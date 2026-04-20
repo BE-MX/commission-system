@@ -3,11 +3,17 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from app.core.database import engine
 from app.core.rule_config import load_order_match_config
+from app.api import (
+    employee_router, supervisor_router, customer_router,
+    payment_router, commission_router, report_router,
+)
 
 logger = logging.getLogger("commission")
 
@@ -43,6 +49,42 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+# CORS 中间件
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# 全局异常处理
+@app.exception_handler(ValueError)
+async def value_error_handler(request: Request, exc: ValueError):
+    return JSONResponse(
+        status_code=400,
+        content={"code": 400, "message": str(exc), "data": None},
+    )
+
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"code": 500, "message": "服务器内部错误", "data": None},
+    )
+
+
+# 注册路由
+app.include_router(employee_router, prefix="/api/v1/employee", tags=["员工属性"])
+app.include_router(supervisor_router, prefix="/api/v1/supervisor", tags=["主管关系"])
+app.include_router(customer_router, prefix="/api/v1/customer", tags=["客户归属"])
+app.include_router(payment_router, prefix="/api/v1/payment", tags=["回款同步"])
+app.include_router(commission_router, prefix="/api/v1/commission", tags=["提成计算"])
+app.include_router(report_router, prefix="/api/v1/report", tags=["报表导出"])
 
 
 @app.get("/health")

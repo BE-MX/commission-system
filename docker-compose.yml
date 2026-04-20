@@ -11,3 +11,12 @@ services:
     volumes:
       - ./backend/config:/app/config:ro
     restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: commission-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped

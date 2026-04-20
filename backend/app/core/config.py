@@ -1,5 +1,7 @@
 """环境变量配置（Pydantic Settings）"""
 
+from urllib.parse import quote_plus
+
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 
@@ -17,8 +19,9 @@ class Settings(BaseSettings):
 
     @property
     def commission_db_url(self) -> str:
+        password = quote_plus(self.COMMISSION_DB_PASSWORD)
         return (
-            f"mysql+pymysql://{self.COMMISSION_DB_USER}:{self.COMMISSION_DB_PASSWORD}"
+            f"mysql+pymysql://{self.COMMISSION_DB_USER}:{password}"
             f"@{self.COMMISSION_DB_HOST}:{self.COMMISSION_DB_PORT}/{self.COMMISSION_DB_NAME}"
             "?charset=utf8mb4"
         )

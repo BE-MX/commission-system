@@ -19,6 +19,56 @@ def load_order_match_config() -> dict[str, Any]:
     return data["order_match"]
 
 
+def build_batch_order_match_query(customer_ids: list[str]) -> str:
+    """
+    批量版订单匹配：一次查询返回多个客户的首条匹配订单。
+    返回按 company_id, account_date 排序的结果，调用方取每个客户的第一条。
+    """
+    settings = get_settings()
+    cfg = load_order_match_config()
+
+    schema = settings.BUSINESS_DB_NAME
+    table = cfg["table"]
+    cid_field = cfg["customer_id_field"]
+    cond = cfg["conditions"]
+
+    id_list = ", ".join(f"'{cid}'" for cid in customer_ids)
+    clauses = [f"`{cid_field}` IN ({id_list})"]
+
+    if cond.get("custom_fields_like"):
+        escaped = cond["custom_fields_like"].replace("'", "\\'")
+        clauses.append(f"`custom_fields` LIKE '%{escaped}%'")
+    if cond.get("account_date_min"):
+        clauses.append(f"`account_date` >= '{cond['account_date_min']}'")
+    if cond.get("trail_not_like"):
+        clauses.append(f"(`trail` IS NULL OR `trail` NOT LIKE '%{cond['trail_not_like']}%')")
+
+    status_values = cond.get("status_values", [])
+    if status_values:
+        status_parts = []
+        for sv in status_values:
+            val = sv["value"]
+            sn = sv.get("status_name")
+            if sn:
+                status_parts.append(f"(`status` = '{val}' AND `status_name` = '{sn}')")
+            else:
+                status_parts.append(f"`status` = '{val}'")
+        clauses.append(f"({' OR '.join(status_parts)})")
+
+    dept_ids = cond.get("department_ids", [])
+    if dept_ids:
+        id_vals = ", ".join(str(d) for d in dept_ids)
+        clauses.append(f"""`departments` REGEXP '"id":({id_vals})'""")
+
+    where = " AND ".join(clauses)
+    sql = (
+        f"SELECT * FROM `{schema}`.`{table}` "
+        f"WHERE {where} "
+        f"ORDER BY `{cid_field}`, `account_date` ASC"
+    )
+    return sql
+
+
 def build_order_match_query(customer_id: str) -> str:
     """
     根据配置文件拼接订单匹配的 SQL WHERE 子句。
