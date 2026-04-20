@@ -1,0 +1,30 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+dist/
+build/
+*.spec
+
+# Node (frontend)
+node_modules/
+
+# Alembic
+alembic/__pycache__/
+
+# Claude Code
+.claude/

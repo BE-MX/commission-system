@@ -1,0 +1,27 @@
+# 订单匹配规则配置
+# 当客户无归属快照时，系统用以下条件在业务订单表中查找匹配订单
+order_match:
+  table: okki_orders
+  customer_id_field: company_id
+  conditions:
+    # custom_fields JSON字段匹配
+    custom_fields_like: '"22595163468": "是", "691123983470": "定制品"'
+    # 订单日期起始
+    account_date_min: "2026-03-01"
+    # trail排除条件
+    trail_not_like: "个人"
+    # 状态条件
+    status_values:
+      - value: "13972831656"
+        status_name: null  # 不限status_name
+      - value: "13972831654"
+        status_name: "已结清"
+    # 部门ID白名单
+    department_ids:
+      - 24925
+      - 24926
+      - 25198
+      - 258938
+      - 258940
+      - 258941
+      - 258942
