@@ -22,6 +22,7 @@ router = APIRouter()
 
 def _set_supervisor_relation(
     db: Session, salesperson_id: str, supervisor_id: str,
+    second_supervisor_id: str = None,
 ) -> str:
     """设置/变更主管关系，返回操作类型"""
     current = db.query(SupervisorRelationHistory).filter(
@@ -29,7 +30,9 @@ def _set_supervisor_relation(
         SupervisorRelationHistory.is_current == True,
     ).first()
 
-    if current and current.supervisor_id == supervisor_id:
+    if (current
+        and current.supervisor_id == supervisor_id
+        and current.second_supervisor_id == second_supervisor_id):
         return "skipped"
 
     today = date.today()
@@ -41,6 +44,7 @@ def _set_supervisor_relation(
     new_record = SupervisorRelationHistory(
         salesperson_id=salesperson_id,
         supervisor_id=supervisor_id,
+        second_supervisor_id=second_supervisor_id,
         effective_start=today,
         is_current=True,
     )
@@ -58,17 +62,22 @@ def list_supervisor_relations(
     """查询当前有效的主管关系列表"""
     SpUser = aliased(UserBasic)
     SvUser = aliased(UserBasic)
+    Sv2User = aliased(UserBasic)
 
     query = db.query(
         SupervisorRelationHistory.salesperson_id,
         SpUser.full_name.label("salesperson_name"),
         SupervisorRelationHistory.supervisor_id,
         SvUser.full_name.label("supervisor_name"),
+        SupervisorRelationHistory.second_supervisor_id,
+        Sv2User.full_name.label("second_supervisor_name"),
         SupervisorRelationHistory.effective_start,
     ).join(
         SpUser, SupervisorRelationHistory.salesperson_id == SpUser.user_id,
     ).outerjoin(
         SvUser, SupervisorRelationHistory.supervisor_id == SvUser.user_id,
+    ).outerjoin(
+        Sv2User, SupervisorRelationHistory.second_supervisor_id == Sv2User.user_id,
     ).filter(
         SupervisorRelationHistory.is_current == True,
     )
@@ -90,6 +99,8 @@ def list_supervisor_relations(
             salesperson_name=r.salesperson_name,
             supervisor_id=r.supervisor_id,
             supervisor_name=r.supervisor_name,
+            second_supervisor_id=r.second_supervisor_id,
+            second_supervisor_name=r.second_supervisor_name,
             effective_start=r.effective_start,
         )
         for r in rows
@@ -110,14 +121,20 @@ def set_supervisor_relation(
 
     sv_user = db.query(UserBasic).filter(UserBasic.user_id == req.supervisor_id).first()
     if not sv_user:
-        return ResponseModel(code=404, message=f"主管 {req.supervisor_id} 不存在")
+        return ResponseModel(code=404, message=f"一级主管 {req.supervisor_id} 不存在")
 
-    action = _set_supervisor_relation(db, req.salesperson_id, req.supervisor_id)
+    if req.second_supervisor_id:
+        sv2_user = db.query(UserBasic).filter(UserBasic.user_id == req.second_supervisor_id).first()
+        if not sv2_user:
+            return ResponseModel(code=404, message=f"二级主管 {req.second_supervisor_id} 不存在")
+
+    action = _set_supervisor_relation(db, req.salesperson_id, req.supervisor_id, req.second_supervisor_id)
     db.commit()
 
     return ResponseModel(data=SupervisorRelationResult(
         salesperson_id=req.salesperson_id,
         supervisor_id=req.supervisor_id,
+        second_supervisor_id=req.second_supervisor_id,
         action=action,
     ))
 
@@ -143,7 +160,7 @@ def import_supervisor_relations(
     file: UploadFile = File(..., description="Excel文件"),
     db: Session = Depends(get_db),
 ) -> ResponseModel[SupervisorImportResult]:
-    """从 Excel 批量导入主管关系。模板列：业务员ID(user_id) | 主管ID(user_id)"""
+    """从 Excel 批量导入主管关系。模板列：业务员ID | 一级主管ID | 二级主管ID(可选)"""
     result = SupervisorImportResult(total_rows=0, success=0, failed=0)
 
     with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
@@ -161,6 +178,7 @@ def import_supervisor_relations(
         try:
             sp_id = str(row[0]).strip()
             sv_id = str(row[1]).strip()
+            sv2_id = str(row[2]).strip() if len(row) > 2 and row[2] else None
 
             sp_user = db.query(UserBasic).filter(UserBasic.user_id == sp_id).first()
             if not sp_user:
@@ -168,9 +186,14 @@ def import_supervisor_relations(
 
             sv_user = db.query(UserBasic).filter(UserBasic.user_id == sv_id).first()
             if not sv_user:
-                raise ValueError(f"主管 {sv_id} 在业务库中不存在")
+                raise ValueError(f"一级主管 {sv_id} 在业务库中不存在")
 
-            _set_supervisor_relation(db, sp_id, sv_id)
+            if sv2_id:
+                sv2_user = db.query(UserBasic).filter(UserBasic.user_id == sv2_id).first()
+                if not sv2_user:
+                    raise ValueError(f"二级主管 {sv2_id} 在业务库中不存在")
+
+            _set_supervisor_relation(db, sp_id, sv_id, sv2_id)
             result.success += 1
         except Exception as e:
             result.failures.append(f"第 {row_idx} 行: {e}")

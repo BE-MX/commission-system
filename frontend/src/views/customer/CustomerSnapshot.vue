@@ -15,19 +15,22 @@
         </el-select>
       </el-col>
       <el-col :span="14" style="text-align:right">
-        <el-button type="primary" @click="openCreateDialog">手工新增</el-button>
-        <el-button @click="importDialogVisible = true">Excel导入</el-button>
-        <el-button @click="downloadTpl">下载模板</el-button>
+        <el-button type="success" :loading="autoMatching" @click="handleAutoMatch"><el-icon><MagicStick /></el-icon> 自动匹配</el-button>
+        <el-button type="primary" @click="openCreateDialog"><el-icon><Plus /></el-icon> 手工新增</el-button>
+        <el-button @click="importDialogVisible = true"><el-icon><Upload /></el-icon> Excel导入</el-button>
+        <el-button @click="downloadTpl"><el-icon><Download /></el-icon> 下载模板</el-button>
       </el-col>
     </el-row>
 
     <!-- 表格 -->
     <el-table
+      ref="tableRef"
       :data="tableData"
       v-loading="loading"
       stripe border
       style="width: 100%"
       :row-class-name="rowClassName"
+      :max-height="maxHeight"
     >
       <el-table-column prop="customer_id" label="客户ID" width="160" />
       <el-table-column prop="customer_name" label="客户名称" min-width="160" show-overflow-tooltip />
@@ -40,15 +43,21 @@
       <el-table-column label="业务员比例" width="100" align="right">
         <template #default="{ row }">{{ rateStr(row.salesperson_rate) }}</template>
       </el-table-column>
-      <el-table-column prop="supervisor_name" label="主管" width="100" />
-      <el-table-column label="主管属性" width="90">
+      <el-table-column prop="supervisor_name" label="一级主管" width="100" />
+      <el-table-column label="一级主管属性" width="110">
         <template #default="{ row }">
           <span>{{ attrLabel(row.supervisor_attribute) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="主管比例" width="90" align="right">
+      <el-table-column label="一级主管比例" width="110" align="right">
         <template #default="{ row }">{{ rateStr(row.supervisor_rate) }}</template>
       </el-table-column>
+      <el-table-column prop="second_supervisor_name" label="二级主管" width="100" />
+      <el-table-column label="二级主管比例" width="110" align="right">
+        <template #default="{ row }">{{ rateStr(row.second_supervisor_rate) }}</template>
+      </el-table-column>
+      <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip />
+      <el-table-column prop="first_receipt_date" label="首次成交日期" width="120" />
       <el-table-column label="状态" width="90">
         <template #default="{ row }">
           <el-tag v-if="row.is_complete" type="success" size="small">已完整</el-tag>
@@ -60,8 +69,8 @@
       </el-table-column>
       <el-table-column label="操作" width="180" fixed="right">
         <template #default="{ row }">
-          <el-button v-if="!row.is_complete" link type="warning" @click="openCompleteDialog(row)">补充信息</el-button>
-          <el-button link type="primary" @click="openResetDialog(row)">重置归属</el-button>
+          <el-button v-if="!row.is_complete" link type="warning" @click="openCompleteDialog(row)"><el-icon><EditPen /></el-icon> 补充信息</el-button>
+          <el-button link type="primary" @click="openResetDialog(row)"><el-icon><RefreshRight /></el-icon> 重置归属</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -92,14 +101,20 @@
             <el-option label="分配" value="distribute" />
           </el-select>
         </el-form-item>
-        <el-form-item label="主管ID">
+        <el-form-item label="一级主管ID">
           <el-input v-model="createForm.supervisor_id" />
         </el-form-item>
-        <el-form-item label="主管属性">
+        <el-form-item label="一级主管属性">
           <el-select v-model="createForm.supervisor_attribute" clearable style="width:100%">
             <el-option label="开发" value="develop" />
             <el-option label="分配" value="distribute" />
           </el-select>
+        </el-form-item>
+        <el-form-item label="二级主管ID">
+          <el-input v-model="createForm.second_supervisor_id" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="createForm.remark" type="textarea" :rows="2" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -109,13 +124,16 @@
     </el-dialog>
 
     <!-- 补充信息 Dialog -->
-    <el-dialog v-model="completeDialogVisible" title="补充归属信息" width="450px">
-      <el-form :model="completeForm" label-width="100px">
+    <el-dialog v-model="completeDialogVisible" title="补充归属信息" width="500px">
+      <el-form :model="completeForm" label-width="110px">
         <el-form-item label="业务员">
           <span>{{ currentRow?.salesperson_name || currentRow?.salesperson_id }}</span>
         </el-form-item>
-        <el-form-item label="主管">
+        <el-form-item label="一级主管">
           <span>{{ currentRow?.supervisor_name || currentRow?.supervisor_id || '无' }}</span>
+        </el-form-item>
+        <el-form-item label="二级主管">
+          <span>{{ currentRow?.second_supervisor_name || currentRow?.second_supervisor_id || '无' }}</span>
         </el-form-item>
         <el-form-item label="业务员属性" required>
           <el-select v-model="completeForm.salesperson_attribute" style="width:100%">
@@ -123,11 +141,23 @@
             <el-option label="分配" value="distribute" />
           </el-select>
         </el-form-item>
-        <el-form-item label="主管属性">
+        <el-form-item label="一级主管属性">
           <el-select v-model="completeForm.supervisor_attribute" clearable style="width:100%">
             <el-option label="开发" value="develop" />
             <el-option label="分配" value="distribute" />
           </el-select>
+        </el-form-item>
+        <el-form-item label="业务员比例">
+          <el-input-number v-model="completeForm.salesperson_rate" :min="0" :max="100" :precision="1" :step="0.5" :controls="false" style="width:120px" />
+          <span style="margin-left:4px">%</span>
+        </el-form-item>
+        <el-form-item label="一级主管比例">
+          <el-input-number v-model="completeForm.supervisor_rate" :min="0" :max="100" :precision="1" :step="0.5" :controls="false" style="width:120px" />
+          <span style="margin-left:4px">%</span>
+        </el-form-item>
+        <el-form-item label="二级主管比例">
+          <el-input-number v-model="completeForm.second_supervisor_rate" :min="0" :max="100" :precision="1" :step="0.5" :controls="false" style="width:120px" />
+          <span style="margin-left:4px">%</span>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -151,14 +181,20 @@
             <el-option label="分配" value="distribute" />
           </el-select>
         </el-form-item>
-        <el-form-item label="主管ID">
+        <el-form-item label="一级主管ID">
           <el-input v-model="resetForm.supervisor_id" />
         </el-form-item>
-        <el-form-item label="主管属性">
+        <el-form-item label="一级主管属性">
           <el-select v-model="resetForm.supervisor_attribute" clearable style="width:100%">
             <el-option label="开发" value="develop" />
             <el-option label="分配" value="distribute" />
           </el-select>
+        </el-form-item>
+        <el-form-item label="二级主管ID">
+          <el-input v-model="resetForm.second_supervisor_id" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="resetForm.remark" type="textarea" :rows="2" />
         </el-form-item>
         <el-form-item label="重置原因" required>
           <el-input v-model="resetForm.reset_reason" type="textarea" :rows="2" />
@@ -173,7 +209,7 @@
     <!-- 导入 Dialog -->
     <el-dialog v-model="importDialogVisible" title="Excel批量导入客户归属" width="480px">
       <el-alert type="info" :closable="false" style="margin-bottom:16px">
-        模板列：客户ID | 业务员ID | 业务员属性(开发/分配) | 主管ID | 主管属性(开发/分配)
+        模板列：客户ID | 业务员ID | 业务员属性(开发/分配) | 一级主管ID | 一级主管属性(开发/分配) | 二级主管ID
       </el-alert>
       <el-upload drag :auto-upload="false" :limit="1" accept=".xlsx,.xls" :on-change="handleFileChange">
         <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
@@ -200,8 +236,11 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getSnapshotList, createSnapshot, completeSnapshot, resetSnapshot, importSnapshots, downloadTemplate } from '@/api/customer'
+import { getSnapshotList, createSnapshot, completeSnapshot, resetSnapshot, importSnapshots, downloadTemplate, autoMatchSnapshots } from '@/api/customer'
 import { downloadUrl } from '@/utils/download'
+import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
+
+const { tableRef, maxHeight } = useTableMaxHeight()
 
 const keyword = ref('')
 const isComplete = ref('all')
@@ -242,10 +281,10 @@ async function fetchList() {
 
 // 手工新增
 const createDialogVisible = ref(false)
-const createForm = ref({ customer_id: '', salesperson_id: '', salesperson_attribute: '', supervisor_id: '', supervisor_attribute: '' })
+const createForm = ref({ customer_id: '', salesperson_id: '', salesperson_attribute: '', supervisor_id: '', supervisor_attribute: '', second_supervisor_id: '', remark: '' })
 
 function openCreateDialog() {
-  createForm.value = { customer_id: '', salesperson_id: '', salesperson_attribute: '', supervisor_id: '', supervisor_attribute: '' }
+  createForm.value = { customer_id: '', salesperson_id: '', salesperson_attribute: '', supervisor_id: '', supervisor_attribute: '', second_supervisor_id: '', remark: '' }
   createDialogVisible.value = true
 }
 
@@ -259,6 +298,8 @@ async function submitCreate() {
   try {
     const payload = { ...f }
     if (!payload.supervisor_id) { payload.supervisor_id = null; payload.supervisor_attribute = null }
+    if (!payload.second_supervisor_id) { payload.second_supervisor_id = null }
+    if (!payload.remark) { payload.remark = null }
     await createSnapshot(payload)
     ElMessage.success('新增成功')
     createDialogVisible.value = false
@@ -270,11 +311,17 @@ async function submitCreate() {
 
 // 补充信息
 const completeDialogVisible = ref(false)
-const completeForm = ref({ salesperson_attribute: '', supervisor_attribute: '' })
+const completeForm = ref({ salesperson_attribute: '', supervisor_attribute: '', salesperson_rate: 2.0, supervisor_rate: 1.0, second_supervisor_rate: 0.5 })
 
 function openCompleteDialog(row) {
   currentRow.value = row
-  completeForm.value = { salesperson_attribute: '', supervisor_attribute: '' }
+  completeForm.value = {
+    salesperson_attribute: '',
+    supervisor_attribute: '',
+    salesperson_rate: 2.0,
+    supervisor_rate: row.supervisor_id ? 1.0 : 0,
+    second_supervisor_rate: row.second_supervisor_id ? 0.5 : 0,
+  }
   completeDialogVisible.value = true
 }
 
@@ -285,7 +332,14 @@ async function submitComplete() {
   }
   saving.value = true
   try {
-    await completeSnapshot(currentRow.value.id, completeForm.value)
+    const f = completeForm.value
+    await completeSnapshot(currentRow.value.id, {
+      salesperson_attribute: f.salesperson_attribute,
+      supervisor_attribute: f.supervisor_attribute || null,
+      salesperson_rate: f.salesperson_rate / 100,
+      supervisor_rate: f.supervisor_rate / 100,
+      second_supervisor_rate: f.second_supervisor_rate / 100,
+    })
     ElMessage.success('补全成功')
     completeDialogVisible.value = false
     fetchList()
@@ -296,7 +350,7 @@ async function submitComplete() {
 
 // 重置归属
 const resetDialogVisible = ref(false)
-const resetForm = ref({ salesperson_id: '', salesperson_attribute: '', supervisor_id: '', supervisor_attribute: '', reset_reason: '' })
+const resetForm = ref({ salesperson_id: '', salesperson_attribute: '', supervisor_id: '', supervisor_attribute: '', second_supervisor_id: '', remark: '', reset_reason: '' })
 
 function openResetDialog(row) {
   currentRow.value = row
@@ -305,6 +359,8 @@ function openResetDialog(row) {
     salesperson_attribute: row.salesperson_attribute || '',
     supervisor_id: row.supervisor_id || '',
     supervisor_attribute: row.supervisor_attribute || '',
+    second_supervisor_id: row.second_supervisor_id || '',
+    remark: row.remark || '',
     reset_reason: ''
   }
   resetDialogVisible.value = true
@@ -320,6 +376,8 @@ async function submitReset() {
   try {
     const payload = { ...f }
     if (!payload.supervisor_id) { payload.supervisor_id = null; payload.supervisor_attribute = null }
+    if (!payload.second_supervisor_id) { payload.second_supervisor_id = null }
+    if (!payload.remark) { payload.remark = null }
     await resetSnapshot(currentRow.value.id, payload)
     ElMessage.success('重置成功')
     resetDialogVisible.value = false
@@ -348,6 +406,20 @@ async function submitImport() {
     fetchList()
   } finally {
     importing.value = false
+  }
+}
+
+// 自动匹配
+const autoMatching = ref(false)
+
+async function handleAutoMatch() {
+  autoMatching.value = true
+  try {
+    const res = await autoMatchSnapshots()
+    ElMessage.success(`本次成功匹配${res.data.matched}条，当前还剩${res.data.remaining}条未匹配成功。`)
+    fetchList()
+  } finally {
+    autoMatching.value = false
   }
 }
 

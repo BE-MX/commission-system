@@ -78,7 +78,7 @@
         </el-row>
       </template>
 
-      <el-table :data="paymentList" v-loading="listLoading" stripe border>
+      <el-table ref="tableRef" :data="paymentList" v-loading="listLoading" stripe border :max-height="maxHeight">
         <el-table-column prop="payment_id" label="回款ID" width="180" show-overflow-tooltip />
         <el-table-column prop="order_id" label="订单ID" width="180" show-overflow-tooltip />
         <el-table-column prop="customer_name" label="客户名称" min-width="160" show-overflow-tooltip />
@@ -116,6 +116,9 @@
 import { ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { syncPayments, getSyncedPayments } from '@/api/payment'
+import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
+
+const { tableRef, maxHeight } = useTableMaxHeight()
 
 // 同步操作
 const dateRange = ref(null)
@@ -183,6 +186,9 @@ async function fetchPayments() {
   margin-bottom: 16px;
   box-shadow: var(--card-shadow);
   border: 1px solid #ebeef5;
+  position: sticky;
+  top: 0;
+  z-index: 3;
 }
 .sync-action-left {
   display: flex;

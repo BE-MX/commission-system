@@ -28,3 +28,6 @@ alembic/__pycache__/
 
 # Claude Code
 .claude/
+
+# Server logs
+logs/

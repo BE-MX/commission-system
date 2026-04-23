@@ -2,10 +2,12 @@
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 from app.core.database import engine
@@ -16,6 +18,8 @@ from app.api import (
 )
 
 logger = logging.getLogger("commission")
+
+FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 
 
 @asynccontextmanager
@@ -101,3 +105,18 @@ def health_check():
         "status": "ok",
         "database": db_status,
     }
+
+
+# ---------- 生产模式：托管前端 ----------
+if FRONTEND_DIST.is_dir():
+    app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        """所有非 /api、/health、/assets 的请求 fallback 到 index.html（SPA 路由）"""
+        file = FRONTEND_DIST / full_path
+        if file.is_file():
+            return FileResponse(file)
+        return FileResponse(FRONTEND_DIST / "index.html")
+
+    logger.info(f"Serving frontend from {FRONTEND_DIST}")

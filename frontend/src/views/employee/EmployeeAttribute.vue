@@ -8,13 +8,13 @@
         </el-input>
       </el-col>
       <el-col :span="4">
-        <el-button type="primary" @click="fetchList">查询</el-button>
-        <el-button @click="importDialogVisible = true">批量导入</el-button>
+        <el-button type="primary" @click="fetchList"><el-icon><Search /></el-icon> 查询</el-button>
+        <el-button @click="importDialogVisible = true"><el-icon><Upload /></el-icon> 批量导入</el-button>
       </el-col>
     </el-row>
 
     <!-- 表格 -->
-    <el-table :data="tableData" v-loading="loading" stripe border style="width: 100%">
+    <el-table ref="tableRef" :data="tableData" v-loading="loading" stripe border style="width: 100%" :max-height="maxHeight">
       <el-table-column prop="user_id" label="员工ID" width="200" />
       <el-table-column prop="full_name" label="姓名" width="140" />
       <el-table-column prop="nickname" label="昵称" width="140" />
@@ -27,8 +27,8 @@
       </el-table-column>
       <el-table-column label="操作" min-width="160">
         <template #default="{ row }">
-          <el-button link type="primary" @click="openSetDialog(row)">设置属性</el-button>
-          <el-button link type="primary" @click="openHistory(row)">查看历史</el-button>
+          <el-button link type="primary" @click="openSetDialog(row)"><el-icon><Edit /></el-icon> 设置属性</el-button>
+          <el-button link type="primary" @click="openHistory(row)"><el-icon><Clock /></el-icon> 查看历史</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -55,6 +55,15 @@
             <el-option label="开发" value="develop" />
             <el-option label="分配" value="distribute" />
           </el-select>
+        </el-form-item>
+        <el-form-item label="生效时间">
+          <el-date-picker
+            v-model="attrForm.effective_date"
+            type="date"
+            placeholder="选择生效日期"
+            value-format="YYYY-MM-DD"
+            style="width: 100%"
+          />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -124,6 +133,9 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getEmployeeList, setEmployeeAttribute, getAttributeHistory, importEmployeeAttributes } from '@/api/employee'
+import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
+
+const { tableRef, maxHeight } = useTableMaxHeight()
 
 const keyword = ref('')
 const page = ref(1)
@@ -146,12 +158,18 @@ async function fetchList() {
 // 设置属性
 const setDialogVisible = ref(false)
 const currentRow = ref(null)
-const attrForm = ref({ attribute_type: '' })
+const attrForm = ref({ attribute_type: '', effective_date: '' })
 const saving = ref(false)
+
+function formatToday() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 function openSetDialog(row) {
   currentRow.value = row
   attrForm.value.attribute_type = row.current_attribute || ''
+  attrForm.value.effective_date = formatToday()
   setDialogVisible.value = true
 }
 
@@ -164,7 +182,8 @@ async function submitAttribute() {
   try {
     await setEmployeeAttribute({
       employee_id: currentRow.value.user_id,
-      attribute_type: attrForm.value.attribute_type
+      attribute_type: attrForm.value.attribute_type,
+      effective_date: attrForm.value.effective_date || undefined
     })
     ElMessage.success('设置成功')
     setDialogVisible.value = false

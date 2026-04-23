@@ -21,12 +21,15 @@ class CustomerCommissionSnapshot(Base):
         nullable=True, comment="业务员属性快照，NULL表示待补充",
     )
     salesperson_rate = Column(DECIMAL(5, 4), nullable=True, comment="业务员提成比例")
-    supervisor_id = Column(String(64), nullable=True, comment="归属业务主管ID")
+    supervisor_id = Column(String(64), nullable=True, comment="一级主管ID")
     supervisor_attribute = Column(
         Enum("develop", "distribute", name="sv_attribute_enum"),
-        nullable=True, comment="主管属性快照",
+        nullable=True, comment="一级主管属性快照",
     )
-    supervisor_rate = Column(DECIMAL(5, 4), nullable=True, comment="主管提成比例")
+    supervisor_rate = Column(DECIMAL(5, 4), nullable=True, comment="一级主管提成比例")
+    second_supervisor_id = Column(String(64), nullable=True, comment="二级主管ID")
+    second_supervisor_rate = Column(DECIMAL(5, 4), nullable=True, comment="二级主管提成比例")
+    remark = Column(Text, nullable=True, comment="备注")
     is_complete = Column(Boolean, default=False, comment="是否完整（有比例即完整）")
     is_current = Column(Boolean, default=True, comment="是否当前有效")
     source = Column(

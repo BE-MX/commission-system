@@ -1,6 +1,6 @@
 """业务库只读映射（跨库查询，不建表）"""
 
-from sqlalchemy import Column, String, Date, DECIMAL, Text
+from sqlalchemy import Column, String, Date, DECIMAL, Text, BigInteger
 from sqlalchemy.orm import DeclarativeBase
 
 from app.core.config import get_settings
@@ -66,6 +66,7 @@ class OkkiReceipt(BusinessBase):
     collection_date = Column(Date)
     type = Column(String(64))
     amount_usd = Column(DECIMAL(12, 2))
+    service_fee_amount_usd = Column(DECIMAL(15, 2), comment="交易服务费(美元)")
     order_id = Column(String(64))
     company_id = Column(String(64))
     order_no = Column(String(64))

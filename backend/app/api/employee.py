@@ -15,6 +15,7 @@ from app.schemas.common import ResponseModel, PageResponse
 from app.schemas.employee import (
     EmployeeListItem, EmployeeAttributeRequest,
     EmployeeAttributeHistoryItem, EmployeeAttributeResult, EmployeeImportResult,
+    EmployeeAttributeBatchHistoryRequest,
 )
 
 router = APIRouter()
@@ -22,6 +23,7 @@ router = APIRouter()
 
 def _set_employee_attribute(
     db: Session, employee_id: str, attribute_type: str,
+    effective_date: date = None,
 ) -> str:
     """设置/变更员工属性，返回操作类型"""
     current = db.query(EmployeeAttributeHistory).filter(
@@ -32,16 +34,16 @@ def _set_employee_attribute(
     if current and current.attribute_type == attribute_type:
         return "skipped"
 
-    today = date.today()
+    eff_date = effective_date or date.today()
 
     if current:
         current.is_current = False
-        current.effective_end = today
+        current.effective_end = eff_date
 
     new_record = EmployeeAttributeHistory(
         employee_id=employee_id,
         attribute_type=attribute_type,
-        effective_start=today,
+        effective_start=eff_date,
         is_current=True,
     )
     db.add(new_record)
@@ -101,7 +103,7 @@ def set_employee_attribute(
     if not user:
         return ResponseModel(code=404, message=f"员工 {req.employee_id} 不存在")
 
-    action = _set_employee_attribute(db, req.employee_id, req.attribute_type)
+    action = _set_employee_attribute(db, req.employee_id, req.attribute_type, req.effective_date)
     db.commit()
 
     return ResponseModel(data=EmployeeAttributeResult(
@@ -169,3 +171,65 @@ def import_employee_attributes(
     wb.close()
     db.commit()
     return ResponseModel(data=result)
+
+
+@router.post("/attribute/batch-history", summary="批量设置员工属性历史记录")
+def batch_set_attribute_history(
+    items: list[EmployeeAttributeBatchHistoryRequest],
+    db: Session = Depends(get_db),
+) -> ResponseModel[dict]:
+    """
+    批量写入员工属性历史记录。
+
+    会先清除指定员工的所有历史记录，再按时间顺序重建。
+    最后一条记录自动标记为 is_current=True。
+    """
+    from app.services.customer_reset_service import refresh_snapshots_by_employees
+
+    affected_employee_ids = []
+
+    for item in items:
+        emp_id = item.employee_id
+        user = db.query(UserBasic).filter(UserBasic.user_id == emp_id).first()
+        if not user:
+            return ResponseModel(code=404, message=f"员工 {emp_id} 不存在")
+
+        if not item.records:
+            continue
+
+        sorted_records = sorted(item.records, key=lambda r: r.effective_start)
+
+        db.query(EmployeeAttributeHistory).filter(
+            EmployeeAttributeHistory.employee_id == emp_id,
+        ).delete(synchronize_session="fetch")
+
+        for idx, rec in enumerate(sorted_records):
+            is_last = idx == len(sorted_records) - 1
+            effective_end = sorted_records[idx + 1].effective_start if not is_last else None
+
+            new_record = EmployeeAttributeHistory(
+                employee_id=emp_id,
+                attribute_type=rec.attribute_type,
+                effective_start=rec.effective_start,
+                effective_end=effective_end,
+                is_current=is_last,
+            )
+            db.add(new_record)
+
+        affected_employee_ids.append(emp_id)
+
+    db.flush()
+
+    refresh_result = refresh_snapshots_by_employees(db, affected_employee_ids, operator="api")
+
+    db.commit()
+
+    return ResponseModel(
+        message=f"已更新 {len(affected_employee_ids)} 位员工的属性历史，"
+                f"刷新快照 {refresh_result.updated} 条",
+        data={
+            "employees_updated": len(affected_employee_ids),
+            "snapshots_refreshed": refresh_result.updated,
+            "snapshots_skipped": refresh_result.skipped,
+        },
+    )

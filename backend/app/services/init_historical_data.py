@@ -49,6 +49,14 @@ def _get_supervisor_id(db: Session, salesperson_id: str) -> Optional[str]:
     return row.supervisor_id if row else None
 
 
+def _get_second_supervisor_id(db: Session, salesperson_id: str) -> Optional[str]:
+    row = db.query(SupervisorRelationHistory).filter(
+        SupervisorRelationHistory.salesperson_id == salesperson_id,
+        SupervisorRelationHistory.is_current == True,
+    ).first()
+    return row.second_supervisor_id if row else None
+
+
 def init_customer_snapshots(db: Session, dry_run: bool = False) -> int:
     """
     Step 3: 为存量客户生成归属快照。
@@ -90,11 +98,12 @@ def init_customer_snapshots(db: Session, dry_run: bool = False) -> int:
         sp_attr = _get_employee_attribute(db, sp_id)
         sv_id = _get_supervisor_id(db, sp_id)
         sv_attr = _get_employee_attribute(db, sv_id) if sv_id else None
+        sv2_id = _get_second_supervisor_id(db, sp_id)
 
         is_complete = sp_attr is not None
-        sp_rate, sv_rate = None, None
+        sp_rate, sv_rate, sv2_rate = None, None, None
         if is_complete:
-            sp_rate, sv_rate, _ = calc_commission_rates(sp_id, sp_attr, sv_id, sv_attr)
+            sp_rate, sv_rate, sv2_rate, _ = calc_commission_rates(sp_id, sp_attr, sv_id, sv_attr, sv2_id)
 
         if not dry_run:
             snapshot = CustomerCommissionSnapshot(
@@ -107,6 +116,8 @@ def init_customer_snapshots(db: Session, dry_run: bool = False) -> int:
                 supervisor_id=sv_id,
                 supervisor_attribute=sv_attr,
                 supervisor_rate=sv_rate,
+                second_supervisor_id=sv2_id,
+                second_supervisor_rate=sv2_rate,
                 is_complete=is_complete,
                 is_current=True,
                 source="init",

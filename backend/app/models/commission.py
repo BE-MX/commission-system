@@ -17,6 +17,7 @@ class SyncedPayment(Base):
     customer_id = Column(String(64), nullable=False, comment="关联客户ID")
     payment_date = Column(Date, nullable=False, comment="回款日期")
     payment_amount = Column(DECIMAL(12, 2), nullable=False, comment="回款金额")
+    service_fee = Column(DECIMAL(15, 2), server_default="0", comment="交易服务费")
     synced_at = Column(DateTime, server_default=func.now(), comment="同步时间")
 
     __table_args__ = (
@@ -62,7 +63,10 @@ class CommissionDetail(Base):
     salesperson_commission = Column(DECIMAL(12, 2), nullable=False, comment="业务员提成金额")
     supervisor_id = Column(String(64), nullable=True)
     supervisor_rate = Column(DECIMAL(5, 4), nullable=True)
-    supervisor_commission = Column(DECIMAL(12, 2), server_default="0", comment="主管提成金额")
+    supervisor_commission = Column(DECIMAL(12, 2), server_default="0", comment="一级主管提成金额")
+    second_supervisor_id = Column(String(64), nullable=True)
+    second_supervisor_rate = Column(DECIMAL(5, 4), nullable=True)
+    second_supervisor_commission = Column(DECIMAL(12, 2), server_default="0", comment="二级主管提成金额")
     calc_rule_note = Column(String(256), nullable=True, comment="计算规则说明")
     calculated_at = Column(DateTime, server_default=func.now())
     status = Column(
@@ -76,6 +80,7 @@ class CommissionDetail(Base):
         Index("ix_detail_order", "order_id"),
         Index("ix_detail_salesperson", "salesperson_id"),
         Index("ix_detail_supervisor", "supervisor_id"),
+        Index("ix_detail_second_supervisor", "second_supervisor_id"),
     )
 
 

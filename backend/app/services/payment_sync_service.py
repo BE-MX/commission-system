@@ -14,7 +14,7 @@ from app.core.rule_config import build_batch_order_match_query
 from app.models.commission import SyncedPayment
 from app.models.customer import CustomerCommissionSnapshot
 from app.models.employee import EmployeeAttributeHistory, SupervisorRelationHistory
-from app.services.rate_utils import calc_commission_rates, to_date
+from app.services.rate_utils import calc_commission_rates, to_date, get_employee_attribute_at_date_from_records
 
 logger = logging.getLogger("commission.sync")
 
@@ -56,13 +56,36 @@ def _batch_get_employee_attributes(db: Session, employee_ids: set[str]) -> dict[
     return {r.employee_id: r.attribute_type for r in rows}
 
 
+def _batch_load_employee_history(db: Session, employee_ids: set[str]) -> dict[str, list]:
+    """批量加载员工全部属性历史记录（按 effective_start 升序）"""
+    rows = _batch_query_in(
+        db, EmployeeAttributeHistory, EmployeeAttributeHistory.employee_id,
+        employee_ids,
+    )
+    result: dict[str, list] = {}
+    for r in rows:
+        result.setdefault(r.employee_id, []).append(r)
+    for emp_id in result:
+        result[emp_id].sort(key=lambda r: r.effective_start)
+    return result
+
+
 def _batch_get_supervisor_ids(db: Session, salesperson_ids: set[str]) -> dict[str, str]:
-    """批量查询业务员当前主管"""
+    """批量查询业务员当前一级主管"""
     rows = _batch_query_in(
         db, SupervisorRelationHistory, SupervisorRelationHistory.salesperson_id,
         salesperson_ids, [SupervisorRelationHistory.is_current == True]
     )
     return {r.salesperson_id: r.supervisor_id for r in rows}
+
+
+def _batch_get_second_supervisor_ids(db: Session, salesperson_ids: set[str]) -> dict[str, str]:
+    """批量查询业务员当前二级主管"""
+    rows = _batch_query_in(
+        db, SupervisorRelationHistory, SupervisorRelationHistory.salesperson_id,
+        salesperson_ids, [SupervisorRelationHistory.is_current == True]
+    )
+    return {r.salesperson_id: r.second_supervisor_id for r in rows if r.second_supervisor_id}
 
 
 def _batch_find_matching_orders(db: Session, customer_ids: list[str]) -> dict[str, dict]:
@@ -124,7 +147,7 @@ def sync_payments(db: Session, date_start: date, date_end: date) -> SyncResult:
     # ---- Step 1: 从业务库拉取回款 ----
     sql = (
         f"SELECT cash_collection_id, cash_collection_no, collection_date, "
-        f"amount_usd, order_id, company_id, order_no, company_name "
+        f"amount_usd, service_fee_amount_usd, order_id, company_id, order_no, company_name "
         f"FROM `{schema}`.`okki_receipts` "
         f"WHERE `collection_date` >= :ds AND `collection_date` <= :de"
     )
@@ -158,6 +181,7 @@ def sync_payments(db: Session, date_start: date, date_end: date) -> SyncResult:
             "customer_id": str(row["company_id"]),
             "payment_date": to_date(row["collection_date"]),
             "payment_amount": Decimal(str(row["amount_usd"])),
+            "service_fee": Decimal(str(row["service_fee_amount_usd"] or 0)),
         })
         result.new_synced += 1
 
@@ -217,31 +241,53 @@ def sync_payments(db: Session, date_start: date, date_end: date) -> SyncResult:
         elif cid in cid_fallback_order and cid_fallback_order[cid].get("user_id"):
             sp_ids_needed.add(str(cid_fallback_order[cid]["user_id"]))
 
-    # 批量查询员工属性和主管关系
-    attr_map = _batch_get_employee_attributes(db, sp_ids_needed)
+    # 批量查询主管关系
     supervisor_map = _batch_get_supervisor_ids(db, sp_ids_needed)
+    second_supervisor_map = _batch_get_second_supervisor_ids(db, sp_ids_needed)
 
-    # 主管也需要查属性
+    # 一级主管 ID 也需要加载属性历史
     sv_ids = set(supervisor_map.values())
-    if sv_ids:
-        sv_attr_map = _batch_get_employee_attributes(db, sv_ids)
-        attr_map.update(sv_attr_map)
+    all_emp_ids = sp_ids_needed | sv_ids
+
+    # 批量加载全部属性历史（用于按日期查找）
+    emp_history_map = _batch_load_employee_history(db, all_emp_ids)
+
+    # 批量查询各客户的首次成交日期
+    from app.models.business import OkkiReceipt
+    from sqlalchemy import func as sa_func
+    cid_first_receipt: dict[str, Optional[date]] = {}
+    cid_list_snap = list(set(customers_needing_snapshot))
+    for i in range(0, len(cid_list_snap), BATCH_CHUNK):
+        chunk = cid_list_snap[i:i + BATCH_CHUNK]
+        rows_fr = db.query(
+            OkkiReceipt.company_id,
+            sa_func.min(OkkiReceipt.collection_date).label("first_date"),
+        ).filter(OkkiReceipt.company_id.in_(chunk)).group_by(OkkiReceipt.company_id).all()
+        for r in rows_fr:
+            cid_first_receipt[str(r.company_id)] = to_date(r.first_date)
 
     # ---- Step 6: 批量生成快照 ----
     snapshot_rows = []
     for cid in customers_needing_snapshot:
         try:
+            first_receipt = cid_first_receipt.get(cid)
+
             if cid in matched_orders:
                 order = matched_orders[cid]
                 sp_id = str(order["user_id"])
-                sp_attr = attr_map.get(sp_id)
+                sp_records = emp_history_map.get(sp_id, [])
+                sp_attr = get_employee_attribute_at_date_from_records(sp_records, first_receipt)
                 sv_id = supervisor_map.get(sp_id)
-                sv_attr = attr_map.get(sv_id) if sv_id else None
+                sv_attr = None
+                if sv_id:
+                    sv_records = emp_history_map.get(sv_id, [])
+                    sv_attr = get_employee_attribute_at_date_from_records(sv_records, first_receipt)
+                sv2_id = second_supervisor_map.get(sp_id)
 
-                sp_rate, sv_rate = None, None
+                sp_rate, sv_rate, sv2_rate = None, None, None
                 is_complete = sp_attr is not None
                 if is_complete:
-                    sp_rate, sv_rate, _ = calc_commission_rates(sp_id, sp_attr, sv_id, sv_attr)
+                    sp_rate, sv_rate, sv2_rate, _ = calc_commission_rates(sp_id, sp_attr, sv_id, sv_attr, sv2_id)
 
                 snapshot_rows.append({
                     "customer_id": cid,
@@ -253,6 +299,8 @@ def sync_payments(db: Session, date_start: date, date_end: date) -> SyncResult:
                     "supervisor_id": sv_id,
                     "supervisor_attribute": sv_attr,
                     "supervisor_rate": sv_rate,
+                    "second_supervisor_id": sv2_id,
+                    "second_supervisor_rate": sv2_rate,
                     "is_complete": is_complete,
                     "is_current": True,
                     "source": "auto",
@@ -270,14 +318,17 @@ def sync_payments(db: Session, date_start: date, date_end: date) -> SyncResult:
             if fallback_order and fallback_order.get("user_id"):
                 sp_id = str(fallback_order["user_id"])
                 sv_id = supervisor_map.get(sp_id)
+                sv2_id = second_supervisor_map.get(sp_id)
                 snapshot_rows.append({
                     "customer_id": cid,
                     "salesperson_id": sp_id,
                     "supervisor_id": sv_id,
+                    "second_supervisor_id": sv2_id,
                     "salesperson_attribute": None,
                     "salesperson_rate": None,
                     "supervisor_attribute": None,
                     "supervisor_rate": None,
+                    "second_supervisor_rate": None,
                     "is_complete": False,
                     "is_current": True,
                     "source": "auto",

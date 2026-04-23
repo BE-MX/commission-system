@@ -78,6 +78,7 @@ def execute_calculation(
         total_payments=result.total_payments,
         total_salesperson_commission=float(result.total_salesperson_commission),
         total_supervisor_commission=float(result.total_supervisor_commission),
+        total_second_supervisor_commission=float(result.total_second_supervisor_commission),
         skipped_incomplete=result.skipped_incomplete,
         skipped_no_snapshot=result.skipped_no_snapshot,
         errors=result.errors,
@@ -98,12 +99,14 @@ def list_commission_details(
     """查询指定批次的提成明细"""
     SpUser = aliased(UserBasic)
     SvUser = aliased(UserBasic)
+    Sv2User = aliased(UserBasic)
 
     query = db.query(
         CommissionDetail,
         CustomerInfo.company_name.label("customer_name"),
         SpUser.full_name.label("salesperson_name"),
         SvUser.full_name.label("supervisor_name"),
+        Sv2User.full_name.label("second_supervisor_name"),
     ).outerjoin(
         CustomerInfo,
         CommissionDetail.customer_id == CustomerInfo.company_id,
@@ -111,6 +114,8 @@ def list_commission_details(
         SpUser, CommissionDetail.salesperson_id == SpUser.user_id,
     ).outerjoin(
         SvUser, CommissionDetail.supervisor_id == SvUser.user_id,
+    ).outerjoin(
+        Sv2User, CommissionDetail.second_supervisor_id == Sv2User.user_id,
     ).filter(
         CommissionDetail.batch_id == batch_id,
     )
@@ -134,7 +139,7 @@ def list_commission_details(
     rows = query.offset((page - 1) * page_size).limit(page_size).all()
 
     items = []
-    for detail, customer_name, sp_name, sv_name in rows:
+    for detail, customer_name, sp_name, sv_name, sv2_name in rows:
         items.append(CommissionDetailListItem(
             id=detail.id,
             payment_id=detail.payment_id,
@@ -150,6 +155,10 @@ def list_commission_details(
             supervisor_name=sv_name,
             supervisor_rate=float(detail.supervisor_rate) if detail.supervisor_rate else None,
             supervisor_commission=float(detail.supervisor_commission),
+            second_supervisor_id=detail.second_supervisor_id,
+            second_supervisor_name=sv2_name,
+            second_supervisor_rate=float(detail.second_supervisor_rate) if detail.second_supervisor_rate else None,
+            second_supervisor_commission=float(detail.second_supervisor_commission),
             calc_rule_note=detail.calc_rule_note,
             status=detail.status,
         ))
@@ -197,8 +206,10 @@ def get_batch_summary(
         func.coalesce(func.sum(CommissionDetail.payment_amount), 0).label("total_payment_amount"),
         func.coalesce(func.sum(CommissionDetail.salesperson_commission), 0).label("total_sp_commission"),
         func.coalesce(func.sum(CommissionDetail.supervisor_commission), 0).label("total_sv_commission"),
+        func.coalesce(func.sum(CommissionDetail.second_supervisor_commission), 0).label("total_sv2_commission"),
         func.count(func.distinct(CommissionDetail.salesperson_id)).label("salesperson_count"),
         func.count(func.distinct(CommissionDetail.supervisor_id)).label("supervisor_count"),
+        func.count(func.distinct(CommissionDetail.second_supervisor_id)).label("second_supervisor_count"),
     ).filter(
         CommissionDetail.batch_id == batch_id,
         CommissionDetail.status != "voided",
@@ -240,6 +251,7 @@ def get_batch_summary(
 
     total_sp = float(agg.total_sp_commission) if agg else 0
     total_sv = float(agg.total_sv_commission) if agg else 0
+    total_sv2 = float(agg.total_sv2_commission) if agg else 0
 
     return ResponseModel(data=CommissionBatchSummary(
         batch_name=batch.batch_name,
@@ -248,9 +260,11 @@ def get_batch_summary(
         total_payment_amount=float(agg.total_payment_amount) if agg else 0,
         total_salesperson_commission=total_sp,
         total_supervisor_commission=total_sv,
-        total_commission=total_sp + total_sv,
+        total_second_supervisor_commission=total_sv2,
+        total_commission=total_sp + total_sv + total_sv2,
         salesperson_count=agg.salesperson_count if agg else 0,
         supervisor_count=agg.supervisor_count if agg else 0,
+        second_supervisor_count=agg.second_supervisor_count if agg else 0,
         skipped_incomplete=skipped_incomplete,
         skipped_no_snapshot=skipped_no_snapshot,
     ))

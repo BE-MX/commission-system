@@ -20,6 +20,7 @@ class EmployeeAttributeRequest(BaseModel):
     """设置/变更员工属性请求"""
     employee_id: str
     attribute_type: Literal["develop", "distribute"]
+    effective_date: Optional[date] = None
 
 
 class EmployeeAttributeHistoryItem(BaseModel):
@@ -48,3 +49,15 @@ class EmployeeImportResult(BaseModel):
     success: int
     failed: int
     failures: list[str] = []
+
+
+class EmployeeAttributeBatchHistoryItem(BaseModel):
+    """批量设置历史记录中的单条"""
+    attribute_type: Literal["develop", "distribute"]
+    effective_start: date
+
+
+class EmployeeAttributeBatchHistoryRequest(BaseModel):
+    """批量设置员工属性历史记录"""
+    employee_id: str
+    records: list[EmployeeAttributeBatchHistoryItem]

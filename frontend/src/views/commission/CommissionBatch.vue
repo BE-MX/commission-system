@@ -12,12 +12,12 @@
         </el-radio-group>
       </el-col>
       <el-col :span="6" style="text-align:right">
-        <el-button type="primary" @click="openCreateDialog">新建批次</el-button>
+        <el-button type="primary" @click="openCreateDialog"><el-icon><Plus /></el-icon> 新建批次</el-button>
       </el-col>
     </el-row>
 
     <!-- 表格 -->
-    <el-table :data="tableData" v-loading="loading" stripe border>
+    <el-table ref="tableRef" :data="tableData" v-loading="loading" stripe border :max-height="maxHeight">
       <el-table-column prop="batch_name" label="批次名称" min-width="140" />
       <el-table-column label="周期类型" width="90">
         <template #default="{ row }">{{ periodLabel(row.period_type) }}</template>
@@ -34,47 +34,51 @@
         <template #default="{ row }">
           <!-- 草稿 -->
           <template v-if="row.status === 'draft'">
-            <el-button link type="primary" @click="handleCalculate(row)">执行计算</el-button>
+            <el-button link type="primary" @click="handleCalculate(row)"><el-icon><DataAnalysis /></el-icon> 执行计算</el-button>
           </template>
           <!-- 已计算 -->
           <template v-if="row.status === 'calculated'">
-            <el-button link type="primary" @click="goDetail(row)">查看明细</el-button>
-            <el-button link type="success" @click="handleConfirm(row)">确认</el-button>
-            <el-button link type="danger" @click="handleVoid(row)">作废</el-button>
-            <el-dropdown trigger="click" @command="cmd => handleExport(row, cmd)" style="margin-left:8px">
-              <el-button link type="primary">导出</el-button>
+            <el-button link type="primary" @click="goDetail(row)"><el-icon><View /></el-icon> 明细</el-button>
+            <el-button link type="success" @click="handleConfirm(row)"><el-icon><CircleCheck /></el-icon> 确认</el-button>
+            <el-button link type="danger" @click="handleVoid(row)"><el-icon><CircleClose /></el-icon> 作废</el-button>
+            <el-dropdown trigger="click" @command="cmd => handleExport(row, cmd)" style="margin-left:4px">
+              <el-button type="primary" size="small" plain>
+                <el-icon><Download /></el-icon> 导出 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+              </el-button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item command="all">全部明细</el-dropdown-item>
-                  <el-dropdown-item command="salesperson">按业务员</el-dropdown-item>
-                  <el-dropdown-item command="supervisor">按主管</el-dropdown-item>
-                  <el-dropdown-item command="customer">按客户</el-dropdown-item>
-                  <el-dropdown-item command="sp_summary" divided>业务员汇总</el-dropdown-item>
-                  <el-dropdown-item command="sv_summary">主管汇总</el-dropdown-item>
+                  <el-dropdown-item command="all"><el-icon><Document /></el-icon> 全部明细</el-dropdown-item>
+                  <el-dropdown-item command="salesperson"><el-icon><User /></el-icon> 按业务员</el-dropdown-item>
+                  <el-dropdown-item command="supervisor"><el-icon><UserFilled /></el-icon> 按一级主管</el-dropdown-item>
+                  <el-dropdown-item command="customer"><el-icon><OfficeBuilding /></el-icon> 按客户</el-dropdown-item>
+                  <el-dropdown-item command="sp_summary" divided><el-icon><TrendCharts /></el-icon> 业务员汇总</el-dropdown-item>
+                  <el-dropdown-item command="sv_summary"><el-icon><TrendCharts /></el-icon> 一级主管汇总</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
           </template>
           <!-- 已确认 -->
           <template v-if="row.status === 'confirmed'">
-            <el-button link type="primary" @click="goDetail(row)">查看明细</el-button>
-            <el-dropdown trigger="click" @command="cmd => handleExport(row, cmd)" style="margin-left:8px">
-              <el-button link type="primary">导出</el-button>
+            <el-button link type="primary" @click="goDetail(row)"><el-icon><View /></el-icon> 明细</el-button>
+            <el-dropdown trigger="click" @command="cmd => handleExport(row, cmd)" style="margin-left:4px">
+              <el-button type="primary" size="small" plain>
+                <el-icon><Download /></el-icon> 导出 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+              </el-button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item command="all">全部明细</el-dropdown-item>
-                  <el-dropdown-item command="salesperson">按业务员</el-dropdown-item>
-                  <el-dropdown-item command="supervisor">按主管</el-dropdown-item>
-                  <el-dropdown-item command="customer">按客户</el-dropdown-item>
-                  <el-dropdown-item command="sp_summary" divided>业务员汇总</el-dropdown-item>
-                  <el-dropdown-item command="sv_summary">主管汇总</el-dropdown-item>
+                  <el-dropdown-item command="all"><el-icon><Document /></el-icon> 全部明细</el-dropdown-item>
+                  <el-dropdown-item command="salesperson"><el-icon><User /></el-icon> 按业务员</el-dropdown-item>
+                  <el-dropdown-item command="supervisor"><el-icon><UserFilled /></el-icon> 按一级主管</el-dropdown-item>
+                  <el-dropdown-item command="customer"><el-icon><OfficeBuilding /></el-icon> 按客户</el-dropdown-item>
+                  <el-dropdown-item command="sp_summary" divided><el-icon><TrendCharts /></el-icon> 业务员汇总</el-dropdown-item>
+                  <el-dropdown-item command="sv_summary"><el-icon><TrendCharts /></el-icon> 一级主管汇总</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
           </template>
           <!-- 已作废 -->
           <template v-if="row.status === 'voided'">
-            <el-button link type="primary" @click="goDetail(row)">查看明细</el-button>
+            <el-button link type="primary" @click="goDetail(row)"><el-icon><View /></el-icon> 明细</el-button>
           </template>
         </template>
       </el-table-column>
@@ -128,7 +132,8 @@
       <el-descriptions :column="2" border v-if="calcResult">
         <el-descriptions-item label="参与计算回款数">{{ calcResult.total_payments }}</el-descriptions-item>
         <el-descriptions-item label="业务员提成合计">{{ calcResult.total_salesperson_commission?.toFixed(2) }}</el-descriptions-item>
-        <el-descriptions-item label="主管提成合计">{{ calcResult.total_supervisor_commission?.toFixed(2) }}</el-descriptions-item>
+        <el-descriptions-item label="一级主管提成合计">{{ calcResult.total_supervisor_commission?.toFixed(2) }}</el-descriptions-item>
+        <el-descriptions-item label="二级主管提成合计">{{ calcResult.total_second_supervisor_commission?.toFixed(2) }}</el-descriptions-item>
         <el-descriptions-item label="跳过(归属不完整)">{{ calcResult.skipped_incomplete }}</el-descriptions-item>
         <el-descriptions-item label="跳过(无快照)">{{ calcResult.skipped_no_snapshot }}</el-descriptions-item>
       </el-descriptions>
@@ -152,7 +157,10 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { createBatch, getBatchList, calculateBatch, confirmBatch, voidBatch } from '@/api/commission'
 import { exportCommissionDetails, exportSalespersonSummary, exportSupervisorSummary } from '@/api/report'
-import { downloadUrl } from '@/utils/download'
+import { downloadBlob } from '@/utils/download'
+import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
+
+const { tableRef, maxHeight } = useTableMaxHeight()
 
 const router = useRouter()
 const statusFilter = ref('')
@@ -264,15 +272,17 @@ async function handleVoid(row) {
 }
 
 // 导出
-function handleExport(row, cmd) {
+async function handleExport(row, cmd) {
+  let res
   if (cmd === 'sp_summary') {
-    downloadUrl(exportSalespersonSummary(row.id))
+    res = await exportSalespersonSummary(row.id)
   } else if (cmd === 'sv_summary') {
-    downloadUrl(exportSupervisorSummary(row.id))
+    res = await exportSupervisorSummary(row.id)
   } else {
     const groupBy = cmd === 'all' ? '' : cmd
-    downloadUrl(exportCommissionDetails(row.id, groupBy))
+    res = await exportCommissionDetails(row.id, groupBy)
   }
+  downloadBlob(res)
 }
 
 function goDetail(row) {

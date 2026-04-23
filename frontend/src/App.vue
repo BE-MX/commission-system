@@ -1,6 +1,11 @@
 <template>
   <router-view />
+  <GlobalLoading />
 </template>
+
+<script setup>
+import GlobalLoading from '@/components/GlobalLoading.vue'
+</script>
 
 <style>
 :root {
@@ -344,6 +349,23 @@ html, body, #app {
 /* Menu popover */
 .el-menu--popup { border-radius: 10px !important; }
 
+/* ---- Dropdown trigger button in tables ---- */
+.el-table .el-dropdown .el-button--small.is-plain {
+  padding: 5px 10px;
+  font-size: 12px;
+}
+.el-table .el-dropdown .el-button--small.is-plain .el-icon--right {
+  margin-left: 2px;
+  font-size: 11px;
+}
+
+/* ---- Dropdown menu items with icons ---- */
+.el-dropdown-menu__item .el-icon {
+  margin-right: 6px;
+  font-size: 14px;
+  vertical-align: -0.15em;
+}
+
 /* ===== Page-level shared styles ===== */
 
 .toolbar {
@@ -353,6 +375,9 @@ html, body, #app {
   border-radius: var(--card-radius);
   box-shadow: var(--card-shadow);
   border: 1px solid var(--border-color);
+  position: sticky;
+  top: 0;
+  z-index: 3;
 }
 
 .el-main .el-table {

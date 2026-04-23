@@ -8,22 +8,24 @@
         </el-input>
       </el-col>
       <el-col :span="4">
-        <el-button type="primary" @click="fetchList">查询</el-button>
-        <el-button @click="importDialogVisible = true">批量导入</el-button>
+        <el-button type="primary" @click="fetchList"><el-icon><Search /></el-icon> 查询</el-button>
+        <el-button @click="importDialogVisible = true"><el-icon><Upload /></el-icon> 批量导入</el-button>
       </el-col>
     </el-row>
 
     <!-- 表格 -->
-    <el-table :data="tableData" v-loading="loading" stripe border style="width: 100%">
+    <el-table ref="tableRef" :data="tableData" v-loading="loading" stripe border style="width: 100%" :max-height="maxHeight">
       <el-table-column prop="salesperson_id" label="业务员ID" width="200" />
       <el-table-column prop="salesperson_name" label="业务员姓名" width="140" />
-      <el-table-column prop="supervisor_id" label="主管ID" width="200" />
-      <el-table-column prop="supervisor_name" label="主管姓名" width="140" />
+      <el-table-column prop="supervisor_id" label="一级主管ID" width="200" />
+      <el-table-column prop="supervisor_name" label="一级主管姓名" width="140" />
+      <el-table-column prop="second_supervisor_id" label="二级主管ID" width="200" />
+      <el-table-column prop="second_supervisor_name" label="二级主管姓名" width="140" />
       <el-table-column prop="effective_start" label="生效日期" width="120" />
       <el-table-column label="操作" min-width="160">
         <template #default="{ row }">
-          <el-button link type="primary" @click="openSetDialog(row)">变更主管</el-button>
-          <el-button link type="primary" @click="openHistory(row)">查看历史</el-button>
+          <el-button link type="primary" @click="openSetDialog(row)"><el-icon><Edit /></el-icon> 变更主管</el-button>
+          <el-button link type="primary" @click="openHistory(row)"><el-icon><Clock /></el-icon> 查看历史</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -41,12 +43,15 @@
 
     <!-- 变更主管 Dialog -->
     <el-dialog v-model="setDialogVisible" title="变更主管" width="420px">
-      <el-form label-width="80px">
+      <el-form label-width="100px">
         <el-form-item label="业务员">
           <span>{{ currentRow?.salesperson_name || currentRow?.salesperson_id }}</span>
         </el-form-item>
-        <el-form-item label="新主管ID">
-          <el-input v-model="relForm.supervisor_id" placeholder="输入主管员工ID" />
+        <el-form-item label="一级主管ID">
+          <el-input v-model="relForm.supervisor_id" placeholder="输入一级主管员工ID" />
+        </el-form-item>
+        <el-form-item label="二级主管ID">
+          <el-input v-model="relForm.second_supervisor_id" placeholder="输入二级主管员工ID（可选）" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -56,7 +61,7 @@
     </el-dialog>
 
     <!-- 历史 Drawer -->
-    <el-drawer v-model="historyVisible" :title="`${currentRow?.salesperson_name || ''} 主管变更历史`" size="400px">
+    <el-drawer v-model="historyVisible" :title="`${currentRow?.salesperson_name || ''} 主管变更历史`" size="500px">
       <el-timeline v-if="historyList.length">
         <el-timeline-item
           v-for="item in historyList"
@@ -65,7 +70,8 @@
           placement="top"
         >
           <el-card shadow="never" body-style="padding: 12px">
-            <div>主管ID：{{ item.supervisor_id }}</div>
+            <div>一级主管：{{ item.supervisor_id }}</div>
+            <div v-if="item.second_supervisor_id">二级主管：{{ item.second_supervisor_id }}</div>
             <span v-if="item.effective_end" class="history-range">截至 {{ item.effective_end }}</span>
             <el-tag v-if="item.is_current" type="primary" size="small" style="margin-left:8px">当前</el-tag>
           </el-card>
@@ -77,7 +83,7 @@
     <!-- 批量导入 Dialog -->
     <el-dialog v-model="importDialogVisible" title="批量导入主管关系" width="480px">
       <el-alert type="info" :closable="false" style="margin-bottom:16px">
-        Excel 模板列：业务员ID(user_id) | 主管ID(user_id)
+        Excel 模板列：业务员ID(user_id) | 一级主管ID(user_id) | 二级主管ID(user_id, 可选)
       </el-alert>
       <el-upload
         ref="uploadRef"
@@ -114,6 +120,9 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getSupervisorList, setSupervisorRelation, getSupervisorHistory, importSupervisorRelations } from '@/api/supervisor'
+import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
+
+const { tableRef, maxHeight } = useTableMaxHeight()
 
 const keyword = ref('')
 const page = ref(1)
@@ -136,26 +145,30 @@ async function fetchList() {
 // 变更主管
 const setDialogVisible = ref(false)
 const currentRow = ref(null)
-const relForm = ref({ supervisor_id: '' })
+const relForm = ref({ supervisor_id: '', second_supervisor_id: '' })
 const saving = ref(false)
 
 function openSetDialog(row) {
   currentRow.value = row
-  relForm.value.supervisor_id = ''
+  relForm.value = { supervisor_id: '', second_supervisor_id: '' }
   setDialogVisible.value = true
 }
 
 async function submitRelation() {
   if (!relForm.value.supervisor_id) {
-    ElMessage.warning('请输入主管ID')
+    ElMessage.warning('请输入一级主管ID')
     return
   }
   saving.value = true
   try {
-    await setSupervisorRelation({
+    const payload = {
       salesperson_id: currentRow.value.salesperson_id,
-      supervisor_id: relForm.value.supervisor_id
-    })
+      supervisor_id: relForm.value.supervisor_id,
+    }
+    if (relForm.value.second_supervisor_id) {
+      payload.second_supervisor_id = relForm.value.second_supervisor_id
+    }
+    await setSupervisorRelation(payload)
     ElMessage.success('设置成功')
     setDialogVisible.value = false
     fetchList()

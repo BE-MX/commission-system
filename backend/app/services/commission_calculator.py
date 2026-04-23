@@ -21,6 +21,7 @@ class CalcResult:
     total_payments: int = 0
     total_salesperson_commission: Decimal = Decimal("0")
     total_supervisor_commission: Decimal = Decimal("0")
+    total_second_supervisor_commission: Decimal = Decimal("0")
     skipped_incomplete: int = 0
     skipped_no_snapshot: int = 0
     errors: list = field(default_factory=list)
@@ -84,28 +85,29 @@ def calculate_commission(db: Session, batch_id: int) -> CalcResult:
         s.customer_id: s for s in snapshots_q
     }
 
-    # ---- Step 4: 逐条回款计算 ----
+    # ---- Step 4: 批量计算提成 ----
+    detail_rows = []
+    status_rows = []
+
     for payment in pending_payments:
         snapshot = snapshot_map.get(payment.customer_id)
 
-        # 无快照
         if not snapshot:
             result.skipped_no_snapshot += 1
             continue
 
-        # 快照不完整
         if not snapshot.is_complete:
             result.skipped_incomplete += 1
             continue
 
         try:
             amount = Decimal(str(payment.payment_amount))
+            fee = Decimal(str(payment.service_fee or 0))
+            commission_base = amount - fee
 
-            # 4b. 业务员提成
             sp_rate = Decimal(str(snapshot.salesperson_rate))
-            sp_commission = amount * sp_rate
+            sp_commission = commission_base * sp_rate
 
-            # 4c. 主管提成
             sv_id = snapshot.supervisor_id
             sv_rate_val = (
                 Decimal(str(snapshot.supervisor_rate))
@@ -119,51 +121,67 @@ def calculate_commission(db: Session, batch_id: int) -> CalcResult:
                 or sv_rate_val == Decimal("0")
             ):
                 sv_commission = Decimal("0")
-                calc_note = "主管兼业务员，仅计业务员提成"
+                calc_note = "一级主管兼业务员，仅计业务员提成"
             elif (
                 snapshot.salesperson_attribute == "develop"
                 and snapshot.supervisor_attribute == "develop"
             ):
-                sv_commission = amount * Decimal("0.0150")
-                calc_note = "双开发，主管1.5%"
+                sv_commission = commission_base * Decimal("0.0150")
+                calc_note = "双开发，一级主管1.5%"
             else:
-                sv_commission = amount * sv_rate_val
-                calc_note = "主管1%"
+                sv_commission = commission_base * sv_rate_val
+                calc_note = "一级主管1%"
 
-            # 4d. 写入提成明细
-            detail = CommissionDetail(
-                batch_id=batch_id,
-                payment_id=payment.payment_id,
-                order_id=payment.order_id,
-                customer_id=payment.customer_id,
-                payment_amount=amount,
-                salesperson_id=snapshot.salesperson_id,
-                salesperson_rate=sp_rate,
-                salesperson_commission=sp_commission,
-                supervisor_id=sv_id,
-                supervisor_rate=sv_rate_val if sv_id else None,
-                supervisor_commission=sv_commission,
-                calc_rule_note=calc_note,
+            sv2_id = snapshot.second_supervisor_id
+            sv2_rate_val = (
+                Decimal(str(snapshot.second_supervisor_rate))
+                if snapshot.second_supervisor_rate is not None
+                else Decimal("0")
             )
-            db.add(detail)
+            if sv2_id and sv2_id != snapshot.salesperson_id and sv2_rate_val > 0:
+                sv2_commission = commission_base * sv2_rate_val
+                calc_note += "，二级主管0.5%"
+            else:
+                sv2_commission = Decimal("0")
 
-            # 4e. 标记回款已计算
-            pcs = PaymentCommissionStatus(
-                payment_id=payment.payment_id,
-                batch_id=batch_id,
-            )
-            db.add(pcs)
+            detail_rows.append({
+                "batch_id": batch_id,
+                "payment_id": payment.payment_id,
+                "order_id": payment.order_id,
+                "customer_id": payment.customer_id,
+                "payment_amount": amount,
+                "salesperson_id": snapshot.salesperson_id,
+                "salesperson_rate": sp_rate,
+                "salesperson_commission": sp_commission,
+                "supervisor_id": sv_id,
+                "supervisor_rate": sv_rate_val if sv_id else None,
+                "supervisor_commission": sv_commission,
+                "second_supervisor_id": sv2_id,
+                "second_supervisor_rate": sv2_rate_val if sv2_id else None,
+                "second_supervisor_commission": sv2_commission,
+                "calc_rule_note": calc_note,
+            })
+
+            status_rows.append({
+                "payment_id": payment.payment_id,
+                "batch_id": batch_id,
+            })
 
             result.total_payments += 1
             result.total_salesperson_commission += sp_commission
             result.total_supervisor_commission += sv_commission
+            result.total_second_supervisor_commission += sv2_commission
 
         except Exception as e:
             err_msg = f"回款 {payment.payment_id} 计算异常: {e}"
             logger.error(err_msg)
             result.errors.append(err_msg)
 
-    # ---- Step 5: 更新批次状态 ----
+    # ---- Step 5: 批量写入 + 更新批次状态 ----
+    if detail_rows:
+        db.execute(CommissionDetail.__table__.insert(), detail_rows)
+    if status_rows:
+        db.execute(PaymentCommissionStatus.__table__.insert(), status_rows)
     batch.status = "calculated"
     db.flush()
 
@@ -171,7 +189,8 @@ def calculate_commission(db: Session, batch_id: int) -> CalcResult:
         f"批次 {batch_id} 计算完成: "
         f"计算 {result.total_payments} 条, "
         f"业务员合计 {result.total_salesperson_commission}, "
-        f"主管合计 {result.total_supervisor_commission}, "
+        f"一级主管合计 {result.total_supervisor_commission}, "
+        f"二级主管合计 {result.total_second_supervisor_commission}, "
         f"跳过(不完整) {result.skipped_incomplete}, "
         f"跳过(无快照) {result.skipped_no_snapshot}"
     )

@@ -34,7 +34,8 @@ class SupervisorRelationHistory(Base):
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     salesperson_id = Column(String(64), nullable=False, comment="业务员ID")
-    supervisor_id = Column(String(64), nullable=False, comment="业务主管ID")
+    supervisor_id = Column(String(64), nullable=False, comment="一级主管ID")
+    second_supervisor_id = Column(String(64), nullable=True, comment="二级主管ID")
     effective_start = Column(Date, nullable=False)
     effective_end = Column(Date, nullable=True)
     is_current = Column(Boolean, default=True)

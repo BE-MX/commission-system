@@ -21,10 +21,15 @@ class CustomerSnapshotListItem(BaseModel):
     supervisor_name: Optional[str] = None
     supervisor_attribute: Optional[str] = None
     supervisor_rate: Optional[float] = None
+    second_supervisor_id: Optional[str] = None
+    second_supervisor_name: Optional[str] = None
+    second_supervisor_rate: Optional[float] = None
+    remark: Optional[str] = None
     is_complete: bool
     source: Optional[str] = None
     first_order_id: Optional[str] = None
     first_order_date: Optional[date] = None
+    first_receipt_date: Optional[date] = None
 
 
 class CustomerSnapshotCreateRequest(BaseModel):
@@ -34,12 +39,17 @@ class CustomerSnapshotCreateRequest(BaseModel):
     salesperson_attribute: Literal["develop", "distribute"]
     supervisor_id: Optional[str] = None
     supervisor_attribute: Optional[Literal["develop", "distribute"]] = None
+    second_supervisor_id: Optional[str] = None
+    remark: Optional[str] = None
 
 
 class CustomerSnapshotCompleteRequest(BaseModel):
     """补全不完整快照请求"""
     salesperson_attribute: Literal["develop", "distribute"]
     supervisor_attribute: Optional[Literal["develop", "distribute"]] = None
+    salesperson_rate: Optional[float] = None
+    supervisor_rate: Optional[float] = None
+    second_supervisor_rate: Optional[float] = None
 
 
 class CustomerSnapshotResetRequest(BaseModel):
@@ -48,6 +58,8 @@ class CustomerSnapshotResetRequest(BaseModel):
     salesperson_attribute: Literal["develop", "distribute"]
     supervisor_id: Optional[str] = None
     supervisor_attribute: Optional[Literal["develop", "distribute"]] = None
+    second_supervisor_id: Optional[str] = None
+    remark: Optional[str] = None
     reset_reason: str
 
 
@@ -57,3 +69,9 @@ class CustomerImportResult(BaseModel):
     success: int
     failed: int
     failures: list[str] = []
+
+
+class CustomerAutoMatchResult(BaseModel):
+    """自动匹配结果"""
+    matched: int
+    remaining: int

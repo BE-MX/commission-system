@@ -14,6 +14,8 @@ class SupervisorRelationListItem(BaseModel):
     salesperson_name: Optional[str] = None
     supervisor_id: str
     supervisor_name: Optional[str] = None
+    second_supervisor_id: Optional[str] = None
+    second_supervisor_name: Optional[str] = None
     effective_start: date
 
 
@@ -21,6 +23,7 @@ class SupervisorRelationRequest(BaseModel):
     """设置/变更主管关系请求"""
     salesperson_id: str
     supervisor_id: str
+    second_supervisor_id: Optional[str] = None
 
 
 class SupervisorHistoryItem(BaseModel):
@@ -30,6 +33,7 @@ class SupervisorHistoryItem(BaseModel):
     id: int
     salesperson_id: str
     supervisor_id: str
+    second_supervisor_id: Optional[str] = None
     effective_start: date
     effective_end: Optional[date] = None
     is_current: bool
@@ -40,6 +44,7 @@ class SupervisorRelationResult(BaseModel):
     """设置关系操作结果"""
     salesperson_id: str
     supervisor_id: str
+    second_supervisor_id: Optional[str] = None
     action: str
 
 

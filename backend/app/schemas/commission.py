@@ -48,6 +48,10 @@ class CommissionDetailListItem(BaseModel):
     supervisor_name: Optional[str] = None
     supervisor_rate: Optional[float] = None
     supervisor_commission: float
+    second_supervisor_id: Optional[str] = None
+    second_supervisor_name: Optional[str] = None
+    second_supervisor_rate: Optional[float] = None
+    second_supervisor_commission: float = 0
     calc_rule_note: Optional[str] = None
     status: str
 
@@ -57,6 +61,7 @@ class CommissionCalcResponse(BaseModel):
     total_payments: int
     total_salesperson_commission: float
     total_supervisor_commission: float
+    total_second_supervisor_commission: float = 0
     skipped_incomplete: int
     skipped_no_snapshot: int
     errors: list[str] = []
@@ -75,8 +80,10 @@ class CommissionBatchSummary(BaseModel):
     total_payment_amount: float
     total_salesperson_commission: float
     total_supervisor_commission: float
+    total_second_supervisor_commission: float = 0
     total_commission: float
     salesperson_count: int
     supervisor_count: int
+    second_supervisor_count: int = 0
     skipped_incomplete: int
     skipped_no_snapshot: int
