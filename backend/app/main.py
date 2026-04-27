@@ -17,6 +17,7 @@ from app.api import (
     payment_router, commission_router, report_router,
     tracking_router,
 )
+from app.design.router import router as design_router
 
 logger = logging.getLogger("commission")
 
@@ -91,6 +92,7 @@ app.include_router(payment_router, prefix="/api/v1/payment", tags=["回款同步
 app.include_router(commission_router, prefix="/api/v1/commission", tags=["提成计算"])
 app.include_router(report_router, prefix="/api/v1/report", tags=["报表导出"])
 app.include_router(tracking_router, prefix="/api/v1/tracking", tags=["物流跟踪"])
+app.include_router(design_router, prefix="/api/design", tags=["设计预约"])
 
 
 @app.get("/health")

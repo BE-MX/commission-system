@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     TRACKING_POLL_BATCH_SIZE: int = 50
     STAGING_SCAN_BATCH_SIZE: int = 100
 
+    # 设计预约模块
+    DESIGN_DEFAULT_DAILY_CAPACITY: int = 3
+    DESIGN_REQUEST_NO_PREFIX: str = "DSR"
+    DESIGN_TASK_NO_PREFIX: str = "DST"
+
     @property
     def commission_db_url(self) -> str:
         password = quote_plus(self.COMMISSION_DB_PASSWORD)

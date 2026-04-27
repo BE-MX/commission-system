@@ -72,6 +72,29 @@
           <el-icon><Van /></el-icon>
           <template #title>物流跟踪</template>
         </el-menu-item>
+
+        <el-sub-menu index="design-mgmt">
+          <template #title>
+            <el-icon><Camera /></el-icon>
+            <span>设计预约</span>
+          </template>
+          <el-menu-item index="/design/submit">
+            <el-icon><EditPen /></el-icon>
+            <template #title>提交预约</template>
+          </el-menu-item>
+          <el-menu-item index="/design/my-requests">
+            <el-icon><Document /></el-icon>
+            <template #title>我的预约</template>
+          </el-menu-item>
+          <el-menu-item index="/design/audit">
+            <el-icon><Stamp /></el-icon>
+            <template #title>审批队列</template>
+          </el-menu-item>
+          <el-menu-item index="/design/manage">
+            <el-icon><Setting /></el-icon>
+            <template #title>设计管理</template>
+          </el-menu-item>
+        </el-sub-menu>
       </el-menu>
 
       <div class="sidebar-bottom" v-show="!isCollapse">

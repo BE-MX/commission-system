@@ -59,6 +59,30 @@ const routes = [
         name: 'TrackingDetail',
         component: () => import('../views/tracking/TrackingDetail.vue'),
         meta: { title: '运单详情' }
+      },
+      {
+        path: 'design/submit',
+        name: 'DesignSubmit',
+        component: () => import('../views/design/SubmitRequest.vue'),
+        meta: { title: '提交预约' }
+      },
+      {
+        path: 'design/my-requests',
+        name: 'MyRequests',
+        component: () => import('../views/design/MyRequests.vue'),
+        meta: { title: '我的预约' }
+      },
+      {
+        path: 'design/audit',
+        name: 'DesignAudit',
+        component: () => import('../views/design/AuditQueue.vue'),
+        meta: { title: '审批队列' }
+      },
+      {
+        path: 'design/manage',
+        name: 'DesignManage',
+        component: () => import('../views/design/DesignManage.vue'),
+        meta: { title: '设计管理' }
       }
     ]
   }
