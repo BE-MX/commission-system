@@ -15,6 +15,7 @@ from app.core.rule_config import load_order_match_config
 from app.api import (
     employee_router, supervisor_router, customer_router,
     payment_router, commission_router, report_router,
+    tracking_router,
 )
 
 logger = logging.getLogger("commission")
@@ -89,6 +90,7 @@ app.include_router(customer_router, prefix="/api/v1/customer", tags=["客户归�
 app.include_router(payment_router, prefix="/api/v1/payment", tags=["回款同步"])
 app.include_router(commission_router, prefix="/api/v1/commission", tags=["提成计算"])
 app.include_router(report_router, prefix="/api/v1/report", tags=["报表导出"])
+app.include_router(tracking_router, prefix="/api/v1/tracking", tags=["物流跟踪"])
 
 
 @app.get("/health")

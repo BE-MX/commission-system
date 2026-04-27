@@ -17,6 +17,20 @@ class Settings(BaseSettings):
     # 业务数据库（只读，同一RDS实例，跨库查询）
     BUSINESS_DB_NAME: str = "lsordertest"
 
+    # DHL API
+    DHL_API_USERNAME: str = ""
+    DHL_API_PASSWORD: str = ""
+    DHL_API_ENV: str = "test"
+
+    # FedEx API
+    FEDEX_CLIENT_ID: str = ""
+    FEDEX_CLIENT_SECRET: str = ""
+    FEDEX_SANDBOX: str = "false"
+
+    # 轮询配置
+    TRACKING_POLL_BATCH_SIZE: int = 50
+    STAGING_SCAN_BATCH_SIZE: int = 100
+
     @property
     def commission_db_url(self) -> str:
         password = quote_plus(self.COMMISSION_DB_PASSWORD)
