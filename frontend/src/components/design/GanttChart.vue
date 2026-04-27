@@ -59,6 +59,7 @@
                   @mousedown="onTaskMousedown($event, task)"
                 >
                   <span class="task-bar-text">{{ task.task_name || task.task_no }}</span>
+                  <span v-if="task.priority === 'urgent'" class="urgent-badge">急</span>
                 </div>
               </template>
               <div class="task-popover">
@@ -112,6 +113,7 @@
                   @mousedown="onTaskMousedown($event, task)"
                 >
                   <span class="task-bar-text">{{ task.task_name || task.task_no }}</span>
+                  <span v-if="task.priority === 'urgent'" class="urgent-badge">急</span>
                 </div>
               </template>
               <div class="task-popover">
@@ -616,6 +618,24 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Urgent badge */
+.urgent-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #F56C6C;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  z-index: 2;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 /* Popover content */

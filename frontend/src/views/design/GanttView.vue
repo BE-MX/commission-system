@@ -33,6 +33,9 @@
         </el-select>
         <el-button :icon="Refresh" @click="fetchData">刷新</el-button>
       </div>
+      <div class="toolbar-right">
+        <el-button type="success" :icon="Download" @click="handleExport" :loading="exporting">导出 Excel</el-button>
+      </div>
     </div>
 
     <!-- Legend -->
@@ -89,7 +92,8 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { Refresh } from '@element-plus/icons-vue'
+import { Refresh, Download } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import { getGanttData, getDesigners } from '@/api/design'
 import GanttChart from '@/components/design/GanttChart.vue'
 
@@ -112,6 +116,7 @@ const dateRange = ref(getDefaultDateRange())
 const selectedDesigners = ref([])
 const allDesigners = ref([])
 const loading = ref(false)
+const exporting = ref(false)
 
 const ganttData = ref({
   designers: [],
@@ -197,6 +202,32 @@ async function fetchData() {
   }
 }
 
+// --- Export ---
+async function handleExport() {
+  if (!dateRange.value || dateRange.value.length !== 2) return
+  exporting.value = true
+  try {
+    const url = `/api/design/export/tasks?start_date=${dateRange.value[0]}&end_date=${dateRange.value[1]}`
+    const resp = await fetch(url)
+    if (!resp.ok) throw new Error('导出失败')
+    const blob = await resp.blob()
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    const disposition = resp.headers.get('Content-Disposition') || ''
+    const match = disposition.match(/filename\*?=(?:UTF-8'')?(.+)/i)
+    a.download = match ? decodeURIComponent(match[1]) : `design_tasks_${dateRange.value[0]}_${dateRange.value[1]}.xlsx`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(a.href)
+    ElMessage.success('导出成功')
+  } catch {
+    ElMessage.error('导出失败')
+  } finally {
+    exporting.value = false
+  }
+}
+
 onMounted(() => {
   fetchDesigners()
   fetchData()
@@ -218,6 +249,12 @@ onMounted(() => {
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .gantt-legend {

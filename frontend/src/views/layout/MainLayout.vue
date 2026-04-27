@@ -98,6 +98,10 @@
             <el-icon><Setting /></el-icon>
             <template #title>设计管理</template>
           </el-menu-item>
+          <el-menu-item index="/design/stats">
+            <el-icon><TrendCharts /></el-icon>
+            <template #title>设计统计</template>
+          </el-menu-item>
         </el-sub-menu>
       </el-menu>
 

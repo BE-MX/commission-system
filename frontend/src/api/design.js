@@ -119,4 +119,30 @@ export function getAuditLogs(requestId) {
   return designApi.get(`/audit-logs/${requestId}`, { showLoading: false })
 }
 
+// --- Export ---
+
+export function exportTasksExcel(params) {
+  return designApi.get('/export/tasks', {
+    params,
+    responseType: 'blob',
+    showLoading: false,
+  })
+}
+
+// --- Stats ---
+
+export function getDesignStats(params) {
+  return designApi.get('/stats', { params, showLoading: false })
+}
+
+// --- Import ---
+
+export function importRequests(formData, params) {
+  return designApi.post('/import/requests', formData, {
+    params,
+    headers: { 'Content-Type': 'multipart/form-data' },
+    loadingText: '正在导入...',
+  })
+}
+
 export default designApi

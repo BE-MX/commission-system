@@ -3,7 +3,7 @@
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, File, UploadFile
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
@@ -342,6 +342,38 @@ def update_scheduling_mode(
 # ── 审计日志 ──────────────────────────────────────────────
 
 
+@router.get("/audit-logs/{request_id}")
+def get_audit_logs_by_request(
+    request_id: int,
+    db: Session = Depends(get_db),
+):
+    """查询指定申请单的操作日志"""
+    items = db.query(DesignAuditLog).filter(
+        DesignAuditLog.request_id == request_id,
+    ).order_by(DesignAuditLog.created_at.asc()).all()
+
+    return {
+        "code": 200,
+        "message": "ok",
+        "data": [
+            {
+                "id": log.id,
+                "request_id": log.request_id,
+                "task_id": log.task_id,
+                "operator_id": log.operator_id,
+                "operator_name": log.operator_name,
+                "operator_role": log.operator_role,
+                "action": log.action,
+                "from_status": log.from_status,
+                "to_status": log.to_status,
+                "comment": log.comment,
+                "created_at": log.created_at.isoformat() if log.created_at else None,
+            }
+            for log in items
+        ],
+    }
+
+
 @router.get("/audit-logs")
 def list_audit_logs(
     request_id: Optional[int] = Query(None),
@@ -415,3 +447,47 @@ def list_designers(
             for d in designers
         ],
     }
+
+
+# ── 导出 Excel ────────────────────────────────────────────
+
+
+@router.get("/export/tasks")
+def export_tasks(
+    start_date: date = Query(..., description="开始日期"),
+    end_date: date = Query(..., description="结束日期"),
+    db: Session = Depends(get_db),
+):
+    """导出设计任务为 Excel"""
+    return service.export_tasks_excel(db, start_date, end_date)
+
+
+# ── 统计报表 ──────────────────────────────────────────────
+
+
+@router.get("/stats")
+def get_stats(
+    start_date: date = Query(..., description="开始日期"),
+    end_date: date = Query(..., description="结束日期"),
+    db: Session = Depends(get_db),
+):
+    """获取设计模块统计"""
+    return service.get_design_stats(db, start_date, end_date)
+
+
+# ── 批量导入 ──────────────────────────────────────────────
+
+
+@router.post("/import/requests")
+async def import_requests(
+    file: UploadFile = File(..., description="Excel 文件"),
+    operator_id: int = Query(..., description="操作人ID"),
+    operator_name: str = Query(..., description="操作人姓名"),
+    operator_role: str = Query("salesperson", description="操作人角色"),
+    db: Session = Depends(get_db),
+):
+    """批量导入预约申请"""
+    contents = await file.read()
+    return service.batch_import_requests(
+        db, contents, operator_id, operator_name, operator_role
+    )

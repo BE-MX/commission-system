@@ -130,7 +130,11 @@
               placement="top"
               :type="timelineType(log.action)"
             >
-              <p class="log-action">{{ log.operator_name }} - {{ LOG_ACTION_MAP[log.action] || log.action }}</p>
+              <p class="log-action">{{ LOG_ACTION_MAP[log.action] || log.action }}</p>
+              <p class="log-operator">{{ log.operator_name }} ({{ ROLE_MAP[log.operator_role] || log.operator_role }})</p>
+              <p class="log-transition" v-if="log.from_status || log.to_status">
+                {{ STATUS_MAP[log.from_status] || log.from_status || '-' }} &rarr; {{ STATUS_MAP[log.to_status] || log.to_status || '-' }}
+              </p>
               <p class="log-comment" v-if="log.comment">{{ log.comment }}</p>
             </el-timeline-item>
           </el-timeline>
@@ -191,17 +195,33 @@ const STATUS_TAG = {
 const STATUS_OPTIONS = Object.entries(STATUS_MAP).map(([value, label]) => ({ value, label }))
 
 const LOG_ACTION_MAP = {
-  submit: '提交预约',
+  submit: '提交申请',
   approve: '审批通过',
-  reject: '审批拒绝',
+  reject: '驳回',
   confirm: '确认排期',
   start: '开始执行',
   complete: '完成',
   cancel: '取消',
+  reschedule: '调整排期',
+}
+
+const ROLE_MAP = {
+  salesperson: '业务员',
+  supervisor: '主管',
+  design_staff: '设计部',
 }
 
 function timelineType(action) {
-  const map = { approve: 'success', reject: 'danger', cancel: 'info', complete: 'success' }
+  const map = {
+    submit: 'primary',
+    approve: 'success',
+    reject: 'danger',
+    confirm: 'primary',
+    start: 'warning',
+    complete: 'success',
+    cancel: 'info',
+    reschedule: 'warning',
+  }
   return map[action] || 'primary'
 }
 
@@ -275,7 +295,17 @@ onMounted(() => {
 }
 .log-action {
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
+  margin: 0 0 2px;
+}
+.log-operator {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0 0 2px;
+}
+.log-transition {
+  font-size: 12px;
+  color: #409EFF;
   margin: 0 0 2px;
 }
 .log-comment {

@@ -145,6 +145,66 @@
       <el-tab-pane label="容量配置" name="capacity" lazy>
         <DesignCapacityConfig />
       </el-tab-pane>
+
+      <!-- Tab 6: 批量导入 -->
+      <el-tab-pane label="批量导入" name="import" lazy>
+        <div class="import-section">
+          <el-alert
+            title="Excel 格式要求"
+            type="info"
+            :closable="false"
+            show-icon
+            style="margin-bottom: 16px"
+          >
+            <template #default>
+              列顺序: 客户名称, 业务员姓名, 拍摄类型, 期望开始日期, 期望结束日期, 优先级, 备注<br/>
+              拍摄类型: 产品图/模特图/视频/产品视频/其他 | 优先级: 普通/加急 | 日期格式: YYYY-MM-DD
+            </template>
+          </el-alert>
+          <el-upload
+            ref="uploadRef"
+            action=""
+            :auto-upload="false"
+            :limit="1"
+            accept=".xlsx,.xls"
+            :on-change="onFileChange"
+            :on-remove="() => importFile = null"
+          >
+            <template #trigger>
+              <el-button type="primary" :icon="Upload">选择文件</el-button>
+            </template>
+            <template #tip>
+              <div class="el-upload__tip">仅支持 .xlsx / .xls 文件</div>
+            </template>
+          </el-upload>
+          <el-button
+            type="success"
+            style="margin-top: 12px"
+            :disabled="!importFile"
+            :loading="importing"
+            @click="submitImport"
+          >开始导入</el-button>
+        </div>
+
+        <!-- Import results dialog -->
+        <el-dialog v-model="importResultVisible" title="导入结果" width="560px">
+          <div v-if="importResult">
+            <el-descriptions :column="3" border size="small" style="margin-bottom: 16px">
+              <el-descriptions-item label="总行数">{{ importResult.total }}</el-descriptions-item>
+              <el-descriptions-item label="成功">
+                <el-tag type="success" size="small">{{ importResult.success }}</el-tag>
+              </el-descriptions-item>
+              <el-descriptions-item label="失败">
+                <el-tag type="danger" size="small">{{ importResult.failed }}</el-tag>
+              </el-descriptions-item>
+            </el-descriptions>
+            <el-table v-if="importResult.errors?.length" :data="importResult.errors" border size="small" max-height="300">
+              <el-table-column prop="row" label="行号" width="80" />
+              <el-table-column prop="reason" label="失败原因" />
+            </el-table>
+          </div>
+        </el-dialog>
+      </el-tab-pane>
     </el-tabs>
 
     <!-- Confirm scheduling dialog -->
@@ -194,7 +254,8 @@
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getRequests, getTaskList, getDesigners, actionRequest, rescheduleTask } from '@/api/design'
+import { Upload } from '@element-plus/icons-vue'
+import { getRequests, getTaskList, getDesigners, actionRequest, rescheduleTask, importRequests } from '@/api/design'
 import DesignCalendarConfig from '@/components/design/DesignCalendarConfig.vue'
 import DesignCapacityConfig from '@/components/design/DesignCapacityConfig.vue'
 
@@ -394,6 +455,42 @@ function updateTabMaxHeight() {
   tabMaxHeight.value = Math.max(300, window.innerHeight - 260)
 }
 
+// --- Import ---
+const uploadRef = ref()
+const importFile = ref(null)
+const importing = ref(false)
+const importResultVisible = ref(false)
+const importResult = ref(null)
+
+function onFileChange(file) {
+  importFile.value = file.raw
+}
+
+async function submitImport() {
+  if (!importFile.value) return
+  importing.value = true
+  try {
+    const formData = new FormData()
+    formData.append('file', importFile.value)
+    const res = await importRequests(formData, {
+      operator_id: 1,
+      operator_name: '管理员',
+      operator_role: 'salesperson',
+    })
+    importResult.value = res.data
+    importResultVisible.value = true
+    // Reset upload
+    importFile.value = null
+    if (uploadRef.value) uploadRef.value.clearFiles()
+    // Refresh pending list if on that tab
+    if (activeTab.value === 'pending') fetchPending()
+  } catch {
+    // handled by interceptor
+  } finally {
+    importing.value = false
+  }
+}
+
 onMounted(() => {
   updateTabMaxHeight()
   window.addEventListener('resize', updateTabMaxHeight)
@@ -405,6 +502,7 @@ onMounted(() => {
 <style scoped>
 .pagination { margin-top: 16px; justify-content: flex-end; }
 .text-muted { color: var(--text-secondary); font-size: 12px; }
+.import-section { max-width: 600px; }
 
 :deep(.el-tabs__header) {
   margin-bottom: 16px;

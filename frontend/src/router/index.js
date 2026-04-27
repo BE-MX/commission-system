@@ -89,6 +89,12 @@ const routes = [
         name: 'DesignManage',
         component: () => import('../views/design/DesignManage.vue'),
         meta: { title: '设计管理' }
+      },
+      {
+        path: 'design/stats',
+        name: 'DesignStats',
+        component: () => import('../views/design/DesignStats.vue'),
+        meta: { title: '设计统计' }
       }
     ]
   }
