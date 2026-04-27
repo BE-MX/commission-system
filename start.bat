@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul
-title Commission System Launcher
+title LeShine Ark Platform
 
 echo ========================================
 echo   提成管理系统 - 启动中...

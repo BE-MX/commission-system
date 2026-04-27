@@ -2,13 +2,13 @@
 chcp 65001 >nul
 setlocal enabledelayedexpansion
 REM ============================================================
-REM  Commission System - 首次部署脚本
+REM  LeShine Ark Platform - First Deploy
 REM  在服务器上以管理员身份运行一次即可
 REM ============================================================
 
 echo.
 echo ==============================
-echo  Commission System 服务器部署
+echo  LeShine Ark Platform - Server Setup
 echo ==============================
 echo.
 

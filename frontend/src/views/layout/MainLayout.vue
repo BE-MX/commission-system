@@ -9,7 +9,7 @@
         <transition name="text-fade">
           <div v-show="!isCollapse" class="logo-text-group">
             <span class="logo-text">LeShine</span>
-            <span class="logo-sub">Commission System</span>
+            <span class="logo-sub">Ark Platform</span>
           </div>
         </transition>
       </div>

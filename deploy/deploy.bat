@@ -1,9 +1,9 @@
 @echo off
 chcp 65001 >nul
 setlocal enabledelayedexpansion
-title Commission System - Sync Update
+title LeShine Ark Platform - Sync Update
 REM ============================================================
-REM  Commission System - Daily Update Script
+REM  LeShine Ark Platform - Daily Update Script
 REM  Run on server after each git push from dev machine
 REM ============================================================
 
@@ -12,7 +12,7 @@ set "SERVICE_NAME=CommissionSystem"
 
 echo.
 echo ==============================
-echo   Commission System - Sync
+echo   LeShine Ark Platform - Sync
 echo ==============================
 echo.
 

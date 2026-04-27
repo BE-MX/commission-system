@@ -3,9 +3,9 @@
     <!-- Hero section: asymmetric layout -->
     <div class="hero">
       <div class="hero-content">
-        <div class="hero-tag">COMMISSION SYSTEM</div>
-        <h1 class="hero-title">莱莎提成管理</h1>
-        <p class="hero-desc">员工属性 / 客户归属 / 回款同步 / 提成计算</p>
+        <div class="hero-tag">ARK PLATFORM</div>
+        <h1 class="hero-title">莱莎方舟平台</h1>
+        <p class="hero-desc">提成管理 / 物流跟踪 / 客户归属 / 回款同步</p>
       </div>
       <div class="hero-visual">
         <div class="hex hex-1"></div>

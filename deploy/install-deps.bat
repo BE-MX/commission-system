@@ -1,10 +1,10 @@
 @echo off
 chcp 65001 >nul
-title Commission System - 环境安装
+title LeShine Ark Platform - Install Deps
 
 echo.
 echo ==============================
-echo  Commission System 依赖安装
+echo  LeShine Ark Platform - Install Deps
 echo  请以管理员身份运行
 echo ==============================
 echo.

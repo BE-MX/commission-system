@@ -49,8 +49,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Commission Management System",
-    description="提成管理与计算系统 API",
+    title="LeShine Ark Platform",
+    description="莱莎方舟平台 API",
     version="0.1.0",
     lifespan=lifespan,
 )
