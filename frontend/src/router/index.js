@@ -47,6 +47,18 @@ const routes = [
         name: 'CommissionDetail',
         component: () => import('../views/commission/CommissionDetail.vue'),
         meta: { title: '提成明细' }
+      },
+      {
+        path: 'tracking',
+        name: 'TrackingList',
+        component: () => import('../views/tracking/TrackingList.vue'),
+        meta: { title: '物流跟踪' }
+      },
+      {
+        path: 'tracking/:waybillNo',
+        name: 'TrackingDetail',
+        component: () => import('../views/tracking/TrackingDetail.vue'),
+        meta: { title: '运单详情' }
       }
     ]
   }

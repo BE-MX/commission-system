@@ -67,6 +67,11 @@
             <template #title>提成批次</template>
           </el-menu-item>
         </el-sub-menu>
+
+        <el-menu-item index="/tracking">
+          <el-icon><Van /></el-icon>
+          <template #title>物流跟踪</template>
+        </el-menu-item>
       </el-menu>
 
       <div class="sidebar-bottom" v-show="!isCollapse">
