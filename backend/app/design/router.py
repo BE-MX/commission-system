@@ -201,7 +201,11 @@ def list_tasks(
     if designer_id:
         query = query.filter(DesignScheduleTask.designer_id == designer_id)
     if status:
-        query = query.filter(DesignScheduleTask.status == status)
+        statuses = [s.strip() for s in status.split(",") if s.strip()]
+        if len(statuses) == 1:
+            query = query.filter(DesignScheduleTask.status == statuses[0])
+        elif statuses:
+            query = query.filter(DesignScheduleTask.status.in_(statuses))
 
     total = query.count()
     items = query.order_by(DesignScheduleTask.created_at.desc()).offset(

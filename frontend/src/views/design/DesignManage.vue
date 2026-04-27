@@ -55,14 +55,24 @@
           border
           :max-height="tabMaxHeight"
         >
-          <el-table-column prop="request_no" label="预约编号" width="160" show-overflow-tooltip />
+          <el-table-column prop="task_no" label="任务编号" width="170" show-overflow-tooltip />
           <el-table-column prop="customer_name" label="客户名称" width="130" show-overflow-tooltip />
+          <el-table-column prop="salesperson_name" label="业务员" width="90" />
           <el-table-column label="拍摄类型" width="100">
             <template #default="{ row }">{{ SHOOT_TYPE_MAP[row.shoot_type] || row.shoot_type }}</template>
           </el-table-column>
-          <el-table-column prop="designer_name" label="设计师" width="100" />
+          <el-table-column label="设计师" width="100">
+            <template #default="{ row }">{{ getDesignerName(row.designer_id) }}</template>
+          </el-table-column>
           <el-table-column label="排期日期" width="200">
-            <template #default="{ row }">{{ row.scheduled_start || '-' }} ~ {{ row.scheduled_end || '-' }}</template>
+            <template #default="{ row }">{{ row.plan_start_date || '-' }} ~ {{ row.plan_end_date || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="优先级" width="80" align="center">
+            <template #default="{ row }">
+              <el-tag :type="row.priority === 'urgent' ? 'danger' : 'info'" size="small" effect="plain">
+                {{ row.priority === 'urgent' ? '加急' : '普通' }}
+              </el-tag>
+            </template>
           </el-table-column>
           <el-table-column label="状态" width="100" align="center">
             <template #default="{ row }">
@@ -77,12 +87,12 @@
                 v-if="row.status === 'scheduled'"
                 link type="primary" size="small"
                 @click="handleTaskAction(row, 'start')"
-              >开始</el-button>
+              >开始执行</el-button>
               <el-button
                 v-if="row.status === 'in_progress'"
                 link type="success" size="small"
                 @click="handleTaskAction(row, 'complete')"
-              >完成</el-button>
+              >标记完成</el-button>
               <el-button
                 v-if="['scheduled', 'in_progress'].includes(row.status)"
                 link type="danger" size="small"
@@ -308,6 +318,11 @@ const TASK_STATUS_TAG = {
   in_progress: '',
   completed: 'success',
   cancelled: 'info',
+}
+
+function getDesignerName(id) {
+  const d = designerData.value.find(d => d.id === id)
+  return d ? d.name : id || '-'
 }
 
 const activeTab = ref('pending')
