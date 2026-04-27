@@ -1,52 +1,108 @@
 @echo off
 chcp 65001 >nul
+setlocal enabledelayedexpansion
+title Commission System - Sync Update
 REM ============================================================
-REM  Commission System - 日常更新脚本
-REM  每次本机开发完 push 后，在服务器上双击运行
+REM  Commission System - Daily Update Script
+REM  Run on server after each git push from dev machine
 REM ============================================================
 
 set "INSTALL_DIR=D:\commission-system"
 set "SERVICE_NAME=CommissionSystem"
 
 echo.
-echo === 开始更新 ===
+echo ==============================
+echo   Commission System - Sync
+echo ==============================
 echo.
 
-REM ---------- 拉取最新代码 ----------
-echo [1/4] 拉取代码...
+REM ---------- Check directory ----------
+if not exist "%INSTALL_DIR%\.git" (
+    echo [ERROR] %INSTALL_DIR% is not a Git repo, run setup-server.bat first
+    goto :error
+)
+
+REM ---------- [1/5] Pull latest code ----------
+echo [1/5] Git pull...
 cd /d "%INSTALL_DIR%"
 git pull
 if errorlevel 1 (
-    echo ERROR: git pull 失败
-    pause
-    exit /b 1
+    echo [ERROR] git pull failed
+    goto :error
 )
-
-REM ---------- 后端依赖 ----------
+echo      OK
 echo.
-echo [2/4] 更新后端依赖...
+
+REM ---------- [2/5] Backend deps ----------
+echo [2/5] Backend dependencies...
 cd /d "%INSTALL_DIR%\backend"
 call .venv\Scripts\activate.bat
+if errorlevel 1 (
+    echo [ERROR] venv activate failed
+    goto :error
+)
 pip install -r requirements.txt -q
-
-REM ---------- 数据库迁移 ----------
+if errorlevel 1 (
+    echo [ERROR] pip install failed
+    goto :error
+)
+echo      OK
 echo.
-echo [3/4] 数据库迁移...
+
+REM ---------- [3/5] Database migration ----------
+echo [3/5] Database migration...
 alembic upgrade head
-
-REM ---------- 前端构建 ----------
+if errorlevel 1 (
+    echo [ERROR] alembic migration failed
+    goto :error
+)
+echo      OK
 echo.
-echo [4/4] 构建前端...
+
+REM ---------- [4/5] Build frontend ----------
+echo [4/5] Build frontend...
 cd /d "%INSTALL_DIR%\frontend"
 call npm install --silent
+if errorlevel 1 (
+    echo [ERROR] npm install failed
+    goto :error
+)
 call npm run build
-
-REM ---------- 重启服务 ----------
+if errorlevel 1 (
+    echo [ERROR] npm build failed
+    goto :error
+)
+echo      OK
 echo.
-echo 重启服务...
+
+REM ---------- [5/5] Restart service ----------
+echo [5/5] Restart service...
 nssm restart %SERVICE_NAME%
-
+if errorlevel 1 (
+    echo [WARNING] Restart failed, trying stop + start...
+    nssm stop %SERVICE_NAME%
+    timeout /t 2 /nobreak >nul
+    nssm start %SERVICE_NAME%
+    if errorlevel 1 (
+        echo [ERROR] Service start failed
+        goto :error
+    )
+)
+echo      OK
 echo.
-echo === 更新完成 ===
+
+echo ==============================
+echo   Update completed!
+echo ==============================
+echo.
+goto :done
+
+:error
+echo.
+echo ==============================
+echo   Update FAILED! Check errors above
+echo ==============================
+
+:done
 echo.
 pause
