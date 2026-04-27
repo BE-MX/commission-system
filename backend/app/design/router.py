@@ -418,6 +418,64 @@ def list_designers(
     }
 
 
+@router.post("/designers")
+def create_designer(
+    data: dict,
+    db: Session = Depends(get_db),
+):
+    """新建设计师"""
+    designer = DesignDesigner(
+        name=data["name"],
+        dingtalk_id=data.get("dingtalk_id"),
+        email=data.get("email"),
+        is_active=data.get("is_active", True),
+    )
+    db.add(designer)
+    db.commit()
+    db.refresh(designer)
+    return {
+        "code": 200,
+        "message": "ok",
+        "data": {
+            "id": designer.id,
+            "name": designer.name,
+            "dingtalk_id": designer.dingtalk_id,
+            "email": designer.email,
+            "is_active": designer.is_active,
+        },
+    }
+
+
+@router.put("/designers/{designer_id}")
+def update_designer(
+    designer_id: int,
+    data: dict,
+    db: Session = Depends(get_db),
+):
+    """编辑设计师"""
+    designer = db.query(DesignDesigner).filter(DesignDesigner.id == designer_id).first()
+    if not designer:
+        return {"code": 404, "message": "设计师不存在", "data": None}
+
+    for field in ("name", "dingtalk_id", "email", "is_active"):
+        if field in data:
+            setattr(designer, field, data[field])
+
+    db.commit()
+    db.refresh(designer)
+    return {
+        "code": 200,
+        "message": "ok",
+        "data": {
+            "id": designer.id,
+            "name": designer.name,
+            "dingtalk_id": designer.dingtalk_id,
+            "email": designer.email,
+            "is_active": designer.is_active,
+        },
+    }
+
+
 # ── 导出 Excel ────────────────────────────────────────────
 
 

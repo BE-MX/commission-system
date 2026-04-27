@@ -113,6 +113,14 @@ export function getDesigners() {
   return designApi.get('/designers', { showLoading: false })
 }
 
+export function createDesigner(data) {
+  return designApi.post('/designers', data, { loadingText: '正在保存...' })
+}
+
+export function updateDesigner(id, data) {
+  return designApi.put(`/designers/${id}`, data, { loadingText: '正在保存...' })
+}
+
 // --- Audit Logs ---
 
 export function getAuditLogs(requestId) {

@@ -104,6 +104,9 @@
 
       <!-- Tab 3: 设计师管理 -->
       <el-tab-pane label="设计师管理" name="designers">
+        <el-row style="margin-bottom: 12px" justify="end">
+          <el-button type="primary" @click="openDesignerDialog(null)"><el-icon><Plus /></el-icon> 新建设计师</el-button>
+        </el-row>
         <el-table
           :data="designerData"
           v-loading="designerLoading"
@@ -113,24 +116,25 @@
         >
           <el-table-column prop="id" label="ID" width="80" />
           <el-table-column prop="name" label="姓名" width="120" />
-          <el-table-column prop="skills" label="技能" min-width="200">
-            <template #default="{ row }">
-              <el-tag
-                v-for="skill in (row.skills || [])"
-                :key="skill"
-                size="small"
-                effect="plain"
-                style="margin-right: 4px"
-              >{{ SHOOT_TYPE_MAP[skill] || skill }}</el-tag>
-              <span v-if="!row.skills?.length" class="text-muted">-</span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="max_daily_tasks" label="日最大任务数" width="120" align="center" />
+          <el-table-column prop="email" label="邮箱" min-width="180" show-overflow-tooltip />
+          <el-table-column prop="dingtalk_id" label="钉钉ID" width="140" show-overflow-tooltip />
           <el-table-column label="状态" width="100" align="center">
             <template #default="{ row }">
               <el-tag :type="row.is_active ? 'success' : 'info'" size="small" effect="plain">
                 {{ row.is_active ? '在职' : '停用' }}
               </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="created_at" label="创建时间" width="170" show-overflow-tooltip />
+          <el-table-column label="操作" width="150" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="primary" size="small" @click="openDesignerDialog(row)">编辑</el-button>
+              <el-button
+                link
+                :type="row.is_active ? 'danger' : 'success'"
+                size="small"
+                @click="toggleDesignerActive(row)"
+              >{{ row.is_active ? '停用' : '启用' }}</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -248,14 +252,41 @@
         <el-button type="primary" @click="submitConfirm" :loading="confirming">确认</el-button>
       </template>
     </el-dialog>
+
+    <!-- Designer create/edit dialog -->
+    <el-dialog
+      v-model="designerDialogVisible"
+      :title="designerForm.id ? '编辑设计师' : '新建设计师'"
+      width="460px"
+      :close-on-click-modal="false"
+    >
+      <el-form :model="designerForm" label-width="80px">
+        <el-form-item label="姓名" required>
+          <el-input v-model="designerForm.name" placeholder="请输入设计师姓名" />
+        </el-form-item>
+        <el-form-item label="邮箱">
+          <el-input v-model="designerForm.email" placeholder="选填" />
+        </el-form-item>
+        <el-form-item label="钉钉ID">
+          <el-input v-model="designerForm.dingtalk_id" placeholder="选填" />
+        </el-form-item>
+        <el-form-item label="状态" v-if="designerForm.id">
+          <el-switch v-model="designerForm.is_active" active-text="在职" inactive-text="停用" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="designerDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="submitDesigner" :loading="designerSaving">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Upload } from '@element-plus/icons-vue'
-import { getRequests, getTaskList, getDesigners, actionRequest, rescheduleTask, importRequests } from '@/api/design'
+import { Upload, Plus } from '@element-plus/icons-vue'
+import { getRequests, getTaskList, getDesigners, createDesigner, updateDesigner, actionRequest, rescheduleTask, importRequests } from '@/api/design'
 import DesignCalendarConfig from '@/components/design/DesignCalendarConfig.vue'
 import DesignCapacityConfig from '@/components/design/DesignCapacityConfig.vue'
 
@@ -353,6 +384,73 @@ function onTabChange(tab) {
   if (tab === 'pending') fetchPending()
   else if (tab === 'scheduled') fetchScheduled()
   else if (tab === 'designers') fetchDesigners()
+}
+
+// --- Designer create/edit ---
+const designerDialogVisible = ref(false)
+const designerSaving = ref(false)
+const designerForm = reactive({
+  id: null,
+  name: '',
+  email: '',
+  dingtalk_id: '',
+  is_active: true,
+})
+
+function openDesignerDialog(row) {
+  if (row) {
+    designerForm.id = row.id
+    designerForm.name = row.name
+    designerForm.email = row.email || ''
+    designerForm.dingtalk_id = row.dingtalk_id || ''
+    designerForm.is_active = row.is_active
+  } else {
+    designerForm.id = null
+    designerForm.name = ''
+    designerForm.email = ''
+    designerForm.dingtalk_id = ''
+    designerForm.is_active = true
+  }
+  designerDialogVisible.value = true
+}
+
+async function submitDesigner() {
+  if (!designerForm.name.trim()) {
+    ElMessage.warning('请输入设计师姓名')
+    return
+  }
+  designerSaving.value = true
+  try {
+    const payload = {
+      name: designerForm.name.trim(),
+      email: designerForm.email || null,
+      dingtalk_id: designerForm.dingtalk_id || null,
+      is_active: designerForm.is_active,
+    }
+    if (designerForm.id) {
+      await updateDesigner(designerForm.id, payload)
+    } else {
+      await createDesigner(payload)
+    }
+    ElMessage.success('保存成功')
+    designerDialogVisible.value = false
+    fetchDesigners()
+  } finally {
+    designerSaving.value = false
+  }
+}
+
+async function toggleDesignerActive(row) {
+  const action = row.is_active ? '停用' : '启用'
+  try {
+    await ElMessageBox.confirm(`确定${action}设计师「${row.name}」？`, '确认', { type: 'warning' })
+  } catch { return }
+
+  try {
+    await updateDesigner(row.id, { is_active: !row.is_active })
+    ElMessage.success(`${action}成功`)
+    fetchDesigners()
+  } catch { /* handled */ }
 }
 
 // --- Confirm scheduling dialog ---
