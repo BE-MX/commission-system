@@ -78,6 +78,10 @@
             <el-icon><Camera /></el-icon>
             <span>设计预约</span>
           </template>
+          <el-menu-item index="/design/gantt">
+            <el-icon><Calendar /></el-icon>
+            <template #title>排期甘特图</template>
+          </el-menu-item>
           <el-menu-item index="/design/submit">
             <el-icon><EditPen /></el-icon>
             <template #title>提交预约</template>

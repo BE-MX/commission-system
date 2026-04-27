@@ -61,6 +61,12 @@ const routes = [
         meta: { title: '运单详情' }
       },
       {
+        path: 'design/gantt',
+        name: 'DesignGantt',
+        component: () => import('../views/design/GanttView.vue'),
+        meta: { title: '排期甘特图' }
+      },
+      {
         path: 'design/submit',
         name: 'DesignSubmit',
         component: () => import('../views/design/SubmitRequest.vue'),

@@ -74,13 +74,9 @@
         </el-row>
 
         <!-- Conflict alert -->
-        <el-alert
-          v-if="conflictInfo.hasConflict"
-          :title="conflictInfo.title"
-          :type="conflictInfo.type"
-          :description="conflictInfo.description"
-          show-icon
-          :closable="false"
+        <ConflictAlert
+          v-if="conflictResult"
+          :conflict-result="conflictResult"
           class="conflict-alert"
         />
 
@@ -103,10 +99,11 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { submitRequest, checkConflict } from '@/api/design'
+import { submitRequest, checkConflict, getUnavailableDates } from '@/api/design'
+import ConflictAlert from '@/components/design/ConflictAlert.vue'
 
 const router = useRouter()
 const formRef = ref()
@@ -139,21 +136,35 @@ const rules = {
   priority: [{ required: true, message: '请选择优先级', trigger: 'change' }],
 }
 
-const conflictInfo = reactive({
-  hasConflict: false,
-  type: 'warning',
-  title: '',
-  description: '',
-})
+const conflictResult = ref(null)
+const unavailableDateSet = ref(new Set())
 
 function disablePastDate(date) {
-  return date < new Date(new Date().setHours(0, 0, 0, 0))
+  if (date < new Date(new Date().setHours(0, 0, 0, 0))) return true
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return unavailableDateSet.value.has(`${y}-${m}-${d}`)
 }
+
+async function fetchUnavailableDates() {
+  try {
+    const res = await getUnavailableDates()
+    const dates = res.data || []
+    unavailableDateSet.value = new Set(dates.map(d => typeof d === 'string' ? d : d.date))
+  } catch {
+    // ignore
+  }
+}
+
+onMounted(() => {
+  fetchUnavailableDates()
+})
 
 let conflictTimer = null
 function onDateRangeChange(val) {
   clearTimeout(conflictTimer)
-  conflictInfo.hasConflict = false
+  conflictResult.value = null
   if (!val || val.length !== 2) return
   conflictTimer = setTimeout(() => {
     doConflictCheck(val[0], val[1])
@@ -168,18 +179,11 @@ async function doConflictCheck(start, end) {
       shoot_type: form.shoot_type || undefined,
     })
     const data = res.data
-    if (data.has_unavailable) {
-      conflictInfo.hasConflict = true
-      conflictInfo.type = 'error'
-      conflictInfo.title = '日期冲突'
-      conflictInfo.description = `以下日期不可用：${data.unavailable_dates?.join('、') || '存在不可用日期'}`
-    } else if (data.has_conflict) {
-      conflictInfo.hasConflict = true
-      conflictInfo.type = 'warning'
-      conflictInfo.title = '排期拥挤'
-      conflictInfo.description = data.message || '该时段已有较多预约，建议调整日期'
-    } else {
-      conflictInfo.hasConflict = false
+    conflictResult.value = {
+      has_conflict: data.has_conflict || data.has_unavailable || false,
+      unavailable_dates: data.unavailable_dates || [],
+      overloaded_dates: data.overloaded_dates || [],
+      route: data.route || null,
     }
   } catch {
     // ignore conflict check error
@@ -216,7 +220,7 @@ async function handleSubmit() {
 
 function resetForm() {
   formRef.value?.resetFields()
-  conflictInfo.hasConflict = false
+  conflictResult.value = null
 }
 </script>
 
