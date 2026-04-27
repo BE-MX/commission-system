@@ -31,19 +31,19 @@ router = APIRouter()
 @router.post("/requests")
 def create_request(
     data: DesignRequestCreate,
-    operator_id: int = Query(..., description="操作人ID"),
-    operator_name: str = Query(..., description="操作人姓名"),
-    operator_role: str = Query("salesperson", description="操作人角色"),
     db: Session = Depends(get_db),
 ):
     """提交设计预约申请"""
-    return service.create_request(db, data, operator_id, operator_name, operator_role)
+    return service.create_request(
+        db, data, data.operator_id, data.operator_name, data.operator_role
+    )
 
 
 @router.get("/requests")
 def list_requests(
-    status: Optional[str] = Query(None, description="状态筛选"),
-    salesperson_id: Optional[int] = Query(None, description="业务员ID"),
+    status: Optional[str] = Query(None),
+    salesperson_id: Optional[int] = Query(None),
+    keyword: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -53,9 +53,20 @@ def list_requests(
         DesignScheduleRequest.deleted_at.is_(None),
     )
     if status:
-        query = query.filter(DesignScheduleRequest.status == status)
+        q_statuses = [s.strip() for s in status.split(",") if s.strip()]
+        if len(q_statuses) == 1:
+            query = query.filter(DesignScheduleRequest.status == q_statuses[0])
+        elif q_statuses:
+            query = query.filter(DesignScheduleRequest.status.in_(q_statuses))
     if salesperson_id:
         query = query.filter(DesignScheduleRequest.salesperson_id == salesperson_id)
+    if keyword:
+        like = f"%{keyword}%"
+        query = query.filter(
+            (DesignScheduleRequest.customer_name.like(like))
+            | (DesignScheduleRequest.request_no.like(like))
+            | (DesignScheduleRequest.salesperson_name.like(like))
+        )
 
     total = query.count()
     items = query.order_by(DesignScheduleRequest.created_at.desc()).offset(
@@ -79,6 +90,7 @@ def list_requests(
                     "expect_end_date": r.expect_end_date.isoformat() if r.expect_end_date else None,
                     "priority": r.priority,
                     "status": r.status,
+                    "conflict_detail": r.conflict_detail,
                     "assigned_designer_id": r.assigned_designer_id,
                     "created_at": r.created_at.isoformat() if r.created_at else None,
                     "updated_at": r.updated_at.isoformat() if r.updated_at else None,
@@ -90,10 +102,7 @@ def list_requests(
 
 
 @router.get("/requests/{request_id}")
-def get_request(
-    request_id: int,
-    db: Session = Depends(get_db),
-):
+def get_request(request_id: int, db: Session = Depends(get_db)):
     """查询申请单详情"""
     req = db.query(DesignScheduleRequest).filter(
         DesignScheduleRequest.id == request_id,
@@ -144,26 +153,21 @@ def get_request(
 def audit_request(
     request_id: int,
     data: DesignRequestAudit,
-    operator_id: int = Query(..., description="操作人ID"),
-    operator_name: str = Query(..., description="操作人姓名"),
     db: Session = Depends(get_db),
 ):
     """主管审批申请单"""
-    return service.audit_request(db, request_id, data, operator_id, operator_name)
+    return service.audit_request(db, request_id, data, data.operator_id, data.operator_name)
 
 
 @router.post("/requests/{request_id}/action")
 def action_request(
     request_id: int,
     data: DesignRequestAction,
-    operator_id: int = Query(..., description="操作人ID"),
-    operator_name: str = Query(..., description="操作人姓名"),
-    operator_role: str = Query(..., description="操作人角色"),
     db: Session = Depends(get_db),
 ):
     """执行申请单动作（confirm/start/complete/cancel）"""
     return service.action_request(
-        db, request_id, data, operator_id, operator_name, operator_role
+        db, request_id, data, data.operator_id, data.operator_name, data.operator_role
     )
 
 
@@ -172,9 +176,9 @@ def action_request(
 
 @router.get("/gantt")
 def get_gantt(
-    start_date: date = Query(..., description="开始日期"),
-    end_date: date = Query(..., description="结束日期"),
-    designer_id: Optional[int] = Query(None, description="设计师ID"),
+    start_date: date = Query(...),
+    end_date: date = Query(...),
+    designer_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
 ):
     """获取甘特图数据"""
@@ -186,8 +190,8 @@ def get_gantt(
 
 @router.get("/tasks")
 def list_tasks(
-    designer_id: Optional[int] = Query(None, description="设计师ID"),
-    status: Optional[str] = Query(None, description="状态筛选"),
+    designer_id: Optional[int] = Query(None),
+    status: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -239,12 +243,10 @@ def list_tasks(
 def reschedule_task(
     task_id: int,
     data: TaskReschedule,
-    operator_id: int = Query(..., description="操作人ID"),
-    operator_name: str = Query(..., description="操作人姓名"),
     db: Session = Depends(get_db),
 ):
     """任务改期"""
-    return service.reschedule_task(db, task_id, data, operator_id, operator_name)
+    return service.reschedule_task(db, task_id, data, data.operator_id, data.operator_name)
 
 
 # ── 不可用日期 ────────────────────────────────────────────
@@ -283,19 +285,17 @@ def list_unavailable_dates(
 @router.post("/unavailable-dates")
 def create_unavailable_dates(
     data: UnavailableDateCreate,
-    operator_id: int = Query(..., description="操作人ID"),
-    operator_name: str = Query(..., description="操作人姓名"),
     db: Session = Depends(get_db),
 ):
     """批量设置不可用日期"""
-    return service.create_unavailable_dates(db, data, operator_id, operator_name)
+    return service.create_unavailable_dates(db, data, data.operator_id, data.operator_name)
 
 
 @router.delete("/unavailable-dates/{date_str}")
 def delete_unavailable_date(
     date_str: str,
-    operator_id: int = Query(..., description="操作人ID"),
-    operator_name: str = Query(..., description="操作人姓名"),
+    operator_id: int = Query(1),
+    operator_name: str = Query("管理员"),
     db: Session = Depends(get_db),
 ):
     """删除不可用日期"""
@@ -314,12 +314,10 @@ def get_capacity(db: Session = Depends(get_db)):
 @router.put("/capacity")
 def update_capacity(
     data: CapacityUpdate,
-    operator_id: int = Query(..., description="操作人ID"),
-    operator_name: str = Query(..., description="操作人姓名"),
     db: Session = Depends(get_db),
 ):
     """更新容量配置"""
-    return service.update_capacity(db, data, operator_id, operator_name)
+    return service.update_capacity(db, data, data.operator_id, data.operator_name)
 
 
 # ── 冲突检测 ──────────────────────────────────────────────
@@ -351,22 +349,17 @@ def get_scheduling_mode(db: Session = Depends(get_db)):
 @router.put("/scheduling-mode")
 def update_scheduling_mode(
     data: ModeUpdate,
-    operator_id: int = Query(..., description="操作人ID"),
-    operator_name: str = Query(..., description="操作人姓名"),
     db: Session = Depends(get_db),
 ):
     """更新排期模式"""
-    return service.update_scheduling_mode(db, data, operator_id, operator_name)
+    return service.update_scheduling_mode(db, data, data.operator_id, data.operator_name)
 
 
 # ── 审计日志 ──────────────────────────────────────────────
 
 
 @router.get("/audit-logs/{request_id}")
-def get_audit_logs_by_request(
-    request_id: int,
-    db: Session = Depends(get_db),
-):
+def get_audit_logs_by_request(request_id: int, db: Session = Depends(get_db)):
     """查询指定申请单的操作日志"""
     items = db.query(DesignAuditLog).filter(
         DesignAuditLog.request_id == request_id,
@@ -391,48 +384,6 @@ def get_audit_logs_by_request(
             }
             for log in items
         ],
-    }
-
-
-@router.get("/audit-logs")
-def list_audit_logs(
-    request_id: Optional[int] = Query(None),
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
-    db: Session = Depends(get_db),
-):
-    """查询操作日志"""
-    query = db.query(DesignAuditLog)
-    if request_id:
-        query = query.filter(DesignAuditLog.request_id == request_id)
-
-    total = query.count()
-    items = query.order_by(DesignAuditLog.created_at.desc()).offset(
-        (page - 1) * page_size
-    ).limit(page_size).all()
-
-    return {
-        "code": 200,
-        "message": "ok",
-        "data": {
-            "total": total,
-            "items": [
-                {
-                    "id": log.id,
-                    "request_id": log.request_id,
-                    "task_id": log.task_id,
-                    "operator_id": log.operator_id,
-                    "operator_name": log.operator_name,
-                    "operator_role": log.operator_role,
-                    "action": log.action,
-                    "from_status": log.from_status,
-                    "to_status": log.to_status,
-                    "comment": log.comment,
-                    "created_at": log.created_at.isoformat() if log.created_at else None,
-                }
-                for log in items
-            ],
-        },
     }
 
 
@@ -472,8 +423,8 @@ def list_designers(
 
 @router.get("/export/tasks")
 def export_tasks(
-    start_date: date = Query(..., description="开始日期"),
-    end_date: date = Query(..., description="结束日期"),
+    start_date: date = Query(...),
+    end_date: date = Query(...),
     db: Session = Depends(get_db),
 ):
     """导出设计任务为 Excel"""
@@ -485,8 +436,8 @@ def export_tasks(
 
 @router.get("/stats")
 def get_stats(
-    start_date: date = Query(..., description="开始日期"),
-    end_date: date = Query(..., description="结束日期"),
+    start_date: date = Query(...),
+    end_date: date = Query(...),
     db: Session = Depends(get_db),
 ):
     """获取设计模块统计"""
@@ -498,10 +449,10 @@ def get_stats(
 
 @router.post("/import/requests")
 async def import_requests(
-    file: UploadFile = File(..., description="Excel 文件"),
-    operator_id: int = Query(..., description="操作人ID"),
-    operator_name: str = Query(..., description="操作人姓名"),
-    operator_role: str = Query("salesperson", description="操作人角色"),
+    file: UploadFile = File(...),
+    operator_id: int = Query(1),
+    operator_name: str = Query("管理员"),
+    operator_role: str = Query("salesperson"),
     db: Session = Depends(get_db),
 ):
     """批量导入预约申请"""

@@ -6,10 +6,19 @@ from typing import Optional, Literal
 from pydantic import BaseModel, ConfigDict, model_validator
 
 
+# ── 操作人混入 ─────────────────────────────────────────────
+
+
+class OperatorMixin(BaseModel):
+    operator_id: int = 1
+    operator_name: str = "管理员"
+    operator_role: str = "salesperson"
+
+
 # ── 写入模式 ──────────────────────────────────────────────
 
 
-class DesignRequestCreate(BaseModel):
+class DesignRequestCreate(OperatorMixin):
     customer_name: str
     salesperson_id: int
     salesperson_name: str
@@ -33,12 +42,12 @@ class DesignRequestCreate(BaseModel):
         return self
 
 
-class DesignRequestAudit(BaseModel):
+class DesignRequestAudit(OperatorMixin):
     action: Literal["approve", "reject"]
     comment: Optional[str] = None
 
 
-class DesignRequestAction(BaseModel):
+class DesignRequestAction(OperatorMixin):
     action: Literal["confirm", "start", "complete", "cancel"]
     designer_id: Optional[int] = None
     plan_start_date: Optional[date] = None
@@ -46,14 +55,14 @@ class DesignRequestAction(BaseModel):
     comment: Optional[str] = None
 
 
-class TaskReschedule(BaseModel):
+class TaskReschedule(OperatorMixin):
     plan_start_date: date
     plan_end_date: date
     designer_id: Optional[int] = None
     comment: Optional[str] = None
 
 
-class UnavailableDateCreate(BaseModel):
+class UnavailableDateCreate(OperatorMixin):
     dates: list[date]
     reason: str
 
@@ -64,11 +73,11 @@ class CapacityEntry(BaseModel):
     max_parallel_tasks: int
 
 
-class CapacityUpdate(BaseModel):
+class CapacityUpdate(OperatorMixin):
     entries: list[CapacityEntry]
 
 
-class ModeUpdate(BaseModel):
+class ModeUpdate(OperatorMixin):
     scheduling_mode: Literal["pool", "individual"]
 
 
