@@ -53,9 +53,10 @@
               <template #reference>
                 <div
                   class="task-bar"
-                  :class="{ 'is-urgent': task.priority === 'urgent' }"
+                  :class="{ 'is-urgent': task.priority === 'urgent', 'is-draggable': draggable }"
                   :style="getTaskBarStyle(task, ti)"
                   @click="$emit('task-click', task)"
+                  @mousedown="onTaskMousedown($event, task)"
                 >
                   <span class="task-bar-text">{{ task.task_name || task.task_no }}</span>
                 </div>
@@ -105,9 +106,10 @@
               <template #reference>
                 <div
                   class="task-bar"
-                  :class="{ 'is-urgent': task.priority === 'urgent' }"
+                  :class="{ 'is-urgent': task.priority === 'urgent', 'is-draggable': draggable }"
                   :style="getTaskBarStyle(task, ti)"
                   @click="$emit('task-click', task)"
+                  @mousedown="onTaskMousedown($event, task)"
                 >
                   <span class="task-bar-text">{{ task.task_name || task.task_no }}</span>
                 </div>
@@ -134,7 +136,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, onBeforeUnmount } from 'vue'
 
 const props = defineProps({
   tasks: { type: Array, default: () => [] },
@@ -144,9 +146,10 @@ const props = defineProps({
   unavailableDates: { type: Array, default: () => [] },
   dateLoad: { type: Object, default: () => ({}) },
   mode: { type: String, default: 'individual' }, // 'pool' or 'individual'
+  draggable: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['task-click'])
+const emit = defineEmits(['task-click', 'reschedule'])
 
 // --- Date utilities ---
 function parseDate(str) {
@@ -312,6 +315,104 @@ function statusTagType(status) {
 function shootTypeLabel(type) {
   return SHOOT_TYPE_LABELS[type] || type || ''
 }
+
+// --- Drag-to-reschedule ---
+const scrollRef = ref(null)
+const dragState = ref(null) // { task, startX, barEl, origLeft, cellWidth, duration }
+
+function onTaskMousedown(event, task) {
+  if (!props.draggable) return
+  if (event.button !== 0) return // left button only
+  event.preventDefault()
+  event.stopPropagation()
+
+  const barEl = event.currentTarget
+  const rowEl = barEl.closest('.gantt-row')
+  if (!rowEl) return
+
+  const rowRect = rowEl.getBoundingClientRect()
+  const cellWidth = rowRect.width / totalDays.value
+
+  // Calculate task duration in days
+  const taskStart = parseDate(task.plan_start_date)
+  const taskEnd = parseDate(task.plan_end_date)
+  const duration = Math.round((taskEnd - taskStart) / 86400000) // days between start and end
+
+  dragState.value = {
+    task,
+    startX: event.clientX,
+    barEl,
+    origTransform: barEl.style.transform || '',
+    cellWidth,
+    duration,
+    rowWidth: rowRect.width,
+    origLeft: parseFloat(barEl.style.left), // percentage
+  }
+
+  barEl.classList.add('is-dragging')
+  document.addEventListener('mousemove', onDragMove)
+  document.addEventListener('mouseup', onDragEnd)
+}
+
+function onDragMove(event) {
+  if (!dragState.value) return
+  const { startX, barEl, cellWidth } = dragState.value
+  const dx = event.clientX - startX
+
+  // Snap to cell boundaries
+  const cellOffset = Math.round(dx / cellWidth)
+  const snappedDx = cellOffset * cellWidth
+
+  barEl.style.transform = `translateX(${snappedDx}px)`
+}
+
+function onDragEnd(event) {
+  document.removeEventListener('mousemove', onDragMove)
+  document.removeEventListener('mouseup', onDragEnd)
+
+  if (!dragState.value) return
+  const { task, startX, barEl, cellWidth, duration } = dragState.value
+  const dx = event.clientX - startX
+  const cellOffset = Math.round(dx / cellWidth)
+
+  // Reset visual state
+  barEl.style.transform = ''
+  barEl.classList.remove('is-dragging')
+
+  if (cellOffset === 0) {
+    dragState.value = null
+    return
+  }
+
+  // Calculate new dates
+  const origStart = parseDate(task.plan_start_date)
+  const newStart = new Date(origStart)
+  newStart.setDate(newStart.getDate() + cellOffset)
+  const newEnd = new Date(newStart)
+  newEnd.setDate(newEnd.getDate() + duration)
+
+  // Bounds check: new dates must stay within the gantt range
+  const rangeStart = parseDate(props.startDate)
+  const rangeEnd = parseDate(props.endDate)
+  if (newStart < rangeStart || newEnd > rangeEnd) {
+    dragState.value = null
+    return
+  }
+
+  emit('reschedule', {
+    taskId: task.task_id,
+    planStartDate: formatDate(newStart),
+    planEndDate: formatDate(newEnd),
+    task,
+  })
+
+  dragState.value = null
+}
+
+onBeforeUnmount(() => {
+  document.removeEventListener('mousemove', onDragMove)
+  document.removeEventListener('mouseup', onDragEnd)
+})
 </script>
 
 <style scoped>
@@ -491,6 +592,24 @@ function shootTypeLabel(type) {
 .task-bar:hover {
   filter: brightness(1.1);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+}
+
+.task-bar.is-draggable {
+  cursor: grab;
+}
+
+.task-bar.is-draggable:active {
+  cursor: grabbing;
+}
+
+.task-bar.is-dragging {
+  opacity: 0.85;
+  z-index: 10;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  outline: 2px dashed #409EFF;
+  outline-offset: 1px;
+  cursor: grabbing;
+  user-select: none;
 }
 
 .task-bar-text {

@@ -135,6 +135,16 @@
           </el-table-column>
         </el-table>
       </el-tab-pane>
+
+      <!-- Tab 4: 不可用日期 -->
+      <el-tab-pane label="不可用日期" name="unavailable" lazy>
+        <DesignCalendarConfig />
+      </el-tab-pane>
+
+      <!-- Tab 5: 容量配置 -->
+      <el-tab-pane label="容量配置" name="capacity" lazy>
+        <DesignCapacityConfig />
+      </el-tab-pane>
     </el-tabs>
 
     <!-- Confirm scheduling dialog -->
@@ -184,7 +194,9 @@
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getRequests, getTaskList, getDesigners, actionRequest } from '@/api/design'
+import { getRequests, getTaskList, getDesigners, actionRequest, rescheduleTask } from '@/api/design'
+import DesignCalendarConfig from '@/components/design/DesignCalendarConfig.vue'
+import DesignCapacityConfig from '@/components/design/DesignCapacityConfig.vue'
 
 const SHOOT_TYPE_MAP = {
   product_photo: '产品图',
@@ -350,6 +362,29 @@ async function handleTaskAction(row, action) {
       operator_role: 'design_staff',
     })
     ElMessage.success('操作成功')
+    fetchScheduled()
+  } catch { /* handled by interceptor */ }
+}
+
+// --- Gantt reschedule handler ---
+async function handleReschedule({ taskId, planStartDate, planEndDate, task }) {
+  try {
+    await ElMessageBox.confirm(
+      `确定将任务 "${task.task_name || task.task_no}" 的排期调整为 ${planStartDate} ~ ${planEndDate}？`,
+      '调整排期',
+      { type: 'warning' }
+    )
+  } catch { return }
+
+  try {
+    await rescheduleTask(taskId, {
+      plan_start_date: planStartDate,
+      plan_end_date: planEndDate,
+      operator_id: 1,
+      operator_name: '管理员',
+      operator_role: 'design_staff',
+    })
+    ElMessage.success('排期已调整')
     fetchScheduled()
   } catch { /* handled by interceptor */ }
 }
