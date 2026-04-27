@@ -17,7 +17,10 @@ from app.design.schemas import (
     CapacityUpdate,
     ModeUpdate,
 )
-from app.design.models import DesignScheduleRequest, DesignScheduleTask, DesignAuditLog
+from app.design.models import (
+    DesignScheduleRequest, DesignScheduleTask, DesignAuditLog,
+    DesignUnavailableDate, DesignDesigner, DesignCapacityConfig,
+)
 
 router = APIRouter()
 
@@ -319,6 +322,23 @@ def update_capacity(
     return service.update_capacity(db, data, operator_id, operator_name)
 
 
+# ── 冲突检测 ──────────────────────────────────────────────
+
+
+@router.get("/conflict-check")
+def conflict_check(
+    start_date: date = Query(...),
+    end_date: date = Query(...),
+    designer_id: Optional[int] = Query(None),
+    exclude_task_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+):
+    """前端实时冲突检查（不写库）"""
+    from app.design.conflict_engine import check_conflict
+    result = check_conflict(db, start_date, end_date, designer_id, exclude_task_id)
+    return {"code": 200, "message": "ok", "data": result}
+
+
 # ── 排期模式 ──────────────────────────────────────────────
 
 
@@ -425,8 +445,6 @@ def list_designers(
     db: Session = Depends(get_db),
 ):
     """查询设计师列表"""
-    from app.design.models import DesignDesigner
-
     query = db.query(DesignDesigner)
     if is_active is not None:
         query = query.filter(DesignDesigner.is_active == is_active)

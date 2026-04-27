@@ -118,6 +118,11 @@ if FRONTEND_DIST.is_dir():
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
         """所有非 /api、/health、/assets 的请求 fallback 到 index.html（SPA 路由）"""
+        if full_path.startswith("api/"):
+            return JSONResponse(
+                status_code=404,
+                content={"code": 404, "message": "API not found", "data": None},
+            )
         file = FRONTEND_DIST / full_path
         if file.is_file():
             return FileResponse(file)

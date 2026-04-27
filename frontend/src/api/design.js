@@ -94,11 +94,11 @@ export function updateCapacity(data) {
 }
 
 export function getSchedulingMode() {
-  return designApi.get('/config/mode', { showLoading: false })
+  return designApi.get('/scheduling-mode', { showLoading: false })
 }
 
 export function updateSchedulingMode(data) {
-  return designApi.put('/config/mode', data)
+  return designApi.put('/scheduling-mode', data)
 }
 
 // --- Conflict Check ---
