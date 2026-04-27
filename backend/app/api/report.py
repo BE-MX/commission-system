@@ -3,6 +3,7 @@
 from collections import defaultdict
 from decimal import Decimal
 from io import BytesIO
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Query, Path
 from fastapi.responses import StreamingResponse
@@ -192,10 +193,13 @@ def _to_streaming(wb: Workbook, filename: str) -> StreamingResponse:
     buffer = BytesIO()
     wb.save(buffer)
     buffer.seek(0)
+    encoded = quote(filename, safe="")
     return StreamingResponse(
         buffer,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{encoded}",
+        },
     )
 
 

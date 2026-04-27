@@ -9,8 +9,13 @@ export function downloadUrl(url) {
 
 export function downloadBlob(response) {
   const disposition = response.headers['content-disposition'] || ''
-  const match = disposition.match(/filename=(.+?)(?:;|$)/)
-  const filename = match ? decodeURIComponent(match[1]) : 'export.xlsx'
+  const starMatch = disposition.match(/filename\*=UTF-8''(.+?)(?:;|$)/i)
+  const plainMatch = disposition.match(/filename=(.+?)(?:;|$)/)
+  const filename = starMatch
+    ? decodeURIComponent(starMatch[1])
+    : plainMatch
+      ? decodeURIComponent(plainMatch[1])
+      : 'export.xlsx'
 
   const url = window.URL.createObjectURL(new Blob([response.data]))
   const a = document.createElement('a')
