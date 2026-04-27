@@ -30,7 +30,7 @@
           <div class="gantt-row-label">设计组</div>
           <div
             class="gantt-row"
-            :style="{ gridColumn: '2 / ' + (dateRange.length + 2) }"
+            :style="{ gridColumn: '2 / ' + (dateRange.length + 2), minHeight: rowMinHeight(getMaxStack(poolStackLevels)) + 'px' }"
           >
             <div
               v-for="(d, idx) in dateRange"
@@ -44,8 +44,8 @@
               :style="{ left: (idx / totalDays * 100) + '%', width: (1 / totalDays * 100) + '%' }"
             ></div>
             <el-popover
-              v-for="(task, ti) in allTasks"
-              :key="task.task_id"
+              v-for="task in allTasks"
+              :key="task.id || task.task_id"
               placement="top"
               :width="280"
               trigger="hover"
@@ -54,7 +54,7 @@
                 <div
                   class="task-bar"
                   :class="{ 'is-urgent': task.priority === 'urgent', 'is-draggable': draggable }"
-                  :style="getTaskBarStyle(task, ti)"
+                  :style="getTaskBarStyle(task, poolStackLevels)"
                   @click="$emit('task-click', task)"
                   @mousedown="onTaskMousedown($event, task)"
                 >
@@ -84,7 +84,7 @@
           <div class="gantt-row-label">{{ designer.name }}</div>
           <div
             class="gantt-row"
-            :style="{ gridColumn: '2 / ' + (dateRange.length + 2) }"
+            :style="{ gridColumn: '2 / ' + (dateRange.length + 2), minHeight: rowMinHeight(getMaxStack(designerStackLevels(designer))) + 'px' }"
           >
             <div
               v-for="(d, idx) in dateRange"
@@ -98,8 +98,8 @@
               :style="{ left: (idx / totalDays * 100) + '%', width: (1 / totalDays * 100) + '%' }"
             ></div>
             <el-popover
-              v-for="(task, ti) in getDesignerTasks(designer)"
-              :key="task.task_id"
+              v-for="task in getDesignerTasks(designer)"
+              :key="task.id || task.task_id"
               placement="top"
               :width="280"
               trigger="hover"
@@ -108,7 +108,7 @@
                 <div
                   class="task-bar"
                   :class="{ 'is-urgent': task.priority === 'urgent', 'is-draggable': draggable }"
-                  :style="getTaskBarStyle(task, ti)"
+                  :style="getTaskBarStyle(task, designerStackLevels(designer))"
                   @click="$emit('task-click', task)"
                   @mousedown="onTaskMousedown($event, task)"
                 >
@@ -233,14 +233,63 @@ const allTasks = computed(() => {
       tasks.push(...designer.tasks)
     }
   }
-  // Also include standalone tasks prop
   if (props.tasks?.length) {
     tasks.push(...props.tasks)
   }
   return tasks
 })
 
-function getTaskBarStyle(task, stackIndex = 0) {
+function tasksOverlap(a, b) {
+  return a.plan_start_date <= b.plan_end_date && b.plan_start_date <= a.plan_end_date
+}
+
+function computeStackLevels(tasks) {
+  const levels = new Map()
+  const sorted = [...tasks].sort((a, b) => (a.plan_start_date || '').localeCompare(b.plan_start_date || ''))
+  for (const task of sorted) {
+    let level = 0
+    for (const other of sorted) {
+      if (other === task) break
+      if (levels.has(other) && tasksOverlap(task, other) && levels.get(other) === level) {
+        level++
+      }
+    }
+    // Re-check: greedy assignment
+    let assigned = false
+    for (let l = 0; !assigned; l++) {
+      let conflict = false
+      for (const other of sorted) {
+        if (other === task) continue
+        if (levels.has(other) && levels.get(other) === l && tasksOverlap(task, other)) {
+          conflict = true
+          break
+        }
+      }
+      if (!conflict) {
+        levels.set(task, l)
+        assigned = true
+      }
+    }
+  }
+  return levels
+}
+
+const poolStackLevels = computed(() => computeStackLevels(allTasks.value))
+
+function designerStackLevels(designer) {
+  return computeStackLevels(getDesignerTasks(designer))
+}
+
+function getMaxStack(levels) {
+  if (!levels || levels.size === 0) return 0
+  return Math.max(...levels.values())
+}
+
+function rowMinHeight(taskCount) {
+  return Math.max(60, (taskCount + 1) * 30 + 4)
+}
+
+function getTaskBarStyle(task, stackLevels) {
   if (!task.plan_start_date || !task.plan_end_date) return { display: 'none' }
   const gridStart = parseDate(props.startDate)
   const taskStart = parseDate(task.plan_start_date)
@@ -258,8 +307,8 @@ function getTaskBarStyle(task, stackIndex = 0) {
   const width = (span / total) * 100
   const color = statusColor(task.status)
 
-  // Stack bars vertically: 28px height + 2px gap
-  const top = 2 + stackIndex * (28 + 2)
+  const level = stackLevels.get(task) || 0
+  const top = 4 + level * 30
 
   return {
     left: left + '%',
