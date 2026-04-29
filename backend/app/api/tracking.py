@@ -15,6 +15,7 @@ from app.schemas.tracking import (
 )
 from app.services.staging_service import scan_staging
 from app.services.tracking_service import poll_active_shipments, refresh_single
+from app.services.short_link import build_short_link
 
 router = APIRouter()
 
@@ -87,7 +88,11 @@ def list_shipments(
         "message": "ok",
         "data": {
             "total": total,
-            "items": [ShipmentListItem.model_validate(i).model_dump() for i in items],
+            "items": [
+                {**ShipmentListItem.model_validate(i).model_dump(),
+                 "short_link": build_short_link(i.short_code) if i.short_code else None}
+                for i in items
+            ],
         },
     }
 
@@ -117,6 +122,7 @@ def get_shipment_detail(
 
     detail = ShipmentDetailResponse.model_validate(shipment)
     detail.events = [TrackingEventItem.model_validate(e) for e in events]
+    detail.short_link = build_short_link(shipment.short_code) if shipment.short_code else None
     return {"code": 200, "message": "ok", "data": detail.model_dump()}
 
 

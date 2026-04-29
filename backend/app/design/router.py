@@ -87,7 +87,9 @@ def list_requests(
                     "salesperson_name": r.salesperson_name,
                     "shoot_type": r.shoot_type,
                     "expect_start_date": r.expect_start_date.isoformat() if r.expect_start_date else None,
+                    "expect_start_period": r.expect_start_period,
                     "expect_end_date": r.expect_end_date.isoformat() if r.expect_end_date else None,
+                    "expect_end_period": r.expect_end_period,
                     "priority": r.priority,
                     "status": r.status,
                     "conflict_detail": r.conflict_detail,
@@ -123,14 +125,18 @@ def get_request(request_id: int, db: Session = Depends(get_db)):
             "shoot_type": req.shoot_type,
             "shoot_type_remark": req.shoot_type_remark,
             "expect_start_date": req.expect_start_date.isoformat() if req.expect_start_date else None,
+            "expect_start_period": req.expect_start_period,
             "expect_end_date": req.expect_end_date.isoformat() if req.expect_end_date else None,
+            "expect_end_period": req.expect_end_period,
             "priority": req.priority,
             "remark": req.remark,
             "status": req.status,
             "conflict_detail": req.conflict_detail,
             "assigned_designer_id": req.assigned_designer_id,
             "actual_start_date": req.actual_start_date.isoformat() if req.actual_start_date else None,
+            "actual_start_period": req.actual_start_period,
             "actual_end_date": req.actual_end_date.isoformat() if req.actual_end_date else None,
+            "actual_end_period": req.actual_end_period,
             "created_at": req.created_at.isoformat() if req.created_at else None,
             "updated_at": req.updated_at.isoformat() if req.updated_at else None,
             "tasks": [
@@ -140,7 +146,9 @@ def get_request(request_id: int, db: Session = Depends(get_db)):
                     "designer_id": t.designer_id,
                     "task_name": t.task_name,
                     "plan_start_date": t.plan_start_date.isoformat() if t.plan_start_date else None,
+                    "plan_start_period": t.plan_start_period,
                     "plan_end_date": t.plan_end_date.isoformat() if t.plan_end_date else None,
+                    "plan_end_period": t.plan_end_period,
                     "status": t.status,
                 }
                 for t in req.tasks
@@ -229,9 +237,13 @@ def list_tasks(
                     "shoot_type": t.shoot_type,
                     "priority": t.priority,
                     "plan_start_date": t.plan_start_date.isoformat() if t.plan_start_date else None,
+                    "plan_start_period": t.plan_start_period,
                     "plan_end_date": t.plan_end_date.isoformat() if t.plan_end_date else None,
+                    "plan_end_period": t.plan_end_period,
                     "actual_start_date": t.actual_start_date.isoformat() if t.actual_start_date else None,
+                    "actual_start_period": t.actual_start_period,
                     "actual_end_date": t.actual_end_date.isoformat() if t.actual_end_date else None,
+                    "actual_end_period": t.actual_end_period,
                     "status": t.status,
                     "remark": t.remark,
                     "created_at": t.created_at.isoformat() if t.created_at else None,
@@ -277,6 +289,7 @@ def list_unavailable_dates(
             {
                 "id": r.id,
                 "date": r.date.isoformat(),
+                "period": r.period,
                 "reason": r.reason,
                 "created_by": r.created_by,
                 "created_at": r.created_at.isoformat() if r.created_at else None,
@@ -298,12 +311,13 @@ def create_unavailable_dates(
 @router.delete("/unavailable-dates/{date_str}")
 def delete_unavailable_date(
     date_str: str,
+    period: Optional[str] = Query(None),
     operator_id: int = Query(1),
     operator_name: str = Query("管理员"),
     db: Session = Depends(get_db),
 ):
     """删除不可用日期"""
-    return service.delete_unavailable_date(db, date_str, operator_id, operator_name)
+    return service.delete_unavailable_date(db, date_str, operator_id, operator_name, period=period)
 
 
 # ── 容量配置 ──────────────────────────────────────────────
@@ -331,13 +345,21 @@ def update_capacity(
 def conflict_check(
     start_date: date = Query(...),
     end_date: date = Query(...),
+    start_period: Optional[str] = Query(None),
+    end_period: Optional[str] = Query(None),
     designer_id: Optional[int] = Query(None),
     exclude_task_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
 ):
     """前端实时冲突检查（不写库）"""
     from app.design.conflict_engine import check_conflict
-    result = check_conflict(db, start_date, end_date, designer_id, exclude_task_id)
+    result = check_conflict(
+        db, start_date, end_date,
+        start_period=start_period or "am",
+        end_period=end_period or "pm",
+        designer_id=designer_id,
+        exclude_task_id=exclude_task_id,
+    )
     return {"code": 200, "message": "ok", "data": result}
 
 

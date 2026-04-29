@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models.tracking import ShipmentStaging, ShipmentTracking
+from app.services.short_link import generate_short_code
 
 logger = logging.getLogger("tracking.staging")
 settings = get_settings()
@@ -62,6 +63,7 @@ def scan_staging(db: Session) -> dict:
                     dingtalk_user_name=row.dingtalk_user_name,
                     ocr_raw_text=row.ocr_raw_text,
                     source_image_url=row.source_image_url,
+                    short_code=generate_short_code(db),
                 )
                 db.add(shipment)
                 row.process_result = "success"

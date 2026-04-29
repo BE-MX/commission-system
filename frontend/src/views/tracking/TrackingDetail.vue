@@ -51,6 +51,15 @@
             <div class="info-label">录入时间</div>
             <div class="info-value">{{ shipment.created_at || '-' }}</div>
           </div>
+          <div class="info-item" v-if="shipment.short_link">
+            <div class="info-label">物流查询短链接</div>
+            <div class="info-value short-link-value">
+              <span class="short-link-text">{{ shipment.short_link }}</span>
+              <el-button link type="primary" size="small" @click="copyLink(shipment.short_link)" style="margin-left:6px">
+                <el-icon><CopyDocument /></el-icon> 复制
+              </el-button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -111,6 +120,12 @@ const waybillNo = route.params.waybillNo
 const shipment = ref(null)
 const loading = ref(false)
 const refreshing = ref(false)
+
+function copyLink(link) {
+  navigator.clipboard.writeText(link).then(() => {
+    ElMessage.success('短链接已复制')
+  })
+}
 
 const STATUS_MAP = {
   pending: '待查询',
@@ -234,5 +249,14 @@ onMounted(fetchDetail)
 
 .poll-section {
   margin-bottom: 24px;
+}
+.short-link-value {
+  display: flex;
+  align-items: center;
+}
+.short-link-text {
+  font-size: 13px;
+  word-break: break-all;
+  opacity: 0.85;
 }
 </style>

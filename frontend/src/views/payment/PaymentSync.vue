@@ -73,7 +73,7 @@
             </el-input>
           </el-col>
           <el-col :span="2">
-            <el-button @click="fetchPayments">查询</el-button>
+            <el-button type="primary" @click="fetchPayments"><el-icon><Search /></el-icon> 查询</el-button>
           </el-col>
         </el-row>
       </template>

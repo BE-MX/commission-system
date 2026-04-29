@@ -47,6 +47,7 @@ class ShipmentListItem(BaseModel):
     last_event_time: Optional[datetime] = None
     dingtalk_user_name: str
     is_active: bool
+    short_link: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -86,6 +87,7 @@ class ShipmentDetailResponse(BaseModel):
     poll_count: int
     last_polled_at: Optional[datetime] = None
     poll_error: Optional[str] = None
+    short_link: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     events: list[TrackingEventItem] = []

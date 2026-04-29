@@ -103,6 +103,21 @@
             <template #title>设计统计</template>
           </el-menu-item>
         </el-sub-menu>
+
+        <el-sub-menu index="system-mgmt" v-if="authStore.hasAnyPermission(['user:read', 'role:read'])">
+          <template #title>
+            <el-icon><Setting /></el-icon>
+            <span>系统管理</span>
+          </template>
+          <el-menu-item index="/system/users" v-if="authStore.hasPermission('user:read')">
+            <el-icon><User /></el-icon>
+            <template #title>用户管理</template>
+          </el-menu-item>
+          <el-menu-item index="/system/roles" v-if="authStore.hasPermission('user:read')">
+            <el-icon><Lock /></el-icon>
+            <template #title>角色权限</template>
+          </el-menu-item>
+        </el-sub-menu>
       </el-menu>
 
       <div class="sidebar-bottom" v-show="!isCollapse">
@@ -123,6 +138,20 @@
         </div>
         <div class="header-right">
           <div class="header-badge">莱莎发制品</div>
+          <el-dropdown trigger="click" @command="handleUserCommand">
+            <div class="user-trigger">
+              <el-icon><UserFilled /></el-icon>
+              <span>{{ authStore.user?.real_name || '用户' }}</span>
+              <el-icon class="arrow"><ArrowDown /></el-icon>
+            </div>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="profile"><el-icon><User /></el-icon> 个人设置</el-dropdown-item>
+                <el-dropdown-item command="password"><el-icon><Key /></el-icon> 修改密码</el-dropdown-item>
+                <el-dropdown-item divided command="logout"><el-icon><SwitchButton /></el-icon> 退出登录</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </div>
       </el-header>
       <el-main class="main-content">
@@ -140,10 +169,19 @@
 
 <script setup>
 import { ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 
 const route = useRoute()
+const router = useRouter()
+const authStore = useAuthStore()
 const isCollapse = ref(false)
+
+function handleUserCommand(cmd) {
+  if (cmd === 'profile') router.push('/profile')
+  else if (cmd === 'password') router.push('/profile')
+  else if (cmd === 'logout') authStore.logout()
+}
 </script>
 
 <style scoped>
@@ -352,6 +390,7 @@ const isCollapse = ref(false)
 .header-right {
   display: flex;
   align-items: center;
+  gap: 12px;
 }
 .header-badge {
   font-family: var(--font-display);
@@ -383,4 +422,24 @@ const isCollapse = ref(false)
 .page-leave-active { transition: opacity 0.15s ease; }
 .page-enter-from { opacity: 0; transform: translateY(10px); }
 .page-leave-to { opacity: 0; }
+
+/* User trigger */
+.user-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: 8px;
+  transition: background 0.2s;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.user-trigger:hover {
+  background: #F5F2EE;
+}
+.user-trigger .arrow {
+  font-size: 10px;
+  margin-left: 2px;
+}
 </style>

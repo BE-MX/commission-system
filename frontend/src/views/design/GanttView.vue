@@ -77,8 +77,8 @@
               {{ selectedTask.priority === 'urgent' ? '加急' : '普通' }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="计划开始">{{ selectedTask.plan_start_date }}</el-descriptions-item>
-          <el-descriptions-item label="计划结束">{{ selectedTask.plan_end_date }}</el-descriptions-item>
+          <el-descriptions-item label="计划开始">{{ selectedTask.plan_start_date }} {{ periodLabel(selectedTask.plan_start_period) }}</el-descriptions-item>
+          <el-descriptions-item label="计划结束">{{ selectedTask.plan_end_date }} {{ periodLabel(selectedTask.plan_end_period) }}</el-descriptions-item>
           <el-descriptions-item label="状态">
             <el-tag :type="statusTagType(selectedTask.status)" size="small">
               {{ statusLabel(selectedTask.status) }}
@@ -97,11 +97,13 @@ import { ElMessage } from 'element-plus'
 import { getGanttData, getDesigners } from '@/api/design'
 import GanttChart from '@/components/design/GanttChart.vue'
 
-// --- Default date range: first day of current month to last day of next month ---
+// --- Default date range: today ±7 days ---
 function getDefaultDateRange() {
   const now = new Date()
-  const start = new Date(now.getFullYear(), now.getMonth(), 1)
-  const end = new Date(now.getFullYear(), now.getMonth() + 2, 0) // last day of next month
+  const start = new Date(now)
+  start.setDate(now.getDate() - 7)
+  const end = new Date(now)
+  end.setDate(now.getDate() + 7)
   return [formatDate(start), formatDate(end)]
 }
 
@@ -157,6 +159,9 @@ function statusLabel(status) {
 function statusTagType(status) {
   return STATUS_TAG_TYPES[status] || ''
 }
+
+const PERIOD_LABELS = { am: '上午', pm: '下午' }
+function periodLabel(p) { return PERIOD_LABELS[p] || '' }
 
 // --- Task detail dialog ---
 const detailVisible = ref(false)

@@ -12,12 +12,12 @@
       <template #default>
         <div class="conflict-date-list">
           <el-tag
-            v-for="d in conflictResult.unavailable_dates"
-            :key="d"
+            v-for="(d, idx) in conflictResult.unavailable_dates"
+            :key="idx"
             type="danger"
             size="small"
             effect="plain"
-          >{{ d }}</el-tag>
+          >{{ typeof d === 'string' ? d : d.date }}{{ d && d.period ? (d.period === 'am' ? ' 上午' : ' 下午') : '' }}</el-tag>
         </div>
       </template>
     </el-alert>
@@ -38,9 +38,9 @@
             :key="item.date || item"
             class="overload-item"
           >
-            {{ item.date || item }}
-            <span v-if="item.active_count != null" class="overload-detail">
-              ({{ item.active_count }}/{{ item.max_capacity }})
+            {{ item.date || item }}{{ item.period ? (item.period === 'am' ? ' 上午' : ' 下午') : '' }}
+            <span v-if="item.current_tasks != null" class="overload-detail">
+              ({{ item.current_tasks }}/{{ item.capacity }})
             </span>
           </span>
         </div>

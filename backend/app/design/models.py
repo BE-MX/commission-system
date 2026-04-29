@@ -37,7 +37,9 @@ class DesignScheduleRequest(Base):
     )
     shoot_type_remark = Column(String(256), nullable=True, comment="拍摄类型备注")
     expect_start_date = Column(Date, nullable=False, comment="期望开始日期")
+    expect_start_period = Column(String(2), nullable=True, comment="期望开始时段(am/pm)")
     expect_end_date = Column(Date, nullable=False, comment="期望结束日期")
+    expect_end_period = Column(String(2), nullable=True, comment="期望结束时段(am/pm)")
     priority = Column(
         SAEnum("normal", "urgent", name="priority_enum"),
         nullable=False, default="normal", server_default="normal", comment="优先级",
@@ -52,7 +54,9 @@ class DesignScheduleRequest(Base):
     conflict_detail = Column(JSON, nullable=True, comment="冲突详情")
     assigned_designer_id = Column(Integer, nullable=True, comment="指派设计师ID")
     actual_start_date = Column(Date, nullable=True, comment="实际开始日期")
+    actual_start_period = Column(String(2), nullable=True, comment="实际开始时段(am/pm)")
     actual_end_date = Column(Date, nullable=True, comment="实际结束日期")
+    actual_end_period = Column(String(2), nullable=True, comment="实际结束时段(am/pm)")
     created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
     updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now, comment="更新时间")
     deleted_at = Column(DateTime, nullable=True, comment="软删除时间")
@@ -88,9 +92,13 @@ class DesignScheduleTask(Base):
         nullable=True, comment="优先级",
     )
     plan_start_date = Column(Date, nullable=True, comment="计划开始日期")
+    plan_start_period = Column(String(2), nullable=True, comment="计划开始时段(am/pm)")
     plan_end_date = Column(Date, nullable=True, comment="计划结束日期")
+    plan_end_period = Column(String(2), nullable=True, comment="计划结束时段(am/pm)")
     actual_start_date = Column(Date, nullable=True, comment="实际开始日期")
+    actual_start_period = Column(String(2), nullable=True, comment="实际开始时段(am/pm)")
     actual_end_date = Column(Date, nullable=True, comment="实际结束日期")
+    actual_end_period = Column(String(2), nullable=True, comment="实际结束时段(am/pm)")
     status = Column(
         SAEnum("pending_design", "scheduled", "in_progress", "completed", "cancelled",
                name="task_status_enum"),
@@ -116,10 +124,15 @@ class DesignUnavailableDate(Base):
     __tablename__ = "design_unavailable_date"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    date = Column(Date, nullable=False, unique=True, comment="不可用日期")
+    date = Column(Date, nullable=False, comment="不可用日期")
+    period = Column(String(2), nullable=True, comment="时段(am/pm, NULL=全天)")
     reason = Column(String(256), nullable=True, comment="原因")
     created_by = Column(Integer, nullable=True, comment="创建人ID")
     created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
+
+    __table_args__ = (
+        UniqueConstraint("date", "period", name="uq_unavailable_date_period"),
+    )
 
 
 class DesignCapacityConfig(Base):
@@ -128,6 +141,7 @@ class DesignCapacityConfig(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     config_date = Column(Date, nullable=True, comment="配置日期（NULL=全局）")
     designer_id = Column(Integer, nullable=True, comment="设计师ID（NULL=全局）")
+    period = Column(String(2), nullable=True, comment="时段(am/pm, NULL=全天)")
     max_parallel_tasks = Column(Integer, nullable=False, default=3, server_default="3", comment="最大并行任务数")
     scheduling_mode = Column(
         SAEnum("pool", "individual", name="scheduling_mode_enum"),
@@ -137,7 +151,7 @@ class DesignCapacityConfig(Base):
     updated_at = Column(DateTime, nullable=True, default=datetime.now, onupdate=datetime.now, comment="更新时间")
 
     __table_args__ = (
-        UniqueConstraint("config_date", "designer_id", name="uq_config_date_designer"),
+        UniqueConstraint("config_date", "designer_id", "period", name="uq_config_date_designer_period"),
     )
 
 

@@ -1,47 +1,78 @@
 <template>
   <div class="gantt-wrapper" ref="wrapperRef">
-    <!-- Header row: row label + date headers -->
     <div class="gantt-scroll" ref="scrollRef">
       <div class="gantt-grid" :style="gridStyle">
-        <!-- Corner cell -->
+        <!-- Corner cell (spans 2 header rows) -->
         <div class="gantt-corner">{{ mode === 'pool' ? '设计组' : '设计师' }}</div>
-        <!-- Date headers -->
+
+        <!-- Row 1: Date headers, each spanning 2 columns -->
         <div
-          v-for="(d, idx) in dateRange"
-          :key="'h-' + d.str"
+          v-for="d in dateRange"
+          :key="'dh-' + d.str"
           class="gantt-date-header"
           :class="{
             'is-weekend': d.isWeekend,
             'is-today': d.isToday,
-            'is-unavailable': isUnavailable(d.str),
+            'is-unavailable': isDateFullUnavailable(d.str),
           }"
         >
           <span class="date-weekday">{{ d.weekday }}</span>
           <span class="date-label">{{ d.dayNum }}</span>
-          <span
-            v-if="getLoadDot(d.str)"
-            class="load-dot"
-            :class="getLoadDot(d.str)"
-          ></span>
         </div>
+
+        <!-- Row 2: Period sub-headers (上午 / 下午) -->
+        <div class="gantt-corner gantt-period-corner"></div>
+        <template v-for="d in dateRange" :key="'ph-' + d.str">
+          <div
+            class="gantt-period-header"
+            :class="{
+              'is-weekend': d.isWeekend,
+              'is-today': d.isToday,
+              'is-unavailable': isSlotUnavailable(d.str, 'am'),
+            }"
+          >
+            <span>上午</span>
+            <span
+              v-if="getLoadDot(d.str + '-am')"
+              class="load-dot"
+              :class="getLoadDot(d.str + '-am')"
+            ></span>
+          </div>
+          <div
+            class="gantt-period-header period-pm"
+            :class="{
+              'is-weekend': d.isWeekend,
+              'is-today': d.isToday,
+              'is-unavailable': isSlotUnavailable(d.str, 'pm'),
+            }"
+          >
+            <span>下午</span>
+            <span
+              v-if="getLoadDot(d.str + '-pm')"
+              class="load-dot"
+              :class="getLoadDot(d.str + '-pm')"
+            ></span>
+          </div>
+        </template>
 
         <!-- Pool mode: single row -->
         <template v-if="mode === 'pool'">
           <div class="gantt-row-label">设计组</div>
           <div
             class="gantt-row"
-            :style="{ gridColumn: '2 / ' + (dateRange.length + 2), minHeight: rowMinHeight(getMaxStack(poolStackLevels)) + 'px' }"
+            :style="{ gridColumn: '2 / ' + (totalSlots + 2), minHeight: rowMinHeight(getMaxStack(poolStackLevels)) + 'px' }"
           >
             <div
-              v-for="(d, idx) in dateRange"
-              :key="'u-' + d.str"
+              v-for="(slot, idx) in slotRange"
+              :key="'u-' + slot.slotKey"
               class="gantt-cell-overlay"
               :class="{
-                'is-weekend': d.isWeekend,
-                'is-today': d.isToday,
-                'is-unavailable': isUnavailable(d.str),
+                'is-weekend': slot.isWeekend,
+                'is-today': slot.isToday,
+                'is-unavailable': isSlotUnavailable(slot.str, slot.period),
+                'is-pm': slot.period === 'pm',
               }"
-              :style="{ left: (idx / totalDays * 100) + '%', width: (1 / totalDays * 100) + '%' }"
+              :style="{ left: (idx / totalSlots * 100) + '%', width: (1 / totalSlots * 100) + '%' }"
             ></div>
             <el-popover
               v-for="task in allTasks"
@@ -53,12 +84,12 @@
               <template #reference>
                 <div
                   class="task-bar"
-                  :class="{ 'is-urgent': task.priority === 'urgent', 'is-draggable': draggable }"
+                  :class="{ 'is-draggable': draggable }"
                   :style="getTaskBarStyle(task, poolStackLevels)"
                   @click="$emit('task-click', task)"
                   @mousedown="onTaskMousedown($event, task)"
                 >
-                  <span class="task-bar-text">{{ task.task_name || task.task_no }}</span>
+                  <span class="task-bar-text">{{ taskDisplayName(task) }}</span>
                   <span v-if="task.priority === 'urgent'" class="urgent-badge">急</span>
                 </div>
               </template>
@@ -68,7 +99,7 @@
                 <p><strong>业务员：</strong>{{ task.salesperson_name }}</p>
                 <p><strong>拍摄类型：</strong>{{ shootTypeLabel(task.shoot_type) }}</p>
                 <p><strong>优先级：</strong>{{ task.priority === 'urgent' ? '加急' : '普通' }}</p>
-                <p><strong>计划日期：</strong>{{ task.plan_start_date }} ~ {{ task.plan_end_date }}</p>
+                <p><strong>计划日期：</strong>{{ task.plan_start_date }} {{ periodLabel(task.plan_start_period) }} ~ {{ task.plan_end_date }} {{ periodLabel(task.plan_end_period) }}</p>
                 <p><strong>状态：</strong>
                   <el-tag :type="statusTagType(task.status)" size="small">
                     {{ statusLabel(task.status) }}
@@ -84,18 +115,19 @@
           <div class="gantt-row-label">{{ designer.name }}</div>
           <div
             class="gantt-row"
-            :style="{ gridColumn: '2 / ' + (dateRange.length + 2), minHeight: rowMinHeight(getMaxStack(designerStackLevels(designer))) + 'px' }"
+            :style="{ gridColumn: '2 / ' + (totalSlots + 2), minHeight: rowMinHeight(getMaxStack(designerStackLevels(designer))) + 'px' }"
           >
             <div
-              v-for="(d, idx) in dateRange"
-              :key="'u-' + d.str"
+              v-for="(slot, idx) in slotRange"
+              :key="'u-' + slot.slotKey"
               class="gantt-cell-overlay"
               :class="{
-                'is-weekend': d.isWeekend,
-                'is-today': d.isToday,
-                'is-unavailable': isUnavailable(d.str),
+                'is-weekend': slot.isWeekend,
+                'is-today': slot.isToday,
+                'is-unavailable': isSlotUnavailable(slot.str, slot.period),
+                'is-pm': slot.period === 'pm',
               }"
-              :style="{ left: (idx / totalDays * 100) + '%', width: (1 / totalDays * 100) + '%' }"
+              :style="{ left: (idx / totalSlots * 100) + '%', width: (1 / totalSlots * 100) + '%' }"
             ></div>
             <el-popover
               v-for="task in getDesignerTasks(designer)"
@@ -107,12 +139,12 @@
               <template #reference>
                 <div
                   class="task-bar"
-                  :class="{ 'is-urgent': task.priority === 'urgent', 'is-draggable': draggable }"
+                  :class="{ 'is-draggable': draggable }"
                   :style="getTaskBarStyle(task, designerStackLevels(designer))"
                   @click="$emit('task-click', task)"
                   @mousedown="onTaskMousedown($event, task)"
                 >
-                  <span class="task-bar-text">{{ task.task_name || task.task_no }}</span>
+                  <span class="task-bar-text">{{ taskDisplayName(task) }}</span>
                   <span v-if="task.priority === 'urgent'" class="urgent-badge">急</span>
                 </div>
               </template>
@@ -122,7 +154,7 @@
                 <p><strong>业务员：</strong>{{ task.salesperson_name }}</p>
                 <p><strong>拍摄类型：</strong>{{ shootTypeLabel(task.shoot_type) }}</p>
                 <p><strong>优先级：</strong>{{ task.priority === 'urgent' ? '加急' : '普通' }}</p>
-                <p><strong>计划日期：</strong>{{ task.plan_start_date }} ~ {{ task.plan_end_date }}</p>
+                <p><strong>计划日期：</strong>{{ task.plan_start_date }} {{ periodLabel(task.plan_start_period) }} ~ {{ task.plan_end_date }} {{ periodLabel(task.plan_end_period) }}</p>
                 <p><strong>状态：</strong>
                   <el-tag :type="statusTagType(task.status)" size="small">
                     {{ statusLabel(task.status) }}
@@ -147,11 +179,17 @@ const props = defineProps({
   endDate: { type: String, required: true },
   unavailableDates: { type: Array, default: () => [] },
   dateLoad: { type: Object, default: () => ({}) },
-  mode: { type: String, default: 'individual' }, // 'pool' or 'individual'
+  mode: { type: String, default: 'individual' },
   draggable: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['task-click', 'reschedule'])
+
+const PERIOD_LABELS = { am: '上午', pm: '下午' }
+
+function periodLabel(p) {
+  return PERIOD_LABELS[p] || ''
+}
 
 // --- Date utilities ---
 function parseDate(str) {
@@ -167,7 +205,6 @@ function formatDate(date) {
 }
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
-
 const todayStr = formatDate(new Date())
 
 const dateRange = computed(() => {
@@ -193,26 +230,54 @@ const dateRange = computed(() => {
 
 const totalDays = computed(() => dateRange.value.length)
 
+const slotRange = computed(() => {
+  const slots = []
+  for (const d of dateRange.value) {
+    slots.push({ ...d, period: 'am', slotKey: d.str + '-am' })
+    slots.push({ ...d, period: 'pm', slotKey: d.str + '-pm' })
+  }
+  return slots
+})
+
+const totalSlots = computed(() => slotRange.value.length)
+
 const displayRows = computed(() => {
   if (props.mode === 'pool') return 1
   return props.designers.length
 })
 
 const gridStyle = computed(() => ({
-  gridTemplateColumns: `[label-col] 120px repeat(${totalDays.value}, minmax(40px, 1fr))`,
-  gridTemplateRows: `auto repeat(${displayRows.value}, minmax(60px, auto))`,
+  gridTemplateColumns: `[label-col] 120px repeat(${totalSlots.value}, minmax(24px, 1fr))`,
+  gridTemplateRows: `auto auto repeat(${displayRows.value}, minmax(60px, auto))`,
 }))
 
 // --- Unavailable check ---
-const unavailableSet = computed(() => new Set(props.unavailableDates))
+const unavailableMap = computed(() => {
+  const map = new Map()
+  for (const item of props.unavailableDates) {
+    const dateStr = typeof item === 'string' ? item : item.date
+    const period = typeof item === 'string' ? null : item.period
+    if (!map.has(dateStr)) map.set(dateStr, new Set())
+    map.get(dateStr).add(period)
+  }
+  return map
+})
 
-function isUnavailable(dateStr) {
-  return unavailableSet.value.has(dateStr)
+function isSlotUnavailable(dateStr, period) {
+  const set = unavailableMap.value.get(dateStr)
+  if (!set) return false
+  return set.has(null) || set.has(period)
+}
+
+function isDateFullUnavailable(dateStr) {
+  const set = unavailableMap.value.get(dateStr)
+  if (!set) return false
+  return set.has(null)
 }
 
 // --- Load dot ---
-function getLoadDot(dateStr) {
-  const info = props.dateLoad[dateStr]
+function getLoadDot(slotKey) {
+  const info = props.dateLoad[slotKey]
   if (!info) return null
   const ratio = info.max_capacity > 0 ? info.active_count / info.max_capacity : 0
   if (ratio >= 1) return 'load-red'
@@ -225,36 +290,39 @@ function getDesignerTasks(designer) {
   return designer.tasks || []
 }
 
-// All tasks across all designers (for pool mode)
 const allTasks = computed(() => {
   const tasks = []
   for (const designer of props.designers) {
-    if (designer.tasks) {
-      tasks.push(...designer.tasks)
-    }
+    if (designer.tasks) tasks.push(...designer.tasks)
   }
-  if (props.tasks?.length) {
-    tasks.push(...props.tasks)
-  }
+  if (props.tasks?.length) tasks.push(...props.tasks)
   return tasks
 })
 
+function _slotVal(dateStr, period) {
+  if (!dateStr) return -1
+  const d = parseDate(dateStr)
+  const gridStart = parseDate(props.startDate)
+  const dayOffset = (d - gridStart) / 86400000
+  return dayOffset * 2 + (period === 'pm' ? 1 : 0)
+}
+
 function tasksOverlap(a, b) {
-  return a.plan_start_date <= b.plan_end_date && b.plan_start_date <= a.plan_end_date
+  const aStart = _slotVal(a.plan_start_date, a.plan_start_period || 'am')
+  const aEnd = _slotVal(a.plan_end_date, a.plan_end_period || 'pm')
+  const bStart = _slotVal(b.plan_start_date, b.plan_start_period || 'am')
+  const bEnd = _slotVal(b.plan_end_date, b.plan_end_period || 'pm')
+  return aStart <= bEnd && bStart <= aEnd
 }
 
 function computeStackLevels(tasks) {
   const levels = new Map()
-  const sorted = [...tasks].sort((a, b) => (a.plan_start_date || '').localeCompare(b.plan_start_date || ''))
+  const sorted = [...tasks].sort((a, b) => {
+    const av = _slotVal(a.plan_start_date, a.plan_start_period || 'am')
+    const bv = _slotVal(b.plan_start_date, b.plan_start_period || 'am')
+    return av - bv
+  })
   for (const task of sorted) {
-    let level = 0
-    for (const other of sorted) {
-      if (other === task) break
-      if (levels.has(other) && tasksOverlap(task, other) && levels.get(other) === level) {
-        level++
-      }
-    }
-    // Re-check: greedy assignment
     let assigned = false
     for (let l = 0; !assigned; l++) {
       let conflict = false
@@ -294,25 +362,33 @@ function getTaskBarStyle(task, stackLevels) {
   const gridStart = parseDate(props.startDate)
   const taskStart = parseDate(task.plan_start_date)
   const taskEnd = parseDate(task.plan_end_date)
-  const total = totalDays.value
+  const total = totalSlots.value
   if (total <= 0) return { display: 'none' }
 
-  const startOffset = Math.max(0, (taskStart - gridStart) / 86400000)
-  const endOffset = Math.min(total, (taskEnd - gridStart) / 86400000 + 1)
-  const span = endOffset - startOffset
+  const startDayOffset = Math.max(0, (taskStart - gridStart) / 86400000)
+  const slotStart = startDayOffset * 2 + ((task.plan_start_period || 'am') === 'pm' ? 1 : 0)
+
+  const endDayOffset = (taskEnd - gridStart) / 86400000
+  const slotEnd = endDayOffset * 2 + ((task.plan_end_period || 'pm') === 'pm' ? 2 : 1)
+
+  const clampedStart = Math.max(0, slotStart)
+  const clampedEnd = Math.min(total, slotEnd)
+  const span = clampedEnd - clampedStart
 
   if (span <= 0) return { display: 'none' }
 
-  const left = (startOffset / total) * 100
+  const left = (clampedStart / total) * 100
   const width = (span / total) * 100
   const color = statusColor(task.status)
 
   const level = stackLevels.get(task) || 0
   const top = 4 + level * 30
 
+  const maxWidth = 100 - left
+
   return {
     left: left + '%',
-    width: width + '%',
+    width: Math.min(width, maxWidth) + '%',
     top: top + 'px',
     backgroundColor: color,
   }
@@ -351,29 +427,24 @@ const SHOOT_TYPE_LABELS = {
   other: '其他',
 }
 
-function statusColor(status) {
-  return STATUS_COLORS[status] || '#409EFF'
-}
+function statusColor(status) { return STATUS_COLORS[status] || '#409EFF' }
+function statusLabel(status) { return STATUS_LABELS[status] || status }
+function statusTagType(status) { return STATUS_TAG_TYPES[status] || '' }
+function shootTypeLabel(type) { return SHOOT_TYPE_LABELS[type] || type || '' }
 
-function statusLabel(status) {
-  return STATUS_LABELS[status] || status
-}
-
-function statusTagType(status) {
-  return STATUS_TAG_TYPES[status] || ''
-}
-
-function shootTypeLabel(type) {
-  return SHOOT_TYPE_LABELS[type] || type || ''
+function taskDisplayName(task) {
+  const typeName = SHOOT_TYPE_LABELS[task.shoot_type] || task.shoot_type || ''
+  const customer = task.customer_name || ''
+  return customer && typeName ? `${customer}-${typeName}` : customer || typeName || task.task_no
 }
 
 // --- Drag-to-reschedule ---
 const scrollRef = ref(null)
-const dragState = ref(null) // { task, startX, barEl, origLeft, cellWidth, duration }
+const dragState = ref(null)
 
 function onTaskMousedown(event, task) {
   if (!props.draggable) return
-  if (event.button !== 0) return // left button only
+  if (event.button !== 0) return
   event.preventDefault()
   event.stopPropagation()
 
@@ -382,22 +453,20 @@ function onTaskMousedown(event, task) {
   if (!rowEl) return
 
   const rowRect = rowEl.getBoundingClientRect()
-  const cellWidth = rowRect.width / totalDays.value
+  const cellWidth = rowRect.width / totalSlots.value
 
-  // Calculate task duration in days
-  const taskStart = parseDate(task.plan_start_date)
-  const taskEnd = parseDate(task.plan_end_date)
-  const duration = Math.round((taskEnd - taskStart) / 86400000) // days between start and end
+  const startSlot = _slotVal(task.plan_start_date, task.plan_start_period || 'am')
+  const endSlot = _slotVal(task.plan_end_date, task.plan_end_period || 'pm')
+  const duration = endSlot - startSlot
 
   dragState.value = {
     task,
     startX: event.clientX,
     barEl,
-    origTransform: barEl.style.transform || '',
     cellWidth,
     duration,
     rowWidth: rowRect.width,
-    origLeft: parseFloat(barEl.style.left), // percentage
+    origLeft: parseFloat(barEl.style.left),
   }
 
   barEl.classList.add('is-dragging')
@@ -409,11 +478,8 @@ function onDragMove(event) {
   if (!dragState.value) return
   const { startX, barEl, cellWidth } = dragState.value
   const dx = event.clientX - startX
-
-  // Snap to cell boundaries
   const cellOffset = Math.round(dx / cellWidth)
   const snappedDx = cellOffset * cellWidth
-
   barEl.style.transform = `translateX(${snappedDx}px)`
 }
 
@@ -426,7 +492,6 @@ function onDragEnd(event) {
   const dx = event.clientX - startX
   const cellOffset = Math.round(dx / cellWidth)
 
-  // Reset visual state
   barEl.style.transform = ''
   barEl.classList.remove('is-dragging')
 
@@ -435,25 +500,32 @@ function onDragEnd(event) {
     return
   }
 
-  // Calculate new dates
-  const origStart = parseDate(task.plan_start_date)
-  const newStart = new Date(origStart)
-  newStart.setDate(newStart.getDate() + cellOffset)
-  const newEnd = new Date(newStart)
-  newEnd.setDate(newEnd.getDate() + duration)
+  const origStartSlot = _slotVal(task.plan_start_date, task.plan_start_period || 'am')
+  const newStartSlot = origStartSlot + cellOffset
+  const newEndSlot = newStartSlot + duration
 
-  // Bounds check: new dates must stay within the gantt range
-  const rangeStart = parseDate(props.startDate)
-  const rangeEnd = parseDate(props.endDate)
-  if (newStart < rangeStart || newEnd > rangeEnd) {
+  if (newStartSlot < 0 || newEndSlot > totalSlots.value) {
     dragState.value = null
     return
   }
 
+  const newStartDay = Math.floor(newStartSlot / 2)
+  const newStartPeriod = newStartSlot % 2 === 0 ? 'am' : 'pm'
+  const newEndDay = Math.floor(newEndSlot / 2)
+  const newEndPeriod = newEndSlot % 2 === 0 ? 'am' : 'pm'
+
+  const gridStart = parseDate(props.startDate)
+  const startDate = new Date(gridStart)
+  startDate.setDate(startDate.getDate() + newStartDay)
+  const endDate = new Date(gridStart)
+  endDate.setDate(endDate.getDate() + newEndDay)
+
   emit('reschedule', {
-    taskId: task.task_id,
-    planStartDate: formatDate(newStart),
-    planEndDate: formatDate(newEnd),
+    taskId: task.task_id || task.id,
+    planStartDate: formatDate(startDate),
+    planStartPeriod: newStartPeriod,
+    planEndDate: formatDate(endDate),
+    planEndPeriod: newEndPeriod,
     task,
   })
 
@@ -500,12 +572,20 @@ onBeforeUnmount(() => {
   font-weight: 600;
   color: #606266;
   padding: 8px;
+  grid-row: 1;
 }
 
-/* Date headers */
-.gantt-date-header {
-  background: #f5f7fa;
+.gantt-period-corner {
+  grid-row: 2;
   border-bottom: 1px solid #e4e7ed;
+}
+
+/* Date headers (span 2 columns each) */
+.gantt-date-header {
+  grid-row: 1;
+  grid-column: span 2;
+  background: #f5f7fa;
+  border-bottom: 1px solid #ebeef5;
   border-right: 1px solid #ebeef5;
   display: flex;
   flex-direction: column;
@@ -515,58 +595,54 @@ onBeforeUnmount(() => {
   font-size: 12px;
   color: #606266;
   position: relative;
-  min-width: 40px;
+  min-width: 48px;
 }
 
-.gantt-date-header.is-weekend {
-  background: #f5f5f5;
-}
-
-.gantt-date-header.is-today {
-  border-bottom: 2px solid var(--color-gold, #e6a23c);
-}
-
+.gantt-date-header.is-weekend { background: #f5f5f5; }
+.gantt-date-header.is-today { border-bottom: 2px solid var(--color-gold, #e6a23c); }
 .gantt-date-header.is-unavailable {
-  background: repeating-linear-gradient(
-    -45deg,
-    transparent,
-    transparent 3px,
-    rgba(144, 147, 153, 0.12) 3px,
-    rgba(144, 147, 153, 0.12) 6px
-  );
+  background: repeating-linear-gradient(-45deg, transparent, transparent 3px, rgba(144,147,153,0.12) 3px, rgba(144,147,153,0.12) 6px);
 }
 
-.date-label {
-  font-weight: 600;
-  line-height: 1.2;
-}
+.date-label { font-weight: 600; line-height: 1.2; }
+.date-weekday { font-size: 11px; color: #909399; line-height: 1.2; }
 
-.date-weekday {
+/* Period sub-headers */
+.gantt-period-header {
+  grid-row: 2;
+  background: #fafafa;
+  border-bottom: 1px solid #e4e7ed;
+  border-right: 1px dashed #ebeef5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
   font-size: 11px;
   color: #909399;
-  line-height: 1.2;
+  padding: 2px 0;
+  min-width: 24px;
+}
+
+.gantt-period-header.period-pm {
+  border-right: 1px solid #ebeef5;
+}
+
+.gantt-period-header.is-weekend { background: #f5f5f5; }
+.gantt-period-header.is-today { background: #fdf6ec; }
+.gantt-period-header.is-unavailable {
+  background: repeating-linear-gradient(-45deg, transparent, transparent 3px, rgba(144,147,153,0.12) 3px, rgba(144,147,153,0.12) 6px);
 }
 
 /* Load dots */
 .load-dot {
   display: inline-block;
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
-  margin-top: 2px;
 }
-
-.load-dot.load-green {
-  background: #67C23A;
-}
-
-.load-dot.load-yellow {
-  background: #E6A23C;
-}
-
-.load-dot.load-red {
-  background: #F56C6C;
-}
+.load-dot.load-green { background: #67C23A; }
+.load-dot.load-yellow { background: #E6A23C; }
+.load-dot.load-red { background: #F56C6C; }
 
 /* Row label */
 .gantt-row-label {
@@ -592,30 +668,20 @@ onBeforeUnmount(() => {
   min-height: 60px;
 }
 
-/* Cell overlays for unavailable / weekend / today */
+/* Cell overlays */
 .gantt-cell-overlay {
   position: absolute;
   top: 0;
   bottom: 0;
   pointer-events: none;
 }
-
-.gantt-cell-overlay.is-weekend {
-  background: rgba(250, 245, 232, 0.4);
-}
-
-.gantt-cell-overlay.is-today {
-  border-left: 2px solid var(--color-gold, #e6a23c);
-}
-
+.gantt-cell-overlay.is-weekend { background: rgba(250,245,232,0.4); }
+.gantt-cell-overlay.is-today { border-left: 2px solid var(--color-gold, #e6a23c); }
 .gantt-cell-overlay.is-unavailable {
-  background: repeating-linear-gradient(
-    -45deg,
-    transparent,
-    transparent 3px,
-    rgba(144, 147, 153, 0.12) 3px,
-    rgba(144, 147, 153, 0.12) 6px
-  );
+  background: repeating-linear-gradient(-45deg, transparent, transparent 3px, rgba(144,147,153,0.12) 3px, rgba(144,147,153,0.12) 6px);
+}
+.gantt-cell-overlay.is-pm {
+  border-left: 1px dashed #ebeef5;
 }
 
 /* Task bar */
@@ -628,35 +694,17 @@ onBeforeUnmount(() => {
   line-height: 28px;
   padding: 0 8px;
   cursor: pointer;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   z-index: 1;
   transition: filter 0.15s ease;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.12);
 }
-
-.task-bar.is-urgent {
-  border-left: 3px solid #F56C6C;
-}
-
-.task-bar:hover {
-  filter: brightness(1.1);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
-}
-
-.task-bar.is-draggable {
-  cursor: grab;
-}
-
-.task-bar.is-draggable:active {
-  cursor: grabbing;
-}
-
+.task-bar:hover { filter: brightness(1.1); box-shadow: 0 2px 6px rgba(0,0,0,0.18); }
+.task-bar.is-draggable { cursor: grab; }
+.task-bar.is-draggable:active { cursor: grabbing; }
 .task-bar.is-dragging {
   opacity: 0.85;
   z-index: 10;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
   outline: 2px dashed #409EFF;
   outline-offset: 1px;
   cursor: grabbing;
@@ -664,9 +712,11 @@ onBeforeUnmount(() => {
 }
 
 .task-bar-text {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  max-width: 100%;
 }
 
 /* Urgent badge */
@@ -684,7 +734,7 @@ onBeforeUnmount(() => {
   line-height: 16px;
   text-align: center;
   z-index: 2;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
 }
 
 /* Popover content */

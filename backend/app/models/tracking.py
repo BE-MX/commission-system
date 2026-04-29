@@ -66,6 +66,7 @@ class ShipmentTracking(Base):
     last_polled_at = Column(DateTime)
     poll_error = Column(String(500))
     ocr_raw_text = Column(Text)
+    short_code = Column(String(8), unique=True, comment="短链接编码")
     source_image_url = Column(String(500))
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())

@@ -2,6 +2,12 @@ import { createRouter, createWebHistory } from 'vue-router'
 
 const routes = [
   {
+    path: '/login',
+    name: 'Login',
+    component: () => import('../views/auth/LoginPage.vue'),
+    meta: { title: '登录', public: true }
+  },
+  {
     path: '/',
     component: () => import('../views/layout/MainLayout.vue'),
     redirect: '/dashboard',
@@ -95,6 +101,24 @@ const routes = [
         name: 'DesignStats',
         component: () => import('../views/design/DesignStats.vue'),
         meta: { title: '设计统计' }
+      },
+      {
+        path: 'system/users',
+        name: 'UserManagement',
+        component: () => import('../views/system/UserManagement.vue'),
+        meta: { title: '用户管理', permission: 'user:read' }
+      },
+      {
+        path: 'system/roles',
+        name: 'RoleManagement',
+        component: () => import('../views/system/RoleManagement.vue'),
+        meta: { title: '角色权限管理', permission: 'user:read' }
+      },
+      {
+        path: 'profile',
+        name: 'Profile',
+        component: () => import('../views/profile/ProfilePage.vue'),
+        meta: { title: '个人设置' }
       }
     ]
   }
@@ -103,6 +127,33 @@ const routes = [
 const router = createRouter({
   history: createWebHistory(),
   routes
+})
+
+// ── 路由守卫 ──────────────────────────────────────────
+router.beforeEach(async (to, from, next) => {
+  // 设置页面标题
+  document.title = to.meta.title ? `${to.meta.title} - 莱莎方舟` : '莱莎方舟'
+
+  // 公开页面直接放行
+  if (to.meta.public) return next()
+
+  // 动态引入 store（避免在 router 初始化时 pinia 未就绪）
+  const { useAuthStore } = await import('@/stores/auth')
+  const auth = useAuthStore()
+
+  // 未登录：跳转登录页
+  if (!auth.isLoggedIn) {
+    return next({ name: 'Login', query: { redirect: to.fullPath } })
+  }
+
+  // 权限检查
+  if (to.meta.permission && !auth.hasPermission(to.meta.permission)) {
+    const { ElMessage } = await import('element-plus')
+    ElMessage.error('权限不足')
+    return next(from.fullPath || '/dashboard')
+  }
+
+  next()
 })
 
 export default router

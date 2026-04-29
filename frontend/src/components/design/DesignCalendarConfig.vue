@@ -42,17 +42,19 @@
       <h4>即将到来的不可用日期</h4>
       <el-empty v-if="!upcomingDates.length" description="暂无不可用日期" :image-size="60" />
       <div v-else class="upcoming-list">
-        <div v-for="item in upcomingDates" :key="item.date" class="upcoming-item">
+        <div v-for="(item, idx) in upcomingDates" :key="idx" class="upcoming-item">
           <div class="upcoming-info">
             <span class="upcoming-date">{{ item.date }}</span>
             <span class="upcoming-weekday">{{ getWeekday(item.date) }}</span>
+            <el-tag v-if="item.period" size="small" effect="plain" style="margin-left: 4px">{{ item.period === 'am' ? '上午' : '下午' }}</el-tag>
+            <el-tag v-else size="small" type="info" effect="plain" style="margin-left: 4px">全天</el-tag>
             <span v-if="item.reason" class="upcoming-reason">{{ item.reason }}</span>
           </div>
           <el-button
             type="danger"
             link
             size="small"
-            @click="handleRemove(item.date)"
+            @click="handleRemove(item.date, item.period)"
           >删除</el-button>
         </div>
       </div>
@@ -63,6 +65,13 @@
       <el-form label-width="80px">
         <el-form-item label="日期">
           <span>{{ addForm.date }}</span>
+        </el-form-item>
+        <el-form-item label="时段">
+          <el-radio-group v-model="addForm.period">
+            <el-radio :value="null">全天</el-radio>
+            <el-radio value="am">上午</el-radio>
+            <el-radio value="pm">下午</el-radio>
+          </el-radio-group>
         </el-form-item>
         <el-form-item label="原因" required>
           <el-input v-model="addForm.reason" placeholder="请输入不可用原因" maxlength="100" show-word-limit />
@@ -81,6 +90,13 @@
           <div class="batch-dates">
             <el-tag v-for="d in batchSelected" :key="d" size="small" style="margin: 2px;">{{ d }}</el-tag>
           </div>
+        </el-form-item>
+        <el-form-item label="时段">
+          <el-radio-group v-model="batchForm.period">
+            <el-radio :value="null">全天</el-radio>
+            <el-radio value="am">上午</el-radio>
+            <el-radio value="pm">下午</el-radio>
+          </el-radio-group>
         </el-form-item>
         <el-form-item label="原因" required>
           <el-input v-model="batchForm.reason" placeholder="请输入不可用原因" maxlength="100" show-word-limit />
@@ -121,11 +137,11 @@ const unavailableList = ref([]) // [{ date, reason }]
 const batchMode = ref(false)
 const batchSelected = ref([])
 const batchDialogVisible = ref(false)
-const batchForm = ref({ reason: '' })
+const batchForm = ref({ period: null, reason: '' })
 
 // --- Add dialog ---
 const addDialogVisible = ref(false)
-const addForm = ref({ date: '', reason: '' })
+const addForm = ref({ date: '', period: null, reason: '' })
 
 // --- Remove dialog ---
 const removeDialogVisible = ref(false)
@@ -193,19 +209,22 @@ function handleDateClick(dateStr) {
     removeDate.value = dateStr
     removeDialogVisible.value = true
   } else {
-    addForm.value = { date: dateStr, reason: '' }
+    addForm.value = { date: dateStr, period: null, reason: '' }
     addDialogVisible.value = true
   }
 }
 
-function handleRemove(dateStr) {
+const removePeriod = ref(null)
+
+function handleRemove(dateStr, period = null) {
   removeDate.value = dateStr
+  removePeriod.value = period
   removeDialogVisible.value = true
 }
 
 function openBatchDialog() {
   if (!batchSelected.value.length) return
-  batchForm.value = { reason: '' }
+  batchForm.value = { period: null, reason: '' }
   batchDialogVisible.value = true
 }
 
@@ -228,7 +247,7 @@ async function submitAdd() {
   submitting.value = true
   try {
     await createUnavailableDates(
-      { dates: [addForm.value.date], reason: addForm.value.reason },
+      { dates: [addForm.value.date], period: addForm.value.period, reason: addForm.value.reason },
       { params: operatorParams }
     )
     ElMessage.success('设置成功')
@@ -247,7 +266,7 @@ async function submitBatch() {
   submitting.value = true
   try {
     await createUnavailableDates(
-      { dates: [...batchSelected.value], reason: batchForm.value.reason },
+      { dates: [...batchSelected.value], period: batchForm.value.period, reason: batchForm.value.reason },
       { params: operatorParams }
     )
     ElMessage.success('批量设置成功')
@@ -262,7 +281,9 @@ async function submitBatch() {
 async function submitRemove() {
   submitting.value = true
   try {
-    await deleteUnavailableDate(removeDate.value, { params: operatorParams })
+    const delParams = { ...operatorParams }
+    if (removePeriod.value) delParams.period = removePeriod.value
+    await deleteUnavailableDate(removeDate.value, { params: delParams })
     ElMessage.success('已移除')
     removeDialogVisible.value = false
     await fetchDates()

@@ -48,17 +48,14 @@
         </el-row>
 
         <el-row :gutter="24">
-          <el-col :span="12">
-            <el-form-item label="期望日期" prop="dateRange">
-              <el-date-picker
-                v-model="form.dateRange"
-                type="daterange"
-                range-separator="至"
-                start-placeholder="开始日期"
-                end-placeholder="结束日期"
-                value-format="YYYY-MM-DD"
+          <el-col :span="16">
+            <el-form-item label="期望日期" prop="startDate">
+              <DatePeriodPicker
+                v-model:start-date="form.startDate"
+                v-model:start-period="form.startPeriod"
+                v-model:end-date="form.endDate"
+                v-model:end-period="form.endPeriod"
                 :disabled-date="disablePastDate"
-                style="width: 100%"
                 @change="onDateRangeChange"
               />
             </el-form-item>
@@ -104,6 +101,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { submitRequest, checkConflict, getUnavailableDates } from '@/api/design'
 import ConflictAlert from '@/components/design/ConflictAlert.vue'
+import DatePeriodPicker from '@/components/design/DatePeriodPicker.vue'
 
 const router = useRouter()
 const formRef = ref()
@@ -122,7 +120,10 @@ const form = reactive({
   salesperson_name: '',
   shoot_type: '',
   shoot_type_remark: '',
-  dateRange: null,
+  startDate: '',
+  startPeriod: 'am',
+  endDate: '',
+  endPeriod: 'pm',
   priority: 'normal',
   remark: '',
 })
@@ -132,7 +133,7 @@ const rules = {
   salesperson_name: [{ required: true, message: '请输入业务员姓名', trigger: 'blur' }],
   shoot_type: [{ required: true, message: '请选择拍摄类型', trigger: 'change' }],
   shoot_type_remark: [{ required: true, message: '请说明拍摄类型', trigger: 'blur' }],
-  dateRange: [{ required: true, message: '请选择期望日期范围', trigger: 'change' }],
+  startDate: [{ required: true, message: '请选择期望开始日期', trigger: 'change' }],
   priority: [{ required: true, message: '请选择优先级', trigger: 'change' }],
 }
 
@@ -165,17 +166,19 @@ let conflictTimer = null
 function onDateRangeChange(val) {
   clearTimeout(conflictTimer)
   conflictResult.value = null
-  if (!val || val.length !== 2) return
+  if (!val || !val.startDate || !val.endDate) return
   conflictTimer = setTimeout(() => {
-    doConflictCheck(val[0], val[1])
+    doConflictCheck(val.startDate, val.endDate, val.startPeriod, val.endPeriod)
   }, 300)
 }
 
-async function doConflictCheck(start, end) {
+async function doConflictCheck(start, end, startPeriod, endPeriod) {
   try {
     const res = await checkConflict({
       start_date: start,
       end_date: end,
+      start_period: startPeriod || 'am',
+      end_period: endPeriod || 'pm',
       shoot_type: form.shoot_type || undefined,
     })
     const data = res.data
@@ -202,8 +205,10 @@ async function handleSubmit() {
       salesperson_id: 1,
       shoot_type: form.shoot_type,
       shoot_type_remark: form.shoot_type === 'other' ? form.shoot_type_remark : '',
-      expect_start_date: form.dateRange[0],
-      expect_end_date: form.dateRange[1],
+      expect_start_date: form.startDate,
+      expect_start_period: form.startPeriod,
+      expect_end_date: form.endDate,
+      expect_end_period: form.endPeriod,
       priority: form.priority,
       remark: form.remark,
       operator_id: 1,

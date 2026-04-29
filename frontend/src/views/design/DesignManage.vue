@@ -17,8 +17,8 @@
           <el-table-column label="拍摄类型" width="100">
             <template #default="{ row }">{{ SHOOT_TYPE_MAP[row.shoot_type] || row.shoot_type }}</template>
           </el-table-column>
-          <el-table-column label="期望日期" width="200">
-            <template #default="{ row }">{{ row.expect_start_date }} ~ {{ row.expect_end_date }}</template>
+          <el-table-column label="期望日期" width="280">
+            <template #default="{ row }">{{ row.expect_start_date }} {{ periodLabel(row.expect_start_period) }} ~ {{ row.expect_end_date }} {{ periodLabel(row.expect_end_period) }}</template>
           </el-table-column>
           <el-table-column label="优先级" width="80" align="center">
             <template #default="{ row }">
@@ -64,8 +64,8 @@
           <el-table-column label="设计师" width="100">
             <template #default="{ row }">{{ getDesignerName(row.designer_id) }}</template>
           </el-table-column>
-          <el-table-column label="排期日期" width="200">
-            <template #default="{ row }">{{ row.plan_start_date || '-' }} ~ {{ row.plan_end_date || '-' }}</template>
+          <el-table-column label="排期日期" width="280">
+            <template #default="{ row }">{{ row.plan_start_date || '-' }} {{ periodLabel(row.plan_start_period) }} ~ {{ row.plan_end_date || '-' }} {{ periodLabel(row.plan_end_period) }}</template>
           </el-table-column>
           <el-table-column label="优先级" width="80" align="center">
             <template #default="{ row }">
@@ -243,14 +243,11 @@
           </el-select>
         </el-form-item>
         <el-form-item label="排期日期" required>
-          <el-date-picker
-            v-model="confirmForm.dateRange"
-            type="daterange"
-            range-separator="至"
-            start-placeholder="开始"
-            end-placeholder="结束"
-            value-format="YYYY-MM-DD"
-            style="width: 100%"
+          <DatePeriodPicker
+            v-model:start-date="confirmForm.startDate"
+            v-model:start-period="confirmForm.startPeriod"
+            v-model:end-date="confirmForm.endDate"
+            v-model:end-period="confirmForm.endPeriod"
           />
         </el-form-item>
         <el-form-item label="备注">
@@ -299,6 +296,10 @@ import { Upload, Plus } from '@element-plus/icons-vue'
 import { getRequests, getTaskList, getDesigners, createDesigner, updateDesigner, actionRequest, rescheduleTask, importRequests } from '@/api/design'
 import DesignCalendarConfig from '@/components/design/DesignCalendarConfig.vue'
 import DesignCapacityConfig from '@/components/design/DesignCapacityConfig.vue'
+import DatePeriodPicker from '@/components/design/DatePeriodPicker.vue'
+
+const PERIOD_LABELS = { am: '上午', pm: '下午' }
+function periodLabel(p) { return PERIOD_LABELS[p] || '' }
 
 const SHOOT_TYPE_MAP = {
   product_photo: '产品图',
@@ -474,16 +475,20 @@ const confirmRow = ref(null)
 const confirming = ref(false)
 const confirmForm = reactive({
   designer_id: null,
-  dateRange: null,
+  startDate: '',
+  startPeriod: 'am',
+  endDate: '',
+  endPeriod: 'pm',
   comment: '',
 })
 
 function openConfirmDialog(row) {
   confirmRow.value = row
   confirmForm.designer_id = null
-  confirmForm.dateRange = row.expect_start_date && row.expect_end_date
-    ? [row.expect_start_date, row.expect_end_date]
-    : null
+  confirmForm.startDate = row.expect_start_date || ''
+  confirmForm.startPeriod = row.expect_start_period || 'am'
+  confirmForm.endDate = row.expect_end_date || ''
+  confirmForm.endPeriod = row.expect_end_period || 'pm'
   confirmForm.comment = ''
   confirmVisible.value = true
   // Ensure designers loaded for the select
@@ -495,7 +500,7 @@ async function submitConfirm() {
     ElMessage.warning('请选择设计师')
     return
   }
-  if (!confirmForm.dateRange || confirmForm.dateRange.length !== 2) {
+  if (!confirmForm.startDate || !confirmForm.endDate) {
     ElMessage.warning('请选择排期日期')
     return
   }
@@ -504,8 +509,10 @@ async function submitConfirm() {
     await actionRequest(confirmRow.value.id, {
       action: 'confirm',
       designer_id: confirmForm.designer_id,
-      scheduled_start: confirmForm.dateRange[0],
-      scheduled_end: confirmForm.dateRange[1],
+      plan_start_date: confirmForm.startDate,
+      plan_start_period: confirmForm.startPeriod,
+      plan_end_date: confirmForm.endDate,
+      plan_end_period: confirmForm.endPeriod,
       comment: confirmForm.comment,
       operator_id: 1,
       operator_name: '管理员',
@@ -541,10 +548,11 @@ async function handleTaskAction(row, action) {
 }
 
 // --- Gantt reschedule handler ---
-async function handleReschedule({ taskId, planStartDate, planEndDate, task }) {
+async function handleReschedule({ taskId, planStartDate, planStartPeriod, planEndDate, planEndPeriod, task }) {
+  const pLabels = { am: '上午', pm: '下午' }
   try {
     await ElMessageBox.confirm(
-      `确定将任务 "${task.task_name || task.task_no}" 的排期调整为 ${planStartDate} ~ ${planEndDate}？`,
+      `确定将任务 "${task.task_name || task.task_no}" 的排期调整为 ${planStartDate} ${pLabels[planStartPeriod] || ''} ~ ${planEndDate} ${pLabels[planEndPeriod] || ''}？`,
       '调整排期',
       { type: 'warning' }
     )
@@ -553,7 +561,9 @@ async function handleReschedule({ taskId, planStartDate, planEndDate, task }) {
   try {
     await rescheduleTask(taskId, {
       plan_start_date: planStartDate,
+      plan_start_period: planStartPeriod || 'am',
       plan_end_date: planEndDate,
+      plan_end_period: planEndPeriod || 'pm',
       operator_id: 1,
       operator_name: '管理员',
       operator_role: 'design_staff',

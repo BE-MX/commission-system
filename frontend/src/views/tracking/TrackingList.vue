@@ -91,6 +91,14 @@
         <template #default="{ row }">{{ row.last_event_time || '-' }}</template>
       </el-table-column>
       <el-table-column prop="dingtalk_user_name" label="提交人" width="80" />
+      <el-table-column label="短链接" width="100" align="center">
+        <template #default="{ row }">
+          <el-button v-if="row.short_link" link type="primary" size="small" @click="copyLink(row.short_link)">
+            <el-icon><CopyDocument /></el-icon> 复制
+          </el-button>
+          <span v-else>-</span>
+        </template>
+      </el-table-column>
       <el-table-column label="跟踪" width="70" align="center">
         <template #default="{ row }">
           <el-tag :type="row.is_active ? 'success' : 'info'" size="small" effect="plain">
@@ -228,6 +236,12 @@ async function handlePoll() {
 
 function goDetail(row) {
   router.push(`/tracking/${row.waybill_no}`)
+}
+
+function copyLink(link) {
+  navigator.clipboard.writeText(link).then(() => {
+    ElMessage.success('短链接已复制')
+  })
 }
 
 onMounted(() => {

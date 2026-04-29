@@ -31,10 +31,39 @@ class Settings(BaseSettings):
     TRACKING_POLL_BATCH_SIZE: int = 50
     STAGING_SCAN_BATCH_SIZE: int = 100
 
+    # 短链接
+    SHORT_LINK_BASE_URL: str = "http://localhost:8001"
+
     # 设计预约模块
     DESIGN_DEFAULT_DAILY_CAPACITY: int = 3
     DESIGN_REQUEST_NO_PREFIX: str = "DSR"
     DESIGN_TASK_NO_PREFIX: str = "DST"
+
+    # JWT / Auth
+    JWT_SECRET_KEY: str = "change-this-to-a-random-64-char-secret-in-production"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRE_MINUTES: int = 15
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    LOGIN_MAX_FAIL: int = 5
+    LOGIN_LOCK_MINUTES: int = 30
+    COOKIE_SECURE: bool = False  # 生产环境设为 True
+
+    # 钉钉 AI 表格 API
+    DINGTALK_CLIENT_ID: str = ""
+    DINGTALK_CLIENT_SECRET: str = ""
+
+    # 钉钉 Webhook 机器人
+    DINGTALK_WEBHOOK_URL: str = ""
+    DINGTALK_WEBHOOK_SECRET: str = ""
+
+    # 钉钉企业内部应用（工作通知、审批）
+    DINGTALK_APP_KEY: str = ""
+    DINGTALK_APP_SECRET: str = ""
+    DINGTALK_AGENT_ID: str = ""
+
+    # 钉钉回调
+    DINGTALK_CALLBACK_AES_KEY: str = ""
+    DINGTALK_CALLBACK_TOKEN: str = ""
 
     @property
     def commission_db_url(self) -> str:

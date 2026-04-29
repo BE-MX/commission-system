@@ -63,9 +63,13 @@
           type="date"
           placeholder="选择日期"
           value-format="YYYY-MM-DD"
-          :disabled-date="isDateAlreadyConfigured"
           style="width: 180px;"
         />
+        <el-select v-model="newEntry.period" placeholder="时段" style="width: 100px;">
+          <el-option label="全天" :value="null" />
+          <el-option label="上午" value="am" />
+          <el-option label="下午" value="pm" />
+        </el-select>
         <el-input-number
           v-model="newEntry.capacity"
           :min="0"
@@ -82,6 +86,13 @@
       <!-- Table of existing specific dates -->
       <el-table :data="specificDates" stripe border style="width: 100%; margin-top: 12px;" empty-text="暂无特定日期容量配置">
         <el-table-column prop="config_date" label="日期" width="160" sortable />
+        <el-table-column label="时段" width="100" align="center">
+          <template #default="{ row }">
+            <el-tag v-if="row.period === 'am'" size="small" effect="plain">上午</el-tag>
+            <el-tag v-else-if="row.period === 'pm'" size="small" effect="plain">下午</el-tag>
+            <el-tag v-else size="small" type="info" effect="plain">全天</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="星期" width="100">
           <template #default="{ row }">
             {{ getWeekday(row.config_date) }}
@@ -128,6 +139,7 @@ const capacityEntries = ref([]) // raw entries from API
 
 const newEntry = reactive({
   date: '',
+  period: null,
   capacity: 3,
 })
 
@@ -214,11 +226,12 @@ async function addSpecificDate() {
   saving.value = true
   try {
     await updateCapacity(
-      { entries: [{ config_date: newEntry.date, designer_id: null, max_parallel_tasks: newEntry.capacity }] },
+      { entries: [{ config_date: newEntry.date, designer_id: null, period: newEntry.period, max_parallel_tasks: newEntry.capacity }] },
       { params: operatorParams }
     )
     ElMessage.success('已添加特定日期容量')
     newEntry.date = ''
+    newEntry.period = null
     newEntry.capacity = globalCapacity.value
     await fetchAll()
   } finally {

@@ -80,7 +80,11 @@ def create_request(
 ) -> dict:
     """创建设计预约申请"""
     # 冲突检测
-    conflict = check_conflict(db, data.expect_start_date, data.expect_end_date)
+    conflict = check_conflict(
+        db, data.expect_start_date, data.expect_end_date,
+        start_period=data.expect_start_period or "am",
+        end_period=data.expect_end_period or "pm",
+    )
 
     request_no = generate_request_no(db)
 
@@ -92,7 +96,9 @@ def create_request(
         shoot_type=data.shoot_type,
         shoot_type_remark=data.shoot_type_remark,
         expect_start_date=data.expect_start_date,
+        expect_start_period=data.expect_start_period or "am",
         expect_end_date=data.expect_end_date,
+        expect_end_period=data.expect_end_period or "pm",
         priority=data.priority,
         remark=data.remark,
         status="pending_audit",
@@ -213,7 +219,9 @@ def action_request(
             shoot_type=req.shoot_type,
             priority=req.priority,
             plan_start_date=data.plan_start_date or req.expect_start_date,
+            plan_start_period=data.plan_start_period or req.expect_start_period or "am",
             plan_end_date=data.plan_end_date or req.expect_end_date,
+            plan_end_period=data.plan_end_period or req.expect_end_period or "pm",
             status="scheduled",
         )
         db.add(task)
@@ -223,19 +231,22 @@ def action_request(
 
     elif data.action == "start":
         req.actual_start_date = date.today()
-        # 同步更新相关任务
+        req.actual_start_period = "am"
         for t in req.tasks:
             if t.status == "scheduled":
                 t.status = "in_progress"
                 t.actual_start_date = date.today()
+                t.actual_start_period = "am"
                 t.updated_at = datetime.now()
 
     elif data.action == "complete":
         req.actual_end_date = date.today()
+        req.actual_end_period = "pm"
         for t in req.tasks:
             if t.status == "in_progress":
                 t.status = "completed"
                 t.actual_end_date = date.today()
+                t.actual_end_period = "pm"
                 t.updated_at = datetime.now()
 
     elif data.action == "cancel":
@@ -304,9 +315,13 @@ def get_gantt_data(
                     "shoot_type": t.shoot_type,
                     "priority": t.priority,
                     "plan_start_date": t.plan_start_date.isoformat() if t.plan_start_date else None,
+                    "plan_start_period": t.plan_start_period or "am",
                     "plan_end_date": t.plan_end_date.isoformat() if t.plan_end_date else None,
+                    "plan_end_period": t.plan_end_period or "pm",
                     "actual_start_date": t.actual_start_date.isoformat() if t.actual_start_date else None,
+                    "actual_start_period": t.actual_start_period,
                     "actual_end_date": t.actual_end_date.isoformat() if t.actual_end_date else None,
+                    "actual_end_period": t.actual_end_period,
                     "status": t.status,
                     "remark": t.remark,
                     "created_at": t.created_at.isoformat() if t.created_at else None,
@@ -321,7 +336,10 @@ def get_gantt_data(
         DesignUnavailableDate.date >= start_date,
         DesignUnavailableDate.date <= end_date,
     ).all()
-    unavailable_dates = [row.date.isoformat() for row in unavailable]
+    unavailable_dates = [
+        {"date": row.date.isoformat(), "period": row.period}
+        for row in unavailable
+    ]
 
     return {
         "code": 200,
@@ -354,11 +372,15 @@ def reschedule_task(
         raise ValueError(f"任务状态 {task.status} 不允许改期")
 
     old_start = task.plan_start_date
+    old_start_period = task.plan_start_period
     old_end = task.plan_end_date
+    old_end_period = task.plan_end_period
     old_designer = task.designer_id
 
     task.plan_start_date = data.plan_start_date
+    task.plan_start_period = data.plan_start_period or "am"
     task.plan_end_date = data.plan_end_date
+    task.plan_end_period = data.plan_end_period or "pm"
     if data.designer_id is not None:
         task.designer_id = data.designer_id
     task.updated_at = datetime.now()
@@ -376,10 +398,14 @@ def reschedule_task(
         comment=data.comment,
         snapshot={
             "old_start": old_start.isoformat() if old_start else None,
+            "old_start_period": old_start_period,
             "old_end": old_end.isoformat() if old_end else None,
+            "old_end_period": old_end_period,
             "old_designer_id": old_designer,
             "new_start": data.plan_start_date.isoformat(),
+            "new_start_period": data.plan_start_period or "am",
             "new_end": data.plan_end_date.isoformat(),
+            "new_end_period": data.plan_end_period or "pm",
             "new_designer_id": data.designer_id,
         },
     )
@@ -405,13 +431,16 @@ def create_unavailable_dates(
     """批量设置不可用日期"""
     created = []
     for d in data.dates:
-        existing = db.query(DesignUnavailableDate).filter(
-            DesignUnavailableDate.date == d,
-        ).first()
-        if existing:
+        q = db.query(DesignUnavailableDate).filter(DesignUnavailableDate.date == d)
+        if data.period:
+            q = q.filter(DesignUnavailableDate.period == data.period)
+        else:
+            q = q.filter(DesignUnavailableDate.period.is_(None))
+        if q.first():
             continue
         row = DesignUnavailableDate(
             date=d,
+            period=data.period,
             reason=data.reason,
             created_by=operator_id,
         )
@@ -442,6 +471,7 @@ def delete_unavailable_date(
     date_str: str,
     operator_id: int,
     operator_name: str,
+    period: Optional[str] = None,
 ) -> dict:
     """删除不可用日期"""
     from datetime import date as date_type
@@ -450,9 +480,12 @@ def delete_unavailable_date(
     except ValueError:
         raise ValueError("日期格式错误，应为 YYYY-MM-DD")
 
-    row = db.query(DesignUnavailableDate).filter(
-        DesignUnavailableDate.date == target,
-    ).first()
+    q = db.query(DesignUnavailableDate).filter(DesignUnavailableDate.date == target)
+    if period:
+        q = q.filter(DesignUnavailableDate.period == period)
+    else:
+        q = q.filter(DesignUnavailableDate.period.is_(None))
+    row = q.first()
     if not row:
         raise ValueError("该日期未设置为不可用")
 
@@ -482,6 +515,7 @@ def get_capacity(db: Session) -> list:
             "id": r.id,
             "config_date": r.config_date.isoformat() if r.config_date else None,
             "designer_id": r.designer_id,
+            "period": r.period,
             "max_parallel_tasks": r.max_parallel_tasks,
             "scheduling_mode": r.scheduling_mode,
             "updated_by": r.updated_by,
@@ -499,10 +533,11 @@ def update_capacity(
 ) -> dict:
     """更新容量配置"""
     for entry in data.entries:
-        existing = db.query(DesignCapacityConfig).filter(
-            DesignCapacityConfig.config_date == entry.config_date if entry.config_date else DesignCapacityConfig.config_date.is_(None),
-            DesignCapacityConfig.designer_id == entry.designer_id if entry.designer_id else DesignCapacityConfig.designer_id.is_(None),
-        ).first()
+        q = db.query(DesignCapacityConfig)
+        q = q.filter(DesignCapacityConfig.config_date == entry.config_date) if entry.config_date else q.filter(DesignCapacityConfig.config_date.is_(None))
+        q = q.filter(DesignCapacityConfig.designer_id == entry.designer_id) if entry.designer_id else q.filter(DesignCapacityConfig.designer_id.is_(None))
+        q = q.filter(DesignCapacityConfig.period == entry.period) if entry.period else q.filter(DesignCapacityConfig.period.is_(None))
+        existing = q.first()
         if existing:
             existing.max_parallel_tasks = entry.max_parallel_tasks
             existing.updated_by = operator_id
@@ -511,6 +546,7 @@ def update_capacity(
             row = DesignCapacityConfig(
                 config_date=entry.config_date,
                 designer_id=entry.designer_id,
+                period=entry.period,
                 max_parallel_tasks=entry.max_parallel_tasks,
                 updated_by=operator_id,
             )
@@ -633,9 +669,12 @@ def export_tasks_excel(
     designers = db.query(DesignDesigner).all()
     designer_map = {d.id: d.name for d in designers}
 
+    PERIOD_LABELS = {"am": "上午", "pm": "下午"}
+
     columns = [
         "任务编号", "客户名称", "业务员", "设计师", "拍摄类型",
-        "优先级", "计划开始", "计划结束", "实际开始", "实际结束", "状态",
+        "优先级", "计划开始", "开始时段", "计划结束", "结束时段",
+        "实际开始", "实际结束", "状态",
     ]
 
     wb = Workbook()
@@ -656,10 +695,12 @@ def export_tasks_excel(
         ws.cell(row=row_idx, column=5, value=SHOOT_TYPE_LABELS.get(t.shoot_type, t.shoot_type or ""))
         ws.cell(row=row_idx, column=6, value=PRIORITY_LABELS.get(t.priority, t.priority or ""))
         ws.cell(row=row_idx, column=7, value=t.plan_start_date.isoformat() if t.plan_start_date else "")
-        ws.cell(row=row_idx, column=8, value=t.plan_end_date.isoformat() if t.plan_end_date else "")
-        ws.cell(row=row_idx, column=9, value=t.actual_start_date.isoformat() if t.actual_start_date else "")
-        ws.cell(row=row_idx, column=10, value=t.actual_end_date.isoformat() if t.actual_end_date else "")
-        ws.cell(row=row_idx, column=11, value=TASK_STATUS_LABELS.get(t.status, t.status or ""))
+        ws.cell(row=row_idx, column=8, value=PERIOD_LABELS.get(t.plan_start_period, "全天"))
+        ws.cell(row=row_idx, column=9, value=t.plan_end_date.isoformat() if t.plan_end_date else "")
+        ws.cell(row=row_idx, column=10, value=PERIOD_LABELS.get(t.plan_end_period, "全天"))
+        ws.cell(row=row_idx, column=11, value=t.actual_start_date.isoformat() if t.actual_start_date else "")
+        ws.cell(row=row_idx, column=12, value=t.actual_end_date.isoformat() if t.actual_end_date else "")
+        ws.cell(row=row_idx, column=13, value=TASK_STATUS_LABELS.get(t.status, t.status or ""))
 
     # Auto-width columns
     for col in ws.columns:
@@ -824,7 +865,7 @@ def batch_import_requests(
             remark = str(row[6]).strip() if len(row) > 6 and row[6] else None
 
             # Conflict check
-            conflict = check_conflict(db, expect_start, expect_end)
+            conflict = check_conflict(db, expect_start, expect_end, start_period="am", end_period="pm")
 
             request_no = generate_request_no(db)
             req = DesignScheduleRequest(
@@ -834,7 +875,9 @@ def batch_import_requests(
                 salesperson_name=salesperson_name or operator_name,
                 shoot_type=shoot_type,
                 expect_start_date=expect_start,
+                expect_start_period="am",
                 expect_end_date=expect_end,
+                expect_end_period="pm",
                 priority=priority,
                 remark=remark,
                 status="pending_audit",

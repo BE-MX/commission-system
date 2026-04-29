@@ -1,9 +1,11 @@
 """设计预约 — Pydantic 数据模式"""
 
 from datetime import date, datetime
-from typing import Optional, Literal
+from typing import Optional, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, model_validator
+
+PeriodType = Optional[Literal["am", "pm"]]
 
 
 # ── 操作人混入 ─────────────────────────────────────────────
@@ -25,7 +27,9 @@ class DesignRequestCreate(OperatorMixin):
     shoot_type: str
     shoot_type_remark: Optional[str] = None
     expect_start_date: date
+    expect_start_period: PeriodType = "am"
     expect_end_date: date
+    expect_end_period: PeriodType = "pm"
     priority: str = "normal"
     remark: Optional[str] = None
 
@@ -34,6 +38,11 @@ class DesignRequestCreate(OperatorMixin):
         today = date.today()
         if self.expect_start_date > self.expect_end_date:
             raise ValueError("期望开始日期不能晚于结束日期")
+        if self.expect_start_date == self.expect_end_date:
+            sp = 0 if (self.expect_start_period or "am") == "am" else 1
+            ep = 0 if (self.expect_end_period or "pm") == "am" else 1
+            if sp > ep:
+                raise ValueError("同一天内开始时段不能晚于结束时段")
         if self.expect_start_date < today:
             raise ValueError("期望开始日期不能早于今天")
         delta = (self.expect_end_date - self.expect_start_date).days
@@ -51,25 +60,31 @@ class DesignRequestAction(OperatorMixin):
     action: Literal["confirm", "start", "complete", "cancel"]
     designer_id: Optional[int] = None
     plan_start_date: Optional[date] = None
+    plan_start_period: PeriodType = "am"
     plan_end_date: Optional[date] = None
+    plan_end_period: PeriodType = "pm"
     comment: Optional[str] = None
 
 
 class TaskReschedule(OperatorMixin):
     plan_start_date: date
+    plan_start_period: PeriodType = "am"
     plan_end_date: date
+    plan_end_period: PeriodType = "pm"
     designer_id: Optional[int] = None
     comment: Optional[str] = None
 
 
 class UnavailableDateCreate(OperatorMixin):
     dates: list[date]
+    period: PeriodType = None
     reason: str
 
 
 class CapacityEntry(BaseModel):
     config_date: Optional[date] = None
     designer_id: Optional[int] = None
+    period: PeriodType = None
     max_parallel_tasks: int
 
 
@@ -95,14 +110,18 @@ class DesignRequestListItem(BaseModel):
     shoot_type: str
     shoot_type_remark: Optional[str] = None
     expect_start_date: date
+    expect_start_period: PeriodType = None
     expect_end_date: date
+    expect_end_period: PeriodType = None
     priority: str
     remark: Optional[str] = None
     status: str
     conflict_detail: Optional[dict] = None
     assigned_designer_id: Optional[int] = None
     actual_start_date: Optional[date] = None
+    actual_start_period: PeriodType = None
     actual_end_date: Optional[date] = None
+    actual_end_period: PeriodType = None
     created_at: datetime
     updated_at: datetime
 
@@ -120,9 +139,13 @@ class DesignTaskListItem(BaseModel):
     shoot_type: Optional[str] = None
     priority: Optional[str] = None
     plan_start_date: Optional[date] = None
+    plan_start_period: PeriodType = None
     plan_end_date: Optional[date] = None
+    plan_end_period: PeriodType = None
     actual_start_date: Optional[date] = None
+    actual_start_period: PeriodType = None
     actual_end_date: Optional[date] = None
+    actual_end_period: PeriodType = None
     status: str
     remark: Optional[str] = None
     created_at: datetime
@@ -137,8 +160,13 @@ class GanttDesigner(BaseModel):
     tasks: list[DesignTaskListItem] = []
 
 
+class UnavailableDateItem(BaseModel):
+    date: date
+    period: PeriodType = None
+
+
 class GanttResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     designers: list[GanttDesigner] = []
-    unavailable_dates: list[date] = []
+    unavailable_dates: list[UnavailableDateItem] = []
