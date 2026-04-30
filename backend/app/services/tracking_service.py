@@ -92,7 +92,7 @@ async def poll_active_shipments(db: Session) -> dict:
     shipments = (
         db.query(ShipmentTracking)
         .filter(ShipmentTracking.is_active == True)
-        .order_by(ShipmentTracking.last_polled_at.asc().nullsfirst())
+        .order_by(ShipmentTracking.last_polled_at.asc())
         .limit(settings.TRACKING_POLL_BATCH_SIZE)
         .all()
     )
