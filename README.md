@@ -9,23 +9,30 @@
 - **后端**: Python 3.12 + FastAPI + SQLAlchemy 2.0 + Alembic
 - **前端**: Vue 3 + Element Plus + Vite 5
 - **数据库**: 腾讯云 RDS MySQL（提成库读写 + 业务库跨库只读）
-- **部署**: Docker + docker-compose
+- **部署**: Windows Server + NSSM 服务管理
 
 ## 快速开始
 
 ```bash
 # 1. 复制环境变量
 cp backend/.env.example backend/.env
-# 编辑 .env 填入实际数据库连接信息
+# 编辑 .env 填入实际数据库连接信息和 SHORT_LINK_BASE_URL
 
-# 2. Docker 启动
-docker-compose up -d --build
+# 2. 本地开发（使用 start.bat 一键启动）
+start.bat
 
 # 3. 数据库迁移
-docker-compose exec backend alembic upgrade head
+cd backend && alembic upgrade head
 
 # 4. 健康检查
 curl http://localhost:8001/health
+```
+
+**钉钉 AI 表格同步**需要在服务器上预先安装并授权 `dws` CLI：
+
+```bash
+npm install -g @dingwork/dws
+dws auth login  # 首次授权，浏览器完成认证
 ```
 
 ## 项目结构

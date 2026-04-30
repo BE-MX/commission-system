@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.models.tracking import ShipmentTracking, TrackingEvent, CarrierConfig
 from app.services.carriers import get_adapter
+from app.services.dws_sync_service import sync_shipment
 
 logger = logging.getLogger("tracking.poll")
 settings = get_settings()
@@ -87,6 +88,10 @@ async def poll_single(db: Session, shipment: ShipmentTracking) -> dict:
         logger.info(f"{shipment.waybill_no}: deactivated, exceeded {max_days} days")
 
     db.commit()
+
+    if new_events:
+        sync_shipment(db, shipment)
+
     return {"waybill_no": shipment.waybill_no, "status": "ok", "new_events": len(new_events)}
 
 

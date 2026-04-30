@@ -16,6 +16,7 @@ from app.schemas.tracking import (
 from app.services.staging_service import scan_staging
 from app.services.tracking_service import poll_active_shipments, refresh_single
 from app.services.short_link import build_short_link
+from app.services.dws_sync_service import sync_shipment, sync_all_active
 
 router = APIRouter()
 
@@ -174,3 +175,25 @@ async def trigger_poll(db: Session = Depends(get_db)):
 def trigger_scan(db: Session = Depends(get_db)):
     stats = scan_staging(db)
     return {"code": 200, "message": "ok", "data": stats}
+
+
+@router.post("/dws-sync", summary="全量同步运单到钉钉 AI 表格")
+def trigger_dws_sync(db: Session = Depends(get_db)):
+    stats = sync_all_active(db)
+    return {"code": 200, "message": "ok", "data": stats}
+
+
+@router.post("/{waybill_no}/dws-sync", summary="单条运单同步到钉钉 AI 表格")
+def trigger_dws_sync_single(
+    waybill_no: str = Path(...),
+    db: Session = Depends(get_db),
+):
+    shipment = (
+        db.query(ShipmentTracking)
+        .filter(ShipmentTracking.waybill_no == waybill_no)
+        .first()
+    )
+    if not shipment:
+        return {"code": 404, "message": f"waybill {waybill_no} not found", "data": None}
+    ok = sync_shipment(db, shipment)
+    return {"code": 200, "message": "ok", "data": {"synced": ok}}
