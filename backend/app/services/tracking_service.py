@@ -51,12 +51,15 @@ async def poll_single(db: Session, shipment: ShipmentTracking) -> dict:
     )
     latest_existing_time = latest_existing.event_time if latest_existing else datetime.min
 
-    new_events = [e for e in result.events if e.event_time > latest_existing_time]
+    new_events = [
+        e for e in result.events
+        if e.event_time.replace(tzinfo=None) > latest_existing_time
+    ]
     for evt in new_events:
         db.add(TrackingEvent(
             waybill_no=shipment.waybill_no,
             carrier=shipment.carrier,
-            event_time=evt.event_time,
+            event_time=evt.event_time.replace(tzinfo=None),
             status_code=evt.status_code,
             description=evt.description,
             location=evt.location,
