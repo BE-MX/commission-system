@@ -9,7 +9,7 @@
 - **后端**: Python 3.12 + FastAPI + SQLAlchemy 2.0 + Alembic
 - **前端**: Vue 3 + Element Plus + Vite 5
 - **数据库**: 腾讯云 RDS MySQL（提成库读写 + 业务库跨库只读）
-- **部署**: Docker + docker-compose
+- **部署**: Windows Server + NSSM 服务管理
 
 ## 项目结构
 
@@ -40,6 +40,10 @@ commission-system/
 ## 开发命令
 
 ```bash
+# 本地开发 - 使用 start.bat 一键启动
+start.bat                                # 同时启动前后端开发服务器
+
+# 或手动启动：
 # 后端（在 backend/ 目录下）
 pip install -r requirements.txt         # 安装依赖
 uvicorn app.main:app --reload --port 8001  # 本地启动
@@ -51,9 +55,9 @@ npm install                              # 安装依赖
 npm run dev                              # 开发服务器 (port 3000, 代理 /api → 8001)
 npm run build                            # 构建
 
-# Docker 部署
-docker-compose up -d --build             # 启动全部
-docker-compose exec backend alembic upgrade head  # 容器内迁移
+# 服务器部署
+deploy\setup-server.bat                  # 首次部署：克隆代码、安装依赖、配置服务
+deploy\deploy.bat                        # 日常更新：拉取代码、安装依赖、迁移数据库、构建前端、重启服务
 ```
 
 ## 端口
