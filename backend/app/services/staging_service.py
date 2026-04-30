@@ -73,6 +73,9 @@ def scan_staging(db: Session) -> dict:
             row.processed_at = datetime.now()
             stats["processed"] += 1
 
+            # Flush after each row to catch integrity errors early
+            db.flush()
+
         except Exception as e:
             logger.error(f"staging row {row.id} error: {e}")
             row.process_result = "error"
@@ -80,6 +83,7 @@ def scan_staging(db: Session) -> dict:
             row.processed = True
             row.processed_at = datetime.now()
             stats["error"] += 1
+            db.rollback()
 
     db.commit()
     logger.info(f"staging scan done: {stats}")
