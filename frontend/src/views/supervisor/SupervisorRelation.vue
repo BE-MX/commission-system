@@ -223,5 +223,5 @@ onMounted(fetchList)
 <style scoped>
 .toolbar { margin-bottom: 16px; }
 .pagination { margin-top: 16px; justify-content: flex-end; }
-.history-range { color: #909399; font-size: 12px; margin-left: 4px; }
+.history-range { color: var(--text-muted); font-size: 12px; margin-left: 4px; }
 </style>

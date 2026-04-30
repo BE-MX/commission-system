@@ -22,7 +22,7 @@
       <el-table-column label="角色" min-width="160">
         <template #default="{ row }">
           <el-tag v-for="r in row.roles" :key="r" size="small" style="margin-right: 4px">{{ r }}</el-tag>
-          <span v-if="!row.roles?.length" style="color: #909399">未分配</span>
+          <span v-if="!row.roles?.length" style="color: var(--text-muted)">未分配</span>
         </template>
       </el-table-column>
       <el-table-column label="状态" width="80" align="center">

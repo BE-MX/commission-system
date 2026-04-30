@@ -306,7 +306,7 @@ onMounted(fetchDates)
   gap: 12px;
   margin-bottom: 12px;
   padding: 8px 12px;
-  background: #f5f7fa;
+  background: var(--toolbar-bg);
   border-radius: 6px;
 }
 
@@ -325,25 +325,25 @@ onMounted(fetchDates)
 }
 
 .date-cell:hover {
-  background: rgba(64, 158, 255, 0.08);
+  background: rgba(212, 148, 28, 0.08);
 }
 
 .date-cell.unavailable-cell {
-  background: rgba(245, 108, 108, 0.12);
+  background: rgba(220, 53, 69, 0.12);
 }
 
 .date-cell.unavailable-cell:hover {
-  background: rgba(245, 108, 108, 0.22);
+  background: rgba(220, 53, 69, 0.22);
 }
 
 .date-cell.today-cell {
-  border: 2px solid #e6a23c;
+  border: 2px solid var(--color-primary);
   border-radius: 6px;
 }
 
 .date-cell.batch-selected {
-  background: rgba(64, 158, 255, 0.15);
-  outline: 2px solid #409eff;
+  background: rgba(212, 148, 28, 0.15);
+  outline: 2px solid var(--color-primary);
   outline-offset: -2px;
 }
 
@@ -357,7 +357,7 @@ onMounted(fetchDates)
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #f56c6c;
+  background: var(--color-danger);
   margin-top: 2px;
 }
 
@@ -365,7 +365,7 @@ onMounted(fetchDates)
   position: absolute;
   top: 2px;
   right: 2px;
-  color: #409eff;
+  color: var(--color-primary);
 }
 
 /* Upcoming section */
@@ -377,11 +377,11 @@ onMounted(fetchDates)
   margin: 0 0 12px;
   font-size: 15px;
   font-weight: 600;
-  color: #303133;
+  color: var(--text-primary);
 }
 
 .upcoming-list {
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--border-color);
   border-radius: 6px;
   overflow: hidden;
 }
@@ -391,7 +391,7 @@ onMounted(fetchDates)
   align-items: center;
   justify-content: space-between;
   padding: 10px 14px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .upcoming-item:last-child {
@@ -399,7 +399,7 @@ onMounted(fetchDates)
 }
 
 .upcoming-item:hover {
-  background: #f5f7fa;
+  background: var(--toolbar-bg);
 }
 
 .upcoming-info {
@@ -410,20 +410,20 @@ onMounted(fetchDates)
 
 .upcoming-date {
   font-weight: 500;
-  color: #303133;
+  color: var(--text-primary);
   font-size: 14px;
 }
 
 .upcoming-weekday {
-  color: #909399;
+  color: var(--text-muted);
   font-size: 13px;
 }
 
 .upcoming-reason {
-  color: #606266;
+  color: var(--text-secondary);
   font-size: 13px;
   padding-left: 8px;
-  border-left: 2px solid #ebeef5;
+  border-left: 2px solid var(--border-color);
 }
 
 .batch-dates {

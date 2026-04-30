@@ -291,7 +291,7 @@ onMounted(fetchAll)
 
 .config-label {
   font-size: 14px;
-  color: #606266;
+  color: var(--text-secondary);
 }
 
 .mode-option {
@@ -306,7 +306,7 @@ onMounted(fetchAll)
 
 .mode-desc {
   font-size: 12px;
-  color: #909399;
+  color: var(--text-muted);
   font-weight: normal;
 }
 
@@ -317,7 +317,7 @@ onMounted(fetchAll)
 }
 
 .text-muted {
-  color: #909399;
+  color: var(--text-muted);
   font-size: 12px;
 }
 

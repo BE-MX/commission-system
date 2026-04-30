@@ -144,19 +144,19 @@ onMounted(() => {
 
 .stat-card {
   text-align: center;
-  border-top: 3px solid #409EFF;
+  border-top: 3px solid var(--color-primary);
 }
 
 .stat-card.card-success {
-  border-top-color: #67C23A;
+  border-top-color: var(--color-success);
 }
 
 .stat-card.card-warning {
-  border-top-color: #E6A23C;
+  border-top-color: var(--color-warning-text);
 }
 
 .stat-card.card-info {
-  border-top-color: #909399;
+  border-top-color: var(--text-muted);
 }
 
 .stat-value {

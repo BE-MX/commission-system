@@ -41,7 +41,9 @@
     <!-- Legend -->
     <div class="gantt-legend">
       <span class="legend-item" v-for="item in legendItems" :key="item.status">
-        <span class="legend-dot" :style="{ backgroundColor: item.color }"></span>
+        <span class="legend-icon-wrap" :style="{ backgroundColor: item.color }">
+          <el-icon :size="12"><component :is="item.icon" /></el-icon>
+        </span>
         {{ item.label }}
       </span>
     </div>
@@ -92,7 +94,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { Refresh, Download } from '@element-plus/icons-vue'
+import { Refresh, Download, Clock, Calendar, VideoPlay, CircleCheck, CircleClose } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { getGanttData, getDesigners } from '@/api/design'
 import GanttChart from '@/components/design/GanttChart.vue'
@@ -127,12 +129,20 @@ const ganttData = ref({
   date_load: {},
 })
 
+const STATUS_ICONS = {
+  pending_design: Clock,
+  scheduled: Calendar,
+  in_progress: VideoPlay,
+  completed: CircleCheck,
+  cancelled: CircleClose,
+}
+
 const legendItems = [
-  { status: 'pending_design', color: '#E6A23C', label: '待设计' },
-  { status: 'scheduled', color: '#409EFF', label: '已排期' },
-  { status: 'in_progress', color: '#F56C6C', label: '进行中' },
-  { status: 'completed', color: '#67C23A', label: '已完成' },
-  { status: 'cancelled', color: '#909399', label: '已取消' },
+  { status: 'pending_design', color: 'rgba(212,148,28,0.7)', icon: Clock, label: '待设计' },
+  { status: 'scheduled', color: 'rgba(212,148,28,0.7)', icon: Calendar, label: '已排期' },
+  { status: 'in_progress', color: 'rgba(220,53,69,0.7)', icon: VideoPlay, label: '进行中' },
+  { status: 'completed', color: 'rgba(45,159,111,0.7)', icon: CircleCheck, label: '已完成' },
+  { status: 'cancelled', color: 'rgba(156,149,144,0.7)', icon: CircleClose, label: '已取消' },
 ]
 
 // --- Status helpers ---
@@ -268,10 +278,10 @@ onMounted(() => {
   gap: 16px;
   margin-bottom: 12px;
   padding: 8px 12px;
-  background: #f5f7fa;
+  background: var(--toolbar-bg);
   border-radius: 6px;
   font-size: 13px;
-  color: #606266;
+  color: var(--text-secondary);
 }
 
 .legend-item {
@@ -280,10 +290,13 @@ onMounted(() => {
   gap: 6px;
 }
 
-.legend-dot {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
+.legend-icon-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  color: #fff;
 }
 </style>

@@ -1,0 +1,90 @@
+/* ===================================================
+   Design Tokens — LeShine Ark Platform
+   单一真相源。所有视觉决策在这里定义，组件只引用变量。
+   参见 DESIGN.md 了解完整设计规范。
+   =================================================== */
+
+:root {
+  /* ── Primary: LeShine Gold ── */
+  --color-primary:        #D4941C;
+  --color-primary-hover:  #BB8218;
+  --color-primary-light:  rgba(212, 148, 28, 0.08);
+  --color-primary-glow:   rgba(212, 148, 28, 0.25);
+
+  /* ── Accent Gold ── */
+  --color-gold:           #F5CB5C;
+  --color-gold-soft:      #FDF4DC;
+  --color-gold-muted:     #B8860B;
+
+  /* ── Sidebar Dark ── */
+  --sidebar-bg-from:      #141210;
+  --sidebar-bg-to:        #1E1B18;
+  --sidebar-active:       var(--color-gold);
+  --sidebar-text:         #9C9590;
+  --sidebar-text-hover:   #D4C4A8;
+  --sidebar-subtitle:     #5C5550;
+  --sidebar-label:        #3D3832;
+  --sidebar-popup-border: #332E28;
+
+  /* ── Semantic Colors ── */
+  --color-success:        #2D9F6F;
+  --color-success-hover:  #248A5E;
+  --color-success-text:   #1E7D50;
+  --color-success-bg:     rgba(45, 159, 111, 0.08);
+  --color-success-bg-strong: rgba(103, 194, 58, 0.2);
+
+  --color-danger:         #DC3545;
+  --color-danger-hover:   #C0392B;
+  --color-danger-deep:    #A93226;
+  --color-danger-text:    #A93226;
+  --color-danger-bg:      rgba(192, 57, 43, 0.08);
+  --color-danger-bg-strong: rgba(245, 108, 108, 0.2);
+
+  --color-warning-bg:     rgba(245, 203, 92, 0.15);
+  --color-warning-bg-strong: rgba(230, 162, 60, 0.2);
+  --color-warning-text:   #8B6914;
+
+  --color-info-bg:        rgba(107, 140, 186, 0.08);
+  --color-info-text:      #6B8CBA;
+
+  /* ── Text ── */
+  --text-primary:         #1A1816;
+  --text-secondary:       #6B6560;
+  --text-muted:           #9C9590;
+
+  /* ── Borders ── */
+  --border-color:         #E8E2DC;
+  --border-hover:         #cbd5e1;
+
+  /* ── Surfaces ── */
+  --page-bg:              #FAF8F6;
+  --card-bg:              #ffffff;
+  --toolbar-bg:           #F5F2EE;
+  --table-header-bg:      #F5F2EE;
+  --table-stripe-bg:      #FDFCFA;
+  --input-hover-border:   #cbd5e1;
+
+  /* ── Shadows ── */
+  --card-radius:          12px;
+  --card-shadow:          0 1px 2px rgba(26, 24, 22, 0.04), 0 1px 3px rgba(26, 24, 22, 0.05);
+  --card-shadow-hover:    0 4px 16px rgba(26, 24, 22, 0.08), 0 2px 4px rgba(26, 24, 22, 0.04);
+
+  /* ── Typography ── */
+  --font-display:         'Outfit', sans-serif;
+  --font-body:            'DM Sans', sans-serif;
+
+  /* ── Layout ── */
+  --header-height:        56px;
+
+  /* ── Scrollbar ── */
+  --scrollbar-thumb:      #cbd5e1;
+  --scrollbar-thumb-hover:#94a3b8;
+}
+
+/* ── Border Radius Scale ── */
+/* Use these classes or reference values directly:
+   --radius-sm:   6px   (tags, badges)
+   --radius-md:   8px   (buttons, inputs, interactive elements)
+   --radius-lg:  12px   (cards, containers)
+   --radius-xl:  16px   (dialogs, drawers)
+*/

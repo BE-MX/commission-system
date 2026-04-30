@@ -62,8 +62,8 @@
       </el-table-column>
       <el-table-column label="操作" width="160" fixed="right">
         <template #default="{ row }">
-          <el-button link type="success" size="small" @click="handleApprove(row)">通过</el-button>
-          <el-button link type="danger" size="small" @click="handleReject(row)">拒绝</el-button>
+          <el-button link type="success" @click="handleApprove(row)"><el-icon><CircleCheck /></el-icon> 通过</el-button>
+          <el-button link type="danger" @click="handleReject(row)"><el-icon><CircleClose /></el-icon> 拒绝</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -110,6 +110,7 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { CircleCheck, CircleClose } from '@element-plus/icons-vue'
 import { getRequests, auditRequest } from '@/api/design'
 import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
 
@@ -205,7 +206,7 @@ onMounted(() => {
 .text-muted { color: var(--text-secondary); font-size: 12px; }
 
 .stats-banner {
-  background: linear-gradient(135deg, #141210 0%, #1E1B18 60%, #141210 100%);
+  background: linear-gradient(135deg, var(--sidebar-bg-from) 0%, var(--sidebar-bg-to) 60%, var(--sidebar-bg-from) 100%);
   border-radius: 16px;
   padding: 24px 32px;
   margin-bottom: 16px;
@@ -218,13 +219,13 @@ onMounted(() => {
 }
 .stat-item {
   background: rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
+  border-radius: 8px;
   padding: 16px;
   text-align: center;
 }
-.stat-item.pending { background: rgba(230, 162, 60, 0.2); }
-.stat-item.approved { background: rgba(103, 194, 58, 0.2); }
-.stat-item.rejected { background: rgba(245, 108, 108, 0.2); }
+.stat-item.pending { background: var(--color-warning-bg-strong); }
+.stat-item.approved { background: var(--color-success-bg-strong); }
+.stat-item.rejected { background: var(--color-danger-bg-strong); }
 .stat-value {
   font-size: 28px;
   font-weight: 700;

@@ -185,7 +185,7 @@ async function fetchPayments() {
   padding: 20px 24px;
   margin-bottom: 16px;
   box-shadow: var(--card-shadow);
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--border-color);
   position: sticky;
   top: 0;
   z-index: 3;
@@ -209,11 +209,11 @@ async function fetchPayments() {
 .sync-title {
   font-size: 15px;
   font-weight: 600;
-  color: #1a1f36;
+  color: var(--text-primary);
 }
 .sync-desc {
   font-size: 12px;
-  color: #8c92a4;
+  color: var(--text-secondary);
   margin-top: 2px;
 }
 .sync-action-right {

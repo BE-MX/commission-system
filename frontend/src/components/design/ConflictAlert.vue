@@ -97,10 +97,10 @@ const noConflict = computed(() => {
 }
 .overload-item {
   font-size: 13px;
-  color: #606266;
+  color: var(--text-secondary);
 }
 .overload-detail {
-  color: #E6A23C;
+  color: var(--color-primary);
   font-weight: 600;
 }
 </style>

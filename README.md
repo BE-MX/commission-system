@@ -2,12 +2,12 @@
 
 ## 项目概述
 
-莱莎方舟平台，集成提成管理与物流跟踪两大业务模块。
+莱莎方舟平台，集成提成管理、物流跟踪、客户归属、设计预约四大业务模块。
 
 ## 技术栈
 
 - **后端**: Python 3.12 + FastAPI + SQLAlchemy 2.0 + Alembic
-- **前端**: Vue3 + ElementPlus + Vite（后续实现）
+- **前端**: Vue 3 + Element Plus + Vite 5
 - **数据库**: 腾讯云 RDS MySQL（提成库读写 + 业务库跨库只读）
 - **部署**: Docker + docker-compose
 
@@ -42,10 +42,20 @@ commission-system/
 │   ├── alembic/          # 数据库迁移
 │   ├── config/           # 业务规则配置
 │   └── sql/              # DDL 脚本
-├── frontend/             # 前端（后续实现）
+├── frontend/
+│   ├── src/
+│   │   ├── api/          # Axios 请求封装
+│   │   ├── views/        # 页面组件（按领域分目录）
+│   │   ├── router/       # Vue Router
+│   │   └── utils/        # 工具函数
+│   └── dist/             # 构建产物
 └── docker-compose.yml
 ```
 
 ## 端口
 
-- 后端 API: 8001
+| 服务     | 端口 |
+|----------|------|
+| 后端 API | 8001 |
+| 前端 dev | 3000 (代理 /api → 8001) |
+| 前端生产 | 80   |

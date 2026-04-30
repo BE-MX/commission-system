@@ -8,38 +8,7 @@ import GlobalLoading from '@/components/GlobalLoading.vue'
 </script>
 
 <style>
-:root {
-  /* --- Palette: LeShine Gold + Black --- */
-  --color-primary: #D4941C;
-  --color-primary-hover: #BB8218;
-  --color-primary-light: rgba(212,148,28,0.08);
-  --color-primary-glow: rgba(212,148,28,0.25);
-  --color-gold: #F5CB5C;
-  --color-gold-soft: #FDF4DC;
-  --color-accent: #D4941C;
-  --color-danger: #DC3545;
-  --color-success: #2D9F6F;
-
-  --sidebar-bg-from: #141210;
-  --sidebar-bg-to: #1E1B18;
-  --sidebar-active: var(--color-gold);
-
-  --text-primary: #1A1816;
-  --text-secondary: #6B6560;
-  --text-muted: #9C9590;
-  --border-color: #E8E2DC;
-
-  --header-height: 56px;
-  --page-bg: #FAF8F6;
-  --card-bg: #ffffff;
-  --card-radius: 12px;
-  --card-shadow: 0 1px 2px rgba(26,24,22,0.04), 0 1px 3px rgba(26,24,22,0.05);
-  --card-shadow-hover: 0 4px 16px rgba(26,24,22,0.08), 0 2px 4px rgba(26,24,22,0.04);
-
-  /* --- Typography --- */
-  --font-display: 'Outfit', sans-serif;
-  --font-body: 'DM Sans', sans-serif;
-}
+/* Variables now in src/styles/tokens.css — single source of truth */
 
 html, body, #app {
   margin: 0;
@@ -64,8 +33,8 @@ html, body, #app {
 
 /* --- Scrollbar --- */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
 ::-webkit-scrollbar-track { background: transparent; }
 
 /* ===== Element Plus Overrides ===== */
@@ -78,7 +47,7 @@ html, body, #app {
   --el-table-border-color: var(--border-color);
 }
 .el-table th.el-table__cell {
-  background: #F5F2EE !important;
+  background: var(--table-header-bg) !important;
   color: var(--text-secondary);
   font-family: var(--font-display);
   font-weight: 600;
@@ -90,10 +59,10 @@ html, body, #app {
 .el-table td.el-table__cell {
   color: var(--text-primary);
   font-size: 13px;
-  border-bottom-color: #F5F2EE !important;
+  border-bottom-color: var(--table-header-bg) !important;
 }
 .el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell {
-  background: #FDFCFA !important;
+  background: var(--table-stripe-bg) !important;
 }
 .el-table .el-table__body tr:hover > td.el-table__cell {
   background: var(--color-primary-light) !important;
@@ -124,13 +93,15 @@ html, body, #app {
   letter-spacing: 0.03em;
 }
 
-/* Buttons */
+/* Buttons — base */
 .el-button {
   border-radius: 8px;
   font-family: var(--font-display);
   font-weight: 600;
   transition: all 0.2s ease;
 }
+
+/* Solid buttons — brand palette */
 .el-button--primary {
   background: var(--color-primary);
   border-color: var(--color-primary);
@@ -142,9 +113,31 @@ html, body, #app {
   border-color: var(--color-primary-hover);
   color: #fff;
 }
-.el-button.is-link { font-weight: 500; }
+.el-button--success {
+  background: var(--color-success);
+  border-color: var(--color-success);
+  color: #fff;
+}
+.el-button--success:hover,
+.el-button--success:focus {
+  background: var(--color-success-hover);
+  border-color: var(--color-success-hover);
+  color: #fff;
+}
+.el-button--danger {
+  background: var(--color-danger);
+  border-color: var(--color-danger);
+  color: #fff;
+}
+.el-button--danger:hover,
+.el-button--danger:focus {
+  background: var(--color-danger-hover);
+  border-color: var(--color-danger-hover);
+  color: #fff;
+}
 
-/* Link button colors — brand palette */
+/* Link buttons — brand palette */
+.el-button.is-link { font-weight: 500; }
 .el-button.is-link.el-button--primary {
   color: var(--color-primary);
   background: transparent;
@@ -155,18 +148,18 @@ html, body, #app {
   background: var(--color-primary-light);
 }
 .el-button.is-link.el-button--success {
-  color: #2D9F6F;
+  color: var(--color-success);
 }
 .el-button.is-link.el-button--success:hover {
-  color: #248A5E;
-  background: rgba(45,159,111,0.06);
+  color: var(--color-success-hover);
+  background: var(--color-success-bg);
 }
 .el-button.is-link.el-button--danger {
-  color: #C0392B;
+  color: var(--color-danger-hover);
 }
 .el-button.is-link.el-button--danger:hover {
-  color: #A93226;
-  background: rgba(192,57,43,0.06);
+  color: var(--color-danger-deep);
+  background: var(--color-danger-bg);
 }
 .el-button.is-link.el-button--warning {
   color: var(--color-primary);
@@ -178,44 +171,44 @@ html, body, #app {
 
 /* ---- Tags: brand-consistent status colors ---- */
 .el-tag--info {
-  background: #F5F2EE;
-  border-color: #E8E2DC;
-  color: #6B6560;
+  background: var(--toolbar-bg);
+  border-color: var(--border-color);
+  color: var(--text-secondary);
 }
 .el-tag--primary, .el-tag:not([class*="--"]) {
   background: rgba(212,148,28,0.1);
   border-color: rgba(212,148,28,0.2);
-  color: #B8860B;
+  color: var(--color-gold-muted);
 }
 .el-tag--success {
-  background: rgba(45,159,111,0.08);
+  background: var(--color-success-bg);
   border-color: rgba(45,159,111,0.18);
-  color: #1E7D50;
+  color: var(--color-success-text);
 }
 .el-tag--danger {
-  background: rgba(192,57,43,0.08);
+  background: var(--color-danger-bg);
   border-color: rgba(192,57,43,0.18);
-  color: #A93226;
+  color: var(--color-danger-text);
 }
 .el-tag--warning {
-  background: rgba(245,203,92,0.15);
+  background: var(--color-warning-bg);
   border-color: rgba(245,203,92,0.3);
-  color: #8B6914;
+  color: var(--color-warning-text);
 }
 /* Dark effect tags (used in detail banner) */
 .el-tag.el-tag--dark {
   border-color: transparent;
 }
 .el-tag--success.el-tag--dark {
-  background: #2D9F6F;
+  background: var(--color-success);
   color: #fff;
 }
 .el-tag--info.el-tag--dark {
-  background: #6B6560;
+  background: var(--text-secondary);
   color: #fff;
 }
 .el-tag--danger.el-tag--dark {
-  background: #C0392B;
+  background: var(--color-danger-hover);
   color: #fff;
 }
 
@@ -257,6 +250,11 @@ html, body, #app {
 .el-dropdown-menu__item:hover {
   background: var(--color-primary-light) !important;
   color: var(--color-primary) !important;
+}
+
+/* Inputs */
+.el-input__wrapper:hover {
+  box-shadow: 0 0 0 1px var(--input-hover-border) inset !important;
 }
 
 /* Dialogs */
@@ -348,16 +346,6 @@ html, body, #app {
 
 /* Menu popover */
 .el-menu--popup { border-radius: 10px !important; }
-
-/* ---- Dropdown trigger button in tables ---- */
-.el-table .el-dropdown .el-button--small.is-plain {
-  padding: 5px 10px;
-  font-size: 12px;
-}
-.el-table .el-dropdown .el-button--small.is-plain .el-icon--right {
-  margin-left: 2px;
-  font-size: 11px;
-}
 
 /* ---- Dropdown menu items with icons ---- */
 .el-dropdown-menu__item .el-icon {

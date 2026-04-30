@@ -60,7 +60,7 @@
               />
             </el-form-item>
           </el-col>
-          <el-col :span="12">
+          <el-col :span="8">
             <el-form-item label="优先级" prop="priority">
               <el-radio-group v-model="form.priority">
                 <el-radio value="normal">普通</el-radio>
@@ -87,8 +87,8 @@
         </el-form-item>
 
         <el-form-item>
-          <el-button type="primary" @click="handleSubmit" :loading="submitting">提交预约</el-button>
-          <el-button @click="resetForm">重置</el-button>
+          <el-button type="primary" :icon="Promotion" @click="handleSubmit" :loading="submitting">提交预约</el-button>
+          <el-button :icon="RefreshLeft" @click="resetForm">重置</el-button>
         </el-form-item>
       </el-form>
     </div>
@@ -99,6 +99,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { Promotion, RefreshLeft } from '@element-plus/icons-vue'
 import { submitRequest, checkConflict, getUnavailableDates } from '@/api/design'
 import ConflictAlert from '@/components/design/ConflictAlert.vue'
 import DatePeriodPicker from '@/components/design/DatePeriodPicker.vue'
@@ -132,7 +133,12 @@ const rules = {
   customer_name: [{ required: true, message: '请输入客户名称', trigger: 'blur' }],
   salesperson_name: [{ required: true, message: '请输入业务员姓名', trigger: 'blur' }],
   shoot_type: [{ required: true, message: '请选择拍摄类型', trigger: 'change' }],
-  shoot_type_remark: [{ required: true, message: '请说明拍摄类型', trigger: 'blur' }],
+  shoot_type_remark: [{ required: true, message: '请说明拍摄类型', trigger: 'blur',
+    validator: (rule, value, callback) => {
+      if (form.shoot_type === 'other' && !value) callback(new Error('请说明拍摄类型'))
+      else callback()
+    }
+  }],
   startDate: [{ required: true, message: '请选择期望开始日期', trigger: 'change' }],
   priority: [{ required: true, message: '请选择优先级', trigger: 'change' }],
 }

@@ -28,9 +28,9 @@
             </template>
           </el-table-column>
           <el-table-column prop="created_at" label="创建时间" width="170" show-overflow-tooltip />
-          <el-table-column label="操作" width="120" fixed="right">
+          <el-table-column label="操作" width="130" fixed="right">
             <template #default="{ row }">
-              <el-button link type="primary" size="small" @click="openConfirmDialog(row)">确认排期</el-button>
+              <el-button link type="primary" @click="openConfirmDialog(row)"><el-icon><Calendar /></el-icon> 确认排期</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -85,19 +85,19 @@
             <template #default="{ row }">
               <el-button
                 v-if="row.status === 'scheduled'"
-                link type="primary" size="small"
+                link type="primary"
                 @click="handleTaskAction(row, 'start')"
-              >开始执行</el-button>
+              ><el-icon><VideoPlay /></el-icon> 开始执行</el-button>
               <el-button
                 v-if="row.status === 'in_progress'"
-                link type="success" size="small"
+                link type="success"
                 @click="handleTaskAction(row, 'complete')"
-              >标记完成</el-button>
+              ><el-icon><CircleCheck /></el-icon> 标记完成</el-button>
               <el-button
                 v-if="['scheduled', 'in_progress'].includes(row.status)"
-                link type="danger" size="small"
+                link type="danger"
                 @click="handleTaskAction(row, 'cancel')"
-              >取消</el-button>
+              ><el-icon><CircleClose /></el-icon> 取消</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -138,13 +138,12 @@
           <el-table-column prop="created_at" label="创建时间" width="170" show-overflow-tooltip />
           <el-table-column label="操作" width="150" fixed="right">
             <template #default="{ row }">
-              <el-button link type="primary" size="small" @click="openDesignerDialog(row)">编辑</el-button>
+              <el-button link type="primary" @click="openDesignerDialog(row)"><el-icon><Edit /></el-icon> 编辑</el-button>
               <el-button
                 link
                 :type="row.is_active ? 'danger' : 'success'"
-                size="small"
                 @click="toggleDesignerActive(row)"
-              >{{ row.is_active ? '停用' : '启用' }}</el-button>
+              ><el-icon><SwitchButton /></el-icon> {{ row.is_active ? '停用' : '启用' }}</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -292,7 +291,7 @@
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Upload, Plus } from '@element-plus/icons-vue'
+import { Upload, Plus, Calendar, VideoPlay, CircleCheck, CircleClose, Edit, SwitchButton } from '@element-plus/icons-vue'
 import { getRequests, getTaskList, getDesigners, createDesigner, updateDesigner, actionRequest, rescheduleTask, importRequests } from '@/api/design'
 import DesignCalendarConfig from '@/components/design/DesignCalendarConfig.vue'
 import DesignCapacityConfig from '@/components/design/DesignCapacityConfig.vue'

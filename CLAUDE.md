@@ -73,6 +73,8 @@ docker-compose exec backend alembic upgrade head  # 容器内迁移
 - `/api/v1/payment` — 回款同步
 - `/api/v1/commission` — 提成计算
 - `/api/v1/report` — 报表导出
+- `/api/v1/design` — 设计预约（拍摄预约申请、审批、排期管理）
+- `/api/v1/tracking` — 物流运单追踪
 
 ## 数据库
 
@@ -89,3 +91,8 @@ docker-compose exec backend alembic upgrade head  # 容器内迁移
 - 前端 API 封装放 `frontend/src/api/`，页面组件放 `frontend/src/views/{领域}/`
 - 环境变量通过 `backend/.env` 管理，不进 git
 - 数据库变更必须通过 Alembic migration，不手动改表
+
+## Design System
+
+所有 UI 决策以 DESIGN.md 为准。做任何视觉相关改动前先读 DESIGN.md。
+QA 时检查代码是否符合 DESIGN.md 中的颜色、字体、间距、圆角规范。

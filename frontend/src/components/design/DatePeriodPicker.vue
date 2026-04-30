@@ -111,18 +111,18 @@ function emitChange() {
 .date-period-picker {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 0;
 }
 .range-sep {
   margin: 0 8px;
-  color: #909399;
+  color: var(--text-muted);
   font-size: 13px;
 }
 .period-error {
   display: block;
   width: 100%;
-  color: #f56c6c;
+  color: var(--color-danger);
   font-size: 12px;
   margin-top: 4px;
 }

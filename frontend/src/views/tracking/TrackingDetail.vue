@@ -224,7 +224,7 @@ onMounted(fetchDetail)
   font-weight: 600;
   margin: 0 0 16px;
   padding-left: 10px;
-  border-left: 3px solid var(--el-color-primary);
+  border-left: 3px solid var(--color-primary);
 }
 
 .timeline-section {
@@ -235,15 +235,15 @@ onMounted(fetchDetail)
 }
 .event-card.latest .event-desc {
   font-weight: 600;
-  color: var(--el-color-primary);
+  color: var(--color-primary);
 }
 .event-desc {
   font-size: 14px;
-  color: #303133;
+  color: var(--text-primary);
 }
 .event-location {
   font-size: 12px;
-  color: #909399;
+  color: var(--text-muted);
   margin-top: 2px;
 }
 

@@ -73,16 +73,15 @@
         </template>
       </el-table-column>
       <el-table-column prop="created_at" label="创建时间" width="170" show-overflow-tooltip />
-      <el-table-column label="操作" width="140" fixed="right">
+      <el-table-column label="操作" width="160" fixed="right">
         <template #default="{ row }">
+          <el-button link type="primary" @click="toggleDetail(row)"><el-icon><View /></el-icon> 详情</el-button>
           <el-button
             v-if="canCancel(row.status)"
             link
             type="danger"
-            size="small"
             @click="handleCancel(row)"
-          >取消</el-button>
-          <el-button link type="primary" size="small" @click="toggleDetail(row)">详情</el-button>
+          ><el-icon><CircleClose /></el-icon> 取消</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -148,6 +147,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { View, CircleClose } from '@element-plus/icons-vue'
 import { getRequests, actionRequest, getAuditLogs } from '@/api/design'
 import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
 
@@ -305,7 +305,7 @@ onMounted(() => {
 }
 .log-transition {
   font-size: 12px;
-  color: #409EFF;
+  color: var(--color-primary);
   margin: 0 0 2px;
 }
 .log-comment {

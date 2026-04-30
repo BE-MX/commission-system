@@ -89,6 +89,7 @@
                   @click="$emit('task-click', task)"
                   @mousedown="onTaskMousedown($event, task)"
                 >
+                  <el-icon class="task-bar-icon"><component :is="statusIcon(task.status)" /></el-icon>
                   <span class="task-bar-text">{{ taskDisplayName(task) }}</span>
                   <span v-if="task.priority === 'urgent'" class="urgent-badge">急</span>
                 </div>
@@ -144,6 +145,7 @@
                   @click="$emit('task-click', task)"
                   @mousedown="onTaskMousedown($event, task)"
                 >
+                  <el-icon class="task-bar-icon"><component :is="statusIcon(task.status)" /></el-icon>
                   <span class="task-bar-text">{{ taskDisplayName(task) }}</span>
                   <span v-if="task.priority === 'urgent'" class="urgent-badge">急</span>
                 </div>
@@ -170,7 +172,21 @@
 </template>
 
 <script setup>
-import { computed, ref, onBeforeUnmount } from 'vue'
+import { computed, ref, onBeforeUnmount, h } from 'vue'
+import { Clock, Calendar, VideoPlay, CircleCheck, CircleClose } from '@element-plus/icons-vue'
+
+// 状态图标映射（SVG Unicode 字符，兼容性好且无需额外渲染层）
+const STATUS_ICONS = {
+  pending_design: Clock,
+  scheduled: Calendar,
+  in_progress: VideoPlay,
+  completed: CircleCheck,
+  cancelled: CircleClose,
+}
+
+function statusIcon(status) {
+  return STATUS_ICONS[status] || Clock
+}
 
 const props = defineProps({
   tasks: { type: Array, default: () => [] },
@@ -396,11 +412,11 @@ function getTaskBarStyle(task, stackLevels) {
 
 // --- Status helpers ---
 const STATUS_COLORS = {
-  pending_design: '#E6A23C',
-  scheduled: '#409EFF',
-  in_progress: '#F56C6C',
-  completed: '#67C23A',
-  cancelled: '#909399',
+  pending_design: 'rgba(212,148,28,0.7)',
+  scheduled: 'rgba(212,148,28,0.7)',
+  in_progress: 'rgba(220,53,69,0.7)',
+  completed: 'rgba(45,159,111,0.7)',
+  cancelled: 'rgba(156,149,144,0.7)',
 }
 
 const STATUS_LABELS = {
@@ -427,15 +443,15 @@ const SHOOT_TYPE_LABELS = {
   other: '其他',
 }
 
-function statusColor(status) { return STATUS_COLORS[status] || '#409EFF' }
+function statusColor(status) { return STATUS_COLORS[status] || '#D4941C' }
 function statusLabel(status) { return STATUS_LABELS[status] || status }
 function statusTagType(status) { return STATUS_TAG_TYPES[status] || '' }
 function shootTypeLabel(type) { return SHOOT_TYPE_LABELS[type] || type || '' }
 
 function taskDisplayName(task) {
   const typeName = SHOOT_TYPE_LABELS[task.shoot_type] || task.shoot_type || ''
-  const customer = task.customer_name || ''
-  return customer && typeName ? `${customer}-${typeName}` : customer || typeName || task.task_no
+  const salesperson = task.salesperson_name || ''
+  return salesperson && typeName ? `${salesperson}-${typeName}` : salesperson || typeName || task.task_no
 }
 
 // --- Drag-to-reschedule ---
@@ -540,7 +556,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .gantt-wrapper {
-  border: 1px solid #e4e7ed;
+  border: 1px solid var(--border-color);
   border-radius: 8px;
   background: #fff;
   overflow: hidden;
@@ -562,73 +578,73 @@ onBeforeUnmount(() => {
   position: sticky;
   left: 0;
   z-index: 3;
-  background: #f5f7fa;
-  border-bottom: 1px solid #e4e7ed;
-  border-right: 1px solid #e4e7ed;
+  background: var(--table-header-bg);
+  border-bottom: 1px solid var(--border-color);
+  border-right: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 13px;
   font-weight: 600;
-  color: #606266;
+  color: var(--text-secondary);
   padding: 8px;
   grid-row: 1;
 }
 
 .gantt-period-corner {
   grid-row: 2;
-  border-bottom: 1px solid #e4e7ed;
+  border-bottom: 1px solid var(--border-color);
 }
 
 /* Date headers (span 2 columns each) */
 .gantt-date-header {
   grid-row: 1;
   grid-column: span 2;
-  background: #f5f7fa;
-  border-bottom: 1px solid #ebeef5;
-  border-right: 1px solid #ebeef5;
+  background: var(--table-header-bg);
+  border-bottom: 1px solid var(--border-color);
+  border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 6px 2px;
   font-size: 12px;
-  color: #606266;
+  color: var(--text-secondary);
   position: relative;
   min-width: 48px;
 }
 
-.gantt-date-header.is-weekend { background: #f5f5f5; }
-.gantt-date-header.is-today { border-bottom: 2px solid var(--color-gold, #e6a23c); }
+.gantt-date-header.is-weekend { background: var(--toolbar-bg); }
+.gantt-date-header.is-today { border-bottom: 2px solid var(--color-primary); }
 .gantt-date-header.is-unavailable {
   background: repeating-linear-gradient(-45deg, transparent, transparent 3px, rgba(144,147,153,0.12) 3px, rgba(144,147,153,0.12) 6px);
 }
 
 .date-label { font-weight: 600; line-height: 1.2; }
-.date-weekday { font-size: 11px; color: #909399; line-height: 1.2; }
+.date-weekday { font-size: 11px; color: var(--text-muted); line-height: 1.2; }
 
 /* Period sub-headers */
 .gantt-period-header {
   grid-row: 2;
-  background: #fafafa;
-  border-bottom: 1px solid #e4e7ed;
-  border-right: 1px dashed #ebeef5;
+  background: var(--toolbar-bg);
+  border-bottom: 1px solid var(--border-color);
+  border-right: 1px dashed var(--border-color);
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 2px;
   font-size: 11px;
-  color: #909399;
+  color: var(--text-muted);
   padding: 2px 0;
   min-width: 24px;
 }
 
 .gantt-period-header.period-pm {
-  border-right: 1px solid #ebeef5;
+  border-right: 1px solid var(--border-color);
 }
 
-.gantt-period-header.is-weekend { background: #f5f5f5; }
-.gantt-period-header.is-today { background: #fdf6ec; }
+.gantt-period-header.is-weekend { background: var(--toolbar-bg); }
+.gantt-period-header.is-today { background: rgba(212,148,28,0.08); }
 .gantt-period-header.is-unavailable {
   background: repeating-linear-gradient(-45deg, transparent, transparent 3px, rgba(144,147,153,0.12) 3px, rgba(144,147,153,0.12) 6px);
 }
@@ -640,9 +656,9 @@ onBeforeUnmount(() => {
   height: 5px;
   border-radius: 50%;
 }
-.load-dot.load-green { background: #67C23A; }
-.load-dot.load-yellow { background: #E6A23C; }
-.load-dot.load-red { background: #F56C6C; }
+.load-dot.load-green { background: #2D9F6F; }
+.load-dot.load-yellow { background: #D4941C; }
+.load-dot.load-red { background: #DC3545; }
 
 /* Row label */
 .gantt-row-label {
@@ -650,22 +666,23 @@ onBeforeUnmount(() => {
   left: 0;
   z-index: 2;
   background: #fff;
-  border-right: 1px solid #e4e7ed;
-  border-bottom: 1px solid #ebeef5;
+  border-right: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   padding: 0 12px;
   font-size: 13px;
   font-weight: 500;
-  color: #303133;
+  color: var(--text-primary);
   white-space: nowrap;
 }
 
 /* Row content */
 .gantt-row {
   position: relative;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid var(--border-color);
   min-height: 60px;
+  overflow: hidden;
 }
 
 /* Cell overlays */
@@ -676,12 +693,12 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 .gantt-cell-overlay.is-weekend { background: rgba(250,245,232,0.4); }
-.gantt-cell-overlay.is-today { border-left: 2px solid var(--color-gold, #e6a23c); }
+.gantt-cell-overlay.is-today { border-left: 2px solid var(--color-primary); }
 .gantt-cell-overlay.is-unavailable {
   background: repeating-linear-gradient(-45deg, transparent, transparent 3px, rgba(144,147,153,0.12) 3px, rgba(144,147,153,0.12) 6px);
 }
 .gantt-cell-overlay.is-pm {
-  border-left: 1px dashed #ebeef5;
+  border-left: 1px dashed var(--border-color);
 }
 
 /* Task bar */
@@ -691,8 +708,11 @@ onBeforeUnmount(() => {
   border-radius: 4px;
   color: #fff;
   font-size: 12px;
-  line-height: 28px;
-  padding: 0 8px;
+  padding: 0 6px 0 8px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 4px;
   cursor: pointer;
   z-index: 1;
   transition: filter 0.15s ease;
@@ -704,19 +724,25 @@ onBeforeUnmount(() => {
 .task-bar.is-dragging {
   opacity: 0.85;
   z-index: 10;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
-  outline: 2px dashed #409EFF;
+  box-shadow: 0 4px 12px rgba(26,24,22,0.25);
+  outline: 2px dashed var(--color-primary);
   outline-offset: 1px;
   cursor: grabbing;
   user-select: none;
 }
 
+.task-bar-icon {
+  flex-shrink: 0;
+  font-size: 13px;
+  opacity: 0.95;
+}
+
 .task-bar-text {
-  display: block;
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 100%;
 }
 
 /* Urgent badge */
@@ -727,21 +753,21 @@ onBeforeUnmount(() => {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #F56C6C;
+  background: var(--color-danger);
   color: #fff;
   font-size: 10px;
   font-weight: 700;
   line-height: 16px;
   text-align: center;
   z-index: 2;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  box-shadow: 0 1px 3px rgba(26,24,22,0.2);
 }
 
 /* Popover content */
 .task-popover p {
   margin: 4px 0;
   font-size: 13px;
-  color: #303133;
+  color: var(--text-primary);
   line-height: 1.6;
 }
 </style>

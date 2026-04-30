@@ -41,8 +41,8 @@
             <el-button link type="primary" @click="goDetail(row)"><el-icon><View /></el-icon> 明细</el-button>
             <el-button link type="success" @click="handleConfirm(row)"><el-icon><CircleCheck /></el-icon> 确认</el-button>
             <el-button link type="danger" @click="handleVoid(row)"><el-icon><CircleClose /></el-icon> 作废</el-button>
-            <el-dropdown trigger="click" @command="cmd => handleExport(row, cmd)" style="margin-left:4px">
-              <el-button type="primary" size="small" plain>
+            <el-dropdown trigger="click" @command="cmd => handleExport(row, cmd)">
+              <el-button link type="primary">
                 <el-icon><Download /></el-icon> 导出 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
               </el-button>
               <template #dropdown>
@@ -60,8 +60,8 @@
           <!-- 已确认 -->
           <template v-if="row.status === 'confirmed'">
             <el-button link type="primary" @click="goDetail(row)"><el-icon><View /></el-icon> 明细</el-button>
-            <el-dropdown trigger="click" @command="cmd => handleExport(row, cmd)" style="margin-left:4px">
-              <el-button type="primary" size="small" plain>
+            <el-dropdown trigger="click" @command="cmd => handleExport(row, cmd)">
+              <el-button link type="primary">
                 <el-icon><Download /></el-icon> 导出 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
               </el-button>
               <template #dropdown>
