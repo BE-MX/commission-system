@@ -1,6 +1,5 @@
 """物流跟踪核心业务逻辑 — 轮询物流API、更新状态"""
 
-import asyncio
 import json
 import logging
 from datetime import datetime, timedelta
@@ -88,7 +87,7 @@ async def poll_single(db: Session, shipment: ShipmentTracking) -> dict:
     return {"waybill_no": shipment.waybill_no, "status": "ok", "new_events": len(new_events)}
 
 
-def poll_active_shipments(db: Session) -> dict:
+async def poll_active_shipments(db: Session) -> dict:
     """批量轮询所有活跃运单"""
     shipments = (
         db.query(ShipmentTracking)
@@ -100,7 +99,7 @@ def poll_active_shipments(db: Session) -> dict:
 
     results = []
     for s in shipments:
-        r = asyncio.run(poll_single(db, s))
+        r = await poll_single(db, s)
         results.append(r)
 
     stats = {

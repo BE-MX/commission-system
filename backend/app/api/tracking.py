@@ -165,8 +165,8 @@ def get_stats(db: Session = Depends(get_db)):
 
 
 @router.post("/poll", summary="批量轮询（定时任务调用）")
-def trigger_poll(db: Session = Depends(get_db)):
-    stats = poll_active_shipments(db)
+async def trigger_poll(db: Session = Depends(get_db)):
+    stats = await poll_active_shipments(db)
     return {"code": 200, "message": "ok", "data": stats}
 
 
