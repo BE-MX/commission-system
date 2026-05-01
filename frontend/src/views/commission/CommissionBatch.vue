@@ -12,39 +12,40 @@
         </el-radio-group>
       </el-col>
       <el-col :span="6" style="text-align:right">
-        <el-button type="primary" @click="openCreateDialog"><el-icon><Plus /></el-icon> 新建批次</el-button>
+        <GlassButton variant="primary" left-icon="Plus" @click="openCreateDialog">新建批次</GlassButton>
       </el-col>
     </el-row>
 
     <!-- 表格 -->
-    <el-table ref="tableRef" :data="tableData" v-loading="loading" stripe border :max-height="maxHeight">
-      <el-table-column prop="batch_name" label="批次名称" min-width="140" />
-      <el-table-column label="周期类型" width="90">
+    <div class="table-card">
+    <el-table ref="tableRef" :data="tableData" v-loading="loading" class="list-table" border :max-height="maxHeight">
+      <el-table-column prop="batch_name" label="批次名称" min-width="140" max-width="210" show-overflow-tooltip />
+      <el-table-column label="周期类型" min-width="90" max-width="140">
         <template #default="{ row }">{{ periodLabel(row.period_type) }}</template>
       </el-table-column>
-      <el-table-column prop="period_start" label="起始日期" width="110" />
-      <el-table-column prop="period_end" label="结束日期" width="110" />
-      <el-table-column label="状态" width="90">
+      <el-table-column prop="period_start" label="起始日期" min-width="110" max-width="170" show-overflow-tooltip />
+      <el-table-column prop="period_end" label="结束日期" min-width="110" max-width="170" show-overflow-tooltip />
+      <el-table-column label="状态" min-width="90" max-width="140">
         <template #default="{ row }">
-          <el-tag :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
+          <el-tag :type="statusType(row.status)" size="small" effect="plain">{{ statusLabel(row.status) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="created_at" label="创建时间" width="170" />
-      <el-table-column label="操作" width="280" fixed="right">
+      <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" show-overflow-tooltip />
+      <el-table-column label="操作" min-width="280" max-width="420" fixed="right">
         <template #default="{ row }">
           <!-- 草稿 -->
           <template v-if="row.status === 'draft'">
-            <el-button link type="primary" @click="handleCalculate(row)"><el-icon><DataAnalysis /></el-icon> 执行计算</el-button>
+            <GlassButton variant="link" left-icon="DataAnalysis" @click="handleCalculate(row)">执行计算</GlassButton>
           </template>
           <!-- 已计算 -->
           <template v-if="row.status === 'calculated'">
-            <el-button link type="primary" @click="goDetail(row)"><el-icon><View /></el-icon> 明细</el-button>
-            <el-button link type="success" @click="handleConfirm(row)"><el-icon><CircleCheck /></el-icon> 确认</el-button>
-            <el-button link type="danger" @click="handleVoid(row)"><el-icon><CircleClose /></el-icon> 作废</el-button>
+            <GlassButton variant="link" left-icon="View" @click="goDetail(row)">明细</GlassButton>
+            <GlassButton variant="link" link-tone="success" left-icon="CircleCheck" @click="handleConfirm(row)">确认</GlassButton>
+            <GlassButton variant="link" link-tone="danger" left-icon="CircleClose" @click="handleVoid(row)">作废</GlassButton>
             <el-dropdown trigger="click" @command="cmd => handleExport(row, cmd)">
-              <el-button link type="primary">
-                <el-icon><Download /></el-icon> 导出 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
-              </el-button>
+              <GlassButton variant="link" left-icon="Download" right-icon="ArrowDown">
+                导出
+              </GlassButton>
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item command="all"><el-icon><Document /></el-icon> 全部明细</el-dropdown-item>
@@ -59,11 +60,11 @@
           </template>
           <!-- 已确认 -->
           <template v-if="row.status === 'confirmed'">
-            <el-button link type="primary" @click="goDetail(row)"><el-icon><View /></el-icon> 明细</el-button>
+            <GlassButton variant="link" left-icon="View" @click="goDetail(row)">明细</GlassButton>
             <el-dropdown trigger="click" @command="cmd => handleExport(row, cmd)">
-              <el-button link type="primary">
-                <el-icon><Download /></el-icon> 导出 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
-              </el-button>
+              <GlassButton variant="link" left-icon="Download" right-icon="ArrowDown">
+                导出
+              </GlassButton>
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item command="all"><el-icon><Document /></el-icon> 全部明细</el-dropdown-item>
@@ -78,11 +79,12 @@
           </template>
           <!-- 已作废 -->
           <template v-if="row.status === 'voided'">
-            <el-button link type="primary" @click="goDetail(row)"><el-icon><View /></el-icon> 明细</el-button>
+            <GlassButton variant="link" left-icon="View" @click="goDetail(row)">明细</GlassButton>
           </template>
         </template>
       </el-table-column>
     </el-table>
+    </div>
 
     <el-pagination
       class="pagination"
@@ -122,8 +124,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="createDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="submitCreate">创建</el-button>
+        <GlassButton variant="ghost" @click="createDialogVisible = false">取消</GlassButton>
+        <GlassButton variant="primary" :loading="saving" @click="submitCreate">创建</GlassButton>
       </template>
     </el-dialog>
 
@@ -145,7 +147,7 @@
         title="部分回款因客户归属不完整而跳过，请补充后重新计算"
       />
       <template #footer>
-        <el-button type="primary" @click="calcResultVisible = false">确定</el-button>
+        <GlassButton variant="primary" @click="calcResultVisible = false">确定</GlassButton>
       </template>
     </el-dialog>
   </div>

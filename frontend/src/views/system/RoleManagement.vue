@@ -3,34 +3,36 @@
     <!-- 操作栏 -->
     <el-row :gutter="16" class="toolbar">
       <el-col :span="24">
-        <el-button type="primary" @click="openCreateDialog"><el-icon><Plus /></el-icon> 新增角色</el-button>
+        <GlassButton variant="primary" left-icon="Plus" @click="openCreateDialog">新增角色</GlassButton>
       </el-col>
     </el-row>
 
     <!-- 表格 -->
-    <el-table ref="tableRef" :data="tableData" v-loading="loading" stripe border style="width: 100%" :max-height="maxHeight">
-      <el-table-column prop="name" label="角色标识" width="140" />
-      <el-table-column prop="label" label="角色名称" width="140" />
-      <el-table-column prop="description" label="描述" min-width="200" show-overflow-tooltip />
-      <el-table-column label="类型" width="100" align="center">
+    <div class="table-card">
+    <el-table ref="tableRef" :data="tableData" v-loading="loading" border class="list-table" style="width: 100%" :max-height="maxHeight">
+      <el-table-column prop="name" label="角色标识" min-width="140" max-width="210" show-overflow-tooltip />
+      <el-table-column prop="label" label="角色名称" min-width="140" max-width="210" show-overflow-tooltip />
+      <el-table-column prop="description" label="描述" min-width="200" max-width="300" show-overflow-tooltip />
+      <el-table-column label="类型" min-width="100" max-width="150">
         <template #default="{ row }">
-          <el-tag :type="row.is_system ? 'warning' : 'primary'" size="small">{{ row.is_system ? '系统' : '自定义' }}</el-tag>
+          <el-tag :type="row.is_system ? 'warning' : 'primary'" size="small" effect="plain">{{ row.is_system ? '系统' : '自定义' }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="user_count" label="用户数" width="80" align="center" />
-      <el-table-column prop="permission_count" label="权限数" width="80" align="center" />
-      <el-table-column prop="created_at" label="创建时间" width="170" />
-      <el-table-column label="操作" width="160" fixed="right">
+      <el-table-column prop="user_count" label="用户数" min-width="80" max-width="120" show-overflow-tooltip />
+      <el-table-column prop="permission_count" label="权限数" min-width="80" max-width="120" show-overflow-tooltip />
+      <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" show-overflow-tooltip />
+      <el-table-column label="操作" min-width="160" max-width="240" fixed="right">
         <template #default="{ row }">
-          <el-button link type="primary" :disabled="row.is_system" @click="openEditDialog(row)">
-            <el-icon><Edit /></el-icon> 编辑
-          </el-button>
-          <el-button link type="danger" :disabled="row.is_system || row.user_count > 0" @click="handleDelete(row)">
-            <el-icon><Delete /></el-icon> 删除
-          </el-button>
+          <GlassButton variant="link" :disabled="row.is_system" @click="openEditDialog(row)" left-icon="Edit">
+            编辑
+          </GlassButton>
+          <GlassButton variant="link" link-tone="danger" :disabled="row.is_system || row.user_count > 0" @click="handleDelete(row)" left-icon="Delete">
+            删除
+          </GlassButton>
         </template>
       </el-table-column>
     </el-table>
+    </div>
 
     <!-- 新增/编辑 Dialog -->
     <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑角色' : '新增角色'" width="560px">
@@ -61,8 +63,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="submitForm">确定</el-button>
+        <GlassButton variant="ghost" @click="dialogVisible = false">取消</GlassButton>
+        <GlassButton variant="primary" :loading="saving" @click="submitForm">确定</GlassButton>
       </template>
     </el-dialog>
   </div>

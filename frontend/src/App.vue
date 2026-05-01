@@ -54,18 +54,19 @@ html, body, #app {
   font-size: 12px;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  border-bottom: 2px solid var(--border-color) !important;
+  border-bottom: 1px solid var(--border-color) !important;
 }
 .el-table td.el-table__cell {
   color: var(--text-primary);
-  font-size: 13px;
-  border-bottom-color: var(--table-header-bg) !important;
+  font-size: 14px;
+  border-bottom-color: #f0f2f7 !important;
+  transition: background 0.2s ease;
 }
 .el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell {
   background: var(--table-stripe-bg) !important;
 }
 .el-table .el-table__body tr:hover > td.el-table__cell {
-  background: var(--color-primary-light) !important;
+  background: var(--table-row-hover) !important;
 }
 .el-table--border .el-table__inner-wrapper::after,
 .el-table--border::before,
@@ -99,19 +100,50 @@ html, body, #app {
   font-family: var(--font-display);
   font-weight: 600;
   transition: all 0.2s ease;
+  height: 36px;
+  padding: 0 16px;
+}
+.el-button.is-link,
+.el-button.is-text {
+  height: auto;
+  padding: 4px 8px;
+}
+.el-button.is-circle {
+  height: 36px;
+  width: 36px;
+  padding: 0;
+}
+.el-button [class*="el-icon"] + span {
+  margin-left: 4px;
+}
+
+/* Default buttons — secondary style */
+.el-button--default {
+  background: #fff;
+  border-color: var(--border-color);
+  color: #4a5568;
+}
+.el-button--default:hover,
+.el-button--default:focus {
+  background: var(--toolbar-bg);
+  border-color: rgba(212, 175, 110, 0.3);
+  color: #4a5568;
 }
 
 /* Solid buttons — brand palette */
 .el-button--primary {
-  background: var(--color-primary);
-  border-color: var(--color-primary);
-  color: #fff;
+  background: linear-gradient(135deg, #d4af6e, #a08040);
+  border-color: transparent;
+  color: #1a1816;
+  font-weight: 600;
 }
 .el-button--primary:hover,
 .el-button--primary:focus {
-  background: var(--color-primary-hover);
-  border-color: var(--color-primary-hover);
-  color: #fff;
+  background: linear-gradient(135deg, #e8d5a3, #b08d4f);
+  border-color: transparent;
+  color: #1a1816;
+  filter: brightness(1.05);
+  box-shadow: 0 4px 12px rgba(212, 175, 110, 0.25);
 }
 .el-button--success {
   background: var(--color-success);
@@ -256,6 +288,9 @@ html, body, #app {
 .el-input__wrapper:hover {
   box-shadow: 0 0 0 1px var(--input-hover-border) inset !important;
 }
+.el-input__inner {
+  height: 36px;
+}
 
 /* Dialogs */
 .el-dialog {
@@ -354,6 +389,71 @@ html, body, #app {
   vertical-align: -0.15em;
 }
 
+/* ===== List Table Global Styles ===== */
+
+.list-table {
+  font-family: var(--font-body);
+}
+
+.list-table :deep(.el-table__header th.el-table__cell) {
+  background: var(--table-header-bg) !important;
+  color: var(--text-secondary);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 13px;
+  text-transform: none;
+  letter-spacing: normal;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-color) !important;
+  border-right: 1px solid var(--border-color) !important;
+  white-space: nowrap !important;
+}
+
+.list-table :deep(.el-table__body td.el-table__cell) {
+  color: var(--text-primary);
+  font-size: 13px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #f0f2f7 !important;
+  border-right: 1px solid var(--border-color) !important;
+  white-space: nowrap !important;
+}
+
+.list-table :deep(.el-table__body tr:last-child td.el-table__cell) {
+  border-bottom: none !important;
+}
+
+/* Element Plus wraps content in .cell div which has white-space: normal by default */
+.list-table :deep(.el-table__cell .cell) {
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Status tags — pill shape inside list tables */
+.list-table :deep(.el-tag) {
+  border-radius: 9999px;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* Operation buttons inside list tables */
+.list-table :deep(.el-button.is-link) {
+  font-weight: 500;
+  font-size: 13px;
+}
+.list-table :deep(.el-button.is-link .el-icon) {
+  font-size: 13px;
+  margin-right: 4px;
+}
+
+/* Primary key link inside list tables */
+.list-table .primary-link {
+  font-weight: 600;
+  font-size: 13px;
+}
+
 /* ===== Page-level shared styles ===== */
 
 .toolbar {
@@ -388,4 +488,55 @@ html, body, #app {
 .anim-stagger > *:nth-child(4) { animation-delay: 0.26s; }
 .anim-stagger > *:nth-child(5) { animation-delay: 0.33s; }
 .anim-stagger > *:nth-child(6) { animation-delay: 0.40s; }
+
+/* ===== Kimi-style components ===== */
+
+.table-card {
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  overflow: hidden;
+  box-shadow: var(--card-shadow);
+}
+
+.badge-dev {
+  background: var(--badge-dev-bg);
+  color: var(--badge-dev-color);
+  border: 1px solid var(--badge-dev-border);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  display: inline-block;
+}
+
+.badge-assign {
+  background: var(--badge-assign-bg);
+  color: var(--badge-assign-color);
+  border: 1px solid var(--badge-assign-border);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  display: inline-block;
+}
+
+.stat-card {
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  padding: 20px;
+  box-shadow: var(--card-shadow);
+}
+
+.stat-icon-box {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 </style>

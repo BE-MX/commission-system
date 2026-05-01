@@ -87,8 +87,8 @@
         </el-form-item>
 
         <el-form-item>
-          <el-button type="primary" :icon="Promotion" @click="handleSubmit" :loading="submitting">提交预约</el-button>
-          <el-button :icon="RefreshLeft" @click="resetForm">重置</el-button>
+          <GlassButton variant="primary" :icon="Promotion" @click="handleSubmit" :loading="submitting">提交预约</GlassButton>
+          <GlassButton :icon="RefreshLeft" @click="resetForm">重置</GlassButton>
         </el-form-item>
       </el-form>
     </div>

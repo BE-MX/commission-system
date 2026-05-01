@@ -8,40 +8,42 @@
         </el-input>
       </el-col>
       <el-col :span="16">
-        <el-button type="primary" @click="fetchList"><el-icon><Search /></el-icon> 查询</el-button>
-        <el-button type="primary" @click="openCreateDialog"><el-icon><Plus /></el-icon> 新增用户</el-button>
+        <GlassButton left-icon="Search" @click="fetchList">查询</GlassButton>
+        <GlassButton variant="primary" left-icon="Plus" @click="openCreateDialog">新增用户</GlassButton>
       </el-col>
     </el-row>
 
     <!-- 表格 -->
-    <el-table ref="tableRef" :data="tableData" v-loading="loading" stripe border style="width: 100%" :max-height="maxHeight">
-      <el-table-column prop="username" label="用户名" width="140" />
-      <el-table-column prop="real_name" label="姓名" width="120" />
-      <el-table-column prop="email" label="邮箱" min-width="180" show-overflow-tooltip />
-      <el-table-column prop="phone" label="手机号" width="140" />
-      <el-table-column label="角色" min-width="160">
+    <div class="table-card">
+    <el-table ref="tableRef" :data="tableData" v-loading="loading" border class="list-table" style="width: 100%" :max-height="maxHeight">
+      <el-table-column prop="username" label="用户名" min-width="140" max-width="210" show-overflow-tooltip />
+      <el-table-column prop="real_name" label="姓名" min-width="120" max-width="180" show-overflow-tooltip />
+      <el-table-column prop="email" label="邮箱" min-width="180" max-width="270" show-overflow-tooltip />
+      <el-table-column prop="phone" label="手机号" min-width="140" max-width="210" show-overflow-tooltip />
+      <el-table-column label="角色" min-width="160" max-width="240">
         <template #default="{ row }">
-          <el-tag v-for="r in row.roles" :key="r" size="small" style="margin-right: 4px">{{ r }}</el-tag>
+          <el-tag v-for="r in row.roles" :key="r" size="small" effect="plain" style="margin-right: 4px">{{ r }}</el-tag>
           <span v-if="!row.roles?.length" style="color: var(--text-muted)">未分配</span>
         </template>
       </el-table-column>
-      <el-table-column label="状态" width="80" align="center">
+      <el-table-column label="状态" min-width="80" max-width="120">
         <template #default="{ row }">
-          <el-tag :type="row.is_active ? 'success' : 'danger'" size="small">{{ row.is_active ? '正常' : '禁用' }}</el-tag>
+          <el-tag :type="row.is_active ? 'success' : 'danger'" size="small" effect="plain">{{ row.is_active ? '正常' : '禁用' }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="last_login_at" label="最后登录" width="170" />
-      <el-table-column label="操作" width="280" fixed="right">
+      <el-table-column prop="last_login_at" label="最后登录" min-width="170" max-width="260" show-overflow-tooltip />
+      <el-table-column label="操作" min-width="280" max-width="420" fixed="right">
         <template #default="{ row }">
-          <el-button link type="primary" @click="openEditDialog(row)"><el-icon><Edit /></el-icon> 编辑</el-button>
-          <el-button link type="warning" @click="openResetPwdDialog(row)"><el-icon><Key /></el-icon> 重置密码</el-button>
-          <el-button link :type="row.is_active ? 'warning' : 'success'" @click="handleToggleActive(row)">
+          <GlassButton variant="link" left-icon="Edit" @click="openEditDialog(row)">编辑</GlassButton>
+          <GlassButton variant="link" left-icon="Key" @click="openResetPwdDialog(row)">重置密码</GlassButton>
+          <GlassButton variant="link" :link-tone="row.is_active ? '' : 'success'" left-icon="SwitchButton" @click="handleToggleActive(row)">
             {{ row.is_active ? '禁用' : '启用' }}
-          </el-button>
-          <el-button link type="danger" @click="handleDelete(row)"><el-icon><Delete /></el-icon> 删除</el-button>
+          </GlassButton>
+          <GlassButton variant="link" link-tone="danger" left-icon="Delete" @click="handleDelete(row)">删除</GlassButton>
         </template>
       </el-table-column>
     </el-table>
+    </div>
 
     <el-pagination
       class="pagination"
@@ -79,8 +81,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="submitForm">确定</el-button>
+        <GlassButton variant="ghost" @click="dialogVisible = false">取消</GlassButton>
+        <GlassButton variant="primary" :loading="saving" @click="submitForm">确定</GlassButton>
       </template>
     </el-dialog>
 
@@ -98,8 +100,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="resetPwdVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="submitResetPwd">确定</el-button>
+        <GlassButton variant="ghost" @click="resetPwdVisible = false">取消</GlassButton>
+        <GlassButton variant="primary" :loading="saving" @click="submitResetPwd">确定</GlassButton>
       </template>
     </el-dialog>
   </div>

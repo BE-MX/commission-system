@@ -3,37 +3,39 @@
     <el-tabs v-model="activeTab" @tab-change="onTabChange">
       <!-- Tab 1: 待确认任务 -->
       <el-tab-pane label="待确认任务" name="pending">
+        <div class="table-card">
         <el-table
           ref="pendingTableRef"
           :data="pendingData"
           v-loading="pendingLoading"
-          stripe
+          class="list-table"
           border
           :max-height="tabMaxHeight"
         >
-          <el-table-column prop="request_no" label="预约编号" width="160" show-overflow-tooltip />
-          <el-table-column prop="customer_name" label="客户名称" width="130" show-overflow-tooltip />
-          <el-table-column prop="salesperson_name" label="业务员" width="90" />
-          <el-table-column label="拍摄类型" width="100">
+          <el-table-column prop="request_no" label="预约编号" min-width="160" max-width="240" show-overflow-tooltip />
+          <el-table-column prop="customer_name" label="客户名称" min-width="130" max-width="200" show-overflow-tooltip />
+          <el-table-column prop="salesperson_name" label="业务员" min-width="90" max-width="140" show-overflow-tooltip />
+          <el-table-column label="拍摄类型" min-width="100" max-width="150">
             <template #default="{ row }">{{ SHOOT_TYPE_MAP[row.shoot_type] || row.shoot_type }}</template>
           </el-table-column>
-          <el-table-column label="期望日期" width="280">
+          <el-table-column label="期望日期" min-width="280" max-width="420">
             <template #default="{ row }">{{ row.expect_start_date }} {{ periodLabel(row.expect_start_period) }} ~ {{ row.expect_end_date }} {{ periodLabel(row.expect_end_period) }}</template>
           </el-table-column>
-          <el-table-column label="优先级" width="80" align="center">
+          <el-table-column label="优先级" min-width="80" max-width="120">
             <template #default="{ row }">
-              <el-tag :type="row.priority === 'urgent' ? 'danger' : 'info'" size="small" effect="plain">
+              <el-tag :type="row.priority === 'urgent' ? 'danger' : 'info'" effect="plain">
                 {{ row.priority === 'urgent' ? '加急' : '普通' }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="created_at" label="创建时间" width="170" show-overflow-tooltip />
-          <el-table-column label="操作" width="130" fixed="right">
+          <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" show-overflow-tooltip />
+          <el-table-column label="操作" min-width="130" max-width="200" fixed="right">
             <template #default="{ row }">
-              <el-button link type="primary" @click="openConfirmDialog(row)"><el-icon><Calendar /></el-icon> 确认排期</el-button>
+              <GlassButton variant="link" left-icon="Calendar" @click="openConfirmDialog(row)">确认排期</GlassButton>
             </template>
           </el-table-column>
         </el-table>
+        </div>
 
         <el-pagination
           class="pagination"
@@ -47,60 +49,62 @@
 
       <!-- Tab 2: 排期任务 -->
       <el-tab-pane label="排期任务" name="scheduled">
+        <div class="table-card">
         <el-table
           ref="scheduledTableRef"
           :data="scheduledData"
           v-loading="scheduledLoading"
-          stripe
+          class="list-table"
           border
           :max-height="tabMaxHeight"
         >
-          <el-table-column prop="task_no" label="任务编号" width="170" show-overflow-tooltip />
-          <el-table-column prop="customer_name" label="客户名称" width="130" show-overflow-tooltip />
-          <el-table-column prop="salesperson_name" label="业务员" width="90" />
-          <el-table-column label="拍摄类型" width="100">
+          <el-table-column prop="task_no" label="任务编号" min-width="170" max-width="260" show-overflow-tooltip />
+          <el-table-column prop="customer_name" label="客户名称" min-width="130" max-width="200" show-overflow-tooltip />
+          <el-table-column prop="salesperson_name" label="业务员" min-width="90" max-width="140" show-overflow-tooltip />
+          <el-table-column label="拍摄类型" min-width="100" max-width="150">
             <template #default="{ row }">{{ SHOOT_TYPE_MAP[row.shoot_type] || row.shoot_type }}</template>
           </el-table-column>
-          <el-table-column label="设计师" width="100">
+          <el-table-column label="设计师" min-width="100" max-width="150">
             <template #default="{ row }">{{ getDesignerName(row.designer_id) }}</template>
           </el-table-column>
-          <el-table-column label="排期日期" width="280">
+          <el-table-column label="排期日期" min-width="280" max-width="420">
             <template #default="{ row }">{{ row.plan_start_date || '-' }} {{ periodLabel(row.plan_start_period) }} ~ {{ row.plan_end_date || '-' }} {{ periodLabel(row.plan_end_period) }}</template>
           </el-table-column>
-          <el-table-column label="优先级" width="80" align="center">
+          <el-table-column label="优先级" min-width="80" max-width="120">
             <template #default="{ row }">
-              <el-tag :type="row.priority === 'urgent' ? 'danger' : 'info'" size="small" effect="plain">
+              <el-tag :type="row.priority === 'urgent' ? 'danger' : 'info'" effect="plain">
                 {{ row.priority === 'urgent' ? '加急' : '普通' }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="状态" width="100" align="center">
+          <el-table-column label="状态" min-width="100" max-width="150">
             <template #default="{ row }">
-              <el-tag :type="TASK_STATUS_TAG[row.status]" size="small" effect="plain">
+              <el-tag :type="TASK_STATUS_TAG[row.status]" effect="plain">
                 {{ TASK_STATUS_MAP[row.status] || row.status }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="200" fixed="right">
+          <el-table-column label="操作" min-width="200" max-width="300" fixed="right">
             <template #default="{ row }">
-              <el-button
+              <GlassButton
                 v-if="row.status === 'scheduled'"
-                link type="primary"
+                variant="link" left-icon="VideoPlay"
                 @click="handleTaskAction(row, 'start')"
-              ><el-icon><VideoPlay /></el-icon> 开始执行</el-button>
-              <el-button
+              >开始执行</GlassButton>
+              <GlassButton
                 v-if="row.status === 'in_progress'"
-                link type="success"
+                variant="link" link-tone="success" left-icon="CircleCheck"
                 @click="handleTaskAction(row, 'complete')"
-              ><el-icon><CircleCheck /></el-icon> 标记完成</el-button>
-              <el-button
+              >标记完成</GlassButton>
+              <GlassButton
                 v-if="['scheduled', 'in_progress'].includes(row.status)"
-                link type="danger"
+                variant="link" link-tone="danger" left-icon="CircleClose"
                 @click="handleTaskAction(row, 'cancel')"
-              ><el-icon><CircleClose /></el-icon> 取消</el-button>
+              >取消</GlassButton>
             </template>
           </el-table-column>
         </el-table>
+        </div>
 
         <el-pagination
           class="pagination"
@@ -115,38 +119,41 @@
       <!-- Tab 3: 设计师管理 -->
       <el-tab-pane label="设计师管理" name="designers">
         <el-row style="margin-bottom: 12px" justify="end">
-          <el-button type="primary" @click="openDesignerDialog(null)"><el-icon><Plus /></el-icon> 新建设计师</el-button>
+          <GlassButton variant="primary" left-icon="Plus" @click="openDesignerDialog(null)">新建设计师</GlassButton>
         </el-row>
+        <div class="table-card">
         <el-table
           :data="designerData"
           v-loading="designerLoading"
-          stripe
+          class="list-table"
           border
           :max-height="tabMaxHeight"
         >
-          <el-table-column prop="id" label="ID" width="80" />
-          <el-table-column prop="name" label="姓名" width="120" />
-          <el-table-column prop="email" label="邮箱" min-width="180" show-overflow-tooltip />
-          <el-table-column prop="dingtalk_id" label="钉钉ID" width="140" show-overflow-tooltip />
-          <el-table-column label="状态" width="100" align="center">
+          <el-table-column prop="id" label="ID" min-width="80" max-width="120" show-overflow-tooltip />
+          <el-table-column prop="name" label="姓名" min-width="120" max-width="180" show-overflow-tooltip />
+          <el-table-column prop="email" label="邮箱" min-width="180" max-width="270" show-overflow-tooltip />
+          <el-table-column prop="dingtalk_id" label="钉钉ID" min-width="140" max-width="210" show-overflow-tooltip />
+          <el-table-column label="状态" min-width="100" max-width="150">
             <template #default="{ row }">
-              <el-tag :type="row.is_active ? 'success' : 'info'" size="small" effect="plain">
+              <el-tag :type="row.is_active ? 'success' : 'info'" effect="plain">
                 {{ row.is_active ? '在职' : '停用' }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="created_at" label="创建时间" width="170" show-overflow-tooltip />
-          <el-table-column label="操作" width="150" fixed="right">
+          <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" show-overflow-tooltip />
+          <el-table-column label="操作" min-width="150" max-width="230" fixed="right">
             <template #default="{ row }">
-              <el-button link type="primary" @click="openDesignerDialog(row)"><el-icon><Edit /></el-icon> 编辑</el-button>
-              <el-button
-                link
-                :type="row.is_active ? 'danger' : 'success'"
+              <GlassButton variant="link" left-icon="Edit" @click="openDesignerDialog(row)">编辑</GlassButton>
+              <GlassButton
+                variant="link"
+                :link-tone="row.is_active ? 'danger' : 'success'"
+                left-icon="SwitchButton"
                 @click="toggleDesignerActive(row)"
-              ><el-icon><SwitchButton /></el-icon> {{ row.is_active ? '停用' : '启用' }}</el-button>
+              >{{ row.is_active ? '停用' : '启用' }}</GlassButton>
             </template>
           </el-table-column>
         </el-table>
+        </div>
       </el-tab-pane>
 
       <!-- Tab 4: 不可用日期 -->
@@ -184,19 +191,19 @@
             :on-remove="() => importFile = null"
           >
             <template #trigger>
-              <el-button type="primary" :icon="Upload">选择文件</el-button>
+              <GlassButton variant="primary" :icon="Upload">选择文件</GlassButton>
             </template>
             <template #tip>
               <div class="el-upload__tip">仅支持 .xlsx / .xls 文件</div>
             </template>
           </el-upload>
-          <el-button
-            type="success"
+          <GlassButton
+            variant="success"
             style="margin-top: 12px"
             :disabled="!importFile"
             :loading="importing"
             @click="submitImport"
-          >开始导入</el-button>
+          >开始导入</GlassButton>
         </div>
 
         <!-- Import results dialog -->
@@ -254,8 +261,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="confirmVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitConfirm" :loading="confirming">确认</el-button>
+        <GlassButton variant="ghost" @click="confirmVisible = false">取消</GlassButton>
+        <GlassButton variant="primary" @click="submitConfirm" :loading="confirming">确认</GlassButton>
       </template>
     </el-dialog>
 
@@ -281,8 +288,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="designerDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitDesigner" :loading="designerSaving">保存</el-button>
+        <GlassButton variant="ghost" @click="designerDialogVisible = false">取消</GlassButton>
+        <GlassButton variant="primary" @click="submitDesigner" :loading="designerSaving">保存</GlassButton>
       </template>
     </el-dialog>
   </div>

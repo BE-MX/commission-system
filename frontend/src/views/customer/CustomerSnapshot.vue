@@ -15,65 +15,68 @@
         </el-select>
       </el-col>
       <el-col :span="14" style="text-align:right">
-        <el-button type="success" :loading="autoMatching" @click="handleAutoMatch"><el-icon><MagicStick /></el-icon> 自动匹配</el-button>
-        <el-button type="primary" @click="openCreateDialog"><el-icon><Plus /></el-icon> 手工新增</el-button>
-        <el-button @click="importDialogVisible = true"><el-icon><Upload /></el-icon> Excel导入</el-button>
-        <el-button @click="downloadTpl"><el-icon><Download /></el-icon> 下载模板</el-button>
+        <GlassButton variant="success" :loading="autoMatching" @click="handleAutoMatch" left-icon="MagicStick">自动匹配</GlassButton>
+        <GlassButton variant="primary" left-icon="Plus" @click="openCreateDialog">手工新增</GlassButton>
+        <GlassButton left-icon="Upload" @click="importDialogVisible = true">Excel导入</GlassButton>
+        <GlassButton left-icon="Download" @click="downloadTpl">下载模板</GlassButton>
       </el-col>
     </el-row>
 
     <!-- 表格 -->
+    <div class="table-card">
     <el-table
       ref="tableRef"
       :data="tableData"
       v-loading="loading"
-      stripe border
+      border
+      class="list-table"
       style="width: 100%"
       :row-class-name="rowClassName"
       :max-height="maxHeight"
     >
-      <el-table-column prop="customer_id" label="客户ID" width="160" />
-      <el-table-column prop="customer_name" label="客户名称" min-width="160" show-overflow-tooltip />
-      <el-table-column prop="salesperson_name" label="业务员" width="100" />
-      <el-table-column label="业务员属性" width="100">
+      <el-table-column prop="customer_id" label="客户ID" min-width="160" max-width="240" show-overflow-tooltip />
+      <el-table-column prop="customer_name" label="客户名称" min-width="160" max-width="240" show-overflow-tooltip />
+      <el-table-column prop="salesperson_name" label="业务员" min-width="100" max-width="150" show-overflow-tooltip />
+      <el-table-column label="业务员属性" min-width="100" max-width="150">
         <template #default="{ row }">
           <span>{{ attrLabel(row.salesperson_attribute) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="业务员比例" width="100" align="right">
+      <el-table-column label="业务员比例" min-width="100" max-width="150">
         <template #default="{ row }">{{ rateStr(row.salesperson_rate) }}</template>
       </el-table-column>
-      <el-table-column prop="supervisor_name" label="一级主管" width="100" />
-      <el-table-column label="一级主管属性" width="110">
+      <el-table-column prop="supervisor_name" label="一级主管" min-width="100" max-width="150" show-overflow-tooltip />
+      <el-table-column label="一级主管属性" min-width="110" max-width="170">
         <template #default="{ row }">
           <span>{{ attrLabel(row.supervisor_attribute) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="一级主管比例" width="110" align="right">
+      <el-table-column label="一级主管比例" min-width="110" max-width="170">
         <template #default="{ row }">{{ rateStr(row.supervisor_rate) }}</template>
       </el-table-column>
-      <el-table-column prop="second_supervisor_name" label="二级主管" width="100" />
-      <el-table-column label="二级主管比例" width="110" align="right">
+      <el-table-column prop="second_supervisor_name" label="二级主管" min-width="100" max-width="150" show-overflow-tooltip />
+      <el-table-column label="二级主管比例" min-width="110" max-width="170">
         <template #default="{ row }">{{ rateStr(row.second_supervisor_rate) }}</template>
       </el-table-column>
-      <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip />
-      <el-table-column prop="first_receipt_date" label="首次成交日期" width="120" />
-      <el-table-column label="状态" width="90">
+      <el-table-column prop="remark" label="备注" min-width="120" max-width="240" show-overflow-tooltip />
+      <el-table-column prop="first_receipt_date" label="首次成交日期" min-width="120" max-width="180" show-overflow-tooltip />
+      <el-table-column label="状态" min-width="90" max-width="140">
         <template #default="{ row }">
-          <el-tag v-if="row.is_complete" type="success" size="small">已完整</el-tag>
-          <el-tag v-else type="warning" size="small">待补充</el-tag>
+          <el-tag v-if="row.is_complete" type="success" size="small" effect="plain">已完整</el-tag>
+          <el-tag v-else type="warning" size="small" effect="plain">待补充</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="来源" width="70">
+      <el-table-column label="来源" min-width="70" max-width="110">
         <template #default="{ row }">{{ sourceLabel(row.source) }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="180" fixed="right">
+      <el-table-column label="操作" min-width="180" max-width="270" fixed="right">
         <template #default="{ row }">
-          <el-button v-if="!row.is_complete" link type="warning" @click="openCompleteDialog(row)"><el-icon><EditPen /></el-icon> 补充信息</el-button>
-          <el-button link type="primary" @click="openResetDialog(row)"><el-icon><RefreshRight /></el-icon> 重置归属</el-button>
+          <GlassButton v-if="!row.is_complete" variant="link" left-icon="EditPen" @click="openCompleteDialog(row)">补充信息</GlassButton>
+          <GlassButton variant="link" left-icon="RefreshRight" @click="openResetDialog(row)">重置归属</GlassButton>
         </template>
       </el-table-column>
     </el-table>
+    </div>
 
     <el-pagination
       class="pagination"
@@ -118,8 +121,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="createDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="submitCreate">确定</el-button>
+        <GlassButton variant="ghost" @click="createDialogVisible = false">取消</GlassButton>
+        <GlassButton variant="primary" :loading="saving" @click="submitCreate">确定</GlassButton>
       </template>
     </el-dialog>
 
@@ -161,8 +164,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="completeDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="submitComplete">确定</el-button>
+        <GlassButton variant="ghost" @click="completeDialogVisible = false">取消</GlassButton>
+        <GlassButton variant="primary" :loading="saving" @click="submitComplete">确定</GlassButton>
       </template>
     </el-dialog>
 
@@ -201,8 +204,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="resetDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="submitReset">确定</el-button>
+        <GlassButton variant="ghost" @click="resetDialogVisible = false">取消</GlassButton>
+        <GlassButton variant="primary" :loading="saving" @click="submitReset">确定</GlassButton>
       </template>
     </el-dialog>
 
@@ -226,8 +229,8 @@
         </div>
       </div>
       <template #footer>
-        <el-button @click="importDialogVisible = false">关闭</el-button>
-        <el-button type="primary" :loading="importing" @click="submitImport" :disabled="!importFile">开始导入</el-button>
+        <GlassButton variant="ghost" @click="importDialogVisible = false">关闭</GlassButton>
+        <GlassButton variant="primary" :loading="importing" @click="submitImport" :disabled="!importFile">开始导入</GlassButton>
       </template>
     </el-dialog>
   </div>

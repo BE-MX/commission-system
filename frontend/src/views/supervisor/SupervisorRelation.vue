@@ -8,27 +8,29 @@
         </el-input>
       </el-col>
       <el-col :span="4">
-        <el-button type="primary" @click="fetchList"><el-icon><Search /></el-icon> 查询</el-button>
-        <el-button @click="importDialogVisible = true"><el-icon><Upload /></el-icon> 批量导入</el-button>
+        <GlassButton left-icon="Search" @click="fetchList">查询</GlassButton>
+        <GlassButton left-icon="Upload" @click="importDialogVisible = true">批量导入</GlassButton>
       </el-col>
     </el-row>
 
     <!-- 表格 -->
-    <el-table ref="tableRef" :data="tableData" v-loading="loading" stripe border style="width: 100%" :max-height="maxHeight">
-      <el-table-column prop="salesperson_id" label="业务员ID" width="200" />
-      <el-table-column prop="salesperson_name" label="业务员姓名" width="140" />
-      <el-table-column prop="supervisor_id" label="一级主管ID" width="200" />
-      <el-table-column prop="supervisor_name" label="一级主管姓名" width="140" />
-      <el-table-column prop="second_supervisor_id" label="二级主管ID" width="200" />
-      <el-table-column prop="second_supervisor_name" label="二级主管姓名" width="140" />
-      <el-table-column prop="effective_start" label="生效日期" width="120" />
-      <el-table-column label="操作" min-width="160">
+    <div class="table-card">
+    <el-table ref="tableRef" :data="tableData" v-loading="loading" border class="list-table" style="width: 100%" :max-height="maxHeight">
+      <el-table-column prop="salesperson_id" label="业务员ID" min-width="200" max-width="300" show-overflow-tooltip />
+      <el-table-column prop="salesperson_name" label="业务员姓名" min-width="140" max-width="210" show-overflow-tooltip />
+      <el-table-column prop="supervisor_id" label="一级主管ID" min-width="200" max-width="300" show-overflow-tooltip />
+      <el-table-column prop="supervisor_name" label="一级主管姓名" min-width="140" max-width="210" show-overflow-tooltip />
+      <el-table-column prop="second_supervisor_id" label="二级主管ID" min-width="200" max-width="300" show-overflow-tooltip />
+      <el-table-column prop="second_supervisor_name" label="二级主管姓名" min-width="140" max-width="210" show-overflow-tooltip />
+      <el-table-column prop="effective_start" label="生效日期" min-width="120" max-width="180" show-overflow-tooltip />
+      <el-table-column label="操作" min-width="160" max-width="240">
         <template #default="{ row }">
-          <el-button link type="primary" @click="openSetDialog(row)"><el-icon><Edit /></el-icon> 变更主管</el-button>
-          <el-button link type="primary" @click="openHistory(row)"><el-icon><Clock /></el-icon> 查看历史</el-button>
+          <GlassButton variant="link" left-icon="Edit" @click="openSetDialog(row)">变更主管</GlassButton>
+          <GlassButton variant="link" left-icon="Clock" @click="openHistory(row)">查看历史</GlassButton>
         </template>
       </el-table-column>
     </el-table>
+    </div>
 
     <el-pagination
       class="pagination"
@@ -55,8 +57,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="setDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="submitRelation">确定</el-button>
+        <GlassButton variant="ghost" @click="setDialogVisible = false">取消</GlassButton>
+        <GlassButton variant="primary" :loading="saving" @click="submitRelation">确定</GlassButton>
       </template>
     </el-dialog>
 
@@ -107,10 +109,10 @@
         </div>
       </div>
       <template #footer>
-        <el-button @click="importDialogVisible = false">关闭</el-button>
-        <el-button type="primary" :loading="importing" @click="submitImport" :disabled="!importFile">
+        <GlassButton variant="ghost" @click="importDialogVisible = false">关闭</GlassButton>
+        <GlassButton variant="primary" :loading="importing" @click="submitImport" :disabled="!importFile">
           开始导入
-        </el-button>
+        </GlassButton>
       </template>
     </el-dialog>
   </div>

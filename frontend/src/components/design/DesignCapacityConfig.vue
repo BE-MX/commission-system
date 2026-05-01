@@ -17,9 +17,9 @@
           size="default"
           style="width: 160px;"
         />
-        <el-button type="primary" size="default" @click="saveGlobalCapacity" :loading="saving">
+        <GlassButton variant="primary" left-icon="Check" :loading="saving" @click="saveGlobalCapacity">
           保存
-        </el-button>
+        </GlassButton>
       </div>
     </el-card>
 
@@ -78,9 +78,9 @@
           placeholder="容量"
           style="width: 140px;"
         />
-        <el-button type="primary" @click="addSpecificDate" :disabled="!newEntry.date">
+        <GlassButton variant="primary" left-icon="Plus" :disabled="!newEntry.date" @click="addSpecificDate">
           添加
-        </el-button>
+        </GlassButton>
       </div>
 
       <!-- Table of existing specific dates -->
@@ -114,7 +114,7 @@
         </el-table-column>
         <el-table-column label="操作" width="100" align="center">
           <template #default="{ row }">
-            <el-button type="danger" link size="small" @click="removeSpecificDate(row)">删除</el-button>
+            <GlassButton variant="link" link-tone="danger" left-icon="Delete" @click="removeSpecificDate(row)">删除</GlassButton>
           </template>
         </el-table-column>
       </el-table>

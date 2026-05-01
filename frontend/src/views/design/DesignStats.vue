@@ -16,7 +16,7 @@
         />
       </el-col>
       <el-col :span="3">
-        <el-button type="primary" :icon="Refresh" @click="fetchStats">刷新</el-button>
+        <GlassButton :icon="Refresh" @click="fetchStats">刷新</GlassButton>
       </el-col>
     </el-row>
 
@@ -50,30 +50,31 @@
 
     <!-- Designer workload table -->
     <div class="section-title">设计师工作量</div>
+    <div class="table-card">
     <el-table
       :data="designerStats"
       v-loading="loading"
-      stripe
+      class="list-table"
       border
     >
-      <el-table-column prop="designer_name" label="设计师" width="120" />
-      <el-table-column prop="total" label="总任务数" width="100" align="center" />
-      <el-table-column prop="completed" label="已完成" width="100" align="center">
+      <el-table-column prop="designer_name" label="设计师" min-width="120" max-width="180" show-overflow-tooltip />
+      <el-table-column prop="total" label="总任务数" min-width="100" max-width="150" />
+      <el-table-column prop="completed" label="已完成" min-width="100" max-width="150">
         <template #default="{ row }">
           <el-tag type="success" size="small" effect="plain">{{ row.completed }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="in_progress" label="进行中" width="100" align="center">
+      <el-table-column prop="in_progress" label="进行中" min-width="100" max-width="150">
         <template #default="{ row }">
           <el-tag type="warning" size="small" effect="plain">{{ row.in_progress }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="avg_duration_days" label="平均任务时长(天)" width="160" align="center">
+      <el-table-column prop="avg_duration_days" label="平均任务时长(天)" min-width="160" max-width="240" show-overflow-tooltip>
         <template #default="{ row }">
           {{ row.avg_duration_days || '-' }}
         </template>
       </el-table-column>
-      <el-table-column label="完成率" min-width="160">
+      <el-table-column label="完成率" min-width="160" max-width="240">
         <template #default="{ row }">
           <el-progress
             :percentage="row.total > 0 ? Math.round(row.completed / row.total * 100) : 0"
@@ -83,6 +84,7 @@
         </template>
       </el-table-column>
     </el-table>
+    </div>
   </div>
 </template>
 

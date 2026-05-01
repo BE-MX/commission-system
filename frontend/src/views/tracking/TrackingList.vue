@@ -59,61 +59,70 @@
         </el-select>
       </el-col>
       <el-col :span="2">
-        <el-button type="primary" @click="fetchList"><el-icon><Search /></el-icon> 查询</el-button>
+        <GlassButton left-icon="Search" @click="fetchList">查询</GlassButton>
       </el-col>
       <el-col :span="8" style="text-align:right">
-        <el-button @click="handleScanStaging"><el-icon><Refresh /></el-icon> 扫描暂存</el-button>
-        <el-button @click="handlePoll"><el-icon><Loading /></el-icon> 批量轮询</el-button>
+        <GlassButton left-icon="Refresh" @click="handleScanStaging">扫描暂存</GlassButton>
+        <GlassButton left-icon="Loading" @click="handlePoll">批量轮询</GlassButton>
       </el-col>
     </el-row>
 
     <!-- 表格 -->
-    <el-table ref="tableRef" :data="tableData" v-loading="loading" stripe border :max-height="maxHeight">
-      <el-table-column prop="waybill_no" label="运单号" width="160" show-overflow-tooltip>
+    <div class="table-card">
+    <el-table
+      ref="tableRef"
+      :data="tableData"
+      v-loading="loading"
+      :max-height="maxHeight"
+      class="list-table"
+      border
+    >
+      <el-table-column prop="waybill_no" label="运单号" min-width="140" max-width="200" show-overflow-tooltip>
         <template #default="{ row }">
-          <el-button link type="primary" @click="goDetail(row)">{{ row.waybill_no }}</el-button>
+          <GlassButton variant="link" class="primary-link" @click="goDetail(row)">{{ row.waybill_no }}</GlassButton>
         </template>
       </el-table-column>
-      <el-table-column prop="carrier_name" label="物流商" width="100" />
-      <el-table-column prop="receiver_name" label="收件人" width="110" show-overflow-tooltip />
-      <el-table-column prop="receiver_company" label="收件公司" min-width="140" show-overflow-tooltip />
-      <el-table-column prop="receiver_country" label="国家" width="100" />
-      <el-table-column label="状态" width="100">
+      <el-table-column prop="carrier_name" label="物流商" min-width="100" max-width="140" show-overflow-tooltip />
+      <el-table-column prop="receiver_name" label="收件人" min-width="110" max-width="170" show-overflow-tooltip />
+      <el-table-column prop="receiver_company" label="收件公司" min-width="150" max-width="300" show-overflow-tooltip />
+      <el-table-column prop="receiver_country" label="国家" min-width="90" max-width="130" show-overflow-tooltip />
+      <el-table-column label="状态" min-width="110" max-width="150">
         <template #default="{ row }">
           <el-tag :type="statusTagType(row.current_status)" size="small" effect="plain">
             {{ statusText(row.current_status) }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="current_status_text" label="最新动态" min-width="180" show-overflow-tooltip />
-      <el-table-column prop="current_location" label="当前位置" width="140" show-overflow-tooltip />
-      <el-table-column label="最新时间" width="160">
+      <el-table-column prop="current_status_text" label="最新动态" min-width="190" max-width="340" show-overflow-tooltip />
+      <el-table-column prop="current_location" label="当前位置" min-width="130" max-width="220" show-overflow-tooltip />
+      <el-table-column label="最新时间" min-width="160" max-width="200" show-overflow-tooltip>
         <template #default="{ row }">{{ row.last_event_time || '-' }}</template>
       </el-table-column>
-      <el-table-column prop="dingtalk_user_name" label="提交人" width="80" />
-      <el-table-column label="短链接" width="100" align="center">
+      <el-table-column prop="dingtalk_user_name" label="提交人" min-width="100" max-width="140" show-overflow-tooltip />
+      <el-table-column label="短链接" min-width="100" max-width="140">
         <template #default="{ row }">
-          <el-button v-if="row.short_link" link type="primary" size="small" @click="copyLink(row.short_link)">
-            <el-icon><CopyDocument /></el-icon> 复制
-          </el-button>
+          <GlassButton v-if="row.short_link" variant="link" left-icon="CopyDocument" @click="copyLink(row.short_link)">
+            复制
+          </GlassButton>
           <span v-else>-</span>
         </template>
       </el-table-column>
-      <el-table-column label="跟踪" width="70" align="center">
+      <el-table-column label="跟踪" min-width="110" max-width="150">
         <template #default="{ row }">
           <el-tag :type="row.is_active ? 'success' : 'info'" size="small" effect="plain">
             {{ row.is_active ? '进行中' : '已结束' }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="90" fixed="right">
+      <el-table-column label="操作" min-width="90" max-width="130" fixed="right">
         <template #default="{ row }">
-          <el-button link type="primary" size="small" @click="handleRefresh(row)">
-            <el-icon><Refresh /></el-icon> 刷新
-          </el-button>
+          <GlassButton variant="link" left-icon="Refresh" @click="handleRefresh(row)">
+            刷新
+          </GlassButton>
         </template>
       </el-table-column>
     </el-table>
+    </div>
 
     <el-pagination
       class="pagination"

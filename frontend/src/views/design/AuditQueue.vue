@@ -19,32 +19,33 @@
     </div>
 
     <!-- 表格 -->
+    <div class="table-card">
     <el-table
       ref="tableRef"
       :data="tableData"
       v-loading="loading"
-      stripe
       border
+      class="list-table"
       :max-height="maxHeight"
     >
-      <el-table-column prop="request_no" label="预约编号" width="160" show-overflow-tooltip />
-      <el-table-column prop="customer_name" label="客户名称" width="130" show-overflow-tooltip />
-      <el-table-column prop="salesperson_name" label="业务员" width="90" />
-      <el-table-column label="拍摄类型" width="100">
+      <el-table-column prop="request_no" label="预约编号" min-width="160" max-width="240" show-overflow-tooltip />
+      <el-table-column prop="customer_name" label="客户名称" min-width="130" max-width="200" show-overflow-tooltip />
+      <el-table-column prop="salesperson_name" label="业务员" min-width="90" max-width="140" show-overflow-tooltip />
+      <el-table-column label="拍摄类型" min-width="100" max-width="150">
         <template #default="{ row }">{{ SHOOT_TYPE_MAP[row.shoot_type] || row.shoot_type }}</template>
       </el-table-column>
-      <el-table-column label="期望日期" width="200">
+      <el-table-column label="期望日期" min-width="200" max-width="300">
         <template #default="{ row }">{{ row.expect_start_date }} ~ {{ row.expect_end_date }}</template>
       </el-table-column>
-      <el-table-column label="优先级" width="80" align="center">
+      <el-table-column label="优先级" min-width="80" max-width="120">
         <template #default="{ row }">
-          <el-tag :type="row.priority === 'urgent' ? 'danger' : 'info'" size="small" effect="plain">
+          <el-tag :type="row.priority === 'urgent' ? 'danger' : 'info'" effect="plain">
             {{ row.priority === 'urgent' ? '加急' : '普通' }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="created_at" label="提交时间" width="170" show-overflow-tooltip />
-      <el-table-column label="冲突" width="80" align="center">
+      <el-table-column prop="created_at" label="提交时间" min-width="170" max-width="260" show-overflow-tooltip />
+      <el-table-column label="冲突" min-width="80" max-width="120">
         <template #default="{ row }">
           <el-popover
             v-if="row.conflict_detail"
@@ -54,19 +55,20 @@
             width="260"
           >
             <template #reference>
-              <el-tag type="warning" size="small" effect="plain" style="cursor: pointer">有冲突</el-tag>
+              <el-tag type="warning" effect="plain" style="cursor: pointer">有冲突</el-tag>
             </template>
           </el-popover>
           <span v-else class="text-muted">-</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="160" fixed="right">
+      <el-table-column label="操作" min-width="160" max-width="240" fixed="right">
         <template #default="{ row }">
-          <el-button link type="success" @click="handleApprove(row)"><el-icon><CircleCheck /></el-icon> 通过</el-button>
-          <el-button link type="danger" @click="handleReject(row)"><el-icon><CircleClose /></el-icon> 拒绝</el-button>
+          <GlassButton variant="link" link-tone="success" left-icon="CircleCheck" @click="handleApprove(row)">通过</GlassButton>
+          <GlassButton variant="link" link-tone="danger" left-icon="CircleClose" @click="handleReject(row)">拒绝</GlassButton>
         </template>
       </el-table-column>
     </el-table>
+    </div>
 
     <el-pagination
       class="pagination"
@@ -87,8 +89,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="approveVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitAudit('approve')" :loading="auditing">确认通过</el-button>
+        <GlassButton variant="ghost" @click="approveVisible = false">取消</GlassButton>
+        <GlassButton variant="primary" @click="submitAudit('approve')" :loading="auditing">确认通过</GlassButton>
       </template>
     </el-dialog>
 
@@ -100,8 +102,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="rejectVisible = false">取消</el-button>
-        <el-button type="danger" @click="submitAudit('reject')" :loading="auditing">确认拒绝</el-button>
+        <GlassButton variant="ghost" @click="rejectVisible = false">取消</GlassButton>
+        <GlassButton variant="danger" @click="submitAudit('reject')" :loading="auditing">确认拒绝</GlassButton>
       </template>
     </el-dialog>
   </div>

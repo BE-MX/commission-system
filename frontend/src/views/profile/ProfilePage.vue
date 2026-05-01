@@ -19,9 +19,9 @@
           <el-input v-model="profileForm.phone" placeholder="选填" />
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" :loading="savingProfile" @click="submitProfile">
-            <el-icon><Check /></el-icon> 保存资料
-          </el-button>
+          <GlassButton variant="primary" :loading="savingProfile" @click="submitProfile" left-icon="Check">
+            保存资料
+          </GlassButton>
         </el-form-item>
       </el-form>
     </el-card>
@@ -42,9 +42,9 @@
           <el-input v-model="pwdForm.confirm_password" type="password" placeholder="再次输入新密码" show-password />
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" :loading="savingPwd" @click="submitPassword">
-            <el-icon><Key /></el-icon> 确认修改
-          </el-button>
+          <GlassButton variant="primary" :loading="savingPwd" @click="submitPassword" left-icon="Key">
+            确认修改
+          </GlassButton>
         </el-form-item>
       </el-form>
     </el-card>

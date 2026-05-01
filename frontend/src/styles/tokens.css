@@ -48,21 +48,31 @@
   --color-info-text:      #6B8CBA;
 
   /* ── Text ── */
-  --text-primary:         #1A1816;
-  --text-secondary:       #6B6560;
-  --text-muted:           #9C9590;
+  --text-primary:         #1a1a2e;
+  --text-secondary:       #4a5568;
+  --text-muted:           #a0aec0;
+  --text-placeholder:     #a0aec0;
 
   /* ── Borders ── */
-  --border-color:         #E8E2DC;
-  --border-hover:         #cbd5e1;
+  --border-color:         #e2e5ef;
+  --border-hover:         #c5cce0;
 
   /* ── Surfaces ── */
-  --page-bg:              #FAF8F6;
+  --page-bg:              #f0f2f7;
   --card-bg:              #ffffff;
-  --toolbar-bg:           #F5F2EE;
-  --table-header-bg:      #F5F2EE;
-  --table-stripe-bg:      #FDFCFA;
-  --input-hover-border:   #cbd5e1;
+  --toolbar-bg:           #fafbfe;
+  --table-header-bg:      #fafbfe;
+  --table-stripe-bg:      #fafbfe;
+  --table-row-hover:      #fef9f0;
+  --input-hover-border:   #c5cce0;
+
+  /* ── Badge tokens ── */
+  --badge-dev-bg:         #eff6ff;
+  --badge-dev-color:      #2563eb;
+  --badge-dev-border:     #bfdbfe;
+  --badge-assign-bg:      #fef9f0;
+  --badge-assign-color:   #b08d4f;
+  --badge-assign-border:  #f5e0b5;
 
   /* ── Shadows ── */
   --card-radius:          12px;

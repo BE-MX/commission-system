@@ -31,60 +31,63 @@
         </el-select>
       </el-col>
       <el-col :span="2">
-        <el-button type="primary" @click="fetchList">
-          <el-icon><Search /></el-icon> 查询
-        </el-button>
+        <GlassButton left-icon="Search" @click="fetchList">
+          查询
+        </GlassButton>
       </el-col>
     </el-row>
 
     <!-- 表格 -->
+    <div class="table-card">
     <el-table
       ref="tableRef"
       :data="tableData"
       v-loading="loading"
-      stripe
+      class="list-table"
       border
       :max-height="maxHeight"
     >
-      <el-table-column prop="request_no" label="预约编号" width="160" show-overflow-tooltip>
+      <el-table-column prop="request_no" label="预约编号" min-width="160" max-width="240">
         <template #default="{ row }">
-          <el-button link type="primary" @click="toggleDetail(row)">{{ row.request_no }}</el-button>
+          <GlassButton variant="link" @click="toggleDetail(row)">{{ row.request_no }}</GlassButton>
         </template>
       </el-table-column>
-      <el-table-column prop="customer_name" label="客户名称" width="140" show-overflow-tooltip />
-      <el-table-column label="拍摄类型" width="100">
+      <el-table-column prop="customer_name" label="客户名称" min-width="140" max-width="210" show-overflow-tooltip />
+      <el-table-column label="拍摄类型" min-width="100" max-width="150">
         <template #default="{ row }">{{ shootTypeLabel(row.shoot_type) }}</template>
       </el-table-column>
-      <el-table-column label="期望日期" width="200">
+      <el-table-column label="期望日期" min-width="200" max-width="300">
         <template #default="{ row }">{{ row.expect_start_date }} ~ {{ row.expect_end_date }}</template>
       </el-table-column>
-      <el-table-column label="优先级" width="80" align="center">
+      <el-table-column label="优先级" min-width="80" max-width="120">
         <template #default="{ row }">
-          <el-tag :type="row.priority === 'urgent' ? 'danger' : 'info'" size="small" effect="plain">
+          <el-tag :type="row.priority === 'urgent' ? 'danger' : 'info'" effect="plain">
             {{ row.priority === 'urgent' ? '加急' : '普通' }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="状态" width="110" align="center">
+      <el-table-column label="状态" min-width="110" max-width="170">
         <template #default="{ row }">
-          <el-tag :type="STATUS_TAG[row.status]" size="small" effect="plain">
+          <el-tag :type="STATUS_TAG[row.status]" effect="plain">
             {{ STATUS_MAP[row.status] || row.status }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="created_at" label="创建时间" width="170" show-overflow-tooltip />
-      <el-table-column label="操作" width="160" fixed="right">
+      <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" show-overflow-tooltip />
+      <el-table-column label="操作" min-width="160" max-width="240" fixed="right">
         <template #default="{ row }">
-          <el-button link type="primary" @click="toggleDetail(row)"><el-icon><View /></el-icon> 详情</el-button>
-          <el-button
+          <GlassButton variant="link" left-icon="View" @click="toggleDetail(row)">详情</GlassButton>
+          <GlassButton
             v-if="canCancel(row.status)"
-            link
-            type="danger"
+            variant="link"
+            link-tone="danger"
+            left-icon="CircleClose"
             @click="handleCancel(row)"
-          ><el-icon><CircleClose /></el-icon> 取消</el-button>
+          >取消</GlassButton>
         </template>
       </el-table-column>
     </el-table>
+    </div>
 
     <el-pagination
       class="pagination"

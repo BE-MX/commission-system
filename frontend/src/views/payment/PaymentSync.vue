@@ -21,9 +21,9 @@
           value-format="YYYY-MM-DD"
           style="width: 280px"
         />
-        <el-button type="primary" :loading="syncing" @click="handleSync" :disabled="!dateRange">
-          <el-icon><Refresh /></el-icon> 开始同步
-        </el-button>
+        <GlassButton variant="primary" :loading="syncing" @click="handleSync" :disabled="!dateRange" left-icon="Refresh">
+          开始同步
+        </GlassButton>
       </div>
     </div>
 
@@ -73,30 +73,32 @@
             </el-input>
           </el-col>
           <el-col :span="2">
-            <el-button type="primary" @click="fetchPayments"><el-icon><Search /></el-icon> 查询</el-button>
+            <GlassButton left-icon="Search" @click="fetchPayments">查询</GlassButton>
           </el-col>
         </el-row>
       </template>
 
-      <el-table ref="tableRef" :data="paymentList" v-loading="listLoading" stripe border :max-height="maxHeight">
-        <el-table-column prop="payment_id" label="回款ID" width="180" show-overflow-tooltip />
-        <el-table-column prop="order_id" label="订单ID" width="180" show-overflow-tooltip />
-        <el-table-column prop="customer_name" label="客户名称" min-width="160" show-overflow-tooltip />
-        <el-table-column prop="payment_date" label="回款日期" width="110" />
-        <el-table-column label="回款金额(USD)" width="130" align="right">
+      <div class="table-card">
+      <el-table ref="tableRef" :data="paymentList" v-loading="listLoading" class="list-table" border :max-height="maxHeight">
+        <el-table-column prop="payment_id" label="回款ID" min-width="180" max-width="270" show-overflow-tooltip />
+        <el-table-column prop="order_id" label="订单ID" min-width="180" max-width="270" show-overflow-tooltip />
+        <el-table-column prop="customer_name" label="客户名称" min-width="160" max-width="240" show-overflow-tooltip />
+        <el-table-column prop="payment_date" label="回款日期" min-width="110" max-width="170" show-overflow-tooltip />
+        <el-table-column label="回款金额(USD)" min-width="130" max-width="200">
           <template #default="{ row }">{{ row.payment_amount?.toFixed(2) }}</template>
         </el-table-column>
-        <el-table-column label="是否已计算" width="100" align="center">
+        <el-table-column label="是否已计算" min-width="100" max-width="150">
           <template #default="{ row }">
-            <el-tag :type="row.is_calculated ? 'success' : 'info'" size="small">
+            <el-tag :type="row.is_calculated ? 'success' : 'info'" size="small" effect="plain">
               {{ row.is_calculated ? '是' : '否' }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="所属批次" width="120">
+        <el-table-column label="所属批次" min-width="120" max-width="180" show-overflow-tooltip>
           <template #default="{ row }">{{ row.batch_id || '-' }}</template>
         </el-table-column>
       </el-table>
+      </div>
 
       <el-pagination
         class="pagination"

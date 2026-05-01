@@ -3,12 +3,12 @@
     <!-- 返回 + 刷新 -->
     <el-row class="toolbar" justify="space-between" align="middle">
       <el-col :span="12">
-        <el-button @click="$router.push('/tracking')"><el-icon><ArrowLeft /></el-icon> 返回列表</el-button>
+        <GlassButton left-icon="ArrowLeft" @click="$router.push('/tracking')">返回列表</GlassButton>
       </el-col>
       <el-col :span="12" style="text-align:right">
-        <el-button type="primary" :loading="refreshing" @click="handleRefresh">
-          <el-icon><Refresh /></el-icon> 刷新物流
-        </el-button>
+        <GlassButton variant="primary" :loading="refreshing" @click="handleRefresh" left-icon="Refresh">
+          刷新物流
+        </GlassButton>
       </el-col>
     </el-row>
 
@@ -55,9 +55,9 @@
             <div class="info-label">物流查询短链接</div>
             <div class="info-value short-link-value">
               <span class="short-link-text">{{ shipment.short_link }}</span>
-              <el-button link type="primary" size="small" @click="copyLink(shipment.short_link)" style="margin-left:6px">
-                <el-icon><CopyDocument /></el-icon> 复制
-              </el-button>
+              <GlassButton variant="link" size="xs" @click="copyLink(shipment.short_link)" style="margin-left:6px" left-icon="CopyDocument">
+                复制
+              </GlassButton>
             </div>
           </div>
         </div>

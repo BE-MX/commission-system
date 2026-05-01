@@ -4,15 +4,16 @@
     <div class="toolbar">
       <el-checkbox v-model="batchMode">批量选择模式</el-checkbox>
       <template v-if="batchMode">
-        <el-button
-          type="primary"
+        <GlassButton
+          variant="primary"
           size="small"
+          left-icon="Setting"
           :disabled="!batchSelected.length"
           @click="openBatchDialog"
         >
           批量设置 ({{ batchSelected.length }})
-        </el-button>
-        <el-button size="small" @click="batchSelected = []">清除选择</el-button>
+        </GlassButton>
+        <GlassButton variant="ghost" size="small" left-icon="Close" @click="batchSelected = []">清除选择</GlassButton>
       </template>
     </div>
 
@@ -50,12 +51,7 @@
             <el-tag v-else size="small" type="info" effect="plain" style="margin-left: 4px">全天</el-tag>
             <span v-if="item.reason" class="upcoming-reason">{{ item.reason }}</span>
           </div>
-          <el-button
-            type="danger"
-            link
-            size="small"
-            @click="handleRemove(item.date, item.period)"
-          >删除</el-button>
+          <GlassButton variant="link" link-tone="danger" left-icon="Delete" @click="handleRemove(item.date, item.period)">删除</GlassButton>
         </div>
       </div>
     </div>
@@ -78,8 +74,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="addDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitAdd" :loading="submitting">确定</el-button>
+        <GlassButton variant="ghost" @click="addDialogVisible = false">取消</GlassButton>
+        <GlassButton variant="primary" :loading="submitting" @click="submitAdd">确定</GlassButton>
       </template>
     </el-dialog>
 
@@ -103,8 +99,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="batchDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitBatch" :loading="submitting">确定</el-button>
+        <GlassButton variant="ghost" @click="batchDialogVisible = false">取消</GlassButton>
+        <GlassButton variant="primary" :loading="submitting" @click="submitBatch">确定</GlassButton>
       </template>
     </el-dialog>
 
@@ -112,8 +108,8 @@
     <el-dialog v-model="removeDialogVisible" title="移除不可用日期" width="360px" :close-on-click-modal="false">
       <p>确定移除 <strong>{{ removeDate }}</strong> 的不可用标记？</p>
       <template #footer>
-        <el-button @click="removeDialogVisible = false">取消</el-button>
-        <el-button type="danger" @click="submitRemove" :loading="submitting">确定移除</el-button>
+        <GlassButton variant="ghost" @click="removeDialogVisible = false">取消</GlassButton>
+        <GlassButton variant="danger" left-icon="Delete" :loading="submitting" @click="submitRemove">确定移除</GlassButton>
       </template>
     </el-dialog>
   </div>

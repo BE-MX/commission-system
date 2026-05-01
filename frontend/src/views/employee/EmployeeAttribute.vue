@@ -8,30 +8,32 @@
         </el-input>
       </el-col>
       <el-col :span="4">
-        <el-button type="primary" @click="fetchList"><el-icon><Search /></el-icon> 查询</el-button>
-        <el-button @click="importDialogVisible = true"><el-icon><Upload /></el-icon> 批量导入</el-button>
+        <GlassButton left-icon="Search" @click="fetchList">查询</GlassButton>
+        <GlassButton left-icon="Upload" @click="importDialogVisible = true">批量导入</GlassButton>
       </el-col>
     </el-row>
 
     <!-- 表格 -->
-    <el-table ref="tableRef" :data="tableData" v-loading="loading" stripe border style="width: 100%" :max-height="maxHeight">
-      <el-table-column prop="user_id" label="员工ID" width="200" />
-      <el-table-column prop="full_name" label="姓名" width="140" />
-      <el-table-column prop="nickname" label="昵称" width="140" />
-      <el-table-column label="当前属性" width="120">
+    <div class="table-card">
+    <el-table ref="tableRef" :data="tableData" v-loading="loading" border class="list-table" style="width: 100%" :max-height="maxHeight">
+      <el-table-column prop="user_id" label="员工ID" min-width="200" max-width="300" show-overflow-tooltip />
+      <el-table-column prop="full_name" label="姓名" min-width="140" max-width="210" show-overflow-tooltip />
+      <el-table-column prop="nickname" label="昵称" min-width="140" max-width="210" show-overflow-tooltip />
+      <el-table-column label="当前属性" min-width="120" max-width="180">
         <template #default="{ row }">
-          <el-tag v-if="row.current_attribute === 'develop'" type="success">开发</el-tag>
-          <el-tag v-else-if="row.current_attribute === 'distribute'" type="warning">分配</el-tag>
-          <el-tag v-else type="info">未设置</el-tag>
+          <span v-if="row.current_attribute === 'develop'" class="badge-dev">开发</span>
+          <span v-else-if="row.current_attribute === 'distribute'" class="badge-assign">分配</span>
+          <el-tag v-else type="info" size="small" effect="plain">未设置</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" min-width="160">
+      <el-table-column label="操作" min-width="160" max-width="240">
         <template #default="{ row }">
-          <el-button link type="primary" @click="openSetDialog(row)"><el-icon><Edit /></el-icon> 设置属性</el-button>
-          <el-button link type="primary" @click="openHistory(row)"><el-icon><Clock /></el-icon> 查看历史</el-button>
+          <GlassButton variant="link" left-icon="Edit" @click="openSetDialog(row)">设置属性</GlassButton>
+          <GlassButton variant="link" left-icon="Clock" @click="openHistory(row)">查看历史</GlassButton>
         </template>
       </el-table-column>
     </el-table>
+    </div>
 
     <el-pagination
       class="pagination"
@@ -67,8 +69,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="setDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="submitAttribute">确定</el-button>
+        <GlassButton variant="ghost" @click="setDialogVisible = false">取消</GlassButton>
+        <GlassButton variant="primary" :loading="saving" @click="submitAttribute">确定</GlassButton>
       </template>
     </el-dialog>
 
@@ -120,10 +122,10 @@
         </div>
       </div>
       <template #footer>
-        <el-button @click="importDialogVisible = false">关闭</el-button>
-        <el-button type="primary" :loading="importing" @click="submitImport" :disabled="!importFile">
+        <GlassButton variant="ghost" @click="importDialogVisible = false">关闭</GlassButton>
+        <GlassButton variant="primary" :loading="importing" @click="submitImport" :disabled="!importFile">
           开始导入
-        </el-button>
+        </GlassButton>
       </template>
     </el-dialog>
   </div>
