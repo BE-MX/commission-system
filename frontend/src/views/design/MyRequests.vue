@@ -153,6 +153,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { View, CircleClose } from '@element-plus/icons-vue'
 import { getRequests, actionRequest, getAuditLogs } from '@/api/design'
 import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
+import { getDictMap, buildDictLabel } from '@/utils/dict'
 
 const { tableRef, maxHeight } = useTableMaxHeight()
 
@@ -168,14 +169,6 @@ const detailVisible = ref(false)
 const currentDetail = ref(null)
 const auditLogs = ref([])
 
-const SHOOT_TYPE_MAP = {
-  product_photo: '产品图',
-  model_photo: '模特图',
-  video: '视频',
-  product_video: '产品视频',
-  other: '其他',
-}
-function shootTypeLabel(t) { return SHOOT_TYPE_MAP[t] || t }
 
 const STATUS_MAP = {
   pending_audit: '待审批',
@@ -196,6 +189,12 @@ const STATUS_TAG = {
   cancelled: 'info',
 }
 const STATUS_OPTIONS = Object.entries(STATUS_MAP).map(([value, label]) => ({ value, label }))
+
+const shootTypeMap = ref({})
+async function loadShootTypeDict() {
+  shootTypeMap.value = await getDictMap('shoot_type')
+}
+function shootTypeLabel(t) { return buildDictLabel(t, shootTypeMap.value) }
 
 const LOG_ACTION_MAP = {
   submit: '提交申请',
@@ -279,6 +278,7 @@ async function toggleDetail(row) {
 }
 
 onMounted(() => {
+  loadShootTypeDict()
   fetchList()
 })
 </script>

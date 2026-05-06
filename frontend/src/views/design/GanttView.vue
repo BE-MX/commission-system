@@ -73,7 +73,7 @@
           <el-descriptions-item label="任务名称">{{ selectedTask.task_name }}</el-descriptions-item>
           <el-descriptions-item label="客户">{{ selectedTask.customer_name }}</el-descriptions-item>
           <el-descriptions-item label="业务员">{{ selectedTask.salesperson_name }}</el-descriptions-item>
-          <el-descriptions-item label="拍摄类型">{{ selectedTask.shoot_type }}</el-descriptions-item>
+          <el-descriptions-item label="拍摄类型">{{ shootTypeLabel(selectedTask.shoot_type) }}</el-descriptions-item>
           <el-descriptions-item label="优先级">
             <el-tag :type="selectedTask.priority === 'urgent' ? 'danger' : ''">
               {{ selectedTask.priority === 'urgent' ? '加急' : '普通' }}
@@ -97,6 +97,7 @@ import { ref, onMounted } from 'vue'
 import { Refresh, Download, Clock, Calendar, VideoPlay, CircleCheck, CircleClose } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { getGanttData, getDesigners } from '@/api/design'
+import { getDictMap, buildDictLabel } from '@/utils/dict'
 import GanttChart from '@/components/design/GanttChart.vue'
 
 // --- Default date range: today ±7 days ---
@@ -138,7 +139,7 @@ const STATUS_ICONS = {
 }
 
 const legendItems = [
-  { status: 'pending_design', color: 'rgba(212,148,28,0.7)', icon: Clock, label: '待设计' },
+  { status: 'pending_design', color: 'rgba(37,99,235,0.7)', icon: Clock, label: '待设计' },
   { status: 'scheduled', color: 'rgba(212,148,28,0.7)', icon: Calendar, label: '已排期' },
   { status: 'in_progress', color: 'rgba(220,53,69,0.7)', icon: VideoPlay, label: '进行中' },
   { status: 'completed', color: 'rgba(45,159,111,0.7)', icon: CircleCheck, label: '已完成' },
@@ -172,6 +173,10 @@ function statusTagType(status) {
 
 const PERIOD_LABELS = { am: '上午', pm: '下午' }
 function periodLabel(p) { return PERIOD_LABELS[p] || '' }
+
+const shootTypeMap = ref({})
+getDictMap('shoot_type').then(map => { shootTypeMap.value = map })
+function shootTypeLabel(typeCodes) { return buildDictLabel(typeCodes, shootTypeMap.value) }
 
 // --- Task detail dialog ---
 const detailVisible = ref(false)

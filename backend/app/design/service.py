@@ -23,6 +23,7 @@ from app.design.models import (
 from app.design.state_machine import RequestStatus, OperatorRole, transition
 from app.design.conflict_engine import check_conflict, get_scheduling_mode as _get_mode
 from app.design.utils import generate_request_no, generate_task_no
+from app.system.service import get_label_map as _get_dict_map
 from app.design.schemas import (
     DesignRequestCreate,
     DesignRequestAudit,
@@ -91,6 +92,7 @@ def create_request(
     req = DesignScheduleRequest(
         request_no=request_no,
         customer_name=data.customer_name,
+        customer_level=data.customer_level,
         salesperson_id=data.salesperson_id,
         salesperson_name=data.salesperson_name,
         shoot_type=data.shoot_type,
@@ -620,14 +622,6 @@ HEADER_FONT = Font(bold=True)
 HEADER_FILL = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
 HEADER_ALIGN = Alignment(horizontal="center")
 
-SHOOT_TYPE_LABELS = {
-    "product_photo": "产品图",
-    "model_photo": "模特图",
-    "video": "视频",
-    "product_video": "产品视频",
-    "other": "其他",
-}
-
 PRIORITY_LABELS = {"normal": "普通", "urgent": "加急"}
 
 TASK_STATUS_LABELS = {
@@ -671,6 +665,13 @@ def export_tasks_excel(
 
     PERIOD_LABELS = {"am": "上午", "pm": "下午"}
 
+    shoot_type_map = _get_dict_map(db, "shoot_type")
+    def _fmt_shoot_type(raw: str | None) -> str:
+        if not raw:
+            return ""
+        codes = [c.strip() for c in raw.split(",") if c.strip()]
+        return "、".join(shoot_type_map.get(c, c) for c in codes)
+
     columns = [
         "任务编号", "客户名称", "业务员", "设计师", "拍摄类型",
         "优先级", "计划开始", "开始时段", "计划结束", "结束时段",
@@ -692,7 +693,7 @@ def export_tasks_excel(
         ws.cell(row=row_idx, column=2, value=t.customer_name or "")
         ws.cell(row=row_idx, column=3, value=t.salesperson_name or "")
         ws.cell(row=row_idx, column=4, value=designer_map.get(t.designer_id, ""))
-        ws.cell(row=row_idx, column=5, value=SHOOT_TYPE_LABELS.get(t.shoot_type, t.shoot_type or ""))
+        ws.cell(row=row_idx, column=5, value=_fmt_shoot_type(t.shoot_type))
         ws.cell(row=row_idx, column=6, value=PRIORITY_LABELS.get(t.priority, t.priority or ""))
         ws.cell(row=row_idx, column=7, value=t.plan_start_date.isoformat() if t.plan_start_date else "")
         ws.cell(row=row_idx, column=8, value=PERIOD_LABELS.get(t.plan_start_period, "全天"))
@@ -821,7 +822,9 @@ def batch_import_requests(
     # Expected header: 客户名称, 业务员姓名, 拍摄类型, 期望开始日期, 期望结束日期, 优先级, 备注
     header = [str(c).strip() if c else "" for c in rows[0]]
 
-    SHOOT_TYPE_REVERSE = {v: k for k, v in SHOOT_TYPE_LABELS.items()}
+    shoot_type_map = _get_dict_map(db, "shoot_type")
+    shoot_type_reverse = {v: k for k, v in shoot_type_map.items()}
+    valid_codes = set(shoot_type_map.keys())
     PRIORITY_REVERSE = {"普通": "normal", "加急": "urgent"}
 
     total = 0
@@ -838,9 +841,12 @@ def batch_import_requests(
             customer_name = str(row[0]).strip()
             salesperson_name = str(row[1]).strip() if row[1] else ""
             shoot_type_raw = str(row[2]).strip() if row[2] else ""
-            shoot_type = SHOOT_TYPE_REVERSE.get(shoot_type_raw, shoot_type_raw)
-            if shoot_type not in ("product_photo", "model_photo", "video", "product_video", "other"):
-                raise ValueError(f"无效的拍摄类型: {shoot_type_raw}")
+            parts = [p.strip() for p in shoot_type_raw.replace("、", ",").split(",") if p.strip()]
+            codes = [shoot_type_reverse.get(p, p) for p in parts]
+            if any(c not in valid_codes for c in codes):
+                invalid = [p for p in parts if shoot_type_reverse.get(p, p) not in valid_codes]
+                raise ValueError(f"无效的拍摄类型: {'、'.join(invalid)}")
+            shoot_type = ",".join(codes)
 
             # Parse dates (handle both string and date objects)
             expect_start = row[3]

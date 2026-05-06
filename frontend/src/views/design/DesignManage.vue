@@ -16,7 +16,7 @@
           <el-table-column prop="customer_name" label="客户名称" min-width="130" max-width="200" show-overflow-tooltip />
           <el-table-column prop="salesperson_name" label="业务员" min-width="90" max-width="140" show-overflow-tooltip />
           <el-table-column label="拍摄类型" min-width="100" max-width="150">
-            <template #default="{ row }">{{ SHOOT_TYPE_MAP[row.shoot_type] || row.shoot_type }}</template>
+            <template #default="{ row }">{{ buildDictLabel(row.shoot_type, shootTypeMap.value) }}</template>
           </el-table-column>
           <el-table-column label="期望日期" min-width="280" max-width="420">
             <template #default="{ row }">{{ row.expect_start_date }} {{ periodLabel(row.expect_start_period) }} ~ {{ row.expect_end_date }} {{ periodLabel(row.expect_end_period) }}</template>
@@ -300,6 +300,7 @@ import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload, Plus, Calendar, VideoPlay, CircleCheck, CircleClose, Edit, SwitchButton } from '@element-plus/icons-vue'
 import { getRequests, getTaskList, getDesigners, createDesigner, updateDesigner, actionRequest, rescheduleTask, importRequests } from '@/api/design'
+import { getDictMap, buildDictLabel } from '@/utils/dict'
 import DesignCalendarConfig from '@/components/design/DesignCalendarConfig.vue'
 import DesignCapacityConfig from '@/components/design/DesignCapacityConfig.vue'
 import DatePeriodPicker from '@/components/design/DatePeriodPicker.vue'
@@ -307,12 +308,9 @@ import DatePeriodPicker from '@/components/design/DatePeriodPicker.vue'
 const PERIOD_LABELS = { am: '上午', pm: '下午' }
 function periodLabel(p) { return PERIOD_LABELS[p] || '' }
 
-const SHOOT_TYPE_MAP = {
-  product_photo: '产品图',
-  model_photo: '模特图',
-  video: '视频',
-  product_video: '产品视频',
-  other: '其他',
+const shootTypeMap = ref({})
+async function loadShootTypeDict() {
+  shootTypeMap.value = await getDictMap('shoot_type')
 }
 const TASK_STATUS_MAP = {
   scheduled: '已排期',

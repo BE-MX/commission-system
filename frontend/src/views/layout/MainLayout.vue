@@ -117,6 +117,10 @@
             <el-icon><Lock /></el-icon>
             <template #title>角色权限</template>
           </el-menu-item>
+          <el-menu-item index="/system/dicts" v-if="authStore.hasPermission('user:read')">
+            <el-icon><Notebook /></el-icon>
+            <template #title>基础字典</template>
+          </el-menu-item>
         </el-sub-menu>
       </el-menu>
 

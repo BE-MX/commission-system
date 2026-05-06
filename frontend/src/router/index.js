@@ -115,6 +115,12 @@ const routes = [
         meta: { title: '角色权限管理', permission: 'user:read' }
       },
       {
+        path: 'system/dicts',
+        name: 'DictManagement',
+        component: () => import('../views/system/DictManagement.vue'),
+        meta: { title: '基础字典', permission: 'user:read' }
+      },
+      {
         path: 'profile',
         name: 'Profile',
         component: () => import('../views/profile/ProfilePage.vue'),

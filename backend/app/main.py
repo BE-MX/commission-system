@@ -24,6 +24,7 @@ from app.auth.admin_router import router as admin_router
 from app.dingtalk.router import router as dingtalk_router
 from app.dingtalk.callback import router as dingtalk_callback_router
 from app.api.short_link import router as short_link_router
+from app.system.router import router as system_router
 
 logger = logging.getLogger("commission")
 
@@ -113,6 +114,7 @@ app.include_router(design_router, prefix="/api/design", tags=["设计预约"])
 app.include_router(dingtalk_router, prefix="/api/dingtalk", tags=["钉钉集成"])
 app.include_router(dingtalk_callback_router, prefix="/api", tags=["钉钉回调"])
 app.include_router(short_link_router, tags=["短链接"])
+app.include_router(system_router, prefix="/api/system", tags=["系统字典"])
 
 
 @app.get("/health")

@@ -21,26 +21,48 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="业务员" prop="salesperson_name">
-              <el-input v-model="form.salesperson_name" placeholder="请输入业务员姓名" />
+            <el-form-item label="客户等级" prop="customer_level">
+              <el-select v-model="form.customer_level" placeholder="请选择客户等级" style="width: 100%" clearable>
+                <el-option
+                  v-for="item in customerLevelOptions"
+                  :key="item.code"
+                  :label="item.label"
+                  :value="item.code"
+                />
+              </el-select>
             </el-form-item>
           </el-col>
         </el-row>
 
         <el-row :gutter="24">
           <el-col :span="12">
+            <el-form-item label="业务员" prop="salesperson_name">
+              <el-input v-model="form.salesperson_name" placeholder="请输入业务员姓名" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
             <el-form-item label="拍摄类型" prop="shoot_type">
-              <el-select v-model="form.shoot_type" placeholder="请选择拍摄类型" style="width: 100%">
+              <el-select
+                v-model="form.shoot_type"
+                placeholder="请选择拍摄类型"
+                style="width: 100%"
+                multiple
+                collapse-tags
+                collapse-tags-tooltip
+              >
                 <el-option
-                  v-for="item in SHOOT_TYPE_OPTIONS"
-                  :key="item.value"
+                  v-for="item in shootTypeOptions"
+                  :key="item.code"
                   :label="item.label"
-                  :value="item.value"
+                  :value="item.code"
                 />
               </el-select>
             </el-form-item>
           </el-col>
-          <el-col :span="12" v-if="form.shoot_type === 'other'">
+        </el-row>
+
+        <el-row :gutter="24">
+          <el-col :span="24" v-if="form.shoot_type.includes('other')">
             <el-form-item label="类型备注" prop="shoot_type_remark">
               <el-input v-model="form.shoot_type_remark" placeholder="请说明拍摄类型" />
             </el-form-item>
@@ -100,26 +122,25 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Promotion, RefreshLeft } from '@element-plus/icons-vue'
+import { useAuthStore } from '@/stores/auth'
 import { submitRequest, checkConflict, getUnavailableDates } from '@/api/design'
+import { getDictItems } from '@/api/system'
 import ConflictAlert from '@/components/design/ConflictAlert.vue'
 import DatePeriodPicker from '@/components/design/DatePeriodPicker.vue'
 
 const router = useRouter()
+const authStore = useAuthStore()
 const formRef = ref()
 const submitting = ref(false)
 
-const SHOOT_TYPE_OPTIONS = [
-  { label: '产品图', value: 'product_photo' },
-  { label: '模特图', value: 'model_photo' },
-  { label: '视频', value: 'video' },
-  { label: '产品视频', value: 'product_video' },
-  { label: '其他', value: 'other' },
-]
+const shootTypeOptions = ref([])
+const customerLevelOptions = ref([])
 
 const form = reactive({
   customer_name: '',
-  salesperson_name: '',
-  shoot_type: '',
+  customer_level: '',
+  salesperson_name: authStore.user?.real_name || authStore.user?.username || '',
+  shoot_type: [],
   shoot_type_remark: '',
   startDate: '',
   startPeriod: 'am',
@@ -132,13 +153,23 @@ const form = reactive({
 const rules = {
   customer_name: [{ required: true, message: '请输入客户名称', trigger: 'blur' }],
   salesperson_name: [{ required: true, message: '请输入业务员姓名', trigger: 'blur' }],
-  shoot_type: [{ required: true, message: '请选择拍摄类型', trigger: 'change' }],
-  shoot_type_remark: [{ required: true, message: '请说明拍摄类型', trigger: 'blur',
-    validator: (rule, value, callback) => {
-      if (form.shoot_type === 'other' && !value) callback(new Error('请说明拍摄类型'))
-      else callback()
+  shoot_type: [
+    { required: true, message: '请选择拍摄类型', trigger: 'change' },
+    {
+      validator: (rule, value, callback) => {
+        if (!Array.isArray(value) || value.length === 0) callback(new Error('请选择拍摄类型'))
+        else callback()
+      }, trigger: 'change',
+    },
+  ],
+  shoot_type_remark: [
+    { required: true, message: '请说明拍摄类型', trigger: 'blur',
+      validator: (rule, value, callback) => {
+        if (form.shoot_type.includes('other') && !value) callback(new Error('请说明拍摄类型'))
+        else callback()
+      }
     }
-  }],
+  ],
   startDate: [{ required: true, message: '请选择期望开始日期', trigger: 'change' }],
   priority: [{ required: true, message: '请选择优先级', trigger: 'change' }],
 }
@@ -164,8 +195,22 @@ async function fetchUnavailableDates() {
   }
 }
 
+async function loadDicts() {
+  try {
+    const [stRes, clRes] = await Promise.all([
+      getDictItems('shoot_type', true),
+      getDictItems('customer_level', true),
+    ])
+    shootTypeOptions.value = stRes.data || []
+    customerLevelOptions.value = clRes.data || []
+  } catch {
+    // ignore
+  }
+}
+
 onMounted(() => {
   fetchUnavailableDates()
+  loadDicts()
 })
 
 let conflictTimer = null
@@ -185,7 +230,7 @@ async function doConflictCheck(start, end, startPeriod, endPeriod) {
       end_date: end,
       start_period: startPeriod || 'am',
       end_period: endPeriod || 'pm',
-      shoot_type: form.shoot_type || undefined,
+      shoot_type: form.shoot_type.join(',') || undefined,
     })
     const data = res.data
     conflictResult.value = {
@@ -207,17 +252,18 @@ async function handleSubmit() {
   try {
     const payload = {
       customer_name: form.customer_name,
+      customer_level: form.customer_level || undefined,
       salesperson_name: form.salesperson_name,
-      salesperson_id: 1,
-      shoot_type: form.shoot_type,
-      shoot_type_remark: form.shoot_type === 'other' ? form.shoot_type_remark : '',
+      salesperson_id: authStore.user?.id || 1,
+      shoot_type: form.shoot_type.join(','),
+      shoot_type_remark: form.shoot_type.includes('other') ? form.shoot_type_remark : '',
       expect_start_date: form.startDate,
       expect_start_period: form.startPeriod,
       expect_end_date: form.endDate,
       expect_end_period: form.endPeriod,
       priority: form.priority,
       remark: form.remark,
-      operator_id: 1,
+      operator_id: authStore.user?.id || 1,
       operator_name: form.salesperson_name || '业务员',
       operator_role: 'salesperson',
     }

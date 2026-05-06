@@ -28,12 +28,12 @@ class DesignScheduleRequest(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     request_no = Column(String(32), nullable=False, unique=True, comment="申请单号")
     customer_name = Column(String(128), nullable=False, comment="客户名称")
+    customer_level = Column(String(64), nullable=True, comment="客户等级(字典code)")
     salesperson_id = Column(Integer, nullable=False, comment="业务员ID")
     salesperson_name = Column(String(64), nullable=False, comment="业务员姓名")
     shoot_type = Column(
-        SAEnum("product_photo", "model_photo", "video", "product_video", "other",
-               name="shoot_type_enum"),
-        nullable=False, comment="拍摄类型",
+        String(255), nullable=False,
+        comment="拍摄类型(字典code，多选用逗号分隔)",
     )
     shoot_type_remark = Column(String(256), nullable=True, comment="拍摄类型备注")
     expect_start_date = Column(Date, nullable=False, comment="期望开始日期")
@@ -83,9 +83,8 @@ class DesignScheduleTask(Base):
     customer_name = Column(String(128), nullable=True, comment="客户名称")
     salesperson_name = Column(String(64), nullable=True, comment="业务员姓名")
     shoot_type = Column(
-        SAEnum("product_photo", "model_photo", "video", "product_video", "other",
-               name="shoot_type_enum"),
-        nullable=True, comment="拍摄类型",
+        String(255), nullable=True,
+        comment="拍摄类型(字典code，多选用逗号分隔)",
     )
     priority = Column(
         SAEnum("normal", "urgent", name="priority_enum"),

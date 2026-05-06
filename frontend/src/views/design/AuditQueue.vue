@@ -32,7 +32,7 @@
       <el-table-column prop="customer_name" label="客户名称" min-width="130" max-width="200" show-overflow-tooltip />
       <el-table-column prop="salesperson_name" label="业务员" min-width="90" max-width="140" show-overflow-tooltip />
       <el-table-column label="拍摄类型" min-width="100" max-width="150">
-        <template #default="{ row }">{{ SHOOT_TYPE_MAP[row.shoot_type] || row.shoot_type }}</template>
+        <template #default="{ row }">{{ buildDictLabel(row.shoot_type, shootTypeMap.value) }}</template>
       </el-table-column>
       <el-table-column label="期望日期" min-width="200" max-width="300">
         <template #default="{ row }">{{ row.expect_start_date }} ~ {{ row.expect_end_date }}</template>
@@ -115,15 +115,13 @@ import { ElMessage } from 'element-plus'
 import { CircleCheck, CircleClose } from '@element-plus/icons-vue'
 import { getRequests, auditRequest } from '@/api/design'
 import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
+import { getDictMap, buildDictLabel } from '@/utils/dict'
 
 const { tableRef, maxHeight } = useTableMaxHeight()
 
-const SHOOT_TYPE_MAP = {
-  product_photo: '产品图',
-  model_photo: '模特图',
-  video: '视频',
-  product_video: '产品视频',
-  other: '其他',
+const shootTypeMap = ref({})
+async function loadShootTypeDict() {
+  shootTypeMap.value = await getDictMap('shoot_type')
 }
 
 const stats = reactive({ pending: 0, today_approved: 0, today_rejected: 0 })
@@ -198,6 +196,7 @@ async function submitAudit(action) {
 }
 
 onMounted(() => {
+  loadShootTypeDict()
   fetchList()
 })
 </script>

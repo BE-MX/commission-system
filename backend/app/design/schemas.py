@@ -22,6 +22,7 @@ class OperatorMixin(BaseModel):
 
 class DesignRequestCreate(OperatorMixin):
     customer_name: str
+    customer_level: Optional[str] = None
     salesperson_id: int
     salesperson_name: str
     shoot_type: str
@@ -36,6 +37,8 @@ class DesignRequestCreate(OperatorMixin):
     @model_validator(mode="after")
     def validate_dates(self):
         today = date.today()
+        if not self.shoot_type or not self.shoot_type.strip():
+            raise ValueError("请选择拍摄类型")
         if self.expect_start_date > self.expect_end_date:
             raise ValueError("期望开始日期不能晚于结束日期")
         if self.expect_start_date == self.expect_end_date:
@@ -105,6 +108,7 @@ class DesignRequestListItem(BaseModel):
     id: int
     request_no: str
     customer_name: str
+    customer_level: Optional[str] = None
     salesperson_id: int
     salesperson_name: str
     shoot_type: str

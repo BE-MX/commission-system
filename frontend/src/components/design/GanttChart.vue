@@ -174,6 +174,7 @@
 <script setup>
 import { computed, ref, onBeforeUnmount, h } from 'vue'
 import { Clock, Calendar, VideoPlay, CircleCheck, CircleClose } from '@element-plus/icons-vue'
+import { getDictMap, buildDictLabel } from '@/utils/dict'
 
 // 状态图标映射（SVG Unicode 字符，兼容性好且无需额外渲染层）
 const STATUS_ICONS = {
@@ -412,7 +413,7 @@ function getTaskBarStyle(task, stackLevels) {
 
 // --- Status helpers ---
 const STATUS_COLORS = {
-  pending_design: 'rgba(212,148,28,0.7)',
+  pending_design: 'rgba(37,99,235,0.7)',
   scheduled: 'rgba(212,148,28,0.7)',
   in_progress: 'rgba(220,53,69,0.7)',
   completed: 'rgba(45,159,111,0.7)',
@@ -435,21 +436,16 @@ const STATUS_TAG_TYPES = {
   cancelled: 'info',
 }
 
-const SHOOT_TYPE_LABELS = {
-  product_photo: '产品图',
-  model_photo: '模特图',
-  video: '视频',
-  product_video: '产品视频',
-  other: '其他',
-}
+const shootTypeMap = ref({})
+getDictMap('shoot_type').then(map => { shootTypeMap.value = map })
 
 function statusColor(status) { return STATUS_COLORS[status] || '#D4941C' }
 function statusLabel(status) { return STATUS_LABELS[status] || status }
 function statusTagType(status) { return STATUS_TAG_TYPES[status] || '' }
-function shootTypeLabel(type) { return SHOOT_TYPE_LABELS[type] || type || '' }
+function shootTypeLabel(typeCodes) { return buildDictLabel(typeCodes, shootTypeMap.value) }
 
 function taskDisplayName(task) {
-  const typeName = SHOOT_TYPE_LABELS[task.shoot_type] || task.shoot_type || ''
+  const typeName = shootTypeLabel(task.shoot_type).split('、')[0] || ''
   const salesperson = task.salesperson_name || ''
   return salesperson && typeName ? `${salesperson}-${typeName}` : salesperson || typeName || task.task_no
 }
