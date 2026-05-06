@@ -31,3 +31,7 @@ alembic/__pycache__/
 
 # Server logs
 logs/
+
+# Design reference assets (临时素材，不入库)
+frontend/kimi-ref.*
+frontend/kimi-dom.html
