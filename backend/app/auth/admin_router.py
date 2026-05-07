@@ -234,9 +234,16 @@ async def sync_user_dingtalk(
     if not user.phone:
         return ResponseModel(code=400, message="该用户未填写手机号，请先补充手机号")
 
-    from app.dingtalk.client import get_dingtalk_client
+    logger.info("同步钉钉 — 用户 %s (id=%s)，手机号: [%s]", user.real_name, user_id, repr(user.phone))
+    phone = user.phone.strip()
+
+    from app.dingtalk.client import get_dingtalk_client, DingTalkError
     client = get_dingtalk_client()
-    dingtalk_id = await client.get_userid_by_mobile(user.phone)
+    try:
+        dingtalk_id = await client.get_userid_by_mobile(phone)
+    except DingTalkError as e:
+        logger.error("钉钉 API 调用失败: %s", e)
+        return ResponseModel(code=400, message=f"钉钉接口调用失败: {e}")
 
     if not dingtalk_id:
         return ResponseModel(code=400, message=f"未找到手机号 {user.phone} 对应的钉钉用户，请确认手机号与钉钉注册号一致")
@@ -267,14 +274,17 @@ async def sync_all_users_dingtalk(
     if not users:
         return ResponseModel(message="没有需要同步的用户（所有有手机号的用户都已绑定）")
 
-    from app.dingtalk.client import get_dingtalk_client
+    from app.dingtalk.client import get_dingtalk_client, DingTalkError
     client = get_dingtalk_client()
 
     success_count = 0
     fail_list = []
 
     for user in users:
-        dingtalk_id = await client.get_userid_by_mobile(user.phone)
+        try:
+            dingtalk_id = await client.get_userid_by_mobile(user.phone.strip())
+        except DingTalkError:
+            dingtalk_id = None
         if dingtalk_id:
             user.dingtalk_id = dingtalk_id
             user.updated_at = datetime.utcnow()
