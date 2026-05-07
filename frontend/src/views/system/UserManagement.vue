@@ -10,6 +10,7 @@
       <el-col :span="16">
         <GlassButton left-icon="Search" @click="fetchList">查询</GlassButton>
         <GlassButton variant="primary" left-icon="Plus" @click="openCreateDialog">新增用户</GlassButton>
+        <GlassButton left-icon="Connection" :loading="syncingAll" @click="handleSyncAll">批量同步钉钉</GlassButton>
       </el-col>
     </el-row>
 
@@ -20,6 +21,12 @@
       <el-table-column prop="real_name" label="姓名" min-width="120" max-width="180" show-overflow-tooltip />
       <el-table-column prop="email" label="邮箱" min-width="180" max-width="270" show-overflow-tooltip />
       <el-table-column prop="phone" label="手机号" min-width="140" max-width="210" show-overflow-tooltip />
+      <el-table-column label="钉钉绑定" min-width="120" max-width="180">
+        <template #default="{ row }">
+          <el-tag v-if="row.dingtalk_id" type="success" size="small" effect="plain">已绑定</el-tag>
+          <el-tag v-else type="info" size="small" effect="plain">未绑定</el-tag>
+        </template>
+      </el-table-column>
       <el-table-column label="角色" min-width="160" max-width="240">
         <template #default="{ row }">
           <el-tag v-for="r in row.roles" :key="r" size="small" effect="plain" style="margin-right: 4px">{{ r }}</el-tag>
@@ -32,9 +39,10 @@
         </template>
       </el-table-column>
       <el-table-column prop="last_login_at" label="最后登录" min-width="170" max-width="260" show-overflow-tooltip />
-      <el-table-column label="操作" min-width="280" max-width="420" fixed="right">
+      <el-table-column label="操作" min-width="340" max-width="480" fixed="right">
         <template #default="{ row }">
           <GlassButton variant="link" left-icon="Edit" @click="openEditDialog(row)">编辑</GlassButton>
+          <GlassButton variant="link" left-icon="Connection" @click="handleSyncDingtalk(row)" :disabled="!row.phone || !!row.dingtalk_id">同步钉钉</GlassButton>
           <GlassButton variant="link" left-icon="Key" @click="openResetPwdDialog(row)">重置密码</GlassButton>
           <GlassButton variant="link" :link-tone="row.is_active ? '' : 'success'" left-icon="SwitchButton" @click="handleToggleActive(row)">
             {{ row.is_active ? '禁用' : '启用' }}
@@ -113,6 +121,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getUserList, createUser, updateUser, deleteUser,
   resetUserPassword, toggleUserActive, getRoleList,
+  syncUserDingtalk, syncAllUsersDingtalk,
 } from '@/api/userManagement'
 import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
 
@@ -280,6 +289,40 @@ async function handleDelete(row) {
 }
 
 onMounted(fetchList)
+
+// ── 同步钉钉 ────────────────────────────────────────
+const syncingAll = ref(false)
+
+async function handleSyncDingtalk(row) {
+  try {
+    const res = await syncUserDingtalk(row.id)
+    if (res.code === 200) {
+      ElMessage.success(res.message)
+      row.dingtalk_id = res.data.dingtalk_id
+    } else {
+      ElMessage.warning(res.message)
+    }
+  } catch {
+    // handled by interceptor
+  }
+}
+
+async function handleSyncAll() {
+  syncingAll.value = true
+  try {
+    const res = await syncAllUsersDingtalk()
+    if (res.code === 200) {
+      ElMessage.success(res.message)
+      fetchList()
+    } else {
+      ElMessage.warning(res.message)
+    }
+  } catch {
+    // handled by interceptor
+  } finally {
+    syncingAll.value = false
+  }
+}
 </script>
 
 <style scoped>

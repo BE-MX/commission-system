@@ -29,6 +29,14 @@ export function toggleUserActive(userId) {
   return authRequest.put(`/users/${userId}/toggle-active`).then(r => r.data)
 }
 
+export function syncUserDingtalk(userId) {
+  return authRequest.post(`/users/${userId}/sync-dingtalk`, {}, { loadingText: '正在同步...' }).then(r => r.data)
+}
+
+export function syncAllUsersDingtalk() {
+  return authRequest.post('/users/sync-dingtalk-all', {}, { loadingText: '正在批量同步...' }).then(r => r.data)
+}
+
 // ── 角色管理 ──────────────────────────────────────────
 
 export function getRoleList() {

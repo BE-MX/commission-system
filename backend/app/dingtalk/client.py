@@ -84,6 +84,18 @@ class DingTalkClient:
                 raise DingTalkError(data.get("errcode", -1), data.get("errmsg", "unknown"))
             return data
 
+    async def get_userid_by_mobile(self, mobile: str) -> str | None:
+        """通过手机号查询钉钉 userId，找不到返回 None"""
+        try:
+            data = await self.post(
+                "topapi/v2/user/getbymobile",
+                json_data={"mobile": mobile},
+            )
+            return data.get("result", {}).get("userid")
+        except DingTalkError as e:
+            logger.warning("根据手机号 %s 查询钉钉用户失败: %s", mobile, e)
+            return None
+
     @staticmethod
     def sign_webhook(timestamp_ms: str, secret: str) -> str:
         """计算 Webhook 签名"""

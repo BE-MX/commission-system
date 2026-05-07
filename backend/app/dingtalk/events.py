@@ -109,7 +109,7 @@ async def notify_design_request_submitted(
     schedule_date: str,
     link: str = "",
 ):
-    """设计预约申请提交通知（通知审批人）"""
+    """设计预约申请提交通知（群消息广播）"""
     sender = get_webhook_sender()
     text = (
         f"###  新的设计预约申请\n"
@@ -126,14 +126,50 @@ async def notify_design_request_submitted(
 
 
 @_safe_notify
+async def notify_design_audit_needed(
+    reviewer_dingtalk_ids: list[str],
+    request_no: str,
+    customer_name: str,
+    applicant_name: str,
+    schedule_date: str,
+    conflict_summary: str = "",
+    link: str = "",
+):
+    """设计预约需要审批 — 向主管发送点对点工作通知"""
+    if not reviewer_dingtalk_ids:
+        logger.info("无主管钉钉ID，跳过审批点对点通知 (单号: %s)", request_no)
+        return
+
+    notifier = get_work_notifier()
+    md = (
+        f"### 📋 设计预约待审批\n"
+        f"**单号：** {request_no}\n"
+        f"**客户：** {customer_name}\n"
+        f"**申请人：** {applicant_name}\n"
+        f"**预约日期：** {schedule_date}\n"
+    )
+    if conflict_summary:
+        md += f"**冲突原因：** {conflict_summary}\n"
+    if link:
+        md += f"\n[去审批]({link})\n"
+
+    await notifier.send_to_users(
+        user_ids=reviewer_dingtalk_ids,
+        title="设计预约待审批",
+        markdown_text=md,
+    )
+
+
+@_safe_notify
 async def notify_design_request_approved(
     request_no: str,
     customer_name: str,
     designer_name: str,
     schedule_date: str,
+    applicant_dingtalk_id: str = "",
     link: str = "",
 ):
-    """设计预约审批通过通知（通知申请人和设计师）"""
+    """设计预约审批通过 — 群消息 + 向申请人发点对点通知"""
     sender = get_webhook_sender()
     text = (
         f"### ✅ 设计预约已通过\n"
@@ -147,15 +183,33 @@ async def notify_design_request_approved(
 
     await sender.send_markdown(title="设计预约通过", text=text)
 
+    # 同时给申请人发工作通知
+    if applicant_dingtalk_id:
+        notifier = get_work_notifier()
+        md = (
+            f"### ✅ 你的设计预约已通过\n"
+            f"**单号：** {request_no}\n"
+            f"**客户：** {customer_name}\n"
+            f"**预约日期：** {schedule_date}\n"
+        )
+        if link:
+            md += f"\n[查看详情]({link})\n"
+        await notifier.send_to_users(
+            user_ids=[applicant_dingtalk_id],
+            title="设计预约已通过",
+            markdown_text=md,
+        )
+
 
 @_safe_notify
 async def notify_design_request_rejected(
     request_no: str,
     customer_name: str,
     reason: str,
+    applicant_dingtalk_id: str = "",
     link: str = "",
 ):
-    """设计预约审批拒绝通知"""
+    """设计预约审批拒绝 — 群消息 + 向申请人发点对点通知"""
     sender = get_webhook_sender()
     text = (
         f"### ❌ 设计预约被拒绝\n"
@@ -167,6 +221,23 @@ async def notify_design_request_rejected(
         text += f"[查看详情]({link})\n"
 
     await sender.send_markdown(title="设计预约被拒", text=text)
+
+    # 同时给申请人发工作通知
+    if applicant_dingtalk_id:
+        notifier = get_work_notifier()
+        md = (
+            f"### ❌ 你的设计预约被拒绝\n"
+            f"**单号：** {request_no}\n"
+            f"**客户：** {customer_name}\n"
+            f"**拒绝原因：** {reason}\n"
+        )
+        if link:
+            md += f"\n[查看详情]({link})\n"
+        await notifier.send_to_users(
+            user_ids=[applicant_dingtalk_id],
+            title="设计预约被拒绝",
+            markdown_text=md,
+        )
 
 
 # ══════════════════════════════════════════════════════════════

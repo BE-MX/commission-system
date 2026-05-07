@@ -1,9 +1,11 @@
 """设计预约 — API 路由"""
 
+import asyncio
+import logging
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query, File, UploadFile
+from fastapi import APIRouter, Depends, Query, File, UploadFile, BackgroundTasks
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
@@ -22,6 +24,8 @@ from app.design.models import (
     DesignUnavailableDate, DesignDesigner, DesignCapacityConfig,
 )
 
+logger = logging.getLogger("design")
+
 router = APIRouter()
 
 
@@ -31,11 +35,75 @@ router = APIRouter()
 @router.post("/requests")
 def create_request(
     data: DesignRequestCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     """提交设计预约申请"""
-    return service.create_request(
+    result = service.create_request(
         db, data, data.operator_id, data.operator_name, data.operator_role
+    )
+
+    # 触发钉钉通知（仅当进入审批流程时）
+    if result.get("data", {}).get("status") == "pending_audit":
+        background_tasks.add_task(
+            _notify_audit_needed,
+            db=db,
+            request_no=result["data"]["request_no"],
+            customer_name=data.customer_name,
+            applicant_name=data.operator_name,
+            schedule_date=f"{data.expect_start_date} ~ {data.expect_end_date}",
+            conflict=result["data"].get("conflict"),
+        )
+
+    return result
+
+
+async def _notify_audit_needed(
+    db: Session,
+    request_no: str,
+    customer_name: str,
+    applicant_name: str,
+    schedule_date: str,
+    conflict: dict | None = None,
+):
+    """查找所有主管的钉钉ID，发送审批通知"""
+    from app.auth.models import ArkUser, ArkRole, ArkUserRole
+    from app.dingtalk.events import notify_design_audit_needed
+
+    # 查找 supervisor 角色的所有用户
+    supervisor_users = db.query(ArkUser).join(
+        ArkUserRole, ArkUser.id == ArkUserRole.user_id
+    ).join(
+        ArkRole, ArkRole.id == ArkUserRole.role_id
+    ).filter(
+        ArkRole.name == "supervisor",
+        ArkUser.is_active == True,
+        ArkUser.deleted_at.is_(None),
+        ArkUser.dingtalk_id.isnot(None),
+        ArkUser.dingtalk_id != "",
+    ).all()
+
+    dingtalk_ids = [u.dingtalk_id for u in supervisor_users]
+
+    # 构建冲突摘要
+    conflict_summary = ""
+    if conflict:
+        parts = []
+        unavail = conflict.get("conflicting_unavailable_slots", [])
+        overload = conflict.get("overloaded_dates", [])
+        if unavail:
+            parts.append(f"包含 {len(unavail)} 个不可用时段")
+        if overload:
+            parts.append(f"{len(overload)} 个时段超容量")
+        conflict_summary = "，".join(parts)
+
+    await notify_design_audit_needed(
+        reviewer_dingtalk_ids=dingtalk_ids,
+        request_no=request_no,
+        customer_name=customer_name,
+        applicant_name=applicant_name,
+        schedule_date=schedule_date,
+        conflict_summary=conflict_summary,
     )
 
 
@@ -172,10 +240,66 @@ def get_request(request_id: int, db: Session = Depends(get_db)):
 def audit_request(
     request_id: int,
     data: DesignRequestAudit,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     """主管审批申请单"""
-    return service.audit_request(db, request_id, data, data.operator_id, data.operator_name)
+    result = service.audit_request(db, request_id, data, data.operator_id, data.operator_name)
+
+    # 审批完成后通知申请人
+    background_tasks.add_task(
+        _notify_audit_result,
+        db=db,
+        request_id=request_id,
+        action=data.action,
+        comment=data.comment,
+    )
+
+    return result
+
+
+async def _notify_audit_result(
+    db: Session,
+    request_id: int,
+    action: str,
+    comment: str | None = None,
+):
+    """审批通过/拒绝后向申请人发送点对点通知"""
+    from app.auth.models import ArkUser
+    from app.dingtalk.events import notify_design_request_approved, notify_design_request_rejected
+
+    req = db.query(DesignScheduleRequest).filter(
+        DesignScheduleRequest.id == request_id
+    ).first()
+    if not req:
+        return
+
+    # 查申请人的钉钉ID
+    applicant_dingtalk_id = ""
+    if req.salesperson_id:
+        applicant = db.query(ArkUser).filter(ArkUser.id == req.salesperson_id).first()
+        if applicant and applicant.dingtalk_id:
+            applicant_dingtalk_id = applicant.dingtalk_id
+
+    schedule_date = ""
+    if req.expect_start_date and req.expect_end_date:
+        schedule_date = f"{req.expect_start_date.isoformat()} ~ {req.expect_end_date.isoformat()}"
+
+    if action == "approve":
+        await notify_design_request_approved(
+            request_no=req.request_no,
+            customer_name=req.customer_name,
+            designer_name="",
+            schedule_date=schedule_date,
+            applicant_dingtalk_id=applicant_dingtalk_id,
+        )
+    elif action == "reject":
+        await notify_design_request_rejected(
+            request_no=req.request_no,
+            customer_name=req.customer_name,
+            reason=comment or "未说明原因",
+            applicant_dingtalk_id=applicant_dingtalk_id,
+        )
 
 
 @router.post("/requests/{request_id}/action")

@@ -1,5 +1,7 @@
 """用户/角色/权限管理 & 个人资料路由"""
 
+import asyncio
+import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -21,6 +23,8 @@ from app.auth.admin_schemas import (
     PermissionItem, PermissionGroupItem,
 )
 from app.schemas.common import ResponseModel, PageResponse
+
+logger = logging.getLogger("commission.auth")
 
 router = APIRouter()
 
@@ -59,6 +63,7 @@ def list_users(
             real_name=u.real_name,
             email=u.email,
             phone=u.phone,
+            dingtalk_id=u.dingtalk_id,
             is_active=bool(u.is_active),
             roles=[r.label for r in u.roles],
             last_login_at=u.last_login_at.isoformat() if u.last_login_at else None,
@@ -211,6 +216,78 @@ def toggle_user_active(
     db.commit()
 
     return ResponseModel(data={"is_active": bool(user.is_active)})
+
+
+@router.post("/users/{user_id}/sync-dingtalk", summary="同步单个用户的钉钉ID")
+async def sync_user_dingtalk(
+    user_id: int,
+    db: Session = Depends(get_db),
+    _current_user: dict = Depends(require_permission("user:write")),
+) -> ResponseModel:
+    """根据用户手机号自动查询并回填钉钉 userId"""
+    user = db.query(ArkUser).filter(
+        ArkUser.id == user_id,
+        ArkUser.deleted_at.is_(None),
+    ).first()
+    if not user:
+        return ResponseModel(code=404, message="用户不存在")
+    if not user.phone:
+        return ResponseModel(code=400, message="该用户未填写手机号，请先补充手机号")
+
+    from app.dingtalk.client import get_dingtalk_client
+    client = get_dingtalk_client()
+    dingtalk_id = await client.get_userid_by_mobile(user.phone)
+
+    if not dingtalk_id:
+        return ResponseModel(code=400, message=f"未找到手机号 {user.phone} 对应的钉钉用户，请确认手机号与钉钉注册号一致")
+
+    user.dingtalk_id = dingtalk_id
+    user.updated_at = datetime.utcnow()
+    db.commit()
+
+    return ResponseModel(
+        message="钉钉绑定成功",
+        data={"dingtalk_id": dingtalk_id},
+    )
+
+
+@router.post("/users/sync-dingtalk-all", summary="批量同步所有用户的钉钉ID")
+async def sync_all_users_dingtalk(
+    db: Session = Depends(get_db),
+    _current_user: dict = Depends(require_permission("user:write")),
+) -> ResponseModel:
+    """遍历所有有手机号但无钉钉ID的用户，自动匹配钉钉 userId"""
+    users = db.query(ArkUser).filter(
+        ArkUser.deleted_at.is_(None),
+        ArkUser.phone.isnot(None),
+        ArkUser.phone != "",
+        (ArkUser.dingtalk_id.is_(None)) | (ArkUser.dingtalk_id == ""),
+    ).all()
+
+    if not users:
+        return ResponseModel(message="没有需要同步的用户（所有有手机号的用户都已绑定）")
+
+    from app.dingtalk.client import get_dingtalk_client
+    client = get_dingtalk_client()
+
+    success_count = 0
+    fail_list = []
+
+    for user in users:
+        dingtalk_id = await client.get_userid_by_mobile(user.phone)
+        if dingtalk_id:
+            user.dingtalk_id = dingtalk_id
+            user.updated_at = datetime.utcnow()
+            success_count += 1
+        else:
+            fail_list.append({"user_id": user.id, "real_name": user.real_name, "phone": user.phone})
+
+    db.commit()
+
+    return ResponseModel(
+        message=f"同步完成：成功 {success_count} 人，失败 {len(fail_list)} 人",
+        data={"success_count": success_count, "fail_list": fail_list},
+    )
 
 
 # ============================================================

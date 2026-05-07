@@ -38,6 +38,7 @@ class UserListItem(BaseModel):
     real_name: str
     email: Optional[str] = None
     phone: Optional[str] = None
+    dingtalk_id: Optional[str] = None
     is_active: bool
     roles: list[str] = []
     last_login_at: Optional[str] = None
