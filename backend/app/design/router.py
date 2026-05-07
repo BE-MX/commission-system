@@ -58,21 +58,24 @@ def create_request(
 
     # 触发钉钉通知
     req_status = result.get("data", {}).get("status")
-    level_label, type_label = _translate_dict_fields(
-        db, data.customer_level or "", data.shoot_type or "",
+    level_label, type_label, props_label = _translate_dict_fields(
+        db, data.customer_level or "", data.shoot_type or "", data.props_requirement or "",
     )
+    preferred_name = _get_designer_name(db, data.preferred_designer_id) or "随机分配"
     notify_kwargs = dict(
         request_no=result["data"]["request_no"],
         salesperson_name=data.salesperson_name or data.operator_name,
         customer_name=data.customer_name,
         customer_level=level_label,
         shoot_type=type_label,
+        props_requirement=props_label,
         schedule_date=_fmt_schedule_date(
             data.expect_start_date, data.expect_end_date,
             data.expect_start_period, data.expect_end_period,
         ),
         priority=data.priority or "normal",
         remark=data.remark or "",
+        preferred_designer=preferred_name,
     )
 
     if req_status == "pending_audit":
@@ -130,8 +133,8 @@ def _fmt_schedule_date(
     return f"{s} {sp} ~ {e} {ep}".strip()
 
 
-def _translate_dict_fields(db: Session, customer_level: str, shoot_type: str) -> tuple[str, str]:
-    """将客户等级和拍摄类型的字典 code 翻译为显示名"""
+def _translate_dict_fields(db: Session, customer_level: str, shoot_type: str, props_requirement: str = "") -> tuple[str, str, str]:
+    """将客户等级、拍摄类型、道具要求的字典 code 翻译为显示名"""
     from app.system.service import get_label_map as _get_dict_map
 
     level_label = customer_level
@@ -145,7 +148,22 @@ def _translate_dict_fields(db: Session, customer_level: str, shoot_type: str) ->
         codes = [c.strip() for c in shoot_type.split(",") if c.strip()]
         type_label = "、".join(type_map.get(c, c) for c in codes)
 
-    return level_label, type_label
+    props_label = ""
+    if props_requirement:
+        props_map = _get_dict_map(db, "props_requirement")
+        codes = [c.strip() for c in props_requirement.split(",") if c.strip()]
+        props_label = "、".join(props_map.get(c, c) for c in codes)
+
+    return level_label, type_label, props_label
+
+
+def _get_designer_name(db: Session, designer_id: int | None) -> str:
+    """根据设计师ID获取姓名"""
+    if not designer_id:
+        return ""
+    from app.design.models import DesignDesigner
+    d = db.query(DesignDesigner).filter(DesignDesigner.id == designer_id).first()
+    return d.name if d else ""
 
 
 async def _notify_audit_needed(
@@ -287,6 +305,8 @@ def list_requests(
                     "status": r.status,
                     "conflict_detail": r.conflict_detail,
                     "assigned_designer_id": r.assigned_designer_id,
+                    "props_requirement": r.props_requirement,
+                    "preferred_designer_id": r.preferred_designer_id,
                     "created_at": r.created_at.isoformat() if r.created_at else None,
                     "updated_at": r.updated_at.isoformat() if r.updated_at else None,
                 }
@@ -318,12 +338,14 @@ def get_request(request_id: int, db: Session = Depends(get_db)):
             "salesperson_name": req.salesperson_name,
             "shoot_type": req.shoot_type,
             "shoot_type_remark": req.shoot_type_remark,
+            "props_requirement": req.props_requirement,
             "expect_start_date": req.expect_start_date.isoformat() if req.expect_start_date else None,
             "expect_start_period": req.expect_start_period,
             "expect_end_date": req.expect_end_date.isoformat() if req.expect_end_date else None,
             "expect_end_period": req.expect_end_period,
             "priority": req.priority,
             "remark": req.remark,
+            "preferred_designer_id": req.preferred_designer_id,
             "status": req.status,
             "conflict_detail": req.conflict_detail,
             "assigned_designer_id": req.assigned_designer_id,
@@ -407,9 +429,10 @@ async def _notify_audit_result(
             req.expect_start_period, req.expect_end_period,
         )
 
-    level_label, type_label = _translate_dict_fields(
-        db, req.customer_level or "", req.shoot_type or "",
+    level_label, type_label, props_label = _translate_dict_fields(
+        db, req.customer_level or "", req.shoot_type or "", req.props_requirement or "",
     )
+    preferred_name = _get_designer_name(db, req.preferred_designer_id) or "随机分配"
 
     common = dict(
         request_no=req.request_no,
@@ -417,9 +440,11 @@ async def _notify_audit_result(
         customer_name=req.customer_name,
         customer_level=level_label,
         shoot_type=type_label,
+        props_requirement=props_label,
         schedule_date=schedule_date,
         priority=req.priority or "normal",
         remark=req.remark or "",
+        preferred_designer=preferred_name,
     )
 
     if action == "approve":
@@ -507,19 +532,17 @@ async def _notify_action_to_applicant(
             req.expect_start_period, req.expect_end_period,
         )
 
-    level_label, type_label = _translate_dict_fields(
-        db, req.customer_level or "", req.shoot_type or "",
+    level_label, type_label, props_label = _translate_dict_fields(
+        db, req.customer_level or "", req.shoot_type or "", req.props_requirement or "",
     )
+    preferred_name = _get_designer_name(db, req.preferred_designer_id) or "随机分配"
 
     # 构建额外信息
     extra = []
     if action == "confirm" and req.assigned_designer_id:
-        from app.design.models import DesignDesigner
-        designer = db.query(DesignDesigner).filter(
-            DesignDesigner.id == req.assigned_designer_id,
-        ).first()
-        if designer:
-            extra.append(f"设计师：{designer.name}")
+        designer_name = _get_designer_name(db, req.assigned_designer_id)
+        if designer_name:
+            extra.append(f"设计师：{designer_name}")
 
     title = _ACTION_TITLES.get(action, f"预约单状态更新: {action}")
 
@@ -531,11 +554,40 @@ async def _notify_action_to_applicant(
         customer_name=req.customer_name,
         customer_level=level_label,
         shoot_type=type_label,
+        props_requirement=props_label,
         schedule_date=schedule_date,
         priority=req.priority or "normal",
         remark=req.remark or "",
+        preferred_designer=preferred_name,
         extra_lines=extra or None,
     )
+
+
+@router.put("/requests/{request_id}/expect-date")
+def update_expect_date(
+    request_id: int,
+    data: dict,
+    db: Session = Depends(get_db),
+):
+    """修改待确认任务的期望日期"""
+    req = db.query(DesignScheduleRequest).filter(
+        DesignScheduleRequest.id == request_id,
+        DesignScheduleRequest.deleted_at.is_(None),
+    ).first()
+    if not req:
+        return {"code": 404, "message": "预约单不存在", "data": None}
+    if req.status != "pending_design":
+        return {"code": 400, "message": "只有待排期状态的预约单可以修改期望日期", "data": None}
+
+    from datetime import date as _date
+    req.expect_start_date = _date.fromisoformat(data["expect_start_date"])
+    req.expect_start_period = data.get("expect_start_period", "am")
+    req.expect_end_date = _date.fromisoformat(data["expect_end_date"])
+    req.expect_end_period = data.get("expect_end_period", "pm")
+    req.updated_at = datetime.now()
+    db.commit()
+
+    return {"code": 200, "message": "期望日期已更新", "data": None}
 
 
 # ── 甘特图 ────────────────────────────────────────────────

@@ -22,7 +22,12 @@
             <template #default="{ row }">{{ buildDictLabel(row.shoot_type, shootTypeMap) }}</template>
           </el-table-column>
           <el-table-column label="期望日期" min-width="280" max-width="420">
-            <template #default="{ row }">{{ row.expect_start_date }} {{ periodLabel(row.expect_start_period) }} ~ {{ row.expect_end_date }} {{ periodLabel(row.expect_end_period) }}</template>
+            <template #default="{ row }">
+              <span class="clickable-date" @click="openEditDateDialog(row)">
+                {{ row.expect_start_date }} {{ periodLabel(row.expect_start_period) }} ~ {{ row.expect_end_date }} {{ periodLabel(row.expect_end_period) }}
+                <el-icon class="edit-icon"><Edit /></el-icon>
+              </span>
+            </template>
           </el-table-column>
           <el-table-column label="优先级" min-width="80" max-width="120">
             <template #default="{ row }">
@@ -306,6 +311,24 @@
 
     <!-- 预约详情抽屉 -->
     <RequestDetailDrawer v-model="detailVisible" :request-id="detailRequestId" />
+
+    <!-- 修改期望日期 -->
+    <el-dialog v-model="editDateVisible" title="修改期望日期" width="500px" :close-on-click-modal="false">
+      <el-form label-width="100px">
+        <el-form-item label="期望日期">
+          <DatePeriodPicker
+            v-model:start-date="editDateForm.startDate"
+            v-model:start-period="editDateForm.startPeriod"
+            v-model:end-date="editDateForm.endDate"
+            v-model:end-period="editDateForm.endPeriod"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <GlassButton variant="ghost" @click="editDateVisible = false">取消</GlassButton>
+        <GlassButton variant="primary" @click="submitEditDate" :loading="editDateSaving">保存</GlassButton>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -313,7 +336,7 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload, Plus, Calendar, VideoPlay, CircleCheck, CircleClose, Edit, SwitchButton } from '@element-plus/icons-vue'
-import { getRequests, getTaskList, getDesigners, createDesigner, updateDesigner, actionRequest, rescheduleTask, importRequests } from '@/api/design'
+import { getRequests, getTaskList, getDesigners, createDesigner, updateDesigner, actionRequest, rescheduleTask, importRequests, updateExpectDate } from '@/api/design'
 import { getDictMap, buildDictLabel } from '@/utils/dict'
 import DesignCalendarConfig from '@/components/design/DesignCalendarConfig.vue'
 import DesignCapacityConfig from '@/components/design/DesignCapacityConfig.vue'
@@ -359,6 +382,42 @@ const detailRequestId = ref(null)
 function openDetail(requestId) {
   detailRequestId.value = requestId
   detailVisible.value = true
+}
+
+// --- Edit expect date ---
+const editDateVisible = ref(false)
+const editDateSaving = ref(false)
+const editDateRow = ref(null)
+const editDateForm = reactive({ startDate: '', startPeriod: 'am', endDate: '', endPeriod: 'pm' })
+
+function openEditDateDialog(row) {
+  editDateRow.value = row
+  editDateForm.startDate = row.expect_start_date || ''
+  editDateForm.startPeriod = row.expect_start_period || 'am'
+  editDateForm.endDate = row.expect_end_date || ''
+  editDateForm.endPeriod = row.expect_end_period || 'pm'
+  editDateVisible.value = true
+}
+
+async function submitEditDate() {
+  if (!editDateForm.startDate || !editDateForm.endDate) {
+    ElMessage.warning('请选择日期')
+    return
+  }
+  editDateSaving.value = true
+  try {
+    await updateExpectDate(editDateRow.value.id, {
+      expect_start_date: editDateForm.startDate,
+      expect_start_period: editDateForm.startPeriod,
+      expect_end_date: editDateForm.endDate,
+      expect_end_period: editDateForm.endPeriod,
+    })
+    ElMessage.success('期望日期已更新')
+    editDateVisible.value = false
+    fetchPending()
+  } finally {
+    editDateSaving.value = false
+  }
 }
 
 // --- Pending tab ---
@@ -516,7 +575,8 @@ const confirmForm = reactive({
 
 function openConfirmDialog(row) {
   confirmRow.value = row
-  confirmForm.designer_id = null
+  // 如果预约单指定了期望设计师，默认选中；否则留空
+  confirmForm.designer_id = row.preferred_designer_id || null
   confirmForm.startDate = row.expect_start_date || ''
   confirmForm.startPeriod = row.expect_start_period || 'am'
   confirmForm.endDate = row.expect_end_date || ''
@@ -672,5 +732,23 @@ onMounted(() => {
 
 :deep(.el-dialog__body) {
   overflow: visible;
+}
+
+.clickable-date {
+  cursor: pointer;
+  color: var(--color-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.clickable-date:hover {
+  text-decoration: underline;
+}
+.clickable-date .edit-icon {
+  font-size: 14px;
+  opacity: 0.5;
+}
+.clickable-date:hover .edit-icon {
+  opacity: 1;
 }
 </style>

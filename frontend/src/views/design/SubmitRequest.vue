@@ -69,6 +69,28 @@
           </el-col>
         </el-row>
 
+        <el-row :gutter="24" v-if="form.shoot_type.includes('INS')">
+          <el-col :span="24">
+            <el-form-item label="道具要求" prop="props_requirement">
+              <el-select
+                v-model="form.props_requirement"
+                placeholder="请选择道具要求"
+                style="width: 100%"
+                multiple
+                collapse-tags
+                collapse-tags-tooltip
+              >
+                <el-option
+                  v-for="item in propsOptions"
+                  :key="item.code"
+                  :label="item.label"
+                  :value="item.code"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+
         <el-row :gutter="24">
           <el-col :span="16">
             <el-form-item label="期望日期" prop="startDate">
@@ -81,6 +103,15 @@
                 @change="onDateRangeChange"
               />
             </el-form-item>
+            <div class="date-hint">
+              <p>结束日期为期望"拍摄完成"的截止日期，倒推拍摄周期为开始日期；</p>
+              <p><strong>拍摄周期参考标准：</strong></p>
+              <p>10个颜色或30张以下拍摄参考周期为半天</p>
+              <p>10-20个颜色或约60张拍摄参考周期为一天</p>
+            </div>
+            <div class="date-limit-hint" v-if="dateSpanWarning">
+              <el-alert :title="dateSpanWarning" type="warning" :closable="false" show-icon />
+            </div>
           </el-col>
           <el-col :span="8">
             <el-form-item label="优先级" prop="priority">
@@ -88,6 +119,23 @@
                 <el-radio value="normal">普通</el-radio>
                 <el-radio value="urgent">加急</el-radio>
               </el-radio-group>
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="24">
+          <el-col :span="12">
+            <el-form-item label="期望设计师">
+              <el-select v-model="form.preferred_designer_id" placeholder="随机分配" style="width: 100%" clearable>
+                <el-option :value="null" label="随机分配" />
+                <el-option
+                  v-for="d in designerOptions"
+                  :key="d.id"
+                  :label="d.name"
+                  :value="d.id"
+                />
+              </el-select>
+              <div class="field-hint">根据具体情况优先分配期望设计师</div>
             </el-form-item>
           </el-col>
         </el-row>
@@ -142,7 +190,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Promotion, RefreshLeft, UploadFilled } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
-import { submitRequest, checkConflict, getUnavailableDates, uploadAttachment } from '@/api/design'
+import { submitRequest, checkConflict, getUnavailableDates, uploadAttachment, getDesigners } from '@/api/design'
 import { getDictItems } from '@/api/system'
 import ConflictAlert from '@/components/design/ConflictAlert.vue'
 import DatePeriodPicker from '@/components/design/DatePeriodPicker.vue'
@@ -156,6 +204,8 @@ const fileList = ref([])
 
 const shootTypeOptions = ref([])
 const customerLevelOptions = ref([])
+const propsOptions = ref([])
+const designerOptions = ref([])
 
 const form = reactive({
   customer_name: '',
@@ -163,12 +213,14 @@ const form = reactive({
   salesperson_name: authStore.user?.real_name || authStore.user?.username || '',
   shoot_type: [],
   shoot_type_remark: '',
+  props_requirement: [],
   startDate: '',
   startPeriod: 'am',
   endDate: '',
   endPeriod: 'pm',
   priority: 'normal',
   remark: '',
+  preferred_designer_id: null,
 })
 
 const rules = {
@@ -193,11 +245,45 @@ const rules = {
   ],
   startDate: [{ required: true, message: '请选择期望开始日期', trigger: 'change' }],
   priority: [{ required: true, message: '请选择优先级', trigger: 'change' }],
+  props_requirement: [
+    {
+      validator: (rule, value, callback) => {
+        if (form.shoot_type.includes('INS') && (!Array.isArray(value) || value.length === 0)) {
+          callback(new Error('选择INS场景图时必须填写道具要求'))
+        } else {
+          callback()
+        }
+      }, trigger: 'change',
+    },
+  ],
 }
 
 const conflictResult = ref(null)
+const dateSpanWarning = ref('')
 // Key: "YYYY-MM-DD" (full day disabled) or "YYYY-MM-DD_am" / "YYYY-MM-DD_pm" (half-day)
 const unavailableDateSet = ref(new Set())
+
+/**
+ * 计算两个日期之间的可用天数（排除不可用日期）
+ */
+function countAvailableDays(startStr, endStr) {
+  if (!startStr || !endStr) return 0
+  const start = new Date(startStr)
+  const end = new Date(endStr)
+  let count = 0
+  const d = new Date(start)
+  while (d <= end) {
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const dd = String(d.getDate()).padStart(2, '0')
+    const key = `${y}-${m}-${dd}`
+    const fullDayUnavail = unavailableDateSet.value.has(key) ||
+      (unavailableDateSet.value.has(`${key}_am`) && unavailableDateSet.value.has(`${key}_pm`))
+    if (!fullDayUnavail) count++
+    d.setDate(d.getDate() + 1)
+  }
+  return count
+}
 
 function disablePastDate(date) {
   if (date < new Date(new Date().setHours(0, 0, 0, 0))) return true
@@ -237,12 +323,16 @@ async function fetchUnavailableDates() {
 
 async function loadDicts() {
   try {
-    const [stRes, clRes] = await Promise.all([
+    const [stRes, clRes, prRes, dsRes] = await Promise.all([
       getDictItems('shoot_type', true),
       getDictItems('customer_level', true),
+      getDictItems('props_requirement', true),
+      getDesigners(),
     ])
     shootTypeOptions.value = stRes.data || []
     customerLevelOptions.value = clRes.data || []
+    propsOptions.value = prRes.data || []
+    designerOptions.value = (dsRes.data || []).filter(d => d.is_active)
   } catch {
     // ignore
   }
@@ -257,7 +347,15 @@ let conflictTimer = null
 function onDateRangeChange(val) {
   clearTimeout(conflictTimer)
   conflictResult.value = null
+  dateSpanWarning.value = ''
   if (!val || !val.startDate || !val.endDate) return
+
+  // 检查可用天数是否超过3天
+  const availDays = countAvailableDays(val.startDate, val.endDate)
+  if (availDays > 3) {
+    dateSpanWarning.value = `期望日期范围内有效天数为 ${availDays} 天，超过 3 天限制，请缩短日期范围`
+  }
+
   conflictTimer = setTimeout(() => {
     doConflictCheck(val.startDate, val.endDate, val.startPeriod, val.endPeriod)
   }, 300)
@@ -303,6 +401,12 @@ async function handleSubmit() {
   const valid = await formRef.value.validate().catch(() => false)
   if (!valid) return
 
+  // 检查日期范围
+  if (dateSpanWarning.value) {
+    ElMessage.warning('期望日期范围超过3天限制，请调整')
+    return
+  }
+
   submitting.value = true
   try {
     const payload = {
@@ -312,12 +416,14 @@ async function handleSubmit() {
       salesperson_id: authStore.user?.id || 1,
       shoot_type: form.shoot_type.join(','),
       shoot_type_remark: form.shoot_type.includes('other') ? form.shoot_type_remark : '',
+      props_requirement: form.shoot_type.includes('INS') ? form.props_requirement.join(',') : '',
       expect_start_date: form.startDate,
       expect_start_period: form.startPeriod,
       expect_end_date: form.endDate,
       expect_end_period: form.endPeriod,
       priority: form.priority,
       remark: form.remark,
+      preferred_designer_id: form.preferred_designer_id || undefined,
       operator_id: authStore.user?.id || 1,
       operator_name: form.salesperson_name || '业务员',
       operator_role: 'salesperson',
@@ -359,6 +465,7 @@ async function handleSubmit() {
 function resetForm() {
   formRef.value?.resetFields()
   conflictResult.value = null
+  dateSpanWarning.value = ''
   fileList.value = []
 }
 </script>
@@ -397,5 +504,24 @@ function resetForm() {
   font-size: 12px;
   color: var(--text-secondary, #999);
   margin-top: 4px;
+}
+.date-hint {
+  background: var(--fill-color-lighter, #f5f7fa);
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin: -8px 0 16px;
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--text-secondary, #666);
+}
+.date-hint p { margin: 0; }
+.date-hint strong { color: var(--text-primary, #333); }
+.date-limit-hint {
+  margin: -4px 0 16px;
+}
+.field-hint {
+  font-size: 12px;
+  color: var(--text-secondary, #999);
+  margin-top: 2px;
 }
 </style>

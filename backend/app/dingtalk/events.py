@@ -111,9 +111,11 @@ def _build_request_markdown(
     customer_name: str = "",
     customer_level: str = "",
     shoot_type: str = "",
+    props_requirement: str = "",
     schedule_date: str = "",
     priority: str = "",
     remark: str = "",
+    preferred_designer: str = "",
     extra_lines: list[str] | None = None,
 ) -> str:
     """构建统一的设计预约通知 Markdown 文本
@@ -130,10 +132,16 @@ def _build_request_markdown(
         f"客户名称：{customer_name}",
         f"客户等级：{customer_level}",
         f"拍摄类型：{shoot_type}",
+    ]
+    if props_requirement:
+        lines.append(f"道具要求：{props_requirement}")
+    lines.extend([
         f"期望日期：{schedule_date}",
         f"优先级：{_PRIORITY_LABELS.get(priority, priority)}",
         f"备注：{remark or '无'}",
-    ]
+    ])
+    if preferred_designer:
+        lines.append(f"期望设计师：{preferred_designer}")
     if extra_lines:
         lines.append(sep)
         lines.extend(extra_lines)

@@ -7,6 +7,7 @@
         <el-descriptions-item label="客户名称">{{ detail.customer_name }}</el-descriptions-item>
         <el-descriptions-item label="客户等级">{{ customerLevelLabel(detail.customer_level) }}</el-descriptions-item>
         <el-descriptions-item label="拍摄类型">{{ shootTypeLabel(detail.shoot_type) }}</el-descriptions-item>
+        <el-descriptions-item v-if="detail.props_requirement" label="道具要求">{{ propsLabel(detail.props_requirement) }}</el-descriptions-item>
         <el-descriptions-item label="期望日期">
           {{ formatDatePeriod(detail.expect_start_date, detail.expect_start_period) }}
           ~
@@ -23,6 +24,7 @@
           </el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="备注">{{ detail.remark || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="期望设计师">{{ preferredDesignerLabel }}</el-descriptions-item>
       </el-descriptions>
 
       <!-- 附件列表 -->
@@ -69,7 +71,7 @@
 <script setup>
 import { ref, watch } from 'vue'
 import { Paperclip, Download } from '@element-plus/icons-vue'
-import { getRequestDetail, getAuditLogs, getAttachments, getAttachmentDownloadUrl } from '@/api/design'
+import { getRequestDetail, getAuditLogs, getAttachments, getAttachmentDownloadUrl, getDesigners } from '@/api/design'
 import { getDictMap, buildDictLabel } from '@/utils/dict'
 
 const props = defineProps({
@@ -86,6 +88,8 @@ const auditLogs = ref([])
 
 const shootTypeMap = ref({})
 const customerLevelMap = ref({})
+const propsMap = ref({})
+const designerList = ref([])
 
 const PERIOD_MAP = { am: '上午', pm: '下午' }
 const STATUS_MAP = {
@@ -129,10 +133,24 @@ function formatDatePeriod(d, period) {
 
 function shootTypeLabel(t) { return buildDictLabel(t, shootTypeMap.value) }
 
+function propsLabel(t) {
+  if (!t) return '-'
+  return buildDictLabel(t, propsMap.value)
+}
+
 function customerLevelLabel(code) {
   if (!code) return '-'
   return customerLevelMap.value[code] || code
 }
+
+import { computed } from 'vue'
+const preferredDesignerLabel = computed(() => {
+  if (!detail.value) return '-'
+  const id = detail.value.preferred_designer_id
+  if (!id) return '随机分配'
+  const d = designerList.value.find(d => d.id === id)
+  return d ? d.name : `设计师#${id}`
+})
 
 function formatFileSize(bytes) {
   if (!bytes) return '0 B'
@@ -153,6 +171,11 @@ function timelineType(action) {
 async function loadDicts() {
   shootTypeMap.value = await getDictMap('shoot_type')
   customerLevelMap.value = await getDictMap('customer_level')
+  propsMap.value = await getDictMap('props_requirement')
+  try {
+    const res = await getDesigners()
+    designerList.value = res.data || []
+  } catch { designerList.value = [] }
 }
 
 async function loadDetail(requestId) {

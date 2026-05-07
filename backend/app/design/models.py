@@ -36,6 +36,7 @@ class DesignScheduleRequest(Base):
         comment="拍摄类型(字典code，多选用逗号分隔)",
     )
     shoot_type_remark = Column(String(256), nullable=True, comment="拍摄类型备注")
+    props_requirement = Column(String(512), nullable=True, comment="道具要求(字典code，多选用逗号分隔)")
     expect_start_date = Column(Date, nullable=False, comment="期望开始日期")
     expect_start_period = Column(String(2), nullable=True, comment="期望开始时段(am/pm)")
     expect_end_date = Column(Date, nullable=False, comment="期望结束日期")
@@ -45,6 +46,7 @@ class DesignScheduleRequest(Base):
         nullable=False, default="normal", server_default="normal", comment="优先级",
     )
     remark = Column(Text, nullable=True, comment="备注")
+    preferred_designer_id = Column(Integer, nullable=True, comment="期望设计师ID(NULL=随机分配)")
     status = Column(
         SAEnum("pending_audit", "pending_design", "scheduled", "in_progress",
                "completed", "rejected", "cancelled", name="request_status_enum"),

@@ -1,5 +1,6 @@
 """FastAPI 应用入口"""
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -59,6 +60,11 @@ async def lifespan(app: FastAPI):
             seed_role_permissions(db)
     except Exception as e:
         logger.warning(f"Init admin password skipped: {e}")
+
+    # 启动定时任务
+    from app.design.scheduler import scheduler_loop
+    asyncio.create_task(scheduler_loop())
+    logger.info("Design shoot reminder scheduler started")
 
     yield
     # --- 关闭 ---

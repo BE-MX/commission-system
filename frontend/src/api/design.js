@@ -177,4 +177,8 @@ export function getAttachmentDownloadUrl(attachmentId) {
   return `/api/design/attachments/${attachmentId}/download`
 }
 
+export function updateExpectDate(requestId, data) {
+  return designApi.put(`/requests/${requestId}/expect-date`, data, { loadingText: '正在更新...' })
+}
+
 export default designApi

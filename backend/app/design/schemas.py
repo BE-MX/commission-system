@@ -27,12 +27,14 @@ class DesignRequestCreate(OperatorMixin):
     salesperson_name: str
     shoot_type: str
     shoot_type_remark: Optional[str] = None
+    props_requirement: Optional[str] = None
     expect_start_date: date
     expect_start_period: PeriodType = "am"
     expect_end_date: date
     expect_end_period: PeriodType = "pm"
     priority: str = "normal"
     remark: Optional[str] = None
+    preferred_designer_id: Optional[int] = None
 
     @model_validator(mode="after")
     def validate_dates(self):
