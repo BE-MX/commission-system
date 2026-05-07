@@ -45,13 +45,19 @@ def create_request(
 
     # 触发钉钉通知
     req_status = result.get("data", {}).get("status")
+    level_label, type_label = _translate_dict_fields(
+        db, data.customer_level or "", data.shoot_type or "",
+    )
     notify_kwargs = dict(
         request_no=result["data"]["request_no"],
         salesperson_name=data.salesperson_name or data.operator_name,
         customer_name=data.customer_name,
-        customer_level=data.customer_level or "",
-        shoot_type=data.shoot_type or "",
-        schedule_date=f"{data.expect_start_date} ~ {data.expect_end_date}",
+        customer_level=level_label,
+        shoot_type=type_label,
+        schedule_date=_fmt_schedule_date(
+            data.expect_start_date, data.expect_end_date,
+            data.expect_start_period, data.expect_end_period,
+        ),
         priority=data.priority or "normal",
         remark=data.remark or "",
     )
@@ -93,6 +99,40 @@ def _find_role_dingtalk_ids(db: Session, role_name: str) -> list[str]:
     ).all()
 
     return [u.dingtalk_id for u in users]
+
+
+_PERIOD_LABELS = {"am": "上午", "pm": "下午"}
+
+
+def _fmt_schedule_date(
+    start_date, end_date,
+    start_period: str | None = None,
+    end_period: str | None = None,
+) -> str:
+    """格式化期望日期，带上午/下午"""
+    s = str(start_date)
+    e = str(end_date)
+    sp = _PERIOD_LABELS.get(start_period, "")
+    ep = _PERIOD_LABELS.get(end_period, "")
+    return f"{s} {sp} ~ {e} {ep}".strip()
+
+
+def _translate_dict_fields(db: Session, customer_level: str, shoot_type: str) -> tuple[str, str]:
+    """将客户等级和拍摄类型的字典 code 翻译为显示名"""
+    from app.system.service import get_label_map as _get_dict_map
+
+    level_label = customer_level
+    if customer_level:
+        level_map = _get_dict_map(db, "customer_level")
+        level_label = level_map.get(customer_level, customer_level)
+
+    type_label = shoot_type
+    if shoot_type:
+        type_map = _get_dict_map(db, "shoot_type")
+        codes = [c.strip() for c in shoot_type.split(",") if c.strip()]
+        type_label = "、".join(type_map.get(c, c) for c in codes)
+
+    return level_label, type_label
 
 
 async def _notify_audit_needed(
@@ -349,14 +389,21 @@ async def _notify_audit_result(
 
     schedule_date = ""
     if req.expect_start_date and req.expect_end_date:
-        schedule_date = f"{req.expect_start_date.isoformat()} ~ {req.expect_end_date.isoformat()}"
+        schedule_date = _fmt_schedule_date(
+            req.expect_start_date, req.expect_end_date,
+            req.expect_start_period, req.expect_end_period,
+        )
+
+    level_label, type_label = _translate_dict_fields(
+        db, req.customer_level or "", req.shoot_type or "",
+    )
 
     common = dict(
         request_no=req.request_no,
         salesperson_name=req.salesperson_name or "",
         customer_name=req.customer_name,
-        customer_level=req.customer_level or "",
-        shoot_type=req.shoot_type or "",
+        customer_level=level_label,
+        shoot_type=type_label,
         schedule_date=schedule_date,
         priority=req.priority or "normal",
         remark=req.remark or "",

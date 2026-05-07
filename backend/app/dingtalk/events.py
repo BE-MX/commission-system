@@ -116,20 +116,29 @@ def _build_request_markdown(
     remark: str = "",
     extra_lines: list[str] | None = None,
 ) -> str:
-    """构建统一的设计预约通知 Markdown 文本"""
-    md = f"### {title}\n"
-    md += f"**预约编号：** {request_no}\n"
-    md += f"**业务员：** {salesperson_name}\n"
-    md += f"**客户名称：** {customer_name}\n"
-    md += f"**客户等级：** {customer_level}\n"
-    md += f"**拍摄类型：** {shoot_type}\n"
-    md += f"**期望日期：** {schedule_date}\n"
-    md += f"**优先级：** {_PRIORITY_LABELS.get(priority, priority)}\n"
-    md += f"**备注：** {remark or '无'}\n"
+    """构建统一的设计预约通知 Markdown 文本
+
+    所有字段值应已翻译为显示名（由调用方完成字典转换）。
+    使用分隔线让各行在钉钉客户端清晰可读。
+    """
+    sep = "———————————"
+    lines = [
+        f"### {title}",
+        sep,
+        f"预约编号：{request_no}",
+        f"业务员：{salesperson_name}",
+        f"客户名称：{customer_name}",
+        f"客户等级：{customer_level}",
+        f"拍摄类型：{shoot_type}",
+        f"期望日期：{schedule_date}",
+        f"优先级：{_PRIORITY_LABELS.get(priority, priority)}",
+        f"备注：{remark or '无'}",
+    ]
     if extra_lines:
-        for line in extra_lines:
-            md += f"{line}\n"
-    return md
+        lines.append(sep)
+        lines.extend(extra_lines)
+    lines.append(sep)
+    return "\n\n".join(lines)
 
 
 @_safe_notify
