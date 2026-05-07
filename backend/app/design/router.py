@@ -43,47 +43,74 @@ def create_request(
         db, data, data.operator_id, data.operator_name, data.operator_role
     )
 
-    # 触发钉钉通知（仅当进入审批流程时）
-    if result.get("data", {}).get("status") == "pending_audit":
+    # 触发钉钉通知
+    req_status = result.get("data", {}).get("status")
+    notify_kwargs = dict(
+        request_no=result["data"]["request_no"],
+        salesperson_name=data.salesperson_name or data.operator_name,
+        customer_name=data.customer_name,
+        customer_level=data.customer_level or "",
+        shoot_type=data.shoot_type or "",
+        schedule_date=f"{data.expect_start_date} ~ {data.expect_end_date}",
+        priority=data.priority or "normal",
+        remark=data.remark or "",
+    )
+
+    if req_status == "pending_audit":
+        # 有冲突 → 通知主管审批
         background_tasks.add_task(
             _notify_audit_needed,
             db=db,
-            request_no=result["data"]["request_no"],
-            customer_name=data.customer_name,
-            applicant_name=data.operator_name,
-            schedule_date=f"{data.expect_start_date} ~ {data.expect_end_date}",
             conflict=result["data"].get("conflict"),
+            **notify_kwargs,
+        )
+    elif req_status == "pending_design":
+        # 无冲突 → 直接通知设计部
+        background_tasks.add_task(
+            _notify_design_dept,
+            db=db,
+            source="直接提交",
+            **notify_kwargs,
         )
 
     return result
 
 
-async def _notify_audit_needed(
-    db: Session,
-    request_no: str,
-    customer_name: str,
-    applicant_name: str,
-    schedule_date: str,
-    conflict: dict | None = None,
-):
-    """查找所有主管的钉钉ID，发送审批通知"""
+def _find_role_dingtalk_ids(db: Session, role_name: str) -> list[str]:
+    """查找指定角色下所有已绑定钉钉的活跃用户ID"""
     from app.auth.models import ArkUser, ArkRole, ArkUserRole
-    from app.dingtalk.events import notify_design_audit_needed
 
-    # 查找 supervisor 角色的所有用户
-    supervisor_users = db.query(ArkUser).join(
+    users = db.query(ArkUser).join(
         ArkUserRole, ArkUser.id == ArkUserRole.user_id
     ).join(
         ArkRole, ArkRole.id == ArkUserRole.role_id
     ).filter(
-        ArkRole.name == "supervisor",
+        ArkRole.name == role_name,
         ArkUser.is_active == True,
         ArkUser.deleted_at.is_(None),
         ArkUser.dingtalk_id.isnot(None),
         ArkUser.dingtalk_id != "",
     ).all()
 
-    dingtalk_ids = [u.dingtalk_id for u in supervisor_users]
+    return [u.dingtalk_id for u in users]
+
+
+async def _notify_audit_needed(
+    db: Session,
+    request_no: str,
+    salesperson_name: str,
+    customer_name: str,
+    customer_level: str,
+    shoot_type: str,
+    schedule_date: str,
+    priority: str,
+    remark: str,
+    conflict: dict | None = None,
+):
+    """查找所有主管的钉钉ID，发送审批通知"""
+    from app.dingtalk.events import notify_design_audit_needed
+
+    dingtalk_ids = _find_role_dingtalk_ids(db, "supervisor")
 
     # 构建冲突摘要
     conflict_summary = ""
@@ -100,10 +127,45 @@ async def _notify_audit_needed(
     await notify_design_audit_needed(
         reviewer_dingtalk_ids=dingtalk_ids,
         request_no=request_no,
+        salesperson_name=salesperson_name,
         customer_name=customer_name,
-        applicant_name=applicant_name,
+        customer_level=customer_level,
+        shoot_type=shoot_type,
         schedule_date=schedule_date,
+        priority=priority,
+        remark=remark,
         conflict_summary=conflict_summary,
+    )
+
+
+async def _notify_design_dept(
+    db: Session,
+    request_no: str,
+    salesperson_name: str,
+    customer_name: str,
+    customer_level: str,
+    shoot_type: str,
+    schedule_date: str,
+    priority: str,
+    remark: str,
+    source: str = "",
+):
+    """查找设计部所有成员的钉钉ID，发送待排期通知"""
+    from app.dingtalk.events import notify_design_ready_for_design
+
+    dingtalk_ids = _find_role_dingtalk_ids(db, "design_staff")
+
+    await notify_design_ready_for_design(
+        designer_dingtalk_ids=dingtalk_ids,
+        request_no=request_no,
+        salesperson_name=salesperson_name,
+        customer_name=customer_name,
+        customer_level=customer_level,
+        shoot_type=shoot_type,
+        schedule_date=schedule_date,
+        priority=priority,
+        remark=remark,
+        source=source,
     )
 
 
@@ -264,9 +326,13 @@ async def _notify_audit_result(
     action: str,
     comment: str | None = None,
 ):
-    """审批通过/拒绝后向申请人发送点对点通知"""
+    """审批通过/拒绝后向申请人发送点对点通知；通过时同时通知设计部"""
     from app.auth.models import ArkUser
-    from app.dingtalk.events import notify_design_request_approved, notify_design_request_rejected
+    from app.dingtalk.events import (
+        notify_design_request_approved,
+        notify_design_request_rejected,
+        notify_design_ready_for_design,
+    )
 
     req = db.query(DesignScheduleRequest).filter(
         DesignScheduleRequest.id == request_id
@@ -285,20 +351,35 @@ async def _notify_audit_result(
     if req.expect_start_date and req.expect_end_date:
         schedule_date = f"{req.expect_start_date.isoformat()} ~ {req.expect_end_date.isoformat()}"
 
+    common = dict(
+        request_no=req.request_no,
+        salesperson_name=req.salesperson_name or "",
+        customer_name=req.customer_name,
+        customer_level=req.customer_level or "",
+        shoot_type=req.shoot_type or "",
+        schedule_date=schedule_date,
+        priority=req.priority or "normal",
+        remark=req.remark or "",
+    )
+
     if action == "approve":
+        # 通知申请人
         await notify_design_request_approved(
-            request_no=req.request_no,
-            customer_name=req.customer_name,
-            designer_name="",
-            schedule_date=schedule_date,
             applicant_dingtalk_id=applicant_dingtalk_id,
+            **common,
+        )
+        # 通知设计部
+        design_ids = _find_role_dingtalk_ids(db, "design_staff")
+        await notify_design_ready_for_design(
+            designer_dingtalk_ids=design_ids,
+            source="审核通过",
+            **common,
         )
     elif action == "reject":
         await notify_design_request_rejected(
-            request_no=req.request_no,
-            customer_name=req.customer_name,
-            reason=comment or "未说明原因",
             applicant_dingtalk_id=applicant_dingtalk_id,
+            reject_reason=comment or "未说明原因",
+            **common,
         )
 
 

@@ -66,6 +66,7 @@ def list_users(
             dingtalk_id=u.dingtalk_id,
             is_active=bool(u.is_active),
             roles=[r.label for r in u.roles],
+            role_ids=[r.id for r in u.roles],
             last_login_at=u.last_login_at.isoformat() if u.last_login_at else None,
             created_at=u.created_at.isoformat() if u.created_at else "",
         )

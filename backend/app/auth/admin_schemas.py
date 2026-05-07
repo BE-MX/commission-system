@@ -41,6 +41,7 @@ class UserListItem(BaseModel):
     dingtalk_id: Optional[str] = None
     is_active: bool
     roles: list[str] = []
+    role_ids: list[int] = []
     last_login_at: Optional[str] = None
     created_at: str
 

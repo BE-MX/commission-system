@@ -181,11 +181,9 @@ function openEditDialog(row) {
     real_name: row.real_name,
     email: row.email || '',
     phone: row.phone || '',
-    role_ids: [],
+    role_ids: row.role_ids || [],
   }
   fetchRoles()
-  // 需要获取当前用户的角色 ID 列表（后端只返回 label）
-  // 通过用户名匹配 roleOptions 来还原
   dialogVisible.value = true
 }
 

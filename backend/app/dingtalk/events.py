@@ -99,60 +99,76 @@ async def notify_payment_sync_done(
 #  设计预约相关
 # ══════════════════════════════════════════════════════════════
 
+# 优先级中文映射
+_PRIORITY_LABELS = {"normal": "普通", "urgent": "加急"}
 
-@_safe_notify
-async def notify_design_request_submitted(
+
+def _build_request_markdown(
+    title: str,
+    *,
     request_no: str,
-    customer_name: str,
-    applicant_name: str,
-    designer_name: str,
-    schedule_date: str,
-    link: str = "",
-):
-    """设计预约申请提交通知（群消息广播）"""
-    sender = get_webhook_sender()
-    text = (
-        f"###  新的设计预约申请\n"
-        f"**单号：** {request_no}\n"
-        f"**客户：** {customer_name}\n"
-        f"**申请人：** {applicant_name}\n"
-        f"**指派设计师：** {designer_name}\n"
-        f"**预约日期：** {schedule_date}\n"
-    )
-    if link:
-        text += f"[去审批]({link})\n"
-
-    await sender.send_markdown(title="新设计预约", text=text)
+    salesperson_name: str = "",
+    customer_name: str = "",
+    customer_level: str = "",
+    shoot_type: str = "",
+    schedule_date: str = "",
+    priority: str = "",
+    remark: str = "",
+    extra_lines: list[str] | None = None,
+) -> str:
+    """构建统一的设计预约通知 Markdown 文本"""
+    md = f"### {title}\n"
+    md += f"**预约编号：** {request_no}\n"
+    md += f"**业务员：** {salesperson_name}\n"
+    md += f"**客户名称：** {customer_name}\n"
+    md += f"**客户等级：** {customer_level}\n"
+    md += f"**拍摄类型：** {shoot_type}\n"
+    md += f"**期望日期：** {schedule_date}\n"
+    md += f"**优先级：** {_PRIORITY_LABELS.get(priority, priority)}\n"
+    md += f"**备注：** {remark or '无'}\n"
+    if extra_lines:
+        for line in extra_lines:
+            md += f"{line}\n"
+    return md
 
 
 @_safe_notify
 async def notify_design_audit_needed(
     reviewer_dingtalk_ids: list[str],
+    *,
     request_no: str,
-    customer_name: str,
-    applicant_name: str,
-    schedule_date: str,
+    salesperson_name: str = "",
+    customer_name: str = "",
+    customer_level: str = "",
+    shoot_type: str = "",
+    schedule_date: str = "",
+    priority: str = "",
+    remark: str = "",
     conflict_summary: str = "",
-    link: str = "",
 ):
     """设计预约需要审批 — 向主管发送点对点工作通知"""
     if not reviewer_dingtalk_ids:
         logger.info("无主管钉钉ID，跳过审批点对点通知 (单号: %s)", request_no)
         return
 
-    notifier = get_work_notifier()
-    md = (
-        f"### 📋 设计预约待审批\n"
-        f"**单号：** {request_no}\n"
-        f"**客户：** {customer_name}\n"
-        f"**申请人：** {applicant_name}\n"
-        f"**预约日期：** {schedule_date}\n"
-    )
+    extra = []
     if conflict_summary:
-        md += f"**冲突原因：** {conflict_summary}\n"
-    if link:
-        md += f"\n[去审批]({link})\n"
+        extra.append(f"**冲突原因：** {conflict_summary}")
 
+    md = _build_request_markdown(
+        "📋 设计预约待审批",
+        request_no=request_no,
+        salesperson_name=salesperson_name,
+        customer_name=customer_name,
+        customer_level=customer_level,
+        shoot_type=shoot_type,
+        schedule_date=schedule_date,
+        priority=priority,
+        remark=remark,
+        extra_lines=extra,
+    )
+
+    notifier = get_work_notifier()
     await notifier.send_to_users(
         user_ids=reviewer_dingtalk_ids,
         title="设计预约待审批",
@@ -162,82 +178,127 @@ async def notify_design_audit_needed(
 
 @_safe_notify
 async def notify_design_request_approved(
-    request_no: str,
-    customer_name: str,
-    designer_name: str,
-    schedule_date: str,
     applicant_dingtalk_id: str = "",
-    link: str = "",
+    *,
+    request_no: str,
+    salesperson_name: str = "",
+    customer_name: str = "",
+    customer_level: str = "",
+    shoot_type: str = "",
+    schedule_date: str = "",
+    priority: str = "",
+    remark: str = "",
 ):
-    """设计预约审批通过 — 群消息 + 向申请人发点对点通知"""
-    sender = get_webhook_sender()
-    text = (
-        f"### ✅ 设计预约已通过\n"
-        f"**单号：** {request_no}\n"
-        f"**客户：** {customer_name}\n"
-        f"**设计师：** {designer_name}\n"
-        f"**预约日期：** {schedule_date}\n"
+    """设计预约审批通过 — 向申请人发点对点通知"""
+    if not applicant_dingtalk_id:
+        logger.info("申请人无钉钉ID，跳过审批通过通知 (单号: %s)", request_no)
+        return
+
+    md = _build_request_markdown(
+        "✅ 你的设计预约已通过",
+        request_no=request_no,
+        salesperson_name=salesperson_name,
+        customer_name=customer_name,
+        customer_level=customer_level,
+        shoot_type=shoot_type,
+        schedule_date=schedule_date,
+        priority=priority,
+        remark=remark,
     )
-    if link:
-        text += f"[查看详情]({link})\n"
 
-    await sender.send_markdown(title="设计预约通过", text=text)
-
-    # 同时给申请人发工作通知
-    if applicant_dingtalk_id:
-        notifier = get_work_notifier()
-        md = (
-            f"### ✅ 你的设计预约已通过\n"
-            f"**单号：** {request_no}\n"
-            f"**客户：** {customer_name}\n"
-            f"**预约日期：** {schedule_date}\n"
-        )
-        if link:
-            md += f"\n[查看详情]({link})\n"
-        await notifier.send_to_users(
-            user_ids=[applicant_dingtalk_id],
-            title="设计预约已通过",
-            markdown_text=md,
-        )
+    notifier = get_work_notifier()
+    await notifier.send_to_users(
+        user_ids=[applicant_dingtalk_id],
+        title="设计预约已通过",
+        markdown_text=md,
+    )
 
 
 @_safe_notify
 async def notify_design_request_rejected(
-    request_no: str,
-    customer_name: str,
-    reason: str,
     applicant_dingtalk_id: str = "",
-    link: str = "",
+    *,
+    request_no: str,
+    salesperson_name: str = "",
+    customer_name: str = "",
+    customer_level: str = "",
+    shoot_type: str = "",
+    schedule_date: str = "",
+    priority: str = "",
+    remark: str = "",
+    reject_reason: str = "",
 ):
-    """设计预约审批拒绝 — 群消息 + 向申请人发点对点通知"""
-    sender = get_webhook_sender()
-    text = (
-        f"### ❌ 设计预约被拒绝\n"
-        f"**单号：** {request_no}\n"
-        f"**客户：** {customer_name}\n"
-        f"**拒绝原因：** {reason}\n"
+    """设计预约审批拒绝 — 向申请人发点对点通知"""
+    if not applicant_dingtalk_id:
+        logger.info("申请人无钉钉ID，跳过审批拒绝通知 (单号: %s)", request_no)
+        return
+
+    extra = [f"**拒绝原因：** {reject_reason}"] if reject_reason else []
+
+    md = _build_request_markdown(
+        "❌ 你的设计预约被拒绝",
+        request_no=request_no,
+        salesperson_name=salesperson_name,
+        customer_name=customer_name,
+        customer_level=customer_level,
+        shoot_type=shoot_type,
+        schedule_date=schedule_date,
+        priority=priority,
+        remark=remark,
+        extra_lines=extra,
     )
-    if link:
-        text += f"[查看详情]({link})\n"
 
-    await sender.send_markdown(title="设计预约被拒", text=text)
+    notifier = get_work_notifier()
+    await notifier.send_to_users(
+        user_ids=[applicant_dingtalk_id],
+        title="设计预约被拒绝",
+        markdown_text=md,
+    )
 
-    # 同时给申请人发工作通知
-    if applicant_dingtalk_id:
-        notifier = get_work_notifier()
-        md = (
-            f"### ❌ 你的设计预约被拒绝\n"
-            f"**单号：** {request_no}\n"
-            f"**客户：** {customer_name}\n"
-            f"**拒绝原因：** {reason}\n"
-        )
-        if link:
-            md += f"\n[查看详情]({link})\n"
-        await notifier.send_to_users(
-            user_ids=[applicant_dingtalk_id],
-            title="设计预约被拒绝",
-            markdown_text=md,
-        )
+
+@_safe_notify
+async def notify_design_ready_for_design(
+    designer_dingtalk_ids: list[str],
+    *,
+    request_no: str,
+    salesperson_name: str = "",
+    customer_name: str = "",
+    customer_level: str = "",
+    shoot_type: str = "",
+    schedule_date: str = "",
+    priority: str = "",
+    remark: str = "",
+    source: str = "",
+):
+    """预约单进入待排期 — 向设计部成员发送点对点工作通知
+
+    source: "审核通过" 或 "直接提交"，用于区分来源
+    """
+    if not designer_dingtalk_ids:
+        logger.info("无设计部钉钉ID，跳过待排期通知 (单号: %s)", request_no)
+        return
+
+    extra = [f"**来源：** {source}"] if source else []
+
+    md = _build_request_markdown(
+        "📐 新预约单待排期",
+        request_no=request_no,
+        salesperson_name=salesperson_name,
+        customer_name=customer_name,
+        customer_level=customer_level,
+        shoot_type=shoot_type,
+        schedule_date=schedule_date,
+        priority=priority,
+        remark=remark,
+        extra_lines=extra,
+    )
+
+    notifier = get_work_notifier()
+    await notifier.send_to_users(
+        user_ids=designer_dingtalk_ids,
+        title="新预约单待排期",
+        markdown_text=md,
+    )
 
 
 # ══════════════════════════════════════════════════════════════
