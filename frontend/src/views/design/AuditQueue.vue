@@ -82,8 +82,9 @@
           <span v-else class="text-muted">-</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" min-width="160" max-width="240" fixed="right">
+      <el-table-column label="操作" min-width="210" max-width="300" fixed="right">
         <template #default="{ row }">
+          <GlassButton variant="link" left-icon="View" @click="openDetail(row)">详情</GlassButton>
           <GlassButton variant="link" link-tone="success" left-icon="CircleCheck" @click="handleApprove(row)">通过</GlassButton>
           <GlassButton variant="link" link-tone="danger" left-icon="CircleClose" @click="handleReject(row)">拒绝</GlassButton>
         </template>
@@ -142,6 +143,9 @@
       </div>
       <el-empty v-else description="暂无附件" :image-size="60" />
     </el-dialog>
+
+    <!-- 预约详情抽屉 -->
+    <RequestDetailDrawer v-model="detailVisible" :request-id="detailRequestId" />
   </div>
 </template>
 
@@ -152,6 +156,7 @@ import { CircleCheck, CircleClose, Paperclip, Download } from '@element-plus/ico
 import { getRequests, auditRequest, getAttachments, getAttachmentDownloadUrl } from '@/api/design'
 import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
 import { getDictMap, buildDictLabel } from '@/utils/dict'
+import RequestDetailDrawer from '@/components/design/RequestDetailDrawer.vue'
 
 const { tableRef, maxHeight } = useTableMaxHeight()
 
@@ -180,6 +185,13 @@ const auditing = ref(false)
 const currentRow = ref(null)
 const attachmentVisible = ref(false)
 const attachmentList = ref([])
+const detailVisible = ref(false)
+const detailRequestId = ref(null)
+
+function openDetail(row) {
+  detailRequestId.value = row.id
+  detailVisible.value = true
+}
 
 function formatFileSize(bytes) {
   if (!bytes) return '0 B'

@@ -35,8 +35,9 @@
             <template #default="{ row }">{{ row.remark || '-' }}</template>
           </el-table-column>
           <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" show-overflow-tooltip />
-          <el-table-column label="操作" min-width="130" max-width="200" fixed="right">
+          <el-table-column label="操作" min-width="180" max-width="260" fixed="right">
             <template #default="{ row }">
+              <GlassButton variant="link" left-icon="View" @click="openDetail(row.id)">详情</GlassButton>
               <GlassButton variant="link" left-icon="Calendar" @click="openConfirmDialog(row)">确认排期</GlassButton>
             </template>
           </el-table-column>
@@ -93,8 +94,9 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" min-width="200" max-width="300" fixed="right">
+          <el-table-column label="操作" min-width="260" max-width="380" fixed="right">
             <template #default="{ row }">
+              <GlassButton variant="link" left-icon="View" @click="openDetail(row.request_id)">详情</GlassButton>
               <GlassButton
                 v-if="row.status === 'scheduled'"
                 variant="link" left-icon="VideoPlay"
@@ -301,6 +303,9 @@
         <GlassButton variant="primary" @click="submitDesigner" :loading="designerSaving">保存</GlassButton>
       </template>
     </el-dialog>
+
+    <!-- 预约详情抽屉 -->
+    <RequestDetailDrawer v-model="detailVisible" :request-id="detailRequestId" />
   </div>
 </template>
 
@@ -313,6 +318,7 @@ import { getDictMap, buildDictLabel } from '@/utils/dict'
 import DesignCalendarConfig from '@/components/design/DesignCalendarConfig.vue'
 import DesignCapacityConfig from '@/components/design/DesignCapacityConfig.vue'
 import DatePeriodPicker from '@/components/design/DatePeriodPicker.vue'
+import RequestDetailDrawer from '@/components/design/RequestDetailDrawer.vue'
 
 const PERIOD_LABELS = { am: '上午', pm: '下午' }
 function periodLabel(p) { return PERIOD_LABELS[p] || '' }
@@ -347,6 +353,13 @@ function getDesignerName(id) {
 
 const activeTab = ref('pending')
 const tabMaxHeight = ref(500)
+const detailVisible = ref(false)
+const detailRequestId = ref(null)
+
+function openDetail(requestId) {
+  detailRequestId.value = requestId
+  detailVisible.value = true
+}
 
 // --- Pending tab ---
 const pendingTableRef = ref()
