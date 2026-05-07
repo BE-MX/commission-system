@@ -310,6 +310,47 @@ async def notify_design_ready_for_design(
     )
 
 
+@_safe_notify
+async def notify_design_status_change(
+    applicant_dingtalk_id: str,
+    *,
+    title: str,
+    request_no: str,
+    salesperson_name: str = "",
+    customer_name: str = "",
+    customer_level: str = "",
+    shoot_type: str = "",
+    schedule_date: str = "",
+    priority: str = "",
+    remark: str = "",
+    extra_lines: list[str] | None = None,
+):
+    """预约单状态变更 — 向申请人发送点对点通知（已排期/已开始/已完成等）"""
+    if not applicant_dingtalk_id:
+        logger.info("申请人无钉钉ID，跳过状态变更通知 (单号: %s)", request_no)
+        return
+
+    md = _build_request_markdown(
+        title,
+        request_no=request_no,
+        salesperson_name=salesperson_name,
+        customer_name=customer_name,
+        customer_level=customer_level,
+        shoot_type=shoot_type,
+        schedule_date=schedule_date,
+        priority=priority,
+        remark=remark,
+        extra_lines=extra_lines,
+    )
+
+    notifier = get_work_notifier()
+    await notifier.send_to_users(
+        user_ids=[applicant_dingtalk_id],
+        title=title,
+        markdown_text=md,
+    )
+
+
 # ══════════════════════════════════════════════════════════════
 #  超期/预警
 # ══════════════════════════════════════════════════════════════

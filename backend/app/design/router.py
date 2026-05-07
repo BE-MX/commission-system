@@ -447,11 +447,94 @@ async def _notify_audit_result(
 def action_request(
     request_id: int,
     data: DesignRequestAction,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     """执行申请单动作（confirm/start/complete/cancel）"""
-    return service.action_request(
+    result = service.action_request(
         db, request_id, data, data.operator_id, data.operator_name, data.operator_role
+    )
+
+    # 状态变更通知申请人
+    if data.action in ("confirm", "start", "complete"):
+        background_tasks.add_task(
+            _notify_action_to_applicant,
+            db=db,
+            request_id=request_id,
+            action=data.action,
+        )
+
+    return result
+
+
+# 动作 → 通知标题映射
+_ACTION_TITLES = {
+    "confirm": "📅 你的设计预约已排期",
+    "start": "🚀 你的设计预约已开始执行",
+    "complete": "🎉 你的设计预约已完成",
+}
+
+
+async def _notify_action_to_applicant(
+    db: Session,
+    request_id: int,
+    action: str,
+):
+    """confirm/start/complete 后向申请人发送状态变更通知"""
+    from app.auth.models import ArkUser
+    from app.dingtalk.events import notify_design_status_change
+
+    req = db.query(DesignScheduleRequest).filter(
+        DesignScheduleRequest.id == request_id,
+    ).first()
+    if not req:
+        return
+
+    # 查申请人的钉钉ID
+    applicant_dingtalk_id = ""
+    if req.salesperson_id:
+        applicant = db.query(ArkUser).filter(ArkUser.id == req.salesperson_id).first()
+        if applicant and applicant.dingtalk_id:
+            applicant_dingtalk_id = applicant.dingtalk_id
+
+    if not applicant_dingtalk_id:
+        return
+
+    schedule_date = ""
+    if req.expect_start_date and req.expect_end_date:
+        schedule_date = _fmt_schedule_date(
+            req.expect_start_date, req.expect_end_date,
+            req.expect_start_period, req.expect_end_period,
+        )
+
+    level_label, type_label = _translate_dict_fields(
+        db, req.customer_level or "", req.shoot_type or "",
+    )
+
+    # 构建额外信息
+    extra = []
+    if action == "confirm" and req.assigned_designer_id:
+        from app.design.models import DesignDesigner
+        designer = db.query(DesignDesigner).filter(
+            DesignDesigner.id == req.assigned_designer_id,
+        ).first()
+        if designer:
+            extra.append(f"设计师：{designer.name}")
+
+    title = _ACTION_TITLES.get(action, f"预约单状态更新: {action}")
+
+    await notify_design_status_change(
+        applicant_dingtalk_id,
+        title=title,
+        request_no=req.request_no,
+        salesperson_name=req.salesperson_name or "",
+        customer_name=req.customer_name,
+        customer_level=level_label,
+        shoot_type=type_label,
+        schedule_date=schedule_date,
+        priority=req.priority or "normal",
+        remark=req.remark or "",
+        extra_lines=extra or None,
     )
 
 
