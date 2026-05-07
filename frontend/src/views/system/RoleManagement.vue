@@ -85,7 +85,8 @@ const loading = ref(false)
 const saving = ref(false)
 
 const moduleLabelMap = {
-  user: '用户管理',
+  employee: '人员管理',
+  customer: '客户管理',
   commission: '提成管理',
   tracking: '物流跟踪',
   design: '设计预约',
@@ -135,7 +136,8 @@ function openEditDialog(row) {
     name: row.name,
     label: row.label,
     description: row.description || '',
-    permission_ids: [...(row.permission_ids || [])],
+    // 确保 id 全为 number，与 perm.id 类型一致，否则 checkbox 无法匹配
+    permission_ids: (row.permission_ids || []).map(Number),
   }
   fetchPermissions()
   dialogVisible.value = true

@@ -27,78 +27,78 @@
           <template #title>工作台</template>
         </el-menu-item>
 
-        <el-sub-menu index="personnel">
+        <el-sub-menu index="personnel" v-if="authStore.hasAnyPermission(['employee:read', 'employee:write'])">
           <template #title>
             <el-icon><User /></el-icon>
             <span>人员管理</span>
           </template>
-          <el-menu-item index="/employee/attribute">
+          <el-menu-item index="/employee/attribute" v-if="authStore.hasAnyPermission(['employee:read', 'employee:write'])">
             <el-icon><UserFilled /></el-icon>
             <template #title>员工属性</template>
           </el-menu-item>
-          <el-menu-item index="/supervisor/relation">
+          <el-menu-item index="/supervisor/relation" v-if="authStore.hasAnyPermission(['employee:read', 'employee:write'])">
             <el-icon><Connection /></el-icon>
             <template #title>主管关系</template>
           </el-menu-item>
         </el-sub-menu>
 
-        <el-sub-menu index="customer-mgmt">
+        <el-sub-menu index="customer-mgmt" v-if="authStore.hasAnyPermission(['customer:read', 'customer:write'])">
           <template #title>
             <el-icon><OfficeBuilding /></el-icon>
             <span>客户管理</span>
           </template>
-          <el-menu-item index="/customer/snapshot">
+          <el-menu-item index="/customer/snapshot" v-if="authStore.hasAnyPermission(['customer:read', 'customer:write'])">
             <el-icon><Document /></el-icon>
             <template #title>客户归属</template>
           </el-menu-item>
         </el-sub-menu>
 
-        <el-sub-menu index="commission-mgmt">
+        <el-sub-menu index="commission-mgmt" v-if="authStore.hasAnyPermission(['commission:read', 'commission:write', 'commission:self_read', 'payment:read', 'payment:write'])">
           <template #title>
             <el-icon><Money /></el-icon>
             <span>提成管理</span>
           </template>
-          <el-menu-item index="/payment/sync">
+          <el-menu-item index="/payment/sync" v-if="authStore.hasAnyPermission(['payment:read', 'payment:write'])">
             <el-icon><Refresh /></el-icon>
             <template #title>回款同步</template>
           </el-menu-item>
-          <el-menu-item index="/commission/batch">
+          <el-menu-item index="/commission/batch" v-if="authStore.hasAnyPermission(['commission:read', 'commission:write', 'commission:self_read'])">
             <el-icon><List /></el-icon>
             <template #title>提成批次</template>
           </el-menu-item>
         </el-sub-menu>
 
-        <el-menu-item index="/tracking">
+        <el-menu-item index="/tracking" v-if="authStore.hasAnyPermission(['tracking:read', 'tracking:write'])">
           <el-icon><Van /></el-icon>
           <template #title>物流跟踪</template>
         </el-menu-item>
 
-        <el-sub-menu index="design-mgmt">
+        <el-sub-menu index="design-mgmt" v-if="authStore.hasAnyPermission(['design:read', 'design:write', 'design:audit', 'design:manage'])">
           <template #title>
             <el-icon><Camera /></el-icon>
             <span>设计预约</span>
           </template>
-          <el-menu-item index="/design/gantt">
+          <el-menu-item index="/design/gantt" v-if="authStore.hasAnyPermission(['design:read', 'design:write', 'design:audit', 'design:manage'])">
             <el-icon><Calendar /></el-icon>
             <template #title>排期甘特图</template>
           </el-menu-item>
-          <el-menu-item index="/design/submit">
+          <el-menu-item index="/design/submit" v-if="authStore.hasAnyPermission(['design:write'])">
             <el-icon><EditPen /></el-icon>
             <template #title>提交预约</template>
           </el-menu-item>
-          <el-menu-item index="/design/my-requests">
+          <el-menu-item index="/design/my-requests" v-if="authStore.hasAnyPermission(['design:write', 'design:read'])">
             <el-icon><Document /></el-icon>
             <template #title>我的预约</template>
           </el-menu-item>
-          <el-menu-item index="/design/audit">
+          <el-menu-item index="/design/audit" v-if="authStore.hasPermission('design:audit')">
             <el-icon><Stamp /></el-icon>
             <template #title>审批队列</template>
           </el-menu-item>
-          <el-menu-item index="/design/manage">
+          <el-menu-item index="/design/manage" v-if="authStore.hasPermission('design:manage')">
             <el-icon><Setting /></el-icon>
             <template #title>设计管理</template>
           </el-menu-item>
-          <el-menu-item index="/design/stats">
+          <el-menu-item index="/design/stats" v-if="authStore.hasAnyPermission(['design:manage', 'design:audit'])">
             <el-icon><TrendCharts /></el-icon>
             <template #title>设计统计</template>
           </el-menu-item>

@@ -10,6 +10,11 @@ export const useAuthStore = defineStore('auth', () => {
   const accessToken = ref(null)
   const user = ref(null)
 
+  // 刷新完成前为 null（等待中），完成后为 true/false
+  // 路由守卫通过此 Promise 等待初始化结束
+  let _resolveInit
+  const initPromise = new Promise(resolve => { _resolveInit = resolve })
+
   const isLoggedIn = computed(() => !!accessToken.value)
   const permissions = computed(() => user.value?.permissions ?? [])
   const roles = computed(() => user.value?.roles ?? [])
@@ -49,8 +54,14 @@ export const useAuthStore = defineStore('auth', () => {
     return data
   }
 
+  /** App.vue 初始化完成后调用，解除路由守卫的等待 */
+  function markInitialized() {
+    _resolveInit()
+  }
+
   return {
     accessToken, user, isLoggedIn, permissions, roles,
     hasPermission, hasAnyPermission, login, logout, refreshToken, fetchMe,
+    initPromise, markInitialized,
   }
 })

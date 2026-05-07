@@ -284,8 +284,8 @@ def update_role(
     role = db.get(ArkRole, role_id)
     if not role:
         return ResponseModel(code=404, message="角色不存在")
-    if role.is_system:
-        return ResponseModel(code=400, message="系统内置角色不可编辑")
+    if role.name == "super_admin":
+        return ResponseModel(code=400, message="超级管理员角色不可编辑")
 
     if req.label is not None:
         role.label = req.label
@@ -313,8 +313,8 @@ def delete_role(
     role = db.get(ArkRole, role_id)
     if not role:
         return ResponseModel(code=404, message="角色不存在")
-    if role.is_system:
-        return ResponseModel(code=400, message="系统内置角色不可删除")
+    if role.name == "super_admin":
+        return ResponseModel(code=400, message="超级管理员角色不可删除")
 
     # 检查是否有用户关联
     user_count = db.query(func.count()).select_from(ArkUserRole).filter(

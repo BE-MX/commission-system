@@ -147,6 +147,9 @@ router.beforeEach(async (to, from, next) => {
   const { useAuthStore } = await import('@/stores/auth')
   const auth = useAuthStore()
 
+  // 等待 App.vue 初始化（刷新时 refresh_token 换取 access_token）完成
+  await auth.initPromise
+
   // 未登录：跳转登录页
   if (!auth.isLoggedIn) {
     return next({ name: 'Login', query: { redirect: to.fullPath } })

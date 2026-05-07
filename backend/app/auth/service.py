@@ -155,13 +155,37 @@ def init_admin_password(db: Session):
 
 
 def seed_role_permissions(db: Session):
-    """启动时确保角色管理相关权限存在（幂等）"""
+    """启动时确保全部权限存在（幂等），并给 admin 角色补齐"""
     from app.auth.models import ArkPermission, ArkRole, ArkRolePermission
 
     seeds = [
-        ("role:read", "system", "read", "查看角色列表"),
-        ("role:write", "system", "write", "创建/编辑角色"),
-        ("role:delete", "system", "delete", "删除角色"),
+        # 人员管理
+        ("employee:read",  "employee", "read",   "查看员工属性"),
+        ("employee:write", "employee", "write",  "编辑员工属性"),
+        # 客户管理
+        ("customer:read",  "customer", "read",   "查看客户归属"),
+        ("customer:write", "customer", "write",  "编辑客户归属"),
+        # 提成管理
+        ("commission:read",      "commission", "read",       "查看提成批次"),
+        ("commission:write",     "commission", "write",      "管理提成批次"),
+        ("commission:self_read", "commission", "self_read",  "查看本人提成"),
+        ("payment:read",         "commission", "read",       "查看回款记录"),
+        ("payment:write",        "commission", "write",      "同步回款"),
+        # 物流跟踪
+        ("tracking:read",  "tracking", "read",   "查看物流跟踪"),
+        ("tracking:write", "tracking", "write",  "编辑物流记录"),
+        # 设计预约
+        ("design:read",    "design", "read",     "查看设计预约"),
+        ("design:write",   "design", "write",    "提交/编辑预约"),
+        ("design:audit",   "design", "audit",    "审批设计预约"),
+        ("design:manage",  "design", "manage",   "设计管理"),
+        # 系统管理
+        ("user:read",      "system", "read",     "查看用户/角色"),
+        ("user:write",     "system", "write",    "创建/编辑用户"),
+        ("user:delete",    "system", "delete",   "删除用户"),
+        ("role:read",      "system", "read",     "查看角色列表"),
+        ("role:write",     "system", "write",    "创建/编辑角色"),
+        ("role:delete",    "system", "delete",   "删除角色"),
     ]
     for code, module, action, label in seeds:
         existing = db.query(ArkPermission).filter(ArkPermission.code == code).first()
@@ -169,7 +193,7 @@ def seed_role_permissions(db: Session):
             db.add(ArkPermission(code=code, module=module, action=action, label=label))
     db.flush()
 
-    # 给 admin 角色分配这些权限
+    # 给 admin 角色补齐所有权限
     admin_role = db.query(ArkRole).filter(ArkRole.name == "admin").first()
     if admin_role:
         for code, _, _, _ in seeds:

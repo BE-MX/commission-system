@@ -44,6 +44,8 @@ def list_requests(
     status: Optional[str] = Query(None),
     salesperson_id: Optional[int] = Query(None),
     keyword: Optional[str] = Query(None),
+    expect_start_date: Optional[str] = Query(None, description="期望开始日期 >=，格式 YYYY-MM-DD"),
+    expect_end_date: Optional[str] = Query(None, description="期望开始日期 <=，格式 YYYY-MM-DD"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -67,6 +69,12 @@ def list_requests(
             | (DesignScheduleRequest.request_no.like(like))
             | (DesignScheduleRequest.salesperson_name.like(like))
         )
+    if expect_start_date:
+        from datetime import date as _date
+        query = query.filter(DesignScheduleRequest.expect_start_date >= _date.fromisoformat(expect_start_date))
+    if expect_end_date:
+        from datetime import date as _date
+        query = query.filter(DesignScheduleRequest.expect_start_date <= _date.fromisoformat(expect_end_date))
 
     total = query.count()
     items = query.order_by(DesignScheduleRequest.created_at.desc()).offset(
@@ -92,6 +100,7 @@ def list_requests(
                     "expect_end_date": r.expect_end_date.isoformat() if r.expect_end_date else None,
                     "expect_end_period": r.expect_end_period,
                     "priority": r.priority,
+                    "remark": r.remark,
                     "status": r.status,
                     "conflict_detail": r.conflict_detail,
                     "assigned_designer_id": r.assigned_designer_id,

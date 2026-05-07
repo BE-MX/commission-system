@@ -4,7 +4,24 @@
 </template>
 
 <script setup>
+import { onMounted } from 'vue'
 import GlobalLoading from '@/components/GlobalLoading.vue'
+import { useAuthStore } from '@/stores/auth'
+
+const auth = useAuthStore()
+
+// 页面刷新时用 HttpOnly Cookie 中的 refresh_token 恢复 access_token
+// 失败说明会话已过期，保持未登录状态，路由守卫会跳转登录页
+onMounted(async () => {
+  if (!auth.isLoggedIn) {
+    try {
+      await auth.refreshToken()
+    } catch {
+      // refresh_token 过期或不存在，正常未登录状态
+    }
+  }
+  auth.markInitialized()
+})
 </script>
 
 <style>
