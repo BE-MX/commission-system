@@ -62,6 +62,7 @@ class DesignScheduleRequest(Base):
     deleted_at = Column(DateTime, nullable=True, comment="软删除时间")
 
     tasks = relationship("DesignScheduleTask", back_populates="request", lazy="selectin")
+    attachments = relationship("DesignRequestAttachment", back_populates="request", lazy="selectin")
 
     __table_args__ = (
         Index("uk_request_no", "request_no", unique=True),
@@ -184,3 +185,23 @@ class DesignRequestSeq(Base):
 
     date_key = Column(CHAR(8), primary_key=True, comment="日期键 YYYYMMDD")
     last_seq = Column(Integer, nullable=False, default=0, server_default="0", comment="最后序号")
+
+
+class DesignRequestAttachment(Base):
+    __tablename__ = "design_request_attachment"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    request_id = Column(Integer, ForeignKey("design_schedule_request.id"), nullable=False, comment="关联申请ID")
+    file_name = Column(String(256), nullable=False, comment="原始文件名")
+    file_path = Column(String(512), nullable=False, comment="存储路径")
+    file_size = Column(Integer, nullable=False, default=0, comment="文件大小(字节)")
+    content_type = Column(String(128), nullable=True, comment="MIME类型")
+    uploaded_by = Column(Integer, nullable=True, comment="上传人ID")
+    uploaded_by_name = Column(String(64), nullable=True, comment="上传人姓名")
+    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
+
+    request = relationship("DesignScheduleRequest", back_populates="attachments")
+
+    __table_args__ = (
+        Index("idx_attachment_request_id", "request_id"),
+    )

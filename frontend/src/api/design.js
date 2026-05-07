@@ -153,4 +153,28 @@ export function importRequests(formData, params) {
   })
 }
 
+// --- Attachments ---
+
+export function uploadAttachment(requestId, file, params = {}) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return designApi.post(`/requests/${requestId}/attachments`, formData, {
+    params,
+    headers: { 'Content-Type': 'multipart/form-data' },
+    loadingText: '正在上传...',
+  })
+}
+
+export function getAttachments(requestId) {
+  return designApi.get(`/requests/${requestId}/attachments`, { showLoading: false })
+}
+
+export function deleteAttachment(attachmentId) {
+  return designApi.delete(`/attachments/${attachmentId}`, { loadingText: '正在删除...' })
+}
+
+export function getAttachmentDownloadUrl(attachmentId) {
+  return `/api/design/attachments/${attachmentId}/download`
+}
+
 export default designApi

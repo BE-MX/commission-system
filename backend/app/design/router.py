@@ -2,10 +2,13 @@
 
 import asyncio
 import logging
+import uuid
 from datetime import date
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, File, UploadFile, BackgroundTasks
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
@@ -22,9 +25,19 @@ from app.design.schemas import (
 from app.design.models import (
     DesignScheduleRequest, DesignScheduleTask, DesignAuditLog,
     DesignUnavailableDate, DesignDesigner, DesignCapacityConfig,
+    DesignRequestAttachment,
 )
 
 logger = logging.getLogger("design")
+
+# 附件上传目录
+UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent / "uploads" / "design"
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+# 单个文件最大 20MB
+MAX_FILE_SIZE = 20 * 1024 * 1024
+# 单个预约单最多 10 个附件
+MAX_ATTACHMENTS_PER_REQUEST = 10
 
 router = APIRouter()
 
@@ -807,3 +820,138 @@ async def import_requests(
     return service.batch_import_requests(
         db, contents, operator_id, operator_name, operator_role
     )
+
+
+# ── 附件管理 ──────────────────────────────────────────────
+
+
+@router.post("/requests/{request_id}/attachments")
+async def upload_attachment(
+    request_id: int,
+    file: UploadFile = File(...),
+    operator_id: int = Query(1),
+    operator_name: str = Query("管理员"),
+    db: Session = Depends(get_db),
+):
+    """上传附件到指定预约单"""
+    req = db.query(DesignScheduleRequest).filter(
+        DesignScheduleRequest.id == request_id,
+        DesignScheduleRequest.deleted_at.is_(None),
+    ).first()
+    if not req:
+        return {"code": 404, "message": "预约单不存在", "data": None}
+
+    # 检查附件数量限制
+    existing_count = db.query(DesignRequestAttachment).filter(
+        DesignRequestAttachment.request_id == request_id,
+    ).count()
+    if existing_count >= MAX_ATTACHMENTS_PER_REQUEST:
+        return {"code": 400, "message": f"每个预约单最多上传 {MAX_ATTACHMENTS_PER_REQUEST} 个附件", "data": None}
+
+    # 读取文件内容并检查大小
+    contents = await file.read()
+    if len(contents) > MAX_FILE_SIZE:
+        return {"code": 400, "message": "单个文件不能超过 20MB", "data": None}
+
+    # 生成唯一文件名，保留原始后缀
+    ext = Path(file.filename).suffix if file.filename else ""
+    stored_name = f"{request_id}_{uuid.uuid4().hex[:12]}{ext}"
+    file_path = UPLOAD_DIR / stored_name
+    file_path.write_bytes(contents)
+
+    attachment = DesignRequestAttachment(
+        request_id=request_id,
+        file_name=file.filename or "unnamed",
+        file_path=str(stored_name),
+        file_size=len(contents),
+        content_type=file.content_type,
+        uploaded_by=operator_id,
+        uploaded_by_name=operator_name,
+    )
+    db.add(attachment)
+    db.commit()
+    db.refresh(attachment)
+
+    return {
+        "code": 200,
+        "message": "上传成功",
+        "data": {
+            "id": attachment.id,
+            "file_name": attachment.file_name,
+            "file_size": attachment.file_size,
+            "created_at": attachment.created_at.isoformat() if attachment.created_at else None,
+        },
+    }
+
+
+@router.get("/requests/{request_id}/attachments")
+def list_attachments(
+    request_id: int,
+    db: Session = Depends(get_db),
+):
+    """获取指定预约单的附件列表"""
+    attachments = db.query(DesignRequestAttachment).filter(
+        DesignRequestAttachment.request_id == request_id,
+    ).order_by(DesignRequestAttachment.created_at.asc()).all()
+
+    return {
+        "code": 200,
+        "message": "ok",
+        "data": [
+            {
+                "id": a.id,
+                "file_name": a.file_name,
+                "file_size": a.file_size,
+                "content_type": a.content_type,
+                "uploaded_by_name": a.uploaded_by_name,
+                "created_at": a.created_at.isoformat() if a.created_at else None,
+            }
+            for a in attachments
+        ],
+    }
+
+
+@router.get("/attachments/{attachment_id}/download")
+def download_attachment(
+    attachment_id: int,
+    db: Session = Depends(get_db),
+):
+    """下载附件"""
+    attachment = db.query(DesignRequestAttachment).filter(
+        DesignRequestAttachment.id == attachment_id,
+    ).first()
+    if not attachment:
+        return {"code": 404, "message": "附件不存在", "data": None}
+
+    file_path = UPLOAD_DIR / attachment.file_path
+    if not file_path.is_file():
+        return {"code": 404, "message": "文件不存在", "data": None}
+
+    return FileResponse(
+        path=str(file_path),
+        filename=attachment.file_name,
+        media_type=attachment.content_type or "application/octet-stream",
+    )
+
+
+@router.delete("/attachments/{attachment_id}")
+def delete_attachment(
+    attachment_id: int,
+    db: Session = Depends(get_db),
+):
+    """删除附件"""
+    attachment = db.query(DesignRequestAttachment).filter(
+        DesignRequestAttachment.id == attachment_id,
+    ).first()
+    if not attachment:
+        return {"code": 404, "message": "附件不存在", "data": None}
+
+    # 删除物理文件
+    file_path = UPLOAD_DIR / attachment.file_path
+    if file_path.is_file():
+        file_path.unlink()
+
+    db.delete(attachment)
+    db.commit()
+
+    return {"code": 200, "message": "删除成功", "data": None}

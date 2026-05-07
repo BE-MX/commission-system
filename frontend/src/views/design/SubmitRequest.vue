@@ -108,6 +108,25 @@
           />
         </el-form-item>
 
+        <el-form-item label="附件">
+          <el-upload
+            ref="uploadRef"
+            :auto-upload="false"
+            :file-list="fileList"
+            :on-change="handleFileChange"
+            :on-remove="handleFileRemove"
+            :limit="10"
+            :on-exceed="() => ElMessage.warning('最多上传 10 个附件')"
+            multiple
+            accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar"
+          >
+            <GlassButton :icon="UploadFilled">选择文件</GlassButton>
+            <template #tip>
+              <div class="upload-tip">支持图片、文档、压缩包等，单个文件不超过 20MB，最多 10 个</div>
+            </template>
+          </el-upload>
+        </el-form-item>
+
         <el-form-item>
           <GlassButton variant="primary" :icon="Promotion" @click="handleSubmit" :loading="submitting">提交预约</GlassButton>
           <GlassButton :icon="RefreshLeft" @click="resetForm">重置</GlassButton>
@@ -121,9 +140,9 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Promotion, RefreshLeft } from '@element-plus/icons-vue'
+import { Promotion, RefreshLeft, UploadFilled } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
-import { submitRequest, checkConflict, getUnavailableDates } from '@/api/design'
+import { submitRequest, checkConflict, getUnavailableDates, uploadAttachment } from '@/api/design'
 import { getDictItems } from '@/api/system'
 import ConflictAlert from '@/components/design/ConflictAlert.vue'
 import DatePeriodPicker from '@/components/design/DatePeriodPicker.vue'
@@ -132,6 +151,8 @@ const router = useRouter()
 const authStore = useAuthStore()
 const formRef = ref()
 const submitting = ref(false)
+const uploadRef = ref()
+const fileList = ref([])
 
 const shootTypeOptions = ref([])
 const customerLevelOptions = ref([])
@@ -265,6 +286,19 @@ async function doConflictCheck(start, end, startPeriod, endPeriod) {
   }
 }
 
+function handleFileChange(file, uploadFiles) {
+  if (file.size > 20 * 1024 * 1024) {
+    ElMessage.warning('文件大小不能超过 20MB')
+    uploadFiles.splice(uploadFiles.indexOf(file), 1)
+    return
+  }
+  fileList.value = uploadFiles
+}
+
+function handleFileRemove(file, uploadFiles) {
+  fileList.value = uploadFiles
+}
+
 async function handleSubmit() {
   const valid = await formRef.value.validate().catch(() => false)
   if (!valid) return
@@ -288,7 +322,28 @@ async function handleSubmit() {
       operator_name: form.salesperson_name || '业务员',
       operator_role: 'salesperson',
     }
-    await submitRequest(payload)
+    const res = await submitRequest(payload)
+    const requestId = res.data?.id
+
+    // 上传附件（如果有）
+    if (requestId && fileList.value.length > 0) {
+      let uploadOk = 0
+      for (const f of fileList.value) {
+        try {
+          await uploadAttachment(requestId, f.raw, {
+            operator_id: authStore.user?.id || 1,
+            operator_name: form.salesperson_name || '业务员',
+          })
+          uploadOk++
+        } catch {
+          // 单个附件失败不阻断
+        }
+      }
+      if (uploadOk < fileList.value.length) {
+        ElMessage.warning(`${fileList.value.length - uploadOk} 个附件上传失败，请稍后在详情中补传`)
+      }
+    }
+
     const hasConflict = conflictResult.value?.has_conflict
     if (hasConflict) {
       ElMessage.success('预约提交成功，存在排期冲突，等待审批')
@@ -304,6 +359,7 @@ async function handleSubmit() {
 function resetForm() {
   formRef.value?.resetFields()
   conflictResult.value = null
+  fileList.value = []
 }
 </script>
 
@@ -336,5 +392,10 @@ function resetForm() {
 }
 .conflict-alert {
   margin-bottom: 18px;
+}
+.upload-tip {
+  font-size: 12px;
+  color: var(--text-secondary, #999);
+  margin-top: 4px;
 }
 </style>

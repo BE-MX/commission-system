@@ -55,6 +55,17 @@
         <template #default="{ row }">{{ row.remark || '-' }}</template>
       </el-table-column>
       <el-table-column prop="created_at" label="提交时间" min-width="170" max-width="260" show-overflow-tooltip />
+      <el-table-column label="附件" min-width="70" max-width="100">
+        <template #default="{ row }">
+          <GlassButton
+            v-if="row._attachment_count > 0"
+            variant="link"
+            left-icon="Paperclip"
+            @click="showAttachments(row)"
+          >{{ row._attachment_count }}</GlassButton>
+          <span v-else class="text-muted">-</span>
+        </template>
+      </el-table-column>
       <el-table-column label="冲突" min-width="80" max-width="120">
         <template #default="{ row }">
           <el-popover
@@ -116,14 +127,29 @@
         <GlassButton variant="danger" @click="submitAudit('reject')" :loading="auditing">确认拒绝</GlassButton>
       </template>
     </el-dialog>
+
+    <!-- Attachment dialog -->
+    <el-dialog v-model="attachmentVisible" title="附件列表" width="500px">
+      <div v-if="attachmentList.length" class="attachment-list">
+        <div v-for="a in attachmentList" :key="a.id" class="attachment-item">
+          <el-icon class="attachment-icon"><Paperclip /></el-icon>
+          <span class="attachment-name" :title="a.file_name">{{ a.file_name }}</span>
+          <span class="attachment-size">{{ formatFileSize(a.file_size) }}</span>
+          <a :href="getAttachmentDownloadUrl(a.id)" target="_blank" class="attachment-download">
+            <el-icon><Download /></el-icon>
+          </a>
+        </div>
+      </div>
+      <el-empty v-else description="暂无附件" :image-size="60" />
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { CircleCheck, CircleClose } from '@element-plus/icons-vue'
-import { getRequests, auditRequest } from '@/api/design'
+import { CircleCheck, CircleClose, Paperclip, Download } from '@element-plus/icons-vue'
+import { getRequests, auditRequest, getAttachments, getAttachmentDownloadUrl } from '@/api/design'
 import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
 import { getDictMap, buildDictLabel } from '@/utils/dict'
 
@@ -152,6 +178,26 @@ const rejectVisible = ref(false)
 const auditComment = ref('')
 const auditing = ref(false)
 const currentRow = ref(null)
+const attachmentVisible = ref(false)
+const attachmentList = ref([])
+
+function formatFileSize(bytes) {
+  if (!bytes) return '0 B'
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+}
+
+async function showAttachments(row) {
+  attachmentList.value = []
+  attachmentVisible.value = true
+  try {
+    const res = await getAttachments(row.id)
+    attachmentList.value = res.data || []
+  } catch {
+    attachmentList.value = []
+  }
+}
 
 async function fetchList() {
   loading.value = true
@@ -166,6 +212,15 @@ async function fetchList() {
     const data = res.data
     tableData.value = data?.items || data || []
     total.value = data?.total || 0
+
+    // 并行获取每个预约单的附件数量
+    const items = tableData.value
+    const countPromises = items.map(row =>
+      getAttachments(row.id)
+        .then(res => { row._attachment_count = (res.data || []).length })
+        .catch(() => { row._attachment_count = 0 })
+    )
+    Promise.all(countPromises)
 
     // Update stats from response if available, otherwise count from list
     stats.pending = data?.stats?.pending ?? total.value
@@ -221,6 +276,44 @@ onMounted(() => {
 .toolbar { margin-bottom: 16px; }
 .pagination { margin-top: 16px; justify-content: flex-end; }
 .text-muted { color: var(--text-secondary); font-size: 12px; }
+
+.attachment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.attachment-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--fill-color-lighter, #fafafa);
+  border-radius: 6px;
+  font-size: 13px;
+}
+.attachment-icon {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.attachment-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attachment-size {
+  color: var(--text-secondary);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.attachment-download {
+  color: var(--color-primary);
+  flex-shrink: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
 
 .stats-banner {
   background: linear-gradient(135deg, var(--sidebar-bg-from) 0%, var(--sidebar-bg-to) 60%, var(--sidebar-bg-from) 100%);

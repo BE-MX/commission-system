@@ -169,6 +169,22 @@
           <el-descriptions-item label="备注">{{ currentDetail.remark || '-' }}</el-descriptions-item>
         </el-descriptions>
 
+        <!-- 附件列表 -->
+        <div class="attachment-section">
+          <h4>附件</h4>
+          <div v-if="attachmentList.length" class="attachment-list">
+            <div v-for="a in attachmentList" :key="a.id" class="attachment-item">
+              <el-icon class="attachment-icon"><Paperclip /></el-icon>
+              <span class="attachment-name" :title="a.file_name">{{ a.file_name }}</span>
+              <span class="attachment-size">{{ formatFileSize(a.file_size) }}</span>
+              <a :href="getAttachmentDownloadUrl(a.id)" target="_blank" class="attachment-download">
+                <el-icon><Download /></el-icon>
+              </a>
+            </div>
+          </div>
+          <el-empty v-else description="暂无附件" :image-size="40" />
+        </div>
+
         <div class="timeline-section">
           <h4>审批记录</h4>
           <el-timeline v-if="auditLogs.length">
@@ -197,7 +213,8 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getRequests, actionRequest, getAuditLogs } from '@/api/design'
+import { Paperclip, Download } from '@element-plus/icons-vue'
+import { getRequests, actionRequest, getAuditLogs, getAttachments, getAttachmentDownloadUrl } from '@/api/design'
 import { useAuthStore } from '@/stores/auth'
 import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
 import { getDictMap, buildDictLabel } from '@/utils/dict'
@@ -218,6 +235,7 @@ const loading = ref(false)
 const detailVisible = ref(false)
 const currentDetail = ref(null)
 const auditLogs = ref([])
+const attachmentList = ref([])
 
 // ── 权限：只看自己还是看全部 ─────────────────────────────
 const isSelfOnly = computed(() =>
@@ -368,14 +386,27 @@ async function handleCancel(row) {
   } catch { /* handled by interceptor */ }
 }
 
+function formatFileSize(bytes) {
+  if (!bytes) return '0 B'
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+}
+
 async function toggleDetail(row) {
   currentDetail.value = row
   detailVisible.value = true
+  attachmentList.value = []
   try {
-    const res = await getAuditLogs(row.id)
-    auditLogs.value = res.data || []
+    const [logRes, attRes] = await Promise.all([
+      getAuditLogs(row.id),
+      getAttachments(row.id),
+    ])
+    auditLogs.value = logRes.data || []
+    attachmentList.value = attRes.data || []
   } catch {
     auditLogs.value = []
+    attachmentList.value = []
   }
 }
 
@@ -417,5 +448,52 @@ onMounted(() => {
   font-size: 12px;
   color: var(--text-secondary);
   margin: 0;
+}
+
+.attachment-section {
+  margin-top: 24px;
+}
+.attachment-section h4 {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--text-primary);
+}
+.attachment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.attachment-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--fill-color-lighter, #fafafa);
+  border-radius: 6px;
+  font-size: 13px;
+}
+.attachment-icon {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.attachment-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attachment-size {
+  color: var(--text-secondary);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.attachment-download {
+  color: var(--color-primary);
+  flex-shrink: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
 }
 </style>
