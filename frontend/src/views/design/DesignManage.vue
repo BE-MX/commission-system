@@ -15,7 +15,7 @@
           <el-table-column prop="request_no" label="预约编号" min-width="160" max-width="240" show-overflow-tooltip />
           <el-table-column prop="customer_name" label="客户名称" min-width="130" max-width="200" show-overflow-tooltip />
           <el-table-column prop="customer_level" label="客户等级" min-width="90" max-width="130">
-            <template #default="{ row }">{{ row.customer_level || '-' }}</template>
+            <template #default="{ row }">{{ customerLevelLabel(row.customer_level) }}</template>
           </el-table-column>
           <el-table-column prop="salesperson_name" label="业务员" min-width="90" max-width="140" show-overflow-tooltip />
           <el-table-column label="拍摄类型" min-width="120" max-width="180" show-overflow-tooltip>
@@ -318,8 +318,14 @@ const PERIOD_LABELS = { am: '上午', pm: '下午' }
 function periodLabel(p) { return PERIOD_LABELS[p] || '' }
 
 const shootTypeMap = ref({})
+const customerLevelMap = ref({})
 async function loadShootTypeDict() {
   shootTypeMap.value = await getDictMap('shoot_type')
+  customerLevelMap.value = await getDictMap('customer_level')
+}
+function customerLevelLabel(code) {
+  if (!code) return '-'
+  return customerLevelMap.value[code] || code
 }
 const TASK_STATUS_MAP = {
   scheduled: '已排期',

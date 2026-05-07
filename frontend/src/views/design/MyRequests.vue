@@ -85,7 +85,7 @@
       <el-table-column prop="customer_name" label="客户名称" min-width="140" max-width="210" show-overflow-tooltip />
       <el-table-column prop="customer_level" label="客户等级" min-width="100" max-width="140">
         <template #default="{ row }">
-          <span>{{ row.customer_level || '-' }}</span>
+          <span>{{ customerLevelLabel(row.customer_level) }}</span>
         </template>
       </el-table-column>
       <el-table-column label="拍摄类型" min-width="100" max-width="150">
@@ -149,7 +149,7 @@
           <el-descriptions-item label="预约编号">{{ currentDetail.request_no }}</el-descriptions-item>
           <el-descriptions-item label="业务员">{{ currentDetail.salesperson_name }}</el-descriptions-item>
           <el-descriptions-item label="客户名称">{{ currentDetail.customer_name }}</el-descriptions-item>
-          <el-descriptions-item label="客户等级">{{ currentDetail.customer_level || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="客户等级">{{ customerLevelLabel(currentDetail.customer_level) }}</el-descriptions-item>
           <el-descriptions-item label="拍摄类型">{{ shootTypeLabel(currentDetail.shoot_type) }}</el-descriptions-item>
           <el-descriptions-item label="期望日期">
             {{ formatDatePeriod(currentDetail.expect_start_date, currentDetail.expect_start_period) }}
@@ -271,10 +271,16 @@ const STATUS_TAG = {
 const STATUS_OPTIONS = Object.entries(STATUS_MAP).map(([value, label]) => ({ value, label }))
 
 const shootTypeMap = ref({})
+const customerLevelMap = ref({})
 async function loadShootTypeDict() {
   shootTypeMap.value = await getDictMap('shoot_type')
+  customerLevelMap.value = await getDictMap('customer_level')
 }
 function shootTypeLabel(t) { return buildDictLabel(t, shootTypeMap.value) }
+function customerLevelLabel(code) {
+  if (!code) return '-'
+  return customerLevelMap.value[code] || code
+}
 
 const LOG_ACTION_MAP = {
   submit: '提交申请',
