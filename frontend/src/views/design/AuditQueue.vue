@@ -34,8 +34,8 @@
         <template #default="{ row }">{{ row.customer_level || '-' }}</template>
       </el-table-column>
       <el-table-column prop="salesperson_name" label="业务员" min-width="90" max-width="140" show-overflow-tooltip />
-      <el-table-column label="拍摄类型" min-width="120" max-width="180" show-overflow-tooltip>
-        <template #default="{ row }">{{ buildDictLabel(row.shoot_type, shootTypeMap.value) }}</template>
+      <el-table-column label="拍摄类型" min-width="120" max-width="180">
+        <template #default="{ row }">{{ buildDictLabel(row.shoot_type, shootTypeMap) }}</template>
       </el-table-column>
       <el-table-column label="期望日期" min-width="230" max-width="320">
         <template #default="{ row }">

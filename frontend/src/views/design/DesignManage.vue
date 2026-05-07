@@ -19,7 +19,7 @@
           </el-table-column>
           <el-table-column prop="salesperson_name" label="业务员" min-width="90" max-width="140" show-overflow-tooltip />
           <el-table-column label="拍摄类型" min-width="120" max-width="180" show-overflow-tooltip>
-            <template #default="{ row }">{{ buildDictLabel(row.shoot_type, shootTypeMap.value) }}</template>
+            <template #default="{ row }">{{ buildDictLabel(row.shoot_type, shootTypeMap) }}</template>
           </el-table-column>
           <el-table-column label="期望日期" min-width="280" max-width="420">
             <template #default="{ row }">{{ row.expect_start_date }} {{ periodLabel(row.expect_start_period) }} ~ {{ row.expect_end_date }} {{ periodLabel(row.expect_end_period) }}</template>
@@ -68,7 +68,7 @@
           <el-table-column prop="customer_name" label="客户名称" min-width="130" max-width="200" show-overflow-tooltip />
           <el-table-column prop="salesperson_name" label="业务员" min-width="90" max-width="140" show-overflow-tooltip />
           <el-table-column label="拍摄类型" min-width="120" max-width="180" show-overflow-tooltip>
-            <template #default="{ row }">{{ buildDictLabel(row.shoot_type, shootTypeMap.value) }}</template>
+            <template #default="{ row }">{{ buildDictLabel(row.shoot_type, shootTypeMap) }}</template>
           </el-table-column>
           <el-table-column label="设计师" min-width="100" max-width="150">
             <template #default="{ row }">{{ getDesignerName(row.designer_id) }}</template>
