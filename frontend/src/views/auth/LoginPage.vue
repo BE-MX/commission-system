@@ -28,18 +28,18 @@
           <!-- Statistics Row -->
           <div class="flex gap-6 mt-12 will-animate animate-fade-in-left delay-500">
             <div class="glass-card px-6 py-4 flex items-center gap-3">
-              <svg class="w-5 h-5 text-[#d4af6e]" fill="currentColor" viewBox="0 0 24 24">
+              <span class="text-3xl font-bold font-mono text-[#d4af6e]">30+</span>
+              <span class="text-sm text-white/70">年发制品制造与服务经验</span>
+            </div>
+            <div class="glass-card px-6 py-4 flex items-center gap-3">
+              <svg class="w-5 h-5 text-[#d4af6e] flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
               </svg>
-              <span class="text-sm text-white/70">全球精品发制品</span>
+              <span class="text-sm text-white/70">AI驱动全链路数据基座</span>
             </div>
             <div class="glass-card px-6 py-4 flex items-center gap-3">
-              <span class="text-3xl font-bold font-mono text-[#d4af6e]">1200+</span>
-              <span class="text-sm text-white/70">数据驱动 · 智慧管理</span>
-            </div>
-            <div class="glass-card px-6 py-4 flex items-center gap-3">
-              <span class="text-3xl font-bold font-mono text-[#d4af6e]">568</span>
-              <span class="text-sm text-white/70">合作客户</span>
+              <span class="text-3xl font-bold font-mono text-[#d4af6e]">4000+</span>
+              <span class="text-sm text-white/70">专业沙龙/设计师产品与销售赋能</span>
             </div>
           </div>
         </div>
