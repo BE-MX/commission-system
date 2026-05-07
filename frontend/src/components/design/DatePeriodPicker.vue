@@ -1,46 +1,50 @@
 <template>
   <div class="date-period-picker">
-    <el-date-picker
-      v-model="localStartDate"
-      type="date"
-      placeholder="开始日期"
-      value-format="YYYY-MM-DD"
-      :disabled-date="disabledDate"
-      :disabled="disabled"
-      style="width: 150px"
-      @change="onStartDateChange"
-    />
-    <el-select
-      v-model="localStartPeriod"
-      :disabled="disabled"
-      style="width: 80px; margin-left: 4px"
-      @change="emitChange"
-    >
-      <el-option label="上午" value="am" />
-      <el-option label="下午" value="pm" />
-    </el-select>
+    <div class="date-row">
+      <span class="row-label">开始</span>
+      <el-date-picker
+        v-model="localStartDate"
+        type="date"
+        placeholder="开始日期"
+        value-format="YYYY-MM-DD"
+        :disabled-date="disabledDate"
+        :disabled="disabled"
+        style="width: 150px"
+        @change="onStartDateChange"
+      />
+      <el-select
+        v-model="localStartPeriod"
+        :disabled="disabled"
+        style="width: 80px; margin-left: 4px"
+        @change="emitChange"
+      >
+        <el-option label="上午" value="am" />
+        <el-option label="下午" value="pm" />
+      </el-select>
+    </div>
 
-    <span class="range-sep">至</span>
-
-    <el-date-picker
-      v-model="localEndDate"
-      type="date"
-      placeholder="结束日期"
-      value-format="YYYY-MM-DD"
-      :disabled-date="disabledDate"
-      :disabled="disabled"
-      style="width: 150px"
-      @change="onEndDateChange"
-    />
-    <el-select
-      v-model="localEndPeriod"
-      :disabled="disabled"
-      style="width: 80px; margin-left: 4px"
-      @change="emitChange"
-    >
-      <el-option label="上午" value="am" />
-      <el-option label="下午" value="pm" />
-    </el-select>
+    <div class="date-row">
+      <span class="row-label">结束</span>
+      <el-date-picker
+        v-model="localEndDate"
+        type="date"
+        placeholder="结束日期"
+        value-format="YYYY-MM-DD"
+        :disabled-date="disabledDate"
+        :disabled="disabled"
+        style="width: 150px"
+        @change="onEndDateChange"
+      />
+      <el-select
+        v-model="localEndPeriod"
+        :disabled="disabled"
+        style="width: 80px; margin-left: 4px"
+        @change="emitChange"
+      >
+        <el-option label="上午" value="am" />
+        <el-option label="下午" value="pm" />
+      </el-select>
+    </div>
 
     <span v-if="hasError" class="period-error">同一天内开始时段不能晚于结束时段</span>
   </div>
@@ -110,20 +114,23 @@ function emitChange() {
 <style scoped>
 .date-period-picker {
   display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.date-row {
+  display: flex;
   align-items: center;
-  flex-wrap: nowrap;
   gap: 0;
 }
-.range-sep {
-  margin: 0 8px;
-  color: var(--text-muted);
+.row-label {
+  width: 32px;
   font-size: 13px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
 }
 .period-error {
   display: block;
-  width: 100%;
   color: var(--color-danger);
   font-size: 12px;
-  margin-top: 4px;
 }
 </style>
