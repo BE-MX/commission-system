@@ -649,6 +649,7 @@ async function submitImport() {
 onMounted(() => {
   updateTabMaxHeight()
   window.addEventListener('resize', updateTabMaxHeight)
+  loadShootTypeDict()
   fetchPending()
   fetchDesigners()
 })
