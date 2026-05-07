@@ -23,10 +23,10 @@
       <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" show-overflow-tooltip />
       <el-table-column label="操作" min-width="160" max-width="240" fixed="right">
         <template #default="{ row }">
-          <GlassButton variant="link" :disabled="row.is_system" @click="openEditDialog(row)" left-icon="Edit">
+          <GlassButton variant="link" :disabled="row.name === 'super_admin'" @click="openEditDialog(row)" left-icon="Edit">
             编辑
           </GlassButton>
-          <GlassButton variant="link" link-tone="danger" :disabled="row.is_system || row.user_count > 0" @click="handleDelete(row)" left-icon="Delete">
+          <GlassButton variant="link" link-tone="danger" :disabled="row.name === 'super_admin' || row.user_count > 0" @click="handleDelete(row)" left-icon="Delete">
             删除
           </GlassButton>
         </template>
