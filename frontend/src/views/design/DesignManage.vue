@@ -14,8 +14,11 @@
         >
           <el-table-column prop="request_no" label="预约编号" min-width="160" max-width="240" show-overflow-tooltip />
           <el-table-column prop="customer_name" label="客户名称" min-width="130" max-width="200" show-overflow-tooltip />
+          <el-table-column prop="customer_level" label="客户等级" min-width="90" max-width="130">
+            <template #default="{ row }">{{ row.customer_level || '-' }}</template>
+          </el-table-column>
           <el-table-column prop="salesperson_name" label="业务员" min-width="90" max-width="140" show-overflow-tooltip />
-          <el-table-column label="拍摄类型" min-width="100" max-width="150">
+          <el-table-column label="拍摄类型" min-width="120" max-width="180" show-overflow-tooltip>
             <template #default="{ row }">{{ buildDictLabel(row.shoot_type, shootTypeMap.value) }}</template>
           </el-table-column>
           <el-table-column label="期望日期" min-width="280" max-width="420">
@@ -27,6 +30,9 @@
                 {{ row.priority === 'urgent' ? '加急' : '普通' }}
               </el-tag>
             </template>
+          </el-table-column>
+          <el-table-column prop="remark" label="备注" min-width="160" max-width="260" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.remark || '-' }}</template>
           </el-table-column>
           <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" show-overflow-tooltip />
           <el-table-column label="操作" min-width="130" max-width="200" fixed="right">
@@ -61,8 +67,8 @@
           <el-table-column prop="task_no" label="任务编号" min-width="170" max-width="260" show-overflow-tooltip />
           <el-table-column prop="customer_name" label="客户名称" min-width="130" max-width="200" show-overflow-tooltip />
           <el-table-column prop="salesperson_name" label="业务员" min-width="90" max-width="140" show-overflow-tooltip />
-          <el-table-column label="拍摄类型" min-width="100" max-width="150">
-            <template #default="{ row }">{{ SHOOT_TYPE_MAP[row.shoot_type] || row.shoot_type }}</template>
+          <el-table-column label="拍摄类型" min-width="120" max-width="180" show-overflow-tooltip>
+            <template #default="{ row }">{{ buildDictLabel(row.shoot_type, shootTypeMap.value) }}</template>
           </el-table-column>
           <el-table-column label="设计师" min-width="100" max-width="150">
             <template #default="{ row }">{{ getDesignerName(row.designer_id) }}</template>
@@ -76,6 +82,9 @@
                 {{ row.priority === 'urgent' ? '加急' : '普通' }}
               </el-tag>
             </template>
+          </el-table-column>
+          <el-table-column prop="remark" label="备注" min-width="160" max-width="260" show-overflow-tooltip>
+            <template #default="{ row }">{{ row.remark || '-' }}</template>
           </el-table-column>
           <el-table-column label="状态" min-width="100" max-width="150">
             <template #default="{ row }">
@@ -231,10 +240,10 @@
     <el-dialog
       v-model="confirmVisible"
       title="确认排期"
-      width="500px"
+      width="560px"
       :close-on-click-modal="false"
     >
-      <el-form :model="confirmForm" label-width="90px">
+      <el-form :model="confirmForm" label-width="90px" class="confirm-form">
         <el-form-item label="客户">
           <span>{{ confirmRow?.customer_name }}</span>
         </el-form-item>
@@ -248,7 +257,7 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="排期日期" required>
+        <el-form-item label="排期日期" required class="date-period-item">
           <DatePeriodPicker
             v-model:start-date="confirmForm.startDate"
             v-model:start-period="confirmForm.startPeriod"
@@ -633,5 +642,15 @@ onMounted(() => {
 
 :deep(.el-tabs__header) {
   margin-bottom: 16px;
+}
+
+/* Prevent date picker popper from being clipped inside the dialog */
+.confirm-form .date-period-item :deep(.el-date-editor),
+.confirm-form .date-period-item :deep(.el-date-picker) {
+  position: relative;
+}
+
+:deep(.el-dialog__body) {
+  overflow: visible;
 }
 </style>

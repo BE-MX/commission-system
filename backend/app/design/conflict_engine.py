@@ -143,6 +143,17 @@ def check_conflict(
             "period": row.period,
         })
 
+    # Build a fast lookup: {(date, period_or_None)} for unavailable records
+    # period=None means full day (blocks both am and pm slots)
+    unavailable_lookup: set[tuple] = set()
+    for row in unavailable_rows:
+        if row.period is None:
+            # Full day — blocks both half-day slots
+            unavailable_lookup.add((row.date, "am"))
+            unavailable_lookup.add((row.date, "pm"))
+        else:
+            unavailable_lookup.add((row.date, row.period))
+
     # 2. Pre-fetch active tasks that could overlap the date range
     query = db.query(DesignScheduleTask).filter(
         DesignScheduleTask.plan_start_date <= end_date,
@@ -155,12 +166,20 @@ def check_conflict(
         query = query.filter(DesignScheduleTask.id != exclude_task_id)
     active_tasks = query.all()
 
-    # 3. Check each slot
+    # 3. Check each slot — capacity overload AND unavailable overlap
     overloaded_slots = []
+    conflicting_unavailable_slots = []
     for slot_date, slot_period in iter_slots(start_date, start_period, end_date, end_period):
+        # Check unavailable
+        if (slot_date, slot_period) in unavailable_lookup:
+            conflicting_unavailable_slots.append({
+                "date": slot_date.isoformat(),
+                "period": slot_period,
+            })
+
+        # Check capacity
         task_count = sum(1 for t in active_tasks if task_covers_slot(t, slot_date, slot_period))
         capacity = get_capacity_for_slot(db, slot_date, slot_period, designer_id)
-
         if task_count >= capacity:
             overloaded_slots.append({
                 "date": slot_date.isoformat(),
@@ -169,12 +188,13 @@ def check_conflict(
                 "capacity": capacity,
             })
 
-    has_conflict = len(overloaded_slots) > 0
-    route = "pending_audit" if has_conflict else None
+    has_conflict = len(overloaded_slots) > 0 or len(conflicting_unavailable_slots) > 0
+    route = "pending_audit" if has_conflict else "pending_design"
 
     return {
         "has_conflict": has_conflict,
         "unavailable_dates": unavailable_slots,
+        "conflicting_unavailable_slots": conflicting_unavailable_slots,
         "overloaded_dates": overloaded_slots,
         "route": route,
     }

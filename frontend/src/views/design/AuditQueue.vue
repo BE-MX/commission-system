@@ -30,12 +30,19 @@
     >
       <el-table-column prop="request_no" label="预约编号" min-width="160" max-width="240" show-overflow-tooltip />
       <el-table-column prop="customer_name" label="客户名称" min-width="130" max-width="200" show-overflow-tooltip />
+      <el-table-column prop="customer_level" label="客户等级" min-width="90" max-width="130">
+        <template #default="{ row }">{{ row.customer_level || '-' }}</template>
+      </el-table-column>
       <el-table-column prop="salesperson_name" label="业务员" min-width="90" max-width="140" show-overflow-tooltip />
-      <el-table-column label="拍摄类型" min-width="100" max-width="150">
+      <el-table-column label="拍摄类型" min-width="120" max-width="180" show-overflow-tooltip>
         <template #default="{ row }">{{ buildDictLabel(row.shoot_type, shootTypeMap.value) }}</template>
       </el-table-column>
-      <el-table-column label="期望日期" min-width="200" max-width="300">
-        <template #default="{ row }">{{ row.expect_start_date }} ~ {{ row.expect_end_date }}</template>
+      <el-table-column label="期望日期" min-width="230" max-width="320">
+        <template #default="{ row }">
+          {{ row.expect_start_date }} {{ row.expect_start_period === 'am' ? '上午' : row.expect_start_period === 'pm' ? '下午' : '' }}
+          ~
+          {{ row.expect_end_date }} {{ row.expect_end_period === 'am' ? '上午' : row.expect_end_period === 'pm' ? '下午' : '' }}
+        </template>
       </el-table-column>
       <el-table-column label="优先级" min-width="80" max-width="120">
         <template #default="{ row }">
@@ -43,6 +50,9 @@
             {{ row.priority === 'urgent' ? '加急' : '普通' }}
           </el-tag>
         </template>
+      </el-table-column>
+      <el-table-column prop="remark" label="备注" min-width="160" max-width="260" show-overflow-tooltip>
+        <template #default="{ row }">{{ row.remark || '-' }}</template>
       </el-table-column>
       <el-table-column prop="created_at" label="提交时间" min-width="170" max-width="260" show-overflow-tooltip />
       <el-table-column label="冲突" min-width="80" max-width="120">

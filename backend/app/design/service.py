@@ -87,6 +87,10 @@ def create_request(
         end_period=data.expect_end_period or "pm",
     )
 
+    # Route to pending_design (skip audit) when no conflict and no unavailable overlap
+    has_any_issue = conflict["has_conflict"]
+    initial_status = "pending_audit" if has_any_issue else "pending_design"
+
     request_no = generate_request_no(db)
 
     req = DesignScheduleRequest(
@@ -103,7 +107,7 @@ def create_request(
         expect_end_period=data.expect_end_period or "pm",
         priority=data.priority,
         remark=data.remark,
-        status="pending_audit",
+        status=initial_status,
         conflict_detail=conflict if conflict["has_conflict"] else None,
     )
     db.add(req)
@@ -116,7 +120,7 @@ def create_request(
         operator_name=operator_name,
         operator_role=operator_role,
         action="submit",
-        to_status="pending_audit",
+        to_status=initial_status,
         comment=data.remark,
     )
     db.commit()
@@ -872,6 +876,7 @@ def batch_import_requests(
 
             # Conflict check
             conflict = check_conflict(db, expect_start, expect_end, start_period="am", end_period="pm")
+            batch_status = "pending_audit" if conflict["has_conflict"] else "pending_design"
 
             request_no = generate_request_no(db)
             req = DesignScheduleRequest(
@@ -886,7 +891,7 @@ def batch_import_requests(
                 expect_end_period="pm",
                 priority=priority,
                 remark=remark,
-                status="pending_audit",
+                status=batch_status,
                 conflict_detail=conflict if conflict["has_conflict"] else None,
             )
             db.add(req)
@@ -899,7 +904,7 @@ def batch_import_requests(
                 operator_name=operator_name,
                 operator_role=operator_role,
                 action="submit",
-                to_status="pending_audit",
+                to_status=batch_status,
                 comment=f"批量导入 (行{row_idx})",
             )
             success += 1

@@ -3,7 +3,7 @@
     <div class="form-card">
       <div class="form-card-header">
         <h3>提交设计预约</h3>
-        <p>填写拍摄需求信息，提交后将进入审批流程</p>
+        <p>填写拍摄需求信息，日期无冲突时直接进入排期，有冲突时进入审批流程</p>
       </div>
 
       <el-form
@@ -175,6 +175,7 @@ const rules = {
 }
 
 const conflictResult = ref(null)
+// Key: "YYYY-MM-DD" (full day disabled) or "YYYY-MM-DD_am" / "YYYY-MM-DD_pm" (half-day)
 const unavailableDateSet = ref(new Set())
 
 function disablePastDate(date) {
@@ -182,14 +183,32 @@ function disablePastDate(date) {
   const y = date.getFullYear()
   const m = String(date.getMonth() + 1).padStart(2, '0')
   const d = String(date.getDate()).padStart(2, '0')
-  return unavailableDateSet.value.has(`${y}-${m}-${d}`)
+  const key = `${y}-${m}-${d}`
+  // Disable the whole day only when there is a full-day record (period=null)
+  // or both am and pm records exist for the same date
+  return (
+    unavailableDateSet.value.has(key) ||
+    (unavailableDateSet.value.has(`${key}_am`) && unavailableDateSet.value.has(`${key}_pm`))
+  )
 }
 
 async function fetchUnavailableDates() {
   try {
     const res = await getUnavailableDates()
     const dates = res.data || []
-    unavailableDateSet.value = new Set(dates.map(d => typeof d === 'string' ? d : d.date))
+    const s = new Set()
+    for (const item of dates) {
+      const dateStr = typeof item === 'string' ? item : item.date
+      const period = typeof item === 'object' ? item.period : null
+      if (!period) {
+        // Full-day unavailable → add plain date key
+        s.add(dateStr)
+      } else {
+        // Half-day unavailable → add period-specific key
+        s.add(`${dateStr}_${period}`)
+      }
+    }
+    unavailableDateSet.value = s
   } catch {
     // ignore
   }
@@ -233,9 +252,11 @@ async function doConflictCheck(start, end, startPeriod, endPeriod) {
       shoot_type: form.shoot_type.join(',') || undefined,
     })
     const data = res.data
+    const hasUnavailable = (data.unavailable_dates?.length > 0 || data.conflicting_unavailable_slots?.length > 0)
     conflictResult.value = {
-      has_conflict: data.has_conflict || data.has_unavailable || false,
+      has_conflict: data.has_conflict || hasUnavailable || false,
       unavailable_dates: data.unavailable_dates || [],
+      conflicting_unavailable_slots: data.conflicting_unavailable_slots || [],
       overloaded_dates: data.overloaded_dates || [],
       route: data.route || null,
     }
@@ -268,7 +289,12 @@ async function handleSubmit() {
       operator_role: 'salesperson',
     }
     await submitRequest(payload)
-    ElMessage.success('预约提交成功，等待审批')
+    const hasConflict = conflictResult.value?.has_conflict
+    if (hasConflict) {
+      ElMessage.success('预约提交成功，存在排期冲突，等待审批')
+    } else {
+      ElMessage.success('预约提交成功，已进入排期流程')
+    }
     router.push('/design/my-requests')
   } finally {
     submitting.value = false

@@ -85,22 +85,29 @@
 </template>
 
 <script setup>
-import { ref, onMounted, markRaw } from 'vue'
+import { ref, computed, onMounted, markRaw } from 'vue'
 import { getSnapshotList } from '@/api/customer'
 import { getBatchList } from '@/api/commission'
 import { getEmployeeList } from '@/api/employee'
+import { useAuthStore } from '@/stores/auth'
 import { UserFilled, Connection, Refresh, List } from '@element-plus/icons-vue'
+
+const authStore = useAuthStore()
 
 const incompleteCount = ref(0)
 const latestBatch = ref(null)
 const employeeCount = ref(0)
 
-const shortcuts = [
-  { label: '员工属性管理', desc: '设置开发/分配属性', path: '/employee/attribute', icon: markRaw(UserFilled), bg: 'linear-gradient(135deg, #D4941C, #E5A820)' },
-  { label: '主管关系管理', desc: '维护业务主管关系', path: '/supervisor/relation', icon: markRaw(Connection), bg: 'linear-gradient(135deg, #1A1816, #2E2A26)' },
-  { label: '回款同步', desc: '拉取业务系统数据', path: '/payment/sync', icon: markRaw(Refresh), bg: 'linear-gradient(135deg, #D4941C, #BB8218)' },
-  { label: '提成批次', desc: '计算与确认提成', path: '/commission/batch', icon: markRaw(List), bg: 'linear-gradient(135deg, #1A1816, #2E2A26)' },
+const ALL_SHORTCUTS = [
+  { label: '员工属性管理', desc: '设置开发/分配属性', path: '/employee/attribute', icon: markRaw(UserFilled), bg: 'linear-gradient(135deg, #D4941C, #E5A820)', perms: ['employee:read', 'employee:write'] },
+  { label: '主管关系管理', desc: '维护业务主管关系', path: '/supervisor/relation', icon: markRaw(Connection), bg: 'linear-gradient(135deg, #1A1816, #2E2A26)', perms: ['employee:read', 'employee:write'] },
+  { label: '回款同步', desc: '拉取业务系统数据', path: '/payment/sync', icon: markRaw(Refresh), bg: 'linear-gradient(135deg, #D4941C, #BB8218)', perms: ['payment:read', 'payment:write'] },
+  { label: '提成批次', desc: '计算与确认提成', path: '/commission/batch', icon: markRaw(List), bg: 'linear-gradient(135deg, #1A1816, #2E2A26)', perms: ['commission:read', 'commission:write'] },
 ]
+
+const shortcuts = computed(() =>
+  ALL_SHORTCUTS.filter(item => authStore.hasAnyPermission(item.perms))
+)
 
 function statusType(s) {
   return { draft: 'info', calculated: '', confirmed: 'success', voided: 'danger' }[s] || 'info'

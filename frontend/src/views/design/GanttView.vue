@@ -86,6 +86,7 @@
               {{ statusLabel(selectedTask.status) }}
             </el-tag>
           </el-descriptions-item>
+          <el-descriptions-item v-if="selectedTask.remark" label="备注">{{ selectedTask.remark }}</el-descriptions-item>
         </el-descriptions>
       </template>
     </el-dialog>

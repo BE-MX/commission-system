@@ -1,28 +1,28 @@
 <template>
   <div class="conflict-alert-wrapper" v-if="conflictResult">
-    <!-- Unavailable dates: hard block -->
+    <!-- Conflicting unavailable slots: actual overlap with unavailable records -->
     <el-alert
-      v-if="conflictResult.unavailable_dates && conflictResult.unavailable_dates.length > 0"
+      v-if="conflictResult.conflicting_unavailable_slots && conflictResult.conflicting_unavailable_slots.length > 0"
       type="error"
       show-icon
       :closable="false"
       class="conflict-alert-item"
     >
-      <template #title>以下日期为不可用日期</template>
+      <template #title>所选时段包含不可用日期，将转主管审核</template>
       <template #default>
         <div class="conflict-date-list">
           <el-tag
-            v-for="(d, idx) in conflictResult.unavailable_dates"
+            v-for="(d, idx) in conflictResult.conflicting_unavailable_slots"
             :key="idx"
             type="danger"
             size="small"
             effect="plain"
-          >{{ typeof d === 'string' ? d : d.date }}{{ d && d.period ? (d.period === 'am' ? ' 上午' : ' 下午') : '' }}</el-tag>
+          >{{ d.date }}{{ d.period === 'am' ? ' 上午' : d.period === 'pm' ? ' 下午' : '' }}</el-tag>
         </div>
       </template>
     </el-alert>
 
-    <!-- Overloaded dates: warning, will need supervisor review -->
+    <!-- Overloaded dates: capacity exceeded, will need supervisor review -->
     <el-alert
       v-if="conflictResult.overloaded_dates && conflictResult.overloaded_dates.length > 0"
       type="warning"
@@ -30,15 +30,15 @@
       :closable="false"
       class="conflict-alert-item"
     >
-      <template #title>以下日期资源已满，提交后将转主管审核</template>
+      <template #title>以下时段资源已满，将转主管审核</template>
       <template #default>
         <div class="conflict-date-list">
           <span
             v-for="item in conflictResult.overloaded_dates"
-            :key="item.date || item"
+            :key="item.date + item.period"
             class="overload-item"
           >
-            {{ item.date || item }}{{ item.period ? (item.period === 'am' ? ' 上午' : ' 下午') : '' }}
+            {{ item.date }}{{ item.period === 'am' ? ' 上午' : item.period === 'pm' ? ' 下午' : '' }}
             <span v-if="item.current_tasks != null" class="overload-detail">
               ({{ item.current_tasks }}/{{ item.capacity }})
             </span>
@@ -55,7 +55,7 @@
       :closable="false"
       class="conflict-alert-item"
     >
-      <template #title>日期可用，提交后直接进入设计部确认</template>
+      <template #title>日期可用，提交后直接进入设计部排期</template>
     </el-alert>
   </div>
 </template>
@@ -73,9 +73,9 @@ const props = defineProps({
 const noConflict = computed(() => {
   if (!props.conflictResult) return false
   const r = props.conflictResult
-  const hasUnavailable = r.unavailable_dates && r.unavailable_dates.length > 0
+  const hasConflictingUnavailable = r.conflicting_unavailable_slots && r.conflicting_unavailable_slots.length > 0
   const hasOverloaded = r.overloaded_dates && r.overloaded_dates.length > 0
-  return !r.has_conflict && !hasUnavailable && !hasOverloaded
+  return !r.has_conflict && !hasConflictingUnavailable && !hasOverloaded
 })
 </script>
 
