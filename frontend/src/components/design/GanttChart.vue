@@ -613,7 +613,7 @@ onBeforeUnmount(() => {
 .gantt-date-header.is-weekend { background: var(--toolbar-bg); }
 .gantt-date-header.is-today { border-bottom: 2px solid var(--color-primary); }
 .gantt-date-header.is-unavailable {
-  background: repeating-linear-gradient(-45deg, transparent, transparent 3px, rgba(144,147,153,0.12) 3px, rgba(144,147,153,0.12) 6px);
+  background: rgba(144, 147, 153, 0.25);
 }
 
 .date-label { font-weight: 600; line-height: 1.2; }
@@ -642,7 +642,7 @@ onBeforeUnmount(() => {
 .gantt-period-header.is-weekend { background: var(--toolbar-bg); }
 .gantt-period-header.is-today { background: rgba(212,148,28,0.08); }
 .gantt-period-header.is-unavailable {
-  background: repeating-linear-gradient(-45deg, transparent, transparent 3px, rgba(144,147,153,0.12) 3px, rgba(144,147,153,0.12) 6px);
+  background: rgba(144, 147, 153, 0.25);
 }
 
 /* Load dots */
@@ -691,7 +691,7 @@ onBeforeUnmount(() => {
 .gantt-cell-overlay.is-weekend { background: rgba(250,245,232,0.4); }
 .gantt-cell-overlay.is-today { border-left: 2px solid var(--color-primary); }
 .gantt-cell-overlay.is-unavailable {
-  background: repeating-linear-gradient(-45deg, transparent, transparent 3px, rgba(144,147,153,0.12) 3px, rgba(144,147,153,0.12) 6px);
+  background: rgba(144, 147, 153, 0.25);
 }
 .gantt-cell-overlay.is-pm {
   border-left: 1px dashed var(--border-color);
