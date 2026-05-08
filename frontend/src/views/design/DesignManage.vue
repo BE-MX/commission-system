@@ -3,6 +3,11 @@
     <el-tabs v-model="activeTab" @tab-change="onTabChange">
       <!-- Tab 1: 待确认任务 -->
       <el-tab-pane label="待确认任务" name="pending">
+        <div class="tab-toolbar">
+          <GlassButton variant="secondary" left-icon="Bell" @click="handleScanShootReminders">
+            预约任务扫描
+          </GlassButton>
+        </div>
         <div class="table-card">
         <el-table
           ref="pendingTableRef"
@@ -335,8 +340,8 @@
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Upload, Plus, Calendar, VideoPlay, CircleCheck, CircleClose, Edit, SwitchButton } from '@element-plus/icons-vue'
-import { getRequests, getTaskList, getDesigners, createDesigner, updateDesigner, actionRequest, rescheduleTask, importRequests, updateExpectDate } from '@/api/design'
+import { Upload, Plus, Calendar, VideoPlay, CircleCheck, CircleClose, Edit, SwitchButton, Bell } from '@element-plus/icons-vue'
+import { getRequests, getTaskList, getDesigners, createDesigner, updateDesigner, actionRequest, rescheduleTask, importRequests, updateExpectDate, triggerShootReminderScan } from '@/api/design'
 import { getDictMap, buildDictLabel } from '@/utils/dict'
 import DesignCalendarConfig from '@/components/design/DesignCalendarConfig.vue'
 import DesignCapacityConfig from '@/components/design/DesignCapacityConfig.vue'
@@ -444,6 +449,20 @@ async function fetchPending() {
   } finally {
     pendingLoading.value = false
   }
+}
+
+async function handleScanShootReminders() {
+  try {
+    await ElMessageBox.confirm(
+      '将立即扫描今日待确认任务并向相关人员推送钉钉拍摄提醒，是否继续？',
+      '预约任务扫描',
+      { type: 'info', confirmButtonText: '开始扫描', cancelButtonText: '取消' },
+    )
+  } catch { return }
+  try {
+    await triggerShootReminderScan()
+    ElMessage.success('扫描已完成，相关提醒已推送')
+  } catch { /* handled by interceptor */ }
 }
 
 // --- Scheduled tab ---
@@ -716,6 +735,7 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.tab-toolbar { margin-bottom: 12px; display: flex; justify-content: flex-end; }
 .pagination { margin-top: 16px; justify-content: flex-end; }
 .text-muted { color: var(--text-secondary); font-size: 12px; }
 .import-section { max-width: 600px; }

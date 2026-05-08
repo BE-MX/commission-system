@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import uuid
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
 
@@ -177,6 +177,8 @@ async def _notify_audit_needed(
     priority: str,
     remark: str,
     conflict: dict | None = None,
+    props_requirement: str = "",
+    preferred_designer: str = "",
 ):
     """查找所有主管的钉钉ID，发送审批通知"""
     from app.dingtalk.events import notify_design_audit_needed
@@ -220,6 +222,8 @@ async def _notify_design_dept(
     priority: str,
     remark: str,
     source: str = "",
+    props_requirement: str = "",
+    preferred_designer: str = "",
 ):
     """查找设计部所有成员的钉钉ID，发送待排期通知"""
     from app.dingtalk.events import notify_design_ready_for_design
@@ -588,6 +592,21 @@ def update_expect_date(
     db.commit()
 
     return {"code": 200, "message": "期望日期已更新", "data": None}
+
+
+# ── 定时任务手动触发 ──────────────────────────────────────
+
+
+@router.post("/scan-shoot-reminders")
+async def trigger_scan_shoot_reminders():
+    """手动触发"今日拍摄提醒"扫描，立即执行一次定时任务逻辑"""
+    from app.design.scheduler import check_today_shoot_reminders
+    try:
+        await check_today_shoot_reminders()
+        return {"code": 200, "message": "扫描已完成", "data": None}
+    except Exception as e:
+        logger.exception("手动触发拍摄提醒扫描失败")
+        return {"code": 500, "message": f"扫描失败: {e}", "data": None}
 
 
 # ── 甘特图 ────────────────────────────────────────────────

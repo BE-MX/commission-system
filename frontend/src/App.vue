@@ -75,7 +75,7 @@ html, body, #app {
 }
 .el-table td.el-table__cell {
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: 12px;
   border-bottom-color: #f0f2f7 !important;
   transition: background 0.2s ease;
 }
@@ -428,7 +428,7 @@ html, body, #app {
 
 .list-table :deep(.el-table__body td.el-table__cell) {
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: 12px;
   padding: 10px 12px;
   border-bottom: 1px solid #f0f2f7 !important;
   border-right: 1px solid var(--border-color) !important;
@@ -458,17 +458,17 @@ html, body, #app {
 /* Operation buttons inside list tables */
 .list-table :deep(.el-button.is-link) {
   font-weight: 500;
-  font-size: 13px;
+  font-size: 12px;
 }
 .list-table :deep(.el-button.is-link .el-icon) {
-  font-size: 13px;
+  font-size: 12px;
   margin-right: 4px;
 }
 
 /* Primary key link inside list tables */
 .list-table .primary-link {
   font-weight: 600;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 /* ===== Page-level shared styles ===== */
