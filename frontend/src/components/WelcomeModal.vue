@@ -55,6 +55,9 @@
                 <span>{{ todayDate }}</span>
               </div>
 
+              <!-- 时段问候语 -->
+              <p v-if="greetingMessage" class="welcome-greeting-msg">{{ greetingMessage }}</p>
+
               <!-- TIPS 卡片 -->
               <div class="welcome-tip-card">
                 <div class="tip-header">
@@ -510,6 +513,18 @@ defineExpose({ open })
 }
 
 /* TIPS 卡片 */
+.welcome-greeting-msg {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.55);
+  line-height: 1.6;
+  text-align: center;
+  margin: 0 0 14px;
+  padding: 0 8px;
+  font-style: italic;
+  animation: fadeSlideUp 0.5s ease 0.45s both;
+}
+
 .welcome-tip-card {
   padding: 14px 16px;
   border-radius: 12px;
