@@ -4,7 +4,10 @@ import asyncio
 import logging
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+import os
+import shutil
+from pathlib import Path
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy import or_, func
 from sqlalchemy.orm import Session, joinedload
 
@@ -467,11 +470,61 @@ def update_profile(
         user.email = req.email
     if req.phone is not None:
         user.phone = req.phone
+    if req.avatar_url is not None:
+        user.avatar_url = req.avatar_url
 
     user.updated_at = datetime.utcnow()
     db.commit()
 
     return ResponseModel(message="资料已更新")
+
+
+# 头像上传目录
+AVATAR_UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent.parent / "uploads" / "avatars"
+AVATAR_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+
+@router.post("/avatar", summary="上传头像")
+async def upload_avatar(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+) -> ResponseModel:
+    user_id = int(current_user["sub"])
+    user = db.get(ArkUser, user_id)
+    if not user:
+        return ResponseModel(code=404, message="用户不存在")
+
+    # 校验文件类型
+    allowed_types = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+    if file.content_type not in allowed_types:
+        return ResponseModel(code=400, message="仅支持 JPG/PNG/GIF/WebP 图片")
+
+    # 校验文件大小（最大 2MB）
+    content = await file.read()
+    if len(content) > 2 * 1024 * 1024:
+        return ResponseModel(code=400, message="图片大小不能超过 2MB")
+
+    # 删除旧头像
+    if user.avatar_url:
+        old_path = AVATAR_UPLOAD_DIR / os.path.basename(user.avatar_url)
+        if old_path.exists():
+            old_path.unlink()
+
+    # 保存新头像
+    ext = os.path.splitext(file.filename or "")[1].lower() or ".png"
+    filename = f"avatar_{user_id}_{int(datetime.utcnow().timestamp())}{ext}"
+    file_path = AVATAR_UPLOAD_DIR / filename
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    # 更新用户头像 URL
+    avatar_url = f"/uploads/avatars/{filename}"
+    user.avatar_url = avatar_url
+    user.updated_at = datetime.utcnow()
+    db.commit()
+
+    return ResponseModel(message="头像上传成功", data={"avatar_url": avatar_url})
 
 
 @router.put("/profile/password", summary="修改个人密码")

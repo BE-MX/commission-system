@@ -93,3 +93,4 @@ class ProfileUpdateRequest(BaseModel):
     real_name: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
+    avatar_url: Optional[str] = None

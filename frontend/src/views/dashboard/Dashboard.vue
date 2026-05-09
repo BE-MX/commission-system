@@ -5,9 +5,17 @@
     <div class="dashboard-hero">
       <div class="hero-content">
         <div class="hero-tag">ARK PLATFORM</div>
-        <h1 class="hero-greeting">
-          {{ authStore.user?.real_name || '用户' }}，{{ greeting }}
-        </h1>
+        <div class="hero-user-row">
+          <div class="hero-avatar" v-if="authStore.user?.avatar_url">
+            <img :src="authStore.user.avatar_url" alt="avatar" />
+          </div>
+          <div class="hero-avatar avatar-fallback" v-else>
+            {{ (authStore.user?.real_name || '用户')[0] }}
+          </div>
+          <h1 class="hero-greeting">
+            {{ authStore.user?.real_name || '用户' }}，{{ greeting }}
+          </h1>
+        </div>
         <p class="hero-subtitle">{{ subtitleText }}</p>
         <p v-if="dailyTip" class="hero-tip">
           <el-icon class="tip-icon"><Star /></el-icon>
@@ -481,12 +489,21 @@
       </div>
     </div>
 
+    <!-- 登录欢迎弹框 -->
+    <WelcomeModal
+      :user-name="authStore.user?.real_name || '用户'"
+      :avatar-url="authStore.user?.avatar_url || ''"
+      :pending-count="pendingApprovals"
+      :shoot-count="todayShootCount"
+    />
+
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
+import WelcomeModal from '@/components/WelcomeModal.vue'
 
 // Element Plus 图标
 import {
@@ -885,6 +902,38 @@ function formatMoney(amount) {
   letter-spacing: 0.15em;
   text-transform: uppercase;
   color: var(--color-gold);
+}
+
+.hero-user-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.hero-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  border: 2px solid rgba(245, 203, 92, 0.3);
+  box-shadow: 0 0 12px rgba(245, 203, 92, 0.15);
+}
+.hero-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.avatar-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  color: #F5F2EE;
+  background: linear-gradient(135deg, rgba(212, 175, 110, 0.4), rgba(160, 128, 64, 0.3));
 }
 
 .hero-greeting {

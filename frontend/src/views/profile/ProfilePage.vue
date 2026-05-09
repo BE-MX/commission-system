@@ -1,5 +1,34 @@
 <template>
   <div class="profile-page">
+    <!-- 头像 -->
+    <el-card shadow="never" class="profile-card">
+      <template #header>
+        <div class="card-header">头像</div>
+      </template>
+      <div class="avatar-section">
+        <el-upload
+          class="avatar-uploader"
+          action=""
+          :auto-upload="false"
+          :show-file-list="false"
+          :on-change="handleAvatarChange"
+          accept="image/*"
+        >
+          <div v-if="avatarPreview" class="avatar-preview">
+            <img :src="avatarPreview" alt="avatar" />
+          </div>
+          <div v-else class="avatar-placeholder">
+            <el-icon><Plus /></el-icon>
+            <span>点击上传</span>
+          </div>
+          <div v-if="avatarLoading" class="avatar-loading">
+            <el-icon class="is-loading"><Loading /></el-icon>
+          </div>
+        </el-upload>
+        <p class="avatar-hint">支持 JPG、PNG、GIF、WebP，最大 2MB</p>
+      </div>
+    </el-card>
+
     <!-- 基本信息 -->
     <el-card shadow="never" class="profile-card">
       <template #header>
@@ -55,9 +84,43 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
-import { updateProfile, changePassword } from '@/api/userManagement'
+import { updateProfile, changePassword, uploadAvatar } from '@/api/userManagement'
+import { Plus } from '@element-plus/icons-vue'
 
 const authStore = useAuthStore()
+
+// ── 头像 ────────────────────────────────────────────
+const avatarLoading = ref(false)
+const avatarPreview = ref('')
+
+function loadAvatar() {
+  avatarPreview.value = authStore.user?.avatar_url || ''
+}
+
+async function handleAvatarChange(file) {
+  const isImage = file.raw.type.startsWith('image/')
+  const isLt2M = file.raw.size / 1024 / 1024 < 2
+  if (!isImage) {
+    ElMessage.error('请上传图片文件')
+    return
+  }
+  if (!isLt2M) {
+    ElMessage.error('图片大小不能超过 2MB')
+    return
+  }
+  avatarLoading.value = true
+  try {
+    const res = await uploadAvatar(file.raw)
+    avatarPreview.value = res.data?.avatar_url || ''
+    await authStore.fetchMe()
+    loadAvatar()
+    ElMessage.success('头像上传成功')
+  } catch {
+    // handled by interceptor
+  } finally {
+    avatarLoading.value = false
+  }
+}
 
 // ── 基本信息 ────────────────────────────────────────
 const profileForm = ref({ username: '', real_name: '', email: '', phone: '' })
@@ -71,6 +134,7 @@ function loadProfile() {
     email: user.email || '',
     phone: user.phone || '',
   }
+  loadAvatar()
 }
 
 async function submitProfile() {
@@ -84,6 +148,7 @@ async function submitProfile() {
       real_name: profileForm.value.real_name,
       email: profileForm.value.email || null,
       phone: profileForm.value.phone || null,
+      avatar_url: avatarPreview.value || null,
     })
     ElMessage.success('资料已更新')
     // 刷新 store 中的用户信息
@@ -143,5 +208,79 @@ onMounted(() => {
 .card-header {
   font-weight: 600;
   font-size: 15px;
+}
+
+/* 头像上传 */
+.avatar-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.avatar-uploader :deep(.el-upload) {
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+
+.avatar-preview {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2px solid var(--border-color);
+  transition: all 0.25s ease;
+}
+.avatar-preview:hover {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 4px var(--color-primary-light);
+}
+.avatar-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.avatar-placeholder {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  border: 2px dashed var(--border-color);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--text-muted);
+  transition: all 0.25s ease;
+}
+.avatar-placeholder:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.avatar-placeholder .el-icon {
+  font-size: 24px;
+}
+.avatar-placeholder span {
+  font-size: 12px;
+}
+
+.avatar-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 50%;
+  font-size: 24px;
+  color: var(--color-primary);
+}
+
+.avatar-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0;
 }
 </style>

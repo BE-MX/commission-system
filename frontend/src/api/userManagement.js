@@ -70,3 +70,14 @@ export function updateProfile(data) {
 export function changePassword(data) {
   return authRequest.put('/profile/password', data, { loadingText: '正在修改...' }).then(r => r.data)
 }
+
+// ── 头像上传 ──────────────────────────────────────────
+
+export function uploadAvatar(file) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return authRequest.post('/avatar', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    loadingText: '正在上传...',
+  }).then(r => r.data)
+}

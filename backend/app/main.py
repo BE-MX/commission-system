@@ -106,6 +106,11 @@ async def general_exception_handler(request: Request, exc: Exception):
     )
 
 
+# 静态文件：上传的头像
+UPLOADS_DIR = Path(__file__).resolve().parent.parent.parent / "uploads"
+if UPLOADS_DIR.is_dir():
+    app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
+
 # 注册路由
 app.include_router(auth_router, prefix="/api/auth", tags=["认证"])
 app.include_router(admin_router, prefix="/api/auth", tags=["用户角色管理"])

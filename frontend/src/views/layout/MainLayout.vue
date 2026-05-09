@@ -144,7 +144,13 @@
           <div class="header-badge">莱莎发制品</div>
           <el-dropdown trigger="click" @command="handleUserCommand">
             <div class="user-trigger">
-              <el-icon><UserFilled /></el-icon>
+              <img
+                v-if="authStore.user?.avatar_url"
+                :src="authStore.user.avatar_url"
+                class="header-avatar"
+                alt="avatar"
+              />
+              <el-icon v-else><UserFilled /></el-icon>
               <span>{{ authStore.user?.real_name || '用户' }}</span>
               <el-icon class="arrow"><ArrowDown /></el-icon>
             </div>
@@ -442,6 +448,14 @@ function handleUserCommand(cmd) {
 .user-trigger:hover {
   background: #F5F2EE;
 }
+.header-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--border-color);
+}
+
 .user-trigger .arrow {
   font-size: 10px;
   margin-left: 2px;
