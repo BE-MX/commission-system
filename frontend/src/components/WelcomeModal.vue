@@ -45,7 +45,7 @@
                     <el-icon class="greeting-icon"><component :is="greetingIcon" /></el-icon>
                     <span class="greeting-text">{{ greetingText }}，{{ userName }}</span>
                   </div>
-                  <p class="greeting-sub">欢迎回到莱莎方舟综合管理平台</p>
+                  <p class="greeting-sub">{{ greetingMessage || '欢迎回来' }}</p>
                 </div>
               </div>
 
@@ -54,9 +54,6 @@
                 <el-icon class="date-icon"><Star /></el-icon>
                 <span>{{ todayDate }}</span>
               </div>
-
-              <!-- 时段问候语 -->
-              <p v-if="greetingMessage" class="welcome-greeting-msg">{{ greetingMessage }}</p>
 
               <!-- TIPS 卡片 -->
               <div class="welcome-tip-card">
