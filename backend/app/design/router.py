@@ -82,7 +82,6 @@ def create_request(
         # 有冲突 → 通知主管审批
         background_tasks.add_task(
             _notify_audit_needed,
-            db=db,
             conflict=result["data"].get("conflict"),
             **notify_kwargs,
         )
@@ -90,7 +89,6 @@ def create_request(
         # 无冲突 → 直接通知设计部
         background_tasks.add_task(
             _notify_design_dept,
-            db=db,
             source="直接提交",
             **notify_kwargs,
         )
@@ -167,7 +165,6 @@ def _get_designer_name(db: Session, designer_id: int | None) -> str:
 
 
 async def _notify_audit_needed(
-    db: Session,
     request_no: str,
     salesperson_name: str,
     customer_name: str,
@@ -180,22 +177,24 @@ async def _notify_audit_needed(
     props_requirement: str = "",
     preferred_designer: str = "",
 ):
-    """查找所有主管的钉钉ID，发送审批通知"""
+    """查找所有主管的钉钉ID，发送审批通知（内部新建 Session）"""
     from app.dingtalk.events import notify_design_audit_needed
+    from app.core.database import SessionLocal
 
-    dingtalk_ids = _find_role_dingtalk_ids(db, "supervisor")
+    with SessionLocal() as db:
+        dingtalk_ids = _find_role_dingtalk_ids(db, "supervisor")
 
-    # 构建冲突摘要
-    conflict_summary = ""
-    if conflict:
-        parts = []
-        unavail = conflict.get("conflicting_unavailable_slots", [])
-        overload = conflict.get("overloaded_dates", [])
-        if unavail:
-            parts.append(f"包含 {len(unavail)} 个不可用时段")
-        if overload:
-            parts.append(f"{len(overload)} 个时段超容量")
-        conflict_summary = "，".join(parts)
+        # 构建冲突摘要
+        conflict_summary = ""
+        if conflict:
+            parts = []
+            unavail = conflict.get("conflicting_unavailable_slots", [])
+            overload = conflict.get("overloaded_dates", [])
+            if unavail:
+                parts.append(f"包含 {len(unavail)} 个不可用时段")
+            if overload:
+                parts.append(f"{len(overload)} 个时段超容量")
+            conflict_summary = "，".join(parts)
 
     await notify_design_audit_needed(
         reviewer_dingtalk_ids=dingtalk_ids,
@@ -212,7 +211,6 @@ async def _notify_audit_needed(
 
 
 async def _notify_design_dept(
-    db: Session,
     request_no: str,
     salesperson_name: str,
     customer_name: str,
@@ -225,10 +223,12 @@ async def _notify_design_dept(
     props_requirement: str = "",
     preferred_designer: str = "",
 ):
-    """查找设计部所有成员的钉钉ID，发送待排期通知"""
+    """查找设计部所有成员的钉钉ID，发送待排期通知（内部新建 Session）"""
     from app.dingtalk.events import notify_design_ready_for_design
+    from app.core.database import SessionLocal
 
-    dingtalk_ids = _find_role_dingtalk_ids(db, "design_staff")
+    with SessionLocal() as db:
+        dingtalk_ids = _find_role_dingtalk_ids(db, "design_staff")
 
     await notify_design_ready_for_design(
         designer_dingtalk_ids=dingtalk_ids,
@@ -390,7 +390,6 @@ def audit_request(
     # 审批完成后通知申请人
     background_tasks.add_task(
         _notify_audit_result,
-        db=db,
         request_id=request_id,
         action=data.action,
         comment=data.comment,
@@ -400,76 +399,77 @@ def audit_request(
 
 
 async def _notify_audit_result(
-    db: Session,
     request_id: int,
     action: str,
     comment: str | None = None,
 ):
-    """审批通过/拒绝后向申请人发送点对点通知；通过时同时通知设计部"""
+    """审批通过/拒绝后向申请人发送点对点通知；通过时同时通知设计部（内部新建 Session）"""
     from app.auth.models import ArkUser
     from app.dingtalk.events import (
         notify_design_request_approved,
         notify_design_request_rejected,
         notify_design_ready_for_design,
     )
+    from app.core.database import SessionLocal
 
-    req = db.query(DesignScheduleRequest).filter(
-        DesignScheduleRequest.id == request_id
-    ).first()
-    if not req:
-        return
+    with SessionLocal() as db:
+        req = db.query(DesignScheduleRequest).filter(
+            DesignScheduleRequest.id == request_id
+        ).first()
+        if not req:
+            return
 
-    # 查申请人的钉钉ID
-    applicant_dingtalk_id = ""
-    if req.salesperson_id:
-        applicant = db.query(ArkUser).filter(ArkUser.id == req.salesperson_id).first()
-        if applicant and applicant.dingtalk_id:
-            applicant_dingtalk_id = applicant.dingtalk_id
+        # 查申请人的钉钉ID
+        applicant_dingtalk_id = ""
+        if req.salesperson_id:
+            applicant = db.query(ArkUser).filter(ArkUser.id == req.salesperson_id).first()
+            if applicant and applicant.dingtalk_id:
+                applicant_dingtalk_id = applicant.dingtalk_id
 
-    schedule_date = ""
-    if req.expect_start_date and req.expect_end_date:
-        schedule_date = _fmt_schedule_date(
-            req.expect_start_date, req.expect_end_date,
-            req.expect_start_period, req.expect_end_period,
+        schedule_date = ""
+        if req.expect_start_date and req.expect_end_date:
+            schedule_date = _fmt_schedule_date(
+                req.expect_start_date, req.expect_end_date,
+                req.expect_start_period, req.expect_end_period,
+            )
+
+        level_label, type_label, props_label = _translate_dict_fields(
+            db, req.customer_level or "", req.shoot_type or "", req.props_requirement or "",
+        )
+        preferred_name = _get_designer_name(db, req.preferred_designer_id) or "随机分配"
+
+        common = dict(
+            request_no=req.request_no,
+            salesperson_name=req.salesperson_name or "",
+            customer_name=req.customer_name,
+            customer_level=level_label,
+            shoot_type=type_label,
+            props_requirement=props_label,
+            schedule_date=schedule_date,
+            priority=req.priority or "normal",
+            remark=req.remark or "",
+            preferred_designer=preferred_name,
         )
 
-    level_label, type_label, props_label = _translate_dict_fields(
-        db, req.customer_level or "", req.shoot_type or "", req.props_requirement or "",
-    )
-    preferred_name = _get_designer_name(db, req.preferred_designer_id) or "随机分配"
-
-    common = dict(
-        request_no=req.request_no,
-        salesperson_name=req.salesperson_name or "",
-        customer_name=req.customer_name,
-        customer_level=level_label,
-        shoot_type=type_label,
-        props_requirement=props_label,
-        schedule_date=schedule_date,
-        priority=req.priority or "normal",
-        remark=req.remark or "",
-        preferred_designer=preferred_name,
-    )
-
-    if action == "approve":
-        # 通知申请人
-        await notify_design_request_approved(
-            applicant_dingtalk_id=applicant_dingtalk_id,
-            **common,
-        )
-        # 通知设计部
-        design_ids = _find_role_dingtalk_ids(db, "design_staff")
-        await notify_design_ready_for_design(
-            designer_dingtalk_ids=design_ids,
-            source="审核通过",
-            **common,
-        )
-    elif action == "reject":
-        await notify_design_request_rejected(
-            applicant_dingtalk_id=applicant_dingtalk_id,
-            reject_reason=comment or "未说明原因",
-            **common,
-        )
+        if action == "approve":
+            # 通知申请人
+            await notify_design_request_approved(
+                applicant_dingtalk_id=applicant_dingtalk_id,
+                **common,
+            )
+            # 通知设计部
+            design_ids = _find_role_dingtalk_ids(db, "design_staff")
+            await notify_design_ready_for_design(
+                designer_dingtalk_ids=design_ids,
+                source="审核通过",
+                **common,
+            )
+        elif action == "reject":
+            await notify_design_request_rejected(
+                applicant_dingtalk_id=applicant_dingtalk_id,
+                reject_reason=comment or "未说明原因",
+                **common,
+            )
 
 
 @router.post("/requests/{request_id}/action")
@@ -488,7 +488,6 @@ def action_request(
     if data.action in ("confirm", "start", "complete"):
         background_tasks.add_task(
             _notify_action_to_applicant,
-            db=db,
             request_id=request_id,
             action=data.action,
         )
@@ -505,50 +504,51 @@ _ACTION_TITLES = {
 
 
 async def _notify_action_to_applicant(
-    db: Session,
     request_id: int,
     action: str,
 ):
-    """confirm/start/complete 后向申请人发送状态变更通知"""
+    """confirm/start/complete 后向申请人发送状态变更通知（内部新建 Session）"""
     from app.auth.models import ArkUser
     from app.dingtalk.events import notify_design_status_change
+    from app.core.database import SessionLocal
 
-    req = db.query(DesignScheduleRequest).filter(
-        DesignScheduleRequest.id == request_id,
-    ).first()
-    if not req:
-        return
+    with SessionLocal() as db:
+        req = db.query(DesignScheduleRequest).filter(
+            DesignScheduleRequest.id == request_id,
+        ).first()
+        if not req:
+            return
 
-    # 查申请人的钉钉ID
-    applicant_dingtalk_id = ""
-    if req.salesperson_id:
-        applicant = db.query(ArkUser).filter(ArkUser.id == req.salesperson_id).first()
-        if applicant and applicant.dingtalk_id:
-            applicant_dingtalk_id = applicant.dingtalk_id
+        # 查申请人的钉钉ID
+        applicant_dingtalk_id = ""
+        if req.salesperson_id:
+            applicant = db.query(ArkUser).filter(ArkUser.id == req.salesperson_id).first()
+            if applicant and applicant.dingtalk_id:
+                applicant_dingtalk_id = applicant.dingtalk_id
 
-    if not applicant_dingtalk_id:
-        return
+        if not applicant_dingtalk_id:
+            return
 
-    schedule_date = ""
-    if req.expect_start_date and req.expect_end_date:
-        schedule_date = _fmt_schedule_date(
-            req.expect_start_date, req.expect_end_date,
-            req.expect_start_period, req.expect_end_period,
+        schedule_date = ""
+        if req.expect_start_date and req.expect_end_date:
+            schedule_date = _fmt_schedule_date(
+                req.expect_start_date, req.expect_end_date,
+                req.expect_start_period, req.expect_end_period,
+            )
+
+        level_label, type_label, props_label = _translate_dict_fields(
+            db, req.customer_level or "", req.shoot_type or "", req.props_requirement or "",
         )
+        preferred_name = _get_designer_name(db, req.preferred_designer_id) or "随机分配"
 
-    level_label, type_label, props_label = _translate_dict_fields(
-        db, req.customer_level or "", req.shoot_type or "", req.props_requirement or "",
-    )
-    preferred_name = _get_designer_name(db, req.preferred_designer_id) or "随机分配"
+        # 构建额外信息
+        extra = []
+        if action == "confirm" and req.assigned_designer_id:
+            designer_name = _get_designer_name(db, req.assigned_designer_id)
+            if designer_name:
+                extra.append(f"设计师：{designer_name}")
 
-    # 构建额外信息
-    extra = []
-    if action == "confirm" and req.assigned_designer_id:
-        designer_name = _get_designer_name(db, req.assigned_designer_id)
-        if designer_name:
-            extra.append(f"设计师：{designer_name}")
-
-    title = _ACTION_TITLES.get(action, f"预约单状态更新: {action}")
+        title = _ACTION_TITLES.get(action, f"预约单状态更新: {action}")
 
     await notify_design_status_change(
         applicant_dingtalk_id,

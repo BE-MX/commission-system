@@ -737,7 +737,7 @@ async function loadAllData() {
     // 待审批
     if (authStore.hasAnyPermission(['design:audit'])) {
       try {
-        const res = await getRequests({ page: 1, page_size: 1 })
+        const res = await getRequests({ status: 'pending_audit', page: 1, page_size: 1 })
         pendingApprovals.value = res.data?.total || 0
       } catch { /* ignore */ }
     }
@@ -748,8 +748,8 @@ async function loadAllData() {
       const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
       const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0)
       const res = await getDesignStats({
-        start_date: startOfMonth.toISOString().split('T')[0],
-        end_date: endOfMonth.toISOString().split('T')[0]
+        start_date: toLocalISODate(startOfMonth),
+        end_date: toLocalISODate(endOfMonth)
       })
       const summary = res.data?.summary || {}
       // 如果还没有运单分布数据，用设计分布
@@ -778,7 +778,7 @@ async function loadAllData() {
         customerName: item.customer_name || '-',
         status: normalizeStatus(item.status),
         statusText: translateDesignStatus(item.status),
-        meta: item.expect_shoot_date ? `期望日期：${item.expect_shoot_date}` : formatDate(item.created_at)
+        meta: item.expect_start_date ? `期望日期：${item.expect_start_date}${item.expect_end_date && item.expect_end_date !== item.expect_start_date ? ' ~ ' + item.expect_end_date : ''}` : formatDate(item.created_at)
       }))
     } catch { /* ignore */ }
   }
@@ -816,7 +816,8 @@ function normalizeStatus(status) {
   const map = {
     '在途': 'info', '已签收': 'success', '异常': 'danger', '其他': 'muted',
     '草稿': 'info', '已计算': 'warning', '已确认': 'success', '已作废': 'danger',
-    'pending': 'warning', 'approved': 'primary', 'scheduled': 'success', 'completed': 'success',
+    'pending_audit': 'warning', 'pending_design': 'warning', 'scheduled': 'success',
+    'in_progress': 'info', 'completed': 'success', 'rejected': 'danger', 'cancelled': 'danger',
     'PENDING_DESIGN': 'warning', 'PENDING_APPROVAL': 'warning', 'APPROVED': 'primary',
     'SCHEDULED': 'success', 'IN_PROGRESS': 'info', 'COMPLETED': 'success', 'REJECTED': 'danger'
   }
@@ -825,11 +826,19 @@ function normalizeStatus(status) {
 
 function translateDesignStatus(status) {
   const map = {
-    'pending': '待审批', 'approved': '已通过', 'scheduled': '已排期', 'completed': '已完成',
-    'PENDING_DESIGN': '待设计', 'PENDING_APPROVAL': '待审批', 'APPROVED': '已通过',
+    'pending_audit': '待审批', 'pending_design': '待排期', 'scheduled': '已排期',
+    'in_progress': '执行中', 'completed': '已完成', 'rejected': '已拒绝', 'cancelled': '已取消',
+    'PENDING_DESIGN': '待排期', 'PENDING_APPROVAL': '待审批', 'APPROVED': '已通过',
     'SCHEDULED': '已排期', 'IN_PROGRESS': '执行中', 'COMPLETED': '已完成', 'REJECTED': '已拒绝'
   }
   return map[status] || status
+}
+
+function toLocalISODate(date) {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
 }
 
 function formatDate(date) {

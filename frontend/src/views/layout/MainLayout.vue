@@ -121,6 +121,10 @@
             <el-icon><Notebook /></el-icon>
             <template #title>基础字典</template>
           </el-menu-item>
+          <el-menu-item index="/system/ai" v-if="authStore.hasPermission('ai:admin')">
+            <el-icon><Lightning /></el-icon>
+            <template #title>AI 接入管理</template>
+          </el-menu-item>
         </el-sub-menu>
       </el-menu>
 

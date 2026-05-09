@@ -187,6 +187,9 @@ def seed_role_permissions(db: Session):
         ("role:read",      "system", "read",     "查看角色列表"),
         ("role:write",     "system", "write",    "创建/编辑角色"),
         ("role:delete",    "system", "delete",   "删除角色"),
+        # AI 接入
+        ("ai:admin",       "ai",     "admin",    "AI 接入管理"),
+        ("ai:invoke",      "ai",     "invoke",   "AI 调用权限"),
     ]
     for code, module, action, label in seeds:
         existing = db.query(ArkPermission).filter(ArkPermission.code == code).first()

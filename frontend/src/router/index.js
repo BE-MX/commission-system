@@ -121,6 +121,12 @@ const routes = [
         meta: { title: '基础字典', permission: 'user:read' }
       },
       {
+        path: 'system/ai',
+        name: 'AIManager',
+        component: () => import('../views/system/AIManager.vue'),
+        meta: { title: 'AI 接入管理', permission: 'ai:admin' }
+      },
+      {
         path: 'profile',
         name: 'Profile',
         component: () => import('../views/profile/ProfilePage.vue'),

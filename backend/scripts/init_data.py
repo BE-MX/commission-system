@@ -18,6 +18,53 @@ sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.par
 
 from app.core.database import SessionLocal
 from app.services.init_historical_data import run_full_init
+from app.system.models import SysDict
+
+
+# ── 系统字典种子数据 ──────────────────────────────────────
+
+_SYS_DICT_SEED = {
+    "props_requirement": [
+        {"code": "wig", "label": "假发套", "sort": 1},
+        {"code": "mannequin", "label": "模特头", "sort": 2},
+        {"code": "accessories", "label": "配饰", "sort": 3},
+        {"code": "backdrop", "label": "背景布", "sort": 4},
+        {"code": "lighting", "label": "灯光设备", "sort": 5},
+        {"code": "prop_stand", "label": "道具架", "sort": 6},
+        {"code": "other", "label": "其他", "sort": 99},
+    ],
+}
+
+
+def init_sys_dicts(db, dry_run=False):
+    """初始化系统字典类型（幂等：已存在则跳过）"""
+    logger = logging.getLogger("commission.init")
+    created = 0
+    skipped = 0
+
+    for dict_type, items in _SYS_DICT_SEED.items():
+        for item in items:
+            exists = db.query(SysDict).filter(
+                SysDict.type == dict_type,
+                SysDict.code == item["code"],
+            ).first()
+            if exists:
+                skipped += 1
+                continue
+
+            if not dry_run:
+                db.add(SysDict(
+                    type=dict_type,
+                    code=item["code"],
+                    label=item["label"],
+                    sort=item["sort"],
+                    is_active=True,
+                ))
+            created += 1
+
+    prefix = "[DRY-RUN] " if dry_run else ""
+    logger.info(f"{prefix}系统字典: 新建 {created} 条, 跳过 {skipped} 条")
+    return created, skipped
 
 
 def main():
@@ -58,6 +105,9 @@ def main():
     try:
         result = run_full_init(db, cutoff_date=cutoff, dry_run=args.dry_run)
 
+        # 初始化系统字典
+        dict_created, dict_skipped = init_sys_dicts(db, dry_run=args.dry_run)
+
         if not args.dry_run:
             db.commit()
             logger.info("事务已提交")
@@ -74,6 +124,7 @@ def main():
         print(f"  客户快照创建: {result.snapshots_created}")
         print(f"  历史回款同步: {result.payments_synced}")
         print(f"  回款标记已算: {result.payments_marked}")
+        print(f"  系统字典新建: {dict_created} (跳过 {dict_skipped})")
         if result.errors:
             print(f"\n  异常 ({len(result.errors)}):")
             for err in result.errors:
