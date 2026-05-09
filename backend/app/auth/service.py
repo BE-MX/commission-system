@@ -136,6 +136,7 @@ def authenticate_user(
         "id": user.id,
         "username": user.username,
         "real_name": user.real_name,
+        "avatar_url": user.avatar_url,
         "roles": roles,
         "permissions": permissions,
         "must_change_password": bool(user.must_change_password),

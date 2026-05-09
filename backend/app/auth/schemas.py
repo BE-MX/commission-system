@@ -13,6 +13,7 @@ class UserInfo(BaseModel):
     id: int
     username: str
     real_name: str
+    avatar_url: Optional[str] = None
     roles: list[str] = []
     permissions: list[str] = []
     must_change_password: bool = False

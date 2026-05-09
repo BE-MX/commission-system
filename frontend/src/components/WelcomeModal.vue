@@ -109,13 +109,14 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import {
   Close, Star, ReadingLamp, Sunny, Sunrise, Moon,
   PartlyCloudy, Check
 } from '@element-plus/icons-vue'
 import dailyTipsData from '@/assets/daily-tips.json'
+import greetingsData from '@/assets/greetings.json'
 
 const props = defineProps({
   userName: { type: String, default: '' },
@@ -150,6 +151,27 @@ const todayDate = computed(() => {
   })
 })
 
+// 时段问候语（根据时间段随机从 greetings.json 中选择）
+function getTimePeriod() {
+  const hour = new Date().getHours()
+  if (hour >= 0 && hour < 5) return '凌晨'
+  if (hour >= 5 && hour < 9) return '早上'
+  if (hour >= 9 && hour < 12) return '上午'
+  if (hour >= 12 && hour < 14) return '中午'
+  if (hour >= 14 && hour < 18) return '下午'
+  if (hour >= 18 && hour < 20) return '傍晚'
+  if (hour >= 20 && hour < 23) return '晚上'
+  return '深夜'
+}
+
+const greetingMessage = computed(() => {
+  const period = getTimePeriod()
+  const list = greetingsData[period] || []
+  if (list.length === 0) return ''
+  const idx = Math.floor(Math.random() * list.length)
+  return list[idx]
+})
+
 // 每日 TIPS（从 1000 条中随机）
 const dailyTip = computed(() => {
   if (!dailyTipsData || dailyTipsData.length === 0) return ''
@@ -174,41 +196,68 @@ function particleStyle(n) {
   }
 }
 
-// localStorage 键
-const LS_KEY = 'leshine_welcome_last_shown'
+// localStorage：控制"今天不再显示"
+const LS_KEY = 'leshine_welcome_dont_show'
+// sessionStorage：控制"本次会话已显示过"（防止刷新重复弹）
+const SS_KEY = 'leshine_welcome_shown_session'
 
-function shouldShowToday() {
-  const lastShown = localStorage.getItem(LS_KEY)
-  const today = new Date().toDateString()
-  return lastShown !== today
+function isDontShowToday() {
+  const stored = localStorage.getItem(LS_KEY)
+  if (!stored) return false
+  try {
+    const { date } = JSON.parse(stored)
+    return date === new Date().toDateString()
+  } catch {
+    return false
+  }
 }
 
-function markShownToday() {
-  localStorage.setItem(LS_KEY, new Date().toDateString())
+function markDontShowToday() {
+  localStorage.setItem(LS_KEY, JSON.stringify({
+    date: new Date().toDateString(),
+  }))
+}
+
+function isShownInSession() {
+  return sessionStorage.getItem(SS_KEY) === '1'
+}
+
+function markShownInSession() {
+  sessionStorage.setItem(SS_KEY, '1')
 }
 
 function handleClose() {
   if (dontShowAgain.value) {
-    markShownToday()
+    markDontShowToday()
   }
+  markShownInSession()
   visible.value = false
 }
 
 // 对外暴露的打开方法
 function open() {
-  if (shouldShowToday()) {
+  if (isDontShowToday()) return
+  if (isShownInSession()) return
+  visible.value = true
+  markShownInSession()
+}
+
+function tryShow() {
+  if (isDontShowToday()) return
+  if (isShownInSession()) return
+  setTimeout(() => {
     visible.value = true
-    markShownToday()
-  }
+    markShownInSession()
+  }, 600)
 }
 
 // 自动显示（延迟 600ms）
-onMounted(() => {
-  if (shouldShowToday()) {
-    setTimeout(() => {
-      visible.value = true
-      markShownToday()
-    }, 600)
+onMounted(tryShow)
+
+// 监听登录状态变化：登出后重新登录时触发
+watch(() => authStore.isLoggedIn, (loggedIn) => {
+  if (loggedIn) {
+    tryShow()
   }
 })
 
