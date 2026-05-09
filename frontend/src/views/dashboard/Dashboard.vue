@@ -786,17 +786,25 @@ async function loadAllData() {
   // 回款记录
   if (authStore.hasAnyPermission(['payment:read'])) {
     try {
-      const res = await getSyncedPayments({ page: 1, page_size: 1 })
+      const today = new Date()
+      const thirtyDaysAgo = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 30)
+      const paymentParams = {
+        date_start: toLocalISODate(thirtyDaysAgo),
+        date_end: toLocalISODate(today),
+        page: 1,
+        page_size: 1,
+      }
+      const res = await getSyncedPayments(paymentParams)
       const items = res.data?.items || []
       latestPayment.value = items[0] || null
       // 最近动态
-      const recentRes = await getSyncedPayments({ page: 1, page_size: 5 })
+      const recentRes = await getSyncedPayments({ ...paymentParams, page_size: 5 })
       const recentItems = recentRes.data?.items || []
       recentPayments.value = recentItems.map((item, idx) => ({
         id: item.id || idx,
         customerName: item.customer_name || '-',
-        amount: formatMoney(item.amount),
-        time: formatDate(item.synced_at || item.paid_at)
+        amount: formatMoney(item.payment_amount),
+        time: formatDate(item.payment_date)
       }))
     } catch { /* ignore */ }
   }

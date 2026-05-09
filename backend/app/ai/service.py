@@ -224,11 +224,7 @@ def test_provider(db: Session, provider_id: int) -> dict:
         body = {
             "model": model,
             "messages": [{"role": "user", "content": "hi"}],
-            "max_tokens": 10,
             "max_completion_tokens": 10,
-            "temperature": 0.7,
-            "top_p": 0.95,
-            "stream": False,
         }
         payload = json.dumps(body).encode()
 
@@ -388,6 +384,9 @@ def test_preset(db: Session, preset_id: int, test_message: str) -> dict:
     if provider.provider_type == "accio_work":
         raise ValueError("ACCIO WORK 类型 Preset 不支持直接测试，请使用 delegate 接口")
 
+    if not p.model:
+        raise ValueError("Preset 未配置模型名称，请先编辑 Preset 填写正确的 model")
+
     start = time.time()
     api_key = _decrypt_key(provider.api_key) if provider.api_key else None
 
@@ -403,6 +402,8 @@ def test_preset(db: Session, preset_id: int, test_message: str) -> dict:
         params.update(p.parameters)
 
     import urllib.request
+    import urllib.error
+
     req = urllib.request.Request(
         _build_chat_url(provider.api_base),
         data=json.dumps(params).encode(),
@@ -410,8 +411,17 @@ def test_preset(db: Session, preset_id: int, test_message: str) -> dict:
         method="POST",
     )
 
-    with urllib.request.urlopen(req, timeout=provider.timeout_sec) as resp:
-        result = json.loads(resp.read().decode())
+    try:
+        with urllib.request.urlopen(req, timeout=provider.timeout_sec) as resp:
+            result = json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        resp_body = e.read().decode("utf-8", errors="replace")[:500]
+        try:
+            err_json = json.loads(resp_body)
+            err_msg = err_json.get("error", {}).get("message", resp_body)
+        except json.JSONDecodeError:
+            err_msg = resp_body
+        raise ValueError(f"HTTP {e.code} {e.reason}: {err_msg}")
 
     duration_ms = int((time.time() - start) * 1000)
     content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
