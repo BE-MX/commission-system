@@ -16,6 +16,8 @@ onMounted(async () => {
   if (!auth.isLoggedIn) {
     try {
       await auth.refreshToken()
+      // token 恢复成功后拉取完整用户信息（权限、头像等）
+      await auth.fetchMe()
     } catch {
       // refresh_token 过期或不存在，正常未登录状态
     }
