@@ -9,6 +9,7 @@ from pathlib import Path as FilePath
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Path, UploadFile, status
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError, ProgrammingError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
@@ -415,44 +416,78 @@ def create_waybill(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_permission("tracking:write")),
 ):
-    # 后端二次去重校验
-    existing = db.query(Waybill).filter(Waybill.waybill_no == payload.waybill_no).first()
-    if existing:
+    try:
+        # 后端二次去重校验
+        existing = (
+            db.query(Waybill)
+            .filter(Waybill.waybill_no == payload.waybill_no)
+            .first()
+        )
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "code": 409,
+                    "message": "运单号已存在",
+                    "data": {
+                        "waybill_no": existing.waybill_no,
+                        "created_at": existing.created_at.strftime(
+                            "%Y-%m-%d %H:%M:%S"
+                        ),
+                        "created_by": existing.created_by,
+                        "status": existing.status,
+                    },
+                },
+            )
+
+        waybill = Waybill(
+            waybill_no=payload.waybill_no,
+            carrier=payload.carrier,
+            recipient_name=payload.recipient_name,
+            recipient_country=payload.recipient_country,
+            ship_date=payload.ship_date,
+            entry_source=payload.entry_source,
+            created_by=current_user.get("username", "unknown"),
+            created_at=datetime.now(),
+        )
+
+        db.add(waybill)
+        db.commit()
+        db.refresh(waybill)
+    except HTTPException:
+        raise
+    except IntegrityError as exc:
+        db.rollback()
+        logger.warning("运单入库唯一约束冲突: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
                 "code": 409,
                 "message": "运单号已存在",
-                "data": {
-                    "waybill_no": existing.waybill_no,
-                    "created_at": existing.created_at.strftime("%Y-%m-%d %H:%M:%S"),
-                    "created_by": existing.created_by,
-                    "status": existing.status,
-                },
+                "data": None,
             },
         )
-
-    waybill = Waybill(
-        waybill_no=payload.waybill_no,
-        carrier=payload.carrier,
-        recipient_name=payload.recipient_name,
-        recipient_country=payload.recipient_country,
-        ship_date=payload.ship_date,
-        entry_source=payload.entry_source,
-        created_by=current_user.get("username", "unknown"),
-        created_at=datetime.now(),
-    )
-
-    try:
-        db.add(waybill)
-        db.commit()
-        db.refresh(waybill)
+    except ProgrammingError as exc:
+        db.rollback()
+        logger.exception("运单入库数据库错误: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "code": 500,
+                "message": "数据库结构错误，请联系管理员",
+                "data": None,
+            },
+        )
     except Exception as exc:
         db.rollback()
         logger.exception("运单入库失败: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"code": 500, "message": "数据库写入失败，请稍后重试", "data": None},
+            detail={
+                "code": 500,
+                "message": "数据库写入失败，请稍后重试",
+                "data": None,
+            },
         )
 
     # 异步触发钉钉推送（不阻塞响应）
