@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.auth.models import ArkUser, ArkLoginLog, ArkRefreshToken
 from app.auth.utils import (
     verify_password, create_access_token, generate_refresh_token,
-    hash_token, hash_password,
+    hash_token, hash_password, decode_access_token,
 )
 from app.core.config import get_settings
 
@@ -190,6 +190,11 @@ def seed_role_permissions(db: Session):
         # AI 接入
         ("ai:admin",       "ai",     "admin",    "AI 接入管理"),
         ("ai:invoke",      "ai",     "invoke",   "AI 调用权限"),
+        # 方舟洞见
+        ("insight:read",          "insight", "read",          "查看方舟洞见(行业日报/案例库/周会纪要)"),
+        ("insight:internal_read", "insight", "internal_read", "查看内部经营报告 / AI 工具速递"),
+        ("insight:write",         "insight", "write",         "上传案例 / 周会纪要"),
+        ("insight:admin",         "insight", "admin",         "信源管理 / 重新生成报告"),
     ]
     for code, module, action, label in seeds:
         existing = db.query(ArkPermission).filter(ArkPermission.code == code).first()
@@ -210,6 +215,79 @@ def seed_role_permissions(db: Session):
                 if not link:
                     db.add(ArkRolePermission(role_id=admin_role.id, permission_id=perm.id))
     db.commit()
+
+
+# ── Refresh Token ─────────────────────────────────────
+
+def refresh_access_token(db: Session, refresh_token_plain: str) -> tuple:
+    """
+    用 refresh_token 换取新的 access_token。
+    返回 (new_access_token, user_info_dict)。
+    失败抛 InvalidCredentialsException。
+    """
+    token_hash = hash_token(refresh_token_plain)
+    rt_record = (
+        db.query(ArkRefreshToken)
+        .filter(
+            ArkRefreshToken.token_hash == token_hash,
+            ArkRefreshToken.revoked_at.is_(None),
+        )
+        .first()
+    )
+
+    if not rt_record:
+        raise InvalidCredentialsException("Refresh Token 无效")
+
+    if rt_record.expires_at < datetime.utcnow():
+        raise InvalidCredentialsException("Refresh Token 已过期")
+
+    user = db.query(ArkUser).filter(
+        ArkUser.id == rt_record.user_id,
+        ArkUser.is_active.is_(True),
+        ArkUser.deleted_at.is_(None),
+    ).first()
+
+    if not user:
+        raise InvalidCredentialsException("用户不存在或已禁用")
+
+    roles = get_user_roles(user)
+    permissions = get_user_permissions(user)
+
+    at_payload = {
+        "sub": str(user.id),
+        "username": user.username,
+        "roles": roles,
+        "permissions": permissions,
+        "must_change_password": user.must_change_password,
+    }
+    access_token = create_access_token(at_payload)
+
+    user_info = {
+        "id": user.id,
+        "username": user.username,
+        "real_name": user.real_name,
+        "avatar_url": user.avatar_url,
+        "roles": roles,
+        "permissions": permissions,
+        "must_change_password": bool(user.must_change_password),
+    }
+
+    return access_token, user_info
+
+
+def logout_user(db: Session, refresh_token_plain: str | None) -> None:
+    """注销：标记 refresh_token 为已撤销。"""
+    if not refresh_token_plain:
+        return
+    token_hash = hash_token(refresh_token_plain)
+    rt_record = (
+        db.query(ArkRefreshToken)
+        .filter(ArkRefreshToken.token_hash == token_hash)
+        .first()
+    )
+    if rt_record:
+        rt_record.revoked_at = datetime.utcnow()
+        db.commit()
 
 
 # ── 异常类 ────────────────────────────────────────────

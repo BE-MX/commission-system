@@ -6,12 +6,14 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.auth.dependencies import get_current_user
-from app.auth.schemas import LoginRequest, LoginResponse, UserInfo, MeResponse
+from app.auth.schemas import LoginRequest, LoginResponse, UserInfo, MeResponse, RefreshResponse
 from app.auth.service import (
     authenticate_user,
     get_user_by_username,
     get_user_roles,
     get_user_permissions,
+    refresh_access_token,
+    logout_user,
     InvalidCredentialsException,
     AccountLockedException,
     AccountDisabledException,
@@ -90,3 +92,32 @@ def get_me(current_user: dict = Depends(get_current_user), db: Session = Depends
         last_login_at=user.last_login_at.isoformat() if user.last_login_at else None,
         created_at=user.created_at.isoformat() if user.created_at else None,
     )
+
+
+@router.post("/refresh", response_model=RefreshResponse)
+def refresh(request: Request, response: Response, db: Session = Depends(get_db)):
+    """用 HttpOnly Cookie 中的 refresh_token 换取新的 access_token"""
+    refresh_token = request.cookies.get("refresh_token")
+    if not refresh_token:
+        raise HTTPException(status_code=401, detail="未提供 Refresh Token")
+
+    try:
+        access_token, user_info = refresh_access_token(db, refresh_token)
+    except InvalidCredentialsException as e:
+        # Token 无效或过期，清除 cookie
+        response.delete_cookie(key="refresh_token", path="/api/auth")
+        raise HTTPException(status_code=401, detail=str(e))
+
+    return RefreshResponse(
+        access_token=access_token,
+        expires_in=settings.JWT_EXPIRE_MINUTES * 60,
+    )
+
+
+@router.post("/logout")
+def logout(request: Request, response: Response, db: Session = Depends(get_db)):
+    """退出登录，撤销 refresh_token"""
+    refresh_token = request.cookies.get("refresh_token")
+    logout_user(db, refresh_token)
+    response.delete_cookie(key="refresh_token", path="/api/auth")
+    return {"code": 200, "message": "退出成功", "data": None}

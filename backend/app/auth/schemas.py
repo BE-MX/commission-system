@@ -38,3 +38,9 @@ class MeResponse(BaseModel):
     must_change_password: bool = False
     last_login_at: Optional[str] = None
     created_at: Optional[str] = None
+
+
+class RefreshResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int

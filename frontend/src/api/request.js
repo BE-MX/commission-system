@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import { useLoading } from '@/composables/useLoading'
+import { getAccessToken, clearAuthState } from '@/stores/auth'
 
 const service = axios.create({
   baseURL: '/api/v1',
@@ -14,14 +15,9 @@ service.interceptors.request.use(config => {
     loading.show(config.loadingText || '')
   }
   // 注入 Access Token
-  try {
-    const { useAuthStore } = require('@/stores/auth')
-    const auth = useAuthStore()
-    if (auth.accessToken) {
-      config.headers.Authorization = `Bearer ${auth.accessToken}`
-    }
-  } catch (e) {
-    // store 未初始化时忽略
+  const token = getAccessToken()
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
   }
   return config
 })
@@ -35,7 +31,7 @@ service.interceptors.response.use(
       return response
     }
     const res = response.data
-    if (res.code !== undefined && res.code !== 200) {
+    if (res.code !== undefined && res.code !== 200 && res.code !== 201) {
       ElMessage.error(res.message || '请求失败')
       return Promise.reject(new Error(res.message || '请求失败'))
     }
@@ -45,18 +41,17 @@ service.interceptors.response.use(
     if (error.config?.showLoading !== false) {
       loading.hide()
     }
-    // 401 时跳转登录页
+    // 401 时清除认证状态并跳转登录页
     if (error.response?.status === 401) {
-      try {
-        const { useAuthStore } = require('@/stores/auth')
-        const auth = useAuthStore()
-        auth.logout()
-      } catch (e) {
-        // ignore
-      }
+      clearAuthState()
+      window.location.href = '/login'
       return Promise.reject(error)
     }
-    const msg = error.response?.data?.detail || error.response?.data?.message || error.message || '网络错误'
+    let msg = error.response?.data?.detail || error.response?.data?.message || error.message || '网络错误'
+    // FastAPI HTTPException detail 可能是对象，提取其中的 message
+    if (typeof msg === 'object' && msg !== null) {
+      msg = msg.message || JSON.stringify(msg)
+    }
     ElMessage.error(msg)
     return Promise.reject(error)
   }
