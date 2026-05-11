@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     STAGING_SCAN_BATCH_SIZE: int = 100
 
     # 短链接
-    SHORT_LINK_BASE_URL: str = "https://tinyurl.com"
+    SHORT_LINK_BASE_URL: str = "https://leshine.work"
 
     # 设计预约模块
     DESIGN_DEFAULT_DAILY_CAPACITY: int = 3

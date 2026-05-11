@@ -595,9 +595,9 @@ async def create_waybill(
     except Exception as exc:
         logger.warning("钉钉推送任务创建失败（不影响录入）: %s", exc)
 
-    # 生成 is.gd 短链（用于前端弹窗展示）
+    # 生成短链（用于前端弹窗展示与钉钉推送）
     carrier_url = build_carrier_tracking_url(payload.carrier, payload.waybill_no)
-    isgd_link = generate_short_link(carrier_url)
+    short_url = generate_short_link(carrier_url)
 
     data = {
         "id": waybill.id,
@@ -609,7 +609,7 @@ async def create_waybill(
         "status": waybill.status,
         "created_by": waybill.created_by,
         "created_at": waybill.created_at.strftime("%Y-%m-%d %H:%M:%S"),
-        "short_link": isgd_link,
+        "short_link": short_url,
     }
 
     # 追加轮询后的物流状态（供前端弹窗展示）

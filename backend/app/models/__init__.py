@@ -10,6 +10,7 @@ from app.models.tracking import (
     ShipmentStaging, ShipmentTracking, TrackingEvent, CarrierConfig,
 )
 from app.models.waybill import Waybill
+from app.models.short_link import ArkShortLink
 
 __all__ = [
     # 提成系统自有表
@@ -32,4 +33,6 @@ __all__ = [
     "CarrierConfig",
     # 运单录入
     "Waybill",
+    # 短链接
+    "ArkShortLink",
 ]

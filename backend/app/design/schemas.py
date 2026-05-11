@@ -170,6 +170,7 @@ class GanttDesigner(BaseModel):
 class UnavailableDateItem(BaseModel):
     date: date
     period: PeriodType = None
+    reason: Optional[str] = None
 
 
 class GanttResponse(BaseModel):

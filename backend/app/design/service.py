@@ -394,7 +394,7 @@ def get_gantt_data(
         DesignUnavailableDate.date <= end_date,
     ).all()
     unavailable_dates = [
-        {"date": row.date.isoformat(), "period": row.period}
+        {"date": row.date.isoformat(), "period": row.period, "reason": row.reason}
         for row in unavailable
     ]
 

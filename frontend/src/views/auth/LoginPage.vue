@@ -12,7 +12,7 @@
       >
         <!-- Brand Header -->
         <div class="pt-4 will-animate animate-fade-in-left delay-200">
-          <span class="text-2xl font-semibold italic text-[#d4af6e]">leShine</span>
+          <span class="text-2xl font-semibold italic text-[#d4af6e]">LeShine</span>
           <span class="ml-2 text-sm text-white/40 tracking-[0.15em]">ARK PLATFORM</span>
         </div>
 
@@ -57,7 +57,7 @@
         <div class="glass-card gold-glow w-full max-w-[420px] p-10 md:p-12 will-animate animate-fade-in-right delay-300">
           <!-- Mobile brand (visible only on small screens) -->
           <div class="lg:hidden mb-8 text-center">
-            <span class="text-xl font-semibold italic text-[#d4af6e]">leShine</span>
+            <span class="text-xl font-semibold italic text-[#d4af6e]">LeShine</span>
             <span class="ml-1 text-xs text-white/40">Hair</span>
             <p class="mt-2 text-xs text-white/50">莱莎方舟综合管理平台</p>
           </div>
@@ -65,7 +65,7 @@
           <!-- Form Header -->
           <div class="mb-8">
             <div class="flex items-baseline gap-2 mb-3">
-              <span class="text-2xl font-semibold italic text-[#d4af6e]">leShine</span>
+              <span class="text-2xl font-semibold italic text-[#d4af6e]">LeShine</span>
               <span class="text-sm text-white/50">Hair</span>
             </div>
             <p class="text-sm text-white/60">欢迎登录莱莎方舟综合管理平台</p>
@@ -137,9 +137,19 @@
             <!-- Submit -->
             <button
               type="submit"
-              class="tech-btn-primary w-full h-12 mt-8 text-base font-semibold"
+              :disabled="loading"
+              class="tech-btn-primary w-full h-12 mt-8 text-base font-semibold flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
             >
-              登 录
+              <svg
+                v-if="loading"
+                class="w-4 h-4 animate-spin"
+                viewBox="0 0 24 24"
+                fill="none"
+              >
+                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" stroke-opacity="0.25"/>
+                <path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+              </svg>
+              <span>{{ loading ? '登 录 中...' : '登 录' }}</span>
             </button>
           </form>
         </div>
@@ -162,19 +172,24 @@ const username = ref('')
 const password = ref('')
 const showPassword = ref(false)
 const remember = ref(false)
+const loading = ref(false)
 
 const handleSubmit = async () => {
+  if (loading.value) return
   if (!username.value || !password.value) {
     ElMessage.warning('请输入用户名和密码')
     return
   }
 
+  loading.value = true
   try {
     await authStore.login(username.value, password.value)
     ElMessage.success('登录成功')
     router.push('/')
   } catch (error) {
     ElMessage.error(error.message || '登录失败，请检查用户名和密码')
+  } finally {
+    loading.value = false
   }
 }
 </script>

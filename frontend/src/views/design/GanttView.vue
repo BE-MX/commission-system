@@ -40,12 +40,18 @@
 
     <!-- Legend -->
     <div class="gantt-legend">
-      <span class="legend-item" v-for="item in legendItems" :key="item.status">
-        <span class="legend-icon-wrap" :style="{ backgroundColor: item.color }">
-          <el-icon :size="12"><component :is="item.icon" /></el-icon>
+      <div class="legend-row">
+        <span class="legend-item" v-for="item in legendItems" :key="item.status">
+          <span class="legend-icon-wrap" :style="{ backgroundColor: item.color }">
+            <el-icon :size="12"><component :is="item.icon" /></el-icon>
+          </span>
+          {{ item.label }}
         </span>
-        {{ item.label }}
-      </span>
+      </div>
+      <div class="legend-hint">
+        <span class="legend-hint-chip"></span>
+        <span>日期为灰色时说明不可预约，可将鼠标移到对应日期上查看不可预约的原因。</span>
+      </div>
     </div>
 
     <!-- Gantt chart -->
@@ -280,14 +286,38 @@ onMounted(() => {
 
 .gantt-legend {
   display: flex;
-  align-items: center;
-  gap: 16px;
+  flex-direction: column;
+  gap: 6px;
   margin-bottom: 12px;
   padding: 8px 12px;
   background: var(--toolbar-bg);
   border-radius: 6px;
   font-size: 13px;
   color: var(--text-secondary);
+}
+
+.legend-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.legend-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted, #909399);
+}
+
+.legend-hint-chip {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  background: rgba(144, 147, 153, 0.25);
+  flex-shrink: 0;
 }
 
 .legend-item {

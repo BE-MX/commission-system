@@ -16,7 +16,7 @@ settings = get_settings()
 
 # 物流商官网查询 URL 模板，{waybill_no} 会被替换为实际运单号
 CARRIER_TRACKING_URLS: dict[str, str] = {
-    "DHL": "https://www.dhl.com/cn-zh/home/tracking/tracking-parcel.html?submit=1&tracking-id={waybill_no}",
+    "DHL": "https://www.dhl.com/cn-zh/home/tracking.html?tracking-id={waybill_no}",
     "FEDEX": "https://www.fedex.com/fedextrack/?trknbr={waybill_no}",
     "UPS": "https://www.ups.com/track?tracknum={waybill_no}&loc=zh_CN",
     "TNT": "https://www.tnt.com/express/zh_cn/site/shipping-tools/tracking.html?searchType=con&cons={waybill_no}",

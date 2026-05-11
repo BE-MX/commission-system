@@ -6,53 +6,86 @@
         <div class="gantt-corner">{{ mode === 'pool' ? '设计组' : '设计师' }}</div>
 
         <!-- Row 1: Date headers, each spanning 2 columns -->
-        <div
+        <el-tooltip
           v-for="d in dateRange"
           :key="'dh-' + d.str"
-          class="gantt-date-header"
-          :class="{
-            'is-weekend': d.isWeekend,
-            'is-today': d.isToday,
-            'is-unavailable': isDateFullUnavailable(d.str),
-          }"
+          placement="top"
+          effect="dark"
+          :show-after="120"
+          :disabled="!hasAnyUnavailable(d.str)"
         >
-          <span class="date-weekday">{{ d.weekday }}</span>
-          <span class="date-label">{{ d.dayNum }}</span>
-        </div>
+          <template #content>
+            <div
+              v-for="(line, idx) in getDateUnavailableLines(d.str)"
+              :key="idx"
+              class="gantt-tip-line"
+            >{{ line }}</div>
+          </template>
+          <div
+            class="gantt-date-header"
+            :class="{
+              'is-weekend': d.isWeekend,
+              'is-today': d.isToday,
+              'is-unavailable': isDateFullUnavailable(d.str),
+              'is-clickable': hasAnyUnavailable(d.str),
+            }"
+          >
+            <span class="date-weekday">{{ d.weekday }}</span>
+            <span class="date-label">{{ d.dayNum }}</span>
+          </div>
+        </el-tooltip>
 
         <!-- Row 2: Period sub-headers (上午 / 下午) -->
         <div class="gantt-corner gantt-period-corner"></div>
         <template v-for="d in dateRange" :key="'ph-' + d.str">
-          <div
-            class="gantt-period-header"
-            :class="{
-              'is-weekend': d.isWeekend,
-              'is-today': d.isToday,
-              'is-unavailable': isSlotUnavailable(d.str, 'am'),
-            }"
+          <el-tooltip
+            placement="top"
+            effect="dark"
+            :show-after="120"
+            :content="getSlotUnavailableTooltip(d.str, 'am')"
+            :disabled="!isSlotUnavailable(d.str, 'am')"
           >
-            <span>上午</span>
-            <span
-              v-if="getLoadDot(d.str + '-am')"
-              class="load-dot"
-              :class="getLoadDot(d.str + '-am')"
-            ></span>
-          </div>
-          <div
-            class="gantt-period-header period-pm"
-            :class="{
-              'is-weekend': d.isWeekend,
-              'is-today': d.isToday,
-              'is-unavailable': isSlotUnavailable(d.str, 'pm'),
-            }"
+            <div
+              class="gantt-period-header"
+              :class="{
+                'is-weekend': d.isWeekend,
+                'is-today': d.isToday,
+                'is-unavailable': isSlotUnavailable(d.str, 'am'),
+                'is-clickable': isSlotUnavailable(d.str, 'am'),
+              }"
+            >
+              <span>上午</span>
+              <span
+                v-if="getLoadDot(d.str + '-am')"
+                class="load-dot"
+                :class="getLoadDot(d.str + '-am')"
+              ></span>
+            </div>
+          </el-tooltip>
+          <el-tooltip
+            placement="top"
+            effect="dark"
+            :show-after="120"
+            :content="getSlotUnavailableTooltip(d.str, 'pm')"
+            :disabled="!isSlotUnavailable(d.str, 'pm')"
           >
-            <span>下午</span>
-            <span
-              v-if="getLoadDot(d.str + '-pm')"
-              class="load-dot"
-              :class="getLoadDot(d.str + '-pm')"
-            ></span>
-          </div>
+            <div
+              class="gantt-period-header period-pm"
+              :class="{
+                'is-weekend': d.isWeekend,
+                'is-today': d.isToday,
+                'is-unavailable': isSlotUnavailable(d.str, 'pm'),
+                'is-clickable': isSlotUnavailable(d.str, 'pm'),
+              }"
+            >
+              <span>下午</span>
+              <span
+                v-if="getLoadDot(d.str + '-pm')"
+                class="load-dot"
+                :class="getLoadDot(d.str + '-pm')"
+              ></span>
+            </div>
+          </el-tooltip>
         </template>
 
         <!-- Pool mode: single row -->
@@ -270,26 +303,59 @@ const gridStyle = computed(() => ({
 
 // --- Unavailable check ---
 const unavailableMap = computed(() => {
+  // Map<dateStr, { full?: {reason}, am?: {reason}, pm?: {reason} }>
   const map = new Map()
   for (const item of props.unavailableDates) {
     const dateStr = typeof item === 'string' ? item : item.date
     const period = typeof item === 'string' ? null : item.period
-    if (!map.has(dateStr)) map.set(dateStr, new Set())
-    map.get(dateStr).add(period)
+    const reason = typeof item === 'string' ? '' : (item.reason || '')
+    if (!map.has(dateStr)) map.set(dateStr, {})
+    const entry = map.get(dateStr)
+    if (period === null || period === undefined) {
+      entry.full = { reason }
+    } else {
+      entry[period] = { reason }
+    }
   }
   return map
 })
 
 function isSlotUnavailable(dateStr, period) {
-  const set = unavailableMap.value.get(dateStr)
-  if (!set) return false
-  return set.has(null) || set.has(period)
+  const entry = unavailableMap.value.get(dateStr)
+  if (!entry) return false
+  return !!entry.full || !!entry[period]
 }
 
 function isDateFullUnavailable(dateStr) {
-  const set = unavailableMap.value.get(dateStr)
-  if (!set) return false
-  return set.has(null)
+  return !!unavailableMap.value.get(dateStr)?.full
+}
+
+function hasAnyUnavailable(dateStr) {
+  return unavailableMap.value.has(dateStr)
+}
+
+function getDateUnavailableLines(dateStr) {
+  const entry = unavailableMap.value.get(dateStr)
+  if (!entry) return []
+  if (entry.full) {
+    return [entry.full.reason ? `全天不可用：${entry.full.reason}` : '全天不可用']
+  }
+  const lines = []
+  if (entry.am) lines.push(entry.am.reason ? `上午不可用：${entry.am.reason}` : '上午不可用')
+  if (entry.pm) lines.push(entry.pm.reason ? `下午不可用：${entry.pm.reason}` : '下午不可用')
+  return lines
+}
+
+function getSlotUnavailableTooltip(dateStr, period) {
+  const entry = unavailableMap.value.get(dateStr)
+  if (!entry) return ''
+  if (entry.full) {
+    return entry.full.reason ? `全天不可用：${entry.full.reason}` : '全天不可用'
+  }
+  const slot = entry[period]
+  if (!slot) return ''
+  const label = period === 'am' ? '上午' : '下午'
+  return slot.reason ? `${label}不可用：${slot.reason}` : `${label}不可用`
 }
 
 // --- Load dot ---
@@ -615,6 +681,7 @@ onBeforeUnmount(() => {
 .gantt-date-header.is-unavailable {
   background: rgba(144, 147, 153, 0.25);
 }
+.gantt-date-header.is-clickable { cursor: help; }
 
 .date-label { font-weight: 600; line-height: 1.2; }
 .date-weekday { font-size: 11px; color: var(--text-muted); line-height: 1.2; }
@@ -643,6 +710,13 @@ onBeforeUnmount(() => {
 .gantt-period-header.is-today { background: rgba(212,148,28,0.08); }
 .gantt-period-header.is-unavailable {
   background: rgba(144, 147, 153, 0.25);
+}
+.gantt-period-header.is-clickable { cursor: help; }
+
+/* Tooltip content for unavailable slots */
+.gantt-tip-line {
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 /* Load dots */
