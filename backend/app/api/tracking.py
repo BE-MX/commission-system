@@ -492,6 +492,7 @@ def create_waybill(
         )
 
     # 自动创建 shipment_tracking 记录以启动物流轮询
+    short_link = None
     try:
         existing_tracking = (
             db.query(ShipmentTracking)
@@ -515,6 +516,7 @@ def create_waybill(
                 if user and user.dingtalk_id:
                     dingtalk_id = user.dingtalk_id
 
+            short_code = generate_short_code(db)
             tracking = ShipmentTracking(
                 waybill_no=payload.waybill_no,
                 carrier=payload.carrier,
@@ -523,11 +525,14 @@ def create_waybill(
                 receiver_country=payload.recipient_country,
                 dingtalk_user_id=dingtalk_id,
                 dingtalk_user_name=current_user.get("username", ""),
-                short_code=generate_short_code(db),
+                short_code=short_code,
                 is_active=True,
             )
             db.add(tracking)
             db.commit()
+            short_link = build_short_link(short_code)
+        else:
+            short_link = build_short_link(existing_tracking.short_code) if existing_tracking.short_code else None
     except Exception as exc:
         db.rollback()
         logger.warning("自动创建跟踪记录失败（不影响录入）: %s", exc)
@@ -552,6 +557,7 @@ def create_waybill(
             "status": waybill.status,
             "created_by": waybill.created_by,
             "created_at": waybill.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+            "short_link": short_link,
         },
     }
 
