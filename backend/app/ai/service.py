@@ -540,7 +540,11 @@ def chat(db: Session, preset_name: str, messages: list, caller_module: str, call
         full_messages.append({"role": "system", "content": preset.system_prompt})
     full_messages.extend(messages)
 
-    # 写入 pending 日志
+    # 写入 pending 日志（截断过长的 prompt_snapshot，避免超出 TEXT 列限制）
+    snapshot_str = json.dumps(full_messages, ensure_ascii=False)
+    if len(snapshot_str) > 60000:
+        # 多模态请求含 base64 图片会很大，只记录前后部分
+        snapshot_str = snapshot_str[:2000] + f"\n... [truncated {len(snapshot_str)} chars, likely contains base64 image] ...\n" + snapshot_str[-500:]
     log = AiCallLog(
         caller_module=caller_module,
         caller_user_id=caller_user_id,
@@ -548,7 +552,7 @@ def chat(db: Session, preset_name: str, messages: list, caller_module: str, call
         preset_name=preset.preset_name,
         provider_type=provider.provider_type,
         model=preset.model,
-        prompt_snapshot=json.dumps(full_messages, ensure_ascii=False),
+        prompt_snapshot=snapshot_str,
         status="pending",
     )
     db.add(log)

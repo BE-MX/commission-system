@@ -4,6 +4,27 @@ export function getShipmentList(params) {
   return request.get('/tracking/shipments', { params, showLoading: false })
 }
 
+export function uploadOCR(formData) {
+  return request.post('/tracking/upload-ocr', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 35000,
+    loadingText: '正在识别运单信息...',
+  })
+}
+
+export function checkWaybill(waybillNo) {
+  return request.get('/tracking/waybills/check', {
+    params: { waybill_no: waybillNo },
+    showLoading: false,
+  })
+}
+
+export function createWaybill(data) {
+  return request.post('/tracking/waybills', data, {
+    loadingText: '正在提交运单...',
+  })
+}
+
 export function getShipmentDetail(waybillNo) {
   return request.get(`/tracking/shipments/${waybillNo}`, { showLoading: false })
 }

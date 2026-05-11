@@ -9,6 +9,7 @@ from app.models.business import UserBasic, CustomerInfo, OkkiOrder, OkkiReceipt
 from app.models.tracking import (
     ShipmentStaging, ShipmentTracking, TrackingEvent, CarrierConfig,
 )
+from app.models.waybill import Waybill
 
 __all__ = [
     # 提成系统自有表
@@ -29,4 +30,6 @@ __all__ = [
     "ShipmentTracking",
     "TrackingEvent",
     "CarrierConfig",
+    # 运单录入
+    "Waybill",
 ]

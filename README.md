@@ -2,7 +2,7 @@
 
 ## 项目概述
 
-莱莎方舟平台，企业内部综合后台。包含提成管理、物流跟踪、客户归属、设计预约、用户/权限、钉钉集成六大模块。详细说明见 [CLAUDE.md](./CLAUDE.md)。
+莱莎方舟平台，企业内部综合后台。包含提成管理、物流跟踪、运单上传（AI OCR）、客户归属、设计预约、用户/权限、AI 接入、方舟洞见、钉钉集成九大模块。详细说明见 [CLAUDE.md](./CLAUDE.md)。
 
 ## 技术栈
 
@@ -45,7 +45,13 @@ commission-system/
 │   │   ├── models/       # SQLAlchemy 数据模型
 │   │   ├── schemas/      # Pydantic 验证模型
 │   │   ├── api/          # API 路由
-│   │   └── services/     # 业务逻辑
+│   │   ├── services/     # 业务逻辑
+│   │   ├── auth/         # 认证 & RBAC
+│   │   ├── design/       # 设计预约
+│   │   ├── system/       # 系统字典
+│   │   ├── dingtalk/     # 钉钉集成
+│   │   ├── ai/           # AI 接入（Provider/Preset/调用日志）
+│   │   └── insight/      # 方舟洞见
 │   ├── alembic/          # 数据库迁移
 │   ├── config/           # 业务规则配置
 │   └── sql/              # DDL 脚本

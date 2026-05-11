@@ -27,6 +27,7 @@ from app.dingtalk.callback import router as dingtalk_callback_router
 from app.api.short_link import router as short_link_router
 from app.system.router import router as system_router
 from app.ai.router import router as ai_router
+from app.insight.router import router as insight_router
 
 logger = logging.getLogger("commission")
 
@@ -66,6 +67,67 @@ async def lifespan(app: FastAPI):
     from app.design.scheduler import scheduler_loop
     asyncio.create_task(scheduler_loop())
     logger.info("Design shoot reminder scheduler started")
+
+    # 自动初始化 waybill_ocr AI preset（如需要）
+    try:
+        from app.ai.models import AiProvider, AiPreset
+        with SessionLocal() as db:
+            existing = (
+                db.query(AiPreset)
+                .filter(AiPreset.preset_name == "waybill_ocr", AiPreset.deleted_at.is_(None))
+                .first()
+            )
+            if not existing:
+                provider = (
+                    db.query(AiProvider)
+                    .filter(AiProvider.is_enabled.is_(True), AiProvider.deleted_at.is_(None))
+                    .first()
+                )
+                if provider:
+                    first_preset = (
+                        db.query(AiPreset)
+                        .filter(AiPreset.provider_id == provider.id, AiPreset.deleted_at.is_(None))
+                        .first()
+                    )
+                    model = first_preset.model if first_preset else "gpt-4o"
+                    preset = AiPreset(
+                        preset_name="waybill_ocr",
+                        provider_id=provider.id,
+                        model=model,
+                        system_prompt=(
+                            "你是一个专业的国际物流运单信息提取助手。\n\n"
+                            "你的任务是从用户上传的运单图片中提取关键物流字段。"
+                            "图片可能来自手机拍摄，存在以下常见问题：光线不均匀、角度倾斜（最多30度）、"
+                            "部分字段被手指或物品遮挡、图片模糊或噪点较多。请尽力识别，不确定时宁可返回 null，不要猜测。\n\n"
+                            "【输出格式】\n"
+                            '必须返回合法的 JSON，不得包含任何 Markdown 代码块标记、解释文字或其他内容。格式如下：\n'
+                            '{\n  "waybill_no": "运单号字符串或 null",\n'
+                            '  "carrier": "FedEx 或 DHL 或 UPS 或 未知",\n'
+                            '  "recipient_name": "收件人姓名或 null",\n'
+                            '  "recipient_country": "收件国家（中文名称）或 null",\n'
+                            '  "ship_date": "YYYY-MM-DD 格式或 null"\n}\n\n'
+                            "【字段提取规则】\n"
+                            '1. waybill_no：提取图片上最显眼的条形码下方数字，或标注为"Tracking Number"/"Waybill No"/"运单号"的字符串。去除空格和连字符。\n'
+                            '2. carrier：优先根据运单外观（FedEx紫橙色/DHL黄色/UPS深棕色）和Logo判断；无法判断时根据运单号格式辅助判断。\n'
+                            '3. recipient_name：提取标注为"To:"/"Deliver To"/"收件人"/"Recipient"区域的人名。仅提取姓名，不含公司名。\n'
+                            '4. recipient_country：提取收件地址中的国家，统一转换为中文名称（如"United States"→"美国"，"Germany"→"德国"）。\n'
+                            '5. ship_date：提取标注为"Ship Date"/"Date"/"发件日期"的日期，格式统一为 YYYY-MM-DD。若只有月和日则补充当前年份。\n\n'
+                            "【特殊情况处理】\n"
+                            '- 若图片内容完全无法识别（非运单图片、全黑/全白），返回所有字段均为 null，并额外添加字段 "error": "非运单图片或图片质量过低"\n'
+                            '- 若运单号识别到多个候选，选择最长且格式最规范的一个\n'
+                            '- 不要返回条形码本身，只返回数字/字母字符串'
+                        ),
+                        parameters={"temperature": 0.1, "max_tokens": 512},
+                        description="运单图片 OCR 识别",
+                        is_enabled=True,
+                    )
+                    db.add(preset)
+                    db.commit()
+                    logger.info("Auto-created waybill_ocr preset with provider=%s model=%s", provider.name, model)
+                else:
+                    logger.warning("No active AI provider found, waybill_ocr preset not auto-created")
+    except Exception as e:
+        logger.warning("Auto-init waybill_ocr preset skipped: %s", e)
 
     yield
     # --- 关闭 ---
@@ -128,6 +190,7 @@ app.include_router(dingtalk_callback_router, prefix="/api", tags=["钉钉回调"
 app.include_router(short_link_router, tags=["短链接"])
 app.include_router(system_router, prefix="/api/system", tags=["系统字典"])
 app.include_router(ai_router, prefix="/api/ai", tags=["AI 接入"])
+app.include_router(insight_router, prefix="/api/insight", tags=["方舟洞见"])
 
 
 @app.get("/health")

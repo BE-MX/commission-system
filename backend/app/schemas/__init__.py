@@ -23,3 +23,6 @@ from app.schemas.commission import (
     CommissionConfirmRequest, CommissionBatchSummary,
 )
 from app.schemas.report import ReportExportParams
+from app.schemas.waybill import (
+    WaybillCreate, WaybillOut, WaybillCheckResponse, OCRUploadResponse,
+)
