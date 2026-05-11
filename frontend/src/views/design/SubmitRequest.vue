@@ -152,8 +152,12 @@
             v-model="form.remark"
             type="textarea"
             :rows="3"
-            placeholder="拍摄要求、特殊说明等（选填）"
+            placeholder='拍摄要求填写格式参见下方说明，如无需备注，则填写"无特殊要求"'
           />
+          <div class="remark-hint">
+            <p><strong>填写示例：</strong>10个色块图</p>
+            <p>天才10个颜色，每个颜色2张白底图；贴发8个颜色，每个颜色2张场景图</p>
+          </div>
         </el-form-item>
 
         <el-form-item label="附件">
@@ -245,6 +249,7 @@ const rules = {
   ],
   startDate: [{ required: true, message: '请选择期望开始日期', trigger: 'change' }],
   priority: [{ required: true, message: '请选择优先级', trigger: 'change' }],
+  remark: [{ required: true, message: '请填写备注，如无特殊要求请填写"无特殊要求"', trigger: 'blur' }],
   props_requirement: [
     {
       validator: (rule, value, callback) => {
@@ -524,4 +529,15 @@ function resetForm() {
   color: var(--text-secondary, #999);
   margin-top: 2px;
 }
+.remark-hint {
+  background: var(--fill-color-lighter, #f5f7fa);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--text-secondary, #666);
+}
+.remark-hint p { margin: 0; }
+.remark-hint strong { color: var(--text-primary, #333); }
 </style>

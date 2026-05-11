@@ -35,8 +35,12 @@ export function refreshShipment(waybillNo) {
   })
 }
 
-export function getTrackingStats() {
-  return request.get('/tracking/stats', { showLoading: false })
+export function getTrackingStats(params) {
+  return request.get('/tracking/stats', { params, showLoading: false })
+}
+
+export function getSubmitters() {
+  return request.get('/tracking/submitters', { showLoading: false })
 }
 
 export function createStaging(data) {

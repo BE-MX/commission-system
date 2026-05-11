@@ -25,8 +25,10 @@ from app.schemas.tracking import (
 from app.schemas.waybill import WaybillCreate, OCRUploadResponse
 from app.services.staging_service import scan_staging
 from app.services.tracking_service import poll_active_shipments, refresh_single, poll_single
-from app.services.short_link import build_short_link, generate_short_code
+from app.services.short_link import build_short_link, generate_short_code, build_carrier_tracking_url
 from app.services.dws_sync_service import sync_shipment, sync_all_active
+from app.services.carriers.base import STATUS_MAP_CN
+from app.utils.shortlink import generate_short_link
 
 router = APIRouter()
 logger = logging.getLogger("commission.tracking")
@@ -73,9 +75,12 @@ def list_shipments(
     carrier: str = Query("", description="物流商筛选"),
     keyword: str = Query("", description="运单号/收件人模糊搜索"),
     is_active: str = Query("", description="是否活跃: 1/0"),
+    mine: str = Query("", description="仅看本人提交: 1/0"),
+    submitter: str = Query("", description="按提交人(dingtalk_user_name)过滤"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
 ):
     q = db.query(ShipmentTracking)
     if status:
@@ -91,6 +96,10 @@ def list_shipments(
         )
     if is_active in ("1", "0"):
         q = q.filter(ShipmentTracking.is_active == (is_active == "1"))
+    if submitter:
+        q = q.filter(ShipmentTracking.dingtalk_user_name == submitter)
+    elif mine == "1":
+        q = q.filter(ShipmentTracking.dingtalk_user_name == current_user.get("username", ""))
 
     total = q.count()
     items = (
@@ -154,14 +163,26 @@ async def refresh_shipment(
 
 
 @router.get("/stats", summary="统计概览")
-def get_stats(db: Session = Depends(get_db)):
-    rows = (
-        db.query(ShipmentTracking.current_status, func.count(ShipmentTracking.id))
-        .group_by(ShipmentTracking.current_status)
-        .all()
-    )
+def get_stats(
+    mine: str = Query("", description="仅看本人提交: 1/0"),
+    submitter: str = Query("", description="按提交人(dingtalk_user_name)过滤"),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    q = db.query(ShipmentTracking.current_status, func.count(ShipmentTracking.id))
+    active_q = db.query(func.count(ShipmentTracking.id)).filter(ShipmentTracking.is_active == True)
+
+    if submitter:
+        q = q.filter(ShipmentTracking.dingtalk_user_name == submitter)
+        active_q = active_q.filter(ShipmentTracking.dingtalk_user_name == submitter)
+    elif mine == "1":
+        username = current_user.get("username", "")
+        q = q.filter(ShipmentTracking.dingtalk_user_name == username)
+        active_q = active_q.filter(ShipmentTracking.dingtalk_user_name == username)
+
+    rows = q.group_by(ShipmentTracking.current_status).all()
     counts = {status: count for status, count in rows}
-    active = db.query(func.count(ShipmentTracking.id)).filter(ShipmentTracking.is_active == True).scalar()
+    active = active_q.scalar()
     total = sum(counts.values())
 
     return {
@@ -178,6 +199,23 @@ def get_stats(db: Session = Depends(get_db)):
             returned=counts.get("returned", 0),
         ).model_dump(),
     }
+
+
+@router.get("/submitters", summary="提交人列表（用于前端下拉筛选）")
+def list_submitters(
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_permission("tracking:read")),
+):
+    rows = (
+        db.query(ShipmentTracking.dingtalk_user_name)
+        .filter(ShipmentTracking.dingtalk_user_name.isnot(None))
+        .filter(ShipmentTracking.dingtalk_user_name != "")
+        .distinct()
+        .order_by(ShipmentTracking.dingtalk_user_name)
+        .all()
+    )
+    submitters = [r[0] for r in rows]
+    return {"code": 200, "message": "ok", "data": submitters}
 
 
 @router.post("/poll", summary="批量轮询（定时任务调用）")
@@ -541,41 +579,70 @@ async def create_waybill(
         logger.warning("自动创建跟踪记录失败（不影响录入）: %s", exc)
 
     # 立即轮询一次获取实时物流状态
+    poll_ok = False
+    poll_error = None
     if tracking:
         try:
             await poll_single(db, tracking)
+            poll_ok = True
         except Exception as exc:
+            poll_error = str(exc)
             logger.warning("自动轮询失败（不影响录入）: %s", exc)
 
     # 异步触发钉钉推送（不阻塞响应）
     try:
-        asyncio.create_task(_push_waybill_dingtalk(waybill, short_link))
+        asyncio.create_task(_push_waybill_dingtalk(waybill))
     except Exception as exc:
         logger.warning("钉钉推送任务创建失败（不影响录入）: %s", exc)
+
+    # 生成 is.gd 短链（用于前端弹窗展示）
+    carrier_url = build_carrier_tracking_url(payload.carrier, payload.waybill_no)
+    isgd_link = generate_short_link(carrier_url)
+
+    data = {
+        "id": waybill.id,
+        "waybill_no": waybill.waybill_no,
+        "carrier": waybill.carrier,
+        "recipient_name": waybill.recipient_name,
+        "recipient_country": waybill.recipient_country,
+        "ship_date": str(waybill.ship_date),
+        "status": waybill.status,
+        "created_by": waybill.created_by,
+        "created_at": waybill.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+        "short_link": isgd_link,
+    }
+
+    # 追加轮询后的物流状态（供前端弹窗展示）
+    if tracking:
+        data["tracking_status"] = tracking.current_status or "pending"
+        data["tracking_status_text"] = (
+            tracking.current_status_text
+            or STATUS_MAP_CN.get(tracking.current_status, tracking.current_status or "待查询")
+        )
+        if tracking.estimated_delivery_date:
+            data["estimated_delivery_date"] = tracking.estimated_delivery_date.strftime("%Y-%m-%d")
+        if tracking.last_event_time:
+            data["last_event_time"] = tracking.last_event_time.strftime("%Y-%m-%d %H:%M")
+        data["poll_ok"] = poll_ok
+        if poll_error:
+            data["poll_error"] = poll_error
 
     return {
         "code": 201,
         "message": "运单录入成功",
-        "data": {
-            "id": waybill.id,
-            "waybill_no": waybill.waybill_no,
-            "carrier": waybill.carrier,
-            "recipient_name": waybill.recipient_name,
-            "recipient_country": waybill.recipient_country,
-            "ship_date": str(waybill.ship_date),
-            "status": waybill.status,
-            "created_by": waybill.created_by,
-            "created_at": waybill.created_at.strftime("%Y-%m-%d %H:%M:%S"),
-            "short_link": short_link,
-        },
+        "data": data,
     }
 
 
-async def _push_waybill_dingtalk(waybill: Waybill, short_link: str | None = None) -> None:
-    """通过钉钉 Webhook 推送运单录入通知。"""
+async def _push_waybill_dingtalk(waybill: Waybill) -> None:
+    """通过钉钉 Webhook 推送运单录入通知（ActionCard 带按钮跳转）。"""
     try:
         from app.dingtalk.webhook import get_webhook_sender
         sender = get_webhook_sender()
+
+        carrier_url = build_carrier_tracking_url(waybill.carrier, waybill.waybill_no)
+        short_url = generate_short_link(carrier_url)
+
         text = (
             f"### 运单录入通知\n"
             f"**运单号：** {waybill.waybill_no}\n"
@@ -585,10 +652,19 @@ async def _push_waybill_dingtalk(waybill: Waybill, short_link: str | None = None
             f"**发件日期：** {waybill.ship_date}\n"
             f"**录入人：** {waybill.created_by}\n"
         )
-        if short_link:
-            text += f"**短链接：** {short_link}\n"
         if waybill.estimated_delivery_date:
             text += f"**预计送达：** {waybill.estimated_delivery_date.strftime('%Y年%m月%d日')}\n"
-        await sender.send_markdown(title="运单录入通知", text=text)
+
+        btns = [{
+            "title": f"查看 {waybill.carrier} 物流",
+            "actionURL": short_url,
+        }]
+
+        await sender.send_action_card(
+            title="运单录入通知",
+            text=text,
+            btns=btns,
+            btn_orientation="0",
+        )
     except Exception as exc:
         logger.warning("钉钉推送失败（不影响录入）: %s", exc)

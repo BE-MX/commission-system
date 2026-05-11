@@ -272,6 +272,33 @@
           </div>
         </div>
 
+        <!-- 物流状态区域 -->
+        <div class="copy-section">
+          <div class="copy-label">
+            <el-icon><Van /></el-icon>
+            <span>当前物流状态</span>
+          </div>
+          <div class="tracking-status-card">
+            <div class="tracking-status-row">
+              <span
+                class="tracking-status-badge"
+                :class="`status-${resultData.tracking_status || 'pending'}`"
+              >
+                {{ resultData.tracking_status_text || '待查询' }}
+              </span>
+              <span v-if="resultData.last_event_time" class="tracking-status-time">
+                {{ resultData.last_event_time }}
+              </span>
+            </div>
+            <div v-if="resultData.estimated_delivery_date" class="tracking-status-delivery">
+              预计送达：{{ resultData.estimated_delivery_date }}
+            </div>
+            <div v-if="resultData.poll_error" class="tracking-status-error">
+              轮询失败：{{ resultData.poll_error }}
+            </div>
+          </div>
+        </div>
+
         <!-- 短链接区域 -->
         <div v-if="resultData.short_link" class="copy-section">
           <div class="copy-label">
@@ -363,6 +390,12 @@ const resultData = reactive({
   ship_date: '',
   short_link: '',
   notifyTemplate: '',
+  tracking_status: '',
+  tracking_status_text: '',
+  estimated_delivery_date: '',
+  last_event_time: '',
+  poll_ok: false,
+  poll_error: '',
 })
 
 const form = reactive({
@@ -389,7 +422,7 @@ function detectCarrier(waybillNo) {
 
   const UPS_REGEX = /^1Z[0-9A-Z]{6}[0-9]{2}[0-9]{8}$/i
   const FEDEX_REGEX = /^((\d{12})|(\d{15})|(\d{20})|(\d{22})|(96\d{20})|(92\d{20}))$/
-  const DHL_REGEX = /^(\d{10,11}|[A-Z]{2}\d{8,9}[A-Z]{2})$/i
+  const DHL_REGEX = /^(\d{10,11}|[A-Z]{2}\d{8,9}[A-Z]{2}|JJD\d{16,22}|GM\d{16,22})$/i
 
   if (UPS_REGEX.test(no)) return 'UPS'
   if (FEDEX_REGEX.test(no)) return 'FedEx'
@@ -432,7 +465,7 @@ async function handleFileChange(uploadFile) {
     if (!data) throw new Error('响应数据为空')
 
     form.waybill_no = data.waybill_no || ''
-    form.carrier = data.carrier || ''
+    form.carrier = data.carrier || detectCarrier(data.waybill_no) || ''
     form.recipient_name = data.recipient_name || ''
     form.recipient_country = data.recipient_country || ''
     form.ship_date = data.ship_date || ''
@@ -543,6 +576,12 @@ async function handleSubmit() {
     resultData.recipient_country = data.recipient_country || form.recipient_country
     resultData.ship_date = data.ship_date || form.ship_date
     resultData.short_link = data.short_link || ''
+    resultData.tracking_status = data.tracking_status || 'pending'
+    resultData.tracking_status_text = data.tracking_status_text || ''
+    resultData.estimated_delivery_date = data.estimated_delivery_date || ''
+    resultData.last_event_time = data.last_event_time || ''
+    resultData.poll_ok = data.poll_ok || false
+    resultData.poll_error = data.poll_error || ''
     resultData.notifyTemplate =
       `Hi ${resultData.recipient_name}, great news! Your order has been picked up by ${resultData.carrier}. Tracking#: ${resultData.waybill_no}. Expected delivery: TBD. I'll keep an eye on it for you!`
 
@@ -1050,6 +1089,77 @@ function resetAll() {
 
 .copy-btn.copied {
   background: linear-gradient(135deg, #059669, #16a34a);
+}
+
+/* 物流状态区域 */
+.tracking-status-card {
+  background: #fafbfe;
+  border: 1px solid #e8ecf3;
+  border-radius: 10px;
+  padding: 12px 16px;
+  text-align: left;
+}
+.tracking-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.tracking-status-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.status-pending {
+  color: #909399;
+  background: #f4f4f5;
+}
+.status-picked_up {
+  color: #409eff;
+  background: #ecf5ff;
+}
+.status-in_transit {
+  color: #e6a23c;
+  background: #fdf6ec;
+}
+.status-out_for_delivery {
+  color: #e6a23c;
+  background: #fdf6ec;
+}
+.status-customs,
+.status-customs_hold {
+  color: #f56c6c;
+  background: #fef0f0;
+}
+.status-delivered {
+  color: #67c23a;
+  background: #f0f9eb;
+}
+.status-returned {
+  color: #909399;
+  background: #f4f4f5;
+}
+.status-exception {
+  color: #f56c6c;
+  background: #fef0f0;
+}
+.tracking-status-time {
+  font-size: 12px;
+  color: #8b95a5;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+.tracking-status-delivery {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #4a5568;
+}
+.tracking-status-error {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #f56c6c;
 }
 
 /* 通知模板区域 */

@@ -1,40 +1,81 @@
 <template>
   <div>
-    <!-- 统计卡片 -->
-    <div class="stats-banner" v-if="stats">
-      <div class="stats-grid">
-        <div class="stat-item" @click="filterByStatus('')">
-          <div class="stat-value">{{ stats.total }}</div>
-          <div class="stat-label">全部运单</div>
+    <!-- 看板：运单状态概览 -->
+    <section class="kanban" v-if="stats">
+      <div class="kanban-header">
+        <div class="kanban-title">
+          <span class="kanban-accent"></span>
+          <h3>运单状态概览</h3>
+          <span class="kanban-realtime">实时</span>
         </div>
-        <div class="stat-item active" @click="filterByStatus('in_transit')">
-          <div class="stat-value">{{ stats.in_transit }}</div>
-          <div class="stat-label">运输中</div>
-        </div>
-        <div class="stat-item" @click="filterByStatus('customs')">
-          <div class="stat-value">{{ stats.customs }}</div>
-          <div class="stat-label">清关中</div>
-        </div>
-        <div class="stat-item delivered" @click="filterByStatus('delivered')">
-          <div class="stat-value">{{ stats.delivered }}</div>
-          <div class="stat-label">已签收</div>
-        </div>
-        <div class="stat-item warning" @click="filterByStatus('exception')">
-          <div class="stat-value">{{ stats.exception }}</div>
-          <div class="stat-label">异常</div>
+        <span class="kanban-updated" v-if="lastUpdated">
+          <el-icon><Clock /></el-icon>
+          更新于 {{ lastUpdated }}
+        </span>
+      </div>
+
+      <div class="kanban-grid">
+        <div
+          v-for="(item, i) in kanbanItems"
+          :key="item.key"
+          class="kanban-card"
+          :class="{ 'is-active': activeKanban === item.key }"
+          :style="{
+            background: item.bg,
+            borderColor: activeKanban === item.key ? item.color : item.border,
+            boxShadow: activeKanban === item.key ? `0 0 0 2px ${item.color}33` : undefined,
+            animationDelay: `${i * 70}ms`,
+          }"
+          @click="handleKanbanClick(item)"
+        >
+          <div class="kanban-card__bg-icon" :style="{ color: item.color }">
+            <el-icon><component :is="item.icon" /></el-icon>
+          </div>
+
+          <div class="kanban-card__inner">
+            <div class="kanban-card__top">
+              <div class="kanban-card__icon" :style="{ background: `${item.color}1f`, color: item.color }">
+                <el-icon><component :is="item.icon" /></el-icon>
+              </div>
+            </div>
+
+            <div class="kanban-card__value">
+              <span class="value" :style="{ color: item.color }">{{ getStatValue(item.statKey) }}</span>
+              <span class="desc">{{ item.desc }}</span>
+            </div>
+
+            <div class="kanban-card__foot">
+              <span class="label">{{ item.label }}</span>
+              <span class="progress">
+                <span class="progress__fill" :style="{ width: `${getProgress(item.statKey)}%`, background: item.color }"></span>
+              </span>
+            </div>
+          </div>
         </div>
       </div>
+    </section>
+
+    <!-- 范围选择条 -->
+    <div class="scope-bar">
+      <el-checkbox v-model="onlyMine" @change="handleOnlyMineChange">
+        仅显示我的运单
+      </el-checkbox>
+      <span class="scope-bar__hint">
+        <template v-if="submitter">当前筛选提交人：<b>{{ submitter }}</b></template>
+        <template v-else-if="onlyMine">当前仅显示 <b>{{ authStore.user?.real_name || authStore.user?.username || '我' }}</b> 提交的运单</template>
+        <template v-else>当前显示全部用户提交的运单</template>
+      </span>
     </div>
 
     <!-- 筛选栏 -->
     <el-row :gutter="12" class="toolbar" align="middle">
-      <el-col :span="5">
+      <el-col :span="4">
         <el-input v-model="keyword" placeholder="运单号 / 收件人" clearable @keyup.enter="fetchList" @clear="fetchList">
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
       </el-col>
       <el-col :span="3">
-        <el-select v-model="statusFilter" placeholder="状态" clearable @change="fetchList">
+        <el-select v-model="statusFilter" placeholder="状态" clearable @change="handleStatusFilterChange">
           <el-option label="待查询" value="pending" />
           <el-option label="运输中" value="in_transit" />
           <el-option label="清关中" value="customs" />
@@ -53,6 +94,17 @@
         </el-select>
       </el-col>
       <el-col :span="3">
+        <el-select
+          v-model="submitter"
+          placeholder="提交人"
+          clearable
+          filterable
+          @change="handleSubmitterChange"
+        >
+          <el-option v-for="name in submitters" :key="name" :label="name" :value="name" />
+        </el-select>
+      </el-col>
+      <el-col :span="3">
         <el-select v-model="activeFilter" placeholder="跟踪状态" clearable @change="fetchList">
           <el-option label="跟踪中" value="1" />
           <el-option label="已结束" value="0" />
@@ -61,7 +113,7 @@
       <el-col :span="2">
         <GlassButton left-icon="Search" @click="fetchList">查询</GlassButton>
       </el-col>
-      <el-col :span="8" style="text-align:right">
+      <el-col :span="6" style="text-align:right">
         <GlassButton left-icon="Refresh" @click="handleScanStaging">扫描暂存</GlassButton>
         <GlassButton left-icon="Loading" @click="handlePoll">批量轮询</GlassButton>
       </el-col>
@@ -146,22 +198,91 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { getShipmentList, getTrackingStats, refreshShipment, triggerScanStaging, triggerPoll } from '@/api/tracking'
+import { getShipmentList, getTrackingStats, getSubmitters, refreshShipment, triggerScanStaging, triggerPoll } from '@/api/tracking'
 import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
+import { useAuthStore } from '@/stores/auth'
 
 const { tableRef, maxHeight } = useTableMaxHeight()
 const router = useRouter()
+const authStore = useAuthStore()
 
 const stats = ref(null)
+const lastUpdated = ref('')
+const activeKanban = ref('')
 const keyword = ref('')
 const statusFilter = ref('')
 const carrierFilter = ref('')
 const activeFilter = ref('')
+const onlyMine = ref(true)
+const submitter = ref('')
+const submitters = ref([])
 const page = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
 const tableData = ref([])
 const loading = ref(false)
+
+const kanbanItems = [
+  {
+    key: 'total', statKey: 'total', statusValue: '',
+    label: '全部运单', desc: '累计',
+    icon: 'Box', color: '#2563eb',
+    bg: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)', border: '#bfdbfe',
+  },
+  {
+    key: 'in_transit', statKey: 'in_transit', statusValue: 'in_transit',
+    label: '运输中', desc: '在途',
+    icon: 'Van', color: '#d97706',
+    bg: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)', border: '#fde68a',
+  },
+  {
+    key: 'customs', statKey: 'customs', statusValue: 'customs',
+    label: '清关中', desc: '等待放行',
+    icon: 'Ship', color: '#7c3aed',
+    bg: 'linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)', border: '#ddd6fe',
+  },
+  {
+    key: 'delivered', statKey: 'delivered', statusValue: 'delivered',
+    label: '已签收', desc: '已完成',
+    icon: 'CircleCheck', color: '#059669',
+    bg: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)', border: '#a7f3d0',
+  },
+  {
+    key: 'exception', statKey: 'exception', statusValue: 'exception',
+    label: '异常', desc: '需关注',
+    icon: 'Warning', color: '#dc2626',
+    bg: 'linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)', border: '#fecaca',
+  },
+]
+
+function getStatValue(key) {
+  return stats.value?.[key] ?? 0
+}
+
+function getProgress(key) {
+  const totalCount = stats.value?.total || 0
+  if (key === 'total') return totalCount > 0 ? 100 : 0
+  if (!totalCount) return 0
+  const v = stats.value?.[key] || 0
+  return Math.min(Math.round((v / totalCount) * 100), 100)
+}
+
+function handleKanbanClick(item) {
+  if (activeKanban.value === item.key) {
+    activeKanban.value = ''
+    statusFilter.value = ''
+  } else {
+    activeKanban.value = item.key
+    statusFilter.value = item.statusValue
+  }
+  page.value = 1
+  fetchList()
+}
+
+function formatUpdatedAt(d = new Date()) {
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
 
 const STATUS_MAP = {
   pending: '待查询',
@@ -189,15 +310,34 @@ const STATUS_TAG = {
 function statusText(s) { return STATUS_MAP[s] || s }
 function statusTagType(s) { return STATUS_TAG[s] || 'info' }
 
-function filterByStatus(s) {
-  statusFilter.value = s
+// 状态下拉变更时，同步看板高亮（'total' 卡仅由点击触发，不随空筛选自动激活）
+function handleStatusFilterChange() {
+  const val = statusFilter.value
+  if (!val) {
+    activeKanban.value = ''
+  } else {
+    const hit = kanbanItems.find((it) => it.statusValue === val)
+    activeKanban.value = hit ? hit.key : ''
+  }
+  page.value = 1
   fetchList()
 }
 
 async function fetchStats() {
   try {
-    const res = await getTrackingStats()
+    const res = await getTrackingStats({
+      mine: onlyMine.value ? '1' : '',
+      submitter: submitter.value,
+    })
     stats.value = res.data
+    lastUpdated.value = formatUpdatedAt()
+  } catch { /* ignore */ }
+}
+
+async function fetchSubmitters() {
+  try {
+    const res = await getSubmitters()
+    submitters.value = res.data || []
   } catch { /* ignore */ }
 }
 
@@ -209,6 +349,8 @@ async function fetchList() {
       status: statusFilter.value,
       carrier: carrierFilter.value,
       is_active: activeFilter.value,
+      mine: onlyMine.value ? '1' : '',
+      submitter: submitter.value,
       page: page.value,
       page_size: pageSize.value,
     })
@@ -217,6 +359,24 @@ async function fetchList() {
   } finally {
     loading.value = false
   }
+}
+
+function handleOnlyMineChange(val) {
+  if (val) {
+    submitter.value = ''
+  }
+  page.value = 1
+  fetchList()
+  fetchStats()
+}
+
+function handleSubmitterChange(val) {
+  if (val) {
+    onlyMine.value = false
+  }
+  page.value = 1
+  fetchList()
+  fetchStats()
 }
 
 async function handleRefresh(row) {
@@ -269,6 +429,7 @@ function fmtDateShort(dateStr) {
 onMounted(() => {
   fetchStats()
   fetchList()
+  fetchSubmitters()
 })
 </script>
 
@@ -276,38 +437,194 @@ onMounted(() => {
 .toolbar { margin-bottom: 16px; }
 .pagination { margin-top: 16px; justify-content: flex-end; }
 
-.stats-banner {
-  background: linear-gradient(135deg, #141210 0%, #1E1B18 60%, #141210 100%);
-  border-radius: 16px;
-  padding: 24px 32px;
-  margin-bottom: 16px;
-  color: #fff;
+/* ===== 范围选择条 ===== */
+.scope-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+  background: rgba(212, 148, 28, 0.06);
+  border: 1px solid rgba(212, 148, 28, 0.18);
+  border-radius: 8px;
 }
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 16px;
+.scope-bar :deep(.el-checkbox__label) {
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
 }
-.stat-item {
-  background: rgba(255,255,255,0.08);
-  border-radius: 10px;
-  padding: 16px;
-  cursor: pointer;
-  transition: background 0.2s;
-  text-align: center;
-}
-.stat-item:hover { background: rgba(255,255,255,0.14); }
-.stat-item.active { background: rgba(64,158,255,0.2); }
-.stat-item.delivered { background: rgba(103,194,58,0.2); }
-.stat-item.warning { background: rgba(245,108,108,0.2); }
-.stat-value {
-  font-size: 28px;
-  font-weight: 700;
-  line-height: 1.2;
-}
-.stat-label {
+.scope-bar__hint {
   font-size: 12px;
-  color: rgba(255,255,255,0.65);
-  margin-top: 4px;
+  color: #6b7280;
+}
+.scope-bar__hint b {
+  color: #B8860B;
+  font-weight: 600;
+}
+
+/* ===== 看板：运单状态概览 ===== */
+.kanban {
+  margin-bottom: 14px;
+}
+.kanban-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 2px 8px;
+}
+.kanban-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.kanban-title h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1f2937;
+  letter-spacing: 0.2px;
+}
+.kanban-accent {
+  width: 3px;
+  height: 14px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #D4941C 0%, #B8860B 100%);
+}
+.kanban-realtime {
+  font-size: 10px;
+  color: #6b7280;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  padding: 1px 8px;
+  line-height: 14px;
+}
+.kanban-updated {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: #9ca3af;
+}
+.kanban-updated .el-icon {
+  font-size: 11px;
+}
+
+.kanban-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.kanban-card {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid;
+  border-radius: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+  opacity: 0;
+  transform: translateY(10px);
+  animation: kanbanIn 0.4s ease forwards;
+}
+.kanban-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+}
+.kanban-card.is-active {
+  transform: translateY(-2px) scale(1.01);
+}
+
+@keyframes kanbanIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.kanban-card__bg-icon {
+  position: absolute;
+  right: -6px;
+  bottom: -8px;
+  opacity: 0.07;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+  pointer-events: none;
+}
+.kanban-card__bg-icon .el-icon {
+  font-size: 54px;
+}
+.kanban-card:hover .kanban-card__bg-icon {
+  transform: scale(1.08) rotate(3deg);
+  opacity: 0.1;
+}
+
+.kanban-card__inner {
+  position: relative;
+  z-index: 1;
+}
+.kanban-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.kanban-card__icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.25s ease;
+}
+.kanban-card__icon .el-icon {
+  font-size: 13px;
+}
+.kanban-card:hover .kanban-card__icon {
+  transform: scale(1.08);
+}
+
+.kanban-card__value {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  margin-bottom: 4px;
+}
+.kanban-card__value .value {
+  font-size: 20px;
+  font-weight: 700;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: -0.4px;
+  line-height: 1.1;
+}
+.kanban-card__value .desc {
+  font-size: 10px;
+  color: #6b7280;
+}
+
+.kanban-card__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.kanban-card__foot .label {
+  font-size: 11px;
+  font-weight: 500;
+  color: #374151;
+}
+.kanban-card__foot .progress {
+  width: 32px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.6);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.kanban-card__foot .progress__fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  transition: width 0.6s ease;
 }
 </style>
