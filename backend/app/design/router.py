@@ -548,6 +548,13 @@ async def _notify_action_to_applicant(
         )
         preferred_name = _get_designer_name(db, req.preferred_designer_id) or "随机分配"
 
+        # 优先使用任务的备注（排期确认备注），其次用预约单备注
+        task_remark = req.remark or ""
+        for t in req.tasks:
+            if t.status not in ("cancelled",):
+                task_remark = t.remark or req.remark or ""
+                break
+
         # 构建额外信息
         extra = []
         if action == "confirm" and req.assigned_designer_id:
@@ -568,7 +575,7 @@ async def _notify_action_to_applicant(
         props_requirement=props_label,
         schedule_date=schedule_date,
         priority=req.priority or "normal",
-        remark=req.remark or "",
+        remark=task_remark,
         preferred_designer=preferred_name,
         extra_lines=extra or None,
     )
@@ -609,13 +616,19 @@ async def _notify_confirm_to_designer(request_id: int):
         )
         preferred_name = _get_designer_name(db, req.preferred_designer_id) or "随机分配"
 
+        # 优先使用任务的备注（排期确认备注），其次用预约单备注
+        task_remark = req.remark or ""
+        for t in req.tasks:
+            if t.status not in ("cancelled",):
+                task_remark = t.remark or req.remark or ""
+                break
+
         # 在 session 关闭前抽出所有需要的字段
         designer_dingtalk_id = designer.dingtalk_id
         request_no = req.request_no
         salesperson_name = req.salesperson_name or ""
         customer_name = req.customer_name
         priority = req.priority or "normal"
-        remark = req.remark or ""
 
     await notify_design_status_change(
         designer_dingtalk_id,
@@ -628,9 +641,159 @@ async def _notify_confirm_to_designer(request_id: int):
         props_requirement=props_label,
         schedule_date=schedule_date,
         priority=priority,
-        remark=remark,
+        remark=task_remark,
         preferred_designer=preferred_name,
     )
+
+
+async def _notify_reschedule_designer_changed(task_id: int, new_designer_id: int):
+    """改期时设计师变更 → 通知新设计师"""
+    from app.dingtalk.events import notify_design_status_change
+    from app.core.database import SessionLocal
+
+    with SessionLocal() as db:
+        task = db.query(DesignScheduleTask).filter(
+            DesignScheduleTask.id == task_id,
+        ).first()
+        if not task:
+            return
+        req = db.query(DesignScheduleRequest).filter(
+            DesignScheduleRequest.id == task.request_id,
+        ).first()
+        if not req:
+            return
+
+        designer = db.query(DesignDesigner).filter(
+            DesignDesigner.id == new_designer_id,
+        ).first()
+        if not designer or not designer.dingtalk_id:
+            return
+
+        schedule_date = _fmt_schedule_date(
+            task.plan_start_date, task.plan_end_date,
+            task.plan_start_period, task.plan_end_period,
+        )
+        level_label, type_label, props_label = _translate_dict_fields(
+            db, req.customer_level or "", req.shoot_type or "", req.props_requirement or "",
+        )
+        preferred_name = _get_designer_name(db, req.preferred_designer_id) or "随机分配"
+        task_remark = task.remark or req.remark or ""
+
+        designer_dingtalk_id = designer.dingtalk_id
+        request_no = req.request_no
+        customer_name = req.customer_name
+        priority = req.priority or "normal"
+        salesperson_name = req.salesperson_name or ""
+
+    await notify_design_status_change(
+        designer_dingtalk_id,
+        title="📐 设计任务设计师变更通知",
+        request_no=request_no,
+        salesperson_name=salesperson_name,
+        customer_name=customer_name,
+        customer_level=level_label,
+        shoot_type=type_label,
+        props_requirement=props_label,
+        schedule_date=schedule_date,
+        priority=priority,
+        remark=task_remark,
+        preferred_designer=preferred_name,
+        extra_lines=["你已被指派为该任务的新设计师"],
+    )
+
+
+async def _notify_reschedule_date_changed(
+    task_id: int,
+    new_start: str,
+    new_start_period: str,
+    new_end: str,
+    new_end_period: str,
+    comment: str | None = None,
+):
+    """改期时日期变更 → 通知设计师 + 申请人"""
+    from app.auth.models import ArkUser
+    from app.dingtalk.events import notify_design_status_change
+    from app.core.database import SessionLocal
+
+    with SessionLocal() as db:
+        task = db.query(DesignScheduleTask).filter(
+            DesignScheduleTask.id == task_id,
+        ).first()
+        if not task:
+            return
+        req = db.query(DesignScheduleRequest).filter(
+            DesignScheduleRequest.id == task.request_id,
+        ).first()
+        if not req:
+            return
+
+        schedule_date = _fmt_schedule_date(
+            task.plan_start_date, task.plan_end_date,
+            task.plan_start_period, task.plan_end_period,
+        )
+        level_label, type_label, props_label = _translate_dict_fields(
+            db, req.customer_level or "", req.shoot_type or "", req.props_requirement or "",
+        )
+        preferred_name = _get_designer_name(db, req.preferred_designer_id) or "随机分配"
+        task_remark = task.remark or req.remark or ""
+
+        # 收集接收人
+        recipients = []
+
+        # 设计师
+        designer = db.query(DesignDesigner).filter(
+            DesignDesigner.id == task.designer_id,
+        ).first()
+        if designer and designer.dingtalk_id:
+            recipients.append(("designer", designer.dingtalk_id))
+
+        # 申请人
+        applicant_dingtalk_id = ""
+        if req.salesperson_id:
+            applicant = db.query(ArkUser).filter(ArkUser.id == req.salesperson_id).first()
+            if applicant and applicant.dingtalk_id:
+                applicant_dingtalk_id = applicant.dingtalk_id
+                recipients.append(("applicant", applicant_dingtalk_id))
+
+        request_no = req.request_no
+        customer_name = req.customer_name
+        priority = req.priority or "normal"
+        salesperson_name = req.salesperson_name or ""
+
+    extra = [f"新排期：{new_start} {_PERIOD_LABELS.get(new_start_period, '')} ~ {new_end} {_PERIOD_LABELS.get(new_end_period, '')}"]
+    if comment:
+        extra.append(f"改期备注：{comment}")
+
+    for role, dingtalk_id in recipients:
+        title = "📅 设计预约排期变更通知" if role == "applicant" else "📅 设计任务排期变更通知"
+        await notify_design_status_change(
+            dingtalk_id,
+            title=title,
+            request_no=request_no,
+            salesperson_name=salesperson_name,
+            customer_name=customer_name,
+            customer_level=level_label,
+            shoot_type=type_label,
+            props_requirement=props_label,
+            schedule_date=schedule_date,
+            priority=priority,
+            remark=task_remark,
+            preferred_designer=preferred_name,
+            extra_lines=extra,
+        )
+
+
+@router.put("/requests/{request_id}/remark")
+def update_request_remark(
+    request_id: int,
+    data: dict,
+    db: Session = Depends(get_db),
+):
+    """修改预约单备注"""
+    result = service.update_request_remark(
+        db, request_id, data.get("remark"), data.get("operator_id", 1), data.get("operator_name", "管理员")
+    )
+    return result
 
 
 @router.put("/requests/{request_id}/expect-date")
@@ -701,7 +864,10 @@ def list_tasks(
     db: Session = Depends(get_db),
 ):
     """查询任务列表"""
-    query = db.query(DesignScheduleTask)
+    from sqlalchemy.orm import joinedload
+    query = db.query(DesignScheduleTask).options(
+        joinedload(DesignScheduleTask.request)
+    )
     if designer_id:
         query = query.filter(DesignScheduleTask.designer_id == designer_id)
     if status:
@@ -742,6 +908,7 @@ def list_tasks(
                     "actual_end_period": t.actual_end_period,
                     "status": t.status,
                     "remark": t.remark,
+                    "request_remark": t.request.remark if t.request else None,
                     "created_at": t.created_at.isoformat() if t.created_at else None,
                     "updated_at": t.updated_at.isoformat() if t.updated_at else None,
                 }
@@ -755,10 +922,36 @@ def list_tasks(
 def reschedule_task(
     task_id: int,
     data: TaskReschedule,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     """任务改期"""
-    return service.reschedule_task(db, task_id, data, data.operator_id, data.operator_name)
+    result = service.reschedule_task(db, task_id, data, data.operator_id, data.operator_name)
+    d = result.get("data", {})
+
+    # 设计师变更 → 通知新设计师
+    if d.get("old_designer_id") != d.get("new_designer_id"):
+        background_tasks.add_task(
+            _notify_reschedule_designer_changed,
+            task_id=d.get("task_id"),
+            new_designer_id=d.get("new_designer_id"),
+        )
+
+    # 日期变更 → 通知设计师 + 申请人
+    old_start = d.get("old_start")
+    new_start = d.get("new_start")
+    if old_start != new_start or d.get("old_end") != d.get("new_end"):
+        background_tasks.add_task(
+            _notify_reschedule_date_changed,
+            task_id=d.get("task_id"),
+            new_start=d.get("new_start"),
+            new_start_period=d.get("new_start_period"),
+            new_end=d.get("new_end"),
+            new_end_period=d.get("new_end_period"),
+            comment=data.comment,
+        )
+
+    return result
 
 
 # ── 不可用日期 ────────────────────────────────────────────

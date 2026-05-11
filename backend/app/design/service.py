@@ -231,6 +231,7 @@ def action_request(
             plan_end_date=data.plan_end_date or req.expect_end_date,
             plan_end_period=data.plan_end_period or req.expect_end_period or "pm",
             status="scheduled",
+            remark=data.comment,
         )
         db.add(task)
         db.flush()
@@ -283,6 +284,29 @@ def action_request(
         "message": f"操作 {data.action} 完成",
         "data": {"id": req.id, "status": req.status},
     }
+
+
+def update_request_remark(
+    db: Session,
+    request_id: int,
+    remark: str | None,
+    operator_id: int,
+    operator_name: str,
+) -> dict:
+    """修改预约单备注"""
+    req = db.query(DesignScheduleRequest).filter(
+        DesignScheduleRequest.id == request_id,
+        DesignScheduleRequest.deleted_at.is_(None),
+    ).first()
+    if not req:
+        raise ValueError("申请单不存在")
+
+    req.remark = remark
+    req.updated_at = datetime.now()
+    db.commit()
+    db.refresh(req)
+
+    return {"code": 200, "message": "备注已更新", "data": None}
 
 
 # ── 甘特图 ────────────────────────────────────────────────
@@ -423,7 +447,21 @@ def reschedule_task(
     return {
         "code": 200,
         "message": "改期成功",
-        "data": {"task_id": task.id, "task_no": task.task_no},
+        "data": {
+            "task_id": task.id,
+            "task_no": task.task_no,
+            "request_id": task.request_id,
+            "old_designer_id": old_designer,
+            "new_designer_id": task.designer_id,
+            "old_start": old_start.isoformat() if old_start else None,
+            "old_start_period": old_start_period,
+            "old_end": old_end.isoformat() if old_end else None,
+            "old_end_period": old_end_period,
+            "new_start": data.plan_start_date.isoformat(),
+            "new_start_period": data.plan_start_period or "am",
+            "new_end": data.plan_end_date.isoformat(),
+            "new_end_period": data.plan_end_period or "pm",
+        },
     }
 
 

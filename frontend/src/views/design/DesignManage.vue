@@ -41,8 +41,13 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="remark" label="备注" min-width="160" max-width="260" show-overflow-tooltip>
-            <template #default="{ row }">{{ row.remark || '-' }}</template>
+          <el-table-column label="备注" min-width="160" max-width="260" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span class="clickable-remark" @click="openRemarkDialog(row)">
+                {{ row.remark || '-' }}
+                <el-icon class="edit-icon"><Edit /></el-icon>
+              </span>
+            </template>
           </el-table-column>
           <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" show-overflow-tooltip />
           <el-table-column label="操作" min-width="180" max-width="260" fixed="right">
@@ -81,11 +86,26 @@
           <el-table-column label="拍摄类型" min-width="120" max-width="180" show-overflow-tooltip>
             <template #default="{ row }">{{ buildDictLabel(row.shoot_type, shootTypeMap) }}</template>
           </el-table-column>
-          <el-table-column label="设计师" min-width="100" max-width="150">
-            <template #default="{ row }">{{ getDesignerName(row.designer_id) }}</template>
+          <el-table-column label="设计师" min-width="120" max-width="170">
+            <template #default="{ row }">
+              <div v-if="editingDesignerId === row.id" class="inline-edit">
+                <el-select v-model="editingDesignerValue" size="small" style="width: 100px" @change="saveDesigner(row)" @blur="cancelEditDesigner">
+                  <el-option v-for="d in designerData" :key="d.id" :label="d.name" :value="d.id" />
+                </el-select>
+              </div>
+              <span v-else class="clickable-cell" @click="startEditDesigner(row)">
+                {{ getDesignerName(row.designer_id) }}
+                <el-icon class="edit-icon"><Edit /></el-icon>
+              </span>
+            </template>
           </el-table-column>
           <el-table-column label="排期日期" min-width="280" max-width="420">
-            <template #default="{ row }">{{ row.plan_start_date || '-' }} {{ periodLabel(row.plan_start_period) }} ~ {{ row.plan_end_date || '-' }} {{ periodLabel(row.plan_end_period) }}</template>
+            <template #default="{ row }">
+              <span class="clickable-date" @click="openEditTaskDateDialog(row)">
+                {{ row.plan_start_date || '-' }} {{ periodLabel(row.plan_start_period) }} ~ {{ row.plan_end_date || '-' }} {{ periodLabel(row.plan_end_period) }}
+                <el-icon class="edit-icon"><Edit /></el-icon>
+              </span>
+            </template>
           </el-table-column>
           <el-table-column label="优先级" min-width="80" max-width="120">
             <template #default="{ row }">
@@ -94,8 +114,18 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="remark" label="备注" min-width="160" max-width="260" show-overflow-tooltip>
-            <template #default="{ row }">{{ row.remark || '-' }}</template>
+          <el-table-column label="备注" min-width="180" max-width="300" show-overflow-tooltip>
+            <template #default="{ row }">
+              <div v-if="row.remark || row.request_remark" class="remark-mixed">
+                <div v-if="row.remark" class="remark-line">
+                  <span class="remark-tag task">排期</span>{{ row.remark }}
+                </div>
+                <div v-if="row.request_remark" class="remark-line">
+                  <span class="remark-tag request">预约</span>{{ row.request_remark }}
+                </div>
+              </div>
+              <span v-else>-</span>
+            </template>
           </el-table-column>
           <el-table-column label="状态" min-width="100" max-width="150">
             <template #default="{ row }">
@@ -334,6 +364,40 @@
         <GlassButton variant="primary" @click="submitEditDate" :loading="editDateSaving">保存</GlassButton>
       </template>
     </el-dialog>
+
+    <!-- 修改备注 -->
+    <el-dialog v-model="remarkVisible" title="修改备注" width="500px" :close-on-click-modal="false">
+      <el-form label-width="80px">
+        <el-form-item label="备注">
+          <el-input v-model="remarkForm.remark" type="textarea" :rows="4" placeholder="请输入备注" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <GlassButton variant="ghost" @click="remarkVisible = false">取消</GlassButton>
+        <GlassButton variant="primary" @click="submitRemark" :loading="remarkSaving">保存</GlassButton>
+      </template>
+    </el-dialog>
+
+    <!-- 修改排期日期 -->
+    <el-dialog v-model="editTaskDateVisible" title="修改排期日期" width="500px" :close-on-click-modal="false">
+      <el-form label-width="100px">
+        <el-form-item label="排期日期">
+          <DatePeriodPicker
+            v-model:start-date="editTaskDateForm.startDate"
+            v-model:start-period="editTaskDateForm.startPeriod"
+            v-model:end-date="editTaskDateForm.endDate"
+            v-model:end-period="editTaskDateForm.endPeriod"
+          />
+        </el-form-item>
+        <el-form-item label="改期备注">
+          <el-input v-model="editTaskDateForm.comment" type="textarea" :rows="2" placeholder="选填，将包含在钉钉通知中" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <GlassButton variant="ghost" @click="editTaskDateVisible = false">取消</GlassButton>
+        <GlassButton variant="primary" @click="submitEditTaskDate" :loading="editTaskDateSaving">保存</GlassButton>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -341,7 +405,7 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload, Plus, Calendar, VideoPlay, CircleCheck, CircleClose, Edit, SwitchButton, Bell } from '@element-plus/icons-vue'
-import { getRequests, getTaskList, getDesigners, createDesigner, updateDesigner, actionRequest, rescheduleTask, importRequests, updateExpectDate, triggerShootReminderScan } from '@/api/design'
+import { getRequests, getTaskList, getDesigners, createDesigner, updateDesigner, actionRequest, rescheduleTask, importRequests, updateExpectDate, updateRequestRemark, triggerShootReminderScan } from '@/api/design'
 import { getDictMap, buildDictLabel } from '@/utils/dict'
 import DesignCalendarConfig from '@/components/design/DesignCalendarConfig.vue'
 import DesignCapacityConfig from '@/components/design/DesignCapacityConfig.vue'
@@ -422,6 +486,117 @@ async function submitEditDate() {
     fetchPending()
   } finally {
     editDateSaving.value = false
+  }
+}
+
+// --- Edit remark (pending tab) ---
+const remarkVisible = ref(false)
+const remarkSaving = ref(false)
+const remarkRow = ref(null)
+const remarkForm = reactive({ remark: '' })
+
+function openRemarkDialog(row) {
+  remarkRow.value = row
+  remarkForm.remark = row.remark || ''
+  remarkVisible.value = true
+}
+
+async function submitRemark() {
+  remarkSaving.value = true
+  try {
+    await updateRequestRemark(remarkRow.value.id, {
+      remark: remarkForm.remark,
+      operator_id: 1,
+      operator_name: '管理员',
+    })
+    ElMessage.success('备注已更新')
+    remarkVisible.value = false
+    fetchPending()
+  } finally {
+    remarkSaving.value = false
+  }
+}
+
+// --- Designer inline edit (scheduled tab) ---
+const editingDesignerId = ref(null)
+const editingDesignerValue = ref(null)
+
+function startEditDesigner(row) {
+  editingDesignerId.value = row.id
+  editingDesignerValue.value = row.designer_id
+}
+
+function cancelEditDesigner() {
+  editingDesignerId.value = null
+  editingDesignerValue.value = null
+}
+
+async function saveDesigner(row) {
+  if (editingDesignerValue.value === row.designer_id) {
+    editingDesignerId.value = null
+    return
+  }
+  try {
+    await rescheduleTask(row.id, {
+      designer_id: editingDesignerValue.value,
+      plan_start_date: row.plan_start_date,
+      plan_start_period: row.plan_start_period || 'am',
+      plan_end_date: row.plan_end_date,
+      plan_end_period: row.plan_end_period || 'pm',
+      operator_id: 1,
+      operator_name: '管理员',
+      operator_role: 'design_staff',
+    })
+    ElMessage.success('设计师已更新')
+    fetchScheduled()
+  } catch { /* handled by interceptor */ }
+  editingDesignerId.value = null
+}
+
+// --- Edit task date (scheduled tab) ---
+const editTaskDateVisible = ref(false)
+const editTaskDateSaving = ref(false)
+const editTaskDateRow = ref(null)
+const editTaskDateForm = reactive({
+  startDate: '',
+  startPeriod: 'am',
+  endDate: '',
+  endPeriod: 'pm',
+  comment: '',
+})
+
+function openEditTaskDateDialog(row) {
+  editTaskDateRow.value = row
+  editTaskDateForm.startDate = row.plan_start_date || ''
+  editTaskDateForm.startPeriod = row.plan_start_period || 'am'
+  editTaskDateForm.endDate = row.plan_end_date || ''
+  editTaskDateForm.endPeriod = row.plan_end_period || 'pm'
+  editTaskDateForm.comment = ''
+  editTaskDateVisible.value = true
+}
+
+async function submitEditTaskDate() {
+  if (!editTaskDateForm.startDate || !editTaskDateForm.endDate) {
+    ElMessage.warning('请选择日期')
+    return
+  }
+  editTaskDateSaving.value = true
+  try {
+    await rescheduleTask(editTaskDateRow.value.id, {
+      plan_start_date: editTaskDateForm.startDate,
+      plan_start_period: editTaskDateForm.startPeriod,
+      plan_end_date: editTaskDateForm.endDate,
+      plan_end_period: editTaskDateForm.endPeriod,
+      comment: editTaskDateForm.comment,
+      operator_id: 1,
+      operator_name: '管理员',
+      operator_role: 'design_staff',
+    })
+    ElMessage.success('排期日期已更新')
+    editTaskDateVisible.value = false
+    fetchScheduled()
+  } finally {
+    editTaskDateSaving.value = false
   }
 }
 
@@ -770,5 +945,75 @@ onMounted(() => {
 }
 .clickable-date:hover .edit-icon {
   opacity: 1;
+}
+
+.clickable-remark {
+  cursor: pointer;
+  color: var(--color-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.clickable-remark:hover {
+  text-decoration: underline;
+}
+.clickable-remark .edit-icon {
+  font-size: 14px;
+  opacity: 0.5;
+}
+.clickable-remark:hover .edit-icon {
+  opacity: 1;
+}
+
+.clickable-cell {
+  cursor: pointer;
+  color: var(--color-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.clickable-cell:hover {
+  text-decoration: underline;
+}
+.clickable-cell .edit-icon {
+  font-size: 14px;
+  opacity: 0.5;
+}
+.clickable-cell:hover .edit-icon {
+  opacity: 1;
+}
+
+.inline-edit {
+  display: inline-block;
+}
+
+.remark-mixed {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.remark-line {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.remark-tag {
+  display: inline-block;
+  padding: 0 4px;
+  border-radius: 3px;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.remark-tag.task {
+  background: rgba(64, 158, 255, 0.15);
+  color: #409eff;
+}
+.remark-tag.request {
+  background: rgba(103, 194, 58, 0.15);
+  color: #67c23a;
 }
 </style>

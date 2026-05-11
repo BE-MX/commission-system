@@ -181,6 +181,10 @@ export function updateExpectDate(requestId, data) {
   return designApi.put(`/requests/${requestId}/expect-date`, data, { loadingText: '正在更新...' })
 }
 
+export function updateRequestRemark(requestId, data) {
+  return designApi.put(`/requests/${requestId}/remark`, data, { loadingText: '正在保存...' })
+}
+
 export function triggerShootReminderScan() {
   return designApi.post('/scan-shoot-reminders', null, { loadingText: '正在扫描...' })
 }
