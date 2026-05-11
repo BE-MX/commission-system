@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models.tracking import ShipmentTracking, TrackingEvent, CarrierConfig
+from app.models.waybill import Waybill
 from app.services.carriers import get_adapter
 from app.services.dws_sync_service import sync_shipment
 
@@ -65,12 +66,16 @@ async def poll_single(db: Session, shipment: ShipmentTracking) -> dict:
             description=evt.description,
             location=evt.location,
             raw_response=json.dumps(evt.raw, default=str, ensure_ascii=False) if evt.raw else None,
+            estimated_delivery_date=result.estimated_delivery_date.replace(tzinfo=None) if result.estimated_delivery_date else None,
         ))
 
     shipment.current_status = result.current_status
     shipment.current_status_text = result.current_status_text
     shipment.current_location = result.current_location
     shipment.last_event_time = result.last_event_time
+    if result.estimated_delivery_date:
+        est_naive = result.estimated_delivery_date.replace(tzinfo=None)
+        shipment.estimated_delivery_date = est_naive
 
     if result.current_status == "delivered":
         shipment.delivered_at = result.last_event_time
@@ -80,6 +85,15 @@ async def poll_single(db: Session, shipment: ShipmentTracking) -> dict:
 
     if not shipment.shipped_at and result.current_status not in ("pending",):
         shipment.shipped_at = datetime.now()
+
+    # 同步预计送达时间到 ark_waybills
+    if result.estimated_delivery_date:
+        try:
+            waybill = db.query(Waybill).filter(Waybill.waybill_no == shipment.waybill_no).first()
+            if waybill:
+                waybill.estimated_delivery_date = result.estimated_delivery_date.replace(tzinfo=None)
+        except Exception:
+            pass
 
     carrier_cfg = db.query(CarrierConfig).filter(CarrierConfig.carrier == shipment.carrier).first()
     max_days = carrier_cfg.max_poll_days if carrier_cfg else 90

@@ -14,7 +14,8 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.auth.dependencies import get_current_user, require_permission
-from app.models.tracking import ShipmentStaging, ShipmentTracking, TrackingEvent
+from app.auth.models import ArkUser
+from app.models.tracking import CarrierConfig, ShipmentStaging, ShipmentTracking, TrackingEvent
 from app.models.waybill import Waybill
 from app.schemas.tracking import (
     StagingCreateRequest, StagingCreateResponse,
@@ -24,7 +25,7 @@ from app.schemas.tracking import (
 from app.schemas.waybill import WaybillCreate, OCRUploadResponse
 from app.services.staging_service import scan_staging
 from app.services.tracking_service import poll_active_shipments, refresh_single
-from app.services.short_link import build_short_link
+from app.services.short_link import build_short_link, generate_short_code
 from app.services.dws_sync_service import sync_shipment, sync_all_active
 
 router = APIRouter()
@@ -490,6 +491,47 @@ def create_waybill(
             },
         )
 
+    # 自动创建 shipment_tracking 记录以启动物流轮询
+    try:
+        existing_tracking = (
+            db.query(ShipmentTracking)
+            .filter(
+                ShipmentTracking.waybill_no == payload.waybill_no,
+                ShipmentTracking.carrier == payload.carrier,
+            )
+            .first()
+        )
+        if not existing_tracking:
+            carrier_cfg = (
+                db.query(CarrierConfig)
+                .filter(func.lower(CarrierConfig.carrier) == payload.carrier.lower())
+                .first()
+            )
+            # 查当前用户的钉钉ID
+            user_id = current_user.get("sub")
+            dingtalk_id = ""
+            if user_id:
+                user = db.query(ArkUser).filter(ArkUser.id == int(user_id)).first()
+                if user and user.dingtalk_id:
+                    dingtalk_id = user.dingtalk_id
+
+            tracking = ShipmentTracking(
+                waybill_no=payload.waybill_no,
+                carrier=payload.carrier,
+                carrier_name=carrier_cfg.carrier_name if carrier_cfg else payload.carrier,
+                receiver_name=payload.recipient_name,
+                receiver_country=payload.recipient_country,
+                dingtalk_user_id=dingtalk_id,
+                dingtalk_user_name=current_user.get("username", ""),
+                short_code=generate_short_code(db),
+                is_active=True,
+            )
+            db.add(tracking)
+            db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.warning("自动创建跟踪记录失败（不影响录入）: %s", exc)
+
     # 异步触发钉钉推送（不阻塞响应）
     try:
         import asyncio
@@ -528,6 +570,8 @@ async def _push_waybill_dingtalk(waybill: Waybill) -> None:
             f"**发件日期：** {waybill.ship_date}\n"
             f"**录入人：** {waybill.created_by}\n"
         )
+        if waybill.estimated_delivery_date:
+            text += f"**预计送达：** {waybill.estimated_delivery_date.strftime('%Y年%m月%d日')}\n"
         await sender.send_markdown(title="运单录入通知", text=text)
     except Exception as exc:
         logger.warning("钉钉推送失败（不影响录入）: %s", exc)

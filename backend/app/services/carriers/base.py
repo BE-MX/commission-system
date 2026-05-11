@@ -25,6 +25,7 @@ class TrackingResult:
     last_event_time: Optional[datetime]
     events: list[TrackingEvent]
     error: Optional[str] = None
+    estimated_delivery_date: Optional[datetime] = None
 
 
 STATUS_MAP_CN = {

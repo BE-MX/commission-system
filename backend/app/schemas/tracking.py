@@ -45,6 +45,7 @@ class ShipmentListItem(BaseModel):
     current_status_text: Optional[str] = None
     current_location: Optional[str] = None
     last_event_time: Optional[datetime] = None
+    estimated_delivery_date: Optional[datetime] = None
     dingtalk_user_name: str
     is_active: bool
     short_link: Optional[str] = None
@@ -81,6 +82,7 @@ class ShipmentDetailResponse(BaseModel):
     last_event_time: Optional[datetime] = None
     shipped_at: Optional[datetime] = None
     delivered_at: Optional[datetime] = None
+    estimated_delivery_date: Optional[datetime] = None
     dingtalk_user_id: str
     dingtalk_user_name: str
     is_active: bool

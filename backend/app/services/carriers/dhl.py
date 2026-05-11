@@ -97,6 +97,18 @@ class DHLAdapter(CarrierAdapter):
         latest_typecode = latest.status_code.upper() if latest else ""
         normalized = DHL_TYPECODE_MAP.get(latest_typecode, "in_transit")
 
+        # 提取预计送达时间
+        est_dt = None
+        eta_str = shipment.get("estimatedTimeOfDelivery")
+        if not eta_str:
+            # 尝试其他可能的字段名
+            eta_str = shipment.get("estimatedDeliveryTime")
+        if eta_str:
+            try:
+                est_dt = datetime.fromisoformat(eta_str)
+            except Exception:
+                est_dt = None
+
         return TrackingResult(
             success=True,
             waybill_no=waybill_no,
@@ -105,4 +117,5 @@ class DHLAdapter(CarrierAdapter):
             current_location=latest.location if latest else "",
             last_event_time=latest.event_time if latest else None,
             events=events,
+            estimated_delivery_date=est_dt,
         )

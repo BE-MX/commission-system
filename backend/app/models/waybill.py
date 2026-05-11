@@ -15,6 +15,7 @@ class Waybill(Base):
     recipient_country = Column(String(100), nullable=False, comment="收件国家")
     ship_date = Column(Date, nullable=False, comment="发件日期")
     status = Column(String(20), nullable=False, default="待跟踪", comment="状态")
+    estimated_delivery_date = Column(DateTime, comment="预计送达时间，来自承运商API，每次轮询覆盖更新")
     entry_source = Column(String(20), nullable=False, default="manual", comment="录入来源")
     created_by = Column(String(50), nullable=False, comment="录入人")
     created_at = Column(DateTime, nullable=False, server_default=func.now())

@@ -95,6 +95,11 @@
       </el-table-column>
       <el-table-column prop="current_status_text" label="最新动态" min-width="190" max-width="340" show-overflow-tooltip />
       <el-table-column prop="current_location" label="当前位置" min-width="130" max-width="220" show-overflow-tooltip />
+      <el-table-column label="预计送达" min-width="90" max-width="130" show-overflow-tooltip>
+        <template #default="{ row }">
+          {{ row.estimated_delivery_date ? fmtDateShort(row.estimated_delivery_date) : '-' }}
+        </template>
+      </el-table-column>
       <el-table-column label="最新时间" min-width="160" max-width="200" show-overflow-tooltip>
         <template #default="{ row }">{{ row.last_event_time || '-' }}</template>
       </el-table-column>
@@ -251,6 +256,14 @@ function copyLink(link) {
   navigator.clipboard.writeText(link).then(() => {
     ElMessage.success('短链接已复制')
   })
+}
+
+function fmtDateShort(dateStr) {
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return '-'
+  const m = d.getMonth() + 1
+  const day = d.getDate()
+  return `${m}/${day}`
 }
 
 onMounted(() => {

@@ -113,6 +113,23 @@ class FedExAdapter(CarrierAdapter):
             last_time = events[0].event_time if events else None
             normalized = FEDEX_STATUS_MAP.get(raw_code.upper(), "in_transit")
 
+            # 提取预计送达时间
+            est_dt = None
+            est_window = r.get("estimatedDeliveryTimeWindow", {})
+            est_begins = est_window.get("begins")
+            if est_begins:
+                try:
+                    est_dt = datetime.fromisoformat(est_begins.replace("Z", "+00:00"))
+                except Exception:
+                    est_dt = None
+            if not est_dt:
+                est_str = r.get("estimatedDeliveryTime")
+                if est_str:
+                    try:
+                        est_dt = datetime.fromisoformat(est_str.replace("Z", "+00:00"))
+                    except Exception:
+                        est_dt = None
+
             return TrackingResult(
                 success=True,
                 waybill_no=waybill_no,
@@ -121,6 +138,7 @@ class FedExAdapter(CarrierAdapter):
                 current_location=cur_loc,
                 last_event_time=last_time,
                 events=events,
+                estimated_delivery_date=est_dt,
             )
         except Exception as e:
             return TrackingResult(False, waybill_no, "exception", "解析失败", "", None, [], error=str(e))

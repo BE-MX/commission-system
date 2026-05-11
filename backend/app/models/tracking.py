@@ -57,6 +57,7 @@ class ShipmentTracking(Base):
     last_event_time = Column(DateTime)
     shipped_at = Column(DateTime)
     delivered_at = Column(DateTime)
+    estimated_delivery_date = Column(DateTime, comment="预计送达时间，来自承运商API，每次轮询覆盖更新")
     dingtalk_user_id = Column(String(64), nullable=False)
     dingtalk_user_name = Column(String(50), nullable=False)
     dingtalk_sheet_row_id = Column(String(64))
@@ -93,6 +94,7 @@ class TrackingEvent(Base):
     location = Column(String(200))
     location_code = Column(String(20))
     raw_response = Column(Text, comment="JSON原始响应")
+    estimated_delivery_date = Column(DateTime, comment="该次查询时承运商返回的预计送达时间")
     synced_at = Column(DateTime, nullable=False, server_default=func.now())
 
     __table_args__ = (
