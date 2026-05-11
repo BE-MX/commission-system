@@ -67,6 +67,12 @@ const routes = [
         meta: { title: '运单详情' }
       },
       {
+        path: 'tracking/upload',
+        name: 'WaybillUpload',
+        component: () => import('../views/tracking/WaybillUpload.vue'),
+        meta: { title: '运单上传', permission: 'tracking:write' }
+      },
+      {
         path: 'design/gantt',
         name: 'DesignGantt',
         component: () => import('../views/design/GanttView.vue'),
@@ -125,6 +131,42 @@ const routes = [
         name: 'AIManager',
         component: () => import('../views/system/AIManager.vue'),
         meta: { title: 'AI 接入管理', permission: 'ai:admin' }
+      },
+      {
+        path: 'insight/industry-daily',
+        name: 'InsightIndustryDaily',
+        component: () => import('../views/insight/IndustryDailyView.vue'),
+        meta: { title: '行业情报日报', permission: 'insight:read' }
+      },
+      {
+        path: 'insight/ai-tools',
+        name: 'InsightAITools',
+        component: () => import('../views/insight/AIToolsView.vue'),
+        meta: { title: 'AI 工具速递', permission: 'insight:internal_read' }
+      },
+      {
+        path: 'insight/reports',
+        name: 'InsightInternalReports',
+        component: () => import('../views/insight/InternalReportsView.vue'),
+        meta: { title: '内部经营报告', permission: 'insight:internal_read' }
+      },
+      {
+        path: 'insight/cases',
+        name: 'InsightCaseLibrary',
+        component: () => import('../views/insight/CaseLibraryView.vue'),
+        meta: { title: '业务员案例库', permission: 'insight:read' }
+      },
+      {
+        path: 'insight/minutes',
+        name: 'InsightMeetingMinutes',
+        component: () => import('../views/insight/MeetingMinutesView.vue'),
+        meta: { title: '周会纪要', permission: 'insight:read' }
+      },
+      {
+        path: 'insight/sources',
+        name: 'InsightSources',
+        component: () => import('../views/insight/SourcesAdminView.vue'),
+        meta: { title: '信源配置', permission: 'insight:admin' }
       },
       {
         path: 'profile',

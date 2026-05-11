@@ -68,10 +68,51 @@
           </el-menu-item>
         </el-sub-menu>
 
-        <el-menu-item index="/tracking" v-if="authStore.hasAnyPermission(['tracking:read', 'tracking:write'])">
-          <el-icon><Van /></el-icon>
-          <template #title>物流跟踪</template>
-        </el-menu-item>
+        <el-sub-menu index="tracking-mgmt" v-if="authStore.hasAnyPermission(['tracking:read', 'tracking:write'])">
+          <template #title>
+            <el-icon><Van /></el-icon>
+            <span>物流管理</span>
+          </template>
+          <el-menu-item index="/tracking" v-if="authStore.hasAnyPermission(['tracking:read', 'tracking:write'])">
+            <el-icon><List /></el-icon>
+            <template #title>物流跟踪</template>
+          </el-menu-item>
+          <el-menu-item index="/tracking/upload" v-if="authStore.hasAnyPermission(['tracking:write'])">
+            <el-icon><Upload /></el-icon>
+            <template #title>运单上传</template>
+          </el-menu-item>
+        </el-sub-menu>
+
+        <el-sub-menu index="insight" v-if="authStore.hasAnyPermission(['insight:read', 'insight:write', 'insight:internal_read', 'insight:admin'])">
+          <template #title>
+            <el-icon><Aim /></el-icon>
+            <span>方舟洞见</span>
+          </template>
+          <el-menu-item index="/insight/industry-daily" v-if="authStore.hasPermission('insight:read')">
+            <el-icon><Reading /></el-icon>
+            <template #title>行业情报日报</template>
+          </el-menu-item>
+          <el-menu-item index="/insight/ai-tools" v-if="authStore.hasAnyPermission(['insight:internal_read', 'insight:admin'])">
+            <el-icon><MagicStick /></el-icon>
+            <template #title>AI 工具速递</template>
+          </el-menu-item>
+          <el-menu-item index="/insight/reports" v-if="authStore.hasAnyPermission(['insight:internal_read', 'insight:admin'])">
+            <el-icon><DataAnalysis /></el-icon>
+            <template #title>内部经营报告</template>
+          </el-menu-item>
+          <el-menu-item index="/insight/cases" v-if="authStore.hasAnyPermission(['insight:read', 'insight:write'])">
+            <el-icon><Notebook /></el-icon>
+            <template #title>业务员案例库</template>
+          </el-menu-item>
+          <el-menu-item index="/insight/minutes" v-if="authStore.hasPermission('insight:read')">
+            <el-icon><Calendar /></el-icon>
+            <template #title>周会纪要</template>
+          </el-menu-item>
+          <el-menu-item index="/insight/sources" v-if="authStore.hasPermission('insight:admin')">
+            <el-icon><Connection /></el-icon>
+            <template #title>信源配置</template>
+          </el-menu-item>
+        </el-sub-menu>
 
         <el-sub-menu index="design-mgmt" v-if="authStore.hasAnyPermission(['design:read', 'design:write', 'design:audit', 'design:manage'])">
           <template #title>

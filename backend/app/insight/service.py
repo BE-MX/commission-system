@@ -1,0 +1,1029 @@
+"""方舟洞见 — 业务逻辑层"""
+
+from __future__ import annotations
+
+import csv
+import io
+import json
+import logging
+import os
+import re
+import shutil
+import time
+import uuid
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from typing import Any, Optional
+
+from jinja2 import Environment, FileSystemLoader, select_autoescape
+from sqlalchemy import or_, and_, desc, func
+from sqlalchemy.orm import Session
+
+from app.insight.models import (
+    InsightReport,
+    InsightSource,
+    InsightCase,
+    MeetingMinutes,
+    InsightTask,
+)
+from app.insight.schemas import (
+    ReportImport,
+    SourceCreate,
+    SourceUpdate,
+    CaseManualCreate,
+    CasePublish,
+    MinutesUpload,
+    TaskUpdate,
+)
+
+logger = logging.getLogger("insight")
+
+# ── 上传目录 ──────────────────────────────────────────
+INSIGHT_UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent / "uploads" / "insight"
+INSIGHT_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+# ── Jinja2 模板环境 ─────────────────────────────────────
+TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
+_jinja_env = Environment(
+    loader=FileSystemLoader(str(TEMPLATE_DIR)),
+    autoescape=select_autoescape(["html", "xml"]),
+    trim_blocks=True,
+    lstrip_blocks=True,
+)
+
+
+# ──────────────────────────────────────────────────────
+# 报告(Reports)
+# ──────────────────────────────────────────────────────
+
+def list_reports(
+    db: Session,
+    report_type: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    status: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 50,
+) -> dict:
+    """报告列表查询 — 不返回 html_content 字段(性能)。"""
+    query = db.query(
+        InsightReport.id,
+        InsightReport.report_type,
+        InsightReport.report_date,
+        InsightReport.title,
+        InsightReport.status,
+        InsightReport.report_metadata,
+        InsightReport.created_at,
+    )
+
+    if report_type:
+        if "," in report_type:
+            types = [t.strip() for t in report_type.split(",") if t.strip()]
+            query = query.filter(InsightReport.report_type.in_(types))
+        else:
+            query = query.filter(InsightReport.report_type == report_type)
+    if start_date:
+        query = query.filter(InsightReport.report_date >= start_date)
+    if end_date:
+        query = query.filter(InsightReport.report_date <= end_date)
+    if status:
+        query = query.filter(InsightReport.status == status)
+
+    total = query.count()
+    rows = (
+        query.order_by(desc(InsightReport.report_date), desc(InsightReport.id))
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    items = [
+        {
+            "id": r.id,
+            "report_type": r.report_type,
+            "report_date": r.report_date.isoformat() if r.report_date else None,
+            "title": r.title,
+            "status": r.status,
+            "report_metadata": r.report_metadata,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]
+    return {"total": total, "items": items}
+
+
+def get_report(db: Session, report_id: int) -> InsightReport:
+    r = db.query(InsightReport).filter(InsightReport.id == report_id).first()
+    if not r:
+        raise ValueError("报告不存在")
+    return r
+
+
+def get_report_html(db: Session, report_id: int) -> str:
+    """获取报告 HTML 内容(优先 html_content,否则读 file_path)。"""
+    r = get_report(db, report_id)
+    if r.html_content:
+        return r.html_content
+    if r.file_path:
+        p = Path(r.file_path)
+        if p.is_file():
+            return p.read_text(encoding="utf-8")
+    raise ValueError("报告内容为空")
+
+
+def import_report(db: Session, data: ReportImport, created_by: Optional[int] = None) -> InsightReport:
+    """ACCIO WORK 等外部系统推送报告。"""
+    valid_types = {"industry_daily", "ai_tools", "shop_analysis", "competitor_analysis", "inquiry_analysis"}
+    if data.report_type not in valid_types:
+        raise ValueError(f"非法的 report_type: {data.report_type}")
+
+    r = InsightReport(
+        report_type=data.report_type,
+        report_date=data.report_date,
+        title=data.title or f"{data.report_type} {data.report_date}",
+        html_content=data.html_content,
+        source_data=data.source_data,
+        report_metadata=data.metadata,
+        status="published",
+        created_by=created_by,
+    )
+    db.add(r)
+    db.commit()
+    db.refresh(r)
+    logger.info(f"Imported report id={r.id} type={r.report_type} date={r.report_date}")
+    return r
+
+
+def regenerate_report(db: Session, report_id: int, user_id: Optional[int] = None) -> InsightReport:
+    """手动触发重新生成 — 当前不实现实际信源抓取,仅返回报告条目重置状态。"""
+    r = get_report(db, report_id)
+    r.status = "pending"
+    r.error_msg = None
+    db.commit()
+    db.refresh(r)
+    # TODO: 接入定时任务/异步队列后,这里应触发 generate_industry_daily_report() 等
+    logger.info(f"Report {report_id} marked for regeneration (TODO: actual fetch+generate not implemented)")
+    return r
+
+
+# ──────────────────────────────────────────────────────
+# 信源(Sources)
+# ──────────────────────────────────────────────────────
+
+def list_sources(
+    db: Session,
+    source_type: Optional[str] = None,
+    is_active: Optional[bool] = None,
+    pipeline: Optional[str] = None,
+) -> list[InsightSource]:
+    query = db.query(InsightSource)
+    if source_type:
+        query = query.filter(InsightSource.source_type == source_type)
+    if is_active is not None:
+        query = query.filter(InsightSource.is_active.is_(is_active))
+    if pipeline:
+        query = query.filter(InsightSource.pipeline == pipeline)
+    return query.order_by(InsightSource.sort_order, InsightSource.id).all()
+
+
+def get_source(db: Session, source_id: int) -> InsightSource:
+    s = db.query(InsightSource).filter(InsightSource.id == source_id).first()
+    if not s:
+        raise ValueError("信源不存在")
+    return s
+
+
+def create_source(db: Session, data: SourceCreate) -> InsightSource:
+    s = InsightSource(**data.model_dump())
+    db.add(s)
+    db.commit()
+    db.refresh(s)
+    return s
+
+
+def update_source(db: Session, source_id: int, data: SourceUpdate) -> InsightSource:
+    s = get_source(db, source_id)
+    payload = data.model_dump(exclude_unset=True)
+    for k, v in payload.items():
+        setattr(s, k, v)
+    db.commit()
+    db.refresh(s)
+    return s
+
+
+def delete_source(db: Session, source_id: int) -> None:
+    """软删除:置 is_active=False。"""
+    s = get_source(db, source_id)
+    s.is_active = False
+    db.commit()
+
+
+def test_source(db: Session, source_id: int) -> dict:
+    """信源连通性测试 — HEAD/GET 探测。"""
+    import urllib.request
+    import urllib.error
+
+    s = get_source(db, source_id)
+    start = time.time()
+
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Accept": "*/*",
+    }
+    if s.request_headers:
+        headers.update(s.request_headers)
+
+    try:
+        req = urllib.request.Request(s.url, method="GET", headers=headers)
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            status_code = resp.status
+            content = resp.read(2048).decode("utf-8", errors="replace")
+        elapsed = int((time.time() - start) * 1000)
+
+        # 简单解析:RSS 检测 <item> 数量
+        preview = []
+        if "<item>" in content or "<entry>" in content:
+            # 粗略统计
+            import re as _re
+            items = _re.findall(r"<title[^>]*>(.*?)</title>", content)
+            preview = [{"title": (t or "")[:80]} for t in items[:5]]
+
+        # 标记成功
+        s.last_fetched_at = datetime.utcnow()
+        s.last_error = None
+        s.consecutive_failures = 0
+        db.commit()
+
+        return {
+            "success": True,
+            "status_code": status_code,
+            "latency_ms": elapsed,
+            "preview": preview,
+            "error": None,
+        }
+    except urllib.error.HTTPError as e:
+        elapsed = int((time.time() - start) * 1000)
+        msg = f"HTTP {e.code} {e.reason}"
+        s.last_error = msg
+        s.consecutive_failures = (s.consecutive_failures or 0) + 1
+        db.commit()
+        return {"success": False, "status_code": e.code, "latency_ms": elapsed, "preview": [], "error": msg}
+    except Exception as e:
+        elapsed = int((time.time() - start) * 1000)
+        msg = f"{type(e).__name__}: {str(e)[:200]}"
+        s.last_error = msg
+        s.consecutive_failures = (s.consecutive_failures or 0) + 1
+        db.commit()
+        return {"success": False, "status_code": None, "latency_ms": elapsed, "preview": [], "error": msg}
+
+
+# ──────────────────────────────────────────────────────
+# 案例库(Cases)
+# ──────────────────────────────────────────────────────
+
+ALLOWED_IMG_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+MAX_IMG_SIZE = 5 * 1024 * 1024  # 5 MB
+
+
+def _save_uploaded_image(file_obj, original_filename: str) -> str:
+    """保存上传图片,返回相对路径 uploads/insight/xxx.png"""
+    ext = Path(original_filename).suffix.lower()
+    if ext not in ALLOWED_IMG_EXTS:
+        raise ValueError(f"不支持的图片格式: {ext}")
+    safe_name = f"case_{uuid.uuid4().hex}{ext}"
+    dest = INSIGHT_UPLOAD_DIR / safe_name
+    with dest.open("wb") as out:
+        shutil.copyfileobj(file_obj, out)
+    if dest.stat().st_size > MAX_IMG_SIZE:
+        dest.unlink(missing_ok=True)
+        raise ValueError("图片超过 5MB 限制")
+    return f"/uploads/insight/{safe_name}"
+
+
+def upload_case(
+    db: Session,
+    user_id: int,
+    user_name: str,
+    *,
+    source_type: str,
+    text: Optional[str],
+    file_path: Optional[str],
+    share_person: Optional[str],
+    share_date: Optional[date],
+) -> InsightCase:
+    """案例上传(截图 OCR / 文本粘贴) — 异步处理,先创建 processing 状态记录。"""
+    if source_type not in ("screenshot", "text_paste"):
+        raise ValueError("source_type 必须为 screenshot 或 text_paste")
+
+    case = InsightCase(
+        title="(AI 处理中…)",
+        share_person=(share_person or user_name or "")[:50],
+        share_date=share_date,
+        source_type=source_type,
+        image_path=file_path if source_type == "screenshot" else None,
+        original_content=text if source_type == "text_paste" else None,
+        uploaded_by=user_id,
+        status="processing",
+    )
+    db.add(case)
+    db.commit()
+    db.refresh(case)
+
+    # 同步执行 AI 提取(简化:立即处理。实际生产应 BackgroundTasks)
+    try:
+        if source_type == "screenshot":
+            # 1. OCR 提取文本
+            ocr_text = _invoke_ocr(db, file_path or "", user_id)
+            case.original_content = ocr_text
+        else:
+            ocr_text = text or ""
+
+        # 2. 用 AI 整理为案例字段
+        ai_payload = _invoke_case_format(db, ocr_text, user_id)
+        case.title = ai_payload.get("title") or "(待补充)"
+        case.scenario = ai_payload.get("scenario")
+        case.what_was_done = ai_payload.get("what_was_done")
+        case.result = ai_payload.get("result")
+        case.customer_name = ai_payload.get("customer_name")
+        case.tags = ai_payload.get("tags") or []
+        case.highlights = ai_payload.get("highlights")
+        case.customer_type = ai_payload.get("customer_type")
+        case.market = ai_payload.get("market")
+        case.product_type = ai_payload.get("product_type")
+        case.key_phrases = ai_payload.get("key_phrases")
+        case.raw_summary = ai_payload.get("raw_summary")
+        case.status = "draft"
+    except Exception as e:
+        logger.exception("案例 AI 处理失败")
+        case.error_msg = str(e)[:500]
+        case.status = "failed"
+
+    db.commit()
+    db.refresh(case)
+    return case
+
+
+def manual_create_case(db: Session, user_id: int, user_name: str, data: CaseManualCreate) -> InsightCase:
+    """业务员表单直接发布(不走 AI),直接进入 published 状态。"""
+    case = InsightCase(
+        title=data.title,
+        scenario=data.scenario,
+        what_was_done=data.what_was_done,
+        result=data.result,
+        customer_name=data.customer_name,
+        tags=data.tags or [],
+        attachments=data.attachments or [],
+        customer_type=data.customer_type,
+        market=data.market,
+        product_type=data.product_type,
+        share_person=(data.share_person or user_name or "")[:50],
+        share_date=data.share_date or date.today(),
+        source_type="manual",
+        uploaded_by=user_id,
+        status="published",
+    )
+    db.add(case)
+    db.commit()
+    db.refresh(case)
+    return case
+
+
+def get_case_status(db: Session, case_id: int) -> dict:
+    case = db.query(InsightCase).filter(InsightCase.id == case_id).first()
+    if not case:
+        raise ValueError("案例不存在")
+    return {"id": case.id, "status": case.status, "error_msg": case.error_msg}
+
+
+def publish_case(db: Session, case_id: int, user_id: int, data: CasePublish) -> InsightCase:
+    """发布草稿(可附带修改字段)。"""
+    case = db.query(InsightCase).filter(InsightCase.id == case_id).first()
+    if not case:
+        raise ValueError("案例不存在")
+    if case.uploaded_by != user_id:
+        # 仅本人可发布草稿
+        raise ValueError("无权操作此案例")
+    if case.status not in ("draft", "failed"):
+        raise ValueError(f"案例当前状态({case.status})不允许发布")
+
+    payload = data.model_dump(exclude_unset=True)
+    for k, v in payload.items():
+        if v is not None:
+            setattr(case, k, v)
+    case.status = "published"
+    db.commit()
+    db.refresh(case)
+    return case
+
+
+def list_cases(
+    db: Session,
+    *,
+    share_person: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    product_type: Optional[str] = None,
+    market: Optional[str] = None,
+    tag: Optional[str] = None,
+    q: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 30,
+    sort: str = "date",
+) -> dict:
+    query = db.query(InsightCase).filter(InsightCase.status == "published")
+    if share_person:
+        query = query.filter(InsightCase.share_person == share_person)
+    if start_date:
+        query = query.filter(InsightCase.share_date >= start_date)
+    if end_date:
+        query = query.filter(InsightCase.share_date <= end_date)
+    if product_type:
+        query = query.filter(InsightCase.product_type == product_type)
+    if market:
+        query = query.filter(InsightCase.market == market)
+    if q:
+        like = f"%{q}%"
+        query = query.filter(
+            or_(
+                InsightCase.title.like(like),
+                InsightCase.scenario.like(like),
+                InsightCase.what_was_done.like(like),
+                InsightCase.result.like(like),
+                InsightCase.customer_name.like(like),
+                InsightCase.share_person.like(like),
+            )
+        )
+    if tag:
+        # JSON 包含搜索 — MySQL JSON_CONTAINS
+        query = query.filter(
+            func.json_search(InsightCase.tags, "one", tag).isnot(None)
+        )
+
+    total = query.count()
+    if sort == "likes":
+        query = query.order_by(desc(InsightCase.like_count), desc(InsightCase.id))
+    else:
+        query = query.order_by(desc(InsightCase.share_date), desc(InsightCase.id))
+
+    items = query.offset((page - 1) * page_size).limit(page_size).all()
+    return {"total": total, "items": items}
+
+
+def get_case_detail(db: Session, case_id: int, user_id: Optional[int] = None) -> InsightCase:
+    case = db.query(InsightCase).filter(InsightCase.id == case_id).first()
+    if not case:
+        raise ValueError("案例不存在")
+    case.view_count = (case.view_count or 0) + 1
+    db.commit()
+    db.refresh(case)
+    return case
+
+
+def delete_case(db: Session, case_id: int, user_id: int, is_admin: bool = False) -> None:
+    case = db.query(InsightCase).filter(InsightCase.id == case_id).first()
+    if not case:
+        raise ValueError("案例不存在")
+    if not is_admin and case.uploaded_by != user_id:
+        raise ValueError("无权删除此案例")
+    case.status = "archived"
+    db.commit()
+
+
+def toggle_case_like(db: Session, case_id: int, delta: int) -> int:
+    """delta = +1 或 -1。返回最新 like_count。"""
+    case = db.query(InsightCase).filter(InsightCase.id == case_id).first()
+    if not case:
+        raise ValueError("案例不存在")
+    case.like_count = max(0, (case.like_count or 0) + delta)
+    db.commit()
+    db.refresh(case)
+    return case.like_count
+
+
+# ──────────────────────────────────────────────────────
+# 周会纪要(Minutes)
+# ──────────────────────────────────────────────────────
+
+def upload_minutes(db: Session, user_id: int, data: MinutesUpload) -> MeetingMinutes:
+    """上传纪要原文,触发 AI 处理(同步执行简化版)。"""
+    if not data.original_text or len(data.original_text.strip()) < 10:
+        raise ValueError("会议原文不能为空(至少 10 字符)")
+
+    m = MeetingMinutes(
+        meeting_date=data.meeting_date,
+        title=data.title or f"{data.meeting_date} 会议",
+        duration=data.duration,
+        participants=data.participants,
+        original_text=data.original_text,
+        source_url=data.source_url,
+        has_attachment=data.has_attachment,
+        word_count_original=len(data.original_text),
+        status="processing",
+        uploaded_by=user_id,
+    )
+    db.add(m)
+    db.commit()
+    db.refresh(m)
+
+    # 同步处理(AI 双 preset)
+    try:
+        # 1. 精要(Markdown)
+        summary_md = _invoke_meeting_summary(db, data.original_text, user_id)
+        m.summary_md = summary_md
+        m.word_count_summary = len(summary_md or "")
+
+        # 2. 任务清单(JSON 数组)
+        tasks_payload = _invoke_meeting_tasks(db, data.original_text, user_id)
+        m.tasks_json = tasks_payload
+
+        # 3. 结构化精要(从原文提取 topics / decisions / action_items / outcome)
+        structured = _build_structured_summary(summary_md or "", tasks_payload, data)
+        m.structured_summary = structured
+
+        # 4. 任务写入 ark_insight_tasks
+        for t in (tasks_payload or []):
+            task = InsightTask(
+                minutes_id=m.id,
+                assignee=(t.get("assignee") or "待定")[:50],
+                description=(t.get("description") or "(无描述)")[:500],
+                deadline=_parse_date(t.get("deadline")),
+                priority=t.get("priority") if t.get("priority") in ("high", "medium", "low") else "medium",
+                source_quote=(t.get("source_quote") or "")[:500] or None,
+                status="pending",
+            )
+            db.add(task)
+
+        m.status = "published"
+    except Exception as e:
+        logger.exception("纪要 AI 处理失败")
+        m.error_msg = str(e)[:500]
+        m.status = "failed"
+
+    db.commit()
+    db.refresh(m)
+    return m
+
+
+def get_minutes_status(db: Session, minutes_id: int) -> dict:
+    m = db.query(MeetingMinutes).filter(MeetingMinutes.id == minutes_id).first()
+    if not m:
+        raise ValueError("纪要不存在")
+    return {"id": m.id, "status": m.status, "error_msg": m.error_msg}
+
+
+def list_minutes(
+    db: Session,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    page: int = 1,
+    page_size: int = 30,
+) -> dict:
+    query = db.query(MeetingMinutes)
+    if start_date:
+        query = query.filter(MeetingMinutes.meeting_date >= start_date)
+    if end_date:
+        query = query.filter(MeetingMinutes.meeting_date <= end_date)
+
+    total = query.count()
+    rows = (
+        query.order_by(desc(MeetingMinutes.meeting_date), desc(MeetingMinutes.id))
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+
+    # 计算每条 pending 任务数
+    items = []
+    for m in rows:
+        pending = (
+            db.query(InsightTask)
+            .filter(InsightTask.minutes_id == m.id, InsightTask.status.in_(["pending", "in_progress"]))
+            .count()
+        )
+        items.append({
+            "id": m.id,
+            "meeting_date": m.meeting_date.isoformat() if m.meeting_date else None,
+            "title": m.title,
+            "duration": m.duration,
+            "participants": m.participants,
+            "structured_summary": m.structured_summary,
+            "status": m.status,
+            "has_attachment": m.has_attachment,
+            "source_url": m.source_url,
+            "pending_tasks": pending,
+            "created_at": m.created_at.isoformat() if m.created_at else None,
+        })
+    return {"total": total, "items": items}
+
+
+def get_minutes_detail(db: Session, minutes_id: int) -> dict:
+    m = db.query(MeetingMinutes).filter(MeetingMinutes.id == minutes_id).first()
+    if not m:
+        raise ValueError("纪要不存在")
+    tasks = (
+        db.query(InsightTask)
+        .filter(InsightTask.minutes_id == minutes_id)
+        .order_by(InsightTask.priority.desc(), InsightTask.id)
+        .all()
+    )
+    pending = sum(1 for t in tasks if t.status in ("pending", "in_progress"))
+    return {
+        "id": m.id,
+        "meeting_date": m.meeting_date.isoformat() if m.meeting_date else None,
+        "title": m.title,
+        "duration": m.duration,
+        "participants": m.participants,
+        "original_text": m.original_text,
+        "summary_md": m.summary_md,
+        "structured_summary": m.structured_summary,
+        "status": m.status,
+        "has_attachment": m.has_attachment,
+        "source_url": m.source_url,
+        "pending_tasks": pending,
+        "created_at": m.created_at.isoformat() if m.created_at else None,
+        "tasks": [
+            {
+                "id": t.id,
+                "minutes_id": t.minutes_id,
+                "assignee": t.assignee,
+                "description": t.description,
+                "deadline": t.deadline.isoformat() if t.deadline else None,
+                "priority": t.priority,
+                "status": t.status,
+                "source_quote": t.source_quote,
+                "completed_at": t.completed_at.isoformat() if t.completed_at else None,
+                "completed_by": t.completed_by,
+                "notes": t.notes,
+                "created_at": t.created_at.isoformat() if t.created_at else None,
+                "updated_at": t.updated_at.isoformat() if t.updated_at else None,
+            }
+            for t in tasks
+        ],
+    }
+
+
+def update_task(db: Session, task_id: int, user_id: int, data: TaskUpdate) -> InsightTask:
+    t = db.query(InsightTask).filter(InsightTask.id == task_id).first()
+    if not t:
+        raise ValueError("任务不存在")
+    payload = data.model_dump(exclude_unset=True)
+    if "status" in payload:
+        if payload["status"] not in ("pending", "in_progress", "completed", "overdue"):
+            raise ValueError("非法的任务状态")
+        if payload["status"] == "completed" and t.status != "completed":
+            t.completed_at = datetime.utcnow()
+            t.completed_by = user_id
+        elif payload["status"] != "completed":
+            t.completed_at = None
+            t.completed_by = None
+        t.status = payload["status"]
+    for k in ("notes", "deadline", "priority", "description"):
+        if k in payload and payload[k] is not None:
+            setattr(t, k, payload[k])
+    db.commit()
+    db.refresh(t)
+    return t
+
+
+def export_tasks_csv(db: Session, minutes_id: int) -> tuple[str, str]:
+    """返回 (filename, csv_text)"""
+    m = db.query(MeetingMinutes).filter(MeetingMinutes.id == minutes_id).first()
+    if not m:
+        raise ValueError("纪要不存在")
+    tasks = db.query(InsightTask).filter(InsightTask.minutes_id == minutes_id).all()
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["责任人", "任务描述", "截止日期", "优先级", "状态", "原文依据", "备注"])
+    for t in tasks:
+        writer.writerow([
+            t.assignee,
+            t.description,
+            t.deadline.isoformat() if t.deadline else "",
+            t.priority,
+            t.status,
+            t.source_quote or "",
+            t.notes or "",
+        ])
+    filename = f"tasks_{m.meeting_date.isoformat() if m.meeting_date else minutes_id}.csv"
+    return filename, buf.getvalue()
+
+
+# ──────────────────────────────────────────────────────
+# 工作台首页摘要
+# ──────────────────────────────────────────────────────
+
+def get_dashboard_summary(db: Session, user_name: str = "") -> dict:
+    """工作台首页方舟洞见摘要小组件数据。"""
+    # 行业情报日报最新一份
+    industry = (
+        db.query(InsightReport)
+        .filter(InsightReport.report_type == "industry_daily", InsightReport.status == "published")
+        .order_by(desc(InsightReport.report_date), desc(InsightReport.id))
+        .first()
+    )
+    industry_data = None
+    if industry:
+        sd = industry.source_data or {}
+        quick = sd.get("quick_overview") if isinstance(sd, dict) else None
+        industry_data = {
+            "latest_date": industry.report_date.isoformat(),
+            "report_id": industry.id,
+            "quick_overview": quick or [],
+        }
+
+    # AI 工具速递最新一份
+    ai_tools = (
+        db.query(InsightReport)
+        .filter(InsightReport.report_type == "ai_tools", InsightReport.status == "published")
+        .order_by(desc(InsightReport.report_date), desc(InsightReport.id))
+        .first()
+    )
+    ai_tools_data = None
+    if ai_tools:
+        sd = ai_tools.source_data or {}
+        items = sd.get("items") if isinstance(sd, dict) else None
+        if not items and isinstance(sd, list):
+            items = sd
+        ai_tools_data = {
+            "latest_date": ai_tools.report_date.isoformat(),
+            "items": (items or [])[:3],
+        }
+
+    # 当前用户的待处理任务
+    pending_q = db.query(InsightTask).filter(InsightTask.status.in_(["pending", "in_progress"]))
+    if user_name:
+        pending_q = pending_q.filter(InsightTask.assignee == user_name)
+    pending_count = pending_q.count()
+    overdue_count = pending_q.filter(InsightTask.status == "overdue").count()
+
+    # 最近的案例
+    recent_cases = (
+        db.query(InsightCase)
+        .filter(InsightCase.status == "published")
+        .order_by(desc(InsightCase.created_at))
+        .limit(3)
+        .all()
+    )
+
+    return {
+        "industry_daily": industry_data,
+        "ai_tools": ai_tools_data,
+        "pending_tasks": {"count": pending_count, "overdue_count": overdue_count},
+        "recent_cases": {
+            "count": len(recent_cases),
+            "items": [{"id": c.id, "title": c.title, "share_person": c.share_person} for c in recent_cases],
+        },
+    }
+
+
+# ──────────────────────────────────────────────────────
+# AI 调用包装
+# ──────────────────────────────────────────────────────
+
+def _try_invoke_ai(db: Session, preset_name: str, user_text: str, user_id: Optional[int] = None) -> Optional[str]:
+    """统一 AI 调用入口 — preset 缺失时返回 None,由调用方降级。"""
+    try:
+        from app.ai import service as ai_service
+        from app.ai.models import AiPreset
+
+        preset = (
+            db.query(AiPreset)
+            .filter(AiPreset.preset_name == preset_name, AiPreset.deleted_at.is_(None))
+            .first()
+        )
+        if not preset or not preset.is_enabled:
+            logger.warning(f"AI preset '{preset_name}' missing or disabled, falling back to mock")
+            return None
+
+        result = ai_service.chat(
+            db=db,
+            preset_name=preset_name,
+            messages=[{"role": "user", "content": user_text}],
+            caller_module="insight",
+            caller_user_id=user_id,
+        )
+        return result.get("content") or ""
+    except Exception as e:
+        logger.exception(f"AI invoke failed (preset={preset_name})")
+        return None
+
+
+def _safe_json_parse(text: str) -> Optional[Any]:
+    """从 AI 返回文本中提取 JSON(支持 ```json fenced 块)。"""
+    if not text:
+        return None
+    candidates = [text]
+    # 提取 fenced code block
+    m = re.search(r"```(?:json)?\s*\n(.*?)\n```", text, re.DOTALL)
+    if m:
+        candidates.insert(0, m.group(1))
+    # 提取首个 { 到末尾 } 的子串
+    if "{" in text and "}" in text:
+        start = text.index("{")
+        end = text.rindex("}")
+        if end > start:
+            candidates.insert(0, text[start : end + 1])
+    for c in candidates:
+        try:
+            return json.loads(c)
+        except json.JSONDecodeError:
+            continue
+    return None
+
+
+def _invoke_ocr(db: Session, image_path: str, user_id: Optional[int]) -> str:
+    """图片 OCR — 通过 ark_ai_presets 中的 ocr_extract preset。"""
+    # 注意:当前 ai.service.chat 仅支持纯文本 messages。多模态 OCR 需要扩展为 image_url 消息体。
+    # 当 preset 不存在或调用失败时,返回友好提示文本,案例字段由用户手动补充。
+    text = _try_invoke_ai(
+        db,
+        "ocr_extract",
+        f"请从以下图片(image path: {image_path})中提取所有文字,保持原有格式输出。",
+        user_id,
+    )
+    if text:
+        return text.strip()
+    return "[OCR 暂未配置:请在 AI 接入管理中创建多模态 preset 'ocr_extract',或改用文本粘贴方式上传案例]"
+
+
+def _invoke_case_format(db: Session, raw_text: str, user_id: Optional[int]) -> dict:
+    """案例库整理 — 通过 case_library_format preset。"""
+    prompt = (
+        "请将以下原始文本整理为业务员案例 JSON,字段:\n"
+        "- title(25 字以内)\n"
+        "- scenario(场景背景, 60 字以内)\n"
+        "- what_was_done(执行过程, 200 字以内)\n"
+        "- result(结果, 60 字以内)\n"
+        "- customer_name(客户名称, 可空)\n"
+        "- tags(分类标签数组, 从'开发跟进/谈判技巧/定制流程/物流处理/纠纷解决/竞品应对'中选 1-3 个)\n"
+        "- customer_type(批发商/零售/沙龙/其他)\n"
+        "- market(美国/欧洲/中东/其他)\n"
+        "- product_type(真人发/合成发/发片/发帽/其他)\n"
+        "- highlights(3 条核心亮点, 每条 30 字以内)\n"
+        "- key_phrases(2-3 条关键话术)\n"
+        "- raw_summary(100 字摘要)\n"
+        "只输出 JSON,不要其他文字。\n\n"
+        f"原始文本:\n{raw_text}"
+    )
+    text = _try_invoke_ai(db, "case_library_format", prompt, user_id)
+    parsed = _safe_json_parse(text or "")
+    if not parsed:
+        # 降级:从 raw_text 提取标题作为 title,其他字段留空
+        first_line = (raw_text or "").strip().split("\n", 1)[0][:25]
+        return {
+            "title": first_line or "(待补充)",
+            "scenario": (raw_text or "")[:60],
+            "what_was_done": "",
+            "result": "",
+            "customer_name": "",
+            "tags": [],
+            "highlights": [],
+            "raw_summary": (raw_text or "")[:100],
+        }
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _invoke_meeting_summary(db: Session, original_text: str, user_id: Optional[int]) -> str:
+    """精要 Markdown — meeting_summary preset。"""
+    prompt = (
+        "请将以下钉钉 AI 转录文本整理为精要版会议记录,要求:\n"
+        "1. 保留关键决策、关键数据、分歧点;\n"
+        "2. 压缩到原文长度的约 20%;\n"
+        "3. 格式: ## 核心决策 / ## 主要讨论点 / ## 待跟进事项;\n"
+        "4. 不要使用'综上所述'。\n"
+        "输出 Markdown 纯文本。\n\n"
+        f"原文:\n{original_text}"
+    )
+    text = _try_invoke_ai(db, "meeting_summary", prompt, user_id)
+    if text:
+        return text.strip()
+    # 降级:截取原文前 500 字 + 提示
+    head = (original_text or "")[:500]
+    return f"## 主要讨论点\n\n{head}\n\n_AI preset 'meeting_summary' 未配置,以上为原文截断。请在 AI 管理中配置后重新上传。_"
+
+
+def _invoke_meeting_tasks(db: Session, original_text: str, user_id: Optional[int]) -> list:
+    """任务清单 JSON 数组 — meeting_tasks preset。"""
+    prompt = (
+        "从以下会议转录中提取所有明确的任务指派,输出 JSON 数组,每条任务包含:\n"
+        "{\n"
+        '  "assignee": "责任人姓名",\n'
+        '  "description": "任务描述(50 字以内, 动词开头)",\n'
+        '  "deadline": "YYYY-MM-DD 或 null",\n'
+        '  "priority": "high/medium/low",\n'
+        '  "source_quote": "原文中的相关原句(100 字以内)"\n'
+        "}\n"
+        "只输出 JSON 数组,不要其他文字。\n\n"
+        f"原文:\n{original_text}"
+    )
+    text = _try_invoke_ai(db, "meeting_tasks", prompt, user_id)
+    parsed = _safe_json_parse(text or "")
+    if isinstance(parsed, list):
+        return parsed
+    if isinstance(parsed, dict) and "tasks" in parsed and isinstance(parsed["tasks"], list):
+        return parsed["tasks"]
+    # 降级:从原文用正则匹配中文人名+动词
+    return _fallback_extract_tasks(original_text)
+
+
+def _fallback_extract_tasks(text: str) -> list:
+    """从原文简单提取「XXX:动作」式任务,作为 AI preset 缺失时的兜底。"""
+    if not text:
+        return []
+    tasks = []
+    for line in text.splitlines():
+        line = line.strip()
+        m = re.match(r"^([一-龥]{2,4})[::](.+)$", line)
+        if m and len(m.group(2).strip()) > 4:
+            tasks.append({
+                "assignee": m.group(1),
+                "description": m.group(2).strip()[:200],
+                "priority": "medium",
+                "source_quote": line[:300],
+            })
+        if len(tasks) >= 10:
+            break
+    return tasks
+
+
+def _build_structured_summary(summary_md: str, tasks: list, data: MinutesUpload) -> dict:
+    """从精要 Markdown + 任务列表组装结构化精要(冗余存储,前端直接展示)。"""
+    topics = []
+    decisions = []
+    pending_followups = []
+    current_section = None
+    for line in (summary_md or "").splitlines():
+        s = line.strip()
+        if not s:
+            continue
+        if s.startswith("##"):
+            heading = s.lstrip("#").strip()
+            if "决策" in heading or "确认" in heading:
+                current_section = "decisions"
+            elif "讨论" in heading or "议题" in heading or "重点" in heading:
+                current_section = "topics"
+            elif "待" in heading or "跟进" in heading or "Action" in heading:
+                current_section = "pending"
+            else:
+                current_section = None
+            continue
+        if s.startswith(("-", "*", "•", "1.", "2.", "3.", "4.", "5.")):
+            text = re.sub(r"^[\-\*\•\d\.\s]+", "", s).strip()
+            if not text:
+                continue
+            if current_section == "decisions":
+                decisions.append(text[:200])
+            elif current_section == "topics":
+                topics.append(text[:200])
+            elif current_section == "pending":
+                pending_followups.append(text[:200])
+
+    action_items = [
+        f"{t.get('assignee') or '待定'}:{t.get('description') or ''}{('(' + t.get('deadline') + '前)') if t.get('deadline') else ''}"
+        for t in (tasks or [])
+    ]
+
+    outcome = ""
+    if decisions:
+        outcome = "本次会议确认 " + str(len(decisions)) + " 项决策" + ("。" + decisions[0] if decisions else "")
+    elif data.title:
+        outcome = data.title
+
+    return {
+        "topics": topics[:8],
+        "decisions": decisions[:8],
+        "action_items": action_items[:20],
+        "pending_followups": pending_followups[:8],
+        "outcome": outcome[:200],
+    }
+
+
+# ──────────────────────────────────────────────────────
+# Jinja2 渲染(行业日报 / AI 工具速递)
+# ──────────────────────────────────────────────────────
+
+def render_industry_daily_html(report_date: date, data: dict) -> str:
+    template = _jinja_env.get_template("industry_daily.html")
+    return template.render(report_date=report_date, **data)
+
+
+def render_ai_tools_html(report_date: date, grouped: dict) -> str:
+    template = _jinja_env.get_template("ai_tools.html")
+    return template.render(report_date=report_date, grouped=grouped)
+
+
+# ──────────────────────────────────────────────────────
+# 辅助函数
+# ──────────────────────────────────────────────────────
+
+def _parse_date(s: Any) -> Optional[date]:
+    if not s:
+        return None
+    if isinstance(s, date):
+        return s
+    try:
+        return datetime.strptime(str(s)[:10], "%Y-%m-%d").date()
+    except Exception:
+        return None
