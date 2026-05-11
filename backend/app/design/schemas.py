@@ -69,6 +69,7 @@ class DesignRequestAction(OperatorMixin):
     plan_end_date: Optional[date] = None
     plan_end_period: PeriodType = "pm"
     comment: Optional[str] = None
+    sync_unavailable: Optional[bool] = False
 
 
 class TaskReschedule(OperatorMixin):

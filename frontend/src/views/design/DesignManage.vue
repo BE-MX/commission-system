@@ -310,6 +310,11 @@
         <el-form-item label="备注">
           <el-input v-model="confirmForm.comment" type="textarea" :rows="2" placeholder="选填" />
         </el-form-item>
+        <el-form-item>
+          <el-checkbox v-model="confirmForm.sync_unavailable">
+            将当前排期日期同步设置为不可用
+          </el-checkbox>
+        </el-form-item>
       </el-form>
       <template #footer>
         <GlassButton variant="ghost" @click="confirmVisible = false">取消</GlassButton>
@@ -765,6 +770,7 @@ const confirmForm = reactive({
   endDate: '',
   endPeriod: 'pm',
   comment: '',
+  sync_unavailable: true,
 })
 
 function openConfirmDialog(row) {
@@ -800,6 +806,7 @@ async function submitConfirm() {
       plan_end_date: confirmForm.endDate,
       plan_end_period: confirmForm.endPeriod,
       comment: confirmForm.comment,
+      sync_unavailable: confirmForm.sync_unavailable,
       operator_id: 1,
       operator_name: '管理员',
       operator_role: 'design_staff',

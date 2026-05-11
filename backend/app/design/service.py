@@ -238,6 +238,31 @@ def action_request(
         task_id = task.id
         req.assigned_designer_id = data.designer_id
 
+        # 同步设置为不可用日期（跳过已存在的）
+        if data.sync_unavailable:
+            from datetime import timedelta
+            from app.design.models import DesignUnavailableDate
+
+            current = data.plan_start_date or req.expect_start_date
+            end = data.plan_end_date or req.expect_end_date
+            created_dates = []
+            while current and end and current <= end:
+                exists = db.query(DesignUnavailableDate).filter(
+                    DesignUnavailableDate.date == current
+                ).first()
+                if not exists:
+                    row = DesignUnavailableDate(
+                        date=current,
+                        period=None,
+                        reason=f"排期任务 {task_no}",
+                        created_by=operator_id,
+                    )
+                    db.add(row)
+                    created_dates.append(current.isoformat())
+                current += timedelta(days=1)
+            if created_dates:
+                logger.info("同步设置不可用日期: %s", created_dates)
+
     elif data.action == "start":
         req.actual_start_date = date.today()
         req.actual_start_period = "am"
