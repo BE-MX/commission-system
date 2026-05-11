@@ -24,7 +24,7 @@ from app.schemas.tracking import (
 )
 from app.schemas.waybill import WaybillCreate, OCRUploadResponse
 from app.services.staging_service import scan_staging
-from app.services.tracking_service import poll_active_shipments, refresh_single
+from app.services.tracking_service import poll_active_shipments, refresh_single, poll_single
 from app.services.short_link import build_short_link, generate_short_code
 from app.services.dws_sync_service import sync_shipment, sync_all_active
 
@@ -412,7 +412,7 @@ def check_waybill(
 
 
 @router.post("/waybills", status_code=status.HTTP_201_CREATED, summary="提交运单入库")
-def create_waybill(
+async def create_waybill(
     payload: WaybillCreate,
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_permission("tracking:write")),
@@ -493,6 +493,7 @@ def create_waybill(
 
     # 自动创建 shipment_tracking 记录以启动物流轮询
     short_link = None
+    tracking = None
     try:
         existing_tracking = (
             db.query(ShipmentTracking)
@@ -530,17 +531,25 @@ def create_waybill(
             )
             db.add(tracking)
             db.commit()
+            db.refresh(tracking)
             short_link = build_short_link(short_code)
         else:
+            tracking = existing_tracking
             short_link = build_short_link(existing_tracking.short_code) if existing_tracking.short_code else None
     except Exception as exc:
         db.rollback()
         logger.warning("自动创建跟踪记录失败（不影响录入）: %s", exc)
 
+    # 立即轮询一次获取实时物流状态
+    if tracking:
+        try:
+            await poll_single(db, tracking)
+        except Exception as exc:
+            logger.warning("自动轮询失败（不影响录入）: %s", exc)
+
     # 异步触发钉钉推送（不阻塞响应）
     try:
-        import asyncio
-        asyncio.create_task(_push_waybill_dingtalk(waybill))
+        asyncio.create_task(_push_waybill_dingtalk(waybill, short_link))
     except Exception as exc:
         logger.warning("钉钉推送任务创建失败（不影响录入）: %s", exc)
 
@@ -562,7 +571,7 @@ def create_waybill(
     }
 
 
-async def _push_waybill_dingtalk(waybill: Waybill) -> None:
+async def _push_waybill_dingtalk(waybill: Waybill, short_link: str | None = None) -> None:
     """通过钉钉 Webhook 推送运单录入通知。"""
     try:
         from app.dingtalk.webhook import get_webhook_sender
@@ -576,6 +585,8 @@ async def _push_waybill_dingtalk(waybill: Waybill) -> None:
             f"**发件日期：** {waybill.ship_date}\n"
             f"**录入人：** {waybill.created_by}\n"
         )
+        if short_link:
+            text += f"**短链接：** {short_link}\n"
         if waybill.estimated_delivery_date:
             text += f"**预计送达：** {waybill.estimated_delivery_date.strftime('%Y年%m月%d日')}\n"
         await sender.send_markdown(title="运单录入通知", text=text)
