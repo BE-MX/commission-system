@@ -492,6 +492,13 @@ def action_request(
             action=data.action,
         )
 
+    # 确认排期 → 同时通知被指派的设计师
+    if data.action == "confirm":
+        background_tasks.add_task(
+            _notify_confirm_to_designer,
+            request_id=request_id,
+        )
+
     return result
 
 
@@ -564,6 +571,65 @@ async def _notify_action_to_applicant(
         remark=req.remark or "",
         preferred_designer=preferred_name,
         extra_lines=extra or None,
+    )
+
+
+async def _notify_confirm_to_designer(request_id: int):
+    """确认排期后向被指派的设计师发送通知（内部新建 Session）"""
+    from app.dingtalk.events import notify_design_status_change
+    from app.core.database import SessionLocal
+
+    with SessionLocal() as db:
+        req = db.query(DesignScheduleRequest).filter(
+            DesignScheduleRequest.id == request_id,
+        ).first()
+        if not req or not req.assigned_designer_id:
+            return
+
+        # 查设计师的钉钉ID（DesignDesigner 表自带 dingtalk_id 字段）
+        designer = db.query(DesignDesigner).filter(
+            DesignDesigner.id == req.assigned_designer_id,
+        ).first()
+        if not designer or not designer.dingtalk_id:
+            logger.info(
+                "设计师 %s 未绑定钉钉ID，跳过指派通知 (单号: %s)",
+                req.assigned_designer_id, req.request_no,
+            )
+            return
+
+        schedule_date = ""
+        if req.expect_start_date and req.expect_end_date:
+            schedule_date = _fmt_schedule_date(
+                req.expect_start_date, req.expect_end_date,
+                req.expect_start_period, req.expect_end_period,
+            )
+
+        level_label, type_label, props_label = _translate_dict_fields(
+            db, req.customer_level or "", req.shoot_type or "", req.props_requirement or "",
+        )
+        preferred_name = _get_designer_name(db, req.preferred_designer_id) or "随机分配"
+
+        # 在 session 关闭前抽出所有需要的字段
+        designer_dingtalk_id = designer.dingtalk_id
+        request_no = req.request_no
+        salesperson_name = req.salesperson_name or ""
+        customer_name = req.customer_name
+        priority = req.priority or "normal"
+        remark = req.remark or ""
+
+    await notify_design_status_change(
+        designer_dingtalk_id,
+        title="📐 你有新的设计任务",
+        request_no=request_no,
+        salesperson_name=salesperson_name,
+        customer_name=customer_name,
+        customer_level=level_label,
+        shoot_type=type_label,
+        props_requirement=props_label,
+        schedule_date=schedule_date,
+        priority=priority,
+        remark=remark,
+        preferred_designer=preferred_name,
     )
 
 

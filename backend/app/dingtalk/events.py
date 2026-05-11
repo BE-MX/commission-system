@@ -320,7 +320,7 @@ async def notify_design_ready_for_design(
 
 @_safe_notify
 async def notify_design_status_change(
-    applicant_dingtalk_id: str,
+    recipient_dingtalk_id: str,
     *,
     title: str,
     request_no: str,
@@ -328,14 +328,20 @@ async def notify_design_status_change(
     customer_name: str = "",
     customer_level: str = "",
     shoot_type: str = "",
+    props_requirement: str = "",
     schedule_date: str = "",
     priority: str = "",
     remark: str = "",
+    preferred_designer: str = "",
     extra_lines: list[str] | None = None,
 ):
-    """预约单状态变更 — 向申请人发送点对点通知（已排期/已开始/已完成等）"""
-    if not applicant_dingtalk_id:
-        logger.info("申请人无钉钉ID，跳过状态变更通知 (单号: %s)", request_no)
+    """预约单状态变更 — 向指定接收人发送点对点通知
+
+    申请人收到"已排期/已开始/已完成"等状态变更；
+    设计师收到"被指派新任务"等指派通知。
+    """
+    if not recipient_dingtalk_id:
+        logger.info("接收人无钉钉ID，跳过状态变更通知 (单号: %s)", request_no)
         return
 
     md = _build_request_markdown(
@@ -345,15 +351,17 @@ async def notify_design_status_change(
         customer_name=customer_name,
         customer_level=customer_level,
         shoot_type=shoot_type,
+        props_requirement=props_requirement,
         schedule_date=schedule_date,
         priority=priority,
         remark=remark,
+        preferred_designer=preferred_designer,
         extra_lines=extra_lines,
     )
 
     notifier = get_work_notifier()
     await notifier.send_to_users(
-        user_ids=[applicant_dingtalk_id],
+        user_ids=[recipient_dingtalk_id],
         title=title,
         markdown_text=md,
     )
