@@ -515,6 +515,7 @@ function onWaybillFocus() {
 
 function onWaybillBlur() {
   if (!form.waybill_no) return
+  form.waybill_no = form.waybill_no.trim().replace(/\s+/g, '')
   mode.value = 'manual'
 
   const detected = detectCarrier(form.waybill_no)
@@ -557,6 +558,7 @@ async function handleSubmit() {
   const valid = await formRef.value.validate().catch(() => false)
   if (!valid) return
 
+  form.waybill_no = form.waybill_no.trim().replace(/\s+/g, '')
   submitting.value = true
 
   try {
@@ -582,8 +584,9 @@ async function handleSubmit() {
     resultData.last_event_time = data.last_event_time || ''
     resultData.poll_ok = data.poll_ok || false
     resultData.poll_error = data.poll_error || ''
+    const estText = resultData.estimated_delivery_date || 'TBD'
     resultData.notifyTemplate =
-      `Hi ${resultData.recipient_name}, great news! Your order has been picked up by ${resultData.carrier}. Tracking#: ${resultData.waybill_no}. Expected delivery: TBD. I'll keep an eye on it for you!`
+      `Hi ${resultData.recipient_name}, great news! Your order has been picked up by ${resultData.carrier}. Tracking#: ${resultData.waybill_no}. Expected delivery: ${estText}. I'll keep an eye on it for you!`
 
     copiedLink.value = false
     copiedTemplate.value = false

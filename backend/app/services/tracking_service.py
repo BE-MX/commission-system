@@ -11,7 +11,6 @@ from app.core.config import get_settings
 from app.models.tracking import ShipmentTracking, TrackingEvent, CarrierConfig
 from app.models.waybill import Waybill
 from app.services.carriers import get_adapter
-from app.services.dws_sync_service import sync_shipment
 from app.utils.tracking_status import normalize_status
 from app.services.tracking_push import check_and_push
 
@@ -113,9 +112,6 @@ async def poll_single(db: Session, shipment: ShipmentTracking) -> dict:
         await check_and_push(db, shipment)
     except Exception as e:
         logger.warning("关键状态推送检查失败 %s: %s", shipment.waybill_no, e)
-
-    if new_events:
-        sync_shipment(db, shipment)
 
     return {"waybill_no": shipment.waybill_no, "status": "ok", "new_events": len(new_events)}
 

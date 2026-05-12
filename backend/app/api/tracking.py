@@ -26,7 +26,6 @@ from app.schemas.waybill import WaybillCreate, OCRUploadResponse
 from app.services.staging_service import scan_staging
 from app.services.tracking_service import poll_active_shipments, refresh_single, poll_single
 from app.services.short_link import build_short_link, generate_short_code, build_carrier_tracking_url
-from app.services.dws_sync_service import sync_shipment, sync_all_active
 from app.services.carriers.base import STATUS_MAP_CN
 from app.utils.shortlink import generate_short_link
 
@@ -84,7 +83,11 @@ def list_shipments(
 ):
     q = db.query(ShipmentTracking)
     if status:
-        q = q.filter(ShipmentTracking.current_status == status)
+        # customs 同时匹配 customs 和 customs_hold（stats 合并了两个值）
+        if status == "customs":
+            q = q.filter(ShipmentTracking.current_status.in_(["customs", "customs_hold"]))
+        else:
+            q = q.filter(ShipmentTracking.current_status == status)
     if carrier:
         q = q.filter(ShipmentTracking.carrier == carrier.upper())
     if keyword:
@@ -225,31 +228,9 @@ async def trigger_poll(db: Session = Depends(get_db)):
 
 
 @router.post("/scan-staging", summary="扫描暂存表（定时任务调用）")
-def trigger_scan(db: Session = Depends(get_db)):
-    stats = scan_staging(db)
+async def trigger_scan(db: Session = Depends(get_db)):
+    stats = await scan_staging(db)
     return {"code": 200, "message": "ok", "data": stats}
-
-
-@router.post("/dws-sync", summary="全量同步运单到钉钉 AI 表格")
-def trigger_dws_sync(db: Session = Depends(get_db)):
-    stats = sync_all_active(db)
-    return {"code": 200, "message": "ok", "data": stats}
-
-
-@router.post("/{waybill_no}/dws-sync", summary="单条运单同步到钉钉 AI 表格")
-def trigger_dws_sync_single(
-    waybill_no: str = Path(...),
-    db: Session = Depends(get_db),
-):
-    shipment = (
-        db.query(ShipmentTracking)
-        .filter(ShipmentTracking.waybill_no == waybill_no)
-        .first()
-    )
-    if not shipment:
-        return {"code": 404, "message": f"waybill {waybill_no} not found", "data": None}
-    ok = sync_shipment(db, shipment)
-    return {"code": 200, "message": "ok", "data": {"synced": ok}}
 
 
 # ══════════════════════════════════════════════════════════════

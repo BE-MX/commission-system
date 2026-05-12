@@ -7,6 +7,7 @@ Create Date: 2026-05-12
 """
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 
 
 revision = '014_tracking_push'
@@ -16,30 +17,43 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # 1. shipment_tracking 新增 unified_status 和 last_pushed_status
-    op.add_column(
-        'shipment_tracking',
-        sa.Column('unified_status', sa.String(length=30), nullable=True, comment='统一状态码'),
-    )
-    op.add_column(
-        'shipment_tracking',
-        sa.Column('last_pushed_status', sa.String(length=30), nullable=True, comment='上次推送时的状态，防重复推送'),
-    )
-    op.create_index('idx_tracking_unified_status', 'shipment_tracking', ['unified_status'])
+    conn = op.get_bind()
+    inspector = inspect(conn)
 
-    # 2. 新建物流日报表
-    op.create_table(
-        'ark_shipping_daily_reports',
-        sa.Column('id', sa.Integer(), autoincrement=True, primary_key=True),
-        sa.Column('user_id', sa.Integer(), nullable=False, comment='所属用户ID'),
-        sa.Column('report_date', sa.Date(), nullable=False, comment='日报日期'),
-        sa.Column('html_content', sa.Text(), nullable=False, comment='日报HTML内容'),
-        sa.Column('short_url', sa.String(length=100), nullable=True, comment='日报短链'),
-        sa.Column('is_pushed', sa.Boolean(), nullable=False, server_default='0', comment='是否已推送'),
-        sa.Column('created_at', sa.DateTime(), server_default=sa.func.now(), nullable=False),
-        sa.UniqueConstraint('user_id', 'report_date', name='uk_user_date'),
-        comment='物流日报',
-    )
+    # 1. shipment_tracking 新增 unified_status 和 last_pushed_status（幂等）
+    existing_cols = {col['name'] for col in inspector.get_columns('shipment_tracking')}
+    existing_indexes = {idx['name'] for idx in inspector.get_indexes('shipment_tracking')}
+
+    if 'unified_status' not in existing_cols:
+        op.add_column(
+            'shipment_tracking',
+            sa.Column('unified_status', sa.String(length=30), nullable=True, comment='统一状态码'),
+        )
+
+    if 'last_pushed_status' not in existing_cols:
+        op.add_column(
+            'shipment_tracking',
+            sa.Column('last_pushed_status', sa.String(length=30), nullable=True, comment='上次推送时的状态，防重复推送'),
+        )
+
+    if 'idx_tracking_unified_status' not in existing_indexes:
+        op.create_index('idx_tracking_unified_status', 'shipment_tracking', ['unified_status'])
+
+    # 2. 新建物流日报表（幂等）
+    existing_tables = inspector.get_table_names()
+    if 'ark_shipping_daily_reports' not in existing_tables:
+        op.create_table(
+            'ark_shipping_daily_reports',
+            sa.Column('id', sa.Integer(), autoincrement=True, primary_key=True),
+            sa.Column('user_id', sa.Integer(), nullable=False, comment='所属用户ID'),
+            sa.Column('report_date', sa.Date(), nullable=False, comment='日报日期'),
+            sa.Column('html_content', sa.Text(), nullable=False, comment='日报HTML内容'),
+            sa.Column('short_url', sa.String(length=100), nullable=True, comment='日报短链'),
+            sa.Column('is_pushed', sa.Boolean(), nullable=False, server_default='0', comment='是否已推送'),
+            sa.Column('created_at', sa.DateTime(), server_default=sa.func.now(), nullable=False),
+            sa.UniqueConstraint('user_id', 'report_date', name='uk_user_date'),
+            comment='物流日报',
+        )
 
 
 def downgrade() -> None:

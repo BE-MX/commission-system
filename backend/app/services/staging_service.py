@@ -3,17 +3,19 @@
 import logging
 from datetime import datetime
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.models.tracking import ShipmentStaging, ShipmentTracking
+from app.models.tracking import CarrierConfig, ShipmentStaging, ShipmentTracking
 from app.services.short_link import generate_short_code
+from app.services.tracking_service import poll_single
 
 logger = logging.getLogger("tracking.staging")
 settings = get_settings()
 
 
-def scan_staging(db: Session) -> dict:
+async def scan_staging(db: Session) -> dict:
     """扫描未处理的暂存记录，去重后插入正式运单表"""
     rows = (
         db.query(ShipmentStaging)
@@ -49,10 +51,18 @@ def scan_staging(db: Session) -> dict:
                     row.process_note = f"reactivated id={existing.id}"
                     stats["reactivated"] += 1
             else:
+                # 查 CarrierConfig 获取中文名
+                carrier_cfg = (
+                    db.query(CarrierConfig)
+                    .filter(func.lower(CarrierConfig.carrier) == row.carrier.lower())
+                    .first()
+                )
+
+                short_code = generate_short_code(db)
                 shipment = ShipmentTracking(
                     waybill_no=row.waybill_no,
                     carrier=row.carrier,
-                    carrier_name=row.carrier_name or row.carrier,
+                    carrier_name=carrier_cfg.carrier_name if carrier_cfg else (row.carrier_name or row.carrier),
                     sender_name=row.sender_name,
                     sender_company=row.sender_company,
                     receiver_name=row.receiver_name,
@@ -63,9 +73,18 @@ def scan_staging(db: Session) -> dict:
                     dingtalk_user_name=row.dingtalk_user_name,
                     ocr_raw_text=row.ocr_raw_text,
                     source_image_url=row.source_image_url,
-                    short_code=generate_short_code(db),
+                    short_code=short_code,
+                    is_active=True,
                 )
                 db.add(shipment)
+                db.flush()
+
+                # 立即轮询获取实时物流状态
+                try:
+                    await poll_single(db, shipment)
+                except Exception as poll_err:
+                    logger.warning("staging auto-poll failed for %s: %s", row.waybill_no, poll_err)
+
                 row.process_result = "success"
                 stats["success"] += 1
 
@@ -73,11 +92,10 @@ def scan_staging(db: Session) -> dict:
             row.processed_at = datetime.now()
             stats["processed"] += 1
 
-            # Flush after each row to catch integrity errors early
             db.flush()
 
         except Exception as e:
-            logger.error(f"staging row {row.id} error: {e}")
+            logger.error("staging row %d error: %s", row.id, e)
             row.process_result = "error"
             row.process_note = str(e)[:500]
             row.processed = True
@@ -86,5 +104,5 @@ def scan_staging(db: Session) -> dict:
             db.rollback()
 
     db.commit()
-    logger.info(f"staging scan done: {stats}")
+    logger.info("staging scan done: %s", stats)
     return stats

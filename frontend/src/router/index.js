@@ -64,7 +64,7 @@ const routes = [
         path: 'tracking/:waybillNo',
         name: 'TrackingDetail',
         component: () => import('../views/tracking/TrackingDetail.vue'),
-        meta: { title: '运单详情' }
+        meta: { title: '运单详情', permission: 'tracking:read' }
       },
       {
         path: 'tracking/upload',
@@ -76,7 +76,7 @@ const routes = [
         path: 'tracking/daily-report',
         name: 'ShippingDailyReport',
         component: () => import('../views/tracking/ShippingDailyReport.vue'),
-        meta: { title: '物流日报' }
+        meta: { title: '物流日报', permission: 'tracking:daily_report' }
       },
       {
         path: 'design/gantt',

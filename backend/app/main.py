@@ -74,6 +74,11 @@ async def lifespan(app: FastAPI):
 
     from app.design.scheduler import check_today_shoot_reminders
     from app.services.tracking_daily_report import generate_daily_reports
+    from app.services.staging_service import scan_staging
+
+    async def _scan_staging_job():
+        with SessionLocal() as db:
+            await scan_staging(db)
 
     _scheduler.add_job(
         check_today_shoot_reminders,
@@ -87,6 +92,13 @@ async def lifespan(app: FastAPI):
         trigger="cron",
         hour=8, minute=30,
         id="shipping_daily_report",
+        replace_existing=True,
+    )
+    _scheduler.add_job(
+        _scan_staging_job,
+        trigger="interval",
+        minutes=2,
+        id="staging_scan",
         replace_existing=True,
     )
     _scheduler.start()

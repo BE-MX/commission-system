@@ -68,7 +68,7 @@
           </el-menu-item>
         </el-sub-menu>
 
-        <el-sub-menu index="tracking-mgmt" v-if="authStore.hasAnyPermission(['tracking:read', 'tracking:write'])">
+        <el-sub-menu index="tracking-mgmt" v-if="authStore.hasAnyPermission(['tracking:read', 'tracking:write', 'tracking:daily_report'])">
           <template #title>
             <el-icon><Van /></el-icon>
             <span>物流管理</span>
@@ -81,7 +81,7 @@
             <el-icon><Upload /></el-icon>
             <template #title>运单上传</template>
           </el-menu-item>
-          <el-menu-item index="/tracking/daily-report" v-if="authStore.hasAnyPermission(['tracking:read', 'tracking:write'])">
+          <el-menu-item index="/tracking/daily-report" v-if="authStore.hasAnyPermission(['tracking:daily_report'])">
             <el-icon><Document /></el-icon>
             <template #title>物流日报</template>
           </el-menu-item>

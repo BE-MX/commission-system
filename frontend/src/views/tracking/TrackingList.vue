@@ -1,5 +1,5 @@
 <template>
-  <div>
+  <div class="tracking-page">
     <!-- 看板：运单状态概览 -->
     <section class="kanban" v-if="stats">
       <div class="kanban-header">
@@ -120,12 +120,12 @@
     </el-row>
 
     <!-- 表格 -->
-    <div class="table-card">
+    <div ref="tableCardRef" class="table-card">
     <el-table
       ref="tableRef"
       :data="tableData"
       v-loading="loading"
-      :max-height="maxHeight"
+      :max-height="tableMaxHeight"
       class="list-table"
       border
     >
@@ -136,7 +136,6 @@
       </el-table-column>
       <el-table-column prop="carrier_name" label="物流商" min-width="100" max-width="140" show-overflow-tooltip />
       <el-table-column prop="receiver_name" label="收件人" min-width="110" max-width="170" show-overflow-tooltip />
-      <el-table-column prop="receiver_company" label="收件公司" min-width="150" max-width="300" show-overflow-tooltip />
       <el-table-column prop="receiver_country" label="国家" min-width="90" max-width="130" show-overflow-tooltip />
       <el-table-column label="状态" min-width="110" max-width="150">
         <template #default="{ row }">
@@ -195,16 +194,25 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getShipmentList, getTrackingStats, getSubmitters, refreshShipment, triggerScanStaging, triggerPoll } from '@/api/tracking'
-import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
 import { useAuthStore } from '@/stores/auth'
 
-const { tableRef, maxHeight } = useTableMaxHeight()
 const router = useRouter()
 const authStore = useAuthStore()
+
+const tableCardRef = ref()
+const tableRef = ref()
+const tableMaxHeight = ref(400)
+let resizeObserver = null
+
+function updateTableHeight() {
+  if (!tableCardRef.value) return
+  const h = tableCardRef.value.clientHeight
+  if (h > 50) tableMaxHeight.value = h
+}
 
 const stats = ref(null)
 const lastUpdated = ref('')
@@ -430,12 +438,28 @@ onMounted(() => {
   fetchStats()
   fetchList()
   fetchSubmitters()
+  nextTick(() => {
+    updateTableHeight()
+    resizeObserver = new ResizeObserver(updateTableHeight)
+    if (tableCardRef.value) resizeObserver.observe(tableCardRef.value)
+  })
+})
+
+onUnmounted(() => {
+  if (resizeObserver) resizeObserver.disconnect()
 })
 </script>
 
 <style scoped>
-.toolbar { margin-bottom: 16px; }
-.pagination { margin-top: 16px; justify-content: flex-end; }
+.tracking-page {
+  height: calc(100vh - 100px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.toolbar { margin-bottom: 16px; flex-shrink: 0; }
+.table-card { flex: 1; overflow: hidden; }
+.pagination { margin-top: 16px; justify-content: flex-end; flex-shrink: 0; }
 
 /* ===== 范围选择条 ===== */
 .scope-bar {
@@ -448,6 +472,7 @@ onMounted(() => {
   background: rgba(212, 148, 28, 0.06);
   border: 1px solid rgba(212, 148, 28, 0.18);
   border-radius: 8px;
+  flex-shrink: 0;
 }
 .scope-bar :deep(.el-checkbox__label) {
   font-size: 13px;
@@ -466,6 +491,7 @@ onMounted(() => {
 /* ===== 看板：运单状态概览 ===== */
 .kanban {
   margin-bottom: 14px;
+  flex-shrink: 0;
 }
 .kanban-header {
   display: flex;
