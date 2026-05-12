@@ -2,6 +2,7 @@
  * Auth API — 登录、刷新、获取用户信息
  */
 import axios from 'axios'
+import { ElMessage } from 'element-plus'
 
 // 独立的 axios 实例，不走业务 request.js 的拦截器
 const authRequest = axios.create({
@@ -19,6 +20,57 @@ authRequest.interceptors.request.use(async config => {
   }
   return config
 })
+
+// 响应错误拦截器：统一处理登录相关错误
+authRequest.interceptors.response.use(
+  response => response,
+  error => {
+    // 网络层错误（后端未启动、DNS 失败、CORS 等）
+    if (!error.response) {
+      const msg = error.code === 'ECONNABORTED' || error.code === 'ERR_NETWORK'
+        ? '网络超时，请检查后端服务是否启动'
+        : '网络错误，请检查网络连接或后端服务'
+      ElMessage.error(msg)
+      return Promise.reject(new Error(msg))
+    }
+
+    const status = error.response.status
+    const data = error.response.data || {}
+
+    // 401 — 用户名或密码错误 / Token 过期
+    if (status === 401) {
+      const msg = data.detail || data.message || '用户名或密码错误'
+      ElMessage.error(msg)
+      return Promise.reject(new Error(msg))
+    }
+
+    // 403 — 账号被禁用
+    if (status === 403) {
+      const msg = data.detail || data.message || '账号已被禁用，请联系管理员'
+      ElMessage.error(msg)
+      return Promise.reject(new Error(msg))
+    }
+
+    // 423 — 账号被锁定
+    if (status === 423) {
+      const msg = data.detail || data.message || '账号已锁定，请稍后再试'
+      ElMessage.error(msg)
+      return Promise.reject(new Error(msg))
+    }
+
+    // 500 — 服务器内部错误
+    if (status === 500) {
+      const msg = data.detail || data.message || '服务器内部错误，请稍后重试'
+      ElMessage.error(msg)
+      return Promise.reject(new Error(msg))
+    }
+
+    // 其他状态码
+    const msg = data.detail || data.message || `请求失败 (${status})`
+    ElMessage.error(msg)
+    return Promise.reject(new Error(msg))
+  }
+)
 
 export const authApi = {
   /**

@@ -185,6 +185,14 @@ export function updateRequestRemark(requestId, data) {
   return designApi.put(`/requests/${requestId}/remark`, data, { loadingText: '正在保存...' })
 }
 
+export function updateRequestShootType(requestId, data) {
+  return designApi.put(`/requests/${requestId}/shoot-type`, data, { loadingText: '正在保存...' })
+}
+
+export function updateTaskShootType(taskId, data) {
+  return designApi.put(`/tasks/${taskId}/shoot-type`, data, { loadingText: '正在保存...' })
+}
+
 export function triggerShootReminderScan() {
   return designApi.post('/scan-shoot-reminders', null, { loadingText: '正在扫描...' })
 }

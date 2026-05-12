@@ -16,9 +16,9 @@ DHL_TYPECODE_MAP = {
     "TR": "in_transit",    # In transit
     "AR": "in_transit",    # Arrived
     "SM": "in_transit",    # Scheduled
-    "WC": "in_transit",    # With courier
-    "OH": "in_transit",    # On hold
-    "HP": "in_transit",    # Hold for payment
+    "WC": "out_for_delivery", # With courier
+    "OH": "customs_hold",  # On hold
+    "HP": "customs_hold",  # Hold for payment
     "PY": "in_transit",    # Payment received
     "RR": "customs",       # Customs clearance update
     "CR": "in_transit",    # Clearance complete
@@ -97,17 +97,16 @@ class DHLAdapter(CarrierAdapter):
         latest_typecode = latest.status_code.upper() if latest else ""
         normalized = DHL_TYPECODE_MAP.get(latest_typecode, "in_transit")
 
-        # 提取预计送达时间
+        # 提取预计送达时间（优先取根节点 estimatedDeliveryDate）
         est_dt = None
-        eta_str = shipment.get("estimatedTimeOfDelivery")
-        if not eta_str:
-            # 尝试其他可能的字段名
-            eta_str = shipment.get("estimatedDeliveryTime")
-        if eta_str:
-            try:
-                est_dt = datetime.fromisoformat(eta_str)
-            except Exception:
-                est_dt = None
+        for field in ("estimatedDeliveryDate", "estimatedTimeOfDelivery", "estimatedDeliveryTime"):
+            eta_str = shipment.get(field)
+            if eta_str:
+                try:
+                    est_dt = datetime.fromisoformat(eta_str)
+                    break
+                except Exception:
+                    continue
 
         return TrackingResult(
             success=True,

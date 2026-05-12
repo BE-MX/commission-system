@@ -5,11 +5,13 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError, TimeoutError as DBTimeoutError
 
 from app.core.database import engine
 from app.core.database import SessionLocal
@@ -30,6 +32,9 @@ from app.ai.router import router as ai_router
 from app.insight.router import router as insight_router
 
 logger = logging.getLogger("commission")
+
+# 全局 APScheduler 实例
+_scheduler: AsyncIOScheduler | None = None
 
 FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 
@@ -63,10 +68,29 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Init admin password skipped: {e}")
 
-    # 启动定时任务
-    from app.design.scheduler import scheduler_loop
-    asyncio.create_task(scheduler_loop())
-    logger.info("Design shoot reminder scheduler started")
+    # 启动 APScheduler 定时任务
+    global _scheduler
+    _scheduler = AsyncIOScheduler(timezone="Asia/Shanghai")
+
+    from app.design.scheduler import check_today_shoot_reminders
+    from app.services.tracking_daily_report import generate_daily_reports
+
+    _scheduler.add_job(
+        check_today_shoot_reminders,
+        trigger="cron",
+        hour=8, minute=30,
+        id="design_shoot_reminder",
+        replace_existing=True,
+    )
+    _scheduler.add_job(
+        generate_daily_reports,
+        trigger="cron",
+        hour=8, minute=30,
+        id="shipping_daily_report",
+        replace_existing=True,
+    )
+    _scheduler.start()
+    logger.info("APScheduler started with %s jobs", len(_scheduler.get_jobs()))
 
     # 自动初始化 waybill_ocr AI preset（如需要）
     try:
@@ -131,6 +155,9 @@ async def lifespan(app: FastAPI):
 
     yield
     # --- 关闭 ---
+    if _scheduler:
+        _scheduler.shutdown(wait=False)
+        logger.info("APScheduler shutdown")
     engine.dispose()
 
 
@@ -157,6 +184,17 @@ async def value_error_handler(request: Request, exc: ValueError):
     return JSONResponse(
         status_code=400,
         content={"code": 400, "message": str(exc), "data": None},
+    )
+
+
+@app.exception_handler(OperationalError)
+@app.exception_handler(DBTimeoutError)
+async def db_error_handler(request: Request, exc):
+    """数据库连接异常 — 返回具体原因，便于前端提示"""
+    logger.error(f"Database error: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"code": 500, "message": "数据库连接失败，请稍后重试", "data": None},
     )
 
 

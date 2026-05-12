@@ -334,6 +334,87 @@ def update_request_remark(
     return {"code": 200, "message": "备注已更新", "data": None}
 
 
+def update_request_shoot_type(
+    db: Session,
+    request_id: int,
+    shoot_type: str,
+    operator_id: int,
+    operator_name: str,
+) -> dict:
+    """修改预约单拍摄类型"""
+    req = db.query(DesignScheduleRequest).filter(
+        DesignScheduleRequest.id == request_id,
+        DesignScheduleRequest.deleted_at.is_(None),
+    ).first()
+    if not req:
+        raise ValueError("申请单不存在")
+
+    old_shoot_type = req.shoot_type
+    req.shoot_type = shoot_type
+    req.updated_at = datetime.now()
+
+    _write_audit_log(
+        db,
+        request_id=req.id,
+        operator_id=operator_id,
+        operator_name=operator_name,
+        operator_role="design_staff",
+        action="reschedule",
+        from_status=req.status,
+        to_status=req.status,
+        comment=f"修改拍摄类型: {old_shoot_type} → {shoot_type}",
+    )
+    db.commit()
+    db.refresh(req)
+
+    return {"code": 200, "message": "拍摄类型已更新", "data": None}
+
+
+def update_task_shoot_type(
+    db: Session,
+    task_id: int,
+    shoot_type: str,
+    operator_id: int,
+    operator_name: str,
+) -> dict:
+    """修改任务拍摄类型（同步更新关联预约单）"""
+    task = db.query(DesignScheduleTask).filter(
+        DesignScheduleTask.id == task_id,
+    ).first()
+    if not task:
+        raise ValueError("任务不存在")
+
+    old_shoot_type = task.shoot_type
+    task.shoot_type = shoot_type
+    task.updated_at = datetime.now()
+
+    # 同步更新关联 request 的拍摄类型
+    req = db.query(DesignScheduleRequest).filter(
+        DesignScheduleRequest.id == task.request_id,
+        DesignScheduleRequest.deleted_at.is_(None),
+    ).first()
+    if req:
+        req.shoot_type = shoot_type
+        req.updated_at = datetime.now()
+
+    _write_audit_log(
+        db,
+        request_id=task.request_id,
+        task_id=task.id,
+        operator_id=operator_id,
+        operator_name=operator_name,
+        operator_role="design_staff",
+        action="reschedule",
+        from_status=task.status,
+        to_status=task.status,
+        comment=f"修改拍摄类型: {old_shoot_type} → {shoot_type}",
+    )
+    db.commit()
+    db.refresh(task)
+
+    return {"code": 200, "message": "拍摄类型已更新", "data": None}
+
+
 # ── 甘特图 ────────────────────────────────────────────────
 
 

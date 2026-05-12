@@ -1,7 +1,7 @@
 """物流跟踪相关数据模型"""
 
 from sqlalchemy import (
-    Column, BigInteger, Integer, String, Text, DateTime, Boolean,
+    Column, BigInteger, Integer, String, Text, Date, DateTime, Boolean,
     Index, func,
 )
 from app.core.database import Base
@@ -69,6 +69,8 @@ class ShipmentTracking(Base):
     ocr_raw_text = Column(Text)
     short_code = Column(String(8), unique=True, comment="短链接编码")
     source_image_url = Column(String(500))
+    unified_status = Column(String(30), comment="统一状态码")
+    last_pushed_status = Column(String(30), comment="上次推送时的状态，防重复推送")
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
 
@@ -121,3 +123,20 @@ class CarrierConfig(Base):
     waybill_pattern = Column(String(100))
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class ShippingDailyReport(Base):
+    """物流日报"""
+    __tablename__ = "ark_shipping_daily_reports"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=False, comment="所属用户ID")
+    report_date = Column(Date, nullable=False, comment="日报日期")
+    html_content = Column(Text, nullable=False, comment="日报HTML内容")
+    short_url = Column(String(100), comment="日报短链")
+    is_pushed = Column(Boolean, nullable=False, server_default="0", comment="是否已推送")
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("uk_user_date", "user_id", "report_date", unique=True),
+    )

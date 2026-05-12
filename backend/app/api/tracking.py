@@ -7,7 +7,7 @@ import logging
 from datetime import datetime
 from pathlib import Path as FilePath
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Path, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Path, UploadFile, status
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError, ProgrammingError
 from sqlalchemy.orm import Session
@@ -426,7 +426,7 @@ def _call_ocr_sync(image_bytes: bytes, suffix: str) -> dict:
 def check_waybill(
     waybill_no: str = Query(..., min_length=1, max_length=50),
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_permission("tracking:read")),
+    current_user: dict = Depends(require_permission("tracking:write")),
 ):
     record = (
         db.query(Waybill.waybill_no, Waybill.created_at, Waybill.created_by, Waybill.status)
@@ -668,3 +668,103 @@ async def _push_waybill_dingtalk(waybill: Waybill) -> None:
         )
     except Exception as exc:
         logger.warning("钉钉推送失败（不影响录入）: %s", exc)
+
+
+# ══════════════════════════════════════════════════════════════
+#  物流日报
+# ══════════════════════════════════════════════════════════════
+
+from datetime import date as _date_type
+from app.services.tracking_daily_report import get_user_daily_report
+
+
+@router.get("/daily-report", summary="获取物流日报")
+def get_daily_report(
+    report_date: str = Query(None, description="日报日期 YYYY-MM-DD，默认今天"),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """获取当前用户指定日期的物流日报 HTML 内容。"""
+    user_id = current_user.get("sub")
+    if not user_id:
+        return {"code": 401, "message": "未登录", "data": None}
+
+    try:
+        target_date = _date_type.fromisoformat(report_date) if report_date else _date_type.today()
+    except ValueError:
+        return {"code": 400, "message": "日期格式错误，应为 YYYY-MM-DD", "data": None}
+
+    report = get_user_daily_report(db, int(user_id), target_date)
+    if not report:
+        return {
+            "code": 200,
+            "message": "ok",
+            "data": {
+                "exists": False,
+                "html": None,
+                "report_date": target_date.isoformat(),
+            },
+        }
+
+    return {
+        "code": 200,
+        "message": "ok",
+        "data": {
+            "exists": True,
+            "html": report.html_content,
+            "report_date": report.report_date.isoformat(),
+            "short_url": report.short_url,
+            "is_pushed": report.is_pushed,
+            "created_at": report.created_at.isoformat() if report.created_at else None,
+        },
+    }
+
+
+@router.post("/daily-report/generate", summary="手动生成物流日报")
+def generate_daily_report(
+    background_tasks: BackgroundTasks,
+    report_date: str = Query(None, description="日报日期 YYYY-MM-DD，默认今天"),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """手动生成当前用户指定日期的物流日报。"""
+    user_id = current_user.get("sub")
+    if not user_id:
+        return {"code": 401, "message": "未登录", "data": None}
+
+    try:
+        target_date = _date_type.fromisoformat(report_date) if report_date else _date_type.today()
+    except ValueError:
+        return {"code": 400, "message": "日期格式错误，应为 YYYY-MM-DD", "data": None}
+
+    from app.services.tracking_daily_report import generate_user_report, push_daily_report
+    from app.auth.models import ArkUser
+
+    # 获取当前用户的钉钉ID
+    user = db.query(ArkUser).filter(ArkUser.id == int(user_id)).first()
+    if not user or not user.dingtalk_id:
+        return {"code": 400, "message": "当前用户未绑定钉钉账号，无法生成日报", "data": None}
+
+    try:
+        report = generate_user_report(db, int(user_id), user.dingtalk_id, target_date)
+        if not report:
+            return {"code": 200, "message": "ok", "data": {"exists": False, "reason": "无运单数据"}}
+
+        # 异步推送（不阻塞响应）
+        background_tasks.add_task(push_daily_report, db, report)
+
+        return {
+            "code": 200,
+            "message": "日报已生成",
+            "data": {
+                "exists": True,
+                "html": report.html_content,
+                "report_date": report.report_date.isoformat(),
+                "short_url": report.short_url,
+                "is_pushed": report.is_pushed,
+                "created_at": report.created_at.isoformat() if report.created_at else None,
+            },
+        }
+    except Exception as e:
+        logger.exception("手动生成日报失败: %s", e)
+        return {"code": 500, "message": f"生成失败: {e}", "data": None}

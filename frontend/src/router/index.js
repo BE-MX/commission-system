@@ -73,6 +73,12 @@ const routes = [
         meta: { title: '运单上传', permission: 'tracking:write' }
       },
       {
+        path: 'tracking/daily-report',
+        name: 'ShippingDailyReport',
+        component: () => import('../views/tracking/ShippingDailyReport.vue'),
+        meta: { title: '物流日报' }
+      },
+      {
         path: 'design/gantt',
         name: 'DesignGantt',
         component: () => import('../views/design/GanttView.vue'),

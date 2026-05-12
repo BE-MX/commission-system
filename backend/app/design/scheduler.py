@@ -1,6 +1,5 @@
 """设计预约 — 定时任务"""
 
-import asyncio
 import logging
 from datetime import date, datetime
 
@@ -83,20 +82,3 @@ async def check_today_shoot_reminders():
         db.close()
 
 
-async def scheduler_loop():
-    """定时任务主循环 — 每天 08:30 执行拍摄提醒"""
-    while True:
-        now = datetime.now()
-        # 计算距离下一个 08:30 的秒数
-        target = now.replace(hour=8, minute=30, second=0, microsecond=0)
-        if now >= target:
-            from datetime import timedelta
-            target += timedelta(days=1)
-        wait_seconds = (target - now).total_seconds()
-        logger.info("下次拍摄提醒扫描: %s (%.0f秒后)", target.isoformat(), wait_seconds)
-        await asyncio.sleep(wait_seconds)
-
-        try:
-            await check_today_shoot_reminders()
-        except Exception as e:
-            logger.error("拍摄提醒定时任务异常: %s", e)

@@ -81,6 +81,10 @@
             <el-icon><Upload /></el-icon>
             <template #title>运单上传</template>
           </el-menu-item>
+          <el-menu-item index="/tracking/daily-report" v-if="authStore.hasAnyPermission(['tracking:read', 'tracking:write'])">
+            <el-icon><Document /></el-icon>
+            <template #title>物流日报</template>
+          </el-menu-item>
         </el-sub-menu>
 
         <el-sub-menu index="insight" v-if="authStore.hasAnyPermission(['insight:read', 'insight:write', 'insight:internal_read', 'insight:admin'])">

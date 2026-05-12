@@ -155,6 +155,7 @@ class DesignTaskListItem(BaseModel):
     actual_end_period: PeriodType = None
     status: str
     remark: Optional[str] = None
+    request_remark: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

@@ -57,3 +57,17 @@ export function triggerPoll() {
     loadingText: '正在轮询物流状态...',
   })
 }
+
+export function getDailyReport(date) {
+  return request.get('/tracking/daily-report', {
+    params: date ? { report_date: date } : {},
+    showLoading: false,
+  })
+}
+
+export function generateDailyReport(date) {
+  return request.post('/tracking/daily-report/generate', null, {
+    params: date ? { report_date: date } : {},
+    loadingText: '正在生成日报...',
+  })
+}

@@ -796,6 +796,32 @@ def update_request_remark(
     return result
 
 
+@router.put("/requests/{request_id}/shoot-type")
+def update_request_shoot_type(
+    request_id: int,
+    data: dict,
+    db: Session = Depends(get_db),
+):
+    """修改预约单拍摄类型"""
+    result = service.update_request_shoot_type(
+        db, request_id, data.get("shoot_type", ""), data.get("operator_id", 1), data.get("operator_name", "管理员")
+    )
+    return result
+
+
+@router.put("/tasks/{task_id}/shoot-type")
+def update_task_shoot_type(
+    task_id: int,
+    data: dict,
+    db: Session = Depends(get_db),
+):
+    """修改任务拍摄类型"""
+    result = service.update_task_shoot_type(
+        db, task_id, data.get("shoot_type", ""), data.get("operator_id", 1), data.get("operator_name", "管理员")
+    )
+    return result
+
+
 @router.put("/requests/{request_id}/expect-date")
 def update_expect_date(
     request_id: int,

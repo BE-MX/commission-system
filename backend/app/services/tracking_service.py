@@ -12,6 +12,8 @@ from app.models.tracking import ShipmentTracking, TrackingEvent, CarrierConfig
 from app.models.waybill import Waybill
 from app.services.carriers import get_adapter
 from app.services.dws_sync_service import sync_shipment
+from app.utils.tracking_status import normalize_status
+from app.services.tracking_push import check_and_push
 
 logger = logging.getLogger("tracking.poll")
 settings = get_settings()
@@ -86,6 +88,9 @@ async def poll_single(db: Session, shipment: ShipmentTracking) -> dict:
     if not shipment.shipped_at and result.current_status not in ("pending",):
         shipment.shipped_at = datetime.now()
 
+    # 更新统一状态码
+    shipment.unified_status = normalize_status(shipment.carrier, result.current_status)
+
     # 同步预计送达时间到 ark_waybills
     if result.estimated_delivery_date:
         try:
@@ -102,6 +107,12 @@ async def poll_single(db: Session, shipment: ShipmentTracking) -> dict:
         logger.info(f"{shipment.waybill_no}: deactivated, exceeded {max_days} days")
 
     db.commit()
+
+    # 关键状态推送（异步，不阻塞）
+    try:
+        await check_and_push(db, shipment)
+    except Exception as e:
+        logger.warning("关键状态推送检查失败 %s: %s", shipment.waybill_no, e)
 
     if new_events:
         sync_shipment(db, shipment)

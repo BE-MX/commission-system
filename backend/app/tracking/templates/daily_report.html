@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>物流日报 {{ report_date }}</title>
+<style>
+.daily-report-wrap{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;line-height:1.6;padding:20px;background:#f5f7fa;color:#1a1a2e;max-width:720px;margin:0 auto;box-sizing:border-box}
+.daily-report-wrap .header{background:linear-gradient(135deg,#1e3a5f 0%,#2d5a87 100%);color:#fff;padding:24px 20px;border-radius:12px;margin-bottom:20px}
+.daily-report-wrap .header h1{font-size:20px;font-weight:700;margin-bottom:4px;margin-top:0}
+.daily-report-wrap .header .date{font-size:13px;opacity:.85}
+.daily-report-wrap .summary{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px}
+.daily-report-wrap .summary-card{background:#fff;border-radius:10px;padding:16px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.daily-report-wrap .summary-card .num{font-size:28px;font-weight:700;margin-bottom:2px}
+.daily-report-wrap .summary-card .label{font-size:12px;color:#8b95a5}
+.daily-report-wrap .summary-card.alert .num{color:#dc2626}
+.daily-report-wrap .summary-card.warn .num{color:#f59e0b}
+.daily-report-wrap .summary-card.info .num{color:#2563eb}
+.daily-report-wrap .section{background:#fff;border-radius:10px;padding:20px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.daily-report-wrap .section-title{font-size:15px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:8px;margin-top:0}
+.daily-report-wrap .section-title .icon{font-size:18px}
+.daily-report-wrap .shipment-table{width:100%;border-collapse:collapse;font-size:13px}
+.daily-report-wrap .shipment-table th{padding:10px 8px;text-align:left;background:#f8f9fc;font-weight:600;color:#5a6372;font-size:12px;border-bottom:1px solid #e8ecf4}
+.daily-report-wrap .shipment-table td{padding:10px 8px;border-bottom:1px solid #f0f2f7;vertical-align:top}
+.daily-report-wrap .shipment-table tr:last-child td{border-bottom:none}
+.daily-report-wrap .status-tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:500}
+.daily-report-wrap .status-picked_up{background:#eff6ff;color:#1d4ed8}
+.daily-report-wrap .status-in_transit{background:#fef3c7;color:#92400e}
+.daily-report-wrap .status-customs_hold{background:#fee2e2;color:#991b1b}
+.daily-report-wrap .status-out_for_delivery{background:#dbeafe;color:#1e40af}
+.daily-report-wrap .status-delivered{background:#d1fae5;color:#065f46}
+.daily-report-wrap .status-exception{background:#fee2e2;color:#991b1b}
+.daily-report-wrap .status-returned{background:#f3f4f6;color:#4b5563}
+.daily-report-wrap .short-link{color:#2563eb;text-decoration:none;font-size:12px}
+.daily-report-wrap .short-link:hover{text-decoration:underline}
+.daily-report-wrap .empty{text-align:center;padding:24px;color:#a0aec0;font-size:13px}
+.daily-report-wrap .footer{text-align:center;padding:16px;font-size:11px;color:#a0aec0;margin-top:8px}
+</style>
+</head>
+<body>
+
+<div class="daily-report-wrap">
+  <div class="header">
+    <h1>物流日报</h1>
+    <div class="date">{{ report_date }} | 共 {{ total_count }} 票运单</div>
+  </div>
+
+  <!-- 今日速览 -->
+  <div class="summary">
+    <div class="summary-card alert">
+      <div class="num">{{ alert_count }}</div>
+      <div class="label">需关注</div>
+    </div>
+    <div class="summary-card warn">
+      <div class="num">{{ delivering_count }}</div>
+      <div class="label">派送中</div>
+    </div>
+    <div class="summary-card info">
+      <div class="num">{{ in_transit_count }}</div>
+      <div class="label">在途总数</div>
+    </div>
+  </div>
+
+  <!-- 需关注 -->
+  <div class="section">
+    <div class="section-title">
+      <span class="icon">⚠️</span>
+      <span>需关注（异常 / 清关扣押）— {{ alert_shipments|length }} 票</span>
+    </div>
+    {% if alert_shipments %}
+    <table class="shipment-table">
+      <thead>
+        <tr>
+          <th>运单号</th>
+          <th>物流商</th>
+          <th>目的国</th>
+          <th>状态</th>
+          <th>预计送达</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in alert_shipments %}
+        <tr>
+          <td><strong>{{ s.waybill_no }}</strong></td>
+          <td>{{ s.carrier_name or s.carrier }}</td>
+          <td>{{ s.receiver_country or '-' }}</td>
+          <td><span class="status-tag status-{{ s.unified_status }}">{{ s.status_label }}</span></td>
+          <td>{{ s.estimated_delivery_date or '-' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty">暂无异常或清关扣押运单</div>
+    {% endif %}
+  </div>
+
+  <!-- 派送中 -->
+  <div class="section">
+    <div class="section-title">
+      <span class="icon">🚚</span>
+      <span>派送中 — {{ delivering_shipments|length }} 票</span>
+    </div>
+    {% if delivering_shipments %}
+    <table class="shipment-table">
+      <thead>
+        <tr>
+          <th>运单号</th>
+          <th>物流商</th>
+          <th>目的国</th>
+          <th>状态</th>
+          <th>预计送达</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in delivering_shipments %}
+        <tr>
+          <td><strong>{{ s.waybill_no }}</strong></td>
+          <td>{{ s.carrier_name or s.carrier }}</td>
+          <td>{{ s.receiver_country or '-' }}</td>
+          <td><span class="status-tag status-out_for_delivery">{{ s.status_label }}</span></td>
+          <td>{{ s.estimated_delivery_date or '-' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty">暂无派送中运单</div>
+    {% endif %}
+  </div>
+
+  <!-- 运输中 -->
+  <div class="section">
+    <div class="section-title">
+      <span class="icon">✈️</span>
+      <span>运输中 / 已揽收 — {{ transit_shipments|length }} 票</span>
+    </div>
+    {% if transit_shipments %}
+    <table class="shipment-table">
+      <thead>
+        <tr>
+          <th>运单号</th>
+          <th>物流商</th>
+          <th>目的国</th>
+          <th>状态</th>
+          <th>预计送达</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in transit_shipments %}
+        <tr>
+          <td><strong>{{ s.waybill_no }}</strong></td>
+          <td>{{ s.carrier_name or s.carrier }}</td>
+          <td>{{ s.receiver_country or '-' }}</td>
+          <td><span class="status-tag status-{{ s.unified_status }}">{{ s.status_label }}</span></td>
+          <td>{{ s.estimated_delivery_date or '-' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty">暂无运输中运单</div>
+    {% endif %}
+  </div>
+
+  <!-- 近7天签收 -->
+  <div class="section">
+    <div class="section-title">
+      <span class="icon">✅</span>
+      <span>近7天签收 — {{ recent_delivered|length }} 票</span>
+    </div>
+    {% if recent_delivered %}
+    <table class="shipment-table">
+      <thead>
+        <tr>
+          <th>运单号</th>
+          <th>物流商</th>
+          <th>目的国</th>
+          <th>签收时间</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in recent_delivered %}
+        <tr>
+          <td><strong>{{ s.waybill_no }}</strong></td>
+          <td>{{ s.carrier_name or s.carrier }}</td>
+          <td>{{ s.receiver_country or '-' }}</td>
+          <td>{{ s.delivered_at or '-' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty">近7天无签收运单</div>
+    {% endif %}
+  </div>
+
+  <div class="footer">
+    莱莎方舟 · 物流日报 · 每日 08:30 自动生成
+  </div>
+</div>
+
+</body>
+</html>

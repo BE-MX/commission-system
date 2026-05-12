@@ -2,7 +2,7 @@
 
 ## 项目概述
 
-莱莎方舟平台，企业内部综合后台。包含提成管理、物流跟踪、运单上传（AI OCR）、客户归属、设计预约、用户/权限、AI 接入、方舟洞见、钉钉集成九大模块。详细说明见 [CLAUDE.md](./CLAUDE.md)。
+莱莎方舟平台，企业内部综合后台。包含提成管理、物流跟踪（含关键状态推送 + 物流日报）、运单上传（AI OCR）、客户归属、设计预约、用户/权限、AI 接入、方舟洞见、钉钉集成九大模块。详细说明见 [CLAUDE.md](./CLAUDE.md)。
 
 ## 技术栈
 
@@ -18,13 +18,17 @@
 cp backend/.env.example backend/.env
 # 编辑 .env 填入实际数据库连接信息和 SHORT_LINK_BASE_URL
 
-# 2. 本地开发（使用 start.bat 一键启动）
+# 2. 安装依赖（后端 + 前端）
+cd backend && pip install -r requirements.txt && cd ..
+cd frontend && npm install && cd ..
+
+# 3. 本地开发（使用 start.bat 一键启动）
 start.bat
 
-# 3. 数据库迁移
+# 4. 数据库迁移
 cd backend && alembic upgrade head
 
-# 4. 健康检查
+# 5. 健康检查
 curl http://localhost:8001/health
 ```
 
@@ -51,7 +55,8 @@ commission-system/
 │   │   ├── system/       # 系统字典
 │   │   ├── dingtalk/     # 钉钉集成
 │   │   ├── ai/           # AI 接入（Provider/Preset/调用日志）
-│   │   └── insight/      # 方舟洞见
+│   │   ├── insight/      # 方舟洞见
+│   │   └── tracking/     # 物流跟踪（Jinja2 模板）
 │   ├── alembic/          # 数据库迁移
 │   ├── config/           # 业务规则配置
 │   └── sql/              # DDL 脚本

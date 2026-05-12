@@ -24,7 +24,12 @@
           </el-table-column>
           <el-table-column prop="salesperson_name" label="业务员" min-width="90" max-width="140" show-overflow-tooltip />
           <el-table-column label="拍摄类型" min-width="120" max-width="180" show-overflow-tooltip>
-            <template #default="{ row }">{{ buildDictLabel(row.shoot_type, shootTypeMap) }}</template>
+            <template #default="{ row }">
+              <span class="clickable-shoot-type" @click="openShootTypeDialog(row, 'request')">
+                {{ buildDictLabel(row.shoot_type, shootTypeMap) }}
+                <el-icon class="edit-icon"><Edit /></el-icon>
+              </span>
+            </template>
           </el-table-column>
           <el-table-column label="期望日期" min-width="280" max-width="420">
             <template #default="{ row }">
@@ -84,7 +89,12 @@
           <el-table-column prop="customer_name" label="客户名称" min-width="130" max-width="200" show-overflow-tooltip />
           <el-table-column prop="salesperson_name" label="业务员" min-width="90" max-width="140" show-overflow-tooltip />
           <el-table-column label="拍摄类型" min-width="120" max-width="180" show-overflow-tooltip>
-            <template #default="{ row }">{{ buildDictLabel(row.shoot_type, shootTypeMap) }}</template>
+            <template #default="{ row }">
+              <span class="clickable-shoot-type" @click="openShootTypeDialog(row, 'task')">
+                {{ buildDictLabel(row.shoot_type, shootTypeMap) }}
+                <el-icon class="edit-icon"><Edit /></el-icon>
+              </span>
+            </template>
           </el-table-column>
           <el-table-column label="设计师" min-width="120" max-width="170">
             <template #default="{ row }">
@@ -403,6 +413,26 @@
         <GlassButton variant="primary" @click="submitEditTaskDate" :loading="editTaskDateSaving">保存</GlassButton>
       </template>
     </el-dialog>
+
+    <!-- 修改拍摄类型 -->
+    <el-dialog v-model="shootTypeVisible" title="修改拍摄类型" width="460px" :close-on-click-modal="false">
+      <el-form label-width="90px">
+        <el-form-item label="拍摄类型">
+          <el-select v-model="shootTypeForm.shoot_type" multiple placeholder="请选择拍摄类型" style="width: 100%">
+            <el-option
+              v-for="(label, code) in shootTypeMap"
+              :key="code"
+              :label="label"
+              :value="code"
+            />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <GlassButton variant="ghost" @click="shootTypeVisible = false">取消</GlassButton>
+        <GlassButton variant="primary" @click="submitShootType" :loading="shootTypeSaving">保存</GlassButton>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -410,7 +440,7 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Upload, Plus, Calendar, VideoPlay, CircleCheck, CircleClose, Edit, SwitchButton, Bell } from '@element-plus/icons-vue'
-import { getRequests, getTaskList, getDesigners, createDesigner, updateDesigner, actionRequest, rescheduleTask, importRequests, updateExpectDate, updateRequestRemark, triggerShootReminderScan } from '@/api/design'
+import { getRequests, getTaskList, getDesigners, createDesigner, updateDesigner, actionRequest, rescheduleTask, importRequests, updateExpectDate, updateRequestRemark, updateRequestShootType, updateTaskShootType, triggerShootReminderScan } from '@/api/design'
 import { getDictMap, buildDictLabel } from '@/utils/dict'
 import DesignCalendarConfig from '@/components/design/DesignCalendarConfig.vue'
 import DesignCapacityConfig from '@/components/design/DesignCapacityConfig.vue'
@@ -519,6 +549,50 @@ async function submitRemark() {
     fetchPending()
   } finally {
     remarkSaving.value = false
+  }
+}
+
+// --- Edit shoot type (both tabs) ---
+const shootTypeVisible = ref(false)
+const shootTypeSaving = ref(false)
+const shootTypeRow = ref(null)
+const shootTypeTarget = ref('request')
+const shootTypeForm = reactive({ shoot_type: [] })
+
+function openShootTypeDialog(row, target) {
+  shootTypeRow.value = row
+  shootTypeTarget.value = target
+  shootTypeForm.shoot_type = row.shoot_type ? row.shoot_type.split(',').filter(Boolean) : []
+  shootTypeVisible.value = true
+}
+
+async function submitShootType() {
+  if (!shootTypeForm.shoot_type || shootTypeForm.shoot_type.length === 0) {
+    ElMessage.warning('请选择拍摄类型')
+    return
+  }
+  shootTypeSaving.value = true
+  try {
+    const shootTypeStr = shootTypeForm.shoot_type.join(',')
+    if (shootTypeTarget.value === 'request') {
+      await updateRequestShootType(shootTypeRow.value.id, {
+        shoot_type: shootTypeStr,
+        operator_id: 1,
+        operator_name: '管理员',
+      })
+      fetchPending()
+    } else {
+      await updateTaskShootType(shootTypeRow.value.id, {
+        shoot_type: shootTypeStr,
+        operator_id: 1,
+        operator_name: '管理员',
+      })
+      fetchScheduled()
+    }
+    ElMessage.success('拍摄类型已更新')
+    shootTypeVisible.value = false
+  } finally {
+    shootTypeSaving.value = false
   }
 }
 
@@ -969,6 +1043,24 @@ onMounted(() => {
   opacity: 0.5;
 }
 .clickable-remark:hover .edit-icon {
+  opacity: 1;
+}
+
+.clickable-shoot-type {
+  cursor: pointer;
+  color: var(--color-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.clickable-shoot-type:hover {
+  text-decoration: underline;
+}
+.clickable-shoot-type .edit-icon {
+  font-size: 14px;
+  opacity: 0.5;
+}
+.clickable-shoot-type:hover .edit-icon {
   opacity: 1;
 }
 
