@@ -173,7 +173,8 @@ def seed_role_permissions(db: Session):
         ("payment:read",         "commission", "read",       "查看回款记录"),
         ("payment:write",        "commission", "write",      "同步回款"),
         # 物流跟踪
-        ("tracking:read",         "tracking", "read",         "查看物流跟踪"),
+        ("tracking:read",         "tracking", "read",         "查看物流跟踪（仅本人）"),
+        ("tracking:read_all",     "tracking", "read_all",     "查看全部运单"),
         ("tracking:write",        "tracking", "write",        "编辑物流记录"),
         ("tracking:daily_report", "tracking", "daily_report", "查看物流日报"),
         # 设计预约

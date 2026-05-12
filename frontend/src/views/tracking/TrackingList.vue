@@ -55,18 +55,6 @@
       </div>
     </section>
 
-    <!-- 范围选择条 -->
-    <div class="scope-bar">
-      <el-checkbox v-model="onlyMine" @change="handleOnlyMineChange">
-        仅显示我的运单
-      </el-checkbox>
-      <span class="scope-bar__hint">
-        <template v-if="submitter">当前筛选提交人：<b>{{ submitter }}</b></template>
-        <template v-else-if="onlyMine">当前仅显示 <b>{{ authStore.user?.real_name || authStore.user?.username || '我' }}</b> 提交的运单</template>
-        <template v-else>当前显示全部用户提交的运单</template>
-      </span>
-    </div>
-
     <!-- 筛选栏 -->
     <el-row :gutter="12" class="toolbar" align="middle">
       <el-col :span="4">
@@ -93,18 +81,7 @@
           <el-option label="TNT" value="TNT" />
         </el-select>
       </el-col>
-      <el-col :span="3">
-        <el-select
-          v-model="submitter"
-          placeholder="提交人"
-          clearable
-          filterable
-          @change="handleSubmitterChange"
-        >
-          <el-option v-for="name in submitters" :key="name" :label="name" :value="name" />
-        </el-select>
-      </el-col>
-      <el-col :span="3">
+      <el-col :span="4">
         <el-select v-model="activeFilter" placeholder="跟踪状态" clearable @change="fetchList">
           <el-option label="跟踪中" value="1" />
           <el-option label="已结束" value="0" />
@@ -113,7 +90,7 @@
       <el-col :span="2">
         <GlassButton left-icon="Search" @click="fetchList">查询</GlassButton>
       </el-col>
-      <el-col :span="6" style="text-align:right">
+      <el-col :span="8" style="text-align:right">
         <GlassButton left-icon="Refresh" @click="handleScanStaging">扫描暂存</GlassButton>
         <GlassButton left-icon="Loading" @click="handlePoll">批量轮询</GlassButton>
       </el-col>
@@ -197,7 +174,7 @@
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { getShipmentList, getTrackingStats, getSubmitters, refreshShipment, triggerScanStaging, triggerPoll } from '@/api/tracking'
+import { getShipmentList, getTrackingStats, refreshShipment, triggerScanStaging, triggerPoll } from '@/api/tracking'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
@@ -221,9 +198,6 @@ const keyword = ref('')
 const statusFilter = ref('')
 const carrierFilter = ref('')
 const activeFilter = ref('')
-const onlyMine = ref(true)
-const submitter = ref('')
-const submitters = ref([])
 const page = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
@@ -333,19 +307,9 @@ function handleStatusFilterChange() {
 
 async function fetchStats() {
   try {
-    const res = await getTrackingStats({
-      mine: onlyMine.value ? '1' : '',
-      submitter: submitter.value,
-    })
+    const res = await getTrackingStats()
     stats.value = res.data
     lastUpdated.value = formatUpdatedAt()
-  } catch { /* ignore */ }
-}
-
-async function fetchSubmitters() {
-  try {
-    const res = await getSubmitters()
-    submitters.value = res.data || []
   } catch { /* ignore */ }
 }
 
@@ -357,8 +321,6 @@ async function fetchList() {
       status: statusFilter.value,
       carrier: carrierFilter.value,
       is_active: activeFilter.value,
-      mine: onlyMine.value ? '1' : '',
-      submitter: submitter.value,
       page: page.value,
       page_size: pageSize.value,
     })
@@ -367,24 +329,6 @@ async function fetchList() {
   } finally {
     loading.value = false
   }
-}
-
-function handleOnlyMineChange(val) {
-  if (val) {
-    submitter.value = ''
-  }
-  page.value = 1
-  fetchList()
-  fetchStats()
-}
-
-function handleSubmitterChange(val) {
-  if (val) {
-    onlyMine.value = false
-  }
-  page.value = 1
-  fetchList()
-  fetchStats()
 }
 
 async function handleRefresh(row) {
@@ -437,7 +381,6 @@ function fmtDateShort(dateStr) {
 onMounted(() => {
   fetchStats()
   fetchList()
-  fetchSubmitters()
   nextTick(() => {
     updateTableHeight()
     resizeObserver = new ResizeObserver(updateTableHeight)
@@ -460,33 +403,6 @@ onUnmounted(() => {
 .toolbar { margin-bottom: 16px; flex-shrink: 0; }
 .table-card { flex: 1; overflow: hidden; }
 .pagination { margin-top: 16px; justify-content: flex-end; flex-shrink: 0; }
-
-/* ===== 范围选择条 ===== */
-.scope-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 12px;
-  margin-bottom: 10px;
-  background: rgba(212, 148, 28, 0.06);
-  border: 1px solid rgba(212, 148, 28, 0.18);
-  border-radius: 8px;
-  flex-shrink: 0;
-}
-.scope-bar :deep(.el-checkbox__label) {
-  font-size: 13px;
-  font-weight: 500;
-  color: #374151;
-}
-.scope-bar__hint {
-  font-size: 12px;
-  color: #6b7280;
-}
-.scope-bar__hint b {
-  color: #B8860B;
-  font-weight: 600;
-}
 
 /* ===== 看板：运单状态概览 ===== */
 .kanban {

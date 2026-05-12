@@ -74,14 +74,19 @@ def list_shipments(
     carrier: str = Query("", description="物流商筛选"),
     keyword: str = Query("", description="运单号/收件人模糊搜索"),
     is_active: str = Query("", description="是否活跃: 1/0"),
-    mine: str = Query("", description="仅看本人提交: 1/0"),
-    submitter: str = Query("", description="按提交人(dingtalk_user_name)过滤"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
     q = db.query(ShipmentTracking)
+
+    # 权限自动判断数据范围
+    user_perms = current_user.get("permissions", [])
+    is_super = "super_admin" in current_user.get("roles", [])
+    if not is_super and "tracking:read_all" not in user_perms:
+        q = q.filter(ShipmentTracking.dingtalk_user_name == current_user.get("username", ""))
+
     if status:
         # customs 同时匹配 customs 和 customs_hold（stats 合并了两个值）
         if status == "customs":
@@ -99,10 +104,6 @@ def list_shipments(
         )
     if is_active in ("1", "0"):
         q = q.filter(ShipmentTracking.is_active == (is_active == "1"))
-    if submitter:
-        q = q.filter(ShipmentTracking.dingtalk_user_name == submitter)
-    elif mine == "1":
-        q = q.filter(ShipmentTracking.dingtalk_user_name == current_user.get("username", ""))
 
     total = q.count()
     items = (
@@ -167,18 +168,16 @@ async def refresh_shipment(
 
 @router.get("/stats", summary="统计概览")
 def get_stats(
-    mine: str = Query("", description="仅看本人提交: 1/0"),
-    submitter: str = Query("", description="按提交人(dingtalk_user_name)过滤"),
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
     q = db.query(ShipmentTracking.current_status, func.count(ShipmentTracking.id))
     active_q = db.query(func.count(ShipmentTracking.id)).filter(ShipmentTracking.is_active == True)
 
-    if submitter:
-        q = q.filter(ShipmentTracking.dingtalk_user_name == submitter)
-        active_q = active_q.filter(ShipmentTracking.dingtalk_user_name == submitter)
-    elif mine == "1":
+    # 权限自动判断数据范围
+    user_perms = current_user.get("permissions", [])
+    is_super = "super_admin" in current_user.get("roles", [])
+    if not is_super and "tracking:read_all" not in user_perms:
         username = current_user.get("username", "")
         q = q.filter(ShipmentTracking.dingtalk_user_name == username)
         active_q = active_q.filter(ShipmentTracking.dingtalk_user_name == username)

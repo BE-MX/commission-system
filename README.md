@@ -32,13 +32,6 @@ cd backend && alembic upgrade head
 curl http://localhost:8001/health
 ```
 
-**钉钉 AI 表格同步**需要在服务器上预先安装并授权 `dws` CLI：
-
-```bash
-npm install -g @dingwork/dws
-dws auth login  # 首次授权，浏览器完成认证
-```
-
 ## 项目结构
 
 ```
