@@ -569,15 +569,24 @@ async def create_waybill(
             poll_error = str(exc)
             logger.warning("自动轮询失败（不影响录入）: %s", exc)
 
-    # 异步触发钉钉推送（不阻塞响应）
-    try:
-        asyncio.create_task(_push_waybill_dingtalk(waybill))
-    except Exception as exc:
-        logger.warning("钉钉推送任务创建失败（不影响录入）: %s", exc)
-
     # 生成短链（用于前端弹窗展示与钉钉推送）
     carrier_url = build_carrier_tracking_url(payload.carrier, payload.waybill_no)
     short_url = generate_short_link(carrier_url)
+
+    # 生成发货消息模板
+    est_text = (tracking.estimated_delivery_date.strftime("%Y-%m-%d")
+                if tracking and tracking.estimated_delivery_date else "TBD")
+    shipping_template = (
+        f"Hi {payload.recipient_name}, great news! Your order has been picked up by "
+        f"{payload.carrier}. Tracking#: {payload.waybill_no}. "
+        f"Expected delivery: {est_text}. I'll keep an eye on it for you!"
+    )
+
+    # 异步触发钉钉推送（不阻塞响应）
+    try:
+        asyncio.create_task(_push_waybill_dingtalk(waybill, short_url, shipping_template))
+    except Exception as exc:
+        logger.warning("钉钉推送任务创建失败（不影响录入）: %s", exc)
 
     data = {
         "id": waybill.id,
@@ -590,6 +599,7 @@ async def create_waybill(
         "created_by": waybill.created_by,
         "created_at": waybill.created_at.strftime("%Y-%m-%d %H:%M:%S"),
         "short_link": short_url,
+        "shipping_template": shipping_template,
     }
 
     # 追加轮询后的物流状态（供前端弹窗展示）
@@ -614,14 +624,11 @@ async def create_waybill(
     }
 
 
-async def _push_waybill_dingtalk(waybill: Waybill) -> None:
+async def _push_waybill_dingtalk(waybill: Waybill, short_url: str, shipping_template: str) -> None:
     """通过钉钉 Webhook 推送运单录入通知（ActionCard 带按钮跳转）。"""
     try:
         from app.dingtalk.webhook import get_webhook_sender
         sender = get_webhook_sender()
-
-        carrier_url = build_carrier_tracking_url(waybill.carrier, waybill.waybill_no)
-        short_url = generate_short_link(carrier_url)
 
         text = (
             f"### 运单录入通知\n"
@@ -634,6 +641,9 @@ async def _push_waybill_dingtalk(waybill: Waybill) -> None:
         )
         if waybill.estimated_delivery_date:
             text += f"**预计送达：** {waybill.estimated_delivery_date.strftime('%Y年%m月%d日')}\n"
+
+        text += f"\n---\n**发货通知模板（可复制）：**\n```\n{shipping_template}\n```\n"
+        text += f"**短链接：** {short_url}\n"
 
         btns = [{
             "title": f"查看 {waybill.carrier} 物流",

@@ -464,7 +464,7 @@ async function handleFileChange(uploadFile) {
     const data = res.data
     if (!data) throw new Error('响应数据为空')
 
-    form.waybill_no = data.waybill_no || ''
+    form.waybill_no = (data.waybill_no || '').trim().replace(/\s+/g, '')
     form.carrier = data.carrier || detectCarrier(data.waybill_no) || ''
     form.recipient_name = data.recipient_name || ''
     form.recipient_country = data.recipient_country || ''

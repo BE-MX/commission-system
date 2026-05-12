@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     # JWT / Auth
     JWT_SECRET_KEY: str = "change-this-to-a-random-64-char-secret-in-production"
     JWT_ALGORITHM: str = "HS256"
-    JWT_EXPIRE_MINUTES: int = 15
+    JWT_EXPIRE_MINUTES: int = 720
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     LOGIN_MAX_FAIL: int = 5
     LOGIN_LOCK_MINUTES: int = 30
