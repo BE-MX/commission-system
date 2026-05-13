@@ -85,14 +85,23 @@
         <el-form-item label="是否启用">
           <el-switch v-model="form.is_active" />
         </el-form-item>
-        <el-form-item label="关键词(JSON)" v-if="form.source_type === 'google_alerts_rss'">
-          <el-input v-model="keywordsText" type="textarea" :rows="2" placeholder='["hair extensions", "wig review"]' />
+        <el-form-item label="关键词" v-if="form.source_type === 'google_alerts_rss'">
+          <el-input v-model="keywordsText" type="textarea" :rows="2" placeholder="hair extensions, wig review" />
+          <div class="field-hint">命中任一保留 · 用英文逗号分隔</div>
+        </el-form-item>
+        <el-form-item label="排除关键词" v-if="form.source_type === 'google_alerts_rss'">
+          <el-input v-model="excludeKeywordsText" type="textarea" :rows="2" placeholder="halloween, costume, diy" />
+          <div class="field-hint">命中任一丢弃 · 用英文逗号分隔</div>
         </el-form-item>
         <el-form-item label="CSS 选择器" v-if="form.source_type === 'amazon_bestseller' || form.source_type === 'competitor_html'">
           <el-input v-model="form.css_selector" placeholder=".product-row" />
         </el-form-item>
         <el-form-item label="自定义请求头(JSON)">
           <el-input v-model="headersText" type="textarea" :rows="2" placeholder='{"User-Agent": "..."}' />
+        </el-form-item>
+        <el-form-item label="代理地址（可选）">
+          <el-input v-model="form.proxy_url" placeholder="http://127.0.0.1:1080" />
+          <div class="field-hint">Google / Pinterest 在国内需代理才能访问</div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -165,8 +174,10 @@ const form = reactive({
   sort_order: 0,
   is_active: true,
   css_selector: '',
+  proxy_url: '',
 })
 const keywordsText = ref('')
+const excludeKeywordsText = ref('')
 const headersText = ref('')
 
 const rules = {
@@ -194,9 +205,10 @@ function openCreate() {
   Object.assign(form, {
     name: '', source_type: 'google_alerts_rss', url: '',
     pipeline: 'external', fetch_interval_hours: 24, sort_order: 0,
-    is_active: true, css_selector: '',
+    is_active: true, css_selector: '', proxy_url: '',
   })
   keywordsText.value = ''
+  excludeKeywordsText.value = ''
   headersText.value = ''
   dialogVisible.value = true
 }
@@ -213,31 +225,42 @@ function openEdit(row) {
     sort_order: row.sort_order || 0,
     is_active: row.is_active,
     css_selector: row.css_selector || '',
+    proxy_url: row.proxy_url || '',
   })
-  keywordsText.value = row.keywords ? JSON.stringify(row.keywords, null, 2) : ''
+  keywordsText.value = row.keywords ? row.keywords.join(', ') : ''
+  excludeKeywordsText.value = row.exclude_keywords ? row.exclude_keywords.join(', ') : ''
   headersText.value = row.request_headers ? JSON.stringify(row.request_headers, null, 2) : ''
   dialogVisible.value = true
+}
+
+function _commaStrToArray(text) {
+  if (!text || !text.trim()) return null
+  // 全角逗号/中文逗号 转 半角逗号，然后分割
+  return text
+    .replace(/[，,]/g, ',')
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
 }
 
 async function submitForm() {
   if (!formRef.value) return
   const valid = await formRef.value.validate().catch(() => false)
   if (!valid) return
-  let keywords = null
+  const keywords = _commaStrToArray(keywordsText.value)
+  const excludeKeywords = _commaStrToArray(excludeKeywordsText.value)
   let headers = null
-  try {
-    if (keywordsText.value.trim()) keywords = JSON.parse(keywordsText.value)
-  } catch (e) {
-    ElMessage.error('关键词 JSON 格式错误')
-    return
-  }
   try {
     if (headersText.value.trim()) headers = JSON.parse(headersText.value)
   } catch (e) {
     ElMessage.error('请求头 JSON 格式错误')
     return
   }
-  const payload = { ...form, keywords, request_headers: headers }
+  const payload = { ...form, keywords, exclude_keywords: excludeKeywords, request_headers: headers }
+  // 空字符串转为 null，避免后端存空串
+  if (!payload.proxy_url || !payload.proxy_url.trim()) {
+    payload.proxy_url = null
+  }
   saving.value = true
   try {
     if (isEdit.value) {
@@ -355,4 +378,11 @@ onMounted(refresh)
 
 .preview-list ul { padding-left: 18px; margin: 0; }
 .preview-list li { font-size: 12px; color: var(--text-secondary, #4a5568); padding: 2px 0; }
+
+.field-hint {
+  font-size: 12px;
+  color: var(--text-tertiary, #8b95a5);
+  margin-top: 4px;
+  line-height: 1.4;
+}
 </style>

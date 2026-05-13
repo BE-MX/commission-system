@@ -10,6 +10,7 @@ import os
 import re
 import shutil
 import time
+import urllib.request
 import uuid
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -217,8 +218,41 @@ def delete_source(db: Session, source_id: int) -> None:
     db.commit()
 
 
+def filter_items(items: list[dict], keywords: list[str] | None, exclude_keywords: list[str] | None) -> list[dict]:
+    """
+    两级过滤：先包含，再排除。
+    - keywords: 非空时，标题/摘要必须命中至少一个关键词，未命中则丢弃
+    - exclude_keywords: 非空时，标题/摘要命中任一排除词则丢弃
+    """
+    result = []
+    for item in items:
+        text = f"{item.get('title', '')} {item.get('summary', '')}".lower()
+
+        # 第1级：包含过滤
+        if keywords:
+            if not any(str(kw).lower() in text for kw in keywords):
+                continue
+
+        # 第2级：排除过滤
+        if exclude_keywords:
+            if any(str(kw).lower() in text for kw in exclude_keywords):
+                continue
+
+        result.append(item)
+
+    return result
+
+
+def _build_urlopen_handler(proxy_url: str | None) -> urllib.request.OpenerDirector:
+    """根据 proxy_url 构建 urllib opener；None 则返回默认 opener。"""
+    if proxy_url:
+        proxy_handler = urllib.request.ProxyHandler({"http": proxy_url, "https": proxy_url})
+        return urllib.request.build_opener(proxy_handler)
+    return urllib.request.build_opener()
+
+
 def test_source(db: Session, source_id: int) -> dict:
-    """信源连通性测试 — HEAD/GET 探测。"""
+    """信源连通性测试 — HEAD/GET 探测，支持代理。"""
     import urllib.request
     import urllib.error
 
@@ -235,9 +269,11 @@ def test_source(db: Session, source_id: int) -> dict:
     if s.request_headers:
         headers.update(s.request_headers)
 
+    opener = _build_urlopen_handler(s.proxy_url)
+
     try:
         req = urllib.request.Request(s.url, method="GET", headers=headers)
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with opener.open(req, timeout=15) as resp:
             status_code = resp.status
             content = resp.read(2048).decode("utf-8", errors="replace")
         elapsed = int((time.time() - start) * 1000)

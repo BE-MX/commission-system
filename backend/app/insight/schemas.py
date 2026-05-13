@@ -42,8 +42,10 @@ class SourceBase(BaseModel):
     source_type: str
     url: str
     keywords: Optional[list] = None
+    exclude_keywords: Optional[list] = None
     css_selector: Optional[str] = None
     request_headers: Optional[dict] = None
+    proxy_url: Optional[str] = None
     fetch_interval_hours: int = 24
     is_active: bool = True
     pipeline: str = "external"
@@ -59,8 +61,10 @@ class SourceUpdate(BaseModel):
     source_type: Optional[str] = None
     url: Optional[str] = None
     keywords: Optional[list] = None
+    exclude_keywords: Optional[list] = None
     css_selector: Optional[str] = None
     request_headers: Optional[dict] = None
+    proxy_url: Optional[str] = None
     fetch_interval_hours: Optional[int] = None
     is_active: Optional[bool] = None
     pipeline: Optional[str] = None

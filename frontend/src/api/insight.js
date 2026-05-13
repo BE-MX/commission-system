@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import { useLoading } from '@/composables/useLoading'
+import { getAccessToken, clearAuthState } from '@/stores/auth'
 
 const insightApi = axios.create({
   baseURL: '/api/insight',
@@ -12,6 +13,10 @@ const loading = useLoading()
 insightApi.interceptors.request.use((config) => {
   if (config.showLoading !== false) {
     loading.show(config.loadingText || '')
+  }
+  const token = getAccessToken()
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
   }
   return config
 })
@@ -28,7 +33,16 @@ insightApi.interceptors.response.use(
   },
   (error) => {
     if (error.config?.showLoading !== false) loading.hide()
-    ElMessage.error(error.response?.data?.detail || error.response?.data?.message || error.message || '网络错误')
+    if (error.response?.status === 401) {
+      clearAuthState()
+      window.location.href = '/login'
+      return Promise.reject(error)
+    }
+    let msg = error.response?.data?.detail || error.response?.data?.message || error.message || '网络错误'
+    if (typeof msg === 'object' && msg !== null) {
+      msg = msg.message || JSON.stringify(msg)
+    }
+    ElMessage.error(msg)
     return Promise.reject(error)
   }
 )
