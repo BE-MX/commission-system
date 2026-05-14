@@ -65,6 +65,10 @@ export function regenerateReport(id) {
   return insightApi.post(`/reports/${id}/regenerate`, null, { loadingText: '正在重新生成...' })
 }
 
+export function triggerReportGeneration(reportType) {
+  return insightApi.post(`/reports/generate/${reportType}`, null, { loadingText: '正在生成报告...' })
+}
+
 // ── 信源 ──────────────────────────────────────────────
 export function listSources(params) {
   return insightApi.get('/sources', { params, showLoading: false })

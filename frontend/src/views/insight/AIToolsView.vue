@@ -18,12 +18,21 @@
           <el-option v-for="d in dateOptions" :key="d.value" :label="d.label" :value="d.value" />
         </el-select>
         <span class="result-count">{{ filteredTools.length }} 项</span>
+        <GlassButton
+          v-if="canAdmin"
+          variant="primary"
+          left-icon="MagicStick"
+          :loading="generating"
+          @click="generateToday"
+        >
+          拉取今日速递
+        </GlassButton>
       </div>
     </div>
 
     <div v-loading="loading" class="tools-grid">
       <el-empty v-if="!loading && tools.length === 0" description="暂无 AI 工具速递" :image-size="80">
-        <p class="empty-tip">由 ACCIO WORK 自动推送 / 管理员从 aihot.virxact.com 接入</p>
+        <p class="empty-tip">点击右上角「拉取今日速递」或等待每日 08:35 自动生成</p>
       </el-empty>
       <el-empty v-else-if="!loading && filteredTools.length === 0" description="未匹配到工具" :image-size="80" />
 
@@ -65,7 +74,11 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { Search, Link, Star, StarFilled } from '@element-plus/icons-vue'
-import { listReports, getReport } from '@/api/insight'
+import { listReports, getReport, triggerReportGeneration } from '@/api/insight'
+import { useAuthStore } from '@/stores/auth'
+import GlassButton from '@/components/GlassButton.vue'
+
+const authStore = useAuthStore()
 
 const CATEGORY_LABELS = {
   model: '模型发布',
@@ -80,10 +93,13 @@ const STAR_KEY = 'insight:ai_tools:starred'
 const reports = ref([])
 const tools = ref([]) // 所有报告里展平的工具
 const loading = ref(false)
+const generating = ref(false)
 const searchQuery = ref('')
 const tagFilter = ref('all')
 const dateFilter = ref('all')
 const starredKeys = ref(new Set(JSON.parse(localStorage.getItem(STAR_KEY) || '[]')))
+
+const canAdmin = computed(() => authStore.hasPermission('insight:admin'))
 
 const tagOptions = computed(() => {
   const s = new Set()
@@ -180,6 +196,16 @@ async function loadAll() {
     tools.value = flat
   } finally {
     loading.value = false
+  }
+}
+
+async function generateToday() {
+  generating.value = true
+  try {
+    await triggerReportGeneration('ai_tools')
+    await loadAll()
+  } finally {
+    generating.value = false
   }
 }
 

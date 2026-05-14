@@ -3,7 +3,9 @@
     <div class="insight-toolbar" v-if="canAdmin">
       <GlassButton variant="link" left-icon="Setting" @click="goSources">信源配置</GlassButton>
       <GlassButton variant="link" left-icon="RefreshRight" @click="refreshAll">刷新列表</GlassButton>
-      <span class="toolbar-tip">本期信源抓取尚未实现,可由管理员从外部手动导入。</span>
+      <GlassButton variant="primary" left-icon="MagicStick" :loading="generating" @click="generateToday">
+        生成今日日报
+      </GlassButton>
     </div>
 
     <div class="insight-body">
@@ -65,7 +67,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Calendar, ArrowRight, Document, Loading } from '@element-plus/icons-vue'
 import GlassButton from '@/components/GlassButton.vue'
-import { listReports, getReportHtmlUrl } from '@/api/insight'
+import { listReports, getReportHtmlUrl, triggerReportGeneration } from '@/api/insight'
 import { useAuthStore } from '@/stores/auth'
 
 const authStore = useAuthStore()
@@ -76,6 +78,7 @@ const totalCount = ref(0)
 const loading = ref(false)
 const selectedId = ref(null)
 const expandedMonths = ref({})
+const generating = ref(false)
 
 const canAdmin = computed(() => authStore.hasPermission('insight:admin'))
 
@@ -126,6 +129,18 @@ function selectReport(id) {
 
 function goSources() {
   router.push('/insight/sources')
+}
+
+async function generateToday() {
+  generating.value = true
+  try {
+    const res = await triggerReportGeneration('industry_daily')
+    await refreshAll()
+    // 自动选中刚生成的报告
+    if (res.data?.id) selectedId.value = res.data.id
+  } finally {
+    generating.value = false
+  }
 }
 
 onMounted(refreshAll)

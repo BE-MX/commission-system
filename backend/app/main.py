@@ -101,6 +101,23 @@ async def lifespan(app: FastAPI):
         id="staging_scan",
         replace_existing=True,
     )
+
+    from app.insight.scheduler import generate_industry_daily, generate_ai_tools
+
+    _scheduler.add_job(
+        generate_industry_daily,
+        trigger="cron",
+        hour=8, minute=30,
+        id="insight_industry_daily",
+        replace_existing=True,
+    )
+    _scheduler.add_job(
+        generate_ai_tools,
+        trigger="cron",
+        hour=8, minute=35,
+        id="insight_ai_tools",
+        replace_existing=True,
+    )
     _scheduler.start()
     logger.info("APScheduler started with %s jobs", len(_scheduler.get_jobs()))
 
@@ -164,6 +181,67 @@ async def lifespan(app: FastAPI):
                     logger.warning("No active AI provider found, waybill_ocr preset not auto-created")
     except Exception as e:
         logger.warning("Auto-init waybill_ocr preset skipped: %s", e)
+
+    # 自动初始化行业日报 AI 整理 preset
+    try:
+        from app.ai.models import AiProvider as _AP, AiPreset as _APr
+        with SessionLocal() as db:
+            existing = (
+                db.query(_APr)
+                .filter(_APr.preset_name == "insight_daily_organize", _APr.deleted_at.is_(None))
+                .first()
+            )
+            if not existing:
+                # 优先选 MIMO，其次第一个可用 provider
+                provider = (
+                    db.query(_AP)
+                    .filter(_AP.is_enabled.is_(True), _AP.deleted_at.is_(None), _AP.name == "MIMO")
+                    .first()
+                ) or (
+                    db.query(_AP)
+                    .filter(_AP.is_enabled.is_(True), _AP.deleted_at.is_(None))
+                    .first()
+                )
+                if provider:
+                    first_preset = (
+                        db.query(_APr)
+                        .filter(_APr.provider_id == provider.id, _APr.deleted_at.is_(None))
+                        .first()
+                    )
+                    model = first_preset.model if first_preset else "gpt-4o"
+                    preset = _APr(
+                        preset_name="insight_daily_organize",
+                        provider_id=provider.id,
+                        model=model,
+                        system_prompt=(
+                            "你是发制品行业的市场情报分析师。"
+                            "用户会提供一组从外部信源抓取的行业新闻/趋势/竞品动态原始条目。\n\n"
+                            "请将这些条目整理为以下 JSON 对象（只输出 JSON，不要其他文字）：\n\n"
+                            '{\n'
+                            '  "quick_overview": ["条目1要点（20字以内）", ...],\n'
+                            '  "color_style_trends": "一段话总结今日发色/发型相关趋势（100字以内，无则空串）",\n'
+                            '  "trend_keywords": ["关键词1", "关键词2"],\n'
+                            '  "amazon_hot": [{"rank": 1, "name": "商品名", "change": "NEW/+2/-1", "reason": "简析"}],\n'
+                            '  "competitor_updates": [{"source": "信源名", "summary": "摘要（60字）", "url": "链接"}],\n'
+                            '  "supply_chain": "一段话总结供应链/原材料动态（80字以内，无则空串）"\n'
+                            '}\n\n'
+                            "规则：\n"
+                            "- 与发制品无关的条目直接忽略\n"
+                            "- 没有数据的板块返回空数组或空字符串\n"
+                            "- amazon_hot 的 change 用 +/-数字 或 NEW 表示\n"
+                            "- 不要编造信息"
+                        ),
+                        parameters={"temperature": 0.3, "max_tokens": 8192},
+                        description="行业情报日报：AI 整理信源数据为 5 个板块",
+                        is_enabled=True,
+                    )
+                    db.add(preset)
+                    db.commit()
+                    logger.info("Auto-created insight_daily_organize preset with provider=%s model=%s", provider.name, model)
+                else:
+                    logger.warning("No active AI provider found, insight_daily_organize preset not auto-created")
+    except Exception as e:
+        logger.warning("Auto-init insight_daily_organize preset skipped: %s", e)
 
     yield
     # --- 关闭 ---

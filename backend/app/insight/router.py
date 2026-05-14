@@ -172,9 +172,43 @@ def regenerate_report(
     db: Session = Depends(get_db),
     user: dict = Depends(_require_insight_admin),
 ):
-    user_id = int(user.get("sub")) if user.get("sub") else None
-    r = service.regenerate_report(db, report_id, user_id)
-    return _ok({"id": r.id, "status": r.status}, "已触发重新生成(信源抓取暂未实现,待后续接入)")
+    r = service.get_report(db, report_id)
+    try:
+        if r.report_type == "industry_daily":
+            report = service.generate_industry_daily_report(db, report_date=r.report_date)
+        elif r.report_type == "ai_tools":
+            report = service.generate_ai_tools_report(db, report_date=r.report_date)
+        else:
+            raise HTTPException(status_code=400, detail=f"暂不支持重新生成 {r.report_type} 类型")
+        return _ok({"id": report.id, "status": report.status}, "已重新生成")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Regenerate report failed: id=%s", report_id)
+        raise HTTPException(status_code=500, detail=f"生成失败: {str(e)[:200]}")
+
+
+@router.post("/reports/generate/{report_type}")
+def trigger_report_generation(
+    report_type: str,
+    db: Session = Depends(get_db),
+    user: dict = Depends(_require_insight_admin),
+):
+    """手动触发报告生成（管理员用）。"""
+    if report_type not in ("industry_daily", "ai_tools"):
+        raise HTTPException(status_code=400, detail="report_type 仅支持 industry_daily 或 ai_tools")
+    try:
+        if report_type == "industry_daily":
+            report = service.generate_industry_daily_report(db, report_date=date.today())
+        else:
+            report = service.generate_ai_tools_report(db, report_date=date.today())
+        return _ok(
+            {"id": report.id, "report_type": report.report_type, "status": report.status},
+            "报告生成成功",
+        )
+    except Exception as e:
+        logger.exception("手动生成报告失败: %s", report_type)
+        raise HTTPException(status_code=500, detail=f"生成失败: {str(e)[:200]}")
 
 
 @router.post("/reports/import")
