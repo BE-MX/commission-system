@@ -684,7 +684,7 @@ const pendingTableRef = ref()
 const pendingData = ref([])
 const pendingLoading = ref(false)
 const pendingPage = ref(1)
-const pendingPageSize = ref(20)
+const pendingPageSize = ref(50)
 const pendingTotal = ref(0)
 
 async function fetchPending() {
@@ -708,7 +708,7 @@ async function fetchPending() {
 async function handleScanShootReminders() {
   try {
     await ElMessageBox.confirm(
-      '将立即扫描今日待确认任务并向相关人员推送钉钉拍摄提醒，是否继续？',
+      '将立即扫描今日待确认和已排期任务并向相关人员推送钉钉拍摄提醒，是否继续？',
       '预约任务扫描',
       { type: 'info', confirmButtonText: '开始扫描', cancelButtonText: '取消' },
     )
@@ -724,7 +724,7 @@ const scheduledTableRef = ref()
 const scheduledData = ref([])
 const scheduledLoading = ref(false)
 const scheduledPage = ref(1)
-const scheduledPageSize = ref(20)
+const scheduledPageSize = ref(50)
 const scheduledTotal = ref(0)
 
 async function fetchScheduled() {

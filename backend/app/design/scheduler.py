@@ -10,18 +10,42 @@ logger = logging.getLogger("design.scheduler")
 
 
 async def check_today_shoot_reminders():
-    """扫描待确认任务中期望开始日期=今天的预约单，推送钉钉提醒"""
+    """扫描待确认和已排期任务中排期日期=今天的预约单，推送钉钉提醒"""
     db = SessionLocal()
     try:
+        from app.design.models import DesignScheduleTask
+
         today = date.today()
-        requests = db.query(DesignScheduleRequest).filter(
+
+        # 1. 待确认预约单（pending_design）：期望开始日期=今天
+        pending_requests = db.query(DesignScheduleRequest).filter(
             DesignScheduleRequest.deleted_at.is_(None),
             DesignScheduleRequest.status == "pending_design",
             DesignScheduleRequest.expect_start_date == today,
         ).all()
 
+        # 2. 已排期/进行中任务（scheduled / in_progress）：计划开始日期=今天
+        scheduled_tasks = db.query(DesignScheduleTask).filter(
+            DesignScheduleTask.status.in_(["scheduled", "in_progress"]),
+            DesignScheduleTask.plan_start_date == today,
+        ).all()
+
+        # 合并去重：以 request 为单位
+        seen_ids = set()
+        requests = []
+        for req in pending_requests:
+            if req.id not in seen_ids:
+                seen_ids.add(req.id)
+                requests.append(req)
+        for task in scheduled_tasks:
+            if task.request_id not in seen_ids:
+                seen_ids.add(task.request_id)
+                req = db.get(DesignScheduleRequest, task.request_id)
+                if req and req.deleted_at is None:
+                    requests.append(req)
+
         if not requests:
-            logger.info("今日无需提醒的拍摄预约")
+            logger.info("今日无需提醒的拍摄预约或排期任务")
             return
 
         from app.auth.models import ArkUser, ArkRole, ArkUserRole
@@ -54,8 +78,14 @@ async def check_today_shoot_reminders():
             from app.dingtalk.work_notify import get_work_notifier
             from app.dingtalk.events import _build_request_markdown, _PRIORITY_LABELS
 
+            # 区分提醒标题
+            if req.status == "pending_design":
+                reminder_title = "⏰ 拍摄提醒：今日有预约待处理"
+            else:
+                reminder_title = "⏰ 拍摄提醒：今日有排期任务"
+
             md = _build_request_markdown(
-                "⏰ 拍摄提醒：今日有预约待处理",
+                reminder_title,
                 request_no=req.request_no,
                 salesperson_name=req.salesperson_name or "",
                 customer_name=req.customer_name,
