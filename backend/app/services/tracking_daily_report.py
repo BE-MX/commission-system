@@ -61,18 +61,32 @@ def _shipment_to_dict(s: ShipmentTracking) -> dict:
     }
 
 
-def generate_user_report(db: Session, user_id: int, dingtalk_user_id: str, report_date: date) -> ShippingDailyReport | None:
+def generate_user_report(db: Session, user_id: int, dingtalk_user_id: str, report_date: date, username: str = None) -> ShippingDailyReport | None:
     """为指定用户生成指定日期的日报。
 
     user_id: 系统用户ID（用于存日报表）
     dingtalk_user_id: 钉钉用户ID（用于查运单）
+    username: 系统用户名（用于 fallback 匹配 dingtalk_user_id 为空的运单）
     """
+    from app.auth.models import ArkUser
+
     seven_days_ago = report_date - timedelta(days=7)
 
-    # 查询该用户的所有活跃/近期运单（通过 dingtalk_user_id 匹配）
+    # 查询该用户的所有活跃/近期运单
+    # 主匹配：dingtalk_user_id == 用户钉钉ID
+    # 兜底匹配：dingtalk_user_name == 用户名（处理 dingtalk_user_id 缺失的情况）
+    from sqlalchemy import or_
+
+    conditions = [ShipmentTracking.dingtalk_user_id == dingtalk_user_id]
+    if username:
+        conditions.append(
+            (ShipmentTracking.dingtalk_user_name == username)
+            & (ShipmentTracking.dingtalk_user_id.in_(["", None]))
+        )
+
     shipments = (
         db.query(ShipmentTracking)
-        .filter(ShipmentTracking.dingtalk_user_id == dingtalk_user_id)
+        .filter(or_(*conditions))
         .filter(
             (ShipmentTracking.is_active == True)
             | (ShipmentTracking.delivered_at >= seven_days_ago)
@@ -199,28 +213,53 @@ async def generate_daily_reports() -> dict:
     try:
         from app.auth.models import ArkUser
 
-        # 获取所有有活跃运单的用户（通过 dingtalk_user_id 关联到系统用户）
+        # 收集所有需要生成日报的系统用户（去重）
+        user_ids = set()
+
+        # 方式1：通过 dingtalk_user_id 关联
         dingtalk_ids = [
             row[0] for row in
             db.query(ShipmentTracking.dingtalk_user_id)
             .filter(ShipmentTracking.is_active == True)
             .filter(ShipmentTracking.dingtalk_user_id.isnot(None))
+            .filter(ShipmentTracking.dingtalk_user_id != "")
             .distinct()
             .all()
         ]
+        for dingtalk_id in dingtalk_ids:
+            user = db.query(ArkUser).filter(ArkUser.dingtalk_id == dingtalk_id).first()
+            if user:
+                user_ids.add(user.id)
 
-        if not dingtalk_ids:
+        # 方式2：通过 dingtalk_user_name 匹配（dingtalk_user_id 为空的运单）
+        usernames = [
+            row[0] for row in
+            db.query(ShipmentTracking.dingtalk_user_name)
+            .filter(ShipmentTracking.is_active == True)
+            .filter(
+                (ShipmentTracking.dingtalk_user_id.is_(None))
+                | (ShipmentTracking.dingtalk_user_id == "")
+            )
+            .filter(ShipmentTracking.dingtalk_user_name.isnot(None))
+            .filter(ShipmentTracking.dingtalk_user_name != "")
+            .distinct()
+            .all()
+        ]
+        for username in usernames:
+            user = db.query(ArkUser).filter(ArkUser.username == username).first()
+            if user:
+                user_ids.add(user.id)
+
+        if not user_ids:
             logger.info("今日无需要生成日报的用户")
             return {"total": 0, "generated": 0, "pushed": 0}
 
         generated = 0
         pushed = 0
 
-        for dingtalk_id in dingtalk_ids:
-            # 通过 dingtalk_id 找到系统用户
-            user = db.query(ArkUser).filter(ArkUser.dingtalk_id == dingtalk_id).first()
+        for uid in user_ids:
+            user = db.query(ArkUser).filter(ArkUser.id == uid).first()
             if not user:
-                logger.info("钉钉ID %s 未绑定系统用户，跳过", dingtalk_id)
                 continue
 
             # 检查今天是否已生成
@@ -234,14 +273,14 @@ async def generate_daily_reports() -> dict:
                 logger.info("用户 %s 今日日报已存在，跳过", user.id)
                 continue
 
-            report = generate_user_report(db, user.id, dingtalk_id, today)
+            report = generate_user_report(db, user.id, user.dingtalk_id or "", today, username=user.username)
             if report:
                 generated += 1
                 ok = await push_daily_report(db, report)
                 if ok:
                     pushed += 1
 
-        return {"total": len(dingtalk_ids), "generated": generated, "pushed": pushed}
+        return {"total": len(user_ids), "generated": generated, "pushed": pushed}
     except Exception as e:
         logger.exception("日报生成任务异常: %s", e)
         return {"total": 0, "generated": 0, "pushed": 0, "error": str(e)}

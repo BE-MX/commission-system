@@ -66,6 +66,7 @@ class ShipmentTracking(Base):
     poll_count = Column(Integer, nullable=False, server_default="0")
     last_polled_at = Column(DateTime)
     poll_error = Column(String(500))
+    consecutive_errors = Column(Integer, nullable=False, server_default="0", comment="连续错误次数")
     ocr_raw_text = Column(Text)
     short_code = Column(String(8), unique=True, comment="短链接编码")
     source_image_url = Column(String(500))

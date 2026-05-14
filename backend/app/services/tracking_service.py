@@ -33,15 +33,16 @@ async def poll_single(db: Session, shipment: ShipmentTracking) -> dict:
     shipment.last_polled_at = datetime.now()
 
     if not result.success:
-        error_count = (shipment.poll_count if shipment.poll_error else 0)
         shipment.poll_error = result.error
-        if error_count >= 10:
+        shipment.consecutive_errors = (shipment.consecutive_errors or 0) + 1
+        if shipment.consecutive_errors >= 10:
             shipment.is_active = False
-            logger.warning(f"{shipment.waybill_no}: deactivated after {error_count} consecutive errors")
+            logger.warning(f"{shipment.waybill_no}: deactivated after {shipment.consecutive_errors} consecutive errors")
         db.commit()
         return {"waybill_no": shipment.waybill_no, "status": "error", "error": result.error}
 
     shipment.poll_error = None
+    shipment.consecutive_errors = 0
 
     latest_existing = (
         db.query(TrackingEvent)
@@ -117,10 +118,13 @@ async def poll_single(db: Session, shipment: ShipmentTracking) -> dict:
 
 
 async def poll_active_shipments(db: Session) -> dict:
-    """批量轮询所有活跃运单"""
+    """批量轮询所有活跃运单（排除已签收/已退回）"""
     shipments = (
         db.query(ShipmentTracking)
-        .filter(ShipmentTracking.is_active == True)
+        .filter(
+            ShipmentTracking.is_active == True,
+            ShipmentTracking.current_status.notin_(["delivered", "returned"]),
+        )
         .order_by(ShipmentTracking.last_polled_at.asc())
         .limit(settings.TRACKING_POLL_BATCH_SIZE)
         .all()

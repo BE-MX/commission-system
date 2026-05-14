@@ -221,7 +221,10 @@ def list_submitters(
 
 
 @router.post("/poll", summary="批量轮询（定时任务调用）")
-async def trigger_poll(db: Session = Depends(get_db)):
+async def trigger_poll(
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_permission("tracking:read")),
+):
     stats = await poll_active_shipments(db)
     return {"code": 200, "message": "ok", "data": stats}
 
@@ -732,11 +735,11 @@ def generate_daily_report(
 
     # 获取当前用户的钉钉ID
     user = db.query(ArkUser).filter(ArkUser.id == int(user_id)).first()
-    if not user or not user.dingtalk_id:
-        return {"code": 400, "message": "当前用户未绑定钉钉账号，无法生成日报", "data": None}
+    if not user:
+        return {"code": 400, "message": "用户不存在", "data": None}
 
     try:
-        report = generate_user_report(db, int(user_id), user.dingtalk_id, target_date)
+        report = generate_user_report(db, int(user_id), user.dingtalk_id or "", target_date, username=user.username)
         if not report:
             return {"code": 200, "message": "ok", "data": {"exists": False, "reason": "无运单数据"}}
 
