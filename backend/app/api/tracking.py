@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path as FilePath
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Path, UploadFile, status
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError, ProgrammingError
 from sqlalchemy.orm import Session
 
@@ -35,6 +35,45 @@ logger = logging.getLogger("commission.tracking")
 ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 OCR_TIMEOUT = 30  # seconds
+
+
+def _apply_data_scope(query, db: Session, current_user: dict):
+    """根据权限自动过滤数据范围。
+
+    tracking:read_all / super_admin → 不过滤
+    tracking:read → 按当前用户匹配：
+      主匹配：dingtalk_user_id == ark_users.dingtalk_id
+      兜底：dingtalk_user_name == username（ID 为空时）
+    """
+    user_perms = current_user.get("permissions", [])
+    is_super = "super_admin" in current_user.get("roles", [])
+    if is_super or "tracking:read_all" in user_perms:
+        return query
+
+    user_id = current_user.get("sub")
+    username = current_user.get("username", "")
+
+    # 通过 ark_users 查钉钉 ID
+    dingtalk_id = None
+    if user_id:
+        user = db.query(ArkUser).filter(ArkUser.id == int(user_id)).first()
+        if user and user.dingtalk_id:
+            dingtalk_id = user.dingtalk_id
+
+    # 主匹配 + 兜底
+    conditions = []
+    if dingtalk_id:
+        conditions.append(ShipmentTracking.dingtalk_user_id == dingtalk_id)
+    if username:
+        conditions.append(
+            (ShipmentTracking.dingtalk_user_name == username)
+            & (ShipmentTracking.dingtalk_user_id.in_(["", None]))
+        )
+
+    if conditions:
+        return query.filter(or_(*conditions))
+    # 无钉钉 ID 且无用户名 → 查不到（返回空）
+    return query.filter(False)
 
 
 @router.post("/staging", summary="运单推送到暂存表")
@@ -82,10 +121,7 @@ def list_shipments(
     q = db.query(ShipmentTracking)
 
     # 权限自动判断数据范围
-    user_perms = current_user.get("permissions", [])
-    is_super = "super_admin" in current_user.get("roles", [])
-    if not is_super and "tracking:read_all" not in user_perms:
-        q = q.filter(ShipmentTracking.dingtalk_user_name == current_user.get("username", ""))
+    q = _apply_data_scope(q, db, current_user)
 
     if status:
         # customs 同时匹配 customs 和 customs_hold（stats 合并了两个值）
@@ -175,12 +211,8 @@ def get_stats(
     active_q = db.query(func.count(ShipmentTracking.id)).filter(ShipmentTracking.is_active == True)
 
     # 权限自动判断数据范围
-    user_perms = current_user.get("permissions", [])
-    is_super = "super_admin" in current_user.get("roles", [])
-    if not is_super and "tracking:read_all" not in user_perms:
-        username = current_user.get("username", "")
-        q = q.filter(ShipmentTracking.dingtalk_user_name == username)
-        active_q = active_q.filter(ShipmentTracking.dingtalk_user_name == username)
+    q = _apply_data_scope(q, db, current_user)
+    active_q = _apply_data_scope(active_q, db, current_user)
 
     rows = q.group_by(ShipmentTracking.current_status).all()
     counts = {status: count for status, count in rows}

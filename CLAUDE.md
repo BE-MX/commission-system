@@ -416,9 +416,9 @@ content = result["content"]
 ## 物流跟踪数据范围
 
 数据范围由系统权限控制，用户无法在页面上切换：
-- `tracking:read`（仅本人）→ 后端按 `dingtalk_user_name == current_user.username` 过滤
+- `tracking:read`（仅本人）→ 后端通过 `ark_users.dingtalk_id` 关联 `shipment_tracking.dingtalk_user_id` 匹配；dingtalk_id 缺失时兜底用 `dingtalk_user_name == username`
 - `tracking:read_all`（查看全部）→ 后端不过滤，显示所有用户的运单
 - `super_admin` 角色自动等同于 `tracking:read_all`
-- 看板统计和运单列表共用同一权限口径，不会出现数据不一致
+- 看板统计和运单列表共用 `_apply_data_scope()` 公共函数，同一权限口径
 
 **口径限制**:钉钉 Accio Work 推送进暂存表的运单,`dingtalk_user_name` 存的是钉钉昵称(中文),与系统登录名不匹配——这类运单在仅有 `tracking:read` 的用户视图中不会出现。如果将来要统一,需要给提交人匹配加 `OR dingtalk_user_id == 当前用户.dingtalk_id` 二级匹配。
