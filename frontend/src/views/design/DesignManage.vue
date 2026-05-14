@@ -8,6 +8,13 @@
             预约任务扫描
           </GlassButton>
         </div>
+        <div class="filter-bar">
+          <el-input v-model="pendingFilters.salesperson_name" placeholder="业务员" clearable style="width: 120px" @clear="fetchPending" @keyup.enter="fetchPending" />
+          <el-select v-model="pendingFilters.shoot_type" placeholder="拍摄类型" clearable style="width: 130px" @change="fetchPending">
+            <el-option v-for="(label, code) in shootTypeMap" :key="code" :label="label" :value="code" />
+          </el-select>
+          <el-date-picker v-model="pendingFilters.expectDateRange" type="daterange" start-placeholder="期望开始" end-placeholder="期望结束" value-format="YYYY-MM-DD" style="width: 260px" @change="fetchPending" />
+        </div>
         <div class="table-card">
         <el-table
           ref="pendingTableRef"
@@ -76,6 +83,16 @@
 
       <!-- Tab 2: 排期任务 -->
       <el-tab-pane label="排期任务" name="scheduled">
+        <div class="filter-bar">
+          <el-input v-model="scheduledFilters.salesperson_name" placeholder="业务员" clearable style="width: 120px" @clear="fetchScheduled" @keyup.enter="fetchScheduled" />
+          <el-select v-model="scheduledFilters.shoot_type" placeholder="拍摄类型" clearable style="width: 130px" @change="fetchScheduled">
+            <el-option v-for="(label, code) in shootTypeMap" :key="code" :label="label" :value="code" />
+          </el-select>
+          <el-select v-model="scheduledFilters.designer_id" placeholder="设计师" clearable style="width: 120px" @change="fetchScheduled">
+            <el-option v-for="d in designerData" :key="d.id" :label="d.name" :value="d.id" />
+          </el-select>
+          <el-date-picker v-model="scheduledFilters.planDateRange" type="daterange" start-placeholder="排期开始" end-placeholder="排期结束" value-format="YYYY-MM-DD" style="width: 260px" @change="fetchScheduled" />
+        </div>
         <div class="table-card">
         <el-table
           ref="scheduledTableRef"
@@ -177,7 +194,72 @@
         />
       </el-tab-pane>
 
-      <!-- Tab 3: 设计师管理 -->
+      <!-- Tab 3: 已完成任务 -->
+      <el-tab-pane label="已完成任务" name="completed">
+        <div class="filter-bar">
+          <el-input v-model="completedFilters.salesperson_name" placeholder="业务员" clearable style="width: 120px" @clear="fetchCompleted" @keyup.enter="fetchCompleted" />
+          <el-select v-model="completedFilters.shoot_type" placeholder="拍摄类型" clearable style="width: 130px" @change="fetchCompleted">
+            <el-option v-for="(label, code) in shootTypeMap" :key="code" :label="label" :value="code" />
+          </el-select>
+          <el-select v-model="completedFilters.designer_id" placeholder="设计师" clearable style="width: 120px" @change="fetchCompleted">
+            <el-option v-for="d in designerData" :key="d.id" :label="d.name" :value="d.id" />
+          </el-select>
+          <el-date-picker v-model="completedFilters.planDateRange" type="daterange" start-placeholder="排期开始" end-placeholder="排期结束" value-format="YYYY-MM-DD" style="width: 260px" @change="fetchCompleted" />
+        </div>
+        <div class="table-card">
+        <el-table
+          ref="completedTableRef"
+          :data="completedData"
+          v-loading="completedLoading"
+          class="list-table"
+          border
+          :max-height="tabMaxHeight"
+        >
+          <el-table-column prop="task_no" label="任务编号" min-width="170" max-width="260" show-overflow-tooltip />
+          <el-table-column prop="customer_name" label="客户名称" min-width="130" max-width="200" show-overflow-tooltip />
+          <el-table-column prop="salesperson_name" label="业务员" min-width="90" max-width="140" show-overflow-tooltip />
+          <el-table-column label="拍摄类型" min-width="120" max-width="180" show-overflow-tooltip>
+            <template #default="{ row }">{{ buildDictLabel(row.shoot_type, shootTypeMap) }}</template>
+          </el-table-column>
+          <el-table-column label="设计师" min-width="100" max-width="150">
+            <template #default="{ row }">{{ getDesignerName(row.designer_id) }}</template>
+          </el-table-column>
+          <el-table-column label="排期日期" min-width="240" max-width="360">
+            <template #default="{ row }">
+              {{ row.plan_start_date || '-' }} {{ periodLabel(row.plan_start_period) }} ~ {{ row.plan_end_date || '-' }} {{ periodLabel(row.plan_end_period) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="优先级" min-width="80" max-width="120">
+            <template #default="{ row }">
+              <el-tag :type="row.priority === 'urgent' ? 'danger' : 'info'" effect="plain">
+                {{ row.priority === 'urgent' ? '加急' : '普通' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="状态" min-width="80" max-width="120">
+            <template #default="{ row }">
+              <el-tag type="success" effect="plain">已完成</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" min-width="100" max-width="150" fixed="right">
+            <template #default="{ row }">
+              <GlassButton variant="link" left-icon="View" @click="openDetail(row.request_id)">详情</GlassButton>
+            </template>
+          </el-table-column>
+        </el-table>
+        </div>
+
+        <el-pagination
+          class="pagination"
+          v-model:current-page="completedPage"
+          v-model:page-size="completedPageSize"
+          :total="completedTotal"
+          layout="total, prev, pager, next"
+          @current-change="fetchCompleted"
+        />
+      </el-tab-pane>
+
+      <!-- Tab 4: 设计师管理 -->
       <el-tab-pane label="设计师管理" name="designers">
         <el-row style="margin-bottom: 12px" justify="end">
           <GlassButton variant="primary" left-icon="Plus" @click="openDesignerDialog(null)">新建设计师</GlassButton>
@@ -217,17 +299,17 @@
         </div>
       </el-tab-pane>
 
-      <!-- Tab 4: 不可用日期 -->
+      <!-- Tab 5: 不可用日期 -->
       <el-tab-pane label="不可用日期" name="unavailable" lazy>
         <DesignCalendarConfig />
       </el-tab-pane>
 
-      <!-- Tab 5: 容量配置 -->
+      <!-- Tab 6: 容量配置 -->
       <el-tab-pane label="容量配置" name="capacity" lazy>
         <DesignCapacityConfig />
       </el-tab-pane>
 
-      <!-- Tab 6: 批量导入 -->
+      <!-- Tab 7: 批量导入 -->
       <el-tab-pane label="批量导入" name="import" lazy>
         <div class="import-section">
           <el-alert
@@ -479,7 +561,7 @@ function getDesignerName(id) {
 }
 
 const activeTab = ref('pending')
-const tabMaxHeight = ref(500)
+const tabMaxHeight = ref(700)
 const detailVisible = ref(false)
 const detailRequestId = ref(null)
 
@@ -686,17 +768,25 @@ const pendingLoading = ref(false)
 const pendingPage = ref(1)
 const pendingPageSize = ref(50)
 const pendingTotal = ref(0)
+const pendingFilters = reactive({ salesperson_name: '', shoot_type: '', expectDateRange: null })
 
 async function fetchPending() {
   pendingLoading.value = true
   try {
-    const res = await getRequests({
+    const params = {
       status: 'pending_design',
       page: pendingPage.value,
       page_size: pendingPageSize.value,
       operator_id: 1,
       operator_role: 'design_staff',
-    })
+    }
+    if (pendingFilters.salesperson_name) params.salesperson_name = pendingFilters.salesperson_name
+    if (pendingFilters.shoot_type) params.shoot_type = pendingFilters.shoot_type
+    if (pendingFilters.expectDateRange?.length === 2) {
+      params.expect_start_date = pendingFilters.expectDateRange[0]
+      params.expect_end_date = pendingFilters.expectDateRange[1]
+    }
+    const res = await getRequests(params)
     const data = res.data
     pendingData.value = data?.items || data || []
     pendingTotal.value = data?.total || 0
@@ -726,22 +816,66 @@ const scheduledLoading = ref(false)
 const scheduledPage = ref(1)
 const scheduledPageSize = ref(50)
 const scheduledTotal = ref(0)
+const scheduledFilters = reactive({ salesperson_name: '', shoot_type: '', designer_id: null, planDateRange: null })
 
 async function fetchScheduled() {
   scheduledLoading.value = true
   try {
-    const res = await getTaskList({
+    const params = {
       status: 'scheduled,in_progress',
       page: scheduledPage.value,
       page_size: scheduledPageSize.value,
       operator_id: 1,
       operator_role: 'design_staff',
-    })
+    }
+    if (scheduledFilters.salesperson_name) params.salesperson_name = scheduledFilters.salesperson_name
+    if (scheduledFilters.shoot_type) params.shoot_type = scheduledFilters.shoot_type
+    if (scheduledFilters.designer_id) params.designer_id = scheduledFilters.designer_id
+    if (scheduledFilters.planDateRange?.length === 2) {
+      params.plan_start_date = scheduledFilters.planDateRange[0]
+      params.plan_end_date = scheduledFilters.planDateRange[1]
+    }
+    const res = await getTaskList(params)
     const data = res.data
     scheduledData.value = data?.items || data || []
     scheduledTotal.value = data?.total || 0
   } finally {
     scheduledLoading.value = false
+  }
+}
+
+// --- Completed tab ---
+const completedTableRef = ref()
+const completedData = ref([])
+const completedLoading = ref(false)
+const completedPage = ref(1)
+const completedPageSize = ref(50)
+const completedTotal = ref(0)
+const completedFilters = reactive({ salesperson_name: '', shoot_type: '', designer_id: null, planDateRange: null })
+
+async function fetchCompleted() {
+  completedLoading.value = true
+  try {
+    const params = {
+      status: 'completed',
+      page: completedPage.value,
+      page_size: completedPageSize.value,
+      operator_id: 1,
+      operator_role: 'design_staff',
+    }
+    if (completedFilters.salesperson_name) params.salesperson_name = completedFilters.salesperson_name
+    if (completedFilters.shoot_type) params.shoot_type = completedFilters.shoot_type
+    if (completedFilters.designer_id) params.designer_id = completedFilters.designer_id
+    if (completedFilters.planDateRange?.length === 2) {
+      params.plan_start_date = completedFilters.planDateRange[0]
+      params.plan_end_date = completedFilters.planDateRange[1]
+    }
+    const res = await getTaskList(params)
+    const data = res.data
+    completedData.value = data?.items || data || []
+    completedTotal.value = data?.total || 0
+  } finally {
+    completedLoading.value = false
   }
 }
 
@@ -763,6 +897,7 @@ async function fetchDesigners() {
 function onTabChange(tab) {
   if (tab === 'pending') fetchPending()
   else if (tab === 'scheduled') fetchScheduled()
+  else if (tab === 'completed') fetchCompleted()
   else if (tab === 'designers') fetchDesigners()
 }
 
@@ -942,7 +1077,7 @@ async function handleReschedule({ taskId, planStartDate, planStartPeriod, planEn
 
 // --- Recalculate table height ---
 function updateTabMaxHeight() {
-  tabMaxHeight.value = Math.max(300, window.innerHeight - 260)
+  tabMaxHeight.value = Math.max(400, window.innerHeight - 200)
 }
 
 // --- Import ---
@@ -992,6 +1127,7 @@ onMounted(() => {
 
 <style scoped>
 .tab-toolbar { margin-bottom: 12px; display: flex; justify-content: flex-end; }
+.filter-bar { margin-bottom: 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .pagination { margin-top: 16px; justify-content: flex-end; }
 .text-muted { color: var(--text-secondary); font-size: 12px; }
 .import-section { max-width: 600px; }

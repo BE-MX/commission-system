@@ -248,6 +248,8 @@ async def _notify_design_dept(
 def list_requests(
     status: Optional[str] = Query(None),
     salesperson_id: Optional[int] = Query(None),
+    salesperson_name: Optional[str] = Query(None, description="业务员姓名模糊匹配"),
+    shoot_type: Optional[str] = Query(None, description="拍摄类型 code，逗号分隔多值匹配"),
     keyword: Optional[str] = Query(None),
     expect_start_date: Optional[str] = Query(None, description="期望开始日期 >=，格式 YYYY-MM-DD"),
     expect_end_date: Optional[str] = Query(None, description="期望开始日期 <=，格式 YYYY-MM-DD"),
@@ -267,6 +269,15 @@ def list_requests(
             query = query.filter(DesignScheduleRequest.status.in_(q_statuses))
     if salesperson_id:
         query = query.filter(DesignScheduleRequest.salesperson_id == salesperson_id)
+    if salesperson_name:
+        query = query.filter(DesignScheduleRequest.salesperson_name.like(f"%{salesperson_name}%"))
+    if shoot_type:
+        # 拍摄类型是逗号分隔存储，用 LIKE 匹配任一值
+        from sqlalchemy import or_
+        st_codes = [c.strip() for c in shoot_type.split(",") if c.strip()]
+        if st_codes:
+            st_conditions = [DesignScheduleRequest.shoot_type.like(f"%{c}%") for c in st_codes]
+            query = query.filter(or_(*st_conditions))
     if keyword:
         like = f"%{keyword}%"
         query = query.filter(
@@ -884,6 +895,10 @@ def get_gantt(
 @router.get("/tasks")
 def list_tasks(
     designer_id: Optional[int] = Query(None),
+    salesperson_name: Optional[str] = Query(None, description="业务员姓名模糊匹配"),
+    shoot_type: Optional[str] = Query(None, description="拍摄类型 code，逗号分隔多值匹配"),
+    plan_start_date: Optional[str] = Query(None, description="计划开始日期 >=，格式 YYYY-MM-DD"),
+    plan_end_date: Optional[str] = Query(None, description="计划开始日期 <=，格式 YYYY-MM-DD"),
     status: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -896,6 +911,20 @@ def list_tasks(
     )
     if designer_id:
         query = query.filter(DesignScheduleTask.designer_id == designer_id)
+    if salesperson_name:
+        query = query.filter(DesignScheduleTask.salesperson_name.like(f"%{salesperson_name}%"))
+    if shoot_type:
+        from sqlalchemy import or_
+        st_codes = [c.strip() for c in shoot_type.split(",") if c.strip()]
+        if st_codes:
+            st_conditions = [DesignScheduleTask.shoot_type.like(f"%{c}%") for c in st_codes]
+            query = query.filter(or_(*st_conditions))
+    if plan_start_date:
+        from datetime import date as _date
+        query = query.filter(DesignScheduleTask.plan_start_date >= _date.fromisoformat(plan_start_date))
+    if plan_end_date:
+        from datetime import date as _date
+        query = query.filter(DesignScheduleTask.plan_start_date <= _date.fromisoformat(plan_end_date))
     if status:
         statuses = [s.strip() for s in status.split(",") if s.strip()]
         if len(statuses) == 1:
