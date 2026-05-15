@@ -87,6 +87,25 @@
           </el-menu-item>
         </el-sub-menu>
 
+        <el-sub-menu index="stock" v-if="authStore.hasAnyPermission(['stock:read', 'stock:write', 'stock:admin'])">
+          <template #title>
+            <el-icon><Box /></el-icon>
+            <span>备货管理</span>
+          </template>
+          <el-menu-item index="/stock/overview" v-if="authStore.hasPermission('stock:read')">
+            <el-icon><List /></el-icon>
+            <template #title>销量备货一览</template>
+          </el-menu-item>
+          <el-menu-item index="/stock/safety-config" v-if="authStore.hasPermission('stock:write')">
+            <el-icon><Setting /></el-icon>
+            <template #title>安全库存设置</template>
+          </el-menu-item>
+          <el-menu-item index="/stock/daily-report" v-if="authStore.hasPermission('stock:read')">
+            <el-icon><Document /></el-icon>
+            <template #title>安全库存日报</template>
+          </el-menu-item>
+        </el-sub-menu>
+
         <el-sub-menu index="insight" v-if="authStore.hasAnyPermission(['insight:read', 'insight:write', 'insight:internal_read', 'insight:admin'])">
           <template #title>
             <el-icon><Aim /></el-icon>

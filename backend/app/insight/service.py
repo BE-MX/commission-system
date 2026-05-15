@@ -36,6 +36,7 @@ from app.insight.schemas import (
     SourceUpdate,
     CaseManualCreate,
     CasePublish,
+    CaseUpdate,
     MinutesUpload,
     TaskUpdate,
 )
@@ -540,6 +541,85 @@ def _save_uploaded_image(file_obj, original_filename: str) -> str:
     return f"/uploads/insight/{safe_name}"
 
 
+_CASE_FIELD_MAP = {
+    "title", "scenario", "what_was_done", "result", "customer_name", "tags",
+    "customer_type", "market", "product_type", "key_phrases", "raw_summary",
+    "customer_country", "communication_channel", "communication_period",
+    "total_rounds", "final_result", "background_check_status",
+    "rounds_analysis", "dimension_scores", "golden_phrases", "red_flags",
+    "core_strengths", "result_analysis", "improvements", "next_actions",
+}
+
+
+def _apply_case_fields(case: InsightCase, payload: dict) -> None:
+    """将 AI 输出或用户表单数据映射到案例模型字段。"""
+    for k in _CASE_FIELD_MAP:
+        if k in payload:
+            v = payload[k]
+            if k == "total_rounds" and v is not None:
+                try:
+                    v = int(v)
+                except (ValueError, TypeError):
+                    v = None
+            setattr(case, k, v)
+
+
+def _process_case_async(
+    case_id: int,
+    source_type: str,
+    text: Optional[str],
+    file_path: Optional[str],
+    user_id: Optional[int],
+) -> None:
+    """后台线程：完成 OCR + AI 整理，更新案例状态。"""
+    import threading
+
+    thread_name = threading.current_thread().name
+    logger.info("[%s] 开始处理案例 case_id=%s", thread_name, case_id)
+
+    # 后台线程需要独立的 db session
+    from app.core.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        case = db.query(InsightCase).filter(InsightCase.id == case_id).first()
+        if not case:
+            logger.warning("[%s] 案例 case_id=%s 不存在，跳过处理", thread_name, case_id)
+            return
+
+        # 1. OCR（截图模式）
+        if source_type == "screenshot":
+            try:
+                ocr_text = _invoke_ocr(db, file_path or "", user_id)
+                case.original_content = ocr_text
+                db.commit()
+            except Exception as e:
+                logger.exception("[%s] OCR 失败 case_id=%s", thread_name, case_id)
+                case.error_msg = f"OCR失败: {str(e)[:200]}"
+                case.status = "failed"
+                db.commit()
+                return
+            raw_text = ocr_text
+        else:
+            raw_text = text or ""
+
+        # 2. AI 整理
+        try:
+            ai_payload = _invoke_case_format(db, raw_text, user_id)
+            _apply_case_fields(case, ai_payload)
+            case.ai_draft = ai_payload
+            case.status = "draft"
+            logger.info("[%s] 案例 case_id=%s AI 整理完成", thread_name, case_id)
+        except Exception as e:
+            logger.exception("[%s] AI 整理失败 case_id=%s", thread_name, case_id)
+            case.error_msg = str(e)[:500]
+            case.status = "failed"
+
+        db.commit()
+    finally:
+        db.close()
+
+
 def upload_case(
     db: Session,
     user_id: int,
@@ -551,7 +631,7 @@ def upload_case(
     share_person: Optional[str],
     share_date: Optional[date],
 ) -> InsightCase:
-    """案例上传(截图 OCR / 文本粘贴) — 异步处理,先创建 processing 状态记录。"""
+    """案例上传(截图 OCR / 文本粘贴) — 创建 processing 记录后立即返回，后台线程完成 AI 整理。"""
     if source_type not in ("screenshot", "text_paste"):
         raise ValueError("source_type 必须为 screenshot 或 text_paste")
 
@@ -569,37 +649,17 @@ def upload_case(
     db.commit()
     db.refresh(case)
 
-    # 同步执行 AI 提取(简化:立即处理。实际生产应 BackgroundTasks)
-    try:
-        if source_type == "screenshot":
-            # 1. OCR 提取文本
-            ocr_text = _invoke_ocr(db, file_path or "", user_id)
-            case.original_content = ocr_text
-        else:
-            ocr_text = text or ""
+    # 启动后台线程完成 AI 整理，避免阻塞 HTTP 响应
+    import threading
 
-        # 2. 用 AI 整理为案例字段
-        ai_payload = _invoke_case_format(db, ocr_text, user_id)
-        case.title = ai_payload.get("title") or "(待补充)"
-        case.scenario = ai_payload.get("scenario")
-        case.what_was_done = ai_payload.get("what_was_done")
-        case.result = ai_payload.get("result")
-        case.customer_name = ai_payload.get("customer_name")
-        case.tags = ai_payload.get("tags") or []
-        case.highlights = ai_payload.get("highlights")
-        case.customer_type = ai_payload.get("customer_type")
-        case.market = ai_payload.get("market")
-        case.product_type = ai_payload.get("product_type")
-        case.key_phrases = ai_payload.get("key_phrases")
-        case.raw_summary = ai_payload.get("raw_summary")
-        case.status = "draft"
-    except Exception as e:
-        logger.exception("案例 AI 处理失败")
-        case.error_msg = str(e)[:500]
-        case.status = "failed"
+    t = threading.Thread(
+        target=_process_case_async,
+        args=(case.id, source_type, text, file_path, user_id),
+        name=f"case-proc-{case.id}",
+        daemon=True,
+    )
+    t.start()
 
-    db.commit()
-    db.refresh(case)
     return case
 
 
@@ -607,21 +667,15 @@ def manual_create_case(db: Session, user_id: int, user_name: str, data: CaseManu
     """业务员表单直接发布(不走 AI),直接进入 published 状态。"""
     case = InsightCase(
         title=data.title,
-        scenario=data.scenario,
-        what_was_done=data.what_was_done,
-        result=data.result,
-        customer_name=data.customer_name,
-        tags=data.tags or [],
-        attachments=data.attachments or [],
-        customer_type=data.customer_type,
-        market=data.market,
-        product_type=data.product_type,
         share_person=(data.share_person or user_name or "")[:50],
         share_date=data.share_date or date.today(),
         source_type="manual",
         uploaded_by=user_id,
         status="published",
     )
+    _apply_case_fields(case, data.model_dump(exclude_unset=True))
+    case.tags = data.tags or []
+    case.attachments = data.attachments or []
     db.add(case)
     db.commit()
     db.refresh(case)
@@ -636,21 +690,43 @@ def get_case_status(db: Session, case_id: int) -> dict:
 
 
 def publish_case(db: Session, case_id: int, user_id: int, data: CasePublish) -> InsightCase:
-    """发布草稿(可附带修改字段)。"""
+    """发布草稿(可附带修改字段和评价修正)。"""
     case = db.query(InsightCase).filter(InsightCase.id == case_id).first()
     if not case:
         raise ValueError("案例不存在")
     if case.uploaded_by != user_id:
-        # 仅本人可发布草稿
         raise ValueError("无权操作此案例")
     if case.status not in ("draft", "failed"):
         raise ValueError(f"案例当前状态({case.status})不允许发布")
 
     payload = data.model_dump(exclude_unset=True)
+    corrections = payload.pop("user_corrections", None)
     for k, v in payload.items():
         if v is not None:
             setattr(case, k, v)
+    if corrections is not None:
+        case.user_corrections = corrections
     case.status = "published"
+    db.commit()
+    db.refresh(case)
+    return case
+
+
+def update_case(db: Session, case_id: int, user_id: int, is_admin: bool, data: CaseUpdate) -> InsightCase:
+    """编辑已发布的案例 — 作者或 admin 可修改。"""
+    case = db.query(InsightCase).filter(InsightCase.id == case_id).first()
+    if not case:
+        raise ValueError("案例不存在")
+    if not is_admin and case.uploaded_by != user_id:
+        raise ValueError("无权编辑此案例")
+
+    payload = data.model_dump(exclude_unset=True)
+    corrections = payload.pop("user_corrections", None)
+    for k, v in payload.items():
+        if v is not None:
+            setattr(case, k, v)
+    if corrections is not None:
+        case.user_corrections = corrections
     db.commit()
     db.refresh(case)
     return case
@@ -1086,38 +1162,158 @@ def _invoke_ocr(db: Session, image_path: str, user_id: Optional[int]) -> str:
     return "[OCR 暂未配置:请在 AI 接入管理中创建多模态 preset 'ocr_extract',或改用文本粘贴方式上传案例]"
 
 
+def _load_chat_skill() -> str:
+    """读取 chat-analysis SKILL 文件内容。"""
+    skill_path = Path(__file__).parent / "skills" / "chat-analysis.md"
+    if skill_path.exists():
+        return skill_path.read_text(encoding="utf-8")
+    return ""
+
+
+# 精简版 chat-analysis SKILL 核心指令（避免完整 452 行文件导致 token 爆炸和超时）
+_CASE_SKILL_CORE = """你是莱莎发制品客户聊天记录复盘分析专家。对业务员与客户的聊天记录进行结构化复盘。
+
+## 分析框架
+
+### 1. 基本信息提取
+- 客户名称、国家、类型（沙龙/品牌/电商/批发/影视）
+- 沟通渠道（WhatsApp/阿里TM/Email/Instagram）
+- 沟通时段、总回合数
+- 最终结果（成交/未成交/谈判中/流失）
+
+### 2. 回合拆解（R1, R2...）
+每个回合标注：
+- time: 时间/间隔
+- customer_action: 客户动作（兴趣表达/异议提出/沉默/决策信号/流失信号）
+- salesperson_action: 业务员动作标签（开场破冰/需求探询/产品展示/证据背书/报价策略/异议处理/推进闭环/情感共鸣/信息确认/节奏把控/防流失锚定/合规守线）
+- summary: 回合摘要
+- score: 1-5 分
+- comment: 一句话评价
+超过15回合改为阶段式汇总（破冰需求/产品异议/报价推进/决策闭环）。
+
+### 3. 六维度评分（1-5分整数）
+- response_speed: 响应时效（24h内全覆盖=5分）
+- talk_track_quality: 话术专业度（USP引用/FABE结构=5分）
+- needs_alignment: 需求匹配度（精准判断客户类型=5分）
+- deal_momentum: 谈判推进力（每回合有推进方向=5分）
+- emotional_engagement: 情感连接度（建立个人连接=5分）
+- compliance_risk: 合规与风控（全程合规=5分）
+- overall: 加权均分
+
+### 4. 关键话术提取
+- golden_phrases: 亮点话术（适用场景、原话、为什么好）
+- red_flags: 问题话术（问题类型、原话、问题在哪、修正建议）
+
+### 5. 结果归因
+- 成交：分析核心驱动因素（产品差异化/价格策略/供应链速度/情感连接/样品策略）
+- 未成交：分析流失根因（价格鸿沟/需求错配/节奏失控/推进力不足/信任缺失/竞品截胡/合规障碍）
+
+### 6. 优化建议
+improvements 按优先级 🔴紧急/🟡重要/🟢建议 分层，每条包含问题描述、影响评估、修正方案、预期收益。
+
+### 7. 行动清单
+next_actions 按优先级分层，包含具体动作、负责人、截止日期。
+
+## 输出规则
+1. 只输出 JSON，不要任何其他文字
+2. 所有评分必须是 1-5 的整数
+3. 信息不足时字段留空或置 null，不要编造
+4. 超过15回合的对话，回合分析改为阶段式汇总
+"""
+
+
 def _invoke_case_format(db: Session, raw_text: str, user_id: Optional[int]) -> dict:
-    """案例库整理 — 通过 case_library_format preset。"""
-    prompt = (
-        "请将以下原始文本整理为业务员案例 JSON,字段:\n"
-        "- title(25 字以内)\n"
-        "- scenario(场景背景, 60 字以内)\n"
-        "- what_was_done(执行过程, 200 字以内)\n"
-        "- result(结果, 60 字以内)\n"
-        "- customer_name(客户名称, 可空)\n"
-        "- tags(分类标签数组, 从'开发跟进/谈判技巧/定制流程/物流处理/纠纷解决/竞品应对'中选 1-3 个)\n"
-        "- customer_type(批发商/零售/沙龙/其他)\n"
-        "- market(美国/欧洲/中东/其他)\n"
-        "- product_type(真人发/合成发/发片/发帽/其他)\n"
-        "- highlights(3 条核心亮点, 每条 30 字以内)\n"
-        "- key_phrases(2-3 条关键话术)\n"
-        "- raw_summary(100 字摘要)\n"
-        "只输出 JSON,不要其他文字。\n\n"
-        f"原始文本:\n{raw_text}"
+    """案例库整理 — 使用精简版 SKILL 核心指令进行 AI 整理，避免完整文件导致超时。"""
+    system_text = (
+        _CASE_SKILL_CORE
+        + "\n\n## 输出 JSON 格式\n"
+        + '{\n'
+        '  "title": "案例标题(25字以内)",\n'
+        '  "customer_name": "客户名称",\n'
+        '  "customer_country": "客户国家",\n'
+        '  "customer_type": "客户类型(沙龙/品牌/电商/批发/影视)",\n'
+        '  "communication_channel": "沟通渠道(WhatsApp/阿里TM/Email/Instagram)",\n'
+        '  "communication_period": "沟通时段",\n'
+        '  "total_rounds": 总回合数(整数),\n'
+        '  "final_result": "最终结果(成交/未成交/谈判中/流失)",\n'
+        '  "background_check_status": "背调状态(有wiki记录/无历史背调)",\n'
+        '  "scenario": "场景背景(2-3句话概述)",\n'
+        '  "rounds_analysis": [\n'
+        '    {"round_no": "R1", "time": "时间/间隔", "customer_action": "客户动作", "salesperson_action": "业务员动作标签", "summary": "回合摘要", "score": 1-5, "comment": "一句话评价"}\n'
+        '  ],\n'
+        '  "dimension_scores": {\n'
+        '    "response_speed": {"score": 1-5, "comment": "简评"},\n'
+        '    "talk_track_quality": {"score": 1-5, "comment": "简评"},\n'
+        '    "needs_alignment": {"score": 1-5, "comment": "简评"},\n'
+        '    "deal_momentum": {"score": 1-5, "comment": "简评"},\n'
+        '    "emotional_engagement": {"score": 1-5, "comment": "简评"},\n'
+        '    "compliance_risk": {"score": 1-5, "comment": "简评"},\n'
+        '    "overall": 加权均分\n'
+        '  },\n'
+        '  "golden_phrases": [\n'
+        '    {"scene": "适用场景", "phrase": "原话", "why": "为什么好(一句话)"}\n'
+        '  ],\n'
+        '  "red_flags": [\n'
+        '    {"issue_type": "问题类型", "phrase": "原话", "problem": "问题在哪(一句话)", "suggestion": "修正建议"}\n'
+        '  ],\n'
+        '  "core_strengths": ["核心亮点1", "核心亮点2", "核心亮点3"],\n'
+        '  "result_analysis": [\n'
+        '    {"factor": "驱动因素/流失根因", "evidence": "一句话证据"}\n'
+        '  ],\n'
+        '  "improvements": [\n'
+        '    {"priority": "🔴/🟡/🟢", "problem": "问题描述", "impact": "影响评估", "fix": "修正方案", "benefit": "预期收益"}\n'
+        '  ],\n'
+        '  "next_actions": [\n'
+        '    {"priority": "🔴/🟡/🟢", "action": "具体动作", "owner": "负责人", "deadline": "截止日期或null"}\n'
+        '  ],\n'
+        '  "tags": ["标签1", "标签2"],\n'
+        '  "raw_summary": "100字摘要"\n'
+        '}\n'
     )
-    text = _try_invoke_ai(db, "case_library_format", prompt, user_id)
+
+    user_text = f"请对以下聊天记录进行复盘分析:\n\n{raw_text}"
+
+    try:
+        from app.ai import service as ai_service
+        from app.ai.models import AiPreset
+
+        preset = (
+            db.query(AiPreset)
+            .filter(AiPreset.preset_name == "case_library_format", AiPreset.deleted_at.is_(None))
+            .first()
+        )
+        if not preset or not preset.is_enabled:
+            logger.warning("AI preset 'case_library_format' missing or disabled, falling back")
+            raise ValueError("preset missing")
+
+        messages = [
+            {"role": "system", "content": system_text},
+            {"role": "user", "content": user_text},
+        ]
+        result = ai_service.chat(
+            db=db,
+            preset_name="case_library_format",
+            messages=messages,
+            caller_module="insight",
+            caller_user_id=user_id,
+        )
+        text = result.get("content") or ""
+    except Exception:
+        # 降级:用 _try_invoke_ai 走传统方式(无 SKILL)
+        text = _try_invoke_ai(db, "case_library_format", user_text, user_id)
+
     parsed = _safe_json_parse(text or "")
     if not parsed:
-        # 降级:从 raw_text 提取标题作为 title,其他字段留空
+        # 最终降级
         first_line = (raw_text or "").strip().split("\n", 1)[0][:25]
         return {
             "title": first_line or "(待补充)",
-            "scenario": (raw_text or "")[:60],
+            "scenario": (raw_text or "")[:200],
             "what_was_done": "",
             "result": "",
             "customer_name": "",
             "tags": [],
-            "highlights": [],
+            "core_strengths": [],
             "raw_summary": (raw_text or "")[:100],
         }
     return parsed if isinstance(parsed, dict) else {}

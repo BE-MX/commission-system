@@ -41,17 +41,15 @@
       </aside>
 
       <section class="report-content">
-        <div v-if="loading" class="content-loading">
+        <div v-if="htmlLoading" class="content-loading">
           <el-icon class="is-loading"><Loading /></el-icon>
           <span>加载中...</span>
         </div>
-        <iframe
-          v-else-if="selectedHtmlUrl"
+        <div
+          v-else-if="htmlContent"
           :key="selectedId"
-          :src="selectedHtmlUrl"
-          class="report-iframe"
-          title="行业情报日报"
-          sandbox="allow-same-origin"
+          class="report-html"
+          v-html="htmlContent"
         />
         <div v-else class="content-empty">
           <el-icon size="40"><Document /></el-icon>
@@ -67,7 +65,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Calendar, ArrowRight, Document, Loading } from '@element-plus/icons-vue'
 import GlassButton from '@/components/GlassButton.vue'
-import { listReports, getReportHtmlUrl, triggerReportGeneration } from '@/api/insight'
+import { listReports, getReportHtml, triggerReportGeneration } from '@/api/insight'
 import { useAuthStore } from '@/stores/auth'
 
 const authStore = useAuthStore()
@@ -79,6 +77,8 @@ const loading = ref(false)
 const selectedId = ref(null)
 const expandedMonths = ref({})
 const generating = ref(false)
+const htmlContent = ref('')
+const htmlLoading = ref(false)
 
 const canAdmin = computed(() => authStore.hasPermission('insight:admin'))
 
@@ -100,7 +100,21 @@ const monthGroups = computed(() => {
   return Array.from(groups.entries()).map(([label, children]) => ({ label, children }))
 })
 
-const selectedHtmlUrl = computed(() => (selectedId.value ? getReportHtmlUrl(selectedId.value) : ''))
+async function loadHtml() {
+  if (!selectedId.value) {
+    htmlContent.value = ''
+    return
+  }
+  htmlLoading.value = true
+  try {
+    const res = await getReportHtml(selectedId.value)
+    htmlContent.value = res || ''
+  } catch (e) {
+    htmlContent.value = `<p style="color:#999;padding:20px;">加载失败: ${e.message || '未知错误'}</p>`
+  } finally {
+    htmlLoading.value = false
+  }
+}
 
 async function refreshAll() {
   loading.value = true
@@ -112,7 +126,10 @@ async function refreshAll() {
       const firstMonth = monthGroups.value[0].label
       expandedMonths.value[firstMonth] = true
       const firstReport = monthGroups.value[0].children[0]
-      if (firstReport && !selectedId.value) selectedId.value = firstReport.id
+      if (firstReport) {
+        selectedId.value = firstReport.id
+        await loadHtml()
+      }
     }
   } finally {
     loading.value = false
@@ -125,6 +142,7 @@ function toggleMonth(label) {
 
 function selectReport(id) {
   selectedId.value = id
+  loadHtml()
 }
 
 function goSources() {
@@ -137,7 +155,10 @@ async function generateToday() {
     const res = await triggerReportGeneration('industry_daily')
     await refreshAll()
     // 自动选中刚生成的报告
-    if (res.data?.id) selectedId.value = res.data.id
+    if (res.data?.id) {
+      selectedId.value = res.data.id
+      await loadHtml()
+    }
   } finally {
     generating.value = false
   }
@@ -298,10 +319,110 @@ onMounted(refreshAll)
   position: relative;
 }
 
-.report-iframe {
+.report-html {
   width: 100%;
   height: 100%;
-  border: none;
+  overflow-y: auto;
+  padding: 24px;
+  box-sizing: border-box;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.7;
+  color: #1a1a2e;
+}
+
+/* ── 日报内容样式 ── */
+.report-html :deep(h1) {
+  font-size: 22px;
+  font-weight: 700;
+  margin-bottom: 6px;
+  color: #1a1a2e;
+}
+.report-html :deep(.meta) {
+  font-size: 12px;
+  color: #8b95a5;
+  margin-bottom: 20px;
+}
+.report-html :deep(h2) {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 24px 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #d4af6e;
+  color: #1a1a2e;
+}
+.report-html :deep(h3) {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 16px 0 8px;
+  color: #4a5568;
+}
+.report-html :deep(ol),
+.report-html :deep(ul) {
+  padding-left: 20px;
+  margin: 8px 0;
+}
+.report-html :deep(li) {
+  margin: 6px 0;
+}
+.report-html :deep(.trend-tag) {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  margin: 3px;
+  background: #fef9f0;
+  color: #b08d4f;
+  border: 1px solid #f5e0b5;
+}
+.report-html :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 13px;
+}
+.report-html :deep(th),
+.report-html :deep(td) {
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid #e2e5ef;
+}
+.report-html :deep(th) {
+  background: #fafbfe;
+  font-weight: 600;
+  color: #5a6372;
+  font-size: 12px;
+}
+.report-html :deep(.rank-up) { color: #059669; font-weight: 600; }
+.report-html :deep(.rank-down) { color: #dc2626; font-weight: 600; }
+.report-html :deep(.rank-new) { color: #2563eb; font-weight: 600; }
+.report-html :deep(.card) {
+  border: 1px solid #e2e5ef;
+  border-radius: 10px;
+  padding: 14px;
+  margin: 10px 0;
+  background: #fafbfe;
+}
+.report-html :deep(.card h4) {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: #1a1a2e;
+}
+.report-html :deep(.card p) {
+  font-size: 12px;
+  color: #8b95a5;
+  line-height: 1.6;
+}
+.report-html :deep(.source) {
+  font-size: 11px;
+  color: #a0aec0;
+  margin-top: 8px;
+}
+.report-html :deep(.empty) {
+  font-size: 13px;
+  color: #a0aec0;
+  font-style: italic;
+  padding: 8px 0;
 }
 
 .content-loading,

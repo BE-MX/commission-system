@@ -178,16 +178,17 @@ async function loadAll() {
         // 这里可以再调用单独的 API 或者改为前端用 iframe HTML — 但更好做法是后端补一个接口。
         // 本期权宜:重新通过 listReports 时,后端没传 source_data。需要一个全量获取的接口。
         // 简化:让后端 list_reports 在 ai_tools 类型时把 source_data 也返回。下面直接读 r.source_data。
-        const sd = (det.data && det.data.source_data) || r.source_data || []
-        const items = Array.isArray(sd) ? sd : (sd.items || [])
-        for (const item of items) {
-          const cat = (item.category || 'tips').toLowerCase()
-          flat.push({
-            ...item,
-            _report_date: r.report_date,
-            category: cat,
-            category_label: CATEGORY_LABELS[cat] || '其他',
-          })
+        const sd = (det.data && det.data.source_data) || r.source_data || {}
+        const grouped = sd.grouped || {}
+        for (const [catKey, items] of Object.entries(grouped)) {
+          for (const item of items || []) {
+            flat.push({
+              ...item,
+              _report_date: r.report_date,
+              category: catKey,
+              category_label: CATEGORY_LABELS[catKey] || '其他',
+            })
+          }
         }
       } catch (e) {
         // 单个报告读取失败不影响其他

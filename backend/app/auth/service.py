@@ -197,6 +197,10 @@ def seed_role_permissions(db: Session):
         ("insight:internal_read", "insight", "internal_read", "查看内部经营报告 / AI 工具速递"),
         ("insight:write",         "insight", "write",         "上传案例 / 周会纪要"),
         ("insight:admin",         "insight", "admin",         "信源管理 / 重新生成报告"),
+        # 备货管理
+        ("stock:read",            "stock",   "read",          "查看销量备货一览 / 安全库存 / 日报"),
+        ("stock:write",           "stock",   "write",         "设置安全库存 / AI 生成建议"),
+        ("stock:admin",           "stock",   "admin",         "手动触发日报生成 / 调试推送"),
     ]
     for code, module, action, label in seeds:
         existing = db.query(ArkPermission).filter(ArkPermission.code == code).first()

@@ -139,6 +139,24 @@ const routes = [
         meta: { title: 'AI 接入管理', permission: 'ai:admin' }
       },
       {
+        path: 'stock/overview',
+        name: 'StockOverview',
+        component: () => import('../views/stock/StockOverview.vue'),
+        meta: { title: '销量备货一览', permission: 'stock:read' }
+      },
+      {
+        path: 'stock/safety-config',
+        name: 'SafetyConfig',
+        component: () => import('../views/stock/SafetyConfig.vue'),
+        meta: { title: '安全库存设置', permission: 'stock:write' }
+      },
+      {
+        path: 'stock/daily-report',
+        name: 'StockDailyReport',
+        component: () => import('../views/stock/DailyReport.vue'),
+        meta: { title: '安全库存日报', permission: 'stock:read' }
+      },
+      {
         path: 'insight/industry-daily',
         name: 'InsightIndustryDaily',
         component: () => import('../views/insight/IndustryDailyView.vue'),

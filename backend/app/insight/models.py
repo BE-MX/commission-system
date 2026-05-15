@@ -126,6 +126,25 @@ class InsightCase(Base):
     product_type = Column(String(50), nullable=True)
     key_phrases = Column(JSON, nullable=True)
     raw_summary = Column(Text, nullable=True)
+
+    # ── SKILL-based 扩展字段 ──────────────────────
+    customer_country = Column(String(50), nullable=True)
+    communication_channel = Column(String(50), nullable=True)
+    communication_period = Column(String(100), nullable=True)
+    total_rounds = Column(SmallInteger, nullable=True)
+    final_result = Column(String(50), nullable=True)
+    background_check_status = Column(String(50), nullable=True)
+    rounds_analysis = Column(JSON, nullable=True)
+    dimension_scores = Column(JSON, nullable=True)
+    golden_phrases = Column(JSON, nullable=True)
+    red_flags = Column(JSON, nullable=True)
+    core_strengths = Column(JSON, nullable=True)
+    result_analysis = Column(JSON, nullable=True)
+    improvements = Column(JSON, nullable=True)
+    next_actions = Column(JSON, nullable=True)
+    ai_draft = Column(JSON, nullable=True)
+    user_corrections = Column(JSON, nullable=True)
+
     original_content = Column(MEDIUMTEXT, nullable=True)
     source_type = Column(
         Enum("screenshot", "text_paste", "manual", name="insight_case_source_type"),

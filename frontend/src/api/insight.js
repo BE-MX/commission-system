@@ -61,6 +61,10 @@ export function getReportHtmlUrl(id) {
   return `/api/insight/reports/${id}/html`
 }
 
+export function getReportHtml(id) {
+  return insightApi.get(`/reports/${id}/html`, { showLoading: false, responseType: 'text' })
+}
+
 export function regenerateReport(id) {
   return insightApi.post(`/reports/${id}/regenerate`, null, { loadingText: '正在重新生成...' })
 }
@@ -122,8 +126,12 @@ export function publishCase(id, data) {
   return insightApi.post(`/cases/${id}/publish`, data, { loadingText: '正在发布...' })
 }
 
+export function updateCase(id, data) {
+  return insightApi.put(`/cases/${id}`, data, { loadingText: '正在保存...' })
+}
+
 export function deleteCase(id) {
-  return insightApi.delete(`/cases/${id}`, { loadingText: '正在归档...' })
+  return insightApi.delete(`/cases/${id}`, { loadingText: '正在删除...' })
 }
 
 export function toggleCaseLike(id, delta = 1) {

@@ -96,6 +96,21 @@ class CaseBase(BaseModel):
     product_type: Optional[str] = None
     share_person: Optional[str] = ""
     share_date: Optional[date] = None
+    # SKILL-based fields
+    customer_country: Optional[str] = None
+    communication_channel: Optional[str] = None
+    communication_period: Optional[str] = None
+    total_rounds: Optional[int] = None
+    final_result: Optional[str] = None
+    background_check_status: Optional[str] = None
+    rounds_analysis: Optional[list[dict]] = None
+    dimension_scores: Optional[dict] = None
+    golden_phrases: Optional[list[dict]] = None
+    red_flags: Optional[list[dict]] = None
+    core_strengths: Optional[list[str]] = None
+    result_analysis: Optional[list[dict]] = None
+    improvements: Optional[list[dict]] = None
+    next_actions: Optional[list[dict]] = None
 
 
 class CaseManualCreate(CaseBase):
@@ -113,9 +128,15 @@ class CaseUploadResponse(BaseModel):
 
 
 class CasePublish(CaseBase):
-    """从草稿确认发布,可附带修改字段"""
+    """从草稿确认发布,可附带修改字段和评价修正"""
 
-    pass
+    user_corrections: Optional[dict] = None
+
+
+class CaseUpdate(CaseBase):
+    """已发布案例的编辑请求,作者或 admin 可修改"""
+
+    user_corrections: Optional[dict] = None
 
 
 class CaseDetail(BaseModel):
@@ -147,9 +168,27 @@ class CaseDetail(BaseModel):
     view_count: int
     created_at: datetime
     updated_at: datetime
+    # SKILL-based 扩展字段
+    customer_country: Optional[str] = None
+    communication_channel: Optional[str] = None
+    communication_period: Optional[str] = None
+    total_rounds: Optional[int] = None
+    final_result: Optional[str] = None
+    background_check_status: Optional[str] = None
+    rounds_analysis: Optional[list] = None
+    dimension_scores: Optional[dict] = None
+    golden_phrases: Optional[list] = None
+    red_flags: Optional[list] = None
+    core_strengths: Optional[list] = None
+    result_analysis: Optional[list] = None
+    improvements: Optional[list] = None
+    next_actions: Optional[list] = None
+    ai_draft: Optional[dict] = None
+    user_corrections: Optional[dict] = None
     # 客户端展示用辅助字段(运行时填充)
     author: Optional[str] = None
     liked: Optional[bool] = False
+    is_owner: Optional[bool] = False
 
 
 # ── 周会纪要 ────────────────────────────────────────────

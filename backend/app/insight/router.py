@@ -27,6 +27,7 @@ from app.insight import service
 from app.insight.schemas import (
     CaseManualCreate,
     CasePublish,
+    CaseUpdate,
     MinutesUpload,
     ReportImport,
     SourceCreate,
@@ -398,6 +399,21 @@ def publish_case(
     return _ok(_serialize_case(case, user_id), "已发布")
 
 
+@router.put("/cases/{case_id}")
+def update_case(
+    case_id: int,
+    data: CaseUpdate,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    if not _has_any_perm(user, ["insight:write", "insight:admin"]):
+        raise HTTPException(status_code=403, detail="权限不足:需要 insight:write")
+    user_id = int(user.get("sub"))
+    is_admin = _has_perm(user, "insight:admin")
+    case = service.update_case(db, case_id, user_id, is_admin, data)
+    return _ok(_serialize_case(case, user_id), "已更新")
+
+
 @router.get("/cases")
 def list_cases(
     share_person: Optional[str] = None,
@@ -453,7 +469,7 @@ def delete_case(
     user_id = int(user.get("sub"))
     is_admin = _has_perm(user, "insight:admin")
     service.delete_case(db, case_id, user_id, is_admin=is_admin)
-    return _ok(None, "已归档")
+    return _ok(None, "已删除")
 
 
 @router.post("/cases/{case_id}/like")
@@ -498,6 +514,23 @@ def _serialize_case(c, current_user_id: Optional[int] = None):
         "created_at": c.created_at.isoformat() if c.created_at else None,
         "updated_at": c.updated_at.isoformat() if c.updated_at else None,
         "is_owner": current_user_id is not None and current_user_id == c.uploaded_by,
+        # SKILL-based 扩展字段
+        "customer_country": c.customer_country,
+        "communication_channel": c.communication_channel,
+        "communication_period": c.communication_period,
+        "total_rounds": c.total_rounds,
+        "final_result": c.final_result,
+        "background_check_status": c.background_check_status,
+        "rounds_analysis": c.rounds_analysis,
+        "dimension_scores": c.dimension_scores,
+        "golden_phrases": c.golden_phrases,
+        "red_flags": c.red_flags,
+        "core_strengths": c.core_strengths,
+        "result_analysis": c.result_analysis,
+        "improvements": c.improvements,
+        "next_actions": c.next_actions,
+        "ai_draft": c.ai_draft,
+        "user_corrections": c.user_corrections,
     }
 
 

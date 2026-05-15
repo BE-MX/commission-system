@@ -30,6 +30,7 @@ from app.api.short_link import router as short_link_router
 from app.system.router import router as system_router
 from app.ai.router import router as ai_router
 from app.insight.router import router as insight_router
+from app.stock.router import router as stock_router
 
 logger = logging.getLogger("commission")
 
@@ -116,6 +117,16 @@ async def lifespan(app: FastAPI):
         trigger="cron",
         hour=8, minute=35,
         id="insight_ai_tools",
+        replace_existing=True,
+    )
+
+    from app.stock.scheduler import generate_stock_daily_report
+
+    _scheduler.add_job(
+        generate_stock_daily_report,
+        trigger="cron",
+        hour=8, minute=30,
+        id="stock_daily_report",
         replace_existing=True,
     )
     _scheduler.start()
@@ -319,6 +330,7 @@ app.include_router(short_link_router, tags=["短链接"])
 app.include_router(system_router, prefix="/api/system", tags=["系统字典"])
 app.include_router(ai_router, prefix="/api/ai", tags=["AI 接入"])
 app.include_router(insight_router, prefix="/api/insight", tags=["方舟洞见"])
+app.include_router(stock_router, prefix="/api/stock", tags=["备货管理"])
 
 
 @app.get("/health")
