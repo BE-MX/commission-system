@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError, TimeoutError as DBTimeoutError
 
+from app.core.config import get_settings
 from app.core.database import engine
 from app.bootstrap import (
     check_database_connection, load_business_rules,
@@ -19,6 +20,7 @@ from app.routers import register_routers
 from app.schedulers import start_scheduler, shutdown_scheduler
 
 logger = logging.getLogger("commission")
+settings = get_settings()
 
 # 全局 APScheduler 实例 (SCHEDULER_ENABLED=false 时为 None)
 _scheduler = None
@@ -52,7 +54,7 @@ app = FastAPI(
 # CORS 中间件
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:5174", "http://localhost:8000"],
+    allow_origins=settings.CORS_ALLOW_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
