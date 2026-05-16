@@ -742,35 +742,38 @@ async function loadAllData() {
       } catch { /* ignore */ }
     }
 
-    // 设计统计
+    // 设计统计 + 最近动态
     try {
-      const today = new Date()
-      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
-      const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0)
-      const res = await getDesignStats({
-        start_date: toLocalISODate(startOfMonth),
-        end_date: toLocalISODate(endOfMonth)
-      })
-      const summary = res.data?.summary || {}
-      // 如果还没有运单分布数据，用设计分布
-      if (donutData.value.length === 0) {
-        const dist = []
-        const sTotal = summary.total || 0
-        const sCompleted = summary.completed || 0
-        const sInProgress = summary.in_progress || 0
-        const sScheduled = summary.scheduled || 0
-        if (sScheduled) dist.push({ key: 'scheduled', label: '已排期', value: sScheduled, color: '#3B82F6', percent: 0 })
-        if (sInProgress) dist.push({ key: 'in_progress', label: '执行中', value: sInProgress, color: '#F5CB5C', percent: 0 })
-        if (sCompleted) dist.push({ key: 'completed', label: '已完成', value: sCompleted, color: '#2D9F6F', percent: 0 })
-        if (sTotal - sScheduled - sInProgress - sCompleted > 0) {
-          dist.push({ key: 'other', label: '其他', value: sTotal - sScheduled - sInProgress - sCompleted, color: '#a0aec0', percent: 0 })
+      // 设计统计 — 需要 audit/manage 才能看 (任务分布是管理视角,非业务员视角)
+      if (authStore.hasAnyPermission(['design:audit', 'design:manage'])) {
+        const today = new Date()
+        const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
+        const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0)
+        const res = await getDesignStats({
+          start_date: toLocalISODate(startOfMonth),
+          end_date: toLocalISODate(endOfMonth)
+        })
+        const summary = res.data?.summary || {}
+        // 如果还没有运单分布数据，用设计分布
+        if (donutData.value.length === 0) {
+          const dist = []
+          const sTotal = summary.total || 0
+          const sCompleted = summary.completed || 0
+          const sInProgress = summary.in_progress || 0
+          const sScheduled = summary.scheduled || 0
+          if (sScheduled) dist.push({ key: 'scheduled', label: '已排期', value: sScheduled, color: '#3B82F6', percent: 0 })
+          if (sInProgress) dist.push({ key: 'in_progress', label: '执行中', value: sInProgress, color: '#F5CB5C', percent: 0 })
+          if (sCompleted) dist.push({ key: 'completed', label: '已完成', value: sCompleted, color: '#2D9F6F', percent: 0 })
+          if (sTotal - sScheduled - sInProgress - sCompleted > 0) {
+            dist.push({ key: 'other', label: '其他', value: sTotal - sScheduled - sInProgress - sCompleted, color: '#a0aec0', percent: 0 })
+          }
+          const total = dist.reduce((s, i) => s + i.value, 0)
+          dist.forEach(item => { item.percent = total > 0 ? Math.round((item.value / total) * 100) : 0 })
+          donutData.value = dist
+          donutLabel.value = '任务总数'
         }
-        const total = dist.reduce((s, i) => s + i.value, 0)
-        dist.forEach(item => { item.percent = total > 0 ? Math.round((item.value / total) * 100) : 0 })
-        donutData.value = dist
-        donutLabel.value = '任务总数'
       }
-      // 最近动态
+      // 最近动态 — 任意 design 权限可看 (service 层按身份过滤"仅本人"或"全部")
       const recentRes = await getRequests({ page: 1, page_size: 5 })
       const recentItems = recentRes.data?.items || []
       recentDesigns.value = recentItems.map((item, idx) => ({
