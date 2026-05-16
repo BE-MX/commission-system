@@ -22,172 +22,33 @@
         :collapse="isCollapse"
         class="side-menu"
       >
-        <el-menu-item index="/dashboard">
-          <el-icon><DataAnalysis /></el-icon>
-          <template #title>工作台</template>
+        <!-- 顶级菜单项 (Dashboard 等无分组的入口) -->
+        <el-menu-item
+          v-for="item in topLevelItems"
+          :key="item.path"
+          :index="item.path"
+        >
+          <el-icon><component :is="item.icon" /></el-icon>
+          <template #title>{{ item.title }}</template>
         </el-menu-item>
 
-        <el-sub-menu index="personnel" v-if="authStore.hasAnyPermission(['employee:read', 'employee:write'])">
+        <!-- 分组菜单 -->
+        <el-sub-menu
+          v-for="group in visibleGroups"
+          :key="group.key"
+          :index="group.key"
+        >
           <template #title>
-            <el-icon><User /></el-icon>
-            <span>人员管理</span>
+            <el-icon><component :is="group.icon" /></el-icon>
+            <span>{{ group.title }}</span>
           </template>
-          <el-menu-item index="/employee/attribute" v-if="authStore.hasAnyPermission(['employee:read', 'employee:write'])">
-            <el-icon><UserFilled /></el-icon>
-            <template #title>员工属性</template>
-          </el-menu-item>
-          <el-menu-item index="/supervisor/relation" v-if="authStore.hasAnyPermission(['employee:read', 'employee:write'])">
-            <el-icon><Connection /></el-icon>
-            <template #title>主管关系</template>
-          </el-menu-item>
-        </el-sub-menu>
-
-        <el-sub-menu index="customer-mgmt" v-if="authStore.hasAnyPermission(['customer:read', 'customer:write'])">
-          <template #title>
-            <el-icon><OfficeBuilding /></el-icon>
-            <span>客户管理</span>
-          </template>
-          <el-menu-item index="/customer/snapshot" v-if="authStore.hasAnyPermission(['customer:read', 'customer:write'])">
-            <el-icon><Document /></el-icon>
-            <template #title>客户归属</template>
-          </el-menu-item>
-        </el-sub-menu>
-
-        <el-sub-menu index="commission-mgmt" v-if="authStore.hasAnyPermission(['commission:read', 'commission:write', 'commission:self_read', 'payment:read', 'payment:write'])">
-          <template #title>
-            <el-icon><Money /></el-icon>
-            <span>提成管理</span>
-          </template>
-          <el-menu-item index="/payment/sync" v-if="authStore.hasAnyPermission(['payment:read', 'payment:write'])">
-            <el-icon><Refresh /></el-icon>
-            <template #title>回款同步</template>
-          </el-menu-item>
-          <el-menu-item index="/commission/batch" v-if="authStore.hasAnyPermission(['commission:read', 'commission:write', 'commission:self_read'])">
-            <el-icon><List /></el-icon>
-            <template #title>提成批次</template>
-          </el-menu-item>
-        </el-sub-menu>
-
-        <el-sub-menu index="tracking-mgmt" v-if="authStore.hasAnyPermission(['tracking:read', 'tracking:write', 'tracking:daily_report'])">
-          <template #title>
-            <el-icon><Van /></el-icon>
-            <span>物流管理</span>
-          </template>
-          <el-menu-item index="/tracking" v-if="authStore.hasAnyPermission(['tracking:read', 'tracking:write'])">
-            <el-icon><List /></el-icon>
-            <template #title>物流跟踪</template>
-          </el-menu-item>
-          <el-menu-item index="/tracking/upload" v-if="authStore.hasAnyPermission(['tracking:write'])">
-            <el-icon><Upload /></el-icon>
-            <template #title>运单上传</template>
-          </el-menu-item>
-          <el-menu-item index="/tracking/daily-report" v-if="authStore.hasAnyPermission(['tracking:daily_report'])">
-            <el-icon><Document /></el-icon>
-            <template #title>物流日报</template>
-          </el-menu-item>
-        </el-sub-menu>
-
-        <el-sub-menu index="stock" v-if="authStore.hasAnyPermission(['stock:read', 'stock:write', 'stock:admin'])">
-          <template #title>
-            <el-icon><Box /></el-icon>
-            <span>备货管理</span>
-          </template>
-          <el-menu-item index="/stock/overview" v-if="authStore.hasPermission('stock:read')">
-            <el-icon><List /></el-icon>
-            <template #title>销量备货一览</template>
-          </el-menu-item>
-          <el-menu-item index="/stock/safety-config" v-if="authStore.hasPermission('stock:write')">
-            <el-icon><Setting /></el-icon>
-            <template #title>安全库存设置</template>
-          </el-menu-item>
-          <el-menu-item index="/stock/daily-report" v-if="authStore.hasPermission('stock:read')">
-            <el-icon><Document /></el-icon>
-            <template #title>安全库存日报</template>
-          </el-menu-item>
-        </el-sub-menu>
-
-        <el-sub-menu index="insight" v-if="authStore.hasAnyPermission(['insight:read', 'insight:write', 'insight:internal_read', 'insight:admin'])">
-          <template #title>
-            <el-icon><Aim /></el-icon>
-            <span>方舟洞见</span>
-          </template>
-          <el-menu-item index="/insight/industry-daily" v-if="authStore.hasPermission('insight:read')">
-            <el-icon><Reading /></el-icon>
-            <template #title>行业情报日报</template>
-          </el-menu-item>
-          <el-menu-item index="/insight/ai-tools" v-if="authStore.hasAnyPermission(['insight:internal_read', 'insight:admin'])">
-            <el-icon><MagicStick /></el-icon>
-            <template #title>AI 工具速递</template>
-          </el-menu-item>
-          <el-menu-item index="/insight/reports" v-if="authStore.hasAnyPermission(['insight:internal_read', 'insight:admin'])">
-            <el-icon><DataAnalysis /></el-icon>
-            <template #title>内部经营报告</template>
-          </el-menu-item>
-          <el-menu-item index="/insight/cases" v-if="authStore.hasAnyPermission(['insight:read', 'insight:write'])">
-            <el-icon><Notebook /></el-icon>
-            <template #title>业务员案例库</template>
-          </el-menu-item>
-          <el-menu-item index="/insight/minutes" v-if="authStore.hasPermission('insight:read')">
-            <el-icon><Calendar /></el-icon>
-            <template #title>周会纪要</template>
-          </el-menu-item>
-          <el-menu-item index="/insight/sources" v-if="authStore.hasPermission('insight:admin')">
-            <el-icon><Connection /></el-icon>
-            <template #title>信源配置</template>
-          </el-menu-item>
-        </el-sub-menu>
-
-        <el-sub-menu index="design-mgmt" v-if="authStore.hasAnyPermission(['design:read', 'design:write', 'design:audit', 'design:manage'])">
-          <template #title>
-            <el-icon><Camera /></el-icon>
-            <span>设计预约</span>
-          </template>
-          <el-menu-item index="/design/gantt" v-if="authStore.hasAnyPermission(['design:read', 'design:write', 'design:audit', 'design:manage'])">
-            <el-icon><Calendar /></el-icon>
-            <template #title>排期甘特图</template>
-          </el-menu-item>
-          <el-menu-item index="/design/submit" v-if="authStore.hasAnyPermission(['design:write'])">
-            <el-icon><EditPen /></el-icon>
-            <template #title>提交预约</template>
-          </el-menu-item>
-          <el-menu-item index="/design/my-requests" v-if="authStore.hasAnyPermission(['design:write', 'design:read'])">
-            <el-icon><Document /></el-icon>
-            <template #title>我的预约</template>
-          </el-menu-item>
-          <el-menu-item index="/design/audit" v-if="authStore.hasPermission('design:audit')">
-            <el-icon><Stamp /></el-icon>
-            <template #title>审批队列</template>
-          </el-menu-item>
-          <el-menu-item index="/design/manage" v-if="authStore.hasPermission('design:manage')">
-            <el-icon><Setting /></el-icon>
-            <template #title>设计管理</template>
-          </el-menu-item>
-          <el-menu-item index="/design/stats" v-if="authStore.hasAnyPermission(['design:manage', 'design:audit'])">
-            <el-icon><TrendCharts /></el-icon>
-            <template #title>设计统计</template>
-          </el-menu-item>
-        </el-sub-menu>
-
-        <el-sub-menu index="system-mgmt" v-if="authStore.hasAnyPermission(['user:read', 'role:read'])">
-          <template #title>
-            <el-icon><Setting /></el-icon>
-            <span>系统管理</span>
-          </template>
-          <el-menu-item index="/system/users" v-if="authStore.hasPermission('user:read')">
-            <el-icon><User /></el-icon>
-            <template #title>用户管理</template>
-          </el-menu-item>
-          <el-menu-item index="/system/roles" v-if="authStore.hasPermission('user:read')">
-            <el-icon><Lock /></el-icon>
-            <template #title>角色权限</template>
-          </el-menu-item>
-          <el-menu-item index="/system/dicts" v-if="authStore.hasPermission('user:read')">
-            <el-icon><Notebook /></el-icon>
-            <template #title>基础字典</template>
-          </el-menu-item>
-          <el-menu-item index="/system/ai" v-if="authStore.hasPermission('ai:admin')">
-            <el-icon><Lightning /></el-icon>
-            <template #title>AI 接入管理</template>
+          <el-menu-item
+            v-for="item in group.items"
+            :key="item.path"
+            :index="item.path"
+          >
+            <el-icon><component :is="item.icon" /></el-icon>
+            <template #title>{{ item.title }}</template>
           </el-menu-item>
         </el-sub-menu>
       </el-menu>
@@ -246,14 +107,46 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { NAV_ENTRIES, MENU_GROUPS } from '@/config/navigation'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 const isCollapse = ref(false)
+
+// 权限策略检查 — 支持 permission(单权限) 与 anyPermission(任一即可)
+function hasAccess(perms) {
+  if (!perms) return true
+  if (perms.permission) return authStore.hasPermission(perms.permission)
+  if (perms.anyPermission) return authStore.hasAnyPermission(perms.anyPermission)
+  return true
+}
+
+// 顶级菜单项 (menu 字段存在但无 group, 例如 Dashboard)
+const topLevelItems = computed(() => {
+  return NAV_ENTRIES
+    .filter(e => !e.hideInMenu && e.menu && !e.menu.group && hasAccess(e.menu))
+    .slice()
+    .sort((a, b) => (a.menu.order ?? 999) - (b.menu.order ?? 999))
+    .map(e => ({ path: e.path, title: e.menu.title ?? e.title, icon: e.menu.icon }))
+})
+
+// 分组菜单 — 分组本身权限不通过或无可见子项即隐藏
+const visibleGroups = computed(() => {
+  return Object.entries(MENU_GROUPS)
+    .map(([key, group]) => {
+      const items = NAV_ENTRIES
+        .filter(e => !e.hideInMenu && e.menu?.group === key && hasAccess(e.menu))
+        .slice()
+        .sort((a, b) => (a.menu.order ?? 999) - (b.menu.order ?? 999))
+        .map(e => ({ path: e.path, title: e.menu.title ?? e.title, icon: e.menu.icon }))
+      return { key, ...group, items }
+    })
+    .filter(group => hasAccess(group) && group.items.length > 0)
+})
 
 function handleUserCommand(cmd) {
   if (cmd === 'profile') router.push('/profile')

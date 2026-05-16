@@ -1,210 +1,37 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { NAV_ENTRIES } from '@/config/navigation'
+
+// NAV_ENTRIES 中每条记录映射成 vue-router 的 children 路由
+// path 去掉前导 '/' 因为父路由是 '/'
+const layoutRoutes = NAV_ENTRIES.map(entry => ({
+  path: entry.path.replace(/^\//, ''),
+  name: entry.name,
+  component: entry.component,
+  meta: {
+    title: entry.title,
+    permission: entry.permission,
+    anyPermission: entry.anyPermission,
+  },
+}))
 
 const routes = [
   {
     path: '/login',
     name: 'Login',
-    component: () => import('../views/auth/LoginPage.vue'),
-    meta: { title: '登录', public: true }
+    component: () => import('@/views/auth/LoginPage.vue'),
+    meta: { title: '登录', public: true },
   },
   {
     path: '/',
-    component: () => import('../views/layout/MainLayout.vue'),
+    component: () => import('@/views/layout/MainLayout.vue'),
     redirect: '/dashboard',
-    children: [
-      {
-        path: 'dashboard',
-        name: 'Dashboard',
-        component: () => import('../views/dashboard/Dashboard.vue'),
-        meta: { title: '工作台' }
-      },
-      {
-        path: 'employee/attribute',
-        name: 'EmployeeAttribute',
-        component: () => import('../views/employee/EmployeeAttribute.vue'),
-        meta: { title: '员工属性管理' }
-      },
-      {
-        path: 'supervisor/relation',
-        name: 'SupervisorRelation',
-        component: () => import('../views/supervisor/SupervisorRelation.vue'),
-        meta: { title: '主管关系管理' }
-      },
-      {
-        path: 'customer/snapshot',
-        name: 'CustomerSnapshot',
-        component: () => import('../views/customer/CustomerSnapshot.vue'),
-        meta: { title: '客户归属管理' }
-      },
-      {
-        path: 'payment/sync',
-        name: 'PaymentSync',
-        component: () => import('../views/payment/PaymentSync.vue'),
-        meta: { title: '回款同步' }
-      },
-      {
-        path: 'commission/batch',
-        name: 'CommissionBatch',
-        component: () => import('../views/commission/CommissionBatch.vue'),
-        meta: { title: '提成批次' }
-      },
-      {
-        path: 'commission/batch/:batchId/details',
-        name: 'CommissionDetail',
-        component: () => import('../views/commission/CommissionDetail.vue'),
-        meta: { title: '提成明细' }
-      },
-      {
-        path: 'tracking',
-        name: 'TrackingList',
-        component: () => import('../views/tracking/TrackingList.vue'),
-        meta: { title: '物流跟踪' }
-      },
-      {
-        path: 'tracking/:waybillNo',
-        name: 'TrackingDetail',
-        component: () => import('../views/tracking/TrackingDetail.vue'),
-        meta: { title: '运单详情', permission: 'tracking:read' }
-      },
-      {
-        path: 'tracking/upload',
-        name: 'WaybillUpload',
-        component: () => import('../views/tracking/WaybillUpload.vue'),
-        meta: { title: '运单上传', permission: 'tracking:write' }
-      },
-      {
-        path: 'tracking/daily-report',
-        name: 'ShippingDailyReport',
-        component: () => import('../views/tracking/ShippingDailyReport.vue'),
-        meta: { title: '物流日报', permission: 'tracking:daily_report' }
-      },
-      {
-        path: 'design/gantt',
-        name: 'DesignGantt',
-        component: () => import('../views/design/GanttView.vue'),
-        meta: { title: '排期甘特图' }
-      },
-      {
-        path: 'design/submit',
-        name: 'DesignSubmit',
-        component: () => import('../views/design/SubmitRequest.vue'),
-        meta: { title: '提交预约' }
-      },
-      {
-        path: 'design/my-requests',
-        name: 'MyRequests',
-        component: () => import('../views/design/MyRequests.vue'),
-        meta: { title: '我的预约' }
-      },
-      {
-        path: 'design/audit',
-        name: 'DesignAudit',
-        component: () => import('../views/design/AuditQueue.vue'),
-        meta: { title: '审批队列' }
-      },
-      {
-        path: 'design/manage',
-        name: 'DesignManage',
-        component: () => import('../views/design/DesignManage.vue'),
-        meta: { title: '设计管理' }
-      },
-      {
-        path: 'design/stats',
-        name: 'DesignStats',
-        component: () => import('../views/design/DesignStats.vue'),
-        meta: { title: '设计统计' }
-      },
-      {
-        path: 'system/users',
-        name: 'UserManagement',
-        component: () => import('../views/system/UserManagement.vue'),
-        meta: { title: '用户管理', permission: 'user:read' }
-      },
-      {
-        path: 'system/roles',
-        name: 'RoleManagement',
-        component: () => import('../views/system/RoleManagement.vue'),
-        meta: { title: '角色权限管理', permission: 'user:read' }
-      },
-      {
-        path: 'system/dicts',
-        name: 'DictManagement',
-        component: () => import('../views/system/DictManagement.vue'),
-        meta: { title: '基础字典', permission: 'user:read' }
-      },
-      {
-        path: 'system/ai',
-        name: 'AIManager',
-        component: () => import('../views/system/AIManager.vue'),
-        meta: { title: 'AI 接入管理', permission: 'ai:admin' }
-      },
-      {
-        path: 'stock/overview',
-        name: 'StockOverview',
-        component: () => import('../views/stock/StockOverview.vue'),
-        meta: { title: '销量备货一览', permission: 'stock:read' }
-      },
-      {
-        path: 'stock/safety-config',
-        name: 'SafetyConfig',
-        component: () => import('../views/stock/SafetyConfig.vue'),
-        meta: { title: '安全库存设置', permission: 'stock:write' }
-      },
-      {
-        path: 'stock/daily-report',
-        name: 'StockDailyReport',
-        component: () => import('../views/stock/DailyReport.vue'),
-        meta: { title: '安全库存日报', permission: 'stock:read' }
-      },
-      {
-        path: 'insight/industry-daily',
-        name: 'InsightIndustryDaily',
-        component: () => import('../views/insight/IndustryDailyView.vue'),
-        meta: { title: '行业情报日报', permission: 'insight:read' }
-      },
-      {
-        path: 'insight/ai-tools',
-        name: 'InsightAITools',
-        component: () => import('../views/insight/AIToolsView.vue'),
-        meta: { title: 'AI 工具速递', permission: 'insight:internal_read' }
-      },
-      {
-        path: 'insight/reports',
-        name: 'InsightInternalReports',
-        component: () => import('../views/insight/InternalReportsView.vue'),
-        meta: { title: '内部经营报告', permission: 'insight:internal_read' }
-      },
-      {
-        path: 'insight/cases',
-        name: 'InsightCaseLibrary',
-        component: () => import('../views/insight/CaseLibraryView.vue'),
-        meta: { title: '业务员案例库', permission: 'insight:read' }
-      },
-      {
-        path: 'insight/minutes',
-        name: 'InsightMeetingMinutes',
-        component: () => import('../views/insight/MeetingMinutesView.vue'),
-        meta: { title: '周会纪要', permission: 'insight:read' }
-      },
-      {
-        path: 'insight/sources',
-        name: 'InsightSources',
-        component: () => import('../views/insight/SourcesAdminView.vue'),
-        meta: { title: '信源配置', permission: 'insight:admin' }
-      },
-      {
-        path: 'profile',
-        name: 'Profile',
-        component: () => import('../views/profile/ProfilePage.vue'),
-        meta: { title: '个人设置' }
-      }
-    ]
-  }
+    children: layoutRoutes,
+  },
 ]
 
 const router = createRouter({
   history: createWebHistory(),
-  routes
+  routes,
 })
 
 // ── 路由守卫 ──────────────────────────────────────────
@@ -215,20 +42,25 @@ router.beforeEach(async (to, from, next) => {
   // 公开页面直接放行
   if (to.meta.public) return next()
 
-  // 动态引入 store（避免在 router 初始化时 pinia 未就绪）
+  // 动态引入 store(避免在 router 初始化时 pinia 未就绪)
   const { useAuthStore } = await import('@/stores/auth')
   const auth = useAuthStore()
 
-  // 等待 App.vue 初始化（刷新时 refresh_token 换取 access_token）完成
+  // 等待 App.vue 初始化(刷新时 refresh_token 换取 access_token)完成
   await auth.initPromise
 
-  // 未登录：跳转登录页
+  // 未登录:跳转登录页
   if (!auth.isLoggedIn) {
     return next({ name: 'Login', query: { redirect: to.fullPath } })
   }
 
-  // 权限检查
+  // 权限检查 — 支持 permission(单权限) 与 anyPermission(任一即可)
   if (to.meta.permission && !auth.hasPermission(to.meta.permission)) {
+    const { ElMessage } = await import('element-plus')
+    ElMessage.error('权限不足')
+    return next(from.fullPath || '/dashboard')
+  }
+  if (to.meta.anyPermission && !auth.hasAnyPermission(to.meta.anyPermission)) {
     const { ElMessage } = await import('element-plus')
     ElMessage.error('权限不足')
     return next(from.fullPath || '/dashboard')
