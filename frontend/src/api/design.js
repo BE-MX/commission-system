@@ -1,37 +1,4 @@
-import axios from 'axios'
-import { ElMessage } from 'element-plus'
-import { useLoading } from '@/composables/useLoading'
-
-const designApi = axios.create({
-  baseURL: '/api/design',
-  timeout: 60000
-})
-
-const loading = useLoading()
-
-designApi.interceptors.request.use(config => {
-  if (config.showLoading !== false) {
-    loading.show(config.loadingText || '')
-  }
-  return config
-})
-
-designApi.interceptors.response.use(
-  response => {
-    if (response.config.showLoading !== false) loading.hide()
-    const res = response.data
-    if (res.code !== undefined && res.code !== 200) {
-      ElMessage.error(res.message || '请求失败')
-      return Promise.reject(new Error(res.message))
-    }
-    return res
-  },
-  error => {
-    if (error.config?.showLoading !== false) loading.hide()
-    ElMessage.error(error.response?.data?.message || error.message || '网络错误')
-    return Promise.reject(error)
-  }
-)
+import { designClient as designApi } from './clients'
 
 // --- Request (预约单) ---
 

@@ -1,48 +1,4 @@
-import axios from 'axios'
-import { ElMessage } from 'element-plus'
-import { useLoading } from '@/composables/useLoading'
-
-const aiApi = axios.create({
-  baseURL: '/api/ai',
-  timeout: 120000,
-})
-
-const loading = useLoading()
-
-aiApi.interceptors.request.use(config => {
-  if (config.showLoading !== false) {
-    loading.show(config.loadingText || '')
-  }
-  // 注入 Access Token
-  try {
-    const { useAuthStore } = require('@/stores/auth')
-    const auth = useAuthStore()
-    if (auth.accessToken) {
-      config.headers.Authorization = `Bearer ${auth.accessToken}`
-    }
-  } catch (e) {
-    // store 未初始化时忽略
-  }
-  return config
-})
-
-aiApi.interceptors.response.use(
-  response => {
-    if (response.config.showLoading !== false) loading.hide()
-    const res = response.data
-    if (res.code !== undefined && res.code !== 200) {
-      ElMessage.error(res.message || '请求失败')
-      return Promise.reject(new Error(res.message))
-    }
-    return res
-  },
-  error => {
-    if (error.config?.showLoading !== false) loading.hide()
-    const msg = error.response?.data?.message || error.message || '网络错误'
-    ElMessage.error(msg)
-    return Promise.reject(error)
-  }
-)
+import { aiClient as aiApi } from './clients'
 
 // Provider
 export function getProviders(params) {
