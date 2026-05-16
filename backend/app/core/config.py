@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     TRACKING_POLL_BATCH_SIZE: int = 50
     STAGING_SCAN_BATCH_SIZE: int = 100
 
+    # APScheduler 定时任务
+    SCHEDULER_ENABLED: bool = True
+    SCHEDULER_TIMEZONE: str = "Asia/Shanghai"
+
     # 短链接
     SHORT_LINK_BASE_URL: str = "https://leshine.work"
 

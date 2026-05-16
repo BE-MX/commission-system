@@ -77,6 +77,7 @@ def engine():
                 collection_date TEXT,
                 type TEXT,
                 amount_usd REAL,
+                service_fee_amount_usd REAL,
                 order_id TEXT,
                 company_id TEXT,
                 order_no TEXT,

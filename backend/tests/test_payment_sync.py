@@ -60,8 +60,8 @@ class TestPaymentSync:
     def test_auto_snapshot_with_matching_order(self, db, seed_employees, seed_business_data):
         """客户无快照，匹配到订单 → 自动生成完整快照"""
         # CUST001 有匹配订单 ORD001 (符合 custom_fields / status / dept 规则)
-        # 用 mock 让 build_order_match_query 返回能匹配 SQLite 的 SQL
-        with patch("app.services.payment_sync_service.build_order_match_query") as mock_q:
+        # 用 mock 让 build_batch_order_match_query 返回能匹配 SQLite 的 SQL
+        with patch("app.services.payment_sync_service.build_batch_order_match_query") as mock_q:
             mock_q.return_value = (
                 "SELECT * FROM lsordertest.okki_orders "
                 "WHERE company_id = 'CUST001' ORDER BY account_date ASC LIMIT 1"
@@ -81,7 +81,7 @@ class TestPaymentSync:
     def test_incomplete_snapshot_no_matching_order(self, db, seed_employees, seed_business_data):
         """客户无快照，匹配不到订单 → 生成不完整快照"""
         # CUST003 的订单不符合规则
-        with patch("app.services.payment_sync_service.build_order_match_query") as mock_q:
+        with patch("app.services.payment_sync_service.build_batch_order_match_query") as mock_q:
             # 返回一定查不到的 SQL
             mock_q.return_value = (
                 "SELECT * FROM lsordertest.okki_orders "
