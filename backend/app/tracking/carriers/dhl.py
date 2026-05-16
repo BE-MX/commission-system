@@ -4,7 +4,7 @@ from datetime import datetime
 
 import httpx
 
-from app.services.carriers.base import CarrierAdapter, TrackingResult, TrackingEvent
+from app.tracking.carriers.base import CarrierAdapter, TrackingResult, TrackingEvent
 
 
 # DHL event typeCode → 系统状态

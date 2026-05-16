@@ -6,10 +6,10 @@ from app.models.commission import (
     SyncedPayment, CommissionBatch, CommissionDetail, PaymentCommissionStatus,
 )
 from app.models.business import UserBasic, CustomerInfo, OkkiOrder, OkkiReceipt
-from app.models.tracking import (
+from app.tracking.models import (
     ShipmentStaging, ShipmentTracking, TrackingEvent, CarrierConfig,
 )
-from app.models.waybill import Waybill
+from app.tracking.models import Waybill
 from app.models.short_link import ArkShortLink
 
 __all__ = [

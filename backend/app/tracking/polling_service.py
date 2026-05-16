@@ -8,11 +8,11 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.models.tracking import ShipmentTracking, TrackingEvent, CarrierConfig
-from app.models.waybill import Waybill
-from app.services.carriers import get_adapter
-from app.utils.tracking_status import normalize_status
-from app.services.tracking_push import check_and_push
+from app.tracking.models import ShipmentTracking, TrackingEvent, CarrierConfig
+from app.tracking.models import Waybill
+from app.tracking.carriers import get_adapter
+from app.tracking.status import normalize_status
+from app.tracking.push_service import check_and_push
 
 logger = logging.getLogger("tracking.poll")
 settings = get_settings()

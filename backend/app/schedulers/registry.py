@@ -22,8 +22,8 @@ JOB_STOCK_DAILY_REPORT = "stock_daily_report"
 def _register_jobs(scheduler: AsyncIOScheduler) -> None:
     """注册所有定时任务。新增任务时在此追加。"""
     from app.design.scheduler import check_today_shoot_reminders
-    from app.services.tracking_daily_report import generate_daily_reports
-    from app.services.staging_service import scan_staging
+    from app.tracking.daily_report_service import generate_daily_reports
+    from app.tracking.staging_service import scan_staging
     from app.insight.scheduler import generate_industry_daily, generate_ai_tools
     from app.stock.scheduler import generate_stock_daily_report
 

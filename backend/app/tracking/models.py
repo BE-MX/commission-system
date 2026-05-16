@@ -1,10 +1,14 @@
-"""物流跟踪相关数据模型"""
+"""物流跟踪 / 运单录入 — 数据模型 (合并自 models/tracking.py + models/waybill.py)"""
 
 from sqlalchemy import (
     Column, BigInteger, Integer, String, Text, Date, DateTime, Boolean,
     Index, func,
 )
+
 from app.core.database import Base
+
+
+# ── 物流跟踪 ────────────────────────────────────────────
 
 
 class ShipmentStaging(Base):
@@ -141,3 +145,23 @@ class ShippingDailyReport(Base):
     __table_args__ = (
         Index("uk_user_date", "user_id", "report_date", unique=True),
     )
+
+
+# ── 运单录入 (manual + OCR) ─────────────────────────────
+
+
+class Waybill(Base):
+    __tablename__ = "ark_waybills"
+
+    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
+    waybill_no = Column(String(50), nullable=False, unique=True, comment="运单号")
+    carrier = Column(String(50), nullable=False, default="未知", comment="物流商")
+    recipient_name = Column(String(100), nullable=False, comment="收件人姓名")
+    recipient_country = Column(String(100), nullable=False, comment="收件国家")
+    ship_date = Column(Date, nullable=False, comment="发件日期")
+    status = Column(String(20), nullable=False, default="待跟踪", comment="状态")
+    estimated_delivery_date = Column(DateTime, comment="预计送达时间，来自承运商API，每次轮询覆盖更新")
+    entry_source = Column(String(20), nullable=False, default="manual", comment="录入来源")
+    created_by = Column(String(50), nullable=False, comment="录入人")
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())

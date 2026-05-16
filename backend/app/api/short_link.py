@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db
 from app.core.config import get_settings
 from app.models.short_link import ArkShortLink
-from app.models.tracking import ShipmentTracking
+from app.tracking.models import ShipmentTracking
 from app.services.short_link import build_carrier_tracking_url
 from app.utils.shortlink import generate_short_link
 

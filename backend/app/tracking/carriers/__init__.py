@@ -1,14 +1,14 @@
 """物流商适配器注册"""
 
 from app.core.config import get_settings
-from app.services.carriers.base import CarrierAdapter
+from app.tracking.carriers.base import CarrierAdapter
 
 CARRIER_ADAPTERS: dict[str, CarrierAdapter] = {}
 
 
 def _init_adapters():
-    from app.services.carriers.dhl import DHLAdapter
-    from app.services.carriers.fedex import FedExAdapter
+    from app.tracking.carriers.dhl import DHLAdapter
+    from app.tracking.carriers.fedex import FedExAdapter
 
     settings = get_settings()  # 在初始化时获取配置，确保环境变量已加载
 

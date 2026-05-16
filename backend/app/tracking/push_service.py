@@ -8,8 +8,8 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from app.models.tracking import ShipmentTracking
-from app.utils.tracking_status import PUSH_TRIGGER_STATUSES, get_status_label
+from app.tracking.models import ShipmentTracking
+from app.tracking.status import PUSH_TRIGGER_STATUSES, get_status_label
 from app.services.short_link import build_short_link
 
 logger = logging.getLogger("tracking.push")

@@ -7,7 +7,7 @@ from urllib.parse import quote
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.models.tracking import ShipmentTracking
+from app.tracking.models import ShipmentTracking
 
 _ALPHABET = string.ascii_letters + string.digits  # base62
 _CODE_LENGTH = 8

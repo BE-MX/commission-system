@@ -9,7 +9,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from app.models.tracking import ShipmentTracking
+from app.tracking.models import ShipmentTracking
 from app.services.short_link import build_short_link
 
 logger = logging.getLogger("tracking.dws_sync")

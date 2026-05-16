@@ -12,8 +12,8 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
-from app.models.tracking import ShipmentTracking, ShippingDailyReport
-from app.utils.tracking_status import get_status_label
+from app.tracking.models import ShipmentTracking, ShippingDailyReport
+from app.tracking.status import get_status_label
 from app.utils.shortlink import generate_short_link
 
 logger = logging.getLogger("tracking.daily_report")

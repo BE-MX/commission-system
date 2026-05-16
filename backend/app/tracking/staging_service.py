@@ -7,9 +7,9 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.models.tracking import CarrierConfig, ShipmentStaging, ShipmentTracking
+from app.tracking.models import CarrierConfig, ShipmentStaging, ShipmentTracking
 from app.services.short_link import generate_short_code
-from app.services.tracking_service import poll_single
+from app.tracking.polling_service import poll_single
 
 logger = logging.getLogger("tracking.staging")
 settings = get_settings()

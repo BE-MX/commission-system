@@ -15,18 +15,18 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db
 from app.auth.dependencies import get_current_user, require_permission
 from app.auth.models import ArkUser
-from app.models.tracking import CarrierConfig, ShipmentStaging, ShipmentTracking, TrackingEvent
-from app.models.waybill import Waybill
-from app.schemas.tracking import (
+from app.tracking.models import CarrierConfig, ShipmentStaging, ShipmentTracking, TrackingEvent
+from app.tracking.models import Waybill
+from app.tracking.schemas import (
     StagingCreateRequest, StagingCreateResponse,
     ShipmentListItem, ShipmentDetailResponse, TrackingEventItem,
     TrackingStatsResponse,
 )
-from app.schemas.waybill import WaybillCreate, OCRUploadResponse
-from app.services.staging_service import scan_staging
-from app.services.tracking_service import poll_active_shipments, refresh_single, poll_single
+from app.tracking.schemas import WaybillCreate, OCRUploadResponse
+from app.tracking.staging_service import scan_staging
+from app.tracking.polling_service import poll_active_shipments, refresh_single, poll_single
 from app.services.short_link import build_short_link, generate_short_code, build_carrier_tracking_url
-from app.services.carriers.base import STATUS_MAP_CN
+from app.tracking.carriers.base import STATUS_MAP_CN
 from app.utils.shortlink import generate_short_link
 
 router = APIRouter()
@@ -700,7 +700,7 @@ async def _push_waybill_dingtalk(waybill: Waybill, short_url: str, shipping_temp
 # ══════════════════════════════════════════════════════════════
 
 from datetime import date as _date_type
-from app.services.tracking_daily_report import get_user_daily_report
+from app.tracking.daily_report_service import get_user_daily_report
 
 
 @router.get("/daily-report", summary="获取物流日报")
@@ -762,7 +762,7 @@ def generate_daily_report(
     except ValueError:
         return {"code": 400, "message": "日期格式错误，应为 YYYY-MM-DD", "data": None}
 
-    from app.services.tracking_daily_report import generate_user_report, push_daily_report
+    from app.tracking.daily_report_service import generate_user_report, push_daily_report
     from app.auth.models import ArkUser
 
     # 获取当前用户的钉钉ID

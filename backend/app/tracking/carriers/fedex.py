@@ -6,7 +6,7 @@ from typing import Optional
 
 import httpx
 
-from app.services.carriers.base import CarrierAdapter, TrackingResult, TrackingEvent
+from app.tracking.carriers.base import CarrierAdapter, TrackingResult, TrackingEvent
 
 
 FEDEX_STATUS_MAP = {
