@@ -37,7 +37,7 @@ def get_current_user(
 
 def require_permission(*permissions: str):
     """
-    权限校验 Dependency Factory
+    权限校验 Dependency Factory(AND 语义:全部权限都必须满足)
 
     用法:
         @router.get("/some-endpoint")
@@ -58,5 +58,32 @@ def require_permission(*permissions: str):
                     detail=f"权限不足，需要: {perm}",
                 )
         return current_user
+
+    return permission_checker
+
+
+def require_any_permission(*permissions: str):
+    """
+    权限校验 Dependency Factory(OR 语义:任一权限命中即放行)
+
+    用法:
+        @router.get("/some-endpoint")
+        def handler(current_user=Depends(require_any_permission("design:read", "design:write"))):
+            ...
+    """
+    def permission_checker(current_user: dict = Depends(get_current_user)):
+        roles = current_user.get("roles", [])
+        # super_admin 跳过权限检查
+        if "super_admin" in roles:
+            return current_user
+
+        user_perms = current_user.get("permissions", [])
+        if any(perm in user_perms for perm in permissions):
+            return current_user
+
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"权限不足，需要其中之一: {', '.join(permissions)}",
+        )
 
     return permission_checker

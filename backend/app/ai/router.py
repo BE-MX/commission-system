@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
+from app.auth.dependencies import require_permission
 from app.ai import service
 from app.ai.schemas import (
     ProviderCreate, ProviderUpdate, Provider, ProviderTestResult,
@@ -16,7 +17,10 @@ from app.ai.schemas import (
     TaskResult,
 )
 
-router = APIRouter()
+# 所有 AI 端点要求 ai:admin 权限。
+# 业务模块内部调用 (如 tracking OCR / insight 日报) 走 service.chat() 函数级,不经此 HTTP 入口,
+# 因此 HTTP 端点专门服务于前端 AI 管理页,统一管理员权限即可。
+router = APIRouter(dependencies=[Depends(require_permission("ai:admin"))])
 
 
 def _ok(data, message: str = "ok"):

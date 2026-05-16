@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
+from app.auth.dependencies import require_permission, require_any_permission
 from app.design import service
 from app.design.schemas import (
     DesignRequestCreate,
@@ -50,6 +51,7 @@ def create_request(
     data: DesignRequestCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission('design:write')),
 ):
     """提交设计预约申请"""
     result = service.create_request(
@@ -256,6 +258,7 @@ def list_requests(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission('design:read', 'design:write', 'design:audit', 'design:manage')),
 ):
     """查询申请单列表"""
     query = db.query(DesignScheduleRequest).filter(
@@ -332,7 +335,11 @@ def list_requests(
 
 
 @router.get("/requests/{request_id}")
-def get_request(request_id: int, db: Session = Depends(get_db)):
+def get_request(
+    request_id: int,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission('design:read', 'design:write', 'design:audit', 'design:manage')),
+):
     """查询申请单详情"""
     req = db.query(DesignScheduleRequest).filter(
         DesignScheduleRequest.id == request_id,
@@ -394,6 +401,7 @@ def audit_request(
     data: DesignRequestAudit,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission('design:audit')),
 ):
     """主管审批申请单"""
     result = service.audit_request(db, request_id, data, data.operator_id, data.operator_name)
@@ -489,6 +497,7 @@ def action_request(
     data: DesignRequestAction,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission('design:manage')),
 ):
     """执行申请单动作（confirm/start/complete/cancel）"""
     result = service.action_request(
@@ -799,6 +808,7 @@ def update_request_remark(
     request_id: int,
     data: dict,
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission('design:write', 'design:manage')),
 ):
     """修改预约单备注"""
     result = service.update_request_remark(
@@ -812,6 +822,7 @@ def update_request_shoot_type(
     request_id: int,
     data: dict,
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission('design:write', 'design:manage')),
 ):
     """修改预约单拍摄类型"""
     result = service.update_request_shoot_type(
@@ -825,6 +836,7 @@ def update_task_shoot_type(
     task_id: int,
     data: dict,
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission('design:write', 'design:manage')),
 ):
     """修改任务拍摄类型"""
     result = service.update_task_shoot_type(
@@ -838,6 +850,7 @@ def update_expect_date(
     request_id: int,
     data: dict,
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission('design:write')),
 ):
     """修改待确认任务的期望日期"""
     req = db.query(DesignScheduleRequest).filter(
@@ -864,7 +877,9 @@ def update_expect_date(
 
 
 @router.post("/scan-shoot-reminders")
-async def trigger_scan_shoot_reminders():
+async def trigger_scan_shoot_reminders(
+    _user: dict = Depends(require_permission('design:manage')),
+):
     """手动触发"今日拍摄提醒"扫描，立即执行一次定时任务逻辑"""
     from app.design.scheduler import check_today_shoot_reminders
     try:
@@ -884,6 +899,7 @@ def get_gantt(
     end_date: date = Query(...),
     designer_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission('design:read', 'design:write', 'design:audit', 'design:manage')),
 ):
     """获取甘特图数据"""
     return service.get_gantt_data(db, start_date, end_date, designer_id)
@@ -903,6 +919,7 @@ def list_tasks(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission('design:read', 'design:write', 'design:audit', 'design:manage')),
 ):
     """查询任务列表"""
     from sqlalchemy.orm import joinedload
@@ -979,6 +996,7 @@ def reschedule_task(
     data: TaskReschedule,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission('design:manage')),
 ):
     """任务改期"""
     result = service.reschedule_task(db, task_id, data, data.operator_id, data.operator_name)
@@ -1017,6 +1035,7 @@ def list_unavailable_dates(
     start_date: Optional[date] = Query(None),
     end_date: Optional[date] = Query(None),
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission('design:read', 'design:write', 'design:audit', 'design:manage')),
 ):
     """查询不可用日期"""
     query = db.query(DesignUnavailableDate)
@@ -1047,6 +1066,7 @@ def list_unavailable_dates(
 def create_unavailable_dates(
     data: UnavailableDateCreate,
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission('design:manage')),
 ):
     """批量设置不可用日期"""
     return service.create_unavailable_dates(db, data, data.operator_id, data.operator_name)
@@ -1059,6 +1079,7 @@ def delete_unavailable_date(
     operator_id: int = Query(1),
     operator_name: str = Query("管理员"),
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission('design:manage')),
 ):
     """删除不可用日期"""
     return service.delete_unavailable_date(db, date_str, operator_id, operator_name, period=period)
@@ -1068,7 +1089,10 @@ def delete_unavailable_date(
 
 
 @router.get("/capacity")
-def get_capacity(db: Session = Depends(get_db)):
+def get_capacity(
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission('design:read', 'design:write', 'design:audit', 'design:manage')),
+):
     """获取容量配置"""
     return {"code": 200, "message": "ok", "data": service.get_capacity(db)}
 
@@ -1077,6 +1101,7 @@ def get_capacity(db: Session = Depends(get_db)):
 def update_capacity(
     data: CapacityUpdate,
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission('design:manage')),
 ):
     """更新容量配置"""
     return service.update_capacity(db, data, data.operator_id, data.operator_name)
@@ -1094,6 +1119,7 @@ def conflict_check(
     designer_id: Optional[int] = Query(None),
     exclude_task_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission('design:write')),
 ):
     """前端实时冲突检查（不写库）"""
     from app.design.conflict_engine import check_conflict
@@ -1111,7 +1137,10 @@ def conflict_check(
 
 
 @router.get("/scheduling-mode")
-def get_scheduling_mode(db: Session = Depends(get_db)):
+def get_scheduling_mode(
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission('design:read', 'design:write', 'design:audit', 'design:manage')),
+):
     """获取当前排期模式"""
     return service.get_scheduling_mode_info(db)
 
@@ -1120,6 +1149,7 @@ def get_scheduling_mode(db: Session = Depends(get_db)):
 def update_scheduling_mode(
     data: ModeUpdate,
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission('design:manage')),
 ):
     """更新排期模式"""
     return service.update_scheduling_mode(db, data, data.operator_id, data.operator_name)
@@ -1129,7 +1159,11 @@ def update_scheduling_mode(
 
 
 @router.get("/audit-logs/{request_id}")
-def get_audit_logs_by_request(request_id: int, db: Session = Depends(get_db)):
+def get_audit_logs_by_request(
+    request_id: int,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission('design:read', 'design:write', 'design:audit', 'design:manage')),
+):
     """查询指定申请单的操作日志"""
     items = db.query(DesignAuditLog).filter(
         DesignAuditLog.request_id == request_id,
@@ -1164,6 +1198,7 @@ def get_audit_logs_by_request(request_id: int, db: Session = Depends(get_db)):
 def list_designers(
     is_active: Optional[bool] = Query(None),
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission('design:read', 'design:write', 'design:audit', 'design:manage')),
 ):
     """查询设计师列表"""
     query = db.query(DesignDesigner)
@@ -1192,6 +1227,7 @@ def list_designers(
 def create_designer(
     data: dict,
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission('design:manage')),
 ):
     """新建设计师"""
     designer = DesignDesigner(
@@ -1221,6 +1257,7 @@ def update_designer(
     designer_id: int,
     data: dict,
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission('design:manage')),
 ):
     """编辑设计师"""
     designer = db.query(DesignDesigner).filter(DesignDesigner.id == designer_id).first()
@@ -1254,6 +1291,7 @@ def export_tasks(
     start_date: date = Query(...),
     end_date: date = Query(...),
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission('design:audit', 'design:manage')),
 ):
     """导出设计任务为 Excel"""
     return service.export_tasks_excel(db, start_date, end_date)
@@ -1267,6 +1305,7 @@ def get_stats(
     start_date: date = Query(...),
     end_date: date = Query(...),
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission('design:audit', 'design:manage')),
 ):
     """获取设计模块统计"""
     return service.get_design_stats(db, start_date, end_date)
@@ -1282,6 +1321,7 @@ async def import_requests(
     operator_name: str = Query("管理员"),
     operator_role: str = Query("salesperson"),
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission('design:manage')),
 ):
     """批量导入预约申请"""
     contents = await file.read()
@@ -1300,6 +1340,7 @@ async def upload_attachment(
     operator_id: int = Query(1),
     operator_name: str = Query("管理员"),
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission('design:write')),
 ):
     """上传附件到指定预约单"""
     req = db.query(DesignScheduleRequest).filter(
@@ -1356,6 +1397,7 @@ async def upload_attachment(
 def list_attachments(
     request_id: int,
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission('design:read', 'design:write', 'design:audit', 'design:manage')),
 ):
     """获取指定预约单的附件列表"""
     attachments = db.query(DesignRequestAttachment).filter(
@@ -1383,6 +1425,7 @@ def list_attachments(
 def download_attachment(
     attachment_id: int,
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission('design:read', 'design:write', 'design:audit', 'design:manage')),
 ):
     """下载附件"""
     attachment = db.query(DesignRequestAttachment).filter(
@@ -1406,6 +1449,7 @@ def download_attachment(
 def delete_attachment(
     attachment_id: int,
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission('design:write', 'design:manage')),
 ):
     """删除附件"""
     attachment = db.query(DesignRequestAttachment).filter(
