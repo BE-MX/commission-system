@@ -140,8 +140,34 @@ export function deleteAttachment(attachmentId) {
   return designApi.delete(`/attachments/${attachmentId}`, { loadingText: '正在删除...' })
 }
 
-export function getAttachmentDownloadUrl(attachmentId) {
-  return `/api/design/attachments/${attachmentId}/download`
+/**
+ * 下载附件 — 通过 designClient (携带 Bearer Token) 拉 blob,在浏览器内触发保存。
+ *
+ * 早期实现是 <a :href="/api/design/attachments/{id}/download" target="_blank">,
+ * 直接走浏览器请求不会注入 Authorization header,后端权限校验启用后会 401。
+ *
+ * @param {{ id: number|string, file_name?: string }} attachment
+ */
+export async function downloadAttachment(attachment) {
+  const resp = await designApi.get(`/attachments/${attachment.id}/download`, {
+    responseType: 'blob',
+    loadingText: '下载中...',
+  })
+  // factory 中 blob response 直接返回完整 response (含 headers)
+  let fileName = attachment.file_name || ''
+  if (!fileName) {
+    const cd = resp.headers?.['content-disposition'] || ''
+    const m = /filename\*?=(?:UTF-8'')?["']?([^;"'\n]+)/i.exec(cd)
+    if (m) fileName = decodeURIComponent(m[1])
+  }
+  const url = URL.createObjectURL(resp.data)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = fileName || `attachment_${attachment.id}`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
 }
 
 export function updateExpectDate(requestId, data) {

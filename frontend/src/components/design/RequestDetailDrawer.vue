@@ -35,7 +35,7 @@
             <el-icon class="attachment-icon"><Paperclip /></el-icon>
             <span class="attachment-name" :title="a.file_name">{{ a.file_name }}</span>
             <span class="attachment-size">{{ formatFileSize(a.file_size) }}</span>
-            <a :href="getAttachmentDownloadUrl(a.id)" target="_blank" class="attachment-download">
+            <a @click.prevent="downloadAttachment(a)" href="javascript:void(0)" class="attachment-download">
               <el-icon><Download /></el-icon>
             </a>
           </div>
@@ -71,7 +71,7 @@
 <script setup>
 import { ref, watch } from 'vue'
 import { Paperclip, Download } from '@element-plus/icons-vue'
-import { getRequestDetail, getAuditLogs, getAttachments, getAttachmentDownloadUrl, getDesigners } from '@/api/design'
+import { getRequestDetail, getAuditLogs, getAttachments, downloadAttachment, getDesigners } from '@/api/design'
 import { getDictMap, buildDictLabel } from '@/utils/dict'
 
 const props = defineProps({

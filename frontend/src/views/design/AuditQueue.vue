@@ -136,7 +136,7 @@
           <el-icon class="attachment-icon"><Paperclip /></el-icon>
           <span class="attachment-name" :title="a.file_name">{{ a.file_name }}</span>
           <span class="attachment-size">{{ formatFileSize(a.file_size) }}</span>
-          <a :href="getAttachmentDownloadUrl(a.id)" target="_blank" class="attachment-download">
+          <a @click.prevent="downloadAttachment(a)" href="javascript:void(0)" class="attachment-download">
             <el-icon><Download /></el-icon>
           </a>
         </div>
@@ -153,7 +153,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { CircleCheck, CircleClose, Paperclip, Download } from '@element-plus/icons-vue'
-import { getRequests, auditRequest, getAttachments, getAttachmentDownloadUrl } from '@/api/design'
+import { getRequests, auditRequest, getAttachments, downloadAttachment } from '@/api/design'
 import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
 import { getDictMap, buildDictLabel } from '@/utils/dict'
 import RequestDetailDrawer from '@/components/design/RequestDetailDrawer.vue'
