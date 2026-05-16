@@ -4,9 +4,10 @@ from fastapi import FastAPI
 
 from app.api import (
     employee_router, supervisor_router, customer_router,
-    payment_router, commission_router, report_router, tracking_router,
+    payment_router, commission_router, report_router,
 )
 from app.api.short_link import router as short_link_router
+from app.tracking.router import router as tracking_router
 from app.design.router import router as design_router
 from app.auth.router import router as auth_router
 from app.auth.admin_router import router as admin_router
