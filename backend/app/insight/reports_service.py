@@ -157,14 +157,28 @@ def import_report(db: Session, data: ReportImport, created_by: Optional[int] = N
 
 
 def regenerate_report(db: Session, report_id: int, user_id: Optional[int] = None) -> InsightReport:
-    """手动触发重新生成 — 当前不实现实际信源抓取,仅返回报告条目重置状态。"""
+    """手动触发重新生成 — 按原 report_date 调用对应类型的 generate 函数。
+
+    注意: _save_report 是幂等覆盖(同 report_type+date 删旧插新),返回的 InsightReport
+    会是新 id,不再是入参 report_id 那一条。
+    """
     r = get_report(db, report_id)
+    report_type = r.report_type
+    report_date_val = r.report_date
+
     r.status = "pending"
     r.error_msg = None
     db.commit()
+
+    logger.info("Regenerating report id=%s type=%s date=%s", report_id, report_type, report_date_val)
+
+    if report_type == "industry_daily":
+        return generate_industry_daily_report(db, report_date_val)
+    if report_type == "ai_tools":
+        return generate_ai_tools_report(db, report_date_val)
+
+    logger.warning("Report id=%s type=%s has no auto-regenerate impl, only status reset", report_id, report_type)
     db.refresh(r)
-    # TODO: 接入定时任务/异步队列后,这里应触发 generate_industry_daily_report() 等
-    logger.info(f"Report {report_id} marked for regeneration (TODO: actual fetch+generate not implemented)")
     return r
 
 
