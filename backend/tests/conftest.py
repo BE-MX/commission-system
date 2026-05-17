@@ -22,10 +22,20 @@ from app.design.models import (
 
 # SQLite 不支持 BIGINT 自增，编译时替换为 INTEGER
 from sqlalchemy.ext.compiler import compiles
+from sqlalchemy.dialects.mysql import LONGTEXT, MEDIUMTEXT
 
 @compiles(BigInteger, "sqlite")
 def _compile_big_int_sqlite(type_, compiler, **kw):
     return "INTEGER"
+
+# SQLite 没有 LONGTEXT/MEDIUMTEXT 这些 MySQL 扩展类型,用 TEXT 兜底
+@compiles(LONGTEXT, "sqlite")
+def _compile_longtext_sqlite(type_, compiler, **kw):
+    return "TEXT"
+
+@compiles(MEDIUMTEXT, "sqlite")
+def _compile_mediumtext_sqlite(type_, compiler, **kw):
+    return "TEXT"
 
 
 @pytest.fixture
