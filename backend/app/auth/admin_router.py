@@ -1,13 +1,11 @@
 """用户/角色/权限管理 & 个人资料路由"""
 
-import asyncio
 import logging
 from datetime import datetime
 
 import os
-import shutil
 from pathlib import Path
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, Depends, Query, UploadFile, File
 from sqlalchemy import or_, func
 from sqlalchemy.orm import Session, joinedload
 

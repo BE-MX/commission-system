@@ -1,7 +1,7 @@
 """客户归属相关 Schema"""
 
 from typing import Optional, Literal
-from datetime import date, datetime
+from datetime import date
 
 from pydantic import BaseModel, ConfigDict
 

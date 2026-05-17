@@ -7,23 +7,12 @@ router.py 的私有 helper 函数集中处, 包括:
 """
 
 import logging
-from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app.core.database import SessionLocal
-from app.auth.models import ArkUser
 from app.design.models import (
     DesignScheduleRequest, DesignScheduleTask, DesignDesigner,
 )
-from app.dingtalk.events import (
-    notify_design_audit_needed,
-    notify_design_ready_for_design,
-    notify_design_request_approved,
-    notify_design_request_rejected,
-    notify_design_status_change,
-)
-from app.system.service import get_label_map as _get_dict_map
 
 logger = logging.getLogger("design")
 

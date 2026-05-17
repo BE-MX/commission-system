@@ -10,20 +10,18 @@
 """
 
 import asyncio
-import base64
 import logging
 from datetime import datetime
 from pathlib import Path as FilePath
 
 from sqlalchemy import func
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth.models import ArkUser
 from app.tracking.models import CarrierConfig, ShipmentStaging, ShipmentTracking, Waybill
 from app.tracking.schemas import WaybillCreate, StagingCreateRequest
 from app.tracking.polling_service import poll_single
-from app.tracking.ocr_service import OCRParseError, call_ocr_sync
+from app.tracking.ocr_service import call_ocr_sync
 from app.tracking.carriers.base import STATUS_MAP_CN
 from app.services.short_link import build_short_link, generate_short_code, build_carrier_tracking_url
 from app.utils.shortlink import generate_short_link

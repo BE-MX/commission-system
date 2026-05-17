@@ -2,9 +2,8 @@
 
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 
-from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings

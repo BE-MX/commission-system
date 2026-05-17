@@ -1,6 +1,5 @@
 """系统字典 — 业务逻辑层"""
 
-from typing import Optional
 
 from sqlalchemy import case, func
 from sqlalchemy.orm import Session

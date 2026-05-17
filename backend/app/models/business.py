@@ -1,6 +1,6 @@
 """业务库只读映射（跨库查询，不建表）"""
 
-from sqlalchemy import Column, String, Date, DECIMAL, Text, BigInteger
+from sqlalchemy import Column, String, Date, DECIMAL, Text
 from sqlalchemy.orm import DeclarativeBase
 
 from app.core.config import get_settings
@@ -11,7 +11,6 @@ BUSINESS_SCHEMA = settings.BUSINESS_DB_NAME
 
 class BusinessBase(DeclarativeBase):
     """业务库模型的独立 Base，不参与 Alembic 迁移"""
-    pass
 
 
 class UserBasic(BusinessBase):

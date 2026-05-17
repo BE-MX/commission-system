@@ -1,8 +1,8 @@
 """提成批次、提成明细、已同步回款、回款提成状态模型"""
 
 from sqlalchemy import (
-    Column, BigInteger, String, Date, Boolean, DateTime, Enum,
-    DECIMAL, ForeignKey, Index, func,
+    Column, BigInteger, String, Date, DateTime, Enum, DECIMAL,
+    ForeignKey, Index, func,
 )
 from app.core.database import Base
 

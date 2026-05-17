@@ -1,33 +1,18 @@
 """设计预约 — 排期 / 容量 / 不可日 / 调度模式 / 甘特图"""
 
-import logging
 from datetime import date, datetime
-from io import BytesIO
 from typing import Optional
-from urllib.parse import quote
 
-from openpyxl import Workbook
-from openpyxl.styles import Font, Alignment, PatternFill
-from fastapi.responses import StreamingResponse
-from sqlalchemy import and_, func, Integer, case
 from sqlalchemy.orm import Session
 
 from app.design.models import (
-    DesignScheduleRequest,
     DesignScheduleTask,
     DesignDesigner,
     DesignUnavailableDate,
     DesignCapacityConfig,
-    DesignAuditLog,
 )
-from app.design.state_machine import RequestStatus, OperatorRole, transition
-from app.design.conflict_engine import check_conflict, get_scheduling_mode as _get_mode
-from app.design.utils import generate_request_no, generate_task_no
-from app.system.service import get_label_map as _get_dict_map
+from app.design.conflict_engine import get_scheduling_mode as _get_mode
 from app.design.schemas import (
-    DesignRequestCreate,
-    DesignRequestAudit,
-    DesignRequestAction,
     TaskReschedule,
     UnavailableDateCreate,
     CapacityUpdate,

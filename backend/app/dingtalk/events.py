@@ -5,7 +5,6 @@
 """
 
 import logging
-from datetime import date, datetime
 
 from app.dingtalk.webhook import get_webhook_sender
 from app.dingtalk.work_notify import get_work_notifier

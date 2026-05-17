@@ -9,12 +9,8 @@ from app.api.deps import get_db
 from app.auth.dependencies import require_permission
 from app.ai import service
 from app.ai.schemas import (
-    ProviderCreate, ProviderUpdate, Provider, ProviderTestResult,
-    PresetCreate, PresetUpdate, Preset, PresetTestRequest, PresetTestResult,
-    CallLogItem, CallLogDetail, CallLogList,
-    ChatRequest, ChatResponse,
-    DelegateRequest, DelegateResponse,
-    TaskResult,
+    ProviderCreate, ProviderUpdate, PresetCreate, PresetUpdate,
+    PresetTestRequest, ChatRequest, DelegateRequest,
 )
 
 # 所有 AI 端点要求 ai:admin 权限。

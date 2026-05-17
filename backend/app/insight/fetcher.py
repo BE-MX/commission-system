@@ -2,44 +2,17 @@
 
 from __future__ import annotations
 
-import csv
 import html.parser
-import io
 import json
 import logging
-import os
 import re
-import shutil
-import time
 import urllib.error
 import urllib.request
-import uuid
 import xml.etree.ElementTree as ET
-from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Optional
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from sqlalchemy import or_, and_, desc, func
-from sqlalchemy.orm import Session
 
-from app.insight.models import (
-    InsightReport,
-    InsightSource,
-    InsightCase,
-    MeetingMinutes,
-    InsightTask,
-)
-from app.insight.schemas import (
-    ReportImport,
-    SourceCreate,
-    SourceUpdate,
-    CaseManualCreate,
-    CasePublish,
-    CaseUpdate,
-    MinutesUpload,
-    TaskUpdate,
-)
 
 logger = logging.getLogger("insight")
 

@@ -1,6 +1,5 @@
 """设计预约 — API 路由"""
 
-import asyncio
 import logging
 import uuid
 from datetime import date, datetime
@@ -25,11 +24,9 @@ from app.design.schemas import (
 )
 from app.design.models import (
     DesignScheduleRequest, DesignScheduleTask, DesignAuditLog,
-    DesignUnavailableDate, DesignDesigner, DesignCapacityConfig,
-    DesignRequestAttachment,
+    DesignUnavailableDate, DesignDesigner, DesignRequestAttachment,
 )
 from app.design.notifications import (
-    _find_role_dingtalk_ids,
     _fmt_schedule_date,
     _translate_dict_fields,
     _get_designer_name,
@@ -40,8 +37,6 @@ from app.design.notifications import (
     _notify_confirm_to_designer,
     _notify_reschedule_designer_changed,
     _notify_reschedule_date_changed,
-    _PERIOD_LABELS,
-    _ACTION_TITLES,
 )
 
 

@@ -1,7 +1,7 @@
 """设计预约 — 定时任务"""
 
 import logging
-from datetime import date, datetime
+from datetime import date
 
 from app.core.database import SessionLocal
 from app.design.models import DesignScheduleRequest
@@ -48,8 +48,7 @@ async def check_today_shoot_reminders():
             logger.info("今日无需提醒的拍摄预约或排期任务")
             return
 
-        from app.auth.models import ArkUser, ArkRole, ArkUserRole
-        from app.dingtalk.events import notify_design_status_change
+        from app.auth.models import ArkUser
         from app.design.router import _find_role_dingtalk_ids, _translate_dict_fields, _fmt_schedule_date, _get_designer_name
 
         design_ids = _find_role_dingtalk_ids(db, "design_staff")
@@ -76,7 +75,7 @@ async def check_today_shoot_reminders():
             preferred_name = _get_designer_name(db, req.preferred_designer_id) or "随机分配"
 
             from app.dingtalk.work_notify import get_work_notifier
-            from app.dingtalk.events import _build_request_markdown, _PRIORITY_LABELS
+            from app.dingtalk.events import _build_request_markdown
 
             # 区分提醒标题
             if req.status == "pending_design":

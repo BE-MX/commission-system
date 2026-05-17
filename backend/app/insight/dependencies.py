@@ -14,7 +14,7 @@ import logging
 import os
 from typing import Optional
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException
 
 from app.auth.dependencies import get_current_user
 

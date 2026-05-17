@@ -9,7 +9,6 @@ from app.auth.dependencies import get_current_user
 from app.auth.schemas import LoginRequest, LoginResponse, UserInfo, MeResponse, RefreshResponse
 from app.auth.service import (
     authenticate_user,
-    get_user_by_username,
     get_user_roles,
     get_user_permissions,
     refresh_access_token,

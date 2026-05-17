@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from datetime import date
 from typing import Optional
 
@@ -12,17 +11,15 @@ from fastapi import (
     Depends,
     File,
     Form,
-    Header,
     HTTPException,
     Query,
     Response,
     UploadFile,
-    status,
 )
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
-from app.auth.dependencies import get_current_user, require_permission
+from app.auth.dependencies import get_current_user
 from app.insight import service
 from app.insight.schemas import (
     CaseManualCreate,
@@ -37,11 +34,9 @@ from app.insight.schemas import (
 
 logger = logging.getLogger("insight")
 from app.insight.dependencies import (
-    _is_super_admin,
     _has_perm,
     _has_any_perm,
     _require_insight_view,
-    _require_insight_internal,
     _require_insight_admin,
     _verify_import_api_key,
     _serialize_source,

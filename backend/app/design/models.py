@@ -1,6 +1,6 @@
 """设计预约 — SQLAlchemy 数据模型"""
 
-from datetime import datetime, date
+from datetime import datetime
 
 from sqlalchemy import (
     Column, Integer, String, Date, DateTime, Text, JSON, Boolean,

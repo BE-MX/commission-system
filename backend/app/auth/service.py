@@ -2,13 +2,13 @@
 
 from datetime import datetime, timedelta
 
-from sqlalchemy import func, and_
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth.models import ArkUser, ArkLoginLog, ArkRefreshToken
 from app.auth.utils import (
     verify_password, create_access_token, generate_refresh_token,
-    hash_token, hash_password, decode_access_token,
+    hash_token,
 )
 from app.core.config import get_settings
 

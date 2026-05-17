@@ -4,11 +4,10 @@
 """
 
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
@@ -68,7 +67,6 @@ def generate_user_report(db: Session, user_id: int, dingtalk_user_id: str, repor
     dingtalk_user_id: 钉钉用户ID（用于查运单）
     username: 系统用户名（用于 fallback 匹配 dingtalk_user_id 为空的运单）
     """
-    from app.auth.models import ArkUser
 
     seven_days_ago = report_date - timedelta(days=7)
 

@@ -5,7 +5,7 @@ import secrets
 from datetime import datetime, timedelta
 
 import bcrypt as _bcrypt
-from jose import jwt, JWTError
+from jose import jwt
 
 from app.core.config import get_settings
 

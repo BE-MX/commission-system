@@ -3,7 +3,6 @@
 from datetime import date, timedelta
 from typing import Optional, Generator
 
-from sqlalchemy import and_, or_, func
 from sqlalchemy.orm import Session
 
 from app.design.models import (

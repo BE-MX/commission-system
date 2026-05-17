@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
-from app.auth.dependencies import get_current_user, require_permission
+from app.auth.dependencies import require_permission
 from app.stock import service
 from app.stock.schemas import (
     AutoGenerateRequest,

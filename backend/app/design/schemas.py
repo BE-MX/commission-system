@@ -1,7 +1,7 @@
 """设计预约 — Pydantic 数据模式"""
 
 from datetime import date, datetime
-from typing import Optional, Literal, Union
+from typing import Optional, Literal
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
