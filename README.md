@@ -39,26 +39,30 @@ commission-system/
 ├── backend/
 │   ├── app/              # FastAPI 应用
 │   │   ├── core/         # 配置、数据库连接
-│   │   ├── models/       # SQLAlchemy 数据模型
-│   │   ├── schemas/      # Pydantic 验证模型
-│   │   ├── api/          # API 路由
-│   │   ├── services/     # 业务逻辑
-│   │   ├── auth/         # 认证 & RBAC
-│   │   ├── design/       # 设计预约
+│   │   ├── bootstrap/    # 启动期初始化 (DB/规则/seed/static)
+│   │   ├── schedulers/   # APScheduler 注册 (registry + SCHEDULER_ENABLED 开关)
+│   │   ├── routers.py    # 集中注册所有 router
+│   │   ├── models/       # SQLAlchemy 数据模型（共享层）
+│   │   ├── schemas/      # Pydantic 验证模型（共享层）
+│   │   ├── api/          # API 路由（共享层 — 提成/客户/short_link 等）
+│   │   ├── services/     # 业务逻辑（共享层）
+│   │   ├── auth/         # 认证 & RBAC + 权限 helper
+│   │   ├── design/       # 设计预约 (service.py facade + audit_log/request/schedule/stats/import_service)
 │   │   ├── system/       # 系统字典
 │   │   ├── dingtalk/     # 钉钉集成
-│   │   ├── ai/           # AI 接入（Provider/Preset/调用日志）
-│   │   ├── insight/      # 方舟洞见（信源配置/行业日报/案例库/周会纪要）
-│   │   ├── stock/        # 备货管理（安全库存/备货一览/日报/scheduler）
-│   │   └── tracking/     # 物流跟踪（Jinja2 模板）
+│   │   ├── ai/           # AI 接入 (service.py facade + provider/preset/call/log_service + keyring/http_client)
+│   │   ├── insight/      # 方舟洞见 (service.py facade + fetcher + ai_helpers + sources/reports/case_library/meeting_minutes/dashboard_service)
+│   │   ├── stock/        # 备货管理 (service.py facade + constants/sku_query/overview/safety/daily_report_service)
+│   │   └── tracking/     # 物流跟踪 (router + shipment/upload/ocr/polling/staging/daily_report/push_service + carriers/ + status.py + templates/)
 │   ├── alembic/          # 数据库迁移
 │   ├── config/           # 业务规则配置
 │   └── sql/              # DDL 脚本
 ├── frontend/
 │   ├── src/
-│   │   ├── api/          # Axios 请求封装
+│   │   ├── api/          # Axios 请求封装 (createApiClient factory + clients.js)
+│   │   ├── config/       # navigation.js — 路由 + 菜单单一来源
 │   │   ├── views/        # 页面组件（按领域分目录）
-│   │   ├── router/       # Vue Router
+│   │   ├── router/       # Vue Router（从 navigation.js 生成）
 │   │   └── utils/        # 工具函数
 │   └── dist/             # 构建产物
 └── docker-compose.yml
