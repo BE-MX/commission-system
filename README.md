@@ -47,11 +47,11 @@ commission-system/
 │   │   ├── api/          # API 路由（共享层 — 提成/客户/short_link 等）
 │   │   ├── services/     # 业务逻辑（共享层）
 │   │   ├── auth/         # 认证 & RBAC + 权限 helper
-│   │   ├── design/       # 设计预约 (service.py facade + audit_log/request/schedule/stats/import_service)
+│   │   ├── design/       # 设计预约 (service.py facade + audit_log/request/schedule/stats/import_service + notifications.py 钉钉通知 helper)
 │   │   ├── system/       # 系统字典
 │   │   ├── dingtalk/     # 钉钉集成
 │   │   ├── ai/           # AI 接入 (service.py facade + provider/preset/call/log_service + keyring/http_client)
-│   │   ├── insight/      # 方舟洞见 (service.py facade + fetcher + ai_helpers + sources/reports/case_library/meeting_minutes/dashboard_service)
+│   │   ├── insight/      # 方舟洞见 (service.py facade + fetcher + ai_helpers + sources/reports/case_library/meeting_minutes/dashboard_service + dependencies.py)
 │   │   ├── stock/        # 备货管理 (service.py facade + constants/sku_query/overview/safety/daily_report_service)
 │   │   └── tracking/     # 物流跟踪 (router + shipment/upload/ocr/polling/staging/daily_report/push_service + carriers/ + status.py + templates/)
 │   ├── alembic/          # 数据库迁移
@@ -61,7 +61,7 @@ commission-system/
 │   ├── src/
 │   │   ├── api/          # Axios 请求封装 (createApiClient factory + clients.js)
 │   │   ├── config/       # navigation.js — 路由 + 菜单单一来源
-│   │   ├── views/        # 页面组件（按领域分目录）
+│   │   ├── views/        # 页面组件（按领域分目录,大页面拆 composables/use*.js + 必要时 components/*.vue）
 │   │   ├── router/       # Vue Router（从 navigation.js 生成）
 │   │   └── utils/        # 工具函数
 │   └── dist/             # 构建产物
