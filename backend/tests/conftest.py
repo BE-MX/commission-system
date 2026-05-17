@@ -13,6 +13,11 @@ from app.models.customer import CustomerCommissionSnapshot
 from app.models.commission import (
     SyncedPayment, CommissionBatch, CommissionDetail, PaymentCommissionStatus,
 )
+from app.design.models import (
+    DesignDesigner, DesignScheduleRequest, DesignScheduleTask,
+    DesignUnavailableDate, DesignCapacityConfig, DesignAuditLog,
+    DesignRequestSeq, DesignRequestAttachment,
+)
 
 
 # SQLite 不支持 BIGINT 自增，编译时替换为 INTEGER
@@ -32,6 +37,17 @@ def engine():
     @event.listens_for(eng, "connect")
     def _attach(dbapi_conn, _rec):
         dbapi_conn.execute("ATTACH DATABASE ':memory:' AS lsordertest")
+
+    # SQLite 的 index 是全局命名空间(MySQL 是表内),Base 里多张表共用 "idx_status" 这类名字
+    # 会在 create_all 时撞名。仅在测试态把同名 index 在 metadata 层去重(只留首次出现的那个),
+    # 不影响生产模型,也不需要 alembic 迁移。
+    _seen_index_names: set[str] = set()
+    for table in Base.metadata.tables.values():
+        for idx in list(table.indexes):
+            if idx.name in _seen_index_names:
+                table.indexes.discard(idx)
+            else:
+                _seen_index_names.add(idx.name)
 
     Base.metadata.create_all(eng)
 
@@ -245,3 +261,12 @@ def seed_draft_batch(db):
     db.add(batch)
     db.flush()
     return batch
+
+
+@pytest.fixture
+def seed_designer(db):
+    """预填充：一名启用状态的设计师，返回 id"""
+    d = DesignDesigner(name="测试设计师", is_active=True)
+    db.add(d)
+    db.flush()
+    return d
