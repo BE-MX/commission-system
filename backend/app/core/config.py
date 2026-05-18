@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     # ── 短链接 ───────────────────────────────────────────
     SHORT_LINK_BASE_URL: str = "https://leshine.work"
 
+    # ── TFT 备货预测微服务 ────────────────────────────────
+    TFT_SERVICE_ENABLED: bool = False
+    TFT_SERVICE_URL: str = ""
+
     # ── 设计预约模块 ──────────────────────────────────────
     DESIGN_DEFAULT_DAILY_CAPACITY: int = 3
     DESIGN_REQUEST_NO_PREFIX: str = "DSR"

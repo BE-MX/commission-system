@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -98,16 +99,41 @@ def get_report(db: Session, report_id: int) -> InsightReport:
     return r
 
 
+def _extract_body_fragment(html: str) -> str:
+    """若 html 是完整文档，提取 body 内容并移除全局 style，避免 v-html 注入后污染页面样式。"""
+    # 提取 <body>...</body> 内容
+    body_match = re.search(r"<body[^>]*>(.*?)</body>", html, re.DOTALL | re.IGNORECASE)
+    if body_match:
+        fragment = body_match.group(1).strip()
+    else:
+        fragment = html.strip()
+    # 移除残留的 <style>...</style>（防止全局样式污染）
+    fragment = re.sub(r"<style[^>]*>.*?</style>", "", fragment, flags=re.DOTALL | re.IGNORECASE)
+    # 移除其他文档级标签
+    fragment = re.sub(r"</?(html|head|body|!DOCTYPE)[^>]*>", "", fragment, flags=re.IGNORECASE)
+    return fragment.strip()
+
+
 def get_report_html(db: Session, report_id: int) -> str:
-    """获取报告 HTML 内容(优先 html_content,否则读 file_path)。"""
+    """获取报告 HTML 内容(优先 html_content,否则读 file_path)。
+
+    若存储的是完整 HTML 文档，自动提取 body 片段并清理全局 style，
+    防止前端 v-html 注入后污染页面样式。
+    """
     r = get_report(db, report_id)
+    raw = None
     if r.html_content:
-        return r.html_content
-    if r.file_path:
+        raw = r.html_content
+    elif r.file_path:
         p = Path(r.file_path)
         if p.is_file():
-            return p.read_text(encoding="utf-8")
-    raise ValueError("报告内容为空")
+            raw = p.read_text(encoding="utf-8")
+    if not raw:
+        raise ValueError("报告内容为空")
+    # 完整文档检测：含 DOCTYPE 或 <html> 或 <head>
+    if re.search(r"<!DOCTYPE\s+html|<html[\s>]|<head[\s>]", raw, re.IGNORECASE):
+        return _extract_body_fragment(raw)
+    return raw
 
 
 def import_report(db: Session, data: ReportImport, created_by: Optional[int] = None) -> InsightReport:

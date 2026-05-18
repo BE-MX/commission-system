@@ -328,6 +328,10 @@ onMounted(refreshAll)
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   line-height: 1.7;
   color: #1a1a2e;
+  /* 防止 v-html 注入的长文本/URL 撑开或压缩布局 */
+  word-break: break-word;
+  overflow-wrap: break-word;
+  min-width: 0;
 }
 
 /* ── 日报内容样式 ── */
@@ -385,6 +389,9 @@ onMounted(refreshAll)
   padding: 8px 12px;
   text-align: left;
   border-bottom: 1px solid #e2e5ef;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  max-width: 400px;
 }
 .report-html :deep(th) {
   background: #fafbfe;
@@ -417,6 +424,11 @@ onMounted(refreshAll)
   font-size: 11px;
   color: #a0aec0;
   margin-top: 8px;
+  word-break: break-all;
+}
+.report-html :deep(.source a),
+.report-html :deep(.tool-link) {
+  word-break: break-all;
 }
 .report-html :deep(.empty) {
   font-size: 13px;

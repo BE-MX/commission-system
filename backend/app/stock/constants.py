@@ -4,7 +4,9 @@
 TFT 微服务配置可选,默认关闭走公式兜底。
 """
 
-import os
+from app.core.config import get_settings
+
+_settings = get_settings()
 
 # ── 订单口径 (与提成模块一致) ──────────────────────────────
 VALID_ORDER_FILTER = """
@@ -24,8 +26,8 @@ VALID_ORDER_FILTER = """
 """
 
 # ── TFT 配置 ─────────────────────────────────────────────
-TFT_SERVICE_ENABLED = os.environ.get("TFT_SERVICE_ENABLED", "").lower() in {"1", "true", "yes"}
-TFT_SERVICE_URL = os.environ.get("TFT_SERVICE_URL", "")
+TFT_SERVICE_ENABLED = _settings.TFT_SERVICE_ENABLED
+TFT_SERVICE_URL = _settings.TFT_SERVICE_URL
 
 # ── 来源枚举 ─────────────────────────────────────────────
 SOURCE_MANUAL = "manual"

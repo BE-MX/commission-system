@@ -9,11 +9,6 @@ export function getReport(id) {
   return insightApi.get(`/reports/${id}`, { showLoading: false })
 }
 
-export function getReportHtmlUrl(id) {
-  // iframe src 直接绑定该 URL
-  return `/api/insight/reports/${id}/html`
-}
-
 export function getReportHtml(id) {
   return insightApi.get(`/reports/${id}/html`, { showLoading: false, responseType: 'text' })
 }

@@ -41,6 +41,11 @@ def get_overview(
     sort: str = Query("sales_30d", pattern="^(sales_30d|sales_90d|enable_count)$"),
     order: str = Query("desc", pattern="^(desc|asc)$"),
     keyword: Optional[str] = Query(None, max_length=200),
+    model: Optional[str] = Query(None, max_length=100),
+    product_type: Optional[str] = Query(None, max_length=100),
+    size: Optional[str] = Query(None, max_length=100),
+    color: Optional[str] = Query(None, max_length=100),
+    weight: Optional[str] = Query(None, max_length=100),
     db: Session = Depends(get_db),
     _user: dict = Depends(require_permission("stock:read")),
 ):
@@ -54,6 +59,11 @@ def get_overview(
         sort_by=sort,
         order=order,
         keyword=keyword,
+        model=model,
+        product_type=product_type,
+        size=size,
+        color=color,
+        weight=weight,
     )
     return _ok({
         "total": result["total"],
@@ -70,12 +80,25 @@ def get_safety_list(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     keyword: Optional[str] = Query(None, max_length=200),
+    model: Optional[str] = Query(None, max_length=100),
+    product_type: Optional[str] = Query(None, max_length=100),
+    size: Optional[str] = Query(None, max_length=100),
+    color: Optional[str] = Query(None, max_length=100),
+    weight: Optional[str] = Query(None, max_length=100),
     db: Session = Depends(get_db),
     _user: dict = Depends(require_permission("stock:read")),
 ):
     """安全库存列表(用于设置页)"""
     result = service.query_safety_stock_list(
-        db=db, page=page, page_size=page_size, keyword=keyword,
+        db=db,
+        page=page,
+        page_size=page_size,
+        keyword=keyword,
+        model=model,
+        product_type=product_type,
+        size=size,
+        color=color,
+        weight=weight,
     )
     return _ok({
         "total": result["total"],

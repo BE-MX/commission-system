@@ -355,7 +355,7 @@ def list_cases(
     market: Optional[str] = None,
     tag: Optional[str] = None,
     q: Optional[str] = None,
-    sort: str = Query("date", regex="^(date|likes)$"),
+    sort: str = Query("date", pattern="^(date|likes)$"),
     page: int = Query(1, ge=1),
     page_size: int = Query(30, ge=1, le=100),
     db: Session = Depends(get_db),

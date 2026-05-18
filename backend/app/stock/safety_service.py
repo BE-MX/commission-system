@@ -20,11 +20,45 @@ logger = logging.getLogger("stock.safety")
 settings = get_settings()
 
 
+def _name_filter_clauses(
+    model: Optional[str] = None,
+    product_type: Optional[str] = None,
+    size: Optional[str] = None,
+    color: Optional[str] = None,
+    weight: Optional[str] = None,
+) -> tuple[str, dict[str, Any]]:
+    """生成产品型号 + 名称拆分筛选的 SQL 片段与参数。"""
+    clauses: list[str] = []
+    params: dict[str, Any] = {}
+    if model:
+        clauses.append("p.model = :model")
+        params["model"] = model
+    if product_type:
+        clauses.append("SUBSTRING_INDEX(p.name, '/', 1) = :product_type")
+        params["product_type"] = product_type
+    if size:
+        clauses.append("SUBSTRING_INDEX(SUBSTRING_INDEX(p.name, '/', 2), '/', -1) = :size")
+        params["size"] = size
+    if color:
+        clauses.append("SUBSTRING_INDEX(SUBSTRING_INDEX(p.name, '/', -2), '/', 1) = :color")
+        params["color"] = color
+    if weight:
+        clauses.append("SUBSTRING_INDEX(p.name, '/', -1) = :weight")
+        params["weight"] = weight
+    sql = " AND ".join(clauses)
+    return (f"AND {sql}" if sql else ""), params
+
+
 def query_safety_stock_list(
     db: Session,
     page: int = 1,
     page_size: int = 50,
     keyword: Optional[str] = None,
+    model: Optional[str] = None,
+    product_type: Optional[str] = None,
+    size: Optional[str] = None,
+    color: Optional[str] = None,
+    weight: Optional[str] = None,
 ) -> dict:
     """安全库存设置页用,展示 SKU 基本信息 + 当前配置 + 30 天销量(轻量)"""
     business_db = settings.BUSINESS_DB_NAME
@@ -35,12 +69,22 @@ def query_safety_stock_list(
         kw_clause = "AND (p.name LIKE :kw OR p.model LIKE :kw OR p.cn_name LIKE :kw)"
         params["kw"] = f"%{keyword}%"
 
+    name_clause, name_params = _name_filter_clauses(
+        model=model,
+        product_type=product_type,
+        size=size,
+        color=color,
+        weight=weight,
+    )
+    params.update(name_params)
+
     # 先取总数
     count_sql = f"""
         SELECT COUNT(*) AS cnt
         FROM `{business_db}`.okki_products p
         WHERE p.disable_flag = 0
           {kw_clause}
+          {name_clause}
     """
     total = db.execute(text(count_sql), params).scalar() or 0
 
@@ -84,6 +128,7 @@ def query_safety_stock_list(
                ON ss.product_id = p.product_id
         WHERE p.disable_flag = 0
           {kw_clause}
+          {name_clause}
         GROUP BY p.product_id, p.name, p.cn_name, p.model,
                  inv.enable_count,
                  ss.safety_stock, ss.lead_time_days, ss.safety_factor,
@@ -203,7 +248,7 @@ async def get_safety_stock_suggestion(
     product_id: int,
     lead_time_days: int,
     safety_factor: float,
-    history_days: int = 30,
+    history_days: int = 90,
 ) -> dict:
     """
     单 SKU 安全库存建议。
@@ -263,7 +308,7 @@ async def batch_generate_suggestions(
     product_ids: Optional[list[int]],
     lead_time_days: int,
     safety_factor: float,
-    history_days: int = 30,
+    history_days: int = 90,
 ) -> dict:
     """
     批量生成。product_ids=None 时查全部启用产品。

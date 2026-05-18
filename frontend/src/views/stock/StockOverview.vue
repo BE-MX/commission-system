@@ -41,36 +41,58 @@
     <div class="toolbar-card">
       <div class="filter-row">
         <div class="filter-group">
-          <span class="filter-label">状态筛选</span>
-          <el-select v-model="filters.status" multiple placeholder="全部状态" collapse-tags collapse-tags-tooltip style="width:180px" clearable>
-            <el-option label="紧缺" value="shortage">
-              <el-tag size="small" type="danger" style="margin-right:6px">●</el-tag> 紧缺
-            </el-option>
-            <el-option label="预警" value="warning">
-              <el-tag size="small" type="warning" style="margin-right:6px">●</el-tag> 预警
-            </el-option>
-            <el-option label="充足" value="sufficient">
-              <el-tag size="small" type="success" style="margin-right:6px">●</el-tag> 充足
-            </el-option>
-            <el-option label="未设置" value="unset">
-              <el-tag size="small" type="info" style="margin-right:6px">●</el-tag> 未设置
-            </el-option>
+          <span class="filter-label">状态</span>
+          <el-select v-model="filters.status" multiple placeholder="全部状态" collapse-tags collapse-tags-tooltip style="width:150px" clearable>
+            <el-option label="紧缺" value="shortage"><el-tag size="small" type="danger" style="margin-right:6px">●</el-tag>紧缺</el-option>
+            <el-option label="预警" value="warning"><el-tag size="small" type="warning" style="margin-right:6px">●</el-tag>预警</el-option>
+            <el-option label="充足" value="sufficient"><el-tag size="small" type="success" style="margin-right:6px">●</el-tag>充足</el-option>
+            <el-option label="未设置" value="unset"><el-tag size="small" type="info" style="margin-right:6px">●</el-tag>未设置</el-option>
+          </el-select>
+        </div>
+        <div class="filter-group">
+          <span class="filter-label">型号</span>
+          <el-select v-model="filters.model" placeholder="全部型号" clearable filterable style="width:130px">
+            <el-option v-for="m in filterOptions.models" :key="m" :label="m" :value="m" />
+          </el-select>
+        </div>
+        <div class="filter-group">
+          <span class="filter-label">类型</span>
+          <el-select v-model="filters.product_type" placeholder="全部类型" clearable filterable style="width:130px">
+            <el-option v-for="t in filterOptions.types" :key="t" :label="t" :value="t" />
+          </el-select>
+        </div>
+        <div class="filter-group">
+          <span class="filter-label">尺寸</span>
+          <el-select v-model="filters.size" placeholder="全部尺寸" clearable filterable style="width:110px">
+            <el-option v-for="s in filterOptions.sizes" :key="s" :label="s" :value="s" />
+          </el-select>
+        </div>
+        <div class="filter-group">
+          <span class="filter-label">颜色</span>
+          <el-select v-model="filters.color" placeholder="全部颜色" clearable filterable style="width:100px">
+            <el-option v-for="c in filterOptions.colors" :key="c" :label="c" :value="c" />
+          </el-select>
+        </div>
+        <div class="filter-group">
+          <span class="filter-label">克重</span>
+          <el-select v-model="filters.weight" placeholder="全部克重" clearable filterable style="width:110px">
+            <el-option v-for="w in filterOptions.weights" :key="w" :label="w" :value="w" />
           </el-select>
         </div>
         <div class="filter-group">
           <span class="filter-label">排序</span>
-          <el-select v-model="filters.sortField" style="width:140px">
+          <el-select v-model="filters.sortField" style="width:120px">
             <el-option label="近30天销量" value="sales_30d" />
             <el-option label="近90天销量" value="sales_90d" />
             <el-option label="可用库存" value="enable_count" />
           </el-select>
-          <el-select v-model="filters.sortOrder" style="width:100px;margin-left:6px">
+          <el-select v-model="filters.sortOrder" style="width:90px;margin-left:6px">
             <el-option label="降序" value="desc" />
             <el-option label="升序" value="asc" />
           </el-select>
         </div>
         <div class="filter-group">
-          <el-input v-model="filters.keyword" placeholder="搜索产品名或型号" :prefix-icon="Search" clearable style="width:240px" @input="handleSearch" />
+          <el-input v-model="filters.keyword" placeholder="搜索产品名或型号" :prefix-icon="Search" clearable style="width:200px" @input="handleSearch" />
         </div>
         <el-button type="primary" @click="applyFilters">
           <el-icon><Filter /></el-icon> 筛选
@@ -85,16 +107,20 @@
     <div class="card">
       <el-table :data="tableData" style="width:100%" :header-cell-style="headerStyle" v-loading="loading" stripe
         :row-class-name="rowClassName">
-        <el-table-column type="index" label="#" width="60" align="center" />
-        <el-table-column label="产品名" min-width="180" show-overflow-tooltip>
-          <template #default="{ row }">
-            <div class="product-name-cell">
-              <div class="product-name">{{ row.product_name }}</div>
-              <div class="product-id">ID: {{ row.product_id }}</div>
-            </div>
-          </template>
+        <el-table-column type="index" label="#" width="50" align="center" />
+        <el-table-column label="型号" prop="model" min-width="120" show-overflow-tooltip />
+        <el-table-column label="类型" min-width="100" show-overflow-tooltip>
+          <template #default="{ row }">{{ parseProductName(row.product_name).type }}</template>
         </el-table-column>
-        <el-table-column label="型号" prop="model" min-width="130" show-overflow-tooltip />
+        <el-table-column label="尺寸" min-width="100" show-overflow-tooltip>
+          <template #default="{ row }">{{ parseProductName(row.product_name).size }}</template>
+        </el-table-column>
+        <el-table-column label="颜色" min-width="90" show-overflow-tooltip>
+          <template #default="{ row }">{{ parseProductName(row.product_name).color }}</template>
+        </el-table-column>
+        <el-table-column label="克重" min-width="90" show-overflow-tooltip>
+          <template #default="{ row }">{{ parseProductName(row.product_name).weight }}</template>
+        </el-table-column>
         <el-table-column label="30天销量" width="100" align="center">
           <template #default="{ row }"><span class="value-gold">{{ row.sales_30d }}</span></template>
         </el-table-column>
@@ -146,7 +172,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   WarningFilled, Timer, CircleCheckFilled, QuestionFilled,
@@ -158,7 +184,51 @@ const loading = ref(false)
 const tableData = ref([])
 const summary = reactive({ shortage_count: 0, warning_count: 0, sufficient_count: 0, unset_count: 0 })
 const pagination = reactive({ total: 0, page: 1, page_size: 20 })
-const filters = reactive({ status: [], sortField: 'sales_30d', sortOrder: 'desc', keyword: '' })
+const filters = reactive({
+  status: [],
+  sortField: 'sales_30d',
+  sortOrder: 'desc',
+  keyword: '',
+  model: '',
+  product_type: '',
+  size: '',
+  color: '',
+  weight: '',
+})
+
+const filterOptions = computed(() => {
+  const models = new Set()
+  const types = new Set()
+  const sizes = new Set()
+  const colors = new Set()
+  const weights = new Set()
+  for (const row of tableData.value) {
+    if (row.model) models.add(row.model)
+    const parsed = parseProductName(row.product_name)
+    if (parsed.type) types.add(parsed.type)
+    if (parsed.size) sizes.add(parsed.size)
+    if (parsed.color) colors.add(parsed.color)
+    if (parsed.weight) weights.add(parsed.weight)
+  }
+  return {
+    models: Array.from(models).sort(),
+    types: Array.from(types).sort(),
+    sizes: Array.from(sizes).sort(),
+    colors: Array.from(colors).sort(),
+    weights: Array.from(weights).sort(),
+  }
+})
+
+function parseProductName(name) {
+  if (!name) return { type: '', size: '', color: '', weight: '' }
+  const parts = name.split('/')
+  return {
+    type: parts[0] || '',
+    size: parts[1] || '',
+    color: parts[2] || '',
+    weight: parts[3] || '',
+  }
+}
 
 const statusTagType = (s) => ({ shortage: 'danger', warning: 'warning', sufficient: 'success', unset: 'info' })[s] || 'info'
 const statusLabel = (s) => ({ shortage: '紧缺', warning: '预警', sufficient: '充足', unset: '未设置' })[s] || s
@@ -191,6 +261,11 @@ async function loadData() {
       sort: filters.sortField,
       order: filters.sortOrder,
       keyword: filters.keyword || undefined,
+      model: filters.model || undefined,
+      product_type: filters.product_type || undefined,
+      size: filters.size || undefined,
+      color: filters.color || undefined,
+      weight: filters.weight || undefined,
     })
     const d = res.data
     tableData.value = d.items || []
@@ -217,6 +292,11 @@ function resetFilters() {
   filters.sortField = 'sales_30d'
   filters.sortOrder = 'desc'
   filters.keyword = ''
+  filters.model = ''
+  filters.product_type = ''
+  filters.size = ''
+  filters.color = ''
+  filters.weight = ''
   pagination.page = 1
   loadData()
   ElMessage.info('已重置筛选条件')
@@ -260,9 +340,6 @@ onMounted(loadData)
 /* 卡片和表格 */
 .card { background: #ffffff; border-radius: 16px; padding: 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
 .pagination-bar { margin-top: 16px; display: flex; justify-content: flex-end; }
-.product-name-cell { display: flex; flex-direction: column; }
-.product-name { font-weight: 500; color: #1e1e2d; font-size: 14px; }
-.product-id { font-size: 12px; color: #999; margin-top: 2px; }
 .value-gold { color: #d4af6e; font-weight: 600; }
 .value-danger { color: #e74c3c; font-weight: 600; }
 .text-muted { color: #ccc; }

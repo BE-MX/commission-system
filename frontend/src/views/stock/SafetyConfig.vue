@@ -62,19 +62,42 @@
           <span class="toolbar-title">SKU 安全库存配置</span>
           <el-tag size="small" type="info">共 {{ pagination.total }} 条</el-tag>
         </div>
-        <el-input v-model="keyword" placeholder="搜索产品名或型号" :prefix-icon="Search" clearable style="width:220px" @input="handleSearch" />
+        <div class="toolbar-filters">
+          <el-select v-model="filters.model" placeholder="型号" clearable filterable style="width:120px">
+            <el-option v-for="m in filterOptions.models" :key="m" :label="m" :value="m" />
+          </el-select>
+          <el-select v-model="filters.product_type" placeholder="类型" clearable filterable style="width:120px">
+            <el-option v-for="t in filterOptions.types" :key="t" :label="t" :value="t" />
+          </el-select>
+          <el-select v-model="filters.size" placeholder="尺寸" clearable filterable style="width:100px">
+            <el-option v-for="s in filterOptions.sizes" :key="s" :label="s" :value="s" />
+          </el-select>
+          <el-select v-model="filters.color" placeholder="颜色" clearable filterable style="width:90px">
+            <el-option v-for="c in filterOptions.colors" :key="c" :label="c" :value="c" />
+          </el-select>
+          <el-select v-model="filters.weight" placeholder="克重" clearable filterable style="width:100px">
+            <el-option v-for="w in filterOptions.weights" :key="w" :label="w" :value="w" />
+          </el-select>
+          <el-input v-model="filters.keyword" placeholder="搜索产品名或型号" :prefix-icon="Search" clearable style="width:180px" @input="handleSearch" />
+          <el-button type="primary" size="small" @click="applyFilters"><el-icon><Filter /></el-icon>筛选</el-button>
+          <el-button size="small" @click="resetFilters">重置</el-button>
+        </div>
       </div>
       <el-table :data="tableData" style="width:100%" :header-cell-style="headerStyle" v-loading="loading">
-        <el-table-column type="index" label="#" width="60" align="center" />
-        <el-table-column label="产品名" min-width="180" show-overflow-tooltip>
-          <template #default="{ row }">
-            <div class="product-name-cell">
-              <div class="product-name">{{ row.product_name }}</div>
-              <div class="product-id">ID: {{ row.product_id }}</div>
-            </div>
-          </template>
-        </el-table-column>
+        <el-table-column type="index" label="#" width="50" align="center" />
         <el-table-column label="型号" prop="model" min-width="120" show-overflow-tooltip />
+        <el-table-column label="类型" min-width="100" show-overflow-tooltip>
+          <template #default="{ row }">{{ parseProductName(row.product_name).type }}</template>
+        </el-table-column>
+        <el-table-column label="尺寸" min-width="100" show-overflow-tooltip>
+          <template #default="{ row }">{{ parseProductName(row.product_name).size }}</template>
+        </el-table-column>
+        <el-table-column label="颜色" min-width="90" show-overflow-tooltip>
+          <template #default="{ row }">{{ parseProductName(row.product_name).color }}</template>
+        </el-table-column>
+        <el-table-column label="克重" min-width="90" show-overflow-tooltip>
+          <template #default="{ row }">{{ parseProductName(row.product_name).weight }}</template>
+        </el-table-column>
         <el-table-column label="近30日销量" width="110" align="center">
           <template #default="{ row }">
             <span class="sales-value">{{ row.sales_30d || 0 }}</span><span class="sales-unit">件</span>
@@ -158,7 +181,7 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  Setting, MagicStick, Check, Search, QuestionFilled, InfoFilled,
+  Setting, MagicStick, Check, Search, Filter, RefreshRight, QuestionFilled, InfoFilled,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { getSafetyList, saveSafetyStock, autoGenerateSafety } from '@/api/stock'
@@ -168,9 +191,51 @@ const authStore = useAuthStore()
 const loading = ref(false)
 const saveLoading = ref(false)
 const aiLoading = ref(false)
-const keyword = ref('')
 const tableData = ref([])
 const pagination = reactive({ total: 0, page: 1, page_size: 20 })
+
+const filters = reactive({
+  keyword: '',
+  model: '',
+  product_type: '',
+  size: '',
+  color: '',
+  weight: '',
+})
+
+function parseProductName(name) {
+  if (!name) return { type: '', size: '', color: '', weight: '' }
+  const parts = name.split('/')
+  return {
+    type: parts[0] || '',
+    size: parts[1] || '',
+    color: parts[2] || '',
+    weight: parts[3] || '',
+  }
+}
+
+const filterOptions = computed(() => {
+  const models = new Set()
+  const types = new Set()
+  const sizes = new Set()
+  const colors = new Set()
+  const weights = new Set()
+  for (const row of tableData.value) {
+    if (row.model) models.add(row.model)
+    const parsed = parseProductName(row.product_name)
+    if (parsed.type) types.add(parsed.type)
+    if (parsed.size) sizes.add(parsed.size)
+    if (parsed.color) colors.add(parsed.color)
+    if (parsed.weight) weights.add(parsed.weight)
+  }
+  return {
+    models: Array.from(models).sort(),
+    types: Array.from(types).sort(),
+    sizes: Array.from(sizes).sort(),
+    colors: Array.from(colors).sort(),
+    weights: Array.from(weights).sort(),
+  }
+})
 
 const aiDialogVisible = ref(false)
 const aiSuggestion = ref(null)
@@ -203,7 +268,12 @@ async function loadData() {
     const res = await getSafetyList({
       page: pagination.page,
       page_size: pagination.page_size,
-      keyword: keyword.value || undefined,
+      keyword: filters.keyword || undefined,
+      model: filters.model || undefined,
+      product_type: filters.product_type || undefined,
+      size: filters.size || undefined,
+      color: filters.color || undefined,
+      weight: filters.weight || undefined,
     })
     const d = res.data
     tableData.value = (d.items || []).map(i => ({ ...i, _dirty: false, _aiGenerated: false, aiLoading: false }))
@@ -217,6 +287,22 @@ let searchTimer = null
 function handleSearch() {
   if (searchTimer) clearTimeout(searchTimer)
   searchTimer = setTimeout(() => { pagination.page = 1; loadData() }, 400)
+}
+
+function applyFilters() {
+  pagination.page = 1
+  loadData()
+}
+
+function resetFilters() {
+  filters.keyword = ''
+  filters.model = ''
+  filters.product_type = ''
+  filters.size = ''
+  filters.color = ''
+  filters.weight = ''
+  pagination.page = 1
+  loadData()
 }
 
 async function aiGenerateSingle(row) {
@@ -358,9 +444,7 @@ onMounted(loadData)
 .table-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .toolbar-left { display: flex; align-items: center; gap: 10px; }
 .toolbar-title { font-size: 16px; font-weight: 600; color: #1e1e2d; }
-.product-name-cell { display: flex; flex-direction: column; }
-.product-name { font-weight: 500; color: #1e1e2d; font-size: 14px; }
-.product-id { font-size: 12px; color: #999; margin-top: 2px; }
+.toolbar-filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .sales-value { font-weight: 600; color: #1e1e2d; }
 .sales-unit { font-size: 12px; color: #999; margin-left: 2px; }
 .stock-value { font-weight: 600; font-size: 15px; }
