@@ -2,8 +2,10 @@
 
 from typing import Optional
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.stock.sku_query import query_all_sku_status
 
 
@@ -90,3 +92,72 @@ def query_stock_overview(
     items = all_items[start:start + page_size]
 
     return {"total": total, "summary": summary, "items": items}
+
+
+def get_filter_options(db: Session) -> dict:
+    """返回所有启用产品的筛选维度可选值(model/type/size/color/weight)。"""
+    settings = get_settings()
+    business_db = settings.BUSINESS_DB_NAME
+
+    # model
+    model_rows = db.execute(
+        text(f"""
+            SELECT DISTINCT model
+            FROM `{business_db}`.okki_products
+            WHERE disable_flag = 0 AND model IS NOT NULL AND model != ''
+            ORDER BY model
+        """)
+    ).all()
+    models = [r[0] for r in model_rows]
+
+    # type: SUBSTRING_INDEX(name, '/', 1)
+    type_rows = db.execute(
+        text(f"""
+            SELECT DISTINCT SUBSTRING_INDEX(name, '/', 1) AS val
+            FROM `{business_db}`.okki_products
+            WHERE disable_flag = 0 AND name LIKE '%/%'
+            ORDER BY val
+        """)
+    ).all()
+    types = [r[0] for r in type_rows if r[0]]
+
+    # size: SUBSTRING_INDEX(SUBSTRING_INDEX(name, '/', 2), '/', -1)
+    size_rows = db.execute(
+        text(f"""
+            SELECT DISTINCT SUBSTRING_INDEX(SUBSTRING_INDEX(name, '/', 2), '/', -1) AS val
+            FROM `{business_db}`.okki_products
+            WHERE disable_flag = 0 AND name LIKE '%/%/%'
+            ORDER BY val
+        """)
+    ).all()
+    sizes = [r[0] for r in size_rows if r[0]]
+
+    # color: SUBSTRING_INDEX(SUBSTRING_INDEX(name, '/', -2), '/', 1)
+    color_rows = db.execute(
+        text(f"""
+            SELECT DISTINCT SUBSTRING_INDEX(SUBSTRING_INDEX(name, '/', -2), '/', 1) AS val
+            FROM `{business_db}`.okki_products
+            WHERE disable_flag = 0 AND name LIKE '%/%/%/%'
+            ORDER BY val
+        """)
+    ).all()
+    colors = [r[0] for r in color_rows if r[0]]
+
+    # weight: SUBSTRING_INDEX(name, '/', -1)
+    weight_rows = db.execute(
+        text(f"""
+            SELECT DISTINCT SUBSTRING_INDEX(name, '/', -1) AS val
+            FROM `{business_db}`.okki_products
+            WHERE disable_flag = 0 AND name LIKE '%/%'
+            ORDER BY val
+        """)
+    ).all()
+    weights = [r[0] for r in weight_rows if r[0]]
+
+    return {
+        "models": models,
+        "types": types,
+        "sizes": sizes,
+        "colors": colors,
+        "weights": weights,
+    }

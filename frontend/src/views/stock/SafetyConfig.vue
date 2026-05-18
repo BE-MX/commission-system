@@ -184,7 +184,7 @@ import {
   Setting, MagicStick, Check, Search, Filter, RefreshRight, QuestionFilled, InfoFilled,
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
-import { getSafetyList, saveSafetyStock, autoGenerateSafety } from '@/api/stock'
+import { getSafetyList, saveSafetyStock, autoGenerateSafety, getFilterOptions } from '@/api/stock'
 
 const authStore = useAuthStore()
 
@@ -214,28 +214,9 @@ function parseProductName(name) {
   }
 }
 
-const filterOptions = computed(() => {
-  const models = new Set()
-  const types = new Set()
-  const sizes = new Set()
-  const colors = new Set()
-  const weights = new Set()
-  for (const row of tableData.value) {
-    if (row.model) models.add(row.model)
-    const parsed = parseProductName(row.product_name)
-    if (parsed.type) types.add(parsed.type)
-    if (parsed.size) sizes.add(parsed.size)
-    if (parsed.color) colors.add(parsed.color)
-    if (parsed.weight) weights.add(parsed.weight)
-  }
-  return {
-    models: Array.from(models).sort(),
-    types: Array.from(types).sort(),
-    sizes: Array.from(sizes).sort(),
-    colors: Array.from(colors).sort(),
-    weights: Array.from(weights).sort(),
-  }
-})
+const allFilterOptions = ref({ models: [], types: [], sizes: [], colors: [], weights: [] })
+
+const filterOptions = computed(() => allFilterOptions.value)
 
 const aiDialogVisible = ref(false)
 const aiSuggestion = ref(null)
@@ -417,7 +398,27 @@ async function saveAll() {
   }
 }
 
-onMounted(loadData)
+async function loadFilterOptions() {
+  try {
+    const res = await getFilterOptions()
+    if (res.data) {
+      allFilterOptions.value = {
+        models: res.data.models || [],
+        types: res.data.types || [],
+        sizes: res.data.sizes || [],
+        colors: res.data.colors || [],
+        weights: res.data.weights || [],
+      }
+    }
+  } catch (e) {
+    console.warn('加载筛选选项失败:', e)
+  }
+}
+
+onMounted(() => {
+  loadData()
+  loadFilterOptions()
+})
 </script>
 
 <style scoped>

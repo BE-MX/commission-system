@@ -5,6 +5,11 @@ export function getStockOverview(params) {
   return stockApi.get('/overview', { params, showLoading: false })
 }
 
+// ── 筛选维度可选值(全部产品) ────────────────────────────
+export function getFilterOptions() {
+  return stockApi.get('/filter-options', { showLoading: false })
+}
+
 // ── 安全库存列表 ────────────────────────────────────────
 export function getSafetyList(params) {
   return stockApi.get('/safety', { params, showLoading: false })

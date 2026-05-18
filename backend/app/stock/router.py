@@ -183,6 +183,17 @@ async def tft_predict(
     return _ok(result)
 
 
+# ── GET /filter-options ────────────────────────────────
+@router.get("/filter-options")
+def get_filter_options(
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("stock:read")),
+):
+    """全部产品的筛选维度可选值(型号/类型/尺寸/颜色/克重)"""
+    opts = service.get_filter_options(db=db)
+    return _ok(opts)
+
+
 # ── GET /daily-report ──────────────────────────────────
 @router.get("/daily-report")
 def get_latest_daily_report(
