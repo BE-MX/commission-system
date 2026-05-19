@@ -51,31 +51,31 @@
         </div>
         <div class="filter-group">
           <span class="filter-label">型号</span>
-          <el-select v-model="filters.model" placeholder="全部型号" clearable filterable style="width:130px">
+          <el-select v-model="filters.model" multiple placeholder="全部型号" clearable filterable style="width:140px">
             <el-option v-for="m in filterOptions.models" :key="m" :label="m" :value="m" />
           </el-select>
         </div>
         <div class="filter-group">
           <span class="filter-label">类型</span>
-          <el-select v-model="filters.product_type" placeholder="全部类型" clearable filterable style="width:130px">
+          <el-select v-model="filters.product_type" multiple placeholder="全部类型" clearable filterable style="width:140px">
             <el-option v-for="t in filterOptions.types" :key="t" :label="t" :value="t" />
           </el-select>
         </div>
         <div class="filter-group">
           <span class="filter-label">尺寸</span>
-          <el-select v-model="filters.size" placeholder="全部尺寸" clearable filterable style="width:110px">
+          <el-select v-model="filters.size" multiple placeholder="全部尺寸" clearable filterable style="width:120px">
             <el-option v-for="s in filterOptions.sizes" :key="s" :label="s" :value="s" />
           </el-select>
         </div>
         <div class="filter-group">
           <span class="filter-label">颜色</span>
-          <el-select v-model="filters.color" placeholder="全部颜色" clearable filterable style="width:100px">
+          <el-select v-model="filters.color" multiple placeholder="全部颜色" clearable filterable style="width:120px">
             <el-option v-for="c in filterOptions.colors" :key="c" :label="c" :value="c" />
           </el-select>
         </div>
         <div class="filter-group">
           <span class="filter-label">克重</span>
-          <el-select v-model="filters.weight" placeholder="全部克重" clearable filterable style="width:110px">
+          <el-select v-model="filters.weight" multiple placeholder="全部克重" clearable filterable style="width:120px">
             <el-option v-for="w in filterOptions.weights" :key="w" :label="w" :value="w" />
           </el-select>
         </div>
@@ -189,11 +189,11 @@ const filters = reactive({
   sortField: 'sales_30d',
   sortOrder: 'desc',
   keyword: '',
-  model: '',
-  product_type: '',
-  size: '',
-  color: '',
-  weight: '',
+  model: [],
+  product_type: [],
+  size: [],
+  color: [],
+  weight: [],
 })
 
 const allFilterOptions = ref({ models: [], types: [], sizes: [], colors: [], weights: [] })
@@ -244,11 +244,11 @@ async function loadData() {
       sort: filters.sortField,
       order: filters.sortOrder,
       keyword: filters.keyword || undefined,
-      model: filters.model || undefined,
-      product_type: filters.product_type || undefined,
-      size: filters.size || undefined,
-      color: filters.color || undefined,
-      weight: filters.weight || undefined,
+      model: filters.model.length ? filters.model.join(',') : undefined,
+      product_type: filters.product_type.length ? filters.product_type.join(',') : undefined,
+      size: filters.size.length ? filters.size.join(',') : undefined,
+      color: filters.color.length ? filters.color.join(',') : undefined,
+      weight: filters.weight.length ? filters.weight.join(',') : undefined,
     })
     const d = res.data
     tableData.value = d.items || []
@@ -275,11 +275,11 @@ function resetFilters() {
   filters.sortField = 'sales_30d'
   filters.sortOrder = 'desc'
   filters.keyword = ''
-  filters.model = ''
-  filters.product_type = ''
-  filters.size = ''
-  filters.color = ''
-  filters.weight = ''
+  filters.model = []
+  filters.product_type = []
+  filters.size = []
+  filters.color = []
+  filters.weight = []
   pagination.page = 1
   loadData()
   ElMessage.info('已重置筛选条件')

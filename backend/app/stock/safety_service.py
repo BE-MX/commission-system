@@ -20,6 +20,25 @@ logger = logging.getLogger("stock.safety")
 settings = get_settings()
 
 
+def _add_in_clause(
+    field_expr: str,
+    param_prefix: str,
+    raw_value: Optional[str],
+    clauses: list[str],
+    params: dict[str, Any],
+) -> None:
+    """辅助: 将逗号分隔值转为 SQL IN 子句。"""
+    if not raw_value:
+        return
+    vals = [v for v in raw_value.split(",") if v]
+    if not vals:
+        return
+    placeholders = ",".join(f":{param_prefix}{i}" for i in range(len(vals)))
+    clauses.append(f"{field_expr} IN ({placeholders})")
+    for i, v in enumerate(vals):
+        params[f"{param_prefix}{i}"] = v
+
+
 def _name_filter_clauses(
     model: Optional[str] = None,
     product_type: Optional[str] = None,
@@ -27,35 +46,28 @@ def _name_filter_clauses(
     color: Optional[str] = None,
     weight: Optional[str] = None,
 ) -> tuple[str, dict[str, Any]]:
-    """生成产品型号 + 名称拆分筛选的 SQL 片段与参数。"""
+    """生成产品型号 + 名称拆分筛选的 SQL 片段与参数。支持逗号分隔多选。"""
     clauses: list[str] = []
     params: dict[str, Any] = {}
-    if model:
-        clauses.append("p.model = :model")
-        params["model"] = model
-    if product_type:
-        clauses.append("SUBSTRING_INDEX(p.name, '/', 1) = :product_type")
-        params["product_type"] = product_type
-    if size:
-        clauses.append("SUBSTRING_INDEX(SUBSTRING_INDEX(p.name, '/', 2), '/', -1) = :size")
-        params["size"] = size
-    if color:
-        clauses.append("""
-            CASE
-                WHEN (LENGTH(p.name) - LENGTH(REPLACE(p.name, '/', '')) + 1) >= 5
-                     AND SUBSTRING_INDEX(SUBSTRING_INDEX(p.name, '/', -3), '/', 1) LIKE '#%'
-                THEN CONCAT(
-                    SUBSTRING_INDEX(SUBSTRING_INDEX(p.name, '/', -3), '/', 1),
-                    '/',
-                    SUBSTRING_INDEX(SUBSTRING_INDEX(p.name, '/', -2), '/', 1)
-                )
-                ELSE SUBSTRING_INDEX(SUBSTRING_INDEX(p.name, '/', -2), '/', 1)
-            END = :color
-        """.strip())
-        params["color"] = color
-    if weight:
-        clauses.append("SUBSTRING_INDEX(p.name, '/', -1) = :weight")
-        params["weight"] = weight
+    _add_in_clause("p.model", "m", model, clauses, params)
+    _add_in_clause("SUBSTRING_INDEX(p.name, '/', 1)", "t", product_type, clauses, params)
+    _add_in_clause(
+        "SUBSTRING_INDEX(SUBSTRING_INDEX(p.name, '/', 2), '/', -1)", "s", size, clauses, params
+    )
+    _add_in_clause(
+        """CASE
+            WHEN (LENGTH(p.name) - LENGTH(REPLACE(p.name, '/', '')) + 1) >= 5
+                 AND SUBSTRING_INDEX(SUBSTRING_INDEX(p.name, '/', -3), '/', 1) LIKE '#%'
+            THEN CONCAT(
+                SUBSTRING_INDEX(SUBSTRING_INDEX(p.name, '/', -3), '/', 1),
+                '/',
+                SUBSTRING_INDEX(SUBSTRING_INDEX(p.name, '/', -2), '/', 1)
+            )
+            ELSE SUBSTRING_INDEX(SUBSTRING_INDEX(p.name, '/', -2), '/', 1)
+        END""",
+        "c", color, clauses, params
+    )
+    _add_in_clause("SUBSTRING_INDEX(p.name, '/', -1)", "w", weight, clauses, params)
     sql = " AND ".join(clauses)
     return (f"AND {sql}" if sql else ""), params
 

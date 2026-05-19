@@ -68,28 +68,33 @@ def query_stock_overview(
     if status_filter:
         all_items = [it for it in all_items if it["status"] in status_filter]
 
-    # 型号/类型/尺寸/颜色/克重 筛选
-    if model:
-        all_items = [it for it in all_items if it.get("model") == model]
-    if product_type:
+    # 型号/类型/尺寸/颜色/克重 筛选（逗号分隔多选）
+    model_list = [m for m in (model or "").split(",") if m] or None
+    if model_list:
+        all_items = [it for it in all_items if it.get("model") in model_list]
+    type_list = [t for t in (product_type or "").split(",") if t] or None
+    if type_list:
         all_items = [
             it for it in all_items
-            if _parse_name(it.get("product_name", ""))["type"] == product_type
+            if _parse_name(it.get("product_name", ""))["type"] in type_list
         ]
-    if size:
+    size_list = [s for s in (size or "").split(",") if s] or None
+    if size_list:
         all_items = [
             it for it in all_items
-            if _parse_name(it.get("product_name", ""))["size"] == size
+            if _parse_name(it.get("product_name", ""))["size"] in size_list
         ]
-    if color:
+    color_list = [c for c in (color or "").split(",") if c] or None
+    if color_list:
         all_items = [
             it for it in all_items
-            if _parse_name(it.get("product_name", ""))["color"] == color
+            if _parse_name(it.get("product_name", ""))["color"] in color_list
         ]
-    if weight:
+    weight_list = [w for w in (weight or "").split(",") if w] or None
+    if weight_list:
         all_items = [
             it for it in all_items
-            if _parse_name(it.get("product_name", ""))["weight"] == weight
+            if _parse_name(it.get("product_name", ""))["weight"] in weight_list
         ]
 
     # 排序

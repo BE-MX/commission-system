@@ -63,19 +63,19 @@
           <el-tag size="small" type="info">共 {{ pagination.total }} 条</el-tag>
         </div>
         <div class="toolbar-filters">
-          <el-select v-model="filters.model" placeholder="型号" clearable filterable style="width:120px">
+          <el-select v-model="filters.model" multiple placeholder="型号" clearable filterable style="width:140px">
             <el-option v-for="m in filterOptions.models" :key="m" :label="m" :value="m" />
           </el-select>
-          <el-select v-model="filters.product_type" placeholder="类型" clearable filterable style="width:120px">
+          <el-select v-model="filters.product_type" multiple placeholder="类型" clearable filterable style="width:140px">
             <el-option v-for="t in filterOptions.types" :key="t" :label="t" :value="t" />
           </el-select>
-          <el-select v-model="filters.size" placeholder="尺寸" clearable filterable style="width:100px">
+          <el-select v-model="filters.size" multiple placeholder="尺寸" clearable filterable style="width:120px">
             <el-option v-for="s in filterOptions.sizes" :key="s" :label="s" :value="s" />
           </el-select>
-          <el-select v-model="filters.color" placeholder="颜色" clearable filterable style="width:90px">
+          <el-select v-model="filters.color" multiple placeholder="颜色" clearable filterable style="width:120px">
             <el-option v-for="c in filterOptions.colors" :key="c" :label="c" :value="c" />
           </el-select>
-          <el-select v-model="filters.weight" placeholder="克重" clearable filterable style="width:100px">
+          <el-select v-model="filters.weight" multiple placeholder="克重" clearable filterable style="width:120px">
             <el-option v-for="w in filterOptions.weights" :key="w" :label="w" :value="w" />
           </el-select>
           <el-input v-model="filters.keyword" placeholder="搜索产品名或型号" :prefix-icon="Search" clearable style="width:180px" @input="handleSearch" />
@@ -196,11 +196,11 @@ const pagination = reactive({ total: 0, page: 1, page_size: 20 })
 
 const filters = reactive({
   keyword: '',
-  model: '',
-  product_type: '',
-  size: '',
-  color: '',
-  weight: '',
+  model: [],
+  product_type: [],
+  size: [],
+  color: [],
+  weight: [],
 })
 
 function parseProductName(name) {
@@ -252,11 +252,11 @@ async function loadData() {
       page: pagination.page,
       page_size: pagination.page_size,
       keyword: filters.keyword || undefined,
-      model: filters.model || undefined,
-      product_type: filters.product_type || undefined,
-      size: filters.size || undefined,
-      color: filters.color || undefined,
-      weight: filters.weight || undefined,
+      model: filters.model.length ? filters.model.join(',') : undefined,
+      product_type: filters.product_type.length ? filters.product_type.join(',') : undefined,
+      size: filters.size.length ? filters.size.join(',') : undefined,
+      color: filters.color.length ? filters.color.join(',') : undefined,
+      weight: filters.weight.length ? filters.weight.join(',') : undefined,
     })
     const d = res.data
     tableData.value = (d.items || []).map(i => ({ ...i, _dirty: false, _aiGenerated: false, aiLoading: false }))
@@ -279,11 +279,11 @@ function applyFilters() {
 
 function resetFilters() {
   filters.keyword = ''
-  filters.model = ''
-  filters.product_type = ''
-  filters.size = ''
-  filters.color = ''
-  filters.weight = ''
+  filters.model = []
+  filters.product_type = []
+  filters.size = []
+  filters.color = []
+  filters.weight = []
   pagination.page = 1
   loadData()
 }
