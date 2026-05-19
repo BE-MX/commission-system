@@ -7,18 +7,7 @@ from typing import Optional
 import httpx
 
 from app.tracking.carriers.base import CarrierAdapter, TrackingResult, TrackingEvent
-
-
-FEDEX_STATUS_MAP = {
-    "PU": "picked_up", "OC": "picked_up",
-    "IT": "in_transit", "DP": "in_transit", "AR": "in_transit",
-    "OD": "out_for_delivery",
-    "CC": "customs", "CD": "customs", "CU": "customs",
-    "OH": "customs_hold",
-    "DL": "delivered",
-    "RS": "returned", "HL": "returned",
-    "DE": "exception", "SE": "exception", "CA": "exception", "XP": "exception",
-}
+from app.tracking.status import FEDEX_STATUS_MAP
 
 
 class FedExAdapter(CarrierAdapter):

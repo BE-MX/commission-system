@@ -29,8 +29,8 @@ def session_factory(engine):
 # ── 注册测试 ─────────────────────────────────────────
 
 class TestSchedulerRegistration:
-    async def test_start_scheduler_registers_six_jobs(self, monkeypatch):
-        """start_scheduler 应注册 6 个 job 且 id 命名约定一致"""
+    async def test_start_scheduler_registers_seven_jobs(self, monkeypatch):
+        """start_scheduler 应注册 7 个 job 且 id 命名约定一致"""
         from app.core.config import get_settings
 
         # 强制开启 scheduler
@@ -47,6 +47,7 @@ class TestSchedulerRegistration:
                 "design_shoot_reminder",
                 "shipping_daily_report",
                 "staging_scan",
+                "tracking_poll_active",
                 "insight_industry_daily",
                 "insight_ai_tools",
                 "stock_daily_report",
@@ -103,6 +104,15 @@ class TestStagingScan:
         assert stats["success"] == 0
         assert stats["duplicate"] == 0
         assert stats["error"] == 0
+
+
+class TestTrackingPollActive:
+    async def test_empty_db_returns_zero_counts(self, db):
+        """无活跃运单时 poll_active_shipments 应安全返回零计数"""
+        from app.tracking.polling_service import poll_active_shipments
+        stats = await poll_active_shipments(db)
+
+        assert stats == {"total": 0, "ok": 0, "error": 0, "skipped": 0}
 
 
 class TestInsightIndustryDaily:
