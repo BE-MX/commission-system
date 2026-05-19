@@ -17,7 +17,7 @@ import {
   DataAnalysis, User, UserFilled, Connection, OfficeBuilding, Document,
   Money, Refresh, List, Van, Upload, Box, Setting, Aim, Reading,
   MagicStick, Notebook, Calendar, Camera, EditPen, Stamp, TrendCharts,
-  Lock, Lightning,
+  Lock, Lightning, Picture, Collection, CollectionTag,
 } from '@element-plus/icons-vue'
 
 /**
@@ -54,6 +54,11 @@ export const MENU_GROUPS = {
     title: '备货管理',
     icon: Box,
     anyPermission: ['stock:read', 'stock:write', 'stock:admin'],
+  },
+  asset: {
+    title: '素材管理',
+    icon: Picture,
+    anyPermission: ['asset:read', 'asset:write', 'asset:delete', 'asset:admin'],
   },
   insight: {
     title: '方舟洞见',
@@ -231,6 +236,74 @@ export const NAV_ENTRIES = [
     menu: {
       group: 'stock', title: '安全库存日报', icon: Document, order: 30,
       permission: 'stock:read',
+    },
+  },
+
+  // ── 素材管理 ───────────────────────────────────────────
+  {
+    path: '/asset/library',
+    name: 'AssetLibrary',
+    component: () => import('@/views/asset/AssetLibrary.vue'),
+    title: '素材库',
+    permission: 'asset:read',
+    menu: {
+      group: 'asset', title: '素材库', icon: Picture, order: 10,
+      permission: 'asset:read',
+    },
+  },
+  {
+    path: '/asset/upload',
+    name: 'AssetUpload',
+    component: () => import('@/views/asset/AssetUpload.vue'),
+    title: '素材上传',
+    permission: 'asset:write',
+    menu: {
+      group: 'asset', title: '素材上传', icon: Upload, order: 20,
+      permission: 'asset:write',
+    },
+  },
+  {
+    path: '/asset/favorites',
+    name: 'AssetFavorites',
+    component: () => import('@/views/asset/AssetFavorites.vue'),
+    title: '我的收藏',
+    permission: 'asset:read',
+    menu: {
+      group: 'asset', title: '我的收藏', icon: Collection, order: 30,
+      permission: 'asset:read',
+    },
+  },
+  {
+    path: '/asset/favorites',
+    name: 'AssetFavorites',
+    component: () => import('@/views/asset/AssetFavorites.vue'),
+    title: '我的收藏',
+    permission: 'asset:read',
+    menu: {
+      group: 'asset', title: '我的收藏', icon: Collection, order: 30,
+      permission: 'asset:read',
+    },
+  },
+  {
+    path: '/asset/stats',
+    name: 'AssetStats',
+    component: () => import('@/views/asset/AssetStats.vue'),
+    title: '下载统计',
+    permission: 'asset:read',
+    menu: {
+      group: 'asset', title: '下载统计', icon: TrendCharts, order: 35,
+      permission: 'asset:read',
+    },
+  },
+  {
+    path: '/asset/tag-dimensions',
+    name: 'TagDimensionManage',
+    component: () => import('@/views/asset/TagDimensionManage.vue'),
+    title: '标签维度管理',
+    permission: 'asset:admin',
+    menu: {
+      group: 'asset', title: '标签维度', icon: CollectionTag, order: 40,
+      permission: 'asset:admin',
     },
   },
 

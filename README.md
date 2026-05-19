@@ -2,7 +2,7 @@
 
 ## 项目概述
 
-莱莎方舟平台，企业内部综合后台。包含提成管理、物流跟踪（含关键状态推送 + 物流日报）、运单上传（AI OCR）、客户归属、设计预约、用户/权限、AI 接入、方舟洞见（信源配置/行业情报/案例库/周会纪要）、备货管理（安全库存/销量备货一览/库存日报 + 手动钉钉推送）、钉钉集成十大模块。详细说明见 [CLAUDE.md](./CLAUDE.md)。
+莱莎方舟平台，企业内部综合后台。包含提成管理、物流跟踪（含关键状态推送 + 物流日报）、运单上传（AI OCR）、客户归属、设计预约、素材管理（标签化素材中台/AI 打标签/版本迭代/收藏分享）、用户/权限、AI 接入、方舟洞见（信源配置/行业情报/案例库/周会纪要）、备货管理（安全库存/销量备货一览/库存日报 + 手动钉钉推送）、钉钉集成十一大模块。详细说明见 [CLAUDE.md](./CLAUDE.md)。
 
 ## 技术栈
 
@@ -53,7 +53,8 @@ commission-system/
 │   │   ├── ai/           # AI 接入 (service.py facade + provider/preset/call/log_service + keyring/http_client)
 │   │   ├── insight/      # 方舟洞见 (service.py facade + fetcher + ai_helpers + sources/reports/case_library/meeting_minutes/dashboard_service + dependencies.py)
 │   │   ├── stock/        # 备货管理 (service.py facade + constants/sku_query/overview/safety/daily_report_service)
-│   │   └── tracking/     # 物流跟踪 (router + shipment/upload/ocr/polling/staging/daily_report/push_service + carriers/ + status.py + templates/)
+│   │   ├── tracking/     # 物流跟踪 (router + shipment/upload/ocr/polling/staging/daily_report/push_service + carriers/ + status.py + templates/)
+│   │   └── asset/        # 素材管理 (router/models/schemas/service facade + analyze/batch/stats/tag/favorite/asset_service 子模块)
 │   ├── alembic/          # 数据库迁移
 │   ├── config/           # 业务规则配置
 │   └── sql/              # DDL 脚本

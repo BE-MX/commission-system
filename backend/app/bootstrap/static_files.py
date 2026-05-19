@@ -1,6 +1,7 @@
 """静态文件挂载: 用户上传目录 + 生产模式前端 dist SPA"""
 
 import logging
+import os
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -12,12 +13,16 @@ logger = logging.getLogger("commission")
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent  # commission-system/
 UPLOADS_DIR = _REPO_ROOT / "uploads"
 FRONTEND_DIST = _REPO_ROOT / "frontend" / "dist"
+ASSET_STORAGE_ROOT = Path(os.environ.get("ASSET_STORAGE_ROOT", r"D:\WORKSOURCE"))
 
 
 def mount_uploads(app: FastAPI) -> None:
     """挂载头像等用户上传目录"""
     if UPLOADS_DIR.is_dir():
         app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
+    # 素材文件挂载（支持独立存储根目录）
+    if ASSET_STORAGE_ROOT.is_dir():
+        app.mount("/uploads/assets", StaticFiles(directory=ASSET_STORAGE_ROOT), name="asset_uploads")
 
 
 def mount_frontend(app: FastAPI) -> None:

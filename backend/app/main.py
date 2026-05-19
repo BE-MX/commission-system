@@ -14,6 +14,7 @@ from app.core.database import engine
 from app.bootstrap import (
     check_database_connection, load_business_rules,
     seed_admin_and_permissions, auto_init_ai_presets,
+    seed_asset_dimensions,
     mount_uploads, mount_frontend,
 )
 from app.routers import register_routers
@@ -32,6 +33,7 @@ async def lifespan(app: FastAPI):
     check_database_connection()
     load_business_rules()
     seed_admin_and_permissions()
+    seed_asset_dimensions()
 
     global _scheduler
     _scheduler = start_scheduler()

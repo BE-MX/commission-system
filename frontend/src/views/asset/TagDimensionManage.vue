@@ -1,0 +1,454 @@
+<template>
+  <div class="tag-dimension-page">
+    <!-- 顶部工具栏 -->
+    <div class="toolbar">
+      <h2 class="page-title">
+        <el-icon><CollectionTag /></el-icon>
+        标签维度管理
+      </h2>
+      <el-button type="primary" @click="showCreateDim = true">
+        <el-icon><Plus /></el-icon>
+        新建维度
+      </el-button>
+    </div>
+
+    <!-- 维度列表 -->
+    <div v-if="loading" class="loading-wrap">
+      <el-skeleton :rows="5" animated />
+    </div>
+    <div v-else-if="dimensions.length === 0" class="empty-wrap">
+      <el-empty description="暂无标签维度" />
+    </div>
+    <div v-else class="dimension-list">
+      <div
+        v-for="dim in sortedDimensions"
+        :key="dim.id"
+        class="dimension-card"
+        :class="{ 'is-system': dim.is_system }"
+      >
+        <div class="dim-header">
+          <div class="dim-info">
+            <span class="dim-name">{{ dim.label }}</span>
+            <span class="dim-meta">{{ dim.name }}</span>
+            <el-tag v-if="dim.is_system" size="small" type="info">系统内置</el-tag>
+            <el-tag v-if="dim.is_single_select" size="small" type="warning">单选</el-tag>
+            <el-tag v-else size="small" type="success">多选</el-tag>
+            <el-tag v-if="dim.is_required" size="small" type="danger">必填</el-tag>
+          </div>
+          <div class="dim-actions">
+            <el-button link type="primary" size="small" @click="openEditDim(dim)">
+              <el-icon><Edit /></el-icon>编辑
+            </el-button>
+            <el-button link type="primary" size="small" @click="openCreateValue(dim)">
+              <el-icon><Plus /></el-icon>添加值
+            </el-button>
+            <el-button
+              v-if="!dim.is_system"
+              link
+              type="danger"
+              size="small"
+              @click="handleDeleteDim(dim)"
+            >
+              <el-icon><Delete /></el-icon>删除
+            </el-button>
+          </div>
+        </div>
+
+        <!-- 标签值列表 -->
+        <div class="value-list">
+          <div
+            v-for="val in dim.values"
+            :key="val.id"
+            class="value-item"
+          >
+            <el-tag
+              size="small"
+              :color="val.color_hex || undefined"
+              :style="val.color_hex ? 'color: #fff; border: none;' : ''"
+            >
+              {{ val.value }}
+            </el-tag>
+            <span v-if="!val.is_active" class="value-inactive">(已禁用)</span>
+            <div class="value-actions">
+              <el-button link type="primary" size="small" @click="openEditValue(dim, val)">
+                编辑
+              </el-button>
+              <el-button link type="danger" size="small" @click="handleDeleteValue(val)">
+                删除
+              </el-button>
+            </div>
+          </div>
+          <el-text v-if="dim.values.length === 0" type="info" size="small">
+            暂无标签值
+          </el-text>
+        </div>
+      </div>
+    </div>
+
+    <!-- 新建/编辑维度弹窗 -->
+    <el-dialog
+      v-model="showDimDialog"
+      :title="isEditDim ? '编辑维度' : '新建维度'"
+      width="480px"
+    >
+      <el-form :model="dimForm" label-width="100px">
+        <el-form-item label="标识名" required>
+          <el-input v-model="dimForm.name" placeholder="英文标识，如 color" :disabled="isEditDim" />
+        </el-form-item>
+        <el-form-item label="显示名" required>
+          <el-input v-model="dimForm.label" placeholder="中文显示名，如 颜色" />
+        </el-form-item>
+        <el-form-item label="选择类型">
+          <el-radio-group v-model="dimForm.is_single_select">
+            <el-radio-button :label="1">单选</el-radio-button>
+            <el-radio-button :label="0">多选</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="是否必填">
+          <el-switch v-model="dimForm.is_required" :active-value="1" :inactive-value="0" />
+        </el-form-item>
+        <el-form-item label="排序">
+          <el-input-number v-model="dimForm.sort_order" :min="0" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showDimDialog = false">取消</el-button>
+        <el-button type="primary" :loading="dimSubmitting" @click="submitDim">
+          确认
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 新建/编辑标签值弹窗 -->
+    <el-dialog
+      v-model="showValueDialog"
+      :title="isEditValue ? '编辑标签值' : '新建标签值'"
+      width="420px"
+    >
+      <el-form :model="valueForm" label-width="80px">
+        <el-form-item label="所属维度">
+          <el-input :model-value="currentDim?.label" disabled />
+        </el-form-item>
+        <el-form-item label="标签值" required>
+          <el-input v-model="valueForm.value" placeholder="如 #1B、20\"" />
+        </el-form-item>
+        <el-form-item label="颜色">
+          <el-color-picker v-model="valueForm.color_hex" show-alpha />
+        </el-form-item>
+        <el-form-item label="排序">
+          <el-input-number v-model="valueForm.sort_order" :min="0" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showValueDialog = false">取消</el-button>
+        <el-button type="primary" :loading="valueSubmitting" @click="submitValue">
+          确认
+        </el-button>
+      </template>
+    </el-dialog>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, watch, onMounted } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  CollectionTag, Plus, Edit, Delete,
+} from '@element-plus/icons-vue'
+import {
+  getTagDimensions, createDimension, updateDimension, deleteDimension,
+  createTagValue, updateTagValue, deleteTagValue,
+} from '@/api/asset'
+
+const loading = ref(false)
+const dimensions = ref([])
+
+const sortedDimensions = computed(() => {
+  return [...dimensions.value].sort((a, b) => a.sort_order - b.sort_order)
+})
+
+async function loadData() {
+  loading.value = true
+  try {
+    const res = await getTagDimensions()
+    dimensions.value = res.data || []
+  } catch (e) {
+    ElMessage.error('加载标签维度失败')
+  } finally {
+    loading.value = false
+  }
+}
+
+// ── 维度 ────────────────────────────────────────────────
+const showDimDialog = ref(false)
+const showCreateDim = ref(false)
+const isEditDim = ref(false)
+const dimSubmitting = ref(false)
+const dimForm = ref({
+  name: '',
+  label: '',
+  is_single_select: 0,
+  is_required: 0,
+  sort_order: 0,
+})
+
+function openEditDim(dim) {
+  isEditDim.value = true
+  dimForm.value = {
+    name: dim.name,
+    label: dim.label,
+    is_single_select: dim.is_single_select,
+    is_required: dim.is_required,
+    sort_order: dim.sort_order,
+  }
+  showDimDialog.value = true
+}
+
+watch(showCreateDim, (v) => {
+  if (v) {
+    isEditDim.value = false
+    dimForm.value = {
+      name: '',
+      label: '',
+      is_single_select: 0,
+      is_required: 0,
+      sort_order: dimensions.value.length,
+    }
+    showDimDialog.value = true
+    showCreateDim.value = false
+  }
+})
+
+async function submitDim() {
+  const data = { ...dimForm.value }
+  if (!data.name.trim() || !data.label.trim()) {
+    ElMessage.warning('请填写完整信息')
+    return
+  }
+  dimSubmitting.value = true
+  try {
+    if (isEditDim.value) {
+      const dim = dimensions.value.find(d => d.name === data.name)
+      await updateDimension(dim.id, data)
+      ElMessage.success('更新成功')
+    } else {
+      await createDimension(data)
+      ElMessage.success('创建成功')
+    }
+    showDimDialog.value = false
+    await loadData()
+  } catch (e) {
+    ElMessage.error(e.response?.data?.message || '操作失败')
+  } finally {
+    dimSubmitting.value = false
+  }
+}
+
+async function handleDeleteDim(dim) {
+  try {
+    await ElMessageBox.confirm(
+      `确定删除维度「${dim.label}」？其下所有标签值也将被删除。`,
+      '确认删除',
+      { type: 'warning' },
+    )
+    await deleteDimension(dim.id)
+    ElMessage.success('删除成功')
+    await loadData()
+  } catch (e) {
+    if (e !== 'cancel') {
+      ElMessage.error(e.response?.data?.message || '删除失败')
+    }
+  }
+}
+
+// ── 标签值 ──────────────────────────────────────────────
+const showValueDialog = ref(false)
+const isEditValue = ref(false)
+const valueSubmitting = ref(false)
+const currentDim = ref(null)
+const currentValue = ref(null)
+const valueForm = ref({
+  value: '',
+  color_hex: null,
+  sort_order: 0,
+})
+
+function openCreateValue(dim) {
+  currentDim.value = dim
+  currentValue.value = null
+  isEditValue.value = false
+  valueForm.value = {
+    value: '',
+    color_hex: null,
+    sort_order: dim.values?.length || 0,
+  }
+  showValueDialog.value = true
+}
+
+function openEditValue(dim, val) {
+  currentDim.value = dim
+  currentValue.value = val
+  isEditValue.value = true
+  valueForm.value = {
+    value: val.value,
+    color_hex: val.color_hex,
+    sort_order: val.sort_order,
+  }
+  showValueDialog.value = true
+}
+
+async function submitValue() {
+  if (!valueForm.value.value.trim()) {
+    ElMessage.warning('请填写标签值')
+    return
+  }
+  valueSubmitting.value = true
+  try {
+    if (isEditValue.value && currentValue.value) {
+      await updateTagValue(currentValue.value.id, {
+        value: valueForm.value.value,
+        color_hex: valueForm.value.color_hex,
+        sort_order: valueForm.value.sort_order,
+      })
+      ElMessage.success('更新成功')
+    } else {
+      await createTagValue(currentDim.value.id, {
+        value: valueForm.value.value,
+        color_hex: valueForm.value.color_hex,
+        sort_order: valueForm.value.sort_order,
+      })
+      ElMessage.success('创建成功')
+    }
+    showValueDialog.value = false
+    await loadData()
+  } catch (e) {
+    ElMessage.error(e.response?.data?.message || '操作失败')
+  } finally {
+    valueSubmitting.value = false
+  }
+}
+
+async function handleDeleteValue(val) {
+  try {
+    await ElMessageBox.confirm(
+      `确定删除标签值「${val.value}」？`,
+      '确认删除',
+      { type: 'warning' },
+    )
+    await deleteTagValue(val.id)
+    ElMessage.success('删除成功')
+    await loadData()
+  } catch (e) {
+    if (e !== 'cancel') {
+      ElMessage.error(e.response?.data?.message || '删除失败')
+    }
+  }
+}
+
+onMounted(() => {
+  loadData()
+})
+</script>
+
+<style scoped>
+.tag-dimension-page {
+  padding: 20px 28px;
+}
+
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.page-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #1a1a2e;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.loading-wrap,
+.empty-wrap {
+  padding: 40px;
+  text-align: center;
+}
+
+.dimension-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.dimension-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+}
+
+.dimension-card.is-system {
+  border-left: 4px solid #d4941c;
+}
+
+.dim-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.dim-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dim-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1a1a2e;
+}
+
+.dim-meta {
+  font-size: 12px;
+  color: #999;
+}
+
+.dim-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.value-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.value-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: #fafbfe;
+  border-radius: 8px;
+}
+
+.value-inactive {
+  font-size: 12px;
+  color: #999;
+}
+
+.value-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: 4px;
+}
+</style>

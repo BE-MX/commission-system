@@ -1,0 +1,433 @@
+"""素材管理 — 素材上传/查询/更新/下载"""
+
+import os
+import shutil
+import uuid
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Optional
+
+from sqlalchemy import desc, func, or_
+from sqlalchemy.orm import Session
+
+from app.asset.models import (
+    Asset,
+    AssetPermission,
+    AssetVersion,
+    DownloadLog,
+    TagValue,
+    asset_tag_association,
+)
+from app.asset.schemas import AssetPermissionIn, AssetTagItem
+
+# 文件存储根目录（从环境变量读取，默认 D:\WORKSOURCE）
+ASSET_STORAGE_ROOT = Path(os.environ.get("ASSET_STORAGE_ROOT", r"D:\WORKSOURCE"))
+ASSET_STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
+
+# 缩略图尺寸
+THUMB_MAX_WIDTH = 600
+
+# 签名 URL 有效期（秒）
+SIGNED_URL_EXPIRY = 7200
+
+
+def _build_storage_path(file_type: str, file_format: str) -> str:
+    """生成存储路径: {root}/{year}/{month}/{uuid}.{ext}"""
+    now = datetime.now()
+    ext = file_format.lower().lstrip(".")
+    uid = uuid.uuid4().hex[:16]
+    rel_path = f"{now.year}/{now.month:02d}/{uid}.{ext}"
+    return rel_path
+
+
+def _ensure_dir(abs_path: Path) -> None:
+    abs_path.parent.mkdir(parents=True, exist_ok=True)
+
+
+def _save_upload_file(src_path: str, rel_path: str) -> str:
+    """将上传的临时文件移到正式存储目录。返回绝对路径。"""
+    abs_path = ASSET_STORAGE_ROOT / rel_path
+    _ensure_dir(abs_path)
+    shutil.move(src_path, str(abs_path))
+    return str(abs_path)
+
+
+def _generate_thumbnail(image_path: str, rel_path: str) -> Optional[str]:
+    """生成缩略图。返回相对路径或 None。"""
+    try:
+        from PIL import Image
+
+        thumb_rel = rel_path.rsplit(".", 1)[0] + "_thumb.jpg"
+        thumb_abs = ASSET_STORAGE_ROOT / thumb_rel
+        _ensure_dir(thumb_abs)
+
+        with Image.open(image_path) as im:
+            im.thumbnail((THUMB_MAX_WIDTH, THUMB_MAX_WIDTH))
+            im = im.convert("RGB")
+            im.save(str(thumb_abs), "JPEG", quality=85)
+        return thumb_rel
+    except Exception:
+        return None
+
+
+def _delete_file(rel_path: Optional[str]) -> None:
+    if not rel_path:
+        return
+    try:
+        (ASSET_STORAGE_ROOT / rel_path).unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
+# ── 创建素材 ────────────────────────────────────────────
+
+def create_asset(
+    db: Session,
+    *,
+    file_name: str,
+    file_type: str,
+    file_format: str,
+    file_size: int,
+    temp_storage_path: str,
+    uploader_id: int,
+    tags: list[AssetTagItem],
+    permission: AssetPermissionIn,
+    remark: Optional[str] = None,
+) -> Asset:
+    """创建素材（含第一版版本记录）。"""
+    rel_path = _build_storage_path(file_type, file_format)
+    abs_path = _save_upload_file(temp_storage_path, rel_path)
+
+    # 缩略图
+    thumbnail_path: Optional[str] = None
+    if file_type == "image":
+        thumbnail_path = _generate_thumbnail(abs_path, rel_path)
+
+    # 创建素材主记录
+    asset = Asset(
+        file_name=file_name,
+        file_type=file_type,
+        file_format=file_format,
+        storage_path=rel_path,
+        file_size=file_size,
+        thumbnail_path=thumbnail_path,
+        uploader_id=uploader_id,
+        status="latest",
+        remark=remark,
+    )
+    db.add(asset)
+    db.flush()
+
+    # 创建版本记录
+    version = AssetVersion(
+        asset_id=asset.id,
+        version_number=1,
+        storage_path=rel_path,
+        file_size=file_size,
+        uploader_id=uploader_id,
+    )
+    db.add(version)
+    db.flush()
+
+    # 更新当前版本
+    asset.current_version_id = version.id
+
+    # 写入标签
+    _apply_tags(db, asset.id, version.id, tags)
+
+    # 写入权限
+    perm = AssetPermission(
+        asset_id=asset.id,
+        permission_group=permission.permission_group,
+        allow_preview=permission.allow_preview,
+        allow_download=permission.allow_download,
+        specified_user_ids=permission.specified_user_ids,
+    )
+    db.add(perm)
+
+    db.commit()
+    db.refresh(asset)
+    return asset
+
+
+def _apply_tags(
+    db: Session,
+    asset_id: int,
+    version_id: int,
+    tags: list[AssetTagItem],
+) -> None:
+    """将标签关联写入 asset_tag_association。"""
+    for item in tags:
+        for tv_id in item.tag_value_ids:
+            db.execute(
+                asset_tag_association.insert().values(
+                    asset_id=asset_id,
+                    version_id=version_id,
+                    dimension_id=item.dimension_id,
+                    tag_value_id=tv_id,
+                )
+            )
+
+
+def _clear_tags(db: Session, asset_id: int, version_id: int) -> None:
+    """清除素材的某版本标签关联。"""
+    db.execute(
+        asset_tag_association.delete().where(
+            asset_tag_association.c.asset_id == asset_id,
+            asset_tag_association.c.version_id == version_id,
+        )
+    )
+
+
+# ── 查询素材 ────────────────────────────────────────────
+
+def query_assets(
+    db: Session,
+    *,
+    file_type: Optional[str] = None,
+    tag_filters: Optional[dict[str, list[int]]] = None,
+    keyword: Optional[str] = None,
+    status: Optional[str] = None,
+    sort_by: str = "created_at",
+    sort_order: str = "desc",
+    page: int = 1,
+    page_size: int = 24,
+) -> tuple[int, list[Asset]]:
+    """返回 (total, items)。"""
+    q = db.query(Asset)
+
+    if file_type:
+        q = q.filter(Asset.file_type == file_type)
+    if status:
+        q = q.filter(Asset.status == status)
+
+    # 关键词检索（文件名/备注）
+    if keyword:
+        like_kw = f"%{keyword}%"
+        q = q.filter(
+            or_(
+                Asset.file_name.ilike(like_kw),
+                Asset.remark.ilike(like_kw),
+            )
+        )
+
+    # 标签筛选
+    if tag_filters:
+        # tag_filters: {"dimension_name": [tag_value_id, ...], ...}
+        # 同一维度内 OR，不同维度间 AND
+        from app.asset.models import TagDimension
+
+        for dim_name, tv_ids in tag_filters.items():
+            if not tv_ids:
+                continue
+            dim = db.query(TagDimension).filter(TagDimension.name == dim_name).first()
+            if not dim:
+                continue
+            q = q.filter(
+                Asset.id.in_(
+                    db.query(asset_tag_association.c.asset_id)
+                    .filter(
+                        asset_tag_association.c.dimension_id == dim.id,
+                        asset_tag_association.c.tag_value_id.in_(tv_ids),
+                    )
+                )
+            )
+
+    total = q.with_entities(func.count(Asset.id)).scalar() or 0
+
+    sort_col = getattr(Asset, sort_by, Asset.created_at)
+    if sort_order == "desc":
+        q = q.order_by(desc(sort_col))
+    else:
+        q = q.order_by(sort_col)
+
+    items = q.offset((page - 1) * page_size).limit(page_size).all()
+    return total, items
+
+
+def get_asset_detail(db: Session, asset_id: int) -> Optional[Asset]:
+    return db.query(Asset).filter(Asset.id == asset_id).first()
+
+
+# ── 更新素材 ────────────────────────────────────────────
+
+def update_asset_tags(
+    db: Session,
+    asset_id: int,
+    tags: list[AssetTagItem],
+) -> Optional[Asset]:
+    asset = get_asset_detail(db, asset_id)
+    if not asset:
+        return None
+
+    version_id = asset.current_version_id
+    _clear_tags(db, asset_id, version_id)
+    _apply_tags(db, asset_id, version_id, tags)
+    db.commit()
+    db.refresh(asset)
+    return asset
+
+
+def update_asset_status(
+    db: Session,
+    asset_id: int,
+    status: str,
+) -> Optional[Asset]:
+    asset = get_asset_detail(db, asset_id)
+    if not asset:
+        return None
+    asset.status = status
+    db.commit()
+    db.refresh(asset)
+    return asset
+
+
+def upload_new_version(
+    db: Session,
+    asset_id: int,
+    file_name: str,
+    file_size: int,
+    temp_storage_path: str,
+    uploader_id: int,
+    remark: Optional[str] = None,
+) -> Optional[AssetVersion]:
+    """上传新版本。旧版标记为 history，新版标记为 latest。"""
+    asset = get_asset_detail(db, asset_id)
+    if not asset:
+        return None
+
+    # 旧版标记为 history
+    asset.status = "history"
+
+    # 生成新存储路径
+    rel_path = _build_storage_path(asset.file_type, asset.file_format)
+    _save_upload_file(temp_storage_path, rel_path)
+
+    # 缩略图
+    thumbnail_path: Optional[str] = None
+    if asset.file_type == "image":
+        thumbnail_path = _generate_thumbnail(
+            str(ASSET_STORAGE_ROOT / rel_path), rel_path
+        )
+
+    # 计算版本号
+    max_ver = (
+        db.query(func.max(AssetVersion.version_number))
+        .filter(AssetVersion.asset_id == asset_id)
+        .scalar()
+        or 0
+    )
+
+    version = AssetVersion(
+        asset_id=asset_id,
+        version_number=max_ver + 1,
+        storage_path=rel_path,
+        file_size=file_size,
+        uploader_id=uploader_id,
+        remark=remark,
+    )
+    db.add(version)
+    db.flush()
+
+    # 更新素材主记录
+    asset.current_version_id = version.id
+    asset.status = "latest"
+    asset.file_name = file_name
+    asset.file_size = file_size
+    asset.storage_path = rel_path
+    asset.thumbnail_path = thumbnail_path
+
+    # 复制旧版标签到新版本
+    _copy_tags_to_version(db, asset_id, version.id)
+
+    db.commit()
+    db.refresh(version)
+    return version
+
+
+def _copy_tags_to_version(db: Session, asset_id: int, new_version_id: int) -> None:
+    """将素材当前版本的标签复制到新版本。"""
+    asset = get_asset_detail(db, asset_id)
+    if not asset or not asset.current_version_id:
+        return
+
+    rows = db.execute(
+        asset_tag_association.select().where(
+            asset_tag_association.c.asset_id == asset_id,
+            asset_tag_association.c.version_id == asset.current_version_id,
+        )
+    ).fetchall()
+
+    for row in rows:
+        db.execute(
+            asset_tag_association.insert().values(
+                asset_id=asset_id,
+                version_id=new_version_id,
+                dimension_id=row.dimension_id,
+                tag_value_id=row.tag_value_id,
+            )
+        )
+
+
+# ── 删除素材 ────────────────────────────────────────────
+
+def delete_asset(db: Session, asset_id: int) -> bool:
+    asset = get_asset_detail(db, asset_id)
+    if not asset:
+        return False
+
+    # 删除物理文件
+    _delete_file(asset.storage_path)
+    _delete_file(asset.thumbnail_path)
+    for v in asset.versions:
+        _delete_file(v.storage_path)
+
+    db.delete(asset)
+    db.commit()
+    return True
+
+
+# ── 下载 ────────────────────────────────────────────────
+
+def get_asset_download_url(asset: Asset, expiry_seconds: int = SIGNED_URL_EXPIRY) -> str:
+    """生成签名下载 URL。"""
+    # 简单实现：直接返回文件访问路径 + 签名 token
+    # 生产环境可改为 Nginx internal redirect + X-Accel-Redirect
+    expires = int((datetime.utcnow() + timedelta(seconds=expiry_seconds)).timestamp())
+    token = _make_sign_token(asset.storage_path, expires)
+    return f"/api/assets/{asset.id}/download?token={token}&expires={expires}"
+
+
+def _make_sign_token(path: str, expires: int) -> str:
+    import hashlib
+    import hmac
+
+    secret = os.environ.get("ASSET_SIGN_SECRET", "leshine-asset-secret")
+    msg = f"{path}:{expires}"
+    return hmac.new(secret.encode(), msg.encode(), hashlib.sha256).hexdigest()[:16]
+
+
+def verify_sign_token(path: str, expires: int, token: str) -> bool:
+    """验证签名 token 是否有效。"""
+    import time
+
+    if int(expires) < time.time():
+        return False
+    return token == _make_sign_token(path, expires)
+
+
+def increment_download_count(db: Session, asset_id: int) -> None:
+    asset = get_asset_detail(db, asset_id)
+    if asset:
+        asset.download_count += 1
+        db.commit()
+
+
+def log_download(db: Session, asset_id: int, user_id: int, version_number: Optional[int]) -> None:
+    log = DownloadLog(
+        asset_id=asset_id,
+        user_id=user_id,
+        version_number=version_number,
+    )
+    db.add(log)
+    db.commit()

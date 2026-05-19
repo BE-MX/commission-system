@@ -201,6 +201,11 @@ def seed_role_permissions(db: Session):
         ("stock:read",            "stock",   "read",          "查看销量备货一览 / 安全库存 / 日报"),
         ("stock:write",           "stock",   "write",         "设置安全库存 / AI 生成建议"),
         ("stock:admin",           "stock",   "admin",         "手动触发日报生成 / 调试推送"),
+        # 素材管理
+        ("asset:read",            "asset",   "read",          "查看素材库 / 预览 / 下载 / 收藏"),
+        ("asset:write",           "asset",   "write",         "上传素材 / 编辑标签 / 版本迭代"),
+        ("asset:delete",          "asset",   "delete",        "删除素材"),
+        ("asset:admin",           "asset",   "admin",         "标签维度管理 / 权限设置"),
     ]
     for code, module, action, label in seeds:
         existing = db.query(ArkPermission).filter(ArkPermission.code == code).first()
