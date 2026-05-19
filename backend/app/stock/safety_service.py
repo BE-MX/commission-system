@@ -40,7 +40,18 @@ def _name_filter_clauses(
         clauses.append("SUBSTRING_INDEX(SUBSTRING_INDEX(p.name, '/', 2), '/', -1) = :size")
         params["size"] = size
     if color:
-        clauses.append("SUBSTRING_INDEX(SUBSTRING_INDEX(p.name, '/', -2), '/', 1) = :color")
+        clauses.append("""
+            CASE
+                WHEN (LENGTH(p.name) - LENGTH(REPLACE(p.name, '/', '')) + 1) >= 5
+                     AND SUBSTRING_INDEX(SUBSTRING_INDEX(p.name, '/', -3), '/', 1) LIKE '#%'
+                THEN CONCAT(
+                    SUBSTRING_INDEX(SUBSTRING_INDEX(p.name, '/', -3), '/', 1),
+                    '/',
+                    SUBSTRING_INDEX(SUBSTRING_INDEX(p.name, '/', -2), '/', 1)
+                )
+                ELSE SUBSTRING_INDEX(SUBSTRING_INDEX(p.name, '/', -2), '/', 1)
+            END = :color
+        """.strip())
         params["color"] = color
     if weight:
         clauses.append("SUBSTRING_INDEX(p.name, '/', -1) = :weight")

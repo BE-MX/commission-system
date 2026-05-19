@@ -16,7 +16,7 @@
           <el-date-picker v-model="selectedDate" type="date" placeholder="选择日期" format="YYYY-MM-DD"
             value-format="YYYY-MM-DD" :clearable="false" style="width:160px" @change="loadData" />
         </div>
-        <div v-if="reportData">
+        <div v-if="reportData" class="dingtalk-area">
           <div class="dingtalk-status">
             <el-icon :size="16" :color="reportData.dingtalk_sent ? '#27ae60' : '#ccc'">
               <component :is="reportData.dingtalk_sent ? 'CircleCheckFilled' : 'WarningFilled'" />
@@ -29,6 +29,14 @@
               {{ formatTime(reportData.sent_at) }}
             </span>
           </div>
+          <el-button
+            v-if="authStore.hasPermission('stock:admin')"
+            type="warning"
+            size="small"
+            :icon="Promotion"
+            :loading="pushLoading"
+            @click="pushDingTalk"
+          >推送钉钉</el-button>
         </div>
       </div>
     </div>
@@ -159,12 +167,13 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Document, WarningFilled, Timer, CircleCheckFilled } from '@element-plus/icons-vue'
+import { Document, WarningFilled, Timer, CircleCheckFilled, Promotion } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
-import { getLatestDailyReport, getDailyReportByDate, triggerDailyReport } from '@/api/stock'
+import { getLatestDailyReport, getDailyReportByDate, triggerDailyReport, pushDailyReport } from '@/api/stock'
 
 const authStore = useAuthStore()
 const loading = ref(false)
+const pushLoading = ref(false)
 const selectedDate = ref('')
 const reportData = ref(null)
 
@@ -215,6 +224,22 @@ async function generateToday() {
   }
 }
 
+async function pushDingTalk() {
+  pushLoading.value = true
+  try {
+    const res = await pushDailyReport({
+      report_date: selectedDate.value || undefined,
+    })
+    ElMessage.success(res.message || '钉钉推送已发送')
+    // 刷新状态
+    await loadData()
+  } catch (err) {
+    ElMessage.error(err.message || '推送失败')
+  } finally {
+    pushLoading.value = false
+  }
+}
+
 onMounted(() => {
   selectedDate.value = new Date().toISOString().slice(0, 10)
   loadData()
@@ -239,6 +264,7 @@ onMounted(() => {
 .header-icon { width: 48px; height: 48px; border-radius: 14px; background: linear-gradient(135deg, #d4af6e, #c9a05c); display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 15px rgba(212,175,110,0.3); }
 .header-title { font-size: 20px; font-weight: 600; color: #fff; }
 .header-subtitle { font-size: 13px; color: #8888a0; margin-top: 4px; }
+.dingtalk-area { display: flex; align-items: center; gap: 12px; }
 .dingtalk-status { display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.06); padding: 10px 18px; border-radius: 10px; }
 .ding-label { font-size: 13px; color: #aaa; }
 .ding-time { font-size: 12px; color: #8888a0; font-family: monospace; }

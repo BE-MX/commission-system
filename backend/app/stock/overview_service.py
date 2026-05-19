@@ -10,16 +10,28 @@ from app.stock.sku_query import query_all_sku_status
 
 
 def _parse_name(name: str) -> dict:
-    """产品名称拆分: 类型/尺寸/颜色/克重"""
+    """产品名称拆分: 类型/尺寸/颜色/克重
+
+    颜色规则:
+      - >=5 段且倒数第 3 段以 # 开头 → 倒数第 3 段/倒数第 2 段
+      - 否则 → 倒数第 2 段
+    """
     if not name:
         return {"type": "", "size": "", "color": "", "weight": ""}
     parts = name.split("/")
-    return {
-        "type": parts[0] if len(parts) > 0 else "",
-        "size": parts[1] if len(parts) > 1 else "",
-        "color": parts[2] if len(parts) > 2 else "",
-        "weight": parts[3] if len(parts) > 3 else "",
-    }
+    n = len(parts)
+    # 类型: 第 1 段
+    t = parts[0] if n > 0 else ""
+    # 尺寸: 第 2 段
+    s = parts[1] if n > 1 else ""
+    # 颜色
+    if n >= 5 and parts[-3].startswith("#"):
+        c = f"{parts[-3]}/{parts[-2]}"
+    else:
+        c = parts[-2] if n >= 2 else ""
+    # 克重: 最后 1 段
+    w = parts[-1] if n >= 1 else ""
+    return {"type": t, "size": s, "color": c, "weight": w}
 
 
 def query_stock_overview(
@@ -132,10 +144,20 @@ def get_filter_options(db: Session) -> dict:
     ).all()
     sizes = [r[0] for r in size_rows if r[0]]
 
-    # color: SUBSTRING_INDEX(SUBSTRING_INDEX(name, '/', -2), '/', 1)
+    # color: 倒数第2段; 若>=5段且倒数第3段以#开头则拼接倒数第3/2段
     color_rows = db.execute(
         text(f"""
-            SELECT DISTINCT SUBSTRING_INDEX(SUBSTRING_INDEX(name, '/', -2), '/', 1) AS val
+            SELECT DISTINCT
+                CASE
+                    WHEN (LENGTH(name) - LENGTH(REPLACE(name, '/', '')) + 1) >= 5
+                         AND SUBSTRING_INDEX(SUBSTRING_INDEX(name, '/', -3), '/', 1) LIKE '#%'
+                    THEN CONCAT(
+                        SUBSTRING_INDEX(SUBSTRING_INDEX(name, '/', -3), '/', 1),
+                        '/',
+                        SUBSTRING_INDEX(SUBSTRING_INDEX(name, '/', -2), '/', 1)
+                    )
+                    ELSE SUBSTRING_INDEX(SUBSTRING_INDEX(name, '/', -2), '/', 1)
+                END AS val
             FROM `{business_db}`.okki_products
             WHERE disable_flag = 0 AND name LIKE '%/%/%/%'
             ORDER BY val

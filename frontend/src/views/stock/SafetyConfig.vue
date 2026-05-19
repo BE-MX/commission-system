@@ -206,12 +206,14 @@ const filters = reactive({
 function parseProductName(name) {
   if (!name) return { type: '', size: '', color: '', weight: '' }
   const parts = name.split('/')
-  return {
-    type: parts[0] || '',
-    size: parts[1] || '',
-    color: parts[2] || '',
-    weight: parts[3] || '',
-  }
+  const n = parts.length
+  const type = parts[0] || ''
+  const size = parts[1] || ''
+  const color = (n >= 5 && parts[n - 3].startsWith('#'))
+    ? `${parts[n - 3]}/${parts[n - 2]}`
+    : (parts[n - 2] || '')
+  const weight = parts[n - 1] || ''
+  return { type, size, color, weight }
 }
 
 const allFilterOptions = ref({ models: [], types: [], sizes: [], colors: [], weights: [] })

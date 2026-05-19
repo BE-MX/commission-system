@@ -241,3 +241,44 @@ def trigger_daily_report(
         "sufficient_count": rec.sufficient_count,
         "dingtalk_sent": bool(rec.dingtalk_sent),
     }, message="已生成")
+
+
+# ── POST /daily-report/push ─────────────────────────────
+@router.post("/daily-report/push")
+def push_daily_report_endpoint(
+    report_date_value: Optional[date] = Query(None, alias="report_date"),
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("stock:admin")),
+):
+    """手动触发钉钉推送(日报不存在时先自动生成)"""
+    from app.stock.scheduler import generate_stock_daily_report_sync
+    from app.stock.daily_report_service import push_daily_report
+
+    target_date = report_date_value or date.today()
+
+    # 检查日报是否存在
+    rec = service.get_daily_report(db=db, report_date_value=target_date)
+    if not rec:
+        # 不存在则生成(不推送)
+        generate_stock_daily_report_sync(db=db, target_date=target_date, push_dingtalk=False)
+        rec = service.get_daily_report(db=db, report_date_value=target_date)
+
+    if not rec:
+        raise HTTPException(status_code=500, detail="日报生成失败")
+
+    # 推送钉钉
+    shortage_skus = rec.get("shortage_skus", [])
+    warning_skus = rec.get("warning_skus", [])
+    summary = {
+        "shortage_count": rec.get("shortage_count", 0),
+        "warning_count": rec.get("warning_count", 0),
+        "sufficient_count": rec.get("sufficient_count", 0),
+    }
+
+    push_daily_report(db, target_date, shortage_skus, warning_skus, summary)
+    service.mark_daily_report_pushed(db, target_date)
+
+    return _ok(
+        {"report_date": target_date.isoformat(), "dingtalk_sent": True},
+        message="钉钉推送已发送",
+    )

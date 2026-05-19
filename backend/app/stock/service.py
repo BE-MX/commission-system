@@ -28,7 +28,7 @@ from app.stock.sku_query import (  # noqa: F401
 
 # 销量备货一览
 from app.stock.overview_service import (  # noqa: F401
-    query_stock_overview,
+    query_stock_overview, get_filter_options,
 )
 
 # 安全库存 CRUD + AI 建议

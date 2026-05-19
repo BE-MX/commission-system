@@ -42,3 +42,7 @@ export function getDailyReportByDate(date) {
 export function triggerDailyReport(params) {
   return stockApi.post('/daily-report/generate', null, { params, loadingText: '生成中...', timeout: 180000 })
 }
+
+export function pushDailyReport(params) {
+  return stockApi.post('/daily-report/push', null, { params, loadingText: '推送中...', timeout: 60000 })
+}
