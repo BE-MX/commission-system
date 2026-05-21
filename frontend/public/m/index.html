@@ -417,11 +417,17 @@ const ToastProvider = {
 
 /* ==================== BottomSheet 组件 ==================== */
 const BottomSheet = {
-  props: ['title', 'show', 'selected', 'options', 'multi'],
+  props: ['title', 'show', 'selected', 'options', 'multi', 'searchable'],
   emits: ['update:show', 'update:selected', 'confirm'],
   setup(props, { emit }) {
     const localSel = ref([]);
-    watch(() => props.show, v => { if (v) localSel.value = [...(props.selected || [])]; });
+    const searchQ = ref('');
+    watch(() => props.show, v => {
+      if (v) {
+        localSel.value = [...(props.selected || [])];
+        searchQ.value = '';
+      }
+    });
     const isOn = v => localSel.value.includes(v);
     const toggle = v => {
       if (props.multi) {
@@ -432,7 +438,15 @@ const BottomSheet = {
     const clear = () => { localSel.value = []; };
     const confirm = () => { emit('update:selected', [...localSel.value]); emit('update:show', false); emit('confirm'); };
     const close = () => emit('update:show', false);
-    return { localSel, isOn, toggle, clear, confirm, close };
+    const filteredOpts = computed(() => {
+      let opts = props.options || [];
+      if (searchQ.value.trim()) {
+        const kw = searchQ.value.trim().toLowerCase();
+        opts = opts.filter(o => (o.label || o.value || o).toLowerCase().includes(kw));
+      }
+      return opts;
+    });
+    return { localSel, isOn, toggle, clear, confirm, close, searchQ, filteredOpts };
   },
   template: `
     <div v-if="show" class="bs-overlay" @click="close"></div>
@@ -443,8 +457,16 @@ const BottomSheet = {
         <span class="bs-clear" v-if="multi" @click="clear">清除</span>
         <span class="bs-close" @click="close">&#10005;</span>
       </div>
+      <div v-if="searchable" class="bs-search" style="padding:8px 16px;border-bottom:1px solid var(--border)">
+        <div class="search-input" style="position:relative">
+          <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:14px;color:var(--gray)">&#128269;</span>
+          <input v-model="searchQ" placeholder="搜索标签..." style="width:100%;padding:8px 10px 8px 32px;background:var(--bg);border-radius:6px;font-size:14px"/>
+          <span v-if="searchQ" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);width:18px;height:18px;display:flex;align-items:center;justify-content:center;color:var(--gray);font-size:12px;background:var(--border);border-radius:50%" @click="searchQ=''">&#10005;</span>
+        </div>
+      </div>
       <div class="bs-body">
-        <div v-for="opt in options" :key="opt.value||opt" :class="['bs-option',isOn(opt.value||opt)?'on':'']" @click="toggle(opt.value||opt)">
+        <div v-if="filteredOpts.length===0" style="padding:24px;text-align:center;color:var(--gray-light);font-size:13px">无匹配标签</div>
+        <div v-for="opt in filteredOpts" :key="opt.value||opt" :class="['bs-option',isOn(opt.value||opt)?'on':'']" @click="toggle(opt.value||opt)">
           <div class="bs-check">&#10003;</div>
           <div v-if="opt.color" class="bs-color-dot" :style="{background:opt.color}"></div>
           <span>{{opt.label||opt.value||opt}}</span>
@@ -576,6 +598,8 @@ const MSearch = {
 
     // 标签维度缓存
     const tagDimensions = ref([]);
+    // 联动筛选：当前结果集中各维度可用的标签值集合 { dimension: Set(value) }
+    const availableTags = reactive({});
 
     onMounted(async () => {
       syncToken();
@@ -610,6 +634,8 @@ const MSearch = {
         const r = await API.quickSearch({ keyword: sq.value, tags, page: 1, page_size: 20 });
         results.value = r.items || [];
         totalPages.value = r.total_pages || 1;
+        // 联动筛选：收集当前结果中各维度存在的标签值
+        updateAvailableTags(results.value);
       } catch (e) {
         toast.show(e.message || '搜索失败', 'error');
       } finally {
@@ -632,6 +658,8 @@ const MSearch = {
       try {
         const r = await API.quickSearch({ keyword: sq.value, tags, page: page.value, page_size: 20 });
         results.value.push(...(r.items || []));
+        // 联动筛选：追加收集
+        updateAvailableTags(results.value);
       } catch (e) {
         toast.show(e.message || '加载失败', 'error');
       } finally {
@@ -639,13 +667,38 @@ const MSearch = {
       }
     }
 
+    function updateAvailableTags(items) {
+      // 收集当前结果集中各维度存在的标签值
+      const tagMap = {};
+      items.forEach(asset => {
+        asset.tags?.forEach(tag => {
+          if (!tagMap[tag.dimension]) tagMap[tag.dimension] = new Set();
+          tagMap[tag.dimension].add(tag.value);
+        });
+      });
+      // 同步到 reactive 对象
+      Object.keys(availableTags).forEach(k => delete availableTags[k]);
+      Object.entries(tagMap).forEach(([k, set]) => { availableTags[k] = set; });
+    }
+
     function openBs(chip) {
       const dim = tagDimensions.value.find(d => d.name === chip.dimension) || {};
+      let options = (dim.values || []).map(v => ({ value: v.value, label: v.value }));
+      // 联动筛选：当已有筛选条件且已有结果时，只显示当前结果集中存在的标签值
+      // 但已选中的标签值始终保留，确保用户可以取消选择
+      const hasActiveFilter = Object.values(activeFilters).some(arr => arr && arr.length > 0);
+      if (hasActiveFilter && results.value.length > 0) {
+        const availableSet = availableTags[chip.dimension];
+        const currentSelected = new Set(activeFilters[chip.dimension] || []);
+        if (availableSet && availableSet.size > 0) {
+          options = options.filter(o => availableSet.has(o.value) || currentSelected.has(o.value));
+        }
+      }
       bs.value = {
         show: true,
         title: dim.label || chip.label || chip.dimension,
         dimension: chip.dimension,
-        options: (dim.values || []).map(v => ({ value: v.value, label: v.value })),
+        options,
         selected: [...(activeFilters[chip.dimension] || [])],
       };
     }
@@ -663,6 +716,7 @@ const MSearch = {
 
     function clearFilters() {
       Object.keys(activeFilters).forEach(k => delete activeFilters[k]);
+      Object.keys(availableTags).forEach(k => delete availableTags[k]);
       doSearch();
     }
 
@@ -751,7 +805,7 @@ const MSearch = {
     return {
       sq, results, chips, bs, ctx, folderSheet, folders, hasFilters, filterPills, activeFilters, loading,
       goDetail, copyLink, downloadAsset, toggleFav, addToFolder, onLongPress, openBs, onBsConfirm,
-      removeFilter, clearFilters, onScroll,
+      removeFilter, clearFilters, onScroll, updateAvailableTags,
     };
   },
   template: `
@@ -782,7 +836,7 @@ const MSearch = {
         <div class="empty-title">没找到匹配的素材</div>
         <button class="empty-btn" @click="sq='';clearFilters()">清除筛选条件</button>
       </div>
-      <BottomSheet v-model:show="bs.show" :title="bs.title" :options="bs.options" :selected="bs.selected" v-model:selected="bs.selected" multi @confirm="onBsConfirm"/>
+      <BottomSheet v-model:show="bs.show" :title="bs.title" :options="bs.options" :selected="bs.selected" v-model:selected="bs.selected" multi searchable @confirm="onBsConfirm"/>
       <LongPressMenu :show="ctx.show" :x="ctx.x" :y="ctx.y" :is-invalid="ctx.asset?.is_valid===false"
         @close="ctx.show=false" @copy="copyLink(ctx.asset)" @download="downloadAsset(ctx.asset)" @fav="toggleFav(ctx.asset)" @detail="goDetail(ctx.asset)"/>
       <FolderSelectSheet :show="folderSheet.show" :folders="folders" @select="addToFolder" @close="folderSheet.show=false"/>

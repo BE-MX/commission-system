@@ -615,12 +615,7 @@ function fileTypeTag(type) {
 }
 
 onMounted(() => {
-  // 移动端自动跳转（除非用户手动选择了完整版）
-  if (/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) &&
-      sessionStorage.getItem('ark_desktop_mode') !== '1') {
-    window.location.href = '/m/'
-    return
-  }
+  // 移动端检测已移至路由守卫，此处仅加载数据
   loadDimensions()
   loadData()
 })
