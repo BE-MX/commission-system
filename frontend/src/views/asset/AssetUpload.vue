@@ -1,6 +1,11 @@
 <template>
   <div class="asset-upload-page">
-    <el-page-header content="素材上传" @back="$router.back()" />
+    <div class="page-header-row">
+      <el-page-header content="素材上传" @back="$router.back()" />
+      <el-button type="primary" plain @click="openFolderUpload">
+        <el-icon><FolderOpened /></el-icon>文件夹批量上传
+      </el-button>
+    </div>
 
     <div class="upload-layout">
       <!-- 左侧：文件上传区 -->
@@ -216,6 +221,196 @@
         </div>
       </div>
     </div>
+
+    <!-- 文件夹批量上传 -->
+    <el-dialog
+      v-model="folderUploadVisible"
+      :title="folderUploadStep === 'report' ? '文件夹上传完成' : '文件夹批量上传'"
+      width="640px"
+      :close-on-click-modal="false"
+      destroy-on-close
+      @closed="closeFolderUpload"
+    >
+      <!-- 步骤1：输入路径 -->
+      <div v-if="folderUploadStep === 'input'">
+        <el-form label-position="top">
+          <el-form-item label="文件夹路径">
+            <el-input
+              v-model="folderPath"
+              placeholder="例如：D:\\upload_staging\\贴发\\产品图"
+              clearable
+              @keyup.enter="startFolderValidate"
+            />
+          </el-form-item>
+          <el-form-item>
+            <el-alert
+              title="系统会自动遍历文件夹内的所有图片文件，并根据文件夹层级提取标签"
+              type="info"
+              :closable="false"
+              show-icon
+            />
+          </el-form-item>
+        </el-form>
+        <div class="dialog-footer">
+          <el-button @click="folderUploadVisible = false">取消</el-button>
+          <el-button type="primary" @click="startFolderValidate">开始校验</el-button>
+        </div>
+      </div>
+
+      <!-- 步骤2：校验中 -->
+      <div v-else-if="folderUploadStep === 'validating'" class="folder-loading">
+        <el-icon size="48" class="loading-icon"><Loading /></el-icon>
+        <p>正在扫描文件夹结构并匹配标签库...</p>
+      </div>
+
+      <!-- 步骤3：校验失败 -->
+      <div v-else-if="folderUploadStep === 'fail'">
+        <div v-if="folderValidationResult?.message" class="fail-message">
+          <el-icon size="24" color="#f56c6c"><CircleClose /></el-icon>
+          <span>{{ folderValidationResult.message }}</span>
+        </div>
+        <div v-else>
+          <div class="fail-header">
+            <el-icon size="24" color="#e6a23c"><Warning /></el-icon>
+            <span>以下文件夹名无法自动匹配到标签库，请处理后再上传</span>
+          </div>
+
+          <div v-if="folderValidationResult?.missing?.length" class="fail-section">
+            <div class="fail-section-title">缺失标签（未找到匹配）</div>
+            <el-table :data="folderValidationResult.missing.map(t => ({ tag_name: t }))" size="small">
+              <el-table-column label="文件夹名" prop="tag_name" />
+              <el-table-column label="操作" width="120">
+                <template #default="{ row }">
+                  <el-button type="primary" link size="small" @click="goToTagManage">去创建</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+
+          <div v-if="folderValidationResult?.ambiguous?.length" class="fail-section">
+            <div class="fail-section-title">歧义标签（多维度匹配）</div>
+            <div
+              v-for="item in folderValidationResult.ambiguous"
+              :key="item.tag_name"
+              class="ambiguous-item"
+            >
+              <span class="ambiguous-tag">{{ item.tag_name }}</span>
+              <span class="ambiguous-label">属于：</span>
+              <el-select
+                v-if="!folderTagMapping[item.tag_name]"
+                placeholder="请选择维度"
+                size="small"
+                style="width: 160px"
+                @change="(dimId) => onAmbiguousChange(item.tag_name, dimId, item.dimensions)"
+              >
+                <el-option
+                  v-for="dim in item.dimensions"
+                  :key="dim.dimension_id"
+                  :label="dim.dimension_label || dim.dimension_name"
+                  :value="dim.dimension_id"
+                />
+              </el-select>
+              <el-tag v-else type="success" size="small">已选择 {{ folderTagMapping[item.tag_name].dimension_name }}</el-tag>
+            </div>
+          </div>
+        </div>
+        <div class="dialog-footer">
+          <el-button @click="folderUploadStep = 'input'">返回修改</el-button>
+          <el-button @click="folderUploadVisible = false">关闭</el-button>
+        </div>
+      </div>
+
+      <!-- 步骤4：预览确认 -->
+      <div v-else-if="folderUploadStep === 'preview'">
+        <div class="preview-summary">
+          <span>共 <strong>{{ folderPreviewData?.total_files || 0 }}</strong> 个文件</span>
+          <span v-if="folderPreviewData?.files?.length > 100" class="async-hint">
+            （超过 100 个，将后台异步处理）
+          </span>
+          <span v-if="folderPreviewData?.tag_summary?.length">
+            ，使用标签：
+            <el-tag
+              v-for="(tag, i) in folderPreviewData.tag_summary"
+              :key="i"
+              size="small"
+              effect="plain"
+              class="mr-4"
+            >
+              {{ tag.dimension_name }}:{{ tag.tag_value }}
+            </el-tag>
+          </span>
+        </div>
+        <el-table
+          :data="(folderPreviewData?.files || []).slice(0, 50)"
+          size="small"
+          max-height="400"
+        >
+          <el-table-column label="文件名" prop="file_name" show-overflow-tooltip />
+          <el-table-column label="标签" min-width="200">
+            <template #default="{ row }">
+              <el-tag
+                v-for="(tag, i) in row.tags"
+                :key="i"
+                size="small"
+                effect="plain"
+                class="mr-4"
+              >
+                {{ tag.dimension_name }}:{{ tag.tag_value }}
+              </el-tag>
+            </template>
+          </el-table-column>
+        </el-table>
+        <p v-if="(folderPreviewData?.files || []).length > 50" class="preview-more">
+          还有 {{ folderPreviewData.files.length - 50 }} 个文件...
+        </p>
+        <div class="dialog-footer">
+          <el-button @click="folderUploadStep = 'input'">返回</el-button>
+          <el-button type="primary" @click="confirmFolderUpload">确认上传</el-button>
+        </div>
+      </div>
+
+      <!-- 步骤5：执行中 / 后台执行中 -->
+      <div v-else-if="folderUploadStep === 'executing'" class="folder-loading">
+        <el-icon size="48" class="loading-icon"><Loading /></el-icon>
+        <p>{{ folderJobId ? '已提交后台处理，请稍候...' : '正在逐文件入库，请稍候...' }}</p>
+        <p v-if="folderJobId" class="job-hint">任务 ID: {{ folderJobId }}</p>
+      </div>
+
+      <!-- 步骤6：执行报告 -->
+      <div v-else-if="folderUploadStep === 'report'">
+        <div class="report-stats">
+          <div class="report-stat">
+            <div class="report-stat-value">{{ folderUploadReport?.total || 0 }}</div>
+            <div class="report-stat-label">总文件数</div>
+          </div>
+          <div class="report-stat success">
+            <div class="report-stat-value">{{ folderUploadReport?.success || 0 }}</div>
+            <div class="report-stat-label">成功入库</div>
+          </div>
+          <div class="report-stat warning">
+            <div class="report-stat-value">{{ folderUploadReport?.new_version_count || 0 }}</div>
+            <div class="report-stat-label">作为新版本</div>
+          </div>
+          <div class="report-stat danger">
+            <div class="report-stat-value">{{ folderUploadReport?.failed?.length || 0 }}</div>
+            <div class="report-stat-label">失败</div>
+          </div>
+        </div>
+        <el-table
+          v-if="folderUploadReport?.failed?.length"
+          :data="folderUploadReport.failed"
+          size="small"
+          class="report-fail-table"
+        >
+          <el-table-column label="文件" prop="file_name" />
+          <el-table-column label="原因" prop="reason" />
+        </el-table>
+        <div class="dialog-footer">
+          <el-button @click="folderUploadVisible = false">关闭</el-button>
+          <el-button type="primary" @click="handleViewUploaded">查看素材库</el-button>
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -225,8 +420,13 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   UploadFilled, Document, CollectionTag, Lock, MagicStick, Check,
+  FolderOpened, Loading, CircleClose, Warning,
 } from '@element-plus/icons-vue'
-import { getTagDimensions, uploadAsset, analyzePreview } from '@/api/asset'
+import {
+  getTagDimensions, uploadAsset, analyzePreview,
+  validateFolderUpload, previewFolderUpload, executeFolderUpload,
+  getFolderUploadStatus,
+} from '@/api/asset'
 
 const router = useRouter()
 const uploadRef = ref(null)
@@ -455,6 +655,192 @@ function fileTypeLabel(type) {
 onMounted(() => {
   loadDimensions()
 })
+
+// ── 文件夹批量上传 ──────────────────────────────────────
+const folderUploadVisible = ref(false)
+const folderUploadStep = ref('input')
+const folderPath = ref('')
+const folderValidationResult = ref(null)
+const folderPreviewData = ref(null)
+const folderUploadReport = ref(null)
+const folderTagMapping = ref({})
+const folderExtraPermission = ref({ permission_group: 'all', allow_preview: 1, allow_download: 1 })
+const folderJobId = ref(null)
+let pollTimer = null
+
+function openFolderUpload() {
+  folderUploadVisible.value = true
+  folderUploadStep.value = 'input'
+  folderPath.value = ''
+  folderValidationResult.value = null
+  folderPreviewData.value = null
+  folderUploadReport.value = null
+  folderTagMapping.value = {}
+  folderExtraPermission.value = { permission_group: 'all', allow_preview: 1, allow_download: 1 }
+  folderJobId.value = null
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
+async function startFolderValidate() {
+  if (!folderPath.value.trim()) {
+    ElMessage.warning('请输入文件夹路径')
+    return
+  }
+  folderUploadStep.value = 'validating'
+  try {
+    const res = await validateFolderUpload(folderPath.value.trim())
+    const data = res.data || {}
+    folderValidationResult.value = data
+
+    if (data.message === '所选文件夹中未找到图片文件') {
+      folderUploadStep.value = 'fail'
+      return
+    }
+
+    if (data.is_valid) {
+      const mapping = {}
+      for (const m of data.matched || []) {
+        mapping[m.tag_name] = {
+          dimension_id: m.dimension_id,
+          tag_value_id: m.tag_value_id,
+          dimension_name: m.dimension_name,
+          original_value: m.original_value,
+        }
+      }
+      folderTagMapping.value = mapping
+
+      const previewRes = await previewFolderUpload(folderPath.value.trim(), mapping)
+      folderPreviewData.value = previewRes.data || {}
+      folderUploadStep.value = 'preview'
+    } else {
+      folderUploadStep.value = 'fail'
+    }
+  } catch (e) {
+    ElMessage.error('校验失败: ' + (e.response?.data?.message || e.message))
+    folderUploadStep.value = 'input'
+  }
+}
+
+function onAmbiguousChange(tagName, dimId, dimensions) {
+  const dim = dimensions.find(d => d.dimension_id === dimId)
+  if (dim) {
+    resolveAmbiguousTag(tagName, dim.dimension_id, dim.tag_value_id, dim.dimension_name, dim.original_value)
+  }
+}
+
+async function resolveAmbiguousTag(tagName, dimensionId, tagValueId, dimensionName, originalValue) {
+  folderTagMapping.value[tagName] = {
+    dimension_id: dimensionId,
+    tag_value_id: tagValueId,
+    dimension_name: dimensionName,
+    original_value: originalValue,
+  }
+  const result = folderValidationResult.value
+  const stillMissing = (result.missing || []).filter(m => !folderTagMapping.value[m])
+  const stillAmbiguous = (result.ambiguous || []).filter(a => !folderTagMapping.value[a.tag_name])
+
+  if (stillMissing.length === 0 && stillAmbiguous.length === 0) {
+    const mapping = { ...folderTagMapping.value }
+    for (const m of result.matched || []) {
+      if (!mapping[m.tag_name]) {
+        mapping[m.tag_name] = {
+          dimension_id: m.dimension_id,
+          tag_value_id: m.tag_value_id,
+          dimension_name: m.dimension_name,
+          original_value: m.original_value,
+        }
+      }
+    }
+    folderTagMapping.value = mapping
+    folderUploadStep.value = 'validating'
+    try {
+      const previewRes = await previewFolderUpload(folderPath.value.trim(), mapping)
+      folderPreviewData.value = previewRes.data || {}
+      folderUploadStep.value = 'preview'
+    } catch (e) {
+      ElMessage.error('预览生成失败')
+      folderUploadStep.value = 'fail'
+    }
+  }
+}
+
+async function confirmFolderUpload() {
+  folderUploadStep.value = 'executing'
+  try {
+    const extraTags = []
+    const res = await executeFolderUpload(
+      folderPath.value.trim(),
+      folderTagMapping.value,
+      folderExtraPermission.value,
+      extraTags,
+    )
+    const data = res.data || {}
+
+    if (data.async) {
+      // 后台异步执行，开始轮询
+      folderJobId.value = data.job_id
+      startPolling(data.job_id)
+    } else {
+      // 同步完成
+      folderUploadReport.value = data.report || {}
+      folderUploadStep.value = 'report'
+    }
+  } catch (e) {
+    ElMessage.error('上传失败: ' + (e.response?.data?.message || e.message))
+    folderUploadStep.value = 'preview'
+  }
+}
+
+function startPolling(jobId) {
+  pollTimer = setInterval(async () => {
+    try {
+      const res = await getFolderUploadStatus(jobId)
+      const job = res.data || {}
+
+      if (job.status === 'completed') {
+        clearInterval(pollTimer)
+        pollTimer = null
+        folderUploadReport.value = job.report || {}
+        folderUploadStep.value = 'report'
+      } else if (job.status === 'failed') {
+        clearInterval(pollTimer)
+        pollTimer = null
+        ElMessage.error('后台处理失败: ' + (job.error || '未知错误'))
+        folderUploadStep.value = 'input'
+      }
+      // pending / running 继续轮询
+    } catch (e) {
+      // 轮询失败不中断，继续尝试
+      console.warn('轮询任务状态失败:', e)
+    }
+  }, 2000)
+}
+
+function closeFolderUpload() {
+  folderUploadVisible.value = false
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+  if (folderUploadStep.value === 'report') {
+    folderUploadStep.value = 'input'
+  }
+}
+
+function goToTagManage() {
+  folderUploadVisible.value = false
+  setTimeout(() => {
+    window.open('/system/tag-dimension', '_blank')
+  }, 300)
+}
+
+function handleViewUploaded() {
+  folderUploadVisible.value = false
+  router.push('/asset/library')
+}
 </script>
 
 <style scoped>
@@ -707,5 +1093,152 @@ onMounted(() => {
   gap: 12px;
   padding-top: 20px;
   border-top: 1px solid #f0f0f0;
+}
+
+/* 页面头部 */
+.page-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* ── 文件夹上传 dialog ────────────────────────────────── */
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #e4e7ed;
+}
+
+.folder-loading {
+  text-align: center;
+  padding: 40px 0;
+}
+
+.folder-loading .loading-icon {
+  color: #d4941c;
+  animation: rotate 1.5s linear infinite;
+}
+
+@keyframes rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.fail-message {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 20px;
+  background: #fef0f0;
+  border-radius: 8px;
+  color: #f56c6c;
+  font-size: 14px;
+}
+
+.fail-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0;
+  font-size: 14px;
+  color: #e6a23c;
+  font-weight: 500;
+}
+
+.fail-section {
+  margin-top: 16px;
+}
+
+.fail-section-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: #666;
+  margin-bottom: 8px;
+}
+
+.ambiguous-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.ambiguous-tag {
+  font-weight: 500;
+  color: #1e1e2d;
+  min-width: 80px;
+}
+
+.ambiguous-label {
+  font-size: 12px;
+  color: #999;
+}
+
+.preview-summary {
+  padding: 12px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.preview-summary .async-hint {
+  color: #e6a23c;
+  margin-left: 8px;
+}
+
+.preview-more {
+  text-align: center;
+  color: #999;
+  font-size: 12px;
+  padding: 8px 0;
+}
+
+.job-hint {
+  font-size: 12px;
+  color: #999;
+  margin-top: 8px;
+}
+
+.report-stats {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.report-stat {
+  flex: 1;
+  text-align: center;
+  padding: 16px;
+  background: #f5f7fa;
+  border-radius: 8px;
+}
+
+.report-stat.success { background: #f0f9eb; }
+.report-stat.warning { background: #fdf6ec; }
+.report-stat.danger { background: #fef0f0; }
+
+.report-stat-value {
+  font-size: 24px;
+  font-weight: 600;
+  color: #1e1e2d;
+}
+
+.report-stat.success .report-stat-value { color: #67c23a; }
+.report-stat.warning .report-stat-value { color: #e6a23c; }
+.report-stat.danger .report-stat-value { color: #f56c6c; }
+
+.report-stat-label {
+  font-size: 12px;
+  color: #999;
+  margin-top: 4px;
+}
+
+.report-fail-table {
+  margin-bottom: 16px;
 }
 </style>

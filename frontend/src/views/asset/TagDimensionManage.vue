@@ -61,6 +61,12 @@
             :key="val.id"
             class="value-item"
           >
+            <div class="value-tag-wrap">
+            <img
+              v-if="val.image_path"
+              :src="getTagImageUrl(val.image_path)"
+              class="value-tag-thumb"
+            />
             <el-tag
               size="small"
               :color="val.color_hex || undefined"
@@ -68,6 +74,7 @@
             >
               {{ val.value }}
             </el-tag>
+          </div>
             <span v-if="!val.is_active" class="value-inactive">(已禁用)</span>
             <div class="value-actions">
               <el-button link type="primary" size="small" @click="openEditValue(dim, val)">
@@ -135,6 +142,22 @@
         <el-form-item label="颜色">
           <el-color-picker v-model="valueForm.color_hex" show-alpha />
         </el-form-item>
+        <el-form-item label="图片">
+          <div class="tag-image-uploader">
+            <el-upload
+              class="tag-image-upload"
+              :http-request="handleTagImageUpload"
+              :show-file-list="false"
+              accept="image/*"
+            >
+              <div v-if="valueForm.image_path" class="tag-image-preview">
+                <img :src="getTagImageUrl(valueForm.image_path)" />
+                <el-icon class="tag-image-delete" @click.stop="valueForm.image_path = null"><CircleClose /></el-icon>
+              </div>
+              <el-icon v-else class="tag-image-plus"><Plus /></el-icon>
+            </el-upload>
+          </div>
+        </el-form-item>
         <el-form-item label="排序">
           <el-input-number v-model="valueForm.sort_order" :min="0" />
         </el-form-item>
@@ -153,11 +176,11 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  CollectionTag, Plus, Edit, Delete,
+  CollectionTag, Plus, Edit, Delete, CircleClose,
 } from '@element-plus/icons-vue'
 import {
   getTagDimensions, createDimension, updateDimension, deleteDimension,
-  createTagValue, updateTagValue, deleteTagValue,
+  createTagValue, updateTagValue, deleteTagValue, uploadTagImage,
 } from '@/api/asset'
 
 const loading = ref(false)
@@ -270,6 +293,7 @@ const currentValue = ref(null)
 const valueForm = ref({
   value: '',
   color_hex: null,
+  image_path: null,
   sort_order: 0,
 })
 
@@ -280,6 +304,7 @@ function openCreateValue(dim) {
   valueForm.value = {
     value: '',
     color_hex: null,
+    image_path: null,
     sort_order: dim.values?.length || 0,
   }
   showValueDialog.value = true
@@ -292,6 +317,7 @@ function openEditValue(dim, val) {
   valueForm.value = {
     value: val.value,
     color_hex: val.color_hex,
+    image_path: val.image_path,
     sort_order: val.sort_order,
   }
   showValueDialog.value = true
@@ -304,19 +330,17 @@ async function submitValue() {
   }
   valueSubmitting.value = true
   try {
+    const payload = {
+      value: valueForm.value.value,
+      color_hex: valueForm.value.color_hex,
+      image_path: valueForm.value.image_path,
+      sort_order: valueForm.value.sort_order,
+    }
     if (isEditValue.value && currentValue.value) {
-      await updateTagValue(currentValue.value.id, {
-        value: valueForm.value.value,
-        color_hex: valueForm.value.color_hex,
-        sort_order: valueForm.value.sort_order,
-      })
+      await updateTagValue(currentValue.value.id, payload)
       ElMessage.success('更新成功')
     } else {
-      await createTagValue(currentDim.value.id, {
-        value: valueForm.value.value,
-        color_hex: valueForm.value.color_hex,
-        sort_order: valueForm.value.sort_order,
-      })
+      await createTagValue(currentDim.value.id, payload)
       ElMessage.success('创建成功')
     }
     showValueDialog.value = false
@@ -326,6 +350,20 @@ async function submitValue() {
   } finally {
     valueSubmitting.value = false
   }
+}
+
+async function handleTagImageUpload(options) {
+  try {
+    const res = await uploadTagImage(options.file)
+    valueForm.value.image_path = res.data?.image_path || null
+  } catch (e) {
+    ElMessage.error('图片上传失败')
+  }
+}
+
+function getTagImageUrl(path) {
+  if (!path) return ''
+  return `/uploads/${path}`
 }
 
 async function handleDeleteValue(val) {
@@ -439,6 +477,69 @@ onMounted(() => {
   padding: 6px 10px;
   background: #fafbfe;
   border-radius: 8px;
+}
+
+.value-tag-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.value-tag-thumb {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid #e4e7ed;
+}
+
+.tag-image-uploader {
+  display: flex;
+}
+
+.tag-image-upload :deep(.el-upload) {
+  width: 80px;
+  height: 80px;
+  border: 1px dashed #d9d9d9;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+}
+
+.tag-image-upload :deep(.el-upload:hover) {
+  border-color: #d4941c;
+}
+
+.tag-image-preview {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.tag-image-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.tag-image-delete {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  color: #fff;
+  background: rgba(0,0,0,0.5);
+  border-radius: 50%;
+  padding: 2px;
+  cursor: pointer;
+}
+
+.tag-image-plus {
+  font-size: 24px;
+  color: #8c939d;
 }
 
 .value-inactive {

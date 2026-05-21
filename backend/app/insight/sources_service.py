@@ -17,9 +17,36 @@ from app.insight.models import (
 from app.insight.schemas import (
     SourceCreate,
     SourceUpdate,
+    SourceCreateV2,
 )
 
 logger = logging.getLogger("insight")
+
+# ── 信源校验规则 ──────────────────────────────────────────
+VALID_MONITOR_FIELDS = {"price_change", "new_product", "out_of_stock"}
+
+
+def _validate_source_config(data: dict) -> None:
+    """校验信源配置，有问题直接抛 ValueError。"""
+    source_type = data.get("source_type")
+    config = data.get("config_json") or {}
+
+    if source_type == "xpoz":
+        target_accounts = config.get("target_accounts", [])
+        if not target_accounts:
+            raise ValueError("XPOZ 信源必须指定 target_accounts（至少一个账号）")
+
+    if source_type == "competitor_monitor":
+        monitor_fields = config.get("monitor_fields", [])
+        invalid = set(monitor_fields) - VALID_MONITOR_FIELDS
+        if invalid:
+            raise ValueError(f"竞品监控字段非法: {invalid}，只允许 {VALID_MONITOR_FIELDS}")
+
+    # 通用: url 校验
+    url = data.get("url", "")
+    if not url or not url.startswith(("http://", "https://", "www.")):
+        if source_type not in ("manual", "xpoz"):
+            raise ValueError("信源 URL 必须以 http:// 或 https:// 开头")
 
 # ── 上传目录 ──────────────────────────────────────────
 INSIGHT_UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent / "uploads" / "insight"
@@ -59,8 +86,10 @@ def get_source(db: Session, source_id: int) -> InsightSource:
     return s
 
 
-def create_source(db: Session, data: SourceCreate) -> InsightSource:
-    s = InsightSource(**data.model_dump())
+def create_source(db: Session, data: SourceCreate | SourceCreateV2) -> InsightSource:
+    payload = data.model_dump()
+    _validate_source_config(payload)
+    s = InsightSource(**payload)
     db.add(s)
     db.commit()
     db.refresh(s)
@@ -70,6 +99,13 @@ def create_source(db: Session, data: SourceCreate) -> InsightSource:
 def update_source(db: Session, source_id: int, data: SourceUpdate) -> InsightSource:
     s = get_source(db, source_id)
     payload = data.model_dump(exclude_unset=True)
+    # 校验合并后的完整配置
+    merged = {
+        "source_type": payload.get("source_type", s.source_type),
+        "config_json": payload.get("config_json", s.config_json),
+        "url": payload.get("url", s.url),
+    }
+    _validate_source_config(merged)
     for k, v in payload.items():
         setattr(s, k, v)
     db.commit()

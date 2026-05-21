@@ -20,7 +20,18 @@ from app.api.deps import get_db
 from app.auth.dependencies import require_permission
 from app.asset import service
 from app.asset.analyze_service import analyze_asset_tags
+from app.asset.folder_upload_service import (
+    ASYNC_FILE_THRESHOLD,
+    execute_folder_upload,
+    extract_tags_from_path,
+    get_folder_upload_job,
+    preview_files,
+    scan_folder,
+    start_folder_upload_async,
+    validate_folder_tags,
+)
 from app.asset.schemas import (
+    AssetActionRequest,
     AssetCreate,
     AssetListRequest,
     AssetPermissionIn,
@@ -31,6 +42,9 @@ from app.asset.schemas import (
     FavoriteFolderCreate,
     FavoriteFolderUpdate,
     FavoriteItemCreate,
+    FolderUploadExecuteRequest,
+    FolderUploadPreviewRequest,
+    FolderUploadValidateRequest,
     TagDimensionCreate,
     TagDimensionUpdate,
     TagValueCreate,
@@ -65,6 +79,7 @@ def get_dimensions(
             "dimension_id": v.dimension_id,
             "value": v.value,
             "color_hex": v.color_hex,
+            "image_path": v.image_path,
             "sort_order": v.sort_order,
             "is_active": v.is_active,
         } for v in d.values],
@@ -120,6 +135,34 @@ def delete_dimension(
     return _ok(None)
 
 
+@router.post("/tag-image-upload")
+def upload_tag_image(
+    file: UploadFile = File(...),
+    _user: dict = Depends(require_permission("asset:admin")),
+):
+    """上传标签图片到系统 uploads 目录，返回相对路径"""
+    from datetime import datetime
+
+    from app.bootstrap.static_files import UPLOADS_DIR
+
+    tag_dir = UPLOADS_DIR / "tag_images"
+    tag_dir.mkdir(parents=True, exist_ok=True)
+
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in {".jpg", ".jpeg", ".png", ".webp", ".gif"}:
+        raise HTTPException(status_code=400, detail="仅支持 jpg/png/webp/gif 格式")
+
+    now = datetime.now()
+    filename = f"tag_{now.strftime('%Y%m%d%H%M%S')}_{os.urandom(4).hex()}{ext}"
+    save_path = tag_dir / filename
+
+    with open(save_path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    rel_path = f"tag_images/{filename}"
+    return _ok({"image_path": rel_path})
+
+
 @router.post("/tags/dimensions/{dim_id}/values")
 def create_tag_value(
     dim_id: int,
@@ -133,7 +176,7 @@ def create_tag_value(
         raise HTTPException(status_code=404, detail="维度不存在")
     tv = service.create_dimension_value(
         db, dimension_id=dim_id, value=req.value,
-        color_hex=req.color_hex, sort_order=req.sort_order,
+        color_hex=req.color_hex, image_path=req.image_path, sort_order=req.sort_order,
     )
     return _ok({"id": tv.id, "value": tv.value})
 
@@ -148,7 +191,7 @@ def update_tag_value(
     """更新标签值"""
     tv = service.update_dimension_value(
         db, value_id, value=req.value,
-        color_hex=req.color_hex, sort_order=req.sort_order,
+        color_hex=req.color_hex, image_path=req.image_path, sort_order=req.sort_order,
     )
     if not tv:
         raise HTTPException(status_code=404, detail="标签值不存在")
@@ -270,6 +313,7 @@ def list_assets(
             "file_format": a.file_format,
             "file_size": a.file_size,
             "thumbnail_path": a.thumbnail_path,
+            "storage_path": a.storage_path,
             "uploader_id": a.uploader_id,
             "status": a.status,
             "download_count": a.download_count,
@@ -279,9 +323,129 @@ def list_assets(
                 "dimension_id": t.dimension_id,
                 "value": t.value,
                 "color_hex": t.color_hex,
+                "image_path": t.image_path,
             } for t in a.tags],
         } for a in items],
     })
+
+
+# ── 文件夹上传 ──────────────────────────────────────────
+
+@router.post("/folder-upload/validate")
+def folder_upload_validate(
+    req: FolderUploadValidateRequest,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("asset:write")),
+):
+    """校验文件夹标签：扫描文件夹 → 提取候选标签 → 匹配标签库。"""
+    files = scan_folder(req.folder_path)
+    if not files:
+        return _ok({
+            "is_valid": False,
+            "total_files": 0,
+            "matched": [],
+            "missing": [],
+            "ambiguous": [],
+            "message": "所选文件夹中未找到图片文件",
+        })
+
+    # 收集所有候选标签
+    all_tags: list[str] = []
+    for fp in files:
+        all_tags.extend(extract_tags_from_path(fp, req.folder_path))
+
+    result = validate_folder_tags(db, all_tags)
+
+    return _ok({
+        "is_valid": result.is_valid,
+        "total_files": len(files),
+        "candidate_tags": list(dict.fromkeys(all_tags)),
+        "matched": result.matched,
+        "missing": result.missing,
+        "ambiguous": result.ambiguous,
+    })
+
+
+@router.post("/folder-upload/preview")
+def folder_upload_preview(
+    req: FolderUploadPreviewRequest,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("asset:write")),
+):
+    """预览即将入库的文件清单。"""
+    files = preview_files(db, req.folder_path, req.tag_mapping)
+
+    # 统计使用的标签维度
+    dim_stats: dict[int, dict] = {}
+    for f in files:
+        for t in f["tags"]:
+            dim_id = t["dimension_id"]
+            if dim_id not in dim_stats:
+                dim_stats[dim_id] = {
+                    "dimension_name": t["dimension_name"],
+                    "tag_value": t["tag_value"],
+                }
+
+    return _ok({
+        "total_files": len(files),
+        "files": files,
+        "tag_summary": list(dim_stats.values()),
+    })
+
+
+@router.post("/folder-upload/execute")
+def folder_upload_execute(
+    req: FolderUploadExecuteRequest,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("asset:write")),
+):
+    """执行文件夹批量入库。>100 文件时后台异步执行。"""
+    from app.core.database import SessionLocal
+
+    user_id = int(user.get("sub") or user.get("user_id") or 0)
+    files = scan_folder(req.folder_path)
+
+    if len(files) > ASYNC_FILE_THRESHOLD:
+        job_id = start_folder_upload_async(
+            SessionLocal,
+            req.folder_path,
+            req.tag_mapping,
+            req.permission,
+            req.extra_tags,
+            user_id,
+        )
+        return _ok({
+            "async": True,
+            "job_id": job_id,
+            "total_files": len(files),
+            "message": f"共 {len(files)} 个文件，已提交后台处理",
+        })
+
+    report = execute_folder_upload(
+        db,
+        folder_path=req.folder_path,
+        tag_mapping=req.tag_mapping,
+        permission=req.permission,
+        extra_tags=req.extra_tags,
+        uploader_id=user_id,
+        copy=True,
+    )
+    return _ok({
+        "async": False,
+        "report": report,
+    })
+
+
+@router.get("/folder-upload/status/{job_id}")
+def folder_upload_status(
+    job_id: str,
+    _user: dict = Depends(require_permission("asset:write")),
+):
+    """查询异步文件夹上传任务状态。"""
+    job = get_folder_upload_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    return _ok(job)
 
 
 # ── 素材详情 ────────────────────────────────────────────
@@ -504,12 +668,28 @@ def get_favorite_folders(
     db: Session = Depends(get_db),
     user: dict = Depends(require_permission("asset:read")),
 ):
-    """我的收藏夹列表"""
+    """我的收藏夹列表（含素材数量）"""
+    from sqlalchemy import func
+    from app.asset.models import FavoriteFolder, FavoriteItem
+
     user_id = int(user.get("sub") or user.get("user_id") or 0)
     folders = service.list_favorite_folders(db, user_id)
+
+    # 计算每个收藏夹的素材数量
+    folder_counts = {}
+    for fc in (
+        db.query(FavoriteItem.folder_id, func.count(FavoriteItem.id).label("cnt"))
+        .join(FavoriteFolder)
+        .filter(FavoriteFolder.user_id == user_id)
+        .group_by(FavoriteItem.folder_id)
+        .all()
+    ):
+        folder_counts[fc.folder_id] = fc.cnt
+
     return _ok([{
         "id": f.id,
         "name": f.name,
+        "item_count": folder_counts.get(f.id, 0),
         "sort_order": f.sort_order,
         "created_at": f.created_at.isoformat() if f.created_at else None,
     } for f in folders])
@@ -713,3 +893,349 @@ def get_download_trend_data(
 ):
     """下载趋势（按天）"""
     return _ok(service.get_download_trend(db, days=days))
+
+
+# ── 移动端专用接口 ──────────────────────────────────────
+
+
+@router.get("/quick-search")
+def quick_search_assets(
+    file_type: Optional[str] = Query(None),
+    tag_filters: Optional[str] = Query(None, description='JSON {"color":[1,2],"length":[3]}'),
+    keyword: Optional[str] = Query(None),
+    status: Optional[str] = Query("latest"),
+    sort_by: str = Query("created_at"),
+    sort_order: str = Query("desc"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=50),
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("asset:read")),
+):
+    """移动端快速搜索 — 返回精简字段"""
+    import json
+
+    parsed_tags: Optional[dict] = None
+    if tag_filters:
+        parsed_tags = json.loads(tag_filters)
+
+    total, items = service.query_assets(
+        db,
+        file_type=file_type,
+        tag_filters=parsed_tags,
+        keyword=keyword,
+        status=status,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        page=page,
+        page_size=page_size,
+    )
+
+    return _ok({
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total + page_size - 1) // page_size,
+        "items": [{
+            "id": a.id,
+            "file_name": a.file_name,
+            "file_type": a.file_type,
+            "thumbnail_path": a.thumbnail_path,
+            "status": a.status,
+            "tags": [{
+                "dimension": t.dimension.name if t.dimension else "",
+                "dimension_label": t.dimension.label if t.dimension else "",
+                "value": t.value,
+            } for t in a.tags],
+            "permissions": {
+                "can_preview": a.permissions.allow_preview if a.permissions else True,
+                "can_download": a.permissions.allow_download if a.permissions else True,
+            },
+        } for a in items],
+    })
+
+
+@router.get("/tags/popular")
+def get_popular_tags(
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("asset:read")),
+):
+    """获取热门标签 — 各维度下关联素材最多的标签值"""
+    from sqlalchemy import func
+    from app.asset.models import TagDimension, TagValue, asset_tag_association, Asset
+
+    dims = db.query(TagDimension).filter(TagValue.is_active == 1).all()
+    result = []
+
+    for dim in dims:
+        top_values = (
+            db.query(
+                TagValue.value,
+                func.count(asset_tag_association.c.asset_id).label("cnt"),
+            )
+            .join(asset_tag_association, TagValue.id == asset_tag_association.c.tag_value_id)
+            .join(Asset, Asset.id == asset_tag_association.c.asset_id)
+            .filter(
+                TagValue.dimension_id == dim.id,
+                Asset.status == "latest",
+            )
+            .group_by(TagValue.value)
+            .order_by(func.count(asset_tag_association.c.asset_id).desc())
+            .limit(8)
+            .all()
+        )
+
+        if top_values:
+            result.append({
+                "dimension": dim.name,
+                "label": dim.label,
+                "top_values": [v.value for v in top_values],
+            })
+
+    return _ok(result)
+
+
+@router.get("/{asset_id}/share-link")
+def get_asset_share_link(
+    asset_id: int,
+    expires: int = Query(7200, ge=60, le=86400),
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("asset:read")),
+):
+    """获取素材分享/复制链接（签名下载URL）"""
+    from datetime import datetime, timedelta
+    from app.asset.asset_service import get_asset_download_url
+
+    asset = service.get_asset_detail(db, asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail="素材不存在")
+
+    # 生成签名URL
+    url = get_asset_download_url(asset, expiry_seconds=expires)
+    expires_at = datetime.utcnow() + timedelta(seconds=expires)
+
+    return _ok({
+        "url": url,
+        "expires_at": expires_at.isoformat(),
+    })
+
+
+@router.post("/{asset_id}/actions")
+def record_asset_action(
+    asset_id: int,
+    req: AssetActionRequest,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("asset:read")),
+):
+    """记录素材使用行为（view / download / copy_link）"""
+    from app.asset.models import DownloadLog
+
+    asset = service.get_asset_detail(db, asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail="素材不存在")
+
+    user_id = int(user.get("sub") or user.get("user_id") or 0)
+
+    if req.action == "download":
+        service.increment_download_count(db, asset_id)
+        service.log_download(db, asset_id, user_id, asset.current_version_id)
+    else:
+        # view / copy_link 也记日志（version_number=None 表示非下载行为）
+        log = DownloadLog(
+            asset_id=asset_id,
+            user_id=user_id,
+            version_number=None,
+        )
+        db.add(log)
+        db.commit()
+
+    return _ok(None)
+
+
+@router.get("/recent")
+def get_recent_assets(
+    limit: int = Query(30, ge=1, le=50),
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("asset:read")),
+):
+    """最近使用记录 — 基于下载/查看/复制日志"""
+    from sqlalchemy import desc, func
+    from app.asset.models import DownloadLog, Asset
+    from app.auth.models import ArkUser
+
+    user_id = int(user.get("sub") or user.get("user_id") or 0)
+
+    # 按素材分组取最近一条记录
+    subq = (
+        db.query(
+            DownloadLog.asset_id,
+            func.max(DownloadLog.created_at).label("last_at"),
+        )
+        .filter(DownloadLog.user_id == user_id)
+        .group_by(DownloadLog.asset_id)
+        .subquery()
+    )
+
+    logs = (
+        db.query(DownloadLog, subq.c.last_at)
+        .join(subq, (
+            DownloadLog.asset_id == subq.c.asset_id,
+            DownloadLog.created_at == subq.c.last_at,
+        ))
+        .filter(DownloadLog.user_id == user_id)
+        .order_by(desc(subq.c.last_at))
+        .limit(limit)
+        .all()
+    )
+
+    # 去重并按时间排序
+    seen = set()
+    result = []
+    for log, _ in logs:
+        if log.asset_id in seen:
+            continue
+        seen.add(log.asset_id)
+        asset = db.query(Asset).filter(Asset.id == log.asset_id).first()
+        if not asset:
+            continue
+
+        # 判断是否收藏
+        is_fav = False
+        fav_items = db.query(service.FavoriteItem).filter(
+            service.FavoriteItem.asset_id == asset.id,
+        ).join(service.FavoriteFolder).filter(
+            service.FavoriteFolder.user_id == user_id,
+        ).first()
+        if fav_items:
+            is_fav = True
+
+        result.append({
+            "id": asset.id,
+            "file_name": asset.file_name,
+            "file_type": asset.file_type,
+            "thumbnail_path": asset.thumbnail_path,
+            "status": asset.status,
+            "tags": [{
+                "dimension": t.dimension.name if t.dimension else "",
+                "dimension_label": t.dimension.label if t.dimension else "",
+                "value": t.value,
+            } for t in asset.tags],
+            "permissions": {
+                "can_preview": asset.permissions.allow_preview if asset.permissions else True,
+                "can_download": asset.permissions.allow_download if asset.permissions else True,
+            },
+            "last_action": "download" if log.version_number else "view",
+            "last_action_at": log.created_at.isoformat() if log.created_at else None,
+            "fav": is_fav,
+        })
+
+    return _ok(result)
+
+
+@router.delete("/favorites/folders/{folder_id}/items/by-asset/{asset_id}")
+def remove_favorite_by_asset(
+    folder_id: int,
+    asset_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("asset:read")),
+):
+    """移动端：通过 asset_id 移除收藏（而非 item_id）"""
+    user_id = int(user.get("sub") or user.get("user_id") or 0)
+    ok = service.remove_favorite_item_by_asset(db, folder_id, user_id, asset_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="收藏项不存在")
+    return _ok(None)
+
+
+@router.get("/favorites/folders/{folder_id}/mobile-items")
+def get_favorite_items_mobile(
+    folder_id: int,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=50),
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("asset:read")),
+):
+    """移动端：收藏夹内容（分页 + 素材详情 + 是否有效）"""
+    from app.asset.models import Asset, AssetPermission, FavoriteItem, FavoriteFolder
+
+    user_id = int(user.get("sub") or user.get("user_id") or 0)
+
+    # 校验收藏夹归属
+    folder = (
+        db.query(FavoriteFolder)
+        .filter(FavoriteFolder.id == folder_id, FavoriteFolder.user_id == user_id)
+        .first()
+    )
+    if not folder:
+        raise HTTPException(status_code=404, detail="收藏夹不存在")
+
+    # 查询收藏项（分页）
+    total = (
+        db.query(FavoriteItem)
+        .filter(FavoriteItem.folder_id == folder_id)
+        .count()
+    )
+
+    items = (
+        db.query(FavoriteItem)
+        .filter(FavoriteItem.folder_id == folder_id)
+        .order_by(FavoriteItem.sort_order)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+
+    result = []
+    for item in items:
+        asset = db.query(Asset).filter(Asset.id == item.asset_id).first()
+        if not asset:
+            # 素材已被删除
+            result.append({
+                "id": item.asset_id,
+                "file_name": "未知素材",
+                "file_type": "image",
+                "thumbnail_path": None,
+                "status": "offline",
+                "tags": [],
+                "permissions": {"can_preview": False, "can_download": False},
+                "is_valid": False,
+                "invalid_reason": "deleted",
+                "fav": True,
+            })
+            continue
+
+        # 判断是否有效
+        perm = db.query(AssetPermission).filter(AssetPermission.asset_id == asset.id).first()
+        is_valid = asset.status != "offline"
+        invalid_reason = None
+        if asset.status == "offline":
+            invalid_reason = "offline"
+        elif perm and not perm.allow_preview:
+            invalid_reason = "no_permission"
+
+        result.append({
+            "id": asset.id,
+            "file_name": asset.file_name,
+            "file_type": asset.file_type,
+            "thumbnail_path": asset.thumbnail_path,
+            "status": asset.status,
+            "tags": [{
+                "dimension": t.dimension.name if t.dimension else "",
+                "dimension_label": t.dimension.label if t.dimension else "",
+                "value": t.value,
+            } for t in asset.tags],
+            "permissions": {
+                "can_preview": perm.allow_preview if perm else True,
+                "can_download": perm.allow_download if perm else True,
+            },
+            "is_valid": is_valid,
+            "invalid_reason": invalid_reason,
+            "fav": True,
+        })
+
+    return _ok({
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total + page_size - 1) // page_size,
+        "items": result,
+    })

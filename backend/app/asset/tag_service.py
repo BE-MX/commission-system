@@ -78,12 +78,14 @@ def create_dimension_value(
     dimension_id: int,
     value: str,
     color_hex: str | None = None,
+    image_path: str | None = None,
     sort_order: int = 0,
 ) -> TagValue:
     tv = TagValue(
         dimension_id=dimension_id,
         value=value,
         color_hex=color_hex,
+        image_path=image_path,
         sort_order=sort_order,
         is_active=1,
     )
@@ -98,6 +100,7 @@ def update_dimension_value(
     value_id: int,
     value: str | None = None,
     color_hex: str | None = None,
+    image_path: str | None = None,
     sort_order: int | None = None,
     is_active: int | None = None,
 ) -> TagValue | None:
@@ -108,6 +111,8 @@ def update_dimension_value(
         tv.value = value
     if color_hex is not None:
         tv.color_hex = color_hex
+    if image_path is not None:
+        tv.image_path = image_path
     if sort_order is not None:
         tv.sort_order = sort_order
     if is_active is not None:
@@ -163,21 +168,14 @@ def update_dimension(
     dim = db.query(TagDimension).filter(TagDimension.id == dim_id).first()
     if not dim:
         return None
-    if dim.is_system:
-        # 系统内置维度只允许修改 label/sort_order
-        if label is not None:
-            dim.label = label
-        if sort_order is not None:
-            dim.sort_order = sort_order
-    else:
-        if label is not None:
-            dim.label = label
-        if is_single_select is not None:
-            dim.is_single_select = is_single_select
-        if is_required is not None:
-            dim.is_required = is_required
-        if sort_order is not None:
-            dim.sort_order = sort_order
+    if label is not None:
+        dim.label = label
+    if is_single_select is not None:
+        dim.is_single_select = is_single_select
+    if is_required is not None:
+        dim.is_required = is_required
+    if sort_order is not None:
+        dim.sort_order = sort_order
     db.commit()
     db.refresh(dim)
     return dim

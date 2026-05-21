@@ -16,8 +16,11 @@ JOB_SHIPPING_DAILY_REPORT = "shipping_daily_report"
 JOB_STAGING_SCAN = "staging_scan"
 JOB_INSIGHT_INDUSTRY_DAILY = "insight_industry_daily"
 JOB_INSIGHT_AI_TOOLS = "insight_ai_tools"
+JOB_INSIGHT_INTELLIGENCE = "insight_intelligence_overview"
 JOB_STOCK_DAILY_REPORT = "stock_daily_report"
 JOB_TRACKING_POLL_ACTIVE = "tracking_poll_active"
+JOB_COLOR_SOCIAL_EXTRACT = "color_social_extract"
+JOB_COLOR_SALES_AGGREGATE = "color_sales_aggregate"
 
 
 def _register_jobs(scheduler: AsyncIOScheduler) -> None:
@@ -26,8 +29,9 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
     from app.tracking.daily_report_service import generate_daily_reports
     from app.tracking.polling_service import poll_active_shipments
     from app.tracking.staging_service import scan_staging
-    from app.insight.scheduler import generate_industry_daily, generate_ai_tools
+    from app.insight.scheduler import generate_industry_daily, generate_ai_tools, generate_intelligence_overview
     from app.stock.scheduler import generate_stock_daily_report
+    from app.color.social_extract_service import extract_social_colors, aggregate_sales_by_color
 
     async def _scan_staging_job():
         with SessionLocal() as db:
@@ -68,9 +72,34 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
         id=JOB_INSIGHT_AI_TOOLS, replace_existing=True,
     )
     scheduler.add_job(
+        generate_intelligence_overview,
+        trigger="cron", hour=8, minute=40,
+        id=JOB_INSIGHT_INTELLIGENCE, replace_existing=True,
+    )
+    scheduler.add_job(
         generate_stock_daily_report,
         trigger="cron", hour=8, minute=30,
         id=JOB_STOCK_DAILY_REPORT, replace_existing=True,
+    )
+
+    # ── 色彩趋势 ──────────────────────────────────────────
+    async def _color_social_extract_job():
+        with SessionLocal() as db:
+            extract_social_colors(db)
+
+    async def _color_sales_aggregate_job():
+        with SessionLocal() as db:
+            aggregate_sales_by_color(db)
+
+    scheduler.add_job(
+        _color_social_extract_job,
+        trigger="cron", hour=8, minute=0,
+        id=JOB_COLOR_SOCIAL_EXTRACT, replace_existing=True,
+    )
+    scheduler.add_job(
+        _color_sales_aggregate_job,
+        trigger="cron", day_of_week="mon", hour=6, minute=0,
+        id=JOB_COLOR_SALES_AGGREGATE, replace_existing=True,
     )
 
 

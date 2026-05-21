@@ -53,7 +53,7 @@ class SourceBase(BaseModel):
 
 
 class SourceCreate(SourceBase):
-    pass
+    config_json: Optional[dict] = None
 
 
 class SourceUpdate(BaseModel):
@@ -248,3 +248,167 @@ class MinutesDetail(MinutesListItem):
     original_text: Optional[str] = None
     summary_md: Optional[str] = None
     tasks: list[TaskItem] = []
+
+
+# ── 情报条目 ────────────────────────────────────────────
+class InsightItemBase(BaseModel):
+    source_id: Optional[int] = None
+    source_type: str
+    collected_at: datetime
+    published_at: Optional[datetime] = None
+    original_url: Optional[str] = None
+    title: Optional[str] = None
+    content_mode: str = "summary"
+    content_md: Optional[str] = None
+    credibility_score: Optional[int] = None
+    credibility_label: Optional[str] = None
+    credibility_note: Optional[str] = None
+    tags: Optional[list[str]] = None
+    item_type: Optional[str] = None
+    related_competitor: Optional[str] = None
+    is_featured: bool = False
+    status: str = "active"
+    # XPOZ 字段
+    xpoz_post_id: Optional[str] = None
+    like_count: Optional[int] = None
+    comment_count: Optional[int] = None
+    media_type: Optional[str] = None
+    ai_signal: Optional[str] = None
+    ai_meaning: Optional[str] = None
+    ai_action_hint: Optional[str] = None
+    priority: str = "medium"
+
+
+class InsightItemCreate(InsightItemBase):
+    pass
+
+
+class InsightItemUpdate(BaseModel):
+    title: Optional[str] = None
+    content_md: Optional[str] = None
+    credibility_score: Optional[int] = None
+    credibility_label: Optional[str] = None
+    credibility_note: Optional[str] = None
+    tags: Optional[list[str]] = None
+    item_type: Optional[str] = None
+    related_competitor: Optional[str] = None
+    is_featured: Optional[bool] = None
+    status: Optional[str] = None
+    priority: Optional[str] = None
+
+
+class InsightItemListItem(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    source_id: Optional[int] = None
+    source_type: str
+    collected_at: datetime
+    published_at: Optional[datetime] = None
+    original_url: Optional[str] = None
+    title: Optional[str] = None
+    content_mode: str
+    content_md: Optional[str] = None
+    credibility_score: Optional[int] = None
+    credibility_label: Optional[str] = None
+    tags: Optional[list] = None
+    item_type: Optional[str] = None
+    related_competitor: Optional[str] = None
+    is_featured: bool
+    status: str
+    like_count: Optional[int] = None
+    comment_count: Optional[int] = None
+    media_type: Optional[str] = None
+    ai_signal: Optional[str] = None
+    priority: str
+    created_at: datetime
+
+
+class InsightItemDetail(InsightItemListItem):
+    credibility_note: Optional[str] = None
+    ai_meaning: Optional[str] = None
+    ai_action_hint: Optional[str] = None
+
+
+# ── 采集日志 ────────────────────────────────────────────
+class CollectionLogItem(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    source_id: Optional[int] = None
+    run_at: datetime
+    status: str
+    items_fetched: int
+    items_written: int
+    items_filtered: int
+    error_message: Optional[str] = None
+    duration_ms: Optional[int] = None
+    created_at: datetime
+
+
+# ── 定时规则 ────────────────────────────────────────────
+class ScheduleRuleBase(BaseModel):
+    rule_name: str
+    is_active: bool = True
+    cron_expression: Optional[str] = None
+    config_json: Optional[dict] = None
+    notify_dingtalk: bool = True
+
+
+class ScheduleRuleCreate(ScheduleRuleBase):
+    pass
+
+
+class ScheduleRuleUpdate(BaseModel):
+    rule_name: Optional[str] = None
+    is_active: Optional[bool] = None
+    cron_expression: Optional[str] = None
+    config_json: Optional[dict] = None
+    notify_dingtalk: Optional[bool] = None
+
+
+class ScheduleRuleDetail(ScheduleRuleBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    last_run_at: Optional[datetime] = None
+    created_at: datetime
+
+
+# ── 速览报告生成 ────────────────────────────────────────
+class IntelligenceReportGenerate(BaseModel):
+    report_title: Optional[str] = None
+    date_range_start: date
+    date_range_end: date
+    mode: str = "rule_based"  # manual_select / rule_based
+    # 手动选材
+    item_ids: Optional[list[int]] = None
+    # 规则选材
+    min_credibility_score: int = 3
+    source_types: Optional[list[str]] = None
+    item_types: Optional[list[str]] = None
+    include_featured_only: bool = False
+    max_items_total: int = 30
+    competitor_filter: Optional[list[str]] = None
+    # 内容生成规则
+    content_focus: Optional[list[str]] = None
+    output_language: str = "zh-CN"
+    report_depth: str = "standard"  # brief / standard / deep
+
+
+# ── 扩展 Source 模型 ────────────────────────────────────
+class SourceCreateV2(BaseModel):
+    """支持 config_json 的信源创建"""
+    name: str
+    source_type: str
+    url: str
+    keywords: Optional[list] = None
+    exclude_keywords: Optional[list] = None
+    css_selector: Optional[str] = None
+    request_headers: Optional[dict] = None
+    proxy_url: Optional[str] = None
+    config_json: Optional[dict] = None
+    fetch_interval_hours: int = 24
+    is_active: bool = True
+    pipeline: str = "external"
+    sort_order: int = 0

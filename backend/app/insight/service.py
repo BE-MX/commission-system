@@ -22,12 +22,34 @@ from app.insight.reports_service import (  # noqa: F401
 # 信源 CRUD
 from app.insight.sources_service import (  # noqa: F401
     list_sources, get_source, create_source, update_source, delete_source,
-    test_source,
+    test_source, _validate_source_config,
 )
 
 # 抓取 (供其他业务模块复用)
 from app.insight.fetcher import (  # noqa: F401
     filter_items, fetch_rss, fetch_html, fetch_aihot_daily,
+)
+
+# 情报条目
+from app.insight.item_service import (  # noqa: F401
+    list_items, get_item, create_item, update_item, toggle_feature,
+    update_status, batch_toggle_feature, batch_update_status, upload_manual_md,
+)
+
+# 采集引擎
+from app.insight.collector_service import (  # noqa: F401
+    collect_source, run_collection_batch,
+)
+
+# 情报速览
+from app.insight.intelligence_service import (  # noqa: F401
+    generate_intelligence_report, list_intelligence_reports,
+    get_intelligence_report_html, delete_intelligence_report, pin_report,
+)
+
+# 定时规则
+from app.insight.schedule_service import (  # noqa: F401
+    list_rules, get_rule, create_rule, update_rule, toggle_rule, delete_rule,
 )
 
 # 案例库

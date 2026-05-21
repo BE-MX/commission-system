@@ -6,18 +6,46 @@
         <span class="sidebar-title">筛选</span>
         <el-button type="text" size="small" @click="resetFilters">重置</el-button>
       </div>
+
+      <!-- 标签关键字筛选 -->
+      <div class="filter-keyword-wrap">
+        <el-input
+          v-model="filterKeyword"
+          placeholder="搜索标签"
+          clearable
+          size="small"
+        >
+          <template #prefix>
+            <el-icon><Search /></el-icon>
+          </template>
+        </el-input>
+      </div>
+
       <div class="filter-groups">
-        <div v-for="dim in dimensions" :key="dim.id" class="filter-group">
+        <div
+          v-for="dim in filteredDimensions"
+          :key="dim.id"
+          class="filter-group"
+          :style="getDimDividerStyle(dim)"
+        >
           <div class="filter-label">{{ dim.label }}</div>
-          <el-checkbox-group v-model="activeFilters[dim.name]" size="small">
-            <el-checkbox-button
-              v-for="val in dim.values"
+          <div class="filter-tag-list">
+            <div
+              v-for="val in filteredValues(dim)"
               :key="val.id"
-              :label="val.id"
+              class="filter-tag"
+              :class="{ active: isTagSelected(dim.name, val.id) }"
+              :style="getTagStyle(dim.name, val.id, val.color_hex)"
+              @click="toggleTag(dim.name, val.id)"
             >
+              <img
+                v-if="val.image_path"
+                :src="getTagImageUrl(val.image_path)"
+                class="filter-tag-thumb"
+              />
               {{ val.value }}
-            </el-checkbox-button>
-          </el-checkbox-group>
+            </div>
+          </div>
         </div>
       </div>
     </aside>
@@ -60,22 +88,20 @@
             <el-radio-button label="grid"><el-icon><Grid /></el-icon></el-radio-button>
             <el-radio-button label="list"><el-icon><List /></el-icon></el-radio-button>
           </el-radio-group>
-          <el-button type="primary" @click="$router.push('/asset/upload')">
-            <el-icon><Upload /></el-icon>上传素材
-          </el-button>
         </div>
       </div>
 
-      <!-- 素材列表 -->
-      <div v-if="loading" class="loading-wrap">
-        <el-skeleton :rows="5" animated />
-      </div>
-      <div v-else-if="assets.length === 0" class="empty-wrap">
-        <el-empty description="暂无素材" />
-      </div>
+      <!-- 内容区（可滚动） -->
+      <div class="content-wrapper">
+        <div v-if="loading" class="loading-wrap">
+          <el-skeleton :rows="5" animated />
+        </div>
+        <div v-else-if="assets.length === 0" class="empty-wrap">
+          <el-empty description="暂无素材" />
+        </div>
 
-      <!-- 网格视图 -->
-      <div v-else-if="viewMode === 'grid'" class="asset-grid">
+        <!-- 网格视图 -->
+        <div v-else-if="viewMode === 'grid'" class="asset-grid">
         <div
           v-for="asset in assets"
           :key="asset.id"
@@ -91,7 +117,7 @@
             />
           </div>
           <div class="card-thumb">
-            <img v-if="asset.file_type === 'image' && asset.thumbnail_path" :src="getThumbUrl(asset.thumbnail_path)" />
+            <img v-if="asset.file_type === 'image'" :src="getThumbUrl(asset.thumbnail_path || asset.storage_path)" />
             <div v-else-if="asset.file_type === 'video'" class="type-icon video"><el-icon><VideoPlay /></el-icon></div>
             <div v-else-if="asset.file_type === 'document'" class="type-icon doc"><el-icon><Document /></el-icon></div>
             <div v-else class="type-icon"><el-icon><Picture /></el-icon></div>
@@ -104,9 +130,12 @@
               <span>{{ formatDate(asset.created_at) }}</span>
             </div>
             <div class="card-tags">
-              <el-tag v-for="tag in asset.tags.slice(0, 3)" :key="tag.id" size="small" effect="plain">
-                {{ tag.value }}
-              </el-tag>
+              <div v-for="tag in asset.tags.slice(0, 3)" :key="tag.id" class="tag-with-thumb">
+                <img v-if="tag.image_path" :src="getTagImageUrl(tag.image_path)" class="tag-thumb" />
+                <el-tag size="small" effect="plain">
+                  {{ tag.value }}
+                </el-tag>
+              </div>
             </div>
           </div>
           <div class="card-actions" @click.stop>
@@ -128,7 +157,7 @@
       <el-table v-else :data="assets" style="width: 100%" @row-click="openPreview">
         <el-table-column label="缩略图" width="80">
           <template #default="{ row }">
-            <img v-if="row.thumbnail_path" :src="getThumbUrl(row.thumbnail_path)" class="table-thumb" />
+            <img v-if="row.file_type === 'image'" :src="getThumbUrl(row.thumbnail_path || row.storage_path)" class="table-thumb" />
             <el-icon v-else size="24"><Picture /></el-icon>
           </template>
         </el-table-column>
@@ -143,9 +172,12 @@
         </el-table-column>
         <el-table-column label="标签" min-width="200">
           <template #default="{ row }">
-            <el-tag v-for="tag in row.tags" :key="tag.id" size="small" effect="plain" class="mr-4">
-              {{ tag.value }}
-            </el-tag>
+            <div v-for="tag in row.tags" :key="tag.id" class="tag-with-thumb mr-4">
+              <img v-if="tag.image_path" :src="getTagImageUrl(tag.image_path)" class="tag-thumb" />
+              <el-tag size="small" effect="plain">
+                {{ tag.value }}
+              </el-tag>
+            </div>
           </template>
         </el-table-column>
         <el-table-column label="上传时间" width="160">
@@ -162,6 +194,7 @@
           </template>
         </el-table-column>
       </el-table>
+      </div>
 
       <!-- 分页 -->
       <div class="pagination-bar">
@@ -237,17 +270,21 @@
         <el-button type="primary" :disabled="!selectedFolderId" @click="confirmFavorite">确定</el-button>
       </template>
     </el-dialog>
+
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, watch, onMounted } from 'vue'
+import { ref, reactive, watch, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  Search, Grid, List, Upload, Download, Star, Picture,
+  Search, Grid, List, Download, Star, Picture,
   VideoPlay, Document, Folder, MagicStick,
 } from '@element-plus/icons-vue'
-import { getAssetList, getTagDimensions, downloadAsset, getFavoriteFolders, addFavoriteItem, analyzeAsset, batchDownload } from '@/api/asset'
+import {
+  getAssetList, getTagDimensions, downloadAsset, getFavoriteFolders,
+  addFavoriteItem, analyzeAsset, batchDownload,
+} from '@/api/asset'
 
 const loading = ref(false)
 const assets = ref([])
@@ -262,6 +299,98 @@ const sidebarCollapsed = ref(false)
 
 const dimensions = ref([])
 const activeFilters = reactive({})
+
+// 标签关键字筛选
+const filterKeyword = ref('')
+
+// 当前已加载素材拥有的标签 ID 集合（用于联动筛选）
+const availableTagIds = ref(new Set())
+
+// 根据关键字过滤后的维度（只包含有匹配标签值的维度）
+const filteredDimensions = computed(() => {
+  const dims = dimensions.value
+  if (!filterKeyword.value.trim()) {
+    return dims.filter(dim => dim.values?.length > 0)
+  }
+  const kw = filterKeyword.value.toLowerCase()
+  return dims.filter(dim => dim.values?.some(v => v.value.toLowerCase().includes(kw)))
+})
+
+// 获取某个维度下过滤后的标签值
+function filteredValues(dim) {
+  let values = dim.values || []
+  if (filterKeyword.value.trim()) {
+    const kw = filterKeyword.value.toLowerCase()
+    values = values.filter(v => v.value.toLowerCase().includes(kw))
+  }
+  // 联动筛选：当用户已选择某些标签且已加载素材时，只显示当前结果中存在的标签
+  const hasActiveFilter = Object.values(activeFilters).some(arr => arr && arr.length > 0)
+  if (hasActiveFilter && assets.value.length > 0 && availableTagIds.value.size > 0) {
+    values = values.filter(v => availableTagIds.value.has(v.id))
+  }
+  return values
+}
+
+// 检查标签是否被选中
+function isTagSelected(dimName, valId) {
+  return (activeFilters[dimName] || []).includes(valId)
+}
+
+// 切换标签选中状态
+function toggleTag(dimName, valId) {
+  if (!activeFilters[dimName]) {
+    activeFilters[dimName] = []
+  }
+  const idx = activeFilters[dimName].indexOf(valId)
+  if (idx >= 0) {
+    activeFilters[dimName].splice(idx, 1)
+  } else {
+    activeFilters[dimName].push(valId)
+  }
+}
+
+// 获取标签样式（选中时显示标签库颜色）
+function getTagStyle(dimName, valId, colorHex) {
+  if (!isTagSelected(dimName, valId)) return {}
+  const color = colorHex || '#d4941c'
+  // 如果颜色是 rgb 格式，直接返回；如果是 hex，判断亮度决定文字颜色
+  return {
+    backgroundColor: color,
+    color: isLightColor(color) ? '#1e1e2d' : '#fff',
+    borderColor: 'transparent',
+  }
+}
+
+// 简单判断颜色亮度
+function isLightColor(color) {
+  if (!color) return false
+  // 处理 rgb(r,g,b) 格式
+  const rgbMatch = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/)
+  if (rgbMatch) {
+    const r = parseInt(rgbMatch[1])
+    const g = parseInt(rgbMatch[2])
+    const b = parseInt(rgbMatch[3])
+    return (r * 299 + g * 587 + b * 114) / 1000 > 160
+  }
+  // 处理 hex 格式
+  let hex = color.replace('#', '')
+  if (hex.length === 3) hex = hex.split('').map(c => c + c).join('')
+  if (hex.length !== 6) return false
+  const r = parseInt(hex.substr(0, 2), 16)
+  const g = parseInt(hex.substr(2, 2), 16)
+  const b = parseInt(hex.substr(4, 2), 16)
+  return (r * 299 + g * 587 + b * 114) / 1000 > 160
+}
+
+// 获取维度分隔色条样式：取该维度下第一个有颜色的标签值
+function getDimDividerStyle(dim) {
+  const color = dim.values?.find(v => v.color_hex)?.color_hex
+  if (!color) return {}
+  return {
+    borderLeft: `3px solid ${color}`,
+    backgroundColor: color + '10',
+  }
+}
 
 const previewVisible = ref(false)
 const previewAsset = ref(null)
@@ -285,6 +414,12 @@ watch(dimensions, (dims) => {
     }
   })
 }, { immediate: true })
+
+// 标签筛选变化时自动加载
+watch(activeFilters, () => {
+  page.value = 1
+  loadData()
+}, { deep: true })
 
 async function handleAiAnalyze(asset) {
   if (!asset) return
@@ -332,6 +467,13 @@ async function loadData() {
     })
     assets.value = res.data?.items || []
     total.value = res.data?.total || 0
+
+    // 更新可用标签 ID 集合（联动筛选）
+    const tagIds = new Set()
+    assets.value.forEach(asset => {
+      asset.tags?.forEach(tag => tagIds.add(tag.id))
+    })
+    availableTagIds.value = tagIds
   } catch (e) {
     ElMessage.error('加载素材失败')
   } finally {
@@ -341,6 +483,7 @@ async function loadData() {
 
 function resetFilters() {
   keyword.value = ''
+  filterKeyword.value = ''
   for (const key in activeFilters) {
     activeFilters[key] = []
   }
@@ -441,6 +584,11 @@ function getFileUrl(path) {
   return `/uploads/assets/${path}`
 }
 
+function getTagImageUrl(path) {
+  if (!path) return ''
+  return `/uploads/${path}`
+}
+
 function formatSize(bytes) {
   if (!bytes) return '0 B'
   const units = ['B', 'KB', 'MB', 'GB']
@@ -467,6 +615,12 @@ function fileTypeTag(type) {
 }
 
 onMounted(() => {
+  // 移动端自动跳转（除非用户手动选择了完整版）
+  if (/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) &&
+      sessionStorage.getItem('ark_desktop_mode') !== '1') {
+    window.location.href = '/m/'
+    return
+  }
   loadDimensions()
   loadData()
 })
@@ -475,7 +629,6 @@ onMounted(() => {
 <style scoped>
 .asset-library-page {
   display: flex;
-  height: 100%;
   gap: 16px;
 }
 
@@ -487,6 +640,10 @@ onMounted(() => {
   border-radius: 12px;
   padding: 16px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  max-height: calc(100vh - 48px);
   overflow-y: auto;
 }
 .filter-sidebar.collapsed {
@@ -506,13 +663,61 @@ onMounted(() => {
   color: #1e1e2d;
 }
 .filter-group {
-  margin-bottom: 16px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border-bottom: 1px solid #f0f0f0;
+}
+.filter-group:last-child {
+  border-bottom: none;
 }
 .filter-label {
   font-size: 13px;
-  font-weight: 500;
-  color: #666;
+  font-weight: 600;
+  color: #333;
   margin-bottom: 8px;
+  padding-left: 6px;
+}
+
+.filter-keyword-wrap {
+  padding-bottom: 12px;
+}
+
+.filter-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.filter-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid #e4e7ed;
+  background: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1.4;
+  transition: all 0.15s;
+  user-select: none;
+}
+
+.filter-tag:hover {
+  border-color: #d4941c;
+}
+
+.filter-tag.active {
+  font-weight: 500;
+}
+
+.filter-tag-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
 }
 
 /* 主内容 */
@@ -521,7 +726,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  overflow: hidden;
+  min-width: 0;
 }
 
 .toolbar {
@@ -532,6 +737,9 @@ onMounted(() => {
   border-radius: 12px;
   padding: 12px 16px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 .toolbar-left {
   display: flex;
@@ -548,7 +756,6 @@ onMounted(() => {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 16px;
-  overflow-y: auto;
   padding: 4px;
 }
 .asset-card {
@@ -735,6 +942,20 @@ onMounted(() => {
   margin-right: 4px;
 }
 
+.tag-with-thumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tag-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid #e4e7ed;
+}
+
 /* 批量操作栏 */
 .batch-toolbar {
   display: flex;
@@ -745,6 +966,9 @@ onMounted(() => {
   padding: 12px 16px;
   margin-bottom: 16px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
 .batch-info {

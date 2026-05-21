@@ -16,6 +16,10 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 logger = logging.getLogger("insight")
 
+# ── 常量 ──────────────────────────────────────────────
+_DEFAULT_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+_AIHOT_BASE_URL = "https://aihot.virxact.com"
+
 # ── 上传目录 ──────────────────────────────────────────
 INSIGHT_UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent / "uploads" / "insight"
 INSIGHT_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)

@@ -128,6 +128,29 @@ def add_favorite_item(db: Session, folder_id: int, user_id: int, asset_id: int) 
     return item
 
 
+def remove_favorite_item_by_asset(db: Session, folder_id: int, user_id: int, asset_id: int) -> bool:
+    """通过 asset_id 移除收藏项。"""
+    folder = (
+        db.query(FavoriteFolder)
+        .filter(FavoriteFolder.id == folder_id, FavoriteFolder.user_id == user_id)
+        .first()
+    )
+    if not folder:
+        return False
+
+    item = (
+        db.query(FavoriteItem)
+        .filter(FavoriteItem.folder_id == folder_id, FavoriteItem.asset_id == asset_id)
+        .first()
+    )
+    if not item:
+        return False
+
+    db.delete(item)
+    db.commit()
+    return True
+
+
 def remove_favorite_item(db: Session, folder_id: int, user_id: int, item_id: int) -> bool:
     folder = (
         db.query(FavoriteFolder)

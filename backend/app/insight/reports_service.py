@@ -38,6 +38,19 @@ _jinja_env = Environment(
 
 from app.insight.fetcher import fetch_rss, fetch_html, fetch_aihot_daily, filter_items
 
+_AIHOT_SECTION_MAP = {
+    "模型发布/更新": "model",
+    "模型": "model",
+    "产品发布/更新": "product",
+    "产品": "product",
+    "行业动态": "industry",
+    "行业": "industry",
+    "论文研究": "paper",
+    "论文": "paper",
+    "技巧与观点": "tips",
+    "技巧": "tips",
+}
+
 
 def list_reports(
     db: Session,

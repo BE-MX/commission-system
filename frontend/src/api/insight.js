@@ -46,6 +46,80 @@ export function testSource(id) {
   return insightApi.post(`/sources/${id}/test`, null, { loadingText: '正在测试连通性...' })
 }
 
+export function collectSource(id) {
+  return insightApi.post(`/sources/${id}/collect`, null, { loadingText: '正在采集...' })
+}
+
+// ── 情报条目 ──────────────────────────────────────────
+export function listItems(params) {
+  return insightApi.get('/items', { params, showLoading: false })
+}
+
+export function getItem(id) {
+  return insightApi.get(`/items/${id}`, { showLoading: false })
+}
+
+export function toggleItemFeature(id) {
+  return insightApi.patch(`/items/${id}/feature`, null, { showLoading: false })
+}
+
+export function updateItemStatus(id, status) {
+  return insightApi.patch(`/items/${id}/status`, null, { params: { status }, showLoading: false })
+}
+
+export function uploadMd(formData) {
+  return insightApi.post('/items/upload', formData, {
+    loadingText: '正在上传...',
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+}
+
+export function batchFeature(itemIds, isFeatured = true) {
+  return insightApi.post('/items/batch/feature', itemIds, { loadingText: '正在更新...' })
+}
+
+export function batchStatus(itemIds, status) {
+  return insightApi.post('/items/batch/status', itemIds, { params: { status }, loadingText: '正在更新...' })
+}
+
+// ── 情报速览 ──────────────────────────────────────────
+export function listIntelligenceReports(params) {
+  return insightApi.get('/reports/intelligence', { params, showLoading: false })
+}
+
+export function getIntelligenceHtml(id) {
+  return insightApi.get(`/reports/intelligence/${id}/html`, { showLoading: false, responseType: 'text' })
+}
+
+export function generateIntelligence(data) {
+  return insightApi.post('/reports/intelligence/generate', data, { loadingText: '正在生成报告...' })
+}
+
+export function deleteIntelligenceReport(id) {
+  return insightApi.delete(`/reports/intelligence/${id}`, { loadingText: '正在删除...' })
+}
+
+export function pinIntelligenceReport(id, isPinned = true) {
+  return insightApi.patch(`/reports/intelligence/${id}/pin`, null, { params: { is_pinned: isPinned }, showLoading: false })
+}
+
+// ── 定时规则 ──────────────────────────────────────────
+export function listScheduleRules(params) {
+  return insightApi.get('/schedule-rules', { params, showLoading: false })
+}
+
+export function createScheduleRule(data) {
+  return insightApi.post('/schedule-rules', data, { loadingText: '正在保存...' })
+}
+
+export function updateScheduleRule(id, data) {
+  return insightApi.put(`/schedule-rules/${id}`, data, { loadingText: '正在保存...' })
+}
+
+export function toggleScheduleRule(id) {
+  return insightApi.patch(`/schedule-rules/${id}/toggle`, null, { showLoading: false })
+}
+
 // ── 案例库 ────────────────────────────────────────────
 export function listCases(params) {
   return insightApi.get('/cases', { params, showLoading: false })

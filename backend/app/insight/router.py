@@ -29,7 +29,13 @@ from app.insight.schemas import (
     ReportImport,
     SourceCreate,
     SourceUpdate,
+    SourceCreateV2,
     TaskUpdate,
+    InsightItemCreate,
+    InsightItemUpdate,
+    IntelligenceReportGenerate,
+    ScheduleRuleCreate,
+    ScheduleRuleUpdate,
 )
 
 logger = logging.getLogger("insight")
@@ -144,6 +150,81 @@ def regenerate_report(
         raise HTTPException(status_code=500, detail=f"生成失败: {str(e)[:200]}")
 
 
+# ── 情报速览报告 ─────────────────────────────────────────
+@router.post("/reports/intelligence/generate")
+def generate_intelligence(
+    data: IntelligenceReportGenerate,
+    db: Session = Depends(get_db),
+    user: dict = Depends(_require_insight_admin),
+):
+    """手动触发生成行业情报速览报告。"""
+    from app.insight.intelligence_service import generate_intelligence_report
+    try:
+        user_id = int(user.get("sub")) if user.get("sub") else None
+        report = generate_intelligence_report(db, data, user_id=user_id)
+        return _ok({
+            "id": report.id,
+            "status": report.status,
+            "title": report.title,
+        }, "报告生成中")
+    except Exception as e:
+        logger.exception("生成情报速览失败")
+        raise HTTPException(status_code=500, detail=f"生成失败: {str(e)[:200]}")
+
+
+@router.get("/reports/intelligence")
+def list_intelligence(
+    status: Optional[str] = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    user: dict = Depends(_require_insight_view),
+):
+    from app.insight.intelligence_service import list_intelligence_reports
+    result = list_intelligence_reports(db, status=status, page=page, page_size=page_size)
+    return _ok(result)
+
+
+@router.get("/reports/intelligence/{report_id}/html")
+def get_intelligence_html(
+    report_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(_require_insight_view),
+):
+    from app.insight.intelligence_service import get_intelligence_report_html
+    try:
+        html = get_intelligence_report_html(db, report_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return Response(content=html, media_type="text/html; charset=utf-8")
+
+
+@router.delete("/reports/intelligence/{report_id}")
+def delete_intelligence(
+    report_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(_require_insight_admin),
+):
+    from app.insight.intelligence_service import delete_intelligence_report
+    try:
+        delete_intelligence_report(db, report_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return _ok(None, "已删除")
+
+
+@router.patch("/reports/intelligence/{report_id}/pin")
+def pin_intelligence(
+    report_id: int,
+    is_pinned: bool = Query(True),
+    db: Session = Depends(get_db),
+    user: dict = Depends(_require_insight_admin),
+):
+    from app.insight.intelligence_service import pin_report
+    report = pin_report(db, report_id, is_pinned)
+    return _ok({"id": report.id, "is_pinned": bool(report.is_pinned)}, "已更新")
+
+
 @router.post("/reports/generate/{report_type}")
 def trigger_report_generation(
     report_type: str,
@@ -242,6 +323,207 @@ def test_source(
 ):
     result = service.test_source(db, source_id)
     return _ok(result)
+
+
+@router.post("/sources/{source_id}/collect")
+def trigger_source_collection(
+    source_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(_require_insight_admin),
+):
+    """对指定信源立即触发一次采集。"""
+    from app.insight.collector_service import collect_source
+    result = collect_source(db, source_id)
+    return _ok(result)
+
+
+# ──────────────────────────────────────────────────────
+# 定时规则(Schedule Rules)
+# ──────────────────────────────────────────────────────
+
+@router.get("/schedule-rules")
+def list_schedule_rules(
+    is_active: Optional[bool] = None,
+    db: Session = Depends(get_db),
+    user: dict = Depends(_require_insight_admin),
+):
+    from app.insight.schedule_service import list_rules
+    rows = list_rules(db, is_active=is_active)
+    return _ok([{
+        "id": r.id,
+        "rule_name": r.rule_name,
+        "is_active": bool(r.is_active),
+        "cron_expression": r.cron_expression,
+        "config_json": r.config_json,
+        "notify_dingtalk": bool(r.notify_dingtalk),
+        "last_run_at": r.last_run_at.isoformat() if r.last_run_at else None,
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+    } for r in rows])
+
+
+@router.post("/schedule-rules")
+def create_schedule_rule(
+    data: ScheduleRuleCreate,
+    db: Session = Depends(get_db),
+    user: dict = Depends(_require_insight_admin),
+):
+    from app.insight.schedule_service import create_rule
+    r = create_rule(db, data)
+    return _ok({
+        "id": r.id,
+        "rule_name": r.rule_name,
+        "is_active": bool(r.is_active),
+        "cron_expression": r.cron_expression,
+    }, "创建成功")
+
+
+@router.put("/schedule-rules/{rule_id}")
+def update_schedule_rule(
+    rule_id: int,
+    data: ScheduleRuleUpdate,
+    db: Session = Depends(get_db),
+    user: dict = Depends(_require_insight_admin),
+):
+    from app.insight.schedule_service import update_rule
+    r = update_rule(db, rule_id, data)
+    return _ok({
+        "id": r.id,
+        "rule_name": r.rule_name,
+        "is_active": bool(r.is_active),
+    }, "更新成功")
+
+
+@router.patch("/schedule-rules/{rule_id}/toggle")
+def toggle_schedule_rule(
+    rule_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(_require_insight_admin),
+):
+    from app.insight.schedule_service import toggle_rule
+    r = toggle_rule(db, rule_id)
+    return _ok({"id": r.id, "is_active": bool(r.is_active)}, "已切换")
+
+
+# ──────────────────────────────────────────────────────
+# 情报条目(Items)
+# ──────────────────────────────────────────────────────
+
+@router.get("/items")
+def list_items(
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    source_ids: Optional[str] = Query(None, description="逗号分隔信源ID"),
+    source_types: Optional[str] = Query(None, description="逗号分隔信源类型"),
+    item_types: Optional[str] = Query(None, description="逗号分隔条目类型"),
+    credibility_labels: Optional[str] = Query(None, description="逗号分隔可信度标签"),
+    tags: Optional[str] = Query(None, description="逗号分隔标签"),
+    is_featured: Optional[bool] = None,
+    status: Optional[str] = Query(None, description="active/archived/flagged"),
+    keyword: Optional[str] = None,
+    sort_by: str = Query("collected_at"),
+    sort_desc: bool = Query(True),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    user: dict = Depends(_require_insight_view),
+):
+    from app.insight.item_service import list_items as _list_items
+    result = _list_items(
+        db,
+        start_date=start_date,
+        end_date=end_date,
+        source_ids=[int(x) for x in source_ids.split(",") if x.strip()] if source_ids else None,
+        source_types=[x.strip() for x in source_types.split(",") if x.strip()] if source_types else None,
+        item_types=[x.strip() for x in item_types.split(",") if x.strip()] if item_types else None,
+        credibility_labels=[x.strip() for x in credibility_labels.split(",") if x.strip()] if credibility_labels else None,
+        tags=[x.strip() for x in tags.split(",") if x.strip()] if tags else None,
+        is_featured=is_featured,
+        status=status,
+        keyword=keyword,
+        sort_by=sort_by,
+        sort_desc=sort_desc,
+        page=page,
+        page_size=page_size,
+    )
+    # SQLAlchemy ORM 对象不能直接 JSON 序列化，需要手动转 dict
+    items = [_serialize_item(item) for item in result["items"]]
+    return _ok({"total": result["total"], "items": items, "page": result["page"], "page_size": result["page_size"]})
+
+
+@router.get("/items/{item_id}")
+def get_item(
+    item_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(_require_insight_view),
+):
+    from app.insight.item_service import get_item as _get_item
+    item = _get_item(db, item_id)
+    return _ok(_serialize_item_detail(item))
+
+
+@router.patch("/items/{item_id}/feature")
+def toggle_item_feature(
+    item_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(_require_insight_admin),
+):
+    from app.insight.item_service import toggle_feature
+    item = toggle_feature(db, item_id)
+    return _ok(_serialize_item(item), "已更新")
+
+
+@router.patch("/items/{item_id}/status")
+def update_item_status(
+    item_id: int,
+    status: str = Query(..., description="active/archived/flagged"),
+    db: Session = Depends(get_db),
+    user: dict = Depends(_require_insight_admin),
+):
+    from app.insight.item_service import update_status
+    item = update_status(db, item_id, status)
+    return _ok(_serialize_item(item), "已更新")
+
+
+@router.post("/items/upload")
+async def upload_md(
+    file: UploadFile = File(...),
+    title: Optional[str] = Form(None),
+    tags: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    user: dict = Depends(_require_insight_admin),
+):
+    """手工上传 MD 文件入库。"""
+    from app.insight.item_service import upload_manual_md
+    if not file.filename or not file.filename.endswith(".md"):
+        raise HTTPException(status_code=400, detail="仅支持 .md 文件")
+    content = (await file.read()).decode("utf-8", errors="replace")
+    tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
+    item = upload_manual_md(db, title=title or file.filename, content_md=content, tags=tag_list)
+    return _ok(_serialize_item(item), "上传成功")
+
+
+@router.post("/items/batch/feature")
+def batch_feature(
+    item_ids: list[int],
+    is_featured: bool = True,
+    db: Session = Depends(get_db),
+    user: dict = Depends(_require_insight_admin),
+):
+    from app.insight.item_service import batch_toggle_feature
+    count = batch_toggle_feature(db, item_ids, is_featured)
+    return _ok({"count": count}, "批量更新成功")
+
+
+@router.post("/items/batch/status")
+def batch_status(
+    item_ids: list[int],
+    status: str = Query(...),
+    db: Session = Depends(get_db),
+    user: dict = Depends(_require_insight_admin),
+):
+    from app.insight.item_service import batch_update_status
+    count = batch_update_status(db, item_ids, status)
+    return _ok({"count": count}, "批量更新成功")
 
 
 # ──────────────────────────────────────────────────────
@@ -559,3 +841,42 @@ def dashboard_summary(
 ):
     user_name = user.get("username", "")
     return _ok(service.get_dashboard_summary(db, user_name=user_name))
+
+
+# ── 序列化辅助 ──────────────────────────────────────────
+
+def _serialize_item(item) -> dict:
+    return {
+        "id": item.id,
+        "source_id": item.source_id,
+        "source_type": item.source_type,
+        "collected_at": item.collected_at.isoformat() if item.collected_at else None,
+        "published_at": item.published_at.isoformat() if item.published_at else None,
+        "original_url": item.original_url,
+        "title": item.title,
+        "content_mode": item.content_mode,
+        "content_md": item.content_md,
+        "credibility_score": item.credibility_score,
+        "credibility_label": item.credibility_label,
+        "tags": item.tags or [],
+        "item_type": item.item_type,
+        "related_competitor": item.related_competitor,
+        "is_featured": bool(item.is_featured),
+        "status": item.status,
+        "like_count": item.like_count,
+        "comment_count": item.comment_count,
+        "media_type": item.media_type,
+        "ai_signal": item.ai_signal,
+        "priority": item.priority,
+        "created_at": item.created_at.isoformat() if item.created_at else None,
+    }
+
+
+def _serialize_item_detail(item) -> dict:
+    base = _serialize_item(item)
+    base.update({
+        "credibility_note": item.credibility_note,
+        "ai_meaning": item.ai_meaning,
+        "ai_action_hint": item.ai_action_hint,
+    })
+    return base

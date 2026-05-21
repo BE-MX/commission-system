@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>行业情报速览 - {{ report_date }}</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: #f5f5f7;
+  color: #1d1d1f;
+  line-height: 1.6;
+  padding: 40px 20px;
+}
+.container {
+  max-width: 960px;
+  margin: 0 auto;
+}
+.header {
+  background: #fff;
+  border-radius: 16px;
+  padding: 32px;
+  margin-bottom: 24px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+.header h1 {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: #1d1d1f;
+}
+.header .meta {
+  font-size: 13px;
+  color: #86868b;
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.tldr {
+  background: #fff;
+  border-radius: 16px;
+  padding: 24px 32px;
+  margin-bottom: 24px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+.tldr h2 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  color: #1d1d1f;
+}
+.tldr-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+.tldr-item:last-child { border-bottom: none; }
+.tldr-badge {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+}
+.tldr-badge.high { background: #dc2626; }
+.tldr-badge.medium { background: #f59e0b; }
+.tldr-badge.low { background: #6b7280; }
+.tldr-text {
+  font-size: 14px;
+  color: #374151;
+}
+.tldr-from {
+  font-size: 12px;
+  color: #9ca3af;
+  margin-top: 2px;
+}
+.section {
+  background: #fff;
+  border-radius: 16px;
+  padding: 24px 32px;
+  margin-bottom: 24px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+.section h2 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f0f0f0;
+  color: #1d1d1f;
+}
+.signal-card {
+  padding: 16px 0;
+  border-bottom: 1px solid #f5f5f7;
+}
+.signal-card:last-child { border-bottom: none; }
+.signal-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1d1d1f;
+  margin-bottom: 6px;
+}
+.signal-fact {
+  font-size: 13px;
+  color: #4b5563;
+  margin-bottom: 8px;
+}
+.signal-source {
+  font-size: 12px;
+  color: #6b7280;
+}
+.signal-source a {
+  color: #2563eb;
+  text-decoration: none;
+}
+.signal-source a:hover { text-decoration: underline; }
+.cred-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  margin-left: 8px;
+}
+.cred-verified { background: #d1fae5; color: #065f46; }
+.cred-plausible { background: #fef3c7; color: #92400e; }
+.cred-uncertain { background: #fee2e2; color: #991b1b; }
+.cred-unverifiable { background: #e5e7eb; color: #374151; }
+.suggestion-card {
+  background: #f8fafc;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+.suggestion-scenario {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1e40af;
+  margin-bottom: 6px;
+}
+.suggestion-strategy {
+  font-size: 13px;
+  color: #374151;
+  margin-bottom: 8px;
+}
+.suggestion-script {
+  background: #fff;
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 13px;
+  color: #4b5563;
+  font-style: italic;
+  border-left: 3px solid #3b82f6;
+}
+.empty-state {
+  text-align: center;
+  padding: 40px;
+  color: #9ca3af;
+  font-size: 14px;
+}
+.footer {
+  text-align: center;
+  padding: 24px;
+  font-size: 12px;
+  color: #9ca3af;
+}
+@media print {
+  body { background: #fff; padding: 0; }
+  .section, .tldr, .header { box-shadow: none; border: 1px solid #e5e7eb; }
+}
+@media (max-width: 640px) {
+  body { padding: 16px; }
+  .header, .section, .tldr { padding: 20px; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>行业情报速览 · {{ report_date }}</h1>
+    <div class="meta">
+      <span>生成时间: {{ generated_at[:10] }}</span>
+      <span>情报条目: {{ item_count }} 条</span>
+      <span>深度: {{ config.get('report_depth', 'standard') }}</span>
+    </div>
+  </div>
+
+  {# TL;DR #}
+  <div class="tldr">
+    <h2>核心速览</h2>
+    {% if data.tldr %}
+      {% for item in data.tldr %}
+      <div class="tldr-item">
+        <span class="tldr-badge {{ item.priority }}">{{ loop.index }}</span>
+        <div>
+          <div class="tldr-text">{{ item.text }}</div>
+          <div class="tldr-from">来自: {{ item.from }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty-state">本期暂无核心速览</div>
+    {% endif %}
+  </div>
+
+  {# 市场趋势 #}
+  <div class="section">
+    <h2>市场趋势汇总</h2>
+    {% if data.market_trends %}
+      {% for item in data.market_trends %}
+      <div class="signal-card">
+        <div class="signal-title">{{ item.title }}</div>
+        <div class="signal-fact">{{ item.fact }}</div>
+        <div class="signal-source">
+          {% if item.source_url %}<a href="{{ item.source_url }}" target="_blank">来源</a>{% endif %}
+          {% if item.credibility %}<span class="cred-tag cred-{{ item.credibility }}">{{ item.credibility }}</span>{% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty-state">本期暂无市场趋势情报</div>
+    {% endif %}
+  </div>
+
+  {# 大品牌动向 #}
+  <div class="section">
+    <h2>大品牌动向汇总</h2>
+    {% if data.brand_movements %}
+      {% for item in data.brand_movements %}
+      <div class="signal-card">
+        <div class="signal-title">{% if item.brand %}[{{ item.brand }}] {% endif %}{{ item.title }}</div>
+        <div class="signal-fact">{{ item.fact }}</div>
+        <div class="signal-source">
+          {% if item.source_url %}<a href="{{ item.source_url }}" target="_blank">来源</a>{% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty-state">本期暂无大品牌动向情报</div>
+    {% endif %}
+  </div>
+
+  {# 社媒动态 #}
+  <div class="section">
+    <h2>社媒动态汇总</h2>
+    {% if data.social_dynamics %}
+      {% for item in data.social_dynamics %}
+      <div class="signal-card">
+        <div class="signal-title">@{{ item.account }} ({{ item.platform }})</div>
+        <div class="signal-fact">{{ item.content }}</div>
+        {% if item.engagement %}<div class="signal-source">互动: {{ item.engagement }}</div>{% endif %}
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty-state">本期暂无社媒动态情报</div>
+    {% endif %}
+  </div>
+
+  {# 竞品信息 #}
+  <div class="section">
+    <h2>竞品信息汇总</h2>
+    {% if data.competitor_info %}
+      {% for item in data.competitor_info %}
+      <div class="signal-card">
+        <div class="signal-title">{% if item.competitor %}[{{ item.competitor }}] {% endif %}{{ item.type }}</div>
+        <div class="signal-fact">{{ item.detail }}</div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty-state">本期暂无竞品情报</div>
+    {% endif %}
+  </div>
+
+  {# 莱莎建议 #}
+  <div class="section">
+    <h2>莱莎建议</h2>
+    {% if data.leshine_suggestions %}
+      {% for item in data.leshine_suggestions %}
+      <div class="suggestion-card">
+        <div class="suggestion-scenario">
+          {{ item.scenario }} · 适用: {{ item.customer_level }}
+        </div>
+        <div class="suggestion-strategy">{{ item.strategy }}</div>
+        <div class="suggestion-script">{{ item.script }}</div>
+        <div class="signal-source">信号来源: {{ item.signal_source }}</div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty-state">本期暂无莱莎建议</div>
+    {% endif %}
+  </div>
+
+  <div class="footer">
+    <p>本报告由 AI 辅助生成，推断内容仅供参考。数据截止: {{ generated_at }}</p>
+  </div>
+</div>
+</body>
+</html>

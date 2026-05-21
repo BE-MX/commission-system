@@ -34,6 +34,7 @@ class InsightReport(Base):
             "shop_analysis",
             "competitor_analysis",
             "inquiry_analysis",
+            "intelligence_overview",
             name="insight_report_type",
         ),
         nullable=False,
@@ -43,14 +44,21 @@ class InsightReport(Base):
     html_content = Column(LONGTEXT, nullable=True)
     file_path = Column(String(512), nullable=True)
     source_data = Column(JSON, nullable=True)
-    report_metadata = Column(JSON, nullable=True)  # 列名避开 SQLAlchemy 保留字 metadata
+    report_metadata = Column(JSON, nullable=True)
     status = Column(
-        Enum("pending", "published", "failed", name="insight_report_status"),
+        Enum("pending", "published", "failed", "generating", "completed", name="insight_report_status"),
         nullable=False,
         default="pending",
     )
     error_msg = Column(Text, nullable=True)
     created_by = Column(Integer, nullable=True)
+    # 情报速览扩展字段
+    date_range_start = Column(Date, nullable=True)
+    date_range_end = Column(Date, nullable=True)
+    item_ids = Column(JSON, nullable=True)
+    config_snapshot = Column(JSON, nullable=True)
+    is_pinned = Column(Boolean, nullable=False, default=False)
+    trigger_type = Column(String(32), nullable=False, default="manual")
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -77,6 +85,11 @@ class InsightSource(Base):
             "competitor_rss",
             "competitor_html",
             "aihot_api",
+            "xpoz",
+            "competitor_monitor",
+            "perplexity",
+            "amazon",
+            "manual",
             name="insight_source_type",
         ),
         nullable=False,
@@ -87,6 +100,7 @@ class InsightSource(Base):
     css_selector = Column(String(512), nullable=True)
     request_headers = Column(JSON, nullable=True)
     proxy_url = Column(String(255), nullable=True)
+    config_json = Column(JSON, nullable=True)
     fetch_interval_hours = Column(SmallInteger, nullable=False, default=24)
     last_fetched_at = Column(DateTime, nullable=True)
     last_error = Column(Text, nullable=True)
@@ -233,3 +247,85 @@ class InsightTask(Base):
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     minutes = relationship("MeetingMinutes", back_populates="tasks")
+
+
+# ── 情报条目 ────────────────────────────────────────────
+class InsightItem(Base):
+    __tablename__ = "ark_insight_items"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    source_id = Column(Integer, ForeignKey("ark_insight_sources.id"), nullable=True)
+    source_type = Column(String(32), nullable=False)
+    collected_at = Column(DateTime, nullable=False)
+    published_at = Column(DateTime, nullable=True)
+    original_url = Column(Text, nullable=True)
+    title = Column(String(512), nullable=True)
+    content_mode = Column(String(16), nullable=False, default="summary")
+    content_md = Column(LONGTEXT, nullable=True)
+    credibility_score = Column(SmallInteger, nullable=True)
+    credibility_label = Column(String(32), nullable=True)
+    credibility_note = Column(Text, nullable=True)
+    tags = Column(JSON, nullable=True)
+    item_type = Column(String(64), nullable=True)
+    related_competitor = Column(String(128), nullable=True)
+    is_featured = Column(Boolean, nullable=False, default=False)
+    status = Column(String(32), nullable=False, default="active")
+    # XPOZ 专属字段
+    xpoz_post_id = Column(String(64), nullable=True)
+    like_count = Column(Integer, nullable=True)
+    comment_count = Column(Integer, nullable=True)
+    media_type = Column(String(16), nullable=True)
+    ai_signal = Column(String(100), nullable=True)
+    ai_meaning = Column(String(200), nullable=True)
+    ai_action_hint = Column(String(150), nullable=True)
+    priority = Column(String(16), nullable=False, default="medium")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("idx_insight_item_collected", "collected_at"),
+        Index("idx_insight_item_source", "source_id"),
+        Index("idx_insight_item_type", "item_type"),
+        Index("idx_insight_item_cred", "credibility_score"),
+        Index("idx_insight_item_featured", "is_featured"),
+        Index("idx_insight_item_status", "status"),
+        Index("idx_insight_item_xpoz", "xpoz_post_id", unique=True),
+    )
+
+
+# ── 采集任务日志 ────────────────────────────────────────
+class InsightCollectionLog(Base):
+    __tablename__ = "ark_insight_collection_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    source_id = Column(Integer, ForeignKey("ark_insight_sources.id"), nullable=True)
+    run_at = Column(DateTime, nullable=False)
+    status = Column(String(32), nullable=False)
+    items_fetched = Column(Integer, nullable=False, default=0)
+    items_written = Column(Integer, nullable=False, default=0)
+    items_filtered = Column(Integer, nullable=False, default=0)
+    error_message = Column(Text, nullable=True)
+    duration_ms = Column(Integer, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("idx_insight_log_source", "source_id"),
+        Index("idx_insight_log_run", "run_at"),
+    )
+
+
+# ── 定时生成规则 ────────────────────────────────────────
+class InsightScheduleRule(Base):
+    __tablename__ = "ark_insight_schedule_rules"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    rule_name = Column(String(128), nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True)
+    cron_expression = Column(String(64), nullable=True)
+    config_json = Column(JSON, nullable=True)
+    notify_dingtalk = Column(Boolean, nullable=False, default=True)
+    last_run_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("idx_insight_rule_active", "is_active"),
+    )

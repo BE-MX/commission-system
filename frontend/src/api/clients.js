@@ -16,3 +16,4 @@ export const insightClient = createApiClient({ baseURL: '/api/insight', timeout:
 export const stockClient = createApiClient({ baseURL: '/api/stock', timeout: 90000 })
 export const systemClient = createApiClient({ baseURL: '/api/system', timeout: 30000 })
 export const assetClient = createApiClient({ baseURL: '/api/assets', timeout: 120000 })
+export const colorClient = createApiClient({ baseURL: '/api/color', timeout: 120000 })

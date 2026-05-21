@@ -13,6 +13,7 @@ export function getAccessToken() { return _globalAccessToken }
 /** 不依赖 Pinia store 实例，直接清除认证状态 */
 export function clearAuthState() {
   _globalAccessToken = null
+  localStorage.removeItem('ark_access_token')
 }
 
 export const useAuthStore = defineStore('auth', () => {
@@ -28,6 +29,11 @@ export const useAuthStore = defineStore('auth', () => {
   function _setGlobalToken(token) {
     _globalAccessToken = token
     accessToken.value = token
+    if (token) {
+      localStorage.setItem('ark_access_token', token)
+    } else {
+      localStorage.removeItem('ark_access_token')
+    }
   }
 
   const isLoggedIn = computed(() => !!accessToken.value)

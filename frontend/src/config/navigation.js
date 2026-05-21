@@ -60,6 +60,11 @@ export const MENU_GROUPS = {
     icon: Picture,
     anyPermission: ['asset:read', 'asset:write', 'asset:delete', 'asset:admin'],
   },
+  color: {
+    title: '色彩管理',
+    icon: MagicStick,
+    anyPermission: ['color:read', 'color:write', 'color:admin'],
+  },
   insight: {
     title: '方舟洞见',
     icon: Aim,
@@ -274,17 +279,6 @@ export const NAV_ENTRIES = [
     },
   },
   {
-    path: '/asset/favorites',
-    name: 'AssetFavorites',
-    component: () => import('@/views/asset/AssetFavorites.vue'),
-    title: '我的收藏',
-    permission: 'asset:read',
-    menu: {
-      group: 'asset', title: '我的收藏', icon: Collection, order: 30,
-      permission: 'asset:read',
-    },
-  },
-  {
     path: '/asset/stats',
     name: 'AssetStats',
     component: () => import('@/views/asset/AssetStats.vue'),
@@ -307,7 +301,75 @@ export const NAV_ENTRIES = [
     },
   },
 
+  // ── 色彩管理 ───────────────────────────────────────────
+  {
+    path: '/color-management/palette',
+    name: 'ColorPalette',
+    component: () => import('@/views/color/PaletteView.vue'),
+    title: '色板数据库',
+    permission: 'color:read',
+    menu: {
+      group: 'color', title: '色板数据库', icon: Picture, order: 10,
+      permission: 'color:read',
+    },
+  },
+  {
+    path: '/color-management/blends',
+    name: 'ColorBlends',
+    component: () => import('@/views/color/BlendView.vue'),
+    title: '混合色管理',
+    permission: 'color:read',
+    menu: {
+      group: 'color', title: '混合色管理', icon: CollectionTag, order: 20,
+      permission: 'color:read',
+    },
+  },
+  {
+    path: '/color-management/trends',
+    name: 'ColorTrends',
+    component: () => import('@/views/color/TrendView.vue'),
+    title: '色彩趋势看板',
+    permission: 'color:read',
+    menu: {
+      group: 'color', title: '色彩趋势', icon: TrendCharts, order: 30,
+      permission: 'color:read',
+    },
+  },
+  {
+    path: '/color-management/swatch-generator',
+    name: 'ColorSwatchGenerator',
+    component: () => import('@/views/color/SwatchGenerator.vue'),
+    title: '色板图生成器',
+    permission: 'color:write',
+    menu: {
+      group: 'color', title: '色板图生成', icon: MagicStick, order: 40,
+      permission: 'color:write',
+    },
+  },
+
   // ── 方舟洞见 ───────────────────────────────────────────
+  {
+    path: '/insight/intelligence',
+    name: 'InsightIntelligenceOverview',
+    component: () => import('@/views/insight/IntelligenceOverview.vue'),
+    title: '行业情报速览',
+    permission: 'insight:read',
+    menu: {
+      group: 'insight', title: '行业情报速览', icon: Aim, order: 5,
+      permission: 'insight:read',
+    },
+  },
+  {
+    path: '/insight/library',
+    name: 'InsightIntelligenceLibrary',
+    component: () => import('@/views/insight/IntelligenceLibrary.vue'),
+    title: '情报采集库',
+    permission: 'insight:read',
+    menu: {
+      group: 'insight', title: '情报采集库', icon: Reading, order: 8,
+      permission: 'insight:read',
+    },
+  },
   {
     path: '/insight/industry-daily',
     name: 'InsightIndustryDaily',

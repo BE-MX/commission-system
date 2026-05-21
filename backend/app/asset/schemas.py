@@ -41,7 +41,8 @@ class TagDimensionWithValues(TagDimensionOut):
 
 class TagValueCreate(BaseModel):
     value: str = Field(..., max_length=128)
-    color_hex: Optional[str] = Field(None, max_length=7)
+    color_hex: Optional[str] = Field(None, max_length=32)
+    image_path: Optional[str] = Field(None, max_length=512)
     sort_order: int = 0
 
 
@@ -218,3 +219,39 @@ class FavoriteItemOut(BaseModel):
 
 class FavoriteFolderWithItems(FavoriteFolderOut):
     items: list[FavoriteItemOut] = []
+
+
+# ── 文件夹上传 ──────────────────────────────────────────
+
+class TagMappingItem(BaseModel):
+    dimension_id: int
+    tag_value_id: int
+    dimension_name: Optional[str] = None
+    original_value: Optional[str] = None
+
+
+class FolderUploadValidateRequest(BaseModel):
+    folder_path: str = Field(..., min_length=1)
+
+
+class FolderUploadPreviewRequest(BaseModel):
+    folder_path: str = Field(..., min_length=1)
+    tag_mapping: dict[str, TagMappingItem] = {}
+
+
+class FolderUploadExecuteRequest(BaseModel):
+    folder_path: str = Field(..., min_length=1)
+    tag_mapping: dict[str, TagMappingItem] = {}
+    permission: AssetPermissionIn = AssetPermissionIn()
+    extra_tags: list[AssetTagItem] = []
+
+
+# ── 移动端 ──────────────────────────────────────────────
+
+class AssetActionRequest(BaseModel):
+    action: str = Field(..., pattern="^(view|download|copy_link)$")
+
+
+class AssetShareLinkOut(BaseModel):
+    url: str
+    expires_at: Optional[datetime] = None

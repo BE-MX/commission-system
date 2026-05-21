@@ -29,6 +29,16 @@ export function deleteTagValue(valueId) {
   return assetClient.delete(`/tags/values/${valueId}`)
 }
 
+export function uploadTagImage(file) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return assetClient.post('/tag-image-upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    loadingText: '上传中...',
+    timeout: 30000,
+  })
+}
+
 // ── 素材 ────────────────────────────────────────────────
 export function getAssetList(params) {
   return assetClient.get('/list', { params, showLoading: false })
@@ -76,6 +86,40 @@ export function analyzePreview(fileName, directoryPath) {
     loadingText: 'AI 分析中...',
     timeout: 60000,
   })
+}
+
+// ── 文件夹批量上传 ──────────────────────────────────────
+export function validateFolderUpload(folderPath) {
+  return assetClient.post('/folder-upload/validate', { folder_path: folderPath }, {
+    loadingText: '正在扫描文件夹...',
+    timeout: 30000,
+  })
+}
+
+export function previewFolderUpload(folderPath, tagMapping) {
+  return assetClient.post('/folder-upload/preview', {
+    folder_path: folderPath,
+    tag_mapping: tagMapping,
+  }, {
+    loadingText: '正在生成预览...',
+    timeout: 30000,
+  })
+}
+
+export function executeFolderUpload(folderPath, tagMapping, permission, extraTags) {
+  return assetClient.post('/folder-upload/execute', {
+    folder_path: folderPath,
+    tag_mapping: tagMapping,
+    permission,
+    extra_tags: extraTags,
+  }, {
+    loadingText: '正在入库...',
+    timeout: 600000,
+  })
+}
+
+export function getFolderUploadStatus(jobId) {
+  return assetClient.get(`/folder-upload/status/${jobId}`, { showLoading: false })
 }
 
 export function batchDownload(assetIds) {

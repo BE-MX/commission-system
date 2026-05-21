@@ -44,11 +44,14 @@ def _ensure_dir(abs_path: Path) -> None:
     abs_path.parent.mkdir(parents=True, exist_ok=True)
 
 
-def _save_upload_file(src_path: str, rel_path: str) -> str:
-    """将上传的临时文件移到正式存储目录。返回绝对路径。"""
+def _save_upload_file(src_path: str, rel_path: str, *, copy: bool = False) -> str:
+    """将上传的临时文件移到（或复制到）正式存储目录。返回绝对路径。"""
     abs_path = ASSET_STORAGE_ROOT / rel_path
     _ensure_dir(abs_path)
-    shutil.move(src_path, str(abs_path))
+    if copy:
+        shutil.copy2(src_path, str(abs_path))
+    else:
+        shutil.move(src_path, str(abs_path))
     return str(abs_path)
 
 
@@ -93,10 +96,11 @@ def create_asset(
     tags: list[AssetTagItem],
     permission: AssetPermissionIn,
     remark: Optional[str] = None,
+    copy: bool = False,
 ) -> Asset:
     """创建素材（含第一版版本记录）。"""
     rel_path = _build_storage_path(file_type, file_format)
-    abs_path = _save_upload_file(temp_storage_path, rel_path)
+    abs_path = _save_upload_file(temp_storage_path, rel_path, copy=copy)
 
     # 缩略图
     thumbnail_path: Optional[str] = None
@@ -290,6 +294,7 @@ def upload_new_version(
     temp_storage_path: str,
     uploader_id: int,
     remark: Optional[str] = None,
+    copy: bool = False,
 ) -> Optional[AssetVersion]:
     """上传新版本。旧版标记为 history，新版标记为 latest。"""
     asset = get_asset_detail(db, asset_id)
@@ -301,7 +306,7 @@ def upload_new_version(
 
     # 生成新存储路径
     rel_path = _build_storage_path(asset.file_type, asset.file_format)
-    _save_upload_file(temp_storage_path, rel_path)
+    _save_upload_file(temp_storage_path, rel_path, copy=copy)
 
     # 缩略图
     thumbnail_path: Optional[str] = None

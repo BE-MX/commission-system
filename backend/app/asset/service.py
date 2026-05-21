@@ -46,6 +46,15 @@ from app.asset.stats_service import (  # noqa: F401
     get_download_trend,
 )
 
+# 文件夹上传服务
+from app.asset.folder_upload_service import (  # noqa: F401
+    scan_folder,
+    extract_tags_from_path,
+    validate_folder_tags,
+    preview_files,
+    execute_folder_upload,
+)
+
 # 收藏服务
 from app.asset.favorite_service import (  # noqa: F401
     list_favorite_folders,
@@ -55,6 +64,7 @@ from app.asset.favorite_service import (  # noqa: F401
     list_favorite_items,
     add_favorite_item,
     remove_favorite_item,
+    remove_favorite_item_by_asset,
     share_folder,
     get_shared_folder,
     revoke_share,

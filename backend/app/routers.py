@@ -18,6 +18,7 @@ from app.ai.router import router as ai_router
 from app.insight.router import router as insight_router
 from app.stock.router import router as stock_router
 from app.asset.router import router as asset_router
+from app.color.router import router as color_router
 
 
 def register_routers(app: FastAPI) -> None:
@@ -40,3 +41,4 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(insight_router, prefix="/api/insight", tags=["方舟洞见"])
     app.include_router(stock_router, prefix="/api/stock", tags=["备货管理"])
     app.include_router(asset_router, prefix="/api/assets", tags=["素材管理"])
+    app.include_router(color_router, prefix="/api/color", tags=["色彩管理"])

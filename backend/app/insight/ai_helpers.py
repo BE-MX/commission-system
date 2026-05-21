@@ -103,6 +103,26 @@ def _load_chat_skill() -> str:
     return ""
 
 
+_CASE_SKILL_CORE = """你是莱莎发制品业务的资深销售复盘教练。你的任务是对业务员与客户的沟通记录进行深度复盘分析，提取可复用的销售方法论。
+
+## 分析维度
+
+1. **沟通策略**：识别客户的真实需求、顾虑点和决策信号
+2. **话术质量**：评估业务员的响应是否专业、及时、有针对性
+3. **成交路径**：分析从初次接触到最终结果的完整路径
+4. **风险预警**：识别可能导致客户流失的沟通失误
+5. **可复制经验**：提炼可在团队内推广的最佳实践
+
+## 评分标准
+- response_speed: 响应速度（是否及时跟进）
+- talk_track_quality: 话术质量（是否专业、有说服力）
+- needs_alignment: 需求对齐（是否准确理解客户需求）
+- deal_momentum: 推进力度（是否有效推进交易）
+- emotional_engagement: 情感互动（是否建立良好关系）
+- compliance_risk: 合规风险（是否有潜在风险）
+"""
+
+
 def _invoke_case_format(db: Session, raw_text: str, user_id: Optional[int]) -> dict:
     """案例库整理 — 使用精简版 SKILL 核心指令进行 AI 整理，避免完整文件导致超时。"""
     system_text = (
