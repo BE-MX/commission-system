@@ -36,12 +36,12 @@ const router = createRouter({
 
 // ── 路由守卫 ──────────────────────────────────────────
 router.beforeEach(async (to, from, next) => {
-  // 移动端访问素材库页时，直接跳转到移动端独立页面（避免先加载 WEB 端再跳转导致白屏）
+  // 移动端访问素材管理相关页面时，直接跳转到移动端独立页面
   if (/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) &&
       sessionStorage.getItem('ark_desktop_mode') !== '1' &&
-      to.path.startsWith('/asset/library')) {
+      to.path.startsWith('/asset/')) {
     window.location.href = '/m/'
-    return
+    return false
   }
 
   // 设置页面标题
