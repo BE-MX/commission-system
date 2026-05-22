@@ -1,6 +1,6 @@
 # anatomy.md
 
-> Auto-maintained by OpenWolf. Last scanned: 2026-05-22T03:29:24.038Z
+> Auto-maintained by OpenWolf. Last scanned: 2026-05-22T03:45:33.044Z
 > Files: 605 tracked | Anatomy hits: 0 | Misses: 0
 
 ## ./
@@ -706,7 +706,7 @@
 - `__init__.py` — 应用启动期的初始化任务 (DB 探活 / 规则加载 / 数据种子 / 静态文件挂载) (~168 tok)
 - `seed_ai.py` — 启动时自动初始化业务 AI Preset (waybill_ocr / insight_daily_organize / asset_analyze) (~1902 tok)
 - `seed_asset.py` — 素材管理标签维度种子 (幂等) (~142 tok)
-- `static_files.py` — 静态文件挂载: 用户上传目录 + 生产模式前端 dist SPA (~484 tok)
+- `static_files.py` — 静态文件挂载: 用户上传目录 + 生产模式前端 dist SPA (~540 tok)
 
 ## backend/app/color/
 

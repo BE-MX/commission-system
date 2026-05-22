@@ -43,6 +43,11 @@ def mount_frontend(app: FastAPI) -> None:
         file = FRONTEND_DIST / full_path
         if file.is_file():
             return FileResponse(file)
+        # 目录路径（如 /m/）优先返回目录下的 index.html
+        if file.is_dir():
+            index_file = file / "index.html"
+            if index_file.is_file():
+                return FileResponse(index_file)
         return FileResponse(FRONTEND_DIST / "index.html")
 
     logger.info(f"Serving frontend from {FRONTEND_DIST}")
