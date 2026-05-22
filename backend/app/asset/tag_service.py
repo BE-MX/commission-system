@@ -29,11 +29,11 @@ DEFAULT_DIMENSIONS = [
 
 
 def seed_default_dimensions(db: Session) -> None:
-    """初始化内置标签维度。幂等，已有则跳过。"""
+    """初始化内置标签维度。仅在表为空时创建，后续由用户管理。"""
+    if db.query(TagDimension).first() is not None:
+        return
+
     for dim_data in DEFAULT_DIMENSIONS:
-        existing = db.query(TagDimension).filter(TagDimension.name == dim_data["name"]).first()
-        if existing:
-            continue
         dim = TagDimension(
             name=dim_data["name"],
             label=dim_data["label"],

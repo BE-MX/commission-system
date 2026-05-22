@@ -1,6 +1,6 @@
 # anatomy.md
 
-> Auto-maintained by OpenWolf. Last scanned: 2026-05-22T01:28:03.161Z
+> Auto-maintained by OpenWolf. Last scanned: 2026-05-22T03:29:24.038Z
 > Files: 605 tracked | Anatomy hits: 0 | Misses: 0
 
 ## ./
@@ -695,7 +695,7 @@
 - `schemas.py` — 素材管理 — Pydantic 模型 (~1797 tok)
 - `service.py` — 素材管理 — service facade (~442 tok)
 - `stats_service.py` — 素材管理 — 下载统计服务 (~587 tok)
-- `tag_service.py` — 素材管理 — 标签维度/值 CRUD + 种子数据 (~1745 tok)
+- `tag_service.py` — 素材管理 — 标签维度/值 CRUD + 种子数据 (~1727 tok)
 
 ## backend/app/auth/
 
