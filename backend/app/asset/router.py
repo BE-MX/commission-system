@@ -449,6 +449,88 @@ def folder_upload_status(
     return _ok(job)
 
 
+# ── 最近使用 ────────────────────────────────────────────
+
+@router.get("/recent")
+def get_recent_assets(
+    limit: int = Query(30, ge=1, le=50),
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("asset:read")),
+):
+    """最近使用记录 — 基于下载/查看/复制日志"""
+    from sqlalchemy import desc, func
+    from app.asset.models import DownloadLog, Asset
+    from app.auth.models import ArkUser
+
+    user_id = int(user.get("sub") or user.get("user_id") or 0)
+
+    # 按素材分组取最近一条记录
+    subq = (
+        db.query(
+            DownloadLog.asset_id,
+            func.max(DownloadLog.created_at).label("last_at"),
+        )
+        .filter(DownloadLog.user_id == user_id)
+        .group_by(DownloadLog.asset_id)
+        .subquery()
+    )
+
+    logs = (
+        db.query(DownloadLog, subq.c.last_at)
+        .join(subq, (
+            DownloadLog.asset_id == subq.c.asset_id,
+            DownloadLog.created_at == subq.c.last_at,
+        ))
+        .filter(DownloadLog.user_id == user_id)
+        .order_by(desc(subq.c.last_at))
+        .limit(limit)
+        .all()
+    )
+
+    # 去重并按时间排序
+    seen = set()
+    result = []
+    for log, _ in logs:
+        if log.asset_id in seen:
+            continue
+        seen.add(log.asset_id)
+        asset = db.query(Asset).filter(Asset.id == log.asset_id).first()
+        if not asset:
+            continue
+
+        # 判断是否收藏
+        is_fav = False
+        fav_items = db.query(service.FavoriteItem).filter(
+            service.FavoriteItem.asset_id == asset.id,
+        ).join(service.FavoriteFolder).filter(
+            service.FavoriteFolder.user_id == user_id,
+        ).first()
+        if fav_items:
+            is_fav = True
+
+        result.append({
+            "id": asset.id,
+            "file_name": asset.file_name,
+            "file_type": asset.file_type,
+            "thumbnail_path": asset.thumbnail_path,
+            "status": asset.status,
+            "tags": [{
+                "dimension": t.dimension.name if t.dimension else "",
+                "dimension_label": t.dimension.label if t.dimension else "",
+                "value": t.value,
+            } for t in asset.tags],
+            "permissions": {
+                "can_preview": asset.permissions.allow_preview if asset.permissions else True,
+                "can_download": asset.permissions.allow_download if asset.permissions else True,
+            },
+            "last_action": "download" if log.version_number else "view",
+            "last_action_at": log.created_at.isoformat() if log.created_at else None,
+            "fav": is_fav,
+        })
+
+    return _ok(result)
+
+
 # ── 素材详情 ────────────────────────────────────────────
 
 @router.get("/{asset_id}")
@@ -1050,86 +1132,6 @@ def record_asset_action(
         db.commit()
 
     return _ok(None)
-
-
-@router.get("/recent")
-def get_recent_assets(
-    limit: int = Query(30, ge=1, le=50),
-    db: Session = Depends(get_db),
-    user: dict = Depends(require_permission("asset:read")),
-):
-    """最近使用记录 — 基于下载/查看/复制日志"""
-    from sqlalchemy import desc, func
-    from app.asset.models import DownloadLog, Asset
-    from app.auth.models import ArkUser
-
-    user_id = int(user.get("sub") or user.get("user_id") or 0)
-
-    # 按素材分组取最近一条记录
-    subq = (
-        db.query(
-            DownloadLog.asset_id,
-            func.max(DownloadLog.created_at).label("last_at"),
-        )
-        .filter(DownloadLog.user_id == user_id)
-        .group_by(DownloadLog.asset_id)
-        .subquery()
-    )
-
-    logs = (
-        db.query(DownloadLog, subq.c.last_at)
-        .join(subq, (
-            DownloadLog.asset_id == subq.c.asset_id,
-            DownloadLog.created_at == subq.c.last_at,
-        ))
-        .filter(DownloadLog.user_id == user_id)
-        .order_by(desc(subq.c.last_at))
-        .limit(limit)
-        .all()
-    )
-
-    # 去重并按时间排序
-    seen = set()
-    result = []
-    for log, _ in logs:
-        if log.asset_id in seen:
-            continue
-        seen.add(log.asset_id)
-        asset = db.query(Asset).filter(Asset.id == log.asset_id).first()
-        if not asset:
-            continue
-
-        # 判断是否收藏
-        is_fav = False
-        fav_items = db.query(service.FavoriteItem).filter(
-            service.FavoriteItem.asset_id == asset.id,
-        ).join(service.FavoriteFolder).filter(
-            service.FavoriteFolder.user_id == user_id,
-        ).first()
-        if fav_items:
-            is_fav = True
-
-        result.append({
-            "id": asset.id,
-            "file_name": asset.file_name,
-            "file_type": asset.file_type,
-            "thumbnail_path": asset.thumbnail_path,
-            "status": asset.status,
-            "tags": [{
-                "dimension": t.dimension.name if t.dimension else "",
-                "dimension_label": t.dimension.label if t.dimension else "",
-                "value": t.value,
-            } for t in asset.tags],
-            "permissions": {
-                "can_preview": asset.permissions.allow_preview if asset.permissions else True,
-                "can_download": asset.permissions.allow_download if asset.permissions else True,
-            },
-            "last_action": "download" if log.version_number else "view",
-            "last_action_at": log.created_at.isoformat() if log.created_at else None,
-            "fav": is_fav,
-        })
-
-    return _ok(result)
 
 
 @router.delete("/favorites/folders/{folder_id}/items/by-asset/{asset_id}")
