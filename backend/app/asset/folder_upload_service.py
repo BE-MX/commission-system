@@ -95,6 +95,13 @@ def extract_tags_from_path(file_path: str, root_path: str) -> list[str]:
     reserved_norm = {_normalize_text(l) for l in RESERVED_DIMENSION_LABELS}
 
     tags: list[str] = []
+
+    # 所选文件夹本身的名称也作为标签
+    root_name = root_p.name
+    norm_root = _normalize_text(root_name)
+    if norm_root and norm_root not in reserved_norm:
+        tags.append(root_name)
+
     for part in rel.parent.parts:
         normalized = _normalize_text(part)
         if not normalized or normalized in reserved_norm:

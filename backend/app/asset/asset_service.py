@@ -195,8 +195,8 @@ def query_assets(
     sort_order: str = "desc",
     page: int = 1,
     page_size: int = 24,
-) -> tuple[int, list[Asset]]:
-    """返回 (total, items)。"""
+) -> tuple[int, list[Asset], list[int]]:
+    """返回 (total, items, available_tag_ids)。"""
     q = db.query(Asset)
 
     if file_type:
@@ -238,6 +238,15 @@ def query_assets(
 
     total = q.with_entities(func.count(Asset.id)).scalar() or 0
 
+    # 全量筛选结果的可用标签 ID（不分页、不排序）
+    tag_ids = (
+        q.join(asset_tag_association, Asset.id == asset_tag_association.c.asset_id)
+        .with_entities(asset_tag_association.c.tag_value_id)
+        .distinct()
+        .all()
+    )
+    available_tag_ids = [tid for (tid,) in tag_ids if tid is not None]
+
     sort_col = getattr(Asset, sort_by, Asset.created_at)
     if sort_order == "desc":
         q = q.order_by(desc(sort_col))
@@ -245,7 +254,7 @@ def query_assets(
         q = q.order_by(sort_col)
 
     items = q.offset((page - 1) * page_size).limit(page_size).all()
-    return total, items
+    return total, items, available_tag_ids
 
 
 def get_asset_detail(db: Session, asset_id: int) -> Optional[Asset]:

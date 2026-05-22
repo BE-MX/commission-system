@@ -290,7 +290,7 @@ def list_assets(
     if tag_filters:
         parsed_tags = json.loads(tag_filters)
 
-    total, items = service.query_assets(
+    total, items, available_tag_ids = service.query_assets(
         db,
         file_type=file_type,
         tag_filters=parsed_tags,
@@ -306,6 +306,7 @@ def list_assets(
         "total": total,
         "page": page,
         "page_size": page_size,
+        "available_tag_ids": available_tag_ids,
         "items": [{
             "id": a.id,
             "file_name": a.file_name,

@@ -30,6 +30,7 @@
 - 发色数字化模块采用领域模块结构 `app/color/`，自包含 router/models/schemas/service facade + palette/blend/calc/trend/swatch/social_extract 子模块。混色计算在 LAB 空间做加权线性插值替代 Kubelka-Munk 模型（pymixbox 非商用授权）
 - 混合色（Piano/Ombre/Balayage/Rooted）通过 `color_blend` + `color_blend_component` 两张表联合表达，`computed_hex` 仅用于列表缩略图和粗筛，真实色彩结构通过 component 表的 position + weight + sort_order 完整描述
 - 色彩计算核心依赖 `colour-science`（BSD-3 授权），提供工业级色彩空间转换（RGB↔LAB↔XYZ）、ΔE2000 色差计算。OpenCV + scikit-learn 用于图片主色提取（K-means 聚类）
+- 素材库标签联动筛选的可用标签值必须基于**全量检索结果**（不分页）统计，而非当前页。实现方式：后端 `query_assets` 在同筛选条件下（排序和分页之前）额外做一次 `DISTINCT tag_value_id` 查询，随分页结果一并返回 `available_tag_ids`。前端直接用该字段替代从 `assets.value` 自行统计
 
 ## Do-Not-Repeat
 

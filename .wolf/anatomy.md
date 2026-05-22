@@ -1,7 +1,7 @@
 # anatomy.md
 
-> Auto-maintained by OpenWolf. Last scanned: 2026-05-22T00:29:51.906Z
-> Files: 604 tracked | Anatomy hits: 0 | Misses: 0
+> Auto-maintained by OpenWolf. Last scanned: 2026-05-22T01:28:03.161Z
+> Files: 605 tracked | Anatomy hits: 0 | Misses: 0
 
 ## ./
 
@@ -686,13 +686,13 @@
 ## backend/app/asset/
 
 - `analyze_service.py` — 素材管理 — AI 打标签服务 (~1800 tok)
-- `asset_service.py` — 素材管理 — 素材上传/查询/更新/下载 (~3287 tok)
+- `asset_service.py` — 素材管理 — 素材上传/查询/更新/下载 (~3388 tok)
 - `batch_service.py` — 素材管理 — 批量操作服务 (~461 tok)
 - `favorite_service.py` — 素材管理 — 收藏夹/收藏项 CRUD (~1645 tok)
-- `folder_upload_service.py` — 素材管理 — 文件夹批量上传服务 (~3181 tok)
+- `folder_upload_service.py` — 素材管理 — 文件夹批量上传服务 (~3232 tok)
 - `models.py` — 素材管理 — SQLAlchemy ORM 模型 (~2280 tok)
-- `router.py` — 素材管理 — API 路由 (~10755 tok)
-- `schemas.py` — 素材管理 — Pydantic 模型 (~1786 tok)
+- `router.py` — 素材管理 — API 路由 (~10774 tok)
+- `schemas.py` — 素材管理 — Pydantic 模型 (~1797 tok)
 - `service.py` — 素材管理 — service facade (~442 tok)
 - `stats_service.py` — 素材管理 — 下载统计服务 (~587 tok)
 - `tag_service.py` — 素材管理 — 标签维度/值 CRUD + 种子数据 (~1745 tok)
@@ -753,6 +753,7 @@
 
 ## backend/scripts/
 
+- `bulk_tag_asset.py` — 批量为所有素材打标签：dimension_id=5, tag_value_id=2026 (~474 tok)
 - `clear_asset_tags.py` — 清空素材库所有标签维度、标签值和素材标签关联 (~288 tok)
 - `import_base_colors.py` — 导入基础色号到 ark_color_palette 表 (~924 tok)
 - `import_pantone.py` — 导入 Pantone TCX 参考色库到 ark_pantone_reference 表 (~642 tok)
@@ -785,7 +786,7 @@
 ## frontend/src/views/asset/
 
 - `AssetFavorites.vue` — Vue: setup (~4088 tok)
-- `AssetLibrary.vue` — Vue: setup (~6876 tok)
+- `AssetLibrary.vue` — Vue: setup (~6855 tok)
 - `AssetStats.vue` — Vue: setup (~1739 tok)
 - `AssetUpload.vue` — Vue component (~8910 tok)
 - `TagDimensionManage.vue` — Vue: setup (~3599 tok)

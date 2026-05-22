@@ -176,6 +176,7 @@ class AssetListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+    available_tag_ids: list[int] = []
     items: list[AssetListItem]
 
 

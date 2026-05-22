@@ -468,12 +468,8 @@ async function loadData() {
     assets.value = res.data?.items || []
     total.value = res.data?.total || 0
 
-    // 更新可用标签 ID 集合（联动筛选）
-    const tagIds = new Set()
-    assets.value.forEach(asset => {
-      asset.tags?.forEach(tag => tagIds.add(tag.id))
-    })
-    availableTagIds.value = tagIds
+    // 更新可用标签 ID 集合（基于全量检索结果，非当前页）
+    availableTagIds.value = new Set(res.data?.available_tag_ids || [])
   } catch (e) {
     ElMessage.error('加载素材失败')
   } finally {
