@@ -1,7 +1,7 @@
 # anatomy.md
 
-> Auto-maintained by OpenWolf. Last scanned: 2026-05-21T01:57:14.658Z
-> Files: 602 tracked | Anatomy hits: 0 | Misses: 0
+> Auto-maintained by OpenWolf. Last scanned: 2026-05-22T00:29:51.906Z
+> Files: 604 tracked | Anatomy hits: 0 | Misses: 0
 
 ## ./
 
@@ -676,6 +676,7 @@
 - `020_add_asset_module.py` — add asset module (~3071 tok)
 - `021_add_intelligence_module.py` — add intelligence module (~2925 tok)
 - `022_add_color_module.py` — add color module (~3841 tok)
+- `023_fix_asset_tags_pk.py` — fix asset tags primary key (~281 tok)
 
 ## backend/app/
 
@@ -685,11 +686,11 @@
 ## backend/app/asset/
 
 - `analyze_service.py` — 素材管理 — AI 打标签服务 (~1800 tok)
-- `asset_service.py` — 素材管理 — 素材上传/查询/更新/下载 (~3293 tok)
+- `asset_service.py` — 素材管理 — 素材上传/查询/更新/下载 (~3287 tok)
 - `batch_service.py` — 素材管理 — 批量操作服务 (~461 tok)
 - `favorite_service.py` — 素材管理 — 收藏夹/收藏项 CRUD (~1645 tok)
 - `folder_upload_service.py` — 素材管理 — 文件夹批量上传服务 (~3181 tok)
-- `models.py` — 素材管理 — SQLAlchemy ORM 模型 (~2278 tok)
+- `models.py` — 素材管理 — SQLAlchemy ORM 模型 (~2280 tok)
 - `router.py` — 素材管理 — API 路由 (~10755 tok)
 - `schemas.py` — 素材管理 — Pydantic 模型 (~1786 tok)
 - `service.py` — 素材管理 — service facade (~442 tok)
@@ -733,7 +734,7 @@
 - `item_service.py` — 方舟洞见 — 情报条目服务 (CRUD + 筛选 + 批量操作) (~1511 tok)
 - `models.py` — 方舟洞见 — SQLAlchemy ORM 模型 (~3757 tok)
 - `reports_service.py` — 方舟洞见 — 行业日报 / AI 工具速递 / 内部报告 (CRUD + 生成 + 渲染) (~3746 tok)
-- `router.py` — 方舟洞见 — API 路由 (~8522 tok)
+- `router.py` — 方舟洞见 — API 路由 (~8536 tok)
 - `schedule_service.py` — 定时生成规则管理 (~300 tok)
 - `schedule_service.py` — 方舟洞见 — 定时生成规则管理 (~536 tok)
 - `scheduler.py` — 方舟洞见 — 定时任务 (~862 tok)
@@ -758,7 +759,7 @@
 
 ## frontend/public/m/
 
-- `index.html` — 移动端素材管理独立页面（Vue 3 CDN + 真实 API） (~13929 tok)
+- `index.html` — 莱莎方舟 · 素材管理 (~14657 tok)
 - `vue-router.global.js` — Vue Router 4 全局构建 (~164296 tok)
 - `vue.global.js` — Vue 3 全局构建 (~562700 tok)
 
@@ -773,6 +774,10 @@
 
 - `navigation.js` — 导航配置 — 单一来源。 (~4469 tok)
 
+## frontend/src/router/
+
+- `index.js` — NAV_ENTRIES 中每条记录映射成 vue-router 的 children 路由 (~617 tok)
+
 ## frontend/src/stores/
 
 - `auth.js` — Auth Store — 管理登录状态、token、用户信息 (~720 tok)
@@ -780,7 +785,7 @@
 ## frontend/src/views/asset/
 
 - `AssetFavorites.vue` — Vue: setup (~4088 tok)
-- `AssetLibrary.vue` — Vue: setup (~6924 tok)
+- `AssetLibrary.vue` — Vue: setup (~6876 tok)
 - `AssetStats.vue` — Vue: setup (~1739 tok)
 - `AssetUpload.vue` — Vue component (~8910 tok)
 - `TagDimensionManage.vue` — Vue: setup (~3599 tok)

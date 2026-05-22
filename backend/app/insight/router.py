@@ -61,6 +61,82 @@ def _ok(data, message: str = "ok"):
 # 报告(Reports)
 # ──────────────────────────────────────────────────────
 
+# ── 情报速览报告（固定路径放前面，避免被 /reports/{report_id} 吞掉）──
+@router.get("/reports/intelligence")
+def list_intelligence(
+    status: Optional[str] = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    user: dict = Depends(_require_insight_view),
+):
+    from app.insight.intelligence_service import list_intelligence_reports
+    result = list_intelligence_reports(db, status=status, page=page, page_size=page_size)
+    return _ok(result)
+
+
+@router.post("/reports/intelligence/generate")
+def generate_intelligence(
+    data: IntelligenceReportGenerate,
+    db: Session = Depends(get_db),
+    user: dict = Depends(_require_insight_admin),
+):
+    """手动触发生成行业情报速览报告。"""
+    from app.insight.intelligence_service import generate_intelligence_report
+    try:
+        user_id = int(user.get("sub")) if user.get("sub") else None
+        report = generate_intelligence_report(db, data, user_id=user_id)
+        return _ok({
+            "id": report.id,
+            "status": report.status,
+            "title": report.title,
+        }, "报告生成中")
+    except Exception as e:
+        logger.exception("生成情报速览失败")
+        raise HTTPException(status_code=500, detail=f"生成失败: {str(e)[:200]}")
+
+
+@router.get("/reports/intelligence/{report_id}/html")
+def get_intelligence_html(
+    report_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(_require_insight_view),
+):
+    from app.insight.intelligence_service import get_intelligence_report_html
+    try:
+        html = get_intelligence_report_html(db, report_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return Response(content=html, media_type="text/html; charset=utf-8")
+
+
+@router.delete("/reports/intelligence/{report_id}")
+def delete_intelligence(
+    report_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(_require_insight_admin),
+):
+    from app.insight.intelligence_service import delete_intelligence_report
+    try:
+        delete_intelligence_report(db, report_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return _ok(None, "已删除")
+
+
+@router.patch("/reports/intelligence/{report_id}/pin")
+def pin_intelligence(
+    report_id: int,
+    is_pinned: bool = Query(True),
+    db: Session = Depends(get_db),
+    user: dict = Depends(_require_insight_admin),
+):
+    from app.insight.intelligence_service import pin_report
+    report = pin_report(db, report_id, is_pinned)
+    return _ok({"id": report.id, "is_pinned": bool(report.is_pinned)}, "已更新")
+
+
+# ── 通用报告 ─────────────────────────────────────────
 @router.get("/reports")
 def list_reports(
     report_type: Optional[str] = Query(None, description="支持逗号分隔多个类型"),
@@ -148,81 +224,6 @@ def regenerate_report(
     except Exception as e:
         logger.exception("Regenerate report failed: id=%s", report_id)
         raise HTTPException(status_code=500, detail=f"生成失败: {str(e)[:200]}")
-
-
-# ── 情报速览报告 ─────────────────────────────────────────
-@router.post("/reports/intelligence/generate")
-def generate_intelligence(
-    data: IntelligenceReportGenerate,
-    db: Session = Depends(get_db),
-    user: dict = Depends(_require_insight_admin),
-):
-    """手动触发生成行业情报速览报告。"""
-    from app.insight.intelligence_service import generate_intelligence_report
-    try:
-        user_id = int(user.get("sub")) if user.get("sub") else None
-        report = generate_intelligence_report(db, data, user_id=user_id)
-        return _ok({
-            "id": report.id,
-            "status": report.status,
-            "title": report.title,
-        }, "报告生成中")
-    except Exception as e:
-        logger.exception("生成情报速览失败")
-        raise HTTPException(status_code=500, detail=f"生成失败: {str(e)[:200]}")
-
-
-@router.get("/reports/intelligence")
-def list_intelligence(
-    status: Optional[str] = None,
-    page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=200),
-    db: Session = Depends(get_db),
-    user: dict = Depends(_require_insight_view),
-):
-    from app.insight.intelligence_service import list_intelligence_reports
-    result = list_intelligence_reports(db, status=status, page=page, page_size=page_size)
-    return _ok(result)
-
-
-@router.get("/reports/intelligence/{report_id}/html")
-def get_intelligence_html(
-    report_id: int,
-    db: Session = Depends(get_db),
-    user: dict = Depends(_require_insight_view),
-):
-    from app.insight.intelligence_service import get_intelligence_report_html
-    try:
-        html = get_intelligence_report_html(db, report_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    return Response(content=html, media_type="text/html; charset=utf-8")
-
-
-@router.delete("/reports/intelligence/{report_id}")
-def delete_intelligence(
-    report_id: int,
-    db: Session = Depends(get_db),
-    user: dict = Depends(_require_insight_admin),
-):
-    from app.insight.intelligence_service import delete_intelligence_report
-    try:
-        delete_intelligence_report(db, report_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    return _ok(None, "已删除")
-
-
-@router.patch("/reports/intelligence/{report_id}/pin")
-def pin_intelligence(
-    report_id: int,
-    is_pinned: bool = Query(True),
-    db: Session = Depends(get_db),
-    user: dict = Depends(_require_insight_admin),
-):
-    from app.insight.intelligence_service import pin_report
-    report = pin_report(db, report_id, is_pinned)
-    return _ok({"id": report.id, "is_pinned": bool(report.is_pinned)}, "已更新")
 
 
 @router.post("/reports/generate/{report_type}")

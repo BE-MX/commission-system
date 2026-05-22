@@ -71,8 +71,8 @@ asset_tag_association = Table(
     Base.metadata,
     Column("asset_id", Integer, ForeignKey("ark_assets.id"), primary_key=True),
     Column("version_id", Integer, ForeignKey("ark_asset_versions.id"), nullable=True),
-    Column("dimension_id", Integer, ForeignKey("ark_tag_dimensions.id"), nullable=False),
-    Column("tag_value_id", Integer, ForeignKey("ark_tag_values.id"), nullable=False),
+    Column("dimension_id", Integer, ForeignKey("ark_tag_dimensions.id"), primary_key=True),
+    Column("tag_value_id", Integer, ForeignKey("ark_tag_values.id"), primary_key=True),
     Index("idx_asset_tag_asset", "asset_id"),
     Index("idx_asset_tag_dim", "dimension_id", "tag_value_id"),
 )

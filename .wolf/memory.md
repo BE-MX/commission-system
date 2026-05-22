@@ -511,3 +511,62 @@
 
 | Time | Action | File(s) | Outcome | ~Tokens |
 |------|--------|---------|---------|--------|
+
+## Session: 2026-05-21 19:23
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 19:24 | Edited frontend/public/m/index.html | added 1 condition(s) | ~860 |
+| 19:25 | Edited frontend/public/m/index.html | 4→6 lines | ~47 |
+| 19:26 | Edited frontend/public/m/index.html | modified doSearch() | ~161 |
+| 19:26 | Edited frontend/public/m/index.html | modified catch() | ~66 |
+| 19:26 | Edited frontend/public/m/index.html | added optional chaining | ~349 |
+| 19:26 | Edited frontend/public/m/index.html | inline fix | ~48 |
+| 19:26 | Edited frontend/public/m/index.html | 5→5 lines | ~78 |
+| 19:27 | Edited frontend/public/m/index.html | modified clearFilters() | ~53 |
+| 19:27 | Edited frontend/public/m/index.html | modified openBs() | ~256 |
+
+## Session: 2026-05-21 19:28
+
+**移动端素材库标签搜索 + 联动筛选**
+
+修改文件：`frontend/public/m/index.html`
+
+1. **BottomSheet 组件**：新增 `searchable` prop，弹层顶部显示标签搜索输入框，实时过滤标签值（`filteredOpts` computed）
+2. **联动筛选**：
+   - 新增 `availableTags` reactive 对象 + `updateAvailableTags()` 函数
+   - `doSearch()` / `loadMore()` 成功后收集当前结果集的标签值分布
+   - `openBs()` 当已有筛选条件时，只显示当前结果集中存在的标签值；已选标签始终保留以便取消
+3. **clearFilters()**：清除筛选时同步清空 `availableTags`
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 19:28 | 移动端素材库标签搜索+联动筛选 | frontend/public/m/index.html | BottomSheet 搜索框 + availableTags 联动筛选 | ~1200 |
+| 19:32 | 移动端访问 /asset/library 白屏修复 | router/index.js, AssetLibrary.vue | 移动端检测从 onMounted 前移到路由守卫，避免 WEB 端组件加载后再跳转导致白屏 | ~180 |
+| 19:28 | Session end: 9 writes across 1 files (index.html) | 2 reads | ~23635 tok |
+| 19:29 | Session end: 9 writes across 1 files (index.html) | 2 reads | ~23635 tok |
+| 19:39 | Edited frontend/src/router/index.js | added 1 condition(s) | ~130 |
+| 19:39 | Edited frontend/src/views/asset/AssetLibrary.vue | 10→5 lines | ~21 |
+| 19:39 | Session end: 11 writes across 3 files (index.html, index.js, AssetLibrary.vue) | 6 reads | ~24508 tok |
+| 19:42 | Session end: 11 writes across 3 files (index.html, index.js, AssetLibrary.vue) | 6 reads | ~24508 tok |
+| 19:43 | Session end: 11 writes across 3 files (index.html, index.js, AssetLibrary.vue) | 6 reads | ~24508 tok |
+| 19:55 | Edited frontend/src/router/index.js | 7→7 lines | ~73 |
+| 19:57 | Session end: 12 writes across 3 files (index.html, index.js, AssetLibrary.vue) | 8 reads | ~29672 tok |
+
+## Session: 2026-05-21 20:01
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 20:03 | Edited backend/app/insight/router.py | modified list_intelligence() | ~1741 |
+
+| 22:00 | Edited backend/app/insight/router.py | reordered /reports/intelligence/* routes before /reports/{report_id} | fixed int_parsing error on /reports/intelligence | ~1800 |
+| 20:03 | Session end: 1 writes across 1 files (router.py) | 1 reads | ~10263 tok |
+
+## Session: 2026-05-22 08:25
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 08:29 | Edited backend/app/asset/models.py | 11→11 lines | ~155 |
+| 08:29 | Edited backend/app/asset/asset_service.py | modified _clear_tags() | ~78 |
+| 08:29 | Created backend/alembic/versions/023_fix_asset_tags_pk.py | — | ~281 |
+| 08:31 | Session end: 3 writes across 3 files (models.py, asset_service.py, 023_fix_asset_tags_pk.py) | 5 reads | ~12337 tok |

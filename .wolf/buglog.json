@@ -674,6 +674,83 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-05-21T01:52:49.254Z"
+    },
+    {
+      "id": "bug-043",
+      "timestamp": "2026-05-21T11:24:59.248Z",
+      "error_message": "Significant refactor of ",
+      "file": "frontend/public/m/index.html",
+      "root_cause": "4 lines replaced/restructured",
+      "fix": "Rewrote 42→64 lines (4 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "html"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-21T11:24:59.248Z"
+    },
+    {
+      "id": "bug-044",
+      "timestamp": "2026-05-21T11:26:33.056Z",
+      "error_message": "Null/undefined access in ",
+      "file": "frontend/public/m/index.html",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "html"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-21T11:26:33.056Z"
+    },
+    {
+      "id": "bug-045",
+      "timestamp": "2026-05-21T11:39:16.709Z",
+      "error_message": "Significant refactor of ",
+      "file": "frontend/src/views/asset/AssetLibrary.vue",
+      "root_cause": "6 lines replaced/restructured",
+      "fix": "Rewrote 10→5 lines (6 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-21T11:39:16.709Z"
+    },
+    {
+      "id": "bug-046",
+      "timestamp": "2026-05-21T14:00:00.000Z",
+      "error_message": "Input should be a valid integer, unable to parse string as an integer",
+      "file": "backend/app/insight/router.py",
+      "root_cause": "FastAPI 路由顺序错误：/reports/{report_id} 定义在 /reports/intelligence 之前，请求 /reports/intelligence 时被参数路由吞掉，把 'intelligence' 当 report_id 解析为 int 失败",
+      "fix": "将 /reports/intelligence/* 所有路由整体前移到 /reports/{report_id} 之前",
+      "tags": [
+        "fastapi",
+        "route-order",
+        "path-parameter",
+        "int-parsing"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-21T14:00:00.000Z"
+    },
+    {
+      "id": "bug-047",
+      "timestamp": "2026-05-22T14:00:00.000Z",
+      "error_message": "(pymysql.err.IntegrityError) (1062, \"Duplicate entry '761' for key 'ark_asset_tags.PRIMARY'\")",
+      "file": "backend/app/asset/models.py, backend/alembic/versions/020_add_asset_module.py",
+      "root_cause": "ark_asset_tags 关联表主键只有 asset_id 一列，导致同一个素材无法写入多条标签记录。文件夹上传时一个素材从路径提取出多个标签，第二条 INSERT 即因主键冲突失败",
+      "fix": "1) 模型：将主键改为复合主键 (asset_id, dimension_id, tag_value_id)；2) _clear_tags：改为按 asset_id 清除全部旧标签（避免新旧版本标签重叠冲突）；3) 迁移 023：ALTER TABLE 修改 MySQL 生产表主键",
+      "tags": ["mysql", "primary-key", "asset", "integrity-error", "migration"],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-22T14:00:00.000Z"
     }
   ]
 }

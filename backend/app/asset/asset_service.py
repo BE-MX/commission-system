@@ -173,12 +173,11 @@ def _apply_tags(
             )
 
 
-def _clear_tags(db: Session, asset_id: int, version_id: int) -> None:
-    """清除素材的某版本标签关联。"""
+def _clear_tags(db: Session, asset_id: int, version_id: Optional[int] = None) -> None:
+    """清除素材的全部标签关联（version_id 保留参数兼容，实际已忽略）。"""
     db.execute(
         asset_tag_association.delete().where(
             asset_tag_association.c.asset_id == asset_id,
-            asset_tag_association.c.version_id == version_id,
         )
     )
 
