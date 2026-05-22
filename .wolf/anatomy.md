@@ -1,7 +1,7 @@
 # anatomy.md
 
-> Auto-maintained by OpenWolf. Last scanned: 2026-05-22T03:45:33.044Z
-> Files: 605 tracked | Anatomy hits: 0 | Misses: 0
+> Auto-maintained by OpenWolf. Last scanned: 2026-05-22T05:08:17.954Z
+> Files: 607 tracked | Anatomy hits: 0 | Misses: 0
 
 ## ./
 
@@ -758,9 +758,17 @@
 - `import_base_colors.py` — 导入基础色号到 ark_color_palette 表 (~924 tok)
 - `import_pantone.py` — 导入 Pantone TCX 参考色库到 ark_pantone_reference 表 (~642 tok)
 
+## frontend/
+
+- `vite.config.js` — Declares htmlPath (~281 tok)
+
+## frontend/dist/m/
+
+- `index.html` — 莱莎方舟 · 素材管理 (~14643 tok)
+
 ## frontend/public/m/
 
-- `index.html` — 莱莎方舟 · 素材管理 (~14657 tok)
+- `index.html` — 莱莎方舟 · 素材管理 (~15010 tok)
 - `vue-router.global.js` — Vue Router 4 全局构建 (~164296 tok)
 - `vue.global.js` — Vue 3 全局构建 (~562700 tok)
 

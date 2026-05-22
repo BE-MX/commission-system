@@ -207,6 +207,19 @@ img{max-width:100%;display:block}
 /* 收藏夹选择弹层 */
 .folder-select .bs-option{padding:14px 16px;border-bottom:1px solid var(--border)}
 .folder-select .bs-option:last-child{border-bottom:none}
+
+/* 切换到完整版条 */
+.switch-bar{position:sticky;top:0;z-index:110;background:var(--primary-light);padding:6px 12px;display:flex;align-items:center;justify-content:space-between;font-size:12px}
+.switch-bar span{color:#8a6d3b}
+.switch-bar a{color:var(--primary);font-weight:500;text-decoration:underline}
+
+/* 登录引导 */
+.login-guide{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px;background:var(--bg)}
+.login-guide-content{text-align:center}
+.login-guide-icon{font-size:56px;margin-bottom:16px}
+.login-guide-content h3{font-size:18px;font-weight:600;margin-bottom:8px;color:var(--text)}
+.login-guide-content p{font-size:14px;color:var(--gray);margin-bottom:24px}
+.login-guide-btn{padding:12px 40px;background:var(--primary);color:#fff;border-radius:8px;font-size:15px;font-weight:500;cursor:pointer}
 </style>
 </head>
 <body>
@@ -609,8 +622,9 @@ const MSearch = {
           API.getTags(),
           API.getFavorites(),
         ]);
-        chips.value = popularR || [];
         tagDimensions.value = tagsR || [];
+        // 按维度 ID 从小到大排列标签维度
+        chips.value = tagDimensions.value.map(d => ({ dimension: d.name, label: d.label }));
         folders.value = (favR || []).filter(f => f.id !== 'all');
         loadRecent();
       } catch (e) {
@@ -1192,31 +1206,37 @@ const MobileNav = {
   `
 };
 
-/* 切换到完整版条 */
-.switch-bar{position:sticky;top:0;z-index:110;background:var(--primary-light);padding:6px 12px;display:flex;align-items:center;justify-content:space-between;font-size:12px}
-.switch-bar span{color:#8a6d3b}
-.switch-bar a{color:var(--primary);font-weight:500;text-decoration:underline}
-
 /* ==================== 根布局 ==================== */
 const MobileApp = {
   components: { MobileNav, ToastProvider },
   setup() {
     const route = useRoute();
     const hideNav = computed(() => route.path.startsWith('/assets/'));
+    const token = ref(getToken());
     function toDesktop() {
       sessionStorage.setItem('ark_desktop_mode', '1');
       window.location.href = '/asset/library';
     }
-    return { hideNav, toDesktop };
+    return { hideNav, toDesktop, token };
   },
   template: `
     <div class="app">
-      <div class="switch-bar">
-        <span>手机版</span>
-        <a href="javascript:void(0)" @click="toDesktop">切换到完整版</a>
+      <div v-if="!token" class="login-guide">
+        <div class="login-guide-content">
+          <div class="login-guide-icon">&#128274;</div>
+          <h3>请先登录</h3>
+          <p>请从方舟平台登录后再进入素材管理</p>
+          <button class="login-guide-btn" @click="toDesktop">前往登录</button>
+        </div>
       </div>
-      <router-view/>
-      <MobileNav v-if="!hideNav"/>
+      <template v-else>
+        <div class="switch-bar">
+          <span>手机版</span>
+          <a href="javascript:void(0)" @click="toDesktop">切换到完整版</a>
+        </div>
+        <router-view/>
+        <MobileNav v-if="!hideNav"/>
+      </template>
       <ToastProvider/>
     </div>
   `
@@ -1231,7 +1251,17 @@ const routes = [
   { path: '/assets/:id', component: MAssetDetail }
 ];
 
-const router = createRouter({ history: createWebHashHistory(), routes });
+const router = createRouter({
+  history: createWebHashHistory('/m/'),
+  routes: [
+    { path: '/', redirect: '/favorites' },
+    { path: '/search', component: MSearch },
+    { path: '/favorites', component: MFavorites },
+    { path: '/recent', component: MRecent },
+    { path: '/assets/:id', component: MAssetDetail },
+    { path: '/:pathMatch(.*)*', redirect: '/favorites' }
+  ]
+});
 const app = createApp({ template: '<MobileApp/>', components: { MobileApp } });
 app.use(router);
 app.mount('#app');
