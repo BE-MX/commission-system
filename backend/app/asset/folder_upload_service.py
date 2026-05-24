@@ -29,6 +29,13 @@ SUPPORTED_IMAGE_EXTS = {
     ".gif", ".bmp", ".tiff", ".tif",
 }
 
+SUPPORTED_VIDEO_EXTS = {
+    ".mp4", ".mov", ".avi", ".mkv", ".wmv",
+    ".flv", ".webm", ".m4v", ".3gp", ".mpeg", ".mpg",
+}
+
+SUPPORTED_FILE_EXTS = SUPPORTED_IMAGE_EXTS | SUPPORTED_VIDEO_EXTS
+
 SKIP_FILES = {".ds_store", "thumbs.db", "desktop.ini"}
 
 # 系统保留维度名：文件夹名等于这些时跳过，不作为标签提取
@@ -54,8 +61,18 @@ def _normalize_text(text: str) -> str:
 
 # ── 扫描与提取 ──────────────────────────────────────────
 
+def _detect_file_type(ext: str) -> str:
+    """根据扩展名判断 file_type（image / video / document）。"""
+    ext_lower = ext.lower().lstrip(".")
+    if ext_lower in {"jpg", "jpeg", "png", "webp", "heic", "gif", "bmp", "tiff", "tif"}:
+        return "image"
+    if ext_lower in {"mp4", "mov", "avi", "mkv", "wmv", "flv", "webm", "m4v", "3gp", "mpeg", "mpg"}:
+        return "video"
+    return "document"
+
+
 def scan_folder(folder_path: str) -> list[str]:
-    """递归扫描文件夹，返回所有图片文件的绝对路径列表（按字母序）。"""
+    """递归扫描文件夹，返回所有图片/视频文件的绝对路径列表（按字母序）。"""
     result: list[str] = []
     root = Path(folder_path)
 
@@ -71,7 +88,7 @@ def scan_folder(folder_path: str) -> list[str]:
             continue
 
         ext = path.suffix.lower()
-        if ext not in SUPPORTED_IMAGE_EXTS:
+        if ext not in SUPPORTED_FILE_EXTS:
             continue
 
         result.append(str(path))
@@ -261,6 +278,7 @@ def execute_folder_upload(
         file_name = path.name
         ext = path.suffix.lower().lstrip(".")
         file_size = path.stat().st_size
+        file_type = _detect_file_type(ext)
 
         # 构建标签项
         tags = extract_tags_from_path(file_path, folder_path)
@@ -291,10 +309,10 @@ def execute_folder_upload(
             used_dimensions.add(item.dimension_id)
             tag_items.append(item)
 
-        # 检查是否已存在（按 file_name + file_type='image' 匹配）
+        # 检查是否已存在（按 file_name + file_type 匹配）
         existing = db.query(Asset).filter(
             Asset.file_name == file_name,
-            Asset.file_type == "image",
+            Asset.file_type == file_type,
         ).first()
 
         try:
@@ -320,7 +338,7 @@ def execute_folder_upload(
                 asset = create_asset(
                     db,
                     file_name=file_name,
-                    file_type="image",
+                    file_type=file_type,
                     file_format=ext,
                     file_size=file_size,
                     temp_storage_path=str(path),

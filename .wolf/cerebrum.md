@@ -49,6 +49,7 @@
 - [2026-05-21] MySQL 外键要求引用列和被引用列类型**完全匹配**（包括 unsigned）。Alembic 迁移中 `_UINT = sa.Integer().with_variant(mysql.INTEGER(unsigned=True), 'mysql')` 用作主键时，FK 引用列也必须用 `_UINT`，不能用 `sa.Integer()`
 - [2026-05-21] Margaret2/pantone-colors 的 `pantone-colors.json` 只有 names/values 数组，Pantone code 在单独的 `pantone-numbers.json` 中（key 为 code，value 为 {name, hex}）
 - [2026-05-22] 关联表（多对多）的复合主键必须包含所有区分度列，不能只设一个 `asset_id` 为主键。`ark_asset_tags` 原主键只有 `asset_id`，导致同一素材无法写入多条标签，文件夹批量上传第二条标签即报 IntegrityError (1062)。正确主键应为 `(asset_id, dimension_id, tag_value_id)`。同时 `_clear_tags` 需按 `asset_id` 清除全部旧标签（而非仅当前 version），避免新旧版本标签重叠导致复合主键冲突
+- [2026-05-23] 文件夹批量上传服务中 `file_type` 不能硬编码为 `"image"`。`scan_folder` 的扩展名白名单、`execute_folder_upload` 的查重条件和 `create_asset` 调用都必须根据实际文件扩展名自动判断类型（image/video/document），否则视频/文档文件在扫描阶段就被丢弃或入库后类型错误
 
 ## Decision Log
 

@@ -1,6 +1,6 @@
 # anatomy.md
 
-> Auto-maintained by OpenWolf. Last scanned: 2026-05-22T05:26:33.277Z
+> Auto-maintained by OpenWolf. Last scanned: 2026-05-23T14:52:26.322Z
 > Files: 607 tracked | Anatomy hits: 0 | Misses: 0
 
 ## ./
@@ -689,7 +689,7 @@
 - `asset_service.py` — 素材管理 — 素材上传/查询/更新/下载 (~3388 tok)
 - `batch_service.py` — 素材管理 — 批量操作服务 (~461 tok)
 - `favorite_service.py` — 素材管理 — 收藏夹/收藏项 CRUD (~1645 tok)
-- `folder_upload_service.py` — 素材管理 — 文件夹批量上传服务 (~3232 tok)
+- `folder_upload_service.py` — 素材管理 — 文件夹批量上传服务 (~3412 tok)
 - `models.py` — 素材管理 — SQLAlchemy ORM 模型 (~2280 tok)
 - `router.py` — 素材管理 — API 路由 (~10790 tok)
 - `schemas.py` — 素材管理 — Pydantic 模型 (~1797 tok)
