@@ -13,7 +13,7 @@ import os
 import shutil
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
@@ -751,25 +751,44 @@ def delete_asset(
 @router.get("/{asset_id}/download")
 def download_asset(
     asset_id: int,
+    request: "Request",
+    token: Optional[str] = Query(None),
+    expires: Optional[int] = Query(None),
     db: Session = Depends(get_db),
-    user: dict = Depends(require_permission("asset:read")),
 ):
-    """获取下载 URL"""
+    """下载文件 — 支持 JWT 认证或签名 token"""
     from fastapi.responses import FileResponse
-    from app.asset.asset_service import ASSET_STORAGE_ROOT
+    from app.asset.asset_service import ASSET_STORAGE_ROOT, verify_sign_token
+    from app.auth.utils import decode_access_token
+    from jose import JWTError
 
     asset = service.get_asset_detail(db, asset_id)
     if not asset:
         raise HTTPException(status_code=404, detail="素材不存在")
+
+    # 认证：优先签名 token，否则走 JWT
+    user_id = 0
+    if token and expires:
+        if not verify_sign_token(asset.storage_path, expires, token):
+            raise HTTPException(status_code=401, detail="签名无效或已过期")
+    else:
+        auth_header = request.headers.get("authorization", "")
+        if not auth_header.startswith("Bearer "):
+            raise HTTPException(status_code=401, detail="Not authenticated")
+        try:
+            payload = decode_access_token(auth_header[7:])
+            user_id = int(payload.get("sub") or 0)
+        except (JWTError, Exception):
+            raise HTTPException(status_code=401, detail="Token无效或已过期")
 
     # 权限校验
     if asset.permissions and not asset.permissions.allow_download:
         raise HTTPException(status_code=403, detail="该素材不允许下载")
 
     # 记录下载
-    user_id = int(user.get("sub") or user.get("user_id") or 0)
     service.increment_download_count(db, asset_id)
-    service.log_download(db, asset_id, user_id, asset.current_version_id)
+    if user_id:
+        service.log_download(db, asset_id, user_id, asset.current_version_id)
 
     abs_path = ASSET_STORAGE_ROOT / asset.storage_path
     if not abs_path.exists():
