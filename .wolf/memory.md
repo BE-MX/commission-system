@@ -627,3 +627,69 @@
 | 22:51 | Edited backend/app/asset/folder_upload_service.py | modified _detect_file_type() | ~276 |
 | 22:52 | Edited backend/app/asset/folder_upload_service.py | 80→81 lines | ~784 |
 | 22:53 | Session end: 3 writes across 1 files (folder_upload_service.py) | 2 reads | ~7783 tok |
+| 19:30 | Session end: 3 writes across 1 files (folder_upload_service.py) | 2 reads | ~7783 tok |
+
+## Session: 2026-05-25 08:34
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 08:38 | Edited frontend/public/m/index.html | 6→6 lines | ~117 |
+| 08:39 | Edited frontend/src/views/asset/TagDimensionManage.vue | CSS: clearable | ~171 |
+| 08:39 | Edited frontend/src/views/asset/TagDimensionManage.vue | 3→3 lines | ~27 |
+| 08:39 | Edited frontend/src/views/asset/TagDimensionManage.vue | added 1 condition(s) | ~85 |
+| 08:39 | Edited frontend/src/views/asset/TagDimensionManage.vue | expanded (+16 lines) | ~70 |
+| 08:39 | Edited frontend/src/views/asset/TagDimensionManage.vue | 3→6 lines | ~66 |
+
+## Session: 2026-05-25 08:45
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 08:45 | Bug fix: MAssetCard v-if/v-else-if pairing | frontend/public/m/index.html | 将 v-else-if/v-else div 移入 router-link 内部，修复视频/无缩略图素材卡片空白问题 | ~200 |
+| 08:46 | Feature: TagDimensionManage value search | frontend/src/views/asset/TagDimensionManage.vue | 每个维度卡片上方添加标签值搜索框（el-input + clearable），支持按名称实时过滤，显示「共X个，显示Y个」数量提示 | ~300 |
+| 08:46 | Session end: 2 bug/feature fixes | 2 files | ~800 tok |
+| 08:48 | Edited backend/app/asset/folder_upload_service.py | ASYNC_FILE_THRESHOLD 100→20 | 文件夹上传异步阈值调整 | ~15 |
+| 08:48 | Edited frontend/src/views/asset/AssetLibrary.vue | card + table thumb | 视频文件有 thumbnail_path 时显示缩略图，无则显示视频图标 | ~80 |
+| 08:48 | Session end: 阈值调整+视频缩略图 | 2 files | ~500 tok |
+| 08:50 | Bug fix: mobile search empty results | frontend/public/m/index.html | loadRecent() 返回空时自动 fallback 到 doSearch() 全量列表；修复 storage_path 缺失导致 thumb 为空 | ~200 |
+| 08:40 | Session end: 6 writes across 2 files (index.html, TagDimensionManage.vue) | 4 reads | ~33361 tok |
+| 08:42 | Edited frontend/src/views/asset/AssetLibrary.vue | 3→3 lines | ~88 |
+| 08:42 | Edited frontend/src/views/asset/AssetLibrary.vue | 2→3 lines | ~90 |
+| 08:42 | Edited backend/app/asset/folder_upload_service.py | 100 → 20 | ~8 |
+| 08:42 | Session end: 9 writes across 4 files (index.html, TagDimensionManage.vue, AssetLibrary.vue, folder_upload_service.py) | 6 reads | ~43827 tok |
+| 08:43 | Session end: 9 writes across 4 files (index.html, TagDimensionManage.vue, AssetLibrary.vue, folder_upload_service.py) | 6 reads | ~43827 tok |
+
+## Session: 2026-05-25 08:55
+
+**neat-freak 同步**
+
+### 变更
+- `CLAUDE.md` — 文件夹上传阈值 100→20
+- `.wolf/cerebrum.md` — 新增 2 条 Key Learning（Vue CDN prop 绑定行为、storage_path 缺失）+ 3 条 Do-Not-Repeat + 更新日期
+- `project_asset_module.md` — 补充标签维度搜索、视频缩略图、移动端 bug 修复、阈值调整
+| 08:55 | Edited frontend/public/m/index.html | inline fix | ~9 |
+| 08:55 | Session end: 10 writes across 4 files (index.html, TagDimensionManage.vue, AssetLibrary.vue, folder_upload_service.py) | 6 reads | ~43837 tok |
+| 09:09 | Edited backend/app/asset/router.py | 5→6 lines | ~64 |
+| 09:09 | Edited frontend/public/m/index.html | 2→2 lines | ~43 |
+| 09:09 | Edited backend/app/asset/router.py | 10→11 lines | ~98 |
+| 09:09 | Session end: 13 writes across 5 files (index.html, TagDimensionManage.vue, AssetLibrary.vue, folder_upload_service.py, router.py) | 9 reads | ~45582 tok |
+| 12:34 | Edited frontend/public/m/index.html | added 1 condition(s) | ~74 |
+| 12:34 | Session end: 14 writes across 5 files (index.html, TagDimensionManage.vue, AssetLibrary.vue, folder_upload_service.py, router.py) | 9 reads | ~45668 tok |
+| 13:12 | Session end: 14 writes across 5 files (index.html, TagDimensionManage.vue, AssetLibrary.vue, folder_upload_service.py, router.py) | 9 reads | ~45668 tok |
+| 13:28 | Session end: 14 writes across 5 files (index.html, TagDimensionManage.vue, AssetLibrary.vue, folder_upload_service.py, router.py) | 9 reads | ~45668 tok |
+| 13:36 | Session end: 14 writes across 5 files (index.html, TagDimensionManage.vue, AssetLibrary.vue, folder_upload_service.py, router.py) | 9 reads | ~45668 tok |
+| 13:47 | Edited CLAUDE.md | 100 → 20 | ~20 |
+| 13:49 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_asset_module.md | 2→5 lines | ~117 |
+| 13:50 | Session end: 16 writes across 7 files (index.html, TagDimensionManage.vue, AssetLibrary.vue, folder_upload_service.py, router.py) | 12 reads | ~56397 tok |
+
+## Session: 2026-05-25 13:56
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 14:02 | Edited backend/app/asset/folder_upload_service.py | 39→40 lines | ~412 |
+
+## Session: 2026-05-25 14:10
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 14:10 | Fix folder upload session pollution bug | folder_upload_service.py:318 | Added db.rollback() in except block | ~800 |
+| 14:03 | Session end: 1 writes across 1 files (folder_upload_service.py) | 6 reads | ~27398 tok |

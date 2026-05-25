@@ -350,6 +350,7 @@ def execute_folder_upload(
                 )
                 success += 1
         except Exception as exc:
+            db.rollback()
             failed.append({
                 "file_name": file_name,
                 "reason": str(exc),

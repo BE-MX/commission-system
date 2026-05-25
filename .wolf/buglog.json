@@ -822,6 +822,120 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-05-23T14:55:00.000Z"
+    },
+    {
+      "id": "bug-052",
+      "timestamp": "2026-05-25T00:39:12.275Z",
+      "error_message": "Missing guard clause",
+      "file": "frontend/src/views/asset/TagDimensionManage.vue",
+      "root_cause": "No early return/throw for edge case: !q",
+      "fix": "Added guard clause: if (!q)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-25T00:39:12.275Z"
+    },
+    {
+      "id": "bug-053",
+      "timestamp": "2026-05-25T00:42:04.799Z",
+      "error_message": "Incorrect value in code",
+      "file": "frontend/src/views/asset/AssetLibrary.vue",
+      "root_cause": "Had \" :src=\"",
+      "fix": "Changed to ' || (asset.file_type === '",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-25T00:42:05.163Z"
+    },
+    {
+      "id": "bug-054",
+      "timestamp": "2026-05-25T00:42:11.980Z",
+      "error_message": "Wrong reference: 100 should be 20",
+      "file": "backend/app/asset/folder_upload_service.py",
+      "root_cause": "Used \"100\" instead of \"20\"",
+      "fix": "Changed 100 → 20",
+      "tags": [
+        "auto-detected",
+        "wrong-reference",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-25T00:42:11.980Z"
+    },
+    {
+      "id": "bug-055",
+      "timestamp": "2026-05-25T00:55:17.904Z",
+      "error_message": "Wrong reference: searchable should be true",
+      "file": "frontend/public/m/index.html",
+      "root_cause": "Used \"searchable\" instead of \"true\"",
+      "fix": "Changed searchable → true",
+      "tags": [
+        "auto-detected",
+        "wrong-reference",
+        "html"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-25T00:55:17.904Z"
+    },
+    {
+      "id": "bug-056",
+      "timestamp": "2026-05-25T04:34:28.929Z",
+      "error_message": "Wrong operator: || should be &&",
+      "file": "frontend/public/m/index.html",
+      "root_cause": "Used \"||\" instead of \"&&\"",
+      "fix": "Changed operator || → &&",
+      "tags": [
+        "auto-detected",
+        "operator-fix",
+        "html"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-25T04:34:28.929Z"
+    },
+    {
+      "id": "bug-057",
+      "timestamp": "2026-05-25T05:47:59.877Z",
+      "error_message": "Wrong reference: 100 should be 20",
+      "file": "CLAUDE.md",
+      "root_cause": "Used \"100\" instead of \"20\"",
+      "fix": "Changed 100 → 20",
+      "tags": [
+        "auto-detected",
+        "wrong-reference",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-25T05:47:59.877Z"
+    },
+    {
+      "id": "bug-058",
+      "timestamp": "2026-05-25T06:00:00.000Z",
+      "error_message": "文件夹批量上传：文件已复制到目标目录但数据库未写入，后续文件全部失败",
+      "file": "backend/app/asset/folder_upload_service.py",
+      "root_cause": "execute_folder_upload 对每文件循环处理，共用同一个 SQLAlchemy session。当某个文件 create_asset/upload_new_version 内部 db.commit() 失败时，transaction 被自动回滚，session 进入失效状态；但 except 块只记录了 failed 列表，没有 db.rollback() 恢复 session。后续所有文件的 db.commit() 继续失败，而 _save_upload_file（文件复制）在 db.commit() 之前执行，导致文件全复制了但数据库一条没写入",
+      "fix": "在 except Exception 块中加入 db.rollback()，恢复 session 的可用状态，确保后续文件能继续正常入库",
+      "tags": [
+        "asset",
+        "folder-upload",
+        "sqlalchemy",
+        "session-pollution",
+        "transaction-rollback"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-25T06:00:00.000Z"
     }
   ]
 }

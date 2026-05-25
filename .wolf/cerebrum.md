@@ -2,7 +2,7 @@
 
 > OpenWolf's learning memory. Updated automatically as the AI learns from interactions.
 > Do not edit manually unless correcting an error.
-> Last updated: 2026-05-19
+> Last updated: 2026-05-25
 
 ## User Preferences
 
@@ -11,6 +11,8 @@
 ## Key Learnings
 
 <!-- Project-specific conventions discovered during development. -->
+
+- SQLAlchemy session 在循环批量处理中，单次 `db.commit()` 失败后必须显式 `db.rollback()` 恢复 session 状态，否则后续所有 commit 都会失败。典型案例：`folder_upload_service.py` 的 `execute_folder_upload` 逐文件入库，一个文件异常后 session 污染导致后续全部文件数据库写入失败（但 `_save_upload_file` 文件复制不受影响，造成"文件已复制但数据库没数据"的诡异现象）
 
 - 素材管理模块采用**领域模块**结构（与 tracking/stock/insight 一致），`app/asset/` 下自包含 router/models/schemas/service，复杂逻辑拆子 service 模块
 - 标签维度/值设计为**可扩展的 EAV 模式**：`tag_dimensions`（维度定义）+ `tag_values`（值定义）+ `asset_tag_association`（多对多关联），支持单选/多选/必填/系统内置标记
@@ -31,6 +33,8 @@
 - 混合色（Piano/Ombre/Balayage/Rooted）通过 `color_blend` + `color_blend_component` 两张表联合表达，`computed_hex` 仅用于列表缩略图和粗筛，真实色彩结构通过 component 表的 position + weight + sort_order 完整描述
 - 色彩计算核心依赖 `colour-science`（BSD-3 授权），提供工业级色彩空间转换（RGB↔LAB↔XYZ）、ΔE2000 色差计算。OpenCV + scikit-learn 用于图片主色提取（K-means 聚类）
 - 素材库标签联动筛选的可用标签值必须基于**全量检索结果**（不分页）统计，而非当前页。实现方式：后端 `query_assets` 在同筛选条件下（排序和分页之前）额外做一次 `DISTINCT tag_value_id` 查询，随分页结果一并返回 `available_tag_ids`。前端直接用该字段替代从 `assets.value` 自行统计
+- **Vue 3 CDN 全局构建中，无值 attribute 绑定行为与 SFC 不同**：`<BottomSheet searchable>` 在运行时模板中不会自动传 `true`，而是传空字符串 `''`（falsy），导致 `v-if="searchable"` 不渲染。必须显式写成 `:searchable="true"` 才能正确传递布尔值。这与 SFC 编译版本不同（SFC 中无值 prop 会根据 prop 类型定义自动转换）
+- **移动端 `/quick-search` 和 `/recent` API 返回的字段与 `/list` 不同**：`/list` 返回 `storage_path`，而 `/quick-search`/`/recent` 早期实现遗漏了该字段。移动端 `MAssetCard` 仅使用 `thumbnail_path` 生成缩略图 URL，当缩略图生成失败时 `thumbnail_path` 为空，导致图片卡片空白。修复：后端补充 `storage_path`，前端 fallback 到 `storage_path`
 
 ## Do-Not-Repeat
 
@@ -50,6 +54,10 @@
 - [2026-05-21] Margaret2/pantone-colors 的 `pantone-colors.json` 只有 names/values 数组，Pantone code 在单独的 `pantone-numbers.json` 中（key 为 code，value 为 {name, hex}）
 - [2026-05-22] 关联表（多对多）的复合主键必须包含所有区分度列，不能只设一个 `asset_id` 为主键。`ark_asset_tags` 原主键只有 `asset_id`，导致同一素材无法写入多条标签，文件夹批量上传第二条标签即报 IntegrityError (1062)。正确主键应为 `(asset_id, dimension_id, tag_value_id)`。同时 `_clear_tags` 需按 `asset_id` 清除全部旧标签（而非仅当前 version），避免新旧版本标签重叠导致复合主键冲突
 - [2026-05-23] 文件夹批量上传服务中 `file_type` 不能硬编码为 `"image"`。`scan_folder` 的扩展名白名单、`execute_folder_upload` 的查重条件和 `create_asset` 调用都必须根据实际文件扩展名自动判断类型（image/video/document），否则视频/文档文件在扫描阶段就被丢弃或入库后类型错误
+- [2026-05-25] Vue 3 的 `v-if`/`v-else-if`/`v-else` 必须在**同级相邻元素**上配对。移动端 `MAssetCard` 中 `img` 在 `router-link` 内部有 `v-if`，但 `v-else-if`/`v-else` 的 div 在 `router-link` 外部 → 导致 `v-else-if`/`v-else` 被静默忽略，视频/无缩略图素材在卡片上完全空白。修复：将 `v-else-if`/`v-else` 元素移入 `router-link` 内部与 `img` 同级
+- [2026-05-25] Vue 3 CDN 运行时模板中，组件无值 attribute（如 `<BottomSheet searchable>`）传的是空字符串 `''` 而非布尔值 `true`。空字符串是 falsy 的，导致 `v-if="searchable"` 不渲染搜索框、`v-if="multi"` 不显示"清除"按钮。修复：显式写成 `:searchable="true"` `:multi="true"`
+- [2026-05-25] 素材库移动端搜索页初始态调用 `loadRecent()`（基于 `DownloadLog`），如果用户没有下载/查看/复制记录，返回空数组，页面显示"没找到匹配素材"。与 PC 端素材库（显示全量列表）行为不一致。修复：`loadRecent()` 返回空时自动 fallback 到 `doSearch()` 获取全量素材列表
+- [2026-05-25] 后端 `/quick-search` 和 `/recent` 返回的字段集与 `/list` 不同，遗漏了 `storage_path`。移动端 `MAssetCard` 仅依赖 `thumbnail_path` 生成缩略图 URL，缩略图生成失败时卡片空白（无 fallback）。修复：后端补充 `storage_path`，前端使用 `thumbnail_path || storage_path` fallback
 
 ## Decision Log
 
