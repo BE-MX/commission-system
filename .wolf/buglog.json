@@ -936,6 +936,86 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-05-25T06:00:00.000Z"
+    },
+    {
+      "id": "bug-059",
+      "timestamp": "2026-05-25T06:37:18.647Z",
+      "error_message": "Incorrect value in code",
+      "file": "frontend/public/m/index.html",
+      "root_cause": "Had '&&a.thumbnail_path\"",
+      "fix": "Changed to '&&(a.thumbnail_path||a.storage_path)\"",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "html"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-25T06:37:18.647Z"
+    },
+    {
+      "id": "bug-060",
+      "timestamp": "2026-05-25T07:30:38.215Z",
+      "error_message": "Wrong condition in logic",
+      "file": "frontend/public/m/index.html",
+      "root_cause": "Condition was: if (params.tag_filters)",
+      "fix": "Changed to: if (params.tags)",
+      "tags": [
+        "auto-detected",
+        "logic-fix",
+        "html"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-25T07:30:38.215Z"
+    },
+    {
+      "id": "bug-061",
+      "timestamp": "2026-05-25T07:31:03.838Z",
+      "error_message": "Missing guard clause",
+      "file": "frontend/public/m/index.html",
+      "root_cause": "No early return/throw for edge case: !values || !values.length",
+      "fix": "Added guard clause: if (!values || !values.length)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "html"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-25T07:31:03.838Z"
+    },
+    {
+      "id": "bug-062",
+      "timestamp": "2026-05-25T07:43:53.071Z",
+      "error_message": "Missing guard clause",
+      "file": "frontend/public/m/index.html",
+      "root_cause": "No early return/throw for edge case: !availableTagIds || !availableTagIds.length",
+      "fix": "Added guard clause: if (!availableTagIds || !availableTagIds.len)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "html"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-25T07:43:53.071Z"
+    },
+    {
+      "id": "bug-063",
+      "timestamp": "2026-05-25T08:44:19.325Z",
+      "error_message": "Significant refactor of ",
+      "file": "frontend/public/m/index.html",
+      "root_cause": "3 lines replaced/restructured",
+      "fix": "Rewrote 17→26 lines (3 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "html"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-25T08:44:19.325Z"
     }
   ]
 }

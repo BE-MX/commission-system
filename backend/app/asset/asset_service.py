@@ -202,7 +202,7 @@ def query_assets(
     if file_type:
         q = q.filter(Asset.file_type == file_type)
     if status:
-        q = q.filter(Asset.status == status)
+        q = q.filter(or_(Asset.status == status, Asset.status.is_(None)))
 
     # 关键词检索（文件名/备注）
     if keyword:

@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<link rel="icon" href="data:,">
 <title>莱莎方舟 · 素材管理</title>
 <style>
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -423,6 +424,7 @@ const ToastProvider = {
     return { toasts, bottomToasts };
   },
   template: `
+    <slot/>
     <div class="toast-container"><div v-for="t in toasts" :key="t.id" :class="['toast',t.type]">{{t.msg}}</div></div>
     <div class="toast-bottom" v-if="bottomToasts.length"><div v-for="t in bottomToasts" :key="t.id" class="toast">{{t.msg}}</div></div>
   `

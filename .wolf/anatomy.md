@@ -1,6 +1,6 @@
 # anatomy.md
 
-> Auto-maintained by OpenWolf. Last scanned: 2026-05-23T14:52:26.322Z
+> Auto-maintained by OpenWolf. Last scanned: 2026-05-25T09:38:56.599Z
 > Files: 607 tracked | Anatomy hits: 0 | Misses: 0
 
 ## ./
@@ -38,7 +38,7 @@
 
 - `feedback_mobile_token_sync.md` (~155 tok)
 - `MEMORY.md` (~280 tok)
-- `project_asset_module.md` (~541 tok)
+- `project_asset_module.md` (~610 tok)
 - `project_color_module.md` — 数据库（7张表，022迁移） (~559 tok)
 - `project_insight_sources.md` — 2026-05-20 情报采集库 + 行业情报速览（新架构） (~979 tok)
 - `project_intelligence_module.md` — 2026-05-20 行业情报模块完整实现 (~463 tok)
@@ -686,12 +686,12 @@
 ## backend/app/asset/
 
 - `analyze_service.py` — 素材管理 — AI 打标签服务 (~1800 tok)
-- `asset_service.py` — 素材管理 — 素材上传/查询/更新/下载 (~3388 tok)
+- `asset_service.py` — 素材管理 — 素材上传/查询/更新/下载 (~3396 tok)
 - `batch_service.py` — 素材管理 — 批量操作服务 (~461 tok)
 - `favorite_service.py` — 素材管理 — 收藏夹/收藏项 CRUD (~1645 tok)
-- `folder_upload_service.py` — 素材管理 — 文件夹批量上传服务 (~3412 tok)
+- `folder_upload_service.py` — 素材管理 — 文件夹批量上传服务 (~3666 tok)
 - `models.py` — 素材管理 — SQLAlchemy ORM 模型 (~2280 tok)
-- `router.py` — 素材管理 — API 路由 (~10790 tok)
+- `router.py` — 素材管理 — API 路由 (~10852 tok)
 - `schemas.py` — 素材管理 — Pydantic 模型 (~1797 tok)
 - `service.py` — 素材管理 — service facade (~442 tok)
 - `stats_service.py` — 素材管理 — 下载统计服务 (~587 tok)
@@ -768,7 +768,7 @@
 
 ## frontend/public/m/
 
-- `index.html` — 莱莎方舟 · 素材管理 (~15010 tok)
+- `index.html` — 莱莎方舟 · 素材管理 (~15355 tok)
 - `vue-router.global.js` — Vue Router 4 全局构建 (~164296 tok)
 - `vue.global.js` — Vue 3 全局构建 (~562700 tok)
 
@@ -794,10 +794,10 @@
 ## frontend/src/views/asset/
 
 - `AssetFavorites.vue` — Vue: setup (~4088 tok)
-- `AssetLibrary.vue` — Vue: setup (~6855 tok)
+- `AssetLibrary.vue` — Vue: setup (~6909 tok)
 - `AssetStats.vue` — Vue: setup (~1739 tok)
 - `AssetUpload.vue` — Vue component (~8910 tok)
-- `TagDimensionManage.vue` — Vue: setup (~3599 tok)
+- `TagDimensionManage.vue` — Vue: setup (~3882 tok)
 
 ## frontend/src/views/color/
 
