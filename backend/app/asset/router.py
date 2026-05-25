@@ -573,6 +573,7 @@ def quick_search_assets(
         "page": page,
         "page_size": page_size,
         "total_pages": (total + page_size - 1) // page_size,
+        "available_tag_ids": available_tag_ids,
         "items": [{
             "id": a.id,
             "file_name": a.file_name,

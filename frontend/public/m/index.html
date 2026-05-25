@@ -667,8 +667,8 @@ const MSearch = {
         const r = await API.quickSearch({ keyword: sq.value, tags: tag_filters, page: 1, page_size: 20 });
         results.value = r.items || [];
         totalPages.value = r.total_pages || 1;
-        // 联动筛选：收集当前结果中各维度存在的标签值
-        updateAvailableTags(results.value);
+        // 联动筛选：用后端返回的全量 available_tag_ids（非当前页）
+        updateAvailableTags(r.available_tag_ids || []);
       } catch (e) {
         toast.show(e.message || '搜索失败', 'error');
       } finally {
@@ -690,8 +690,6 @@ const MSearch = {
       try {
         const r = await API.quickSearch({ keyword: sq.value, tags: tag_filters, page: page.value, page_size: 20 });
         results.value.push(...(r.items || []));
-        // 联动筛选：追加收集
-        updateAvailableTags(results.value);
       } catch (e) {
         toast.show(e.message || '加载失败', 'error');
       } finally {
@@ -699,18 +697,21 @@ const MSearch = {
       }
     }
 
-    function updateAvailableTags(items) {
-      // 收集当前结果集中各维度存在的标签值
-      const tagMap = {};
-      items.forEach(asset => {
-        asset.tags?.forEach(tag => {
-          if (!tagMap[tag.dimension]) tagMap[tag.dimension] = new Set();
-          tagMap[tag.dimension].add(tag.value);
-        });
-      });
-      // 同步到 reactive 对象
+    function updateAvailableTags(availableTagIds) {
+      // 根据后端返回的 available_tag_ids（基于全量筛选结果）重建 availableTags
       Object.keys(availableTags).forEach(k => delete availableTags[k]);
-      Object.entries(tagMap).forEach(([k, set]) => { availableTags[k] = set; });
+      if (!availableTagIds || !availableTagIds.length) return;
+      // 建立 id -> {dimension, value} 映射
+      const idToInfo = {};
+      tagDimensions.value.forEach(dim => {
+        (dim.values || []).forEach(v => { idToInfo[v.id] = { dimension: dim.name, value: v.value }; });
+      });
+      availableTagIds.forEach(id => {
+        const info = idToInfo[id];
+        if (!info) return;
+        if (!availableTags[info.dimension]) availableTags[info.dimension] = new Set();
+        availableTags[info.dimension].add(info.value);
+      });
     }
 
     function openBs(chip) {
