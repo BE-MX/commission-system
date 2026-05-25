@@ -56,7 +56,7 @@ def _save_upload_file(src_path: str, rel_path: str, *, copy: bool = False) -> st
 
 
 def _generate_thumbnail(image_path: str, rel_path: str) -> Optional[str]:
-    """生成缩略图。返回相对路径或 None。"""
+    """生成图片缩略图。返回相对路径或 None。"""
     try:
         from PIL import Image
 
@@ -68,6 +68,31 @@ def _generate_thumbnail(image_path: str, rel_path: str) -> Optional[str]:
             im.thumbnail((THUMB_MAX_WIDTH, THUMB_MAX_WIDTH))
             im = im.convert("RGB")
             im.save(str(thumb_abs), "JPEG", quality=85)
+        return thumb_rel
+    except Exception:
+        return None
+
+
+def _generate_video_thumbnail(video_path: str, rel_path: str) -> Optional[str]:
+    """从视频抽取第一帧生成缩略图。返回相对路径或 None。"""
+    try:
+        import cv2
+
+        cap = cv2.VideoCapture(video_path)
+        ret, frame = cap.read()
+        cap.release()
+        if not ret or frame is None:
+            return None
+
+        h, w = frame.shape[:2]
+        if w > THUMB_MAX_WIDTH:
+            scale = THUMB_MAX_WIDTH / w
+            frame = cv2.resize(frame, (THUMB_MAX_WIDTH, int(h * scale)))
+
+        thumb_rel = rel_path.rsplit(".", 1)[0] + "_thumb.jpg"
+        thumb_abs = ASSET_STORAGE_ROOT / thumb_rel
+        _ensure_dir(thumb_abs)
+        cv2.imwrite(str(thumb_abs), frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
         return thumb_rel
     except Exception:
         return None
@@ -106,6 +131,8 @@ def create_asset(
     thumbnail_path: Optional[str] = None
     if file_type == "image":
         thumbnail_path = _generate_thumbnail(abs_path, rel_path)
+    elif file_type == "video":
+        thumbnail_path = _generate_video_thumbnail(abs_path, rel_path)
 
     # 创建素材主记录
     asset = Asset(
@@ -354,6 +381,10 @@ def upload_new_version(
     thumbnail_path: Optional[str] = None
     if asset.file_type == "image":
         thumbnail_path = _generate_thumbnail(
+            str(ASSET_STORAGE_ROOT / rel_path), rel_path
+        )
+    elif asset.file_type == "video":
+        thumbnail_path = _generate_video_thumbnail(
             str(ASSET_STORAGE_ROOT / rel_path), rel_path
         )
 
