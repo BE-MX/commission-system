@@ -1134,6 +1134,10 @@ const MAssetDetail = {
     const copied = ref(false);
     const showVersions = ref(false);
     const scale = ref(1);
+    const videoUrl = ref('');
+
+    const stClass = computed(() => ({ 'latest': 'status-latest', 'history': 'status-history', 'offline': 'status-offline' }[asset.value?.status] || ''));
+    const storageUrl = computed(() => asset.value?.storage_path ? thumbUrl(asset.value.storage_path) : '');
 
     onMounted(async () => {
       syncToken();
@@ -1142,6 +1146,10 @@ const MAssetDetail = {
         const r = await API.getAsset(id);
         asset.value = r;
         API.recordAction(id, 'view').catch(() => { });
+        if (r && r.file_type === 'video') {
+          const link = await API.getShareLink(r.id, 7200);
+          if (link && link.url) videoUrl.value = link.url;
+        }
       } catch (e) {
         toast.show(e.message || '加载失败', 'error');
       }
@@ -1173,10 +1181,7 @@ const MAssetDetail = {
     function goBack() { router.back(); }
     function toggleZoom() { scale.value = scale.value === 1 ? 2 : 1; }
 
-    const stClass = computed(() => ({ 'latest': 'status-latest', 'history': 'status-history', 'offline': 'status-offline' }[asset.value?.status] || ''));
-    const storageUrl = computed(() => asset.value?.storage_path ? thumbUrl(asset.value.storage_path) : '');
-
-    return { asset, copied, showVersions, scale, copyLink, downloadAsset, toggleFav, goBack, toggleZoom, stClass, storageUrl, fmtSize, fmtDate };
+    return { asset, copied, showVersions, scale, copyLink, downloadAsset, toggleFav, goBack, toggleZoom, stClass, storageUrl, videoUrl, fmtSize, fmtDate };
   },
   template: `
     <div class="detail-page">
@@ -1190,6 +1195,7 @@ const MAssetDetail = {
       <div v-if="asset" style="display:flex;flex-direction:column;flex:1;overflow:hidden">
         <div class="detail-media" @click="toggleZoom">
           <img v-if="asset.file_type==='image'" :src="storageUrl" :style="{transform:'scale('+scale+')'}" loading="lazy"/>
+          <video v-else-if="asset.file_type==='video'&&videoUrl" :src="videoUrl" controls playsinline webkit-playsinline style="width:100%;max-height:100%;object-fit:contain"></video>
           <div v-else-if="asset.file_type==='video'" class="video-player">&#9654;</div>
           <div v-else class="doc-preview"><i>&#128196;</i><button class="btn-open" @click.stop>在浏览器中打开</button></div>
         </div>
