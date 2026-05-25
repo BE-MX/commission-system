@@ -1064,7 +1064,7 @@ const MRecent = {
       <div class="recent-list">
         <div v-for="a in items" :key="a.id" class="recent-item" @click="goDetail(a)">
           <div class="recent-thumb">
-            <img v-if="a.file_type==='image'&&a.thumbnail_path" :src="thumbUrl(a.thumbnail_path)"/>
+            <img v-if="a.file_type==='image'&&(a.thumbnail_path||a.storage_path)" :src="thumbUrl(a.thumbnail_path||a.storage_path)"/>
             <i v-else-if="a.file_type==='video'">&#9654;</i>
             <i v-else>&#128196;</i>
           </div>
