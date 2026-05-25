@@ -540,9 +540,9 @@ const MAssetCard = {
       <div class="card-thumb">
         <router-link :to="'/assets/'+asset.id" style="display:block;position:absolute;inset:0;z-index:1">
           <img v-if="asset.file_type==='image'&&thumb" :src="thumb" loading="lazy" style="width:100%;height:100%;object-fit:cover"/>
+          <div v-else-if="asset.file_type==='video'" class="video-bg">&#9654;</div>
+          <div v-else class="doc-bg"><i>&#128196;</i></div>
         </router-link>
-        <div v-else-if="asset.file_type==='video'" class="video-bg">&#9654;</div>
-        <div v-else class="doc-bg"><i>&#128196;</i></div>
         <span v-if="asset.duration" class="duration">{{asset.duration}}</span>
         <span :class="['status',stClass]">{{stText}}</span>
         <span :class="['fav-btn',asset.fav?'on':'']" @click.stop="$emit('fav',asset)">{{asset.fav?'&#10084;':'&#9825;'}}</span>

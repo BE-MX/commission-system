@@ -45,7 +45,7 @@ RESERVED_DIMENSION_LABELS = {"素材类型", "状态", "版本", "日期", "权�
 UPLOAD_STAGING_ROOT = os.environ.get("ASSET_UPLOAD_STAGING", r"D:\upload_staging")
 
 # 异步执行文件数量阈值
-ASYNC_FILE_THRESHOLD = 100
+ASYNC_FILE_THRESHOLD = 20
 
 # 异步任务状态存储（内存中，重启后丢失）
 _folder_upload_jobs: dict[str, dict] = {}

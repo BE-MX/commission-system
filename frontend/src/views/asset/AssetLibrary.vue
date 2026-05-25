@@ -117,7 +117,7 @@
             />
           </div>
           <div class="card-thumb">
-            <img v-if="asset.file_type === 'image'" :src="getThumbUrl(asset.thumbnail_path || asset.storage_path)" />
+            <img v-if="asset.file_type === 'image' || (asset.file_type === 'video' && asset.thumbnail_path)" :src="getThumbUrl(asset.thumbnail_path || asset.storage_path)" />
             <div v-else-if="asset.file_type === 'video'" class="type-icon video"><el-icon><VideoPlay /></el-icon></div>
             <div v-else-if="asset.file_type === 'document'" class="type-icon doc"><el-icon><Document /></el-icon></div>
             <div v-else class="type-icon"><el-icon><Picture /></el-icon></div>
@@ -157,7 +157,8 @@
       <el-table v-else :data="assets" style="width: 100%" @row-click="openPreview">
         <el-table-column label="缩略图" width="80">
           <template #default="{ row }">
-            <img v-if="row.file_type === 'image'" :src="getThumbUrl(row.thumbnail_path || row.storage_path)" class="table-thumb" />
+            <img v-if="row.file_type === 'image' || (row.file_type === 'video' && row.thumbnail_path)" :src="getThumbUrl(row.thumbnail_path || row.storage_path)" class="table-thumb" />
+            <el-icon v-else-if="row.file_type === 'video'" size="24"><VideoPlay /></el-icon>
             <el-icon v-else size="24"><Picture /></el-icon>
           </template>
         </el-table-column>

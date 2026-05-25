@@ -54,10 +54,25 @@
           </div>
         </div>
 
+        <!-- 标签值搜索 -->
+        <div class="value-search-wrap">
+          <el-input
+            v-model="valueSearchQuery[dim.id]"
+            placeholder="搜索标签值..."
+            size="small"
+            clearable
+            :prefix-icon="Search"
+            class="value-search-input"
+          />
+          <span class="value-count-hint">
+            共 {{ dim.values.length }} 个，显示 {{ filteredValues(dim).length }} 个
+          </span>
+        </div>
+
         <!-- 标签值列表 -->
         <div class="value-list">
           <div
-            v-for="val in dim.values"
+            v-for="val in filteredValues(dim)"
             :key="val.id"
             class="value-item"
           >
@@ -87,6 +102,9 @@
           </div>
           <el-text v-if="dim.values.length === 0" type="info" size="small">
             暂无标签值
+          </el-text>
+          <el-text v-else-if="filteredValues(dim).length === 0" type="info" size="small">
+            无匹配标签值
           </el-text>
         </div>
       </div>
@@ -176,7 +194,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  CollectionTag, Plus, Edit, Delete, CircleClose,
+  CollectionTag, Plus, Edit, Delete, CircleClose, Search,
 } from '@element-plus/icons-vue'
 import {
   getTagDimensions, createDimension, updateDimension, deleteDimension,
@@ -185,6 +203,15 @@ import {
 
 const loading = ref(false)
 const dimensions = ref([])
+const valueSearchQuery = ref({})
+
+function filteredValues(dim) {
+  const q = (valueSearchQuery.value[dim.id] || '').trim().toLowerCase()
+  if (!q) return dim.values || []
+  return (dim.values || []).filter(v =>
+    (v.value || '').toLowerCase().includes(q)
+  )
+}
 
 const sortedDimensions = computed(() => {
   return [...dimensions.value].sort((a, b) => a.sort_order - b.sort_order)
@@ -462,6 +489,22 @@ onMounted(() => {
 .dim-actions {
   display: flex;
   gap: 4px;
+}
+
+.value-search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.value-search-input {
+  width: 220px;
+}
+
+.value-count-hint {
+  font-size: 12px;
+  color: #999;
 }
 
 .value-list {
