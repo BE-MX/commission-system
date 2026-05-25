@@ -556,7 +556,7 @@ def quick_search_assets(
     if tag_filters:
         parsed_tags = json.loads(tag_filters)
 
-    total, items, _ = service.query_assets(
+    total, items, available_tag_ids = service.query_assets(
         db,
         file_type=file_type,
         tag_filters=parsed_tags,
