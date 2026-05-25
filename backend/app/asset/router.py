@@ -513,6 +513,7 @@ def get_recent_assets(
             "file_name": asset.file_name,
             "file_type": asset.file_type,
             "thumbnail_path": asset.thumbnail_path,
+            "storage_path": asset.storage_path,
             "status": asset.status,
             "tags": [{
                 "dimension": t.dimension.name if t.dimension else "",
@@ -1023,6 +1024,7 @@ def quick_search_assets(
             "file_name": a.file_name,
             "file_type": a.file_type,
             "thumbnail_path": a.thumbnail_path,
+            "storage_path": a.storage_path,
             "status": a.status,
             "tags": [{
                 "dimension": t.dimension.name if t.dimension else "",

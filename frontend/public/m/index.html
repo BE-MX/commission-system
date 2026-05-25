@@ -529,7 +529,7 @@ const MAssetCard = {
     const endPress = () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } };
     const stClass = { 'latest': 'status-latest', 'history': 'status-history', 'offline': 'status-offline' }[props.asset.status] || '';
     const stText = { 'latest': '最新版', 'history': '历史版', 'offline': '已下线' }[props.asset.status] || props.asset.status;
-    const thumb = computed(() => thumbUrl(props.asset.thumbnail_path));
+    const thumb = computed(() => thumbUrl(props.asset.thumbnail_path || props.asset.storage_path));
     return { startPress, endPress, stClass, stText, thumb };
   },
   template: `
@@ -633,10 +633,14 @@ const MSearch = {
     });
 
     function loadRecent() {
-      // 搜索页初始态显示最近使用的前6个
+      // 搜索页初始态：优先显示最近使用，无记录则 fallback 到全量列表
       API.getRecent(6).then(data => {
-        results.value = data || [];
-      }).catch(() => { });
+        if (data && data.length > 0) {
+          results.value = data;
+        } else {
+          doSearch();
+        }
+      }).catch(() => { doSearch(); });
     }
 
     async function doSearch() {
@@ -850,7 +854,7 @@ const MSearch = {
         <div class="empty-title">没找到匹配的素材</div>
         <button class="empty-btn" @click="sq='';clearFilters()">清除筛选条件</button>
       </div>
-      <BottomSheet v-model:show="bs.show" :title="bs.title" :options="bs.options" :selected="bs.selected" v-model:selected="bs.selected" multi searchable @confirm="onBsConfirm"/>
+      <BottomSheet v-model:show="bs.show" :title="bs.title" :options="bs.options" :selected="bs.selected" v-model:selected="bs.selected" :multi="true" :searchable="true" @confirm="onBsConfirm"/>
       <LongPressMenu :show="ctx.show" :x="ctx.x" :y="ctx.y" :is-invalid="ctx.asset?.is_valid===false"
         @close="ctx.show=false" @copy="copyLink(ctx.asset)" @download="downloadAsset(ctx.asset)" @fav="toggleFav(ctx.asset)" @detail="goDetail(ctx.asset)"/>
       <FolderSelectSheet :show="folderSheet.show" :folders="folders" @select="addToFolder" @close="folderSheet.show=false"/>
