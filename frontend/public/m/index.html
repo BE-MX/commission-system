@@ -320,7 +320,7 @@ const API = {
     if (params.status) qs.set('status', params.status);
     if (params.page) qs.set('page', String(params.page));
     if (params.page_size) qs.set('page_size', String(params.page_size));
-    if (params.tag_filters) qs.set('tag_filters', JSON.stringify(params.tag_filters));
+    if (params.tags) qs.set('tag_filters', JSON.stringify(params.tags));
     const r = await apiRequest('/quick-search?' + qs.toString());
     return r.data || {};
   },
@@ -643,13 +643,28 @@ const MSearch = {
       }).catch(() => { doSearch(); });
     }
 
+    function buildTagFilters() {
+      const tag_filters = {};
+      Object.entries(activeFilters).forEach(([dimName, values]) => {
+        if (!values || !values.length) return;
+        const dim = tagDimensions.value.find(d => d.name === dimName);
+        if (!dim || !dim.values) return;
+        const ids = [];
+        values.forEach(val => {
+          const tv = dim.values.find(v => v.value === val);
+          if (tv) ids.push(tv.id);
+        });
+        if (ids.length) tag_filters[dimName] = ids;
+      });
+      return tag_filters;
+    }
+
     async function doSearch() {
       page.value = 1;
-      const tags = {};
-      Object.entries(activeFilters).forEach(([k, v]) => { if (v && v.length) tags[k] = v; });
+      const tag_filters = buildTagFilters();
       try {
         loading.value = true;
-        const r = await API.quickSearch({ keyword: sq.value, tags, page: 1, page_size: 20 });
+        const r = await API.quickSearch({ keyword: sq.value, tags: tag_filters, page: 1, page_size: 20 });
         results.value = r.items || [];
         totalPages.value = r.total_pages || 1;
         // 联动筛选：收集当前结果中各维度存在的标签值
@@ -671,10 +686,9 @@ const MSearch = {
       if (loading.value || page.value >= totalPages.value) return;
       loading.value = true;
       page.value++;
-      const tags = {};
-      Object.entries(activeFilters).forEach(([k, v]) => { if (v && v.length) tags[k] = v; });
+      const tag_filters = buildTagFilters();
       try {
-        const r = await API.quickSearch({ keyword: sq.value, tags, page: page.value, page_size: 20 });
+        const r = await API.quickSearch({ keyword: sq.value, tags: tag_filters, page: page.value, page_size: 20 });
         results.value.push(...(r.items || []));
         // 联动筛选：追加收集
         updateAvailableTags(results.value);
