@@ -1253,10 +1253,11 @@ const MobileApp = {
           <span>手机版</span>
           <a href="javascript:void(0)" @click="toDesktop">切换到完整版</a>
         </div>
-        <router-view/>
+        <ToastProvider>
+          <router-view/>
+        </ToastProvider>
         <MobileNav v-if="!hideNav"/>
       </template>
-      <ToastProvider/>
     </div>
   `
 };
