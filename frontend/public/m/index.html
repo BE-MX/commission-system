@@ -616,17 +616,26 @@ const MSearch = {
 
     onMounted(async () => {
       syncToken();
+      // 1) 先从缓存恢复标签维度，立即渲染 chips（零等待）
+      const cached = localStorage.getItem('m_tag_dimensions');
+      if (cached) {
+        try {
+          tagDimensions.value = JSON.parse(cached);
+          chips.value = tagDimensions.value.map(d => ({ dimension: d.name, label: d.label }));
+        } catch (e) { /* 缓存损坏，忽略 */ }
+      }
+      // 2) 最近使用/全量列表不阻塞，立即加载
+      loadRecent();
+      // 3) 后台并行加载维度数据和收藏夹，完成后静默刷新缓存
       try {
-        const [popularR, tagsR, favR] = await Promise.all([
-          API.getPopularTags(),
+        const [tagsR, favR] = await Promise.all([
           API.getTags(),
           API.getFavorites(),
         ]);
         tagDimensions.value = tagsR || [];
-        // 按维度 ID 从小到大排列标签维度
         chips.value = tagDimensions.value.map(d => ({ dimension: d.name, label: d.label }));
+        localStorage.setItem('m_tag_dimensions', JSON.stringify(tagsR || []));
         folders.value = (favR || []).filter(f => f.id !== 'all');
-        loadRecent();
       } catch (e) {
         toast.show(e.message || '加载失败', 'error');
       }
