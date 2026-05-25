@@ -32,6 +32,7 @@ from app.asset.asset_service import (  # noqa: F401
     delete_asset,
     get_asset_download_url,
     increment_download_count,
+    log_download,
 )
 
 # 批量服务
