@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db
 from app.auth.dependencies import require_permission
 from app.asset import service
+from sqlalchemy import and_
 from app.asset.analyze_service import analyze_asset_tags
 from app.asset.models import FavoriteFolder, FavoriteItem
 from app.asset.folder_upload_service import (
@@ -478,7 +479,7 @@ def get_recent_assets(
 
     logs = (
         db.query(DownloadLog, subq.c.last_at)
-        .join(subq, (
+        .join(subq, and_(
             DownloadLog.asset_id == subq.c.asset_id,
             DownloadLog.created_at == subq.c.last_at,
         ))
@@ -555,7 +556,7 @@ def quick_search_assets(
     if tag_filters:
         parsed_tags = json.loads(tag_filters)
 
-    total, items = service.query_assets(
+    total, items, _ = service.query_assets(
         db,
         file_type=file_type,
         tag_filters=parsed_tags,
