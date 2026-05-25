@@ -7,8 +7,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-from sqlalchemy import desc, func, or_
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, desc, func, or_
+from sqlalchemy.orm import Session, selectinload, joinedload
 
 from app.asset.models import (
     Asset,
@@ -215,37 +215,63 @@ def query_assets(
         )
 
     # 标签筛选
+    _tag_subquery = None
     if tag_filters:
-        # tag_filters: {"dimension_name": [tag_value_id, ...], ...}
-        # 同一维度内 OR，不同维度间 AND
         from app.asset.models import TagDimension
 
-        for dim_name, tv_ids in tag_filters.items():
-            if not tv_ids:
-                continue
-            dim = db.query(TagDimension).filter(TagDimension.name == dim_name).first()
-            if not dim:
-                continue
-            q = q.filter(
-                Asset.id.in_(
-                    db.query(asset_tag_association.c.asset_id)
-                    .filter(
-                        asset_tag_association.c.dimension_id == dim.id,
+        dim_names = [name for name, ids in tag_filters.items() if ids]
+        if dim_names:
+            dims = (
+                db.query(TagDimension.id, TagDimension.name)
+                .filter(TagDimension.name.in_(dim_names))
+                .all()
+            )
+            dim_name_to_id = {d.name: d.id for d in dims}
+
+            or_conditions = []
+            active_dim_count = 0
+            for dim_name, tv_ids in tag_filters.items():
+                if not tv_ids:
+                    continue
+                dim_id = dim_name_to_id.get(dim_name)
+                if dim_id is None:
+                    continue
+                active_dim_count += 1
+                or_conditions.append(
+                    and_(
+                        asset_tag_association.c.dimension_id == dim_id,
                         asset_tag_association.c.tag_value_id.in_(tv_ids),
                     )
                 )
-            )
 
+            if or_conditions:
+                _tag_subquery = (
+                    db.query(asset_tag_association.c.asset_id)
+                    .filter(or_(*or_conditions))
+                    .group_by(asset_tag_association.c.asset_id)
+                    .having(
+                        func.count(func.distinct(asset_tag_association.c.dimension_id))
+                        == active_dim_count
+                    )
+                    .subquery()
+                )
+                q = q.filter(Asset.id.in_(db.query(_tag_subquery.c.asset_id)))
+
+    # total + 分页 + available_tag_ids 尽量少往返
     total = q.with_entities(func.count(Asset.id)).scalar() or 0
+    if total == 0:
+        return 0, [], []
 
-    # 全量筛选结果的可用标签 ID（不分页、不排序）
-    tag_ids = (
-        q.join(asset_tag_association, Asset.id == asset_tag_association.c.asset_id)
-        .with_entities(asset_tag_association.c.tag_value_id)
-        .distinct()
-        .all()
-    )
-    available_tag_ids = [tid for (tid,) in tag_ids if tid is not None]
+    # 联动筛选：用子查询在服务端完成，不传大 ID 列表
+    available_tag_ids: list[int] = []
+    if _tag_subquery is not None and total <= 2000:
+        available_tag_ids = [
+            tid
+            for (tid,) in db.query(asset_tag_association.c.tag_value_id.distinct())
+            .filter(asset_tag_association.c.asset_id.in_(db.query(_tag_subquery.c.asset_id)))
+            .all()
+            if tid is not None
+        ]
 
     sort_col = getattr(Asset, sort_by, Asset.created_at)
     if sort_order == "desc":
@@ -253,7 +279,15 @@ def query_assets(
     else:
         q = q.order_by(sort_col)
 
-    items = q.offset((page - 1) * page_size).limit(page_size).all()
+    items = (
+        q.options(
+            selectinload(Asset.tags).joinedload(TagValue.dimension),
+            selectinload(Asset.permissions),
+        )
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
     return total, items, available_tag_ids
 
 

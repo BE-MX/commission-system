@@ -57,7 +57,7 @@ class TagValue(Base):
     is_active = Column(SmallInteger, nullable=False, default=1, comment="0=禁用,1=启用")
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
-    dimension = relationship("TagDimension", back_populates="values")
+    dimension = relationship("TagDimension", back_populates="values", lazy="joined")
 
     __table_args__ = (
         Index("idx_tag_val_dim", "dimension_id", "sort_order"),
