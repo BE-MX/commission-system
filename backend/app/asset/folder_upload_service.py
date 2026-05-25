@@ -246,6 +246,33 @@ def preview_files(
     return result
 
 
+# ── 标签匹配 ────────────────────────────────────────────
+
+def _tags_match(
+    db: Session,
+    asset_id: int,
+    tag_items: list[AssetTagItem],
+) -> bool:
+    """比较已有素材的标签与目标标签是否完全一致。
+
+    比较维度：dimension_id + tag_value_id 的集合。
+    """
+    from app.asset.models import asset_tag_association as ata
+
+    existing_rows = db.query(
+        ata.c.dimension_id,
+        ata.c.tag_value_id,
+    ).filter(ata.c.asset_id == asset_id).all()
+    existing_set = {(r.dimension_id, r.tag_value_id) for r in existing_rows}
+
+    target_set = set()
+    for item in tag_items:
+        for tv_id in item.tag_value_ids:
+            target_set.add((item.dimension_id, tv_id))
+
+    return existing_set == target_set
+
+
 # ── 执行入库 ────────────────────────────────────────────
 
 def execute_folder_upload(
@@ -261,8 +288,10 @@ def execute_folder_upload(
 
     对每文件：
     1. 提取路径标签 → 按 tag_mapping 转换 → 合并 extra_tags
-    2. 按 file_name 检查是否已存在 → 存在则作为新版本
-    3. 不存在则创建新素材
+    2. 按 file_name + file_type 查找已有素材
+    3. 同名素材存在且标签完全一致 → 作为新版本上传
+    4. 同名素材存在但标签不同 → 创建新素材（独立记录）
+    5. 不存在 → 创建新素材
 
     返回执行报告。
     """
@@ -309,15 +338,18 @@ def execute_folder_upload(
             used_dimensions.add(item.dimension_id)
             tag_items.append(item)
 
-        # 检查是否已存在（按 file_name + file_type 匹配）
+        # 查找同名同类型素材
         existing = db.query(Asset).filter(
             Asset.file_name == file_name,
             Asset.file_type == file_type,
         ).first()
 
+        # 只有文件名+标签都一致时才合并为新版本
+        should_merge = existing and _tags_match(db, existing.id, tag_items)
+
         try:
-            if existing:
-                # 作为新版本上传
+            if should_merge:
+                # 标签一致 → 作为新版本上传
                 version = upload_new_version(
                     db, existing.id, file_name, file_size,
                     str(path), uploader_id, remark=None, copy=copy,
@@ -334,7 +366,7 @@ def execute_folder_upload(
                         "reason": "版本上传失败",
                     })
             else:
-                # 创建新素材
+                # 标签不同 或 不存在 → 创建新素材
                 asset = create_asset(
                     db,
                     file_name=file_name,

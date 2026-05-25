@@ -693,3 +693,9 @@
 |------|--------|---------|---------|--------|
 | 14:10 | Fix folder upload session pollution bug | folder_upload_service.py:318 | Added db.rollback() in except block | ~800 |
 | 14:03 | Session end: 1 writes across 1 files (folder_upload_service.py) | 6 reads | ~27398 tok |
+| 14:17 | Session end: 1 writes across 1 files (folder_upload_service.py) | 6 reads | ~27398 tok |
+| 14:33 | Session end: 1 writes across 1 files (folder_upload_service.py) | 12 reads | ~43799 tok |
+| 14:37 | Edited frontend/public/m/index.html | inline fix | ~36 |
+| 14:38 | Session end: 2 writes across 2 files (folder_upload_service.py, index.html) | 13 reads | ~44118 tok |
+| 14:48 | Edited backend/app/asset/folder_upload_service.py | modified _tags_match() | ~1243 |
+| 14:48 | Add _tags_match to folder upload merge logic | folder_upload_service.py:249-273 | Same-name files merge only when tags also match | ~450 |
