@@ -20,6 +20,7 @@ from app.api.deps import get_db
 from app.auth.dependencies import require_permission
 from app.asset import service
 from app.asset.analyze_service import analyze_asset_tags
+from app.asset.models import FavoriteFolder, FavoriteItem
 from app.asset.folder_upload_service import (
     ASYNC_FILE_THRESHOLD,
     execute_folder_upload,
@@ -500,10 +501,10 @@ def get_recent_assets(
 
         # 判断是否收藏
         is_fav = False
-        fav_items = db.query(service.FavoriteItem).filter(
-            service.FavoriteItem.asset_id == asset.id,
-        ).join(service.FavoriteFolder).filter(
-            service.FavoriteFolder.user_id == user_id,
+        fav_items = db.query(FavoriteItem).filter(
+            FavoriteItem.asset_id == asset.id,
+        ).join(FavoriteFolder).filter(
+            FavoriteFolder.user_id == user_id,
         ).first()
         if fav_items:
             is_fav = True
@@ -530,6 +531,65 @@ def get_recent_assets(
         })
 
     return _ok(result)
+
+
+# ── 移动端专用接口 ──────────────────────────────────────
+
+@router.get("/quick-search")
+def quick_search_assets(
+    file_type: Optional[str] = Query(None),
+    tag_filters: Optional[str] = Query(None, description='JSON {"color":[1,2],"length":[3]}'),
+    keyword: Optional[str] = Query(None),
+    status: Optional[str] = Query("latest"),
+    sort_by: str = Query("created_at"),
+    sort_order: str = Query("desc"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=50),
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("asset:read")),
+):
+    """移动端快速搜索 — 返回精简字段"""
+    import json
+
+    parsed_tags: Optional[dict] = None
+    if tag_filters:
+        parsed_tags = json.loads(tag_filters)
+
+    total, items = service.query_assets(
+        db,
+        file_type=file_type,
+        tag_filters=parsed_tags,
+        keyword=keyword,
+        status=status,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        page=page,
+        page_size=page_size,
+    )
+
+    return _ok({
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total + page_size - 1) // page_size,
+        "items": [{
+            "id": a.id,
+            "file_name": a.file_name,
+            "file_type": a.file_type,
+            "thumbnail_path": a.thumbnail_path,
+            "storage_path": a.storage_path,
+            "status": a.status,
+            "tags": [{
+                "dimension": t.dimension.name if t.dimension else "",
+                "dimension_label": t.dimension.label if t.dimension else "",
+                "value": t.value,
+            } for t in a.tags],
+            "permissions": {
+                "can_preview": a.permissions.allow_preview if a.permissions else True,
+                "can_download": a.permissions.allow_download if a.permissions else True,
+            },
+        } for a in items],
+    })
 
 
 # ── 素材详情 ────────────────────────────────────────────
@@ -977,66 +1037,6 @@ def get_download_trend_data(
 ):
     """下载趋势（按天）"""
     return _ok(service.get_download_trend(db, days=days))
-
-
-# ── 移动端专用接口 ──────────────────────────────────────
-
-
-@router.get("/quick-search")
-def quick_search_assets(
-    file_type: Optional[str] = Query(None),
-    tag_filters: Optional[str] = Query(None, description='JSON {"color":[1,2],"length":[3]}'),
-    keyword: Optional[str] = Query(None),
-    status: Optional[str] = Query("latest"),
-    sort_by: str = Query("created_at"),
-    sort_order: str = Query("desc"),
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=50),
-    db: Session = Depends(get_db),
-    _user: dict = Depends(require_permission("asset:read")),
-):
-    """移动端快速搜索 — 返回精简字段"""
-    import json
-
-    parsed_tags: Optional[dict] = None
-    if tag_filters:
-        parsed_tags = json.loads(tag_filters)
-
-    total, items = service.query_assets(
-        db,
-        file_type=file_type,
-        tag_filters=parsed_tags,
-        keyword=keyword,
-        status=status,
-        sort_by=sort_by,
-        sort_order=sort_order,
-        page=page,
-        page_size=page_size,
-    )
-
-    return _ok({
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-        "total_pages": (total + page_size - 1) // page_size,
-        "items": [{
-            "id": a.id,
-            "file_name": a.file_name,
-            "file_type": a.file_type,
-            "thumbnail_path": a.thumbnail_path,
-            "storage_path": a.storage_path,
-            "status": a.status,
-            "tags": [{
-                "dimension": t.dimension.name if t.dimension else "",
-                "dimension_label": t.dimension.label if t.dimension else "",
-                "value": t.value,
-            } for t in a.tags],
-            "permissions": {
-                "can_preview": a.permissions.allow_preview if a.permissions else True,
-                "can_download": a.permissions.allow_download if a.permissions else True,
-            },
-        } for a in items],
-    })
 
 
 @router.get("/tags/popular")
