@@ -404,9 +404,8 @@ def delete_asset(db: Session, asset_id: int) -> bool:
 
 def get_asset_download_url(asset: Asset, expiry_seconds: int = SIGNED_URL_EXPIRY) -> str:
     """生成签名下载 URL。"""
-    # 简单实现：直接返回文件访问路径 + 签名 token
-    # 生产环境可改为 Nginx internal redirect + X-Accel-Redirect
-    expires = int((datetime.utcnow() + timedelta(seconds=expiry_seconds)).timestamp())
+    import time as _time
+    expires = int(_time.time()) + expiry_seconds
     token = _make_sign_token(asset.storage_path, expires)
     return f"/api/assets/{asset.id}/download?token={token}&expires={expires}"
 
