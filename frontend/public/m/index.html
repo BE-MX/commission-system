@@ -393,9 +393,15 @@ const API = {
   },
 
   async downloadAsset(assetId) {
-    const token = getToken();
-    const url = API_BASE + '/' + assetId + '/download';
-    window.open(url + (url.includes('?') ? '&' : '?') + '_t=' + Date.now(), '_blank');
+    try {
+      const r = await apiRequest('/' + assetId + '/share-link?expires=7200');
+      const url = (r.data && r.data.url) || '';
+      if (url) {
+        window.open(url, '_blank');
+      }
+    } catch (e) {
+      console.error('download failed', e);
+    }
   },
 };
 

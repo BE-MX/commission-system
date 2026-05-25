@@ -19,9 +19,10 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db
 from app.auth.dependencies import require_permission
 from app.asset import service
-from sqlalchemy import and_
+from sqlalchemy import and_, desc, func
 from app.asset.analyze_service import analyze_asset_tags
-from app.asset.models import FavoriteFolder, FavoriteItem
+from app.asset.models import Asset, FavoriteFolder, FavoriteItem, DownloadLog
+from app.auth.models import ArkUser  # noqa: F401 — registers ark_users for FK resolution
 from app.asset.folder_upload_service import (
     ASYNC_FILE_THRESHOLD,
     execute_folder_upload,
@@ -460,10 +461,6 @@ def get_recent_assets(
     user: dict = Depends(require_permission("asset:read")),
 ):
     """最近使用记录 — 基于下载/查看/复制日志"""
-    from sqlalchemy import desc, func
-    from app.asset.models import DownloadLog, Asset
-    from app.auth.models import ArkUser
-
     user_id = int(user.get("sub") or user.get("user_id") or 0)
 
     # 按素材分组取最近一条记录
@@ -759,6 +756,7 @@ def download_asset(
 ):
     """获取下载 URL"""
     from fastapi.responses import FileResponse
+    from app.asset.asset_service import ASSET_STORAGE_ROOT
 
     asset = service.get_asset_detail(db, asset_id)
     if not asset:
@@ -773,15 +771,12 @@ def download_asset(
     service.increment_download_count(db, asset_id)
     service.log_download(db, asset_id, user_id, asset.current_version_id)
 
-    abs_path = os.path.join(
-        os.environ.get("ASSET_STORAGE_ROOT", r"D:\WORKSOURCE"),
-        asset.storage_path,
-    )
-    if not os.path.exists(abs_path):
+    abs_path = ASSET_STORAGE_ROOT / asset.storage_path
+    if not abs_path.exists():
         raise HTTPException(status_code=404, detail="文件不存在")
 
     return FileResponse(
-        abs_path,
+        str(abs_path),
         filename=asset.file_name,
         media_type="application/octet-stream",
     )
@@ -1114,8 +1109,6 @@ def record_asset_action(
     user: dict = Depends(require_permission("asset:read")),
 ):
     """记录素材使用行为（view / download / copy_link）"""
-    from app.asset.models import DownloadLog
-
     asset = service.get_asset_detail(db, asset_id)
     if not asset:
         raise HTTPException(status_code=404, detail="素材不存在")
