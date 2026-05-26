@@ -3,6 +3,41 @@
 > Chronological action log. Hooks and AI append to this file automatically.
 > Old sessions are consolidated by the daemon weekly.
 
+## Session: 2026-05-26 开发安全库存生产单购物车与生产订单管理
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 10:00 | Created backend/alembic/versions/025_add_production_module.py | 4张新表 | 生产订单/明细/购物车/审计日志迁移 | ~1763 |
+| 10:05 | Edited backend/app/stock/models.py | 新增4个模型 | ProductionOrder/Item/Cart/AuditLog | ~892 |
+| 10:10 | Edited backend/app/stock/schemas.py | 新增12个schema | 购物车/订单/明细/在途请求响应模型 | ~645 |
+| 10:20 | Created backend/app/stock/production_cart_service.py | 购物车CRUD | 增删改查/角标计数/去重合并 | ~1488 |
+| 10:30 | Created backend/app/stock/production_order_service.py | 订单CRUD+状态+入库 | 订单生成/列表/详情/编辑/删除/明细管理/审计日志 | ~5238 |
+| 10:40 | Created backend/app/stock/in_transit_service.py | 在途统计 | 按product_id聚合已提交明细的在途数量 | ~312 |
+| 10:45 | Edited backend/app/stock/safety_service.py | 加入生产在途列 | query_safety_stock_list返回production_in_transit | ~245 |
+| 10:50 | Edited backend/app/stock/sku_query.py | 可用库存纳入在途 | effective_enable_count = enable_count + production_in_transit | ~380 |
+| 11:00 | Edited backend/app/stock/router.py | 新增18个端点 | 购物车/订单/明细/在途全链路API | ~2100 |
+| 11:05 | Edited backend/app/stock/service.py | facade re-export | 兼容旧调用方+新模块导出 | ~156 |
+| 11:10 | Edited backend/app/auth/service.py | 权限种子 | 新增production:read/write/admin | ~45 |
+| 11:20 | Edited frontend/src/api/stock.js | 扩展16个API函数 | 生产订单全链路前端API | ~680 |
+| 11:25 | Created frontend/src/views/stock/composables/useProductionCart.js | 购物车状态管理 | 列表/角标/勾选/操作/生成订单 | ~850 |
+| 11:40 | Rewrote frontend/src/views/stock/SafetyConfig.vue | 大改造 | 操作列+生产在途列+购物车图标+生产下单弹窗+购物车drawer+生成订单弹窗 | ~3200 |
+| 11:50 | Edited frontend/src/views/stock/StockOverview.vue | 中改造 | 生产在途列+有效可用库存计算 | ~420 |
+| 12:00 | Created frontend/src/views/stock/ProductionOrderManage.vue | 新建管理页 | 双标签页(订单维度+明细维度)/状态管理/入库录入 | ~2800 |
+| 12:10 | Edited frontend/src/config/navigation.js | 新增菜单 | 生产订单管理(permission:production:read) | ~35 |
+| 12:15 | Edited .wolf/cerebrum.md | 新增学习点 | 6条项目级学习记录 | ~380 |
+| 14:00 | Created backend/alembic/versions/026_add_urgent_and_delivery_date.py | +2字段 | is_urgent + expected_delivery_date | ~312 |
+| 14:05 | Edited backend/app/stock/models.py | +2字段 | ProductionOrderItem is_urgent/expected_delivery_date | ~156 |
+| 14:10 | Edited backend/app/stock/schemas.py | +字段扩展 | OrderCreateRequest/OrderItemUpdateRequest/StockStatusQuery | ~380 |
+| 14:15 | Edited backend/app/stock/production_order_service.py | +备货状态查询 | get_stock_status_by_product_ids + urgent/date 支持 | ~1240 |
+| 14:20 | Edited backend/app/stock/router.py | +stock-status端点 | POST /production/stock-status | ~210 |
+| 14:25 | Edited frontend/src/api/stock.js | +queryStockStatus | 备货状态查询API | ~85 |
+| 14:30 | Edited frontend/src/views/stock/SafetyConfig.vue | +备货状态列+弹窗 | 绿色/红色字体,点击弹明细,生成订单弹窗加急+交期 | ~680 |
+| 14:35 | Edited frontend/src/views/stock/StockOverview.vue | +备货状态列+弹窗 | 同上 | ~420 |
+| 14:40 | Edited frontend/src/views/stock/ProductionOrderManage.vue | +加急/交期列+编辑 | 明细列表加急/交期列,编辑弹窗可修改 | ~560 |
+| 14:45 | Fixed tests/test_scheduler_jobs.py | 更新期望值 | 7 jobs → 10 jobs | ~45 |
+| 14:50 | pytest 全量通过 | 71 passed | 无回归 | ~200 |
+| 14:55 | npm run build 成功 | 7.42s | SafetyConfig 26.76kB, ProductionOrderManage 18.66kB | ~180 |
+
 ## Session: 2026-05-19 21:27
 
 | Time | Action | File(s) | Outcome | ~Tokens |
@@ -809,3 +844,89 @@
 | 14:27 | Edited backend/app/asset/folder_upload_service.py | modified _build_file_tag_items() | ~2614 |
 | 14:28 | Session end: 12 writes across 8 files (login.html, index.html, index.js, LoginPage.vue, project_mobile_login_flow.md) | 11 reads | ~27733 tok |
 | 17:01 | Session end: 12 writes across 8 files (login.html, index.html, index.js, LoginPage.vue, project_mobile_login_flow.md) | 11 reads | ~27733 tok |
+| 17:08 | Session end: 12 writes across 8 files (login.html, index.html, index.js, LoginPage.vue, project_mobile_login_flow.md) | 11 reads | ~27733 tok |
+
+## Session: 2026-05-26 17:08
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 17:17 | Created backend/alembic/versions/025_add_production_module.py | — | ~1763 |
+| 17:17 | Edited backend/app/stock/models.py | modified SafetyStock() | ~92 |
+| 17:18 | Edited backend/app/stock/models.py | modified ProductionOrder() | ~1281 |
+| 17:19 | Edited backend/app/stock/schemas.py | modified TftPredictRequest() | ~1032 |
+| 17:19 | Created backend/app/stock/production_cart_service.py | — | ~1488 |
+| 17:22 | Created backend/app/stock/production_order_service.py | — | ~5220 |
+| 17:22 | Created backend/app/stock/in_transit_service.py | — | ~397 |
+| 17:23 | Edited backend/app/stock/sku_query.py | added 1 import(s) | ~51 |
+| 17:23 | Edited backend/app/stock/sku_query.py | expanded (+9 lines) | ~608 |
+| 17:23 | Edited backend/app/stock/safety_service.py | added 1 import(s) | ~97 |
+| 17:24 | Edited backend/app/stock/safety_service.py | expanded (+8 lines) | ~389 |
+| 17:24 | Edited backend/app/stock/service.py | expanded (+23 lines) | ~228 |
+| 17:24 | Edited backend/app/auth/service.py | 4→8 lines | ~149 |
+| 17:25 | Edited backend/app/stock/router.py | modified _ok() | ~354 |
+| 17:26 | Edited backend/app/stock/router.py | modified get_cart() | ~2849 |
+| 17:27 | Edited frontend/src/api/stock.js | modified pushDailyReport() | ~769 |
+| 17:27 | Created frontend/src/views/stock/composables/useProductionCart.js | — | ~923 |
+| 17:32 | Created frontend/src/views/stock/SafetyConfig.vue | — | ~8659 |
+| 17:32 | Edited frontend/src/views/stock/StockOverview.vue | added nullish coalescing | ~328 |
+| 17:32 | Edited frontend/src/views/stock/StockOverview.vue | added nullish coalescing | ~77 |
+| 17:32 | Edited frontend/src/views/stock/StockOverview.vue | modified deep() | ~54 |
+| 17:35 | Created frontend/src/views/stock/ProductionOrderManage.vue | — | ~6072 |
+| 17:36 | Edited frontend/src/config/navigation.js | expanded (+11 lines) | ~180 |
+| 17:37 | Edited backend/app/stock/production_order_service.py | 11→11 lines | ~134 |
+| 17:37 | Edited backend/app/stock/production_order_service.py | inline fix | ~24 |
+| 17:39 | Edited frontend/src/views/stock/SafetyConfig.vue | 13→12 lines | ~107 |
+| 17:40 | Session end: 26 writes across 16 files (025_add_production_module.py, models.py, schemas.py, production_cart_service.py, production_order_service.py) | 17 reads | ~39189 tok |
+| 18:14 | Edited frontend/src/views/stock/composables/useProductionCart.js | 9→10 lines | ~75 |
+| 18:17 | Edited frontend/src/views/stock/composables/useProductionCart.js | added optional chaining | ~139 |
+| 18:17 | Edited frontend/src/views/stock/composables/useProductionCart.js | modified batchRemoveCartItems() | ~94 |
+| 18:18 | Edited frontend/src/views/stock/SafetyConfig.vue | 4→5 lines | ~46 |
+| 18:18 | Session end: 30 writes across 16 files (025_add_production_module.py, models.py, schemas.py, production_cart_service.py, production_order_service.py) | 20 reads | ~50342 tok |
+| 19:12 | Created backend/alembic/versions/026_add_urgent_and_delivery_date.py | — | ~341 |
+| 19:12 | Edited backend/app/stock/models.py | 3→5 lines | ~112 |
+| 19:12 | Edited backend/app/stock/schemas.py | added 1 import(s) | ~28 |
+| 19:12 | Edited backend/app/stock/schemas.py | modified OrderItemUpdateRequest() | ~80 |
+| 19:12 | Edited backend/app/stock/schemas.py | modified OrderItemResponse() | ~127 |
+| 19:13 | Edited backend/app/stock/schemas.py | modified StockStatusQueryRequest() | ~161 |
+| 19:13 | Edited backend/app/stock/production_order_service.py | added 1 import(s) | ~29 |
+| 19:13 | Edited backend/app/stock/production_order_service.py | modified create_order() | ~73 |
+| 19:13 | Edited backend/app/stock/production_order_service.py | 14→16 lines | ~159 |
+| 19:13 | Edited backend/app/stock/production_order_service.py | 2→2 lines | ~61 |
+| 19:13 | Edited backend/app/stock/production_order_service.py | 4→6 lines | ~95 |
+| 19:13 | Edited backend/app/stock/production_order_service.py | 2→2 lines | ~54 |
+| 19:14 | Edited backend/app/stock/production_order_service.py | 4→6 lines | ~107 |
+| 19:14 | Edited backend/app/stock/production_order_service.py | modified update_order_item() | ~514 |
+| 19:15 | Edited backend/app/stock/production_order_service.py | modified get_stock_status_by_product_ids() | ~694 |
+| 19:15 | Edited backend/app/stock/router.py | 9→11 lines | ~103 |
+| 19:15 | Edited backend/app/stock/router.py | 10→12 lines | ~122 |
+| 19:16 | Edited backend/app/stock/router.py | modified query_stock_status() | ~183 |
+| 19:16 | Edited backend/app/stock/schemas.py | modified OrderCreateRequest() | ~84 |
+| 19:16 | Edited backend/app/stock/service.py | 9→10 lines | ~93 |
+| 19:16 | Edited frontend/src/api/stock.js | modified queryInTransit() | ~120 |
+| 19:17 | Edited frontend/src/views/stock/composables/useProductionCart.js | modified generateOrder() | ~177 |
+| 19:17 | Edited frontend/src/views/stock/SafetyConfig.vue | CSS: cursor | ~252 |
+| 19:17 | Edited frontend/src/views/stock/SafetyConfig.vue | CSS: el-tag, el-table, width | ~898 |
+| 19:18 | Edited frontend/src/views/stock/SafetyConfig.vue | 3→3 lines | ~32 |
+| 19:18 | Edited frontend/src/views/stock/SafetyConfig.vue | added error handling | ~459 |
+| 19:19 | Edited frontend/src/views/stock/SafetyConfig.vue | modified openGenerateOrderDialog() | ~296 |
+| 19:19 | Edited frontend/src/views/stock/SafetyConfig.vue | added 1 condition(s) | ~86 |
+| 19:19 | Edited frontend/src/views/stock/SafetyConfig.vue | expanded (+8 lines) | ~148 |
+| 19:20 | Edited frontend/src/views/stock/StockOverview.vue | CSS: cursor | ~251 |
+| 19:20 | Edited frontend/src/views/stock/StockOverview.vue | inline fix | ~22 |
+| 19:20 | Edited frontend/src/views/stock/StockOverview.vue | added error handling | ~409 |
+| 19:20 | Edited frontend/src/views/stock/StockOverview.vue | CSS: el-tag, el-table, width | ~454 |
+| 19:20 | Edited frontend/src/views/stock/StockOverview.vue | added 1 condition(s) | ~220 |
+| 19:20 | Edited frontend/src/views/stock/StockOverview.vue | modified deep() | ~170 |
+| 19:21 | Edited frontend/src/views/stock/ProductionOrderManage.vue | expanded (+9 lines) | ~228 |
+| 19:21 | Edited frontend/src/views/stock/ProductionOrderManage.vue | expanded (+6 lines) | ~330 |
+| 19:21 | Edited frontend/src/views/stock/ProductionOrderManage.vue | modified editItem() | ~232 |
+| 19:22 | Edited frontend/src/views/stock/ProductionOrderManage.vue | expanded (+9 lines) | ~199 |
+| 19:23 | Session end: 69 writes across 17 files (025_add_production_module.py, models.py, schemas.py, production_cart_service.py, production_order_service.py) | 22 reads | ~83626 tok |
+| 19:31 | Edited backend/tests/test_scheduler_jobs.py | test_start_scheduler_registers_seven_jobs() → test_start_scheduler_registers_nine_jobs() | ~321 |
+| 19:33 | Session end: 70 writes across 18 files (025_add_production_module.py, models.py, schemas.py, production_cart_service.py, production_order_service.py) | 24 reads | ~83947 tok |
+| 20:09 | Edited backend/app/stock/production_cart_service.py | 30→32 lines | ~339 |
+| 20:09 | Edited backend/app/stock/production_cart_service.py | 11→12 lines | ~113 |
+| 20:10 | Edited backend/app/stock/production_cart_service.py | modified delete_cart_item() | ~240 |
+| 20:11 | Session end: 73 writes across 18 files (025_add_production_module.py, models.py, schemas.py, production_cart_service.py, production_order_service.py) | 25 reads | ~86127 tok |
+| 20:18 | Edited frontend/src/views/stock/SafetyConfig.vue | 5→5 lines | ~53 |
+| 20:18 | Session end: 74 writes across 18 files (025_add_production_module.py, models.py, schemas.py, production_cart_service.py, production_order_service.py) | 25 reads | ~86495 tok |

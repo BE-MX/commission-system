@@ -1210,6 +1210,214 @@
       "related_bugs": [],
       "occurrences": 2,
       "last_seen": "2026-05-26T06:27:54.588Z"
+    },
+    {
+      "id": "bug-076",
+      "timestamp": "2026-05-26T09:25:14.325Z",
+      "error_message": "Significant refactor of ",
+      "file": "backend/app/stock/router.py",
+      "root_cause": "4 lines replaced/restructured",
+      "fix": "Rewrote 32→50 lines (4 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-26T09:25:14.325Z"
+    },
+    {
+      "id": "bug-077",
+      "timestamp": "2026-05-26T09:32:38.650Z",
+      "error_message": "Null/undefined access in ",
+      "file": "frontend/src/views/stock/StockOverview.vue",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check) | Also: const effective = row.effective_enable_count ?? row.enable_c; if (effective < row.safety_stock) return 'stock-shortage'",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-26T09:32:48.116Z"
+    },
+    {
+      "id": "bug-078",
+      "timestamp": "2026-05-26T09:37:09.064Z",
+      "error_message": "Wrong reference: None should be r",
+      "file": "backend/app/stock/production_order_service.py",
+      "root_cause": "Used \"None\" instead of \"r\"",
+      "fix": "Changed None → r",
+      "tags": [
+        "auto-detected",
+        "wrong-reference",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-26T09:37:09.064Z"
+    },
+    {
+      "id": "bug-079",
+      "timestamp": "2026-05-26T09:39:09.923Z",
+      "error_message": "CSS fix: suggested_qty",
+      "file": "frontend/src/views/stock/SafetyConfig.vue",
+      "root_cause": "suggested_qty: Math.max(0, effectiveStock - enableCount - inTransit), → Math.max(0, effectiveStock - effectiveCount),",
+      "fix": "Changed suggested_qty: Math.max(0, effectiveStock - enableCount - inTransit), → Math.max(0, effectiveStock - effectiveCount),",
+      "tags": [
+        "auto-detected",
+        "style-fix",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-26T09:39:09.923Z"
+    },
+    {
+      "id": "bug-080",
+      "timestamp": "2026-05-26T10:17:17.279Z",
+      "error_message": "Null/undefined access in ",
+      "file": "frontend/src/views/stock/composables/useProductionCart.js",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "js"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-26T10:17:17.279Z"
+    },
+    {
+      "id": "bug-081",
+      "timestamp": "2026-05-26T11:13:23.890Z",
+      "error_message": "Significant refactor of ",
+      "file": "backend/app/stock/production_order_service.py",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 8→10 lines (2 removed) | Also: \"\"\"编辑明细(数量和备注)\"\"\"; snapshot={\"order_qty\": order_qty, \"remark\": remark",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-26T11:14:17.760Z"
+    },
+    {
+      "id": "bug-082",
+      "timestamp": "2026-05-26T11:18:56.932Z",
+      "error_message": "Missing error handling in function",
+      "file": "frontend/src/views/stock/SafetyConfig.vue",
+      "root_cause": "Code path had no error handling — exceptions would propagate uncaught",
+      "fix": "Added try/catch block",
+      "tags": [
+        "auto-detected",
+        "error-handling",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-26T11:18:56.932Z"
+    },
+    {
+      "id": "bug-083",
+      "timestamp": "2026-05-26T11:19:30.403Z",
+      "error_message": "Missing guard clause",
+      "file": "frontend/src/views/stock/SafetyConfig.vue",
+      "root_cause": "No early return/throw for edge case: !row.stock_status",
+      "fix": "Added guard clause: if (!row.stock_status)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-26T11:19:30.403Z"
+    },
+    {
+      "id": "bug-084",
+      "timestamp": "2026-05-26T11:19:39.381Z",
+      "error_message": "CSS fix: font-size, color",
+      "file": "frontend/src/views/stock/SafetyConfig.vue",
+      "root_cause": "font-size: 14px → 15px; color: #27ae60 → #1e1e2d",
+      "fix": "Changed font-size: 14px → 15px; color: #27ae60 → #1e1e2d",
+      "tags": [
+        "auto-detected",
+        "style-fix",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-26T11:19:39.381Z"
+    },
+    {
+      "id": "bug-085",
+      "timestamp": "2026-05-26T11:20:20.934Z",
+      "error_message": "Missing error handling in function",
+      "file": "frontend/src/views/stock/StockOverview.vue",
+      "root_cause": "Code path had no error handling — exceptions would propagate uncaught",
+      "fix": "Added try/catch block",
+      "tags": [
+        "auto-detected",
+        "error-handling",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-26T11:20:20.934Z"
+    },
+    {
+      "id": "bug-086",
+      "timestamp": "2026-05-26T11:20:45.507Z",
+      "error_message": "Missing guard clause",
+      "file": "frontend/src/views/stock/StockOverview.vue",
+      "root_cause": "No early return/throw for edge case: !row.stock_status",
+      "fix": "Added guard clause: if (!row.stock_status)",
+      "tags": [
+        "auto-detected",
+        "guard-clause",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-26T11:20:45.507Z"
+    },
+    {
+      "id": "bug-087",
+      "timestamp": "2026-05-26T11:20:55.361Z",
+      "error_message": "CSS fix: font-size, color",
+      "file": "frontend/src/views/stock/StockOverview.vue",
+      "root_cause": "font-size: 14px → 15px; color: #27ae60 → #1e1e2d",
+      "fix": "Changed font-size: 14px → 15px; color: #27ae60 → #1e1e2d",
+      "tags": [
+        "auto-detected",
+        "style-fix",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-26T11:20:55.361Z"
+    },
+    {
+      "id": "bug-088",
+      "timestamp": "2026-05-26T11:21:57.570Z",
+      "error_message": "CSS fix: id",
+      "file": "frontend/src/views/stock/ProductionOrderManage.vue",
+      "root_cause": "id: null, order_qty: 0, remark: '' → null, order_qty: 0, remark: '', is_urgent: 0, expected_delivery_date: ''",
+      "fix": "Changed id: null, order_qty: 0, remark: '' → null, order_qty: 0, remark: '', is_urgent: 0, expected_delivery_date: ''",
+      "tags": [
+        "auto-detected",
+        "style-fix",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-26T11:21:57.570Z"
     }
   ]
 }

@@ -134,7 +134,27 @@
         </el-table-column>
         <el-table-column label="可用库存" width="100" align="center">
           <template #default="{ row }">
-            <span :class="getStockClass(row)">{{ Math.round(row.enable_count) }}</span>
+            <span :class="getStockClass(row)">{{ Math.round(row.effective_enable_count ?? row.enable_count) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="生产在途" width="90" align="center">
+          <template #default="{ row }">
+            <span :class="['in-transit-value', row.production_in_transit > 0 ? 'in-transit-active' : '']">
+              {{ row.production_in_transit || 0 }}
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column label="备货状态" width="90" align="center">
+          <template #default="{ row }">
+            <span
+              v-if="row.stock_status"
+              :class="['stock-status-label', row.stock_status === '加急中' ? 'stock-status-urgent' : 'stock-status-normal']"
+              @click="openStockStatusDialog(row)"
+              style="cursor:pointer"
+            >
+              {{ row.stock_status }}
+            </span>
+            <span v-else class="text-muted">—</span>
           </template>
         </el-table-column>
         <el-table-column label="安全库存" width="100" align="center">
@@ -168,6 +188,35 @@
           :page-sizes="[20,50,100]" layout="total,sizes,prev,pager,next,jumper" @size-change="loadData" @current-change="loadData" />
       </div>
     </div>
+
+    <!-- 备货状态明细弹窗 -->
+    <el-dialog v-model="stockStatusDialogVisible" title="备货明细" width="600px" align-center>
+      <div v-if="currentStockStatusRow" class="stock-status-dialog">
+        <div class="stock-status-header">
+          <span class="stock-status-product">{{ currentStockStatusRow.product_name }}</span>
+          <el-tag :type="currentStockStatusRow.stock_status === '加急中' ? 'danger' : 'success'" size="small">
+            {{ currentStockStatusRow.stock_status }}
+          </el-tag>
+        </div>
+        <el-table :data="currentStockStatusRow.stock_items || []" size="small" style="width:100%" v-if="(currentStockStatusRow.stock_items || []).length > 0">
+          <el-table-column label="生产单号" prop="order_no" min-width="120" />
+          <el-table-column label="批次号" prop="batch_no" min-width="100" />
+          <el-table-column label="下单量" width="80" align="center" prop="order_qty" />
+          <el-table-column label="已入库" width="80" align="center" prop="received_qty" />
+          <el-table-column label="在途" width="70" align="center" prop="in_transit_qty" />
+          <el-table-column label="加急" width="70" align="center">
+            <template #default="{ row }">
+              <el-tag v-if="row.is_urgent" type="danger" size="small">加急</el-tag>
+              <span v-else class="text-muted">—</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="预计交期" width="110" align="center">
+            <template #default="{ row }">{{ row.expected_delivery_date || '—' }}</template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-else description="暂无备货明细" />
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -178,7 +227,7 @@ import {
   WarningFilled, Timer, CircleCheckFilled, QuestionFilled,
   Search, Filter, RefreshRight,
 } from '@element-plus/icons-vue'
-import { getStockOverview, getFilterOptions } from '@/api/stock'
+import { getStockOverview, getFilterOptions, queryStockStatus } from '@/api/stock'
 
 const loading = ref(false)
 const tableData = ref([])
@@ -219,10 +268,20 @@ const statusIcon = (s) => ({ shortage: 'WarningFilled', warning: 'Timer', suffic
 const sourceTagType = (s) => ({ '': 'info', manual: 'primary', formula: 'warning', tft: 'success' })[s] || 'info'
 const sourceLabel = (s) => ({ '': '未设置', manual: '手动', formula: '公式', tft: 'TFT' })[s] || s
 
+const stockStatusDialogVisible = ref(false)
+const currentStockStatusRow = ref(null)
+
+function openStockStatusDialog(row) {
+  if (!row.stock_status) return
+  currentStockStatusRow.value = row
+  stockStatusDialogVisible.value = true
+}
+
 function getStockClass(row) {
+  const effective = row.effective_enable_count ?? row.enable_count
   if (!row.safety_stock) return ''
-  if (row.enable_count < row.safety_stock) return 'stock-shortage'
-  if (row.enable_count < row.safety_stock * 1.5) return 'stock-warning'
+  if (effective < row.safety_stock) return 'stock-shortage'
+  if (effective < row.safety_stock * 1.5) return 'stock-warning'
   return 'stock-sufficient'
 }
 
@@ -251,7 +310,27 @@ async function loadData() {
       weight: filters.weight.length ? filters.weight.join(',') : undefined,
     })
     const d = res.data
-    tableData.value = d.items || []
+    const items = (d.items || []).map(i => ({ ...i, stock_status: '', stock_items: [] }))
+
+    if (items.length > 0) {
+      try {
+        const pids = items.map(i => i.product_id)
+        const statusRes = await queryStockStatus(pids)
+        const statusMap = {}
+        ;(statusRes.data?.items || []).forEach(s => { statusMap[s.product_id] = s })
+        items.forEach(item => {
+          const s = statusMap[item.product_id]
+          if (s) {
+            item.stock_status = s.stock_status
+            item.stock_items = s.items || []
+          }
+        })
+      } catch (e) {
+        console.warn('备货状态查询失败:', e)
+      }
+    }
+
+    tableData.value = items
     pagination.total = d.total || 0
     Object.assign(summary, d.summary || {})
   } finally {
@@ -354,4 +433,15 @@ onMounted(() => {
 .stock-sufficient { color: #27ae60; background: #e9f7ef; padding: 2px 8px; border-radius: 6px; font-weight: 600; }
 
 :deep(.anomaly-row .el-table__cell) { background: #fff0f0 !important; }
+
+.in-transit-value { font-weight: 500; font-size: 14px; color: #888; }
+.in-transit-active { color: #27ae60; font-weight: 600; }
+
+.stock-status-label { font-size: 13px; }
+.stock-status-normal { color: #27ae60; }
+.stock-status-urgent { color: #e74c3c; font-weight: 700; }
+
+.stock-status-dialog { padding: 10px 0; }
+.stock-status-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #eee; }
+.stock-status-product { font-weight: 600; font-size: 15px; color: #1e1e2d; }
 </style>

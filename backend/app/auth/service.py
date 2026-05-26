@@ -201,6 +201,10 @@ def seed_role_permissions(db: Session):
         ("stock:read",            "stock",   "read",          "查看销量备货一览 / 安全库存 / 日报"),
         ("stock:write",           "stock",   "write",         "设置安全库存 / AI 生成建议"),
         ("stock:admin",           "stock",   "admin",         "手动触发日报生成 / 调试推送"),
+        # 生产订单管理
+        ("production:read",       "production", "read",       "查看生产订单"),
+        ("production:write",      "production", "write",      "创建/编辑生产订单 / 入库录入"),
+        ("production:admin",      "production", "admin",      "删除生产订单 / 管理全部订单"),
         # 素材管理
         ("asset:read",            "asset",   "read",          "查看素材库 / 预览 / 下载 / 收藏"),
         ("asset:write",           "asset",   "write",         "上传素材 / 编辑标签 / 版本迭代"),

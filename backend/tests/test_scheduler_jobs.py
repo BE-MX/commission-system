@@ -29,8 +29,8 @@ def session_factory(engine):
 # ── 注册测试 ─────────────────────────────────────────
 
 class TestSchedulerRegistration:
-    async def test_start_scheduler_registers_seven_jobs(self, monkeypatch):
-        """start_scheduler 应注册 7 个 job 且 id 命名约定一致"""
+    async def test_start_scheduler_registers_nine_jobs(self, monkeypatch):
+        """start_scheduler 应注册 9 个 job 且 id 命名约定一致"""
         from app.core.config import get_settings
 
         # 强制开启 scheduler
@@ -50,7 +50,10 @@ class TestSchedulerRegistration:
                 "tracking_poll_active",
                 "insight_industry_daily",
                 "insight_ai_tools",
+                "insight_intelligence_overview",
                 "stock_daily_report",
+                "color_social_extract",
+                "color_sales_aggregate",
             }
         finally:
             shutdown_scheduler(scheduler)

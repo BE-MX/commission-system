@@ -46,3 +46,77 @@ export function triggerDailyReport(params) {
 export function pushDailyReport(params) {
   return stockApi.post('/daily-report/push', null, { params, loadingText: '推送中...', timeout: 60000 })
 }
+
+// ── 生产单购物车 ──────────────────────────────────────────
+export function getProductionCart() {
+  return stockApi.get('/production/cart', { showLoading: false })
+}
+
+export function addToProductionCart(payload) {
+  return stockApi.post('/production/cart', payload, { loadingText: '添加中...' })
+}
+
+export function updateProductionCartItem(cartId, payload) {
+  return stockApi.put(`/production/cart/${cartId}`, payload, { loadingText: '更新中...' })
+}
+
+export function deleteProductionCartItem(cartId) {
+  return stockApi.delete(`/production/cart/${cartId}`, { loadingText: '删除中...' })
+}
+
+export function deleteProductionCartItems(cartIds) {
+  const params = new URLSearchParams()
+  cartIds.forEach(id => params.append('cart_ids', id))
+  return stockApi.delete(`/production/cart?${params.toString()}`, { loadingText: '删除中...' })
+}
+
+// ── 生产在途 ──────────────────────────────────────────────
+export function queryInTransit(productIds) {
+  return stockApi.post('/production/in-transit', { product_ids: productIds }, { showLoading: false })
+}
+
+// ── 备货状态 ──────────────────────────────────────────────
+export function queryStockStatus(productIds) {
+  return stockApi.post('/production/stock-status', { product_ids: productIds }, { showLoading: false })
+}
+
+// ── 生产订单 ──────────────────────────────────────────────
+export function createProductionOrder(payload) {
+  return stockApi.post('/production/orders', payload, { loadingText: '创建订单中...' })
+}
+
+export function getProductionOrders(params) {
+  return stockApi.get('/production/orders', { params, showLoading: false })
+}
+
+export function getProductionOrderDetail(orderId) {
+  return stockApi.get(`/production/orders/${orderId}`, { showLoading: false })
+}
+
+export function updateProductionOrder(orderId, payload) {
+  return stockApi.put(`/production/orders/${orderId}`, payload, { loadingText: '更新中...' })
+}
+
+export function deleteProductionOrder(orderId) {
+  return stockApi.delete(`/production/orders/${orderId}`, { loadingText: '删除中...' })
+}
+
+export function getProductionOrderItems(params) {
+  return stockApi.get('/production/order-items', { params, showLoading: false })
+}
+
+export function updateProductionOrderItem(itemId, payload) {
+  return stockApi.put(`/production/order-items/${itemId}`, payload, { loadingText: '更新中...' })
+}
+
+export function updateProductionItemStatus(itemId, payload) {
+  return stockApi.put(`/production/order-items/${itemId}/status`, payload, { loadingText: '更新中...' })
+}
+
+export function updateProductionItemReceived(itemId, payload) {
+  return stockApi.put(`/production/order-items/${itemId}/received`, payload, { loadingText: '更新中...' })
+}
+
+export function deleteProductionOrderItem(itemId) {
+  return stockApi.delete(`/production/order-items/${itemId}`, { loadingText: '删除中...' })
+}

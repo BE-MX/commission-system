@@ -7,11 +7,13 @@ from sqlalchemy import (
     Column,
     Date,
     DateTime,
+    ForeignKey,
     Index,
     Integer,
     JSON,
     Numeric,
     SmallInteger,
+    String,
     UniqueConstraint,
 )
 
@@ -58,4 +60,100 @@ class StockDailyReport(Base):
     __table_args__ = (
         UniqueConstraint("report_date", name="uk_report_date"),
         Index("idx_stock_daily_created_at", "created_at"),
+    )
+
+
+class ProductionOrder(Base):
+    """生产订单主表"""
+
+    __tablename__ = "ark_production_orders"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    order_no = Column(String(32), nullable=False, comment="生产单号")
+    batch_no = Column(String(64), nullable=False, comment="生产批次号")
+    remark = Column(String(500), nullable=True, comment="生产单备注")
+    status = Column(SmallInteger, nullable=False, default=0, comment="0=已提交,1=已终止,2=已完成")
+    created_by = Column(Integer, nullable=False, comment="创建人 user_id")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_by = Column(Integer, nullable=True, comment="最后修改人 user_id")
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    deleted_flag = Column(SmallInteger, nullable=False, default=0, comment="0=正常,1=已删除")
+
+    __table_args__ = (
+        UniqueConstraint("order_no", name="uk_order_no"),
+        UniqueConstraint("batch_no", name="uk_batch_no"),
+        Index("idx_production_orders_status", "status"),
+        Index("idx_production_orders_created_by", "created_by"),
+    )
+
+
+class ProductionOrderItem(Base):
+    """生产订单明细表"""
+
+    __tablename__ = "ark_production_order_items"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    order_id = Column(Integer, ForeignKey("ark_production_orders.id", ondelete="CASCADE"), nullable=False, comment="关联生产订单ID")
+    product_id = Column(BigInteger, nullable=False, comment="产品ID")
+    product_name = Column(String(255), nullable=False, comment="产品名称")
+    model = Column(String(100), nullable=True, comment="型号")
+    spec_info = Column(String(255), nullable=True, comment="规格属性")
+    order_qty = Column(Integer, nullable=False, comment="生产下单数量")
+    received_qty = Column(Integer, nullable=False, default=0, comment="已入库数量")
+    status = Column(SmallInteger, nullable=False, default=0, comment="0=已提交,1=已终止,2=已完成")
+    is_urgent = Column(SmallInteger, nullable=False, default=0, comment="0=正常,1=加急")
+    expected_delivery_date = Column(Date, nullable=True, comment="预计交期")
+    remark = Column(String(500), nullable=True, comment="明细备注")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index("idx_production_items_order_id", "order_id"),
+        Index("idx_production_items_product_id", "product_id"),
+        Index("idx_production_items_status", "status"),
+    )
+
+
+class ProductionCart(Base):
+    """生产单购物车,按用户隔离"""
+
+    __tablename__ = "ark_production_cart"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=False, comment="用户ID")
+    product_id = Column(BigInteger, nullable=False, comment="产品ID")
+    product_name = Column(String(255), nullable=False, comment="产品名称")
+    model = Column(String(100), nullable=True, comment="型号")
+    spec_info = Column(String(255), nullable=True, comment="规格属性")
+    order_qty = Column(Integer, nullable=False, comment="生产下单数量")
+    remark = Column(String(500), nullable=True, comment="备注")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "product_id", name="uk_cart_user_product"),
+        Index("idx_production_cart_user_id", "user_id"),
+    )
+
+
+class ProductionAuditLog(Base):
+    """生产订单审计日志"""
+
+    __tablename__ = "ark_production_audit_log"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    order_id = Column(Integer, nullable=False, comment="关联生产订单ID")
+    item_id = Column(Integer, nullable=True, comment="关联明细ID,可为空")
+    operator_id = Column(Integer, nullable=False, comment="操作人 user_id")
+    operator_name = Column(String(64), nullable=False, comment="操作人姓名")
+    action = Column(String(32), nullable=False, comment="操作动作")
+    from_status = Column(SmallInteger, nullable=True, comment="原状态")
+    to_status = Column(SmallInteger, nullable=True, comment="目标状态")
+    comment = Column(String(500), nullable=True, comment="操作备注")
+    snapshot = Column(JSON, nullable=True, comment="变更快照JSON")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("idx_production_audit_order_id", "order_id"),
+        Index("idx_production_audit_created_at", "created_at"),
     )

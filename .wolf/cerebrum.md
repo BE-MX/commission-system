@@ -10,6 +10,18 @@
 
 ## Key Learnings
 
+- **生产订单模块权限独立**：新增 `production:read/write/admin` 权限码，与 `stock` 权限分离。备货管理菜单组(`stock`)的 `anyPermission` 未包含 production 权限，因此 production 菜单需单独挂载在备货管理分组下，由 `production:read` 控制显示
+- **生产订单号生成规则**：`PO{YYYYMMDD}-{NNN}`，按天自增序号。实现方式：查询当天最大订单号，解析序号部分 +1，格式化 3 位零填充
+- **订单与明细状态双向同步**：修改订单状态时级联更新所有明细状态；修改明细状态时，若所有明细变更为同一状态，则同步更新订单状态。实现于 `production_order_service.py` 的 `update_order` 和 `update_item_status`
+- **入库完成自动改状态**：`received_qty == order_qty` 时自动将明细状态改为「已完成」(2)。实现于 `update_item_received`，不弹窗确认直接自动完成
+- **生产在途统计口径**：仅统计明细状态为「已提交」(0) 且订单状态也为「已提交」(0) 且未软删的数据。`in_transit_qty = order_qty - received_qty`，不冗余存储，实时计算
+- **可用库存纳入生产在途**：`effective_enable_count = enable_count + production_in_transit`。状态判断（shortage/warning/sufficient）和建议备货量均基于 effective_enable_count。实现于 `sku_query.py` 的 `query_all_sku_status`，被销量备货一览和日报生成共用
+- **购物车按用户隔离**：`user_id + product_id` 唯一约束，同一产品不重复加入购物车，更新数量和备注
+- **生产订单加急与预计交期**：`is_urgent` (SmallInteger 0/1) + `expected_delivery_date` (Date) 存在明细表。生成订单时统一设置，提交后在明细列表可单独修改
+- **备货状态查询逻辑**：`get_stock_status_by_product_ids` 按 product_id 聚合，优先判断 has_urgent →「加急中」(红)，次判有未完成明细 →「备货中」(绿)，否则空。仅统计明细和订单状态均为「已提交」的数据
+- **Vue el-switch 与后端 SmallInteger 映射**：`:active-value="1" :inactive-value="0"` 确保 switch 输出整数而非布尔，与后端 `is_urgent` SmallInteger 精确匹配
+- **前端日期空值处理**：`el-date-picker` 未选时返回空字符串，传给后端前用 `|| undefined` 转为 undefined，避免 FastAPI `Optional[date]` 解析空字符串失败
+
 <!-- Project-specific conventions discovered during development. -->
 
 - SQLAlchemy session 在循环批量处理中，单次 `db.commit()` 失败后必须显式 `db.rollback()` 恢复 session 状态，否则后续所有 commit 都会失败。典型案例：`folder_upload_service.py` 的 `execute_folder_upload` 逐文件入库，一个文件异常后 session 污染导致后续全部文件数据库写入失败（但 `_save_upload_file` 文件复制不受影响，造成"文件已复制但数据库没数据"的诡异现象）。**已优化**：改用 `db.begin_nested()` savepoint 逐文件隔离，异常只回滚当前 savepoint，批次末尾统一 commit

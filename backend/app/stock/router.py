@@ -1,16 +1,19 @@
 """备货管理 — API 路由
 
 权限码:
-- stock:read  — 查看库存/日报
-- stock:write — 修改安全库存配置 / 触发 AI 建议
-- stock:admin — 管理(预留, 当前与 write 等价)
+- stock:read      — 查看库存/日报
+- stock:write     — 修改安全库存配置 / 触发 AI 建议
+- stock:admin     — 管理(预留, 当前与 write 等价)
+- production:read — 查看生产订单
+- production:write— 创建/编辑生产订单 / 入库录入
+- production:admin— 删除生产订单 / 管理全部订单
 """
 
 from __future__ import annotations
 
 import logging
 from datetime import date
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -20,6 +23,14 @@ from app.auth.dependencies import require_permission
 from app.stock import service
 from app.stock.schemas import (
     AutoGenerateRequest,
+    CartAddRequest,
+    CartUpdateRequest,
+    InTransitQueryRequest,
+    OrderCreateRequest,
+    OrderItemReceivedRequest,
+    OrderItemStatusRequest,
+    OrderItemUpdateRequest,
+    OrderUpdateRequest,
     SafetyStockSaveRequest,
     TftPredictRequest,
 )
@@ -30,6 +41,13 @@ router = APIRouter()
 
 def _ok(data, message: str = "ok", code: int = 200):
     return {"code": code, "message": message, "data": data}
+
+
+def _get_user_id(user: dict) -> int:
+    uid = int(user.get("sub") or user.get("user_id") or 0)
+    if not uid:
+        raise HTTPException(status_code=401, detail="无法识别当前用户")
+    return uid
 
 
 # ── GET /overview ──────────────────────────────────────
@@ -282,3 +300,338 @@ def push_daily_report_endpoint(
         {"report_date": target_date.isoformat(), "dingtalk_sent": True},
         message="钉钉推送已发送",
     )
+
+
+# ═══════════════════════════════════════════════════════════════
+# 生产单购物车
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/production/cart")
+def get_cart(
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("production:write")),
+):
+    """购物车列表"""
+    user_id = _get_user_id(user)
+    items = service.get_cart_list(db, user_id)
+    count = service.get_cart_count(db, user_id)
+    return _ok({"items": items, "count": count})
+
+
+@router.post("/production/cart")
+def add_to_cart(
+    req: CartAddRequest,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("production:write")),
+):
+    """加入购物车(已存在则更新)"""
+    user_id = _get_user_id(user)
+    result = service.add_or_update_cart(
+        db,
+        user_id=user_id,
+        product_id=req.product_id,
+        product_name=req.product_name,
+        model=req.model,
+        spec_info=req.spec_info,
+        order_qty=req.order_qty,
+        remark=req.remark,
+    )
+    action_label = "更新" if result["action"] == "updated" else "添加"
+    return _ok(result, message=f"已{action_label}到购物车")
+
+
+@router.put("/production/cart/{cart_id}")
+def update_cart(
+    cart_id: int,
+    req: CartUpdateRequest,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("production:write")),
+):
+    """更新购物车项"""
+    user_id = _get_user_id(user)
+    ok = service.update_cart_item(db, user_id, cart_id, req.order_qty, req.remark)
+    if not ok:
+        raise HTTPException(status_code=404, detail="购物车项不存在")
+    return _ok(None, message="已更新")
+
+
+@router.delete("/production/cart/{cart_id}")
+def remove_from_cart(
+    cart_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("production:write")),
+):
+    """删除购物车单项"""
+    user_id = _get_user_id(user)
+    ok = service.delete_cart_item(db, user_id, cart_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="购物车项不存在")
+    return _ok(None, message="已删除")
+
+
+@router.delete("/production/cart")
+def clear_cart(
+    cart_ids: list[int] = Query(..., description="要删除的购物车ID列表"),
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("production:write")),
+):
+    """批量删除购物车项"""
+    user_id = _get_user_id(user)
+    deleted = service.delete_cart_items(db, user_id, cart_ids)
+    return _ok({"deleted_count": deleted}, message=f"已删除 {deleted} 项")
+
+
+# ═══════════════════════════════════════════════════════════════
+# 生产在途查询
+# ═══════════════════════════════════════════════════════════════
+
+@router.post("/production/in-transit")
+def query_in_transit(
+    req: InTransitQueryRequest,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("stock:read")),
+):
+    """批量查询生产在途数量"""
+    result = service.get_in_transit_by_product_ids(db, req.product_ids)
+    items = [{"product_id": pid, "in_transit_qty": qty} for pid, qty in result.items()]
+    return _ok({"items": items})
+
+
+@router.post("/production/stock-status")
+def query_stock_status(
+    req: InTransitQueryRequest,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("stock:read")),
+):
+    """批量查询产品备货状态"""
+    result = service.get_stock_status_by_product_ids(db, req.product_ids)
+    items = [
+        {"product_id": pid, "stock_status": v["stock_status"], "has_urgent": v["has_urgent"], "items": v["items"]}
+        for pid, v in result.items()
+    ]
+    return _ok({"items": items})
+
+
+# ═══════════════════════════════════════════════════════════════
+# 生产订单管理
+# ═══════════════════════════════════════════════════════════════
+
+@router.post("/production/orders")
+def create_production_order(
+    req: OrderCreateRequest,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("production:write")),
+):
+    """从购物车生成生产订单"""
+    user_id = _get_user_id(user)
+    cart_items = service.get_cart_items_by_ids(db, user_id, req.cart_ids)
+    if not cart_items:
+        raise HTTPException(status_code=400, detail="未找到有效的购物车项")
+
+    # 检查是否有失效产品(简单检查:产品名不能为空)
+    invalid = [c for c in cart_items if not c.get("product_name")]
+    if invalid:
+        raise HTTPException(status_code=400, detail="选中的产品存在失效项,请移除后重试")
+
+    try:
+        result = service.create_order(
+            db,
+            cart_items=cart_items,
+            batch_no=req.batch_no,
+            remark=req.remark,
+            is_urgent=req.is_urgent,
+            expected_delivery_date=req.expected_delivery_date,
+            operator_id=user_id,
+            operator_name=user.get("username", ""),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # 从购物车移除已选中的
+    service.delete_cart_items(db, user_id, req.cart_ids)
+
+    return _ok(result, message="生产订单创建成功", code=201)
+
+
+@router.get("/production/orders")
+def list_production_orders(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    status: Optional[int] = Query(None, ge=0, le=2),
+    keyword: Optional[str] = Query(None, max_length=200),
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("production:read")),
+):
+    """生产订单列表(按订单维度)"""
+    result = service.get_order_list(db, page=page, page_size=page_size, status=status, keyword=keyword)
+    return _ok({
+        "total": result["total"],
+        "page": page,
+        "page_size": page_size,
+        "items": result["items"],
+    })
+
+
+@router.get("/production/orders/{order_id}")
+def get_production_order(
+    order_id: int,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("production:read")),
+):
+    """生产订单详情"""
+    detail = service.get_order_detail(db, order_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="生产订单不存在")
+    return _ok(detail)
+
+
+@router.put("/production/orders/{order_id}")
+def update_production_order(
+    order_id: int,
+    req: OrderUpdateRequest,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("production:write")),
+):
+    """编辑生产订单(含状态变更,级联同步明细)"""
+    user_id = _get_user_id(user)
+    try:
+        ok = service.update_order(
+            db, order_id,
+            batch_no=req.batch_no,
+            remark=req.remark,
+            status=req.status,
+            operator_id=user_id,
+            operator_name=user.get("username", ""),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if not ok:
+        raise HTTPException(status_code=404, detail="生产订单不存在")
+    return _ok(None, message="已更新")
+
+
+@router.delete("/production/orders/{order_id}")
+def delete_production_order(
+    order_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("production:admin")),
+):
+    """删除生产订单(软删,已入库的不允许)"""
+    user_id = _get_user_id(user)
+    try:
+        ok = service.delete_order(db, order_id, operator_id=user_id, operator_name=user.get("username", ""))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if not ok:
+        raise HTTPException(status_code=404, detail="生产订单不存在")
+    return _ok(None, message="已删除")
+
+
+# ── 明细 ──────────────────────────────────────────────────────
+
+@router.get("/production/order-items")
+def list_production_order_items(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    status: Optional[int] = Query(None, ge=0, le=2),
+    keyword: Optional[str] = Query(None, max_length=200),
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("production:read")),
+):
+    """生产订单明细列表(按明细维度,标签页二用)"""
+    result = service.get_order_item_list(db, page=page, page_size=page_size, status=status, keyword=keyword)
+    return _ok({
+        "total": result["total"],
+        "page": page,
+        "page_size": page_size,
+        "items": result["items"],
+    })
+
+
+@router.put("/production/order-items/{item_id}")
+def update_production_order_item(
+    item_id: int,
+    req: OrderItemUpdateRequest,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("production:write")),
+):
+    """编辑生产订单明细"""
+    user_id = _get_user_id(user)
+    try:
+        ok = service.update_order_item(
+            db, item_id,
+            order_qty=req.order_qty,
+            remark=req.remark,
+            is_urgent=req.is_urgent,
+            expected_delivery_date=req.expected_delivery_date,
+            operator_id=user_id,
+            operator_name=user.get("username", ""),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if not ok:
+        raise HTTPException(status_code=404, detail="明细不存在")
+    return _ok(None, message="已更新")
+
+
+@router.put("/production/order-items/{item_id}/status")
+def update_production_item_status(
+    item_id: int,
+    req: OrderItemStatusRequest,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("production:write")),
+):
+    """修改明细状态(双向同步订单状态)"""
+    user_id = _get_user_id(user)
+    ok = service.update_item_status(
+        db, item_id, req.status,
+        operator_id=user_id,
+        operator_name=user.get("username", ""),
+    )
+    if not ok:
+        raise HTTPException(status_code=404, detail="明细不存在")
+    return _ok(None, message="状态已更新")
+
+
+@router.put("/production/order-items/{item_id}/received")
+def update_production_item_received(
+    item_id: int,
+    req: OrderItemReceivedRequest,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("production:write")),
+):
+    """录入已入库数量(入库完成自动改状态为已完成)"""
+    user_id = _get_user_id(user)
+    try:
+        ok = service.update_item_received(
+            db, item_id, req.received_qty,
+            operator_id=user_id,
+            operator_name=user.get("username", ""),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if not ok:
+        raise HTTPException(status_code=404, detail="明细不存在")
+    return _ok(None, message="入库数量已更新")
+
+
+@router.delete("/production/order-items/{item_id}")
+def delete_production_order_item(
+    item_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("production:admin")),
+):
+    """删除生产订单明细(已入库的不允许)"""
+    user_id = _get_user_id(user)
+    try:
+        ok = service.delete_order_item(db, item_id, operator_id=user_id, operator_name=user.get("username", ""))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if not ok:
+        raise HTTPException(status_code=404, detail="明细不存在")
+    return _ok(None, message="已删除")

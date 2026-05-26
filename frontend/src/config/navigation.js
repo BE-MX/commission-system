@@ -243,6 +243,17 @@ export const NAV_ENTRIES = [
       permission: 'stock:read',
     },
   },
+  {
+    path: '/stock/production-orders',
+    name: 'ProductionOrderManage',
+    component: () => import('@/views/stock/ProductionOrderManage.vue'),
+    title: '生产订单管理',
+    permission: 'production:read',
+    menu: {
+      group: 'stock', title: '生产订单管理', icon: Box, order: 40,
+      permission: 'production:read',
+    },
+  },
 
   // ── 素材管理 ───────────────────────────────────────────
   {

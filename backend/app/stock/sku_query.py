@@ -13,6 +13,7 @@ from app.core.config import get_settings
 from app.stock.constants import (
     VALID_ORDER_FILTER, calc_status, calc_suggested_qty, source_label,
 )
+from app.stock.in_transit_service import get_in_transit_by_product_ids
 
 settings = get_settings()
 
@@ -104,6 +105,10 @@ def query_all_sku_status(
 
     rows = db.execute(text(sql), params).mappings().all()
 
+    # 批量查询生产在途数量
+    product_ids = [int(r["product_id"]) for r in rows]
+    in_transit_map = get_in_transit_by_product_ids(db, product_ids)
+
     results: list[dict] = []
     for r in rows:
         sales_30d = int(r["sales_30d"] or 0)
@@ -112,8 +117,11 @@ def query_all_sku_status(
         real_count = float(r["real_count"] or 0)
         safety_stock = int(r["safety_stock"] or 0)
         source_int = r["source"] if r["source"] is not None else 0
-        status = calc_status(enable_count, safety_stock)
-        suggested_qty = calc_suggested_qty(enable_count, safety_stock)
+        production_in_transit = in_transit_map.get(int(r["product_id"]), 0)
+        # 可用库存纳入生产在途
+        effective_enable_count = enable_count + production_in_transit
+        status = calc_status(effective_enable_count, safety_stock)
+        suggested_qty = calc_suggested_qty(effective_enable_count, safety_stock)
         data_anomaly = enable_count > real_count and real_count > 0
         avg_daily = round(sales_30d / 30, 2) if sales_30d else 0.0
 
@@ -126,6 +134,8 @@ def query_all_sku_status(
             "sales_90d": sales_90d,
             "avg_daily_sales_30d": avg_daily,
             "enable_count": enable_count,
+            "production_in_transit": production_in_transit,
+            "effective_enable_count": effective_enable_count,
             "real_count": real_count,
             "safety_stock": safety_stock,
             "lead_time_days": int(r["lead_time_days"] or 30),

@@ -14,6 +14,7 @@ from app.stock.constants import (
     SOURCE_FORMULA, SOURCE_TFT, SOURCE_INSUFFICIENT,
     source_code, source_label,
 )
+from app.stock.in_transit_service import get_in_transit_by_product_ids
 from app.stock.sku_query import get_sku_sales
 
 logger = logging.getLogger("stock.safety")
@@ -161,11 +162,18 @@ def query_safety_stock_list(
     """
 
     rows = db.execute(text(sql), params).mappings().all()
+
+    # 批量查询生产在途数量
+    product_ids = [int(r["product_id"]) for r in rows]
+    in_transit_map = get_in_transit_by_product_ids(db, product_ids)
+
     items = []
     for r in rows:
         sales_30d = int(r["sales_30d"] or 0)
         avg_daily = round(sales_30d / 30, 2) if sales_30d else 0.0
         source_int = r["source"]
+        enable_count = float(r["enable_count"] or 0)
+        production_in_transit = in_transit_map.get(int(r["product_id"]), 0)
         items.append({
             "product_id": int(r["product_id"]),
             "product_name": r["product_name"] or r["cn_name"] or "",
@@ -173,7 +181,8 @@ def query_safety_stock_list(
             "model": r["model"] or "",
             "sales_30d": sales_30d,
             "avg_daily_sales_30d": avg_daily,
-            "enable_count": float(r["enable_count"] or 0),
+            "enable_count": enable_count,
+            "production_in_transit": production_in_transit,
             "safety_stock": int(r["safety_stock"] or 0),
             "lead_time_days": int(r["lead_time_days"] or 30),
             "safety_factor": float(r["safety_factor"] or 1.50),

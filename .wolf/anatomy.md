@@ -1,7 +1,7 @@
 # anatomy.md
 
-> Auto-maintained by OpenWolf. Last scanned: 2026-05-26T06:27:54.566Z
-> Files: 15 tracked | Anatomy hits: 0 | Misses: 0
+> Auto-maintained by OpenWolf. Last scanned: 2026-05-26T12:18:22.482Z
+> Files: 34 tracked | Anatomy hits: 0 | Misses: 0
 
 ## ./
 
@@ -252,6 +252,8 @@
 ## backend/alembic/versions/
 
 - `024_add_asset_tag_filter_index.py` — add covering index for asset tag filtering (~209 tok)
+- `025_add_production_module.py` — add production module (orders + order_items + cart + audit_log) (~1763 tok)
+- `026_add_urgent_and_delivery_date.py` — add urgent flag and expected delivery date to production order items (~341 tok)
 
 ## backend/app/
 
@@ -265,6 +267,7 @@
 
 ## backend/app/auth/
 
+- `service.py` — Auth 业务逻辑 (~3218 tok)
 
 ## backend/app/bootstrap/
 
@@ -281,8 +284,24 @@
 ## backend/app/schedulers/
 
 
+## backend/app/stock/
+
+- `in_transit_service.py` — 备货管理 — 生产在途数量统计 (~397 tok)
+- `models.py` — 备货管理 — SQLAlchemy ORM 模型 (~1934 tok)
+- `production_cart_service.py` — 备货管理 — 生产单购物车 CRUD (~1513 tok)
+- `production_order_service.py` — 备货管理 — 生产订单 CRUD + 状态管理 + 入库数量 + 审计日志 (~6221 tok)
+- `router.py` — 备货管理 — API 路由 (~5809 tok)
+- `safety_service.py` — 备货管理 — 安全库存 CRUD + AI 备货建议(TFT 微服务 / 公式兜底) (~4036 tok)
+- `schemas.py` — 备货管理 — Pydantic 请求/响应模型 (~1454 tok)
+- `service.py` — 备货管理 — service facade (~567 tok)
+- `sku_query.py` — 备货管理 — SKU 销量 / 库存状态查询 (~1779 tok)
+
 ## backend/scripts/
 
+
+## backend/tests/
+
+- `test_scheduler_jobs.py` — 定时任务 smoke tests (~1949 tok)
 
 ## frontend/
 
@@ -297,9 +316,11 @@
 
 ## frontend/src/api/
 
+- `stock.js` — ── 销量备货一览 ──────────────────────────────────────── (~1280 tok)
 
 ## frontend/src/config/
 
+- `navigation.js` — 导航配置 — 单一来源。 (~4562 tok)
 
 ## frontend/src/router/
 
@@ -323,6 +344,16 @@
 
 ## frontend/src/views/insight/
 
+
+## frontend/src/views/stock/
+
+- `ProductionOrderManage.vue` — Vue component (~6509 tok)
+- `SafetyConfig.vue` — Vue component (~9771 tok)
+- `StockOverview.vue` — Vue: setup (~5382 tok)
+
+## frontend/src/views/stock/composables/
+
+- `useProductionCart.js` — Exports useProductionCart (~976 tok)
 
 ## 登录动效/app/
 
