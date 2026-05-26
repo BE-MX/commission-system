@@ -36,10 +36,17 @@ const router = createRouter({
 
 // ── 路由守卫 ──────────────────────────────────────────
 router.beforeEach(async (to, from, next) => {
+  const isMobileUA = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
+  const desktopMode = sessionStorage.getItem('ark_desktop_mode') === '1'
+
+  // 移动端访问登录页：直接走移动端独立登录页
+  if (isMobileUA && !desktopMode && to.path === '/login') {
+    window.location.href = '/m/login.html'
+    return false
+  }
+
   // 移动端访问素材管理相关页面时，直接跳转到移动端独立页面
-  if (/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) &&
-      sessionStorage.getItem('ark_desktop_mode') !== '1' &&
-      to.path.startsWith('/asset/')) {
+  if (isMobileUA && !desktopMode && to.path.startsWith('/asset/')) {
     window.location.href = '/m/'
     return false
   }

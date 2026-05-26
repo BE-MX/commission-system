@@ -185,6 +185,13 @@ const handleSubmit = async () => {
   try {
     await authStore.login(username.value, password.value)
     ElMessage.success('登录成功')
+    // 移动 UA 默认进移动端，除非用户主动选了「切换到完整版」（ark_desktop_mode=1）
+    const isMobileUA = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
+    const desktopMode = sessionStorage.getItem('ark_desktop_mode') === '1'
+    if (isMobileUA && !desktopMode) {
+      window.location.href = '/m/'
+      return
+    }
     router.push('/')
   } catch (error) {
     ElMessage.error(error.message || '登录失败，请检查用户名和密码')

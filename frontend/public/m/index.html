@@ -302,7 +302,10 @@ async function apiRequest(path, options = {}) {
   });
 
   if (res.status === 401) {
-    // Token 过期，尝试刷新或提示登录
+    // Token 过期 — 清掉旧 token，回到移动端登录页
+    localStorage.removeItem('ark_access_token');
+    sessionStorage.removeItem('ark_access_token');
+    location.replace('/m/login.html');
     throw new Error('登录已过期，请重新登录');
   }
 
@@ -702,10 +705,12 @@ const MSearch = {
     async function loadMore() {
       if (loading.value || page.value >= totalPages.value) return;
       loading.value = true;
-      page.value++;
+      const expectedPage = ++page.value;
       const tag_filters = buildTagFilters();
       try {
-        const r = await API.quickSearch({ keyword: sq.value, tags: tag_filters, page: page.value, page_size: 20 });
+        const r = await API.quickSearch({ keyword: sq.value, tags: tag_filters, page: expectedPage, page_size: 20 });
+        // 防竞态：若 doSearch/clearFilters 已重置 page，丢弃旧分页结果
+        if (page.value !== expectedPage) return;
         results.value.push(...(r.items || []));
       } catch (e) {
         toast.show(e.message || '加载失败', 'error');
@@ -1255,26 +1260,41 @@ const MobileApp = {
     const route = useRoute();
     const hideNav = computed(() => route.path.startsWith('/assets/'));
     const token = ref(getToken());
+
+    // 未登录直接跳移动端登录页
+    if (!token.value) {
+      location.replace('/m/login.html');
+    }
+
     function toDesktop() {
       sessionStorage.setItem('ark_desktop_mode', '1');
       window.location.href = '/asset/library';
     }
-    return { hideNav, toDesktop, token };
+
+    async function logout() {
+      try {
+        await fetch('/api/auth/logout', {
+          method: 'POST',
+          credentials: 'include',
+          headers: token.value ? { 'Authorization': 'Bearer ' + token.value } : {}
+        });
+      } catch (e) { /* 忽略网络错误，仍然清本地 token */ }
+      localStorage.removeItem('ark_access_token');
+      sessionStorage.removeItem('ark_access_token');
+      location.replace('/m/login.html');
+    }
+
+    return { hideNav, toDesktop, logout, token };
   },
   template: `
     <div class="app">
-      <div v-if="!token" class="login-guide">
-        <div class="login-guide-content">
-          <div class="login-guide-icon">&#128274;</div>
-          <h3>请先登录</h3>
-          <p>请从方舟平台登录后再进入素材管理</p>
-          <button class="login-guide-btn" @click="toDesktop">前往登录</button>
-        </div>
-      </div>
-      <template v-else>
+      <template v-if="token">
         <div class="switch-bar">
           <span>手机版</span>
-          <a href="javascript:void(0)" @click="toDesktop">切换到完整版</a>
+          <span style="display:flex;gap:14px;align-items:center">
+            <a href="javascript:void(0)" @click="toDesktop">切换到完整版</a>
+            <a href="javascript:void(0)" @click="logout" style="color:#dc2626">退出登录</a>
+          </span>
         </div>
         <ToastProvider>
           <router-view/>

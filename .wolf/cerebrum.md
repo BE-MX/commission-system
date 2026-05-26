@@ -34,6 +34,7 @@
 - 色彩计算核心依赖 `colour-science`（BSD-3 授权），提供工业级色彩空间转换（RGB↔LAB↔XYZ）、ΔE2000 色差计算。OpenCV + scikit-learn 用于图片主色提取（K-means 聚类）
 - 素材库标签联动筛选的可用标签值必须基于**全量检索结果**（不分页）统计，而非当前页。实现方式：后端 `query_assets` 在同筛选条件下（排序和分页之前）额外做一次 `DISTINCT tag_value_id` 查询，随分页结果一并返回 `available_tag_ids`。前端直接用该字段替代从 `assets.value` 自行统计
 - **Vue 3 CDN 全局构建中，无值 attribute 绑定行为与 SFC 不同**：`<BottomSheet searchable>` 在运行时模板中不会自动传 `true`，而是传空字符串 `''`（falsy），导致 `v-if="searchable"` 不渲染。必须显式写成 `:searchable="true"` 才能正确传递布尔值。这与 SFC 编译版本不同（SFC 中无值 prop 会根据 prop 类型定义自动转换）
+- **移动端独立登录页用纯 HTML + fetch 实现，与主站共享 `localStorage.ark_access_token`**：`m/login.html` 直接 POST `/api/auth/login`，成功后写 localStorage 并 `replace('/m/')`。登录态存续期间访问移动端 SPA 自动放行；退出时调用 `/api/auth/logout` + 清 token 并回登录页。PC `LoginPage.vue` 也做反向分流（移动 UA 登录成功跳 `/m/`），UA 守卫在 `/login` 和 `/asset/*` 都生效，确保移动端用户全程闭环在 `/m/*` 路径内
 - **移动端 `/quick-search` 和 `/recent` API 返回的字段与 `/list` 不同**：`/list` 返回 `storage_path`，而 `/quick-search`/`/recent` 早期实现遗漏了该字段。移动端 `MAssetCard` 仅使用 `thumbnail_path` 生成缩略图 URL，当缩略图生成失败时 `thumbnail_path` 为空，导致图片卡片空白。修复：后端补充 `storage_path`，前端 fallback 到 `storage_path`
 
 ## Do-Not-Repeat

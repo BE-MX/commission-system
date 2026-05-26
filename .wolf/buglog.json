@@ -1016,6 +1016,178 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-05-25T08:44:19.325Z"
+    },
+    {
+      "id": "bug-064",
+      "timestamp": "2026-05-25T09:46:59.488Z",
+      "error_message": "Missing error handling in downloadAsset",
+      "file": "frontend/public/m/index.html",
+      "root_cause": "Code path had no error handling — exceptions would propagate uncaught",
+      "fix": "Added try/catch block",
+      "tags": [
+        "auto-detected",
+        "error-handling",
+        "html"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-25T09:46:59.488Z"
+    },
+    {
+      "id": "bug-065",
+      "timestamp": "2026-05-25T10:15:13.773Z",
+      "error_message": "Significant refactor of ",
+      "file": "backend/app/asset/router.py",
+      "root_cause": "3 lines replaced/restructured",
+      "fix": "Rewrote 15→32 lines (3 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-25T10:15:13.773Z"
+    },
+    {
+      "id": "bug-066",
+      "timestamp": "2026-05-25T10:16:49.759Z",
+      "error_message": "Wrong reference: UploadFile should be Request",
+      "file": "backend/app/asset/router.py",
+      "root_cause": "Used \"UploadFile\" instead of \"Request\"",
+      "fix": "Changed UploadFile → Request",
+      "tags": [
+        "auto-detected",
+        "wrong-reference",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-25T10:16:49.759Z"
+    },
+    {
+      "id": "bug-067",
+      "timestamp": "2026-05-25T11:47:54.913Z",
+      "error_message": "Significant refactor of ",
+      "file": "backend/app/asset/asset_service.py",
+      "root_cause": "16 lines replaced/restructured",
+      "fix": "Rewrote 41→72 lines (16 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-25T11:47:54.913Z"
+    },
+    {
+      "id": "bug-068",
+      "timestamp": "2026-05-25T12:13:16.087Z",
+      "error_message": "Missing error handling in unknown",
+      "file": "frontend/public/m/index.html",
+      "root_cause": "Code path had no error handling — exceptions would propagate uncaught",
+      "fix": "Added try/catch block",
+      "tags": [
+        "auto-detected",
+        "error-handling",
+        "html"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-25T12:13:16.087Z"
+    },
+    {
+      "id": "bug-069",
+      "timestamp": "2026-05-25T12:13:36.724Z",
+      "error_message": "Null/undefined access in ",
+      "file": "frontend/public/m/index.html",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "html"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-25T12:13:36.724Z"
+    },
+    {
+      "id": "bug-070",
+      "timestamp": "2026-05-25T12:14:28.591Z",
+      "error_message": "Significant refactor of ",
+      "file": "frontend/public/m/index.html",
+      "root_cause": "16 lines replaced/restructured",
+      "fix": "Rewrote 29→9 lines (16 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "html"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-25T12:14:28.591Z"
+    },
+    {
+      "id": "bug-071",
+      "timestamp": "2026-05-25T12:14:44.986Z",
+      "error_message": "Incorrect value in code",
+      "file": "frontend/public/m/index.html",
+      "root_cause": "Had \"/>\n          <div v-else-if=\"",
+      "fix": "Changed to \"/>\n          <video v-else-if=\"",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "html"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-25T12:14:44.986Z"
+    },
+    {
+      "id": "bug-072",
+      "timestamp": "2026-05-26T01:23:07.404Z",
+      "error_message": "Missing error handling in toDesktop",
+      "file": "frontend/public/m/index.html",
+      "root_cause": "Code path had no error handling — exceptions would propagate uncaught",
+      "fix": "Added try/catch block",
+      "tags": [
+        "auto-detected",
+        "error-handling",
+        "html"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-26T01:23:07.404Z"
+    },
+    {
+      "id": "bug-073",
+      "timestamp": "2026-05-26T01:23:29.045Z",
+      "error_message": "Wrong operator: !== should be ===",
+      "file": "frontend/src/router/index.js",
+      "root_cause": "Used \"!==\" instead of \"===\"",
+      "fix": "Changed operator !== → ===",
+      "tags": [
+        "auto-detected",
+        "operator-fix",
+        "js"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-26T01:23:29.045Z"
+    },
+    {
+      "id": "bug-074",
+      "timestamp": "2026-05-26T09:40:00.000Z",
+      "error_message": "移动端素材库多维度标签筛选结果混杂旧分页数据",
+      "file": "frontend/public/m/index.html",
+      "root_cause": "loadMore() 和 doSearch() 之间存在竞态条件：用户滚动触发 loadMore(page=N) 后，在请求完成前通过 BottomSheet 选标签触发 doSearch() 重置 page=1，doSearch 先完成替换 results，随后 loadMore 完成将旧筛选条件的分页结果追加到 results，导致用户看到混合结果（新筛选结果 + 旧分页结果）",
+      "fix": "loadMore() 中保存请求时的 expectedPage，请求完成后检查 page.value 是否仍等于 expectedPage；若 doSearch/clearFilters 已重置 page 则丢弃该次分页结果",
+      "tags": ["race-condition", "async", "mobile", "pagination", "vue"],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-26T09:40:00.000Z"
     }
   ]
 }
