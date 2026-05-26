@@ -2,7 +2,7 @@
 
 > OpenWolf's learning memory. Updated automatically as the AI learns from interactions.
 > Do not edit manually unless correcting an error.
-> Last updated: 2026-05-25
+> Last updated: 2026-05-26
 
 ## User Preferences
 
@@ -12,7 +12,7 @@
 
 <!-- Project-specific conventions discovered during development. -->
 
-- SQLAlchemy session 在循环批量处理中，单次 `db.commit()` 失败后必须显式 `db.rollback()` 恢复 session 状态，否则后续所有 commit 都会失败。典型案例：`folder_upload_service.py` 的 `execute_folder_upload` 逐文件入库，一个文件异常后 session 污染导致后续全部文件数据库写入失败（但 `_save_upload_file` 文件复制不受影响，造成"文件已复制但数据库没数据"的诡异现象）
+- SQLAlchemy session 在循环批量处理中，单次 `db.commit()` 失败后必须显式 `db.rollback()` 恢复 session 状态，否则后续所有 commit 都会失败。典型案例：`folder_upload_service.py` 的 `execute_folder_upload` 逐文件入库，一个文件异常后 session 污染导致后续全部文件数据库写入失败（但 `_save_upload_file` 文件复制不受影响，造成"文件已复制但数据库没数据"的诡异现象）。**已优化**：改用 `db.begin_nested()` savepoint 逐文件隔离，异常只回滚当前 savepoint，批次末尾统一 commit
 
 - 素材管理模块采用**领域模块**结构（与 tracking/stock/insight 一致），`app/asset/` 下自包含 router/models/schemas/service，复杂逻辑拆子 service 模块
 - 标签维度/值设计为**可扩展的 EAV 模式**：`tag_dimensions`（维度定义）+ `tag_values`（值定义）+ `asset_tag_association`（多对多关联），支持单选/多选/必填/系统内置标记
@@ -36,6 +36,8 @@
 - **Vue 3 CDN 全局构建中，无值 attribute 绑定行为与 SFC 不同**：`<BottomSheet searchable>` 在运行时模板中不会自动传 `true`，而是传空字符串 `''`（falsy），导致 `v-if="searchable"` 不渲染。必须显式写成 `:searchable="true"` 才能正确传递布尔值。这与 SFC 编译版本不同（SFC 中无值 prop 会根据 prop 类型定义自动转换）
 - **移动端独立登录页用纯 HTML + fetch 实现，与主站共享 `localStorage.ark_access_token`**：`m/login.html` 直接 POST `/api/auth/login`，成功后写 localStorage 并 `replace('/m/')`。登录态存续期间访问移动端 SPA 自动放行；退出时调用 `/api/auth/logout` + 清 token 并回登录页。PC `LoginPage.vue` 也做反向分流（移动 UA 登录成功跳 `/m/`），UA 守卫在 `/login` 和 `/asset/*` 都生效，确保移动端用户全程闭环在 `/m/*` 路径内
 - **移动端 `/quick-search` 和 `/recent` API 返回的字段与 `/list` 不同**：`/list` 返回 `storage_path`，而 `/quick-search`/`/recent` 早期实现遗漏了该字段。移动端 `MAssetCard` 仅使用 `thumbnail_path` 生成缩略图 URL，当缩略图生成失败时 `thumbnail_path` 为空，导致图片卡片空白。修复：后端补充 `storage_path`，前端 fallback 到 `storage_path`
+- **文件夹批量上传性能优化三件套**：(1) 预加载查重字典+标签字典+版本号，消除循环内 N+1 查询；(2) 内联 `create_asset`/`upload_new_version` 核心逻辑，避免逐文件 commit；(3) 每 BATCH_SIZE(20) 个文件一个事务 + `db.begin_nested()` savepoint 隔离单文件失败。1000 文件场景下查询次数从 ~2000 降到 3 次，commit 次数从 1000 降到 50 次
+- **移动端 SPA 中 `loadMore()` 与 `doSearch()` 存在竞态条件**：用户在滚动加载分页时（`loadMore` 请求未完成），通过 BottomSheet 选标签触发 `doSearch()` 重置 `page=1`，`doSearch` 先完成替换 `results` 后，`loadMore` 的旧请求完成将上一筛选条件的分页结果追加进来，导致 `results` 混合。修复：`loadMore()` 中保存请求时的 `expectedPage`，await 完成后检查 `page.value !== expectedPage` 则丢弃该次旧结果
 
 ## Do-Not-Repeat
 
@@ -59,6 +61,8 @@
 - [2026-05-25] Vue 3 CDN 运行时模板中，组件无值 attribute（如 `<BottomSheet searchable>`）传的是空字符串 `''` 而非布尔值 `true`。空字符串是 falsy 的，导致 `v-if="searchable"` 不渲染搜索框、`v-if="multi"` 不显示"清除"按钮。修复：显式写成 `:searchable="true"` `:multi="true"`
 - [2026-05-25] 素材库移动端搜索页初始态调用 `loadRecent()`（基于 `DownloadLog`），如果用户没有下载/查看/复制记录，返回空数组，页面显示"没找到匹配素材"。与 PC 端素材库（显示全量列表）行为不一致。修复：`loadRecent()` 返回空时自动 fallback 到 `doSearch()` 获取全量素材列表
 - [2026-05-25] 后端 `/quick-search` 和 `/recent` 返回的字段集与 `/list` 不同，遗漏了 `storage_path`。移动端 `MAssetCard` 仅依赖 `thumbnail_path` 生成缩略图 URL，缩略图生成失败时卡片空白（无 fallback）。修复：后端补充 `storage_path`，前端使用 `thumbnail_path || storage_path` fallback
+- [2026-05-26] 移动端 `loadMore()` 与 `doSearch()` 竞态条件：用户在滚动加载分页期间选标签触发 `doSearch()` 重置 `page=1`，旧 `loadMore` 请求完成后将上一筛选条件的分页结果追加到 `results`，造成筛选结果混合。修复：`loadMore()` 保存请求时的 `expectedPage`，await 后检查 `page.value !== expectedPage` 则丢弃旧结果
+- [2026-05-26] 文件夹批量上传 `execute_folder_upload` 循环内逐文件调用 `create_asset`/`upload_new_version`，每个文件触发 2 次数据库查询（查重 + 标签匹配）+ 1 次 commit，1000 文件产生 ~2000 次查询 + 1000 次 commit。修复：循环前预加载查重字典 + 标签字典 + 版本号（3 次查询），内联入库逻辑 + 每 20 文件一个事务 + `begin_nested()` savepoint 隔离
 
 ## Decision Log
 

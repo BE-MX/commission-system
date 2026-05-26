@@ -1184,10 +1184,32 @@
       "file": "frontend/public/m/index.html",
       "root_cause": "loadMore() 和 doSearch() 之间存在竞态条件：用户滚动触发 loadMore(page=N) 后，在请求完成前通过 BottomSheet 选标签触发 doSearch() 重置 page=1，doSearch 先完成替换 results，随后 loadMore 完成将旧筛选条件的分页结果追加到 results，导致用户看到混合结果（新筛选结果 + 旧分页结果）",
       "fix": "loadMore() 中保存请求时的 expectedPage，请求完成后检查 page.value 是否仍等于 expectedPage；若 doSearch/clearFilters 已重置 page 则丢弃该次分页结果",
-      "tags": ["race-condition", "async", "mobile", "pagination", "vue"],
+      "tags": [
+        "race-condition",
+        "async",
+        "mobile",
+        "pagination",
+        "vue"
+      ],
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-05-26T09:40:00.000Z"
+    },
+    {
+      "id": "bug-075",
+      "timestamp": "2026-05-26T06:26:32.866Z",
+      "error_message": "Significant refactor of ",
+      "file": "backend/app/asset/folder_upload_service.py",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 5→7 lines (2 removed) | Also: \"\"\"执行文件夹批量上传。; 对每文件：",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-26T06:27:54.588Z"
     }
   ]
 }

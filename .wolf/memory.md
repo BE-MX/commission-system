@@ -804,3 +804,8 @@
 | 09:43 | Edited CLAUDE.md | inline fix | ~79 |
 | 09:51 | Edited frontend/public/m/index.html | added 1 condition(s) | ~168 |
 | 09:52 | Session end: 10 writes across 7 files (login.html, index.html, index.js, LoginPage.vue, project_mobile_login_flow.md) | 10 reads | ~25071 tok |
+| 11:51 | Session end: 10 writes across 7 files (login.html, index.html, index.js, LoginPage.vue, project_mobile_login_flow.md) | 10 reads | ~25071 tok |
+| 14:26 | Edited backend/app/asset/folder_upload_service.py | 5→7 lines | ~48 |
+| 14:27 | Edited backend/app/asset/folder_upload_service.py | modified _build_file_tag_items() | ~2614 |
+| 14:28 | Session end: 12 writes across 8 files (login.html, index.html, index.js, LoginPage.vue, project_mobile_login_flow.md) | 11 reads | ~27733 tok |
+| 17:01 | Session end: 12 writes across 8 files (login.html, index.html, index.js, LoginPage.vue, project_mobile_login_flow.md) | 11 reads | ~27733 tok |

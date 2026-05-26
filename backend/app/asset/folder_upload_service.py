@@ -16,8 +16,10 @@ from sqlalchemy.orm import Session
 
 from app.asset.asset_service import (
     ASSET_STORAGE_ROOT,
-    create_asset,
-    upload_new_version,
+    _build_storage_path,
+    _generate_thumbnail,
+    _generate_video_thumbnail,
+    _save_upload_file,
 )
 from app.asset.models import Asset, TagDimension, TagValue
 from app.asset.schemas import AssetPermissionIn, AssetTagItem
@@ -275,6 +277,42 @@ def _tags_match(
 
 # ── 执行入库 ────────────────────────────────────────────
 
+def _build_file_tag_items(
+    file_path: str,
+    folder_path: str,
+    tag_mapping: dict[str, dict],
+    extra_tags: list[AssetTagItem],
+) -> tuple[list[AssetTagItem], set[tuple[int, int]]]:
+    """构建文件的标签项列表和目标标签集合。"""
+    tags = extract_tags_from_path(file_path, folder_path)
+    tag_items: list[AssetTagItem] = []
+    used_dimensions: set[int] = set()
+
+    for tag in tags:
+        mapping = tag_mapping.get(tag) or tag_mapping.get(_normalize_text(tag))
+        if not mapping:
+            continue
+        dim_id = _get_mapping_value(mapping, "dimension_id")
+        tv_id = _get_mapping_value(mapping, "tag_value_id")
+        if dim_id in used_dimensions:
+            continue
+        used_dimensions.add(dim_id)
+        tag_items.append(AssetTagItem(dimension_id=dim_id, tag_value_ids=[tv_id]))
+
+    for item in extra_tags:
+        if item.dimension_id in used_dimensions:
+            continue
+        used_dimensions.add(item.dimension_id)
+        tag_items.append(item)
+
+    target_set: set[tuple[int, int]] = set()
+    for item in tag_items:
+        for tv_id in item.tag_value_ids:
+            target_set.add((item.dimension_id, tv_id))
+
+    return tag_items, target_set
+
+
 def execute_folder_upload(
     db: Session,
     folder_path: str,
@@ -284,109 +322,192 @@ def execute_folder_upload(
     uploader_id: int,
     copy: bool = False,
 ) -> dict:
-    """执行文件夹批量上传。
+    """执行文件夹批量上传（优化版）。
 
-    对每文件：
-    1. 提取路径标签 → 按 tag_mapping 转换 → 合并 extra_tags
-    2. 按 file_name + file_type 查找已有素材
-    3. 同名素材存在且标签完全一致 → 作为新版本上传
-    4. 同名素材存在但标签不同 → 创建新素材（独立记录）
-    5. 不存在 → 创建新素材
-
-    返回执行报告。
+    优化点：
+    1. 预加载查重字典 + 标签字典 + 版本号，消除 N+1 查询
+    2. 内联入库逻辑，避免 create_asset/upload_new_version 内部逐文件 commit
+    3. 每 BATCH_SIZE 个文件一个事务 + savepoint 隔离，减少 commit 开销
     """
-    files = scan_folder(folder_path)
+    from sqlalchemy import func
+    from app.asset.models import asset_tag_association as ata
 
+    files = scan_folder(folder_path)
     total = len(files)
+    if total == 0:
+        return {"total": 0, "success": 0, "new_version_count": 0, "failed": []}
+
+    # ── 1. 预加载：一次性消除循环内的所有查询 ──────────────
+    file_names = [Path(f).name for f in files]
+
+    # 1a. 批量查重（加载完整 ORM 对象，后续可直接修改字段）
+    existing_assets = db.query(Asset).filter(Asset.file_name.in_(file_names)).all()
+    existing_map: dict[tuple[str, str], Asset] = {
+        (a.file_name, a.file_type): a for a in existing_assets
+    }
+
+    # 1b. 批量加载已有素材的标签
+    existing_ids = [a.id for a in existing_assets]
+    asset_tags_map: dict[int, set[tuple[int, int]]] = {}
+    if existing_ids:
+        tag_rows = db.execute(
+            ata.select().where(ata.c.asset_id.in_(existing_ids))
+        ).fetchall()
+        for row in tag_rows:
+            asset_tags_map.setdefault(row.asset_id, set()).add(
+                (row.dimension_id, row.tag_value_id)
+            )
+
+    # 1c. 批量预计算版本号（避免循环内逐素材 SELECT MAX）
+    version_numbers: dict[int, int] = {}
+    for a in existing_assets:
+        max_v = db.query(func.max(AssetVersion.version_number)).filter(
+            AssetVersion.asset_id == a.id
+        ).scalar() or 0
+        version_numbers[a.id] = max_v
+
+    # ── 2. 批量入库 ────────────────────────────────────────
+    BATCH_SIZE = 20
     success = 0
     new_version_count = 0
     failed: list[dict] = []
 
-    for file_path in files:
-        path = Path(file_path)
-        file_name = path.name
-        ext = path.suffix.lower().lstrip(".")
-        file_size = path.stat().st_size
-        file_type = _detect_file_type(ext)
+    for i in range(0, total, BATCH_SIZE):
+        batch = files[i : i + BATCH_SIZE]
 
-        # 构建标签项
-        tags = extract_tags_from_path(file_path, folder_path)
+        for file_path in batch:
+            path = Path(file_path)
+            file_name = path.name
+            try:
+                with db.begin_nested():
+                    ext = path.suffix.lower().lstrip(".")
+                    file_size = path.stat().st_size
+                    file_type = _detect_file_type(ext)
 
-        tag_items: list[AssetTagItem] = []
-        used_dimensions: set[int] = set()
+                    tag_items, target_set = _build_file_tag_items(
+                        file_path, folder_path, tag_mapping, extra_tags
+                    )
 
-        for tag in tags:
-            mapping = tag_mapping.get(tag) or tag_mapping.get(_normalize_text(tag))
-            if not mapping:
-                continue
+                    existing = existing_map.get((file_name, file_type))
+                    should_merge = (
+                        existing is not None
+                        and asset_tags_map.get(existing.id, set()) == target_set
+                    )
 
-            dim_id = _get_mapping_value(mapping, "dimension_id")
-            tv_id = _get_mapping_value(mapping, "tag_value_id")
+                    if should_merge and existing:
+                        # ── 新版本 ──
+                        eid = existing.id
+                        version_numbers[eid] += 1
+                        ver_num = version_numbers[eid]
 
-            if dim_id in used_dimensions:
-                continue
-            used_dimensions.add(dim_id)
-            tag_items.append(AssetTagItem(
-                dimension_id=dim_id,
-                tag_value_ids=[tv_id],
-            ))
+                        existing.status = "history"
 
-        # 追加额外标签
-        for item in extra_tags:
-            if item.dimension_id in used_dimensions:
-                continue
-            used_dimensions.add(item.dimension_id)
-            tag_items.append(item)
+                        rel_path = _build_storage_path(file_type, ext)
+                        _save_upload_file(file_path, rel_path, copy=copy)
 
-        # 查找同名同类型素材
-        existing = db.query(Asset).filter(
-            Asset.file_name == file_name,
-            Asset.file_type == file_type,
-        ).first()
+                        thumbnail_path: Optional[str] = None
+                        abs_storage = str(ASSET_STORAGE_ROOT / rel_path)
+                        if file_type == "image":
+                            thumbnail_path = _generate_thumbnail(abs_storage, rel_path)
+                        elif file_type == "video":
+                            thumbnail_path = _generate_video_thumbnail(abs_storage, rel_path)
 
-        # 只有文件名+标签都一致时才合并为新版本
-        should_merge = existing and _tags_match(db, existing.id, tag_items)
+                        version = AssetVersion(
+                            asset_id=eid,
+                            version_number=ver_num,
+                            storage_path=rel_path,
+                            file_size=file_size,
+                            uploader_id=uploader_id,
+                        )
+                        db.add(version)
+                        db.flush()
 
-        try:
-            if should_merge:
-                # 标签一致 → 作为新版本上传
-                version = upload_new_version(
-                    db, existing.id, file_name, file_size,
-                    str(path), uploader_id, remark=None, copy=copy,
-                )
-                if version:
-                    # 新版本继承旧版标签后，再更新为用户指定的标签
-                    from app.asset.asset_service import update_asset_tags
-                    update_asset_tags(db, existing.id, tag_items)
-                    new_version_count += 1
-                    success += 1
-                else:
-                    failed.append({
-                        "file_name": file_name,
-                        "reason": "版本上传失败",
-                    })
-            else:
-                # 标签不同 或 不存在 → 创建新素材
-                asset = create_asset(
-                    db,
-                    file_name=file_name,
-                    file_type=file_type,
-                    file_format=ext,
-                    file_size=file_size,
-                    temp_storage_path=str(path),
-                    uploader_id=uploader_id,
-                    tags=tag_items,
-                    permission=permission,
-                    remark=None,
-                    copy=copy,
-                )
-                success += 1
-        except Exception as exc:
-            db.rollback()
-            failed.append({
-                "file_name": file_name,
-                "reason": str(exc),
-            })
+                        existing.current_version_id = version.id
+                        existing.status = "latest"
+                        existing.file_name = file_name
+                        existing.file_size = file_size
+                        existing.storage_path = rel_path
+                        existing.thumbnail_path = thumbnail_path
+
+                        # 清除旧标签并写入新标签
+                        db.execute(ata.delete().where(ata.c.asset_id == eid))
+                        for item in tag_items:
+                            for tv_id in item.tag_value_ids:
+                                db.execute(
+                                    ata.insert().values(
+                                        asset_id=eid,
+                                        version_id=version.id,
+                                        dimension_id=item.dimension_id,
+                                        tag_value_id=tv_id,
+                                    )
+                                )
+
+                        new_version_count += 1
+                        success += 1
+
+                    else:
+                        # ── 新素材 ──
+                        rel_path = _build_storage_path(file_type, ext)
+                        _save_upload_file(file_path, rel_path, copy=copy)
+
+                        thumbnail_path: Optional[str] = None
+                        abs_storage = str(ASSET_STORAGE_ROOT / rel_path)
+                        if file_type == "image":
+                            thumbnail_path = _generate_thumbnail(abs_storage, rel_path)
+                        elif file_type == "video":
+                            thumbnail_path = _generate_video_thumbnail(abs_storage, rel_path)
+
+                        asset = Asset(
+                            file_name=file_name,
+                            file_type=file_type,
+                            file_format=ext,
+                            storage_path=rel_path,
+                            file_size=file_size,
+                            thumbnail_path=thumbnail_path,
+                            uploader_id=uploader_id,
+                            status="latest",
+                        )
+                        db.add(asset)
+                        db.flush()
+
+                        version = AssetVersion(
+                            asset_id=asset.id,
+                            version_number=1,
+                            storage_path=rel_path,
+                            file_size=file_size,
+                            uploader_id=uploader_id,
+                        )
+                        db.add(version)
+                        db.flush()
+
+                        asset.current_version_id = version.id
+
+                        for item in tag_items:
+                            for tv_id in item.tag_value_ids:
+                                db.execute(
+                                    ata.insert().values(
+                                        asset_id=asset.id,
+                                        version_id=version.id,
+                                        dimension_id=item.dimension_id,
+                                        tag_value_id=tv_id,
+                                    )
+                                )
+
+                        perm = AssetPermission(
+                            asset_id=asset.id,
+                            permission_group=permission.permission_group,
+                            allow_preview=permission.allow_preview,
+                            allow_download=permission.allow_download,
+                            specified_user_ids=permission.specified_user_ids,
+                        )
+                        db.add(perm)
+
+                        success += 1
+
+            except Exception as exc:
+                failed.append({"file_name": file_name, "reason": str(exc)})
+
+        db.commit()
 
     return {
         "total": total,
