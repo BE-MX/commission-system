@@ -18,19 +18,19 @@
 
     <!-- 表格 -->
     <div class="table-card">
-    <el-table ref="tableRef" :data="tableData" v-loading="loading" class="list-table" border :max-height="maxHeight">
-      <el-table-column prop="batch_name" label="批次名称" min-width="140" max-width="210" show-overflow-tooltip />
+    <el-table ref="tableRef" :data="tableData" v-loading="loading" class="list-table" border :max-height="maxHeight" @sort-change="orderSort.onSortChange">
+      <el-table-column prop="batch_name" label="批次名称" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
       <el-table-column label="周期类型" min-width="90" max-width="140">
         <template #default="{ row }">{{ periodLabel(row.period_type) }}</template>
       </el-table-column>
-      <el-table-column prop="period_start" label="起始日期" min-width="110" max-width="170" show-overflow-tooltip />
-      <el-table-column prop="period_end" label="结束日期" min-width="110" max-width="170" show-overflow-tooltip />
-      <el-table-column label="状态" min-width="90" max-width="140">
+      <el-table-column prop="period_start" label="起始日期" min-width="110" max-width="170" show-overflow-tooltip sortable="custom" />
+      <el-table-column prop="period_end" label="结束日期" min-width="110" max-width="170" show-overflow-tooltip sortable="custom" />
+      <el-table-column prop="status" label="状态" min-width="90" max-width="140" sortable="custom">
         <template #default="{ row }">
           <el-tag :type="statusType(row.status)" size="small" effect="plain">{{ statusLabel(row.status) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" show-overflow-tooltip />
+      <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" show-overflow-tooltip sortable="custom" />
       <el-table-column label="操作" min-width="280" max-width="420" fixed="right">
         <template #default="{ row }">
           <!-- 草稿 -->
@@ -161,8 +161,10 @@ import { createBatch, getBatchList, calculateBatch, confirmBatch, voidBatch } fr
 import { exportCommissionDetails, exportSalespersonSummary, exportSupervisorSummary } from '@/api/report'
 import { downloadBlob } from '@/utils/download'
 import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
+import { useTableSort } from '@/composables/useTableSort'
 
 const { tableRef, maxHeight } = useTableMaxHeight()
+const orderSort = useTableSort()
 
 const router = useRouter()
 const statusFilter = ref('')
@@ -187,7 +189,8 @@ async function fetchList() {
   loading.value = true
   try {
     const res = await getBatchList({
-      status: statusFilter.value, page: page.value, page_size: pageSize.value
+      status: statusFilter.value, page: page.value, page_size: pageSize.value,
+      ...orderSort.sortParams.value,
     })
     tableData.value = res.data.items
     total.value = res.data.total

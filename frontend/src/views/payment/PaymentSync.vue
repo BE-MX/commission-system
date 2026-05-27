@@ -79,12 +79,12 @@
       </template>
 
       <div class="table-card">
-      <el-table ref="tableRef" :data="paymentList" v-loading="listLoading" class="list-table" border :max-height="maxHeight">
+      <el-table ref="tableRef" :data="paymentList" v-loading="listLoading" class="list-table" border :max-height="maxHeight" @sort-change="orderSort.onSortChange">
         <el-table-column prop="payment_id" label="回款ID" min-width="180" max-width="270" show-overflow-tooltip />
         <el-table-column prop="order_id" label="订单ID" min-width="180" max-width="270" show-overflow-tooltip />
-        <el-table-column prop="customer_name" label="客户名称" min-width="160" max-width="240" show-overflow-tooltip />
-        <el-table-column prop="payment_date" label="回款日期" min-width="110" max-width="170" show-overflow-tooltip />
-        <el-table-column label="回款金额(USD)" min-width="130" max-width="200">
+        <el-table-column prop="customer_name" label="客户名称" min-width="160" max-width="240" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="payment_date" label="回款日期" min-width="110" max-width="170" show-overflow-tooltip sortable="custom" />
+        <el-table-column prop="payment_amount" label="回款金额(USD)" min-width="130" max-width="200" sortable="custom">
           <template #default="{ row }">{{ row.payment_amount?.toFixed(2) }}</template>
         </el-table-column>
         <el-table-column label="是否已计算" min-width="100" max-width="150">
@@ -119,8 +119,10 @@ import { ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { syncPayments, getSyncedPayments } from '@/api/payment'
 import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
+import { useTableSort } from '@/composables/useTableSort'
 
 const { tableRef, maxHeight } = useTableMaxHeight()
+const orderSort = useTableSort()
 
 // 同步操作
 const dateRange = ref(null)
@@ -167,7 +169,8 @@ async function fetchPayments() {
       date_end: dateRange.value[1],
       keyword: listKeyword.value,
       page: listPage.value,
-      page_size: listPageSize.value
+      page_size: listPageSize.value,
+      ...orderSort.sortParams.value
     })
     paymentList.value = res.data.items
     listTotal.value = res.data.total

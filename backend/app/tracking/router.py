@@ -44,6 +44,8 @@ def list_shipments(
     is_active: str = Query("", description="是否活跃: 1/0"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    sort_field: str = Query("created_at"),
+    sort_order: str = Query("desc"),
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
@@ -51,6 +53,7 @@ def list_shipments(
         db, current_user,
         status=status, carrier=carrier, keyword=keyword,
         is_active=is_active, page=page, page_size=page_size,
+        sort_field=sort_field, sort_order=sort_order,
     )
     return {"code": 200, "message": "ok", "data": data}
 

@@ -33,10 +33,11 @@
       style="width: 100%"
       :row-class-name="rowClassName"
       :max-height="maxHeight"
+      @sort-change="orderSort.onSortChange"
     >
       <el-table-column prop="customer_id" label="客户ID" min-width="160" max-width="240" show-overflow-tooltip />
-      <el-table-column prop="customer_name" label="客户名称" min-width="160" max-width="240" show-overflow-tooltip />
-      <el-table-column prop="salesperson_name" label="业务员" min-width="100" max-width="150" show-overflow-tooltip />
+      <el-table-column prop="customer_name" label="客户名称" min-width="160" max-width="240" show-overflow-tooltip sortable="custom" />
+      <el-table-column prop="salesperson_name" label="业务员" min-width="100" max-width="150" show-overflow-tooltip sortable="custom" />
       <el-table-column label="业务员属性" min-width="100" max-width="150">
         <template #default="{ row }">
           <span>{{ attrLabel(row.salesperson_attribute) }}</span>
@@ -59,7 +60,7 @@
         <template #default="{ row }">{{ rateStr(row.second_supervisor_rate) }}</template>
       </el-table-column>
       <el-table-column prop="remark" label="备注" min-width="120" max-width="240" show-overflow-tooltip />
-      <el-table-column prop="first_receipt_date" label="首次成交日期" min-width="120" max-width="180" show-overflow-tooltip />
+      <el-table-column prop="first_receipt_date" label="首次成交日期" min-width="120" max-width="180" show-overflow-tooltip sortable="custom" />
       <el-table-column label="状态" min-width="90" max-width="140">
         <template #default="{ row }">
           <el-tag v-if="row.is_complete" type="success" size="small" effect="plain">已完整</el-tag>
@@ -242,8 +243,10 @@ import { ElMessage } from 'element-plus'
 import { getSnapshotList, createSnapshot, completeSnapshot, resetSnapshot, importSnapshots, downloadTemplate, autoMatchSnapshots } from '@/api/customer'
 import { downloadUrl } from '@/utils/download'
 import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
+import { useTableSort } from '@/composables/useTableSort'
 
 const { tableRef, maxHeight } = useTableMaxHeight()
+const orderSort = useTableSort()
 
 const keyword = ref('')
 const isComplete = ref('all')
@@ -273,7 +276,8 @@ async function fetchList() {
   try {
     const res = await getSnapshotList({
       keyword: keyword.value, is_complete: isComplete.value,
-      page: page.value, page_size: pageSize.value
+      page: page.value, page_size: pageSize.value,
+      ...orderSort.sortParams.value
     })
     tableData.value = res.data.items
     total.value = res.data.total

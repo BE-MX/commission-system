@@ -24,8 +24,11 @@ def list_palettes(
     luminance_level: Optional[str] = None,
     is_leshine_stock: Optional[bool] = None,
     keyword: Optional[str] = None,
+    sort_field: str = "color_family",
+    sort_order: str = "asc",
 ) -> dict:
     """色号列表（支持筛选）"""
+    from sqlalchemy import desc as _desc
     q = db.query(ColorPalette)
 
     if color_family:
@@ -45,9 +48,20 @@ def list_palettes(
             | (ColorPalette.hex_code.ilike(like))
         )
 
+    SORT_MAP = {
+        "industry_code": ColorPalette.industry_code,
+        "display_name": ColorPalette.display_name,
+        "hex_code": ColorPalette.hex_code,
+        "color_family": ColorPalette.color_family,
+        "luminance_level": ColorPalette.luminance_level,
+        "created_at": ColorPalette.created_at,
+    }
+    sort_col = SORT_MAP.get(sort_field, ColorPalette.color_family)
+    order_fn = _desc if sort_order == "desc" else lambda c: c
+
     total = q.count()
     items = (
-        q.order_by(ColorPalette.color_family, ColorPalette.id)
+        q.order_by(order_fn(sort_col), ColorPalette.id)
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()

@@ -152,6 +152,8 @@ def get_order_list(
     page_size: int = 20,
     status: Optional[int] = None,
     keyword: Optional[str] = None,
+    sort_field: str = "created_at",
+    sort_order: str = "desc",
 ) -> dict:
     """按生产单维度列表"""
     clauses = ["o.deleted_flag = 0"]
@@ -171,6 +173,14 @@ def get_order_list(
     total = db.execute(text(count_sql), params).scalar() or 0
 
     # 查询
+    ALLOWED_SORT_COLUMNS = {"order_no", "batch_no", "created_at", "status"}
+    SORT_COL_MAP = {
+        "order_no": "o.order_no", "batch_no": "o.batch_no",
+        "created_at": "o.created_at", "status": "o.status",
+    }
+    sort_col = SORT_COL_MAP.get(sort_field, "o.created_at")
+    sort_dir = "DESC" if sort_order == "desc" else "ASC"
+
     params.update({"limit": page_size, "offset": (page - 1) * page_size})
     sql = f"""
         SELECT
@@ -186,7 +196,7 @@ def get_order_list(
         WHERE {where_sql}
         GROUP BY o.id, o.order_no, o.batch_no, o.remark, o.status,
                  o.created_by, o.created_at, u.real_name
-        ORDER BY o.created_at DESC
+        ORDER BY {sort_col} {sort_dir}
         LIMIT :limit OFFSET :offset
     """
     rows = db.execute(text(sql), params).mappings().all()
@@ -405,6 +415,8 @@ def get_order_item_list(
     page_size: int = 20,
     status: Optional[int] = None,
     keyword: Optional[str] = None,
+    sort_field: str = "created_at",
+    sort_order: str = "desc",
 ) -> dict:
     """按生产订单明细维度列表(标签页二用)"""
     clauses = ["o.deleted_flag = 0"]
@@ -426,6 +438,16 @@ def get_order_item_list(
     """
     total = db.execute(text(count_sql), params).scalar() or 0
 
+    ALLOWED_SORT_COLUMNS = {"order_no", "batch_no", "product_name", "model", "order_qty", "received_qty", "created_at"}
+    SORT_COL_MAP = {
+        "order_no": "o.order_no", "batch_no": "o.batch_no",
+        "product_name": "i.product_name", "model": "i.model",
+        "order_qty": "i.order_qty", "received_qty": "i.received_qty",
+        "created_at": "i.created_at",
+    }
+    sort_col = SORT_COL_MAP.get(sort_field, "i.created_at")
+    sort_dir = "DESC" if sort_order == "desc" else "ASC"
+
     params.update({"limit": page_size, "offset": (page - 1) * page_size})
     sql = f"""
         SELECT
@@ -435,7 +457,7 @@ def get_order_item_list(
         FROM ark_production_order_items i
         JOIN ark_production_orders o ON o.id = i.order_id
         WHERE {where_sql}
-        ORDER BY i.created_at DESC
+        ORDER BY {sort_col} {sort_dir}
         LIMIT :limit OFFSET :offset
     """
     rows = db.execute(text(sql), params).mappings().all()

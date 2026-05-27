@@ -58,6 +58,8 @@ def get_colors(
     luminance_level: Optional[str] = Query(None),
     is_leshine_stock: Optional[bool] = Query(None),
     keyword: Optional[str] = Query(None),
+    sort_field: str = Query("color_family"),
+    sort_order: str = Query("asc"),
     db: Session = Depends(get_db),
     _user: dict = Depends(require_permission("color:read")),
 ):
@@ -71,6 +73,8 @@ def get_colors(
         luminance_level=luminance_level,
         is_leshine_stock=is_leshine_stock,
         keyword=keyword,
+        sort_field=sort_field,
+        sort_order=sort_order,
     )
     return _ok(result)
 
@@ -143,6 +147,8 @@ def get_blends(
     blend_type: Optional[str] = Query(None),
     source: Optional[str] = Query(None),
     keyword: Optional[str] = Query(None),
+    sort_field: str = Query("created_at"),
+    sort_order: str = Query("desc"),
     db: Session = Depends(get_db),
     _user: dict = Depends(require_permission("color:read")),
 ):
@@ -150,6 +156,7 @@ def get_blends(
     result = blend_service.list_blends(
         db=db, page=page, page_size=page_size,
         blend_type=blend_type, source=source, keyword=keyword,
+        sort_field=sort_field, sort_order=sort_order,
     )
     return _ok(result)
 

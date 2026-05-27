@@ -75,6 +75,10 @@
 - [2026-05-25] 后端 `/quick-search` 和 `/recent` 返回的字段集与 `/list` 不同，遗漏了 `storage_path`。移动端 `MAssetCard` 仅依赖 `thumbnail_path` 生成缩略图 URL，缩略图生成失败时卡片空白（无 fallback）。修复：后端补充 `storage_path`，前端使用 `thumbnail_path || storage_path` fallback
 - [2026-05-26] 移动端 `loadMore()` 与 `doSearch()` 竞态条件：用户在滚动加载分页期间选标签触发 `doSearch()` 重置 `page=1`，旧 `loadMore` 请求完成后将上一筛选条件的分页结果追加到 `results`，造成筛选结果混合。修复：`loadMore()` 保存请求时的 `expectedPage`，await 后检查 `page.value !== expectedPage` 则丢弃旧结果
 - [2026-05-26] 文件夹批量上传 `execute_folder_upload` 循环内逐文件调用 `create_asset`/`upload_new_version`，每个文件触发 2 次数据库查询（查重 + 标签匹配）+ 1 次 commit，1000 文件产生 ~2000 次查询 + 1000 次 commit。修复：循环前预加载查重字典 + 标签字典 + 版本号（3 次查询），内联入库逻辑 + 每 20 文件一个事务 + `begin_nested()` savepoint 隔离
+- [2026-05-26] SQLAlchemy `Session.execute(UPDATE/DELETE/INSERT)` 后必须显式调用 `db.commit()`，否则变更只在事务内存中，不会真正写入数据库。`production_cart_service.py` 的 `add_or_update_cart`/`update_cart_item`/`delete_cart_item`/`delete_cart_items` 全部遗漏 commit，导致购物车加入成功但刷新后为空。修复：每个写操作后补 `db.commit()`
+- [2026-05-26] 前端响应拦截器将后端 `{code, message, data}` 整体作为响应体返回，但 composable 中直接访问 `res.data.items` 时 `res.data` 实际是外层响应的 `data` 字段（即真正的业务数据）。正确做法：`const payload = res.data ?? res; payload.items`。`useProductionCart.js` 最初未 unwrap 导致购物车列表解析失败
+- [2026-05-26] Vue composable 返回的 reactive 状态必须在组件中完整解构才能使用。`SafetyConfig.vue` 模板引用了 `selectedCartIds.length`，但解构时漏了 `selectedCartIds`，导致 `Cannot read properties of undefined (reading 'length')`。修复：确保 `const { cartItems, selectedCartIds, ... } = useProductionCart()` 解构完整
+- [2026-05-27] Raw SQL 端点的排序列必须带表别名前缀（如 `o.order_no` 而非 `order_no`），因为 SQL 使用了 `FROM ark_production_orders o` 别名。直接用前端 prop 名会导致 `Unknown column` 错误。修复：用 `SORT_COL_MAP` 字典映射 prop 名 → 带别名的 SQL 列名
 
 ## Decision Log
 

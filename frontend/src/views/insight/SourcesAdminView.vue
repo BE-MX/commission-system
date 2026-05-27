@@ -12,9 +12,10 @@
     </div>
 
     <el-table :data="sources" v-loading="loading" border class="source-table" style="width: 100%">
-      <el-table-column prop="id" label="ID" width="60" />
-      <el-table-column prop="name" label="名称" min-width="160" show-overflow-tooltip />
-      <el-table-column label="类型" width="140">
+      <el-table-column prop="id" label="ID" width="60" sortable />
+      <el-table-column prop="sort_order" label="排序" width="80" sortable />
+      <el-table-column prop="name" label="名称" min-width="160" show-overflow-tooltip sortable />
+      <el-table-column prop="source_type" label="类型" width="140" sortable>
         <template #default="{ row }">
           <el-tag size="small" effect="light">{{ TYPE_LABELS[row.source_type] || row.source_type }}</el-tag>
         </template>
@@ -28,7 +29,7 @@
       <el-table-column label="抓取间隔" width="100">
         <template #default="{ row }">{{ row.fetch_interval_hours }}h</template>
       </el-table-column>
-      <el-table-column label="状态" width="80">
+      <el-table-column prop="is_active" label="状态" width="80" sortable>
         <template #default="{ row }">
           <el-tag :type="row.is_active ? 'success' : 'danger'" size="small" effect="plain">{{ row.is_active ? '启用' : '禁用' }}</el-tag>
         </template>

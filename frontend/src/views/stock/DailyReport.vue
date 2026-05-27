@@ -90,7 +90,7 @@
       <div class="card" style="border-radius:0 0 16px 16px;">
         <el-table :data="reportData.shortage_skus" style="width:100%" :header-cell-style="shortageHeaderStyle">
           <el-table-column type="index" label="#" width="50" align="center" />
-          <el-table-column label="产品名" min-width="180" show-overflow-tooltip>
+          <el-table-column label="产品名" prop="product_name" min-width="180" show-overflow-tooltip sortable>
             <template #default="{ row }">
               <div class="product-name-cell">
                 <div class="product-name">{{ row.product_name }}</div>
@@ -98,20 +98,20 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="型号" prop="model" min-width="120" show-overflow-tooltip />
-          <el-table-column label="可用库存" width="100" align="center">
+          <el-table-column label="型号" prop="model" min-width="120" show-overflow-tooltip sortable />
+          <el-table-column prop="enable_count" label="可用库存" width="100" align="center" sortable>
             <template #default="{ row }"><span class="cell-danger">{{ Math.round(row.enable_count) }} 件</span></template>
           </el-table-column>
-          <el-table-column label="安全库存" width="100" align="center">
+          <el-table-column prop="safety_stock" label="安全库存" width="100" align="center" sortable>
             <template #default="{ row }"><span class="cell-normal">{{ row.safety_stock }} 件</span></template>
           </el-table-column>
-          <el-table-column label="日均销量" width="100" align="center">
+          <el-table-column prop="avg_daily_sales" label="日均销量" width="100" align="center" sortable>
             <template #default="{ row }"><span class="cell-gold">{{ row.avg_daily_sales }}/天</span></template>
           </el-table-column>
-          <el-table-column label="建议备货量" width="110" align="center">
+          <el-table-column prop="suggested_qty" label="建议备货量" width="110" align="center" sortable>
             <template #default="{ row }"><span class="cell-suggest">{{ row.suggested_qty }} 件</span></template>
           </el-table-column>
-          <el-table-column label="缺口" width="90" align="center">
+          <el-table-column label="缺口" width="90" align="center" sortable>
             <template #default="{ row }">
               <el-tag size="small" type="danger" effect="dark">-{{ row.safety_stock - row.enable_count }}</el-tag>
             </template>
@@ -132,7 +132,7 @@
       <div class="card" style="border-radius:0 0 16px 16px;">
         <el-table :data="reportData.warning_skus" style="width:100%" :header-cell-style="warningHeaderStyle">
           <el-table-column type="index" label="#" width="50" align="center" />
-          <el-table-column label="产品名" min-width="180" show-overflow-tooltip>
+          <el-table-column label="产品名" prop="product_name" min-width="180" show-overflow-tooltip sortable>
             <template #default="{ row }">
               <div class="product-name-cell">
                 <div class="product-name">{{ row.product_name }}</div>
@@ -140,20 +140,20 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="型号" prop="model" min-width="120" show-overflow-tooltip />
-          <el-table-column label="可用库存" width="100" align="center">
+          <el-table-column label="型号" prop="model" min-width="120" show-overflow-tooltip sortable />
+          <el-table-column prop="enable_count" label="可用库存" width="100" align="center" sortable>
             <template #default="{ row }"><span class="cell-warning">{{ Math.round(row.enable_count) }} 件</span></template>
           </el-table-column>
-          <el-table-column label="安全库存" width="100" align="center">
+          <el-table-column prop="safety_stock" label="安全库存" width="100" align="center" sortable>
             <template #default="{ row }"><span class="cell-normal">{{ row.safety_stock }} 件</span></template>
           </el-table-column>
-          <el-table-column label="日均销量" width="100" align="center">
+          <el-table-column prop="avg_daily_sales" label="日均销量" width="100" align="center" sortable>
             <template #default="{ row }"><span class="cell-gold">{{ row.avg_daily_sales }}/天</span></template>
           </el-table-column>
-          <el-table-column label="建议备货量" width="110" align="center">
+          <el-table-column prop="suggested_qty" label="建议备货量" width="110" align="center" sortable>
             <template #default="{ row }"><span class="cell-suggest">{{ row.suggested_qty }} 件</span></template>
           </el-table-column>
-          <el-table-column label="余量" width="90" align="center">
+          <el-table-column label="余量" width="90" align="center" sortable>
             <template #default="{ row }">
               <el-tag size="small" type="warning">{{ Math.round(row.enable_count - row.safety_stock) }}</el-tag>
             </template>

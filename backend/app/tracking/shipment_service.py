@@ -66,6 +66,8 @@ def list_shipments(
     is_active: str = "",
     page: int = 1,
     page_size: int = 20,
+    sort_field: str = "created_at",
+    sort_order: str = "desc",
 ) -> dict:
     q = db.query(ShipmentTracking)
     q = apply_data_scope(q, db, current_user)
@@ -88,9 +90,20 @@ def list_shipments(
     if is_active in ("1", "0"):
         q = q.filter(ShipmentTracking.is_active == (is_active == "1"))
 
+    SORT_MAP = {
+        "waybill_no": ShipmentTracking.waybill_no,
+        "carrier": ShipmentTracking.carrier,
+        "current_status": ShipmentTracking.current_status,
+        "created_at": ShipmentTracking.created_at,
+        "updated_at": ShipmentTracking.updated_at,
+    }
+    sort_col = SORT_MAP.get(sort_field, ShipmentTracking.created_at)
+    from sqlalchemy import desc as _desc
+    order_fn = _desc if sort_order == "desc" else lambda c: c
+
     total = q.count()
     items = (
-        q.order_by(ShipmentTracking.created_at.desc())
+        q.order_by(order_fn(sort_col))
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()

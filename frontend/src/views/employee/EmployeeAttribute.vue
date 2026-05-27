@@ -15,11 +15,11 @@
 
     <!-- 表格 -->
     <div class="table-card">
-    <el-table ref="tableRef" :data="tableData" v-loading="loading" border class="list-table" style="width: 100%" :max-height="maxHeight">
-      <el-table-column prop="user_id" label="员工ID" min-width="200" max-width="300" show-overflow-tooltip />
-      <el-table-column prop="full_name" label="姓名" min-width="140" max-width="210" show-overflow-tooltip />
+    <el-table ref="tableRef" :data="tableData" v-loading="loading" border class="list-table" style="width: 100%" :max-height="maxHeight" @sort-change="orderSort.onSortChange">
+      <el-table-column prop="user_id" label="员工ID" min-width="200" max-width="300" show-overflow-tooltip sortable="custom" />
+      <el-table-column prop="full_name" label="姓名" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
       <el-table-column prop="nickname" label="昵称" min-width="140" max-width="210" show-overflow-tooltip />
-      <el-table-column label="当前属性" min-width="120" max-width="180">
+      <el-table-column prop="current_attribute" label="当前属性" min-width="120" max-width="180" sortable="custom">
         <template #default="{ row }">
           <span v-if="row.current_attribute === 'develop'" class="badge-dev">开发</span>
           <span v-else-if="row.current_attribute === 'distribute'" class="badge-assign">分配</span>
@@ -136,8 +136,10 @@ import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getEmployeeList, setEmployeeAttribute, getAttributeHistory, importEmployeeAttributes } from '@/api/employee'
 import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
+import { useTableSort } from '@/composables/useTableSort'
 
 const { tableRef, maxHeight } = useTableMaxHeight()
+const orderSort = useTableSort()
 
 const keyword = ref('')
 const page = ref(1)
@@ -149,7 +151,7 @@ const loading = ref(false)
 async function fetchList() {
   loading.value = true
   try {
-    const res = await getEmployeeList({ keyword: keyword.value, page: page.value, page_size: pageSize.value })
+    const res = await getEmployeeList({ keyword: keyword.value, page: page.value, page_size: pageSize.value, ...orderSort.sortParams.value })
     tableData.value = res.data.items
     total.value = res.data.total
   } finally {

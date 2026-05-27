@@ -45,13 +45,13 @@
           <el-button type="primary" size="small" @click="loadOrderList"><el-icon><Filter /></el-icon> 筛选</el-button>
           <el-button size="small" @click="resetOrderFilters">重置</el-button>
         </div>
-        <el-table :data="orderList" style="width:100%" :header-cell-style="headerStyle" v-loading="orderLoading" stripe>
-          <el-table-column label="生产单号" prop="order_no" min-width="130" show-overflow-tooltip />
-          <el-table-column label="生产批次号" prop="batch_no" min-width="130" show-overflow-tooltip />
+        <el-table :data="orderList" style="width:100%" :header-cell-style="headerStyle" v-loading="orderLoading" stripe @sort-change="orderSort.onSortChange">
+          <el-table-column label="生产单号" prop="order_no" min-width="130" sortable="custom" show-overflow-tooltip />
+          <el-table-column label="生产批次号" prop="batch_no" min-width="130" sortable="custom" show-overflow-tooltip />
           <el-table-column label="创建人" min-width="100">
             <template #default="{ row }">{{ row.created_by_name || '-' }}</template>
           </el-table-column>
-          <el-table-column label="创建时间" min-width="140">
+          <el-table-column label="创建时间" prop="created_at" min-width="140" sortable="custom">
             <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
           </el-table-column>
           <el-table-column label="明细数" width="80" align="center" prop="item_count" />
@@ -62,7 +62,7 @@
               <span :class="row.total_in_transit_qty > 0 ? 'in-transit-active' : ''">{{ row.total_in_transit_qty }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="状态" width="90" align="center">
+          <el-table-column label="状态" prop="status" width="90" align="center" sortable="custom">
             <template #default="{ row }">
               <el-tag :type="statusTagType(row.status)" size="small">{{ row.status_label }}</el-tag>
             </template>
@@ -93,13 +93,13 @@
           <el-button type="primary" size="small" @click="loadItemList"><el-icon><Filter /></el-icon> 筛选</el-button>
           <el-button size="small" @click="resetItemFilters">重置</el-button>
         </div>
-        <el-table :data="itemList" style="width:100%" :header-cell-style="headerStyle" v-loading="itemLoading" stripe>
-          <el-table-column label="生产单号" prop="order_no" min-width="130" show-overflow-tooltip />
-          <el-table-column label="批次号" prop="batch_no" min-width="120" show-overflow-tooltip />
-          <el-table-column label="产品名称" prop="product_name" min-width="140" show-overflow-tooltip />
-          <el-table-column label="型号" prop="model" min-width="100" show-overflow-tooltip />
-          <el-table-column label="下单数量" width="90" align="center" prop="order_qty" />
-          <el-table-column label="已入库" width="80" align="center" prop="received_qty" />
+        <el-table :data="itemList" style="width:100%" :header-cell-style="headerStyle" v-loading="itemLoading" stripe @sort-change="itemSort.onSortChange">
+          <el-table-column label="生产单号" prop="order_no" min-width="130" sortable="custom" show-overflow-tooltip />
+          <el-table-column label="批次号" prop="batch_no" min-width="120" sortable="custom" show-overflow-tooltip />
+          <el-table-column label="产品名称" prop="product_name" min-width="140" sortable="custom" show-overflow-tooltip />
+          <el-table-column label="型号" prop="model" min-width="100" sortable="custom" show-overflow-tooltip />
+          <el-table-column label="下单数量" width="90" align="center" prop="order_qty" sortable="custom" />
+          <el-table-column label="已入库" width="80" align="center" prop="received_qty" sortable="custom" />
           <el-table-column label="在途" width="70" align="center">
             <template #default="{ row }">
               <span :class="row.in_transit_qty > 0 ? 'in-transit-active' : ''">{{ row.in_transit_qty }}</span>
@@ -265,6 +265,7 @@ import { ref, reactive, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document, CircleClose, CircleCheck, Filter } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
+import { useTableSort } from '@/composables/useTableSort'
 import {
   getProductionOrders, getProductionOrderDetail, updateProductionOrder,
   deleteProductionOrder, getProductionOrderItems, updateProductionOrderItem,
@@ -272,6 +273,9 @@ import {
 } from '@/api/stock'
 
 const authStore = useAuthStore()
+
+const orderSort = useTableSort()
+const itemSort = useTableSort()
 
 const activeTab = ref('order')
 const statusCount = reactive({ submitted: 0, terminated: 0, completed: 0 })
@@ -300,6 +304,7 @@ async function loadOrderList() {
       page_size: orderPagination.page_size,
       status: orderFilters.status,
       keyword: orderFilters.keyword || undefined,
+      ...orderSort.sortParams.value,
     }
     const res = await getProductionOrders(params)
     const d = res.data
@@ -327,6 +332,7 @@ function resetOrderFilters() {
   orderFilters.status = null
   orderFilters.keyword = ''
   orderPagination.page = 1
+  orderSort.reset()
   loadOrderList()
 }
 
@@ -344,6 +350,7 @@ async function loadItemList() {
       page_size: itemPagination.page_size,
       status: itemFilters.status,
       keyword: itemFilters.keyword || undefined,
+      ...itemSort.sortParams.value,
     }
     const res = await getProductionOrderItems(params)
     const d = res.data
@@ -366,6 +373,7 @@ function resetItemFilters() {
   itemFilters.status = null
   itemFilters.keyword = ''
   itemPagination.page = 1
+  itemSort.reset()
   loadItemList()
 }
 

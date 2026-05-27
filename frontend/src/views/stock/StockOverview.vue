@@ -81,15 +81,7 @@
         </div>
         <div class="filter-group">
           <span class="filter-label">排序</span>
-          <el-select v-model="filters.sortField" style="width:120px">
-            <el-option label="近30天销量" value="sales_30d" />
-            <el-option label="近90天销量" value="sales_90d" />
-            <el-option label="可用库存" value="enable_count" />
-          </el-select>
-          <el-select v-model="filters.sortOrder" style="width:90px;margin-left:6px">
-            <el-option label="降序" value="desc" />
-            <el-option label="升序" value="asc" />
-          </el-select>
+          <span class="sort-hint">点击表头箭头排序</span>
         </div>
         <div class="filter-group">
           <el-input v-model="filters.keyword" placeholder="搜索产品名或型号" :prefix-icon="Search" clearable style="width:200px" @input="handleSearch" />
@@ -106,9 +98,9 @@
     <!-- 数据表 -->
     <div class="card">
       <el-table :data="tableData" style="width:100%" :header-cell-style="headerStyle" v-loading="loading" stripe
-        :row-class-name="rowClassName">
+        :row-class-name="rowClassName" @sort-change="onSortChange">
         <el-table-column type="index" label="#" width="50" align="center" />
-        <el-table-column label="型号" prop="model" min-width="120" show-overflow-tooltip />
+        <el-table-column label="型号" prop="model" min-width="120" sortable="custom" show-overflow-tooltip />
         <el-table-column label="类型" min-width="100" show-overflow-tooltip>
           <template #default="{ row }">{{ parseProductName(row.product_name).type }}</template>
         </el-table-column>
@@ -121,23 +113,23 @@
         <el-table-column label="克重" min-width="90" show-overflow-tooltip>
           <template #default="{ row }">{{ parseProductName(row.product_name).weight }}</template>
         </el-table-column>
-        <el-table-column label="30天销量" width="100" align="center">
+        <el-table-column label="30天销量" prop="sales_30d" width="100" align="center" sortable="custom">
           <template #default="{ row }"><span class="value-gold">{{ row.sales_30d }}</span></template>
         </el-table-column>
-        <el-table-column label="90天销量" width="100" align="center">
+        <el-table-column label="90天销量" prop="sales_90d" width="100" align="center" sortable="custom">
           <template #default="{ row }"><span style="color:#888">{{ row.sales_90d }}</span></template>
         </el-table-column>
-        <el-table-column label="日均销量" width="100" align="center">
+        <el-table-column label="日均销量" prop="avg_daily_sales_30d" width="100" align="center" sortable="custom">
           <template #default="{ row }">
             <span class="avg-badge">{{ row.avg_daily_sales_30d?.toFixed(1) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="可用库存" width="100" align="center">
+        <el-table-column label="可用库存" prop="enable_count" width="100" align="center" sortable="custom">
           <template #default="{ row }">
             <span :class="getStockClass(row)">{{ Math.round(row.effective_enable_count ?? row.enable_count) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="生产在途" width="90" align="center">
+        <el-table-column label="生产在途" prop="production_in_transit" width="90" align="center" sortable="custom">
           <template #default="{ row }">
             <span :class="['in-transit-value', row.production_in_transit > 0 ? 'in-transit-active' : '']">
               {{ row.production_in_transit || 0 }}
@@ -157,7 +149,7 @@
             <span v-else class="text-muted">—</span>
           </template>
         </el-table-column>
-        <el-table-column label="安全库存" width="100" align="center">
+        <el-table-column label="安全库存" prop="safety_stock" width="100" align="center" sortable="custom">
           <template #default="{ row }">
             <span v-if="row.safety_stock" style="font-weight:500;color:#666">{{ row.safety_stock }}</span>
             <el-tag v-else size="small" type="info">未设置</el-tag>
@@ -228,15 +220,15 @@ import {
   Search, Filter, RefreshRight,
 } from '@element-plus/icons-vue'
 import { getStockOverview, getFilterOptions, queryStockStatus } from '@/api/stock'
+import { useTableSort } from '@/composables/useTableSort'
 
 const loading = ref(false)
 const tableData = ref([])
 const summary = reactive({ shortage_count: 0, warning_count: 0, sufficient_count: 0, unset_count: 0 })
 const pagination = reactive({ total: 0, page: 1, page_size: 20 })
+const { sortParams, onSortChange, reset: resetSort } = useTableSort('sales_30d', 'desc')
 const filters = reactive({
   status: [],
-  sortField: 'sales_30d',
-  sortOrder: 'desc',
   keyword: '',
   model: [],
   product_type: [],
@@ -300,8 +292,8 @@ async function loadData() {
       page: pagination.page,
       page_size: pagination.page_size,
       status: filters.status.join(',') || undefined,
-      sort: filters.sortField,
-      order: filters.sortOrder,
+      sort: sortParams.value.sort_field || 'sales_30d',
+      order: sortParams.value.sort_order || 'desc',
       keyword: filters.keyword || undefined,
       model: filters.model.length ? filters.model.join(',') : undefined,
       product_type: filters.product_type.length ? filters.product_type.join(',') : undefined,
@@ -351,8 +343,6 @@ function applyFilters() {
 
 function resetFilters() {
   filters.status = []
-  filters.sortField = 'sales_30d'
-  filters.sortOrder = 'desc'
   filters.keyword = ''
   filters.model = []
   filters.product_type = []
@@ -360,6 +350,7 @@ function resetFilters() {
   filters.color = []
   filters.weight = []
   pagination.page = 1
+  resetSort()
   loadData()
   ElMessage.info('已重置筛选条件')
 }
@@ -418,6 +409,7 @@ onMounted(() => {
 .filter-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .filter-group { display: flex; align-items: center; gap: 8px; }
 .filter-label { font-size: 13px; font-weight: 500; color: #666; white-space: nowrap; }
+.sort-hint { font-size: 12px; color: #aaa; white-space: nowrap; }
 
 /* 卡片和表格 */
 .card { background: #ffffff; border-radius: 16px; padding: 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); }

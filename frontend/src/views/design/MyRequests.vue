@@ -75,14 +75,15 @@
       class="list-table"
       border
       :max-height="maxHeight"
+      @sort-change="orderSort.onSortChange"
     >
-      <el-table-column prop="request_no" label="预约编号" min-width="160" max-width="240">
+      <el-table-column prop="request_no" label="预约编号" min-width="160" max-width="240" sortable="custom">
         <template #default="{ row }">
           <GlassButton variant="link" @click="toggleDetail(row)">{{ row.request_no }}</GlassButton>
         </template>
       </el-table-column>
       <el-table-column prop="salesperson_name" label="业务员" min-width="100" max-width="140" show-overflow-tooltip />
-      <el-table-column prop="customer_name" label="客户名称" min-width="140" max-width="210" show-overflow-tooltip />
+      <el-table-column prop="customer_name" label="客户名称" min-width="140" max-width="210" sortable="custom" show-overflow-tooltip />
       <el-table-column prop="customer_level" label="客户等级" min-width="100" max-width="140">
         <template #default="{ row }">
           <span>{{ customerLevelLabel(row.customer_level) }}</span>
@@ -91,7 +92,7 @@
       <el-table-column label="拍摄类型" min-width="100" max-width="150">
         <template #default="{ row }">{{ shootTypeLabel(row.shoot_type) }}</template>
       </el-table-column>
-      <el-table-column label="期望日期" min-width="230" max-width="320">
+      <el-table-column label="期望日期" min-width="230" max-width="320" prop="expect_start_date" sortable="custom">
         <template #default="{ row }">
           {{ formatDatePeriod(row.expect_start_date, row.expect_start_period) }}
           ~
@@ -105,7 +106,7 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="状态" min-width="110" max-width="170">
+      <el-table-column label="状态" min-width="110" max-width="170" prop="status" sortable="custom">
         <template #default="{ row }">
           <el-tag :type="STATUS_TAG[row.status]" effect="plain">
             {{ STATUS_MAP[row.status] || row.status }}
@@ -115,7 +116,7 @@
       <el-table-column prop="remark" label="备注" min-width="160" max-width="260" show-overflow-tooltip>
         <template #default="{ row }">{{ row.remark || '-' }}</template>
       </el-table-column>
-      <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" show-overflow-tooltip />
+      <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" sortable="custom" show-overflow-tooltip />
       <el-table-column label="操作" min-width="160" max-width="240" fixed="right">
         <template #default="{ row }">
           <GlassButton variant="link" left-icon="View" @click="toggleDetail(row)">详情</GlassButton>
@@ -218,9 +219,11 @@ import { getRequests, actionRequest, getAuditLogs, getAttachments, downloadAttac
 import { useAuthStore } from '@/stores/auth'
 import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
 import { getDictMap, buildDictLabel } from '@/utils/dict'
+import { useTableSort } from '@/composables/useTableSort'
 
 const { tableRef, maxHeight } = useTableMaxHeight()
 const authStore = useAuthStore()
+const orderSort = useTableSort()
 
 const keyword = ref('')
 const salespersonFilter = ref(null)
@@ -337,6 +340,7 @@ function canCancel(status) {
 
 function doSearch() {
   page.value = 1
+  orderSort.reset()
   fetchList()
 }
 
@@ -348,6 +352,7 @@ async function fetchList() {
       status: statusFilter.value.length ? statusFilter.value.join(',') : undefined,
       page: page.value,
       page_size: pageSize.value,
+      ...orderSort.sortParams.value,
     }
     // 权限控制：只有 design:write 且没有 audit/manage 权限的人只能看自己
     if (isSelfOnly.value) {

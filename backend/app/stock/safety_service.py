@@ -83,6 +83,11 @@ def query_safety_stock_list(
     size: Optional[str] = None,
     color: Optional[str] = None,
     weight: Optional[str] = None,
+    sort_by: str = "product_id",
+    order: str = "asc",
+    has_in_transit: Optional[bool] = None,
+    has_safety_stock: Optional[bool] = None,
+    stock_status: Optional[str] = None,
 ) -> dict:
     """安全库存设置页用,展示 SKU 基本信息 + 当前配置 + 30 天销量(轻量)"""
     business_db = settings.BUSINESS_DB_NAME
@@ -102,15 +107,62 @@ def query_safety_stock_list(
     )
     params.update(name_params)
 
-    # 先取总数
-    count_sql = f"""
-        SELECT COUNT(*) AS cnt
-        FROM `{business_db}`.okki_products p
-        WHERE p.disable_flag = 0
-          {kw_clause}
-          {name_clause}
-    """
-    total = db.execute(text(count_sql), params).scalar() or 0
+    # 排序映射
+    sort_map = {
+        "product_id": "p.product_id",
+        "sales_30d": "COALESCE(SUM(CASE WHEN o.account_date >= :d30 THEN oi.quantity END), 0)",
+        "enable_count": "COALESCE(inv.enable_count, 0)",
+        "safety_stock": "COALESCE(ss.safety_stock, 0)",
+    }
+    order_col = sort_map.get(sort_by, "p.product_id")
+    order_dir = "DESC" if order.lower() == "desc" else "ASC"
+    order_by = f"ORDER BY {order_col} {order_dir}, p.product_id ASC"
+
+    # 额外筛选条件
+    extra_clauses = ""
+
+    if has_in_transit is True:
+        extra_clauses += """
+            AND EXISTS (
+                SELECT 1 FROM ark_production_order_items i
+                JOIN ark_production_orders o ON o.id = i.order_id
+                WHERE i.product_id = p.product_id
+                  AND i.status = 0 AND o.status = 0 AND o.deleted_flag = 0
+                HAVING SUM(i.order_qty - i.received_qty) > 0
+            )"""
+
+    if has_safety_stock is True:
+        extra_clauses += """
+            AND EXISTS (
+                SELECT 1 FROM ark_safety_stock ss2
+                WHERE ss2.product_id = p.product_id AND ss2.safety_stock > 0
+            )"""
+
+    if stock_status == "urgent":
+        extra_clauses += """
+            AND EXISTS (
+                SELECT 1 FROM ark_production_order_items i
+                JOIN ark_production_orders o ON o.id = i.order_id
+                WHERE i.product_id = p.product_id
+                  AND i.status = 0 AND i.is_urgent = 1
+                  AND o.status = 0 AND o.deleted_flag = 0
+            )"""
+    elif stock_status == "stocking":
+        extra_clauses += """
+            AND EXISTS (
+                SELECT 1 FROM ark_production_order_items i
+                JOIN ark_production_orders o ON o.id = i.order_id
+                WHERE i.product_id = p.product_id
+                  AND i.status = 0
+                  AND o.status = 0 AND o.deleted_flag = 0
+            )
+            AND NOT EXISTS (
+                SELECT 1 FROM ark_production_order_items i
+                JOIN ark_production_orders o ON o.id = i.order_id
+                WHERE i.product_id = p.product_id
+                  AND i.status = 0 AND i.is_urgent = 1
+                  AND o.status = 0 AND o.deleted_flag = 0
+            )"""
 
     today = date.today()
     d30 = today - timedelta(days=30)
@@ -119,6 +171,18 @@ def query_safety_stock_list(
         "limit": page_size,
         "offset": (page - 1) * page_size,
     })
+
+    # 先取总数(排除分页参数)
+    count_params = {k: v for k, v in params.items() if k not in ("limit", "offset", "d30")}
+    count_sql = f"""
+        SELECT COUNT(*) AS cnt
+        FROM `{business_db}`.okki_products p
+        WHERE p.disable_flag = 0
+          {kw_clause}
+          {name_clause}
+          {extra_clauses}
+    """
+    total = db.execute(text(count_sql), count_params).scalar() or 0
 
     sql = f"""
         SELECT
@@ -153,11 +217,12 @@ def query_safety_stock_list(
         WHERE p.disable_flag = 0
           {kw_clause}
           {name_clause}
+          {extra_clauses}
         GROUP BY p.product_id, p.name, p.cn_name, p.model,
                  inv.enable_count,
                  ss.safety_stock, ss.lead_time_days, ss.safety_factor,
                  ss.source, ss.updated_by, ss.updated_at
-        ORDER BY p.product_id
+        {order_by}
         LIMIT :limit OFFSET :offset
     """
 

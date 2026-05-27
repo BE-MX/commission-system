@@ -55,9 +55,12 @@ def list_employees(
     keyword: str = Query("", description="搜索姓名/ID"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    sort_field: str = Query("user_id"),
+    sort_order: str = Query("asc"),
     db: Session = Depends(get_db),
 ) -> ResponseModel[PageResponse[EmployeeListItem]]:
     """查询员工列表，LEFT JOIN 当前属性"""
+    from sqlalchemy import desc as _desc
     query = db.query(
         UserBasic.user_id,
         UserBasic.full_name,
@@ -76,6 +79,15 @@ def list_employees(
             UserBasic.full_name.like(like_pattern),
             UserBasic.nickname.like(like_pattern),
         ))
+
+    SORT_MAP = {
+        "user_id": UserBasic.user_id,
+        "full_name": UserBasic.full_name,
+        "current_attribute": EmployeeAttributeHistory.attribute_type,
+    }
+    sort_col = SORT_MAP.get(sort_field, UserBasic.user_id)
+    order_fn = _desc if sort_order == "desc" else lambda c: c
+    query = query.order_by(order_fn(sort_col))
 
     total = query.count()
     rows = query.offset((page - 1) * page_size).limit(page_size).all()

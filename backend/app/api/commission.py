@@ -48,15 +48,28 @@ def list_batches(
     status: str = Query("", description="状态筛选"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    sort_field: str = Query("created_at"),
+    sort_order: str = Query("desc"),
     db: Session = Depends(get_db),
 ) -> ResponseModel[PageResponse[CommissionBatchListItem]]:
     """查询提成批次列表"""
+    from sqlalchemy import desc as _desc
     query = db.query(CommissionBatch)
 
     if status:
         query = query.filter(CommissionBatch.status == status)
 
-    query = query.order_by(CommissionBatch.id.desc())
+    SORT_MAP = {
+        "batch_name": CommissionBatch.batch_name,
+        "period_start": CommissionBatch.period_start,
+        "period_end": CommissionBatch.period_end,
+        "status": CommissionBatch.status,
+        "created_at": CommissionBatch.created_at,
+    }
+    sort_col = SORT_MAP.get(sort_field, CommissionBatch.created_at)
+    order_fn = _desc if sort_order == "desc" else lambda c: c
+
+    query = query.order_by(order_fn(sort_col))
     total = query.count()
     rows = query.offset((page - 1) * page_size).limit(page_size).all()
 
@@ -94,6 +107,8 @@ def list_commission_details(
     keyword: str = Query("", description="搜索关键字"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    sort_field: str = Query("payment_amount"),
+    sort_order: str = Query("desc"),
     db: Session = Depends(get_db),
 ) -> ResponseModel[PageResponse[CommissionDetailListItem]]:
     """查询指定批次的提成明细"""
@@ -134,6 +149,17 @@ def list_commission_details(
             | SvUser.full_name.like(like_pattern)
             | CommissionDetail.payment_id.like(like_pattern)
         )
+
+    from sqlalchemy import desc as _desc
+    SORT_MAP = {
+        "customer_name": CustomerInfo.company_name,
+        "salesperson_name": SpUser.full_name,
+        "payment_amount": CommissionDetail.payment_amount,
+        "commission_amount": CommissionDetail.salesperson_commission,
+    }
+    sort_col = SORT_MAP.get(sort_field, CommissionDetail.payment_amount)
+    order_fn = _desc if sort_order == "desc" else lambda c: c
+    query = query.order_by(order_fn(sort_col))
 
     total = query.count()
     rows = query.offset((page - 1) * page_size).limit(page_size).all()

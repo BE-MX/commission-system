@@ -103,6 +103,11 @@ def get_safety_list(
     size: Optional[str] = Query(None, max_length=500, description="逗号分隔，支持多选"),
     color: Optional[str] = Query(None, max_length=500, description="逗号分隔，支持多选"),
     weight: Optional[str] = Query(None, max_length=500, description="逗号分隔，支持多选"),
+    sort: str = Query("product_id", pattern="^(product_id|sales_30d|enable_count|safety_stock)$"),
+    order: str = Query("asc", pattern="^(asc|desc)$"),
+    has_in_transit: Optional[bool] = Query(None, description="仅显示有生产在途的产品"),
+    has_safety_stock: Optional[bool] = Query(None, description="仅显示已设置安全库存的产品"),
+    stock_status: Optional[str] = Query(None, pattern="^(stocking|urgent)$", description="备货状态筛选: stocking=备货中, urgent=加急中"),
     db: Session = Depends(get_db),
     _user: dict = Depends(require_permission("stock:read")),
 ):
@@ -117,6 +122,11 @@ def get_safety_list(
         size=size,
         color=color,
         weight=weight,
+        sort_by=sort,
+        order=order,
+        has_in_transit=has_in_transit,
+        has_safety_stock=has_safety_stock,
+        stock_status=stock_status,
     )
     return _ok({
         "total": result["total"],
@@ -459,11 +469,13 @@ def list_production_orders(
     page_size: int = Query(20, ge=1, le=100),
     status: Optional[int] = Query(None, ge=0, le=2),
     keyword: Optional[str] = Query(None, max_length=200),
+    sort_field: str = Query("created_at"),
+    sort_order: str = Query("desc"),
     db: Session = Depends(get_db),
     _user: dict = Depends(require_permission("production:read")),
 ):
     """生产订单列表(按订单维度)"""
-    result = service.get_order_list(db, page=page, page_size=page_size, status=status, keyword=keyword)
+    result = service.get_order_list(db, page=page, page_size=page_size, status=status, keyword=keyword, sort_field=sort_field, sort_order=sort_order)
     return _ok({
         "total": result["total"],
         "page": page,
@@ -537,11 +549,13 @@ def list_production_order_items(
     page_size: int = Query(20, ge=1, le=100),
     status: Optional[int] = Query(None, ge=0, le=2),
     keyword: Optional[str] = Query(None, max_length=200),
+    sort_field: str = Query("created_at"),
+    sort_order: str = Query("desc"),
     db: Session = Depends(get_db),
     _user: dict = Depends(require_permission("production:read")),
 ):
     """生产订单明细列表(按明细维度,标签页二用)"""
-    result = service.get_order_item_list(db, page=page, page_size=page_size, status=status, keyword=keyword)
+    result = service.get_order_item_list(db, page=page, page_size=page_size, status=status, keyword=keyword, sort_field=sort_field, sort_order=sort_order)
     return _ok({
         "total": result["total"],
         "page": page,

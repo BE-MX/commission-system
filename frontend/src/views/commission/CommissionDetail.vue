@@ -47,18 +47,18 @@
 
     <!-- 明细表格 -->
     <div class="table-card">
-    <el-table ref="tableRef" :data="tableData" v-loading="loading" class="list-table" border :max-height="maxHeight">
+    <el-table ref="tableRef" :data="tableData" v-loading="loading" class="list-table" border :max-height="maxHeight" @sort-change="orderSort.onSortChange">
       <el-table-column prop="payment_id" label="回款ID" min-width="160" max-width="240" show-overflow-tooltip />
       <el-table-column prop="order_id" label="订单ID" min-width="160" max-width="240" show-overflow-tooltip />
-      <el-table-column prop="customer_name" label="客户名称" min-width="140" max-width="210" show-overflow-tooltip />
-      <el-table-column label="回款金额" min-width="110" max-width="170">
+      <el-table-column prop="customer_name" label="客户名称" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
+      <el-table-column prop="payment_amount" label="回款金额" min-width="110" max-width="170" sortable="custom">
         <template #default="{ row }">{{ row.payment_amount?.toFixed(2) }}</template>
       </el-table-column>
-      <el-table-column prop="salesperson_name" label="业务员" min-width="90" max-width="140" show-overflow-tooltip />
+      <el-table-column prop="salesperson_name" label="业务员" min-width="90" max-width="140" show-overflow-tooltip sortable="custom" />
       <el-table-column label="业务员比例" min-width="90" max-width="140">
         <template #default="{ row }">{{ rateStr(row.salesperson_rate) }}</template>
       </el-table-column>
-      <el-table-column label="业务员提成" min-width="100" max-width="150">
+      <el-table-column prop="salesperson_commission" label="业务员提成" min-width="100" max-width="150" sortable="custom">
         <template #default="{ row }">{{ row.salesperson_commission?.toFixed(2) }}</template>
       </el-table-column>
       <el-table-column prop="supervisor_name" label="一级主管" min-width="90" max-width="140" show-overflow-tooltip />
@@ -97,8 +97,10 @@ import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { getBatchDetails, getBatchSummary } from '@/api/commission'
 import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
+import { useTableSort } from '@/composables/useTableSort'
 
 const { tableRef, maxHeight } = useTableMaxHeight()
+const orderSort = useTableSort()
 
 const route = useRoute()
 const batchId = route.params.batchId
@@ -134,7 +136,8 @@ async function fetchDetails() {
     const res = await getBatchDetails(batchId, {
       keyword: keyword.value,
       page: page.value,
-      page_size: pageSize.value
+      page_size: pageSize.value,
+      ...orderSort.sortParams.value
     })
     tableData.value = res.data.items
     total.value = res.data.total

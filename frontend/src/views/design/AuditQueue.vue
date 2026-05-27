@@ -27,24 +27,25 @@
       border
       class="list-table"
       :max-height="maxHeight"
+      @sort-change="orderSort.onSortChange"
     >
-      <el-table-column prop="request_no" label="预约编号" min-width="160" max-width="240" show-overflow-tooltip />
-      <el-table-column prop="customer_name" label="客户名称" min-width="130" max-width="200" show-overflow-tooltip />
+      <el-table-column prop="request_no" label="预约编号" min-width="160" max-width="240" sortable="custom" show-overflow-tooltip />
+      <el-table-column prop="customer_name" label="客户名称" min-width="130" max-width="200" sortable="custom" show-overflow-tooltip />
       <el-table-column prop="customer_level" label="客户等级" min-width="90" max-width="130">
         <template #default="{ row }">{{ customerLevelLabel(row.customer_level) }}</template>
       </el-table-column>
-      <el-table-column prop="salesperson_name" label="业务员" min-width="90" max-width="140" show-overflow-tooltip />
+      <el-table-column prop="salesperson_name" label="业务员" min-width="90" max-width="140" sortable="custom" show-overflow-tooltip />
       <el-table-column label="拍摄类型" min-width="120" max-width="180">
         <template #default="{ row }">{{ buildDictLabel(row.shoot_type, shootTypeMap) }}</template>
       </el-table-column>
-      <el-table-column label="期望日期" min-width="230" max-width="320">
+      <el-table-column label="期望日期" min-width="230" max-width="320" prop="expect_start_date" sortable="custom">
         <template #default="{ row }">
           {{ row.expect_start_date }} {{ row.expect_start_period === 'am' ? '上午' : row.expect_start_period === 'pm' ? '下午' : '' }}
           ~
           {{ row.expect_end_date }} {{ row.expect_end_period === 'am' ? '上午' : row.expect_end_period === 'pm' ? '下午' : '' }}
         </template>
       </el-table-column>
-      <el-table-column label="优先级" min-width="80" max-width="120">
+      <el-table-column label="优先级" min-width="80" max-width="120" prop="priority" sortable="custom">
         <template #default="{ row }">
           <el-tag :type="row.priority === 'urgent' ? 'danger' : 'info'" effect="plain">
             {{ row.priority === 'urgent' ? '加急' : '普通' }}
@@ -54,7 +55,7 @@
       <el-table-column prop="remark" label="备注" min-width="160" max-width="260" show-overflow-tooltip>
         <template #default="{ row }">{{ row.remark || '-' }}</template>
       </el-table-column>
-      <el-table-column prop="created_at" label="提交时间" min-width="170" max-width="260" show-overflow-tooltip />
+      <el-table-column prop="created_at" label="提交时间" min-width="170" max-width="260" sortable="custom" show-overflow-tooltip />
       <el-table-column label="附件" min-width="70" max-width="100">
         <template #default="{ row }">
           <GlassButton
@@ -157,8 +158,10 @@ import { getRequests, auditRequest, getAttachments, downloadAttachment } from '@
 import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
 import { getDictMap, buildDictLabel } from '@/utils/dict'
 import RequestDetailDrawer from '@/components/design/RequestDetailDrawer.vue'
+import { useTableSort } from '@/composables/useTableSort'
 
 const { tableRef, maxHeight } = useTableMaxHeight()
+const orderSort = useTableSort()
 
 const shootTypeMap = ref({})
 const customerLevelMap = ref({})
@@ -220,6 +223,7 @@ async function fetchList() {
       page_size: pageSize.value,
       operator_id: 1,
       operator_role: 'supervisor',
+      ...orderSort.sortParams.value,
     })
     const data = res.data
     tableData.value = data?.items || data || []

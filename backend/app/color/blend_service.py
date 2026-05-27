@@ -21,8 +21,11 @@ def list_blends(
     blend_type: Optional[str] = None,
     source: Optional[str] = None,
     keyword: Optional[str] = None,
+    sort_field: str = "created_at",
+    sort_order: str = "desc",
 ) -> dict:
     """混合色列表"""
+    from sqlalchemy import desc as _desc
     q = db.query(ColorBlend)
 
     if blend_type:
@@ -37,9 +40,18 @@ def list_blends(
             | (ColorBlend.brand_name.ilike(like))
         )
 
+    SORT_MAP = {
+        "blend_code": ColorBlend.blend_code,
+        "display_name": ColorBlend.display_name,
+        "blend_type": ColorBlend.blend_type,
+        "created_at": ColorBlend.created_at,
+    }
+    sort_col = SORT_MAP.get(sort_field, ColorBlend.created_at)
+    order_fn = _desc if sort_order == "desc" else lambda c: c
+
     total = q.count()
     items = (
-        q.order_by(ColorBlend.id.desc())
+        q.order_by(order_fn(sort_col))
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()

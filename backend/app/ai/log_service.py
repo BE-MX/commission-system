@@ -16,7 +16,10 @@ def list_logs(
     date_to: Optional[str] = None,
     page: int = 1,
     page_size: int = 50,
+    sort_field: str = "created_at",
+    sort_order: str = "desc",
 ) -> dict:
+    from sqlalchemy import desc as _desc
     query = db.query(AiCallLog)
     if caller_module:
         query = query.filter(AiCallLog.caller_module == caller_module)
@@ -29,9 +32,18 @@ def list_logs(
     if date_to:
         query = query.filter(AiCallLog.created_at <= date_to)
 
+    SORT_MAP = {
+        "created_at": AiCallLog.created_at,
+        "model": AiCallLog.model,
+        "tokens_used": AiCallLog.tokens_used,
+        "duration_ms": AiCallLog.duration_ms,
+    }
+    sort_col = SORT_MAP.get(sort_field, AiCallLog.created_at)
+    order_fn = _desc if sort_order == "desc" else lambda c: c
+
     total = query.count()
     items = (
-        query.order_by(AiCallLog.id.desc())
+        query.order_by(order_fn(sort_col))
         .offset((page - 1) * page_size)
         .limit(page_size)
         .all()

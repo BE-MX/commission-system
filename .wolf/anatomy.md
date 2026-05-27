@@ -1,11 +1,12 @@
 # anatomy.md
 
-> Auto-maintained by OpenWolf. Last scanned: 2026-05-26T12:18:22.482Z
-> Files: 34 tracked | Anatomy hits: 0 | Misses: 0
+> Auto-maintained by OpenWolf. Last scanned: 2026-05-27T10:50:34.023Z
+> Files: 81 tracked | Anatomy hits: 0 | Misses: 0
 
 ## ./
 
-- `CLAUDE.md` — OpenWolf (~9327 tok)
+- `CLAUDE.md` — OpenWolf (~9917 tok)
+- `README.md` — Project documentation (~765 tok)
 
 ## .claude/
 
@@ -22,13 +23,16 @@
 ## C:/Users/windb/.claude/plans/
 
 - `bubbly-herding-moler.md` — 素材标签筛选性能优化方案 (~869 tok)
+- `nifty-booping-aho.md` — 列表表头排序统一改造方案 (~2099 tok)
 
 ## C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/
 
 - `feedback_asset_download_auth.md` (~295 tok)
-- `MEMORY.md` (~329 tok)
+- `MEMORY.md` (~379 tok)
 - `project_asset_module.md` (~809 tok)
 - `project_mobile_login_flow.md` (~318 tok)
+- `project_production_module.md` — 数据库（4 张表，025 + 026 迁移） (~609 tok)
+- `project_table_sorting.md` — 列表表头排序统一改造 (~280 tok)
 
 ## backend/
 
@@ -258,6 +262,19 @@
 ## backend/app/
 
 
+## backend/app/ai/
+
+- `log_service.py` — AI 调用日志查询 (~797 tok)
+- `router.py` — AI 接入模块 — API 路由 (~2272 tok)
+
+## backend/app/api/
+
+- `commission.py` — 提成计算路由 (~3372 tok)
+- `customer.py` — 客户归属快照管理路由 (~3395 tok)
+- `employee.py` — 员工属性管理路由 (~2309 tok)
+- `payment.py` — 回款同步路由 (~1085 tok)
+- `supervisor.py` — 主管关系管理路由 (~2198 tok)
+
 ## backend/app/asset/
 
 - `asset_service.py` — 素材管理 — 素材上传/查询/更新/下载 (~4006 tok)
@@ -267,6 +284,7 @@
 
 ## backend/app/auth/
 
+- `admin_router.py` — 用户/角色/权限管理 & 个人资料路由 (~5083 tok)
 - `service.py` — Auth 业务逻辑 (~3218 tok)
 
 ## backend/app/bootstrap/
@@ -274,6 +292,13 @@
 
 ## backend/app/color/
 
+- `blend_service.py` — 混合色 CRUD 服务 (~1968 tok)
+- `palette_service.py` — 色号 CRUD 服务 (~1434 tok)
+- `router.py` — 发色数字化 — API 路由 (~4126 tok)
+
+## backend/app/design/
+
+- `router.py` — 设计预约 — API 路由 (~10093 tok)
 
 ## backend/app/insight/
 
@@ -289,12 +314,17 @@
 - `in_transit_service.py` — 备货管理 — 生产在途数量统计 (~397 tok)
 - `models.py` — 备货管理 — SQLAlchemy ORM 模型 (~1934 tok)
 - `production_cart_service.py` — 备货管理 — 生产单购物车 CRUD (~1513 tok)
-- `production_order_service.py` — 备货管理 — 生产订单 CRUD + 状态管理 + 入库数量 + 审计日志 (~6221 tok)
-- `router.py` — 备货管理 — API 路由 (~5809 tok)
-- `safety_service.py` — 备货管理 — 安全库存 CRUD + AI 备货建议(TFT 微服务 / 公式兜底) (~4036 tok)
+- `production_order_service.py` — 备货管理 — 生产订单 CRUD + 状态管理 + 入库数量 + 审计日志 (~6500 tok)
+- `router.py` — 备货管理 — API 路由 (~6052 tok)
+- `safety_service.py` — 备货管理 — 安全库存 CRUD + AI 备货建议(TFT 微服务 / 公式兜底) (~4773 tok)
 - `schemas.py` — 备货管理 — Pydantic 请求/响应模型 (~1454 tok)
 - `service.py` — 备货管理 — service facade (~567 tok)
 - `sku_query.py` — 备货管理 — SKU 销量 / 库存状态查询 (~1779 tok)
+
+## backend/app/tracking/
+
+- `router.py` — 物流跟踪 API 路由 (薄壳: 参数 / 权限 / 调用 service / 异常映射) (~3143 tok)
+- `shipment_service.py` — 运单查询服务 — 列表 / 详情 / 统计 / 提交人 (~1644 tok)
 
 ## backend/scripts/
 
@@ -318,6 +348,10 @@
 
 - `stock.js` — ── 销量备货一览 ──────────────────────────────────────── (~1280 tok)
 
+## frontend/src/composables/
+
+- `useTableSort.js` — 列表排序 composable (~260 tok)
+
 ## frontend/src/config/
 
 - `navigation.js` — 导航配置 — 单一来源。 (~4562 tok)
@@ -331,6 +365,9 @@
 
 ## frontend/src/views/asset/
 
+- `AssetLibrary.vue` — Vue: setup (~6826 tok)
+- `AssetStats.vue` — Vue: setup (~1742 tok)
+- `AssetUpload.vue` — Vue component (~8919 tok)
 
 ## frontend/src/views/auth/
 
@@ -338,22 +375,77 @@
 
 ## frontend/src/views/color/
 
+- `BlendView.vue` — Vue: setup (~4263 tok)
+- `PaletteView.vue` — Vue: setup (~3196 tok)
+- `SwatchGenerator.vue` — Vue: setup (~2293 tok)
 
 ## frontend/src/views/color/components/
 
 
+## frontend/src/views/commission/
+
+- `CommissionBatch.vue` — Vue: setup (~3306 tok)
+- `CommissionDetail.vue` — Vue: setup (~1954 tok)
+
+## frontend/src/views/customer/
+
+- `CustomerSnapshot.vue` — Vue component (~4752 tok)
+
+## frontend/src/views/design/
+
+- `AuditQueue.vue` — Vue: 管理员, setup (~3344 tok)
+- `DesignManage.vue` — Vue component (~8190 tok)
+- `DesignStats.vue` — Vue: setup (~1434 tok)
+- `MyRequests.vue` — Vue: setup (~4191 tok)
+
+## frontend/src/views/design/composables/
+
+- `useDesignManage.js` — 设计管理页 — 业务逻辑 composable (~6191 tok)
+
+## frontend/src/views/employee/
+
+- `EmployeeAttribute.vue` — Vue: setup (~2420 tok)
+
 ## frontend/src/views/insight/
 
+- `IntelligenceLibrary.vue` — Vue: setup (~2986 tok)
+- `IntelligenceOverview.vue` — Vue: setup (~2818 tok)
+- `SourcesAdminView.vue` — Vue: setup (~3433 tok)
+
+## frontend/src/views/payment/
+
+- `PaymentSync.vue` — Vue: setup (~1966 tok)
 
 ## frontend/src/views/stock/
 
-- `ProductionOrderManage.vue` — Vue component (~6509 tok)
-- `SafetyConfig.vue` — Vue component (~9771 tok)
-- `StockOverview.vue` — Vue: setup (~5382 tok)
+- `DailyReport.vue` — Vue: setup (~3683 tok)
+- `ProductionOrderManage.vue` — Vue component (~6649 tok)
+- `SafetyConfig.vue` — Vue component (~10188 tok)
+- `StockOverview.vue` — Vue: setup (~5386 tok)
 
 ## frontend/src/views/stock/composables/
 
 - `useProductionCart.js` — Exports useProductionCart (~976 tok)
+
+## frontend/src/views/supervisor/
+
+- `SupervisorRelation.vue` — Vue: setup (~2343 tok)
+
+## frontend/src/views/system/
+
+- `AIManager.vue` — Vue component (~6293 tok)
+- `DictManagement.vue` — Vue: setup (~1812 tok)
+- `RoleManagement.vue` — Vue: setup (~1894 tok)
+- `UserManagement.vue` — Vue: setup (~3144 tok)
+
+## frontend/src/views/system/composables/
+
+- `useAiManager.js` — AI 管理页 — 业务逻辑 composable (~4353 tok)
+
+## frontend/src/views/tracking/
+
+- `ShippingDailyReport.vue` — Vue: setup (~4865 tok)
+- `TrackingList.vue` — Vue: setup (~4603 tok)
 
 ## 登录动效/app/
 

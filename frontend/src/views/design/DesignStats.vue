@@ -57,19 +57,19 @@
       class="list-table"
       border
     >
-      <el-table-column prop="designer_name" label="设计师" min-width="120" max-width="180" show-overflow-tooltip />
-      <el-table-column prop="total" label="总任务数" min-width="100" max-width="150" />
-      <el-table-column prop="completed" label="已完成" min-width="100" max-width="150">
+      <el-table-column prop="designer_name" label="设计师" min-width="120" max-width="180" show-overflow-tooltip sortable />
+      <el-table-column prop="total" label="总任务数" min-width="100" max-width="150" sortable />
+      <el-table-column prop="completed" label="已完成" min-width="100" max-width="150" sortable>
         <template #default="{ row }">
           <el-tag type="success" size="small" effect="plain">{{ row.completed }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="in_progress" label="进行中" min-width="100" max-width="150">
+      <el-table-column prop="in_progress" label="进行中" min-width="100" max-width="150" sortable>
         <template #default="{ row }">
           <el-tag type="warning" size="small" effect="plain">{{ row.in_progress }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="avg_duration_days" label="平均任务时长(天)" min-width="160" max-width="240" show-overflow-tooltip>
+      <el-table-column prop="avg_duration_days" label="平均任务时长(天)" min-width="160" max-width="240" show-overflow-tooltip sortable>
         <template #default="{ row }">
           {{ row.avg_duration_days || '-' }}
         </template>

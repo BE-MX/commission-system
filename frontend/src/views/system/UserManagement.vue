@@ -16,11 +16,11 @@
 
     <!-- 表格 -->
     <div class="table-card">
-    <el-table ref="tableRef" :data="tableData" v-loading="loading" border class="list-table" style="width: 100%" :max-height="maxHeight">
-      <el-table-column prop="username" label="用户名" min-width="140" max-width="210" show-overflow-tooltip />
-      <el-table-column prop="real_name" label="姓名" min-width="120" max-width="180" show-overflow-tooltip />
-      <el-table-column prop="email" label="邮箱" min-width="180" max-width="270" show-overflow-tooltip />
-      <el-table-column prop="phone" label="手机号" min-width="140" max-width="210" show-overflow-tooltip />
+    <el-table ref="tableRef" :data="tableData" v-loading="loading" border class="list-table" style="width: 100%" :max-height="maxHeight" @sort-change="orderSort.onSortChange">
+      <el-table-column prop="username" label="用户名" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
+      <el-table-column prop="real_name" label="姓名" min-width="120" max-width="180" show-overflow-tooltip sortable="custom" />
+      <el-table-column prop="email" label="邮箱" min-width="180" max-width="270" show-overflow-tooltip sortable="custom" />
+      <el-table-column prop="phone" label="手机号" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
       <el-table-column label="钉钉绑定" min-width="120" max-width="180">
         <template #default="{ row }">
           <el-tag v-if="row.dingtalk_id" type="success" size="small" effect="plain">已绑定</el-tag>
@@ -38,7 +38,7 @@
           <el-tag :type="row.is_active ? 'success' : 'danger'" size="small" effect="plain">{{ row.is_active ? '正常' : '禁用' }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="last_login_at" label="最后登录" min-width="170" max-width="260" show-overflow-tooltip />
+      <el-table-column prop="last_login_at" label="最后登录" min-width="170" max-width="260" show-overflow-tooltip sortable="custom" />
       <el-table-column label="操作" min-width="340" max-width="480" fixed="right">
         <template #default="{ row }">
           <GlassButton variant="link" left-icon="Edit" @click="openEditDialog(row)">编辑</GlassButton>
@@ -124,8 +124,10 @@ import {
   syncUserDingtalk, syncAllUsersDingtalk,
 } from '@/api/userManagement'
 import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
+import { useTableSort } from '@/composables/useTableSort'
 
 const { tableRef, maxHeight } = useTableMaxHeight()
+const orderSort = useTableSort()
 
 const keyword = ref('')
 const page = ref(1)
@@ -139,7 +141,7 @@ const saving = ref(false)
 async function fetchList() {
   loading.value = true
   try {
-    const res = await getUserList({ keyword: keyword.value, page: page.value, page_size: pageSize.value })
+    const res = await getUserList({ keyword: keyword.value, page: page.value, page_size: pageSize.value, ...orderSort.sortParams.value })
     tableData.value = res.data.items
     total.value = res.data.total
   } finally {

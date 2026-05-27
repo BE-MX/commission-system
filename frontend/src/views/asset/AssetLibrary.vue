@@ -73,15 +73,6 @@
           >
             <template #prefix><el-icon><Search /></el-icon></template>
           </el-input>
-          <el-select v-model="sortBy" style="width: 140px" @change="loadData">
-            <el-option label="上传时间" value="created_at" />
-            <el-option label="文件名" value="file_name" />
-            <el-option label="下载量" value="download_count" />
-          </el-select>
-          <el-select v-model="sortOrder" style="width: 100px" @change="loadData">
-            <el-option label="降序" value="desc" />
-            <el-option label="升序" value="asc" />
-          </el-select>
         </div>
         <div class="toolbar-right">
           <el-radio-group v-model="viewMode" size="small">
@@ -154,7 +145,7 @@
       </div>
 
       <!-- 列表视图 -->
-      <el-table v-else :data="assets" style="width: 100%" @row-click="openPreview">
+      <el-table v-else :data="assets" style="width: 100%" @row-click="openPreview" @sort-change="orderSort.onSortChange">
         <el-table-column label="缩略图" width="80">
           <template #default="{ row }">
             <img v-if="row.file_type === 'image' || (row.file_type === 'video' && row.thumbnail_path)" :src="getThumbUrl(row.thumbnail_path || row.storage_path)" class="table-thumb" />
@@ -162,7 +153,7 @@
             <el-icon v-else size="24"><Picture /></el-icon>
           </template>
         </el-table-column>
-        <el-table-column label="文件名" prop="file_name" min-width="200" show-overflow-tooltip />
+        <el-table-column label="文件名" prop="file_name" min-width="200" show-overflow-tooltip sortable="custom" />
         <el-table-column label="类型" width="80">
           <template #default="{ row }">
             <el-tag size="small" :type="fileTypeTag(row.file_type)">{{ fileTypeLabel(row.file_type) }}</el-tag>
@@ -181,7 +172,7 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="上传时间" width="160">
+        <el-table-column label="上传时间" prop="created_at" width="160" sortable="custom">
           <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
         </el-table-column>
         <el-table-column label="操作" width="140" fixed="right">
@@ -286,6 +277,9 @@ import {
   getAssetList, getTagDimensions, downloadAsset, getFavoriteFolders,
   addFavoriteItem, analyzeAsset, batchDownload,
 } from '@/api/asset'
+import { useTableSort } from '@/composables/useTableSort'
+
+const orderSort = useTableSort()
 
 const loading = ref(false)
 const assets = ref([])
@@ -293,8 +287,6 @@ const total = ref(0)
 const page = ref(1)
 const pageSize = ref(24)
 const keyword = ref('')
-const sortBy = ref('created_at')
-const sortOrder = ref('desc')
 const viewMode = ref('grid')
 const sidebarCollapsed = ref(false)
 
@@ -460,8 +452,8 @@ async function loadData() {
 
     const res = await getAssetList({
       keyword: keyword.value || undefined,
-      sort_by: sortBy.value,
-      sort_order: sortOrder.value,
+      sort_by: orderSort.sortField.value || undefined,
+      sort_order: orderSort.sortOrder.value || undefined,
       page: page.value,
       page_size: pageSize.value,
       tag_filters: Object.keys(tagFilters).length ? JSON.stringify(tagFilters) : undefined,

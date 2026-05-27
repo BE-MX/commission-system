@@ -103,18 +103,19 @@
       :data="tableData"
       v-loading="loading"
       :max-height="tableMaxHeight"
+      @sort-change="orderSort.onSortChange"
       class="list-table"
       border
     >
-      <el-table-column prop="waybill_no" label="运单号" min-width="140" max-width="200" show-overflow-tooltip>
+      <el-table-column prop="waybill_no" label="运单号" min-width="140" max-width="200" show-overflow-tooltip sortable="custom">
         <template #default="{ row }">
           <GlassButton variant="link" class="primary-link" @click="goDetail(row)">{{ row.waybill_no }}</GlassButton>
         </template>
       </el-table-column>
-      <el-table-column prop="carrier_name" label="物流商" min-width="100" max-width="140" show-overflow-tooltip />
+      <el-table-column prop="carrier_name" label="物流商" min-width="100" max-width="140" show-overflow-tooltip sortable="custom" />
       <el-table-column prop="receiver_name" label="收件人" min-width="110" max-width="170" show-overflow-tooltip />
       <el-table-column prop="receiver_country" label="国家" min-width="90" max-width="130" show-overflow-tooltip />
-      <el-table-column label="状态" min-width="110" max-width="150">
+      <el-table-column prop="current_status" label="状态" min-width="110" max-width="150" sortable="custom">
         <template #default="{ row }">
           <el-tag :type="statusTagType(row.current_status)" size="small" effect="plain">
             {{ statusText(row.current_status) }}
@@ -176,9 +177,11 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getShipmentList, getTrackingStats, refreshShipment, triggerScanStaging, triggerPoll } from '@/api/tracking'
 import { useAuthStore } from '@/stores/auth'
+import { useTableSort } from '@/composables/useTableSort'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const orderSort = useTableSort()
 
 const tableCardRef = ref()
 const tableRef = ref()
@@ -323,6 +326,7 @@ async function fetchList() {
       is_active: activeFilter.value,
       page: page.value,
       page_size: pageSize.value,
+      ...orderSort.sortParams.value,
     })
     tableData.value = res.data.items
     total.value = res.data.total

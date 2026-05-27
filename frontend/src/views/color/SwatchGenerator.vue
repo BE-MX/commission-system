@@ -89,7 +89,7 @@
     <!-- 历史记录 -->
     <div class="history-section">
       <h3>历史生成记录</h3>
-      <el-table :data="historyList" size="small">
+      <el-table :data="historyList" size="small" @sort-change="orderSort.onSortChange">
         <el-table-column prop="id" label="ID" width="60" />
         <el-table-column label="色号" width="100">
           <template #default="{ row }">
@@ -112,7 +112,7 @@
             <el-tag :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" />
+        <el-table-column prop="created_at" label="创建时间" sortable="custom" />
       </el-table>
       <el-pagination
         v-if="historyTotal > 0"
@@ -129,6 +129,7 @@
 import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Picture } from '@element-plus/icons-vue'
+import { useTableSort } from '@/composables/useTableSort'
 import { generateSwatch, getColors, getSwatches, getSwatchStatus } from '@/api/color'
 
 const colorOptions = ref([])
@@ -137,6 +138,7 @@ const manualHex = ref('')
 const style = ref('swatch_card')
 const background = ref('white')
 const generating = ref(false)
+const orderSort = useTableSort()
 const currentTask = ref(null)
 
 const historyList = ref([])
@@ -163,7 +165,7 @@ async function loadColorOptions() {
 
 async function loadHistory() {
   try {
-    const res = await getSwatches({ page: historyPage.value, page_size: historyPageSize.value })
+    const res = await getSwatches({ page: historyPage.value, page_size: historyPageSize.value, ...orderSort.sortParams.value })
     if (res.data?.code === 200) {
       historyList.value = res.data.data.items || []
       historyTotal.value = res.data.data.total || 0

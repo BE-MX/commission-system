@@ -39,6 +39,8 @@ def list_users(
     keyword: str = Query("", description="搜索用户名/姓名"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    sort_field: str = Query("created_at"),
+    sort_order: str = Query("desc"),
     db: Session = Depends(get_db),
     _current_user: dict = Depends(require_permission("user:read")),
 ) -> ResponseModel:
@@ -50,10 +52,22 @@ def list_users(
             ArkUser.real_name.like(like),
         ))
 
+    from sqlalchemy import desc as _desc
+    SORT_MAP = {
+        "username": ArkUser.username,
+        "real_name": ArkUser.real_name,
+        "email": ArkUser.email,
+        "phone": ArkUser.phone,
+        "last_login_at": ArkUser.last_login_at,
+        "created_at": ArkUser.created_at,
+    }
+    sort_col = SORT_MAP.get(sort_field, ArkUser.created_at)
+    order_fn = _desc if sort_order == "desc" else lambda c: c
+
     total = db.query(func.count(ArkUser.id)).filter(*base_filter).scalar()
     rows = db.query(ArkUser).options(
         joinedload(ArkUser.roles),
-    ).filter(*base_filter).order_by(ArkUser.id.desc()).offset(
+    ).filter(*base_filter).order_by(order_fn(sort_col)).offset(
         (page - 1) * page_size
     ).limit(page_size).all()
 

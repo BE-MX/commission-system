@@ -190,19 +190,19 @@
               运单明细
             </h4>
             <el-table :data="reportShipments" size="small" class="shipment-table" border>
-              <el-table-column prop="waybill_no" label="运单号" min-width="130" show-overflow-tooltip>
+              <el-table-column prop="waybill_no" label="运单号" min-width="130" show-overflow-tooltip sortable>
                 <template #default="{ row }">
                   <strong>{{ row.waybill_no }}</strong>
                 </template>
               </el-table-column>
-              <el-table-column prop="carrier_name" label="物流商" min-width="90" show-overflow-tooltip />
-              <el-table-column prop="receiver_country" label="目的国" min-width="80" show-overflow-tooltip />
-              <el-table-column prop="status_label" label="状态" min-width="90">
+              <el-table-column prop="carrier_name" label="物流商" min-width="90" show-overflow-tooltip sortable />
+              <el-table-column prop="receiver_country" label="目的国" min-width="80" show-overflow-tooltip sortable />
+              <el-table-column prop="unified_status" label="状态" min-width="90" sortable>
                 <template #default="{ row }">
                   <span :class="`status-badge status-${row.unified_status}`">{{ row.status_label }}</span>
                 </template>
               </el-table-column>
-              <el-table-column prop="estimated_delivery_date" label="预计送达" min-width="100" />
+              <el-table-column prop="estimated_delivery_date" label="预计送达" min-width="100" sortable />
             </el-table>
           </div>
 

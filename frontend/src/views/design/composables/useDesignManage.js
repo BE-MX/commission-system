@@ -22,6 +22,7 @@ import {
   triggerShootReminderScan,
 } from '@/api/design'
 import { getDictMap } from '@/utils/dict'
+import { useTableSort } from '@/composables/useTableSort'
 
 
 const PERIOD_LABELS = { am: '上午', pm: '下午' }
@@ -42,6 +43,11 @@ function periodLabel(p) { return PERIOD_LABELS[p] || '' }
 
 
 export function useDesignManage() {
+  // ── 排序 ──────────────────────────────────────────────
+  const pendingSort = useTableSort()
+  const scheduledSort = useTableSort()
+  const completedSort = useTableSort()
+
   // ── 字典 ──────────────────────────────────────────────
   const shootTypeMap = ref({})
   const customerLevelMap = ref({})
@@ -274,6 +280,7 @@ export function useDesignManage() {
         page_size: pendingPageSize.value,
         operator_id: 1,
         operator_role: 'design_staff',
+        ...pendingSort.sortParams.value,
       }
       if (pendingFilters.salesperson_name) params.salesperson_name = pendingFilters.salesperson_name
       if (pendingFilters.shoot_type) params.shoot_type = pendingFilters.shoot_type
@@ -322,6 +329,7 @@ export function useDesignManage() {
         page_size: scheduledPageSize.value,
         operator_id: 1,
         operator_role: 'design_staff',
+        ...scheduledSort.sortParams.value,
       }
       if (scheduledFilters.salesperson_name) params.salesperson_name = scheduledFilters.salesperson_name
       if (scheduledFilters.shoot_type) params.shoot_type = scheduledFilters.shoot_type
@@ -357,6 +365,7 @@ export function useDesignManage() {
         page_size: completedPageSize.value,
         operator_id: 1,
         operator_role: 'design_staff',
+        ...completedSort.sortParams.value,
       }
       if (completedFilters.salesperson_name) params.salesperson_name = completedFilters.salesperson_name
       if (completedFilters.shoot_type) params.shoot_type = completedFilters.shoot_type
@@ -628,15 +637,15 @@ export function useDesignManage() {
     // Pending tab
     pendingTableRef, pendingData, pendingLoading,
     pendingPage, pendingPageSize, pendingTotal, pendingFilters,
-    fetchPending, handleScanShootReminders,
+    fetchPending, handleScanShootReminders, pendingSort,
     // Scheduled tab
     scheduledTableRef, scheduledData, scheduledLoading,
     scheduledPage, scheduledPageSize, scheduledTotal, scheduledFilters,
-    fetchScheduled,
+    fetchScheduled, scheduledSort,
     // Completed tab
     completedTableRef, completedData, completedLoading,
     completedPage, completedPageSize, completedTotal, completedFilters,
-    fetchCompleted,
+    fetchCompleted, completedSort,
     // Designers tab
     designerData, designerLoading, fetchDesigners,
     designerDialogVisible, designerSaving, designerForm,

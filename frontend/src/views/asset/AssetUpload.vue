@@ -278,7 +278,7 @@
           <div v-if="folderValidationResult?.missing?.length" class="fail-section">
             <div class="fail-section-title">缺失标签（未找到匹配）</div>
             <el-table :data="folderValidationResult.missing.map(t => ({ tag_name: t }))" size="small">
-              <el-table-column label="文件夹名" prop="tag_name" />
+              <el-table-column label="文件夹名" prop="tag_name" sortable />
               <el-table-column label="操作" width="120">
                 <template #default="{ row }">
                   <el-button type="primary" link size="small" @click="goToTagManage">去创建</el-button>
@@ -345,7 +345,7 @@
           size="small"
           max-height="400"
         >
-          <el-table-column label="文件名" prop="file_name" show-overflow-tooltip />
+          <el-table-column label="文件名" prop="file_name" show-overflow-tooltip sortable />
           <el-table-column label="标签" min-width="200">
             <template #default="{ row }">
               <el-tag
@@ -402,8 +402,8 @@
           size="small"
           class="report-fail-table"
         >
-          <el-table-column label="文件" prop="file_name" />
-          <el-table-column label="原因" prop="reason" />
+          <el-table-column label="文件" prop="file_name" sortable />
+          <el-table-column label="原因" prop="reason" sortable />
         </el-table>
         <div class="dialog-footer">
           <el-button @click="folderUploadVisible = false">关闭</el-button>

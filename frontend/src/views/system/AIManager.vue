@@ -184,7 +184,7 @@
           </div>
         </div>
 
-        <el-table :data="logsData" border class="list-table" v-loading="logsLoading" @expand-change="onLogExpand">
+        <el-table :data="logsData" border class="list-table" v-loading="logsLoading" @expand-change="onLogExpand" @sort-change="logSort.onSortChange">
           <el-table-column type="expand">
             <template #default="{ row }">
               <div class="log-detail">
@@ -217,7 +217,7 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="model" label="模型" min-width="120">
+          <el-table-column prop="model" label="模型" min-width="120" sortable="custom">
             <template #default="{ row }"><span class="mono-text">{{ row.model || '-' }}</span></template>
           </el-table-column>
           <el-table-column prop="tokens_used" label="Token" width="80" align="right">
@@ -237,7 +237,7 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="created_at" label="时间" width="150" />
+          <el-table-column prop="created_at" label="时间" width="150" sortable="custom" />
         </el-table>
 
         <el-pagination v-model:current-page="logPage" v-model:page-size="logPageSize" :page-sizes="[20, 50, 100]" :total="logTotal" layout="total, sizes, prev, pager, next" class="pagination" @change="fetchLogs" />
@@ -376,7 +376,7 @@ const {
   // Logs
   logsData, logsLoading, logModuleFilter, logStatusFilter, logDateRange,
   logPage, logPageSize, logTotal,
-  onLogExpand,
+  onLogExpand, logSort,
   logSummary,
   // shared
   stats,

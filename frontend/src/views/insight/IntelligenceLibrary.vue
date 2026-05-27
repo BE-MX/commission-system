@@ -60,16 +60,16 @@
 
     <!-- 列表 -->
     <el-card class="list-card" shadow="never" v-loading="loading">
-      <el-table :data="items" @selection-change="handleSelectionChange">
+      <el-table :data="items" @selection-change="handleSelectionChange" @sort-change="libSort.onSortChange">
         <el-table-column type="selection" width="40" />
-        <el-table-column label="可信度" width="90">
+        <el-table-column label="可信度" width="90" prop="credibility_label" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="credibilityType(row.credibility_label)" size="small">
               {{ credibilityLabel(row.credibility_label) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="标题" min-width="300">
+        <el-table-column label="标题" min-width="300" prop="title" sortable="custom">
           <template #default="{ row }">
             <div class="item-title">
               <el-icon v-if="row.is_featured" class="featured-star"><Star-Filled /></el-icon>
@@ -87,7 +87,7 @@
             <el-tag size="small">{{ row.item_type || '-' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="80">
+        <el-table-column label="状态" width="80" prop="status" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="statusType(row.status)" size="small">{{ row.status }}</el-tag>
           </template>
@@ -155,8 +155,10 @@ import { ElMessage } from 'element-plus'
 import { Plus, Upload, StarFilled } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { listItems, toggleItemFeature, batchFeature as apiBatchFeature, batchStatus, uploadMd } from '@/api/insight'
+import { useTableSort } from '@/composables/useTableSort'
 
 const authStore = useAuthStore()
+const libSort = useTableSort()
 
 // 状态
 const loading = ref(false)
@@ -190,6 +192,7 @@ async function loadItems() {
       page: page.value,
       page_size: pageSize.value,
       ...filterForm,
+      ...libSort.sortParams.value,
     }
     if (dateRange.value?.length === 2) {
       params.start_date = dateRange.value[0]
@@ -222,6 +225,7 @@ function resetFilter() {
   filterForm.credibility_labels = []
   filterForm.status = ''
   filterForm.keyword = ''
+  libSort.reset()
   page.value = 1
   loadItems()
 }

@@ -57,9 +57,12 @@ def list_supervisor_relations(
     keyword: str = Query("", description="搜索业务员姓名/ID"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    sort_field: str = Query("effective_start"),
+    sort_order: str = Query("desc"),
     db: Session = Depends(get_db),
 ) -> ResponseModel[PageResponse[SupervisorRelationListItem]]:
     """查询当前有效的主管关系列表"""
+    from sqlalchemy import desc as _desc
     SpUser = aliased(UserBasic)
     SvUser = aliased(UserBasic)
     Sv2User = aliased(UserBasic)
@@ -89,6 +92,15 @@ def list_supervisor_relations(
             SpUser.full_name.like(like_pattern),
             SpUser.nickname.like(like_pattern),
         ))
+
+    SORT_MAP = {
+        "salesperson_name": SpUser.full_name,
+        "supervisor_name": SvUser.full_name,
+        "effective_start": SupervisorRelationHistory.effective_start,
+    }
+    sort_col = SORT_MAP.get(sort_field, SupervisorRelationHistory.effective_start)
+    order_fn = _desc if sort_order == "desc" else lambda c: c
+    query = query.order_by(order_fn(sort_col))
 
     total = query.count()
     rows = query.offset((page - 1) * page_size).limit(page_size).all()

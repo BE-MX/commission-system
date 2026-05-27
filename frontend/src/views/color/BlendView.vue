@@ -18,15 +18,15 @@
       <el-button v-if="canWrite" type="success" @click="openCreate">+ 新增混合色</el-button>
     </div>
 
-    <el-table v-loading="loading" :data="blendList" style="width: 100%;">
+    <el-table v-loading="loading" :data="blendList" style="width: 100%;" @sort-change="orderSort.onSortChange">
       <el-table-column label="综合色" width="80">
         <template #default="{ row }">
           <div class="blend-preview" :style="{ backgroundColor: row.computed_hex }"></div>
         </template>
       </el-table-column>
-      <el-table-column prop="blend_code" label="编码" width="120" />
-      <el-table-column prop="display_name" label="名称" />
-      <el-table-column prop="blend_type" label="类型" width="120">
+      <el-table-column prop="blend_code" label="编码" width="120" sortable="custom" />
+      <el-table-column prop="display_name" label="名称" sortable="custom" />
+      <el-table-column prop="blend_type" label="类型" width="120" sortable="custom">
         <template #default="{ row }">
           <el-tag size="small">{{ blendTypeLabel(row.blend_type) }}</el-tag>
         </template>
@@ -198,9 +198,11 @@ import {
   getColors,
   updateBlend,
 } from '@/api/color'
+import { useTableSort } from '@/composables/useTableSort'
 import GradientBar from './components/GradientBar.vue'
 
 const authStore = useAuthStore()
+const orderSort = useTableSort()
 const canWrite = computed(() => authStore.hasPermission('color:write'))
 const canAdmin = computed(() => authStore.hasPermission('color:admin'))
 
@@ -274,6 +276,7 @@ async function loadData() {
       page: page.value,
       page_size: pageSize.value,
       ...filters,
+      ...orderSort.sortParams.value,
     })
     if (res.data?.code === 200) {
       blendList.value = res.data.data.items || []
@@ -287,6 +290,7 @@ async function loadData() {
 function resetFilters() {
   Object.keys(filters).forEach(k => filters[k] = '')
   page.value = 1
+  orderSort.reset()
   loadData()
 }
 

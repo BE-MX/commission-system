@@ -85,13 +85,20 @@
             <el-option v-for="w in filterOptions.weights" :key="w" :label="w" :value="w" />
           </el-select>
           <el-input v-model="filters.keyword" placeholder="搜索产品名或型号" :prefix-icon="Search" clearable style="width:180px" @input="handleSearch" />
+          <el-checkbox v-model="filters.has_in_transit" label="仅看在途" size="small" border @change="applyFilters" />
+          <el-checkbox v-model="filters.has_safety_stock" label="仅看已设安全库存" size="small" border @change="applyFilters" />
+          <el-select v-model="filters.stock_status" placeholder="备货状态" clearable style="width:120px" @change="applyFilters">
+            <el-option label="全部状态" value="" />
+            <el-option label="备货中" value="stocking" />
+            <el-option label="加急中" value="urgent" />
+          </el-select>
           <el-button type="primary" size="small" @click="applyFilters"><el-icon><Filter /></el-icon>筛选</el-button>
           <el-button size="small" @click="resetFilters">重置</el-button>
         </div>
       </div>
-      <el-table :data="tableData" style="width:100%" :header-cell-style="headerStyle" v-loading="loading">
+      <el-table :data="tableData" style="width:100%" :header-cell-style="headerStyle" v-loading="loading" @sort-change="onSortChange">
         <el-table-column type="index" label="#" width="50" align="center" />
-        <el-table-column label="型号" prop="model" min-width="100" show-overflow-tooltip />
+        <el-table-column label="型号" prop="model" min-width="100" show-overflow-tooltip sortable="custom" />
         <el-table-column label="类型" min-width="90" show-overflow-tooltip>
           <template #default="{ row }">{{ parseProductName(row.product_name).type }}</template>
         </el-table-column>
@@ -104,12 +111,12 @@
         <el-table-column label="克重" min-width="80" show-overflow-tooltip>
           <template #default="{ row }">{{ parseProductName(row.product_name).weight }}</template>
         </el-table-column>
-        <el-table-column label="近30日销量" width="95" align="center">
+        <el-table-column label="近30日销量" prop="sales_30d" width="95" align="center" sortable="custom">
           <template #default="{ row }">
             <span class="sales-value">{{ row.sales_30d || 0 }}</span><span class="sales-unit">件</span>
           </template>
         </el-table-column>
-        <el-table-column label="当前可用库存" width="105" align="center">
+        <el-table-column label="当前可用库存" prop="enable_count" width="105" align="center" sortable="custom">
           <template #default="{ row }">
             <span :class="['stock-value', row.enable_count < (row.safety_stock||0) ? 'stock-low' : '']">
               {{ Math.round(row.enable_count || 0) }}
@@ -136,7 +143,7 @@
             <span v-else class="text-muted">—</span>
           </template>
         </el-table-column>
-        <el-table-column label="安全库存阈值" width="140" align="center">
+        <el-table-column label="安全库存阈值" prop="safety_stock" width="140" align="center" sortable="custom">
           <template #default="{ row }">
             <div class="editable-cell">
               <el-input-number v-model="row.safety_stock" :min="0" :max="10000" :step="1" controls-position="right" style="width:100px" @change="markDirty(row)" />
@@ -225,16 +232,20 @@
           <span class="prod-value">{{ currentProductionRow.model }}</span>
         </div>
         <div class="prod-info-row">
-          <span class="prod-label">规格</span>
-          <span class="prod-value">{{ parseProductName(currentProductionRow.product_name).type }}/{{ parseProductName(currentProductionRow.product_name).size }}/{{ parseProductName(currentProductionRow.product_name).color }}/{{ parseProductName(currentProductionRow.product_name).weight }}</span>
+          <span class="prod-label">近30日销量</span>
+          <span class="prod-value">{{ currentProductionRow.sales_30d || 0 }} 件</span>
+        </div>
+        <div class="prod-info-row">
+          <span class="prod-label">生产在途</span>
+          <span class="prod-value" :class="currentProductionRow.production_in_transit > 0 ? 'in-transit-active' : ''">{{ currentProductionRow.production_in_transit || 0 }} 件</span>
         </div>
         <div class="prod-info-row">
           <span class="prod-label">当前库存</span>
-          <span class="prod-value">{{ Math.round(currentProductionRow.enable_count || 0) }}</span>
+          <span class="prod-value">{{ Math.round(currentProductionRow.enable_count || 0) }} 件</span>
         </div>
         <div class="prod-info-row">
           <span class="prod-label">安全库存</span>
-          <span class="prod-value">{{ currentProductionRow.safety_stock || 0 }}</span>
+          <span class="prod-value">{{ currentProductionRow.safety_stock || 0 }} 件</span>
         </div>
         <div class="prod-info-row">
           <span class="prod-label">差值</span>
@@ -242,7 +253,7 @@
         </div>
         <el-divider />
         <el-form :model="productionForm" label-width="100px">
-          <el-form-item label="生产下单数量" required>
+          <el-form-item label="生产下单数量" required class="order-qty-form-item">
             <el-input-number v-model="productionForm.order_qty" :min="1" :max="999999" :step="1" controls-position="right" style="width:160px" />
           </el-form-item>
           <el-form-item label="备注">
@@ -375,8 +386,10 @@ import {
   getSafetyList, saveSafetyStock, autoGenerateSafety, getFilterOptions, queryStockStatus,
 } from '@/api/stock'
 import { useProductionCart } from './composables/useProductionCart'
+import { useTableSort } from '@/composables/useTableSort'
 
 const authStore = useAuthStore()
+const { sortParams, onSortChange, reset: resetSort } = useTableSort('product_id', 'asc')
 
 // ── 原有安全库存逻辑 ──────────────────────────
 const loading = ref(false)
@@ -392,6 +405,9 @@ const filters = reactive({
   size: [],
   color: [],
   weight: [],
+  has_in_transit: false,
+  has_safety_stock: false,
+  stock_status: '',
 })
 
 function parseProductName(name) {
@@ -447,6 +463,11 @@ async function loadData() {
       size: filters.size.length ? filters.size.join(',') : undefined,
       color: filters.color.length ? filters.color.join(',') : undefined,
       weight: filters.weight.length ? filters.weight.join(',') : undefined,
+      sort: sortParams.value.sort_field || 'product_id',
+      order: sortParams.value.sort_order || 'asc',
+      has_in_transit: filters.has_in_transit || undefined,
+      has_safety_stock: filters.has_safety_stock || undefined,
+      stock_status: filters.stock_status || undefined,
     })
     const d = res.data
     const items = (d.items || []).map(i => {
@@ -507,6 +528,10 @@ function resetFilters() {
   filters.size = []
   filters.color = []
   filters.weight = []
+  filters.has_in_transit = false
+  filters.has_safety_stock = false
+  filters.stock_status = ''
+  resetSort()
   pagination.page = 1
   loadData()
 }
@@ -853,9 +878,10 @@ onMounted(() => {
 .production-dialog-content { padding: 10px 0; }
 .prod-info-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
 .prod-info-row:last-child { border-bottom: none; }
-.prod-label { color: #888; font-size: 13px; }
-.prod-value { font-weight: 500; color: #1e1e2d; font-size: 14px; }
+.prod-label { color: #888; font-size: 13px; white-space: nowrap; flex-shrink: 0; margin-right: 16px; }
+.prod-value { font-weight: 500; color: #1e1e2d; font-size: 14px; text-align: right; }
 .value-danger { color: #e74c3c; font-weight: 600; }
+.order-qty-form-item :deep(.el-form-item__label) { white-space: nowrap; }
 
 /* 购物车 */
 .cart-badge :deep(.el-badge__content) { background: #e74c3c; }

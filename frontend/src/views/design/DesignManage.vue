@@ -23,13 +23,14 @@
           class="list-table"
           border
           :max-height="tabMaxHeight"
+          @sort-change="pendingSort.onSortChange"
         >
-          <el-table-column prop="request_no" label="预约编号" min-width="160" max-width="240" show-overflow-tooltip />
-          <el-table-column prop="customer_name" label="客户名称" min-width="130" max-width="200" show-overflow-tooltip />
+          <el-table-column prop="request_no" label="预约编号" min-width="160" max-width="240" sortable="custom" show-overflow-tooltip />
+          <el-table-column prop="customer_name" label="客户名称" min-width="130" max-width="200" sortable="custom" show-overflow-tooltip />
           <el-table-column prop="customer_level" label="客户等级" min-width="90" max-width="130">
             <template #default="{ row }">{{ customerLevelLabel(row.customer_level) }}</template>
           </el-table-column>
-          <el-table-column prop="salesperson_name" label="业务员" min-width="90" max-width="140" show-overflow-tooltip />
+          <el-table-column prop="salesperson_name" label="业务员" min-width="90" max-width="140" sortable="custom" show-overflow-tooltip />
           <el-table-column label="拍摄类型" min-width="120" max-width="180" show-overflow-tooltip>
             <template #default="{ row }">
               <span class="clickable-shoot-type" @click="openShootTypeDialog(row, 'request')">
@@ -38,7 +39,7 @@
               </span>
             </template>
           </el-table-column>
-          <el-table-column label="期望日期" min-width="280" max-width="420">
+          <el-table-column label="期望日期" min-width="280" max-width="420" prop="expect_start_date" sortable="custom">
             <template #default="{ row }">
               <span class="clickable-date" @click="openEditDateDialog(row)">
                 {{ row.expect_start_date }} {{ periodLabel(row.expect_start_period) }} ~ {{ row.expect_end_date }} {{ periodLabel(row.expect_end_period) }}
@@ -46,7 +47,7 @@
               </span>
             </template>
           </el-table-column>
-          <el-table-column label="优先级" min-width="80" max-width="120">
+          <el-table-column label="优先级" min-width="80" max-width="120" prop="priority" sortable="custom">
             <template #default="{ row }">
               <el-tag :type="row.priority === 'urgent' ? 'danger' : 'info'" effect="plain">
                 {{ row.priority === 'urgent' ? '加急' : '普通' }}
@@ -61,7 +62,7 @@
               </span>
             </template>
           </el-table-column>
-          <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" show-overflow-tooltip />
+          <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" sortable="custom" show-overflow-tooltip />
           <el-table-column label="操作" min-width="180" max-width="260" fixed="right">
             <template #default="{ row }">
               <GlassButton variant="link" left-icon="View" @click="openDetail(row.id)">详情</GlassButton>
@@ -101,9 +102,10 @@
           class="list-table"
           border
           :max-height="tabMaxHeight"
+          @sort-change="scheduledSort.onSortChange"
         >
-          <el-table-column prop="task_no" label="任务编号" min-width="170" max-width="260" show-overflow-tooltip />
-          <el-table-column prop="customer_name" label="客户名称" min-width="130" max-width="200" show-overflow-tooltip />
+          <el-table-column prop="task_no" label="任务编号" min-width="170" max-width="260" sortable="custom" show-overflow-tooltip />
+          <el-table-column prop="customer_name" label="客户名称" min-width="130" max-width="200" sortable="custom" show-overflow-tooltip />
           <el-table-column prop="salesperson_name" label="业务员" min-width="90" max-width="140" show-overflow-tooltip />
           <el-table-column label="拍摄类型" min-width="120" max-width="180" show-overflow-tooltip>
             <template #default="{ row }">
@@ -126,7 +128,7 @@
               </span>
             </template>
           </el-table-column>
-          <el-table-column label="排期日期" min-width="280" max-width="420">
+          <el-table-column label="排期日期" min-width="280" max-width="420" prop="plan_start_date" sortable="custom">
             <template #default="{ row }">
               <span class="clickable-date" @click="openEditTaskDateDialog(row)">
                 {{ row.plan_start_date || '-' }} {{ periodLabel(row.plan_start_period) }} ~ {{ row.plan_end_date || '-' }} {{ periodLabel(row.plan_end_period) }}
@@ -154,13 +156,14 @@
               <span v-else>-</span>
             </template>
           </el-table-column>
-          <el-table-column label="状态" min-width="100" max-width="150">
+          <el-table-column label="状态" min-width="100" max-width="150" prop="status" sortable="custom">
             <template #default="{ row }">
               <el-tag :type="TASK_STATUS_TAG[row.status]" effect="plain">
                 {{ TASK_STATUS_MAP[row.status] || row.status }}
               </el-tag>
             </template>
           </el-table-column>
+          <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" sortable="custom" show-overflow-tooltip />
           <el-table-column label="操作" min-width="260" max-width="380" fixed="right">
             <template #default="{ row }">
               <GlassButton variant="link" left-icon="View" @click="openDetail(row.request_id)">详情</GlassButton>
@@ -214,9 +217,10 @@
           class="list-table"
           border
           :max-height="tabMaxHeight"
+          @sort-change="completedSort.onSortChange"
         >
-          <el-table-column prop="task_no" label="任务编号" min-width="170" max-width="260" show-overflow-tooltip />
-          <el-table-column prop="customer_name" label="客户名称" min-width="130" max-width="200" show-overflow-tooltip />
+          <el-table-column prop="task_no" label="任务编号" min-width="170" max-width="260" sortable="custom" show-overflow-tooltip />
+          <el-table-column prop="customer_name" label="客户名称" min-width="130" max-width="200" sortable="custom" show-overflow-tooltip />
           <el-table-column prop="salesperson_name" label="业务员" min-width="90" max-width="140" show-overflow-tooltip />
           <el-table-column label="拍摄类型" min-width="120" max-width="180" show-overflow-tooltip>
             <template #default="{ row }">{{ buildDictLabel(row.shoot_type, shootTypeMap) }}</template>
@@ -224,7 +228,7 @@
           <el-table-column label="设计师" min-width="100" max-width="150">
             <template #default="{ row }">{{ getDesignerName(row.designer_id) }}</template>
           </el-table-column>
-          <el-table-column label="排期日期" min-width="240" max-width="360">
+          <el-table-column label="排期日期" min-width="240" max-width="360" prop="plan_start_date" sortable="custom">
             <template #default="{ row }">
               {{ row.plan_start_date || '-' }} {{ periodLabel(row.plan_start_period) }} ~ {{ row.plan_end_date || '-' }} {{ periodLabel(row.plan_end_period) }}
             </template>
@@ -236,11 +240,12 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="状态" min-width="80" max-width="120">
+          <el-table-column label="状态" min-width="80" max-width="120" prop="status" sortable="custom">
             <template #default="{ row }">
               <el-tag type="success" effect="plain">已完成</el-tag>
             </template>
           </el-table-column>
+          <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" sortable="custom" show-overflow-tooltip />
           <el-table-column label="操作" min-width="100" max-width="150" fixed="right">
             <template #default="{ row }">
               <GlassButton variant="link" left-icon="View" @click="openDetail(row.request_id)">详情</GlassButton>
@@ -548,15 +553,15 @@ const {
   // Pending
   pendingTableRef, pendingData, pendingLoading,
   pendingPage, pendingPageSize, pendingTotal, pendingFilters,
-  fetchPending, handleScanShootReminders,
+  fetchPending, handleScanShootReminders, pendingSort,
   // Scheduled
   scheduledTableRef, scheduledData, scheduledLoading,
   scheduledPage, scheduledPageSize, scheduledTotal, scheduledFilters,
-  fetchScheduled,
+  fetchScheduled, scheduledSort,
   // Completed
   completedTableRef, completedData, completedLoading,
   completedPage, completedPageSize, completedTotal, completedFilters,
-  fetchCompleted,
+  fetchCompleted, completedSort,
   // Designers
   designerData, designerLoading,
   designerDialogVisible, designerSaving, designerForm,

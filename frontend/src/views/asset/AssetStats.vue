@@ -37,7 +37,7 @@
           </div>
           <el-table :data="stats.top_assets" size="small" class="stats-table">
             <el-table-column type="index" width="40" />
-            <el-table-column label="文件名" prop="file_name" show-overflow-tooltip />
+            <el-table-column label="文件名" prop="file_name" show-overflow-tooltip sortable />
             <el-table-column label="类型" width="70">
               <template #default="{ row }">
                 <el-tag size="small" :type="fileTypeTag(row.file_type)">

@@ -133,6 +133,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Setting, Top } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
+import { useTableSort } from '@/composables/useTableSort'
 import {
   listIntelligenceReports,
   generateIntelligence,
@@ -143,6 +144,7 @@ import {
 } from '@/api/insight'
 
 const authStore = useAuthStore()
+const orderSort = useTableSort()
 
 // 状态
 const loading = ref(false)
@@ -178,6 +180,7 @@ async function loadReports() {
     const res = await listIntelligenceReports({
       page: page.value,
       page_size: pageSize.value,
+      ...orderSort.sortParams.value,
     })
     if (res.data?.code === 200) {
       reports.value = res.data.data.items

@@ -930,3 +930,287 @@
 | 20:11 | Session end: 73 writes across 18 files (025_add_production_module.py, models.py, schemas.py, production_cart_service.py, production_order_service.py) | 25 reads | ~86127 tok |
 | 20:18 | Edited frontend/src/views/stock/SafetyConfig.vue | 5→5 lines | ~53 |
 | 20:18 | Session end: 74 writes across 18 files (025_add_production_module.py, models.py, schemas.py, production_cart_service.py, production_order_service.py) | 25 reads | ~86495 tok |
+| 20:25 | Session end: 74 writes across 18 files (025_add_production_module.py, models.py, schemas.py, production_cart_service.py, production_order_service.py) | 25 reads | ~86495 tok |
+| 20:27 | Session end: 74 writes across 18 files (025_add_production_module.py, models.py, schemas.py, production_cart_service.py, production_order_service.py) | 25 reads | ~86495 tok |
+| 20:29 | Session end: 74 writes across 18 files (025_add_production_module.py, models.py, schemas.py, production_cart_service.py, production_order_service.py) | 25 reads | ~86495 tok |
+
+## Session: 2026-05-26 20:42
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 20:43 | Edited CLAUDE.md | 2→3 lines | ~68 |
+| 20:43 | Edited CLAUDE.md | inline fix | ~56 |
+| 20:43 | Edited CLAUDE.md | expanded (+18 lines) | ~361 |
+| 20:44 | Edited CLAUDE.md | 2→7 lines | ~206 |
+| 20:44 | Edited CLAUDE.md | 1→2 lines | ~59 |
+| 20:44 | Edited CLAUDE.md | inline fix | ~35 |
+| 20:45 | Edited README.md | 1→2 lines | ~68 |
+| 20:45 | Created memory/project_production_module.md | — | ~1568 |
+| 20:45 | Edited memory/MEMORY.md | 1→2 lines | ~57 |
+| 20:45 | Edited .wolf/cerebrum.md | +3 Do-Not-Repeat | ~380 |
+
+## Session: 2026-05-26 20:45
+
+**neat-freak 同步：生产订单管理模块**
+
+### 记忆变更
+- 新增：`project_production_module.md` — 购物车/批量下单/双维订单管理/入库跟踪/加急交期/备货状态（025/026迁移）
+- 更新：`MEMORY.md` — 新增 production_module 索引
+
+### 文档变更
+- `CLAUDE.md` — 补充生产订单管理模块：项目简介、API路由清单（/production/* 18端点）、数据库4张表、权限（production:read/write/admin）、stock模块结构
+- `README.md` — 模块列表补充「生产订单管理」
+- `.wolf/cerebrum.md` — 新增3条Do-Not-Repeat（SQLAlchemy commit遗漏/响应拦截器unwrap/composable解构完整）
+| 20:44 | Edited README.md | inline fix | ~81 |
+| 20:44 | Created C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_production_module.md | — | ~629 |
+| 20:44 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/MEMORY.md | 2→3 lines | ~74 |
+| 20:45 | Session end: 9 writes across 4 files (CLAUDE.md, README.md, project_production_module.md, MEMORY.md) | 5 reads | ~23367 tok |
+
+## Session: 2026-05-27 09:24
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-05-27 09:25
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 09:51 | Edited backend/app/stock/router.py | modified get_safety_list() | ~491 |
+| 09:54 | Created backend/app/stock/safety_service.py | — | ~4743 |
+| 09:54 | Edited frontend/src/views/stock/SafetyConfig.vue | 8→13 lines | ~61 |
+| 09:54 | Edited frontend/src/views/stock/SafetyConfig.vue | expanded (+13 lines) | ~336 |
+| 09:54 | Edited frontend/src/views/stock/SafetyConfig.vue | modified computed() | ~80 |
+| 09:55 | Edited frontend/src/views/stock/SafetyConfig.vue | modified loadData() | ~223 |
+| 09:55 | Edited frontend/src/views/stock/SafetyConfig.vue | modified resetFilters() | ~93 |
+| 09:55 | Edited frontend/src/views/stock/SafetyConfig.vue | 42→46 lines | ~634 |
+| 09:56 | Edited frontend/src/views/stock/SafetyConfig.vue | modified deep() | ~145 |
+| 09:57 | Edited backend/app/stock/safety_service.py | 10→11 lines | ~111 |
+| 09:59 | pytest 全量通过 | 71 passed | 无回归 | ~200 |
+| 10:00 | Session end: 安全库存设置列表增强 | 3 files (router.py, safety_service.py, SafetyConfig.vue) | ~1200 tok |
+
+## Session: 2026-05-27 10:00
+
+**安全库存设置列表增强**
+
+### 后端
+- `backend/app/stock/router.py` — GET /safety 增加 6 个参数：`sort`/`order`/`has_in_transit`/`has_safety_stock`/`stock_status`
+- `backend/app/stock/safety_service.py` — `query_safety_stock_list()` 增加排序映射（product_id/sales_30d/enable_count/safety_stock）+ 3 个 EXISTS 子查询筛选（在途/安全库存/备货状态），count_sql 独立参数避免多余绑定
+
+### 前端
+- `frontend/src/views/stock/SafetyConfig.vue`：
+  - 生产下单弹框：删除规格行，增加近30日销量/生产在途行，生产下单数量标签加 `white-space: nowrap`
+  - 工具栏增加排序选择器（默认/近30日销量↓/当前可用库存↓/安全库存↓）
+  - 工具栏增加两个 `el-checkbox` 筛选项：仅看在途/仅看已设安全库存
+  - 工具栏增加备货状态筛选项（全部/备货中/加急中）
+  - `resetFilters()` 同步重置所有新字段
+| 09:59 | Session end: 10 writes across 3 files (router.py, safety_service.py, SafetyConfig.vue) | 6 reads | ~29388 tok |
+
+## Session: 2026-05-27 13:56
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 14:47 | Created C:/Users/windb/.claude/plans/nifty-booping-aho.md | — | ~2239 |
+| 18:23 | Created frontend/src/composables/useTableSort.js | — | ~260 |
+| 18:25 | Edited backend/app/stock/production_order_service.py | modified get_order_list() | ~90 |
+| 18:25 | Edited backend/app/stock/production_order_service.py | 18→22 lines | ~294 |
+| 18:25 | Edited backend/app/stock/production_order_service.py | modified get_order_item_list() | ~75 |
+| 18:25 | Edited backend/app/stock/production_order_service.py | 12→16 lines | ~242 |
+| 18:26 | Edited backend/app/stock/router.py | modified list_production_orders() | ~174 |
+| 18:26 | Edited backend/app/stock/router.py | modified list_production_order_items() | ~181 |
+| 18:27 | Edited frontend/src/views/stock/ProductionOrderManage.vue | added 1 import(s) | ~150 |
+| 18:27 | Edited frontend/src/views/stock/ProductionOrderManage.vue | 1→4 lines | ~27 |
+| 18:28 | Edited frontend/src/views/stock/ProductionOrderManage.vue | 22→22 lines | ~431 |
+| 18:28 | Edited frontend/src/views/stock/ProductionOrderManage.vue | 7→7 lines | ~220 |
+| 18:28 | Edited frontend/src/views/stock/ProductionOrderManage.vue | 7→7 lines | ~61 |
+| 18:29 | Edited frontend/src/views/stock/ProductionOrderManage.vue | 3→4 lines | ~31 |
+| 18:29 | Edited frontend/src/views/stock/ProductionOrderManage.vue | 7→8 lines | ~74 |
+| 18:30 | Edited frontend/src/views/stock/ProductionOrderManage.vue | modified resetOrderFilters() | ~42 |
+| 18:30 | Edited frontend/src/views/stock/ProductionOrderManage.vue | modified resetItemFilters() | ~40 |
+| 18:32 | Edited backend/app/tracking/shipment_service.py | modified list_shipments() | ~485 |
+| 18:32 | Edited backend/app/ai/log_service.py | modified list_logs() | ~373 |
+| 18:32 | Edited backend/app/color/palette_service.py | modified list_palettes() | ~499 |
+| 18:32 | Edited backend/app/color/blend_service.py | modified list_blends() | ~347 |
+| 18:32 | Edited backend/app/api/commission.py | desc() → order_fn() | ~310 |
+| 18:32 | Edited backend/app/api/commission.py | modified list_commission_details() | ~176 |
+| 18:33 | Edited backend/app/api/commission.py | expanded (+11 lines) | ~184 |
+| 18:34 | Edited backend/app/api/employee.py | modified list_employees() | ~426 |
+| 18:34 | Edited backend/app/api/supervisor.py | modified list_supervisor_relations() | ~583 |
+| 18:34 | Edited backend/app/api/customer.py | modified list_customer_snapshots() | ~132 |
+| 18:34 | Edited backend/app/api/customer.py | expanded (+11 lines) | ~199 |
+| 18:35 | Edited backend/app/api/payment.py | modified list_synced_payments() | ~155 |
+| 18:35 | Edited backend/app/api/payment.py | expanded (+10 lines) | ~163 |
+| 18:35 | Edited backend/app/auth/admin_router.py | desc() → order_fn() | ~374 |
+| 18:35 | Edited backend/app/design/router.py | modified list_requests() | ~235 |
+| 18:36 | Edited backend/app/design/router.py | expanded (+13 lines) | ~247 |
+| 18:36 | Edited backend/app/design/router.py | modified list_tasks() | ~219 |
+| 18:36 | Edited backend/app/design/router.py | expanded (+13 lines) | ~230 |
+| 18:37 | Edited backend/app/tracking/router.py | modified list_shipments() | ~221 |
+| 18:38 | Edited backend/app/ai/router.py | modified list_logs() | ~172 |
+| 18:38 | Edited backend/app/color/router.py | modified get_colors() | ~249 |
+| 18:38 | Edited backend/app/color/router.py | modified get_blends() | ~179 |
+| 18:39 | Edited frontend/src/views/tracking/TrackingList.vue | added 1 import(s) | ~53 |
+| 18:39 | Edited frontend/src/views/customer/CustomerSnapshot.vue | added 1 import(s) | ~57 |
+| 18:39 | Edited frontend/src/views/tracking/TrackingList.vue | 4→5 lines | ~57 |
+| 18:39 | Edited frontend/src/views/system/UserManagement.vue | added 1 import(s) | ~57 |
+| 18:39 | Edited frontend/src/views/system/UserManagement.vue | 5→5 lines | ~180 |
+| 18:39 | Edited frontend/src/views/system/UserManagement.vue | inline fix | ~35 |
+| 18:39 | Edited frontend/src/views/system/UserManagement.vue | inline fix | ~37 |
+| 18:39 | Edited frontend/src/views/customer/CustomerSnapshot.vue | 2→3 lines | ~22 |
+| 18:39 | Edited frontend/src/views/tracking/TrackingList.vue | inline fix | ~35 |
+| 18:39 | Edited frontend/src/views/design/composables/useDesignManage.js | added 1 import(s) | ~134 |
+| 18:39 | Edited frontend/src/views/tracking/TrackingList.vue | "状态" → "current_status" | ~29 |
+| 18:39 | Edited frontend/src/views/system/composables/useAiManager.js | added 1 import(s) | ~69 |
+| 18:39 | Edited frontend/src/views/system/composables/useAiManager.js | 1→2 lines | ~44 |
+| 18:39 | Edited frontend/src/views/system/composables/useAiManager.js | 4→5 lines | ~39 |
+| 18:39 | Edited frontend/src/views/system/composables/useAiManager.js | 4→4 lines | ~55 |
+| 18:39 | Edited frontend/src/views/design/composables/useDesignManage.js | modified useDesignManage() | ~77 |
+| 18:39 | Edited frontend/src/views/color/PaletteView.vue | added 1 import(s) | ~47 |
+| 18:39 | Edited frontend/src/views/color/BlendView.vue | added 1 import(s) | ~30 |
+| 18:39 | Edited frontend/src/views/color/SwatchGenerator.vue | added 1 import(s) | ~39 |
+| 18:39 | Edited frontend/src/views/customer/CustomerSnapshot.vue | 2→2 lines | ~71 |
+| 18:39 | Edited frontend/src/views/tracking/TrackingList.vue | 8→9 lines | ~74 |
+| 18:40 | Edited frontend/src/views/insight/IntelligenceOverview.vue | added 1 import(s) | ~25 |
+| 18:40 | Edited frontend/src/views/customer/CustomerSnapshot.vue | inline fix | ~37 |
+| 18:40 | Edited frontend/src/views/design/composables/useDesignManage.js | 7→8 lines | ~70 |
+| 18:40 | Edited frontend/src/views/color/PaletteView.vue | 1→2 lines | ~18 |
+| 18:40 | Edited frontend/src/views/commission/CommissionBatch.vue | added 1 import(s) | ~57 |
+| 18:40 | Edited frontend/src/views/color/BlendView.vue | 1→2 lines | ~18 |
+| 18:40 | Edited frontend/src/views/system/AIManager.vue | 5→5 lines | ~42 |
+| 18:40 | Edited frontend/src/views/color/SwatchGenerator.vue | 1→2 lines | ~17 |
+| 18:40 | Edited frontend/src/views/system/AIManager.vue | inline fix | ~40 |
+| 18:40 | Edited frontend/src/views/insight/IntelligenceOverview.vue | 1→2 lines | ~18 |
+| 18:40 | Edited frontend/src/views/system/AIManager.vue | inline fix | ~23 |
+| 18:40 | Edited frontend/src/views/system/AIManager.vue | inline fix | ~24 |
+| 18:40 | Edited frontend/src/views/customer/CustomerSnapshot.vue | 4→5 lines | ~52 |
+| 18:40 | Edited frontend/src/views/design/composables/useDesignManage.js | 7→8 lines | ~74 |
+| 18:40 | Edited frontend/src/views/commission/CommissionBatch.vue | 2→2 lines | ~76 |
+| 18:40 | Edited frontend/src/views/payment/PaymentSync.vue | added 1 import(s) | ~57 |
+| 18:40 | Edited frontend/src/views/design/composables/useDesignManage.js | 7→8 lines | ~70 |
+| 18:40 | Edited frontend/src/views/commission/CommissionBatch.vue | 3→3 lines | ~96 |
+| 18:40 | Edited frontend/src/views/stock/StockOverview.vue | reduced (-8 lines) | ~39 |
+| 18:40 | Edited frontend/src/views/color/BlendView.vue | inline fix | ~30 |
+| 18:40 | Edited frontend/src/views/color/BlendView.vue | inline fix | ~23 |
+| 18:40 | Edited frontend/src/views/payment/PaymentSync.vue | inline fix | ~44 |
+| 18:40 | Edited frontend/src/views/color/BlendView.vue | inline fix | ~20 |
+| 18:40 | Edited frontend/src/views/color/BlendView.vue | inline fix | ~22 |
+| 18:40 | Edited frontend/src/views/commission/CommissionBatch.vue | inline fix | ~35 |
+| 18:40 | Edited frontend/src/views/design/composables/useDesignManage.js | 12→12 lines | ~160 |
+| 18:40 | Edited frontend/src/views/color/SwatchGenerator.vue | inline fix | ~24 |
+| 18:40 | Edited frontend/src/views/color/SwatchGenerator.vue | inline fix | ~21 |
+| 18:40 | Edited frontend/src/views/commission/CommissionBatch.vue | 3→4 lines | ~43 |
+| 18:40 | Edited frontend/src/views/payment/PaymentSync.vue | 3→3 lines | ~102 |
+| 18:40 | Edited frontend/src/views/employee/EmployeeAttribute.vue | added 1 import(s) | ~57 |
+| 18:40 | Edited frontend/src/views/payment/PaymentSync.vue | 7→8 lines | ~69 |
+| 18:40 | Edited frontend/src/views/insight/IntelligenceLibrary.vue | added 1 import(s) | ~64 |
+| 18:40 | Edited frontend/src/views/insight/IntelligenceLibrary.vue | inline fix | ~29 |
+| 18:40 | Edited frontend/src/views/insight/IntelligenceLibrary.vue | inline fix | ~25 |
+| 18:40 | Edited frontend/src/views/insight/IntelligenceLibrary.vue | inline fix | ~23 |
+| 18:40 | Edited frontend/src/views/insight/IntelligenceLibrary.vue | inline fix | ~22 |
+| 18:40 | Edited frontend/src/views/insight/IntelligenceLibrary.vue | 5→6 lines | ~38 |
+| 18:40 | Edited frontend/src/views/stock/StockOverview.vue | 4→4 lines | ~98 |
+| 18:40 | Edited frontend/src/views/design/DesignManage.vue | 9→9 lines | ~107 |
+| 18:40 | Edited frontend/src/views/insight/IntelligenceLibrary.vue | modified resetFilter() | ~58 |
+| 18:40 | Edited frontend/src/views/color/PaletteView.vue | 5→6 lines | ~41 |
+| 18:40 | Edited frontend/src/views/color/BlendView.vue | 5→6 lines | ~41 |
+| 18:40 | Edited frontend/src/views/color/SwatchGenerator.vue | inline fix | ~34 |
+| 18:40 | Edited frontend/src/views/insight/IntelligenceOverview.vue | 4→5 lines | ~40 |
+| 18:40 | Edited frontend/src/views/commission/CommissionDetail.vue | added 1 import(s) | ~57 |
+| 18:40 | Edited frontend/src/views/employee/EmployeeAttribute.vue | 3→3 lines | ~114 |
+| 18:40 | Edited frontend/src/views/design/DesignManage.vue | 8→9 lines | ~70 |
+| 18:40 | Edited frontend/src/views/commission/CommissionDetail.vue | inline fix | ~42 |
+| 18:40 | Edited frontend/src/views/employee/EmployeeAttribute.vue | "当前属性" → "current_attribute" | ~30 |
+| 18:40 | Edited frontend/src/views/color/PaletteView.vue | modified resetFilters() | ~49 |
+| 18:40 | Edited frontend/src/views/color/BlendView.vue | modified resetFilters() | ~35 |
+| 18:40 | Edited frontend/src/views/commission/CommissionDetail.vue | inline fix | ~35 |
+| 18:40 | Edited frontend/src/views/employee/EmployeeAttribute.vue | inline fix | ~38 |
+| 18:40 | Edited frontend/src/views/stock/StockOverview.vue | 17→17 lines | ~312 |
+| 18:40 | Edited frontend/src/views/supervisor/SupervisorRelation.vue | added 1 import(s) | ~57 |
+| 18:40 | Edited frontend/src/views/design/DesignManage.vue | 2→2 lines | ~72 |
+| 18:40 | Edited frontend/src/views/supervisor/SupervisorRelation.vue | 5→5 lines | ~182 |
+| 18:41 | Edited frontend/src/views/stock/StockOverview.vue | inline fix | ~28 |
+| 18:41 | Edited frontend/src/views/commission/CommissionDetail.vue | "回款金额" → "payment_amount" | ~29 |
+| 18:41 | Edited frontend/src/views/supervisor/SupervisorRelation.vue | inline fix | ~36 |
+| 18:41 | Edited frontend/src/views/supervisor/SupervisorRelation.vue | inline fix | ~39 |
+| 18:41 | Edited frontend/src/views/commission/CommissionDetail.vue | inline fix | ~36 |
+| 18:41 | Edited frontend/src/views/commission/CommissionDetail.vue | "业务员提成" → "salesperson_commission" | ~32 |
+| 18:41 | Edited frontend/src/views/design/DesignManage.vue | 5→5 lines | ~121 |
+| 18:41 | Edited frontend/src/views/commission/CommissionDetail.vue | 5→6 lines | ~48 |
+| 18:41 | Edited frontend/src/views/design/DesignManage.vue | inline fix | ~31 |
+| 18:41 | Edited frontend/src/views/stock/StockOverview.vue | added 1 import(s) | ~156 |
+| 18:41 | Edited frontend/src/views/design/DesignManage.vue | 16→16 lines | ~240 |
+| 18:41 | Edited frontend/src/views/stock/StockOverview.vue | 7→7 lines | ~84 |
+| 18:41 | Edited frontend/src/views/stock/StockOverview.vue | modified resetFilters() | ~70 |
+| 18:41 | Edited frontend/src/views/design/DesignManage.vue | 10→11 lines | ~143 |
+| 18:42 | Edited frontend/src/views/design/DesignManage.vue | 29→29 lines | ~438 |
+| 18:42 | Edited frontend/src/views/design/DesignManage.vue | 8→9 lines | ~154 |
+| 18:42 | Edited frontend/src/views/stock/StockOverview.vue | 1→2 lines | ~41 |
+| 18:42 | Edited frontend/src/views/design/DesignManage.vue | 35→37 lines | ~604 |
+| 18:42 | Edited frontend/src/views/design/MyRequests.vue | added 1 import(s) | ~122 |
+| 18:42 | Edited frontend/src/views/design/MyRequests.vue | 8→9 lines | ~54 |
+| 18:43 | Edited frontend/src/views/design/MyRequests.vue | inline fix | ~28 |
+| 18:43 | Edited frontend/src/views/design/MyRequests.vue | inline fix | ~35 |
+| 18:43 | Edited frontend/src/views/design/MyRequests.vue | inline fix | ~30 |
+| 18:43 | Edited frontend/src/views/design/MyRequests.vue | inline fix | ~27 |
+| 18:43 | Edited frontend/src/views/design/MyRequests.vue | inline fix | ~35 |
+| 18:43 | Edited frontend/src/views/stock/SafetyConfig.vue | added 1 import(s) | ~34 |
+| 18:43 | Edited frontend/src/views/stock/SafetyConfig.vue | CSS: reset | ~33 |
+| 18:43 | Edited frontend/src/views/design/MyRequests.vue | modified join() | ~66 |
+| 18:43 | Edited frontend/src/views/stock/SafetyConfig.vue | 13→11 lines | ~51 |
+| 18:43 | Edited frontend/src/views/design/MyRequests.vue | modified doSearch() | ~20 |
+| 18:44 | Edited frontend/src/views/stock/SafetyConfig.vue | removed 13 lines | ~6 |
+| 18:44 | Edited frontend/src/views/stock/SafetyConfig.vue | removed 7 lines | ~6 |
+| 18:44 | Edited frontend/src/views/design/AuditQueue.vue | added 1 import(s) | ~118 |
+| 18:44 | Edited frontend/src/views/stock/SafetyConfig.vue | inline fix | ~36 |
+| 18:44 | Edited frontend/src/views/design/AuditQueue.vue | 8→9 lines | ~54 |
+| 18:44 | Edited frontend/src/views/stock/SafetyConfig.vue | inline fix | ~29 |
+| 18:44 | Edited frontend/src/views/design/AuditQueue.vue | 2→2 lines | ~70 |
+| 18:44 | Edited backend/app/stock/production_order_service.py | 2→2 lines | ~48 |
+| 18:44 | Edited frontend/src/views/system/DictManagement.vue | 3→3 lines | ~86 |
+| 18:44 | Edited frontend/src/views/system/RoleManagement.vue | 2→2 lines | ~61 |
+| 18:44 | Edited frontend/src/views/system/RoleManagement.vue | 3→3 lines | ~97 |
+| 18:44 | Edited frontend/src/views/insight/SourcesAdminView.vue | inline fix | ~26 |
+| 18:44 | Edited frontend/src/views/insight/SourcesAdminView.vue | 5→5 lines | ~71 |
+| 18:44 | Edited frontend/src/views/insight/SourcesAdminView.vue | 5→5 lines | ~77 |
+| 18:44 | Edited frontend/src/views/stock/SafetyConfig.vue | inline fix | ~27 |
+| 18:44 | Edited frontend/src/views/design/AuditQueue.vue | 2→2 lines | ~54 |
+| 18:44 | Edited frontend/src/views/stock/SafetyConfig.vue | inline fix | ~28 |
+| 18:44 | Edited backend/app/stock/production_order_service.py | 2→6 lines | ~81 |
+| 18:44 | Edited frontend/src/views/insight/SourcesAdminView.vue | 1→2 lines | ~38 |
+| 18:44 | Edited frontend/src/views/design/AuditQueue.vue | 8→8 lines | ~151 |
+| 18:44 | Edited frontend/src/views/design/AuditQueue.vue | inline fix | ~35 |
+| 18:44 | Edited frontend/src/views/stock/SafetyConfig.vue | inline fix | ~28 |
+| 18:44 | Edited frontend/src/views/stock/SafetyConfig.vue | 2→2 lines | ~29 |
+| 18:44 | Edited frontend/src/views/design/DesignStats.vue | 2→2 lines | ~58 |
+| 18:44 | Edited frontend/src/views/design/DesignStats.vue | inline fix | ~25 |
+| 18:44 | Edited frontend/src/views/design/DesignStats.vue | inline fix | ~26 |
+| 18:44 | Edited frontend/src/views/design/AuditQueue.vue | 7→8 lines | ~60 |
+| 18:44 | Edited frontend/src/views/design/DesignStats.vue | inline fix | ~35 |
+| 18:44 | Edited frontend/src/views/stock/SafetyConfig.vue | 4→2 lines | ~15 |
+| 18:44 | Edited backend/app/stock/production_order_service.py | expanded (+6 lines) | ~125 |
+| 18:45 | Edited frontend/src/views/stock/SafetyConfig.vue | 2→3 lines | ~17 |
+| 18:45 | Edited frontend/src/views/asset/AssetLibrary.vue | 4→7 lines | ~64 |
+| 18:45 | Edited frontend/src/views/stock/DailyReport.vue | 26→26 lines | ~470 |
+| 18:45 | Edited frontend/src/views/asset/AssetLibrary.vue | 4→2 lines | ~14 |
+| 18:45 | Edited frontend/src/views/asset/AssetLibrary.vue | 9→4 lines | ~55 |
+| 18:45 | Edited frontend/src/views/stock/DailyReport.vue | 26→26 lines | ~469 |
+| 18:45 | Edited frontend/src/views/tracking/ShippingDailyReport.vue | 14→14 lines | ~266 |
+| 18:45 | Edited frontend/src/views/asset/AssetStats.vue | inline fix | ~25 |
+| 18:45 | Edited frontend/src/views/asset/AssetLibrary.vue | removed 6 lines | ~10 |
+| 18:45 | Edited frontend/src/views/asset/AssetLibrary.vue | inline fix | ~33 |
+| 18:45 | Edited frontend/src/views/asset/AssetUpload.vue | inline fix | ~24 |
+| 18:45 | Edited frontend/src/views/asset/AssetUpload.vue | inline fix | ~18 |
+| 18:45 | Edited frontend/src/views/asset/AssetUpload.vue | inline fix | ~17 |
+| 18:46 | Edited frontend/src/views/asset/AssetUpload.vue | inline fix | ~19 |
+| 18:46 | Edited frontend/src/views/asset/AssetLibrary.vue | inline fix | ~30 |
+| 18:46 | Edited frontend/src/views/asset/AssetLibrary.vue | inline fix | ~23 |
+| 18:46 | Edited frontend/src/views/asset/AssetLibrary.vue | modified stringify() | ~93 |
+| 18:48 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/MEMORY.md | 1→2 lines | ~55 |
+| 18:48 | Created C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_table_sorting.md | — | ~299 |
+| 18:50 | Edited CLAUDE.md | inline fix | ~21 |
+| 18:50 | Edited CLAUDE.md | 1→2 lines | ~39 |
+| 18:50 | Edited CLAUDE.md | inline fix | ~98 |
+
+## Session: 2026-05-27 23:00
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|

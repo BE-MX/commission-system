@@ -15,6 +15,7 @@ import {
   getPresets, createPreset, updatePreset, deletePreset, testPreset,
   getLogs,
 } from '@/api/ai'
+import { useTableSort } from '@/composables/useTableSort'
 
 const MODULE_LABELS = {
   logistics: '物流跟踪',
@@ -130,6 +131,7 @@ export function useAiManager() {
   const logPageSize = ref(20)
   const logTotal = ref(0)
   const logSummaryData = ref({ tokens_total: 0, success_count: 0, error_count: 0, timeout_count: 0, avg_duration_ms: 0 })
+  const logSort = useTableSort()
 
   // ── Computed ──────────────────────────────────────────
   const stats = computed(() => {
@@ -367,6 +369,7 @@ export function useAiManager() {
       const params = {
         page: logPage.value,
         page_size: logPageSize.value,
+        ...logSort.sortParams.value,
       }
       if (logModuleFilter.value) params.caller_module = logModuleFilter.value
       if (logStatusFilter.value) params.status = logStatusFilter.value
@@ -419,7 +422,7 @@ export function useAiManager() {
     // Logs
     logsData, logsLoading, logSearch, logModuleFilter, logStatusFilter, logDateRange,
     logPage, logPageSize, logTotal, logSummaryData,
-    fetchLogs, onLogExpand,
+    fetchLogs, onLogExpand, logSort,
     logSummary,
     // shared
     stats,

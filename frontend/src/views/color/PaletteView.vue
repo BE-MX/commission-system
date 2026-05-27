@@ -153,10 +153,12 @@ import {
   updateColor,
   generateSwatch as apiGenerateSwatch,
 } from '@/api/color'
+import { useTableSort } from '@/composables/useTableSort'
 import ColorBlock from './components/ColorBlock.vue'
 import ColorDetailModal from './components/ColorDetailModal.vue'
 
 const authStore = useAuthStore()
+const orderSort = useTableSort()
 const canWrite = computed(() => authStore.hasPermission('color:write'))
 const canAdmin = computed(() => authStore.hasPermission('color:admin'))
 
@@ -232,6 +234,7 @@ async function loadData() {
       page: page.value,
       page_size: pageSize.value,
       ...filters,
+      ...orderSort.sortParams.value,
     })
     if (res.data?.code === 200) {
       paletteList.value = res.data.data.items || []
@@ -248,6 +251,7 @@ function resetFilters() {
   filters.luminance_level = ''
   filters.keyword = ''
   page.value = 1
+  orderSort.reset()
   loadData()
 }
 

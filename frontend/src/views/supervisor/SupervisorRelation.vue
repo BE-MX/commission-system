@@ -15,14 +15,14 @@
 
     <!-- 表格 -->
     <div class="table-card">
-    <el-table ref="tableRef" :data="tableData" v-loading="loading" border class="list-table" style="width: 100%" :max-height="maxHeight">
+    <el-table ref="tableRef" :data="tableData" v-loading="loading" border class="list-table" style="width: 100%" :max-height="maxHeight" @sort-change="orderSort.onSortChange">
       <el-table-column prop="salesperson_id" label="业务员ID" min-width="200" max-width="300" show-overflow-tooltip />
-      <el-table-column prop="salesperson_name" label="业务员姓名" min-width="140" max-width="210" show-overflow-tooltip />
+      <el-table-column prop="salesperson_name" label="业务员姓名" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
       <el-table-column prop="supervisor_id" label="一级主管ID" min-width="200" max-width="300" show-overflow-tooltip />
-      <el-table-column prop="supervisor_name" label="一级主管姓名" min-width="140" max-width="210" show-overflow-tooltip />
+      <el-table-column prop="supervisor_name" label="一级主管姓名" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
       <el-table-column prop="second_supervisor_id" label="二级主管ID" min-width="200" max-width="300" show-overflow-tooltip />
       <el-table-column prop="second_supervisor_name" label="二级主管姓名" min-width="140" max-width="210" show-overflow-tooltip />
-      <el-table-column prop="effective_start" label="生效日期" min-width="120" max-width="180" show-overflow-tooltip />
+      <el-table-column prop="effective_start" label="生效日期" min-width="120" max-width="180" show-overflow-tooltip sortable="custom" />
       <el-table-column label="操作" min-width="160" max-width="240">
         <template #default="{ row }">
           <GlassButton variant="link" left-icon="Edit" @click="openSetDialog(row)">变更主管</GlassButton>
@@ -123,8 +123,10 @@ import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getSupervisorList, setSupervisorRelation, getSupervisorHistory, importSupervisorRelations } from '@/api/supervisor'
 import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
+import { useTableSort } from '@/composables/useTableSort'
 
 const { tableRef, maxHeight } = useTableMaxHeight()
+const orderSort = useTableSort()
 
 const keyword = ref('')
 const page = ref(1)
@@ -136,7 +138,7 @@ const loading = ref(false)
 async function fetchList() {
   loading.value = true
   try {
-    const res = await getSupervisorList({ keyword: keyword.value, page: page.value, page_size: pageSize.value })
+    const res = await getSupervisorList({ keyword: keyword.value, page: page.value, page_size: pageSize.value, ...orderSort.sortParams.value })
     tableData.value = res.data.items
     total.value = res.data.total
   } finally {

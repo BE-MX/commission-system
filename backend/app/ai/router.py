@@ -243,9 +243,11 @@ def list_logs(
     date_to: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
+    sort_field: str = Query("created_at"),
+    sort_order: str = Query("desc"),
     db: Session = Depends(get_db),
 ):
-    result = service.list_logs(db, caller_module, preset_id, status, date_from, date_to, page, page_size)
+    result = service.list_logs(db, caller_module, preset_id, status, date_from, date_to, page, page_size, sort_field=sort_field, sort_order=sort_order)
     return _ok(result)
 
 

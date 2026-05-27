@@ -1418,6 +1418,582 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-05-26T11:21:57.570Z"
+    },
+    {
+      "id": "bug-089",
+      "timestamp": "2026-05-27T01:54:45.212Z",
+      "error_message": "CSS fix: width",
+      "file": "frontend/src/views/stock/SafetyConfig.vue",
+      "root_cause": "width: 180px\" @input=\"handleSearch\" /> → 120px\" @change=\"applyFilters\">",
+      "fix": "Changed width: 180px\" @input=\"handleSearch\" /> → 120px\" @change=\"applyFilters\">",
+      "tags": [
+        "auto-detected",
+        "style-fix",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-27T01:54:45.212Z"
+    },
+    {
+      "id": "bug-090",
+      "timestamp": "2026-05-27T01:56:09.862Z",
+      "error_message": "Significant refactor of ",
+      "file": "frontend/src/views/stock/SafetyConfig.vue",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 7→8 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-27T01:56:09.862Z"
+    },
+    {
+      "id": "bug-091",
+      "timestamp": "2026-05-27T01:57:41.847Z",
+      "error_message": "Significant refactor of ",
+      "file": "backend/app/stock/safety_service.py",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 10→11 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-27T01:57:41.847Z"
+    },
+    {
+      "id": "bug-092",
+      "timestamp": "2026-05-27T10:28:09.418Z",
+      "error_message": "CSS fix: el-table",
+      "file": "frontend/src/views/stock/ProductionOrderManage.vue",
+      "root_cause": "el-table: data=\"orderList\" style=\"width:100%\" :header-cell-style=\"headerStyle\" v-loading=\"orderLoading\" stripe> → data=\"orderList\" style=\"width:100%\" :header-cell-style=\"headerStyle\" v-loading=\"orderLoading\" stripe @sort-change=\"orderSort.onSortChange\">",
+      "fix": "Changed el-table: data=\"orderList\" style=\"width:100%\" :header-cell-style=\"headerStyle\" v-loading=\"orderLoading\" stripe> → data=\"orderList\" style=\"width:100%\" :header-cell-style=\"headerStyle\" v-loading=\"orderLoading\" stripe @sort-change=\"orderSort.onSortChange\">",
+      "tags": [
+        "auto-detected",
+        "style-fix",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-27T10:28:26.022Z"
+    },
+    {
+      "id": "bug-093",
+      "timestamp": "2026-05-27T10:29:37.133Z",
+      "error_message": "Missing await",
+      "file": "frontend/src/views/stock/ProductionOrderManage.vue",
+      "root_cause": "Async call without await — returned Promise instead of value",
+      "fix": "Added await to async call",
+      "tags": [
+        "auto-detected",
+        "async-fix",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-27T10:29:37.133Z"
+    },
+    {
+      "id": "bug-094",
+      "timestamp": "2026-05-27T10:39:39.102Z",
+      "error_message": "CSS fix: width",
+      "file": "frontend/src/views/system/UserManagement.vue",
+      "root_cause": "width: 100%\" :max-height=\"maxHeight\"> → 100%\" :max-height=\"maxHeight\" @sort-change=\"orderSort.onSortChange\">",
+      "fix": "Changed width: 100%\" :max-height=\"maxHeight\"> → 100%\" :max-height=\"maxHeight\" @sort-change=\"orderSort.onSortChange\">",
+      "tags": [
+        "auto-detected",
+        "style-fix",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-27T10:39:40.023Z"
+    },
+    {
+      "id": "bug-095",
+      "timestamp": "2026-05-27T10:39:51.730Z",
+      "error_message": "Incorrect value in code",
+      "file": "frontend/src/views/tracking/TrackingList.vue",
+      "root_cause": "Had \"状态\"",
+      "fix": "Changed to \"current_status\"",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-27T10:39:51.730Z"
+    },
+    {
+      "id": "bug-096",
+      "timestamp": "2026-05-27T10:39:58.681Z",
+      "error_message": "Incorrect value in code",
+      "file": "frontend/src/views/color/PaletteView.vue",
+      "root_cause": "Had './components/ColorBlock.vue'",
+      "fix": "Changed to '@/composables/useTableSort'",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-27T10:39:58.681Z"
+    },
+    {
+      "id": "bug-097",
+      "timestamp": "2026-05-27T10:39:59.160Z",
+      "error_message": "Incorrect value in code",
+      "file": "frontend/src/views/color/BlendView.vue",
+      "root_cause": "Had './components/GradientBar.vue'",
+      "fix": "Changed to '@/composables/useTableSort'",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-27T10:39:59.160Z"
+    },
+    {
+      "id": "bug-098",
+      "timestamp": "2026-05-27T10:39:59.673Z",
+      "error_message": "Incorrect value in code",
+      "file": "frontend/src/views/color/SwatchGenerator.vue",
+      "root_cause": "Had '@/api/color'",
+      "fix": "Changed to '@/composables/useTableSort'",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-27T10:39:59.674Z"
+    },
+    {
+      "id": "bug-099",
+      "timestamp": "2026-05-27T10:39:59.768Z",
+      "error_message": "Incorrect value in code",
+      "file": "frontend/src/views/customer/CustomerSnapshot.vue",
+      "root_cause": "Had \"salesperson_name\"",
+      "fix": "Changed to \"custom\"",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-27T10:39:59.769Z"
+    },
+    {
+      "id": "bug-100",
+      "timestamp": "2026-05-27T10:40:00.152Z",
+      "error_message": "Wrong reference: listIntelligenceReports should be useTableSort",
+      "file": "frontend/src/views/insight/IntelligenceOverview.vue",
+      "root_cause": "Used \"listIntelligenceReports\" instead of \"useTableSort\"",
+      "fix": "Changed listIntelligenceReports → useTableSort",
+      "tags": [
+        "auto-detected",
+        "wrong-reference",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-27T10:40:00.152Z"
+    },
+    {
+      "id": "bug-101",
+      "timestamp": "2026-05-27T10:40:08.196Z",
+      "error_message": "CSS fix: el-table",
+      "file": "frontend/src/views/system/AIManager.vue",
+      "root_cause": "el-table: data=\"logsData\" border class=\"list-table\" v-loading=\"logsLoading\" @expand-change=\"onLogExpand\"> → data=\"logsData\" border class=\"list-table\" v-loading=\"logsLoading\" @expand-change=\"onLogExpand\" @sort-change=\"logSort.onSortChange\">",
+      "fix": "Changed el-table: data=\"logsData\" border class=\"list-table\" v-loading=\"logsLoading\" @expand-change=\"onLogExpand\"> → data=\"logsData\" border class=\"list-table\" v-loading=\"logsLoading\" @expand-change=\"onLogExpand\" @sort-change=\"logSort.onSortChange\">",
+      "tags": [
+        "auto-detected",
+        "style-fix",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-27T10:40:08.196Z"
+    },
+    {
+      "id": "bug-102",
+      "timestamp": "2026-05-27T10:40:09.395Z",
+      "error_message": "CSS fix: page",
+      "file": "frontend/src/views/customer/CustomerSnapshot.vue",
+      "root_cause": "page: page.value, page_size: pageSize.value → page.value, page_size: pageSize.value,",
+      "fix": "Changed page: page.value, page_size: pageSize.value → page.value, page_size: pageSize.value,",
+      "tags": [
+        "auto-detected",
+        "style-fix",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-27T10:40:09.395Z"
+    },
+    {
+      "id": "bug-103",
+      "timestamp": "2026-05-27T10:40:11.820Z",
+      "error_message": "Incorrect value in code",
+      "file": "frontend/src/views/commission/CommissionBatch.vue",
+      "root_cause": "Had \"batch_name\"",
+      "fix": "Changed to \"orderSort.onSortChange\"",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-27T10:40:17.067Z"
+    },
+    {
+      "id": "bug-104",
+      "timestamp": "2026-05-27T10:40:18.003Z",
+      "error_message": "Significant refactor of ",
+      "file": "frontend/src/views/stock/StockOverview.vue",
+      "root_cause": "9 lines replaced/restructured",
+      "fix": "Rewrote 12→4 lines (9 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-27T10:40:18.003Z"
+    },
+    {
+      "id": "bug-105",
+      "timestamp": "2026-05-27T10:40:19.835Z",
+      "error_message": "CSS fix: border",
+      "file": "frontend/src/views/payment/PaymentSync.vue",
+      "root_cause": "border: max-height=\"maxHeight\"> → max-height=\"maxHeight\" @sort-change=\"orderSort.onSortChange\">",
+      "fix": "Changed border: max-height=\"maxHeight\"> → max-height=\"maxHeight\" @sort-change=\"orderSort.onSortChange\">",
+      "tags": [
+        "auto-detected",
+        "style-fix",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-27T10:40:31.313Z"
+    },
+    {
+      "id": "bug-106",
+      "timestamp": "2026-05-27T10:40:25.568Z",
+      "error_message": "CSS fix: el-table",
+      "file": "frontend/src/views/color/SwatchGenerator.vue",
+      "root_cause": "el-table: data=\"historyList\" size=\"small\"> → data=\"historyList\" size=\"small\" @sort-change=\"orderSort.onSortChange\">",
+      "fix": "Changed el-table: data=\"historyList\" size=\"small\"> → data=\"historyList\" size=\"small\" @sort-change=\"orderSort.onSortChange\">",
+      "tags": [
+        "auto-detected",
+        "style-fix",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-27T10:40:36.022Z"
+    },
+    {
+      "id": "bug-107",
+      "timestamp": "2026-05-27T10:40:26.069Z",
+      "error_message": "CSS fix: status",
+      "file": "frontend/src/views/commission/CommissionBatch.vue",
+      "root_cause": "status: statusFilter.value, page: page.value, page_size: pageSize.value → statusFilter.value, page: page.value, page_size: pageSize.value,",
+      "fix": "Changed status: statusFilter.value, page: page.value, page_size: pageSize.value → statusFilter.value, page: page.value, page_size: pageSize.value,",
+      "tags": [
+        "auto-detected",
+        "style-fix",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-27T10:40:26.069Z"
+    },
+    {
+      "id": "bug-108",
+      "timestamp": "2026-05-27T10:40:27.004Z",
+      "error_message": "Incorrect value in code",
+      "file": "frontend/src/views/payment/PaymentSync.vue",
+      "root_cause": "Had \"payment_date\"",
+      "fix": "Changed to \"custom\"",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-27T10:40:27.004Z"
+    },
+    {
+      "id": "bug-109",
+      "timestamp": "2026-05-27T10:40:32.096Z",
+      "error_message": "CSS fix: el-table",
+      "file": "frontend/src/views/insight/IntelligenceLibrary.vue",
+      "root_cause": "el-table: data=\"items\" @selection-change=\"handleSelectionChange\"> → data=\"items\" @selection-change=\"handleSelectionChange\" @sort-change=\"libSort.onSortChange\">",
+      "fix": "Changed el-table: data=\"items\" @selection-change=\"handleSelectionChange\"> → data=\"items\" @selection-change=\"handleSelectionChange\" @sort-change=\"libSort.onSortChange\">",
+      "tags": [
+        "auto-detected",
+        "style-fix",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-27T10:40:32.096Z"
+    },
+    {
+      "id": "bug-110",
+      "timestamp": "2026-05-27T10:40:38.538Z",
+      "error_message": "Incorrect value in code",
+      "file": "frontend/src/views/employee/EmployeeAttribute.vue",
+      "root_cause": "Had \"user_id\"",
+      "fix": "Changed to \"orderSort.onSortChange\"",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-27T10:40:42.994Z"
+    },
+    {
+      "id": "bug-111",
+      "timestamp": "2026-05-27T10:40:40.592Z",
+      "error_message": "CSS fix: border",
+      "file": "frontend/src/views/commission/CommissionDetail.vue",
+      "root_cause": "border: max-height=\"maxHeight\"> → max-height=\"maxHeight\" @sort-change=\"orderSort.onSortChange\">",
+      "fix": "Changed border: max-height=\"maxHeight\"> → max-height=\"maxHeight\" @sort-change=\"orderSort.onSortChange\">",
+      "tags": [
+        "auto-detected",
+        "style-fix",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-27T10:41:17.557Z"
+    },
+    {
+      "id": "bug-112",
+      "timestamp": "2026-05-27T10:40:46.533Z",
+      "error_message": "CSS fix: keyword",
+      "file": "frontend/src/views/employee/EmployeeAttribute.vue",
+      "root_cause": "keyword: keyword.value, page: page.value, page_size: pageSize.value → keyword.value, page: page.value, page_size: pageSize.value, ...orderSort.sortParams.value",
+      "fix": "Changed keyword: keyword.value, page: page.value, page_size: pageSize.value → keyword.value, page: page.value, page_size: pageSize.value, ...orderSort.sortParams.value",
+      "tags": [
+        "auto-detected",
+        "style-fix",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-27T10:40:46.533Z"
+    },
+    {
+      "id": "bug-113",
+      "timestamp": "2026-05-27T10:40:52.382Z",
+      "error_message": "Incorrect value in code",
+      "file": "frontend/src/views/design/DesignManage.vue",
+      "root_cause": "Had \"customer_name\"",
+      "fix": "Changed to \"custom\"",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-27T10:40:52.382Z"
+    },
+    {
+      "id": "bug-114",
+      "timestamp": "2026-05-27T10:40:59.219Z",
+      "error_message": "CSS fix: width",
+      "file": "frontend/src/views/supervisor/SupervisorRelation.vue",
+      "root_cause": "width: 100%\" :max-height=\"maxHeight\"> → 100%\" :max-height=\"maxHeight\" @sort-change=\"orderSort.onSortChange\">",
+      "fix": "Changed width: 100%\" :max-height=\"maxHeight\"> → 100%\" :max-height=\"maxHeight\" @sort-change=\"orderSort.onSortChange\">",
+      "tags": [
+        "auto-detected",
+        "style-fix",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-27T10:41:06.657Z"
+    },
+    {
+      "id": "bug-115",
+      "timestamp": "2026-05-27T10:41:00.368Z",
+      "error_message": "Incorrect value in code",
+      "file": "frontend/src/views/stock/StockOverview.vue",
+      "root_cause": "Had \"100\"",
+      "fix": "Changed to \"safety_stock\"",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-27T10:41:00.368Z"
+    },
+    {
+      "id": "bug-116",
+      "timestamp": "2026-05-27T10:41:01.302Z",
+      "error_message": "Incorrect value in code",
+      "file": "frontend/src/views/commission/CommissionDetail.vue",
+      "root_cause": "Had \"回款金额\"",
+      "fix": "Changed to \"payment_amount\"",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-27T10:41:13.385Z"
+    },
+    {
+      "id": "bug-117",
+      "timestamp": "2026-05-27T10:41:42.519Z",
+      "error_message": "CSS fix: sort, order",
+      "file": "frontend/src/views/stock/StockOverview.vue",
+      "root_cause": "sort: filters.sortField, → sortParams.value.sort_field || 'sales_30d',; order: filters.sortOrder, → sortParams.value.sort_order || 'desc',",
+      "fix": "Changed sort: filters.sortField, → sortParams.value.sort_field || 'sales_30d',; order: filters.sortOrder, → sortParams.value.sort_order || 'desc',",
+      "tags": [
+        "auto-detected",
+        "style-fix",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-27T10:42:40.017Z"
+    },
+    {
+      "id": "bug-118",
+      "timestamp": "2026-05-27T10:44:12.016Z",
+      "error_message": "CSS fix: el-table",
+      "file": "frontend/src/views/stock/SafetyConfig.vue",
+      "root_cause": "el-table: data=\"tableData\" style=\"width:100%\" :header-cell-style=\"headerStyle\" v-loading=\"loading\"> → data=\"tableData\" style=\"width:100%\" :header-cell-style=\"headerStyle\" v-loading=\"loading\" @sort-change=\"onSortChange\">",
+      "fix": "Changed el-table: data=\"tableData\" style=\"width:100%\" :header-cell-style=\"headerStyle\" v-loading=\"loading\"> → data=\"tableData\" style=\"width:100%\" :header-cell-style=\"headerStyle\" v-loading=\"loading\" @sort-change=\"onSortChange\">",
+      "tags": [
+        "auto-detected",
+        "style-fix",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-27T10:44:46.388Z"
+    },
+    {
+      "id": "bug-119",
+      "timestamp": "2026-05-27T10:44:22.233Z",
+      "error_message": "Incorrect value in code",
+      "file": "frontend/src/views/design/AuditQueue.vue",
+      "root_cause": "Had \"customer_name\"",
+      "fix": "Changed to \"custom\"",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-27T10:44:29.790Z"
+    },
+    {
+      "id": "bug-120",
+      "timestamp": "2026-05-27T10:44:24.432Z",
+      "error_message": "Incorrect value in code",
+      "file": "backend/app/stock/production_order_service.py",
+      "root_cause": "Had \"order_no\"",
+      "fix": "Changed to \"o.order_no\"",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-27T10:44:24.432Z"
+    },
+    {
+      "id": "bug-121",
+      "timestamp": "2026-05-27T10:44:28.152Z",
+      "error_message": "Incorrect value in code",
+      "file": "frontend/src/views/stock/SafetyConfig.vue",
+      "root_cause": "Had \"95\"",
+      "fix": "Changed to \"sales_30d\"",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 3,
+      "last_seen": "2026-05-27T10:44:42.266Z"
+    },
+    {
+      "id": "bug-122",
+      "timestamp": "2026-05-27T10:45:30.231Z",
+      "error_message": "Significant refactor of ",
+      "file": "frontend/src/views/asset/AssetLibrary.vue",
+      "root_cause": "7 lines replaced/restructured",
+      "fix": "Rewrote 9→4 lines (7 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-27T10:45:30.231Z"
+    },
+    {
+      "id": "bug-123",
+      "timestamp": "2026-05-27T10:45:55.435Z",
+      "error_message": "CSS fix: v-else",
+      "file": "frontend/src/views/asset/AssetLibrary.vue",
+      "root_cause": "v-else: data=\"assets\" style=\"width: 100%\" @row-click=\"openPreview\"> → data=\"assets\" style=\"width: 100%\" @row-click=\"openPreview\" @sort-change=\"orderSort.onSortChange\">",
+      "fix": "Changed v-else: data=\"assets\" style=\"width: 100%\" @row-click=\"openPreview\"> → data=\"assets\" style=\"width: 100%\" @row-click=\"openPreview\" @sort-change=\"orderSort.onSortChange\">",
+      "tags": [
+        "auto-detected",
+        "style-fix",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-27T10:46:18.800Z"
+    },
+    {
+      "id": "bug-124",
+      "timestamp": "2026-05-27T10:46:11.852Z",
+      "error_message": "Incorrect value in code",
+      "file": "frontend/src/views/asset/AssetLibrary.vue",
+      "root_cause": "Had \"160\"",
+      "fix": "Changed to \"created_at\"",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-27T10:46:11.852Z"
     }
   ]
 }

@@ -44,6 +44,8 @@ def list_synced_payments(
     keyword: str = Query("", description="搜索关键字"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    sort_field: str = Query("payment_date"),
+    sort_order: str = Query("desc"),
     db: Session = Depends(get_db),
 ) -> ResponseModel[PageResponse[SyncedPaymentListItem]]:
     """查询已同步的回款列表"""
@@ -73,6 +75,16 @@ def list_synced_payments(
             SyncedPayment.customer_id.like(like_pattern),
             CustomerInfo.company_name.like(like_pattern),
         ))
+
+    from sqlalchemy import desc as _desc
+    SORT_MAP = {
+        "payment_date": SyncedPayment.payment_date,
+        "customer_name": CustomerInfo.company_name,
+        "payment_amount": SyncedPayment.payment_amount,
+    }
+    sort_col = SORT_MAP.get(sort_field, SyncedPayment.payment_date)
+    order_fn = _desc if sort_order == "desc" else lambda c: c
+    query = query.order_by(order_fn(sort_col))
 
     total = query.count()
     rows = query.offset((page - 1) * page_size).limit(page_size).all()

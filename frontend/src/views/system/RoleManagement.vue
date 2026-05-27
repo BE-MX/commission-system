@@ -10,17 +10,17 @@
     <!-- 表格 -->
     <div class="table-card">
     <el-table ref="tableRef" :data="tableData" v-loading="loading" border class="list-table" style="width: 100%" :max-height="maxHeight">
-      <el-table-column prop="name" label="角色标识" min-width="140" max-width="210" show-overflow-tooltip />
-      <el-table-column prop="label" label="角色名称" min-width="140" max-width="210" show-overflow-tooltip />
+      <el-table-column prop="name" label="角色标识" min-width="140" max-width="210" show-overflow-tooltip sortable />
+      <el-table-column prop="label" label="角色名称" min-width="140" max-width="210" show-overflow-tooltip sortable />
       <el-table-column prop="description" label="描述" min-width="200" max-width="300" show-overflow-tooltip />
       <el-table-column label="类型" min-width="100" max-width="150">
         <template #default="{ row }">
           <el-tag :type="row.is_system ? 'warning' : 'primary'" size="small" effect="plain">{{ row.is_system ? '系统' : '自定义' }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="user_count" label="用户数" min-width="80" max-width="120" show-overflow-tooltip />
-      <el-table-column prop="permission_count" label="权限数" min-width="80" max-width="120" show-overflow-tooltip />
-      <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" show-overflow-tooltip />
+      <el-table-column prop="user_count" label="用户数" min-width="80" max-width="120" show-overflow-tooltip sortable />
+      <el-table-column prop="permission_count" label="权限数" min-width="80" max-width="120" show-overflow-tooltip sortable />
+      <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" show-overflow-tooltip sortable />
       <el-table-column label="操作" min-width="160" max-width="240" fixed="right">
         <template #default="{ row }">
           <GlassButton variant="link" :disabled="row.name === 'super_admin'" @click="openEditDialog(row)" left-icon="Edit">

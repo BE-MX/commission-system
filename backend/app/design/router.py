@@ -120,6 +120,8 @@ def list_requests(
     expect_end_date: Optional[str] = Query(None, description="期望开始日期 <=，格式 YYYY-MM-DD"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    sort_field: str = Query("created_at"),
+    sort_order: str = Query("desc"),
     db: Session = Depends(get_db),
     _user: dict = Depends(require_any_permission('design:read', 'design:write', 'design:audit', 'design:manage')),
 ):
@@ -158,8 +160,21 @@ def list_requests(
         from datetime import date as _date
         query = query.filter(DesignScheduleRequest.expect_start_date <= _date.fromisoformat(expect_end_date))
 
+    from sqlalchemy import desc as _desc
+    SORT_MAP = {
+        "request_no": DesignScheduleRequest.request_no,
+        "customer_name": DesignScheduleRequest.customer_name,
+        "salesperson_name": DesignScheduleRequest.salesperson_name,
+        "expect_start_date": DesignScheduleRequest.expect_start_date,
+        "priority": DesignScheduleRequest.priority,
+        "created_at": DesignScheduleRequest.created_at,
+        "status": DesignScheduleRequest.status,
+    }
+    sort_col = SORT_MAP.get(sort_field, DesignScheduleRequest.created_at)
+    order_fn = _desc if sort_order == "desc" else lambda c: c
+
     total = query.count()
-    items = query.order_by(DesignScheduleRequest.created_at.desc()).offset(
+    items = query.order_by(order_fn(sort_col)).offset(
         (page - 1) * page_size
     ).limit(page_size).all()
 
@@ -429,6 +444,8 @@ def list_tasks(
     status: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    sort_field: str = Query("created_at"),
+    sort_order: str = Query("desc"),
     db: Session = Depends(get_db),
     _user: dict = Depends(require_any_permission('design:read', 'design:write', 'design:audit', 'design:manage')),
 ):
@@ -460,8 +477,21 @@ def list_tasks(
         elif statuses:
             query = query.filter(DesignScheduleTask.status.in_(statuses))
 
+    from sqlalchemy import desc as _desc
+    SORT_MAP = {
+        "task_no": DesignScheduleTask.task_no,
+        "customer_name": DesignScheduleTask.customer_name,
+        "salesperson_name": DesignScheduleTask.salesperson_name,
+        "plan_start_date": DesignScheduleTask.plan_start_date,
+        "plan_end_date": DesignScheduleTask.plan_end_date,
+        "created_at": DesignScheduleTask.created_at,
+        "status": DesignScheduleTask.status,
+    }
+    sort_col = SORT_MAP.get(sort_field, DesignScheduleTask.created_at)
+    order_fn = _desc if sort_order == "desc" else lambda c: c
+
     total = query.count()
-    items = query.order_by(DesignScheduleTask.created_at.desc()).offset(
+    items = query.order_by(order_fn(sort_col)).offset(
         (page - 1) * page_size
     ).limit(page_size).all()
 

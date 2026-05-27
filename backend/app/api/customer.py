@@ -34,6 +34,8 @@ def list_customer_snapshots(
     is_complete: str = Query("all", description="完整性筛选: true/false/all"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    sort_field: str = Query("customer_name"),
+    sort_order: str = Query("asc"),
     db: Session = Depends(get_db),
 ) -> ResponseModel[PageResponse[CustomerSnapshotListItem]]:
     """查询当前有效的客户归属快照列表"""
@@ -85,10 +87,21 @@ def list_customer_snapshots(
         ))
 
     total = query.count()
-    rows = query.order_by(
-        CustomerCommissionSnapshot.is_complete.asc(),
-        SpUser.full_name.asc(),
-    ).offset((page - 1) * page_size).limit(page_size).all()
+    from sqlalchemy import desc as _desc
+    SORT_MAP = {
+        "customer_name": CustomerInfo.company_name,
+        "salesperson_name": SpUser.full_name,
+        "first_receipt_date": first_receipt_sub.c.first_receipt_date,
+    }
+    sort_col = SORT_MAP.get(sort_field)
+    if sort_col is not None:
+        order_fn = _desc if sort_order == "desc" else lambda c: c
+        rows = query.order_by(order_fn(sort_col)).offset((page - 1) * page_size).limit(page_size).all()
+    else:
+        rows = query.order_by(
+            CustomerCommissionSnapshot.is_complete.asc(),
+            SpUser.full_name.asc(),
+        ).offset((page - 1) * page_size).limit(page_size).all()
 
     items = []
     for snap, customer_name, sp_name, sv_name, sv2_name, first_receipt_date in rows:

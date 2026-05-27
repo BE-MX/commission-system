@@ -18,9 +18,9 @@
 
     <div class="table-card">
       <el-table ref="tableRef" :data="tableData" v-loading="loading" border class="list-table" style="width: 100%" :max-height="maxHeight">
-        <el-table-column prop="code" label="字典编码" min-width="140" max-width="210" show-overflow-tooltip />
-        <el-table-column prop="label" label="显示名" min-width="140" max-width="210" show-overflow-tooltip />
-        <el-table-column prop="sort" label="排序" min-width="80" max-width="120" />
+        <el-table-column prop="code" label="字典编码" min-width="140" max-width="210" show-overflow-tooltip sortable />
+        <el-table-column prop="label" label="显示名" min-width="140" max-width="210" show-overflow-tooltip sortable />
+        <el-table-column prop="sort" label="排序" min-width="80" max-width="120" sortable />
         <el-table-column label="状态" min-width="80" max-width="120">
           <template #default="{ row }">
             <el-tag :type="row.is_active ? 'success' : 'danger'" size="small" effect="plain">{{ row.is_active ? '启用' : '禁用' }}</el-tag>
