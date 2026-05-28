@@ -106,12 +106,13 @@ export function previewFolderUpload(folderPath, tagMapping) {
   })
 }
 
-export function executeFolderUpload(folderPath, tagMapping, permission, extraTags) {
+export function executeFolderUpload(folderPath, tagMapping, permission, extraTags, updateDuplicates = true) {
   return assetClient.post('/folder-upload/execute', {
     folder_path: folderPath,
     tag_mapping: tagMapping,
     permission,
     extra_tags: extraTags,
+    update_duplicates: updateDuplicates,
   }, {
     loadingText: '正在入库...',
     timeout: 600000,

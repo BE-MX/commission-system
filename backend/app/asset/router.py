@@ -417,6 +417,7 @@ def folder_upload_execute(
             req.permission,
             req.extra_tags,
             user_id,
+            update_duplicates=req.update_duplicates,
         )
         return _ok({
             "async": True,
@@ -433,6 +434,7 @@ def folder_upload_execute(
         extra_tags=req.extra_tags,
         uploader_id=user_id,
         copy=True,
+        update_duplicates=req.update_duplicates,
     )
     return _ok({
         "async": False,

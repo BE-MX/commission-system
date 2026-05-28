@@ -322,6 +322,7 @@ def execute_folder_upload(
     extra_tags: list[AssetTagItem],
     uploader_id: int,
     copy: bool = False,
+    update_duplicates: bool = True,
 ) -> dict:
     """执行文件夹批量上传（优化版）。
 
@@ -336,7 +337,7 @@ def execute_folder_upload(
     files = scan_folder(folder_path)
     total = len(files)
     if total == 0:
-        return {"total": 0, "success": 0, "new_version_count": 0, "failed": []}
+        return {"total": 0, "success": 0, "new_version_count": 0, "skipped": 0, "failed": []}
 
     # ── 1. 预加载：一次性消除循环内的所有查询 ──────────────
     file_names = [Path(f).name for f in files]
@@ -371,6 +372,7 @@ def execute_folder_upload(
     BATCH_SIZE = 20
     success = 0
     new_version_count = 0
+    skipped = 0
     failed: list[dict] = []
 
     for i in range(0, total, BATCH_SIZE):
@@ -394,6 +396,11 @@ def execute_folder_upload(
                         existing is not None
                         and asset_tags_map.get(existing.id, set()) == target_set
                     )
+
+                    if should_merge and not update_duplicates:
+                        # 关闭"更新为新版本"开关 → 同名同标签直接跳过
+                        skipped += 1
+                        continue
 
                     if should_merge and existing:
                         # ── 新版本 ──
@@ -514,6 +521,7 @@ def execute_folder_upload(
         "total": total,
         "success": success,
         "new_version_count": new_version_count,
+        "skipped": skipped,
         "failed": failed,
     }
 
@@ -527,6 +535,7 @@ def start_folder_upload_async(
     permission: AssetPermissionIn,
     extra_tags: list,
     uploader_id: int,
+    update_duplicates: bool = True,
 ) -> str:
     """启动异步文件夹上传，返回 job_id。"""
     job_id = str(uuid.uuid4())[:16]
@@ -544,6 +553,7 @@ def start_folder_upload_async(
             report = execute_folder_upload(
                 db, folder_path, tag_mapping, permission, extra_tags, uploader_id,
                 copy=True,
+                update_duplicates=update_duplicates,
             )
             _folder_upload_jobs[job_id].update({
                 "status": "completed",

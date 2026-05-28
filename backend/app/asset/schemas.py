@@ -245,6 +245,10 @@ class FolderUploadExecuteRequest(BaseModel):
     tag_mapping: dict[str, TagMappingItem] = {}
     permission: AssetPermissionIn = AssetPermissionIn()
     extra_tags: list[AssetTagItem] = []
+    update_duplicates: bool = Field(
+        True,
+        description="同名同标签文件是否更新为新版本; False 时直接跳过",
+    )
 
 
 # ── 移动端 ──────────────────────────────────────────────

@@ -363,6 +363,13 @@
         <p v-if="(folderPreviewData?.files || []).length > 50" class="preview-more">
           还有 {{ folderPreviewData.files.length - 50 }} 个文件...
         </p>
+        <div class="duplicate-policy">
+          <span class="duplicate-policy-label">同名文件（标签与文件名均相同）：</span>
+          <el-radio-group v-model="folderUpdateDuplicates" size="small">
+            <el-radio :label="true">更新为新版本</el-radio>
+            <el-radio :label="false">直接跳过</el-radio>
+          </el-radio-group>
+        </div>
         <div class="dialog-footer">
           <el-button @click="folderUploadStep = 'input'">返回</el-button>
           <el-button type="primary" @click="confirmFolderUpload">确认上传</el-button>
@@ -390,6 +397,10 @@
           <div class="report-stat warning">
             <div class="report-stat-value">{{ folderUploadReport?.new_version_count || 0 }}</div>
             <div class="report-stat-label">作为新版本</div>
+          </div>
+          <div class="report-stat info">
+            <div class="report-stat-value">{{ folderUploadReport?.skipped || 0 }}</div>
+            <div class="report-stat-label">已跳过</div>
           </div>
           <div class="report-stat danger">
             <div class="report-stat-value">{{ folderUploadReport?.failed?.length || 0 }}</div>
@@ -666,6 +677,7 @@ const folderUploadReport = ref(null)
 const folderTagMapping = ref({})
 const folderExtraPermission = ref({ permission_group: 'all', allow_preview: 1, allow_download: 1 })
 const folderJobId = ref(null)
+const folderUpdateDuplicates = ref(true)
 let pollTimer = null
 
 function openFolderUpload() {
@@ -678,6 +690,7 @@ function openFolderUpload() {
   folderTagMapping.value = {}
   folderExtraPermission.value = { permission_group: 'all', allow_preview: 1, allow_download: 1 }
   folderJobId.value = null
+  folderUpdateDuplicates.value = true
   if (pollTimer) {
     clearInterval(pollTimer)
     pollTimer = null
@@ -776,6 +789,7 @@ async function confirmFolderUpload() {
       folderTagMapping.value,
       folderExtraPermission.value,
       extraTags,
+      folderUpdateDuplicates.value,
     )
     const data = res.data || {}
 
@@ -1220,6 +1234,7 @@ function handleViewUploaded() {
 
 .report-stat.success { background: #f0f9eb; }
 .report-stat.warning { background: #fdf6ec; }
+.report-stat.info { background: #f4f4f5; }
 .report-stat.danger { background: #fef0f0; }
 
 .report-stat-value {
@@ -1230,7 +1245,19 @@ function handleViewUploaded() {
 
 .report-stat.success .report-stat-value { color: #67c23a; }
 .report-stat.warning .report-stat-value { color: #e6a23c; }
+.report-stat.info .report-stat-value { color: #909399; }
 .report-stat.danger .report-stat-value { color: #f56c6c; }
+.duplicate-policy {
+  margin: 12px 0 4px;
+  padding: 10px 12px;
+  background: #faf8f3;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+}
+.duplicate-policy-label { color: #606266; white-space: nowrap; }
 
 .report-stat-label {
   font-size: 12px;
