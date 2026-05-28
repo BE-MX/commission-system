@@ -315,9 +315,11 @@ def query_assets(
         q = q.order_by(sort_col)
 
     # 分页 + selectinload tags (selectinload 比 joinedload 在 LIMIT 场景下快 6 倍)
+    # permissions 也加载, 移动端 quick-search 端点会访问 a.permissions.allow_preview 等字段
     items = (
         q.options(
             selectinload(Asset.tags).joinedload(TagValue.dimension),
+            selectinload(Asset.permissions),
         )
         .offset((page - 1) * page_size)
         .limit(page_size)
