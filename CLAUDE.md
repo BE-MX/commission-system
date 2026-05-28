@@ -522,6 +522,7 @@ QA 时检查代码是否符合 DESIGN.md 中的颜色、字体、间距、圆角
 - `frontend/src/api/insight.js` 和 `frontend/src/api/system.js` 自建了 axios 实例但**没有注入 Authorization token**，导致所有 POST/PUT/DELETE 请求报 401。修复：参照 `request.js` 在请求拦截器中加入 `getAccessToken()` 注入 Bearer token
 - **批量循环服务漏 import 静默失败**：`folder_upload_service.execute_folder_upload` 这种「逐文件 + try/except」结构里，循环体用到的名字漏 import 时 `NameError` 会被外层 `except Exception as exc: failed.append(...)` 吞掉，表现是"任务跑完但全部 failed"或"零写入但状态 completed"。改这类批量服务前先 grep 确认顶部 `from app.xxx.models import ...` 包含循环里所有 ORM 类。调试时让 except 块 `print(f"FAIL err={type(exc).__name__}: {exc}", flush=True); traceback.print_exc()`——uvicorn 默认不打 logger.info，print(flush=True) 才进 NSSM service.log
 - **SQLAlchemy relationship `lazy="selectin"` 在大表上是 N+1 重灾区**：`Asset.versions/permissions/tags` 之前是 selectin，10K 行 `db.query(Asset).all()` 触发 30K+ 额外查询导致 87s。Asset 已改 `lazy="noload"` + 业务层按需 `joinedload`。新增 ORM 表设计 relationship 时，**默认用 `noload` 或 `raise`，由 query 显式 `joinedload/selectinload` 控制加载**，避免无意中拖垮列表查询
+- **joinedload vs selectinload 选择**：`joinedload` 用 LEFT OUTER JOIN 一次拿全部数据，但主表带 LIMIT 或关联表行数多时会产生笛卡尔积（24 行 × 5 个 tag = 120 行传输 + ORM 反序列化）；`selectinload` 拆成 2 条 SQL（主表 + `WHERE id IN (...)`），在 LIMIT 场景或 1:N 关系 N 较大时反而更快。经验：**主表有 LIMIT 或关联表平均 >3 行时优先 selectinload**；1:1 关系或关联表总是 1-2 行时用 joinedload。Asset 列表查询（24 行 × 平均 4-5 tag）改 selectinload 后快 6 倍；TagDimension（5 行 × 平均 83 值）改 selectinload 后快 4 倍
 
 **钉钉推送**：运单入库成功后通过 `dingtalk/webhook.py` 异步推送 Markdown 通知到群（不阻塞响应）
 
