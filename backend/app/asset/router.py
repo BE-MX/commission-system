@@ -67,26 +67,9 @@ def get_dimensions(
     db: Session = Depends(get_db),
     _user: dict = Depends(require_permission("asset:read")),
 ):
-    """标签维度列表（含标签值）"""
-    dims = service.list_dimensions(db)
-    return _ok([{
-        "id": d.id,
-        "name": d.name,
-        "label": d.label,
-        "is_single_select": d.is_single_select,
-        "is_system": d.is_system,
-        "is_required": d.is_required,
-        "sort_order": d.sort_order,
-        "values": [{
-            "id": v.id,
-            "dimension_id": v.dimension_id,
-            "value": v.value,
-            "color_hex": v.color_hex,
-            "image_path": v.image_path,
-            "sort_order": v.sort_order,
-            "is_active": v.is_active,
-        } for v in d.values],
-    } for d in dims])
+    """标签维度列表（含标签值）— 带 60 秒进程内缓存"""
+    from app.asset.tag_service import list_dimensions_cached
+    return _ok(list_dimensions_cached(db))
 
 
 @router.post("/tags/dimensions")

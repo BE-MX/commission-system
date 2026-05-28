@@ -1,5 +1,8 @@
 """素材管理 — 标签维度/值 CRUD + 种子数据"""
 
+import threading
+import time
+
 from sqlalchemy.orm import Session
 
 from app.asset.models import TagDimension, TagValue
@@ -58,8 +61,37 @@ def seed_default_dimensions(db: Session) -> None:
 
 # ── 维度查询 ────────────────────────────────────────────
 
+# 进程内缓存: 跨海 RDS 跑一次需要 1-2 秒,标签维度变更频率极低,值得缓存
+# 任何写操作后调用 invalidate_dim_cache() 立即失效
+_DIM_CACHE: dict = {"data": None, "expires_at": 0.0}
+_DIM_CACHE_LOCK = threading.Lock()
+_DIM_CACHE_TTL_SECONDS = 60
+
+
+def _build_dim_payload(dims: list[TagDimension]) -> list[dict]:
+    """把 ORM 序列化成纯 dict,缓存安全(无 session 绑定)。"""
+    return [{
+        "id": d.id,
+        "name": d.name,
+        "label": d.label,
+        "is_single_select": d.is_single_select,
+        "is_system": d.is_system,
+        "is_required": d.is_required,
+        "sort_order": d.sort_order,
+        "values": [{
+            "id": v.id,
+            "dimension_id": v.dimension_id,
+            "value": v.value,
+            "color_hex": v.color_hex,
+            "image_path": v.image_path,
+            "sort_order": v.sort_order,
+            "is_active": v.is_active,
+        } for v in d.values],
+    } for d in dims]
+
+
 def list_dimensions(db: Session) -> list[TagDimension]:
-    """所有标签维度（含标签值）"""
+    """所有标签维度（含标签值）— 直接查库,返回 ORM 对象。"""
     from sqlalchemy.orm import selectinload
     return (
         db.query(TagDimension)
@@ -67,6 +99,35 @@ def list_dimensions(db: Session) -> list[TagDimension]:
         .order_by(TagDimension.sort_order)
         .all()
     )
+
+
+def list_dimensions_cached(db: Session) -> list[dict]:
+    """缓存版本 — 返回纯 dict,直接喂给 router 的 JSON 响应。
+
+    TTL 60 秒,任何写操作会调用 invalidate_dim_cache() 立即失效。
+    """
+    now = time.time()
+    cached = _DIM_CACHE
+    if cached["data"] is not None and now < cached["expires_at"]:
+        return cached["data"]
+
+    with _DIM_CACHE_LOCK:
+        # double check 防止并发重复刷新
+        cached = _DIM_CACHE
+        if cached["data"] is not None and now < cached["expires_at"]:
+            return cached["data"]
+
+        dims = list_dimensions(db)
+        payload = _build_dim_payload(dims)
+        _DIM_CACHE["data"] = payload
+        _DIM_CACHE["expires_at"] = now + _DIM_CACHE_TTL_SECONDS
+        return payload
+
+
+def invalidate_dim_cache() -> None:
+    """清空标签维度缓存,在任何 CRUD 写操作之后调用。"""
+    _DIM_CACHE["data"] = None
+    _DIM_CACHE["expires_at"] = 0.0
 
 
 def get_dimension(db: Session, dim_id: int) -> TagDimension | None:
@@ -94,6 +155,7 @@ def create_dimension_value(
     db.add(tv)
     db.commit()
     db.refresh(tv)
+    invalidate_dim_cache()
     return tv
 
 
@@ -121,6 +183,7 @@ def update_dimension_value(
         tv.is_active = is_active
     db.commit()
     db.refresh(tv)
+    invalidate_dim_cache()
     return tv
 
 
@@ -131,6 +194,7 @@ def delete_dimension_value(db: Session, value_id: int) -> bool:
         return False
     db.delete(tv)
     db.commit()
+    invalidate_dim_cache()
     return True
 
 
@@ -156,6 +220,7 @@ def create_dimension(
     db.add(dim)
     db.commit()
     db.refresh(dim)
+    invalidate_dim_cache()
     return dim
 
 
@@ -180,6 +245,7 @@ def update_dimension(
         dim.sort_order = sort_order
     db.commit()
     db.refresh(dim)
+    invalidate_dim_cache()
     return dim
 
 
@@ -190,4 +256,5 @@ def delete_dimension(db: Session, dim_id: int) -> bool:
         return False
     db.delete(dim)
     db.commit()
+    invalidate_dim_cache()
     return True
