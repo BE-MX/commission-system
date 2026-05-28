@@ -513,7 +513,12 @@ def execute_folder_upload(
                         success += 1
 
             except Exception as exc:
-                failed.append({"file_name": file_name, "reason": str(exc)})
+                import traceback
+                err = f"{type(exc).__name__}: {exc}"
+                failed.append({"file_name": file_name, "reason": err})
+                # 打到 stderr,确保 uvicorn 控制台 / NSSM 日志能看到
+                print(f"[folder-upload] FAIL file={file_name} err={err}", flush=True)
+                traceback.print_exc()
 
         db.commit()
 
@@ -553,6 +558,7 @@ def start_folder_upload_async(
         db = db_session_factory()
         try:
             _folder_upload_jobs[job_id]["status"] = "running"
+            print(f"[folder-upload {job_id}] START path={folder_path} update_duplicates={update_duplicates}", flush=True)
             logger.info("[folder-upload %s] start path=%s update_duplicates=%s",
                         job_id, folder_path, update_duplicates)
             report = execute_folder_upload(
@@ -560,6 +566,7 @@ def start_folder_upload_async(
                 copy=True,
                 update_duplicates=update_duplicates,
             )
+            print(f"[folder-upload {job_id}] DONE report={report}", flush=True)
             logger.info("[folder-upload %s] done report=%s", job_id, report)
             _folder_upload_jobs[job_id].update({
                 "status": "completed",
@@ -567,6 +574,9 @@ def start_folder_upload_async(
                 "finished_at": datetime.now().isoformat(),
             })
         except Exception as e:
+            import traceback
+            print(f"[folder-upload {job_id}] FAILED err={e}", flush=True)
+            traceback.print_exc()
             logger.exception("[folder-upload %s] failed", job_id)
             _folder_upload_jobs[job_id].update({
                 "status": "failed",
