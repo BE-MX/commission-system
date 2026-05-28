@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.asset.asset_service import (
@@ -21,7 +22,7 @@ from app.asset.asset_service import (
     _generate_video_thumbnail,
     _save_upload_file,
 )
-from app.asset.models import Asset, TagDimension, TagValue
+from app.asset.models import Asset, AssetVersion, TagDimension, TagValue
 from app.asset.schemas import AssetPermissionIn, AssetTagItem
 
 # ── 配置 ────────────────────────────────────────────────
