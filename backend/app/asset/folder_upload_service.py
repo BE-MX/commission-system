@@ -22,7 +22,7 @@ from app.asset.asset_service import (
     _generate_video_thumbnail,
     _save_upload_file,
 )
-from app.asset.models import Asset, AssetVersion, TagDimension, TagValue
+from app.asset.models import Asset, AssetPermission, AssetVersion, TagDimension, TagValue
 from app.asset.schemas import AssetPermissionIn, AssetTagItem
 
 # ── 配置 ────────────────────────────────────────────────
