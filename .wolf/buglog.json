@@ -2026,6 +2026,22 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-05-28T00:46:56.361Z"
+    },
+    {
+      "id": "bug-127",
+      "timestamp": "2026-05-28T02:58:50.623Z",
+      "error_message": "Wrong return value",
+      "file": "backend/app/asset/asset_service.py",
+      "root_cause": "Was returning: db.query(Asset).filter(Asset.id == asset_id).first",
+      "fix": "Now returns: (",
+      "tags": [
+        "auto-detected",
+        "return-value",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-28T02:58:50.623Z"
     }
   ]
 }

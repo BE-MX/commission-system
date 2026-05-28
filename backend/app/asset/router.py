@@ -14,14 +14,14 @@ import shutil
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import get_db
 from app.auth.dependencies import require_permission
 from app.asset import service
 from sqlalchemy import and_, desc, func
 from app.asset.analyze_service import analyze_asset_tags
-from app.asset.models import Asset, FavoriteFolder, FavoriteItem, DownloadLog
+from app.asset.models import Asset, FavoriteFolder, FavoriteItem, DownloadLog, TagValue
 from app.auth.models import ArkUser  # noqa: F401 — registers ark_users for FK resolution
 from app.asset.folder_upload_service import (
     ASYNC_FILE_THRESHOLD,
@@ -493,7 +493,12 @@ def get_recent_assets(
         if log.asset_id in seen:
             continue
         seen.add(log.asset_id)
-        asset = db.query(Asset).filter(Asset.id == log.asset_id).first()
+        asset = (
+            db.query(Asset)
+            .options(joinedload(Asset.tags).joinedload(TagValue.dimension))
+            .filter(Asset.id == log.asset_id)
+            .first()
+        )
         if not asset:
             continue
 
@@ -1205,7 +1210,12 @@ def get_favorite_items_mobile(
 
     result = []
     for item in items:
-        asset = db.query(Asset).filter(Asset.id == item.asset_id).first()
+        asset = (
+            db.query(Asset)
+            .options(joinedload(Asset.tags).joinedload(TagValue.dimension))
+            .filter(Asset.id == item.asset_id)
+            .first()
+        )
         if not asset:
             # 素材已被删除
             result.append({

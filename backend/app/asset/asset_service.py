@@ -308,8 +308,7 @@ def query_assets(
 
     items = (
         q.options(
-            selectinload(Asset.tags).joinedload(TagValue.dimension),
-            selectinload(Asset.permissions),
+            joinedload(Asset.tags).joinedload(TagValue.dimension),
         )
         .offset((page - 1) * page_size)
         .limit(page_size)
@@ -319,7 +318,16 @@ def query_assets(
 
 
 def get_asset_detail(db: Session, asset_id: int) -> Optional[Asset]:
-    return db.query(Asset).filter(Asset.id == asset_id).first()
+    return (
+        db.query(Asset)
+        .options(
+            joinedload(Asset.tags).joinedload(TagValue.dimension),
+            joinedload(Asset.versions),
+            joinedload(Asset.permissions),
+        )
+        .filter(Asset.id == asset_id)
+        .first()
+    )
 
 
 # ── 更新素材 ────────────────────────────────────────────

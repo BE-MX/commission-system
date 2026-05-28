@@ -1,7 +1,7 @@
 # anatomy.md
 
-> Auto-maintained by OpenWolf. Last scanned: 2026-05-28T00:46:56.347Z
-> Files: 83 tracked | Anatomy hits: 0 | Misses: 0
+> Auto-maintained by OpenWolf. Last scanned: 2026-05-28T02:59:50.511Z
+> Files: 84 tracked | Anatomy hits: 0 | Misses: 0
 
 ## ./
 
@@ -277,9 +277,10 @@
 
 ## backend/app/asset/
 
-- `asset_service.py` — 素材管理 — 素材上传/查询/更新/下载 (~4006 tok)
+- `asset_service.py` — 素材管理 — 素材上传/查询/更新/下载 (~4053 tok)
 - `folder_upload_service.py` — 素材管理 — 文件夹批量上传服务 (~5270 tok)
-- `models.py` — 素材管理 — SQLAlchemy ORM 模型 (~2284 tok)
+- `models.py` — 素材管理 — SQLAlchemy ORM 模型 (~2282 tok)
+- `router.py` — 素材管理 — API 路由 (~11130 tok)
 - `service.py` — 素材管理 — service facade (~447 tok)
 
 ## backend/app/auth/

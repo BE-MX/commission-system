@@ -98,11 +98,11 @@ class Asset(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    versions = relationship("AssetVersion", back_populates="asset", lazy="selectin",
+    versions = relationship("AssetVersion", back_populates="asset", lazy="noload",
                            primaryjoin="Asset.id==AssetVersion.asset_id")
-    permissions = relationship("AssetPermission", back_populates="asset", lazy="selectin",
+    permissions = relationship("AssetPermission", back_populates="asset", lazy="noload",
                               uselist=False)
-    tags = relationship("TagValue", secondary=asset_tag_association, lazy="selectin")
+    tags = relationship("TagValue", secondary=asset_tag_association, lazy="noload")
 
     __table_args__ = (
         Index("idx_asset_status", "status"),
