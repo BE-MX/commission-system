@@ -1,11 +1,11 @@
 # anatomy.md
 
-> Auto-maintained by OpenWolf. Last scanned: 2026-05-28T02:59:50.511Z
-> Files: 84 tracked | Anatomy hits: 0 | Misses: 0
+> Auto-maintained by OpenWolf. Last scanned: 2026-05-28T07:06:50.465Z
+> Files: 89 tracked | Anatomy hits: 0 | Misses: 0
 
 ## ./
 
-- `CLAUDE.md` — OpenWolf (~9917 tok)
+- `CLAUDE.md` — OpenWolf (~10158 tok)
 - `README.md` — Project documentation (~765 tok)
 
 ## .claude/
@@ -28,11 +28,14 @@
 ## C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/
 
 - `feedback_asset_download_auth.md` (~295 tok)
-- `MEMORY.md` (~379 tok)
-- `project_asset_module.md` (~809 tok)
+- `feedback_domain_imports_silent_fail.md` (~290 tok)
+- `MEMORY.md` (~456 tok)
+- `project_asset_module.md` (~990 tok)
 - `project_mobile_login_flow.md` (~318 tok)
 - `project_production_module.md` — 数据库（4 张表，025 + 026 迁移） (~609 tok)
+- `project_stock_module.md` (~749 tok)
 - `project_table_sorting.md` — 列表表头排序统一改造 (~280 tok)
+- `reference_git_proxy.md` (~178 tok)
 
 ## backend/
 
@@ -277,10 +280,11 @@
 
 ## backend/app/asset/
 
-- `asset_service.py` — 素材管理 — 素材上传/查询/更新/下载 (~4053 tok)
-- `folder_upload_service.py` — 素材管理 — 文件夹批量上传服务 (~5270 tok)
+- `asset_service.py` — 素材管理 — 素材上传/查询/更新/下载 (~4212 tok)
+- `folder_upload_service.py` — 素材管理 — 文件夹批量上传服务 (~5949 tok)
 - `models.py` — 素材管理 — SQLAlchemy ORM 模型 (~2282 tok)
-- `router.py` — 素材管理 — API 路由 (~11130 tok)
+- `router.py` — 素材管理 — API 路由 (~11159 tok)
+- `schemas.py` — 素材管理 — Pydantic 模型 (~1828 tok)
 - `service.py` — 素材管理 — service facade (~447 tok)
 
 ## backend/app/auth/
@@ -349,6 +353,7 @@
 
 ## frontend/src/api/
 
+- `asset.js` — ── 标签维度 ──────────────────────────────────────────── (~1558 tok)
 - `stock.js` — ── 销量备货一览 ──────────────────────────────────────── (~1280 tok)
 
 ## frontend/src/composables/
@@ -370,7 +375,7 @@
 
 - `AssetLibrary.vue` — Vue: setup (~6826 tok)
 - `AssetStats.vue` — Vue: setup (~1742 tok)
-- `AssetUpload.vue` — Vue component (~8919 tok)
+- `AssetUpload.vue` — Vue component (~9184 tok)
 
 ## frontend/src/views/auth/
 

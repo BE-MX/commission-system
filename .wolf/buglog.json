@@ -2042,6 +2042,86 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-05-28T02:58:50.623Z"
+    },
+    {
+      "id": "bug-128",
+      "timestamp": "2026-05-28T04:44:13.290Z",
+      "error_message": "Wrong return value",
+      "file": "backend/app/asset/folder_upload_service.py",
+      "root_cause": "Was returning: {\"total\": 0, \"success\": 0, \"new_version_count\": 0,",
+      "fix": "Now returns: {\"total\": 0, \"success\": 0, \"new_version_count\": 0,",
+      "tags": [
+        "auto-detected",
+        "return-value",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-28T04:44:13.290Z"
+    },
+    {
+      "id": "bug-129",
+      "timestamp": "2026-05-28T04:53:50.450Z",
+      "error_message": "CSS fix: color",
+      "file": "frontend/src/views/asset/AssetUpload.vue",
+      "root_cause": "color: #f56c6c → #606266",
+      "fix": "Changed color: #f56c6c → #606266",
+      "tags": [
+        "auto-detected",
+        "style-fix",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-28T04:53:50.450Z"
+    },
+    {
+      "id": "bug-130",
+      "timestamp": "2026-05-28T06:05:31.056Z",
+      "error_message": "Significant refactor of ",
+      "file": "backend/app/asset/folder_upload_service.py",
+      "root_cause": "5 lines replaced/restructured",
+      "fix": "Rewrote 28→40 lines (5 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-28T06:05:31.056Z"
+    },
+    {
+      "id": "bug-131",
+      "timestamp": "2026-05-28T06:48:12.950Z",
+      "error_message": "Significant refactor of ",
+      "file": "C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_stock_module.md",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 4→9 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-28T06:48:12.950Z"
+    },
+    {
+      "id": "bug-132",
+      "timestamp": "2026-05-28T06:52:12.412Z",
+      "error_message": "Incorrect value in code",
+      "file": "CLAUDE.md",
+      "root_cause": "Had `GET /safety`",
+      "fix": "Changed to `stock_status`",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-28T06:52:12.412Z"
     }
   ]
 }
