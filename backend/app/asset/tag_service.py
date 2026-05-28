@@ -60,8 +60,10 @@ def seed_default_dimensions(db: Session) -> None:
 
 def list_dimensions(db: Session) -> list[TagDimension]:
     """所有标签维度（含标签值）"""
+    from sqlalchemy.orm import selectinload
     return (
         db.query(TagDimension)
+        .options(selectinload(TagDimension.values))
         .order_by(TagDimension.sort_order)
         .all()
     )

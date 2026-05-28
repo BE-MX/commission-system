@@ -603,9 +603,10 @@ function fileTypeTag(type) {
   return { image: 'success', video: 'warning', document: 'info' }[type] || ''
 }
 
-onMounted(() => {
+onMounted(async () => {
   // 移动端检测已移至路由守卫，此处仅加载数据
-  loadDimensions()
+  // 先等标签维度加载完，避免 watch(activeFilters) 触发二次 loadData
+  await loadDimensions()
   loadData()
 })
 </script>
