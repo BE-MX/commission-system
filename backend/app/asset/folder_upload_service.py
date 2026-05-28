@@ -538,6 +538,9 @@ def start_folder_upload_async(
     update_duplicates: bool = True,
 ) -> str:
     """启动异步文件夹上传，返回 job_id。"""
+    import logging
+    logger = logging.getLogger("asset.folder_upload")
+
     job_id = str(uuid.uuid4())[:16]
     _folder_upload_jobs[job_id] = {
         "id": job_id,
@@ -550,17 +553,21 @@ def start_folder_upload_async(
         db = db_session_factory()
         try:
             _folder_upload_jobs[job_id]["status"] = "running"
+            logger.info("[folder-upload %s] start path=%s update_duplicates=%s",
+                        job_id, folder_path, update_duplicates)
             report = execute_folder_upload(
                 db, folder_path, tag_mapping, permission, extra_tags, uploader_id,
                 copy=True,
                 update_duplicates=update_duplicates,
             )
+            logger.info("[folder-upload %s] done report=%s", job_id, report)
             _folder_upload_jobs[job_id].update({
                 "status": "completed",
                 "report": report,
                 "finished_at": datetime.now().isoformat(),
             })
         except Exception as e:
+            logger.exception("[folder-upload %s] failed", job_id)
             _folder_upload_jobs[job_id].update({
                 "status": "failed",
                 "error": str(e),
