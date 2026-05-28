@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from sqlalchemy import func
+from sqlalchemy import bindparam, func, text
 from sqlalchemy.orm import Session
 
 from app.asset.asset_service import (
@@ -341,12 +341,14 @@ def execute_folder_upload(
 
     # ── 1. 预加载：一次性消除循环内的所有查询 ──────────────
     file_names = [Path(f).name for f in files]
+    print(f"[folder-upload] preload: scanning {total} files, looking up existing assets", flush=True)
 
     # 1a. 批量查重（加载完整 ORM 对象，后续可直接修改字段）
     existing_assets = db.query(Asset).filter(Asset.file_name.in_(file_names)).all()
     existing_map: dict[tuple[str, str], Asset] = {
         (a.file_name, a.file_type): a for a in existing_assets
     }
+    print(f"[folder-upload] preload: matched {len(existing_assets)} existing assets", flush=True)
 
     # 1b. 批量加载已有素材的标签
     existing_ids = [a.id for a in existing_assets]
@@ -359,14 +361,24 @@ def execute_folder_upload(
             asset_tags_map.setdefault(row.asset_id, set()).add(
                 (row.dimension_id, row.tag_value_id)
             )
+        print(f"[folder-upload] preload: loaded {len(tag_rows)} tag rows", flush=True)
 
     # 1c. 批量预计算版本号（避免循环内逐素材 SELECT MAX）
+    # 仅在需要写新版本时执行；update_duplicates=False 模式下纯跳过,完全用不到
     version_numbers: dict[int, int] = {}
-    for a in existing_assets:
-        max_v = db.query(func.max(AssetVersion.version_number)).filter(
-            AssetVersion.asset_id == a.id
-        ).scalar() or 0
-        version_numbers[a.id] = max_v
+    if update_duplicates and existing_ids:
+        ver_rows = db.execute(
+            text("""
+                SELECT asset_id, MAX(version_number) AS max_v
+                FROM ark_asset_versions
+                WHERE asset_id IN :ids
+                GROUP BY asset_id
+            """).bindparams(bindparam("ids", expanding=True)),
+            {"ids": existing_ids},
+        ).fetchall()
+        version_numbers = {r.asset_id: int(r.max_v or 0) for r in ver_rows}
+        print(f"[folder-upload] preload: loaded version numbers for {len(version_numbers)} assets", flush=True)
+    print(f"[folder-upload] preload done, start ingesting", flush=True)
 
     # ── 2. 批量入库 ────────────────────────────────────────
     BATCH_SIZE = 20
@@ -377,6 +389,8 @@ def execute_folder_upload(
 
     for i in range(0, total, BATCH_SIZE):
         batch = files[i : i + BATCH_SIZE]
+        if i % 200 == 0:
+            print(f"[folder-upload] progress {i}/{total} success={success} skipped={skipped} new_version={new_version_count} failed={len(failed)}", flush=True)
 
         for file_path in batch:
             path = Path(file_path)
