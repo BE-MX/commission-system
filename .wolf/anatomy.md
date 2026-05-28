@@ -1,7 +1,7 @@
 # anatomy.md
 
-> Auto-maintained by OpenWolf. Last scanned: 2026-05-27T10:50:34.023Z
-> Files: 81 tracked | Anatomy hits: 0 | Misses: 0
+> Auto-maintained by OpenWolf. Last scanned: 2026-05-28T00:46:56.347Z
+> Files: 83 tracked | Anatomy hits: 0 | Misses: 0
 
 ## ./
 
@@ -311,12 +311,14 @@
 
 ## backend/app/stock/
 
+- `_filters.py` — 备货管理 — 列表筛选 SQL 助手 (overview / safety 共享) (~578 tok)
 - `in_transit_service.py` — 备货管理 — 生产在途数量统计 (~397 tok)
 - `models.py` — 备货管理 — SQLAlchemy ORM 模型 (~1934 tok)
+- `overview_service.py` — 备货管理 — 销量备货一览(SQL 分页 + 状态过滤 + 摘要统计) (~3682 tok)
 - `production_cart_service.py` — 备货管理 — 生产单购物车 CRUD (~1513 tok)
 - `production_order_service.py` — 备货管理 — 生产订单 CRUD + 状态管理 + 入库数量 + 审计日志 (~6500 tok)
 - `router.py` — 备货管理 — API 路由 (~6052 tok)
-- `safety_service.py` — 备货管理 — 安全库存 CRUD + AI 备货建议(TFT 微服务 / 公式兜底) (~4773 tok)
+- `safety_service.py` — 备货管理 — 安全库存 CRUD + AI 备货建议(TFT 微服务 / 公式兜底) (~4095 tok)
 - `schemas.py` — 备货管理 — Pydantic 请求/响应模型 (~1454 tok)
 - `service.py` — 备货管理 — service facade (~567 tok)
 - `sku_query.py` — 备货管理 — SKU 销量 / 库存状态查询 (~1779 tok)
@@ -420,8 +422,8 @@
 
 - `DailyReport.vue` — Vue: setup (~3683 tok)
 - `ProductionOrderManage.vue` — Vue component (~6649 tok)
-- `SafetyConfig.vue` — Vue component (~10188 tok)
-- `StockOverview.vue` — Vue: setup (~5386 tok)
+- `SafetyConfig.vue` — Vue component (~10056 tok)
+- `StockOverview.vue` — Vue: setup (~5258 tok)
 
 ## frontend/src/views/stock/composables/
 

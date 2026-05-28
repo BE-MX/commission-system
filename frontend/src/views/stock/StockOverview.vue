@@ -219,7 +219,7 @@ import {
   WarningFilled, Timer, CircleCheckFilled, QuestionFilled,
   Search, Filter, RefreshRight,
 } from '@element-plus/icons-vue'
-import { getStockOverview, getFilterOptions, queryStockStatus } from '@/api/stock'
+import { getStockOverview, getFilterOptions } from '@/api/stock'
 import { useTableSort } from '@/composables/useTableSort'
 
 const loading = ref(false)
@@ -302,27 +302,12 @@ async function loadData() {
       weight: filters.weight.length ? filters.weight.join(',') : undefined,
     })
     const d = res.data
-    const items = (d.items || []).map(i => ({ ...i, stock_status: '', stock_items: [] }))
-
-    if (items.length > 0) {
-      try {
-        const pids = items.map(i => i.product_id)
-        const statusRes = await queryStockStatus(pids)
-        const statusMap = {}
-        ;(statusRes.data?.items || []).forEach(s => { statusMap[s.product_id] = s })
-        items.forEach(item => {
-          const s = statusMap[item.product_id]
-          if (s) {
-            item.stock_status = s.stock_status
-            item.stock_items = s.items || []
-          }
-        })
-      } catch (e) {
-        console.warn('备货状态查询失败:', e)
-      }
-    }
-
-    tableData.value = items
+    // 后端已返回 stock_status / stock_items，无需二次请求
+    tableData.value = (d.items || []).map(i => ({
+      ...i,
+      stock_status: i.stock_status || '',
+      stock_items: i.stock_items || [],
+    }))
     pagination.total = d.total || 0
     Object.assign(summary, d.summary || {})
   } finally {

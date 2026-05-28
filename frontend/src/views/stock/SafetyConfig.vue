@@ -383,7 +383,7 @@ import {
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import {
-  getSafetyList, saveSafetyStock, autoGenerateSafety, getFilterOptions, queryStockStatus,
+  getSafetyList, saveSafetyStock, autoGenerateSafety, getFilterOptions,
 } from '@/api/stock'
 import { useProductionCart } from './composables/useProductionCart'
 import { useTableSort } from '@/composables/useTableSort'
@@ -470,7 +470,8 @@ async function loadData() {
       stock_status: filters.stock_status || undefined,
     })
     const d = res.data
-    const items = (d.items || []).map(i => {
+    // 后端已返回 stock_status / stock_items / production_in_transit，无需二次请求
+    tableData.value = (d.items || []).map(i => {
       const effectiveStock = (i.safety_stock || 0) * 2
       const effectiveCount = (i.enable_count || 0) + (i.production_in_transit || 0)
       return {
@@ -478,32 +479,11 @@ async function loadData() {
         _dirty: false,
         _aiGenerated: false,
         aiLoading: false,
-        stock_status: '',
-        stock_items: [],
+        stock_status: i.stock_status || '',
+        stock_items: i.stock_items || [],
         suggested_qty: Math.max(0, effectiveStock - effectiveCount),
       }
     })
-
-    // 查询备货状态
-    if (items.length > 0) {
-      try {
-        const pids = items.map(i => i.product_id)
-        const statusRes = await queryStockStatus(pids)
-        const statusMap = {}
-        ;(statusRes.data?.items || []).forEach(s => { statusMap[s.product_id] = s })
-        items.forEach(item => {
-          const s = statusMap[item.product_id]
-          if (s) {
-            item.stock_status = s.stock_status
-            item.stock_items = s.items || []
-          }
-        })
-      } catch (e) {
-        console.warn('备货状态查询失败:', e)
-      }
-    }
-
-    tableData.value = items
     pagination.total = d.total || 0
   } finally {
     loading.value = false

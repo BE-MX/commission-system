@@ -9,68 +9,25 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.stock._filters import name_filter_clauses
 from app.stock.constants import (
     VALID_ORDER_FILTER, TFT_SERVICE_ENABLED, TFT_SERVICE_URL,
     SOURCE_FORMULA, SOURCE_TFT, SOURCE_INSUFFICIENT,
     source_code, source_label,
 )
-from app.stock.in_transit_service import get_in_transit_by_product_ids
+from app.stock.production_order_service import get_stock_status_by_product_ids
 from app.stock.sku_query import get_sku_sales
 
 logger = logging.getLogger("stock.safety")
 settings = get_settings()
 
 
-def _add_in_clause(
-    field_expr: str,
-    param_prefix: str,
-    raw_value: Optional[str],
-    clauses: list[str],
-    params: dict[str, Any],
-) -> None:
-    """辅助: 将逗号分隔值转为 SQL IN 子句。"""
-    if not raw_value:
-        return
-    vals = [v for v in raw_value.split(",") if v]
-    if not vals:
-        return
-    placeholders = ",".join(f":{param_prefix}{i}" for i in range(len(vals)))
-    clauses.append(f"{field_expr} IN ({placeholders})")
-    for i, v in enumerate(vals):
-        params[f"{param_prefix}{i}"] = v
-
-
-def _name_filter_clauses(
-    model: Optional[str] = None,
-    product_type: Optional[str] = None,
-    size: Optional[str] = None,
-    color: Optional[str] = None,
-    weight: Optional[str] = None,
-) -> tuple[str, dict[str, Any]]:
-    """生成产品型号 + 名称拆分筛选的 SQL 片段与参数。支持逗号分隔多选。"""
-    clauses: list[str] = []
-    params: dict[str, Any] = {}
-    _add_in_clause("p.model", "m", model, clauses, params)
-    _add_in_clause("SUBSTRING_INDEX(p.name, '/', 1)", "t", product_type, clauses, params)
-    _add_in_clause(
-        "SUBSTRING_INDEX(SUBSTRING_INDEX(p.name, '/', 2), '/', -1)", "s", size, clauses, params
-    )
-    _add_in_clause(
-        """CASE
-            WHEN (LENGTH(p.name) - LENGTH(REPLACE(p.name, '/', '')) + 1) >= 5
-                 AND SUBSTRING_INDEX(SUBSTRING_INDEX(p.name, '/', -3), '/', 1) LIKE '#%'
-            THEN CONCAT(
-                SUBSTRING_INDEX(SUBSTRING_INDEX(p.name, '/', -3), '/', 1),
-                '/',
-                SUBSTRING_INDEX(SUBSTRING_INDEX(p.name, '/', -2), '/', 1)
-            )
-            ELSE SUBSTRING_INDEX(SUBSTRING_INDEX(p.name, '/', -2), '/', 1)
-        END""",
-        "c", color, clauses, params
-    )
-    _add_in_clause("SUBSTRING_INDEX(p.name, '/', -1)", "w", weight, clauses, params)
-    sql = " AND ".join(clauses)
-    return (f"AND {sql}" if sql else ""), params
+_SORT_MAP = {
+    "product_id": "p.product_id",
+    "sales_30d": "sales_30d",
+    "enable_count": "enable_count",
+    "safety_stock": "safety_stock",
+}
 
 
 def query_safety_stock_list(
@@ -89,8 +46,13 @@ def query_safety_stock_list(
     has_safety_stock: Optional[bool] = None,
     stock_status: Optional[str] = None,
 ) -> dict:
-    """安全库存设置页用,展示 SKU 基本信息 + 当前配置 + 30 天销量(轻量)"""
+    """安全库存设置页:SKU 基本信息 + 当前配置 + 30 天销量 + 在途 + 备货状态。
+
+    所有筛选/排序/分页下沉到 SQL,主查询包含一次 LEFT JOIN 预聚合表,无主表 GROUP BY。
+    """
     business_db = settings.BUSINESS_DB_NAME
+    today = date.today()
+    d30 = today - timedelta(days=30)
 
     kw_clause = ""
     params: dict[str, Any] = {}
@@ -98,165 +60,133 @@ def query_safety_stock_list(
         kw_clause = "AND (p.name LIKE :kw OR p.model LIKE :kw OR p.cn_name LIKE :kw)"
         params["kw"] = f"%{keyword}%"
 
-    name_clause, name_params = _name_filter_clauses(
-        model=model,
-        product_type=product_type,
-        size=size,
-        color=color,
-        weight=weight,
-    )
+    name_clause, name_params = name_filter_clauses(model, product_type, size, color, weight)
     params.update(name_params)
 
-    # 排序映射
-    sort_map = {
-        "product_id": "p.product_id",
-        "sales_30d": "COALESCE(SUM(CASE WHEN o.account_date >= :d30 THEN oi.quantity END), 0)",
-        "enable_count": "COALESCE(inv.enable_count, 0)",
-        "safety_stock": "COALESCE(ss.safety_stock, 0)",
-    }
-    order_col = sort_map.get(sort_by, "p.product_id")
-    order_dir = "DESC" if order.lower() == "desc" else "ASC"
-    order_by = f"ORDER BY {order_col} {order_dir}, p.product_id ASC"
+    # 排序列
+    sort_col = _SORT_MAP.get(sort_by, "p.product_id")
+    sort_dir = "DESC" if (order or "").lower() == "desc" else "ASC"
+    order_by = f"ORDER BY {sort_col} {sort_dir}, p.product_id ASC"
 
-    # 额外筛选条件
-    extra_clauses = ""
-
+    # 额外筛选
+    extra_clauses_parts: list[str] = []
     if has_in_transit is True:
-        extra_clauses += """
-            AND EXISTS (
-                SELECT 1 FROM ark_production_order_items i
-                JOIN ark_production_orders o ON o.id = i.order_id
-                WHERE i.product_id = p.product_id
-                  AND i.status = 0 AND o.status = 0 AND o.deleted_flag = 0
-                HAVING SUM(i.order_qty - i.received_qty) > 0
-            )"""
-
+        extra_clauses_parts.append("AND COALESCE(it.in_transit_qty, 0) > 0")
     if has_safety_stock is True:
-        extra_clauses += """
-            AND EXISTS (
-                SELECT 1 FROM ark_safety_stock ss2
-                WHERE ss2.product_id = p.product_id AND ss2.safety_stock > 0
-            )"""
-
+        extra_clauses_parts.append("AND COALESCE(ss.safety_stock, 0) > 0")
     if stock_status == "urgent":
-        extra_clauses += """
-            AND EXISTS (
-                SELECT 1 FROM ark_production_order_items i
-                JOIN ark_production_orders o ON o.id = i.order_id
-                WHERE i.product_id = p.product_id
-                  AND i.status = 0 AND i.is_urgent = 1
-                  AND o.status = 0 AND o.deleted_flag = 0
-            )"""
+        extra_clauses_parts.append("AND COALESCE(it.has_urgent, 0) = 1")
     elif stock_status == "stocking":
-        extra_clauses += """
-            AND EXISTS (
-                SELECT 1 FROM ark_production_order_items i
-                JOIN ark_production_orders o ON o.id = i.order_id
-                WHERE i.product_id = p.product_id
-                  AND i.status = 0
-                  AND o.status = 0 AND o.deleted_flag = 0
-            )
-            AND NOT EXISTS (
-                SELECT 1 FROM ark_production_order_items i
-                JOIN ark_production_orders o ON o.id = i.order_id
-                WHERE i.product_id = p.product_id
-                  AND i.status = 0 AND i.is_urgent = 1
-                  AND o.status = 0 AND o.deleted_flag = 0
-            )"""
+        extra_clauses_parts.append(
+            "AND COALESCE(it.in_transit_qty, 0) > 0 AND COALESCE(it.has_urgent, 0) = 0"
+        )
+    extra_clauses = "\n".join(extra_clauses_parts)
 
-    today = date.today()
-    d30 = today - timedelta(days=30)
-    params.update({
-        "d30": d30,
-        "limit": page_size,
-        "offset": (page - 1) * page_size,
-    })
-
-    # 先取总数(排除分页参数)
-    count_params = {k: v for k, v in params.items() if k not in ("limit", "offset", "d30")}
-    count_sql = f"""
-        SELECT COUNT(*) AS cnt
+    # 共用 FROM/JOIN(不含销量,销量按 product_id 后续 LEFT JOIN)
+    base_join = f"""
         FROM `{business_db}`.okki_products p
+        LEFT JOIN (
+            SELECT product_id, SUM(enable_count) AS enable_count
+            FROM `{business_db}`.okki_inventory
+            WHERE disable_flag = 0
+            GROUP BY product_id
+        ) inv ON inv.product_id = p.product_id
+        LEFT JOIN ark_safety_stock ss ON ss.product_id = p.product_id
+        LEFT JOIN (
+            SELECT i.product_id,
+                   SUM(i.order_qty - i.received_qty) AS in_transit_qty,
+                   MAX(i.is_urgent)                  AS has_urgent
+            FROM ark_production_order_items i
+            JOIN ark_production_orders o ON o.id = i.order_id
+            WHERE i.status = 0 AND o.status = 0 AND o.deleted_flag = 0
+            GROUP BY i.product_id
+        ) it ON it.product_id = p.product_id
+    """
+    where_sql = f"""
         WHERE p.disable_flag = 0
           {kw_clause}
           {name_clause}
           {extra_clauses}
     """
-    total = db.execute(text(count_sql), count_params).scalar() or 0
 
-    sql = f"""
+    # 总数
+    count_sql = f"SELECT COUNT(*) {base_join} {where_sql}"
+    total = int(db.execute(text(count_sql), params).scalar() or 0)
+
+    if total == 0:
+        return {"total": 0, "items": []}
+
+    # 排序需要 sales_30d / enable_count / safety_stock 时,sales 字段必须出现在 SELECT
+    # 但只对当前页 product_ids 跑销量子查询太复杂,这里把 sales 子查询合在外层 SELECT 里
+    # 因为 sales 是 LEFT JOIN by product_id,无主表 GROUP BY,代价很低
+    data_params = {**params, "d30": d30, "limit": page_size, "offset": (page - 1) * page_size}
+
+    sales_join = f"""
+        LEFT JOIN (
+            SELECT oi.product_id, SUM(oi.quantity) AS sales_30d
+            FROM `{business_db}`.okki_order_items oi
+            JOIN `{business_db}`.okki_orders o ON o.order_id = oi.order_id
+            WHERE o.account_date >= :d30
+              AND {VALID_ORDER_FILTER}
+            GROUP BY oi.product_id
+        ) sales ON sales.product_id = p.product_id
+    """
+
+    data_sql = f"""
         SELECT
             p.product_id                        AS product_id,
             p.name                              AS product_name,
             p.cn_name                           AS cn_name,
             p.model                             AS model,
-            COALESCE(SUM(CASE WHEN o.account_date >= :d30 THEN oi.quantity END), 0) AS sales_30d,
+            COALESCE(sales.sales_30d, 0)        AS sales_30d,
             COALESCE(inv.enable_count, 0)       AS enable_count,
+            COALESCE(it.in_transit_qty, 0)      AS production_in_transit,
+            COALESCE(it.has_urgent, 0)          AS has_urgent,
             COALESCE(ss.safety_stock, 0)        AS safety_stock,
             COALESCE(ss.lead_time_days, 30)     AS lead_time_days,
             COALESCE(ss.safety_factor, 1.50)    AS safety_factor,
             ss.source                           AS source,
             ss.updated_by                       AS updated_by,
             ss.updated_at                       AS updated_at
-        FROM `{business_db}`.okki_products p
-        LEFT JOIN `{business_db}`.okki_order_items oi
-               ON oi.product_id = p.product_id
-        LEFT JOIN `{business_db}`.okki_orders o
-               ON o.order_id = oi.order_id
-              AND {VALID_ORDER_FILTER}
-              AND o.account_date >= :d30
-        LEFT JOIN (
-            SELECT product_id,
-                   SUM(enable_count) AS enable_count
-            FROM `{business_db}`.okki_inventory
-            WHERE disable_flag = 0
-            GROUP BY product_id
-        ) inv ON inv.product_id = p.product_id
-        LEFT JOIN ark_safety_stock ss
-               ON ss.product_id = p.product_id
-        WHERE p.disable_flag = 0
-          {kw_clause}
-          {name_clause}
-          {extra_clauses}
-        GROUP BY p.product_id, p.name, p.cn_name, p.model,
-                 inv.enable_count,
-                 ss.safety_stock, ss.lead_time_days, ss.safety_factor,
-                 ss.source, ss.updated_by, ss.updated_at
+        {base_join}
+        {sales_join}
+        {where_sql}
         {order_by}
         LIMIT :limit OFFSET :offset
     """
+    rows = db.execute(text(data_sql), data_params).mappings().all()
 
-    rows = db.execute(text(sql), params).mappings().all()
+    page_pids = [int(r["product_id"]) for r in rows]
+    stock_status_map = get_stock_status_by_product_ids(db, page_pids) if page_pids else {}
 
-    # 批量查询生产在途数量
-    product_ids = [int(r["product_id"]) for r in rows]
-    in_transit_map = get_in_transit_by_product_ids(db, product_ids)
-
-    items = []
+    items: list[dict] = []
     for r in rows:
+        pid = int(r["product_id"])
         sales_30d = int(r["sales_30d"] or 0)
         avg_daily = round(sales_30d / 30, 2) if sales_30d else 0.0
         source_int = r["source"]
-        enable_count = float(r["enable_count"] or 0)
-        production_in_transit = in_transit_map.get(int(r["product_id"]), 0)
+        ss_entry = stock_status_map.get(pid) or {"stock_status": "", "items": []}
+
         items.append({
-            "product_id": int(r["product_id"]),
+            "product_id": pid,
             "product_name": r["product_name"] or r["cn_name"] or "",
             "cn_name": r["cn_name"],
             "model": r["model"] or "",
             "sales_30d": sales_30d,
             "avg_daily_sales_30d": avg_daily,
-            "enable_count": enable_count,
-            "production_in_transit": production_in_transit,
+            "enable_count": float(r["enable_count"] or 0),
+            "production_in_transit": int(r["production_in_transit"] or 0),
             "safety_stock": int(r["safety_stock"] or 0),
             "lead_time_days": int(r["lead_time_days"] or 30),
             "safety_factor": float(r["safety_factor"] or 1.50),
             "source": source_label(source_int) if source_int is not None else "",
             "updated_by": r["updated_by"],
             "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None,
+            "stock_status": ss_entry["stock_status"],
+            "stock_items": ss_entry.get("items", []),
         })
 
-    return {"total": int(total), "items": items}
+    return {"total": total, "items": items}
 
 
 def save_safety_stock(

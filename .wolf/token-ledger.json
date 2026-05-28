@@ -2,14 +2,14 @@
   "version": 1,
   "created_at": "2026-05-19T11:15:51.566Z",
   "lifetime": {
-    "total_tokens_estimated": 5543592,
-    "total_reads": 1630,
-    "total_writes": 2773,
+    "total_tokens_estimated": 5584378,
+    "total_reads": 1642,
+    "total_writes": 2780,
     "total_sessions": 26,
-    "anatomy_hits": 759,
-    "anatomy_misses": 570,
+    "anatomy_hits": 764,
+    "anatomy_misses": 573,
     "repeated_reads_blocked": 1815,
-    "estimated_savings_vs_bare_cli": 13717655
+    "estimated_savings_vs_bare_cli": 13718655
   },
   "sessions": [
     {
@@ -26136,6 +26136,130 @@
         "reads_count": 6,
         "writes_count": 10,
         "repeated_reads_blocked": 8,
+        "anatomy_lookups": 5
+      }
+    },
+    {
+      "id": "session-2026-05-28-0828",
+      "started": "2026-05-28T00:28:10.613Z",
+      "ended": "2026-05-28T00:48:28.766Z",
+      "reads": [
+        {
+          "file": "D:/MyProgram/commission-system/backend/app/stock/overview.py",
+          "tokens_estimated": 0,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        },
+        {
+          "file": "D:/MyProgram/commission-system/backend/app/stock/sku_query.py",
+          "tokens_estimated": 1779,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        },
+        {
+          "file": "D:/MyProgram/commission-system/backend/app/stock/router.py",
+          "tokens_estimated": 6052,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        },
+        {
+          "file": "D:/MyProgram/commission-system/backend/app/stock/service.py",
+          "tokens_estimated": 567,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        },
+        {
+          "file": "D:/MyProgram/commission-system/backend/app/stock/in_transit_service.py",
+          "tokens_estimated": 397,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        },
+        {
+          "file": "D:/MyProgram/commission-system/backend/app/stock/overview_service.py",
+          "tokens_estimated": 0,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        },
+        {
+          "file": "D:/MyProgram/commission-system/frontend/src/views/stock/StockOverview.vue",
+          "tokens_estimated": 5386,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        },
+        {
+          "file": "D:/MyProgram/commission-system/backend/app/stock/constants.py",
+          "tokens_estimated": 0,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        },
+        {
+          "file": "D:/MyProgram/commission-system/backend/app/stock/production_order_service.py",
+          "tokens_estimated": 6500,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        },
+        {
+          "file": "D:/MyProgram/commission-system/frontend/src/views/stock/SafetyConfig.vue",
+          "tokens_estimated": 10188,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        },
+        {
+          "file": "D:/MyProgram/commission-system/frontend/src/api/stock.js",
+          "tokens_estimated": 1280,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        },
+        {
+          "file": "D:/MyProgram/commission-system/backend/app/stock/scheduler.py",
+          "tokens_estimated": 0,
+          "was_repeated": false,
+          "anatomy_had_description": false
+        }
+      ],
+      "writes": [
+        {
+          "file": "D:/MyProgram/commission-system/backend/app/stock/_filters.py",
+          "tokens_estimated": 578,
+          "action": "create"
+        },
+        {
+          "file": "D:/MyProgram/commission-system/backend/app/stock/overview_service.py",
+          "tokens_estimated": 3682,
+          "action": "create"
+        },
+        {
+          "file": "D:/MyProgram/commission-system/backend/app/stock/safety_service.py",
+          "tokens_estimated": 4095,
+          "action": "create"
+        },
+        {
+          "file": "D:/MyProgram/commission-system/frontend/src/views/stock/StockOverview.vue",
+          "tokens_estimated": 19,
+          "action": "edit"
+        },
+        {
+          "file": "D:/MyProgram/commission-system/frontend/src/views/stock/StockOverview.vue",
+          "tokens_estimated": 64,
+          "action": "edit"
+        },
+        {
+          "file": "D:/MyProgram/commission-system/frontend/src/views/stock/SafetyConfig.vue",
+          "tokens_estimated": 29,
+          "action": "edit"
+        },
+        {
+          "file": "D:/MyProgram/commission-system/frontend/src/views/stock/SafetyConfig.vue",
+          "tokens_estimated": 170,
+          "action": "edit"
+        }
+      ],
+      "totals": {
+        "input_tokens_estimated": 32149,
+        "output_tokens_estimated": 8637,
+        "reads_count": 12,
+        "writes_count": 7,
+        "repeated_reads_blocked": 0,
         "anatomy_lookups": 5
       }
     }
