@@ -96,7 +96,7 @@
           <el-button size="small" @click="resetFilters">重置</el-button>
         </div>
       </div>
-      <el-table :data="tableData" style="width:100%" :header-cell-style="headerStyle" v-loading="loading" @sort-change="onSortChange">
+      <el-table :data="tableData" style="width:100%" :header-cell-style="headerStyle" v-loading="loading" @sort-change="handleSortChange">
         <el-table-column type="index" label="#" width="50" align="center" />
         <el-table-column label="型号" prop="model" min-width="100" show-overflow-tooltip sortable="custom" />
         <el-table-column label="类型" min-width="90" show-overflow-tooltip>
@@ -390,6 +390,11 @@ import { useTableSort } from '@/composables/useTableSort'
 
 const authStore = useAuthStore()
 const { sortParams, onSortChange, reset: resetSort } = useTableSort('product_id', 'asc')
+function handleSortChange(sortInfo) {
+  onSortChange(sortInfo)
+  pagination.page = 1
+  loadData()
+}
 
 // ── 原有安全库存逻辑 ──────────────────────────
 const loading = ref(false)

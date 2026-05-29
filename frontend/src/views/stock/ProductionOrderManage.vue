@@ -45,7 +45,7 @@
           <el-button type="primary" size="small" @click="loadOrderList"><el-icon><Filter /></el-icon> 筛选</el-button>
           <el-button size="small" @click="resetOrderFilters">重置</el-button>
         </div>
-        <el-table :data="orderList" style="width:100%" :header-cell-style="headerStyle" v-loading="orderLoading" stripe @sort-change="orderSort.onSortChange">
+        <el-table :data="orderList" style="width:100%" :header-cell-style="headerStyle" v-loading="orderLoading" stripe @sort-change="handleOrderSortChange">
           <el-table-column label="生产单号" prop="order_no" min-width="130" sortable="custom" show-overflow-tooltip />
           <el-table-column label="生产批次号" prop="batch_no" min-width="130" sortable="custom" show-overflow-tooltip />
           <el-table-column label="创建人" min-width="100">
@@ -93,7 +93,7 @@
           <el-button type="primary" size="small" @click="loadItemList"><el-icon><Filter /></el-icon> 筛选</el-button>
           <el-button size="small" @click="resetItemFilters">重置</el-button>
         </div>
-        <el-table :data="itemList" style="width:100%" :header-cell-style="headerStyle" v-loading="itemLoading" stripe @sort-change="itemSort.onSortChange">
+        <el-table :data="itemList" style="width:100%" :header-cell-style="headerStyle" v-loading="itemLoading" stripe @sort-change="handleItemSortChange">
           <el-table-column label="生产单号" prop="order_no" min-width="130" sortable="custom" show-overflow-tooltip />
           <el-table-column label="批次号" prop="batch_no" min-width="120" sortable="custom" show-overflow-tooltip />
           <el-table-column label="产品名称" prop="product_name" min-width="140" sortable="custom" show-overflow-tooltip />
@@ -276,6 +276,16 @@ const authStore = useAuthStore()
 
 const orderSort = useTableSort()
 const itemSort = useTableSort()
+function handleOrderSortChange(sortInfo) {
+  orderSort.onSortChange(sortInfo)
+  orderPagination.page = 1
+  loadOrderList()
+}
+function handleItemSortChange(sortInfo) {
+  itemSort.onSortChange(sortInfo)
+  itemPagination.page = 1
+  loadItemList()
+}
 
 const activeTab = ref('order')
 const statusCount = reactive({ submitted: 0, terminated: 0, completed: 0 })

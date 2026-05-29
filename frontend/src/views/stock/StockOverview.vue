@@ -98,7 +98,7 @@
     <!-- 数据表 -->
     <div class="card">
       <el-table :data="tableData" style="width:100%" :header-cell-style="headerStyle" v-loading="loading" stripe
-        :row-class-name="rowClassName" @sort-change="onSortChange">
+        :row-class-name="rowClassName" @sort-change="handleSortChange">
         <el-table-column type="index" label="#" width="50" align="center" />
         <el-table-column label="型号" prop="model" min-width="120" sortable="custom" show-overflow-tooltip />
         <el-table-column label="类型" min-width="100" show-overflow-tooltip>
@@ -227,6 +227,11 @@ const tableData = ref([])
 const summary = reactive({ shortage_count: 0, warning_count: 0, sufficient_count: 0, unset_count: 0 })
 const pagination = reactive({ total: 0, page: 1, page_size: 20 })
 const { sortParams, onSortChange, reset: resetSort } = useTableSort('sales_30d', 'desc')
+function handleSortChange(sortInfo) {
+  onSortChange(sortInfo)
+  pagination.page = 1
+  loadData()
+}
 const filters = reactive({
   status: [],
   keyword: '',
