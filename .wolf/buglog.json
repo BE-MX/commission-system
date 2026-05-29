@@ -2122,6 +2122,182 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-05-28T06:52:12.412Z"
+    },
+    {
+      "id": "bug-133",
+      "timestamp": "2026-05-28T07:51:35.664Z",
+      "error_message": "Missing await",
+      "file": "frontend/src/views/asset/AssetLibrary.vue",
+      "root_cause": "Async call without await — returned Promise instead of value",
+      "fix": "Added await to async call",
+      "tags": [
+        "auto-detected",
+        "async-fix",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-28T07:51:35.664Z"
+    },
+    {
+      "id": "bug-134",
+      "timestamp": "2026-05-28T07:56:24.661Z",
+      "error_message": "Missing await",
+      "file": "C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_asset_module.md",
+      "root_cause": "Async call without await — returned Promise instead of value",
+      "fix": "Added await to async call",
+      "tags": [
+        "auto-detected",
+        "async-fix",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-28T07:56:24.661Z"
+    },
+    {
+      "id": "bug-135",
+      "timestamp": "2026-05-28T09:25:40.607Z",
+      "error_message": "Significant refactor of ",
+      "file": "backend/app/asset/router.py",
+      "root_cause": "20 lines replaced/restructured",
+      "fix": "Rewrote 25→8 lines (20 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-28T09:25:40.607Z"
+    },
+    {
+      "id": "bug-136",
+      "timestamp": "2026-05-29T05:30:56.980Z",
+      "error_message": "Significant refactor of ",
+      "file": "C:/Users/windb/cola/outputs/jimureport-集成开发文档/01-architecture.md",
+      "root_cause": "15 lines replaced/restructured",
+      "fix": "Rewrote 27→34 lines (15 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-29T05:30:56.980Z"
+    },
+    {
+      "id": "bug-137",
+      "timestamp": "2026-05-29T05:32:04.491Z",
+      "error_message": "Significant refactor of ",
+      "file": "C:/Users/windb/cola/outputs/jimureport-集成开发文档/02-java-service.md",
+      "root_cause": "7 lines replaced/restructured",
+      "fix": "Rewrote 14→23 lines (7 removed) | Also: # 方舟 JWT 密钥（必须与 FastAPI 中保持一致）; url: jdbc:mysql://${DB_HOST}:${DB_PORT}/ark_commis",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-05-29T05:32:30.332Z"
+    },
+    {
+      "id": "bug-138",
+      "timestamp": "2026-05-29T05:36:19.938Z",
+      "error_message": "Significant refactor of ",
+      "file": "C:/Users/windb/cola/outputs/jimureport-集成开发文档/07-verification.md",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 11→20 lines (2 removed) | Also: # 1.6 获取方舟 JWT; -d '{\"username\":\"test_user\",\"password\":\"test_pass\" | Also: # 打开: http://localhost:3000; # 登录方舟平台",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 3,
+      "last_seen": "2026-05-29T05:37:33.324Z"
+    },
+    {
+      "id": "bug-139",
+      "timestamp": "2026-05-29T05:44:10.237Z",
+      "error_message": "Significant refactor of ",
+      "file": "C:/Users/windb/cola/outputs/jimureport-集成开发文档/02-java-service.md",
+      "root_cause": "9 lines replaced/restructured",
+      "fix": "Rewrote 37→27 lines (9 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-29T05:44:10.237Z"
+    },
+    {
+      "id": "bug-140",
+      "timestamp": "2026-05-29T05:45:32.337Z",
+      "error_message": "Significant refactor of ",
+      "file": "C:/Users/windb/cola/outputs/jimureport-集成开发文档/03-fastapi-token.md",
+      "root_cause": "5 lines replaced/restructured",
+      "fix": "Rewrote 7→8 lines (5 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-29T05:45:32.337Z"
+    },
+    {
+      "id": "bug-141",
+      "timestamp": "2026-05-29T06:59:28.034Z",
+      "error_message": "Significant refactor of ",
+      "file": "jmreport-service/src/main/java/com/leshine/jmreport/config/SecurityConfig.java",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 5→7 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "java"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-29T06:59:28.034Z"
+    },
+    {
+      "id": "bug-142",
+      "timestamp": "2026-05-29T08:22:08.154Z",
+      "error_message": "Null/undefined access in ",
+      "file": "CLAUDE.md",
+      "root_cause": "Property access on potentially null/undefined value",
+      "fix": "Added null safety (optional chaining or null check)",
+      "tags": [
+        "auto-detected",
+        "null-safety",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-05-29T08:22:08.154Z"
+    },
+    {
+      "id": "bug-143",
+      "timestamp": "2026-05-29T08:29:46.434Z",
+      "error_message": "Significant refactor of ",
+      "file": "C:/Users/windb/cola/outputs/jimureport-集成开发文档/07-verification.md",
+      "root_cause": "7 lines replaced/restructured",
+      "fix": "Rewrote 15→17 lines (7 removed) | Also: # 1.4 jimureport 配置库表已创建; mysql -h localhost -u jmreport -p'JmReport@2024!'  | Also: **错误现象**：iframe 显示空白，浏览器控制台报：; Refused to display 'http://localhost:8888/...' in  | Also: ### 🔴 ERR-001: `JmReportTokenServiceI` 注入失败; **原因**：`JmReportTokenServiceImpl` 未被 Spring 扫描到。",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 4,
+      "last_seen": "2026-05-29T08:33:19.486Z"
     }
   ]
 }

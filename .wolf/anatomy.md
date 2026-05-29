@@ -1,11 +1,11 @@
 # anatomy.md
 
-> Auto-maintained by OpenWolf. Last scanned: 2026-05-28T07:06:50.465Z
-> Files: 89 tracked | Anatomy hits: 0 | Misses: 0
+> Auto-maintained by OpenWolf. Last scanned: 2026-05-29T08:47:03.439Z
+> Files: 121 tracked | Anatomy hits: 0 | Misses: 0
 
 ## ./
 
-- `CLAUDE.md` — OpenWolf (~10158 tok)
+- `CLAUDE.md` — OpenWolf (~11716 tok)
 - `README.md` — Project documentation (~765 tok)
 
 ## .claude/
@@ -29,13 +29,23 @@
 
 - `feedback_asset_download_auth.md` (~295 tok)
 - `feedback_domain_imports_silent_fail.md` (~290 tok)
-- `MEMORY.md` (~456 tok)
-- `project_asset_module.md` (~990 tok)
+- `MEMORY.md` (~468 tok)
+- `project_asset_module.md` (~1208 tok)
 - `project_mobile_login_flow.md` (~318 tok)
 - `project_production_module.md` — 数据库（4 张表，025 + 026 迁移） (~609 tok)
 - `project_stock_module.md` (~749 tok)
 - `project_table_sorting.md` — 列表表头排序统一改造 (~280 tok)
 - `reference_git_proxy.md` (~178 tok)
+
+## C:/Users/windb/cola/outputs/jimureport-集成开发文档/
+
+- `01-architecture.md` — 01 — 整体架构与技术决策 (~1230 tok)
+- `02-java-service.md` — 02 — Java Spring Boot 微服务搭建（基于 jimureport-example v2.3.4 改造） (~3303 tok)
+- `03-fastapi-token.md` — 03 — FastAPI Token 中转接口 (~1895 tok)
+- `04-vue3-integration.md` — 04 — Vue3 前端集成 (~2381 tok)
+- `06-deploy.md` — 06 — 部署（Windows Server + NSSM） (~1591 tok)
+- `07-verification.md` — 07 — 验证清单 & 错误排查 (~2884 tok)
+- `README.md` — Project documentation (~716 tok)
 
 ## backend/
 
@@ -264,6 +274,7 @@
 
 ## backend/app/
 
+- `routers.py` — 集中注册所有 FastAPI router。新增业务模块时在此追加。 (~738 tok)
 
 ## backend/app/ai/
 
@@ -275,6 +286,7 @@
 - `commission.py` — 提成计算路由 (~3372 tok)
 - `customer.py` — 客户归属快照管理路由 (~3395 tok)
 - `employee.py` — 员工属性管理路由 (~2309 tok)
+- `jmreport.py` — API: 3 endpoints (~1241 tok)
 - `payment.py` — 回款同步路由 (~1085 tok)
 - `supervisor.py` — 主管关系管理路由 (~2198 tok)
 
@@ -283,14 +295,15 @@
 - `asset_service.py` — 素材管理 — 素材上传/查询/更新/下载 (~4212 tok)
 - `folder_upload_service.py` — 素材管理 — 文件夹批量上传服务 (~5949 tok)
 - `models.py` — 素材管理 — SQLAlchemy ORM 模型 (~2282 tok)
-- `router.py` — 素材管理 — API 路由 (~11159 tok)
+- `router.py` — 素材管理 — API 路由 (~11018 tok)
 - `schemas.py` — 素材管理 — Pydantic 模型 (~1828 tok)
 - `service.py` — 素材管理 — service facade (~447 tok)
+- `tag_service.py` — 素材管理 — 标签维度/值 CRUD + 种子数据 (~2305 tok)
 
 ## backend/app/auth/
 
 - `admin_router.py` — 用户/角色/权限管理 & 个人资料路由 (~5083 tok)
-- `service.py` — Auth 业务逻辑 (~3218 tok)
+- `service.py` — Auth 业务逻辑 (~3296 tok)
 
 ## backend/app/bootstrap/
 
@@ -300,6 +313,10 @@
 - `blend_service.py` — 混合色 CRUD 服务 (~1968 tok)
 - `palette_service.py` — 色号 CRUD 服务 (~1434 tok)
 - `router.py` — 发色数字化 — API 路由 (~4126 tok)
+
+## backend/app/core/
+
+- `config.py` — 环境变量配置（Pydantic Settings） (~1430 tok)
 
 ## backend/app/design/
 
@@ -340,6 +357,11 @@
 
 - `test_scheduler_jobs.py` — 定时任务 smoke tests (~1949 tok)
 
+## deploy/
+
+- `restart-jmreport.bat` (~192 tok)
+- `setup-jmreport.bat` (~1367 tok)
+
 ## frontend/
 
 
@@ -354,6 +376,8 @@
 ## frontend/src/api/
 
 - `asset.js` — ── 标签维度 ──────────────────────────────────────────── (~1558 tok)
+- `clients.js` — 业务域 API client 集合。 (~286 tok)
+- `jmreport.js` — 积木报表（jimureport）集成 — 前端 API 封装。 (~198 tok)
 - `stock.js` — ── 销量备货一览 ──────────────────────────────────────── (~1280 tok)
 
 ## frontend/src/composables/
@@ -362,7 +386,7 @@
 
 ## frontend/src/config/
 
-- `navigation.js` — 导航配置 — 单一来源。 (~4562 tok)
+- `navigation.js` — 导航配置 — 单一来源。 (~4791 tok)
 
 ## frontend/src/router/
 
@@ -370,10 +394,11 @@
 
 ## frontend/src/stores/
 
+- `jmreport.js` — 积木报表 token Pinia store。 (~511 tok)
 
 ## frontend/src/views/asset/
 
-- `AssetLibrary.vue` — Vue: setup (~6826 tok)
+- `AssetLibrary.vue` — Vue: setup (~6843 tok)
 - `AssetStats.vue` — Vue: setup (~1742 tok)
 - `AssetUpload.vue` — Vue component (~9184 tok)
 
@@ -420,6 +445,10 @@
 - `IntelligenceOverview.vue` — Vue: setup (~2818 tok)
 - `SourcesAdminView.vue` — Vue: setup (~3433 tok)
 
+## frontend/src/views/jmreport/
+
+- `JmReportView.vue` — Vue: setup (~617 tok)
+
 ## frontend/src/views/payment/
 
 - `PaymentSync.vue` — Vue: setup (~1966 tok)
@@ -454,6 +483,51 @@
 
 - `ShippingDailyReport.vue` — Vue: setup (~4865 tok)
 - `TrackingList.vue` — Vue: setup (~4603 tok)
+
+## jmreport-service/
+
+- `.gitignore` — Git ignore rules (~147 tok)
+- `pom.xml` (~3137 tok)
+
+## jmreport-service/sql/
+
+- `filter_init.py` — is_target_table, main (~434 tok)
+- `import.py` — load_env, main (~924 tok)
+- `README.md` — Project documentation (~217 tok)
+
+## jmreport-service/src/main/java/com/jeecg/modules/jmreport/controller/
+
+- `InternalHealthController.java` — 内网健康检查接口（不走 sa-token 鉴权，已在 SaTokenConfigure 白名单） (~212 tok)
+
+## jmreport-service/src/main/java/com/jeecg/modules/jmreport/extend/
+
+- `JimuReportTokenServiceImpl.java` — 方舟 × jimureport 鉴权适配器 (~2048 tok)
+
+## jmreport-service/src/main/java/com/jeecg/modules/jmreport/satoken/
+
+- `SaTokenConfigure.java` — [Sa-Token 权限认证] 配置类 (~912 tok)
+
+## jmreport-service/src/main/java/com/leshine/jmreport/
+
+- `JmReportApplication.java` — JmReportApplication: main (~168 tok)
+
+## jmreport-service/src/main/java/com/leshine/jmreport/config/
+
+- `SecurityConfig.java` — = 浏览器侧 /jmreport/internal/**（FastAPI 内网调用） (~630 tok)
+
+## jmreport-service/src/main/java/com/leshine/jmreport/controller/
+
+- `TokenController.java` — 内网接口（健康检查 + Token 验签），仅供 FastAPI 内网调用。 (~646 tok)
+
+## jmreport-service/src/main/java/com/leshine/jmreport/service/
+
+- `JmReportTokenServiceImpl.java` — JimuReport Token 服务实现 (jimureport 2.3.4 真实接口) (~1435 tok)
+
+## jmreport-service/src/main/resources/
+
+- `application-dev.yml` (~929 tok)
+- `application-prod.yml` — 生产环境覆盖配置 (~274 tok)
+- `application.yml` (~316 tok)
 
 ## 登录动效/app/
 
