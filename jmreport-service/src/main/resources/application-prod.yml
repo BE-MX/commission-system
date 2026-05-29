@@ -1,7 +1,8 @@
 server:
-  port: 8085
+  port: 8888
   tomcat:
     max-swallow-size: -1
+    max-http-request-header-size: 65536
   error:
     include-exception: true
     include-stacktrace: ALWAYS
@@ -13,9 +14,9 @@ spring:
       max-request-size: 10MB
   #数据库
   datasource:
-    url: jdbc:mysql://${MYSQL-HOST:127.0.0.1}:${MYSQL-PORT:3306}/${MYSQL-DB:jimureport}?characterEncoding=UTF-8&useUnicode=true&useSSL=false&tinyInt1isBit=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+    url: jdbc:mysql://sg-cynosdbmysql-grp-qga9yv1b.sql.tencentcdb.com:21831/jimureport?characterEncoding=UTF-8&useUnicode=true&useSSL=false&tinyInt1isBit=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
     username: root
-    password: root
+    password: Fr456yhgt~!@
     driver-class-name: com.mysql.cj.jdbc.Driver
   #Redis配置
   data:
@@ -54,7 +55,7 @@ jeecg:
   # local
   path:
     #文件路径
-    upload: /opt/upload
+    upload: D:/commission-system/jmreport-service/uploads
   # alioss
   oss:
     endpoint: ??
@@ -99,9 +100,9 @@ jeecg:
     # 平台上线安全配置
     firewall:
       # 数据源安全 (开启后，不允许使用平台数据源、SQL解析加签并且不允许查询数据库)
-      dataSourceSafe: true
+      dataSourceSafe: false
       # 低代码开发模式（dev:开发模式，prod:发布模式—关闭在线报表设计功能，分配角色admin、lowdeveloper可放开限制）
-      lowCodeMode: prod
+      lowCodeMode: dev
       # sql注入检查级别（strict:严格, basic:简单校验, none:不校验）
       sqlInjectionLevel: strict
     # 展示列数
