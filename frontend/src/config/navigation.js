@@ -75,6 +75,11 @@ export const MENU_GROUPS = {
     icon: Camera,
     anyPermission: ['design:read', 'design:write', 'design:audit', 'design:manage'],
   },
+  report: {
+    title: '报表中心',
+    icon: DataAnalysis,
+    anyPermission: ['report:read', 'report:design', 'report:admin'],
+  },
   system: {
     title: '系统管理',
     icon: Setting,
@@ -554,6 +559,28 @@ export const NAV_ENTRIES = [
       group: 'system', title: 'AI 接入管理', icon: Lightning, order: 40,
       permission: 'ai:admin',
     },
+  },
+
+  // ── 报表中心（jimureport iframe 集成） ──────────────────
+  {
+    path: '/report',
+    name: 'JmReportDesigner',
+    component: () => import('@/views/jmreport/JmReportView.vue'),
+    title: '报表设计器',
+    anyPermission: ['report:design', 'report:admin'],
+    menu: {
+      group: 'report', title: '报表设计器', icon: EditPen, order: 10,
+      anyPermission: ['report:design', 'report:admin'],
+    },
+  },
+  {
+    path: '/report/view',
+    name: 'JmReportView',
+    component: () => import('@/views/jmreport/JmReportView.vue'),
+    props: (route) => ({ reportCode: route.query.reportCode, mode: 'view' }),
+    title: '查看报表',
+    permission: 'report:read',
+    hideInMenu: true,
   },
 
   // ── 个人设置 (隐藏) ────────────────────────────────────

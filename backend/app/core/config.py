@@ -91,6 +91,12 @@ class Settings(BaseSettings):
     DINGTALK_CALLBACK_AES_KEY: str = ""
     DINGTALK_CALLBACK_TOKEN: str = ""
 
+    # ── 积木报表（jimureport）集成 ───────────────────────
+    # INTERNAL: FastAPI 探活/调用 Java 服务的内网地址（example 项目无 context-path，根路径直连）
+    # PUBLIC:   前端 iframe 拼 src 用，必须浏览器可达；带 /jmreport 是因为设计器路径是 /jmreport/list
+    JMREPORT_INTERNAL_URL: str = "http://localhost:8888"
+    JMREPORT_PUBLIC_URL: str = "http://localhost:8888/jmreport"
+
     @field_validator("CORS_ALLOW_ORIGINS", mode="before")
     @classmethod
     def _split_origins(cls, v):

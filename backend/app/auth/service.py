@@ -214,6 +214,10 @@ def seed_role_permissions(db: Session):
         ("color:read",            "color",   "read",          "查看色板数据库 / 色彩趋势"),
         ("color:write",           "color",   "write",         "编辑色号 / 混合色 / 生成色板图"),
         ("color:admin",           "color",   "admin",         "管理竞品监控 / 趋势数据源 / 色板图任务"),
+        # 报表中心（jimureport 集成）
+        ("report:read",           "report",  "read",          "查看报表 / 数据大屏"),
+        ("report:design",         "report",  "design",        "进入报表设计器 / 编辑报表"),
+        ("report:admin",          "report",  "admin",         "管理报表元数据 / 数据源"),
     ]
     for code, module, action, label in seeds:
         existing = db.query(ArkPermission).filter(ArkPermission.code == code).first()
