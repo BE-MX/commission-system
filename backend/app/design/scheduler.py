@@ -49,7 +49,7 @@ async def check_today_shoot_reminders():
             return
 
         from app.auth.models import ArkUser
-        from app.design.router import _find_role_dingtalk_ids, _translate_dict_fields, _fmt_schedule_date, _get_designer_name
+        from app.design.notifications import _find_role_dingtalk_ids, _translate_dict_fields, _fmt_schedule_date, _get_designer_name
 
         design_ids = _find_role_dingtalk_ids(db, "design_staff")
 
