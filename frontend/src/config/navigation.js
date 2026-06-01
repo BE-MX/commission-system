@@ -53,7 +53,7 @@ export const MENU_GROUPS = {
   stock: {
     title: '备货管理',
     icon: Box,
-    anyPermission: ['stock:read', 'stock:write', 'stock:admin'],
+    anyPermission: ['stock:read', 'stock:write', 'stock:admin', 'production:read', 'production:write', 'production:admin'],
   },
   asset: {
     title: '素材管理',
@@ -258,6 +258,49 @@ export const NAV_ENTRIES = [
       group: 'stock', title: '生产订单管理', icon: Box, order: 40,
       permission: 'production:read',
     },
+  },
+
+  // ── 生产报工 ───────────────────────────────────────────
+  {
+    path: '/production/products',
+    name: 'ProductManage',
+    component: () => import('@/views/production/ProductManage.vue'),
+    title: '产品管理',
+    permission: 'production:read',
+    menu: {
+      group: 'stock', title: '产品管理', icon: List, order: 35,
+      permission: 'production:read',
+    },
+  },
+  {
+    path: '/production/processes',
+    name: 'ProcessManage',
+    component: () => import('@/views/production/ProcessManage.vue'),
+    title: '工序管理',
+    permission: 'production:admin',
+    menu: {
+      group: 'stock', title: '工序管理', icon: Setting, order: 36,
+      permission: 'production:admin',
+    },
+  },
+  {
+    path: '/production/process-routes',
+    name: 'ProcessRouteManage',
+    component: () => import('@/views/production/ProcessRouteManage.vue'),
+    title: '工序路线管理',
+    permission: 'production:admin',
+    menu: {
+      group: 'stock', title: '工序路线', icon: Stamp, order: 37,
+      permission: 'production:admin',
+    },
+  },
+  {
+    path: '/production/print-card/:id',
+    name: 'PrintCard',
+    component: () => import('@/views/production/PrintCard.vue'),
+    title: '工艺流转卡打印',
+    permission: 'production:read',
+    hideInMenu: true,
   },
 
   // ── 素材管理 ───────────────────────────────────────────

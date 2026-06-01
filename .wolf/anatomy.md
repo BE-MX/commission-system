@@ -1,12 +1,12 @@
 # anatomy.md
 
-> Auto-maintained by OpenWolf. Last scanned: 2026-05-29T08:47:03.439Z
-> Files: 121 tracked | Anatomy hits: 0 | Misses: 0
+> Auto-maintained by OpenWolf. Last scanned: 2026-06-01T04:33:08.015Z
+> Files: 147 tracked | Anatomy hits: 0 | Misses: 0
 
 ## ./
 
-- `CLAUDE.md` — OpenWolf (~11716 tok)
-- `README.md` — Project documentation (~765 tok)
+- `CLAUDE.md` — OpenWolf (~12588 tok)
+- `README.md` — Project documentation (~949 tok)
 
 ## .claude/
 
@@ -28,14 +28,21 @@
 ## C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/
 
 - `feedback_asset_download_auth.md` (~295 tok)
+- `feedback_axios_token.md` — Declares fooClient (~356 tok)
 - `feedback_domain_imports_silent_fail.md` (~290 tok)
-- `MEMORY.md` (~468 tok)
+- `feedback_iframe-auth-vhtml.md` (~563 tok)
+- `feedback_router_authorization.md` (~497 tok)
+- `MEMORY.md` (~529 tok)
 - `project_asset_module.md` (~1208 tok)
+- `project_jmreport_module.md` — 集成形态 (~1048 tok)
 - `project_mobile_login_flow.md` (~318 tok)
+- `project_phase2_governance.md` (~1154 tok)
 - `project_production_module.md` — 数据库（4 张表，025 + 026 迁移） (~609 tok)
+- `project_production_reporting_module.md` — 2026-06-01 生产报工模块 (~811 tok)
 - `project_stock_module.md` (~749 tok)
 - `project_table_sorting.md` — 列表表头排序统一改造 (~280 tok)
-- `reference_git_proxy.md` (~178 tok)
+- `project_testing_setup.md` (~504 tok)
+- `reference_git_proxy.md` (~315 tok)
 
 ## C:/Users/windb/cola/outputs/jimureport-集成开发文档/
 
@@ -49,6 +56,7 @@
 
 ## backend/
 
+- `requirements.txt` — Python dependencies (~129 tok)
 
 ## backend/.pytest_cache/
 
@@ -271,10 +279,11 @@
 - `024_add_asset_tag_filter_index.py` — add covering index for asset tag filtering (~209 tok)
 - `025_add_production_module.py` — add production module (orders + order_items + cart + audit_log) (~1763 tok)
 - `026_add_urgent_and_delivery_date.py` — add urgent flag and expected delivery date to production order items (~341 tok)
+- `027_add_process_reporting.py` — add production process reporting tables (~2457 tok)
 
 ## backend/app/
 
-- `routers.py` — 集中注册所有 FastAPI router。新增业务模块时在此追加。 (~738 tok)
+- `routers.py` — 集中注册所有 FastAPI router。新增业务模块时在此追加。 (~779 tok)
 
 ## backend/app/ai/
 
@@ -303,6 +312,7 @@
 ## backend/app/auth/
 
 - `admin_router.py` — 用户/角色/权限管理 & 个人资料路由 (~5083 tok)
+- `models.py` — Auth 数据模型（SQLAlchemy） (~1228 tok)
 - `service.py` — Auth 业务逻辑 (~3296 tok)
 
 ## backend/app/bootstrap/
@@ -316,17 +326,30 @@
 
 ## backend/app/core/
 
-- `config.py` — 环境变量配置（Pydantic Settings） (~1430 tok)
+- `config.py` — 环境变量配置（Pydantic Settings） (~1488 tok)
 
 ## backend/app/design/
 
 - `router.py` — 设计预约 — API 路由 (~10093 tok)
+- `scheduler.py` — 设计预约 — 定时任务 (~1182 tok)
 
 ## backend/app/insight/
 
 
 ## backend/app/insight/templates/
 
+
+## backend/app/production/
+
+- `__init__.py` — 生产报工领域模块 (~14 tok)
+- `binding_service.py` — 产品路线绑定 + 用户工序绑定 service (~2071 tok)
+- `models.py` — 生产报工 — SQLAlchemy ORM 模型 (~1484 tok)
+- `process_service.py` — 工序管理 service (~724 tok)
+- `report_service.py` — 报工核心 service + 进度初始化/查询 (~3212 tok)
+- `route_service.py` — 工序路线管理 service (~1263 tok)
+- `router.py` — 生产报工领域模块 — FastAPI router (~3858 tok)
+- `schemas.py` — 生产报工 — Pydantic schemas (~1656 tok)
+- `service.py` — 生产报工 — facade re-export (~82 tok)
 
 ## backend/app/schedulers/
 
@@ -338,7 +361,7 @@
 - `models.py` — 备货管理 — SQLAlchemy ORM 模型 (~1934 tok)
 - `overview_service.py` — 备货管理 — 销量备货一览(SQL 分页 + 状态过滤 + 摘要统计) (~3682 tok)
 - `production_cart_service.py` — 备货管理 — 生产单购物车 CRUD (~1513 tok)
-- `production_order_service.py` — 备货管理 — 生产订单 CRUD + 状态管理 + 入库数量 + 审计日志 (~6500 tok)
+- `production_order_service.py` — 备货管理 — 生产订单 CRUD + 状态管理 + 入库数量 + 审计日志 (~6645 tok)
 - `router.py` — 备货管理 — API 路由 (~6052 tok)
 - `safety_service.py` — 备货管理 — 安全库存 CRUD + AI 备货建议(TFT 微服务 / 公式兜底) (~4095 tok)
 - `schemas.py` — 备货管理 — Pydantic 请求/响应模型 (~1454 tok)
@@ -360,6 +383,7 @@
 ## deploy/
 
 - `restart-jmreport.bat` (~192 tok)
+- `setup-jmreport-full.bat` (~3585 tok)
 - `setup-jmreport.bat` (~1367 tok)
 
 ## frontend/
@@ -376,8 +400,9 @@
 ## frontend/src/api/
 
 - `asset.js` — ── 标签维度 ──────────────────────────────────────────── (~1558 tok)
-- `clients.js` — 业务域 API client 集合。 (~286 tok)
+- `clients.js` — 业务域 API client 集合。 (~314 tok)
 - `jmreport.js` — 积木报表（jimureport）集成 — 前端 API 封装。 (~198 tok)
+- `production.js` — 生产报工 API client (~848 tok)
 - `stock.js` — ── 销量备货一览 ──────────────────────────────────────── (~1280 tok)
 
 ## frontend/src/composables/
@@ -386,7 +411,7 @@
 
 ## frontend/src/config/
 
-- `navigation.js` — 导航配置 — 单一来源。 (~4791 tok)
+- `navigation.js` — 导航配置 — 单一来源。 (~5159 tok)
 
 ## frontend/src/router/
 
@@ -453,12 +478,19 @@
 
 - `PaymentSync.vue` — Vue: setup (~1966 tok)
 
+## frontend/src/views/production/
+
+- `PrintCard.vue` — Vue: setup (~1593 tok)
+- `ProcessManage.vue` — Vue: setup (~1624 tok)
+- `ProcessRouteManage.vue` — Vue: setup (~2577 tok)
+- `ProductManage.vue` — Vue: setup (~2165 tok)
+
 ## frontend/src/views/stock/
 
 - `DailyReport.vue` — Vue: setup (~3683 tok)
-- `ProductionOrderManage.vue` — Vue component (~6649 tok)
-- `SafetyConfig.vue` — Vue component (~10056 tok)
-- `StockOverview.vue` — Vue: setup (~5258 tok)
+- `ProductionOrderManage.vue` — Vue component (~8323 tok)
+- `SafetyConfig.vue` — Vue component (~10084 tok)
+- `StockOverview.vue` — Vue: setup (~5286 tok)
 
 ## frontend/src/views/stock/composables/
 
@@ -473,7 +505,7 @@
 - `AIManager.vue` — Vue component (~6293 tok)
 - `DictManagement.vue` — Vue: setup (~1812 tok)
 - `RoleManagement.vue` — Vue: setup (~1894 tok)
-- `UserManagement.vue` — Vue: setup (~3144 tok)
+- `UserManagement.vue` — Vue: setup (~3967 tok)
 
 ## frontend/src/views/system/composables/
 
@@ -526,7 +558,7 @@
 ## jmreport-service/src/main/resources/
 
 - `application-dev.yml` (~929 tok)
-- `application-prod.yml` — 生产环境覆盖配置 (~274 tok)
+- `application-prod.yml` (~804 tok)
 - `application.yml` (~316 tok)
 
 ## 登录动效/app/

@@ -6,7 +6,7 @@ set "LOGFILE=%~dp0setup-jmreport.log"
 echo ==== JimuReport Setup Start %date% %time% ==== > "%LOGFILE%"
 
 set "INSTALL_DIR=D:\commission-system"
-set "SERVICE_NAME=LeShineJmReport"
+set "SERVICE_NAME=LeShineJmReport2"
 set "PORT=8888"
 set "JM_DIR=%INSTALL_DIR%\jmreport-service"
 set "JAR_NAME=jimureport-example-2.3.jar"

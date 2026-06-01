@@ -173,7 +173,66 @@
           <el-table-column label="状态" width="80" align="center">
             <template #default="{ row }"><el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag></template>
           </el-table-column>
+          <el-table-column label="操作" width="140" align="center">
+            <template #default="{ row }">
+              <el-button size="small" link type="primary" @click="toggleItemProgress(row)">进度</el-button>
+              <el-button size="small" link type="warning" @click="printCard(row)">打印流转卡</el-button>
+            </template>
+          </el-table-column>
         </el-table>
+
+        <!-- 工序进度看板（按需展开） -->
+        <template v-for="item in (currentOrder.items || [])" :key="'progress-' + item.id">
+          <div v-if="expandedProgressId === item.id" class="progress-panel">
+            <div class="progress-panel-header">
+              <span class="detail-subtitle">工序进度：{{ item.product_name }}</span>
+              <div>
+                <el-button size="small" link @click="refreshProgress(item.id)">刷新</el-button>
+                <el-button size="small" link @click="expandedProgressId = null">收起</el-button>
+              </div>
+            </div>
+            <div v-if="progressLoading" style="text-align:center; padding: 20px;">
+              <el-icon class="is-loading" :size="20"><Loading /></el-icon> 加载中...
+            </div>
+            <div v-else-if="progressData[item.id]" class="progress-content">
+              <!-- 进度条 -->
+              <div class="progress-bar-wrap">
+                <el-progress
+                  :percentage="progressData[item.id].completion_rate"
+                  :color="progressColor(progressData[item.id].completion_rate)"
+                  :stroke-width="16"
+                  :text-inside="true"
+                  style="margin-bottom: 12px;"
+                />
+                <span class="progress-summary">
+                  {{ progressData[item.id].completed_steps }}/{{ progressData[item.id].total_steps }} 工序完成
+                  <template v-if="progressData[item.id].all_completed"> 🎉 全部完成</template>
+                </span>
+              </div>
+              <!-- 步骤列表 -->
+              <div class="step-timeline">
+                <div v-for="step in progressData[item.id].steps" :key="step.id" class="step-row" :class="{ completed: step.status === 1, current: step.status === 0 && isCurrentStep(step, progressData[item.id]) }">
+                  <span class="step-icon">
+                    <template v-if="step.status === 1">✅</template>
+                    <template v-else-if="isCurrentStep(step, progressData[item.id])">🔵</template>
+                    <template v-else>⚪</template>
+                  </span>
+                  <span class="step-order-num">{{ step.step_order }}</span>
+                  <span class="step-process-name">{{ step.process_name }}</span>
+                  <span v-if="step.status === 1" class="step-meta">
+                    {{ formatShortDate(step.completed_at) }} · {{ step.completed_by_user_name || '未知' }}
+                  </span>
+                  <span v-else-if="isCurrentStep(step, progressData[item.id])" class="step-meta">待完成（当前工序）</span>
+                  <span v-else class="step-meta">未到</span>
+                </div>
+              </div>
+            </div>
+            <div v-else class="progress-empty">
+              <span style="color: #909399;">未配置工序路线，请前往产品管理绑定</span>
+              <router-link to="/production/products" style="margin-left: 8px;">去绑定 →</router-link>
+            </div>
+          </div>
+        </template>
       </div>
     </el-dialog>
 
@@ -262,16 +321,19 @@
 
 <script setup>
 import { ref, reactive, onMounted, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document, CircleClose, CircleCheck, Filter } from '@element-plus/icons-vue'
+import { Document, CircleClose, CircleCheck, Filter, Loading } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useTableSort } from '@/composables/useTableSort'
+import { getProgress, getPrintCardData } from '@/api/production'
 import {
   getProductionOrders, getProductionOrderDetail, updateProductionOrder,
   deleteProductionOrder, getProductionOrderItems, updateProductionOrderItem,
   updateProductionItemStatus, updateProductionItemReceived, deleteProductionOrderItem,
 } from '@/api/stock'
 
+const router = useRouter()
 const authStore = useAuthStore()
 
 const orderSort = useTableSort()
@@ -545,6 +607,59 @@ async function deleteItem(row) {
 onMounted(() => {
   loadOrderList()
 })
+
+// ── 工序进度看板 ──────────────────────────
+const expandedProgressId = ref(null)
+const progressData = ref({})
+const progressLoading = ref(false)
+
+function isCurrentStep(step, progress) {
+  const firstPending = progress.steps.find(s => s.status === 0)
+  return firstPending && step.id === firstPending.id
+}
+
+function progressColor(rate) {
+  if (rate >= 100) return '#409eff'
+  if (rate > 70) return '#67c23a'
+  if (rate > 30) return '#e6a23c'
+  return '#f56c6c'
+}
+
+function formatShortDate(dt) {
+  if (!dt) return ''
+  const d = new Date(dt)
+  return `${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
+}
+
+async function toggleItemProgress(item) {
+  if (expandedProgressId.value === item.id) {
+    expandedProgressId.value = null
+    return
+  }
+  expandedProgressId.value = item.id
+  await loadProgress(item.id)
+}
+
+async function loadProgress(itemId) {
+  progressLoading.value = true
+  try {
+    const { data } = await getProgress(itemId)
+    progressData.value[itemId] = data
+  } catch {
+    progressData.value[itemId] = null
+  } finally {
+    progressLoading.value = false
+  }
+}
+
+async function refreshProgress(itemId) {
+  await loadProgress(itemId)
+}
+
+function printCard(item) {
+  const url = router.resolve({ name: 'PrintCard', params: { id: item.id } }).href
+  window.open(url, '_blank')
+}
 </script>
 
 <style scoped>
@@ -582,4 +697,22 @@ onMounted(() => {
 
 /* 通用 */
 .in-transit-active { color: #27ae60; font-weight: 600; }
+
+/* 工序进度看板 */
+.progress-panel { margin-top: 12px; padding: 16px; background: #fafbfc; border-radius: 8px; border: 1px solid #ebeef5; }
+.progress-panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.progress-content { }
+.progress-bar-wrap { margin-bottom: 12px; }
+.progress-summary { font-size: 13px; color: #606266; }
+.step-timeline { display: flex; flex-direction: column; gap: 4px; }
+.step-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 4px; font-size: 13px; }
+.step-row.completed { background: #f0f9eb; }
+.step-row.current { background: #ecf5ff; }
+.step-icon { font-size: 14px; width: 20px; text-align: center; }
+.step-order-num { width: 20px; height: 20px; border-radius: 50%; background: #c0c4cc; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 11px; }
+.step-row.completed .step-order-num { background: #67c23a; }
+.step-row.current .step-order-num { background: #409eff; }
+.step-process-name { font-weight: 500; min-width: 80px; }
+.step-meta { color: #909399; font-size: 12px; }
+.progress-empty { text-align: center; padding: 16px; }
 </style>

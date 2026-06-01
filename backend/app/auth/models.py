@@ -21,6 +21,7 @@ class ArkUser(Base):
     email = Column(String(100))
     phone = Column(String(20))
     dingtalk_id = Column(String(100), unique=True)
+    wx_id = Column(String(100), unique=True, nullable=True, comment="微信原始ID（FromUserName），用于报工匹配")
     avatar_url = Column(String(500))
     is_active = Column(Boolean, nullable=False, default=True)
     must_change_password = Column(Boolean, nullable=False, default=False)

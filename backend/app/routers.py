@@ -20,6 +20,7 @@ from app.insight.router import router as insight_router
 from app.stock.router import router as stock_router
 from app.asset.router import router as asset_router
 from app.color.router import router as color_router
+from app.production.router import router as production_router
 
 
 def register_routers(app: FastAPI) -> None:
@@ -44,3 +45,4 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(asset_router, prefix="/api/assets", tags=["素材管理"])
     app.include_router(color_router, prefix="/api/color", tags=["色彩管理"])
     app.include_router(jmreport_router, prefix="/api/report", tags=["积木报表"])
+    app.include_router(production_router, prefix="/api/production", tags=["生产报工"])

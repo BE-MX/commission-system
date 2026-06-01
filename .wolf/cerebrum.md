@@ -10,6 +10,7 @@
 
 ## Key Learnings
 
+- **Git 代理双端口**：开发机 GitHub 默认走 1080 端口代理，1080 连不上时切换 7078 尝试（`git config --global http.proxy http://127.0.0.1:7078` + https.proxy 同理）。用户指令 2026-05-29
 - **生产订单模块权限独立**：新增 `production:read/write/admin` 权限码，与 `stock` 权限分离。备货管理菜单组(`stock`)的 `anyPermission` 未包含 production 权限，因此 production 菜单需单独挂载在备货管理分组下，由 `production:read` 控制显示
 - **生产订单号生成规则**：`PO{YYYYMMDD}-{NNN}`，按天自增序号。实现方式：查询当天最大订单号，解析序号部分 +1，格式化 3 位零填充
 - **订单与明细状态双向同步**：修改订单状态时级联更新所有明细状态；修改明细状态时，若所有明细变更为同一状态，则同步更新订单状态。实现于 `production_order_service.py` 的 `update_order` 和 `update_item_status`
@@ -79,6 +80,7 @@
 - [2026-05-26] 前端响应拦截器将后端 `{code, message, data}` 整体作为响应体返回，但 composable 中直接访问 `res.data.items` 时 `res.data` 实际是外层响应的 `data` 字段（即真正的业务数据）。正确做法：`const payload = res.data ?? res; payload.items`。`useProductionCart.js` 最初未 unwrap 导致购物车列表解析失败
 - [2026-05-26] Vue composable 返回的 reactive 状态必须在组件中完整解构才能使用。`SafetyConfig.vue` 模板引用了 `selectedCartIds.length`，但解构时漏了 `selectedCartIds`，导致 `Cannot read properties of undefined (reading 'length')`。修复：确保 `const { cartItems, selectedCartIds, ... } = useProductionCart()` 解构完整
 - [2026-05-27] Raw SQL 端点的排序列必须带表别名前缀（如 `o.order_no` 而非 `order_no`），因为 SQL 使用了 `FROM ark_production_orders o` 别名。直接用前端 prop 名会导致 `Unknown column` 错误。修复：用 `SORT_COL_MAP` 字典映射 prop 名 → 带别名的 SQL 列名
+- [2026-06-01] 函数搬家（refactor/rename）时，必须全局 grep 旧路径的 import——**包括函数体内的延迟 import**（`from app.design.router import _xxx` 写在函数体内而非文件顶部）。阶段二治理将 `_find_role_dingtalk_ids` 等 4 个函数从 `router.py` 移至 `notifications.py`，但 `scheduler.py:52` 的延迟 import 未同步更新。注册期不报错（函数体不执行），08:30 定时任务或手动点按钮才炸。**grep 命令**：`grep -rn "from app\.design\.router import" backend/` 不能只搜顶层 import
 
 ## Decision Log
 
@@ -87,3 +89,7 @@
 - [2026-05-19] 素材存储根目录默认 `D:\WORKSOURCE`（`ASSET_STORAGE_ROOT` 环境变量），与 uploads/avatars 分离 — 历史文件量大，独立盘符便于扩展
 - [2026-05-19] AI 打标签走「文件名解析」路线而非视觉模型 — 需求确认后设计部命名规范已含颜色/尺寸信息，视觉模型成本高且延迟大，文本解析足够
 - [2026-05-19] 收藏夹分享采用 token 机制（非短链服务）— 分享场景独立，token 直接绑定收藏夹表，简化链路
+- [2026-06-01] 生产报工模块独立为 `app/production/` 领域模块（与 stock 平级），路由挂载 `/api/production`。原因：(1) 报工接口用 API Key 鉴权与 stock JWT 模式不同；(2) stock router 已有 27 个端点不宜再膨胀；(3) 工序/路线/报工是独立业务域
+- [2026-06-01] 报工接口 `order_product_id` 对应 `ark_production_order_items.id`（非独立表），每条订单明细即一个"订单产品"，进度表 FK 引用该表
+- [2026-06-01] okki_products 产品字段实际可用：`product_no, name, model, production_color_requirement, production_size_requirement`。无 `cn_name/group_name/synced_at`，产品管理页只展示这些字段
+- [2026-06-01] 二维码签名使用 `hmac.new(key=..., msg=..., digestmod=...)` 关键字参数，避免参数顺序错误

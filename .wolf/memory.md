@@ -3,6 +3,11 @@
 > Chronological action log. Hooks and AI append to this file automatically.
 > Old sessions are consolidated by the daemon weekly.
 
+| HH:MM | description | file(s) | outcome | ~tokens |
+|-------|-------------|---------|---------|---------|
+| 11:01 | 完成生产进度报工系统全量开发（后端 6 service + router 24 endpoints + 前端 4 页面 + 迁移 + 配置） | backend/app/production/*, frontend/src/views/production/*, alembic/027 | 后端 import 验证通过，前端 vite build 成功，24 条路由注册 | ~45k |
+| 11:15 | 完成收尾三项：用户管理页嵌入工序绑定+微信ID；订单详情嵌入进度看板+打印流转卡按钮；订单创建自动初始化进度 | UserManagement.vue, ProductionOrderManage.vue, production_order_service.py | 前端 build 通过，后端 import 验证通过 | ~18k |
+
 ## Session: 2026-05-26 开发安全库存生产单购物车与生产订单管理
 
 | Time | Action | File(s) | Outcome | ~Tokens |
@@ -1422,3 +1427,192 @@
 | 16:44 | Created jmreport-service/sql/README.md | — | ~232 |
 | 16:45 | Edited jmreport-service/.gitignore | expanded (+8 lines) | ~39 |
 | 16:47 | Edited jmreport-service/.gitignore | 3→4 lines | ~31 |
+| 16:52 | Session end: 81 writes across 32 files (README.md, 01-architecture.md, 02-java-service.md, 03-fastapi-token.md, 04-vue3-integration.md) | 21 reads | ~65942 tok |
+| 16:54 | Session end: 81 writes across 32 files (README.md, 01-architecture.md, 02-java-service.md, 03-fastapi-token.md, 04-vue3-integration.md) | 21 reads | ~65942 tok |
+| 16:57 | Edited README.md | inline fix | ~95 |
+| 16:57 | Edited README.md | expanded (+7 lines) | ~291 |
+| 17:01 | Created C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_jmreport_module.md | — | ~1097 |
+| 17:01 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/MEMORY.md | 2→3 lines | ~94 |
+| 17:02 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/reference_git_proxy.md | 3→7 lines | ~102 |
+| 17:04 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/feedback_iframe-auth-vhtml.md | expanded (+16 lines) | ~192 |
+| 17:06 | Edited CLAUDE.md | 5→10 lines | ~162 |
+| 17:08 | Edited CLAUDE.md | 1→2 lines | ~67 |
+| 17:09 | Edited CLAUDE.md | expanded (+11 lines) | ~318 |
+| 17:10 | Edited CLAUDE.md | "set VAR=value" → "chcp 65001 >nul" | ~36 |
+| 17:12 | Session end: 91 writes across 36 files (README.md, 01-architecture.md, 02-java-service.md, 03-fastapi-token.md, 04-vue3-integration.md) | 25 reads | ~71533 tok |
+
+## Session: 2026-05-29 17:14
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 17:33 | Edited frontend/src/views/stock/StockOverview.vue | modified handleSortChange() | ~51 |
+| 17:33 | Edited frontend/src/views/stock/StockOverview.vue | "onSortChange" → "handleSortChange" | ~9 |
+| 17:33 | Edited frontend/src/views/stock/SafetyConfig.vue | modified handleSortChange() | ~51 |
+| 17:33 | Edited frontend/src/views/stock/SafetyConfig.vue | "onSortChange" → "handleSortChange" | ~9 |
+| 17:33 | Edited frontend/src/views/stock/ProductionOrderManage.vue | modified handleOrderSortChange() | ~83 |
+| 17:33 | Edited frontend/src/views/stock/ProductionOrderManage.vue | "orderSort.onSortChange" → "handleOrderSortChange" | ~10 |
+| 17:33 | Edited frontend/src/views/stock/ProductionOrderManage.vue | "itemSort.onSortChange" → "handleItemSortChange" | ~10 |
+| 17:38 | Session end: 7 writes across 3 files (StockOverview.vue, SafetyConfig.vue, ProductionOrderManage.vue) | 9 reads | ~33473 tok |
+| 17:59 | Session end: 7 writes across 3 files (StockOverview.vue, SafetyConfig.vue, ProductionOrderManage.vue) | 9 reads | ~33473 tok |
+| 18:04 | Session end: 7 writes across 3 files (StockOverview.vue, SafetyConfig.vue, ProductionOrderManage.vue) | 9 reads | ~33473 tok |
+
+## Session: 2026-05-29 18:20
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 18:21 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/reference_git_proxy.md | inline fix | ~18 |
+| 18:21 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/reference_git_proxy.md | 2→5 lines | ~111 |
+| 18:21 | Session end: 2 writes across 1 files (reference_git_proxy.md) | 1 reads | ~389 tok |
+| 18:59 | Session end: 2 writes across 1 files (reference_git_proxy.md) | 3 reads | ~2634 tok |
+| 19:00 | Session end: 2 writes across 1 files (reference_git_proxy.md) | 3 reads | ~2634 tok |
+| 19:03 | Created deploy/setup-jmreport-full.bat | — | ~3347 |
+| 19:04 | Session end: 3 writes across 2 files (reference_git_proxy.md, setup-jmreport-full.bat) | 4 reads | ~6412 tok |
+| 19:08 | Created deploy/setup-jmreport-full.bat | — | ~3675 |
+| 19:08 | Session end: 4 writes across 2 files (reference_git_proxy.md, setup-jmreport-full.bat) | 5 reads | ~13697 tok |
+| 19:15 | Session end: 4 writes across 2 files (reference_git_proxy.md, setup-jmreport-full.bat) | 5 reads | ~13697 tok |
+| 19:17 | Created deploy/setup-jmreport-full.bat | — | ~3235 |
+| 19:19 | Session end: 5 writes across 2 files (reference_git_proxy.md, setup-jmreport-full.bat) | 5 reads | ~17163 tok |
+| 19:25 | Session end: 5 writes across 2 files (reference_git_proxy.md, setup-jmreport-full.bat) | 5 reads | ~17163 tok |
+| 19:37 | Session end: 5 writes across 2 files (reference_git_proxy.md, setup-jmreport-full.bat) | 5 reads | ~17163 tok |
+| 19:38 | Edited deploy/setup-jmreport-full.bat | "MAVEN_VER=3.9.9" → "MAVEN_VER=3.9.8" | ~6 |
+| 19:38 | Edited deploy/setup-jmreport-full.bat | expanded (+6 lines) | ~191 |
+| 19:38 | Session end: 7 writes across 2 files (reference_git_proxy.md, setup-jmreport-full.bat) | 5 reads | ~17374 tok |
+| 19:45 | Session end: 7 writes across 2 files (reference_git_proxy.md, setup-jmreport-full.bat) | 5 reads | ~17374 tok |
+| 19:48 | Session end: 7 writes across 2 files (reference_git_proxy.md, setup-jmreport-full.bat) | 5 reads | ~17374 tok |
+| 00:12 | Session end: 7 writes across 2 files (reference_git_proxy.md, setup-jmreport-full.bat) | 5 reads | ~17374 tok |
+| 00:16 | Edited deploy/setup-jmreport-full.bat | 15→11 lines | ~188 |
+| 00:16 | Edited deploy/setup-jmreport-full.bat | expanded (+23 lines) | ~280 |
+| 00:17 | Session end: 9 writes across 2 files (reference_git_proxy.md, setup-jmreport-full.bat) | 5 reads | ~17876 tok |
+| 00:21 | Session end: 9 writes across 2 files (reference_git_proxy.md, setup-jmreport-full.bat) | 5 reads | ~17876 tok |
+| 00:23 | Session end: 9 writes across 2 files (reference_git_proxy.md, setup-jmreport-full.bat) | 5 reads | ~17876 tok |
+| 00:25 | Session end: 9 writes across 2 files (reference_git_proxy.md, setup-jmreport-full.bat) | 5 reads | ~17876 tok |
+| 00:27 | Edited jmreport-service/src/main/resources/application-prod.yml | 19→20 lines | ~176 |
+| 00:27 | Edited jmreport-service/src/main/resources/application-prod.yml | 3→3 lines | ~22 |
+| 00:28 | Edited jmreport-service/src/main/resources/application-prod.yml | 4→4 lines | ~50 |
+| 00:28 | Session end: 12 writes across 3 files (reference_git_proxy.md, setup-jmreport-full.bat, application-prod.yml) | 6 reads | ~18398 tok |
+| 00:31 | Session end: 12 writes across 3 files (reference_git_proxy.md, setup-jmreport-full.bat, application-prod.yml) | 6 reads | ~18398 tok |
+| 00:33 | Session end: 12 writes across 3 files (reference_git_proxy.md, setup-jmreport-full.bat, application-prod.yml) | 6 reads | ~18398 tok |
+| 00:34 | Session end: 12 writes across 3 files (reference_git_proxy.md, setup-jmreport-full.bat, application-prod.yml) | 6 reads | ~18398 tok |
+| 00:37 | Session end: 12 writes across 3 files (reference_git_proxy.md, setup-jmreport-full.bat, application-prod.yml) | 6 reads | ~18398 tok |
+| 00:41 | Session end: 12 writes across 3 files (reference_git_proxy.md, setup-jmreport-full.bat, application-prod.yml) | 6 reads | ~18398 tok |
+| 00:43 | Session end: 12 writes across 3 files (reference_git_proxy.md, setup-jmreport-full.bat, application-prod.yml) | 6 reads | ~18398 tok |
+| 00:45 | Session end: 12 writes across 3 files (reference_git_proxy.md, setup-jmreport-full.bat, application-prod.yml) | 6 reads | ~18398 tok |
+| 00:47 | Session end: 12 writes across 3 files (reference_git_proxy.md, setup-jmreport-full.bat, application-prod.yml) | 6 reads | ~18398 tok |
+| 00:49 | Session end: 12 writes across 3 files (reference_git_proxy.md, setup-jmreport-full.bat, application-prod.yml) | 6 reads | ~18398 tok |
+| 00:51 | Session end: 12 writes across 3 files (reference_git_proxy.md, setup-jmreport-full.bat, application-prod.yml) | 6 reads | ~18398 tok |
+| 00:54 | Session end: 12 writes across 3 files (reference_git_proxy.md, setup-jmreport-full.bat, application-prod.yml) | 6 reads | ~18398 tok |
+| 00:55 | Session end: 12 writes across 3 files (reference_git_proxy.md, setup-jmreport-full.bat, application-prod.yml) | 6 reads | ~18398 tok |
+| 00:56 | Edited deploy/setup-jmreport-full.bat | "SERVICE_NAME=LeShineJmRep" → "SERVICE_NAME=LeShineJmRep" | ~10 |
+| 00:56 | Session end: 13 writes across 3 files (reference_git_proxy.md, setup-jmreport-full.bat, application-prod.yml) | 6 reads | ~18408 tok |
+| 00:58 | Session end: 13 writes across 3 files (reference_git_proxy.md, setup-jmreport-full.bat, application-prod.yml) | 6 reads | ~18408 tok |
+
+## Session: 2026-05-30 10:50
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-06-01 08:39
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 09:03 | Edited backend/app/design/scheduler.py | inline fix | ~38 |
+| 09:04 | Session end: 1 writes across 1 files (scheduler.py) | 1 reads | ~38 tok |
+| 09:08 | Session end: 1 writes across 1 files (scheduler.py) | 2 reads | ~38 tok |
+| 09:11 | Session end: 1 writes across 1 files (scheduler.py) | 4 reads | ~1220 tok |
+| 09:12 | Session end: 1 writes across 1 files (scheduler.py) | 4 reads | ~1220 tok |
+
+## Session: 2026-06-01 neat-freak 知识库整理
+
+### 本次会话变更
+1. 修复 `scheduler.py` import 源错误（router → notifications）
+2. 全链路扫描 design 模块钉钉推送 import 链路，确认无其他问题
+
+### 知识库变更
+- `.wolf/cerebrum.md` — Do-Not-Repeat 新增 1 条：函数搬家必须 grep 延迟 import
+- `.wolf/buglog.json` — bug-152 重写：补充完整根因分析（阶段二治理回归 + 延迟 import 隐蔽性）+ 关联 bug-035（同类根因）
+| 10:16 | Session end: 1 writes across 1 files (scheduler.py) | 8 reads | ~2388 tok |
+
+## Session: 2026-06-01 10:22
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 10:39 | Created backend/alembic/versions/027_add_process_reporting.py | — | ~2457 |
+| 10:39 | Created backend/app/production/__init__.py | — | ~14 |
+| 10:40 | Created backend/app/production/models.py | — | ~1484 |
+| 10:41 | Created backend/app/production/schemas.py | — | ~1687 |
+| 10:42 | Created backend/app/production/process_service.py | — | ~724 |
+| 10:42 | Created backend/app/production/route_service.py | — | ~1263 |
+| 10:43 | Created backend/app/production/binding_service.py | — | ~2136 |
+| 10:44 | Created backend/app/production/report_service.py | — | ~3207 |
+| 10:46 | Created backend/app/production/router.py | — | ~3858 |
+| 10:46 | Created backend/app/production/service.py | — | ~82 |
+| 10:46 | Edited backend/app/routers.py | added 1 import(s) | ~46 |
+| 10:46 | Edited backend/app/routers.py | 1→2 lines | ~46 |
+| 10:47 | Edited backend/app/core/config.py | 5→9 lines | ~152 |
+| 10:47 | Edited backend/app/auth/models.py | 2→3 lines | ~54 |
+| 10:48 | Edited backend/requirements.txt | 1→5 lines | ~21 |
+| 10:49 | Created frontend/src/api/production.js | — | ~822 |
+| 10:49 | Edited frontend/src/api/clients.js | 1→2 lines | ~53 |
+| 10:50 | Created frontend/src/views/production/ProcessManage.vue | — | ~1626 |
+| 10:52 | Created frontend/src/views/production/ProcessRouteManage.vue | — | ~2607 |
+| 10:53 | Created frontend/src/views/production/ProductManage.vue | — | ~2219 |
+| 10:53 | Created frontend/src/views/production/PrintCard.vue | — | ~1595 |
+| 10:54 | Edited frontend/src/config/navigation.js | expanded (+43 lines) | ~444 |
+| 10:55 | Edited frontend/src/config/navigation.js | 5→5 lines | ~50 |
+| 10:58 | Edited backend/app/production/report_service.py | inline fix | ~30 |
+| 11:02 | Session end: 24 writes across 20 files (027_add_process_reporting.py, __init__.py, models.py, schemas.py, process_service.py) | 27 reads | ~62399 tok |
+| 11:12 | Edited frontend/src/views/system/UserManagement.vue | expanded (+24 lines) | ~734 |
+| 11:12 | Edited frontend/src/views/system/UserManagement.vue | added 1 import(s) | ~115 |
+| 11:13 | Edited frontend/src/views/system/UserManagement.vue | modified openEditDialog() | ~98 |
+| 11:13 | Edited frontend/src/views/system/UserManagement.vue | added error handling | ~383 |
+| 11:13 | Edited frontend/src/views/system/UserManagement.vue | CSS: font-size, color, line-height | ~54 |
+| 11:14 | Edited frontend/src/views/stock/ProductionOrderManage.vue | expanded (+59 lines) | ~1259 |
+| 11:15 | Edited frontend/src/views/stock/ProductionOrderManage.vue | added 1 import(s) | ~72 |
+| 11:15 | Edited frontend/src/views/stock/ProductionOrderManage.vue | added error handling | ~385 |
+| 11:15 | Edited frontend/src/views/stock/ProductionOrderManage.vue | added 1 import(s) | ~40 |
+| 11:16 | Edited frontend/src/views/stock/ProductionOrderManage.vue | 1→2 lines | ~16 |
+| 11:16 | Edited frontend/src/views/stock/ProductionOrderManage.vue | expanded (+18 lines) | ~332 |
+| 11:18 | Edited backend/app/stock/production_order_service.py | modified all() | ~268 |
+| 11:23 | Session end: 36 writes across 23 files (027_add_process_reporting.py, __init__.py, models.py, schemas.py, process_service.py) | 28 reads | ~69545 tok |
+| 11:32 | Session end: 36 writes across 23 files (027_add_process_reporting.py, __init__.py, models.py, schemas.py, process_service.py) | 28 reads | ~69545 tok |
+
+## Session: 2026-06-01 11:49
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 11:59 | Created C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_production_reporting_module.md | — | ~865 |
+| 11:59 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_phase2_governance.md | inline fix | ~25 |
+| 11:59 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/feedback_router_authorization.md | inline fix | ~9 |
+| 11:59 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_testing_setup.md | inline fix | ~9 |
+| 11:59 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_stock_module.md | inline fix | ~15 |
+| 11:59 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/feedback_axios_token.md | inline fix | ~23 |
+| 11:59 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/feedback_iframe-auth-vhtml.md | inline fix | ~32 |
+| 11:59 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/feedback_asset_download_auth.md | inline fix | ~19 |
+| 12:00 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/feedback_asset_download_auth.md | inline fix | ~19 |
+| 12:00 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/feedback_axios_token.md | inline fix | ~23 |
+| 12:01 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/MEMORY.md | 1→2 lines | ~53 |
+| 12:02 | Edited CLAUDE.md | 2→3 lines | ~103 |
+| 12:03 | Edited CLAUDE.md | expanded (+20 lines) | ~368 |
+| 12:04 | Edited CLAUDE.md | expanded (+8 lines) | ~219 |
+| 12:04 | Edited README.md | inline fix | ~105 |
+| 12:05 | Edited README.md | 2→4 lines | ~107 |
+| 12:07 | Session end: 16 writes across 11 files (project_production_reporting_module.md, project_phase2_governance.md, feedback_router_authorization.md, project_testing_setup.md, project_stock_module.md) | 21 reads | ~19222 tok |
+| 12:25 | Edited frontend/src/views/production/ProcessManage.vue | modified loadData() | ~90 |
+| 12:26 | Edited frontend/src/views/production/ProcessRouteManage.vue | modified loadRoutes() | ~89 |
+| 12:26 | Edited frontend/src/views/production/ProcessRouteManage.vue | modified doSelectRoute() | ~71 |
+| 12:26 | Edited frontend/src/views/production/ProductManage.vue | modified if() | ~48 |
+| 12:26 | Edited frontend/src/views/production/ProductManage.vue | modified loadData() | ~182 |
+| 12:27 | Edited frontend/src/views/production/ProductManage.vue | 3→3 lines | ~54 |
+| 12:27 | Edited frontend/src/views/production/PrintCard.vue | 2→2 lines | ~19 |
+| 12:28 | Edited backend/app/production/router.py | modified list_routes() | ~89 |
+| 12:30 | Edited backend/app/production/binding_service.py | 32→29 lines | ~283 |
+| 12:30 | Edited frontend/src/views/production/ProductManage.vue | 4→2 lines | ~30 |
+| 12:31 | Edited backend/app/production/schemas.py | modified ProductListItem() | ~68 |
+| 12:32 | Edited frontend/src/api/production.js | 7→8 lines | ~201 |
+| 12:33 | Edited frontend/src/views/production/ProcessRouteManage.vue | updateProcessRoute() → deleteProcessRoute() | ~102 |
+| 12:34 | Session end: 29 writes across 19 files (project_production_reporting_module.md, project_phase2_governance.md, feedback_router_authorization.md, project_testing_setup.md, project_stock_module.md) | 28 reads | ~34929 tok |
+
+## Session: 2026-06-01 12:36
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|

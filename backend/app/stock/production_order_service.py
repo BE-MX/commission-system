@@ -143,6 +143,19 @@ def create_order(
     )
 
     db.commit()
+
+    # 订单创建后，自动为每个明细初始化工序进度（静默忽略未绑定路线的产品）
+    try:
+        from app.production.report_service import init_order_product_progress
+        for item_obj in db.query(ProductionOrderItem).filter(ProductionOrderItem.order_id == order.id).all():
+            try:
+                init_order_product_progress(db, item_obj.id)
+            except (ValueError, LookupError):
+                pass  # 产品未绑定路线或路线无工序，静默忽略
+        db.commit()
+    except Exception as e:
+        logger.warning(f"自动初始化工序进度失败（不影响订单创建）: {e}")
+
     return {"order_id": order.id, "order_no": order_no}
 
 

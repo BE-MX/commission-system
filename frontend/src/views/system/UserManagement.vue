@@ -65,7 +65,7 @@
     />
 
     <!-- 新增/编辑用户 Dialog -->
-    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑用户' : '新增用户'" width="480px">
+    <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑用户' : '新增用户'" width="560px">
       <el-form ref="formRef" :model="form" label-width="80px">
         <el-form-item label="用户名" required>
           <el-input v-model="form.username" placeholder="2-50 个字符" :disabled="isEdit" />
@@ -87,6 +87,30 @@
             <el-option v-for="r in roleOptions" :key="r.id" :label="r.label" :value="r.id" />
           </el-select>
         </el-form-item>
+
+        <!-- 微信ID（仅编辑模式） -->
+        <template v-if="isEdit">
+          <el-divider content-position="left">报工配置</el-divider>
+          <el-form-item label="微信ID">
+            <div style="display: flex; gap: 8px; width: 100%;">
+              <el-input v-model="wxIdForm.wx_id" placeholder="微信原始ID（如 oXXXX...）" style="flex:1" />
+              <el-button type="primary" size="small" :loading="savingWxId" @click="saveWxId">保存</el-button>
+            </div>
+            <div class="form-tip">用于工人扫码报工时身份匹配，由管理员通过测试扫码获取</div>
+          </el-form-item>
+          <el-form-item label="绑定工序">
+            <div style="width: 100%;">
+              <el-checkbox-group v-model="bindingForm.process_ids">
+                <el-checkbox v-for="p in allProcesses" :key="p.id" :value="p.id">{{ p.name }}</el-checkbox>
+              </el-checkbox-group>
+              <div v-if="allProcesses.length === 0" style="color: #909399; font-size: 12px;">暂无工序，请先在工序管理页创建</div>
+              <div style="margin-top: 8px;">
+                <el-button type="primary" size="small" :loading="savingBindings" @click="saveBindings">保存绑定</el-button>
+                <span style="margin-left: 8px; color: #909399; font-size: 12px;">已绑定 {{ bindingForm.process_ids.length }} 个工序</span>
+              </div>
+            </div>
+          </el-form-item>
+        </template>
       </el-form>
       <template #footer>
         <GlassButton variant="ghost" @click="dialogVisible = false">取消</GlassButton>
@@ -123,6 +147,7 @@ import {
   resetUserPassword, toggleUserActive, getRoleList,
   syncUserDingtalk, syncAllUsersDingtalk,
 } from '@/api/userManagement'
+import { getActiveProcesses, getUserProcessBindings, updateUserProcessBindings, updateUserWxId } from '@/api/production'
 import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
 import { useTableSort } from '@/composables/useTableSort'
 
@@ -186,6 +211,8 @@ function openEditDialog(row) {
     role_ids: row.role_ids || [],
   }
   fetchRoles()
+  loadProcessBindings(row.id)
+  loadAllProcesses()
   dialogVisible.value = true
 }
 
@@ -290,6 +317,58 @@ async function handleDelete(row) {
 
 onMounted(fetchList)
 
+// ── 工序绑定 + 微信ID（编辑模式附加） ─────────────────
+const allProcesses = ref([])
+const bindingForm = reactive({ process_ids: [] })
+const savingBindings = ref(false)
+const wxIdForm = reactive({ wx_id: '' })
+const savingWxId = ref(false)
+
+async function loadAllProcesses() {
+  try {
+    const { data } = await getActiveProcesses()
+    allProcesses.value = data || []
+  } catch { allProcesses.value = [] }
+}
+
+async function loadProcessBindings(userId) {
+  try {
+    const { data } = await getUserProcessBindings(userId)
+    bindingForm.process_ids = (data.bindings || []).map(b => b.process_id)
+    // 同时加载微信ID
+    const row = tableData.value.find(r => r.id === userId)
+    wxIdForm.wx_id = row?.wx_id || ''
+  } catch {
+    bindingForm.process_ids = []
+    wxIdForm.wx_id = ''
+  }
+}
+
+async function saveBindings() {
+  savingBindings.value = true
+  try {
+    await updateUserProcessBindings(editUserId.value, bindingForm.process_ids)
+    ElMessage.success(`已绑定 ${bindingForm.process_ids.length} 个工序`)
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '保存失败')
+  } finally {
+    savingBindings.value = false
+  }
+}
+
+async function saveWxId() {
+  savingWxId.value = true
+  try {
+    await updateUserWxId(editUserId.value, wxIdForm.wx_id || null)
+    ElMessage.success('微信ID已保存')
+    fetchList()
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '保存失败')
+  } finally {
+    savingWxId.value = false
+  }
+}
+
 // ── 同步钉钉 ────────────────────────────────────────
 const syncingAll = ref(false)
 
@@ -328,4 +407,5 @@ async function handleSyncAll() {
 <style scoped>
 .toolbar { margin-bottom: 16px; }
 .pagination { margin-top: 16px; justify-content: flex-end; }
+.form-tip { font-size: 12px; color: #909399; margin-top: 4px; line-height: 1.4; }
 </style>

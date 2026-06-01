@@ -97,6 +97,10 @@ class Settings(BaseSettings):
     JMREPORT_INTERNAL_URL: str = "http://localhost:8888"
     JMREPORT_PUBLIC_URL: str = "http://localhost:8888/jmreport"
 
+    # ── 生产报工 ──────────────────────────────────────────
+    QR_SIGN_SECRET: str = "change-this-to-a-random-32-char-secret"  # 二维码 HMAC 签名密钥
+    PRODUCTION_API_KEY: str = ""  # ACCIO WORK 调用报工接口的 API Key
+
     @field_validator("CORS_ALLOW_ORIGINS", mode="before")
     @classmethod
     def _split_origins(cls, v):
