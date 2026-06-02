@@ -37,7 +37,7 @@ def _parse_name(name: str) -> dict:
 
 # ── 排序列映射 ─────────────────────────────────────────────
 # 主查询 derived table 内字段,可在外层 ORDER BY 直接引用
-_COLOR_SORT_EXPR = "REPLACE(SUBSTRING_INDEX(SUBSTRING_INDEX(p.name, '/', 2), '/', -1), '#', '')"
+_COLOR_SORT_EXPR = "REPLACE(p.name, '#', '')"
 
 _SORT_MAP = {
     "sales_30d": "sales_30d",

@@ -22,7 +22,7 @@ logger = logging.getLogger("stock.safety")
 settings = get_settings()
 
 
-_COLOR_SORT_EXPR = "REPLACE(SUBSTRING_INDEX(SUBSTRING_INDEX(p.name, '/', 2), '/', -1), '#', '')"
+_COLOR_SORT_EXPR = "REPLACE(p.name, '#', '')"
 
 _SORT_MAP = {
     "product_id": "p.product_id",
