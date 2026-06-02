@@ -105,7 +105,7 @@
         <el-table-column label="尺寸" min-width="90" show-overflow-tooltip>
           <template #default="{ row }">{{ parseProductName(row.product_name).size }}</template>
         </el-table-column>
-        <el-table-column label="颜色" min-width="80" show-overflow-tooltip>
+        <el-table-column label="颜色" prop="color" min-width="80" show-overflow-tooltip sortable="custom">
           <template #default="{ row }">{{ parseProductName(row.product_name).color }}</template>
         </el-table-column>
         <el-table-column label="克重" min-width="80" show-overflow-tooltip>

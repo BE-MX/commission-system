@@ -27,6 +27,7 @@ _SORT_MAP = {
     "sales_30d": "sales_30d",
     "enable_count": "enable_count",
     "safety_stock": "safety_stock",
+    "color": "p.name",
 }
 
 

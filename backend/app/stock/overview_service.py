@@ -41,12 +41,14 @@ _SORT_MAP = {
     "sales_30d": "sales_30d",
     "sales_90d": "sales_90d",
     "avg_daily_sales_30d": "sales_30d",  # 等价于按 30d 销量
-    "enable_count": "effective_enable_count",
+    "enable_count": "enable_count",
+    "real_count": "real_count",
     "effective_enable_count": "effective_enable_count",
     "production_in_transit": "production_in_transit",
     "safety_stock": "safety_stock",
     "model": "model",
     "product_id": "product_id",
+    "color": "product_name",
 }
 
 
