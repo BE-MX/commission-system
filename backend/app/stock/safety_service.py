@@ -22,8 +22,8 @@ logger = logging.getLogger("stock.safety")
 settings = get_settings()
 
 
-# 从产品名提取颜色段,去掉 # 和 /,仅保留字母数字,按首字符排序(数字优先)
-_COLOR_SORT_EXPR = "REPLACE(REPLACE(REGEXP_REPLACE(p.name, '^[^/]+/[^/]+/(.*)/[^/]+$', '\\\\1'), '#', ''), '/', '')"
+# 从产品名提取颜色段: 先去掉前两段(TYPE/SIZE/),再去掉末段(/WEIGHT),最后去 # 和 /
+_COLOR_SORT_EXPR = "REPLACE(REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(p.name, '^([^/]+/){2}', ''), '/[^/]+$', ''), '#', ''), '/', '')"
 
 _SORT_MAP = {
     "product_id": "p.product_id",
