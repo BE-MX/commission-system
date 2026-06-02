@@ -37,9 +37,8 @@ def _parse_name(name: str) -> dict:
 
 # ── 排序列映射 ─────────────────────────────────────────────
 # 主查询 derived table 内字段,可在外层 ORDER BY 直接引用
-# 从产品名提取颜色段: TYPE/SIZE/ <color> /WEIGHT, 去掉 '#'
-# .* 贪婪匹配到倒数第二个 '/', 正确处理 #HEX/COLOR 双段颜色
-_COLOR_SORT_EXPR = "REPLACE(REGEXP_REPLACE(p.name, '^[^/]+/[^/]+/(.*)/[^/]+$', '\\\\1'), '#', '')"
+# 从产品名提取颜色段,去掉 # 和 /,仅保留字母数字,按首字符排序(数字优先)
+_COLOR_SORT_EXPR = "REPLACE(REPLACE(REGEXP_REPLACE(p.name, '^[^/]+/[^/]+/(.*)/[^/]+$', '\\\\1'), '#', ''), '/', '')"
 
 _SORT_MAP = {
     "sales_30d": "sales_30d",
