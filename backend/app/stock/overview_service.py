@@ -37,6 +37,8 @@ def _parse_name(name: str) -> dict:
 
 # ── 排序列映射 ─────────────────────────────────────────────
 # 主查询 derived table 内字段,可在外层 ORDER BY 直接引用
+_COLOR_SORT_EXPR = "REPLACE(SUBSTRING_INDEX(SUBSTRING_INDEX(p.name, '/', 2), '/', -1), '#', '')"
+
 _SORT_MAP = {
     "sales_30d": "sales_30d",
     "sales_90d": "sales_90d",
@@ -48,7 +50,7 @@ _SORT_MAP = {
     "safety_stock": "safety_stock",
     "model": "model",
     "product_id": "product_id",
-    "color": "product_name",
+    "color": "_color_sort",
 }
 
 
@@ -166,6 +168,7 @@ def query_stock_overview(
                 p.name                                      AS product_name,
                 p.cn_name                                   AS cn_name,
                 p.model                                     AS model,
+                {_COLOR_SORT_EXPR}                          AS _color_sort,
                 COALESCE(inv.enable_count, 0)               AS enable_count,
                 COALESCE(inv.real_count, 0)                 AS real_count,
                 COALESCE(ss.safety_stock, 0)                AS safety_stock,

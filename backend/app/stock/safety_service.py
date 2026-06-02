@@ -22,12 +22,14 @@ logger = logging.getLogger("stock.safety")
 settings = get_settings()
 
 
+_COLOR_SORT_EXPR = "REPLACE(SUBSTRING_INDEX(SUBSTRING_INDEX(p.name, '/', 2), '/', -1), '#', '')"
+
 _SORT_MAP = {
     "product_id": "p.product_id",
     "sales_30d": "sales_30d",
     "enable_count": "enable_count",
     "safety_stock": "safety_stock",
-    "color": "p.name",
+    "color": "_color_sort",
 }
 
 
@@ -139,6 +141,7 @@ def query_safety_stock_list(
             p.name                              AS product_name,
             p.cn_name                           AS cn_name,
             p.model                             AS model,
+            {_COLOR_SORT_EXPR}                  AS _color_sort,
             COALESCE(sales.sales_30d, 0)        AS sales_30d,
             COALESCE(inv.enable_count, 0)       AS enable_count,
             COALESCE(it.in_transit_qty, 0)      AS production_in_transit,
