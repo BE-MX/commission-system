@@ -329,7 +329,7 @@ def init_progress(
     order_product_id: int,
     body: InitProgressRequest | None = None,
     db: Session = Depends(get_db),
-    _user=Depends(require_permission("production:admin")),
+    _user=Depends(require_any_permission("production:admin", "production:write")),
 ):
     force = body.force if body else False
     try:

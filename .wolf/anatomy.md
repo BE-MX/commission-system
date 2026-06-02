@@ -1,7 +1,7 @@
 # anatomy.md
 
-> Auto-maintained by OpenWolf. Last scanned: 2026-06-01T04:33:08.015Z
-> Files: 147 tracked | Anatomy hits: 0 | Misses: 0
+> Auto-maintained by OpenWolf. Last scanned: 2026-06-02T03:28:08.169Z
+> Files: 148 tracked | Anatomy hits: 0 | Misses: 0
 
 ## ./
 
@@ -53,6 +53,10 @@
 - `06-deploy.md` — 06 — 部署（Windows Server + NSSM） (~1591 tok)
 - `07-verification.md` — 07 — 验证清单 & 错误排查 (~2884 tok)
 - `README.md` — Project documentation (~716 tok)
+
+## C:/Users/windb/cola/outputs/方舟平台生产进度报工系统功能设计/
+
+- `soul.md` — ACCIO WORK Soul (~1210 tok)
 
 ## backend/
 
@@ -326,7 +330,7 @@
 
 ## backend/app/core/
 
-- `config.py` — 环境变量配置（Pydantic Settings） (~1488 tok)
+- `config.py` — 环境变量配置（Pydantic Settings） (~1505 tok)
 
 ## backend/app/design/
 
@@ -347,7 +351,7 @@
 - `process_service.py` — 工序管理 service (~724 tok)
 - `report_service.py` — 报工核心 service + 进度初始化/查询 (~3212 tok)
 - `route_service.py` — 工序路线管理 service (~1263 tok)
-- `router.py` — 生产报工领域模块 — FastAPI router (~3858 tok)
+- `router.py` — 生产报工领域模块 — FastAPI router (~3865 tok)
 - `schemas.py` — 生产报工 — Pydantic schemas (~1656 tok)
 - `service.py` — 生产报工 — facade re-export (~82 tok)
 
@@ -362,7 +366,7 @@
 - `overview_service.py` — 备货管理 — 销量备货一览(SQL 分页 + 状态过滤 + 摘要统计) (~3682 tok)
 - `production_cart_service.py` — 备货管理 — 生产单购物车 CRUD (~1513 tok)
 - `production_order_service.py` — 备货管理 — 生产订单 CRUD + 状态管理 + 入库数量 + 审计日志 (~6645 tok)
-- `router.py` — 备货管理 — API 路由 (~6052 tok)
+- `router.py` — 备货管理 — API 路由 (~6254 tok)
 - `safety_service.py` — 备货管理 — 安全库存 CRUD + AI 备货建议(TFT 微服务 / 公式兜底) (~4095 tok)
 - `schemas.py` — 备货管理 — Pydantic 请求/响应模型 (~1454 tok)
 - `service.py` — 备货管理 — service facade (~567 tok)
@@ -488,9 +492,9 @@
 ## frontend/src/views/stock/
 
 - `DailyReport.vue` — Vue: setup (~3683 tok)
-- `ProductionOrderManage.vue` — Vue component (~8323 tok)
-- `SafetyConfig.vue` — Vue component (~10084 tok)
-- `StockOverview.vue` — Vue: setup (~5286 tok)
+- `ProductionOrderManage.vue` — Vue component (~9569 tok)
+- `SafetyConfig.vue` — Vue component (~11110 tok)
+- `StockOverview.vue` — Vue component (~6310 tok)
 
 ## frontend/src/views/stock/composables/
 
@@ -505,7 +509,7 @@
 - `AIManager.vue` — Vue component (~6293 tok)
 - `DictManagement.vue` — Vue: setup (~1812 tok)
 - `RoleManagement.vue` — Vue: setup (~1894 tok)
-- `UserManagement.vue` — Vue: setup (~3967 tok)
+- `UserManagement.vue` — Vue: setup (~4006 tok)
 
 ## frontend/src/views/system/composables/
 
@@ -557,8 +561,8 @@
 
 ## jmreport-service/src/main/resources/
 
-- `application-dev.yml` (~929 tok)
-- `application-prod.yml` (~804 tok)
+- `application-dev.yml` (~948 tok)
+- `application-prod.yml` (~823 tok)
 - `application.yml` (~316 tok)
 
 ## 登录动效/app/

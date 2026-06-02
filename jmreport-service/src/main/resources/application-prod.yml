@@ -93,6 +93,8 @@ jeecg:
         #jimu-view-path: "https://???/jmreport/view/"
         # 非必须，下载的报表的存放目录(服务器上的目录)
         #download-path: "/???/???"
+    # Excel导出模式（primary:主表数据导出）
+    export-excel-pattern: primary
     #多租户模式，默认值为空(created:按照创建人隔离、tenant:按照租户隔离)
     saasMode:
     # 签名密钥

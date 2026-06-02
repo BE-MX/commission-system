@@ -140,7 +140,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getUserList, createUser, updateUser, deleteUser,
@@ -326,15 +326,17 @@ const savingWxId = ref(false)
 
 async function loadAllProcesses() {
   try {
-    const { data } = await getActiveProcesses()
-    allProcesses.value = data || []
+    const data = await getActiveProcesses()
+    allProcesses.value = Array.isArray(data) ? data : (data.data || [])
   } catch { allProcesses.value = [] }
 }
 
 async function loadProcessBindings(userId) {
   try {
-    const { data } = await getUserProcessBindings(userId)
-    bindingForm.process_ids = (data.bindings || []).map(b => b.process_id)
+    const res = await getUserProcessBindings(userId)
+    // productionClient 拦截器已解包 response.data，直接拿到 {user_id, bindings}
+    const payload = res.data || res
+    bindingForm.process_ids = (payload.bindings || []).map(b => b.process_id)
     // 同时加载微信ID
     const row = tableData.value.find(r => r.id === userId)
     wxIdForm.wx_id = row?.wx_id || ''

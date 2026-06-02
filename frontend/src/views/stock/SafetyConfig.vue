@@ -344,7 +344,7 @@
     </el-dialog>
 
     <!-- 备货状态明细弹窗 -->
-    <el-dialog v-model="stockStatusDialogVisible" title="备货明细" width="600px" align-center>
+    <el-dialog v-model="stockStatusDialogVisible" title="备货明细" width="700px" align-center>
       <div v-if="currentStockStatusRow" class="stock-status-dialog">
         <div class="stock-status-header">
           <span class="stock-status-product">{{ currentStockStatusRow.product_name }}</span>
@@ -353,6 +353,11 @@
           </el-tag>
         </div>
         <el-table :data="currentStockStatusRow.stock_items || []" size="small" style="width:100%" v-if="(currentStockStatusRow.stock_items || []).length > 0">
+          <el-table-column label="操作" width="70" align="center">
+            <template #default="{ row }">
+              <el-button size="small" link type="success" @click="openProgressDialog(row)">进度</el-button>
+            </template>
+          </el-table-column>
           <el-table-column label="生产单号" prop="order_no" min-width="120" />
           <el-table-column label="批次号" prop="batch_no" min-width="100" />
           <el-table-column label="下单量" width="80" align="center" prop="order_qty" />
@@ -371,6 +376,37 @@
         <el-empty v-else description="暂无备货明细" />
       </div>
     </el-dialog>
+
+    <!-- 工序进度弹窗 -->
+    <el-dialog v-model="progressDialogVisible" title="工序进度" width="640px">
+      <div v-if="progressLoading" style="text-align:center; padding: 20px;">
+        <el-icon class="is-loading" :size="20" style="animation: rotate 1s linear infinite;">⟳</el-icon> 加载中...
+      </div>
+      <template v-else-if="progressDialogRow && progressData">
+        <div style="margin-bottom: 12px; font-weight: 600; color: #1e1e2d;">{{ progressData.order_product_id ? `${progressDialogRow.product_name || progressDialogRow.order_no}` : '' }}</div>
+        <div style="margin-bottom: 12px;">
+          <el-progress :percentage="progressData.completion_rate || 0" :stroke-width="16" :text-inside="true" style="margin-bottom: 12px;" />
+          <span style="font-size: 13px; color: #606266;">
+            {{ progressData.completed_steps || 0 }}/{{ progressData.total_steps || 0 }} 工序完成
+            <template v-if="progressData.all_completed"> 🎉 全部完成</template>
+          </span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <div v-for="step in (progressData.steps || [])" :key="step.id" style="display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 4px; font-size: 13px;" :style="{ background: step.status === 1 ? '#f0f9eb' : (step.status === 0 && isCurrentStep(step) ? '#ecf5ff' : 'transparent') }">
+            <span style="width: 20px; text-align: center;">{{ step.status === 1 ? '✅' : (isCurrentStep(step) ? '🔵' : '⚪') }}</span>
+            <span style="width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #fff;" :style="{ background: step.status === 1 ? '#67c23a' : (isCurrentStep(step) ? '#409eff' : '#c0c4cc') }">{{ step.step_order }}</span>
+            <span style="font-weight: 500; min-width: 80px;">{{ step.process_name }}</span>
+            <span v-if="step.status === 1" style="color: #909399; font-size: 12px;">{{ step.completed_at }} · {{ step.completed_by_user_name || '未知' }}</span>
+            <span v-else-if="isCurrentStep(step)" style="color: #909399; font-size: 12px;">待完成（当前工序）</span>
+            <span v-else style="color: #909399; font-size: 12px;">未到</span>
+          </div>
+        </div>
+      </template>
+      <div v-else style="text-align: center; padding: 16px;">
+        <span style="color: #909399;">未配置工序路线，请前往产品管理绑定</span>
+        <router-link to="/production/products" style="margin-left: 8px;">去绑定 →</router-link>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -385,6 +421,7 @@ import { useAuthStore } from '@/stores/auth'
 import {
   getSafetyList, saveSafetyStock, autoGenerateSafety, getFilterOptions,
 } from '@/api/stock'
+import { getProgress, initProgress } from '@/api/production'
 import { useProductionCart } from './composables/useProductionCart'
 import { useTableSort } from '@/composables/useTableSort'
 
@@ -793,6 +830,41 @@ function openStockStatusDialog(row) {
   if (!row.stock_status) return
   currentStockStatusRow.value = row
   stockStatusDialogVisible.value = true
+}
+
+// ── 工序进度弹窗 ──────────────────────────
+const progressDialogVisible = ref(false)
+const progressDialogRow = ref(null)
+const progressData = ref(null)
+const progressLoading = ref(false)
+
+function isCurrentStep(step) {
+  if (!progressData.value || !progressData.value.steps) return false
+  const firstPending = progressData.value.steps.find(s => s.status === 0)
+  return firstPending && step.id === firstPending.id
+}
+
+async function openProgressDialog(row) {
+  const itemId = row.item_id
+  if (!itemId) return
+  progressDialogRow.value = row
+  progressDialogVisible.value = true
+  progressLoading.value = true
+  progressData.value = null
+  try {
+    const res = await getProgress(itemId)
+    progressData.value = res.data || res
+  } catch {
+    try {
+      await initProgress(itemId)
+      const res2 = await getProgress(itemId)
+      progressData.value = res2.data || res2
+    } catch {
+      progressData.value = null
+    }
+  } finally {
+    progressLoading.value = false
+  }
 }
 
 // 页面加载时同步购物车

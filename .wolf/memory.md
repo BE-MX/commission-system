@@ -1616,3 +1616,90 @@
 
 | Time | Action | File(s) | Outcome | ~Tokens |
 |------|--------|---------|---------|--------|
+
+## Session: 2026-06-01 13:53
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 14:21 | Edited frontend/src/views/stock/ProductionOrderManage.vue | inline fix | ~21 |
+| 14:21 | Edited frontend/src/views/stock/ProductionOrderManage.vue | modified loadProgress() | ~111 |
+| 14:24 | Edited frontend/src/views/stock/ProductionOrderManage.vue | modified loadProgress() | ~121 |
+| 14:24 | Edited backend/app/production/router.py | require_permission() → require_any_permission() | ~85 |
+| 14:27 | Edited frontend/src/views/stock/ProductionOrderManage.vue | added 1 import(s) | ~32 |
+| 14:27 | Edited frontend/src/views/stock/ProductionOrderManage.vue | 2→1 lines | ~21 |
+| 14:29 | Session end: 6 writes across 2 files (ProductionOrderManage.vue, router.py) | 10 reads | ~24596 tok |
+| 14:32 | Session end: 6 writes across 2 files (ProductionOrderManage.vue, router.py) | 10 reads | ~24596 tok |
+| 14:45 | Edited frontend/src/views/stock/ProductionOrderManage.vue | modified loadProgress() | ~125 |
+| 14:47 | Edited frontend/src/views/stock/ProductionOrderManage.vue | modified loadProgress() | ~142 |
+| 14:48 | Session end: 8 writes across 2 files (ProductionOrderManage.vue, router.py) | 11 reads | ~24889 tok |
+
+## Session: 2026-06-01 15:08
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 15:18 | Edited frontend/src/views/stock/ProductionOrderManage.vue | inline fix | ~20 |
+| 15:19 | Edited frontend/src/views/stock/ProductionOrderManage.vue | 27→27 lines | ~471 |
+| 15:20 | Edited frontend/src/views/stock/ProductionOrderManage.vue | 8→9 lines | ~195 |
+| 15:21 | Edited frontend/src/views/stock/ProductionOrderManage.vue | expanded (+43 lines) | ~911 |
+| 15:21 | Edited frontend/src/views/stock/ProductionOrderManage.vue | added 1 condition(s) | ~109 |
+| 15:21 | Edited frontend/src/views/stock/ProductionOrderManage.vue | 4→6 lines | ~59 |
+| 15:23 | Edited frontend/src/views/stock/StockOverview.vue | expanded (+36 lines) | ~1193 |
+| 15:23 | Edited frontend/src/views/stock/StockOverview.vue | added 1 import(s) | ~49 |
+| 15:24 | Edited frontend/src/views/stock/StockOverview.vue | added error handling | ~300 |
+| 15:25 | Edited frontend/src/views/stock/SafetyConfig.vue | expanded (+36 lines) | ~1194 |
+| 15:25 | Edited frontend/src/views/stock/SafetyConfig.vue | added error handling | ~300 |
+| 15:26 | Edited frontend/src/views/stock/SafetyConfig.vue | added 1 import(s) | ~44 |
+| 15:27 | Session end: 12 writes across 3 files (ProductionOrderManage.vue, StockOverview.vue, SafetyConfig.vue) | 4 reads | ~33679 tok |
+| 16:01 | Edited frontend/src/views/system/UserManagement.vue | CSS: data | ~181 |
+| 16:02 | Session end: 13 writes across 4 files (ProductionOrderManage.vue, StockOverview.vue, SafetyConfig.vue, UserManagement.vue) | 9 reads | ~37840 tok |
+| 16:10 | Edited frontend/src/views/system/UserManagement.vue | inline fix | ~13 |
+| 16:10 | Session end: 14 writes across 4 files (ProductionOrderManage.vue, StockOverview.vue, SafetyConfig.vue, UserManagement.vue) | 9 reads | ~37891 tok |
+
+## Session: 2026-06-01 16:19
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-06-01 18:43
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 18:46 | Edited jmreport-service/src/main/resources/application-dev.yml | 2→4 lines | ~37 |
+| 18:46 | Edited jmreport-service/src/main/resources/application-prod.yml | 2→4 lines | ~37 |
+| 18:46 | Session end: 2 writes across 2 files (application-dev.yml, application-prod.yml) | 3 reads | ~1807 tok |
+| 18:49 | Session end: 2 writes across 2 files (application-dev.yml, application-prod.yml) | 3 reads | ~1807 tok |
+| 18:58 | Session end: 2 writes across 2 files (application-dev.yml, application-prod.yml) | 5 reads | ~2935 tok |
+| 19:26 | Edited frontend/src/views/stock/ProductionOrderManage.vue | 3→4 lines | ~119 |
+| 19:26 | Edited frontend/src/views/stock/ProductionOrderManage.vue | added 1 import(s) | ~63 |
+| 19:26 | Edited frontend/src/views/stock/ProductionOrderManage.vue | CSS: margin-top | ~792 |
+| 19:27 | Edited frontend/src/views/stock/ProductionOrderManage.vue | added error handling | ~243 |
+| 19:27 | Edited frontend/src/views/stock/ProductionOrderManage.vue | expanded (+8 lines) | ~47 |
+| 19:27 | Session end: 7 writes across 3 files (application-dev.yml, application-prod.yml, ProductionOrderManage.vue) | 6 reads | ~13453 tok |
+| 19:29 | Edited frontend/src/views/stock/ProductionOrderManage.vue | "REPLACE_WITH_REPORT_ID" → "1221310490024333312" | ~15 |
+| 19:30 | Session end: 8 writes across 3 files (application-dev.yml, application-prod.yml, ProductionOrderManage.vue) | 6 reads | ~13469 tok |
+| 19:47 | Session end: 8 writes across 3 files (application-dev.yml, application-prod.yml, ProductionOrderManage.vue) | 6 reads | ~13469 tok |
+| 19:48 | Session end: 8 writes across 3 files (application-dev.yml, application-prod.yml, ProductionOrderManage.vue) | 6 reads | ~13469 tok |
+| 20:02 | Edited backend/app/stock/router.py | added 2 import(s) | ~89 |
+| 20:02 | Edited backend/app/stock/router.py | modified get_order_qrcode_image() | ~215 |
+| 20:14 | Session end: 10 writes across 4 files (application-dev.yml, application-prod.yml, ProductionOrderManage.vue, router.py) | 12 reads | ~27216 tok |
+| 08:42 | Session end: 10 writes across 4 files (application-dev.yml, application-prod.yml, ProductionOrderManage.vue, router.py) | 13 reads | ~29109 tok |
+
+## Session: 2026-06-02 08:50
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 09:21 | Edited backend/app/core/config.py | 5→6 lines | ~58 |
+| 09:22 | Session end: 1 writes across 1 files (config.py) | 2 reads | ~7800 tok |
+
+## Session: 2026-06-02 09:41
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-06-02 11:04
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 11:28 | Created C:/Users/windb/cola/outputs/方舟平台生产进度报工系统功能设计/soul.md | — | ~1291 |
+| 11:30 | Session end: 1 writes across 1 files (soul.md) | 1 reads | ~1383 tok |
+| 11:33 | Session end: 1 writes across 1 files (soul.md) | 1 reads | ~1383 tok |

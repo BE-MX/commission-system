@@ -71,6 +71,7 @@
             <template #default="{ row }">
               <el-button size="small" link type="primary" @click="viewOrderDetail(row)">详情</el-button>
               <el-button size="small" link type="primary" @click="editOrder(row)">编辑</el-button>
+              <el-button size="small" link type="success" @click="printOrder(row)">打印</el-button>
               <el-button size="small" link type="danger" @click="deleteOrder(row)" v-if="authStore.hasPermission('production:admin')">删除</el-button>
             </template>
           </el-table-column>
@@ -124,11 +125,12 @@
           <el-table-column label="预计交期" width="110" align="center">
             <template #default="{ row }">{{ row.expected_delivery_date || '—' }}</template>
           </el-table-column>
-          <el-table-column label="操作" width="220" align="center" fixed="right">
+          <el-table-column label="操作" width="260" align="center" fixed="right">
             <template #default="{ row }">
               <el-button size="small" link type="primary" @click="editItem(row)">编辑</el-button>
               <el-button size="small" link type="primary" @click="changeItemStatus(row)">改状态</el-button>
               <el-button size="small" link type="warning" @click="inputReceived(row)">入库</el-button>
+              <el-button size="small" link type="success" @click="toggleItemProgress(row)">进度</el-button>
               <el-button size="small" link type="danger" @click="deleteItem(row)" v-if="authStore.hasPermission('production:admin')">删除</el-button>
             </template>
           </el-table-column>
@@ -141,7 +143,7 @@
     </el-tabs>
 
     <!-- 订单详情弹窗 -->
-    <el-dialog v-model="detailDialogVisible" title="生产订单详情" width="700px">
+    <el-dialog v-model="detailDialogVisible" title="生产订单详情" width="960px">
       <div v-if="currentOrder" class="order-detail">
         <div class="detail-header">
           <div class="detail-row"><span class="detail-label">生产单号</span><span class="detail-value">{{ currentOrder.order_no }}</span></div>
@@ -154,6 +156,12 @@
         <el-divider />
         <div class="detail-subtitle">产品明细</div>
         <el-table :data="currentOrder.items || []" size="small">
+          <el-table-column label="操作" width="140" align="center">
+            <template #default="{ row }">
+              <el-button size="small" link type="primary" @click="toggleItemProgress(row)">进度</el-button>
+              <el-button size="small" link type="warning" @click="printCard(row)">打印流转卡</el-button>
+            </template>
+          </el-table-column>
           <el-table-column label="产品名称" prop="product_name" min-width="140" show-overflow-tooltip />
           <el-table-column label="型号" prop="model" min-width="100" />
           <el-table-column label="下单量" width="80" align="center" prop="order_qty" />
@@ -172,12 +180,6 @@
           </el-table-column>
           <el-table-column label="状态" width="80" align="center">
             <template #default="{ row }"><el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag></template>
-          </el-table-column>
-          <el-table-column label="操作" width="140" align="center">
-            <template #default="{ row }">
-              <el-button size="small" link type="primary" @click="toggleItemProgress(row)">进度</el-button>
-              <el-button size="small" link type="warning" @click="printCard(row)">打印流转卡</el-button>
-            </template>
           </el-table-column>
         </el-table>
 
@@ -316,6 +318,58 @@
         <el-button type="primary" @click="confirmReceived" :loading="receivedLoading">确认</el-button>
       </template>
     </el-dialog>
+
+    <!-- 工序进度弹窗（明细维度 + 备货弹窗共用） -->
+    <el-dialog v-model="progressDialogVisible" title="工序进度" width="640px" @close="expandedProgressId = null">
+      <div v-if="progressLoading" style="text-align:center; padding: 20px;">
+        <el-icon class="is-loading" :size="20"><Loading /></el-icon> 加载中...
+      </div>
+      <template v-else-if="progressDialogItem && progressData[progressDialogItem.id]">
+        <div style="margin-bottom: 12px; font-weight: 600; color: #1e1e2d;">{{ progressDialogItem.product_name }}</div>
+        <div class="progress-bar-wrap">
+          <el-progress
+            :percentage="progressData[progressDialogItem.id].completion_rate"
+            :color="progressColor(progressData[progressDialogItem.id].completion_rate)"
+            :stroke-width="16"
+            :text-inside="true"
+            style="margin-bottom: 12px;"
+          />
+          <span class="progress-summary">
+            {{ progressData[progressDialogItem.id].completed_steps }}/{{ progressData[progressDialogItem.id].total_steps }} 工序完成
+            <template v-if="progressData[progressDialogItem.id].all_completed"> 🎉 全部完成</template>
+          </span>
+        </div>
+        <div class="step-timeline">
+          <div v-for="step in progressData[progressDialogItem.id].steps" :key="step.id" class="step-row" :class="{ completed: step.status === 1, current: step.status === 0 && isCurrentStep(step, progressData[progressDialogItem.id]) }">
+            <span class="step-icon">
+              <template v-if="step.status === 1">✅</template>
+              <template v-else-if="isCurrentStep(step, progressData[progressDialogItem.id])">🔵</template>
+              <template v-else>⚪</template>
+            </span>
+            <span class="step-order-num">{{ step.step_order }}</span>
+            <span class="step-process-name">{{ step.process_name }}</span>
+            <span v-if="step.status === 1" class="step-meta">
+              {{ formatShortDate(step.completed_at) }} · {{ step.completed_by_user_name || '未知' }}
+            </span>
+            <span v-else-if="isCurrentStep(step, progressData[progressDialogItem.id])" class="step-meta">待完成（当前工序）</span>
+            <span v-else class="step-meta">未到</span>
+          </div>
+        </div>
+      </template>
+      <div v-else class="progress-empty">
+        <span style="color: #909399;">未配置工序路线，请前往产品管理绑定</span>
+        <router-link to="/production/products" style="margin-left: 8px;">去绑定 →</router-link>
+      </div>
+    </el-dialog>
+
+    <!-- 报表打印预览弹窗 -->
+    <el-dialog v-model="printDialogVisible" title="生产订单打印预览" width="90%" top="2vh" destroy-on-close>
+      <div v-if="printDialogLoading" style="text-align:center; padding: 40px;">
+        <el-icon class="is-loading" :size="24"><Loading /></el-icon>
+        <p style="margin-top: 12px; color: #909399;">正在加载报表...</p>
+      </div>
+      <iframe v-else-if="printDialogUrl" :src="printDialogUrl" class="print-preview-iframe" frameborder="0" />
+    </el-dialog>
   </div>
 </template>
 
@@ -326,7 +380,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document, CircleClose, CircleCheck, Filter, Loading } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useTableSort } from '@/composables/useTableSort'
-import { getProgress, getPrintCardData } from '@/api/production'
+import { useJmReportStore } from '@/stores/jmreport'
+import { getProgress, initProgress, getPrintCardData } from '@/api/production'
 import {
   getProductionOrders, getProductionOrderDetail, updateProductionOrder,
   deleteProductionOrder, getProductionOrderItems, updateProductionOrderItem,
@@ -612,6 +667,8 @@ onMounted(() => {
 const expandedProgressId = ref(null)
 const progressData = ref({})
 const progressLoading = ref(false)
+const progressDialogVisible = ref(false)
+const progressDialogItem = ref(null)
 
 function isCurrentStep(step, progress) {
   const firstPending = progress.steps.find(s => s.status === 0)
@@ -632,21 +689,37 @@ function formatShortDate(dt) {
 }
 
 async function toggleItemProgress(item) {
-  if (expandedProgressId.value === item.id) {
-    expandedProgressId.value = null
+  // 详情弹窗内 → 内联展开
+  if (detailDialogVisible.value) {
+    if (expandedProgressId.value === item.id) {
+      expandedProgressId.value = null
+      return
+    }
+    expandedProgressId.value = item.id
+    await loadProgress(item.id)
     return
   }
-  expandedProgressId.value = item.id
+  // 明细维度标签页 → 独立弹窗
+  progressDialogItem.value = item
+  progressDialogVisible.value = true
   await loadProgress(item.id)
 }
 
 async function loadProgress(itemId) {
   progressLoading.value = true
   try {
-    const { data } = await getProgress(itemId)
-    progressData.value[itemId] = data
+    const res = await getProgress(itemId)
+    // 后端直接返回进度对象（无 {code,data} 包装），axios 拦截器已解包 response.data
+    progressData.value[itemId] = res.data || res
   } catch {
-    progressData.value[itemId] = null
+    // 404 = 尚未初始化进度，尝试自动初始化后再拉取
+    try {
+      await initProgress(itemId)
+      const res2 = await getProgress(itemId)
+      progressData.value[itemId] = res2.data || res2
+    } catch {
+      progressData.value[itemId] = null
+    }
   } finally {
     progressLoading.value = false
   }
@@ -659,6 +732,30 @@ async function refreshProgress(itemId) {
 function printCard(item) {
   const url = router.resolve({ name: 'PrintCard', params: { id: item.id } }).href
   window.open(url, '_blank')
+}
+
+// ── 报表打印 ────────────────────────────
+const reportStore = useJmReportStore()
+const printDialogVisible = ref(false)
+const printDialogLoading = ref(false)
+const printDialogUrl = ref('')
+// TODO: 替换为实际的报表 ID
+const PRODUCTION_ORDER_REPORT_ID = '1221310490024333312'
+
+async function printOrder(row) {
+  printDialogLoading.value = true
+  printDialogVisible.value = true
+  printDialogUrl.value = ''
+  try {
+    const token = await reportStore.fetchToken()
+    const baseUrl = reportStore.jmreportUrl
+    printDialogUrl.value = `${baseUrl}/view/${PRODUCTION_ORDER_REPORT_ID}?token=${token}&order_no=${encodeURIComponent(row.order_no)}`
+  } catch {
+    ElMessage.error('获取报表凭证失败')
+    printDialogVisible.value = false
+  } finally {
+    printDialogLoading.value = false
+  }
 }
 </script>
 
@@ -715,4 +812,12 @@ function printCard(item) {
 .step-process-name { font-weight: 500; min-width: 80px; }
 .step-meta { color: #909399; font-size: 12px; }
 .progress-empty { text-align: center; padding: 16px; }
+
+/* 报表打印预览 */
+.print-preview-iframe {
+  width: 100%;
+  height: calc(85vh - 80px);
+  border: none;
+  background: #fff;
+}
 </style>

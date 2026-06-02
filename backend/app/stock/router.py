@@ -13,9 +13,11 @@ from __future__ import annotations
 
 import logging
 from datetime import date
+from io import BytesIO
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
@@ -649,3 +651,21 @@ def delete_production_order_item(
     if not ok:
         raise HTTPException(status_code=404, detail="明细不存在")
     return _ok(None, message="已删除")
+
+
+# ── 二维码图片（供 jimureport 报表直接引用）──────────────────
+@router.get("/production/qrcode-image")
+def get_order_qrcode_image(
+    order_no: str = Query(..., description="生产订单号"),
+    size: int = Query(200, ge=100, le=500),
+):
+    """根据 order_no 生成二维码 PNG，供报表 img src 直接使用（无需鉴权）"""
+    import qrcode
+    qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=10, border=2)
+    qr.add_data(order_no)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="image/png")
