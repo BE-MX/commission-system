@@ -2,10 +2,9 @@
 
 import re
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.auth.dependencies import require_permission, require_any_permission
 from app.production import (
@@ -14,7 +13,6 @@ from app.production import (
 from app.production.schemas import *
 
 router = APIRouter()
-settings = get_settings()
 
 
 def get_db():
@@ -303,17 +301,10 @@ def update_user_wx_id(
 # 报工接口（API Key 鉴权，供 ACCIO WORK 调用）
 # ════════════════════════════════════════════════════════════
 
-def _verify_api_key(x_api_key: str = Header(...)):
-    if not settings.PRODUCTION_API_KEY or x_api_key != settings.PRODUCTION_API_KEY:
-        raise HTTPException(401, "Invalid API Key")
-    return True
-
-
 @router.post("/report", summary="工人扫码报工（核心）")
 def production_report(
     body: ReportRequest,
     db: Session = Depends(get_db),
-    _auth=Depends(_verify_api_key),
 ):
     result = report_service.handle_production_report(db, body.qr_data, body.wx_id)
     db.commit()
