@@ -194,7 +194,7 @@ def handle_production_report(db: Session, qr_data: str, wx_id: str) -> dict:
     if not bound_process_ids:
         return {"success": False, "message": "您的账号未绑定任何工序，请联系管理员配置工序权限"}
 
-    # Step 5: 获取最小序号的未完成工序
+    # Step 5: 获取最小序号的未完成工序（如果进度不存在则自动初始化）
     pending = (
         db.query(OrderProductProcessProgress)
         .filter(
@@ -204,6 +204,23 @@ def handle_production_report(db: Session, qr_data: str, wx_id: str) -> dict:
         .order_by(OrderProductProcessProgress.step_order.asc())
         .first()
     )
+    if not pending:
+        # 进度记录不存在，尝试自动初始化
+        try:
+            init_result = init_order_product_progress(db, order_product_id)
+            db.flush()
+            # 重新查询待完成工序
+            pending = (
+                db.query(OrderProductProcessProgress)
+                .filter(
+                    OrderProductProcessProgress.order_product_id == order_product_id,
+                    OrderProductProcessProgress.status == 0,
+                )
+                .order_by(OrderProductProcessProgress.step_order.asc())
+                .first()
+            )
+        except (LookupError, ValueError):
+            pass
     if not pending:
         return {"success": False, "message": "该产品所有工序已完成"}
 
@@ -288,14 +305,14 @@ def _sync_order_status(db: Session, order_id: int) -> None:
 
 # ── 二维码 / 打印卡数据 ─────────────────────────────────
 
-def get_qrcode(db: Session, order_product_id: int, size: int = 200) -> dict:
+def get_qrcode(db: Session, order_product_id: int, size: int = 200, box_size: int = 10) -> dict:
     """生成二维码 base64"""
     import qrcode
     from io import BytesIO
     import base64
 
     qr_data = generate_qr_data(order_product_id)
-    qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=10, border=2)
+    qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=box_size, border=2)
     qr.add_data(qr_data)
     qr.make(fit=True)
     img = qr.make_image(fill_color="black", back_color="white")
