@@ -3,7 +3,14 @@
 import hmac
 import hashlib
 import re
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+# 北京时间 UTC+8
+_BJ_TZ = timezone(timedelta(hours=8))
+
+
+def _bj_now():
+    return datetime.now(_BJ_TZ)
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -235,7 +242,7 @@ def handle_production_report(db: Session, qr_data: str, wx_id: str) -> dict:
 
     # Step 7: 更新进度
     pending.status = 1
-    pending.completed_at = datetime.utcnow()
+    pending.completed_at = _bj_now()
     pending.completed_by_user_id = user.id
     pending.completed_by_wx_id = wx_id
     db.flush()
@@ -258,7 +265,7 @@ def handle_production_report(db: Session, qr_data: str, wx_id: str) -> dict:
 
     if all_completed:
         item.status = 2  # 已完成
-        item.updated_at = datetime.utcnow()
+        item.updated_at = _bj_now()
         # 检查是否所有明细都完成，同步订单状态
         _sync_order_status(db, item.order_id)
 
@@ -359,5 +366,5 @@ def get_print_card_data(db: Session, order_product_id: int) -> dict:
         "remark": item.remark,
         "process_steps": process_steps,
         "qr_code_base64": qr_data["qr_code"],
-        "printed_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
+        "printed_at": _bj_now().strftime("%Y-%m-%d %H:%M"),
     }
