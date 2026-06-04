@@ -22,7 +22,7 @@ This project uses OpenWolf for context management. Read and follow .wolf/OPENWOL
 - **备货管理**：安全库存设置（手动/AI 生成）、销量备货一览、安全库存日报、低库存钉钉推送（每日 08:30 自动 + 管理员手动触发）
 - **生产订单管理**：购物车（安全库存页一键加入→右上角角标→批量生成订单）、订单双维管理（订单维度+明细维度）、状态流转（已提交/已终止/已完成）、入库数量跟踪（收货完成自动改状态）、加急标记与预计交期、备货状态实时显示（销量备货一览/安全库存设置表）
 - **钉钉集成**：webhook 推送、审批回调、工作通知（预约状态变更点对点推送）、消息日志
-- **积木报表（jimureport）集成**：独立 Java Spring Boot 微服务（jimureport-example 改造版），方舟前端 iframe 嵌入设计器，FastAPI Token 中转 + Java 端 sa-token 适配实现 SSO（方舟 JWT → jimureport 上下文）
+- **报表中心（Stimulsoft）**：Stimulsoft Reports.JS 替代 JimuReport，前端直接 DOM 挂载 Viewer/Designer（无 iframe），后端提供 JSON 数据 API（模板不直连 MySQL），模板按 report_code + version 管理存储在数据库
 
 ## 技术栈
 
@@ -61,6 +61,7 @@ commission-system/
 │   │   ├── asset/         # 素材管理领域模块（router/models/schemas/service facade + analyze/batch/stats/tag/favorite/asset_service 子模块）
 │   │   ├── color/         # 发色数字化领域模块（router/models/schemas/service facade + palette/blend/calc/trend/swatch/social_extract 子模块）
 │   │   ├── production/    # 生产报工领域模块（router/models/schemas/service facade + process/route/binding/report_service 子模块；与 stock/production_* 生产订单是两个模块）
+│   │   ├── report/         # 报表中心领域模块（router/models/schemas/data_service — Stimulsoft Reports.JS 模板 CRUD + 数据组装）
 │   │   └── main.py        # FastAPI 入口（薄,只装配 app/middleware/lifespan,bootstrap/scheduler/router 都委托给子模块）
 │   ├── alembic/           # 数据库迁移
 │   ├── config/            # YAML 业务规则配置
@@ -82,11 +83,6 @@ commission-system/
 │   │   ├── styles/        # 设计 token、全局样式（tokens.css 是单一真相源）
 │   │   └── utils/         # 工具函数
 │   └── dist/              # 构建产物
-├── jmreport-service/      # 积木报表 Java 微服务（jimureport-example v2.3.4 改造，独立 NSSM service）
-│   ├── src/main/java/com/jeecg/  # JimuReportTokenServiceImpl 改方舟 JWT 解签 + sa-token 注入；InternalHealthController；SaTokenConfigure（CSP frame-ancestors *）
-│   ├── src/main/resources/       # application*.yml（端口 8888 + 64KB header buffer）
-│   ├── sql/                      # filter_init.py / import.py 初始化脚本
-│   └── pom.xml
 ├── deploy/                # Windows Server 部署脚本（NSSM）
 ├── DESIGN.md              # 设计系统规范（颜色/字体/间距/组件）
 └── docker-compose.yml
@@ -110,21 +106,10 @@ npm install                              # 安装依赖
 npm run dev                              # 开发服务器 (port 3000, 代理 /api → 8001)
 npm run build                            # 构建
 
-# 积木报表 Java 服务（在 jmreport-service/ 目录下，需 JDK 17+ + Maven 3.9+）
-mvn package -DskipTests                  # 打 fat jar (~263MB，target/jimureport-example-2.3.jar)
-java -Dspring.profiles.active=dev \
-     -DMYSQL-HOST=<host> -DMYSQL-PORT=<port> -DMYSQL-DB=jimureport \
-     -Dspring.datasource.username=<user> -Dspring.datasource.password=<pass> \
-     -Dark.jwt.secret=<JWT_SECRET_KEY> \
-     -jar target/jimureport-example-2.3.jar
-# 首次还需建库 + 灌核心表：python sql/import.py（详见 sql/README.md）
-
 # 服务器部署
 deploy\setup-server.bat                  # 首次部署：克隆代码、安装依赖、配置 CommissionSystem service
-deploy\setup-jmreport.bat                # 首次部署 jimureport：mvn 打包 + 注册 LeShineJmReport NSSM service
 deploy\deploy.bat                        # 日常更新：拉取代码、安装依赖、迁移数据库、构建前端、重启服务
 deploy\restart.bat                       # 仅重启 CommissionSystem service
-deploy\restart-jmreport.bat              # 仅重启 LeShineJmReport service
                                          # 注意：bat 用 UTF-8 编码 + chcp 65001，变量写 set VAR=value 不带引号
 ```
 
@@ -135,7 +120,6 @@ deploy\restart-jmreport.bat              # 仅重启 LeShineJmReport service
 | 后端 API | 8001 |
 | 前端 dev | 3000 |
 | 前端生产 | 80   |
-| jimureport (Java) | 8888 |
 
 ## API 路由前缀
 
@@ -263,7 +247,7 @@ deploy\restart-jmreport.bat              # 仅重启 LeShineJmReport service
   - `GET /users/{id}/process-bindings` — 查询用户工序绑定（需 `production:admin`）
   - `PUT /users/{id}/process-bindings` — 更新用户工序绑定（需 `production:admin`）
   - `PUT /users/{id}/wx-id` — 更新用户微信 ID（需 `production:admin`）
-  - `POST /report` — 工人扫码报工（核心端点，需 `production:write`）
+  - `POST /report` — 工人扫码报工（核心端点，**无鉴权**，供 Accio Work 本机调用）
   - `POST /order-products/{id}/init-progress` — 初始化工序进度
   - `GET /order-products/{id}/progress` — 获取工序进度
   - `GET /order-products/{id}/qrcode` — 生成二维码
@@ -327,10 +311,13 @@ deploy\restart-jmreport.bat              # 仅重启 LeShineJmReport service
   - `GET /color-trends/overview` — 趋势概览
   - `GET /color-trends/history` — 历史趋势
   - `GET /color-trends/prediction` — 30 天预测（占位）
-- `/api/report` — 积木报表 Token 中转（`backend/app/api/jmreport.py`，详见末尾「积木报表集成」章节）
-  - `GET /token` — 拿原始方舟 JWT + jmreport_url（前端 iframe 拼 src，需 `report:read|design|admin` 任一）
-  - `POST /token/for-embed` — 拿指定 reportCode 的嵌入 URL
-  - `GET /health` — 探活，转发 jimureport :8888 `/internal/health`
+- `/api/report` — 报表中心（`backend/app/report/router.py`，Stimulsoft Reports.JS）
+  - `GET /templates` — 模板列表（需 `report:read`）
+  - `GET /templates/{report_code}` — 模板详情含 .mrt 内容（需 `report:read`）
+  - `POST /templates` — 创建模板（需 `report:design`）
+  - `PUT /templates/{report_code}` — 更新模板（需 `report:design`，更新内容时 version 自增）
+  - `DELETE /templates/{report_code}` — 软删模板（需 `report:admin`）
+  - `GET /data/{report_code}` — 获取报表数据 JSON（需 `report:read`，后端查询组装）
 
 ## 数据库
 
@@ -419,7 +406,7 @@ deploy\restart-jmreport.bat              # 仅重启 LeShineJmReport service
 | 素材管理 | `asset:read` / `asset:write` / `asset:delete` / `asset:admin` | 查看素材库/上传编辑/删除/标签维度管理 |
 | 色彩管理 | `color:read` / `color:write` / `color:admin` | 查看色板数据库/色彩趋势/编辑色号/生成色板图/管理竞品监控 |
 | 生产订单 | `production:read` / `production:write` / `production:admin` | 查看订单/创建编辑订单与入库/删除订单（备货管理菜单组下独立子菜单，由 `production:read` 控制显示） |
-| 报表中心 | `report:read` / `report:design` / `report:admin` | 查看报表/进设计器/管理元数据（jimureport iframe 集成，super_admin 自动绕过） |
+| 报表中心 | `report:read` / `report:design` / `report:admin` | 查看报表/编辑模板/删除模板（Stimulsoft Reports.JS，super_admin 自动绕过） |
 
 **导航显示逻辑**（`MainLayout.vue`）：各菜单项通过 `v-if="authStore.hasAnyPermission([...])"` 控制，`super_admin` 角色绕过所有权限检查。头部用户区域显示头像（`avatar_url`），无头像时显示默认图标。物流管理子菜单含三个入口：物流跟踪(`tracking:read/read_all`) / 运单上传(`tracking:write`) / 物流日报(`tracking:daily_report`)。路由守卫：`/tracking/:waybillNo` 需 `tracking:read`，`/tracking/daily-report` 需 `tracking:daily_report`。运单列表数据范围由权限自动决定（`tracking:read` 仅看本人，`tracking:read_all` 看全部），页面无切换控件。
 
@@ -688,115 +675,73 @@ content = result["content"]
 
 **口径限制**:钉钉 Accio Work 推送进暂存表的运单,`dingtalk_user_name` 存的是钉钉昵称(中文),与系统登录名不匹配——这类运单在仅有 `tracking:read` 的用户视图中不会出现。如果将来要统一,需要给提交人匹配加 `OR dingtalk_user_id == 当前用户.dingtalk_id` 二级匹配。
 
-## 积木报表（jimureport）集成
+## 报表中心（Stimulsoft Reports.JS）
 
-独立 Java Spring Boot 微服务，通过 iframe 嵌入方舟前端。**关键决定：不换发 Token，方舟 access_token 直接喂给 jimureport**——Java 端用同一份 `JWT_SECRET_KEY` 解签后将用户名注入 sa-token 上下文。
+用 Stimulsoft Reports.JS 替代原 JimuReport（Java 微服务已移除）。前端直接 DOM 挂载 Viewer/Designer（无 iframe），后端提供 JSON 数据 API。
 
-### 仓库布局
+### 架构
 
-```
-commission-system/
-├── jmreport-service/           ← 新增 Java 微服务（基于 jimureport-example v2.3.4 改造）
-│   ├── src/main/java/com/jeecg/...
-│   │   ├── modules/jmreport/extend/JimuReportTokenServiceImpl.java  ← 改成方舟 JWT 解签
-│   │   ├── modules/jmreport/controller/InternalHealthController.java ← 探活端点
-│   │   └── modules/jmreport/satoken/SaTokenConfigure.java            ← /internal/** 加白
-│   ├── src/main/resources/
-│   │   ├── application.yml         ← sa-token 配置
-│   │   └── application-dev.yml     ← 端口/数据库/header buffer/ARK secret 占位
-│   ├── sql/
-│   │   ├── jimureport-init.sql     ← 完整 dump（44 张含演示）
-│   │   ├── jimureport-core.sql     ← 过滤后的核心 24 张（jimu_*/onl_drag_*）
-│   │   ├── filter_init.py          ← 过滤脚本
-│   │   └── import.py               ← pymysql 导入器（从 backend/.env 读凭证）
-│   ├── target/jimureport-example-2.3.jar
-│   └── pom.xml
-└── deploy/
-    ├── setup-jmreport.bat       ← 首次注册 NSSM 服务（管理员运行）
-    └── restart-jmreport.bat     ← 日常重启
-```
-
-### 技术栈与端口
-
-- **Java 17+**（实际跑在 JBR 21 / Android Studio 自带）
-- **Maven 3.9+**
-- **Spring Boot 3.2.5** + **jimureport-spring-boot3-starter 2.3.4**
-- **sa-token 1.44**（jimureport-example 自带，不要 Redis，session 走 sa-token 内存）
-- 端口 **8888**，无 context-path（设计器路径直接 `/jmreport/list`）
-- 数据库 `jimureport`（与 `commission_db`/`lsordertest` 同实例，腾讯云 CynosDB MySQL）
-
-### 数据流
-
-```
-浏览器
-  ├── Vue3:3000 主应用
-  │     └── /report 路由 → <iframe src="http://localhost:8888/jmreport/list?token={ARK_JWT}">
-  └── iframe（同浏览器，跨端口）
-        └── jimureport :8888 设计器（CSP frame-ancestors *，浏览器不拦）
+```text
+前端（按需加载 Stimulsoft JS）
+  ├── /report 路由 → ReportCenter.vue（模板管理）
+  ├── /report/view → ReportView.vue（Stimulsoft Viewer）
+  └── 生产订单打印 → StimulsoftViewer 组件（el-dialog 内）
 
 后端
-  ├── FastAPI :8001
-  │     └── GET /api/report/token (require report:read|design|admin)
-  │         返回 { token: <原始 ark_jwt>, jmreport_url: "http://localhost:8888/jmreport", expire_in: 43200 }
-  ├── Java :8888 jimureport-example
-  │     ├── JimuReportTokenServiceImpl (方舟 JWT 适配版)
-  │     │     ├── getToken      : 优先 ?token= URL 参数，其次 Authorization Bearer，最后 sa-token 上下文
-  │     │     ├── verifyToken   : jjwt 用 ARK_JWT_SECRET 解签 → StpUtil.login(username) 注入
-  │     │     ├── getUsername   : claims.get("username")
-  │     │     ├── getRoles      : 方舟 payload roles[] → String[]
-  │     │     └── getPermissions: 方舟 payload permissions[] → String[]
-  │     └── /internal/health (sa-token 白名单，FastAPI 探活用)
-  └── MySQL（同实例）
-        ├── commission_db (RW)  ← 方舟提成业务
-        ├── lsordertest    (RO)  ← 业务库
-        └── jimureport     (RW)  ← 24 张核心表（jimu_*/onl_drag_*），新增
+  ├── /api/report/templates — 模板 CRUD
+  ├── /api/report/data/{report_code} — JSON 数据组装
+  └── 权限: report:read / report:design / report:admin
+
+前端静态资源
+  └── frontend/public/vendor/stimulsoft/reports-js/
+      ├── stimulsoft.reports.js          # 核心引擎（非压缩版，含 StiLicense 类）
+      ├── stimulsoft.viewer.js           # 查看器
+      ├── stimulsoft.designer.js         # 设计器
+      ├── stimulsoft.blockly.editor.js   # Blockly 编辑器
+      ├── stimulsoft.reports.export.pack.js  # 导出（pack 版）
+      ├── stimulsoft.reports.chart.pack.js   # 图表（pack 版）
+      └── localization/zh-CHS.xml
 ```
 
-### 启动顺序
+### 关键文件
 
-```bash
-# 0. 一次性：腾讯云 MySQL 建 jimureport 库 + 导核心表
-cd jmreport-service && python sql/import.py    # 从 backend/.env 读凭证
+```text
+backend/app/report/
+├── router.py          — 模板 CRUD + 数据端点
+├── models.py          — ReportTemplate ORM (ark_report_templates)
+├── schemas.py         — Pydantic 模型
+└── data_service.py    — 报表数据组装（按 report_code 分发）
 
-# 1. 本地开发：mvn 打包后前台跑
-cd jmreport-service && mvn package -DskipTests
-java -Dspring.profiles.active=dev \
-     -DMYSQL-HOST=<host> -DMYSQL-PORT=<port> -DMYSQL-DB=jimureport \
-     -Dspring.datasource.username=<user> -Dspring.datasource.password=<pass> \
-     -Dark.jwt.secret=<JWT_SECRET_KEY> \
-     -jar target/jimureport-example-2.3.jar
-
-# 2. 生产部署：NSSM
-cd deploy && setup-jmreport.bat       # 首次（管理员）
-cd deploy && restart-jmreport.bat     # 日常重启
-# 服务名 LeShineJmReport，日志 D:\commission-system\logs\jmreport\service.log
+frontend/src/
+├── composables/useStimulsoft.js  — JS 动态加载 + License 激活 + Viewer/Designer 工厂
+├── components/StimulsoftViewer.vue — 通用报表查看组件
+├── components/StimulsoftDesigner.vue — 报表设计器组件
+├── api/reportCenter.js           — 报表 API client
+└── views/report/
+    ├── ReportCenter.vue          — 模板管理页
+    └── ReportView.vue            — 独立报表查看页
 ```
 
-### 权限码
+### 数据库表
 
-- `report:read` — 看报表 / 数据大屏（普通用户）
-- `report:design` — 进设计器、编辑报表
-- `report:admin` — 报表元数据 / 数据源管理
+- `ark_report_templates` — 报表模板（report_code UNIQUE, name, description, template_content LONGTEXT, version, status, created_by, updated_by）
 
-`require_any_permission("report:read", "report:design", "report:admin")` 控制 `/api/report/*`；`super_admin` 自动绕过。
+### 报表数据组装
 
-### 集成踩坑（必读，文档反复绕错）
+`data_service.py` 按 `report_code` 分发到对应函数：
 
-1. **`jimureport-spring-boot3-starter` 不带设计器 UI** — 它只是给 jeecg-boot 项目当依赖加载，纯 starter 跑的话 `/jmreport/index` 永远 `No static resource`。**必须用 `jimureport-example` 整套作骨架**（含 sa-token + LoginController + 完整 WebMvcConfigurer），UI 才能渲染。
-2. **设计器入口路径是 `/jmreport/list`，不是 `/jmreport/index`** — 02 文档原版写错。前端 Pinia store `designerUrl` 必须拼 `/list`。
-3. **Tomcat header buffer 默认 8KB，方舟 access_token + 58 条 permissions 会爆** — `application-dev.yml` 必须 `server.max-http-request-header-size: 65536`，否则点"新建数据报表"会 400 `Request header is too large`。
-4. **`getToken(HttpServletRequest)` 优先级要先 URL 后 sa-token** — 如果先 `StpUtil.getTokenValue()`，sa-token 残留的 UUID 会被当成 token 喂给 verifyToken，jjwt 立刻报 `Invalid compact JWT string ... Found: 0` 个 dot。
-5. **example 的 `application-dev.yml` 配了 `spring.data.redis` 但 pom 默认注释了 sa-token-redis-jackson** — Redis 不连，sa-token 走内存 session，**不要装 Redis**。
-6. **iframe 跨端口能嵌入靠 sa-token 的 `Content-Security-Policy: frame-ancestors *`**（在 `SaTokenConfigure.setBeforeAuth`），不需要再单独配 Spring Security frameOptions。
-7. **JWT_SECRET_KEY 64 字节 ≥32**（已确认），jjwt HS256 不会拒绝。
-8. **方舟 access_token payload**：`{ sub: <user.id 字符串>, username, roles[], permissions[], must_change_password, exp, iat }`——没有 `user_id` 也没有 `department`。Java 取 user_id 用 `claims.getSubject()`。
-9. **InternalHealthController 路径是 `/internal/health`（无 `/jmreport` 前缀）** — example 没设 context-path。FastAPI Settings 的 `JMREPORT_INTERNAL_URL` 是 `http://localhost:8888`（不带 `/jmreport`），`JMREPORT_PUBLIC_URL` 是 `http://localhost:8888/jmreport`（带，因为设计器路径如此）。
+| report_code | 函数 | 说明 |
+|---|---|---|
+| `production_order_print` | `get_production_order_print_data` | 生产订单打印，Cross-Tab：行=color2，列=product_remark+size2，汇总=Sum(qty) |
 
-### 数据源接入（Phase 2，jimureport 设计器内手工配）
+新增报表只需：(1) 加一个 `get_xxx_data(db, params)` 函数 (2) 注册到 `_DATA_DISPATCH` 字典。
 
-设计器页 → 数据源管理 → 新建：
-- `commission_db` — `jdbc:mysql://<host>:<port>/commission_db?...`，root 用户（生产应切独立只读账号）
-- `lsordertest` — 同上换库名
+### 模板设计
 
-报表 SQL 直接 `SELECT ... FROM commission_db.ark_users` / `lsordertest.<业务表>`。
+模板 (.mrt) 在 Stimulsoft Designer 中设计，通过 API `POST /templates` 存入数据库。模板只消费 JSON 数据，不直连 MySQL。
 
+### 已踩过的坑
+
+- `Scripts/` 下的 `.pack.js` **不含 StiLicense 类**，License Key 设置被静默忽略，永远显示 trial。必须用 `Demo/scripts/` 下的非压缩 `.js`（如 `stimulsoft.reports.js` 11.8MB）
+- `ReportCenter.vue` 的 `openDesigner` 不能在 `_ensureDesignerLoaded()` 完成前调 `new Stimulsoft.Report.StiReport()`——核心 JS 还没加载完，`window.Stimulsoft.Report` 是 undefined。修复：StiReport 创建移入 `createDesigner` 内部
+- `createDesigner` 第二个参数从 `StiReport 实例` 改为 `mrtContent 字符串|null`，内部在 JS 加载完成后创建 StiReport

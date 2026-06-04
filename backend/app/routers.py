@@ -7,7 +7,7 @@ from app.api import (
     payment_router, commission_router, report_router,
 )
 from app.api.short_link import router as short_link_router
-from app.api.jmreport import router as jmreport_router
+from app.report.router import router as report_center_router
 from app.tracking.router import router as tracking_router
 from app.design.router import router as design_router
 from app.auth.router import router as auth_router
@@ -44,5 +44,5 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(stock_router, prefix="/api/stock", tags=["备货管理"])
     app.include_router(asset_router, prefix="/api/assets", tags=["素材管理"])
     app.include_router(color_router, prefix="/api/color", tags=["色彩管理"])
-    app.include_router(jmreport_router, prefix="/api/report", tags=["积木报表"])
+    app.include_router(report_center_router, prefix="/api/report", tags=["报表中心"])
     app.include_router(production_router, prefix="/api/production", tags=["生产报工"])

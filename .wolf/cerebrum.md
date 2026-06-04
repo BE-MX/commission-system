@@ -2,7 +2,7 @@
 
 > OpenWolf's learning memory. Updated automatically as the AI learns from interactions.
 > Do not edit manually unless correcting an error.
-> Last updated: 2026-05-26
+> Last updated: 2026-06-03
 
 ## User Preferences
 
@@ -81,6 +81,13 @@
 - [2026-05-26] Vue composable 返回的 reactive 状态必须在组件中完整解构才能使用。`SafetyConfig.vue` 模板引用了 `selectedCartIds.length`，但解构时漏了 `selectedCartIds`，导致 `Cannot read properties of undefined (reading 'length')`。修复：确保 `const { cartItems, selectedCartIds, ... } = useProductionCart()` 解构完整
 - [2026-05-27] Raw SQL 端点的排序列必须带表别名前缀（如 `o.order_no` 而非 `order_no`），因为 SQL 使用了 `FROM ark_production_orders o` 别名。直接用前端 prop 名会导致 `Unknown column` 错误。修复：用 `SORT_COL_MAP` 字典映射 prop 名 → 带别名的 SQL 列名
 - [2026-06-01] 函数搬家（refactor/rename）时，必须全局 grep 旧路径的 import——**包括函数体内的延迟 import**（`from app.design.router import _xxx` 写在函数体内而非文件顶部）。阶段二治理将 `_find_role_dingtalk_ids` 等 4 个函数从 `router.py` 移至 `notifications.py`，但 `scheduler.py:52` 的延迟 import 未同步更新。注册期不报错（函数体不执行），08:30 定时任务或手动点按钮才炸。**grep 命令**：`grep -rn "from app\.design\.router import" backend/` 不能只搜顶层 import
+- [2026-06-02] MySQL `REGEXP_REPLACE` 的 backreference `$1` 在 SQLAlchemy `text()` 中被当 bind parameter 吞掉（pymysql 把 `$1` 解析为参数占位符）。用 `CONCAT(CHAR(36), '1')` 构造 replacement 会触发 `utf8mb4_0900_ai_ci cannot be used in conjunction with 'binary'` 字符集冲突。**正确做法**：不用 backreference，用双层 `REGEXP_REPLACE` 分别去前缀和后缀
+- [2026-06-02] FastAPI router 的 `Query(pattern="...")` 正则白名单是**新增排序字段的隐形杀手**。新增 `sort_field` 值时必须同步更新 pattern，否则返回 422 而非 500，容易误判为后端逻辑错误
+- [2026-06-02] 产品名颜色提取（`#1B/613` 双段色 vs `BLONDE` 单段色）不能用 `SUBSTRING_INDEX` 简单截取——颜色段长度不固定。`REGEXP_REPLACE(name, '^([^/]+/){2}', '')` 去前缀 + `REGEXP_REPLACE(result, '/[^/]+$', '')` 去后缀是可靠方案
+- [2026-06-03] Stimulsoft Designer 报错 `Cannot read properties of undefined (reading 'Report')`：在 `_ensureDesignerLoaded()` 完成前就调了 `new Stimulsoft.Report.StiReport()`——基础 JS 还没加载完，`window.Stimulsoft.Report` 不存在。**所有 Stimulsoft 对象创建必须在 `_ensureLoaded()`/`_ensureDesignerLoaded()` 之后**。修复：将 StiReport 创建移入 `createDesigner` 内部
+- [2026-06-03] Stimulsoft `.pack.js`（Scripts/ 目录）**不包含 StiLicense 类**（grep 确认 0 匹配），`StiLicense.Key = 'xxx'` 被静默忽略，导致永远显示 trial。**必须用 `Demo/scripts/` 下的非压缩 `.js` 文件**（`stimulsoft.reports.js` 等 11.8MB），它们包含完整 License 校验逻辑
+- [2026-06-03] Stimulsoft Viewer 打印弹框卡"正在加载报表引擎"有三个叠加根因：(1) `_waitStimulsoftReady()` 用 `watch(ref)` 等待，dialog `destroy-on-close` 重建组件时 ref 已 true，watch 不触发 → 改用 `ensureLoaded()` 返回 Promise；(2) `viewer.report = report` 在 `viewer.renderHtml(containerEl)` 之前执行，setter 内部 `assignReport` 用 setTimeout + renderAsync2 依赖 DOM → 先 renderHtml 再赋 report；(3) axios 拦截器已解包 `response.data` 返回 `{code,data}`，但 StimulsoftViewer 还在做 `res.data.data` 二次解包
+- [2026-06-03] Stimulsoft `DataSet.readJson()` 传 JS 对象时内部会做 `JSON.stringify`，但 `correctJson()` 对非标准结构解析不稳定。**显式传 `JSON.stringify(reportData)` 更可靠**
 
 ## Decision Log
 
@@ -93,3 +100,6 @@
 - [2026-06-01] 报工接口 `order_product_id` 对应 `ark_production_order_items.id`（非独立表），每条订单明细即一个"订单产品"，进度表 FK 引用该表
 - [2026-06-01] okki_products 产品字段实际可用：`product_no, name, model, production_color_requirement, production_size_requirement`。无 `cn_name/group_name/synced_at`，产品管理页只展示这些字段
 - [2026-06-01] 二维码签名使用 `hmac.new(key=..., msg=..., digestmod=...)` 关键字参数，避免参数顺序错误
+- [2026-06-03] 报工接口 `POST /api/production/report` 取消鉴权（无 JWT/API Key），因为 Accio Work 与方舟平台在同一台服务器上，无需认证。原 `_verify_api_key` + `x-api-key` Header 机制已移除。`PRODUCTION_API_KEY` 配置保留在 config.py 但不再被 router 引用
+- [2026-06-03] 报工接口 `handle_production_report` Step 5 自动初始化：当 `order_product_process_progress` 无记录时，调 `init_order_product_progress` 自动创建进度，不再直接返回"该产品所有工序已完成"。前提是产品已绑定工序路线
+- [2026-06-03] 报工时间统一用北京时间 UTC+8（`_bj_now()`），不使用 `datetime.utcnow()`。涉及 `completed_at`、`item.updated_at`、`printed_at` 三个字段

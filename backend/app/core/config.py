@@ -69,7 +69,6 @@ class Settings(BaseSettings):
         "http://localhost:5173",
         "http://localhost:5174",
         "http://localhost:8000",
-        "http://localhost:8888",  # jimureport 报表服务加载后端图片资源
     ]
 
     # ── AI 加密 ──────────────────────────────────────────
@@ -91,12 +90,6 @@ class Settings(BaseSettings):
     # ── 钉钉回调 ─────────────────────────────────────────
     DINGTALK_CALLBACK_AES_KEY: str = ""
     DINGTALK_CALLBACK_TOKEN: str = ""
-
-    # ── 积木报表（jimureport）集成 ───────────────────────
-    # INTERNAL: FastAPI 探活/调用 Java 服务的内网地址（example 项目无 context-path，根路径直连）
-    # PUBLIC:   前端 iframe 拼 src 用，必须浏览器可达；带 /jmreport 是因为设计器路径是 /jmreport/list
-    JMREPORT_INTERNAL_URL: str = "http://localhost:8888"
-    JMREPORT_PUBLIC_URL: str = "http://localhost:8888/jmreport"
 
     # ── 生产报工 ──────────────────────────────────────────
     QR_SIGN_SECRET: str = "change-this-to-a-random-32-char-secret"  # 二维码 HMAC 签名密钥

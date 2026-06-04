@@ -2621,5 +2621,142 @@
     "related_bugs": [],
     "occurrences": 1,
     "last_seen": "2026-06-01T12:00:00"
+  },
+  {
+    "id": "bug-164",
+    "timestamp": "2026-06-02T19:34:44.000Z",
+    "error_message": "405 Method Not Allowed on POST /api/production/report — router sort pattern missing \"color\"",
+    "file": "backend/app/stock/router.py",
+    "root_cause": "router.py sort Query parameter has regex whitelist pattern=\"^(sales_30d|sales_90d|enable_count)$\" that did not include \"color\". New sort field added to _SORT_MAP but pattern not updated.",
+    "fix": "Added \"color\" to both overview (pattern=\"^(sales_30d|sales_90d|enable_count|color)$\") and safety (pattern=\"^(product_id|sales_30d|enable_count|safety_stock|color)$\") sort patterns",
+    "tags": [
+      "fastapi",
+      "query-validation",
+      "sort",
+      "stock"
+    ],
+    "related_bugs": [],
+    "occurrences": 1,
+    "last_seen": "2026-06-02T19:34:44.000Z"
+  },
+  {
+    "id": "bug-165",
+    "timestamp": "2026-06-02T19:34:44.000Z",
+    "error_message": "REGEXP_REPLACE backreference \\ returns empty via SQLAlchemy text()",
+    "file": "backend/app/stock/overview_service.py",
+    "root_cause": "MySQL REGEXP_REPLACE(p.name, pattern, \"\") — the  backreference is swallowed by pymysql as a bind parameter when passed through SQLAlchemy text(). Direct cursor.execute works but text() does not.",
+    "fix": "Avoided backreference entirely: use double REGEXP_REPLACE to strip prefix and suffix separately, no capture group needed",
+    "tags": [
+      "mysql",
+      "regexp",
+      "sqlalchemy",
+      "pymysql",
+      "stock"
+    ],
+    "related_bugs": [],
+    "occurrences": 1,
+    "last_seen": "2026-06-02T19:34:44.000Z"
+  },
+  {
+    "id": "bug-166",
+    "timestamp": "2026-06-02T19:34:44.000Z",
+    "error_message": "Character set utf8mb4_0900_ai_ci cannot be used in conjunction with binary in regexp_replace",
+    "file": "backend/app/stock/overview_service.py",
+    "root_cause": "CONCAT(CHAR(36), \"1\") as replacement in REGEXP_REPLACE causes charset mismatch between utf8mb4 input and binary CONCAT output on Tencent CynosDB MySQL 8.0",
+    "fix": "Used double REGEXP_REPLACE with literal empty-string replacements instead of backreference-based replacement",
+    "tags": [
+      "mysql",
+      "charset",
+      "regexp",
+      "stock"
+    ],
+    "related_bugs": [
+      "bug-165"
+    ],
+    "occurrences": 1,
+    "last_seen": "2026-06-02T19:34:44.000Z"
+  },
+  {
+    "id": "bug-167",
+    "timestamp": "2026-06-02T19:34:44.000Z",
+    "error_message": "Color sort key extracting SIZE instead of COLOR from product name",
+    "file": "backend/app/stock/overview_service.py",
+    "root_cause": "SUBSTRING_INDEX(SUBSTRING_INDEX(p.name, \"/\", -2), \"/\", 1) extracts the first of the last 2 segments, which is SIZE for 4-part names (TYPE/SIZE/COLOR/WEIGHT). Also REPLACE(p.name, \"#\", \"\") sorts by full product name, not color.",
+    "fix": "Double REGEXP_REPLACE: REGEXP_REPLACE(name, \"^([^/]+/){2}\", \"\") removes TYPE/SIZE/, then REGEXP_REPLACE(result, \"/[^/]+$\", \"\") removes /WEIGHT. Correctly handles both 4-part (BLONDE) and 5-part (#1B/613) color formats.",
+    "tags": [
+      "mysql",
+      "sort",
+      "product-name",
+      "stock"
+    ],
+    "related_bugs": [],
+    "occurrences": 1,
+    "last_seen": "2026-06-02T19:34:44.000Z"
+  },
+  {
+    "id": "bug-168",
+    "timestamp": "2026-06-02T19:34:44.000Z",
+    "error_message": "REGEXP_SUBSTR with lookbehind includes SIZE segment in match for 4-part product names",
+    "file": "backend/app/stock/overview_service.py",
+    "root_cause": "Pattern (?<=/)([^/]+/)*[^/]+(?=/[^/]+$) with greedy quantifier matches from any / position, pulling in SIZE for 4-part names. REGEXP_SUBSTR returns full match not capture group.",
+    "fix": "Used REGEXP_REPLACE (strip prefix+suffix) instead of REGEXP_SUBSTR (extract match)",
+    "tags": [
+      "mysql",
+      "regexp",
+      "stock"
+    ],
+    "related_bugs": [
+      "bug-167"
+    ],
+    "occurrences": 1,
+    "last_seen": "2026-06-02T19:34:44.000Z"
+  },
+  {
+    "id": "bug-169",
+    "timestamp": "2026-06-03T15:30:00.000Z",
+    "error_message": "生产订单打印弹框卡在'正在加载报表引擎'不动",
+    "file": "frontend/src/components/StimulsoftViewer.vue, frontend/src/composables/useStimulsoft.js",
+    "root_cause": "三个叠加问题：(1) _waitStimulsoftReady() 用 watch(ref) 等引擎加载，dialog destroy-on-close 重建组件时 ref 已 true，watch 不再触发，Promise 永不 resolve；(2) createViewer 先 viewer.report=report（触发 assignReport/setTimeout/renderAsync2）再 viewer.renderHtml(containerEl)，此时 DOM 不存在，内部渲染失败；(3) axios 拦截器 return res（已解包 response.data），但 StimulsoftViewer 用 res.data.data 二次解包导致拿到 undefined",
+    "fix": "(1) 删除 _waitStimulsoftReady()，改用 ensureLoaded() 直接返回 Promise；(2) createViewer 中先 renderHtml 再赋 report；(3) 解包改为 res?.data ?? res（单层 nullish coalescing）；(4) readJson 显式传 JSON.stringify(reportData)",
+    "tags": ["stimulsoft", "viewer", "dialog", "watch-deadlock", "response-unwrapping"],
+    "related_bugs": [],
+    "occurrences": 1,
+    "last_seen": "2026-06-03T15:30:00.000Z"
+  },
+  {
+    "id": "bug-170",
+    "timestamp": "2026-06-03T18:30:00.000Z",
+    "error_message": "Accio Work 调 POST /api/production/report 返回 401 '缺少 x-api-key'",
+    "file": "backend/app/production/router.py",
+    "root_cause": "本地开发环境已移除 _verify_api_key 鉴权，但改动未 commit/push。服务器 git 仓库仍是旧版（含 x-api-key Header 校验），Accio Work 调用时被 FastAPI Header 校验拦截",
+    "fix": "commit 并 push 鉴权移除（53b93d4），服务器 git checkout -- router.py + git pull + nssm restart。验证：Invoke-RestMethod 无需 x-api-key 即可调用成功",
+    "tags": ["production", "auth", "accio-work", "deploy-miss"],
+    "related_bugs": [],
+    "occurrences": 1,
+    "last_seen": "2026-06-03T18:30:00.000Z"
+  },
+  {
+    "id": "bug-171",
+    "timestamp": "2026-06-03T19:30:00.000Z",
+    "error_message": "扫码报工返回'该产品所有工序已完成'，但 order_product_process_progress 中无记录",
+    "file": "backend/app/production/report_service.py",
+    "root_cause": "handle_production_report Step 5 查询 pending 工序时，如果进度表无记录（未初始化），pending 为 None 直接返回'已完成'。缺少自动初始化逻辑",
+    "fix": "Step 5 增加 fallback：pending 为 None 时调 init_order_product_progress 自动创建进度记录，然后重新查询。commit 29d6594",
+    "tags": ["production", "report", "auto-init", "progress"],
+    "related_bugs": [],
+    "occurrences": 1,
+    "last_seen": "2026-06-03T19:30:00.000Z"
+  },
+  {
+    "id": "bug-172",
+    "timestamp": "2026-06-03T19:35:00.000Z",
+    "error_message": "报工 completed_at 时间比北京时间慢 8 小时（用的 UTC）",
+    "file": "backend/app/production/report_service.py",
+    "root_cause": "datetime.utcnow() 返回 UTC 时间，服务器在北京时区，业务需要北京时间",
+    "fix": "新增 _bj_now() 函数返回 UTC+8 时间，替换所有 datetime.utcnow() 调用（completed_at/updated_at/printed_at）。commit e4da065",
+    "tags": ["production", "timezone", "beijing-time"],
+    "related_bugs": [],
+    "occurrences": 1,
+    "last_seen": "2026-06-03T19:35:00.000Z"
   }
 ]

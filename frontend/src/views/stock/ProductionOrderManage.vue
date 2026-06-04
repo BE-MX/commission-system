@@ -71,7 +71,15 @@
             <template #default="{ row }">
               <el-button size="small" link type="primary" @click="viewOrderDetail(row)">详情</el-button>
               <el-button size="small" link type="primary" @click="editOrder(row)">编辑</el-button>
-              <el-button size="small" link type="success" @click="printOrder(row)">打印</el-button>
+              <el-dropdown trigger="click" @command="(cmd) => handlePrintCommand(cmd, row)">
+                <el-button size="small" link type="success">打印</el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="order">打印生产单</el-dropdown-item>
+                    <el-dropdown-item command="process_card">打印工序卡片</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
               <el-button size="small" link type="danger" @click="deleteOrder(row)" v-if="authStore.hasPermission('production:admin')">删除</el-button>
             </template>
           </el-table-column>
@@ -363,12 +371,12 @@
     </el-dialog>
 
     <!-- 报表打印预览弹窗 -->
-    <el-dialog v-model="printDialogVisible" title="生产订单打印预览" width="90%" top="2vh" destroy-on-close>
-      <div v-if="printDialogLoading" style="text-align:center; padding: 40px;">
-        <el-icon class="is-loading" :size="24"><Loading /></el-icon>
-        <p style="margin-top: 12px; color: #909399;">正在加载报表...</p>
-      </div>
-      <iframe v-else-if="printDialogUrl" :src="printDialogUrl" class="print-preview-iframe" frameborder="0" />
+    <el-dialog v-model="printDialogVisible" :title="printDialogTitle" width="90%" top="2vh" destroy-on-close>
+      <StimulsoftViewer
+        :report-code="currentReportCode"
+        :params="{ order_no: currentPrintOrderNo }"
+        height="80vh"
+      />
     </el-dialog>
   </div>
 </template>
@@ -380,7 +388,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document, CircleClose, CircleCheck, Filter, Loading } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useTableSort } from '@/composables/useTableSort'
-import { useJmReportStore } from '@/stores/jmreport'
+import StimulsoftViewer from '@/components/StimulsoftViewer.vue'
 import { getProgress, initProgress, getPrintCardData } from '@/api/production'
 import {
   getProductionOrders, getProductionOrderDetail, updateProductionOrder,
@@ -735,27 +743,21 @@ function printCard(item) {
 }
 
 // ── 报表打印 ────────────────────────────
-const reportStore = useJmReportStore()
 const printDialogVisible = ref(false)
-const printDialogLoading = ref(false)
-const printDialogUrl = ref('')
-// TODO: 替换为实际的报表 ID
-const PRODUCTION_ORDER_REPORT_ID = '1221310490024333312'
+const currentPrintOrderNo = ref('')
+const currentReportCode = ref('production_order_print')
+const printDialogTitle = ref('生产订单打印预览')
 
-async function printOrder(row) {
-  printDialogLoading.value = true
-  printDialogVisible.value = true
-  printDialogUrl.value = ''
-  try {
-    const token = await reportStore.fetchToken()
-    const baseUrl = reportStore.jmreportUrl
-    printDialogUrl.value = `${baseUrl}/view/${PRODUCTION_ORDER_REPORT_ID}?token=${token}&order_no=${encodeURIComponent(row.order_no)}`
-  } catch {
-    ElMessage.error('获取报表凭证失败')
-    printDialogVisible.value = false
-  } finally {
-    printDialogLoading.value = false
+function handlePrintCommand(cmd, row) {
+  currentPrintOrderNo.value = row.order_no
+  if (cmd === 'process_card') {
+    currentReportCode.value = 'process_card_print'
+    printDialogTitle.value = '工序卡片打印预览'
+  } else {
+    currentReportCode.value = 'production_order_print'
+    printDialogTitle.value = '生产订单打印预览'
   }
+  printDialogVisible.value = true
 }
 </script>
 
@@ -813,11 +815,4 @@ async function printOrder(row) {
 .step-meta { color: #909399; font-size: 12px; }
 .progress-empty { text-align: center; padding: 16px; }
 
-/* 报表打印预览 */
-.print-preview-iframe {
-  width: 100%;
-  height: calc(85vh - 80px);
-  border: none;
-  background: #fff;
-}
 </style>

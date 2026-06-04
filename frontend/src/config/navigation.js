@@ -604,23 +604,23 @@ export const NAV_ENTRIES = [
     },
   },
 
-  // ── 报表中心（jimureport iframe 集成） ──────────────────
+  // ── 报表中心（Stimulsoft Reports.JS） ──────────────────
   {
     path: '/report',
-    name: 'JmReportDesigner',
-    component: () => import('@/views/jmreport/JmReportView.vue'),
-    title: '报表设计器',
-    anyPermission: ['report:design', 'report:admin'],
+    name: 'ReportCenter',
+    component: () => import('@/views/report/ReportCenter.vue'),
+    title: '报表中心',
+    anyPermission: ['report:read', 'report:design', 'report:admin'],
     menu: {
-      group: 'report', title: '报表设计器', icon: EditPen, order: 10,
-      anyPermission: ['report:design', 'report:admin'],
+      group: 'report', title: '报表中心', icon: DataAnalysis, order: 10,
+      anyPermission: ['report:read', 'report:design', 'report:admin'],
     },
   },
   {
     path: '/report/view',
-    name: 'JmReportView',
-    component: () => import('@/views/jmreport/JmReportView.vue'),
-    props: (route) => ({ reportCode: route.query.reportCode, mode: 'view' }),
+    name: 'ReportView',
+    component: () => import('@/views/report/ReportView.vue'),
+    props: (route) => ({ reportCode: route.query.reportCode, ...route.query }),
     title: '查看报表',
     permission: 'report:read',
     hideInMenu: true,

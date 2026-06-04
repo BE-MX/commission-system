@@ -1,0 +1,307 @@
+"""报表中心 — API 路由
+
+权限码:
+- report:read   — 查看报表 / 获取数据
+- report:design — 设计/编辑模板
+- report:admin  — 管理模板（删除/启停）
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+
+from app.api.deps import get_db
+from app.auth.dependencies import require_permission
+from app.report.models import ReportTemplate, ReportTemplateVersion
+from app.report.schemas import (
+    ReportTemplateCreate,
+    ReportTemplateDetailResponse,
+    ReportTemplateResponse,
+    ReportTemplateUpdate,
+    ReportTemplateVersionResponse,
+)
+from app.report.data_service import get_report_data
+
+logger = logging.getLogger("report")
+router = APIRouter()
+
+
+def _ok(data, message: str = "ok", code: int = 200):
+    return {"code": code, "message": message, "data": data}
+
+
+def _get_user_id(user: dict) -> int:
+    uid = int(user.get("sub") or user.get("user_id") or 0)
+    if not uid:
+        raise HTTPException(status_code=401, detail="无法识别当前用户")
+    return uid
+
+
+# ── 模板 CRUD ──────────────────────────────────────────────
+
+
+@router.get("/templates")
+def list_templates(
+    _user: dict = Depends(require_permission("report:read")),
+    db: Session = Depends(get_db),
+):
+    """模板列表（不含 content，轻量）"""
+    templates = (
+        db.query(ReportTemplate)
+        .filter(ReportTemplate.status >= 0)
+        .order_by(ReportTemplate.report_code)
+        .all()
+    )
+    return _ok([ReportTemplateResponse.model_validate(t).model_dump() for t in templates])
+
+
+@router.get("/templates/{report_code}")
+def get_template(
+    report_code: str,
+    _user: dict = Depends(require_permission("report:read")),
+    db: Session = Depends(get_db),
+):
+    """获取模板详情（含 .mrt 内容）"""
+    t = db.query(ReportTemplate).filter(ReportTemplate.report_code == report_code).first()
+    if not t:
+        raise HTTPException(status_code=404, detail=f"模板不存在: {report_code}")
+    return _ok(ReportTemplateDetailResponse.model_validate(t).model_dump())
+
+
+@router.post("/templates")
+def create_template(
+    body: ReportTemplateCreate,
+    _user: dict = Depends(require_permission("report:design")),
+    db: Session = Depends(get_db),
+):
+    """创建模板"""
+    existing = db.query(ReportTemplate).filter(ReportTemplate.report_code == body.report_code).first()
+    if existing:
+        raise HTTPException(status_code=409, detail=f"模板编码已存在: {body.report_code}")
+
+    t = ReportTemplate(
+        report_code=body.report_code,
+        name=body.name,
+        description=body.description,
+        template_content=body.template_content,
+        version=1,
+        status=1,
+        created_by=_get_user_id(_user),
+    )
+    db.add(t)
+    db.commit()
+    db.refresh(t)
+    return _ok(ReportTemplateResponse.model_validate(t).model_dump(), code=201)
+
+
+@router.put("/templates/{report_code}")
+def update_template(
+    report_code: str,
+    body: ReportTemplateUpdate,
+    _user: dict = Depends(require_permission("report:design")),
+    db: Session = Depends(get_db),
+):
+    """更新模板（更新内容时 version 自增）"""
+    t = db.query(ReportTemplate).filter(ReportTemplate.report_code == report_code).first()
+    if not t:
+        raise HTTPException(status_code=404, detail=f"模板不存在: {report_code}")
+
+    update_data = body.model_dump(exclude_unset=True)
+    if not update_data:
+        raise HTTPException(status_code=400, detail="没有需要更新的字段")
+
+    # 如果更新了 template_content，版本号自增 + 保存旧版本快照
+    if "template_content" in update_data:
+        # 快照当前版本
+        snapshot = ReportTemplateVersion(
+            template_id=t.id,
+            version=t.version,
+            template_content=t.template_content,
+            change_summary=body.change_summary,
+            created_by=_get_user_id(_user),
+        )
+        db.add(snapshot)
+        t.version = (t.version or 0) + 1
+
+    for key, value in update_data.items():
+        setattr(t, key, value)
+
+    t.updated_by = _get_user_id(_user)
+    db.commit()
+    db.refresh(t)
+    return _ok(ReportTemplateResponse.model_validate(t).model_dump())
+
+
+@router.delete("/templates/{report_code}")
+def delete_template(
+    report_code: str,
+    _user: dict = Depends(require_permission("report:admin")),
+    db: Session = Depends(get_db),
+):
+    """软删除模板（status=-1）"""
+    t = db.query(ReportTemplate).filter(ReportTemplate.report_code == report_code).first()
+    if not t:
+        raise HTTPException(status_code=404, detail=f"模板不存在: {report_code}")
+
+    t.status = -1
+    t.updated_by = _get_user_id(_user)
+    db.commit()
+    return _ok(None, message="已删除")
+
+
+# ── 模板版本历史 ──────────────────────────────────────────
+
+
+@router.get("/templates/{report_code}/versions")
+def list_template_versions(
+    report_code: str,
+    _user: dict = Depends(require_permission("report:design")),
+    db: Session = Depends(get_db),
+):
+    """获取模板版本历史列表"""
+    t = db.query(ReportTemplate).filter(ReportTemplate.report_code == report_code).first()
+    if not t:
+        raise HTTPException(status_code=404, detail=f"模板不存在: {report_code}")
+
+    versions = (
+        db.query(ReportTemplateVersion)
+        .filter(ReportTemplateVersion.template_id == t.id)
+        .order_by(ReportTemplateVersion.version.desc())
+        .all()
+    )
+    return _ok([ReportTemplateVersionResponse.model_validate(v).model_dump() for v in versions])
+
+
+@router.get("/templates/{report_code}/versions/{version}")
+def get_template_version(
+    report_code: str,
+    version: int,
+    _user: dict = Depends(require_permission("report:design")),
+    db: Session = Depends(get_db),
+):
+    """获取指定版本的模板内容"""
+    t = db.query(ReportTemplate).filter(ReportTemplate.report_code == report_code).first()
+    if not t:
+        raise HTTPException(status_code=404, detail=f"模板不存在: {report_code}")
+
+    v = (
+        db.query(ReportTemplateVersion)
+        .filter(
+            ReportTemplateVersion.template_id == t.id,
+            ReportTemplateVersion.version == version,
+        )
+        .first()
+    )
+    if not v:
+        raise HTTPException(status_code=404, detail=f"版本不存在: v{version}")
+
+    return _ok({
+        "id": v.id,
+        "template_id": v.template_id,
+        "version": v.version,
+        "template_content": v.template_content,
+        "change_summary": v.change_summary,
+        "created_by": v.created_by,
+        "created_at": v.created_at.isoformat() if v.created_at else None,
+    })
+
+
+@router.post("/templates/{report_code}/rollback/{version}")
+def rollback_template(
+    report_code: str,
+    version: int,
+    _user: dict = Depends(require_permission("report:design")),
+    db: Session = Depends(get_db),
+):
+    """回滚模板到指定版本"""
+    t = db.query(ReportTemplate).filter(ReportTemplate.report_code == report_code).first()
+    if not t:
+        raise HTTPException(status_code=404, detail=f"模板不存在: {report_code}")
+
+    v = (
+        db.query(ReportTemplateVersion)
+        .filter(
+            ReportTemplateVersion.template_id == t.id,
+            ReportTemplateVersion.version == version,
+        )
+        .first()
+    )
+    if not v:
+        raise HTTPException(status_code=404, detail=f"版本不存在: v{version}")
+
+    # 先快照当前版本
+    snapshot = ReportTemplateVersion(
+        template_id=t.id,
+        version=t.version,
+        template_content=t.template_content,
+        change_summary=f"回滚到 v{version}",
+        created_by=_get_user_id(_user),
+    )
+    db.add(snapshot)
+
+    # 恢复目标版本的内容
+    t.template_content = v.template_content
+    t.version = (t.version or 0) + 1
+    t.updated_by = _get_user_id(_user)
+    db.commit()
+    db.refresh(t)
+    return _ok(ReportTemplateResponse.model_validate(t).model_dump(), message=f"已回滚到 v{version}")
+
+
+@router.patch("/templates/{report_code}/status")
+def toggle_template_status(
+    report_code: str,
+    body: dict,
+    _user: dict = Depends(require_permission("report:admin")),
+    db: Session = Depends(get_db),
+):
+    """切换模板启用/禁用状态"""
+    t = db.query(ReportTemplate).filter(ReportTemplate.report_code == report_code).first()
+    if not t:
+        raise HTTPException(status_code=404, detail=f"模板不存在: {report_code}")
+
+    new_status = body.get("status")
+    if new_status not in (0, 1):
+        raise HTTPException(status_code=400, detail="status 必须为 0 或 1")
+
+    t.status = new_status
+    t.updated_by = _get_user_id(_user)
+    db.commit()
+    return _ok(ReportTemplateResponse.model_validate(t).model_dump())
+
+
+# ── 报表数据 ───────────────────────────────────────────────
+
+
+@router.get("/data/{report_code}")
+def get_data(
+    report_code: str,
+    order_no: Optional[str] = Query(None),
+    _user: dict = Depends(require_permission("report:read")),
+    db: Session = Depends(get_db),
+):
+    """获取报表数据 JSON（前端传参 → 后端查询 → 返回结构化 JSON 供 Stimulsoft regData）"""
+    # 检查模板是否存在且启用
+    t = db.query(ReportTemplate).filter(
+        ReportTemplate.report_code == report_code,
+        ReportTemplate.status == 1,
+    ).first()
+    if not t:
+        raise HTTPException(status_code=404, detail=f"报表模板不存在或未启用: {report_code}")
+
+    try:
+        params = {}
+        if order_no:
+            params["order_no"] = order_no
+
+        data = get_report_data(db, report_code, params)
+        return _ok(data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"获取报表数据失败: report_code={report_code}, params={params}, error={e}")
+        raise HTTPException(status_code=500, detail="获取报表数据失败")
