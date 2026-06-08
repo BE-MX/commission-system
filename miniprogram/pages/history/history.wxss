@@ -185,6 +185,7 @@
   align-items: center;
   gap: 14px;
   box-shadow: 0 2px 14px rgba(0,0,0,0.09);
+  overflow: hidden;
 }
 
 .record-dot {
@@ -204,12 +205,17 @@
 
 .record-info {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
 }
 .record-model {
   font-size: 15px;
   font-weight: 700;
   color: #1A1A1A;
   display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .record-process-tag {
   font-size: 13px;
@@ -227,11 +233,15 @@
   display: block;
   margin-top: 4px;
   font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .record-right {
   text-align: right;
   flex-shrink: 0;
+  width: 72px;
 }
 .record-time {
   font-size: 14px;
