@@ -1,0 +1,332 @@
+/* components/confirm-sheet/confirm-sheet.wxss */
+
+.confirm-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(26,26,26,0.55);
+  backdrop-filter: blur(3px);
+  z-index: 1999;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.confirm-sheet {
+  background: #FFFFFF;
+  border-radius: 24px 24px 0 0;
+  padding: 20px 22px;
+  padding-bottom: calc(40px + constant(safe-area-inset-bottom));
+  padding-bottom: calc(40px + env(safe-area-inset-bottom));
+}
+
+.sheet-handle {
+  width: 36px;
+  height: 4px;
+  background: #E5E5E5;
+  border-radius: 2px;
+  margin: 0 auto 16px;
+}
+
+/* ── 品牌条 ── */
+.sheet-brand-strip {
+  background: #F5D547;
+  border-radius: 12px;
+  padding: 10px 16px;
+  margin-bottom: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.sheet-brand-name {
+  font-size: 14px;
+  font-weight: 800;
+  color: #1A1A1A;
+  font-style: italic;
+}
+.sheet-brand-sub {
+  font-size: 12px;
+  color: rgba(26,26,26,0.55);
+}
+
+/* ── Section ── */
+.sheet-sec-label {
+  font-size: 12px;
+  color: #999999;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+  display: block;
+}
+.sheet-section {
+  margin-bottom: 14px;
+}
+
+/* ── Info Row ── */
+.info-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 0;
+  border-bottom: 1px solid #E5E5E5;
+}
+.info-row:last-child {
+  border-bottom: none;
+}
+.info-lbl {
+  font-size: 15px;
+  color: #555555;
+}
+.info-val {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1A1A1A;
+}
+.info-val.lg {
+  font-size: 18px;
+}
+.info-val-wrap {
+  display: flex;
+  align-items: center;
+}
+
+/* ── 加急 Tag ── */
+.tag-urgent {
+  display: inline-block;
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  background: #FFF3EE;
+  color: #FF6B35;
+  font-weight: 700;
+  margin-left: 7px;
+  border: 1px solid rgba(255,107,53,0.3);
+}
+
+/* ── 工序 Tag ── */
+.process-tag {
+  background: #F5D547;
+  color: #1A1A1A;
+  padding: 5px 16px;
+  border-radius: 10px;
+  font-size: 34px;
+  font-weight: 800;
+}
+
+/* ── 进度条 ── */
+.proc-bar-wrap {
+  margin-top: 8px;
+}
+.proc-bar-label {
+  font-size: 13px;
+  color: #555555;
+  margin-bottom: 6px;
+  display: block;
+}
+.proc-bar-bg {
+  height: 8px;
+  background: #F2F3F5;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.proc-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #F5D547, #D4B620);
+}
+
+/* ── 按钮 ── */
+.sheet-btns {
+  display: flex;
+  gap: 12px;
+  margin-top: 22px;
+}
+.btn-cancel {
+  flex: 1;
+  height: 54px;
+  border-radius: 27px;
+  border: 2px solid #1A1A1A;
+  color: #1A1A1A;
+  font-size: 17px;
+  font-weight: 600;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.btn-confirm {
+  flex: 2;
+  height: 54px;
+  border-radius: 27px;
+  background: #F5D547;
+  color: #1A1A1A;
+  font-size: 17px;
+  font-weight: 800;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  box-shadow: 0 6px 20px rgba(245,213,71,0.5);
+}
+.btn-confirm[disabled] {
+  background: #E5E5E5;
+  color: #999999;
+  box-shadow: none;
+}
+
+/* ══════════════════════════════════════════
+   工序时间轴弹窗 — 独立 overlay，z-index 高于 confirm
+   ══════════════════════════════════════════ */
+
+/* 时间轴遮罩 — 覆盖全屏 */
+.timeline-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(26,26,26,0.55);
+  backdrop-filter: blur(3px);
+  z-index: 2999;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+/* 时间轴面板 — 与 confirm-sheet 同高 */
+.timeline-sheet {
+  background: #FFFFFF;
+  border-radius: 24px 24px 0 0;
+  padding: 20px 22px;
+  padding-bottom: calc(40px + constant(safe-area-inset-bottom));
+  padding-bottom: calc(40px + env(safe-area-inset-bottom));
+  min-height: 60vh;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.timeline-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.timeline-title {
+  font-size: 18px;
+  font-weight: 800;
+  color: #1A1A1A;
+}
+.timeline-close {
+  width: 32px;
+  height: 32px;
+  line-height: 32px;
+  text-align: center;
+  font-size: 18px;
+  color: #999999;
+}
+
+.timeline-body {
+  flex: 1;
+  height: 0;
+  overflow-y: auto;
+}
+
+/* ── 时间轴列表 ── */
+.timeline-list {
+  padding-left: 4px;
+}
+
+.timeline-item {
+  display: flex;
+  gap: 14px;
+  min-height: 72px;
+}
+
+/* 左侧轨道 */
+.tl-track {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 20px;
+  flex-shrink: 0;
+}
+.tl-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 2.5px solid #E5E5E5;
+  background: #FFFFFF;
+  margin-top: 4px;
+}
+.tl-line {
+  width: 2px;
+  flex: 1;
+  background: #E5E5E5;
+  margin: 4px 0;
+}
+
+/* 已完成态 */
+.timeline-item.done .tl-dot {
+  background: #F5D547;
+  border-color: #D4B620;
+}
+.timeline-item.done .tl-line {
+  background: #F5D547;
+}
+
+/* 右侧内容 */
+.tl-content {
+  flex: 1;
+  padding-bottom: 16px;
+}
+.tl-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.tl-step {
+  font-size: 12px;
+  color: #999999;
+  font-weight: 600;
+}
+.tl-status {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+.status-done {
+  background: #FFFBE8;
+  color: #D4B620;
+}
+.status-pending {
+  background: #F2F3F5;
+  color: #999999;
+}
+
+.tl-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1A1A1A;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.tl-detail {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.tl-time {
+  font-size: 13px;
+  color: #555555;
+}
+.tl-user {
+  font-size: 13px;
+  color: #F5D547;
+  font-weight: 700;
+  background: #FFFBE8;
+  padding: 1px 8px;
+  border-radius: 4px;
+}

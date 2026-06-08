@@ -69,6 +69,9 @@ class Settings(BaseSettings):
         "http://localhost:5173",
         "http://localhost:5174",
         "http://localhost:8000",
+        "http://127.0.0.1:8001",
+        "http://localhost:8001",
+        "http://192.168.100.43:8001",
     ]
 
     # ── AI 加密 ──────────────────────────────────────────
@@ -94,6 +97,10 @@ class Settings(BaseSettings):
     # ── 生产报工 ──────────────────────────────────────────
     QR_SIGN_SECRET: str = "change-this-to-a-random-32-char-secret"  # 二维码 HMAC 签名密钥
     PRODUCTION_API_KEY: str = ""  # ACCIO WORK 调用报工接口的 API Key
+
+    # ── 微信小程序 ────────────────────────────────────────
+    WX_MINI_APPID: str = ""  # 微信小程序 AppID
+    WX_MINI_SECRET: str = ""  # 微信小程序 AppSecret
 
     @field_validator("CORS_ALLOW_ORIGINS", mode="before")
     @classmethod

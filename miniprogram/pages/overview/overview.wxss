@@ -1,0 +1,363 @@
+/* pages/overview/overview.wxss */
+
+.overview-page {
+  min-height: 100vh;
+  background: #F2F3F5;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── 顶部导航栏 ── */
+.top-bar {
+  background: #1A1A1A;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.nav-bar-inner {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+}
+.nav-back {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.back-arrow {
+  color: #F5D547;
+  font-size: 24px;
+  font-weight: 300;
+  line-height: 1;
+}
+.back-text {
+  color: #F5D547;
+  font-size: 14px;
+  font-weight: 500;
+}
+.nav-title {
+  color: #F5D547;
+  font-size: 17px;
+  font-weight: 700;
+}
+.nav-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.filter-icon {
+  color: rgba(245,213,71,0.7);
+  font-size: 11px;
+}
+.filter-text {
+  color: rgba(245,213,71,0.7);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* ── 筛选面板 ── */
+.filter-panel {
+  background: #FFFFFF;
+  padding: 0 16px;
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease, padding 0.3s ease;
+  flex-shrink: 0;
+}
+.filter-panel.filter-open {
+  max-height: 200px;
+  padding: 16px;
+}
+.filter-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.filter-label {
+  font-size: 14px;
+  color: #555555;
+  font-weight: 600;
+  width: 70px;
+  flex-shrink: 0;
+}
+.filter-date-group {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.filter-date-picker {
+  flex: 1;
+  height: 36px;
+  line-height: 36px;
+  background: #F2F3F5;
+  border-radius: 8px;
+  text-align: center;
+  font-size: 13px;
+  color: #1A1A1A;
+}
+.filter-sep {
+  font-size: 13px;
+  color: #999999;
+  flex-shrink: 0;
+}
+.filter-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 4px;
+}
+.filter-btn-reset {
+  flex: 1;
+  height: 40px;
+  line-height: 40px;
+  text-align: center;
+  border-radius: 20px;
+  border: 1.5px solid #E5E5E5;
+  font-size: 14px;
+  font-weight: 600;
+  color: #555555;
+}
+.filter-btn-search {
+  flex: 2;
+  height: 40px;
+  line-height: 40px;
+  text-align: center;
+  border-radius: 20px;
+  background: #F5D547;
+  font-size: 14px;
+  font-weight: 700;
+  color: #1A1A1A;
+}
+
+/* ── 列表区 ── */
+.overview-list {
+  flex: 1;
+  padding: 0 16px 100px;
+}
+
+/* ── 加载/空态 ── */
+.loading-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 0;
+}
+.loading-text {
+  font-size: 14px;
+  color: #999999;
+}
+
+/* ── 日期分隔线 ── */
+.date-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 0 10px;
+}
+.date-divider-line {
+  flex: 1;
+  height: 1px;
+  background: #E0E0E0;
+}
+.date-divider-text {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1A1A1A;
+  flex-shrink: 0;
+}
+
+/* ── 工序分组卡片 ── */
+.group-card {
+  background: #FFFFFF;
+  border-radius: 14px;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+  margin-bottom: 10px;
+}
+.group-card:active {
+  opacity: 0.85;
+}
+.group-left {
+  flex: 1;
+  min-width: 0;
+}
+.group-process-name {
+  display: block;
+  font-size: 18px;
+  font-weight: 800;
+  color: #1A1A1A;
+  margin-bottom: 6px;
+}
+.group-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.group-qty {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1A1A1A;
+  background: #F5D547;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+.group-count {
+  font-size: 12px;
+  color: #999999;
+}
+.group-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  flex-shrink: 0;
+  padding-left: 12px;
+}
+.group-time-label {
+  font-size: 11px;
+  color: #BBBBBB;
+  font-weight: 500;
+}
+.group-time {
+  font-size: 16px;
+  color: #555555;
+  font-weight: 700;
+}
+.group-arrow {
+  font-size: 20px;
+  color: #CCCCCC;
+  margin-top: 2px;
+}
+
+/* ── 空态 ── */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 60px 0;
+}
+.empty-icon { font-size: 48px; margin-bottom: 12px; }
+.empty-title { font-size: 17px; font-weight: 600; color: #1A1A1A; margin-bottom: 8px; }
+.empty-desc { font-size: 14px; color: #999999; }
+
+/* ── 明细弹窗（底部弹出） ── */
+.detail-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(26,26,26,0.5);
+  backdrop-filter: blur(4px);
+  z-index: 4999;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.detail-sheet {
+  width: 100%;
+  max-height: 70vh;
+  background: #FFFFFF;
+  border-radius: 24px 24px 0 0;
+  display: flex;
+  flex-direction: column;
+  animation: sheet-up 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes sheet-up {
+  0% { transform: translateY(100%); }
+  100% { transform: translateY(0); }
+}
+.sheet-handle {
+  width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  background: #E0E0E0;
+  margin: 12px auto 0;
+}
+.detail-header {
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid #F0F0F0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.detail-title {
+  font-size: 18px;
+  font-weight: 800;
+  color: #1A1A1A;
+}
+.detail-date {
+  font-size: 14px;
+  color: #999999;
+  font-weight: 500;
+}
+.detail-list {
+  flex: 1;
+  padding: 12px 16px 24px;
+  max-height: 55vh;
+}
+
+/* ── 明细列表项（复用 record-card 风格） ── */
+.detail-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid #F5F5F5;
+}
+.detail-dot {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #FDF0A0;
+  border: 2px solid #F5D547;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+  color: #1A1A1A;
+  font-weight: 700;
+}
+.detail-info {
+  flex: 1;
+}
+.detail-model {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1A1A1A;
+  display: block;
+}
+.detail-process-tag {
+  font-size: 12px;
+  color: #1A1A1A;
+  display: inline-block;
+  margin-top: 2px;
+  background: #F5D547;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+.detail-order {
+  font-size: 18px;
+  color: #F5D547;
+  display: block;
+  margin-top: 3px;
+  font-weight: 700;
+}
+.detail-time {
+  font-size: 13px;
+  color: #999999;
+  flex-shrink: 0;
+}
+.detail-empty {
+  padding: 40px 0;
+  text-align: center;
+}
+.detail-empty-text {
+  font-size: 14px;
+  color: #999999;
+}

@@ -1,0 +1,49 @@
+/* components/nav-bar/nav-bar.wxss */
+
+.nav-bar {
+  background: #1A1A1A;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+}
+.nav-content {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
+  position: relative;
+}
+.nav-title {
+  color: #F5D547;
+  font-size: 17px;
+  font-weight: 700;
+}
+.nav-left {
+  position: absolute;
+  left: 16px;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+}
+.nav-back {
+  font-size: 24px;
+  color: #F5D547;
+  font-weight: 300;
+}
+.nav-right {
+  position: absolute;
+  right: 16px;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+}
+.nav-right-text {
+  color: rgba(245,213,71,0.7);
+  font-size: 14px;
+  font-weight: 500;
+}

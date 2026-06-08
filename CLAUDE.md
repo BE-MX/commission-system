@@ -60,7 +60,7 @@ commission-system/
 │   │   ├── tracking/      # 物流跟踪领域模块（router + shipment/upload/ocr/polling/staging/daily_report/push_service + carriers/ + status.py + templates/）
 │   │   ├── asset/         # 素材管理领域模块（router/models/schemas/service facade + analyze/batch/stats/tag/favorite/asset_service 子模块）
 │   │   ├── color/         # 发色数字化领域模块（router/models/schemas/service facade + palette/blend/calc/trend/swatch/social_extract 子模块）
-│   │   ├── production/    # 生产报工领域模块（router/models/schemas/service facade + process/route/binding/report_service 子模块；与 stock/production_* 生产订单是两个模块）
+│   │   ├── production/    # 生产报工领域模块（router/models/schemas/service facade + process/route/binding/report/dashboard_service 子模块；与 stock/production_* 生产订单是两个模块）
 │   │   ├── report/         # 报表中心领域模块（router/models/schemas/data_service — Stimulsoft Reports.JS 模板 CRUD + 数据组装）
 │   │   └── main.py        # FastAPI 入口（薄,只装配 app/middleware/lifespan,bootstrap/scheduler/router 都委托给子模块）
 │   ├── alembic/           # 数据库迁移
@@ -233,6 +233,7 @@ deploy\restart.bat                       # 仅重启 CommissionSystem service
     - `PUT /production/order-items/{item_id}/received` — 录入入库数量（`received_qty == order_qty` 时自动将明细状态改为已完成）
     - `DELETE /production/order-items/{item_id}` — 删除单条明细
 - `/api/production` — 生产报工（独立领域模块 `app/production/`，与 stock 下的生产订单是两个模块）
+  - `GET /dashboard` — 生产看板数据聚合（需 `production:read`，4 条批量 SQL + 内存聚合，无 N+1）
   - `GET /processes` / `POST /processes` / `PUT /processes/{id}` / `DELETE /processes/{id}` — 工序 CRUD（需 `production:admin`）
   - `GET /active-processes` — 启用中工序列表（选择器用）
   - `GET /process-routes` / `POST /process-routes` / `PUT /process-routes/{id}` — 工序路线 CRUD（需 `production:admin`）

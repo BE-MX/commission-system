@@ -1,0 +1,74 @@
+/* components/result-toast/result-toast.wxss */
+
+.result-toast {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.9);
+  opacity: 0;
+  z-index: 1000;
+  border-radius: 24px;
+  padding: 40rpx 48rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12rpx;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.result-toast.show {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+  pointer-events: auto;
+}
+
+.result-toast.success {
+  background: linear-gradient(135deg, #00C48C 0%, #009A72 100%);
+  box-shadow: 0 16rpx 48rpx rgba(0, 196, 140, 0.35);
+}
+
+.result-toast.error {
+  background: linear-gradient(135deg, #E53935 0%, #B71C1C 100%);
+  box-shadow: 0 16rpx 48rpx rgba(229, 57, 53, 0.35);
+}
+
+.toast-icon {
+  width: 80rpx;
+  height: 80rpx;
+  border-radius: 50%;
+  border: 4rpx solid rgba(255,255,255,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 8rpx;
+}
+
+.icon-check {
+  font-size: 48rpx;
+  color: #FFFFFF;
+  font-weight: 300;
+}
+
+.icon-fail {
+  font-size: 48rpx;
+  color: #FFFFFF;
+  font-weight: 300;
+}
+
+.toast-title {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #FFFFFF;
+}
+
+.toast-desc {
+  font-size: 26rpx;
+  color: rgba(255,255,255,0.85);
+}
+
+.toast-time {
+  font-size: 22rpx;
+  color: rgba(255,255,255,0.6);
+  margin-top: 4rpx;
+}

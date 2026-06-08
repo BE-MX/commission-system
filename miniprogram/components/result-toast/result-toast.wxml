@@ -1,0 +1,20 @@
+<!-- components/result-toast/result-toast.wxml -->
+<view class="result-toast {{type}} {{visible ? 'show' : ''}}" wx:if="{{visible}}" bindtap="onTap">
+  <!-- 成功 -->
+  <block wx:if="{{type === 'success'}}">
+    <view class="toast-icon">
+      <text class="icon-check">✓</text>
+    </view>
+    <text class="toast-title">{{title}}</text>
+    <text class="toast-desc">报工成功</text>
+    <text class="toast-time">{{time}}</text>
+  </block>
+  <!-- 失败 -->
+  <block wx:else>
+    <view class="toast-icon error">
+      <text class="icon-fail">✗</text>
+    </view>
+    <text class="toast-title">{{title}}</text>
+    <text class="toast-desc">{{desc}}</text>
+  </block>
+</view>

@@ -1,0 +1,57 @@
+<!-- pages/login/login.wxml -->
+<view class="login-page">
+  <!-- Logo 区 -->
+  <view class="logo-area">
+    <view class="logo-wrap">
+      <text class="logo-le">Le</text>
+      <text class="logo-shine">Shine®</text>
+      <text class="logo-hair"> Hair</text>
+    </view>
+    <text class="logo-subtitle">生产报工系统</text>
+  </view>
+
+  <!-- 开发模式：用工号直接登录 -->
+  <view class="form-area" wx:if="{{devMode}}">
+    <view class="form-title">开发调试登录</view>
+    <view class="form-desc">输入方舟平台工号或手机号，直接换取 Token</view>
+    <input
+      class="form-input"
+      placeholder="工号 / 手机号"
+      placeholder-class="input-placeholder"
+      value="{{devIdentifier}}"
+      bindinput="onDevIdentifierInput"
+      bindconfirm="onDevLogin"
+    />
+    <button class="btn-bind" bindtap="onDevLogin" disabled="{{!devIdentifier || loading}}">
+      <text wx:if="{{loading}}">登录中...</text>
+      <text wx:else>登录</text>
+    </button>
+  </view>
+
+  <!-- 正式模式：自动 wx.login → 绑定 -->
+  <block wx:if="{{!devMode}}">
+    <!-- 绑定表单（未绑定时显示）-->
+    <view class="form-area" wx:if="{{!isLoggingIn}}">
+      <view class="form-title">绑定方舟账号</view>
+      <view class="form-desc">请输入您在方舟平台注册的工号或手机号，首次使用需绑定微信</view>
+      <input
+        class="form-input"
+        placeholder="工号 / 手机号"
+        placeholder-class="input-placeholder"
+        value="{{identifier}}"
+        bindinput="onIdentifierInput"
+        bindconfirm="onBind"
+      />
+      <button class="btn-bind" bindtap="onBind" disabled="{{!identifier || loading}}">
+        <text wx:if="{{loading}}">绑定中...</text>
+        <text wx:else>绑定并登录</text>
+      </button>
+    </view>
+
+    <!-- 自动登录中 -->
+    <view class="auto-login" wx:if="{{isLoggingIn}}">
+      <view class="spinner"></view>
+      <text class="auto-login-text">登录中...</text>
+    </view>
+  </block>
+</view>

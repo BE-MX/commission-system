@@ -1,0 +1,142 @@
+/* pages/assistant/assistant.wxss */
+
+.assistant-page {
+  min-height: 100vh;
+  background: #F2F3F5;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── 顶栏 ── */
+.brand-bar { background: #1A1A1A; flex-shrink: 0; }
+.brand-bar-inner {
+  height: 44px; display: flex; align-items: center; justify-content: space-between; padding: 0 20px;
+}
+.logo-wrap { display: flex; flex-direction: column; line-height: 1; }
+.logo-le { font-size: 11px; font-weight: 700; color: #F5D547; letter-spacing: 0.5px; }
+.logo-shine { font-size: 22px; font-weight: 900; color: #F5D547; letter-spacing: -0.5px; font-style: italic; }
+.logo-hair { font-size: 10px; font-weight: 600; color: rgba(245,213,71,0.6); letter-spacing: 2px; margin-top: 1px; }
+.brand-bar-right { color: rgba(245,213,71,0.65); font-size: 13px; font-weight: 500; }
+.nav-bar {
+  background: #1A1A1A; height: 44px;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.nav-title { color: #F5D547; font-size: 17px; font-weight: 700; }
+
+/* ── 消息区 ── */
+.chat-area {
+  flex: 1;
+  padding: 14px 16px;
+  min-height: 300px;
+}
+
+.msg-wrap {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+.msg-wrap:nth-child(2n) {
+  flex-direction: row-reverse;
+}
+
+.msg-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.msg-avatar.bot {
+  background: #F5D547;
+  color: #1A1A1A;
+}
+.msg-avatar.user {
+  background: #1A1A1A;
+  color: #F5D547;
+}
+
+.msg-bubble {
+  max-width: 236px;
+  padding: 12px 16px;
+  border-radius: 18px;
+  font-size: 15px;
+  line-height: 1.55;
+  word-break: break-all;
+}
+.msg-bubble.bot {
+  background: #FFFFFF;
+  color: #1A1A1A;
+  border-radius: 4px 18px 18px 18px;
+  box-shadow: 0 2px 14px rgba(0,0,0,0.09);
+}
+.msg-bubble.user {
+  background: #1A1A1A;
+  color: #F5D547;
+  border-radius: 18px 4px 18px 18px;
+}
+
+/* ── 输入区 ── */
+.chat-input-area {
+  background: #FFFFFF;
+  border-top: 1px solid #E5E5E5;
+  padding: 12px 14px;
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.voice-btn {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: #FDF0A0;
+  border: 2px solid #F5D547;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.voice-btn:active {
+  background: #F5D547;
+}
+.voice-icon {
+  font-size: 22px;
+}
+
+.input-box {
+  flex: 1;
+  background: #F2F3F5;
+  border: none;
+  border-radius: 22px;
+  padding: 11px 16px;
+  font-size: 15px;
+  color: #1A1A1A;
+  min-height: 40px;
+  max-height: 120px;
+}
+.input-placeholder {
+  color: #C4CDD6;
+}
+
+.send-btn {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: #1A1A1A;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.send-icon {
+  color: #F5D547;
+  font-size: 20px;
+  font-weight: 800;
+}

@@ -1,0 +1,38 @@
+<!-- custom-tab-bar/index.wxml -->
+<!-- 底栏：品牌黑底 + 统一线条风格图标 + 黄色光晕 + 激活指示条 -->
+
+<view class="tabbar safe-bottom" wx:if="{{!hide}}">
+  <!-- 扫码报工：扫描框 — 四角取景框 + 扫描线 -->
+  <view class="tab-item {{selected === 0 ? 'active' : ''}}" bindtap="onTabTap" data-index="0">
+    <view class="tab-icon icon-scan">
+      <view class="sc-c sc-tl"></view>
+      <view class="sc-c sc-tr"></view>
+      <view class="sc-c sc-bl"></view>
+      <view class="sc-c sc-br"></view>
+      <view class="sc-line"></view>
+    </view>
+    <text class="tab-label">扫码报工</text>
+  </view>
+
+  <!-- 拍照上传：相机 — 机身 + 镜头 + 闪光灯 -->
+  <view class="tab-item {{selected === 1 ? 'active' : ''}}" bindtap="onTabTap" data-index="1">
+    <view class="tab-icon icon-camera">
+      <view class="cam-body"></view>
+      <view class="cam-lens"></view>
+      <view class="cam-top"></view>
+    </view>
+    <text class="tab-label">拍照上传</text>
+  </view>
+
+  <!-- 生产助手：客服耳机 — 头带弧 + 耳罩 + 麦克风 -->
+  <view class="tab-item {{selected === 2 ? 'active' : ''}}" bindtap="onTabTap" data-index="2">
+    <view class="tab-icon icon-headset">
+      <view class="hs-band"></view>
+      <view class="hs-ear-l"></view>
+      <view class="hs-ear-r"></view>
+      <view class="hs-boom"></view>
+      <view class="hs-mic"></view>
+    </view>
+    <text class="tab-label">生产助手</text>
+  </view>
+</view>

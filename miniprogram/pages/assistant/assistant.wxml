@@ -1,0 +1,57 @@
+<!-- pages/assistant/assistant.wxml -->
+<view class="assistant-page">
+  <!-- 顶栏 -->
+  <view class="brand-bar" style="padding-top: {{statusBarHeight}}px">
+    <view class="brand-bar-inner">
+      <view class="logo-wrap">
+        <text class="logo-le">le</text>
+        <text class="logo-shine">Shine®</text>
+        <text class="logo-hair">Hair</text>
+      </view>
+      <text class="brand-bar-right">生产管理</text>
+    </view>
+  </view>
+  <view class="nav-bar"><text class="nav-title">生产助手</text></view>
+
+  <!-- 消息区 -->
+  <scroll-view
+    class="chat-area"
+    scroll-y
+    scroll-into-view="{{scrollTarget}}"
+    scroll-with-animation
+  >
+    <view class="msg-wrap" wx:for="{{messages}}" wx:key="index" id="msg-{{index}}">
+      <!-- 系统消息 -->
+      <block wx:if="{{item.type === 'system'}}">
+        <view class="msg-avatar bot">lS</view>
+        <view class="msg-bubble bot">{{item.text}}</view>
+      </block>
+      <!-- 用户消息 -->
+      <block wx:else>
+        <view class="msg-avatar user">{{avatarLetter}}</view>
+        <view class="msg-bubble user">{{item.text}}</view>
+      </block>
+    </view>
+  </scroll-view>
+
+  <!-- 底部输入区 -->
+  <view class="chat-input-area safe-bottom">
+    <view class="voice-btn" bindtouchstart="onVoiceStart" bindtouchend="onVoiceStop" bindtouchmove="onVoiceMove">
+      <text class="voice-icon">🎙</text>
+    </view>
+    <textarea
+      class="input-box"
+      value="{{inputText}}"
+      placeholder="输入指令或问题..."
+      placeholder-class="input-placeholder"
+      bindinput="onInputChange"
+      bindconfirm="onSend"
+      auto-height
+      maxlength="500"
+      adjust-position="{{true}}"
+    />
+    <view class="send-btn" bindtap="onSend">
+      <text class="send-icon">↑</text>
+    </view>
+  </view>
+</view>

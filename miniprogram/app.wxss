@@ -1,0 +1,54 @@
+/* app.wxss — 全局样式 */
+
+/* ── 品牌变量 ── */
+page {
+  --brand-yellow: #F5D547;
+  --brand-black: #1A1A1A;
+  --brand-yellow-d: #D4B620;
+  --brand-yellow-l: #FDF0A0;
+  --brand-yellow-bg: #FFFBE8;
+  --gray-bg: #F2F3F5;
+  --card-bg: #FFFFFF;
+  --text-main: #1A1A1A;
+  --text-sub: #555555;
+  --text-muted: #999999;
+  --border: #E5E5E5;
+  --success: #00C48C;
+  --warning: #FF6B35;
+  --danger: #E53935;
+
+  font-family: -apple-system, 'PingFang SC', 'Noto Sans SC', 'Helvetica Neue', sans-serif;
+  font-size: 28rpx;
+  color: var(--text-main);
+  background: var(--gray-bg);
+  line-height: 1.5;
+}
+
+/* ── 公共工具类 ── */
+.flex { display: flex; }
+.flex-col { display: flex; flex-direction: column; }
+.flex-center { display: flex; align-items: center; justify-content: center; }
+.flex-between { display: flex; align-items: center; justify-content: space-between; }
+.flex-1 { flex: 1; }
+
+.text-main { color: var(--text-main); }
+.text-sub { color: var(--text-sub); }
+.text-muted { color: var(--text-muted); }
+.text-brand { color: var(--brand-yellow); }
+.text-warning { color: var(--warning); }
+.text-success { color: var(--success); }
+
+.fw-bold { font-weight: 700; }
+.fw-semibold { font-weight: 600; }
+
+.ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 安全区 */
+.safe-bottom {
+  padding-bottom: constant(safe-area-inset-bottom);
+  padding-bottom: env(safe-area-inset-bottom);
+}

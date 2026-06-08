@@ -1,0 +1,41 @@
+{
+  "pages": [
+    "pages/scan/scan",
+    "pages/photo/photo",
+    "pages/assistant/assistant",
+    "pages/login/login",
+    "pages/history/history",
+    "pages/overview/overview"
+  ],
+  "tabBar": {
+    "custom": true,
+    "color": "#999999",
+    "selectedColor": "#F5D547",
+    "backgroundColor": "#1A1A1A",
+    "borderStyle": "black",
+    "list": [
+      {
+        "pagePath": "pages/scan/scan",
+        "text": "扫码报工"
+      },
+      {
+        "pagePath": "pages/photo/photo",
+        "text": "拍照上传"
+      },
+      {
+        "pagePath": "pages/assistant/assistant",
+        "text": "生产助手"
+      }
+    ]
+  },
+  "window": {
+    "navigationBarBackgroundColor": "#1A1A1A",
+    "navigationBarTitleText": "leShine 生产报工",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#F2F3F5",
+    "backgroundTextStyle": "dark"
+  },
+  "style": "v2",
+  "darkmode": false,
+  "sitemapLocation": "sitemap.json"
+}

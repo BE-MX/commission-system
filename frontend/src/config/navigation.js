@@ -17,7 +17,7 @@ import {
   DataAnalysis, User, UserFilled, Connection, OfficeBuilding, Document,
   Money, Refresh, List, Van, Upload, Box, Setting, Aim, Reading,
   MagicStick, Notebook, Calendar, Camera, EditPen, Stamp, TrendCharts,
-  Lock, Lightning, Picture, Collection, CollectionTag,
+  Lock, Lightning, Picture, Collection, CollectionTag, DataBoard,
 } from '@element-plus/icons-vue'
 
 /**
@@ -292,6 +292,17 @@ export const NAV_ENTRIES = [
     menu: {
       group: 'stock', title: '工序路线', icon: Stamp, order: 37,
       permission: 'production:admin',
+    },
+  },
+  {
+    path: '/production/dashboard',
+    name: 'ProductionDashboard',
+    component: () => import('@/views/production/ProductionDashboard.vue'),
+    title: '生产看板',
+    permission: 'production:read',
+    menu: {
+      group: 'stock', title: '生产看板', icon: DataBoard, order: 38,
+      permission: 'production:read',
     },
   },
   {

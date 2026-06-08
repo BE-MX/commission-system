@@ -46,3 +46,6 @@ export const getQRCode = (orderProductId, size = 200) =>
   productionClient.get(`/order-products/${orderProductId}/qrcode`, { params: { size } })
 export const getPrintCardData = (orderProductId) =>
   productionClient.get(`/order-products/${orderProductId}/print-card`)
+
+// ── 生产看板 ──────────────────────────────────────────
+export const getDashboardData = () => productionClient.get('/dashboard')

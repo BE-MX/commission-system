@@ -1,11 +1,11 @@
 # anatomy.md
 
-> Auto-maintained by OpenWolf. Last scanned: 2026-06-03T11:46:41.507Z
-> Files: 141 tracked | Anatomy hits: 0 | Misses: 0
+> Auto-maintained by OpenWolf. Last scanned: 2026-06-08T07:28:57.018Z
+> Files: 215 tracked | Anatomy hits: 0 | Misses: 0
 
 ## ./
 
-- `CLAUDE.md` — OpenWolf (~11681 tok)
+- `CLAUDE.md` — OpenWolf (~11703 tok)
 - `README.md` — Project documentation (~888 tok)
 
 ## .claude/
@@ -23,6 +23,7 @@
 ## C:/Users/windb/.claude/plans/
 
 - `bubbly-herding-moler.md` — 素材标签筛选性能优化方案 (~869 tok)
+- `golden-brewing-cosmos.md` — 生产看板集成计划 (~1360 tok)
 - `nifty-booping-aho.md` — 列表表头排序统一改造方案 (~2099 tok)
 - `whimsical-purring-cocke.md` — JimuReport → Stimulsoft Reports.JS 迁移计划 (~2637 tok)
 
@@ -39,7 +40,7 @@
 - `project_mobile_login_flow.md` (~318 tok)
 - `project_phase2_governance.md` (~1154 tok)
 - `project_production_module.md` — 数据库（4 张表，025 + 026 迁移） (~609 tok)
-- `project_production_reporting_module.md` — 2026-06-01 生产报工模块 (~824 tok)
+- `project_production_reporting_module.md` — 2026-06-01 生产报工模块 (~1113 tok)
 - `project_stimulsoft_module.md` — 2026-06-03 JimuReport → Stimulsoft 迁移 (~1071 tok)
 - `project_stock_module.md` (~866 tok)
 - `project_table_sorting.md` — 列表表头排序统一改造 (~390 tok)
@@ -291,7 +292,7 @@
 
 ## backend/app/
 
-- `routers.py` — 集中注册所有 FastAPI router。新增业务模块时在此追加。 (~782 tok)
+- `routers.py` — 集中注册所有 FastAPI router。新增业务模块时在此追加。 (~817 tok)
 
 ## backend/app/ai/
 
@@ -333,7 +334,7 @@
 
 ## backend/app/core/
 
-- `config.py` — 环境变量配置（Pydantic Settings） (~1394 tok)
+- `config.py` — 环境变量配置（Pydantic Settings） (~1466 tok)
 
 ## backend/app/design/
 
@@ -346,15 +347,24 @@
 ## backend/app/insight/templates/
 
 
+## backend/app/mini/
+
+- `__init__.py` — 微信小程序端接口模块 (~5 tok)
+- `auth.py` — 微信小程序端认证依赖 — JWT 解析 & 微信 jscode2session (~604 tok)
+- `router.py` — 微信小程序端路由 — /api/mini/* (~2062 tok)
+- `schemas.py` — 微信小程序端接口 — Pydantic schemas (~646 tok)
+- `service.py` — 微信小程序端 — 业务逻辑层 (~6247 tok)
+
 ## backend/app/production/
 
 - `__init__.py` — 生产报工领域模块 (~14 tok)
 - `binding_service.py` — 产品路线绑定 + 用户工序绑定 service (~2071 tok)
+- `dashboard_service.py` — 生产看板数据聚合 service — 批量查询版，零 N+1 (~1966 tok)
 - `models.py` — 生产报工 — SQLAlchemy ORM 模型 (~1484 tok)
 - `process_service.py` — 工序管理 service (~724 tok)
 - `report_service.py` — 报工核心 service + 进度初始化/查询 (~3429 tok)
 - `route_service.py` — 工序路线管理 service (~1263 tok)
-- `router.py` — 生产报工领域模块 — FastAPI router (~3773 tok)
+- `router.py` — 生产报工领域模块 — FastAPI router (~3879 tok)
 - `schemas.py` — 生产报工 — Pydantic schemas (~1656 tok)
 - `service.py` — 生产报工 — facade re-export (~82 tok)
 
@@ -409,11 +419,15 @@
 - `index.html` — 莱莎方舟 · 素材管理 (~15670 tok)
 - `login.html` — 登录 · 莱莎方舟 (~3000 tok)
 
+## frontend/src/
+
+- `main.js` — Declares app (~221 tok)
+
 ## frontend/src/api/
 
 - `asset.js` — ── 标签维度 ──────────────────────────────────────────── (~1558 tok)
 - `clients.js` — 业务域 API client 集合。 (~314 tok)
-- `production.js` — 生产报工 API client (~848 tok)
+- `production.js` — 生产报工 API client (~884 tok)
 - `reportCenter.js` — 报表中心 API（Stimulsoft） (~364 tok)
 - `stock.js` — ── 销量备货一览 ──────────────────────────────────────── (~1280 tok)
 
@@ -422,6 +436,21 @@
 - `StimulsoftDesigner.vue` — Vue: setup (~796 tok)
 - `StimulsoftViewer.vue` — 报表编码，如 production_order_print (~930 tok)
 
+## frontend/src/components/production/
+
+- `BaseModal.vue` — Vue: setup (~966 tok)
+- `DashboardTopbar.vue` — Vue: setup (~923 tok)
+- `DeliveryTimeline.vue` — Vue: setup (~1166 tok)
+- `DetailTable.vue` — Vue: setup (~704 tok)
+- `KpiCard.vue` — Vue: setup (~739 tok)
+- `OrderDetailBarChart.vue` — Vue: 已入库, setup (~876 tok)
+- `OrderProgressList.vue` — Vue: setup (~1096 tok)
+- `ProcessBarChart.vue` — Vue: setup (~593 tok)
+- `StatusDonutChart.vue` — Vue: setup (~629 tok)
+- `UrgentBarChart.vue` — Vue: 已入库, setup (~717 tok)
+- `UrgentOrderPanel.vue` — Vue: setup (~1023 tok)
+- `WipModelGrid.vue` — Vue: setup (~904 tok)
+
 ## frontend/src/composables/
 
 - `useStimulsoft.js` — Stimulsoft Reports.JS 动态加载 composable (~2144 tok)
@@ -429,7 +458,7 @@
 
 ## frontend/src/config/
 
-- `navigation.js` — 导航配置 — 单一来源。 (~5166 tok)
+- `navigation.js` — 导航配置 — 单一来源。 (~5262 tok)
 
 ## frontend/src/router/
 
@@ -437,6 +466,10 @@
 
 ## frontend/src/stores/
 
+
+## frontend/src/styles/
+
+- `dashboard-theme.css` — Styles: 64 vars (~680 tok)
 
 ## frontend/src/views/asset/
 
@@ -496,7 +529,13 @@
 - `PrintCard.vue` — Vue: setup (~1593 tok)
 - `ProcessManage.vue` — Vue: setup (~1624 tok)
 - `ProcessRouteManage.vue` — Vue: setup (~2577 tok)
+- `ProductionDashboard.vue` — Vue: 未开始, setup (~5310 tok)
 - `ProductManage.vue` — Vue: setup (~2165 tok)
+
+## frontend/src/views/production/composables/
+
+- `useDashboardData.js` — 生产看板数据 composable (~948 tok)
+- `useDashboardTheme.js` — Exports useDashboardTheme (~250 tok)
 
 ## frontend/src/views/report/
 
@@ -533,6 +572,92 @@
 
 - `ShippingDailyReport.vue` — Vue: setup (~4865 tok)
 - `TrackingList.vue` — Vue: setup (~4603 tok)
+
+## miniprogram/
+
+- `app.js` — app.js (~263 tok)
+- `app.json` (~259 tok)
+- `app.wxss` (~371 tok)
+- `project.config.json` (~330 tok)
+- `project.private.config.json` (~188 tok)
+- `sitemap.json` (~47 tok)
+
+## miniprogram/components/confirm-sheet/
+
+- `confirm-sheet.js` — components/confirm-sheet/confirm-sheet.js (~638 tok)
+- `confirm-sheet.json` (~7 tok)
+- `confirm-sheet.wxml` (~1059 tok)
+- `confirm-sheet.wxss` (~1525 tok)
+
+## miniprogram/components/nav-bar/
+
+- `nav-bar.js` — components/nav-bar/nav-bar.js (~142 tok)
+- `nav-bar.json` (~7 tok)
+- `nav-bar.wxml` (~134 tok)
+- `nav-bar.wxss` (~199 tok)
+
+## miniprogram/components/result-toast/
+
+- `result-toast.js` — components/result-toast/result-toast.js (~119 tok)
+- `result-toast.json` (~7 tok)
+- `result-toast.wxml` (~177 tok)
+- `result-toast.wxss` (~368 tok)
+
+## miniprogram/custom-tab-bar/
+
+- `index.js` — custom-tab-bar/index.js (~102 tok)
+- `index.json` (~7 tok)
+- `index.wxml` (~353 tok)
+- `index.wxss` (~1415 tok)
+
+## miniprogram/pages/assistant/
+
+- `assistant.js` — pages/assistant/assistant.js — 零 import (~1106 tok)
+- `assistant.json` (~10 tok)
+- `assistant.wxml` (~465 tok)
+- `assistant.wxss` (~778 tok)
+
+## miniprogram/pages/history/
+
+- `history.js` — pages/history/history.js — 零 import (~2123 tok)
+- `history.json` (~20 tok)
+- `history.wxml` (~1497 tok)
+- `history.wxss` (~2393 tok)
+
+## miniprogram/pages/login/
+
+- `login.js` — pages/login/login.js — 零 import (~1053 tok)
+- `login.json` (~20 tok)
+- `login.wxml` (~475 tok)
+- `login.wxss` (~603 tok)
+
+## miniprogram/pages/overview/
+
+- `overview.js` — pages/overview/overview.js — 报工总览页（全用户，按日期+工序分组） (~870 tok)
+- `overview.json` (~35 tok)
+- `overview.wxml` (~1140 tok)
+- `overview.wxss` (~1644 tok)
+
+## miniprogram/pages/photo/
+
+- `photo.js` — pages/photo/photo.js — 零 import (~247 tok)
+- `photo.json` (~10 tok)
+- `photo.wxml` (~371 tok)
+- `photo.wxss` (~658 tok)
+
+## miniprogram/pages/scan/
+
+- `scan.js` — pages/scan/scan.js — 零 import，纯回调 (~3681 tok)
+- `scan.json` (~46 tok)
+- `scan.wxml` (~1735 tok)
+- `scan.wxss` (~3499 tok)
+
+## miniprogram/utils/
+
+- `constants.js` — utils/constants.js — 常量定义 (~147 tok)
+- `crypto.js` — 简单签名校验 (~56 tok)
+- `request.js` — utils/request.js — 统一请求封装 (~393 tok)
+- `storage.js` — utils/storage.js — 本地存储封装 (~139 tok)
 
 ## 登录动效/app/
 

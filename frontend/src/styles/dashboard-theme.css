@@ -1,0 +1,85 @@
+/* 深色主题（默认）*/
+[data-theme="dark"],
+:root {
+  --db-bg-deep: #0d1117;
+  --db-bg-card: #161b22;
+  --db-bg-card2: #1c2128;
+  --db-border: #30363d;
+  --db-accent-blue: #58a6ff;
+  --db-accent-cyan: #39d353;
+  --db-accent-gold: #f0b429;
+  --db-accent-red: #ff6b6b;
+  --db-accent-purple: #bc8cff;
+  --db-accent-teal: #56d4c5;
+  --db-text-primary: #e6edf3;
+  --db-text-muted: #8b949e;
+  --db-text-dim: #484f58;
+  --db-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  /* ECharts 主题名 */
+  --db-echarts-theme: dark;
+  /* topbar 专用 */
+  --db-topbar-bg: #0d1117;
+  --db-card-bg: #161b22;
+  --db-hover-bg: #1c2128;
+  --db-text-secondary: #8b949e;
+  --db-accent-green: #39d353;
+  --db-badge-red-bg: rgba(255,107,107,.15);
+  --db-progress-track: rgba(0,0,0,.2);
+  --db-accent-orange: #f0b429;
+  /* modal 专用 */
+  --db-overlay-bg: rgba(0,0,0,.6);
+  --db-shadow-heavy: rgba(0,0,0,.5);
+  --db-scrollbar: #30363d;
+  /* table */
+  --db-table-head-bg: #1c2128;
+  --db-border-subtle: rgba(48,54,61,.5);
+  /* badge */
+  --db-badge-blue-bg: rgba(88,166,255,.12);
+  --db-badge-green-bg: rgba(57,211,83,.1);
+  --db-badge-orange-bg: rgba(240,180,41,.1);
+  /* WIP card */
+  --db-accent-purple-alpha: rgba(188,140,255,.15);
+}
+
+
+/* 浅色主题 */
+[data-theme="light"] {
+  --db-bg-deep: #f0f2f5;
+  --db-bg-card: #ffffff;
+  --db-bg-card2: #f6f8fa;
+  --db-border: #d0d7de;
+  --db-accent-blue: #0969da;
+  --db-accent-cyan: #1a7f37;
+  --db-accent-gold: #9a6700;
+  --db-accent-red: #cf222e;
+  --db-accent-purple: #6639ba;
+  --db-accent-teal: #1b7c83;
+  --db-text-primary: #1f2328;
+  --db-text-muted: #656d76;
+  --db-text-dim: #afb8c1;
+  --db-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  /* 浅色主题使用 ECharts 默认亮色主题（空字符串） */
+  --db-echarts-theme: '';
+  /* topbar 专用 */
+  --db-topbar-bg: #f0f2f5;
+  --db-card-bg: #ffffff;
+  --db-hover-bg: #f6f8fa;
+  --db-text-secondary: #656d76;
+  --db-accent-green: #1a7f37;
+  --db-badge-red-bg: rgba(207,34,46,.1);
+  --db-progress-track: rgba(0,0,0,.06);
+  --db-accent-orange: #9a6700;
+  /* modal 专用 */
+  --db-overlay-bg: rgba(0,0,0,.3);
+  --db-shadow-heavy: rgba(0,0,0,.12);
+  --db-scrollbar: #d0d7de;
+  /* table */
+  --db-table-head-bg: #f6f8fa;
+  --db-border-subtle: rgba(208,215,222,.5);
+  /* badge */
+  --db-badge-blue-bg: rgba(9,105,218,.08);
+  --db-badge-green-bg: rgba(26,127,55,.08);
+  --db-badge-orange-bg: rgba(154,103,0,.08);
+  /* WIP card */
+  --db-accent-purple-alpha: rgba(102,57,186,.1);
+}

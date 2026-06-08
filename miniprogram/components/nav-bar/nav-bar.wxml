@@ -1,0 +1,14 @@
+<!-- components/nav-bar/nav-bar.wxml -->
+<view class="nav-bar" style="padding-top: {{statusBarHeight}}px">
+  <view class="nav-content">
+    <view class="nav-left" wx:if="{{showBack}}" bindtap="onBack">
+      <text class="nav-back">‹</text>
+    </view>
+    <view class="nav-center">
+      <text class="nav-title">{{title}}</text>
+    </view>
+    <view class="nav-right" bindtap="onRightTap" wx:if="{{rightText}}">
+      <text class="nav-right-text">{{rightText}}</text>
+    </view>
+  </view>
+</view>

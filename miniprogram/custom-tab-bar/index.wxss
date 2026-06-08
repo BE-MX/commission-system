@@ -1,0 +1,266 @@
+/* custom-tab-bar/index.wxss
+   底栏：品牌黑底 + 统一线条风格图标（2px 描边） + 黄色光晕 + 激活指示条
+   三个图标统一：28×28px 容器，2px 描边，圆角风格一致 */
+
+.tabbar {
+  background: #1A1A1A;
+  height: 83px;
+  display: flex;
+  align-items: flex-start;
+  padding-top: 10px;
+  border-top: 2px solid rgba(245,213,71,0.2);
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 999;
+}
+
+.tab-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+  position: relative;
+}
+
+/* ── Label ── */
+.tab-label {
+  font-size: 12px;
+  color: rgba(255,255,255,0.65);
+  font-weight: 400;
+}
+.tab-item.active .tab-label {
+  color: #F5D547;
+  font-weight: 700;
+}
+
+/* ── 激活指示条 ── */
+.tab-item.active::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  width: 24px;
+  height: 3px;
+  border-radius: 2px;
+  background: #F5D547;
+}
+
+
+/* ══════════════════════════════════════════
+   图标通用容器 — 28×28px
+   ══════════════════════════════════════════ */
+.tab-icon {
+  width: 28px;
+  height: 28px;
+  position: relative;
+}
+
+/* 默认色：白色 72% 不透明 */
+.tab-icon view {
+  background: rgba(255,255,255,0.72);
+}
+
+/* 激活：品牌黄 + 光晕 */
+.tab-item.active .tab-icon {
+  filter: drop-shadow(0 0 5px rgba(245,213,71,0.7));
+}
+.tab-item.active .tab-icon view {
+  background: #F5D547;
+}
+
+
+/* ══════════════════════════════════════════
+   图标1：扫码 — 四角取景框 + 扫描线
+   统一线宽 2px，圆角 2px
+   ══════════════════════════════════════════ */
+.icon-scan {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 四个角 — 每个角由两条短边构成 L 形 */
+.sc-c {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border: 2px solid rgba(255,255,255,0.72);
+  box-sizing: border-box;
+}
+.tab-item.active .sc-c {
+  border-color: #F5D547;
+  background: transparent !important;
+}
+
+/* 四角定位：内缩 2px，保持 28px 容器居中 */
+.sc-tl { top: 2px; left: 2px; border-right: none; border-bottom: none; border-radius: 3px 0 0 0; }
+.sc-tr { top: 2px; right: 2px; border-left: none; border-bottom: none; border-radius: 0 3px 0 0; }
+.sc-bl { bottom: 2px; left: 2px; border-right: none; border-top: none; border-radius: 0 0 0 3px; }
+.sc-br { bottom: 2px; right: 2px; border-left: none; border-top: none; border-radius: 0 0 3px 0; }
+
+/* 中间扫描线 */
+.sc-line {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  height: 2px;
+  border-radius: 1px;
+  background: rgba(255,255,255,0.72) !important;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.tab-item.active .sc-line {
+  background: #F5D547 !important;
+}
+
+
+/* ══════════════════════════════════════════
+   图标2：相机 — 机身 + 镜头圆 + 顶部凸起
+   统一线宽 2px，圆角 3px
+   ══════════════════════════════════════════ */
+.icon-camera {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 机身：圆角矩形 */
+.cam-body {
+  position: absolute;
+  top: 5px;
+  left: 2px;
+  right: 2px;
+  bottom: 3px;
+  border: 2px solid rgba(255,255,255,0.72);
+  border-radius: 3px;
+  box-sizing: border-box;
+  background: transparent !important;
+}
+.tab-item.active .cam-body {
+  border-color: #F5D547;
+  background: transparent !important;
+}
+
+/* 镜头：圆环（描边不填充） */
+.cam-lens {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.72);
+  box-sizing: border-box;
+  transform: translate(-50%, -50%);
+  background: transparent !important;
+}
+.tab-item.active .cam-lens {
+  border-color: #F5D547;
+  background: transparent !important;
+}
+
+/* 顶部凸起（闪光灯/取景器） */
+.cam-top {
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  width: 6px;
+  height: 4px;
+  border-radius: 2px 2px 0 0;
+  transform: translateX(-50%);
+}
+
+
+/* ══════════════════════════════════════════
+   图标3：客服耳机 — 头带弧 + 左右耳罩 + 麦克风臂
+   统一线宽 2px，圆角风格
+   ══════════════════════════════════════════ */
+.icon-headset {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 头带弧 — 顶部半圆弧 */
+.hs-band {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  right: 4px;
+  height: 14px;
+  border: 2px solid rgba(255,255,255,0.72);
+  border-bottom: none;
+  border-radius: 10px 10px 0 0;
+  box-sizing: border-box;
+  background: transparent !important;
+}
+.tab-item.active .hs-band {
+  border-color: #F5D547;
+  background: transparent !important;
+}
+
+/* 左耳罩 */
+.hs-ear-l {
+  position: absolute;
+  top: 12px;
+  left: 2px;
+  width: 7px;
+  height: 10px;
+  border-radius: 3px;
+  border: 2px solid rgba(255,255,255,0.72);
+  box-sizing: border-box;
+  background: transparent !important;
+}
+.tab-item.active .hs-ear-l {
+  border-color: #F5D547;
+  background: transparent !important;
+}
+
+/* 右耳罩 */
+.hs-ear-r {
+  position: absolute;
+  top: 12px;
+  right: 2px;
+  width: 7px;
+  height: 10px;
+  border-radius: 3px;
+  border: 2px solid rgba(255,255,255,0.72);
+  box-sizing: border-box;
+  background: transparent !important;
+}
+.tab-item.active .hs-ear-r {
+  border-color: #F5D547;
+  background: transparent !important;
+}
+
+/* 麦克风臂 — 从右耳罩底部向下延伸的短弧线 */
+.hs-boom {
+  position: absolute;
+  right: 4px;
+  bottom: 2px;
+  width: 8px;
+  height: 8px;
+  border: 2px solid rgba(255,255,255,0.72);
+  border-top: none;
+  border-left: none;
+  border-radius: 0 0 8px 0;
+  box-sizing: border-box;
+  background: transparent !important;
+}
+.tab-item.active .hs-boom {
+  border-color: #F5D547;
+  background: transparent !important;
+}
+
+/* 麦克风小圆点 */
+.hs-mic {
+  position: absolute;
+  bottom: 1px;
+  right: 1px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+}

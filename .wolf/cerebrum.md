@@ -103,3 +103,6 @@
 - [2026-06-03] 报工接口 `POST /api/production/report` 取消鉴权（无 JWT/API Key），因为 Accio Work 与方舟平台在同一台服务器上，无需认证。原 `_verify_api_key` + `x-api-key` Header 机制已移除。`PRODUCTION_API_KEY` 配置保留在 config.py 但不再被 router 引用
 - [2026-06-03] 报工接口 `handle_production_report` Step 5 自动初始化：当 `order_product_process_progress` 无记录时，调 `init_order_product_progress` 自动创建进度，不再直接返回"该产品所有工序已完成"。前提是产品已绑定工序路线
 - [2026-06-03] 报工时间统一用北京时间 UTC+8（`_bj_now()`），不使用 `datetime.utcnow()`。涉及 `completed_at`、`item.updated_at`、`printed_at` 三个字段
+- [2026-06-05] 生产看板集成：cola 生成的独立 Vue 3 + ECharts 看板项目（深浅双主题、12 子组件、2 composable），集成到方舟平台。看板 `--db-*` CSS 变量独立于主站 `--color-*`，不冲突。组件放 `components/production/`，composable 放 `views/production/composables/`，主题 CSS 放 `styles/dashboard-theme.css` 全局加载。导航 `stock` 组 order 38，`production:read`
+- [2026-06-05] **dashboard 聚合查询必须用批量 SQL + 内存聚合，禁止循环内逐条查询**：`dashboard_service.py` 初版对 184 个 order_item 逐条查 progress（N+1），导致 API 耗时 78 秒。改用 4 条批量 SQL（`IN (ids)` 批量查）+ Python 内存聚合后降至 5.7 秒。同理，today_completed 查 order_no 也必须批量 IN 查，不能逐条 `.first()`
+- [2026-06-05] **ECharts 整包 `import * as echarts from 'echarts'` 会产出 1.1MB chunk**：Vite 构建报警告但功能正常。优化方向是按需 import（`echarts/core` + 手动注册组件），但看板场景组件多，收益有限，暂不优化

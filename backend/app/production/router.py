@@ -9,6 +9,7 @@ from app.core.database import SessionLocal
 from app.auth.dependencies import require_permission, require_any_permission
 from app.production import (
     process_service, route_service, binding_service, report_service,
+    dashboard_service,
 )
 from app.production.schemas import *
 
@@ -21,6 +22,18 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+# ════════════════════════════════════════════════════════════
+# 生产看板
+# ════════════════════════════════════════════════════════════
+
+@router.get("/dashboard", summary="生产看板数据")
+def get_dashboard(
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("production:read")),
+):
+    return dashboard_service.get_dashboard_data(db)
 
 
 # ════════════════════════════════════════════════════════════

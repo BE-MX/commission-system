@@ -1,0 +1,112 @@
+<!-- pages/overview/overview.wxml -->
+<view class="overview-page">
+  <!-- 顶部导航栏 -->
+  <view class="top-bar" style="padding-top: {{statusBarHeight || 20}}px">
+    <view class="nav-bar-inner">
+      <view class="nav-back" bindtap="onBack">
+        <text class="back-arrow">‹</text>
+        <text class="back-text">返回</text>
+      </view>
+      <text class="nav-title">报工总览</text>
+      <view class="nav-right" bindtap="onToggleFilter">
+        <text class="filter-icon">{{showFilter ? '▲' : '▼'}}</text>
+        <text class="filter-text">筛选</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 筛选区 -->
+  <view class="filter-panel {{showFilter ? 'filter-open' : ''}}">
+    <view class="filter-row">
+      <text class="filter-label">日期范围</text>
+      <view class="filter-date-group">
+        <picker mode="date" value="{{dateStart}}" bindchange="onDateStartChange">
+          <view class="filter-date-picker">{{dateStart || '开始日期'}}</view>
+        </picker>
+        <text class="filter-sep">至</text>
+        <picker mode="date" value="{{dateEnd}}" bindchange="onDateEndChange">
+          <view class="filter-date-picker">{{dateEnd || '结束日期'}}</view>
+        </picker>
+      </view>
+    </view>
+    <view class="filter-actions">
+      <view class="filter-btn-reset" bindtap="onResetFilter">重置</view>
+      <view class="filter-btn-search" bindtap="onSearch">查询</view>
+    </view>
+  </view>
+
+  <!-- 加载态 -->
+  <view class="loading-state" wx:if="{{loading && dates.length === 0}}">
+    <text class="loading-text">加载中...</text>
+  </view>
+
+  <!-- 日期分组列表 -->
+  <scroll-view class="overview-list" scroll-y wx:if="{{!loading || dates.length > 0}}">
+    <block wx:for="{{dates}}" wx:key="date" wx:for-item="dateGroup">
+      <!-- 日期分隔线 -->
+      <view class="date-divider">
+        <view class="date-divider-line"></view>
+        <text class="date-divider-text">{{dateGroup.date}}</text>
+        <view class="date-divider-line"></view>
+      </view>
+
+      <!-- 工序分组卡片 -->
+      <view class="group-card"
+            wx:for="{{dateGroup.groups}}"
+            wx:for-item="grp"
+            wx:key="process_id"
+            bindtap="onGroupTap"
+            data-date="{{dateGroup.date}}"
+            data-process-id="{{grp.process_id}}"
+            data-process-name="{{grp.process_name}}">
+        <view class="group-left">
+          <text class="group-process-name">{{grp.process_name}}</text>
+          <view class="group-meta">
+            <text class="group-qty">报工总量 × {{grp.total_qty}}</text>
+            <text class="group-count">{{grp.record_count}} 条</text>
+          </view>
+        </view>
+        <view class="group-right">
+          <text class="group-time-label">最近报工</text>
+          <text class="group-time">{{grp.latest_time}}</text>
+          <text class="group-arrow">›</text>
+        </view>
+      </view>
+    </block>
+
+    <!-- 空态 -->
+    <view class="empty-state" wx:if="{{!loading && dates.length === 0}}">
+      <text class="empty-icon">📊</text>
+      <text class="empty-title">暂无报工记录</text>
+      <text class="empty-desc">当前筛选范围内没有报工数据</text>
+    </view>
+  </scroll-view>
+
+  <!-- 明细弹窗（底部弹出） -->
+  <view class="detail-overlay" wx:if="{{showDetail}}" catchtap="onCloseDetail">
+    <view class="detail-sheet" catchtap="">
+      <!-- 拖拽指示条 -->
+      <view class="sheet-handle"></view>
+      <!-- 标题 -->
+      <view class="detail-header">
+        <text class="detail-title">{{detailProcessName}}</text>
+        <text class="detail-date">{{detailDate}}</text>
+      </view>
+      <!-- 明细列表 -->
+      <scroll-view class="detail-list" scroll-y>
+        <view class="detail-item" wx:for="{{detailRecords}}" wx:key="progress_id">
+          <view class="detail-dot">✓</view>
+          <view class="detail-info">
+            <text class="detail-model">{{item.product_name}} · {{item.model}}</text>
+            <text class="detail-process-tag">{{item.process_name}} × {{item.order_qty}}　{{item.completed_by_name}}</text>
+            <text class="detail-order">{{item.order_no}}</text>
+          </view>
+          <text class="detail-time">{{item.completed_at}}</text>
+        </view>
+        <view class="detail-empty" wx:if="{{detailRecords.length === 0}}">
+          <text class="detail-empty-text">暂无记录</text>
+        </view>
+      </scroll-view>
+    </view>
+  </view>
+</view>

@@ -21,6 +21,7 @@ from app.stock.router import router as stock_router
 from app.asset.router import router as asset_router
 from app.color.router import router as color_router
 from app.production.router import router as production_router
+from app.mini.router import router as mini_router
 
 
 def register_routers(app: FastAPI) -> None:
@@ -46,3 +47,4 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(color_router, prefix="/api/color", tags=["色彩管理"])
     app.include_router(report_center_router, prefix="/api/report", tags=["报表中心"])
     app.include_router(production_router, prefix="/api/production", tags=["生产报工"])
+    app.include_router(mini_router, prefix="/api/mini", tags=["微信小程序"])

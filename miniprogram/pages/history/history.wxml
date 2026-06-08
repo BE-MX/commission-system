@@ -1,0 +1,153 @@
+<!-- pages/history/history.wxml -->
+<view class="history-page">
+  <!-- 顶部导航栏 -->
+  <view class="top-bar" style="padding-top: {{statusBarHeight}}px">
+    <view class="nav-bar-inner">
+      <view class="nav-back" bindtap="onBack">
+        <text class="back-arrow">‹</text>
+        <text class="back-text">返回</text>
+      </view>
+      <text class="nav-title">报工历史</text>
+      <view class="nav-right" bindtap="onToggleFilter">
+        <text class="filter-icon">{{showFilter ? '▲' : '▼'}}</text>
+        <text class="filter-text">筛选</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 筛选区 -->
+  <view class="filter-panel {{showFilter ? 'filter-open' : ''}}">
+    <view class="filter-row">
+      <text class="filter-label">报工日期</text>
+      <view class="filter-date-group">
+        <picker mode="date" value="{{dateStart}}" bindchange="onDateStartChange">
+          <view class="filter-date-picker">{{dateStart || '开始日期'}}</view>
+        </picker>
+        <text class="filter-sep">至</text>
+        <picker mode="date" value="{{dateEnd}}" bindchange="onDateEndChange">
+          <view class="filter-date-picker">{{dateEnd || '结束日期'}}</view>
+        </picker>
+      </view>
+    </view>
+    <view class="filter-row">
+      <text class="filter-label">产品型号</text>
+      <input
+        class="filter-input"
+        placeholder="搜索型号"
+        placeholder-class="input-placeholder"
+        value="{{keyword}}"
+        bindinput="onKeywordInput"
+        bindconfirm="onSearch"
+      />
+    </view>
+    <view class="filter-row">
+      <text class="filter-label">所属订单</text>
+      <input
+        class="filter-input"
+        placeholder="批次号"
+        placeholder-class="input-placeholder"
+        value="{{orderNo}}"
+        bindinput="onOrderNoInput"
+        bindconfirm="onSearch"
+      />
+    </view>
+    <view class="filter-actions">
+      <view class="filter-btn-reset" bindtap="onResetFilter">重置</view>
+      <view class="filter-btn-search" bindtap="onSearch">查询</view>
+    </view>
+  </view>
+
+  <!-- 列表 — 左滑撤销 -->
+  <scroll-view
+    class="history-list {{showFilter ? 'has-filter' : ''}}"
+    scroll-y
+    bindscrolltolower="onLoadMore"
+    lower-threshold="100"
+    refresher-enabled="{{true}}"
+    refresher-triggered="{{refreshing}}"
+    bindrefresherrefresh="onRefresh"
+  >
+    <view class="swipe-wrapper" wx:for="{{records}}" wx:key="index">
+      <view class="swipe-container"
+            style="transform: translateX({{item._swipeX || 0}}px); transition: {{item._animating ? 'transform 0.25s ease' : 'none'}}"
+            bindtouchstart="onSwipeStart"
+            bindtouchmove="onSwipeMove"
+            bindtouchend="onSwipeEnd"
+            data-index="{{index}}">
+        <view class="record-card">
+          <view class="record-dot">✓</view>
+          <view class="record-info">
+            <text class="record-model">{{item.product_name}} · {{item.model}}</text>
+            <text class="record-process-tag">{{item.process_name}} × {{item.order_qty}}</text>
+            <text class="record-order">{{item.order_no}}</text>
+          </view>
+          <view class="record-right">
+            <text class="record-time">{{item.completed_at}}</text>
+            <text class="record-date">{{item.completed_date}}</text>
+          </view>
+        </view>
+      </view>
+      <view class="swipe-action" bindtap="onRevokeTap" data-index="{{index}}" data-progress-id="{{item.progress_id}}" data-process-name="{{item.process_name}}">
+        <text class="swipe-action-text">撤销</text>
+      </view>
+    </view>
+
+    <!-- 加载态 -->
+    <view class="loading-more" wx:if="{{loading}}">
+      <text class="loading-text">加载中...</text>
+    </view>
+
+    <!-- 无更多 -->
+    <view class="no-more" wx:if="{{noMore && records.length > 0}}">
+      <text class="no-more-text">没有更多了</text>
+    </view>
+
+    <!-- 空态 -->
+    <view class="empty-state" wx:if="{{!loading && records.length === 0}}">
+      <text class="empty-icon">📋</text>
+      <text class="empty-title">暂无报工记录</text>
+      <text class="empty-desc">请联系调度员确认排班</text>
+    </view>
+  </scroll-view>
+
+  <!-- 提交中遮罩 -->
+  <view class="submitting-overlay" wx:if="{{submitting}}">
+    <view class="submitting-content">
+      <view class="submitting-spinner">
+        <view class="spinner-ring"></view>
+        <view class="spinner-check">↩</view>
+      </view>
+      <text class="submitting-text">{{submittingText || '撤销提交中'}}</text>
+      <text class="submitting-sub">请稍等...</text>
+    </view>
+  </view>
+
+  <!-- 撤销确认弹窗 -->
+  <view class="revoke-overlay" wx:if="{{revokeVisible}}" catchtap="onRevokeCancel">
+    <view class="revoke-card" catchtap="">
+      <view class="revoke-icon-wrap">
+        <view class="revoke-icon-bg"></view>
+        <text class="revoke-icon-char">↩</text>
+      </view>
+      <text class="revoke-title">撤销报工</text>
+      <text class="revoke-desc">确定撤销「{{revokeProcessName}}」工序的报工记录？</text>
+      <view class="revoke-btns">
+        <view class="revoke-btn-cancel" bindtap="onRevokeCancel">取消</view>
+        <view class="revoke-btn-confirm" bindtap="onRevokeConfirm">确认撤销</view>
+      </view>
+      <view class="revoke-bar"></view>
+    </view>
+  </view>
+
+  <!-- 成功/错误提示 -->
+  <view class="result-overlay" wx:if="{{resultVisible}}" catchtap="onResultTap">
+    <view class="result-card {{resultSuccess ? 'result-success' : 'result-error'}}" catchtap="">
+      <view class="result-icon-wrap">
+        <text class="result-icon-char">{{resultSuccess ? '✓' : '!'}}</text>
+      </view>
+      <text class="result-title">{{resultTitle}}</text>
+      <text class="result-desc">{{resultMessage}}</text>
+      <view class="result-bar"></view>
+    </view>
+  </view>
+</view>

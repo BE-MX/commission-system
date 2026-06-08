@@ -1,0 +1,101 @@
+<!-- components/confirm-sheet/confirm-sheet.wxml -->
+<view class="confirm-overlay" wx:if="{{visible}}" catchtap="onOverlayTap">
+  <view class="confirm-sheet" catchtap="">
+    <!-- 拖拽指示条 -->
+    <view class="sheet-handle"></view>
+
+    <!-- 品牌条 -->
+    <view class="sheet-brand-strip">
+      <text class="sheet-brand-name">leShine® Hair</text>
+      <text class="sheet-brand-sub">确认报工信息</text>
+    </view>
+
+    <!-- 产品信息 -->
+    <view class="sheet-section">
+      <text class="sheet-sec-label">产品信息</text>
+      <view class="info-row">
+        <text class="info-lbl">产品型号</text>
+        <view class="info-val-wrap">
+          <text class="info-val lg">{{productInfo.product_name || '-'}}</text>
+          <text class="tag-urgent" wx:if="{{productInfo.is_urgent === 1}}">加急</text>
+        </view>
+      </view>
+      <view class="info-row">
+        <text class="info-lbl">规格</text>
+        <text class="info-val">{{productInfo.model || '-'}}</text>
+      </view>
+      <view class="info-row">
+        <text class="info-lbl">所属订单</text>
+        <text class="info-val" style="color:var(--text-sub)">{{productInfo.order_no || '-'}}</text>
+      </view>
+    </view>
+
+    <!-- 报工工序 -->
+    <view class="sheet-section">
+      <text class="sheet-sec-label">报工工序</text>
+      <view class="info-row">
+        <text class="info-lbl">当前工序</text>
+        <text class="info-val process-tag">{{nextProcess.process_name || '-'}} × {{productInfo.order_qty || '-'}}</text>
+      </view>
+      <view class="proc-bar-wrap" bindtap="onProgressTap">
+        <text class="proc-bar-label">工序进度 · 第 {{nextProcess.step_order || 0}} 道 / 共 {{nextProcess.total_steps || 0}} 道 ›</text>
+        <view class="proc-bar-bg">
+          <view class="proc-bar-fill" style="width: {{progressPercent}}%"></view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 操作人 -->
+    <view class="sheet-section" style="margin-bottom:0">
+      <text class="sheet-sec-label">操作人</text>
+      <view class="info-row" style="border:none;padding-bottom:0">
+        <text class="info-lbl">当前用户</text>
+        <text class="info-val">{{userName}}</text>
+      </view>
+    </view>
+
+    <!-- 按钮 -->
+    <view class="sheet-btns">
+      <button class="btn-cancel" bindtap="onCancel">取消</button>
+      <button class="btn-confirm" bindtap="onConfirm" disabled="{{submitting}}">
+        <text wx:if="{{submitting}}">提交中...</text>
+        <block wx:else>✓ 确认报工</block>
+      </button>
+    </view>
+  </view>
+</view>
+
+<!-- 工序时间轴弹窗（独立 overlay，z-index 高于 confirm-overlay） -->
+<view class="timeline-overlay" wx:if="{{showTimeline}}" catchtap="onTimelineMaskTap">
+  <view class="timeline-sheet" catchtap="">
+    <view class="sheet-handle"></view>
+    <view class="timeline-header">
+      <text class="timeline-title">工序进度详情</text>
+      <text class="timeline-close" bindtap="onTimelineClose">✕</text>
+    </view>
+
+    <scroll-view class="timeline-body" scroll-y>
+      <view class="timeline-list">
+        <view class="timeline-item {{item.status === 1 ? 'done' : 'pending'}}" wx:for="{{processList}}" wx:key="step_order">
+          <!-- 左侧时间轴 -->
+          <view class="tl-track">
+            <view class="tl-dot"></view>
+            <view class="tl-line" wx:if="{{index < allProcesses.length - 1}}"></view>
+          </view>
+          <!-- 右侧内容 -->
+          <view class="tl-content">
+            <view class="tl-top">
+              <text class="tl-step">第 {{item.step_order}} 道</text>
+              <text class="tl-status {{item.status === 1 ? 'status-done' : 'status-pending'}}">{{item.status === 1 ? '已完成' : '待完成'}}</text>
+            </view>
+            <text class="tl-name">{{item.process_name}}</text>
+            <view class="tl-detail" wx:if="{{item.status === 1}}">
+              <text class="tl-time">{{item.completed_at}}</text>
+              <text class="tl-user" wx:if="{{item.completed_by}}">{{item.completed_by}}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+    </scroll-view>
+  </view>
+</view>

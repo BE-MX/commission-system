@@ -1,0 +1,174 @@
+<!-- pages/scan/scan.wxml -->
+<view class="scan-page">
+  <!-- 自定义导航栏（品牌顶栏） -->
+  <view class="brand-bar" style="padding-top: {{statusBarHeight}}px">
+    <view class="brand-bar-inner">
+      <view class="logo-wrap">
+        <text class="logo-le">Le</text>
+        <text class="logo-shine">Shine®</text>
+        <text class="logo-hair"> Hair</text>
+      </view>
+      <text class="brand-bar-right">生产管理</text>
+    </view>
+  </view>
+
+  <!-- 用户信息条 -->
+  <view class="user-bar">
+    <view class="user-avatar">{{avatarLetter}}</view>
+    <view class="user-info">
+      <text class="user-name">{{userName}}</text>
+      <text class="user-count">今日已报工 {{todayCount}} 次</text>
+    </view>
+    <view class="history-btn" bindtap="onHistoryTap">查看记录</view>
+  </view>
+
+  <!-- 扫码核心区 -->
+  <view class="scan-center">
+    <view class="scan-btn-wrap">
+      <view class="scan-outer-ring"></view>
+      <view class="scan-ring"></view>
+      <view class="scan-btn" bindtap="onScanTap">
+        <view class="scan-icon">
+          <view class="qr-corner qr-tl"><view class="qr-inner"></view></view>
+          <view class="qr-corner qr-tr"><view class="qr-inner"></view></view>
+          <view class="qr-corner qr-bl"><view class="qr-inner"></view></view>
+          <view class="qr-dot d1"></view>
+          <view class="qr-dot d2"></view>
+          <view class="qr-dot d3"></view>
+          <view class="qr-dot d4"></view>
+          <view class="qr-dot d5"></view>
+          <view class="qr-dot d6"></view>
+          <view class="qr-dot d7"></view>
+          <view class="scan-line"></view>
+        </view>
+        <text class="scan-btn-text">扫 码</text>
+      </view>
+    </view>
+    <text class="scan-hint">点击扫描工艺流转卡</text>
+
+  </view>
+
+  <!-- 今日报工记录 -->
+  <view class="section-header">
+    <text class="section-title">今日报工记录</text>
+    <text class="section-more" bindtap="onAllRecordsTap">全部 ›</text>
+  </view>
+
+  <!-- 有记录 — 左滑撤销 -->
+  <view class="record-list" wx:if="{{todayRecords.length > 0}}">
+    <view class="swipe-wrapper" wx:for="{{todayRecords}}" wx:key="progress_id">
+      <view class="swipe-container"
+            style="transform: translateX({{item._swipeX || 0}}px); transition: {{item._animating ? 'transform 0.25s ease' : 'none'}}"
+            bindtouchstart="onSwipeStart"
+            bindtouchmove="onSwipeMove"
+            bindtouchend="onSwipeEnd"
+            data-index="{{index}}"
+            data-list="today">
+        <view class="record-card">
+          <view class="record-dot">✓</view>
+          <view class="record-info">
+            <text class="record-model">{{item.product_name}} · {{item.model}}</text>
+            <text class="record-process-tag">{{item.process_name}} × {{item.order_qty}}</text>
+            <text class="record-order" wx:if="{{item.order_no}}">{{item.order_no}}</text>
+          </view>
+          <text class="record-time">{{item.completed_at}}</text>
+        </view>
+      </view>
+      <view class="swipe-action" bindtap="onRevokeTap" data-index="{{index}}" data-list="today" data-progress-id="{{item.progress_id}}" data-process-name="{{item.process_name}}">
+        <text class="swipe-action-text">撤销</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 空态 -->
+  <view class="empty-state" wx:else>
+    <text class="empty-icon">📋</text>
+    <text class="empty-title">暂无报工记录</text>
+    <text class="empty-desc">扫描工艺流转卡开始报工</text>
+  </view>
+
+  <!-- 确认弹框 -->
+  <confirm-sheet
+    visible="{{state === 'showing-confirm'}}"
+    productInfo="{{productInfo}}"
+    nextProcess="{{nextProcess}}"
+    allProcesses="{{allProcesses}}"
+    userName="{{userName}}"
+    submitting="{{submitting}}"
+    bind:confirm="onConfirmSubmit"
+    bind:cancel="onCancelConfirm"
+  ></confirm-sheet>
+
+  <!-- 工单识别中 全屏遮罩 -->
+  <view class="loading-overlay" wx:if="{{loading}}">
+    <view class="loading-content">
+      <view class="loading-spinner">
+        <view class="loading-ring"></view>
+        <view class="loading-scan-icon">
+          <view class="lsi-corner lsi-tl"></view>
+          <view class="lsi-corner lsi-tr"></view>
+          <view class="lsi-corner lsi-bl"></view>
+          <view class="lsi-line"></view>
+        </view>
+      </view>
+      <text class="loading-text">工单识别中</text>
+      <text class="loading-sub">请稍等...</text>
+    </view>
+  </view>
+
+  <!-- 提交中全屏遮罩 -->
+  <view class="submitting-overlay" wx:if="{{submitting}}">
+    <view class="submitting-content">
+      <view class="submitting-spinner">
+        <view class="spinner-ring"></view>
+        <view class="spinner-check">✓</view>
+      </view>
+      <text class="submitting-text">{{submittingText || '报工提交中'}}</text>
+      <text class="submitting-sub">请稍等...</text>
+    </view>
+  </view>
+
+  <!-- 报工成功弹窗 -->
+  <view class="success-overlay" wx:if="{{successVisible}}" catchtap="onSuccessTap">
+    <view class="success-card" catchtap="">
+      <view class="success-icon-wrap">
+        <view class="success-icon-bg"></view>
+        <text class="success-icon-check">✓</text>
+      </view>
+      <text class="success-title">{{successTitle || '报工成功'}}</text>
+      <text class="success-desc">{{successMessage}}</text>
+      <view class="success-bar"></view>
+    </view>
+  </view>
+
+  <!-- 错误/警告弹窗 -->
+  <view class="error-overlay" wx:if="{{errorVisible}}" catchtap="onErrorTap">
+    <view class="error-card" catchtap="">
+      <view class="error-icon-wrap">
+        <view class="error-icon-bg"></view>
+        <text class="error-icon-char">!</text>
+      </view>
+      <text class="error-title">{{errorTitle}}</text>
+      <text class="error-desc">{{errorMessage}}</text>
+      <view class="error-btn" catchtap="onErrorTap">我知道了</view>
+      <view class="error-bar"></view>
+    </view>
+  </view>
+
+  <!-- 撤销确认弹窗 -->
+  <view class="error-overlay" wx:if="{{revokeVisible}}" catchtap="onRevokeCancel">
+    <view class="error-card" catchtap="">
+      <view class="error-icon-wrap">
+        <view class="error-icon-bg" style="background:#F5D547; opacity:0.15"></view>
+        <text class="error-icon-char" style="background:#F5D547; color:#1A1A1A; box-shadow: 0 4px 16px rgba(245,213,71,0.5)">↩</text>
+      </view>
+      <text class="error-title">撤销报工</text>
+      <text class="error-desc">确定撤销「{{revokeProcessName}}」工序的报工记录？</text>
+      <view class="revoke-btns">
+        <view class="revoke-btn-cancel" bindtap="onRevokeCancel">取消</view>
+        <view class="revoke-btn-confirm" bindtap="onRevokeConfirm">确认撤销</view>
+      </view>
+      <view class="error-bar" style="background:#F5D547"></view>
+    </view>
+  </view>
+</view>

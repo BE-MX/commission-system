@@ -1,0 +1,42 @@
+<!-- pages/photo/photo.wxml -->
+<view class="photo-page">
+  <!-- 顶栏 -->
+  <view class="brand-bar" style="padding-top: {{statusBarHeight}}px">
+    <view class="brand-bar-inner">
+      <view class="logo-wrap">
+        <text class="logo-le">le</text>
+        <text class="logo-shine">Shine®</text>
+        <text class="logo-hair">Hair</text>
+      </view>
+      <text class="brand-bar-right">生产管理</text>
+    </view>
+  </view>
+  <view class="nav-bar"><text class="nav-title">拍照上传</text></view>
+
+  <view class="page-content">
+    <!-- 开发中提示条 -->
+    <view class="coming-bar">
+      <text class="coming-icon">🔧</text>
+      <text class="coming-text">此功能正在开发中，后续将接入 AI 识别能力</text>
+    </view>
+
+    <!-- 上传区 -->
+    <view class="upload-zone" bindtap="onChooseImage">
+      <block wx:if="{{!imagePath}}">
+        <text class="upload-zone-icon">📷</text>
+        <text class="upload-zone-text">点击拍照或选取图片</text>
+      </block>
+      <block wx:else>
+        <image class="upload-preview" src="{{imagePath}}" mode="aspectFill" />
+        <view class="upload-clear" catchtap="onClearImage">✕</view>
+      </block>
+    </view>
+
+    <!-- 说明文字 -->
+    <text class="upload-hint" wx:if="{{!imagePath}}">拍摄工艺流转卡或工单纸\nAI 将自动识别并提取报工信息</text>
+    <text class="upload-hint" wx:else>图片已选择，等待 AI 识别功能上线</text>
+
+    <!-- 提交按钮（disabled） -->
+    <button class="btn-disabled">🔍 提交识别（即将开放）</button>
+  </view>
+</view>
