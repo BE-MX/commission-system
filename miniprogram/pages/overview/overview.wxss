@@ -136,6 +136,8 @@
 .overview-list {
   flex: 1;
   padding: 0 16px 100px;
+  box-sizing: border-box;
+  width: 100%;
 }
 
 /* ── 加载/空态 ── */
@@ -178,7 +180,8 @@
   align-items: center;
   box-shadow: 0 2px 12px rgba(0,0,0,0.07);
   margin-bottom: 10px;
-  overflow: hidden;
+  box-sizing: border-box;
+  width: 100%;
 }
 .group-card:active {
   opacity: 0.85;

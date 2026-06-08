@@ -145,6 +145,8 @@
 .history-list {
   flex: 1;
   padding: 16px;
+  box-sizing: border-box;
+  width: 100%;
 }
 
 /* ── 左滑撤销 ── */
@@ -153,6 +155,8 @@
   overflow: hidden;
   border-radius: 16px;
   margin-bottom: 10px;
+  width: 100%;
+  box-sizing: border-box;
 }
 .swipe-container {
   position: relative;
@@ -185,7 +189,8 @@
   align-items: center;
   gap: 14px;
   box-shadow: 0 2px 14px rgba(0,0,0,0.09);
-  overflow: hidden;
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .record-dot {
