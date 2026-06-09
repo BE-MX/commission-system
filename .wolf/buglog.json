@@ -2718,7 +2718,13 @@
     "file": "frontend/src/components/StimulsoftViewer.vue, frontend/src/composables/useStimulsoft.js",
     "root_cause": "三个叠加问题：(1) _waitStimulsoftReady() 用 watch(ref) 等引擎加载，dialog destroy-on-close 重建组件时 ref 已 true，watch 不再触发，Promise 永不 resolve；(2) createViewer 先 viewer.report=report（触发 assignReport/setTimeout/renderAsync2）再 viewer.renderHtml(containerEl)，此时 DOM 不存在，内部渲染失败；(3) axios 拦截器 return res（已解包 response.data），但 StimulsoftViewer 用 res.data.data 二次解包导致拿到 undefined",
     "fix": "(1) 删除 _waitStimulsoftReady()，改用 ensureLoaded() 直接返回 Promise；(2) createViewer 中先 renderHtml 再赋 report；(3) 解包改为 res?.data ?? res（单层 nullish coalescing）；(4) readJson 显式传 JSON.stringify(reportData)",
-    "tags": ["stimulsoft", "viewer", "dialog", "watch-deadlock", "response-unwrapping"],
+    "tags": [
+      "stimulsoft",
+      "viewer",
+      "dialog",
+      "watch-deadlock",
+      "response-unwrapping"
+    ],
     "related_bugs": [],
     "occurrences": 1,
     "last_seen": "2026-06-03T15:30:00.000Z"
@@ -2730,7 +2736,12 @@
     "file": "backend/app/production/router.py",
     "root_cause": "本地开发环境已移除 _verify_api_key 鉴权，但改动未 commit/push。服务器 git 仓库仍是旧版（含 x-api-key Header 校验），Accio Work 调用时被 FastAPI Header 校验拦截",
     "fix": "commit 并 push 鉴权移除（53b93d4），服务器 git checkout -- router.py + git pull + nssm restart。验证：Invoke-RestMethod 无需 x-api-key 即可调用成功",
-    "tags": ["production", "auth", "accio-work", "deploy-miss"],
+    "tags": [
+      "production",
+      "auth",
+      "accio-work",
+      "deploy-miss"
+    ],
     "related_bugs": [],
     "occurrences": 1,
     "last_seen": "2026-06-03T18:30:00.000Z"
@@ -2742,7 +2753,12 @@
     "file": "backend/app/production/report_service.py",
     "root_cause": "handle_production_report Step 5 查询 pending 工序时，如果进度表无记录（未初始化），pending 为 None 直接返回'已完成'。缺少自动初始化逻辑",
     "fix": "Step 5 增加 fallback：pending 为 None 时调 init_order_product_progress 自动创建进度记录，然后重新查询。commit 29d6594",
-    "tags": ["production", "report", "auto-init", "progress"],
+    "tags": [
+      "production",
+      "report",
+      "auto-init",
+      "progress"
+    ],
     "related_bugs": [],
     "occurrences": 1,
     "last_seen": "2026-06-03T19:30:00.000Z"
@@ -2754,9 +2770,30 @@
     "file": "backend/app/production/report_service.py",
     "root_cause": "datetime.utcnow() 返回 UTC 时间，服务器在北京时区，业务需要北京时间",
     "fix": "新增 _bj_now() 函数返回 UTC+8 时间，替换所有 datetime.utcnow() 调用（completed_at/updated_at/printed_at）。commit e4da065",
-    "tags": ["production", "timezone", "beijing-time"],
+    "tags": [
+      "production",
+      "timezone",
+      "beijing-time"
+    ],
     "related_bugs": [],
     "occurrences": 1,
     "last_seen": "2026-06-03T19:35:00.000Z"
+  },
+  {
+    "id": "bug-092",
+    "timestamp": "2026-06-09T08:35:44.314431Z",
+    "error_message": "miniprogram overview/history page card width overflows screen",
+    "file": "miniprogram/pages/overview/overview.wxss, miniprogram/pages/history/history.wxss",
+    "root_cause": "miniprogram CSS defaults to box-sizing:content-box, padding adds extra width beyond screen; flex children missing min-width:0 allows text to push container wider",
+    "fix": "card containers: box-sizing:border-box + width:100%; flex children: min-width:0 + overflow:hidden; long text: text-overflow:ellipsis + white-space:nowrap",
+    "tags": [
+      "miniprogram",
+      "css",
+      "box-sizing",
+      "overflow"
+    ],
+    "related_bugs": [],
+    "occurrences": 2,
+    "last_seen": "2026-06-09T08:35:44.314431Z"
   }
 ]

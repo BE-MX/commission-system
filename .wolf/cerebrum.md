@@ -88,6 +88,8 @@
 - [2026-06-03] Stimulsoft `.pack.js`（Scripts/ 目录）**不包含 StiLicense 类**（grep 确认 0 匹配），`StiLicense.Key = 'xxx'` 被静默忽略，导致永远显示 trial。**必须用 `Demo/scripts/` 下的非压缩 `.js` 文件**（`stimulsoft.reports.js` 等 11.8MB），它们包含完整 License 校验逻辑
 - [2026-06-03] Stimulsoft Viewer 打印弹框卡"正在加载报表引擎"有三个叠加根因：(1) `_waitStimulsoftReady()` 用 `watch(ref)` 等待，dialog `destroy-on-close` 重建组件时 ref 已 true，watch 不触发 → 改用 `ensureLoaded()` 返回 Promise；(2) `viewer.report = report` 在 `viewer.renderHtml(containerEl)` 之前执行，setter 内部 `assignReport` 用 setTimeout + renderAsync2 依赖 DOM → 先 renderHtml 再赋 report；(3) axios 拦截器已解包 `response.data` 返回 `{code,data}`，但 StimulsoftViewer 还在做 `res.data.data` 二次解包
 - [2026-06-03] Stimulsoft `DataSet.readJson()` 传 JS 对象时内部会做 `JSON.stringify`，但 `correctJson()` 对非标准结构解析不稳定。**显式传 `JSON.stringify(reportData)` 更可靠**
+- [2026-06-08] **小程序 CSS 默认 `box-sizing: content-box`**：带 padding 的卡片容器必须加 `box-sizing: border-box; width: 100%`，否则 padding 额外增加宽度超出屏幕。flex 子元素加 `min-width: 0; overflow: hidden` 防止文本撑破容器。长文本加 `text-overflow: ellipsis; white-space: nowrap`
+- [2026-06-08] **微信小程序体验版「网络错误」排查优先级**：(1) 服务器 `.env` 是否配了 `WX_MINI_APPID` + `WX_MINI_SECRET`（默认空字符串致 jscode2session 失败）；(2) 微信公众平台是否配了 request 合法域名（体验版强制校验，`urlCheck:false` 只在开发工具生效）；(3) `app.js` 的 `baseUrl` 是否指向生产地址
 
 ## Decision Log
 

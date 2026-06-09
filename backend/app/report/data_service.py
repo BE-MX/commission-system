@@ -7,7 +7,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from collections import OrderedDict
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -16,18 +17,85 @@ from app.core.config import get_settings
 
 logger = logging.getLogger("report")
 
+# 预留最大列槽位数（order 中实际出现的 product_remark+size2 组合数不会超过此值）
+_MAX_PIVOT_COLS = 30
+
 
 # ── 订单打印数据 ─────────────────────────────────────────
 
 
-def get_production_order_print_data(db: Session, order_no: str) -> Dict[str, Any]:
-    """生产订单打印数据：header + items（按颜色/等级/尺寸聚合）。
+def _pivot_items(rows: List[Dict]) -> Dict[str, Any]:
+    """将长格式 rows 透视为宽格式，供 Stimulsoft 普通 Table 使用。
 
-    items 字段用于 Stimulsoft Cross-Tab:
-      - 行标题: color2 (色号 + 生产色号要求)
-      - 一级列表头: product_remark (等级/产品说明)
-      - 二级列表头: size2 (尺寸 + 生产尺寸要求)
-      - 单元格: Sum(qty)
+    输入: [{color2, product_remark, size2, qty}, ...]
+    输出: {column_defs, rows, col_totals}
+    """
+    # 1) 收集所有唯一列组合 (product_remark, size2)，按出现顺序保持
+    seen_cols: OrderedDict[tuple, int] = OrderedDict()  # (remark, size2) -> col index
+    row_map: OrderedDict[str, Dict] = OrderedDict()  # color2 -> {col_N: qty}
+
+    for r in rows:
+        col_key = (r["product_remark"] or "", r["size2"] or "")
+        if col_key not in seen_cols:
+            seen_cols[col_key] = len(seen_cols)
+
+        color = r["color2"] or ""
+        if color not in row_map:
+            row_map[color] = {
+                "color2": color,
+                "color": r.get("color", ""),
+                "production_color_requirement": r.get("production_color_requirement", ""),
+            }
+
+        col_idx = seen_cols[col_key]
+        row_map[color][f"col_{col_idx}"] = row_map[color].get(f"col_{col_idx}", 0) + (r["qty"] or 0)
+
+    # 2) 构造 column_defs
+    column_defs: List[Dict[str, str]] = []
+    for (remark, size2), idx in seen_cols.items():
+        column_defs.append({
+            "key": f"col_{idx}",
+            "group": remark,   # 一级表头: product_remark
+            "label": size2,    # 二级表头: size2
+        })
+
+    # 3) 构造 rows（补齐所有列 + 行合计）
+    result_rows = []
+    for color2, data in row_map.items():
+        row_total = 0
+        for idx in range(len(seen_cols)):
+            key = f"col_{idx}"
+            val = data.get(key, 0)
+            data[key] = val
+            row_total += val
+        data["row_total"] = row_total
+        result_rows.append(data)
+
+    # 4) 构造列合计
+    col_totals = {}
+    grand_total = 0
+    for idx in range(len(seen_cols)):
+        key = f"col_{idx}"
+        total = sum(r.get(key, 0) for r in result_rows)
+        col_totals[key] = total
+        grand_total += total
+    col_totals["grand_total"] = grand_total
+
+    return {
+        "column_defs": column_defs,
+        "rows": result_rows,
+        "col_totals": col_totals,
+        "total_cols": len(column_defs),  # 模板用：知道实际有多少列
+    }
+
+
+def get_production_order_print_data(db: Session, order_no: str) -> Dict[str, Any]:
+    """生产订单打印数据：header + 透视后的宽格式数据。
+
+    宽格式结构:
+      column_defs: [{key, group(product_remark), label(size2)}]
+      rows: [{color2, color, production_color_requirement, col_0..col_N, row_total}]
+      col_totals: {col_0..col_N, grand_total}
     """
     settings = get_settings()
     business_db = settings.BUSINESS_DB_NAME
@@ -43,7 +111,7 @@ def get_production_order_print_data(db: Session, order_no: str) -> Dict[str, Any
     """)
     header_row = db.execute(header_sql, {"order_no": order_no}).mappings().first()
     if not header_row:
-        return {"header": {}, "items": []}
+        return {"header": {}, "column_defs": [], "rows": [], "col_totals": {}, "total_cols": 0}
 
     header = {
         "company_name": "青岛丽丝发制品有限公司",
@@ -51,7 +119,7 @@ def get_production_order_print_data(db: Session, order_no: str) -> Dict[str, Any
         "remark": header_row["remark"] or "",
     }
 
-    # ── items ────────────────────────────────────────────
+    # ── items（长格式）────────────────────────────────────
     items_sql = text(f"""
         SELECT
             o.order_no,
@@ -82,9 +150,9 @@ def get_production_order_print_data(db: Session, order_no: str) -> Dict[str, Any
     """)
     rows = db.execute(items_sql, {"order_no": order_no}).mappings().all()
 
-    items = []
+    long_items = []
     for r in rows:
-        items.append({
+        long_items.append({
             "order_no": r["order_no"],
             "color": r["color"] or "",
             "production_color_requirement": r["production_color_requirement"] or "",
@@ -96,7 +164,13 @@ def get_production_order_print_data(db: Session, order_no: str) -> Dict[str, Any
             "qty": int(r["qty"]) if r["qty"] else 0,
         })
 
-    return {"header": header, "items": items}
+    # ── 透视 ─────────────────────────────────────────────
+    pivoted = _pivot_items(long_items)
+
+    return {
+        "header": header,
+        **pivoted,
+    }
 
 
 # ── 工序卡片打印数据 ──────────────────────────────────────
@@ -171,13 +245,26 @@ def get_report_data(db: Session, report_code: str, params: Optional[Dict] = None
         order_no = params.get("order_no", "")
         # 设计器打开时可能传空 order_no，返回带样例行的结构让字典树有完整字段定义
         if not order_no:
+            # 构造 3 列样例，让 Stimulsoft 字典树识别所有 col_0..col_2 + row_total
+            sample_cols = []
+            for i in range(3):
+                sample_cols.append({"key": f"col_{i}", "group": f"等级{i+1}", "label": f"尺寸{i+1}"})
+            sample_row = {
+                "color2": "样例色号",
+                "color": "1B",
+                "production_color_requirement": "",
+                "row_total": 0,
+            }
+            for i in range(3):
+                sample_row[f"col_{i}"] = 0
+            sample_totals = {f"col_{i}": 0 for i in range(3)}
+            sample_totals["grand_total"] = 0
             return {
                 "header": {"company_name": "", "order_no": "", "remark": ""},
-                "items": [{
-                    "order_no": "", "color": "", "production_color_requirement": "",
-                    "color2": "", "product_remark": "", "size": "",
-                    "production_size_requirement": "", "size2": "", "qty": 0,
-                }],
+                "column_defs": sample_cols,
+                "rows": [sample_row],
+                "col_totals": sample_totals,
+                "total_cols": 3,
             }
         return handler(db, order_no)
 

@@ -2,7 +2,7 @@
 
 ## 项目概述
 
-莱莎方舟平台，企业内部综合后台。包含提成管理、物流跟踪（含关键状态推送 + 物流日报）、运单上传（AI OCR）、客户归属、设计预约、素材管理（标签化素材中台/AI 打标签/版本迭代/收藏分享/**移动端素材检索**）、发色数字化管理（色板数据库/色彩趋势/AI 色板图生成）、用户/权限、AI 接入、方舟洞见（信源配置/情报采集库/行业情报速览/行业情报日报/AI 工具速递/案例库/周会纪要）、备货管理（安全库存/销量备货一览/库存日报 + 手动钉钉推送）、**生产订单管理（购物车→批量下单→订单跟踪→入库录入）**、**生产报工（工序管理→路线配置→产品绑定→扫码报工→进度跟踪→打印卡）**、**报表中心（Stimulsoft Reports.JS 设计器+查看器，前端 DOM 挂载，后端 JSON 数据 API）**、钉钉集成十五大模块。详细说明见 [CLAUDE.md](./CLAUDE.md)。
+莱莎方舟平台，企业内部综合后台。包含提成管理、物流跟踪（含关键状态推送 + 物流日报）、运单上传（AI OCR）、客户归属、设计预约、素材管理（标签化素材中台/AI 打标签/版本迭代/收藏分享/**移动端素材检索**）、发色数字化管理（色板数据库/色彩趋势/AI 色板图生成）、用户/权限、AI 接入、方舟洞见（信源配置/情报采集库/行业情报速览/行业情报日报/AI 工具速递/案例库/周会纪要）、备货管理（安全库存/销量备货一览/库存日报 + 手动钉钉推送）、**生产订单管理（购物车→批量下单→订单跟踪→入库录入）**、**生产报工（工序管理→路线配置→产品绑定→扫码报工→进度跟踪→打印卡）**、**报表中心（Stimulsoft Reports.JS 设计器+查看器，前端 DOM 挂载，后端 JSON 数据 API）**、**微信小程序（扫码报工/报工历史/报工总览/登录绑定）**、钉钉集成十六大模块。详细说明见 [CLAUDE.md](./CLAUDE.md)。
 
 ## 技术栈
 
@@ -10,6 +10,7 @@
 - **前端**: Vue 3 + Element Plus + Vite 5
 - **数据库**: 腾讯云 RDS MySQL（提成库读写 + 业务库跨库只读）
 - **部署**: Windows Server + NSSM 服务管理
+- **微信小程序**: 原生小程序（扫码报工/报工历史/报工总览，AppID `wx4dea4f10fe1bda19`）
 
 ## 快速开始
 
@@ -57,7 +58,8 @@ commission-system/
 │   │   └── asset/        # 素材管理 (router/models/schemas/service facade + analyze/batch/stats/tag/favorite/asset_service 子模块)
 │   │   ├── color/         # 发色数字化 (router/models/schemas/service facade + palette/blend/calc/trend/swatch/social_extract 子模块)
 │   │   ├── report/        # 报表中心 Stimulsoft (router/models/schemas/data_service — 模板 CRUD + JSON 数据组装)
-│   │   └── production/    # 生产报工 (router/models/schemas/service facade + process/route/binding/report_service 子模块)
+│   │   ├── production/    # 生产报工 (router/models/schemas/service facade + process/route/binding/report_service 子模块)
+│   │   └── mini/          # 微信小程序端 (router/service/auth/schemas — 扫码报工/历史/总览/撤销/登录绑定)
 │   ├── alembic/          # 数据库迁移
 │   ├── config/           # 业务规则配置
 │   └── sql/              # DDL 脚本
@@ -71,6 +73,7 @@ commission-system/
 │   │   ├── router/       # Vue Router（从 navigation.js 生成）
 │   │   └── utils/        # 工具函数
 │   └── dist/             # 构建产物
+├── miniprogram/            # 微信小程序（扫码报工/历史/总览，AppID wx4dea4f10fe1bda19）
 ├── deploy/                # NSSM 部署脚本
 └── docker-compose.yml
 ```

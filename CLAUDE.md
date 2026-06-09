@@ -62,6 +62,7 @@ commission-system/
 │   │   ├── color/         # 发色数字化领域模块（router/models/schemas/service facade + palette/blend/calc/trend/swatch/social_extract 子模块）
 │   │   ├── production/    # 生产报工领域模块（router/models/schemas/service facade + process/route/binding/report/dashboard_service 子模块；与 stock/production_* 生产订单是两个模块）
 │   │   ├── report/         # 报表中心领域模块（router/models/schemas/data_service — Stimulsoft Reports.JS 模板 CRUD + 数据组装）
+│   │   ├── mini/           # 微信小程序端领域模块（router/service/auth/schemas — 扫码报工/历史/总览/撤销/登录绑定）
 │   │   └── main.py        # FastAPI 入口（薄,只装配 app/middleware/lifespan,bootstrap/scheduler/router 都委托给子模块）
 │   ├── alembic/           # 数据库迁移
 │   ├── config/            # YAML 业务规则配置
@@ -83,6 +84,7 @@ commission-system/
 │   │   ├── styles/        # 设计 token、全局样式（tokens.css 是单一真相源）
 │   │   └── utils/         # 工具函数
 │   └── dist/              # 构建产物
+├── miniprogram/            # 微信小程序（生产报工扫码：scan/history/overview/photo/assistant 页面 + custom-tab-bar + 登录绑定）
 ├── deploy/                # Windows Server 部署脚本（NSSM）
 ├── DESIGN.md              # 设计系统规范（颜色/字体/间距/组件）
 └── docker-compose.yml
@@ -253,6 +255,18 @@ deploy\restart.bat                       # 仅重启 CommissionSystem service
   - `GET /order-products/{id}/progress` — 获取工序进度
   - `GET /order-products/{id}/qrcode` — 生成二维码
   - `GET /order-products/{id}/print-card` — 获取打印卡数据
+- `/api/mini` — 微信小程序端（独立领域模块 `app/mini/`，JWT 鉴权，无 RBAC 权限）
+  - `POST /auth/dev-login` — 开发调试登录（非 production 可用）
+  - `POST /auth/login` — wx.login code 换 token（→ jscode2session → 查绑定）
+  - `POST /auth/bind` — 绑定 openId ↔ 方舟用户（body: open_id + identifier）
+  - `GET /auth/verify` — 验证 token 有效性
+  - `GET /scan/product/{id}` — 扫码获取产品+工序信息（需 sign 参数）
+  - `POST /scan/submit` — 提交报工（body: progress_id + order_product_id）
+  - `GET /scan/history` — 今日报工记录（当前用户）
+  - `GET /scan/history/all` — 历史报工记录（分页+筛选）
+  - `GET /scan/overview` — 报工总览（全用户，按日期+工序分组）
+  - `GET /scan/overview/detail` — 指定日期+工序的明细列表
+  - `POST /scan/revoke` — 撤销报工（只能撤销自己的最后一道已完成工序）
 - `/api/assets` — 素材管理（标签化素材中台）
   - `GET /tags/dimensions` — 标签维度列表（含标签值，需 `asset:read`）
   - `POST /tags/dimensions` — 新建标签维度（需 `asset:admin`）
@@ -530,6 +544,11 @@ nssm start CommissionSystem    # 正常启动
   - `stock_daily_report` — 安全库存日报 + 低库存钉钉推送，cron 每天 08:30
   - `color_social_extract` — 社媒发色提取，cron 每天 08:00（Xpoz 竞品帖子图片 → OpenCV 提取主色 → 匹配色族 → 写入 trend_data）
   - `color_sales_aggregate` — 销售色彩聚合，cron 每周一 06:00（okki_orders 按颜色字段聚合 → 写入 trend_data）
+
+**微信小程序环境变量**（服务器 `.env` 必配，否则小程序登录/报工失败）：
+- `WX_MINI_APPID` — 微信小程序 AppID（`wx4dea4f10fe1bda19`）
+- `WX_MINI_SECRET` — 微信小程序 AppSecret（从微信公众平台获取）
+- `QR_SIGN_SECRET` — 二维码 HMAC 签名密钥（生产报工扫码验签用）
 
 ## Design System
 

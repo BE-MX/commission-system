@@ -1,12 +1,12 @@
 # anatomy.md
 
-> Auto-maintained by OpenWolf. Last scanned: 2026-06-08T07:28:57.018Z
-> Files: 215 tracked | Anatomy hits: 0 | Misses: 0
+> Auto-maintained by OpenWolf. Last scanned: 2026-06-09T02:24:58.945Z
+> Files: 216 tracked | Anatomy hits: 0 | Misses: 0
 
 ## ./
 
-- `CLAUDE.md` — OpenWolf (~11703 tok)
-- `README.md` — Project documentation (~888 tok)
+- `CLAUDE.md` — OpenWolf (~11965 tok)
+- `README.md` — Project documentation (~952 tok)
 
 ## .claude/
 
@@ -34,9 +34,10 @@
 - `feedback_domain_imports_silent_fail.md` (~290 tok)
 - `feedback_iframe-auth-vhtml.md` (~530 tok)
 - `feedback_router_authorization.md` (~497 tok)
-- `MEMORY.md` (~536 tok)
+- `MEMORY.md` (~560 tok)
 - `project_asset_module.md` (~1208 tok)
 - `project_intelligence_module.md` (~0 tok)
+- `project_mini_program.md` — 微信小程序 — 生产报工模块 (~982 tok)
 - `project_mobile_login_flow.md` (~318 tok)
 - `project_phase2_governance.md` (~1154 tok)
 - `project_production_module.md` — 数据库（4 张表，025 + 026 迁移） (~609 tok)
@@ -371,7 +372,7 @@
 ## backend/app/report/
 
 - `__init__.py` (~0 tok)
-- `data_service.py` — 报表中心 — 数据组装服务 (~1771 tok)
+- `data_service.py` — 报表中心 — 数据组装服务 (~2604 tok)
 - `models.py` — 报表中心 — SQLAlchemy ORM 模型 (~682 tok)
 - `router.py` — 报表中心 — API 路由 (~2670 tok)
 - `schemas.py` — 报表中心 — Pydantic 模型 (~335 tok)
@@ -622,7 +623,7 @@
 - `history.js` — pages/history/history.js — 零 import (~2123 tok)
 - `history.json` (~20 tok)
 - `history.wxml` (~1497 tok)
-- `history.wxss` (~2393 tok)
+- `history.wxss` (~2477 tok)
 
 ## miniprogram/pages/login/
 
@@ -636,7 +637,7 @@
 - `overview.js` — pages/overview/overview.js — 报工总览页（全用户，按日期+工序分组） (~870 tok)
 - `overview.json` (~35 tok)
 - `overview.wxml` (~1140 tok)
-- `overview.wxss` (~1644 tok)
+- `overview.wxss` (~1691 tok)
 
 ## miniprogram/pages/photo/
 
