@@ -9,6 +9,8 @@ REM ============================================================
 
 set "INSTALL_DIR=D:\commission-system"
 set "SERVICE_NAME=CommissionSystem"
+set "CLOUD_SERVER=root@119.28.107.92"
+set "CLOUD_DIST=/var/www/ark/dist"
 
 echo.
 echo ==============================
@@ -22,8 +24,8 @@ if not exist "%INSTALL_DIR%\.git" (
     goto :error
 )
 
-REM ---------- [1/5] Pull latest code ----------
-echo [1/5] Git pull...
+REM ---------- [1/6] Pull latest code ----------
+echo [1/6] Git pull...
 cd /d "%INSTALL_DIR%"
 git pull
 if errorlevel 1 (
@@ -33,8 +35,8 @@ if errorlevel 1 (
 echo      OK
 echo.
 
-REM ---------- [2/5] Backend deps ----------
-echo [2/5] Backend dependencies...
+REM ---------- [2/6] Backend deps ----------
+echo [2/6] Backend dependencies...
 cd /d "%INSTALL_DIR%\backend"
 call .venv\Scripts\activate.bat
 if errorlevel 1 (
@@ -49,8 +51,8 @@ if errorlevel 1 (
 echo      OK
 echo.
 
-REM ---------- [3/5] Database migration ----------
-echo [3/5] Database migration...
+REM ---------- [3/6] Database migration ----------
+echo [3/6] Database migration...
 alembic upgrade head
 if errorlevel 1 (
     echo [ERROR] alembic migration failed
@@ -59,8 +61,8 @@ if errorlevel 1 (
 echo      OK
 echo.
 
-REM ---------- [4/5] Build frontend ----------
-echo [4/5] Build frontend...
+REM ---------- [4/6] Build frontend ----------
+echo [4/6] Build frontend...
 cd /d "%INSTALL_DIR%\frontend"
 call npm install --silent
 if errorlevel 1 (
@@ -75,8 +77,19 @@ if errorlevel 1 (
 echo      OK
 echo.
 
-REM ---------- [5/5] Restart service ----------
-echo [5/5] Restart service...
+REM ---------- [5/6] Sync dist to cloud ----------
+echo [5/6] Sync frontend to cloud server...
+cd /d "%INSTALL_DIR%\frontend"
+scp -r dist/* %CLOUD_SERVER%:%CLOUD_DIST%
+if errorlevel 1 (
+    echo [WARNING] SCP sync failed - cloud CDN may be stale
+) else (
+    echo      OK
+)
+echo.
+
+REM ---------- [6/6] Restart service ----------
+echo [6/6] Restart service...
 nssm restart %SERVICE_NAME%
 if errorlevel 1 (
     echo [WARNING] Restart failed, trying stop + start...
