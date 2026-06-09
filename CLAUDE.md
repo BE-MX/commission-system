@@ -110,7 +110,7 @@ npm run build                            # 构建
 
 # 服务器部署
 deploy\setup-server.bat                  # 首次部署：克隆代码、安装依赖、配置 CommissionSystem service
-deploy\deploy.bat                        # 日常更新：拉取代码、安装依赖、迁移数据库、构建前端、重启服务
+deploy\deploy.bat                        # 日常更新：拉代码→装依赖→迁移→构建→SCP 同步 dist 到云服务器→重启服务
 deploy\restart.bat                       # 仅重启 CommissionSystem service
                                          # 注意：bat 用 UTF-8 编码 + chcp 65001，变量写 set VAR=value 不带引号
 ```
@@ -121,7 +121,23 @@ deploy\restart.bat                       # 仅重启 CommissionSystem service
 |----------|------|
 | 后端 API | 8001 |
 | 前端 dev | 3000 |
-| 前端生产 | 80   |
+| 前端生产 | 443 (腾讯云 Nginx, 静态直出 + API 反代隧道) |
+
+## 生产架构
+
+```
+外网用户 → 腾讯云 Nginx (119.28.107.92:443)
+  ├── 静态文件 (/assets/, /index.html, /vite.svg) → Nginx 直接返回 (/var/www/ark/dist/)
+  └── API (/api/, /uploads/, /s/, /health) → 隧道 → 本地方舟 Windows Server (:8002)
+
+局域网用户 → 本地 IP:8002 直连方舟 → 本地 Nginx/uvicorn serve 静态+API
+```
+
+- **云 Nginx 配置**: `/etc/nginx/conf.d/leshine.conf`（SSL 证书 `/etc/nginx/ssl/`）
+- **前端 dist 同步**: `deploy.bat` [5/6] 自动 `scp dist/* → root@119.28.107.92:/var/www/ark/dist/`（SSH 免密）
+- **gzip**: 已开启（JS/CSS/SVG/JSON/XML），`gzip_comp_level 6`
+- **SPA fallback**: `try_files $uri $uri/ /index.html`，`/assets/` 设置 1 年强缓存
+- 局域网访问不受影响，方舟本地 8002 端口照常运行
 
 ## API 路由前缀
 
@@ -333,6 +349,8 @@ deploy\restart.bat                       # 仅重启 CommissionSystem service
   - `PUT /templates/{report_code}` — 更新模板（需 `report:design`，更新内容时 version 自增）
   - `DELETE /templates/{report_code}` — 软删模板（需 `report:admin`）
   - `GET /data/{report_code}` — 获取报表数据 JSON（需 `report:read`，后端查询组装）
+  - `GET /print/production-order` — 生产订单 HTML 打印页（无鉴权，参数 `order_no`，Jinja2 渲染）
+  - `GET /export/production-order` — 生产订单 Word 导出（参数 `order_no`/`page_size`/`orientation`，python-docx 延迟导入）
 
 ## 数据库
 
@@ -705,11 +723,13 @@ content = result["content"]
 前端（按需加载 Stimulsoft JS）
   ├── /report 路由 → ReportCenter.vue（模板管理）
   ├── /report/view → ReportView.vue（Stimulsoft Viewer）
-  └── 生产订单打印 → StimulsoftViewer 组件（el-dialog 内）
+  └── 生产订单打印 → StimulsoftViewer 组件（el-dialog 内） + HTML 打印（新窗口）
 
 后端
   ├── /api/report/templates — 模板 CRUD
   ├── /api/report/data/{report_code} — JSON 数据组装
+  ├── /api/report/print/production-order — 生产订单 HTML 打印（Jinja2 渲染，无鉴权）
+  ├── /api/report/export/production-order — 生产订单 Word 导出（python-docx，延迟导入）
   └── 权限: report:read / report:design / report:admin
 
 前端静态资源
@@ -727,10 +747,13 @@ content = result["content"]
 
 ```text
 backend/app/report/
-├── router.py          — 模板 CRUD + 数据端点
+├── router.py          — 模板 CRUD + 数据端点 + HTML 打印端点
 ├── models.py          — ReportTemplate ORM (ark_report_templates)
 ├── schemas.py         — Pydantic 模型
-└── data_service.py    — 报表数据组装（按 report_code 分发）
+├── data_service.py    — 报表数据组装（含 _pivot_items 长→宽透视 + 公斤数统计）
+├── docx_export.py     — 生产订单 Word 导出（python-docx，支持 A4/A3/A5/B5 + 横竖版）
+└── templates/
+    └── production_order_print.html — 生产订单 Jinja2 HTML 打印模板
 
 frontend/src/
 ├── composables/useStimulsoft.js  — JS 动态加载 + License 激活 + Viewer/Designer 工厂
@@ -752,7 +775,8 @@ frontend/src/
 
 | report_code | 函数 | 说明 |
 |---|---|---|
-| `production_order_print` | `get_production_order_print_data` | 生产订单打印，Cross-Tab：行=color2，列=product_remark+size2，汇总=Sum(qty) |
+| `production_order_print` | `get_production_order_print_data` | 生产订单打印，后端 `_pivot_items` 透视为宽格式（按 group 排序）+ 公斤数统计（纯色/T色）+ Jinja2 HTML 渲染（方案C）+ Word 导出 |
+| `process_card_print` | `get_process_card_print_data` | 工序卡片打印，查询明细 + 生成二维码 base64 |
 
 新增报表只需：(1) 加一个 `get_xxx_data(db, params)` 函数 (2) 注册到 `_DATA_DISPATCH` 字典。
 
@@ -765,3 +789,6 @@ frontend/src/
 - `Scripts/` 下的 `.pack.js` **不含 StiLicense 类**，License Key 设置被静默忽略，永远显示 trial。必须用 `Demo/scripts/` 下的非压缩 `.js`（如 `stimulsoft.reports.js` 11.8MB）
 - `ReportCenter.vue` 的 `openDesigner` 不能在 `_ensureDesignerLoaded()` 完成前调 `new Stimulsoft.Report.StiReport()`——核心 JS 还没加载完，`window.Stimulsoft.Report` 是 undefined。修复：StiReport 创建移入 `createDesigner` 内部
 - `createDesigner` 第二个参数从 `StiReport 实例` 改为 `mrtContent 字符串|null`，内部在 JS 加载完成后创建 StiReport
+- 透视后列按 group 排序（2026-06-09）：`_pivot_items` 的 `column_defs` 必须按 `(product_remark, size)` 排序，否则 Jinja group-header 切换检测会重复生成 `<th>`，产生空列
+- SQL GROUP BY 不含 production_*_requirement（2026-06-09）：同一 `(color, product_remark, size)` 因 `production_color_requirement`/`production_size_requirement` 不同被拆成多行，透视后多出虚假列。改用 `MAX()` 聚合
+- python-docx 延迟导入（2026-06-09）：`docx_export` 在 router 顶层 import 会导致未安装 `python-docx` 的环境启动失败（`ModuleNotFoundError`），改为端点内 `try/except ImportError` 延迟导入

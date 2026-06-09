@@ -9,7 +9,7 @@
 - **后端**: Python 3.12 + FastAPI + SQLAlchemy 2.0 + Alembic
 - **前端**: Vue 3 + Element Plus + Vite 5
 - **数据库**: 腾讯云 RDS MySQL（提成库读写 + 业务库跨库只读）
-- **部署**: Windows Server + NSSM 服务管理
+- **部署**: Windows Server + NSSM 服务管理 + 腾讯云 Nginx 反代（静态文件云端直出）
 - **微信小程序**: 原生小程序（扫码报工/报工历史/报工总览，AppID `wx4dea4f10fe1bda19`）
 
 ## 快速开始
@@ -84,4 +84,4 @@ commission-system/
 |----------|------|
 | 后端 API | 8001 |
 | 前端 dev | 3000 (代理 /api → 8001) |
-| 前端生产 | 80   |
+| 前端生产 | 443 (腾讯云 Nginx, 静态直出 + API 反代隧道) |

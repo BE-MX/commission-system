@@ -3,6 +3,8 @@
 > Chronological action log. Hooks and AI append to this file automatically.
 > Old sessions are consolidated by the daemon weekly.
 
+| 18:10 | 优化 leshine.work 外网访问延迟：开启 Nginx gzip + 前端 dist 部署到云服务器 + deploy.bat 增加 SCP 同步 + SSH 免密 | deploy/deploy.bat, /etc/nginx/nginx.conf, /etc/nginx/conf.d/leshine.conf | HTML TTFB 9s→0.88s, JS 82s→1.05s | ~15k |
+
 | HH:MM | description | file(s) | outcome | ~tokens |
 |-------|-------------|---------|---------|---------|
 | 11:01 | 完成生产进度报工系统全量开发 | backend/app/production/*, alembic/027 | 后端 import 通过，前端 build 成功 | ~45k |
@@ -522,3 +524,184 @@
 | 10:24 | Edited backend/app/report/data_service.py | modified _pivot_items() | ~1610 |
 | 10:24 | Edited backend/app/report/data_service.py | modified range() | ~308 |
 | 10:26 | Session end: 2 writes across 1 files (data_service.py) | 3 reads | ~8122 tok |
+| 10:45 | Session end: 2 writes across 1 files (data_service.py) | 3 reads | ~8122 tok |
+| 11:03 | Created backend/app/report/templates/production_order_print.html | — | ~1754 |
+| 11:04 | Edited backend/app/report/router.py | added 3 import(s) | ~87 |
+| 11:04 | Edited backend/app/report/router.py | 2→6 lines | ~62 |
+| 11:05 | Edited backend/app/report/router.py | modified print_production_order() | ~252 |
+| 11:05 | Edited frontend/src/views/stock/ProductionOrderManage.vue | 9→10 lines | ~162 |
+| 11:06 | Edited frontend/src/views/stock/ProductionOrderManage.vue | modified handlePrintCommand() | ~136 |
+| 11:07 | Session end: 8 writes across 4 files (data_service.py, production_order_print.html, router.py, ProductionOrderManage.vue) | 6 reads | ~20350 tok |
+
+## Session: 2026-06-09 11:31
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 11:31 | Edited backend/app/core/config.py | inline fix | ~26 |
+| 11:33 | Session end: 1 writes across 1 files (config.py) | 1 reads | ~26 tok |
+| 11:35 | Session end: 1 writes across 1 files (config.py) | 1 reads | ~26 tok |
+| 11:35 | Session end: 1 writes across 1 files (config.py) | 1 reads | ~26 tok |
+| 11:36 | Session end: 1 writes across 1 files (config.py) | 2 reads | ~26 tok |
+| 11:38 | Created backend/alembic/versions/030_add_data_governance.py | — | ~2452 |
+| 11:39 | Created backend/app/governance/__init__.py | — | ~5 |
+| 11:39 | Created backend/app/governance/models.py | — | ~2245 |
+| 11:40 | Created backend/app/governance/schemas.py | — | ~2334 |
+| 11:40 | Created backend/app/governance/concept_service.py | — | ~2914 |
+| 11:41 | Session end: 6 writes across 6 files (config.py, 030_add_data_governance.py, __init__.py, models.py, schemas.py) | 11 reads | ~17631 tok |
+| 11:41 | Created backend/app/governance/relationship_service.py | — | ~1706 |
+| 11:42 | Created backend/app/governance/changelog_service.py | — | ~1188 |
+| 11:43 | Created backend/app/governance/import_service.py | — | ~3904 |
+| 11:43 | Created backend/app/governance/service.py | — | ~269 |
+| 11:44 | Created backend/app/governance/router.py | — | ~2807 |
+| 11:44 | Edited backend/app/routers.py | added 1 import(s) | ~32 |
+| 11:44 | Edited backend/app/routers.py | 1→2 lines | ~45 |
+| 11:44 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_stimulsoft_module.md | expanded (+19 lines) | ~273 |
+| 11:45 | Edited backend/app/auth/service.py | 5→9 lines | ~157 |
+| 11:46 | Edited frontend/src/api/clients.js | 1→2 lines | ~55 |
+| 11:46 | Created frontend/src/api/governance.js | — | ~590 |
+| 11:46 | Edited CLAUDE.md | 3→4 lines | ~66 |
+| 11:46 | Edited frontend/src/config/navigation.js | 6→7 lines | ~94 |
+| 11:47 | Edited frontend/src/config/navigation.js | 5→10 lines | ~69 |
+| 11:47 | Edited CLAUDE.md | 2→3 lines | ~56 |
+| 11:47 | Edited frontend/src/config/navigation.js | expanded (+43 lines) | ~432 |
+| 11:47 | Edited CLAUDE.md | 4→5 lines | ~57 |
+| 11:48 | Edited CLAUDE.md | inline fix | ~17 |
+| 11:48 | Created frontend/src/views/governance/ConceptRegistry.vue | — | ~3521 |
+| 11:48 | Edited CLAUDE.md | 5→7 lines | ~82 |
+| 11:49 | Session end: 26 writes across 18 files (config.py, 030_add_data_governance.py, __init__.py, models.py, schemas.py) | 15 reads | ~50295 tok |
+
+## Session: 2026-06-09 11:50
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 11:50 | Created frontend/src/views/governance/ConceptEditor.vue | — | ~6597 |
+| 11:51 | Created frontend/src/views/governance/ConceptGraph.vue | — | ~1350 |
+| 11:51 | Created frontend/src/views/governance/ChangeLog.vue | — | ~1499 |
+| 11:52 | 验证通过：后端 16 条路由注册成功，ORM import OK，前端 vite build 成功 | backend/app/governance/*, frontend/src/views/governance/* | Phase 1 全栈开发完成 | ~45k |
+
+## Session: 2026-06-09 数据概念治理模块开发
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 11:38 | 030 迁移：3 张表 (data_concepts/concept_relationships/concept_change_logs) | alembic/030_add_data_governance.py | MySQL ENUM + JSON + FK | ~2500 |
+| 11:39 | ORM 模型 + 常量 | app/governance/models.py | DataConcept + ConceptRelationship + ConceptChangeLog | ~2200 |
+| 11:40 | Pydantic schemas | app/governance/schemas.py | CRUD + 状态流转 + 关联 + 变更 + 导入导出 | ~2300 |
+| 11:40 | 概念 service | app/governance/concept_service.py | CRUD + 6 态流转 + 完整度校验 | ~2900 |
+| 11:41 | 关联 service | app/governance/relationship_service.py | CRUD + conflicts_with 双向同步 | ~1700 |
+| 11:42 | 变更记录 service | app/governance/changelog_service.py | 快照 + diff + 回滚 | ~1200 |
+| 11:43 | 导入/导出 service | app/governance/import_service.py | 批量导入 + 种子数据 15+9+14 | ~3900 |
+| 11:44 | API 路由 16 端点 | app/governance/router.py + routers.py | 权限守卫 + 注册 | ~2900 |
+| 11:45 | 权限种子 | app/auth/service.py | governance:read/write/admin | ~200 |
+| 11:46 | 前端 API client | api/governance.js + clients.js | governanceClient | ~700 |
+| 11:47 | 导航配置 | navigation.js | governance 菜单组 + 4 路由 | ~600 |
+| 11:48 | 概念列表页 | views/governance/ConceptRegistry.vue | 进度看板 + 筛选 + 表格 + 种子按钮 | ~3500 |
+| 11:50 | 概念编辑页 | views/governance/ConceptEditor.vue | 8 分区表单 + 完整度 + 状态按钮 + 关联抽屉 | ~6600 |
+| 11:51 | 全景关系图 | views/governance/ConceptGraph.vue | ECharts Graph 力导向 + 层级/关系筛选 | ~1350 |
+| 11:51 | 变更历史页 | views/governance/ChangeLog.vue | Timeline + diff 展示 + 回滚 | ~1500 |
+| 11:54 | Created C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_governance_module.md | — | ~415 |
+| 11:55 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/MEMORY.md | 1→2 lines | ~59 |
+| 11:55 | Session end: 5 writes across 5 files (ConceptEditor.vue, ConceptGraph.vue, ChangeLog.vue, project_governance_module.md, MEMORY.md) | 1 reads | ~11189 tok |
+| 12:00 | Edited backend/app/report/data_service.py | 2→3 lines | ~70 |
+| 12:01 | Edited backend/app/report/data_service.py | 3→7 lines | ~90 |
+| 12:01 | Edited backend/app/report/data_service.py | modified items() | ~119 |
+| 12:01 | Edited backend/app/report/templates/production_order_print.html | expanded (+20 lines) | ~156 |
+| 12:01 | Edited backend/app/report/templates/production_order_print.html | 1→6 lines | ~66 |
+| 12:01 | Edited backend/app/report/templates/production_order_print.html | 3→8 lines | ~69 |
+| 12:02 | Edited backend/app/report/templates/production_order_print.html | reduced (-6 lines) | ~232 |
+| 12:02 | Session end: 12 writes across 7 files (ConceptEditor.vue, ConceptGraph.vue, ChangeLog.vue, project_governance_module.md, MEMORY.md) | 3 reads | ~16597 tok |
+| 12:32 | Session end: 12 writes across 7 files (ConceptEditor.vue, ConceptGraph.vue, ChangeLog.vue, project_governance_module.md, MEMORY.md) | 3 reads | ~16597 tok |
+| 13:30 | Edited backend/app/report/data_service.py | 28→24 lines | ~247 |
+| 13:31 | Edited backend/app/report/data_service.py | 21→20 lines | ~249 |
+| 13:32 | Edited backend/app/report/data_service.py | modified items() | ~134 |
+| 13:33 | Edited backend/app/report/data_service.py | 13→10 lines | ~124 |
+| 13:35 | Edited backend/app/report/data_service.py | inline fix | ~31 |
+| 13:35 | Edited backend/app/report/data_service.py | 4→4 lines | ~57 |
+| 13:36 | Edited backend/app/report/data_service.py | 5→4 lines | ~63 |
+| 13:39 | Session end: 19 writes across 7 files (ConceptEditor.vue, ConceptGraph.vue, ChangeLog.vue, project_governance_module.md, MEMORY.md) | 3 reads | ~17482 tok |
+| 13:42 | Edited backend/app/report/data_service.py | 8→9 lines | ~70 |
+| 13:44 | Edited backend/app/report/data_service.py | 5→6 lines | ~57 |
+| 13:44 | Edited backend/app/report/data_service.py | inline fix | ~27 |
+| 13:46 | Edited backend/app/report/templates/production_order_print.html | expanded (+11 lines) | ~220 |
+| 13:47 | Session end: 23 writes across 7 files (ConceptEditor.vue, ConceptGraph.vue, ChangeLog.vue, project_governance_module.md, MEMORY.md) | 3 reads | ~17871 tok |
+| 14:06 | Edited backend/app/report/data_service.py | added 1 import(s) | ~28 |
+| 14:06 | Edited backend/app/report/data_service.py | modified _extract_weight_grams() | ~183 |
+| 14:07 | Edited backend/app/report/data_service.py | modified in() | ~1026 |
+| 14:07 | Edited backend/app/report/templates/production_order_print.html | expanded (+51 lines) | ~485 |
+| 14:08 | Edited backend/app/report/data_service.py | expanded (+6 lines) | ~189 |
+| 14:08 | Session end: 28 writes across 7 files (ConceptEditor.vue, ConceptGraph.vue, ChangeLog.vue, project_governance_module.md, MEMORY.md) | 3 reads | ~19864 tok |
+| 14:17 | Edited backend/app/report/data_service.py | expanded (+6 lines) | ~184 |
+| 14:18 | Edited backend/app/report/data_service.py | modified in() | ~442 |
+| 14:18 | Edited backend/app/report/templates/production_order_print.html | 8→8 lines | ~80 |
+| 14:19 | Session end: 31 writes across 7 files (ConceptEditor.vue, ConceptGraph.vue, ChangeLog.vue, project_governance_module.md, MEMORY.md) | 4 reads | ~24803 tok |
+| 14:22 | Edited backend/app/report/data_service.py | modified items() | ~459 |
+| 14:23 | Session end: 32 writes across 7 files (ConceptEditor.vue, ConceptGraph.vue, ChangeLog.vue, project_governance_module.md, MEMORY.md) | 4 reads | ~25262 tok |
+| 14:36 | Created backend/app/report/docx_export.py | — | ~3626 |
+| 14:37 | Edited backend/app/report/router.py | 4→4 lines | ~59 |
+| 14:37 | Edited backend/app/report/router.py | added 1 import(s) | ~37 |
+| 14:37 | Edited backend/app/report/router.py | modified export_production_order_docx() | ~452 |
+| 14:38 | Edited backend/app/report/router.py | added 1 import(s) | ~7 |
+| 14:38 | Edited backend/app/report/templates/production_order_print.html | expanded (+55 lines) | ~503 |
+| 14:39 | Edited backend/app/report/templates/production_order_print.html | expanded (+18 lines) | ~230 |
+| 14:40 | Edited backend/app/report/templates/production_order_print.html | added 1 condition(s) | ~210 |
+| 14:41 | Edited backend/requirements.txt | 1→3 lines | ~13 |
+| 14:42 | Session end: 41 writes across 10 files (ConceptEditor.vue, ConceptGraph.vue, ChangeLog.vue, project_governance_module.md, MEMORY.md) | 6 reads | ~41023 tok |
+| 14:50 | Session end: 41 writes across 10 files (ConceptEditor.vue, ConceptGraph.vue, ChangeLog.vue, project_governance_module.md, MEMORY.md) | 8 reads | ~41023 tok |
+| 14:55 | Session end: 41 writes across 10 files (ConceptEditor.vue, ConceptGraph.vue, ChangeLog.vue, project_governance_module.md, MEMORY.md) | 11 reads | ~41364 tok |
+| 15:01 | Edited backend/app/report/router.py | 2→1 lines | ~15 |
+| 15:01 | Edited backend/app/report/router.py | 2→7 lines | ~85 |
+| 15:02 | Session end: 43 writes across 10 files (ConceptEditor.vue, ConceptGraph.vue, ChangeLog.vue, project_governance_module.md, MEMORY.md) | 11 reads | ~41464 tok |
+| 16:15 | Edited backend/app/report/templates/production_order_print.html | 8→13 lines | ~74 |
+| 16:15 | Edited backend/app/report/templates/production_order_print.html | inline fix | ~33 |
+| 16:15 | Session end: 45 writes across 10 files (ConceptEditor.vue, ConceptGraph.vue, ChangeLog.vue, project_governance_module.md, MEMORY.md) | 11 reads | ~41773 tok |
+| 16:22 | Edited backend/app/report/templates/production_order_print.html | 3→3 lines | ~16 |
+| 16:22 | Edited backend/app/report/templates/production_order_print.html | "width:30px;min-width:30px" → "width:80px;min-width:80px" | ~21 |
+| 16:22 | Session end: 47 writes across 10 files (ConceptEditor.vue, ConceptGraph.vue, ChangeLog.vue, project_governance_module.md, MEMORY.md) | 11 reads | ~41813 tok |
+| 16:23 | Edited backend/app/report/templates/production_order_print.html | 3→3 lines | ~17 |
+| 16:23 | Edited backend/app/report/templates/production_order_print.html | "width:80px;min-width:80px" → "width:100px;min-width:100" | ~38 |
+| 16:24 | Session end: 49 writes across 10 files (ConceptEditor.vue, ConceptGraph.vue, ChangeLog.vue, project_governance_module.md, MEMORY.md) | 11 reads | ~41872 tok |
+| 16:53 | Edited CLAUDE.md | 1→2 lines | ~50 |
+| 16:53 | Edited CLAUDE.md | 2→3 lines | ~40 |
+| 16:53 | Edited CLAUDE.md | inline fix | ~42 |
+| 16:54 | Edited CLAUDE.md | 2→3 lines | ~53 |
+| 16:55 | Edited CLAUDE.md | 1→4 lines | ~150 |
+| 16:55 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_stimulsoft_module.md | inline fix | ~84 |
+| 16:56 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_stimulsoft_module.md | inline fix | ~36 |
+| 16:56 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_stimulsoft_module.md | 1→3 lines | ~60 |
+| 16:57 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_stimulsoft_module.md | expanded (+13 lines) | ~236 |
+| 16:57 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_stimulsoft_module.md | 1→2 lines | ~39 |
+| 16:58 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_stimulsoft_module.md | 5→8 lines | ~396 |
+| 16:59 | neat-freak sync: CLAUDE.md + project_stimulsoft_module.md + buglog.json | 生产订单打印透视排序/SQL GROUP BY/python-docx 延迟导入/Word 导出端点 | ~200 |
+| 17:01 | Session end: 60 writes across 12 files (ConceptEditor.vue, ConceptGraph.vue, ChangeLog.vue, project_governance_module.md, MEMORY.md) | 13 reads | ~56557 tok |
+| 17:10 | Session end: 60 writes across 12 files (ConceptEditor.vue, ConceptGraph.vue, ChangeLog.vue, project_governance_module.md, MEMORY.md) | 13 reads | ~56557 tok |
+
+## Session: 2026-06-09 17:37
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 18:39 | Edited deploy/deploy.bat | 2→4 lines | ~40 |
+| 18:39 | Edited deploy/deploy.bat | expanded (+11 lines) | ~88 |
+| 18:39 | Edited deploy/deploy.bat | inline fix | ~8 |
+| 18:39 | Edited deploy/deploy.bat | 2→2 lines | ~20 |
+| 18:39 | Edited deploy/deploy.bat | 2→2 lines | ~23 |
+| 18:39 | Edited deploy/deploy.bat | 2→2 lines | ~22 |
+| 18:39 | Edited deploy/deploy.bat | 2→2 lines | ~19 |
+| 18:40 | Session end: 7 writes across 1 files (deploy.bat) | 3 reads | ~1002 tok |
+| 18:41 | Session end: 7 writes across 1 files (deploy.bat) | 3 reads | ~1002 tok |
+| 18:42 | Session end: 7 writes across 1 files (deploy.bat) | 3 reads | ~1002 tok |
+| 18:43 | Session end: 7 writes across 1 files (deploy.bat) | 3 reads | ~1002 tok |
+| 18:44 | Session end: 7 writes across 1 files (deploy.bat) | 3 reads | ~1002 tok |
+| 18:45 | Session end: 7 writes across 1 files (deploy.bat) | 3 reads | ~1002 tok |
+| 18:45 | Session end: 7 writes across 1 files (deploy.bat) | 3 reads | ~1002 tok |
+| 18:46 | Session end: 7 writes across 1 files (deploy.bat) | 3 reads | ~1002 tok |
+| 18:46 | Session end: 7 writes across 1 files (deploy.bat) | 3 reads | ~1002 tok |
+| 18:47 | Session end: 7 writes across 1 files (deploy.bat) | 3 reads | ~1002 tok |
+| 18:48 | Session end: 7 writes across 1 files (deploy.bat) | 4 reads | ~13246 tok |
+| 18:50 | Session end: 7 writes across 1 files (deploy.bat) | 4 reads | ~13246 tok |
+| 18:51 | Edited CLAUDE.md | 5→5 lines | ~93 |
+| 18:51 | Edited CLAUDE.md | expanded (+16 lines) | ~188 |
+| 18:51 | Edited README.md | inline fix | ~17 |
+| 18:52 | Edited README.md | 3→3 lines | ~26 |
+| 18:52 | Edited CLAUDE.md | 3→3 lines | ~22 |
+| 18:52 | Created C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_production_architecture.md | — | ~318 |
+| 18:52 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/MEMORY.md | 1→2 lines | ~54 |
+| 18:53 | Session end: 14 writes across 5 files (deploy.bat, CLAUDE.md, README.md, project_production_architecture.md, MEMORY.md) | 7 reads | ~15560 tok |
