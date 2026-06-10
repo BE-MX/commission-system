@@ -189,4 +189,37 @@ export function getDashboardSummary() {
   return insightApi.get('/dashboard/summary', { showLoading: false })
 }
 
+// ── 客户机会台 ──────────────────────────────────────────
+export function getMyOpportunities(params) {
+  return insightApi.get('/customer-opportunities/my', { params, showLoading: false })
+}
+
+export function getOpportunityStats() {
+  return insightApi.get('/customer-opportunities/stats', { showLoading: false })
+}
+
+export function getOpportunityDetail(id) {
+  return insightApi.get(`/customer-opportunities/${id}`, { showLoading: false })
+}
+
+export function updateOpportunityStatus(id, data) {
+  return insightApi.put(`/customer-opportunities/${id}/status`, null, { params: data, loadingText: '正在更新...' })
+}
+
+export function addOpportunityFeedback(id, data) {
+  return insightApi.post(`/customer-opportunities/${id}/feedback`, null, { params: data, loadingText: '正在保存...' })
+}
+
+export function getAllOpportunities(params) {
+  return insightApi.get('/customer-opportunities/admin/all', { params, showLoading: false })
+}
+
+export function getUnassignedOpportunities(params) {
+  return insightApi.get('/customer-opportunities/admin/unassigned', { params, showLoading: false })
+}
+
+export function assignOpportunity(id, userId) {
+  return insightApi.put(`/customer-opportunities/${id}/assign`, null, { params: { user_id: userId }, loadingText: '正在分配...' })
+}
+
 export default insightApi

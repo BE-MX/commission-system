@@ -705,3 +705,87 @@
 | 18:52 | Created C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_production_architecture.md | — | ~318 |
 | 18:52 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/MEMORY.md | 1→2 lines | ~54 |
 | 18:53 | Session end: 14 writes across 5 files (deploy.bat, CLAUDE.md, README.md, project_production_architecture.md, MEMORY.md) | 7 reads | ~15560 tok |
+| 18:54 | Session end: 14 writes across 5 files (deploy.bat, CLAUDE.md, README.md, project_production_architecture.md, MEMORY.md) | 7 reads | ~15560 tok |
+
+## Session: 2026-06-10 09:00
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 09:12 | Created C:/Users/windb/.claude/plans/vast-singing-minsky.md | — | ~3033 |
+| 09:17 | Created backend/alembic/versions/031_add_customer_opportunity_platform.py | — | ~3763 |
+| 09:17 | Edited backend/app/auth/models.py | 11→11 lines | ~78 |
+| 09:18 | Edited backend/app/auth/models.py | modified ArkLoginLog() | ~799 |
+| 09:18 | Edited backend/app/insight/models.py | 22→23 lines | ~112 |
+| 09:18 | Edited backend/app/insight/models.py | modified InquiryImportBatch() | ~1465 |
+| 09:20 | Edited backend/app/auth/service.py | expanded (+8 lines) | ~238 |
+| 09:20 | Edited backend/app/insight/dependencies.py | modified _verify_import_api_key() | ~427 |
+| 09:21 | Created backend/app/insight/external_binding_service.py | — | ~2102 |
+| 09:22 | Edited backend/app/insight/service.py | expanded (+14 lines) | ~178 |
+| 09:23 | Edited backend/app/auth/admin_router.py | 4→5 lines | ~46 |
+| 09:24 | Edited backend/app/auth/admin_router.py | modified list_user_bindings() | ~1574 |
+| 09:26 | Created backend/app/insight/customer_opportunity_service.py | — | ~4664 |
+| 09:27 | Edited backend/app/insight/router.py | 8→11 lines | ~79 |
+| 09:28 | Edited backend/app/insight/router.py | modified _serialize_item_detail() | ~2173 |
+| 09:30 | Edited frontend/src/config/navigation.js | 5→5 lines | ~51 |
+| 09:31 | Edited frontend/src/config/navigation.js | expanded (+11 lines) | ~191 |
+| 09:32 | Edited frontend/src/api/insight.js | modified getDashboardSummary() | ~413 |
+| 09:33 | Created frontend/src/views/insight/composables/useCustomerOpportunity.js | — | ~1263 |
+| 09:35 | Created frontend/src/views/insight/CustomerOpportunityView.vue | — | ~4467 |
+| 09:37 | Created frontend/src/views/system/ExternalBindings.vue | — | ~1740 |
+| 09:39 | Edited frontend/src/config/navigation.js | expanded (+11 lines) | ~140 |
+| 09:41 | Session end: 22 writes across 14 files (vast-singing-minsky.md, 031_add_customer_opportunity_platform.py, models.py, service.py, dependencies.py) | 36 reads | ~55268 tok |
+
+## Session: 2026-06-10 09:43
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 09:55 | Edited backend/alembic/versions/031_add_customer_opportunity_platform.py | 2→7 lines | ~60 |
+| 09:55 | Edited backend/alembic/versions/031_add_customer_opportunity_platform.py | inline fix | ~22 |
+| 09:55 | Edited backend/alembic/versions/031_add_customer_opportunity_platform.py | inline fix | ~24 |
+| 09:55 | Edited backend/alembic/versions/031_add_customer_opportunity_platform.py | inline fix | ~24 |
+| 09:55 | Edited backend/alembic/versions/031_add_customer_opportunity_platform.py | inline fix | ~17 |
+| 09:57 | Edited backend/alembic/versions/031_add_customer_opportunity_platform.py | 2→2 lines | ~30 |
+| 09:58 | Session end: 6 writes across 1 files (031_add_customer_opportunity_platform.py) | 1 reads | ~3940 tok |
+| 10:16 | Edited CLAUDE.md | inline fix | ~36 |
+| 10:16 | Edited CLAUDE.md | expanded (+10 lines) | ~251 |
+| 10:17 | Edited CLAUDE.md | 1→3 lines | ~87 |
+| 10:17 | Edited CLAUDE.md | expanded (+7 lines) | ~300 |
+| 10:18 | Edited CLAUDE.md | inline fix | ~81 |
+| 10:19 | Edited CLAUDE.md | expanded (+7 lines) | ~145 |
+| 10:21 | Created C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_customer_opportunity_module.md | — | ~553 |
+| 10:21 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/MEMORY.md | 1→2 lines | ~71 |
+| 10:23 | Edited README.md | inline fix | ~137 |
+
+## Session: 2026-06-10 neat-freak 知识库整理
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|---------|
+| 10:15 | neat-freak: 客户机会台模块知识同步 | CLAUDE.md, cerebrum.md, MEMORY.md, project_customer_opportunity_module.md, README.md | 5 文件更新 | ~5000 |
+| 10:24 | Session end: 15 writes across 5 files (031_add_customer_opportunity_platform.py, CLAUDE.md, project_customer_opportunity_module.md, MEMORY.md, README.md) | 4 reads | ~20250 tok |
+| 10:39 | Edited frontend/src/views/insight/CustomerOpportunityView.vue | CSS: box-shadow, box-shadow, box-shadow | ~1473 |
+| 10:40 | Edited frontend/src/views/system/ExternalBindings.vue | 8→8 lines | ~112 |
+| 10:41 | Session end: 17 writes across 7 files (031_add_customer_opportunity_platform.py, CLAUDE.md, project_customer_opportunity_module.md, MEMORY.md, README.md) | 13 reads | ~48947 tok |
+
+## Session: 2026-06-10 11:36
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 11:41 | Edited frontend/src/views/insight/CustomerOpportunityView.vue | 31→35 lines | ~439 |
+| 11:42 | Edited frontend/src/views/insight/CustomerOpportunityView.vue | expanded (+6 lines) | ~238 |
+| 11:42 | Edited frontend/src/views/insight/CustomerOpportunityView.vue | inline fix | ~38 |
+| 11:43 | Edited frontend/src/views/insight/composables/useCustomerOpportunity.js | added 2 condition(s) | ~322 |
+| 11:43 | Edited frontend/src/views/insight/composables/useCustomerOpportunity.js | modified statusLabel() | ~92 |
+| 11:43 | Edited frontend/src/views/insight/composables/useCustomerOpportunity.js | inline fix | ~22 |
+| 11:43 | Edited frontend/src/views/insight/CustomerOpportunityView.vue | 7→7 lines | ~72 |
+| 11:44 | Edited frontend/src/views/insight/CustomerOpportunityView.vue | CSS: open | ~305 |
+| 11:44 | Edited frontend/src/views/insight/CustomerOpportunityView.vue | inline fix | ~42 |
+| 11:44 | Edited frontend/src/views/insight/CustomerOpportunityView.vue | modified urgencyLabel() | ~42 |
+| 11:46 | Edited frontend/src/views/insight/CustomerOpportunityView.vue | added 1 import(s) | ~74 |
+| 11:47 | Edited frontend/src/views/insight/CustomerOpportunityView.vue | expanded (+9 lines) | ~208 |
+| 11:47 | Edited frontend/src/views/insight/CustomerOpportunityView.vue | modified handleFeedbackReason() | ~107 |
+| 11:48 | Edited frontend/src/views/insight/CustomerOpportunityView.vue | expanded (+7 lines) | ~415 |
+| 11:49 | Edited frontend/src/views/insight/CustomerOpportunityView.vue | expanded (+27 lines) | ~417 |
+| 11:50 | Session end: 15 writes across 2 files (CustomerOpportunityView.vue, useCustomerOpportunity.js) | 4 reads | ~9410 tok |
+| 12:25 | Edited frontend/src/views/insight/CustomerOpportunityView.vue | added 1 import(s) | ~60 |
+| 12:26 | Session end: 16 writes across 2 files (CustomerOpportunityView.vue, useCustomerOpportunity.js) | 4 reads | ~9474 tok |
+| 14:19 | Session end: 16 writes across 2 files (CustomerOpportunityView.vue, useCustomerOpportunity.js) | 8 reads | ~26078 tok |

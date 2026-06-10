@@ -3,8 +3,8 @@
 from datetime import datetime
 
 from sqlalchemy import (
-    Column, Integer, BigInteger, String, DateTime, Enum,
-    ForeignKey, Boolean,
+    Boolean, Column, Integer, BigInteger, String, DateTime, Enum,
+    ForeignKey, JSON, SmallInteger, Text,
 )
 from sqlalchemy.orm import relationship
 
@@ -102,3 +102,44 @@ class ArkLoginLog(Base):
     status = Column(Enum("success", "failed", "locked", name="login_status"), nullable=False)
     fail_reason = Column(String(255))
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+# ── 外部账号绑定 ────────────────────────────────────────────
+class ArkUserExternalBinding(Base):
+    __tablename__ = "ark_user_external_bindings"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    ark_user_id = Column(Integer, ForeignKey("ark_users.id"), nullable=False, comment="方舟用户ID")
+    provider = Column(String(50), nullable=False, comment="alibaba_icbu/okki/dingtalk/email")
+    external_account_id = Column(String(100), nullable=False, comment="外部账号稳定ID")
+    external_display_name = Column(String(100), nullable=True, comment="外部账号显示名")
+    external_meta = Column(JSON, nullable=True, comment="外部账号原始信息和扩展信息")
+    binding_status = Column(String(20), nullable=False, default="active", comment="active/inactive/conflict/pending")
+    is_primary = Column(Boolean, nullable=False, default=False, comment="是否为该 provider 下主绑定账号")
+    remark = Column(String(255), nullable=True)
+    created_by = Column(Integer, nullable=True)
+    updated_by = Column(Integer, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    deleted_at = Column(DateTime, nullable=True, comment="软删除")
+
+    user = relationship("ArkUser", backref="external_bindings")
+
+
+class ArkExternalBindingCandidate(Base):
+    __tablename__ = "ark_external_binding_candidates"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    provider = Column(String(50), nullable=False)
+    external_account_id = Column(String(100), nullable=False)
+    external_display_name = Column(String(100), nullable=True)
+    source = Column(String(50), nullable=False, default="accio_work")
+    first_seen_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    last_seen_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    seen_count = Column(Integer, nullable=False, default=1)
+    suggested_user_id = Column(Integer, ForeignKey("ark_users.id"), nullable=True, comment="按名称等规则推测的用户")
+    suggestion_reason = Column(String(255), nullable=True)
+    candidate_status = Column(String(20), nullable=False, default="pending", comment="pending/bound/ignored")
+    raw_payload = Column(JSON, nullable=True)
+
+    suggested_user = relationship("ArkUser")

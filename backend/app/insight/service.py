@@ -68,3 +68,17 @@ from app.insight.meeting_minutes_service import (  # noqa: F401
 from app.insight.dashboard_service import (  # noqa: F401
     get_dashboard_summary,
 )
+
+# 外部账号绑定
+from app.insight.external_binding_service import (  # noqa: F401
+    resolve_owner, ensure_candidate, list_candidates,
+    bind_candidate, ignore_candidate,
+    get_user_bindings, create_binding, delete_binding,
+)
+
+# 客户机会
+from app.insight.customer_opportunity_service import (  # noqa: F401
+    import_accio_inquiries, get_opportunity, list_my_opportunities,
+    list_all_opportunities, list_unassigned_opportunities, get_opportunity_stats,
+    update_opportunity_status, add_opportunity_feedback, assign_opportunity,
+)

@@ -18,6 +18,7 @@ import {
   Money, Refresh, List, Van, Upload, Box, Setting, Aim, Reading,
   MagicStick, Notebook, Calendar, Camera, EditPen, Stamp, TrendCharts,
   Lock, Lightning, Picture, Collection, CollectionTag, DataBoard,
+  DataLine,
 } from '@element-plus/icons-vue'
 
 /**
@@ -68,7 +69,7 @@ export const MENU_GROUPS = {
   insight: {
     title: '方舟洞见',
     icon: Aim,
-    anyPermission: ['insight:read', 'insight:write', 'insight:internal_read', 'insight:admin'],
+    anyPermission: ['insight:read', 'insight:write', 'insight:internal_read', 'insight:admin', 'customer_opportunity:read'],
   },
   design: {
     title: '设计预约',
@@ -84,6 +85,11 @@ export const MENU_GROUPS = {
     title: '系统管理',
     icon: Setting,
     anyPermission: ['user:read', 'role:read'],
+  },
+  governance: {
+    title: '数据治理',
+    icon: DataLine,
+    anyPermission: ['governance:read', 'governance:write', 'governance:admin'],
   },
 }
 
@@ -506,6 +512,17 @@ export const NAV_ENTRIES = [
       permission: 'insight:admin',
     },
   },
+  {
+    path: '/insight/customer-opportunities',
+    name: 'CustomerOpportunity',
+    component: () => import('@/views/insight/CustomerOpportunityView.vue'),
+    title: '客户机会台',
+    permission: 'customer_opportunity:read',
+    menu: {
+      group: 'insight', title: '客户机会台', icon: Lightning, order: 65,
+      permission: 'customer_opportunity:read',
+    },
+  },
 
   // ── 设计预约 ───────────────────────────────────────────
   {
@@ -614,6 +631,17 @@ export const NAV_ENTRIES = [
       permission: 'ai:admin',
     },
   },
+  {
+    path: '/system/external-bindings',
+    name: 'ExternalBindings',
+    component: () => import('@/views/system/ExternalBindings.vue'),
+    title: '外部账号绑定',
+    permission: 'external_binding:read',
+    menu: {
+      group: 'system', title: '外部账号绑定', icon: Connection, order: 50,
+      permission: 'external_binding:write',
+    },
+  },
 
   // ── 报表中心（Stimulsoft Reports.JS） ──────────────────
   {
@@ -635,6 +663,49 @@ export const NAV_ENTRIES = [
     title: '查看报表',
     permission: 'report:read',
     hideInMenu: true,
+  },
+
+  // ── 数据治理 ───────────────────────────────────────────
+  {
+    path: '/governance/concepts',
+    name: 'ConceptRegistry',
+    component: () => import('@/views/governance/ConceptRegistry.vue'),
+    title: '概念注册表',
+    anyPermission: ['governance:read', 'governance:write', 'governance:admin'],
+    menu: {
+      group: 'governance', title: '概念注册表', icon: List, order: 10,
+      anyPermission: ['governance:read', 'governance:write', 'governance:admin'],
+    },
+  },
+  {
+    path: '/governance/concepts/:conceptId',
+    name: 'ConceptEditor',
+    component: () => import('@/views/governance/ConceptEditor.vue'),
+    title: '概念编辑',
+    anyPermission: ['governance:read', 'governance:write', 'governance:admin'],
+    hideInMenu: true,
+  },
+  {
+    path: '/governance/graph',
+    name: 'ConceptGraph',
+    component: () => import('@/views/governance/ConceptGraph.vue'),
+    title: '全景关系图',
+    permission: 'governance:read',
+    menu: {
+      group: 'governance', title: '全景关系图', icon: DataLine, order: 20,
+      permission: 'governance:read',
+    },
+  },
+  {
+    path: '/governance/change-logs',
+    name: 'ChangeLog',
+    component: () => import('@/views/governance/ChangeLog.vue'),
+    title: '变更历史',
+    anyPermission: ['governance:read', 'governance:write', 'governance:admin'],
+    menu: {
+      group: 'governance', title: '变更历史', icon: Document, order: 30,
+      anyPermission: ['governance:read', 'governance:write', 'governance:admin'],
+    },
   },
 
   // ── 个人设置 (隐藏) ────────────────────────────────────

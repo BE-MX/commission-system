@@ -90,6 +90,11 @@
 - [2026-06-03] Stimulsoft `DataSet.readJson()` 传 JS 对象时内部会做 `JSON.stringify`，但 `correctJson()` 对非标准结构解析不稳定。**显式传 `JSON.stringify(reportData)` 更可靠**
 - [2026-06-08] **小程序 CSS 默认 `box-sizing: content-box`**：带 padding 的卡片容器必须加 `box-sizing: border-box; width: 100%`，否则 padding 额外增加宽度超出屏幕。flex 子元素加 `min-width: 0; overflow: hidden` 防止文本撑破容器。长文本加 `text-overflow: ellipsis; white-space: nowrap`
 - [2026-06-08] **微信小程序体验版「网络错误」排查优先级**：(1) 服务器 `.env` 是否配了 `WX_MINI_APPID` + `WX_MINI_SECRET`（默认空字符串致 jscode2session 失败）；(2) 微信公众平台是否配了 request 合法域名（体验版强制校验，`urlCheck:false` 只在开发工具生效）；(3) `app.js` 的 `baseUrl` 是否指向生产地址
+- [2026-06-09] **Pydantic Settings `.env` 下划线转义导致启动报 28 个 `extra_forbidden` 校验错误**：`.env` 文件里所有变量名的下划线被 Markdown 编辑器自动转义为 `\_`（如 `COMMISSION\_DB\_HOST`），Pydantic Settings 2.x 不认识这些变量名，加上 `model_config` 默认 `extra="forbid"` 直接拒绝。修复：(1) `model_config` 加 `"extra": "ignore"`；(2) 修正 `.env` 去掉所有反斜杠转义和行末多余 `\` 续行符。**教训：`.env` 文件不要用 Markdown 编辑器保存**
+- [2026-06-09] **报表打印方案C（Jinja2 HTML）替代 Stimulsoft Cross-Tab**：Cross-Tab 组件单元格宽度/换行不可控，动态列数有限制。后端 `_pivot_items()` 将长格式透视为宽格式，Jinja2 渲染 HTML 表格，行列完全由数据动态决定。端点 `GET /api/report/print/production-order?order_no=xxx` 无鉴权
+- [2026-06-10] **Alembic revision ID 长度限制 32 字符**：`alembic_version.version_num` 是 `VARCHAR(32)`，长名称如 `031_add_customer_opportunity_platform`（40字符）写入时报 `Data too long`。**所有迁移 revision ID 必须控制在 32 字符以内**
+- [2026-06-10] **MySQL DDL 不可回滚 + Alembic 半执行状态**：迁移中前面 `create_table` 成功、后面 `alter/insert` 失败时，表已建但 version_num 未更新。修复需：手动 `UPDATE alembic_version SET version_num='新ID'` 然后重跑。**迁移前先验证 SQL 无误，FK 类型匹配**
+- [2026-06-10] **`ark_users.id` 实际是 INT UNSIGNED**：ORM 定义 `Column(Integer)` 看似 signed，但 MySQL 实际列是 `INT UNSIGNED`。FK 引用必须用 `_UINT = sa.Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql")`，否则 MySQL 8 报 `3780 incompatible foreign key`
 
 ## Decision Log
 

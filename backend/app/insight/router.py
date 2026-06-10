@@ -44,6 +44,9 @@ from app.insight.dependencies import (
     _has_any_perm,
     _require_insight_view,
     _require_insight_admin,
+    _require_opportunity_read,
+    _require_opportunity_write,
+    _require_opportunity_manage,
     _verify_import_api_key,
     _serialize_source,
 )
@@ -879,5 +882,200 @@ def _serialize_item_detail(item) -> dict:
         "credibility_note": item.credibility_note,
         "ai_meaning": item.ai_meaning,
         "ai_action_hint": item.ai_action_hint,
+    })
+    return base
+
+
+# ──────────────────────────────────────────────────────
+# ── 客户机会台 ───────────────────────────────────────
+# ──────────────────────────────────────────────────────
+
+@router.post("/customer-opportunities/import/accio", summary="ACCIO WORK 导入询盘")
+def import_accio(
+    payload: dict,
+    db: Session = Depends(get_db),
+    _authed: bool = Depends(_verify_import_api_key),
+):
+    from app.insight.customer_opportunity_service import import_accio_inquiries
+    result = import_accio_inquiries(db, payload)
+    return _ok(result, message="导入完成")
+
+
+@router.get("/customer-opportunities/my", summary="我的客户机会")
+def list_my_opportunities(
+    status: str = Query(None),
+    priority_level: str = Query(None),
+    source: str = Query(None),
+    keyword: str = Query(None),
+    date_from: str = Query(None),
+    date_to: str = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    _user: dict = Depends(_require_opportunity_read),
+):
+    from app.insight.customer_opportunity_service import list_my_opportunities as _list
+    user_id = _user["sub"]
+    result = _list(db, user_id, status, priority_level, source, keyword, date_from, date_to, page, page_size)
+    return _ok({
+        "items": [_serialize_opportunity(o) for o in result["items"]],
+        "total": result["total"],
+        "page": result["page"],
+        "page_size": result["page_size"],
+    })
+
+
+@router.get("/customer-opportunities/stats", summary="我的机会统计")
+def get_my_stats(
+    db: Session = Depends(get_db),
+    _user: dict = Depends(_require_opportunity_read),
+):
+    from app.insight.customer_opportunity_service import get_opportunity_stats
+    user_id = _user["sub"]
+    return _ok(get_opportunity_stats(db, user_id))
+
+
+@router.get("/customer-opportunities/{opp_id}", summary="机会详情")
+def get_opportunity_detail(
+    opp_id: int,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(_require_opportunity_read),
+):
+    from app.insight.customer_opportunity_service import get_opportunity
+    opp = get_opportunity(db, opp_id)
+    if not opp:
+        raise HTTPException(status_code=404, detail="机会不存在")
+    # 非 manage 权限只能看自己的
+    if not _has_perm(_user, "customer_opportunity:manage") and opp.owner_user_id != _user["sub"]:
+        raise HTTPException(status_code=403, detail="无权查看该机会")
+    return _ok(_serialize_opportunity_detail(opp))
+
+
+@router.put("/customer-opportunities/{opp_id}/status", summary="更新机会状态")
+def update_opp_status(
+    opp_id: int,
+    status: str = Query(..., description="新状态"),
+    note: str = Query(None),
+    db: Session = Depends(get_db),
+    _user: dict = Depends(_require_opportunity_write),
+):
+    from app.insight.customer_opportunity_service import update_opportunity_status
+    try:
+        opp = update_opportunity_status(db, opp_id, status, note, _user["sub"])
+        return _ok({"id": opp.id, "status": opp.status}, message="状态已更新")
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/customer-opportunities/{opp_id}/feedback", summary="添加反馈")
+def add_opp_feedback(
+    opp_id: int,
+    feedback: str = Query(..., description="useful/not_useful"),
+    note: str = Query(None),
+    db: Session = Depends(get_db),
+    _user: dict = Depends(_require_opportunity_write),
+):
+    from app.insight.customer_opportunity_service import add_opportunity_feedback
+    try:
+        add_opportunity_feedback(db, opp_id, feedback, note, _user["sub"])
+        return _ok(None, message="反馈已记录")
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/customer-opportunities/admin/all", summary="管理员: 全部机会")
+def admin_list_all(
+    status: str = Query(None),
+    priority_level: str = Query(None),
+    owner_user_id: int = Query(None),
+    resolve_status: str = Query(None),
+    keyword: str = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    _user: dict = Depends(_require_opportunity_manage),
+):
+    from app.insight.customer_opportunity_service import list_all_opportunities as _list
+    result = _list(db, status, priority_level, owner_user_id, resolve_status, keyword, page, page_size)
+    return _ok({
+        "items": [_serialize_opportunity(o) for o in result["items"]],
+        "total": result["total"],
+        "page": result["page"],
+        "page_size": result["page_size"],
+    })
+
+
+@router.get("/customer-opportunities/admin/unassigned", summary="管理员: 未分配机会")
+def admin_list_unassigned(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    _user: dict = Depends(_require_opportunity_manage),
+):
+    from app.insight.customer_opportunity_service import list_unassigned_opportunities as _list
+    result = _list(db, page, page_size)
+    return _ok({
+        "items": [_serialize_opportunity(o) for o in result["items"]],
+        "total": result["total"],
+        "page": result["page"],
+        "page_size": result["page_size"],
+    })
+
+
+@router.put("/customer-opportunities/{opp_id}/assign", summary="管理员: 分配机会")
+def admin_assign(
+    opp_id: int,
+    user_id: int = Query(..., description="方舟用户ID"),
+    db: Session = Depends(get_db),
+    _user: dict = Depends(_require_opportunity_manage),
+):
+    from app.insight.customer_opportunity_service import assign_opportunity
+    try:
+        opp = assign_opportunity(db, opp_id, user_id, _user["sub"])
+        return _ok({"id": opp.id, "owner_user_id": opp.owner_user_id}, message="已分配")
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+# ── 机会序列化 ──────────────────────────────────────────
+
+def _serialize_opportunity(o) -> dict:
+    return {
+        "id": o.id,
+        "opportunity_type": o.opportunity_type,
+        "source": o.source,
+        "source_key": o.source_key,
+        "owner_user_id": o.owner_user_id,
+        "owner_resolve_status": o.owner_resolve_status,
+        "customer_name": o.customer_name,
+        "customer_region": o.customer_region,
+        "priority_level": o.priority_level,
+        "confidence_score": o.confidence_score,
+        "urgency": o.urgency,
+        "title": o.title,
+        "summary": o.summary,
+        "status": o.status,
+        "feedback": o.feedback,
+        "due_at": o.due_at.isoformat() if o.due_at else None,
+        "latest_message_at": o.latest_message_at.isoformat() if o.latest_message_at else None,
+        "handled_at": o.handled_at.isoformat() if o.handled_at else None,
+        "created_at": o.created_at.isoformat() if o.created_at else None,
+        "updated_at": o.updated_at.isoformat() if o.updated_at else None,
+    }
+
+
+def _serialize_opportunity_detail(o) -> dict:
+    base = _serialize_opportunity(o)
+    base.update({
+        "source_ref_type": o.source_ref_type,
+        "source_ref_id": o.source_ref_id,
+        "source_owner_external_json": o.source_owner_external_json,
+        "customer_external_id": o.customer_external_id,
+        "key_signals_json": o.key_signals_json,
+        "background_check_json": o.background_check_json,
+        "recommended_strategy": o.recommended_strategy,
+        "opening_message_en": o.opening_message_en,
+        "follow_up_message_en": o.follow_up_message_en,
+        "evidence_json": o.evidence_json,
     })
     return base

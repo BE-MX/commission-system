@@ -27,3 +27,5 @@ Pillow>=10.0
 qrcode[pil]>=7.4
 # AI key encryption
 cryptography>=42.0
+# 报表 Word 导出
+python-docx>=1.1

@@ -16,7 +16,7 @@ This project uses OpenWolf for context management. Read and follow .wolf/OPENWOL
 - **设计预约**：拍摄/设计排期申请、审批流、冲突检测、甘特视图、附件上传、钉钉状态通知
 - **认证与 RBAC**：用户/角色/权限管理，JWT + Refresh Token Cookie
 - **AI 接入**：AI Provider/Preset 管理、调用日志、多模态 OCR（运单识别）
-- **方舟洞见**：信源配置、情报采集库（结构化情报条目+可信度标记）、行业情报速览（从采集库选材生成 6 部分 HTML 报告）、行业情报日报、AI 工具速递、内部经营报告、业务员案例库、周会纪要
+- **方舟洞见**：信源配置、情报采集库（结构化情报条目+可信度标记）、行业情报速览（从采集库选材生成 6 部分 HTML 报告）、行业情报日报、AI 工具速递、内部经营报告、业务员案例库、周会纪要、**客户机会台（阿里询盘导入→归属解析→机会卡→话术+状态管理）**
 - **素材管理**：标签化素材中台，取代钉钉网盘。支持上传（AI 自动打标签）、标签组合检索、版本迭代、权限控制（预览/下载）、收藏夹（含分享）、下载统计报表
 - **发色数字化管理**：色板数据库（行业通用色号+莱莎自有色号+混合色管理）、色彩趋势预测、AI 色板图生成（GPT-Image-2 + ΔE 色差校验）
 - **备货管理**：安全库存设置（手动/AI 生成）、销量备货一览、安全库存日报、低库存钉钉推送（每日 08:30 自动 + 管理员手动触发）
@@ -55,7 +55,7 @@ commission-system/
 │   │   ├── system/        # 系统字典领域模块
 │   │   ├── dingtalk/      # 钉钉集成领域模块
 │   │   ├── ai/            # AI 接入领域模块（service.py facade + provider/preset/call/log_service + keyring + http_client）
-│   │   ├── insight/       # 方舟洞见领域模块（service.py facade + fetcher + ai_helpers + sources/reports/case_library/meeting_minutes/dashboard_service/item_service/collector_service/intelligence_service/schedule_service + dependencies.py router 依赖工厂）
+│   │   ├── insight/       # 方舟洞见领域模块（service.py facade + fetcher + ai_helpers + sources/reports/case_library/meeting_minutes/dashboard_service/item_service/collector_service/intelligence_service/schedule_service + external_binding_service + customer_opportunity_service + dependencies.py router 依赖工厂）
 │   │   ├── stock/         # 备货管理领域模块（service.py facade + constants/sku_query/overview/safety/daily_report_service/production_cart_service/production_order_service/in_transit_service；TFT 微服务通过 Settings 配置接入）
 │   │   ├── tracking/      # 物流跟踪领域模块（router + shipment/upload/ocr/polling/staging/daily_report/push_service + carriers/ + status.py + templates/）
 │   │   ├── asset/         # 素材管理领域模块（router/models/schemas/service facade + analyze/batch/stats/tag/favorite/asset_service 子模块）
@@ -173,6 +173,13 @@ deploy\restart.bat                       # 仅重启 CommissionSystem service
   - `PUT /profile` — 修改个人资料（real_name, email, phone, avatar_url）
   - `POST /avatar` — 上传头像（图片文件，最大 2MB，自动删除旧头像）
   - `PUT /profile/password` — 修改密码
+  - **外部账号绑定**（`external_binding:read/write`，`auth/admin_router.py`）
+    - `GET /users/{user_id}/external-bindings` — 列出用户外部绑定
+    - `POST /users/{user_id}/external-bindings` — 创建绑定（Query: provider, external_account_id, display_name）
+    - `DELETE /users/{user_id}/external-bindings/{binding_id}` — 软删绑定
+    - `GET /external-binding-candidates` — 候选列表（可选 status 筛选）
+    - `POST /external-binding-candidates/{candidate_id}/bind` — 候选绑定到用户
+    - `POST /external-binding-candidates/{candidate_id}/ignore` — 忽略候选
 - `/api/design` — 设计预约（拍摄预约申请、审批、排期管理、附件、期望日期修改）
   - 附件端点：`POST/GET /requests/{id}/attachments`，`GET /attachments/{id}/download`，`DELETE /attachments/{id}`
   - 期望日期修改：`PUT /requests/{id}/expect-date`（仅 pending_design 状态）
@@ -222,6 +229,16 @@ deploy\restart.bat                       # 仅重启 CommissionSystem service
   - `PATCH /tasks/{task_id}` — 更新任务状态
   - `GET /minutes/{id}/tasks/export` — 导出任务 CSV
   - `GET /dashboard/summary` — 工作台首页摘要
+  - **客户机会台**（`customer_opportunity:read/write/manage` + `external_binding:read/write`，子路径 `/customer-opportunities/*` 和 `/external-bindings/*`）
+    - `POST /customer-opportunities/import/accio` — ACCIO WORK 询盘导入（`X-Import-API-Key` 认证，复用 `INSIGHT_IMPORT_API_KEY`）
+    - `GET /customer-opportunities/my` — 我的机会列表（`owner_user_id=current`，分页+筛选）
+    - `GET /customer-opportunities/stats` — 我的 KPI 统计（pending/a_count/overdue/today_contacted）
+    - `GET /customer-opportunities/{id}` — 机会详情（owner 校验）
+    - `PUT /customer-opportunities/{id}/status` — 更新状态（pending→contacted→replied→quoted→won/lost/dismissed）+ 写事件
+    - `POST /customer-opportunities/{id}/feedback` — 添加反馈（useful/not_useful）
+    - `GET /customer-opportunities/admin/all` — 管理员: 全部机会（需 `customer_opportunity:manage`）
+    - `GET /customer-opportunities/admin/unassigned` — 管理员: 未分配机会
+    - `PUT /customer-opportunities/{id}/assign` — 管理员: 手动分配
 - `/api/stock` — 备货管理（销量备货一览/安全库存设置/日报）
   - `GET /overview` — 销量备货一览（分页+状态筛选+排序+搜索，型号/类型/尺寸/颜色/克重支持逗号分隔多选；返回项已包含 `stock_status` / `stock_items` / `production_in_transit`，前端无需再调 `/production/stock-status`）
   - `GET /safety` — 安全库存列表（用于设置页，型号/类型/尺寸/颜色/克重支持逗号分隔多选；返回项同样含 `stock_status` / `stock_items`）
@@ -393,6 +410,13 @@ deploy\restart.bat                       # 仅重启 CommissionSystem service
   - `ark_insight_items` — 情报条目（source_id, source_type, collected_at, published_at, original_url, title, content_mode: full_text/summary, content_md LONGTEXT, credibility_score 1-5, credibility_label: verified/plausible/uncertain/unverifiable, credibility_note, tags JSON, item_type, related_competitor, is_featured, status: active/archived/flagged, xpoz_post_id, like_count, comment_count, media_type, ai_signal, ai_meaning, ai_action_hint, priority: high/medium/low）
   - `ark_insight_collection_logs` — 采集任务日志（source_id, run_at, status: success/partial/failed, items_fetched/written/filtered, error_message, duration_ms）
   - `ark_insight_schedule_rules` — 速览定时生成规则（rule_name, is_active, cron_expression, config_json, notify_dingtalk, last_run_at）
+- **外部账号绑定（2 张表，031 迁移，auth/models.py）**：
+  - `ark_user_external_bindings` — 用户外部账号绑定（provider + external_account_id 唯一，ark_user_id FK ark_users，binding_status active/inactive/conflict/pending，软删 deleted_at）
+  - `ark_external_binding_candidates` — 外部账号绑定候选（provider + external_account_id 唯一，suggested_user_id 自动匹配，candidate_status pending/bound/ignored）
+- **客户机会台（3 张表，031 迁移，insight/models.py）**：
+  - `ark_inquiry_import_batches` — 阿里询盘导入批次（batch_id 唯一，source/schema_version，统计 created/updated/unassigned/failed，status processing/success/partial_failed/failed）
+  - `ark_customer_opportunities` — 客户机会卡（source_key 唯一幂等键，owner_user_id FK ark_users，owner_binding_id FK ark_user_external_bindings，priority_level A/B/C/D，urgency urgent/high/normal/low，due_at 按等级计算，status pending/contacted/replied/quoted/won/lost/dismissed，含背调/AI策略/话术字段）
+  - `ark_customer_opportunity_events` — 机会事件（opportunity_id FK CASCADE，event_type created/imported/viewed/status_changed/feedback/assigned）
 - **素材管理（7 张表，020 迁移）**：
   - `ark_tag_dimensions` — 标签维度
   - `ark_tag_values` — 标签值
@@ -440,6 +464,8 @@ deploy\restart.bat                       # 仅重启 CommissionSystem service
 | 色彩管理 | `color:read` / `color:write` / `color:admin` | 查看色板数据库/色彩趋势/编辑色号/生成色板图/管理竞品监控 |
 | 生产订单 | `production:read` / `production:write` / `production:admin` | 查看订单/创建编辑订单与入库/删除订单（备货管理菜单组下独立子菜单，由 `production:read` 控制显示） |
 | 报表中心 | `report:read` / `report:design` / `report:admin` | 查看报表/编辑模板/删除模板（Stimulsoft Reports.JS，super_admin 自动绕过） |
+| 客户机会台 | `customer_opportunity:read` / `customer_opportunity:write` / `customer_opportunity:manage` | 查看本人机会/更新状态反馈/管理全部机会分配 |
+| 外部账号绑定 | `external_binding:read` / `external_binding:write` | 查看绑定/创建删除绑定管理候选 |
 
 **导航显示逻辑**（`MainLayout.vue`）：各菜单项通过 `v-if="authStore.hasAnyPermission([...])"` 控制，`super_admin` 角色绕过所有权限检查。头部用户区域显示头像（`avatar_url`），无头像时显示默认图标。物流管理子菜单含三个入口：物流跟踪(`tracking:read/read_all`) / 运单上传(`tracking:write`) / 物流日报(`tracking:daily_report`)。路由守卫：`/tracking/:waybillNo` 需 `tracking:read`，`/tracking/daily-report` 需 `tracking:daily_report`。运单列表数据范围由权限自动决定（`tracking:read` 仅看本人，`tracking:read_all` 看全部），页面无切换控件。
 

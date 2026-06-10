@@ -72,6 +72,25 @@ def _verify_import_api_key(authorization: Optional[str] = Header(None)):
     return True
 
 
+# ── 客户机会台权限 ─────────────────────────────────────────
+def _require_opportunity_read(user: dict = Depends(get_current_user)):
+    if not _has_any_perm(user, ["customer_opportunity:read", "customer_opportunity:write", "customer_opportunity:manage"]):
+        raise HTTPException(status_code=403, detail="权限不足:需要 customer_opportunity:read")
+    return user
+
+
+def _require_opportunity_write(user: dict = Depends(get_current_user)):
+    if not _has_any_perm(user, ["customer_opportunity:write", "customer_opportunity:manage"]):
+        raise HTTPException(status_code=403, detail="权限不足:需要 customer_opportunity:write")
+    return user
+
+
+def _require_opportunity_manage(user: dict = Depends(get_current_user)):
+    if not _has_perm(user, "customer_opportunity:manage"):
+        raise HTTPException(status_code=403, detail="权限不足:需要 customer_opportunity:manage")
+    return user
+
+
 def _serialize_source(s):
     return {
         "id": s.id,

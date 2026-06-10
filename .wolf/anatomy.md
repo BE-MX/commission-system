@@ -1,12 +1,12 @@
 # anatomy.md
 
-> Auto-maintained by OpenWolf. Last scanned: 2026-06-09T02:24:58.945Z
-> Files: 216 tracked | Anatomy hits: 0 | Misses: 0
+> Auto-maintained by OpenWolf. Last scanned: 2026-06-10T04:25:28.224Z
+> Files: 249 tracked | Anatomy hits: 0 | Misses: 0
 
 ## ./
 
-- `CLAUDE.md` — OpenWolf (~11965 tok)
-- `README.md` — Project documentation (~952 tok)
+- `CLAUDE.md` — OpenWolf (~13090 tok)
+- `README.md` — Project documentation (~984 tok)
 
 ## .claude/
 
@@ -25,6 +25,7 @@
 - `bubbly-herding-moler.md` — 素材标签筛选性能优化方案 (~869 tok)
 - `golden-brewing-cosmos.md` — 生产看板集成计划 (~1360 tok)
 - `nifty-booping-aho.md` — 列表表头排序统一改造方案 (~2099 tok)
+- `vast-singing-minsky.md` — 客户机会台开发计划 (~2844 tok)
 - `whimsical-purring-cocke.md` — JimuReport → Stimulsoft Reports.JS 迁移计划 (~2637 tok)
 
 ## C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/
@@ -34,15 +35,18 @@
 - `feedback_domain_imports_silent_fail.md` (~290 tok)
 - `feedback_iframe-auth-vhtml.md` (~530 tok)
 - `feedback_router_authorization.md` (~497 tok)
-- `MEMORY.md` (~560 tok)
+- `MEMORY.md` (~651 tok)
 - `project_asset_module.md` (~1208 tok)
+- `project_customer_opportunity_module.md` — 客户机会台模块 (~537 tok)
+- `project_governance_module.md` — 数据概念治理模块 (~408 tok)
 - `project_intelligence_module.md` (~0 tok)
 - `project_mini_program.md` — 微信小程序 — 生产报工模块 (~982 tok)
 - `project_mobile_login_flow.md` (~318 tok)
 - `project_phase2_governance.md` (~1154 tok)
+- `project_production_architecture.md` — 生产架构（2026-06-09 确立） (~317 tok)
 - `project_production_module.md` — 数据库（4 张表，025 + 026 迁移） (~609 tok)
 - `project_production_reporting_module.md` — 2026-06-01 生产报工模块 (~1113 tok)
-- `project_stimulsoft_module.md` — 2026-06-03 JimuReport → Stimulsoft 迁移 (~1071 tok)
+- `project_stimulsoft_module.md` — 2026-06-03 JimuReport → Stimulsoft 迁移 (~1707 tok)
 - `project_stock_module.md` (~866 tok)
 - `project_table_sorting.md` — 列表表头排序统一改造 (~390 tok)
 - `project_testing_setup.md` (~504 tok)
@@ -64,7 +68,7 @@
 
 ## backend/
 
-- `requirements.txt` — Python dependencies (~129 tok)
+- `requirements.txt` — Python dependencies (~136 tok)
 
 ## backend/.pytest_cache/
 
@@ -290,10 +294,12 @@
 - `027_add_process_reporting.py` — add production process reporting tables (~2457 tok)
 - `028_add_report_template.py` — add report template table (~660 tok)
 - `029_add_report_template_versions.py` — add report template version history (~580 tok)
+- `030_add_data_governance.py` — add data governance module (3 tables) (~2452 tok)
+- `031_add_customer_opportunity_platform.py` — add customer opportunity platform (5 tables) (~3797 tok)
 
 ## backend/app/
 
-- `routers.py` — 集中注册所有 FastAPI router。新增业务模块时在此追加。 (~817 tok)
+- `routers.py` — 集中注册所有 FastAPI router。新增业务模块时在此追加。 (~859 tok)
 
 ## backend/app/ai/
 
@@ -320,9 +326,9 @@
 
 ## backend/app/auth/
 
-- `admin_router.py` — 用户/角色/权限管理 & 个人资料路由 (~5083 tok)
-- `models.py` — Auth 数据模型（SQLAlchemy） (~1228 tok)
-- `service.py` — Auth 业务逻辑 (~3296 tok)
+- `admin_router.py` — 用户/角色/权限管理 & 个人资料路由 (~6663 tok)
+- `models.py` — Auth 数据模型（SQLAlchemy） (~1902 tok)
+- `service.py` — Auth 业务逻辑 (~3536 tok)
 
 ## backend/app/bootstrap/
 
@@ -335,15 +341,33 @@
 
 ## backend/app/core/
 
-- `config.py` — 环境变量配置（Pydantic Settings） (~1466 tok)
+- `config.py` — 环境变量配置（Pydantic Settings） (~1472 tok)
 
 ## backend/app/design/
 
 - `router.py` — 设计预约 — API 路由 (~10093 tok)
 - `scheduler.py` — 设计预约 — 定时任务 (~1182 tok)
 
+## backend/app/governance/
+
+- `__init__.py` — 数据概念治理领域模块 (~5 tok)
+- `changelog_service.py` — 数据概念治理 — 变更记录 + diff + 回滚 (~1188 tok)
+- `concept_service.py` — 数据概念治理 — 概念 CRUD + 状态流转 + 完整度校验 (~2914 tok)
+- `import_service.py` — 数据概念治理 — 批量导入 + 导出 (~3904 tok)
+- `models.py` — 数据概念治理 — SQLAlchemy ORM 模型 (~2245 tok)
+- `relationship_service.py` — 数据概念治理 — 关联关系 CRUD + 双向同步 (~1706 tok)
+- `router.py` — 数据概念治理 — API 路由 (~2807 tok)
+- `schemas.py` — 数据概念治理 — Pydantic 请求/响应模型 (~2334 tok)
+- `service.py` — 数据概念治理 — service facade（re-export） (~269 tok)
+
 ## backend/app/insight/
 
+- `customer_opportunity_service.py` — 客户机会服务 — ACCIO 导入 + 机会 CRUD + 状态管理 (~4664 tok)
+- `dependencies.py` — 方舟洞见 — Router 权限依赖与视图模型 helper (~1220 tok)
+- `external_binding_service.py` — 外部账号绑定服务 — 归属解析 + 绑定 CRUD + 候选管理 (~2102 tok)
+- `models.py` — 方舟洞见 — SQLAlchemy ORM 模型 (~5203 tok)
+- `router.py` — 方舟洞见 — API 路由 (~10720 tok)
+- `service.py` — 方舟洞见 — service facade (~782 tok)
 
 ## backend/app/insight/templates/
 
@@ -372,10 +396,15 @@
 ## backend/app/report/
 
 - `__init__.py` (~0 tok)
-- `data_service.py` — 报表中心 — 数据组装服务 (~2604 tok)
+- `data_service.py` — 报表中心 — 数据组装服务 (~3746 tok)
+- `docx_export.py` — 生产订单 Word 导出服务。 (~3626 tok)
 - `models.py` — 报表中心 — SQLAlchemy ORM 模型 (~682 tok)
-- `router.py` — 报表中心 — API 路由 (~2670 tok)
+- `router.py` — 报表中心 — API 路由 (~3409 tok)
 - `schemas.py` — 报表中心 — Pydantic 模型 (~335 tok)
+
+## backend/app/report/templates/
+
+- `production_order_print.html` — 生产订单 {{ header.order_no }} (~3221 tok)
 
 ## backend/app/schedulers/
 
@@ -408,6 +437,7 @@
 
 ## deploy/
 
+- `deploy.bat` (~767 tok)
 
 ## frontend/
 
@@ -427,7 +457,9 @@
 ## frontend/src/api/
 
 - `asset.js` — ── 标签维度 ──────────────────────────────────────────── (~1558 tok)
-- `clients.js` — 业务域 API client 集合。 (~314 tok)
+- `clients.js` — 业务域 API client 集合。 (~341 tok)
+- `governance.js` — 数据概念治理 API client (~590 tok)
+- `insight.js` — ── 报告 ────────────────────────────────────────────── (~2070 tok)
 - `production.js` — 生产报工 API client (~884 tok)
 - `reportCenter.js` — 报表中心 API（Stimulsoft） (~364 tok)
 - `stock.js` — ── 销量备货一览 ──────────────────────────────────────── (~1280 tok)
@@ -459,7 +491,7 @@
 
 ## frontend/src/config/
 
-- `navigation.js` — 导航配置 — 单一来源。 (~5262 tok)
+- `navigation.js` — 导航配置 — 单一来源。 (~5931 tok)
 
 ## frontend/src/router/
 
@@ -515,11 +547,23 @@
 
 - `EmployeeAttribute.vue` — Vue: setup (~2420 tok)
 
+## frontend/src/views/governance/
+
+- `ChangeLog.vue` — Vue: setup (~1499 tok)
+- `ConceptEditor.vue` — Vue component (~6597 tok)
+- `ConceptGraph.vue` — Vue: setup (~1350 tok)
+- `ConceptRegistry.vue` — Vue: setup (~3521 tok)
+
 ## frontend/src/views/insight/
 
+- `CustomerOpportunityView.vue` — Vue: setup (~5648 tok)
 - `IntelligenceLibrary.vue` — Vue: setup (~2986 tok)
 - `IntelligenceOverview.vue` — Vue: setup (~2818 tok)
 - `SourcesAdminView.vue` — Vue: setup (~3433 tok)
+
+## frontend/src/views/insight/composables/
+
+- `useCustomerOpportunity.js` — 客户机会台 — 业务逻辑 composable (~1536 tok)
 
 ## frontend/src/views/payment/
 
@@ -546,7 +590,7 @@
 ## frontend/src/views/stock/
 
 - `DailyReport.vue` — Vue: setup (~3683 tok)
-- `ProductionOrderManage.vue` — Vue component (~9546 tok)
+- `ProductionOrderManage.vue` — Vue component (~9616 tok)
 - `SafetyConfig.vue` — Vue component (~11118 tok)
 - `StockOverview.vue` — Vue component (~6460 tok)
 
@@ -562,6 +606,7 @@
 
 - `AIManager.vue` — Vue component (~6293 tok)
 - `DictManagement.vue` — Vue: setup (~1812 tok)
+- `ExternalBindings.vue` — Vue: setup (~1754 tok)
 - `RoleManagement.vue` — Vue: setup (~1894 tok)
 - `UserManagement.vue` — Vue: setup (~4006 tok)
 

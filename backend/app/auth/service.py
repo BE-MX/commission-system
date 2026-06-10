@@ -218,6 +218,18 @@ def seed_role_permissions(db: Session):
         ("report:read",           "report",  "read",          "查看报表 / 数据大屏"),
         ("report:design",         "report",  "design",        "进入报表设计器 / 编辑报表"),
         ("report:admin",          "report",  "admin",         "管理报表元数据 / 数据源"),
+        # 数据概念治理
+        ("governance:read",       "governance", "read",       "查看概念定义 / 图谱 / 变更历史"),
+        ("governance:write",      "governance", "write",      "创建/编辑概念 / 提交审批 / 添加关联"),
+        ("governance:admin",      "governance", "admin",      "审批/废弃/回滚/批量导入/删除关联"),
+        # 客户机会台
+        ("customer_opportunity:read",   "customer_opportunity", "read",   "查看客户机会（本人）"),
+        ("customer_opportunity:write",  "customer_opportunity", "write",  "更新机会状态/添加反馈"),
+        ("customer_opportunity:import", "customer_opportunity", "import", "ACCIO 导入询盘"),
+        ("customer_opportunity:manage", "customer_opportunity", "manage", "管理全部机会/分配/管理未分配"),
+        # 外部账号绑定
+        ("external_binding:read",  "external_binding", "read",  "查看外部账号绑定"),
+        ("external_binding:write", "external_binding", "write", "创建/删除绑定/管理候选"),
     ]
     for code, module, action, label in seeds:
         existing = db.query(ArkPermission).filter(ArkPermission.code == code).first()

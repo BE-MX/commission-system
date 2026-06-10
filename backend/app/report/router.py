@@ -8,10 +8,14 @@
 
 from __future__ import annotations
 
+import io
 import logging
+from pathlib import Path as FilePath
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import HTMLResponse, StreamingResponse
+from jinja2 import Environment, FileSystemLoader
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
@@ -28,6 +32,10 @@ from app.report.data_service import get_report_data
 
 logger = logging.getLogger("report")
 router = APIRouter()
+
+# Jinja2 环境
+_TEMPLATES_DIR = FilePath(__file__).parent / "templates"
+_jinja_env = Environment(loader=FileSystemLoader(str(_TEMPLATES_DIR)), autoescape=True)
 
 
 def _ok(data, message: str = "ok", code: int = 200):
@@ -305,3 +313,62 @@ def get_data(
     except Exception as e:
         logger.error(f"获取报表数据失败: report_code={report_code}, params={params}, error={e}")
         raise HTTPException(status_code=500, detail="获取报表数据失败")
+
+
+# ── HTML 打印（方案 C：Jinja2 渲染）────────────────────────
+
+
+@router.get("/print/production-order", response_class=HTMLResponse)
+def print_production_order(
+    order_no: str = Query(..., description="生产订单号"),
+    db: Session = Depends(get_db),
+):
+    """生产订单打印页（HTML，无需登录，供打印窗口直接访问）"""
+    data = get_report_data(db, "production_order_print", {"order_no": order_no})
+
+    if not data.get("header"):
+        raise HTTPException(status_code=404, detail=f"订单不存在: {order_no}")
+
+    template = _jinja_env.get_template("production_order_print.html")
+    html = template.render(**data)
+    return HTMLResponse(content=html)
+
+
+@router.get("/export/production-order")
+def export_production_order_docx(
+    order_no: str = Query(..., description="生产订单号"),
+    page_size: str = Query("A4", description="页面尺寸：A4/A3/A5/B5"),
+    orientation: str = Query("portrait", description="方向：portrait/landscape"),
+    db: Session = Depends(get_db),
+):
+    """导出生产订单为 Word (.docx) 文件"""
+    try:
+        from app.report.docx_export import generate_production_order_docx, PAGE_SIZES
+    except ImportError:
+        raise HTTPException(status_code=500, detail="python-docx 未安装，请执行 pip install python-docx")
+
+    if page_size.upper() not in PAGE_SIZES:
+        raise HTTPException(status_code=400, detail=f"不支持的页面尺寸: {page_size}，可选: {', '.join(PAGE_SIZES)}")
+    if orientation not in ("portrait", "landscape"):
+        raise HTTPException(status_code=400, detail="方向必须为 portrait 或 landscape")
+
+    data = get_report_data(db, "production_order_print", {"order_no": order_no})
+    if not data.get("header"):
+        raise HTTPException(status_code=404, detail=f"订单不存在: {order_no}")
+
+    try:
+        docx_bytes = generate_production_order_docx(
+            data,
+            page_size=page_size.upper(),
+            orientation=orientation,
+        )
+    except Exception as e:
+        logger.error(f"导出 Word 失败: order_no={order_no}, error={e}")
+        raise HTTPException(status_code=500, detail="导出 Word 失败")
+
+    filename = f"production_order_{order_no}.docx"
+    return StreamingResponse(
+        io.BytesIO(docx_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )

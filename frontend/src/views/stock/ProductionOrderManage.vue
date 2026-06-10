@@ -80,6 +80,7 @@
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
+              <el-button size="small" link type="warning" @click="printOrderHtml(row)">打印订单</el-button>
               <el-button size="small" link type="danger" @click="deleteOrder(row)" v-if="authStore.hasPermission('production:admin')">删除</el-button>
             </template>
           </el-table-column>
@@ -758,6 +759,11 @@ function handlePrintCommand(cmd, row) {
     printDialogTitle.value = '生产订单打印预览'
   }
   printDialogVisible.value = true
+}
+
+function printOrderHtml(row) {
+  const url = `/api/report/print/production-order?order_no=${encodeURIComponent(row.order_no)}`
+  window.open(url, '_blank')
 }
 </script>
 

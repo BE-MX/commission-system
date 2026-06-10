@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>生产订单 {{ header.order_no }}</title>
+<style>
+  @page { size: A4; margin: 12mm 10mm; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Microsoft YaHei", "PingFang SC", -apple-system, sans-serif;
+    font-size: 12px;
+    color: #1a1a2e;
+    line-height: 1.5;
+    padding: 16px 20px;
+  }
+
+  /* ── 页头 ── */
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    border-bottom: 2px solid #1a1a2e;
+    padding-bottom: 10px;
+    margin-bottom: 14px;
+  }
+  .page-header h1 {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 2px;
+  }
+  .page-header .meta {
+    text-align: right;
+    font-size: 12px;
+    color: #4a5568;
+  }
+  .page-header .meta span { display: block; }
+
+  /* ── 订单信息 ── */
+  .order-info {
+    display: flex;
+    gap: 40px;
+    margin-bottom: 16px;
+    font-size: 13px;
+  }
+  .order-info .item { display: flex; gap: 4px; }
+  .order-info .label { color: #4a5568; white-space: nowrap; }
+  .order-info .value { font-weight: 600; }
+
+  /* ── 数据表格 ── */
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: auto;
+    margin-bottom: 12px;
+  }
+  .data-table th,
+  .data-table td {
+    border: 1px solid #c5cce0;
+    padding: 6px 8px;
+    text-align: center;
+    vertical-align: middle;
+    word-break: break-all;
+  }
+
+  /* 表头 */
+  .data-table thead th {
+    background: #f0f2f7;
+    font-weight: 600;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  /* 一级表头（等级行）*/
+  .data-table thead .group-header {
+    background: #e2e5ef;
+    font-size: 12px;
+    border-bottom: 1px solid #c5cce0;
+  }
+  /* 二级表头（尺寸行）*/
+  .data-table thead .size-header {
+    background: #f0f2f7;
+    font-size: 11px;
+    color: #4a5568;
+  }
+
+  /* 数据行 */
+  .data-table tbody .color-cell {
+    text-align: left;
+    font-weight: 600;
+    white-space: normal;
+    word-wrap: break-word;
+    word-break: break-all;
+    width: 100px;
+    min-width: 100px;
+    max-width: 100px;
+    line-height: 1.2;
+    font-size: 10px;
+  }
+  .data-table tbody .color-cell .color-main {
+    display: block;
+  }
+  .data-table tbody .color-cell .color-req {
+    display: block;
+    font-weight: 400;
+    font-size: 10px;
+    color: #718096;
+  }
+  /* 二级表头尺寸行双行 */
+  .data-table thead .size-header .size-main {
+    display: block;
+  }
+  .data-table thead .size-header .size-req {
+    display: block;
+    font-weight: 400;
+    font-size: 10px;
+    color: #718096;
+  }
+  .data-table tbody td.qty-cell {
+    min-width: 40px;
+    font-variant-numeric: tabular-nums;
+  }
+  .data-table tbody td.qty-zero {
+    color: #a0aec0;
+  }
+  .data-table tbody td.row-total {
+    font-weight: 700;
+    background: #fef9f0;
+  }
+
+  /* 合计行 */
+  .data-table tfoot td {
+    background: #f8f9fc;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .data-table tfoot td.grand-total {
+    background: #fef9f0;
+    color: #D4941C;
+    font-size: 13px;
+  }
+
+  /* ── 页脚 ── */
+  .page-footer {
+    margin-top: 24px;
+    padding-top: 12px;
+    border-top: 1px solid #e2e5ef;
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: #a0aec0;
+  }
+  .signature-area {
+    margin-top: 20px;
+    display: flex;
+    gap: 60px;
+    font-size: 13px;
+  }
+  .signature-area .sig {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .signature-area .sig-line {
+    display: inline-block;
+    width: 100px;
+    border-bottom: 1px solid #1a1a2e;
+  }
+
+  /* ── 打印优化 ── */
+  @media print {
+    body { padding: 0; }
+    .no-print { display: none !important; }
+    .data-table th, .data-table td { border-color: #333 !important; }
+  }
+
+  /* ── 屏幕上的操作按钮 ── */
+  .print-btn-bar {
+    position: fixed;
+    top: 16px;
+    right: 24px;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .print-btn {
+    background: #D4941C;
+    color: #fff;
+    border: none;
+    padding: 8px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(212,148,28,0.3);
+  }
+  .print-btn:hover { background: #BB8218; }
+  .export-btn {
+    background: #409eff;
+    color: #fff;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(64,158,255,0.3);
+  }
+  .export-btn:hover { background: #337ecc; }
+  .close-btn {
+    background: #fff;
+    color: #4a5568;
+    border: 1px solid #e2e5ef;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .close-btn:hover { background: #f0f2f7; }
+  .export-panel {
+    display: none;
+    position: fixed;
+    top: 60px;
+    right: 24px;
+    z-index: 101;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+    padding: 16px;
+    width: 220px;
+  }
+  .export-panel.show { display: block; }
+  .export-panel label {
+    display: block;
+    font-size: 12px;
+    color: #4a5568;
+    margin-bottom: 4px;
+    margin-top: 10px;
+  }
+  .export-panel label:first-child { margin-top: 0; }
+  .export-panel select {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid #dcdfe6;
+    border-radius: 6px;
+    font-size: 13px;
+    outline: none;
+  }
+  .export-panel select:focus { border-color: #409eff; }
+  .export-panel .do-export {
+    width: 100%;
+    margin-top: 14px;
+    padding: 8px 0;
+    background: #409eff;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .export-panel .do-export:hover { background: #337ecc; }
+</style>
+</head>
+<body>
+
+<!-- 屏幕上的操作按钮（打印时隐藏） -->
+<div class="print-btn-bar no-print">
+  <button class="print-btn" onclick="window.print()">打印</button>
+  <button class="export-btn" onclick="document.getElementById('exportPanel').classList.toggle('show')">导出 Word</button>
+  <button class="close-btn" onclick="window.close()">关闭</button>
+</div>
+
+<!-- 导出选项面板 -->
+<div id="exportPanel" class="export-panel no-print">
+  <label>页面尺寸</label>
+  <select id="exportPageSize">
+    <option value="A4">A4 (210×297mm)</option>
+    <option value="A3">A3 (297×420mm)</option>
+    <option value="A5">A5 (148×210mm)</option>
+    <option value="B5">B5 (176×250mm)</option>
+  </select>
+  <label>页面方向</label>
+  <select id="exportOrientation">
+    <option value="portrait">竖版</option>
+    <option value="landscape">横版</option>
+  </select>
+  <button class="do-export" onclick="doExport()">确认导出</button>
+</div>
+
+<!-- 页头 -->
+<div class="page-header">
+  <div>
+    <h1>{{ header.company_name }}</h1>
+    <div style="font-size:14px;color:#4a5568;margin-top:2px">生产订单 · 库存单</div>
+  </div>
+  <div class="meta">
+    <span>订单编号：{{ header.order_no }}</span>
+    {% if header.batch_no %}
+    <span>批次号：{{ header.batch_no }}</span>
+    {% endif %}
+  </div>
+</div>
+
+<!-- 订单信息 -->
+<div class="order-info">
+  <div class="item">
+    <span class="label">订单编号：</span>
+    <span class="value">{{ header.order_no }}</span>
+  </div>
+  {% if header.batch_no %}
+  <div class="item">
+    <span class="label">批次号：</span>
+    <span class="value">{{ header.batch_no }}</span>
+  </div>
+  {% endif %}
+  {% if header.remark %}
+  <div class="item">
+    <span class="label">备注：</span>
+    <span class="value">{{ header.remark }}</span>
+  </div>
+  {% endif %}
+</div>
+
+<!-- 数据表格 -->
+{% if column_defs and rows %}
+<table class="data-table">
+  <thead>
+    {# 一级表头：等级行 — 同一 product_remark 合并 #}
+    <tr>
+      <th rowspan="2" style="width:100px;min-width:100px;max-width:100px;font-size:8px;line-height:1.2;white-space:normal;word-wrap:break-word;word-break:break-all">天才发帘；色号；注意幅度；克重足重</th>
+      {% set ns = namespace(current_group='') %}
+      {% for col in column_defs %}
+        {% if col.group != ns.current_group %}
+          {% set ns.current_group = col.group %}
+          {% set group_count = column_defs | selectattr('group', 'equalto', col.group) | list | length %}
+          <th class="group-header" colspan="{{ group_count }}">{{ col.group }}</th>
+        {% endif %}
+      {% endfor %}
+      <th rowspan="2">合计</th>
+    </tr>
+    {# 二级表头：尺寸行 #}
+    <tr>
+      {% for col in column_defs %}
+      <th class="size-header">
+        <span class="size-main">{{ col.size }}</span>
+        {% if col.size_req %}
+        <span class="size-req">{{ col.size_req }}</span>
+        {% endif %}
+      </th>
+      {% endfor %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td class="color-cell">
+        <span class="color-main">{{ row.color }}</span>
+        {% if row.production_color_requirement %}
+        <span class="color-req">{{ row.production_color_requirement }}</span>
+        {% endif %}
+      </td>
+      {% for col in column_defs %}
+        {% set val = row[col.key] %}
+        <td class="qty-cell {{ 'qty-zero' if val == 0 else '' }}">{{ val }}</td>
+      {% endfor %}
+      <td class="row-total">{{ row.row_total }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+  <tfoot>
+    <tr>
+      <td style="font-weight:700;text-align:left">合计</td>
+      {% for col in column_defs %}
+      <td>{{ col_totals[col.key] }}</td>
+      {% endfor %}
+      <td class="grand-total">{{ col_totals.grand_total }}</td>
+    </tr>
+  </tfoot>
+</table>
+{% else %}
+<p style="text-align:center;color:#a0aec0;padding:40px 0">该订单暂无明细数据</p>
+{% endif %}
+
+<!-- 公斤数统计表 -->
+{% if column_defs and weight_totals %}
+<div style="margin-top:18px;font-size:13px;font-weight:700">公斤数统计（kg）</div>
+<table class="data-table" style="margin-top:4px">
+  <thead>
+    <tr>
+      <th rowspan="2" style="min-width:60px">等级</th>
+      {% set ns2 = namespace(current_group='') %}
+      {% for col in column_defs %}
+        {% if col.group != ns2.current_group %}
+          {% set ns2.current_group = col.group %}
+          {% set group_count = column_defs | selectattr('group', 'equalto', col.group) | list | length %}
+          <th class="group-header" colspan="{{ group_count }}">{{ col.group }}</th>
+        {% endif %}
+      {% endfor %}
+      <th rowspan="2">合计</th>
+    </tr>
+    <tr>
+      {% for col in column_defs %}
+      <th class="size-header">
+        <span class="size-main">{{ col.size }}</span>
+        {% if col.size_req %}
+        <span class="size-req">{{ col.size_req }}</span>
+        {% endif %}
+      </th>
+      {% endfor %}
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style="font-weight:600">纯色</td>
+      {% for col in column_defs %}
+      {% set wval = weight_totals[col.key] %}
+      <td class="{{ 'qty-zero' if wval == 0 else '' }}">{{ wval }}</td>
+      {% endfor %}
+      <td class="grand-total">{{ weight_totals.grand_total }}</td>
+    </tr>
+    {% if weight_t_totals and weight_t_totals.grand_total > 0 %}
+    <tr>
+      <td style="font-weight:600">T色</td>
+      {% for col in column_defs %}
+      {% set wtval = weight_t_totals[col.key] %}
+      <td class="{{ 'qty-zero' if wtval == 0 else '' }}">{{ wtval }}</td>
+      {% endfor %}
+      <td class="grand-total">{{ weight_t_totals.grand_total }}</td>
+    </tr>
+    {% endif %}
+  </tbody>
+</table>
+{% endif %}
+
+<!-- 签字区 -->
+<div class="signature-area">
+  <div class="sig">制单人：<span class="sig-line"></span></div>
+  <div class="sig">审核人：<span class="sig-line"></span></div>
+  <div class="sig">日期：<span class="sig-line"></span></div>
+</div>
+
+<div class="page-footer">
+  <span>青岛丽丝发制品有限公司</span>
+  <span>{{ header.order_no }}</span>
+</div>
+
+<script>
+function doExport() {
+  const pageSize = document.getElementById('exportPageSize').value;
+  const orientation = document.getElementById('exportOrientation').value;
+  const orderNo = '{{ header.order_no }}';
+  const url = '/api/report/export/production-order?order_no=' + encodeURIComponent(orderNo)
+    + '&page_size=' + pageSize + '&orientation=' + orientation;
+  window.location.href = url;
+  document.getElementById('exportPanel').classList.remove('show');
+}
+// 点击其他区域关闭面板
+document.addEventListener('click', function(e) {
+  const panel = document.getElementById('exportPanel');
+  if (!panel.contains(e.target) && !e.target.classList.contains('export-btn')) {
+    panel.classList.remove('show');
+  }
+});
+</script>
+
+</body>
+</html>

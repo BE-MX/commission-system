@@ -3,6 +3,7 @@
 from datetime import datetime
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     Column,
     Date,
@@ -328,4 +329,96 @@ class InsightScheduleRule(Base):
 
     __table_args__ = (
         Index("idx_insight_rule_active", "is_active"),
+    )
+
+
+# ── 阿里询盘导入批次 ──────────────────────────────────────
+class InquiryImportBatch(Base):
+    __tablename__ = "ark_inquiry_import_batches"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    batch_id = Column(String(100), nullable=False, unique=True, comment="ACCIO 批次ID")
+    source = Column(String(50), nullable=False, default="accio_work")
+    schema_version = Column(String(50), nullable=False)
+    generated_at = Column(DateTime, nullable=True)
+    time_range_start = Column(DateTime, nullable=True)
+    time_range_end = Column(DateTime, nullable=True)
+    item_count = Column(Integer, nullable=False, default=0)
+    created_count = Column(Integer, nullable=False, default=0)
+    updated_count = Column(Integer, nullable=False, default=0)
+    unassigned_count = Column(Integer, nullable=False, default=0)
+    failed_count = Column(Integer, nullable=False, default=0)
+    status = Column(String(20), nullable=False, default="processing", comment="processing/success/partial_failed/failed")
+    raw_payload = Column(JSON, nullable=True)
+    error_msg = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+# ── 客户机会卡 ──────────────────────────────────────────
+class CustomerOpportunity(Base):
+    __tablename__ = "ark_customer_opportunities"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    opportunity_type = Column(String(50), nullable=False, comment="ali_inquiry/public_pool/customer_reactivation")
+    source = Column(String(50), nullable=False, comment="alibaba_international/okki/manual")
+    source_key = Column(String(255), nullable=False, unique=True, comment="外部来源幂等键")
+    source_ref_type = Column(String(50), nullable=True, comment="conversation/inquiry/order/customer")
+    source_ref_id = Column(String(100), nullable=True)
+    owner_user_id = Column(Integer, ForeignKey("ark_users.id"), nullable=True, comment="方舟归属用户")
+    owner_binding_id = Column(BigInteger, ForeignKey("ark_user_external_bindings.id"), nullable=True, comment="命中的外部账号绑定ID")
+    owner_resolve_status = Column(String(20), nullable=False, default="unassigned", comment="resolved/unassigned/conflict/inactive_user")
+    source_owner_external_json = Column(JSON, nullable=True, comment="原始外部归属信息")
+    customer_name = Column(String(200), nullable=False, default="")
+    customer_region = Column(String(100), nullable=True)
+    customer_external_id = Column(String(100), nullable=True)
+    priority_level = Column(String(5), nullable=False, default="C", comment="A/B/C/D")
+    confidence_score = Column(SmallInteger, nullable=False, default=0)
+    urgency = Column(String(20), nullable=False, default="normal", comment="urgent/high/normal/low")
+    title = Column(String(255), nullable=False, default="")
+    summary = Column(Text, nullable=True)
+    key_signals_json = Column(JSON, nullable=True)
+    background_check_json = Column(JSON, nullable=True)
+    recommended_strategy = Column(Text, nullable=True)
+    opening_message_en = Column(Text, nullable=True)
+    follow_up_message_en = Column(Text, nullable=True)
+    evidence_json = Column(JSON, nullable=True)
+    status = Column(String(30), nullable=False, default="pending", comment="pending/contacted/replied/quoted/won/lost/dismissed")
+    feedback = Column(String(50), nullable=True)
+    due_at = Column(DateTime, nullable=True)
+    latest_message_at = Column(DateTime, nullable=True)
+    handled_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    events = relationship(
+        "CustomerOpportunityEvent",
+        back_populates="opportunity",
+        cascade="all, delete-orphan",
+        order_by="CustomerOpportunityEvent.id.desc()",
+    )
+
+    __table_args__ = (
+        Index("idx_opp_owner_status", "owner_user_id", "status"),
+        Index("idx_opp_owner_priority", "owner_user_id", "priority_level", "due_at"),
+        Index("idx_opp_resolve_status", "owner_resolve_status"),
+        Index("idx_opp_latest_message", "latest_message_at"),
+    )
+
+
+# ── 客户机会事件 ────────────────────────────────────────
+class CustomerOpportunityEvent(Base):
+    __tablename__ = "ark_customer_opportunity_events"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    opportunity_id = Column(BigInteger, ForeignKey("ark_customer_opportunities.id", ondelete="CASCADE"), nullable=False)
+    event_type = Column(String(50), nullable=False, comment="created/imported/viewed/copied/status_changed/feedback/assigned")
+    actor_user_id = Column(Integer, nullable=True)
+    event_payload = Column(JSON, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    opportunity = relationship("CustomerOpportunity", back_populates="events")
+
+    __table_args__ = (
+        Index("idx_event_opportunity", "opportunity_id", "event_type"),
+        Index("idx_event_actor_created", "actor_user_id", "created_at"),
     )

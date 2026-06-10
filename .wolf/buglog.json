@@ -2795,5 +2795,79 @@
     "related_bugs": [],
     "occurrences": 2,
     "last_seen": "2026-06-09T08:35:44.314431Z"
+  },
+  {
+    "id": "bug-173",
+    "timestamp": "2026-06-09T11:30:00.000Z",
+    "error_message": "Pydantic Settings ValidationError: 28 extra inputs are not permitted → 后端启动失败 → 登录超时",
+    "file": "backend/.env, backend/app/core/config.py",
+    "root_cause": ".env 文件被 Markdown 编辑器保存后，所有下划线被转义为 `\\_`（如 `COMMISSION\\_DB\\_HOST`），行末多余 `\\` 续行符。Pydantic Settings 2.x 不认识这些变量名，加上 model_config 默认 extra='forbid'，直接拒绝启动。所有配置走默认值 → 连接 localhost:3306（无本地 MySQL）",
+    "fix": "(1) config.py model_config 加 extra='ignore'；(2) 重写 .env 去掉全部反斜杠转义和行末续行符，数据库连接恢复正常",
+    "tags": [
+      "pydantic",
+      "settings",
+      "env",
+      "escaping",
+      "startup-failure"
+    ],
+    "related_bugs": [],
+    "occurrences": 1,
+    "last_seen": "2026-06-09T11:30:00.000Z"
+  },
+  {
+    "id": "bug-174",
+    "timestamp": "2026-06-09T06:00:00.000Z",
+    "error_message": "打印页多出3列空列：B等级一档/B等级三档/B等级一档重复出现",
+    "file": "backend/app/report/data_service.py",
+    "root_cause": "_pivot_items 输出的 column_defs 未按 group 排序，同一 product_remark 的列散布在不同位置（如 col_0=B等级一档, col_2=B等级三档, col_4=B等级一档），Jinja 模板的 group 切换检测在每次 group 变化时都生成新 th，5个 group-header th 的 colspan 总和=23 远超实际 9 列",
+    "fix": "sorted_cols = sorted(seen_cols.items(), key=lambda item: (item[0][0], item[0][1]))  按 (remark, size) 排序后重新编号，同 group 列连续排列",
+    "tags": [
+      "report",
+      "pivot",
+      "jinja",
+      "group-header",
+      "sorting"
+    ],
+    "related_bugs": [],
+    "occurrences": 1,
+    "last_seen": "2026-06-09T06:00:00.000Z"
+  },
+  {
+    "id": "bug-175",
+    "timestamp": "2026-06-09T06:05:00.000Z",
+    "error_message": "打印页多出空列（第二次出现）：同一(color, product_remark, size) 因 production_color_requirement/production_size_requirement 值不同被拆成多行",
+    "file": "backend/app/report/data_service.py",
+    "root_cause": "SQL GROUP BY 包含 production_color_requirement 和 production_size_requirement，同一 (color, product_remark, size) 组合因这两个字段值不同被拆成多行，透视后产生虚假列",
+    "fix": "GROUP BY 只保留 (order_no, color, product_remark, size)，production_color_requirement/production_size_requirement 改用 MAX() 聚合",
+    "tags": [
+      "report",
+      "sql",
+      "group-by",
+      "pivot",
+      "duplicate-rows"
+    ],
+    "related_bugs": [
+      "bug-174"
+    ],
+    "occurrences": 1,
+    "last_seen": "2026-06-09T06:05:00.000Z"
+  },
+  {
+    "id": "bug-176",
+    "timestamp": "2026-06-09T06:10:00.000Z",
+    "error_message": "ModuleNotFoundError: No module named docx — 后端启动失败，登录报 500",
+    "file": "backend/app/report/router.py",
+    "root_cause": "router.py 顶层 from app.report.docx_export import ... 导致未安装 python-docx 的环境启动失败，整个应用无法初始化",
+    "fix": "docx_export 改为端点函数内 try/except ImportError 延迟导入",
+    "tags": [
+      "report",
+      "import",
+      "python-docx",
+      "startup-failure",
+      "lazy-import"
+    ],
+    "related_bugs": [],
+    "occurrences": 1,
+    "last_seen": "2026-06-09T06:10:00.000Z"
   }
 ]

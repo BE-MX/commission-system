@@ -14,6 +14,7 @@ from app.auth.dependencies import get_current_user, require_permission
 from app.auth.models import (
     ArkUser, ArkRole, ArkPermission,
     ArkUserRole, ArkRolePermission,
+    ArkUserExternalBinding, ArkExternalBindingCandidate,
 )
 from app.auth.utils import hash_password, verify_password
 from app.auth.admin_schemas import (
@@ -314,6 +315,141 @@ async def sync_all_users_dingtalk(
         message=f"同步完成：成功 {success_count} 人，失败 {len(fail_list)} 人",
         data={"success_count": success_count, "fail_list": fail_list},
     )
+
+
+# ============================================================
+# 外部账号绑定
+# ============================================================
+
+@router.get("/users/{user_id}/external-bindings", summary="获取用户外部账号绑定列表")
+def list_user_bindings(
+    user_id: int,
+    db: Session = Depends(get_db),
+    _current_user: dict = Depends(require_permission("external_binding:read")),
+) -> ResponseModel:
+    from app.insight.external_binding_service import get_user_bindings
+    bindings = get_user_bindings(db, user_id)
+    items = []
+    for b in bindings:
+        items.append({
+            "id": b.id,
+            "provider": b.provider,
+            "external_account_id": b.external_account_id,
+            "external_display_name": b.external_display_name,
+            "external_meta": b.external_meta,
+            "binding_status": b.binding_status,
+            "is_primary": b.is_primary,
+            "remark": b.remark,
+            "created_at": b.created_at.isoformat() if b.created_at else None,
+        })
+    return ResponseModel(data=items)
+
+
+@router.post("/users/{user_id}/external-bindings", summary="新增外部账号绑定")
+def create_user_binding(
+    user_id: int,
+    provider: str = Query(..., description="外部系统: alibaba_icbu/okki/dingtalk/email"),
+    external_account_id: str = Query(..., description="外部账号稳定ID"),
+    external_display_name: str = Query(None, description="外部账号显示名"),
+    is_primary: bool = Query(False),
+    db: Session = Depends(get_db),
+    _current_user: dict = Depends(require_permission("external_binding:write")),
+) -> ResponseModel:
+    # 校验用户存在
+    user = db.query(ArkUser).filter(ArkUser.id == user_id, ArkUser.deleted_at.is_(None)).first()
+    if not user:
+        return ResponseModel(code=404, message="用户不存在")
+    from app.insight.external_binding_service import create_binding
+    try:
+        binding = create_binding(
+            db, user_id=user_id, provider=provider,
+            external_account_id=external_account_id,
+            external_display_name=external_display_name,
+            is_primary=is_primary,
+            created_by=_current_user.get("sub"),
+        )
+        db.commit()
+        return ResponseModel(message="绑定成功", data={"binding_id": binding.id})
+    except ValueError as e:
+        return ResponseModel(code=400, message=str(e))
+
+
+@router.delete("/users/{user_id}/external-bindings/{binding_id}", summary="删除外部账号绑定(软删)")
+def delete_user_binding(
+    user_id: int,
+    binding_id: int,
+    db: Session = Depends(get_db),
+    _current_user: dict = Depends(require_permission("external_binding:write")),
+) -> ResponseModel:
+    from app.insight.external_binding_service import delete_binding
+    try:
+        delete_binding(db, binding_id)
+        db.commit()
+        return ResponseModel(message="已解绑")
+    except ValueError as e:
+        return ResponseModel(code=404, message=str(e))
+
+
+@router.get("/external-binding-candidates", summary="获取未绑定外部账号候选列表")
+def list_binding_candidates(
+    status: str = Query(None, description="pending/bound/ignored"),
+    db: Session = Depends(get_db),
+    _current_user: dict = Depends(require_permission("external_binding:read")),
+) -> ResponseModel:
+    from app.insight.external_binding_service import list_candidates
+    candidates = list_candidates(db, status)
+    items = []
+    for c in candidates:
+        item = {
+            "id": c.id,
+            "provider": c.provider,
+            "external_account_id": c.external_account_id,
+            "external_display_name": c.external_display_name,
+            "source": c.source,
+            "first_seen_at": c.first_seen_at.isoformat() if c.first_seen_at else None,
+            "last_seen_at": c.last_seen_at.isoformat() if c.last_seen_at else None,
+            "seen_count": c.seen_count,
+            "suggested_user_id": c.suggested_user_id,
+            "suggestion_reason": c.suggestion_reason,
+            "candidate_status": c.candidate_status,
+        }
+        # 附带建议用户名
+        if c.suggested_user_id:
+            su = db.query(ArkUser).get(c.suggested_user_id)
+            item["suggested_user_name"] = su.real_name if su else None
+        items.append(item)
+    return ResponseModel(data=items)
+
+
+@router.post("/external-binding-candidates/{candidate_id}/bind", summary="将候选绑定到方舟用户")
+def bind_candidate_endpoint(
+    candidate_id: int,
+    user_id: int = Query(..., description="方舟用户ID"),
+    db: Session = Depends(get_db),
+    _current_user: dict = Depends(require_permission("external_binding:write")),
+) -> ResponseModel:
+    from app.insight.external_binding_service import bind_candidate
+    try:
+        bind_candidate(db, candidate_id, user_id, admin_user_id=_current_user.get("sub"))
+        db.commit()
+        return ResponseModel(message="绑定成功")
+    except ValueError as e:
+        return ResponseModel(code=400, message=str(e))
+
+
+@router.post("/external-binding-candidates/{candidate_id}/ignore", summary="忽略候选")
+def ignore_candidate_endpoint(
+    candidate_id: int,
+    db: Session = Depends(get_db),
+    _current_user: dict = Depends(require_permission("external_binding:write")),
+) -> ResponseModel:
+    from app.insight.external_binding_service import ignore_candidate
+    try:
+        ignore_candidate(db, candidate_id)
+        db.commit()
+        return ResponseModel(message="已忽略")
+    except ValueError as e:
+        return ResponseModel(code=404, message=str(e))
 
 
 # ============================================================
