@@ -105,14 +105,24 @@ def _parse_reasoning_to_dict(text: str) -> dict | None:
             result["carrier"] = name
             break
 
-    # 收件人: "TO XXX" / "收件人是 XXX" / "收件人：XXX"
-    m = re.search(r"TO\s+([A-Z][A-Z\s]+?)(?:\n|\"|,|\d{5})", text)
-    if m:
-        result["recipient_name"] = m.group(1).strip().title()
-    if not result["recipient_name"]:
-        m = re.search(r"收件人[是：:]\s*(\S+)", text)
+    # 收件人: "TO XXX" / "SHIP TO: XXX" / "Consignee: XXX" / "ATTN: XXX" / "收件人是 XXX"
+    # 匹配英文名（含大小写混合、公司后缀如 LLC/LTD/INC、逗号分隔的公司名）或中文名
+    _name_patterns = [
+        # 优先匹配明确标签 (ATTN/CONSIGNEE 等),最后才是通用 TO
+        r"(?:ATTN|ATTENTION)[:\s]+(.+?)(?:\n|\s+\d{3,}|\s+\d+\s+[A-Za-z])",
+        r"(?:CONSIGNEE|RECIPIENT|DELIVER\s+TO)[:\s]+(.+?)(?:\n|\s+\d{3,}|\s+\d+\s+[A-Za-z])",
+        r"(?:SHIP\s+)?TO[:\s]+(.+?)(?:\n|\s+\d{3,}|\s+\d+\s+[A-Za-z])",
+        r"收件人[是：:]\s*(.+?)(?:\n|，)",
+    ]
+    for pat in _name_patterns:
+        m = re.search(pat, text, re.IGNORECASE)
         if m:
-            result["recipient_name"] = m.group(1).strip()
+            name = m.group(1).strip()
+            # 去掉末尾可能误捕的标点和多余空格
+            name = re.sub(r"[.,;:\-\s]+$", "", name)
+            if len(name) >= 2:
+                result["recipient_name"] = name
+                break
 
     # 目的国: 先匹配 "转换为中文是 XXX" 的显式声明,再按国家名字典匹配
     m = re.search(r"转换为中文是\s*[\"']?(\S+?)[\"']?(?:\s|$|。|,|，)", text)
