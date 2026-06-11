@@ -5,6 +5,7 @@
 
 | 18:10 | 优化 leshine.work 外网访问延迟：开启 Nginx gzip + 前端 dist 部署到云服务器 + deploy.bat 增加 SCP 同步 + SSH 免密 | deploy/deploy.bat, /etc/nginx/nginx.conf, /etc/nginx/conf.d/leshine.conf | HTML TTFB 9s→0.88s, JS 82s→1.05s | ~15k |
 
+| 09:47 | 运单 OCR 诊断增强：call_service 加请求/响应诊断日志(flush=True)、ocr_service 错误信息带原始返回、前端 502 展示 detail | call_service.py, ocr_service.py, useWaybillUpload.js | StepFun OCR 恢复正常，诊断日志持续生效 | ~12k |
 | HH:MM | description | file(s) | outcome | ~tokens |
 |-------|-------------|---------|---------|---------|
 | 11:01 | 完成生产进度报工系统全量开发 | backend/app/production/*, alembic/027 | 后端 import 通过，前端 build 成功 | ~45k |
@@ -789,3 +790,108 @@
 | 12:25 | Edited frontend/src/views/insight/CustomerOpportunityView.vue | added 1 import(s) | ~60 |
 | 12:26 | Session end: 16 writes across 2 files (CustomerOpportunityView.vue, useCustomerOpportunity.js) | 4 reads | ~9474 tok |
 | 14:19 | Session end: 16 writes across 2 files (CustomerOpportunityView.vue, useCustomerOpportunity.js) | 8 reads | ~26078 tok |
+| 15:22 | Session end: 16 writes across 2 files (CustomerOpportunityView.vue, useCustomerOpportunity.js) | 8 reads | ~26078 tok |
+| 15:40 | Created deploy/deploy.bat | — | ~914 |
+| 15:40 | Session end: 17 writes across 3 files (CustomerOpportunityView.vue, useCustomerOpportunity.js, deploy.bat) | 9 reads | ~27824 tok |
+| 16:07 | Session end: 17 writes across 3 files (CustomerOpportunityView.vue, useCustomerOpportunity.js, deploy.bat) | 9 reads | ~27824 tok |
+| 17:21 | Edited frontend/src/views/insight/CustomerOpportunityView.vue | 180 → 90 | ~15 |
+| 17:21 | Edited frontend/src/views/insight/CustomerOpportunityView.vue | inline fix | ~29 |
+| 17:21 | Session end: 19 writes across 3 files (CustomerOpportunityView.vue, useCustomerOpportunity.js, deploy.bat) | 9 reads | ~28375 tok |
+| 19:33 | Edited frontend/src/views/insight/CustomerOpportunityView.vue | added optional chaining | ~1441 |
+| 19:33 | Edited frontend/src/views/insight/CustomerOpportunityView.vue | 3→3 lines | ~69 |
+| 19:33 | Edited frontend/src/views/insight/CustomerOpportunityView.vue | added optional chaining | ~142 |
+| 19:34 | Edited frontend/src/views/insight/CustomerOpportunityView.vue | 2→2 lines | ~63 |
+| 19:35 | Edited frontend/src/views/insight/CustomerOpportunityView.vue | modified deep() | ~712 |
+| 19:35 | Edited frontend/src/views/insight/CustomerOpportunityView.vue | removed 14 lines | ~3 |
+| 19:39 | Edited backend/app/insight/models.py | 2→3 lines | ~74 |
+| 19:40 | Edited backend/app/insight/customer_opportunity_service.py | 4→9 lines | ~122 |
+| 19:41 | Edited backend/app/insight/customer_opportunity_service.py | 15→11 lines | ~146 |
+| 19:41 | Edited backend/app/insight/customer_opportunity_service.py | expanded (+6 lines) | ~183 |
+| 19:42 | Edited backend/app/insight/customer_opportunity_service.py | 4→5 lines | ~71 |
+| 19:42 | Created backend/alembic/versions/032_add_full_report_html.py | — | ~178 |
+| 19:44 | Session end: 31 writes across 6 files (CustomerOpportunityView.vue, useCustomerOpportunity.js, deploy.bat, models.py, customer_opportunity_service.py) | 12 reads | ~37702 tok |
+
+## Session: 2026-06-11 08:25
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 08:38 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_customer_opportunity_module.md | 7→7 lines | ~138 |
+| 08:39 | Edited CLAUDE.md | inline fix | ~85 |
+| 08:41 | Created C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_insight_sources.md | — | ~670 |
+
+## Session: 2026-06-11 neat-freak 知识库整理
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|---------|
+| 08:35-08:50 | neat-freak: 全量知识库审查 | project_customer_opportunity_module.md, project_insight_sources.md, CLAUDE.md, cerebrum.md | 032 迁移 full_report_html 同步 + insight_sources 合并重写 | ~6000 |
+| 08:44 | Session end: 3 writes across 3 files (project_customer_opportunity_module.md, CLAUDE.md, project_insight_sources.md) | 23 reads | ~30231 tok |
+| 09:43 | Created C:/Users/windb/.claude/plans/parsed-sprouting-pinwheel.md | — | ~921 |
+
+## Session: 2026-06-11 10:23
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 10:23 | Edited frontend/src/views/production/ProductManage.vue | 26→28 lines | ~407 |
+| 10:25 | Edited frontend/src/views/production/ProcessManage.vue | 26→28 lines | ~449 |
+| 10:27 | Edited frontend/src/views/governance/ConceptRegistry.vue | CSS: text-decoration | ~698 |
+| 10:27 | Edited backend/app/tracking/ocr_service.py | modified fields() | ~291 |
+| 10:28 | Created frontend/src/views/system/ExternalBindings.vue | — | ~1858 |
+| 10:28 | Edited backend/app/tracking/ocr_service.py | modified strip() | ~244 |
+| 10:29 | Session end: 6 writes across 5 files (ProductManage.vue, ProcessManage.vue, ConceptRegistry.vue, ocr_service.py, ExternalBindings.vue) | 7 reads | ~26827 tok |
+| 10:29 | Edited frontend/src/views/insight/CustomerOpportunityView.vue | 46→47 lines | ~636 |
+| 10:30 | Edited frontend/src/views/report/ReportCenter.vue | CSS: margin-bottom | ~750 |
+| 10:30 | Edited frontend/src/views/stock/ProductionOrderManage.vue | 27→27 lines | ~500 |
+| 10:31 | Edited frontend/src/views/stock/ProductionOrderManage.vue | 40→42 lines | ~826 |
+| 10:31 | Edited frontend/src/views/report/ReportCenter.vue | 29→27 lines | ~338 |
+| 10:32 | Edited frontend/src/views/stock/ProductionOrderManage.vue | 41→43 lines | ~846 |
+| 10:32 | Edited frontend/src/views/stock/ProductionOrderManage.vue | inline fix | ~13 |
+| 10:35 | Edited frontend/src/views/stock/ProductionOrderManage.vue | "warning" → "link" | ~28 |
+| 10:36 | Edited frontend/src/views/stock/ProductionOrderManage.vue | 2→2 lines | ~44 |
+| 10:41 | Session end: 15 writes across 8 files (ProductManage.vue, ProcessManage.vue, ConceptRegistry.vue, ocr_service.py, ExternalBindings.vue) | 9 reads | ~34846 tok |
+| 10:43 | Session end: 15 writes across 8 files (ProductManage.vue, ProcessManage.vue, ConceptRegistry.vue, ocr_service.py, ExternalBindings.vue) | 9 reads | ~34846 tok |
+
+## Session: 2026-06-11 neat-freak 知识库整理（列表页规范同步）
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|---------|
+| 10:50 | neat-freak: 列表页规范拉齐同步 | cerebrum.md, memory.md | 记录标杆模板 DictManagement.vue + 7 文件修复模式 | ~2000 |
+
+## Session: 2026-06-11 11:18
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-06-11 11:24
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 11:38 | Edited backend/app/tracking/ocr_service.py | modified fields() | ~296 |
+
+## Session: 2026-06-11 12:36
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-06-11 12:36
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-06-11 12:37
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 12:41 | Edited backend/app/tracking/ocr_service.py | modified startswith() | ~153 |
+| 12:41 | Session end: 1 writes across 1 files (ocr_service.py) | 7 reads | ~1301 tok |
+| 12:42 | Edited backend/app/ai/call_service.py | expanded (+11 lines) | ~198 |
+| 12:43 | Edited backend/app/ai/call_service.py | modified isinstance() | ~95 |
+| 12:43 | Edited backend/app/tracking/ocr_service.py | 15→10 lines | ~103 |
+| 12:43 | Edited frontend/src/views/tracking/composables/useWaybillUpload.js | added 1 condition(s) | ~185 |
+| 12:44 | Session end: 5 writes across 3 files (ocr_service.py, call_service.py, useWaybillUpload.js) | 10 reads | ~5025 tok |
+| 12:58 | Edited backend/app/ai/call_service.py | 6→9 lines | ~53 |
+| 12:58 | Session end: 6 writes across 3 files (ocr_service.py, call_service.py, useWaybillUpload.js) | 10 reads | ~6995 tok |
+| 13:00 | Edited backend/app/ai/call_service.py | expanded (+12 lines) | ~182 |
+| 13:01 | Edited backend/app/ai/call_service.py | 8→9 lines | ~158 |
+| 13:01 | Edited backend/app/ai/call_service.py | 11→13 lines | ~178 |
+| 13:01 | Session end: 9 writes across 3 files (ocr_service.py, call_service.py, useWaybillUpload.js) | 10 reads | ~7655 tok |
+| 13:04 | Session end: 9 writes across 3 files (ocr_service.py, call_service.py, useWaybillUpload.js) | 10 reads | ~7655 tok |

@@ -2869,5 +2869,21 @@
     "related_bugs": [],
     "occurrences": 1,
     "last_seen": "2026-06-09T06:10:00.000Z"
+  },
+  {
+    "id": "bug-177",
+    "timestamp": "2026-06-11T04:58:41.582357Z",
+    "error_message": "name 'logger' is not defined in call_service.py",
+    "file": "backend/app/ai/call_service.py",
+    "root_cause": "Added logger.warning() call for StepFun empty content diagnosis but forgot to import logging and create logger instance",
+    "fix": "Added import logging and logger = logging.getLogger(\"commission.ai\") at top of file",
+    "tags": [
+      "missing-import",
+      "ai",
+      "call_service"
+    ],
+    "related_bugs": [],
+    "occurrences": 1,
+    "last_seen": "2026-06-11T04:58:41.582357Z"
   }
 ]

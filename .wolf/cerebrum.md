@@ -2,7 +2,7 @@
 
 > OpenWolf's learning memory. Updated automatically as the AI learns from interactions.
 > Do not edit manually unless correcting an error.
-> Last updated: 2026-06-03
+> Last updated: 2026-06-11
 
 ## User Preferences
 
@@ -25,7 +25,13 @@
 
 <!-- Project-specific conventions discovered during development. -->
 
+- **列表页规范拉齐（2026-06-11）**：7 个新增模块的列表页（ProductManage/ProcessManage/ProductionOrderManage/ConceptRegistry/CustomerOpportunityView/ExternalBindings/ReportCenter）在快速开发时未遵循 DESIGN.md List Page Spec。标杆模板是 `system/DictManagement.vue`。修复要点：`width` → `min-width`+`max-width`，`stripe` 移除，加 `border class="list-table"`，包裹 `.table-card`，移除 `align="center"` 和 `size="small"`，操作按钮用 `GlassButton variant="link" left-icon="..."` 替代 `el-button link size="small"`，`el-tag` 加 `effect="plain"`，纯文本列加 `show-overflow-tooltip`。**以后新增列表页直接复制 DictManagement.vue 的模板结构**，不要从零开始。
+
 - SQLAlchemy session 在循环批量处理中，单次 `db.commit()` 失败后必须显式 `db.rollback()` 恢复 session 状态，否则后续所有 commit 都会失败。典型案例：`folder_upload_service.py` 的 `execute_folder_upload` 逐文件入库，一个文件异常后 session 污染导致后续全部文件数据库写入失败（但 `_save_upload_file` 文件复制不受影响，造成"文件已复制但数据库没数据"的诡异现象）。**已优化**：改用 `db.begin_nested()` savepoint 逐文件隔离，异常只回滚当前 savepoint，批次末尾统一 commit
+
+- **StepFun API 多模态偶发空返回**：step-3.7-flash 支持多模态，但大图片 base64 请求偶发返回空 content（HTTP 200 + choices 正常但 content 为空字符串）。`call_service.py` 已加诊断日志（`[AI-DIAG]` + `print(flush=True)`），再发时查 service.log 的 `full_result` 确认 StepFun 返回结构。**教训**：改 `call_service.py` 时务必确认顶部有 `import logging` + `logger = logging.getLogger(...)`，否则 `logger.warning` 会 NameError 被外层 except 吞掉变成 "AI 调用失败"
+
+- **NSSM 环境日志**：uvicorn 默认不打 `logger.info` 到 NSSM service.log，诊断信息必须同时 `print(flush=True)` 才能进 service.log
 
 - 素材管理模块采用**领域模块**结构（与 tracking/stock/insight 一致），`app/asset/` 下自包含 router/models/schemas/service，复杂逻辑拆子 service 模块
 - 标签维度/值设计为**可扩展的 EAV 模式**：`tag_dimensions`（维度定义）+ `tag_values`（值定义）+ `asset_tag_association`（多对多关联），支持单选/多选/必填/系统内置标记

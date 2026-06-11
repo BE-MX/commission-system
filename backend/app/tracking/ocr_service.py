@@ -50,6 +50,8 @@ def call_ocr_sync(image_bytes: bytes, suffix: str) -> dict:
     suffix_map = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
     media_type = suffix_map.get(suffix.lower(), "image/jpeg")
 
+    # 注意: call_service.py 会自动在 messages 前插入 preset 的 system_prompt,
+    # 这里不再重复添加 system message,避免两个 system message 干扰模型。
     messages = [
         {
             "role": "user",
@@ -58,7 +60,17 @@ def call_ocr_sync(image_bytes: bytes, suffix: str) -> dict:
                     "type": "image_url",
                     "image_url": {"url": f"data:{media_type};base64,{b64_image}"},
                 },
-                {"type": "text", "text": "请从以下运单图片中提取物流信息，严格按照 JSON 格式返回。"},
+                {
+                    "type": "text",
+                    "text": (
+                        "Extract shipping info from this waybill image. "
+                        "Return ONLY a valid JSON object with these fields (use null if not found): "
+                        '{"waybill_no": "运单号", "carrier": "承运商(DHL/FedEx/UPS/TNT/EMS/Aramex/其他)", '
+                        '"recipient_name": "收件人姓名", "recipient_country": "目的国", '
+                        '"ship_date": "发件日期(YYYY-MM-DD)"}. '
+                        "No markdown, no explanation, no extra text — just the JSON object."
+                    ),
+                },
             ],
         }
     ]
@@ -76,15 +88,34 @@ def call_ocr_sync(image_bytes: bytes, suffix: str) -> dict:
     text = resp.get("content", "")
     logger.info("OCR raw response length=%s preview=%s", len(text), text[:200])
 
+    # 空内容 — 通常意味着模型不支持多模态图片输入
+    if not text or not text.strip():
+        raise OCRParseError(
+            "AI 返回内容为空，请检查 waybill_ocr 预设绑定的模型是否支持图片输入（多模态）。"
+            "纯文本模型（如部分 MIMO/DeepSeek 模型）无法处理运单图片。",
+            raw_text="",
+        )
+
     # 提取 JSON
     json_str = _extract_json(text)
     logger.info("OCR extracted JSON preview=%s", json_str[:200])
+
+    if not json_str.strip():
+        raise OCRParseError(
+            f"AI 返回内容中未找到 JSON 结构，原始响应: {text[:300]}",
+            raw_text=text,
+        )
 
     try:
         result = json.loads(json_str)
     except json.JSONDecodeError as exc:
         logger.error("OCR JSON 解析失败: %s | raw=%s", exc, text[:500])
-        raise OCRParseError(f"AI 返回格式不是有效 JSON: {exc}", raw_text=text)
+        # 截取原始返回内容用于前端展示(限 200 字)
+        preview = text[:200].replace("\n", " ")
+        raise OCRParseError(
+            f"AI 返回格式不是有效 JSON: {exc}。模型原始返回: {preview}",
+            raw_text=text,
+        )
 
     # 标准化:确保返回 dict,且包含所需字段(缺失时为 None)
     return {

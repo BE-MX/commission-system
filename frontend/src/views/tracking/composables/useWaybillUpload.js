@@ -162,14 +162,18 @@ export function useWaybillUpload() {
       }
     } catch (err) {
       const status = err.response?.status
+      const detailMsg = err.response?.data?.detail?.message
       if (status === 504) {
         ocrError.value = 'AI 识别超时，请重试或切换至手动录入'
       } else if (status === 422) {
-        ocrError.value = '文件格式不支持或超过大小限制'
+        ocrError.value = detailMsg || '文件格式不支持或超过大小限制'
+      } else if (status === 502) {
+        // 后端 OCR 解析失败,展示具体原因(如模型返回格式错误)
+        ocrError.value = detailMsg || 'AI 识别服务暂时不可用，请稍后重试或手动录入'
       } else if (err.code === 'ERR_NETWORK' || err.message?.includes('Network')) {
         ocrError.value = '网络异常，请检查网络连接后重试'
       } else {
-        ocrError.value = 'AI 识别服务暂时不可用，请稍后重试或手动录入'
+        ocrError.value = detailMsg || 'AI 识别服务暂时不可用，请稍后重试或手动录入'
       }
     } finally {
       ocrLoading.value = false

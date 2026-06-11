@@ -1,11 +1,14 @@
 """AI 调用 — chat (同步) / delegate (异步占位) / get_task_result"""
 
 import json
+import logging
 import time
 import urllib.request
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
+
+logger = logging.getLogger("commission.ai")
 
 from sqlalchemy.orm import Session
 
@@ -79,6 +82,20 @@ def chat(
         if preset.parameters:
             params.update(preset.parameters)
 
+        url = build_chat_url(provider.api_base)
+        has_image = any(
+            isinstance(m.get("content"), list)
+            and any(c.get("type") == "image_url" for c in m["content"])
+            for m in full_messages
+        )
+        logger.info(
+            "AI request: provider=%s model=%s url=%s msg_count=%d has_image=%s",
+            provider.name, preset.model, url, len(full_messages), has_image,
+        )
+        if has_image:
+            print(f"[AI-DIAG] request with image | provider={provider.name} model={preset.model} "
+                  f"url={url} msg_count={len(full_messages)}", flush=True)
+
         req = urllib.request.Request(
             build_chat_url(provider.api_base),
             data=json.dumps(params).encode(),
@@ -86,9 +103,24 @@ def chat(
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=provider.timeout_sec) as resp:
-            result = json.loads(resp.read().decode())
+            raw_bytes = resp.read()
+            result = json.loads(raw_bytes.decode())
 
+        # 兼容 OpenAI 标准格式: choices[0].message.content
         content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+        # 某些 API (如 StepFun) 可能返回 list/dict 类型的 content,统一转 str
+        if content is not None and not isinstance(content, str):
+            content = json.dumps(content, ensure_ascii=False)
+
+        # 诊断: content 为空时记录完整响应结构,帮助排查非标准 API (如 StepFun)
+        if not content and result:
+            diag = json.dumps(result, ensure_ascii=False)[:2000]
+            logger.warning(
+                "AI response has empty content. provider=%s model=%s result_keys=%s full_result=%s",
+                provider.name, preset.model, list(result.keys()), diag,
+            )
+            print(f"[AI-DIAG] empty content | provider={provider.name} model={preset.model} "
+                  f"result_keys={list(result.keys())} full_result={diag}", flush=True)
         usage = result.get("usage", {})
         duration_ms = int((time.time() - start) * 1000)
 
