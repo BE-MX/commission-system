@@ -9,8 +9,8 @@ from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers
-revision = "033"
-down_revision = "032"
+revision = "033_provider_api_type"
+down_revision = "032_opp_full_report"
 branch_labels = None
 depends_on = None
 
