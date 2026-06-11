@@ -107,12 +107,26 @@ def chat(
             result = json.loads(raw_bytes.decode())
 
         # 兼容 OpenAI 标准格式: choices[0].message.content
-        content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+        message = result.get("choices", [{}])[0].get("message", {})
+        content = message.get("content", "")
         # 某些 API (如 StepFun) 可能返回 list/dict 类型的 content,统一转 str
         if content is not None and not isinstance(content, str):
             content = json.dumps(content, ensure_ascii=False)
 
-        # 诊断: content 为空时记录完整响应结构,帮助排查非标准 API (如 StepFun)
+        # 推理模型兼容 (Step-3.7-flash / DeepSeek-R1 等):
+        # content 为空但 reasoning/reasoning_content 有内容时,从中提取答案
+        if not content:
+            reasoning = message.get("reasoning_content") or message.get("reasoning") or ""
+            if reasoning and isinstance(reasoning, str) and reasoning.strip():
+                logger.info(
+                    "AI content empty, falling back to reasoning. provider=%s model=%s reasoning_len=%d",
+                    provider.name, preset.model, len(reasoning),
+                )
+                print(f"[AI-DIAG] content empty, using reasoning ({len(reasoning)} chars) | "
+                      f"provider={provider.name} model={preset.model}", flush=True)
+                content = reasoning
+
+        # 诊断: content 仍为空时记录完整响应结构
         if not content and result:
             diag = json.dumps(result, ensure_ascii=False)[:2000]
             logger.warning(

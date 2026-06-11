@@ -3,6 +3,7 @@
 import base64
 import json
 import logging
+import re
 
 from app.ai.service import chat
 from app.core.database import SessionLocal
@@ -38,6 +39,101 @@ def _extract_json(text: str) -> str:
         return cleaned[start:end + 1]
 
     return cleaned
+
+
+_COUNTRY_MAP = {
+    "united states": "美国", "usa": "美国", "us": "美国",
+    "united kingdom": "英国", "uk": "英国", "england": "英国",
+    "germany": "德国", "deutschland": "德国",
+    "france": "法国", "australia": "澳大利亚",
+    "canada": "加拿大", "japan": "日本", "korea": "韩国",
+    "brazil": "巴西", "india": "印度", "mexico": "墨西哥",
+    "italy": "意大利", "spain": "西班牙", "netherlands": "荷兰",
+    "turkey": "土耳其", "saudi arabia": "沙特阿拉伯",
+    "uae": "阿联酋", "united arab emirates": "阿联酋",
+    "south africa": "南非", "russia": "俄罗斯",
+    "thailand": "泰国", "vietnam": "越南", "malaysia": "马来西亚",
+    "singapore": "新加坡", "philippines": "菲律宾",
+    "indonesia": "印度尼西亚", "poland": "波兰",
+    "sweden": "瑞典", "norway": "挪威", "denmark": "丹麦",
+    "finland": "芬兰", "switzerland": "瑞士", "austria": "奥地利",
+    "belgium": "比利时", "portugal": "葡萄牙", "ireland": "爱尔兰",
+    "new zealand": "新西兰", "argentina": "阿根廷", "chile": "智利",
+    "colombia": "哥伦比亚", "peru": "秘鲁", "egypt": "埃及",
+    "nigeria": "尼日利亚", "kenya": "肯尼亚",
+}
+
+
+def _parse_reasoning_to_dict(text: str) -> dict | None:
+    """从推理模型的 reasoning 自然语言中提取运单字段。
+
+    reasoning 模型 (Step-3.7-flash / DeepSeek-R1 等) 会在 reasoning 字段中
+    以自然语言列出识别结果，如：
+      - 承运商是 FedEx
+      - 收件人是 ALISHA HAYES
+      - 国家是 United States，转换为中文是 "美国"
+      - 应该是 2026-06-04
+    """
+    result = {
+        "waybill_no": None,
+        "carrier": None,
+        "recipient_name": None,
+        "recipient_country": None,
+        "ship_date": None,
+    }
+
+    # 运单号: TRK# 后的数字 / 条形码下方数字
+    m = re.search(r"TRK[#\s\n]*(\d[\d\s]{8,})", text)
+    if m:
+        result["waybill_no"] = m.group(1).replace(" ", "")
+    if not result["waybill_no"]:
+        m = re.search(r"运单号[：:]\s*(\w[\w\s-]{8,})", text)
+        if m:
+            result["waybill_no"] = m.group(1).replace(" ", "").replace("-", "")
+    if not result["waybill_no"]:
+        # 兜底: 12位纯数字序列 (常见运单号长度)
+        m = re.search(r"(?<!\d)(\d{10,14})(?!\d)", text)
+        if m:
+            result["waybill_no"] = m.group(1)
+
+    # 承运商
+    carriers = {"fedex": "FedEx", "dhl": "DHL", "ups": "UPS", "tnt": "TNT",
+                "aramex": "Aramex", "ems": "EMS", "usps": "USPS", "sf": "顺丰"}
+    text_lower = text.lower()
+    for key, name in carriers.items():
+        if key in text_lower:
+            result["carrier"] = name
+            break
+
+    # 收件人: "TO XXX" / "收件人是 XXX" / "收件人：XXX"
+    m = re.search(r"TO\s+([A-Z][A-Z\s]+?)(?:\n|\"|,|\d{5})", text)
+    if m:
+        result["recipient_name"] = m.group(1).strip().title()
+    if not result["recipient_name"]:
+        m = re.search(r"收件人[是：:]\s*(\S+)", text)
+        if m:
+            result["recipient_name"] = m.group(1).strip()
+
+    # 目的国: 先匹配 "转换为中文是 XXX" 的显式声明,再按国家名字典匹配
+    m = re.search(r"转换为中文是\s*[\"']?(\S+?)[\"']?(?:\s|$|。|,|，)", text)
+    if m:
+        result["recipient_country"] = m.group(1).strip()
+    if not result["recipient_country"]:
+        # 按长度降序匹配,避免 "united states" 被 "united" 截断
+        for eng, chn in sorted(_COUNTRY_MAP.items(), key=lambda x: -len(x[0])):
+            if eng in text_lower:
+                result["recipient_country"] = chn
+                break
+
+    # 发件日期: YYYY-MM-DD 格式
+    m = re.search(r"(\d{4}-\d{2}-\d{2})", text)
+    if m:
+        result["ship_date"] = m.group(1)
+
+    # 只要至少识别出运单号或承运商就算有效
+    if result["waybill_no"] or result["carrier"]:
+        return result
+    return None
 
 
 def call_ocr_sync(image_bytes: bytes, suffix: str) -> dict:
@@ -100,20 +196,26 @@ def call_ocr_sync(image_bytes: bytes, suffix: str) -> dict:
     json_str = _extract_json(text)
     logger.info("OCR extracted JSON preview=%s", json_str[:200])
 
-    if not json_str.strip():
-        raise OCRParseError(
-            f"AI 返回内容中未找到 JSON 结构，原始响应: {text[:300]}",
-            raw_text=text,
-        )
+    result = None
 
-    try:
-        result = json.loads(json_str)
-    except json.JSONDecodeError as exc:
-        logger.error("OCR JSON 解析失败: %s | raw=%s", exc, text[:500])
-        # 截取原始返回内容用于前端展示(限 200 字)
+    # 尝试 JSON 解析
+    if json_str.strip():
+        try:
+            result = json.loads(json_str)
+        except json.JSONDecodeError as exc:
+            logger.warning("OCR JSON 解析失败: %s", exc)
+
+    # JSON 解析失败 — 尝试从推理模型 reasoning 文本中提取
+    if result is None:
+        result = _parse_reasoning_to_dict(text)
+        if result:
+            logger.info("OCR fallback: extracted from reasoning text")
+            print(f"[OCR] reasoning fallback extracted: {result}", flush=True)
+
+    if result is None:
         preview = text[:200].replace("\n", " ")
         raise OCRParseError(
-            f"AI 返回格式不是有效 JSON: {exc}。模型原始返回: {preview}",
+            f"AI 返回内容中未找到运单信息。模型原始返回: {preview}",
             raw_text=text,
         )
 
