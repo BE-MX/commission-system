@@ -13,6 +13,7 @@ class ProviderCreate(BaseModel):
     provider_type: str = Field(..., pattern="^(direct|accio_work)$")
     api_base: str = Field(..., min_length=1, max_length=512)
     api_key: Optional[str] = Field(None, max_length=2048)
+    api_type: str = Field("openai", pattern="^(openai|anthropic)$")
     extra_headers: Optional[dict] = None
     is_enabled: bool = True
     timeout_sec: int = Field(60, ge=1, le=3600)
@@ -32,6 +33,7 @@ class ProviderUpdate(BaseModel):
     provider_type: Optional[str] = Field(None, pattern="^(direct|accio_work)$")
     api_base: Optional[str] = Field(None, min_length=1, max_length=512)
     api_key: Optional[str] = Field(None, max_length=2048)
+    api_type: Optional[str] = Field(None, pattern="^(openai|anthropic)$")
     extra_headers: Optional[dict] = None
     is_enabled: Optional[bool] = None
     timeout_sec: Optional[int] = Field(None, ge=1, le=3600)
@@ -55,6 +57,7 @@ class Provider(BaseModel):
     provider_type: str
     api_base: str
     api_key: str  # 前端返回 ****
+    api_type: str = "openai"
     extra_headers: Optional[dict] = None
     is_enabled: bool
     timeout_sec: int

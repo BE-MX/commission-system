@@ -25,6 +25,12 @@ class AiProvider(Base):
     )
     api_base = Column(String(512), nullable=False, comment="基础 URL")
     api_key = Column(Text, nullable=True, comment="加密存储的 API Key")
+    api_type = Column(
+        Enum("openai", "anthropic", name="ai_api_type"),
+        nullable=False,
+        default="openai",
+        comment="API 协议类型: openai=Chat Completions, anthropic=Messages",
+    )
     extra_headers = Column(JSON, nullable=True, comment="附加请求头")
     is_enabled = Column(Boolean, nullable=False, default=True, comment="0=禁用 1=启用")
     timeout_sec = Column(

@@ -9,7 +9,10 @@ from sqlalchemy.orm import Session
 
 from app.ai.models import AiProvider, AiPreset
 from app.ai.keyring import encrypt_key, decrypt_key
-from app.ai.http_client import build_chat_url, build_headers
+from app.ai.http_client import (
+    build_chat_url, build_headers,
+    build_anthropic_body, extract_anthropic_content,
+)
 
 
 def list_providers(
@@ -56,6 +59,7 @@ def create_provider(db: Session, data: dict) -> AiProvider:
         provider_type=data.get("provider_type", "direct"),
         api_base=data["api_base"],
         api_key=encrypt_key(data.get("api_key")),
+        api_type=data.get("api_type", "openai"),
         extra_headers=data.get("extra_headers"),
         is_enabled=data.get("is_enabled", True),
         timeout_sec=data.get("timeout_sec", 60),
@@ -88,6 +92,8 @@ def update_provider(db: Session, provider_id: int, data: dict) -> AiProvider:
         p.api_base = data["api_base"]
     if "api_key" in data and data["api_key"]:
         p.api_key = encrypt_key(data["api_key"])
+    if "api_type" in data:
+        p.api_type = data["api_type"]
     if "extra_headers" in data:
         p.extra_headers = data["extra_headers"]
     if "is_enabled" in data:
@@ -181,16 +187,21 @@ def test_provider(db: Session, provider_id: int) -> dict:
                 "detail": "此 Provider 下没有配置模型名的 Preset，请先创建一个 Preset 并填写正确的模型名称（如 mimo-v2.5-pro）",
             }
         model = first_preset.model
+        api_type = getattr(p, "api_type", "openai") or "openai"
 
-        body = {
-            "model": model,
-            "messages": [{"role": "user", "content": "hi"}],
-            "max_completion_tokens": 10,
-        }
+        if api_type == "anthropic":
+            body = build_anthropic_body(model, [{"role": "user", "content": "hi"}], parameters={"max_tokens": 10})
+        else:
+            body = {
+                "model": model,
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_completion_tokens": 10,
+            }
         payload = json.dumps(body).encode()
 
+        url = build_chat_url(p.api_base, api_type)
         req = urllib.request.Request(
-            build_chat_url(p.api_base),
+            url,
             data=payload,
             headers=headers,
             method="POST",
@@ -198,7 +209,10 @@ def test_provider(db: Session, provider_id: int) -> dict:
         with urllib.request.urlopen(req, timeout=p.timeout_sec) as resp:
             result = json.loads(resp.read().decode())
 
-        content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+        if api_type == "anthropic":
+            content = extract_anthropic_content(result)
+        else:
+            content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
         return {
             "latency_ms": _elapsed(),
             "status": "ok",

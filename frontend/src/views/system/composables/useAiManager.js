@@ -75,7 +75,7 @@ export function useAiManager() {
   const providerFormRef = ref(null)
   const providerSaving = ref(false)
   const providerForm = ref({
-    name: '', provider_type: 'direct', api_base: '', api_key: '', timeout_sec: 60, remark: '',
+    name: '', provider_type: 'direct', api_base: '', api_key: '', api_type: 'openai', timeout_sec: 60, remark: '',
   })
   const providerRules = {
     name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
@@ -194,7 +194,7 @@ export function useAiManager() {
     providerEditId.value = row?.id || null
     providerForm.value = row
       ? { ...row, api_key: '' }
-      : { name: '', provider_type: 'direct', api_base: '', api_key: '', timeout_sec: 60, remark: '' }
+      : { name: '', provider_type: 'direct', api_base: '', api_key: '', api_type: 'openai', timeout_sec: 60, remark: '' }
     providerDialogVisible.value = true
   }
 

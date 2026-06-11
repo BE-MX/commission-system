@@ -14,7 +14,10 @@ from sqlalchemy.orm import Session
 
 from app.ai.models import AiPreset, AiCallLog
 from app.ai.keyring import decrypt_key
-from app.ai.http_client import build_chat_url, build_headers
+from app.ai.http_client import (
+    build_chat_url, build_headers,
+    build_anthropic_body, extract_anthropic_content, extract_anthropic_usage,
+)
 from app.ai.provider_service import get_provider
 
 
@@ -77,27 +80,37 @@ def chat(
     try:
         api_key = decrypt_key(provider.api_key) if provider.api_key else None
         headers = build_headers(provider, api_key)
+        api_type = getattr(provider, "api_type", "openai") or "openai"
 
-        params = {"model": preset.model, "messages": full_messages, "stream": False}
-        if preset.parameters:
-            params.update(preset.parameters)
+        # 按协议类型构造请求体
+        if api_type == "anthropic":
+            params = build_anthropic_body(
+                model=preset.model,
+                messages=full_messages,
+                system_prompt=preset.system_prompt,
+                parameters=preset.parameters,
+            )
+        else:
+            params = {"model": preset.model, "messages": full_messages, "stream": False}
+            if preset.parameters:
+                params.update(preset.parameters)
 
-        url = build_chat_url(provider.api_base)
+        url = build_chat_url(provider.api_base, api_type)
         has_image = any(
             isinstance(m.get("content"), list)
             and any(c.get("type") == "image_url" for c in m["content"])
             for m in full_messages
         )
         logger.info(
-            "AI request: provider=%s model=%s url=%s msg_count=%d has_image=%s",
-            provider.name, preset.model, url, len(full_messages), has_image,
+            "AI request: provider=%s model=%s api_type=%s url=%s msg_count=%d has_image=%s",
+            provider.name, preset.model, api_type, url, len(full_messages), has_image,
         )
         if has_image:
             print(f"[AI-DIAG] request with image | provider={provider.name} model={preset.model} "
-                  f"url={url} msg_count={len(full_messages)}", flush=True)
+                  f"api_type={api_type} url={url} msg_count={len(full_messages)}", flush=True)
 
         req = urllib.request.Request(
-            build_chat_url(provider.api_base),
+            url,
             data=json.dumps(params).encode(),
             headers=headers,
             method="POST",
@@ -106,27 +119,34 @@ def chat(
             raw_bytes = resp.read()
             result = json.loads(raw_bytes.decode())
 
-        # 兼容 OpenAI 标准格式: choices[0].message.content
-        message = result.get("choices", [{}])[0].get("message", {})
-        content = message.get("content", "")
-        # 某些 API (如 StepFun) 可能返回 list/dict 类型的 content,统一转 str
-        if content is not None and not isinstance(content, str):
-            content = json.dumps(content, ensure_ascii=False)
+        # 按协议类型解析响应
+        if api_type == "anthropic":
+            content = extract_anthropic_content(result)
+            usage = extract_anthropic_usage(result)
+        else:
+            # OpenAI 标准格式: choices[0].message.content
+            message = result.get("choices", [{}])[0].get("message", {})
+            content = message.get("content", "")
+            # 某些 API (如 StepFun) 可能返回 list/dict 类型的 content,统一转 str
+            if content is not None and not isinstance(content, str):
+                content = json.dumps(content, ensure_ascii=False)
 
-        # 推理模型兼容 (Step-3.7-flash / DeepSeek-R1 等):
-        # content 为空但 reasoning/reasoning_content 有内容时,从中提取答案
-        if not content:
-            reasoning = message.get("reasoning_content") or message.get("reasoning") or ""
-            if reasoning and isinstance(reasoning, str) and reasoning.strip():
-                logger.info(
-                    "AI content empty, falling back to reasoning. provider=%s model=%s reasoning_len=%d",
-                    provider.name, preset.model, len(reasoning),
-                )
-                print(f"[AI-DIAG] content empty, using reasoning ({len(reasoning)} chars) | "
-                      f"provider={provider.name} model={preset.model}", flush=True)
-                content = reasoning
+            # 推理模型兼容 (Step-3.7-flash / DeepSeek-R1 等):
+            # content 为空但 reasoning/reasoning_content 有内容时,从中提取答案
+            if not content:
+                reasoning = message.get("reasoning_content") or message.get("reasoning") or ""
+                if reasoning and isinstance(reasoning, str) and reasoning.strip():
+                    logger.info(
+                        "AI content empty, falling back to reasoning. provider=%s model=%s reasoning_len=%d",
+                        provider.name, preset.model, len(reasoning),
+                    )
+                    print(f"[AI-DIAG] content empty, using reasoning ({len(reasoning)} chars) | "
+                          f"provider={provider.name} model={preset.model}", flush=True)
+                    content = reasoning
 
-        # 诊断: content 仍为空时记录完整响应结构
+            usage = result.get("usage", {})
+
+        # 诊断: content 为空时记录完整响应结构
         if not content and result:
             diag = json.dumps(result, ensure_ascii=False)[:2000]
             logger.warning(
@@ -135,7 +155,6 @@ def chat(
             )
             print(f"[AI-DIAG] empty content | provider={provider.name} model={preset.model} "
                   f"result_keys={list(result.keys())} full_result={diag}", flush=True)
-        usage = result.get("usage", {})
         duration_ms = int((time.time() - start) * 1000)
 
         log.status = "success"

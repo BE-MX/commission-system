@@ -56,6 +56,14 @@
               </el-tag>
             </template>
           </el-table-column>
+          <el-table-column label="协议" width="100">
+            <template #default="{ row }">
+              <el-tag v-if="row.provider_type === 'direct'" :type="row.api_type === 'anthropic' ? 'warning' : 'info'" size="small" effect="plain">
+                {{ row.api_type === 'anthropic' ? 'Anthropic' : 'OpenAI' }}
+              </el-tag>
+              <span v-else>-</span>
+            </template>
+          </el-table-column>
           <el-table-column label="API Base / Key" min-width="220">
             <template #default="{ row }">
               <div class="mono-text">{{ row.api_base }}</div>
@@ -258,6 +266,13 @@
         </el-form-item>
         <el-form-item label="API Base" prop="api_base">
           <el-input v-model="providerForm.api_base" :placeholder="providerForm.provider_type === 'accio_work' ? 'http://119.28.107.92:3100' : 'https://api.openai.com/v1'" />
+        </el-form-item>
+        <el-form-item label="协议类型" v-if="providerForm.provider_type === 'direct'">
+          <el-radio-group v-model="providerForm.api_type">
+            <el-radio-button label="openai">OpenAI</el-radio-button>
+            <el-radio-button label="anthropic">Anthropic</el-radio-button>
+          </el-radio-group>
+          <div class="form-tip">ELBNT-AI 等代理选 Anthropic；OpenAI/DeepSeek/StepFun 选 OpenAI</div>
         </el-form-item>
         <el-form-item label="API Key" v-if="providerForm.provider_type !== 'accio_work'">
           <el-input v-model="providerForm.api_key" type="password" show-password :placeholder="providerEditId ? '留空表示不修改' : 'sk-xxxxxxxxxxxxxxxx'" />
@@ -476,6 +491,12 @@ const {
 .mono-text {
   font-family: var(--font-mono);
   font-size: 12px;
+}
+.form-tip {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin-top: 4px;
+  line-height: 1.4;
 }
 .key-row {
   display: flex;
