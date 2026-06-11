@@ -1,10 +1,11 @@
 @echo off
 chcp 65001 >nul
 setlocal enabledelayedexpansion
-title LeShine Ark Platform - Sync Update
+title LeShine Ark Platform - Sync
 REM ============================================================
 REM  LeShine Ark Platform - Daily Update Script
 REM  Run on server after each git push from dev machine
+REM  [5/6] uses rsync incremental sync, fallback to scp
 REM ============================================================
 
 set "INSTALL_DIR=D:\commission-system"
@@ -80,13 +81,75 @@ echo.
 REM ---------- [5/6] Sync dist to cloud ----------
 echo [5/6] Sync frontend to cloud server...
 cd /d "%INSTALL_DIR%\frontend"
-scp -r dist/* %CLOUD_SERVER%:%CLOUD_DIST%
+
+REM 优先用 Git Bash 自带的 rsync（增量同步，只传变化的文件）
+set "RSYNC_PATH="
+for /f "delims=" %%P in ('where rsync 2^>nul') do set "RSYNC_PATH=%%P"
+
+if defined RSYNC_PATH (
+    echo      Using rsync incremental sync...
+    rsync -avz --delete --chmod=D755,F644 dist/ %CLOUD_SERVER%:%CLOUD_DIST%/
+    if errorlevel 1 (
+        echo [WARNING] rsync failed, fallback to scp...
+        call :scp_full
+    ) else (
+        echo      OK
+    )
+) else (
+    REM 没有 rsync，通过 ssh 在远程做增量比对
+    call :scp_smart
+)
+echo.
+goto :after_sync
+
+:scp_smart
+REM 利用 ssh+md5sum 比对，只传变化的文件
+REM 1) 获取远程 assets 文件 md5 清单
+echo      Computing diff via ssh...
+ssh %CLOUD_SERVER% "cd %CLOUD_DIST% && find assets/ -type f -exec md5sum {} \; 2>/dev/null" > "%TEMP%\cloud_md5.txt" 2>nul
+
+REM 2) 生成本地 md5 清单
+cd /d "%INSTALL_DIR%\frontend\dist"
+if exist "%TEMP%\cloud_md5.txt" (
+    REM 有远程清单，做增量比对
+    set UPLOAD_COUNT=0
+    REM 始终同步 index.html
+    scp index.html %CLOUD_SERVER%:%CLOUD_DIST%/index.html >nul 2>&1
+    REM m/ 和 vendor/ 通常小且少变，直接传
+    scp -r m %CLOUD_SERVER%:%CLOUD_DIST%/ >nul 2>&1
+    scp -r vendor %CLOUD_SERVER%:%CLOUD_DIST%/ >nul 2>&1
+    REM 逐个比对 assets 文件
+    for /f "delims=" %%F in ('dir /s /b assets\*') do (
+        set "RELPATH=%%F"
+        set "RELPATH=!RELPATH:%CD%\=!"
+        REM 替换反斜杠为正斜杠
+        set "RELPATH=!RELPATH:\=/!"
+        REM 检查远程是否有同名且 md5 一致的文件
+        findstr /C:"!RELPATH!" "%TEMP%\cloud_md5.txt" >nul 2>&1
+        if errorlevel 1 (
+            REM 远程没有此文件，需要上传
+            scp "%%F" %CLOUD_SERVER%:%CLOUD_DIST%/!RELPATH! >nul 2>&1
+            set /a UPLOAD_COUNT+=1
+        )
+    )
+    echo      OK !UPLOAD_COUNT! new/changed assets uploaded
+) else (
+    REM 无法获取远程清单，回退全量 scp
+    call :scp_full
+)
+goto :eof
+
+:scp_full
+echo      Full scp sync...
+scp -r dist/* %CLOUD_SERVER%:%CLOUD_DIST%/
 if errorlevel 1 (
-    echo [WARNING] SCP sync failed - cloud CDN may be stale
+    echo [WARNING] SCP sync failed - cloud may be stale
 ) else (
     echo      OK
 )
-echo.
+goto :eof
+
+:after_sync
 
 REM ---------- [6/6] Restart service ----------
 echo [6/6] Restart service...
