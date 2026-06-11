@@ -45,34 +45,35 @@
           <el-button type="primary" size="small" @click="loadOrderList"><el-icon><Filter /></el-icon> 筛选</el-button>
           <el-button size="small" @click="resetOrderFilters">重置</el-button>
         </div>
-        <el-table :data="orderList" style="width:100%" :header-cell-style="headerStyle" v-loading="orderLoading" stripe @sort-change="handleOrderSortChange">
-          <el-table-column label="生产单号" prop="order_no" min-width="130" sortable="custom" show-overflow-tooltip />
-          <el-table-column label="生产批次号" prop="batch_no" min-width="130" sortable="custom" show-overflow-tooltip />
-          <el-table-column label="创建人" min-width="100">
+        <div class="table-card">
+        <el-table :data="orderList" style="width:100%" :header-cell-style="headerStyle" v-loading="orderLoading" border class="list-table" @sort-change="handleOrderSortChange">
+          <el-table-column label="生产单号" prop="order_no" min-width="130" max-width="195" sortable="custom" show-overflow-tooltip />
+          <el-table-column label="生产批次号" prop="batch_no" min-width="130" max-width="195" sortable="custom" show-overflow-tooltip />
+          <el-table-column label="创建人" min-width="100" max-width="150" show-overflow-tooltip>
             <template #default="{ row }">{{ row.created_by_name || '-' }}</template>
           </el-table-column>
-          <el-table-column label="创建时间" prop="created_at" min-width="140" sortable="custom">
+          <el-table-column label="创建时间" prop="created_at" min-width="140" max-width="210" sortable="custom" show-overflow-tooltip>
             <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
           </el-table-column>
-          <el-table-column label="明细数" width="80" align="center" prop="item_count" />
-          <el-table-column label="总下单量" width="90" align="center" prop="total_order_qty" />
-          <el-table-column label="总入库量" width="90" align="center" prop="total_received_qty" />
-          <el-table-column label="在途量" width="80" align="center">
+          <el-table-column label="明细数" min-width="80" max-width="120" prop="item_count" show-overflow-tooltip />
+          <el-table-column label="总下单量" min-width="90" max-width="135" prop="total_order_qty" show-overflow-tooltip />
+          <el-table-column label="总入库量" min-width="90" max-width="135" prop="total_received_qty" show-overflow-tooltip />
+          <el-table-column label="在途量" min-width="80" max-width="120">
             <template #default="{ row }">
               <span :class="row.total_in_transit_qty > 0 ? 'in-transit-active' : ''">{{ row.total_in_transit_qty }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="状态" prop="status" width="90" align="center" sortable="custom">
+          <el-table-column label="状态" prop="status" min-width="90" max-width="135" sortable="custom">
             <template #default="{ row }">
-              <el-tag :type="statusTagType(row.status)" size="small">{{ row.status_label }}</el-tag>
+              <el-tag :type="statusTagType(row.status)" size="small" effect="plain">{{ row.status_label }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="180" align="center" fixed="right">
+          <el-table-column label="操作" min-width="220" max-width="330" fixed="right">
             <template #default="{ row }">
-              <el-button size="small" link type="primary" @click="viewOrderDetail(row)">详情</el-button>
-              <el-button size="small" link type="primary" @click="editOrder(row)">编辑</el-button>
+              <GlassButton variant="link" left-icon="View" @click="viewOrderDetail(row)">详情</GlassButton>
+              <GlassButton variant="link" left-icon="Edit" @click="editOrder(row)">编辑</GlassButton>
               <el-dropdown trigger="click" @command="(cmd) => handlePrintCommand(cmd, row)">
-                <el-button size="small" link type="success">打印</el-button>
+                <GlassButton variant="link" left-icon="Printer">打印</GlassButton>
                 <template #dropdown>
                   <el-dropdown-menu>
                     <el-dropdown-item command="order">打印生产单</el-dropdown-item>
@@ -80,11 +81,12 @@
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
-              <el-button size="small" link type="warning" @click="printOrderHtml(row)">打印订单</el-button>
-              <el-button size="small" link type="danger" @click="deleteOrder(row)" v-if="authStore.hasPermission('production:admin')">删除</el-button>
+              <GlassButton variant="link" left-icon="Printer" @click="printOrderHtml(row)">打印订单</GlassButton>
+              <GlassButton variant="link" link-tone="danger" left-icon="Delete" @click="deleteOrder(row)" v-if="authStore.hasPermission('production:admin')">删除</GlassButton>
             </template>
           </el-table-column>
         </el-table>
+        </div>
         <div class="pagination-bar">
           <el-pagination v-model:current-page="orderPagination.page" v-model:page-size="orderPagination.page_size" :total="orderPagination.total"
             :page-sizes="[20,50,100]" layout="total,sizes,prev,pager,next,jumper" @size-change="loadOrderList" @current-change="loadOrderList" />
@@ -103,47 +105,49 @@
           <el-button type="primary" size="small" @click="loadItemList"><el-icon><Filter /></el-icon> 筛选</el-button>
           <el-button size="small" @click="resetItemFilters">重置</el-button>
         </div>
-        <el-table :data="itemList" style="width:100%" :header-cell-style="headerStyle" v-loading="itemLoading" stripe @sort-change="handleItemSortChange">
-          <el-table-column label="生产单号" prop="order_no" min-width="130" sortable="custom" show-overflow-tooltip />
-          <el-table-column label="批次号" prop="batch_no" min-width="120" sortable="custom" show-overflow-tooltip />
-          <el-table-column label="产品名称" prop="product_name" min-width="140" sortable="custom" show-overflow-tooltip />
-          <el-table-column label="型号" prop="model" min-width="100" sortable="custom" show-overflow-tooltip />
-          <el-table-column label="下单数量" width="90" align="center" prop="order_qty" sortable="custom" />
-          <el-table-column label="已入库" width="80" align="center" prop="received_qty" sortable="custom" />
-          <el-table-column label="在途" width="70" align="center">
+        <div class="table-card">
+        <el-table :data="itemList" style="width:100%" :header-cell-style="headerStyle" v-loading="itemLoading" border class="list-table" @sort-change="handleItemSortChange">
+          <el-table-column label="生产单号" prop="order_no" min-width="130" max-width="195" sortable="custom" show-overflow-tooltip />
+          <el-table-column label="批次号" prop="batch_no" min-width="120" max-width="180" sortable="custom" show-overflow-tooltip />
+          <el-table-column label="产品名称" prop="product_name" min-width="140" max-width="210" sortable="custom" show-overflow-tooltip />
+          <el-table-column label="型号" prop="model" min-width="100" max-width="150" sortable="custom" show-overflow-tooltip />
+          <el-table-column label="下单数量" min-width="90" max-width="135" prop="order_qty" sortable="custom" show-overflow-tooltip />
+          <el-table-column label="已入库" min-width="80" max-width="120" prop="received_qty" sortable="custom" show-overflow-tooltip />
+          <el-table-column label="在途" min-width="70" max-width="105">
             <template #default="{ row }">
               <span :class="row.in_transit_qty > 0 ? 'in-transit-active' : ''">{{ row.in_transit_qty }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="明细状态" width="90" align="center">
+          <el-table-column label="明细状态" min-width="90" max-width="135">
             <template #default="{ row }">
-              <el-tag :type="statusTagType(row.status)" size="small">{{ row.status_label }}</el-tag>
+              <el-tag :type="statusTagType(row.status)" size="small" effect="plain">{{ row.status_label }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="订单状态" width="90" align="center">
+          <el-table-column label="订单状态" min-width="90" max-width="135">
             <template #default="{ row }">
               <el-tag :type="statusTagType(row.order_status)" size="small" effect="plain">{{ row.order_status_label }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="加急" width="70" align="center">
+          <el-table-column label="加急" min-width="70" max-width="105">
             <template #default="{ row }">
-              <el-tag v-if="row.is_urgent" type="danger" size="small">加急</el-tag>
+              <el-tag v-if="row.is_urgent" type="danger" size="small" effect="plain">加急</el-tag>
               <span v-else class="text-muted">—</span>
             </template>
           </el-table-column>
-          <el-table-column label="预计交期" width="110" align="center">
+          <el-table-column label="预计交期" min-width="110" max-width="165">
             <template #default="{ row }">{{ row.expected_delivery_date || '—' }}</template>
           </el-table-column>
-          <el-table-column label="操作" width="260" align="center" fixed="right">
+          <el-table-column label="操作" min-width="260" max-width="390" fixed="right">
             <template #default="{ row }">
-              <el-button size="small" link type="primary" @click="editItem(row)">编辑</el-button>
-              <el-button size="small" link type="primary" @click="changeItemStatus(row)">改状态</el-button>
-              <el-button size="small" link type="warning" @click="inputReceived(row)">入库</el-button>
-              <el-button size="small" link type="success" @click="toggleItemProgress(row)">进度</el-button>
-              <el-button size="small" link type="danger" @click="deleteItem(row)" v-if="authStore.hasPermission('production:admin')">删除</el-button>
+              <GlassButton variant="link" left-icon="Edit" @click="editItem(row)">编辑</GlassButton>
+              <GlassButton variant="link" left-icon="VideoPause" @click="changeItemStatus(row)">改状态</GlassButton>
+              <GlassButton variant="link" left-icon="Box" @click="inputReceived(row)">入库</GlassButton>
+              <GlassButton variant="link" left-icon="List" @click="toggleItemProgress(row)">进度</GlassButton>
+              <GlassButton variant="link" link-tone="danger" left-icon="Delete" @click="deleteItem(row)" v-if="authStore.hasPermission('production:admin')">删除</GlassButton>
             </template>
           </el-table-column>
         </el-table>
+        </div>
         <div class="pagination-bar">
           <el-pagination v-model:current-page="itemPagination.page" v-model:page-size="itemPagination.page_size" :total="itemPagination.total"
             :page-sizes="[20,50,100]" layout="total,sizes,prev,pager,next,jumper" @size-change="loadItemList" @current-change="loadItemList" />
@@ -164,31 +168,31 @@
         </div>
         <el-divider />
         <div class="detail-subtitle">产品明细</div>
-        <el-table :data="currentOrder.items || []" size="small">
-          <el-table-column label="操作" width="140" align="center">
+        <el-table :data="currentOrder.items || []">
+          <el-table-column label="操作" min-width="140" max-width="210">
             <template #default="{ row }">
-              <el-button size="small" link type="primary" @click="toggleItemProgress(row)">进度</el-button>
-              <el-button size="small" link type="warning" @click="printCard(row)">打印流转卡</el-button>
+              <GlassButton variant="link" left-icon="List" @click="toggleItemProgress(row)">进度</GlassButton>
+              <GlassButton variant="link" left-icon="Printer" @click="printCard(row)">打印流转卡</GlassButton>
             </template>
           </el-table-column>
           <el-table-column label="产品名称" prop="product_name" min-width="140" show-overflow-tooltip />
-          <el-table-column label="型号" prop="model" min-width="100" />
-          <el-table-column label="下单量" width="80" align="center" prop="order_qty" />
-          <el-table-column label="已入库" width="80" align="center" prop="received_qty" />
-          <el-table-column label="在途" width="70" align="center">
+          <el-table-column label="型号" prop="model" min-width="100" show-overflow-tooltip />
+          <el-table-column label="下单量" min-width="80" max-width="120" prop="order_qty" show-overflow-tooltip />
+          <el-table-column label="已入库" min-width="80" max-width="120" prop="received_qty" show-overflow-tooltip />
+          <el-table-column label="在途" min-width="70" max-width="105">
             <template #default="{ row }"><span :class="row.in_transit_qty > 0 ? 'in-transit-active' : ''">{{ row.in_transit_qty }}</span></template>
           </el-table-column>
-          <el-table-column label="加急" width="70" align="center">
+          <el-table-column label="加急" min-width="70" max-width="105">
             <template #default="{ row }">
-              <el-tag v-if="row.is_urgent" type="danger" size="small">加急</el-tag>
+              <el-tag v-if="row.is_urgent" type="danger" size="small" effect="plain">加急</el-tag>
               <span v-else class="text-muted">—</span>
             </template>
           </el-table-column>
-          <el-table-column label="预计交期" width="100" align="center">
+          <el-table-column label="预计交期" min-width="100" max-width="150">
             <template #default="{ row }">{{ row.expected_delivery_date || '—' }}</template>
           </el-table-column>
-          <el-table-column label="状态" width="80" align="center">
-            <template #default="{ row }"><el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag></template>
+          <el-table-column label="状态" min-width="80" max-width="120">
+            <template #default="{ row }"><el-tag :type="statusTagType(row.status)" size="small" effect="plain">{{ statusLabel(row.status) }}</el-tag></template>
           </el-table-column>
         </el-table>
 
@@ -198,8 +202,8 @@
             <div class="progress-panel-header">
               <span class="detail-subtitle">工序进度：{{ item.product_name }}</span>
               <div>
-                <el-button size="small" link @click="refreshProgress(item.id)">刷新</el-button>
-                <el-button size="small" link @click="expandedProgressId = null">收起</el-button>
+                <el-button link @click="refreshProgress(item.id)">刷新</el-button>
+                <el-button link @click="expandedProgressId = null">收起</el-button>
               </div>
             </div>
             <div v-if="progressLoading" style="text-align:center; padding: 20px;">
@@ -418,7 +422,7 @@ const statusCount = reactive({ submitted: 0, terminated: 0, completed: 0 })
 
 const statusTagType = (s) => ({ 0: 'primary', 1: 'info', 2: 'success' })[s] || 'info'
 const statusLabel = (s) => ({ 0: '已提交', 1: '已终止', 2: '已完成' })[s] || '未知'
-const headerStyle = () => ({ background: 'linear-gradient(135deg,#f8f6f0,#f0ece3)', fontWeight: 600, color: '#4a4a5a' })
+const headerStyle = () => ({ fontWeight: 600 })
 
 function formatDate(iso) {
   if (!iso) return '-'
@@ -762,7 +766,8 @@ function handlePrintCommand(cmd, row) {
 }
 
 function printOrderHtml(row) {
-  const url = `/api/report/print/production-order?order_no=${encodeURIComponent(row.order_no)}`
+  const reviewerName = encodeURIComponent(authStore.user?.real_name || '')
+  const url = `/api/report/print/production-order?order_no=${encodeURIComponent(row.order_no)}&reviewer=${reviewerName}`
   window.open(url, '_blank')
 }
 </script>

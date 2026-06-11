@@ -318,11 +318,69 @@
   {% endif %}
 </div>
 
-<!-- 数据表格 -->
-{% if column_defs and rows %}
+<!-- 数据表格（按型号分类拆分） -->
+{% if sub_tables %}
+{% for sub in sub_tables %}
+<div style="margin-bottom:20px">
 <table class="data-table">
   <thead>
     {# 一级表头：等级行 — 同一 product_remark 合并 #}
+    <tr>
+      <th rowspan="2" style="width:100px;min-width:100px;max-width:100px;font-size:10px;line-height:1.2;white-space:normal;word-wrap:break-word;word-break:break-all">{{ sub.category_label }}</th>
+      {% set ns = namespace(current_group='') %}
+      {% for col in sub.column_defs %}
+        {% if col.group != ns.current_group %}
+          {% set ns.current_group = col.group %}
+          {% set group_count = sub.column_defs | selectattr('group', 'equalto', col.group) | list | length %}
+          <th class="group-header" colspan="{{ group_count }}">{{ col.group }}</th>
+        {% endif %}
+      {% endfor %}
+      <th rowspan="2">合计</th>
+    </tr>
+    {# 二级表头：尺寸行 #}
+    <tr>
+      {% for col in sub.column_defs %}
+      <th class="size-header">
+        <span class="size-main">{{ col.size }}</span>
+        {% if col.size_req %}
+        <span class="size-req">{{ col.size_req }}</span>
+        {% endif %}
+      </th>
+      {% endfor %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in sub.rows %}
+    <tr>
+      <td class="color-cell">
+        <span class="color-main">{{ row.color }}</span>
+        {% if row.production_color_requirement %}
+        <span class="color-req">{{ row.production_color_requirement }}</span>
+        {% endif %}
+      </td>
+      {% for col in sub.column_defs %}
+        {% set val = row[col.key] %}
+        <td class="qty-cell {{ 'qty-zero' if val == 0 else '' }}">{{ val }}</td>
+      {% endfor %}
+      <td class="row-total">{{ row.row_total }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+  <tfoot>
+    <tr>
+      <td style="font-weight:700;text-align:left">合计</td>
+      {% for col in sub.column_defs %}
+      <td>{{ sub.col_totals[col.key] }}</td>
+      {% endfor %}
+      <td class="grand-total">{{ sub.col_totals.grand_total }}</td>
+    </tr>
+  </tfoot>
+</table>
+</div>
+{% endfor %}
+{% elif column_defs and rows %}
+<table class="data-table">
+  <thead>
     <tr>
       <th rowspan="2" style="width:100px;min-width:100px;max-width:100px;font-size:8px;line-height:1.2;white-space:normal;word-wrap:break-word;word-break:break-all">天才发帘；色号；注意幅度；克重足重</th>
       {% set ns = namespace(current_group='') %}
@@ -335,7 +393,6 @@
       {% endfor %}
       <th rowspan="2">合计</th>
     </tr>
-    {# 二级表头：尺寸行 #}
     <tr>
       {% for col in column_defs %}
       <th class="size-header">
@@ -431,9 +488,9 @@
 
 <!-- 签字区 -->
 <div class="signature-area">
-  <div class="sig">制单人：<span class="sig-line"></span></div>
-  <div class="sig">审核人：<span class="sig-line"></span></div>
-  <div class="sig">日期：<span class="sig-line"></span></div>
+  <div class="sig">制单人：<span class="sig-line">{{ header.creator_name }}</span></div>
+  <div class="sig">审核人：<span class="sig-line">{{ header.reviewer_name }}</span></div>
+  <div class="sig">日期：<span class="sig-line">{{ header.print_date }}</span></div>
 </div>
 
 <div class="page-footer">

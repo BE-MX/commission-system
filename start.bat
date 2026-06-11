@@ -7,7 +7,7 @@ echo   提成管理系统 - 启动中...
 echo ========================================
 echo.
 
-start "Backend - FastAPI :8001" cmd /k "cd /d %~dp0backend && call .venv\Scripts\activate && uvicorn app.main:app --reload --port 8001"
+start "Backend - FastAPI :8001" cmd /k "cd /d %~dp0backend && .venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8001"
 
 timeout /t 3 /nobreak >nul
 

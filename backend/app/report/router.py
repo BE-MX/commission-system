@@ -321,13 +321,18 @@ def get_data(
 @router.get("/print/production-order", response_class=HTMLResponse)
 def print_production_order(
     order_no: str = Query(..., description="生产订单号"),
+    reviewer: str = Query("", description="审核人姓名（当前打印用户）"),
     db: Session = Depends(get_db),
 ):
     """生产订单打印页（HTML，无需登录，供打印窗口直接访问）"""
+    from datetime import date
     data = get_report_data(db, "production_order_print", {"order_no": order_no})
 
     if not data.get("header"):
         raise HTTPException(status_code=404, detail=f"订单不存在: {order_no}")
+
+    data["header"]["reviewer_name"] = reviewer
+    data["header"]["print_date"] = date.today().strftime("%Y-%m-%d")
 
     template = _jinja_env.get_template("production_order_print.html")
     html = template.render(**data)

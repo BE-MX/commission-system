@@ -42,6 +42,56 @@ def _extract_weight_grams(product_name: str) -> float:
     except (ValueError, TypeError):
         return 0.0
 
+# ── 型号分类规则 ─────────────────────────────────────────
+
+_CATEGORY_RULES = [
+    ("天才", "天才", "天才发帘"),
+    ("贴发", "贴发", "机织贴发"),
+    ("平型", "平型", "平型/平型接发"),
+    ("打孔", "打孔", "打孔发帘"),
+]
+# 优先级：按列表顺序匹配第一个命中的关键字；全部不匹配归入"其他"
+_CATEGORY_ORDER = ["天才", "贴发", "平型", "打孔"]
+# 分类名称 -> 左上角单元格显示文本
+_CATEGORY_LABELS = {cat_name: label for _, cat_name, label in _CATEGORY_RULES}
+
+
+def _classify_by_model(model: str) -> tuple:
+    """根据 order_item 的 model 字段关键字返回 (分类名称, 左上角标签)。
+
+    model 示例: "B1天才发帘（帘宽12"）"、"B1机织贴发"、"B3平型"、"B3中间打孔发帘（帘宽33cm）"
+    匹配优先级按 _CATEGORY_RULES 列表顺序，全部不匹配归入"其他"。
+    """
+    for keyword, cat_name, _ in _CATEGORY_RULES:
+        if keyword in model:
+            return cat_name
+    return "其他"
+
+
+def _split_by_category(long_items: List[Dict]) -> Dict[str, List[Dict]]:
+    """将长格式 rows 按型号(model)分类拆分成 {分类: [items]} 字典。"""
+    buckets: Dict[str, List[Dict]] = {}
+    for item in long_items:
+        cat = _classify_by_model(item.get("model", ""))
+        buckets.setdefault(cat, []).append(item)
+    # 按固定顺序输出
+    result = OrderedDict()
+    for cat in _CATEGORY_ORDER + ["其他"]:
+        if cat in buckets:
+            result[cat] = buckets[cat]
+    return result
+
+
+def _collect_remarks_for_category(long_items: List[Dict]) -> List[str]:
+    """从同分类的 items 中去重收集 product_remark，保持出现顺序。"""
+    seen: OrderedDict[str, None] = OrderedDict()
+    for item in long_items:
+        remark = item.get("product_remark", "")
+        if remark and remark not in seen:
+            seen[remark] = None
+    return list(seen.keys())
+
+
 # 预留最大列槽位数（order 中实际出现的 product_remark+size2 组合数不会超过此值）
 _MAX_PIVOT_COLS = 30
 
@@ -151,19 +201,23 @@ def get_production_order_print_data(db: Session, order_no: str) -> Dict[str, Any
             o.order_no,
             o.batch_no,
             o.remark,
-            o.created_at
+            o.created_at,
+            o.created_by,
+            u.real_name AS creator_name
         FROM ark_production_orders o
+        LEFT JOIN ark_users u ON u.id = o.created_by
         WHERE o.order_no = :order_no AND o.deleted_flag = 0
     """)
     header_row = db.execute(header_sql, {"order_no": order_no}).mappings().first()
     if not header_row:
-        return {"header": {}, "column_defs": [], "rows": [], "col_totals": {}, "total_cols": 0}
+        return {"header": {}, "sub_tables": [], "column_defs": [], "rows": [], "col_totals": {}, "total_cols": 0}
 
     header = {
         "company_name": "青岛丽丝发制品有限公司",
         "order_no": header_row["order_no"],
         "batch_no": header_row["batch_no"] or "",
         "remark": header_row["remark"] or "",
+        "creator_name": header_row["creator_name"] or "",
     }
 
     # ── items（长格式）────────────────────────────────────
@@ -175,6 +229,7 @@ def get_production_order_print_data(db: Session, order_no: str) -> Dict[str, Any
             IFNULL(p.product_remark, '') AS product_remark,
             p.size,
             MAX(IFNULL(p.production_size_requirement, '')) AS production_size_requirement,
+            oi.model,
             CAST(SUM(oi.order_qty) AS SIGNED) AS qty
         FROM ark_production_order_items oi
         JOIN ark_production_orders o ON o.id = oi.order_id
@@ -185,7 +240,8 @@ def get_production_order_print_data(db: Session, order_no: str) -> Dict[str, Any
             o.order_no,
             p.color,
             p.product_remark,
-            p.size
+            p.size,
+            oi.model
         ORDER BY
             p.color,
             p.product_remark,
@@ -205,12 +261,27 @@ def get_production_order_print_data(db: Session, order_no: str) -> Dict[str, Any
             "color": color,
             "production_color_requirement": r["production_color_requirement"] or "",
             "product_remark": prod_remark,
+            "model": r["model"] or "",
             "size": size,
             "production_size_requirement": r["production_size_requirement"] or "",
             "qty": int(r["qty"]) if r["qty"] else 0,
         })
 
-    # ── 透视 ─────────────────────────────────────────────
+    # ── 按型号分类拆分透视 ──────────────────────────────────
+    category_splits = _split_by_category(long_items)
+    sub_tables = []
+    for cat_name, cat_items in category_splits.items():
+        cat_pivoted = _pivot_items(cat_items)
+        cat_remarks = _collect_remarks_for_category(cat_items)
+        if cat_pivoted["column_defs"]:  # 跳过空表
+            sub_tables.append({
+                "category_name": cat_name,
+                "category_label": _CATEGORY_LABELS.get(cat_name, cat_name),
+                "category_remarks": cat_remarks,
+                **cat_pivoted,
+            })
+
+    # ── 全量透视（公斤数统计用） ──────────────────────────────
     pivoted = _pivot_items(long_items)
 
     # ── 公斤数统计 ───────────────────────────────────────
@@ -267,6 +338,7 @@ def get_production_order_print_data(db: Session, order_no: str) -> Dict[str, Any
 
     return {
         "header": header,
+        "sub_tables": sub_tables,
         **pivoted,
         "weight_totals": weight_pure_totals,
         "weight_t_totals": weight_t_totals,
@@ -364,6 +436,7 @@ def get_report_data(db: Session, report_code: str, params: Optional[Dict] = None
             sample_weight_t["grand_total"] = 0.0
             return {
                 "header": {"company_name": "", "order_no": "", "batch_no": "", "remark": ""},
+                "sub_tables": [],
                 "column_defs": sample_cols,
                 "rows": [sample_row],
                 "col_totals": sample_totals,
