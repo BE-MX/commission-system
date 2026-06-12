@@ -344,6 +344,7 @@ def export_production_order_docx(
     order_no: str = Query(..., description="生产订单号"),
     page_size: str = Query("A4", description="页面尺寸：A4/A3/A5/B5"),
     orientation: str = Query("portrait", description="方向：portrait/landscape"),
+    reviewer: str = Query("", description="审核人姓名（当前导出用户）"),
     db: Session = Depends(get_db),
 ):
     """导出生产订单为 Word (.docx) 文件"""
@@ -360,6 +361,11 @@ def export_production_order_docx(
     data = get_report_data(db, "production_order_print", {"order_no": order_no})
     if not data.get("header"):
         raise HTTPException(status_code=404, detail=f"订单不存在: {order_no}")
+
+    # 签字区补充字段（与 HTML 打印端点保持一致）
+    from datetime import date
+    data["header"]["reviewer_name"] = reviewer
+    data["header"]["print_date"] = date.today().strftime("%Y-%m-%d")
 
     try:
         docx_bytes = generate_production_order_docx(

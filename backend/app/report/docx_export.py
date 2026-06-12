@@ -112,6 +112,7 @@ def generate_production_order_docx(
     section.right_margin = Cm(1.0)
 
     header = data.get("header", {})
+    sub_tables = data.get("sub_tables", [])
     column_defs = data.get("column_defs", [])
     rows = data.get("rows", [])
     col_totals = data.get("col_totals", {})
@@ -156,101 +157,114 @@ def generate_production_order_docx(
         doc.save(buf)
         return buf.getvalue()
 
-    # ── 主表格 ──
-    num_cols = 1 + len(column_defs) + 1  # 颜色列 + 数据列 + 合计列
-    # thead: 2 行 (group-header + size-header) + tbody: len(rows) 行 + tfoot: 1 行
-    total_rows = 2 + len(rows) + 1
-    table = doc.add_table(rows=total_rows, cols=num_cols)
-    table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    table.style = "Table Grid"
+    # ── 按型号分类拆分的子表 ──────────────────────────────
+    tables_to_render = []
+    if sub_tables:
+        for sub in sub_tables:
+            sub_cdefs = sub.get("column_defs", [])
+            sub_rows = sub.get("rows", [])
+            sub_ct = sub.get("col_totals", {})
+            sub_remarks = sub.get("category_remarks", [])
+            sub_label = sub.get("category_label", "颜色")
+            if sub_cdefs:
+                tables_to_render.append((sub_cdefs, sub_rows, sub_ct, sub_remarks, sub_label))
+    else:
+        # 无分类数据时兜底：渲染全量单表
+        tables_to_render.append((column_defs, rows, col_totals, [], "颜色"))
 
-    # ── 一级表头（group-header）────────────────────────────
-    # 第一列 rowspan=2
-    cell_color_header = table.cell(0, 0)
-    _set_cell_text(cell_color_header, "颜色", bold=True, size=9)
-    _set_cell_shading(cell_color_header, "E2E5EF")
-    # 合并第一列的两行
-    cell_color_header.merge(table.cell(1, 0))
+    for tbl_idx, (tbl_cdefs, tbl_rows, tbl_ct, tbl_remarks, tbl_label) in enumerate(tables_to_render):
+        if tbl_idx > 0:
+            doc.add_paragraph()  # 子表间空行
 
-    # 最后一列（合计）rowspan=2
-    last_col_idx = num_cols - 1
-    cell_total_header = table.cell(0, last_col_idx)
-    _set_cell_text(cell_total_header, "合计", bold=True, size=9)
-    _set_cell_shading(cell_total_header, "FEF9F0")
-    cell_total_header.merge(table.cell(1, last_col_idx))
+        num_cols = 1 + len(tbl_cdefs) + 1
+        total_doc_rows = 2 + len(tbl_rows) + 1
+        table = doc.add_table(rows=total_doc_rows, cols=num_cols)
+        table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        table.style = "Table Grid"
 
-    # 合并 group 列
-    col_idx = 1
-    current_group = None
-    for col_def in column_defs:
-        if col_def["group"] != current_group:
-            current_group = col_def["group"]
-            group_cols = [c for c in column_defs if c["group"] == current_group]
-            span = len(group_cols)
-            start = col_idx
-            end = col_idx + span - 1
-            cell = table.cell(0, start)
-            if span > 1:
-                cell.merge(table.cell(0, end))
-            _set_cell_text(cell, current_group, bold=True, size=9)
-            _set_cell_shading(cell, "E2E5EF")
-        col_idx += 1
+        # ── 一级表头（group-header）────────────────────────────
+        cell_color_header = table.cell(0, 0)
+        remark_text = "\n".join(tbl_remarks) if tbl_remarks else tbl_label
+        _set_cell_text(cell_color_header, remark_text, bold=True, size=7,
+                       align=WD_ALIGN_PARAGRAPH.LEFT)
+        _set_cell_shading(cell_color_header, "E2E5EF")
+        cell_color_header.merge(table.cell(1, 0))
 
-    # ── 二级表头（size-header）────────────────────────────
-    for i, col_def in enumerate(column_defs):
-        cell = table.cell(1, 1 + i)
-        size_req = col_def.get("size_req", "")
-        if size_req:
-            _set_cell_two_line(cell, col_def["size"], size_req)
-        else:
-            _set_cell_text(cell, col_def["size"], size=8)
-        _set_cell_shading(cell, "F0F2F7")
+        last_col_idx = num_cols - 1
+        cell_total_header = table.cell(0, last_col_idx)
+        _set_cell_text(cell_total_header, "合计", bold=True, size=9)
+        _set_cell_shading(cell_total_header, "FEF9F0")
+        cell_total_header.merge(table.cell(1, last_col_idx))
 
-    # ── 数据行 ────────────────────────────────────────────
-    for row_i, row_data in enumerate(rows):
-        actual_row = 2 + row_i  # 跳过 2 行 thead
+        # 合并 group 列
+        col_idx = 1
+        current_group = None
+        for col_def in tbl_cdefs:
+            if col_def["group"] != current_group:
+                current_group = col_def["group"]
+                group_cols = [c for c in tbl_cdefs if c["group"] == current_group]
+                span = len(group_cols)
+                start = col_idx
+                end = col_idx + span - 1
+                cell = table.cell(0, start)
+                if span > 1:
+                    cell.merge(table.cell(0, end))
+                _set_cell_text(cell, current_group, bold=True, size=9)
+                _set_cell_shading(cell, "E2E5EF")
+            col_idx += 1
 
-        # 颜色列
-        color_cell = table.cell(actual_row, 0)
-        color_req = row_data.get("production_color_requirement", "")
-        color_main = row_data.get("color", "")
-        if color_req:
-            _set_cell_two_line(color_cell, color_main, color_req,
-                               bold1=True, align=WD_ALIGN_PARAGRAPH.LEFT)
-        else:
-            _set_cell_text(color_cell, color_main, bold=True,
-                           align=WD_ALIGN_PARAGRAPH.LEFT)
+        # ── 二级表头（size-header）────────────────────────────
+        for i, col_def in enumerate(tbl_cdefs):
+            cell = table.cell(1, 1 + i)
+            size_req = col_def.get("size_req", "")
+            if size_req:
+                _set_cell_two_line(cell, col_def["size"], size_req)
+            else:
+                _set_cell_text(cell, col_def["size"], size=8)
+            _set_cell_shading(cell, "F0F2F7")
 
-        # 数量列
-        for col_i, col_def in enumerate(column_defs):
-            val = row_data.get(col_def["key"], 0)
-            cell = table.cell(actual_row, 1 + col_i)
-            _set_cell_text(cell, str(val), size=9,
-                           color=_COLOR_GRAY if val == 0 else None)
+        # ── 数据行 ────────────────────────────────────────────
+        for row_i, row_data in enumerate(tbl_rows):
+            actual_row = 2 + row_i
 
-        # 行合计
-        row_total = row_data.get("row_total", 0)
-        total_cell = table.cell(actual_row, last_col_idx)
-        _set_cell_text(total_cell, str(row_total), bold=True, size=9)
-        _set_cell_shading(total_cell, "FEF9F0")
+            color_cell = table.cell(actual_row, 0)
+            color_req = row_data.get("production_color_requirement", "")
+            color_main = row_data.get("color", "")
+            if color_req:
+                _set_cell_two_line(color_cell, color_main, color_req,
+                                   bold1=True, align=WD_ALIGN_PARAGRAPH.LEFT)
+            else:
+                _set_cell_text(color_cell, color_main, bold=True,
+                               align=WD_ALIGN_PARAGRAPH.LEFT)
 
-    # ── 合计行 ────────────────────────────────────────────
-    footer_row = 2 + len(rows)
-    _set_cell_text(table.cell(footer_row, 0), "合计", bold=True, size=9,
-                   align=WD_ALIGN_PARAGRAPH.LEFT)
-    _set_cell_shading(table.cell(footer_row, 0), "F8F9FC")
+            for col_i, col_def in enumerate(tbl_cdefs):
+                val = row_data.get(col_def["key"], 0)
+                cell = table.cell(actual_row, 1 + col_i)
+                _set_cell_text(cell, str(val), size=9,
+                               color=_COLOR_GRAY if val == 0 else None)
 
-    for col_i, col_def in enumerate(column_defs):
-        val = col_totals.get(col_def["key"], 0)
-        cell = table.cell(footer_row, 1 + col_i)
-        _set_cell_text(cell, str(val), bold=True, size=9)
-        _set_cell_shading(cell, "F8F9FC")
+            row_total = row_data.get("row_total", 0)
+            total_cell = table.cell(actual_row, last_col_idx)
+            _set_cell_text(total_cell, str(row_total), bold=True, size=9)
+            _set_cell_shading(total_cell, "FEF9F0")
 
-    grand_total = col_totals.get("grand_total", 0)
-    gt_cell = table.cell(footer_row, last_col_idx)
-    _set_cell_text(gt_cell, str(grand_total), bold=True, size=10,
-                   color=_COLOR_ACCENT)
-    _set_cell_shading(gt_cell, "FEF9F0")
+        # ── 合计行 ────────────────────────────────────────────
+        footer_row = 2 + len(tbl_rows)
+        _set_cell_text(table.cell(footer_row, 0), "合计", bold=True, size=9,
+                       align=WD_ALIGN_PARAGRAPH.LEFT)
+        _set_cell_shading(table.cell(footer_row, 0), "F8F9FC")
+
+        for col_i, col_def in enumerate(tbl_cdefs):
+            val = tbl_ct.get(col_def["key"], 0)
+            cell = table.cell(footer_row, 1 + col_i)
+            _set_cell_text(cell, str(val), bold=True, size=9)
+            _set_cell_shading(cell, "F8F9FC")
+
+        grand_total = tbl_ct.get("grand_total", 0)
+        gt_cell = table.cell(footer_row, last_col_idx)
+        _set_cell_text(gt_cell, str(grand_total), bold=True, size=10,
+                       color=_COLOR_ACCENT)
+        _set_cell_shading(gt_cell, "FEF9F0")
 
     # ── 公斤数统计表 ──────────────────────────────────────
     if weight_totals:
@@ -332,10 +346,17 @@ def generate_production_order_docx(
             _set_cell_text(wt_table.cell(wt_row, last_col_idx), str(gt_t),
                            bold=True, size=9, color=_COLOR_ACCENT)
 
-    # ── 签字区 ──
+    # ── 签字区（与 HTML 打印模板对齐：预填制单人/审核人/日期） ──
     doc.add_paragraph()
+    creator = header.get("creator_name", "")
+    reviewer = header.get("reviewer_name", "")
+    print_date = header.get("print_date", "")
+
     p_sign = doc.add_paragraph()
-    run_sign = p_sign.add_run("制单人：__________　　审核人：__________　　日期：__________")
+    sign_parts = [f"制单人：{creator}"]
+    sign_parts.append(f"审核人：{reviewer}")
+    sign_parts.append(f"日期：{print_date}")
+    run_sign = p_sign.add_run("　　".join(sign_parts))
     run_sign.font.size = Pt(10)
     run_sign.font.name = _FONT
     run_sign._element.rPr.rFonts.set(qn("w:eastAsia"), _FONT)

@@ -503,8 +503,10 @@ function doExport() {
   const pageSize = document.getElementById('exportPageSize').value;
   const orientation = document.getElementById('exportOrientation').value;
   const orderNo = '{{ header.order_no }}';
-  const url = '/api/report/export/production-order?order_no=' + encodeURIComponent(orderNo)
+  const reviewer = '{{ header.reviewer_name | e }}';
+  let url = '/api/report/export/production-order?order_no=' + encodeURIComponent(orderNo)
     + '&page_size=' + pageSize + '&orientation=' + orientation;
+  if (reviewer) url += '&reviewer=' + encodeURIComponent(reviewer);
   window.location.href = url;
   document.getElementById('exportPanel').classList.remove('show');
 }
