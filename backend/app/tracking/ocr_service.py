@@ -65,6 +65,8 @@ def _clean_ocr_value(value: str | None) -> str | None:
         return value
 
     s = value.strip()
+    if not s:
+        return None
 
     # 1. 去掉 markdown bold 标记
     s = re.sub(r"\*{1,2}", "", s)
@@ -86,7 +88,13 @@ def _clean_ocr_value(value: str | None) -> str | None:
     if m:
         s = m.group(1).strip()
 
-    # 4. 去英文解释尾缀
+    # 4. 去英文解释前缀+尾缀
+    s = re.sub(
+        r"^(?:the\s+)?(?:name|value|field|text|result|label)[*:：\s]+",
+        "",
+        s,
+        flags=re.IGNORECASE,
+    ).strip()
     s = re.sub(
         r"\s+(?:is|was|found|seen|visible|labeled|located|printed|shown|written|displayed)\b.*$",
         "",
@@ -104,7 +112,28 @@ def _clean_ocr_value(value: str | None) -> str | None:
     s = re.sub(r'["“”‘’\']+$', '', s)
     s = s.strip()
 
-    # 7. 丢弃 JSON 字段标签（清洗后再判，避免误杀含标签的正常名字）
+    # 7. Reject instruction/prompt echoes (model sometimes returns the prompt as a value)
+    _instr_pattern = re.compile(
+        r'\b(?:extract|return|provide|identify|analyze|parse|output|generate|find|read|enter)\b'
+        r'.{0,40}'
+        r'\b(?:from|as|with|into|for|only|should|must|shall)\b',
+        re.IGNORECASE,
+    )
+    if len(s) > 25 and _instr_pattern.search(s):
+        return None
+    # Short instruction phrases like "return ONLY a valid JSON object"
+    _short_instr = re.compile(
+        r'^(?:return|provide|output|enter|extract)\b.*\b(?:json|object|info|data|field|value)\b',
+        re.IGNORECASE,
+    )
+    if _short_instr.match(s):
+        return None
+
+    # 8. Length guard: legitimate OCR field values never exceed 100 chars
+    if len(s) > 100:
+        return None
+
+    # 9. Reject JSON field labels (last check, after all cleaning)
     if s.lower() in _JSON_FIELD_LABELS:
         return None
 
