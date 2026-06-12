@@ -41,6 +41,40 @@ def _extract_json(text: str) -> str:
     return cleaned
 
 
+def _clean_ocr_value(value: str | None) -> str | None:
+    """清洗 OCR 返回的字段值，去除模型夹带的引号、markdown、解释性尾缀。
+
+    典型问题：
+      - `"ALISHA HAYES"` → `ALISHA HAYES`（去引号）
+      - `name**: "ALISHA HAYES" is clearly visible under "TO"` → `ALISHA HAYES`
+    """
+    if not value or not isinstance(value, str):
+        return value
+
+    s = value.strip()
+
+    # 去掉 markdown bold 标记
+    s = re.sub(r"\*{1,2}", "", s)
+
+    # 如果含引号包裹的名字，提取引号内容（优先）
+    m = re.search(r'"([^"]{2,})"', s)
+    if m:
+        return m.group(1).strip()
+
+    # 去掉末尾的解释性文本（如 "is clearly visible", "found in", "labeled as" 等）
+    s = re.sub(
+        r"\s+(?:is|was|found|seen|visible|labeled|located|printed|shown|written|displayed)\b.*$",
+        "",
+        s,
+        flags=re.IGNORECASE,
+    )
+
+    # 去掉残留标点（含中英文引号）
+    s = s.strip(' *:：,;""\'\'「」')
+
+    return s if len(s) >= 2 else value
+
+
 _COUNTRY_MAP = {
     "united states": "美国", "usa": "美国", "us": "美国",
     "united kingdom": "英国", "uk": "英国", "england": "英国",
@@ -140,6 +174,9 @@ def _parse_reasoning_to_dict(text: str) -> dict | None:
     if m:
         result["ship_date"] = m.group(1)
 
+    # 清洗收件人姓名（推理模型也可能夹带解释文本）
+    result["recipient_name"] = _clean_ocr_value(result["recipient_name"])
+
     # 只要至少识别出运单号或承运商就算有效
     if result["waybill_no"] or result["carrier"]:
         return result
@@ -174,6 +211,9 @@ def call_ocr_sync(image_bytes: bytes, suffix: str) -> dict:
                         '{"waybill_no": "运单号", "carrier": "承运商(DHL/FedEx/UPS/TNT/EMS/Aramex/其他)", '
                         '"recipient_name": "收件人姓名", "recipient_country": "目的国", '
                         '"ship_date": "发件日期(YYYY-MM-DD)"}. '
+                        "CRITICAL: each value must be the RAW data only — no quotes wrapping, "
+                        "no explanatory text, no markdown. For example: "
+                        '\"recipient_name\": \"JOHN DOE\" not \"recipient_name\": \"the name JOHN DOE is visible under TO\". '
                         "No markdown, no explanation, no extra text — just the JSON object."
                     ),
                 },
@@ -233,7 +273,7 @@ def call_ocr_sync(image_bytes: bytes, suffix: str) -> dict:
     return {
         "waybill_no": result.get("waybill_no"),
         "carrier": result.get("carrier"),
-        "recipient_name": result.get("recipient_name"),
+        "recipient_name": _clean_ocr_value(result.get("recipient_name")),
         "recipient_country": result.get("recipient_country"),
         "ship_date": result.get("ship_date"),
     }
