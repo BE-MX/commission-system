@@ -47,6 +47,7 @@ def _clean_ocr_value(value: str | None) -> str | None:
     典型问题：
       - `"ALISHA HAYES"` → `ALISHA HAYES`（去引号）
       - `name**: "ALISHA HAYES" is clearly visible under "TO"` → `ALISHA HAYES`
+      - `ALISHA HAYES"` → `ALISHA HAYES`（孤立尾部引号）
     """
     if not value or not isinstance(value, str):
         return value
@@ -56,8 +57,23 @@ def _clean_ocr_value(value: str | None) -> str | None:
     # 去掉 markdown bold 标记
     s = re.sub(r"\*{1,2}", "", s)
 
-    # 如果含引号包裹的名字，提取引号内容（优先）
-    m = re.search(r'"([^"]{2,})"', s)
+    # 去掉成对引号包裹：如果整段文字被引号包裹，去掉外层引号
+    # 支持递归去除多层引号，如 '"ALISHA HAYES"' → ALISHA HAYES
+    while True:
+        stripped = s
+        for q in ['"', '“”', '‘’', "'", '"', "'"]:
+            if len(q) == 2 and stripped.startswith(q[0]) and stripped.endswith(q[1]) and len(stripped) > 2:
+                stripped = stripped[1:-1].strip()
+                break
+            elif q in ('"', "'") and stripped.startswith(q) and stripped.endswith(q) and len(stripped) > 2:
+                stripped = stripped[1:-1].strip()
+                break
+        else:
+            break
+        s = stripped
+
+    # 如果含引号包裹的名字片段，提取引号内容（如 name**: "ALISHA HAYES" is ...）
+    m = re.search(r'["“]([^"”]{2,})["”]', s)
     if m:
         return m.group(1).strip()
 
@@ -69,8 +85,12 @@ def _clean_ocr_value(value: str | None) -> str | None:
         flags=re.IGNORECASE,
     )
 
-    # 去掉残留标点（含中英文引号）
-    s = s.strip(' *:：,;""\'\'「」')
+    # 去掉残留标点和孤立引号
+    s = s.strip(' *:：,;“”‘’「」"\'')
+    # 去掉首尾孤立的引号字符（不成对的）
+    s = re.sub(r'^["“”‘’\']+', '', s)
+    s = re.sub(r'["“”‘’\']+$', '', s)
+    s = s.strip()
 
     return s if len(s) >= 2 else value
 
