@@ -5,7 +5,7 @@ title LeShine Ark Platform - Sync
 REM ============================================================
 REM  LeShine Ark Platform - Daily Update Script
 REM  Run on server after each git push from dev machine
-REM  [5/6] uses rsync incremental sync, fallback to scp
+REM  [4/6] and [5/6] auto-skip if frontend has no changes
 REM ============================================================
 
 set "INSTALL_DIR=D:\commission-system"
@@ -62,8 +62,30 @@ if errorlevel 1 (
 echo      OK
 echo.
 
+REM ---------- Detect frontend changes ----------
+set "FRONTEND_CHANGED=0"
+cd /d "%INSTALL_DIR%"
+REM 检查本次 pull 是否改了 frontend/src 或 frontend/public 或 frontend/package.json
+git diff --name-only HEAD@{1} HEAD -- frontend/src/ frontend/public/ frontend/package.json frontend/package-lock.json frontend/vite.config.* 2>nul | findstr /R "." >nul 2>&1
+if not errorlevel 1 (
+    set "FRONTEND_CHANGED=1"
+)
+REM 也检查是否有未提交的本地改动
+git diff --name-only -- frontend/src/ frontend/public/ frontend/package.json | findstr /R "." >nul 2>&1
+if not errorlevel 1 (
+    set "FRONTEND_CHANGED=1"
+)
+
+if "%FRONTEND_CHANGED%"=="0" (
+    echo [4/6] Build frontend... SKIPPED ^(no frontend changes detected^)
+    echo.
+    echo [5/6] Sync dist to cloud... SKIPPED
+    echo.
+    goto :restart_service
+)
+
 REM ---------- [4/6] Build frontend ----------
-echo [4/6] Build frontend...
+echo [4/6] Build frontend... ^(changes detected^)
 cd /d "%INSTALL_DIR%\frontend"
 call npm install --silent
 if errorlevel 1 (
@@ -100,7 +122,7 @@ if defined RSYNC_PATH (
     call :scp_smart
 )
 echo.
-goto :after_sync
+goto :restart_service
 
 :scp_smart
 REM 利用 ssh+md5sum 比对，只传变化的文件
@@ -149,8 +171,7 @@ if errorlevel 1 (
 )
 goto :eof
 
-:after_sync
-
+:restart_service
 REM ---------- [6/6] Restart service ----------
 echo [6/6] Restart service...
 nssm restart %SERVICE_NAME%

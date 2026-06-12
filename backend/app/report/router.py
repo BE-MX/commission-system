@@ -374,8 +374,8 @@ def export_production_order_docx(
             orientation=orientation,
         )
     except Exception as e:
-        logger.error(f"导出 Word 失败: order_no={order_no}, error={e}")
-        raise HTTPException(status_code=500, detail="导出 Word 失败")
+        logger.error(f"导出 Word 失败: order_no={order_no}, error={e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"导出 Word 失败: {e}")
 
     filename = f"production_order_{order_no}.docx"
     return StreamingResponse(

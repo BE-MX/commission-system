@@ -276,10 +276,14 @@ def generate_production_order_docx(
         run_wt.font.name = _FONT
         run_wt._element.rPr.rFonts.set(qn("w:eastAsia"), _FONT)
 
+        # 公斤数表基于全量 column_defs，需独立计算列数
+        wt_num_cols = 1 + len(column_defs) + 1
+        wt_last_col = wt_num_cols - 1
+
         # 公斤数表：theader 2 行 + 数据行(纯色 + T色)
         has_t = weight_t_totals.get("grand_total", 0) > 0
         wt_data_rows = 1 + (1 if has_t else 0)
-        wt_table = doc.add_table(rows=2 + wt_data_rows, cols=num_cols)
+        wt_table = doc.add_table(rows=2 + wt_data_rows, cols=wt_num_cols)
         wt_table.alignment = WD_TABLE_ALIGNMENT.CENTER
         wt_table.style = "Table Grid"
 
@@ -289,10 +293,10 @@ def generate_production_order_docx(
         _set_cell_shading(wt_cell0, "E2E5EF")
         wt_cell0.merge(wt_table.cell(1, 0))
 
-        wt_cell_last = wt_table.cell(0, last_col_idx)
+        wt_cell_last = wt_table.cell(0, wt_last_col)
         _set_cell_text(wt_cell_last, "合计", bold=True, size=9)
         _set_cell_shading(wt_cell_last, "E2E5EF")
-        wt_cell_last.merge(wt_table.cell(1, last_col_idx))
+        wt_cell_last.merge(wt_table.cell(1, wt_last_col))
 
         col_idx = 1
         current_group = None
@@ -329,7 +333,7 @@ def generate_production_order_docx(
             _set_cell_text(cell, str(val), size=9,
                            color=_COLOR_GRAY if val == 0 else None)
         gt = weight_totals.get("grand_total", 0)
-        _set_cell_text(wt_table.cell(wt_row, last_col_idx), str(gt),
+        _set_cell_text(wt_table.cell(wt_row, wt_last_col), str(gt),
                        bold=True, size=9, color=_COLOR_ACCENT)
 
         # T色行
@@ -343,7 +347,7 @@ def generate_production_order_docx(
                 _set_cell_text(cell, str(val), size=9,
                                color=_COLOR_GRAY if val == 0 else None)
             gt_t = weight_t_totals.get("grand_total", 0)
-            _set_cell_text(wt_table.cell(wt_row, last_col_idx), str(gt_t),
+            _set_cell_text(wt_table.cell(wt_row, wt_last_col), str(gt_t),
                            bold=True, size=9, color=_COLOR_ACCENT)
 
     # ── 签字区（与 HTML 打印模板对齐：预填制单人/审核人/日期） ──
