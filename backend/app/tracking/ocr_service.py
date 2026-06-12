@@ -41,77 +41,72 @@ def _extract_json(text: str) -> str:
     return cleaned
 
 
+# JSON 字段标签黑名单 — 模型把 key/描述当 value 返回时需丢弃
+_JSON_FIELD_LABELS = frozenset({
+    "name", "recipient_name", "recipient", "收件人", "收件人姓名",
+    "carrier", "承运商", "country", "recipient_country", "目的国",
+    "waybill_no", "运单号", "ship_date", "发件日期",
+})
+
+
 def _clean_ocr_value(value: str | None) -> str | None:
     """清洗 OCR 返回的字段值，去除模型夹带的引号、markdown、解释性尾缀。
 
-    典型问题：
-      - `"ALISHA HAYES"` → `ALISHA HAYES`（去引号）
-      - `name**: "ALISHA HAYES" is clearly visible under "TO"` → `ALISHA HAYES`
-      - `ALISHA HAYES"` → `ALISHA HAYES`（孤立尾部引号）
+    处理顺序（每步都在上一步结果上继续）：
+    1. 去 markdown bold
+    2. 剥外层成对引号（递归多层）
+    3. 提取引号内核心内容（如 name**: "ALISHA HAYES" is ...）
+    4. 去英文解释尾缀
+    5. 去中文解释尾缀
+    6. 去残留标点 + 孤立引号
+    7. 丢弃 JSON 字段标签（最后检查，确保清洗后再判）
     """
     if not value or not isinstance(value, str):
         return value
 
     s = value.strip()
 
-    # 如果值本身就是 JSON 字段标签（模型把 key 当 value 返回），丢弃
-    _json_field_labels = {
-        "name", "recipient_name", "recipient", "收件人", "收件人姓名",
-        "carrier", "承运商", "country", "recipient_country", "目的国",
-        "waybill_no", "运单号", "ship_date", "发件日期",
-    }
-    if s.lower() in _json_field_labels:
-        return None
-
-    # 去掉 markdown bold 标记
+    # 1. 去掉 markdown bold 标记
     s = re.sub(r"\*{1,2}", "", s)
 
-    # 去掉成对引号包裹：如果整段文字被引号包裹，去掉外层引号
-    # 支持递归去除多层引号，如 '"ALISHA HAYES"' → ALISHA HAYES
+    # 2. 剥外层成对引号（递归多层）
+    _quote_pairs = [('"', '"'), ('“', '”'), ('‘', '’'), ("'", "'")]
     while True:
-        stripped = s
-        for q in ['"', '“”', '‘’', "'", '"', "'"]:
-            if len(q) == 2 and stripped.startswith(q[0]) and stripped.endswith(q[1]) and len(stripped) > 2:
-                stripped = stripped[1:-1].strip()
+        changed = False
+        for open_q, close_q in _quote_pairs:
+            if s.startswith(open_q) and s.endswith(close_q) and len(s) > 2:
+                s = s[1:-1].strip()
+                changed = True
                 break
-            elif q in ('"', "'") and stripped.startswith(q) and stripped.endswith(q) and len(stripped) > 2:
-                stripped = stripped[1:-1].strip()
-                break
-        else:
+        if not changed:
             break
-        s = stripped
 
-    # 如果含引号包裹的名字片段，提取引号内容（如 name**: "ALISHA HAYES" is ...）
+    # 3. 如果仍含引号包裹的片段，提取引号内核心内容
     m = re.search(r'["“]([^"”]{2,})["”]', s)
     if m:
-        return m.group(1).strip()
+        s = m.group(1).strip()
 
-    # 去掉末尾的解释性文本
-    # 英文尾缀：如 "is clearly visible", "found in", "labeled as" 等
+    # 4. 去英文解释尾缀
     s = re.sub(
         r"\s+(?:is|was|found|seen|visible|labeled|located|printed|shown|written|displayed)\b.*$",
         "",
         s,
         flags=re.IGNORECASE,
     )
-    # 中文解释尾缀：如 `" - 这是收件人姓名"`、`（承运商）`、`——目的国` 等
-    s = re.sub(
-        r'[\s]*["""]?\s*[-—]\s+这是.{1,20}$',
-        "",
-        s,
-    )
-    s = re.sub(
-        r'[\s]*["""]?\s*[（(].{1,20}[）)]$',
-        "",
-        s,
-    )
 
-    # 去掉残留标点和孤立引号
+    # 5. 去中文解释尾缀
+    s = re.sub(r'[\s]*["“”]?\s*[-—]\s+这是.{1,20}$', "", s)
+    s = re.sub(r'[\s]*["“”]?\s*[（(].{1,20}[）)]$', "", s)
+
+    # 6. 去残留标点 + 孤立引号
     s = s.strip(' *:：,;“”‘’「」"\'')
-    # 去掉首尾孤立的引号字符（不成对的）
     s = re.sub(r'^["“”‘’\']+', '', s)
     s = re.sub(r'["“”‘’\']+$', '', s)
     s = s.strip()
+
+    # 7. 丢弃 JSON 字段标签（清洗后再判，避免误杀含标签的正常名字）
+    if s.lower() in _JSON_FIELD_LABELS:
+        return None
 
     return s if len(s) >= 2 else value
 
