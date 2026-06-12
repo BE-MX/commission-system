@@ -77,12 +77,24 @@ def _clean_ocr_value(value: str | None) -> str | None:
     if m:
         return m.group(1).strip()
 
-    # 去掉末尾的解释性文本（如 "is clearly visible", "found in", "labeled as" 等）
+    # 去掉末尾的解释性文本
+    # 英文尾缀：如 "is clearly visible", "found in", "labeled as" 等
     s = re.sub(
         r"\s+(?:is|was|found|seen|visible|labeled|located|printed|shown|written|displayed)\b.*$",
         "",
         s,
         flags=re.IGNORECASE,
+    )
+    # 中文解释尾缀：如 `" - 这是收件人姓名"`、`（承运商）`、`——目的国` 等
+    s = re.sub(
+        r'[\s]*["""]?\s*[-—]\s+这是.{1,20}$',
+        "",
+        s,
+    )
+    s = re.sub(
+        r'[\s]*["""]?\s*[（(].{1,20}[）)]$',
+        "",
+        s,
     )
 
     # 去掉残留标点和孤立引号
