@@ -54,6 +54,15 @@ def _clean_ocr_value(value: str | None) -> str | None:
 
     s = value.strip()
 
+    # 如果值本身就是 JSON 字段标签（模型把 key 当 value 返回），丢弃
+    _json_field_labels = {
+        "name", "recipient_name", "recipient", "收件人", "收件人姓名",
+        "carrier", "承运商", "country", "recipient_country", "目的国",
+        "waybill_no", "运单号", "ship_date", "发件日期",
+    }
+    if s.lower() in _json_field_labels:
+        return None
+
     # 去掉 markdown bold 标记
     s = re.sub(r"\*{1,2}", "", s)
 
