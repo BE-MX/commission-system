@@ -184,8 +184,7 @@ def generate_production_order_docx(
 
         # ── 一级表头（group-header）────────────────────────────
         cell_color_header = table.cell(0, 0)
-        remark_text = "\n".join(tbl_remarks) if tbl_remarks else tbl_label
-        _set_cell_text(cell_color_header, remark_text, bold=True, size=7,
+        _set_cell_text(cell_color_header, tbl_label, bold=True, size=9,
                        align=WD_ALIGN_PARAGRAPH.LEFT)
         _set_cell_shading(cell_color_header, "E2E5EF")
         cell_color_header.merge(table.cell(1, 0))
