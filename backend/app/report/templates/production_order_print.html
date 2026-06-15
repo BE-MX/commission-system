@@ -95,6 +95,19 @@
     line-height: 1.2;
     font-size: 10px;
   }
+  /* 左上角分类标签：保留 \n 换行 */
+  .data-table thead .category-cell {
+    width: 130px;
+    min-width: 130px;
+    max-width: 130px;
+    font-size: 10px;
+    line-height: 1.35;
+    white-space: pre-line;
+    word-wrap: break-word;
+    word-break: break-word;
+    text-align: left;
+    padding: 6px 8px;
+  }
   .data-table tbody .color-cell .color-main {
     display: block;
   }
@@ -163,6 +176,26 @@
     display: inline-block;
     width: 100px;
     border-bottom: 1px solid #1a1a2e;
+  }
+
+  /* ── 中间打孔要求图（model 含「中间打孔」时插入文档末尾） ── */
+  .middle-punch-section {
+    margin-top: 28px;
+    padding-top: 16px;
+    border-top: 1px solid #e2e5ef;
+    page-break-before: always;  /* 打印时另起一页 */
+  }
+  .middle-punch-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #1a1a2e;
+    margin-bottom: 10px;
+  }
+  .middle-punch-image {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: 0 auto;
   }
 
   /* ── 打印优化 ── */
@@ -326,7 +359,7 @@
   <thead>
     {# 一级表头：等级行 — 同一 product_remark 合并 #}
     <tr>
-      <th rowspan="2" style="width:100px;min-width:100px;max-width:100px;font-size:10px;line-height:1.2;white-space:normal;word-wrap:break-word;word-break:break-all">{{ sub.category_label }}</th>
+      <th rowspan="2" class="category-cell">{{ sub.category_label }}</th>
       {% set ns = namespace(current_group='') %}
       {% for col in sub.column_defs %}
         {% if col.group != ns.current_group %}
@@ -497,6 +530,14 @@
   <span>青岛丽丝发制品有限公司</span>
   <span>{{ header.order_no }}</span>
 </div>
+
+{# 中间打孔要求图：仅当订单含 model 关键词「中间打孔」时插入到文档末尾 #}
+{% if has_middle_punch and middle_punch_image %}
+<div class="middle-punch-section">
+  <div class="middle-punch-title">中间打孔要求</div>
+  <img class="middle-punch-image" src="{{ middle_punch_image }}" alt="中间打孔要求">
+</div>
+{% endif %}
 
 <script>
 function doExport() {

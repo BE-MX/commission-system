@@ -35,7 +35,26 @@ router = APIRouter()
 
 # Jinja2 环境
 _TEMPLATES_DIR = FilePath(__file__).parent / "templates"
+_ASSETS_DIR = _TEMPLATES_DIR / "assets"
 _jinja_env = Environment(loader=FileSystemLoader(str(_TEMPLATES_DIR)), autoescape=True)
+
+
+def _load_middle_punch_image_data_uri() -> str:
+    """读取中间打孔要求图，返回 base64 data URI（懒加载并缓存）。"""
+    cache = getattr(_load_middle_punch_image_data_uri, "_cache", None)
+    if cache is not None:
+        return cache
+    import base64
+    img_path = _ASSETS_DIR / "middle_punch_requirement.jpg"
+    try:
+        with open(img_path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode("ascii")
+        data_uri = f"data:image/jpeg;base64,{b64}"
+    except FileNotFoundError:
+        logger.warning(f"中间打孔要求图未找到: {img_path}")
+        data_uri = ""
+    _load_middle_punch_image_data_uri._cache = data_uri  # type: ignore[attr-defined]
+    return data_uri
 
 
 def _ok(data, message: str = "ok", code: int = 200):
@@ -333,6 +352,12 @@ def print_production_order(
 
     data["header"]["reviewer_name"] = reviewer
     data["header"]["print_date"] = date.today().strftime("%Y-%m-%d")
+
+    # 任一明细 model 含「中间打孔」时注入要求图（base64 data URI）
+    if data.get("has_middle_punch"):
+        data["middle_punch_image"] = _load_middle_punch_image_data_uri()
+    else:
+        data["middle_punch_image"] = ""
 
     template = _jinja_env.get_template("production_order_print.html")
     html = template.render(**data)

@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import io
+from pathlib import Path
 from typing import Optional
 
 from docx import Document
@@ -13,6 +14,10 @@ from docx.enum.section import WD_ORIENT
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Cm, Pt, Emu, RGBColor
+
+# 模板资源目录（与 HTML 打印模板共享）
+_ASSETS_DIR = Path(__file__).parent / "templates" / "assets"
+_MIDDLE_PUNCH_IMAGE = _ASSETS_DIR / "middle_punch_requirement.jpg"
 from docx.oxml.ns import qn
 
 # 纸张尺寸映射 (宽 cm, 高 cm)
@@ -82,6 +87,30 @@ def _set_cell_two_line(cell, line1: str, line2: str, bold1: bool = False,
         run2.font.name = _FONT
         run2.font.color.rgb = _COLOR_GRAY
         run2._element.rPr.rFonts.set(qn("w:eastAsia"), _FONT)
+
+
+def _set_cell_multiline(cell, text: str, bold: bool = False, size: int = 8,
+                        align=WD_ALIGN_PARAGRAPH.LEFT):
+    """设置单元格多行文字（保留 \\n 换行，用 add_break 插入 <w:br/>）。
+
+    用于左上角分类标签（含 2-3 行的产品规格）。
+    """
+    cell.text = ""
+    p = cell.paragraphs[0]
+    p.alignment = align
+    p.paragraph_format.space_before = Pt(1)
+    p.paragraph_format.space_after = Pt(1)
+    p.paragraph_format.line_spacing = 1.15
+
+    lines = (text or "").split("\n")
+    for idx, line in enumerate(lines):
+        run = p.add_run(line)
+        run.bold = bold
+        run.font.size = Pt(size)
+        run.font.name = _FONT
+        run._element.rPr.rFonts.set(qn("w:eastAsia"), _FONT)
+        if idx < len(lines) - 1:
+            run.add_break()
 
 
 def generate_production_order_docx(
@@ -184,8 +213,8 @@ def generate_production_order_docx(
 
         # ── 一级表头（group-header）────────────────────────────
         cell_color_header = table.cell(0, 0)
-        _set_cell_text(cell_color_header, tbl_label, bold=True, size=9,
-                       align=WD_ALIGN_PARAGRAPH.LEFT)
+        _set_cell_multiline(cell_color_header, tbl_label, bold=True, size=8,
+                            align=WD_ALIGN_PARAGRAPH.LEFT)
         _set_cell_shading(cell_color_header, "E2E5EF")
         cell_color_header.merge(table.cell(1, 0))
 
@@ -349,13 +378,56 @@ def generate_production_order_docx(
             _set_cell_text(wt_table.cell(wt_row, wt_last_col), str(gt_t),
                            bold=True, size=9, color=_COLOR_ACCENT)
 
+    # ── 中间打孔要求图（订单含 model 关键词「中间打孔」时另起一页插入图片）──
+    # 注意顺序：图片放在签字/页脚之前。否则当数据表正好填满页面时，签字+页脚
+    # 会单独占下一页（只有 3 行内容显得空），再被 page_break_before 推到第三页放图片。
+    has_punch = bool(data.get("has_middle_punch")) and _MIDDLE_PUNCH_IMAGE.exists()
+    if has_punch:
+        # 标题段：把分页符挂在段落属性上（page_break_before），避免 add_page_break() 插入额外空段落
+        p_title = doc.add_paragraph()
+        p_title.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        p_title.paragraph_format.page_break_before = True
+        p_title.paragraph_format.space_before = Pt(0)
+        p_title.paragraph_format.space_after = Pt(6)
+        run_title = p_title.add_run("中间打孔要求")
+        run_title.bold = True
+        run_title.font.size = Pt(13)
+        run_title.font.name = _FONT
+        run_title._element.rPr.rFonts.set(qn("w:eastAsia"), _FONT)
+
+        # 图片宽度按「同时满足页面可用宽度 + 可用高度」双约束，取较小值，保证单页放得下
+        # 图片素材：1055 × 1491 px，高宽比 ≈ 1.413
+        # 含签字/页脚预留：标题 ~1.2cm + 签字 ~1.0cm + 页脚 ~0.6cm + 段间距 ~0.4cm
+        IMG_ASPECT_H_OVER_W = 1491 / 1055
+        TITLE_RESERVE_CM = 1.2
+        SIG_FOOTER_RESERVE_CM = 2.0  # 给图片下方的签字+页脚留位置，避免它们独占一页
+        BOTTOM_BUFFER_CM = 0.3
+        usable_w = max(w - 2.0, 6.0)  # 页宽 - 左右页边距 1.0+1.0
+        usable_h = max(
+            h - 1.2 - 1.0 - TITLE_RESERVE_CM - SIG_FOOTER_RESERVE_CM - BOTTOM_BUFFER_CM,
+            6.0,
+        )
+        # 高度约束反推宽度：若按 usable_w 缩放后高度超过 usable_h，则改用高度限制
+        width_limited_by_height = usable_h / IMG_ASPECT_H_OVER_W
+        img_width_cm = min(usable_w, width_limited_by_height)
+
+        p_img = doc.add_paragraph()
+        p_img.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p_img.paragraph_format.space_before = Pt(0)
+        p_img.paragraph_format.space_after = Pt(0)
+        p_img.add_run().add_picture(str(_MIDDLE_PUNCH_IMAGE), width=Cm(img_width_cm))
+
     # ── 签字区（与 HTML 打印模板对齐：预填制单人/审核人/日期） ──
-    doc.add_paragraph()
+    # 紧跟在图片下方（含中间打孔时）或紧跟数据表下方（不含时）
+    if not has_punch:
+        doc.add_paragraph()  # 数据表与签字区间的视觉留白；图片下方不再加，避免推页
     creator = header.get("creator_name", "")
     reviewer = header.get("reviewer_name", "")
     print_date = header.get("print_date", "")
 
     p_sign = doc.add_paragraph()
+    p_sign.paragraph_format.space_before = Pt(6 if has_punch else 0)
+    p_sign.paragraph_format.space_after = Pt(2)
     sign_parts = [f"制单人：{creator}"]
     sign_parts.append(f"审核人：{reviewer}")
     sign_parts.append(f"日期：{print_date}")
@@ -367,6 +439,8 @@ def generate_production_order_docx(
     # ── 页脚 ──
     p_footer = doc.add_paragraph()
     p_footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_footer.paragraph_format.space_before = Pt(0)
+    p_footer.paragraph_format.space_after = Pt(0)
     run_footer = p_footer.add_run(f"{header.get('company_name', '')}　　{header.get('order_no', '')}")
     run_footer.font.size = Pt(8)
     run_footer.font.color.rgb = _COLOR_GRAY

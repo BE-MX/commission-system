@@ -43,43 +43,132 @@ def _extract_weight_grams(product_name: str) -> float:
         return 0.0
 
 # ── 型号分类规则 ─────────────────────────────────────────
-
-_CATEGORY_RULES = [
-    ("天才", "天才", "天才发帘"),
-    ("贴发", "贴发", "机织贴发"),
-    ("平型", "平型", "平型/平型接发"),
-    ("打孔", "打孔", "打孔发帘"),
+# 规则源：发帘与贴发产品清单.xlsx（2026-06-15 更新）
+# 每条规则按 Excel 顺序，先命中先胜出（model_includes / model_excludes / unit_includes / unit_excludes 同时满足）
+# unit_includes / unit_excludes 为空 = 不限制 unit 字段
+# label 中的 \n 在 HTML / Word 中均被渲染为换行
+_CATEGORY_RULES: List[Dict[str, Any]] = [
+    {  # 1
+        "model_includes": ["Deep"], "model_excludes": [],
+        "unit_includes": [], "unit_excludes": [],
+        "label": "Deep天才发帘 帘宽12“\n20g\n扁头银线3条/包",
+    },
+    {  # 2
+        "model_includes": ["棒棒"], "model_excludes": ["哑光"],
+        "unit_includes": [], "unit_excludes": [],
+        "label": "棒棒\n1g\n25根/捆 50根/包",
+    },
+    {  # 3
+        "model_includes": ["打孔"], "model_excludes": [],
+        "unit_includes": ["60"], "unit_excludes": [],
+        "label": "打孔发帘 帘宽33cm\n60g\n扁头银线1条/包",
+    },
+    {  # 4
+        "model_includes": ["打孔"], "model_excludes": [],
+        "unit_includes": ["50"], "unit_excludes": [],
+        "label": "打孔发帘 帘宽33cm\n50g\n扁头银线1条/包",
+    },
+    {  # 5
+        "model_includes": ["卡子"], "model_excludes": [],
+        "unit_includes": [], "unit_excludes": [],
+        "label": "机织卡子发\n100g\n银线一套/包",
+    },
+    {  # 6
+        "model_includes": ["机织贴发"], "model_excludes": ["长条"],
+        "unit_includes": [], "unit_excludes": [],
+        "label": "机织贴发 4*0.8cm\n2.5g\n20片/包",
+    },
+    {  # 7
+        "model_includes": ["贴发", "长条"], "model_excludes": [],
+        "unit_includes": [], "unit_excludes": [],
+        "label": "机织长条贴发 帘宽14\" 规格：0.8cm\n50g\n1条/包",
+    },
+    {  # 8
+        "model_includes": ["加纱"], "model_excludes": [],
+        "unit_includes": [], "unit_excludes": [],
+        "label": "加纱天才 帘宽12“\n20g\n扁头银线3条/包",
+    },
+    {  # 9
+        "model_includes": ["迷你", "平型"], "model_excludes": [],
+        "unit_includes": [], "unit_excludes": [],
+        "label": "迷你平型 0.6*0.6cm\n0.8g\n25根/捆 50根/包",
+    },
+    {  # 10
+        "model_includes": ["平型"], "model_excludes": ["迷你"],
+        "unit_includes": [], "unit_excludes": [],
+        "label": "平型接发 \n1g\n25根/捆 50根/包",
+    },
+    {  # 11
+        "model_includes": ["三合片"], "model_excludes": [],
+        "unit_includes": [], "unit_excludes": [],
+        "label": "三合片发帘 先花纹后齐边，帘宽90cm\n150g\n扁头银线1条/包",
+    },
+    {  # 12
+        "model_includes": ["天才", "双层"], "model_excludes": [],
+        "unit_includes": [], "unit_excludes": [],
+        "label": "双层天才发帘 帘宽12“\n50g\n扁头银线1条/包",
+    },
+    {  # 13
+        "model_includes": ["天才", "12"], "model_excludes": ["双层"],
+        "unit_includes": [], "unit_excludes": [],
+        "label": "天才发帘 帘宽12“\n20g\n扁头银线3条/包",
+    },
+    {  # 14
+        "model_includes": ["天才", "24"], "model_excludes": ["双层"],
+        "unit_includes": [], "unit_excludes": [],
+        "label": "天才发帘 帘宽24“\n50g\n扁头银线1条/包",
+    },
+    {  # 15
+        "model_includes": ["贴发"], "model_excludes": ["机织", "长条"],
+        "unit_includes": [], "unit_excludes": [],
+        "label": "贴发 4*0.8cm\n2.5g\n20片/包",
+    },
+    {  # 16
+        "model_includes": ["铁丝"], "model_excludes": [],
+        "unit_includes": [], "unit_excludes": [],
+        "label": "铁丝 \n1g\n25根/捆 50根/包",
+    },
+    {  # 17
+        "model_includes": ["哑光棒棒"], "model_excludes": [],
+        "unit_includes": [], "unit_excludes": [],
+        "label": "哑光棒棒\n1g\n25根/捆 50根/包",
+    },
 ]
-# 优先级：按列表顺序匹配第一个命中的关键字；全部不匹配归入"其他"
-_CATEGORY_ORDER = ["天才", "贴发", "平型", "打孔"]
-# 分类名称 -> 左上角单元格显示文本
-_CATEGORY_LABELS = {cat_name: label for _, cat_name, label in _CATEGORY_RULES}
+_OTHER_CATEGORY_INDEX = -1
+_OTHER_LABEL = "其他"
 
 
-def _classify_by_model(model: str) -> tuple:
-    """根据 order_item 的 model 字段关键字返回 (分类名称, 左上角标签)。
+def _classify(model: str, unit: str) -> tuple:
+    """按 model + unit 关键字匹配规则，返回 (category_index, category_label)。
 
-    model 示例: "B1天才发帘（帘宽12"）"、"B1机织贴发"、"B3平型"、"B3中间打孔发帘（帘宽33cm）"
-    匹配优先级按 _CATEGORY_RULES 列表顺序，全部不匹配归入"其他"。
+    优先级 = Excel 列表顺序，第一条命中即返回。全部不匹配归入 (-1, "其他")。
     """
-    for keyword, cat_name, _ in _CATEGORY_RULES:
-        if keyword in model:
-            return cat_name
-    return "其他"
+    model = model or ""
+    unit = unit or ""
+    for idx, rule in enumerate(_CATEGORY_RULES):
+        if (
+            all(s in model for s in rule["model_includes"])
+            and not any(s in model for s in rule["model_excludes"])
+            and all(s in unit for s in rule["unit_includes"])
+            and not any(s in unit for s in rule["unit_excludes"])
+        ):
+            return idx, rule["label"]
+    return _OTHER_CATEGORY_INDEX, _OTHER_LABEL
 
 
-def _split_by_category(long_items: List[Dict]) -> Dict[str, List[Dict]]:
-    """将长格式 rows 按型号(model)分类拆分成 {分类: [items]} 字典。"""
-    buckets: Dict[str, List[Dict]] = {}
+def _split_by_category(long_items: List[Dict]) -> List[tuple]:
+    """将长格式 rows 按 (model, unit) 双键分类，返回 [(cat_idx, label, items)]。
+
+    输出顺序：Excel 规则顺序（cat_idx 升序），未匹配的 "其他" 永远放最后。
+    """
+    buckets: Dict[int, Dict[str, Any]] = {}
     for item in long_items:
-        cat = _classify_by_model(item.get("model", ""))
-        buckets.setdefault(cat, []).append(item)
-    # 按固定顺序输出
-    result = OrderedDict()
-    for cat in _CATEGORY_ORDER + ["其他"]:
-        if cat in buckets:
-            result[cat] = buckets[cat]
-    return result
+        cat_idx, cat_label = _classify(item.get("model", ""), item.get("unit", ""))
+        if cat_idx not in buckets:
+            buckets[cat_idx] = {"label": cat_label, "items": []}
+        buckets[cat_idx]["items"].append(item)
+    sorted_keys = sorted(buckets.keys(), key=lambda k: (k == _OTHER_CATEGORY_INDEX, k))
+    return [(k, buckets[k]["label"], buckets[k]["items"]) for k in sorted_keys]
 
 
 def _collect_remarks_for_category(long_items: List[Dict]) -> List[str]:
@@ -221,6 +310,7 @@ def get_production_order_print_data(db: Session, order_no: str) -> Dict[str, Any
     }
 
     # ── items（长格式）────────────────────────────────────
+    # unit 加入 GROUP BY：分类规则按 (model, unit) 双键判定（如打孔 60g vs 50g 进不同分类）
     items_sql = text(f"""
         SELECT
             o.order_no,
@@ -230,6 +320,7 @@ def get_production_order_print_data(db: Session, order_no: str) -> Dict[str, Any
             p.size,
             MAX(IFNULL(p.production_size_requirement, '')) AS production_size_requirement,
             oi.model,
+            IFNULL(p.unit, '') AS unit,
             CAST(SUM(oi.order_qty) AS SIGNED) AS qty
         FROM ark_production_order_items oi
         JOIN ark_production_orders o ON o.id = oi.order_id
@@ -241,7 +332,8 @@ def get_production_order_print_data(db: Session, order_no: str) -> Dict[str, Any
             p.color,
             p.product_remark,
             p.size,
-            oi.model
+            oi.model,
+            p.unit
         ORDER BY
             p.color,
             p.product_remark,
@@ -262,24 +354,28 @@ def get_production_order_print_data(db: Session, order_no: str) -> Dict[str, Any
             "production_color_requirement": r["production_color_requirement"] or "",
             "product_remark": prod_remark,
             "model": r["model"] or "",
+            "unit": r["unit"] or "",
             "size": size,
             "production_size_requirement": r["production_size_requirement"] or "",
             "qty": int(r["qty"]) if r["qty"] else 0,
         })
 
-    # ── 按型号分类拆分透视 ──────────────────────────────────
+    # ── 按 (model, unit) 分类拆分透视 ──────────────────────
     category_splits = _split_by_category(long_items)
     sub_tables = []
-    for cat_name, cat_items in category_splits.items():
+    for cat_idx, cat_label, cat_items in category_splits:
         cat_pivoted = _pivot_items(cat_items)
         cat_remarks = _collect_remarks_for_category(cat_items)
         if cat_pivoted["column_defs"]:  # 跳过空表
             sub_tables.append({
-                "category_name": cat_name,
-                "category_label": _CATEGORY_LABELS.get(cat_name, cat_name),
+                "category_index": cat_idx,
+                "category_label": cat_label,  # 含 \n，模板需保留换行
                 "category_remarks": cat_remarks,
                 **cat_pivoted,
             })
+
+    # ── 中间打孔要求图：任一明细 model 含 "中间打孔" 即在文档末尾插图 ──
+    has_middle_punch = any("中间打孔" in (it.get("model") or "") for it in long_items)
 
     # ── 全量透视（公斤数统计用） ──────────────────────────────
     pivoted = _pivot_items(long_items)
@@ -342,6 +438,7 @@ def get_production_order_print_data(db: Session, order_no: str) -> Dict[str, Any
         **pivoted,
         "weight_totals": weight_pure_totals,
         "weight_t_totals": weight_t_totals,
+        "has_middle_punch": has_middle_punch,
     }
 
 
@@ -443,6 +540,7 @@ def get_report_data(db: Session, report_code: str, params: Optional[Dict] = None
                 "total_cols": 3,
                 "weight_totals": sample_weight,
                 "weight_t_totals": sample_weight_t,
+                "has_middle_punch": False,
             }
         return handler(db, order_no)
 
