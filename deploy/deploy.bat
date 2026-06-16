@@ -10,6 +10,7 @@ REM ============================================================
 
 set "INSTALL_DIR=D:\commission-system"
 set "SERVICE_NAME=CommissionSystem"
+set "CONNECTOR_SERVICE_NAME=WhatsAppConnector"
 set "CLOUD_SERVER=root@119.28.107.92"
 set "CLOUD_DIST=/var/www/ark/dist"
 
@@ -187,19 +188,10 @@ if errorlevel 1 (
 goto :eof
 
 :restart_service
-REM ---------- [6/6] Restart service ----------
-echo [6/6] Restart service...
-nssm restart %SERVICE_NAME%
-if errorlevel 1 (
-    echo [WARNING] Restart failed, trying stop + start...
-    nssm stop %SERVICE_NAME%
-    timeout /t 2 /nobreak >nul
-    nssm start %SERVICE_NAME%
-    if errorlevel 1 (
-        echo [ERROR] Service start failed
-        goto :error
-    )
-)
+REM ---------- [6/6] Restart services ----------
+echo [6/6] Restart services...
+call :restart_nssm_service "%SERVICE_NAME%" "Ark backend"
+call :restart_nssm_service "%CONNECTOR_SERVICE_NAME%" "WhatsApp connector"
 echo      OK
 echo.
 
@@ -208,6 +200,21 @@ echo   Update completed!
 echo ==============================
 echo.
 goto :done
+
+:restart_nssm_service
+echo      Restarting %~2 ^(%~1^)...
+nssm restart "%~1"
+if errorlevel 1 (
+    echo      [WARNING] Restart failed, trying stop + start...
+    nssm stop "%~1"
+    timeout /t 2 /nobreak >nul
+    nssm start "%~1"
+    if errorlevel 1 (
+        echo [ERROR] Service start failed: %~1
+        goto :error
+    )
+)
+goto :eof
 
 :error
 echo.
