@@ -1,5 +1,6 @@
 """环境变量配置（Pydantic Settings）"""
 
+from pathlib import Path
 from urllib.parse import quote_plus
 
 from pydantic import field_validator, model_validator
@@ -8,6 +9,7 @@ from functools import lru_cache
 
 
 _JWT_DEFAULT_PLACEHOLDER = "change-this-to-a-random-64-char-secret-in-production"
+_BACKEND_DIR = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
@@ -98,6 +100,14 @@ class Settings(BaseSettings):
     QR_SIGN_SECRET: str = "change-this-to-a-random-32-char-secret"  # 二维码 HMAC 签名密钥
     PRODUCTION_API_KEY: str = ""  # ACCIO WORK 调用报工接口的 API Key
 
+    # ── WhatsApp Connector ───────────────────────────────
+    WHATSAPP_CONNECTOR_BASE_URL: str = ""
+    WHATSAPP_CONNECTOR_API_KEY: str = ""
+    WHATSAPP_CONNECTOR_TIMEOUT_SECONDS: int = 30
+    WHATSAPP_AUTO_SYNC_ENABLED: bool = True
+    WHATSAPP_AUTO_SYNC_INTERVAL_MINUTES: int = 5
+    WHATSAPP_AUTO_SYNC_BATCH_SIZE: int = 100
+
     # ── 微信小程序 ────────────────────────────────────────
     WX_MINI_APPID: str = ""  # 微信小程序 AppID
     WX_MINI_SECRET: str = ""  # 微信小程序 AppSecret
@@ -140,7 +150,11 @@ class Settings(BaseSettings):
             "?charset=utf8mb4"
         )
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
+    model_config = {
+        "env_file": str(_BACKEND_DIR / ".env"),
+        "env_file_encoding": "utf-8",
+        "extra": "ignore",
+    }
 
 
 @lru_cache

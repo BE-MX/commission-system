@@ -84,7 +84,7 @@ export const MENU_GROUPS = {
   system: {
     title: '系统管理',
     icon: Setting,
-    anyPermission: ['user:read', 'role:read'],
+    anyPermission: ['user:read', 'role:read', 'whatsapp:read', 'whatsapp:write'],
   },
   governance: {
     title: '数据治理',
@@ -640,6 +640,17 @@ export const NAV_ENTRIES = [
     menu: {
       group: 'system', title: '外部账号绑定', icon: Connection, order: 50,
       permission: 'external_binding:write',
+    },
+  },
+  {
+    path: '/system/whatsapp-connector',
+    name: 'WhatsAppConnector',
+    component: () => import('@/views/system/WhatsAppConnector.vue'),
+    title: 'WhatsApp 同步',
+    permission: 'whatsapp:read',
+    menu: {
+      group: 'system', title: 'WhatsApp 同步', icon: Connection, order: 60,
+      permission: 'whatsapp:read',
     },
   },
 

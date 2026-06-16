@@ -23,6 +23,7 @@ from app.color.router import router as color_router
 from app.production.router import router as production_router
 from app.mini.router import router as mini_router
 from app.governance.router import router as governance_router
+from app.whatsapp.router import router as whatsapp_router
 
 
 def register_routers(app: FastAPI) -> None:
@@ -50,3 +51,4 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(production_router, prefix="/api/production", tags=["生产报工"])
     app.include_router(mini_router, prefix="/api/mini", tags=["微信小程序"])
     app.include_router(governance_router, prefix="/api/governance", tags=["数据概念治理"])
+    app.include_router(whatsapp_router, prefix="/api/whatsapp", tags=["WhatsApp 同步"])

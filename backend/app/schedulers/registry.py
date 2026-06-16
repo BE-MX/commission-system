@@ -21,6 +21,7 @@ JOB_STOCK_DAILY_REPORT = "stock_daily_report"
 JOB_TRACKING_POLL_ACTIVE = "tracking_poll_active"
 JOB_COLOR_SOCIAL_EXTRACT = "color_social_extract"
 JOB_COLOR_SALES_AGGREGATE = "color_sales_aggregate"
+JOB_WHATSAPP_AUTO_SYNC = "whatsapp_auto_sync"
 
 
 def _register_jobs(scheduler: AsyncIOScheduler) -> None:
@@ -32,6 +33,9 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
     from app.insight.scheduler import generate_industry_daily, generate_ai_tools, generate_intelligence_overview
     from app.stock.scheduler import generate_stock_daily_report
     from app.color.social_extract_service import extract_social_colors, aggregate_sales_by_color
+    from app.whatsapp.scheduler import sync_whatsapp_accounts_job
+
+    settings = get_settings()
 
     async def _scan_staging_job():
         with SessionLocal() as db:
@@ -101,6 +105,14 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
         trigger="cron", day_of_week="mon", hour=6, minute=0,
         id=JOB_COLOR_SALES_AGGREGATE, replace_existing=True,
     )
+    if settings.WHATSAPP_AUTO_SYNC_ENABLED:
+        scheduler.add_job(
+            sync_whatsapp_accounts_job,
+            trigger="interval", minutes=settings.WHATSAPP_AUTO_SYNC_INTERVAL_MINUTES,
+            id=JOB_WHATSAPP_AUTO_SYNC, replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+        )
 
 
 def start_scheduler() -> Optional[AsyncIOScheduler]:

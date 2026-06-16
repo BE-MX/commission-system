@@ -29,7 +29,7 @@ def session_factory(engine):
 # ── 注册测试 ─────────────────────────────────────────
 
 class TestSchedulerRegistration:
-    async def test_start_scheduler_registers_nine_jobs(self, monkeypatch):
+    async def test_start_scheduler_registers_jobs(self, monkeypatch):
         """start_scheduler 应注册 9 个 job 且 id 命名约定一致"""
         from app.core.config import get_settings
 
@@ -37,6 +37,7 @@ class TestSchedulerRegistration:
         real_settings = get_settings()
         monkeypatch.setattr(real_settings, "SCHEDULER_ENABLED", True)
         monkeypatch.setattr(real_settings, "SCHEDULER_TIMEZONE", "Asia/Shanghai")
+        monkeypatch.setattr(real_settings, "WHATSAPP_AUTO_SYNC_ENABLED", True)
 
         from app.schedulers.registry import start_scheduler, shutdown_scheduler
         scheduler = start_scheduler()
@@ -54,6 +55,7 @@ class TestSchedulerRegistration:
                 "stock_daily_report",
                 "color_social_extract",
                 "color_sales_aggregate",
+                "whatsapp_auto_sync",
             }
         finally:
             shutdown_scheduler(scheduler)

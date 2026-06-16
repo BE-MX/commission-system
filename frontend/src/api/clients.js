@@ -20,3 +20,4 @@ export const colorClient = createApiClient({ baseURL: '/api/color', timeout: 120
 export const reportClient = createApiClient({ baseURL: '/api/report', timeout: 30000 })
 export const productionClient = createApiClient({ baseURL: '/api/production', timeout: 60000 })
 export const governanceClient = createApiClient({ baseURL: '/api/governance', timeout: 30000 })
+export const whatsappClient = createApiClient({ baseURL: '/api/whatsapp', timeout: 60000 })

@@ -119,3 +119,5 @@
 - [2026-06-05] 生产看板集成：cola 生成的独立 Vue 3 + ECharts 看板项目（深浅双主题、12 子组件、2 composable），集成到方舟平台。看板 `--db-*` CSS 变量独立于主站 `--color-*`，不冲突。组件放 `components/production/`，composable 放 `views/production/composables/`，主题 CSS 放 `styles/dashboard-theme.css` 全局加载。导航 `stock` 组 order 38，`production:read`
 - [2026-06-05] **dashboard 聚合查询必须用批量 SQL + 内存聚合，禁止循环内逐条查询**：`dashboard_service.py` 初版对 184 个 order_item 逐条查 progress（N+1），导致 API 耗时 78 秒。改用 4 条批量 SQL（`IN (ids)` 批量查）+ Python 内存聚合后降至 5.7 秒。同理，today_completed 查 order_no 也必须批量 IN 查，不能逐条 `.first()`
 - [2026-06-05] **ECharts 整包 `import * as echarts from 'echarts'` 会产出 1.1MB chunk**：Vite 构建报警告但功能正常。优化方向是按需 import（`echarts/core` + 手动注册组件），但看板场景组件多，收益有限，暂不优化
+- [2026-06-16] WhatsApp 同步采用「独立 connector 服务 + 方舟本地投影表」方案。方舟只调用 `/internal/v1/*` HTTP contract 并存账号/会话/消息/游标，不保存 WhatsApp Web 会话密钥、不直接接入 WhatsApp Web 私有协议，降低主系统长连接和封号风险。
+- [2026-06-16] WhatsApp 自动同步职责划分：方舟后端 APScheduler 负责按账号拉取并写本地投影表；connector 负责维护/恢复 WhatsApp Web 浏览器会话。connector 重启只尝试恢复 `active` 账号，若 WhatsApp 要求重新扫码则标记 `reconnect_required`，不在后台生成无人可用的二维码。
