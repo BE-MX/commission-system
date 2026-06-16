@@ -219,7 +219,9 @@ def _upsert_message(db: Session, account_uid: str, payload: dict[str, Any]) -> W
 
     msg.conversation_uid = payload.get("conversation_uid") or msg.conversation_uid
     msg.direction = payload.get("direction") or msg.direction or "inbound"
+    msg.sender_wa_id = payload.get("sender_wa_id") or payload.get("sender_id") or msg.sender_wa_id
     msg.sender_phone = payload.get("sender_phone")
+    msg.sender_name = payload.get("sender_name") or payload.get("sender_display_name")
     msg.content_type = payload.get("content_type") or payload.get("type") or "text"
     msg.content_text = payload.get("content_text") or payload.get("text")
     msg.content_preview = payload.get("content_preview") or (msg.content_text[:500] if msg.content_text else None)

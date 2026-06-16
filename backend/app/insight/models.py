@@ -382,6 +382,7 @@ class CustomerOpportunity(Base):
     opening_message_en = Column(Text, nullable=True)
     follow_up_message_en = Column(Text, nullable=True)
     evidence_json = Column(JSON, nullable=True)
+    full_report_html = Column(Text, nullable=True, comment="ACCIO 完整背调报告 HTML")
     status = Column(String(30), nullable=False, default="pending", comment="pending/contacted/replied/quoted/won/lost/dismissed")
     feedback = Column(String(50), nullable=True)
     due_at = Column(DateTime, nullable=True)
@@ -421,4 +422,108 @@ class CustomerOpportunityEvent(Base):
     __table_args__ = (
         Index("idx_event_opportunity", "opportunity_id", "event_type"),
         Index("idx_event_actor_created", "actor_user_id", "created_at"),
+    )
+
+
+# ── 客户经营雷达 ────────────────────────────────────────
+
+
+class CustomerProfile(Base):
+    """活画像主表 — 一个客户一条记录，持续积累信号"""
+    __tablename__ = "ark_customer_profiles"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    customer_name = Column(String(200), nullable=False, default="")
+    customer_region = Column(String(100))
+    customer_company = Column(String(200))
+    customer_external_id = Column(String(100), unique=True)
+    owner_user_id = Column(Integer, ForeignKey("ark_users.id"))
+    owner_resolve_status = Column(String(20), nullable=False, default="unassigned")
+    profile_tags = Column(JSON)
+    profile_judgement = Column(String(500))
+    profile_signals_json = Column(JSON)
+    priority_score = Column(SmallInteger, nullable=False, default=0)
+    total_opportunities = Column(Integer, nullable=False, default=0)
+    total_events = Column(Integer, nullable=False, default=0)
+    last_event_at = Column(DateTime)
+    last_opportunity_at = Column(DateTime)
+    first_seen_at = Column(DateTime, nullable=False)
+    source = Column(String(50), nullable=False, default="alibaba_international")
+    source_json = Column(JSON)
+    suggested_message = Column(Text)
+    weight_adjustments = Column(JSON)
+    status = Column(String(20), nullable=False, default="active")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    events = relationship("CustomerProfileEvent", back_populates="profile",
+                          cascade="all, delete-orphan", order_by="CustomerProfileEvent.occurred_at.desc()")
+    actions = relationship("CustomerAction", back_populates="profile",
+                           cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index("idx_profile_owner", "owner_user_id", "status"),
+        Index("idx_profile_name_region", "customer_name", "customer_region"),
+        Index("idx_profile_priority", "priority_score"),
+    )
+
+
+class CustomerProfileEvent(Base):
+    """画像事件流 — 所有信号先成为事件再更新画像"""
+    __tablename__ = "ark_customer_profile_events"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    profile_id = Column(BigInteger, ForeignKey("ark_customer_profiles.id", ondelete="CASCADE"), nullable=False)
+    event_source = Column(String(50), nullable=False, comment="accio_inquiry/okki_order/logistics/manual_note")
+    event_type = Column(String(50), nullable=False, comment="new_inquiry/replied/won/lost/order_placed/manual_note")
+    source_ref_type = Column(String(50))
+    source_ref_id = Column(String(100))
+    opportunity_id = Column(BigInteger, ForeignKey("ark_customer_opportunities.id"))
+    event_title = Column(String(255), nullable=False, default="")
+    event_summary = Column(Text)
+    event_payload = Column(JSON)
+    event_score = Column(SmallInteger, nullable=False, default=0)
+    actor_user_id = Column(Integer)
+    occurred_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    profile = relationship("CustomerProfile", back_populates="events")
+
+    __table_args__ = (
+        Index("idx_cpe_profile_time", "profile_id", "occurred_at"),
+        Index("idx_cpe_source", "event_source", "event_type"),
+        Index("idx_cpe_opportunity", "opportunity_id"),
+    )
+
+
+class CustomerAction(Base):
+    """行动候选池 — 每天为每个客户生成一条推荐行动"""
+    __tablename__ = "ark_customer_actions"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    profile_id = Column(BigInteger, ForeignKey("ark_customer_profiles.id", ondelete="CASCADE"), nullable=False)
+    owner_user_id = Column(Integer, ForeignKey("ark_users.id"), nullable=False)
+    thread_group = Column(String(30), nullable=False, comment="new_inquiry/sample_delivery/key_account/reorder_window/reactivation/public_pool")
+    thread_priority = Column(String(10), nullable=False, default="normal")
+    action_reason = Column(String(500), nullable=False, default="")
+    suggested_next_action = Column(String(500))
+    suggested_message = Column(Text)
+    source_evidence = Column(JSON)
+    action_status = Column(String(20), nullable=False, default="pending")
+    snoozed_until = Column(DateTime)
+    action_date = Column(Date, nullable=False)
+    completed_at = Column(DateTime)
+    completed_by = Column(Integer)
+    user_feedback = Column(String(50))
+    user_note = Column(Text)
+    sort_order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    profile = relationship("CustomerProfile", back_populates="actions")
+
+    __table_args__ = (
+        Index("idx_action_owner_date", "owner_user_id", "action_date", "thread_group"),
+        Index("idx_action_profile", "profile_id", "action_date"),
+        Index("idx_action_status", "owner_user_id", "action_status", "action_date"),
     )

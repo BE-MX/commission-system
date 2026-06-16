@@ -6,6 +6,8 @@
 | 18:10 | 优化 leshine.work 外网访问延迟：开启 Nginx gzip + 前端 dist 部署到云服务器 + deploy.bat 增加 SCP 同步 + SSH 免密 | deploy/deploy.bat, /etc/nginx/nginx.conf, /etc/nginx/conf.d/leshine.conf | HTML TTFB 9s→0.88s, JS 82s→1.05s | ~15k |
 
 | 09:47 | 运单 OCR 诊断增强：call_service 加请求/响应诊断日志(flush=True)、ocr_service 错误信息带原始返回、前端 502 展示 detail | call_service.py, ocr_service.py, useWaybillUpload.js | StepFun OCR 恢复正常，诊断日志持续生效 | ~12k |
+| 10:15 | 推理模型兼容：call_service fallback reasoning/reasoning_content、ocr_service _parse_reasoning_to_dict 正则提取运单字段 | call_service.py, ocr_service.py | Step-3.7-flash OCR 完整可用 | ~15k |
+| 10:45 | Anthropic Messages API 协议支持：api_type 字段、http_client 适配层、前端协议选择器、迁移 033 | http_client.py, call_service.py, provider_service.py, models.py, schemas.py, router.py, AIManager.vue | ELBNT-AI 实际是 OpenAI 格式代理池，需 www 前缀 | ~25k |
 | HH:MM | description | file(s) | outcome | ~tokens |
 |-------|-------------|---------|---------|---------|
 | 11:01 | 完成生产进度报工系统全量开发 | backend/app/production/*, alembic/027 | 后端 import 通过，前端 build 成功 | ~45k |
@@ -15,6 +17,11 @@
 
 | Time | Action | File(s) | Outcome | ~Tokens |
 |------|--------|---------|---------|--------|
+| 11:35 | fix backend env loading and Markdown-escaped .env keys | backend/app/core/config.py + backend/.env | Settings now reads backend/.env by absolute path; cleaned escaped env keys so DB host no longer falls back to localhost | ~2k |
+| 11:58 | fix WhatsApp 502 chain | backend/alembic/versions/035_whatsapp_connector.py + backend/app/whatsapp/models.py + DB migration | ran alembic upgrade head; registered auth models for WhatsApp FK metadata; service create_bind_session now persists successfully | ~3k |
+| 11:03 | add WhatsApp Connector Ark integration skeleton | backend/app/whatsapp/* + frontend WhatsAppConnector.vue + 035 migration + connector contract doc | Ark now has QR binding proxy, account/message projection APIs, UI entry, config placeholders; external WhatsApp Web protocol remains isolated in connector service | ~18k |
+| 11:12 | add standalone WhatsApp Connector service | services/whatsapp-connector/* | Node Express service implements bind session, QR auth, account revoke, conversation/message pull contract via whatsapp-web.js | ~5k |
+| 12:28 | add WhatsApp auto sync worker and connector startup restore | backend/app/whatsapp/scheduler.py + service.py + schedulers/registry.py + services/whatsapp-connector/src/server.js | APScheduler pulls active WhatsApp accounts every interval; connector reloads active local WhatsApp Web sessions after restart and marks expired sessions reconnect_required | ~5k |
 | 00:00 | 复制 Stimulsoft 静态资源 | frontend/public/vendor/stimulsoft/reports-js/ | 4个.pack.js + zh-CHS.xml 就位 | ~200 |
 | 00:05 | 创建 028 迁移 + ReportTemplate ORM | alembic/028_add_report_template.py, app/report/models.py | ark_report_templates 表 | ~800 |
 | 00:10 | 创建后端报表领域模块 | app/report/{router,schemas,data_service}.py | 6 个端点 + 数据组装 | ~3000 |
@@ -895,3 +902,297 @@
 | 13:01 | Edited backend/app/ai/call_service.py | 11→13 lines | ~178 |
 | 13:01 | Session end: 9 writes across 3 files (ocr_service.py, call_service.py, useWaybillUpload.js) | 10 reads | ~7655 tok |
 | 13:04 | Session end: 9 writes across 3 files (ocr_service.py, call_service.py, useWaybillUpload.js) | 10 reads | ~7655 tok |
+| 13:05 | Session end: 9 writes across 3 files (ocr_service.py, call_service.py, useWaybillUpload.js) | 10 reads | ~7655 tok |
+| 14:27 | Edited backend/app/ai/call_service.py | modified isinstance() | ~466 |
+| 14:28 | Edited backend/app/tracking/ocr_service.py | added 1 import(s) | ~62 |
+| 14:29 | Edited backend/app/tracking/ocr_service.py | modified _extract_json() | ~1056 |
+| 14:30 | Edited backend/app/tracking/ocr_service.py | modified strip() | ~318 |
+| 14:30 | Edited backend/app/tracking/ocr_service.py | 8→13 lines | ~149 |
+| 14:31 | Edited backend/app/tracking/ocr_service.py | 9→10 lines | ~131 |
+| 14:32 | Session end: 15 writes across 3 files (ocr_service.py, call_service.py, useWaybillUpload.js) | 10 reads | ~9979 tok |
+| 14:56 | Session end: 15 writes across 3 files (ocr_service.py, call_service.py, useWaybillUpload.js) | 10 reads | ~9979 tok |
+| 14:58 | Session end: 15 writes across 3 files (ocr_service.py, call_service.py, useWaybillUpload.js) | 10 reads | ~9979 tok |
+| 15:00 | Session end: 15 writes across 3 files (ocr_service.py, call_service.py, useWaybillUpload.js) | 10 reads | ~9979 tok |
+| 15:01 | Session end: 15 writes across 3 files (ocr_service.py, call_service.py, useWaybillUpload.js) | 10 reads | ~9979 tok |
+| 15:03 | Session end: 15 writes across 3 files (ocr_service.py, call_service.py, useWaybillUpload.js) | 10 reads | ~9979 tok |
+| 15:04 | Created C:/Users/windb/test_elbnt.bat | — | ~92 |
+| 15:04 | Session end: 16 writes across 4 files (ocr_service.py, call_service.py, useWaybillUpload.js, test_elbnt.bat) | 10 reads | ~10078 tok |
+| 15:17 | Created C:/Users/windb/test_elbnt.bat | — | ~109 |
+| 15:17 | Session end: 17 writes across 4 files (ocr_service.py, call_service.py, useWaybillUpload.js, test_elbnt.bat) | 10 reads | ~10195 tok |
+| 15:21 | Session end: 17 writes across 4 files (ocr_service.py, call_service.py, useWaybillUpload.js, test_elbnt.bat) | 10 reads | ~10195 tok |
+| 15:26 | Edited backend/app/ai/http_client.py | modified build_chat_url() | ~190 |
+| 15:27 | Session end: 18 writes across 5 files (ocr_service.py, call_service.py, useWaybillUpload.js, test_elbnt.bat, http_client.py) | 10 reads | ~10385 tok |
+| 15:34 | Edited backend/app/ai/models.py | expanded (+6 lines) | ~117 |
+| 15:34 | Created backend/alembic/versions/033_add_provider_api_type.py | — | ~204 |
+| 15:35 | Edited backend/app/ai/http_client.py | modified build_chat_url() | ~1041 |
+| 15:36 | Edited backend/app/ai/call_service.py | 2→5 lines | ~56 |
+| 15:36 | Edited backend/app/ai/call_service.py | modified isinstance() | ~1056 |
+| 15:37 | Edited backend/app/ai/provider_service.py | 2→5 lines | ~50 |
+| 15:37 | Edited backend/app/ai/provider_service.py | expanded (+8 lines) | ~289 |
+| 15:37 | Edited backend/app/ai/schemas.py | modified ProviderCreate() | ~148 |
+| 15:38 | Edited backend/app/ai/schemas.py | modified ProviderUpdate() | ~166 |
+| 15:38 | Edited backend/app/ai/schemas.py | modified Provider() | ~118 |
+| 15:39 | Edited frontend/src/views/system/composables/useAiManager.js | 3→3 lines | ~43 |
+| 15:40 | Edited frontend/src/views/system/composables/useAiManager.js | modified openProviderDialog() | ~90 |
+| 15:40 | Edited frontend/src/views/system/AIManager.vue | expanded (+7 lines) | ~207 |
+| 15:40 | Edited frontend/src/views/system/AIManager.vue | expanded (+8 lines) | ~209 |
+| 15:42 | Edited frontend/src/views/system/AIManager.vue | CSS: color, margin-top, line-height | ~48 |
+| 15:42 | Edited backend/app/ai/provider_service.py | 10→11 lines | ~122 |
+| 15:43 | Edited backend/app/ai/provider_service.py | 3→5 lines | ~55 |
+| 15:43 | Session end: 35 writes across 11 files (ocr_service.py, call_service.py, useWaybillUpload.js, test_elbnt.bat, http_client.py) | 13 reads | ~27686 tok |
+| 15:46 | Session end: 35 writes across 11 files (ocr_service.py, call_service.py, useWaybillUpload.js, test_elbnt.bat, http_client.py) | 13 reads | ~27686 tok |
+| 15:49 | Edited backend/alembic/versions/033_add_provider_api_type.py | 2→2 lines | ~21 |
+| 15:50 | Session end: 36 writes across 11 files (ocr_service.py, call_service.py, useWaybillUpload.js, test_elbnt.bat, http_client.py) | 13 reads | ~27707 tok |
+| 15:56 | Edited backend/app/ai/router.py | 13→14 lines | ~170 |
+| 15:56 | Edited backend/app/ai/router.py | 11→12 lines | ~133 |
+| 15:57 | Session end: 38 writes across 12 files (ocr_service.py, call_service.py, useWaybillUpload.js, test_elbnt.bat, http_client.py) | 14 reads | ~30308 tok |
+| 16:00 | Created C:/Users/windb/test_elbnt2.bat | — | ~116 |
+| 16:01 | Created C:/Users/windb/test_elbnt3.bat | — | ~127 |
+| 16:01 | Session end: 40 writes across 14 files (ocr_service.py, call_service.py, useWaybillUpload.js, test_elbnt.bat, http_client.py) | 14 reads | ~30569 tok |
+| 16:23 | Created C:/Users/windb/test_elbnt4.bat | — | ~371 |
+| 16:23 | Session end: 41 writes across 15 files (ocr_service.py, call_service.py, useWaybillUpload.js, test_elbnt.bat, http_client.py) | 14 reads | ~30967 tok |
+| 16:24 | Created C:/Users/windb/test_elbnt5.bat | — | ~119 |
+| 16:24 | Session end: 42 writes across 16 files (ocr_service.py, call_service.py, useWaybillUpload.js, test_elbnt.bat, http_client.py) | 14 reads | ~31095 tok |
+| 16:26 | Created C:/Users/windb/test_elbnt6.bat | — | ~202 |
+| 16:27 | Session end: 43 writes across 17 files (ocr_service.py, call_service.py, useWaybillUpload.js, test_elbnt.bat, http_client.py) | 14 reads | ~31311 tok |
+| 16:28 | Session end: 43 writes across 17 files (ocr_service.py, call_service.py, useWaybillUpload.js, test_elbnt.bat, http_client.py) | 14 reads | ~31311 tok |
+| 16:29 | Session end: 43 writes across 17 files (ocr_service.py, call_service.py, useWaybillUpload.js, test_elbnt.bat, http_client.py) | 14 reads | ~31311 tok |
+| 16:45 | Edited CLAUDE.md | inline fix | ~38 |
+| 16:45 | Edited CLAUDE.md | 14→19 lines | ~276 |
+| 16:46 | Edited CLAUDE.md | 2→2 lines | ~95 |
+| 16:46 | Edited CLAUDE.md | 1→2 lines | ~66 |
+| 16:48 | Session end: 47 writes across 18 files (ocr_service.py, call_service.py, useWaybillUpload.js, test_elbnt.bat, http_client.py) | 15 reads | ~44936 tok |
+| 16:52 | Edited backend/app/bootstrap/seed_ai.py | inline fix | ~307 |
+| 16:52 | Edited backend/app/tracking/ocr_service.py | expanded (+8 lines) | ~197 |
+| 16:53 | Edited backend/app/tracking/ocr_service.py | rstrip() → sub() | ~221 |
+| 16:54 | Edited backend/app/tracking/ocr_service.py | 9→9 lines | ~132 |
+| 16:57 | Edited backend/app/tracking/ocr_service.py | 7→7 lines | ~102 |
+| 16:58 | Session end: 52 writes across 19 files (ocr_service.py, call_service.py, useWaybillUpload.js, test_elbnt.bat, http_client.py) | 15 reads | ~47023 tok |
+
+## Session: 2026-06-11 17:04
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 17:06 | Edited backend/app/tracking/ocr_service.py | modified _clean_ocr_value() | ~244 |
+| 17:07 | Edited backend/app/tracking/ocr_service.py | modified fields() | ~267 |
+| 17:07 | Edited backend/app/tracking/ocr_service.py | 8→8 lines | ~94 |
+| 17:07 | Edited backend/app/tracking/ocr_service.py | 4→7 lines | ~62 |
+| 11:50 | OCR 收件人姓名清洗：新增 `_clean_ocr_value()` 去引号/去 markdown/去解释尾缀，prompt 加 CRITICAL 正反例 | ocr_service.py | 修复模型返回 "ALISHA HAYES" is clearly visible... 问题 | ~2k |
+| 17:09 | Session end: 4 writes across 1 files (ocr_service.py) | 1 reads | ~3349 tok |
+| 18:58 | Edited CLAUDE.md | 1→2 lines | ~100 |
+| 18:59 | Session end: 5 writes across 2 files (ocr_service.py, CLAUDE.md) | 2 reads | ~16745 tok |
+
+## Session: 2026-06-11 19:06
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-06-11 19:56
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-06-11 19:59
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 20:12 | Edited backend/app/report/data_service.py | modified _classify_remark() | ~385 |
+| 20:12 | Edited backend/app/report/data_service.py | modified items() | ~172 |
+| 20:12 | Edited backend/app/report/data_service.py | 6→7 lines | ~54 |
+| 20:13 | Edited backend/app/report/templates/production_order_print.html | expanded (+57 lines) | ~1068 |
+| 20:13 | Edited backend/app/report/docx_export.py | 6→7 lines | ~88 |
+| 20:14 | Edited backend/app/report/docx_export.py | modified in() | ~1411 |
+| 20:14 | Edited backend/app/report/data_service.py | 3→4 lines | ~55 |
+| 20:14 | Edited backend/app/report/data_service.py | inline fix | ~33 |
+| 20:17 | Session end: 8 writes across 3 files (data_service.py, production_order_print.html, docx_export.py) | 5 reads | ~28469 tok |
+
+## Session: 2026-06-11 20:29
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-06-11 21:08
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 22:08 | Edited start.bat | inline fix | ~36 |
+| 22:09 | Session end: 1 writes across 1 files (start.bat) | 1 reads | ~38 tok |
+| 22:14 | Created backend/_debug_print.py | — | ~447 |
+| 22:18 | Edited backend/app/report/data_service.py | _classify_remark() → _classify_by_model() | ~92 |
+| 22:18 | Edited backend/app/report/data_service.py | _classify_remark() → _classify_by_model() | ~133 |
+| 22:18 | Edited backend/app/report/data_service.py | 25→27 lines | ~276 |
+| 22:18 | Edited backend/app/report/data_service.py | 8→9 lines | ~113 |
+| 22:19 | Session end: 6 writes across 3 files (start.bat, _debug_print.py, data_service.py) | 3 reads | ~9134 tok |
+| 22:22 | Edited backend/app/report/data_service.py | 8→10 lines | ~88 |
+| 22:22 | Edited backend/app/report/data_service.py | modified _classify_by_model() | ~97 |
+| 22:22 | Edited backend/app/report/data_service.py | modified items() | ~167 |
+| 22:24 | Session end: 9 writes across 3 files (start.bat, _debug_print.py, data_service.py) | 3 reads | ~9540 tok |
+| 22:28 | Edited backend/app/report/data_service.py | 20→24 lines | ~258 |
+| 22:29 | Edited frontend/src/views/stock/ProductionOrderManage.vue | added optional chaining | ~69 |
+| 22:29 | Edited backend/app/report/router.py | modified print_production_order() | ~218 |
+| 22:29 | Edited backend/app/report/templates/production_order_print.html | 6→6 lines | ~81 |
+| 22:30 | Session end: 13 writes across 6 files (start.bat, _debug_print.py, data_service.py, ProductionOrderManage.vue, router.py) | 5 reads | ~23437 tok |
+| 22:31 | Session end: 13 writes across 6 files (start.bat, _debug_print.py, data_service.py, ProductionOrderManage.vue, router.py) | 5 reads | ~23437 tok |
+| 22:35 | Session end: 13 writes across 6 files (start.bat, _debug_print.py, data_service.py, ProductionOrderManage.vue, router.py) | 7 reads | ~23828 tok |
+| 22:43 | Edited deploy/deploy.bat | expanded (+24 lines) | ~492 |
+| 22:44 | Created deploy/deploy.bat | — | ~1216 |
+| 22:45 | Session end: 15 writes across 7 files (start.bat, _debug_print.py, data_service.py, ProductionOrderManage.vue, router.py) | 8 reads | ~26825 tok |
+| 22:48 | Session end: 15 writes across 7 files (start.bat, _debug_print.py, data_service.py, ProductionOrderManage.vue, router.py) | 8 reads | ~26825 tok |
+| 22:56 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_stimulsoft_module.md | 15→18 lines | ~355 |
+| 22:57 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_production_architecture.md | expanded (+7 lines) | ~104 |
+| 22:57 | Created C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/feedback_venv_path_pollution.md | — | ~266 |
+| 22:57 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/MEMORY.md | 1→2 lines | ~72 |
+| 23:00 | Session end: 19 writes across 11 files (start.bat, _debug_print.py, data_service.py, ProductionOrderManage.vue, router.py) | 13 reads | ~31946 tok |
+
+## Session: 2026-06-11 23:09
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 08:47 | Edited backend/app/report/router.py | modified get() | ~151 |
+| 08:47 | Edited backend/app/report/docx_export.py | expanded (+7 lines) | ~154 |
+| 08:48 | Edited backend/app/report/docx_export.py | modified enumerate() | ~183 |
+| 08:48 | Edited backend/app/report/docx_export.py | 2→2 lines | ~34 |
+| 08:48 | Edited backend/app/report/router.py | modified export_production_order_docx() | ~106 |
+| 08:49 | Edited backend/app/report/router.py | 4→4 lines | ~51 |
+| 08:49 | Edited backend/app/report/templates/production_order_print.html | added 1 condition(s) | ~155 |
+| 08:50 | Session end: 7 writes across 3 files (router.py, docx_export.py, production_order_print.html) | 12 reads | ~40931 tok |
+| 08:54 | Session end: 7 writes across 3 files (router.py, docx_export.py, production_order_print.html) | 12 reads | ~40931 tok |
+| 08:57 | Session end: 7 writes across 3 files (router.py, docx_export.py, production_order_print.html) | 12 reads | ~40931 tok |
+| 09:07 | Session end: 7 writes across 3 files (router.py, docx_export.py, production_order_print.html) | 12 reads | ~40931 tok |
+| 09:11 | Session end: 7 writes across 3 files (router.py, docx_export.py, production_order_print.html) | 12 reads | ~40931 tok |
+| 09:13 | Session end: 7 writes across 3 files (router.py, docx_export.py, production_order_print.html) | 12 reads | ~40931 tok |
+| 09:17 | Session end: 7 writes across 3 files (router.py, docx_export.py, production_order_print.html) | 12 reads | ~40931 tok |
+| 09:21 | Session end: 7 writes across 3 files (router.py, docx_export.py, production_order_print.html) | 13 reads | ~42147 tok |
+| 09:32 | Created C:/Users/windb/.claude/plans/wondrous-chasing-cat.md | — | ~1866 |
+
+## Session: 2026-06-12 09:36
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 09:50 | Edited backend/app/report/router.py | 2→2 lines | ~44 |
+| 09:50 | Session end: 1 writes across 1 files (router.py) | 3 reads | ~12022 tok |
+| 10:05 | Edited backend/app/report/docx_export.py | 27→31 lines | ~350 |
+| 10:05 | Edited backend/app/report/docx_export.py | modified in() | ~376 |
+| 10:06 | Session end: 3 writes across 2 files (router.py, docx_export.py) | 3 reads | ~12748 tok |
+| 10:16 | Created deploy/deploy.bat | — | ~1431 |
+| 10:16 | Session end: 4 writes across 3 files (router.py, docx_export.py, deploy.bat) | 5 reads | ~19321 tok |
+| 10:18 | Session end: 4 writes across 3 files (router.py, docx_export.py, deploy.bat) | 5 reads | ~19321 tok |
+| 10:19 | Session end: 4 writes across 3 files (router.py, docx_export.py, deploy.bat) | 5 reads | ~19321 tok |
+| 10:20 | Session end: 4 writes across 3 files (router.py, docx_export.py, deploy.bat) | 5 reads | ~19321 tok |
+| 10:21 | Session end: 4 writes across 3 files (router.py, docx_export.py, deploy.bat) | 5 reads | ~19321 tok |
+| 10:23 | Edited backend/app/report/docx_export.py | 5→4 lines | ~66 |
+| 10:24 | Session end: 5 writes across 3 files (router.py, docx_export.py, deploy.bat) | 6 reads | ~23212 tok |
+
+## Session: 2026-06-12 10:32
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 10:44 | Edited backend/app/tracking/ocr_service.py | 2→2 lines | ~16 |
+| 10:45 | Edited backend/app/tracking/ocr_service.py | 2→2 lines | ~17 |
+| 10:45 | Edited backend/app/tracking/ocr_service.py | modified _clean_ocr_value() | ~469 |
+| 10:48 | Session end: 3 writes across 1 files (ocr_service.py) | 1 reads | ~3414 tok |
+| 10:51 | Edited backend/app/tracking/ocr_service.py | expanded (+12 lines) | ~136 |
+| 10:52 | Created test_ocr_clean.py | — | ~541 |
+| 10:53 | Session end: 5 writes across 2 files (ocr_service.py, test_ocr_clean.py) | 1 reads | ~4091 tok |
+| 11:00 | Edited backend/app/tracking/ocr_service.py | modified isinstance() | ~118 |
+| 11:01 | Session end: 6 writes across 2 files (ocr_service.py, test_ocr_clean.py) | 1 reads | ~4276 tok |
+| 11:07 | Created backend/app/tracking/ocr_service.py | — | ~2968 |
+| 11:08 | Created test_ocr_clean.py | — | ~689 |
+| 11:08 | Session end: 8 writes across 2 files (ocr_service.py, test_ocr_clean.py) | 1 reads | ~8024 tok |
+
+## Session: 2026-06-12 11:13
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 11:19 | Edited backend/app/tracking/ocr_service.py | modified search() | ~165 |
+| 11:19 | Edited backend/app/tracking/ocr_service.py | 3→5 lines | ~48 |
+| 11:21 | Edited backend/app/tracking/ocr_service.py | expanded (+6 lines) | ~99 |
+| 11:21 | Edited backend/app/tracking/ocr_service.py | modified search() | ~195 |
+| 11:22 | Edited backend/app/tracking/ocr_service.py | modified isinstance() | ~36 |
+| 11:22 | Session end: 5 writes across 1 files (ocr_service.py) | 1 reads | ~3664 tok |
+| 11:37 | Created backend/alembic/versions/034_customer_radar.py | — | ~1853 |
+| 11:38 | Edited backend/app/insight/models.py | modified CustomerProfile() | ~1479 |
+| 11:39 | Created backend/app/insight/customer_profile_service.py | — | ~2954 |
+| 11:41 | Created backend/app/insight/customer_radar_service.py | — | ~4489 |
+| 11:42 | Created backend/app/insight/customer_source_service.py | — | ~1354 |
+| 11:43 | Edited backend/app/insight/customer_opportunity_service.py | modified all() | ~177 |
+| 11:43 | Edited backend/app/insight/customer_opportunity_service.py | modified add_opportunity_feedback() | ~90 |
+| 11:44 | Edited backend/app/insight/customer_opportunity_service.py | expanded (+8 lines) | ~86 |
+| 11:44 | Edited backend/app/insight/customer_opportunity_service.py | expanded (+8 lines) | ~97 |
+| 11:45 | Edited backend/app/insight/service.py | expanded (+13 lines) | ~164 |
+| 11:46 | Edited backend/app/insight/dependencies.py | modified _require_radar_read() | ~285 |
+| 11:48 | Edited backend/app/auth/service.py | 4→8 lines | ~123 |
+| 11:51 | Edited backend/app/insight/router.py | modified radar_daily_focus() | ~2286 |
+| 11:53 | Edited frontend/src/api/insight.js | modified assignOpportunity() | ~526 |
+| 11:53 | Edited frontend/src/config/navigation.js | inline fix | ~42 |
+| 11:54 | Edited frontend/src/config/navigation.js | expanded (+11 lines) | ~150 |
+| 11:55 | Created frontend/src/views/insight/composables/useCustomerRadar.js | — | ~1625 |
+| 11:56 | Created frontend/src/views/insight/CustomerRadarView.vue | — | ~4250 |
+| 11:58 | Session end: 23 writes across 14 files (ocr_service.py, 034_customer_radar.py, models.py, customer_profile_service.py, customer_radar_service.py) | 10 reads | ~60723 tok |
+| 12:27 | Edited backend/alembic/versions/034_customer_radar.py | added 1 import(s) | ~101 |
+| 12:27 | Session end: 24 writes across 14 files (ocr_service.py, 034_customer_radar.py, models.py, customer_profile_service.py, customer_radar_service.py) | 10 reads | ~60824 tok |
+
+## Session: 2026-06-12 13:36
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 13:40 | Edited CLAUDE.md | inline fix | ~102 |
+| 13:40 | Edited CLAUDE.md | expanded (+12 lines) | ~231 |
+| 13:40 | Edited CLAUDE.md | 4→8 lines | ~366 |
+| 13:40 | Edited CLAUDE.md | 2→3 lines | ~86 |
+| 13:41 | Created C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_customer_radar_module.md | — | ~687 |
+| 13:41 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/MEMORY.md | 2→3 lines | ~99 |
+| 13:42 | Edited README.md | inline fix | ~146 |
+| 13:44 | neat-freak sync: 客户经营雷达模块全量知识同步 | CLAUDE.md, README.md, cerebrum.md, MEMORY.md, project_customer_radar_module.md | 5 文件更新 | ~5000 |
+| 13:44 | Session end: 7 writes across 4 files (CLAUDE.md, project_customer_radar_module.md, MEMORY.md, README.md) | 10 reads | ~45626 tok |
+| 13:48 | Session end: 7 writes across 4 files (CLAUDE.md, project_customer_radar_module.md, MEMORY.md, README.md) | 16 reads | ~60377 tok |
+
+## Session: 2026-06-12 19:53
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 19:55 | Edited backend/app/insight/router.py | 11→14 lines | ~102 |
+| 19:55 | Session end: 1 writes across 1 files (router.py) | 2 reads | ~13329 tok |
+| 19:58 | Edited frontend/src/views/insight/CustomerRadarView.vue | inline fix | ~17 |
+| 19:59 | Edited frontend/src/views/insight/CustomerRadarView.vue | inline fix | ~27 |
+| 19:59 | Session end: 3 writes across 2 files (router.py, CustomerRadarView.vue) | 3 reads | ~17626 tok |
+
+## Session: 2026-06-15 10:41
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 16:39 | Edited backend/app/report/data_service.py | added 1 condition(s) | ~1326 |
+| 16:39 | Edited backend/app/report/data_service.py | 60→64 lines | ~704 |
+| 16:40 | Edited backend/app/report/templates/production_order_print.html | expanded (+13 lines) | ~154 |
+| 16:41 | Edited backend/app/report/templates/production_order_print.html | 19→19 lines | ~193 |
+| 16:41 | Edited backend/app/report/docx_export.py | modified _set_cell_two_line() | ~430 |
+| 16:42 | Edited backend/app/report/docx_export.py | _set_cell_text() → _set_cell_multiline() | ~99 |
+| 16:46 | refactor production order print classification: model+unit dual-key, 17 rules from Excel, multiline labels (HTML pre-line + Word w:br) | report/data_service.py + production_order_print.html + docx_export.py | tested 20 samples + real order PO20260611-001, 5 sub-tables correct | ~12k |
+| 16:47 | Session end: 6 writes across 3 files (data_service.py, production_order_print.html, docx_export.py) | 4 reads | ~18948 tok |
+| 16:55 | Edited backend/app/report/data_service.py | inline fix | ~13 |
+| 16:56 | Session end: 7 writes across 3 files (data_service.py, production_order_print.html, docx_export.py) | 4 reads | ~18961 tok |
+| 18:04 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_stimulsoft_module.md | 10→11 lines | ~282 |
+| 18:06 | Edited CLAUDE.md | inline fix | ~92 |
+| 18:08 | Session end: 9 writes across 5 files (data_service.py, production_order_print.html, docx_export.py, project_stimulsoft_module.md, CLAUDE.md) | 7 reads | ~35658 tok |
+| 18:31 | Edited backend/app/report/data_service.py | 13→16 lines | ~202 |
+| 18:31 | Edited backend/app/report/data_service.py | 7→8 lines | ~67 |
+| 18:32 | Edited backend/app/report/data_service.py | 10→11 lines | ~133 |
+| 18:33 | Edited backend/app/report/router.py | modified _load_middle_punch_image_data_uri() | ~246 |
+| 18:33 | Edited backend/app/report/router.py | modified get() | ~113 |
+| 18:34 | Edited backend/app/report/templates/production_order_print.html | expanded (+8 lines) | ~180 |
+| 18:35 | Edited backend/app/report/templates/production_order_print.html | expanded (+20 lines) | ~118 |
+| 18:35 | Edited backend/app/report/docx_export.py | 15→20 lines | ~153 |
+| 18:36 | Edited backend/app/report/docx_export.py | modified exists() | ~338 |
+| 18:39 | add 中间打孔要求图 to print/export when any item.model contains 中间打孔: HTML data URI inline + Word add_picture page-break | data_service.py + router.py + production_order_print.html + docx_export.py + assets/middle_punch_requirement.jpg | tested PO20260601-002 (has) and PO20260526-001 (no), media/image1.jpg embedded only when needed | ~5k |
+| 18:39 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_stimulsoft_module.md | expanded (+7 lines) | ~243 |
+| 18:41 | Session end: 19 writes across 6 files (data_service.py, production_order_print.html, docx_export.py, project_stimulsoft_module.md, CLAUDE.md) | 8 reads | ~42419 tok |
+| 18:57 | Edited backend/app/report/docx_export.py | modified exists() | ~462 |
+| 18:59 | Session end: 20 writes across 6 files (data_service.py, production_order_print.html, docx_export.py, project_stimulsoft_module.md, CLAUDE.md) | 8 reads | ~43093 tok |
+| 19:21 | Edited backend/app/report/docx_export.py | expanded (+13 lines) | ~879 |
+| 19:23 | Session end: 21 writes across 6 files (data_service.py, production_order_print.html, docx_export.py, project_stimulsoft_module.md, CLAUDE.md) | 8 reads | ~44203 tok |
+| 19:37 | Session end: 21 writes across 6 files (data_service.py, production_order_print.html, docx_export.py, project_stimulsoft_module.md, CLAUDE.md) | 8 reads | ~44203 tok |
+
+## Session: 2026-06-16 09:43
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|

@@ -91,6 +91,25 @@ def _require_opportunity_manage(user: dict = Depends(get_current_user)):
     return user
 
 
+# ── 客户经营雷达权限 ─────────────────────────────────────────
+def _require_radar_read(user: dict = Depends(get_current_user)):
+    if not _has_any_perm(user, ["customer_radar:read", "customer_radar:write", "customer_radar:manage"]):
+        raise HTTPException(status_code=403, detail="权限不足:需要 customer_radar:read")
+    return user
+
+
+def _require_radar_write(user: dict = Depends(get_current_user)):
+    if not _has_any_perm(user, ["customer_radar:write", "customer_radar:manage"]):
+        raise HTTPException(status_code=403, detail="权限不足:需要 customer_radar:write")
+    return user
+
+
+def _require_radar_manage(user: dict = Depends(get_current_user)):
+    if not _has_perm(user, "customer_radar:manage"):
+        raise HTTPException(status_code=403, detail="权限不足:需要 customer_radar:manage")
+    return user
+
+
 def _serialize_source(s):
     return {
         "id": s.id,

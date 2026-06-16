@@ -2,7 +2,7 @@
 
 > OpenWolf's learning memory. Updated automatically as the AI learns from interactions.
 > Do not edit manually unless correcting an error.
-> Last updated: 2026-06-11
+> Last updated: 2026-06-12
 
 ## User Preferences
 
@@ -27,9 +27,13 @@
 
 - **列表页规范拉齐（2026-06-11）**：7 个新增模块的列表页（ProductManage/ProcessManage/ProductionOrderManage/ConceptRegistry/CustomerOpportunityView/ExternalBindings/ReportCenter）在快速开发时未遵循 DESIGN.md List Page Spec。标杆模板是 `system/DictManagement.vue`。修复要点：`width` → `min-width`+`max-width`，`stripe` 移除，加 `border class="list-table"`，包裹 `.table-card`，移除 `align="center"` 和 `size="small"`，操作按钮用 `GlassButton variant="link" left-icon="..."` 替代 `el-button link size="small"`，`el-tag` 加 `effect="plain"`，纯文本列加 `show-overflow-tooltip`。**以后新增列表页直接复制 DictManagement.vue 的模板结构**，不要从零开始。
 
+- **客户经营雷达纯规则引擎（2026-06-12）**：MVP 阶段不调 AI，用纯规则引擎将客户分入 6 个经营线索分组（new_inquiry/sample_delivery/key_account/reorder_window/reactivation/public_pool）。行动推荐在查询时懒生成（首访触发），后续从 `ark_customer_actions` 缓存读取。画像从 `ark_customer_opportunities` 聚合，不需要独立数据源
+
 - SQLAlchemy session 在循环批量处理中，单次 `db.commit()` 失败后必须显式 `db.rollback()` 恢复 session 状态，否则后续所有 commit 都会失败。典型案例：`folder_upload_service.py` 的 `execute_folder_upload` 逐文件入库，一个文件异常后 session 污染导致后续全部文件数据库写入失败（但 `_save_upload_file` 文件复制不受影响，造成"文件已复制但数据库没数据"的诡异现象）。**已优化**：改用 `db.begin_nested()` savepoint 逐文件隔离，异常只回滚当前 savepoint，批次末尾统一 commit
 
-- **StepFun API 多模态偶发空返回**：step-3.7-flash 支持多模态，但大图片 base64 请求偶发返回空 content（HTTP 200 + choices 正常但 content 为空字符串）。`call_service.py` 已加诊断日志（`[AI-DIAG]` + `print(flush=True)`），再发时查 service.log 的 `full_result` 确认 StepFun 返回结构。**教训**：改 `call_service.py` 时务必确认顶部有 `import logging` + `logger = logging.getLogger(...)`，否则 `logger.warning` 会 NameError 被外层 except 吞掉变成 "AI 调用失败"
+- **推理模型返回空 content**：StepFun step-3.7-flash / DeepSeek-R1 等推理模型把分析放在 `reasoning` / `reasoning_content` 字段，`content` 为空字符串。**解决方案**：`call_service.py` content 为空时 fallback 到 reasoning 字段；`ocr_service.py` 新增 `_parse_reasoning_to_dict()` 从自然语言 reasoning 中用正则提取运单字段（TRK#/承运商/收件人/日期/国家）。**教训**：改 `call_service.py` 时务必确认顶部有 `import logging` + `logger`，否则 NameError 被外层 except 吞掉
+
+- **AI OCR 字段值后处理（2026-06-11）**：多模态模型返回 JSON 时，字段值可能夹带解释性文本（如 `recipient_name: "name**: ALISHA HAYES is clearly visible under TO"`）。`_clean_ocr_value()` 做三层清洗：去 markdown `**` → 提取引号包裹内容（优先）→ 正则截掉 `is/was/visible/found...` 后缀。**通用教训**：AI 返回的结构化字段值不能直接信任，对"提取型"字段（姓名/号码/日期）需后处理清洗，prompt 里加正反例能降低但不能消除夹带
 
 - **NSSM 环境日志**：uvicorn 默认不打 `logger.info` 到 NSSM service.log，诊断信息必须同时 `print(flush=True)` 才能进 service.log
 
@@ -101,6 +105,9 @@
 - [2026-06-10] **Alembic revision ID 长度限制 32 字符**：`alembic_version.version_num` 是 `VARCHAR(32)`，长名称如 `031_add_customer_opportunity_platform`（40字符）写入时报 `Data too long`。**所有迁移 revision ID 必须控制在 32 字符以内**
 - [2026-06-10] **MySQL DDL 不可回滚 + Alembic 半执行状态**：迁移中前面 `create_table` 成功、后面 `alter/insert` 失败时，表已建但 version_num 未更新。修复需：手动 `UPDATE alembic_version SET version_num='新ID'` 然后重跑。**迁移前先验证 SQL 无误，FK 类型匹配**
 - [2026-06-10] **`ark_users.id` 实际是 INT UNSIGNED**：ORM 定义 `Column(Integer)` 看似 signed，但 MySQL 实际列是 `INT UNSIGNED`。FK 引用必须用 `_UINT = sa.Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql")`，否则 MySQL 8 报 `3780 incompatible foreign key`
+- [2026-06-11] **新迁移文件必须 git add + push**：032 迁移在本地创建但未 `git add`（untracked），后续 033 的 `down_revision` 指向 032，服务器 `alembic upgrade head` 时 KeyError。**创建迁移后立即 `git add` 确认它被追踪**
+- [2026-06-11] **分类字段选错导致拆表失败**：生产订单打印按 `product_remark`（"B等级一档"）做关键词匹配，但关键词（天才/贴发/平型/打孔）实际在 `model` 字段（"B1天才发帘"）。结果所有行归入「其他」。**分类前先 `SELECT DISTINCT` 确认字段值长什么样**
+- [2026-06-11] **Accio Work Python 污染 PATH**：Accio 自带 Python 的 `ctypes` 损坏，但排在 PATH 最前面。`call activate` 后系统仍优先用坏的 Python。修复：`start.bat` 改为直接用 `.venv\Scripts\python.exe -m uvicorn` 绕过 PATH
 
 ## Decision Log
 

@@ -69,7 +69,7 @@ export const MENU_GROUPS = {
   insight: {
     title: '方舟洞见',
     icon: Aim,
-    anyPermission: ['insight:read', 'insight:write', 'insight:internal_read', 'insight:admin', 'customer_opportunity:read'],
+    anyPermission: ['insight:read', 'insight:write', 'insight:internal_read', 'insight:admin', 'customer_opportunity:read', 'customer_radar:read'],
   },
   design: {
     title: '设计预约',
@@ -521,6 +521,17 @@ export const NAV_ENTRIES = [
     menu: {
       group: 'insight', title: '客户机会台', icon: Lightning, order: 65,
       permission: 'customer_opportunity:read',
+    },
+  },
+  {
+    path: '/insight/customer-radar',
+    name: 'CustomerRadar',
+    component: () => import('@/views/insight/CustomerRadarView.vue'),
+    title: '客户经营雷达',
+    permission: 'customer_radar:read',
+    menu: {
+      group: 'insight', title: '客户经营雷达', icon: Aim, order: 66,
+      permission: 'customer_radar:read',
     },
   },
 

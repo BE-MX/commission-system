@@ -1,81 +1,75 @@
 <template>
   <div class="report-center-page">
     <!-- 模板列表 -->
-    <el-card v-if="!designerMode" shadow="never">
-      <template #header>
-        <div class="card-header">
-          <span class="header-title">报表模板</span>
-          <el-button
-            v-if="authStore.hasAnyPermission(['report:design', 'report:admin'])"
-            type="primary"
-            size="small"
-            @click="showCreateDialog"
-          >
-            新建模板
-          </el-button>
-        </div>
-      </template>
+    <div v-if="!designerMode">
+      <div class="card-header" style="margin-bottom: 16px;">
+        <span class="header-title">报表模板</span>
+        <GlassButton
+          v-if="authStore.hasAnyPermission(['report:design', 'report:admin'])"
+          variant="primary" left-icon="Plus"
+          @click="showCreateDialog"
+        >
+          新建模板
+        </GlassButton>
+      </div>
 
-      <el-table
-        :data="templates"
-        v-loading="loading"
-        stripe
-        style="width: 100%"
-      >
-        <el-table-column label="报表编码" prop="report_code" min-width="180" show-overflow-tooltip />
-        <el-table-column label="报表名称" prop="name" min-width="200" show-overflow-tooltip />
-        <el-table-column label="版本" prop="version" width="80" align="center" />
-        <el-table-column label="状态" width="100" align="center">
-          <template #default="{ row }">
-            <el-switch
-              v-if="authStore.hasPermission('report:admin')"
-              :model-value="row.status === 1"
-              size="small"
-              @change="(val) => handleToggleStatus(row, val)"
-            />
-            <el-tag v-else :type="row.status === 1 ? 'success' : 'info'" size="small">
-              {{ row.status === 1 ? '启用' : '禁用' }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="更新时间" min-width="170">
-          <template #default="{ row }">
-            {{ formatTime(row.updated_at) }}
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="280" fixed="right">
-          <template #default="{ row }">
-            <el-button size="small" link type="primary" @click="previewReport(row)">查看</el-button>
-            <el-button
-              v-if="authStore.hasAnyPermission(['report:design'])"
-              size="small"
-              link
-              type="warning"
-              @click="openDesigner(row)"
-            >
-              设计器
-            </el-button>
-            <el-button
-              v-if="authStore.hasAnyPermission(['report:design'])"
-              size="small"
-              link
-              @click="showVersionHistory(row)"
-            >
-              版本
-            </el-button>
-            <el-button
-              v-if="authStore.hasPermission('report:admin')"
-              size="small"
-              link
-              type="danger"
-              @click="handleDelete(row)"
-            >
-              删除
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-    </el-card>
+      <div class="table-card">
+        <el-table
+          :data="templates"
+          v-loading="loading"
+          border
+          class="list-table"
+          style="width: 100%"
+        >
+          <el-table-column label="报表编码" prop="report_code" min-width="180" max-width="270" show-overflow-tooltip />
+          <el-table-column label="报表名称" prop="name" min-width="200" max-width="300" show-overflow-tooltip />
+          <el-table-column label="版本" prop="version" min-width="80" max-width="120" />
+          <el-table-column label="状态" min-width="100" max-width="150">
+            <template #default="{ row }">
+              <el-switch
+                v-if="authStore.hasPermission('report:admin')"
+                :model-value="row.status === 1"
+                @change="(val) => handleToggleStatus(row, val)"
+              />
+              <el-tag v-else :type="row.status === 1 ? 'success' : 'info'" size="small" effect="plain">
+                {{ row.status === 1 ? '启用' : '禁用' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="更新时间" min-width="170" max-width="255" show-overflow-tooltip>
+            <template #default="{ row }">
+              {{ formatTime(row.updated_at) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" min-width="300" max-width="450" fixed="right">
+            <template #default="{ row }">
+              <GlassButton variant="link" left-icon="View" @click="previewReport(row)">查看</GlassButton>
+              <GlassButton
+                v-if="authStore.hasAnyPermission(['report:design'])"
+                variant="link" left-icon="EditPen"
+                @click="openDesigner(row)"
+              >
+                设计器
+              </GlassButton>
+              <GlassButton
+                v-if="authStore.hasAnyPermission(['report:design'])"
+                variant="link" left-icon="Clock"
+                @click="showVersionHistory(row)"
+              >
+                版本
+              </GlassButton>
+              <GlassButton
+                v-if="authStore.hasPermission('report:admin')"
+                variant="link" link-tone="danger" left-icon="Delete"
+                @click="handleDelete(row)"
+              >
+                删除
+              </GlassButton>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+    </div>
 
     <!-- Stimulsoft Designer 全屏模式 -->
     <div v-if="designerMode" class="designer-page">
@@ -151,32 +145,30 @@
       width="700px"
       destroy-on-close
     >
-      <el-table :data="versionList" v-loading="versionLoading" stripe size="small">
-        <el-table-column label="版本" width="80" align="center">
+      <el-table :data="versionList" v-loading="versionLoading" border class="list-table">
+        <el-table-column label="版本" min-width="80" max-width="120">
           <template #default="{ row }">v{{ row.version }}</template>
         </el-table-column>
-        <el-table-column label="变更说明" prop="change_summary" min-width="200" show-overflow-tooltip>
+        <el-table-column label="变更说明" prop="change_summary" min-width="200" max-width="300" show-overflow-tooltip>
           <template #default="{ row }">
             {{ row.change_summary || '—' }}
           </template>
         </el-table-column>
-        <el-table-column label="保存时间" min-width="160">
+        <el-table-column label="保存时间" min-width="160" max-width="240" show-overflow-tooltip>
           <template #default="{ row }">
             {{ formatTime(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="160" align="center">
+        <el-table-column label="操作" min-width="200" max-width="300" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" link type="primary" @click="previewVersion(row)">预览</el-button>
-            <el-button
+            <GlassButton variant="link" left-icon="View" @click="previewVersion(row)">预览</GlassButton>
+            <GlassButton
               v-if="authStore.hasAnyPermission(['report:design'])"
-              size="small"
-              link
-              type="warning"
+              variant="link" left-icon="RefreshLeft"
               @click="handleRollback(row)"
             >
               回滚
-            </el-button>
+            </GlassButton>
           </template>
         </el-table-column>
       </el-table>

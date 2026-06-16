@@ -55,7 +55,7 @@ commission-system/
 │   │   ├── system/        # 系统字典领域模块
 │   │   ├── dingtalk/      # 钉钉集成领域模块
 │   │   ├── ai/            # AI 接入领域模块（service.py facade + provider/preset/call/log_service + keyring + http_client）
-│   │   ├── insight/       # 方舟洞见领域模块（service.py facade + fetcher + ai_helpers + sources/reports/case_library/meeting_minutes/dashboard_service/item_service/collector_service/intelligence_service/schedule_service + external_binding_service + customer_opportunity_service + dependencies.py router 依赖工厂）
+│   │   ├── insight/       # 方舟洞见领域模块（service.py facade + fetcher + ai_helpers + sources/reports/case_library/meeting_minutes/dashboard_service/item_service/collector_service/intelligence_service/schedule_service + external_binding_service + customer_opportunity_service + customer_profile_service + customer_radar_service + customer_source_service + dependencies.py router 依赖工厂）
 │   │   ├── stock/         # 备货管理领域模块（service.py facade + constants/sku_query/overview/safety/daily_report_service/production_cart_service/production_order_service/in_transit_service；TFT 微服务通过 Settings 配置接入）
 │   │   ├── tracking/      # 物流跟踪领域模块（router + shipment/upload/ocr/polling/staging/daily_report/push_service + carriers/ + status.py + templates/）
 │   │   ├── asset/         # 素材管理领域模块（router/models/schemas/service facade + analyze/batch/stats/tag/favorite/asset_service 子模块）
@@ -239,6 +239,18 @@ deploy\restart.bat                       # 仅重启 CommissionSystem service
     - `GET /customer-opportunities/admin/all` — 管理员: 全部机会（需 `customer_opportunity:manage`）
     - `GET /customer-opportunities/admin/unassigned` — 管理员: 未分配机会
     - `PUT /customer-opportunities/{id}/assign` — 管理员: 手动分配
+  - **客户经营雷达**（`customer_radar:read/write/manage`，子路径 `/customer-radar/*`）
+    - `GET /customer-radar/focus` — 今日经营焦点（按线索分组返回行动列表）
+    - `GET /customer-radar/threads/counts` — 各线索分组的行动计数
+    - `GET /customer-radar/actions` — 行动列表（按 thread_group/status 筛选）
+    - `PUT /customer-radar/actions/{action_id}/complete` — 完成行动
+    - `PUT /customer-radar/actions/{action_id}/dismiss` — 忽略行动
+    - `PUT /customer-radar/actions/{action_id}/snooze` — 延后行动（指定天数）
+    - `POST /customer-radar/actions/{action_id}/feedback` — 反馈行动（useful/not_useful）
+    - `GET /customer-radar/profiles/{profile_id}` — 客户画像详情（含关联机会+事件）
+    - `GET /customer-radar/profiles/{profile_id}/sources` — 画像原始记录（询盘/事件/备注）
+    - `POST /customer-radar/profiles/{profile_id}/notes` — 添加手动备注
+    - `POST /customer-radar/actions/refresh` — 重新生成当日行动推荐
 - `/api/stock` — 备货管理（销量备货一览/安全库存设置/日报）
   - `GET /overview` — 销量备货一览（分页+状态筛选+排序+搜索，型号/类型/尺寸/颜色/克重支持逗号分隔多选；返回项已包含 `stock_status` / `stock_items` / `production_in_transit`，前端无需再调 `/production/stock-status`）
   - `GET /safety` — 安全库存列表（用于设置页，型号/类型/尺寸/颜色/克重支持逗号分隔多选；返回项同样含 `stock_status` / `stock_items`）
@@ -384,7 +396,7 @@ deploy\restart.bat                       # 仅重启 CommissionSystem service
 - `design_schedule_task` — 设计排期任务；`shoot_type VARCHAR(255)` 逗号分隔多选值
 - `design_request_attachment` — 预约附件（file_name, file_path, file_size）；物理文件存 `backend/uploads/design/`
 - `design_unavailable_date` — 设计不可预约日(date, period am/pm/NULL=全天, reason);`(date, period)` 唯一约束,reason 用于甘特图 hover 展示
-- `ark_ai_providers` — AI 服务提供商配置（name, provider_type, api_base, api_key 加密存储）
+- `ark_ai_providers` — AI 服务提供商配置（name, provider_type, api_base, api_key 加密存储, api_type: openai/anthropic, extra_headers JSON, timeout_sec）
 - `ark_ai_presets` — AI 预设（preset_name, provider_id, model, system_prompt, parameters）
 - `ark_ai_call_logs` — AI 调用日志（caller_module, preset_name, tokens, duration_ms, status）
 - `ark_shipping_daily_reports` — 物流日报（user_id, report_date, html_content, short_url, is_pushed）；`(user_id, report_date)` 唯一约束，每日 08:30 自动生成
@@ -415,8 +427,12 @@ deploy\restart.bat                       # 仅重启 CommissionSystem service
   - `ark_external_binding_candidates` — 外部账号绑定候选（provider + external_account_id 唯一，suggested_user_id 自动匹配，candidate_status pending/bound/ignored）
 - **客户机会台（3 张表，031 迁移，insight/models.py）**：
   - `ark_inquiry_import_batches` — 阿里询盘导入批次（batch_id 唯一，source/schema_version，统计 created/updated/unassigned/failed，status processing/success/partial_failed/failed）
-  - `ark_customer_opportunities` — 客户机会卡（source_key 唯一幂等键，owner_user_id FK ark_users，owner_binding_id FK ark_user_external_bindings，priority_level A/B/C/D，urgency urgent/high/normal/low，due_at 按等级计算，status pending/contacted/replied/quoted/won/lost/dismissed，含背调/AI策略/话术字段）
+  - `ark_customer_opportunities` — 客户机会卡（source_key 唯一幂等键，owner_user_id FK ark_users，owner_binding_id FK ark_user_external_bindings，priority_level A/B/C/D，urgency urgent/high/normal/low，due_at 按等级计算，status pending/contacted/replied/quoted/won/lost/dismissed，含背调/AI策略/话术字段，**full_report_html TEXT** ACCIO 完整背调报告 HTML）
   - `ark_customer_opportunity_events` — 机会事件（opportunity_id FK CASCADE，event_type created/imported/viewed/status_changed/feedback/assigned）
+- **客户经营雷达（3 张表，034 迁移，insight/models.py）**：
+  - `ark_customer_profiles` — 客户活画像（customer_external_id UNIQUE，customer_name + customer_region 组合查重，owner_user_id FK ark_users，priority_score 优先级分，total_opportunities/total_events 统计，profile_tags/profile_signals_json/profile_judgement 画像数据，suggested_message 推荐话术，status active）
+  - `ark_customer_profile_events` — 客户事件流（profile_id FK CASCADE，event_source/event_type 分类，event_score 正负评分，opportunity_id FK ark_customer_opportunities，actor_user_id 操作人）
+  - `ark_customer_actions` — 行动候选池（profile_id FK CASCADE，owner_user_id FK ark_users，thread_group 线索分组，thread_priority 优先级，action_status pending/completed/dismissed/snoozed，snoozed_until 延后截止，action_date 行动日期）
 - **素材管理（7 张表，020 迁移）**：
   - `ark_tag_dimensions` — 标签维度
   - `ark_tag_values` — 标签值
@@ -465,6 +481,7 @@ deploy\restart.bat                       # 仅重启 CommissionSystem service
 | 生产订单 | `production:read` / `production:write` / `production:admin` | 查看订单/创建编辑订单与入库/删除订单（备货管理菜单组下独立子菜单，由 `production:read` 控制显示） |
 | 报表中心 | `report:read` / `report:design` / `report:admin` | 查看报表/编辑模板/删除模板（Stimulsoft Reports.JS，super_admin 自动绕过） |
 | 客户机会台 | `customer_opportunity:read` / `customer_opportunity:write` / `customer_opportunity:manage` | 查看本人机会/更新状态反馈/管理全部机会分配 |
+| 客户经营雷达 | `customer_radar:read` / `customer_radar:write` / `customer_radar:manage` | 查看经营雷达/完成延后反馈行动/管理所有客户档案 |
 | 外部账号绑定 | `external_binding:read` / `external_binding:write` | 查看绑定/创建删除绑定管理候选 |
 
 **导航显示逻辑**（`MainLayout.vue`）：各菜单项通过 `v-if="authStore.hasAnyPermission([...])"` 控制，`super_admin` 角色绕过所有权限检查。头部用户区域显示头像（`avatar_url`），无头像时显示默认图标。物流管理子菜单含三个入口：物流跟踪(`tracking:read/read_all`) / 运单上传(`tracking:write`) / 物流日报(`tracking:daily_report`)。路由守卫：`/tracking/:waybillNo` 需 `tracking:read`，`/tracking/daily-report` 需 `tracking:daily_report`。运单列表数据范围由权限自动决定（`tracking:read` 仅看本人，`tracking:read_all` 看全部），页面无切换控件。
@@ -613,8 +630,9 @@ QA 时检查代码是否符合 DESIGN.md 中的颜色、字体、间距、圆角
 **AI OCR 调用链**：
 - 路由层 `_call_ocr_sync()` → `app/ai/service.py` 的 `chat()` → OpenAI 兼容 API
 - 通过 `run_in_executor` 在线程池执行，**函数内自建 `SessionLocal()`**（不传入请求的 db session，线程不安全）
-- AI Preset `waybill_ocr` 必须绑定**支持图片输入的多模态模型**（如 Claude claude-opus-4-6）；MIMO 等纯文本模型不支持
-- AI Preset `insight_daily_organize` — 行业日报 AI 整理，将信源原始条目归类为 5 个模板板块（quick_overview / color_style_trends / trend_keywords / amazon_hot / competitor_updates / supply_chain），需较大 max_tokens（≥8192），推荐用 MIMO provider（ELBNT-AI 超时概率高）
+- AI Preset `waybill_ocr` 必须绑定**支持图片输入的多模态模型**（如 StepFun step-3.7-flash）；纯文本模型不支持。推理模型（step-3.7-flash）会把分析放在 reasoning 字段而非 content，OCR 服务已自动兼容
+- **OCR 字段值后处理**：AI 模型有时在 JSON 字段值中夹带解释文本（如 `recipient_name: "name**: ALISHA HAYES is clearly visible under TO"`）。`_clean_ocr_value()` 负责清洗：去引号、去 markdown、截掉 `is/was/visible/found...` 后的解释尾缀。JSON 正常解析和 reasoning fallback 两条路径都经过清洗
+- AI Preset `insight_daily_organize` — 行业日报 AI 整理，将信源原始条目归类为 5 个模板板块（quick_overview / color_style_trends / trend_keywords / amazon_hot / competitor_updates / supply_chain），需较大 max_tokens（≥8192），推荐用 MIMO provider
 
 **已踩过的坑（红线）**：
 - `from pathlib import Path` 与 `from fastapi import Path` 命名冲突：文件顶部用 `from pathlib import Path as FilePath`
@@ -681,14 +699,18 @@ QA 时检查代码是否符合 DESIGN.md 中的颜色、字体、间距、圆角
 - Google Trends RSS 旧 URL `trends/trendingsearches/daily/rss` 已废弃（404），新 URL 为 `trending/rss?geo=US`
 - 信源 `request_headers` JSON 列曾被误存为整条配置（含 url/name/keywords 等非 HTTP header 字段），`_make_request` 已加 `isinstance(v, str)` 过滤
 - aihot_api 信源的 `pipeline` 必须设为 `internal`（否则被行业日报管线误拉取，触发 `Unknown source_type` 日志）
-- MIMO 模型推理消耗大量 tokens，`max_tokens` 需设 ≥8192；ELBNT-AI 网络超时概率高，不推荐用于此 preset
+- MIMO 模型推理消耗大量 tokens，`max_tokens` 需设 ≥8192
+- **ELBNT-AI 是代理池服务**（非直连），api_base 必须用 `https://www.elbnt.ai`（带 www），协议类型为 OpenAI。`elbnt.ai`（不带 www）会超时。`/v1/messages` 端点也会超时，只能用 `/v1/chat/completions`。模型可用性取决于账号配额，`No available accounts` 表示该模型无可用后端
 
 ## AI 接入模块
 
 **后端领域模块**：`backend/app/ai/`（models/schemas/service/router 自包含）
 
 **核心概念**：
-- `AiProvider` — AI 服务提供商（api_base + api_key 加密存储 + 超时配置）
+- `AiProvider` — AI 服务提供商（api_base + api_key 加密存储 + `api_type` 协议类型 + 超时配置）
+  - `api_type`: `openai`（Chat Completions，默认）/ `anthropic`（Messages API）
+  - Anthropic 协议自动用 `x-api-key` + `anthropic-version` 头，请求体 `system` 为顶层参数，响应 `content` 为数组
+  - `extra_headers` JSON 可自定义请求头（如 `{"User-Agent": "Mozilla/5.0"}`）
 - `AiPreset` — 预设（绑定 Provider，含 model/system_prompt/parameters）
 - `AiCallLog` — 调用日志（prompt 快照、响应快照、tokens、耗时、状态）
 
@@ -697,6 +719,8 @@ QA 时检查代码是否符合 DESIGN.md 中的颜色、字体、间距、圆角
 result = chat(db, preset_name="waybill_ocr", messages=[...], caller_module="tracking")
 content = result["content"]
 ```
+
+**推理模型兼容**：Step-3.7-flash / DeepSeek-R1 等推理模型把分析放在 `reasoning` / `reasoning_content` 字段，`content` 为空。`call_service.py` 自动 fallback 到 reasoning 字段；`ocr_service.py` 的 `_parse_reasoning_to_dict()` 从自然语言 reasoning 中用正则提取运单字段。
 
 **API Key 加密**：`_encrypt_key()` / `_decrypt_key()` 使用 AES-256-GCM（需 `cryptography` 包），fallback 到 base64。
 
@@ -801,7 +825,7 @@ frontend/src/
 
 | report_code | 函数 | 说明 |
 |---|---|---|
-| `production_order_print` | `get_production_order_print_data` | 生产订单打印，后端 `_pivot_items` 透视为宽格式（按 group 排序）+ 公斤数统计（纯色/T色）+ Jinja2 HTML 渲染（方案C）+ Word 导出 |
+| `production_order_print` | `get_production_order_print_data` | 生产订单打印，按 `(model, unit)` 双键 17 规则拆表（源自《发帘与贴发产品清单.xlsx》，Excel 顺序先匹配先胜，"其他"兜底），每张子表 `_pivot_items` 透视为宽格式（按 group 排序）+ 公斤数统计（纯色/T色，全量列）+ Jinja2 HTML 渲染（方案C）+ Word 导出。左上角分类标签来自 Excel「左上角单元格显示内容」列，含 `\n` 多行：HTML 用 `white-space: pre-line`，Word 用 `_set_cell_multiline()` + `<w:br/>` |
 | `process_card_print` | `get_process_card_print_data` | 工序卡片打印，查询明细 + 生成二维码 base64 |
 
 新增报表只需：(1) 加一个 `get_xxx_data(db, params)` 函数 (2) 注册到 `_DATA_DISPATCH` 字典。

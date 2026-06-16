@@ -6,46 +6,50 @@
     </div>
 
     <div class="co-toolbar">
-      <el-radio-group v-model="statusFilter" size="small" @change="loadCandidates">
+      <el-radio-group v-model="statusFilter" @change="loadCandidates">
         <el-radio-button label="">全部</el-radio-button>
         <el-radio-button label="pending">待处理</el-radio-button>
         <el-radio-button label="bound">已绑定</el-radio-button>
         <el-radio-button label="ignored">已忽略</el-radio-button>
       </el-radio-group>
-      <el-button size="small" @click="loadCandidates" :icon="Refresh">刷新</el-button>
+      <GlassButton variant="ghost" left-icon="Refresh" @click="loadCandidates">刷新</GlassButton>
     </div>
 
-    <el-table :data="candidates" v-loading="loading" size="small" style="width: 100%">
-      <el-table-column label="平台" width="120">
-        <template #default="{ row }">{{ providerLabel(row.provider) }}</template>
-      </el-table-column>
-      <el-table-column label="外部账号 ID" prop="external_account_id" width="140" />
-      <el-table-column label="显示名" prop="external_display_name" width="140" />
-      <el-table-column label="状态" width="100" align="center">
-        <template #default="{ row }">
-          <el-tag :type="candidateStatusType(row.candidate_status)" size="small">{{ candidateStatusLabel(row.candidate_status) }}</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column label="建议用户" width="120">
-        <template #default="{ row }">
-          <span v-if="row.suggested_user_name">{{ row.suggested_user_name }}</span>
-          <span v-else class="text-muted">-</span>
-        </template>
-      </el-table-column>
-      <el-table-column label="首次发现" width="160">
-        <template #default="{ row }">{{ formatTime(row.first_seen_at) }}</template>
-      </el-table-column>
-      <el-table-column label="出现次数" prop="seen_count" width="90" align="center" />
-      <el-table-column label="操作" width="200" align="center">
-        <template #default="{ row }">
-          <template v-if="row.candidate_status === 'pending'">
-            <el-button type="primary" size="small" @click="openBindDialog(row)">绑定用户</el-button>
-            <el-button size="small" @click="handleIgnore(row)">忽略</el-button>
+    <div class="table-card">
+      <el-table :data="candidates" v-loading="loading" border class="list-table" style="width: 100%">
+        <el-table-column label="平台" min-width="120" max-width="180">
+          <template #default="{ row }">{{ providerLabel(row.provider) }}</template>
+        </el-table-column>
+        <el-table-column label="外部账号 ID" prop="external_account_id" min-width="140" max-width="210" show-overflow-tooltip />
+        <el-table-column label="显示名" prop="external_display_name" min-width="140" max-width="210" show-overflow-tooltip />
+        <el-table-column label="状态" min-width="100" max-width="150">
+          <template #default="{ row }">
+            <el-tag :type="candidateStatusType(row.candidate_status)" size="small" effect="plain">
+              {{ candidateStatusLabel(row.candidate_status) }}
+            </el-tag>
           </template>
-          <span v-else class="text-muted">{{ candidateStatusLabel(row.candidate_status) }}</span>
-        </template>
-      </el-table-column>
-    </el-table>
+        </el-table-column>
+        <el-table-column label="建议用户" min-width="120" max-width="180" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span v-if="row.suggested_user_name">{{ row.suggested_user_name }}</span>
+            <span v-else class="text-muted">-</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="首次发现" min-width="160" max-width="240" show-overflow-tooltip>
+          <template #default="{ row }">{{ formatTime(row.first_seen_at) }}</template>
+        </el-table-column>
+        <el-table-column label="出现次数" prop="seen_count" min-width="90" max-width="135" />
+        <el-table-column label="操作" min-width="200" max-width="300" fixed="right">
+          <template #default="{ row }">
+            <template v-if="row.candidate_status === 'pending'">
+              <GlassButton variant="link" left-icon="Connection" @click="openBindDialog(row)">绑定用户</GlassButton>
+              <GlassButton variant="link" left-icon="Close" @click="handleIgnore(row)">忽略</GlassButton>
+            </template>
+            <span v-else class="text-muted">{{ candidateStatusLabel(row.candidate_status) }}</span>
+          </template>
+        </el-table-column>
+      </el-table>
+    </div>
 
     <!-- 绑定弹窗 -->
     <el-dialog v-model="bindDialogVisible" title="绑定到方舟用户" width="460px" :close-on-click-modal="false">
@@ -58,8 +62,8 @@
         <el-option v-for="u in userOptions" :key="u.id" :label="`${u.real_name} (${u.username})`" :value="u.id" />
       </el-select>
       <template #footer>
-        <el-button @click="bindDialogVisible = false">取消</el-button>
-        <el-button type="primary" :disabled="!selectedUserId" @click="handleBind">确认绑定</el-button>
+        <GlassButton variant="ghost" @click="bindDialogVisible = false">取消</GlassButton>
+        <GlassButton variant="primary" :disabled="!selectedUserId" @click="handleBind">确认绑定</GlassButton>
       </template>
     </el-dialog>
   </div>
@@ -67,7 +71,6 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { Refresh } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import axios from 'axios'
 

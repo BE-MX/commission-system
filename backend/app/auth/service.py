@@ -234,6 +234,10 @@ def seed_role_permissions(db: Session):
         ("whatsapp:read",  "whatsapp", "read",  "查看 WhatsApp 绑定账号/会话/消息"),
         ("whatsapp:write", "whatsapp", "write", "创建绑定/触发同步/解绑账号"),
         ("whatsapp:admin", "whatsapp", "admin", "管理全部 WhatsApp 同步账号"),
+        # 客户经营雷达
+        ("customer_radar:read",   "customer_radar", "read",   "查看客户经营雷达"),
+        ("customer_radar:write",  "customer_radar", "write",  "完成/延后/反馈行动"),
+        ("customer_radar:manage", "customer_radar", "manage", "管理所有客户档案/手动分配"),
     ]
     for code, module, action, label in seeds:
         existing = db.query(ArkPermission).filter(ArkPermission.code == code).first()

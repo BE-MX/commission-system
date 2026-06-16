@@ -63,49 +63,51 @@
     </div>
 
     <!-- 概念表格 -->
-    <el-table :data="concepts" v-loading="loading" stripe @sort-change="handleSortChange"
-      style="width: 100%">
-      <el-table-column prop="id" label="概念 ID" min-width="160" sortable="custom" show-overflow-tooltip>
-        <template #default="{ row }">
-          <router-link :to="`/governance/concepts/${row.id}`" class="concept-link">
-            {{ row.id }}
-          </router-link>
-        </template>
-      </el-table-column>
-      <el-table-column prop="name_zh" label="中文名" min-width="120" sortable="custom" />
-      <el-table-column prop="name_en" label="英文名" min-width="160" show-overflow-tooltip />
-      <el-table-column prop="layer" label="层级" width="110">
-        <template #default="{ row }">{{ layerLabels[row.layer] || row.layer }}</template>
-      </el-table-column>
-      <el-table-column prop="status" label="状态" width="120" sortable="custom">
-        <template #default="{ row }">
-          <el-tag :type="statusTagType(row.status)" size="small" effect="plain">
-            {{ statusLabels[row.status] || row.status }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column prop="confidence" label="置信度" width="90">
-        <template #default="{ row }">
-          <span v-if="row.confidence">{{ confidenceLabels[row.confidence] }}</span>
-          <span v-else class="text-muted">-</span>
-        </template>
-      </el-table-column>
-      <el-table-column prop="owner" label="负责人" width="100" />
-      <el-table-column prop="updated_at" label="更新时间" width="170" sortable="custom">
-        <template #default="{ row }">{{ formatDate(row.updated_at) }}</template>
-      </el-table-column>
-      <el-table-column label="操作" width="160" fixed="right">
-        <template #default="{ row }">
-          <router-link :to="`/governance/concepts/${row.id}`">
-            <el-button type="primary" link size="small">查看</el-button>
-          </router-link>
-          <el-button v-if="row.status === 'pending' && authStore.hasAnyPermission(['governance:write'])"
-            type="success" link size="small" @click="handleClaim(row)">
-            认领
-          </el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+    <div class="table-card">
+      <el-table :data="concepts" v-loading="loading" border class="list-table" @sort-change="handleSortChange"
+        style="width: 100%">
+        <el-table-column prop="id" label="概念 ID" min-width="160" max-width="240" sortable="custom" show-overflow-tooltip>
+          <template #default="{ row }">
+            <router-link :to="`/governance/concepts/${row.id}`" class="concept-link">
+              {{ row.id }}
+            </router-link>
+          </template>
+        </el-table-column>
+        <el-table-column prop="name_zh" label="中文名" min-width="120" max-width="180" sortable="custom" show-overflow-tooltip />
+        <el-table-column prop="name_en" label="英文名" min-width="160" max-width="240" show-overflow-tooltip />
+        <el-table-column prop="layer" label="层级" min-width="110" max-width="165">
+          <template #default="{ row }">{{ layerLabels[row.layer] || row.layer }}</template>
+        </el-table-column>
+        <el-table-column prop="status" label="状态" min-width="120" max-width="180" sortable="custom">
+          <template #default="{ row }">
+            <el-tag :type="statusTagType(row.status)" size="small" effect="plain">
+              {{ statusLabels[row.status] || row.status }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="confidence" label="置信度" min-width="90" max-width="135">
+          <template #default="{ row }">
+            <span v-if="row.confidence">{{ confidenceLabels[row.confidence] }}</span>
+            <span v-else class="text-muted">-</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="owner" label="负责人" min-width="100" max-width="150" show-overflow-tooltip />
+        <el-table-column prop="updated_at" label="更新时间" min-width="170" max-width="255" sortable="custom" show-overflow-tooltip>
+          <template #default="{ row }">{{ formatDate(row.updated_at) }}</template>
+        </el-table-column>
+        <el-table-column label="操作" min-width="200" max-width="300" fixed="right">
+          <template #default="{ row }">
+            <router-link :to="`/governance/concepts/${row.id}`" style="text-decoration: none;">
+              <GlassButton variant="link" left-icon="View">查看</GlassButton>
+            </router-link>
+            <GlassButton v-if="row.status === 'pending' && authStore.hasAnyPermission(['governance:write'])"
+              variant="link" left-icon="Plus" @click="handleClaim(row)">
+              认领
+            </GlassButton>
+          </template>
+        </el-table-column>
+      </el-table>
+    </div>
 
     <!-- 分页 -->
     <div class="pagination-wrap">

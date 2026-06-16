@@ -18,31 +18,33 @@
     </div>
 
     <!-- 表格 -->
-    <el-table :data="items" v-loading="loading" stripe>
-      <el-table-column prop="id" label="ID" width="70" />
-      <el-table-column prop="name" label="工序名称" min-width="140" />
-      <el-table-column prop="description" label="描述" min-width="200" show-overflow-tooltip />
-      <el-table-column prop="sort_order" label="排序" width="80" />
-      <el-table-column label="状态" width="80">
-        <template #default="{ row }">
-          <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">
-            {{ row.status === 1 ? '启用' : '禁用' }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column label="创建时间" width="160">
-        <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
-      </el-table-column>
-      <el-table-column label="操作" width="200" fixed="right">
-        <template #default="{ row }">
-          <el-button link type="primary" @click="openForm(row)">编辑</el-button>
-          <el-button link :type="row.status === 1 ? 'warning' : 'success'" @click="toggleStatus(row)">
-            {{ row.status === 1 ? '禁用' : '启用' }}
-          </el-button>
-          <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+    <div class="table-card">
+      <el-table :data="items" v-loading="loading" border class="list-table">
+        <el-table-column prop="id" label="ID" min-width="70" max-width="100" show-overflow-tooltip />
+        <el-table-column prop="name" label="工序名称" min-width="140" max-width="210" show-overflow-tooltip />
+        <el-table-column prop="description" label="描述" min-width="200" max-width="300" show-overflow-tooltip />
+        <el-table-column prop="sort_order" label="排序" min-width="80" max-width="120" />
+        <el-table-column label="状态" min-width="80" max-width="120">
+          <template #default="{ row }">
+            <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small" effect="plain">
+              {{ row.status === 1 ? '启用' : '禁用' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="创建时间" min-width="160" max-width="240">
+          <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
+        </el-table-column>
+        <el-table-column label="操作" min-width="240" max-width="360" fixed="right">
+          <template #default="{ row }">
+            <GlassButton variant="link" left-icon="Edit" @click="openForm(row)">编辑</GlassButton>
+            <GlassButton variant="link" :link-tone="row.status === 1 ? 'warning' : 'success'" left-icon="SwitchButton" @click="toggleStatus(row)">
+              {{ row.status === 1 ? '禁用' : '启用' }}
+            </GlassButton>
+            <GlassButton variant="link" link-tone="danger" left-icon="Delete" @click="handleDelete(row)">删除</GlassButton>
+          </template>
+        </el-table-column>
+      </el-table>
+    </div>
 
     <!-- 分页 -->
     <div class="pagination-wrap">

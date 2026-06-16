@@ -222,4 +222,49 @@ export function assignOpportunity(id, userId) {
   return insightApi.put(`/customer-opportunities/${id}/assign`, null, { params: { user_id: userId }, loadingText: '正在分配...' })
 }
 
+// ── 客户经营雷达 ──────────────────────────────────────────
+export function getRadarFocus(params) {
+  return insightApi.get('/customer-radar/focus', { params, showLoading: false })
+}
+
+export function getRadarThreadCounts(params) {
+  return insightApi.get('/customer-radar/threads/counts', { params, showLoading: false })
+}
+
+export function getRadarActions(params) {
+  return insightApi.get('/customer-radar/actions', { params, showLoading: false })
+}
+
+export function completeRadarAction(id, params) {
+  return insightApi.put(`/customer-radar/actions/${id}/complete`, null, { params, loadingText: '正在更新...' })
+}
+
+export function dismissRadarAction(id, params) {
+  return insightApi.put(`/customer-radar/actions/${id}/dismiss`, null, { params, loadingText: '正在忽略...' })
+}
+
+export function snoozeRadarAction(id, params) {
+  return insightApi.put(`/customer-radar/actions/${id}/snooze`, null, { params, loadingText: '正在延后...' })
+}
+
+export function submitRadarFeedback(id, data) {
+  return insightApi.post(`/customer-radar/actions/${id}/feedback`, data, { loadingText: '正在保存...' })
+}
+
+export function getRadarProfile(id) {
+  return insightApi.get(`/customer-radar/profiles/${id}`, { showLoading: false })
+}
+
+export function getRadarSourceRecords(id, params) {
+  return insightApi.get(`/customer-radar/profiles/${id}/sources`, { params, showLoading: false })
+}
+
+export function addRadarNote(id, data) {
+  return insightApi.post(`/customer-radar/profiles/${id}/notes`, data, { loadingText: '正在保存...' })
+}
+
+export function refreshRadarActions() {
+  return insightApi.post('/customer-radar/actions/refresh', null, { loadingText: '正在刷新推荐...' })
+}
+
 export default insightApi

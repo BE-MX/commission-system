@@ -118,14 +118,15 @@ def import_accio_inquiries(db: Session, payload: dict) -> dict:
             # 策略
             strategy = bg.get("next_action") or seed.get("recommended_strategy")
 
-            # 话术
-            opening_msg = ""  # ACCIO v1 不含话术，后续 AI 生成
-            follow_msg = ""
+            # 话术（ACCIO v1.2+ 直接传，否则后续 AI 生成）
+            opening_msg = bg.get("opening_message", "") or seed.get("opening_message", "")
+            follow_msg = bg.get("follow_up_message", "") or seed.get("follow_up_message", "")
 
             # 关键信号
             key_signals = seed.get("key_signals") or bg.get("key_evidence")
 
-            # source_owner_external_json
+            # 完整背调报告 HTML（ACCIO v1.2+）
+            full_report_html = bg.get("full_report_html", "")
             source_owner_ext = {
                 "provider": "alibaba_icbu",
                 "self_ali_id": str(self_ali_id),
@@ -151,6 +152,12 @@ def import_accio_inquiries(db: Session, payload: dict) -> dict:
                 existing.urgency = urgency
                 existing.latest_message_at = latest_send_time
                 existing.source_owner_external_json = source_owner_ext
+                if full_report_html:
+                    existing.full_report_html = full_report_html
+                if opening_msg:
+                    existing.opening_message_en = opening_msg
+                if follow_msg:
+                    existing.follow_up_message_en = follow_msg
                 if existing.status == "pending":
                     existing.due_at = due_at
                 existing.updated_at = now
@@ -188,6 +195,7 @@ def import_accio_inquiries(db: Session, payload: dict) -> dict:
                     recommended_strategy=strategy,
                     opening_message_en=opening_msg,
                     follow_up_message_en=follow_msg,
+                    full_report_html=full_report_html,
                     status="pending",
                     due_at=due_at,
                     latest_message_at=latest_send_time,
@@ -222,6 +230,16 @@ def import_accio_inquiries(db: Session, payload: dict) -> dict:
     batch.item_count = len(items)
     batch.status = "success" if failed_count == 0 else ("partial_failed" if created_count + updated_count > 0 else "failed")
     db.commit()
+
+    # ── 雷达事件入口：为已创建/更新的机会生成画像事件 ──
+    try:
+        from app.insight.customer_profile_service import ingest_opportunity_event
+        for opp in db.query(CustomerOpportunity).filter(
+            CustomerOpportunity.source_key.in_([item.get("source_key") for item in items if item.get("source_key")])
+        ).all():
+            ingest_opportunity_event(db, opp)
+    except Exception:
+        logger.exception("Radar event ingestion failed after ACCIO import")
 
     return {
         "batch_id": batch.id,
@@ -377,6 +395,14 @@ def update_opportunity_status(db: Session, opp_id: int, new_status: str, note: s
         event_payload={"old_status": old_status, "new_status": new_status, "note": note},
     ))
     db.commit()
+
+    # ── 雷达事件入口 ──
+    try:
+        from app.insight.customer_profile_service import ingest_opportunity_event
+        ingest_opportunity_event(db, opp)
+    except Exception:
+        logger.exception("Radar event ingestion failed after status change")
+
     return opp
 
 
@@ -393,6 +419,14 @@ def add_opportunity_feedback(db: Session, opp_id: int, feedback: str, note: str 
     )
     db.add(event)
     db.commit()
+
+    # ── 雷达事件入口 ──
+    try:
+        from app.insight.customer_profile_service import ingest_opportunity_event
+        ingest_opportunity_event(db, opp)
+    except Exception:
+        logger.exception("Radar event ingestion failed after feedback")
+
     return event
 
 
@@ -411,6 +445,14 @@ def assign_opportunity(db: Session, opp_id: int, user_id: int, admin_user_id: in
         event_payload={"old_owner": old_owner, "new_owner": user_id},
     ))
     db.commit()
+
+    # ── 雷达事件入口 ──
+    try:
+        from app.insight.customer_profile_service import ingest_opportunity_event
+        ingest_opportunity_event(db, opp)
+    except Exception:
+        logger.exception("Radar event ingestion failed after assignment")
+
     return opp
 
 

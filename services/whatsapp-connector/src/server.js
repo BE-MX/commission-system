@@ -110,15 +110,10 @@ app.get('/internal/v1/conversations', asyncHandler(async (req, res) => {
   const client = requireClient(accountUid)
   const chats = await client.getChats()
 
-  const items = chats.slice(0, limit).map(chat => ({
-    conversation_uid: `${accountUid}:${chat.id._serialized}`,
-    chat_id: chat.id._serialized,
-    contact_phone: normalizeContactPhone(chat.id._serialized),
-    contact_name: chat.name || chat.formattedTitle || null,
-    is_group: Boolean(chat.isGroup),
-    last_message_at: chat.timestamp ? new Date(chat.timestamp * 1000).toISOString() : null,
-    last_message_preview: chat.lastMessage?.body || '',
-  }))
+  const items = []
+  for (const chat of chats.slice(0, limit)) {
+    items.push(await mapConversation(chat, accountUid))
+  }
 
   account.last_sync_at = new Date().toISOString()
   saveState()
@@ -143,7 +138,7 @@ app.get('/internal/v1/messages', asyncHandler(async (req, res) => {
       if (cursor && messageTime <= cursor) continue
       if (items.length >= limit) break
       maxTimestamp = Math.max(maxTimestamp, messageTime)
-      items.push(mapMessage(accountUid, chat, message))
+      items.push(await mapMessage(client, account, accountUid, chat, message))
     }
   }
 
@@ -384,21 +379,86 @@ function requireClient(accountUid) {
   return client
 }
 
-function mapMessage(accountUid, chat, message) {
+async function mapConversation(chat, accountUid) {
+  const contactProfile = await resolveChatContactProfile(chat)
+  return {
+    conversation_uid: `${accountUid}:${chat.id._serialized}`,
+    chat_id: chat.id._serialized,
+    contact_phone: contactProfile.phone || normalizeContactPhone(chat.id._serialized),
+    contact_name: contactProfile.name || chat.name || chat.formattedTitle || null,
+    is_group: Boolean(chat.isGroup),
+    last_message_at: chat.timestamp ? new Date(chat.timestamp * 1000).toISOString() : null,
+    last_message_preview: chat.lastMessage?.body || '',
+  }
+}
+
+async function mapMessage(client, account, accountUid, chat, message) {
   const messageId = message.id?._serialized || message.id?.id || `${chat.id._serialized}_${message.timestamp}`
   const sentAt = message.timestamp ? new Date(message.timestamp * 1000).toISOString() : null
   const body = message.body || ''
+  const senderWaId = resolveSenderWaId(client, message)
+  const senderProfile = message.fromMe
+    ? {
+        wa_id: senderWaId,
+        phone: account.phone_number,
+        name: account.display_name || account.phone_number,
+      }
+    : await resolveContactProfile(client, senderWaId)
+
   return {
     message_uid: `${accountUid}:${messageId}`,
     conversation_uid: `${accountUid}:${chat.id._serialized}`,
     external_message_id: messageId,
     direction: message.fromMe ? 'outbound' : 'inbound',
-    sender_phone: normalizeContactPhone(message.author || message.from || ''),
+    sender_wa_id: senderProfile.wa_id || senderWaId,
+    sender_phone: senderProfile.phone || normalizeContactPhone(senderWaId),
+    sender_name: senderProfile.name,
     content_type: message.type || 'text',
     content_text: body,
     content_preview: body.slice(0, 500),
     sent_at: sentAt,
     attachments: message.hasMedia ? [{ mime_type: message.type || null }] : [],
+  }
+}
+
+function resolveSenderWaId(client, message) {
+  if (message.fromMe) {
+    return client.info?.wid?._serialized || client.info?.wid?.user || message.author || message.from || ''
+  }
+  return message.author || message.from || ''
+}
+
+async function resolveChatContactProfile(chat) {
+  try {
+    if (typeof chat.getContact !== 'function') return {}
+    const contact = await chat.getContact()
+    return contactToProfile(contact)
+  } catch {
+    return {}
+  }
+}
+
+async function resolveContactProfile(client, contactId) {
+  if (!contactId) return {}
+  try {
+    const contact = await client.getContactById(contactId)
+    return contactToProfile(contact)
+  } catch {
+    return {
+      wa_id: contactId,
+      phone: normalizeContactPhone(contactId),
+      name: null,
+    }
+  }
+}
+
+function contactToProfile(contact) {
+  if (!contact) return {}
+  const waId = contact.id?._serialized || contact.id?.user || null
+  return {
+    wa_id: waId,
+    phone: normalizeContactPhone(waId || contact.number || ''),
+    name: contact.pushname || contact.name || contact.shortName || contact.verifiedName || null,
   }
 }
 

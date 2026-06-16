@@ -69,7 +69,9 @@ class MessageOut(BaseModel):
     conversation_uid: str | None = None
     external_message_id: str
     direction: str
+    sender_wa_id: str | None = None
     sender_phone: str | None = None
+    sender_name: str | None = None
     content_type: str = "text"
     content_text: str | None = None
     content_preview: str | None = None

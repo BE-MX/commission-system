@@ -47,6 +47,9 @@ from app.insight.dependencies import (
     _require_opportunity_read,
     _require_opportunity_write,
     _require_opportunity_manage,
+    _require_radar_read,
+    _require_radar_write,
+    _require_radar_manage,
     _verify_import_api_key,
     _serialize_source,
 )
@@ -1079,3 +1082,222 @@ def _serialize_opportunity_detail(o) -> dict:
         "evidence_json": o.evidence_json,
     })
     return base
+
+
+# ── 客户经营雷达 ──────────────────────────────────────────
+
+
+@router.get("/customer-radar/focus")
+def radar_daily_focus(
+    action_date: Optional[str] = Query(None, description="日期 YYYY-MM-DD"),
+    thread_group: Optional[str] = Query(None, description="经营线索分组"),
+    _user: dict = Depends(_require_radar_read),
+    db: Session = Depends(get_db),
+):
+    """今日经营重点（按经营线索分组）"""
+    from app.insight.customer_radar_service import get_daily_focus
+    uid = _get_user_id(_user)
+    d = date.fromisoformat(action_date) if action_date else None
+    return _ok(get_daily_focus(db, uid, d, thread_group))
+
+
+@router.get("/customer-radar/threads/counts")
+def radar_thread_counts(
+    action_date: Optional[str] = Query(None, description="日期 YYYY-MM-DD"),
+    _user: dict = Depends(_require_radar_read),
+    db: Session = Depends(get_db),
+):
+    """各线索数量"""
+    from app.insight.customer_radar_service import get_thread_counts
+    uid = _get_user_id(_user)
+    d = date.fromisoformat(action_date) if action_date else None
+    return _ok(get_thread_counts(db, uid, d))
+
+
+@router.get("/customer-radar/actions")
+def radar_actions(
+    action_date: Optional[str] = Query(None, description="日期 YYYY-MM-DD"),
+    thread_group: Optional[str] = Query(None, description="经营线索分组"),
+    action_status: Optional[str] = Query(None, description="行动状态"),
+    _user: dict = Depends(_require_radar_read),
+    db: Session = Depends(get_db),
+):
+    """平铺行动列表"""
+    from app.insight.customer_radar_service import get_daily_focus
+    uid = _get_user_id(_user)
+    d = date.fromisoformat(action_date) if action_date else None
+    focus = get_daily_focus(db, uid, d, thread_group)
+    # 展平
+    all_actions = []
+    for thread in focus.get("threads", []):
+        for action in thread.get("actions", []):
+            if action_status and action.get("action_status") != action_status:
+                continue
+            action["thread_label"] = thread["label"]
+            action["thread_color"] = thread["color"]
+            all_actions.append(action)
+    return _ok({"actions": all_actions, "total": len(all_actions)})
+
+
+@router.put("/customer-radar/actions/{action_id}/complete")
+def radar_complete_action(
+    action_id: int,
+    feedback: Optional[str] = Query(None),
+    note: Optional[str] = Query(None),
+    _user: dict = Depends(_require_radar_write),
+    db: Session = Depends(get_db),
+):
+    """完成行动"""
+    from app.insight.customer_radar_service import complete_action, _serialize_action
+    uid = _get_user_id(_user)
+    action = complete_action(db, action_id, uid, feedback, note)
+    return _ok(_serialize_action(action))
+
+
+@router.put("/customer-radar/actions/{action_id}/dismiss")
+def radar_dismiss_action(
+    action_id: int,
+    note: Optional[str] = Query(None),
+    _user: dict = Depends(_require_radar_write),
+    db: Session = Depends(get_db),
+):
+    """忽略行动"""
+    from app.insight.customer_radar_service import dismiss_action, _serialize_action
+    uid = _get_user_id(_user)
+    action = dismiss_action(db, action_id, uid, note)
+    return _ok(_serialize_action(action))
+
+
+@router.put("/customer-radar/actions/{action_id}/snooze")
+def radar_snooze_action(
+    action_id: int,
+    until: str = Query(..., description="延后到 YYYY-MM-DDTHH:MM"),
+    _user: dict = Depends(_require_radar_write),
+    db: Session = Depends(get_db),
+):
+    """延后行动"""
+    from datetime import datetime
+    from app.insight.customer_radar_service import snooze_action, _serialize_action
+    uid = _get_user_id(_user)
+    until_dt = datetime.fromisoformat(until)
+    action = snooze_action(db, action_id, uid, until_dt)
+    return _ok(_serialize_action(action))
+
+
+@router.post("/customer-radar/actions/{action_id}/feedback")
+def radar_action_feedback(
+    action_id: int,
+    body: dict,
+    _user: dict = Depends(_require_radar_write),
+    db: Session = Depends(get_db),
+):
+    """提交反馈（useful/not_useful）"""
+    from app.insight.customer_radar_service import submit_feedback, _serialize_action
+    uid = _get_user_id(_user)
+    action = submit_feedback(db, action_id, body.get("feedback", ""), body.get("note"), uid)
+    return _ok(_serialize_action(action))
+
+
+@router.get("/customer-radar/profiles/{profile_id}")
+def radar_profile_detail(
+    profile_id: int,
+    _user: dict = Depends(_require_radar_read),
+    db: Session = Depends(get_db),
+):
+    """画像详情 + 最近事件 + 今日行动"""
+    from app.insight.customer_profile_service import get_profile
+    from app.insight.customer_radar_service import _serialize_action
+    from app.insight.models import CustomerAction
+
+    profile = get_profile(db, profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="画像不存在")
+
+    # 权限校验：只能看自己的画像（非 manage 权限时）
+    uid = _get_user_id(_user)
+    if not _has_any_perm(_user, ["customer_radar:manage"]):
+        if profile.owner_user_id != uid:
+            raise HTTPException(status_code=403, detail="无权查看此画像")
+
+    # 最近事件
+    events = [
+        {
+            "id": e.id,
+            "event_type": e.event_type,
+            "event_source": e.event_source,
+            "event_title": e.event_title,
+            "event_summary": e.event_summary,
+            "occurred_at": e.occurred_at.isoformat() if e.occurred_at else None,
+        }
+        for e in (profile.events or [])[:20]
+    ]
+
+    # 今日行动
+    today = date.today()
+    action = db.query(CustomerAction).filter(
+        CustomerAction.profile_id == profile_id,
+        CustomerAction.action_date == today,
+    ).first()
+
+    return _ok({
+        "profile": {
+            "id": profile.id,
+            "customer_name": profile.customer_name,
+            "customer_region": profile.customer_region,
+            "customer_company": profile.customer_company,
+            "customer_external_id": profile.customer_external_id,
+            "profile_tags": profile.profile_tags or [],
+            "profile_judgement": profile.profile_judgement or "",
+            "profile_signals_json": profile.profile_signals_json or [],
+            "priority_score": profile.priority_score,
+            "total_opportunities": profile.total_opportunities,
+            "total_events": profile.total_events,
+            "last_event_at": profile.last_event_at.isoformat() if profile.last_event_at else None,
+            "first_seen_at": profile.first_seen_at.isoformat() if profile.first_seen_at else None,
+            "suggested_message": profile.suggested_message or "",
+            "status": profile.status,
+        },
+        "active_action": _serialize_action(action) if action else None,
+        "recent_events": events,
+    })
+
+
+@router.get("/customer-radar/profiles/{profile_id}/sources")
+def radar_profile_sources(
+    profile_id: int,
+    source_type: Optional[str] = Query(None, description="opportunity/event/note"),
+    _user: dict = Depends(_require_radar_read),
+    db: Session = Depends(get_db),
+):
+    """原始记录（抽屉用）"""
+    from app.insight.customer_source_service import get_source_records
+    return _ok(get_source_records(db, profile_id, source_type))
+
+
+@router.post("/customer-radar/profiles/{profile_id}/notes")
+def radar_add_note(
+    profile_id: int,
+    body: dict,
+    _user: dict = Depends(_require_radar_write),
+    db: Session = Depends(get_db),
+):
+    """添加手动备注"""
+    from app.insight.customer_source_service import add_manual_note
+    uid = _get_user_id(_user)
+    note_text = body.get("note", "").strip()
+    if not note_text:
+        raise HTTPException(status_code=400, detail="备注内容不能为空")
+    evt = add_manual_note(db, profile_id, note_text, uid)
+    return _ok({"id": evt.id, "event_title": evt.event_title}, code=201)
+
+
+@router.post("/customer-radar/actions/refresh")
+def radar_refresh_actions(
+    _user: dict = Depends(_require_radar_write),
+    db: Session = Depends(get_db),
+):
+    """重新生成今日推荐"""
+    from app.insight.customer_radar_service import generate_daily_actions, get_daily_focus
+    uid = _get_user_id(_user)
+    generate_daily_actions(db, uid)
+    return _ok(get_daily_focus(db, uid))

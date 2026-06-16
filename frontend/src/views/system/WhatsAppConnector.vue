@@ -69,6 +69,9 @@
           <el-table-column label="方向" min-width="80" max-width="120">
             <template #default="{ row }">{{ row.direction === 'outbound' ? '发出' : '收到' }}</template>
           </el-table-column>
+          <el-table-column label="发送方" min-width="150" max-width="240" show-overflow-tooltip>
+            <template #default="{ row }">{{ messageSenderText(row) }}</template>
+          </el-table-column>
           <el-table-column label="内容" prop="content_preview" min-width="220" max-width="420" show-overflow-tooltip />
         </el-table>
       </div>
@@ -211,6 +214,10 @@ function statusType(status) {
 
 function formatTime(value) {
   return value ? new Date(value).toLocaleString('zh-CN') : '-'
+}
+
+function messageSenderText(row) {
+  return row.sender_name || row.sender_phone || row.sender_wa_id || '-'
 }
 
 onMounted(loadAccounts)

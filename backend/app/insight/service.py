@@ -82,3 +82,16 @@ from app.insight.customer_opportunity_service import (  # noqa: F401
     list_all_opportunities, list_unassigned_opportunities, get_opportunity_stats,
     update_opportunity_status, add_opportunity_feedback, assign_opportunity,
 )
+
+# 客户经营雷达
+from app.insight.customer_profile_service import (  # noqa: F401
+    get_or_create_profile, get_profile, get_profile_by_opportunity,
+    ingest_opportunity_event, list_profiles,
+)
+from app.insight.customer_radar_service import (  # noqa: F401
+    generate_daily_actions, get_daily_focus, get_thread_counts,
+    complete_action, dismiss_action, snooze_action, submit_feedback,
+)
+from app.insight.customer_source_service import (  # noqa: F401
+    get_source_records, add_manual_note,
+)

@@ -84,44 +84,45 @@
       <div class="co-queue-panel">
         <el-table
           :data="opportunities" v-loading="loading"
+          border class="list-table"
           highlight-current-row
           @current-change="row => selectOpportunity(row?.id)"
           :row-class-name="({ row }) => row.id === selectedId ? 'co-active-row' : ''"
-          size="small" style="width: 100%"
+          style="width: 100%"
         >
-          <el-table-column label="客户信息" min-width="180">
+          <el-table-column label="客户信息" min-width="120" max-width="180">
             <template #default="{ row }">
               <div class="customer-name">
                 {{ row.customer_name }}
-                <el-tag v-if="row.status === 'pending' && row.urgency === 'urgent'" size="small" type="danger">新</el-tag>
+                <el-tag v-if="row.status === 'pending' && row.urgency === 'urgent'" size="small" type="danger" effect="plain">新</el-tag>
               </div>
               <div class="customer-meta">{{ row.customer_region || '-' }}</div>
             </template>
           </el-table-column>
-          <el-table-column label="等级" width="60" align="center">
+          <el-table-column label="等级" min-width="60" max-width="90">
             <template #default="{ row }">
               <span class="co-grade" :class="row.priority_level?.toLowerCase()">{{ row.priority_level }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="紧急度" width="80" align="center">
+          <el-table-column label="紧急度" min-width="80" max-width="120">
             <template #default="{ row }">
               <span class="co-urgency" :class="row.urgency">{{ urgencyLabel(row.urgency) }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="截止" width="120">
+          <el-table-column label="截止" min-width="120" max-width="180" show-overflow-tooltip>
             <template #default="{ row }">
               <span class="co-due" :class="{ danger: isOverdue(row) }">{{ formatDue(row.due_at) }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="状态" width="90" align="center">
+          <el-table-column label="状态" min-width="90" max-width="135">
             <template #default="{ row }">
-              <el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
+              <el-tag :type="statusTagType(row.status)" size="small" effect="plain">{{ statusLabel(row.status) }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="关键信号" min-width="140">
+          <el-table-column label="关键信号" min-width="140" max-width="210">
             <template #default="{ row }">
               <div class="co-tags">
-                <el-tag v-for="t in (row.key_signals_json || []).slice(0, 3)" :key="t" size="small" type="info">{{ t }}</el-tag>
+                <el-tag v-for="t in (row.key_signals_json || []).slice(0, 3)" :key="t" size="small" type="info" effect="plain">{{ t }}</el-tag>
               </div>
             </template>
           </el-table-column>
@@ -149,40 +150,42 @@
           </div>
 
           <div class="detail-scroll">
-            <!-- 为什么值得跟 -->
+            <!-- ① AI 结论 -->
             <div class="detail-section">
-              <div class="section-title"><el-icon><CircleCheck /></el-icon> 为什么值得回复</div>
-              <p class="section-text">{{ selectedOpp.summary || '暂无摘要' }}</p>
+              <div class="section-title"><el-icon><Promotion /></el-icon> AI 结论</div>
+              <ul class="verdict-list" v-if="selectedOpp.key_signals_json?.length">
+                <li v-for="(v, i) in selectedOpp.key_signals_json.slice(0, 3)" :key="i">
+                  <el-icon class="vi"><CircleCheck /></el-icon>
+                  <span>{{ v }}</span>
+                </li>
+              </ul>
+              <p v-else class="section-text">{{ selectedOpp.summary || '暂无结论' }}</p>
             </div>
 
-            <!-- 背调结论 -->
-            <div class="detail-section" v-if="selectedOpp.background_check_json">
-              <div class="section-title"><el-icon><Search /></el-icon> 背调结论</div>
-              <div class="info-grid">
-                <div class="info-item" v-for="(val, key) in selectedOpp.background_check_json" :key="key">
-                  <template v-if="typeof val === 'string' || typeof val === 'number'">
-                    <div class="info-label">{{ formatBgKey(key) }}</div>
-                    <div class="info-value">{{ val }}</div>
-                  </template>
+            <!-- ② 关键指标 4格 -->
+            <div class="detail-section">
+              <div class="section-title"><el-icon><DataLine /></el-icon> 关键指标</div>
+              <div class="kpi-row">
+                <div class="kpi-card" :class="{ accent: selectedOpp.priority_level === 'A' }">
+                  <div class="kpi-label">LEAD 评级</div>
+                  <div class="kpi-value" :class="{ gold: selectedOpp.priority_level === 'A' }">{{ selectedOpp.priority_level || '-' }}</div>
+                </div>
+                <div class="kpi-card" :class="{ accent: selectedOpp.confidence_score >= 80 }">
+                  <div class="kpi-label">置信度</div>
+                  <div class="kpi-value" :class="{ gold: selectedOpp.confidence_score >= 80 }">{{ selectedOpp.confidence_score || 0 }}%</div>
+                </div>
+                <div class="kpi-card">
+                  <div class="kpi-label">采购能力</div>
+                  <div class="kpi-value">{{ selectedOpp.background_check_json?.purchase_capacity || '待确认' }}</div>
+                </div>
+                <div class="kpi-card">
+                  <div class="kpi-label">建议跟进</div>
+                  <div class="kpi-value" :class="{ green: selectedOpp.due_at && !isOverdue(selectedOpp) }">{{ formatDue(selectedOpp.due_at) }}</div>
                 </div>
               </div>
-              <button class="evidence-toggle" @click="showEvidence = !showEvidence">
-                <el-icon><QuestionFilled /></el-icon> AI 为什么给这个评级？
-              </button>
-              <div class="evidence-box" :class="{ open: showEvidence }" v-if="selectedOpp.evidence_json">
-                <template v-for="(val, key) in selectedOpp.evidence_json" :key="key">
-                  <div><strong>{{ formatBgKey(key) }}：</strong>{{ val }}</div>
-                </template>
-              </div>
             </div>
 
-            <!-- AI 推荐策略 -->
-            <div class="detail-section" v-if="selectedOpp.recommended_strategy">
-              <div class="section-title"><el-icon><Guide /></el-icon> AI 推荐策略</div>
-              <p class="section-text">{{ selectedOpp.recommended_strategy }}</p>
-            </div>
-
-            <!-- 推荐话术 -->
+            <!-- ③ 推荐话术（上移） -->
             <div class="detail-section" v-if="selectedOpp.opening_message_en">
               <div class="section-title"><el-icon><ChatDotRound /></el-icon> 推荐回复话术</div>
               <div class="message-box">
@@ -211,6 +214,39 @@
                     size="small" @click="handleFeedbackReason(reason)"
                   >{{ reason }}</el-button>
                 </div>
+              </div>
+            </div>
+
+            <!-- ④ AI 推荐策略 -->
+            <div class="detail-section" v-if="selectedOpp.recommended_strategy">
+              <div class="section-title"><el-icon><Guide /></el-icon> AI 推荐策略</div>
+              <p class="section-text">{{ selectedOpp.recommended_strategy }}</p>
+            </div>
+
+            <!-- ⑤ 完整背调报告（折叠） -->
+            <div class="detail-section">
+              <button class="full-report-toggle" :class="{ open: showFullReport }" @click="showFullReport = !showFullReport">
+                <span>📄 查看完整背调报告</span>
+                <el-icon class="toggle-arrow"><ArrowDown /></el-icon>
+              </button>
+              <div class="full-report-body" :class="{ open: showFullReport }">
+                <template v-if="selectedOpp.full_report_html" v-html="selectedOpp.full_report_html" />
+                <template v-else>
+                  <h4>背调信息</h4>
+                  <table v-if="selectedOpp.background_check_json">
+                    <tr v-for="(val, key) in filteredBackground" :key="key">
+                      <td>{{ formatBgKey(key) }}</td>
+                      <td>{{ val }}</td>
+                    </tr>
+                  </table>
+                  <h4 v-if="selectedOpp.evidence_json">AI 评分依据</h4>
+                  <template v-if="selectedOpp.evidence_json">
+                    <div v-for="(val, key) in selectedOpp.evidence_json" :key="key">
+                      <strong>{{ formatBgKey(key) }}：</strong>{{ val }}
+                    </div>
+                  </template>
+                  <p v-else style="color: var(--text-muted);">暂无完整背调报告</p>
+                </template>
               </div>
             </div>
           </div>
@@ -242,8 +278,8 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
-import { AlarmClock, Medal, Timer, Phone, CircleCheck, Search, Guide, ChatDotRound, Top, Bottom, Close, User, QuestionFilled } from '@element-plus/icons-vue'
+import { ref, computed, onMounted } from 'vue'
+import { AlarmClock, Medal, Timer, Phone, CircleCheck, Search, Guide, ChatDotRound, Top, Bottom, Close, User, QuestionFilled, Promotion, DataLine, ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useCustomerOpportunity } from './composables/useCustomerOpportunity'
 
@@ -280,8 +316,18 @@ const sourceOptions = [
 
 // ── 格式化 helpers ──────────────────────────────────────
 const showEvidence = ref(false)
+const showFullReport = ref(false)
 const feedbackReasonVisible = ref(false)
 const feedbackReasons = ['客户类型判断有误', '产品方向不匹配', '不归我负责', '话术风格不合适']
+
+const filteredBackground = computed(() => {
+  if (!selectedOpp.value?.background_check_json) return {}
+  const result = {}
+  for (const [k, v] of Object.entries(selectedOpp.value.background_check_json)) {
+    if (typeof v === 'string' || typeof v === 'number') result[k] = v
+  }
+  return result
+})
 
 async function handleFeedbackReason(reason) {
   await submitFeedback('not_useful', reason)
@@ -369,7 +415,7 @@ async function copyText(text) {
 .co-segments { display: inline-flex; gap: 4px; }
 
 /* 三栏 */
-.co-workspace { display: grid; grid-template-columns: 190px 1fr 390px; gap: 12px; flex: 1; min-height: 0; }
+.co-workspace { display: grid; grid-template-columns: 190px 1fr 480px; gap: 12px; flex: 1; min-height: 0; }
 
 /* 左: 筛选 */
 .co-filter-panel {
@@ -428,9 +474,55 @@ async function copyText(text) {
 .section-title { display: flex; align-items: center; gap: 7px; font-weight: 800; font-size: 13px; margin-bottom: 8px; color: var(--text-primary); }
 .section-title .el-icon { color: var(--color-primary); }
 .section-text { color: var(--text-secondary); line-height: 1.6; margin: 0; font-size: 13px; }
-.info-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
-.info-label { color: var(--text-muted); font-size: 11px; }
-.info-value { color: var(--text-secondary); font-weight: 600; font-size: 13px; }
+
+/* AI 结论 */
+.verdict-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+.verdict-list li {
+  display: flex; align-items: flex-start; gap: 9px;
+  background: linear-gradient(135deg, #fffbf0 0%, #fff8e8 100%);
+  border: 1px solid #f0d8a8; border-radius: 8px; padding: 9px 12px;
+  font-size: 13px; color: var(--text-primary); font-weight: 500; line-height: 1.5;
+}
+.verdict-list li .vi { color: var(--color-primary); flex-shrink: 0; margin-top: 1px; }
+
+/* KPI 4格 */
+.kpi-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.kpi-card {
+  background: var(--toolbar-bg); border: 1px solid var(--border-color);
+  border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 3px;
+}
+.kpi-card.accent {
+  background: linear-gradient(135deg, #fffbf0 0%, #fff5e0 100%);
+  border-color: #f0d8a8;
+}
+.kpi-label { font-size: 11px; color: var(--text-muted); font-weight: 600; letter-spacing: 0.05em; }
+.kpi-value { font-size: 15px; font-weight: 700; color: var(--text-primary); }
+.kpi-value.gold { color: var(--color-primary); }
+.kpi-value.green { color: var(--el-color-success); }
+
+/* 完整背调折叠 */
+.full-report-toggle {
+  width: 100%; padding: 9px 14px; background: var(--toolbar-bg);
+  border: 1px dashed var(--border-color); border-radius: 8px; cursor: pointer;
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 12px; color: var(--text-secondary); font-weight: 600;
+}
+.full-report-toggle:hover { background: #f5f7ff; border-color: #c5cce0; }
+.full-report-toggle .toggle-arrow { transition: transform 0.2s; }
+.full-report-toggle.open .toggle-arrow { transform: rotate(180deg); }
+.full-report-body {
+  display: none; margin-top: 8px; background: var(--toolbar-bg);
+  border: 1px solid var(--border-color); border-radius: 8px; padding: 14px;
+  font-size: 12px; color: var(--text-secondary); line-height: 1.7;
+}
+.full-report-body.open { display: block; }
+.full-report-body :deep(h4) { font-size: 12px; font-weight: 700; color: var(--text-primary); margin: 12px 0 5px; }
+.full-report-body :deep(h4:first-child) { margin-top: 0; }
+.full-report-body :deep(table) { width: 100%; border-collapse: collapse; font-size: 12px; }
+.full-report-body :deep(td) { padding: 4px 8px; border-bottom: 1px solid #eef0f8; vertical-align: top; }
+.full-report-body :deep(td:first-child) { font-weight: 600; color: var(--text-primary); width: 40%; white-space: nowrap; }
+.full-report-body :deep(ul) { margin: 4px 0 0 0; padding-left: 16px; }
+.full-report-body :deep(li) { margin-bottom: 3px; }
 
 /* 话术 */
 .message-box { border: 1px solid #f0d8a8; border-radius: 8px; overflow: hidden; margin-top: 8px; background: #fffdf9; }
@@ -453,19 +545,6 @@ async function copyText(text) {
 .detail-actions-edge { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
 .detail-actions-edge .el-button { justify-content: center; color: var(--text-muted); border-style: dashed; }
 .detail-actions-edge .el-button:hover { color: var(--text-secondary); border-style: solid; }
-
-/* 背调折叠 */
-.evidence-toggle {
-  width: 100%; height: 32px; border: 1px dashed var(--border-color);
-  background: var(--toolbar-bg); color: var(--text-secondary);
-  border-radius: 8px; cursor: pointer; display: flex; align-items: center;
-  justify-content: center; gap: 6px; margin-top: 8px; font-size: 12px;
-}
-.evidence-toggle:hover { color: var(--text-primary); border-color: var(--color-primary); }
-.evidence-box {
-  margin-top: 8px; background: var(--toolbar-bg); border-radius: 8px;
-  padding: 10px; color: var(--text-secondary); line-height: 1.55; font-size: 12px;
-}
 
 /* 反馈原因 */
 .feedback-reasons {

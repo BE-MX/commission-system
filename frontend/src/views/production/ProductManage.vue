@@ -23,31 +23,33 @@
     </div>
 
     <!-- 表格 -->
-    <el-table :data="items" v-loading="loading" stripe @selection-change="onSelectionChange">
-      <el-table-column type="selection" width="40" />
-      <el-table-column prop="product_no" label="产品编号" width="120" />
-      <el-table-column prop="name" label="产品名称" min-width="200" show-overflow-tooltip />
-      <el-table-column prop="model" label="型号" width="80" />
-      <el-table-column label="工序路线" width="180">
-        <template #default="{ row }">
-          <template v-if="row.process_route">
-            <span>{{ row.process_route.route_name }}</span>
-            <el-button link type="primary" size="small" @click="openBindDialog(row)">✏</el-button>
+    <div class="table-card">
+      <el-table :data="items" v-loading="loading" border class="list-table" @selection-change="onSelectionChange">
+        <el-table-column type="selection" width="40" />
+        <el-table-column prop="product_no" label="产品编号" min-width="140" max-width="210" show-overflow-tooltip />
+        <el-table-column prop="name" label="产品名称" min-width="200" max-width="300" show-overflow-tooltip />
+        <el-table-column prop="model" label="型号" min-width="100" max-width="150" show-overflow-tooltip />
+        <el-table-column label="工序路线" min-width="200" max-width="300">
+          <template #default="{ row }">
+            <template v-if="row.process_route">
+              <span>{{ row.process_route.route_name }}</span>
+              <GlassButton variant="link" left-icon="Edit" @click="openBindDialog(row)">编辑</GlassButton>
+            </template>
+            <template v-else>
+              <span style="color: #909399">—</span>
+              <GlassButton variant="link" left-icon="Connection" @click="openBindDialog(row)">绑定</GlassButton>
+            </template>
           </template>
-          <template v-else>
-            <span style="color: #909399">—</span>
-            <el-button link type="primary" size="small" @click="openBindDialog(row)">绑定</el-button>
+        </el-table-column>
+        <el-table-column label="状态" min-width="80" max-width="120">
+          <template #default="{ row }">
+            <el-tag :type="row.disable_flag === 0 ? 'success' : 'info'" size="small" effect="plain">
+              {{ row.disable_flag === 0 ? '正常' : '禁用' }}
+            </el-tag>
           </template>
-        </template>
-      </el-table-column>
-      <el-table-column label="状态" width="70">
-        <template #default="{ row }">
-          <el-tag :type="row.disable_flag === 0 ? 'success' : 'info'" size="small">
-            {{ row.disable_flag === 0 ? '正常' : '禁用' }}
-          </el-tag>
-        </template>
-      </el-table-column>
-    </el-table>
+        </el-table-column>
+      </el-table>
+    </div>
 
     <div class="pagination-wrap">
       <el-pagination background layout="total, prev, pager, next" :total="total" :page-size="pageSize" v-model:current-page="page" @current-change="loadData" />
