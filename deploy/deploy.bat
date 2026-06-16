@@ -11,6 +11,7 @@ REM ============================================================
 set "INSTALL_DIR=D:\commission-system"
 set "SERVICE_NAME=CommissionSystem"
 set "CONNECTOR_SERVICE_NAME=WhatsAppConnector"
+if not defined CONNECTOR_SERVICE_NAME set "CONNECTOR_SERVICE_NAME=WhatsAppConnector"
 set "CLOUD_SERVER=root@119.28.107.92"
 set "CLOUD_DIST=/var/www/ark/dist"
 
@@ -191,7 +192,7 @@ goto :eof
 REM ---------- [6/6] Restart services ----------
 echo [6/6] Restart services...
 call :restart_nssm_service "%SERVICE_NAME%" "Ark backend"
-call :restart_nssm_service "%CONNECTOR_SERVICE_NAME%" "WhatsApp connector"
+call :restart_nssm_service "WhatsAppConnector" "WhatsApp connector"
 echo      OK
 echo.
 
@@ -202,6 +203,10 @@ echo.
 goto :done
 
 :restart_nssm_service
+if "%~1"=="" (
+    echo [ERROR] Service name is empty for %~2
+    goto :error
+)
 echo      Restarting %~2 ^(%~1^)...
 nssm restart "%~1"
 if errorlevel 1 (
