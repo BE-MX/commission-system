@@ -5,7 +5,7 @@ title LeShine Ark Platform - Sync
 REM ============================================================
 REM  LeShine Ark Platform - Daily Update Script
 REM  Run on server after each git push from dev machine
-REM  [4/6] and [5/6] auto-skip if frontend has no changes
+REM  [5/7] and [6/7] auto-skip if frontend has no changes
 REM ============================================================
 
 set "INSTALL_DIR=D:\commission-system"
@@ -65,8 +65,25 @@ if errorlevel 1 (
 echo      OK
 echo.
 
-REM ---------- [3/6] Database migration ----------
-echo [3/6] Database migration...
+REM ---------- [3/7] Connector dependencies ----------
+echo [3/7] Connector dependencies...
+cd /d "%INSTALL_DIR%\services\whatsapp-connector"
+call npm install --silent
+if errorlevel 1 (
+    echo [ERROR] connector npm install failed
+    goto :error
+)
+call npm run check
+if errorlevel 1 (
+    echo [ERROR] connector syntax check failed
+    goto :error
+)
+echo      OK
+echo.
+
+REM ---------- [4/7] Database migration ----------
+echo [4/7] Database migration...
+cd /d "%INSTALL_DIR%\backend"
 .\.venv\Scripts\python.exe scripts\show_db_config.py
 .\.venv\Scripts\python.exe -m alembic upgrade head
 if errorlevel 1 (
@@ -102,15 +119,15 @@ if not errorlevel 1 (
 )
 
 if "%FRONTEND_CHANGED%"=="0" (
-    echo [4/6] Build frontend... SKIPPED ^(no frontend changes detected^)
+    echo [5/7] Build frontend... SKIPPED ^(no frontend changes detected^)
     echo.
-    echo [5/6] Sync dist to cloud... SKIPPED
+    echo [6/7] Sync dist to cloud... SKIPPED
     echo.
     goto :restart_service
 )
 
-REM ---------- [4/6] Build frontend ----------
-echo [4/6] Build frontend... ^(changes detected^)
+REM ---------- [5/7] Build frontend ----------
+echo [5/7] Build frontend... ^(changes detected^)
 cd /d "%INSTALL_DIR%\frontend"
 call npm install --silent
 if errorlevel 1 (
@@ -125,8 +142,8 @@ if errorlevel 1 (
 echo      OK
 echo.
 
-REM ---------- [5/6] Sync dist to cloud ----------
-echo [5/6] Sync frontend to cloud server...
+REM ---------- [6/7] Sync dist to cloud ----------
+echo [6/7] Sync frontend to cloud server...
 cd /d "%INSTALL_DIR%\frontend"
 
 REM 优先用 Git Bash 自带的 rsync（增量同步，只传变化的文件）
@@ -200,8 +217,8 @@ if errorlevel 1 (
 goto :eof
 
 :restart_service
-REM ---------- [6/6] Restart services ----------
-echo [6/6] Restart services...
+REM ---------- [7/7] Restart services ----------
+echo [7/7] Restart services...
 call :restart_nssm_service "%SERVICE_NAME%" "Ark backend"
 call :restart_nssm_service "WhatsAppConnector" "WhatsApp connector"
 echo      OK
@@ -218,6 +235,7 @@ if "%~1"=="" (
     echo [ERROR] Service name is empty for %~2
     goto :error
 )
+set "SERVICE_STATUS="
 echo      Restarting %~2 ^(%~1^)...
 "%NSSM_EXE%" restart "%~1"
 if errorlevel 1 (
@@ -226,9 +244,20 @@ if errorlevel 1 (
     timeout /t 2 /nobreak >nul
     "%NSSM_EXE%" start "%~1"
     if errorlevel 1 (
-        echo [ERROR] Service start failed: %~1
-        goto :error
+        echo      [WARNING] Start failed, trying continue...
+        "%NSSM_EXE%" continue "%~1"
+        if errorlevel 1 (
+            echo [ERROR] Service start failed: %~1
+            "%NSSM_EXE%" status "%~1"
+            goto :error
+        )
     )
+)
+for /f "delims=" %%S in ('"%NSSM_EXE%" status "%~1" 2^>nul') do set "SERVICE_STATUS=%%S"
+echo      Status: !SERVICE_STATUS!
+if /I not "!SERVICE_STATUS!"=="SERVICE_RUNNING" (
+    echo [ERROR] Service is not running: %~1 ^(!SERVICE_STATUS!^)
+    goto :error
 )
 goto :eof
 
