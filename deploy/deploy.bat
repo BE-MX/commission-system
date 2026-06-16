@@ -12,6 +12,7 @@ set "INSTALL_DIR=D:\commission-system"
 set "SERVICE_NAME=CommissionSystem"
 set "CONNECTOR_SERVICE_NAME=WhatsAppConnector"
 if not defined CONNECTOR_SERVICE_NAME set "CONNECTOR_SERVICE_NAME=WhatsAppConnector"
+set "NSSM_EXE=%USERPROFILE%\AppData\Local\Microsoft\WinGet\Links\nssm.exe"
 set "CLOUD_SERVER=root@119.28.107.92"
 set "CLOUD_DIST=/var/www/ark/dist"
 
@@ -24,6 +25,16 @@ echo.
 REM ---------- Check directory ----------
 if not exist "%INSTALL_DIR%\.git" (
     echo [ERROR] %INSTALL_DIR% is not a Git repo, run setup-server.bat first
+    goto :error
+)
+if not exist "%NSSM_EXE%" (
+    for /f "delims=" %%P in ('where nssm.exe 2^>nul') do (
+        if not defined NSSM_EXE_FOUND set "NSSM_EXE_FOUND=%%P"
+    )
+    if defined NSSM_EXE_FOUND set "NSSM_EXE=!NSSM_EXE_FOUND!"
+)
+if not exist "%NSSM_EXE%" (
+    echo [ERROR] nssm.exe not found. Install NSSM or update NSSM_EXE in deploy.bat
     goto :error
 )
 
@@ -208,12 +219,12 @@ if "%~1"=="" (
     goto :error
 )
 echo      Restarting %~2 ^(%~1^)...
-nssm restart "%~1"
+"%NSSM_EXE%" restart "%~1"
 if errorlevel 1 (
     echo      [WARNING] Restart failed, trying stop + start...
-    nssm stop "%~1"
+    "%NSSM_EXE%" stop "%~1"
     timeout /t 2 /nobreak >nul
-    nssm start "%~1"
+    "%NSSM_EXE%" start "%~1"
     if errorlevel 1 (
         echo [ERROR] Service start failed: %~1
         goto :error
