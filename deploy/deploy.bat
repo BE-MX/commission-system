@@ -54,7 +54,8 @@ echo.
 
 REM ---------- [3/6] Database migration ----------
 echo [3/6] Database migration...
-alembic upgrade head
+.\.venv\Scripts\python.exe scripts\show_db_config.py
+.\.venv\Scripts\python.exe -m alembic upgrade head
 if errorlevel 1 (
     echo [ERROR] alembic migration failed
     goto :error

@@ -139,13 +139,14 @@ class WhatsAppAttachment(Base):
 
 
 class WhatsAppPullCursor(Base):
-    """Incremental cursor per account/resource."""
+    """Incremental cursor per account/resource/scope."""
 
     __tablename__ = "ark_whatsapp_pull_cursors"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     account_uid = Column(String(80), nullable=False)
     resource = Column(String(40), nullable=False)
+    scope_uid = Column(String(160), nullable=False, default="global")
     cursor_value = Column(String(500), nullable=True)
     last_pulled_at = Column(DateTime, nullable=True)
     last_error = Column(Text, nullable=True)
@@ -153,7 +154,7 @@ class WhatsAppPullCursor(Base):
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
 
     __table_args__ = (
-        UniqueConstraint("account_uid", "resource", name="uk_wa_cursor_account_resource"),
+        UniqueConstraint("account_uid", "resource", "scope_uid", name="uk_wa_cursor_account_resource_scope"),
     )
 
 

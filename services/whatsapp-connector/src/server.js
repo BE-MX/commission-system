@@ -123,10 +123,11 @@ app.get('/internal/v1/conversations', asyncHandler(async (req, res) => {
 app.get('/internal/v1/messages', asyncHandler(async (req, res) => {
   const accountUid = String(req.query.account_uid || '')
   const cursor = Number(req.query.cursor || 0)
+  const chatId = String(req.query.chat_id || '')
   const limit = clampLimit(req.query.limit, 100)
   const account = requireAccount(accountUid)
   const client = requireClient(accountUid)
-  const chats = await client.getChats()
+  const chats = chatId ? [await resolveChatById(client, chatId)] : await client.getChats()
   const items = []
   let maxTimestamp = cursor
 
@@ -450,6 +451,26 @@ async function resolveContactProfile(client, contactId) {
       name: null,
     }
   }
+}
+
+async function resolveChatById(client, chatId) {
+  if (typeof client.getChatById === 'function') {
+    try {
+      const chat = await client.getChatById(chatId)
+      if (chat) return chat
+    } catch {
+      // Fall back to getChats because whatsapp-web.js versions differ here.
+    }
+  }
+
+  const chats = await client.getChats()
+  const chat = chats.find(item => item.id?._serialized === chatId)
+  if (!chat) {
+    const error = new Error('chat not found')
+    error.statusCode = 404
+    throw error
+  }
+  return chat
 }
 
 function contactToProfile(contact) {

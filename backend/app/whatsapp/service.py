@@ -173,14 +173,23 @@ def revoke_account(db: Session, account_uid: str, current_user: dict) -> WhatsAp
     return account
 
 
-def _get_cursor(db: Session, account_uid: str, resource: str) -> WhatsAppPullCursor:
+def _get_cursor(
+    db: Session,
+    account_uid: str,
+    resource: str,
+    scope_uid: str = "global",
+) -> WhatsAppPullCursor:
     cursor = (
         db.query(WhatsAppPullCursor)
-        .filter(WhatsAppPullCursor.account_uid == account_uid, WhatsAppPullCursor.resource == resource)
+        .filter(
+            WhatsAppPullCursor.account_uid == account_uid,
+            WhatsAppPullCursor.resource == resource,
+            WhatsAppPullCursor.scope_uid == scope_uid,
+        )
         .first()
     )
     if not cursor:
-        cursor = WhatsAppPullCursor(account_uid=account_uid, resource=resource)
+        cursor = WhatsAppPullCursor(account_uid=account_uid, resource=resource, scope_uid=scope_uid)
         db.add(cursor)
     return cursor
 
@@ -248,32 +257,17 @@ def _upsert_message(db: Session, account_uid: str, payload: dict[str, Any]) -> W
     return msg
 
 
-def _pull_resource_for_account(
-    db: Session,
-    account: WhatsAppAccount,
-    resource: str,
-    limit: int,
-) -> tuple[int, str | None]:
-    if resource not in {"conversations", "messages"}:
-        raise ValueError("unsupported whatsapp pull resource")
-
+def _pull_conversations_for_account(db: Session, account: WhatsAppAccount, limit: int) -> tuple[int, str | None]:
     account_uid = account.account_uid
-    cursor = _get_cursor(db, account_uid, resource)
+    cursor = _get_cursor(db, account_uid, "conversations")
     client = WhatsAppConnectorClient()
-    payload = (
-        client.pull_conversations(account_uid, cursor.cursor_value, limit)
-        if resource == "conversations"
-        else client.pull_messages(account_uid, cursor.cursor_value, limit)
-    )
+    payload = client.pull_conversations(account_uid, cursor.cursor_value, limit)
 
     items = payload.get("items") if isinstance(payload.get("items"), list) else []
     for item in items:
         if not isinstance(item, dict):
             continue
-        if resource == "conversations":
-            _upsert_conversation(db, account_uid, item)
-        else:
-            _upsert_message(db, account_uid, item)
+        _upsert_conversation(db, account_uid, item)
 
     cursor.cursor_value = payload.get("next_cursor")
     cursor.last_pulled_at = datetime.utcnow()
@@ -281,8 +275,93 @@ def _pull_resource_for_account(
     account.last_sync_at = datetime.utcnow()
     account.status = "active"
     account.last_error = None
-    _audit(db, action=f"pull_{resource}", result="success", ark_user_id=account.ark_user_id, account_uid=account_uid, detail=f"pulled={len(items)}")
+    _audit(db, action="pull_conversations", result="success", ark_user_id=account.ark_user_id, account_uid=account_uid, detail=f"pulled={len(items)}")
     return len(items), cursor.cursor_value
+
+
+def _pull_messages_for_account(
+    db: Session,
+    account: WhatsAppAccount,
+    per_chat_limit: int,
+    conversation_limit: int | None = None,
+) -> tuple[int, int, int]:
+    account_uid = account.account_uid
+    per_chat_limit = max(1, min(int(per_chat_limit or 100), 500))
+    conversation_limit = max(1, min(int(conversation_limit or 100), 500))
+    conversations = (
+        db.query(WhatsAppConversation)
+        .filter(WhatsAppConversation.account_uid == account_uid)
+        .order_by(desc(WhatsAppConversation.last_message_at), desc(WhatsAppConversation.id))
+        .limit(conversation_limit)
+        .all()
+    )
+    if not conversations:
+        return 0, 0, 0
+
+    client = WhatsAppConnectorClient()
+    total = 0
+    synced_conversations = 0
+    errors = 0
+    first_error: Exception | None = None
+
+    for conversation in conversations:
+        cursor = _get_cursor(db, account_uid, "messages", conversation.conversation_uid)
+        try:
+            payload = client.pull_messages(
+                account_uid,
+                cursor.cursor_value,
+                per_chat_limit,
+                chat_id=conversation.chat_id,
+            )
+            items = payload.get("items") if isinstance(payload.get("items"), list) else []
+            latest_sent_at = account.last_message_at
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                msg = _upsert_message(db, account_uid, item)
+                if msg.sent_at and (latest_sent_at is None or msg.sent_at > latest_sent_at):
+                    latest_sent_at = msg.sent_at
+
+            cursor.cursor_value = payload.get("next_cursor") or cursor.cursor_value
+            cursor.last_pulled_at = datetime.utcnow()
+            cursor.last_error = None
+            account.last_message_at = latest_sent_at
+            total += len(items)
+            synced_conversations += 1
+        except Exception as exc:
+            errors += 1
+            first_error = first_error or exc
+            cursor.last_pulled_at = datetime.utcnow()
+            cursor.last_error = str(exc)[:1000]
+
+    if synced_conversations == 0 and first_error:
+        raise first_error
+
+    account.last_sync_at = datetime.utcnow()
+    account.status = "active"
+    account.last_error = None
+    detail = f"pulled={total},conversations={synced_conversations},errors={errors}"
+    _audit(db, action="pull_messages", result="success" if errors == 0 else "partial", ark_user_id=account.ark_user_id, account_uid=account_uid, detail=detail)
+    return total, synced_conversations, errors
+
+
+def _pull_resource_for_account(
+    db: Session,
+    account: WhatsAppAccount,
+    resource: str,
+    limit: int,
+) -> tuple[int, str | None]:
+    if resource == "conversations":
+        return _pull_conversations_for_account(db, account, limit)
+    if resource == "messages":
+        count, _synced_conversations, _errors = _pull_messages_for_account(
+            db,
+            account,
+            per_chat_limit=limit,
+            conversation_limit=limit,
+        )
+        return count, None
+    raise ValueError("unsupported whatsapp pull resource")
 
 
 def pull_resource(db: Session, account_uid: str, resource: str, limit: int, current_user: dict) -> tuple[int, str | None]:
@@ -290,8 +369,13 @@ def pull_resource(db: Session, account_uid: str, resource: str, limit: int, curr
     return _pull_resource_for_account(db, account, resource, limit)
 
 
-def auto_sync_accounts(db: Session, limit: int = 100) -> dict[str, int]:
-    limit = max(1, min(int(limit or 100), 500))
+def auto_sync_accounts(
+    db: Session,
+    conversation_limit: int = 100,
+    message_limit_per_chat: int = 100,
+) -> dict[str, int]:
+    conversation_limit = max(1, min(int(conversation_limit or 100), 500))
+    message_limit_per_chat = max(1, min(int(message_limit_per_chat or 100), 500))
     accounts = (
         db.query(WhatsAppAccount)
         .filter(WhatsAppAccount.status == "active")
@@ -304,23 +388,32 @@ def auto_sync_accounts(db: Session, limit: int = 100) -> dict[str, int]:
         "error": 0,
         "conversations": 0,
         "messages": 0,
+        "message_conversations": 0,
+        "message_errors": 0,
     }
 
     for account in accounts:
         account_uid = account.account_uid
         try:
-            conversation_count, _ = _pull_resource_for_account(db, account, "conversations", limit)
-            message_count, _ = _pull_resource_for_account(db, account, "messages", limit)
+            conversation_count, _ = _pull_conversations_for_account(db, account, conversation_limit)
+            message_count, message_conversations, message_errors = _pull_messages_for_account(
+                db,
+                account,
+                per_chat_limit=message_limit_per_chat,
+                conversation_limit=conversation_limit,
+            )
             stats["conversations"] += conversation_count
             stats["messages"] += message_count
+            stats["message_conversations"] += message_conversations
+            stats["message_errors"] += message_errors
             stats["ok"] += 1
             _audit(
                 db,
                 action="auto_sync",
-                result="success",
+                result="success" if message_errors == 0 else "partial",
                 ark_user_id=account.ark_user_id,
                 account_uid=account_uid,
-                detail=f"conversations={conversation_count},messages={message_count}",
+                detail=f"conversations={conversation_count},message_conversations={message_conversations},messages={message_count},message_errors={message_errors}",
             )
             db.commit()
         except Exception as exc:

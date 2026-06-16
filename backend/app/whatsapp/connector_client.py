@@ -67,8 +67,16 @@ class WhatsAppConnectorClient:
             params["cursor"] = cursor
         return self._request("GET", "/internal/v1/conversations", params=params)
 
-    def pull_messages(self, account_uid: str, cursor: str | None, limit: int) -> dict[str, Any]:
+    def pull_messages(
+        self,
+        account_uid: str,
+        cursor: str | None,
+        limit: int,
+        chat_id: str | None = None,
+    ) -> dict[str, Any]:
         params = {"account_uid": account_uid, "limit": limit}
         if cursor:
             params["cursor"] = cursor
+        if chat_id:
+            params["chat_id"] = chat_id
         return self._request("GET", "/internal/v1/messages", params=params)

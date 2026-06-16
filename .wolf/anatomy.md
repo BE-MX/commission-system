@@ -319,6 +319,7 @@
 - `034_customer_radar.py` — add customer radar tables (~1863 tok)
 - `035_whatsapp_connector.py` — add WhatsApp Connector projection tables (~2660 tok)
 - `036_whatsapp_sender_profile.py` — add WhatsApp message sender display fields (~190 tok)
+- `037_whatsapp_cursor_scope.py` — add per-scope WhatsApp pull cursors (~260 tok)
 
 ## backend/app/
 
@@ -473,14 +474,16 @@
 
 ## backend/scripts/
 
+- `show_db_config.py` — prints sanitized backend DB settings before deployment migration (~180 tok)
 
 ## backend/tests/
 
 - `test_scheduler_jobs.py` — 定时任务 smoke tests (~1949 tok)
+- `test_whatsapp_sync.py` — verifies per-conversation WhatsApp message cursors (~420 tok)
 
 ## deploy/
 
-- `deploy.bat` — Declares f (~1431 tok)
+- `deploy.bat` — Declares f (~1480 tok)
 
 ## docs/requirements/
 

@@ -97,7 +97,9 @@ Query：`account_uid`、`cursor`、`limit`
 
 ### GET `/internal/v1/messages`
 
-Query：`account_uid`、`cursor`、`limit`
+Query：`account_uid`、`cursor`、`limit`、`chat_id`
+
+`chat_id` 可选。传入后 connector 只拉取指定会话的消息；方舟后端使用该参数按会话维护独立 cursor，避免一个活跃会话推进全局 cursor 后漏掉其他会话消息。
 
 响应：
 

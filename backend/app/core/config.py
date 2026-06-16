@@ -107,6 +107,7 @@ class Settings(BaseSettings):
     WHATSAPP_AUTO_SYNC_ENABLED: bool = True
     WHATSAPP_AUTO_SYNC_INTERVAL_MINUTES: int = 5
     WHATSAPP_AUTO_SYNC_BATCH_SIZE: int = 100
+    WHATSAPP_SYNC_MESSAGES_PER_CHAT: int = 100
 
     # ── 微信小程序 ────────────────────────────────────────
     WX_MINI_APPID: str = ""  # 微信小程序 AppID
