@@ -220,7 +220,9 @@ goto :eof
 REM ---------- [7/7] Restart services ----------
 echo [7/7] Restart services...
 call :restart_nssm_service "%SERVICE_NAME%" "Ark backend"
+if errorlevel 1 goto :error
 call :restart_nssm_service "WhatsAppConnector" "WhatsApp connector"
+if errorlevel 1 goto :error
 echo      OK
 echo.
 
@@ -233,9 +235,10 @@ goto :done
 :restart_nssm_service
 if "%~1"=="" (
     echo [ERROR] Service name is empty for %~2
-    goto :error
+    exit /b 1
 )
 set "SERVICE_STATUS="
+set "SERVICE_STATUS_FILE=%TEMP%\nssm_status_%~1.txt"
 echo      Restarting %~2 ^(%~1^)...
 "%NSSM_EXE%" restart "%~1"
 if errorlevel 1 (
@@ -249,17 +252,22 @@ if errorlevel 1 (
         if errorlevel 1 (
             echo [ERROR] Service start failed: %~1
             "%NSSM_EXE%" status "%~1"
-            goto :error
+            exit /b 1
         )
     )
 )
-for /f "delims=" %%S in ('"%NSSM_EXE%" status "%~1" 2^>nul') do set "SERVICE_STATUS=%%S"
+timeout /t 2 /nobreak >nul
+"%NSSM_EXE%" status "%~1" > "!SERVICE_STATUS_FILE!" 2>&1
+if exist "!SERVICE_STATUS_FILE!" (
+    set /p SERVICE_STATUS=<"!SERVICE_STATUS_FILE!"
+    del /q "!SERVICE_STATUS_FILE!" >nul 2>&1
+)
 echo      Status: !SERVICE_STATUS!
 if /I not "!SERVICE_STATUS!"=="SERVICE_RUNNING" (
     echo [ERROR] Service is not running: %~1 ^(!SERVICE_STATUS!^)
-    goto :error
+    exit /b 1
 )
-goto :eof
+exit /b 0
 
 :error
 echo.
