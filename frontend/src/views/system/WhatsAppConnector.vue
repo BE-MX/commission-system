@@ -42,7 +42,19 @@
               <el-tag :type="statusType(row.status)" size="small" effect="plain">{{ statusLabel(row.status) }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="Connector" prop="connector_status" min-width="120" max-width="180" show-overflow-tooltip />
+          <el-table-column label="Connector" min-width="150" max-width="220">
+            <template #default="{ row }">
+              <el-tooltip
+                :disabled="!row.last_error"
+                :content="row.last_error"
+                placement="top"
+              >
+                <el-tag :type="connectorStatusType(row.connector_status)" size="small" effect="plain">
+                  {{ connectorStatusLabel(row.connector_status) }}
+                </el-tag>
+              </el-tooltip>
+            </template>
+          </el-table-column>
           <el-table-column label="最后同步" min-width="160" max-width="240">
             <template #default="{ row }">{{ formatTime(row.last_sync_at) }}</template>
           </el-table-column>
@@ -290,6 +302,34 @@ function statusType(status) {
     active: 'success',
     revoked: 'info',
     error: 'danger',
+  }[status] || 'info'
+}
+
+function connectorStatusLabel(status) {
+  return {
+    initializing: '初始化中',
+    qr_ready: '等待扫码',
+    connected: '已连接',
+    restoring: '恢复中',
+    sync_error: '同步失败',
+    qr_required: '需重新扫码',
+    revoked: '已解绑',
+    expired: '已过期',
+    error: '连接异常',
+  }[status] || status || '-'
+}
+
+function connectorStatusType(status) {
+  return {
+    connected: 'success',
+    initializing: 'warning',
+    qr_ready: 'warning',
+    restoring: 'warning',
+    sync_error: 'danger',
+    qr_required: 'danger',
+    error: 'danger',
+    revoked: 'info',
+    expired: 'info',
   }[status] || 'info'
 }
 
