@@ -39,7 +39,15 @@ class WhatsAppConnectorClient:
                 response.raise_for_status()
                 payload = response.json()
         except httpx.HTTPStatusError as exc:
-            raise ConnectorError(f"Connector 返回错误: HTTP {exc.response.status_code}") from exc
+            detail = ""
+            try:
+                payload = exc.response.json()
+                if isinstance(payload, dict):
+                    detail = str(payload.get("message") or payload.get("detail") or "")
+            except ValueError:
+                detail = exc.response.text[:300]
+            suffix = f" - {detail}" if detail else ""
+            raise ConnectorError(f"Connector 返回错误: HTTP {exc.response.status_code}{suffix}") from exc
         except httpx.HTTPError as exc:
             raise ConnectorError(f"Connector 连接失败: {exc}") from exc
         except ValueError as exc:

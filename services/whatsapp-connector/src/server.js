@@ -127,7 +127,13 @@ app.get('/internal/v1/messages', asyncHandler(async (req, res) => {
   const limit = clampLimit(req.query.limit, 100)
   const account = requireAccount(accountUid)
   const client = requireClient(accountUid)
-  const chats = chatId ? [await resolveChatById(client, chatId)] : await client.getChats()
+  const chat = chatId ? await resolveChatById(client, chatId) : null
+  if (chatId && !chat) {
+    account.last_sync_at = new Date().toISOString()
+    saveState()
+    return res.json({ code: 200, data: { items: [], next_cursor: cursor ? String(cursor) : null } })
+  }
+  const chats = chatId ? [chat] : await client.getChats()
   const items = []
   let maxTimestamp = cursor
 
@@ -465,12 +471,7 @@ async function resolveChatById(client, chatId) {
 
   const chats = await client.getChats()
   const chat = chats.find(item => item.id?._serialized === chatId)
-  if (!chat) {
-    const error = new Error('chat not found')
-    error.statusCode = 404
-    throw error
-  }
-  return chat
+  return chat || null
 }
 
 function contactToProfile(contact) {
