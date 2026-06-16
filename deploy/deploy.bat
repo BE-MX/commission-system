@@ -65,11 +65,22 @@ echo.
 
 REM ---------- Detect frontend changes ----------
 set "FRONTEND_CHANGED=0"
+set "FRONTEND_MARKER=%INSTALL_DIR%\.deploy_state\frontend_build_commit.txt"
+set "FRONTEND_BASE="
 cd /d "%INSTALL_DIR%"
-REM 检查本次 pull 是否改了 frontend/src 或 frontend/public 或 frontend/package.json
-git diff --name-only HEAD@{1} HEAD -- frontend/src/ frontend/public/ frontend/package.json frontend/package-lock.json frontend/vite.config.* 2>nul | findstr /R "." >nul 2>&1
-if not errorlevel 1 (
+if exist "%FRONTEND_MARKER%" (
+    set /p FRONTEND_BASE=<"%FRONTEND_MARKER%"
+)
+
+if not defined FRONTEND_BASE (
     set "FRONTEND_CHANGED=1"
+    echo      Frontend build marker missing; build required
+) else (
+    REM 检查上次成功构建的 commit 到当前 HEAD 是否改了 frontend
+    git diff --name-only %FRONTEND_BASE% HEAD -- frontend/src/ frontend/public/ frontend/package.json frontend/package-lock.json frontend/vite.config.* 2>nul | findstr /R "." >nul 2>&1
+    if not errorlevel 1 (
+        set "FRONTEND_CHANGED=1"
+    )
 )
 REM 也检查是否有未提交的本地改动
 git diff --name-only -- frontend/src/ frontend/public/ frontend/package.json | findstr /R "." >nul 2>&1
@@ -123,6 +134,9 @@ if defined RSYNC_PATH (
     call :scp_smart
 )
 echo.
+if not exist "%INSTALL_DIR%\.deploy_state" mkdir "%INSTALL_DIR%\.deploy_state"
+for /f "delims=" %%H in ('git -C "%INSTALL_DIR%" rev-parse HEAD') do set "CURRENT_HEAD=%%H"
+echo !CURRENT_HEAD!>"%FRONTEND_MARKER%"
 goto :restart_service
 
 :scp_smart

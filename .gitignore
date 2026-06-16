@@ -31,6 +31,7 @@ alembic/__pycache__/
 
 # Server logs
 logs/
+.deploy_state/
 
 # Design reference assets (临时素材，不入库)
 frontend/kimi-ref.*

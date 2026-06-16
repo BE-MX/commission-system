@@ -483,7 +483,7 @@
 
 ## deploy/
 
-- `deploy.bat` — Declares f (~1480 tok)
+- `deploy.bat` — deploy script with Alembic diagnostics and frontend build marker (~1600 tok)
 
 ## docs/requirements/
 
