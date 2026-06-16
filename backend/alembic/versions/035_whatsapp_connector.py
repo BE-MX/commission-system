@@ -1,7 +1,7 @@
 """add whatsapp connector tables
 
 Revision ID: 035_whatsapp_connector
-Revises: 034_customer_radar
+Revises: 033_provider_api_type
 Create Date: 2026-06-16
 """
 
@@ -11,7 +11,7 @@ from sqlalchemy.dialects import mysql
 
 # revision identifiers
 revision = "035_whatsapp_connector"
-down_revision = "034_customer_radar"
+down_revision = "033_provider_api_type"
 branch_labels = None
 depends_on = None
 
