@@ -249,8 +249,13 @@ def ingest_opportunity_event(
         profile.last_event_at = now
         profile.last_opportunity_at = now
 
+        conversation_summary = opportunity.conversation_summary_json or {}
+        background_summary = opportunity.background_summary_json or {}
+
         # 从 opportunity 继承信号
-        if opportunity.key_signals_json and not profile.profile_signals_json:
+        if conversation_summary.get("key_evidence") and not profile.profile_signals_json:
+            profile.profile_signals_json = conversation_summary.get("key_evidence")
+        elif opportunity.key_signals_json and not profile.profile_signals_json:
             profile.profile_signals_json = opportunity.key_signals_json
         if opportunity.opening_message_en and not profile.suggested_message:
             profile.suggested_message = opportunity.opening_message_en
@@ -268,6 +273,10 @@ def ingest_opportunity_event(
         # 构建画像判断
         if not profile.profile_judgement:
             parts = []
+            if conversation_summary.get("conversation_summary"):
+                parts.append(conversation_summary.get("conversation_summary"))
+            if background_summary.get("recommended_strategy"):
+                parts.append(background_summary.get("recommended_strategy"))
             if opportunity.recommended_strategy:
                 parts.append(opportunity.recommended_strategy)
             if opportunity.summary:

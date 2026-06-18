@@ -60,6 +60,9 @@ def import_accio_inquiries(db: Session, payload: dict) -> dict:
             conv = item.get("conversation", {})
             bg = item.get("background_check", {})
             seed = item.get("opportunity_seed", {})
+            conversation_summary = item.get("conversation_summary")
+            background_summary = item.get("background_summary")
+            customer_profile = item.get("customer_profile") or {}
             source_key = item.get("source_key", "")
 
             if not source_key:
@@ -71,6 +74,7 @@ def import_accio_inquiries(db: Session, payload: dict) -> dict:
             buyer_name = conv.get("buyer_name") or "未知买家"
             buyer_country = conv.get("buyer_country")
             buyer_level = conv.get("buyer_level", "")
+            customer_external_id = customer_profile.get("buyer_identifier")
             latest_content = conv.get("latest_content", "")
             latest_send_time = _parse_dt(conv.get("latest_send_time"))
             chat_link = conv.get("chat_link", "")
@@ -144,8 +148,16 @@ def import_accio_inquiries(db: Session, payload: dict) -> dict:
                 updated_count += 1
                 existing.title = title
                 existing.summary = latest_content
+                if conversation_summary is not None:
+                    existing.conversation_summary_json = conversation_summary
                 if bg_json is not None:
                     existing.background_check_json = bg_json
+                if background_summary is not None:
+                    existing.background_summary_json = background_summary
+                if customer_profile:
+                    existing.customer_profile_json = customer_profile
+                if customer_external_id and not existing.customer_external_id:
+                    existing.customer_external_id = customer_external_id
                 existing.recommended_strategy = strategy
                 existing.key_signals_json = key_signals
                 existing.confidence_score = confidence_score
@@ -186,13 +198,17 @@ def import_accio_inquiries(db: Session, payload: dict) -> dict:
                     source_owner_external_json=source_owner_ext,
                     customer_name=buyer_name,
                     customer_region=buyer_country,
+                    customer_external_id=customer_external_id,
                     priority_level=priority_level,
                     confidence_score=confidence_score,
                     urgency=urgency,
                     title=title,
                     summary=latest_content,
                     key_signals_json=key_signals,
+                    conversation_summary_json=conversation_summary,
                     background_check_json=bg_json,
+                    background_summary_json=background_summary,
+                    customer_profile_json=customer_profile or None,
                     recommended_strategy=strategy,
                     opening_message_en=opening_msg,
                     follow_up_message_en=follow_msg,
