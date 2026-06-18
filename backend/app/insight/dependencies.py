@@ -11,12 +11,12 @@ router 的 endpoint 通过 `from app.insight.dependencies import ...` 引用,
 """
 
 import logging
-import os
 from typing import Optional
 
 from fastapi import Depends, Header, HTTPException
 
 from app.auth.dependencies import get_current_user
+from app.core.config import get_settings
 
 logger = logging.getLogger("insight")
 
@@ -60,7 +60,7 @@ def _require_insight_admin(user: dict = Depends(get_current_user)):
 
 def _verify_import_api_key(authorization: Optional[str] = Header(None)):
     """ACCIO WORK 等外部系统使用 Bearer API Key 认证。"""
-    expected = os.environ.get("INSIGHT_IMPORT_API_KEY", "").strip()
+    expected = get_settings().INSIGHT_IMPORT_API_KEY.strip()
     if not expected:
         # 未配置时拒绝所有外部导入,防误用
         raise HTTPException(status_code=503, detail="导入接口未启用(INSIGHT_IMPORT_API_KEY 未配置)")

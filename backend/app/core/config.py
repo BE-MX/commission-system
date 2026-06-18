@@ -79,6 +79,9 @@ class Settings(BaseSettings):
     # ── AI 加密 ──────────────────────────────────────────
     ARK_AI_ENCRYPTION_KEY: str = ""  # production 模式下必须显式配置
 
+    # ── ACCIO WORK 导入接口 ──────────────────────────────
+    INSIGHT_IMPORT_API_KEY: str = ""
+
     # ── 钉钉 AI 表格 API ─────────────────────────────────
     DINGTALK_CLIENT_ID: str = ""
     DINGTALK_CLIENT_SECRET: str = ""
