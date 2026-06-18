@@ -144,7 +144,8 @@ def import_accio_inquiries(db: Session, payload: dict) -> dict:
                 updated_count += 1
                 existing.title = title
                 existing.summary = latest_content
-                existing.background_check_json = bg_json
+                if bg_json is not None:
+                    existing.background_check_json = bg_json
                 existing.recommended_strategy = strategy
                 existing.key_signals_json = key_signals
                 existing.confidence_score = confidence_score

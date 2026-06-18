@@ -1079,6 +1079,7 @@ def _serialize_opportunity_detail(o) -> dict:
         "recommended_strategy": o.recommended_strategy,
         "opening_message_en": o.opening_message_en,
         "follow_up_message_en": o.follow_up_message_en,
+        "full_report_html": o.full_report_html,
         "evidence_json": o.evidence_json,
     })
     return base
