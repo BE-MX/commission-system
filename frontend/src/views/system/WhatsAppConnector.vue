@@ -37,6 +37,14 @@
               </div>
             </template>
           </el-table-column>
+          <el-table-column label="方舟用户" min-width="120" max-width="180" show-overflow-tooltip>
+            <template #default="{ row }">
+              <div class="account-cell compact">
+                <span>{{ arkUserText(row) }}</span>
+                <small>ID {{ row.ark_user_id || '-' }}</small>
+              </div>
+            </template>
+          </el-table-column>
           <el-table-column label="状态" min-width="100" max-width="150">
             <template #default="{ row }">
               <el-tag :type="statusType(row.status)" size="small" effect="plain">{{ statusLabel(row.status) }}</el-tag>
@@ -57,6 +65,9 @@
           </el-table-column>
           <el-table-column label="最后同步" min-width="160" max-width="240">
             <template #default="{ row }">{{ formatTime(row.last_sync_at) }}</template>
+          </el-table-column>
+          <el-table-column label="消息拉取" min-width="160" max-width="240">
+            <template #default="{ row }">{{ formatTime(row.last_message_pull_at) }}</template>
           </el-table-column>
           <el-table-column label="操作" min-width="260" max-width="390" fixed="right">
             <template #default="{ row }">
@@ -335,6 +346,10 @@ function connectorStatusType(status) {
 
 function formatTime(value) {
   return value ? new Date(value).toLocaleString('zh-CN') : '-'
+}
+
+function arkUserText(row) {
+  return row.ark_user_name || row.ark_username || '-'
 }
 
 function messageSenderText(row) {

@@ -22,6 +22,7 @@ This project uses OpenWolf for context management. Read and follow .wolf/OPENWOL
 - **备货管理**：安全库存设置（手动/AI 生成）、销量备货一览、安全库存日报、低库存钉钉推送（每日 08:30 自动 + 管理员手动触发）
 - **生产订单管理**：购物车（安全库存页一键加入→右上角角标→批量生成订单）、订单双维管理（订单维度+明细维度）、状态流转（已提交/已终止/已完成）、入库数量跟踪（收货完成自动改状态）、加急标记与预计交期、备货状态实时显示（销量备货一览/安全库存设置表）
 - **钉钉集成**：webhook 推送、审批回调、工作通知（预约状态变更点对点推送）、消息日志
+- **WhatsApp 客户沟通同步**：WhatsApp Web 扫码绑定、会话/消息增量拉取、附件元数据投影、自动定时同步（独立 Node.js Connector 服务 + 方舟投影层）
 - **报表中心（Stimulsoft）**：Stimulsoft Reports.JS 替代 JimuReport，前端直接 DOM 挂载 Viewer/Designer（无 iframe），后端提供 JSON 数据 API（模板不直连 MySQL），模板按 report_code + version 管理存储在数据库
 
 ## 技术栈
@@ -54,6 +55,7 @@ commission-system/
 │   │   ├── design/        # 设计预约领域模块（service.py facade + audit_log/request/schedule/stats/import_service 子模块 + notifications.py 钉钉通知 helper + conflict_engine/state_machine/scheduler）
 │   │   ├── system/        # 系统字典领域模块
 │   │   ├── dingtalk/      # 钉钉集成领域模块
+│   │   ├── whatsapp/      # WhatsApp 同步领域模块（router/models/schemas/service + connector_client + scheduler；独立 Node.js Connector 服务在 services/whatsapp-connector/）
 │   │   ├── ai/            # AI 接入领域模块（service.py facade + provider/preset/call/log_service + keyring + http_client）
 │   │   ├── insight/       # 方舟洞见领域模块（service.py facade + fetcher + ai_helpers + sources/reports/case_library/meeting_minutes/dashboard_service/item_service/collector_service/intelligence_service/schedule_service + external_binding_service + customer_opportunity_service + customer_profile_service + customer_radar_service + customer_source_service + dependencies.py router 依赖工厂）
 │   │   ├── stock/         # 备货管理领域模块（service.py facade + constants/sku_query/overview/safety/daily_report_service/production_cart_service/production_order_service/in_transit_service；TFT 微服务通过 Settings 配置接入）
@@ -62,6 +64,7 @@ commission-system/
 │   │   ├── color/         # 发色数字化领域模块（router/models/schemas/service facade + palette/blend/calc/trend/swatch/social_extract 子模块）
 │   │   ├── production/    # 生产报工领域模块（router/models/schemas/service facade + process/route/binding/report/dashboard_service 子模块；与 stock/production_* 生产订单是两个模块）
 │   │   ├── report/         # 报表中心领域模块（router/models/schemas/data_service — Stimulsoft Reports.JS 模板 CRUD + 数据组装）
+│   │   ├── governance/     # 数据概念治理领域模块（router/models/schemas/service facade + concept/relationship/changelog/import_service 子模块）
 │   │   ├── mini/           # 微信小程序端领域模块（router/service/auth/schemas — 扫码报工/历史/总览/撤销/登录绑定）
 │   │   └── main.py        # FastAPI 入口（薄,只装配 app/middleware/lifespan,bootstrap/scheduler/router 都委托给子模块）
 │   ├── alembic/           # 数据库迁移
@@ -69,6 +72,8 @@ commission-system/
 │   ├── scripts/           # 初始化脚本
 │   ├── sql/               # DDL 脚本
 │   └── tests/             # pytest 测试
+├── services/
+│   └── whatsapp-connector/  # WhatsApp Web Node.js 独立服务（whatsapp-web.js，QR 认证+会话+消息拉取）
 ├── frontend/
 │   ├── src/
 │   │   ├── api/           # Axios 请求封装（统一 createApiClient factory,clients.js 集中导出）
@@ -78,6 +83,7 @@ commission-system/
 │   │   │                  #   auth/ commission/ customer/ dashboard/
 │   │   │                  #   design/ employee/ insight/ layout/ payment/
 │   │   │                  #   profile/ stock/ supervisor/ system/ tracking/ asset/
+│   │   │                  #   color/ governance/ production/ report/
 │   │   ├── router/        # Vue Router（从 navigation.js 生成 + 登录守卫 + 权限校验）
 │   │   ├── composables/   # 共享 composable（如 useTableMaxHeight, useTableSort）
 │   │   ├── components/    # 共享组件（如 WorldMapCanvas, WelcomeModal）
@@ -110,7 +116,7 @@ npm run build                            # 构建
 
 # 服务器部署
 deploy\setup-server.bat                  # 首次部署：克隆代码、安装依赖、配置 CommissionSystem service
-deploy\deploy.bat                        # 日常更新：拉代码→装依赖→迁移→构建→SCP 同步 dist 到云服务器→重启服务
+deploy\deploy.bat                        # 日常更新：拉代码→装依赖→Connector npm install→迁移→构建→SCP 同步 dist 到云服务器→重启 CommissionSystem + WhatsAppConnector 双服务
 deploy\restart.bat                       # 仅重启 CommissionSystem service
                                          # 注意：bat 用 UTF-8 编码 + chcp 65001，变量写 set VAR=value 不带引号
 ```
@@ -134,7 +140,7 @@ deploy\restart.bat                       # 仅重启 CommissionSystem service
 ```
 
 - **云 Nginx 配置**: `/etc/nginx/conf.d/leshine.conf`（SSL 证书 `/etc/nginx/ssl/`）
-- **前端 dist 同步**: `deploy.bat` [5/6] 自动 `scp dist/* → root@119.28.107.92:/var/www/ark/dist/`（SSH 免密）
+- **前端 dist 同步**: `deploy.bat` [6/7] 自动 `scp dist/* → root@119.28.107.92:/var/www/ark/dist/`（SSH 免密）
 - **gzip**: 已开启（JS/CSS/SVG/JSON/XML），`gzip_comp_level 6`
 - **SPA fallback**: `try_files $uri $uri/ /index.html`，`/assets/` 设置 1 年强缓存
 - 局域网访问不受影响，方舟本地 8002 端口照常运行
@@ -190,6 +196,30 @@ deploy\restart.bat                       # 仅重启 CommissionSystem service
   - `POST /dicts` / `PUT /dicts/{id}` / `DELETE /dicts/{id}` — CRUD
 - `/api/dingtalk` — 钉钉手动消息发送、消息日志、回调日志
 - `/api/dingtalk/callback` — 钉钉事件回调入口（审批状态变更等，无前缀挂载）
+- `/api/governance` — 数据概念治理（`governance/router.py`，需 `governance:read/write/admin`）
+  - `GET /concepts` — 概念列表（分页+筛选+搜索，需 `governance:read`）
+  - `GET /concepts/{id}` — 概念详情
+  - `POST /concepts` — 创建概念（需 `governance:write`）
+  - `PUT /concepts/{id}` — 更新概念（需 `governance:write`）
+  - `PATCH /concepts/{id}/status` — 变更状态（需 `governance:admin` 审批/废弃）
+  - `GET /concepts/{id}/relationships` — 关联关系列表
+  - `POST /concepts/{id}/relationships` — 添加关联（需 `governance:write`）
+  - `DELETE /concepts/{id}/relationships/{rel_id}` — 删除关联（需 `governance:admin`）
+  - `GET /stats` — 统计概览
+  - `GET /change-logs` — 变更历史（分页）
+  - `GET /change-logs/{id}/diff` — 变更详情
+  - `POST /change-logs/{id}/rollback` — 回滚（需 `governance:admin`）
+  - `GET /graph` — 全景图谱数据（ECharts Graph 格式）
+  - `POST /import` — 批量导入（需 `governance:admin`）
+  - `GET /export` — 导出全部概念
+  - `POST /seed` — 初始化种子数据（需 `governance:admin`）
+- `/api/whatsapp` — WhatsApp 同步（`whatsapp/router.py`，需 `whatsapp:read/write`）
+  - `POST /bind-sessions` — 创建扫码绑定会话（需 `whatsapp:write`）
+  - `GET /bind-sessions/{uid}` — 刷新绑定会话状态
+  - `GET /accounts` — 已绑定账号列表（需 `whatsapp:read`）
+  - `POST /accounts/{uid}/revoke` — 解绑账号（需 `whatsapp:write`）
+  - `POST /sync/pull` — 从 Connector 拉取增量数据（conversations/messages，需 `whatsapp:write`）
+  - `GET /conversations` — 会话列表（分页，需 `whatsapp:read`）
 
 **其他**
 - `/health` — 健康检查（含数据库连通性）
@@ -451,6 +481,18 @@ deploy\restart.bat                       # 仅重启 CommissionSystem service
   - `ark_color_trend_data` — 色彩趋势时序（color_family, data_source, period_date, raw_value, normalized_score）
   - `ark_color_swatch_image` — 色板图生成记录（palette_id/blend_id, prompt, model_used, image_path, delta_e, pass_check, status）
   - `ark_pantone_reference` — Pantone TCX 参考色库（2310 条，pantone_code, hex_code, rgb, lab）
+- **WhatsApp 同步（7 张表，035 迁移）**：
+  - `ark_whatsapp_accounts` — 已绑定 WhatsApp 账号（account_uid UNIQUE, ark_user_id FK, phone_number, status binding/active/revoked, connector_status）
+  - `ark_whatsapp_bind_sessions` — 扫码绑定会话（bind_session_uid UNIQUE, ark_user_id FK, status pending/scanning/bound/expired/failed, qr_code_url）
+  - `ark_whatsapp_conversations` — 会话投影（conversation_uid UNIQUE, account_uid + chat_id 唯一, contact_phone, contact_name, is_group, last_message_at）
+  - `ark_whatsapp_messages` — 消息投影（message_uid UNIQUE, account_uid + external_message_id 唯一, direction in/out, content_type text/image/video/document, content_text, sent_at）
+  - `ark_whatsapp_attachments` — 附件元数据（message_uid, file_name, mime_type, file_size, storage_url）
+  - `ark_whatsapp_pull_cursors` — 增量拉取游标（account_uid + resource + scope_uid 唯一, cursor_value, last_pulled_at）
+  - `ark_whatsapp_audit_logs` — 操作审计（account_uid, ark_user_id FK, action, result, detail）
+- **数据概念治理（3 张表，030 迁移）**：
+  - `data_concepts` — 概念主表（id VARCHAR(64) PK 语义化业务 ID，~20 业务字段，status pending/active/deprecated/archived，layer/confidence/priority ENUM）
+  - `concept_relationships` — 关联关系（source_id + target_id + relation_type 唯一约束，relation_type: parent_of/influences/conflicts_with/composed_of/derived_from/requires，is_auto_generated 标记双向边）
+  - `concept_change_logs` — 变更记录（concept_id FK, action, snapshot JSON 全量, changed_fields JSON diff, operator）
 
 ## 认证与 RBAC
 
@@ -480,9 +522,11 @@ deploy\restart.bat                       # 仅重启 CommissionSystem service
 | 色彩管理 | `color:read` / `color:write` / `color:admin` | 查看色板数据库/色彩趋势/编辑色号/生成色板图/管理竞品监控 |
 | 生产订单 | `production:read` / `production:write` / `production:admin` | 查看订单/创建编辑订单与入库/删除订单（备货管理菜单组下独立子菜单，由 `production:read` 控制显示） |
 | 报表中心 | `report:read` / `report:design` / `report:admin` | 查看报表/编辑模板/删除模板（Stimulsoft Reports.JS，super_admin 自动绕过） |
+| 数据概念治理 | `governance:read` / `governance:write` / `governance:admin` | 查看概念图谱/创建编辑概念/审批废弃回滚导入 |
 | 客户机会台 | `customer_opportunity:read` / `customer_opportunity:write` / `customer_opportunity:manage` | 查看本人机会/更新状态反馈/管理全部机会分配 |
 | 客户经营雷达 | `customer_radar:read` / `customer_radar:write` / `customer_radar:manage` | 查看经营雷达/完成延后反馈行动/管理所有客户档案 |
 | 外部账号绑定 | `external_binding:read` / `external_binding:write` | 查看绑定/创建删除绑定管理候选 |
+| WhatsApp 同步 | `whatsapp:read` / `whatsapp:write` / `whatsapp:admin` | 查看绑定账号会话消息/创建绑定触发同步解绑/管理全部账号 |
 
 **导航显示逻辑**（`MainLayout.vue`）：各菜单项通过 `v-if="authStore.hasAnyPermission([...])"` 控制，`super_admin` 角色绕过所有权限检查。头部用户区域显示头像（`avatar_url`），无头像时显示默认图标。物流管理子菜单含三个入口：物流跟踪(`tracking:read/read_all`) / 运单上传(`tracking:write`) / 物流日报(`tracking:daily_report`)。路由守卫：`/tracking/:waybillNo` 需 `tracking:read`，`/tracking/daily-report` 需 `tracking:daily_report`。运单列表数据范围由权限自动决定（`tracking:read` 仅看本人，`tracking:read_all` 看全部），页面无切换控件。
 
@@ -605,11 +649,21 @@ nssm start CommissionSystem    # 正常启动
   - `stock_daily_report` — 安全库存日报 + 低库存钉钉推送，cron 每天 08:30
   - `color_social_extract` — 社媒发色提取，cron 每天 08:00（Xpoz 竞品帖子图片 → OpenCV 提取主色 → 匹配色族 → 写入 trend_data）
   - `color_sales_aggregate` — 销售色彩聚合，cron 每周一 06:00（okki_orders 按颜色字段聚合 → 写入 trend_data）
+  - `whatsapp_auto_sync` — WhatsApp 增量同步，interval 每 5 分钟（`sync_whatsapp_accounts_job()`，遍历 active 账号拉取会话+消息增量，受 `WHATSAPP_AUTO_SYNC_ENABLED` 开关控制）
 
 **微信小程序环境变量**（服务器 `.env` 必配，否则小程序登录/报工失败）：
 - `WX_MINI_APPID` — 微信小程序 AppID（`wx4dea4f10fe1bda19`）
 - `WX_MINI_SECRET` — 微信小程序 AppSecret（从微信公众平台获取）
 - `QR_SIGN_SECRET` — 二维码 HMAC 签名密钥（生产报工扫码验签用）
+
+**WhatsApp Connector 环境变量**（`.env` 可选配置，不配则 WhatsApp 功能不可用）：
+- `WHATSAPP_CONNECTOR_BASE_URL` — WhatsApp Connector Node.js 服务地址（如 `http://localhost:3100`）
+- `WHATSAPP_CONNECTOR_API_KEY` — Connector API 认证密钥
+- `WHATSAPP_CONNECTOR_TIMEOUT_SECONDS` — 请求超时（默认 30）
+- `WHATSAPP_AUTO_SYNC_ENABLED` — 自动同步开关（默认 `true`）
+- `WHATSAPP_AUTO_SYNC_INTERVAL_MINUTES` — 同步间隔分钟数（默认 5）
+- `WHATSAPP_AUTO_SYNC_BATCH_SIZE` — 每次同步拉取会话数上限（默认 100）
+- `WHATSAPP_SYNC_MESSAGES_PER_CHAT` — 每会话拉取消息数上限（默认 100）
 
 ## Design System
 

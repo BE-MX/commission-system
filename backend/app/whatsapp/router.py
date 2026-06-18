@@ -1,12 +1,15 @@
 """WhatsApp Connector API routes."""
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_any_permission, require_permission
+from app.auth.models import ArkUser
 from app.core.database import SessionLocal
 from app.whatsapp import service
 from app.whatsapp.connector_client import ConnectorError, ConnectorNotConfigured
+from app.whatsapp.models import WhatsAppPullCursor
 from app.whatsapp.schemas import BindSessionCreate, SyncPullRequest
 
 router = APIRouter()
@@ -83,7 +86,34 @@ def list_accounts(
     current_user=Depends(require_permission("whatsapp:read")),
 ):
     accounts = service.list_accounts(db, current_user)
-    return _ok([_account_data(item) for item in accounts])
+    user_ids = [item.ark_user_id for item in accounts]
+    users = {
+        item.id: item
+        for item in db.query(ArkUser).filter(ArkUser.id.in_(user_ids)).all()
+    } if user_ids else {}
+    message_pull_times = {
+        account_uid: last_pulled_at
+        for account_uid, last_pulled_at in (
+            db.query(
+                WhatsAppPullCursor.account_uid,
+                func.max(WhatsAppPullCursor.last_pulled_at),
+            )
+            .filter(
+                WhatsAppPullCursor.resource == "messages",
+                WhatsAppPullCursor.account_uid.in_([item.account_uid for item in accounts]),
+            )
+            .group_by(WhatsAppPullCursor.account_uid)
+            .all()
+        )
+    } if accounts else {}
+    return _ok([
+        _account_data(
+            item,
+            ark_user=users.get(item.ark_user_id),
+            last_message_pull_at=message_pull_times.get(item.account_uid),
+        )
+        for item in accounts
+    ])
 
 
 @router.post("/accounts/{account_uid}/revoke", summary="解绑 WhatsApp 账号")
@@ -195,16 +225,19 @@ def _bind_session_data(item):
     }
 
 
-def _account_data(item):
+def _account_data(item, ark_user=None, last_message_pull_at=None):
     return {
         "id": item.id,
         "account_uid": item.account_uid,
         "ark_user_id": item.ark_user_id,
+        "ark_user_name": ark_user.real_name if ark_user else None,
+        "ark_username": ark_user.username if ark_user else None,
         "phone_number": item.phone_number,
         "display_name": item.display_name,
         "status": item.status,
         "connector_status": item.connector_status,
         "last_sync_at": item.last_sync_at,
+        "last_message_pull_at": last_message_pull_at,
         "last_message_at": item.last_message_at,
         "last_error": item.last_error,
         "created_at": item.created_at,

@@ -2,7 +2,7 @@
 
 ## 项目概述
 
-莱莎方舟平台，企业内部综合后台。包含提成管理、物流跟踪（含关键状态推送 + 物流日报）、运单上传（AI OCR）、客户归属、设计预约、素材管理（标签化素材中台/AI 打标签/版本迭代/收藏分享/**移动端素材检索**）、发色数字化管理（色板数据库/色彩趋势/AI 色板图生成）、用户/权限、AI 接入、方舟洞见（信源配置/情报采集库/行业情报速览/行业情报日报/AI 工具速递/案例库/周会纪要/**客户机会台（阿里询盘导入/归属解析/机会卡/话术/状态管理）**/**客户经营雷达（活画像/事件流/6线索分组/行动推荐）**）、备货管理（安全库存/销量备货一览/库存日报 + 手动钉钉推送）、**生产订单管理（购物车→批量下单→订单跟踪→入库录入）**、**生产报工（工序管理→路线配置→产品绑定→扫码报工→进度跟踪→打印卡）**、**报表中心（Stimulsoft Reports.JS 设计器+查看器，前端 DOM 挂载，后端 JSON 数据 API）**、**微信小程序（扫码报工/报工历史/报工总览/登录绑定）**、**数据概念治理（概念注册表/8分区编辑器/关联关系/全景图谱/变更历史）**、钉钉集成十七大模块。详细说明见 [CLAUDE.md](./CLAUDE.md)。
+莱莎方舟平台，企业内部综合后台。包含提成管理、物流跟踪（含关键状态推送 + 物流日报）、运单上传（AI OCR）、客户归属、设计预约、素材管理（标签化素材中台/AI 打标签/版本迭代/收藏分享/**移动端素材检索**）、发色数字化管理（色板数据库/色彩趋势/AI 色板图生成）、用户/权限、AI 接入、方舟洞见（信源配置/情报采集库/行业情报速览/行业情报日报/AI 工具速递/案例库/周会纪要/**客户机会台（阿里询盘导入/归属解析/机会卡/话术/状态管理）**/**客户经营雷达（活画像/事件流/6线索分组/行动推荐）**）、备货管理（安全库存/销量备货一览/库存日报 + 手动钉钉推送）、**生产订单管理（购物车→批量下单→订单跟踪→入库录入）**、**生产报工（工序管理→路线配置→产品绑定→扫码报工→进度跟踪→打印卡）**、**报表中心（Stimulsoft Reports.JS 设计器+查看器，前端 DOM 挂载，后端 JSON 数据 API）**、**微信小程序（扫码报工/报工历史/报工总览/登录绑定）**、**数据概念治理（概念注册表/8分区编辑器/关联关系/全景图谱/变更历史）**、**WhatsApp 客户沟通同步（扫码绑定/会话消息拉取/附件投影）**、钉钉集成十八大模块。详细说明见 [CLAUDE.md](./CLAUDE.md)。
 
 ## 技术栈
 
@@ -51,18 +51,22 @@ commission-system/
 │   │   ├── design/       # 设计预约 (service.py facade + audit_log/request/schedule/stats/import_service + notifications.py 钉钉通知 helper)
 │   │   ├── system/       # 系统字典
 │   │   ├── dingtalk/     # 钉钉集成
+│   │   ├── whatsapp/     # WhatsApp 同步 (router/models/schemas/service + connector_client + scheduler)
 │   │   ├── ai/           # AI 接入 (service.py facade + provider/preset/call/log_service + keyring/http_client)
-│   │   ├── insight/      # 方舟洞见 (service.py facade + fetcher + ai_helpers + sources/reports/case_library/meeting_minutes/dashboard_service + dependencies.py)
+│   │   ├── insight/      # 方舟洞见 (service.py facade + sources/reports/item/collector/intelligence/customer_opportunity/customer_radar/customer_profile/customer_source + dependencies.py)
 │   │   ├── stock/        # 备货管理 (service.py facade + constants/sku_query/overview/safety/daily_report_service)
 │   │   ├── tracking/     # 物流跟踪 (router + shipment/upload/ocr/polling/staging/daily_report/push_service + carriers/ + status.py + templates/)
 │   │   └── asset/        # 素材管理 (router/models/schemas/service facade + analyze/batch/stats/tag/favorite/asset_service 子模块)
 │   │   ├── color/         # 发色数字化 (router/models/schemas/service facade + palette/blend/calc/trend/swatch/social_extract 子模块)
 │   │   ├── report/        # 报表中心 Stimulsoft (router/models/schemas/data_service — 模板 CRUD + JSON 数据组装)
 │   │   ├── production/    # 生产报工 (router/models/schemas/service facade + process/route/binding/report_service 子模块)
+│   │   ├── governance/    # 数据概念治理 (router/models/schemas/service facade + concept/relationship/changelog/import_service)
 │   │   └── mini/          # 微信小程序端 (router/service/auth/schemas — 扫码报工/历史/总览/撤销/登录绑定)
 │   ├── alembic/          # 数据库迁移
 │   ├── config/           # 业务规则配置
 │   └── sql/              # DDL 脚本
+├── services/
+│   └── whatsapp-connector/  # WhatsApp Web Node.js 独立服务（whatsapp-web.js）
 ├── frontend/
 │   ├── public/
 │   │   └── m/            # 移动端素材管理独立页面（Vue 3 CDN，构建后 /m/ 访问）

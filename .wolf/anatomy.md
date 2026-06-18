@@ -1,12 +1,12 @@
 # anatomy.md
 
-> Auto-maintained by OpenWolf. Last scanned: 2026-06-15T11:21:11.749Z
-> Files: 279 tracked | Anatomy hits: 0 | Misses: 0
+> Auto-maintained by OpenWolf. Last scanned: 2026-06-18T02:14:42.813Z
+> Files: 303 tracked | Anatomy hits: 0 | Misses: 0
 
 ## ./
 
-- `CLAUDE.md` — OpenWolf (~13823 tok)
-- `README.md` — Project documentation (~992 tok)
+- `CLAUDE.md` — OpenWolf (~14875 tok)
+- `README.md` — Project documentation (~1088 tok)
 - `start.bat` (~177 tok)
 - `test_ocr_clean.py` — Test _clean_ocr_value — full coverage. (~689 tok)
 
@@ -49,7 +49,7 @@
 - `feedback_iframe-auth-vhtml.md` (~530 tok)
 - `feedback_router_authorization.md` (~497 tok)
 - `feedback_venv_path_pollution.md` — Accio Work Python PATH 污染 (~249 tok)
-- `MEMORY.md` (~709 tok)
+- `MEMORY.md` (~732 tok)
 - `project_asset_module.md` (~1208 tok)
 - `project_customer_opportunity_module.md` — 客户机会台模块 (~554 tok)
 - `project_customer_radar_module.md` — 客户经营雷达模块 (~663 tok)
@@ -66,6 +66,7 @@
 - `project_stock_module.md` (~866 tok)
 - `project_table_sorting.md` — 列表表头排序统一改造 (~390 tok)
 - `project_testing_setup.md` (~504 tok)
+- `project_whatsapp_module.md` — Declares text (~618 tok)
 - `reference_git_proxy.md` (~315 tok)
 
 ## C:/Users/windb/cola/outputs/jimureport-集成开发文档/
@@ -84,8 +85,8 @@
 
 ## backend/
 
-- `.env.example` — Environment variable template, including WhatsApp Connector settings (~220 tok)
 - `_debug_print.py` (~447 tok)
+- `.env.example` — Environment variable template, including WhatsApp Connector settings (~220 tok)
 - `requirements.txt` — Python dependencies (~136 tok)
 
 ## backend/.pytest_cache/
@@ -468,8 +469,8 @@
 - `connector_client.py` — HTTP client for isolated WhatsApp Connector service (~760 tok)
 - `models.py` — WhatsApp Connector local projection models (~2140 tok)
 - `router.py` — WhatsApp Connector API routes (~2780 tok)
-- `schemas.py` — Schemas for WhatsApp Connector integration (~530 tok)
 - `scheduler.py` — WhatsApp Connector APScheduler auto-sync job (~220 tok)
+- `schemas.py` — Schemas for WhatsApp Connector integration (~530 tok)
 - `service.py` — WhatsApp Connector binding, sync cursor and projection service (~4100 tok)
 
 ## backend/scripts/
@@ -483,23 +484,15 @@
 
 ## deploy/
 
-- `deploy.bat` — deploy script with Alembic diagnostics and frontend build marker (~1600 tok)
+- `deploy.bat` — Declares f (~2106 tok)
+
+## docs/
+
+- `accio-work-integration-spec.md` — ACCIO WORK → 莱莎方舟 客户机会台 集成规范 (~3634 tok)
 
 ## docs/requirements/
 
 - `2026-06-16-whatsapp-connector-contract.md` — WhatsApp Connector 方舟侧 HTTP contract 与验收标准 (~1160 tok)
-
-## services/whatsapp-connector/
-
-- `.env.example` — WhatsApp Connector runtime configuration template (~40 tok)
-- `.gitignore` — ignores connector runtime state and dependencies (~20 tok)
-- `AGENTS.md` — WhatsApp Connector service directory rules (~160 tok)
-- `README.md` — WhatsApp Connector runbook (~210 tok)
-- `package.json` — Node service manifest for WhatsApp Web connector (~130 tok)
-
-## services/whatsapp-connector/src/
-
-- `server.js` — Express + whatsapp-web.js connector HTTP contract implementation with startup restore (~3400 tok)
 
 ## frontend/
 
@@ -673,8 +666,8 @@
 - `DictManagement.vue` — Vue: setup (~1812 tok)
 - `ExternalBindings.vue` — Vue: setup (~1858 tok)
 - `RoleManagement.vue` — Vue: setup (~1894 tok)
-- `WhatsAppConnector.vue` — Vue: setup (~4090 tok)
 - `UserManagement.vue` — Vue: setup (~4006 tok)
+- `WhatsAppConnector.vue` — Vue: setup (~4090 tok)
 
 ## frontend/src/views/system/composables/
 
@@ -775,6 +768,18 @@
 - `request.js` — utils/request.js — 统一请求封装 (~393 tok)
 - `storage.js` — utils/storage.js — 本地存储封装 (~139 tok)
 
+## services/whatsapp-connector/
+
+- `.env.example` — WhatsApp Connector runtime configuration template (~40 tok)
+- `.gitignore` — ignores connector runtime state and dependencies (~20 tok)
+- `AGENTS.md` — WhatsApp Connector service directory rules (~160 tok)
+- `package.json` — Node service manifest for WhatsApp Web connector (~130 tok)
+- `README.md` — WhatsApp Connector runbook (~210 tok)
+
+## services/whatsapp-connector/src/
+
+- `server.js` — Express + whatsapp-web.js connector HTTP contract implementation with startup restore (~3400 tok)
+
 ## 登录动效/app/
 
 
@@ -812,3 +817,4 @@
 
 
 ## 登录动效/app/stock-app/
+

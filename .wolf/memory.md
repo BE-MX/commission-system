@@ -36,6 +36,14 @@
 ## Session: 2026-06-03 neat-freak 知识库整理
 
 | Time | Action | File(s) | Outcome | ~Tokens |
+
+## Session: 2026-06-16 neat-freak 知识库同步
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|---------|
+| 16:00 | 发现 WhatsApp 模块完全未文档化（7表/6+端点/scheduler/env vars），补全 CLAUDE.md + README.md + agent memory | CLAUDE.md, README.md, MEMORY.md, project_whatsapp_module.md | WhatsApp 模块文档补全 | ~25k |
+| 16:05 | 补 governance/ 到 CLAUDE.md + README.md 项目结构树 | CLAUDE.md, README.md | 结构树与代码一致 | ~2k |
+| 16:06 | 更新 README insight/ 描述（补 customer_opportunity/radar/profile/source 等子服务） | README.md | insight 描述对齐代码 | ~1k |
 |------|--------|---------|---------|--------|
 
 ## Earlier Sessions (consolidated summaries)
@@ -1196,3 +1204,45 @@
 
 | Time | Action | File(s) | Outcome | ~Tokens |
 |------|--------|---------|---------|--------|
+| 20:19 | Edited CLAUDE.md | 2→3 lines | ~83 |
+| 20:19 | Edited CLAUDE.md | 2→3 lines | ~64 |
+| 20:20 | Edited CLAUDE.md | expanded (+7 lines) | ~139 |
+| 20:20 | Edited CLAUDE.md | 1→2 lines | ~50 |
+| 20:20 | Edited CLAUDE.md | 1→2 lines | ~63 |
+| 20:21 | Edited CLAUDE.md | expanded (+9 lines) | ~140 |
+| 20:21 | Edited CLAUDE.md | expanded (+8 lines) | ~274 |
+| 20:21 | Edited README.md | 3→4 lines | ~116 |
+| 20:22 | Edited README.md | 6→9 lines | ~142 |
+| 20:23 | Edited README.md | inline fix | ~156 |
+| 20:23 | Created C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_whatsapp_module.md | — | ~542 |
+| 20:24 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/MEMORY.md | 2→3 lines | ~86 |
+| 20:24 | Edited CLAUDE.md | 9→12 lines | ~199 |
+| 20:27 | Edited CLAUDE.md | expanded (+17 lines) | ~279 |
+| 20:28 | Edited CLAUDE.md | 2→3 lines | ~92 |
+| 20:28 | Edited CLAUDE.md | 1→5 lines | ~147 |
+| 20:30 | Edited CLAUDE.md | 4→5 lines | ~115 |
+| 20:31 | Session end: 17 writes across 4 files (CLAUDE.md, README.md, project_whatsapp_module.md, MEMORY.md) | 16 reads | ~48783 tok |
+| 20:41 | Session end: 17 writes across 4 files (CLAUDE.md, README.md, project_whatsapp_module.md, MEMORY.md) | 17 reads | ~53946 tok |
+| 20:50 | Session end: 17 writes across 4 files (CLAUDE.md, README.md, project_whatsapp_module.md, MEMORY.md) | 17 reads | ~53946 tok |
+| 21:01 | Session end: 17 writes across 4 files (CLAUDE.md, README.md, project_whatsapp_module.md, MEMORY.md) | 17 reads | ~53946 tok |
+
+## Session: 2026-06-16 21:23
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 21:27 | Created docs/accio-work-integration-spec.md | — | ~464 |
+| 21:29 | Edited docs/accio-work-integration-spec.md | modified should_run_background_check() | ~3429 |
+| 21:30 | Session end: 2 writes across 1 files (accio-work-integration-spec.md) | 1 reads | ~9334 tok |
+| 21:31 | Session end: 2 writes across 1 files (accio-work-integration-spec.md) | 1 reads | ~9334 tok |
+
+## Session: 2026-06-18 08:34
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 10:13 | Edited CLAUDE.md | inline fix | ~39 |
+| 10:13 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_whatsapp_module.md | inline fix | ~27 |
+| 10:13 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_whatsapp_module.md | expanded (+11 lines) | ~125 |
+| 10:14 | Edited CLAUDE.md | inline fix | ~27 |
+| 10:14 | Edited deploy/deploy.bat | 2→2 lines | ~19 |
+| 10:14 | Edited deploy/deploy.bat | 2→2 lines | ~22 |
+| 10:15 | Session end: 6 writes across 3 files (CLAUDE.md, project_whatsapp_module.md, deploy.bat) | 8 reads | ~10090 tok |

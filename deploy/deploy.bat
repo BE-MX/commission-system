@@ -38,8 +38,8 @@ if not exist "%NSSM_EXE%" (
     goto :error
 )
 
-REM ---------- [1/6] Pull latest code ----------
-echo [1/6] Git pull...
+REM ---------- [1/7] Pull latest code ----------
+echo [1/7] Git pull...
 cd /d "%INSTALL_DIR%"
 git pull
 if errorlevel 1 (
@@ -49,8 +49,8 @@ if errorlevel 1 (
 echo      OK
 echo.
 
-REM ---------- [2/6] Backend deps ----------
-echo [2/6] Backend dependencies...
+REM ---------- [2/7] Backend deps ----------
+echo [2/7] Backend dependencies...
 cd /d "%INSTALL_DIR%\backend"
 call .venv\Scripts\activate.bat
 if errorlevel 1 (
