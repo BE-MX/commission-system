@@ -69,6 +69,21 @@ def get_shipment_detail(
     return {"code": 200, "message": "ok", "data": detail}
 
 
+@router.delete("/shipments/{waybill_no}", summary="删除运单（软删除）")
+def delete_shipment(
+    waybill_no: str = Path(...),
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("tracking:delete")),
+):
+    from app.tracking.models import ShipmentTracking
+    shipment = db.query(ShipmentTracking).filter(ShipmentTracking.waybill_no == waybill_no).first()
+    if not shipment:
+        raise HTTPException(status_code=404, detail=f"运单 {waybill_no} 不存在")
+    shipment.is_active = False
+    db.commit()
+    return {"code": 200, "message": "已删除", "data": None}
+
+
 @router.post("/shipments/{waybill_no}/refresh", summary="手动刷新运单状态")
 async def refresh_shipment(
     waybill_no: str = Path(...),

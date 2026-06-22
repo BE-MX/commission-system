@@ -148,10 +148,19 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" min-width="90" max-width="130" fixed="right">
+      <el-table-column label="操作" min-width="130" max-width="180" fixed="right">
         <template #default="{ row }">
           <GlassButton variant="link" left-icon="Refresh" @click="handleRefresh(row)">
             刷新
+          </GlassButton>
+          <GlassButton
+            v-if="authStore.hasAnyPermission(['tracking:delete'])"
+            variant="link"
+            left-icon="Delete"
+            style="color: var(--el-color-danger)"
+            @click="handleDelete(row)"
+          >
+            删除
           </GlassButton>
         </template>
       </el-table-column>
@@ -174,8 +183,8 @@
 <script setup>
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { getShipmentList, getTrackingStats, refreshShipment, triggerScanStaging, triggerPoll } from '@/api/tracking'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { getShipmentList, getTrackingStats, refreshShipment, deleteShipment, triggerScanStaging, triggerPoll } from '@/api/tracking'
 import { useAuthStore } from '@/stores/auth'
 import { useTableSort } from '@/composables/useTableSort'
 
@@ -342,6 +351,20 @@ async function handleRefresh(row) {
     fetchList()
     fetchStats()
   } catch { /* handled by interceptor */ }
+}
+
+async function handleDelete(row) {
+  try {
+    await ElMessageBox.confirm(`确定删除运单 ${row.waybill_no}？`, '删除确认', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+    await deleteShipment(row.waybill_no)
+    ElMessage.success('已删除')
+    fetchList()
+    fetchStats()
+  } catch { /* cancelled or handled by interceptor */ }
 }
 
 async function handleScanStaging() {

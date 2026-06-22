@@ -35,6 +35,10 @@ export function refreshShipment(waybillNo) {
   })
 }
 
+export function deleteShipment(waybillNo) {
+  return request.delete(`/tracking/shipments/${waybillNo}`)
+}
+
 export function getTrackingStats(params) {
   return request.get('/tracking/stats', { params, showLoading: false })
 }
