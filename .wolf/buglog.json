@@ -16,6 +16,18 @@
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-06-16T12:28:05.804Z"
+    },
+    {
+      "id": "bug-002",
+      "timestamp": "2026-06-22T00:00:00.000Z",
+      "error_message": "GET /api/insight/customer-radar/focus 500 (Internal Server Error) — NameError: name '_get_user_id' is not defined",
+      "file": "backend/app/insight/router.py",
+      "root_cause": "_get_user_id() called 9 times in the radar router section but never defined or imported. Other sections of the same file use _user['sub'] directly.",
+      "fix": "Added `def _get_user_id(user: dict) -> int: return user['sub']` helper before the radar endpoints block.",
+      "tags": ["NameError", "missing-function", "radar", "500", "router"],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-22T00:00:00.000Z"
     }
   ]
 }

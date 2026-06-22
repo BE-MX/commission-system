@@ -1091,6 +1091,10 @@ def _serialize_opportunity_detail(o) -> dict:
 # ── 客户经营雷达 ──────────────────────────────────────────
 
 
+def _get_user_id(user: dict) -> int:
+    return user["sub"]
+
+
 @router.get("/customer-radar/focus")
 def radar_daily_focus(
     action_date: Optional[str] = Query(None, description="日期 YYYY-MM-DD"),
