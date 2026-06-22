@@ -162,6 +162,7 @@ deploy\restart.bat                       # 仅重启 CommissionSystem service
   - `GET /submitters` — 提交人去重列表(需 `tracking:read_all`)
   - `GET /shipments/{waybill_no}` — 运单详情 + 轨迹
   - `POST /shipments/{waybill_no}/refresh` — 手动刷新
+  - `DELETE /shipments/{waybill_no}` — 删除运单(软删除,需 `tracking:delete`)
   - `POST /upload-ocr` — 上传运单图片,AI OCR 识别(需 `tracking:write`,multipart 上传)
   - `GET /waybills/check?waybill_no=xxx` — 运单号去重检查(需 `tracking:write`)
   - `POST /waybills` — 提交运单入库(需 `tracking:write`,返回 HTTP 201)
@@ -511,7 +512,7 @@ deploy\restart.bat                       # 仅重启 CommissionSystem service
 | 客户管理 | `customer:read` / `customer:write` | 查看/编辑客户归属 |
 | 提成管理 | `commission:read` / `commission:write` / `commission:self_read` | 批次查看/管理/查看本人 |
 | 提成管理 | `payment:read` / `payment:write` | 回款查看/同步 |
-| 物流跟踪 | `tracking:read` / `tracking:read_all` / `tracking:write` / `tracking:daily_report` | 查看运单(仅本人)/查看全部/编辑/查看日报 |
+| 物流跟踪 | `tracking:read` / `tracking:read_all` / `tracking:write` / `tracking:delete` / `tracking:daily_report` | 查看运单(仅本人)/查看全部/编辑/删除运单/查看日报 |
 | 设计预约 | `design:read` / `design:write` / `design:audit` / `design:manage` | 查看/提交/审批/管理 |
 | 系统管理 | `user:read` / `user:write` / `user:delete` | 用户管理 |
 | 系统管理 | `role:read` / `role:write` / `role:delete` | 角色管理 |
