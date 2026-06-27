@@ -889,6 +889,28 @@ frontend/src/
 
 模板 (.mrt) 在 Stimulsoft Designer 中设计，通过 API `POST /templates` 存入数据库。模板只消费 JSON 数据，不直连 MySQL。
 
+### Word 导出格式规范
+
+生产订单 Word 导出（`docx_export.py`）完整格式定稿（2026-06-24，对齐 reference.docx 参照文档）：
+
+1. **页面设置**：页边距 1.27cm（四边），列数 > 10 时自动切换横版，默认横版导出
+2. **动态列宽**：颜色列固定 3.5cm + 合计列固定 2.0cm + 数据列均分可用宽度（确保单页内显示）
+3. **表头行重复**：前两行（等级+尺寸）标记为 `<w:tblHeader>`，跨页时每页顶部自动显示完整表头
+4. **字号与颜色**：
+   - 左上角分类标签（如"T3寸；钢琴色比例1：1"）：10pt 加粗纯黑
+   - 列表头第二行（如"修稍到19寸"）：10pt 加粗纯黑
+   - 数据区所有文字：12pt 加粗纯黑
+   - 0 值单元格：显示为空（空白，无灰色标记）
+   - 合计列：12pt 加粗金色（`#D4941C`）
+5. **签字区**：制单人/审核人/日期移至页头订单信息行（与订单编号/批次号/备注同行，用双全角空格分隔）
+6. **页脚**：仅页码"第X页/共X页"，纯黑色 14pt（四号字）加粗居中，使用 Word 域代码（`PAGE` + `NUMPAGES`）动态更新
+
+实现细节：
+- `_set_cell_multiline()` 默认字号 10pt（左上角分类标签），二级表头第二行 10pt
+- `_COLOR_GRAY = RGBColor(0x71, 0x80, 0x96)` 仅用于页脚装饰文字，表格内容全部纯黑
+- 页脚通过 `OxmlElement` 构造 Word 域代码（`w:fldChar` + `w:instrText`），确保页码动态更新
+- 默认导出方向改为 `landscape`（`router.py` 第 371 行 Query 参数默认值）
+
 ### 已踩过的坑
 
 - `Scripts/` 下的 `.pack.js` **不含 StiLicense 类**，License Key 设置被静默忽略，永远显示 trial。必须用 `Demo/scripts/` 下的非压缩 `.js`（如 `stimulsoft.reports.js` 11.8MB）
@@ -897,3 +919,5 @@ frontend/src/
 - 透视后列按 group 排序（2026-06-09）：`_pivot_items` 的 `column_defs` 必须按 `(product_remark, size)` 排序，否则 Jinja group-header 切换检测会重复生成 `<th>`，产生空列
 - SQL GROUP BY 不含 production_*_requirement（2026-06-09）：同一 `(color, product_remark, size)` 因 `production_color_requirement`/`production_size_requirement` 不同被拆成多行，透视后多出虚假列。改用 `MAX()` 聚合
 - python-docx 延迟导入（2026-06-09）：`docx_export` 在 router 顶层 import 会导致未安装 `python-docx` 的环境启动失败（`ModuleNotFoundError`），改为端点内 `try/except ImportError` 延迟导入
+- `_COLOR_GRAY` 未定义错误（2026-06-24）：删除 `_COLOR_GRAY` 常量定义但页脚代码仍引用。修复：重新添加常量并注释用途（仅页脚装饰文字）
+- 中文路径编码失败（2026-06-24）：`PackageNotFoundError` 尝试读取桌面中文文件名 docx，Python pathlib 编码失败。解决方案：用户另存为标准 docx 并放入项目目录，使用 ASCII 文件名

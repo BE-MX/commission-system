@@ -120,3 +120,7 @@ export function updateProductionItemReceived(itemId, payload) {
 export function deleteProductionOrderItem(itemId) {
   return stockApi.delete(`/production/order-items/${itemId}`, { loadingText: '删除中...' })
 }
+
+export function resetOrderProcess(orderId) {
+  return stockApi.post(`/production/orders/${orderId}/reset-process`, null, { loadingText: '重置工艺中...' })
+}

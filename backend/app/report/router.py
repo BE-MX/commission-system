@@ -368,7 +368,7 @@ def print_production_order(
 def export_production_order_docx(
     order_no: str = Query(..., description="生产订单号"),
     page_size: str = Query("A4", description="页面尺寸：A4/A3/A5/B5"),
-    orientation: str = Query("portrait", description="方向：portrait/landscape"),
+    orientation: str = Query("landscape", description="方向：portrait/landscape"),
     reviewer: str = Query("", description="审核人姓名（当前导出用户）"),
     db: Session = Depends(get_db),
 ):

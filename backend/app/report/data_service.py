@@ -11,7 +11,7 @@ from collections import OrderedDict
 import re as _re
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -449,26 +449,71 @@ def get_process_card_print_data(db: Session, order_no: str) -> Dict[str, Any]:
     """工序卡片打印数据：按订单明细列出每个产品的工序卡片信息，含二维码 base64。"""
     from app.production.report_service import get_qrcode
 
-    sql = text("""
+    settings = get_settings()
+    business_db = settings.BUSINESS_DB_NAME
+
+    sql = text(f"""
         SELECT
             oi.id,
+            oi.product_id,
             oi.product_name,
             oi.model,
             oi.order_qty,
             o.batch_no,
-            o.created_at
+            o.created_at,
+            p.color,
+            p.size,
+            p.unit,
+            p.description,
+            p.product_remark
         FROM ark_production_order_items oi
         LEFT JOIN ark_production_orders o ON oi.order_id = o.id
+        LEFT JOIN `{business_db}`.okki_products p ON p.product_id = oi.product_id
         WHERE o.order_no = :order_no AND o.deleted_flag = 0
     """)
     rows = db.execute(sql, {"order_no": order_no}).mappings().all()
 
+    item_ids = [r["id"] for r in rows]
+    product_ids = [r["product_id"] for r in rows if r.get("product_id")]
+    process_map: Dict[int, str] = {}
+
+    # 优先从已初始化的工序进度获取
+    if item_ids:
+        proc_sql = text("""
+            SELECT pp.order_product_id, GROUP_CONCAT(pr.name ORDER BY pp.step_order SEPARATOR '-') AS process_chain
+            FROM order_product_process_progress pp
+            JOIN process pr ON pr.id = pp.process_id
+            WHERE pp.order_product_id IN :ids
+            GROUP BY pp.order_product_id
+        """).bindparams(bindparam("ids", expanding=True))
+        proc_rows = db.execute(proc_sql, {"ids": item_ids}).mappings().all()
+        for pr in proc_rows:
+            process_map[pr["order_product_id"]] = pr["process_chain"] or ""
+
+    # 未初始化进度的明细，从产品绑定的工艺路线获取
+    missing_items = [(r["id"], r["product_id"]) for r in rows if r["id"] not in process_map and r.get("product_id")]
+    if missing_items:
+        missing_product_ids = list(set(pid for _, pid in missing_items))
+        route_sql = text("""
+            SELECT ppr.product_id, GROUP_CONCAT(p.name ORDER BY rs.step_order SEPARATOR '-') AS process_chain
+            FROM product_process_route ppr
+            JOIN process_route_step rs ON rs.route_id = ppr.route_id
+            JOIN process p ON p.id = rs.process_id
+            WHERE ppr.product_id IN :pids
+            GROUP BY ppr.product_id
+        """).bindparams(bindparam("pids", expanding=True))
+        route_rows = db.execute(route_sql, {"pids": missing_product_ids}).mappings().all()
+        product_route_map = {r["product_id"]: r["process_chain"] or "" for r in route_rows}
+        for item_id, product_id in missing_items:
+            if product_id in product_route_map:
+                process_map[item_id] = product_route_map[product_id]
+
     items = []
     for r in rows:
-        qr_code_base64 = ""
+        qr_data = ""
         try:
             qr_result = get_qrcode(db, r["id"], box_size=4)
-            qr_code_base64 = qr_result.get("qr_code", "")
+            qr_data = qr_result.get("qr_data", "")
         except Exception:
             pass
 
@@ -479,7 +524,13 @@ def get_process_card_print_data(db: Session, order_no: str) -> Dict[str, Any]:
             "order_qty": int(r["order_qty"]) if r["order_qty"] else 0,
             "batch_no": r["batch_no"] or "",
             "created_at": str(r["created_at"]) if r["created_at"] else "",
-            "qr_code": qr_code_base64,
+            "qr_code": qr_data,
+            "color": r["color"] or "",
+            "size": r["size"] or "",
+            "unit": r["unit"] or "",
+            "description": r["description"] or "",
+            "product_remark": r["product_remark"] or "",
+            "order_product_process": process_map.get(r["id"], ""),
         })
 
     return {"items": items}
@@ -551,7 +602,9 @@ def get_report_data(db: Session, report_code: str, params: Optional[Dict] = None
                 "items": [{
                     "id": 0, "product_name": "", "model": "",
                     "order_qty": 0, "batch_no": "", "created_at": "",
-                    "qr_code": "",
+                    "qr_code": "", "color": "", "size": "",
+                    "unit": "", "description": "", "product_remark": "",
+                    "order_product_process": "",
                 }],
             }
         return handler(db, order_no)

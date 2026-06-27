@@ -82,6 +82,7 @@
                 </template>
               </el-dropdown>
               <GlassButton variant="link" left-icon="Printer" @click="printOrderHtml(row)">打印订单</GlassButton>
+              <GlassButton variant="link" left-icon="Refresh" @click="handleResetProcess(row)">重置工艺</GlassButton>
               <GlassButton variant="link" link-tone="danger" left-icon="Delete" @click="deleteOrder(row)" v-if="authStore.hasPermission('production:admin')">删除</GlassButton>
             </template>
           </el-table-column>
@@ -399,6 +400,7 @@ import {
   getProductionOrders, getProductionOrderDetail, updateProductionOrder,
   deleteProductionOrder, getProductionOrderItems, updateProductionOrderItem,
   updateProductionItemStatus, updateProductionItemReceived, deleteProductionOrderItem,
+  resetOrderProcess,
 } from '@/api/stock'
 
 const router = useRouter()
@@ -570,6 +572,24 @@ async function deleteOrder(row) {
     await deleteProductionOrder(row.id)
     ElMessage.success('已删除')
     loadOrderList()
+  } catch {
+    // cancel
+  }
+}
+
+async function handleResetProcess(row) {
+  try {
+    await ElMessageBox.confirm(
+      `将删除订单 ${row.order_no} 下所有产品的工序进度，按最新工艺路线重新生成。确定继续？`,
+      '重置工艺确认', { type: 'warning' }
+    )
+    const res = await resetOrderProcess(row.id)
+    const data = res.data || res
+    if (data.errors && data.errors.length > 0) {
+      ElMessage.warning(`重置完成：成功 ${data.success}/${data.total}，${data.errors.length} 个产品未绑定路线`)
+    } else {
+      ElMessage.success(`工艺重置完成，共 ${data.success} 个产品`)
+    }
   } catch {
     // cancel
   }

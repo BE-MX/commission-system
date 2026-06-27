@@ -653,6 +653,68 @@ def delete_production_order_item(
     return _ok(None, message="已删除")
 
 
+@router.post("/production/orders/{order_id}/reset-process", summary="重置订单工艺进度")
+def reset_order_process(
+    order_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("production:write")),
+):
+    """删除订单下所有明细的工序进度，按最新产品工艺路线重新生成。"""
+    from app.production.models import OrderProductProcessProgress, ProcessRouteStep, ProductProcessRoute
+    from app.stock.models import ProductionOrder, ProductionOrderItem
+
+    order = db.query(ProductionOrder).filter(
+        ProductionOrder.id == order_id, ProductionOrder.deleted_flag == 0
+    ).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="生产订单不存在")
+
+    items = db.query(ProductionOrderItem).filter(
+        ProductionOrderItem.order_id == order_id,
+    ).all()
+
+    item_ids = [item.id for item in items]
+    if item_ids:
+        db.query(OrderProductProcessProgress).filter(
+            OrderProductProcessProgress.order_product_id.in_(item_ids)
+        ).delete(synchronize_session=False)
+
+    success_count = 0
+    errors = []
+    for item in items:
+        binding = db.query(ProductProcessRoute).filter(ProductProcessRoute.product_id == item.product_id).first()
+        if not binding:
+            errors.append({"item_id": item.id, "product_name": item.product_name, "error": "未绑定工序路线"})
+            continue
+
+        steps = (
+            db.query(ProcessRouteStep)
+            .filter(ProcessRouteStep.route_id == binding.route_id)
+            .order_by(ProcessRouteStep.step_order)
+            .all()
+        )
+        if not steps:
+            errors.append({"item_id": item.id, "product_name": item.product_name, "error": "工序路线无工序"})
+            continue
+
+        for step in steps:
+            db.add(OrderProductProcessProgress(
+                order_product_id=item.id,
+                process_id=step.process_id,
+                route_id=binding.route_id,
+                step_order=step.step_order,
+                status=0,
+            ))
+        success_count += 1
+
+    db.commit()
+    return _ok({
+        "total": len(items),
+        "success": success_count,
+        "errors": errors,
+    }, message=f"工艺重置完成，成功 {success_count}/{len(items)}")
+
+
 # ── 二维码图片（供 jimureport 报表直接引用）──────────────────
 @router.get("/production/qrcode-image")
 def get_order_qrcode_image(
