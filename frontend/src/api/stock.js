@@ -124,3 +124,17 @@ export function deleteProductionOrderItem(itemId) {
 export function resetOrderProcess(orderId) {
   return stockApi.post(`/production/orders/${orderId}/reset-process`, null, { loadingText: '重置工艺中...' })
 }
+
+// ── 生产订单打印工作台 ────────────────────────────────────────
+
+export function getProductionPrintOrders(params) {
+  return stockApi.get('/production/print-orders', { params, showLoading: false })
+}
+
+export function getOrderPrintCategories(orderId) {
+  return stockApi.get(`/production/orders/${orderId}/print-categories`, { showLoading: false })
+}
+
+export function createProductionPrintJob(orderId, payload) {
+  return stockApi.post(`/production/orders/${orderId}/print-jobs`, payload, { loadingText: '打印中...' })
+}

@@ -203,3 +203,14 @@ class InTransitQueryRequest(BaseModel):
 class InTransitItemResponse(BaseModel):
     product_id: int
     in_transit_qty: int
+
+
+# ═══════════════════════════════════════════════════════════
+# 打印工作台
+# ═══════════════════════════════════════════════════════════
+
+class PrintJobCreateRequest(BaseModel):
+    """创建打印记录"""
+    scope: str = Field(default="category", pattern=r"^(order|category)$")
+    category_index: Optional[int] = None
+    item_ids: Optional[List[int]] = None

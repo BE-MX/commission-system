@@ -58,12 +58,12 @@ commission-system/
 │   │   ├── whatsapp/      # WhatsApp 同步领域模块（router/models/schemas/service + connector_client + scheduler；独立 Node.js Connector 服务在 services/whatsapp-connector/）
 │   │   ├── ai/            # AI 接入领域模块（service.py facade + provider/preset/call/log_service + keyring + http_client）
 │   │   ├── insight/       # 方舟洞见领域模块（service.py facade + fetcher + ai_helpers + sources/reports/case_library/meeting_minutes/dashboard_service/item_service/collector_service/intelligence_service/schedule_service + external_binding_service + customer_opportunity_service + customer_profile_service + customer_radar_service + customer_source_service + dependencies.py router 依赖工厂）
-│   │   ├── stock/         # 备货管理领域模块（service.py facade + constants/sku_query/overview/safety/daily_report_service/production_cart_service/production_order_service/in_transit_service；TFT 微服务通过 Settings 配置接入）
+│   │   ├── stock/         # 备货管理领域模块（service.py facade + constants/sku_query/overview/safety/daily_report_service/production_cart_service/production_order_service/in_transit_service/print_workstation_service；TFT 微服务通过 Settings 配置接入）
 │   │   ├── tracking/      # 物流跟踪领域模块（router + shipment/upload/ocr/polling/staging/daily_report/push_service + carriers/ + status.py + templates/）
 │   │   ├── asset/         # 素材管理领域模块（router/models/schemas/service facade + analyze/batch/stats/tag/favorite/asset_service 子模块）
 │   │   ├── color/         # 发色数字化领域模块（router/models/schemas/service facade + palette/blend/calc/trend/swatch/social_extract 子模块）
 │   │   ├── production/    # 生产报工领域模块（router/models/schemas/service facade + process/route/binding/report/dashboard_service 子模块；与 stock/production_* 生产订单是两个模块）
-│   │   ├── report/         # 报表中心领域模块（router/models/schemas/data_service — Stimulsoft Reports.JS 模板 CRUD + 数据组装）
+│   │   ├── report/         # 报表中心领域模块（router/models/schemas/data_service/category_service/docx_export — Stimulsoft Reports.JS 模板 CRUD + 数据组装 + 分类规则）
 │   │   ├── governance/     # 数据概念治理领域模块（router/models/schemas/service facade + concept/relationship/changelog/import_service 子模块）
 │   │   ├── mini/           # 微信小程序端领域模块（router/service/auth/schemas — 扫码报工/历史/总览/撤销/登录绑定）
 │   │   └── main.py        # FastAPI 入口（薄,只装配 app/middleware/lifespan,bootstrap/scheduler/router 都委托给子模块）
@@ -310,6 +310,11 @@ deploy\restart.bat                       # 仅重启 CommissionSystem service
     - `PUT /production/order-items/{item_id}/status` — 修改明细状态（0已提交/1已终止/2已完成；若所有明细同一状态则同步更新订单状态）
     - `PUT /production/order-items/{item_id}/received` — 录入入库数量（`received_qty == order_qty` 时自动将明细状态改为已完成）
     - `DELETE /production/order-items/{item_id}` — 删除单条明细
+    - `POST /production/orders/{order_id}/reset-process` — 重置订单工艺（删除所有明细工序进度，按最新产品路线绑定重建，需 `production:write`）
+  - **打印工作台**（`production:read/write`，子路径 `/production/print-*` 和 `/production/orders/{id}/print-*`）
+    - `GET /production/print-orders` — 打印工作台订单列表（含最后打印时间，支持 keyword/status/print_state 筛选）
+    - `GET /production/orders/{order_id}/print-categories` — 获取订单分类卡片（按 model+unit 规则拆分聚合）
+    - `POST /production/orders/{order_id}/print-jobs` — 创建打印记录并返回打印 URL（scope order/category）
 - `/api/production` — 生产报工（独立领域模块 `app/production/`，与 stock 下的生产订单是两个模块）
   - `GET /dashboard` — 生产看板数据聚合（需 `production:read`，4 条批量 SQL + 内存聚合，无 N+1）
   - `GET /processes` / `POST /processes` / `PUT /processes/{id}` / `DELETE /processes/{id}` — 工序 CRUD（需 `production:admin`）
@@ -436,9 +441,10 @@ deploy\restart.bat                       # 仅重启 CommissionSystem service
 - `ark_stock_daily_reports` — 安全库存日报（report_date UNIQUE, shortage_skus/warning_skus JSON, dingtalk_sent）
 - **生产订单（025/026 迁移）**：
   - `ark_production_orders` — 生产订单主表（order_no UNIQUE, status 0已提交/1已终止/2已完成, delete_flag 软删, created_by, remark）
-  - `ark_production_order_items` — 生产订单明细（order_id, product_id, product_name, model, spec_info, order_qty, received_qty, status, is_urgent SmallInteger, expected_delivery_date Date, remark, delete_flag）
+  - `ark_production_order_items` — 生产订单明细（order_id, product_id, product_name, model, spec_info, order_qty, received_qty, status, is_urgent SmallInteger, expected_delivery_date Date, remark；无独立软删字段，靠 FK CASCADE 跟随订单删除）
   - `ark_production_cart` — 生产购物车（user_id + product_id UNIQUE, product_name, model, spec_info, order_qty, remark）
   - `ark_production_audit_log` — 生产订单审计日志（order_id, action, old_value, new_value, operator_id）
+  - `ark_production_print_logs` — 打印日志（039 迁移，order_id, order_no, scope order/category, category_index, category_label, item_ids_json JSON, printed_by, printed_by_name, printed_at）
 - **生产报工（027 迁移）**：
   - `process` — 工序基础表（name UNIQUE, description, sort_order, status 0禁用/1启用）
   - `process_route` — 工序路线表（name UNIQUE, description, status）
@@ -856,6 +862,7 @@ backend/app/report/
 ├── models.py          — ReportTemplate ORM (ark_report_templates)
 ├── schemas.py         — Pydantic 模型
 ├── data_service.py    — 报表数据组装（含 _pivot_items 长→宽透视 + 公斤数统计）
+├── category_service.py — 产品分类规则（17 条 model+unit 规则，供 data_service + print_workstation_service 共享）
 ├── docx_export.py     — 生产订单 Word 导出（python-docx，支持 A4/A3/A5/B5 + 横竖版）
 └── templates/
     └── production_order_print.html — 生产订单 Jinja2 HTML 打印模板
@@ -881,7 +888,7 @@ frontend/src/
 | report_code | 函数 | 说明 |
 |---|---|---|
 | `production_order_print` | `get_production_order_print_data` | 生产订单打印，按 `(model, unit)` 双键 17 规则拆表（源自《发帘与贴发产品清单.xlsx》，Excel 顺序先匹配先胜，"其他"兜底），每张子表 `_pivot_items` 透视为宽格式（按 group 排序）+ 公斤数统计（纯色/T色，全量列）+ Jinja2 HTML 渲染（方案C）+ Word 导出。左上角分类标签来自 Excel「左上角单元格显示内容」列，含 `\n` 多行：HTML 用 `white-space: pre-line`，Word 用 `_set_cell_multiline()` + `<w:br/>` |
-| `process_card_print` | `get_process_card_print_data` | 工序卡片打印，查询明细 + 生成二维码 base64 |
+| `process_card_print` | `get_process_card_print_data` | 工序卡片打印，查询明细 + okki_products 字段(color/size/unit/description/product_remark) + 工序链(order_product_process) + 二维码纯文本(qr_data `ARK-P:{id}:{sign}`) |
 
 新增报表只需：(1) 加一个 `get_xxx_data(db, params)` 函数 (2) 注册到 `_DATA_DISPATCH` 字典。
 

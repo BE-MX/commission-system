@@ -18,7 +18,7 @@ import {
   Money, Refresh, List, Van, Upload, Box, Setting, Aim, Reading,
   MagicStick, Notebook, Calendar, Camera, EditPen, Stamp, TrendCharts,
   Lock, Lightning, Picture, Collection, CollectionTag, DataBoard,
-  DataLine,
+  DataLine, Printer,
 } from '@element-plus/icons-vue'
 
 /**
@@ -262,6 +262,18 @@ export const NAV_ENTRIES = [
     permission: 'production:read',
     menu: {
       group: 'stock', title: '生产订单管理', icon: Box, order: 40,
+      permission: 'production:read',
+    },
+  },
+
+  {
+    path: '/stock/production-order-print',
+    name: 'ProductionOrderPrint',
+    component: () => import('@/views/stock/ProductionOrderPrint.vue'),
+    title: '生产订单打印',
+    permission: 'production:read',
+    menu: {
+      group: 'stock', title: '生产订单打印', icon: Printer, order: 41,
       permission: 'production:read',
     },
   },

@@ -157,3 +157,25 @@ class ProductionAuditLog(Base):
         Index("idx_production_audit_order_id", "order_id"),
         Index("idx_production_audit_created_at", "created_at"),
     )
+
+
+class ProductionPrintLog(Base):
+    """生产订单打印日志"""
+
+    __tablename__ = "ark_production_print_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    order_id = Column(Integer, nullable=False, comment="关联生产订单ID")
+    order_no = Column(String(64), nullable=False, comment="生产单号(冗余)")
+    scope = Column(String(20), nullable=False, default="category", comment="打印范围: order/category")
+    category_index = Column(SmallInteger, nullable=True, comment="分类编号(scope=category时)")
+    category_label = Column(String(255), nullable=True, comment="分类名称快照")
+    item_ids_json = Column(JSON, nullable=True, comment="打印的明细ID列表")
+    printed_by = Column(Integer, nullable=False, comment="操作人 user_id")
+    printed_by_name = Column(String(64), nullable=False, default="", comment="操作人姓名快照")
+    printed_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("idx_print_log_order", "order_id", "scope", "category_index", "printed_at"),
+        Index("idx_print_log_order_no", "order_no"),
+    )

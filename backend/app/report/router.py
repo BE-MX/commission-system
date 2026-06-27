@@ -36,7 +36,7 @@ router = APIRouter()
 # Jinja2 环境
 _TEMPLATES_DIR = FilePath(__file__).parent / "templates"
 _ASSETS_DIR = _TEMPLATES_DIR / "assets"
-_jinja_env = Environment(loader=FileSystemLoader(str(_TEMPLATES_DIR)), autoescape=True)
+_jinja_env = Environment(loader=FileSystemLoader(str(_TEMPLATES_DIR)), autoescape=True, auto_reload=True)
 
 
 def _load_middle_punch_image_data_uri() -> str:
@@ -308,6 +308,8 @@ def toggle_template_status(
 def get_data(
     report_code: str,
     order_no: Optional[str] = Query(None),
+    category_index: Optional[int] = Query(None),
+    item_ids: Optional[str] = Query(None, description="逗号分隔的明细ID列表"),
     _user: dict = Depends(require_permission("report:read")),
     db: Session = Depends(get_db),
 ):
@@ -324,6 +326,10 @@ def get_data(
         params = {}
         if order_no:
             params["order_no"] = order_no
+        if category_index is not None:
+            params["category_index"] = category_index
+        if item_ids:
+            params["item_ids"] = [int(x) for x in item_ids.split(",") if x.strip()]
 
         data = get_report_data(db, report_code, params)
         return _ok(data)
@@ -341,11 +347,15 @@ def get_data(
 def print_production_order(
     order_no: str = Query(..., description="生产订单号"),
     reviewer: str = Query("", description="审核人姓名（当前打印用户）"),
+    category_index: Optional[int] = Query(None, description="分类编号(打印特定分类)"),
     db: Session = Depends(get_db),
 ):
     """生产订单打印页（HTML，无需登录，供打印窗口直接访问）"""
     from datetime import date
-    data = get_report_data(db, "production_order_print", {"order_no": order_no})
+    params = {"order_no": order_no}
+    if category_index is not None:
+        params["category_index"] = category_index
+    data = get_report_data(db, "production_order_print", params)
 
     if not data.get("header"):
         raise HTTPException(status_code=404, detail=f"订单不存在: {order_no}")

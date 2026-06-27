@@ -328,7 +328,7 @@
   <div class="meta">
     <span>订单编号：{{ header.order_no }}</span>
     {% if header.batch_no %}
-    <span>批次号：{{ header.batch_no }}</span>
+    <span style="font-size:24px;font-weight:700">批次号：{{ header.batch_no }}</span>
     {% endif %}
   </div>
 </div>
@@ -342,7 +342,13 @@
   {% if header.batch_no %}
   <div class="item">
     <span class="label">批次号：</span>
-    <span class="value">{{ header.batch_no }}</span>
+    <span class="value" style="font-size:26px;font-weight:700">{{ header.batch_no }}</span>
+  </div>
+  {% endif %}
+  {% if header.creator_name %}
+  <div class="item">
+    <span class="label">创建人：</span>
+    <span class="value">{{ header.creator_name }}</span>
   </div>
   {% endif %}
   {% if header.remark %}

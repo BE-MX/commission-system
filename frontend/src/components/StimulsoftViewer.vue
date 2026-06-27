@@ -52,6 +52,7 @@ async function loadReport() {
   errorMsg.value = null
 
   try {
+    console.log('[StimulsoftViewer] loadReport called, reportCode:', props.reportCode, 'params:', JSON.parse(JSON.stringify(props.params)))
     // 并行：等 Stimulsoft 引擎加载 + 请求模板和数据
     const [, templateRes, dataRes] = await Promise.all([
       ensureLoaded(),
@@ -62,6 +63,7 @@ async function loadReport() {
     // 解包响应（拦截器已解包 response.data，直接拿到 { code, data } 结构）
     const template = templateRes?.data ?? templateRes
     const reportData = dataRes?.data ?? dataRes
+    console.log('[StimulsoftViewer] reportData items count:', reportData?.items?.length, 'item ids:', reportData?.items?.map(i => i.id))
 
     if (!template?.template_content) {
       throw new Error('模板内容为空')
@@ -117,7 +119,8 @@ onBeforeUnmount(() => {
 // 参数变化时重新加载
 watch(
   () => [props.reportCode, props.params],
-  () => {
+  (newVal) => {
+    console.log('[StimulsoftViewer] WATCH triggered, new params:', JSON.parse(JSON.stringify(newVal[1])))
     if (viewerContainer.value) {
       viewerContainer.value.innerHTML = ''
     }

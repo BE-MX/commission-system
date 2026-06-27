@@ -42,133 +42,14 @@ def _extract_weight_grams(product_name: str) -> float:
     except (ValueError, TypeError):
         return 0.0
 
-# ── 型号分类规则 ─────────────────────────────────────────
-# 规则源：发帘与贴发产品清单.xlsx（2026-06-15 更新）
-# 每条规则按 Excel 顺序，先命中先胜出（model_includes / model_excludes / unit_includes / unit_excludes 同时满足）
-# unit_includes / unit_excludes 为空 = 不限制 unit 字段
-# label 中的 \n 在 HTML / Word 中均被渲染为换行
-_CATEGORY_RULES: List[Dict[str, Any]] = [
-    {  # 1
-        "model_includes": ["Deep"], "model_excludes": [],
-        "unit_includes": [], "unit_excludes": [],
-        "label": "Deep天才发帘 帘宽12“\n20g\n扁头银线3条/包",
-    },
-    {  # 2
-        "model_includes": ["棒棒"], "model_excludes": ["哑光"],
-        "unit_includes": [], "unit_excludes": [],
-        "label": "棒棒\n1g\n25根/捆 50根/包",
-    },
-    {  # 3
-        "model_includes": ["打孔"], "model_excludes": [],
-        "unit_includes": ["60"], "unit_excludes": [],
-        "label": "打孔发帘 帘宽33cm\n60g\n扁头银线1条/包",
-    },
-    {  # 4
-        "model_includes": ["打孔"], "model_excludes": [],
-        "unit_includes": ["50"], "unit_excludes": [],
-        "label": "打孔发帘 帘宽33cm\n50g\n扁头银线1条/包",
-    },
-    {  # 5
-        "model_includes": ["卡子"], "model_excludes": [],
-        "unit_includes": [], "unit_excludes": [],
-        "label": "机织卡子发\n100g\n银线一套/包",
-    },
-    {  # 6
-        "model_includes": ["机织贴发"], "model_excludes": ["长条"],
-        "unit_includes": [], "unit_excludes": [],
-        "label": "机织贴发 4*0.8cm\n2.5g\n20片/包",
-    },
-    {  # 7
-        "model_includes": ["贴发", "长条"], "model_excludes": [],
-        "unit_includes": [], "unit_excludes": [],
-        "label": "机织长条贴发 帘宽14\" 规格：0.8cm\n50g\n1条/包",
-    },
-    {  # 8
-        "model_includes": ["加纱"], "model_excludes": [],
-        "unit_includes": [], "unit_excludes": [],
-        "label": "加纱天才 帘宽12“\n20g\n扁头银线3条/包",
-    },
-    {  # 9
-        "model_includes": ["迷你", "平型"], "model_excludes": [],
-        "unit_includes": [], "unit_excludes": [],
-        "label": "迷你平型 0.6*0.6cm\n0.8g\n25根/捆 50根/包",
-    },
-    {  # 10
-        "model_includes": ["平型"], "model_excludes": ["迷你"],
-        "unit_includes": [], "unit_excludes": [],
-        "label": "平型接发 \n1g\n25根/捆 50根/包",
-    },
-    {  # 11
-        "model_includes": ["三合片"], "model_excludes": [],
-        "unit_includes": [], "unit_excludes": [],
-        "label": "三合片发帘 先花纹后齐边，帘宽90cm\n150g\n扁头银线1条/包",
-    },
-    {  # 12
-        "model_includes": ["天才", "双层"], "model_excludes": [],
-        "unit_includes": [], "unit_excludes": [],
-        "label": "双层天才发帘 帘宽12“\n50g\n扁头银线1条/包",
-    },
-    {  # 13
-        "model_includes": ["天才", "12"], "model_excludes": ["双层"],
-        "unit_includes": [], "unit_excludes": [],
-        "label": "天才发帘 帘宽12“\n20g\n扁头银线3条/包",
-    },
-    {  # 14
-        "model_includes": ["天才", "24"], "model_excludes": ["双层"],
-        "unit_includes": [], "unit_excludes": [],
-        "label": "天才发帘 帘宽24“\n50g\n扁头银线1条/包",
-    },
-    {  # 15
-        "model_includes": ["贴发"], "model_excludes": ["机织", "长条"],
-        "unit_includes": [], "unit_excludes": [],
-        "label": "贴发 4*0.8cm\n2.5g\n20片/包",
-    },
-    {  # 16
-        "model_includes": ["铁丝"], "model_excludes": [],
-        "unit_includes": [], "unit_excludes": [],
-        "label": "铁丝 \n1g\n25根/捆 50根/包",
-    },
-    {  # 17
-        "model_includes": ["哑光棒棒"], "model_excludes": [],
-        "unit_includes": [], "unit_excludes": [],
-        "label": "哑光棒棒\n1g\n25根/捆 50根/包",
-    },
-]
-_OTHER_CATEGORY_INDEX = -1
-_OTHER_LABEL = "其他"
-
-
-def _classify(model: str, unit: str) -> tuple:
-    """按 model + unit 关键字匹配规则，返回 (category_index, category_label)。
-
-    优先级 = Excel 列表顺序，第一条命中即返回。全部不匹配归入 (-1, "其他")。
-    """
-    model = model or ""
-    unit = unit or ""
-    for idx, rule in enumerate(_CATEGORY_RULES):
-        if (
-            all(s in model for s in rule["model_includes"])
-            and not any(s in model for s in rule["model_excludes"])
-            and all(s in unit for s in rule["unit_includes"])
-            and not any(s in unit for s in rule["unit_excludes"])
-        ):
-            return idx, rule["label"]
-    return _OTHER_CATEGORY_INDEX, _OTHER_LABEL
-
-
-def _split_by_category(long_items: List[Dict]) -> List[tuple]:
-    """将长格式 rows 按 (model, unit) 双键分类，返回 [(cat_idx, label, items)]。
-
-    输出顺序：Excel 规则顺序（cat_idx 升序），未匹配的 "其他" 永远放最后。
-    """
-    buckets: Dict[int, Dict[str, Any]] = {}
-    for item in long_items:
-        cat_idx, cat_label = _classify(item.get("model", ""), item.get("unit", ""))
-        if cat_idx not in buckets:
-            buckets[cat_idx] = {"label": cat_label, "items": []}
-        buckets[cat_idx]["items"].append(item)
-    sorted_keys = sorted(buckets.keys(), key=lambda k: (k == _OTHER_CATEGORY_INDEX, k))
-    return [(k, buckets[k]["label"], buckets[k]["items"]) for k in sorted_keys]
+# ── 型号分类规则（从 category_service 导入） ─────────────────
+from app.report.category_service import (
+    CATEGORY_RULES as _CATEGORY_RULES,
+    OTHER_CATEGORY_INDEX as _OTHER_CATEGORY_INDEX,
+    OTHER_LABEL as _OTHER_LABEL,
+    classify as _classify,
+    split_by_category as _split_by_category,
+)
 
 
 def _collect_remarks_for_category(long_items: List[Dict]) -> List[str]:
@@ -273,7 +154,7 @@ def _pivot_items(rows: List[Dict]) -> Dict[str, Any]:
     }
 
 
-def get_production_order_print_data(db: Session, order_no: str) -> Dict[str, Any]:
+def get_production_order_print_data(db: Session, order_no: str, category_index: Optional[int] = None) -> Dict[str, Any]:
     """生产订单打印数据：header + 透视后的宽格式数据。
 
     宽格式结构:
@@ -362,6 +243,9 @@ def get_production_order_print_data(db: Session, order_no: str) -> Dict[str, Any
 
     # ── 按 (model, unit) 分类拆分透视 ──────────────────────
     category_splits = _split_by_category(long_items)
+    if category_index is not None:
+        category_splits = [(idx, lbl, items) for idx, lbl, items in category_splits if idx == category_index]
+        long_items = [item for _, _, items in category_splits for item in items]
     sub_tables = []
     for cat_idx, cat_label, cat_items in category_splits:
         cat_pivoted = _pivot_items(cat_items)
@@ -445,14 +329,24 @@ def get_production_order_print_data(db: Session, order_no: str) -> Dict[str, Any
 # ── 工序卡片打印数据 ──────────────────────────────────────
 
 
-def get_process_card_print_data(db: Session, order_no: str) -> Dict[str, Any]:
+def get_process_card_print_data(
+    db: Session,
+    order_no: str,
+    category_index: Optional[int] = None,
+    item_ids: Optional[List[int]] = None,
+) -> Dict[str, Any]:
     """工序卡片打印数据：按订单明细列出每个产品的工序卡片信息，含二维码 base64。"""
     from app.production.report_service import get_qrcode
 
     settings = get_settings()
     business_db = settings.BUSINESS_DB_NAME
 
-    sql = text(f"""
+    extra_where = ""
+    query_params: Dict[str, Any] = {"order_no": order_no}
+    if item_ids:
+        extra_where = " AND oi.id IN :filter_ids"
+
+    sql_text = f"""
         SELECT
             oi.id,
             oi.product_id,
@@ -469,16 +363,24 @@ def get_process_card_print_data(db: Session, order_no: str) -> Dict[str, Any]:
         FROM ark_production_order_items oi
         LEFT JOIN ark_production_orders o ON oi.order_id = o.id
         LEFT JOIN `{business_db}`.okki_products p ON p.product_id = oi.product_id
-        WHERE o.order_no = :order_no AND o.deleted_flag = 0
-    """)
-    rows = db.execute(sql, {"order_no": order_no}).mappings().all()
+        WHERE o.order_no = :order_no AND o.deleted_flag = 0{extra_where}
+    """
+    sql = text(sql_text)
+    if item_ids:
+        sql = sql.bindparams(bindparam("filter_ids", expanding=True))
+        query_params["filter_ids"] = item_ids
+    rows = db.execute(sql, query_params).mappings().all()
 
-    item_ids = [r["id"] for r in rows]
+    # 如果按 category_index 过滤，对结果做后过滤
+    if category_index is not None and not item_ids:
+        rows = [r for r in rows if _classify(r["model"] or "", r["unit"] or "")[0] == category_index]
+
+    all_item_ids = [r["id"] for r in rows]
     product_ids = [r["product_id"] for r in rows if r.get("product_id")]
     process_map: Dict[int, str] = {}
 
     # 优先从已初始化的工序进度获取
-    if item_ids:
+    if all_item_ids:
         proc_sql = text("""
             SELECT pp.order_product_id, GROUP_CONCAT(pr.name ORDER BY pp.step_order SEPARATOR '-') AS process_chain
             FROM order_product_process_progress pp
@@ -486,7 +388,7 @@ def get_process_card_print_data(db: Session, order_no: str) -> Dict[str, Any]:
             WHERE pp.order_product_id IN :ids
             GROUP BY pp.order_product_id
         """).bindparams(bindparam("ids", expanding=True))
-        proc_rows = db.execute(proc_sql, {"ids": item_ids}).mappings().all()
+        proc_rows = db.execute(proc_sql, {"ids": all_item_ids}).mappings().all()
         for pr in proc_rows:
             process_map[pr["order_product_id"]] = pr["process_chain"] or ""
 
@@ -593,9 +495,10 @@ def get_report_data(db: Session, report_code: str, params: Optional[Dict] = None
                 "weight_t_totals": sample_weight_t,
                 "has_middle_punch": False,
             }
-        return handler(db, order_no)
+        return handler(db, order_no, category_index=params.get("category_index"))
 
     if report_code == "process_card_print":
+        logger.warning(f"[PRINT DEBUG] process_card_print params={params}")
         order_no = params.get("order_no", "")
         if not order_no:
             return {
@@ -607,6 +510,10 @@ def get_report_data(db: Session, report_code: str, params: Optional[Dict] = None
                     "order_product_process": "",
                 }],
             }
-        return handler(db, order_no)
+        return handler(
+            db, order_no,
+            category_index=params.get("category_index"),
+            item_ids=params.get("item_ids"),
+        )
 
     return handler(db, **params)

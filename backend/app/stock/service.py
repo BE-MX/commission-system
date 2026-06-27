@@ -66,3 +66,9 @@ from app.stock.production_order_service import (  # noqa: F401
 from app.stock.in_transit_service import (  # noqa: F401
     get_in_transit_by_product_ids, get_in_transit_for_query,
 )
+
+# 打印工作台
+from app.stock.print_workstation_service import (  # noqa: F401
+    get_print_order_list, get_order_print_categories,
+    create_print_job,
+)

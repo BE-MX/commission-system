@@ -33,6 +33,7 @@ from app.stock.schemas import (
     OrderItemStatusRequest,
     OrderItemUpdateRequest,
     OrderUpdateRequest,
+    PrintJobCreateRequest,
     SafetyStockSaveRequest,
     TftPredictRequest,
 )
@@ -731,3 +732,62 @@ def get_order_qrcode_image(
     img.save(buf, format="PNG")
     buf.seek(0)
     return StreamingResponse(buf, media_type="image/png")
+
+
+# ═══════════════════════════════════════════════════════════════
+# 生产订单打印工作台
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/production/print-orders")
+def list_print_orders(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    keyword: Optional[str] = Query(None, max_length=200),
+    status: Optional[int] = Query(None, ge=0, le=2),
+    print_state: Optional[str] = Query(None, pattern=r"^(unprinted|today|week)$"),
+    sort_field: str = Query("created_at"),
+    sort_order: str = Query("desc", pattern=r"^(asc|desc)$"),
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("production:read")),
+):
+    """打印工作台-订单列表(含最后打印时间)"""
+    from app.stock.print_workstation_service import get_print_order_list
+    result = get_print_order_list(
+        db, page=page, page_size=page_size, keyword=keyword,
+        status=status, print_state=print_state,
+        sort_field=sort_field, sort_order=sort_order,
+    )
+    return _ok(result)
+
+
+@router.get("/production/orders/{order_id}/print-categories")
+def get_print_categories(
+    order_id: int,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("production:read")),
+):
+    """获取订单的分类卡片(打印工作台-展开)"""
+    from app.stock.print_workstation_service import get_order_print_categories
+    result = get_order_print_categories(db, order_id)
+    return _ok(result)
+
+
+@router.post("/production/orders/{order_id}/print-jobs")
+def create_print_job(
+    order_id: int,
+    body: PrintJobCreateRequest,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("production:write")),
+):
+    """创建打印记录并返回打印URL"""
+    from app.stock.print_workstation_service import create_print_job as _create_print_job
+    try:
+        result = _create_print_job(
+            db, order_id=order_id, scope=body.scope,
+            category_index=body.category_index,
+            item_ids=body.item_ids,
+            user_id=user["sub"], user_name=user.get("real_name", ""),
+        )
+        return _ok(result)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
