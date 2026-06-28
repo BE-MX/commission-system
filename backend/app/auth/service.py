@@ -205,6 +205,7 @@ def seed_role_permissions(db: Session):
         # 生产订单管理
         ("production:read",       "production", "read",       "查看生产订单"),
         ("production:write",      "production", "write",      "创建/编辑生产订单 / 入库录入"),
+        ("production:print",      "production", "print",      "生产订单打印工作台"),
         ("production:admin",      "production", "admin",      "删除生产订单 / 管理全部订单"),
         # 素材管理
         ("asset:read",            "asset",   "read",          "查看素材库 / 预览 / 下载 / 收藏"),

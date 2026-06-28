@@ -221,9 +221,15 @@ async function submitForm() {
     ElMessage.warning('请填写姓名')
     return
   }
-  if (!isEdit.value && (!form.value.username || !form.value.password)) {
-    ElMessage.warning('请填写用户名和密码')
-    return
+  if (!isEdit.value) {
+    if (!form.value.username || form.value.username.length < 2) {
+      ElMessage.warning('用户名至少 2 个字符')
+      return
+    }
+    if (!form.value.password || form.value.password.length < 6) {
+      ElMessage.warning('密码至少 6 位')
+      return
+    }
   }
   saving.value = true
   try {
@@ -236,7 +242,14 @@ async function submitForm() {
       })
       ElMessage.success('更新成功')
     } else {
-      await createUser(form.value)
+      await createUser({
+        username: form.value.username,
+        password: form.value.password,
+        real_name: form.value.real_name,
+        email: form.value.email || null,
+        phone: form.value.phone || null,
+        role_ids: form.value.role_ids,
+      })
       ElMessage.success('创建成功')
     }
     dialogVisible.value = false

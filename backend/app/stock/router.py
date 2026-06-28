@@ -748,7 +748,7 @@ def list_print_orders(
     sort_field: str = Query("created_at"),
     sort_order: str = Query("desc", pattern=r"^(asc|desc)$"),
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_permission("production:read")),
+    _user: dict = Depends(require_permission("production:print")),
 ):
     """打印工作台-订单列表(含最后打印时间)"""
     from app.stock.print_workstation_service import get_print_order_list
@@ -764,7 +764,7 @@ def list_print_orders(
 def get_print_categories(
     order_id: int,
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_permission("production:read")),
+    _user: dict = Depends(require_permission("production:print")),
 ):
     """获取订单的分类卡片(打印工作台-展开)"""
     from app.stock.print_workstation_service import get_order_print_categories
@@ -777,7 +777,7 @@ def create_print_job(
     order_id: int,
     body: PrintJobCreateRequest,
     db: Session = Depends(get_db),
-    user: dict = Depends(require_permission("production:write")),
+    user: dict = Depends(require_permission("production:print")),
 ):
     """创建打印记录并返回打印URL"""
     from app.stock.print_workstation_service import create_print_job as _create_print_job

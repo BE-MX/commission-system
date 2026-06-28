@@ -65,6 +65,18 @@ authRequest.interceptors.response.use(
       return Promise.reject(new Error(msg))
     }
 
+    // 422 — 请求参数校验失败
+    if (status === 422) {
+      let msg = '请求参数校验失败'
+      if (Array.isArray(data.detail) && data.detail.length > 0) {
+        msg = data.detail.map(e => e.msg || e.message).filter(Boolean).join('；') || msg
+      } else if (typeof data.detail === 'string') {
+        msg = data.detail
+      }
+      ElMessage.error(msg)
+      return Promise.reject(new Error(msg))
+    }
+
     // 其他状态码
     const msg = data.detail || data.message || `请求失败 (${status})`
     ElMessage.error(msg)

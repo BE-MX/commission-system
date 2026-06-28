@@ -54,7 +54,7 @@ export const MENU_GROUPS = {
   stock: {
     title: '备货管理',
     icon: Box,
-    anyPermission: ['stock:read', 'stock:write', 'stock:admin', 'production:read', 'production:write', 'production:admin'],
+    anyPermission: ['stock:read', 'stock:write', 'stock:admin', 'production:read', 'production:write', 'production:print', 'production:admin'],
   },
   asset: {
     title: '素材管理',
@@ -271,10 +271,10 @@ export const NAV_ENTRIES = [
     name: 'ProductionOrderPrint',
     component: () => import('@/views/stock/ProductionOrderPrint.vue'),
     title: '生产订单打印',
-    permission: 'production:read',
+    permission: 'production:print',
     menu: {
       group: 'stock', title: '生产订单打印', icon: Printer, order: 41,
-      permission: 'production:read',
+      permission: 'production:print',
     },
   },
 
