@@ -67,7 +67,7 @@
         <view class="record-card">
           <view class="record-dot">✓</view>
           <view class="record-info">
-            <text class="record-model">{{item.product_name}} · {{item.model}}</text>
+            <text class="record-model">{{item.model || '-'}} · {{item.product_display || '-'}}</text>
             <text class="record-process-tag">{{item.process_name}} × {{item.order_qty}}</text>
             <text class="record-order" wx:if="{{item.order_no}}">{{item.order_no}}</text>
           </view>

@@ -97,7 +97,7 @@
         <view class="detail-item" wx:for="{{detailRecords}}" wx:key="progress_id">
           <view class="detail-dot">✓</view>
           <view class="detail-info">
-            <text class="detail-model">{{item.product_name}} · {{item.model}}</text>
+            <text class="detail-model">{{item.model || '-'}} · {{item.product_display || '-'}}</text>
             <text class="detail-process-tag">{{item.process_name}} × {{item.order_qty}}　{{item.completed_by_name}}</text>
             <text class="detail-order">{{item.order_no}}</text>
           </view>

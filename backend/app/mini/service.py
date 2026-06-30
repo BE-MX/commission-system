@@ -2,10 +2,11 @@
 
 from datetime import datetime, timezone, timedelta
 
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from app.auth.models import ArkUser
+from app.core.config import get_settings
 from app.production.models import (
     OrderProductProcessProgress,
     Process,
@@ -19,6 +20,69 @@ _BJ_TZ = timezone(timedelta(hours=8))
 
 def _bj_now():
     return datetime.now(_BJ_TZ)
+
+
+
+def _build_product_display(db: Session, product_id: int) -> str:
+    """从 okki_products 组装产品显示字符串，优先 color;size寸;unit;description，逐级 fallback"""
+    settings = get_settings()
+    biz = settings.BUSINESS_DB_NAME
+    sql = text(f"""
+        SELECT p.color, p.size, p.unit, p.description, p.product_remark, p.cn_name, p.name
+        FROM `{biz}`.okki_products p
+        WHERE p.product_id = :pid
+        LIMIT 1
+    """)
+    row = db.execute(sql, {"pid": product_id}).mappings().first()
+    print(f"[DEBUG] _build_product_display pid={product_id}, row={dict(row) if row else None}", flush=True)
+    if not row:
+        return ""
+    parts = []
+    if row["color"]:
+        parts.append(str(row["color"]))
+    if row["size"]:
+        parts.append(f"{row['size']}寸")
+    if row["unit"]:
+        parts.append(str(row["unit"]))
+    if row["description"]:
+        parts.append(str(row["description"]))
+    if parts:
+        return ";".join(parts)
+    if row["product_remark"]:
+        return str(row["product_remark"])
+    if row["cn_name"]:
+        return str(row["cn_name"])
+    if row["name"]:
+        return str(row["name"])
+    return ""
+
+
+def _batch_product_displays(db: Session, product_ids: list[int]) -> dict[int, str]:
+    """批量查询 okki_products 组装显示字符串，返回 {product_id: display_str}"""
+    if not product_ids:
+        return {}
+    settings = get_settings()
+    biz = settings.BUSINESS_DB_NAME
+    placeholders = ",".join(str(int(pid)) for pid in set(product_ids))
+    sql = text(f"""
+        SELECT p.product_id, p.color, p.size, p.unit, p.description
+        FROM `{biz}`.okki_products p
+        WHERE p.product_id IN ({placeholders})
+    """)
+    rows = db.execute(sql).mappings().all()
+    result = {}
+    for row in rows:
+        parts = []
+        if row["color"]:
+            parts.append(str(row["color"]))
+        if row["size"]:
+            parts.append(f"{row['size']}寸")
+        if row["unit"]:
+            parts.append(str(row["unit"]))
+        if row["description"]:
+            parts.append(str(row["description"]))
+        result[row["product_id"]] = ";".join(parts)
+    return result
 
 
 # ── 认证 ──────────────────────────────────────────────────
@@ -80,12 +144,15 @@ def scan_product(db: Session, order_product_id: int, sign: str, current_user: Ar
     order = db.query(ProductionOrder).get(item.order_id)
     batch_no = order.batch_no if order else None
 
+    product_display = _build_product_display(db, item.product_id) or item.spec_info or item.product_name or ""
+
     product_info = {
         "id": item.id,
         "order_id": item.order_id,
         "order_no": batch_no,
         "product_name": item.product_name,
         "model": item.model,
+        "product_display": product_display,
         "spec_info": item.spec_info,
         "order_qty": item.order_qty,
         "received_qty": item.received_qty,
@@ -282,6 +349,7 @@ def get_today_history(db: Session, user_id: int) -> dict:
         db.query(
             OrderProductProcessProgress.id.label("progress_id"),
             ProductionOrderItem.id.label("order_product_id"),
+            ProductionOrderItem.product_id,
             ProductionOrderItem.product_name,
             ProductionOrderItem.model,
             ProductionOrderItem.order_qty,
@@ -301,6 +369,9 @@ def get_today_history(db: Session, user_id: int) -> dict:
         .all()
     )
 
+    product_ids = [r.product_id for r in rows]
+    displays = _batch_product_displays(db, product_ids)
+
     records = []
     for r in rows:
         time_str = r.completed_at.strftime("%H:%M") if r.completed_at else ""
@@ -309,6 +380,7 @@ def get_today_history(db: Session, user_id: int) -> dict:
             "order_product_id": r.order_product_id,
             "product_name": r.product_name,
             "model": r.model,
+            "product_display": displays.get(r.product_id, ""),
             "order_qty": r.order_qty,
             "process_name": r.process_name,
             "step_order": r.step_order,
@@ -327,6 +399,7 @@ def get_history(db: Session, user_id: int, page: int = 1, page_size: int = 20,
         db.query(
             OrderProductProcessProgress.id.label("progress_id"),
             ProductionOrderItem.id.label("order_product_id"),
+            ProductionOrderItem.product_id,
             ProductionOrderItem.product_name,
             ProductionOrderItem.model,
             ProductionOrderItem.order_qty,
@@ -363,6 +436,9 @@ def get_history(db: Session, user_id: int, page: int = 1, page_size: int = 20,
     total = query.count()
     rows = query.offset((page - 1) * page_size).limit(page_size).all()
 
+    product_ids = [r.product_id for r in rows]
+    displays = _batch_product_displays(db, product_ids)
+
     records = []
     for r in rows:
         time_str = r.completed_at.strftime("%H:%M") if r.completed_at else ""
@@ -372,6 +448,7 @@ def get_history(db: Session, user_id: int, page: int = 1, page_size: int = 20,
             "order_product_id": r.order_product_id,
             "product_name": r.product_name,
             "model": r.model,
+            "product_display": displays.get(r.product_id, ""),
             "order_qty": r.order_qty,
             "process_name": r.process_name,
             "step_order": r.step_order,
@@ -389,6 +466,7 @@ def get_overview(db: Session, date_start: str = None, date_end: str = None) -> d
         db.query(
             OrderProductProcessProgress.id.label("progress_id"),
             ProductionOrderItem.id.label("order_product_id"),
+            ProductionOrderItem.product_id,
             ProductionOrderItem.product_name,
             ProductionOrderItem.model,
             ProductionOrderItem.order_qty,
@@ -418,6 +496,9 @@ def get_overview(db: Session, date_start: str = None, date_end: str = None) -> d
         query = query.filter(OrderProductProcessProgress.completed_at <= de)
 
     rows = query.order_by(OrderProductProcessProgress.completed_at.desc()).all()
+
+    product_ids = [r.product_id for r in rows]
+    displays = _batch_product_displays(db, product_ids)
 
     # 按 date 分组 → 按 process 分组
     date_map = {}  # key: "YYYY-MM-DD" → { process_id → { info, records } }
@@ -453,6 +534,7 @@ def get_overview(db: Session, date_start: str = None, date_end: str = None) -> d
             "order_product_id": r.order_product_id,
             "product_name": r.product_name,
             "model": r.model,
+            "product_display": displays.get(r.product_id, ""),
             "order_qty": r.order_qty,
             "process_name": r.process_name,
             "step_order": r.step_order,
@@ -493,6 +575,7 @@ def get_overview_detail(db: Session, date: str, process_id: int) -> dict:
         db.query(
             OrderProductProcessProgress.id.label("progress_id"),
             ProductionOrderItem.id.label("order_product_id"),
+            ProductionOrderItem.product_id,
             ProductionOrderItem.product_name,
             ProductionOrderItem.model,
             ProductionOrderItem.order_qty,
@@ -517,6 +600,9 @@ def get_overview_detail(db: Session, date: str, process_id: int) -> dict:
         .all()
     )
 
+    product_ids = [r.product_id for r in rows]
+    displays = _batch_product_displays(db, product_ids)
+
     records = []
     for r in rows:
         time_str = r.completed_at.strftime("%H:%M") if r.completed_at else ""
@@ -525,6 +611,7 @@ def get_overview_detail(db: Session, date: str, process_id: int) -> dict:
             "order_product_id": r.order_product_id,
             "product_name": r.product_name,
             "model": r.model,
+            "product_display": displays.get(r.product_id, ""),
             "order_qty": r.order_qty,
             "process_name": r.process_name,
             "step_order": r.step_order,

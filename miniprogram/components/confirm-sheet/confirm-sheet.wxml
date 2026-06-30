@@ -16,13 +16,13 @@
       <view class="info-row">
         <text class="info-lbl">产品型号</text>
         <view class="info-val-wrap">
-          <text class="info-val lg">{{productInfo.product_name || '-'}}</text>
+          <text class="info-val lg">{{productInfo.model || '-'}}</text>
           <text class="tag-urgent" wx:if="{{productInfo.is_urgent === 1}}">加急</text>
         </view>
       </view>
       <view class="info-row">
         <text class="info-lbl">规格</text>
-        <text class="info-val">{{productInfo.model || '-'}}</text>
+        <text class="info-val">{{productInfo.product_display || '-'}}</text>
       </view>
       <view class="info-row">
         <text class="info-lbl">所属订单</text>
