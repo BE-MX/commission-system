@@ -26,6 +26,9 @@ class TestPaymentSync:
         assert sp.customer_id == "CUST001"
         assert sp.payment_date == date(2026, 4, 1)
         assert float(sp.payment_amount) == 3000.00
+        assert float(sp.service_fee) == 30.00
+        assert float(sp.exchange_rate) == 7.12
+        assert float(sp.real_amount_rmb) == 21360.00
 
     def test_idempotent_sync(self, db, seed_employees, seed_business_data):
         """重复同步不产生重复记录"""

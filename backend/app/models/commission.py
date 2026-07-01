@@ -18,6 +18,8 @@ class SyncedPayment(Base):
     payment_date = Column(Date, nullable=False, comment="回款日期")
     payment_amount = Column(DECIMAL(12, 2), nullable=False, comment="回款金额")
     service_fee = Column(DECIMAL(15, 2), server_default="0", comment="交易服务费")
+    exchange_rate = Column(DECIMAL(12, 6), nullable=True, comment="汇率")
+    real_amount_rmb = Column(DECIMAL(15, 2), nullable=True, comment="回款金额(RMB)")
     synced_at = Column(DateTime, server_default=func.now(), comment="同步时间")
 
     __table_args__ = (

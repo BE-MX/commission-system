@@ -3,8 +3,8 @@ App({
   globalData: {
     userInfo: null,
     token: null,
-    // baseUrl: 'http://192.168.100.43:8001'    // 本地开发（真机调试用）
-    baseUrl: 'https://leshine.work'             // 生产/体验版
+    baseUrl: 'http://10.91.3.182:8001'    // 本地开发（真机调试用）
+    // baseUrl: 'https://leshine.work'             // 生产/体验版
   },
 
   onLaunch: function () {

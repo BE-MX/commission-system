@@ -1,4 +1,4 @@
-{
+﻿{
   "version": 1,
   "bugs": [
     {
@@ -20,14 +20,455 @@
     {
       "id": "bug-002",
       "timestamp": "2026-06-22T00:00:00.000Z",
-      "error_message": "GET /api/insight/customer-radar/focus 500 (Internal Server Error) — NameError: name '_get_user_id' is not defined",
+      "error_message": "GET /api/insight/customer-radar/focus 500 (Internal Server Error) 鈥?NameError: name '_get_user_id' is not defined",
       "file": "backend/app/insight/router.py",
       "root_cause": "_get_user_id() called 9 times in the radar router section but never defined or imported. Other sections of the same file use _user['sub'] directly.",
       "fix": "Added `def _get_user_id(user: dict) -> int: return user['sub']` helper before the radar endpoints block.",
-      "tags": ["NameError", "missing-function", "radar", "500", "router"],
+      "tags": [
+        "NameError",
+        "missing-function",
+        "radar",
+        "500",
+        "router"
+      ],
       "related_bugs": [],
       "occurrences": 1,
       "last_seen": "2026-06-22T00:00:00.000Z"
+    },
+    {
+      "id": "bug-003",
+      "timestamp": "2026-06-22T03:38:10.052Z",
+      "error_message": "Incorrect value in code",
+      "file": "backend/app/auth/service.py",
+      "root_cause": "Had \"tracking:daily_report\"",
+      "fix": "Changed to \"tracking:delete\"",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-22T03:38:10.052Z"
+    },
+    {
+      "id": "bug-004",
+      "timestamp": "2026-06-22T05:20:47.703Z",
+      "error_message": "Incorrect value in code",
+      "file": "CLAUDE.md",
+      "root_cause": "Had `POST /upload-ocr`",
+      "fix": "Changed to `DELETE /shipments/{waybill_no}`",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-06-22T05:20:56.343Z"
+    },
+    {
+      "id": "bug-005",
+      "timestamp": "2026-06-24T02:26:49.601Z",
+      "error_message": "Significant refactor of ",
+      "file": "backend/app/report/docx_export.py",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 6 lines and updated cell shading setup.",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-06-24T02:26:57.151Z"
+    },
+    {
+      "id": "bug-006",
+      "timestamp": "2026-06-24T03:03:33.322Z",
+      "error_message": "Significant refactor of ",
+      "file": "backend/app/report/docx_export.py",
+      "root_cause": "17 lines replaced/restructured",
+      "fix": "Rewrote 25鈫? lines (17 removed) | Also: # 鈹€鈹€ 椤佃剼 鈹€鈹€; p_footer = doc.add_paragraph()",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-06-24T03:06:33.202Z"
+    },
+    {
+      "id": "bug-007",
+      "timestamp": "2026-06-24T03:22:58.940Z",
+      "error_message": "Incorrect value in code",
+      "file": "backend/app/report/router.py",
+      "root_cause": "Had \"portrait\"",
+      "fix": "Changed to \"landscape\"",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-24T03:22:58.940Z"
+    },
+    {
+      "id": "bug-008",
+      "timestamp": "2026-06-27T05:27:52.569Z",
+      "error_message": "Significant refactor of ",
+      "file": "backend/app/report/data_service.py",
+      "root_cause": "2 lines replaced/restructured",
+      "fix": "Rewrote 38鈫?2 lines (2 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-27T05:27:52.569Z"
+    },
+    {
+      "id": "bug-009",
+      "timestamp": "2026-06-27T06:14:01.455Z",
+      "error_message": "Wrong reference: text should be bindparam",
+      "file": "backend/app/report/data_service.py",
+      "root_cause": "Used \"text\" instead of \"bindparam\"",
+      "fix": "Changed text 鈫?bindparam",
+      "tags": [
+        "auto-detected",
+        "wrong-reference",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-27T06:14:01.455Z"
+    },
+    {
+      "id": "bug-010",
+      "timestamp": "2026-06-27T06:28:49.162Z",
+      "error_message": "Incorrect value in code",
+      "file": "frontend/src/views/stock/ProductionOrderManage.vue",
+      "root_cause": "Had \"danger\"",
+      "fix": "Changed to \"Refresh\"",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-27T06:28:49.162Z"
+    },
+    {
+      "id": "bug-011",
+      "timestamp": "2026-06-27T06:29:43.115Z",
+      "error_message": "Significant refactor of ",
+      "file": "backend/app/stock/router.py",
+      "root_cause": "5 lines replaced/restructured",
+      "fix": "Rewrote 36鈫?1 lines (5 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-27T06:29:43.115Z"
+    },
+    {
+      "id": "bug-012",
+      "timestamp": "2026-06-27T07:40:32.090Z",
+      "error_message": "Wrong reference: base64 should be okki_products",
+      "file": "C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_stimulsoft_module.md",
+      "root_cause": "Used \"base64\" instead of \"okki_products\"",
+      "fix": "Changed base64 鈫?okki_products",
+      "tags": [
+        "auto-detected",
+        "wrong-reference",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-27T07:40:32.090Z"
+    },
+    {
+      "id": "bug-013",
+      "timestamp": "2026-06-27T07:41:58.833Z",
+      "error_message": "Wrong reference: delete_flag should be FK",
+      "file": "CLAUDE.md",
+      "root_cause": "Used \"delete_flag\" instead of \"FK\"",
+      "fix": "Changed delete_flag 鈫?FK",
+      "tags": [
+        "auto-detected",
+        "wrong-reference",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 2,
+      "last_seen": "2026-06-27T07:42:17.217Z"
+    },
+    {
+      "id": "bug-014",
+      "timestamp": "2026-06-27T16:00:00+08:00",
+      "error_message": "AttributeError: type object ProductionOrderItem has no attribute delete_flag (500 on reset-process)",
+      "file": "backend/app/stock/router.py",
+      "root_cause": "ProductionOrderItem 娌℃湁 delete_flag 瀛楁锛堥潬 FK CASCADE 璺熼殢璁㈠崟鍒犻櫎锛夛紝浣?reset-process 绔偣浠ｇ爜璇紩鐢ㄤ簡 ProductionOrderItem.delete_flag",
+      "fix": "Removed .filter(ProductionOrderItem.delete_flag == 0) and queried details by order_id.",
+      "tags": [
+        "production",
+        "orm",
+        "nonexistent-field",
+        "500"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-27"
+    },
+    {
+      "id": "bug-015",
+      "timestamp": "2026-06-27T08:41:24.738Z",
+      "error_message": "Significant refactor of ",
+      "file": "backend/app/report/data_service.py",
+      "root_cause": "4 lines replaced/restructured",
+      "fix": "Rewrote 23鈫?6 lines (4 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-27T08:41:24.738Z"
+    },
+    {
+      "id": "bug-016",
+      "timestamp": "2026-06-27T08:42:22.673Z",
+      "error_message": "Wrong reference: item_ids should be all_item_ids",
+      "file": "backend/app/report/data_service.py",
+      "root_cause": "Used \"item_ids\" instead of \"all_item_ids\"",
+      "fix": "Changed item_ids 鈫?all_item_ids",
+      "tags": [
+        "auto-detected",
+        "wrong-reference",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-27T08:42:22.673Z"
+    },
+    {
+      "id": "bug-017",
+      "timestamp": "2026-06-27T08:46:19.133Z",
+      "error_message": "Incorrect value in code",
+      "file": "backend/app/report/data_service.py",
+      "root_cause": "Had \"process_card_print\"",
+      "fix": "Changed to \"category_index\"",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-27T08:46:19.133Z"
+    },
+    {
+      "id": "bug-018",
+      "timestamp": "2026-06-27T10:03:25.468Z",
+      "error_message": "Incorrect value in code",
+      "file": "C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_stimulsoft_module.md",
+      "root_cause": "Had `backend/app/report/docx_export.py`",
+      "fix": "Changed to `backend/app/report/category_service.py`",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 3,
+      "last_seen": "2026-06-27T10:03:51.998Z"
+    },
+    {
+      "id": "bug-019",
+      "timestamp": "2026-06-28T03:25:56.752Z",
+      "error_message": "Significant refactor of ",
+      "file": "frontend/src/views/system/UserManagement.vue",
+      "root_cause": "3 lines replaced/restructured",
+      "fix": "Rewrote 23鈫?6 lines (3 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "vue"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-28T03:25:56.752Z"
+    },
+    {
+      "id": "bug-020",
+      "timestamp": "2026-06-28T03:43:22.351Z",
+      "error_message": "Incorrect value in code",
+      "file": "frontend/src/config/navigation.js",
+      "root_cause": "Had 'production:admin'",
+      "fix": "Changed to 'production:print'",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "js"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-28T03:43:22.351Z"
+    },
+    {
+      "id": "bug-021",
+      "timestamp": "2026-06-29T01:13:57.723Z",
+      "error_message": "Incorrect value in code",
+      "file": "CLAUDE.md",
+      "root_cause": "Had `production:admin`",
+      "fix": "Changed to `production:print`",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-29T01:13:57.723Z"
+    },
+    {
+      "id": "bug-022",
+      "timestamp": "2026-06-29T01:14:24.741Z",
+      "error_message": "Incorrect value in code",
+      "file": "C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_production_module.md",
+      "root_cause": "Had `/stock/production-order-print`",
+      "fix": "Changed to `production:read`",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "md"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-29T01:14:24.741Z"
+    },
+    {
+      "id": "bug-015",
+      "timestamp": "2026-06-29T00:00:00+08:00",
+      "error_message": "POST /api/auth/users 422 Unprocessable Entity when creating user",
+      "file": "frontend/src/views/system/UserManagement.vue",
+      "root_cause": "Frontend only checked non-empty for username/password (!form.value.password), but backend Pydantic schema requires min_length=6 for password and min_length=2 for username. Also sent email/phone as empty string '' instead of null, and 422 error interceptor showed [object Object] instead of readable message.",
+      "fix": "Added min_length validation in submitForm (username>=2, password>=6), convert empty email/phone to null on create (matching edit path), added 422 handler in auth.js error interceptor to extract msg from FastAPI detail array.",
+      "tags": [
+        "422",
+        "validation",
+        "user-creation",
+        "auth",
+        "pydantic"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-29T00:00:00+08:00"
+    },
+    {
+      "id": "bug-024",
+      "timestamp": "2026-06-30T04:11:55.279Z",
+      "error_message": "Significant refactor of ",
+      "file": "backend/app/mini/service.py",
+      "root_cause": "3 lines replaced/restructured",
+      "fix": "Rewrote 23鈫?0 lines (3 removed)",
+      "tags": [
+        "auto-detected",
+        "refactor",
+        "py"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-30T04:11:55.279Z"
+    },
+    {
+      "id": "bug-025",
+      "timestamp": "2026-06-30T04:19:42.466Z",
+      "error_message": "Incorrect value in code",
+      "file": "miniprogram/pages/scan/scan.wxml",
+      "root_cause": "Had ' 路 '",
+      "fix": "Changed to '}} 路 {{item.product_display || '",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "wxml"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-30T04:19:42.466Z"
+    },
+    {
+      "id": "bug-026",
+      "timestamp": "2026-06-30T04:20:19.751Z",
+      "error_message": "Incorrect value in code",
+      "file": "miniprogram/pages/history/history.wxml",
+      "root_cause": "Had ' 路 '",
+      "fix": "Changed to '}} 路 {{item.product_display || '",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "wxml"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-30T04:20:19.751Z"
+    },
+    {
+      "id": "bug-027",
+      "timestamp": "2026-06-30T04:20:20.924Z",
+      "error_message": "Incorrect value in code",
+      "file": "miniprogram/pages/overview/overview.wxml",
+      "root_cause": "Had ' 路 '",
+      "fix": "Changed to '}} 路 {{item.product_display || '",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "wxml"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-30T04:20:20.924Z"
+    },
+    {
+      "id": "bug-028",
+      "timestamp": "2026-06-30T05:33:22.050Z",
+      "error_message": "Incorrect value in code",
+      "file": "miniprogram/app.js",
+      "root_cause": "Had 'http://192.168.100.43:8001'",
+      "fix": "Changed to 'http://10.91.3.182:8001'",
+      "tags": [
+        "auto-detected",
+        "wrong-value",
+        "js"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-06-30T05:33:22.050Z"
+    },
+    {
+      "id": "bug-029",
+      "timestamp": "2026-07-01T09:30:00+08:00",
+      "error_message": "git apply --check failed when applying payment sync field changes to target worktree",
+      "file": "backend/app/services/payment_sync_service.py",
+      "root_cause": "Target worktree had a different base commit and existing dirty changes, so a direct patch from the temporary clone did not match file context.",
+      "fix": "Manually ported the semantic changes to the target worktree, then verified backend py_compile, payment sync tests, and frontend build.",
+      "tags": [
+        "patch-apply",
+        "worktree-drift",
+        "manual-port"
+      ],
+      "related_bugs": [],
+      "occurrences": 1,
+      "last_seen": "2026-07-01T09:30:00+08:00"
     }
   ]
 }

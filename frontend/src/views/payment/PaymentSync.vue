@@ -85,7 +85,16 @@
         <el-table-column prop="customer_name" label="客户名称" min-width="160" max-width="240" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="payment_date" label="回款日期" min-width="110" max-width="170" show-overflow-tooltip sortable="custom" />
         <el-table-column prop="payment_amount" label="回款金额(USD)" min-width="130" max-width="200" sortable="custom">
-          <template #default="{ row }">{{ row.payment_amount?.toFixed(2) }}</template>
+          <template #default="{ row }">{{ formatAmount(row.payment_amount) }}</template>
+        </el-table-column>
+        <el-table-column prop="service_fee" label="服务费" min-width="110" max-width="170">
+          <template #default="{ row }">{{ formatAmount(row.service_fee) }}</template>
+        </el-table-column>
+        <el-table-column prop="exchange_rate" label="汇率" min-width="90" max-width="140">
+          <template #default="{ row }">{{ formatAmount(row.exchange_rate, 4) }}</template>
+        </el-table-column>
+        <el-table-column prop="real_amount_rmb" label="回款金额(RMB)" min-width="140" max-width="210">
+          <template #default="{ row }">{{ formatAmount(row.real_amount_rmb) }}</template>
         </el-table-column>
         <el-table-column label="是否已计算" min-width="100" max-width="150">
           <template #default="{ row }">
@@ -159,6 +168,10 @@ const listPageSize = ref(20)
 const listTotal = ref(0)
 const paymentList = ref([])
 const listLoading = ref(false)
+
+function formatAmount(value, digits = 2) {
+  return value == null ? '-' : Number(value).toFixed(digits)
+}
 
 async function fetchPayments() {
   if (!dateRange.value) return

@@ -1,94 +1,12 @@
 {
-  "session_id": "session-2026-06-18-0834",
-  "started": "2026-06-18T00:34:46.090Z",
-  "files_read": {
-    "C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_whatsapp_module.md": {
-      "count": 1,
-      "tokens": 527,
-      "first_read": "2026-06-18T02:10:46.368Z"
-    },
-    "D:/MyProgram/commission-system/docs/accio-work-integration-spec.md": {
-      "count": 1,
-      "tokens": 3634,
-      "first_read": "2026-06-18T02:10:47.300Z"
-    },
-    "D:/MyProgram/commission-system/README.md": {
-      "count": 1,
-      "tokens": 1088,
-      "first_read": "2026-06-18T02:10:47.483Z"
-    },
-    "C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/MEMORY.md": {
-      "count": 1,
-      "tokens": 732,
-      "first_read": "2026-06-18T02:11:04.102Z"
-    },
-    "C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_governance_module.md": {
-      "count": 1,
-      "tokens": 408,
-      "first_read": "2026-06-18T02:11:04.502Z"
-    },
-    "C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_customer_radar_module.md": {
-      "count": 1,
-      "tokens": 663,
-      "first_read": "2026-06-18T02:11:05.156Z"
-    },
-    "D:/MyProgram/commission-system/docs/requirements/2026-06-16-whatsapp-connector-contract.md": {
-      "count": 1,
-      "tokens": 1160,
-      "first_read": "2026-06-18T02:11:40.277Z"
-    },
-    "D:/MyProgram/commission-system/deploy/deploy.bat": {
-      "count": 4,
-      "tokens": 1600,
-      "first_read": "2026-06-18T02:12:20.511Z"
-    }
-  },
-  "files_written": [
-    {
-      "file": "D:/MyProgram/commission-system/CLAUDE.md",
-      "action": "edit",
-      "tokens": 42,
-      "at": "2026-06-18T02:13:19.132Z"
-    },
-    {
-      "file": "C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_whatsapp_module.md",
-      "action": "edit",
-      "tokens": 29,
-      "at": "2026-06-18T02:13:22.254Z"
-    },
-    {
-      "file": "C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_whatsapp_module.md",
-      "action": "edit",
-      "tokens": 134,
-      "at": "2026-06-18T02:13:37.918Z"
-    },
-    {
-      "file": "D:/MyProgram/commission-system/CLAUDE.md",
-      "action": "edit",
-      "tokens": 29,
-      "at": "2026-06-18T02:14:27.442Z"
-    },
-    {
-      "file": "D:/MyProgram/commission-system/deploy/deploy.bat",
-      "action": "edit",
-      "tokens": 21,
-      "at": "2026-06-18T02:14:41.901Z"
-    },
-    {
-      "file": "D:/MyProgram/commission-system/deploy/deploy.bat",
-      "action": "edit",
-      "tokens": 23,
-      "at": "2026-06-18T02:14:42.826Z"
-    }
-  ],
-  "edit_counts": {
-    "CLAUDE.md": 2,
-    "C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_whatsapp_module.md": 2,
-    "deploy/deploy.bat": 2
-  },
-  "anatomy_hits": 8,
+  "session_id": "session-2026-07-01-0912",
+  "started": "2026-07-01T01:12:17.591Z",
+  "files_read": {},
+  "files_written": [],
+  "edit_counts": {},
+  "anatomy_hits": 0,
   "anatomy_misses": 0,
-  "repeated_reads_warned": 3,
+  "repeated_reads_warned": 0,
   "cerebrum_warnings": 0,
-  "stop_count": 1
+  "stop_count": 0
 }

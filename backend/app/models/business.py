@@ -66,6 +66,8 @@ class OkkiReceipt(BusinessBase):
     type = Column(String(64))
     amount_usd = Column(DECIMAL(12, 2))
     service_fee_amount_usd = Column(DECIMAL(15, 2), comment="交易服务费(美元)")
+    exchange_rate = Column(DECIMAL(12, 6), comment="汇率")
+    real_amount_rmb = Column(DECIMAL(15, 2), comment="回款金额(RMB)")
     order_id = Column(String(64))
     company_id = Column(String(64))
     order_no = Column(String(64))

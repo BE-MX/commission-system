@@ -33,5 +33,8 @@ class SyncedPaymentListItem(BaseModel):
     customer_name: Optional[str] = None
     payment_date: date
     payment_amount: float
+    service_fee: Optional[float] = None
+    exchange_rate: Optional[float] = None
+    real_amount_rmb: Optional[float] = None
     is_calculated: bool = False
     batch_id: Optional[int] = None

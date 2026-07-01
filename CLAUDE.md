@@ -527,7 +527,7 @@ deploy\restart.bat                       # 仅重启 CommissionSystem service
 | 备货管理 | `stock:read` / `stock:write` / `stock:admin` | 查看/设置/管理 |
 | 素材管理 | `asset:read` / `asset:write` / `asset:delete` / `asset:admin` | 查看素材库/上传编辑/删除/标签维度管理 |
 | 色彩管理 | `color:read` / `color:write` / `color:admin` | 查看色板数据库/色彩趋势/编辑色号/生成色板图/管理竞品监控 |
-| 生产订单 | `production:read` / `production:write` / `production:admin` | 查看订单/创建编辑订单与入库/删除订单（备货管理菜单组下独立子菜单，由 `production:read` 控制显示） |
+| 生产订单 | `production:read` / `production:write` / `production:print` / `production:admin` | 查看订单/创建编辑订单与入库/打印工作台/删除订单（备货管理菜单组下独立子菜单） |
 | 报表中心 | `report:read` / `report:design` / `report:admin` | 查看报表/编辑模板/删除模板（Stimulsoft Reports.JS，super_admin 自动绕过） |
 | 数据概念治理 | `governance:read` / `governance:write` / `governance:admin` | 查看概念图谱/创建编辑概念/审批废弃回滚导入 |
 | 客户机会台 | `customer_opportunity:read` / `customer_opportunity:write` / `customer_opportunity:manage` | 查看本人机会/更新状态反馈/管理全部机会分配 |

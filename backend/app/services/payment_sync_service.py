@@ -147,7 +147,8 @@ def sync_payments(db: Session, date_start: date, date_end: date) -> SyncResult:
     # ---- Step 1: 从业务库拉取回款 ----
     sql = (
         f"SELECT cash_collection_id, cash_collection_no, collection_date, "
-        f"amount_usd, service_fee_amount_usd, order_id, company_id, order_no, company_name "
+        f"amount_usd, service_fee_amount_usd, exchange_rate, real_amount_rmb, "
+        f"order_id, company_id, order_no, company_name "
         f"FROM `{schema}`.`okki_receipts` "
         f"WHERE `collection_date` >= :ds AND `collection_date` <= :de"
     )
@@ -182,6 +183,14 @@ def sync_payments(db: Session, date_start: date, date_end: date) -> SyncResult:
             "payment_date": to_date(row["collection_date"]),
             "payment_amount": Decimal(str(row["amount_usd"])),
             "service_fee": Decimal(str(row["service_fee_amount_usd"] or 0)),
+            "exchange_rate": (
+                Decimal(str(row["exchange_rate"]))
+                if row["exchange_rate"] is not None else None
+            ),
+            "real_amount_rmb": (
+                Decimal(str(row["real_amount_rmb"]))
+                if row["real_amount_rmb"] is not None else None
+            ),
         })
         result.new_synced += 1
 

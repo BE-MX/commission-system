@@ -46,6 +46,12 @@
 | 16:06 | 更新 README insight/ 描述（补 customer_opportunity/radar/profile/source 等子服务） | README.md | insight 描述对齐代码 | ~1k |
 |------|--------|---------|---------|--------|
 
+## Session: 2026-06-27 neat-freak 知识库同步
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|---------|
+| -- | neat-freak：同步打印工作台特性 + category_service 提取到全部知识层 | CLAUDE.md, project_production_module.md, project_stimulsoft_module.md, cerebrum.md | 5张表/22端点/4服务/039迁移/category_service全部对齐 | ~8k |
+
 ## Earlier Sessions (consolidated summaries)
 
 - **2026-06-02**: 颜色排序修复（双层 REGEXP_REPLACE），Stimulsoft 迁移计划+执行（028/029 迁移，report 领域模块，前端 Designer/Viewer 组件），JMREPORT 环境变量清理
@@ -1246,3 +1252,418 @@
 | 10:14 | Edited deploy/deploy.bat | 2→2 lines | ~19 |
 | 10:14 | Edited deploy/deploy.bat | 2→2 lines | ~22 |
 | 10:15 | Session end: 6 writes across 3 files (CLAUDE.md, project_whatsapp_module.md, deploy.bat) | 8 reads | ~10090 tok |
+| 10:19 | Session end: 6 writes across 3 files (CLAUDE.md, project_whatsapp_module.md, deploy.bat) | 8 reads | ~10090 tok |
+
+## Session: 2026-06-22 08:42
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 08:58 | Edited backend/app/insight/router.py | modified _get_user_id() | ~45 |
+| 08:59 | Session end: 1 writes across 1 files (router.py) | 3 reads | ~19061 tok |
+| 09:02 | Session end: 1 writes across 1 files (router.py) | 3 reads | ~19061 tok |
+| 11:38 | Edited backend/app/auth/service.py | 2→3 lines | ~62 |
+| 11:38 | Edited backend/app/tracking/router.py | modified delete_shipment() | ~202 |
+| 11:38 | Edited frontend/src/api/tracking.js | modified refreshShipment() | ~76 |
+| 11:38 | Edited frontend/src/views/tracking/TrackingList.vue | inline fix | ~36 |
+| 11:39 | Edited frontend/src/views/tracking/TrackingList.vue | inline fix | ~15 |
+| 11:39 | Edited frontend/src/views/tracking/TrackingList.vue | CSS: tracking, color | ~155 |
+| 11:39 | Edited frontend/src/views/tracking/TrackingList.vue | CSS: confirmButtonText, cancelButtonText, type | ~150 |
+| 11:40 | Session end: 8 writes across 4 files (router.py, service.py, tracking.js, TrackingList.vue) | 7 reads | ~19781 tok |
+| 13:17 | Session end: 8 writes across 4 files (router.py, service.py, tracking.js, TrackingList.vue) | 7 reads | ~19781 tok |
+| 13:20 | Edited CLAUDE.md | 2→3 lines | ~52 |
+| 13:20 | Edited CLAUDE.md | inline fix | ~39 |
+| 13:22 | Session end: 10 writes across 5 files (router.py, service.py, tracking.js, TrackingList.vue, CLAUDE.md) | 9 reads | ~19878 tok |
+
+## Session: 2026-06-22 15:37
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-06-22 15:38
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-06-22 15:40
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-06-22 15:44
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-06-22 15:47
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-06-22 15:52
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-06-22 15:56
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-06-22 16:00
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-06-22 16:01
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-06-22 16:09
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-06-23 08:36
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-06-23 10:36
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-06-24 08:56
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 10:26 | Edited backend/app/report/templates/production_order_print.html | 19→18 lines | ~98 |
+| 10:26 | Edited backend/app/report/templates/production_order_print.html | 56→59 lines | ~347 |
+| 10:26 | Edited backend/app/report/templates/production_order_print.html | 11→11 lines | ~61 |
+| 10:26 | Edited backend/app/report/docx_export.py | 6→4 lines | ~34 |
+| 10:26 | Edited backend/app/report/docx_export.py | modified _set_cell_shading() | ~24 |
+| 10:27 | Edited backend/app/report/docx_export.py | modified _set_cell_text() | ~153 |
+| 10:27 | Edited backend/app/report/docx_export.py | modified _set_cell_two_line() | ~226 |
+| 10:27 | Edited backend/app/report/docx_export.py | modified _set_cell_multiline() | ~211 |
+| 10:27 | Edited backend/app/report/docx_export.py | modified in() | ~431 |
+| 10:27 | Edited backend/app/report/docx_export.py | modified in() | ~518 |
+| 10:28 | Edited backend/app/report/docx_export.py | modified in() | ~737 |
+| 10:28 | Session end: 11 writes across 2 files (production_order_print.html, docx_export.py) | 2 reads | ~2875 tok |
+| 10:37 | Session end: 11 writes across 2 files (production_order_print.html, docx_export.py) | 2 reads | ~2875 tok |
+| 10:40 | Session end: 11 writes across 2 files (production_order_print.html, docx_export.py) | 2 reads | ~2875 tok |
+| 10:42 | Edited backend/app/report/docx_export.py | modified generate_production_order_docx() | ~290 |
+| 10:43 | Edited backend/app/report/docx_export.py | modified enumerate() | ~499 |
+| 10:43 | Edited backend/app/report/docx_export.py | expanded (+13 lines) | ~371 |
+| 10:43 | Session end: 14 writes across 2 files (production_order_print.html, docx_export.py) | 2 reads | ~4035 tok |
+| 10:48 | Edited backend/app/report/docx_export.py | modified _set_cell_multiline() | ~65 |
+| 10:49 | Edited backend/app/report/docx_export.py | modified _set_cell_two_line() | ~229 |
+| 10:49 | Edited backend/app/report/docx_export.py | 5→5 lines | ~84 |
+| 10:49 | Session end: 17 writes across 2 files (production_order_print.html, docx_export.py) | 2 reads | ~4413 tok |
+| 10:51 | Edited backend/app/report/docx_export.py | modified in() | ~113 |
+| 10:52 | Edited backend/app/report/docx_export.py | modified in() | ~85 |
+| 10:52 | Edited backend/app/report/docx_export.py | modified in() | ~433 |
+| 10:52 | Session end: 20 writes across 2 files (production_order_print.html, docx_export.py) | 2 reads | ~5044 tok |
+| 11:03 | Edited backend/app/report/docx_export.py | modified get() | ~226 |
+| 11:03 | Edited backend/app/report/docx_export.py | reduced (-19 lines) | ~68 |
+| 11:03 | Session end: 22 writes across 2 files (production_order_print.html, docx_export.py) | 2 reads | ~10572 tok |
+| 11:06 | Edited backend/app/report/docx_export.py | expanded (+59 lines) | ~741 |
+| 11:06 | Edited backend/app/report/docx_export.py | added 1 import(s) | ~61 |
+| 11:07 | Edited backend/app/report/docx_export.py | 10→9 lines | ~89 |
+| 11:07 | Session end: 25 writes across 2 files (production_order_print.html, docx_export.py) | 2 reads | ~11855 tok |
+| 11:08 | Edited backend/app/report/docx_export.py | 4→4 lines | ~37 |
+| 11:09 | Edited backend/app/report/docx_export.py | 7→7 lines | ~64 |
+| 11:09 | Edited backend/app/report/docx_export.py | modified in() | ~95 |
+| 11:09 | Edited backend/app/report/docx_export.py | modified in() | ~397 |
+| 11:09 | Session end: 29 writes across 2 files (production_order_print.html, docx_export.py) | 2 reads | ~12448 tok |
+| 11:10 | Edited backend/app/report/docx_export.py | 4→5 lines | ~52 |
+| 11:11 | Session end: 30 writes across 2 files (production_order_print.html, docx_export.py) | 2 reads | ~12500 tok |
+| 11:12 | Edited backend/app/report/docx_export.py | get() → RGBColor() | ~718 |
+| 11:13 | Session end: 31 writes across 2 files (production_order_print.html, docx_export.py) | 2 reads | ~13218 tok |
+| 11:15 | Session end: 31 writes across 2 files (production_order_print.html, docx_export.py) | 2 reads | ~13218 tok |
+| 11:20 | Edited backend/app/report/docx_export.py | modified range() | ~92 |
+| 11:20 | Edited backend/app/report/docx_export.py | modified range() | ~94 |
+| 11:20 | Session end: 33 writes across 2 files (production_order_print.html, docx_export.py) | 2 reads | ~13404 tok |
+| 11:22 | Edited backend/app/report/router.py | "portrait" → "landscape" | ~23 |
+| 11:23 | Session end: 34 writes across 3 files (production_order_print.html, docx_export.py, router.py) | 3 reads | ~13427 tok |
+| 11:49 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_stimulsoft_module.md | expanded (+13 lines) | ~215 |
+
+## Session: 2026-06-24 11:50
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 11:51 | Edited CLAUDE.md | expanded (+22 lines) | ~248 |
+| 11:51 | Edited CLAUDE.md | 6→8 lines | ~298 |
+| 11:52 | Session end: 2 writes across 1 files (CLAUDE.md) | 1 reads | ~15484 tok |
+
+## Session: 2026-06-24 13:06
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-06-27 13:16
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 13:27 | Edited backend/app/report/data_service.py | modified get_process_card_print_data() | ~502 |
+| 13:28 | Edited backend/app/report/data_service.py | 11→12 lines | ~143 |
+| 13:28 | Session end: 2 writes across 1 files (data_service.py) | 1 reads | ~645 tok |
+| 14:07 | Edited backend/app/report/data_service.py | modified get_process_card_print_data() | ~702 |
+| 14:07 | Edited backend/app/report/data_service.py | 12→13 lines | ~157 |
+| 14:07 | Session end: 4 writes across 1 files (data_service.py) | 1 reads | ~7219 tok |
+| 14:13 | Edited backend/app/report/data_service.py | 13→13 lines | ~191 |
+| 14:14 | Edited backend/app/report/data_service.py | inline fix | ~11 |
+| 14:14 | Session end: 6 writes across 1 files (data_service.py) | 1 reads | ~7635 tok |
+| 14:16 | Edited backend/app/report/data_service.py | expanded (+21 lines) | ~513 |
+| 14:17 | Edited backend/app/report/data_service.py | 18→19 lines | ~167 |
+| 14:17 | Session end: 8 writes across 1 files (data_service.py) | 1 reads | ~8650 tok |
+| 14:27 | Edited backend/app/stock/router.py | modified reset_order_process() | ~415 |
+| 14:28 | Edited frontend/src/api/stock.js | modified deleteProductionOrderItem() | ~85 |
+| 14:28 | Edited frontend/src/views/stock/ProductionOrderManage.vue | 5→6 lines | ~77 |
+| 14:28 | Edited frontend/src/views/stock/ProductionOrderManage.vue | 2→3 lines | ~106 |
+| 14:29 | Edited frontend/src/views/stock/ProductionOrderManage.vue | added 1 condition(s) | ~205 |
+| 14:29 | Edited backend/app/stock/router.py | modified reset_order_process() | ~635 |
+| 14:29 | Session end: 14 writes across 4 files (data_service.py, router.py, stock.js, ProductionOrderManage.vue) | 6 reads | ~20051 tok |
+| 14:52 | Created backend/scripts/seed_product_process_route.py | — | ~444 |
+| 14:52 | Session end: 15 writes across 5 files (data_service.py, router.py, stock.js, ProductionOrderManage.vue, seed_product_process_route.py) | 7 reads | ~20495 tok |
+| 15:03 | Edited backend/app/stock/router.py | 4→3 lines | ~32 |
+| 15:03 | Session end: 16 writes across 5 files (data_service.py, router.py, stock.js, ProductionOrderManage.vue, seed_product_process_route.py) | 7 reads | ~20527 tok |
+| 15:24 | Session end: 16 writes across 5 files (data_service.py, router.py, stock.js, ProductionOrderManage.vue, seed_product_process_route.py) | 7 reads | ~20527 tok |
+| 15:28 | Edited backend/app/report/data_service.py | 17→17 lines | ~168 |
+| 15:28 | Session end: 17 writes across 5 files (data_service.py, router.py, stock.js, ProductionOrderManage.vue, seed_product_process_route.py) | 7 reads | ~20703 tok |
+| 15:38 | Session end: 17 writes across 5 files (data_service.py, router.py, stock.js, ProductionOrderManage.vue, seed_product_process_route.py) | 7 reads | ~20703 tok |
+| 15:40 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_stimulsoft_module.md | inline fix | ~47 |
+| 15:40 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_production_module.md | 3→3 lines | ~64 |
+| 15:40 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_production_module.md | 5→6 lines | ~97 |
+| 15:41 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_production_reporting_module.md | 6→8 lines | ~118 |
+| 15:41 | Edited CLAUDE.md | 3→4 lines | ~100 |
+| 15:41 | Edited CLAUDE.md | inline fix | ~58 |
+| 15:42 | Edited CLAUDE.md | inline fix | ~54 |
+| 15:43 | Session end: 24 writes across 9 files (data_service.py, router.py, stock.js, ProductionOrderManage.vue, seed_product_process_route.py) | 13 reads | ~38651 tok |
+
+## Session: 2026-06-27 16:27
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 16:29 | Created C:/Users/windb/.claude/plans/drifting-watching-origami.md | — | ~1392 |
+| 16:31 | Created backend/app/report/category_service.py | — | ~1382 |
+| 16:33 | Edited backend/app/stock/models.py | modified ProductionPrintLog() | ~342 |
+| 16:34 | Created backend/alembic/versions/039_add_production_print_logs.py | — | ~502 |
+| 16:36 | Created backend/app/stock/print_workstation_service.py | — | ~2555 |
+| 16:37 | Edited backend/app/stock/schemas.py | modified InTransitItemResponse() | ~124 |
+| 16:38 | Edited backend/app/stock/router.py | 13→14 lines | ~98 |
+| 16:38 | Edited backend/app/stock/router.py | modified list_print_orders() | ~631 |
+| 16:39 | Edited backend/app/stock/service.py | expanded (+6 lines) | ~80 |
+| 16:40 | Edited backend/app/report/data_service.py | modified get_process_card_print_data() | ~81 |
+| 16:41 | Edited backend/app/report/data_service.py | expanded (+13 lines) | ~350 |
+| 16:41 | Edited backend/app/report/data_service.py | 10→10 lines | ~111 |
+| 16:42 | Edited backend/app/report/data_service.py | inline fix | ~23 |
+| 16:43 | Edited backend/app/report/data_service.py | 13→17 lines | ~193 |
+| 16:44 | Edited backend/app/report/router.py | modified print_production_order() | ~166 |
+| 16:45 | Edited backend/app/report/data_service.py | inline fix | ~35 |
+| 16:45 | Edited backend/app/report/data_service.py | 2→5 lines | ~96 |
+| 16:46 | Edited backend/app/report/data_service.py | 3→1 lines | ~24 |
+| 16:47 | Edited backend/app/report/data_service.py | 2→4 lines | ~50 |
+| 16:48 | Edited frontend/src/api/stock.js | modified resetOrderProcess() | ~190 |
+| 16:50 | Created frontend/src/views/stock/ProductionOrderPrint.vue | — | ~2999 |
+
+## Session: 2026-06-27 16:51
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 16:52 | Edited frontend/src/config/navigation.js | 2→2 lines | ~16 |
+| 16:52 | Edited frontend/src/config/navigation.js | expanded (+12 lines) | ~112 |
+| 16:53 | Created ProductionOrderPrint.vue | frontend/src/views/stock/ | print workstation page complete | ~3000 |
+| 16:54 | Added Printer icon + nav entry | navigation.js | route /stock/production-order-print registered | ~100 |
+| 16:55 | Verified frontend build | npm run build | ✓ built in 16.85s | 0 |
+| 16:55 | Verified backend imports | category_service + print_workstation_service | ✓ all OK | 0 |
+| 16:55 | Session end: 2 writes across 1 files (navigation.js) | 1 reads | ~128 tok |
+| 17:10 | Session end: 2 writes across 1 files (navigation.js) | 3 reads | ~128 tok |
+| 17:14 | Session end: 2 writes across 1 files (navigation.js) | 4 reads | ~2683 tok |
+| 17:16 | Session end: 2 writes across 1 files (navigation.js) | 4 reads | ~2683 tok |
+| 17:18 | Edited frontend/src/views/stock/ProductionOrderPrint.vue | 8→9 lines | ~79 |
+| 17:18 | Edited frontend/src/views/stock/ProductionOrderPrint.vue | modified if() | ~89 |
+| 17:18 | Edited frontend/src/views/stock/ProductionOrderPrint.vue | modified handlePrintOrder() | ~88 |
+| 17:18 | Edited frontend/src/views/stock/ProductionOrderPrint.vue | modified handlePrintCategory() | ~103 |
+| 17:19 | Session end: 6 writes across 2 files (navigation.js, ProductionOrderPrint.vue) | 4 reads | ~3066 tok |
+| 17:20 | Session end: 6 writes across 2 files (navigation.js, ProductionOrderPrint.vue) | 6 reads | ~3066 tok |
+| 17:26 | Edited backend/app/report/router.py | modified get_data() | ~372 |
+| 17:27 | Created frontend/src/views/stock/ProductionOrderPrint.vue | — | ~3147 |
+
+## Session: 2026-06-27 17:28
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 17:36 | Edited backend/app/report/data_service.py | 3→4 lines | ~55 |
+| 17:37 | Edited frontend/src/views/stock/ProductionOrderPrint.vue | CSS: params, array | ~101 |
+| 17:37 | Session end: 2 writes across 2 files (data_service.py, ProductionOrderPrint.vue) | 4 reads | ~9578 tok |
+| 17:45 | Session end: 2 writes across 2 files (data_service.py, ProductionOrderPrint.vue) | 4 reads | ~9578 tok |
+| 17:48 | Edited frontend/src/components/StimulsoftViewer.vue | CSS: reportCode, params | ~128 |
+| 17:48 | Edited frontend/src/components/StimulsoftViewer.vue | CSS: count, ids | ~79 |
+| 17:49 | Edited frontend/src/components/StimulsoftViewer.vue | CSS: params | ~82 |
+| 17:49 | Session end: 5 writes across 3 files (data_service.py, ProductionOrderPrint.vue, StimulsoftViewer.vue) | 4 reads | ~10892 tok |
+| 17:52 | Session end: 5 writes across 3 files (data_service.py, ProductionOrderPrint.vue, StimulsoftViewer.vue) | 4 reads | ~10892 tok |
+
+## Session: 2026-06-27 17:59
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 18:02 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_production_module.md | 6→7 lines | ~112 |
+| 18:02 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_production_module.md | 3→4 lines | ~131 |
+| 18:02 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_production_module.md | inline fix | ~9 |
+| 18:03 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_production_module.md | 5→6 lines | ~140 |
+| 18:03 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_stimulsoft_module.md | 2→3 lines | ~75 |
+| 18:03 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_stimulsoft_module.md | "GET /api/report/print/pro" → "GET /api/report/print/pro" | ~42 |
+| 18:03 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_stimulsoft_module.md | "_CATEGORY_RULES" → "category_service.CATEGORY" | ~84 |
+| 18:04 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_stimulsoft_module.md | inline fix | ~24 |
+| 18:04 | Edited CLAUDE.md | inline fix | ~63 |
+| 18:04 | Edited CLAUDE.md | inline fix | ~40 |
+| 18:04 | Edited CLAUDE.md | 1→5 lines | ~130 |
+| 18:05 | Edited CLAUDE.md | 1→2 lines | ~74 |
+| 18:05 | Edited CLAUDE.md | 6→7 lines | ~109 |
+
+## Session: 2026-06-27 18:07
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 18:13 | Edited backend/app/report/templates/production_order_print.html | 5→5 lines | ~38 |
+| 18:13 | Edited backend/app/report/templates/production_order_print.html | expanded (+6 lines) | ~98 |
+| 18:14 | Session end: 2 writes across 1 files (production_order_print.html) | 1 reads | ~4176 tok |
+| 18:18 | Edited backend/app/report/router.py | inline fix | ~30 |
+| 18:18 | Session end: 3 writes across 2 files (production_order_print.html, router.py) | 2 reads | ~8152 tok |
+| 18:21 | Session end: 3 writes across 2 files (production_order_print.html, router.py) | 2 reads | ~8152 tok |
+| 18:24 | Session end: 3 writes across 2 files (production_order_print.html, router.py) | 2 reads | ~8152 tok |
+
+## Session: 2026-06-27 18:28
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 10:59 | Created C:/Users/windb/.claude/plans/atomic-giggling-hammock.md | — | ~474 |
+
+## Session: 2026-06-28 11:11
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-06-28 11:11
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-06-28 11:16
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 11:25 | Edited frontend/src/views/system/UserManagement.vue | CSS: username, password | ~268 |
+| 11:26 | Edited frontend/src/api/auth.js | added 3 condition(s) | ~154 |
+| 11:27 | Session end: 2 writes across 2 files (UserManagement.vue, auth.js) | 11 reads | ~441 tok |
+| 11:42 | Edited backend/app/auth/service.py | 3→4 lines | ~90 |
+| 11:43 | Edited backend/app/stock/router.py | modified list_print_orders() | ~156 |
+| 11:43 | Edited backend/app/stock/router.py | modified get_print_categories() | ~61 |
+| 11:43 | Edited backend/app/stock/router.py | modified create_print_job() | ~67 |
+| 11:43 | Edited frontend/src/config/navigation.js | inline fix | ~41 |
+| 11:43 | Edited frontend/src/config/navigation.js | 11→11 lines | ~96 |
+| 11:44 | Session end: 8 writes across 5 files (UserManagement.vue, auth.js, service.py, router.py, navigation.js) | 14 reads | ~18386 tok |
+| 11:59 | Session end: 8 writes across 5 files (UserManagement.vue, auth.js, service.py, router.py, navigation.js) | 14 reads | ~18386 tok |
+| 09:13 | Edited CLAUDE.md | inline fix | ~36 |
+| 09:14 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_production_module.md | 8→9 lines | ~95 |
+| 09:14 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_production_module.md | inline fix | ~39 |
+| 09:16 | Session end: 11 writes across 7 files (UserManagement.vue, auth.js, service.py, router.py, navigation.js) | 20 reads | ~37014 tok |
+| 11:54 | Edited C:/Users/windb/.claude/CLAUDE.md | expanded (+8 lines) | ~102 |
+| 11:54 | Session end: 12 writes across 7 files (UserManagement.vue, auth.js, service.py, router.py, navigation.js) | 21 reads | ~52527 tok |
+
+## Session: 2026-06-29 16:51
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 17:01 | Edited backend/app/mini/service.py | added 1 import(s) | ~138 |
+| 17:01 | Edited backend/app/mini/service.py | modified _bj_now() | ~520 |
+| 17:01 | Edited backend/app/mini/service.py | 12→15 lines | ~160 |
+| 17:02 | Edited backend/app/mini/service.py | modified get_today_history() | ~559 |
+| 17:02 | Edited backend/app/mini/service.py | modified get_history() | ~814 |
+| 17:03 | Edited backend/app/mini/service.py | modified get_overview() | ~1015 |
+| 17:03 | Edited backend/app/mini/service.py | modified get_overview_detail() | ~719 |
+| 17:04 | Edited miniprogram/pages/scan/scan.wxml | inline fix | ~31 |
+| 17:04 | Edited miniprogram/pages/history/history.wxml | inline fix | ~31 |
+| 17:04 | Edited miniprogram/pages/overview/overview.wxml | inline fix | ~31 |
+| 17:04 | Edited miniprogram/components/confirm-sheet/confirm-sheet.wxml | inline fix | ~30 |
+| 17:05 | Session end: 11 writes across 5 files (service.py, scan.wxml, history.wxml, overview.wxml, confirm-sheet.wxml) | 7 reads | ~4056 tok |
+| 17:07 | Session end: 11 writes across 5 files (service.py, scan.wxml, history.wxml, overview.wxml, confirm-sheet.wxml) | 7 reads | ~4056 tok |
+
+## Session: 2026-06-29 17:33
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-06-29 17:33
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-06-29 20:19
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-06-30 11:57
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 12:01 | Edited miniprogram/components/confirm-sheet/confirm-sheet.wxml | 11→11 lines | ~137 |
+| 12:01 | Session end: 1 writes across 1 files (confirm-sheet.wxml) | 4 reads | ~9985 tok |
+| 12:06 | Edited miniprogram/components/confirm-sheet/confirm-sheet.wxml | 4→4 lines | ~50 |
+| 12:11 | Edited backend/app/mini/service.py | modified _parse_product_name_to_display() | ~504 |
+| 12:12 | Edited backend/app/mini/service.py | inline fix | ~26 |
+| 12:12 | Edited miniprogram/components/confirm-sheet/confirm-sheet.wxml | 4→4 lines | ~43 |
+| 12:15 | Edited backend/app/mini/service.py | modified _build_product_display() | ~218 |
+| 12:15 | Edited backend/app/mini/service.py | inline fix | ~26 |
+
+## Session: 2026-06-30 12:18
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 12:19 | Edited backend/app/mini/service.py | removed 27 lines | ~1 |
+| 12:19 | Edited miniprogram/pages/scan/scan.wxml | inline fix | ~27 |
+| 12:20 | Edited miniprogram/pages/history/history.wxml | inline fix | ~27 |
+| 12:20 | Edited miniprogram/pages/overview/overview.wxml | inline fix | ~27 |
+| 12:20 | Session end: 4 writes across 4 files (service.py, scan.wxml, history.wxml, overview.wxml) | 4 reads | ~11757 tok |
+| 12:35 | Edited backend/app/mini/service.py | modified _build_product_display() | ~261 |
+| 12:35 | Edited backend/app/mini/service.py | modified _build_product_display() | ~294 |
+| 12:37 | Edited backend/app/mini/service.py | inline fix | ~32 |
+| 12:37 | Session end: 7 writes across 4 files (service.py, scan.wxml, history.wxml, overview.wxml) | 6 reads | ~12106 tok |
+| 12:54 | Edited backend/app/mini/service.py | 4→5 lines | ~64 |
+| 12:55 | Session end: 8 writes across 4 files (service.py, scan.wxml, history.wxml, overview.wxml) | 6 reads | ~12252 tok |
+
+## Session: 2026-06-30 12:56
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 13:31 | Edited miniprogram/app.js | 2→2 lines | ~35 |
+| 13:32 | Session end: 1 writes across 1 files (app.js) | 9 reads | ~9982 tok |
+| 13:33 | Edited miniprogram/app.js | "http://192.168.100.43:800" → "http://10.91.3.182:8001" | ~16 |
+| 13:34 | Session end: 2 writes across 1 files (app.js) | 10 reads | ~9998 tok |
+
+## Session: 2026-07-01 08:26
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 08:37 | Created docs/README.md | — | ~396 |
+| 08:38 | Created docs/architecture.md | — | ~2808 |
+| 08:39 | Created docs/integration-guide.md | — | ~1802 |
+| 08:41 | Created docs/runbook.md | — | ~2180 |
+| 08:44 | Created docs/handoff.md | — | ~1502 |
+| 08:44 | Edited README.md | 3→7 lines | ~179 |
+| 08:45 | Edited README.md | expanded (+11 lines) | ~159 |
+| 08:45 | Session end: 7 writes across 5 files (README.md, architecture.md, integration-guide.md, runbook.md, handoff.md) | 5 reads | ~25073 tok |
+| 08:47 | Session end: 7 writes across 5 files (README.md, architecture.md, integration-guide.md, runbook.md, handoff.md) | 5 reads | ~25073 tok |
+
+## Session: 2026-07-01 09:05
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-07-01 09:12
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 09:30 | Updated payment sync list fields | payment API/schema/service/models/tests/frontend, migration 040 | Added service_fee, exchange_rate, real_amount_rmb display path; pytest and frontend build passed | ~18000 |

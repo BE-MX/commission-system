@@ -104,6 +104,8 @@ def engine():
                 type TEXT,
                 amount_usd REAL,
                 service_fee_amount_usd REAL,
+                exchange_rate REAL,
+                real_amount_rmb REAL,
                 order_id TEXT,
                 company_id TEXT,
                 order_no TEXT,
@@ -198,12 +200,12 @@ def seed_business_data(db):
     # 业务库回款
     cur.execute("""
         INSERT OR IGNORE INTO lsordertest.okki_receipts
-        (cash_collection_id, collection_date, amount_usd, order_id, company_id, order_no, company_name)
+        (cash_collection_id, collection_date, amount_usd, service_fee_amount_usd, exchange_rate, real_amount_rmb, order_id, company_id, order_no, company_name)
         VALUES
-        ('PAY001', '2026-04-01', 3000.00, 'ORD001', 'CUST001', 'NO001', '客户A'),
-        ('PAY002', '2026-04-05', 2000.00, 'ORD001', 'CUST001', 'NO001', '客户A'),
-        ('PAY003', '2026-04-10', 5000.00, 'ORD002', 'CUST002', 'NO002', '客户B'),
-        ('PAY004', '2026-04-15', 4000.00, 'ORD003', 'CUST003', 'NO003', '客户C')
+        ('PAY001', '2026-04-01', 3000.00, 30.00, 7.120000, 21360.00, 'ORD001', 'CUST001', 'NO001', '客户A'),
+        ('PAY002', '2026-04-05', 2000.00, 20.00, 7.130000, 14260.00, 'ORD001', 'CUST001', 'NO001', '客户A'),
+        ('PAY003', '2026-04-10', 5000.00, 50.00, 7.140000, 35700.00, 'ORD002', 'CUST002', 'NO002', '客户B'),
+        ('PAY004', '2026-04-15', 4000.00, 40.00, 7.150000, 28600.00, 'ORD003', 'CUST003', 'NO003', '客户C')
     """)
     conn.commit()
     conn.close()
@@ -254,6 +256,7 @@ def seed_synced_payments(db):
         db.add(SyncedPayment(
             payment_id=pid, order_id=oid, customer_id=cid,
             payment_date=pdate, payment_amount=amt,
+            service_fee=Decimal("0.00"),
         ))
     db.flush()
 

@@ -98,6 +98,9 @@ def list_synced_payments(
             customer_name=customer_name,
             payment_date=payment.payment_date,
             payment_amount=float(payment.payment_amount),
+            service_fee=float(payment.service_fee) if payment.service_fee is not None else None,
+            exchange_rate=float(payment.exchange_rate) if payment.exchange_rate is not None else None,
+            real_amount_rmb=float(payment.real_amount_rmb) if payment.real_amount_rmb is not None else None,
             is_calculated=batch_id is not None,
             batch_id=batch_id,
         ))

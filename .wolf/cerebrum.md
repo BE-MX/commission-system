@@ -2,7 +2,7 @@
 
 > OpenWolf's learning memory. Updated automatically as the AI learns from interactions.
 > Do not edit manually unless correcting an error.
-> Last updated: 2026-06-12
+> Last updated: 2026-06-27
 
 ## User Preferences
 
@@ -61,6 +61,7 @@
 - **移动端 `/quick-search` 和 `/recent` API 返回的字段与 `/list` 不同**：`/list` 返回 `storage_path`，而 `/quick-search`/`/recent` 早期实现遗漏了该字段。移动端 `MAssetCard` 仅使用 `thumbnail_path` 生成缩略图 URL，当缩略图生成失败时 `thumbnail_path` 为空，导致图片卡片空白。修复：后端补充 `storage_path`，前端 fallback 到 `storage_path`
 - **文件夹批量上传性能优化三件套**：(1) 预加载查重字典+标签字典+版本号，消除循环内 N+1 查询；(2) 内联 `create_asset`/`upload_new_version` 核心逻辑，避免逐文件 commit；(3) 每 BATCH_SIZE(20) 个文件一个事务 + `db.begin_nested()` savepoint 隔离单文件失败。1000 文件场景下查询次数从 ~2000 降到 3 次，commit 次数从 1000 降到 50 次
 - **移动端 SPA 中 `loadMore()` 与 `doSearch()` 存在竞态条件**：用户在滚动加载分页时（`loadMore` 请求未完成），通过 BottomSheet 选标签触发 `doSearch()` 重置 `page=1`，`doSearch` 先完成替换 `results` 后，`loadMore` 的旧请求完成将上一筛选条件的分页结果追加进来，导致 `results` 混合。修复：`loadMore()` 中保存请求时的 `expectedPage`，await 完成后检查 `page.value !== expectedPage` 则丢弃该次旧结果
+- **分类规则提取为独立 service（2026-06-27）**：生产订单打印的 17 条 model+unit 分类规则（`_CATEGORY_RULES`）从 `data_service.py` 提取到 `category_service.py`，供 `data_service` 和 `print_workstation_service` 共享。**规则变更只改一处**，打印工作台分类卡片和打印输出保持一致。提取时保留公开 API：`CATEGORY_RULES` / `OTHER_CATEGORY_INDEX` / `OTHER_LABEL` / `classify()` / `split_by_category()`
 
 ## Do-Not-Repeat
 
