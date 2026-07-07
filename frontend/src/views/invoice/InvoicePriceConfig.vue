@@ -220,7 +220,7 @@
             <el-option
               v-for="c in ruleCustomerOptions"
               :key="c.company_id"
-              :label="`${c.company_name} (${c.company_id})`"
+              :label="customerLabel(c)"
               :value="c"
             />
           </el-select>
@@ -255,6 +255,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Delete, Edit, Plus, Refresh, Search, Upload } from '@element-plus/icons-vue'
 import { msgSuccess, confirmDanger } from '@/utils/feedback'
+import { customerLabel } from './composables/useInvoiceEditor'
 import {
   deleteColorType,
   deleteCustomerRule,

@@ -155,7 +155,7 @@
                 <el-option
                   v-for="customer in customerOptions"
                   :key="customer.company_id"
-                  :label="`${customer.company_name} (${customer.company_id})`"
+                  :label="customerLabel(customer)"
                   :value="customer"
                 />
               </el-select>
@@ -461,7 +461,7 @@ import {
   syncInvoice,
   validateInvoice,
 } from '@/api/invoice'
-import { CURL_OPTIONS, describeCustomerRule, useInvoiceEditor } from './composables/useInvoiceEditor'
+import { CURL_OPTIONS, customerLabel, describeCustomerRule, useInvoiceEditor } from './composables/useInvoiceEditor'
 
 const loading = ref(false)
 const invoices = ref([])

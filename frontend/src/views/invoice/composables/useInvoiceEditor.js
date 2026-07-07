@@ -350,6 +350,14 @@ export function useInvoiceEditor({ onSaved } = {}) {
   }
 }
 
+// 客户下拉统一显示格式：company_name(country_name)，无国家时只显示名称
+export function customerLabel(customer) {
+  if (!customer) return ''
+  return customer.country_name
+    ? `${customer.company_name}(${customer.country_name})`
+    : customer.company_name || ''
+}
+
 export function describeCustomerRule(rule) {
   if (!rule) return ''
   const sign = Number(rule.adjust_value) >= 0 ? '+' : ''
