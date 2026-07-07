@@ -307,9 +307,9 @@ nssm restart CommissionSystem
 ### Q7：展会试戴（/expo/kiosk）异常
 
 1. **不出分析/话术**：按 Q6 排查 `expo_face_analysis` / `expo_sales_strategy` 两个 preset；话术生成失败会自动回落话术卡库原文（销售面板仍有内容），展台不冷场
-2. **不出效果图**：`expo_wig_composite` preset 需绑定支持图像编辑的模型并启用——ELBNT 账号仅 Claude 系（文本/视觉理解），无生图能力
+2. **不出效果图**（2026-07-07 起生图已接入 ELBNT `/v1/images/edits`）：失败原因看 `ark_expo_sessions.error_message` 或 AI 调用日志（`ark_ai_call_logs`，preset=expo_wig_composite）。常见：上游拥堵 502/504（单图 >300s 被 ELBNT 网关掐断，等低峰重试或换 Provider）；卡在"生成中"超 7 分钟会被看门狗自动标失败并给出重试入口
 3. **提示权限不足**：确认账号有 `expo:write`；若右上角显示占位"用户"，硬刷新（Ctrl+F5）重新拉取登录态
-4. 客户照片与效果图存 `uploads/expo/`（photos/results/wigs 三个子目录），属 `/uploads` 备份范围；客户数据删除走线索台「删除」（物理删除照片）
+4. 客户照片与效果图存 `uploads/expo/`（photos/results/wigs/hair_colors 四个子目录），属 `/uploads` 备份范围；客户数据删除走线索台「删除」（物理删除照片）；发型/色板图上传不限体积（送模型前管线自动压缩）
 
 ## 日志位置
 

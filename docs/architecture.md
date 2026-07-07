@@ -68,7 +68,7 @@
 - `app/report/` — 报表中心（router/models/schemas/data_service / category_service / docx_export）
 - `app/governance/` — 数据概念治理（router/models/schemas/service facade + concept / relationship / changelog / import_service）
 - `app/invoice/` — 订单发票管理（router/models/schemas/service + product_service / export_service / xiaoman_service）
-- `app/expo/` — 展会 AI 试戴（router/models/schemas/service + matching 规则匹配引擎 + ai_pipeline 三管线（面容分析/效果图合成/双轨话术）+ script_service 话术卡库；合成双入口 mode=tryon 换发（可选发色，快照注入 prompt）/ scene 佩戴实拍生成场景大片（跳过分析，场景清单 `ai_pipeline.SCENES` 服务端硬编码）；匹配权重 `config/expo_matching.yaml`；设计文档 `docs/requirements/2026-07-03-expo-ai-wig-tryon.md`）
+- `app/expo/` — 展会 AI 试戴（router/models/schemas/service + matching 规则匹配引擎 + ai_pipeline 三管线（面容分析/效果图合成/双轨话术）+ script_service 话术卡库；合成双入口 mode=tryon 换发（单选发型 + 发色库色板图三图合成 + 可选生成场景 `TRYON_SCENES` 原景/居家/办公/聚会）/ scene 佩戴实拍生成场景大片（跳过分析，场景清单 `ai_pipeline.SCENES` 服务端硬编码）；参考图送模型前统一压缩（最长边 1280）；pending/generating 卡死看门狗读取时自愈；匹配权重 `config/expo_matching.yaml`（性别过滤全灭自动降级）；设计文档 `docs/requirements/2026-07-03-expo-ai-wig-tryon.md`）
 - `app/mini/` — 微信小程序端（router/service/auth/schemas — 扫码报工/历史/总览/撤销/登录绑定）
 
 ## 前端结构
@@ -136,6 +136,7 @@ frontend/src/
 | `ark_invoice_items` | 发票明细 | `invoice_id` FK CASCADE |
 | `ark_expo_customers` | 展会试戴客户 | `consent_at` 非空才允许存照片 |
 | `ark_expo_wigs` | 试戴发型库 | `model_no` 唯一, `series`(classic/zhizhen), `fit_tags` JSON |
+| `ark_expo_hair_colors` | 试戴发色库 | `code` 唯一, `swatch_path` 色板图随合成送模型, `color_description` 喂 prompt（048） |
 | `ark_expo_scripts` | 话术卡库 | 营销文档结构化落点, 写入时禁用词校验 |
 | `ark_expo_sessions` | 试戴会话 | `mode`(tryon/scene) 双入口, `analysis_json.internal` 仅销售端可见 |
 | `ark_expo_results` | 试戴效果图 | `wig_id` 可空(scene), `hair_color_json` 发色快照, `scene_json` 场景快照, `short_code` 分享短码, `reaction`(loved/soso) |
