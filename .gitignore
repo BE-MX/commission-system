@@ -46,3 +46,6 @@ backend/uploads/
 backend/analyze_ref.py
 backend/reference.docx
 *reference_order.docx
+
+# OpenWolf 运行时状态（本机记忆，不入库）
+.wolf/
