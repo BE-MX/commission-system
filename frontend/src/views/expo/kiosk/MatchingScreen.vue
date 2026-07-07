@@ -3,6 +3,16 @@
     <h2 class="xk-title">为您甄选 <em>{{ flow.matches.value.length }}</em> 款</h2>
     <div class="xk-sub">依据您的脸型 · 肤色 · 气质定制推荐 · 轻触选择一款</div>
 
+    <!-- AI 面容解读：只展示 serialize 剥离 internal 后的正面公开字段 -->
+    <div v-if="flow.analysis.value" class="reading">
+      <div v-if="flow.analysis.value.display_notes" class="reading-note">{{ flow.analysis.value.display_notes }}</div>
+      <div class="reading-chips">
+        <span v-if="faceLabel" class="rchip"><b>脸型</b>{{ faceLabel }}</span>
+        <span v-if="skinLabel" class="rchip"><b>肤色</b>{{ skinLabel }}</span>
+        <span v-if="flow.analysis.value.temperament" class="rchip"><b>气质</b>{{ flow.analysis.value.temperament }}</span>
+      </div>
+    </div>
+
     <div class="cards">
       <div
         v-for="(match, i) in flow.matches.value" :key="match.wig_id"
@@ -52,9 +62,21 @@
 </template>
 
 <script setup>
-import { inject, onMounted } from 'vue'
+import { computed, inject, onMounted } from 'vue'
 
 const flow = inject('tryonFlow')
+
+// 客户屏话术用讨喜的中文标签（value 是 AI 分析枚举）
+const FACE_LABELS = { oval: '鹅蛋脸', round: '圆脸', square: '方脸', heart: '心形脸', long: '长脸', diamond: '菱形脸' }
+const DEPTH_LABELS = { fair: '白皙', light: '白皙', medium: '自然', tan: '小麦' }
+const TONE_LABELS = { cool: '冷调', warm: '暖调', neutral: '中性' }
+
+const faceLabel = computed(() => FACE_LABELS[flow.analysis.value?.face_shape] || '')
+const skinLabel = computed(() => {
+  const skin = flow.analysis.value?.skin_tone || {}
+  const parts = [DEPTH_LABELS[skin.depth], TONE_LABELS[skin.undertone]].filter(Boolean)
+  return parts.join(' · ')
+})
 
 onMounted(() => flow.loadHairColors())
 
@@ -71,6 +93,22 @@ function pickColor(id) {
 
 <style scoped>
 .matching { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 2vh 6vw 3vh; overflow-y: auto; }
+.reading {
+  width: min(88vw, 560px); margin-top: 2vh; padding: 14px 18px;
+  border: 1px solid var(--xk-gold-line); border-radius: 16px;
+  background: rgba(232, 196, 121, 0.05);
+  animation: card-in 0.7s cubic-bezier(0.2, 0.9, 0.3, 1.2) backwards;
+}
+.reading-note {
+  font-family: 'Noto Serif SC', serif; font-size: 14px; line-height: 1.7;
+  letter-spacing: 0.06em; color: var(--xk-gold-hi);
+}
+.reading-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.rchip {
+  font-size: 11px; letter-spacing: 0.12em; color: var(--xk-mut);
+  border: 1px solid var(--xk-gold-line); border-radius: 14px; padding: 4px 12px;
+}
+.rchip b { color: var(--xk-gold); font-weight: 400; margin-right: 6px; }
 .cards { width: min(88vw, 560px); display: flex; flex-direction: column; gap: 14px; margin-top: 3vh; }
 .card {
   position: relative; display: flex; gap: 16px; align-items: center;

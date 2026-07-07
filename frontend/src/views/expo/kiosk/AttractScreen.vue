@@ -13,8 +13,8 @@
         <circle cx="50" cy="10" r="1.3" /><circle cx="20" cy="50" r="1.3" /><circle cx="80" cy="50" r="1.3" />
       </svg>
     </div>
-    <h2 class="slogan">戴上那一刻<br /><em>状态</em>就回来了</h2>
-    <div class="line">AI 智能试戴 · 60 秒遇见更好的自己</div>
+    <h2 class="slogan">莱莎帮你<br />遇到<em>最喜欢的自己</em></h2>
+    <div class="line">AI 智能试戴 · 60 秒焕新形象</div>
     <button class="xk-btn cta" @click="$emit('start', 'tryon')">AI 试戴新发型</button>
     <button class="xk-btn ghost cta2" @click="$emit('start', 'scene')">
       已佩戴 · 拍场景大片
