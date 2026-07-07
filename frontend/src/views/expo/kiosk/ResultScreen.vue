@@ -35,6 +35,9 @@
         <div class="divider" :style="{ left: `${sliderPct}%` }"><span class="knob">⇔</span></div>
         <span class="lbl b">{{ isScene ? '现场实拍' : '佩戴前' }}</span>
         <span class="lbl a">{{ isScene ? '莱莎 · 场景大片' : '莱莎 · 佩戴后' }}</span>
+        <!-- 预览框 cover 会裁掉比例不合的部分；查看完整图走灯箱。
+             pointerdown.stop 防止触发对比滑块的拖拽手势 -->
+        <button class="zoom-btn" aria-label="查看完整效果图" @pointerdown.stop @click="lightboxOpen = true">⤢ 查看大图</button>
       </div>
 
       <!-- 二次生成：已有成品在展示，新款在后台合成，用胶囊提示不打断浏览 -->
@@ -78,6 +81,15 @@
         </div>
         <button class="home-btn" @click="flow.resetAll()">⌂ 返回主页</button>
       </div>
+
+      <!-- 完整图灯箱：contain 不裁切，轻触任意处关闭 -->
+      <Transition name="lb">
+        <div v-if="lightboxOpen && current" class="lightbox" @click="lightboxOpen = false">
+          <img :src="current.image_url" class="lb-img" alt="完整效果图" />
+          <button class="lb-close" aria-label="关闭">✕</button>
+          <span class="lb-hint">轻触任意处返回</span>
+        </div>
+      </Transition>
     </template>
   </div>
 </template>
@@ -118,6 +130,9 @@ const isScene = computed(() => flow.mode.value === 'scene')
 
 const currentIndex = ref(0)
 const current = computed(() => doneList.value[currentIndex.value] || null)
+const lightboxOpen = ref(false)
+// 成品被清空（重新生成/清场）时收起灯箱，避免空引用的黑屏遮罩
+watch(current, v => { if (!v) lightboxOpen.value = false })
 watch(() => !current.value, syncBrandTimer, { immediate: true })
 // 新成品出炉自动切到最新一张（回头再生成第二款时不停留在旧图）
 watch(doneCount, (n, old) => {
@@ -242,6 +257,49 @@ watch([shareUrl, qrEl], async () => {
 .lbl { position: absolute; top: 16px; font-size: 10px; letter-spacing: 0.24em; padding: 6px 14px; border-radius: 20px; z-index: 2; }
 .lbl.b { left: 14px; color: var(--xk-mut); border: 1px solid rgba(141, 131, 113, 0.4); }
 .lbl.a { right: 14px; color: var(--xk-ink); background: linear-gradient(110deg, var(--xk-gold), var(--xk-gold-hi)); }
+.zoom-btn {
+  position: absolute; right: 14px; bottom: 14px; z-index: 4;
+  padding: 8px 16px; border-radius: 20px; cursor: pointer;
+  border: 1px solid var(--xk-gold-line); background: rgba(12, 10, 8, 0.72);
+  color: var(--xk-gold); font-size: 11px; letter-spacing: 0.14em;
+  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.zoom-btn:active { transform: scale(0.96); }
+
+/* ── 完整图灯箱（z-index 80：压过魔法镜框装饰层 60 与错误条 70） ── */
+.lightbox {
+  position: fixed; inset: 0; z-index: 80;
+  background: rgba(12, 10, 8, 0.92);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  display: flex; align-items: center; justify-content: center;
+}
+.lb-img {
+  max-width: 94vw; max-height: 92vh; object-fit: contain;
+  border-radius: 12px;
+  box-shadow: 0 12px 60px rgba(0, 0, 0, 0.6);
+}
+.lb-close {
+  position: absolute; top: 18px; right: 18px;
+  width: 44px; height: 44px; border-radius: 50%; cursor: pointer;
+  border: 1px solid var(--xk-gold-line); background: rgba(12, 10, 8, 0.7);
+  color: var(--xk-gold); font-size: 15px;
+  display: flex; align-items: center; justify-content: center;
+  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.lb-close:active { transform: scale(0.94); }
+.lb-hint {
+  position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
+  font-size: 11px; letter-spacing: 0.24em; color: var(--xk-mut);
+}
+/* 灯箱是模态：transform-origin 保持居中；入场 240ms 强 ease-out，出场更快 160ms（非对称时长） */
+.lb-enter-active { transition: opacity 240ms cubic-bezier(0.23, 1, 0.32, 1); }
+.lb-enter-active .lb-img { transition: transform 240ms cubic-bezier(0.23, 1, 0.32, 1); }
+.lb-leave-active { transition: opacity 160ms cubic-bezier(0.23, 1, 0.32, 1); }
+.lb-enter-from, .lb-leave-to { opacity: 0; }
+.lb-enter-from .lb-img { transform: scale(0.96); }
+@media (prefers-reduced-motion: reduce) {
+  .lb-enter-from .lb-img { transform: none; }
+}
 .share-row {
   width: min(72vw, 460px); margin-top: 14px;
   display: flex; align-items: stretch; gap: 12px;
