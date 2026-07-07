@@ -55,6 +55,21 @@
       </div>
     </div>
 
+    <div v-if="flow.tryonScenes.value.length" class="color-pick">
+      <div class="cp-title">生成场景<small>可选 · 默认保持原照片背景</small></div>
+      <div class="chips">
+        <button
+          class="chip" :class="{ on: !flow.selectedTryonScene.value }"
+          @click="pickScene(null)"
+        >原景</button>
+        <button
+          v-for="s in flow.tryonScenes.value" :key="s.key"
+          class="chip" :class="{ on: flow.selectedTryonScene.value === s.key }"
+          @click="pickScene(s.key)"
+        >{{ s.label }}<small class="chip-tag">{{ s.tagline }}</small></button>
+      </div>
+    </div>
+
     <button class="xk-btn go" :disabled="!flow.selectedWigId.value" @click="flow.generate()">
       生成我的试戴效果
     </button>
@@ -78,10 +93,18 @@ const skinLabel = computed(() => {
   return parts.join(' · ')
 })
 
-onMounted(() => flow.loadHairColors())
+onMounted(() => {
+  flow.loadHairColors()
+  flow.loadTryonScenes()
+})
 
 function pickWig(id) {
   flow.selectedWigId.value = id
+  flow.touch()
+}
+
+function pickScene(key) {
+  flow.selectedTryonScene.value = key
   flow.touch()
 }
 
@@ -196,6 +219,7 @@ function pickColor(id) {
   object-fit: cover; flex: none;
 }
 .sw.origin { background: conic-gradient(var(--xk-ink-2), var(--xk-gold-dim), var(--xk-ink-2)); }
+.chip-tag { margin-left: 7px; font-size: 10px; color: var(--xk-gold-dim); letter-spacing: 0.1em; }
 .go { margin-top: auto; margin-bottom: 1vh; min-width: 300px; }
 .go:disabled { opacity: 0.4; }
 </style>

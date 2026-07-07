@@ -186,12 +186,10 @@ def _run_analysis(session_id: int) -> None:
 
 # ---------------- 管线二：效果图合成（多款并行，双模式） ----------------
 
-# tryon 合成模板（锚场色机魂结构，2026-07-07 依据用户三格效果图 prompt 重写）：
-# 锚=主体锁定+参考图角色分工 / 场=三格生活场景（每格显式光源方向）/
-# 色=正向质感+负向排除 / 机=85mm 摄像语言+三格构图一致 / 魂=同一人三个日常瞬间。
-# 发色子句（swatch/text）在其后追加，LAST 指代色板图。
+# tryon 合成模板（锚场色机魂结构；2026-07-07 从三格回退单场景——三格单图 200~300s+
+# 撞上游网关 504 结构性走不通，场景改为用户单选，见 TRYON_SCENES）。
+# 组装顺序：锚（主体锁定） + 发色子句 + 场景子句（原景/置换二选一） + 色机魂收尾。
 _COMPOSITE_TEMPLATE = (
-    # 锚 —— 主体锁定
     "The FIRST image is the customer's own photo. The following wig reference image(s) "
     "show the exact wig to use, from multiple angles: {description}. Replace the "
     "customer's hair with this wig, matching its length, layering, fringe and volume "
@@ -199,31 +197,46 @@ _COMPOSITE_TEMPLATE = (
     "exactly the same as the first image, with light natural makeup. The hairline "
     "transition must look naturally grown, with realistic fine baby hairs at the "
     "temples. {extra}"
-    # 场 —— 三格场景，光源方向逐格声明
-    " Render the SAME person wearing this wig in three lifestyle scenes, side by side "
-    "from left to right in ONE single 16:9 image, each scene exactly one third of the "
-    "width: (1) HOME - beside a living-room sofa, warm afternoon window light from her "
-    "front-left, blurred green plants and wooden furniture behind; (2) OFFICE - a bright "
-    "modern workspace, soft overhead daylight panels as the key light with a faint "
-    "laptop-screen fill, blurred glass partitions behind; (3) GATHERING - an evening "
-    "dinner party, warm pendant light overhead as the key light, golden bokeh of string "
-    "lights and candles behind. In every panel the hair highlights and shadows must "
-    "follow that panel's light direction, and the person must blend naturally into the "
-    "environment with no cut-and-paste look."
-    # 色 —— 正向定义 + 负向排除
-    " Photorealistic straight-out-of-camera quality: true skin texture with visible "
-    "pores, individual hair strands with natural sheen; white balance follows each "
-    "scene's light while the skin tone stays consistent. No plastic skin, no "
-    "over-smoothing, no painterly or illustration look, no wig-cap artificiality, "
-    "no heavy filter grading."
-    # 机 —— 摄像语言
-    " Shot like candid 85mm portraits, chest-up framing, shallow depth of field focused "
-    "on the face and hair, identical camera height and subject scale across all three "
-    "panels."
-    # 魂 —— 一句话总纲
-    " The person's identity, wig style, hair color and makeup must be strictly identical "
-    "in all three panels - three real moments from one person's daily life."
 )
+
+# 场景子句：默认保持原景；用户选场景时置换背景（prompt 只在服务端，前端只见 key/label）
+_TRYON_KEEP_BG_CLAUSE = (
+    " Keep the background exactly the same as the first image, and light the new hair "
+    "to match the original photo's light direction."
+)
+_TRYON_SCENE_CLAUSE = (
+    " Recreate the portrait in {scene}. Naturally adapt the background, outfit and "
+    "lighting to the scene while keeping the person clearly recognizable; the hair "
+    "highlights and shadows must follow the scene's light direction, blending naturally "
+    "with no cut-and-paste look."
+)
+
+# 色 + 机 + 魂 收尾
+_TRYON_STYLE_TAIL = (
+    " Photorealistic straight-out-of-camera quality: true skin texture with visible "
+    "pores, individual hair strands with natural sheen and realistic physics. No "
+    "plastic skin, no over-smoothing, no painterly or illustration look, no wig-cap "
+    "artificiality, no heavy filter grading. Shot like a candid 85mm portrait with "
+    "shallow depth of field focused on the face and hair - one real moment of her "
+    "daily life."
+)
+
+# tryon 可选生成场景（不选=原景）；光源方向显式声明，发丝受光跟随场景
+TRYON_SCENES = [
+    {"key": "home", "label": "居家", "tagline": "温馨日常",
+     "prompt": ("a cozy living room beside a sofa, warm afternoon window light from "
+                "her front-left, blurred green plants and wooden furniture behind")},
+    {"key": "office", "label": "办公", "tagline": "职场利落",
+     "prompt": ("a bright modern workspace, soft overhead daylight panels as the key "
+                "light with a faint laptop-screen fill, blurred glass partitions behind")},
+    {"key": "gathering", "label": "聚会", "tagline": "晚间光彩",
+     "prompt": ("an evening dinner party, warm pendant light overhead as the key "
+                "light, golden bokeh of string lights and candles behind")},
+]
+
+
+def resolve_tryon_scene(key: str | None) -> dict | None:
+    return next((s for s in TRYON_SCENES if s["key"] == key), None)
 
 # 发色注入合成 prompt，来源 ark_expo_hair_colors 快照。
 # 有色板图时把它作为最后一张参考图随图送入模型，描述与图互为锚点；无图时退化为纯文本描述
@@ -231,14 +244,14 @@ _COLOR_SWATCH_CLAUSE = (
     " The LAST reference image is a hair color swatch. After replacing the hair, "
     "recolor it to exactly match the swatch: {name} (color code {code}{hex_part}). "
     "{description}The color must look like naturally grown human hair with realistic "
-    "depth, dimension and shine under each scene's lighting. Do not change the "
+    "depth, dimension and shine under the scene's lighting. Do not change the "
     "hairstyle shape or length, and do not alter the face."
 )
 
 _COLOR_TEXT_CLAUSE = (
     " After replacing the hair, recolor it to this exact hair color: {name} "
     "(color code {code}{hex_part}). {description}The color must look like naturally "
-    "grown human hair with realistic depth, dimension and shine under each scene's "
+    "grown human hair with realistic depth, dimension and shine under the scene's "
     "lighting. Do not change the hairstyle shape or length, and do not alter the face."
 )
 
@@ -301,10 +314,18 @@ def _color_clause(color: dict | None, with_swatch: bool = False) -> str:
     )
 
 
-def start_composites(session_id: int, wig_ids: list[int], hair_color: dict | None = None) -> None:
-    """tryon 模式：每款一条 result，发色快照随 result 落库并注入 prompt。"""
+def start_composites(
+    session_id: int, wig_ids: list[int],
+    hair_color: dict | None = None, scene: dict | None = None,
+) -> None:
+    """tryon 模式：每款一条 result，发色/场景快照随 result 落库并注入 prompt。"""
+    scene_snapshot = {"key": scene["key"], "label": scene["label"]} if scene else None
     rows = [
-        ExpoResult(session_id=session_id, wig_id=wig_id, hair_color_json=hair_color, status="generating")
+        ExpoResult(
+            session_id=session_id, wig_id=wig_id,
+            hair_color_json=hair_color, scene_json=scene_snapshot,
+            status="generating",
+        )
         for wig_id in wig_ids
     ]
     _start_batch(session_id, rows)
@@ -354,22 +375,36 @@ def _start_batch(session_id: int, rows: list[ExpoResult]) -> None:
 
 
 def _build_prompt(session: ExpoSession, row: ExpoResult, wig: ExpoWig | None) -> tuple[str, list[Path]]:
-    """按 result 形态组装 prompt 与图片：有 scene_json 走场景模板，否则走换发模板。"""
-    if row.scene_json:
+    """按 result 形态组装 prompt 与图片。
+
+    分支按 wig_id 判定：无发型=scene 模式（佩戴实拍置换场景）；
+    有发型=tryon 换发，scene_json 此时是可选的生成场景（原景/居家/办公/聚会）。
+    """
+    if row.wig_id is None and row.scene_json:
         scene = next((s for s in SCENES if s["key"] == row.scene_json.get("key")), None)
         prompt = _SCENE_TEMPLATE.format(scene=scene["prompt"] if scene else row.scene_json.get("label", ""))
         return prompt, [to_abs(session.photo_path)]
 
-    # 多角度参考图取前 3 张（正面/45度/侧面），与三格模板的 multiple angles 声明对应
+    # 多角度参考图取前 3 张（正面/45度/侧面），与模板的 multiple angles 声明对应
     refs = [to_abs(p) for p in (wig.angle_photos or [])[:3] if to_abs(p).exists()]
     if not refs and wig.cover_path and to_abs(wig.cover_path).exists():
         refs = [to_abs(wig.cover_path)]
     # 三图合成：自拍 + 发型参考图 + 色板图（色板图固定放末位，与 prompt 的 LAST 指代对齐）
     swatch = _color_swatch_path(row.hair_color_json)
-    prompt = _COMPOSITE_TEMPLATE.format(
-        description=wig.wig_description or wig.name,
-        extra=wig.composite_prompt or "",
-    ) + _color_clause(row.hair_color_json, with_swatch=swatch is not None)
+    tryon_scene = resolve_tryon_scene((row.scene_json or {}).get("key"))
+    scene_clause = (
+        _TRYON_SCENE_CLAUSE.format(scene=tryon_scene["prompt"]) if tryon_scene
+        else _TRYON_KEEP_BG_CLAUSE
+    )
+    prompt = (
+        _COMPOSITE_TEMPLATE.format(
+            description=wig.wig_description or wig.name,
+            extra=wig.composite_prompt or "",
+        )
+        + _color_clause(row.hair_color_json, with_swatch=swatch is not None)
+        + scene_clause
+        + _TRYON_STYLE_TAIL
+    )
     images = [to_abs(session.photo_path), *refs]
     if swatch:
         images.append(swatch)

@@ -441,6 +441,12 @@ frontend/src/
 - 后端零改动：走 `GenerateRequest.wig_ids` 单元素列表；`batch` 参数与 `pick_batch_wig_ids` 保留为 API 兼容路径（不传 wig_ids 时仍按批取）
 - CSS 坑：入场动画 `fill: forwards` 会永久持帧锁住 transform，后加的 `:active` 按压 scale 全部失效——改 `backwards` 填充（基态即终态，动画只写 `from`）
 
+**三格回退单场景 + 用户选场景（2026-07-07 晚，方案 A）**
+- 三格在 ELBNT 同步接口上结构性走不通：单图 200~300s+，>300s 被**对方网关 504**（本地超时再高也没用）。回退单场景合成（实测 ~130s 安全区），保留锚色机魂结构与三图输入（自拍+发型参考+色板）
+- 新增 tryon 生成场景单选：`TRYON_SCENES`（home 居家/office 办公/gathering 聚会，prompt 服务端），默认「原景」不置换背景；`GenerateRequest.scene_key` + `GET /scenes?mode=tryon`；快照存 `ExpoResult.scene_json`
+- **分支判定改按 wig_id**：wig_id 为空=scene 模式（佩戴实拍杂志大片），有 wig=tryon（scene_json 是可选生成场景）——不能再用"有无 scene_json"判模式
+- 300s 生图超时与 420s 看门狗保留不回调（对 130s 是宽余量，无害）
+
 **tryon 合成模板重写为「锚场色机魂」三格结构（2026-07-07）**
 - `_COMPOSITE_TEMPLATE` 按用户定稿的三格效果图 prompt 重写（英文）：锚=FIRST image 角色分工+身份锁定 / 场=HOME·OFFICE·GATHERING 三格并排（每格显式光源方向，发丝受光跟随场景）/ 色=原相机直出质感+负向排除（塑料感/磨皮/插画感/头套感）/ 机=85mm 胸上构图三格机位一致 / 魂=三格身份严格同一。输出规格：单张 16:9 三等分拼接
 - 发型多角度参考图上限 2→3（正面/45度/侧面）；发色子句光照措辞改 "each scene's lighting" 适配三格

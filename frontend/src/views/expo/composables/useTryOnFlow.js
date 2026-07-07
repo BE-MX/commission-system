@@ -34,6 +34,8 @@ export function useTryOnFlow() {
   const selectedColorId = ref(null)  // null = 保持发型原色
   const scenes = ref([])             // 场景大片可选场景
   const selectedSceneKeys = ref([])
+  const tryonScenes = ref([])        // tryon 生成场景选项（居家/办公/聚会）
+  const selectedTryonScene = ref(null) // null = 保持原照片背景
 
   const regForm = reactive({
     name: '', phone: '', wechat_id: '',
@@ -75,6 +77,7 @@ export function useTryOnFlow() {
     matchPage.value = 0
     selectedColorId.value = null
     selectedSceneKeys.value = []
+    selectedTryonScene.value = null
     Object.assign(regForm, {
       name: '', phone: '', wechat_id: '',
       primary_need: 'volume', style_pref: '知性优雅', consent: false,
@@ -129,6 +132,14 @@ export function useTryOnFlow() {
       const res = await getHairColors()
       hairColors.value = res.data || []
     } catch (e) { /* 无色板数据时只保留“原色” */ }
+  }
+
+  async function loadTryonScenes() {
+    if (tryonScenes.value.length) return
+    try {
+      const res = await getScenes({ mode: 'tryon' })
+      tryonScenes.value = res.data || []
+    } catch (e) { /* 加载失败只保留"原景"，不阻断 */ }
   }
 
   async function loadScenes() {
@@ -206,6 +217,7 @@ export function useTryOnFlow() {
     try {
       await generateResults(sessionId.value, {
         wigIds: [selectedWigId.value], hairColorId: selectedColorId.value,
+        sceneKey: selectedTryonScene.value,
       })
       startPolling()
     } catch (e) {
@@ -286,6 +298,7 @@ export function useTryOnFlow() {
     selectedWigId, canSwapMatches, swapMatches, backToMatching,
     customerId, sessionId,
     hairColors, selectedColorId, scenes, selectedSceneKeys,
+    tryonScenes, selectedTryonScene, loadTryonScenes,
     start, submitRegister, submitPhoto, generate, react,
     loadHairColors, loadScenes, toggleScene, generateScenes, reselectScenes,
     openSales, submitSales, resetAll, touch,

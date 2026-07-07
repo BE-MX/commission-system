@@ -9,7 +9,7 @@
       </div>
       <div class="wait-text">
         {{ isScene ? '正在为您生成场景大片' : '正在为您合成试戴效果' }}
-        <small>AI 正在精细处理发丝与光影 · 约需 2-3 分钟</small>
+        <small>AI 正在精细处理发丝与光影 · 约需 2 分钟</small>
       </div>
       <div class="bar" aria-hidden="true"><i /></div>
       <div v-if="!isScene" class="stages"><span>解析面容</span><span>甄选发型</span><span class="on">生成效果</span></div>
@@ -45,6 +45,7 @@
         <span v-if="current.hair_color" class="color-tag">
           <i :style="{ background: current.hair_color.hex || 'var(--xk-ink-2)' }" />{{ current.hair_color.name }}
         </span>
+        <span v-if="current.scene && current.wig_id" class="color-tag">{{ current.scene.label }}</span>
         <span class="md">{{ metaLine }}</span>
       </div>
 

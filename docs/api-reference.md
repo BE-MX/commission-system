@@ -46,8 +46,8 @@
 
 **领域模块（/api/*）**
 - `/api/expo` — 展会 AI 假发试戴（`expo/router.py`，需 `expo:read/write/admin`；`GET /share/{code}` 分享落地页无鉴权）
-  - 试戴主流程：`POST /register`（consent 必填）→ `POST /sessions`（multipart 照片，`?mode=tryon|scene`；tryon 异步分析+匹配，scene 直接就绪）→ `GET /sessions/{id}`（轮询统一载荷，`?internal=1` 含内部发况与话术，仅销售面板用）→ `POST /sessions/{id}/generate`（tryon：batch 换一批 + 可选 `hair_color_id` 发色；scene：`scene_keys` 场景列表）→ `POST /results/{id}/reaction` → `POST /customers/{id}/feedback`
-  - 选项端点：`GET /hair-colors`（发色库列表，`?only_active=0` 管理端取全量；048 起独立表 ark_expo_hair_colors，不再复用 ark_color_palette）、`GET /scenes`（场景大片可选场景 key/label/tagline）
+  - 试戴主流程：`POST /register`（consent 必填）→ `POST /sessions`（multipart 照片，`?mode=tryon|scene`；tryon 异步分析+匹配，scene 直接就绪）→ `GET /sessions/{id}`（轮询统一载荷，`?internal=1` 含内部发况与话术，仅销售面板用）→ `POST /sessions/{id}/generate`（tryon：`wig_ids` 单选发型 + 可选 `hair_color_id` 发色 + 可选 `scene_key` 生成场景；scene：`scene_keys` 场景列表）→ `POST /results/{id}/reaction` → `POST /customers/{id}/feedback`
+  - 选项端点：`GET /hair-colors`（发色库列表，`?only_active=0` 管理端取全量；048 起独立表 ark_expo_hair_colors，不再复用 ark_color_palette）、`GET /scenes?mode=scene|tryon`（scene=场景大片五景 / tryon=试戴生成场景 居家/办公/聚会，key/label/tagline）
   - 管理端：`/wigs` CRUD + `/wigs/upload-photo`（发型库）、`/hair-colors` POST/PUT + `/hair-colors/upload-swatch`（发色库，上传色板图自动提取主色 hex；expo:admin）、`/scripts` CRUD + `POST /scripts/seed`（话术卡库，写入时禁用词强校验）、`/leads` 线索台、`DELETE /customers/{id}`（照片物理删除）
   - H5 kiosk：`/expo/kiosk` 全屏路由（router/index.js 顶层注册，不走 MainLayout）；匹配权重 `config/expo_matching.yaml`；上传文件锚定 REPO_ROOT/uploads/expo（存库相对路径）
 - `/api/invoice` — 订单发票管理（`invoice/router.py`，需 `invoice:read/write/sync/admin`；049 起全部端点走 `ok()` 信封）

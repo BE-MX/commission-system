@@ -131,16 +131,37 @@ def test_build_prompt_tryon_without_color_has_no_clause():
     assert "recolor" not in prompt.lower()
 
 
-def test_build_prompt_tryon_triptych_structure():
-    """三格模板核心约束：图片角色分工 + 三场景 + 16:9 拼接 + 三格一致性声明。"""
+def test_build_prompt_tryon_default_keeps_background():
+    """单场景模板默认原景：锚定图片角色分工 + 保持原背景，无三格残留。"""
     session = _session()
     wig = ExpoWig(model_no="LS-3", name="轻盈波波", wig_description="airy bob")
     row = ExpoResult(session_id=1, wig_id=3, hair_color_json=None)
-    prompt, _ = ai_pipeline._build_prompt(session, row, wig)
+    prompt, images = ai_pipeline._build_prompt(session, row, wig)
     assert "FIRST image is the customer's own photo" in prompt  # 锚：参考图角色分工
-    assert "HOME" in prompt and "OFFICE" in prompt and "GATHERING" in prompt  # 场：三格
-    assert "16:9" in prompt and "one third" in prompt  # 输出规格
-    assert "identical in all three panels" in prompt  # 魂：三格身份一致性
+    assert "Keep the background exactly the same" in prompt      # 场：默认原景
+    assert "85mm portrait" in prompt                             # 机
+    assert "16:9" not in prompt and "three" not in prompt        # 三格已回退干净
+    assert len(images) == 1
+
+
+def test_build_prompt_tryon_with_scene_swaps_background():
+    """选了生成场景 → 场景置换子句替代原景子句（tryon 分支按 wig_id 判定）。"""
+    session = _session()
+    wig = ExpoWig(model_no="LS-3", name="轻盈波波", wig_description="airy bob")
+    row = ExpoResult(
+        session_id=1, wig_id=3,
+        scene_json={"key": "office", "label": "办公"},
+    )
+    prompt, _ = ai_pipeline._build_prompt(session, row, wig)
+    assert "workspace" in prompt  # office 场景 prompt 注入
+    assert "Keep the background exactly the same" not in prompt
+    assert "magazine-quality" not in prompt  # 不能误入 scene 模式模板
+
+
+def test_resolve_tryon_scene():
+    assert ai_pipeline.resolve_tryon_scene("home")["label"] == "居家"
+    assert ai_pipeline.resolve_tryon_scene("bogus") is None
+    assert ai_pipeline.resolve_tryon_scene(None) is None
 
 
 # ---------------- 批次切片边界（换一批上界） ----------------

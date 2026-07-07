@@ -17,6 +17,7 @@ class GenerateRequest(BaseModel):
     wig_ids: list[int] | None = Field(None, description="不传则取匹配排名第一批（tryon 模式）")
     batch: int = Field(0, ge=0, le=3, description="换一批批次，0=Top3，1=第4~6名（tryon 模式）")
     hair_color_id: int | None = Field(None, description="发色库 ark_expo_hair_colors.id，不传则保持发型原色（tryon 模式）")
+    scene_key: str | None = Field(None, max_length=32, description="tryon 生成场景 key（home/office/gathering），不传保持原照片背景")
     scene_keys: list[str] | None = Field(None, max_length=6, description="场景 key 列表，不传则取默认前 3 个（scene 模式）")
 
 

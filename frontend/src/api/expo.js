@@ -25,9 +25,9 @@ export function getSession(sessionId, { internal = false } = {}) {
   })
 }
 
-export function generateResults(sessionId, { wigIds = null, batch = 0, hairColorId = null, sceneKeys = null } = {}) {
+export function generateResults(sessionId, { wigIds = null, batch = 0, hairColorId = null, sceneKey = null, sceneKeys = null } = {}) {
   return expoClient.post(`/sessions/${sessionId}/generate`, {
-    wig_ids: wigIds, batch, hair_color_id: hairColorId, scene_keys: sceneKeys,
+    wig_ids: wigIds, batch, hair_color_id: hairColorId, scene_key: sceneKey, scene_keys: sceneKeys,
   }, { showLoading: false })
 }
 
@@ -35,8 +35,8 @@ export function getHairColors(params) {
   return expoClient.get('/hair-colors', { params, showLoading: false })
 }
 
-export function getScenes() {
-  return expoClient.get('/scenes', { showLoading: false })
+export function getScenes(params) {
+  return expoClient.get('/scenes', { params, showLoading: false })
 }
 
 export function setReaction(resultId, reaction) {

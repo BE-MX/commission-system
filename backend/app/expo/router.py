@@ -110,6 +110,11 @@ def generate(
             hair_color = service.snapshot_hair_color(db, body.hair_color_id)
         except ValueError as exc:
             raise HTTPException(400, str(exc))
+    tryon_scene = None
+    if body.scene_key:
+        tryon_scene = ai_pipeline.resolve_tryon_scene(body.scene_key)
+        if not tryon_scene:
+            raise HTTPException(400, "生成场景无效")
     wig_ids = body.wig_ids or service.pick_batch_wig_ids(session, body.batch)
     if not wig_ids:
         raise HTTPException(400, "没有可生成的匹配发型（检查发型库与匹配标签）")
@@ -118,7 +123,7 @@ def generate(
         missing = [i for i in wig_ids if i not in found]
         if missing:
             raise HTTPException(400, f"发型不存在: {missing}")
-    ai_pipeline.start_composites(session_id, wig_ids, hair_color=hair_color)
+    ai_pipeline.start_composites(session_id, wig_ids, hair_color=hair_color, scene=tryon_scene)
     return ok({"wig_ids": wig_ids})
 
 
@@ -132,13 +137,15 @@ def list_hair_colors(
     return ok([service.serialize_hair_color(r) for r in rows])
 
 
-@router.get("/scenes", summary="场景大片可选场景列表")
+@router.get("/scenes", summary="可选场景列表（mode=scene 场景大片 / mode=tryon 试戴生成场景）")
 def list_scenes(
+    mode: str = Query("scene", pattern="^(scene|tryon)$"),
     _user=Depends(require_any_permission("expo:read", "expo:write")),
 ):
+    source = ai_pipeline.TRYON_SCENES if mode == "tryon" else ai_pipeline.SCENES
     return ok([
         {"key": s["key"], "label": s["label"], "tagline": s["tagline"]}
-        for s in ai_pipeline.SCENES
+        for s in source
     ])
 
 
