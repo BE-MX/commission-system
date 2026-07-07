@@ -171,6 +171,17 @@ export const NAV_ENTRIES = [
       anyPermission: ['invoice:read', 'invoice:write', 'invoice:sync'],
     },
   },
+  {
+    path: '/invoice/price-config',
+    name: 'InvoicePriceConfig',
+    component: () => import('@/views/invoice/InvoicePriceConfig.vue'),
+    title: '价格与产品配置',
+    permission: 'invoice:admin',
+    menu: {
+      group: 'invoice', title: '价格与产品配置', icon: Document, order: 20,
+      permission: 'invoice:admin',
+    },
+  },
 
   // ── 展会营销（AI 试戴；kiosk 全屏页在 router/index.js 顶层注册） ──
   {
