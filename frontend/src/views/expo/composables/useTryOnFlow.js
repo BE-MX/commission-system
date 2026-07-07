@@ -115,6 +115,9 @@ export function useTryOnFlow() {
       return
     }
     step.value = 'analyzing'
+    // 清掉 capture 屏残留的 idle 定时器：全局 @pointerdown 先于按钮 click 触发 touch()，
+    // 彼时忙态还没置位会武装一个 60s 定时器，长分析/生成中途到点就整页跳回首页
+    touch()
     startPolling()
   }
 
@@ -194,6 +197,7 @@ export function useTryOnFlow() {
     batch.value = nextBatch
     generating.value = true
     step.value = 'result'
+    touch() // 忙态已置位：只清残留 idle 定时器不再武装（防 pointerdown 先于 click 的竞态跳屏）
     try {
       await generateResults(sessionId.value, {
         batch: nextBatch, hairColorId: selectedColorId.value,
@@ -210,6 +214,7 @@ export function useTryOnFlow() {
     errorText.value = ''
     generating.value = true
     step.value = 'result'
+    touch() // 同 generate：清残留 idle 定时器
     try {
       await generateResults(sessionId.value, { sceneKeys: [...selectedSceneKeys.value] })
       startPolling()

@@ -1,5 +1,6 @@
 """Expo try-on 业务逻辑：客户/会话/结果/反馈/发型库 CRUD 与序列化。"""
 
+import logging
 import shutil
 import uuid
 from datetime import datetime
@@ -18,6 +19,12 @@ from app.expo.models import (
     ExpoWig,
 )
 from app.expo.schemas import CustomerRegister, FeedbackCreate, HairColorUpsert, WigUpsert
+
+logger = logging.getLogger("commission.expo")
+
+# 看门狗阈值：后台线程随进程重启丢失后，卡死状态在轮询读取时自愈
+STALE_PENDING_SECS = 180     # 面容分析正常 <30s
+STALE_GENERATING_SECS = 300  # 单图合成实测 ~130s，并行批次留双倍余量
 
 
 # ---------------- 客户 ----------------
@@ -93,12 +100,43 @@ def create_session(
 
 
 def get_session(db: Session, session_id: int) -> ExpoSession | None:
-    return (
+    session = (
         db.query(ExpoSession)
         .options(selectinload(ExpoSession.results).selectinload(ExpoResult.wig))
         .filter(ExpoSession.id == session_id)
         .first()
     )
+    if session:
+        _heal_stale_session(db, session)
+    return session
+
+
+def _heal_stale_session(db: Session, session: ExpoSession) -> None:
+    """看门狗：pending/generating 卡死超阈值时自愈（线上 session=6 实case——
+    后台合成线程随进程重启丢失，result 永远 generating，前端无限轮询）。"""
+    ref = session.updated_at or session.created_at
+    if not ref or session.status not in ("pending", "generating"):
+        return
+    age = (datetime.utcnow() - ref).total_seconds()
+
+    if session.status == "pending" and age > STALE_PENDING_SECS:
+        session.status = "failed"
+        session.error_message = f"watchdog: analysis stale over {STALE_PENDING_SECS}s"
+    elif session.status == "generating" and age > STALE_GENERATING_SECS:
+        for r in session.results:
+            if r.status in ("pending", "generating"):
+                r.status = "failed"
+        if any(r.status == "done" for r in session.results):
+            session.status = "done"  # 有成品照常展示，只收掉卡死的
+        else:
+            session.status = "failed"
+            session.error_message = f"watchdog: all composites stale over {STALE_GENERATING_SECS}s"
+    else:
+        return
+    msg = f"[expo] watchdog healed session={session.id} -> {session.status} (age={int(age)}s)"
+    logger.warning(msg)
+    print(msg, flush=True)
+    db.commit()
 
 
 def pick_batch_wig_ids(session: ExpoSession, batch: int) -> list[int]:

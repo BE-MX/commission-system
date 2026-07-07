@@ -4,6 +4,8 @@
 不触数据库的部分全部直测；prompt 组装用未落库的 ORM 实例。
 """
 
+from datetime import datetime, timedelta
+
 import pytest
 from pydantic import ValidationError
 
@@ -11,6 +13,7 @@ from app.expo import ai_pipeline
 from app.expo.models import ExpoResult, ExpoSession, ExpoWig
 from app.expo.schemas import GenerateRequest, HairColorUpsert
 from app.expo.service import (
+    get_session,
     pick_batch_wig_ids,
     snapshot_hair_color,
     upsert_hair_color,
@@ -196,6 +199,47 @@ def test_snapshot_inactive_color_rejected(db):
         snapshot_hair_color(db, row.id)
     with pytest.raises(ValueError, match="不存在或已停用"):
         snapshot_hair_color(db, 12345)
+
+
+# ---------------- 卡死状态看门狗（轮询读取时自愈） ----------------
+
+def _stale_session(db, status, secs, results=()):
+    s = ExpoSession(
+        customer_id=1, photo_path="p.jpg", status=status,
+        updated_at=datetime.utcnow() - timedelta(seconds=secs),
+    )
+    db.add(s)
+    db.flush()
+    for r_status in results:
+        db.add(ExpoResult(session_id=s.id, status=r_status))
+    db.commit()
+    return s.id
+
+
+def test_watchdog_heals_stale_generating_keeps_done(db):
+    sid = _stale_session(db, "generating", 400, results=("generating", "done"))
+    got = get_session(db, sid)
+    assert got.status == "done"  # 有成品照常展示
+    assert sorted(r.status for r in got.results) == ["done", "failed"]
+
+
+def test_watchdog_all_stale_marks_failed(db):
+    sid = _stale_session(db, "generating", 400, results=("generating",))
+    got = get_session(db, sid)
+    assert got.status == "failed"
+    assert "watchdog" in (got.error_message or "")
+
+
+def test_watchdog_skips_fresh_generating(db):
+    sid = _stale_session(db, "generating", 30, results=("generating",))
+    got = get_session(db, sid)
+    assert got.status == "generating"  # 未超阈值不动
+
+
+def test_watchdog_heals_stale_pending(db):
+    sid = _stale_session(db, "pending", 400)
+    got = get_session(db, sid)
+    assert got.status == "failed"
 
 
 # ---------------- GenerateRequest 校验 ----------------

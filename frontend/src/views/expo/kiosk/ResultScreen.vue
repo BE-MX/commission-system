@@ -1,14 +1,25 @@
 <template>
   <div class="result">
-    <!-- 生成中：进度表演 -->
+    <!-- 生成中：进度表演（进度环 + 流光条 + 品牌卡轮播，长等待用品牌内容填充） -->
     <div v-if="!current" class="waiting">
-      <div class="halo" />
+      <div class="halo-wrap">
+        <div class="ring" />
+        <div class="halo" />
+        <span class="halo-count">{{ doneCount }}<i>/{{ totalCount }}</i></span>
+      </div>
       <div class="wait-text">
         {{ isScene ? '正在为您生成场景大片' : '正在为您合成试戴效果' }}
-        <small>{{ doneCount }} / {{ totalCount }} 完成 · 好的效果值得几十秒等待</small>
+        <small>AI 正在精细处理发丝与光影 · 约需 1-2 分钟</small>
       </div>
+      <div class="bar" aria-hidden="true"><i /></div>
       <div v-if="!isScene" class="stages"><span>解析面容</span><span>甄选发型</span><span class="on">生成效果</span></div>
       <div v-else class="stages"><span>佩戴实拍</span><span>场景甄选</span><span class="on">生成大片</span></div>
+      <Transition name="bcard" mode="out-in">
+        <div class="brand-card" :key="brandIdx">
+          <b>{{ BRAND_CARDS[brandIdx].tag }}</b>
+          <span>{{ BRAND_CARDS[brandIdx].text }}</span>
+        </div>
+      </Transition>
       <!-- 整批失败：轮询已停且无成品时给出重来出口，不让客户干等 idle -->
       <div v-if="!flow.generating.value" class="wait-actions">
         <button class="xk-btn ghost" @click="retryGenerate">重新生成</button>
@@ -60,9 +71,32 @@
 </template>
 
 <script setup>
-import { computed, inject, nextTick, ref, watch } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 const flow = inject('tryonFlow')
+
+// 品牌卡文案：只用话术库既有硬证据，禁用词红线（便宜/划算/性价比/打折/薅羊毛）已核
+const BRAND_CARDS = [
+  { tag: '匠心选材', text: '22 岁以下原生辫发 · 五道甄选：年龄 / 形态 / 垂感 / 弹性 / 色泽' },
+  { tag: '保鳞工艺', text: '不烫不染不酸洗 · 毛鳞片完整如初' },
+  { tag: '安全认证', text: 'SGS 安全认证 · 无甲醛无重金属 · 网料医用级亲肤' },
+  { tag: '久戴如新', text: '正常保养下佩戴寿命 12-18 个月 · 光泽如初' },
+  { tag: '品牌沉淀', text: '1992 年创立 · 33 年专注健康假发 · 远销 164 个国家' },
+  { tag: '至臻系列', text: '全手工钩织 · 一顶一匠 · 为重要场合而生' },
+]
+const brandIdx = ref(0)
+let brandTimer = null
+function syncBrandTimer(waiting) {
+  if (waiting && !brandTimer) {
+    brandTimer = setInterval(() => {
+      brandIdx.value = (brandIdx.value + 1) % BRAND_CARDS.length
+    }, 6000)
+  } else if (!waiting && brandTimer) {
+    clearInterval(brandTimer)
+    brandTimer = null
+  }
+}
+onBeforeUnmount(() => syncBrandTimer(false))
 
 const photoUrl = computed(() => flow.session.value?.photo_url || '')
 const doneList = computed(() => flow.doneResults.value)
@@ -72,6 +106,7 @@ const isScene = computed(() => flow.mode.value === 'scene')
 
 const currentIndex = ref(0)
 const current = computed(() => doneList.value[currentIndex.value] || null)
+watch(() => !current.value, syncBrandTimer, { immediate: true })
 const metaLine = computed(() => {
   const pos = `${currentIndex.value + 1}/${doneCount.value}`
   return current.value?.model_no ? `${current.value.model_no} · ${pos}` : pos
@@ -116,20 +151,59 @@ watch([shareUrl, qrEl], async () => {
 
 <style scoped>
 .result { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 0 5vw 2.5vh; overflow-y: auto; }
-.waiting { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; }
+.waiting { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; }
+.halo-wrap { position: relative; width: 150px; height: 150px; display: flex; align-items: center; justify-content: center; }
 .halo {
-  width: 140px; height: 140px; border-radius: 50%;
+  position: absolute; inset: 6px; border-radius: 50%;
   border: 1px solid var(--xk-gold-line);
   background: radial-gradient(circle, rgba(232, 196, 121, 0.18), transparent 70%);
   animation: halo 2.2s ease-in-out infinite;
 }
 @keyframes halo { 0%, 100% { transform: scale(0.94); opacity: 0.6; } 50% { transform: scale(1.06); opacity: 1; } }
+/* 匀速旋转的金弧：constant motion 用 linear */
+.ring {
+  position: absolute; inset: 0; border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0 286deg, rgba(232, 196, 121, 0.9) 330deg, transparent 360deg);
+  -webkit-mask: radial-gradient(closest-side, transparent calc(100% - 2.5px), #000 0);
+  mask: radial-gradient(closest-side, transparent calc(100% - 2.5px), #000 0);
+  animation: ring-spin 2.2s linear infinite;
+}
+@keyframes ring-spin { to { transform: rotate(360deg); } }
+.halo-count { position: relative; font-family: 'Noto Serif SC', serif; font-size: 28px; color: var(--xk-gold-hi); }
+.halo-count i { font-style: normal; font-size: 13px; color: var(--xk-mut); margin-left: 2px; }
 .wait-text { text-align: center; font-size: 15px; letter-spacing: 0.2em; color: var(--xk-gold-hi); }
 .wait-text small { display: block; margin-top: 10px; font-size: 11px; color: var(--xk-mut); letter-spacing: 0.14em; }
+/* 不确定进度流光条：匀速 linear，宽度恒定只动 transform */
+.bar { width: min(52vw, 300px); height: 2px; border-radius: 2px; background: rgba(232, 196, 121, 0.14); overflow: hidden; }
+.bar i {
+  display: block; height: 100%; width: 38%; border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--xk-gold), transparent);
+  animation: bar-slide 1.5s linear infinite;
+}
+@keyframes bar-slide { from { transform: translateX(-110%); } to { transform: translateX(380%); } }
 .stages { display: flex; gap: 30px; font-size: 11px; letter-spacing: 0.2em; color: var(--xk-mut); }
 .stages .on { color: var(--xk-gold); border-bottom: 1px solid var(--xk-gold); padding-bottom: 6px; }
+.brand-card {
+  width: min(72vw, 460px); padding: 14px 18px;
+  border: 1px solid var(--xk-gold-line); border-radius: 14px;
+  background: rgba(232, 196, 121, 0.05);
+  display: flex; align-items: center; gap: 12px;
+  font-size: 12px; color: var(--xk-mut); line-height: 1.8; letter-spacing: 0.06em;
+}
+.brand-card b { color: var(--xk-gold); font-weight: 400; letter-spacing: 0.16em; flex: none; }
+/* 卡片轮换：入场强 ease-out + blur 掩护交叉，出场更快（非对称时长） */
+.bcard-enter-active { transition: opacity 420ms cubic-bezier(0.23, 1, 0.32, 1), transform 420ms cubic-bezier(0.23, 1, 0.32, 1), filter 420ms ease; }
+.bcard-leave-active { transition: opacity 200ms ease, transform 200ms ease, filter 200ms ease; }
+.bcard-enter-from { opacity: 0; transform: translateY(12px); filter: blur(6px); }
+.bcard-leave-to { opacity: 0; transform: translateY(-8px); filter: blur(6px); }
 .wait-actions { display: flex; gap: 12px; margin-top: 8px; }
 .wait-actions .xk-btn { height: 44px; padding: 0 28px; font-size: 13px; }
+@media (prefers-reduced-motion: reduce) {
+  .ring, .bar i { animation: none; }
+  .halo { animation-name: halo-fade; }
+  .bcard-enter-from, .bcard-leave-to { transform: none; filter: none; }
+}
+@keyframes halo-fade { 0%, 100% { opacity: 0.6; } 50% { opacity: 1; } }
 
 .stage {
   position: relative; width: min(72vw, 460px); flex: 1; min-height: 0; max-height: 52vh;
