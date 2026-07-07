@@ -28,7 +28,15 @@
           {{ submitting ? '上传中…' : '就用这张' }}
         </button>
       </template>
-      <button v-else-if="cameraOn" class="shutter" aria-label="拍照" @click="snap"><i /></button>
+      <!-- 三槽布局：快门始终居中，本地相册为右侧次级入口（不带 capture，直达相册） -->
+      <template v-else-if="cameraOn">
+        <span class="side" aria-hidden="true" />
+        <button class="shutter" aria-label="拍照" @click="snap"><i /></button>
+        <label class="xk-btn ghost side album">
+          本地相册
+          <input type="file" accept="image/*" hidden @change="onFilePick" />
+        </label>
+      </template>
     </div>
   </div>
 </template>
@@ -148,6 +156,9 @@ video, .preview {
   flex: none; display: flex; justify-content: center; gap: 16px;
   padding-top: 18px; min-height: 88px; align-items: center;
 }
+/* 快门两侧等宽占位，保证快门绝对居中；相册入口做次级视觉弱化 */
+.side { width: 112px; flex: none; }
+.album { display: flex; justify-content: center; cursor: pointer; }
 .shutter {
   width: 72px; height: 72px; border-radius: 50%;
   border: 2px solid var(--xk-gold); background: transparent;
