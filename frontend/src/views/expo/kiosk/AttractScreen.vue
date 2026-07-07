@@ -5,6 +5,10 @@
       <div class="orbit o2"><i /></div>
       <img class="face" :src="logoGold" alt="莱莎 LESHINE" />
     </div>
+    <div class="brand-name">
+      <span class="en">L E S H I N E</span>
+      莱 莎 · 健 康 假 发
+    </div>
     <h2 class="slogan">莱莎帮你<br />遇到<em>最喜欢的自己</em></h2>
     <div class="line">AI 智能试戴 · 60 秒焕新形象</div>
     <button class="xk-btn cta" @click="$emit('start', 'tryon')">AI 试戴新发型</button>
@@ -54,6 +58,18 @@ defineEmits(['start'])
 @keyframes breathe {
   0%, 100% { opacity: 0.82; transform: scale(1); }
   50% { opacity: 1; transform: scale(1.035); }
+}
+.brand-name {
+  display: flex; flex-direction: column; align-items: center; gap: 7px;
+  margin-top: -4px;
+  font-family: 'Noto Serif SC', 'STSong', serif;
+  font-size: 17px; color: var(--xk-gold-hi);
+  letter-spacing: 0.42em; text-indent: 0.42em; /* 补偿末字间距保证视觉居中 */
+}
+.brand-name .en {
+  font-family: 'PingFang SC', sans-serif;
+  font-size: 10px; letter-spacing: 0.6em; text-indent: 0.6em;
+  color: var(--xk-gold-dim);
 }
 .slogan {
   font-family: 'Noto Serif SC', 'STSong', serif;
