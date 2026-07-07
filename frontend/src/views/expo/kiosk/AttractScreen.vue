@@ -3,15 +3,7 @@
     <div class="orbit-wrap">
       <div class="orbit"><i /></div>
       <div class="orbit o2"><i /></div>
-      <svg class="face" viewBox="0 0 100 120">
-        <ellipse cx="50" cy="58" rx="30" ry="38" />
-        <path d="M20 50 Q18 12 50 10 Q82 12 80 50 Q84 28 66 20 Q50 14 34 20 Q16 28 20 50" />
-        <polyline points="34,52 42,50 48,53" /><polyline points="52,53 58,50 66,52" />
-        <polyline points="50,58 47,70 53,70" /><polyline points="40,82 50,86 60,82" />
-        <circle cx="34" cy="52" r="1.3" /><circle cx="66" cy="52" r="1.3" />
-        <circle cx="50" cy="70" r="1.3" /><circle cx="50" cy="86" r="1.3" />
-        <circle cx="50" cy="10" r="1.3" /><circle cx="20" cy="50" r="1.3" /><circle cx="80" cy="50" r="1.3" />
-      </svg>
+      <img class="face" :src="logoGold" alt="莱莎 LESHINE" />
     </div>
     <h2 class="slogan">莱莎帮你<br />遇到<em>最喜欢的自己</em></h2>
     <div class="line">AI 智能试戴 · 60 秒焕新形象</div>
@@ -24,6 +16,9 @@
 </template>
 
 <script setup>
+// 品牌 LOGO 黑金重制版：原绿色 LOGO 经去底 + 亮度映射到主题金色阶（脚本处理，源图见品牌物料）
+import logoGold from '@/assets/expo-logo-gold.png'
+
 defineEmits(['start'])
 </script>
 
@@ -50,13 +45,16 @@ defineEmits(['start'])
   background: var(--xk-gold); box-shadow: 0 0 12px var(--xk-gold);
 }
 @keyframes xk-spin { to { transform: rotate(360deg); } }
-.face { position: absolute; inset: 16%; animation: breathe 4.5s ease-in-out infinite; }
+.face {
+  position: absolute; inset: 15%;
+  width: 70%; height: 70%; object-fit: contain;
+  filter: drop-shadow(0 0 22px rgba(232, 196, 121, 0.28));
+  animation: breathe 4.5s ease-in-out infinite;
+}
 @keyframes breathe {
-  0%, 100% { opacity: 0.75; transform: scale(1); }
+  0%, 100% { opacity: 0.82; transform: scale(1); }
   50% { opacity: 1; transform: scale(1.035); }
 }
-.face polyline, .face path, .face ellipse { fill: none; stroke: var(--xk-gold); stroke-width: 0.8; }
-.face circle { fill: var(--xk-gold-hi); }
 .slogan {
   font-family: 'Noto Serif SC', 'STSong', serif;
   font-size: clamp(28px, 5vw, 44px);
