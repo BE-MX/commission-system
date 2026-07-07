@@ -40,7 +40,11 @@ authRequest.interceptors.response.use(
     // 401 — 用户名或密码错误 / Token 过期
     if (status === 401) {
       const msg = data.detail || data.message || '用户名或密码错误'
-      ElMessage.error(msg)
+      // /refresh 的 401 是匿名访客与会话过期的常态（App.vue 初始化会触达，公开页
+      // /inventory 的外部客户也会命中），调用方自有回退逻辑——不弹全局中文 toast
+      if (!String(error.config?.url || '').includes('/refresh')) {
+        ElMessage.error(msg)
+      }
       return Promise.reject(new Error(msg))
     }
 

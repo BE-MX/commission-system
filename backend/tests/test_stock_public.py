@@ -64,18 +64,25 @@ def inventory_db(db, monkeypatch):
         )
     db.execute(text("INSERT INTO lsordertest.okki_inventory VALUES ('p1', 55, 0)"))
     db.execute(text("INSERT INTO lsordertest.okki_inventory VALUES ('p2', 3, 0)"))
+    db.execute(text(
+        "INSERT INTO lsordertest.okki_products VALUES ('p4', 'Oversold Item', 'OV-1', 0)"
+    ))
+    db.execute(text("INSERT INTO lsordertest.okki_inventory VALUES ('p4', -5, 0)"))
     db.commit()
     return db
 
 
 def test_query_public_inventory_basic(inventory_db):
     result = query_public_inventory(inventory_db, page=1, page_size=10)
-    assert result["total"] == 2  # 停用产品不出
+    assert result["total"] == 3  # 停用产品不出
     by_id = {i["product_id"]: i for i in result["items"]}
     assert by_id["p1"]["available"] == 55
     assert by_id["p1"]["availability"] == "in_stock"
     assert by_id["p2"]["available"] == 3
     assert by_id["p2"]["availability"] == "low_stock"
+    # 负库存（超卖/数据异常）对客户钳位到 0
+    assert by_id["p4"]["available"] == 0
+    assert by_id["p4"]["availability"] == "out_of_stock"
 
 
 def test_query_public_inventory_keyword_and_field_whitelist(inventory_db):
@@ -89,5 +96,5 @@ def test_query_public_inventory_keyword_and_field_whitelist(inventory_db):
 def test_query_public_inventory_pagination(inventory_db):
     page1 = query_public_inventory(inventory_db, page=1, page_size=1)
     page2 = query_public_inventory(inventory_db, page=2, page_size=1)
-    assert page1["total"] == page2["total"] == 2
+    assert page1["total"] == page2["total"] == 3
     assert page1["items"][0]["product_id"] != page2["items"][0]["product_id"]

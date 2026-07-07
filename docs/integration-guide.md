@@ -269,7 +269,7 @@ Content-Type: application/json
 
 | 参数 | 必填 | 说明 |
 |------|------|------|
-| `key` | ✅ | 访问密钥（向莱莎销售代表申请） |
+| `key` | ✅ | 访问密钥（向莱莎销售代表申请；服务端改 `PUBLIC_STOCK_KEYS` 后**需重启后端服务生效**——应急吊销按 runbook 重启 NSSM） |
 | `page` / `page_size` | ❌ | 分页，page_size ≤ 100，默认 1 / 20 |
 | `keyword` | ❌ | 按产品名 / 型号模糊搜索 |
 

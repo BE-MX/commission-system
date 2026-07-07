@@ -81,14 +81,15 @@ def query_public_inventory(
         {**params, "limit": page_size, "offset": (page - 1) * page_size},
     ).mappings().all()
 
-    items = [
-        {
+    items = []
+    for r in rows:
+        # 库存异常为负时对客户钳位到 0（负数会引起客户困惑，异常留内部系统排查）
+        available = max(0, int(r["available"]))
+        items.append({
             "product_id": r["product_id"],
             "name": r["name"],
             "model": r["model"],
-            "available": int(r["available"]),
-            "availability": availability_tier(int(r["available"])),
-        }
-        for r in rows
-    ]
+            "available": available,
+            "availability": availability_tier(available),
+        })
     return {"total": total, "items": items}
