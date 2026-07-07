@@ -116,6 +116,14 @@ def match_wigs(wigs: list, analysis: dict, reg: dict, batch: int = 0) -> list[di
             continue  # gender 硬过滤
         candidates.append(wig)
 
+    # 失败路径兜底：性别过滤全灭（如男顾客 × 全女款库）时降级为不过滤照常排名，
+    # 展位不能出现"甄选 0 款"死路——宁可给参考款也不给空屏
+    if not candidates and wigs:
+        msg = f"[expo] matching gender filter eliminated all {len(wigs)} wigs (gender={gender}), fallback to unfiltered ranking"
+        logger.warning(msg)
+        print(msg, flush=True)
+        candidates = list(wigs)
+
     ranked = sorted(
         candidates,
         key=lambda w: (score_wig(w, analysis, reg, weights), w.priority or 0),

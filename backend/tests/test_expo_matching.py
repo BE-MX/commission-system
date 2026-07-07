@@ -112,6 +112,30 @@ class TestMatchWigs:
         assert reason
         assert "圆脸" in reason or "肤色" in reason
 
+    def test_gender_all_filtered_falls_back_to_unfiltered(self):
+        """性别过滤全灭（男顾客 × 全女款库）→ 降级不过滤，绝不返回 0 款（线上 session=5 实case）。"""
+        wigs = [
+            make_wig(1, gender="female", face_shapes=["round"]),
+            make_wig(2, gender="female", styles=["知性优雅"]),
+        ]
+        analysis = {**ANALYSIS, "gender": "male"}
+        result = matching.match_wigs(wigs, analysis, REG)
+        assert sorted(r["wig_id"] for r in result) == [1, 2]
+        assert result[0]["wig_id"] == 1  # 兜底后仍按分数排名（脸型命中者靠前）
+
+    def test_gender_partial_match_no_fallback(self):
+        """只要有任一款过滤存活，就不触发兜底（不给男顾客混推女款）。"""
+        wigs = [
+            make_wig(1, gender="female"),
+            make_wig(2, gender="male"),
+        ]
+        analysis = {**ANALYSIS, "gender": "male"}
+        result = matching.match_wigs(wigs, analysis, REG)
+        assert [r["wig_id"] for r in result] == [2]
+
+    def test_empty_library_returns_empty(self):
+        assert matching.match_wigs([], ANALYSIS, REG) == []
+
 
 class TestForbiddenWords:
     def test_hit_detection(self):

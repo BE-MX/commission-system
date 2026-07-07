@@ -441,4 +441,5 @@ frontend/src/
 - 后台线程的批量启动函数（`_start_batch`）必须：状态置位与插行合并单事务 + except 回滚 + 会话标 failed + `_log_fail` 双写——初版漏兜底，非法 wig_id 会把会话永久卡在 generating
 - kiosk 轮询状态机的失败路径必须显式收尾：`analyzing` 属 BUSY_STEPS（不挂 idle 定时器），失败时留在原地 = 展位永久卡屏，需退回 `capture`；整批效果图全 failed 时 session 仍推 `done`，前端要用「results 里没有任何 done」补判并给重试出口
 - 「换一批」类按钮的可用性必须由后端总量驱动（`total_matches`），否则第 3~4 次点击必撞 400/422
+- **性别硬过滤全灭必须兜底（2026-07-07 线上 session=5 实case）**：男顾客 × 全女款库 → gender 过滤剔掉全部候选 → kiosk「为您甄选 0 款」死屏。修复：`match_wigs` 过滤后候选为空且库非空时降级为不过滤照常排名（logger+print 双写告警）；有任一款存活则不触发兜底。打分制下其余维度只影响排序不会清零，0 款仅两种可能：性别全灭（已兜底）或发型库全部停用
 - `POST /generate` 用 `status=generating` 做幂等挡板；`_refresh_session_status` 用条件 UPDATE（`WHERE status='generating'`）做多线程收尾互斥，避免重复触发话术生成
