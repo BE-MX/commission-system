@@ -1,8 +1,10 @@
 """APScheduler 任务注册与生命周期管理"""
 
+import asyncio
 import logging
 from typing import Optional
 
+from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_MISSED
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.core.config import get_settings
@@ -87,11 +89,13 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
     )
 
     # ── 色彩趋势 ──────────────────────────────────────────
-    async def _color_social_extract_job():
+    # 注意：这两个管线是纯同步（HTTP + OpenCV），注册为同步函数让
+    # AsyncIOScheduler 放线程池执行，不许写成 async def（会阻塞事件循环，B-1/S3）
+    def _color_social_extract_job():
         with SessionLocal() as db:
             extract_social_colors(db)
 
-    async def _color_sales_aggregate_job():
+    def _color_sales_aggregate_job():
         with SessionLocal() as db:
             aggregate_sales_by_color(db)
 
@@ -115,6 +119,35 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
         )
 
 
+def _make_job_event_listener(loop: asyncio.AbstractEventLoop):
+    """job 失败/错过执行 → 日志 + service.log + 钉钉群告警（B-1）。
+
+    listener 可能在执行器线程回调，钉钉发送（async）用 run_coroutine_threadsafe
+    排回主事件循环——直接调用只会得到一个从未 await 的 coroutine（静默失败）。
+    """
+
+    def _on_job_event(event):
+        if getattr(event, "exception", None):
+            detail = getattr(event, "traceback", "") or ""
+            msg = f"⚠️ 定时任务失败: {event.job_id}\n{event.exception}"
+            logger.error("%s\n%s", msg, detail)
+            print(f"{msg}\n{detail}", flush=True)  # NSSM service.log 只认 print
+        else:
+            msg = f"⚠️ 定时任务错过执行(missed): {event.job_id}"
+            logger.error(msg)
+            print(msg, flush=True)
+        try:
+            from app.dingtalk.webhook import get_webhook_sender
+
+            coro = get_webhook_sender().send_markdown("定时任务告警", msg)
+            asyncio.run_coroutine_threadsafe(coro, loop)
+        except Exception:
+            logger.exception("job alert dingtalk notify failed")
+            print("job alert dingtalk notify failed", flush=True)
+
+    return _on_job_event
+
+
 def start_scheduler() -> Optional[AsyncIOScheduler]:
     """启动 APScheduler。SCHEDULER_ENABLED=false 时返回 None。"""
     settings = get_settings()
@@ -124,6 +157,10 @@ def start_scheduler() -> Optional[AsyncIOScheduler]:
 
     scheduler = AsyncIOScheduler(timezone=settings.SCHEDULER_TIMEZONE)
     _register_jobs(scheduler)
+    scheduler.add_listener(
+        _make_job_event_listener(asyncio.get_event_loop()),
+        EVENT_JOB_ERROR | EVENT_JOB_MISSED,
+    )
     scheduler.start()
 
     job_ids = [job.id for job in scheduler.get_jobs()]

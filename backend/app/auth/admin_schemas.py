@@ -80,6 +80,8 @@ class PermissionItem(BaseModel):
     code: str
     label: str
     action: str
+    kind: str = "action"       # page=页面可见 / action=操作 / data=数据范围
+    sort: int = 0
 
 
 class PermissionGroupItem(BaseModel):

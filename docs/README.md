@@ -14,6 +14,9 @@
 | 文档 | 用途 | 适合谁 |
 |------|------|--------|
 | [architecture.md](architecture.md) | 系统架构、数据库表结构、核心模块说明 | 技术接手人、新后端开发 |
+| [api-reference.md](api-reference.md) | 全模块 API 端点清单（新端点同步更新） | 前后端开发、AI 协作 |
+| [database.md](database.md) | 数据库表结构清单（新表同步更新） | 后端开发、DBA |
+| [module-notes.md](module-notes.md) | 模块专题笔记 + 各模块已踩坑 | 改对应模块前必读 |
 | [integration-guide.md](integration-guide.md) | API 接入指南、认证方式、错误码、示例代码 | 下游系统开发者、外部集成 |
 | [runbook.md](runbook.md) | 部署步骤、运维命令、故障排查、环境变量清单 | 运维人员、项目交接 |
 | [handoff.md](handoff.md) | 项目状态、已完成功能、待办清单、技术债务 | 项目交接、管理层 |

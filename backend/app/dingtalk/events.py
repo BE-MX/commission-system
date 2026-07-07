@@ -52,6 +52,21 @@ async def notify_commission_ready(
     await sender.send_markdown(title="提成计算完成", text=text)
 
 
+@_safe_notify
+async def notify_commission_confirm(
+    dingtalk_ids: list[str],
+    batch_name: str,
+):
+    """向涉及的业务员推送提成确认通知（点对点工作通知）"""
+    notifier = get_work_notifier()
+    content = f"### 📋 提成确认通知\n\n'{batch_name}'已上线，请及时登录莱莎方舟平台进行提成确认。"
+    await notifier.send_to_users(
+        user_ids=dingtalk_ids,
+        title="提成确认通知",
+        markdown_text=content,
+    )
+
+
 # ══════════════════════════════════════════════════════════════
 #  回款相关
 # ══════════════════════════════════════════════════════════════

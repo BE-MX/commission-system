@@ -38,6 +38,22 @@ if not exist "%NSSM_EXE%" (
     goto :error
 )
 
+REM ---------- [0/7] Pre-deploy snapshot (rollback anchor, B-9) ----------
+echo [0/7] Pre-deploy snapshot...
+cd /d "%INSTALL_DIR%"
+for /f "delims=" %%T in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "SNAP_TS=%%T"
+for /f "delims=" %%H in ('git rev-parse --short HEAD') do set "PREV_HEAD=%%H"
+git tag -f deploy-last >nul 2>&1
+git tag deploy-%SNAP_TS% >nul 2>&1
+if not exist "%INSTALL_DIR%\.deploy_state" mkdir "%INSTALL_DIR%\.deploy_state"
+echo %PREV_HEAD%>"%INSTALL_DIR%\.deploy_state\last_deploy_commit.txt"
+if exist "%INSTALL_DIR%\frontend\dist" (
+    if exist "%INSTALL_DIR%\.deploy_state\dist_backup" rmdir /s /q "%INSTALL_DIR%\.deploy_state\dist_backup"
+    xcopy /e /i /q /y "%INSTALL_DIR%\frontend\dist" "%INSTALL_DIR%\.deploy_state\dist_backup" >nul
+)
+echo      OK ^(tag deploy-%SNAP_TS%, commit %PREV_HEAD%^)
+echo.
+
 REM ---------- [1/7] Pull latest code ----------
 echo [1/7] Git pull...
 cd /d "%INSTALL_DIR%"
@@ -88,6 +104,13 @@ cd /d "%INSTALL_DIR%\backend"
 .\.venv\Scripts\python.exe -m alembic upgrade head
 if errorlevel 1 (
     echo [ERROR] alembic migration failed
+    goto :error
+)
+REM Migration validation
+for /f "delims=" %%V in ('.\.venv\Scripts\python.exe -m alembic current 2^>nul') do set "CURRENT_REVISION=%%V"
+echo      Current revision: %CURRENT_REVISION%
+if "%CURRENT_REVISION%"=="" (
+    echo [ERROR] Failed to read current migration revision
     goto :error
 )
 echo      OK

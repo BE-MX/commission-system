@@ -132,7 +132,7 @@ class TestInsightIndustryDaily:
                             mock_generate)
 
         from app.insight.scheduler import generate_industry_daily
-        await generate_industry_daily()
+        generate_industry_daily()
 
         mock_generate.assert_called_once()
 
@@ -143,7 +143,7 @@ class TestInsightIndustryDaily:
                             MagicMock(side_effect=RuntimeError("AI provider down")))
 
         from app.insight.scheduler import generate_industry_daily
-        await generate_industry_daily()  # 不应 raise
+        generate_industry_daily()  # 不应 raise
 
 
 class TestInsightAiTools:
@@ -156,7 +156,7 @@ class TestInsightAiTools:
                             mock_generate)
 
         from app.insight.scheduler import generate_ai_tools
-        await generate_ai_tools()
+        generate_ai_tools()
 
         mock_generate.assert_called_once()
 

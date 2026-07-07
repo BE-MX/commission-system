@@ -1,4 +1,9 @@
-"""方舟洞见 — 定时任务"""
+"""方舟洞见 — 定时任务。
+
+注意：三个报告管线是纯同步（RSS 抓取 + 分钟级 AI 调用），必须是同步函数——
+AsyncIOScheduler 会放线程池执行；写成 async def 会阻塞主事件循环，把 08:30
+档期的其他 job 全部推迟（架构评估 B-1/S3）。
+"""
 
 import logging
 from datetime import date
@@ -8,7 +13,7 @@ from app.core.database import SessionLocal
 logger = logging.getLogger("insight.scheduler")
 
 
-async def generate_industry_daily():
+def generate_industry_daily():
     """定时生成行业情报日报。"""
     db = SessionLocal()
     try:
@@ -22,7 +27,7 @@ async def generate_industry_daily():
         db.close()
 
 
-async def generate_ai_tools():
+def generate_ai_tools():
     """定时生成 AI 工具速递。"""
     db = SessionLocal()
     try:
@@ -36,7 +41,7 @@ async def generate_ai_tools():
         db.close()
 
 
-async def generate_intelligence_overview():
+def generate_intelligence_overview():
     """定时生成行业情报速览 — 遍历启用的 schedule_rules 执行。"""
     db = SessionLocal()
     try:

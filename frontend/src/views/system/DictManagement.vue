@@ -1,3 +1,9 @@
+<!--
+  列表页标杆模板（标记语言/样式规范）：新列表页复制本文件的结构
+  （table-card / list-table / min-width / GlassButton link / el-tag plain / show-overflow-tooltip）。
+  服务端分页的编排逻辑另见标杆用例 views/expo/ExpoLeads.vue
+  （useListPage + utils/feedback + DetailDrawer，2026-07-03 治理 F-2）。
+-->
 <template>
   <div class="dict-page">
     <el-row :gutter="16" class="toolbar">

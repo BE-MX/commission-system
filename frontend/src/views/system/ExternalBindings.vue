@@ -72,14 +72,8 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import axios from 'axios'
-
-// 使用 authClient（/api/auth 前缀）
-const authApi = axios.create({
-  baseURL: '/api/auth',
-  timeout: 30000,
-  headers: { 'Authorization': `Bearer ${localStorage.getItem('ark_access_token')}` },
-})
+// 统一 client：token 注入 / 401 跳转 / 错误提示由拦截器处理（宪法 11）
+import { adminClient as authApi } from '@/api/clients'
 
 const loading = ref(false)
 const candidates = ref([])
@@ -95,7 +89,7 @@ async function loadCandidates() {
   try {
     const params = statusFilter.value ? { status: statusFilter.value } : {}
     const res = await authApi.get('/external-binding-candidates', { params })
-    candidates.value = res.data?.data || []
+    candidates.value = res.data || []
   } catch (e) {
     ElMessage.error('加载候选列表失败')
   } finally {
@@ -108,7 +102,7 @@ async function searchUsers(query) {
   searchLoading.value = true
   try {
     const res = await authApi.get('/users/list', { params: { keyword: query, page: 1, page_size: 20 } })
-    userOptions.value = res.data?.data?.items || []
+    userOptions.value = res.data?.items || []
   } catch { userOptions.value = [] }
   finally { searchLoading.value = false }
 }
@@ -135,9 +129,7 @@ async function handleBind() {
     ElMessage.success('绑定成功')
     bindDialogVisible.value = false
     await loadCandidates()
-  } catch (e) {
-    ElMessage.error(e.response?.data?.message || '绑定失败')
-  }
+  } catch { /* 拦截器已统一提示 */ }
 }
 
 async function handleIgnore(candidate) {

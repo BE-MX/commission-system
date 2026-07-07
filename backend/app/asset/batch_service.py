@@ -13,7 +13,9 @@ from sqlalchemy.orm import Session
 from app.asset.models import Asset
 
 # 文件存储根目录
-ASSET_STORAGE_ROOT = Path(os.environ.get("ASSET_STORAGE_ROOT", r"D:\WORKSOURCE"))
+from app.core.config import get_settings
+
+ASSET_STORAGE_ROOT = Path(get_settings().ASSET_STORAGE_ROOT)
 
 
 def batch_download(

@@ -155,8 +155,44 @@ def init_admin_password(db: Session):
         db.commit()
 
 
+# kind 派生规则（权限重设计方案）：data=数据范围，read/日报=页面可见，其余=操作级
+_DATA_KIND_CODES = {"tracking:read_all", "commission:self_read", "insight:internal_read"}
+_PAGE_KIND_EXTRA = {"tracking:daily_report"}
+
+
+def _perm_kind(code: str, action: str) -> str:
+    if code in _DATA_KIND_CODES:
+        return "data"
+    if action == "read" or code in _PAGE_KIND_EXTRA:
+        return "page"
+    return "action"
+
+
+# 已下架权限（2026-07-03 死码核清：全部零引用）。回填 seed 是为了能在 DB 里标记
+# is_legacy=1（UI 隐藏）；admin 自动授权会跳过它们。彻底删除待观察一个版本后进行。
+LEGACY_SEEDS = [
+    ("commission:read_own", "commission", "read_own", "查看本人提成（旧）"),
+    ("commission:read_all", "commission", "read_all", "查看全部提成（旧）"),
+    ("commission:settle",   "commission", "settle",   "提成结算（旧）"),
+    ("commission:export",   "commission", "export",   "提成导出（旧）"),
+    ("design:submit",       "design",     "submit",   "提交预约（旧）"),
+    ("design:read_own",     "design",     "read_own", "查看本人预约（旧）"),
+    ("design:read_all",     "design",     "read_all", "查看全部预约（旧）"),
+    ("design:approve",      "design",     "approve",  "审批预约（旧）"),
+    ("system:config",       "system",     "config",   "系统配置（旧）"),
+    ("system:logs",         "system",     "logs",     "系统日志（旧）"),
+    ("system:backup",       "system",     "backup",   "系统备份（旧）"),
+    ("user:assign_role",    "user",       "assign_role", "分配角色（旧）"),
+]
+
+
 def seed_role_permissions(db: Session):
-    """启动时确保全部权限存在（幂等），并给 admin 角色补齐"""
+    """启动时 upsert 全部权限（含元数据刷新），并给 admin 角色补齐非 legacy 权限。
+
+    注意：2026-07-03 起从 insert-only 改为 upsert——存在时同步更新
+    module/action/label/kind/is_legacy/sort（code 永不改）。这同时修复了
+    历史上改了 seed 但 DB 不同步的漂移（如 user:* 的 module 归属）。
+    """
     from app.auth.models import ArkPermission, ArkRole, ArkRolePermission
 
     seeds = [
@@ -183,13 +219,13 @@ def seed_role_permissions(db: Session):
         ("design:write",   "design", "write",    "提交/编辑预约"),
         ("design:audit",   "design", "audit",    "审批设计预约"),
         ("design:manage",  "design", "manage",   "设计管理"),
-        # 系统管理
-        ("user:read",      "system", "read",     "查看用户/角色"),
-        ("user:write",     "system", "write",    "创建/编辑用户"),
-        ("user:delete",    "system", "delete",   "删除用户"),
-        ("role:read",      "system", "read",     "查看角色列表"),
-        ("role:write",     "system", "write",    "创建/编辑角色"),
-        ("role:delete",    "system", "delete",   "删除角色"),
+        # 账号体系（2026-07-03 起 user/role 统一挂 module=user，随 upsert 修复 DB 漂移）
+        ("user:read",      "user", "read",     "查看用户/角色"),
+        ("user:write",     "user", "write",    "创建/编辑用户"),
+        ("user:delete",    "user", "delete",   "删除用户"),
+        ("role:read",      "user", "read",     "查看角色列表"),
+        ("role:write",     "user", "write",    "创建/编辑角色"),
+        ("role:delete",    "user", "delete",   "删除角色"),
         # AI 接入
         ("ai:admin",       "ai",     "admin",    "AI 接入管理"),
         ("ai:invoke",      "ai",     "invoke",   "AI 调用权限"),
@@ -207,6 +243,16 @@ def seed_role_permissions(db: Session):
         ("production:write",      "production", "write",      "创建/编辑生产订单 / 入库录入"),
         ("production:print",      "production", "print",      "生产订单打印工作台"),
         ("production:admin",      "production", "admin",      "删除生产订单 / 管理全部订单"),
+        # 订单发票管理
+        ("invoice:read",          "invoice", "read",          "查看订单发票"),
+        ("invoice:write",         "invoice", "write",         "创建/编辑订单发票"),
+        ("invoice:sync",          "invoice", "sync",          "同步订单发票到小满"),
+        # 钉钉集成
+        ("dingtalk:admin",        "dingtalk", "admin",        "手动发送钉钉消息 / 查看消息与回调日志"),
+        # 展会 AI 试戴
+        ("expo:read",             "expo",    "read",          "查看展会线索 / 发型库 / 话术卡"),
+        ("expo:write",            "expo",    "write",         "展位试戴操作 / 销售反馈录入"),
+        ("expo:admin",            "expo",    "admin",         "发型库话术库维护 / 删除客户数据"),
         # 素材管理
         ("asset:read",            "asset",   "read",          "查看素材库 / 预览 / 下载 / 收藏"),
         ("asset:write",           "asset",   "write",         "上传素材 / 编辑标签 / 版本迭代"),
@@ -241,13 +287,27 @@ def seed_role_permissions(db: Session):
         ("customer_radar:write",  "customer_radar", "write",  "完成/延后/反馈行动"),
         ("customer_radar:manage", "customer_radar", "manage", "管理所有客户档案/手动分配"),
     ]
-    for code, module, action, label in seeds:
-        existing = db.query(ArkPermission).filter(ArkPermission.code == code).first()
-        if not existing:
-            db.add(ArkPermission(code=code, module=module, action=action, label=label))
+    # upsert：活跃权限 + 已下架权限统一处理，元数据每次启动刷新
+    existing_map = {p.code: p for p in db.query(ArkPermission).all()}
+    module_counter: dict = {}
+    for entry in [(s, 0) for s in seeds] + [(s, 1) for s in LEGACY_SEEDS]:
+        (code, module, action, label), legacy = entry
+        module_counter[module] = module_counter.get(module, 0) + 1
+        meta = dict(
+            module=module, action=action, label=label,
+            kind=_perm_kind(code, action),
+            is_legacy=legacy,
+            sort=module_counter[module] * 10,
+        )
+        perm = existing_map.get(code)
+        if perm:
+            for k, v in meta.items():
+                setattr(perm, k, v)
+        else:
+            db.add(ArkPermission(code=code, **meta))
     db.flush()
 
-    # 给 admin 角色补齐所有权限
+    # 给 admin 角色补齐所有非 legacy 权限（跳过已下架，避免复活死码授权）
     admin_role = db.query(ArkRole).filter(ArkRole.name == "admin").first()
     if admin_role:
         for code, _, _, _ in seeds:

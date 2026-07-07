@@ -16,7 +16,7 @@ from app.ai.provider_service import (  # noqa: F401
 )
 from app.ai.preset_service import (  # noqa: F401
     list_presets, get_preset, create_preset,
-    update_preset, delete_preset, test_preset,
+    update_preset, delete_preset, test_preset, test_preset_with_image,
 )
 from app.ai.call_service import (  # noqa: F401
     chat, delegate, get_task_result,

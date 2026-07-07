@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.auth.dependencies import require_permission
+from app.core.response import ok as _ok
 from app.color import (
     blend_service,
     calc_service,
@@ -38,10 +39,6 @@ from app.color.schemas import (
 
 logger = logging.getLogger("color.router")
 router = APIRouter()
-
-
-def _ok(data, message: str = "ok", code: int = 200):
-    return {"code": code, "message": message, "data": data}
 
 
 # ═════════════════════════════════════════════════════════

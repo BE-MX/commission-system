@@ -44,6 +44,7 @@ class OkkiOrder(BusinessBase):
 
     order_id = Column(String(64), primary_key=True)
     order_no = Column(String(64))
+    name = Column(String(256))
     company_id = Column(String(64), comment="客户ID")
     amount_usd = Column(DECIMAL(12, 2))
     user_id = Column(String(64))

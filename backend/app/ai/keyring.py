@@ -17,7 +17,8 @@ def _get_encryption_key() -> str:
     """获取加密密钥。模块级缓存,首次调用读环境变量。"""
     global _ARK_AI_ENCRYPTION_KEY
     if _ARK_AI_ENCRYPTION_KEY is None:
-        key = os.environ.get("ARK_AI_ENCRYPTION_KEY", "")
+        from app.core.config import get_settings
+        key = get_settings().ARK_AI_ENCRYPTION_KEY
         if not key:
             # dev 环境占位,AES 会因 key 长度不足退化到 base64 fallback
             _ARK_AI_ENCRYPTION_KEY = base64.b64encode(b"ark_ai_default_key_32_bytes_").decode()

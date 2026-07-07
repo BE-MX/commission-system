@@ -31,6 +31,7 @@ router = APIRouter()
 @router.get("/snapshot/list", summary="查询客户归属列表")
 def list_customer_snapshots(
     keyword: str = Query("", description="搜索客户名/ID"),
+    salesperson_keyword: str = Query("", description="业务员姓名/ID"),
     is_complete: str = Query("all", description="完整性筛选: true/false/all"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -84,6 +85,13 @@ def list_customer_snapshots(
         query = query.filter(or_(
             CustomerCommissionSnapshot.customer_id.like(like_pattern),
             CustomerInfo.company_name.like(like_pattern),
+        ))
+
+    if salesperson_keyword:
+        sp_pattern = f"%{salesperson_keyword}%"
+        query = query.filter(or_(
+            CustomerCommissionSnapshot.salesperson_id.like(sp_pattern),
+            SpUser.full_name.like(sp_pattern),
         ))
 
     total = query.count()

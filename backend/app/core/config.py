@@ -79,6 +79,14 @@ class Settings(BaseSettings):
     # ── AI 加密 ──────────────────────────────────────────
     ARK_AI_ENCRYPTION_KEY: str = ""  # production 模式下必须显式配置
 
+    # ── 素材存储（治理 B-5：收敛自 os.environ 直读）──────
+    ASSET_STORAGE_ROOT: str = "D:\\WORKSOURCE"
+    ASSET_SIGN_SECRET: str = "leshine-asset-secret"
+    ASSET_UPLOAD_STAGING: str = "D:\\upload_staging"
+
+    # ── 色彩趋势 ─────────────────────────────────────────
+    XPOZ_TARGET_ACCOUNTS: str = ""  # 逗号分隔的目标账号
+
     # ── ACCIO WORK 导入接口 ──────────────────────────────
     INSIGHT_IMPORT_API_KEY: str = ""
 

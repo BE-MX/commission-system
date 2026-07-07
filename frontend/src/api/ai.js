@@ -38,7 +38,19 @@ export function deletePreset(id) {
   return aiApi.delete(`/presets/${id}`)
 }
 
-export function testPreset(id, testMessage) {
+export function testPreset(id, testMessage, imageFile = null, referenceImageFile = null) {
+  if (imageFile) {
+    const form = new FormData()
+    form.append('test_message', testMessage)
+    form.append('image', imageFile)
+    if (referenceImageFile) {
+      form.append('reference_image', referenceImageFile)
+    }
+    return aiApi.post(`/presets/${id}/test-multimodal`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      loadingText: '测试中...',
+    })
+  }
   return aiApi.post(`/presets/${id}/test`, { test_message: testMessage }, { loadingText: '测试中...' })
 }
 

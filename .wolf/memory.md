@@ -1,9 +1,15 @@
+> **[已停用 2026-07-03]** 本文件按 docs/2026-07-03-architecture-assessment.md G-2 治理停用，保留作历史存档，不再读写。现行记忆规则见 .wolf/OPENWOLF.md。
+
 # Memory
 
 > Chronological action log. Hooks and AI append to this file automatically.
 > Old sessions are consolidated by the daemon weekly.
 
 | 18:10 | 优化 leshine.work 外网访问延迟：开启 Nginx gzip + 前端 dist 部署到云服务器 + deploy.bat 增加 SCP 同步 + SSH 免密 | deploy/deploy.bat, /etc/nginx/nginx.conf, /etc/nginx/conf.d/leshine.conf | HTML TTFB 9s→0.88s, JS 82s→1.05s | ~15k |
+
+| 09:00 | 修复客户归属自动匹配两个BUG：(1)分配属性业务员比例改为1% (2)按员工属性变动时间点判定属性+to_date类型安全 | backend/app/services/rate_utils.py | 两函数均修复，from_records版同步加固 | ~8k |
+| 09:15 | 回填 synced_payment 的 exchange_rate 和 real_amount_rmb（040迁移加列但未回填旧数据），跨库 JOIN COLLATE 冲突修复 | scripts/backfill_payment_fx.py | 1825条记录回填成功 | ~5k |
+| 09:20 | neat-freak 知识库同步：handoff.md 迁移数039→040，buglog 清理噪音条目，cerebrum 新增2条 Key Learnings | docs/handoff.md, .wolf/cerebrum.md, .wolf/buglog.json | 三层文档对齐 | ~4k |
 
 | 09:47 | 运单 OCR 诊断增强：call_service 加请求/响应诊断日志(flush=True)、ocr_service 错误信息带原始返回、前端 502 展示 detail | call_service.py, ocr_service.py, useWaybillUpload.js | StepFun OCR 恢复正常，诊断日志持续生效 | ~12k |
 | 10:15 | 推理模型兼容：call_service fallback reasoning/reasoning_content、ocr_service _parse_reasoning_to_dict 正则提取运单字段 | call_service.py, ocr_service.py | Step-3.7-flash OCR 完整可用 | ~15k |
@@ -1667,3 +1673,639 @@
 | Time | Action | File(s) | Outcome | ~Tokens |
 |------|--------|---------|---------|--------|
 | 09:30 | Updated payment sync list fields | payment API/schema/service/models/tests/frontend, migration 040 | Added service_fee, exchange_rate, real_amount_rmb display path; pytest and frontend build passed | ~18000 |
+| 09:48 | Edited deploy/deploy.bat | expanded (+7 lines) | ~162 |
+| 09:48 | Session end: 1 writes across 1 files (deploy.bat) | 6 reads | ~173 tok |
+| 10:08 | Session end: 1 writes across 1 files (deploy.bat) | 6 reads | ~173 tok |
+| 10:26 | Edited frontend/src/views/customer/CustomerSnapshot.vue | 15→20 lines | ~239 |
+| 10:26 | Edited frontend/src/views/customer/CustomerSnapshot.vue | 2→3 lines | ~24 |
+| 10:26 | Edited frontend/src/views/customer/CustomerSnapshot.vue | CSS: salesperson_keyword | ~115 |
+| 10:27 | Edited backend/app/api/customer.py | modified list_customer_snapshots() | ~151 |
+| 10:27 | Edited backend/app/api/customer.py | expanded (+7 lines) | ~142 |
+| 10:28 | Session end: 6 writes across 3 files (deploy.bat, CustomerSnapshot.vue, customer.py) | 9 reads | ~871 tok |
+
+## Session: 2026-07-01 15:58
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-07-01 16:00
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-07-01 16:03
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-07-01 16:05
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-07-01 16:12
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 16:13 | Edited backend/app/services/rate_utils.py | 6→7 lines | ~99 |
+
+## Session: 2026-07-01 16:14
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 16:14 | Edited backend/app/services/rate_utils.py | 3→3 lines | ~40 |
+
+## Session: 2026-07-01 16:15
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 16:15 | Edited backend/app/services/rate_utils.py | modified enumerate() | ~299 |
+
+## Session: 2026-07-01 16:18
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-07-01 16:19
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 16:19 | Edited backend/app/services/rate_utils.py | modified get_employee_attribute_at_date_from_records() | ~256 |
+| 16:21 | Session end: 1 writes across 1 files (rate_utils.py) | 1 reads | ~256 tok |
+| 16:23 | Created backend/scripts/fix_snapshot_rates.py | — | ~664 |
+| 16:25 | Session end: 2 writes across 2 files (rate_utils.py, fix_snapshot_rates.py) | 2 reads | ~920 tok |
+| 16:33 | Created backend/scripts/backfill_payment_fx.py | — | ~618 |
+| 16:33 | Edited backend/scripts/backfill_payment_fx.py | 9→9 lines | ~139 |
+| 16:34 | Session end: 4 writes across 3 files (rate_utils.py, fix_snapshot_rates.py, backfill_payment_fx.py) | 4 reads | ~2009 tok |
+| 17:17 | Edited docs/handoff.md | 039 → 040 | ~8 |
+| 17:18 | Session end: 5 writes across 4 files (rate_utils.py, fix_snapshot_rates.py, backfill_payment_fx.py, handoff.md) | 8 reads | ~8101 tok |
+
+## Session: 2026-07-01 17:43
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 17:48 | Created backend/alembic/versions/041_add_confirming_batch_status.py | — | ~195 |
+| 17:48 | Edited backend/app/models/commission.py | 4→4 lines | ~46 |
+| 17:49 | Edited backend/app/services/commission_calculator.py | modified send_confirm() | ~715 |
+| 17:49 | Edited backend/app/services/commission_calculator.py | modified void_batch() | ~124 |
+| 17:49 | Edited backend/app/api/commission.py | 3→3 lines | ~38 |
+| 17:49 | Edited backend/app/api/commission.py | modified confirm_commission_batch() | ~498 |
+| 17:50 | Edited backend/app/dingtalk/events.py | modified notify_commission_confirm() | ~163 |
+| 17:50 | Edited frontend/src/api/commission.js | modified createBatch() | ~373 |
+| 17:50 | Edited frontend/src/views/commission/CommissionBatch.vue | 7→8 lines | ~128 |
+| 17:51 | Edited frontend/src/views/commission/CommissionBatch.vue | expanded (+23 lines) | ~883 |
+| 17:51 | Edited frontend/src/views/commission/CommissionBatch.vue | inline fix | ~38 |
+| 17:51 | Edited frontend/src/views/commission/CommissionBatch.vue | CSS: confirming, confirming | ~74 |
+| 17:52 | Edited frontend/src/views/commission/CommissionBatch.vue | added optional chaining | ~272 |
+| 17:53 | Edited backend/app/api/commission.py | modified send_confirm_batch() | ~179 |
+| 17:54 | Session end: 14 writes across 6 files (041_add_confirming_batch_status.py, commission.py, commission_calculator.py, events.py, commission.js) | 10 reads | ~11619 tok |
+
+## Session: 2026-07-02 10:58
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 10:58 | Created order invoice management requirement/design doc and static prototype | docs/requirements/2026-07-02-order-invoice-management.md; docs/requirements/2026-07-02-order-invoice-management-prototype.html | Feasibility, Xiaoman sync risks, data model, API plan, UX prototype documented | ~4200 |
+| 11:08 | Updated invoice design with sku_id source | docs/requirements/2026-07-02-order-invoice-management.md; .wolf/cerebrum.md | Documented okki_inventory association and multi-sku selection rule | ~800 |
+| 11:22 | Updated invoice product detail matching design | docs/requirements/2026-07-02-order-invoice-management.md; docs/requirements/2026-07-02-order-invoice-management-prototype.html | Added model/color/size/unit cascading product_name matching and field rules | ~1400 |
+| 12:18 | Implemented order invoice MVP | backend/app/invoice; frontend/src/views/invoice; frontend/src/api/invoice.js; backend/alembic/versions/044_add_invoice_module.py | Added invoice CRUD, customer/product lookup, cascading product match, Excel/PDF/print export, sync pre-check boundary, nav entry, and focused tests | ~9500 |
+| 18:03 | Polished invoice management UI and motion | frontend/src/views/invoice/InvoiceManage.vue; memory ad_hoc note | Added summary metrics, refined work panel, product match state, press/entry motion, reduced-motion handling, and saved UI-skill rule to long-term memory | ~2600 |
+| 18:24 | Rechecked invoice UI against motion skills and DESIGN.md | frontend/src/views/invoice/InvoiceManage.vue; memory ad_hoc note | Added filter icon, aligned table/list layout and motion timing with design tokens, and corrected the long-term UI skill rule to the three exact skills | ~1800 |
+| 18:30 | Fixed login bounce caused by missing business API token | frontend/src/stores/auth.js | Restored access token from localStorage for request interceptors and resolved auth initialization immediately after login | ~2200 |
+
+## Session: 2026-07-03 08:21
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-07-03 08:23
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 08:28 | Edited CLAUDE.md | 1→2 lines | ~47 |
+| 08:28 | Edited CLAUDE.md | 2→3 lines | ~91 |
+| 08:28 | Edited CLAUDE.md | 2→2 lines | ~34 |
+| 08:28 | Edited CLAUDE.md | inline fix | ~21 |
+| 08:29 | Edited CLAUDE.md | expanded (+16 lines) | ~203 |
+| 08:29 | Edited CLAUDE.md | expanded (+13 lines) | ~190 |
+| 08:30 | Edited CLAUDE.md | expanded (+7 lines) | ~281 |
+| 08:30 | Edited CLAUDE.md | 1→2 lines | ~49 |
+| 08:30 | Edited CLAUDE.md | inline fix | ~101 |
+| 08:30 | Edited docs/handoff.md | inline fix | ~7 |
+| 08:30 | Edited docs/handoff.md | 2→2 lines | ~16 |
+| 08:31 | Edited docs/handoff.md | 5→6 lines | ~44 |
+| 08:31 | Edited docs/handoff.md | 6→6 lines | ~63 |
+| 08:31 | Edited docs/handoff.md | 4→4 lines | ~45 |
+| 08:31 | Edited docs/handoff.md | 7→7 lines | ~98 |
+| 08:31 | Edited docs/handoff.md | 1→2 lines | ~73 |
+| 08:32 | Edited docs/architecture.md | inline fix | ~7 |
+| 08:32 | Edited docs/architecture.md | inline fix | ~46 |
+| 08:32 | Edited docs/architecture.md | 2→3 lines | ~81 |
+| 08:32 | Edited docs/architecture.md | 1→5 lines | ~88 |
+| 08:32 | Edited docs/architecture.md | 1→2 lines | ~47 |
+| 08:32 | Edited docs/architecture.md | 039 → 044 | ~12 |
+| 08:33 | Created C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_invoice_module.md | — | ~245 |
+| 08:33 | Created C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_commission_confirmation.md | — | ~233 |
+| 08:33 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/MEMORY.md | 2→4 lines | ~116 |
+| 08:34 | Edited docs/runbook.md | inline fix | ~7 |
+| 08:35 | Session end: 26 writes across 7 files (CLAUDE.md, handoff.md, architecture.md, project_invoice_module.md, project_commission_confirmation.md) | 6 reads | ~26252 tok |
+
+## Session: 2026-07-03 08:52
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-07-03 08:54
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-07-03 08:55
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-07-03 08:57
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-07-03 11:02
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-07-03 11:04
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-07-03 11:10
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-07-03 11:19
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 11:51 | Created docs/2026-07-03-architecture-assessment.md | — | ~4467 |
+| 12:01 | Edited docs/2026-07-03-architecture-assessment.md | inline fix | ~41 |
+| 12:01 | Edited docs/2026-07-03-architecture-assessment.md | inline fix | ~21 |
+| 12:01 | Edited docs/2026-07-03-architecture-assessment.md | 2→2 lines | ~138 |
+| 12:01 | Edited docs/2026-07-03-architecture-assessment.md | 1→3 lines | ~126 |
+| 12:01 | Edited docs/2026-07-03-architecture-assessment.md | "except:" → "except Exception: pass" | ~67 |
+| 12:01 | Edited docs/2026-07-03-architecture-assessment.md | inline fix | ~36 |
+| 12:01 | Edited docs/2026-07-03-architecture-assessment.md | modified _on_job_event() | ~412 |
+| 12:02 | Edited docs/2026-07-03-architecture-assessment.md | 3→3 lines | ~199 |
+| 12:02 | Edited docs/2026-07-03-architecture-assessment.md | added 1 import(s) | ~42 |
+| 12:02 | Edited docs/2026-07-03-architecture-assessment.md | 2→4 lines | ~103 |
+| 12:02 | Edited docs/2026-07-03-architecture-assessment.md | expanded (+7 lines) | ~132 |
+| 12:02 | Edited docs/2026-07-03-architecture-assessment.md | 1→3 lines | ~108 |
+| 12:03 | Edited docs/2026-07-03-architecture-assessment.md | "每个提交可独立回滚" → "一个完整功能" | ~35 |
+| 12:03 | Edited docs/2026-07-03-architecture-assessment.md | expanded (+7 lines) | ~159 |
+| 12:03 | Edited docs/2026-07-03-architecture-assessment.md | 2→2 lines | ~104 |
+| 12:03 | Edited docs/2026-07-03-architecture-assessment.md | 5→6 lines | ~167 |
+| 12:03 | 完成平台架构评估文档(3 agent 勘察+对抗审查修订) | docs/2026-07-03-architecture-assessment.md | 交付 | ~230k |
+| 12:04 | Session end: 17 writes across 1 files (2026-07-03-architecture-assessment.md) | 8 reads | ~15212 tok |
+| 13:42 | Created docs/requirements/2026-07-03-expo-ai-wig-tryon.md | — | ~2777 |
+| 13:45 | Created docs/requirements/2026-07-03-expo-ai-wig-tryon-prototype.html | — | ~9652 |
+| 13:45 | Edited docs/requirements/2026-07-03-expo-ai-wig-tryon-prototype.html | inline fix | ~23 |
+| 13:45 | Edited docs/requirements/2026-07-03-expo-ai-wig-tryon-prototype.html | 2→1 lines | ~40 |
+| 13:46 | 展会AI试戴设计文档+原型 | docs/requirements/2026-07-03-expo-ai-wig-tryon.{md,html} | 交付 | ~40k |
+| 13:46 | Session end: 21 writes across 3 files (2026-07-03-architecture-assessment.md, 2026-07-03-expo-ai-wig-tryon.md, 2026-07-03-expo-ai-wig-tryon-prototype.html) | 9 reads | ~28597 tok |
+| 14:10 | Edited docs/requirements/2026-07-03-expo-ai-wig-tryon.md | 6→6 lines | ~65 |
+| 14:10 | Edited docs/requirements/2026-07-03-expo-ai-wig-tryon.md | 4→4 lines | ~24 |
+| 14:10 | Edited docs/requirements/2026-07-03-expo-ai-wig-tryon.md | 7→9 lines | ~137 |
+| 14:10 | Edited docs/requirements/2026-07-03-expo-ai-wig-tryon.md | expanded (+8 lines) | ~172 |
+| 14:10 | Edited docs/requirements/2026-07-03-expo-ai-wig-tryon.md | inline fix | ~35 |
+| 14:11 | Edited docs/requirements/2026-07-03-expo-ai-wig-tryon.md | 2→2 lines | ~48 |
+| 14:11 | Edited docs/requirements/2026-07-03-expo-ai-wig-tryon.md | 4→9 lines | ~60 |
+| 14:11 | Edited docs/requirements/2026-07-03-expo-ai-wig-tryon.md | inline fix | ~16 |
+| 14:11 | Edited docs/requirements/2026-07-03-expo-ai-wig-tryon.md | inline fix | ~34 |
+| 14:11 | H5定案,更新试戴设计文档+cerebrum决策日志 | docs/requirements/2026-07-03-expo-ai-wig-tryon.md, .wolf/cerebrum.md | 完成 | ~8k |
+| 14:12 | Session end: 30 writes across 3 files (2026-07-03-architecture-assessment.md, 2026-07-03-expo-ai-wig-tryon.md, 2026-07-03-expo-ai-wig-tryon-prototype.html) | 9 reads | ~29228 tok |
+| 14:22 | Created docs/requirements/2026-07-03-expo-ai-wig-tryon-prototype.html | — | ~10332 |
+| 14:23 | Edited docs/requirements/2026-07-03-expo-ai-wig-tryon.md | expanded (+13 lines) | ~223 |
+| 14:23 | Edited docs/requirements/2026-07-03-expo-ai-wig-tryon.md | 7→7 lines | ~99 |
+| 14:23 | Edited docs/requirements/2026-07-03-expo-ai-wig-tryon.md | expanded (+6 lines) | ~187 |
+| 14:24 | Edited docs/requirements/2026-07-03-expo-ai-wig-tryon.md | expanded (+7 lines) | ~183 |
+| 14:24 | Edited docs/requirements/2026-07-03-expo-ai-wig-tryon.md | 12→17 lines | ~205 |
+| 14:24 | Edited docs/requirements/2026-07-03-expo-ai-wig-tryon.md | 7→11 lines | ~186 |
+| 14:25 | Edited docs/requirements/2026-07-03-expo-ai-wig-tryon.md | expanded (+27 lines) | ~734 |
+| 14:26 | Edited docs/requirements/2026-07-03-expo-ai-wig-tryon.md | 9→9 lines | ~134 |
+| 14:26 | Edited docs/requirements/2026-07-03-expo-ai-wig-tryon.md | expanded (+11 lines) | ~217 |
+| 14:27 | Edited docs/requirements/2026-07-03-expo-ai-wig-tryon.md | inline fix | ~35 |
+| 14:27 | Edited docs/requirements/2026-07-03-expo-ai-wig-tryon.md | inline fix | ~31 |
+| 14:27 | Edited docs/requirements/2026-07-03-expo-ai-wig-tryon.md | inline fix | ~54 |
+| 14:27 | Edited docs/requirements/2026-07-03-expo-ai-wig-tryon.md | inline fix | ~19 |
+| 14:27 | 内贸品牌转向:重写试戴原型+设计文档融入营销v2/话术v4 | docs/requirements/2026-07-03-expo-ai-wig-tryon.{md,html} | 交付 | ~45k |
+| 14:28 | Session end: 44 writes across 3 files (2026-07-03-architecture-assessment.md, 2026-07-03-expo-ai-wig-tryon.md, 2026-07-03-expo-ai-wig-tryon-prototype.html) | 11 reads | ~42770 tok |
+| 14:46 | Created backend/app/core/response.py | — | ~124 |
+| 14:46 | Created backend/app/expo/__init__.py | — | ~11 |
+| 14:47 | Created backend/app/expo/models.py | — | ~2043 |
+| 14:47 | Created backend/alembic/versions/045_add_expo_tryon_module.py | — | ~2505 |
+| 14:47 | Created backend/config/expo_matching.yaml | — | ~110 |
+| 14:48 | Created backend/app/expo/matching.py | — | ~1516 |
+| 14:49 | Created backend/app/expo/script_service.py | — | ~1920 |
+| 14:50 | Created backend/app/expo/ai_pipeline.py | — | ~3686 |
+| 14:50 | Edited backend/app/expo/ai_pipeline.py | modified _run_strategy() | ~20 |
+| 14:50 | Created backend/app/expo/schemas.py | — | ~556 |
+| 14:51 | Created backend/app/expo/service.py | — | ~3045 |
+| 14:52 | Created backend/app/expo/router.py | — | ~2893 |
+| 14:52 | Edited backend/app/routers.py | added 1 import(s) | ~30 |
+| 14:52 | Edited backend/app/routers.py | 1→2 lines | ~46 |
+| 14:52 | Edited backend/app/auth/service.py | 3→7 lines | ~142 |
+| 14:53 | Created backend/tests/test_expo_matching.py | — | ~1346 |
+| 14:55 | Created frontend/src/api/expo.js | — | ~675 |
+| 14:56 | Edited frontend/src/api/clients.js | 1→2 lines | ~51 |
+| 14:56 | Edited frontend/src/router/index.js | expanded (+7 lines) | ~112 |
+| 14:56 | Edited frontend/src/router/index.js | 5→7 lines | ~83 |
+| 14:56 | Edited frontend/src/config/navigation.js | 6→11 lines | ~75 |
+| 14:57 | Edited frontend/src/config/navigation.js | expanded (+35 lines) | ~346 |
+| 14:58 | Created frontend/src/views/expo/composables/useTryOnFlow.js | — | ~1448 |
+| 14:59 | Created frontend/src/views/expo/ExpoKiosk.vue | — | ~1141 |
+| 14:59 | Created frontend/src/views/expo/kiosk/AttractScreen.vue | — | ~738 |
+| 14:59 | Created frontend/src/views/expo/WigLibrary.vue | — | ~3556 |
+| 14:59 | Created frontend/src/views/expo/kiosk/RegisterScreen.vue | — | ~1161 |
+| 15:00 | Created frontend/src/views/expo/ScriptLibrary.vue | — | ~2401 |
+| 15:00 | Created frontend/src/views/expo/kiosk/CaptureScreen.vue | — | ~1404 |
+| 15:01 | Created frontend/src/views/expo/kiosk/AnalyzingScreen.vue | — | ~1221 |
+| 15:01 | Created frontend/src/views/expo/ExpoLeads.vue | — | ~3132 |
+| 15:01 | Created frontend/src/views/expo/kiosk/MatchingScreen.vue | — | ~883 |
+| 15:02 | Created frontend/src/views/expo/kiosk/ResultScreen.vue | — | ~2008 |
+| 15:02 | Created frontend/src/views/expo/kiosk/SalesPanel.vue | — | ~1815 |
+| 15:05 | Edited backend/app/expo/ai_pipeline.py | modified to_rel() | ~164 |
+| 15:05 | Edited backend/app/expo/ai_pipeline.py | Path() → to_abs() | ~62 |
+| 15:05 | Edited backend/app/expo/ai_pipeline.py | modified exists() | ~194 |
+| 15:05 | Edited backend/app/expo/service.py | str() → to_rel() | ~114 |
+| 15:05 | Edited backend/app/expo/service.py | Path() → to_abs() | ~51 |
+| 15:05 | Edited backend/app/expo/router.py | "uploads/expo/wigs" → "wigs" | ~14 |
+| 15:05 | Edited backend/app/expo/router.py | 6→7 lines | ~104 |
+| 15:06 | expo模块全量开发:迁移045+后端5service+匹配引擎+AI管线+3权限+PC三页(agent)+H5 kiosk 8文件+13测试 | backend/app/expo/* frontend/src/views/expo/* | 87 tests passed + build OK | ~120k |
+| 15:06 | Edited CLAUDE.md | 1→2 lines | ~84 |
+| 15:07 | Edited CLAUDE.md | 2→6 lines | ~194 |
+| 15:07 | Edited CLAUDE.md | 1→2 lines | ~44 |
+| 15:07 | Session end: 88 writes across 33 files (2026-07-03-architecture-assessment.md, 2026-07-03-expo-ai-wig-tryon.md, 2026-07-03-expo-ai-wig-tryon-prototype.html, response.py, __init__.py) | 23 reads | ~110829 tok |
+| 15:11 | Session end: 88 writes across 33 files (2026-07-03-architecture-assessment.md, 2026-07-03-expo-ai-wig-tryon.md, 2026-07-03-expo-ai-wig-tryon-prototype.html, response.py, __init__.py) | 23 reads | ~110829 tok |
+| 15:16 | Session end: 88 writes across 33 files (2026-07-03-architecture-assessment.md, 2026-07-03-expo-ai-wig-tryon.md, 2026-07-03-expo-ai-wig-tryon-prototype.html, response.py, __init__.py) | 23 reads | ~110829 tok |
+| 15:22 | Session end: 88 writes across 33 files (2026-07-03-architecture-assessment.md, 2026-07-03-expo-ai-wig-tryon.md, 2026-07-03-expo-ai-wig-tryon-prototype.html, response.py, __init__.py) | 23 reads | ~110829 tok |
+| 15:31 | Edited frontend/src/App.vue | added 1 condition(s) | ~147 |
+| 15:31 | Session end: 89 writes across 34 files (2026-07-03-architecture-assessment.md, 2026-07-03-expo-ai-wig-tryon.md, 2026-07-03-expo-ai-wig-tryon-prototype.html, response.py, __init__.py) | 24 reads | ~110986 tok |
+| 15:41 | Edited frontend/src/App.vue | logout() → clearAuthState() | ~228 |
+| 15:42 | Edited frontend/src/App.vue | 5→6 lines | ~55 |
+| 15:45 | Edited frontend/src/views/auth/LoginPage.vue | inline fix | ~13 |
+| 15:45 | Edited frontend/src/views/auth/LoginPage.vue | 1→2 lines | ~14 |
+| 15:45 | Edited frontend/src/views/auth/LoginPage.vue | CSS: redirect | ~172 |
+| 15:47 | Session end: 94 writes across 35 files (2026-07-03-architecture-assessment.md, 2026-07-03-expo-ai-wig-tryon.md, 2026-07-03-expo-ai-wig-tryon-prototype.html, response.py, __init__.py) | 27 reads | ~115524 tok |
+| 15:56 | 配置3个expo AI preset绑ELBNT并实测(池子当前无可用账号,兜底链路验证通过) | ark_ai_presets | 完成 | ~15k |
+| 15:57 | Session end: 94 writes across 35 files (2026-07-03-architecture-assessment.md, 2026-07-03-expo-ai-wig-tryon.md, 2026-07-03-expo-ai-wig-tryon-prototype.html, response.py, __init__.py) | 27 reads | ~115524 tok |
+| 16:07 | Edited docs/architecture.md | inline fix | ~15 |
+| 16:07 | Edited docs/architecture.md | 1→2 lines | ~88 |
+| 16:07 | Edited docs/architecture.md | expanded (+6 lines) | ~142 |
+| 16:08 | Edited docs/architecture.md | 1→2 lines | ~44 |
+| 16:08 | Edited docs/handoff.md | 2→2 lines | ~21 |
+| 16:08 | Edited docs/handoff.md | 19 → 20 | ~5 |
+| 16:08 | Edited docs/handoff.md | 1→5 lines | ~90 |
+| 16:08 | Edited docs/handoff.md | 4→6 lines | ~47 |
+| 16:08 | Edited docs/handoff.md | 5→8 lines | ~119 |
+| 16:08 | Edited docs/handoff.md | 2→4 lines | ~115 |
+| 16:10 | Edited docs/runbook.md | expanded (+8 lines) | ~167 |
+| 16:11 | Edited CLAUDE.md | expanded (+7 lines) | ~293 |
+| 16:11 | Edited CLAUDE.md | inline fix | ~75 |
+| 16:11 | Edited CLAUDE.md | inline fix | ~48 |
+| 16:12 | Created C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_expo_module.md | — | ~426 |
+| 16:13 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/feedback_mobile_token_sync.md | added 1 condition(s) | ~167 |
+| 16:14 | Edited README.md | inline fix | ~38 |
+| 16:14 | Edited README.md | inline fix | ~13 |
+| 16:14 | neat-freak知识库同步:6文档+3记忆对齐expo/评估/半登录态 | docs/* CLAUDE.md README.md memory/* | 完成 | ~30k |
+| 16:15 | Session end: 112 writes across 41 files (2026-07-03-architecture-assessment.md, 2026-07-03-expo-ai-wig-tryon.md, 2026-07-03-expo-ai-wig-tryon-prototype.html, response.py, __init__.py) | 30 reads | ~121073 tok |
+| 16:23 | Created CLAUDE.md | — | ~1359 |
+| 16:25 | Created .claude/rules/openwolf.md | — | ~98 |
+| 16:26 | Created .claude/rules/checklists.md | — | ~255 |
+| 16:27 | Created scripts/check_conventions.py | — | ~1853 |
+| 16:27 | Edited scripts/check_conventions.py | modified hasattr() | ~70 |
+| 16:27 | Edited scripts/check_conventions.py | modified lower() | ~126 |
+| 16:28 | Edited scripts/check_conventions.py | modified upper() | ~36 |
+| 16:29 | Edited docs/handoff.md | 1→3 lines | ~74 |
+| 16:29 | Edited docs/handoff.md | 1→4 lines | ~79 |
+| 16:29 | Created C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_vibe_governance.md | — | ~234 |
+| 16:30 | Edited docs/2026-07-03-architecture-assessment.md | inline fix | ~102 |
+| 16:30 | Session end: 123 writes across 45 files (2026-07-03-architecture-assessment.md, 2026-07-03-expo-ai-wig-tryon.md, 2026-07-03-expo-ai-wig-tryon-prototype.html, response.py, __init__.py) | 31 reads | ~125513 tok |
+| 16:45 | Edited CLAUDE.md | inline fix | ~21 |
+| 16:46 | Session end: 124 writes across 45 files (2026-07-03-architecture-assessment.md, 2026-07-03-expo-ai-wig-tryon.md, 2026-07-03-expo-ai-wig-tryon-prototype.html, response.py, __init__.py) | 31 reads | ~125535 tok |
+| 16:51 | Edited frontend/src/api/clients.js | 1→2 lines | ~58 |
+| 16:51 | Edited frontend/src/views/system/ExternalBindings.vue | reduced (-6 lines) | ~53 |
+| 16:51 | Edited frontend/src/views/system/ExternalBindings.vue | 2→2 lines | ~31 |
+| 16:51 | Edited frontend/src/views/system/ExternalBindings.vue | 2→2 lines | ~40 |
+| 16:51 | Edited frontend/src/views/system/ExternalBindings.vue | 4→2 lines | ~8 |
+| 16:53 | Edited frontend/src/styles/tokens.css | expanded (+13 lines) | ~220 |
+| 16:53 | Created frontend/src/composables/useListPage.js | — | ~514 |
+| 16:53 | Created frontend/src/utils/feedback.js | — | ~226 |
+| 16:54 | Created frontend/src/components/AppUpload.vue | — | ~873 |
+| 16:54 | Created frontend/src/components/DetailDrawer.vue | — | ~270 |
+| 16:54 | Edited frontend/vite.config.js | added 3 condition(s) | ~186 |
+| 16:55 | Edited frontend/src/views/expo/ExpoLeads.vue | modified openDetail() | ~527 |
+| 16:55 | Edited frontend/src/views/expo/ExpoLeads.vue | 10→9 lines | ~112 |
+| 16:56 | Edited frontend/src/views/expo/ExpoLeads.vue | 5→4 lines | ~16 |
+| 16:56 | Edited frontend/src/views/system/DictManagement.vue | expanded (+6 lines) | ~78 |
+| 16:56 | Edited CLAUDE.md | 2→3 lines | ~82 |
+| 16:57 | Edited CLAUDE.md | 2→1 lines | ~23 |
+| 16:57 | Edited CLAUDE.md | 1→2 lines | ~32 |
+| 16:58 | Edited docs/2026-07-03-architecture-assessment.md | inline fix | ~106 |
+| 16:59 | Session end: 143 writes across 53 files (2026-07-03-architecture-assessment.md, 2026-07-03-expo-ai-wig-tryon.md, 2026-07-03-expo-ai-wig-tryon-prototype.html, response.py, __init__.py) | 33 reads | ~129151 tok |
+| 17:05 | Edited backend/app/schedulers/registry.py | added 2 import(s) | ~98 |
+| 17:05 | Edited backend/app/schedulers/registry.py | modified _color_social_extract_job() | ~110 |
+| 17:06 | Edited backend/app/schedulers/registry.py | modified _make_job_event_listener() | ~464 |
+| 17:07 | Created backend/tests/test_tracking_status.py | — | ~1449 |
+| 17:07 | Created backend/tests/test_stock_status.py | — | ~1190 |
+| 17:08 | Created backend/tests/test_commission_batch_flow.py | — | ~2504 |
+| 17:08 | Edited backend/tests/test_commission_batch_flow.py | "不存在的批次 ID：所有操作都报" → "不存在的批次 ID：所有操作都报『不存在』" | ~9 |
+| 17:08 | Created backend/tests/test_invoice_amounts.py | — | ~1574 |
+| 2026-07-03 | B-8 补管钱管货回归测试: tracking status映射/stock状态判定/commission批次状态机/invoice金额 共122个新测试 | backend/tests/test_{tracking_status,stock_status,commission_batch_flow,invoice_amounts}.py | 全绿 209 passed (87旧+122新) | ~30k |
+| 17:14 | Edited backend/app/auth/service.py | 2→4 lines | ~59 |
+| 17:16 | Edited deploy/deploy.bat | expanded (+16 lines) | ~256 |
+| 17:16 | Created deploy/rollback.bat | — | ~708 |
+| 17:16 | Created deploy/backup-uploads.bat | — | ~432 |
+| 17:19 | Edited docs/runbook.md | expanded (+19 lines) | ~212 |
+| 17:19 | Edited docs/architecture.md | 1→2 lines | ~42 |
+| 17:20 | Edited docs/handoff.md | 1→6 lines | ~78 |
+| 17:20 | Edited docs/2026-07-03-architecture-assessment.md | inline fix | ~108 |
+| 17:21 | Edited docs/2026-07-03-architecture-assessment.md | inline fix | ~56 |
+| 17:21 | Edited docs/2026-07-03-architecture-assessment.md | inline fix | ~38 |
+| 17:21 | Edited docs/2026-07-03-architecture-assessment.md | inline fix | ~57 |
+| 17:24 | Session end: 162 writes across 61 files (2026-07-03-architecture-assessment.md, 2026-07-03-expo-ai-wig-tryon.md, 2026-07-03-expo-ai-wig-tryon-prototype.html, response.py, __init__.py) | 47 reads | ~138738 tok |
+| 17:32 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_vibe_governance.md | expanded (+8 lines) | ~208 |
+| 17:33 | Session end: 163 writes across 61 files (2026-07-03-architecture-assessment.md, 2026-07-03-expo-ai-wig-tryon.md, 2026-07-03-expo-ai-wig-tryon-prototype.html, response.py, __init__.py) | 47 reads | ~138961 tok |
+| 17:56 | Created docs/requirements/2026-07-03-permission-redesign.md | — | ~1196 |
+| 17:58 | Created docs/requirements/2026-07-03-permission-redesign-prototype.html | — | ~3633 |
+| 18:03 | Edited docs/requirements/2026-07-03-permission-redesign.md | inline fix | ~17 |
+| 18:03 | Edited docs/requirements/2026-07-03-permission-redesign.md | inline fix | ~17 |
+| 18:03 | Edited docs/requirements/2026-07-03-permission-redesign.md | inline fix | ~36 |
+| 18:04 | Session end: 168 writes across 63 files (2026-07-03-architecture-assessment.md, 2026-07-03-expo-ai-wig-tryon.md, 2026-07-03-expo-ai-wig-tryon-prototype.html, response.py, __init__.py) | 50 reads | ~149227 tok |
+| 20:19 | Edited backend/app/auth/models.py | modified ArkPermission() | ~406 |
+| 20:20 | Created backend/alembic/versions/046_add_perm_metadata.py | — | ~540 |
+| 20:20 | Edited backend/app/auth/service.py | modified _perm_kind() | ~478 |
+| 20:20 | Edited backend/app/auth/service.py | 7→7 lines | ~120 |
+| 20:20 | Edited backend/app/auth/service.py | modified items() | ~397 |
+| 20:21 | Edited backend/app/auth/admin_router.py | modified list_permissions() | ~492 |
+| 20:21 | Edited backend/app/auth/admin_schemas.py | modified PermissionItem() | ~50 |
+| 20:22 | Edited backend/app/auth/admin_router.py | modified _write_permission_audit() | ~463 |
+| 20:22 | Edited backend/app/auth/admin_router.py | modified update_role() | ~338 |
+| 20:23 | Created frontend/src/directives/permission.js | — | ~392 |
+| 20:24 | Edited frontend/src/main.js | added 1 import(s) | ~116 |
+| 20:24 | Edited scripts/check_conventions.py | expanded (+12 lines) | ~158 |
+| 20:24 | Edited scripts/check_conventions.py | modified endswith() | ~140 |
+| 20:24 | Edited CLAUDE.md | inline fix | ~68 |
+| 20:24 | Edited CLAUDE.md | inline fix | ~53 |
+| 20:26 | Session end: 183 writes across 68 files (2026-07-03-architecture-assessment.md, 2026-07-03-expo-ai-wig-tryon.md, 2026-07-03-expo-ai-wig-tryon-prototype.html, response.py, __init__.py) | 60 reads | ~151412 tok |
+| 20:27 | Created frontend/src/config/roleTemplates.js | — | ~423 |
+| 20:28 | Created frontend/src/views/system/composables/usePermissionMatrix.js | — | ~2652 |
+| 20:28 | Created frontend/src/views/system/components/PermissionMatrixTab.vue | — | ~1542 |
+| 20:29 | Created frontend/src/views/system/components/PermissionNavTab.vue | — | ~1615 |
+| 20:29 | Edited frontend/src/views/system/components/PermissionNavTab.vue | 2→2 lines | ~25 |
+| 20:29 | Edited frontend/src/views/system/components/PermissionNavTab.vue | added 1 condition(s) | ~85 |
+| 20:31 | Created frontend/src/views/system/RoleManagement.vue | — | ~3259 |
+| 20:31 | Created frontend/src/views/system/components/UserPermissionDrawer.vue | — | ~908 |
+| 20:31 | Edited frontend/src/views/system/UserManagement.vue | 2→3 lines | ~96 |
+| 20:31 | Edited frontend/src/views/system/UserManagement.vue | 7→10 lines | ~104 |
+| 20:31 | Edited frontend/src/views/system/UserManagement.vue | added 1 import(s) | ~53 |
+| 20:31 | Edited frontend/src/views/system/UserManagement.vue | modified openPermPreview() | ~77 |
+| 20:33 | 角色权限矩阵UI: roleTemplates+usePermissionMatrix+Matrix/Nav tab组件+RoleManagement抽屉重写+UserManagement权限预览 | frontend/src/{config/roleTemplates.js,views/system/*} | build通过 | ~35k |
+| 20:41 | Session end: 195 writes across 75 files (2026-07-03-architecture-assessment.md, 2026-07-03-expo-ai-wig-tryon.md, 2026-07-03-expo-ai-wig-tryon-prototype.html, response.py, __init__.py) | 62 reads | ~162804 tok |
+| 20:43 | Edited CLAUDE.md | 1→2 lines | ~52 |
+| 20:43 | Edited C:/Users/windb/.claude/CLAUDE.md | 1→2 lines | ~53 |
+| 20:43 | Edited CLAUDE.md | inline fix | ~67 |
+| 20:43 | Edited C:/Users/windb/.claude/CLAUDE.md | inline fix | ~53 |
+| 20:43 | Created C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/feedback_emil_skills.md | — | ~174 |
+| 20:45 | Session end: 200 writes across 76 files (2026-07-03-architecture-assessment.md, 2026-07-03-expo-ai-wig-tryon.md, 2026-07-03-expo-ai-wig-tryon-prototype.html, response.py, __init__.py) | 62 reads | ~163232 tok |
+| 21:00 | Created docs/requirements/2026-07-03-expo-ai-wig-tryon-prototype-v2-green.html | — | ~10759 |
+| 21:01 | Edited docs/requirements/2026-07-03-expo-ai-wig-tryon-prototype-v2-green.html | inline fix | ~25 |
+| 21:02 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_expo_module.md | 1→3 lines | ~111 |
+| 21:03 | Session end: 203 writes across 77 files (2026-07-03-architecture-assessment.md, 2026-07-03-expo-ai-wig-tryon.md, 2026-07-03-expo-ai-wig-tryon-prototype.html, response.py, __init__.py) | 66 reads | ~174904 tok |
+| 21:16 | Session end: 203 writes across 77 files (2026-07-03-architecture-assessment.md, 2026-07-03-expo-ai-wig-tryon.md, 2026-07-03-expo-ai-wig-tryon-prototype.html, response.py, __init__.py) | 71 reads | ~174904 tok |
+| 21:23 | Session end: 203 writes across 77 files (2026-07-03-architecture-assessment.md, 2026-07-03-expo-ai-wig-tryon.md, 2026-07-03-expo-ai-wig-tryon-prototype.html, response.py, __init__.py) | 72 reads | ~174904 tok |
+| 23:43 | Session end: 203 writes across 77 files (2026-07-03-architecture-assessment.md, 2026-07-03-expo-ai-wig-tryon.md, 2026-07-03-expo-ai-wig-tryon-prototype.html, response.py, __init__.py) | 72 reads | ~174904 tok |
+
+## Session: 2026-07-03 00:33
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 00:42 | Created C:/Users/windb/AppData/Local/Temp/claude/D--MyProgram-commission-system/fd002180-b567-4af5-a80d-bcc0bacd5126/scratchpad/probe_usage.py | — | ~571 |
+| 00:45 | Created ../ai-usage-tray/CLAUDE.md | — | ~356 |
+| 00:45 | Created ../ai-usage-tray/AiUsageTray.csproj | — | ~137 |
+| 00:46 | Created ../ai-usage-tray/Config.cs | — | ~630 |
+| 00:47 | Created ../ai-usage-tray/UsageFetcher.cs | — | ~2665 |
+| 00:47 | Created ../ai-usage-tray/TrayContext.cs | — | ~1941 |
+| 00:48 | Created ../ai-usage-tray/DetailsForm.cs | — | ~1688 |
+| 00:48 | Created ../ai-usage-tray/Program.cs | — | ~458 |
+| 00:49 | Edited ../ai-usage-tray/Program.cs | 2→2 lines | ~36 |
+| 00:49 | Edited ../ai-usage-tray/TrayContext.cs | modified TrayContext() | ~25 |
+| 00:50 | Edited ../ai-usage-tray/TrayContext.cs | added 1 condition(s) | ~24 |
+| 00:51 | Edited ../ai-usage-tray/DetailsForm.cs | 4→5 lines | ~46 |
+| 00:53 | Edited ../ai-usage-tray/DetailsForm.cs | 5→8 lines | ~171 |
+| 00:53 | Edited ../ai-usage-tray/DetailsForm.cs | 3→3 lines | ~29 |
+| 00:55 | Edited ../ai-usage-tray/DetailsForm.cs | modified DetailsForm() | ~265 |
+| 00:55 | Edited ../ai-usage-tray/DetailsForm.cs | 22→22 lines | ~231 |
+| 00:55 | Edited ../ai-usage-tray/DetailsForm.cs | modified BuildCard() | ~353 |
+| 00:56 | Edited ../ai-usage-tray/DetailsForm.cs | modified UsageBar() | ~486 |
+| 01:02 | Edited ../ai-usage-tray/TrayContext.cs | added error handling | ~267 |
+| 01:02 | Created ../ai-usage-tray/build.bat | — | ~82 |
+| 01:03 | Created ../ai-usage-tray/README.md | — | ~304 |
+| 01:04 | Created ../ai-usage-tray/build.bat | — | ~96 |
+| 01:06 | Created ../ai-usage-tray/.gitignore | — | ~15 |
+| 01:14 | Edited ../ai-usage-tray/TrayContext.cs | 2→5 lines | ~77 |
+| 01:14 | Edited ../ai-usage-tray/TrayContext.cs | expanded (+9 lines) | ~164 |
+| 01:14 | Edited ../ai-usage-tray/TrayContext.cs | added 2 condition(s) | ~335 |
+| 01:15 | Edited ../ai-usage-tray/TrayContext.cs | 2→2 lines | ~59 |
+| 01:15 | Edited ../ai-usage-tray/TrayContext.cs | 4→4 lines | ~40 |
+| 01:15 | Edited ../ai-usage-tray/Config.cs | 1→2 lines | ~39 |
+| 01:15 | Edited ../ai-usage-tray/UsageFetcher.cs | modified GetDouble() | ~65 |
+| 01:15 | Edited ../ai-usage-tray/UsageFetcher.cs | modified AddClaudeWindow() | ~259 |
+| 01:16 | Edited ../ai-usage-tray/UsageFetcher.cs | added 1 condition(s) | ~134 |
+| 01:16 | Edited ../ai-usage-tray/DetailsForm.cs | 4→6 lines | ~121 |
+| 01:16 | Edited ../ai-usage-tray/DetailsForm.cs | 6→6 lines | ~65 |
+| 01:16 | Edited ../ai-usage-tray/DetailsForm.cs | added nullish coalescing | ~111 |
+| 01:17 | Edited ../ai-usage-tray/DetailsForm.cs | added 1 condition(s) | ~127 |
+| 01:17 | Edited ../ai-usage-tray/TrayContext.cs | PromoteTrayIcon() → TryPromoteOnce() | ~66 |
+| 01:17 | Edited ../ai-usage-tray/TrayContext.cs | added 2 condition(s) | ~388 |
+| 01:18 | Edited ../ai-usage-tray/Config.cs | 2→5 lines | ~54 |
+| 01:21 | Created C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_ai_usage_tray.md | — | ~270 |
+| 01:21 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/reference_git_proxy.md | inline fix | ~38 |
+| 01:21 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/reference_git_proxy.md | 1→2 lines | ~63 |
+| 01:23 | Session end: 42 writes across 13 files (probe_usage.py, CLAUDE.md, AiUsageTray.csproj, Config.cs, UsageFetcher.cs) | 17 reads | ~15700 tok |
+| 01:30 | Created ../ai-usage-tray/DetailsForm.cs | — | ~3087 |
+| 01:32 | Edited ../ai-usage-tray/DetailsForm.cs | 3→3 lines | ~57 |
+| 01:32 | Edited ../ai-usage-tray/DetailsForm.cs | modified if() | ~75 |
+| 01:32 | Edited ../ai-usage-tray/DetailsForm.cs | 7→8 lines | ~99 |
+| 01:32 | Edited ../ai-usage-tray/DetailsForm.cs | 3→6 lines | ~63 |
+| 01:33 | Edited ../ai-usage-tray/DetailsForm.cs | expanded (+7 lines) | ~89 |
+| 01:34 | Edited ../ai-usage-tray/DetailsForm.cs | added 1 condition(s) | ~204 |
+| 01:36 | Edited ../ai-usage-tray/Config.cs | 2→6 lines | ~66 |
+| 01:36 | Edited ../ai-usage-tray/TrayContext.cs | 2→3 lines | ~42 |
+| 01:36 | Edited ../ai-usage-tray/DetailsForm.cs | added 1 condition(s) | ~195 |
+| 01:36 | Edited ../ai-usage-tray/DetailsForm.cs | added 1 condition(s) | ~184 |
+| 01:39 | Session end: 53 writes across 13 files (probe_usage.py, CLAUDE.md, AiUsageTray.csproj, Config.cs, UsageFetcher.cs) | 21 reads | ~20159 tok |
+
+## Session: 2026-07-04 08:19
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 14:42 | Created backend/alembic/versions/047_expo_color_scene.py | — | ~361 |
+| 14:43 | Edited backend/app/expo/models.py | modified ExpoSession() | ~131 |
+| 14:43 | Edited backend/app/expo/models.py | 4→6 lines | ~149 |
+| 14:43 | Edited backend/app/expo/schemas.py | modified GenerateRequest() | ~117 |
+| 14:43 | Edited backend/app/expo/ai_pipeline.py | modified resolve_scenes() | ~2038 |
+| 14:44 | Edited backend/app/expo/ai_pipeline.py | 6→7 lines | ~122 |
+| 14:44 | Edited backend/app/expo/service.py | added 1 import(s) | ~36 |
+| 14:44 | Edited backend/app/expo/service.py | modified create_session() | ~254 |
+| 14:44 | Edited backend/app/expo/service.py | 22→26 lines | ~278 |
+| 14:44 | Edited backend/app/expo/service.py | modified list_hair_colors() | ~389 |
+| 14:44 | Edited backend/app/expo/router.py | modified create_session() | ~179 |
+| 14:45 | Edited backend/app/expo/router.py | modified generate() | ~492 |
+| 14:45 | Edited backend/app/expo/router.py | 2→2 lines | ~38 |
+| 14:45 | Edited frontend/src/api/expo.js | modified createSession() | ~92 |
+| 14:45 | Edited frontend/src/api/expo.js | modified generateResults() | ~138 |
+| 14:45 | Edited frontend/src/views/expo/composables/useTryOnFlow.js | 12→13 lines | ~144 |
+| 14:45 | Edited frontend/src/views/expo/composables/useTryOnFlow.js | modified useTryOnFlow() | ~172 |
+| 14:45 | Edited frontend/src/views/expo/composables/useTryOnFlow.js | modified resetAll() | ~190 |
+| 14:46 | Edited frontend/src/views/expo/composables/useTryOnFlow.js | added error handling | ~320 |
+| 14:46 | Edited frontend/src/views/expo/composables/useTryOnFlow.js | modified if() | ~42 |
+| 14:46 | Edited frontend/src/views/expo/composables/useTryOnFlow.js | added 1 condition(s) | ~244 |
+| 14:46 | Edited frontend/src/views/expo/composables/useTryOnFlow.js | 7→9 lines | ~116 |
+| 14:46 | Edited frontend/src/views/expo/ExpoKiosk.vue | 7→8 lines | ~146 |
+| 14:46 | Edited frontend/src/views/expo/ExpoKiosk.vue | added 1 import(s) | ~55 |
+| 14:46 | Edited frontend/src/views/expo/ExpoKiosk.vue | CSS: scene | ~66 |
+| 14:46 | Edited frontend/src/views/expo/kiosk/AttractScreen.vue | 9→13 lines | ~108 |
+| 14:46 | Edited frontend/src/views/expo/kiosk/AttractScreen.vue | expanded (+13 lines) | ~90 |
+| 14:47 | Edited frontend/src/views/expo/kiosk/MatchingScreen.vue | CSS: on, on, background | ~259 |
+| 14:47 | Edited frontend/src/views/expo/kiosk/MatchingScreen.vue | expanded (+25 lines) | ~334 |
+| 14:47 | Edited frontend/src/views/expo/kiosk/MatchingScreen.vue | CSS: padding-top | ~44 |
+| 14:47 | Edited frontend/src/views/expo/kiosk/MatchingScreen.vue | inline fix | ~17 |
+| 14:47 | Created frontend/src/views/expo/kiosk/SceneScreen.vue | — | ~744 |
+| 14:48 | Edited frontend/src/views/expo/kiosk/ResultScreen.vue | 5→6 lines | ~102 |
+| 14:48 | Edited frontend/src/views/expo/kiosk/ResultScreen.vue | CSS: i, background | ~82 |
+| 14:48 | Edited frontend/src/views/expo/kiosk/ResultScreen.vue | 4→5 lines | ~102 |
+| 14:48 | Edited frontend/src/views/expo/kiosk/ResultScreen.vue | 7→12 lines | ~157 |
+| 14:48 | Edited frontend/src/views/expo/kiosk/ResultScreen.vue | expanded (+6 lines) | ~132 |
+| 14:48 | Edited frontend/src/views/expo/kiosk/ResultScreen.vue | 2→2 lines | ~38 |
+| 14:50 | Edited docs/api-reference.md | 2→3 lines | ~159 |
+| 14:51 | Edited docs/database.md | 6→6 lines | ~259 |
+| 14:51 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_expo_module.md | expanded (+7 lines) | ~199 |
+| 14:52 | Session end: 41 writes across 16 files (047_expo_color_scene.py, models.py, schemas.py, ai_pipeline.py, service.py) | 21 reads | ~36898 tok |
+| 14:59 | Edited backend/app/expo/ai_pipeline.py | modified start_composites() | ~478 |
+| 14:59 | Edited backend/app/expo/ai_pipeline.py | 7→12 lines | ~201 |
+| 14:59 | Edited backend/app/expo/router.py | expanded (+7 lines) | ~373 |
+| 15:00 | Edited backend/app/expo/router.py | inline fix | ~17 |
+| 15:00 | Edited backend/app/expo/service.py | 6→7 lines | ~70 |
+| 15:00 | Edited frontend/src/views/expo/composables/useTryOnFlow.js | added 2 condition(s) | ~169 |
+| 15:00 | Edited frontend/src/views/expo/composables/useTryOnFlow.js | 4→9 lines | ~139 |
+| 15:00 | Edited frontend/src/views/expo/composables/useTryOnFlow.js | 2→2 lines | ~40 |
+| 15:00 | Edited frontend/src/views/expo/kiosk/ResultScreen.vue | 3→8 lines | ~132 |
+| 15:00 | Edited frontend/src/views/expo/kiosk/ResultScreen.vue | 1→2 lines | ~46 |
+| 15:00 | Edited frontend/src/views/expo/kiosk/ResultScreen.vue | 2→2 lines | ~79 |
+| 15:00 | Edited frontend/src/views/expo/kiosk/ResultScreen.vue | added 1 condition(s) | ~77 |
+| 15:00 | Edited frontend/src/views/expo/kiosk/ResultScreen.vue | CSS: margin-top, height, padding | ~90 |
+| 15:00 | Edited frontend/src/views/expo/kiosk/SalesPanel.vue | inline fix | ~23 |
+| 15:01 | Edited frontend/src/views/expo/kiosk/SalesPanel.vue | added 1 condition(s) | ~96 |
+| 15:01 | Edited frontend/src/views/expo/kiosk/CaptureScreen.vue | 4→4 lines | ~53 |
+| 15:01 | Edited frontend/src/views/expo/ExpoLeads.vue | inline fix | ~42 |
+| 15:01 | Edited frontend/src/views/expo/kiosk/CaptureScreen.vue | 3→4 lines | ~44 |
+| 15:01 | Edited backend/alembic/versions/047_expo_color_scene.py | modified downgrade() | ~56 |
+| 15:02 | Created backend/tests/test_expo_color_scene.py | — | ~1137 |
+| 15:03 | Session end: 61 writes across 20 files (047_expo_color_scene.py, models.py, schemas.py, ai_pipeline.py, service.py) | 22 reads | ~40306 tok |
+| 16:36 | Edited docs/architecture.md | inline fix | ~84 |
+| 16:36 | Edited docs/architecture.md | 2→2 lines | ~61 |
+| 16:36 | Edited docs/handoff.md | "045_expo_tryon" → "047_expo_color_scene" | ~14 |
+| 16:37 | Edited docs/handoff.md | 5→6 lines | ~155 |
+| 16:37 | Edited docs/handoff.md | inline fix | ~16 |
+| 16:37 | Edited docs/handoff.md | inline fix | ~9 |
+| 16:38 | Edited docs/module-notes.md | expanded (+16 lines) | ~352 |
+| 16:38 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_expo_module.md | inline fix | ~28 |
+| 16:39 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/MEMORY.md | inline fix | ~28 |
+| 16:39 | Edited docs/requirements/2026-07-03-expo-ai-wig-tryon.md | 1→2 lines | ~56 |
+| 16:40 | Session end: 71 writes across 25 files (047_expo_color_scene.py, models.py, schemas.py, ai_pipeline.py, service.py) | 28 reads | ~46026 tok |
+| 22:09 | Session end: 71 writes across 25 files (047_expo_color_scene.py, models.py, schemas.py, ai_pipeline.py, service.py) | 28 reads | ~46026 tok |
+
+## Session: 2026-07-06 15:09
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-07-06 15:27
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+
+## Session: 2026-07-06 15:31
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 16:58 | Created C:/Users/windb/Desktop/上半年总结-完整版.md | — | ~1834 |
+| 17:06 | Created C:/Users/windb/Desktop/上半年总结-完整版.md | — | ~2008 |
+| 17:06 | Edited docs/handoff.md | inline fix | ~14 |
+| 17:09 | Created C:/Users/windb/Desktop/上半年汇报.html | — | ~6582 |
+| 17:12 | Created C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_h1_2026_report.md | — | ~176 |
+| 17:13 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/MEMORY.md | 1→2 lines | ~46 |
+| 17:13 | Session end: 6 writes across 5 files (上半年总结-完整版.md, handoff.md, 上半年汇报.html, project_h1_2026_report.md, MEMORY.md) | 12 reads | ~21814 tok |
+| 17:42 | Created C:/Users/windb/Desktop/上半年汇报.html | — | ~4878 |
+| 17:42 | Edited C:/Users/windb/Desktop/上半年汇报.html | inline fix | ~18 |
+| 17:44 | Session end: 8 writes across 5 files (上半年总结-完整版.md, handoff.md, 上半年汇报.html, project_h1_2026_report.md, MEMORY.md) | 15 reads | ~27060 tok |
+| 18:40 | Created C:/Users/windb/Desktop/上半年汇报.html | — | ~6938 |
+| 18:42 | Session end: 9 writes across 5 files (上半年总结-完整版.md, handoff.md, 上半年汇报.html, project_h1_2026_report.md, MEMORY.md) | 19 reads | ~34494 tok |
+| 21:04 | Session end: 9 writes across 5 files (上半年总结-完整版.md, handoff.md, 上半年汇报.html, project_h1_2026_report.md, MEMORY.md) | 19 reads | ~34494 tok |
+| 00:01 | Edited C:/Users/windb/Downloads/08_Code_Dev/2026-07-06_上半年汇报_02.html | inline fix | ~27 |
+| 00:01 | Edited C:/Users/windb/Downloads/08_Code_Dev/2026-07-06_上半年汇报_02.html | 20 → 18 | ~9 |
+| 00:01 | Edited C:/Users/windb/Downloads/08_Code_Dev/2026-07-06_上半年汇报_02.html | 2→2 lines | ~24 |
+| 00:01 | Edited C:/Users/windb/Downloads/08_Code_Dev/2026-07-06_上半年汇报_02.html | inline fix | ~14 |
+| 00:02 | Edited C:/Users/windb/Downloads/08_Code_Dev/2026-07-06_上半年汇报_02.html | expanded (+7 lines) | ~293 |
+| 00:02 | Edited C:/Users/windb/Downloads/08_Code_Dev/2026-07-06_上半年汇报_02.html | removed 19 lines | ~14 |
+| 00:02 | Edited C:/Users/windb/Downloads/08_Code_Dev/2026-07-06_上半年汇报_02.html | modified media() | ~327 |
+| 00:02 | Edited C:/Users/windb/Downloads/08_Code_Dev/2026-07-06_上半年汇报_02.html | removed 22 lines | ~10 |
+| 00:04 | Session end: 17 writes across 6 files (上半年总结-完整版.md, handoff.md, 上半年汇报.html, project_h1_2026_report.md, MEMORY.md) | 21 reads | ~35263 tok |
+| 09:10 | Edited C:/Users/windb/Downloads/08_Code_Dev/2026-07-06_上半年汇报_02.html | modified media() | ~688 |
+| 09:12 | Edited C:/Users/windb/Downloads/08_Code_Dev/2026-07-06_上半年汇报_02.html | reduced (-10 lines) | ~611 |
+| 09:14 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_h1_2026_report.md | 5→7 lines | ~167 |
+| 09:15 | Session end: 20 writes across 6 files (上半年总结-完整版.md, handoff.md, 上半年汇报.html, project_h1_2026_report.md, MEMORY.md) | 23 reads | ~36833 tok |
+
+## Session: 2026-07-07 09:19
+
+| Time | Action | File(s) | Outcome | ~Tokens |
+|------|--------|---------|---------|--------|
+| 09:24 | Created backend/alembic/versions/048_expo_hair_colors.py | — | ~521 |
+| 09:25 | Edited backend/app/expo/models.py | modified ExpoHairColor() | ~287 |
+| 09:25 | Edited backend/app/expo/schemas.py | "发色 ark_color_palette.id，不" → "发色库 ark_expo_hair_colors." | ~31 |
+| 09:25 | Edited backend/app/expo/schemas.py | modified HairColorUpsert() | ~141 |
+| 09:25 | Edited backend/app/expo/service.py | 10→10 lines | ~73 |
+| 09:25 | Edited backend/app/expo/service.py | modified list_hair_colors() | ~533 |
+| 09:26 | Edited backend/app/expo/service.py | modified upsert_hair_color() | ~145 |
+| 09:26 | Edited backend/app/expo/ai_pipeline.py | expanded (+10 lines) | ~257 |
+| 09:26 | Edited backend/app/expo/ai_pipeline.py | modified _color_swatch_path() | ~229 |
+| 09:26 | Edited backend/app/expo/ai_pipeline.py | modified exists() | ~182 |
+| 09:26 | Edited backend/app/expo/router.py | modified list_hair_colors() | ~106 |
+| 09:27 | Edited backend/app/expo/router.py | modified create_hair_color() | ~555 |
+| 09:27 | Edited backend/app/expo/router.py | added 1 import(s) | ~39 |
+| 09:27 | Edited backend/app/expo/router.py | 12→16 lines | ~98 |
+| 09:27 | Edited frontend/src/api/expo.js | modified getHairColors() | ~33 |
+| 09:27 | Edited frontend/src/api/expo.js | modified createHairColor() | ~137 |
+| 09:28 | Created frontend/src/views/expo/HairColorLibrary.vue | — | ~2027 |
+| 09:28 | Edited frontend/src/config/navigation.js | 2→2 lines | ~18 |
+| 09:28 | Edited frontend/src/config/navigation.js | expanded (+11 lines) | ~114 |
+| 09:28 | Edited frontend/src/views/expo/kiosk/MatchingScreen.vue | 1→2 lines | ~49 |
+| 09:28 | Edited frontend/src/views/expo/kiosk/MatchingScreen.vue | CSS: object-fit, flex | ~35 |
+| 09:29 | Edited backend/tests/test_expo_color_scene.py | modified test_color_clause_text_mode_carries_description() | ~384 |
+| 09:29 | Edited backend/tests/test_expo_color_scene.py | modified test_build_prompt_tryon_appends_color_clause() | ~368 |
+| 09:31 | Edited docs/api-reference.md | 2→2 lines | ~104 |
+| 09:31 | Edited docs/database.md | 3→4 lines | ~139 |
+| 09:31 | Edited docs/database.md | inline fix | ~68 |
+| 09:31 | Edited docs/module-notes.md | inline fix | ~118 |
+| 09:38 | Edited backend/app/expo/service.py | modified items() | ~144 |
+| 09:38 | Edited backend/app/expo/service.py | added 1 import(s) | ~26 |
+| 09:38 | Edited backend/app/expo/router.py | modified list_hair_colors() | ~71 |
+| 09:38 | Edited backend/app/expo/router.py | modified list_wigs() | ~63 |
+| 09:38 | Edited backend/app/expo/models.py | "生成时选定的发色快照（palette_id/cod" → "发色快照（048 起 hair_color_id/" | ~41 |
+| 09:38 | Edited frontend/src/views/expo/kiosk/ResultScreen.vue | "{ background: current.hai" → "{ background: current.hai" | ~31 |
+| 09:38 | Edited backend/tests/test_expo_color_scene.py | 7→11 lines | ~90 |
+| 09:39 | Edited backend/tests/test_expo_color_scene.py | modified _color_body() | ~473 |
+| 09:40 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_expo_module.md | inline fix | ~28 |
+| 09:40 | Edited C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/project_expo_module.md | "ark_color_palette" → "ark_expo_hair_colors" | ~145 |
+| 09:41 | Session end: 37 writes across 16 files (048_expo_hair_colors.py, models.py, schemas.py, service.py, ai_pipeline.py) | 22 reads | ~50999 tok |

@@ -18,7 +18,7 @@ import {
   Money, Refresh, List, Van, Upload, Box, Setting, Aim, Reading,
   MagicStick, Notebook, Calendar, Camera, EditPen, Stamp, TrendCharts,
   Lock, Lightning, Picture, Collection, CollectionTag, DataBoard,
-  DataLine, Printer,
+  DataLine, Printer, Brush,
 } from '@element-plus/icons-vue'
 
 /**
@@ -37,6 +37,16 @@ export const MENU_GROUPS = {
     title: '客户管理',
     icon: OfficeBuilding,
     anyPermission: ['customer:read', 'customer:write'],
+  },
+  invoice: {
+    title: '订单管理',
+    icon: Document,
+    anyPermission: ['invoice:read', 'invoice:write', 'invoice:sync'],
+  },
+  expo: {
+    title: '展会营销',
+    icon: MagicStick,
+    anyPermission: ['expo:read', 'expo:write', 'expo:admin'],
   },
   commission: {
     title: '提成管理',
@@ -149,6 +159,65 @@ export const NAV_ENTRIES = [
     },
   },
 
+  // ── 订单管理 ───────────────────────────────────────────
+  {
+    path: '/invoice/manage',
+    name: 'InvoiceManage',
+    component: () => import('@/views/invoice/InvoiceManage.vue'),
+    title: '订单发票管理',
+    anyPermission: ['invoice:read', 'invoice:write', 'invoice:sync'],
+    menu: {
+      group: 'invoice', title: '订单发票管理', icon: Document, order: 10,
+      anyPermission: ['invoice:read', 'invoice:write', 'invoice:sync'],
+    },
+  },
+
+  // ── 展会营销（AI 试戴；kiosk 全屏页在 router/index.js 顶层注册） ──
+  {
+    path: '/expo/wigs',
+    name: 'ExpoWigLibrary',
+    component: () => import('@/views/expo/WigLibrary.vue'),
+    title: '试戴发型库',
+    anyPermission: ['expo:read', 'expo:admin'],
+    menu: {
+      group: 'expo', title: '试戴发型库', icon: Picture, order: 10,
+      anyPermission: ['expo:read', 'expo:admin'],
+    },
+  },
+  {
+    path: '/expo/hair-colors',
+    name: 'ExpoHairColorLibrary',
+    component: () => import('@/views/expo/HairColorLibrary.vue'),
+    title: '试戴发色库',
+    anyPermission: ['expo:read', 'expo:admin'],
+    menu: {
+      group: 'expo', title: '试戴发色库', icon: Brush, order: 15,
+      anyPermission: ['expo:read', 'expo:admin'],
+    },
+  },
+  {
+    path: '/expo/scripts',
+    name: 'ExpoScriptLibrary',
+    component: () => import('@/views/expo/ScriptLibrary.vue'),
+    title: '话术卡库',
+    anyPermission: ['expo:read', 'expo:admin'],
+    menu: {
+      group: 'expo', title: '话术卡库', icon: Reading, order: 20,
+      anyPermission: ['expo:read', 'expo:admin'],
+    },
+  },
+  {
+    path: '/expo/leads',
+    name: 'ExpoLeads',
+    component: () => import('@/views/expo/ExpoLeads.vue'),
+    title: '展会线索台',
+    anyPermission: ['expo:read'],
+    menu: {
+      group: 'expo', title: '展会线索台', icon: Aim, order: 30,
+      anyPermission: ['expo:read'],
+    },
+  },
+
   // ── 提成管理 ───────────────────────────────────────────
   {
     path: '/payment/sync',
@@ -161,13 +230,31 @@ export const NAV_ENTRIES = [
     },
   },
   {
+    path: '/commission/my',
+    name: 'SalesCommission',
+    component: () => import('@/views/commission/SalesCommission.vue'),
+    title: '我的提成',
+    menu: {
+      group: 'commission', title: '我的提成', icon: Money, order: 20,
+      anyPermission: ['commission:self_read', 'commission:read', 'commission:write'],
+    },
+  },
+  {
+    path: '/commission/my/:batchId/details',
+    name: 'SalesCommissionDetail',
+    component: () => import('@/views/commission/SalesCommissionDetail.vue'),
+    title: '我的提成明细',
+    hideInMenu: true,
+    anyPermission: ['commission:self_read', 'commission:read', 'commission:write'],
+  },
+  {
     path: '/commission/batch',
     name: 'CommissionBatch',
     component: () => import('@/views/commission/CommissionBatch.vue'),
     title: '提成批次',
     menu: {
-      group: 'commission', title: '提成批次', icon: List, order: 20,
-      anyPermission: ['commission:read', 'commission:write', 'commission:self_read'],
+      group: 'commission', title: '提成批次', icon: List, order: 30,
+      anyPermission: ['commission:read', 'commission:write'],
     },
   },
   {
@@ -176,6 +263,7 @@ export const NAV_ENTRIES = [
     component: () => import('@/views/commission/CommissionDetail.vue'),
     title: '提成明细',
     hideInMenu: true,
+    anyPermission: ['commission:read', 'commission:write'],
   },
 
   // ── 物流管理 ───────────────────────────────────────────

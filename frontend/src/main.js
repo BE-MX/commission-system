@@ -10,6 +10,7 @@ import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import App from './App.vue'
 import router from './router'
 import GlassButton from './components/GlassButton.vue'
+import { registerPermissionDirectives } from './directives/permission'
 
 const app = createApp(App)
 
@@ -18,6 +19,7 @@ for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
 }
 
 app.component('GlassButton', GlassButton)
+registerPermissionDirectives(app)   // v-permission / v-any-permission（按钮级权限）
 
 app.use(createPinia())
 app.use(ElementPlus, { locale: zhCn })

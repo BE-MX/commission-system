@@ -5,7 +5,7 @@ import re
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.core.database import SessionLocal
+from app.core.database import get_db
 from app.auth.dependencies import require_permission, require_any_permission
 from app.production import (
     process_service, route_service, binding_service, report_service,
@@ -14,14 +14,6 @@ from app.production import (
 from app.production.schemas import *
 
 router = APIRouter()
-
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 # ════════════════════════════════════════════════════════════

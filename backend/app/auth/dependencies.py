@@ -41,7 +41,7 @@ def require_permission(*permissions: str):
 
     用法:
         @router.get("/some-endpoint")
-        def handler(current_user=Depends(require_permission("commission:read_all"))):
+        def handler(current_user=Depends(require_permission("commission:read"))):
             ...
     """
     def permission_checker(current_user: dict = Depends(get_current_user)):

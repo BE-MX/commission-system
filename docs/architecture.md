@@ -1,12 +1,12 @@
 # 莱莎方舟平台 架构说明
 
 > **版本**：v1.0  
-> **最后更新**：2026-07-01  
+> **最后更新**：2026-07-03  
 > **目标读者**：技术接手人、新后端开发
 
 ## 系统概览
 
-莱莎方舟平台，企业内部综合后台，十八大模块：提成管理、物流跟踪、运单上传（AI OCR）、设计预约、认证与 RBAC、AI 接入、方舟洞见（含客户机会台 + 客户经营雷达）、素材管理、发色数字化、备货管理、生产订单、生产报工、报表中心（Stimulsoft）、微信小程序、数据概念治理、WhatsApp 同步、钉钉集成。
+莱莎方舟平台，企业内部综合后台，二十大模块：提成管理、订单发票管理、展会 AI 试戴（内贸「莱莎健康假发」）、物流跟踪、运单上传（AI OCR）、设计预约、认证与 RBAC、AI 接入、方舟洞见（含客户机会台 + 客户经营雷达）、素材管理、发色数字化、备货管理、生产订单、生产报工、报表中心（Stimulsoft）、微信小程序、数据概念治理、WhatsApp 同步、钉钉集成、短链服务。
 
 ### 部署架构
 
@@ -67,6 +67,8 @@
 - `app/production/` — 生产报工（router/models/schemas/service facade + process / route / binding / report / dashboard_service）
 - `app/report/` — 报表中心（router/models/schemas/data_service / category_service / docx_export）
 - `app/governance/` — 数据概念治理（router/models/schemas/service facade + concept / relationship / changelog / import_service）
+- `app/invoice/` — 订单发票管理（router/models/schemas/service + product_service / export_service / xiaoman_service）
+- `app/expo/` — 展会 AI 试戴（router/models/schemas/service + matching 规则匹配引擎 + ai_pipeline 三管线（面容分析/效果图合成/双轨话术）+ script_service 话术卡库；合成双入口 mode=tryon 换发（可选发色，快照注入 prompt）/ scene 佩戴实拍生成场景大片（跳过分析，场景清单 `ai_pipeline.SCENES` 服务端硬编码）；匹配权重 `config/expo_matching.yaml`；设计文档 `docs/requirements/2026-07-03-expo-ai-wig-tryon.md`）
 - `app/mini/` — 微信小程序端（router/service/auth/schemas — 扫码报工/历史/总览/撤销/登录绑定）
 
 ## 前端结构
@@ -101,7 +103,8 @@ frontend/src/
 | `sys_dict` | 系统字典 | `(type, code)` 唯一索引 |
 | `ark_users` | 用户表 | `dingtalk_id`, `wx_id`（微信 FromUserName） |
 | `ark_roles` | 角色表 | - |
-| `ark_permissions` | 权限表 | `permission_code` 唯一 |
+| `ark_permissions` | 权限表 | `code` 唯一；046 起含 kind/is_legacy/sort 元数据 |
+| `ark_permission_audit` | 角色权限变更审计 | added_codes/removed_codes JSON（046 迁移） |
 | `ark_user_roles` | 用户-角色关联 | - |
 | `ark_role_permissions` | 角色-权限关联 | - |
 | `shipment_tracking` | 运单跟踪 | `waybill_no` 唯一，`unified_status`, `last_pushed_status` |
@@ -127,6 +130,16 @@ frontend/src/
 | `ark_whatsapp_accounts` | WhatsApp 账号 | `account_uid` 唯一 |
 | `data_concepts` | 数据概念 | `id` VARCHAR(64) 语义化业务 ID |
 | `ark_report_templates` | 报表模板 | `report_code` 唯一 |
+| `commission_batch_feedback` | 提成批次反馈 | `batch_id` FK, `ark_user_id` |
+| `commission_batch_confirmation` | 提成批次确认 | `(batch_id, ark_user_id)` 唯一 |
+| `ark_invoices` | 订单发票主表 | `invoice_no` 唯一, `customer_id`, `status` |
+| `ark_invoice_items` | 发票明细 | `invoice_id` FK CASCADE |
+| `ark_expo_customers` | 展会试戴客户 | `consent_at` 非空才允许存照片 |
+| `ark_expo_wigs` | 试戴发型库 | `model_no` 唯一, `series`(classic/zhizhen), `fit_tags` JSON |
+| `ark_expo_scripts` | 话术卡库 | 营销文档结构化落点, 写入时禁用词校验 |
+| `ark_expo_sessions` | 试戴会话 | `mode`(tryon/scene) 双入口, `analysis_json.internal` 仅销售端可见 |
+| `ark_expo_results` | 试戴效果图 | `wig_id` 可空(scene), `hair_color_json` 发色快照, `scene_json` 场景快照, `short_code` 分享短码, `reaction`(loved/soso) |
+| `ark_expo_feedback` | 销售反馈 | `intent_level`(A/B/C/D) 直通客户机会台口径 |
 
 完整表结构见 `backend/sql/` 或 `alembic/versions/`。
 
@@ -142,8 +155,9 @@ frontend/src/
 ### 认证与权限
 
 - JWT Access Token（短期）+ Refresh Token（HttpOnly Cookie，路径 `/api/auth`）
-- 权限粒度：模块级 + 操作级（read / write / admin）
+- 权限粒度：模块级 + 操作级（read / write / admin）+ 数据范围级（kind=data，如 read_all/self_read，控查询口径不控显隐）
 - `super_admin` 角色绕过所有权限检查
+- **权限体系 2026-07-03 重设计**（方案见 `requirements/2026-07-03-permission-redesign.md`）：权限带 kind/is_legacy/sort 元数据（046 迁移），12 个历史死码已下架；角色配置为 23 行×5 列**权限矩阵抽屉**（模板套用/搜索/变更差异确认/按导航反查）；角色权限变更自动写 `ark_permission_audit` 审计；按钮级权限统一 `v-permission` / `v-any-permission` 全局指令
 
 ### 已定义权限（部分）
 
@@ -160,6 +174,9 @@ frontend/src/
 | `report:read` / `report:design` / `report:admin` | 报表中心（查看 / 编辑模板 / 删除模板） |
 | `governance:read` / `governance:write` / `governance:admin` | 数据概念治理（查看 / 创建编辑 / 审批废弃回滚） |
 | `whatsapp:read` / `whatsapp:write` / `whatsapp:admin` | WhatsApp 同步（查看 / 创建绑定同步 / 管理全部账号） |
+| `invoice:read` / `invoice:write` / `invoice:sync` | 订单发票（查看 / 创建编辑 / 同步到小满） |
+| `expo:read` / `expo:write` / `expo:admin` | 展会试戴（查看线索发型库 / 展位操作与反馈 / 库维护与删除客户数据） |
+| `dingtalk:admin` | 钉钉手动发送消息 / 查看消息与回调日志（2026-07-03 B-6 收口，原先仅登录即可） |
 
 完整权限清单见 `backend/app/auth/service.py` 的 `seed_role_permissions()`。
 
@@ -295,5 +312,5 @@ ACCIO WORK 询盘推送
 ## 参考资料
 
 - **项目根 CLAUDE.md**：完整的 AI 协作说明（930 行）
-- **alembic/versions/**：数据库迁移历史（039 个迁移文件）
+- **alembic/versions/**：数据库迁移历史（044 个迁移文件）
 - **backend/sql/**：DDL 脚本归档

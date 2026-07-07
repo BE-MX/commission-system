@@ -27,6 +27,18 @@ def build_chat_url(api_base: str, api_type: str = "openai") -> str:
     return f"{base}{suffix}"
 
 
+def build_image_url(api_base: str, endpoint: str = "edits") -> str:
+    """Build an OpenAI-compatible image endpoint URL."""
+    base = api_base.rstrip("/")
+    image_suffixes = ("/images/generations", "/images/edits", "/images/variations")
+    if any(base.endswith(s) for s in image_suffixes):
+        return base
+    clean_endpoint = endpoint.strip("/")
+    if any(base.endswith(v) for v in ("/v1", "/v2", "/v3", "/v4", "/api")):
+        return f"{base}/images/{clean_endpoint}"
+    return f"{base}/v1/images/{clean_endpoint}"
+
+
 def build_headers(provider: AiProvider, api_key: str | None) -> dict:
     """构造请求头。支持通过 extra_headers 自定义认证方式 (如 api-key)。
 

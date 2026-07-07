@@ -1,31 +1,32 @@
 # 莱莎方舟平台 项目交接清单
 
 > **版本**：v1.0  
-> **最后更新**：2026-07-01  
+> **最后更新**：2026-07-03  
 > **项目状态**：运行中，持续迭代
 
 ## 项目概况
 
 - **项目名称**：莱莎方舟平台（LeShine Ark Platform）
-- **开发周期**：2024-Q3 至今（约 15 个月）
+- **开发周期**：2026-03 至今（约 4 个月；git 仓库首次提交 2026-04-20）
 - **代码规模**：后端 ~25K 行 Python + 前端 ~18K 行 Vue + 微信小程序 ~3K 行
-- **数据库表数**：64 张（commission_db）
-- **数据库迁移数**：039 个（Alembic）
+- **数据库表数**：73 张（commission_db）
+- **数据库迁移数**：047（Alembic，最新 `047_expo_color_scene`）
 - **用户数**：~30 人（莱莎员工）
 - **日活**：~20 人
 - **部署环境**：生产（腾讯云 + 本地 Windows Server）
 
-## 已完成功能（2026-07-01）
+## 已完成功能（2026-07-03）
 
-### 核心业务模块（18 个）
+### 核心业务模块（20 个）
 
-1. ✅ **提成管理**：回款单计算、客户归属快照、批次管理
-2. ✅ **物流跟踪**：DHL/FedEx 自动轮询、关键状态推送、物流日报
-3. ✅ **运单上传**：图片 OCR（AI 多模态）+ 手动录入
-4. ✅ **设计预约**：申请/审批/排期、冲突检测、附件上传、钉钉通知
-5. ✅ **认证与 RBAC**：用户/角色/权限、JWT + Refresh Token Cookie
-6. ✅ **AI 接入**：Provider/Preset 管理、调用日志、API Key 加密存储
-7. ✅ **方舟洞见**：
+1. ✅ **提成管理**：回款单计算、客户归属快照、批次管理、业务员确认流程（confirming 状态 + 反馈/确认机制）
+2. ✅ **订单发票管理**：发票 CRUD、产品级联选择、Excel/PDF/HTML 导出、小满订单同步（预留）
+3. ✅ **物流跟踪**：DHL/FedEx 自动轮询、关键状态推送、物流日报
+4. ✅ **运单上传**：图片 OCR（AI 多模态）+ 手动录入
+5. ✅ **设计预约**：申请/审批/排期、冲突检测、附件上传、钉钉通知
+6. ✅ **认证与 RBAC**：用户/角色/权限、JWT + Refresh Token Cookie
+7. ✅ **AI 接入**：Provider/Preset 管理、调用日志、API Key 加密存储
+8. ✅ **方舟洞见**：
    - 信源配置（13 种 source_type）
    - 情报采集库（结构化条目 + 可信度标记）
    - 行业情报速览（AI 6 部分生成）
@@ -34,17 +35,23 @@
    - 周会纪要（AI 整理 + 任务跟踪）
    - **客户机会台**（ACCIO 询盘导入 + 归属解析 + 机会卡 + 话术）
    - **客户经营雷达**（活画像 + 事件流 + 6 线索分组 + 行动推荐）
-8. ✅ **素材管理**：标签化中台、AI 打标签、版本迭代、收藏分享、移动端独立页面
-9. ✅ **发色数字化**：色板数据库、混合色管理、色彩趋势、AI 色板图生成
-10. ✅ **备货管理**：安全库存设置、销量备货一览、库存日报、低库存钉钉推送
-11. ✅ **生产订单**：购物车 → 批量下单 → 订单跟踪 → 入库录入
-12. ✅ **生产报工**：工序管理 → 路线配置 → 产品绑定 → 扫码报工 → 生产看板
-13. ✅ **报表中心**：Stimulsoft Reports.JS（DOM 挂载 Viewer/Designer + 后端 JSON 数据 API）
-14. ✅ **微信小程序**：扫码报工 / 报工历史 / 报工总览 / 登录绑定
-15. ✅ **数据概念治理**：概念注册表 / 8 分区编辑器 / 关联关系 / 全景图谱 / 变更历史
-16. ✅ **WhatsApp 同步**：扫码绑定 / 会话消息拉取 / 附件投影 / 自动定时同步
-17. ✅ **钉钉集成**：工作通知（设计预约 + 物流状态）+ Webhook 推送 + 审批回调
-18. ✅ **短链服务**：统一短链生成（`/s/{code}` 双查找路由）
+9. ✅ **素材管理**：标签化中台、AI 打标签、版本迭代、收藏分享、移动端独立页面
+10. ✅ **发色数字化**：色板数据库、混合色管理、色彩趋势、AI 色板图生成
+11. ✅ **备货管理**：安全库存设置、销量备货一览、库存日报、低库存钉钉推送
+12. ✅ **生产订单**：购物车 → 批量下单 → 订单跟踪 → 入库录入
+13. ✅ **生产报工**：工序管理 → 路线配置 → 产品绑定 → 扫码报工 → 生产看板
+14. ✅ **报表中心**：Stimulsoft Reports.JS（DOM 挂载 Viewer/Designer + 后端 JSON 数据 API）
+15. ✅ **微信小程序**：扫码报工 / 报工历史 / 报工总览 / 登录绑定
+16. ✅ **数据概念治理**：概念注册表 / 8 分区编辑器 / 关联关系 / 全景图谱 / 变更历史
+17. ✅ **WhatsApp 同步**：扫码绑定 / 会话消息拉取 / 附件投影 / 自动定时同步
+18. ✅ **钉钉集成**：工作通知（设计预约 + 物流状态）+ Webhook 推送 + 审批回调
+19. ✅ **短链服务**：统一短链生成（`/s/{code}` 双查找路由）
+20. ✅ **展会 AI 试戴**（2026-07-03，内贸品牌「莱莎健康假发」，8 月展会用）：
+    - H5 kiosk（`/expo/kiosk` 全屏路由，展位 iPad 全天运行）：注册→拍照→AI 面容分析→规则匹配（至臻锚点）→效果图合成→前后对比滑块→销售双轨话术接力
+    - PC 端：试戴发型库 / 话术卡库（19 张种子卡已导入）/ 展会线索台
+    - 品牌视觉 2026-07-03 依《内贸品牌图》定稿：祖母绿×瓷白×樱粉（原型 v2-green 为准；kiosk 实现侧换肤待做）
+    - 合成双入口 + 发色选择（2026-07-04，047 迁移）：mode=tryon（换发，可选 `ark_color_palette` 发色快照注入合成 prompt）/ mode=scene（佩戴实拍直接生成商务/晚宴/咖啡/旅行/居家场景大片，跳过分析与话术）；含独立 agent 对抗性审查后的失败路径加固（整批失败重试出口、分析失败退回拍摄、生成中幂等挡板）
+    - **待完成**：效果图合成需图像编辑模型（ELBNT 账号仅 Claude 系无生图能力，`expo_wig_composite` preset 停用中，**发色/场景两条链路同样依赖它**）；发型库实拍图与 6 个月对比素材待市场部提供
 
 ### 基础设施
 
@@ -54,27 +61,34 @@
 - ✅ NSSM 服务托管（CommissionSystem + WhatsAppConnector 双服务）
 - ✅ 前端路由 + 菜单单一来源（`navigation.js`）
 - ✅ API client 统一（`clients.js` 集中导出，禁止自建 axios）
-- ✅ OpenWolf 项目管理（`.wolf/` 目录，anatomy/cerebrum/memory）
+- ✅ 项目记忆精简协议（`.wolf/cerebrum.md` 唯一教训库；anatomy/memory/buglog 已于 2026-07-03 停用存档）+ `scripts/check_conventions.py` 增量约定检查
+- ✅ 权限矩阵配置（2026-07-03：23×5 矩阵抽屉 + 6 角色模板 + 按导航反查 + 变更审计 + v-permission 指令；81 权限清理为 69 有效）
 
 ### 测试覆盖
 
 - ✅ 提成计算单元测试（27 个）
 - ✅ 设计预约状态机 + 冲突引擎测试（34 个）
 - ✅ Scheduler smoke 测试（10 个）
-- **总计 71 tests**
+- ✅ expo 匹配引擎 + 禁用词测试（13 个）+ 发色/场景双入口逻辑测试（13 个，2026-07-04）
+- ✅ tracking 状态映射（57）/ stock 状态判定（20）/ 提成批次状态机全矩阵（31）/ invoice 金额（14）——2026-07-03 B-8 补齐
+- ✅ invoice / whatsapp / payment 等模块测试
+- **总计 222 tests（2026-07-04 全绿）**
 
 ## 待办事项（优先级递减）
 
-### P0（关键）
+### P0（关键，8 月展会倒排）
 
-无当前 P0 任务，系统运行稳定。
+1. **展会试戴 W1 模型验证**：接入图像编辑模型（GPT-Image / Gemini 图像编辑等，ELBNT 当前账号无生图能力）→ 10 真人照 × 5 假发实测 → 改绑 `expo_wig_composite` preset 并启用
+2. **ELBNT 账号池额度**：2026-07-03 起全模型返回 `503 No available accounts`，影响 expo 分析/话术两个 preset 及既有 Claude preset，需查控制台配额
+3. **展会物料**（依赖市场部）：15~20 款短发多角度实拍图入发型库、6 个月对比素材、10+ 老客户证言
+4. **稳定性止血收尾（代码侧已完成 2026-07-03）**：调度告警/回滚脚本/备份脚本已落地，剩服务器上三个动作——①编辑 `deployackup-uploads.bat` 的 BACKUP_ROOT 指向备份盘并注册 schtasks 计划任务；②下次部署后演练一次 `rollback.bat`；③角色管理页给相关角色分配新权限 `dingtalk:admin`
 
 ### P1（重要）
 
-1. **补全测试覆盖**：
-   - tracking 轮询逻辑单元测试
+1. **补全测试覆盖**（2026-07-03 已补 122 个，剩余缺口）：
+   - tracking 轮询编排逻辑（poll_single 状态推进；状态映射已覆盖）
    - insight 完整链路集成测试
-   - stock 计算单元测试
+   - stock 跨库 SQL 聚合（状态判定纯函数已覆盖，SQL 需真实 MySQL）
    - design router 端到端测试
    - 目标：覆盖率 70%+
 
@@ -122,12 +136,17 @@
 | 债务项 | 影响范围 | 优先级 | 预计工时 |
 |--------|----------|--------|----------|
 | ORM relationship lazy 策略审查 | 全局（潜在 N+1 风险） | P1 | 2 天 |
-| 测试覆盖不足 | 回归测试信心 | P1 | 5 天 |
+| 测试覆盖（剩余：轮询编排/insight 链路/design e2e） | 回归测试信心 | P2 | 2 天 |
 | 批量循环服务 import 检查 | folder_upload / 类似批量逻辑 | P2 | 1 天 |
 | 前端大页面拆分 | 可维护性 | P2 | 3 天 |
 | 移动端全模块适配 | 用户体验 | P2 | 10 天 |
 
 ## 已知问题（非阻塞）
+
+0. **提成模块三个疑点**（2026-07-03 B-8 测试补齐时发现，测试已按现状固化，改行为前先改测试）：
+   - `confirm_batch` 的明细 update 不带 `status != "voided"` 过滤，理论上会把曾作废的明细改回 confirmed（当前整批作废场景下影响面小）
+   - `send_confirm` 中 `business_schema` 赋值后未使用（死代码）
+   - 状态机允许 calculated 跳过 confirming 直接 confirm（现状即设计；若要求必须先发业务员确认需收紧）
 
 1. **ACCIO 推送运单钉钉昵称不匹配**：暂存表 `dingtalk_user_name` 存中文昵称，与系统登录名不匹配，导致 `tracking:read` 用户看不到这类运单。建议：给提交人匹配加二级匹配 `dingtalk_user_id`。
 2. **TFT 微服务依赖外部**：`TFT_SERVICE_ENABLED=false` 时走公式兜底，预测准确率下降。建议：TFT 服务稳定后默认开启。
@@ -149,6 +168,7 @@
 | 任务 | 频率 | 负责人 |
 |------|------|--------|
 | 数据库备份验证 | 每月 | 运维 |
+| uploads/素材盘备份日志抽查（.deploy_stateackup.log） | 每月 | 运维 |
 | SSL 证书续期 | 每 60 天 | 运维 |
 | API Key 轮换 | 每季度 | 技术负责人 |
 | 日志清理 | 每月 | 运维 |
@@ -187,12 +207,19 @@
 | 文档 | 状态 | 说明 |
 |------|------|------|
 | [architecture.md](architecture.md) | ✅ | 系统架构、数据库表结构、核心模块说明 |
+| [api-reference.md](api-reference.md) | ✅ | 全模块 API 端点清单（自 CLAUDE.md 拆出，新端点同步更新） |
+| [database.md](database.md) | ✅ | 数据库表结构清单（自 CLAUDE.md 拆出，新表同步更新） |
+| [module-notes.md](module-notes.md) | ✅ | 模块专题笔记 + 各模块已踩坑（钉钉/报表/OCR/洞见管线等） |
 | [integration-guide.md](integration-guide.md) | ✅ | API 接入指南、认证方式、错误码、示例代码 |
 | [runbook.md](runbook.md) | ✅ | 部署步骤、运维命令、故障排查、环境变量清单 |
 | [handoff.md](handoff.md) | ✅ | 项目状态、已完成功能、待办清单、技术债务 |
 | [accio-work-integration-spec.md](accio-work-integration-spec.md) | ✅ | ACCIO WORK 集成规范（客户机会台） |
 | [requirements/2026-06-16-whatsapp-connector-contract.md](requirements/2026-06-16-whatsapp-connector-contract.md) | ✅ | WhatsApp Connector 契约 |
-| [../CLAUDE.md](../CLAUDE.md) | ✅ | AI 协作说明（930 行，项目根目录） |
+| [requirements/2026-07-02-order-invoice-management.md](requirements/2026-07-02-order-invoice-management.md) | ✅ | 订单发票管理需求文档 |
+| [requirements/2026-07-03-expo-ai-wig-tryon.md](requirements/2026-07-03-expo-ai-wig-tryon.md) | ✅ | 展会 AI 试戴设计开发文档（配套原型以品牌绿版 v2 为准） |
+| [requirements/2026-07-03-permission-redesign.md](requirements/2026-07-03-permission-redesign.md) | ✅ | 角色权限重设计方案（2026-07-03 已实施：046 迁移+矩阵 UI+审计） |
+| [2026-07-03-architecture-assessment.md](2026-07-03-architecture-assessment.md) | ✅ | 平台架构评估与改进路线图（问题清单 + 四批实施计划） |
+| [../CLAUDE.md](../CLAUDE.md) | ✅ | AI 协作说明（项目根目录） |
 | [../README.md](../README.md) | ✅ | 项目简介、快速开始、技术栈 |
 
 ## 交接确认清单
@@ -211,7 +238,9 @@
 
 ## 备注
 
-- 本项目使用 OpenWolf 管理（`.wolf/` 目录），AI 协作时会自动读取项目记忆
+- 项目记忆用精简版协议（2026-07-03 治理）：`.wolf/cerebrum.md` 是唯一教训库，anatomy/memory/buglog 已停用存档；模块知识在 AI 的 auto-memory
+- CLAUDE.md 已瘦身为 ~110 行宪法；API 清单在 `docs/api-reference.md`、表结构在 `docs/database.md`、模块专题在 `docs/module-notes.md`
+- 完工前跑 `python scripts/check_conventions.py`（增量约定检查，红=必须修）
 - 所有 UI 决策以 `DESIGN.md` 为准
 - 新增权限需修改 `seed_role_permissions()` 并重启后端
 - 数据库变更必须通过 Alembic migration

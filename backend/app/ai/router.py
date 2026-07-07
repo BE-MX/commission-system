@@ -2,11 +2,12 @@
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.auth.dependencies import require_permission
+from app.core.response import ok as _ok
 from app.ai import service
 from app.ai.schemas import (
     ProviderCreate, ProviderUpdate, PresetCreate, PresetUpdate,
@@ -17,10 +18,6 @@ from app.ai.schemas import (
 # 业务模块内部调用 (如 tracking OCR / insight 日报) 走 service.chat() 函数级,不经此 HTTP 入口,
 # 因此 HTTP 端点专门服务于前端 AI 管理页,统一管理员权限即可。
 router = APIRouter(dependencies=[Depends(require_permission("ai:admin"))])
-
-
-def _ok(data, message: str = "ok"):
-    return {"code": 200, "message": message, "data": data}
 
 
 def _mask_api_key(key: Optional[str]) -> str:
@@ -173,6 +170,31 @@ def test_preset(
     db: Session = Depends(get_db),
 ):
     result = service.test_preset(db, preset_id, data.test_message)
+    return _ok(result)
+
+
+@router.post("/presets/{preset_id}/test-multimodal")
+async def test_preset_multimodal(
+    preset_id: int,
+    test_message: str = Form(...),
+    image: UploadFile = File(...),
+    reference_image: UploadFile | None = File(None),
+    db: Session = Depends(get_db),
+):
+    image_bytes = await image.read()
+    reference_image_bytes = await reference_image.read() if reference_image else None
+    reference_content_type = None
+    if reference_image:
+        reference_content_type = reference_image.content_type or "application/octet-stream"
+    result = service.test_preset_with_image(
+        db,
+        preset_id,
+        test_message,
+        image_bytes,
+        image.content_type or "application/octet-stream",
+        reference_image_bytes=reference_image_bytes,
+        reference_content_type=reference_content_type,
+    )
     return _ok(result)
 
 

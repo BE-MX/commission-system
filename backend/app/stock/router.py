@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.auth.dependencies import require_permission
+from app.core.response import ok as _ok
 from app.stock import service
 from app.stock.schemas import (
     AutoGenerateRequest,
@@ -40,10 +41,6 @@ from app.stock.schemas import (
 
 logger = logging.getLogger("stock")
 router = APIRouter()
-
-
-def _ok(data, message: str = "ok", code: int = 200):
-    return {"code": code, "message": message, "data": data}
 
 
 def _get_user_id(user: dict) -> int:

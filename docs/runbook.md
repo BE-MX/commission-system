@@ -1,7 +1,7 @@
 # 莱莎方舟平台 运维手册
 
 > **版本**：v1.0  
-> **最后更新**：2026-07-01  
+> **最后更新**：2026-07-03  
 > **目标读者**：运维人员、项目交接人员
 
 ## 环境准备
@@ -63,6 +63,12 @@ WHATSAPP_AUTO_SYNC_ENABLED=true
 # TFT 微服务（可选）
 TFT_SERVICE_ENABLED=false
 TFT_SERVICE_URL=http://192.168.101.47:8003/predict
+
+# 素材存储（可选，2026-07-03 起走 Settings 统一管理，默认值即当前生产值）
+ASSET_STORAGE_ROOT=D:\WORKSOURCE
+ASSET_SIGN_SECRET=<签名密钥>
+ASSET_UPLOAD_STAGING=D:\upload_staging
+XPOZ_TARGET_ACCOUNTS=<逗号分隔账号，色彩趋势采集用>
 
 # 调度器
 SCHEDULER_ENABLED=true
@@ -296,6 +302,14 @@ nssm restart CommissionSystem
 2. 测试连通性：Provider 列表 → 点击「测试连接」
 3. 查看调用日志：AI 接入管理 → 调用日志
 4. 检查 API Key 是否过期或配额不足
+5. ELBNT-AI 返回 `503 No available accounts` = 该账号池当前无可用后端（配额问题），查 ELBNT 控制台，与本地配置无关
+
+### Q7：展会试戴（/expo/kiosk）异常
+
+1. **不出分析/话术**：按 Q6 排查 `expo_face_analysis` / `expo_sales_strategy` 两个 preset；话术生成失败会自动回落话术卡库原文（销售面板仍有内容），展台不冷场
+2. **不出效果图**：`expo_wig_composite` preset 需绑定支持图像编辑的模型并启用——ELBNT 账号仅 Claude 系（文本/视觉理解），无生图能力
+3. **提示权限不足**：确认账号有 `expo:write`；若右上角显示占位"用户"，硬刷新（Ctrl+F5）重新拉取登录态
+4. 客户照片与效果图存 `uploads/expo/`（photos/results/wigs 三个子目录），属 `/uploads` 备份范围；客户数据删除走线索台「删除」（物理删除照片）
 
 ## 日志位置
 
@@ -315,6 +329,25 @@ nssm restart CommissionSystem
 - 每日凌晨 2:00 全量备份
 - 保留 7 天
 - 恢复方式：腾讯云控制台 → RDS → 备份恢复
+
+### 素材与上传文件备份（2026-07-03 新增，架构评估 S7）
+
+`uploads/`（设计附件/头像/报告 HTML/expo 客户照片）与 `D:\WORKSOURCE`（素材中台全部文件）此前**零备份**——盘坏即全量丢失。备份脚本：`deploy\backup-uploads.bat`（robocopy /MIR 镜像到另一块盘）。
+
+**服务器上一次性注册每晚计划任务（管理员 cmd）**：
+```
+schtasks /create /tn ArkUploadsBackup /tr "D:\commission-system\deploy\backup-uploads.bat" /sc daily /st 02:30 /ru SYSTEM
+```
+⚠️ 使用前编辑脚本中 `BACKUP_ROOT`（默认 `E:\ark_backup`）指向**另一块物理盘或 NAS**；备份日志在 `.deploy_state\backup.log`，每月抽查一次。
+
+### 部署回滚（2026-07-03 新增，架构评估 S8）
+
+`deploy.bat` 现在每次部署前自动打快照（`[0/7]`：git tag `deploy-last` + dist 产物留档到 `.deploy_state\`）。一次坏部署的恢复：
+
+```
+deploy\rollback.bat     # 代码回到上次部署 commit + 恢复 dist + 同步云端 + 重启服务
+```
+数据库迁移不自动回滚（RDS 自动备份兜底）；若新版本跑过不兼容迁移，先查 `alembic current` 再人工评估。恢复到最新代码：`git checkout main` 后重跑 deploy.bat。
 
 ### 代码备份
 

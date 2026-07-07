@@ -42,6 +42,7 @@
       <el-table-column label="操作" min-width="340" max-width="480" fixed="right">
         <template #default="{ row }">
           <GlassButton variant="link" left-icon="Edit" @click="openEditDialog(row)">编辑</GlassButton>
+          <GlassButton variant="link" left-icon="Lock" @click="openPermPreview(row)">权限</GlassButton>
           <GlassButton variant="link" left-icon="Connection" @click="handleSyncDingtalk(row)" :disabled="!row.phone || !!row.dingtalk_id">同步钉钉</GlassButton>
           <GlassButton variant="link" left-icon="Key" @click="openResetPwdDialog(row)">重置密码</GlassButton>
           <GlassButton variant="link" :link-tone="row.is_active ? '' : 'success'" left-icon="SwitchButton" @click="handleToggleActive(row)">
@@ -136,6 +137,9 @@
         <GlassButton variant="primary" :loading="saving" @click="submitResetPwd">确定</GlassButton>
       </template>
     </el-dialog>
+
+    <!-- 有效权限预览 Drawer（多角色并集 · 只读矩阵） -->
+    <UserPermissionDrawer v-model="permPreviewVisible" :user="permPreviewUser" />
   </div>
 </template>
 
@@ -150,6 +154,7 @@ import {
 import { getActiveProcesses, getUserProcessBindings, updateUserProcessBindings, updateUserWxId } from '@/api/production'
 import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
 import { useTableSort } from '@/composables/useTableSort'
+import UserPermissionDrawer from './components/UserPermissionDrawer.vue'
 
 const { tableRef, maxHeight } = useTableMaxHeight()
 const orderSort = useTableSort()
@@ -329,6 +334,15 @@ async function handleDelete(row) {
 }
 
 onMounted(fetchList)
+
+// ── 有效权限预览 ────────────────────────────────────
+const permPreviewVisible = ref(false)
+const permPreviewUser = ref(null)
+
+function openPermPreview(row) {
+  permPreviewUser.value = row
+  permPreviewVisible.value = true
+}
 
 // ── 工序绑定 + 微信ID（编辑模式附加） ─────────────────
 const allProcesses = ref([])

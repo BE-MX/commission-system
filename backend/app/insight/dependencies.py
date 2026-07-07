@@ -15,7 +15,7 @@ from typing import Optional
 
 from fastapi import Depends, Header, HTTPException
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, require_any_permission, require_permission
 from app.core.config import get_settings
 
 logger = logging.getLogger("insight")
@@ -38,24 +38,11 @@ def _has_any_perm(user: dict, codes: list[str]) -> bool:
     return any(c in perms for c in codes)
 
 
-def _require_insight_view(user: dict = Depends(get_current_user)):
-    """统一基础查看权限:任意 insight:* 都可读普通报告。"""
-    if not _has_any_perm(user, ["insight:read", "insight:write", "insight:internal_read", "insight:admin"]):
-        raise HTTPException(status_code=403, detail="权限不足:需要 insight 任一权限")
-    return user
-
-
-def _require_insight_internal(user: dict = Depends(get_current_user)):
-    """内部经营报告查看:internal_read 或 admin。"""
-    if not _has_any_perm(user, ["insight:internal_read", "insight:admin"]):
-        raise HTTPException(status_code=403, detail="权限不足:需要 insight:internal_read")
-    return user
-
-
-def _require_insight_admin(user: dict = Depends(get_current_user)):
-    if not _has_perm(user, "insight:admin"):
-        raise HTTPException(status_code=403, detail="权限不足:需要 insight:admin")
-    return user
+# ── 权限依赖：统一委托 auth.dependencies 工厂（治理 B-6，行为不变：OR 语义 + super_admin 绕过）──
+_require_insight_view = require_any_permission(
+    "insight:read", "insight:write", "insight:internal_read", "insight:admin")
+_require_insight_internal = require_any_permission("insight:internal_read", "insight:admin")
+_require_insight_admin = require_permission("insight:admin")
 
 
 def _verify_import_api_key(authorization: Optional[str] = Header(None)):
@@ -72,42 +59,17 @@ def _verify_import_api_key(authorization: Optional[str] = Header(None)):
     return True
 
 
-# ── 客户机会台权限 ─────────────────────────────────────────
-def _require_opportunity_read(user: dict = Depends(get_current_user)):
-    if not _has_any_perm(user, ["customer_opportunity:read", "customer_opportunity:write", "customer_opportunity:manage"]):
-        raise HTTPException(status_code=403, detail="权限不足:需要 customer_opportunity:read")
-    return user
+# ── 客户机会台 / 客户经营雷达权限（同上，统一工厂）──────────
+_require_opportunity_read = require_any_permission(
+    "customer_opportunity:read", "customer_opportunity:write", "customer_opportunity:manage")
+_require_opportunity_write = require_any_permission(
+    "customer_opportunity:write", "customer_opportunity:manage")
+_require_opportunity_manage = require_permission("customer_opportunity:manage")
 
-
-def _require_opportunity_write(user: dict = Depends(get_current_user)):
-    if not _has_any_perm(user, ["customer_opportunity:write", "customer_opportunity:manage"]):
-        raise HTTPException(status_code=403, detail="权限不足:需要 customer_opportunity:write")
-    return user
-
-
-def _require_opportunity_manage(user: dict = Depends(get_current_user)):
-    if not _has_perm(user, "customer_opportunity:manage"):
-        raise HTTPException(status_code=403, detail="权限不足:需要 customer_opportunity:manage")
-    return user
-
-
-# ── 客户经营雷达权限 ─────────────────────────────────────────
-def _require_radar_read(user: dict = Depends(get_current_user)):
-    if not _has_any_perm(user, ["customer_radar:read", "customer_radar:write", "customer_radar:manage"]):
-        raise HTTPException(status_code=403, detail="权限不足:需要 customer_radar:read")
-    return user
-
-
-def _require_radar_write(user: dict = Depends(get_current_user)):
-    if not _has_any_perm(user, ["customer_radar:write", "customer_radar:manage"]):
-        raise HTTPException(status_code=403, detail="权限不足:需要 customer_radar:write")
-    return user
-
-
-def _require_radar_manage(user: dict = Depends(get_current_user)):
-    if not _has_perm(user, "customer_radar:manage"):
-        raise HTTPException(status_code=403, detail="权限不足:需要 customer_radar:manage")
-    return user
+_require_radar_read = require_any_permission(
+    "customer_radar:read", "customer_radar:write", "customer_radar:manage")
+_require_radar_write = require_any_permission("customer_radar:write", "customer_radar:manage")
+_require_radar_manage = require_permission("customer_radar:manage")
 
 
 def _serialize_source(s):

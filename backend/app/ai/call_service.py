@@ -18,6 +18,7 @@ from app.ai.http_client import (
     build_chat_url, build_headers,
     build_anthropic_body, extract_anthropic_content, extract_anthropic_usage,
 )
+from app.ai.log_snapshot import serialize_response_snapshot
 from app.ai.provider_service import get_provider
 
 
@@ -162,7 +163,7 @@ def chat(
         log.tokens_completion = usage.get("completion_tokens")
         log.tokens_used = usage.get("total_tokens")
         log.duration_ms = duration_ms
-        log.response_snapshot = json.dumps(result, ensure_ascii=False)
+        log.response_snapshot = serialize_response_snapshot(result)
         db.commit()
 
         return {
@@ -172,11 +173,15 @@ def chat(
             "log_id": log.id,
         }
     except Exception as e:
-        log.status = "error"
-        log.error_code = "unknown_error"
-        log.error_message = str(e)[:500]
-        log.duration_ms = int((time.time() - start) * 1000)
-        db.commit()
+        db.rollback()
+        try:
+            log.status = "error"
+            log.error_code = "unknown_error"
+            log.error_message = str(e)[:500]
+            log.duration_ms = int((time.time() - start) * 1000)
+            db.commit()
+        except Exception:
+            db.rollback()
         raise
 
 

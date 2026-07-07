@@ -5,26 +5,15 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_any_permission, require_permission
+from app.core.response import ok as _ok
 from app.auth.models import ArkUser
-from app.core.database import SessionLocal
+from app.core.database import get_db
 from app.whatsapp import service
 from app.whatsapp.connector_client import ConnectorError, ConnectorNotConfigured
 from app.whatsapp.models import WhatsAppPullCursor
 from app.whatsapp.schemas import BindSessionCreate, SyncPullRequest
 
 router = APIRouter()
-
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-def _ok(data=None, message: str = "ok"):
-    return {"code": 200, "message": message, "data": data}
 
 
 def _handle_connector_error(exc: Exception):

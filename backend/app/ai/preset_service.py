@@ -1,6 +1,6 @@
 """AI Preset CRUD + 单条测试"""
 
-import json
+import base64
 import time
 from datetime import datetime
 from typing import Optional
@@ -8,9 +8,49 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.ai.models import AiPreset, AiProvider
-from app.ai.keyring import decrypt_key
-from app.ai.http_client import build_chat_url, build_headers
+from app.ai.call_service import chat
+from app.ai.image_service import edit_image
 from app.ai.provider_service import get_provider
+
+MAX_TEST_IMAGE_BYTES = 10 * 1024 * 1024
+ALLOWED_TEST_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
+COMPOSITE_PRESET_NAMES = {"expo_wig_composite"}
+
+
+def _test_error_result(exc: Exception, start: float) -> dict:
+    return {
+        "status": "error",
+        "response": f"{type(exc).__name__}: {str(exc)[:500]}",
+        "tokens_used": None,
+        "duration_ms": int((time.time() - start) * 1000),
+    }
+
+
+def _image_filename(prefix: str, content_type: str) -> str:
+    ext = {
+        "image/jpeg": "jpeg",
+        "image/png": "png",
+        "image/webp": "webp",
+    }.get(content_type, "png")
+    return f"{prefix}.{ext}"
+
+
+def _validate_test_image(image_bytes: bytes, content_type: str) -> Optional[dict]:
+    if content_type not in ALLOWED_TEST_IMAGE_TYPES:
+        return {
+            "status": "error",
+            "response": "测试图片仅支持 JPG / PNG / WEBP",
+            "tokens_used": None,
+            "duration_ms": 0,
+        }
+    if len(image_bytes) > MAX_TEST_IMAGE_BYTES:
+        return {
+            "status": "error",
+            "response": "测试图片不能超过 10MB",
+            "tokens_used": None,
+            "duration_ms": 0,
+        }
+    return None
 
 
 def list_presets(
@@ -121,59 +161,111 @@ def delete_preset(db: Session, preset_id: int) -> None:
 
 
 def test_preset(db: Session, preset_id: int, test_message: str) -> dict:
-    """用指定预设发送测试消息。"""
-    import urllib.request
-    import urllib.error
-
+    """Send a preset test through the same chat path used by business callers."""
     p = get_preset(db, preset_id)
-    provider = get_provider(db, p.provider_id)
-
-    if provider.provider_type == "accio_work":
-        raise ValueError("ACCIO WORK 类型 Preset 不支持直接测试，请使用 delegate 接口")
-
-    if not p.model:
-        raise ValueError("Preset 未配置模型名称，请先编辑 Preset 填写正确的 model")
-
     start = time.time()
-    api_key = decrypt_key(provider.api_key) if provider.api_key else None
-
-    messages = []
-    if p.system_prompt:
-        messages.append({"role": "system", "content": p.system_prompt})
-    messages.append({"role": "user", "content": test_message})
-
-    headers = build_headers(provider, api_key)
-
-    params = {"model": p.model, "messages": messages, "stream": False}
-    if p.parameters:
-        params.update(p.parameters)
-
-    req = urllib.request.Request(
-        build_chat_url(provider.api_base),
-        data=json.dumps(params).encode(),
-        headers=headers,
-        method="POST",
-    )
-
     try:
-        with urllib.request.urlopen(req, timeout=provider.timeout_sec) as resp:
-            result = json.loads(resp.read().decode())
-    except urllib.error.HTTPError as e:
-        resp_body = e.read().decode("utf-8", errors="replace")[:500]
-        try:
-            err_json = json.loads(resp_body)
-            err_msg = err_json.get("error", {}).get("message", resp_body)
-        except json.JSONDecodeError:
-            err_msg = resp_body
-        raise ValueError(f"HTTP {e.code} {e.reason}: {err_msg}")
-
-    duration_ms = int((time.time() - start) * 1000)
-    content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
-    usage = result.get("usage", {})
+        result = chat(
+            db=db,
+            preset_name=p.preset_name,
+            messages=[{"role": "user", "content": test_message}],
+            caller_module="ai_preset_test",
+        )
+    except Exception as exc:
+        return _test_error_result(exc, start)
 
     return {
         "status": "ok",
-        "response": content,
-        "tokens_used": usage.get("total_tokens"),
-        "duration_ms": duration_ms,
+        "response": result.get("content", ""),
+        "tokens_used": result.get("tokens_used"),
+        "duration_ms": result.get("duration_ms"),
+    }
+
+
+def test_preset_with_image(
+    db: Session,
+    preset_id: int,
+    test_message: str,
+    image_bytes: bytes,
+    content_type: str,
+    reference_image_bytes: bytes | None = None,
+    reference_content_type: str | None = None,
+) -> dict:
+    """Send a preset test with one image using the same multimodal shape as expo."""
+    invalid = _validate_test_image(image_bytes, content_type)
+    if invalid:
+        return invalid
+
+    p = get_preset(db, preset_id)
+    if p.preset_name in COMPOSITE_PRESET_NAMES:
+        if not reference_image_bytes:
+            return {
+                "status": "error",
+                "response": "expo_wig_composite 是换发合成预设，测试需要同时上传客户原图和假发参考图。",
+                "tokens_used": None,
+                "duration_ms": 0,
+            }
+        reference_type = reference_content_type or "application/octet-stream"
+        invalid_reference = _validate_test_image(reference_image_bytes, reference_type)
+        if invalid_reference:
+            return invalid_reference
+
+        start = time.time()
+        try:
+            result = edit_image(
+                db=db,
+                preset_name=p.preset_name,
+                prompt=test_message,
+                images=[
+                    {
+                        "filename": _image_filename("customer_image", content_type),
+                        "content": image_bytes,
+                        "content_type": content_type,
+                    },
+                    {
+                        "filename": _image_filename("wig_reference", reference_type),
+                        "content": reference_image_bytes,
+                        "content_type": reference_type,
+                    },
+                ],
+                caller_module="ai_preset_test",
+            )
+        except Exception as exc:
+            return _test_error_result(exc, start)
+
+        return {
+            "status": "ok",
+            "response": result.get("content", ""),
+            "tokens_used": result.get("tokens_used"),
+            "duration_ms": result.get("duration_ms"),
+        }
+
+    image_b64 = base64.b64encode(image_bytes).decode()
+    start = time.time()
+    try:
+        result = chat(
+            db=db,
+            preset_name=p.preset_name,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": test_message},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:{content_type};base64,{image_b64}"},
+                        },
+                    ],
+                }
+            ],
+            caller_module="ai_preset_test",
+        )
+    except Exception as exc:
+        return _test_error_result(exc, start)
+
+    return {
+        "status": "ok",
+        "response": result.get("content", ""),
+        "tokens_used": result.get("tokens_used"),
+        "duration_ms": result.get("duration_ms"),
     }

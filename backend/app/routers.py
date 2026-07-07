@@ -24,6 +24,8 @@ from app.production.router import router as production_router
 from app.mini.router import router as mini_router
 from app.governance.router import router as governance_router
 from app.whatsapp.router import router as whatsapp_router
+from app.invoice.router import router as invoice_router
+from app.expo.router import router as expo_router
 
 
 def register_routers(app: FastAPI) -> None:
@@ -52,3 +54,5 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(mini_router, prefix="/api/mini", tags=["微信小程序"])
     app.include_router(governance_router, prefix="/api/governance", tags=["数据概念治理"])
     app.include_router(whatsapp_router, prefix="/api/whatsapp", tags=["WhatsApp 同步"])
+    app.include_router(invoice_router, prefix="/api/invoice", tags=["Order Invoice"])
+    app.include_router(expo_router, prefix="/api/expo", tags=["展会 AI 试戴"])

@@ -2,19 +2,24 @@
   <div>
     <!-- 顶部工具栏 -->
     <el-row :gutter="16" class="toolbar">
-      <el-col :span="6">
+      <el-col :span="5">
         <el-input v-model="keyword" placeholder="搜索客户名/ID" clearable @keyup.enter="fetchList" @clear="fetchList">
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
       </el-col>
       <el-col :span="4">
+        <el-input v-model="salespersonKeyword" placeholder="业务员姓名/ID" clearable @keyup.enter="fetchList" @clear="fetchList">
+          <template #prefix><el-icon><User /></el-icon></template>
+        </el-input>
+      </el-col>
+      <el-col :span="3">
         <el-select v-model="isComplete" @change="fetchList" style="width:100%">
           <el-option label="全部" value="all" />
           <el-option label="已完整" value="true" />
           <el-option label="待补充" value="false" />
         </el-select>
       </el-col>
-      <el-col :span="14" style="text-align:right">
+      <el-col :span="12" style="text-align:right">
         <GlassButton variant="success" :loading="autoMatching" @click="handleAutoMatch" left-icon="MagicStick">自动匹配</GlassButton>
         <GlassButton variant="primary" left-icon="Plus" @click="openCreateDialog">手工新增</GlassButton>
         <GlassButton left-icon="Upload" @click="importDialogVisible = true">Excel导入</GlassButton>
@@ -249,6 +254,7 @@ const { tableRef, maxHeight } = useTableMaxHeight()
 const orderSort = useTableSort()
 
 const keyword = ref('')
+const salespersonKeyword = ref('')
 const isComplete = ref('all')
 const page = ref(1)
 const pageSize = ref(20)
@@ -275,7 +281,9 @@ async function fetchList() {
   loading.value = true
   try {
     const res = await getSnapshotList({
-      keyword: keyword.value, is_complete: isComplete.value,
+      keyword: keyword.value,
+      salesperson_keyword: salespersonKeyword.value,
+      is_complete: isComplete.value,
       page: page.value, page_size: pageSize.value,
       ...orderSort.sortParams.value
     })

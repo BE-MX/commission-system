@@ -45,7 +45,9 @@ SKIP_FILES = {".ds_store", "thumbs.db", "desktop.ini"}
 RESERVED_DIMENSION_LABELS = {"素材类型", "状态", "版本", "日期", "权限组"}
 
 # staging 根目录（从环境变量读取）
-UPLOAD_STAGING_ROOT = os.environ.get("ASSET_UPLOAD_STAGING", r"D:\upload_staging")
+from app.core.config import get_settings
+
+UPLOAD_STAGING_ROOT = get_settings().ASSET_UPLOAD_STAGING
 
 # 异步执行文件数量阈值
 ASYNC_FILE_THRESHOLD = 20

@@ -160,12 +160,13 @@
 
 <script setup>
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { ElMessage } from 'element-plus'
 import WorldMapCanvas from '@/components/WorldMapCanvas.vue'
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 
 const username = ref('')
@@ -185,14 +186,17 @@ const handleSubmit = async () => {
   try {
     await authStore.login(username.value, password.value)
     ElMessage.success('登录成功')
+    // 深链恢复：守卫带来的 redirect 优先（如展位 iPad 打开 /expo/kiosk 被引到登录页）
+    const redirect = String(route.query.redirect || '')
     // 移动 UA 默认进移动端，除非用户主动选了「切换到完整版」（ark_desktop_mode=1）
+    // 或目标是展会 kiosk（展位 iPad 不进移动端素材页）
     const isMobileUA = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
     const desktopMode = sessionStorage.getItem('ark_desktop_mode') === '1'
-    if (isMobileUA && !desktopMode) {
+    if (isMobileUA && !desktopMode && !redirect.startsWith('/expo')) {
       window.location.href = '/m/'
       return
     }
-    router.push('/')
+    router.push(redirect.startsWith('/') ? redirect : '/')
   } catch (error) {
     ElMessage.error(error.message || '登录失败，请检查用户名和密码')
   } finally {

@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import get_db
 from app.auth.dependencies import require_permission
+from app.core.response import ok as _ok
 from app.asset import service
 from sqlalchemy import and_, desc, func
 from app.asset.analyze_service import analyze_asset_tags
@@ -54,10 +55,6 @@ from app.asset.schemas import (
 )
 
 router = APIRouter()
-
-
-def _ok(data, message: str = "ok", code: int = 200):
-    return {"code": code, "message": message, "data": data}
 
 
 # ── 标签维度 ────────────────────────────────────────────
@@ -963,7 +960,8 @@ def share_favorite_folder(
     folder = service.share_folder(db, folder_id, user_id, expires_hours)
     if not folder:
         raise HTTPException(status_code=404, detail="收藏夹不存在")
-    base_url = f"{os.environ.get('SHORT_LINK_BASE_URL', 'https://leshine.work')}"
+    from app.core.config import get_settings
+    base_url = get_settings().SHORT_LINK_BASE_URL
     share_url = f"{base_url}/asset/shared/{folder.share_token}"
     return _ok({
         "share_url": share_url,

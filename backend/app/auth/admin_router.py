@@ -486,11 +486,32 @@ def list_roles(
     return ResponseModel(data=items)
 
 
+def _write_permission_audit(db, role, operator: dict, old_ids: set, new_ids: set) -> None:
+    """角色权限变更审计：记录 code 级增减（无变更不落记录）。"""
+    from app.auth.models import ArkPermissionAudit
+
+    added_ids, removed_ids = new_ids - old_ids, old_ids - new_ids
+    if not added_ids and not removed_ids:
+        return
+    code_map = {
+        p.id: p.code
+        for p in db.query(ArkPermission).filter(ArkPermission.id.in_(added_ids | removed_ids)).all()
+    }
+    db.add(ArkPermissionAudit(
+        role_id=role.id,
+        role_name=role.name,
+        operator_user_id=int(operator.get("sub") or 0) or None,
+        operator_name=operator.get("username"),
+        added_codes=sorted(code_map[i] for i in added_ids if i in code_map),
+        removed_codes=sorted(code_map[i] for i in removed_ids if i in code_map),
+    ))
+
+
 @router.post("/roles", summary="创建角色")
 def create_role(
     req: RoleCreateRequest,
     db: Session = Depends(get_db),
-    _current_user: dict = Depends(require_permission("user:write")),
+    current_user: dict = Depends(require_permission("user:write")),
 ) -> ResponseModel:
     exists = db.query(ArkRole).filter(ArkRole.name == req.name).first()
     if exists:
@@ -508,6 +529,7 @@ def create_role(
     # 分配权限
     for pid in req.permission_ids:
         db.add(ArkRolePermission(role_id=role.id, permission_id=pid))
+    _write_permission_audit(db, role, current_user, set(), set(req.permission_ids))
     db.commit()
 
     return ResponseModel(data={"id": role.id, "name": role.name})
@@ -518,7 +540,7 @@ def update_role(
     role_id: int,
     req: RoleUpdateRequest,
     db: Session = Depends(get_db),
-    _current_user: dict = Depends(require_permission("user:write")),
+    current_user: dict = Depends(require_permission("user:write")),
 ) -> ResponseModel:
     role = db.get(ArkRole, role_id)
     if not role:
@@ -531,13 +553,18 @@ def update_role(
     if req.description is not None:
         role.description = req.description
 
-    # 更新权限
+    # 更新权限（先取旧集合供审计，再全删重插）
     if req.permission_ids is not None:
+        old_ids = {
+            rp.permission_id
+            for rp in db.query(ArkRolePermission).filter(ArkRolePermission.role_id == role_id).all()
+        }
         db.query(ArkRolePermission).filter(
             ArkRolePermission.role_id == role_id,
         ).delete()
         for pid in req.permission_ids:
             db.add(ArkRolePermission(role_id=role_id, permission_id=pid))
+        _write_permission_audit(db, role, current_user, old_ids, set(req.permission_ids))
 
     db.commit()
     return ResponseModel(message="更新成功")
@@ -574,12 +601,16 @@ def delete_role(
 # 权限参考
 # ============================================================
 
-@router.get("/permissions/list", summary="权限列表（按模块分组）")
+@router.get("/permissions/list", summary="权限列表（按模块分组，默认不含已下架）")
 def list_permissions(
+    include_legacy: int = 0,
     db: Session = Depends(get_db),
     _current_user: dict = Depends(require_permission("user:read")),
 ) -> ResponseModel:
-    perms = db.query(ArkPermission).order_by(ArkPermission.module, ArkPermission.id).all()
+    q = db.query(ArkPermission)
+    if not include_legacy:
+        q = q.filter(ArkPermission.is_legacy == 0)
+    perms = q.order_by(ArkPermission.module, ArkPermission.sort, ArkPermission.id).all()
 
     groups: dict[str, list[PermissionItem]] = {}
     for p in perms:
@@ -587,6 +618,7 @@ def list_permissions(
             groups[p.module] = []
         groups[p.module].append(PermissionItem(
             id=p.id, code=p.code, label=p.label, action=p.action,
+            kind=p.kind or "action", sort=p.sort or 0,
         ))
 
     result = [
@@ -595,6 +627,31 @@ def list_permissions(
     ]
 
     return ResponseModel(data=result)
+
+
+@router.get("/permission-audits", summary="角色权限变更审计（最近 N 条）")
+def list_permission_audits(
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    _current_user: dict = Depends(require_permission("user:read")),
+) -> ResponseModel:
+    from app.auth.models import ArkPermissionAudit
+
+    rows = (
+        db.query(ArkPermissionAudit)
+        .order_by(ArkPermissionAudit.id.desc())
+        .limit(min(limit, 200))
+        .all()
+    )
+    return ResponseModel(data=[
+        {
+            "id": r.id, "role_id": r.role_id, "role_name": r.role_name,
+            "operator_name": r.operator_name,
+            "added_codes": r.added_codes or [], "removed_codes": r.removed_codes or [],
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ])
 
 
 # ============================================================

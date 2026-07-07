@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>角色权限管理重设计原型</title>
+<style>
+:root{
+  --gold:#d4941c; --gold-dark:#bb8218; --gold-soft:#fdf4dc; --gold-line:#f5e0b5;
+  --text:#1a1a2e; --muted:#718096; --line:#e2e5ef; --page:#f0f2f7; --card:#ffffff;
+  --head:#fafbfe; --success:#2d9f6f; --danger:#dc3545; --warn:#8b6914;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"DM Sans","PingFang SC","Segoe UI",sans-serif;color:var(--text);background:var(--page);padding:36px 4vw 80px}
+h1{font-size:24px;margin-bottom:6px}
+.sub{color:var(--muted);font-size:13px;margin-bottom:30px;line-height:1.8}
+.sub b{color:var(--gold-dark)}
+h2{font-size:16px;margin:38px 0 12px;display:flex;align-items:center;gap:10px}
+h2::before{content:"";width:4px;height:16px;background:var(--gold);border-radius:2px}
+.note{font-size:12px;color:var(--muted);margin:-6px 0 14px;line-height:1.8}
+
+/* ── 抽屉框架 ── */
+.drawer{
+  background:var(--card);border:1px solid var(--line);border-radius:14px;
+  box-shadow:0 18px 50px rgba(26,24,22,.10);overflow:hidden;max-width:1180px;
+}
+.drawer-head{
+  display:flex;align-items:center;gap:14px;padding:14px 22px;
+  border-bottom:1px solid var(--line);background:var(--head);flex-wrap:wrap;
+}
+.drawer-head .title{font-weight:700;font-size:15px}
+.role-tag{font-size:12px;background:var(--gold-soft);color:var(--gold-dark);
+  border:1px solid var(--gold-line);border-radius:14px;padding:3px 12px}
+.tabs{display:flex;gap:4px;margin-left:12px}
+.tab{font-size:13px;padding:7px 16px;border-radius:8px 8px 0 0;cursor:pointer;color:var(--muted);border:1px solid transparent}
+.tab.on{background:var(--card);color:var(--gold-dark);font-weight:600;border:1px solid var(--line);border-bottom-color:var(--card)}
+.spacer{flex:1}
+.select,.search{
+  height:32px;border:1px solid var(--line);border-radius:8px;background:var(--card);
+  font-size:12px;color:var(--text);padding:0 12px;display:flex;align-items:center;gap:8px;
+}
+.select b{color:var(--gold-dark)}
+.search{color:#a0aec0;width:200px}
+
+/* ── 矩阵 ── */
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{border-bottom:1px solid var(--line);padding:9px 10px;text-align:center}
+thead th{background:var(--head);font-size:12px;color:var(--muted);font-weight:600;position:sticky;top:0}
+th.mod,td.mod{text-align:left;padding-left:20px;width:210px}
+td.mod .nm{font-weight:600}
+td.mod .cnt{font-size:11px;color:var(--muted);margin-left:8px}
+tbody tr:hover{background:#fffdf6}
+.grp td{background:#f7f4ec;font-size:11px;letter-spacing:.2em;color:var(--warn);text-align:left;padding:5px 20px;font-weight:700}
+
+/* checkbox 三态 */
+.cb{display:inline-block;width:17px;height:17px;border:1.5px solid #c5cce0;border-radius:4px;position:relative;vertical-align:middle;background:#fff}
+.cb.on{background:var(--gold);border-color:var(--gold)}
+.cb.on::after{content:"";position:absolute;left:5px;top:2px;width:4px;height:8px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(40deg)}
+.cb.half{background:var(--gold-soft);border-color:var(--gold)}
+.cb.half::after{content:"";position:absolute;left:3px;top:6.5px;width:9px;height:2px;background:var(--gold)}
+.cb.diff{box-shadow:0 0 0 2px var(--gold-line)}   /* 模板差异高亮 */
+.na{color:#cbd5e1}
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;border:1px solid var(--line);
+  border-radius:12px;padding:2px 9px;margin:2px;color:var(--muted);background:var(--head)}
+.chip.on{border-color:var(--gold);color:var(--gold-dark);background:var(--gold-soft)}
+.chip .k{font-size:9px;background:#eef1f7;border-radius:6px;padding:0 4px;color:#8b95a5}
+.chip.on .k{background:#f7e8c8;color:var(--warn)}
+
+/* ── 差异条 ── */
+.diffbar{
+  display:flex;align-items:center;gap:16px;padding:11px 22px;background:var(--head);
+  border-top:1px solid var(--line);font-size:13px;
+}
+.diffbar .add{color:var(--success);font-weight:700}
+.diffbar .del{color:var(--danger);font-weight:700}
+.diffbar .lg{color:var(--warn);font-size:12px}
+.btn{height:34px;padding:0 22px;border-radius:8px;border:none;font-size:13px;cursor:pointer}
+.btn.primary{background:linear-gradient(110deg,var(--gold-dark),var(--gold));color:#fff;font-weight:600}
+.btn.ghost{background:var(--card);border:1px solid var(--line);color:var(--muted)}
+
+/* ── 导航反查 tab ── */
+.navview{display:grid;grid-template-columns:280px 1fr;min-height:300px}
+.navtree{border-right:1px solid var(--line);padding:16px}
+.nav-group{font-size:12px;color:var(--warn);letter-spacing:.15em;margin:12px 0 6px;font-weight:700}
+.nav-item{display:flex;align-items:center;gap:8px;font-size:13px;padding:6px 10px;border-radius:8px;cursor:pointer}
+.nav-item.on{background:var(--gold-soft)}
+.ok{color:var(--success);font-weight:700}
+.no{color:#cbd5e1;font-weight:700}
+.navdetail{padding:20px 26px}
+.navdetail .pg{font-weight:700;font-size:15px;margin-bottom:4px}
+.navdetail .path{font-size:12px;color:var(--muted);margin-bottom:16px}
+.req{font-size:12px;color:var(--muted);margin:14px 0 6px}
+
+/* 用户有效权限预览 */
+.preview{max-width:1180px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 22px}
+.preview .u{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.avatar{width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,var(--gold-soft),var(--gold-line))}
+.preview .nm{font-weight:700}
+.preview .roles{font-size:12px;color:var(--muted)}
+.legend{display:flex;gap:22px;margin:14px 0 26px;font-size:12px;color:var(--muted);flex-wrap:wrap;align-items:center}
+.legend span{display:flex;align-items:center;gap:7px}
+</style>
+</head>
+<body>
+
+<h1>角色权限管理 · 重设计原型</h1>
+<p class="sub">核心变化：81 个权限从「弹窗一维长列表」折叠为「<b>22 行 × 5 列矩阵</b>」一屏尽收；
+<b>角色模板</b>一键套用（差异金边高亮）；底部<b>变更差异条</b>防误操作；第二个 tab 从<b>导航视角反查</b>"勾掉这个权限哪些菜单会消失"。
+已下架（legacy）权限不再出现在矩阵中。</p>
+
+<div class="legend">
+  <span><i class="cb on" style="position:static"></i> 已授权</span>
+  <span><i class="cb" style="position:static"></i> 未授权</span>
+  <span><i class="cb half" style="position:static"></i> 行/列部分选中（三态）</span>
+  <span><i class="cb on diff" style="position:static"></i> 与模板的差异项（金边）</span>
+  <span><i class="na">—</i> 该模块无此动作</span>
+  <span class="chip on">read_all <i class="k">数据范围</i></span>
+</div>
+
+<h2>① 权限矩阵（角色编辑抽屉 · 90% 宽）</h2>
+<p class="note">行按导航分组排序并插入分组条；行头计数即已授权数；列头三态可整列全选。搜索"发票"只留 invoice 行。</p>
+
+<div class="drawer">
+  <div class="drawer-head">
+    <span class="title">编辑角色权限</span><span class="role-tag">salesperson · 业务员</span>
+    <div class="tabs"><span class="tab on">权限矩阵</span><span class="tab">按导航查看</span></div>
+    <div class="spacer"></div>
+    <div class="select">模板：<b>业务员（预设）</b> ▾</div>
+    <div class="search">🔍 搜索模块 / 权限…</div>
+  </div>
+
+  <table>
+    <thead><tr>
+      <th class="mod">模块 <i class="cb half" style="margin-left:8px"></i></th>
+      <th>查看 <i class="cb half"></i></th><th>编辑 <i class="cb half"></i></th>
+      <th>删除 <i class="cb"></i></th><th>管理 <i class="cb"></i></th>
+      <th style="width:300px">特殊（数据范围 / 业务动作）</th>
+    </tr></thead>
+    <tbody>
+      <tr class="grp"><td colspan="6">经营 · 提成与客户</td></tr>
+      <tr>
+        <td class="mod"><span class="nm">提成管理</span><span class="cnt">2/5</span> <i class="cb half"></i></td>
+        <td><i class="cb"></i></td><td><i class="cb"></i></td><td><i class="na">—</i></td><td><i class="na">—</i></td>
+        <td style="text-align:left"><span class="chip on">self_read <i class="k">数据范围</i></span><span class="chip">export <i class="k">动作</i></span></td>
+      </tr>
+      <tr>
+        <td class="mod"><span class="nm">客户机会台</span><span class="cnt">2/4</span> <i class="cb half"></i></td>
+        <td><i class="cb on"></i></td><td><i class="cb on"></i></td><td><i class="na">—</i></td><td><i class="cb"></i></td>
+        <td style="text-align:left"><span class="chip">import <i class="k">机器接口</i></span></td>
+      </tr>
+      <tr>
+        <td class="mod"><span class="nm">客户经营雷达</span><span class="cnt">2/3</span> <i class="cb half"></i></td>
+        <td><i class="cb on"></i></td><td><i class="cb on"></i></td><td><i class="na">—</i></td><td><i class="cb"></i></td>
+        <td style="text-align:left"><span class="muted" style="font-size:11px;color:#cbd5e1">无</span></td>
+      </tr>
+      <tr class="grp"><td colspan="6">单据 · 订单与物流</td></tr>
+      <tr>
+        <td class="mod"><span class="nm">订单发票</span><span class="cnt">3/3</span> <i class="cb on"></i></td>
+        <td><i class="cb on"></i></td><td><i class="cb on"></i></td><td><i class="na">—</i></td><td><i class="na">—</i></td>
+        <td style="text-align:left"><span class="chip on">sync <i class="k">同步小满</i></span></td>
+      </tr>
+      <tr>
+        <td class="mod"><span class="nm">物流跟踪</span><span class="cnt">2/5</span> <i class="cb half"></i></td>
+        <td><i class="cb on"></i></td><td><i class="cb on diff"></i></td><td><i class="cb"></i></td><td><i class="na">—</i></td>
+        <td style="text-align:left"><span class="chip">read_all <i class="k">数据范围</i></span><span class="chip on">daily_report <i class="k">页面</i></span></td>
+      </tr>
+      <tr class="grp"><td colspan="6">营销 · 展会与洞见</td></tr>
+      <tr>
+        <td class="mod"><span class="nm">展会试戴</span><span class="cnt">1/3</span> <i class="cb half"></i></td>
+        <td><i class="cb"></i></td><td><i class="cb on diff"></i></td><td><i class="na">—</i></td><td><i class="cb"></i></td>
+        <td style="text-align:left"><span class="muted" style="font-size:11px;color:#cbd5e1">无</span></td>
+      </tr>
+      <tr>
+        <td class="mod"><span class="nm">方舟洞见</span><span class="cnt">2/4</span> <i class="cb half"></i></td>
+        <td><i class="cb on"></i></td><td><i class="cb on"></i></td><td><i class="na">—</i></td><td><i class="cb"></i></td>
+        <td style="text-align:left"><span class="chip">internal_read <i class="k">数据范围</i></span></td>
+      </tr>
+      <tr class="grp"><td colspan="6">系统</td></tr>
+      <tr>
+        <td class="mod"><span class="nm">用户与角色</span><span class="cnt">0/7</span> <i class="cb"></i></td>
+        <td><i class="cb"></i></td><td><i class="cb"></i></td><td><i class="cb"></i></td><td><i class="na">—</i></td>
+        <td style="text-align:left"><span class="chip">assign_role <i class="k">动作</i></span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="diffbar">
+    <span>本次变更：<span class="add">+3</span> / <span class="del">−1</span></span>
+    <span class="lg">含 2 个已下架旧权限将在保存时自动移除</span>
+    <div class="spacer"></div>
+    <button class="btn ghost">重置为模板</button>
+    <button class="btn primary">保存（确认变更明细）</button>
+  </div>
+</div>
+
+<h2>② 按导航查看（同抽屉第二个 tab · 只读反查）</h2>
+<p class="note">数据直接来自 navigation.js 的 NAV_ENTRIES，后端零改动。✓/✗ = 当前角色能否看到该菜单；点击权限 chip 跳回矩阵对应格子。</p>
+
+<div class="drawer">
+  <div class="drawer-head">
+    <span class="title">编辑角色权限</span><span class="role-tag">salesperson · 业务员</span>
+    <div class="tabs"><span class="tab">权限矩阵</span><span class="tab on">按导航查看</span></div>
+  </div>
+  <div class="navview">
+    <div class="navtree">
+      <div class="nav-group">订单管理</div>
+      <div class="nav-item"><span class="ok">✓</span> 订单发票管理</div>
+      <div class="nav-group">提成管理</div>
+      <div class="nav-item on"><span class="ok">✓</span> 我的提成</div>
+      <div class="nav-item"><span class="no">✗</span> 提成批次管理</div>
+      <div class="nav-group">物流管理</div>
+      <div class="nav-item"><span class="ok">✓</span> 物流跟踪</div>
+      <div class="nav-item"><span class="ok">✓</span> 运单上传</div>
+      <div class="nav-item"><span class="ok">✓</span> 物流日报</div>
+      <div class="nav-group">展会营销</div>
+      <div class="nav-item"><span class="no">✗</span> 试戴发型库</div>
+      <div class="nav-item"><span class="no">✗</span> 展会线索台</div>
+    </div>
+    <div class="navdetail">
+      <div class="pg">我的提成 <span class="ok" style="font-size:13px">✓ 当前角色可见</span></div>
+      <div class="path">/commission/self · SalesCommission</div>
+      <div class="req">页面可见需要（任一）：</div>
+      <span class="chip on">commission:self_read <i class="k">数据范围</i></span>
+      <div class="req">页面内操作按钮：</div>
+      <span class="chip on">提交反馈 → commission:self_read</span>
+      <span class="chip on">确认提成 → commission:self_read</span>
+      <span class="chip">导出明细 → commission:export <i class="k">未授权</i></span>
+      <div class="req" style="margin-top:18px;color:var(--warn)">⚠ 若取消 commission:self_read：「我的提成」「我的提成详情」两个页面将从该角色的菜单消失</div>
+    </div>
+  </div>
+</div>
+
+<h2>③ 用户有效权限预览（用户管理页 · 详情折叠面板）</h2>
+<p class="note">多角色并集后的最终权限，只读矩阵。回答"这个人到底能干什么"。</p>
+
+<div class="preview">
+  <div class="u">
+    <div class="avatar"></div>
+    <div><div class="nm">Chris</div><div class="roles">角色：salesperson + supervisor（并集生效 · 共 14 项权限）</div></div>
+  </div>
+  <table>
+    <thead><tr><th class="mod">模块</th><th>查看</th><th>编辑</th><th>删除</th><th>管理</th><th style="width:280px">特殊</th></tr></thead>
+    <tbody>
+      <tr><td class="mod"><span class="nm">提成管理</span></td>
+        <td><i class="cb on"></i></td><td><i class="cb"></i></td><td><i class="na">—</i></td><td><i class="na">—</i></td>
+        <td style="text-align:left"><span class="chip on">self_read</span><span class="chip on">read_all <i class="k">来自 supervisor</i></span></td></tr>
+      <tr><td class="mod"><span class="nm">设计预约</span></td>
+        <td><i class="cb on"></i></td><td><i class="cb on"></i></td><td><i class="na">—</i></td><td><i class="cb"></i></td>
+        <td style="text-align:left"><span class="chip on">audit <i class="k">来自 supervisor</i></span></td></tr>
+    </tbody>
+  </table>
+</div>
+
+<p class="sub" style="margin-top:40px">设计文档：docs/requirements/2026-07-03-permission-redesign.md · 原型为静态示意，交互态（三态勾选/差异高亮/搜索过滤）以 CSS 状态呈现</p>
+</body>
+</html>

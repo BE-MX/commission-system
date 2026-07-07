@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.auth.dependencies import get_current_user
+from app.core.response import ok as _ok
 from app.insight import service
 from app.insight.schemas import (
     CaseManualCreate,
@@ -57,10 +58,6 @@ from app.insight.dependencies import (
 router = APIRouter()
 
 INTERNAL_REPORT_TYPES = {"shop_analysis", "competitor_analysis", "inquiry_analysis"}
-
-
-def _ok(data, message: str = "ok"):
-    return {"code": 200, "message": message, "data": data}
 
 
 # ──────────────────────────────────────────────────────

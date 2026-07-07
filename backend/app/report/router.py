@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.auth.dependencies import require_permission
+from app.core.response import ok as _ok
 from app.report.models import ReportTemplate, ReportTemplateVersion
 from app.report.schemas import (
     ReportTemplateCreate,
@@ -55,10 +56,6 @@ def _load_middle_punch_image_data_uri() -> str:
         data_uri = ""
     _load_middle_punch_image_data_uri._cache = data_uri  # type: ignore[attr-defined]
     return data_uri
-
-
-def _ok(data, message: str = "ok", code: int = 200):
-    return {"code": code, "message": message, "data": data}
 
 
 def _get_user_id(user: dict) -> int:

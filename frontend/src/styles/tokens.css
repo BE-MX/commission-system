@@ -89,6 +89,19 @@
   /* ── Scrollbar ── */
   --scrollbar-thumb:      #cbd5e1;
   --scrollbar-thumb-hover:#94a3b8;
+
+  /* ── 扩展色板（2026-07-03 治理 F-3：从 views 高频硬编码色提炼，新代码用变量不用裸 hex） ── */
+  --text-muted-blue:      #8b95a5;   /* 出现 56 次：弱化说明文字 */
+  --color-gold-soft-2:    #d4af6e;   /* 出现 48 次：柔金装饰/图表 */
+  --text-tertiary:        #909399;   /* 出现 29 次：Element 灰文字 */
+  --border-warm:          #e5dfd6;   /* 出现 27 次：暖色分隔线 */
+  --ink-dark:             #1e1e2d;   /* 出现 27 次：深色标题/暗面板 */
+  --color-blue:           #2563eb;   /* 蓝色强调（同 badge-dev-color） */
+  --color-red-flat:       #e74c3c;   /* 扁平红（图表/警示装饰） */
+  --color-red-deep:       #dc2626;   /* 深红（危险文字） */
+  --el-success:           #67c23a;   /* Element 语义色的变量化引用 */
+  --el-warning:           #e6a23c;
+  --el-danger:            #f56c6c;
 }
 
 /* ── Border Radius Scale ── */

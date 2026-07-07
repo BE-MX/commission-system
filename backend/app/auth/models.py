@@ -56,9 +56,29 @@ class ArkPermission(Base):
     module = Column(String(50), nullable=False)
     action = Column(String(50), nullable=False)
     label = Column(String(100), nullable=False)
+    # ── 权限矩阵元数据（046 迁移，权限重设计方案）──
+    kind = Column(String(16), nullable=False, default="action", comment="page=页面可见/action=操作/data=数据范围")
+    is_legacy = Column(Integer, nullable=False, default=0, comment="1=已下架，UI 不展示，端点暂保留兼容")
+    sort = Column(Integer, nullable=False, default=0, comment="模块内展示顺序")
+
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     roles = relationship("ArkRole", secondary="ark_role_permissions", back_populates="permissions")
+
+
+class ArkPermissionAudit(Base):
+    """角色权限变更审计（谁在何时给哪个角色加/减了什么）。"""
+
+    __tablename__ = "ark_permission_audit"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    role_id = Column(Integer, nullable=False)
+    role_name = Column(String(50), nullable=False)
+    operator_user_id = Column(Integer, nullable=True)
+    operator_name = Column(String(64), nullable=True)
+    added_codes = Column(JSON, nullable=True, comment="本次新增的权限 code 列表")
+    removed_codes = Column(JSON, nullable=True, comment="本次移除的权限 code 列表")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
 class ArkUserRole(Base):

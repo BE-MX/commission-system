@@ -25,7 +25,9 @@ from app.color.trend_service import normalize_scores, write_trend_data
 logger = logging.getLogger("color.social")
 
 # 竞品 Instagram 账号列表（从信源配置或环境变量读取）
-DEFAULT_TARGET_ACCOUNTS = os.environ.get("XPOZ_TARGET_ACCOUNTS", "").split(",")
+from app.core.config import get_settings
+
+DEFAULT_TARGET_ACCOUNTS = get_settings().XPOZ_TARGET_ACCOUNTS.split(",")
 DEFAULT_TARGET_ACCOUNTS = [a.strip() for a in DEFAULT_TARGET_ACCOUNTS if a.strip()]
 
 

@@ -1,11 +1,14 @@
 """素材管理 — 素材上传/查询/更新/下载"""
 
+import logging
 import os
 import shutil
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger("asset")
 
 from sqlalchemy import and_, desc, func, or_
 from sqlalchemy.orm import Session, selectinload, joinedload
@@ -21,7 +24,9 @@ from app.asset.models import (
 from app.asset.schemas import AssetPermissionIn, AssetTagItem
 
 # 文件存储根目录（从环境变量读取，默认 D:\WORKSOURCE）
-ASSET_STORAGE_ROOT = Path(os.environ.get("ASSET_STORAGE_ROOT", r"D:\WORKSOURCE"))
+from app.core.config import get_settings
+
+ASSET_STORAGE_ROOT = Path(get_settings().ASSET_STORAGE_ROOT)
 ASSET_STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
 
 # 缩略图尺寸
@@ -103,8 +108,10 @@ def _delete_file(rel_path: Optional[str]) -> None:
         return
     try:
         (ASSET_STORAGE_ROOT / rel_path).unlink(missing_ok=True)
-    except Exception:
-        pass
+    except Exception as exc:
+        # 文件删除失败不阻断业务，但必须留痕（B-2：吞掉可以，无声不行）
+        logger.warning("asset file delete failed: %s err=%s", rel_path, exc)
+        print(f"[asset] file delete failed: {rel_path} err={exc}", flush=True)
 
 
 # ── 创建素材 ────────────────────────────────────────────
@@ -498,7 +505,7 @@ def _make_sign_token(path: str, expires: int) -> str:
     import hashlib
     import hmac
 
-    secret = os.environ.get("ASSET_SIGN_SECRET", "leshine-asset-secret")
+    secret = get_settings().ASSET_SIGN_SECRET
     msg = f"{path}:{expires}"
     return hmac.new(secret.encode(), msg.encode(), hashlib.sha256).hexdigest()[:16]
 

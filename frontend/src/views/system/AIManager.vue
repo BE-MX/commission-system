@@ -322,10 +322,50 @@
     </el-dialog>
 
     <!-- Preset Test Dialog -->
-    <el-dialog v-model="testDialogVisible" :title="`测试预设：${testPresetName}`" width="560px" destroy-on-close>
+    <el-dialog v-model="testDialogVisible" :title="`测试预设：${testPresetName}`" width="640px" destroy-on-close>
       <el-form>
         <el-form-item label="发送消息">
           <el-input v-model="testMessage" type="textarea" :rows="4" placeholder="输入测试消息..." />
+        </el-form-item>
+        <el-form-item :label="isCompositePreset ? '客户原图' : '测试图片'">
+          <el-upload
+            class="preset-image-upload"
+            :auto-upload="false"
+            :limit="1"
+            :file-list="testImageFileList"
+            accept=".jpg,.jpeg,.png,.webp"
+            :on-change="handleTestImageChange"
+            :on-exceed="handleTestImageExceed"
+            :on-remove="clearTestImage"
+          >
+            <el-button>
+              <el-icon><UploadFilled /></el-icon> 选择图片
+            </el-button>
+            <template #tip>
+              <div class="upload-tip">
+                {{ isCompositePreset ? '必填。需要一张客户正面照片，支持 JPG / PNG / WEBP，最大 10MB。' : '可选。用于测试 expo_face_analysis 这类视觉预设，支持 JPG / PNG / WEBP，最大 10MB。' }}
+              </div>
+            </template>
+          </el-upload>
+        </el-form-item>
+        <el-form-item v-if="isCompositePreset" label="假发参考图">
+          <el-upload
+            class="preset-image-upload"
+            :auto-upload="false"
+            :limit="1"
+            :file-list="testReferenceImageFileList"
+            accept=".jpg,.jpeg,.png,.webp"
+            :on-change="handleTestReferenceImageChange"
+            :on-exceed="handleTestReferenceImageExceed"
+            :on-remove="clearTestReferenceImage"
+          >
+            <el-button>
+              <el-icon><UploadFilled /></el-icon> 选择参考图
+            </el-button>
+            <template #tip>
+              <div class="upload-tip">必填。上传假发款式或模特参考图，用于验证换发合成效果。</div>
+            </template>
+          </el-upload>
         </el-form-item>
       </el-form>
       <div class="test-dialog-footer">
@@ -335,14 +375,20 @@
       </div>
       <div v-if="testResult" class="test-result">
         <div class="test-result-header">
-          <el-icon :size="16" color="#7c3aed"><ChatDotRound /></el-icon>
-          <span>回复</span>
+          <el-icon :size="16" :color="testResult.status === 'error' ? '#dc2626' : '#7c3aed'"><ChatDotRound /></el-icon>
+          <span>{{ testResult.status === 'error' ? '测试失败' : '测试结果' }}</span>
           <div class="test-result-meta">
             <span>Token: {{ testResult.tokens_used || 'N/A' }}</span>
             <span>{{ testResult.duration_ms }}ms</span>
           </div>
         </div>
-        <pre class="test-result-content">{{ testResult.response }}</pre>
+        <img
+          v-if="isImageResponse(testResult.response)"
+          class="test-result-image"
+          :src="testResult.response"
+          alt="AI generated preview"
+        >
+        <pre v-else class="test-result-content">{{ testResult.response }}</pre>
       </div>
     </el-dialog>
 
@@ -363,7 +409,7 @@
 <script setup>
 import {
   Cpu, Monitor, Position, Lightning, Edit, Delete,
-  VideoPlay, DocumentCopy, ChatDotRound,
+  VideoPlay, DocumentCopy, ChatDotRound, UploadFilled,
   View, Hide, SuccessFilled, CircleCloseFilled, WarningFilled, Loading,
   Histogram,
 } from '@element-plus/icons-vue'
@@ -384,9 +430,13 @@ const {
   presets, presetLoading, presetSearch, presetProviderFilter, providerOptions,
   presetDialogVisible, presetFormRef, presetSaving,
   presetForm, presetRules, isAccioProvider,
-  testDialogVisible, testPresetName, testMessage, testing, testResult,
+  testDialogVisible, testPresetName, testMessage,
+  testImageFileList, testReferenceImageFileList, testing, testResult, isCompositePreset,
   openPresetDialog, onPresetProviderChange, submitPreset,
-  handleDeletePreset, handleCopyPreset, openTestPreset, sendTest,
+  handleDeletePreset, handleCopyPreset, openTestPreset,
+  handleTestImageChange, handleTestImageExceed, clearTestImage,
+  handleTestReferenceImageChange, handleTestReferenceImageExceed, clearTestReferenceImage,
+  isImageResponse, sendTest,
   filteredPresets,
   // Logs
   logsData, logsLoading, logModuleFilter, logStatusFilter, logDateRange,
@@ -566,6 +616,14 @@ const {
   justify-content: flex-end;
   margin-bottom: 16px;
 }
+.preset-image-upload {
+  width: 100%;
+}
+.upload-tip {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
 .test-result {
   border: 1px solid var(--border-color);
   border-radius: 8px;
@@ -597,6 +655,15 @@ const {
   white-space: pre-wrap;
   margin: 0;
   color: var(--text-primary);
+}
+.test-result-image {
+  display: block;
+  width: 100%;
+  max-height: 520px;
+  object-fit: contain;
+  background: #fff;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
 }
 
 /* Test Popover */

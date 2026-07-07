@@ -96,8 +96,9 @@ async def poll_single(db: Session, shipment: ShipmentTracking) -> dict:
             waybill = db.query(Waybill).filter(Waybill.waybill_no == shipment.waybill_no).first()
             if waybill:
                 waybill.estimated_delivery_date = result.estimated_delivery_date.replace(tzinfo=None)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("sync ETA to waybill failed: %s err=%s", shipment.waybill_no, exc)
+            print(f"[tracking] ETA sync failed {shipment.waybill_no} err={exc}", flush=True)
 
     carrier_cfg = db.query(CarrierConfig).filter(CarrierConfig.carrier == shipment.carrier).first()
     max_days = carrier_cfg.max_poll_days if carrier_cfg else 90

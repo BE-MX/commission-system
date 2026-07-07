@@ -117,8 +117,13 @@ export function useAiManager() {
   const testPresetName = ref('')
   const testPresetId = ref(null)
   const testMessage = ref('')
+  const testImageFile = ref(null)
+  const testImageFileList = ref([])
+  const testReferenceImageFile = ref(null)
+  const testReferenceImageFileList = ref([])
   const testing = ref(false)
   const testResult = ref(null)
+  const isCompositePreset = computed(() => testPresetName.value === 'expo_wig_composite')
 
   // ── Logs ──────────────────────────────────────────────
   const logsData = ref([])
@@ -346,17 +351,90 @@ export function useAiManager() {
   function openTestPreset(row) {
     testPresetId.value = row.id
     testPresetName.value = row.preset_name
-    testMessage.value = ''
+    if (row.preset_name === 'expo_face_analysis') {
+      testMessage.value = '请分析图片中的人物面容特征，只输出 JSON。'
+    } else if (row.preset_name === 'expo_wig_composite') {
+      testMessage.value = 'Replace the hair in the first image with the wig shown in the second image. Keep the face, expression, skin tone, lighting and background unchanged. Make the hairline transition natural and photorealistic.'
+    } else {
+      testMessage.value = ''
+    }
+    testImageFile.value = null
+    testImageFileList.value = []
+    testReferenceImageFile.value = null
+    testReferenceImageFileList.value = []
     testResult.value = null
     testDialogVisible.value = true
   }
 
+  function setTestImageFile(uploadFile, target) {
+    const file = uploadFile.raw
+    if (!file) return
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      ElMessage.error('请选择 JPG / PNG / WEBP 图片')
+      target.file.value = null
+      target.list.value = []
+      return
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      ElMessage.error('测试图片不能超过 10MB')
+      target.file.value = null
+      target.list.value = []
+      return
+    }
+    target.file.value = file
+    target.list.value = [uploadFile]
+  }
+
+  function handleTestImageChange(uploadFile) {
+    setTestImageFile(uploadFile, { file: testImageFile, list: testImageFileList })
+  }
+
+  function handleTestImageExceed(files) {
+    const file = files[0]
+    handleTestImageChange({ name: file.name, raw: file })
+  }
+
+  function clearTestImage() {
+    testImageFile.value = null
+    testImageFileList.value = []
+  }
+
+  function handleTestReferenceImageChange(uploadFile) {
+    setTestImageFile(uploadFile, { file: testReferenceImageFile, list: testReferenceImageFileList })
+  }
+
+  function handleTestReferenceImageExceed(files) {
+    const file = files[0]
+    handleTestReferenceImageChange({ name: file.name, raw: file })
+  }
+
+  function clearTestReferenceImage() {
+    testReferenceImageFile.value = null
+    testReferenceImageFileList.value = []
+  }
+
+  function isImageResponse(value) {
+    return typeof value === 'string' && (
+      value.startsWith('data:image/') ||
+      /^https?:\/\/.+\.(png|jpe?g|webp)(\?.*)?$/i.test(value)
+    )
+  }
+
   async function sendTest() {
     if (!testMessage.value.trim()) return
+    if (isCompositePreset.value && (!testImageFile.value || !testReferenceImageFile.value)) {
+      ElMessage.warning('请同时上传客户原图和假发参考图')
+      return
+    }
     testing.value = true
     testResult.value = null
     try {
-      const res = await testPreset(testPresetId.value, testMessage.value)
+      const res = await testPreset(
+        testPresetId.value,
+        testMessage.value,
+        testImageFile.value,
+        isCompositePreset.value ? testReferenceImageFile.value : null,
+      )
       testResult.value = res.data
     } catch (e) { /* ignore */ }
     testing.value = false
@@ -415,9 +493,13 @@ export function useAiManager() {
     presets, presetLoading, presetSearch, presetProviderFilter, providerOptions,
     presetDialogVisible, presetEditId, presetFormRef, presetSaving,
     presetForm, presetRules, isAccioProvider,
-    testDialogVisible, testPresetName, testPresetId, testMessage, testing, testResult,
+    testDialogVisible, testPresetName, testPresetId, testMessage,
+    testImageFileList, testReferenceImageFileList, testing, testResult, isCompositePreset,
     fetchPresets, openPresetDialog, onPresetProviderChange, submitPreset,
-    handleDeletePreset, handleCopyPreset, openTestPreset, sendTest,
+    handleDeletePreset, handleCopyPreset, openTestPreset,
+    handleTestImageChange, handleTestImageExceed, clearTestImage,
+    handleTestReferenceImageChange, handleTestReferenceImageExceed, clearTestReferenceImage,
+    isImageResponse, sendTest,
     filteredPresets,
     // Logs
     logsData, logsLoading, logSearch, logModuleFilter, logStatusFilter, logDateRange,

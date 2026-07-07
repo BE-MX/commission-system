@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 
 from app.api.deps import get_db
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import require_permission
 from app.schemas.common import ResponseModel, PageResponse
 from app.dingtalk.models import DingTalkMessageLog, DingTalkCallbackLog
 from app.dingtalk.schemas import (
@@ -27,7 +27,7 @@ router = APIRouter()
 @router.post("/webhook/text", summary="发送文本消息")
 async def send_text(
     req: WebhookTextRequest,
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(require_permission("dingtalk:admin")),
 ):
     sender = get_webhook_sender()
     result = await sender.send_text(
@@ -41,7 +41,7 @@ async def send_text(
 @router.post("/webhook/markdown", summary="发送 Markdown 消息")
 async def send_markdown(
     req: WebhookMarkdownRequest,
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(require_permission("dingtalk:admin")),
 ):
     sender = get_webhook_sender()
     result = await sender.send_markdown(
@@ -56,7 +56,7 @@ async def send_markdown(
 @router.post("/webhook/action-card", summary="发送 ActionCard 消息")
 async def send_action_card(
     req: WebhookActionCardRequest,
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(require_permission("dingtalk:admin")),
 ):
     sender = get_webhook_sender()
     result = await sender.send_action_card(
@@ -78,7 +78,7 @@ def list_messages(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(require_permission("dingtalk:admin")),
 ) -> ResponseModel:
     query = db.query(DingTalkMessageLog)
     if msg_type:
@@ -121,7 +121,7 @@ def list_callbacks(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
-    _current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(require_permission("dingtalk:admin")),
 ) -> ResponseModel:
     query = db.query(DingTalkCallbackLog)
     if event_type:

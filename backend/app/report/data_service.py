@@ -416,8 +416,9 @@ def get_process_card_print_data(
         try:
             qr_result = get_qrcode(db, r["id"], box_size=4)
             qr_data = qr_result.get("qr_data", "")
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("print card qrcode failed: item=%s err=%s", r["id"], exc)
+            print(f"[report] qrcode failed item={r['id']} err={exc}", flush=True)
 
         items.append({
             "id": r["id"],

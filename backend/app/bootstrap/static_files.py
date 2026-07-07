@@ -13,7 +13,9 @@ logger = logging.getLogger("commission")
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent  # commission-system/
 UPLOADS_DIR = _REPO_ROOT / "uploads"
 FRONTEND_DIST = _REPO_ROOT / "frontend" / "dist"
-ASSET_STORAGE_ROOT = Path(os.environ.get("ASSET_STORAGE_ROOT", r"D:\WORKSOURCE"))
+from app.core.config import get_settings
+
+ASSET_STORAGE_ROOT = Path(get_settings().ASSET_STORAGE_ROOT)
 
 
 def mount_uploads(app: FastAPI) -> None:

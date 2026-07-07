@@ -1,18 +1,31 @@
 # anatomy.md
 
-> Auto-maintained by OpenWolf. Last scanned: 2026-07-01T00:45:05.472Z
-> Files: 42 tracked | Anatomy hits: 0 | Misses: 0
+> Auto-maintained by OpenWolf. Last scanned: 2026-07-07T01:40:28.094Z
+> Files: 87 tracked | Anatomy hits: 0 | Misses: 0
+
+## ../ai-usage-tray/
+
+- `.gitignore` — Git ignore rules (~15 tok)
+- `AiUsageTray.csproj` (~137 tok)
+- `build.bat` (~96 tok)
+- `CLAUDE.md` — AI Usage Tray - AI 用量托盘 (~333 tok)
+- `Config.cs` — config.json，与 exe 同目录，首次运行自动生成。 (~710 tok)
+- `DetailsForm.cs` — 详情面板：横向数字看板（对齐 codex-island 展开态）。 每个提供方一组列，列 = 小标签 + 重置倒计时 / 巨大百分比数字 / 细进度条。 静态数据看板（10 分钟一刷），刻意不加动画。 (~3479 tok)
+- `Program.cs` — Class: Program (~469 tok)
+- `README.md` — Project documentation (~285 tok)
+- `TrayContext.cs` — 托盘应用主体：NotifyIcon + 定时轮询 + 右键菜单 + 90% 气泡告警。 (~2656 tok)
+- `UsageFetcher.cs` — 一个额度窗口（5 小时 / 7 天 / 模型级 7 天）。Percent 为 0-100。 (~2676 tok)
 
 ## ./
 
-- `CLAUDE.md` — OpenWolf (~15404 tok)
-- `README.md` — Project documentation (~1225 tok)
+- `CLAUDE.md` — LeShine Ark Platform - 莱莎方舟平台 (~1442 tok)
 
 ## .claude/
 
 
 ## .claude/rules/
 
+- `checklists.md` — 流程检查清单（2026-07-03 治理落地，配合 CLAUDE.md 宪法使用） (~239 tok)
 
 ## .pytest_cache/
 
@@ -25,18 +38,33 @@
 
 ## C:/Users/windb/.claude/
 
-- `CLAUDE.md` — 关于我 (~341 tok)
+- `CLAUDE.md` — 关于我 (~390 tok)
 
 ## C:/Users/windb/.claude/plans/
 
-- `atomic-giggling-hammock.md` — Plan: 工序卡片打印改为轻量 HTML 方案 (~445 tok)
-- `drifting-watching-origami.md` — 生产订单打印工作台 — Implementation Plan (~1305 tok)
 
 ## C:/Users/windb/.claude/projects/D--MyProgram-commission-system/memory/
 
-- `project_production_module.md` — 数据库（5 张表，025 + 026 + 039 迁移） (~777 tok)
-- `project_production_reporting_module.md` — 2026-06-01 生产报工模块 (~1157 tok)
-- `project_stimulsoft_module.md` — 2026-06-03 JimuReport → Stimulsoft 迁移 (~2300 tok)
+- `feedback_emil_skills.md` (~182 tok)
+- `MEMORY.md` (~912 tok)
+- `project_ai_usage_tray.md` (~273 tok)
+- `project_expo_module.md` (~774 tok)
+- `project_h1_2026_report.md` (~259 tok)
+- `project_vibe_governance.md` (~401 tok)
+- `reference_git_proxy.md` (~366 tok)
+
+## C:/Users/windb/AppData/Local/Temp/claude/D--MyProgram-commission-system/fd002180-b567-4af5-a80d-bcc0bacd5126/scratchpad/
+
+- `probe_usage.py` — Probe Claude & Codex usage endpoints from Windows. Prints status + response structure, never tokens. (~571 tok)
+
+## C:/Users/windb/Desktop/
+
+- `上半年汇报.html` — 莱莎 AI 与软件平台 · 半年汇报 2026.3–2026.7 (~6938 tok)
+- `上半年总结-完整版.md` — 莱莎AI与软件平台建设半年总结（2026.3–2026.7）与下阶段推进计划 (~1882 tok)
+
+## C:/Users/windb/Downloads/08_Code_Dev/
+
+- `2026-07-06_上半年汇报_02.html` — 莱莎 AI 与软件平台 · 半年汇报 2026.3–2026.7 (~6505 tok)
 
 ## C:/Users/windb/cola/outputs/jimureport-集成开发文档/
 
@@ -265,9 +293,9 @@
 
 ## backend/alembic/versions/
 
-- `039_add_production_print_logs.py` — add production print logs table (~502 tok)
-
-- `040_payment_fx_fields.py` — add FX/RMB fields to synced_payment (~332 tok)
+- `046_add_perm_metadata.py` — permission metadata + audit table (权限重设计方案) (~540 tok)
+- `047_expo_color_scene.py` — expo try-on: hair color params + scene composite mode (~395 tok)
+- `048_expo_hair_colors.py` — expo try-on: dedicated hair color library (swatch image + description) (~521 tok)
 
 ## backend/app/
 
@@ -283,7 +311,10 @@
 
 ## backend/app/auth/
 
-- `service.py` — Auth 业务逻辑 (~3719 tok)
+- `admin_router.py` — 用户/角色/权限管理 & 个人资料路由 (~7299 tok)
+- `admin_schemas.py` — 用户/角色管理 Pydantic 模型 (~725 tok)
+- `models.py` — Auth 数据模型（SQLAlchemy） (~2168 tok)
+- `service.py` — Auth 业务逻辑 (~4503 tok)
 
 ## backend/app/bootstrap/
 
@@ -297,6 +328,17 @@
 ## backend/app/design/
 
 
+## backend/app/dingtalk/
+
+
+## backend/app/expo/
+
+- `ai_pipeline.py` — 展会试戴 AI 管线：面容分析 → 效果图合成 → 双轨话术生成。 (~5616 tok)
+- `models.py` — SQLAlchemy models for the expo AI wig try-on module (045 migration). (~2423 tok)
+- `router.py` — FastAPI router for the expo AI wig try-on module (/api/expo). (~3955 tok)
+- `schemas.py` — Pydantic schemas for the expo try-on module. (~755 tok)
+- `service.py` — Expo try-on 业务逻辑：客户/会话/结果/反馈/发型库 CRUD 与序列化。 (~3795 tok)
+
 ## backend/app/governance/
 
 
@@ -308,63 +350,75 @@
 
 ## backend/app/mini/
 
-- `service.py` — 微信小程序端 — 业务逻辑层 (~7148 tok)
+
+## backend/app/models/
+
 
 ## backend/app/production/
 
 
 ## backend/app/report/
 
-- `category_service.py` — 报表中心 — 产品分类规则服务 (~1382 tok)
-- `data_service.py` — 报表中心 — 数据组装服务 (~5491 tok)
-- `docx_export.py` — 生产订单 Word 导出服务。 (~5704 tok)
-- `router.py` — 报表中心 — API 路由 (~3951 tok)
 
 ## backend/app/report/templates/
 
-- `production_order_print.html` — 生产订单 {{ header.order_no }} (~4095 tok)
 
 ## backend/app/schedulers/
+
+- `registry.py` — APScheduler 任务注册与生命周期管理 (~1847 tok)
+
+## backend/app/services/
 
 
 ## backend/app/stock/
 
-- `models.py` — 备货管理 — SQLAlchemy ORM 模型 (~2233 tok)
-- `print_workstation_service.py` — 备货管理 — 打印工作台服务 (~2555 tok)
-- `router.py` — 备货管理 — API 路由 (~7502 tok)
-- `schemas.py` — 备货管理 — Pydantic 请求/响应模型 (~1554 tok)
-- `service.py` — 备货管理 — service facade (~610 tok)
 
 ## backend/app/tracking/
 
-- `router.py` — 物流跟踪 API 路由 (薄壳: 参数 / 权限 / 调用 service / 异常映射) (~3308 tok)
 
 ## backend/app/whatsapp/
 
 
+## backend/config/
+
+
 ## backend/scripts/
 
-- `seed_product_process_route.py` — main (~444 tok)
 
 ## backend/tests/
 
+- `test_commission_batch_flow.py` — 提成批次状态机回归测试 (~2504 tok)
+- `test_expo_color_scene.py` — 展会试戴「发色选择 + 场景大片双入口」纯逻辑测试（047 迁移配套）。 (~1996 tok)
+- `test_invoice_amounts.py` — 订单发票 — 金额计算与校验回归测试 (~1574 tok)
+- `test_stock_status.py` — 备货管理 — 库存状态判定回归测试（纯函数，无 DB） (~1190 tok)
+- `test_tracking_status.py` — 物流跟踪 — 统一状态映射回归测试（纯函数，无 DB） (~1449 tok)
 
 ## deploy/
 
+- `backup-uploads.bat` (~432 tok)
+- `deploy.bat` — Declares f (~2412 tok)
+- `rollback.bat` (~708 tok)
 
 ## docs/
 
-- `architecture.md` — 莱莎方舟平台 架构说明 (~2632 tok)
-- `handoff.md` — 莱莎方舟平台 项目交接清单 (~1408 tok)
-- `integration-guide.md` — 莱莎方舟平台 API 接入指南 (~1689 tok)
-- `README.md` — Project documentation (~371 tok)
-- `runbook.md` — 莱莎方舟平台 运维手册 (~2044 tok)
+- `2026-07-03-architecture-assessment.md` — 莱莎方舟平台 功能架构评估与改进文档 (~5298 tok)
+- `api-reference.md` — 莱莎方舟 API 参考 (~5017 tok)
+- `architecture.md` — 莱莎方舟平台 架构说明 (~3179 tok)
+- `database.md` — 莱莎方舟 数据库表参考 (~3173 tok)
+- `handoff.md` — 莱莎方舟平台 项目交接清单 (~2216 tok)
+- `module-notes.md` — 莱莎方舟 模块专题笔记（含各模块已踩坑） (~6258 tok)
+- `runbook.md` — 莱莎方舟平台 运维手册 (~2353 tok)
 
 ## docs/requirements/
 
+- `2026-07-03-expo-ai-wig-tryon-prototype-v2-green.html` — 莱莎健康假发 · AI 试戴 H5 原型 v2（品牌绿） (~10756 tok)
+- `2026-07-03-expo-ai-wig-tryon.md` — 展会 AI 假发试戴 H5 应用 设计开发文档 (~4068 tok)
+- `2026-07-03-permission-redesign-prototype.html` — 角色权限管理重设计原型 (~3633 tok)
+- `2026-07-03-permission-redesign.md` — 角色权限管理重设计方案 (~1427 tok)
 
 ## frontend/
 
+- `vite.config.js` — Declares htmlPath (~398 tok)
 
 ## frontend/dist/m/
 
@@ -374,26 +428,33 @@
 
 ## frontend/src/
 
+- `main.js` — Declares app (~264 tok)
 
 ## frontend/src/api/
 
-- `auth.js` — Auth API — 登录、刷新、获取用户信息 (~914 tok)
-- `stock.js` — ── 销量备货一览 ──────────────────────────────────────── (~1469 tok)
-- `tracking.js` — API routes: GET, POST, DELETE (14 endpoints) (~600 tok)
+- `clients.js` — 业务域 API client 集合。 (~425 tok)
+- `expo.js` — 展会 AI 假发试戴 API（/api/expo）。 (~901 tok)
 
 ## frontend/src/components/
 
-- `StimulsoftViewer.vue` — 报表编码，如 production_order_print (~1034 tok)
+- `AppUpload.vue` — 通用上传组件（2026-07-03 治理 F-6）。 (~873 tok)
+- `DetailDrawer.vue` — 详情抽屉骨架（2026-07-03 治理 F-6）。 (~270 tok)
 
 ## frontend/src/components/production/
 
 
 ## frontend/src/composables/
 
+- `useListPage.js` — 列表页编排 composable（2026-07-03 治理 F-2）。 (~514 tok)
 
 ## frontend/src/config/
 
-- `navigation.js` — 导航配置 — 单一来源。 (~6241 tok)
+- `navigation.js` — 导航配置 — 单一来源。 (~7005 tok)
+- `roleTemplates.js` — 角色模板 — 权限矩阵「一键套用」预设（纯前端常量，不入库）。 (~423 tok)
+
+## frontend/src/directives/
+
+- `permission.js` — 按钮级权限指令（权限重设计方案第五节）。 (~392 tok)
 
 ## frontend/src/router/
 
@@ -403,6 +464,11 @@
 
 ## frontend/src/styles/
 
+- `tokens.css` — Styles: 73 vars (~1126 tok)
+
+## frontend/src/utils/
+
+- `feedback.js` — 统一操作反馈（2026-07-03 治理 F-2）。 (~226 tok)
 
 ## frontend/src/views/asset/
 
@@ -431,6 +497,25 @@
 ## frontend/src/views/employee/
 
 
+## frontend/src/views/expo/
+
+- `ExpoKiosk.vue` — Vue: setup (~1188 tok)
+- `ExpoLeads.vue` — 分页列表页标杆用例（2026-07-03 治理 F-2）： (~3100 tok)
+- `HairColorLibrary.vue` — Vue: setup (~2027 tok)
+
+## frontend/src/views/expo/composables/
+
+- `useTryOnFlow.js` — 展会试戴 kiosk 流程状态机（双入口）。 (~2194 tok)
+
+## frontend/src/views/expo/kiosk/
+
+- `AttractScreen.vue` — Vue: setup (~837 tok)
+- `CaptureScreen.vue` — Vue: setup (~1445 tok)
+- `MatchingScreen.vue` — Vue: setup (~1453 tok)
+- `ResultScreen.vue` — Vue: setup (~2457 tok)
+- `SalesPanel.vue` — Vue: setup (~1874 tok)
+- `SceneScreen.vue` — Vue: setup (~744 tok)
+
 ## frontend/src/views/governance/
 
 
@@ -454,8 +539,6 @@
 
 ## frontend/src/views/stock/
 
-- `ProductionOrderManage.vue` — Vue component (~9988 tok)
-- `ProductionOrderPrint.vue` — Vue: setup (~3182 tok)
 
 ## frontend/src/views/stock/composables/
 
@@ -465,25 +548,32 @@
 
 ## frontend/src/views/system/
 
-- `UserManagement.vue` — Vue: setup (~4113 tok)
+- `DictManagement.vue` — Vue: setup (~1879 tok)
+- `ExternalBindings.vue` — Vue: setup (~1811 tok)
+- `RoleManagement.vue` — Vue: setup (~3259 tok)
+- `UserManagement.vue` — Vue: setup (~4256 tok)
+
+## frontend/src/views/system/components/
+
+- `PermissionMatrixTab.vue` — Vue: setup (~1542 tok)
+- `PermissionNavTab.vue` — 当前勾选的权限 code 数组 (~1674 tok)
+- `UserPermissionDrawer.vue` — 用户行数据（需含 role_ids；缺失时按 roles 名称匹配） (~908 tok)
 
 ## frontend/src/views/system/composables/
 
+- `usePermissionMatrix.js` — 权限矩阵编排 composable。 (~2652 tok)
 
 ## frontend/src/views/tracking/
 
-- `TrackingList.vue` — Vue: setup (~4792 tok)
 
 ## frontend/src/views/tracking/composables/
 
 
 ## miniprogram/
 
-- `app.js` — app.js (~262 tok)
 
 ## miniprogram/components/confirm-sheet/
 
-- `confirm-sheet.wxml` (~1060 tok)
 
 ## miniprogram/components/nav-bar/
 
@@ -499,29 +589,33 @@
 
 ## miniprogram/pages/history/
 
-- `history.wxml` (~1502 tok)
 
 ## miniprogram/pages/login/
 
 
 ## miniprogram/pages/overview/
 
-- `overview.wxml` (~1144 tok)
 
 ## miniprogram/pages/photo/
 
 
 ## miniprogram/pages/scan/
 
-- `scan.wxml` (~1739 tok)
 
 ## miniprogram/utils/
 
+
+## scripts/
+
+- `check_conventions.py` — 约定检查脚本 — 机器可查的规范不靠提示词自觉（架构评估 G-3）。 (~2212 tok)
 
 ## services/whatsapp-connector/
 
 
 ## services/whatsapp-connector/src/
+
+
+## tests (B-8 回归测试补充 2026-07-03)
 
 
 ## 登录动效/app/
@@ -561,3 +655,4 @@
 
 
 ## 登录动效/app/stock-app/
+

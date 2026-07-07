@@ -25,6 +25,7 @@
 
 <!-- Project-specific conventions discovered during development. -->
 
+- **列表页双标杆（2026-07-03 治理 F-2 起）**：标记语言/样式复制 `system/DictManagement.vue`；服务端分页的编排逻辑照 `views/expo/ExpoLeads.vue`——`useListPage`（loading/分页/搜索/重置）+ `utils/feedback`（msgSuccess/confirmDanger 统一文案）+ `components/DetailDrawer`（抽屉骨架）+ `components/AppUpload`（上传，uploadFn 注入式）。新列表页必须用这套，不再手写样板。`/api/auth` 管理端点用 `clients.js` 的 `adminClient`（登录语义仍走 auth.js）。
 - **列表页规范拉齐（2026-06-11）**：7 个新增模块的列表页（ProductManage/ProcessManage/ProductionOrderManage/ConceptRegistry/CustomerOpportunityView/ExternalBindings/ReportCenter）在快速开发时未遵循 DESIGN.md List Page Spec。标杆模板是 `system/DictManagement.vue`。修复要点：`width` → `min-width`+`max-width`，`stripe` 移除，加 `border class="list-table"`，包裹 `.table-card`，移除 `align="center"` 和 `size="small"`，操作按钮用 `GlassButton variant="link" left-icon="..."` 替代 `el-button link size="small"`，`el-tag` 加 `effect="plain"`，纯文本列加 `show-overflow-tooltip`。**以后新增列表页直接复制 DictManagement.vue 的模板结构**，不要从零开始。
 
 - **客户经营雷达纯规则引擎（2026-06-12）**：MVP 阶段不调 AI，用纯规则引擎将客户分入 6 个经营线索分组（new_inquiry/sample_delivery/key_account/reorder_window/reactivation/public_pool）。行动推荐在查询时懒生成（首访触发），后续从 `ark_customer_actions` 缓存读取。画像从 `ark_customer_opportunities` 聚合，不需要独立数据源
@@ -62,6 +63,12 @@
 - **文件夹批量上传性能优化三件套**：(1) 预加载查重字典+标签字典+版本号，消除循环内 N+1 查询；(2) 内联 `create_asset`/`upload_new_version` 核心逻辑，避免逐文件 commit；(3) 每 BATCH_SIZE(20) 个文件一个事务 + `db.begin_nested()` savepoint 隔离单文件失败。1000 文件场景下查询次数从 ~2000 降到 3 次，commit 次数从 1000 降到 50 次
 - **移动端 SPA 中 `loadMore()` 与 `doSearch()` 存在竞态条件**：用户在滚动加载分页时（`loadMore` 请求未完成），通过 BottomSheet 选标签触发 `doSearch()` 重置 `page=1`，`doSearch` 先完成替换 `results` 后，`loadMore` 的旧请求完成将上一筛选条件的分页结果追加进来，导致 `results` 混合。修复：`loadMore()` 中保存请求时的 `expectedPage`，await 完成后检查 `page.value !== expectedPage` 则丢弃该次旧结果
 - **分类规则提取为独立 service（2026-06-27）**：生产订单打印的 17 条 model+unit 分类规则（`_CATEGORY_RULES`）从 `data_service.py` 提取到 `category_service.py`，供 `data_service` 和 `print_workstation_service` 共享。**规则变更只改一处**，打印工作台分类卡片和打印输出保持一致。提取时保留公开 API：`CATEGORY_RULES` / `OTHER_CATEGORY_INDEX` / `OTHER_LABEL` / `classify()` / `split_by_category()`
+
+- **提成比例按员工属性区分（2026-07-01）**：业务员提成比例不是固定值——开发(develop)=2%，分配(distribute)=1%。`calc_commission_rates` 根据 `salesperson_attribute` 参数条件选择。所有调用方（auto_match / refresh / manual create / import）都已走统一函数，不需各自判断
+- **日期时间线查找必须 to_date() 包裹（2026-07-01）**：`get_employee_attribute_at_date` 和 `get_employee_attribute_at_date_from_records` 中，target_date 和 record.effective_start 可能是 str/datetime/date 混合类型（MySQL 返回值不确定），直接比较会静默失败。所有日期比较前必须经 `to_date()` 统一转为 `date` 对象
+
+- **订单发票管理可行性评估（2026-07-02）**：小满销售订单同步不是简单推送发票文本，必须先完成本地发票主表/明细表和映射校验；小满 `POST /v1/invoices/order/push` 依赖 `company_id`、`product_id`、`sku_id`、订单状态等企业内 ID，产品明细 `cost_amount` 需要方舟侧计算后传入。`sku_id` 可通过 `okki_inventory` 关联 `okki_products.product_id` 获取；若同一产品多规格，前端必须让业务员选择具体规格，不能猜测。MVP 应先做发票创建、Excel/PDF 导出、手动同步和同步日志，不自动创建小满客户/产品。
+- **订单发票产品明细匹配规则（2026-07-02）**：发票明细最终匹配 `okki_products.product_name`，通过 `model/color/size/unit` 四个级联下拉框收敛；每选一个维度，其余维度候选项同步缩小。全部选择后若唯一匹配则自动填充 Product_name 和 Product（取 `product_name` 第一个 `/` 前内容）。`Price/Piece` 优先从小满接口取，取不到留空可编辑；`TotalPrice=Quantity*Price/Piece`。
 
 ## Do-Not-Repeat
 
@@ -109,9 +116,17 @@
 - [2026-06-10] **`ark_users.id` 实际是 INT UNSIGNED**：ORM 定义 `Column(Integer)` 看似 signed，但 MySQL 实际列是 `INT UNSIGNED`。FK 引用必须用 `_UINT = sa.Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql")`，否则 MySQL 8 报 `3780 incompatible foreign key`
 - [2026-06-11] **新迁移文件必须 git add + push**：032 迁移在本地创建但未 `git add`（untracked），后续 033 的 `down_revision` 指向 032，服务器 `alembic upgrade head` 时 KeyError。**创建迁移后立即 `git add` 确认它被追踪**
 - [2026-06-11] **分类字段选错导致拆表失败**：生产订单打印按 `product_remark`（"B等级一档"）做关键词匹配，但关键词（天才/贴发/平型/打孔）实际在 `model` 字段（"B1天才发帘"）。结果所有行归入「其他」。**分类前先 `SELECT DISTINCT` 确认字段值长什么样**
+- [2026-07-03] **新模块上传目录必须锚定仓库根**：`/uploads` 静态挂载指向 `REPO_ROOT/uploads`（bootstrap/static_files.py），但 uvicorn CWD 是 backend/——用相对路径 `Path("uploads/x")` 会写进 `backend/uploads`，URL 必然 404。正确做法：模块内定义 `REPO_ROOT = Path(__file__).resolve().parents[N]` 锚定 + `to_rel/to_abs` 转换，存库一律相对路径（参照 app/expo/ai_pipeline.py）
+- [2026-07-03] **isLoggedIn=true ≠ 用户信息已加载**：`stores/auth.js` 的 accessToken 从 localStorage 预恢复（供移动端 /m/ 共享）后，页面打开瞬间 isLoggedIn 即为 true，App.vue 原先 `if (!isLoggedIn)` 才拉 /me 的逻辑被跳过 → 永久"半登录态"（token 在、user/permissions 空、右上角显示"用户"、所有权限页报"权限不足"），且 localStorage 跨重启存活，重启前后端无效。**正确判据是 `!auth.user` 而非 `!isLoggedIn`**。修复在 App.vue（fetchMe 失败走 refresh 换新重试，全失败 clearAuthState + 手动复位 store ref——clearAuthState 不触达 Pinia ref）。教训：给鉴权状态加任何"持久化恢复"时，必须重新审视所有以 isLoggedIn 为前提的初始化分支
 - [2026-06-11] **Accio Work Python 污染 PATH**：Accio 自带 Python 的 `ctypes` 损坏，但排在 PATH 最前面。`call activate` 后系统仍优先用坏的 Python。修复：`start.bat` 改为直接用 `.venv\Scripts\python.exe -m uvicorn` 绕过 PATH
+- [2026-07-04] **失败路径是状态机的一等公民**（expo 双入口对抗性审查揪出三处卡死）：①任何"等待中"UI 状态必须有失败出口——不在 idle 计时范围的步骤（如 BUSY_STEPS）失败时留在原地就是永久卡屏，必须显式迁移 step；②整批异步任务"全部失败"与"全部成功"对上层状态是同一个 done，前端必须补判成品数为零并给重试按钮；③多步后台启动函数（置状态+插行）必须单事务 + except 回滚 + 实体标 failed + 双写日志，否则半途异常留下永久 generating 脏状态。写完 happy path 后强制自问：每个中间状态失败了用户怎么出去？
 
 ## Decision Log
+
+- [2026-07-03] **后端治理批次落地**：①响应信封 8 份 `_ok` 归一到 `app/core/response.ok(data=None, message="ok", code=200)`——本地再定义 `_ok` 即违规；②get_db 官方定义只在 `core/database.py`（api/deps 仅 re-export）；③配置全走 Settings（ASSET_*/XPOZ_* 已收编，os.environ 直读清零）；④定时任务：同步管线必须注册同步函数（AsyncIOScheduler 放线程池），写 `async def` 包同步代码会阻塞事件循环拖垮 08:30 档期——insight 三个 AI 报告 job 就踩过；job 失败由 registry 的 EVENT_JOB_ERROR 监听统一钉钉告警（listener 里发 async 通知必须 run_coroutine_threadsafe，不能直接调）；⑤insight 自定义权限依赖已改统一工厂，新代码一律 require_permission/require_any_permission；dingtalk 手动发送/日志需 `dingtalk:admin`。
+- [2026-07-03] **权限体系重设计落地**：①`seed_role_permissions` 从 insert-only 改为 **upsert**——改 seed 里的 module/label/kind 等元数据现在会真正刷进 DB（此前存在"改了 seed 但 DB 永不同步"的漂移陷阱）；②12 个死码回填 seed 标 `is_legacy=1`（UI 隐藏、admin 自动授权跳过），当前 81 总量/69 有效；③user/role 统一挂 module=user；④新权限动作词汇有白名单（check 脚本校验）；⑤角色权限保存自动写 `ark_permission_audit` 审计；⑥按钮级权限统一走 `v-permission`/`v-any-permission` 指令（display:none 实现，不许 el.remove）。方案与核清记录：docs/requirements/2026-07-03-permission-redesign.md
+- [2026-07-03] **mini 小程序端"登录即全通"是刻意决策**（车间工人扫码报工场景，细粒度权限无意义），不算权限漏洞；check_conventions 对 mini/router.py 白名单豁免。
+- [2026-07-03] **Vibe Coding 治理落地**（依据 docs/2026-07-03-architecture-assessment.md 第六部分）：①CLAUDE.md 从 968 行瘦身为 ~110 行宪法（只留改变行为的规则），API 清单→docs/api-reference.md、表结构→docs/database.md、模块专题→docs/module-notes.md，内容零删除只搬家；②.wolf 收敛为 cerebrum 单文件（anatomy/memory/buglog 停用存档，两处指令入口 OPENWOLF.md 与 .claude/rules/openwolf.md 同步精简）；③机器可查的规范交给 scripts/check_conventions.py（diff 增量、红黄两级、--strict 门控），提示词管判断、脚本管硬规则；④流程清单固化在 .claude/rules/checklists.md（新模块 9 步 / DoD / 对抗性审查触发标准）。理由：968 行里 ~600 行参考资料稀释了规则权重，是"规范存在但新代码不守"的机制性根因。
 
 <!-- Significant technical decisions with rationale. Why X was chosen over Y. -->
 
@@ -130,3 +145,6 @@
 - [2026-06-05] **ECharts 整包 `import * as echarts from 'echarts'` 会产出 1.1MB chunk**：Vite 构建报警告但功能正常。优化方向是按需 import（`echarts/core` + 手动注册组件），但看板场景组件多，收益有限，暂不优化
 - [2026-06-16] WhatsApp 同步采用「独立 connector 服务 + 方舟本地投影表」方案。方舟只调用 `/internal/v1/*` HTTP contract 并存账号/会话/消息/游标，不保存 WhatsApp Web 会话密钥、不直接接入 WhatsApp Web 私有协议，降低主系统长连接和封号风险。
 - [2026-06-16] WhatsApp 自动同步职责划分：方舟后端 APScheduler 负责按账号拉取并写本地投影表；connector 负责维护/恢复 WhatsApp Web 浏览器会话。connector 重启只尝试恢复 `active` 账号，若 WhatsApp 要求重新扫码则标记 `reconnect_required`，不在后台生成无人可用的二维码。
+- [2026-07-02] 订单发票模块独立为 `app/invoice`，路由挂载 `/api/invoice`。产品/客户查询只读业务库 `customer_info/okki_products/okki_inventory`，发票主表和明细写方舟库 `ark_invoices/ark_invoice_items`；小满同步先封装在 `xiaoman_service.py`，避免外部接口字段不确定性污染页面录入和本地发票流程。
+- [2026-07-03] 试戴 H5 为**内贸品牌「莱莎健康假发」**（高端 3000+，短发为主）。硬约束：①界面与 AI 话术禁用词——便宜/划算/性价比/打折/薅羊毛；②话术双轨且顺序固定：先情感（气质升级）后理性（久戴如新）；③客户屏只展示正面特征，发量/头皮判断只进 analysis_json.internal 供销售端；④Top3 匹配强制含至臻系列款（向上锚定）。源文档：桌面《莱莎内贸营销策略v2》《莱莎内贸直播话术v4》，结构化入 ark_expo_scripts。
+- [2026-07-03] 展会 AI 假发试戴选 **H5** 而非微信小程序（亮哥拍板）。理由：展位 iPad 相机(getUserMedia)与动画表现更自由、与主站同构开发最快、规避 8 月前小程序审核排期风险。承载方式：主站 SPA 内独立路由组 `/expo/*` + 空白布局 + navigation.js hidden entry——**明确不做第二套代码库**（吸取 `/m/` 平行实现的教训）。后端为领域模块 `app/expo/`，设计文档 docs/requirements/2026-07-03-expo-ai-wig-tryon.md。

@@ -58,12 +58,13 @@ export function createApiClient({ baseURL, timeout = 60000 } = {}) {
       if (error.response?.status === 404 && error.config?.suppressNotFound) {
         return Promise.reject(error)
       }
-      if (error.response?.status === 401) {
+      const detail = error.response?.data?.detail
+      if (error.response?.status === 401 || (error.response?.status === 403 && detail === 'Not authenticated')) {
         clearAuthState()
         window.location.href = '/login'
         return Promise.reject(error)
       }
-      let msg = error.response?.data?.detail || error.response?.data?.message
+      let msg = detail || error.response?.data?.message
         || error.message || '网络错误'
       if (typeof msg === 'object' && msg !== null) {
         msg = msg.message || JSON.stringify(msg)

@@ -1,0 +1,270 @@
+/**
+ * 权限矩阵编排 composable。
+ *
+ * 数据源: GET /api/auth/permissions/list (adminClient, 已过滤 legacy、已按 sort 排序)
+ * 行 = 权限 code 冒号前缀 (23 行, payment/user/role 独立成行, 与后端 module 字段无关)
+ * 列 = 查看(read) / 编辑(write) / 删除(delete) / 管理(admin|manage) + 特殊 (kind=data 或非标准 action)
+ *
+ * 用法:
+ *   const matrix = usePermissionMatrix()                 // 可编辑 (角色权限抽屉)
+ *   const matrix = usePermissionMatrix({ readonly: true }) // 只读 (用户有效权限预览)
+ *   await matrix.loadPermissions()
+ *   matrix.initSelection(role.permission_ids)
+ */
+import { computed, reactive, ref } from 'vue'
+import { adminClient } from '@/api/clients'
+import { ROLE_TEMPLATES } from '@/config/roleTemplates'
+
+/** 前缀 → 中文行名（矩阵行头） */
+export const PREFIX_LABELS = {
+  employee: '人员管理',
+  customer: '客户管理',
+  commission: '提成管理',
+  payment: '回款管理',
+  customer_opportunity: '客户机会台',
+  customer_radar: '客户经营雷达',
+  invoice: '订单发票',
+  tracking: '物流跟踪',
+  stock: '备货管理',
+  production: '生产管理',
+  expo: '展会营销',
+  insight: '方舟洞见',
+  asset: '素材管理',
+  color: '色彩管理',
+  design: '设计预约',
+  user: '用户管理',
+  role: '角色管理',
+  ai: 'AI 接入',
+  report: '报表中心',
+  governance: '数据治理',
+  external_binding: '外部账号绑定',
+  whatsapp: 'WhatsApp 同步',
+  dingtalk: '钉钉集成',
+}
+
+/** 矩阵行分组（视觉分组条，按导航语义排序） */
+const ROW_GROUPS = [
+  { label: '经营 · 提成与客户', prefixes: ['commission', 'payment', 'customer', 'customer_opportunity', 'customer_radar', 'employee'] },
+  { label: '单据 · 订单与物流', prefixes: ['invoice', 'tracking', 'stock', 'production'] },
+  { label: '营销 · 展会与洞见', prefixes: ['expo', 'insight', 'asset', 'color', 'design'] },
+  { label: '系统', prefixes: ['user', 'role', 'ai', 'report', 'governance', 'external_binding', 'whatsapp', 'dingtalk'] },
+]
+
+export const MATRIX_COLUMNS = [
+  { key: 'view', label: '查看' },
+  { key: 'edit', label: '编辑' },
+  { key: 'del', label: '删除' },
+  { key: 'admin', label: '管理' },
+]
+
+export const KIND_LABELS = { data: '数据范围', page: '页面', action: '动作' }
+
+/** action → 标准列；kind=data 或非标准 action → null (进特殊列) */
+function columnOf(perm) {
+  if (perm.kind === 'data') return null
+  if (perm.action === 'read') return 'view'
+  if (perm.action === 'write') return 'edit'
+  if (perm.action === 'delete') return 'del'
+  if (perm.action === 'admin' || perm.action === 'manage') return 'admin'
+  return null
+}
+
+export function usePermissionMatrix({ readonly = false } = {}) {
+  const loading = ref(false)
+  const allPerms = ref([])           // 扁平权限列表 [{id, code, label, action, kind, sort}]
+  const selectedIds = ref(new Set()) // 当前勾选集合（每次变更整体替换以触发响应）
+  const initialIds = ref(new Set())  // 打开时的初始集合（差异条基准）
+  const legacySelectedCount = ref(0) // 角色已勾选但已下架的权限数（保存时自动移除）
+  const searchText = ref('')
+  const templateKey = ref('')
+
+  const permById = computed(() => {
+    const m = new Map()
+    allPerms.value.forEach(p => m.set(Number(p.id), p))
+    return m
+  })
+  const permByCode = computed(() => {
+    const m = new Map()
+    allPerms.value.forEach(p => m.set(p.code, p))
+    return m
+  })
+  /** code → 中文 label（供导航反查 tab 显示 chip 标签） */
+  const codeLabelMap = computed(() => {
+    const m = {}
+    allPerms.value.forEach(p => { m[p.code] = p.label })
+    return m
+  })
+
+  async function loadPermissions() {
+    loading.value = true
+    try {
+      const res = await adminClient.get('/permissions/list')
+      allPerms.value = (res.data || []).flatMap(g => g.permissions || [])
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /** 用角色/用户的 permission_ids 初始化勾选集合；不在列表内的 id 视为 legacy */
+  function initSelection(permissionIds = []) {
+    const known = new Set()
+    let legacy = 0
+    permissionIds.map(Number).forEach(id => {
+      if (permById.value.has(id)) known.add(id)
+      else legacy += 1
+    })
+    selectedIds.value = known
+    initialIds.value = new Set(known)
+    legacySelectedCount.value = legacy
+    templateKey.value = ''
+    searchText.value = ''
+  }
+
+  // ── 行构建 ───────────────────────────────────────────
+  const groupedRows = computed(() => {
+    const byPrefix = new Map()
+    for (const p of allPerms.value) {
+      const prefix = p.code.split(':')[0]
+      if (!byPrefix.has(prefix)) {
+        byPrefix.set(prefix, {
+          prefix,
+          label: PREFIX_LABELS[prefix] || prefix,
+          cells: { view: null, edit: null, del: null, admin: null },
+          specials: [],
+          perms: [],
+        })
+      }
+      const row = byPrefix.get(prefix)
+      row.perms.push(p)
+      const col = columnOf(p)
+      if (col && !row.cells[col]) row.cells[col] = p
+      else row.specials.push(p)
+    }
+    const groups = []
+    const used = new Set()
+    for (const g of ROW_GROUPS) {
+      const rows = g.prefixes.filter(pf => byPrefix.has(pf)).map(pf => { used.add(pf); return byPrefix.get(pf) })
+      if (rows.length) groups.push({ label: g.label, rows })
+    }
+    const rest = [...byPrefix.keys()].filter(pf => !used.has(pf)).map(pf => byPrefix.get(pf))
+    if (rest.length) groups.push({ label: '其他', rows: rest })
+    return groups
+  })
+
+  const flatRows = computed(() => groupedRows.value.flatMap(g => g.rows))
+
+  /** 搜索过滤：前缀中文名 / 前缀 / 权限 code / 权限 label 命中即保留该行 */
+  const filteredGroups = computed(() => {
+    const q = searchText.value.trim().toLowerCase()
+    if (!q) return groupedRows.value
+    return groupedRows.value
+      .map(g => ({
+        ...g,
+        rows: g.rows.filter(r =>
+          r.label.toLowerCase().includes(q)
+          || r.prefix.includes(q)
+          || r.perms.some(p => p.code.toLowerCase().includes(q) || (p.label || '').toLowerCase().includes(q))),
+      }))
+      .filter(g => g.rows.length)
+  })
+
+  // ── 勾选状态 ─────────────────────────────────────────
+  function isSelected(perm) {
+    return !!perm && selectedIds.value.has(Number(perm.id))
+  }
+
+  /** 三态: 'on' | 'half' | '' */
+  function triState(perms) {
+    const list = perms.filter(Boolean)
+    if (!list.length) return ''
+    const n = list.filter(p => selectedIds.value.has(Number(p.id))).length
+    if (n === 0) return ''
+    return n === list.length ? 'on' : 'half'
+  }
+
+  function rowState(row) { return triState(row.perms) }
+  function rowSelectedCount(row) { return row.perms.filter(p => selectedIds.value.has(Number(p.id))).length }
+  function colState(colKey) { return triState(flatRows.value.map(r => r.cells[colKey])) }
+  const allState = computed(() => triState(allPerms.value))
+
+  // ── 勾选操作（readonly 模式全部 no-op） ──────────────
+  function mutate(fn) {
+    if (readonly) return
+    const next = new Set(selectedIds.value)
+    fn(next)
+    selectedIds.value = next
+  }
+
+  function toggleCell(perm) {
+    if (!perm) return
+    mutate(next => {
+      const id = Number(perm.id)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+    })
+  }
+
+  function toggleGroup(perms) {
+    const list = perms.filter(Boolean)
+    if (!list.length) return
+    const allOn = list.every(p => selectedIds.value.has(Number(p.id)))
+    mutate(next => {
+      list.forEach(p => { allOn ? next.delete(Number(p.id)) : next.add(Number(p.id)) })
+    })
+  }
+
+  function toggleRow(row) { toggleGroup(row.perms) }
+  function toggleCol(colKey) { toggleGroup(flatRows.value.map(r => r.cells[colKey])) }
+  function toggleAll() { toggleGroup(allPerms.value) }
+
+  // ── 角色模板 ─────────────────────────────────────────
+  const activeTemplate = computed(() => ROLE_TEMPLATES.find(t => t.key === templateKey.value) || null)
+  const templateCodeSet = computed(() => {
+    const tpl = activeTemplate.value
+    if (!tpl) return null
+    if (tpl.all) return new Set(allPerms.value.map(p => p.code))
+    return new Set(tpl.codes)
+  })
+
+  function applyTemplate(key) {
+    if (readonly) return
+    templateKey.value = key
+    const tpl = activeTemplate.value
+    if (!tpl) return
+    const ids = tpl.all
+      ? allPerms.value.map(p => Number(p.id))
+      : tpl.codes.map(c => permByCode.value.get(c)).filter(Boolean).map(p => Number(p.id))
+    selectedIds.value = new Set(ids)
+  }
+
+  /** 模板差异：套用模板后，当前多勾（模板外）的格子金边高亮 */
+  function isTemplateDiff(perm) {
+    const codes = templateCodeSet.value
+    if (!codes || !perm) return false
+    return selectedIds.value.has(Number(perm.id)) && !codes.has(perm.code)
+  }
+
+  // ── 变更差异（相对打开时的初始集合） ─────────────────
+  const addedCodes = computed(() =>
+    [...selectedIds.value].filter(id => !initialIds.value.has(id)).map(id => permById.value.get(id)?.code).filter(Boolean))
+  const removedCodes = computed(() =>
+    [...initialIds.value].filter(id => !selectedIds.value.has(id)).map(id => permById.value.get(id)?.code).filter(Boolean))
+  const hasChanges = computed(() =>
+    addedCodes.value.length > 0 || removedCodes.value.length > 0 || legacySelectedCount.value > 0)
+
+  const selectedCount = computed(() => selectedIds.value.size)
+  const selectedCodesList = computed(() =>
+    [...selectedIds.value].map(id => permById.value.get(id)?.code).filter(Boolean))
+  /** 保存用 payload */
+  const selectedIdList = computed(() => [...selectedIds.value])
+
+  return reactive({
+    readonly, loading, allPerms, selectedIds, legacySelectedCount, searchText, templateKey,
+    codeLabelMap, filteredGroups, allState,
+    loadPermissions, initSelection,
+    isSelected, rowState, rowSelectedCount, colState,
+    toggleCell, toggleRow, toggleCol, toggleAll,
+    activeTemplate, applyTemplate, isTemplateDiff,
+    addedCodes, removedCodes, hasChanges, selectedCount, selectedCodesList, selectedIdList,
+  })
+}

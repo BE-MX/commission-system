@@ -6,14 +6,11 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
 from app.auth.dependencies import get_current_user, require_permission
+from app.core.response import ok as _ok
 from app.system import service
 from app.system.schemas import DictItem, DictItemCreate, DictItemUpdate
 
 router = APIRouter()
-
-
-def _ok(data, message: str = "ok"):
-    return {"code": 200, "message": message, "data": data}
 
 
 @router.get("/dict-types")

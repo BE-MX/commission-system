@@ -7,8 +7,20 @@ import { authApi } from '@/api/auth'
 import router from '@/router'
 
 // 模块级 token 存储，供 axios 拦截器同步读取（不依赖 Pinia 初始化顺序）
-let _globalAccessToken = null
-export function getAccessToken() { return _globalAccessToken }
+function readStoredAccessToken() {
+  try {
+    return localStorage.getItem('ark_access_token')
+  } catch {
+    return null
+  }
+}
+
+let _globalAccessToken = readStoredAccessToken()
+export function getAccessToken() {
+  if (_globalAccessToken) return _globalAccessToken
+  _globalAccessToken = readStoredAccessToken()
+  return _globalAccessToken
+}
 
 /** 不依赖 Pinia store 实例，直接清除认证状态 */
 export function clearAuthState() {
@@ -17,7 +29,7 @@ export function clearAuthState() {
 }
 
 export const useAuthStore = defineStore('auth', () => {
-  const accessToken = ref(null)
+  const accessToken = ref(getAccessToken())
   const user = ref(null)
 
   // 刷新完成前为 null（等待中），完成后为 true/false
@@ -53,6 +65,7 @@ export const useAuthStore = defineStore('auth', () => {
     const data = await authApi.login({ username, password })
     _setGlobalToken(data.access_token)
     user.value = data.user
+    markInitialized()
     return data
   }
 
