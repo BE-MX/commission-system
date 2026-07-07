@@ -128,6 +128,18 @@ def test_build_prompt_tryon_without_color_has_no_clause():
     assert "recolor" not in prompt.lower()
 
 
+def test_build_prompt_tryon_triptych_structure():
+    """三格模板核心约束：图片角色分工 + 三场景 + 16:9 拼接 + 三格一致性声明。"""
+    session = _session()
+    wig = ExpoWig(model_no="LS-3", name="轻盈波波", wig_description="airy bob")
+    row = ExpoResult(session_id=1, wig_id=3, hair_color_json=None)
+    prompt, _ = ai_pipeline._build_prompt(session, row, wig)
+    assert "FIRST image is the customer's own photo" in prompt  # 锚：参考图角色分工
+    assert "HOME" in prompt and "OFFICE" in prompt and "GATHERING" in prompt  # 场：三格
+    assert "16:9" in prompt and "one third" in prompt  # 输出规格
+    assert "identical in all three panels" in prompt  # 魂：三格身份一致性
+
+
 # ---------------- 批次切片边界（换一批上界） ----------------
 
 def test_pick_batch_beyond_ranking_returns_empty():

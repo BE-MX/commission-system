@@ -162,11 +162,43 @@ def _run_analysis(session_id: int) -> None:
 
 # ---------------- 管线二：效果图合成（多款并行，双模式） ----------------
 
+# tryon 合成模板（锚场色机魂结构，2026-07-07 依据用户三格效果图 prompt 重写）：
+# 锚=主体锁定+参考图角色分工 / 场=三格生活场景（每格显式光源方向）/
+# 色=正向质感+负向排除 / 机=85mm 摄像语言+三格构图一致 / 魂=同一人三个日常瞬间。
+# 发色子句（swatch/text）在其后追加，LAST 指代色板图。
 _COMPOSITE_TEMPLATE = (
-    "Replace the person's hair in the first photo with the wig shown in the reference "
-    "image(s): {description}. Keep the face, skin tone, expression and background exactly "
-    "the same. The hairline transition must look natural, hair should fall with realistic "
-    "physics, and lighting direction must match the original photo. {extra}"
+    # 锚 —— 主体锁定
+    "The FIRST image is the customer's own photo. The following wig reference image(s) "
+    "show the exact wig to use, from multiple angles: {description}. Replace the "
+    "customer's hair with this wig, matching its length, layering, fringe and volume "
+    "exactly. Keep the customer's face, facial features, expression, skin tone and body "
+    "exactly the same as the first image, with light natural makeup. The hairline "
+    "transition must look naturally grown, with realistic fine baby hairs at the "
+    "temples. {extra}"
+    # 场 —— 三格场景，光源方向逐格声明
+    " Render the SAME person wearing this wig in three lifestyle scenes, side by side "
+    "from left to right in ONE single 16:9 image, each scene exactly one third of the "
+    "width: (1) HOME - beside a living-room sofa, warm afternoon window light from her "
+    "front-left, blurred green plants and wooden furniture behind; (2) OFFICE - a bright "
+    "modern workspace, soft overhead daylight panels as the key light with a faint "
+    "laptop-screen fill, blurred glass partitions behind; (3) GATHERING - an evening "
+    "dinner party, warm pendant light overhead as the key light, golden bokeh of string "
+    "lights and candles behind. In every panel the hair highlights and shadows must "
+    "follow that panel's light direction, and the person must blend naturally into the "
+    "environment with no cut-and-paste look."
+    # 色 —— 正向定义 + 负向排除
+    " Photorealistic straight-out-of-camera quality: true skin texture with visible "
+    "pores, individual hair strands with natural sheen; white balance follows each "
+    "scene's light while the skin tone stays consistent. No plastic skin, no "
+    "over-smoothing, no painterly or illustration look, no wig-cap artificiality, "
+    "no heavy filter grading."
+    # 机 —— 摄像语言
+    " Shot like candid 85mm portraits, chest-up framing, shallow depth of field focused "
+    "on the face and hair, identical camera height and subject scale across all three "
+    "panels."
+    # 魂 —— 一句话总纲
+    " The person's identity, wig style, hair color and makeup must be strictly identical "
+    "in all three panels - three real moments from one person's daily life."
 )
 
 # 发色注入合成 prompt，来源 ark_expo_hair_colors 快照。
@@ -175,16 +207,15 @@ _COLOR_SWATCH_CLAUSE = (
     " The LAST reference image is a hair color swatch. After replacing the hair, "
     "recolor it to exactly match the swatch: {name} (color code {code}{hex_part}). "
     "{description}The color must look like naturally grown human hair with realistic "
-    "depth, dimension and shine under the original photo's lighting. Do not change "
-    "the hairstyle shape or length, and do not alter the face."
+    "depth, dimension and shine under each scene's lighting. Do not change the "
+    "hairstyle shape or length, and do not alter the face."
 )
 
 _COLOR_TEXT_CLAUSE = (
     " After replacing the hair, recolor it to this exact hair color: {name} "
     "(color code {code}{hex_part}). {description}The color must look like naturally "
-    "grown human hair with realistic depth, dimension and shine under the original "
-    "photo's lighting. Do not change the hairstyle shape or length, and do not alter "
-    "the face."
+    "grown human hair with realistic depth, dimension and shine under each scene's "
+    "lighting. Do not change the hairstyle shape or length, and do not alter the face."
 )
 
 # scene 模式：客户佩戴假发实拍 → 保持人与发型不变，置换到场景（prompt 只在服务端）
@@ -305,7 +336,8 @@ def _build_prompt(session: ExpoSession, row: ExpoResult, wig: ExpoWig | None) ->
         prompt = _SCENE_TEMPLATE.format(scene=scene["prompt"] if scene else row.scene_json.get("label", ""))
         return prompt, [to_abs(session.photo_path)]
 
-    refs = [to_abs(p) for p in (wig.angle_photos or [])[:2] if to_abs(p).exists()]
+    # 多角度参考图取前 3 张（正面/45度/侧面），与三格模板的 multiple angles 声明对应
+    refs = [to_abs(p) for p in (wig.angle_photos or [])[:3] if to_abs(p).exists()]
     if not refs and wig.cover_path and to_abs(wig.cover_path).exists():
         refs = [to_abs(wig.cover_path)]
     # 三图合成：自拍 + 发型参考图 + 色板图（色板图固定放末位，与 prompt 的 LAST 指代对齐）

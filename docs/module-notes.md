@@ -432,6 +432,11 @@ frontend/src/
 - 气质词汇扩到 6 个：知性优雅/减龄轻盈/自然日常/端庄大气/**温柔清纯/时尚轻熟**——三处强同步契约：WigLibrary STYLES + RegisterScreen style_pref + ai_pipeline `_ANALYSIS_INSTRUCTION` temperament 枚举，改任一处必须同步另两处
 - 肤色/脸型选项 label 改为业务语言（冷白/白皙、自然黄皮、心形/瓜子脸），value 是 AI 分析枚举**不可改**；matching 客户可见理由 heart 文案改「瓜子脸」
 
+**tryon 合成模板重写为「锚场色机魂」三格结构（2026-07-07）**
+- `_COMPOSITE_TEMPLATE` 按用户定稿的三格效果图 prompt 重写（英文）：锚=FIRST image 角色分工+身份锁定 / 场=HOME·OFFICE·GATHERING 三格并排（每格显式光源方向，发丝受光跟随场景）/ 色=原相机直出质感+负向排除（塑料感/磨皮/插画感/头套感）/ 机=85mm 胸上构图三格机位一致 / 魂=三格身份严格同一。输出规格：单张 16:9 三等分拼接
+- 发型多角度参考图上限 2→3（正面/45度/侧面）；发色子句光照措辞改 "each scene's lighting" 适配三格
+- **已知风险**：三格人脸一致性对生图模型是高难度指令，待 `expo_wig_composite` 绑定图像模型后 W1 实测；不稳的降级方案是拆三次单场景生成后程序拼接（scene 模式已有同型实现）
+
 **已踩坑（2026-07-04 对抗性审查修复）**
 - 后台线程的批量启动函数（`_start_batch`）必须：状态置位与插行合并单事务 + except 回滚 + 会话标 failed + `_log_fail` 双写——初版漏兜底，非法 wig_id 会把会话永久卡在 generating
 - kiosk 轮询状态机的失败路径必须显式收尾：`analyzing` 属 BUSY_STEPS（不挂 idle 定时器），失败时留在原地 = 展位永久卡屏，需退回 `capture`；整批效果图全 failed 时 session 仍推 `done`，前端要用「results 里没有任何 done」补判并给重试出口
