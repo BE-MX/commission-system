@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     TFT_SERVICE_ENABLED: bool = False
     TFT_SERVICE_URL: str = ""
 
+    # ── 对外库存查询（客户官网嵌入页 / 客户系统 API） ─────
+    # 逗号分隔的访问 key，可按客户发放与单独吊销；留空 = 端点整体关闭
+    PUBLIC_STOCK_KEYS: str = ""
+
     # ── 设计预约模块 ──────────────────────────────────────
     DESIGN_DEFAULT_DAILY_CAPACITY: int = 3
     DESIGN_REQUEST_NO_PREFIX: str = "DSR"

@@ -64,6 +64,10 @@ export function createApiClient({ baseURL, timeout = 60000 } = {}) {
         window.location.href = '/login'
         return Promise.reject(error)
       }
+      // 调用方自行处理错误 UI（如对外公开页，不能弹中文 toast）
+      if (error.config?.suppressToast) {
+        return Promise.reject(error)
+      }
       let msg = detail || error.response?.data?.message
         || error.message || '网络错误'
       if (typeof msg === 'object' && msg !== null) {

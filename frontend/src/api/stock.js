@@ -1,4 +1,9 @@
-import { stockClient as stockApi } from './clients'
+import { stockClient as stockApi, publicStockClient } from './clients'
+
+// ── 对外库存查询（无登录，key 门禁；客户官网嵌入页用） ──
+export function getPublicInventory(params) {
+  return publicStockClient.get('/products', { params, showLoading: false, suppressToast: true })
+}
 
 // ── 销量备货一览 ────────────────────────────────────────
 export function getStockOverview(params) {

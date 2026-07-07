@@ -259,6 +259,44 @@ Content-Type: application/json
 }
 ```
 
+## 对外库存查询 API（Public Inventory，无需登录）
+
+> 2026-07-07 新增。面向**客户系统**（如客户 Shopify 店铺库存同步、客户官网嵌入页），
+> 不走 JWT——门禁为 `key` 参数（服务端 `PUBLIC_STOCK_KEYS` 配置，按客户发放、可单独吊销；
+> 未配置任何 key 时端点整体关闭返回 403）。只读，只暴露产品标识与可用数量。
+
+**端点**：`GET /api/public/stock/products`
+
+| 参数 | 必填 | 说明 |
+|------|------|------|
+| `key` | ✅ | 访问密钥（向莱莎销售代表申请） |
+| `page` / `page_size` | ❌ | 分页，page_size ≤ 100，默认 1 / 20 |
+| `keyword` | ❌ | 按产品名 / 型号模糊搜索 |
+
+```bash
+curl "https://leshine.work/api/public/stock/products?key=<YOUR_KEY>&keyword=Body+Wave&page=1&page_size=20"
+```
+
+响应（统一信封）：
+```json
+{
+  "code": 200, "message": "ok",
+  "data": {
+    "total": 128, "page": 1, "page_size": 20,
+    "items": [
+      {"product_id": "10086", "name": "Body Wave Bundle 18inch", "model": "BW-18",
+       "available": 55, "availability": "in_stock"}
+    ]
+  }
+}
+```
+
+`availability` 三档：`in_stock`（≥10）/ `low_stock`（1~9）/ `out_of_stock`（0）。
+
+**客户官网嵌入页**（同一 key）：`https://leshine.work/inventory?key=<YOUR_KEY>` —— 全英文独立页面（Lisla 官网风格），客户可直接作为链接放入其官网导航，无需登录。
+
+**Shopify 对接建议**：客户侧定时（如每小时）拉取本 API 全量分页数据，按 `product_id`/`model` 映射到 Shopify variant 后调用 Shopify Inventory API 回写；莱莎侧主动推送（Webhook 到 Shopify）为规划中能力，需要时联系管理员排期。
+
 ## 分页规范
 
 所有列表 API 遵循统一分页规范：

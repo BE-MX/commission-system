@@ -31,7 +31,7 @@ AUTH_PATTERNS = re.compile(
     r"|get_current_mini_user|_require_\w+|_verify_\w+"
 )
 # 无鉴权豁免的 router 文件（机器对机器/公开入口，均有刻意决策记录）
-AUTH_EXEMPT_FILES = ("mini/router.py", "auth/router.py", "api/short_link.py")
+AUTH_EXEMPT_FILES = ("mini/router.py", "auth/router.py", "api/short_link.py", "stock/public_router.py")
 # 无鉴权豁免的端点路径关键词
 AUTH_EXEMPT_ROUTES = ("share", "callback", "login", "health", "print/")
 

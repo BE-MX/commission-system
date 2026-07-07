@@ -86,6 +86,9 @@
 
 ### P1（重要）
 
+0. **对外库存查询后续**（2026-07-07 一期已上线：`/api/public/stock/products` + `/inventory` 英文嵌入页，key 门禁）：①服务器 `.env` 配置 `PUBLIC_STOCK_KEYS` 并把带 key 链接交付客户；②Shopify 主动推送（Webhook 回写客户店铺库存）待客户确认需求后排期；③观察是否需要限流
+
+
 1. **补全测试覆盖**（2026-07-03 已补 122 个，剩余缺口）：
    - tracking 轮询编排逻辑（poll_single 状态推进；状态映射已覆盖）
    - insight 完整链路集成测试
