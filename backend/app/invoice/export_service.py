@@ -19,20 +19,25 @@ def build_invoice_workbook(invoice: Invoice) -> BytesIO:
     ws["A1"].font = Font(size=18, bold=True)
     ws["A1"].alignment = Alignment(horizontal="center")
 
-    ws["A3"] = "Invoice No."
-    ws["B3"] = invoice.invoice_no
-    ws["A4"] = "Date"
-    ws["B4"] = invoice.invoice_date
-    ws["A5"] = "Customer"
-    ws["B5"] = invoice.customer_name
-    ws["A6"] = "Currency"
-    ws["B6"] = invoice.currency
+    header_pairs = [
+        ("Invoice No.", invoice.invoice_no, "Date", invoice.invoice_date),
+        ("To", invoice.contact_name or invoice.customer_name, "From", invoice.sales_user_name or ""),
+        ("TEL/Fax", invoice.contact_phone or "", "TEL", invoice.sales_phone or ""),
+        ("E-mail", invoice.contact_email or "", "E-mail", invoice.sales_email or ""),
+        ("Delivery address", invoice.delivery_address or "", "Express", invoice.express_channel or ""),
+        ("Currency", invoice.currency, "Payment Term", invoice.payment_term or ""),
+    ]
+    for row_idx, (label_l, value_l, label_r, value_r) in enumerate(header_pairs, start=3):
+        ws.cell(row=row_idx, column=1, value=label_l).font = Font(bold=True)
+        ws.cell(row=row_idx, column=2, value=str(value_l or ""))
+        ws.cell(row=row_idx, column=6, value=label_r).font = Font(bold=True)
+        ws.cell(row=row_idx, column=7, value=str(value_r or ""))
 
     headers = [
         "Product_name", "Product", "Net Weight Grams", "Curl", "Model",
         "Color", "Length", "Quantity", "Price/Piece", "TotalPrice",
     ]
-    start_row = 8
+    start_row = 10
     for col, header in enumerate(headers, start=1):
         cell = ws.cell(row=start_row, column=col, value=header)
         cell.font = Font(bold=True, color="FFFFFF")
@@ -55,11 +60,18 @@ def build_invoice_workbook(invoice: Invoice) -> BytesIO:
         for col, value in enumerate(values, start=1):
             ws.cell(row=row_idx, column=col, value=value)
 
-    total_row = start_row + len(invoice.items) + 1
-    ws.cell(row=total_row, column=9, value="Total")
-    ws.cell(row=total_row, column=10, value=float(invoice.total_amount or 0))
-    ws.cell(row=total_row, column=9).font = Font(bold=True)
-    ws.cell(row=total_row, column=10).font = Font(bold=True)
+    fee_rows = [("Hair cost in total", float(invoice.product_amount or 0))]
+    if invoice.shipping_fee:
+        fee_rows.append(("Shipping fee", float(invoice.shipping_fee)))
+    if invoice.surcharge_amount:
+        fee_rows.append((invoice.surcharge_name or "Surcharge", float(invoice.surcharge_amount)))
+    fee_rows.append(("Total", float(invoice.total_amount or 0)))
+
+    total_row = start_row + len(invoice.items)
+    for label, amount in fee_rows:
+        total_row += 1
+        ws.cell(row=total_row, column=9, value=label).font = Font(bold=True)
+        ws.cell(row=total_row, column=10, value=amount).font = Font(bold=(label == "Total"))
 
     thin = Side(style="thin", color="D9E2F3")
     for row in ws.iter_rows(min_row=start_row, max_row=total_row, min_col=1, max_col=10):
@@ -117,8 +129,15 @@ def build_print_html(invoice: Invoice) -> str:
   <div class="meta">
     <strong>Invoice No.</strong><span>{escape(invoice.invoice_no)}</span>
     <strong>Date</strong><span>{invoice.invoice_date}</span>
-    <strong>Customer</strong><span>{escape(invoice.customer_name or "")}</span>
+    <strong>To</strong><span>{escape(invoice.contact_name or invoice.customer_name or "")}</span>
+    <strong>From</strong><span>{escape(invoice.sales_user_name or "")}</span>
+    <strong>TEL/Fax</strong><span>{escape(invoice.contact_phone or "")}</span>
+    <strong>TEL</strong><span>{escape(invoice.sales_phone or "")}</span>
+    <strong>E-mail</strong><span>{escape(invoice.contact_email or "")}</span>
+    <strong>Delivery address</strong><span>{escape(invoice.delivery_address or "")}</span>
+    <strong>Express</strong><span>{escape(invoice.express_channel or "")}</span>
     <strong>Currency</strong><span>{escape(invoice.currency or "")}</span>
+    <strong>Payment Term</strong><span>{escape(invoice.payment_term or "")}</span>
   </div>
   <table>
     <thead>
@@ -129,7 +148,12 @@ def build_print_html(invoice: Invoice) -> str:
     </thead>
     <tbody>{''.join(rows)}</tbody>
   </table>
-  <div class="total">Total: {invoice.currency} {invoice.total_amount}</div>
+  <div class="total">
+    <div>Hair cost in total: {invoice.currency} {invoice.product_amount}</div>
+    <div>Shipping fee: {invoice.currency} {invoice.shipping_fee or 0}</div>
+    <div>{escape(invoice.surcharge_name or 'Surcharge')}: {invoice.currency} {invoice.surcharge_amount or 0}</div>
+    <div>Total: {invoice.currency} {invoice.total_amount}</div>
+  </div>
 </body>
 </html>"""
 

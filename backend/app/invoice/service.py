@@ -6,8 +6,18 @@ from decimal import Decimal, ROUND_HALF_UP
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.invoice import price_service, product_service
 from app.invoice.models import Invoice, InvoiceItem
 from app.invoice.schemas import InvoiceCreate, InvoiceUpdate
+
+_HEADER_FIELDS = (
+    "customer_id", "customer_name", "contact_name", "contact_phone", "contact_email",
+    "delivery_address", "sales_user_name", "sales_phone", "sales_email",
+    "invoice_date", "express_channel", "shipping_fee", "surcharge_name",
+    "surcharge_amount", "payment_term", "internal_payment_method", "internal_discount",
+    "internal_accessory", "internal_received", "internal_balance",
+    "internal_shipping_type", "remark",
+)
 
 
 def list_invoices(
@@ -17,6 +27,7 @@ def list_invoices(
     page_size: int = 20,
     keyword: str | None = None,
     status: str | None = None,
+    order_type: str | None = None,
 ) -> tuple[list[dict], int]:
     query = db.query(Invoice)
     if keyword:
@@ -28,6 +39,8 @@ def list_invoices(
         )
     if status:
         query = query.filter(Invoice.status == status)
+    if order_type:
+        query = query.filter(Invoice.order_type == order_type)
     total = query.count()
     rows = (
         query
@@ -57,27 +70,25 @@ def get_invoice(db: Session, invoice_id: int) -> Invoice | None:
 def create_invoice(db: Session, body: InvoiceCreate, user_id: int | None = None) -> Invoice:
     invoice = Invoice(
         invoice_no=_next_invoice_no(db),
-        customer_id=body.customer_id,
-        customer_name=body.customer_name,
-        invoice_date=body.invoice_date,
+        order_type=body.order_type,
         currency=body.currency or "USD",
-        remark=body.remark,
+        sales_user_id=user_id,
         created_by=user_id,
         updated_by=user_id,
     )
+    for field in _HEADER_FIELDS:
+        setattr(invoice, field, getattr(body, field))
     db.add(invoice)
-    _replace_items(invoice, body.items)
+    _replace_items(db, invoice, body, user_id=user_id)
     _refresh_invoice_totals(invoice)
     db.flush()
     return invoice
 
 
 def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: int | None = None) -> Invoice:
-    invoice.customer_id = body.customer_id
-    invoice.customer_name = body.customer_name
-    invoice.invoice_date = body.invoice_date
+    for field in _HEADER_FIELDS:
+        setattr(invoice, field, getattr(body, field))
     invoice.currency = body.currency or "USD"
-    invoice.remark = body.remark
     invoice.updated_by = user_id
     if invoice.sync_status == "synced":
         invoice.sync_status = "not_synced"
@@ -85,7 +96,7 @@ def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: 
         invoice.xiaoman_order_id = None
         invoice.xiaoman_order_no = None
         invoice.synced_at = None
-    _replace_items(invoice, body.items)
+    _replace_items(db, invoice, body, user_id=user_id)
     _refresh_invoice_totals(invoice)
     db.flush()
     return invoice
@@ -99,14 +110,16 @@ def validate_invoice(invoice: Invoice) -> list[dict]:
         issues.append({"field": "items", "message": "至少需要一条产品明细"})
     for idx, item in enumerate(invoice.items, start=1):
         prefix = f"items[{idx}]"
-        if not item.product_id or not item.product_name:
-            issues.append({"field": prefix, "message": "产品未匹配到唯一产品"})
-        if not item.sku_id:
-            issues.append({"field": f"{prefix}.sku_id", "message": "缺少 sku_id，无法同步小满订单"})
+        if item.item_type == "custom":
+            if not item.product_display:
+                issues.append({"field": prefix, "message": "生产单产品需填写 Product 描述"})
+        else:
+            if not item.product_id or not item.product_name:
+                issues.append({"field": prefix, "message": "产品未匹配到唯一产品"})
+            if not item.sku_id:
+                issues.append({"field": f"{prefix}.sku_id", "message": "缺少 sku_id，无法同步小满订单"})
         if not item.net_weight_grams:
             issues.append({"field": f"{prefix}.net_weight_grams", "message": "Net Weight Grams 必填"})
-        if not item.model:
-            issues.append({"field": f"{prefix}.model", "message": "Model 必填"})
         if not item.color:
             issues.append({"field": f"{prefix}.color", "message": "Color 必填"})
         if not item.length:
@@ -127,6 +140,25 @@ def mark_ready_if_valid(invoice: Invoice) -> list[dict]:
 def serialize_detail(invoice: Invoice) -> dict:
     return {
         **_invoice_list_row(invoice, len(invoice.items)),
+        "contact_name": invoice.contact_name,
+        "contact_phone": invoice.contact_phone,
+        "contact_email": invoice.contact_email,
+        "delivery_address": invoice.delivery_address,
+        "sales_user_name": invoice.sales_user_name,
+        "sales_phone": invoice.sales_phone,
+        "sales_email": invoice.sales_email,
+        "express_channel": invoice.express_channel,
+        "shipping_fee": invoice.shipping_fee,
+        "surcharge_name": invoice.surcharge_name,
+        "surcharge_amount": invoice.surcharge_amount,
+        "payment_term": invoice.payment_term,
+        "product_amount": invoice.product_amount,
+        "internal_payment_method": invoice.internal_payment_method,
+        "internal_discount": invoice.internal_discount,
+        "internal_accessory": invoice.internal_accessory,
+        "internal_received": invoice.internal_received,
+        "internal_balance": invoice.internal_balance,
+        "internal_shipping_type": invoice.internal_shipping_type,
         "remark": invoice.remark,
         "xiaoman_order_id": invoice.xiaoman_order_id,
         "xiaoman_order_no": invoice.xiaoman_order_no,
@@ -155,14 +187,12 @@ def _next_invoice_no(db: Session) -> str:
     return f"{prefix}-{next_seq:03d}"
 
 
-def _replace_items(invoice: Invoice, payload_items) -> None:
+def _replace_items(db: Session, invoice: Invoice, body, user_id: int | None = None) -> None:
     invoice.items.clear()
-    for idx, payload in enumerate(payload_items, start=1):
-        price = payload.price_per_piece
-        quantity = payload.quantity
-        total = _money((price or Decimal("0")) * Decimal(quantity))
-        invoice.items.append(InvoiceItem(
+    for idx, payload in enumerate(body.items, start=1):
+        item = InvoiceItem(
             sort_order=idx,
+            item_type=payload.item_type,
             product_id=payload.product_id,
             sku_id=payload.sku_id,
             product_name=payload.product_name,
@@ -172,15 +202,57 @@ def _replace_items(invoice: Invoice, payload_items) -> None:
             model=payload.model,
             color=payload.color,
             length=payload.length,
-            quantity=quantity,
-            price_per_piece=price,
-            total_price=total,
-            price_source=payload.price_source or "manual",
-        ))
+            quantity=payload.quantity,
+            price_per_piece=payload.price_per_piece,
+        )
+        if payload.item_type == "custom":
+            resolved = product_service.ensure_custom_product(
+                db,
+                product_display=payload.product_display,
+                model=payload.model,
+                color=payload.color,
+                size=payload.length,
+                unit=payload.net_weight_grams,
+                user_id=user_id,
+            )
+            item.custom_product_id = resolved["custom_product_id"]
+            item.product_id = resolved["product_id"]
+            item.sku_id = resolved["sku_id"]
+            item.product_name = resolved["product_name"] or item.product_name
+            if resolved["source"] == "okki":
+                item.item_type = "stock"
+
+        # Pricing snapshot is authoritative on the server: the client shows the
+        # same numbers, but totals must not trust client-side arithmetic.
+        pricing = price_service.resolve_price(
+            db,
+            customer_id=body.customer_id,
+            product_display=item.product_display,
+            length=item.length,
+            unit=item.net_weight_grams,
+            color=item.color,
+        )
+        item.standard_price = pricing["standard_price"]
+        item.customer_price = pricing["customer_price"]
+        if item.price_per_piece is None:
+            item.price_per_piece = pricing["customer_price"]
+        if pricing["customer_price"] is None:
+            item.price_source = "missing_std"
+        elif item.price_per_piece == pricing["customer_price"]:
+            item.price_source = "customer_rule"
+        else:
+            item.price_source = "manual"
+        item.total_price = _money((item.price_per_piece or Decimal("0")) * Decimal(item.quantity))
+        invoice.items.append(item)
 
 
 def _refresh_invoice_totals(invoice: Invoice) -> None:
-    invoice.total_amount = _money(sum((item.total_price or Decimal("0")) for item in invoice.items))
+    invoice.product_amount = _money(sum((item.total_price or Decimal("0")) for item in invoice.items))
+    invoice.total_amount = _money(
+        invoice.product_amount
+        + Decimal(invoice.shipping_fee or 0)
+        + Decimal(invoice.surcharge_amount or 0)
+    )
     if invoice.sync_status != "synced":
         invoice.status = "ready" if invoice.items and not validate_invoice(invoice) else "draft"
 
@@ -193,6 +265,7 @@ def _invoice_list_row(invoice: Invoice, item_count: int) -> dict:
     return {
         "id": invoice.id,
         "invoice_no": invoice.invoice_no,
+        "order_type": invoice.order_type,
         "customer_id": invoice.customer_id,
         "customer_name": invoice.customer_name,
         "invoice_date": invoice.invoice_date,
@@ -209,8 +282,10 @@ def _serialize_item(item: InvoiceItem) -> dict:
     return {
         "id": item.id,
         "sort_order": item.sort_order,
+        "item_type": item.item_type,
         "product_id": item.product_id,
         "sku_id": item.sku_id,
+        "custom_product_id": item.custom_product_id,
         "product_name": item.product_name,
         "product_display": item.product_display,
         "net_weight_grams": item.net_weight_grams,
@@ -219,6 +294,8 @@ def _serialize_item(item: InvoiceItem) -> dict:
         "color": item.color,
         "length": item.length,
         "quantity": item.quantity,
+        "standard_price": item.standard_price,
+        "customer_price": item.customer_price,
         "price_per_piece": item.price_per_piece,
         "price_source": item.price_source,
         "total_price": item.total_price,
