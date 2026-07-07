@@ -1,0 +1,696 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>莱莎健康假发 · AI 试戴 H5 原型 v2（品牌绿）</title>
+<style>
+/* =====================================================================
+   v2 品牌换血（2026-07-03）：参照《内贸品牌图》——祖母绿孔雀 logo（樱粉描边）
+   与展厅效果图（绿构架 + 瓷白板材 + 白色细描线 + 暗色展馆顶）。
+   主题：翡翠祖母绿 × 瓷白 × 樱粉 hairline。
+   动效按 Emil Kowalski STANDARDS 调整：强 ease-out 曲线、stagger 60ms、
+   入场不从 scale(0)、按压 scale(.97)、prefers-reduced-motion 降级。
+   ===================================================================== */
+:root{
+  /* 品牌色（取自 logo 与展厅） */
+  --green:#00885a;          /* 祖母绿主色（logo 底） */
+  --green-deep:#026647;     /* 深绿（构架暗面） */
+  --green-hi:#1fae78;       /* 亮翡翠（羽纹高光） */
+  --green-ink:#0d3b2a;      /* 墨绿正文（白底上的文字） */
+  --mint:#eaf6f0;           /* 薄荷瓷面 */
+  --pink:#f19cae;           /* 樱粉描边（logo 粉圈） */
+  --pink-deep:#e77e97;      /* 深粉（唇色/强调） */
+  --paper:#f8fbf9;          /* 瓷白 */
+  --mut:#6f8d80;            /* 弱化文字（灰绿） */
+  --hall:#04160f;           /* 展馆暗顶 */
+  --line:rgba(0,136,90,.22);
+  --pink-line:rgba(241,156,174,.55);
+  --serif:"Noto Serif SC","STSong",serif;
+  --sans:"PingFang SC","Microsoft YaHei",sans-serif;
+  /* 动效令牌（STANDARDS：强曲线，不用内建弱 easing） */
+  --ease-out:cubic-bezier(0.23,1,0.32,1);
+  --ease-in-out:cubic-bezier(0.77,0,0.175,1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  background:
+    radial-gradient(1100px 560px at 72% -8%, rgba(0,136,90,.18), transparent 62%),
+    radial-gradient(800px 480px at 8% 108%, rgba(31,174,120,.10), transparent 60%),
+    var(--hall);
+  color:#dff0e8;
+  font-family:var(--sans);
+  letter-spacing:.02em;
+  min-height:100vh;
+  overflow-x:hidden;
+}
+
+/* ── 展示壳 ── */
+.hero{max-width:1280px;margin:0 auto;padding:72px 40px 24px;position:relative}
+.hero .kicker{color:var(--green-hi);font-size:12px;letter-spacing:.55em;text-transform:uppercase}
+.hero h1{
+  font-family:var(--serif);font-weight:600;font-size:clamp(38px,5vw,66px);
+  line-height:1.12;margin:18px 0 10px;
+  background:linear-gradient(105deg,#f2fbf7 25%,#8fe3c0 52%,var(--green-hi) 68%,#f2fbf7 95%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  background-size:220% 100%;animation:sheen 7s var(--ease-in-out) infinite;
+}
+@keyframes sheen{0%,100%{background-position:0% 0}50%{background-position:100% 0}}
+.hero .sub{color:#9fbfb1;font-size:15px;max-width:700px;line-height:1.9}
+.hero .sub b{color:var(--green-hi)}
+.hero .rule{height:1px;width:160px;margin-top:34px;background:linear-gradient(90deg,var(--pink),var(--green-hi),transparent)}
+.legend{max-width:1280px;margin:8px auto 0;padding:0 40px;color:#7fa393;font-size:12px;letter-spacing:.12em;line-height:2}
+.legend b{color:var(--pink)}
+
+.flow{
+  max-width:1280px;margin:40px auto 90px;padding:0 40px;
+  display:flex;flex-wrap:wrap;gap:56px 44px;justify-content:center;
+}
+.station{display:flex;flex-direction:column;align-items:center;gap:18px}
+.station .tag{display:flex;align-items:baseline;gap:10px;color:#7fa393;font-size:12px;letter-spacing:.2em}
+.station .tag .no{font-family:var(--serif);font-size:22px;color:var(--green-hi);font-style:italic}
+.station .tag .zh{color:#eaf6f0;letter-spacing:.3em}
+
+/* ── 手机框（白瓷机身 + 绿描边，呼应展台白柱绿框） ── */
+.phone{
+  width:300px;height:620px;border-radius:44px;position:relative;flex:none;
+  background:linear-gradient(165deg,#0b3a29,#04160f 55%);
+  padding:10px;
+  box-shadow:
+    0 0 0 1px rgba(31,174,120,.35),
+    0 30px 70px rgba(0,0,0,.6),
+    inset 0 0 0 1px rgba(0,0,0,.7);
+}
+.phone::before{
+  content:"";position:absolute;top:20px;left:50%;transform:translateX(-50%);
+  width:86px;height:9px;border-radius:9px;background:#02110b;z-index:6;
+}
+.screen{
+  width:100%;height:100%;border-radius:36px;overflow:hidden;position:relative;
+  background:linear-gradient(180deg,#ffffff, var(--paper) 40%, #eef7f2);
+  color:var(--green-ink);
+  display:flex;flex-direction:column;
+}
+.statusbar{
+  height:44px;flex:none;display:flex;justify-content:space-between;align-items:flex-end;
+  padding:0 26px 4px;font-size:10px;color:var(--green);letter-spacing:.12em;
+}
+
+/* ── ① 待机屏：孔雀绿线框 + 樱粉节点 ── */
+.attract{align-items:center;text-align:center}
+.orbit-wrap{position:relative;width:225px;height:225px;margin:30px auto 6px}
+.orbit{position:absolute;inset:0;border-radius:50%;border:1px solid var(--line);animation:spin 26s linear infinite}
+.orbit.o2{inset:22px;border-style:dashed;border-color:var(--pink-line);opacity:.7;animation:spin 18s linear infinite reverse}
+.orbit i{position:absolute;width:6px;height:6px;border-radius:50%;background:var(--pink-deep);box-shadow:0 0 10px var(--pink);top:-3px;left:50%}
+.orbit.o2 i{background:var(--green-hi);box-shadow:0 0 10px var(--green-hi)}
+@keyframes spin{to{transform:rotate(360deg)}}
+.face-svg{position:absolute;inset:36px;animation:breathe 4.5s var(--ease-in-out) infinite}
+@keyframes breathe{0%,100%{opacity:.8;transform:scale(1)}50%{opacity:1;transform:scale(1.03)}}
+.face-svg polyline,.face-svg path,.face-svg ellipse{fill:none;stroke:var(--green);stroke-width:.9;opacity:.95}
+.face-svg .feather{stroke:var(--green-hi);stroke-width:.6;opacity:.6}
+.face-svg circle{fill:var(--pink-deep)}
+.attract .brand{font-family:var(--serif);font-size:12px;letter-spacing:.42em;color:var(--green);margin-top:14px}
+.attract h2{font-family:var(--serif);font-size:29px;font-weight:600;line-height:1.35;margin-top:8px;color:var(--green-ink)}
+.attract h2 em{font-style:italic;color:var(--green)}
+.attract .en{font-size:11px;letter-spacing:.3em;color:var(--mut);margin-top:10px}
+.cta{
+  margin-top:auto;margin-bottom:44px;align-self:center;
+  padding:15px 44px;border-radius:40px;font-size:14px;letter-spacing:.28em;
+  color:#fff;background:linear-gradient(115deg,var(--green-deep),var(--green) 45%,var(--green-hi));
+  background-size:200% 100%;animation:sheen 3.2s linear infinite;
+  box-shadow:0 8px 26px rgba(0,136,90,.35);position:relative;
+  transition:transform 160ms var(--ease-out);   /* STANDARDS：按压反馈 */
+}
+.cta:active{transform:scale(.97)}
+.cta::after{content:"";position:absolute;inset:-7px;border-radius:44px;border:1.5px solid var(--pink-line);
+  animation:pulse 2.4s var(--ease-out) infinite}
+@keyframes pulse{0%{opacity:1;transform:scale(.97)}70%,100%{opacity:0;transform:scale(1.1)}}
+
+/* ── ② 登记 ── */
+.pad{padding:8px 26px 0;display:flex;flex-direction:column;height:100%}
+.reg-head{display:flex;justify-content:space-between;align-items:center;margin:6px 0 2px}
+.reg-head .t{font-family:var(--serif);font-size:24px;font-weight:600;color:var(--green-ink)}
+.lang{font-size:10px;color:var(--green);border:1px solid var(--line);border-radius:20px;padding:4px 10px;letter-spacing:.1em;background:#fff}
+.reg-sub{color:var(--mut);font-size:11px;letter-spacing:.06em;margin-bottom:16px}
+.field{margin-bottom:13px}
+.field label{display:flex;justify-content:space-between;font-size:10px;letter-spacing:.22em;color:var(--green);margin-bottom:6px}
+.field label .req{color:var(--pink-deep)}
+.input{
+  height:42px;border-radius:12px;border:1px solid var(--line);
+  background:#fff;display:flex;align-items:center;padding:0 14px;
+  font-size:13px;color:var(--green-ink);box-shadow:0 1px 2px rgba(2,102,71,.05)}
+.input.ghost{color:#a9c3b8}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.styles3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:2px}
+.stylecard{
+  border:1px solid var(--line);border-radius:12px;padding:10px 6px 8px;text-align:center;
+  background:#fff;transition:transform 160ms var(--ease-out)}
+.stylecard:active{transform:scale(.97)}
+.stylecard.sel{border-color:var(--green);background:var(--mint);
+  box-shadow:inset 0 0 0 1px var(--green), 0 2px 8px rgba(0,136,90,.12)}
+.stylecard .ic{font-family:var(--serif);font-size:19px;color:var(--green);font-style:italic}
+.stylecard .zh{font-size:11px;margin-top:3px;color:var(--green-ink)}
+.stylecard .en{font-size:8px;color:var(--mut);letter-spacing:.12em}
+.consent{display:flex;gap:9px;font-size:10px;color:var(--mut);line-height:1.7;margin-top:10px}
+.checkbox{width:15px;height:15px;flex:none;border-radius:4px;border:1px solid var(--green);
+  background:var(--mint);position:relative;margin-top:2px}
+.checkbox::after{content:"";position:absolute;left:4px;top:1px;width:4px;height:8px;
+  border:solid var(--green);border-width:0 1.5px 1.5px 0;transform:rotate(40deg)}
+.btn-primary{
+  margin:14px 0 24px;height:48px;border-radius:14px;flex:none;
+  display:flex;align-items:center;justify-content:center;gap:12px;
+  color:#fff;font-size:14px;letter-spacing:.3em;
+  background:linear-gradient(115deg,var(--green-deep),var(--green) 50%,var(--green-hi));
+  box-shadow:0 6px 18px rgba(0,136,90,.3);
+  transition:transform 160ms var(--ease-out);
+}
+.btn-primary:active{transform:scale(.97)}
+
+/* ── ③ 拍摄（深玉色取景舱） ── */
+.cam{position:relative;flex:1;margin:6px 16px 16px;border-radius:26px;overflow:hidden;
+  background:radial-gradient(340px 300px at 50% 42%,#0f4a35 0%, #083525 55%, #041d14 100%)}
+.cam .sil{position:absolute;left:50%;top:47%;transform:translate(-50%,-50%)}
+.guide{
+  position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);
+  width:172px;height:224px;border-radius:50%/54%;
+  border:1.5px dashed rgba(241,156,174,.85);
+  box-shadow:0 0 0 2000px rgba(2,20,13,.5);
+  animation:guidePulse 2.6s var(--ease-in-out) infinite}
+@keyframes guidePulse{0%,100%{border-color:rgba(241,156,174,.45)}50%{border-color:#ffd7e0}}
+.corner{position:absolute;width:22px;height:22px;border:2px solid var(--green-hi)}
+.corner.tl{top:16px;left:16px;border-right:0;border-bottom:0;border-radius:8px 0 0 0}
+.corner.tr{top:16px;right:16px;border-left:0;border-bottom:0;border-radius:0 8px 0 0}
+.corner.bl{bottom:16px;left:16px;border-right:0;border-top:0;border-radius:0 0 0 8px}
+.corner.br{bottom:16px;right:16px;border-left:0;border-top:0;border-radius:0 0 8px 0}
+.cam-tip{position:absolute;left:0;right:0;bottom:88px;text-align:center;font-size:11px;
+  color:#d9f4e7;letter-spacing:.2em}
+.cam-tip small{display:block;color:#7fa899;letter-spacing:.14em;margin-top:5px;font-size:9px}
+.shutter{position:absolute;left:50%;bottom:20px;transform:translateX(-50%);
+  width:58px;height:58px;border-radius:50%;border:2px solid #fff;
+  display:flex;align-items:center;justify-content:center;
+  transition:transform 160ms var(--ease-out)}
+.shutter:active{transform:translateX(-50%) scale(.94)}
+.shutter i{width:44px;height:44px;border-radius:50%;
+  background:radial-gradient(circle at 35% 30%,#5fd3a4,var(--green-hi) 55%,var(--green))}
+.light-ok{position:absolute;top:22px;left:50%;transform:translateX(-50%);
+  font-size:9px;color:#8ff0c8;letter-spacing:.24em;display:flex;align-items:center;gap:6px}
+.dot{width:5px;height:5px;border-radius:50%;background:#8ff0c8;box-shadow:0 0 8px #8ff0c8}
+
+/* ── ④ 分析（翡翠扫描） ── */
+.scan-stage{position:relative;margin:8px 16px 0;height:300px;border-radius:24px;overflow:hidden;
+  background:radial-gradient(280px 260px at 50% 45%,#0f4a35,#041d14 72%)}
+.scan-stage .sil{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}
+.mesh{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);opacity:.95}
+.mesh line{stroke:rgba(143,240,200,.55);stroke-width:.6;stroke-dasharray:60;animation:draw 3.4s var(--ease-in-out) infinite}
+.mesh circle{fill:var(--pink);animation:twinkle 3.4s var(--ease-in-out) infinite}
+@keyframes draw{0%{stroke-dashoffset:60;opacity:0}30%,80%{stroke-dashoffset:0;opacity:1}100%{opacity:0}}
+@keyframes twinkle{0%{opacity:0}25%,80%{opacity:1}100%{opacity:0}}
+.scanline{position:absolute;left:0;right:0;height:72px;top:-80px;
+  background:linear-gradient(180deg,transparent, rgba(31,174,120,.25) 45%, #4ee0a8 50%, rgba(31,174,120,.25) 55%, transparent);
+  animation:scan 3.4s var(--ease-in-out) infinite;mix-blend-mode:screen}
+@keyframes scan{0%{top:-80px}55%,100%{top:105%}}
+.scan-grid{position:absolute;inset:0;opacity:.15;
+  background-image:linear-gradient(rgba(143,240,200,.5) 1px,transparent 1px),
+    linear-gradient(90deg, rgba(143,240,200,.5) 1px,transparent 1px);
+  background-size:22px 22px}
+.readouts{padding:18px 26px 0;display:flex;flex-direction:column;gap:9px}
+.chip{
+  display:flex;justify-content:space-between;align-items:center;
+  border:1px solid var(--line);border-radius:11px;padding:9px 14px;
+  background:#fff;font-size:12px;
+  opacity:0;transform:translateY(8px);
+  animation:chipIn 6.4s var(--ease-out) infinite}   /* 揭晓是每客一次的仪式时刻，保留节奏但曲线更利落 */
+.chip .k{color:var(--green);font-size:9px;letter-spacing:.26em}
+.chip .v{color:var(--green-ink);font-weight:600}
+.chip:nth-child(1){animation-delay:.5s}
+.chip:nth-child(2){animation-delay:.95s}
+.chip:nth-child(3){animation-delay:1.4s}
+.chip:nth-child(4){animation-delay:1.85s}
+@keyframes chipIn{
+  0%{opacity:0;transform:translateY(8px)}
+  8%,90%{opacity:1;transform:translateY(0)}
+  97%,100%{opacity:0;transform:translateY(-3px)}
+}
+.social-proof{margin:14px 26px 0;padding:10px 13px;border-radius:11px;
+  border:1px dashed var(--pink-line);background:#fff;font-size:10px;color:var(--mut);line-height:1.8}
+.social-proof em{color:var(--green);font-style:normal}
+.stages{margin-top:auto;margin-bottom:26px;display:flex;justify-content:center;gap:26px;font-size:9px;letter-spacing:.2em;color:var(--mut)}
+.stages .on{color:var(--green);border-bottom:1px solid var(--green);padding-bottom:6px}
+
+/* ── ⑤ 甄选（stagger 60ms · 入场自 scale .96） ── */
+.match-h{font-family:var(--serif);font-size:22px;text-align:center;margin:12px 0 2px;color:var(--green-ink)}
+.match-h em{font-style:italic;color:var(--green)}
+.match-sub{text-align:center;font-size:10px;color:var(--mut);letter-spacing:.2em;margin-bottom:14px}
+.wigcards{display:flex;flex-direction:column;gap:12px;padding:0 22px}
+.wigcard{
+  display:flex;gap:14px;align-items:center;border-radius:16px;padding:12px;
+  border:1px solid var(--line);background:#fff;position:relative;
+  box-shadow:0 2px 10px rgba(2,102,71,.06);
+  opacity:0;transform:translateY(10px) scale(.96);  /* STANDARDS：不从 scale(0) 出场 */
+  animation:cardIn 480ms var(--ease-out) forwards}
+.wigcard:nth-child(1){animation-delay:0ms}
+.wigcard:nth-child(2){animation-delay:60ms}          /* STANDARDS：stagger 30-80ms */
+.wigcard:nth-child(3){animation-delay:120ms}
+@keyframes cardIn{to{opacity:1;transform:none}}
+.wigcard.zhizhen{
+  border:1.5px solid var(--pink);
+  background:linear-gradient(120deg,#fff, #fdf1f4 70%)}
+.zbadge{position:absolute;top:-8px;right:12px;font-size:8px;letter-spacing:.24em;
+  color:#fff;background:linear-gradient(110deg,var(--pink-deep),var(--pink));
+  padding:3px 10px;border-radius:12px}
+.wig-thumb{width:64px;height:78px;border-radius:12px;flex:none;position:relative;overflow:hidden;
+  border:1px solid var(--line)}
+.wig-thumb svg{position:absolute;inset:0}
+.wigcard .info{flex:1}
+.wigcard .no{font-size:9px;letter-spacing:.24em;color:var(--green)}
+.wigcard .nm{font-family:var(--serif);font-size:17px;color:var(--green-ink);margin:2px 0}
+.wigcard .why{font-size:10px;color:var(--mut);line-height:1.65}
+.matchpct{font-family:var(--serif);font-size:21px;color:var(--green);font-style:italic;flex:none}
+.matchpct small{display:block;font-family:var(--sans);font-style:normal;font-size:8px;color:var(--mut);letter-spacing:.2em;text-align:right}
+
+/* ── ⑥ 结果（前后对比 · 粉色分割线） ── */
+.result-stage{position:relative;margin:6px 18px 0;height:320px;border-radius:24px;overflow:hidden;
+  background:radial-gradient(300px 280px at 50% 40%,#12523b,#042116 78%)}
+.result-stage::before{content:"";position:absolute;inset:0;
+  background:radial-gradient(240px 200px at 50% 45%,rgba(31,174,120,.22),transparent 70%);
+  animation:halo 5s var(--ease-in-out) infinite}
+@keyframes halo{0%,100%{opacity:.5}50%{opacity:1}}
+.half{position:absolute;top:0;bottom:0;overflow:hidden}
+.half.before{left:0;width:44%;background:linear-gradient(90deg,rgba(0,0,0,.28),transparent)}
+.half .sil{position:absolute;top:52%;transform:translateY(-50%)}
+.half.before .sil{left:118px;margin-left:-92px}
+.half.after .sil{right:6px}
+.half.after{right:0;width:56%}
+.divider{position:absolute;top:0;bottom:0;left:44%;width:2px;
+  background:linear-gradient(180deg,transparent,var(--pink),transparent);z-index:3}
+.divider .knob{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  width:34px;height:34px;border-radius:50%;border:1.5px solid var(--pink);
+  background:rgba(255,255,255,.92);display:flex;align-items:center;justify-content:center;
+  font-size:10px;color:var(--pink-deep);box-shadow:0 2px 10px rgba(231,126,151,.4)}
+.half-lbl{position:absolute;top:14px;font-size:9px;letter-spacing:.24em;padding:5px 12px;border-radius:20px}
+.half-lbl.b{left:12px;color:#cfe8dc;border:1px solid rgba(207,232,220,.4)}
+.half-lbl.a{right:12px;color:#fff;background:linear-gradient(110deg,var(--green),var(--green-hi))}
+.qr{position:absolute;right:12px;bottom:12px;width:52px;height:52px;border-radius:10px;
+  background:
+   conic-gradient(#fff 25%, transparent 0 50%, #fff 0 75%, transparent 0) 0 0/13px 13px,
+   var(--green-deep);
+  border:1px solid rgba(255,255,255,.5);opacity:.95;z-index:4}
+.qr::after{content:"扫码带走";position:absolute;left:-6px;right:-6px;bottom:-16px;font-size:7px;
+  letter-spacing:.16em;color:#9fdcc2;text-align:center}
+.result-nm{display:flex;justify-content:space-between;align-items:baseline;padding:13px 26px 0}
+.result-nm .nm{font-family:var(--serif);font-size:19px;color:var(--green-ink)}
+.result-nm .md{font-size:9px;letter-spacing:.2em;color:var(--mut)}
+.evidence{margin:9px 24px 0;padding:8px 12px;border-radius:10px;font-size:9.5px;line-height:1.7;
+  border:1px solid var(--line);background:var(--mint);color:var(--mut);
+  display:flex;align-items:center;gap:9px}
+.evidence b{color:var(--green);font-weight:600;letter-spacing:.1em;flex:none}
+.dots{display:flex;justify-content:center;gap:8px;margin-top:9px}
+.dots i{width:5px;height:5px;border-radius:50%;background:#c9ddd3;
+  transition:width 200ms var(--ease-out), background 200ms ease}
+.dots i.on{background:var(--green);width:16px;border-radius:4px;box-shadow:0 0 8px rgba(0,136,90,.5)}
+.reacts{display:flex;gap:10px;padding:11px 24px 0}
+.react{flex:1;height:38px;border-radius:12px;border:1px solid var(--line);background:#fff;
+  display:flex;align-items:center;justify-content:center;gap:8px;font-size:11px;letter-spacing:.12em;color:var(--mut);
+  transition:transform 160ms var(--ease-out)}
+.react:active{transform:scale(.97)}
+.react.liked{color:#fff;border:none;background:linear-gradient(110deg,var(--pink-deep),var(--pink))}
+.result-actions{display:flex;gap:10px;padding:10px 24px 20px;margin-top:auto}
+.ghost-btn{flex:1;height:42px;border-radius:12px;border:1px solid var(--line);background:#fff;
+  display:flex;align-items:center;justify-content:center;font-size:11px;letter-spacing:.2em;color:var(--green);
+  transition:transform 160ms var(--ease-out)}
+.ghost-btn:active{transform:scale(.97)}
+
+/* ── ⑦ 销售面板 ── */
+.sales-h{display:flex;justify-content:space-between;align-items:center;padding:8px 24px 0}
+.sales-h .t{font-family:var(--serif);font-size:20px;color:var(--green-ink)}
+.pill{font-size:9px;color:var(--green);border:1px solid var(--line);padding:4px 10px;border-radius:20px;letter-spacing:.16em;background:var(--mint)}
+.cust{margin:11px 22px 0;padding:12px 15px;border-radius:14px;border:1px solid var(--line);
+  background:#fff;display:flex;gap:12px;align-items:center;box-shadow:0 2px 8px rgba(2,102,71,.05)}
+.avatar{width:42px;height:42px;border-radius:50%;flex:none;
+  background:radial-gradient(circle at 35% 30%,#bfe9d6,#5fbd97);border:1.5px solid var(--pink-line)}
+.cust .nm{font-size:14px;color:var(--green-ink);font-weight:600}
+.cust .meta{font-size:10px;color:var(--mut);margin-top:3px;letter-spacing:.06em;line-height:1.6}
+.internal{color:var(--pink-deep)}
+.strategy{margin:10px 22px 0;padding:13px 15px;border-radius:14px;
+  border:1px solid var(--line);
+  background:linear-gradient(130deg,var(--mint),#fff)}
+.strategy .k{font-size:9px;letter-spacing:.26em;color:var(--green);display:flex;align-items:center;gap:8px}
+.strategy .k::before{content:"";width:14px;height:1px;background:var(--green)}
+.strategy p{font-size:10.5px;line-height:1.8;color:var(--green-ink);margin-top:7px}
+.strategy p em{color:var(--green);font-style:normal;font-weight:600}
+.forbid{margin:9px 22px 0;font-size:9px;color:var(--pink-deep);letter-spacing:.08em}
+.forbid::before{content:"⛔ "}
+.intent{display:flex;gap:8px;padding:11px 22px 0}
+.intent .lv{flex:1;height:38px;border-radius:11px;border:1px solid var(--line);background:#fff;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--mut);
+  transition:transform 160ms var(--ease-out)}
+.intent .lv:active{transform:scale(.97)}
+.intent .lv b{font-family:var(--serif);font-size:15px;font-weight:600}
+.intent .lv small{font-size:7px;letter-spacing:.14em}
+.intent .lv.sel{color:#fff;border:none;background:linear-gradient(110deg,var(--green),var(--green-hi))}
+.note{margin:10px 22px 0;height:60px;border-radius:12px;border:1px solid var(--line);
+  background:#fff;padding:9px 13px;font-size:10.5px;color:var(--mut);line-height:1.7}
+
+/* ── PC 后台壳 ── */
+.pc-section{max-width:1280px;margin:0 auto 110px;padding:0 40px}
+.pc-title{font-family:var(--serif);font-size:30px;margin-bottom:6px;color:#eaf6f0}
+.pc-title em{font-style:italic;color:var(--green-hi)}
+.pc-sub{color:#9fbfb1;font-size:13px;margin-bottom:26px}
+.pc-frame{border-radius:18px;border:1px solid rgba(31,174,120,.3);overflow:hidden;
+  background:var(--paper);box-shadow:0 30px 80px rgba(0,0,0,.5)}
+.pc-bar{height:40px;display:flex;align-items:center;gap:8px;padding:0 18px;
+  border-bottom:1px solid var(--line);color:var(--mut);font-size:11px;letter-spacing:.14em;background:#fff}
+.pc-bar i{width:9px;height:9px;border-radius:50%;background:#cfe4da}
+.pc-bar i:first-child{background:var(--green-hi)}
+.pc-body{display:grid;grid-template-columns:340px 1fr;min-height:380px}
+.pc-list{border-right:1px solid var(--line);padding:18px;background:#fff}
+.pc-list .hd{font-size:10px;letter-spacing:.26em;color:var(--green);margin-bottom:12px}
+.lead{display:flex;gap:11px;align-items:center;padding:11px 12px;border-radius:12px;margin-bottom:6px;color:var(--green-ink)}
+.lead.on{background:var(--mint);border:1px solid var(--line)}
+.lead .nm{font-size:13px}
+.lead .meta{font-size:10px;color:var(--mut);margin-top:2px}
+.lead .lvl{margin-left:auto;font-family:var(--serif);font-style:italic;font-size:16px;color:var(--pink-deep)}
+.pc-detail{padding:22px 26px;color:var(--green-ink)}
+.pc-detail .hd{display:flex;justify-content:space-between;align-items:baseline}
+.pc-detail .hd .nm{font-family:var(--serif);font-size:22px;color:var(--green-ink)}
+.pc-detail .hd .exp{font-size:10px;letter-spacing:.2em;color:var(--mut)}
+.traits{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 18px}
+.trait{font-size:10px;letter-spacing:.1em;color:var(--green);border:1px solid var(--line);
+  border-radius:20px;padding:5px 12px;background:var(--mint)}
+.trait.warn{color:var(--pink-deep);border-color:var(--pink-line);background:#fdf1f4}
+.shots{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.shot{border-radius:14px;height:150px;position:relative;overflow:hidden;
+  border:1px solid var(--line);
+  background:radial-gradient(120px 110px at 50% 42%,#0f4a35,#062b1e 80%)}
+.shot .sil{position:absolute;left:50%;top:56%;transform:translate(-50%,-50%) scale(.62)}
+.shot .lbl{position:absolute;left:10px;bottom:8px;font-size:9px;letter-spacing:.14em;color:#d9f4e7}
+.shot .rc{position:absolute;right:8px;top:8px;font-size:8px;padding:3px 8px;border-radius:12px;
+  letter-spacing:.1em;color:#fff;background:var(--pink-deep)}
+.shot .rc.dim{background:#7fa393;color:#fff}
+footer{padding:36px 40px 60px;color:#5d8172;font-size:11px;letter-spacing:.2em;text-align:center}
+
+/* ── STANDARDS：无障碍降级——保留透明度过渡，移除位移/缩放运动 ── */
+@media (prefers-reduced-motion: reduce){
+  .orbit,.orbit.o2,.face-svg,.scanline,.mesh line,.mesh circle,
+  .cta::after,.guide,.result-stage::before{animation:none}
+  .wigcard{animation:cardFade 200ms ease forwards;transform:none}
+  .chip{animation:chipFade 200ms ease forwards;transform:none}
+  @keyframes cardFade{to{opacity:1}}
+  @keyframes chipFade{to{opacity:1}}
+}
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="kicker">莱莎健康假发 · 品牌绿版 V2</div>
+  <h1>AI 智能试戴 · <span style="font-style:italic">气质升级</span></h1>
+  <p class="sub">依据《内贸品牌图》重定主题：<b>祖母绿孔雀 × 瓷白 × 樱粉描边</b>（logo 的粉圈与展厅的绿构架白板材）。
+  屏内改为瓷白底、祖母绿主色、樱粉承担强调与"心动"语义；动效按 Emil Kowalski 标准调整——强 ease-out 曲线、
+  卡片 stagger 收敛至 60ms、入场不再从零缩放、全部可按元素带按压反馈、支持 prefers-reduced-motion 降级。</p>
+  <div class="rule"></div>
+</div>
+<div class="legend">
+  角色分工：<b>祖母绿</b>=品牌与确认动作 · <b>樱粉</b>=情感语义（心动/至臻/对比分割线）与描边 · 瓷白=底面。
+  暗色仅保留在拍摄/效果图舞台（呼应展馆暗顶的深玉色，不再是外贸版的棕金）。
+</div>
+
+<div class="flow">
+
+  <!-- ① attract -->
+  <div class="station">
+    <div class="tag"><span class="no">Ⅰ</span><span class="zh">待机吸引屏</span><span>ATTRACT</span></div>
+    <div class="phone"><div class="screen attract">
+      <div class="statusbar"><span>莱莎健康假发</span><span>9:41</span></div>
+      <div class="orbit-wrap">
+        <div class="orbit"><i></i></div>
+        <div class="orbit o2"><i></i></div>
+        <svg class="face-svg" viewBox="0 0 100 120">
+          <ellipse cx="50" cy="58" rx="30" ry="38"/>
+          <path d="M20 50 Q18 12 50 10 Q82 12 80 50 Q84 28 66 20 Q50 14 34 20 Q16 28 20 50" />
+          <path class="feather" d="M22 46 Q10 60 16 80 M26 40 Q12 48 10 66 M78 46 Q90 60 84 80 M74 40 Q88 48 90 66"/>
+          <polyline points="34,52 42,50 48,53"/><polyline points="52,53 58,50 66,52"/>
+          <polyline points="50,58 47,70 53,70"/><polyline points="40,82 50,86 60,82"/>
+          <circle cx="34" cy="52" r="1.3"/><circle cx="66" cy="52" r="1.3"/>
+          <circle cx="50" cy="70" r="1.3"/><circle cx="50" cy="86" r="1.3"/>
+          <circle cx="50" cy="10" r="1.3"/><circle cx="20" cy="50" r="1.3"/><circle cx="80" cy="50" r="1.3"/>
+        </svg>
+      </div>
+      <div class="brand">莱 莎 · 健 康 假 发</div>
+      <h2>戴上那一刻<br/><em>状态</em>就回来了</h2>
+      <div class="en">AI 智能试戴 · 60 秒遇见更好的自己</div>
+      <div class="cta">开始试戴体验</div>
+    </div></div>
+  </div>
+
+  <!-- ② register -->
+  <div class="station">
+    <div class="tag"><span class="no">Ⅱ</span><span class="zh">快速登记</span><span>REGISTER</span></div>
+    <div class="phone"><div class="screen">
+      <div class="statusbar"><span>莱莎健康假发</span><span>9:41</span></div>
+      <div class="pad">
+        <div class="reg-head"><div class="t">先认识一下您</div><div class="lang">30 秒</div></div>
+        <div class="reg-sub">试戴效果图将通过短信发送给您，随时回看</div>
+        <div class="field"><label><span>怎么称呼您</span><span class="req">*</span></label>
+          <div class="input">陈女士</div></div>
+        <div class="row2">
+          <div class="field"><label><span>手机号</span><span class="req">*</span></label>
+            <div class="input">138 **** 6688</div></div>
+          <div class="field"><label><span>微信号（选填）</span></label>
+            <div class="input ghost">方便发效果图</div></div>
+        </div>
+        <div class="field"><label><span>您最关心的是</span></label>
+          <div class="styles3">
+            <div class="stylecard sel"><div class="ic">丰</div><div class="zh">发量丰盈</div><div class="en">头顶 · 发缝</div></div>
+            <div class="stylecard"><div class="ic">遮</div><div class="zh">白发遮盖</div><div class="en">自然发色</div></div>
+            <div class="stylecard"><div class="ic">变</div><div class="zh">造型变换</div><div class="en">日常 · 场合</div></div>
+          </div></div>
+        <div class="field"><label><span>偏爱风格</span></label>
+          <div class="styles3">
+            <div class="stylecard sel"><div class="ic">雅</div><div class="zh">知性优雅</div></div>
+            <div class="stylecard"><div class="ic">轻</div><div class="zh">减龄轻盈</div></div>
+            <div class="stylecard"><div class="ic">简</div><div class="zh">自然日常</div></div>
+          </div></div>
+        <div class="consent"><div class="checkbox"></div>
+          <div>同意为生成试戴效果拍摄照片。照片仅用于本次体验与效果回看，保留 90 天，可随时联系我们删除。</div></div>
+        <div class="btn-primary">下一步</div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- ③ capture -->
+  <div class="station">
+    <div class="tag"><span class="no">Ⅲ</span><span class="zh">拍摄</span><span>CAPTURE</span></div>
+    <div class="phone"><div class="screen">
+      <div class="statusbar"><span>莱莎健康假发</span><span>9:42</span></div>
+      <div class="cam">
+        <div class="light-ok"><span class="dot"></span>光线良好</div>
+        <svg class="sil" width="150" height="190" viewBox="0 0 100 130">
+          <path d="M50 16 Q72 16 74 44 Q75 62 66 74 Q60 82 50 82 Q40 82 34 74 Q25 62 26 44 Q28 16 50 16" fill="#123c2c"/>
+          <path d="M22 130 Q26 96 44 90 L56 90 Q74 96 78 130 Z" fill="#0d3123"/>
+        </svg>
+        <div class="guide"></div>
+        <div class="corner tl"></div><div class="corner tr"></div>
+        <div class="corner bl"></div><div class="corner br"></div>
+        <div class="cam-tip">请将面部对准取景框<small>拍完可以重拍，满意为止</small></div>
+        <div class="shutter"><i></i></div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- ④ analyzing -->
+  <div class="station">
+    <div class="tag"><span class="no">Ⅳ</span><span class="zh">AI 面容气质解析</span><span>ANALYZING</span></div>
+    <div class="phone"><div class="screen">
+      <div class="statusbar"><span>莱莎健康假发</span><span>9:42</span></div>
+      <div class="scan-stage">
+        <div class="scan-grid"></div>
+        <svg class="sil" width="170" height="215" viewBox="0 0 100 130">
+          <path d="M50 16 Q72 16 74 44 Q75 62 66 74 Q60 82 50 82 Q40 82 34 74 Q25 62 26 44 Q28 16 50 16" fill="#155a41"/>
+          <path d="M22 130 Q26 96 44 90 L56 90 Q74 96 78 130 Z" fill="#0f4a35"/>
+        </svg>
+        <svg class="mesh" width="170" height="215" viewBox="0 0 100 130">
+          <line x1="36" y1="46" x2="50" y2="52"/><line x1="64" y1="46" x2="50" y2="52"/>
+          <line x1="50" y1="52" x2="50" y2="64"/><line x1="42" y1="72" x2="58" y2="72"/>
+          <line x1="36" y1="46" x2="42" y2="72"/><line x1="64" y1="46" x2="58" y2="72"/>
+          <line x1="50" y1="20" x2="36" y2="46"/><line x1="50" y1="20" x2="64" y2="46"/>
+          <circle cx="36" cy="46" r="1.6"/><circle cx="64" cy="46" r="1.6"/>
+          <circle cx="50" cy="52" r="1.6"/><circle cx="50" cy="64" r="1.6"/>
+          <circle cx="42" cy="72" r="1.6"/><circle cx="58" cy="72" r="1.6"/><circle cx="50" cy="20" r="1.6"/>
+        </svg>
+        <div class="scanline"></div>
+      </div>
+      <div class="readouts">
+        <div class="chip"><span class="k">脸型</span><span class="v">椭圆脸 · 96%</span></div>
+        <div class="chip"><span class="k">肤色</span><span class="v">暖调 · 白皙</span></div>
+        <div class="chip"><span class="k">气质类型</span><span class="v">知性优雅</span></div>
+        <div class="chip"><span class="k">适配发长</span><span class="v">短发 · 及肩</span></div>
+      </div>
+      <div class="social-proof">“这不像假发，像我三年前的自己。”<br/><em>—— 45 岁 · 企业管理者 · 莱莎老客户</em></div>
+      <div class="stages"><span class="on">解析面容</span><span>甄选发型</span><span>生成效果</span></div>
+    </div></div>
+  </div>
+
+  <!-- ⑤ matching -->
+  <div class="station">
+    <div class="tag"><span class="no">Ⅴ</span><span class="zh">发型甄选揭晓</span><span>CURATED</span></div>
+    <div class="phone"><div class="screen">
+      <div class="statusbar"><span>莱莎健康假发</span><span>9:43</span></div>
+      <div class="match-h">为您甄选 <em>3</em> 款</div>
+      <div class="match-sub">依据您的脸型 · 肤色 · 气质定制推荐</div>
+      <div class="wigcards">
+        <div class="wigcard">
+          <div class="wig-thumb"><svg viewBox="0 0 64 78">
+            <rect width="64" height="78" fill="#eef7f2"/>
+            <path d="M32 12 Q52 12 52 32 Q54 48 46 56 Q40 62 32 62 Q24 62 18 56 Q10 48 12 32 Q12 12 32 12" fill="#241a10"/>
+            <path d="M20 26 Q26 20 34 22 M40 22 Q46 24 48 30" stroke="#4a3822" stroke-width="1.2" fill="none"/>
+          </svg></div>
+          <div class="info"><div class="no">LS-D201 · 波波头</div><div class="nm">轻盈波波 · 自然黑</div>
+            <div class="why">碎刘海修饰额头线条，衬您的椭圆脸更显精致</div></div>
+          <div class="matchpct">97<small>匹配</small></div>
+        </div>
+        <div class="wigcard">
+          <div class="wig-thumb"><svg viewBox="0 0 64 78">
+            <rect width="64" height="78" fill="#eef7f2"/>
+            <path d="M32 12 Q50 12 52 30 Q56 44 48 54 Q52 58 46 62 Q40 54 40 48 Q32 54 24 48 Q24 54 18 62 Q12 58 16 54 Q8 44 12 30 Q14 12 32 12" fill="#3d2c1a"/>
+          </svg></div>
+          <div class="info"><div class="no">LS-D318 · 短卷</div><div class="nm">知性短卷 · 深栗棕</div>
+            <div class="why">微卷增加蓬松感，暖棕发色与您的肤色同调</div></div>
+          <div class="matchpct">93<small>匹配</small></div>
+        </div>
+        <div class="wigcard zhizhen">
+          <div class="zbadge">至臻系列</div>
+          <div class="wig-thumb"><svg viewBox="0 0 64 78">
+            <rect width="64" height="78" fill="#fdf1f4"/>
+            <path d="M32 10 Q54 12 54 34 Q56 52 44 60 Q38 64 32 64 Q26 64 20 60 Q8 52 10 34 Q10 12 32 10" fill="#4a3520"/>
+            <path d="M32 12 Q50 14 51 34 M32 12 Q14 14 13 34" stroke="#6b4e2c" stroke-width="1.1" fill="none"/>
+          </svg></div>
+          <div class="info"><div class="no">LS-Z801 · 全手织</div><div class="nm">至臻 · 云鬓</div>
+            <div class="why">22 岁原生辫发全手工钩织，头旋发际根根分明</div></div>
+          <div class="matchpct" style="color:var(--pink-deep)">91<small>匹配</small></div>
+        </div>
+      </div>
+      <div class="btn-primary" style="margin:auto 24px 26px">生成我的试戴效果</div>
+    </div></div>
+  </div>
+
+  <!-- ⑥ result -->
+  <div class="station">
+    <div class="tag"><span class="no">Ⅵ</span><span class="zh">前后对比揭晓</span><span>REVEAL</span></div>
+    <div class="phone"><div class="screen">
+      <div class="statusbar"><span>莱莎健康假发</span><span>9:44</span></div>
+      <div class="result-stage">
+        <div class="half before">
+          <div class="half-lbl b">佩戴前</div>
+          <svg class="sil" width="185" height="235" viewBox="0 0 100 130">
+            <path d="M50 22 Q70 22 72 46 Q73 62 65 73 Q59 81 50 81 Q41 81 35 73 Q27 62 28 46 Q30 22 50 22" fill="#1b5c44"/>
+            <path d="M24 130 Q28 98 45 92 L55 92 Q72 98 76 130 Z" fill="#134634"/>
+            <path d="M50 18 Q64 18 66 34 Q66 40 62 44 Q56 38 50 38 Q44 38 38 44 Q34 40 34 34 Q36 18 50 18" fill="#0f3a2b"/>
+          </svg>
+        </div>
+        <div class="half after">
+          <div class="half-lbl a">莱莎 · 佩戴后</div>
+          <svg class="sil" width="185" height="235" viewBox="0 0 100 130">
+            <path d="M50 22 Q70 22 72 46 Q73 62 65 73 Q59 81 50 81 Q41 81 35 73 Q27 62 28 46 Q30 22 50 22" fill="#1b5c44"/>
+            <path d="M24 130 Q28 98 45 92 L55 92 Q72 98 76 130 Z" fill="#134634"/>
+            <path d="M50 12 Q74 14 76 40 Q78 58 68 68 Q62 74 56 74 Q60 60 58 46 Q50 54 42 46 Q40 60 44 74 Q38 74 32 68 Q22 58 24 40 Q26 14 50 12" fill="#241a10"/>
+            <path d="M50 14 Q70 16 72 40 M50 14 Q30 16 28 40" stroke="#4a3822" stroke-width="1.2" fill="none"/>
+          </svg>
+        </div>
+        <div class="divider"><div class="knob">⇔</div></div>
+        <div class="qr"></div>
+      </div>
+      <div class="result-nm"><span class="nm">轻盈波波 · 自然黑</span><span class="md">LS-D201 · 1/3</span></div>
+      <div class="evidence"><b>久戴如新</b>同款保鳞原生辫发 · 12-18 个月光泽如初 · SGS 认证</div>
+      <div class="dots"><i class="on"></i><i></i><i></i></div>
+      <div class="reacts">
+        <div class="react liked">♥ 心动</div>
+        <div class="react">再看看</div>
+      </div>
+      <div class="result-actions">
+        <div class="ghost-btn">换一批</div>
+        <div class="ghost-btn" style="color:#fff;border:none;background:linear-gradient(110deg,var(--green),var(--green-hi))">请顾问过来</div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- ⑦ sales -->
+  <div class="station">
+    <div class="tag"><span class="no">Ⅶ</span><span class="zh">销售接力面板</span><span>SALES</span></div>
+    <div class="phone"><div class="screen">
+      <div class="statusbar"><span>销售模式 · 王莉</span><span>9:46</span></div>
+      <div class="sales-h"><div class="t">销售接力</div><div class="pill">双轨话术已就绪</div></div>
+      <div class="cust">
+        <div class="avatar"></div>
+        <div><div class="nm">陈女士</div>
+          <div class="meta">138****6688 · 关注发量丰盈 · 知性优雅<br/>心动：轻盈波波 ♥ · 至臻云鬓 ♥ ｜ <span class="internal">发况备注（仅您可见）：头顶发缝偏稀</span></div></div>
+      </div>
+      <div class="strategy">
+        <div class="k">开场 · 情感线（气质升级）</div>
+        <p>“您戴上这顶的瞬间气质完全出来了——不是变好看了一点，是<em>整个状态回来了</em>。您平时开会见客户，这就是每天出门的底气。”</p>
+        <div class="k" style="margin-top:9px">跟进 · 理性线（久戴如新）</div>
+        <p>客户关注发量+长期佩戴 → 讲<em>保鳞原生辫发，12-18 个月久戴如新</em>；她心动了至臻款 → 顺势讲<em>22 岁原生发全定制</em>。</p>
+      </div>
+      <div class="forbid">话术规范：不说「便宜 / 划算 / 性价比 / 打折」</div>
+      <div class="intent">
+        <div class="lv sel"><b>A</b><small>强意向</small></div>
+        <div class="lv"><b>B</b><small>有兴趣</small></div>
+        <div class="lv"><b>C</b><small>观望</small></div>
+        <div class="lv"><b>D</b><small>无意向</small></div>
+      </div>
+      <div class="note">备注：已加微信，试戴实物短卷款，约周六到杭州体验店复试……</div>
+      <div class="btn-primary" style="margin:auto 22px 22px">提交反馈</div>
+    </div></div>
+  </div>
+</div>
+
+<!-- ============ PC backend ============ -->
+<div class="pc-section">
+  <div class="pc-title">方舟后台 · <em>展会线索台</em>（品牌绿版）</div>
+  <div class="pc-sub">PC 端同步换肤：瓷白底 + 薄荷面板 + 祖母绿主操作 + 樱粉承担意向等级与"心动"语义。</div>
+  <div class="pc-frame">
+    <div class="pc-bar"><i></i><i></i><i></i><span style="margin-left:10px">莱莎方舟 · 展会线索台 · 2026-08 内贸展会</span></div>
+    <div class="pc-body">
+      <div class="pc-list">
+        <div class="hd">今日线索 · 63</div>
+        <div class="lead on"><div class="avatar" style="width:34px;height:34px"></div>
+          <div><div class="nm">陈女士</div><div class="meta">发量丰盈 · 3 张效果图 · 王莉跟进</div></div>
+          <div class="lvl">A</div></div>
+        <div class="lead"><div class="avatar" style="width:34px;height:34px"></div>
+          <div><div class="nm">李女士</div><div class="meta">白发遮盖 · 6 张效果图 · 已加微信</div></div>
+          <div class="lvl">B</div></div>
+        <div class="lead"><div class="avatar" style="width:34px;height:34px"></div>
+          <div><div class="nm">周女士</div><div class="meta">造型变换 · 3 张效果图</div></div>
+          <div class="lvl">A</div></div>
+        <div class="lead"><div class="avatar" style="width:34px;height:34px"></div>
+          <div><div class="nm">吴女士</div><div class="meta">发量丰盈 · 未生成</div></div>
+          <div class="lvl">C</div></div>
+      </div>
+      <div class="pc-detail">
+        <div class="hd"><span class="nm">陈女士 · 会话回放</span><span class="exp">导出 EXCEL · 转入客户机会台</span></div>
+        <div class="traits">
+          <span class="trait">椭圆脸</span><span class="trait">暖调白皙</span>
+          <span class="trait">知性优雅</span><span class="trait">适配短发</span>
+          <span class="trait">关注·发量丰盈</span><span class="trait">意向 A · 约到店复试</span>
+          <span class="trait warn">发况(仅内部)：发缝偏稀 · 建议头顶补量款</span>
+        </div>
+        <div class="shots">
+          <div class="shot"><div class="rc">♥ 心动</div>
+            <svg class="sil" width="185" height="235" viewBox="0 0 100 130"><path d="M50 12 Q74 14 76 40 Q78 58 68 68 Q56 76 50 76 Q44 76 32 68 Q22 58 24 40 Q26 14 50 12" fill="#241a10"/><path d="M50 24 Q68 24 70 46 Q71 60 64 71 Q58 79 50 79 Q42 79 36 71 Q29 60 30 46 Q32 24 50 24" fill="#1b5c44"/></svg>
+            <div class="lbl">LS-D201 轻盈波波</div></div>
+          <div class="shot"><div class="rc dim">再看看</div>
+            <svg class="sil" width="185" height="235" viewBox="0 0 100 130"><path d="M50 12 Q70 12 72 34 Q78 48 68 58 Q72 64 66 70 Q58 60 58 52 Q50 58 42 52 Q42 60 34 70 Q28 64 32 58 Q22 48 28 34 Q30 12 50 12" fill="#3d2c1a"/><path d="M50 24 Q68 24 70 46 Q71 60 64 71 Q58 79 50 79 Q42 79 36 71 Q29 60 30 46 Q32 24 50 24" fill="#1b5c44"/></svg>
+            <div class="lbl">LS-D318 知性短卷</div></div>
+          <div class="shot"><div class="rc">♥ 心动</div>
+            <svg class="sil" width="185" height="235" viewBox="0 0 100 130"><path d="M50 10 Q76 12 76 38 Q78 58 66 66 Q58 72 50 72 Q42 72 34 66 Q22 58 24 38 Q24 12 50 10" fill="#4a3318"/><path d="M50 22 Q68 22 70 44 Q71 58 64 69 Q58 77 50 77 Q42 77 36 69 Q29 58 30 44 Q32 22 50 22" fill="#1b5c44"/></svg>
+            <div class="lbl">LS-Z801 至臻云鬓</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>莱莎健康假发 · AI 试戴 H5 · 品牌绿版原型 V2 · 2026-07-03 · 原版（曜石金）保留于 2026-07-03-expo-ai-wig-tryon-prototype.html</footer>
+</body>
+</html>

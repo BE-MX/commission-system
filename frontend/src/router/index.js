@@ -22,6 +22,13 @@ const routes = [
     meta: { title: '登录', public: true },
   },
   {
+    // 展会试戴 kiosk — 独立于 MainLayout 的全屏页（展位 iPad 全天运行）
+    path: '/expo/kiosk',
+    name: 'ExpoKiosk',
+    component: () => import('@/views/expo/ExpoKiosk.vue'),
+    meta: { title: 'AI 智能试戴', permission: 'expo:write' },
+  },
+  {
     path: '/',
     component: () => import('@/views/layout/MainLayout.vue'),
     redirect: '/dashboard',
@@ -40,7 +47,9 @@ router.beforeEach(async (to, from, next) => {
   const desktopMode = sessionStorage.getItem('ark_desktop_mode') === '1'
 
   // 移动端访问登录页：直接走移动端独立登录页
-  if (isMobileUA && !desktopMode && to.path === '/login') {
+  // 例外：目标是展会 kiosk（展位 iPad 用主站登录，不进移动端素材页）
+  const redirectTarget = String(to.query.redirect || '')
+  if (isMobileUA && !desktopMode && to.path === '/login' && !redirectTarget.startsWith('/expo')) {
     window.location.href = '/m/login.html'
     return false
   }

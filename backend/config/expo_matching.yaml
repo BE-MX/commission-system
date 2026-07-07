@@ -1,0 +1,11 @@
+# 展会试戴发型匹配权重（现场可调，改后重启生效）
+# 规则详见 docs/requirements/2026-07-03-expo-ai-wig-tryon.md 第 4.2 节
+weights:
+  face_shape: 30      # 脸型命中（圆脸→碎刘海款，方脸→长鬓角款）
+  skin_tone: 20       # 深浅 10 + 冷暖 10
+  need: 25            # 注册题"最关心什么"（发量丰盈/白发遮盖/造型变换）
+  style: 15           # AI 气质类型 + 注册风格偏好
+  age: 10             # 年龄段重叠
+
+top_n: 3              # 每批推荐数
+zhizhen_anchor: true  # 至臻锚点：前6名里有至臻款则强制占据第一批一席
