@@ -138,8 +138,8 @@ def test_build_prompt_tryon_default_keeps_background():
     row = ExpoResult(session_id=1, wig_id=3, hair_color_json=None)
     prompt, images = ai_pipeline._build_prompt(session, row, wig)
     assert "FIRST image is the customer's own photo" in prompt  # 锚：参考图角色分工
-    assert "Keep the background exactly the same" in prompt      # 场：默认原景
-    assert "85mm portrait" in prompt                             # 机
+    assert "background and framing exactly the same" in prompt   # 场：默认原景全锁定
+    assert "85mm" not in prompt  # 浅景深只随场景置换路径（原景不能又锁背景又虚化）
     assert "16:9" not in prompt and "three" not in prompt        # 三格已回退干净
     assert len(images) == 1
 
@@ -154,7 +154,8 @@ def test_build_prompt_tryon_with_scene_swaps_background():
     )
     prompt, _ = ai_pipeline._build_prompt(session, row, wig)
     assert "workspace" in prompt  # office 场景 prompt 注入
-    assert "Keep the background exactly the same" not in prompt
+    assert "background and framing exactly the same" not in prompt
+    assert "85mm" in prompt  # 场景置换路径带摄像语言
     assert "magazine-quality" not in prompt  # 不能误入 scene 模式模板
 
 
@@ -162,6 +163,33 @@ def test_resolve_tryon_scene():
     assert ai_pipeline.resolve_tryon_scene("home")["label"] == "居家"
     assert ai_pipeline.resolve_tryon_scene("bogus") is None
     assert ai_pipeline.resolve_tryon_scene(None) is None
+
+
+def test_scene_mode_home_key_not_confused_with_tryon_home():
+    """SCENES 与 TRYON_SCENES 都有 key=home：wig_id 为空必须命中 scene 模式模板（撞名守卫）。"""
+    session = _session(mode="scene")
+    row = ExpoResult(session_id=1, wig_id=None, scene_json={"key": "home", "label": "温馨居家"})
+    prompt, images = ai_pipeline._build_prompt(session, row, None)
+    assert "soft lamp light" in prompt      # scene 模式 home 的独有描述
+    assert "front-left" not in prompt       # tryon home 的独有描述不得混入
+    assert len(images) == 1
+
+
+def test_build_prompt_color_and_scene_combined(tmp_path):
+    """发色（色板图）× 生成场景 组合：LAST 指代仍成立且色板图仍在末位。"""
+    swatch = tmp_path / "sw.png"
+    swatch.write_bytes(b"fake")
+    session = _session()
+    wig = ExpoWig(model_no="LS-1", name="轻盈波波", wig_description="short bob")
+    row = ExpoResult(
+        session_id=1, wig_id=1,
+        hair_color_json={"name": "栗棕", "code": "6", "swatch_path": str(swatch)},
+        scene_json={"key": "gathering", "label": "聚会"},
+    )
+    prompt, images = ai_pipeline._build_prompt(session, row, wig)
+    assert "LAST reference image" in prompt
+    assert "dinner party" in prompt
+    assert images[-1] == swatch
 
 
 # ---------------- 批次切片边界（换一批上界） ----------------

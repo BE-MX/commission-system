@@ -193,32 +193,33 @@ _COMPOSITE_TEMPLATE = (
     "The FIRST image is the customer's own photo. The following wig reference image(s) "
     "show the exact wig to use, from multiple angles: {description}. Replace the "
     "customer's hair with this wig, matching its length, layering, fringe and volume "
-    "exactly. Keep the customer's face, facial features, expression, skin tone and body "
+    "exactly. Keep the customer's face, facial features, expression and skin tone "
     "exactly the same as the first image, with light natural makeup. The hairline "
     "transition must look naturally grown, with realistic fine baby hairs at the "
     "temples. {extra}"
 )
 
-# 场景子句：默认保持原景；用户选场景时置换背景（prompt 只在服务端，前端只见 key/label）
+# 场景子句：默认保持原景（body/背景/景深全锁定）；选场景时置换背景（可换装，
+# 85mm 浅景深只在此路径——原景路径不能既要背景原封又要虚化）。prompt 只在服务端
 _TRYON_KEEP_BG_CLAUSE = (
-    " Keep the background exactly the same as the first image, and light the new hair "
-    "to match the original photo's light direction."
+    " Keep the body, outfit, background and framing exactly the same as the first "
+    "image, preserve the original photo's depth of field, and light the new hair to "
+    "match the original photo's light direction."
 )
 _TRYON_SCENE_CLAUSE = (
     " Recreate the portrait in {scene}. Naturally adapt the background, outfit and "
     "lighting to the scene while keeping the person clearly recognizable; the hair "
     "highlights and shadows must follow the scene's light direction, blending naturally "
-    "with no cut-and-paste look."
+    "with no cut-and-paste look. Shot like a candid 85mm portrait with shallow depth "
+    "of field focused on the face and hair."
 )
 
-# 色 + 机 + 魂 收尾
+# 色 + 魂 收尾
 _TRYON_STYLE_TAIL = (
     " Photorealistic straight-out-of-camera quality: true skin texture with visible "
     "pores, individual hair strands with natural sheen and realistic physics. No "
     "plastic skin, no over-smoothing, no painterly or illustration look, no wig-cap "
-    "artificiality, no heavy filter grading. Shot like a candid 85mm portrait with "
-    "shallow depth of field focused on the face and hair - one real moment of her "
-    "daily life."
+    "artificiality, no heavy filter grading - one real moment of daily life."
 )
 
 # tryon 可选生成场景（不选=原景）；光源方向显式声明，发丝受光跟随场景
@@ -244,14 +245,14 @@ _COLOR_SWATCH_CLAUSE = (
     " The LAST reference image is a hair color swatch. After replacing the hair, "
     "recolor it to exactly match the swatch: {name} (color code {code}{hex_part}). "
     "{description}The color must look like naturally grown human hair with realistic "
-    "depth, dimension and shine under the scene's lighting. Do not change the "
+    "depth, dimension and shine under the final lighting. Do not change the "
     "hairstyle shape or length, and do not alter the face."
 )
 
 _COLOR_TEXT_CLAUSE = (
     " After replacing the hair, recolor it to this exact hair color: {name} "
     "(color code {code}{hex_part}). {description}The color must look like naturally "
-    "grown human hair with realistic depth, dimension and shine under the scene's "
+    "grown human hair with realistic depth, dimension and shine under the final "
     "lighting. Do not change the hairstyle shape or length, and do not alter the face."
 )
 

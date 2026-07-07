@@ -83,7 +83,8 @@
               <div v-for="r in s.results" :key="r.id" class="result-item">
                 <el-image :src="r.image_url" fit="cover" :preview-src-list="[r.image_url]" preview-teleported class="result-img" />
                 <span v-if="r.reaction === 'loved'" class="loved-badge">♥ 心动</span>
-                <div class="result-name">{{ r.wig_name }} <span class="muted">{{ r.scene ? '场景大片' : (r.series === 'zhizhen' ? '至臻' : '经典') }}</span></div>
+                <!-- scene_json 双语义：无 wig 才是场景大片；tryon 结果的 scene 是可选生成场景 -->
+                <div class="result-name">{{ r.wig_name }} <span class="muted">{{ !r.wig_id ? '场景大片' : (r.series === 'zhizhen' ? '至臻' : '经典') + (r.scene ? ' · ' + r.scene.label : '') }}</span></div>
               </div>
             </div>
 
