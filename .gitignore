@@ -41,3 +41,8 @@ frontend/kimi-dom.html
 backend/uploads/
 /登录动效/
 .gstack/
+
+# 发票参考单分析临时产物
+backend/analyze_ref.py
+backend/reference.docx
+*reference_order.docx
