@@ -1,0 +1,607 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>订单发票管理原型</title>
+  <style>
+    :root {
+      --gold: #d4941c;
+      --gold-dark: #bb8218;
+      --gold-soft: #fdf4dc;
+      --text: #1a1a2e;
+      --muted: #718096;
+      --line: #e2e5ef;
+      --page: #f0f2f7;
+      --card: #ffffff;
+      --head: #fafbfe;
+      --success: #2d9f6f;
+      --danger: #dc3545;
+      --warning: #8b6914;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "DM Sans", "Segoe UI", Arial, sans-serif;
+      color: var(--text);
+      background: var(--page);
+    }
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 240px 1fr;
+    }
+    .sidebar {
+      background: linear-gradient(180deg, #141210, #1e1b18);
+      color: #d4c4a8;
+      padding: 22px 14px;
+    }
+    .brand {
+      color: #f5cb5c;
+      font-weight: 800;
+      font-size: 18px;
+      margin: 0 10px 28px;
+    }
+    .nav-group {
+      color: #9c9590;
+      font-size: 12px;
+      font-weight: 700;
+      margin: 18px 10px 8px;
+    }
+    .nav-item {
+      height: 38px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 12px;
+      border-radius: 10px;
+      font-size: 14px;
+      color: #d4c4a8;
+    }
+    .nav-item.active {
+      background: rgba(245, 203, 92, 0.13);
+      color: #f5cb5c;
+    }
+    .main {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .topbar {
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 28px;
+      background: #fff;
+      border-bottom: 1px solid var(--line);
+    }
+    .page {
+      padding: 24px 28px 32px;
+      max-width: 1440px;
+      width: 100%;
+    }
+    h1 {
+      font-size: 22px;
+      margin: 0;
+      letter-spacing: 0;
+    }
+    .sub {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 6px;
+    }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin: 20px 0 16px;
+    }
+    .metric {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      box-shadow: 0 8px 20px rgba(20, 18, 16, .04);
+    }
+    .metric label {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .metric strong {
+      font-size: 26px;
+      line-height: 1;
+    }
+    .toolbar, .table-card, .editor-card, .preview-card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 8px 20px rgba(20, 18, 16, .04);
+    }
+    .toolbar {
+      min-height: 64px;
+      padding: 14px;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+    input, select, textarea {
+      height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0 11px;
+      font-size: 13px;
+      color: var(--text);
+      background: #fff;
+      min-width: 130px;
+    }
+    textarea {
+      height: 78px;
+      padding-top: 9px;
+      resize: vertical;
+      width: 100%;
+    }
+    button {
+      height: 36px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--text);
+      font-weight: 700;
+      font-size: 13px;
+      padding: 0 14px;
+      cursor: default;
+    }
+    button.primary {
+      background: linear-gradient(135deg, var(--gold), var(--gold-dark));
+      color: #fff;
+      border-color: transparent;
+    }
+    button.soft {
+      background: var(--gold-soft);
+      color: #8b6914;
+      border-color: rgba(212,148,28,.25);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th {
+      text-align: left;
+      background: var(--head);
+      color: #4a5568;
+      font-weight: 700;
+      padding: 11px 12px;
+      border-bottom: 1px solid var(--line);
+      white-space: nowrap;
+    }
+    td {
+      padding: 11px 12px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+    tr:hover td { background: #fef9f0; }
+    .link {
+      color: var(--gold);
+      font-weight: 700;
+      margin-right: 12px;
+    }
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 22px;
+      border-radius: 999px;
+      padding: 2px 10px;
+      font-size: 12px;
+      font-weight: 700;
+      border: 1px solid transparent;
+    }
+    .tag.ready { color: #8b6914; background: rgba(245,203,92,.15); border-color: rgba(245,203,92,.4); }
+    .tag.synced { color: #1e7d50; background: rgba(45,159,111,.12); border-color: rgba(45,159,111,.3); }
+    .tag.failed { color: #c0392b; background: rgba(220,53,69,.1); border-color: rgba(220,53,69,.25); }
+    .prototype-tabs {
+      display: flex;
+      gap: 8px;
+      margin: 22px 0 14px;
+    }
+    .tab {
+      border-radius: 999px;
+      padding: 8px 14px;
+      border: 1px solid var(--line);
+      background: #fff;
+      font-size: 13px;
+      font-weight: 700;
+      color: #4a5568;
+    }
+    .tab.active {
+      background: var(--gold);
+      color: #fff;
+      border-color: var(--gold);
+    }
+    .editor-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 360px;
+      gap: 16px;
+      align-items: start;
+    }
+    .editor-card, .preview-card {
+      padding: 18px;
+    }
+    .section-title {
+      font-size: 15px;
+      font-weight: 800;
+      margin: 0 0 12px;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+    .field label {
+      display: block;
+      color: #4a5568;
+      font-size: 12px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .field input, .field select { width: 100%; min-width: 0; }
+    input[readonly] {
+      background: #fafbfe;
+      color: #4a5568;
+    }
+    .items-table input { width: 100%; min-width: 70px; }
+    .cascade-panel {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      padding: 12px;
+      margin-bottom: 12px;
+      background: #fafbfe;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    .cascade-panel select {
+      width: 100%;
+      min-width: 0;
+    }
+    .sum-box {
+      margin-top: 14px;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .sum {
+      background: var(--head);
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .sum span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      margin-bottom: 5px;
+    }
+    .sum strong { font-size: 18px; }
+    .invoice-paper {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      background: #fff;
+      min-height: 360px;
+    }
+    .paper-head {
+      display: flex;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 10px;
+      margin-bottom: 12px;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .paper-title {
+      font-size: 16px;
+      font-weight: 800;
+      color: var(--gold);
+      margin-bottom: 8px;
+    }
+    .check-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 14px;
+    }
+    .check {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px;
+      border-radius: 8px;
+      background: var(--head);
+      font-size: 13px;
+    }
+    .ok { color: var(--success); font-weight: 800; }
+    .warn { color: var(--warning); font-weight: 800; }
+    .bad { color: var(--danger); font-weight: 800; }
+    .actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 14px;
+    }
+    .actions .wide { grid-column: 1 / -1; }
+    .drawer {
+      margin-top: 16px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .drawer h2 {
+      margin: 0 0 12px;
+      font-size: 17px;
+    }
+    .payload {
+      background: #141210;
+      color: #f5cb5c;
+      border-radius: 8px;
+      padding: 12px;
+      font-family: Consolas, monospace;
+      font-size: 12px;
+      overflow: auto;
+      line-height: 1.5;
+    }
+    @media (max-width: 1080px) {
+      .app { grid-template-columns: 1fr; }
+      .sidebar { display: none; }
+      .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .editor-layout { grid-template-columns: 1fr; }
+      .form-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">LeShine Ark</div>
+      <div class="nav-item">工作台</div>
+      <div class="nav-group">订单管理</div>
+      <div class="nav-item active">订单发票</div>
+      <div class="nav-item">同步日志</div>
+      <div class="nav-group">提成管理</div>
+      <div class="nav-item">回款同步</div>
+      <div class="nav-item">提成批次</div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <h1>订单发票管理</h1>
+          <div class="sub">从客户发票生成小满销售订单，减少重复录入</div>
+        </div>
+        <button class="primary">＋ 新建发票</button>
+      </header>
+
+      <section class="page">
+        <div class="metrics">
+          <div class="metric"><label>草稿</label><strong>12</strong></div>
+          <div class="metric"><label>待同步</label><strong>8</strong></div>
+          <div class="metric"><label>已同步</label><strong>126</strong></div>
+          <div class="metric"><label>同步失败</label><strong>3</strong></div>
+        </div>
+
+        <div class="toolbar">
+          <div class="filters">
+            <input placeholder="客户 / 发票号 / 产品" value="Samantha" />
+            <select><option>全部状态</option><option>待同步</option><option>同步失败</option></select>
+            <select><option>全部业务员</option><option>Derek</option></select>
+            <input type="date" />
+            <button>筛选</button>
+          </div>
+          <button class="soft">导出筛选结果</button>
+        </div>
+
+        <div class="table-card">
+          <table>
+            <thead>
+              <tr>
+                <th>发票号</th>
+                <th>客户</th>
+                <th>金额</th>
+                <th>发票日期</th>
+                <th>小满订单</th>
+                <th>状态</th>
+                <th>最近同步</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>INV20260702-001</td>
+                <td>Samantha Harrison</td>
+                <td>USD 10,164.00</td>
+                <td>2026-06-17</td>
+                <td>XM-250702-8841</td>
+                <td><span class="tag synced">已同步</span></td>
+                <td>2026-07-02 09:41</td>
+                <td><span class="link">查看</span><span class="link">PDF</span><span class="link">重同步</span></td>
+              </tr>
+              <tr>
+                <td>INV20260702-002</td>
+                <td>Kelly Brown</td>
+                <td>USD 3,860.00</td>
+                <td>2026-07-02</td>
+                <td>-</td>
+                <td><span class="tag ready">待同步</span></td>
+                <td>-</td>
+                <td><span class="link">编辑</span><span class="link">Excel</span><span class="link">同步</span></td>
+              </tr>
+              <tr>
+                <td>INV20260702-003</td>
+                <td>Melody Hair Studio</td>
+                <td>USD 1,920.00</td>
+                <td>2026-07-02</td>
+                <td>-</td>
+                <td><span class="tag failed">同步失败</span></td>
+                <td>缺少 sku_id</td>
+                <td><span class="link">修正</span><span class="link">日志</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="prototype-tabs">
+          <div class="tab active">新建发票</div>
+          <div class="tab">同步确认</div>
+          <div class="tab">客户预览</div>
+        </div>
+
+        <div class="editor-layout">
+          <div class="editor-card">
+            <p class="section-title">客户与业务员</p>
+            <div class="form-grid">
+              <div class="field"><label>客户</label><input value="Samantha Harrison" /></div>
+              <div class="field"><label>联系人电话</label><input value="+61 0407590277" /></div>
+              <div class="field"><label>邮箱</label><input value="hello@shextensions.com.au" /></div>
+              <div class="field"><label>收货地址</label><input value="13 Jenyor Street, Coolum Beach" /></div>
+              <div class="field"><label>业务员</label><input value="Derek" /></div>
+              <div class="field"><label>发票日期</label><input value="2026-06-17" /></div>
+            </div>
+
+            <p class="section-title">产品明细</p>
+            <div class="cascade-panel">
+              <select><option>Model: Invisible Weft</option><option>K Tips</option></select>
+              <select><option>Color: M4/10</option><option>#60</option></select>
+              <select><option>Size: 22"</option><option>24"</option></select>
+              <select><option>Unit: 100grams</option><option>50grams</option></select>
+            </div>
+            <table class="items-table">
+              <thead>
+                <tr>
+                  <th>Product_name</th><th>Product</th><th>Net Weight Grams</th><th>Curl</th><th>Model</th><th>Color</th><th>Length</th><th>Quantity</th><th>Price/Piece</th><th>TotalPrice</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><input readonly value="Invisible Weft/M4/10/22/100g" /></td>
+                  <td><input readonly value="Invisible Weft" /></td>
+                  <td><input value="100grams" /></td>
+                  <td><select><option>Straight</option><option>Body Wave</option></select></td>
+                  <td><input readonly value="Invisible Weft" /></td>
+                  <td><input readonly value="M4/10" /></td>
+                  <td><input readonly value="22" /></td>
+                  <td><input value="5" /></td>
+                  <td><input value="192.4" /></td>
+                  <td>962.00</td>
+                </tr>
+                <tr>
+                  <td><input readonly value="K Tips/#60/22/100g" /></td>
+                  <td><input readonly value="K Tips" /></td>
+                  <td><input value="100grams" /></td>
+                  <td><select><option>Straight</option><option>Body Wave</option></select></td>
+                  <td><input readonly value="K Tips" /></td>
+                  <td><input readonly value="#60" /></td>
+                  <td><input readonly value="22" /></td>
+                  <td><input value="20" /></td>
+                  <td><input value="180.2" /></td>
+                  <td>3,604.00</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div class="sum-box">
+              <div class="sum"><span>Hair Price</span><strong>10,164.00</strong></div>
+              <div class="sum"><span>Shipping</span><strong>0.00</strong></div>
+              <div class="sum"><span>Discount</span><strong>0.00</strong></div>
+              <div class="sum"><span>Total</span><strong>10,164.00</strong></div>
+            </div>
+
+            <p class="section-title" style="margin-top:18px">付款与备注</p>
+            <div class="form-grid">
+              <div class="field"><label>付款条款</label><input value="TT 20% $2032.8" /></div>
+              <div class="field"><label>付款方式</label><input value="TT（2笔）" /></div>
+              <div class="field"><label>发货方式</label><input value="普货" /></div>
+            </div>
+            <textarea>Remark:
+Upgrade raw hair for #60,#60A,OM5-60, $17.8 extra per 100g.
+
+Account Number: 210449371723
+Holder Name: JUANCHENG LESHINE HAIR PRODUCTS CO., LTD</textarea>
+          </div>
+
+          <aside class="preview-card">
+            <p class="section-title">客户版预览</p>
+            <div class="invoice-paper">
+              <div class="paper-title">COMMERCIAL INVOICE</div>
+              <div class="paper-head">
+                <div>
+                  <strong>To:</strong> Samantha Harrison<br />
+                  hello@shextensions.com.au<br />
+                  13 Jenyor Street
+                </div>
+                <div>
+                  <strong>From:</strong> Derek<br />
+                  derek@leshinehair.com<br />
+                  2026.6.17
+                </div>
+              </div>
+              <table>
+                <thead><tr><th>Product</th><th>Color</th><th>Qty</th><th>Total</th></tr></thead>
+                <tbody>
+                  <tr><td>Invisible Weft</td><td>M4/10</td><td>5</td><td>962.00</td></tr>
+                  <tr><td>K Tips</td><td>#60</td><td>20</td><td>3,604.00</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="check-list">
+              <div class="check"><span>客户 company_id</span><span class="ok">已匹配</span></div>
+              <div class="check"><span>产品 product_id</span><span class="ok">已匹配</span></div>
+              <div class="check"><span>规格 sku_id</span><span class="warn">1 行待确认</span></div>
+              <div class="check"><span>金额小计</span><span class="ok">已计算</span></div>
+            </div>
+
+            <div class="actions">
+              <button>保存草稿</button>
+              <button>导出 Excel</button>
+              <button>导出 PDF</button>
+              <button class="primary">同步小满</button>
+            </div>
+          </aside>
+        </div>
+
+        <div class="drawer">
+          <h2>同步确认</h2>
+          <div class="check-list">
+            <div class="check"><span>将创建小满销售订单</span><span class="ok">可同步</span></div>
+            <div class="check"><span>产品明细共 4 行</span><span class="warn">其中 1 行需补 sku_id</span></div>
+            <div class="check"><span>订单金额</span><span>USD 10,164.00</span></div>
+          </div>
+          <pre class="payload">POST /v1/invoices/order/push
+{
+  "company_id": "3448551934",
+  "currency": "USD",
+  "product_list": [
+    { "product_id": "3495743811", "sku_id": "3495743812", "count": "5", "unit_price": "192.4", "cost_amount": "962.00" }
+  ]
+}</pre>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
