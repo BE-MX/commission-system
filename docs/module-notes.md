@@ -456,6 +456,7 @@ frontend/src/
 - 后台线程的批量启动函数（`_start_batch`）必须：状态置位与插行合并单事务 + except 回滚 + 会话标 failed + `_log_fail` 双写——初版漏兜底，非法 wig_id 会把会话永久卡在 generating
 - kiosk 轮询状态机的失败路径必须显式收尾：`analyzing` 属 BUSY_STEPS（不挂 idle 定时器），失败时留在原地 = 展位永久卡屏，需退回 `capture`；整批效果图全 failed 时 session 仍推 `done`，前端要用「results 里没有任何 done」补判并给重试出口
 - 「换一批」类按钮的可用性必须由后端总量驱动（`total_matches`），否则第 3~4 次点击必撞 400/422
+- **参考图原图直传拖垮生成时长（2026-07-07 线上 session=13 实case）**：发型库参考图 1.6~16MB 原图直传，3 张/请求 + base64 膨胀，叠加上游拥堵把单场景生成推过 300s 被 502/504。修复：`_prep_image` 统一压缩口径（最长边 1280 + JPEG q88，实测 16.6MB→155KB），已达标小 JPEG 原样发避免二次有损；压缩失败回退原始字节不阻断。**新上传的发型/色板图无需人工控制体积，管线兜底**
 - **三格模板撞生图 180s 超时（2026-07-07 线上 session=11 实case）**：三格 prompt 单图生成实测 184~200s，`MIN_IMAGE_EDIT_TIMEOUT_SEC=180` 掐死正常请求。修复：下限提到 300s，expo 看门狗 `STALE_GENERATING_SECS` 联动 300→420（**看门狗必须大于生图超时**，否则误杀在途请求）；合成失败原因现在落 `session.error_message`（此前只进控制台，排障要翻 AI 调用日志）。三个数字的联动关系已互写注释
 - **模型偶发输出非法 JSON（2026-07-07 线上 session=9/10 实case）**：面容分析返回的 JSON 字符串值内夹未转义英文双引号 → `Expecting ',' delimiter` → 会话直接 failed，且原始返回没落日志无法排障。修复：`_chat_json` 统一入口（分析+话术共用）——解析失败带纠错反馈重试一次（要求字符串内改用中文引号「」），重试仍败才抛；失败日志带 content 前 300 字符；分析 prompt 补严格 JSON 约束
 - **idle 定时器与全局 pointerdown 的竞态（2026-07-07 线上实case）**：根容器 `@pointerdown="touch()"` 先于按钮 click 触发，「生成」点击瞬间在忙态置位前武装了 60s idle 定时器且无人清除 → 126s 合成等待中途整页 resetAll 跳回首页。修复：`generate/generateScenes/submitPhoto` 置忙态后立即补一次 `touch()`（清残留定时器，guard 保证不再武装）

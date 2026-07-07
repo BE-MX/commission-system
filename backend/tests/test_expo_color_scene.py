@@ -250,6 +250,33 @@ def test_snapshot_inactive_color_rejected(db):
         snapshot_hair_color(db, 12345)
 
 
+# ---------------- _prep_image：送模型前统一压缩 ----------------
+
+def test_prep_image_downscales_large_image(tmp_path):
+    """发型库 2~16MB 原图直传拖垮上游（session=13 实case）：最长边压到 1280 + JPEG 重编码。"""
+    import cv2
+    import numpy as np
+
+    big = tmp_path / "wig_big.png"
+    cv2.imwrite(str(big), np.full((3000, 2000, 3), 128, np.uint8))
+    original_size = big.stat().st_size
+
+    out = ai_pipeline._prep_image(big)
+    assert out["content_type"] == "image/jpeg"
+    assert out["filename"].endswith(".jpg")
+    assert len(out["content"]) < original_size
+    decoded = cv2.imdecode(np.frombuffer(out["content"], np.uint8), cv2.IMREAD_COLOR)
+    assert max(decoded.shape[:2]) == ai_pipeline._MAX_SEND_EDGE
+
+
+def test_prep_image_fallback_on_unreadable(tmp_path):
+    bad = tmp_path / "not_image.png"
+    bad.write_bytes(b"definitely not an image")
+    out = ai_pipeline._prep_image(bad)
+    assert out["content"] == b"definitely not an image"  # 回退原始字节，不阻断合成
+    assert out["filename"] == "not_image.png"
+
+
 # ---------------- _chat_json：非法 JSON 带纠错反馈重试 ----------------
 
 def test_chat_json_retries_malformed_then_succeeds(monkeypatch):

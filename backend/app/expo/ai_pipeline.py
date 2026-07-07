@@ -90,6 +90,38 @@ def _image_content_type(path: Path) -> str:
     return "image/png"
 
 
+# 送模型前的统一压缩口径：发型库存在 2~16MB 原图，3 张参考图直传会把
+# 上游生成拖过 300s 网关红线（2026-07-07 session=13 实case）
+_MAX_SEND_EDGE = 1280
+_SEND_JPEG_QUALITY = 88
+
+
+def _prep_image(path: Path) -> dict:
+    """随请求发送的图片统一降采样重编码；失败回退原始字节，不因压缩阻断合成。"""
+    try:
+        import cv2
+
+        img = cv2.imread(str(path))
+        if img is None:
+            raise ValueError("unreadable image")
+        h, w = img.shape[:2]
+        scale = _MAX_SEND_EDGE / max(h, w)
+        # 已达标的小 JPEG 原样发送，避免无谓的二次有损编码（自拍就是这形态）
+        if scale >= 1 and path.suffix.lower() in (".jpg", ".jpeg") and path.stat().st_size <= 400 * 1024:
+            return {"filename": path.name, "content": path.read_bytes(), "content_type": "image/jpeg"}
+        if scale < 1:
+            img = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+        ok, buf = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), _SEND_JPEG_QUALITY])
+        if not ok:
+            raise ValueError("jpeg encode failed")
+        return {"filename": f"{path.stem}.jpg", "content": buf.tobytes(), "content_type": "image/jpeg"}
+    except Exception as exc:
+        msg = f"[expo] image prep fallback for {path.name}: {exc}"
+        logger.warning(msg)
+        print(msg, flush=True)
+        return {"filename": path.name, "content": path.read_bytes(), "content_type": _image_content_type(path)}
+
+
 def _parse_json(content: str) -> dict:
     """清洗 markdown 围栏后解析 JSON；失败再尝试提取首个 {...} 块。"""
     text = (content or "").strip()
@@ -427,14 +459,7 @@ def _run_composite(session_id: int, result_id: int) -> None:
             db=db,
             preset_name=COMPOSITE_PRESET,
             prompt=prompt,
-            images=[
-                {
-                    "filename": path.name,
-                    "content": path.read_bytes(),
-                    "content_type": _image_content_type(path),
-                }
-                for path in images
-            ],
+            images=[_prep_image(path) for path in images],
             caller_module="expo",
         )
         image_path = _save_result_image(result, result_id)
