@@ -209,6 +209,10 @@ def test_build_prompt_multi_scene_full_replacement(tmp_path):
     assert "发色以色板图为唯一基准" in prompt
     assert "FIRST image" not in prompt  # 不与英文组装模板混拼
     assert images[-1] == swatch
+    # 防"只换背景"回归：身份锁定不得锁死表情/姿势/服装，且逐场景有穿着动作指令
+    assert "绝不沿用图1中的表情、姿势、服装与配饰" in prompt
+    assert "针织家居服" in prompt and "衬衫或轻西装外套" in prompt and "连衣裙" in prompt
+    assert "复制粘贴感" in prompt
 
 
 def test_build_prompt_multi_scene_without_refs_and_color_degrades():
