@@ -103,6 +103,33 @@ def _parse_json(content: str) -> dict:
         raise ValueError(f"AI 返回内容无法解析为 JSON: {text[:200]}")
 
 
+def _chat_json(db, preset_name: str, messages: list, retries: int = 1) -> dict:
+    """chat + JSON 解析；解析失败带纠错反馈重试（模型偶发输出非法 JSON，
+    如字符串值内未转义双引号——线上 session=9/10 实case）。"""
+    from app.ai.service import chat
+
+    last_exc: Exception | None = None
+    for attempt in range(retries + 1):
+        result = chat(db=db, preset_name=preset_name, messages=messages, caller_module="expo")
+        content = result.get("content", "")
+        try:
+            return _parse_json(content)
+        except (ValueError, json.JSONDecodeError) as exc:
+            last_exc = exc
+            msg = f"[expo] {preset_name} json parse failed attempt={attempt} err={exc} content[:300]={content[:300]!r}"
+            logger.warning(msg)
+            print(msg, flush=True)
+            messages = messages + [
+                {"role": "assistant", "content": content},
+                {"role": "user", "content": (
+                    f"你的输出不是合法 JSON（解析错误：{exc}）。请重新输出：只输出一个严格合法的 "
+                    "JSON 对象，不要任何解释文字或代码围栏；字符串值内部禁止出现英文双引号，"
+                    "需要引用词语时用中文引号「」。"
+                )},
+            ]
+    raise ValueError(f"AI JSON 解析重试后仍失败: {last_exc}")
+
+
 # ---------------- 管线一：面容分析（含匹配） ----------------
 
 _ANALYSIS_INSTRUCTION = """请分析照片中人物的面容特征，只输出 JSON（不要任何解释文字），结构如下：
@@ -112,7 +139,8 @@ _ANALYSIS_INSTRUCTION = """请分析照片中人物的面容特征，只输出 J
 "display_notes":"一句对顾客友好的正面描述，30字内",
 "internal":{"hair_condition":"发量正常|发缝偏稀|头顶稀疏|白发比例高","sales_note":"给销售的一句建议"},
 "confidence":0.9}
-注意：display_notes 只写正面特征；发量/头皮的判断只写进 internal。"""
+注意：display_notes 只写正面特征；发量/头皮的判断只写进 internal。
+输出必须是严格合法 JSON：字符串值内部禁止英文双引号，需要引用词语用中文引号「」。"""
 
 
 def start_analysis(session_id: int) -> None:
@@ -121,20 +149,16 @@ def start_analysis(session_id: int) -> None:
 
 
 def _run_analysis(session_id: int) -> None:
-    from app.ai.service import chat
-
     db = SessionLocal()
     try:
         session = db.get(ExpoSession, session_id)
         if not session:
             return
-        result = chat(
-            db=db,
-            preset_name=ANALYSIS_PRESET,
-            messages=_image_message(_ANALYSIS_INSTRUCTION, [to_abs(session.photo_path)]),
-            caller_module="expo",
+        analysis = _chat_json(
+            db,
+            ANALYSIS_PRESET,
+            _image_message(_ANALYSIS_INSTRUCTION, [to_abs(session.photo_path)]),
         )
-        analysis = _parse_json(result.get("content", ""))
 
         reg = {
             "primary_need": session.customer.primary_need,
@@ -513,13 +537,11 @@ def _run_strategy(session_id: int) -> None:
 
 
 def _generate_checked_strategy(db, context: str) -> dict:
-    """生成 + 禁用词硬校验：命中即带否定反馈重试一次，仍命中抛出走模板兜底。"""
-    from app.ai.service import chat
-
+    """生成 + 禁用词硬校验：命中即带否定反馈重试一次，仍命中抛出走模板兜底。
+    JSON 解析失败的重试由 _chat_json 内部处理。"""
     messages = [{"role": "user", "content": context}]
     for attempt in range(2):
-        result = chat(db=db, preset_name=STRATEGY_PRESET, messages=messages, caller_module="expo")
-        strategy = _parse_json(result.get("content", ""))
+        strategy = _chat_json(db, STRATEGY_PRESET, messages)
         text_blob = json.dumps(strategy, ensure_ascii=False)
         hit = script_service.check_forbidden(text_blob)
         if not hit:

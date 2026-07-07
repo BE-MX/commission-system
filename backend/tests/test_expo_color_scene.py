@@ -201,6 +201,34 @@ def test_snapshot_inactive_color_rejected(db):
         snapshot_hair_color(db, 12345)
 
 
+# ---------------- _chat_json：非法 JSON 带纠错反馈重试 ----------------
+
+def test_chat_json_retries_malformed_then_succeeds(monkeypatch):
+    """线上 session=9/10 实case：模型字符串值内夹未转义双引号 → 重试一次拿到合法 JSON。"""
+    calls = []
+
+    def fake_chat(db=None, preset_name=None, messages=None, caller_module=None):
+        calls.append(list(messages))
+        if len(calls) == 1:
+            return {"content": '{"display_notes": "气质"知性"优雅"}'}  # 非法：内嵌未转义双引号
+        return {"content": '{"gender": "female"}'}
+
+    import app.ai.service as ai_service
+    monkeypatch.setattr(ai_service, "chat", fake_chat)
+    out = ai_pipeline._chat_json(None, "expo_face_analysis", [{"role": "user", "content": "hi"}])
+    assert out == {"gender": "female"}
+    assert len(calls) == 2
+    # 第二次请求必须携带纠错反馈
+    assert any("不是合法 JSON" in str(m.get("content")) for m in calls[1])
+
+
+def test_chat_json_raises_after_all_retries(monkeypatch):
+    import app.ai.service as ai_service
+    monkeypatch.setattr(ai_service, "chat", lambda **kw: {"content": "抱歉，我无法输出"})
+    with pytest.raises(ValueError, match="重试后仍失败"):
+        ai_pipeline._chat_json(None, "expo_face_analysis", [{"role": "user", "content": "hi"}])
+
+
 # ---------------- 卡死状态看门狗（轮询读取时自愈） ----------------
 
 def _stale_session(db, status, secs, results=()):
