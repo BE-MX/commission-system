@@ -41,6 +41,9 @@
         </div>
       </div>
 
+      <!-- 二次生成：已有成品在展示，新款在后台合成，用胶囊提示不打断浏览 -->
+      <div v-if="flow.generating.value" class="gen-pill"><i />正在合成新选择 · 完成后自动切换</div>
+
       <div class="meta">
         <span class="nm">{{ current.wig_name }}</span>
         <span v-if="current.hair_color" class="color-tag">
@@ -63,7 +66,7 @@
 
       <div class="actions">
         <button v-if="isScene" class="xk-btn ghost" :disabled="flow.generating.value" @click="flow.reselectScenes()">再选场景</button>
-        <button v-else class="xk-btn ghost" :disabled="flow.generating.value || !flow.canNextBatch.value" @click="flow.generate(flow.batch.value + 1)">换一批</button>
+        <button v-else class="xk-btn ghost" :disabled="flow.generating.value" @click="flow.backToMatching()">试试其他发型</button>
         <button class="xk-btn" @click="flow.openSales()">请顾问过来</button>
       </div>
     </template>
@@ -107,6 +110,10 @@ const isScene = computed(() => flow.mode.value === 'scene')
 const currentIndex = ref(0)
 const current = computed(() => doneList.value[currentIndex.value] || null)
 watch(() => !current.value, syncBrandTimer, { immediate: true })
+// 新成品出炉自动切到最新一张（回头再生成第二款时不停留在旧图）
+watch(doneCount, (n, old) => {
+  if (n > (old || 0)) currentIndex.value = n - 1
+})
 const metaLine = computed(() => {
   const pos = `${currentIndex.value + 1}/${doneCount.value}`
   return current.value?.model_no ? `${current.value.model_no} · ${pos}` : pos
@@ -114,7 +121,7 @@ const metaLine = computed(() => {
 
 function retryGenerate() {
   if (isScene.value) flow.reselectScenes()
-  else flow.generate(flow.batch.value)
+  else flow.generate()
 }
 
 // ── 前后对比滑块 ──
@@ -232,6 +239,16 @@ watch([shareUrl, qrEl], async () => {
 .qr canvas { border-radius: 10px; border: 1px solid var(--xk-gold-line); }
 .qr span { font-size: 9px; letter-spacing: 0.2em; color: var(--xk-gold-dim); }
 
+.gen-pill {
+  margin-top: 12px; padding: 7px 16px; border-radius: 20px;
+  border: 1px solid var(--xk-gold-line); background: rgba(232, 196, 121, 0.07);
+  font-size: 11px; letter-spacing: 0.16em; color: var(--xk-gold);
+  display: flex; align-items: center; gap: 8px;
+}
+.gen-pill i {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--xk-gold);
+  animation: halo-fade 1.4s ease-in-out infinite;
+}
 .meta { width: min(72vw, 460px); display: flex; justify-content: space-between; align-items: baseline; margin-top: 14px; }
 .meta .nm { font-family: 'Noto Serif SC', serif; font-size: 20px; color: var(--xk-gold-hi); }
 .meta .md { font-size: 11px; letter-spacing: 0.2em; color: var(--xk-mut); }

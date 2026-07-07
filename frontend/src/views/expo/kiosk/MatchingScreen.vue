@@ -1,13 +1,14 @@
 <template>
   <div class="matching">
     <h2 class="xk-title">为您甄选 <em>{{ flow.matches.value.length }}</em> 款</h2>
-    <div class="xk-sub">依据您的脸型 · 肤色 · 气质定制推荐</div>
+    <div class="xk-sub">依据您的脸型 · 肤色 · 气质定制推荐 · 轻触选择一款</div>
 
     <div class="cards">
       <div
         v-for="(match, i) in flow.matches.value" :key="match.wig_id"
-        class="card" :class="{ zhizhen: match.series === 'zhizhen' }"
+        class="card" :class="{ zhizhen: match.series === 'zhizhen', sel: flow.selectedWigId.value === match.wig_id }"
         :style="{ animationDelay: `${0.15 + i * 0.25}s` }"
+        @click="pickWig(match.wig_id)"
       >
         <span v-if="match.series === 'zhizhen'" class="badge">至臻系列</span>
         <div class="thumb">
@@ -20,8 +21,13 @@
           <div class="why">{{ match.reason }}</div>
         </div>
         <div class="pct">{{ Math.round(match.score) }}<small>匹配</small></div>
+        <span class="tick" :class="{ on: flow.selectedWigId.value === match.wig_id }">✓</span>
       </div>
     </div>
+
+    <button v-if="flow.canSwapMatches.value" class="swap" @click="flow.swapMatches()">
+      换一批候选 ⟳
+    </button>
 
     <div v-if="flow.hairColors.value.length" class="color-pick">
       <div class="cp-title">甄选发色<small>可选 · 默认保持款式原色</small></div>
@@ -39,7 +45,7 @@
       </div>
     </div>
 
-    <button class="xk-btn go" :disabled="!flow.matches.value.length" @click="flow.generate(0)">
+    <button class="xk-btn go" :disabled="!flow.selectedWigId.value" @click="flow.generate()">
       生成我的试戴效果
     </button>
   </div>
@@ -51,6 +57,11 @@ import { inject, onMounted } from 'vue'
 const flow = inject('tryonFlow')
 
 onMounted(() => flow.loadHairColors())
+
+function pickWig(id) {
+  flow.selectedWigId.value = id
+  flow.touch()
+}
 
 function pickColor(id) {
   flow.selectedColorId.value = id
@@ -65,15 +76,38 @@ function pickColor(id) {
   position: relative; display: flex; gap: 16px; align-items: center;
   border: 1px solid var(--xk-gold-line); border-radius: 18px; padding: 14px 16px;
   background: linear-gradient(120deg, rgba(232, 196, 121, 0.06), rgba(232, 196, 121, 0.015));
-  opacity: 0; transform: perspective(600px) rotateX(24deg) translateY(14px);
   transform-origin: top;
-  animation: card-in 0.9s cubic-bezier(0.2, 0.9, 0.3, 1.2) forwards;
+  /* backwards 填充：入场动画只定义 from，结束后不锁 transform（否则 :active 按压 scale 会被 fill:forwards 持帧覆盖） */
+  animation: card-in 0.9s cubic-bezier(0.2, 0.9, 0.3, 1.2) backwards;
 }
-@keyframes card-in { to { opacity: 1; transform: none; } }
+@keyframes card-in { from { opacity: 0; transform: perspective(600px) rotateX(24deg) translateY(14px); } }
 .card.zhizhen {
   border-color: rgba(232, 196, 121, 0.55);
   background: linear-gradient(120deg, rgba(232, 196, 121, 0.14), rgba(232, 196, 121, 0.03));
 }
+.card { cursor: pointer; transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), border-color 160ms ease, background 160ms ease; }
+.card:active { transform: scale(0.98); }
+.card.sel {
+  border-color: var(--xk-gold);
+  background: linear-gradient(120deg, rgba(232, 196, 121, 0.18), rgba(232, 196, 121, 0.05));
+  box-shadow: 0 0 18px rgba(232, 196, 121, 0.18);
+}
+.tick {
+  position: absolute; right: 12px; bottom: 10px;
+  width: 22px; height: 22px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; color: var(--xk-ink);
+  background: linear-gradient(110deg, var(--xk-gold), var(--xk-gold-hi));
+  opacity: 0; transform: scale(0.9);
+  transition: opacity 160ms cubic-bezier(0.23, 1, 0.32, 1), transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.tick.on { opacity: 1; transform: scale(1); }
+.swap {
+  margin-top: 14px; background: transparent; border: none; cursor: pointer;
+  font-size: 12px; letter-spacing: 0.18em; color: var(--xk-gold-dim);
+  padding: 8px 16px; transition: color 160ms ease, transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.swap:active { transform: scale(0.96); }
 .badge {
   position: absolute; top: -10px; right: 16px;
   font-size: 10px; letter-spacing: 0.24em; color: var(--xk-ink);

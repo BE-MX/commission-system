@@ -25,8 +25,9 @@ export function useTryOnFlow() {
   const session = ref(null)          // GET /sessions/{id} 的最新载荷
   const internalSession = ref(null)  // 销售面板载荷（含 internal + strategy）
   const generating = ref(false)
-  const batch = ref(0)
   const errorText = ref('')
+  const selectedWigId = ref(null)    // 单选：从推荐中挑一款生成
+  const matchPage = ref(0)           // 候选页：0=Top3 / 1=第4~6名
   const hairColors = ref([])         // 发色选择项（色板库）
   const selectedColorId = ref(null)  // null = 保持发型原色
   const scenes = ref([])             // 场景大片可选场景
@@ -43,14 +44,11 @@ export function useTryOnFlow() {
   let idleTimer = null
 
   const analysis = computed(() => session.value?.analysis || null)
-  const matches = computed(() => (session.value?.matches || []).slice(0, 3))
+  const allMatches = computed(() => session.value?.matches || []) // 后端给前 6 名
+  const matches = computed(() => allMatches.value.slice(matchPage.value * 3, matchPage.value * 3 + 3))
+  const canSwapMatches = computed(() => allMatches.value.length > 3)
   const results = computed(() => session.value?.results || [])
   const doneResults = computed(() => results.value.filter(r => r.status === 'done'))
-  // 换一批可用性：不超后端 batch 上限（le=3），且下一批在全量排名内还有货
-  const canNextBatch = computed(() => {
-    const next = batch.value + 1
-    return next <= 3 && next * 3 < (session.value?.total_matches || 0)
-  })
 
   // ── 空闲回归 ──
   function touch() {
@@ -70,8 +68,9 @@ export function useTryOnFlow() {
     session.value = null
     internalSession.value = null
     generating.value = false
-    batch.value = 0
     errorText.value = ''
+    selectedWigId.value = null
+    matchPage.value = 0
     selectedColorId.value = null
     selectedSceneKeys.value = []
     Object.assign(regForm, {
@@ -168,6 +167,9 @@ export function useTryOnFlow() {
 
       if (step.value === 'analyzing' && status === 'analyzed') {
         step.value = 'matching'
+        matchPage.value = 0
+        // 不让用户思考：默认选中匹配度第一的款，轻触可换
+        selectedWigId.value = (res.data.matches || [])[0]?.wig_id || null
         loadHairColors()
         touch()
       }
@@ -192,21 +194,35 @@ export function useTryOnFlow() {
     }
   }
 
-  async function generate(nextBatch = 0) {
+  // 单选生成：只合成用户选中的那一款（发色可选）
+  async function generate() {
+    if (generating.value || !selectedWigId.value) return
     errorText.value = ''
-    batch.value = nextBatch
     generating.value = true
     step.value = 'result'
     touch() // 忙态已置位：只清残留 idle 定时器不再武装（防 pointerdown 先于 click 的竞态跳屏）
     try {
       await generateResults(sessionId.value, {
-        batch: nextBatch, hairColorId: selectedColorId.value,
+        wigIds: [selectedWigId.value], hairColorId: selectedColorId.value,
       })
       startPolling()
     } catch (e) {
       generating.value = false
       errorText.value = '生成请求失败，请呼叫顾问'
     }
+  }
+
+  // 候选换一批：Top3 ⇄ 第 4~6 名，切换后默认选中新页第一款
+  function swapMatches() {
+    matchPage.value = matchPage.value ? 0 : 1
+    selectedWigId.value = matches.value[0]?.wig_id || null
+    touch()
+  }
+
+  // 结果屏回到匹配屏再选一款（历史成品保留在结果轮播里）
+  function backToMatching() {
+    step.value = 'matching'
+    touch()
   }
 
   async function generateScenes() {
@@ -263,8 +279,9 @@ export function useTryOnFlow() {
   })
 
   return {
-    step, mode, regForm, errorText, generating, batch,
-    session, internalSession, analysis, matches, results, doneResults, canNextBatch,
+    step, mode, regForm, errorText, generating,
+    session, internalSession, analysis, matches, results, doneResults,
+    selectedWigId, canSwapMatches, swapMatches, backToMatching,
     customerId, sessionId,
     hairColors, selectedColorId, scenes, selectedSceneKeys,
     start, submitRegister, submitPhoto, generate, react,

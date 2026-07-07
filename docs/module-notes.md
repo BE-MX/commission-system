@@ -432,6 +432,11 @@ frontend/src/
 - 气质词汇扩到 6 个：知性优雅/减龄轻盈/自然日常/端庄大气/**温柔清纯/时尚轻熟**——三处强同步契约：WigLibrary STYLES + RegisterScreen style_pref + ai_pipeline `_ANALYSIS_INSTRUCTION` temperament 枚举，改任一处必须同步另两处
 - 肤色/脸型选项 label 改为业务语言（冷白/白皙、自然黄皮、心形/瓜子脸），value 是 AI 分析枚举**不可改**；matching 客户可见理由 heart 文案改「瓜子脸」
 
+**kiosk 匹配屏改单选生成（2026-07-07）**
+- 交互从「Top3 批量全生成」改为「轻触选一款生成」：默认预选匹配第一名（不让用户思考），卡片金边+✓ 选中态；「换一批候选」在匹配屏内切 Top3⇄第4~6名（后端 serialize 本就给前 6）；结果屏「换一批」改「试试其他发型」→ 回匹配屏再选，历史成品保留在结果轮播并自动跳最新，二次生成用胶囊提示不遮挡浏览
+- 后端零改动：走 `GenerateRequest.wig_ids` 单元素列表；`batch` 参数与 `pick_batch_wig_ids` 保留为 API 兼容路径（不传 wig_ids 时仍按批取）
+- CSS 坑：入场动画 `fill: forwards` 会永久持帧锁住 transform，后加的 `:active` 按压 scale 全部失效——改 `backwards` 填充（基态即终态，动画只写 `from`）
+
 **tryon 合成模板重写为「锚场色机魂」三格结构（2026-07-07）**
 - `_COMPOSITE_TEMPLATE` 按用户定稿的三格效果图 prompt 重写（英文）：锚=FIRST image 角色分工+身份锁定 / 场=HOME·OFFICE·GATHERING 三格并排（每格显式光源方向，发丝受光跟随场景）/ 色=原相机直出质感+负向排除（塑料感/磨皮/插画感/头套感）/ 机=85mm 胸上构图三格机位一致 / 魂=三格身份严格同一。输出规格：单张 16:9 三等分拼接
 - 发型多角度参考图上限 2→3（正面/45度/侧面）；发色子句光照措辞改 "each scene's lighting" 适配三格
