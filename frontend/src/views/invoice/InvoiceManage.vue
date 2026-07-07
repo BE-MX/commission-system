@@ -137,58 +137,68 @@
 
     <el-drawer v-model="drawerVisible" :title="drawerTitle" size="94%">
       <template #default>
-        <el-form ref="formRef" :model="form" label-width="110px" class="invoice-form">
+        <el-form ref="formRef" :model="form" label-width="90px" class="invoice-form">
+          <div class="form-columns">
+            <section class="form-col">
+              <div class="col-title">客户信息</div>
+              <el-form-item label="客户" required>
+                <el-select
+                  v-model="selectedCustomer"
+                  value-key="company_id"
+                  filterable
+                  remote
+                  reserve-keyword
+                  :remote-method="searchCustomers"
+                  :loading="customerLoading"
+                  placeholder="输入客户名称/ID 搜索"
+                  style="width: 100%"
+                  @change="onCustomerChange"
+                >
+                  <el-option
+                    v-for="customer in customerOptions"
+                    :key="customer.company_id"
+                    :label="customerLabel(customer)"
+                    :value="customer"
+                  />
+                </el-select>
+                <div v-if="customerRule" class="rule-badge">
+                  该客户价格规则：{{ describeCustomerRule(customerRule) }}
+                </div>
+              </el-form-item>
+              <el-form-item label="联系人">
+                <el-input v-model="form.contact_name" maxlength="100" placeholder="To" />
+              </el-form-item>
+              <el-form-item label="电话">
+                <el-input v-model="form.contact_phone" maxlength="50" placeholder="TEL/Fax" />
+              </el-form-item>
+              <el-form-item label="邮箱">
+                <el-input v-model="form.contact_email" maxlength="100" placeholder="E-mail" />
+              </el-form-item>
+              <el-form-item label="收货地址">
+                <el-input v-model="form.delivery_address" type="textarea" :rows="2" maxlength="500" placeholder="Delivery address" />
+              </el-form-item>
+            </section>
+            <section class="form-col">
+              <div class="col-title">业务员信息</div>
+              <el-form-item label="业务员">
+                <el-input v-model="form.sales_user_name" maxlength="50" placeholder="From" />
+              </el-form-item>
+              <el-form-item label="业务电话">
+                <el-input v-model="form.sales_phone" maxlength="50" />
+              </el-form-item>
+              <el-form-item label="业务邮箱">
+                <el-input v-model="form.sales_email" maxlength="100" />
+              </el-form-item>
+            </section>
+          </div>
+
+          <div class="col-title order-title">订单信息</div>
           <div class="form-grid">
-            <el-form-item label="客户" required>
-              <el-select
-                v-model="selectedCustomer"
-                value-key="company_id"
-                filterable
-                remote
-                reserve-keyword
-                :remote-method="searchCustomers"
-                :loading="customerLoading"
-                placeholder="输入客户名称/ID 搜索"
-                style="width: 100%"
-                @change="onCustomerChange"
-              >
-                <el-option
-                  v-for="customer in customerOptions"
-                  :key="customer.company_id"
-                  :label="customerLabel(customer)"
-                  :value="customer"
-                />
-              </el-select>
-              <div v-if="customerRule" class="rule-badge">
-                该客户价格规则：{{ describeCustomerRule(customerRule) }}
-              </div>
-            </el-form-item>
             <el-form-item label="日期" required>
               <el-date-picker v-model="form.invoice_date" value-format="YYYY-MM-DD" style="width: 100%" />
             </el-form-item>
             <el-form-item label="币种">
               <el-input v-model="form.currency" maxlength="16" />
-            </el-form-item>
-            <el-form-item label="联系人">
-              <el-input v-model="form.contact_name" maxlength="100" placeholder="To" />
-            </el-form-item>
-            <el-form-item label="电话">
-              <el-input v-model="form.contact_phone" maxlength="50" placeholder="TEL/Fax" />
-            </el-form-item>
-            <el-form-item label="邮箱">
-              <el-input v-model="form.contact_email" maxlength="100" placeholder="E-mail" />
-            </el-form-item>
-            <el-form-item label="收货地址" class="wide">
-              <el-input v-model="form.delivery_address" maxlength="500" placeholder="Delivery address" />
-            </el-form-item>
-            <el-form-item label="业务员">
-              <el-input v-model="form.sales_user_name" maxlength="50" placeholder="From" />
-            </el-form-item>
-            <el-form-item label="业务电话">
-              <el-input v-model="form.sales_phone" maxlength="50" />
-            </el-form-item>
-            <el-form-item label="业务邮箱">
-              <el-input v-model="form.sales_email" maxlength="100" />
             </el-form-item>
             <el-form-item label="快递渠道">
               <el-input v-model="form.express_channel" maxlength="32" placeholder="如 DHL" />
@@ -202,7 +212,7 @@
                 <el-input-number v-model="form.surcharge_amount" :min="0" :precision="2" controls-position="right" />
               </div>
             </el-form-item>
-            <el-form-item label="付款条款" class="wide">
+            <el-form-item label="付款条款">
               <el-input v-model="form.payment_term" maxlength="200" placeholder="Payment Term，如 TT 20%" />
             </el-form-item>
             <el-form-item label="备注" class="wide">
@@ -216,17 +226,23 @@
               <span v-if="isProduction">生产单：关键词下拉可选可输，已有属性直接选，没有就按输入沉淀新产品。</span>
               <span v-else>四个关键词选择完整后自动匹配唯一 Product_name。</span>
             </div>
-            <el-button @click="addLine">
-              <el-icon><Plus /></el-icon>
-              添加明细
-            </el-button>
+            <div class="line-header-actions">
+              <el-button link type="primary" @click="showOptionalCols = !showOptionalCols">
+                <el-icon><component :is="showOptionalCols ? ArrowUp : ArrowDown" /></el-icon>
+                {{ showOptionalCols ? '收起选填列' : '展开选填列' }}
+              </el-button>
+              <el-button @click="addLine">
+                <el-icon><Plus /></el-icon>
+                添加明细
+              </el-button>
+            </div>
           </div>
 
           <div class="line-table-wrap">
             <el-table :data="form.items" border class="list-table line-table">
               <el-table-column label="#" type="index" min-width="48" max-width="60" fixed />
 
-              <el-table-column v-if="isProduction" label="Product" min-width="230" max-width="320">
+              <el-table-column v-if="isProduction" label="Product" min-width="190" max-width="260">
                 <template #default="{ row }">
                   <el-select
                     v-model="row.product_display"
@@ -241,7 +257,7 @@
                 </template>
               </el-table-column>
 
-              <el-table-column label="Model" min-width="150" max-width="220">
+              <el-table-column v-if="showOptionalCols || !isProduction" label="Model" min-width="120" max-width="180">
                 <template #default="{ row }">
                   <el-select
                     v-if="isProduction"
@@ -268,7 +284,7 @@
                 </template>
               </el-table-column>
 
-              <el-table-column label="Color" min-width="150" max-width="220">
+              <el-table-column label="Color" min-width="120" max-width="170">
                 <template #default="{ row }">
                   <el-select
                     v-if="isProduction"
@@ -294,7 +310,7 @@
                 </template>
               </el-table-column>
 
-              <el-table-column label="Length" min-width="130" max-width="180">
+              <el-table-column label="Length" min-width="95" max-width="130">
                 <template #default="{ row }">
                   <el-select
                     v-if="isProduction"
@@ -320,7 +336,7 @@
                 </template>
               </el-table-column>
 
-              <el-table-column label="Net Weight Grams" min-width="150" max-width="210">
+              <el-table-column label="Net Weight" min-width="105" max-width="150">
                 <template #default="{ row }">
                   <el-select
                     v-if="isProduction"
@@ -346,7 +362,7 @@
                 </template>
               </el-table-column>
 
-              <el-table-column v-if="!isProduction" label="Product_name" min-width="280" max-width="420" show-overflow-tooltip>
+              <el-table-column v-if="!isProduction" label="Product_name" min-width="230" max-width="360" show-overflow-tooltip>
                 <template #default="{ row }">
                   <div :class="['product-cell', row.product_name ? 'is-matched' : 'is-pending']">
                     <span>{{ row.product_name || '待匹配' }}</span>
@@ -356,7 +372,7 @@
                 </template>
               </el-table-column>
 
-              <el-table-column label="Curl" min-width="130" max-width="180">
+              <el-table-column v-if="showOptionalCols" label="Curl" min-width="110" max-width="150">
                 <template #default="{ row }">
                   <el-select v-model="row.curl" clearable placeholder="可选">
                     <el-option v-for="v in CURL_OPTIONS" :key="v" :label="v" :value="v" />
@@ -364,7 +380,7 @@
                 </template>
               </el-table-column>
 
-              <el-table-column label="标准价" min-width="120" max-width="170" align="right">
+              <el-table-column label="标准价" min-width="95" max-width="140" align="right">
                 <template #default="{ row }">
                   <span v-if="row.standard_price != null" class="std-price">
                     {{ money4(row.standard_price) }}
@@ -376,26 +392,26 @@
                 </template>
               </el-table-column>
 
-              <el-table-column label="Quantity" min-width="120" max-width="160">
-                <template #default="{ row }">
-                  <el-input-number v-model="row.quantity" :min="1" :precision="0" controls-position="right" @change="updateLineTotal(row)" />
-                </template>
-              </el-table-column>
-
-              <el-table-column label="Price/Piece（客户价）" min-width="170" max-width="220">
+              <el-table-column label="客户价" min-width="140" max-width="180">
                 <template #default="{ row }">
                   <div :class="['price-cell', row.price_source === 'manual' ? 'is-manual' : '']">
-                    <el-input-number v-model="row.price_per_piece" :min="0.01" :precision="4" controls-position="right" @change="onPriceInput(row)" />
+                    <el-input-number v-model="row.price_per_piece" :min="0.01" :precision="4" :controls="false" @change="onPriceInput(row)" />
                     <el-tag v-if="row.price_source === 'manual'" size="small" type="warning" effect="plain">手改</el-tag>
                   </div>
                 </template>
               </el-table-column>
 
-              <el-table-column label="TotalPrice" min-width="120" max-width="170" align="right">
+              <el-table-column label="Quantity" min-width="100" max-width="140">
+                <template #default="{ row }">
+                  <el-input-number v-model="row.quantity" :min="1" :precision="0" :controls="false" @change="updateLineTotal(row)" />
+                </template>
+              </el-table-column>
+
+              <el-table-column label="TotalPrice" min-width="100" max-width="150" align="right">
                 <template #default="{ row }">{{ money(row.total_price) }}</template>
               </el-table-column>
 
-              <el-table-column label="操作" min-width="80" max-width="100" fixed="right">
+              <el-table-column label="操作" min-width="64" max-width="80" fixed="right">
                 <template #default="{ $index }">
                   <el-button link type="danger" @click="removeLine($index)">
                     <el-icon><Delete /></el-icon>
@@ -452,7 +468,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Delete, Download, Edit, Plus, Printer, Refresh, Search } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowUp, Delete, Download, Edit, Plus, Printer, Refresh, Search } from '@element-plus/icons-vue'
 import {
   downloadInvoiceExcel,
   downloadInvoicePdf,
@@ -465,6 +481,7 @@ import { CURL_OPTIONS, customerLabel, describeCustomerRule, useInvoiceEditor } f
 
 const loading = ref(false)
 const invoices = ref([])
+const showOptionalCols = ref(false)
 const filters = reactive({ keyword: '', status: '', order_type: '' })
 const pagination = reactive({ page: 1, page_size: 20, total: 0 })
 

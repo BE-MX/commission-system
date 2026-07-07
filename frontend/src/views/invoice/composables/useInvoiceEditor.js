@@ -149,7 +149,14 @@ export function useInvoiceEditor({ onSaved } = {}) {
   }
 
   function addLine() {
-    form.items.push(normalizeLine({ quantity: 1, item_type: isProduction.value ? 'custom' : 'stock' }))
+    const last = form.items[form.items.length - 1]
+    if (last) {
+      // 按上一行内容自动填充，用户只改变化的参数（改任一关键词会重新匹配/取价）
+      const { options, matching, ...data } = last
+      form.items.push(normalizeLine({ ...data }))
+    } else {
+      form.items.push(normalizeLine({ quantity: 1, item_type: isProduction.value ? 'custom' : 'stock' }))
+    }
   }
 
   function removeLine(index) {

@@ -148,6 +148,30 @@
   font-weight: 600;
 }
 
+.form-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 28px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--invoice-border);
+}
+
+.form-col {
+  min-width: 0;
+}
+
+.col-title {
+  margin: 2px 0 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--invoice-muted);
+  letter-spacing: 0.02em;
+}
+
+.order-title {
+  margin-top: 16px;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(180px, 1fr));
@@ -158,6 +182,12 @@
 
 .form-grid .wide {
   grid-column: 1 / -1;
+}
+
+.line-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .rule-badge {
@@ -321,7 +351,8 @@
     flex-direction: column;
   }
 
-  .form-grid {
+  .form-grid,
+  .form-columns {
     grid-template-columns: 1fr;
   }
 
