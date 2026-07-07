@@ -114,8 +114,14 @@
 .row-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   white-space: nowrap;
+}
+
+/* Element 相邻按钮默认 margin-left:12px，与 gap 叠加会把尾部按钮挤出固定列 */
+.row-actions :deep(.el-button + .el-button),
+.row-actions :deep(.el-dropdown + .el-button) {
+  margin-left: 0;
 }
 
 .empty-state {
