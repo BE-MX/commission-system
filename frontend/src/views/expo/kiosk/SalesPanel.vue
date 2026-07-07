@@ -2,7 +2,7 @@
   <div class="sales">
     <div class="head">
       <span class="title">销售接力</span>
-      <span class="pill" :class="{ ok: strategy || isScene }">{{ pillText }}</span>
+      <span class="pill ok">{{ pillText }}</span>
     </div>
 
     <div class="cust">
@@ -12,22 +12,14 @@
         <div class="meta">
           {{ needLabel }} · {{ stylePref }}
           <template v-if="lovedNames.length"><br />心动：{{ lovedNames.join(' ♥ · ') }} ♥</template>
-          <template v-if="internalNote"><br /><span class="internal">发况备注（仅您可见）：{{ internalNote }}</span></template>
         </div>
       </div>
     </div>
 
-    <div v-if="strategy" class="strategy">
-      <div class="k">开场 · 情感线</div>
-      <p>{{ strategy.opener }}</p>
-      <div class="k">跟进 · 理性线</div>
-      <p>{{ strategy.followup }}</p>
-      <template v-if="strategy.objections?.length">
-        <div class="k">异议应对</div>
-        <p v-for="(item, i) in strategy.objections" :key="i" class="qa">
-          <em>{{ item.q }}</em> —— {{ item.a }}
-        </p>
-      </template>
+    <!-- 话术/发况不落本屏：kiosk 与客户共享屏幕，仅在试戴线索台（顾问自己的设备）展示；
+         文案对客户中性化，不暴露"顾问持有 AI 话术脚本" -->
+    <div v-if="!isScene" class="strategy-hint">
+      本单客户资料已同步至「展会 · 试戴线索台」，详情请在您的工作台查看。
     </div>
 
     <div class="forbid">话术规范：不说「便宜 / 划算 / 性价比 / 打折」</div>
@@ -73,22 +65,14 @@ const LEVELS = [
 const NEXT_ACTIONS = ['约到店复试', '加微信跟进', '当场成交', '发效果图回访']
 const NEED_LABELS = { volume: '关注发量丰盈', gray_cover: '关注白发遮盖', style_change: '关注造型变换' }
 
-const internal = computed(() => flow.internalSession.value)
-const strategy = computed(() => internal.value?.strategy || null)
-// scene 模式后端不生成话术（无面容分析依据），不能让销售等一个永不到来的状态
+// scene 模式后端不生成话术（无面容分析依据）
 const isScene = computed(() => flow.mode.value === 'scene')
-const pillText = computed(() => {
-  if (isScene.value) return '场景大片模式 · 无 AI 话术'
-  return strategy.value ? '双轨话术已就绪' : '话术生成中…'
-})
+const pillText = computed(() =>
+  isScene.value ? '场景大片模式' : '资料已同步线索台',
+)
 const customerName = computed(() => flow.regForm.name || '本单客户')
 const needLabel = computed(() => NEED_LABELS[flow.regForm.primary_need] || '')
 const stylePref = computed(() => flow.regForm.style_pref || '')
-const internalNote = computed(() => {
-  const info = internal.value?.analysis_internal
-  if (!info) return ''
-  return [info.hair_condition, info.sales_note].filter(Boolean).join(' · ')
-})
 const lovedNames = computed(() =>
   (flow.results.value || []).filter(r => r.reaction === 'loved').map(r => r.wig_name).filter(Boolean),
 )
@@ -136,20 +120,12 @@ async function submit() {
 }
 .cust-info .nm { font-size: 16px; color: var(--xk-gold-hi); }
 .cust-info .meta { font-size: 12px; color: var(--xk-mut); margin-top: 4px; line-height: 1.8; }
-.internal { color: #e0906b; }
-.strategy {
-  margin-top: 12px; padding: 15px 17px; border-radius: 16px;
-  border: 1px solid rgba(232, 196, 121, 0.35);
-  background: linear-gradient(130deg, rgba(232, 196, 121, 0.1), rgba(232, 196, 121, 0.02));
+.strategy-hint {
+  margin-top: 12px; padding: 13px 17px; border-radius: 16px;
+  border: 1px solid var(--xk-gold-line);
+  background: rgba(232, 196, 121, 0.05);
+  font-size: 12px; line-height: 1.8; color: var(--xk-mut); letter-spacing: 0.06em;
 }
-.strategy .k {
-  font-size: 10px; letter-spacing: 0.26em; color: var(--xk-gold);
-  display: flex; align-items: center; gap: 8px; margin-top: 10px;
-}
-.strategy .k:first-child { margin-top: 0; }
-.strategy .k::before { content: ''; width: 14px; height: 1px; background: var(--xk-gold); }
-.strategy p { font-size: 13px; line-height: 1.9; margin: 6px 0 0; }
-.strategy .qa em { font-style: normal; color: var(--xk-gold-hi); }
 .forbid { margin-top: 10px; font-size: 11px; color: #e0906b; letter-spacing: 0.08em; }
 .forbid::before { content: '⛔ '; }
 .intent { display: flex; gap: 10px; margin-top: 14px; }

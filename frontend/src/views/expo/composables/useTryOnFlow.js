@@ -25,7 +25,6 @@ export function useTryOnFlow() {
   const customerId = ref(null)
   const sessionId = ref(null)
   const session = ref(null)          // GET /sessions/{id} 的最新载荷
-  const internalSession = ref(null)  // 销售面板载荷（含 internal + strategy）
   const generating = ref(false)
   const errorText = ref('')
   const selectedWigId = ref(null)    // 单选：从推荐中挑一款生成
@@ -70,7 +69,6 @@ export function useTryOnFlow() {
     customerId.value = null
     sessionId.value = null
     session.value = null
-    internalSession.value = null
     generating.value = false
     errorText.value = ''
     selectedWigId.value = null
@@ -269,14 +267,10 @@ export function useTryOnFlow() {
   }
 
   // ── 销售面板 ──
-  async function openSales() {
+  // 不再拉 internal 载荷：kiosk 是与客户共享的屏幕，话术/发况只在试戴线索台
+  //（顾问自己的设备）展示，本机不落任何内部数据（2026-07-07 用户指令）
+  function openSales() {
     step.value = 'sales'
-    try {
-      const res = await getSession(sessionId.value, { internal: true })
-      internalSession.value = res.data
-    } catch (e) {
-      internalSession.value = null
-    }
     touch()
   }
 
@@ -294,7 +288,7 @@ export function useTryOnFlow() {
 
   return {
     step, mode, regForm, errorText, generating,
-    session, internalSession, analysis, matches, results, doneResults,
+    session, analysis, matches, results, doneResults,
     selectedWigId, canSwapMatches, swapMatches, backToMatching,
     customerId, sessionId,
     hairColors, selectedColorId, scenes, selectedSceneKeys,

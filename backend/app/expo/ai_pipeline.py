@@ -1,4 +1,4 @@
-"""展会试戴 AI 管线：面容分析 → 效果图合成 → 双轨话术生成。
+"""展会试戴 AI 管线：面容分析 → 效果图合成 ∥ 双轨话术生成（话术随合成启动并行，供顾问等图期间沟通）。
 
 约定（cerebrum 已踩坑规避）：
 - 线程内自建 SessionLocal，不复用请求 session
@@ -394,6 +394,7 @@ def _start_batch(session_id: int, rows: list[ExpoResult]) -> None:
     """状态置位 + 插行合并为一个事务；失败回滚并把会话标 failed（不许无声吞）。"""
     db = SessionLocal()
     result_ids: list[int] = []
+    start_strategy = False
     try:
         session = db.get(ExpoSession, session_id)
         if not session:
@@ -404,6 +405,9 @@ def _start_batch(session_id: int, rows: list[ExpoResult]) -> None:
             db.flush()
             result_ids.append(row.id)
         db.commit()
+        # 话术前置：合成等待的 1~5 分钟正是顾问的沟通窗口，话术在此刻并行生成，
+        # 顾问在试戴线索台（自己的手机/电脑）立即可见；scene 模式无面容分析不生成
+        start_strategy = session.mode != "scene" and not session.strategy_json
     except Exception as exc:
         db.rollback()
         _log_fail("composite-start", session_id, exc)
@@ -416,6 +420,8 @@ def _start_batch(session_id: int, rows: list[ExpoResult]) -> None:
     finally:
         db.close()
 
+    if result_ids and start_strategy:
+        _start_strategy_once(session_id)
     for result_id in result_ids:
         threading.Thread(target=_run_composite, args=(session_id, result_id), daemon=True).start()
 
@@ -531,7 +537,7 @@ def _make_share_code(result_id: int) -> str:
 
 
 def _refresh_session_status(session_id: int) -> None:
-    """所有效果图出结果后，把会话推进到 done 并触发话术生成。"""
+    """所有效果图出结果后，把会话推进到 done；话术兜底补生成（正常路径已在合成启动时前置）。"""
     db = SessionLocal()
     try:
         session = db.get(ExpoSession, session_id)
@@ -546,14 +552,41 @@ def _refresh_session_status(session_id: int) -> None:
                 .update({"status": "done"}, synchronize_session=False)
             )
             db.commit()
-            # scene 模式无面容分析，话术生成没有输入依据，跳过
+            # 兜底：合成启动时的前置话术若失败/未跑，这里补一次（scene 模式无分析依据，跳过）
             if updated and not session.strategy_json and session.mode != "scene":
-                threading.Thread(target=_run_strategy, args=(session_id,), daemon=True).start()
+                _start_strategy_once(session_id)
     finally:
         db.close()
 
 
 # ---------------- 管线三：双轨话术生成 ----------------
+
+# 前置触发（合成启动）与兜底触发（合成完成）可能并发，同一会话只允许一个生成线程
+_strategy_inflight: set[int] = set()
+_strategy_lock = threading.Lock()
+
+
+def _start_strategy_once(session_id: int) -> None:
+    with _strategy_lock:
+        if session_id in _strategy_inflight:
+            return
+        _strategy_inflight.add(session_id)
+
+    def run() -> None:
+        try:
+            _run_strategy(session_id)
+        finally:
+            with _strategy_lock:
+                _strategy_inflight.discard(session_id)
+
+    try:
+        threading.Thread(target=run, daemon=True).start()
+    except Exception as exc:
+        with _strategy_lock:
+            _strategy_inflight.discard(session_id)
+        msg = f"[expo] strategy thread start failed session={session_id}: {exc}"
+        logger.warning(msg)
+        print(msg, flush=True)
 
 
 def _audience_tags(session: ExpoSession) -> list[str]:
@@ -605,7 +638,8 @@ def _run_strategy(session_id: int) -> None:
     db = SessionLocal()
     try:
         session = db.get(ExpoSession, session_id)
-        if not session:
+        # strategy 已存在即跳过：把"前置/兜底不会双生成"从时序论证变成显式不变量
+        if not session or session.strategy_json:
             return
         tags = _audience_tags(session)
         materials = script_service.pick_scripts(db, tags)

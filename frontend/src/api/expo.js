@@ -52,8 +52,9 @@ export function getLeads(params) {
   return expoClient.get('/leads', { params })
 }
 
-export function getLeadDetail(customerId) {
-  return expoClient.get(`/leads/${customerId}`)
+export function getLeadDetail(customerId, { silent = false } = {}) {
+  // silent：详情抽屉的后台轮询用——不弹全屏 loading、失败不弹 toast
+  return expoClient.get(`/leads/${customerId}`, silent ? { showLoading: false, suppressToast: true } : {})
 }
 
 export function deleteCustomer(customerId) {

@@ -119,7 +119,7 @@
  * useListPage（分页/搜索/loading 编排）+ feedback.js（统一提示与危险确认）+ DetailDrawer（抽屉骨架）。
  * 新的服务端分页列表页照此结构写；标记语言/样式规范仍参照 system/DictManagement.vue。
  */
-import { ref } from 'vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
 import { getLeads, getLeadDetail, deleteCustomer } from '@/api/expo'
 import { useListPage } from '@/composables/useListPage'
 import { msgSuccess, confirmDanger } from '@/utils/feedback'
@@ -150,7 +150,45 @@ const detailVisible = ref(false)
 const detailLoading = ref(false)
 const detail = ref(null)
 
+// 展会现场节奏：话术在合成启动时并行生成，顾问等图期间就会打开详情——
+// 话术/效果图未就绪时静默轮询，就绪或超时即停，不用反复关开抽屉
+const DETAIL_POLL_MS = 5000
+const DETAIL_POLL_MAX = 24 // 最多轮 2 分钟，防旧数据（永远无话术的历史会话）空转
+let detailTimer = null
+let detailCustomerId = null
+
+// 只盯"话术真的在路上"的会话：generating=合成中（话术并行生成中）、
+// done 且无话术=生成收尾的窗口期；analyzed/pending 是客户中途离开的死会话，不轮
+function strategyPending(d) {
+  return (d?.sessions || []).some(
+    s => s.mode !== 'scene' && !s.strategy && ['generating', 'done'].includes(s.status),
+  )
+}
+
+function stopDetailPolling() {
+  if (detailTimer) clearInterval(detailTimer)
+  detailTimer = null
+}
+
+function armDetailPolling() {
+  stopDetailPolling()
+  if (!strategyPending(detail.value)) return
+  let ticks = 0
+  detailTimer = setInterval(async () => {
+    if (!detailVisible.value || ++ticks > DETAIL_POLL_MAX) {
+      stopDetailPolling()
+      return
+    }
+    try {
+      const res = await getLeadDetail(detailCustomerId, { silent: true })
+      detail.value = res.data
+    } catch { /* 单次失败下一轮继续 */ }
+    if (!strategyPending(detail.value)) stopDetailPolling()
+  }, DETAIL_POLL_MS)
+}
+
 async function openDetail(row) {
+  detailCustomerId = row.id
   detailVisible.value = true
   detailLoading.value = true
   detail.value = null
@@ -160,7 +198,11 @@ async function openDetail(row) {
   } finally {
     detailLoading.value = false
   }
+  armDetailPolling()
 }
+
+watch(detailVisible, v => { if (!v) stopDetailPolling() })
+onBeforeUnmount(stopDetailPolling)
 
 async function handleDelete(row) {
   try {
