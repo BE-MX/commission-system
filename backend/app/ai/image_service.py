@@ -33,7 +33,9 @@ IMAGE_PARAMETER_KEYS = {
     "stream",
     "user",
 }
-MIN_IMAGE_EDIT_TIMEOUT_SEC = 180
+# 三格模板（expo tryon 16:9 三场景拼接）实测单图 184~200s，180 会掐死正常请求；
+# 调此值需联动 expo/service.py 的 STALE_GENERATING_SECS（看门狗必须大于本超时）
+MIN_IMAGE_EDIT_TIMEOUT_SEC = 300
 
 def _get_enabled_direct_preset(db: Session, preset_name: str) -> tuple[AiPreset, object]:
     preset = (

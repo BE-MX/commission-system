@@ -415,6 +415,10 @@ def _run_composite(session_id: int, result_id: int) -> None:
         if row:
             row.status = "failed"
             row.gen_ms = int((time.monotonic() - started) * 1000)
+            # 失败原因落会话（销售面板/线索台可见），免得排障只能翻 AI 调用日志
+            session = db.get(ExpoSession, session_id)
+            if session:
+                session.error_message = f"composite#{result_id}: {exc}"
             db.commit()
     finally:
         _refresh_session_status(session_id)

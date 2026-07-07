@@ -9,7 +9,7 @@
       </div>
       <div class="wait-text">
         {{ isScene ? '正在为您生成场景大片' : '正在为您合成试戴效果' }}
-        <small>AI 正在精细处理发丝与光影 · 约需 1-2 分钟</small>
+        <small>AI 正在精细处理发丝与光影 · 约需 2-3 分钟</small>
       </div>
       <div class="bar" aria-hidden="true"><i /></div>
       <div v-if="!isScene" class="stages"><span>解析面容</span><span>甄选发型</span><span class="on">生成效果</span></div>

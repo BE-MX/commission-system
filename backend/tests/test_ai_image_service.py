@@ -77,7 +77,7 @@ def test_edit_image_posts_openai_compatible_image_edit_request(db, monkeypatch):
     )
 
     assert captured["url"] == "https://example.test/v1/images/edits"
-    assert captured["timeout"] == 180
+    assert captured["timeout"] == image_service.MIN_IMAGE_EDIT_TIMEOUT_SEC
     assert captured["headers"]["Authorization"] == "Bearer sk-test"
     assert "Content-Type" not in captured["headers"]
     assert captured["data"] == {
@@ -98,7 +98,7 @@ def test_edit_image_posts_openai_compatible_image_edit_request(db, monkeypatch):
 def test_edit_image_keeps_provider_timeout_when_it_exceeds_image_minimum(db, monkeypatch):
     preset = _create_image_preset(db)
     provider = db.get(AiProvider, preset.provider_id)
-    provider.timeout_sec = 240
+    provider.timeout_sec = image_service.MIN_IMAGE_EDIT_TIMEOUT_SEC + 60
     db.flush()
     captured = {}
 
@@ -133,7 +133,7 @@ def test_edit_image_keeps_provider_timeout_when_it_exceeds_image_minimum(db, mon
         caller_module="ai_preset_test",
     )
 
-    assert captured["timeout"] == 240
+    assert captured["timeout"] == image_service.MIN_IMAGE_EDIT_TIMEOUT_SEC + 60
 
 
 def test_edit_image_timeout_error_mentions_effective_timeout(db, monkeypatch):
@@ -164,7 +164,7 @@ def test_edit_image_timeout_error_mentions_effective_timeout(db, monkeypatch):
             caller_module="ai_preset_test",
         )
     except TimeoutError as exc:
-        assert "180 秒" in str(exc)
+        assert f"{image_service.MIN_IMAGE_EDIT_TIMEOUT_SEC} 秒" in str(exc)
         assert "图片生成超时" in str(exc)
     else:
         raise AssertionError("expected TimeoutError")

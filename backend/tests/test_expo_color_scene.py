@@ -245,14 +245,16 @@ def _stale_session(db, status, secs, results=()):
 
 
 def test_watchdog_heals_stale_generating_keeps_done(db):
-    sid = _stale_session(db, "generating", 400, results=("generating", "done"))
+    from app.expo.service import STALE_GENERATING_SECS
+    sid = _stale_session(db, "generating", STALE_GENERATING_SECS + 60, results=("generating", "done"))
     got = get_session(db, sid)
     assert got.status == "done"  # 有成品照常展示
     assert sorted(r.status for r in got.results) == ["done", "failed"]
 
 
 def test_watchdog_all_stale_marks_failed(db):
-    sid = _stale_session(db, "generating", 400, results=("generating",))
+    from app.expo.service import STALE_GENERATING_SECS
+    sid = _stale_session(db, "generating", STALE_GENERATING_SECS + 60, results=("generating",))
     got = get_session(db, sid)
     assert got.status == "failed"
     assert "watchdog" in (got.error_message or "")

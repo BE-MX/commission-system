@@ -24,7 +24,9 @@ logger = logging.getLogger("commission.expo")
 
 # 看门狗阈值：后台线程随进程重启丢失后，卡死状态在轮询读取时自愈
 STALE_PENDING_SECS = 180     # 面容分析正常 <30s
-STALE_GENERATING_SECS = 300  # 单图合成实测 ~130s，并行批次留双倍余量
+# 必须大于 ai/image_service.py 的 MIN_IMAGE_EDIT_TIMEOUT_SEC(300)，否则会把仍在
+# 正常等待上游的合成误判为卡死（三格模板单图实测 184~200s）
+STALE_GENERATING_SECS = 420
 
 
 # ---------------- 客户 ----------------
