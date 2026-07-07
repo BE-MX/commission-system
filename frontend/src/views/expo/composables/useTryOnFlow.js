@@ -4,7 +4,8 @@
  * tryon：attract → register → capture → analyzing → matching(可选发色) → result ⇄ sales
  * scene：attract → register → capture → scene(选场景) → result ⇄ sales
  * 轮询 GET /sessions/{id} 驱动 analyzing/generating 的状态推进；
- * 60 秒无操作自动回 attract 并清空上一位客户状态（隐私 + 交接下一位）。
+ * 60 秒无操作自动回 attract 并清空上一位客户状态（隐私 + 交接下一位）；
+ * 例外：result 展示页不自动清场，仅「返回主页」手动触发（见 NO_IDLE_STEPS）。
  */
 import { computed, onBeforeUnmount, reactive, ref } from 'vue'
 import {
@@ -14,8 +15,9 @@ import {
 
 const POLL_MS = 2000
 const IDLE_MS = 60000
-// 分析/生成中不判 idle（客户在等待，不算离开）
-const BUSY_STEPS = ['analyzing']
+// 不判 idle 的步骤：analyzing=客户在等待不算离开；result=展示页只允许手动返回主页，
+// 不自动跳回（用户指令 2026-07-07——客户慢慢看图/扫码，不能被清场）
+const NO_IDLE_STEPS = ['analyzing', 'result']
 
 export function useTryOnFlow() {
   const step = ref('attract')
@@ -54,7 +56,7 @@ export function useTryOnFlow() {
   function touch() {
     if (idleTimer) clearTimeout(idleTimer)
     if (step.value === 'attract') return
-    if (BUSY_STEPS.includes(step.value) || generating.value) return
+    if (NO_IDLE_STEPS.includes(step.value) || generating.value) return
     idleTimer = setTimeout(resetAll, IDLE_MS)
   }
 

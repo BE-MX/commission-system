@@ -35,10 +35,6 @@
         <div class="divider" :style="{ left: `${sliderPct}%` }"><span class="knob">⇔</span></div>
         <span class="lbl b">{{ isScene ? '现场实拍' : '佩戴前' }}</span>
         <span class="lbl a">{{ isScene ? '莱莎 · 场景大片' : '莱莎 · 佩戴后' }}</span>
-        <div v-if="shareUrl" class="qr">
-          <canvas ref="qrEl" width="92" height="92" />
-          <span>扫码带走</span>
-        </div>
       </div>
 
       <!-- 二次生成：已有成品在展示，新款在后台合成，用胶囊提示不打断浏览 -->
@@ -68,6 +64,18 @@
         <button v-if="isScene" class="xk-btn ghost" :disabled="flow.generating.value" @click="flow.reselectScenes()">再选场景</button>
         <button v-else class="xk-btn ghost" :disabled="flow.generating.value" @click="flow.backToMatching()">试试其他发型</button>
         <button class="xk-btn" @click="flow.openSales()">请顾问过来</button>
+      </div>
+
+      <!-- 分享与返回：二维码独立黑金卡片，不与照片重叠；返回主页仅手动触发 -->
+      <div class="share-row">
+        <div v-if="shareUrl" class="qr-card">
+          <canvas ref="qrEl" width="84" height="84" />
+          <div class="qr-txt">
+            <b>扫码带走</b>
+            <span>试戴效果存入手机 · 随时分享</span>
+          </div>
+        </div>
+        <button class="home-btn" @click="flow.resetAll()">⌂ 返回主页</button>
       </div>
     </template>
   </div>
@@ -148,8 +156,9 @@ watch([shareUrl, qrEl], async () => {
   if (!qrEl.value) return
   try {
     const QRCode = (await import('qrcode')).default
+    // 墨色码点 + 暖米底：黑金语系里可扫性最稳的组合（反色码部分扫码器不认）
     await QRCode.toCanvas(qrEl.value, shareUrl.value, {
-      width: 92, margin: 1,
+      width: 84, margin: 1,
       color: { dark: '#0c0a08', light: '#f3ead9' },
     })
   } catch (e) { /* 依赖缺失时不显示二维码，不阻断流程 */ }
@@ -232,12 +241,34 @@ watch([shareUrl, qrEl], async () => {
 .lbl { position: absolute; top: 16px; font-size: 10px; letter-spacing: 0.24em; padding: 6px 14px; border-radius: 20px; z-index: 2; }
 .lbl.b { left: 14px; color: var(--xk-mut); border: 1px solid rgba(141, 131, 113, 0.4); }
 .lbl.a { right: 14px; color: var(--xk-ink); background: linear-gradient(110deg, var(--xk-gold), var(--xk-gold-hi)); }
-.qr {
-  position: absolute; right: 14px; bottom: 14px; z-index: 4;
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
+.share-row {
+  width: min(72vw, 460px); margin-top: 14px;
+  display: flex; align-items: stretch; gap: 12px;
 }
-.qr canvas { border-radius: 10px; border: 1px solid var(--xk-gold-line); }
-.qr span { font-size: 9px; letter-spacing: 0.2em; color: var(--xk-gold-dim); }
+.qr-card {
+  flex: 1; display: flex; align-items: center; gap: 14px;
+  padding: 10px 14px; border-radius: 14px;
+  border: 1px solid var(--xk-gold-line);
+  background: linear-gradient(120deg, rgba(232, 196, 121, 0.1), rgba(232, 196, 121, 0.02));
+}
+.qr-card canvas {
+  border-radius: 8px; flex: none;
+  border: 1px solid var(--xk-gold);
+  box-shadow: 0 0 14px rgba(232, 196, 121, 0.16);
+}
+.qr-txt { display: flex; flex-direction: column; gap: 5px; }
+.qr-txt b {
+  font-family: 'Noto Serif SC', serif; font-weight: 400;
+  font-size: 14px; letter-spacing: 0.22em; color: var(--xk-gold-hi);
+}
+.qr-txt span { font-size: 10px; letter-spacing: 0.14em; color: var(--xk-mut); }
+.home-btn {
+  flex: none; align-self: stretch; padding: 0 18px; border-radius: 14px; cursor: pointer;
+  border: 1px solid rgba(141, 131, 113, 0.45); background: transparent;
+  color: var(--xk-mut); font-size: 12px; letter-spacing: 0.16em;
+  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), color 160ms ease, border-color 160ms ease;
+}
+.home-btn:active { transform: scale(0.96); }
 
 .gen-pill {
   margin-top: 12px; padding: 7px 16px; border-radius: 20px;
