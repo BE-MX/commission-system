@@ -306,8 +306,8 @@ nssm restart CommissionSystem
 
 ### Q7：展会试戴（/expo/kiosk）异常
 
-1. **不出分析/话术**：按 Q6 排查 `expo_face_analysis` / `expo_sales_strategy` 两个 preset；话术生成失败会自动回落话术卡库原文（销售面板仍有内容），展台不冷场
-2. **不出效果图**（2026-07-07 起生图已接入 ELBNT `/v1/images/edits`）：失败原因看 `ark_expo_sessions.error_message` 或 AI 调用日志（`ark_ai_call_logs`，preset=expo_wig_composite）。常见：上游拥堵 502/504（单图 >300s 被 ELBNT 网关掐断，等低峰重试或换 Provider）；卡在"生成中"超 7 分钟会被看门狗自动标失败并给出重试入口
+1. **不出分析/话术**：按 Q6 排查 `expo_face_analysis` / `expo_sales_strategy` 两个 preset；话术生成失败会自动回落话术卡库原文，展台不冷场。**话术只在「试戴线索台」展示**（2026-07-07 起 kiosk 销售面板不再显示，客户看得到那块屏）；话术随合成启动并行生成，顾问等图期间打开线索台详情即可看到（详情抽屉会自动刷新）
+2. **不出效果图**：失败原因看 `ark_expo_sessions.error_message` 或 AI 调用日志（`ark_ai_call_logs`，preset=expo_wig_composite）。生图 Provider 在「AI 接入管理」后台可切（2026-07-07 已从 ELBNT 切云雾 api.wlai.vip / gpt-image-2，单场景实测 41~135s）。常见：上游偶发 500/502/504（重试或换 Provider）；「多场景合一」三联图耗时更长但仍在 300s 超时与 420s 看门狗余量内；卡在"生成中"超 7 分钟会被看门狗自动标失败并给出重试入口
 3. **提示权限不足**：确认账号有 `expo:write`；若右上角显示占位"用户"，硬刷新（Ctrl+F5）重新拉取登录态
 4. 客户照片与效果图存 `uploads/expo/`（photos/results/wigs/hair_colors 四个子目录），属 `/uploads` 备份范围；客户数据删除走线索台「删除」（物理删除照片）；发型/色板图上传不限体积（送模型前管线自动压缩）
 

@@ -450,7 +450,20 @@ frontend/src/
 **tryon 合成模板重写为「锚场色机魂」三格结构（2026-07-07）**
 - `_COMPOSITE_TEMPLATE` 按用户定稿的三格效果图 prompt 重写（英文）：锚=FIRST image 角色分工+身份锁定 / 场=HOME·OFFICE·GATHERING 三格并排（每格显式光源方向，发丝受光跟随场景）/ 色=原相机直出质感+负向排除（塑料感/磨皮/插画感/头套感）/ 机=85mm 胸上构图三格机位一致 / 魂=三格身份严格同一。输出规格：单张 16:9 三等分拼接
 - 发型多角度参考图上限 2→3（正面/45度/侧面）；发色子句光照措辞改 "each scene's lighting" 适配三格
-- **已知风险**：三格人脸一致性对生图模型是高难度指令，待 `expo_wig_composite` 绑定图像模型后 W1 实测；不稳的降级方案是拆三次单场景生成后程序拼接（scene 模式已有同型实现）
+- **已知风险**：三格人脸一致性对生图模型是高难度指令；不稳的降级方案是拆三次单场景生成后程序拼接（scene 模式已有同型实现）。多场景合一已以可选项回归（见下），此风险转为观察项
+
+**多场景合一回归 + 6 寸输出规格（2026-07-07 深夜，Provider 已切云雾）**
+- 生图 Provider 从 ELBNT 切「云雾」（api.wlai.vip，模型 gpt-image-2，后台 AI 接入管理可再切）：单场景实测 41~135s，早先 504 结构性瓶颈解除，「多场景合一」以 `TRYON_SCENES` 第 4 个可选项回归（key=multi），不阻塞主路径
+- multi 走 `_build_multi_scene_prompt` **完整替换式中文 prompt**（用户定稿锚场色机魂），不与英文 `_COMPOSITE_TEMPLATE` 组装；锚点句按实际送图动态拼装（无参考图退化为款式描述、无色板退化为文字色号/原色），避免指涉不存在的图
+- 防"只换背景"：锚只锁面部/五官/肤色，显式放开表情/姿势/服装/配饰由场景决定；【场】逐区写死穿着动作神态（居家针织服捧热饮/办公衬衫微侧/聚会连衣裙举杯回眸）；排除清单加"复制粘贴感"
+- **输出尺寸走 API `size` 参数**（`edit_image(size=...)` 覆盖 preset，prompt 文字仅二重锚定）：单场景竖版 1024x1536（6 寸 102×152mm）、multi 横版 1536x1024（6 寸 152×102mm）、scene 大片模式不限定沿用 preset
+
+**话术时序前置 + 顾问侧展示收敛（2026-07-07，用户纠正驱动）**
+- 话术生成从「全部效果图完成后」前置到「合成启动时并行」（`_start_batch` 成功即触发；完成后触发保留为兜底），合成等待 1~5 分钟即顾问沟通窗口；前置/兜底并发用 `_start_strategy_once`（inflight set + 锁 + strategy_json 已存在即跳过）互斥，进程内有效（--workers>1 需重新设计）
+- **kiosk 是与客户共享的屏幕**：销售面板撤下话术卡片与 internal 发况备注，kiosk 端不再拉取 internal 载荷（useTryOnFlow 移除 internalSession）；话术唯一展示面 = 试戴线索台（顾问自己设备），详情抽屉对"生成中"会话每 5s 静默轮询（silent 参数：showLoading false + suppressToast，2 分钟上限；只轮 generating / done无话术，analyzed 死会话不轮）
+- 话术 grounding：strategy context 注入本次试戴发型的特征/卖点/匹配理由（`_tried_wigs_block`）+ 客户脸型特征行，硬性要求点名发型并做"发型特征↔脸型特征"因果挂钩、禁止杜撰清单外细节；`expo_sales_strategy` preset system prompt 补边界句（发型×脸型搭配效果属情感线不算参数）。注意：前置生成时 reaction 尚不存在，心动款进不了话术文本（提速换个性化，用户知情）
+- 面容分析 prompt 加 face_shape 六型判定标准（长宽比/三段宽度/下颌线）+ 新增 `face_features` 客观特征字段（**不进客户屏白名单**，供话术引用）
+- 结果屏新增「查看大图」灯箱（预览框 cover 裁切 → contain 完整显示；入口是按钮而非点图——图片表面被对比滑块手势占用）
 
 **已踩坑（2026-07-04 对抗性审查修复）**
 - 后台线程的批量启动函数（`_start_batch`）必须：状态置位与插行合并单事务 + except 回滚 + 会话标 failed + `_log_fail` 双写——初版漏兜底，非法 wig_id 会把会话永久卡在 generating
