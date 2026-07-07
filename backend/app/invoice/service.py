@@ -6,6 +6,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.auth.models import ArkUser
 from app.invoice import price_service, product_service
 from app.invoice.models import Invoice, InvoiceItem
 from app.invoice.schemas import InvoiceCreate, InvoiceUpdate
@@ -55,7 +56,25 @@ def list_invoices(
         .limit(page_size)
         .all()
     )
-    return [_invoice_list_row(invoice, item_count) for invoice, item_count in rows], total
+    creator_names = _resolve_user_names(db, {inv.created_by for inv, _ in rows if inv.created_by})
+    return [
+        _invoice_list_row(invoice, item_count, creator_names.get(invoice.created_by))
+        for invoice, item_count in rows
+    ], total
+
+
+def _resolve_user_names(db: Session, user_ids: set[int]) -> dict[int, str]:
+    if not user_ids:
+        return {}
+    rows = db.query(ArkUser.id, ArkUser.real_name).filter(ArkUser.id.in_(user_ids)).all()
+    return {uid: name for uid, name in rows}
+
+
+def delete_invoice(db: Session, invoice: Invoice) -> None:
+    """Synced invoices are OKKI-side documents; deleting locally would orphan them."""
+    if invoice.sync_status == "synced":
+        raise ValueError("已同步小满的发票不允许删除，请先在小满侧处理")
+    db.delete(invoice)
 
 
 def get_invoice(db: Session, invoice_id: int) -> Invoice | None:
@@ -279,11 +298,12 @@ def _money(value: Decimal) -> Decimal:
     return Decimal(value).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
-def _invoice_list_row(invoice: Invoice, item_count: int) -> dict:
+def _invoice_list_row(invoice: Invoice, item_count: int, creator_name: str | None = None) -> dict:
     return {
         "id": invoice.id,
         "invoice_no": invoice.invoice_no,
         "order_type": invoice.order_type,
+        "created_by_name": creator_name,
         "customer_id": invoice.customer_id,
         "customer_name": invoice.customer_name,
         "invoice_date": invoice.invoice_date,

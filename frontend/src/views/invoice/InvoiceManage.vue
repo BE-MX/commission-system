@@ -70,52 +70,64 @@
             <span>新建一张发票后会显示在这里。</span>
           </div>
         </template>
-        <el-table-column prop="invoice_no" label="发票号" min-width="150" max-width="220" show-overflow-tooltip />
-        <el-table-column label="类型" min-width="90" max-width="110">
+        <el-table-column prop="invoice_no" label="发票号" min-width="132" max-width="170" show-overflow-tooltip />
+        <el-table-column label="类型" min-width="76" max-width="96">
           <template #default="{ row }">
             <el-tag :type="row.order_type === 'production' ? 'warning' : 'info'" effect="plain">
               {{ row.order_type === 'production' ? '生产单' : '库存单' }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="customer_name" label="客户" min-width="200" max-width="340" show-overflow-tooltip />
-        <el-table-column prop="invoice_date" label="日期" min-width="120" max-width="150" show-overflow-tooltip />
-        <el-table-column prop="item_count" label="明细" min-width="80" max-width="110" align="right" />
-        <el-table-column label="金额" min-width="140" max-width="190" align="right">
+        <el-table-column prop="customer_name" label="客户" min-width="150" max-width="260" show-overflow-tooltip />
+        <el-table-column prop="invoice_date" label="日期" min-width="96" max-width="120" show-overflow-tooltip />
+        <el-table-column prop="item_count" label="明细" min-width="56" max-width="76" align="right" />
+        <el-table-column label="金额" min-width="104" max-width="150" align="right">
           <template #default="{ row }">{{ row.currency }} {{ money(row.total_amount) }}</template>
         </el-table-column>
-        <el-table-column label="状态" min-width="110" max-width="150">
+        <el-table-column label="状态" min-width="84" max-width="110">
           <template #default="{ row }">
             <el-tag :type="statusType(row.status)" effect="plain">{{ statusText(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="同步" min-width="110" max-width="150">
+        <el-table-column label="同步" min-width="84" max-width="110">
           <template #default="{ row }">
             <el-tag :type="syncType(row.sync_status)" effect="plain">{{ syncText(row.sync_status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" min-width="330" max-width="390" fixed="right">
+        <el-table-column label="创建人" min-width="84" max-width="120" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.created_by_name || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="创建时间" min-width="130" max-width="160" show-overflow-tooltip>
+          <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
+        </el-table-column>
+        <el-table-column label="操作" min-width="252" max-width="290" fixed="right">
           <template #default="{ row }">
             <div class="row-actions">
               <el-button link type="primary" @click="openEdit(row.id)">
                 <el-icon><Edit /></el-icon>
                 编辑
               </el-button>
-              <el-button link @click="exportExcel(row)">
-                <el-icon><Download /></el-icon>
-                Excel
-              </el-button>
-              <el-button link @click="exportPdf(row)">
-                <el-icon><Download /></el-icon>
-                PDF
-              </el-button>
-              <el-button link @click="openPrint(row.id)">
-                <el-icon><Printer /></el-icon>
-                打印
-              </el-button>
+              <el-dropdown trigger="click" @command="cmd => handleExport(cmd, row)">
+                <el-button link>
+                  <el-icon><Download /></el-icon>
+                  导出
+                  <el-icon><ArrowDown /></el-icon>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="excel">Excel</el-dropdown-item>
+                    <el-dropdown-item command="pdf">PDF</el-dropdown-item>
+                    <el-dropdown-item command="print">打印 / 预览</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
               <el-button v-permission="'invoice:sync'" link type="warning" @click="validateAndSync(row.id)">
                 <el-icon><Refresh /></el-icon>
                 同步
+              </el-button>
+              <el-button v-permission="'invoice:write'" link type="danger" @click="removeInvoice(row)">
+                <el-icon><Delete /></el-icon>
+                删除
               </el-button>
             </div>
           </template>
@@ -469,7 +481,9 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { ArrowDown, ArrowUp, Delete, Download, Edit, Plus, Printer, Refresh, Search } from '@element-plus/icons-vue'
+import { msgSuccess, confirmDanger } from '@/utils/feedback'
 import {
+  deleteInvoice,
   downloadInvoiceExcel,
   downloadInvoicePdf,
   fetchInvoicePrintHtml,
@@ -559,6 +573,19 @@ async function validateAndSync(id) {
   loadInvoices()
 }
 
+function handleExport(command, row) {
+  if (command === 'excel') return exportExcel(row)
+  if (command === 'pdf') return exportPdf(row)
+  return openPrint(row.id)
+}
+
+async function removeInvoice(row) {
+  await confirmDanger('删除', `发票 ${row.invoice_no}`)
+  await deleteInvoice(row.id)
+  msgSuccess('删除')
+  loadInvoices()
+}
+
 async function exportExcel(row) {
   const res = await downloadInvoiceExcel(row.id)
   downloadBlob(res, `${row.invoice_no || 'invoice'}.xlsx`)
@@ -590,6 +617,11 @@ async function openPrint(id) {
 
 function money(value) {
   return Number(value || 0).toFixed(2)
+}
+
+function formatDateTime(value) {
+  if (!value) return '-'
+  return String(value).replace('T', ' ').slice(0, 16)
 }
 
 function money4(value) {

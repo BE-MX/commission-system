@@ -37,6 +37,10 @@ export function updateInvoice(id, data) {
   return unwrap(request.put(`/invoices/${id}`, data, { loadingText: '正在保存发票...' }))
 }
 
+export function deleteInvoice(id) {
+  return unwrap(request.delete(`/invoices/${id}`, { loadingText: '正在删除发票...' }))
+}
+
 export function validateInvoice(id) {
   return unwrap(request.post(`/invoices/${id}/validate`, null, { loadingText: '正在校验发票...' }))
 }

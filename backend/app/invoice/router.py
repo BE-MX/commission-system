@@ -333,6 +333,23 @@ def update_invoice(
     return ok(service.serialize_detail(invoice))
 
 
+@router.delete("/invoices/{invoice_id}", summary="Delete invoice")
+def delete_invoice(
+    invoice_id: int,
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("invoice:write")),
+):
+    invoice = service.get_invoice(db, invoice_id)
+    if not invoice:
+        raise HTTPException(404, "发票不存在")
+    try:
+        service.delete_invoice(db, invoice)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    db.commit()
+    return ok(message="已删除")
+
+
 @router.post("/invoices/{invoice_id}/validate", summary="Validate invoice before sync")
 def validate_invoice(
     invoice_id: int,

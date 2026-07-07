@@ -357,6 +357,29 @@ def test_missing_std_price_is_flagged_not_blocking(db):
     assert service.validate_invoice(invoice) == []  # D3: not blocking
 
 
+def test_delete_invoice_blocked_when_synced(db):
+    import pytest
+
+    _seed_okki(db)
+    body = InvoiceCreate(
+        customer_id="CUST001", customer_name="客户A", order_type="production",
+        invoice_date=date(2026, 7, 7),
+        items=[_custom_item(price_per_piece=Decimal("10"))],
+    )
+    invoice = service.create_invoice(db, body, user_id=1)
+    db.flush()
+
+    invoice.sync_status = "synced"
+    with pytest.raises(ValueError):
+        service.delete_invoice(db, invoice)
+
+    invoice.sync_status = "not_synced"
+    service.delete_invoice(db, invoice)
+    db.flush()
+    assert db.query(Invoice).count() == 0
+    assert db.query(InvoiceItem).count() == 0
+
+
 # ── workbook import ───────────────────────────────────────────
 
 def test_import_price_workbook(db):

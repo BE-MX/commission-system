@@ -64,6 +64,7 @@
   - `POST /invoices` — 创建发票（order_type stock/production；custom 明细自动沉淀产品并服务端定价快照）
   - `GET /invoices/{id}` — 发票详情
   - `PUT /invoices/{id}` — 更新发票（order_type 创建后不可改）
+  - `DELETE /invoices/{id}` — 删除发票（invoice:write；sync_status=synced 拒绝删除）
   - `POST /invoices/{id}/validate` — 同步前校验
   - `POST /invoices/{id}/sync` — 同步到小满（Phase 2 待接 token，当前返回校验结果）
   - `GET /invoices/{id}/export/excel` — 导出 Excel（含 To/From 头块与费用区）
