@@ -55,7 +55,7 @@ class ExpoWig(Base):
     angle_photos = Column(JSON, nullable=True, comment="多角度参考图路径列表")
     wig_description = Column(Text, nullable=True, comment="喂给合成 prompt 的款式描述")
     composite_prompt = Column(Text, nullable=True, comment="该款个性化合成 prompt 片段")
-    fit_tags = Column(JSON, nullable=True, comment="{gender,face_shapes[],skin_depths[],undertones[],age_ranges[],needs[],styles[],length}")
+    fit_tags = Column(JSON, nullable=True, comment="{gender,face_shapes[],skin_depths[],undertones[],age_ranges[],needs[],styles[],length,occupations[],life_scenes[],sell_positions[],not_suitable[]}（后四项销售参考，不参与匹配）")
     selling_points = Column(Text, nullable=True, comment="卖点，话术生成引用")
     evidence_refs = Column(JSON, nullable=True, comment="6个月对比素材路径等证据引用")
     priority = Column(Integer, nullable=False, default=0, comment="人工权重，平手决胜/主推加权")

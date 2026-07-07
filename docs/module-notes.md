@@ -427,6 +427,11 @@ frontend/src/
 - 场景清单 `ai_pipeline.SCENES` 服务端硬编码（business/banquet/cafe/travel/home），场景 prompt 不下发前端，`GET /expo/scenes` 只出 key/label/tagline
 - `ExpoResult.wig_id` 可空（scene 结果无关联发型），序列化 `wig_name` 回退 `scene_json.label`，线索台/分享页复用同一渲染
 
+**发型库字段对齐《发型推荐分析表》（2026-07-07）**
+- `fit_tags` 新增四个销售参考维度（JSON 内嵌，无迁移）：`occupations[]` 职业场景 / `life_scenes[]` 生活场景 / `sell_positions[]` 销售定位 / `not_suitable[]` 不适合人群——**不参与匹配打分**（matching 未知 key 自动忽略），列表页新增「销售定位」列
+- 气质词汇扩到 6 个：知性优雅/减龄轻盈/自然日常/端庄大气/**温柔清纯/时尚轻熟**——三处强同步契约：WigLibrary STYLES + RegisterScreen style_pref + ai_pipeline `_ANALYSIS_INSTRUCTION` temperament 枚举，改任一处必须同步另两处
+- 肤色/脸型选项 label 改为业务语言（冷白/白皙、自然黄皮、心形/瓜子脸），value 是 AI 分析枚举**不可改**；matching 客户可见理由 heart 文案改「瓜子脸」
+
 **已踩坑（2026-07-04 对抗性审查修复）**
 - 后台线程的批量启动函数（`_start_batch`）必须：状态置位与插行合并单事务 + except 回滚 + 会话标 failed + `_log_fail` 双写——初版漏兜底，非法 wig_id 会把会话永久卡在 generating
 - kiosk 轮询状态机的失败路径必须显式收尾：`analyzing` 属 BUSY_STEPS（不挂 idle 定时器），失败时留在原地 = 展位永久卡屏，需退回 `capture`；整批效果图全 failed 时 session 仍推 `done`，前端要用「results 里没有任何 done」补判并给重试出口

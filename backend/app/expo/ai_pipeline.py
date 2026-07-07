@@ -108,7 +108,7 @@ def _parse_json(content: str) -> dict:
 _ANALYSIS_INSTRUCTION = """请分析照片中人物的面容特征，只输出 JSON（不要任何解释文字），结构如下：
 {"gender":"female|male","age_range":"如 40-50","face_shape":"oval|round|square|heart|long|diamond",
 "skin_tone":{"depth":"fair|light|medium|tan","undertone":"cool|warm|neutral"},
-"temperament":"知性优雅|减龄轻盈|自然日常|端庄大气","suit_length":"short|bob|shoulder|long",
+"temperament":"知性优雅|减龄轻盈|自然日常|端庄大气|温柔清纯|时尚轻熟","suit_length":"short|bob|shoulder|long",
 "display_notes":"一句对顾客友好的正面描述，30字内",
 "internal":{"hair_condition":"发量正常|发缝偏稀|头顶稀疏|白发比例高","sales_note":"给销售的一句建议"},
 "confidence":0.9}

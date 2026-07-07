@@ -31,6 +31,11 @@
             <el-tag v-for="n in row.fit_tags?.needs || []" :key="'n-' + n" size="small" effect="plain" type="warning" class="fit-tag">{{ labelOf(NEEDS, n) }}</el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="销售定位" min-width="160">
+          <template #default="{ row }">
+            <el-tag v-for="p in row.fit_tags?.sell_positions || []" :key="'p-' + p" size="small" effect="plain" type="success" class="fit-tag">{{ p }}</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="priority" label="优先级" min-width="80" sortable />
         <el-table-column label="启用" min-width="80">
           <template #default="{ row }">
@@ -114,6 +119,26 @@
             <el-option v-for="o in LENGTHS" :key="o.value" :label="o.label" :value="o.value" />
           </el-select>
         </el-form-item>
+        <el-form-item label="职业场景">
+          <el-select v-model="form.fit_tags.occupations" multiple filterable allow-create default-first-option placeholder="适合的职业人群，可自由输入" style="width: 100%">
+            <el-option v-for="o in OCCUPATIONS" :key="o" :label="o" :value="o" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="生活场景">
+          <el-select v-model="form.fit_tags.life_scenes" multiple filterable allow-create default-first-option placeholder="适合的生活场合，可自由输入" style="width: 100%">
+            <el-option v-for="o in LIFE_SCENES" :key="o" :label="o" :value="o" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="销售定位">
+          <el-select v-model="form.fit_tags.sell_positions" multiple filterable allow-create default-first-option placeholder="主推方向，如 减龄短发款 / 显精神款" style="width: 100%">
+            <el-option v-for="o in SELL_POSITIONS" :key="o" :label="o" :value="o" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="不适合人群">
+          <el-select v-model="form.fit_tags.not_suitable" multiple filterable allow-create default-first-option placeholder="销售避坑提示，如 脖子短 / 下颌宽" style="width: 100%">
+            <el-option v-for="o in NOT_SUITABLE" :key="o" :label="o" :value="o" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="卖点"><el-input v-model="form.selling_points" type="textarea" :rows="2" placeholder="核心卖点，供话术引用" /></el-form-item>
         <el-form-item label="证据引用">
           <el-select v-model="form.evidence_refs" multiple filterable allow-create default-first-option placeholder="自由输入证据编号 / 来源" style="width: 100%" />
@@ -134,18 +159,37 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getWigs, createWig, updateWig, uploadWigPhoto } from '@/api/expo'
 
+// 选项词汇对齐《发型推荐分析表》的业务语言；value 是 AI 分析枚举，不可改
 const FACE_SHAPES = [
   { value: 'oval', label: '鹅蛋脸' }, { value: 'round', label: '圆脸' }, { value: 'square', label: '方脸' },
-  { value: 'heart', label: '心形脸' }, { value: 'long', label: '长脸' }, { value: 'diamond', label: '菱形脸' },
+  { value: 'heart', label: '心形/瓜子脸' }, { value: 'long', label: '长脸' }, { value: 'diamond', label: '菱形脸' },
 ]
 const SKIN_DEPTHS = [
-  { value: 'fair', label: '白皙' }, { value: 'light', label: '偏白' }, { value: 'medium', label: '自然' }, { value: 'tan', label: '小麦' },
+  { value: 'fair', label: '冷白/白皙' }, { value: 'light', label: '白皙黄皮' }, { value: 'medium', label: '自然黄皮' }, { value: 'tan', label: '小麦/深肤' },
 ]
 const UNDERTONES = [{ value: 'cool', label: '冷调' }, { value: 'warm', label: '暖调' }, { value: 'neutral', label: '中性' }]
 const NEEDS = [{ value: 'volume', label: '发量丰盈' }, { value: 'gray_cover', label: '白发遮盖' }, { value: 'style_change', label: '造型变换' }]
-const STYLES = ['知性优雅', '减龄轻盈', '自然日常', '端庄大气']
+// 与 kiosk 登记页 style_pref、AI 分析 temperament 枚举三处同步（改一处必须同步另两处）
+const STYLES = ['知性优雅', '减龄轻盈', '自然日常', '端庄大气', '温柔清纯', '时尚轻熟']
 const GENDERS = [{ value: 'female', label: '女款' }, { value: 'male', label: '男款' }]
 const LENGTHS = [{ value: 'short', label: '短发' }, { value: 'bob', label: '波波头' }, { value: 'shoulder', label: '及肩' }, { value: 'long', label: '长发' }]
+// 以下四个维度来自《发型推荐分析表》，仅供销售侧参考，不参与匹配打分
+const OCCUPATIONS = [
+  '职场白领', '管理层', '教师', '医生', '美业从业者', '销售顾问',
+  '门店老板', '培训讲师', '主播', '设计师', '学生', '行政前台', '客服',
+]
+const LIFE_SCENES = [
+  '日常通勤', '逛街', '聚会', '拍照', '旅行', '约会',
+  '见家长', '家庭聚餐', '咖啡厅', '展会', '直播间', '上学',
+]
+const SELL_POSITIONS = [
+  '减龄短发款', '显精神款', '时尚气质款', '温柔气质款', '自然百搭款', '初戴推荐款',
+  '显脸小款', '职场女性推荐款', '妈妈减龄款', '气质提升款', '形象提升款', '高级色款',
+]
+const NOT_SUITABLE = [
+  '追求长发飘逸感', '喜欢强烈网红风', '头围特别大', '完全不化妆气色偏暗',
+  '大脸盘', '下颌宽', '脖子短', '肩膀厚', '气质偏传统保守', '脸特别长', '不喜欢蓬松纹理感',
+]
 
 function labelOf(options, value) {
   return options.find((o) => o.value === value)?.label || value
@@ -173,7 +217,10 @@ function emptyForm() {
     model_no: '', name: '', series: 'classic', cover_path: '',
     wig_description: '', composite_prompt: '', selling_points: '',
     evidence_refs: [], priority: 0, is_active: true,
-    fit_tags: { gender: 'female', face_shapes: [], skin_depths: [], undertones: [], age_ranges: [], needs: [], styles: [], length: '' },
+    fit_tags: {
+      gender: 'female', face_shapes: [], skin_depths: [], undertones: [], age_ranges: [], needs: [], styles: [], length: '',
+      occupations: [], life_scenes: [], sell_positions: [], not_suitable: [],
+    },
   }
 }
 const form = ref(emptyForm())
@@ -223,6 +270,8 @@ function openEdit(row) {
       gender: ft.gender || 'female', face_shapes: ft.face_shapes || [], skin_depths: ft.skin_depths || [],
       undertones: ft.undertones || [], age_ranges: ft.age_ranges || [], needs: ft.needs || [],
       styles: ft.styles || [], length: ft.length || '',
+      occupations: ft.occupations || [], life_scenes: ft.life_scenes || [],
+      sell_positions: ft.sell_positions || [], not_suitable: ft.not_suitable || [],
     },
   }
   coverPreview.value = row.cover_url || ''

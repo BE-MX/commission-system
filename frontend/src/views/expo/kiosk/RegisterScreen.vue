@@ -63,7 +63,8 @@ const NEEDS = [
   { value: 'gray_cover', label: '白发遮盖', hint: '自然发色', icon: '遮' },
   { value: 'style_change', label: '造型变换', hint: '日常 · 场合', icon: '变' },
 ]
-const STYLES = ['知性优雅', '减龄轻盈', '自然日常', '端庄大气']
+// 与发型库 fit_tags.styles、AI 分析 temperament 枚举三处同步（改一处必须同步另两处）
+const STYLES = ['知性优雅', '减龄轻盈', '自然日常', '端庄大气', '温柔清纯', '时尚轻熟']
 </script>
 
 <style scoped>

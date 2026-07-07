@@ -17,8 +17,8 @@ DEFAULT_WEIGHTS = {"face_shape": 30, "skin_tone": 20, "need": 25, "style": 15, "
 DEFAULT_TOP_N = 3
 
 _FACE_SHAPE_LABELS = {
-    "oval": "椭圆脸", "round": "圆脸", "square": "方脸",
-    "heart": "心形脸", "long": "长脸", "diamond": "菱形脸",
+    "oval": "鹅蛋脸", "round": "圆脸", "square": "方脸",
+    "heart": "瓜子脸", "long": "长脸", "diamond": "菱形脸",
 }
 
 
