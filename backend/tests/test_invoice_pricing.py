@@ -72,6 +72,34 @@ def test_infer_color_type_heuristic(db):
     assert price_service.resolve_color_type(db, "#P4/18") == ("piano", "inferred")
     assert price_service.resolve_color_type(db, "#5AT60") == ("ombre", "inferred")
     assert price_service.resolve_color_type(db, "#1B") == ("solid", "inferred")
+    # English color words must NOT be misread as piano/ombre — they need explicit mapping
+    assert price_service.resolve_color_type(db, "Purple") == (None, "missing")
+    assert price_service.resolve_color_type(db, "Toffee") == (None, "missing")
+
+
+def test_ambiguous_series_returns_missing(db):
+    price_service.upsert_std_price(
+        db, series_grade="Super Double Drawn Genius", length="16",
+        weight_unit="20g", color_type="solid", price=Decimal("20"),
+    )
+    price_service.upsert_std_price(
+        db, series_grade="Super Double Drawn Virgin", length="16",
+        weight_unit="20g", color_type="solid", price=Decimal("30"),
+    )
+    db.flush()
+    # a short free-form display matches BOTH series -> ambiguous, must not pick one
+    result = price_service.resolve_price(
+        db, customer_id=None,
+        product_display="Super Double Drawn", length="16", unit="20g", color="#1",
+    )
+    assert result["standard_price"] is None
+    assert result["price_source"] == "missing_std"
+    # a fully qualified display still resolves uniquely
+    result = price_service.resolve_price(
+        db, customer_id=None,
+        product_display="Super Double Drawn Genius Weft", length="16", unit="20g", color="#1",
+    )
+    assert result["standard_price"] == Decimal("20")
 
 
 # ── rule application ──────────────────────────────────────────
@@ -153,6 +181,71 @@ def test_ensure_custom_product_links_unique_okki(db):
     assert resolved["product_id"] == 11
     assert resolved["sku_id"] == 9011
     assert db.query(CustomProduct).count() == 0
+
+
+def test_okki_match_without_sku_stays_custom(db):
+    # okki product exists but has NO inventory row -> flipping to stock would
+    # create a line that can never pass sku validation; must stay custom
+    _seed_okki(db)
+    db.execute(text(
+        "INSERT INTO lsordertest.okki_products (product_id, product_no, name, model, color, size, unit, disable_flag) "
+        "VALUES (31, 'P31', 'Standard Double Drawn Genius Weft/20/#6/20g', 'B3', '#6', '20', '20g', 0)"
+    ))
+    body = InvoiceCreate(
+        customer_id="CUST001",
+        customer_name="客户A",
+        order_type="production",
+        invoice_date=date(2026, 7, 7),
+        items=[_custom_item(product_display="Standard Double Drawn Genius Weft", color="#6", length="20",
+                            price_per_piece=Decimal("20"))],
+    )
+    invoice = service.create_invoice(db, body, user_id=1)
+    db.flush()
+    item = invoice.items[0]
+    assert item.item_type == "custom"
+    assert item.sku_id is None
+    assert service.validate_invoice(invoice) == []
+
+
+def test_incomplete_custom_line_not_sunk(db):
+    _seed_okki(db)
+    body = InvoiceCreate(
+        customer_id="CUST001",
+        customer_name="客户A",
+        order_type="production",
+        invoice_date=date(2026, 7, 7),
+        items=[_custom_item(product_display="", color="", length="", net_weight_grams="",
+                            price_per_piece=Decimal("1"))],
+    )
+    invoice = service.create_invoice(db, body, user_id=1)
+    db.flush()
+    assert db.query(CustomProduct).count() == 0
+    assert invoice.items[0].custom_product_id is None
+    assert invoice.status == "draft"
+
+
+def test_resave_does_not_inflate_use_count(db):
+    from app.invoice.schemas import InvoiceUpdate
+
+    _seed_okki(db)
+    _seed_pricing(db)
+    body = InvoiceCreate(
+        customer_id="CUST001",
+        customer_name="客户A",
+        order_type="production",
+        invoice_date=date(2026, 7, 7),
+        items=[_custom_item(price_per_piece=Decimal("20"))],
+    )
+    invoice = service.create_invoice(db, body, user_id=1)
+    db.flush()
+    row = db.query(CustomProduct).one()
+    assert row.use_count == 1
+
+    update = InvoiceUpdate(**{**body.model_dump(), "items": body.model_dump()["items"]})
+    for _ in range(3):
+        invoice = service.update_invoice(db, invoice, update, user_id=1)
+        db.flush()
+    assert db.query(CustomProduct).one().use_count == 1
 
 
 def test_reconcile_backfills_okki_id(db):

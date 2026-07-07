@@ -124,6 +124,7 @@ export function downloadInvoicePdf(id) {
   })
 }
 
-export function getInvoicePrintUrl(id) {
-  return `/api/invoice/invoices/${id}/export/print`
+// 打印页在新标签打开不带 Authorization header，必须先鉴权取回 HTML 再本地打开
+export function fetchInvoicePrintHtml(id) {
+  return request.get(`/invoices/${id}/export/print`, { loadingText: '正在生成打印页...' })
 }

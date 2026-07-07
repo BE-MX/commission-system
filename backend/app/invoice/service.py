@@ -169,13 +169,20 @@ def serialize_detail(invoice: Invoice) -> dict:
     }
 
 
+def _custom_line_complete(payload) -> bool:
+    return all(str(v or "").strip() for v in (
+        payload.product_display, payload.color, payload.length, payload.net_weight_grams,
+    ))
+
+
 def _next_invoice_no(db: Session) -> str:
     today = date.today().strftime("%Y%m%d")
     prefix = f"INV{today}"
     latest = db.execute(
         select(Invoice.invoice_no)
         .where(Invoice.invoice_no.like(f"{prefix}-%"))
-        .order_by(Invoice.invoice_no.desc())
+        # length first so INV...-1000 sorts after INV...-999
+        .order_by(func.length(Invoice.invoice_no).desc(), Invoice.invoice_no.desc())
         .limit(1)
     ).scalar()
     next_seq = 1
@@ -188,6 +195,12 @@ def _next_invoice_no(db: Session) -> str:
 
 
 def _replace_items(db: Session, invoice: Invoice, body, user_id: int | None = None) -> None:
+    # re-saving an invoice must not inflate use_count of already-referenced products
+    prior_custom_ids = {item.custom_product_id for item in invoice.items if item.custom_product_id}
+    has_custom = any(
+        p.item_type == "custom" and _custom_line_complete(p) for p in body.items
+    )
+    okki_rows = product_service.load_okki_rows(db) if has_custom else None
     invoice.items.clear()
     for idx, payload in enumerate(body.items, start=1):
         item = InvoiceItem(
@@ -205,7 +218,7 @@ def _replace_items(db: Session, invoice: Invoice, body, user_id: int | None = No
             quantity=payload.quantity,
             price_per_piece=payload.price_per_piece,
         )
-        if payload.item_type == "custom":
+        if payload.item_type == "custom" and _custom_line_complete(payload):
             resolved = product_service.ensure_custom_product(
                 db,
                 product_display=payload.product_display,
@@ -214,12 +227,17 @@ def _replace_items(db: Session, invoice: Invoice, body, user_id: int | None = No
                 size=payload.length,
                 unit=payload.net_weight_grams,
                 user_id=user_id,
+                okki_rows=okki_rows,
+                skip_bump_ids=prior_custom_ids,
             )
             item.custom_product_id = resolved["custom_product_id"]
             item.product_id = resolved["product_id"]
             item.sku_id = resolved["sku_id"]
             item.product_name = resolved["product_name"] or item.product_name
-            if resolved["source"] == "okki":
+            # Only flip to a stock line when the OKKI product also has a sku:
+            # a stock line without sku_id fails sync validation forever, while
+            # a custom line falls back to the generic product at push time.
+            if resolved["source"] == "okki" and resolved["sku_id"]:
                 item.item_type = "stock"
 
         # Pricing snapshot is authoritative on the server: the client shows the

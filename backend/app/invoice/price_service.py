@@ -78,7 +78,8 @@ def _infer_color_type(code: str) -> str | None:
     upper = code.upper()
     if "TP" in upper:
         return "balayage"
-    if upper.startswith("P"):
+    # piano codes look like P2/8, P18/60: P followed by a digit (not English words like "Pink")
+    if re.match(r"^P\d", upper):
         return "piano"
     # ombre codes look like 4T60 / 5AT60 / 18T60: digits(+letters) then T then digits
     if re.match(r"^\d+[A-Z]*T\d", upper):
@@ -150,7 +151,11 @@ def describe_rule(rule: CustomerPriceRule | None) -> str:
 
 def _lookup_std_price(db: Session, product_display: str, length: str, unit: str, color_type: str) -> StdPrice | None:
     """Prefix-tolerant series match: 'Super Double Drawn Genius' matches
-    display 'Super Double Drawn Genius Weft' and vice versa."""
+    display 'Super Double Drawn Genius Weft' and vice versa.
+
+    Money rule: if more than one distinct series matches, the price is
+    ambiguous — return None (missing) instead of silently picking one.
+    """
     candidates = (
         db.query(StdPrice)
         .filter(
@@ -161,16 +166,20 @@ def _lookup_std_price(db: Session, product_display: str, length: str, unit: str,
         .all()
     )
     display_norm = normalize_text(product_display)
-    best: StdPrice | None = None
-    best_len = -1
+    matched: list[StdPrice] = []
     for row in candidates:
         series_norm = normalize_text(row.series_grade)
         if not series_norm:
             continue
         if display_norm.startswith(series_norm) or series_norm.startswith(display_norm):
-            if len(series_norm) > best_len:
-                best, best_len = row, len(series_norm)
-    return best
+            matched.append(row)
+    if not matched:
+        return None
+    distinct_series = {normalize_text(r.series_grade) for r in matched}
+    if len(distinct_series) > 1:
+        logger.warning("标准价系列匹配歧义 display=%s 命中 %s", product_display, sorted(distinct_series))
+        return None
+    return matched[0]
 
 
 # ── admin CRUD ────────────────────────────────────────────────
@@ -193,11 +202,39 @@ def upsert_std_price(
     price: Decimal,
     currency: str = "USD",
     user_id: int | None = None,
+    price_id: int | None = None,
 ) -> StdPrice:
     if color_type not in COLOR_TYPES:
         raise ValueError(f"color_type 必须是 {COLOR_TYPES}")
     length_n = normalize_length(length)
     unit_n = normalize_text(weight_unit)
+    if price_id:
+        # explicit edit: mutate that row in place so changing a key field
+        # does not leave the old cell behind in the matrix
+        row = db.query(StdPrice).filter(StdPrice.id == price_id).first()
+        if not row:
+            raise ValueError("价格记录不存在")
+        duplicate = (
+            db.query(StdPrice)
+            .filter(
+                StdPrice.id != price_id,
+                StdPrice.series_grade == series_grade.strip(),
+                StdPrice.length == length_n,
+                StdPrice.weight_unit == unit_n,
+                StdPrice.color_type == color_type,
+            )
+            .first()
+        )
+        if duplicate:
+            raise ValueError("同键价格已存在，请直接编辑那一行")
+        row.series_grade = series_grade.strip()
+        row.length = length_n
+        row.weight_unit = unit_n
+        row.color_type = color_type
+        row.price = price
+        row.currency = currency
+        row.updated_by = user_id
+        return row
     row = (
         db.query(StdPrice)
         .filter(

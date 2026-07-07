@@ -171,7 +171,7 @@ def build_invoice_pdf(invoice: Invoice) -> BytesIO:
     for item in invoice.items[:28]:
         product = (item.product_display or item.product_name or "")[:24]
         row = (
-            f"{product} | {item.model} | {item.color} | {item.length} | "
+            f"{product} | {item.model or ''} | {item.color} | {item.length} | "
             f"{item.quantity} | {item.price_per_piece or ''} | {item.total_price or ''}"
         )
         lines.append((row[:105], 50, y, 8))

@@ -101,11 +101,11 @@
                 <el-icon><Edit /></el-icon>
                 编辑
               </el-button>
-              <el-button link @click="exportExcel(row.id)">
+              <el-button link @click="exportExcel(row)">
                 <el-icon><Download /></el-icon>
                 Excel
               </el-button>
-              <el-button link @click="exportPdf(row.id)">
+              <el-button link @click="exportPdf(row)">
                 <el-icon><Download /></el-icon>
                 PDF
               </el-button>
@@ -113,7 +113,7 @@
                 <el-icon><Printer /></el-icon>
                 打印
               </el-button>
-              <el-button link type="warning" @click="validateAndSync(row.id)">
+              <el-button v-permission="'invoice:sync'" link type="warning" @click="validateAndSync(row.id)">
                 <el-icon><Refresh /></el-icon>
                 同步
               </el-button>
@@ -364,9 +364,14 @@
                 </template>
               </el-table-column>
 
-              <el-table-column label="标准价" min-width="110" max-width="150" align="right">
+              <el-table-column label="标准价" min-width="120" max-width="170" align="right">
                 <template #default="{ row }">
-                  <span v-if="row.standard_price != null" class="std-price">{{ money4(row.standard_price) }}</span>
+                  <span v-if="row.standard_price != null" class="std-price">
+                    {{ money4(row.standard_price) }}
+                    <el-tooltip v-if="row.color_type_source === 'inferred'" content="该色号未登记色型映射，价格按命名规则推断的色型取得，请人工核对">
+                      <el-tag size="small" type="warning" effect="plain">色型推断</el-tag>
+                    </el-tooltip>
+                  </span>
                   <el-tag v-else size="small" type="warning" effect="plain">无标准价</el-tag>
                 </template>
               </el-table-column>
@@ -435,8 +440,8 @@
           </div>
           <div>
             <el-button @click="drawerVisible = false">取消</el-button>
-            <el-button @click="saveDraft">保存</el-button>
-            <el-button type="primary" @click="saveAndValidate">保存并校验</el-button>
+            <el-button v-permission="'invoice:write'" @click="saveDraft">保存</el-button>
+            <el-button v-permission="'invoice:write'" type="primary" @click="saveAndValidate">保存并校验</el-button>
           </div>
         </div>
       </template>
@@ -451,7 +456,7 @@ import { Delete, Download, Edit, Plus, Printer, Refresh, Search } from '@element
 import {
   downloadInvoiceExcel,
   downloadInvoicePdf,
-  getInvoicePrintUrl,
+  fetchInvoicePrintHtml,
   listInvoices,
   syncInvoice,
   validateInvoice,
@@ -537,14 +542,14 @@ async function validateAndSync(id) {
   loadInvoices()
 }
 
-async function exportExcel(id) {
-  const res = await downloadInvoiceExcel(id)
-  downloadBlob(res, 'invoice.xlsx')
+async function exportExcel(row) {
+  const res = await downloadInvoiceExcel(row.id)
+  downloadBlob(res, `${row.invoice_no || 'invoice'}.xlsx`)
 }
 
-async function exportPdf(id) {
-  const res = await downloadInvoicePdf(id)
-  downloadBlob(res, 'invoice.pdf')
+async function exportPdf(row) {
+  const res = await downloadInvoicePdf(row.id)
+  downloadBlob(res, `${row.invoice_no || 'invoice'}.pdf`)
 }
 
 function downloadBlob(res, fallbackName) {
@@ -557,8 +562,13 @@ function downloadBlob(res, fallbackName) {
   URL.revokeObjectURL(url)
 }
 
-function openPrint(id) {
-  window.open(getInvoicePrintUrl(id), '_blank')
+async function openPrint(id) {
+  // 新标签直连后端会因不带 Authorization 而 403，先鉴权取回 HTML 再本地打开
+  const html = await fetchInvoicePrintHtml(id)
+  const blob = new Blob([html], { type: 'text/html' })
+  const url = URL.createObjectURL(blob)
+  window.open(url, '_blank')
+  setTimeout(() => URL.revokeObjectURL(url), 60000)
 }
 
 function money(value) {

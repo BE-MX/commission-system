@@ -79,6 +79,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
       quantity: Number(line.quantity || 1),
       standard_price: line.standard_price == null ? null : Number(line.standard_price),
       customer_price: line.customer_price == null ? null : Number(line.customer_price),
+      color_type_source: line.color_type_source || '',
       price_per_piece: line.price_per_piece == null ? null : Number(line.price_per_piece),
       total_price: Number(line.total_price || 0),
       price_source: line.price_source || 'manual',
@@ -229,6 +230,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     })
     row.standard_price = res.standard_price == null ? null : Number(res.standard_price)
     row.customer_price = res.customer_price == null ? null : Number(res.customer_price)
+    row.color_type_source = res.color_type_source || ''
     if (row.customer_price != null) {
       row.price_per_piece = row.customer_price
       row.price_source = 'customer_rule'
@@ -246,7 +248,8 @@ export function useInvoiceEditor({ onSaved } = {}) {
   }
 
   function updateLineTotal(row) {
-    row.total_price = Number(row.quantity || 0) * Number(row.price_per_piece || 0)
+    // 与后端 Decimal ROUND_HALF_UP 口径对齐，避免浮点差 1 分
+    row.total_price = Math.round(Number(row.quantity || 0) * Number(row.price_per_piece || 0) * 100) / 100
   }
 
   // ── 保存 ────────────────────────────────────────────
@@ -305,14 +308,13 @@ export function useInvoiceEditor({ onSaved } = {}) {
   }
 
   async function saveAndValidate() {
-    await saveDraft()
+    await saveDraft() // saveDraft 内已触发 onSaved 刷新列表
     const res = await validateInvoice(form.id)
     if (res.ok) {
       ElMessage.success('校验通过，可以同步小满')
     } else {
       showIssues(res.issues)
     }
-    onSaved?.()
   }
 
   function showIssues(issues = []) {

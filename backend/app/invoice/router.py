@@ -120,6 +120,7 @@ def list_std_prices(
 
 
 class StdPricePayload(BaseModel):
+    id: int | None = None
     series_grade: str = Field(..., max_length=128)
     length: str = Field(..., max_length=32)
     weight_unit: str = Field(..., max_length=32)
@@ -134,16 +135,20 @@ def upsert_std_price(
     db: Session = Depends(get_db),
     current_user=Depends(require_permission("invoice:admin")),
 ):
-    price_service.upsert_std_price(
-        db,
-        series_grade=body.series_grade,
-        length=body.length,
-        weight_unit=body.weight_unit,
-        color_type=body.color_type,
-        price=body.price,
-        currency=body.currency,
-        user_id=_user_id(current_user),
-    )
+    try:
+        price_service.upsert_std_price(
+            db,
+            series_grade=body.series_grade,
+            length=body.length,
+            weight_unit=body.weight_unit,
+            color_type=body.color_type,
+            price=body.price,
+            currency=body.currency,
+            user_id=_user_id(current_user),
+            price_id=body.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
     db.commit()
     return ok(message="已保存")
 
@@ -332,7 +337,8 @@ def update_invoice(
 def validate_invoice(
     invoice_id: int,
     db: Session = Depends(get_db),
-    _user=Depends(_READ_OR_WRITE),
+    # mutates invoice.status -> read-only users must not reach it
+    _user=Depends(require_any_permission("invoice:write", "invoice:sync")),
 ):
     invoice = service.get_invoice(db, invoice_id)
     if not invoice:

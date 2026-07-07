@@ -226,7 +226,12 @@ def get_entry_options(db: Session) -> dict[str, list[str]]:
     return options
 
 
-def _load_okki_rows(db: Session) -> list:
+def load_okki_rows(db: Session) -> list:
+    """Attribute projection of okki_products for in-memory matching.
+
+    Deterministic ORDER BY so a future >10000-row library degrades loudly
+    (newest products first) instead of randomly.
+    """
     schema = _schema()
     product_columns = _table_columns(db, "okki_products")
     if not {"color", "size", "unit", "product_id"}.issubset(product_columns):
@@ -236,7 +241,8 @@ def _load_okki_rows(db: Session) -> list:
         SELECT p.product_id, {name_expr} AS product_name, p.color, p.size, p.unit
         FROM `{schema}`.okki_products p
         WHERE {_disable_filter("okki_products", product_columns, alias="p")}
-        LIMIT 5000
+        ORDER BY p.product_id DESC
+        LIMIT 10000
     """)).mappings().all()
 
 
@@ -253,7 +259,7 @@ def find_okki_by_attributes(
 
     Returns the mapped row only when the match is unique; ambiguity returns None.
     """
-    rows = okki_rows if okki_rows is not None else _load_okki_rows(db)
+    rows = okki_rows if okki_rows is not None else load_okki_rows(db)
 
     want = (
         normalize_text(product_display),
@@ -299,34 +305,52 @@ def ensure_custom_product(
     size: str,
     unit: str,
     user_id: int | None = None,
+    okki_rows: list | None = None,
+    skip_bump_ids: set[int] | None = None,
 ) -> dict:
     """Resolve a free-form production line to a product identity.
 
     1. Unique okki match -> use the real cloud product (no local row needed).
-    2. Existing custom row (by match_key) -> reuse, bump use_count.
-    3. Otherwise insert a new ark_custom_products row.
+    2. Existing custom row (by match_key) -> reuse; bump use_count unless the
+       row id is in skip_bump_ids (re-saving the same invoice must not inflate it).
+    3. Otherwise insert a new ark_custom_products row (savepoint-guarded so a
+       concurrent insert of the same match_key degrades to reuse, not a 500).
     """
-    okki = find_okki_by_attributes(db, product_display=product_display, color=color, size=size, unit=unit)
+    if not all(str(v or "").strip() for v in (product_display, color, size, unit)):
+        raise ValueError("自定义产品必须填写 Product/Color/Length/Unit")
+
+    okki = find_okki_by_attributes(
+        db, product_display=product_display, color=color, size=size, unit=unit, okki_rows=okki_rows
+    )
     if okki:
         return {"source": "okki", "custom_product_id": None, **okki}
 
     key = make_match_key(product_display, model, color, size, unit)
     row = db.query(CustomProduct).filter(CustomProduct.match_key == key).first()
     if row:
-        row.use_count = (row.use_count or 0) + 1
+        if row.id not in (skip_bump_ids or set()):
+            row.use_count = (row.use_count or 0) + 1
     else:
-        row = CustomProduct(
-            match_key=key,
-            product_display=product_display.strip(),
-            product_name=compose_product_name(product_display, size, color, unit),
-            model=(model or "").strip() or None,
-            color=color.strip(),
-            size=size.strip(),
-            unit=unit.strip(),
-            created_by=user_id,
-        )
-        db.add(row)
-        db.flush()
+        try:
+            with db.begin_nested():
+                row = CustomProduct(
+                    match_key=key,
+                    product_display=product_display.strip(),
+                    product_name=compose_product_name(product_display, size, color, unit),
+                    model=(model or "").strip() or None,
+                    color=color.strip(),
+                    size=size.strip(),
+                    unit=unit.strip(),
+                    created_by=user_id,
+                )
+                db.add(row)
+                db.flush()
+        except Exception as exc:  # noqa: BLE001 - unique race: another request inserted the same key
+            logger.warning("custom product 并发插入回退为复用 key=%s: %s", key, exc)
+            print(f"[invoice] custom product insert race, reuse key={key}: {exc}", flush=True)
+            row = db.query(CustomProduct).filter(CustomProduct.match_key == key).first()
+            if row is None:
+                raise
     return {
         "source": "custom",
         "custom_product_id": row.id,
@@ -346,7 +370,7 @@ def reconcile_custom_products(db: Session) -> dict:
     """Backfill okki IDs for custom rows once OKKI officially creates them."""
     pending = db.query(CustomProduct).filter(CustomProduct.okki_product_id.is_(None)).all()
     linked = 0
-    okki_rows = _load_okki_rows(db) if pending else []
+    okki_rows = load_okki_rows(db) if pending else []
     for row in pending:
         okki = find_okki_by_attributes(
             db, product_display=row.product_display, color=row.color, size=row.size, unit=row.unit,
