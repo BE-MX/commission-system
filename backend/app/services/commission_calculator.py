@@ -201,13 +201,13 @@ def void_batch(db: Session, batch_id: int) -> None:
     """
     作废批次：释放回款，明细标记 voided。
 
-    仅 status='calculated' 的批次可作废。
+    status='calculated' 或 'confirming' 的批次可作废。
     """
     batch = db.query(CommissionBatch).filter(CommissionBatch.id == batch_id).first()
     if not batch:
         raise ValueError(f"批次 {batch_id} 不存在")
-    if batch.status != "calculated":
-        raise ValueError(f"批次状态为 '{batch.status}'，只有 'calculated' 可作废")
+    if batch.status not in ("calculated", "confirming"):
+        raise ValueError(f"批次状态为 '{batch.status}'，只有 'calculated'/'confirming' 可作废")
 
     # 删除回款状态标记（释放回款）
     db.query(PaymentCommissionStatus).filter(
@@ -224,17 +224,83 @@ def void_batch(db: Session, batch_id: int) -> None:
     logger.info(f"批次 {batch_id} 已作废")
 
 
-def confirm_batch(db: Session, batch_id: int, confirmed_by: str) -> None:
+def send_confirm(db: Session, batch_id: int) -> dict:
     """
-    确认批次：明细标记 confirmed。
-
-    仅 status='calculated' 的批次可确认。
+    发送确认：批次状态 calculated → confirming，返回涉及的业务员钉钉 ID 列表。
     """
     batch = db.query(CommissionBatch).filter(CommissionBatch.id == batch_id).first()
     if not batch:
         raise ValueError(f"批次 {batch_id} 不存在")
     if batch.status != "calculated":
-        raise ValueError(f"批次状态为 '{batch.status}'，只有 'calculated' 可确认")
+        raise ValueError(f"批次状态为 '{batch.status}'，只有 'calculated' 可发送确认")
+
+    from app.models.business import UserBasic
+    from app.auth.models import ArkUser
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    business_schema = settings.BUSINESS_DB_NAME
+
+    salesperson_ids = (
+        db.query(CommissionDetail.salesperson_id)
+        .filter(
+            CommissionDetail.batch_id == batch_id,
+            CommissionDetail.status != "voided",
+        )
+        .distinct()
+        .all()
+    )
+    sp_ids = [r[0] for r in salesperson_ids]
+
+    dingtalk_ids = []
+    if sp_ids:
+        rows = (
+            db.query(ArkUser.dingtalk_id)
+            .join(UserBasic, ArkUser.real_name == UserBasic.full_name)
+            .filter(
+                UserBasic.user_id.in_(sp_ids),
+                ArkUser.dingtalk_id.isnot(None),
+                ArkUser.dingtalk_id != "",
+                ArkUser.is_active == True,
+                ArkUser.deleted_at.is_(None),
+            )
+            .all()
+        )
+        dingtalk_ids = [r[0] for r in rows]
+
+    batch.status = "confirming"
+    db.flush()
+    logger.info(f"批次 {batch_id} 已发送确认，涉及 {len(dingtalk_ids)} 个钉钉用户")
+
+    return {"batch_name": batch.batch_name, "dingtalk_ids": dingtalk_ids}
+
+
+def revoke_confirm(db: Session, batch_id: int) -> None:
+    """
+    撤销确认：批次状态 confirming → calculated。
+    """
+    batch = db.query(CommissionBatch).filter(CommissionBatch.id == batch_id).first()
+    if not batch:
+        raise ValueError(f"批次 {batch_id} 不存在")
+    if batch.status != "confirming":
+        raise ValueError(f"批次状态为 '{batch.status}'，只有 'confirming' 可撤销确认")
+
+    batch.status = "calculated"
+    db.flush()
+    logger.info(f"批次 {batch_id} 已撤销确认")
+
+
+def confirm_batch(db: Session, batch_id: int, confirmed_by: str) -> None:
+    """
+    确认批次：明细标记 confirmed。
+
+    status='calculated' 或 'confirming' 的批次可确认。
+    """
+    batch = db.query(CommissionBatch).filter(CommissionBatch.id == batch_id).first()
+    if not batch:
+        raise ValueError(f"批次 {batch_id} 不存在")
+    if batch.status not in ("calculated", "confirming"):
+        raise ValueError(f"批次状态为 '{batch.status}'，只有 'calculated'/'confirming' 可确认")
 
     db.query(CommissionDetail).filter(
         CommissionDetail.batch_id == batch_id,

@@ -27,6 +27,14 @@
           <div class="summary-label">总提成</div>
           <div class="summary-value">{{ summary.total_commission?.toFixed(2) }}</div>
         </div>
+        <div class="summary-item">
+          <div class="summary-label">确认进度</div>
+          <div class="summary-value">{{ summary.confirmed_count || 0 }}/{{ summary.expected_confirm_count || 0 }}</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-label">反馈数</div>
+          <div class="summary-value">{{ summary.feedback_count || 0 }}</div>
+        </div>
       </div>
     </div>
 
@@ -114,10 +122,10 @@ const tableData = ref([])
 const loading = ref(false)
 
 function statusType(s) {
-  return { draft: 'info', calculated: '', confirmed: 'success', voided: 'danger' }[s] || 'info'
+  return { draft: 'info', calculated: '', confirming: 'warning', confirmed: 'success', voided: 'danger' }[s] || 'info'
 }
 function statusLabel(s) {
-  return { draft: '草稿', calculated: '已计算', confirmed: '已确认', voided: '已作废' }[s] || s
+  return { draft: '草稿', calculated: '已计算', confirming: '确认中', confirmed: '已确认', voided: '已作废' }[s] || s
 }
 function rateStr(v) {
   return v != null ? (v * 100).toFixed(1) + '%' : '-'
@@ -188,7 +196,7 @@ onMounted(() => {
 }
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(7, 1fr);
   gap: 16px;
 }
 .summary-item {

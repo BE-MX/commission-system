@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 
 
 # 固定比例常量
-SALESPERSON_RATE = Decimal("0.0200")       # 业务员固定 2%
+SALESPERSON_RATE_DEVELOP = Decimal("0.0200")      # 业务员开发 2%
+SALESPERSON_RATE_DISTRIBUTE = Decimal("0.0100")   # 业务员分配 1%
 SUPERVISOR_RATE_DUAL_DEV = Decimal("0.0150")  # 双开发一级主管 1.5%
 SUPERVISOR_RATE_DEFAULT = Decimal("0.0100")   # 默认一级主管 1%
 SUPERVISOR_RATE_ZERO = Decimal("0")
@@ -28,7 +29,7 @@ def calc_commission_rates(
     Returns:
         (salesperson_rate, supervisor_rate, second_supervisor_rate, rule_note)
     """
-    sp_rate = SALESPERSON_RATE
+    sp_rate = SALESPERSON_RATE_DISTRIBUTE if salesperson_attribute == "distribute" else SALESPERSON_RATE_DEVELOP
 
     # 一级主管：无主管 或 主管=业务员
     if not supervisor_id or supervisor_id == salesperson_id:
@@ -64,6 +65,8 @@ def get_employee_attribute_at_date(
     """
     from app.models.employee import EmployeeAttributeHistory
 
+    target_date = to_date(target_date)
+
     if target_date is None:
         row = db.query(EmployeeAttributeHistory).filter(
             EmployeeAttributeHistory.employee_id == employee_id,
@@ -82,11 +85,13 @@ def get_employee_attribute_at_date(
         return None
     if len(records) == 1:
         return records[0].attribute_type
-    if target_date < records[0].effective_start:
+
+    first_start = to_date(records[0].effective_start)
+    if target_date < first_start:
         return records[0].attribute_type
 
     for i, record in enumerate(records):
-        next_start = records[i + 1].effective_start if i + 1 < len(records) else None
+        next_start = to_date(records[i + 1].effective_start) if i + 1 < len(records) else None
         if next_start is None or target_date < next_start:
             return record.attribute_type
 
@@ -102,6 +107,7 @@ def get_employee_attribute_at_date_from_records(
     """
     if not records:
         return None
+    target_date = to_date(target_date)
     if target_date is None:
         for r in records:
             if r.is_current:
@@ -109,11 +115,13 @@ def get_employee_attribute_at_date_from_records(
         return None
     if len(records) == 1:
         return records[0].attribute_type
-    if target_date < records[0].effective_start:
+
+    first_start = to_date(records[0].effective_start)
+    if target_date < first_start:
         return records[0].attribute_type
 
     for i, record in enumerate(records):
-        next_start = records[i + 1].effective_start if i + 1 < len(records) else None
+        next_start = to_date(records[i + 1].effective_start) if i + 1 < len(records) else None
         if next_start is None or target_date < next_start:
             return record.attribute_type
 
