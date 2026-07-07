@@ -16,7 +16,7 @@ _CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "expo_matching.y
 DEFAULT_WEIGHTS = {"face_shape": 30, "skin_tone": 20, "need": 25, "style": 15, "age": 10}
 DEFAULT_TOP_N = 3
 
-_FACE_SHAPE_LABELS = {
+FACE_SHAPE_LABELS = {
     "oval": "鹅蛋脸", "round": "圆脸", "square": "方脸",
     "heart": "瓜子脸", "long": "长脸", "diamond": "菱形脸",
 }
@@ -158,7 +158,7 @@ def build_reason(wig, analysis: dict, reg: dict) -> str:
     parts = []
     face = analysis.get("face_shape")
     if face in _tag_list(tags, "face_shapes"):
-        parts.append(f"版型修饰{_FACE_SHAPE_LABELS.get(face, '脸部')}线条")
+        parts.append(f"版型修饰{FACE_SHAPE_LABELS.get(face, '脸部')}线条")
     skin = analysis.get("skin_tone") or {}
     if skin.get("undertone") in _tag_list(tags, "undertones"):
         parts.append("发色与您的肤色同调")

@@ -166,12 +166,25 @@ def _chat_json(db, preset_name: str, messages: list, retries: int = 1) -> dict:
 
 _ANALYSIS_INSTRUCTION = """请分析照片中人物的面容特征，只输出 JSON（不要任何解释文字），结构如下：
 {"gender":"female|male","age_range":"如 40-50","face_shape":"oval|round|square|heart|long|diamond",
+"face_features":"脸型特征客观描述，40字内",
 "skin_tone":{"depth":"fair|light|medium|tan","undertone":"cool|warm|neutral"},
 "temperament":"知性优雅|减龄轻盈|自然日常|端庄大气|温柔清纯|时尚轻熟","suit_length":"short|bob|shoulder|long",
 "display_notes":"一句对顾客友好的正面描述，30字内",
 "internal":{"hair_condition":"发量正常|发缝偏稀|头顶稀疏|白发比例高","sales_note":"给销售的一句建议"},
 "confidence":0.9}
-注意：display_notes 只写正面特征；发量/头皮的判断只写进 internal。
+
+face_shape 判定流程：先观察三个量——①脸长与脸宽的比例 ②额头/颧骨/下颌三段的宽度关系 ③下颌线走向与下巴形状，再按下列标准归类：
+- oval 鹅蛋脸：脸长约为脸宽 1.3~1.5 倍，额头略宽于下颌，下巴圆润自然收窄
+- round 圆脸：脸长与脸宽接近，脸颊饱满，下颌线圆滑无棱角，下巴短圆
+- square 方脸：额头与下颌接近等宽，下颌角外扩明显，下颌线平直硬朗
+- heart 瓜子脸：额头与颧骨明显宽于下颌，脸部线条向下收拢，下巴尖细
+- long 长脸：脸长明显超过脸宽 1.5 倍，中庭偏长，两颊线条平直
+- diamond 菱形脸：颧骨是全脸最宽点，额头与下巴均偏窄，太阳穴略显凹陷
+介于两型之间时选更接近的一型，并在 face_features 中说明（如「偏鹅蛋的轻微长脸」）。
+face_features 用客观中性措辞按「长宽比例→额头→颧骨→下颌线→下巴」的顺序描述观察到的事实
+（如「脸长约为宽的1.4倍，额头适中，颧骨略高，下颌线平缓，下巴圆润」），
+它是发型推荐与销售话术的依据，只描述不评价、不写建议。
+注意：display_notes 只写正面特征；发量/头皮的判断只写进 internal；face_features 不在客户屏展示，如实描述即可。
 输出必须是严格合法 JSON：字符串值内部禁止英文双引号，需要引用词语用中文引号「」。"""
 
 
@@ -563,6 +576,31 @@ def _audience_tags(session: ExpoSession) -> list[str]:
     return tags
 
 
+def _tried_wigs_block(session: ExpoSession) -> str:
+    """本次试戴发型的真实特征清单——话术生成的唯一事实来源。
+
+    特征/卖点来自发型库，匹配理由来自规则引擎，三者都可解释可追溯；
+    没进清单的细节话术一律不许提，防止模型给发型编造不存在的特征。
+    """
+    reason_map = {
+        item.get("wig_id"): item.get("reason") or ""
+        for item in (session.matched_wig_ids or [])
+        if isinstance(item, dict)
+    }
+    lines, seen = [], set()
+    for r in session.results:
+        wig = r.wig
+        if wig is None or wig.id in seen:
+            continue
+        seen.add(wig.id)
+        mark = "【客户心动】" if r.reaction == "loved" else ""
+        line = f"- {mark}{wig.name}：特征={wig.wig_description or '无'}；卖点={wig.selling_points or '无'}"
+        if reason_map.get(wig.id):
+            line += f"；匹配理由={reason_map[wig.id]}"
+        lines.append(line)
+    return "\n".join(lines)
+
+
 def _run_strategy(session_id: int) -> None:
     db = SessionLocal()
     try:
@@ -575,12 +613,18 @@ def _run_strategy(session_id: int) -> None:
         def fmt(items):
             return "\n".join(f"- [{s.title}] {s.content}" for s in items)
 
+        analysis = session.analysis_json or {}
+        face_label = matching.FACE_SHAPE_LABELS.get(
+            analysis.get("face_shape"), analysis.get("face_shape") or "未知"
+        )
         context = (
             f"客户：{session.customer.name}，最关心：{session.customer.primary_need}，"
             f"风格偏好：{session.customer.style_pref}\n"
+            f"客户脸型：{face_label}；脸型特征：{analysis.get('face_features') or '无补充描述'}\n"
             f"面容分析：{json.dumps(public_analysis(session.analysis_json), ensure_ascii=False)}\n"
             f"内部发况（仅供话术参考，不得在话术中直说负面）："
-            f"{json.dumps((session.analysis_json or {}).get('internal') or {}, ensure_ascii=False)}\n"
+            f"{json.dumps(analysis.get('internal') or {}, ensure_ascii=False)}\n"
+            f"本次试戴的推荐发型（话术的唯一事实来源）：\n{_tried_wigs_block(session) or '- 无'}\n"
             f"客户心动款：{[r.wig.name for r in session.results if r.reaction == 'loved' and r.wig]}\n\n"
             f"可用话术素材：\n开场（情感线）：\n{fmt(materials['openers'])}\n"
             f"逼单（理性/身份线）：\n{fmt(materials['closers'])}\n"
@@ -588,7 +632,13 @@ def _run_strategy(session_id: int) -> None:
             f"可引用证据（只许用这些事实，不许自编数据）："
             f"{json.dumps(script_service.EVIDENCE_POINTS, ensure_ascii=False)}\n\n"
             '请输出 JSON：{"opener":"情感线开场话术，口语化2-3句","followup":"理性线跟进要点，2-3句",'
-            '"objections":[{"q":"客户可能的问题","a":"应对"}]}（恰好 2 条 objections）'
+            '"objections":[{"q":"客户可能的问题","a":"应对"}]}（恰好 2 条 objections）\n'
+            "硬性要求：\n"
+            "1. opener 必须点名一款推荐发型（有心动款优先选心动款），并把该发型的具体特征与客户脸型"
+            "特征做因果挂钩，讲清「这个特征为什么修饰这种脸型」（例：内扣发尾贴合下颌线，刚好柔化圆脸轮廓）；\n"
+            "2. followup 围绕所点名发型的特征、卖点与可引用证据展开，不写与发型无关的泛泛赞美；\n"
+            "3. 发型细节只能引用上面「推荐发型」清单里明确写到的内容——清单没提刘海就不许说刘海，"
+            "没提发色就不许说发色，禁止杜撰发型不具备的特征。"
         )
         strategy = _generate_checked_strategy(db, context)
         session.strategy_json = strategy
