@@ -49,3 +49,6 @@ backend/reference.docx
 
 # OpenWolf 运行时状态（本机记忆，不入库）
 .wolf/
+
+# 运行时上传文件（含展会客户照片，隐私敏感，不入库）
+/uploads/
