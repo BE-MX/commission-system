@@ -50,17 +50,23 @@
   - 选项端点：`GET /hair-colors`（发色库列表，`?only_active=0` 管理端取全量；048 起独立表 ark_expo_hair_colors，不再复用 ark_color_palette）、`GET /scenes`（场景大片可选场景 key/label/tagline）
   - 管理端：`/wigs` CRUD + `/wigs/upload-photo`（发型库）、`/hair-colors` POST/PUT + `/hair-colors/upload-swatch`（发色库，上传色板图自动提取主色 hex；expo:admin）、`/scripts` CRUD + `POST /scripts/seed`（话术卡库，写入时禁用词强校验）、`/leads` 线索台、`DELETE /customers/{id}`（照片物理删除）
   - H5 kiosk：`/expo/kiosk` 全屏路由（router/index.js 顶层注册，不走 MainLayout）；匹配权重 `config/expo_matching.yaml`；上传文件锚定 REPO_ROOT/uploads/expo（存库相对路径）
-- `/api/invoice` — 订单发票管理（`invoice/router.py`，需 `invoice:read/write/sync`）
+- `/api/invoice` — 订单发票管理（`invoice/router.py`，需 `invoice:read/write/sync/admin`；049 起全部端点走 `ok()` 信封）
   - `GET /customers/search` — 客户搜索（invoice:read/write）
-  - `GET /products/filter-options` — 产品级联筛选项（model→color→size→unit）
+  - `GET /products/filter-options` — 产品级联筛选项（model→color→size→unit，库存单用）
   - `GET /products/match` — 按 model/color/size/unit 精确匹配产品
-  - `GET /invoices` — 发票列表（分页+搜索+状态筛选）
-  - `POST /invoices` — 创建发票（含明细行）
+  - `GET /products/entry-options` — 生产单自由录入候选值（okki UNION ark_custom_products，含 displays）
+  - `GET /custom-products` — 沉淀产品列表；`POST /custom-products/reconcile` — 与 okki 产品库对账回填（invoice:admin）
+  - `GET /price/resolve` — 取价（标准价+客户价+色型+规则描述，参数 customer_id/product_display/length/unit/color）
+  - `GET|POST|DELETE /price/std` — 标准价矩阵 CRUD；`POST /price/import` — 导入基础价格表 Excel（价格表+颜色对照表两 sheet，invoice:admin）
+  - `GET|POST|DELETE /price/color-types` — 色号→色型映射（solid/piano/ombre/balayage）
+  - `GET|POST|DELETE /price/customer-rules` — 客户价格规则（fixed/percent 二选一，有符号）；`GET /price/customer-rules/by-customer/{id}` — 单客户规则
+  - `GET /invoices` — 发票列表（分页+搜索+状态+order_type 筛选）
+  - `POST /invoices` — 创建发票（order_type stock/production；custom 明细自动沉淀产品并服务端定价快照）
   - `GET /invoices/{id}` — 发票详情
-  - `PUT /invoices/{id}` — 更新发票
+  - `PUT /invoices/{id}` — 更新发票（order_type 创建后不可改）
   - `POST /invoices/{id}/validate` — 同步前校验
-  - `POST /invoices/{id}/sync` — 同步到小满（预留，当前返回校验结果）
-  - `GET /invoices/{id}/export/excel` — 导出 Excel
+  - `POST /invoices/{id}/sync` — 同步到小满（Phase 2 待接 token，当前返回校验结果）
+  - `GET /invoices/{id}/export/excel` — 导出 Excel（含 To/From 头块与费用区）
   - `GET /invoices/{id}/export/print` — 打印用 HTML
   - `GET /invoices/{id}/export/pdf` — 导出 PDF
 - `/api/auth` — 登录/刷新 token / 当前用户信息 / 退出登录（`auth/router.py`）

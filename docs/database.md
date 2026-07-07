@@ -92,9 +92,15 @@
   - `commission_batch` — status ENUM 新增 `confirming`（draft/calculated/confirming/confirmed/voided）
   - `commission_batch_feedback` — 业务员反馈（batch_id FK, ark_user_id, user_name, business_user_ids, content TEXT）；`(batch_id)` + `(ark_user_id)` 索引
   - `commission_batch_confirmation` — 业务员确认（batch_id FK, ark_user_id, user_name, business_user_ids, confirmation_text, status confirmed/revoked）；`(batch_id, ark_user_id)` 唯一约束
-- **订单发票（2 张表，044 迁移）**：
-  - `ark_invoices` — 发票主表（invoice_no UNIQUE, customer_id, customer_name, invoice_date, currency, status draft/ready/synced/sync_failed, total_amount, xiaoman_order_id/no, sync_status/error/synced_at, created_by/updated_by）
-  - `ark_invoice_items` — 发票明细（invoice_id FK CASCADE, sort_order, product_id, sku_id, product_name, product_display, net_weight_grams, curl, model, color, length, quantity, price_per_piece, total_price, price_source manual/last_order/synced）
+- **订单发票（8 张表，044 迁移 + 049 扩展）**：
+  - `ark_invoices` — 发票主表（invoice_no UNIQUE, order_type stock/production, customer_id/name, 联系人快照 contact_name/phone/email + delivery_address, 业务员快照 sales_user_id/name/phone/email, invoice_date, currency, status draft/ready/synced/sync_failed, express_channel/shipping_fee/surcharge_name/surcharge_amount/payment_term, product_amount+total_amount, internal_* 内部结算 6 字段, xiaoman_order_id/no, sync_status/error/synced_at）
+  - `ark_invoice_items` — 发票明细（invoice_id FK CASCADE, item_type stock/custom, product_id 可空, sku_id, custom_product_id, product_name/display, net_weight_grams, curl, model 可空, color, length, quantity, standard_price+customer_price 双价快照, price_per_piece, total_price, price_source customer_rule/manual/missing_std, xiaoman_unique_id）
+  - `ark_custom_products`（049）— 生产单沉淀产品（match_key UNIQUE=归一化 display|model|color|size|unit, product_display/name, model/color/size/unit, okki_product_id/okki_sku_id 对账回填, use_count）；**okki_products 保持只读，本地产品一律进此表**
+  - `ark_price_color_types`（049）— 色号→色型（color_code UNIQUE 归一化小写无#, color_type solid/piano/ombre/balayage）
+  - `ark_std_prices`（049）— 标准价矩阵（series_grade+length+weight_unit+color_type UNIQUE, price, currency）
+  - `ark_customer_price_rules`（049）— 客户调价规则（customer_id UNIQUE, adjust_type fixed/percent, adjust_value 有符号, enabled, preferred_template）
+  - `ark_invoice_sync_logs`（049）— OKKI 推送日志（invoice_id FK CASCADE, action, success, request_digest/response_body/error_message, operator_id）
+  - `ark_xiaoman_settings`（049）— OKKI 推送配置单行表（generic_product_no/id/sku_id 通用产品, default_order_status, default_currency, access_token）
 - **展会 AI 试戴（7 张表，045 迁移；047 加发色/场景；048 加发色库）**：
   - `ark_expo_customers` — 试戴客户（name 称呼, phone, wechat_id, primary_need volume/gray_cover/style_change, style_pref, **consent_at 非空才允许存照片**, expo_code 届次）
   - `ark_expo_wigs` — 发型库（model_no UNIQUE, series classic/zhizhen 驱动至臻锚点, angle_photos JSON, composite_prompt, fit_tags JSON, evidence_refs JSON, priority）
