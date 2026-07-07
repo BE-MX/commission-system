@@ -76,7 +76,7 @@ def _image_prompt_snapshot(prompt: str, images: list[ImageInput]) -> str:
     )
 
 
-def _image_params(preset: AiPreset, prompt: str) -> dict:
+def _image_params(preset: AiPreset, prompt: str, size: Optional[str] = None) -> dict:
     params = {
         "model": preset.model,
         "prompt": prompt,
@@ -84,6 +84,8 @@ def _image_params(preset: AiPreset, prompt: str) -> dict:
     for key, value in (preset.parameters or {}).items():
         if key in IMAGE_PARAMETER_KEYS:
             params[key] = value
+    if size:  # 请求级尺寸覆盖 preset 配置（如 expo 竖版/横版按场景切换）
+        params["size"] = size
     return params
 
 
@@ -124,6 +126,7 @@ def edit_image(
     images: list[ImageInput],
     caller_module: str,
     caller_user_id: Optional[int] = None,
+    size: Optional[str] = None,
 ) -> dict:
     """Call an OpenAI-compatible image edit endpoint and return an image URL/data URL."""
     preset, provider = _get_enabled_direct_preset(db, preset_name)
@@ -165,7 +168,7 @@ def edit_image(
                 response = client.post(
                     url,
                     headers=headers,
-                    data=_image_params(preset, prompt),
+                    data=_image_params(preset, prompt, size),
                     files=files,
                 )
             except httpx.ReadTimeout as exc:

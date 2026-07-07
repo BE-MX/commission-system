@@ -267,7 +267,20 @@ _TRYON_STYLE_TAIL = (
     "artificiality, no heavy filter grading - one real moment of daily life."
 )
 
-# tryon 可选生成场景（不选=原景）；光源方向显式声明，发丝受光跟随场景
+# 输出规格：6 寸照片。单场景竖版 102×152mm（2:3 → 1024x1536）；
+# 多场景合一横版 152×102mm（3:2 → 1536x1024）。size 走 /v1/images/edits 请求参数，
+# prompt 内的规格文字只是二重锚定，真正的像素约束靠 size 参数
+_SIZE_PORTRAIT = "1024x1536"
+_SIZE_LANDSCAPE = "1536x1024"
+_PORTRAIT_SPEC_CLAUSE = (
+    " Output exactly one 6-inch portrait photo, 102x152mm, 2:3 vertical aspect ratio."
+)
+
+TRYON_SCENE_MULTI_KEY = "multi"
+
+# tryon 可选生成场景（不选=原景）；光源方向显式声明，发丝受光跟随场景。
+# multi=多场景合一：一张横版三联图（2026-07-07 重新引入——早先三格因 ELBNT 网关
+# 504 回退，现 Provider 已切换且为可选项，单图慢不阻塞主路径）
 TRYON_SCENES = [
     {"key": "home", "label": "居家", "tagline": "温馨日常",
      "prompt": ("a cozy living room beside a sofa, warm afternoon window light from "
@@ -278,11 +291,73 @@ TRYON_SCENES = [
     {"key": "gathering", "label": "聚会", "tagline": "晚间光彩",
      "prompt": ("an evening dinner party, warm pendant light overhead as the key "
                 "light, golden bokeh of string lights and candles behind")},
+    {"key": TRYON_SCENE_MULTI_KEY, "label": "多场景合一", "tagline": "居家·办公·聚会 三景同框",
+     "prompt": ""},  # multi 走 _build_multi_scene_prompt 整体替换，不用子句
 ]
 
 
 def resolve_tryon_scene(key: str | None) -> dict | None:
     return next((s for s in TRYON_SCENES if s["key"] == key), None)
+
+
+# 多场景合一：完整替换式 prompt（用户定稿 2026-07-07，锚场色机魂结构）。
+# {subject_anchor}/{color_anchor} 按实际参考图与色板动态拼装，其余文字保持定稿原文
+_MULTI_SCENE_PROMPT = """【输出规格 · 总纲】
+仅生成一张6寸152*102mm横版图片。这是一次性的单张生成任务，不是多张图片的组合：在同一画布上采用三联式构图，从左至右划分为三个等宽区域，各占画面宽度的 1/3。区域之间无边框、无分割线，仅靠各区域场景本身的明暗与色温过渡自然区分。
+
+【锚 · 主体锁定】
+{subject_anchor}{color_anchor}人物的面部轮廓、五官、表情、肤色、体态保持与图1完全一致，不做任何美化改变。妆容为自然淡妆。发际线过渡自然逼真，鬓角与颈后碎发有真实的生长感。画面内三个区域中出现的均为同一人物，其身份、发型、发色、妆容在整张图中严格统一。
+
+【场 · 场景空间】
+在这一张图的三个区域中，同一人物依次置身于三个生活场景：
+① 左侧 1/3 区域 · 居家场景 —— 客厅沙发旁，午后窗光从人物左前方射入，暖白色调，背景有绿植与木质家具的柔和虚化；
+② 中间 1/3 区域 · 办公场景 —— 明亮办公室工位或会议区，顶部柔和日光灯为主光源，人物面前笔记本屏幕有微弱补光，背景是虚化的玻璃隔断与同事身影；
+③ 右侧 1/3 区域 · 聚会场景 —— 傍晚餐厅或朋友聚会包间，头顶暖色吊灯为主光源，背景有串灯与烛光形成的金色光斑虚化，氛围热闹松弛。
+每个区域中人物的发丝受光方向必须与该区域光源方向一致，发丝有真实的高光与阴影层次，人物与环境自然融合，无贴图感、无出画感。
+
+【色 · 视觉风格】
+高清写实的原相机直出照片质感：皮肤有真实毛孔与细腻纹理，发丝根根分明、光泽自然；色彩还原真实，白平衡随各区域光源自然变化但肤色在整张图中始终统一。
+排除：过度磨皮、塑料感皮肤、油画感、插画感、AI 生成痕迹、发际线生硬、假发头套感、脱离环境光的悬浮感、过度饱和的滤镜调色、区域间生硬的直线拼缝感。
+
+【机 · 摄像语言】
+85mm 人像镜头视角，三个区域均为胸部以上半身构图，浅景深背景虚化，对焦锁定人物面部与发丝；三个区域机位高度一致、人物占比一致，如同一位摄影师在三个场合为同一人随手拍下的生活照，无摆拍感。
+
+【魂 · 创作目标】
+同一位顾客戴上这款假发后，自然走进她生活里的三个日常瞬间——让她看到"这就是我明天的样子"，真实、自信、毫不违和。"""
+
+
+def _build_multi_scene_prompt(
+    wig: ExpoWig, refs_count: int, color: dict | None, with_swatch: bool,
+) -> str:
+    """多场景合一 prompt：定稿模板 + 按实际送图数量/色板有无动态拼装锚点句。"""
+    swatch_note = "，最后一张为发色色板图" if with_swatch else ""
+    if refs_count > 0:
+        angles = "正面、左45度3/4侧面、右侧视角" if refs_count == 3 else "多角度"
+        ref_span = "图2" if refs_count == 1 else f"图2-{refs_count + 1}"
+        subject_anchor = (
+            f"图1为顾客本人照片，{ref_span}为假发发型参考图（{angles}）{swatch_note}。"
+            "将图1人物的头发替换为参考图中模特佩戴的假发款式，发型的长度、层次、刘海形态、"
+            "蓬松度与参考图完全一致；"
+        )
+    else:
+        subject_anchor = (
+            f"图1为顾客本人照片{swatch_note}。将图1人物的头发替换为这款假发"
+            f"（无参考图，严格按以下描述执行）：{wig.wig_description or wig.name}。"
+            "发型的长度、层次、刘海形态、蓬松度与描述完全一致；"
+        )
+
+    if with_swatch:
+        color_anchor = "发色以色板图为唯一基准。"
+    elif color:
+        desc = (color.get("description") or "").strip()
+        color_anchor = (
+            f"发色为「{color.get('name') or ''}」（色号 {color.get('code') or ''}）"
+            + (f"：{desc}。" if desc else "。")
+        )
+    else:
+        color_anchor = "发色与假发款式的原本颜色保持一致。"
+
+    return _MULTI_SCENE_PROMPT.format(subject_anchor=subject_anchor, color_anchor=color_anchor)
 
 # 发色注入合成 prompt，来源 ark_expo_hair_colors 快照。
 # 有色板图时把它作为最后一张参考图随图送入模型，描述与图互为锚点；无图时退化为纯文本描述
@@ -426,24 +501,37 @@ def _start_batch(session_id: int, rows: list[ExpoResult]) -> None:
         threading.Thread(target=_run_composite, args=(session_id, result_id), daemon=True).start()
 
 
-def _build_prompt(session: ExpoSession, row: ExpoResult, wig: ExpoWig | None) -> tuple[str, list[Path]]:
-    """按 result 形态组装 prompt 与图片。
+def _build_prompt(
+    session: ExpoSession, row: ExpoResult, wig: ExpoWig | None,
+) -> tuple[str, list[Path], str | None]:
+    """按 result 形态组装 (prompt, 图片, 输出尺寸)。
 
-    分支按 wig_id 判定：无发型=scene 模式（佩戴实拍置换场景）；
-    有发型=tryon 换发，scene_json 此时是可选的生成场景（原景/居家/办公/聚会）。
+    分支按 wig_id 判定：无发型=scene 模式（佩戴实拍置换场景，尺寸沿用 preset 默认）；
+    有发型=tryon 换发（竖版 6 寸），scene_json 是可选生成场景（原景/居家/办公/聚会/
+    多场景合一——multi 为完整替换式 prompt，输出横版 6 寸三联图）。
     """
     if row.wig_id is None and row.scene_json:
         scene = next((s for s in SCENES if s["key"] == row.scene_json.get("key")), None)
         prompt = _SCENE_TEMPLATE.format(scene=scene["prompt"] if scene else row.scene_json.get("label", ""))
-        return prompt, [to_abs(session.photo_path)]
+        return prompt, [to_abs(session.photo_path)], None
 
     # 多角度参考图取前 3 张（正面/45度/侧面），与模板的 multiple angles 声明对应
     refs = [to_abs(p) for p in (wig.angle_photos or [])[:3] if to_abs(p).exists()]
     if not refs and wig.cover_path and to_abs(wig.cover_path).exists():
         refs = [to_abs(wig.cover_path)]
-    # 三图合成：自拍 + 发型参考图 + 色板图（色板图固定放末位，与 prompt 的 LAST 指代对齐）
+    # 三图合成：自拍 + 发型参考图 + 色板图（色板图固定放末位，与 prompt 的 LAST/最后一张 指代对齐）
     swatch = _color_swatch_path(row.hair_color_json)
+    images = [to_abs(session.photo_path), *refs]
+    if swatch:
+        images.append(swatch)
+
     tryon_scene = resolve_tryon_scene((row.scene_json or {}).get("key"))
+    if tryon_scene and tryon_scene["key"] == TRYON_SCENE_MULTI_KEY:
+        prompt = _build_multi_scene_prompt(
+            wig, len(refs), row.hair_color_json, with_swatch=swatch is not None,
+        )
+        return prompt, images, _SIZE_LANDSCAPE
+
     scene_clause = (
         _TRYON_SCENE_CLAUSE.format(scene=tryon_scene["prompt"]) if tryon_scene
         else _TRYON_KEEP_BG_CLAUSE
@@ -456,11 +544,9 @@ def _build_prompt(session: ExpoSession, row: ExpoResult, wig: ExpoWig | None) ->
         + _color_clause(row.hair_color_json, with_swatch=swatch is not None)
         + scene_clause
         + _TRYON_STYLE_TAIL
+        + _PORTRAIT_SPEC_CLAUSE
     )
-    images = [to_abs(session.photo_path), *refs]
-    if swatch:
-        images.append(swatch)
-    return prompt, images
+    return prompt, images, _SIZE_PORTRAIT
 
 
 def _run_composite(session_id: int, result_id: int) -> None:
@@ -473,13 +559,14 @@ def _run_composite(session_id: int, result_id: int) -> None:
         session = db.get(ExpoSession, session_id)
         wig = db.get(ExpoWig, row.wig_id) if row.wig_id else None
 
-        prompt, images = _build_prompt(session, row, wig)
+        prompt, images, size = _build_prompt(session, row, wig)
         result = edit_image(
             db=db,
             preset_name=COMPOSITE_PRESET,
             prompt=prompt,
             images=[_prep_image(path) for path in images],
             caller_module="expo",
+            size=size,
         )
         image_path = _save_result_image(result, result_id)
 
