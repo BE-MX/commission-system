@@ -1,11 +1,13 @@
 """
-数据修复脚本：修复客户归属快照中的业务员属性和比例
+【已废弃 2026-07-08】—— 请勿运行。
 
-修复内容：
-1. 业务员属性为"分配"时比例应为1%（之前错误地写入了2%）
-2. 按员工属性变动时间点（首次回款日期）重新判定业务员属性
+原用途：把"分配"属性的业务员比例修回 1%。
+失效原因：2026-07-08 起业务员比例统一 2%（不再区分开发/分配），
+  calc_commission_rates 已恒返回 2%。本脚本内部走 refresh_snapshots_by_employees
+  → calc_commission_rates，现在实际会把所有人刷成 2%，与下方注释所述完全相反。
+  如需统一刷 2%，用 scripts/unify_salesperson_rate_2pct.py。
 
-执行方式：
+原执行方式（已封禁）：
   cd backend
   python -m scripts.fix_snapshot_rates
 """
@@ -20,6 +22,12 @@ from app.services.customer_reset_service import refresh_snapshots_by_employees
 
 
 def main():
+    print("此脚本已于 2026-07-08 废弃（业务员比例已统一 2%）。")
+    print("如需刷比例请用 scripts/unify_salesperson_rate_2pct.py。")
+    sys.exit(1)
+
+
+def _legacy_main():
     db = SessionLocal()
     try:
         # 先统计当前状态

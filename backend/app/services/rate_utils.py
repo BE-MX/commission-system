@@ -8,8 +8,9 @@ from sqlalchemy.orm import Session
 
 
 # 固定比例常量
-SALESPERSON_RATE_DEVELOP = Decimal("0.0200")      # 业务员开发 2%
-SALESPERSON_RATE_DISTRIBUTE = Decimal("0.0100")   # 业务员分配 1%
+# 业务员提成比例：2026-07-08 起统一 2%，不再区分开发/分配属性
+# （属性仍保留，用于一级主管「双开发」判定，见下方 sv_rate 逻辑）
+SALESPERSON_RATE = Decimal("0.0200")              # 业务员统一 2%
 SUPERVISOR_RATE_DUAL_DEV = Decimal("0.0150")  # 双开发一级主管 1.5%
 SUPERVISOR_RATE_DEFAULT = Decimal("0.0100")   # 默认一级主管 1%
 SUPERVISOR_RATE_ZERO = Decimal("0")
@@ -29,7 +30,8 @@ def calc_commission_rates(
     Returns:
         (salesperson_rate, supervisor_rate, second_supervisor_rate, rule_note)
     """
-    sp_rate = SALESPERSON_RATE_DISTRIBUTE if salesperson_attribute == "distribute" else SALESPERSON_RATE_DEVELOP
+    # 业务员比例统一 2%，与开发/分配属性无关
+    sp_rate = SALESPERSON_RATE
 
     # 一级主管：无主管 或 主管=业务员
     if not supervisor_id or supervisor_id == salesperson_id:

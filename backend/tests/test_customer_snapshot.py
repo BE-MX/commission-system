@@ -13,6 +13,40 @@ from app.services.customer_reset_service import (
     complete_snapshot,
     import_snapshots_from_excel,
 )
+from app.services.rate_utils import calc_commission_rates
+
+
+class TestSalespersonRateUnified:
+    """业务员比例统一 2%（2026-07-08 规则调整）——属性无关"""
+
+    def test_develop_is_2pct(self):
+        sp_rate, _, _, _ = calc_commission_rates("SP001", "develop", None, None)
+        assert sp_rate == Decimal("0.0200")
+
+    def test_distribute_is_2pct(self):
+        """分配属性也统一 2%（旧规则曾是 1%）"""
+        sp_rate, _, _, _ = calc_commission_rates("SP001", "distribute", None, None)
+        assert sp_rate == Decimal("0.0200")
+
+    def test_none_attribute_is_2pct(self):
+        sp_rate, _, _, _ = calc_commission_rates("SP001", None, None, None)
+        assert sp_rate == Decimal("0.0200")
+
+    def test_supervisor_dual_dev_unaffected(self):
+        """业务员比例统一不影响一级主管双开发 1.5% 判定"""
+        sp_rate, sv_rate, _, _ = calc_commission_rates(
+            "SP001", "develop", "SV001", "develop",
+        )
+        assert sp_rate == Decimal("0.0200")
+        assert sv_rate == Decimal("0.0150")
+
+    def test_supervisor_distribute_still_1pct(self):
+        """分配组合下一级主管仍 1%（未受业务员比例统一波及）"""
+        sp_rate, sv_rate, _, _ = calc_commission_rates(
+            "SP001", "distribute", "SV001", "distribute",
+        )
+        assert sp_rate == Decimal("0.0200")
+        assert sv_rate == Decimal("0.0100")
 
 
 class TestCompleteSnapshot:
