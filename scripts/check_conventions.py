@@ -49,6 +49,20 @@ ALLOWED_PERM_ACTIONS = {
     "config", "logs", "backup", "assign_role",
 }
 
+# 命名宪法（docs/database.md 头部，2026-07-08）——列名禁用词 → 规范名
+FORBIDDEN_COLUMN_NAMES = {
+    "create_time": "created_at", "created_time": "created_at", "gmt_create": "created_at",
+    "update_time": "updated_at", "updated_time": "updated_at", "gmt_modified": "updated_at",
+    "create_user": "created_by", "update_user": "updated_by",
+    "is_deleted": "deleted_at", "deleted_flag": "deleted_at",
+    "del_flag": "deleted_at", "delete_flag": "deleted_at",
+    "state": "status", "note": "remark", "notes": "remark", "comment": "remark",
+    "operator": "created_by/updated_by 或 xxx_name", "operator_id": "created_by/updated_by",
+}
+# 业务库(lsordertest)只读投影表——无 ark_ 前缀豁免
+BUSINESS_RO_TABLES = {"okki_orders", "okki_receipts", "okki_products", "okki_inventory",
+                      "okki_order_items", "customer_info", "user_basic"}
+
 RED, YELLOW = "红", "黄"
 
 
@@ -147,6 +161,37 @@ def check(base: str) -> list[tuple[str, str, str]]:
         if re.match(r"backend/app/(api|services|models|schemas)/[^/]+\.py$", posix) \
                 and not sh("git", "ls-files", file).strip():
             findings.append((YELLOW, posix, "共享层已冻结——新业务放领域模块 app/<domain>/（宪法 1）"))
+
+        # 9.[红/黄] 数据库命名宪法（docs/database.md 头部，2026-07-08）
+        # 误报守卫：只认「真正新增」——基线版本已有同名表/列的（改存量行触发的 diff）一律跳过
+        # 已知缺口（2026-07-08 对抗性审查登记，触发时按此排查而非直接忽略红项）：
+        #   a) 9a 豁免判据是全文件子串（f'"{t}"'），基线里 docstring/secondary="表名" 出现同名串会误放行
+        #   b) 9b 列名禁用词未豁免业务库（lsordertest）只读投影的外部列名——将来建投影时给该文件加白名单
+        #   c) P2 治理把 legacy 模型搬新文件时，untracked 新文件会把存量表名报成"新表"——先 git add 建基线再跑
+        #   d) --base <旧ref> 时 tracked 判断用当前索引，base 后新增已提交文件会整文件当新增（方向是误报，可接受）
+        if is_backend and posix.endswith(".py") and "alembic" not in posix:
+            text_new = "\n".join(l for _, l in lines)
+            base_text = sh("git", "show", f"{base}:{file}") if sh("git", "ls-files", file).strip() else ""
+            # 9a. 新表名必须 ark_ 前缀（__tablename__ 与 Table() 两种声明都查）
+            for m in re.finditer(r'(?:__tablename__\s*=\s*|Table\(\s*)"(\w+)"', text_new):
+                t = m.group(1)
+                if f'"{t}"' in base_text:
+                    continue
+                if not t.startswith("ark_") and t not in BUSINESS_RO_TABLES:
+                    findings.append((RED, posix, f'新表 "{t}" 无 ark_ 前缀——命名宪法：ark_<domain>_<entity> 复数'))
+                elif t.endswith("_log"):
+                    findings.append((YELLOW, posix, f'新表 "{t}" 用 _log 单数——日志类统一 _logs 复数'))
+            # 9b/9c. 仅 models 文件查列定义（多行 Column 合并匹配）
+            if posix.endswith("models.py") or "/models/" in posix:
+                for m in re.finditer(r"(\w+)\s*=\s*Column\((?:[^()]|\([^()]*\))*\)", text_new, re.DOTALL):
+                    col, defn = m.group(1), m.group(0)
+                    if re.search(rf"\b{re.escape(col)}\s*=\s*Column\(", base_text):
+                        continue
+                    if col in FORBIDDEN_COLUMN_NAMES:
+                        findings.append((RED, posix,
+                                         f'新列 "{col}" 是禁用命名——用 {FORBIDDEN_COLUMN_NAMES[col]}（命名宪法）'))
+                    if "comment=" not in defn and "primary_key=True" not in defn:
+                        findings.append((YELLOW, posix, f'新列 "{col}" 缺 comment= 中文注释（命名宪法）'))
 
         # 20.[红] expo 相关文件出现品牌禁用词
         # 白名单：定义禁用词表/警示提示文案本身（含"禁用"或 FORBIDDEN 的行是元引用，不是违规使用）

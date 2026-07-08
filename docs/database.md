@@ -3,6 +3,21 @@
 > 本文档由 CLAUDE.md 瘦身治理（2026-07-03，见 docs/2026-07-03-architecture-assessment.md G-1）拆出。
 > 变更 API/表结构/模块行为时**同步更新本文件**。
 
+## 命名宪法（2026-07-08 起对增量强制，评估见 docs/2026-07-08-db-naming-assessment.md；check_conventions.py 机器检查）
+
+**表名**
+1. 新表一律 `ark_<domain>_<entity>`，entity 用**复数**（`ark_invoices`、`ark_production_orders`）
+2. 日志类统一 `_logs` 复数；单行配置表用 `_settings`；不把第三方系统名嵌入新表名
+3. 关联表也走 `ark_` 前缀；用 `Table()` 声明的关联表必须在本文档登记（盘点工具会漏 `Table()`，全库现仅 `ark_asset_tags`）
+
+**字段**
+1. 审计四件套：`created_at` / `updated_at` DATETIME + `created_by` / `updated_by` INT（=ark_users.id）。存姓名一律 `xxx_name` 后缀，禁止用 `created_by` 存字符串
+2. 软删除用 `deleted_at` DATETIME NULL；`is_active` 仅表示"启用/停用开关"，不当软删用；`deleted_flag`/`is_deleted` 禁止新增
+3. 备注统一 `remark`；禁用 `note`/`notes`/`comment` 作列名；状态用 `status` 禁 `state`；操作人不再新增 `operator`/`operator_id`
+4. 布尔列 `is_` 前缀；外键列 `<entity>_id`；**新列必须带 `comment=` 注释（中文优先，术语/外部系统字段可英文），新表必须带表注释**；枚举/状态列把可选值写进注释，金额列注明币种口径
+
+**迁移**：revision ID `NNN_动词_对象` ≤32 字符；重命名类迁移必须写可逆 `downgrade()`
+
 ## 数据库
 
 - 提成库 `commission_db`：读写，存放提成系统自有数据
@@ -111,5 +126,5 @@
   - `ark_expo_results` — 效果图（session_id FK CASCADE, **wig_id 可空**——scene 模式为 NULL, hair_color_json 发色快照（048 起 hair_color_id/code/name/hex/swatch_path/description；历史行为 palette 旧形态）, scene_json 场景快照 key/label, reaction loved/soso, short_code 分享码, gen_ms）
   - `ark_expo_feedback` — 销售反馈（intent_level A/B/C/D 直通客户机会台口径, next_action）
 - **MCP 网关（1 张表，051 迁移）**：
-  - `mcp_tokens` — 业务员个人 access token（token_hash sha256 UNIQUE 只存哈希, user_id FK ark_users.id CASCADE 归属, label 用途备注, is_active 停用即撤销, last_used_at, created_by）；`(user_id)` 索引。供入口无关的 MCP 工具鉴权→复用登录 claims 产出 current_user dict
+  - `ark_mcp_tokens`（053 更名，原 mcp_tokens）— 业务员个人 access token（token_hash sha256 UNIQUE 只存哈希, user_id FK ark_users.id CASCADE 归属, label 用途备注, is_active 停用即撤销, last_used_at, created_by）；`(user_id)` 索引。供入口无关的 MCP 工具鉴权→复用登录 claims 产出 current_user dict
 
