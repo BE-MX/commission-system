@@ -23,7 +23,9 @@ from app.expo.schemas import CustomerRegister, FeedbackCreate, HairColorUpsert, 
 logger = logging.getLogger("commission.expo")
 
 # 看门狗阈值：后台线程随进程重启丢失后，卡死状态在轮询读取时自愈
-STALE_PENDING_SECS = 180     # 面容分析正常 <30s
+# 必须大于 ai/call_service.py 的 MIN_MULTIMODAL_CHAT_TIMEOUT_SEC(120)，否则会把仍在
+# 正常等待模型的面容分析误判为卡死（正常 <30s，240 是刻意宽余量）
+STALE_PENDING_SECS = 240
 # 必须大于 ai/image_service.py 的 MIN_IMAGE_EDIT_TIMEOUT_SEC(300)，否则会把仍在
 # 正常等待上游的合成误判为卡死（单场景模板实测 ~130s，420 是刻意宽余量）
 STALE_GENERATING_SECS = 420

@@ -21,6 +21,27 @@ from app.ai.http_client import (
 from app.ai.log_snapshot import serialize_response_snapshot
 from app.ai.provider_service import get_provider
 
+# 带图 chat（如 expo 面容分析）的超时下限：多模态请求模型处理更慢，Provider 常配的
+# 60s 会掐死正常请求（2026-07-08 expo session=31/32/34/35 实测 61~75s 全超时→分析失败
+# →kiosk 连锁弹回首页）。参照 image_service 的 MIN_IMAGE_EDIT_TIMEOUT_SEC 兜底口径。
+# 调此值需联动 expo/service.py 的 STALE_PENDING_SECS（看门狗必须大于本超时，否则误杀在途分析）
+MIN_MULTIMODAL_CHAT_TIMEOUT_SEC = 120
+
+
+def _has_image_message(messages: list) -> bool:
+    return any(
+        isinstance(m.get("content"), list)
+        and any(c.get("type") == "image_url" for c in m["content"])
+        for m in messages
+    )
+
+
+def _effective_chat_timeout(provider, has_image: bool) -> int:
+    base = provider.timeout_sec or 0
+    if has_image:
+        return max(base, MIN_MULTIMODAL_CHAT_TIMEOUT_SEC)
+    return base
+
 
 def chat(
     db: Session,
@@ -97,18 +118,15 @@ def chat(
                 params.update(preset.parameters)
 
         url = build_chat_url(provider.api_base, api_type)
-        has_image = any(
-            isinstance(m.get("content"), list)
-            and any(c.get("type") == "image_url" for c in m["content"])
-            for m in full_messages
-        )
+        has_image = _has_image_message(full_messages)
+        timeout_sec = _effective_chat_timeout(provider, has_image)
         logger.info(
             "AI request: provider=%s model=%s api_type=%s url=%s msg_count=%d has_image=%s",
             provider.name, preset.model, api_type, url, len(full_messages), has_image,
         )
         if has_image:
             print(f"[AI-DIAG] request with image | provider={provider.name} model={preset.model} "
-                  f"api_type={api_type} url={url} msg_count={len(full_messages)}", flush=True)
+                  f"api_type={api_type} url={url} msg_count={len(full_messages)} timeout={timeout_sec}s", flush=True)
 
         req = urllib.request.Request(
             url,
@@ -116,7 +134,7 @@ def chat(
             headers=headers,
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=provider.timeout_sec) as resp:
+        with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
             raw_bytes = resp.read()
             result = json.loads(raw_bytes.decode())
 

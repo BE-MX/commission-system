@@ -72,12 +72,17 @@ def _log_fail(stage: str, session_id: int, exc: Exception) -> None:
 
 
 def _image_message(text: str, image_paths: list[Path]) -> list[dict]:
+    # 送模型前统一走 _prep_image 压缩（最长边 1280 + JPEG q88）：面容分析原本直传 1~2MB
+    # 原图，模型处理慢 + 上传慢，叠加上游拥堵撞 60s 超时（2026-07-08 实case）。判脸型不需要
+    # 原分辨率，压后与生图路径口径一致；压缩失败回退原始字节不阻断
     content: list[dict] = [{"type": "text", "text": text}]
     for path in image_paths:
-        suffix = path.suffix.lower().lstrip(".") or "jpeg"
-        media = "jpeg" if suffix in ("jpg", "jpeg") else suffix
-        b64 = base64.b64encode(path.read_bytes()).decode()
-        content.append({"type": "image_url", "image_url": {"url": f"data:image/{media};base64,{b64}"}})
+        prepped = _prep_image(path)
+        b64 = base64.b64encode(prepped["content"]).decode()
+        content.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:{prepped['content_type']};base64,{b64}"},
+        })
     return [{"role": "user", "content": content}]
 
 

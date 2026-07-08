@@ -361,6 +361,27 @@ def test_prep_image_fallback_on_unreadable(tmp_path):
     assert out["filename"] == "not_image.png"
 
 
+def test_image_message_compresses_before_send(tmp_path):
+    """面容分析送图前压缩（2026-07-08 超时修复）：大图进 message 时已降采样，
+    data URL 里的图远小于 3000x2000 原图。"""
+    import base64
+
+    import cv2
+    import numpy as np
+
+    big = tmp_path / "face.png"
+    cv2.imwrite(str(big), np.full((3000, 2000, 3), 128, np.uint8))
+
+    msgs = ai_pipeline._image_message("分析这张脸", [big])
+    blocks = msgs[0]["content"]
+    assert blocks[0]["type"] == "text"
+    url = blocks[1]["image_url"]["url"]
+    assert url.startswith("data:image/jpeg;base64,")  # 压缩后统一 JPEG
+    sent_bytes = base64.b64decode(url.split(",", 1)[1])
+    decoded = cv2.imdecode(np.frombuffer(sent_bytes, np.uint8), cv2.IMREAD_COLOR)
+    assert max(decoded.shape[:2]) == ai_pipeline._MAX_SEND_EDGE  # 最长边压到 1280
+
+
 # ---------------- _chat_json：非法 JSON 带纠错反馈重试 ----------------
 
 def test_chat_json_retries_malformed_then_succeeds(monkeypatch):
