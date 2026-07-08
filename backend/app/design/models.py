@@ -14,18 +14,20 @@ from app.core.database import Base
 class DesignDesigner(Base):
     __tablename__ = "design_designer"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
     name = Column(String(64), nullable=False, comment="设计师姓名")
     dingtalk_id = Column(String(64), nullable=True, comment="钉钉ID")
     email = Column(String(128), nullable=True, comment="邮箱")
     is_active = Column(Boolean, nullable=False, default=True, server_default="1", comment="是否启用")
     created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
 
+    __table_args__ = {"comment": "设计师表"}
+
 
 class DesignScheduleRequest(Base):
     __tablename__ = "design_schedule_request"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
     request_no = Column(String(32), nullable=False, unique=True, comment="申请单号")
     customer_name = Column(String(128), nullable=False, comment="客户名称")
     customer_level = Column(String(64), nullable=True, comment="客户等级(字典code)")
@@ -72,13 +74,14 @@ class DesignScheduleRequest(Base):
         Index("idx_status", "status"),
         Index("idx_expect_date", "expect_start_date", "expect_end_date"),
         Index("idx_created_at", "created_at"),
+        {"comment": "设计预约申请单"},
     )
 
 
 class DesignScheduleTask(Base):
     __tablename__ = "design_schedule_task"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
     request_id = Column(Integer, ForeignKey("design_schedule_request.id"), nullable=False, comment="关联申请ID")
     task_no = Column(String(32), nullable=False, unique=True, comment="任务编号")
     designer_id = Column(Integer, nullable=False, comment="设计师ID")
@@ -119,13 +122,14 @@ class DesignScheduleTask(Base):
         Index("idx_designer_id", "designer_id"),
         Index("idx_plan_date", "plan_start_date", "plan_end_date"),
         Index("idx_status", "status"),
+        {"comment": "设计排期任务表"},
     )
 
 
 class DesignUnavailableDate(Base):
     __tablename__ = "design_unavailable_date"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
     date = Column(Date, nullable=False, comment="不可用日期")
     period = Column(String(2), nullable=True, comment="时段(am/pm, NULL=全天)")
     reason = Column(String(256), nullable=True, comment="原因")
@@ -134,13 +138,14 @@ class DesignUnavailableDate(Base):
 
     __table_args__ = (
         UniqueConstraint("date", "period", name="uq_unavailable_date_period"),
+        {"comment": "设计不可用日期表"},
     )
 
 
 class DesignCapacityConfig(Base):
     __tablename__ = "design_capacity_config"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
     config_date = Column(Date, nullable=True, comment="配置日期（NULL=全局）")
     designer_id = Column(Integer, nullable=True, comment="设计师ID（NULL=全局）")
     period = Column(String(2), nullable=True, comment="时段(am/pm, NULL=全天)")
@@ -154,13 +159,14 @@ class DesignCapacityConfig(Base):
 
     __table_args__ = (
         UniqueConstraint("config_date", "designer_id", "period", name="uq_config_date_designer_period"),
+        {"comment": "设计产能配置表"},
     )
 
 
 class DesignAuditLog(Base):
     __tablename__ = "design_audit_log"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
     request_id = Column(Integer, nullable=False, comment="关联申请ID")
     task_id = Column(Integer, nullable=True, comment="关联任务ID")
     operator_id = Column(Integer, nullable=False, comment="操作人ID")
@@ -181,6 +187,8 @@ class DesignAuditLog(Base):
     snapshot = Column(JSON, nullable=True, comment="快照数据")
     created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
 
+    __table_args__ = {"comment": "设计预约操作审计日志"}
+
 
 class DesignRequestSeq(Base):
     __tablename__ = "design_request_seq"
@@ -188,11 +196,13 @@ class DesignRequestSeq(Base):
     date_key = Column(CHAR(8), primary_key=True, comment="日期键 YYYYMMDD")
     last_seq = Column(Integer, nullable=False, default=0, server_default="0", comment="最后序号")
 
+    __table_args__ = {"comment": "申请单号日序号表"}
+
 
 class DesignRequestAttachment(Base):
     __tablename__ = "design_request_attachment"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
     request_id = Column(Integer, ForeignKey("design_schedule_request.id"), nullable=False, comment="关联申请ID")
     file_name = Column(String(256), nullable=False, comment="原始文件名")
     file_path = Column(String(512), nullable=False, comment="存储路径")
@@ -206,4 +216,5 @@ class DesignRequestAttachment(Base):
 
     __table_args__ = (
         Index("idx_attachment_request_id", "request_id"),
+        {"comment": "设计申请附件表"},
     )

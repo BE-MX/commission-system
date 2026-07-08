@@ -137,14 +137,16 @@ class DataConcept(Base):
     notes = Column(Text, nullable=True, comment="补充备注")
     created_by = Column(Integer, nullable=True, comment="创建人 user_id")
     updated_by = Column(Integer, nullable=True, comment="最后修改人 user_id")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
     updated_at = Column(
         DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow,
+        comment="更新时间",
     )
 
     __table_args__ = (
         Index("idx_data_concepts_layer", "layer"),
         Index("idx_data_concepts_status", "status"),
+        {"comment": "数据概念注册表"},
     )
 
     def to_snapshot_dict(self) -> dict:
@@ -183,14 +185,14 @@ class ConceptRelationship(Base):
 
     __tablename__ = "concept_relationships"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
     source_concept_id = Column(
         String(64), ForeignKey("data_concepts.id", ondelete="CASCADE"),
-        nullable=False, comment="源概念ID",
+        nullable=False, comment="源概念ID FK→data_concepts.id",
     )
     target_concept_id = Column(
         String(64), ForeignKey("data_concepts.id", ondelete="CASCADE"),
-        nullable=False, comment="目标概念ID",
+        nullable=False, comment="目标概念ID FK→data_concepts.id",
     )
     relation_type = Column(
         Enum(*RELATION_TYPES, name="relation_type"),
@@ -198,10 +200,10 @@ class ConceptRelationship(Base):
     )
     description = Column(String(200), nullable=True, comment="关联备注说明")
     created_by = Column(Integer, nullable=True, comment="创建人 user_id")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
     is_auto_generated = Column(
         Boolean, nullable=False, default=False,
-        comment="是否由系统自动生成",
+        comment="是否由系统自动生成（如 conflicts_with 反向边）",
     )
 
     __table_args__ = (
@@ -211,6 +213,7 @@ class ConceptRelationship(Base):
             "source_concept_id", "target_concept_id", "relation_type",
             name="uk_concept_rels_pair",
         ),
+        {"comment": "概念关联关系"},
     )
 
 
@@ -219,10 +222,10 @@ class ConceptChangeLog(Base):
 
     __tablename__ = "concept_change_logs"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
     concept_id = Column(
         String(64), ForeignKey("data_concepts.id", ondelete="CASCADE"),
-        nullable=False, comment="概念ID",
+        nullable=False, comment="概念ID FK→data_concepts.id",
     )
     timestamp = Column(
         DateTime, nullable=False, default=datetime.utcnow, comment="操作时间",
@@ -239,4 +242,5 @@ class ConceptChangeLog(Base):
     __table_args__ = (
         Index("idx_change_logs_concept", "concept_id"),
         Index("idx_change_logs_timestamp", "timestamp"),
+        {"comment": "概念变更记录"},
     )

@@ -11,7 +11,7 @@ class CustomerCommissionSnapshot(Base):
     """客户提成归属快照表"""
     __tablename__ = "customer_commission_snapshot"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
     customer_id = Column(String(64), nullable=False, comment="客户ID")
     first_order_id = Column(String(64), nullable=True, comment="首单订单ID")
     first_order_date = Column(Date, nullable=True, comment="首单生效日期")
@@ -40,10 +40,11 @@ class CustomerCommissionSnapshot(Base):
     reset_reason = Column(Text, nullable=True, comment="重置原因")
     operator = Column(String(64), nullable=True, comment="操作人")
     operated_at = Column(DateTime, nullable=True, comment="操作时间")
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime, server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), comment="最后更新时间")
 
     __table_args__ = (
         Index("ix_snapshot_customer_current", "customer_id", "is_current"),
         Index("ix_snapshot_is_complete", "is_complete"),
+        {"comment": "客户提成归属快照表：锁定客户的业务员/主管归属与提成比例"},
     )

@@ -11,8 +11,9 @@ class DingTalkCallbackLog(Base):
     """钉钉回调日志（幂等处理基础）"""
 
     __tablename__ = "dingtalk_callback_log"
+    __table_args__ = {"comment": "钉钉回调日志"}
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
     event_type = Column(String(64), nullable=False, comment="事件类型")
     raw_data = Column(Text, nullable=False, comment="原始回调数据")
     processed = Column(Boolean, nullable=False, default=False, comment="是否已处理")
@@ -25,8 +26,9 @@ class DingTalkMessageLog(Base):
     """钉钉消息发送日志"""
 
     __tablename__ = "dingtalk_message_log"
+    __table_args__ = {"comment": "钉钉消息发送日志"}
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
     msg_type = Column(String(32), nullable=False, comment="消息类型: markdown/action_card/text")
     title = Column(String(128), nullable=False, comment="消息标题")
     content = Column(Text, nullable=False, comment="消息内容")
