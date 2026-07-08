@@ -22,20 +22,21 @@ class MCPToken(Base):
     - user_id 映射 ArkUser，鉴权时据此复用登录 claims 产出 current_user dict
     """
 
-    __tablename__ = "mcp_tokens"
+    __tablename__ = "ark_mcp_tokens"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
     token_hash = Column(String(64), nullable=False, unique=True, comment="sha256(明文token)")
     user_id = Column(
         _UID, ForeignKey("ark_users.id", ondelete="CASCADE"),
         nullable=False, comment="归属业务员 ark_users.id",
     )
     label = Column(String(100), comment="用途备注/接入的 agent 名")
-    is_active = Column(Boolean, nullable=False, server_default="1")
-    last_used_at = Column(DateTime)
+    is_active = Column(Boolean, nullable=False, server_default="1", comment="1=有效,0=已撤销")
+    last_used_at = Column(DateTime, comment="最近一次使用时间")
     created_by = Column(_UID, comment="发放人 ark_users.id")
-    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    created_at = Column(DateTime, nullable=False, server_default=func.now(), comment="创建时间")
 
     __table_args__ = (
         Index("idx_mcp_tokens_user", "user_id"),
+        {"comment": "MCP 网关个人 access token（只存 sha256 哈希，明文仅发放时返回一次）"},
     )

@@ -1,6 +1,6 @@
 """MCP 个人 token 鉴权 — 把 opaque token 解析成与登录一致的 current_user dict。
 
-核心:token → mcp_tokens 查活跃行 → 载入 ArkUser → 复用 auth.service 的
+核心:token → ark_mcp_tokens 查活跃行 → 载入 ArkUser → 复用 auth.service 的
 claims builder（get_user_roles / get_user_permissions）→ 产出 current_user dict。
 下游 tracking service 吃的就是这个 dict，零改动复用 apply_data_scope 归属过滤。
 """
