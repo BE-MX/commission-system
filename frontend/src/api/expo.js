@@ -74,6 +74,10 @@ export function updateWig(id, data) {
   return expoClient.put(`/wigs/${id}`, data)
 }
 
+export function deleteWig(id) {
+  return expoClient.delete(`/wigs/${id}`)
+}
+
 export function uploadWigPhoto(file) {
   const form = new FormData()
   form.append('photo', file)
@@ -89,6 +93,10 @@ export function createHairColor(data) {
 
 export function updateHairColor(id, data) {
   return expoClient.put(`/hair-colors/${id}`, data)
+}
+
+export function deleteHairColor(id) {
+  return expoClient.delete(`/hair-colors/${id}`)
 }
 
 export function uploadHairColorSwatch(file) {

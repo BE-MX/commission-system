@@ -267,6 +267,23 @@ def upsert_hair_color(db: Session, body: HairColorUpsert, color_id: int | None =
     return row
 
 
+def delete_hair_color(db: Session, color_id: int) -> bool:
+    """物理删除发色。发色在效果图里是 JSON 快照（非外键），删除不影响历史效果图，
+    可直接硬删。返回 False=不存在。
+
+    注意：历史 result 的 hair_color_json.swatch_path 仍指向这里删掉的色板图文件，
+    但历史展示只用 hex+name 不渲染该图；对 pending/failed result 重合成时
+    `ai_pipeline._color_swatch_path` 有 exists() 守卫，文件缺失自动降级为纯文本色描述。
+    """
+    row = db.get(ExpoHairColor, color_id)
+    if not row:
+        return False
+    _remove_file(row.swatch_path)
+    db.delete(row)
+    db.commit()
+    return True
+
+
 def snapshot_hair_color(db: Session, hair_color_id: int) -> dict:
     """选定发色 → 随 result 落库的快照（色板图 + 描述），与发色库后续变更解耦。"""
     row = db.get(ExpoHairColor, hair_color_id)
@@ -437,6 +454,30 @@ def upsert_wig(db: Session, body: WigUpsert, wig_id: int | None = None) -> ExpoW
     db.commit()
     db.refresh(wig)
     return wig
+
+
+def delete_wig(db: Session, wig_id: int) -> bool:
+    """物理删除发型。已产生试戴记录的发型拒删（保护线索台复盘数据），
+    引导改用「停用」。返回 False=不存在；被引用抛 ValueError（router 转 409）。"""
+    wig = db.get(ExpoWig, wig_id)
+    if not wig:
+        return False
+    used = db.query(ExpoResult.id).filter(ExpoResult.wig_id == wig_id).count()
+    if used:
+        raise ValueError(f"该发型已产生 {used} 条试戴记录，无法删除；如需下架请改用「停用」")
+    # 无引用才删：清掉该发型独占的封面与多角度图（不影响任何效果图）
+    _remove_file(wig.cover_path)
+    for path in wig.angle_photos or []:
+        _remove_file(path)
+    db.delete(wig)
+    try:
+        db.commit()
+    except IntegrityError:
+        # 应用层查引用与删除之间的竞态：并发插入 result 引用该 wig，DB FK(RESTRICT) 兜底。
+        # 归一为 ValueError → router 转 409，与"已被引用"给用户同一提示，不冒 500
+        db.rollback()
+        raise ValueError("该发型刚产生了新的试戴记录，无法删除；如需下架请改用「停用」")
+    return True
 
 
 def serialize_wig(wig: ExpoWig) -> dict:

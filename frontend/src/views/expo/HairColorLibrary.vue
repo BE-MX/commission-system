@@ -32,9 +32,10 @@
             <el-switch :model-value="!!row.is_active" @change="(v) => toggleActive(row, v)" />
           </template>
         </el-table-column>
-        <el-table-column label="操作" min-width="90" fixed="right">
+        <el-table-column label="操作" min-width="140" fixed="right">
           <template #default="{ row }">
-            <GlassButton variant="link" left-icon="Edit" @click="openEdit(row)">编辑</GlassButton>
+            <GlassButton v-permission="'expo:admin'" variant="link" left-icon="Edit" @click="openEdit(row)">编辑</GlassButton>
+            <GlassButton v-permission="'expo:admin'" variant="link" link-tone="danger" left-icon="Delete" @click="handleDelete(row)">删除</GlassButton>
           </template>
         </el-table-column>
       </el-table>
@@ -72,7 +73,8 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getHairColors, createHairColor, updateHairColor, uploadHairColorSwatch } from '@/api/expo'
+import { getHairColors, createHairColor, updateHairColor, deleteHairColor, uploadHairColorSwatch } from '@/api/expo'
+import { confirmDanger, msgSuccess } from '@/utils/feedback'
 
 const colors = ref([])
 const loading = ref(false)
@@ -169,6 +171,17 @@ async function toggleActive(row, value) {
     await updateHairColor(row.id, { ...toUpsert(row), is_active: value ? 1 : 0 })
     row.is_active = value ? 1 : 0
     ElMessage.success(value ? '已启用' : '已停用')
+  } catch { /* 拦截器已提示 */ }
+}
+
+async function handleDelete(row) {
+  try {
+    await confirmDanger('删除', `发色 ${row.code}`, '将物理删除该发色及其色板图。历史效果图存的是发色快照，不受影响。')
+  } catch { return }
+  try {
+    await deleteHairColor(row.id)
+    msgSuccess('删除')
+    fetchColors()
   } catch { /* 拦截器已提示 */ }
 }
 

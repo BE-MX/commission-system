@@ -282,6 +282,21 @@ def update_wig(
     return ok(service.serialize_wig(wig))
 
 
+@router.delete("/wigs/{wig_id}", summary="删除发型（已产生试戴记录则拒删，引导停用）")
+def delete_wig(
+    wig_id: int,
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("expo:admin")),
+):
+    try:
+        deleted = service.delete_wig(db, wig_id)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc))
+    if not deleted:
+        raise HTTPException(404, "发型不存在")
+    return ok()
+
+
 @router.post("/wigs/upload-photo", summary="上传发型参考图，返回相对路径")
 def upload_wig_photo(
     photo: UploadFile = File(...),
@@ -323,6 +338,17 @@ def update_hair_color(
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     return ok(service.serialize_hair_color(row))
+
+
+@router.delete("/hair-colors/{color_id}", summary="删除发色（效果图存 JSON 快照，删除不影响历史）")
+def delete_hair_color(
+    color_id: int,
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("expo:admin")),
+):
+    if not service.delete_hair_color(db, color_id):
+        raise HTTPException(404, "发色不存在")
+    return ok()
 
 
 @router.post("/hair-colors/upload-swatch", summary="上传色板图，返回相对路径并自动提取主色 hex")

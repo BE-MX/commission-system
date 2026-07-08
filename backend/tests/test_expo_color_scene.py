@@ -10,13 +10,16 @@ import pytest
 from pydantic import ValidationError
 
 from app.expo import ai_pipeline
-from app.expo.models import ExpoResult, ExpoSession, ExpoWig
-from app.expo.schemas import GenerateRequest, HairColorUpsert
+from app.expo.models import ExpoHairColor, ExpoResult, ExpoSession, ExpoWig
+from app.expo.schemas import GenerateRequest, HairColorUpsert, WigUpsert
 from app.expo.service import (
+    delete_hair_color,
+    delete_wig,
     get_session,
     pick_batch_wig_ids,
     snapshot_hair_color,
     upsert_hair_color,
+    upsert_wig,
 )
 
 
@@ -427,6 +430,64 @@ def test_watchdog_heals_stale_pending(db):
     sid = _stale_session(db, "pending", 400)
     got = get_session(db, sid)
     assert got.status == "failed"
+
+
+# ---------------- 发型/发色删除（管货：FK 拦截 + 快照无损） ----------------
+
+def _wig_body(**over):
+    base = dict(model_no="LS-DEL", name="待删发型", series="classic")
+    base.update(over)
+    return WigUpsert(**base)
+
+
+def test_delete_wig_unused_removes_row(db):
+    wig = upsert_wig(db, _wig_body())
+    assert delete_wig(db, wig.id) is True
+    assert db.get(ExpoWig, wig.id) is None
+
+
+def test_delete_wig_missing_returns_false(db):
+    assert delete_wig(db, 999999) is False
+
+
+def test_delete_wig_referenced_by_result_blocked(db):
+    """已产生试戴记录的发型拒删——保护线索台复盘数据，引导改用停用。"""
+    wig = upsert_wig(db, _wig_body())
+    s = ExpoSession(customer_id=1, photo_path="p.jpg", status="done")
+    db.add(s)
+    db.flush()
+    db.add(ExpoResult(session_id=s.id, wig_id=wig.id, status="done"))
+    db.commit()
+    with pytest.raises(ValueError, match="无法删除"):
+        delete_wig(db, wig.id)
+    assert db.get(ExpoWig, wig.id) is not None  # 拦截后未删
+
+
+def test_delete_hair_color_removes_row(db):
+    row = upsert_hair_color(db, _color_body())
+    assert delete_hair_color(db, row.id) is True
+    assert db.get(ExpoHairColor, row.id) is None
+
+
+def test_delete_hair_color_missing_returns_false(db):
+    assert delete_hair_color(db, 999999) is False
+
+
+def test_delete_hair_color_keeps_historical_snapshot(db):
+    """发色在效果图里是 JSON 快照，删发色后历史效果图的发色信息不受影响。"""
+    row = upsert_hair_color(db, _color_body())
+    snap = snapshot_hair_color(db, row.id)
+    s = ExpoSession(customer_id=1, photo_path="p.jpg", status="done")
+    db.add(s)
+    db.flush()
+    result = ExpoResult(session_id=s.id, status="done", hair_color_json=snap)
+    db.add(result)
+    db.commit()
+    result_id = result.id
+
+    assert delete_hair_color(db, row.id) is True
+    db.expire_all()
+    assert db.get(ExpoResult, result_id).hair_color_json["code"] == "1B"  # 快照仍在
 
 
 # ---------------- GenerateRequest 校验 ----------------

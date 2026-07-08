@@ -42,9 +42,10 @@
             <el-switch :model-value="!!row.is_active" @change="(v) => toggleActive(row, v)" />
           </template>
         </el-table-column>
-        <el-table-column label="操作" min-width="90" fixed="right">
+        <el-table-column label="操作" min-width="140" fixed="right">
           <template #default="{ row }">
-            <GlassButton variant="link" left-icon="Edit" @click="openEdit(row)">编辑</GlassButton>
+            <GlassButton v-permission="'expo:admin'" variant="link" left-icon="Edit" @click="openEdit(row)">编辑</GlassButton>
+            <GlassButton v-permission="'expo:admin'" variant="link" link-tone="danger" left-icon="Delete" @click="handleDelete(row)">删除</GlassButton>
           </template>
         </el-table-column>
       </el-table>
@@ -157,7 +158,8 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getWigs, createWig, updateWig, uploadWigPhoto } from '@/api/expo'
+import { getWigs, createWig, updateWig, deleteWig, uploadWigPhoto } from '@/api/expo'
+import { confirmDanger, msgSuccess } from '@/utils/feedback'
 
 // 选项词汇对齐《发型推荐分析表》的业务语言；value 是 AI 分析枚举，不可改
 const FACE_SHAPES = [
@@ -318,6 +320,17 @@ async function toggleActive(row, value) {
     row.is_active = value
     ElMessage.success(value ? '已启用' : '已停用')
   } catch { /* 拦截器已提示 */ }
+}
+
+async function handleDelete(row) {
+  try {
+    await confirmDanger('删除', `发型 ${row.model_no}`, '将物理删除该发型及其封面/多角度图。已产生试戴记录的发型无法删除，请改用「停用」。')
+  } catch { return }
+  try {
+    await deleteWig(row.id)
+    msgSuccess('删除')
+    fetchWigs()
+  } catch { /* 拦截器已提示（含 409 已被引用） */ }
 }
 
 onMounted(fetchWigs)
