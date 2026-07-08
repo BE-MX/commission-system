@@ -207,6 +207,34 @@ class InvoiceSyncLog(Base):
     __table_args__ = (Index("idx_ark_invoice_sync_logs_inv", "invoice_id"),)
 
 
+class ReceiptRepairLog(Base):
+    """Audit trail for collection_date fixes written into the read-only business
+    mirror (lsordertest.okki_receipts).
+
+    Business rule: okki_receipts is externally synced and treated read-only; this
+    tool is the only writer of collection_date. We record old_date → new_date per
+    receipt so every write is reversible. A batch_id groups one apply run.
+    """
+
+    __tablename__ = "ark_receipt_repair_log"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    batch_id = Column(String(40), nullable=False, comment="uuid per apply run")
+    cash_collection_id = Column(String(64), nullable=False, comment="okki_receipts PK")
+    order_no = Column(String(64), nullable=True)
+    company_name = Column(String(256), nullable=True)
+    old_date = Column(Date, nullable=True, comment="collection_date before fix")
+    new_date = Column(Date, nullable=False, comment="collection_date after fix")
+    source_file = Column(String(256), nullable=True, comment="uploaded workbook name")
+    operator_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("idx_ark_receipt_repair_batch", "batch_id"),
+        Index("idx_ark_receipt_repair_ccid", "cash_collection_id"),
+    )
+
+
 class XiaomanSettings(Base):
     """Single-row OKKI push settings, managed on the admin page."""
 
