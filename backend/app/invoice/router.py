@@ -11,7 +11,14 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import require_any_permission, require_permission
 from app.core.database import get_db
 from app.core.response import ok
-from app.invoice import export_service, price_service, product_service, service, xiaoman_service
+from app.invoice import (
+    export_service,
+    price_service,
+    product_service,
+    receipt_repair_service,
+    service,
+    xiaoman_service,
+)
 from app.invoice.schemas import InvoiceCreate, InvoiceUpdate
 
 router = APIRouter()
@@ -423,5 +430,69 @@ def export_pdf(
     return StreamingResponse(
         stream,
         media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
+    )
+
+
+# ── receipt collection_date repair ───────────────────────────
+
+class RepairChangeItem(BaseModel):
+    cash_collection_id: str = Field(..., max_length=64)
+    new_date: str = Field(..., description="YYYY-MM-DD")
+
+
+class RepairApplyPayload(BaseModel):
+    source_file: str | None = Field(None, max_length=256)
+    items: list[RepairChangeItem]
+
+
+class RepairUnmatchedPayload(BaseModel):
+    unmatched: list[dict]
+
+
+@router.post("/receipt-repair/preview", summary="Dry-run match uploaded workbook to okki_receipts")
+def receipt_repair_preview(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("invoice:admin")),
+):
+    content = file.file.read()
+    try:
+        rows = receipt_repair_service.parse_workbook(content)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(400, f"工作表解析失败: {exc}")
+    if not rows:
+        raise HTTPException(400, "未从工作表读到有效数据行")
+    plan = receipt_repair_service.build_plan(db, rows, source_file=file.filename or "")
+    return ok(plan)
+
+
+@router.post("/receipt-repair/apply", summary="Apply confirmed collection_date fixes")
+def receipt_repair_apply(
+    body: RepairApplyPayload,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("invoice:admin")),
+):
+    if not body.items:
+        raise HTTPException(400, "没有需要修复的记录")
+    result = receipt_repair_service.apply_changes(
+        db,
+        [it.model_dump() for it in body.items],
+        operator_id=_user_id(current_user),
+        source_file=body.source_file or "",
+    )
+    return ok(result, message=f"已修复 {result['applied']} 条")
+
+
+@router.post("/receipt-repair/export-unmatched", summary="Export unmatched rows as a workbook")
+def receipt_repair_export_unmatched(
+    body: RepairUnmatchedPayload,
+    _user=Depends(require_permission("invoice:admin")),
+):
+    stream = receipt_repair_service.build_unmatched_workbook(body.unmatched)
+    filename = quote("回款日期修复-无法匹配.xlsx")
+    return StreamingResponse(
+        stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
     )
