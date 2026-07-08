@@ -70,6 +70,9 @@
   - `GET /invoices/{id}/export/excel` — 导出 Excel（含 To/From 头块与费用区）
   - `GET /invoices/{id}/export/print` — 打印用 HTML
   - `GET /invoices/{id}/export/pdf` — 导出 PDF
+  - `POST /receipt-repair/preview` — 上传田雯工作表，只读试跑匹配 okki_receipts（invoice:admin）；锚点=客户名+订单总额USD→唯一订单，返回 待修改/已正确/无法匹配 三类，不写库
+  - `POST /receipt-repair/apply` — 写入前端确认的 collection_date 修复（invoice:admin）；跨库 UPDATE `lsordertest.okki_receipts` + 落审计表 `ark_receipt_repair_log`(old→new) 可回滚
+  - `POST /receipt-repair/export-unmatched` — 无法匹配行导出为新 Excel（invoice:admin）
 - `/api/auth` — 登录/刷新 token / 当前用户信息 / 退出登录（`auth/router.py`）
   - `POST /login` — 用户登录，返回 access_token + 设置 refresh_token Cookie
   - `POST /refresh` — 用 HttpOnly Cookie 中的 refresh_token 换取新 access_token
@@ -320,4 +323,12 @@
   - `GET /data/{report_code}` — 获取报表数据 JSON（需 `report:read`，后端查询组装）
   - `GET /print/production-order` — 生产订单 HTML 打印页（无鉴权，参数 `order_no`，Jinja2 渲染）
   - `GET /export/production-order` — 生产订单 Word 导出（参数 `order_no`/`page_size`/`orientation`，python-docx 延迟导入）
+- `/api/mcp` — MCP 网关 token 管理（`backend/app/mcp/token_admin.py`，内部端点，需 `mcp:admin`；super_admin 绕过）
+  - `POST /tokens` — 发放个人 token（body `user_id`/`label`，**明文仅返回一次**，存 sha256 哈希）
+  - `GET /tokens` — 列出 token（不含明文，含 user/label/is_active/last_used_at）
+  - `DELETE /tokens/{token_id}` — 吊销 token（软停用 is_active=False）
+- `/mcp` — **MCP streamable-http 端点**（非 REST，`backend/app/mcp/server.py`，mount 子 ASGI 应用；stateless JSON）。物流录单/查询的入口无关 MCP 服务，业务员用个人 token（`Authorization: Bearer <token>`）以自己的 agent 接入。三个工具：
+  - `record_shipment(waybill_no, carrier[DHL/FEDEX], recipient_name, recipient_country, ship_date)` — 录单+启动跟踪+立即回状态（需 `tracking:write`；复用 `upload_service.create_waybill_with_tracking`；归属落调用者）
+  - `track_shipment(waybill_no, refresh=false)` — 查状态与轨迹（需 `tracking:read`；**先 `apply_data_scope` 归属校验**，非本人且无 `read_all` 视为未跟踪，不泄露他人 PII；复用 `shipment_service.get_shipment_detail`，refresh 时先 `polling_service.refresh_single`）
+  - `list_my_shipments(status?, keyword?, limit?)` — 列本人名下运单（需 `tracking:read`；复用 `shipment_service.list_shipments`，`apply_data_scope` 按 dingtalk_user_id 归属过滤）
 

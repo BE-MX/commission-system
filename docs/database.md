@@ -28,7 +28,7 @@
 - `ark_safety_stock` — 安全库存配置（product_id UNIQUE, safety_stock, lead_time_days, safety_factor, source: 0手动/1公式/2TFT）
 - `ark_stock_daily_reports` — 安全库存日报（report_date UNIQUE, shortage_skus/warning_skus JSON, dingtalk_sent）
 - **生产订单（025/026 迁移）**：
-  - `ark_production_orders` — 生产订单主表（order_no UNIQUE, status 0已提交/1已终止/2已完成, delete_flag 软删, created_by, remark）
+  - `ark_production_orders` — 生产订单主表（order_no UNIQUE, status 0已提交/1已终止/2已完成, deleted_flag 软删, created_by, remark）
   - `ark_production_order_items` — 生产订单明细（order_id, product_id, product_name, model, spec_info, order_qty, received_qty, status, is_urgent SmallInteger, expected_delivery_date Date, remark；无独立软删字段，靠 FK CASCADE 跟随订单删除）
   - `ark_production_cart` — 生产购物车（user_id + product_id UNIQUE, product_name, model, spec_info, order_qty, remark）
   - `ark_production_audit_log` — 生产订单审计日志（order_id, action, old_value, new_value, operator_id）
@@ -101,6 +101,7 @@
   - `ark_customer_price_rules`（049）— 客户调价规则（customer_id UNIQUE, adjust_type fixed/percent, adjust_value 有符号, enabled, preferred_template）
   - `ark_invoice_sync_logs`（049）— OKKI 推送日志（invoice_id FK CASCADE, action, success, request_digest/response_body/error_message, operator_id）
   - `ark_xiaoman_settings`（049）— OKKI 推送配置单行表（generic_product_no/id/sku_id 通用产品, default_order_status, default_currency, access_token）
+  - `ark_receipt_repair_log`（052）— 回款日期修复审计表（batch_id 分组一次执行, cash_collection_id, order_no, company_name, old_date→new_date, source_file, operator_id, created_at）；**唯一写 `lsordertest.okki_receipts.collection_date` 的入口，每条改动留回滚记录**
 - **展会 AI 试戴（7 张表，045 迁移；047 加发色/场景；048 加发色库）**：
   - `ark_expo_customers` — 试戴客户（name 称呼, phone, wechat_id, primary_need volume/gray_cover/style_change, style_pref, **consent_at 非空才允许存照片**, expo_code 届次）
   - `ark_expo_wigs` — 发型库（model_no UNIQUE, series classic/zhizhen 驱动至臻锚点, angle_photos JSON, composite_prompt, fit_tags JSON, evidence_refs JSON, priority）
@@ -109,4 +110,6 @@
   - `ark_expo_sessions` — 试戴会话（**mode tryon/scene 双入口**——scene=佩戴实拍生成场景图跳过分析, photo_path, analysis_json 含 **internal 内部字段仅销售端可见**, matched_wig_ids JSON 全量排名, strategy_json 双轨话术（scene 模式不生成）, status pending/analyzed/generating/done/failed）
   - `ark_expo_results` — 效果图（session_id FK CASCADE, **wig_id 可空**——scene 模式为 NULL, hair_color_json 发色快照（048 起 hair_color_id/code/name/hex/swatch_path/description；历史行为 palette 旧形态）, scene_json 场景快照 key/label, reaction loved/soso, short_code 分享码, gen_ms）
   - `ark_expo_feedback` — 销售反馈（intent_level A/B/C/D 直通客户机会台口径, next_action）
+- **MCP 网关（1 张表，051 迁移）**：
+  - `mcp_tokens` — 业务员个人 access token（token_hash sha256 UNIQUE 只存哈希, user_id FK ark_users.id CASCADE 归属, label 用途备注, is_active 停用即撤销, last_used_at, created_by）；`(user_id)` 索引。供入口无关的 MCP 工具鉴权→复用登录 claims 产出 current_user dict
 
