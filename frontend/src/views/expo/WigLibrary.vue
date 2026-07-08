@@ -277,7 +277,9 @@ function openEdit(row) {
     },
   }
   coverPreview.value = row.cover_url || ''
-  anglePhotos.value = (row.angle_photos || []).map((p) => ({ path: p, url: p }))
+  // path 用于保存（裸相对路径），url 用于预览（带前导 / 的可访问地址，来自后端 angle_urls）
+  const urls = row.angle_urls || []
+  anglePhotos.value = (row.angle_photos || []).map((p, i) => ({ path: p, url: urls[i] || `/${p}` }))
   drawerVisible.value = true
 }
 

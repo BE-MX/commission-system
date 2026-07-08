@@ -226,6 +226,23 @@ def list_hair_colors(db: Session, only_active: bool = True) -> list[ExpoHairColo
     return q.order_by(ExpoHairColor.priority.desc(), ExpoHairColor.id).all()
 
 
+def pick_swatch_hair_hex(dominant: list[dict]) -> str | None:
+    """从色板图主色簇里挑真实发色 hex：跳过近白背景（色板普遍白底，K-means 最大簇
+    往往是背景，直接取 [0] 会得到 #fcfcfc 这种白，见 2026-07-08 实case）。
+
+    策略：滤掉近白簇（三通道均 >=232），取剩余占比最大的；全被滤光则回退占比最大的原簇。
+    近黑不滤——自然黑是有效发色。dominant 为 extract_dominant_colors 输出（按占比降序）。
+    """
+    def is_near_white(rgb: list[int]) -> bool:
+        return all(c >= 232 for c in rgb)
+
+    if not dominant:
+        return None
+    candidates = [c for c in dominant if not is_near_white(c.get("rgb") or [0, 0, 0])]
+    chosen = candidates[0] if candidates else dominant[0]
+    return chosen.get("hex")
+
+
 def serialize_hair_color(row: ExpoHairColor) -> dict:
     return {
         "id": row.id,
@@ -492,6 +509,9 @@ def serialize_wig(wig: ExpoWig) -> dict:
         "cover_path": wig.cover_path,
         "cover_url": _to_url(wig.cover_path),
         "angle_photos": wig.angle_photos or [],
+        # angle_urls：加前导 / 的可访问 URL，供编辑页预览（angle_photos 存的是裸相对路径，
+        # 直接当 src 会被浏览器按当前路由解析成 /expo/uploads/... → 404，与 cover_url 同理）
+        "angle_urls": [_to_url(p) for p in (wig.angle_photos or [])],
         "wig_description": wig.wig_description,
         "composite_prompt": wig.composite_prompt,
         "fit_tags": wig.fit_tags or {},

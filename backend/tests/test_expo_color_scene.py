@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 import pytest
 from pydantic import ValidationError
 
-from app.expo import ai_pipeline
+from app.expo import ai_pipeline, service
 from app.expo.models import ExpoHairColor, ExpoResult, ExpoSession, ExpoWig
 from app.expo.schemas import GenerateRequest, HairColorUpsert, WigUpsert
 from app.expo.service import (
@@ -451,6 +451,60 @@ def test_watchdog_heals_stale_pending(db):
     sid = _stale_session(db, "pending", 400)
     got = get_session(db, sid)
     assert got.status == "failed"
+
+
+# ---------------- 色板取色（跳过白底背景）+ 发型 angle_urls ----------------
+
+def test_pick_swatch_hair_hex_skips_white_background():
+    """色板白底：最大簇是白背景，必须跳过取真实发色（2026-07-08 实case）。"""
+    dominant = [
+        {"hex": "#FCFCFC", "rgb": [252, 252, 252], "percentage": 70.0},  # 白底
+        {"hex": "#3D070C", "rgb": [61, 7, 12], "percentage": 25.0},       # 暗红发色
+        {"hex": "#8A8A8A", "rgb": [138, 138, 138], "percentage": 5.0},
+    ]
+    assert service.pick_swatch_hair_hex(dominant) == "#3D070C"
+
+
+def test_pick_swatch_hair_hex_keeps_black_hair():
+    """自然黑是有效发色，近黑不能被当背景滤掉。"""
+    dominant = [
+        {"hex": "#FDFDFD", "rgb": [253, 253, 253], "percentage": 60.0},
+        {"hex": "#100D0B", "rgb": [16, 13, 11], "percentage": 40.0},
+    ]
+    assert service.pick_swatch_hair_hex(dominant) == "#100D0B"
+
+
+def test_pick_swatch_hair_hex_all_white_falls_back():
+    """全是近白（空白色板）→ 回退最大簇，不返回 None 卡流程。"""
+    dominant = [
+        {"hex": "#FFFFFF", "rgb": [255, 255, 255], "percentage": 90.0},
+        {"hex": "#FAFAFA", "rgb": [250, 250, 250], "percentage": 10.0},
+    ]
+    assert service.pick_swatch_hair_hex(dominant) == "#FFFFFF"
+
+
+def test_pick_swatch_hair_hex_empty_returns_none():
+    assert service.pick_swatch_hair_hex([]) is None
+
+
+def test_serialize_wig_exposes_angle_urls_with_leading_slash():
+    """编辑页预览要可访问 URL：angle_photos 是裸相对路径，angle_urls 加前导 /。"""
+    wig = ExpoWig(
+        model_no="LS-A", name="多角度款", series="classic",
+        cover_path="uploads/expo/wigs/cover.png",
+        angle_photos=["uploads/expo/wigs/a1.png", "uploads/expo/wigs/a2.png"],
+    )
+    s = service.serialize_wig(wig)
+    assert s["angle_photos"] == ["uploads/expo/wigs/a1.png", "uploads/expo/wigs/a2.png"]
+    assert s["angle_urls"] == ["/uploads/expo/wigs/a1.png", "/uploads/expo/wigs/a2.png"]
+    assert s["cover_url"] == "/uploads/expo/wigs/cover.png"  # 与 cover 同口径
+
+
+def test_serialize_wig_empty_angles_gives_empty_urls():
+    wig = ExpoWig(model_no="LS-B", name="无图款", series="classic")
+    s = service.serialize_wig(wig)
+    assert s["angle_photos"] == []
+    assert s["angle_urls"] == []
 
 
 # ---------------- 发型/发色删除（管货：FK 拦截 + 快照无损） ----------------

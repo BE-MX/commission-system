@@ -363,14 +363,14 @@ def upload_hair_color_swatch(
         shutil.copyfileobj(photo.file, f)
     rel = ai_pipeline.to_rel(target)
 
-    # 系统承担复杂性：色板图主色自动提取，管理员免手填 hex；失败不阻断上传
+    # 系统承担复杂性：色板图主色自动提取，管理员免手填 hex；失败不阻断上传。
+    # k=4 + pick_swatch_hair_hex 跳过白底背景，取真实发色（直接取最大簇会得到白底）
     hex_code = None
     try:
         from app.color.calc_service import extract_dominant_colors
 
-        dominant = extract_dominant_colors(str(target), k=3)
-        if dominant:
-            hex_code = dominant[0]["hex"]
+        dominant = extract_dominant_colors(str(target), k=4)
+        hex_code = service.pick_swatch_hair_hex(dominant)
     except Exception as exc:
         msg = f"[expo] swatch dominant color extract failed: {exc}"
         logger.warning(msg)
