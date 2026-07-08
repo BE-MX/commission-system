@@ -112,6 +112,26 @@ export function reconcileCustomProducts() {
   return unwrap(request.post('/custom-products/reconcile', null, { loadingText: '正在对账回填...' }))
 }
 
+// ── 回款日期修复 ──────────────────────────────────────
+
+export function previewReceiptRepair(formData) {
+  return unwrap(request.post('/receipt-repair/preview', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    loadingText: '正在匹配工作表...',
+  }))
+}
+
+export function applyReceiptRepair(data) {
+  return unwrap(request.post('/receipt-repair/apply', data, { loadingText: '正在写入修复...' }))
+}
+
+export function exportReceiptRepairUnmatched(data) {
+  return request.post('/receipt-repair/export-unmatched', data, {
+    responseType: 'blob',
+    loadingText: '正在导出无法匹配清单...',
+  })
+}
+
 // ── 导出 ─────────────────────────────────────────────
 
 export function downloadInvoiceExcel(id) {

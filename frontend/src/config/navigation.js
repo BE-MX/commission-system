@@ -182,6 +182,17 @@ export const NAV_ENTRIES = [
       permission: 'invoice:admin',
     },
   },
+  {
+    path: '/invoice/receipt-repair',
+    name: 'ReceiptDateRepair',
+    component: () => import('@/views/invoice/ReceiptDateRepair.vue'),
+    title: '回款日期修复',
+    permission: 'invoice:admin',
+    menu: {
+      group: 'invoice', title: '回款日期修复', icon: Document, order: 30,
+      permission: 'invoice:admin',
+    },
+  },
 
   // ── 展会营销（AI 试戴；kiosk 全屏页在 router/index.js 顶层注册） ──
   {
