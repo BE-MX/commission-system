@@ -287,6 +287,8 @@ def seed_role_permissions(db: Session):
         ("customer_radar:read",   "customer_radar", "read",   "查看客户经营雷达"),
         ("customer_radar:write",  "customer_radar", "write",  "完成/延后/反馈行动"),
         ("customer_radar:manage", "customer_radar", "manage", "管理所有客户档案/手动分配"),
+        # MCP 网关(物流录单/查询的入口无关 MCP 服务)
+        ("mcp:admin", "mcp", "admin", "发放/吊销 MCP 个人 access token"),
     ]
     # upsert：活跃权限 + 已下架权限统一处理，元数据每次启动刷新
     existing_map = {p.code: p for p in db.query(ArkPermission).all()}
