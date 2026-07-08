@@ -15,9 +15,10 @@ import {
 
 const POLL_MS = 2000
 const IDLE_MS = 60000
-// 不判 idle 的步骤：analyzing=客户在等待不算离开；result=展示页只允许手动返回主页，
-// 不自动跳回（用户指令 2026-07-07——客户慢慢看图/扫码，不能被清场）
-const NO_IDLE_STEPS = ['analyzing', 'result']
+// 不判 idle 的步骤：analyzing=客户在等待不算离开；matching=甄选发型/发色是客户慢慢挑的
+// 决策页；result=展示页。三者都只允许手动返回主页，不自动跳回
+//（用户指令 2026-07-07 result / 2026-07-08 matching——挑款看图不能被清场）
+const NO_IDLE_STEPS = ['analyzing', 'matching', 'result']
 
 export function useTryOnFlow() {
   const step = ref('attract')
