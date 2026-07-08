@@ -4,7 +4,49 @@
 支持 OpenAI (Chat Completions) 和 Anthropic (Messages) 两种 API 协议。
 """
 
+import re
+
 from app.ai.models import AiProvider
+
+# data URL: data:<media_type>;base64,<data>
+_DATA_URL_RE = re.compile(r"^data:(?P<media>[^;,]+)(?P<b64>;base64)?,(?P<data>.*)$", re.DOTALL)
+
+
+def _openai_block_to_anthropic(block):
+    """OpenAI 的 image_url 内容块 → Anthropic 的 image/source 块；非图片块原样返回。
+
+    调用方（expo 面容分析等）统一按 OpenAI 多模态格式 {"type":"image_url",...} 组装，
+    发到 anthropic 类 Provider 时若不转换，网关会静默丢图 → 模型「未收到照片」
+    （2026-07-08 线上 session=28/29/30 实case）。
+    """
+    if not isinstance(block, dict) or block.get("type") != "image_url":
+        return block
+    image_url = block.get("image_url")
+    url = image_url.get("url") if isinstance(image_url, dict) else image_url
+    if not isinstance(url, str):
+        return block
+    if url.startswith("data:"):
+        m = _DATA_URL_RE.match(url)
+        if not m or not m.group("b64"):
+            return block  # 非 base64 data URL 不猜，保持原样
+        return {
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": m.group("media") or "image/jpeg",
+                "data": m.group("data"),
+            },
+        }
+    if url.startswith(("http://", "https://")):
+        return {"type": "image", "source": {"type": "url", "url": url}}
+    return block
+
+
+def _to_anthropic_content(content):
+    """消息 content 从 OpenAI 多模态格式转 Anthropic 格式；字符串或非图片块保持不变。"""
+    if not isinstance(content, list):
+        return content
+    return [_openai_block_to_anthropic(b) for b in content]
 
 
 def build_chat_url(api_base: str, api_type: str = "openai") -> str:
@@ -78,8 +120,13 @@ def build_anthropic_body(
     - system 是顶层参数,不在 messages 里
     - 必须有 max_tokens
     """
-    # 分离 system message 和 user/assistant messages
-    user_messages = [m for m in messages if m.get("role") != "system"]
+    # 分离 system message 和 user/assistant messages；user/assistant 的多模态 content
+    # 从 OpenAI image_url 格式转成 Anthropic image/source 格式（否则图被网关静默丢弃）
+    user_messages = [
+        {**m, "content": _to_anthropic_content(m.get("content"))}
+        for m in messages
+        if m.get("role") != "system"
+    ]
 
     body = {
         "model": model,
