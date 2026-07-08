@@ -18,6 +18,7 @@ from app.bootstrap import (
     mount_uploads, mount_frontend,
 )
 from app.routers import register_routers
+from app.mcp.server import mount_mcp, mcp_session_lifespan
 from app.schedulers import start_scheduler, shutdown_scheduler
 
 logger = logging.getLogger("commission")
@@ -29,20 +30,22 @@ _scheduler = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # --- 启动 ---
-    check_database_connection()
-    load_business_rules()
-    seed_admin_and_permissions()
-    seed_asset_dimensions()
+    # MCP streamable-http session manager 需在整个 app 生命周期内运行
+    async with mcp_session_lifespan():
+        # --- 启动 ---
+        check_database_connection()
+        load_business_rules()
+        seed_admin_and_permissions()
+        seed_asset_dimensions()
 
-    global _scheduler
-    _scheduler = start_scheduler()
+        global _scheduler
+        _scheduler = start_scheduler()
 
-    auto_init_ai_presets()
+        auto_init_ai_presets()
 
-    yield
-    # --- 关闭 ---
-    shutdown_scheduler(_scheduler)
+        yield
+        # --- 关闭 ---
+        shutdown_scheduler(_scheduler)
     engine.dispose()
 
 
@@ -95,6 +98,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 # 静态文件 & 路由
 mount_uploads(app)
 register_routers(app)
+mount_mcp(app)
 
 
 @app.get("/health")
