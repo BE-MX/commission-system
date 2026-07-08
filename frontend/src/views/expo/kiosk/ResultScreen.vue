@@ -31,7 +31,10 @@
     <template v-else>
       <div ref="stageEl" class="stage" @pointerdown="dragStart" @pointermove="dragMove" @pointerup="dragEnd" @pointercancel="dragEnd">
         <img :src="photoUrl" class="img before" alt="佩戴前" />
-        <img :src="current.image_url" class="img after" :style="{ clipPath: `inset(0 0 0 ${sliderPct}%)` }" alt="佩戴后" />
+        <!-- 切换新效果图时对焦式揭晓：keyed Transition 让旧图淡出、新图 blur→sharp 登场 -->
+        <Transition name="swap">
+          <img :key="current.id" :src="current.image_url" class="img after" :style="{ clipPath: `inset(0 0 0 ${sliderPct}%)` }" alt="佩戴后" />
+        </Transition>
         <div class="divider" :style="{ left: `${sliderPct}%` }"><span class="knob">⇔</span></div>
         <span class="lbl b">{{ isScene ? '现场实拍' : '佩戴前' }}</span>
         <span class="lbl a">{{ isScene ? '莱莎 · 场景大片' : '莱莎 · 佩戴后' }}</span>
@@ -40,8 +43,11 @@
         <button class="zoom-btn" aria-label="查看完整效果图" @pointerdown.stop @click="lightboxOpen = true">⤢ 查看大图</button>
       </div>
 
-      <!-- 二次生成：已有成品在展示，新款在后台合成，用胶囊提示不打断浏览 -->
-      <div v-if="flow.generating.value" class="gen-pill"><i />正在合成新选择 · 完成后自动切换</div>
+      <!-- 二次生成：已有成品在展示，新款在后台合成，用胶囊提示不打断浏览。
+           入场 fade+上移、金光横扫表达"进行中"，完成时淡出 -->
+      <Transition name="pill">
+        <div v-if="flow.generating.value" class="gen-pill"><i />正在合成新选择 · 完成后自动切换</div>
+      </Transition>
 
       <div class="meta">
         <span class="nm">{{ current.wig_name }}</span>
@@ -243,6 +249,16 @@ watch([shareUrl, qrEl], async () => {
   background: radial-gradient(60% 55% at 50% 40%, #34291c, #17110c 78%);
 }
 .img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+/* 新效果图对焦式揭晓：blur→sharp + 从 1.03 收束（像照片显影），旧图更快淡出（非对称时长）。
+   两张 after 图同 clip-path 叠放，crossfade 由 blur 掩护双影，只动 opacity/transform/filter */
+.swap-enter-active { transition: opacity 440ms cubic-bezier(0.23, 1, 0.32, 1), transform 440ms cubic-bezier(0.23, 1, 0.32, 1), filter 440ms ease-out; z-index: 1; }
+.swap-leave-active { transition: opacity 260ms cubic-bezier(0.23, 1, 0.32, 1), filter 260ms ease-out; }
+.swap-enter-from { opacity: 0; transform: scale(1.03); filter: blur(10px); }
+.swap-leave-to { opacity: 0; filter: blur(6px); }
+@media (prefers-reduced-motion: reduce) {
+  .swap-enter-from { transform: none; filter: none; }
+  .swap-leave-to { filter: none; }
+}
 .divider {
   position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; z-index: 3;
   background: linear-gradient(180deg, transparent, var(--xk-gold), transparent);
@@ -330,14 +346,33 @@ watch([shareUrl, qrEl], async () => {
 .home-btn:active { transform: scale(0.96); }
 
 .gen-pill {
+  position: relative; overflow: hidden;
   margin-top: 12px; padding: 7px 16px; border-radius: 20px;
   border: 1px solid var(--xk-gold-line); background: rgba(232, 196, 121, 0.07);
   font-size: 11px; letter-spacing: 0.16em; color: var(--xk-gold);
   display: flex; align-items: center; gap: 8px;
 }
+/* 金光横扫：表达"合成进行中"的持续动作，constant motion 用 linear，只动 transform */
+.gen-pill::after {
+  content: ''; position: absolute; top: 0; bottom: 0; left: 0; width: 45%;
+  background: linear-gradient(90deg, transparent, rgba(247, 227, 176, 0.22), transparent);
+  transform: translateX(-120%);
+  animation: gen-sweep 1.6s linear infinite;
+}
 .gen-pill i {
   width: 6px; height: 6px; border-radius: 50%; background: var(--xk-gold);
+  box-shadow: 0 0 6px var(--xk-gold);
   animation: halo-fade 1.4s ease-in-out infinite;
+}
+@keyframes gen-sweep { to { transform: translateX(370%); } }
+/* 胶囊出入场：入场 fade+上移强 ease-out，完成时更快淡出（非对称） */
+.pill-enter-active { transition: opacity 300ms cubic-bezier(0.23, 1, 0.32, 1), transform 300ms cubic-bezier(0.23, 1, 0.32, 1); }
+.pill-leave-active { transition: opacity 200ms cubic-bezier(0.23, 1, 0.32, 1), transform 200ms cubic-bezier(0.23, 1, 0.32, 1); }
+.pill-enter-from, .pill-leave-to { opacity: 0; transform: translateY(8px); }
+@media (prefers-reduced-motion: reduce) {
+  .gen-pill::after { animation: none; }
+  .gen-pill i { animation-name: halo-fade; }
+  .pill-enter-from, .pill-leave-to { transform: none; }
 }
 .meta { width: min(72vw, 460px); display: flex; justify-content: space-between; align-items: baseline; margin-top: 14px; }
 .meta .nm { font-family: 'Noto Serif SC', serif; font-size: 20px; color: var(--xk-gold-hi); }
@@ -357,8 +392,12 @@ watch([shareUrl, qrEl], async () => {
 }
 .evidence b { color: var(--xk-gold); font-weight: 400; letter-spacing: 0.12em; flex: none; }
 .dots { display: flex; gap: 10px; margin-top: 12px; }
-.dots i { width: 7px; height: 7px; border-radius: 50%; background: #4a4234; cursor: pointer; }
+.dots i {
+  width: 7px; height: 7px; border-radius: 50%; background: #4a4234; cursor: pointer;
+  transition: width 260ms cubic-bezier(0.23, 1, 0.32, 1), background 200ms ease, box-shadow 200ms ease;
+}
 .dots i.on { width: 20px; border-radius: 5px; background: var(--xk-gold); box-shadow: 0 0 8px var(--xk-gold); }
+@media (prefers-reduced-motion: reduce) { .dots i { transition: background 200ms ease; } }
 .reacts { display: flex; gap: 12px; margin-top: 14px; width: min(72vw, 460px); }
 .react {
   flex: 1; height: 44px; border-radius: 14px; cursor: pointer;
