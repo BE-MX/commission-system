@@ -34,8 +34,8 @@ export function useTryOnFlow() {
   const selectedColorId = ref(null)  // null = 保持发型原色
   const scenes = ref([])             // 场景大片可选场景
   const selectedSceneKeys = ref([])
-  const tryonScenes = ref([])        // tryon 生成场景选项（居家/办公/聚会）
-  const selectedTryonScene = ref(null) // null = 保持原照片背景
+  const tryonScenes = ref([])        // tryon 生成场景选项（职业/生活场景，滑动选择）
+  const selectedTryonScene = ref(null) // 默认选中第一个；仅弱网加载失败时留 null=原景兜底
 
   const regForm = reactive({
     name: '', phone: '', wechat_id: '',
@@ -134,11 +134,17 @@ export function useTryOnFlow() {
   }
 
   async function loadTryonScenes() {
-    if (tryonScenes.value.length) return
-    try {
-      const res = await getScenes({ mode: 'tryon' })
-      tryonScenes.value = res.data || []
-    } catch (e) { /* 加载失败只保留"原景"，不阻断 */ }
+    if (!tryonScenes.value.length) {
+      try {
+        const res = await getScenes({ mode: 'tryon' })
+        tryonScenes.value = res.data || []
+      } catch (e) { /* 加载失败留空 → 退回原景兜底(selectedTryonScene=null)，不阻断 */ }
+    }
+    // 原景已作为独立选项移除：每次进甄选页默认选中第一个场景（不让用户思考，可滑动改选）。
+    // resetAll 会把 selectedTryonScene 清回 null，故默认选中须放在缓存守卫之外每次重设
+    if (!selectedTryonScene.value && tryonScenes.value.length) {
+      selectedTryonScene.value = tryonScenes.value[0].key
+    }
   }
 
   async function loadScenes() {

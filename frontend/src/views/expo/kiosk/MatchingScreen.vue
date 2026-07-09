@@ -55,18 +55,23 @@
       </div>
     </div>
 
-    <div v-if="flow.tryonScenes.value.length" class="color-pick">
-      <div class="cp-title">生成场景<small>可选 · 默认保持原照片背景</small></div>
-      <div class="chips">
+    <div v-if="flow.tryonScenes.value.length" class="scene-pick">
+      <div class="cp-title">生成场景<small>左右滑动选择 · 场景图仅示意</small></div>
+      <div ref="trackRef" class="scene-track" @scroll="onSceneScroll">
         <button
-          class="chip" :class="{ on: !flow.selectedTryonScene.value }"
-          @click="pickScene(null)"
-        >原景</button>
-        <button
-          v-for="s in flow.tryonScenes.value" :key="s.key"
-          class="chip" :class="{ on: flow.selectedTryonScene.value === s.key }"
-          @click="pickScene(s.key)"
-        >{{ s.label }}<small class="chip-tag">{{ s.tagline }}</small></button>
+          v-for="(s, i) in flow.tryonScenes.value" :key="s.key"
+          class="scard" :class="{ on: sceneActive === i }"
+          @click="centerScene(i)"
+        >
+          <span class="scard-pic">
+            <img v-if="s.image" :src="s.image" alt="" />
+            <span v-else class="scard-ph"><span class="scard-emoji">{{ sceneEmoji(s.key) }}</span></span>
+          </span>
+          <span class="scard-cap">
+            <span class="scard-lb">{{ s.label }}</span>
+            <span class="scard-tg">{{ s.tagline }}</span>
+          </span>
+        </button>
       </div>
     </div>
 
@@ -77,7 +82,7 @@
 </template>
 
 <script setup>
-import { computed, inject, onMounted } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 
 const flow = inject('tryonFlow')
 
@@ -93,18 +98,8 @@ const skinLabel = computed(() => {
   return parts.join(' · ')
 })
 
-onMounted(() => {
-  flow.loadHairColors()
-  flow.loadTryonScenes()
-})
-
 function pickWig(id) {
   flow.selectedWigId.value = id
-  flow.touch()
-}
-
-function pickScene(key) {
-  flow.selectedTryonScene.value = key
   flow.touch()
 }
 
@@ -112,6 +107,70 @@ function pickColor(id) {
   flow.selectedColorId.value = id
   flow.touch()
 }
+
+// ── 生成场景滑动选择器（居中卡=选中；原生 scroll-snap 吃触摸惯性，选中卡放大） ──
+const trackRef = ref(null)
+const sceneActive = ref(0)
+let scRaf = 0
+
+// 占位卡图标（无示意图时用）；后台把实拍/AI 图丢进 uploads/expo/scenes/<key>.* 即替换为真图
+const SCENE_EMOJI = {
+  whitecollar: '💼', teacher: '📚', shopowner: '🛍️',
+  civilservant: '🏛️', doctor: '🩺', home: '🛋️', gathering: '🥂',
+}
+function sceneEmoji(key) { return SCENE_EMOJI[key] || '✦' }
+
+function cardCenterOffset(el, card) {
+  return card.offsetLeft - (el.clientWidth - card.offsetWidth) / 2
+}
+
+// 滚动时找离容器中线最近的卡 → 置为选中（rAF 节流，避免频繁改 flow 状态）
+function syncScene() {
+  const el = trackRef.value
+  if (!el) return
+  const center = el.scrollLeft + el.clientWidth / 2
+  const cards = el.querySelectorAll('.scard')
+  let best = 0
+  let bestDist = Infinity
+  cards.forEach((c, i) => {
+    const d = Math.abs(c.offsetLeft + c.offsetWidth / 2 - center)
+    if (d < bestDist) { bestDist = d; best = i }
+  })
+  sceneActive.value = best
+  const key = flow.tryonScenes.value[best]?.key
+  if (key && key !== flow.selectedTryonScene.value) {
+    flow.selectedTryonScene.value = key
+    flow.touch()
+  }
+}
+
+function onSceneScroll() {
+  if (scRaf) return
+  scRaf = requestAnimationFrame(() => { scRaf = 0; syncScene() })
+}
+
+// 点卡片 → 平滑滚到居中（snap 会落定，onSceneScroll 顺带更新选中）
+function centerScene(i) {
+  const el = trackRef.value
+  const card = el?.querySelectorAll('.scard')[i]
+  if (!el || !card) return
+  el.scrollTo({ left: cardCenterOffset(el, card), behavior: 'smooth' })
+}
+
+onMounted(async () => {
+  flow.loadHairColors()
+  await flow.loadTryonScenes()
+  await nextTick()
+  // flow 已把默认选中设为第一个场景；把它瞬时居中（无动画），之后滑动/点击才平滑
+  const el = trackRef.value
+  if (!el) return
+  const idx = flow.tryonScenes.value.findIndex(s => s.key === flow.selectedTryonScene.value)
+  sceneActive.value = idx < 0 ? 0 : idx
+  const card = el.querySelectorAll('.scard')[sceneActive.value]
+  if (card) el.scrollLeft = cardCenterOffset(el, card)
+})
+
+onBeforeUnmount(() => { if (scRaf) cancelAnimationFrame(scRaf) })
 </script>
 
 <style scoped>
@@ -220,6 +279,57 @@ function pickColor(id) {
 }
 .sw.origin { background: conic-gradient(var(--xk-ink-2), var(--xk-gold-dim), var(--xk-ink-2)); }
 .chip-tag { margin-left: 7px; font-size: 10px; color: var(--xk-gold-dim); letter-spacing: 0.1em; }
+
+/* ── 生成场景滑动选择器（居中卡放大，仅示意不参与合成） ── */
+.scene-pick { width: min(88vw, 560px); margin-top: auto; --scard-w: 118px; }
+.color-pick + .scene-pick { margin-top: 20px; }
+.scene-track {
+  /* 必须定位：让 .scard 的 offsetParent = 本容器，否则 offsetLeft 相对更上层的 xk-root(fixed)
+     测量，混入常量偏移，syncScene/centerScene 的居中数学在宽屏错位（2026-07-09 对抗性审查修复） */
+  position: relative;
+  display: flex; gap: 4px; margin-top: 12px; padding-bottom: 4px;
+  padding-inline: calc((100% - var(--scard-w)) / 2);
+  overflow-x: auto; scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch; scrollbar-width: none;
+}
+.scene-track::-webkit-scrollbar { display: none; }
+.scard {
+  flex: none; width: var(--scard-w); scroll-snap-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 0; border: none; background: transparent; cursor: pointer;
+  transform: scale(0.82); opacity: 0.5; transform-origin: center bottom;
+  transition: transform 240ms cubic-bezier(0.23, 1, 0.32, 1),
+    opacity 240ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.scard.on { transform: scale(1); opacity: 1; }
+.scard-pic {
+  width: 100%; aspect-ratio: 3 / 4; border-radius: 16px; overflow: hidden;
+  border: 1px solid var(--xk-gold-line); background: var(--xk-ink-2);
+  display: flex; align-items: center; justify-content: center;
+  transition: border-color 240ms ease, box-shadow 240ms ease, transform 120ms ease-out;
+}
+.scard.on .scard-pic { border-color: var(--xk-gold); box-shadow: 0 8px 28px rgba(232, 196, 121, 0.22); }
+.scard:active .scard-pic { transform: scale(0.97); }
+.scard-pic img { width: 100%; height: 100%; object-fit: cover; }
+.scard-ph {
+  width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+  background:
+    radial-gradient(circle at 50% 32%, rgba(232, 196, 121, 0.16), rgba(232, 196, 121, 0.02) 62%),
+    linear-gradient(160deg, var(--xk-ink-2), var(--xk-ink));
+}
+.scard-emoji { font-size: 34px; opacity: 0.6; filter: saturate(0.8); }
+.scard-cap { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.scard-lb { font-family: 'Noto Serif SC', serif; font-size: 15px; color: var(--xk-mut); transition: color 240ms ease; }
+.scard.on .scard-lb { color: var(--xk-gold-hi); }
+.scard-tg { font-size: 10px; letter-spacing: 0.14em; color: var(--xk-gold-dim); }
+
+@media (prefers-reduced-motion: reduce) {
+  .scard { transition: opacity 200ms ease; transform: none; opacity: 0.55; }
+  .scard.on { transform: none; opacity: 1; }
+  .scard:active .scard-pic { transform: none; }
+}
+
 .go { margin-top: auto; margin-bottom: 1vh; min-width: 300px; }
+.scene-pick + .go { margin-top: 16px; }
 .go:disabled { opacity: 0.4; }
 </style>
