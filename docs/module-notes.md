@@ -465,6 +465,13 @@ frontend/src/
 - 面容分析 prompt 加 face_shape 六型判定标准（长宽比/三段宽度/下颌线）+ 新增 `face_features` 客观特征字段（**不进客户屏白名单**，供话术引用）
 - 结果屏新增「查看大图」灯箱（预览框 cover 裁切 → contain 完整显示；入口是按钮而非点图——图片表面被对比滑块手势占用）
 
+**生成场景改版：职业场景 + 滑动选择器 + multi 下线（2026-07-09）**
+- `TRYON_SCENES` 重构：移除 office/multi，新增 5 个职业场景 whitecollar 白领高管/teacher 老师/shopowner 老板娘/civilservant 公务员/doctor 医生（顺序即卡片顺序），保留 home/gathering。默认选中第一个（whitecollar），**「原景」独立选项移除**——每张换发都置换场景；仅弱网 `loadTryonScenes` 失败(tryonScenes 空)时 selectedTryonScene 留 null 退回原景 keep_bg 兜底
+- **叙事化单人收敛**：新场景带强动作（演示PPT/讲课/接待/看材料/检查病人）。`_TRYON_SCENE_CLAUSE` 重写为放开姿势/手势/表情让人物自然融入场景+自信神态，硬锁面部身份与发型发色，第二人物（学生/病人/顾客）只作虚化背景暗示、绝不清晰出镜（避免单人自拍合成崩第二张脸/手）。配套把 expression 从 `_COMPOSITE_TEMPLATE` 硬锁移出、改由 `_TRYON_KEEP_BG_CLAUSE` 承担（原景仍锁表情，场景放开），消除同一 prompt 内「锁表情↔随场景改表情」的自相矛盾
+- **multi（多场景合一）整块下线**：删 `_MULTI_SCENE_PROMPT`/`_build_multi_scene_prompt`/`_SIZE_LANDSCAPE`/`TRYON_SCENE_MULTI_KEY` 及 `_build_prompt` 的 multi 分支（上一条 2026-07-07 的 multi 记录已失效，此为历史）。DB 里若存历史 scene_json.key=="multi"/"office" 的 result 行仅影响「重新生成」，resolve 返回 None → 落 keep_bg 竖版；已生成图按 image_url 原样回放不受影响
+- **滑动图片选择器**（`MatchingScreen.vue`）：场景 chip 换成 scroll-snap 横向滑动，居中卡=选中并放大(scale 1 vs 0.82)，原生 snap 吃触摸惯性；`syncScene` rAF 节流按 offsetLeft 找居中卡回写 `selectedTryonScene`；点卡 `scrollTo` 平滑居中；prefers-reduced-motion 降级去 scale
+- **场景示意图约定**：`scene_image_url(key)` 探测 `uploads/expo/scenes/<key>.{jpg,jpeg,png,webp}`，存在即 `GET /scenes?mode=tryon` 返回 `image` URL，否则 null → 前端退化金线渐变占位卡（emoji 图标）。**运营把实拍/AI 图丢进该目录即自动生效，无需改代码**。场景图仅示意、不参与合成
+
 **已踩坑（2026-07-04 对抗性审查修复）**
 - 后台线程的批量启动函数（`_start_batch`）必须：状态置位与插行合并单事务 + except 回滚 + 会话标 failed + `_log_fail` 双写——初版漏兜底，非法 wig_id 会把会话永久卡在 generating
 - kiosk 轮询状态机的失败路径必须显式收尾：`analyzing` 属 BUSY_STEPS（不挂 idle 定时器），失败时留在原地 = 展位永久卡屏，需退回 `capture`；整批效果图全 failed 时 session 仍推 `done`，前端要用「results 里没有任何 done」补判并给重试出口

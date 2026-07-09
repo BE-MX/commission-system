@@ -153,18 +153,23 @@ def test_build_prompt_tryon_with_scene_swaps_background():
     wig = ExpoWig(model_no="LS-3", name="轻盈波波", wig_description="airy bob")
     row = ExpoResult(
         session_id=1, wig_id=3,
-        scene_json={"key": "office", "label": "办公"},
+        scene_json={"key": "whitecollar", "label": "白领高管"},
     )
     prompt, _, _ = ai_pipeline._build_prompt(session, row, wig)
-    assert "workspace" in prompt  # office 场景 prompt 注入
+    assert "boardroom" in prompt  # whitecollar 场景 prompt 注入
     assert "background and framing exactly the same" not in prompt
     assert "85mm" in prompt  # 场景置换路径带摄像语言
     assert "magazine-quality" not in prompt  # 不能误入 scene 模式模板
+    # 叙事化：放开姿势/表情但锁身份，第二人物只作虚化背景（用户定稿 2026-07-09）
+    assert "adapt the background, outfit, pose, gesture and facial expression" in prompt
+    assert "never with detailed faces or hands" in prompt
 
 
 def test_resolve_tryon_scene():
     assert ai_pipeline.resolve_tryon_scene("home")["label"] == "居家"
-    assert ai_pipeline.resolve_tryon_scene("multi")["label"] == "多场景合一"
+    assert ai_pipeline.resolve_tryon_scene("doctor")["label"] == "医生"
+    assert ai_pipeline.resolve_tryon_scene("office") is None  # 办公已移除
+    assert ai_pipeline.resolve_tryon_scene("multi") is None   # 多场景合一已移除
     assert ai_pipeline.resolve_tryon_scene("bogus") is None
     assert ai_pipeline.resolve_tryon_scene(None) is None
 
@@ -180,7 +185,7 @@ def test_build_prompt_tryon_single_scene_is_portrait():
     assert size == "1024x1536"
     assert "102x152mm" in prompt
 
-    row_scene = ExpoResult(session_id=1, wig_id=3, scene_json={"key": "office", "label": "办公"})
+    row_scene = ExpoResult(session_id=1, wig_id=3, scene_json={"key": "whitecollar", "label": "白领高管"})
     _, _, size2 = ai_pipeline._build_prompt(session, row_scene, wig)
     assert size2 == "1024x1536"
 
@@ -192,61 +197,21 @@ def test_build_prompt_scene_mode_size_follows_preset():
     assert size is None  # scene 模式不限定，沿用 preset 配置
 
 
-# ---------------- 多场景合一（完整替换式 prompt，横版三联图） ----------------
+# ---------------- 场景示意图探测（滑动选择器用，仅示意不参与合成） ----------------
 
-def test_build_prompt_multi_scene_full_replacement(tmp_path):
-    """multi：定稿模板整体替换（不走 COMPOSITE_TEMPLATE 组装），横版尺寸，色板末位。"""
-    swatch = tmp_path / "sw.png"
-    swatch.write_bytes(b"fake")
-    session = _session()
-    wig = ExpoWig(model_no="LS-1", name="轻盈波波", wig_description="short bob")
-    row = ExpoResult(
-        session_id=1, wig_id=1,
-        hair_color_json={"name": "栗棕", "code": "6", "swatch_path": str(swatch)},
-        scene_json={"key": "multi", "label": "多场景合一"},
-    )
-    prompt, images, size = ai_pipeline._build_prompt(session, row, wig)
-    assert size == "1536x1024"
-    assert "152*102mm横版" in prompt
-    assert "三联式构图" in prompt
-    assert "发色以色板图为唯一基准" in prompt
-    assert "FIRST image" not in prompt  # 不与英文组装模板混拼
-    assert images[-1] == swatch
-    # 防"只换背景"回归：身份锁定不得锁死表情/姿势/服装，且逐场景有穿着动作指令
-    assert "绝不沿用图1中的表情、姿势、服装与配饰" in prompt
-    assert "针织家居服" in prompt and "衬衫或轻西装外套" in prompt and "连衣裙" in prompt
-    assert "复制粘贴感" in prompt
+def test_scene_image_url_missing_returns_none():
+    assert ai_pipeline.scene_image_url("whitecollar") is None  # 未放图 → 前端退化占位卡
 
 
-def test_build_prompt_multi_scene_without_refs_and_color_degrades():
-    """multi 无参考图无发色：锚点句退化为款式描述 + 原色，不引用不存在的图。"""
-    session = _session()
-    wig = ExpoWig(model_no="LS-2", name="知性短发", wig_description="精致纹理短发")
-    row = ExpoResult(
-        session_id=1, wig_id=2, hair_color_json=None,
-        scene_json={"key": "multi", "label": "多场景合一"},
-    )
-    prompt, images, size = ai_pipeline._build_prompt(session, row, wig)
-    assert size == "1536x1024"
-    assert "精致纹理短发" in prompt
-    assert "色板图" not in prompt
-    assert "发色与假发款式的原本颜色保持一致" in prompt
-    assert "图2" not in prompt  # 没有参考图就不能出现图2指代
-    assert len(images) == 1
-
-
-def test_build_prompt_multi_scene_text_color_no_swatch():
-    """multi 选了发色但无色板图：色锚退化为文字描述。"""
-    session = _session()
-    wig = ExpoWig(model_no="LS-1", name="轻盈波波", wig_description="short bob")
-    row = ExpoResult(
-        session_id=1, wig_id=1,
-        hair_color_json={"name": "栗棕", "code": "6", "description": "暖调栗棕"},
-        scene_json={"key": "multi", "label": "多场景合一"},
-    )
-    prompt, _, _ = ai_pipeline._build_prompt(session, row, wig)
-    assert "「栗棕」" in prompt and "色号 6" in prompt and "暖调栗棕" in prompt
-    assert "色板图" not in prompt
+def test_scene_image_url_found_returns_public_path(tmp_path, monkeypatch):
+    """约定目录放了 <key>.jpg → 返回 /uploads 开头的公开 URL。"""
+    scene_dir = tmp_path / "scenes"
+    scene_dir.mkdir()
+    (scene_dir / "doctor.jpg").write_bytes(b"fake")
+    monkeypatch.setattr(ai_pipeline, "SCENE_IMAGE_DIR", scene_dir)
+    monkeypatch.setattr(ai_pipeline, "REPO_ROOT", tmp_path)
+    assert ai_pipeline.scene_image_url("doctor") == "/scenes/doctor.jpg"
+    assert ai_pipeline.scene_image_url("teacher") is None
 
 
 def test_scene_mode_home_key_not_confused_with_tryon_home():
