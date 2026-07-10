@@ -70,6 +70,11 @@
   - `GET /invoices/{id}/export/excel` — 导出 Excel（含 To/From 头块与费用区）
   - `GET /invoices/{id}/export/print` — 打印用 HTML
   - `GET /invoices/{id}/export/pdf` — 导出 PDF
+  - `GET /xiaoman/settings` — 读取 OKKI 推单设置（invoice:admin；token 只回掩码 + has_token，无行时返回默认值不建行）
+  - `PUT /xiaoman/settings` — 保存 OKKI 推单设置（invoice:admin；access_token 语义 null=不改/空串=清除/非空=覆盖；generic_product_no 服务端解析 okki_products 回填 product_id，SKU 唯一自动关联、多 SKU 须显式指定且校验归属）
+  - `GET /xiaoman/settings/resolve-product?product_no=` — 按产品编号解析通用产品及 SKU 候选（invoice:admin，前端选 SKU 用）
+  - `POST /xiaoman/settings/fetch-token` — 强制向 OKKI 获取新 access_token（invoice:admin；client_credentials 模式，凭证走 Settings.OKKI_CLIENT_ID/SECRET，token 落 ark_xiaoman_settings，约 8h 有效）
+  - `GET /xiaoman/enums` — OKKI 企业级订单枚举（invoice:admin；order_status_list/currency_list/price_contract_list；内部惰性续期 token，401 自动强刷重试一次）
   - `POST /receipt-repair/preview` — 上传田雯工作表，只读试跑匹配 okki_receipts（invoice:admin）；锚点=客户名+订单总额USD→唯一订单，返回 待修改/已正确/无法匹配 三类，不写库
   - `POST /receipt-repair/apply` — 写入前端确认的 collection_date 修复（invoice:admin）；跨库 UPDATE `lsordertest.okki_receipts` + 落审计表 `ark_receipt_repair_log`(old→new) 可回滚
   - `POST /receipt-repair/export-unmatched` — 无法匹配行导出为新 Excel（invoice:admin）
@@ -90,6 +95,7 @@
     - `POST /users/{user_id}/external-bindings` — 创建绑定（Query: provider, external_account_id, display_name）
     - `DELETE /users/{user_id}/external-bindings/{binding_id}` — 软删绑定
     - `GET /external-binding-candidates` — 候选列表（可选 status 筛选）
+    - `POST /external-binding-candidates/sync-okki` — 从业务库 user_basic 同步 OKKI 用户候选（external_binding:write；已绑定跳过，姓名=real_name 自动带建议用户）
     - `POST /external-binding-candidates/{candidate_id}/bind` — 候选绑定到用户
     - `POST /external-binding-candidates/{candidate_id}/ignore` — 忽略候选
 - `/api/design` — 设计预约（拍摄预约申请、审批、排期管理、附件、期望日期修改）

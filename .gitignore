@@ -52,3 +52,6 @@ backend/reference.docx
 
 # 运行时上传文件（含展会客户照片，隐私敏感，不入库）
 /uploads/
+
+# unknowns 实现笔记（临时，验收后删除）
+docs/implementation-notes.md
