@@ -11,6 +11,7 @@ import base64
 import json
 import logging
 import re
+import shutil
 import threading
 import time
 import urllib.request
@@ -427,6 +428,9 @@ SCENE_IMAGE_DIR = UPLOAD_ROOT / "scenes"
 _SCENE_IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp")
 
 
+_SCENE_IMG_MAX_EDGE = 1200  # kiosk 一屏加载多张，超边长降采样控体积
+
+
 def scene_image_url(key: str) -> str | None:
     """场景 key → 示意图公开 URL（/uploads/...），文件不存在返回 None。"""
     for ext in _SCENE_IMAGE_EXTS:
@@ -434,6 +438,47 @@ def scene_image_url(key: str) -> str | None:
         if p.exists():
             return "/" + p.resolve().relative_to(REPO_ROOT).as_posix()
     return None
+
+
+def delete_scene_image(key: str) -> bool:
+    """删除某场景的示意图（各扩展名都清，避免探测歧义）。返回是否删了文件。"""
+    removed = False
+    for ext in _SCENE_IMAGE_EXTS:
+        p = SCENE_IMAGE_DIR / f"{key}{ext}"
+        if p.exists():
+            p.unlink()
+            removed = True
+    return removed
+
+
+def _downscale_scene_image(path: Path) -> None:
+    """最长边超 _SCENE_IMG_MAX_EDGE 时原地降采样（保留格式）；失败静默保留原图不阻断。"""
+    try:
+        from PIL import Image
+        with Image.open(path) as im:
+            if max(im.size) <= _SCENE_IMG_MAX_EDGE:
+                return
+            im.thumbnail((_SCENE_IMG_MAX_EDGE, _SCENE_IMG_MAX_EDGE))
+            im.save(path)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[expo] scene image downscale skipped ({path.name}): {exc}", flush=True)
+
+
+def save_scene_image(key: str, upload) -> str:
+    """存场景示意图为 uploads/expo/scenes/<key>.<ext>；先删同 key 旧图（各扩展名）避免探测歧义。
+    key 必须是 TRYON_SCENES 里的合法场景；扩展名限 jpg/jpeg/png/webp。返回公开 URL。"""
+    if resolve_tryon_scene(key) is None:
+        raise ValueError("场景不存在")
+    suffix = Path(getattr(upload, "filename", "") or "").suffix.lower()
+    if suffix not in _SCENE_IMAGE_EXTS:
+        raise ValueError("仅支持 jpg / jpeg / png / webp 图片")
+    SCENE_IMAGE_DIR.mkdir(parents=True, exist_ok=True)
+    delete_scene_image(key)
+    target = SCENE_IMAGE_DIR / f"{key}{suffix}"
+    with open(target, "wb") as f:
+        shutil.copyfileobj(upload.file, f)
+    _downscale_scene_image(target)
+    return "/" + target.resolve().relative_to(REPO_ROOT).as_posix()
 
 
 # 发色注入合成 prompt，来源 ark_expo_hair_colors 快照。

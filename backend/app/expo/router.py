@@ -156,6 +156,30 @@ def list_scenes(
     ])
 
 
+@router.post("/scenes/{key}/image", summary="上传/替换场景示意图（存 uploads/expo/scenes/<key>.*）")
+def upload_scene_image(
+    key: str,
+    photo: UploadFile = File(...),
+    _user=Depends(require_permission("expo:admin")),
+):
+    try:
+        url = ai_pipeline.save_scene_image(key, photo)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return ok({"key": key, "url": url}, code=201)
+
+
+@router.delete("/scenes/{key}/image", summary="删除场景示意图")
+def remove_scene_image(
+    key: str,
+    _user=Depends(require_permission("expo:admin")),
+):
+    if ai_pipeline.resolve_tryon_scene(key) is None:
+        raise HTTPException(404, "场景不存在")
+    ai_pipeline.delete_scene_image(key)
+    return ok()
+
+
 @router.post("/results/{result_id}/reaction", summary="客户标记 心动/再看看")
 def set_reaction(
     result_id: int,

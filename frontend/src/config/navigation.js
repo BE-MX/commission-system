@@ -218,6 +218,17 @@ export const NAV_ENTRIES = [
     },
   },
   {
+    path: '/expo/scene-images',
+    name: 'ExpoSceneImages',
+    component: () => import('@/views/expo/SceneImages.vue'),
+    title: '场景示意图',
+    anyPermission: ['expo:read', 'expo:admin'],
+    menu: {
+      group: 'expo', title: '场景示意图', icon: Camera, order: 17,
+      anyPermission: ['expo:read', 'expo:admin'],
+    },
+  },
+  {
     path: '/expo/scripts',
     name: 'ExpoScriptLibrary',
     component: () => import('@/views/expo/ScriptLibrary.vue'),

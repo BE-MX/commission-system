@@ -479,6 +479,11 @@ frontend/src/
 - 前端 `MatchingScreen.vue`：20 景单行滑动退化（滑 4 屏才到底、客群找不到自己的场景），改**分段 Tab（职场专业/长辈生活）**——上方金色胶囊切类，滑动条按 `visibleScenes` 过滤，每类 8~12 张一两滑到底。`syncScene` 改按 visibleScenes 取 key；`switchCategory` 选中新类首景+复位居中；默认分类=默认场景所属类。保留居中放大手感
 - 新场景占位卡 emoji 补齐（`SCENE_EMOJI` 20 项，无图时用）
 
+**场景示意图后台管理页（2026-07-10）**
+- 新页 `/expo/scene-images`（`views/expo/SceneImages.vue`，navigation.js order 17，`expo:read/admin` 可见、`expo:admin` 可传删）：按分类分组的卡片网格，每景上传/替换/删除示意图，复用 `getScenes({mode:'tryon'})` 拉列表
+- 后端 `ai_pipeline.save_scene_image(key, upload)` / `delete_scene_image(key)` / `_downscale_scene_image`：存 `uploads/expo/scenes/<key>.<ext>`，**先删同 key 各扩展名旧图**（避免 scene_image_url 探测歧义）+ 超 1200px 降采样；`POST/DELETE /scenes/{key}/image`（expo:admin）。示意图仅甄选页示意、不参与合成
+- 前端替换同扩展名时 URL 不变，`?t=Date.now()` 强制刷新缓存
+
 **已踩坑（2026-07-04 对抗性审查修复）**
 - 后台线程的批量启动函数（`_start_batch`）必须：状态置位与插行合并单事务 + except 回滚 + 会话标 failed + `_log_fail` 双写——初版漏兜底，非法 wig_id 会把会话永久卡在 generating
 - kiosk 轮询状态机的失败路径必须显式收尾：`analyzing` 属 BUSY_STEPS（不挂 idle 定时器），失败时留在原地 = 展位永久卡屏，需退回 `capture`；整批效果图全 failed 时 session 仍推 `done`，前端要用「results 里没有任何 done」补判并给重试出口

@@ -39,6 +39,19 @@ export function getScenes(params) {
   return expoClient.get('/scenes', { params, showLoading: false })
 }
 
+// ── 场景示意图管理（PC；列表复用 getScenes({ mode: 'tryon' })） ──
+export function uploadSceneImage(key, file) {
+  const form = new FormData()
+  form.append('photo', file)
+  return expoClient.post(`/scenes/${key}/image`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+}
+
+export function deleteSceneImage(key) {
+  return expoClient.delete(`/scenes/${key}/image`)
+}
+
 export function setReaction(resultId, reaction) {
   return expoClient.post(`/results/${resultId}/reaction`, { reaction }, { showLoading: false })
 }

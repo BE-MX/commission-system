@@ -214,6 +214,42 @@ def test_scene_image_url_found_returns_public_path(tmp_path, monkeypatch):
     assert ai_pipeline.scene_image_url("teacher") is None
 
 
+class _FakeUpload:
+    def __init__(self, filename, data=b"fake"):
+        import io
+        self.filename = filename
+        self.file = io.BytesIO(data)
+
+
+def test_save_scene_image_writes_replaces_and_deletes(tmp_path, monkeypatch):
+    """存图为 <key>.<ext>；换扩展名时清旧图避免探测歧义；delete 清各扩展名。"""
+    scene_dir = tmp_path / "scenes"
+    monkeypatch.setattr(ai_pipeline, "SCENE_IMAGE_DIR", scene_dir)
+    monkeypatch.setattr(ai_pipeline, "REPO_ROOT", tmp_path)
+
+    url = ai_pipeline.save_scene_image("doctor", _FakeUpload("x.PNG"))  # 扩展名大小写归一
+    assert url == "/scenes/doctor.png"
+    assert (scene_dir / "doctor.png").exists()
+
+    url2 = ai_pipeline.save_scene_image("doctor", _FakeUpload("y.jpg"))
+    assert url2 == "/scenes/doctor.jpg"
+    assert (scene_dir / "doctor.jpg").exists()
+    assert not (scene_dir / "doctor.png").exists()  # 旧扩展名已清
+
+    assert ai_pipeline.delete_scene_image("doctor") is True
+    assert not (scene_dir / "doctor.jpg").exists()
+    assert ai_pipeline.delete_scene_image("doctor") is False  # 已无文件
+
+
+def test_save_scene_image_rejects_bad_key_and_ext(tmp_path, monkeypatch):
+    monkeypatch.setattr(ai_pipeline, "SCENE_IMAGE_DIR", tmp_path / "scenes")
+    monkeypatch.setattr(ai_pipeline, "REPO_ROOT", tmp_path)
+    with pytest.raises(ValueError, match="场景不存在"):
+        ai_pipeline.save_scene_image("bogus", _FakeUpload("x.png"))
+    with pytest.raises(ValueError, match="仅支持"):
+        ai_pipeline.save_scene_image("doctor", _FakeUpload("x.gif"))
+
+
 def test_scene_mode_home_key_not_confused_with_tryon_home():
     """SCENES 与 TRYON_SCENES 都有 key=home：wig_id 为空必须命中 scene 模式模板（撞名守卫）。"""
     session = _session(mode="scene")
