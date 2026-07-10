@@ -246,7 +246,8 @@ if exist "%TEMP%\cloud_md5.txt" (
     if errorlevel 1 set "VENDOR_CHANGED=1"
     if "!VENDOR_CHANGED!"=="1" (
         echo      vendor/ changed or missing on cloud, uploading ~35MB...
-        scp -r vendor %CLOUD_SERVER%:%CLOUD_DIST%/ >nul 2>&1
+        REM no ^>nul here: a 35MB transfer with output swallowed looks like a hang
+        scp -r vendor %CLOUD_SERVER%:%CLOUD_DIST%/
     ) else (
         echo      vendor/ unchanged, skipped
     )
