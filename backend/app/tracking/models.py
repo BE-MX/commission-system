@@ -77,6 +77,7 @@ class ShipmentTracking(Base):
     source_image_url = Column(String(500), comment="运单图片URL")
     unified_status = Column(String(30), comment="统一状态码")
     last_pushed_status = Column(String(30), comment="上次推送时的状态，防重复推送")
+    deleted_at = Column(DateTime, comment="软删除时间（用户删除；与 is_active 轮询开关语义分离）")
     created_at = Column(DateTime, nullable=False, server_default=func.now(), comment="创建时间")
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now(), comment="最后更新时间")
 
