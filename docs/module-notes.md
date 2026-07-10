@@ -472,6 +472,13 @@ frontend/src/
 - **滑动图片选择器**（`MatchingScreen.vue`）：场景 chip 换成 scroll-snap 横向滑动，居中卡=选中并放大(scale 1 vs 0.82)，原生 snap 吃触摸惯性；`syncScene` rAF 节流按 offsetLeft 找居中卡回写 `selectedTryonScene`；点卡 `scrollTo` 平滑居中；prefers-reduced-motion 降级去 scale
 - **场景示意图约定**：`scene_image_url(key)` 探测 `uploads/expo/scenes/<key>.{jpg,jpeg,png,webp}`，存在即 `GET /scenes?mode=tryon` 返回 `image` URL，否则 null → 前端退化金线渐变占位卡（emoji 图标）。**运营把实拍/AI 图丢进该目录即自动生效，无需改代码**。场景图仅示意、不参与合成
 
+**生成场景扩到 20 景 + 分类 Tab（2026-07-10）**
+- `TRYON_SCENES` 新增 13 景（律师/银行柜员/公司财务/社区主任/药剂师/小区管理员/高铁出差 + 喜婆婆/接孙放学/广场舞领舞/老年大学/闺蜜咖啡/晨间公园），共 20 景。prompt 沿用「场景空间+单人动作+主光源方向+虚化第二人物」结构
+- **长辈场景 prompt 用 poised/graceful/radiant/refreshed 等气质词表达「假发衬得更精致」，刻意不写 younger**——合成锁脸+锁年龄，写"变年轻"会导致脸变形。药剂师「没看出戴假发」由基础模板的自然发际线保证
+- **分类分段**：`tryon_scene_category(key)` 分 career(12)/life(8)，`_TRYON_LIFE_KEYS` 集合驱动；`GET /scenes?mode=tryon` 每景带回 `category`。分类不落库，仅驱动前端分组
+- 前端 `MatchingScreen.vue`：20 景单行滑动退化（滑 4 屏才到底、客群找不到自己的场景），改**分段 Tab（职场专业/长辈生活）**——上方金色胶囊切类，滑动条按 `visibleScenes` 过滤，每类 8~12 张一两滑到底。`syncScene` 改按 visibleScenes 取 key；`switchCategory` 选中新类首景+复位居中；默认分类=默认场景所属类。保留居中放大手感
+- 新场景占位卡 emoji 补齐（`SCENE_EMOJI` 20 项，无图时用）
+
 **已踩坑（2026-07-04 对抗性审查修复）**
 - 后台线程的批量启动函数（`_start_batch`）必须：状态置位与插行合并单事务 + except 回滚 + 会话标 failed + `_log_fail` 双写——初版漏兜底，非法 wig_id 会把会话永久卡在 generating
 - kiosk 轮询状态机的失败路径必须显式收尾：`analyzing` 属 BUSY_STEPS（不挂 idle 定时器），失败时留在原地 = 展位永久卡屏，需退回 `capture`；整批效果图全 failed 时 session 仍推 `done`，前端要用「results 里没有任何 done」补判并给重试出口

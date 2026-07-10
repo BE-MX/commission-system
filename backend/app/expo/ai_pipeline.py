@@ -291,6 +291,9 @@ _PORTRAIT_SPEC_CLAUSE = (
 # 结构=场景空间 + 单人自信动作/姿态 + 主光源方向 + 虚化背景（含仅暗示的第二人物）。
 # 职业场景带强动作（演示/讲解/接待/看材料/检查），叙事化但收敛为单人主体（用户定稿 2026-07-09）。
 # 光源方向显式声明，发丝受光跟随场景。顺序即卡片顺序，默认选中第一个。
+# 2026-07-10 扩到 20 景：新增银行/律师/药剂师/财务/社区主任/小区管理员/高铁出差等职场，及喜婆婆/
+# 接孙放学/广场舞/老年大学/闺蜜咖啡/晨间公园等长辈生活景。长辈景用 poised/graceful/radiant/refreshed
+# 等气质词表达「假发衬得更精致」，靠发型+光营造，不写 younger 以免与身份锁（保脸/保年龄）冲突。
 TRYON_SCENES = [
     {"key": "whitecollar", "label": "白领高管", "tagline": "从容主场",
      "prompt": ("a bright modern corporate boardroom during a meeting, she stands "
@@ -326,11 +329,95 @@ TRYON_SCENES = [
     {"key": "gathering", "label": "聚会", "tagline": "晚间光彩",
      "prompt": ("an evening dinner party, warm pendant light overhead as the key "
                 "light, golden bokeh of string lights and candles behind")},
+    # ── 职场专业（2026-07-10 扩充） ──
+    {"key": "lawyer", "label": "律师", "tagline": "庭上锋芒",
+     "prompt": ("a solemn courtroom, she stands confidently delivering her argument with "
+                "a composed articulate expression and a measured hand gesture in a sharp "
+                "dark suit, focused daylight from her front as the key light, blurred "
+                "wooden benches and out-of-focus figures seated behind")},
+    {"key": "banker", "label": "银行柜员", "tagline": "专业干练",
+     "prompt": ("a bright modern bank hall counter, she stands poised serving a customer "
+                "with a courteous professional smile in a tidy uniform, cool even ceiling "
+                "lighting as the key light, blurred glass partitions and a faint "
+                "out-of-focus customer in front of the counter")},
+    {"key": "accountant", "label": "公司财务", "tagline": "沉稳可靠",
+     "prompt": ("a tidy modern office by a filing cabinet, she stands retrieving a "
+                "document with a calm capable expression in a neat blouse, soft daylight "
+                "as the key light, a blurred desk with a monitor and a faint out-of-focus "
+                "colleague waiting beside her")},
+    {"key": "director", "label": "社区主任", "tagline": "亲切为民",
+     "prompt": ("a warm community service center, she sits attentively helping an elderly "
+                "resident fill out a form with a kind patient smile, pen in hand, in a neat "
+                "casual blazer, soft daylight from a side window as the key light, blurred "
+                "notice boards and a faint out-of-focus elderly resident across the desk")},
+    {"key": "pharmacist", "label": "药剂师", "tagline": "专业亲和",
+     "prompt": ("a clean bright pharmacy, she stands filling a prescription at the medicine "
+                "shelves with a warm attentive expression in a white pharmacist coat, soft "
+                "even lighting from her front as the key light, blurred rows of medicine "
+                "drawers and a faint out-of-focus customer waiting at the counter")},
+    {"key": "propertymanager", "label": "小区管理员", "tagline": "邻里亲和",
+     "prompt": ("a residential compound lobby, she stands chatting warmly with a resident "
+                "while holding a notebook, a friendly approachable smile in a simple neat "
+                "outfit, soft daylight from the entrance as the key light, blurred mailboxes "
+                "and a faint out-of-focus resident beside her")},
+    {"key": "hsrtravel", "label": "高铁出差", "tagline": "出差精致",
+     "prompt": ("a high-speed train window seat, she sits looking composed and put-together "
+                "with a subtle confident expression in a smart blazer, a laptop on the tray, "
+                "bright daylight streaming through the large train window as the key light, "
+                "blurred landscape rushing past outside")},
+    # ── 长辈 / 退休生活（发型提升气质，从容优雅，不改脸/年龄） ──
+    {"key": "weddinghost", "label": "喜婆婆", "tagline": "喜庆体面",
+     "prompt": ("an elegant wedding banquet entrance, she stands graciously welcoming guests "
+                "with a warm delighted smile in a refined festive dress with tasteful "
+                "jewelry, looking poised and radiant, warm golden banquet lighting as the "
+                "key light, a blurred floral arch and out-of-focus guests arriving behind")},
+    {"key": "schoolpickup", "label": "接孙放学", "tagline": "校门风采",
+     "prompt": ("a primary school gate in the afternoon, she stands waiting to pick up her "
+                "grandchild with a warm expectant smile, neatly and elegantly dressed and "
+                "looking notably graceful, soft afternoon daylight as the key light, a "
+                "blurred school gate and out-of-focus parents and grandparents around her")},
+    {"key": "squaredance", "label": "广场舞领舞", "tagline": "广场C位",
+     "prompt": ("a community plaza at dusk, she leads a group dance rehearsal at the front "
+                "with an energetic radiant smile mid-gesture in bright comfortable "
+                "activewear, warm low evening light as the key light, blurred plaza trees "
+                "and out-of-focus dancers following behind her")},
+    {"key": "seniorcollege", "label": "老年大学", "tagline": "老有所乐",
+     "prompt": ("a bright senior-university classroom, she sits gracefully learning a "
+                "musical instrument among peers with a joyful absorbed expression, holding "
+                "the instrument, warm window daylight as the key light, blurred music stands "
+                "and out-of-focus classmates around her")},
+    {"key": "seniorcafe", "label": "闺蜜咖啡", "tagline": "闺蜜时光",
+     "prompt": ("a cozy sunlit cafe, she sits chatting happily over coffee with friends, a "
+                "relaxed radiant smile in a tasteful casual outfit, warm afternoon window "
+                "light as the key light, a blurred cafe interior and out-of-focus friends "
+                "across the small table")},
+    {"key": "parkwalk", "label": "晨间公园", "tagline": "晨间从容",
+     "prompt": ("a green park path in the morning, she takes a leisurely walk looking "
+                "refreshed and at ease with a gentle serene smile in comfortable elegant "
+                "casual wear, soft golden morning light from her side as the key light, "
+                "blurred trees and greenery behind")},
 ]
 
 
 def resolve_tryon_scene(key: str | None) -> dict | None:
     return next((s for s in TRYON_SCENES if s["key"] == key), None)
+
+
+# 场景分类（kiosk 甄选页分段展示，避免 20 景挤成单行长条；2026-07-10）。
+# 顺序即 tab 顺序，默认第一类。分类不落库，仅驱动前端分组展示，scene_json 仍只存 key/label。
+TRYON_SCENE_CATEGORIES = [
+    {"key": "career", "label": "职场专业"},
+    {"key": "life", "label": "长辈生活"},
+]
+_TRYON_LIFE_KEYS = {
+    "home", "gathering", "weddinghost", "schoolpickup",
+    "squaredance", "seniorcollege", "seniorcafe", "parkwalk",
+}
+
+
+def tryon_scene_category(key: str) -> str:
+    """场景 key → 分类 key（不在长辈生活集合里的都归职场专业）。"""
+    return "life" if key in _TRYON_LIFE_KEYS else "career"
 
 
 # 场景示意图（kiosk 滑动选择器用，仅示意、不参与合成）：约定放 uploads/expo/scenes/<key>.<ext>。

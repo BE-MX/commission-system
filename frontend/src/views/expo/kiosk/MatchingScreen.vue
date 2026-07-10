@@ -56,10 +56,17 @@
     </div>
 
     <div v-if="flow.tryonScenes.value.length" class="scene-pick">
-      <div class="cp-title">生成场景<small>左右滑动选择 · 场景图仅示意</small></div>
+      <div class="cp-title">生成场景<small>选类别 · 左右滑动选择 · 场景图仅示意</small></div>
+      <div v-if="categories.length > 1" class="scene-cats">
+        <button
+          v-for="c in categories" :key="c.key"
+          class="scene-cat" :class="{ on: selectedCategory === c.key }"
+          @click="switchCategory(c.key)"
+        >{{ c.label }}</button>
+      </div>
       <div ref="trackRef" class="scene-track" @scroll="onSceneScroll">
         <button
-          v-for="(s, i) in flow.tryonScenes.value" :key="s.key"
+          v-for="(s, i) in visibleScenes" :key="s.key"
           class="scard" :class="{ on: sceneActive === i }"
           @click="centerScene(i)"
         >
@@ -108,15 +115,34 @@ function pickColor(id) {
   flow.touch()
 }
 
-// ── 生成场景滑动选择器（居中卡=选中；原生 scroll-snap 吃触摸惯性，选中卡放大） ──
+// ── 生成场景滑动选择器（分类 Tab + 居中卡=选中；原生 scroll-snap 吃触摸惯性，选中卡放大） ──
 const trackRef = ref(null)
 const sceneActive = ref(0)
 let scRaf = 0
+
+// 分类分段：20 景分「职场专业/长辈生活」两段展示，避免单行长条（category 由后端返回）
+const CATEGORY_LABELS = { career: '职场专业', life: '长辈生活' }
+const categories = computed(() => {
+  const order = []
+  for (const s of flow.tryonScenes.value) {
+    const c = s.category || 'career'
+    if (!order.includes(c)) order.push(c)
+  }
+  return order.map(c => ({ key: c, label: CATEGORY_LABELS[c] || c }))
+})
+const selectedCategory = ref('career')
+const visibleScenes = computed(() =>
+  flow.tryonScenes.value.filter(s => (s.category || 'career') === selectedCategory.value),
+)
 
 // 占位卡图标（无示意图时用）；后台把实拍/AI 图丢进 uploads/expo/scenes/<key>.* 即替换为真图
 const SCENE_EMOJI = {
   whitecollar: '💼', teacher: '📚', shopowner: '🛍️',
   civilservant: '🏛️', doctor: '🩺', home: '🛋️', gathering: '🥂',
+  lawyer: '⚖️', banker: '🏦', accountant: '📊', director: '📋',
+  pharmacist: '💊', propertymanager: '🔑', hsrtravel: '🚄',
+  weddinghost: '💐', schoolpickup: '🎒', squaredance: '💃',
+  seniorcollege: '🎻', seniorcafe: '☕', parkwalk: '🌳',
 }
 function sceneEmoji(key) { return SCENE_EMOJI[key] || '✦' }
 
@@ -137,11 +163,25 @@ function syncScene() {
     if (d < bestDist) { bestDist = d; best = i }
   })
   sceneActive.value = best
-  const key = flow.tryonScenes.value[best]?.key
+  const key = visibleScenes.value[best]?.key
   if (key && key !== flow.selectedTryonScene.value) {
     flow.selectedTryonScene.value = key
     flow.touch()
   }
+}
+
+// 切分类：选中该类第一个场景 + 滑动条复位居中
+async function switchCategory(catKey) {
+  if (catKey === selectedCategory.value) return
+  selectedCategory.value = catKey
+  flow.touch()
+  await nextTick()
+  const first = visibleScenes.value[0]
+  if (first) { flow.selectedTryonScene.value = first.key; flow.touch() }
+  sceneActive.value = 0
+  const el = trackRef.value
+  const card = el?.querySelectorAll('.scard')[0]
+  if (el && card) el.scrollLeft = cardCenterOffset(el, card)
 }
 
 function onSceneScroll() {
@@ -160,11 +200,13 @@ function centerScene(i) {
 onMounted(async () => {
   flow.loadHairColors()
   await flow.loadTryonScenes()
-  await nextTick()
-  // flow 已把默认选中设为第一个场景；把它瞬时居中（无动画），之后滑动/点击才平滑
+  // 默认分类 = 默认选中场景（flow 设的首个场景）所属分类
+  const cur = flow.tryonScenes.value.find(s => s.key === flow.selectedTryonScene.value)
+  selectedCategory.value = cur?.category || categories.value[0]?.key || 'career'
+  await nextTick()  // 等 visibleScenes 过滤后的 DOM 就绪
   const el = trackRef.value
   if (!el) return
-  const idx = flow.tryonScenes.value.findIndex(s => s.key === flow.selectedTryonScene.value)
+  const idx = visibleScenes.value.findIndex(s => s.key === flow.selectedTryonScene.value)
   sceneActive.value = idx < 0 ? 0 : idx
   const card = el.querySelectorAll('.scard')[sceneActive.value]
   if (card) el.scrollLeft = cardCenterOffset(el, card)
@@ -283,6 +325,21 @@ onBeforeUnmount(() => { if (scRaf) cancelAnimationFrame(scRaf) })
 /* ── 生成场景滑动选择器（居中卡放大，仅示意不参与合成） ── */
 .scene-pick { width: min(88vw, 560px); margin-top: auto; --scard-w: 118px; }
 .color-pick + .scene-pick { margin-top: 20px; }
+/* 分类分段控件（职场专业 / 长辈生活）：金色胶囊，选中填金 */
+.scene-cats { display: flex; gap: 8px; margin-top: 12px; }
+.scene-cat {
+  flex: none; height: 34px; padding: 0 18px; border-radius: 18px; cursor: pointer;
+  border: 1px solid var(--xk-gold-line); background: transparent;
+  color: var(--xk-mut); font-size: 13px; letter-spacing: 0.06em;
+  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), border-color 160ms ease,
+    color 160ms ease, background 160ms ease;
+}
+.scene-cat:active { transform: scale(0.96); }
+.scene-cat.on {
+  border-color: var(--xk-gold); color: var(--xk-ink);
+  background: linear-gradient(110deg, var(--xk-gold-dim), var(--xk-gold) 55%, var(--xk-gold-hi));
+}
+.scene-cats + .scene-track { margin-top: 10px; }
 .scene-track {
   /* 必须定位：让 .scard 的 offsetParent = 本容器，否则 offsetLeft 相对更上层的 xk-root(fixed)
      测量，混入常量偏移，syncScene/centerScene 的居中数学在宽屏错位（2026-07-09 对抗性审查修复） */

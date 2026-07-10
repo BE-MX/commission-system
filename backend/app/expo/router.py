@@ -143,12 +143,14 @@ def list_scenes(
     _user=Depends(require_any_permission("expo:read", "expo:write")),
 ):
     source = ai_pipeline.TRYON_SCENES if mode == "tryon" else ai_pipeline.SCENES
-    # tryon 甄选页用滑动图片选择器，附示意图 URL（无图返回 None，前端退化为占位卡）；
-    # scene 模式仍是文字卡片，不带图
+    # tryon 甄选页用滑动图片选择器，附示意图 URL（无图返回 None，前端退化为占位卡）+ 分类
+    # （20 景分段展示，前端按 category 分组）；scene 模式仍是文字卡片，不带图/分类
+    is_tryon = mode == "tryon"
     return ok([
         {
             "key": s["key"], "label": s["label"], "tagline": s["tagline"],
-            "image": ai_pipeline.scene_image_url(s["key"]) if mode == "tryon" else None,
+            "image": ai_pipeline.scene_image_url(s["key"]) if is_tryon else None,
+            "category": ai_pipeline.tryon_scene_category(s["key"]) if is_tryon else None,
         }
         for s in source
     ])
