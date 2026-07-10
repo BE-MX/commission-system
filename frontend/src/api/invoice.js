@@ -112,6 +112,28 @@ export function reconcileCustomProducts() {
   return unwrap(request.post('/custom-products/reconcile', null, { loadingText: '正在对账回填...' }))
 }
 
+// ── OKKI 推单设置 ─────────────────────────────────────
+
+export function getXiaomanSettings() {
+  return unwrap(request.get('/xiaoman/settings', { showLoading: false }))
+}
+
+export function updateXiaomanSettings(data) {
+  return unwrap(request.put('/xiaoman/settings', data, { loadingText: '正在保存设置...' }))
+}
+
+export function resolveXiaomanProduct(params) {
+  return unwrap(request.get('/xiaoman/settings/resolve-product', { params, showLoading: false }))
+}
+
+export function fetchXiaomanToken() {
+  return unwrap(request.post('/xiaoman/settings/fetch-token', null, { loadingText: '正在向 OKKI 获取 Token...' }))
+}
+
+export function getXiaomanEnums() {
+  return unwrap(request.get('/xiaoman/enums', { showLoading: false }))
+}
+
 // ── 回款日期修复 ──────────────────────────────────────
 
 export function previewReceiptRepair(formData) {

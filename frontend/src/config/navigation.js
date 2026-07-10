@@ -183,6 +183,17 @@ export const NAV_ENTRIES = [
     },
   },
   {
+    path: '/invoice/okki-settings',
+    name: 'OkkiSyncSettings',
+    component: () => import('@/views/invoice/OkkiSyncSettings.vue'),
+    title: 'OKKI 推单设置',
+    permission: 'invoice:admin',
+    menu: {
+      group: 'invoice', title: 'OKKI 推单设置', icon: Document, order: 25,
+      permission: 'invoice:admin',
+    },
+  },
+  {
     path: '/invoice/receipt-repair',
     name: 'ReceiptDateRepair',
     component: () => import('@/views/invoice/ReceiptDateRepair.vue'),
