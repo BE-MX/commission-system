@@ -1,4 +1,5 @@
 {
+  "lazyCodeLoading": "requiredComponents",
   "pages": [
     "pages/scan/scan",
     "pages/photo/photo",
