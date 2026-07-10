@@ -45,6 +45,10 @@ Page({
       header: header,
       timeout: 30000,
       success: function (res) {
+        if (res.statusCode === 401) {
+          app.logout()
+          return
+        }
         if (res.statusCode === 200) {
           self.setData({ dates: res.data.dates || [], loading: false })
         } else {
@@ -79,6 +83,10 @@ Page({
       timeout: 30000,
       success: function (res) {
         self.setData({ loading: false })
+        if (res.statusCode === 401) {
+          app.logout()
+          return
+        }
         if (res.statusCode === 200) {
           self.setData({
             showDetail: true,

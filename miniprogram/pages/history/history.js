@@ -105,6 +105,10 @@ Page({
       header: header,
       timeout: 30000,
       success: function (res) {
+        if (res.statusCode === 401) {
+          app.logout()
+          return
+        }
         if (res.statusCode === 200) {
           var newRecords = (res.data.records || []).map(function (r) {
             r._swipeX = 0
@@ -239,6 +243,10 @@ Page({
       timeout: 30000,
       success: function (res) {
         self.setData({ submitting: false })
+        if (res.statusCode === 401) {
+          app.logout()
+          return
+        }
         if (res.statusCode >= 400) {
           var detail = (res.data && res.data.detail) || {}
           self.setData({
