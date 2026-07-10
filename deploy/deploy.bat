@@ -73,6 +73,20 @@ if errorlevel 1 (
     echo [ERROR] venv activate failed
     goto :error
 )
+REM Python 版本守卫：全部依赖在 3.12 上验证选版。venv 若是别的 Python(如 3.14)建的，
+REM 会解析出不同版本组合(ResolutionImpossible)或缺 cp3xx wheel 转源码构建失败。快速失败给清晰指引
+for /f "tokens=2" %%v in ('.\.venv\Scripts\python.exe --version 2^>^&1') do set "PYVER=%%v"
+echo      venv Python %PYVER%
+echo %PYVER% | findstr /b "3.12." >nul
+if errorlevel 1 (
+    echo [ERROR] venv Python is %PYVER%, expected 3.12.x
+    echo         Recreate the venv with Python 3.12:
+    echo           "%NSSM_EXE%" stop "%SERVICE_NAME%"
+    echo           rmdir /s /q "%INSTALL_DIR%\backend\.venv"
+    echo           py -3.12 -m venv "%INSTALL_DIR%\backend\.venv"
+    echo         then rerun deploy.bat
+    goto :error
+)
 REM UTF-8 模式：源码构建的 sdist(如老 starlette)读 README 默认走系统 GBK 会 UnicodeDecodeError
 set PYTHONUTF8=1
 REM 先升级 pip：旧 pip 的 legacy resolver 会挑不满足 fastapi<0.47 约束的老 starlette 去源码构建，
