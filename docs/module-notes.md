@@ -495,3 +495,21 @@ frontend/src/
 - **卡死状态看门狗（2026-07-07 线上 session=6 实case）**：后台合成线程随进程重启丢失 → result 永久 generating、session 永久 generating、前端无限轮询。修复：`service.get_session` 读取时自愈——pending 超 180s / generating 超 300s 标 failed（有成品则 session 推 done 照常展示），logger+print 双写
 - **性别硬过滤全灭必须兜底（2026-07-07 线上 session=5 实case）**：男顾客 × 全女款库 → gender 过滤剔掉全部候选 → kiosk「为您甄选 0 款」死屏。修复：`match_wigs` 过滤后候选为空且库非空时降级为不过滤照常排名（logger+print 双写告警）；有任一款存活则不触发兜底。打分制下其余维度只影响排序不会清零，0 款仅两种可能：性别全灭（已兜底）或发型库全部停用
 - `POST /generate` 用 `status=generating` 做幂等挡板；`_refresh_session_status` 用条件 UPDATE（`WHERE status='generating'`）做多线程收尾互斥，避免重复触发话术生成
+## OKKI 开放平台对接（订单发票推单，2026-07-10 鉴权打通）
+
+### 鉴权与域名
+- **`https://api-sandbox.xiaoman.cn` 就是正式域名**——名字带 sandbox 但官方文档（open.xiaoman.cn/doc-338269）确认为唯一正式地址，**OKKI 没有沙箱环境，联调推单会产生真实订单**
+- 鉴权走 **client_credentials**（`POST /v1/oauth2/access_token`，JSON body：grant_type/client_id/client_secret/scope）：不需要 OKKI 账号密码、无 refresh_token；文档称此模式不返回 expires_in，**实测返回 28799（≈8h）**，代码两头兜住（缺省按 8h）
+- 凭证：`backend/.env` 的 `OKKI_CLIENT_ID` / `OKKI_CLIENT_SECRET`（来源：OKKI 企业管理 → 外部对接 → API对接）；scope 固定 `invoices`
+- HTTP 边界 `app/invoice/okki_client.py`：token 缓存在 `ark_xiaoman_settings`（5 分钟过期缓冲自动续期）；**所有 OKKI 调用必须走 ensure→调用→401 强刷重试一次 的模式**（token 可能被服务端提前吊销，见文件头注释）
+
+### 推单人员字段口径（api-3478252 官方文档核实）
+- `user_id`=操作人（校验订单编辑权限，无权限报 404；不传默认取 token 授权账号）；`handler`=处理人（不传默认=user_id）；`create_user`=创建人；`users[]`=业绩归属（user_id+rate，可分单）——**全部传小满内部用户 ID**
+- 方舟侧映射链：`invoice.sales_user_id`(ark_users.id) → `ark_external_bindings`(provider='okki') → 小满 user_id；OKKI 用户镜像=`lsordertest.user_basic`（只读，ORM 在 app/models/business.py）
+- 绑定入口：系统管理 → 外部账号绑定 →「同步 OKKI 用户」生成候选（已绑定跳过 / ignored 不复活 / 解绑后候选自动复位 pending）
+- 企业订单状态是专属 ID（来自 `/v1/invoices/order/orderEnums` 的 order_status_list）：草稿 13972831654 / 已完成 13972831656 / 内贸-退货 5642697247486（2026-07-10 实测）
+
+### 已踩过的坑
+- **页面不要自己 catch 弹错**：axios 拦截器已统一弹出 FastAPI 的 detail，页面 save() 再 catch `err.response.data.message`（undefined）会追加一条英文噪音 toast——OkkiSyncSettings 首版实case
+- okki_products / okki_inventory / user_basic 均为外部同步作业维护的**只读镜像**，OKKI 侧新建品/新账号有同步延迟，解析不到先等镜像
+- 手动覆盖 token 时表单里的过期时间是旧 token 残值不可信，服务端一律按"刚签发 8h"重算

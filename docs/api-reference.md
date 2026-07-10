@@ -66,7 +66,7 @@
   - `PUT /invoices/{id}` — 更新发票（order_type 创建后不可改）
   - `DELETE /invoices/{id}` — 删除发票（invoice:write；sync_status=synced 拒绝删除）
   - `POST /invoices/{id}/validate` — 同步前校验
-  - `POST /invoices/{id}/sync` — 同步到小满（Phase 2 待接 token，当前返回校验结果）
+  - `POST /invoices/{id}/sync` — 同步到小满（鉴权已就绪，推单字段映射未实现，当前返回校验结果并标 sync_failed）
   - `GET /invoices/{id}/export/excel` — 导出 Excel（含 To/From 头块与费用区）
   - `GET /invoices/{id}/export/print` — 打印用 HTML
   - `GET /invoices/{id}/export/pdf` — 导出 PDF

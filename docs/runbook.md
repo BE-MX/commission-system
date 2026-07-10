@@ -64,6 +64,11 @@ WHATSAPP_AUTO_SYNC_ENABLED=true
 TFT_SERVICE_ENABLED=false
 TFT_SERVICE_URL=http://192.168.101.47:8003/predict
 
+# OKKI 开放平台（订单推送；deploy.bat 不同步 .env，生产服务器需手动配置后重启）
+OKKI_CLIENT_ID=<OKKI 企业管理→外部对接→API对接>
+OKKI_CLIENT_SECRET=<同上>
+# OKKI_API_BASE 默认 https://api-sandbox.xiaoman.cn（即正式域名），一般不用配
+
 # 素材存储（可选，2026-07-03 起走 Settings 统一管理，默认值即当前生产值）
 ASSET_STORAGE_ROOT=D:\WORKSOURCE
 ASSET_SIGN_SECRET=<签名密钥>

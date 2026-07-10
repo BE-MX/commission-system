@@ -289,6 +289,15 @@ ACCIO WORK 询盘推送
 - **认证**：`WHATSAPP_CONNECTOR_API_KEY`
 - **详细契约**：[requirements/2026-06-16-whatsapp-connector-contract.md](requirements/2026-06-16-whatsapp-connector-contract.md)
 
+### OKKI 开放平台（订单推送，Phase 2 进行中）
+
+- **集成方式**：方舟调用 OKKI Open API（`https://api-sandbox.xiaoman.cn`，此即正式域名，无沙箱环境）
+- **认证**：client_credentials（`OKKI_CLIENT_ID` / `OKKI_CLIENT_SECRET`，scope=invoices），token ~8h，缓存于 `ark_xiaoman_settings` 自动续期
+- **HTTP 边界**：`app/invoice/okki_client.py`（token 生命周期 + orderEnums；调用约定见文件头注释）
+- **配置入口**：订单管理 → OKKI 推单设置（`/invoice/okki-settings`，invoice:admin）
+- **业务员映射**：ark_users → `ark_external_bindings`(provider='okki') → 小满 user_id，候选从业务库 `user_basic` 镜像同步
+- **专题细节与坑**：[module-notes.md](module-notes.md) 的「OKKI 开放平台对接」章节
+
 ### 微信小程序（生产报工）
 
 - **AppID**：`wx4dea4f10fe1bda19`

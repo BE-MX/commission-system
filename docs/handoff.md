@@ -20,7 +20,7 @@
 ### 核心业务模块（20 个）
 
 1. ✅ **提成管理**：回款单计算、客户归属快照、批次管理、业务员确认流程（confirming 状态 + 反馈/确认机制）
-2. ✅ **订单发票管理**：发票 CRUD、产品级联选择、Excel/PDF/HTML 导出、小满订单同步（预留）
+2. ✅ **订单发票管理**：发票 CRUD、产品级联选择、Excel/PDF/HTML 导出；OKKI 推单 Phase 2 进行中（2026-07-10 鉴权/token 自动续期/订单枚举/设置页/业务员绑定候选同步已上线，推单字段映射待做）
 3. ✅ **物流跟踪**：DHL/FedEx 自动轮询、关键状态推送、物流日报
 4. ✅ **运单上传**：图片 OCR（AI 多模态）+ 手动录入
 5. ✅ **设计预约**：申请/审批/排期、冲突检测、附件上传、钉钉通知
@@ -86,6 +86,12 @@
 4. **稳定性止血收尾（代码侧已完成 2026-07-03）**：调度告警/回滚脚本/备份脚本已落地，剩服务器上三个动作——①编辑 `deployackup-uploads.bat` 的 BACKUP_ROOT 指向备份盘并注册 schtasks 计划任务；②下次部署后演练一次 `rollback.bat`；③角色管理页给相关角色分配新权限 `dingtalk:admin`
 
 ### P1（重要）
+
+-1. **OKKI 推单 Phase 2 收尾**（2026-07-10 地基完成：client_credentials 鉴权实测打通、token 自动续期、orderEnums、设置页 `/invoice/okki-settings`、绑定候选同步 42 人）：
+   - ①生产服务器 `backend/.env` 加 `OKKI_CLIENT_ID/SECRET` 后部署重启（deploy 不同步 .env）
+   - ②管理员完成业务员绑定（系统管理→外部账号绑定）+ 设置页配置通用产品/默认订单状态
+   - ③开发推单主体：push 字段映射（人员/产品/价格）+ 同步日志 + unique_id 幂等编辑（`xiaoman_service.sync_invoice` 目前是占位）
+   - ④首推联调：**无沙箱，产生真实订单**，需指定测试客户；token 明文入库 vs 需求文档"加密"待拍板
 
 0. **对外库存查询后续**（2026-07-07 一期已上线：`/api/public/stock/products` + `/inventory` 英文嵌入页，key 门禁）：①服务器 `.env` 配置 `PUBLIC_STOCK_KEYS` 并把带 key 链接交付客户；②Shopify 主动推送（Webhook 回写客户店铺库存）待客户确认需求后排期；③观察是否需要限流
 
