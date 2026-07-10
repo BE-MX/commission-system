@@ -51,7 +51,11 @@ def _visible_under_scope(db, user: dict, waybill_no: str) -> bool:
     复用 shipment_service.apply_data_scope，与 list 口径一致：不可见即视为"未跟踪"，
     既不越权读他人 PII，也不泄露运单是否存在。
     """
-    q = db.query(ShipmentTracking).filter(ShipmentTracking.waybill_no == waybill_no)
+    q = (
+        db.query(ShipmentTracking)
+        .filter(ShipmentTracking.waybill_no == waybill_no)
+        .filter(ShipmentTracking.deleted_at.is_(None))
+    )
     q = shipment_service.apply_data_scope(q, db, user)
     return q.first() is not None
 

@@ -85,6 +85,7 @@ def generate_user_report(db: Session, user_id: int, dingtalk_user_id: str, repor
     shipments = (
         db.query(ShipmentTracking)
         .filter(or_(*conditions))
+        .filter(ShipmentTracking.deleted_at.is_(None))
         .filter(
             (ShipmentTracking.is_active == True)
             | (ShipmentTracking.delivered_at >= seven_days_ago)

@@ -1,8 +1,10 @@
-"""运单查询服务 — 列表 / 详情 / 统计 / 提交人
+"""运单查询服务 — 列表 / 详情 / 统计 / 提交人 / 软删除
 
 业务: 数据范围权限自动过滤 + 状态/承运商/关键词筛选 + 分页 + short_link 拼接
+软删口径: deleted_at 非空的运单对列表/详情/统计/提交人全部不可见
 """
 
+from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import func, or_
@@ -69,7 +71,7 @@ def list_shipments(
     sort_field: str = "created_at",
     sort_order: str = "desc",
 ) -> dict:
-    q = db.query(ShipmentTracking)
+    q = db.query(ShipmentTracking).filter(ShipmentTracking.deleted_at.is_(None))
     q = apply_data_scope(q, db, current_user)
 
     if status:
@@ -125,6 +127,7 @@ def get_shipment_detail(db: Session, waybill_no: str) -> Optional[dict]:
     shipment = (
         db.query(ShipmentTracking)
         .filter(ShipmentTracking.waybill_no == waybill_no)
+        .filter(ShipmentTracking.deleted_at.is_(None))
         .first()
     )
     if not shipment:
@@ -147,8 +150,15 @@ def get_shipment_detail(db: Session, waybill_no: str) -> Optional[dict]:
 
 
 def get_stats(db: Session, current_user: dict) -> dict:
-    q = db.query(ShipmentTracking.current_status, func.count(ShipmentTracking.id))
-    active_q = db.query(func.count(ShipmentTracking.id)).filter(ShipmentTracking.is_active == True)
+    q = (
+        db.query(ShipmentTracking.current_status, func.count(ShipmentTracking.id))
+        .filter(ShipmentTracking.deleted_at.is_(None))
+    )
+    active_q = (
+        db.query(func.count(ShipmentTracking.id))
+        .filter(ShipmentTracking.is_active == True)
+        .filter(ShipmentTracking.deleted_at.is_(None))
+    )
 
     q = apply_data_scope(q, db, current_user)
     active_q = apply_data_scope(active_q, db, current_user)
@@ -170,9 +180,44 @@ def get_stats(db: Session, current_user: dict) -> dict:
     ).model_dump()
 
 
+def delete_shipment(db: Session, waybill_no: str) -> bool:
+    """软删除运单：置 deleted_at 并停止轮询。不存在或已删除返回 False。
+
+    不做物理删除：钉钉暂存扫描按 waybill_no+carrier 去重，物理删除会在
+    下一次扫描时重新导入；软删行在 staging_service 重新提交时走恢复路径。
+    """
+    shipment = (
+        db.query(ShipmentTracking)
+        .filter(ShipmentTracking.waybill_no == waybill_no)
+        .filter(ShipmentTracking.deleted_at.is_(None))
+        .first()
+    )
+    if not shipment:
+        return False
+    shipment.deleted_at = datetime.now()
+    shipment.is_active = False
+    db.commit()
+    return True
+
+
+def restore_deleted_shipment(shipment: ShipmentTracking) -> None:
+    """恢复软删运单（staging 重提 / 录单重录共用口径，调用方负责 commit）。
+
+    清 deleted_at；非已签收/退回时重启轮询并清零错误计数——否则残留的
+    consecutive_errors 会让恢复后的运单一次失败即再次停轮。
+    """
+    shipment.deleted_at = None
+    if shipment.current_status not in ("delivered", "returned"):
+        shipment.is_active = True
+        shipment.poll_count = 0
+        shipment.poll_error = None
+        shipment.consecutive_errors = 0
+
+
 def list_submitters(db: Session) -> list[str]:
     rows = (
         db.query(ShipmentTracking.dingtalk_user_name)
+        .filter(ShipmentTracking.deleted_at.is_(None))
         .filter(ShipmentTracking.dingtalk_user_name.isnot(None))
         .filter(ShipmentTracking.dingtalk_user_name != "")
         .distinct()

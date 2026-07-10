@@ -150,6 +150,7 @@ async def refresh_single(db: Session, waybill_no: str) -> dict:
     shipment = (
         db.query(ShipmentTracking)
         .filter(ShipmentTracking.waybill_no == waybill_no)
+        .filter(ShipmentTracking.deleted_at.is_(None))
         .first()
     )
     if not shipment:

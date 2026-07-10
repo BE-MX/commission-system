@@ -10,6 +10,7 @@ from app.core.config import get_settings
 from app.tracking.models import CarrierConfig, ShipmentStaging, ShipmentTracking
 from app.services.short_link import generate_short_code
 from app.tracking.polling_service import poll_single
+from app.tracking.shipment_service import restore_deleted_shipment
 
 logger = logging.getLogger("tracking.staging")
 settings = get_settings()
@@ -41,7 +42,17 @@ async def scan_staging(db: Session) -> dict:
             )
 
             if existing:
-                if existing.is_active:
+                if existing.deleted_at is not None:
+                    # 已被用户删除的运单重新提交 → 恢复可见（误删的回退路径）
+                    restore_deleted_shipment(existing)
+                    if not existing.dingtalk_user_id and row.dingtalk_user_id:
+                        existing.dingtalk_user_id = row.dingtalk_user_id
+                    if not existing.dingtalk_user_id and row.dingtalk_user_name:
+                        _fallback_dingtalk_id(db, existing, row.dingtalk_user_name)
+                    row.process_result = "reactivated"
+                    row.process_note = f"restored after delete, id={existing.id}"
+                    stats["reactivated"] += 1
+                elif existing.is_active:
                     row.process_result = "duplicate"
                     row.process_note = f"already tracked, id={existing.id}"
                     stats["duplicate"] += 1

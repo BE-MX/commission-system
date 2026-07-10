@@ -21,6 +21,7 @@ from app.auth.models import ArkUser
 from app.tracking.models import CarrierConfig, ShipmentStaging, ShipmentTracking, Waybill
 from app.tracking.schemas import WaybillCreate, StagingCreateRequest
 from app.tracking.polling_service import poll_single
+from app.tracking.shipment_service import restore_deleted_shipment
 from app.tracking.ocr_service import call_ocr_sync
 from app.tracking.carriers.base import STATUS_MAP_CN
 from app.services.short_link import build_short_link, generate_short_code, build_carrier_tracking_url
@@ -141,24 +142,35 @@ async def create_waybill_with_tracking(
         WaybillConflict: 运单号已存在 (.existing 携带摘要)
         IntegrityError: 并发情况下唯一约束冲突
     """
-    # 后端二次去重
+    # 后端二次去重；若对应跟踪记录已被软删，放行走下方恢复分支（误删后重新录入的回退路径），
+    # 否则会 409"已存在"但列表里到处看不到这张单
     existing = check_waybill_exists(db, payload.waybill_no)
     if existing:
-        raise WaybillConflict(existing)
-
-    waybill = Waybill(
-        waybill_no=payload.waybill_no,
-        carrier=payload.carrier,
-        recipient_name=payload.recipient_name,
-        recipient_country=payload.recipient_country,
-        ship_date=payload.ship_date,
-        entry_source=payload.entry_source,
-        created_by=current_user.get("username", "unknown"),
-        created_at=datetime.now(),
-    )
-    db.add(waybill)
-    db.commit()
-    db.refresh(waybill)
+        deleted_tracking = (
+            db.query(ShipmentTracking)
+            .filter(
+                ShipmentTracking.waybill_no == payload.waybill_no,
+                ShipmentTracking.deleted_at.isnot(None),
+            )
+            .first()
+        )
+        if deleted_tracking is None:
+            raise WaybillConflict(existing)
+        waybill = db.query(Waybill).filter(Waybill.waybill_no == payload.waybill_no).first()
+    else:
+        waybill = Waybill(
+            waybill_no=payload.waybill_no,
+            carrier=payload.carrier,
+            recipient_name=payload.recipient_name,
+            recipient_country=payload.recipient_country,
+            ship_date=payload.ship_date,
+            entry_source=payload.entry_source,
+            created_by=current_user.get("username", "unknown"),
+            created_at=datetime.now(),
+        )
+        db.add(waybill)
+        db.commit()
+        db.refresh(waybill)
 
     # 自动创建 shipment_tracking 启动物流轮询 (失败不阻塞)
     tracking = None
@@ -203,6 +215,10 @@ async def create_waybill_with_tracking(
             db.refresh(tracking)
             short_link = build_short_link(short_code)
         else:
+            if existing_tracking.deleted_at is not None:
+                # 已删除的运单重新录入 → 恢复可见（口径与 staging 重提一致）
+                restore_deleted_shipment(existing_tracking)
+                db.commit()
             tracking = existing_tracking
             short_link = build_short_link(existing_tracking.short_code) if existing_tracking.short_code else None
     except Exception as exc:

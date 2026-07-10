@@ -75,12 +75,8 @@ def delete_shipment(
     db: Session = Depends(get_db),
     _user: dict = Depends(require_permission("tracking:delete")),
 ):
-    from app.tracking.models import ShipmentTracking
-    shipment = db.query(ShipmentTracking).filter(ShipmentTracking.waybill_no == waybill_no).first()
-    if not shipment:
+    if not shipment_service.delete_shipment(db, waybill_no):
         raise HTTPException(status_code=404, detail=f"运单 {waybill_no} 不存在")
-    shipment.is_active = False
-    db.commit()
     return {"code": 200, "message": "已删除", "data": None}
 
 
