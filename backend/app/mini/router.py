@@ -81,6 +81,7 @@ async def mini_bind(body: MiniBindRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status_code, detail={"code": error, "message": msg})
 
     user = result["user"]
+    db.commit()   # bind_user 只 flush；不 commit 的话 session 关闭时回滚，绑定静默丢失
     token = create_mini_token(user["id"], body.open_id)
     return {"bound": True, "token": token, "user": user}
 
