@@ -30,8 +30,9 @@ cryptography>=42.0
 # 报表 Word 导出
 python-docx>=1.1
 # MCP 网关(物流录单/查询对外 MCP 服务)
-# 注意:mcp 的传递依赖 sse-starlette 若取最新会要求 starlette>=0.49，与 fastapi 0.115
-# 的 starlette<0.47 硬冲突。故显式钉住 starlette 上界 + sse-starlette 兼容版本。
-starlette<0.47
-mcp==1.28.*
-sse-starlette==3.0.*
+# 注意:mcp/sse-starlette 取新 patch 会把 starlette 下限抬到 >=0.47，与 fastapi 0.115 的
+# starlette<0.47 硬冲突。`.*` 开放 patch 让全新解析(服务器)有自由度挑到冲突版本 →
+# ResolutionImpossible。故三者全部钉死到 dev 实测兼容的确切版本(全为 py3-none-any 纯 wheel)。
+starlette==0.46.2
+mcp==1.28.1
+sse-starlette==3.0.3
