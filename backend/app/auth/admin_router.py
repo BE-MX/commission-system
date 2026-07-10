@@ -421,6 +421,20 @@ def list_binding_candidates(
     return ResponseModel(data=items)
 
 
+@router.post("/external-binding-candidates/sync-okki", summary="从业务库 user_basic 同步 OKKI 用户候选")
+def sync_okki_candidates_endpoint(
+    db: Session = Depends(get_db),
+    _current_user: dict = Depends(require_permission("external_binding:write")),
+) -> ResponseModel:
+    from app.insight.external_binding_service import sync_okki_candidates
+    stats = sync_okki_candidates(db)
+    extra = f"，重新开放 {stats['reactivated']}" if stats["reactivated"] else ""
+    return ResponseModel(
+        data=stats,
+        message=f"同步完成：新增 {stats['created']}，更新 {stats['updated']}，已绑定跳过 {stats['skipped_bound']}{extra}",
+    )
+
+
 @router.post("/external-binding-candidates/{candidate_id}/bind", summary="将候选绑定到方舟用户")
 def bind_candidate_endpoint(
     candidate_id: int,

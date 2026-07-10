@@ -85,6 +85,7 @@ def ensure_candidate(
     external_account_id: str,
     external_display_name: str | None = None,
     raw_payload: dict | None = None,
+    source: str = "accio_work",
 ) -> ArkExternalBindingCandidate:
     """创建或更新未绑定候选记录。已 ignored 的不覆盖。"""
     candidate = (
@@ -129,12 +130,90 @@ def ensure_candidate(
         external_account_id=external_account_id,
         external_display_name=external_display_name,
         raw_payload=raw_payload,
+        source=source,
         suggested_user_id=suggested_user_id,
         suggestion_reason=suggestion_reason,
     )
     db.add(candidate)
     db.flush()
     return candidate
+
+
+def sync_okki_candidates(db: Session) -> dict:
+    """从业务库 user_basic（OKKI 用户镜像）生成 provider='okki' 的绑定候选。
+
+    已有活跃 okki 绑定的账号跳过；其余走 ensure_candidate（幂等 upsert，
+    姓名与 real_name 相同的自动带出建议用户）。返回统计供前端 toast。
+    """
+    from sqlalchemy import text
+
+    from app.core.config import get_settings
+
+    schema = get_settings().BUSINESS_DB_NAME
+    rows = db.execute(text(
+        f"SELECT user_id, full_name, nickname, user_mobile FROM `{schema}`.user_basic"
+    )).mappings().all()
+
+    bound_ids = {
+        acc_id for (acc_id,) in db.query(ArkUserExternalBinding.external_account_id).filter(
+            ArkUserExternalBinding.provider == "okki",
+            ArkUserExternalBinding.binding_status == "active",
+            ArkUserExternalBinding.deleted_at.is_(None),
+        ).all()
+    }
+    existing_ids = {
+        acc_id for (acc_id,) in db.query(ArkExternalBindingCandidate.external_account_id).filter(
+            ArkExternalBindingCandidate.provider == "okki",
+        ).all()
+    }
+
+    # 绑定被解除后候选还停在 bound 状态会卡死重绑路径，复位为 pending
+    reactivated = 0
+    stale_bound = db.query(ArkExternalBindingCandidate).filter(
+        ArkExternalBindingCandidate.provider == "okki",
+        ArkExternalBindingCandidate.candidate_status == "bound",
+    ).all()
+    for cand in stale_bound:
+        if cand.external_account_id not in bound_ids:
+            cand.candidate_status = "pending"
+            reactivated += 1
+
+    created = updated = skipped_bound = skipped_ignored = 0
+    for row in rows:
+        account_id = str(row["user_id"] or "").strip()
+        if not account_id:
+            continue
+        if account_id in bound_ids:
+            skipped_bound += 1
+            continue
+        display_name = (row["full_name"] or "").strip() or (row["nickname"] or "").strip() or None
+        candidate = ensure_candidate(
+            db,
+            provider="okki",
+            external_account_id=account_id,
+            external_display_name=display_name,
+            raw_payload={
+                "full_name": row["full_name"],
+                "nickname": row["nickname"],
+                "user_mobile": row["user_mobile"],
+            },
+            source="okki_user_basic",
+        )
+        if candidate.candidate_status == "ignored":
+            skipped_ignored += 1
+        elif account_id in existing_ids:
+            updated += 1
+        else:
+            created += 1
+    db.commit()
+    return {
+        "total": len(rows),
+        "created": created,
+        "updated": updated,
+        "skipped_bound": skipped_bound,
+        "skipped_ignored": skipped_ignored,
+        "reactivated": reactivated,
+    }
 
 
 def list_candidates(db: Session, status: str | None = None) -> list[ArkExternalBindingCandidate]:

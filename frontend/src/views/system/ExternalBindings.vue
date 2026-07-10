@@ -13,6 +13,7 @@
         <el-radio-button label="ignored">已忽略</el-radio-button>
       </el-radio-group>
       <GlassButton variant="ghost" left-icon="Refresh" @click="loadCandidates">刷新</GlassButton>
+      <GlassButton variant="ghost" left-icon="Connection" :loading="syncingOkki" @click="handleSyncOkki">同步 OKKI 用户</GlassButton>
     </div>
 
     <div class="table-card">
@@ -83,6 +84,20 @@ const currentCandidate = ref(null)
 const selectedUserId = ref(null)
 const userOptions = ref([])
 const searchLoading = ref(false)
+const syncingOkki = ref(false)
+
+async function handleSyncOkki() {
+  syncingOkki.value = true
+  try {
+    const res = await authApi.post('/external-binding-candidates/sync-okki')
+    ElMessage.success(res.message || '同步完成')
+    loadCandidates()
+  } catch (e) {
+    // 拦截器已统一提示
+  } finally {
+    syncingOkki.value = false
+  }
+}
 
 async function loadCandidates() {
   loading.value = true
