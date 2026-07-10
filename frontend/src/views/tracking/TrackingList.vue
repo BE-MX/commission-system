@@ -371,7 +371,7 @@ async function handleScanStaging() {
   try {
     const res = await triggerScanStaging()
     const d = res.data
-    ElMessage.success(`扫描完成：${d.success} 新增，${d.duplicate} 重复，${d.error} 异常`)
+    ElMessage.success(`扫描完成：${d.success} 新增，${d.reactivated} 恢复，${d.duplicate} 重复，${d.error} 异常`)
     fetchList()
     fetchStats()
   } catch { /* handled by interceptor */ }
