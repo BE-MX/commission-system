@@ -175,7 +175,7 @@ server {
     }
 
     location ~ ^/(api|uploads|s|health) {
-        proxy_pass http://127.0.0.1:8888;  # SSH 隧道端口
+        proxy_pass http://127.0.0.1:8002;  # SSH 隧道端口（2026-07-10 与云端 /etc/nginx/conf.d/leshine.conf 实况核对，旧文档误写 8888）
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -192,19 +192,23 @@ systemctl reload nginx
 
 ### 8. 配置 SSH 隧道（本地 → 云端）
 
-在本地 Windows Server 运行（保持前台）：
+在本地 Windows Server 运行（保持前台；云端监听口是 8002 而非旧文档的 8888，本地端口以 `netstat -ano | findstr :800` 实际后端口为准）：
 
 ```bash
-ssh -N -R 8888:localhost:8002 root@119.28.107.92
+ssh -N -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes -R 8002:localhost:8002 root@119.28.107.92
 ```
 
 或配置成 NSSM 服务（推荐）：
 
 ```bash
 nssm install SSHTunnel "C:\Windows\System32\OpenSSH\ssh.exe"
-nssm set SSHTunnel AppParameters "-N -R 8888:localhost:8002 root@119.28.107.92"
+nssm set SSHTunnel AppParameters "-N -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes -R 8002:localhost:8002 root@119.28.107.92"
+nssm set SSHTunnel AppExit Default Restart
+nssm set SSHTunnel AppRestartDelay 5000
 nssm start SSHTunnel
 ```
+
+⚠️ **keepalive 三个 `-o` 参数是必配项**：不带它们时，网络闪断/云端重启后 ssh 进程会进入"半死"状态——进程不退出、NSSM 不会重启它、隧道永远不恢复（2026-07-09 全站 502 事故根因）。`ExitOnForwardFailure` 保证端口转发挂不上时进程直接退出交给 NSSM 重拉。
 
 ## 日常更新
 
@@ -310,6 +314,26 @@ nssm restart CommissionSystem
 2. **不出效果图**：失败原因看 `ark_expo_sessions.error_message` 或 AI 调用日志（`ark_ai_call_logs`，preset=expo_wig_composite）。生图 Provider 在「AI 接入管理」后台可切（2026-07-07 已从 ELBNT 切云雾 api.wlai.vip / gpt-image-2，单场景实测 41~135s）。常见：上游偶发 500/502/504（重试或换 Provider）；「多场景合一」三联图耗时更长但仍在 300s 超时与 420s 看门狗余量内；卡在"生成中"超 7 分钟会被看门狗自动标失败并给出重试入口
 3. **提示权限不足**：确认账号有 `expo:write`；若右上角显示占位"用户"，硬刷新（Ctrl+F5）重新拉取登录态
 4. 客户照片与效果图存 `uploads/expo/`（photos/results/wigs/hair_colors 四个子目录），属 `/uploads` 备份范围；客户数据删除走线索台「删除」（物理删除照片）；发型/色板图上传不限体积（送模型前管线自动压缩）
+
+### Q8：全站 /api 一律 502（前端静态页正常）
+
+前端 200 但所有 API 502 = 云 Nginx 找不到上游 = **SSH 反向隧道断了**（2026-07-09 事故：隧道断了一晚无人知）。定位链路：
+
+```bash
+# 1. 云端确认（开发机可直接跑）：8002 无监听 = 隧道断
+ssh root@119.28.107.92 "ss -tlnp | grep 8002"
+ssh root@119.28.107.92 "tail -5 /var/log/nginx/error.log"   # connect() failed (111) 即实锤
+
+# 2. 生产 Windows Server 上恢复：
+nssm status SSHTunnel
+nssm restart SSHTunnel
+# 服务不存在或重启无效时，先手动验证隧道命令能通（见「配置 SSH 隧道」一节），再排查密钥/网络
+
+# 3. 恢复验证（任意机器）：
+curl https://leshine.work/health
+```
+
+隧道断的常见诱因：服务器重启后服务未自启、网络闪断后 ssh 半死不退出（务必配 keepalive 参数，见上文）。
 
 ## 日志位置
 
