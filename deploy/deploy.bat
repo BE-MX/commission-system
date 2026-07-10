@@ -73,8 +73,9 @@ if errorlevel 1 (
     echo [ERROR] venv activate failed
     goto :error
 )
-REM Python 版本守卫：全部依赖在 3.12 上验证选版。venv 若是别的 Python(如 3.14)建的，
-REM 会解析出不同版本组合(ResolutionImpossible)或缺 cp3xx wheel 转源码构建失败。快速失败给清晰指引
+REM Python version guard: deps are validated on 3.12. A venv built with another
+REM Python (e.g. 3.14) resolves a different set (ResolutionImpossible) or misses
+REM cp3xx wheels and falls back to source build. Fail fast with clear guidance.
 for /f "tokens=2" %%v in ('.\.venv\Scripts\python.exe --version 2^>^&1') do set "PYVER=%%v"
 echo      venv Python %PYVER%
 echo %PYVER% | findstr /b "3.12." >nul
@@ -87,10 +88,11 @@ if errorlevel 1 (
     echo         then rerun deploy.bat
     goto :error
 )
-REM UTF-8 模式：源码构建的 sdist(如老 starlette)读 README 默认走系统 GBK 会 UnicodeDecodeError
+REM UTF-8 mode: sdist builds reading README default to system GBK on CN Windows and crash
 set PYTHONUTF8=1
-REM 先升级 pip：旧 pip 的 legacy resolver 会挑不满足 fastapi<0.47 约束的老 starlette 去源码构建，
-REM 现代 resolver 直接命中 starlette 0.46.2 wheel，不再构建。显式用 venv python 绕开 PATH 污染
+REM Upgrade pip first: old pip legacy resolver picks an old starlette violating fastapi<0.47
+REM and builds it from source; modern resolver hits the starlette 0.46.2 wheel. Explicit
+REM venv python to dodge PATH pollution.
 .\.venv\Scripts\python.exe -m pip install --upgrade pip -q
 if errorlevel 1 (
     echo [ERROR] pip upgrade failed
