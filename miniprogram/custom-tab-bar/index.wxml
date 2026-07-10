@@ -14,8 +14,8 @@
     <text class="tab-label">扫码报工</text>
   </view>
 
-  <!-- 拍照上传：相机 — 机身 + 镜头 + 闪光灯 -->
-  <view class="tab-item {{selected === 1 ? 'active' : ''}}" bindtap="onTabTap" data-index="1">
+  <!-- 拍照上传：相机 — 机身 + 镜头 + 闪光灯（功能未上线，showReserved 控制显隐） -->
+  <view class="tab-item {{selected === 1 ? 'active' : ''}}" bindtap="onTabTap" data-index="1" wx:if="{{showReserved}}">
     <view class="tab-icon icon-camera">
       <view class="cam-body"></view>
       <view class="cam-lens"></view>
@@ -24,8 +24,8 @@
     <text class="tab-label">拍照上传</text>
   </view>
 
-  <!-- 生产助手：客服耳机 — 头带弧 + 耳罩 + 麦克风 -->
-  <view class="tab-item {{selected === 2 ? 'active' : ''}}" bindtap="onTabTap" data-index="2">
+  <!-- 生产助手：客服耳机 — 头带弧 + 耳罩 + 麦克风（功能未上线，showReserved 控制显隐） -->
+  <view class="tab-item {{selected === 2 ? 'active' : ''}}" bindtap="onTabTap" data-index="2" wx:if="{{showReserved}}">
     <view class="tab-icon icon-headset">
       <view class="hs-band"></view>
       <view class="hs-ear-l"></view>

@@ -2,7 +2,9 @@
 Component({
   data: {
     selected: 0,
-    hide: false
+    hide: false,
+    // 拍照上传/生产助手功能未实现，正式版审核期间隐藏入口，功能就绪后改回 true
+    showReserved: false
   },
 
   methods: {
