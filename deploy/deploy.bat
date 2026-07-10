@@ -195,23 +195,39 @@ echo [6/7] Sync frontend to cloud server...
 cd /d "%INSTALL_DIR%\frontend"
 
 REM 优先用 Git Bash 自带的 rsync（增量同步，只传变化的文件）
+set "SYNC_OK=0"
 set "RSYNC_PATH="
 for /f "delims=" %%P in ('where rsync 2^>nul') do set "RSYNC_PATH=%%P"
 
 if defined RSYNC_PATH (
     echo      Using rsync incremental sync...
     rsync -avz --delete --chmod=D755,F644 dist/ %CLOUD_SERVER%:%CLOUD_DIST%/
-    if errorlevel 1 (
+    if not errorlevel 1 (
+        set "SYNC_OK=1"
+        echo      OK
+    ) else (
         echo [WARNING] rsync failed, fallback to scp...
         call :scp_full
-    ) else (
-        echo      OK
+        if not errorlevel 1 set "SYNC_OK=1"
     )
 ) else (
     REM 没有 rsync，通过 ssh 在远程做增量比对
     call :scp_smart
+    if not errorlevel 1 set "SYNC_OK=1"
 )
 echo.
+
+REM Sync failure aborts and leaves the marker unchanged, so the next deploy retries
+REM (2026-07-11 fix: marker was written unconditionally + scp errors swallowed by >nul,
+REM  so one silent sync failure poisoned the marker and skipped cloud sync forever).
+if not "!SYNC_OK!"=="1" (
+    echo [ERROR] Frontend sync to cloud FAILED - cloud dist NOT updated.
+    echo         Build marker left unchanged so the next deploy retries the sync.
+    echo         Check ssh/rsync to %CLOUD_SERVER% ^(key / network / path %CLOUD_DIST%^).
+    goto :error
+)
+
+REM Advance the frontend build marker only after a confirmed successful sync
 if not exist "%INSTALL_DIR%\.deploy_state" mkdir "%INSTALL_DIR%\.deploy_state"
 for /f "delims=" %%H in ('git -C "%INSTALL_DIR%" rev-parse HEAD') do set "CURRENT_HEAD=%%H"
 echo !CURRENT_HEAD!>"%FRONTEND_MARKER%"
@@ -219,6 +235,7 @@ goto :restart_service
 
 :scp_smart
 REM 利用 ssh+md5sum 比对，只传变化的文件
+set "SMART_FAIL=0"
 REM 1) 获取远程 assets 文件 md5 清单
 echo      Computing diff via ssh...
 ssh %CLOUD_SERVER% "cd %CLOUD_DIST% && find assets/ -type f -exec md5sum {} \; 2>/dev/null" > "%TEMP%\cloud_md5.txt" 2>nul
@@ -228,8 +245,9 @@ cd /d "%INSTALL_DIR%\frontend\dist"
 if exist "%TEMP%\cloud_md5.txt" (
     REM 有远程清单，做增量比对
     set UPLOAD_COUNT=0
-    REM 始终同步 index.html
+    REM Always upload index.html; its failure means the ssh/scp channel is down = overall fail
     scp index.html %CLOUD_SERVER%:%CLOUD_DIST%/index.html >nul 2>&1
+    if errorlevel 1 set "SMART_FAIL=1"
     REM m/ is small (<1MB), always upload
     scp -r m %CLOUD_SERVER%:%CLOUD_DIST%/ >nul 2>&1
     REM vendor/ holds ~35MB Stimulsoft that almost never changes: upload only when
@@ -248,6 +266,7 @@ if exist "%TEMP%\cloud_md5.txt" (
         echo      vendor/ changed or missing on cloud, uploading ~35MB...
         REM no ^>nul here: a 35MB transfer with output swallowed looks like a hang
         scp -r vendor %CLOUD_SERVER%:%CLOUD_DIST%/
+        if errorlevel 1 set "SMART_FAIL=1"
     ) else (
         echo      vendor/ unchanged, skipped
     )
@@ -269,18 +288,19 @@ if exist "%TEMP%\cloud_md5.txt" (
 ) else (
     REM 无法获取远程清单，回退全量 scp
     call :scp_full
+    if errorlevel 1 set "SMART_FAIL=1"
 )
-goto :eof
+exit /b !SMART_FAIL!
 
 :scp_full
 echo      Full scp sync...
 scp -r dist/* %CLOUD_SERVER%:%CLOUD_DIST%/
 if errorlevel 1 (
     echo [WARNING] SCP sync failed - cloud may be stale
-) else (
-    echo      OK
+    exit /b 1
 )
-goto :eof
+echo      OK
+exit /b 0
 
 :restart_service
 REM ---------- [7/7] Restart services ----------
