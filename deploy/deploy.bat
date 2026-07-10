@@ -230,9 +230,26 @@ if exist "%TEMP%\cloud_md5.txt" (
     set UPLOAD_COUNT=0
     REM 始终同步 index.html
     scp index.html %CLOUD_SERVER%:%CLOUD_DIST%/index.html >nul 2>&1
-    REM m/ 和 vendor/ 通常小且少变，直接传
+    REM m/ is small (<1MB), always upload
     scp -r m %CLOUD_SERVER%:%CLOUD_DIST%/ >nul 2>&1
-    scp -r vendor %CLOUD_SERVER%:%CLOUD_DIST%/ >nul 2>&1
+    REM vendor/ holds ~35MB Stimulsoft that almost never changes: upload only when
+    REM git says it changed since the last synced build, or the cloud copy is missing
+    set "VENDOR_CHANGED=0"
+    if not defined FRONTEND_BASE set "VENDOR_CHANGED=1"
+    if defined FRONTEND_BASE (
+        git -C "%INSTALL_DIR%" diff --name-only %FRONTEND_BASE% HEAD -- frontend/public/vendor/ 2>nul | findstr /R "." >nul 2>&1
+        if not errorlevel 1 set "VENDOR_CHANGED=1"
+    )
+    git -C "%INSTALL_DIR%" diff --name-only -- frontend/public/vendor/ 2>nul | findstr /R "." >nul 2>&1
+    if not errorlevel 1 set "VENDOR_CHANGED=1"
+    ssh %CLOUD_SERVER% "test -d %CLOUD_DIST%/vendor/stimulsoft" >nul 2>&1
+    if errorlevel 1 set "VENDOR_CHANGED=1"
+    if "!VENDOR_CHANGED!"=="1" (
+        echo      vendor/ changed or missing on cloud, uploading ~35MB...
+        scp -r vendor %CLOUD_SERVER%:%CLOUD_DIST%/ >nul 2>&1
+    ) else (
+        echo      vendor/ unchanged, skipped
+    )
     REM 逐个比对 assets 文件
     for /f "delims=" %%F in ('dir /s /b assets\*') do (
         set "RELPATH=%%F"
