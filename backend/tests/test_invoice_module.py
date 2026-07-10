@@ -1,10 +1,11 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
+import pytest
 from sqlalchemy import text
 
-from app.invoice import export_service, product_service, service
-from app.invoice.models import Invoice, InvoiceItem  # noqa: F401 - register metadata for test create_all
+from app.invoice import export_service, product_service, service, xiaoman_service
+from app.invoice.models import Invoice, InvoiceItem, XiaomanSettings  # noqa: F401 - register metadata for test create_all
 from app.invoice.schemas import InvoiceCreate, InvoiceItemPayload
 
 
@@ -89,3 +90,102 @@ def test_invoice_create_totals_and_validation(db):
     assert invoice.status == "ready"
     assert service.validate_invoice(invoice) == []
     assert export_service.build_invoice_pdf(invoice).getvalue().startswith(b"%PDF-1.4")
+
+# ── OKKI push settings ────────────────────────────────────────
+
+def _base_settings_kwargs(**overrides):
+    kwargs = dict(
+        generic_product_no=None,
+        generic_sku_id=None,
+        default_order_status=None,
+        default_currency="USD",
+        access_token=None,
+        token_expires_at=None,
+        user_id=1,
+    )
+    kwargs.update(overrides)
+    return kwargs
+
+
+def test_xiaoman_settings_defaults_and_token_semantics(db):
+    # 未初始化时返回默认结构，不隐式建行
+    assert xiaoman_service.get_settings_row(db) is None
+    default = xiaoman_service.serialize_settings(None)
+    assert default["has_token"] is False
+    assert default["default_currency"] == "USD"
+
+    # 写入 token → 只回掩码；手动覆盖的过期时间不信表单残值，按刚签发 8h 计
+    from datetime import timedelta
+
+    expires = datetime(2026, 12, 31, 23, 59, 59)
+    row = xiaoman_service.update_settings(db, **_base_settings_kwargs(
+        access_token="tok_1234567890abcdef", token_expires_at=expires,
+        default_order_status="待确认",
+    ))
+    db.commit()
+    data = xiaoman_service.serialize_settings(row)
+    assert data["has_token"] is True
+    assert data["access_token_masked"] == "tok_****cdef"
+    assert "tok_1234567890abcdef" not in str(data)
+    assert row.token_expires_at > datetime.utcnow() + timedelta(hours=7)
+
+    # access_token=None → 保持不变
+    row = xiaoman_service.update_settings(db, **_base_settings_kwargs(
+        access_token=None, token_expires_at=expires,
+    ))
+    db.commit()
+    assert row.access_token == "tok_1234567890abcdef"
+
+    # access_token="" → 清除，过期时间联动清空
+    row = xiaoman_service.update_settings(db, **_base_settings_kwargs(
+        access_token="", token_expires_at=expires,
+    ))
+    db.commit()
+    assert row.access_token is None
+    assert row.token_expires_at is None
+
+    # 始终单行
+    assert db.query(XiaomanSettings).count() == 1
+
+
+def test_xiaoman_settings_generic_product_resolution(db):
+    _seed_products(db)
+
+    # 唯一 SKU 自动关联
+    row = xiaoman_service.update_settings(db, **_base_settings_kwargs(generic_product_no="P001"))
+    db.commit()
+    assert row.generic_product_id == 1
+    assert row.generic_sku_id == 9001
+
+    # 不存在的产品编号拒绝保存
+    with pytest.raises(ValueError):
+        xiaoman_service.update_settings(db, **_base_settings_kwargs(generic_product_no="NOPE"))
+
+    # SKU 不属于该产品拒绝保存
+    with pytest.raises(ValueError):
+        xiaoman_service.update_settings(db, **_base_settings_kwargs(
+            generic_product_no="P001", generic_sku_id=9002,
+        ))
+
+    # 多 SKU 且未指定时不猜测
+    db.execute(text("INSERT INTO lsordertest.okki_inventory (product_id, sku_id, disable_flag) VALUES (1, 9010, 0)"))
+    db.commit()
+    row = xiaoman_service.update_settings(db, **_base_settings_kwargs(generic_product_no="P001"))
+    db.commit()
+    assert row.generic_sku_id is None
+    resolved = xiaoman_service.resolve_generic_product(db, "P001")
+    assert resolved["skus"] == [9001, 9010]
+
+    # 指定合法 SKU 通过
+    row = xiaoman_service.update_settings(db, **_base_settings_kwargs(
+        generic_product_no="P001", generic_sku_id=9010,
+    ))
+    db.commit()
+    assert row.generic_sku_id == 9010
+
+    # 清空产品编号 → 关联 ID 全部清空
+    row = xiaoman_service.update_settings(db, **_base_settings_kwargs(generic_product_no="  "))
+    db.commit()
+    assert row.generic_product_no is None
+    assert row.generic_product_id is None
+    assert row.generic_sku_id is None

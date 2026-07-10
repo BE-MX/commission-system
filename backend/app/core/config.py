@@ -128,6 +128,11 @@ class Settings(BaseSettings):
     WX_MINI_APPID: str = ""  # 微信小程序 AppID
     WX_MINI_SECRET: str = ""  # 微信小程序 AppSecret
 
+    # ── OKKI 开放平台（订单推送，client_credentials 鉴权）─
+    OKKI_CLIENT_ID: str = ""
+    OKKI_CLIENT_SECRET: str = ""
+    OKKI_API_BASE: str = "https://api-sandbox.xiaoman.cn"  # api-sandbox 即正式域名（官方文档确认）
+
     @field_validator("CORS_ALLOW_ORIGINS", mode="before")
     @classmethod
     def _split_origins(cls, v):

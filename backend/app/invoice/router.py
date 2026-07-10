@@ -1,5 +1,6 @@
 """FastAPI router for order invoice management."""
 
+from datetime import datetime
 from decimal import Decimal
 from urllib.parse import quote
 
@@ -13,6 +14,7 @@ from app.core.database import get_db
 from app.core.response import ok
 from app.invoice import (
     export_service,
+    okki_client,
     price_service,
     product_service,
     receipt_repair_service,
@@ -279,6 +281,86 @@ def delete_customer_rule(
         raise HTTPException(404, "规则不存在")
     db.commit()
     return ok(message="已删除")
+
+
+# ── OKKI push settings ───────────────────────────────────────
+
+class XiaomanSettingsPayload(BaseModel):
+    generic_product_no: str | None = Field(None, max_length=64)
+    generic_sku_id: int | None = None
+    default_order_status: str | None = Field(None, max_length=64)
+    default_currency: str = Field("USD", max_length=8)
+    # None = 保持现有 token 不变；空字符串 = 清除；其他 = 覆盖
+    access_token: str | None = None
+    token_expires_at: datetime | None = None
+
+
+@router.get("/xiaoman/settings", summary="Get OKKI push settings")
+def get_xiaoman_settings(
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("invoice:admin")),
+):
+    return ok(xiaoman_service.serialize_settings(xiaoman_service.get_settings_row(db)))
+
+
+@router.put("/xiaoman/settings", summary="Update OKKI push settings")
+def update_xiaoman_settings(
+    body: XiaomanSettingsPayload,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("invoice:admin")),
+):
+    try:
+        row = xiaoman_service.update_settings(
+            db,
+            generic_product_no=body.generic_product_no,
+            generic_sku_id=body.generic_sku_id,
+            default_order_status=body.default_order_status,
+            default_currency=body.default_currency,
+            access_token=body.access_token,
+            token_expires_at=body.token_expires_at,
+            user_id=_user_id(current_user),
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    db.commit()
+    return ok(xiaoman_service.serialize_settings(row), message="已保存")
+
+
+@router.get("/xiaoman/settings/resolve-product", summary="Resolve generic product by product_no")
+def resolve_xiaoman_product(
+    product_no: str = Query(..., min_length=1, max_length=64),
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("invoice:admin")),
+):
+    resolved = xiaoman_service.resolve_generic_product(db, product_no.strip())
+    return ok({"found": resolved is not None, "product": resolved})
+
+
+@router.post("/xiaoman/settings/fetch-token", summary="Fetch OKKI access token via client_credentials")
+def fetch_xiaoman_token(
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("invoice:admin")),
+):
+    try:
+        okki_client.ensure_access_token(db, force=True)
+    except okki_client.OkkiApiError as exc:
+        raise HTTPException(400, str(exc))
+    db.commit()
+    row = xiaoman_service.get_settings_row(db)
+    return ok(xiaoman_service.serialize_settings(row), message="Token 已获取")
+
+
+@router.get("/xiaoman/enums", summary="OKKI order enums (status/currency/price contract)")
+def get_xiaoman_enums(
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("invoice:admin")),
+):
+    try:
+        enums = okki_client.get_order_enums(db)
+    except okki_client.OkkiApiError as exc:
+        raise HTTPException(400, str(exc))
+    db.commit()  # 惰性 token 获取可能更新了 settings 行
+    return ok(enums)
 
 
 # ── invoices ─────────────────────────────────────────────────
