@@ -73,7 +73,16 @@ if errorlevel 1 (
     echo [ERROR] venv activate failed
     goto :error
 )
-pip install -r requirements.txt -q
+REM UTF-8 模式：源码构建的 sdist(如老 starlette)读 README 默认走系统 GBK 会 UnicodeDecodeError
+set PYTHONUTF8=1
+REM 先升级 pip：旧 pip 的 legacy resolver 会挑不满足 fastapi<0.47 约束的老 starlette 去源码构建，
+REM 现代 resolver 直接命中 starlette 0.46.2 wheel，不再构建。显式用 venv python 绕开 PATH 污染
+.\.venv\Scripts\python.exe -m pip install --upgrade pip -q
+if errorlevel 1 (
+    echo [ERROR] pip upgrade failed
+    goto :error
+)
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt -q
 if errorlevel 1 (
     echo [ERROR] pip install failed
     goto :error
