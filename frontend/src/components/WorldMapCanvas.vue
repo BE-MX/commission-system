@@ -80,28 +80,32 @@ onMounted(() => {
   let width = 0
   let height = 0
   const dpr = Math.min(window.devicePixelRatio || 1, 2)
+  // 精修：尊重系统「减少动态」偏好——降级为单帧静态图，不跑 rAF
+  const prefersReduced = window.matchMedia
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
   function resize() {
     width = canvas.offsetWidth
     height = canvas.offsetHeight
     canvas.width = width * dpr
     canvas.height = height * dpr
-    ctx.scale(dpr, dpr)
+    // setTransform 绝对赋值（reset + scale 一步）：避免多次 resize 时 ctx.scale 叠乘放大
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
-    // 初始化星星
+    // 初始化星星（密度降到 45，更克制）
     stars.value = []
-    for (let i = 0; i < 80; i++) {
+    for (let i = 0; i < 45; i++) {
       stars.value.push({
         x: Math.random() * width,
         y: Math.random() * height,
-        size: Math.random() * 1.5 + 0.3,
+        size: Math.random() * 1.4 + 0.3,
         twinkle: Math.random() * Math.PI * 2,
         speed: Math.random() * 0.02 + 0.005
       })
     }
-  }
 
-  resize()
+    if (prefersReduced) renderStatic()
+  }
 
   function getMapParams() {
     const cx = width * 0.40
@@ -112,7 +116,7 @@ onMounted(() => {
 
   function drawDotMatrix() {
     const { cx, cy, scale } = getMapParams()
-    const spacing = 6
+    const spacing = 7
     const dotSize = 1.2
 
     for (let y = 0; y < height; y += spacing) {
@@ -258,17 +262,17 @@ onMounted(() => {
   }
 
   function spawnParticles(time) {
-    if (time - lastSpawnTime < 400) return
+    if (time - lastSpawnTime < 600) return
     lastSpawnTime = time
 
     const { cx, cy, scale } = getMapParams()
     const qx = cx + qingdaoLon * scale
     const qy = cy - qingdaoLat * scale
 
-    if (particles.value.length >= 50) return
+    if (particles.value.length >= 28) return
 
     for (const dest of DESTINATIONS) {
-      if (Math.random() > 0.6) continue
+      if (Math.random() > 0.72) continue
       const destX = cx + dest.lon * scale
       const destY = cy - dest.lat * scale
       particles.value.push({
@@ -372,8 +376,7 @@ onMounted(() => {
   function animate(time) {
     ctx.clearRect(0, 0, width, height)
 
-    ctx.fillStyle = '#0a0a0f'
-    ctx.fillRect(0, 0, width, height)
+    // 底透明（不再填不透明黑）：露出下层的 LeShine 品牌水印，页面 bg #0a0a0f 兜底
 
     drawGrid()
     drawStars(time)
@@ -393,16 +396,46 @@ onMounted(() => {
     animRef = requestAnimationFrame(animate)
   }
 
-  animRef = requestAnimationFrame(animate)
+  // 减少动态偏好下的单帧静态图：只画地图/目的地/青岛，不含粒子/涟漪/闪烁动画
+  function renderStatic() {
+    ctx.clearRect(0, 0, width, height)
+    // 底透明（不再填不透明黑）：露出下层的 LeShine 品牌水印，页面 bg #0a0a0f 兜底
+    drawGrid()
+    drawStars(0)
+    drawDotMatrix()
+    drawDestinations()
+    drawQingdaoGlow(0)
+  }
+
+  resize()
+
+  if (prefersReduced) {
+    renderStatic()
+  } else {
+    animRef = requestAnimationFrame(animate)
+  }
 
   const handleResize = () => {
     resize()
   }
   window.addEventListener('resize', handleResize)
 
+  // 页面不可见时暂停 rAF（省电、不空烧 CPU），重新可见再续
+  const handleVisibility = () => {
+    if (prefersReduced) return
+    if (document.hidden) {
+      cancelAnimationFrame(animRef)
+      animRef = 0
+    } else if (!animRef) {
+      animRef = requestAnimationFrame(animate)
+    }
+  }
+  document.addEventListener('visibilitychange', handleVisibility)
+
   onUnmounted(() => {
     cancelAnimationFrame(animRef)
     window.removeEventListener('resize', handleResize)
+    document.removeEventListener('visibilitychange', handleVisibility)
   })
 })
 </script>
