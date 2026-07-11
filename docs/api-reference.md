@@ -85,8 +85,19 @@
   - `POST /logout` — 退出登录，撤销 refresh_token
 - `/api/auth` — 用户/角色/权限管理 & 个人资料（`auth/admin_router.py`，与上同前缀）
   - `GET /permissions/list?include_legacy=0` — 权限列表按模块分组（046 起含 kind/sort 元数据，默认过滤 is_legacy）
-  - `GET /permission-audits?limit=50` — 角色权限变更审计（谁给哪个角色加/减了什么）
-  - `POST/PUT /roles*` — 保存时自动写入权限变更审计
+  - `GET /permission-audits?limit=50` — 角色权限变更审计（谁给哪个角色加/减了什么，`role:read`）
+  - `POST/PUT /roles*` — 保存时自动写入权限变更审计（`role:write`；删除角色 `role:delete`；角色列表/权限列表 `role:read|user:read`）
+
+> **权限体系细化（2026-07-12，061 迁移）**：按功能单元拆分 10 个新码——
+> `dict:read/write`（基础字典，从 user:* 拆出；字典数据 GET 仍任意登录可读）、
+> `supervisor:read/write`（主管关系，从 employee:* 拆出）、
+> `insight_case:read/write`（案例库）与 `insight_minutes:read/write`（周会纪要，均从 insight:read/write 拆出，`insight:write` 转 legacy）、
+> `expo_lead:read/write`（展会线索台，从 expo:read 拆出；kiosk 销售反馈端点兼容 expo:write）。
+> 061 迁移已给持有旧捆绑码的角色自动补授新码（平滑迁移，上线零感知）。
+> 同批修复：`app/api/` 老共享层 30 个端点（提成批次/客户归属/员工/主管/回款/报表导出）补齐
+> `commission|customer|employee|supervisor|payment` 域权限（此前完全无鉴权）；tracking 详情/刷新/轮询/扫描补权限且详情套用数据范围；
+> `POST /api/shortlink` 要求登录。浏览器直链白名单（无 JWT，注释在端点处）：客户归属导入模板、
+> 报表打印/导出 docx、`/tracking/staging`（m2m 推送）。
   - `PUT /profile` — 修改个人资料（real_name, email, phone, avatar_url）
   - `POST /avatar` — 上传头像（图片文件，最大 2MB，自动删除旧头像）
   - `PUT /profile/password` — 修改密码
