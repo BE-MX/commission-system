@@ -161,7 +161,7 @@ def upgrade():
         sa.Column("reviewer_user_id", USER_ID, sa.ForeignKey("ark_users.id"), nullable=False),
         sa.Column("reviewer_name_snapshot", sa.String(64), nullable=False),
         sa.Column("decision", sa.String(16), nullable=False),
-        sa.Column("comment", sa.Text()),
+        sa.Column("remark", sa.Text(), comment="审核意见"),
         sa.Column("compensation_snapshot_json", sa.JSON()),
         sa.Column("idempotency_key", sa.String(64)),
         *_timestamps(),
@@ -179,7 +179,9 @@ def upgrade():
         sa.Column("actor_name_snapshot", sa.String(64)),
         sa.Column("workflow_round", mysql.INTEGER(unsigned=True), nullable=False, server_default="0"),
         sa.Column("detail_json", sa.JSON()),
+        sa.Column("idempotency_key", sa.String(64)),
         *_timestamps(),
+        sa.UniqueConstraint("idempotency_key", name="uq_aftersales_event_idempotency"),
         comment="售后不可变审计事件",
     )
     op.create_index("ix_aftersales_event_case", "ark_aftersales_events", ["case_id", "created_at"])
