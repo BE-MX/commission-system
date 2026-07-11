@@ -171,6 +171,7 @@ def serialize_session(db: Session, session: ExpoSession, include_internal: bool 
             "cover_url": _to_url(wig.cover_path),
             "score": entry.get("score"),
             "reason": entry.get("reason"),
+            "must_recommend": wig.must_recommend,
             "evidence_refs": wig.evidence_refs or [],
         })
 
@@ -518,5 +519,17 @@ def serialize_wig(wig: ExpoWig) -> dict:
         "selling_points": wig.selling_points,
         "evidence_refs": wig.evidence_refs or [],
         "priority": wig.priority,
+        "must_recommend": wig.must_recommend,
         "is_active": wig.is_active,
+    }
+
+
+def serialize_wig_picker(wig: ExpoWig) -> dict:
+    """kiosk「从发型库选择」用的轻量载荷：只给挑款需要的字段，不暴露管理端数据。"""
+    return {
+        "wig_id": wig.id,
+        "model_no": wig.model_no,
+        "name": wig.name,
+        "series": wig.series,
+        "cover_url": _to_url(wig.cover_path),
     }

@@ -15,6 +15,11 @@ _CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "expo_matching.y
 
 DEFAULT_WEIGHTS = {"face_shape": 30, "skin_tone": 20, "need": 25, "style": 15, "age": 10}
 DEFAULT_TOP_N = 3
+# 优先级小幅折算加分：final = base + min(priority*unit, cap)。cap 远小于单项权重，
+# 只在同评级(相近匹配)内把高优先级款拉前、抬高显示分，不让低匹配款跨大档超过高匹配款。
+DEFAULT_PRIORITY_BOOST = {"unit": 0.2, "cap": 6.0}
+# must_recommend 保证进入前 N 个推荐（不强占第一）；这里的 N 即"推荐列表"长度
+GUARANTEED_LIST_SIZE = 6
 
 FACE_SHAPE_LABELS = {
     "oval": "鹅蛋脸", "round": "圆脸", "square": "方脸",
@@ -27,14 +32,24 @@ def load_config() -> dict:
         with open(_CONFIG_PATH, encoding="utf-8") as f:
             cfg = yaml.safe_load(f) or {}
         weights = {**DEFAULT_WEIGHTS, **(cfg.get("weights") or {})}
+        pb = {**DEFAULT_PRIORITY_BOOST, **(cfg.get("priority_boost") or {})}
         return {
             "weights": weights,
             "top_n": int(cfg.get("top_n", DEFAULT_TOP_N)),
             "zhizhen_anchor": bool(cfg.get("zhizhen_anchor", True)),
+            "priority_boost": {"unit": float(pb["unit"]), "cap": float(pb["cap"])},
         }
     except Exception as exc:  # 配置缺失/损坏走默认，不阻断现场
         logger.warning("expo_matching.yaml load failed, using defaults: %s", exc)
-        return {"weights": dict(DEFAULT_WEIGHTS), "top_n": DEFAULT_TOP_N, "zhizhen_anchor": True}
+        return {
+            "weights": dict(DEFAULT_WEIGHTS), "top_n": DEFAULT_TOP_N,
+            "zhizhen_anchor": True, "priority_boost": dict(DEFAULT_PRIORITY_BOOST),
+        }
+
+
+def priority_boost(priority, pb: dict) -> float:
+    """优先级折算的小幅加分（封顶），叠加到 base 匹配分上。"""
+    return min(max(priority or 0, 0) * pb["unit"], pb["cap"])
 
 
 def _tag_list(fit_tags: dict | None, key: str) -> list:
@@ -106,14 +121,14 @@ def match_wigs(wigs: list, analysis: dict, reg: dict, batch: int = 0) -> list[di
     本函数总是返回完整排名（存库后切片，保证换批稳定）。
     """
     cfg = load_config()
-    weights, top_n = cfg["weights"], cfg["top_n"]
+    weights, top_n, pb = cfg["weights"], cfg["top_n"], cfg["priority_boost"]
 
     gender = analysis.get("gender")
     candidates = []
     for wig in wigs:
         wig_gender = (wig.fit_tags or {}).get("gender")
         if gender and wig_gender and wig_gender != gender:
-            continue  # gender 硬过滤
+            continue  # gender 硬过滤（对必推款同样生效：不给男顾客强推女款）
         candidates.append(wig)
 
     # 失败路径兜底：性别过滤全灭（如男顾客 × 全女款库）时降级为不过滤照常排名，
@@ -124,10 +139,13 @@ def match_wigs(wigs: list, analysis: dict, reg: dict, batch: int = 0) -> list[di
         print(msg, flush=True)
         candidates = list(wigs)
 
+    # final = base 匹配分 + 优先级小幅折算加分（同一分值下 priority 高的显示分更高、排更前）
+    score_by_id = {
+        w.id: round(score_wig(w, analysis, reg, weights) + priority_boost(w.priority, pb), 1)
+        for w in candidates
+    }
     ranked = sorted(
-        candidates,
-        key=lambda w: (score_wig(w, analysis, reg, weights), w.priority or 0),
-        reverse=True,
+        candidates, key=lambda w: (score_by_id[w.id], w.priority or 0), reverse=True,
     )
 
     # 至臻锚点：前 6 名中有至臻款但第一批（top_n）没有 → 用至臻款替换第一批末位
@@ -142,14 +160,40 @@ def match_wigs(wigs: list, analysis: dict, reg: dict, batch: int = 0) -> list[di
                 anchor_idx = ranked.index(anchor, top_n)
                 ranked[anchor_idx] = swapped
 
+    # 必推保证：must_recommend 款一定进前 GUARANTEED_LIST_SIZE，但不强占第一（保留最高分在首位）
+    ranked = _ensure_must_recommend(ranked, GUARANTEED_LIST_SIZE)
+
     return [
-        {
-            "wig_id": w.id,
-            "score": round(score_wig(w, analysis, reg, weights), 1),
-            "reason": build_reason(w, analysis, reg),
-        }
+        {"wig_id": w.id, "score": score_by_id[w.id], "reason": build_reason(w, analysis, reg)}
         for w in ranked
     ]
+
+
+def _ensure_must_recommend(ranked: list, k: int) -> list:
+    """把排在第 k 名之外的必推款提升进前 k 名（从末位往前填，保留 index 0 最高分不动）。
+
+    多个必推超过可用坑位时 best-effort（只填得下的），并 log 提示。被挤出的按原分留在后面。
+    """
+    if len(ranked) <= k:
+        return ranked  # 全在列表内，无需处理
+    top, rest = ranked[:k], ranked[k:]
+    must_in_rest = [w for w in rest if getattr(w, "must_recommend", 0)]
+    if not must_in_rest:
+        return ranked
+    # 前 k 内可替换的非必推位（index 0 = 最高分，永不替换；从末位开始替换扰动最小）
+    replaceable = [i for i in range(1, k) if not getattr(top[i], "must_recommend", 0)]
+    for must_w in must_in_rest:
+        if not replaceable:
+            msg = f"[expo] must_recommend overflow: only {k - 1} guaranteed slots, some must-recommend wigs stay below top {k}"
+            logger.warning(msg)
+            print(msg, flush=True)
+            break
+        idx = replaceable.pop()  # 末位优先
+        displaced = top[idx]
+        top[idx] = must_w
+        rest.remove(must_w)
+        rest.append(displaced)
+    return top + rest
 
 
 def build_reason(wig, analysis: dict, reg: dict) -> str:

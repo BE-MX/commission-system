@@ -15,12 +15,13 @@
 
     <div class="cards">
       <div
-        v-for="(match, i) in flow.matches.value" :key="match.wig_id"
-        class="card" :class="{ zhizhen: match.series === 'zhizhen', sel: flow.selectedWigId.value === match.wig_id }"
+        v-for="(match, i) in shownMatches" :key="match.wig_id"
+        class="card" :class="{ zhizhen: match.series === 'zhizhen', custom: match.custom, sel: flow.selectedWigId.value === match.wig_id }"
         :style="{ animationDelay: `${0.15 + i * 0.25}s` }"
         @click="pickWig(match.wig_id)"
       >
-        <span v-if="match.series === 'zhizhen'" class="badge">至臻系列</span>
+        <span v-if="match.custom" class="badge badge-custom">自选</span>
+        <span v-else-if="match.series === 'zhizhen'" class="badge">至臻系列</span>
         <div class="thumb">
           <img v-if="match.cover_url" :src="match.cover_url" alt="" />
           <span v-else class="thumb-ph">莱莎</span>
@@ -30,14 +31,43 @@
           <div class="nm">{{ match.name }}</div>
           <div class="why">{{ match.reason }}</div>
         </div>
-        <div class="pct">{{ Math.round(match.score) }}<small>匹配</small></div>
+        <div v-if="match.custom" class="pct pct-custom">自选<small>发型库</small></div>
+        <div v-else-if="match.must_recommend" class="pct pct-custom">主推<small>为您优选</small></div>
+        <div v-else-if="match.score != null" class="pct">{{ Math.round(match.score) }}<small>匹配</small></div>
         <span class="tick" :class="{ on: flow.selectedWigId.value === match.wig_id }">✓</span>
       </div>
     </div>
 
-    <button v-if="flow.canSwapMatches.value" class="swap" @click="flow.swapMatches()">
-      换一批候选 ⟳
-    </button>
+    <div class="match-actions">
+      <button v-if="flow.canSwapMatches.value" class="swap" @click="doSwap">
+        换一批候选 ⟳
+      </button>
+      <button class="swap lib-entry" @click="openLibrary">从发型库中选择其他款 ›</button>
+    </div>
+
+    <!-- 从发型库选择：全部启用发型网格，滑动挑一款 -->
+    <div v-if="libraryOpen" class="lib-overlay" @click.self="libraryOpen = false">
+      <div class="lib-panel">
+        <div class="lib-head">
+          <span class="lib-title">从发型库选择</span>
+          <button class="lib-close" @click="libraryOpen = false">✕</button>
+        </div>
+        <div v-loading="libraryLoading" class="lib-grid">
+          <button
+            v-for="w in libraryWigs" :key="w.wig_id"
+            class="lib-card" :class="{ on: flow.selectedWigId.value === w.wig_id }"
+            @click="pickFromLibrary(w)"
+          >
+            <span class="lib-thumb">
+              <img v-if="w.cover_url" :src="w.cover_url" alt="" />
+              <span v-else class="lib-ph">莱莎</span>
+            </span>
+            <span v-if="w.series === 'zhizhen'" class="lib-tag">至臻</span>
+            <span class="lib-nm">{{ w.name }}</span>
+          </button>
+        </div>
+      </div>
+    </div>
 
     <div v-if="flow.hairColors.value.length" class="color-pick">
       <div class="cp-title">甄选发色<small>可选 · 默认保持款式原色</small></div>
@@ -90,6 +120,7 @@
 
 <script setup>
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { getWigPicker } from '@/api/expo'
 
 const flow = inject('tryonFlow')
 
@@ -112,6 +143,50 @@ function pickWig(id) {
 
 function pickColor(id) {
   flow.selectedColorId.value = id
+  flow.touch()
+}
+
+// ── 从发型库选择（默认 6 推荐外，客户可挑其他款） ──
+const libraryOpen = ref(false)
+const libraryWigs = ref([])
+const libraryLoading = ref(false)
+const pickedWig = ref(null)  // 从库选的款，塑成 match 卡形态置于最前
+
+// 展示的发型卡 = 推荐列表；若从库选了款且不在推荐里，则把它插到最前（标「自选」）
+const shownMatches = computed(() => {
+  const base = flow.matches.value
+  const picked = pickedWig.value
+  if (!picked || base.some((m) => m.wig_id === picked.wig_id)) return base
+  return [picked, ...base]
+})
+
+async function openLibrary() {
+  libraryOpen.value = true
+  flow.touch()
+  if (libraryWigs.value.length) return
+  libraryLoading.value = true
+  try {
+    const res = await getWigPicker()
+    libraryWigs.value = res.data || []
+  } catch (e) { /* 弱网失败拦截器已提示，浮层空态 */ } finally {
+    libraryLoading.value = false
+  }
+}
+
+// 换一批：回到推荐流，清掉自选卡避免"卡还在最前但已取消选中"的半选态（对抗性审查 F4）
+function doSwap() {
+  pickedWig.value = null
+  flow.swapMatches()
+}
+
+function pickFromLibrary(w) {
+  pickedWig.value = {
+    wig_id: w.wig_id, model_no: w.model_no, name: w.name,
+    series: w.series, cover_url: w.cover_url,
+    reason: '您从发型库选择的款式', score: null, custom: true,
+  }
+  flow.selectedWigId.value = w.wig_id
+  libraryOpen.value = false
   flow.touch()
 }
 
@@ -270,6 +345,59 @@ onBeforeUnmount(() => { if (scRaf) cancelAnimationFrame(scRaf) })
   padding: 8px 16px; transition: color 160ms ease, transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 .swap:active { transform: scale(0.96); }
+.match-actions { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; justify-content: center; margin-top: 14px; }
+.match-actions .swap { margin-top: 0; }
+.lib-entry { color: var(--xk-gold-hi); border: 1px solid var(--xk-gold-line); border-radius: 20px; }
+
+/* 自选卡（从发型库选的款） */
+.card.custom {
+  border-color: var(--xk-gold);
+  background: linear-gradient(120deg, rgba(232, 196, 121, 0.16), rgba(232, 196, 121, 0.04));
+}
+.badge-custom { background: linear-gradient(110deg, var(--xk-gold-hi), var(--xk-gold)); }
+.pct-custom { font-style: normal; font-size: 15px; }
+
+/* 从发型库选择浮层 */
+.lib-overlay {
+  position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center;
+  background: rgba(6, 5, 3, 0.72); backdrop-filter: blur(4px); animation: lib-fade 200ms ease;
+}
+@keyframes lib-fade { from { opacity: 0; } to { opacity: 1; } }
+.lib-panel {
+  width: min(92vw, 720px); max-height: 84vh; display: flex; flex-direction: column;
+  border: 1px solid var(--xk-gold-line); border-radius: 20px;
+  background: linear-gradient(160deg, var(--xk-ink-2), var(--xk-ink));
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5), 0 0 40px rgba(232, 196, 121, 0.12);
+  animation: lib-pop 240ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+@keyframes lib-pop { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
+.lib-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 22px; border-bottom: 1px solid var(--xk-gold-line);
+}
+.lib-title { font-family: 'Noto Serif SC', serif; font-size: 18px; color: var(--xk-gold-hi); letter-spacing: 0.08em; }
+.lib-close { background: transparent; border: none; color: var(--xk-mut); font-size: 18px; cursor: pointer; padding: 4px 8px; }
+.lib-close:active { transform: scale(0.9); }
+.lib-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 12px; padding: 18px 22px; overflow-y: auto;
+}
+.lib-card {
+  position: relative; display: flex; flex-direction: column; gap: 8px; padding: 0;
+  border: 1px solid var(--xk-gold-line); border-radius: 14px; overflow: hidden;
+  background: var(--xk-ink-2); cursor: pointer;
+  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), border-color 160ms ease;
+}
+.lib-card:active { transform: scale(0.97); }
+.lib-card.on { border-color: var(--xk-gold); box-shadow: 0 0 16px rgba(232, 196, 121, 0.2); }
+.lib-thumb { width: 100%; aspect-ratio: 3 / 4; display: flex; align-items: center; justify-content: center; }
+.lib-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.lib-ph { font-size: 12px; letter-spacing: 0.3em; color: var(--xk-gold-dim); }
+.lib-nm { font-size: 12px; color: var(--xk-paper); text-align: center; padding: 0 6px 10px; line-height: 1.4; }
+.lib-tag {
+  position: absolute; top: 8px; right: 8px; font-size: 9px; letter-spacing: 0.1em; color: var(--xk-ink);
+  background: linear-gradient(110deg, var(--xk-gold), var(--xk-gold-hi)); padding: 2px 8px; border-radius: 10px;
+}
 .badge {
   position: absolute; top: -10px; right: 16px;
   font-size: 10px; letter-spacing: 0.24em; color: var(--xk-ink);

@@ -39,6 +39,11 @@ export function getScenes(params) {
   return expoClient.get('/scenes', { params, showLoading: false })
 }
 
+// kiosk「从发型库选择」：启用发型轻量列表（id/name/series/cover_url）
+export function getWigPicker() {
+  return expoClient.get('/wigs/picker', { showLoading: false })
+}
+
 // ── 场景示意图管理（PC；列表复用 getScenes({ mode: 'tryon' })） ──
 export function uploadSceneImage(key, file) {
   const form = new FormData()

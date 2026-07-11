@@ -484,6 +484,12 @@ frontend/src/
 - 后端 `ai_pipeline.save_scene_image(key, upload)` / `delete_scene_image(key)` / `_downscale_scene_image`：存 `uploads/expo/scenes/<key>.<ext>`，**先删同 key 各扩展名旧图**（避免 scene_image_url 探测歧义）+ 超 1200px 降采样；`POST/DELETE /scenes/{key}/image`（expo:admin）。示意图仅甄选页示意、不参与合成
 - 前端替换同扩展名时 URL 不变，`?t=Date.now()` 强制刷新缓存
 
+**推荐引擎优化：必推 + 优先级折算 + 从库选择 + 抓拍感（2026-07-11，060 迁移）**
+- **必推 `must_recommend`**（060 加 SmallInteger）：选是则该款不论脸型都保证进前 `GUARANTEED_LIST_SIZE`(6) 推荐，但**不强占第一**（保留最高分在首位），且**仍走性别硬过滤**（不给男顾客强推女款）。`matching._ensure_must_recommend` 从末位往前替换非必推位（index 0 永不动），多必推超坑位 best-effort + log
+- **优先级折算加分**：`final = base + min(priority*unit, cap)`（默认 unit=0.2/cap=6.0，`config/expo_matching.yaml` 可覆盖 `priority_boost`）。同评级内 priority 高的显示分更高、排更前，封顶保证低匹配高 priority 款不跨大档超过高匹配款（weights 最大 30 ≫ cap 6）。显示 score 与排序 key 用同一 `score_by_id`
+- **从发型库选择**：kiosk 甄选页默认 6 推荐外加「从发型库中选择其他款」按钮 → `GET /wigs/picker`（启用发型轻量列表）网格浮层 → 选一款塑成"自选卡"(score=null、custom 标记)插到 `shownMatches` 最前并 setSelectedWigId，可继续选发色/场景后生成
+- **场景 prompt 抓拍感**：`_TRYON_SCENE_CLAUSE` 收尾改为 candid documentary snapshot——眼神/头自然朝向场景内动作对象、非直视镜头、非摆拍、第三方随手拍的松弛微表情
+
 **已踩坑（2026-07-04 对抗性审查修复）**
 - 后台线程的批量启动函数（`_start_batch`）必须：状态置位与插行合并单事务 + except 回滚 + 会话标 failed + `_log_fail` 双写——初版漏兜底，非法 wig_id 会把会话永久卡在 generating
 - kiosk 轮询状态机的失败路径必须显式收尾：`analyzing` 属 BUSY_STEPS（不挂 idle 定时器），失败时留在原地 = 展位永久卡屏，需退回 `capture`；整批效果图全 failed 时 session 仍推 `done`，前端要用「results 里没有任何 done」补判并给重试出口

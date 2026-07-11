@@ -286,6 +286,15 @@ def list_wigs(
     return ok([service.serialize_wig(w) for w in wigs])
 
 
+@router.get("/wigs/picker", summary="kiosk 从发型库选择：启用发型轻量列表")
+def wig_picker(
+    db: Session = Depends(get_db),
+    _user=Depends(require_any_permission("expo:read", "expo:write", "expo:admin")),
+):
+    wigs = service.list_wigs(db, only_active=True)
+    return ok([service.serialize_wig_picker(w) for w in wigs])
+
+
 @router.post("/wigs", summary="新建发型")
 def create_wig(
     body: WigUpsert,

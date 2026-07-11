@@ -269,7 +269,12 @@ _TRYON_SCENE_CLAUSE = (
     "may appear only as a soft, blurred, out-of-focus background presence - never in sharp "
     "focus, never with detailed faces or hands. The hair highlights and shadows must follow "
     "the scene's light direction, blending naturally with no cut-and-paste look. Shot like a "
-    "candid 85mm portrait with shallow depth of field focused on the face and hair."
+    "candid 85mm documentary snapshot with shallow depth of field focused on the face and "
+    "hair - caught naturally mid-action and unposed, as if a third person quietly "
+    "photographed her in the moment. Her gaze and head are directed naturally within the "
+    "scene (toward what she is doing, looking at or speaking to), not fixed straight at the "
+    "camera unless that truly fits the moment, with a relaxed natural micro-expression rather "
+    "than a stiff, posed, camera-facing studio look."
 )
 
 # 色 + 魂 收尾

@@ -10,6 +10,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    SmallInteger,
     String,
     Text,
 )
@@ -59,7 +60,8 @@ class ExpoWig(Base):
     fit_tags = Column(JSON, nullable=True, comment="{gender,face_shapes[],skin_depths[],undertones[],age_ranges[],needs[],styles[],length,occupations[],life_scenes[],sell_positions[],not_suitable[]}（后四项销售参考，不参与匹配）")
     selling_points = Column(Text, nullable=True, comment="卖点，话术生成引用")
     evidence_refs = Column(JSON, nullable=True, comment="6个月对比素材路径等证据引用")
-    priority = Column(Integer, nullable=False, default=0, comment="人工权重，平手决胜/主推加权")
+    priority = Column(Integer, nullable=False, default=0, comment="人工权重，同评级内小幅折算加分/平手决胜")
+    must_recommend = Column(SmallInteger, nullable=False, default=0, comment="1=必推(不论脸型都保证进前6推荐);0=否")
     is_active = Column(Integer, nullable=False, default=1, comment="1=启用,0=停用")
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")

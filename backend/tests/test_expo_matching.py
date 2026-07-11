@@ -137,6 +137,63 @@ class TestMatchWigs:
         assert matching.match_wigs([], ANALYSIS, REG) == []
 
 
+def _wig(wig_id, must_recommend=0, series="classic", priority=0, **tags):
+    w = make_wig(wig_id, series=series, priority=priority, **tags)
+    w.must_recommend = must_recommend
+    return w
+
+
+class TestPriorityBoost:
+    def test_boost_raises_score_and_rank(self):
+        a = _wig(1, priority=0, face_shapes=["round"])    # base 30
+        b = _wig(2, priority=20, face_shapes=["round"])   # 30 + min(20*0.2,6)=4 = 34
+        res = matching.match_wigs([a, b], ANALYSIS, REG)
+        assert res[0]["wig_id"] == 2
+        assert res[0]["score"] == 34.0 and res[1]["score"] == 30.0
+
+    def test_boost_capped(self):
+        a = _wig(1, priority=1000, face_shapes=["round"])
+        res = matching.match_wigs([a], ANALYSIS, REG)
+        assert res[0]["score"] == 36.0  # 30 + cap 6
+
+    def test_boost_does_not_cross_big_tier(self):
+        """高 priority 低匹配款吃不掉与高匹配款的大分差（封顶保证不跨档）。"""
+        high = _wig(1, priority=0, face_shapes=["round"], needs=["volume"])  # 30+25=55
+        lowp = _wig(2, priority=1000, face_shapes=["round"])                 # 30+6=36
+        res = matching.match_wigs([high, lowp], ANALYSIS, REG)
+        assert res[0]["wig_id"] == 1
+
+    def test_config_present(self):
+        cfg = matching.load_config()
+        assert cfg["priority_boost"]["unit"] > 0 and cfg["priority_boost"]["cap"] > 0
+
+
+class TestMustRecommend:
+    def test_guaranteed_in_top6_not_first(self):
+        good = [_wig(i, face_shapes=["round"]) for i in range(1, 7)]  # 6 款 base 30
+        must = _wig(99, must_recommend=1)                             # base 0 但必推
+        res = matching.match_wigs(good + [must], ANALYSIS, REG)
+        ids = [r["wig_id"] for r in res]
+        assert 99 in ids[:6]   # 必推进前 6
+        assert ids[0] != 99    # 不强占第一
+        assert ids[6] != 99    # 被挤出的高分款落到第 7，不丢失
+
+    def test_already_in_top6_untouched(self):
+        wigs = [_wig(i, face_shapes=["round"]) for i in range(1, 7)]
+        wigs.append(_wig(7, must_recommend=1, face_shapes=["round"]))  # 匹配也高，本就在前
+        res = matching.match_wigs(wigs, ANALYSIS, REG)
+        assert 7 in [r["wig_id"] for r in res[:6]]
+
+    def test_still_gender_filtered(self):
+        """性别硬过滤对必推款同样生效：不给女顾客强推男款。"""
+        male_must = _wig(50, must_recommend=1, gender="male")
+        female = _wig(1, gender="female", face_shapes=["round"])
+        res = matching.match_wigs([male_must, female], ANALYSIS, REG)  # ANALYSIS gender=female
+        ids = [r["wig_id"] for r in res]
+        assert 50 not in ids
+        assert 1 in ids
+
+
 class TestForbiddenWords:
     def test_hit_detection(self):
         assert check_forbidden("这个很划算，性价比高") == ["划算", "性价比"]

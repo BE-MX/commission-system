@@ -37,6 +37,12 @@
           </template>
         </el-table-column>
         <el-table-column prop="priority" label="优先级" min-width="80" sortable />
+        <el-table-column label="必推" min-width="70">
+          <template #default="{ row }">
+            <el-tag v-if="row.must_recommend" type="danger" effect="plain" size="small">必推</el-tag>
+            <span v-else style="color: var(--text-muted)">—</span>
+          </template>
+        </el-table-column>
         <el-table-column label="启用" min-width="80">
           <template #default="{ row }">
             <el-switch :model-value="!!row.is_active" @change="(v) => toggleActive(row, v)" />
@@ -144,7 +150,14 @@
         <el-form-item label="证据引用">
           <el-select v-model="form.evidence_refs" multiple filterable allow-create default-first-option placeholder="自由输入证据编号 / 来源" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="优先级"><el-input-number v-model="form.priority" :min="0" :max="999" style="width: 100%" /></el-form-item>
+        <el-form-item label="优先级">
+          <el-input-number v-model="form.priority" :min="0" :max="999" style="width: 100%" />
+          <span style="color: var(--text-muted); font-size: 12px">数字越大，同评级内推荐分越高、排更前（小幅折算，封顶）</span>
+        </el-form-item>
+        <el-form-item label="必推">
+          <el-switch v-model="form.must_recommend" />
+          <span style="margin-left: 8px; color: var(--text-muted); font-size: 12px">开启后不论脸型都保证进前 6 推荐（不强占第一，仍按性别过滤）；建议少量款设为必推，过多会挤占推荐位</span>
+        </el-form-item>
         <el-form-item label="启用"><el-switch v-model="form.is_active" /></el-form-item>
       </el-form>
       <template #footer>
@@ -218,7 +231,7 @@ function emptyForm() {
   return {
     model_no: '', name: '', series: 'classic', cover_path: '',
     wig_description: '', composite_prompt: '', selling_points: '',
-    evidence_refs: [], priority: 0, is_active: true,
+    evidence_refs: [], priority: 0, must_recommend: false, is_active: true,
     fit_tags: {
       gender: 'female', face_shapes: [], skin_depths: [], undertones: [], age_ranges: [], needs: [], styles: [], length: '',
       occupations: [], life_scenes: [], sell_positions: [], not_suitable: [],
@@ -249,7 +262,8 @@ function toUpsert(src) {
     angle_photos: src.angle_photos || [],
     wig_description: src.wig_description || '', composite_prompt: src.composite_prompt || '',
     fit_tags: src.fit_tags || {}, selling_points: src.selling_points || '',
-    evidence_refs: src.evidence_refs || [], priority: src.priority || 0, is_active: !!src.is_active,
+    evidence_refs: src.evidence_refs || [], priority: src.priority || 0,
+    must_recommend: !!src.must_recommend, is_active: !!src.is_active,
   }
 }
 
