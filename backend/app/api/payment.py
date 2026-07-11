@@ -5,6 +5,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
+from app.auth.dependencies import require_any_permission, require_permission
 from app.models.commission import SyncedPayment, PaymentCommissionStatus
 from app.models.business import CustomerInfo
 from app.schemas.common import ResponseModel, PageResponse
@@ -20,6 +21,7 @@ router = APIRouter()
 def execute_payment_sync(
     req: PaymentSyncRequest,
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("payment:write")),
 ) -> ResponseModel[PaymentSyncResponse]:
     """执行回款增量同步，从业务库拉取指定日期范围的回款"""
     result = sync_payments(db, req.date_start, req.date_end)
@@ -47,6 +49,7 @@ def list_synced_payments(
     sort_field: str = Query("payment_date"),
     sort_order: str = Query("desc"),
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission("payment:read", "payment:write")),
 ) -> ResponseModel[PageResponse[SyncedPaymentListItem]]:
     """查询已同步的回款列表"""
     query = db.query(

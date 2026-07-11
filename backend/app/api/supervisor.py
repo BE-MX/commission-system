@@ -9,6 +9,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session, aliased
 
 from app.api.deps import get_db
+from app.auth.dependencies import require_any_permission, require_permission
 from app.models.employee import SupervisorRelationHistory
 from app.models.business import UserBasic
 from app.schemas.common import ResponseModel, PageResponse
@@ -60,6 +61,7 @@ def list_supervisor_relations(
     sort_field: str = Query("effective_start"),
     sort_order: str = Query("desc"),
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission("supervisor:read", "supervisor:write")),
 ) -> ResponseModel[PageResponse[SupervisorRelationListItem]]:
     """查询当前有效的主管关系列表"""
     from sqlalchemy import desc as _desc
@@ -125,6 +127,7 @@ def list_supervisor_relations(
 def set_supervisor_relation(
     req: SupervisorRelationRequest,
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("supervisor:write")),
 ) -> ResponseModel[SupervisorRelationResult]:
     """设置或变更业务员的主管关系"""
     sp_user = db.query(UserBasic).filter(UserBasic.user_id == req.salesperson_id).first()
@@ -155,6 +158,7 @@ def set_supervisor_relation(
 def get_supervisor_history(
     salesperson_id: str = Query(..., description="业务员ID"),
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission("supervisor:read", "supervisor:write")),
 ) -> ResponseModel[list[SupervisorHistoryItem]]:
     """查询指定业务员的主管关系变更历史"""
     records = (
@@ -171,6 +175,7 @@ def get_supervisor_history(
 def import_supervisor_relations(
     file: UploadFile = File(..., description="Excel文件"),
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("supervisor:write")),
 ) -> ResponseModel[SupervisorImportResult]:
     """从 Excel 批量导入主管关系。模板列：业务员ID | 一级主管ID | 二级主管ID(可选)"""
     result = SupervisorImportResult(total_rows=0, success=0, failed=0)

@@ -11,6 +11,7 @@ from sqlalchemy import or_, func
 from sqlalchemy.orm import Session, aliased
 
 from app.api.deps import get_db
+from app.auth.dependencies import require_any_permission, require_permission
 from app.models.customer import CustomerCommissionSnapshot
 from app.models.business import UserBasic, CustomerInfo, OkkiReceipt
 from app.schemas.common import ResponseModel, PageResponse
@@ -38,6 +39,7 @@ def list_customer_snapshots(
     sort_field: str = Query("customer_name"),
     sort_order: str = Query("asc"),
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission("customer:read", "customer:write")),
 ) -> ResponseModel[PageResponse[CustomerSnapshotListItem]]:
     """查询当前有效的客户归属快照列表"""
     SpUser = aliased(UserBasic)
@@ -144,6 +146,7 @@ def list_customer_snapshots(
 def create_customer_snapshot(
     req: CustomerSnapshotCreateRequest,
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("customer:write")),
 ) -> ResponseModel[CustomerSnapshotListItem]:
     """手工新增客户归属快照"""
     cust = db.query(CustomerInfo).filter(CustomerInfo.company_id == req.customer_id).first()
@@ -214,6 +217,7 @@ def complete_customer_snapshot(
     snapshot_id: int = Path(..., description="快照ID"),
     req: CustomerSnapshotCompleteRequest = ...,
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("customer:write")),
 ) -> ResponseModel[dict]:
     """补全不完整的客户归属快照"""
     from decimal import Decimal as D
@@ -239,6 +243,7 @@ def reset_customer_snapshot(
     snapshot_id: int = Path(..., description="快照ID"),
     req: CustomerSnapshotResetRequest = ...,
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("customer:write")),
 ) -> ResponseModel[dict]:
     """人工重置客户归属"""
     old_snapshot = db.query(CustomerCommissionSnapshot).filter(
@@ -270,6 +275,7 @@ def reset_customer_snapshot(
 def import_customer_snapshots(
     file: UploadFile = File(..., description="Excel文件"),
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("customer:write")),
 ) -> ResponseModel[CustomerImportResult]:
     """从 Excel 批量导入客户归属快照"""
     with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
@@ -290,6 +296,7 @@ def import_customer_snapshots(
 @router.post("/snapshot/auto-match", summary="自动匹配待补充快照")
 def auto_match_snapshots(
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("customer:write")),
 ) -> ResponseModel[CustomerAutoMatchResult]:
     """根据员工属性和主管关系自动填充待补充的客户归属快照"""
     result = auto_match_incomplete_snapshots(db, operator="api")
@@ -302,7 +309,11 @@ def auto_match_snapshots(
 
 @router.get("/snapshot/template", summary="下载客户归属导入模板")
 def download_snapshot_template():
-    """下载客户归属 Excel 导入模板"""
+    """下载客户归属 Excel 导入模板
+
+    白名单豁免鉴权：前端用 downloadUrl() 浏览器直链下载（不带 JWT header），
+    且模板只含固定表头、无任何业务数据。
+    """
     wb = Workbook()
     ws = wb.active
     ws.title = "客户归属导入模板"

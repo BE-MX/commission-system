@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
+from app.auth.dependencies import get_current_user
 from app.core.config import get_settings
 from app.models.short_link import ArkShortLink
 from app.tracking.models import ShipmentTracking
@@ -31,7 +32,12 @@ class ShortLinkResponse(BaseModel):
 
 
 @router.post("/api/shortlink", summary="生成短链", response_model=ShortLinkResponse)
-def create_short_link(payload: ShortLinkRequest) -> ShortLinkResponse:
+def create_short_link(
+    payload: ShortLinkRequest,
+    _user: dict = Depends(get_current_user),
+) -> ShortLinkResponse:
+    """生成短链。要求登录（防止匿名把 leshine.work 当开放跳转源）；
+    后端内部调用方均直接走 utils/shortlink.generate_short_link()，不受影响。"""
     return ShortLinkResponse(short_url=generate_short_link(payload.url))
 
 

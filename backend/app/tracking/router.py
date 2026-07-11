@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError, ProgrammingError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
-from app.auth.dependencies import get_current_user, require_permission
+from app.auth.dependencies import get_current_user, require_any_permission, require_permission
 from app.auth.models import ArkUser
 from app.tracking.schemas import StagingCreateRequest, WaybillCreate
 from app.tracking.staging_service import scan_staging
@@ -29,6 +29,9 @@ logger = logging.getLogger("commission.tracking")
 
 @router.post("/staging", summary="运单推送到暂存表")
 def create_staging(req: StagingCreateRequest, db: Session = Depends(get_db)):
+    """机器对机器端点，白名单豁免鉴权：外部系统（同服务器自动化）推送运单到
+    暂存表，由 scan_staging 消费（见 docs/module-notes.md 运单录入统一模型）。
+    仅写入暂存区，正式入库在 scan-staging 阶段完成校验。"""
     data = upload_service.create_staging(db, req)
     return {"code": 200, "message": "ok", "data": data}
 
@@ -62,6 +65,7 @@ def list_shipments(
 def get_shipment_detail(
     waybill_no: str = Path(...),
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission("tracking:read", "tracking:write")),
 ):
     detail = shipment_service.get_shipment_detail(db, waybill_no)
     if detail is None:
@@ -84,6 +88,7 @@ def delete_shipment(
 async def refresh_shipment(
     waybill_no: str = Path(...),
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("tracking:write")),
 ):
     result = await refresh_single(db, waybill_no)
     if "error" in result:
@@ -110,17 +115,20 @@ def list_submitters(
 # ── 定时任务触发 ─────────────────────────────────────────
 
 
-@router.post("/poll", summary="批量轮询（定时任务调用）")
+@router.post("/poll", summary="批量轮询（前端手动触发）")
 async def trigger_poll(
     db: Session = Depends(get_db),
-    _: dict = Depends(require_permission("tracking:read")),
+    _: dict = Depends(require_permission("tracking:write")),
 ):
     stats = await poll_active_shipments(db)
     return {"code": 200, "message": "ok", "data": stats}
 
 
-@router.post("/scan-staging", summary="扫描暂存表（定时任务调用）")
-async def trigger_scan(db: Session = Depends(get_db)):
+@router.post("/scan-staging", summary="扫描暂存表（前端手动触发；定时任务走函数直调）")
+async def trigger_scan(
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_permission("tracking:write")),
+):
     stats = await scan_staging(db)
     return {"code": 200, "message": "ok", "data": stats}
 

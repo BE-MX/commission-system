@@ -371,6 +371,8 @@ def print_production_order(
     return HTMLResponse(content=html)
 
 
+# 白名单豁免鉴权：与 /print/production-order 同模式——浏览器直链下载 Word 文件
+# （不带 JWT header），前端当前无调用方（手动 URL 使用）。
 @router.get("/export/production-order")
 def export_production_order_docx(
     order_no: str = Query(..., description="生产订单号"),

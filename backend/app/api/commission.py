@@ -13,7 +13,7 @@ from sqlalchemy import func, or_, desc
 from sqlalchemy.orm import Session, aliased
 
 from app.api.deps import get_db
-from app.auth.dependencies import require_any_permission
+from app.auth.dependencies import require_any_permission, require_permission
 from app.auth.models import ArkUser, ArkUserExternalBinding
 from app.models.commission import (
     CommissionBatch, CommissionDetail, SyncedPayment, PaymentCommissionStatus,
@@ -694,6 +694,7 @@ def export_my_commission_batch(
 def create_batch(
     req: CommissionBatchCreateRequest,
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("commission:write")),
 ) -> ResponseModel[CommissionBatchListItem]:
     """创建提成批次（status=draft）"""
     batch = CommissionBatch(
@@ -718,6 +719,7 @@ def list_batches(
     sort_field: str = Query("created_at"),
     sort_order: str = Query("desc"),
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission("commission:read", "commission:write")),
 ) -> ResponseModel[PageResponse[CommissionBatchListItem]]:
     """查询提成批次列表"""
     from sqlalchemy import desc as _desc
@@ -749,6 +751,7 @@ def list_batches(
 def execute_calculation(
     batch_id: int = Path(..., description="批次ID"),
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("commission:write")),
 ) -> ResponseModel[CommissionCalcResponse]:
     """对指定批次执行提成计算"""
     result = calculate_commission(db, batch_id)
@@ -777,6 +780,7 @@ def list_commission_details(
     sort_field: str = Query("payment_amount"),
     sort_order: str = Query("desc"),
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission("commission:read", "commission:write")),
 ) -> ResponseModel[PageResponse[CommissionDetailListItem]]:
     """查询指定批次的提成明细"""
     SpUser = aliased(UserBasic)
@@ -865,6 +869,7 @@ def confirm_commission_batch(
     batch_id: int = Path(..., description="批次ID"),
     req: CommissionConfirmRequest = ...,
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("commission:write")),
 ) -> ResponseModel[dict]:
     """确认提成批次"""
     confirm_batch(db, batch_id, req.confirmed_by)
@@ -877,6 +882,7 @@ async def send_confirm_batch(
     batch_id: int = Path(..., description="批次ID"),
     req: CommissionSendConfirmRequest | None = None,
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("commission:write")),
 ) -> ResponseModel[dict]:
     """发送确认：批次状态变为 confirming，可选是否推送钉钉通知。"""
     from app.dingtalk.events import notify_commission_confirm
@@ -902,6 +908,7 @@ async def send_confirm_batch(
 def revoke_confirm_batch(
     batch_id: int = Path(..., description="批次ID"),
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("commission:write")),
 ) -> ResponseModel[dict]:
     """撤销确认，批次状态回到 calculated"""
     revoke_confirm(db, batch_id)
@@ -913,6 +920,7 @@ def revoke_confirm_batch(
 def void_commission_batch(
     batch_id: int = Path(..., description="批次ID"),
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("commission:write")),
 ) -> ResponseModel[dict]:
     """作废提成批次"""
     void_batch(db, batch_id)
@@ -924,6 +932,7 @@ def void_commission_batch(
 def get_batch_summary(
     batch_id: int = Path(..., description="批次ID"),
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission("commission:read", "commission:write")),
 ) -> ResponseModel[CommissionBatchSummary]:
     """查询批次汇总统计"""
     batch = db.query(CommissionBatch).filter(CommissionBatch.id == batch_id).first()

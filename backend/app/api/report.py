@@ -12,6 +12,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, aliased
 
 from app.api.deps import get_db
+from app.auth.dependencies import require_any_permission
 from app.models.commission import CommissionBatch, CommissionDetail, SyncedPayment
 from app.models.business import UserBasic, CustomerInfo
 
@@ -207,6 +208,7 @@ def export_commission_details(
     batch_id: int = Path(..., description="批次ID"),
     group_by: str = Query("", description="分组方式: salesperson/supervisor/customer"),
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission("commission:read", "commission:write")),
 ):
     """导出提成明细 Excel，支持按业务员/主管/客户分sheet"""
     batch = db.query(CommissionBatch).filter(CommissionBatch.id == batch_id).first()
@@ -255,6 +257,7 @@ def export_commission_details(
 def export_salesperson_summary(
     batch_id: int = Path(..., description="批次ID"),
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission("commission:read", "commission:write")),
 ):
     """导出业务员提成汇总 Excel"""
     batch = db.query(CommissionBatch).filter(CommissionBatch.id == batch_id).first()
@@ -301,6 +304,7 @@ def export_salesperson_summary(
 def export_supervisor_summary(
     batch_id: int = Path(..., description="批次ID"),
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission("commission:read", "commission:write")),
 ):
     """导出主管提成汇总 Excel"""
     batch = db.query(CommissionBatch).filter(CommissionBatch.id == batch_id).first()

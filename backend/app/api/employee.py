@@ -9,6 +9,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
+from app.auth.dependencies import require_any_permission, require_permission
 from app.models.employee import EmployeeAttributeHistory
 from app.models.business import UserBasic
 from app.schemas.common import ResponseModel, PageResponse
@@ -58,6 +59,7 @@ def list_employees(
     sort_field: str = Query("user_id"),
     sort_order: str = Query("asc"),
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission("employee:read", "employee:write")),
 ) -> ResponseModel[PageResponse[EmployeeListItem]]:
     """查询员工列表，LEFT JOIN 当前属性"""
     from sqlalchemy import desc as _desc
@@ -109,6 +111,7 @@ def list_employees(
 def set_employee_attribute(
     req: EmployeeAttributeRequest,
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("employee:write")),
 ) -> ResponseModel[EmployeeAttributeResult]:
     """设置或变更员工属性（开发/分配）"""
     user = db.query(UserBasic).filter(UserBasic.user_id == req.employee_id).first()
@@ -129,6 +132,7 @@ def set_employee_attribute(
 def get_attribute_history(
     employee_id: str = Query(..., description="员工ID"),
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission("employee:read", "employee:write")),
 ) -> ResponseModel[list[EmployeeAttributeHistoryItem]]:
     """查询指定员工的属性变更历史"""
     records = (
@@ -145,6 +149,7 @@ def get_attribute_history(
 def import_employee_attributes(
     file: UploadFile = File(..., description="Excel文件"),
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("employee:write")),
 ) -> ResponseModel[EmployeeImportResult]:
     """从 Excel 批量导入员工属性。模板列：员工ID(user_id) | 属性(开发/分配)"""
     attr_map = {"开发": "develop", "分配": "distribute"}
@@ -189,6 +194,7 @@ def import_employee_attributes(
 def batch_set_attribute_history(
     items: list[EmployeeAttributeBatchHistoryRequest],
     db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("employee:write")),
 ) -> ResponseModel[dict]:
     """
     批量写入员工属性历史记录。
