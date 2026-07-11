@@ -17,7 +17,7 @@
       <div class="toolbar-right">
         <template v-if="selectedProducts.length > 0">
           <el-tag>已选 {{ selectedProducts.length }} 项</el-tag>
-          <el-button type="primary" size="small" @click="openBatchBind">批量绑定路线</el-button>
+          <el-button v-permission="'production:write'" type="primary" size="small" @click="openBatchBind">批量绑定路线</el-button>
         </template>
       </div>
     </div>
@@ -33,11 +33,11 @@
           <template #default="{ row }">
             <template v-if="row.process_route">
               <span>{{ row.process_route.route_name }}</span>
-              <GlassButton variant="link" left-icon="Edit" @click="openBindDialog(row)">编辑</GlassButton>
+              <GlassButton v-permission="'production:write'" variant="link" left-icon="Edit" @click="openBindDialog(row)">编辑</GlassButton>
             </template>
             <template v-else>
               <span style="color: #909399">—</span>
-              <GlassButton variant="link" left-icon="Connection" @click="openBindDialog(row)">绑定</GlassButton>
+              <GlassButton v-permission="'production:write'" variant="link" left-icon="Connection" @click="openBindDialog(row)">绑定</GlassButton>
             </template>
           </template>
         </el-table-column>

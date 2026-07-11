@@ -13,7 +13,7 @@
         <el-radio-button label="ignored">已忽略</el-radio-button>
       </el-radio-group>
       <GlassButton variant="ghost" left-icon="Refresh" @click="loadCandidates">刷新</GlassButton>
-      <GlassButton variant="ghost" left-icon="Connection" :loading="syncingOkki" @click="handleSyncOkki">同步 OKKI 用户</GlassButton>
+      <GlassButton v-permission="'external_binding:write'" variant="ghost" left-icon="Connection" :loading="syncingOkki" @click="handleSyncOkki">同步 OKKI 用户</GlassButton>
     </div>
 
     <div class="table-card">
@@ -43,8 +43,8 @@
         <el-table-column label="操作" min-width="200" max-width="300" fixed="right">
           <template #default="{ row }">
             <template v-if="row.candidate_status === 'pending'">
-              <GlassButton variant="link" left-icon="Connection" @click="openBindDialog(row)">绑定用户</GlassButton>
-              <GlassButton variant="link" left-icon="Close" @click="handleIgnore(row)">忽略</GlassButton>
+              <GlassButton v-permission="'external_binding:write'" variant="link" left-icon="Connection" @click="openBindDialog(row)">绑定用户</GlassButton>
+              <GlassButton v-permission="'external_binding:write'" variant="link" left-icon="Close" @click="handleIgnore(row)">忽略</GlassButton>
             </template>
             <span v-else class="text-muted">{{ candidateStatusLabel(row.candidate_status) }}</span>
           </template>

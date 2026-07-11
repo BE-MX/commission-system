@@ -20,9 +20,9 @@
         </el-select>
       </el-col>
       <el-col :span="12" style="text-align:right">
-        <GlassButton variant="success" :loading="autoMatching" @click="handleAutoMatch" left-icon="MagicStick">自动匹配</GlassButton>
-        <GlassButton variant="primary" left-icon="Plus" @click="openCreateDialog">手工新增</GlassButton>
-        <GlassButton left-icon="Upload" @click="importDialogVisible = true">Excel导入</GlassButton>
+        <GlassButton v-permission="'customer:write'" variant="success" :loading="autoMatching" @click="handleAutoMatch" left-icon="MagicStick">自动匹配</GlassButton>
+        <GlassButton v-permission="'customer:write'" variant="primary" left-icon="Plus" @click="openCreateDialog">手工新增</GlassButton>
+        <GlassButton v-permission="'customer:write'" left-icon="Upload" @click="importDialogVisible = true">Excel导入</GlassButton>
         <GlassButton left-icon="Download" @click="downloadTpl">下载模板</GlassButton>
       </el-col>
     </el-row>
@@ -77,8 +77,8 @@
       </el-table-column>
       <el-table-column label="操作" min-width="180" max-width="270" fixed="right">
         <template #default="{ row }">
-          <GlassButton v-if="!row.is_complete" variant="link" left-icon="EditPen" @click="openCompleteDialog(row)">补充信息</GlassButton>
-          <GlassButton variant="link" left-icon="RefreshRight" @click="openResetDialog(row)">重置归属</GlassButton>
+          <GlassButton v-if="!row.is_complete" v-permission="'customer:write'" variant="link" left-icon="EditPen" @click="openCompleteDialog(row)">补充信息</GlassButton>
+          <GlassButton v-permission="'customer:write'" variant="link" left-icon="RefreshRight" @click="openResetDialog(row)">重置归属</GlassButton>
         </template>
       </el-table-column>
     </el-table>

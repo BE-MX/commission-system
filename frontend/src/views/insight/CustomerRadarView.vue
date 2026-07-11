@@ -163,16 +163,16 @@
 
         <!-- 操作按钮 -->
         <div class="cr-profile-actions">
-          <el-button type="primary" @click="completeAction(selectedActionId)">
+          <el-button v-permission="'customer_radar:write'" type="primary" @click="completeAction(selectedActionId)">
             <el-icon><SuccessFilled /></el-icon>已跟进
           </el-button>
-          <el-button @click="snoozeAction(selectedActionId, snoozeUntil)">
+          <el-button v-permission="'customer_radar:write'" @click="snoozeAction(selectedActionId, snoozeUntil)">
             <el-icon><Clock /></el-icon>今天先不看
           </el-button>
-          <el-button @click="sendFeedback(selectedActionId, 'useful')">
+          <el-button v-permission="'customer_radar:write'" @click="sendFeedback(selectedActionId, 'useful')">
             <el-icon><Top /></el-icon>客户质量更高
           </el-button>
-          <el-button @click="sendFeedback(selectedActionId, 'not_useful')">
+          <el-button v-permission="'customer_radar:write'" @click="sendFeedback(selectedActionId, 'not_useful')">
             <el-icon><Bottom /></el-icon>推荐不准
           </el-button>
         </div>

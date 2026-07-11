@@ -13,7 +13,7 @@
         </el-radio-group>
       </el-col>
       <el-col :span="6" style="text-align:right">
-        <GlassButton variant="primary" left-icon="Plus" @click="openCreateDialog">新建批次</GlassButton>
+        <GlassButton v-permission="'commission:write'" variant="primary" left-icon="Plus" @click="openCreateDialog">新建批次</GlassButton>
       </el-col>
     </el-row>
 
@@ -57,14 +57,14 @@
         <template #default="{ row }">
           <!-- 草稿 -->
           <template v-if="row.status === 'draft'">
-            <GlassButton variant="link" left-icon="DataAnalysis" @click="handleCalculate(row)">执行计算</GlassButton>
+            <GlassButton v-permission="'commission:write'" variant="link" left-icon="DataAnalysis" @click="handleCalculate(row)">执行计算</GlassButton>
           </template>
           <!-- 已计算 -->
           <template v-if="row.status === 'calculated'">
             <GlassButton variant="link" left-icon="View" @click="goDetail(row)">明细</GlassButton>
-            <GlassButton variant="link" link-tone="warning" left-icon="Promotion" @click="handleSendConfirm(row)">发送确认</GlassButton>
-            <GlassButton variant="link" link-tone="success" left-icon="CircleCheck" @click="handleConfirm(row)">确认</GlassButton>
-            <GlassButton variant="link" link-tone="danger" left-icon="CircleClose" @click="handleVoid(row)">作废</GlassButton>
+            <GlassButton v-permission="'commission:write'" variant="link" link-tone="warning" left-icon="Promotion" @click="handleSendConfirm(row)">发送确认</GlassButton>
+            <GlassButton v-permission="'commission:write'" variant="link" link-tone="success" left-icon="CircleCheck" @click="handleConfirm(row)">确认</GlassButton>
+            <GlassButton v-permission="'commission:write'" variant="link" link-tone="danger" left-icon="CircleClose" @click="handleVoid(row)">作废</GlassButton>
             <el-dropdown trigger="click" @command="cmd => handleExport(row, cmd)">
               <GlassButton variant="link" left-icon="Download" right-icon="ArrowDown">
                 导出
@@ -84,9 +84,9 @@
           <!-- 确认中 -->
           <template v-if="row.status === 'confirming'">
             <GlassButton variant="link" left-icon="View" @click="goDetail(row)">明细</GlassButton>
-            <GlassButton variant="link" link-tone="danger" left-icon="RefreshLeft" @click="handleRevokeConfirm(row)">撤销确认</GlassButton>
-            <GlassButton variant="link" link-tone="success" left-icon="CircleCheck" @click="handleConfirm(row)">确认</GlassButton>
-            <GlassButton variant="link" link-tone="danger" left-icon="CircleClose" @click="handleVoid(row)">作废</GlassButton>
+            <GlassButton v-permission="'commission:write'" variant="link" link-tone="danger" left-icon="RefreshLeft" @click="handleRevokeConfirm(row)">撤销确认</GlassButton>
+            <GlassButton v-permission="'commission:write'" variant="link" link-tone="success" left-icon="CircleCheck" @click="handleConfirm(row)">确认</GlassButton>
+            <GlassButton v-permission="'commission:write'" variant="link" link-tone="danger" left-icon="CircleClose" @click="handleVoid(row)">作废</GlassButton>
             <el-dropdown trigger="click" @command="cmd => handleExport(row, cmd)">
               <GlassButton variant="link" left-icon="Download" right-icon="ArrowDown">
                 导出

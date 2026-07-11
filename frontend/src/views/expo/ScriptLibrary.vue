@@ -13,8 +13,8 @@
         </el-radio-group>
       </el-col>
       <el-col :span="10" class="toolbar-right">
-        <GlassButton variant="ghost" left-icon="Download" :loading="seeding" @click="handleSeed">导入种子话术</GlassButton>
-        <GlassButton variant="primary" left-icon="Plus" @click="openCreate">新建话术卡</GlassButton>
+        <GlassButton v-permission="'expo:admin'" variant="ghost" left-icon="Download" :loading="seeding" @click="handleSeed">导入种子话术</GlassButton>
+        <GlassButton v-permission="'expo:admin'" variant="primary" left-icon="Plus" @click="openCreate">新建话术卡</GlassButton>
       </el-col>
     </el-row>
 
@@ -23,7 +23,7 @@
         <div class="card-head">
           <el-tag size="small" :class="'track-' + (card.track || 'rational')">{{ trackLabel(card.track) }}</el-tag>
           <el-tag size="small" effect="plain">{{ typeLabel(card.script_type) }}</el-tag>
-          <el-switch :model-value="!!card.is_active" size="small" class="card-switch" @click.stop @change="(v) => toggleActive(card, v)" />
+          <el-switch v-permission="'expo:admin'" :model-value="!!card.is_active" size="small" class="card-switch" @click.stop @change="(v) => toggleActive(card, v)" />
         </div>
         <div class="card-title">{{ card.title }}</div>
         <div class="card-content">{{ card.content }}</div>
@@ -63,7 +63,7 @@
       </el-form>
       <template #footer>
         <GlassButton variant="ghost" @click="drawerVisible = false">取消</GlassButton>
-        <GlassButton variant="primary" :loading="saving" @click="submit">保存</GlassButton>
+        <GlassButton v-permission="'expo:admin'" variant="primary" :loading="saving" @click="submit">保存</GlassButton>
       </template>
     </el-drawer>
   </div>

@@ -9,8 +9,8 @@
       </el-col>
       <el-col :span="16">
         <GlassButton left-icon="Search" @click="fetchList">查询</GlassButton>
-        <GlassButton variant="primary" left-icon="Plus" @click="openCreateDialog">新增用户</GlassButton>
-        <GlassButton left-icon="Connection" :loading="syncingAll" @click="handleSyncAll">批量同步钉钉</GlassButton>
+        <GlassButton v-permission="'user:write'" variant="primary" left-icon="Plus" @click="openCreateDialog">新增用户</GlassButton>
+        <GlassButton v-permission="'user:write'" left-icon="Connection" :loading="syncingAll" @click="handleSyncAll">批量同步钉钉</GlassButton>
       </el-col>
     </el-row>
 
@@ -41,14 +41,14 @@
       <el-table-column prop="last_login_at" label="最后登录" min-width="170" max-width="260" show-overflow-tooltip sortable="custom" />
       <el-table-column label="操作" min-width="340" max-width="480" fixed="right">
         <template #default="{ row }">
-          <GlassButton variant="link" left-icon="Edit" @click="openEditDialog(row)">编辑</GlassButton>
+          <GlassButton v-permission="'user:write'" variant="link" left-icon="Edit" @click="openEditDialog(row)">编辑</GlassButton>
           <GlassButton variant="link" left-icon="Lock" @click="openPermPreview(row)">权限</GlassButton>
-          <GlassButton variant="link" left-icon="Connection" @click="handleSyncDingtalk(row)" :disabled="!row.phone || !!row.dingtalk_id">同步钉钉</GlassButton>
-          <GlassButton variant="link" left-icon="Key" @click="openResetPwdDialog(row)">重置密码</GlassButton>
-          <GlassButton variant="link" :link-tone="row.is_active ? '' : 'success'" left-icon="SwitchButton" @click="handleToggleActive(row)">
+          <GlassButton v-permission="'user:write'" variant="link" left-icon="Connection" @click="handleSyncDingtalk(row)" :disabled="!row.phone || !!row.dingtalk_id">同步钉钉</GlassButton>
+          <GlassButton v-permission="'user:write'" variant="link" left-icon="Key" @click="openResetPwdDialog(row)">重置密码</GlassButton>
+          <GlassButton v-permission="'user:write'" variant="link" :link-tone="row.is_active ? '' : 'success'" left-icon="SwitchButton" @click="handleToggleActive(row)">
             {{ row.is_active ? '禁用' : '启用' }}
           </GlassButton>
-          <GlassButton variant="link" link-tone="danger" left-icon="Delete" @click="handleDelete(row)">删除</GlassButton>
+          <GlassButton v-permission="'user:delete'" variant="link" link-tone="danger" left-icon="Delete" @click="handleDelete(row)">删除</GlassButton>
         </template>
       </el-table-column>
     </el-table>
@@ -95,7 +95,7 @@
           <el-form-item label="微信ID">
             <div style="display: flex; gap: 8px; width: 100%;">
               <el-input v-model="wxIdForm.wx_id" placeholder="微信原始ID（如 oXXXX...）" style="flex:1" />
-              <el-button type="primary" size="small" :loading="savingWxId" @click="saveWxId">保存</el-button>
+              <el-button v-permission="'user:write'" type="primary" size="small" :loading="savingWxId" @click="saveWxId">保存</el-button>
             </div>
             <div class="form-tip">用于工人扫码报工时身份匹配，由管理员通过测试扫码获取</div>
           </el-form-item>
@@ -106,7 +106,7 @@
               </el-checkbox-group>
               <div v-if="allProcesses.length === 0" style="color: #909399; font-size: 12px;">暂无工序，请先在工序管理页创建</div>
               <div style="margin-top: 8px;">
-                <el-button type="primary" size="small" :loading="savingBindings" @click="saveBindings">保存绑定</el-button>
+                <el-button v-permission="'user:write'" type="primary" size="small" :loading="savingBindings" @click="saveBindings">保存绑定</el-button>
                 <span style="margin-left: 8px; color: #909399; font-size: 12px;">已绑定 {{ bindingForm.process_ids.length }} 个工序</span>
               </div>
             </div>

@@ -21,7 +21,7 @@
           value-format="YYYY-MM-DD"
           style="width: 280px"
         />
-        <GlassButton variant="primary" :loading="syncing" @click="handleSync" :disabled="!dateRange" left-icon="Refresh">
+        <GlassButton v-permission="'payment:write'" variant="primary" :loading="syncing" @click="handleSync" :disabled="!dateRange" left-icon="Refresh">
           开始同步
         </GlassButton>
       </div>

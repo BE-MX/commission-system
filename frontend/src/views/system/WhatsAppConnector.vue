@@ -7,7 +7,7 @@
       </div>
       <div class="header-actions">
         <GlassButton variant="ghost" left-icon="Refresh" @click="loadAccounts">刷新</GlassButton>
-        <GlassButton variant="primary" left-icon="Connection" @click="handleCreateBindSession">扫码绑定</GlassButton>
+        <GlassButton v-permission="'whatsapp:write'" variant="primary" left-icon="Connection" @click="handleCreateBindSession">扫码绑定</GlassButton>
       </div>
     </div>
 
@@ -71,9 +71,9 @@
           </el-table-column>
           <el-table-column label="操作" min-width="260" max-width="390" fixed="right">
             <template #default="{ row }">
-              <GlassButton variant="link" left-icon="Refresh" @click="handlePull(row, 'messages')">拉取消息</GlassButton>
+              <GlassButton v-permission="'whatsapp:write'" variant="link" left-icon="Refresh" @click="handlePull(row, 'messages')">拉取消息</GlassButton>
               <GlassButton variant="link" left-icon="View" @click="selectAccount(row)">查看对话</GlassButton>
-              <GlassButton variant="link" link-tone="danger" left-icon="Close" @click="handleRevoke(row)">解绑</GlassButton>
+              <GlassButton v-permission="'whatsapp:write'" variant="link" link-tone="danger" left-icon="Close" @click="handleRevoke(row)">解绑</GlassButton>
             </template>
           </el-table-column>
         </el-table>

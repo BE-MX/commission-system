@@ -18,7 +18,7 @@
         </el-select>
       </el-col>
       <el-col :span="16">
-        <GlassButton variant="primary" left-icon="Plus" @click="openCreateDialog">新增字典项</GlassButton>
+        <GlassButton v-permission="'dict:write'" variant="primary" left-icon="Plus" @click="openCreateDialog">新增字典项</GlassButton>
       </el-col>
     </el-row>
 
@@ -35,11 +35,11 @@
         <el-table-column prop="remark" label="备注" min-width="140" max-width="210" show-overflow-tooltip />
         <el-table-column label="操作" min-width="240" max-width="360" fixed="right">
           <template #default="{ row }">
-            <GlassButton variant="link" left-icon="Edit" @click="openEditDialog(row)">编辑</GlassButton>
-            <GlassButton variant="link" :link-tone="row.is_active ? '' : 'success'" left-icon="SwitchButton" @click="handleToggleActive(row)">
+            <GlassButton v-permission="'dict:write'" variant="link" left-icon="Edit" @click="openEditDialog(row)">编辑</GlassButton>
+            <GlassButton v-permission="'dict:write'" variant="link" :link-tone="row.is_active ? '' : 'success'" left-icon="SwitchButton" @click="handleToggleActive(row)">
               {{ row.is_active ? '禁用' : '启用' }}
             </GlassButton>
-            <GlassButton variant="link" link-tone="danger" left-icon="Delete" @click="handleDelete(row)">删除</GlassButton>
+            <GlassButton v-permission="'dict:write'" variant="link" link-tone="danger" left-icon="Delete" @click="handleDelete(row)">删除</GlassButton>
           </template>
         </el-table-column>
       </el-table>

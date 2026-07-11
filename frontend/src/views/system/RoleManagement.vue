@@ -3,7 +3,7 @@
     <!-- 操作栏 -->
     <el-row :gutter="16" class="toolbar">
       <el-col :span="24">
-        <GlassButton variant="primary" left-icon="Plus" @click="openCreateDialog">新增角色</GlassButton>
+        <GlassButton v-permission="'role:write'" variant="primary" left-icon="Plus" @click="openCreateDialog">新增角色</GlassButton>
       </el-col>
     </el-row>
 
@@ -23,13 +23,13 @@
       <el-table-column prop="created_at" label="创建时间" min-width="170" max-width="260" show-overflow-tooltip sortable />
       <el-table-column label="操作" min-width="220" max-width="300" fixed="right">
         <template #default="{ row }">
-          <GlassButton variant="link" :disabled="row.name === 'super_admin'" @click="openEditDialog(row)" left-icon="Edit">
+          <GlassButton v-permission="'role:write'" variant="link" :disabled="row.name === 'super_admin'" @click="openEditDialog(row)" left-icon="Edit">
             编辑
           </GlassButton>
-          <GlassButton variant="link" :disabled="row.name === 'super_admin'" @click="openPermDrawer(row)" left-icon="Lock">
+          <GlassButton v-permission="'role:write'" variant="link" :disabled="row.name === 'super_admin'" @click="openPermDrawer(row)" left-icon="Lock">
             权限
           </GlassButton>
-          <GlassButton variant="link" link-tone="danger" :disabled="row.name === 'super_admin' || row.user_count > 0" @click="handleDelete(row)" left-icon="Delete">
+          <GlassButton v-permission="'role:delete'" variant="link" link-tone="danger" :disabled="row.name === 'super_admin' || row.user_count > 0" @click="handleDelete(row)" left-icon="Delete">
             删除
           </GlassButton>
         </template>

@@ -91,8 +91,8 @@
         <GlassButton left-icon="Search" @click="fetchList">查询</GlassButton>
       </el-col>
       <el-col :span="8" style="text-align:right">
-        <GlassButton left-icon="Refresh" @click="handleScanStaging">扫描暂存</GlassButton>
-        <GlassButton left-icon="Loading" @click="handlePoll">批量轮询</GlassButton>
+        <GlassButton v-permission="'tracking:write'" left-icon="Refresh" @click="handleScanStaging">扫描暂存</GlassButton>
+        <GlassButton v-permission="'tracking:write'" left-icon="Loading" @click="handlePoll">批量轮询</GlassButton>
       </el-col>
     </el-row>
 
@@ -150,7 +150,7 @@
       </el-table-column>
       <el-table-column label="操作" min-width="130" max-width="180" fixed="right">
         <template #default="{ row }">
-          <GlassButton variant="link" left-icon="Refresh" @click="handleRefresh(row)">
+          <GlassButton v-permission="'tracking:write'" variant="link" left-icon="Refresh" @click="handleRefresh(row)">
             刷新
           </GlassButton>
           <GlassButton

@@ -6,11 +6,11 @@
         <p>客户发票、产品明细、价格管控、导出与小满同步集中处理。</p>
       </div>
       <div class="header-actions">
-        <el-button type="primary" class="primary-action" @click="openCreate('stock')">
+        <el-button v-permission="'invoice:write'" type="primary" class="primary-action" @click="openCreate('stock')">
           <el-icon><Plus /></el-icon>
           新建库存单
         </el-button>
-        <el-button @click="openCreate('production')">
+        <el-button v-permission="'invoice:write'" @click="openCreate('production')">
           <el-icon><Plus /></el-icon>
           新建生产单
         </el-button>
@@ -103,7 +103,7 @@
         <el-table-column label="操作" min-width="304" max-width="330" fixed="right">
           <template #default="{ row }">
             <div class="row-actions">
-              <el-button link type="primary" @click="openEdit(row.id)">
+              <el-button v-permission="'invoice:write'" link type="primary" @click="openEdit(row.id)">
                 <el-icon><Edit /></el-icon>
                 编辑
               </el-button>

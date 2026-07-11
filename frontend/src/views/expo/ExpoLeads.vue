@@ -38,7 +38,7 @@
         <el-table-column label="操作" min-width="140" fixed="right">
           <template #default="{ row }">
             <GlassButton variant="link" left-icon="View" @click="openDetail(row)">详情</GlassButton>
-            <GlassButton variant="link" link-tone="danger" left-icon="Delete" @click="handleDelete(row)">删除</GlassButton>
+            <GlassButton v-permission="'expo:admin'" variant="link" link-tone="danger" left-icon="Delete" @click="handleDelete(row)">删除</GlassButton>
           </template>
         </el-table-column>
       </el-table>

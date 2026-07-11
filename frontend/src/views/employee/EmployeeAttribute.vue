@@ -9,7 +9,7 @@
       </el-col>
       <el-col :span="4">
         <GlassButton left-icon="Search" @click="fetchList">查询</GlassButton>
-        <GlassButton left-icon="Upload" @click="importDialogVisible = true">批量导入</GlassButton>
+        <GlassButton v-permission="'employee:write'" left-icon="Upload" @click="importDialogVisible = true">批量导入</GlassButton>
       </el-col>
     </el-row>
 
@@ -28,7 +28,7 @@
       </el-table-column>
       <el-table-column label="操作" min-width="160" max-width="240">
         <template #default="{ row }">
-          <GlassButton variant="link" left-icon="Edit" @click="openSetDialog(row)">设置属性</GlassButton>
+          <GlassButton v-permission="'employee:write'" variant="link" left-icon="Edit" @click="openSetDialog(row)">设置属性</GlassButton>
           <GlassButton variant="link" left-icon="Clock" @click="openHistory(row)">查看历史</GlassButton>
         </template>
       </el-table-column>
