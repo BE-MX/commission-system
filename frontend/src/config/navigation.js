@@ -43,6 +43,11 @@ export const MENU_GROUPS = {
     icon: Document,
     anyPermission: ['invoice:read', 'invoice:write', 'invoice:sync'],
   },
+  aftersales: {
+    title: '售后管理',
+    icon: Notebook,
+    anyPermission: ['aftersales:read', 'aftersales:write', 'aftersales:admin'],
+  },
   expo: {
     title: '展会营销',
     icon: MagicStick,
@@ -202,6 +207,68 @@ export const NAV_ENTRIES = [
     menu: {
       group: 'invoice', title: '回款日期修复', icon: Document, order: 30,
       permission: 'invoice:admin',
+    },
+  },
+
+  // ── 客户售后管理 ───────────────────────────────────────
+  {
+    path: '/aftersales/cases',
+    name: 'AfterSalesList',
+    component: () => import('@/views/aftersales/AfterSalesList.vue'),
+    title: '售后单',
+    permission: 'aftersales:read',
+    menu: {
+      group: 'aftersales', title: '售后单', icon: List, order: 10,
+      permission: 'aftersales:read',
+    },
+  },
+  {
+    path: '/aftersales/reviews',
+    name: 'AfterSalesReviews',
+    component: () => import('@/views/aftersales/AfterSalesList.vue'),
+    title: '待我审核',
+    permission: 'aftersales:write',
+    menu: {
+      group: 'aftersales', title: '待我审核', icon: Stamp, order: 20,
+      permission: 'aftersales:write',
+    },
+  },
+  {
+    path: '/aftersales/cases/new',
+    name: 'AfterSalesCreate',
+    component: () => import('@/views/aftersales/AfterSalesWorkspace.vue'),
+    title: '新建售后单',
+    permission: 'aftersales:write',
+    hideInMenu: true,
+  },
+  {
+    path: '/aftersales/cases/:caseId',
+    name: 'AfterSalesWorkspace',
+    component: () => import('@/views/aftersales/AfterSalesWorkspace.vue'),
+    title: '售后单工作台',
+    anyPermission: ['aftersales:read', 'aftersales:write', 'aftersales:admin'],
+    hideInMenu: true,
+  },
+  {
+    path: '/aftersales/sop',
+    name: 'AfterSalesSop',
+    component: () => import('@/views/aftersales/SopManagement.vue'),
+    title: '售后 SOP 管理',
+    permission: 'aftersales:admin',
+    menu: {
+      group: 'aftersales', title: 'SOP 管理', icon: Reading, order: 30,
+      permission: 'aftersales:admin',
+    },
+  },
+  {
+    path: '/aftersales/analytics',
+    name: 'AfterSalesAnalytics',
+    component: () => import('@/views/aftersales/AfterSalesAnalytics.vue'),
+    title: '售后分析',
+    permission: 'aftersales:read',
+    menu: {
+      group: 'aftersales', title: '售后分析', icon: TrendCharts, order: 40,
+      permission: 'aftersales:read',
     },
   },
 
