@@ -183,6 +183,9 @@ LEGACY_SEEDS = [
     ("system:logs",         "system",     "logs",     "系统日志（旧）"),
     ("system:backup",       "system",     "backup",   "系统备份（旧）"),
     ("user:assign_role",    "user",       "assign_role", "分配角色（旧）"),
+    # 2026-07-12 功能单元拆分：案例库/周会纪要写权限拆为 insight_case:write /
+    # insight_minutes:write，本码职责拆空（061 迁移已给持有者补授新码）
+    ("insight:write",       "insight",    "write",    "上传案例/周会纪要（旧，已拆分）"),
 ]
 
 
@@ -199,6 +202,9 @@ def seed_role_permissions(db: Session):
         # 人员管理
         ("employee:read",  "employee", "read",   "查看员工属性"),
         ("employee:write", "employee", "write",  "编辑员工属性"),
+        # 主管关系（2026-07-12 从 employee:* 拆出，独立控制主管关系页）
+        ("supervisor:read",  "supervisor", "read",  "查看主管关系"),
+        ("supervisor:write", "supervisor", "write", "设置/变更/导入主管关系"),
         # 客户管理
         ("customer:read",  "customer", "read",   "查看客户归属"),
         ("customer:write", "customer", "write",  "编辑客户归属"),
@@ -223,17 +229,24 @@ def seed_role_permissions(db: Session):
         ("user:read",      "user", "read",     "查看用户/角色"),
         ("user:write",     "user", "write",    "创建/编辑用户"),
         ("user:delete",    "user", "delete",   "删除用户"),
-        ("role:read",      "user", "read",     "查看角色列表"),
-        ("role:write",     "user", "write",    "创建/编辑角色"),
+        ("role:read",      "user", "read",     "查看角色权限页"),
+        ("role:write",     "user", "write",    "创建/编辑角色 / 配置角色权限"),
         ("role:delete",    "user", "delete",   "删除角色"),
+        # 基础字典（2026-07-12 从 user:* 拆出；字典数据 GET 保持任意登录可读，
+        # dict:read 只控页面入口，dict:write 控增删改）
+        ("dict:read",      "system", "read",   "查看基础字典页"),
+        ("dict:write",     "system", "write",  "新增/编辑/删除字典项"),
         # AI 接入
         ("ai:admin",       "ai",     "admin",    "AI 接入管理"),
         ("ai:invoke",      "ai",     "invoke",   "AI 调用权限"),
-        # 方舟洞见
-        ("insight:read",          "insight", "read",          "查看方舟洞见(行业日报/案例库/周会纪要)"),
+        # 方舟洞见（2026-07-12 案例库/周会纪要拆分为独立子域，insight:read 只控行业情报三页）
+        ("insight:read",          "insight", "read",          "查看行业情报(速览/采集库/日报)"),
         ("insight:internal_read", "insight", "internal_read", "查看内部经营报告 / AI 工具速递"),
-        ("insight:write",         "insight", "write",         "上传案例 / 周会纪要"),
         ("insight:admin",         "insight", "admin",         "信源管理 / 重新生成报告"),
+        ("insight_case:read",     "insight", "read",          "查看业务员案例库"),
+        ("insight_case:write",    "insight", "write",         "上传/编辑案例"),
+        ("insight_minutes:read",  "insight", "read",          "查看周会纪要"),
+        ("insight_minutes:write", "insight", "write",         "上传/管理周会纪要"),
         # 备货管理
         ("stock:read",            "stock",   "read",          "查看销量备货一览 / 安全库存 / 日报"),
         ("stock:write",           "stock",   "write",         "设置安全库存 / AI 生成建议"),
@@ -255,10 +268,12 @@ def seed_role_permissions(db: Session):
         ("aftersales:read_all",   "aftersales", "read_all",   "查看全部售后单"),
         # 钉钉集成
         ("dingtalk:admin",        "dingtalk", "admin",        "手动发送钉钉消息 / 查看消息与回调日志"),
-        # 展会 AI 试戴
-        ("expo:read",             "expo",    "read",          "查看展会线索 / 发型库 / 话术卡"),
-        ("expo:write",            "expo",    "write",         "展位试戴操作 / 销售反馈录入"),
+        # 展会 AI 试戴（2026-07-12 线索台拆分为 expo_lead:*，expo:read 只控素材库页）
+        ("expo:read",             "expo",    "read",          "查看发型库 / 发色库 / 场景图 / 话术卡"),
+        ("expo:write",            "expo",    "write",         "展位试戴操作(kiosk 设备)"),
         ("expo:admin",            "expo",    "admin",         "发型库话术库维护 / 删除客户数据"),
+        ("expo_lead:read",        "expo",    "read",          "查看展会线索台"),
+        ("expo_lead:write",       "expo",    "write",         "线索操作 / 销售反馈录入"),
         # 素材管理
         ("asset:read",            "asset",   "read",          "查看素材库 / 预览 / 下载 / 收藏"),
         ("asset:write",           "asset",   "write",         "上传素材 / 编辑标签 / 版本迭代"),
