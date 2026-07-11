@@ -10,21 +10,25 @@ const SALESPERSON_CODES = [
   'customer:read',
   'tracking:read', 'tracking:write', 'tracking:daily_report',
   'invoice:read', 'invoice:write',
-  'insight:read', 'insight:write',
+  'insight:read',
+  'insight_case:read', 'insight_case:write',
+  'insight_minutes:read',
   'customer_opportunity:read', 'customer_opportunity:write',
   'customer_radar:read', 'customer_radar:write',
   'asset:read',
   'design:read', 'design:write',
-  'expo:write',
+  'expo:write', 'expo_lead:read', 'expo_lead:write',
 ]
 
 const SUPERVISOR_CODES = [
   ...SALESPERSON_CODES,
   'commission:read',
   'customer:write',
+  'supervisor:read',
   'tracking:read_all',
   'design:audit',
   'insight:internal_read',
+  'insight_minutes:write',
   'customer_opportunity:manage',
   'customer_radar:manage',
   'expo:read',
@@ -35,7 +39,7 @@ export const ROLE_TEMPLATES = [
   { key: 'supervisor', label: '主管', codes: SUPERVISOR_CODES },
   {
     key: 'designer', label: '设计部',
-    codes: ['design:read', 'design:write', 'asset:read', 'asset:write', 'color:read', 'color:write', 'insight:read'],
+    codes: ['design:read', 'design:write', 'asset:read', 'asset:write', 'color:read', 'color:write', 'insight:read', 'insight_case:read', 'insight_minutes:read'],
   },
   {
     key: 'workshop', label: '车间',

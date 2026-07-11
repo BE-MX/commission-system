@@ -31,7 +31,7 @@ export const MENU_GROUPS = {
   personnel: {
     title: '人员管理',
     icon: User,
-    anyPermission: ['employee:read', 'employee:write'],
+    anyPermission: ['employee:read', 'employee:write', 'supervisor:read', 'supervisor:write'],
   },
   customer: {
     title: '客户管理',
@@ -51,7 +51,7 @@ export const MENU_GROUPS = {
   expo: {
     title: '展会营销',
     icon: MagicStick,
-    anyPermission: ['expo:read', 'expo:write', 'expo:admin'],
+    anyPermission: ['expo:read', 'expo:write', 'expo:admin', 'expo_lead:read', 'expo_lead:write'],
   },
   commission: {
     title: '提成管理',
@@ -84,7 +84,12 @@ export const MENU_GROUPS = {
   insight: {
     title: '方舟洞见',
     icon: Aim,
-    anyPermission: ['insight:read', 'insight:write', 'insight:internal_read', 'insight:admin', 'customer_opportunity:read', 'customer_radar:read'],
+    anyPermission: [
+      'insight:read', 'insight:internal_read', 'insight:admin',
+      'insight_case:read', 'insight_case:write',
+      'insight_minutes:read', 'insight_minutes:write',
+      'customer_opportunity:read', 'customer_radar:read',
+    ],
   },
   design: {
     title: '设计预约',
@@ -99,7 +104,13 @@ export const MENU_GROUPS = {
   system: {
     title: '系统管理',
     icon: Setting,
-    anyPermission: ['user:read', 'role:read', 'whatsapp:read', 'whatsapp:write'],
+    // 覆盖全部子项权限：任一子页可见则分组可见（此前漏 ai:admin/external_binding
+    // 会让只有这些权限的用户看不到整个分组）
+    anyPermission: [
+      'user:read', 'role:read', 'dict:read', 'ai:admin',
+      'external_binding:read', 'external_binding:write',
+      'whatsapp:read', 'whatsapp:write',
+    ],
   },
   governance: {
     title: '数据治理',
@@ -136,6 +147,7 @@ export const NAV_ENTRIES = [
     name: 'EmployeeAttribute',
     component: () => import('@/views/employee/EmployeeAttribute.vue'),
     title: '员工属性管理',
+    anyPermission: ['employee:read', 'employee:write'],
     menu: {
       group: 'personnel', title: '员工属性', icon: UserFilled, order: 10,
       anyPermission: ['employee:read', 'employee:write'],
@@ -146,9 +158,10 @@ export const NAV_ENTRIES = [
     name: 'SupervisorRelation',
     component: () => import('@/views/supervisor/SupervisorRelation.vue'),
     title: '主管关系管理',
+    anyPermission: ['supervisor:read', 'supervisor:write'],
     menu: {
       group: 'personnel', title: '主管关系', icon: Connection, order: 20,
-      anyPermission: ['employee:read', 'employee:write'],
+      anyPermission: ['supervisor:read', 'supervisor:write'],
     },
   },
 
@@ -158,6 +171,7 @@ export const NAV_ENTRIES = [
     name: 'CustomerSnapshot',
     component: () => import('@/views/customer/CustomerSnapshot.vue'),
     title: '客户归属管理',
+    anyPermission: ['customer:read', 'customer:write'],
     menu: {
       group: 'customer', title: '客户归属', icon: Document, order: 10,
       anyPermission: ['customer:read', 'customer:write'],
@@ -322,10 +336,10 @@ export const NAV_ENTRIES = [
     name: 'ExpoLeads',
     component: () => import('@/views/expo/ExpoLeads.vue'),
     title: '展会线索台',
-    anyPermission: ['expo:read'],
+    anyPermission: ['expo_lead:read', 'expo_lead:write'],
     menu: {
       group: 'expo', title: '展会线索台', icon: Aim, order: 30,
-      anyPermission: ['expo:read'],
+      anyPermission: ['expo_lead:read', 'expo_lead:write'],
     },
   },
 
@@ -335,6 +349,7 @@ export const NAV_ENTRIES = [
     name: 'PaymentSync',
     component: () => import('@/views/payment/PaymentSync.vue'),
     title: '回款同步',
+    anyPermission: ['payment:read', 'payment:write'],
     menu: {
       group: 'commission', title: '回款同步', icon: Refresh, order: 10,
       anyPermission: ['payment:read', 'payment:write'],
@@ -345,6 +360,7 @@ export const NAV_ENTRIES = [
     name: 'SalesCommission',
     component: () => import('@/views/commission/SalesCommission.vue'),
     title: '我的提成',
+    anyPermission: ['commission:self_read', 'commission:read', 'commission:write'],
     menu: {
       group: 'commission', title: '我的提成', icon: Money, order: 20,
       anyPermission: ['commission:self_read', 'commission:read', 'commission:write'],
@@ -363,6 +379,7 @@ export const NAV_ENTRIES = [
     name: 'CommissionBatch',
     component: () => import('@/views/commission/CommissionBatch.vue'),
     title: '提成批次',
+    anyPermission: ['commission:read', 'commission:write'],
     menu: {
       group: 'commission', title: '提成批次', icon: List, order: 30,
       anyPermission: ['commission:read', 'commission:write'],
@@ -383,6 +400,7 @@ export const NAV_ENTRIES = [
     name: 'TrackingList',
     component: () => import('@/views/tracking/TrackingList.vue'),
     title: '物流跟踪',
+    anyPermission: ['tracking:read', 'tracking:write'],
     menu: {
       group: 'tracking', title: '物流跟踪', icon: List, order: 10,
       anyPermission: ['tracking:read', 'tracking:write'],
@@ -695,10 +713,10 @@ export const NAV_ENTRIES = [
     name: 'InsightCaseLibrary',
     component: () => import('@/views/insight/CaseLibraryView.vue'),
     title: '业务员案例库',
-    permission: 'insight:read',
+    anyPermission: ['insight_case:read', 'insight_case:write'],
     menu: {
       group: 'insight', title: '业务员案例库', icon: Notebook, order: 40,
-      anyPermission: ['insight:read', 'insight:write'],
+      anyPermission: ['insight_case:read', 'insight_case:write'],
     },
   },
   {
@@ -706,10 +724,10 @@ export const NAV_ENTRIES = [
     name: 'InsightMeetingMinutes',
     component: () => import('@/views/insight/MeetingMinutesView.vue'),
     title: '周会纪要',
-    permission: 'insight:read',
+    anyPermission: ['insight_minutes:read', 'insight_minutes:write'],
     menu: {
       group: 'insight', title: '周会纪要', icon: Calendar, order: 50,
-      permission: 'insight:read',
+      anyPermission: ['insight_minutes:read', 'insight_minutes:write'],
     },
   },
   {
@@ -752,6 +770,7 @@ export const NAV_ENTRIES = [
     name: 'DesignGantt',
     component: () => import('@/views/design/GanttView.vue'),
     title: '排期甘特图',
+    anyPermission: ['design:read', 'design:write', 'design:audit', 'design:manage'],
     menu: {
       group: 'design', title: '排期甘特图', icon: Calendar, order: 10,
       anyPermission: ['design:read', 'design:write', 'design:audit', 'design:manage'],
@@ -762,6 +781,7 @@ export const NAV_ENTRIES = [
     name: 'DesignSubmit',
     component: () => import('@/views/design/SubmitRequest.vue'),
     title: '提交预约',
+    permission: 'design:write',
     menu: {
       group: 'design', title: '提交预约', icon: EditPen, order: 20,
       anyPermission: ['design:write'],
@@ -772,6 +792,7 @@ export const NAV_ENTRIES = [
     name: 'MyRequests',
     component: () => import('@/views/design/MyRequests.vue'),
     title: '我的预约',
+    anyPermission: ['design:write', 'design:read'],
     menu: {
       group: 'design', title: '我的预约', icon: Document, order: 30,
       anyPermission: ['design:write', 'design:read'],
@@ -782,6 +803,7 @@ export const NAV_ENTRIES = [
     name: 'DesignAudit',
     component: () => import('@/views/design/AuditQueue.vue'),
     title: '审批队列',
+    permission: 'design:audit',
     menu: {
       group: 'design', title: '审批队列', icon: Stamp, order: 40,
       permission: 'design:audit',
@@ -792,6 +814,7 @@ export const NAV_ENTRIES = [
     name: 'DesignManage',
     component: () => import('@/views/design/DesignManage.vue'),
     title: '设计管理',
+    permission: 'design:manage',
     menu: {
       group: 'design', title: '设计管理', icon: Setting, order: 50,
       permission: 'design:manage',
@@ -802,6 +825,7 @@ export const NAV_ENTRIES = [
     name: 'DesignStats',
     component: () => import('@/views/design/DesignStats.vue'),
     title: '设计统计',
+    anyPermission: ['design:manage', 'design:audit'],
     menu: {
       group: 'design', title: '设计统计', icon: TrendCharts, order: 60,
       anyPermission: ['design:manage', 'design:audit'],
@@ -825,10 +849,10 @@ export const NAV_ENTRIES = [
     name: 'RoleManagement',
     component: () => import('@/views/system/RoleManagement.vue'),
     title: '角色权限管理',
-    permission: 'user:read',
+    permission: 'role:read',
     menu: {
       group: 'system', title: '角色权限', icon: Lock, order: 20,
-      permission: 'user:read',
+      permission: 'role:read',
     },
   },
   {
@@ -836,10 +860,10 @@ export const NAV_ENTRIES = [
     name: 'DictManagement',
     component: () => import('@/views/system/DictManagement.vue'),
     title: '基础字典',
-    permission: 'user:read',
+    permission: 'dict:read',
     menu: {
       group: 'system', title: '基础字典', icon: Notebook, order: 30,
-      permission: 'user:read',
+      permission: 'dict:read',
     },
   },
   {
@@ -861,7 +885,7 @@ export const NAV_ENTRIES = [
     permission: 'external_binding:read',
     menu: {
       group: 'system', title: '外部账号绑定', icon: Connection, order: 50,
-      permission: 'external_binding:write',
+      permission: 'external_binding:read',
     },
   },
   {

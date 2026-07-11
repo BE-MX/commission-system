@@ -361,7 +361,7 @@
       </router-link>
 
       <!-- 角色权限 -->
-      <router-link v-if="authStore.hasAnyPermission(['user:read'])" to="/system/roles" class="action-card">
+      <router-link v-if="authStore.hasAnyPermission(['role:read'])" to="/system/roles" class="action-card">
         <div class="action-icon-wrapper action-bg-gold">
           <el-icon><Lock /></el-icon>
         </div>

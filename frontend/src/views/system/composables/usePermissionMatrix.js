@@ -17,7 +17,8 @@ import { ROLE_TEMPLATES } from '@/config/roleTemplates'
 
 /** 前缀 → 中文行名（矩阵行头） */
 export const PREFIX_LABELS = {
-  employee: '人员管理',
+  employee: '员工属性',
+  supervisor: '主管关系',
   customer: '客户管理',
   commission: '提成管理',
   payment: '回款管理',
@@ -27,27 +28,33 @@ export const PREFIX_LABELS = {
   tracking: '物流跟踪',
   stock: '备货管理',
   production: '生产管理',
-  expo: '展会营销',
-  insight: '方舟洞见',
+  expo: '展会试戴素材',
+  expo_lead: '展会线索台',
+  insight: '行业情报',
+  insight_case: '业务员案例库',
+  insight_minutes: '周会纪要',
   asset: '素材管理',
   color: '色彩管理',
   design: '设计预约',
   user: '用户管理',
-  role: '角色管理',
+  role: '角色权限',
+  dict: '基础字典',
   ai: 'AI 接入',
   report: '报表中心',
   governance: '数据治理',
   external_binding: '外部账号绑定',
   whatsapp: 'WhatsApp 同步',
   dingtalk: '钉钉集成',
+  mcp: 'MCP 网关',
+  aftersales: '售后管理',
 }
 
 /** 矩阵行分组（视觉分组条，按导航语义排序） */
 const ROW_GROUPS = [
-  { label: '经营 · 提成与客户', prefixes: ['commission', 'payment', 'customer', 'customer_opportunity', 'customer_radar', 'employee'] },
-  { label: '单据 · 订单与物流', prefixes: ['invoice', 'tracking', 'stock', 'production'] },
-  { label: '营销 · 展会与洞见', prefixes: ['expo', 'insight', 'asset', 'color', 'design'] },
-  { label: '系统', prefixes: ['user', 'role', 'ai', 'report', 'governance', 'external_binding', 'whatsapp', 'dingtalk'] },
+  { label: '经营 · 提成与客户', prefixes: ['commission', 'payment', 'customer', 'customer_opportunity', 'customer_radar', 'employee', 'supervisor'] },
+  { label: '单据 · 订单与物流', prefixes: ['invoice', 'aftersales', 'tracking', 'stock', 'production'] },
+  { label: '营销 · 展会与洞见', prefixes: ['expo', 'expo_lead', 'insight', 'insight_case', 'insight_minutes', 'asset', 'color', 'design'] },
+  { label: '系统', prefixes: ['user', 'role', 'dict', 'ai', 'report', 'governance', 'external_binding', 'whatsapp', 'dingtalk', 'mcp'] },
 ]
 
 export const MATRIX_COLUMNS = [

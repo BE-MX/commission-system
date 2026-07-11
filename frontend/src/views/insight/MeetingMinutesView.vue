@@ -125,6 +125,7 @@
                   <li v-for="t in tasks" :key="t.id" class="task-item" :class="`status-${t.status}`">
                     <el-checkbox
                       :model-value="t.status === 'completed'"
+                      :disabled="!canWrite"
                       @change="(v) => onTaskCheck(t, v)"
                     />
                     <div class="task-body">
@@ -138,7 +139,7 @@
                       <div class="task-desc">{{ t.description }}</div>
                       <div v-if="t.source_quote" class="task-quote">原文: {{ t.source_quote }}</div>
                       <el-input
-                        v-if="t.status === 'completed'"
+                        v-if="t.status === 'completed' && canWrite"
                         :model-value="t.notes || ''"
                         size="small"
                         placeholder="可选: 添加完成备注"
@@ -198,7 +199,7 @@ import {
 import { useAuthStore } from '@/stores/auth'
 
 const authStore = useAuthStore()
-const canWrite = computed(() => authStore.hasAnyPermission(['insight:write', 'insight:admin']))
+const canWrite = computed(() => authStore.hasAnyPermission(['insight_minutes:write', 'insight:admin']))
 
 const minutes = ref([])
 const loading = ref(false)
