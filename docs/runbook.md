@@ -363,6 +363,8 @@ curl https://leshine.work/health
 
 `uploads/`（设计附件/头像/报告 HTML/expo 客户照片）与 `D:\WORKSOURCE`（素材中台全部文件）此前**零备份**——盘坏即全量丢失。备份脚本：`deploy\backup-uploads.bat`（robocopy /MIR 镜像到另一块盘）。
 
+客户售后证据和 SOP 原件位于 `D:\WORKSOURCE\aftersales`，已包含在上述 `D:\WORKSOURCE` 整体镜像范围内。恢复时先恢复数据库，再将备份中的 `WORKSOURCE\aftersales` 原路径回写，并抽查一张售后单的图片/视频下载。
+
 **服务器上一次性注册每晚计划任务（管理员 cmd）**：
 ```
 schtasks /create /tn ArkUploadsBackup /tr "D:\commission-system\deploy\backup-uploads.bat" /sc daily /st 02:30 /ru SYSTEM

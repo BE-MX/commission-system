@@ -513,3 +513,13 @@ frontend/src/
 - **页面不要自己 catch 弹错**：axios 拦截器已统一弹出 FastAPI 的 detail，页面 save() 再 catch `err.response.data.message`（undefined）会追加一条英文噪音 toast——OkkiSyncSettings 首版实case
 - okki_products / okki_inventory / user_basic 均为外部同步作业维护的**只读镜像**，OKKI 侧新建品/新账号有同步延迟，解析不到先等镜像
 - 手动覆盖 token 时表单里的过期时间是旧 token 残值不可信，服务端一律按"刚签发 8h"重算
+## 客户售后管理（aftersales）
+
+- 领域入口：`backend/app/aftersales/`，前端入口：`frontend/src/views/aftersales/`。业务库客户、订单和产品只读查询，售后库保存不可变快照。
+- SOP 先解析、确认问题映射与条款数量后才能启用；售后单固定引用分析当时的 SOP 版本与条款快照。
+- AI 统一走 `app.ai.service.chat` 的 `aftersales_solution_advice` preset，并按完整 JSON Schema 校验和纠错重试。客户回复必须生成英文版；涉及赔偿时必须包含“需最终审批”语义，最终审核通过后才开放复制。
+- AI 分析超过 15 分钟仍处于 `ai_analyzing` 会由每分钟任务恢复为 `ai_failed`，交还创建人重试；人工降级方案必须写明 SOP 条款或“无适用条款”。修改 AI 判责必须填写覆盖原因，服务端强制校验。
+- 证据不足不能直接提交，可申请直属主管豁免；删除证据会重新计算完整度并使既有豁免失效。
+- 无赔偿：直属主管终审；有赔偿：直属主管初审后销售总监终审。审批人提交时快照，管理员转交与 super_admin 代理审核都必须记录原因。
+- 通知采用 outbox，由每分钟任务补发 pending/failed 项，最多 3 次指数退避；缺少钉钉绑定不得回滚业务事务。
+- 重新打开已关闭/拒绝单据时，上一轮执行结果保存在 `reopened` 审计事件，本轮执行与客户反馈字段清空。

@@ -128,3 +128,12 @@
 - **MCP 网关（1 张表，051 迁移）**：
   - `ark_mcp_tokens`（053 更名，原 mcp_tokens）— 业务员个人 access token（token_hash sha256 UNIQUE 只存哈希, user_id FK ark_users.id CASCADE 归属, label 用途备注, is_active 停用即撤销, last_used_at, created_by）；`(user_id)` 索引。供入口无关的 MCP 工具鉴权→复用登录 claims 产出 current_user dict
 
+## 客户售后管理（迁移 057-059）
+
+- `ark_aftersales_cases`：售后主单、业务快照、证据判定、AI/措施、赔偿、审批快照、执行结果和乐观锁版本。
+- `ark_aftersales_evidence`：图片/视频证据元数据和受控存储路径，随主单级联删除。
+- `ark_aftersales_ai_runs`：每次 AI 输入摘要、结构化结果、模型信息、耗时和错误。
+- `ark_aftersales_reviews`：主管/总监审核轮次、决定、意见、代理原因和幂等键。
+- `ark_aftersales_events`：不可变审计事件；`case_id` 可空以记录 SOP 启用等模块级事件。
+- `ark_aftersales_sop_versions`：原始 SOP、解析条款、问题映射、版本状态及启用信息。
+- `ark_aftersales_notification_logs`：按业务事件与接收人幂等的钉钉 outbox、重试次数和下次重试时间；接收人未绑定钉钉时 ID 可空。

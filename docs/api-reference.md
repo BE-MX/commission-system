@@ -338,3 +338,11 @@
   - `track_shipment(waybill_no, refresh=false)` — 查状态与轨迹（需 `tracking:read`；**先 `apply_data_scope` 归属校验**，非本人且无 `read_all` 视为未跟踪，不泄露他人 PII；复用 `shipment_service.get_shipment_detail`，refresh 时先 `polling_service.refresh_single`）
   - `list_my_shipments(status?, keyword?, limit?)` — 列本人名下运单（需 `tracking:read`；复用 `shipment_service.list_shipments`，`apply_data_scope` 按 dingtalk_user_id 归属过滤）
 
+## 客户售后管理（`/api/aftersales`）
+
+- 查询：`GET /options`、`/cases`、`/cases/{id}`、`/cases/{id}/timeline`、`/customers/search`、`/orders/search`、`/products/search`、`/people/search`、`/analytics/summary`。
+- 登记与证据：`POST /cases`、`PUT|DELETE /cases/{id}`、`POST /cases/{id}/evidence`、`GET /evidence/{id}/download`、`DELETE /cases/{id}/evidence/{evidence_id}`。
+- AI 与决策：`POST /cases/{id}/analyze`、`POST /cases/{id}/decision`；AI 输出包含内部中文建议与可编辑的英文客户回复草稿。
+- 流程：`POST /cases/{id}/evidence-waiver/request|review`、`submit`、`review`、`transfer`、`withdraw`、`execute`、`close`、`reopen`。
+- 运维：`POST /notifications/{id}/retry`；`GET|POST /sop/versions`、`POST /sop/versions/{id}/activate`。
+- 权限：读接口使用 `aftersales:read`；写流程使用 `aftersales:write`；SOP、转交、重开和通知重试使用 `aftersales:admin`；`aftersales:read_all` 仅控制数据范围。
