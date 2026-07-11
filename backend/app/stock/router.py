@@ -21,7 +21,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
-from app.auth.dependencies import require_permission
+from app.auth.dependencies import require_any_permission, require_permission
 from app.core.response import ok as _ok
 from app.stock import service
 from app.stock.schemas import (
@@ -319,7 +319,8 @@ def push_daily_report_endpoint(
 @router.get("/production/cart")
 def get_cart(
     db: Session = Depends(get_db),
-    user: dict = Depends(require_permission("production:write")),
+    # 纯查询按用户隔离，read 档即可看自己的购物车（2026-07-12 修正读写错位）
+    user: dict = Depends(require_any_permission("production:read", "production:write")),
 ):
     """购物车列表"""
     user_id = _get_user_id(user)

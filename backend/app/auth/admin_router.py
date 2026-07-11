@@ -10,7 +10,7 @@ from sqlalchemy import or_, func
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import get_db
-from app.auth.dependencies import get_current_user, require_permission
+from app.auth.dependencies import get_current_user, require_any_permission, require_permission
 from app.auth.models import (
     ArkUser, ArkRole, ArkPermission,
     ArkUserRole, ArkRolePermission,
@@ -473,7 +473,8 @@ def ignore_candidate_endpoint(
 @router.get("/roles/list", summary="角色列表")
 def list_roles(
     db: Session = Depends(get_db),
-    _current_user: dict = Depends(require_permission("user:read")),
+    # 角色权限页用 role:read；用户管理页给用户分配角色时也需要角色下拉，故保留 user:read
+    _current_user: dict = Depends(require_any_permission("role:read", "user:read")),
 ) -> ResponseModel:
     roles = db.query(ArkRole).order_by(ArkRole.id).all()
 
@@ -525,7 +526,7 @@ def _write_permission_audit(db, role, operator: dict, old_ids: set, new_ids: set
 def create_role(
     req: RoleCreateRequest,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_permission("user:write")),
+    current_user: dict = Depends(require_permission("role:write")),
 ) -> ResponseModel:
     exists = db.query(ArkRole).filter(ArkRole.name == req.name).first()
     if exists:
@@ -554,7 +555,7 @@ def update_role(
     role_id: int,
     req: RoleUpdateRequest,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_permission("user:write")),
+    current_user: dict = Depends(require_permission("role:write")),
 ) -> ResponseModel:
     role = db.get(ArkRole, role_id)
     if not role:
@@ -588,7 +589,7 @@ def update_role(
 def delete_role(
     role_id: int,
     db: Session = Depends(get_db),
-    _current_user: dict = Depends(require_permission("user:write")),
+    _current_user: dict = Depends(require_permission("role:delete")),
 ) -> ResponseModel:
     role = db.get(ArkRole, role_id)
     if not role:
@@ -619,7 +620,8 @@ def delete_role(
 def list_permissions(
     include_legacy: int = 0,
     db: Session = Depends(get_db),
-    _current_user: dict = Depends(require_permission("user:read")),
+    # 角色权限矩阵用 role:read；用户管理页"有效权限预览"复用矩阵布局，保留 user:read
+    _current_user: dict = Depends(require_any_permission("role:read", "user:read")),
 ) -> ResponseModel:
     q = db.query(ArkPermission)
     if not include_legacy:
@@ -647,7 +649,7 @@ def list_permissions(
 def list_permission_audits(
     limit: int = 50,
     db: Session = Depends(get_db),
-    _current_user: dict = Depends(require_permission("user:read")),
+    _current_user: dict = Depends(require_permission("role:read")),
 ) -> ResponseModel:
     from app.auth.models import ArkPermissionAudit
 

@@ -38,11 +38,19 @@ def _has_any_perm(user: dict, codes: list[str]) -> bool:
     return any(c in perms for c in codes)
 
 
-# ── 权限依赖：统一委托 auth.dependencies 工厂（治理 B-6，行为不变：OR 语义 + super_admin 绕过）──
+# ── 权限依赖：统一委托 auth.dependencies 工厂（治理 B-6：OR 语义 + super_admin 绕过）──
+# 2026-07-12 起 insight:write 下架（职责拆入 insight_case:write / insight_minutes:write），
+# view 组不再包含它；061 迁移已给旧码持有者补授新码
 _require_insight_view = require_any_permission(
-    "insight:read", "insight:write", "insight:internal_read", "insight:admin")
+    "insight:read", "insight:internal_read", "insight:admin")
 _require_insight_internal = require_any_permission("insight:internal_read", "insight:admin")
 _require_insight_admin = require_permission("insight:admin")
+# 案例库 / 周会纪要独立子域（2026-07-12 功能单元拆分）
+_require_case_view = require_any_permission(
+    "insight_case:read", "insight_case:write", "insight:admin")
+_require_minutes_view = require_any_permission(
+    "insight_minutes:read", "insight_minutes:write", "insight:admin")
+_require_minutes_write = require_any_permission("insight_minutes:write", "insight:admin")
 
 
 def _verify_import_api_key(authorization: Optional[str] = Header(None)):

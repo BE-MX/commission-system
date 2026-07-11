@@ -38,7 +38,7 @@ def list_dict_items(
 def create_dict_item(
     data: DictItemCreate,
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_permission("user:write")),
+    _user: dict = Depends(require_permission("dict:write")),
 ):
     item = service.create_item(db, data)
     return _ok(DictItem.model_validate(item).model_dump(mode="json"), "创建成功")
@@ -49,7 +49,7 @@ def update_dict_item(
     item_id: int,
     data: DictItemUpdate,
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_permission("user:write")),
+    _user: dict = Depends(require_permission("dict:write")),
 ):
     item = service.update_item(db, item_id, data)
     return _ok(DictItem.model_validate(item).model_dump(mode="json"), "更新成功")
@@ -59,7 +59,7 @@ def update_dict_item(
 def delete_dict_item(
     item_id: int,
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_permission("user:write")),
+    _user: dict = Depends(require_permission("dict:write")),
 ):
     service.delete_item(db, item_id)
     return _ok(None, "删除成功")

@@ -198,7 +198,8 @@ def add_feedback(
     customer_id: int,
     body: FeedbackCreate,
     db: Session = Depends(get_db),
-    current_user=Depends(require_permission("expo:write")),
+    # 2026-07-12 线索台拆分：反馈在线索台（顾问设备）录入，走 expo_lead:write
+    current_user=Depends(require_permission("expo_lead:write")),
 ):
     try:
         feedback = service.add_feedback(db, customer_id, body, _user_id(current_user) or 0)
@@ -232,7 +233,7 @@ p{{color:#8d8371;font-size:13px;line-height:1.9}}.nm{{color:#f7e3b0;font-size:15
 <p>戴上那一刻，状态就回来了<br/>久戴如新 · SGS 安全认证</p></body></html>""")
 
 
-# ---------------- 线索台（PC，expo:read） ----------------
+# ---------------- 线索台（PC，expo_lead:*，2026-07-12 从 expo:read 拆出） ----------------
 
 @router.get("/leads", summary="展会线索列表")
 def list_leads(
@@ -242,7 +243,7 @@ def list_leads(
     intent_level: str | None = Query(None, pattern="^[ABCD]$"),
     keyword: str | None = Query(None),
     db: Session = Depends(get_db),
-    _user=Depends(require_permission("expo:read")),
+    _user=Depends(require_any_permission("expo_lead:read", "expo_lead:write")),
 ):
     items, total = service.list_leads(
         db, page=page, page_size=page_size,
@@ -255,7 +256,7 @@ def list_leads(
 def lead_detail(
     customer_id: int,
     db: Session = Depends(get_db),
-    _user=Depends(require_permission("expo:read")),
+    _user=Depends(require_any_permission("expo_lead:read", "expo_lead:write")),
 ):
     detail = service.get_lead_detail(db, customer_id)
     if not detail:

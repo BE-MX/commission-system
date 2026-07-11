@@ -264,7 +264,7 @@ def batch_bind_route(
 def get_user_bindings(
     user_id: int,
     db: Session = Depends(get_db),
-    _user=Depends(require_permission("user:write")),
+    _user=Depends(require_permission("user:read")),
 ):
     bindings = binding_service.get_user_bindings(db, user_id)
     return {"user_id": user_id, "bindings": bindings}

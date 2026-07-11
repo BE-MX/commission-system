@@ -401,7 +401,8 @@ def batch_generate_swatch(
 def verify_swatch(
     task_id: int,
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_permission("color:read")),
+    # 触发校验会更新任务记录，属写操作（2026-07-12 修正读写错位）
+    _user: dict = Depends(require_permission("color:write")),
 ):
     """手动触发色差校验"""
     result = swatch_service.verify_swatch_task(db, task_id)

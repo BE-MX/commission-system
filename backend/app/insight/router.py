@@ -45,6 +45,9 @@ from app.insight.dependencies import (
     _has_any_perm,
     _require_insight_view,
     _require_insight_admin,
+    _require_case_view,
+    _require_minutes_view,
+    _require_minutes_write,
     _require_opportunity_read,
     _require_opportunity_write,
     _require_opportunity_manage,
@@ -544,8 +547,8 @@ async def upload_case(
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    if not _has_any_perm(user, ["insight:write", "insight:admin"]):
-        raise HTTPException(status_code=403, detail="权限不足:需要 insight:write")
+    if not _has_any_perm(user, ["insight_case:write", "insight:admin"]):
+        raise HTTPException(status_code=403, detail="权限不足:需要 insight_case:write")
 
     user_id = int(user.get("sub"))
     user_name = user.get("username", "")
@@ -587,8 +590,8 @@ def manual_create_case(
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    if not _has_any_perm(user, ["insight:write", "insight:admin"]):
-        raise HTTPException(status_code=403, detail="权限不足:需要 insight:write")
+    if not _has_any_perm(user, ["insight_case:write", "insight:admin"]):
+        raise HTTPException(status_code=403, detail="权限不足:需要 insight_case:write")
     user_id = int(user.get("sub"))
     case = service.manual_create_case(db, user_id=user_id, user_name=user.get("username", ""), data=data)
     return _ok(_serialize_case(case, user_id), "发布成功")
@@ -598,7 +601,7 @@ def manual_create_case(
 def get_case_status(
     case_id: int,
     db: Session = Depends(get_db),
-    user: dict = Depends(_require_insight_view),
+    user: dict = Depends(_require_case_view),
 ):
     return _ok(service.get_case_status(db, case_id))
 
@@ -610,8 +613,8 @@ def publish_case(
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    if not _has_any_perm(user, ["insight:write", "insight:admin"]):
-        raise HTTPException(status_code=403, detail="权限不足:需要 insight:write")
+    if not _has_any_perm(user, ["insight_case:write", "insight:admin"]):
+        raise HTTPException(status_code=403, detail="权限不足:需要 insight_case:write")
     user_id = int(user.get("sub"))
     case = service.publish_case(db, case_id, user_id, data)
     return _ok(_serialize_case(case, user_id), "已发布")
@@ -624,8 +627,8 @@ def update_case(
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    if not _has_any_perm(user, ["insight:write", "insight:admin"]):
-        raise HTTPException(status_code=403, detail="权限不足:需要 insight:write")
+    if not _has_any_perm(user, ["insight_case:write", "insight:admin"]):
+        raise HTTPException(status_code=403, detail="权限不足:需要 insight_case:write")
     user_id = int(user.get("sub"))
     is_admin = _has_perm(user, "insight:admin")
     case = service.update_case(db, case_id, user_id, is_admin, data)
@@ -645,7 +648,7 @@ def list_cases(
     page: int = Query(1, ge=1),
     page_size: int = Query(30, ge=1, le=100),
     db: Session = Depends(get_db),
-    user: dict = Depends(_require_insight_view),
+    user: dict = Depends(_require_case_view),
 ):
     user_id = int(user.get("sub")) if user.get("sub") else None
     result = service.list_cases(
@@ -669,7 +672,7 @@ def list_cases(
 def get_case_detail(
     case_id: int,
     db: Session = Depends(get_db),
-    user: dict = Depends(_require_insight_view),
+    user: dict = Depends(_require_case_view),
 ):
     user_id = int(user.get("sub")) if user.get("sub") else None
     case = service.get_case_detail(db, case_id, user_id)
@@ -682,8 +685,8 @@ def delete_case(
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    if not _has_any_perm(user, ["insight:write", "insight:admin"]):
-        raise HTTPException(status_code=403, detail="权限不足:需要 insight:write")
+    if not _has_any_perm(user, ["insight_case:write", "insight:admin"]):
+        raise HTTPException(status_code=403, detail="权限不足:需要 insight_case:write")
     user_id = int(user.get("sub"))
     is_admin = _has_perm(user, "insight:admin")
     service.delete_case(db, case_id, user_id, is_admin=is_admin)
@@ -695,7 +698,8 @@ def toggle_like(
     case_id: int,
     delta: int = Query(1),
     db: Session = Depends(get_db),
-    user: dict = Depends(_require_insight_view),
+    # 点赞是查看者的个人反应，凡可见案例库者均可点，有意不设 write 档
+    user: dict = Depends(_require_case_view),
 ):
     if delta not in (1, -1):
         raise HTTPException(status_code=400, detail="delta 必须为 1 或 -1")
@@ -762,8 +766,8 @@ def upload_minutes(
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
-    if not _has_any_perm(user, ["insight:write", "insight:admin"]):
-        raise HTTPException(status_code=403, detail="权限不足:需要 insight:write")
+    if not _has_any_perm(user, ["insight_minutes:write", "insight:admin"]):
+        raise HTTPException(status_code=403, detail="权限不足:需要 insight_minutes:write")
     user_id = int(user.get("sub"))
     m = service.upload_minutes(db, user_id, data)
     return _ok({"id": m.id, "status": m.status, "error_msg": m.error_msg}, "上传成功")
@@ -773,7 +777,7 @@ def upload_minutes(
 def get_minutes_status(
     minutes_id: int,
     db: Session = Depends(get_db),
-    user: dict = Depends(_require_insight_view),
+    user: dict = Depends(_require_minutes_view),
 ):
     return _ok(service.get_minutes_status(db, minutes_id))
 
@@ -785,7 +789,7 @@ def list_minutes(
     page: int = Query(1, ge=1),
     page_size: int = Query(30, ge=1, le=100),
     db: Session = Depends(get_db),
-    user: dict = Depends(_require_insight_view),
+    user: dict = Depends(_require_minutes_view),
 ):
     return _ok(service.list_minutes(db, start_date=start_date, end_date=end_date, page=page, page_size=page_size))
 
@@ -794,7 +798,7 @@ def list_minutes(
 def get_minutes_detail(
     minutes_id: int,
     db: Session = Depends(get_db),
-    user: dict = Depends(_require_insight_view),
+    user: dict = Depends(_require_minutes_view),
 ):
     return _ok(service.get_minutes_detail(db, minutes_id))
 
@@ -804,7 +808,8 @@ def update_task(
     task_id: int,
     data: TaskUpdate,
     db: Session = Depends(get_db),
-    user: dict = Depends(_require_insight_view),
+    # 改任务状态是写操作，read 档不可写（2026-07-12 修正读写错位）
+    user: dict = Depends(_require_minutes_write),
 ):
     user_id = int(user.get("sub"))
     t = service.update_task(db, task_id, user_id, data)
@@ -822,7 +827,7 @@ def update_task(
 def export_tasks(
     minutes_id: int,
     db: Session = Depends(get_db),
-    user: dict = Depends(_require_insight_view),
+    user: dict = Depends(_require_minutes_view),
 ):
     filename, csv_text = service.export_tasks_csv(db, minutes_id)
     # 加 BOM 让 Excel 直接识别 UTF-8
