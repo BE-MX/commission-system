@@ -30,7 +30,7 @@ def session_factory(engine):
 
 class TestSchedulerRegistration:
     async def test_start_scheduler_registers_jobs(self, monkeypatch):
-        """start_scheduler 应注册 9 个 job 且 id 命名约定一致"""
+        """start_scheduler 应注册全部固定 job 且 id 命名约定一致"""
         from app.core.config import get_settings
 
         # 强制开启 scheduler
@@ -56,6 +56,7 @@ class TestSchedulerRegistration:
                 "color_social_extract",
                 "color_sales_aggregate",
                 "whatsapp_auto_sync",
+                "aftersales_notification_retry",
             }
         finally:
             shutdown_scheduler(scheduler)

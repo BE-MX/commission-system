@@ -199,7 +199,8 @@ def test_build_prompt_scene_mode_size_follows_preset():
 
 # ---------------- 场景示意图探测（滑动选择器用，仅示意不参与合成） ----------------
 
-def test_scene_image_url_missing_returns_none():
+def test_scene_image_url_missing_returns_none(tmp_path, monkeypatch):
+    monkeypatch.setattr(ai_pipeline, "SCENE_IMAGE_DIR", tmp_path / "empty-scenes")
     assert ai_pipeline.scene_image_url("whitecollar") is None  # 未放图 → 前端退化占位卡
 
 

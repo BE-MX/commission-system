@@ -88,6 +88,10 @@ class Settings(BaseSettings):
     ASSET_SIGN_SECRET: str = "leshine-asset-secret"
     ASSET_UPLOAD_STAGING: str = "D:\\upload_staging"
 
+    # ── 客户售后管理 ─────────────────────────────────────────
+    AFTERSALES_STORAGE_ROOT: str = "D:\\WORKSOURCE\\aftersales"
+    AFTERSALES_DETAIL_BASE_URL: str = "https://leshine.work/aftersales/cases"
+
     # ── 色彩趋势 ─────────────────────────────────────────
     XPOZ_TARGET_ACCOUNTS: str = ""  # 逗号分隔的目标账号
 

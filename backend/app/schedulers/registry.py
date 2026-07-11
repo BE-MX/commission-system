@@ -24,6 +24,7 @@ JOB_TRACKING_POLL_ACTIVE = "tracking_poll_active"
 JOB_COLOR_SOCIAL_EXTRACT = "color_social_extract"
 JOB_COLOR_SALES_AGGREGATE = "color_sales_aggregate"
 JOB_WHATSAPP_AUTO_SYNC = "whatsapp_auto_sync"
+JOB_AFTERSALES_NOTIFICATION_RETRY = "aftersales_notification_retry"
 
 
 def _register_jobs(scheduler: AsyncIOScheduler) -> None:
@@ -36,6 +37,8 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
     from app.stock.scheduler import generate_stock_daily_report
     from app.color.social_extract_service import extract_social_colors, aggregate_sales_by_color
     from app.whatsapp.scheduler import sync_whatsapp_accounts_job
+    from app.aftersales.notification_service import process_due_notifications
+    from app.aftersales.ai_service import recover_stale_analyses
 
     settings = get_settings()
 
@@ -46,6 +49,12 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
     async def _poll_active_job():
         with SessionLocal() as db:
             await poll_active_shipments(db)
+
+    async def _aftersales_notification_retry_job():
+        with SessionLocal() as db:
+            recover_stale_analyses(db)
+            db.commit()
+            await process_due_notifications(db)
 
     scheduler.add_job(
         check_today_shoot_reminders,
@@ -66,6 +75,12 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
         _poll_active_job,
         trigger="interval", hours=3,
         id=JOB_TRACKING_POLL_ACTIVE, replace_existing=True,
+    )
+    scheduler.add_job(
+        _aftersales_notification_retry_job,
+        trigger="interval", minutes=1,
+        id=JOB_AFTERSALES_NOTIFICATION_RETRY, replace_existing=True,
+        max_instances=1, coalesce=True,
     )
     scheduler.add_job(
         generate_industry_daily,

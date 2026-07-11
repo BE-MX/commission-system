@@ -6,6 +6,7 @@ from decimal import Decimal
 
 from sqlalchemy import create_engine, event, text, BigInteger, Integer
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base
 from app.models.employee import EmployeeAttributeHistory, SupervisorRelationHistory
@@ -41,7 +42,14 @@ def _compile_mediumtext_sqlite(type_, compiler, **kw):
 @pytest.fixture
 def engine():
     """创建内存 SQLite 引擎，附加一个 schema 模拟跨库查询"""
-    eng = create_engine("sqlite:///:memory:", echo=False)
+    # StaticPool + check_same_thread=False 让 FastAPI TestClient 的工作线程
+    # 与测试线程共享同一个内存库连接；普通 service 测试行为不变。
+    eng = create_engine(
+        "sqlite:///:memory:",
+        echo=False,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
 
     # SQLite 不支持 schema，用 ATTACH 模拟业务库
     @event.listens_for(eng, "connect")

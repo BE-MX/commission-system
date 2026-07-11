@@ -27,7 +27,8 @@ class WorkNotifier:
 
         if not agent_id:
             logger.warning("DINGTALK_AGENT_ID 未配置，跳过工作通知")
-            return
+            print("[DINGTALK] DINGTALK_AGENT_ID 未配置，跳过工作通知", flush=True)
+            return False
 
         try:
             await client.post("topapi/message/corpconversation/asyncsend_v2", json_data={
@@ -42,8 +43,11 @@ class WorkNotifier:
                 },
             })
             logger.info("工作通知已发送给 %s", user_ids)
+            return True
         except DingTalkError as e:
             logger.error("工作通知发送失败: %s", e)
+            print(f"[DINGTALK] 工作通知发送失败: {e}", flush=True)
+            return False
 
     async def send_oa_notice(
         self,
@@ -61,7 +65,8 @@ class WorkNotifier:
 
         if not agent_id:
             logger.warning("DINGTALK_AGENT_ID 未配置，跳过工作通知")
-            return
+            print("[DINGTALK] DINGTALK_AGENT_ID 未配置，跳过工作通知", flush=True)
+            return False
 
         try:
             await client.post("topapi/message/corpconversation/asyncsend_v2", json_data={
@@ -81,8 +86,11 @@ class WorkNotifier:
                     },
                 },
             })
+            return True
         except DingTalkError as e:
             logger.error("OA 通知发送失败: %s", e)
+            print(f"[DINGTALK] OA 通知发送失败: {e}", flush=True)
+            return False
 
 
 _notifier: WorkNotifier | None = None

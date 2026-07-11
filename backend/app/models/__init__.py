@@ -11,6 +11,15 @@ from app.tracking.models import (
 )
 from app.tracking.models import Waybill
 from app.models.short_link import ArkShortLink
+from app.aftersales.models import (
+    AfterSalesCase,
+    AfterSalesEvidence,
+    AfterSalesAiRun,
+    AfterSalesReview,
+    AfterSalesEvent,
+    AfterSalesSopVersion,
+    AfterSalesNotificationLog,
+)
 
 __all__ = [
     # 提成系统自有表
@@ -35,4 +44,12 @@ __all__ = [
     "Waybill",
     # 短链接
     "ArkShortLink",
+    # 客户售后管理
+    "AfterSalesCase",
+    "AfterSalesEvidence",
+    "AfterSalesAiRun",
+    "AfterSalesReview",
+    "AfterSalesEvent",
+    "AfterSalesSopVersion",
+    "AfterSalesNotificationLog",
 ]

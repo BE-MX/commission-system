@@ -29,6 +29,7 @@ qrcode[pil]>=7.4
 cryptography>=42.0
 # 报表 Word 导出
 python-docx>=1.1
+pypdf>=5.0
 # MCP 网关(物流录单/查询对外 MCP 服务)
 # 注意:mcp/sse-starlette 取新 patch 会把 starlette 下限抬到 >=0.47，与 fastapi 0.115 的
 # starlette<0.47 硬冲突。`.*` 开放 patch 让全新解析(服务器)有自由度挑到冲突版本 →

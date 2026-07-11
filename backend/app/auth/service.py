@@ -248,6 +248,11 @@ def seed_role_permissions(db: Session):
         ("invoice:write",         "invoice", "write",         "创建/编辑订单发票"),
         ("invoice:sync",          "invoice", "sync",          "同步订单发票到小满"),
         ("invoice:admin",         "invoice", "admin",         "价格配置 / OKKI 同步配置 / 自定义产品管理"),
+        # 客户售后管理
+        ("aftersales:read",       "aftersales", "read",       "查看授权范围内售后单"),
+        ("aftersales:write",      "aftersales", "write",      "登记、分析、提交、审核和关闭售后单"),
+        ("aftersales:admin",      "aftersales", "admin",      "维护 SOP、重试通知和处理异常售后单"),
+        ("aftersales:read_all",   "aftersales", "read_all",   "查看全部售后单"),
         # 钉钉集成
         ("dingtalk:admin",        "dingtalk", "admin",        "手动发送钉钉消息 / 查看消息与回调日志"),
         # 展会 AI 试戴
