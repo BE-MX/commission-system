@@ -194,8 +194,9 @@ import {
 } from '@element-plus/icons-vue'
 import GlassButton from '@/components/GlassButton.vue'
 import {
-  listMinutes, getMinutesDetail, uploadMinutes, updateTask, exportTasksCsvUrl,
+  listMinutes, getMinutesDetail, uploadMinutes, updateTask, exportTasksCsv,
 } from '@/api/insight'
+import { downloadBlob } from '@/utils/download'
 import { useAuthStore } from '@/stores/auth'
 
 const authStore = useAuthStore()
@@ -316,9 +317,10 @@ function isOverdue(t) {
   return t.deadline < today
 }
 
-function exportTasks() {
+async function exportTasks() {
   if (!selectedId.value) return
-  window.open(exportTasksCsvUrl(selectedId.value), '_blank')
+  const res = await exportTasksCsv(selectedId.value)
+  downloadBlob(res)
 }
 
 onMounted(refreshList)

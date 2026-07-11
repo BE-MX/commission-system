@@ -411,7 +411,7 @@ export const NAV_ENTRIES = [
     name: 'TrackingDetail',
     component: () => import('@/views/tracking/TrackingDetail.vue'),
     title: '运单详情',
-    permission: 'tracking:read',
+    anyPermission: ['tracking:read', 'tracking:write'],
     hideInMenu: true,
   },
   {
@@ -713,10 +713,10 @@ export const NAV_ENTRIES = [
     name: 'InsightCaseLibrary',
     component: () => import('@/views/insight/CaseLibraryView.vue'),
     title: '业务员案例库',
-    anyPermission: ['insight_case:read', 'insight_case:write'],
+    anyPermission: ['insight_case:read', 'insight_case:write', 'insight:admin'],
     menu: {
       group: 'insight', title: '业务员案例库', icon: Notebook, order: 40,
-      anyPermission: ['insight_case:read', 'insight_case:write'],
+      anyPermission: ['insight_case:read', 'insight_case:write', 'insight:admin'],
     },
   },
   {
@@ -724,10 +724,10 @@ export const NAV_ENTRIES = [
     name: 'InsightMeetingMinutes',
     component: () => import('@/views/insight/MeetingMinutesView.vue'),
     title: '周会纪要',
-    anyPermission: ['insight_minutes:read', 'insight_minutes:write'],
+    anyPermission: ['insight_minutes:read', 'insight_minutes:write', 'insight:admin'],
     menu: {
       group: 'insight', title: '周会纪要', icon: Calendar, order: 50,
-      anyPermission: ['insight_minutes:read', 'insight_minutes:write'],
+      anyPermission: ['insight_minutes:read', 'insight_minutes:write', 'insight:admin'],
     },
   },
   {

@@ -180,8 +180,12 @@ export function updateTask(taskId, data) {
   return insightApi.patch(`/tasks/${taskId}`, data, { showLoading: false })
 }
 
-export function exportTasksCsvUrl(minutesId) {
-  return `/api/insight/minutes/${minutesId}/tasks/export`
+export function exportTasksCsv(minutesId) {
+  // 端点有 JWT 鉴权，必须走 axios blob（window.open 直链不带 header 会 403）
+  return insightApi.get(`/minutes/${minutesId}/tasks/export`, {
+    responseType: 'blob',
+    loadingText: '正在导出...',
+  })
 }
 
 // ── 工作台摘要 ──────────────────────────────────────────

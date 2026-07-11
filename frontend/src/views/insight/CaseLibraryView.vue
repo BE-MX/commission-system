@@ -25,14 +25,14 @@
         </el-button-group>
       </div>
       <div class="toolbar-right">
-        <GlassButton variant="primary" left-icon="Plus" @click="openAddDialog">添加案例</GlassButton>
+        <GlassButton v-any-permission="['insight_case:write', 'insight:admin']" variant="primary" left-icon="Plus" @click="openAddDialog">添加案例</GlassButton>
       </div>
     </div>
 
     <div v-loading="loading" class="cases-area">
       <el-empty v-if="!loading && cases.length === 0" description="暂无案例" :image-size="80">
         <p class="empty-tip">业务员可分享谈判技巧、客户开发、纠纷处理等成功经验</p>
-        <GlassButton variant="primary" left-icon="Plus" @click="openAddDialog">添加第一个案例</GlassButton>
+        <GlassButton v-any-permission="['insight_case:write', 'insight:admin']" variant="primary" left-icon="Plus" @click="openAddDialog">添加第一个案例</GlassButton>
       </el-empty>
 
       <!-- 卡片网格 -->

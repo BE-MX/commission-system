@@ -36,10 +36,15 @@ NEW_PERMS = [
     ("expo_lead:write", "expo", "write", "线索操作/销售反馈录入", "action"),
 ]
 
-# 旧捆绑码 → 自动补授的新码（保持存量角色可见/可操作范围完全不变）
+# 旧捆绑码 → 自动补授的新码（保持存量角色可见/可操作范围完全不变）。
+# user:write 补 role:delete：改造前删除角色端点即由 user:write 把守，按
+# "平滑迁移不收紧" 原则原样保留，事后人工收紧。
+# 注：全新空库上本迁移先于启动 seed 执行，此时无角色无授权，补授 SELECT
+# 空转属预期；insight:write 持有者的行业情报 API 访问依赖 insight:read
+# （旧导航本就要求），不在补授范围。
 GRANT_MAPPING = {
     "user:read": ["role:read", "dict:read"],
-    "user:write": ["role:write", "dict:write"],
+    "user:write": ["role:write", "dict:write", "role:delete"],
     "user:delete": ["role:delete"],
     "employee:read": ["supervisor:read"],
     "employee:write": ["supervisor:write"],

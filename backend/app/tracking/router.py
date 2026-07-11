@@ -67,7 +67,7 @@ def get_shipment_detail(
     db: Session = Depends(get_db),
     _user: dict = Depends(require_any_permission("tracking:read", "tracking:write")),
 ):
-    detail = shipment_service.get_shipment_detail(db, waybill_no)
+    detail = shipment_service.get_shipment_detail(db, waybill_no, current_user=_user)
     if detail is None:
         return {"code": 404, "message": f"运单 {waybill_no} 不存在", "data": None}
     return {"code": 200, "message": "ok", "data": detail}
@@ -107,7 +107,7 @@ def get_stats(
 @router.get("/submitters", summary="提交人列表（用于前端下拉筛选）")
 def list_submitters(
     db: Session = Depends(get_db),
-    _: dict = Depends(require_permission("tracking:read")),
+    _: dict = Depends(require_any_permission("tracking:read", "tracking:write")),
 ):
     return {"code": 200, "message": "ok", "data": shipment_service.list_submitters(db)}
 

@@ -250,7 +250,7 @@
       </router-link>
 
       <!-- 主管关系 -->
-      <router-link v-if="authStore.hasAnyPermission(['employee:read'])" to="/supervisor/relation" class="action-card">
+      <router-link v-if="authStore.hasAnyPermission(['supervisor:read', 'supervisor:write'])" to="/supervisor/relation" class="action-card">
         <div class="action-icon-wrapper action-bg-gold">
           <el-icon><Connection /></el-icon>
         </div>

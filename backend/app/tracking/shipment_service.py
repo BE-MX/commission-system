@@ -122,14 +122,21 @@ def list_shipments(
     }
 
 
-def get_shipment_detail(db: Session, waybill_no: str) -> Optional[dict]:
-    """返回运单详情 dict;运单不存在返回 None。"""
-    shipment = (
+def get_shipment_detail(db: Session, waybill_no: str, current_user: dict | None = None) -> Optional[dict]:
+    """返回运单详情 dict;运单不存在返回 None。
+
+    current_user 传入时套用与列表一致的数据范围（tracking:read 仅本人，
+    read_all/super_admin 全量）；不可见的运单按不存在处理，防止拿运单号
+    直查他人运单。MCP 调用方自带 scope 校验，传 None 保持原行为。
+    """
+    query = (
         db.query(ShipmentTracking)
         .filter(ShipmentTracking.waybill_no == waybill_no)
         .filter(ShipmentTracking.deleted_at.is_(None))
-        .first()
     )
+    if current_user is not None:
+        query = apply_data_scope(query, db, current_user)
+    shipment = query.first()
     if not shipment:
         return None
 

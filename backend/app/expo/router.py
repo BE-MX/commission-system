@@ -140,7 +140,7 @@ def list_hair_colors(
 @router.get("/scenes", summary="可选场景列表（mode=scene 场景大片 / mode=tryon 试戴生成场景）")
 def list_scenes(
     mode: str = Query("scene", pattern="^(scene|tryon)$"),
-    _user=Depends(require_any_permission("expo:read", "expo:write")),
+    _user=Depends(require_any_permission("expo:read", "expo:write", "expo:admin")),
 ):
     source = ai_pipeline.TRYON_SCENES if mode == "tryon" else ai_pipeline.SCENES
     # tryon 甄选页用滑动图片选择器，附示意图 URL（无图返回 None，前端退化为占位卡）+ 分类
@@ -198,8 +198,9 @@ def add_feedback(
     customer_id: int,
     body: FeedbackCreate,
     db: Session = Depends(get_db),
-    # 2026-07-12 线索台拆分：反馈在线索台（顾问设备）录入，走 expo_lead:write
-    current_user=Depends(require_permission("expo_lead:write")),
+    # 调用方是 kiosk 销售面板（useTryOnFlow.submitSales，展位设备账号持 expo:write）；
+    # 线索台侧未来录入走 expo_lead:write——两码并存，收紧 expo_lead 不许砍 expo:write
+    current_user=Depends(require_any_permission("expo_lead:write", "expo:write")),
 ):
     try:
         feedback = service.add_feedback(db, customer_id, body, _user_id(current_user) or 0)
@@ -426,7 +427,7 @@ def upload_hair_color_swatch(
 def list_scripts(
     script_type: str | None = Query(None),
     db: Session = Depends(get_db),
-    _user=Depends(require_any_permission("expo:read", "expo:write")),
+    _user=Depends(require_any_permission("expo:read", "expo:write", "expo:admin")),
 ):
     scripts = script_service.list_scripts(db, script_type=script_type, only_active=False)
     return ok([
