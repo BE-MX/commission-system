@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Upl
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import get_db
-from app.auth.dependencies import require_permission
+from app.auth.dependencies import require_any_permission, require_permission
 from app.core.response import ok as _ok
 from app.asset import service
 from sqlalchemy import and_, desc, func
@@ -813,7 +813,8 @@ def batch_download_assets(
 @router.get("/favorites/folders")
 def get_favorite_folders(
     db: Session = Depends(get_db),
-    user: dict = Depends(require_permission("asset:read")),
+    # asset_favorites:read=我的收藏页面码（063 拆分），保留 asset:read 兼容（素材库收藏弹层也调本组端点）
+    user: dict = Depends(require_any_permission("asset_favorites:read", "asset:read")),
 ):
     """我的收藏夹列表（含素材数量）"""
     from sqlalchemy import func
@@ -846,7 +847,7 @@ def get_favorite_folders(
 def create_favorite_folder(
     req: FavoriteFolderCreate,
     db: Session = Depends(get_db),
-    user: dict = Depends(require_permission("asset:read")),
+    user: dict = Depends(require_any_permission("asset_favorites:read", "asset:read")),
 ):
     """创建收藏夹"""
     user_id = int(user.get("sub") or user.get("user_id") or 0)
@@ -859,7 +860,7 @@ def update_favorite_folder(
     folder_id: int,
     req: FavoriteFolderUpdate,
     db: Session = Depends(get_db),
-    user: dict = Depends(require_permission("asset:read")),
+    user: dict = Depends(require_any_permission("asset_favorites:read", "asset:read")),
 ):
     """更新收藏夹"""
     user_id = int(user.get("sub") or user.get("user_id") or 0)
@@ -876,7 +877,7 @@ def update_favorite_folder(
 def delete_favorite_folder(
     folder_id: int,
     db: Session = Depends(get_db),
-    user: dict = Depends(require_permission("asset:read")),
+    user: dict = Depends(require_any_permission("asset_favorites:read", "asset:read")),
 ):
     """删除收藏夹"""
     user_id = int(user.get("sub") or user.get("user_id") or 0)
@@ -892,7 +893,7 @@ def delete_favorite_folder(
 def get_favorite_items(
     folder_id: int,
     db: Session = Depends(get_db),
-    user: dict = Depends(require_permission("asset:read")),
+    user: dict = Depends(require_any_permission("asset_favorites:read", "asset:read")),
 ):
     """收藏夹内容"""
     user_id = int(user.get("sub") or user.get("user_id") or 0)
@@ -936,7 +937,7 @@ def remove_favorite_item(
     folder_id: int,
     item_id: int,
     db: Session = Depends(get_db),
-    user: dict = Depends(require_permission("asset:read")),
+    user: dict = Depends(require_any_permission("asset_favorites:read", "asset:read")),
 ):
     """移除收藏"""
     user_id = int(user.get("sub") or user.get("user_id") or 0)
@@ -953,7 +954,7 @@ def share_favorite_folder(
     folder_id: int,
     expires_hours: int = Query(168, ge=1, le=720),
     db: Session = Depends(get_db),
-    user: dict = Depends(require_permission("asset:read")),
+    user: dict = Depends(require_any_permission("asset_favorites:read", "asset:read")),
 ):
     """生成分享链接"""
     user_id = int(user.get("sub") or user.get("user_id") or 0)
@@ -974,7 +975,7 @@ def share_favorite_folder(
 def revoke_favorite_share(
     folder_id: int,
     db: Session = Depends(get_db),
-    user: dict = Depends(require_permission("asset:read")),
+    user: dict = Depends(require_any_permission("asset_favorites:read", "asset:read")),
 ):
     """取消分享"""
     user_id = int(user.get("sub") or user.get("user_id") or 0)
@@ -1017,7 +1018,8 @@ def get_shared_folder_by_token(
 @router.get("/stats/downloads")
 def get_download_statistics(
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_permission("asset:read")),
+    # asset_stats:read=下载统计页面码（063 拆分），保留 asset:read 兼容
+    _user: dict = Depends(require_any_permission("asset_stats:read", "asset:read")),
 ):
     """下载统计概览"""
     return _ok(service.get_download_stats(db))
@@ -1027,7 +1029,7 @@ def get_download_statistics(
 def get_top_downloaded_assets(
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_permission("asset:read")),
+    _user: dict = Depends(require_any_permission("asset_stats:read", "asset:read")),
 ):
     """热门素材 Top N"""
     return _ok(service.get_top_downloaded(db, limit=limit))
@@ -1037,7 +1039,7 @@ def get_top_downloaded_assets(
 def get_download_trend_data(
     days: int = Query(30, ge=7, le=90),
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_permission("asset:read")),
+    _user: dict = Depends(require_any_permission("asset_stats:read", "asset:read")),
 ):
     """下载趋势（按天）"""
     return _ok(service.get_download_trend(db, days=days))

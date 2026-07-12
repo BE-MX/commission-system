@@ -23,7 +23,8 @@ router = APIRouter()
 @router.get("/dashboard", summary="生产看板数据")
 def get_dashboard(
     db: Session = Depends(get_db),
-    _user=Depends(require_permission("production:read")),
+    # production_dashboard:read=生产看板页面码（063 拆分），保留 production:read 兼容
+    _user=Depends(require_any_permission("production_dashboard:read", "production:read")),
 ):
     return dashboard_service.get_dashboard_data(db)
 
@@ -115,7 +116,8 @@ def list_routes(
     name: str | None = Query(None),
     status: int | None = Query(None),
     db: Session = Depends(get_db),
-    _user=Depends(require_permission("production:read")),
+    # production_route:read=工序路线页面码（063 拆分），保留 production:read 兼容
+    _user=Depends(require_any_permission("production_route:read", "production:read")),
 ):
     items, total = route_service.list_routes(db, page=page, page_size=page_size, name=name, status=status)
     return {"total": total, "items": items}
@@ -177,7 +179,8 @@ def save_route_steps(
 def get_route_steps(
     route_id: int,
     db: Session = Depends(get_db),
-    _user=Depends(require_permission("production:read")),
+    # 工序路线页与产品管理页（绑定预览）共用（063 拆分），保留 production:read 兼容
+    _user=Depends(require_any_permission("production_route:read", "production_product:read", "production:read")),
 ):
     steps = route_service.get_route_steps(db, route_id)
     return {"route_id": route_id, "steps": steps}
@@ -197,7 +200,8 @@ def list_products(
     route_bound: str = Query("all"),
     show_disabled: bool = Query(False),
     db: Session = Depends(get_db),
-    _user=Depends(require_permission("production:read")),
+    # production_product:read=产品管理页面码（063 拆分），保留 production:read 兼容
+    _user=Depends(require_any_permission("production_product:read", "production:read")),
 ):
     items, total = binding_service.list_products(
         db, page=page, page_size=page_size, keyword=keyword,
@@ -210,7 +214,7 @@ def list_products(
 @router.get("/products/filter-options", summary="产品筛选项")
 def get_product_filter_options(
     db: Session = Depends(get_db),
-    _user=Depends(require_permission("production:read")),
+    _user=Depends(require_any_permission("production_product:read", "production:read")),
 ):
     return binding_service.get_product_filter_options(db)
 
@@ -386,7 +390,7 @@ def get_print_card(
 @router.get("/active-processes", summary="获取所有启用工序（选择器用）")
 def get_active_processes(
     db: Session = Depends(get_db),
-    _user=Depends(require_permission("production:read")),
+    _user=Depends(require_any_permission("production_route:read", "production:read")),
 ):
     procs = process_service.get_active_processes(db)
     return [
@@ -398,7 +402,7 @@ def get_active_processes(
 @router.get("/active-routes", summary="获取所有启用路线（选择器用）")
 def get_active_routes(
     db: Session = Depends(get_db),
-    _user=Depends(require_permission("production:read")),
+    _user=Depends(require_any_permission("production_product:read", "production:read")),
 ):
     routes = route_service.get_active_routes(db)
     return [

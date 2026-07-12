@@ -226,7 +226,8 @@ def get_filter_options(
 @router.get("/daily-report")
 def get_latest_daily_report(
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_permission("stock:read")),
+    # stock_daily:read=安全库存日报页面码（063 拆分），保留 stock:read 兼容
+    _user: dict = Depends(require_any_permission("stock_daily:read", "stock:read")),
 ):
     """最新一条库存日报"""
     rec = service.get_daily_report(db=db)
@@ -240,7 +241,8 @@ def get_latest_daily_report(
 def get_daily_report_by_date(
     report_date: date,
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_permission("stock:read")),
+    # stock_daily:read=安全库存日报页面码（063 拆分），保留 stock:read 兼容
+    _user: dict = Depends(require_any_permission("stock_daily:read", "stock:read")),
 ):
     """指定日期库存日报"""
     rec = service.get_daily_report(db=db, report_date_value=report_date)

@@ -26,6 +26,8 @@ from app.invoice.schemas import InvoiceCreate, InvoiceUpdate
 router = APIRouter()
 
 _READ_OR_WRITE = require_any_permission("invoice:read", "invoice:write")
+# 价格与产品配置页读端点（063 拆分）：页面码 + 旧读写码兼容（发票编辑器也调这批端点）
+_PRICE_PAGE_READ = require_any_permission("invoice_price:read", "invoice:read", "invoice:write")
 
 
 def _user_id(current_user) -> int | None:
@@ -41,7 +43,7 @@ def search_customers(
     keyword: str | None = Query(None),
     limit: int = Query(20, ge=1, le=50),
     db: Session = Depends(get_db),
-    _user=Depends(_READ_OR_WRITE),
+    _user=Depends(_PRICE_PAGE_READ),
 ):
     return ok({"items": product_service.search_customers(db, keyword=keyword, limit=limit)})
 
@@ -82,7 +84,7 @@ def get_entry_options(
 def list_custom_products(
     keyword: str | None = Query(None),
     db: Session = Depends(get_db),
-    _user=Depends(_READ_OR_WRITE),
+    _user=Depends(_PRICE_PAGE_READ),
 ):
     return ok({"items": product_service.list_custom_products(db, keyword=keyword)})
 
@@ -123,7 +125,7 @@ def resolve_price(
 def list_std_prices(
     series_grade: str | None = Query(None),
     db: Session = Depends(get_db),
-    _user=Depends(_READ_OR_WRITE),
+    _user=Depends(_PRICE_PAGE_READ),
 ):
     return ok({"items": price_service.list_std_prices(db, series_grade=series_grade)})
 
@@ -189,7 +191,7 @@ def import_price_workbook(
 @router.get("/price/color-types", summary="List color type mapping")
 def list_color_types(
     db: Session = Depends(get_db),
-    _user=Depends(_READ_OR_WRITE),
+    _user=Depends(_PRICE_PAGE_READ),
 ):
     return ok({"items": price_service.list_color_types(db)})
 
@@ -226,7 +228,7 @@ def delete_color_type(
 def list_customer_rules(
     keyword: str | None = Query(None),
     db: Session = Depends(get_db),
-    _user=Depends(_READ_OR_WRITE),
+    _user=Depends(_PRICE_PAGE_READ),
 ):
     return ok({"items": price_service.list_customer_rules(db, keyword=keyword)})
 
@@ -536,7 +538,8 @@ class RepairUnmatchedPayload(BaseModel):
 def receipt_repair_preview(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    _user=Depends(require_permission("invoice:admin")),
+    # invoice_repair:read=回款日期修复页面码（063 拆分）；预览是只读试算，apply 仍锁 invoice:admin
+    _user=Depends(require_any_permission("invoice_repair:read", "invoice:admin")),
 ):
     content = file.file.read()
     try:
@@ -569,7 +572,8 @@ def receipt_repair_apply(
 @router.post("/receipt-repair/export-unmatched", summary="Export unmatched rows as a workbook")
 def receipt_repair_export_unmatched(
     body: RepairUnmatchedPayload,
-    _user=Depends(require_permission("invoice:admin")),
+    # 只读导出（axios blob 带 JWT），与 preview 同档；apply 仍锁 invoice:admin
+    _user=Depends(require_any_permission("invoice_repair:read", "invoice:admin")),
 ):
     stream = receipt_repair_service.build_unmatched_workbook(body.unmatched)
     filename = quote("回款日期修复-无法匹配.xlsx")

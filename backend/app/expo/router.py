@@ -131,7 +131,8 @@ def generate(
 def list_hair_colors(
     only_active: int = Query(1, ge=0, le=1),
     db: Session = Depends(get_db),
-    _user=Depends(require_any_permission("expo:read", "expo:write", "expo:admin")),
+    # expo_hair_color:read=发色库页面码（063 拆分）；保留旧码兼容 kiosk 设备账号
+    _user=Depends(require_any_permission("expo_hair_color:read", "expo:read", "expo:write", "expo:admin")),
 ):
     rows = service.list_hair_colors(db, only_active=bool(only_active))
     return ok([service.serialize_hair_color(r) for r in rows])
@@ -140,7 +141,8 @@ def list_hair_colors(
 @router.get("/scenes", summary="可选场景列表（mode=scene 场景大片 / mode=tryon 试戴生成场景）")
 def list_scenes(
     mode: str = Query("scene", pattern="^(scene|tryon)$"),
-    _user=Depends(require_any_permission("expo:read", "expo:write", "expo:admin")),
+    # expo_scene:read=场景示意图页面码（063 拆分）；保留旧码兼容 kiosk 设备账号
+    _user=Depends(require_any_permission("expo_scene:read", "expo:read", "expo:write", "expo:admin")),
 ):
     source = ai_pipeline.TRYON_SCENES if mode == "tryon" else ai_pipeline.SCENES
     # tryon 甄选页用滑动图片选择器，附示意图 URL（无图返回 None，前端退化为占位卡）+ 分类
@@ -427,7 +429,8 @@ def upload_hair_color_swatch(
 def list_scripts(
     script_type: str | None = Query(None),
     db: Session = Depends(get_db),
-    _user=Depends(require_any_permission("expo:read", "expo:write", "expo:admin")),
+    # expo_script:read=话术卡库页面码（063 拆分）；保留旧码兼容线索台/历史调用
+    _user=Depends(require_any_permission("expo_script:read", "expo:read", "expo:write", "expo:admin")),
 ):
     scripts = script_service.list_scripts(db, script_type=script_type, only_active=False)
     return ok([

@@ -123,7 +123,8 @@ def list_requests(
     sort_field: str = Query("created_at"),
     sort_order: str = Query("desc"),
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_any_permission('design:read', 'design:write', 'design:audit', 'design:manage')),
+    _user: dict = Depends(require_any_permission('design:read', 'design:write', 'design:audit', 'design:manage',
+                           'design_gantt:read', 'design_my:read', 'design_stats:read')),
 ):
     """查询申请单列表"""
     query = db.query(DesignScheduleRequest).filter(
@@ -216,7 +217,8 @@ def list_requests(
 def get_request(
     request_id: int,
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_any_permission('design:read', 'design:write', 'design:audit', 'design:manage')),
+    _user: dict = Depends(require_any_permission('design:read', 'design:write', 'design:audit', 'design:manage',
+                           'design_gantt:read', 'design_my:read', 'design_stats:read')),
 ):
     """查询申请单详情"""
     req = db.query(DesignScheduleRequest).filter(
@@ -425,7 +427,8 @@ def get_gantt(
     end_date: date = Query(...),
     designer_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_any_permission('design:read', 'design:write', 'design:audit', 'design:manage')),
+    _user: dict = Depends(require_any_permission('design:read', 'design:write', 'design:audit', 'design:manage',
+                           'design_gantt:read', 'design_my:read', 'design_stats:read')),
 ):
     """获取甘特图数据"""
     return service.get_gantt_data(db, start_date, end_date, designer_id)
@@ -447,7 +450,8 @@ def list_tasks(
     sort_field: str = Query("created_at"),
     sort_order: str = Query("desc"),
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_any_permission('design:read', 'design:write', 'design:audit', 'design:manage')),
+    _user: dict = Depends(require_any_permission('design:read', 'design:write', 'design:audit', 'design:manage',
+                           'design_gantt:read', 'design_my:read', 'design_stats:read')),
 ):
     """查询任务列表"""
     from sqlalchemy.orm import joinedload
@@ -576,7 +580,8 @@ def list_unavailable_dates(
     start_date: Optional[date] = Query(None),
     end_date: Optional[date] = Query(None),
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_any_permission('design:read', 'design:write', 'design:audit', 'design:manage')),
+    _user: dict = Depends(require_any_permission('design:read', 'design:write', 'design:audit', 'design:manage',
+                           'design_gantt:read', 'design_my:read', 'design_stats:read')),
 ):
     """查询不可用日期"""
     query = db.query(DesignUnavailableDate)
@@ -632,7 +637,8 @@ def delete_unavailable_date(
 @router.get("/capacity")
 def get_capacity(
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_any_permission('design:read', 'design:write', 'design:audit', 'design:manage')),
+    _user: dict = Depends(require_any_permission('design:read', 'design:write', 'design:audit', 'design:manage',
+                           'design_gantt:read', 'design_my:read', 'design_stats:read')),
 ):
     """获取容量配置"""
     return {"code": 200, "message": "ok", "data": service.get_capacity(db)}
@@ -680,7 +686,8 @@ def conflict_check(
 @router.get("/scheduling-mode")
 def get_scheduling_mode(
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_any_permission('design:read', 'design:write', 'design:audit', 'design:manage')),
+    _user: dict = Depends(require_any_permission('design:read', 'design:write', 'design:audit', 'design:manage',
+                           'design_gantt:read', 'design_my:read', 'design_stats:read')),
 ):
     """获取当前排期模式"""
     return service.get_scheduling_mode_info(db)
@@ -703,7 +710,8 @@ def update_scheduling_mode(
 def get_audit_logs_by_request(
     request_id: int,
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_any_permission('design:read', 'design:write', 'design:audit', 'design:manage')),
+    _user: dict = Depends(require_any_permission('design:read', 'design:write', 'design:audit', 'design:manage',
+                           'design_gantt:read', 'design_my:read', 'design_stats:read')),
 ):
     """查询指定申请单的操作日志"""
     items = db.query(DesignAuditLog).filter(
@@ -739,7 +747,8 @@ def get_audit_logs_by_request(
 def list_designers(
     is_active: Optional[bool] = Query(None),
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_any_permission('design:read', 'design:write', 'design:audit', 'design:manage')),
+    _user: dict = Depends(require_any_permission('design:read', 'design:write', 'design:audit', 'design:manage',
+                           'design_gantt:read', 'design_my:read', 'design_stats:read')),
 ):
     """查询设计师列表"""
     query = db.query(DesignDesigner)
@@ -846,7 +855,8 @@ def get_stats(
     start_date: date = Query(...),
     end_date: date = Query(...),
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_any_permission('design:audit', 'design:manage')),
+    # design_stats:read=设计统计页面码（063 拆分），保留 audit/manage 兼容
+    _user: dict = Depends(require_any_permission('design_stats:read', 'design:audit', 'design:manage')),
 ):
     """获取设计模块统计"""
     return service.get_design_stats(db, start_date, end_date)
@@ -938,7 +948,8 @@ async def upload_attachment(
 def list_attachments(
     request_id: int,
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_any_permission('design:read', 'design:write', 'design:audit', 'design:manage')),
+    _user: dict = Depends(require_any_permission('design:read', 'design:write', 'design:audit', 'design:manage',
+                           'design_gantt:read', 'design_my:read', 'design_stats:read')),
 ):
     """获取指定预约单的附件列表"""
     attachments = db.query(DesignRequestAttachment).filter(
@@ -966,7 +977,8 @@ def list_attachments(
 def download_attachment(
     attachment_id: int,
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_any_permission('design:read', 'design:write', 'design:audit', 'design:manage')),
+    _user: dict = Depends(require_any_permission('design:read', 'design:write', 'design:audit', 'design:manage',
+                           'design_gantt:read', 'design_my:read', 'design_stats:read')),
 ):
     """下载附件"""
     attachment = db.query(DesignRequestAttachment).filter(

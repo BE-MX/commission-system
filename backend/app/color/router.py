@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
-from app.auth.dependencies import require_permission
+from app.auth.dependencies import require_any_permission, require_permission
 from app.core.response import ok as _ok
 from app.color import (
     blend_service,
@@ -58,7 +58,8 @@ def get_colors(
     sort_field: str = Query("color_family"),
     sort_order: str = Query("asc"),
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_permission("color:read")),
+    # 色板列表同时服务色板数据库页与混合色页的基础色下拉（063 拆分）
+    _user: dict = Depends(require_any_permission("color:read", "color_blend:read")),
 ):
     """色号列表（支持多维筛选）"""
     result = palette_service.list_palettes(
@@ -147,7 +148,8 @@ def get_blends(
     sort_field: str = Query("created_at"),
     sort_order: str = Query("desc"),
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_permission("color:read")),
+    # color_blend:read=混合色管理页面码（063 拆分），保留 color:read 兼容
+    _user: dict = Depends(require_any_permission("color_blend:read", "color:read")),
 ):
     """混合色列表"""
     result = blend_service.list_blends(
@@ -162,7 +164,7 @@ def get_blends(
 def get_blend_detail(
     blend_id: int,
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_permission("color:read")),
+    _user: dict = Depends(require_any_permission("color_blend:read", "color:read")),
 ):
     """混合色详情（含成分）"""
     result = blend_service.get_blend_detail(db, blend_id)
@@ -224,7 +226,7 @@ def delete_blend(
 @router.get("/blends/filter-options")
 def get_blend_filter_options(
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_permission("color:read")),
+    _user: dict = Depends(require_any_permission("color_blend:read", "color:read")),
 ):
     """混合色筛选维度"""
     return _ok(blend_service.get_blend_filter_options(db))
@@ -435,7 +437,8 @@ def get_swatches(
 @router.get("/color-trends/overview")
 def get_trend_overview(
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_permission("color:read")),
+    # color_trend:read=色彩趋势页面码（063 拆分），保留 color:read 兼容
+    _user: dict = Depends(require_any_permission("color_trend:read", "color:read")),
 ):
     """色彩趋势概览"""
     result = trend_service.get_trend_overview(db)
@@ -450,7 +453,7 @@ def get_trend_history(
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_permission("color:read")),
+    _user: dict = Depends(require_any_permission("color_trend:read", "color:read")),
 ):
     """历史趋势"""
     from datetime import date
@@ -465,7 +468,7 @@ def get_trend_prediction(
     horizon: int = Query(30, ge=7, le=90),
     top_n: int = Query(5, ge=1, le=10),
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_permission("color:read")),
+    _user: dict = Depends(require_any_permission("color_trend:read", "color:read")),
 ):
     """30天预测（当前为简单移动平均占位）"""
     result = trend_service.get_trend_prediction(db, horizon, top_n)
@@ -475,7 +478,7 @@ def get_trend_prediction(
 @router.get("/color-trends/social-colors")
 def get_social_colors(
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_permission("color:read")),
+    _user: dict = Depends(require_any_permission("color_trend:read", "color:read")),
 ):
     """社媒色彩快照"""
     result = trend_service.get_trend_overview(db)

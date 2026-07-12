@@ -40,9 +40,12 @@ def _has_any_perm(user: dict, codes: list[str]) -> bool:
 
 # ── 权限依赖：统一委托 auth.dependencies 工厂（治理 B-6：OR 语义 + super_admin 绕过）──
 # 2026-07-12 起 insight:write 下架（职责拆入 insight_case:write / insight_minutes:write），
-# view 组不再包含它；061 迁移已给旧码持有者补授新码
+# view 组不再包含它；061 迁移已给旧码持有者补授新码。
+# 同日 063 逐页拆分：采集库/日报/AI 工具速递页面码并入 view 组（报告端点三页共用）；
+# 内部经营报告仍由 router 内 INTERNAL_REPORT_TYPES 二次校验保护，页面码不放行。
 _require_insight_view = require_any_permission(
-    "insight:read", "insight:internal_read", "insight:admin")
+    "insight:read", "insight:internal_read", "insight:admin",
+    "insight_library:read", "insight_daily:read", "insight_ai_tools:read")
 _require_insight_internal = require_any_permission("insight:internal_read", "insight:admin")
 _require_insight_admin = require_permission("insight:admin")
 # 案例库 / 周会纪要独立子域（2026-07-12 功能单元拆分）

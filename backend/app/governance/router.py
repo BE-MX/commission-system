@@ -195,7 +195,8 @@ def api_list_change_logs(
     operator: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(30, ge=1, le=100),
-    _user: dict = Depends(require_any_permission("governance:read", "governance:write", "governance:admin")),
+    # governance_log:read=变更历史页面码（063 拆分），保留旧码兼容
+    _user: dict = Depends(require_any_permission("governance_log:read", "governance:read", "governance:write", "governance:admin")),
     db: Session = Depends(get_db),
 ):
     data = _list_change_logs(
@@ -208,7 +209,7 @@ def api_list_change_logs(
 @router.get("/change-logs/{log_id}/diff")
 def api_get_change_diff(
     log_id: int,
-    _user: dict = Depends(require_any_permission("governance:read", "governance:write", "governance:admin")),
+    _user: dict = Depends(require_any_permission("governance_log:read", "governance:read", "governance:write", "governance:admin")),
     db: Session = Depends(get_db),
 ):
     try:
@@ -236,7 +237,8 @@ def api_rollback(
 
 @router.get("/graph")
 def api_get_graph(
-    _user: dict = Depends(require_any_permission("governance:read", "governance:write", "governance:admin")),
+    # governance_graph:read=全景关系图页面码（063 拆分），保留旧码兼容
+    _user: dict = Depends(require_any_permission("governance_graph:read", "governance:read", "governance:write", "governance:admin")),
     db: Session = Depends(get_db),
 ):
     from app.governance.models import DataConcept, ConceptRelationship
