@@ -41,7 +41,10 @@ export const MENU_GROUPS = {
   invoice: {
     title: '订单管理',
     icon: Document,
-    anyPermission: ['invoice:read', 'invoice:write', 'invoice:sync'],
+    anyPermission: [
+      'invoice:read', 'invoice:write', 'invoice:sync',
+      'invoice_price:read', 'invoice_okki:read', 'invoice_repair:read',
+    ],
   },
   aftersales: {
     title: '售后管理',
@@ -51,7 +54,10 @@ export const MENU_GROUPS = {
   expo: {
     title: '展会营销',
     icon: MagicStick,
-    anyPermission: ['expo:read', 'expo:write', 'expo:admin', 'expo_lead:read', 'expo_lead:write'],
+    anyPermission: [
+      'expo:read', 'expo:write', 'expo:admin', 'expo_lead:read', 'expo_lead:write',
+      'expo_hair_color:read', 'expo_scene:read', 'expo_script:read',
+    ],
   },
   commission: {
     title: '提成管理',
@@ -69,23 +75,34 @@ export const MENU_GROUPS = {
   stock: {
     title: '备货管理',
     icon: Box,
-    anyPermission: ['stock:read', 'stock:write', 'stock:admin', 'production:read', 'production:write', 'production:print', 'production:admin'],
+    anyPermission: [
+      'stock:read', 'stock:write', 'stock:admin', 'stock_daily:read',
+      'production:read', 'production:write', 'production:print', 'production:admin',
+      'production_product:read', 'production_dashboard:read', 'production_route:read',
+    ],
   },
   asset: {
     title: '素材管理',
     icon: Picture,
-    anyPermission: ['asset:read', 'asset:write', 'asset:delete', 'asset:admin'],
+    anyPermission: [
+      'asset:read', 'asset:write', 'asset:delete', 'asset:admin',
+      'asset_favorites:read', 'asset_stats:read',
+    ],
   },
   color: {
     title: '色彩管理',
     icon: MagicStick,
-    anyPermission: ['color:read', 'color:write', 'color:admin'],
+    anyPermission: [
+      'color:read', 'color:write', 'color:admin',
+      'color_blend:read', 'color_trend:read',
+    ],
   },
   insight: {
     title: '方舟洞见',
     icon: Aim,
     anyPermission: [
       'insight:read', 'insight:internal_read', 'insight:admin',
+      'insight_library:read', 'insight_daily:read', 'insight_ai_tools:read',
       'insight_case:read', 'insight_case:write',
       'insight_minutes:read', 'insight_minutes:write',
       'customer_opportunity:read', 'customer_radar:read',
@@ -94,7 +111,10 @@ export const MENU_GROUPS = {
   design: {
     title: '设计预约',
     icon: Camera,
-    anyPermission: ['design:read', 'design:write', 'design:audit', 'design:manage'],
+    anyPermission: [
+      'design:read', 'design:write', 'design:audit', 'design:manage',
+      'design_gantt:read', 'design_my:read', 'design_stats:read',
+    ],
   },
   report: {
     title: '报表中心',
@@ -115,7 +135,10 @@ export const MENU_GROUPS = {
   governance: {
     title: '数据治理',
     icon: DataLine,
-    anyPermission: ['governance:read', 'governance:write', 'governance:admin'],
+    anyPermission: [
+      'governance:read', 'governance:write', 'governance:admin',
+      'governance_graph:read', 'governance_log:read',
+    ],
   },
 }
 
@@ -195,10 +218,10 @@ export const NAV_ENTRIES = [
     name: 'InvoicePriceConfig',
     component: () => import('@/views/invoice/InvoicePriceConfig.vue'),
     title: '价格与产品配置',
-    permission: 'invoice:admin',
+    permission: 'invoice_price:read',
     menu: {
       group: 'invoice', title: '价格与产品配置', icon: Document, order: 20,
-      permission: 'invoice:admin',
+      permission: 'invoice_price:read',
     },
   },
   {
@@ -206,10 +229,10 @@ export const NAV_ENTRIES = [
     name: 'OkkiSyncSettings',
     component: () => import('@/views/invoice/OkkiSyncSettings.vue'),
     title: 'OKKI 推单设置',
-    permission: 'invoice:admin',
+    permission: 'invoice_okki:read',
     menu: {
       group: 'invoice', title: 'OKKI 推单设置', icon: Document, order: 25,
-      permission: 'invoice:admin',
+      permission: 'invoice_okki:read',
     },
   },
   {
@@ -217,10 +240,10 @@ export const NAV_ENTRIES = [
     name: 'ReceiptDateRepair',
     component: () => import('@/views/invoice/ReceiptDateRepair.vue'),
     title: '回款日期修复',
-    permission: 'invoice:admin',
+    permission: 'invoice_repair:read',
     menu: {
       group: 'invoice', title: '回款日期修复', icon: Document, order: 30,
-      permission: 'invoice:admin',
+      permission: 'invoice_repair:read',
     },
   },
 
@@ -303,10 +326,10 @@ export const NAV_ENTRIES = [
     name: 'ExpoHairColorLibrary',
     component: () => import('@/views/expo/HairColorLibrary.vue'),
     title: '试戴发色库',
-    anyPermission: ['expo:read', 'expo:admin'],
+    permission: 'expo_hair_color:read',
     menu: {
       group: 'expo', title: '试戴发色库', icon: Brush, order: 15,
-      anyPermission: ['expo:read', 'expo:admin'],
+      permission: 'expo_hair_color:read',
     },
   },
   {
@@ -314,10 +337,10 @@ export const NAV_ENTRIES = [
     name: 'ExpoSceneImages',
     component: () => import('@/views/expo/SceneImages.vue'),
     title: '场景示意图',
-    anyPermission: ['expo:read', 'expo:admin'],
+    permission: 'expo_scene:read',
     menu: {
       group: 'expo', title: '场景示意图', icon: Camera, order: 17,
-      anyPermission: ['expo:read', 'expo:admin'],
+      permission: 'expo_scene:read',
     },
   },
   {
@@ -325,10 +348,10 @@ export const NAV_ENTRIES = [
     name: 'ExpoScriptLibrary',
     component: () => import('@/views/expo/ScriptLibrary.vue'),
     title: '话术卡库',
-    anyPermission: ['expo:read', 'expo:admin'],
+    permission: 'expo_script:read',
     menu: {
       group: 'expo', title: '话术卡库', icon: Reading, order: 20,
-      anyPermission: ['expo:read', 'expo:admin'],
+      permission: 'expo_script:read',
     },
   },
   {
@@ -465,10 +488,10 @@ export const NAV_ENTRIES = [
     name: 'StockDailyReport',
     component: () => import('@/views/stock/DailyReport.vue'),
     title: '安全库存日报',
-    permission: 'stock:read',
+    permission: 'stock_daily:read',
     menu: {
       group: 'stock', title: '安全库存日报', icon: Document, order: 30,
-      permission: 'stock:read',
+      permission: 'stock_daily:read',
     },
   },
   {
@@ -501,10 +524,10 @@ export const NAV_ENTRIES = [
     name: 'ProductManage',
     component: () => import('@/views/production/ProductManage.vue'),
     title: '产品管理',
-    permission: 'production:read',
+    permission: 'production_product:read',
     menu: {
       group: 'stock', title: '产品管理', icon: List, order: 35,
-      permission: 'production:read',
+      permission: 'production_product:read',
     },
   },
   {
@@ -523,10 +546,10 @@ export const NAV_ENTRIES = [
     name: 'ProcessRouteManage',
     component: () => import('@/views/production/ProcessRouteManage.vue'),
     title: '工序路线管理',
-    permission: 'production:admin',
+    permission: 'production_route:read',
     menu: {
       group: 'stock', title: '工序路线', icon: Stamp, order: 37,
-      permission: 'production:admin',
+      permission: 'production_route:read',
     },
   },
   {
@@ -534,10 +557,10 @@ export const NAV_ENTRIES = [
     name: 'ProductionDashboard',
     component: () => import('@/views/production/ProductionDashboard.vue'),
     title: '生产看板',
-    permission: 'production:read',
+    permission: 'production_dashboard:read',
     menu: {
       group: 'stock', title: '生产看板', icon: DataBoard, order: 38,
-      permission: 'production:read',
+      permission: 'production_dashboard:read',
     },
   },
   {
@@ -577,10 +600,10 @@ export const NAV_ENTRIES = [
     name: 'AssetFavorites',
     component: () => import('@/views/asset/AssetFavorites.vue'),
     title: '我的收藏',
-    permission: 'asset:read',
+    permission: 'asset_favorites:read',
     menu: {
       group: 'asset', title: '我的收藏', icon: Collection, order: 30,
-      permission: 'asset:read',
+      permission: 'asset_favorites:read',
     },
   },
   {
@@ -588,10 +611,10 @@ export const NAV_ENTRIES = [
     name: 'AssetStats',
     component: () => import('@/views/asset/AssetStats.vue'),
     title: '下载统计',
-    permission: 'asset:read',
+    permission: 'asset_stats:read',
     menu: {
       group: 'asset', title: '下载统计', icon: TrendCharts, order: 35,
-      permission: 'asset:read',
+      permission: 'asset_stats:read',
     },
   },
   {
@@ -623,10 +646,10 @@ export const NAV_ENTRIES = [
     name: 'ColorBlends',
     component: () => import('@/views/color/BlendView.vue'),
     title: '混合色管理',
-    permission: 'color:read',
+    permission: 'color_blend:read',
     menu: {
       group: 'color', title: '混合色管理', icon: CollectionTag, order: 20,
-      permission: 'color:read',
+      permission: 'color_blend:read',
     },
   },
   {
@@ -634,10 +657,10 @@ export const NAV_ENTRIES = [
     name: 'ColorTrends',
     component: () => import('@/views/color/TrendView.vue'),
     title: '色彩趋势看板',
-    permission: 'color:read',
+    permission: 'color_trend:read',
     menu: {
       group: 'color', title: '色彩趋势', icon: TrendCharts, order: 30,
-      permission: 'color:read',
+      permission: 'color_trend:read',
     },
   },
   {
@@ -669,10 +692,10 @@ export const NAV_ENTRIES = [
     name: 'InsightIntelligenceLibrary',
     component: () => import('@/views/insight/IntelligenceLibrary.vue'),
     title: '情报采集库',
-    permission: 'insight:read',
+    permission: 'insight_library:read',
     menu: {
       group: 'insight', title: '情报采集库', icon: Reading, order: 8,
-      permission: 'insight:read',
+      permission: 'insight_library:read',
     },
   },
   {
@@ -680,10 +703,10 @@ export const NAV_ENTRIES = [
     name: 'InsightIndustryDaily',
     component: () => import('@/views/insight/IndustryDailyView.vue'),
     title: '行业情报日报',
-    permission: 'insight:read',
+    permission: 'insight_daily:read',
     menu: {
       group: 'insight', title: '行业情报日报', icon: Reading, order: 10,
-      permission: 'insight:read',
+      permission: 'insight_daily:read',
     },
   },
   {
@@ -691,10 +714,10 @@ export const NAV_ENTRIES = [
     name: 'InsightAITools',
     component: () => import('@/views/insight/AIToolsView.vue'),
     title: 'AI 工具速递',
-    permission: 'insight:internal_read',
+    permission: 'insight_ai_tools:read',
     menu: {
       group: 'insight', title: 'AI 工具速递', icon: MagicStick, order: 20,
-      anyPermission: ['insight:internal_read', 'insight:admin'],
+      permission: 'insight_ai_tools:read',
     },
   },
   {
@@ -770,10 +793,10 @@ export const NAV_ENTRIES = [
     name: 'DesignGantt',
     component: () => import('@/views/design/GanttView.vue'),
     title: '排期甘特图',
-    anyPermission: ['design:read', 'design:write', 'design:audit', 'design:manage'],
+    permission: 'design_gantt:read',
     menu: {
       group: 'design', title: '排期甘特图', icon: Calendar, order: 10,
-      anyPermission: ['design:read', 'design:write', 'design:audit', 'design:manage'],
+      permission: 'design_gantt:read',
     },
   },
   {
@@ -792,10 +815,10 @@ export const NAV_ENTRIES = [
     name: 'MyRequests',
     component: () => import('@/views/design/MyRequests.vue'),
     title: '我的预约',
-    anyPermission: ['design:write', 'design:read'],
+    permission: 'design_my:read',
     menu: {
       group: 'design', title: '我的预约', icon: Document, order: 30,
-      anyPermission: ['design:write', 'design:read'],
+      permission: 'design_my:read',
     },
   },
   {
@@ -825,10 +848,10 @@ export const NAV_ENTRIES = [
     name: 'DesignStats',
     component: () => import('@/views/design/DesignStats.vue'),
     title: '设计统计',
-    anyPermission: ['design:manage', 'design:audit'],
+    permission: 'design_stats:read',
     menu: {
       group: 'design', title: '设计统计', icon: TrendCharts, order: 60,
-      anyPermission: ['design:manage', 'design:audit'],
+      permission: 'design_stats:read',
     },
   },
 
@@ -947,10 +970,10 @@ export const NAV_ENTRIES = [
     name: 'ConceptGraph',
     component: () => import('@/views/governance/ConceptGraph.vue'),
     title: '全景关系图',
-    permission: 'governance:read',
+    permission: 'governance_graph:read',
     menu: {
       group: 'governance', title: '全景关系图', icon: DataLine, order: 20,
-      permission: 'governance:read',
+      permission: 'governance_graph:read',
     },
   },
   {
@@ -958,10 +981,10 @@ export const NAV_ENTRIES = [
     name: 'ChangeLog',
     component: () => import('@/views/governance/ChangeLog.vue'),
     title: '变更历史',
-    anyPermission: ['governance:read', 'governance:write', 'governance:admin'],
+    permission: 'governance_log:read',
     menu: {
       group: 'governance', title: '变更历史', icon: Document, order: 30,
-      anyPermission: ['governance:read', 'governance:write', 'governance:admin'],
+      permission: 'governance_log:read',
     },
   },
 

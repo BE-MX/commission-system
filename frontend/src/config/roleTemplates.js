@@ -10,13 +10,13 @@ const SALESPERSON_CODES = [
   'customer:read',
   'tracking:read', 'tracking:write', 'tracking:daily_report',
   'invoice:read', 'invoice:write',
-  'insight:read',
+  'insight:read', 'insight_library:read', 'insight_daily:read',
   'insight_case:read', 'insight_case:write',
   'insight_minutes:read',
   'customer_opportunity:read', 'customer_opportunity:write',
   'customer_radar:read', 'customer_radar:write',
-  'asset:read',
-  'design:read', 'design:write',
+  'asset:read', 'asset_favorites:read', 'asset_stats:read',
+  'design:read', 'design:write', 'design_gantt:read', 'design_my:read',
   'expo:write', 'expo_lead:read', 'expo_lead:write',
 ]
 
@@ -26,12 +26,12 @@ const SUPERVISOR_CODES = [
   'customer:write',
   'supervisor:read',
   'tracking:read_all',
-  'design:audit',
-  'insight:internal_read',
+  'design:audit', 'design_stats:read',
+  'insight:internal_read', 'insight_ai_tools:read',
   'insight_minutes:write',
   'customer_opportunity:manage',
   'customer_radar:manage',
-  'expo:read',
+  'expo:read', 'expo_hair_color:read', 'expo_scene:read', 'expo_script:read',
 ]
 
 export const ROLE_TEMPLATES = [
@@ -39,11 +39,21 @@ export const ROLE_TEMPLATES = [
   { key: 'supervisor', label: '主管', codes: SUPERVISOR_CODES },
   {
     key: 'designer', label: '设计部',
-    codes: ['design:read', 'design:write', 'asset:read', 'asset:write', 'color:read', 'color:write', 'insight:read', 'insight_case:read', 'insight_minutes:read'],
+    codes: [
+      'design:read', 'design:write', 'design_gantt:read', 'design_my:read',
+      'asset:read', 'asset:write', 'asset_favorites:read', 'asset_stats:read',
+      'color:read', 'color:write', 'color_blend:read', 'color_trend:read',
+      'insight:read', 'insight_library:read', 'insight_daily:read',
+      'insight_case:read', 'insight_minutes:read',
+    ],
   },
   {
     key: 'workshop', label: '车间',
-    codes: ['production:read', 'production:write', 'production:print', 'stock:read'],
+    codes: [
+      'production:read', 'production:write', 'production:print',
+      'production_product:read', 'production_dashboard:read',
+      'stock:read', 'stock_daily:read',
+    ],
   },
   {
     key: 'finance', label: '财务',
