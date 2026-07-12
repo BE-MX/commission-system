@@ -46,7 +46,7 @@ export const MENU_GROUPS = {
   aftersales: {
     title: '售后管理',
     icon: Notebook,
-    anyPermission: ['aftersales:read', 'aftersales:write', 'aftersales:admin'],
+    anyPermission: ['aftersales:read', 'aftersales:write', 'aftersales:admin', 'aftersales_analytics:read'],
   },
   expo: {
     title: '展会营销',
@@ -279,10 +279,10 @@ export const NAV_ENTRIES = [
     name: 'AfterSalesAnalytics',
     component: () => import('@/views/aftersales/AfterSalesAnalytics.vue'),
     title: '售后分析',
-    permission: 'aftersales:read',
+    anyPermission: ['aftersales_analytics:read', 'aftersales:admin'],
     menu: {
       group: 'aftersales', title: '售后分析', icon: TrendCharts, order: 40,
-      permission: 'aftersales:read',
+      anyPermission: ['aftersales_analytics:read', 'aftersales:admin'],
     },
   },
 

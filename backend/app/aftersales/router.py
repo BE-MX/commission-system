@@ -931,7 +931,8 @@ def case_timeline(
 @router.get("/analytics/summary", summary="售后基础分析")
 def analytics_summary(
     db: Session = Depends(get_db),
-    payload=Depends(require_any_permission("aftersales:read", "aftersales:write", "aftersales:admin")),
+    # 2026-07-12 售后分析页独立码（062 迁移已给 aftersales:read 持有者补授）
+    payload=Depends(require_any_permission("aftersales_analytics:read", "aftersales:admin")),
 ):
     user = _ark_user(db, payload)
     base = db.query(AfterSalesCase).filter(AfterSalesCase.deleted_at.is_(None))

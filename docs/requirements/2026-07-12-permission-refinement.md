@@ -24,6 +24,7 @@
 | 业务员案例库 | insight:read/write | **insight_case:read/write**（新增） |
 | 周会纪要 | insight:read/write | **insight_minutes:read/write**（新增） |
 | 展会线索台 | expo:read | **expo_lead:read/write**（新增；kiosk 销售反馈端点兼容 expo:write——调用方是展位设备） |
+| 售后分析 | aftersales:read | **aftersales_analytics:read**（062 迁移补充；售后四页至此各自独立：单=read / 审=write / SOP=admin / 分析=analytics） |
 
 - `insight:write` 职责拆空 → legacy 下架（seed LEGACY_SEEDS + 061 置 is_legacy=1）
 - 生产看板**不拆**（用户确认无"只给看板"的岗位需求）

@@ -366,7 +366,8 @@ def test_analytics_covers_product_batch_grade_responsibility_and_cycle_time(db):
     second.responsibility_class = "D"
     db.commit()
 
-    with _client(db, user, ["aftersales:read", "aftersales:read_all"]) as client:
+    # 2026-07-12 售后分析页独立码：分析端点改为 aftersales_analytics:read 把守
+    with _client(db, user, ["aftersales_analytics:read", "aftersales:read_all"]) as client:
         response = client.get("/api/aftersales/analytics/summary")
 
     data = response.json()["data"]

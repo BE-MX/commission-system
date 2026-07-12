@@ -46,13 +46,14 @@ export const PREFIX_LABELS = {
   whatsapp: 'WhatsApp 同步',
   dingtalk: '钉钉集成',
   mcp: 'MCP 网关',
-  aftersales: '售后管理',
+  aftersales: '售后单据',
+  aftersales_analytics: '售后分析',
 }
 
 /** 矩阵行分组（视觉分组条，按导航语义排序） */
 const ROW_GROUPS = [
   { label: '经营 · 提成与客户', prefixes: ['commission', 'payment', 'customer', 'customer_opportunity', 'customer_radar', 'employee', 'supervisor'] },
-  { label: '单据 · 订单与物流', prefixes: ['invoice', 'aftersales', 'tracking', 'stock', 'production'] },
+  { label: '单据 · 订单与物流', prefixes: ['invoice', 'aftersales', 'aftersales_analytics', 'tracking', 'stock', 'production'] },
   { label: '营销 · 展会与洞见', prefixes: ['expo', 'expo_lead', 'insight', 'insight_case', 'insight_minutes', 'asset', 'color', 'design'] },
   { label: '系统', prefixes: ['user', 'role', 'dict', 'ai', 'report', 'governance', 'external_binding', 'whatsapp', 'dingtalk', 'mcp'] },
 ]
