@@ -450,7 +450,7 @@ def list_my_commission_batches(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_any_permission("commission:self_read", "commission:read", "commission:write")),
+    current_user: dict = Depends(require_any_permission("commission_my:read", "commission:self_read", "commission:read", "commission:write")),
 ) -> ResponseModel[PageResponse[SalesCommissionBatchListItem]]:
     """业务员只能看到确认中/已确认，且与自己相关的批次。"""
     _, user_ids = _current_business_context(db, current_user)
@@ -497,7 +497,7 @@ def list_my_commission_batches(
 def get_my_commission_batch_detail(
     batch_id: int = Path(..., description="批次ID"),
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_any_permission("commission:self_read", "commission:read", "commission:write")),
+    current_user: dict = Depends(require_any_permission("commission_my:read", "commission:self_read", "commission:read", "commission:write")),
 ) -> ResponseModel[SalesCommissionBatchDetail]:
     ark_user, user_ids = _current_business_context(db, current_user)
     batch = db.query(CommissionBatch).filter(CommissionBatch.id == batch_id).first()
@@ -531,7 +531,7 @@ def submit_my_commission_feedback(
     batch_id: int,
     req: SalesCommissionFeedbackRequest,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_any_permission("commission:self_read", "commission:read", "commission:write")),
+    current_user: dict = Depends(require_any_permission("commission_my:read", "commission:self_read", "commission:read", "commission:write")),
 ) -> ResponseModel[dict]:
     ark_user, user_ids = _current_business_context(db, current_user)
     batch = db.query(CommissionBatch).filter(CommissionBatch.id == batch_id).first()
@@ -566,7 +566,7 @@ def confirm_my_commission_batch(
     batch_id: int,
     req: SalesCommissionConfirmRequest,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_any_permission("commission:self_read", "commission:read", "commission:write")),
+    current_user: dict = Depends(require_any_permission("commission_my:read", "commission:self_read", "commission:read", "commission:write")),
 ) -> ResponseModel[dict]:
     ark_user, user_ids = _current_business_context(db, current_user)
     if req.confirmation_text != CONFIRMATION_TEXT:
@@ -602,7 +602,7 @@ def confirm_my_commission_batch(
 def export_my_commission_batch(
     batch_id: int,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(require_any_permission("commission:self_read", "commission:read", "commission:write")),
+    current_user: dict = Depends(require_any_permission("commission_my:read", "commission:self_read", "commission:read", "commission:write")),
 ) -> StreamingResponse:
     _, user_ids = _current_business_context(db, current_user)
     batch = db.query(CommissionBatch).filter(CommissionBatch.id == batch_id).first()

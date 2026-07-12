@@ -208,10 +208,11 @@ def seed_role_permissions(db: Session):
         # 客户管理
         ("customer:read",  "customer", "read",   "查看客户归属"),
         ("customer:write", "customer", "write",  "编辑客户归属"),
-        # 提成管理
+        # 提成管理（2026-07-12 我的提成页拆独立页面码 064；self_read 退回纯数据范围码）
         ("commission:read",      "commission", "read",       "查看提成批次"),
         ("commission:write",     "commission", "write",      "管理提成批次"),
-        ("commission:self_read", "commission", "self_read",  "查看本人提成"),
+        ("commission:self_read", "commission", "self_read",  "本人提成数据范围"),
+        ("commission_my:read",   "commission", "read",       "查看我的提成"),
         ("payment:read",         "commission", "read",       "查看回款记录"),
         ("payment:write",        "commission", "write",      "同步回款"),
         # 物流跟踪
