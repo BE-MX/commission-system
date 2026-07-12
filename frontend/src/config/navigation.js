@@ -63,7 +63,7 @@ export const MENU_GROUPS = {
     title: '提成管理',
     icon: Money,
     anyPermission: [
-      'commission:read', 'commission:write', 'commission:self_read',
+      'commission:read', 'commission:write', 'commission:self_read', 'commission_my:read',
       'payment:read', 'payment:write',
     ],
   },
@@ -383,10 +383,10 @@ export const NAV_ENTRIES = [
     name: 'SalesCommission',
     component: () => import('@/views/commission/SalesCommission.vue'),
     title: '我的提成',
-    anyPermission: ['commission:self_read', 'commission:read', 'commission:write'],
+    permission: 'commission_my:read',
     menu: {
       group: 'commission', title: '我的提成', icon: Money, order: 20,
-      anyPermission: ['commission:self_read', 'commission:read', 'commission:write'],
+      permission: 'commission_my:read',
     },
   },
   {
@@ -395,7 +395,7 @@ export const NAV_ENTRIES = [
     component: () => import('@/views/commission/SalesCommissionDetail.vue'),
     title: '我的提成明细',
     hideInMenu: true,
-    anyPermission: ['commission:self_read', 'commission:read', 'commission:write'],
+    permission: 'commission_my:read',
   },
   {
     path: '/commission/batch',

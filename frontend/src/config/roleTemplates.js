@@ -6,7 +6,7 @@
  */
 
 const SALESPERSON_CODES = [
-  'commission:self_read',
+  'commission:self_read', 'commission_my:read',
   'customer:read',
   'tracking:read', 'tracking:write', 'tracking:daily_report',
   'invoice:read', 'invoice:write',
@@ -58,7 +58,7 @@ export const ROLE_TEMPLATES = [
   {
     key: 'finance', label: '财务',
     codes: [
-      'commission:read', 'commission:write',
+      'commission:read', 'commission:write', 'commission_my:read',
       'payment:read', 'payment:write',
       'invoice:read', 'invoice:write', 'invoice:sync',
       'report:read',
