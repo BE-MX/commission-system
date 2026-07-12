@@ -20,7 +20,8 @@ export const PREFIX_LABELS = {
   employee: '员工属性',
   supervisor: '主管关系',
   customer: '客户管理',
-  commission: '提成管理',
+  commission: '提成批次',
+  commission_my: '我的提成',
   payment: '回款管理',
   customer_opportunity: '客户机会台',
   customer_radar: '客户经营雷达',
@@ -72,9 +73,44 @@ export const PREFIX_LABELS = {
   aftersales_analytics: '售后分析',
 }
 
+/**
+ * 页面码 → 父域前缀（矩阵树状缩进用）。
+ * 只登记"某域的子页面"，独立业务模块（customer_opportunity/payment/dict 等）不进此表。
+ * 新增页面码时同步维护，漏登记只影响缩进层级、不影响功能。
+ */
+export const PAGE_PARENTS = {
+  commission_my: 'commission',
+  aftersales_analytics: 'aftersales',
+  invoice_price: 'invoice',
+  invoice_okki: 'invoice',
+  invoice_repair: 'invoice',
+  expo_hair_color: 'expo',
+  expo_scene: 'expo',
+  expo_script: 'expo',
+  expo_lead: 'expo',
+  stock_daily: 'stock',
+  production_product: 'production',
+  production_dashboard: 'production',
+  production_route: 'production',
+  asset_favorites: 'asset',
+  asset_stats: 'asset',
+  color_blend: 'color',
+  color_trend: 'color',
+  insight_library: 'insight',
+  insight_daily: 'insight',
+  insight_ai_tools: 'insight',
+  insight_case: 'insight',
+  insight_minutes: 'insight',
+  governance_graph: 'governance',
+  governance_log: 'governance',
+  design_gantt: 'design',
+  design_my: 'design',
+  design_stats: 'design',
+}
+
 /** 矩阵行分组（视觉分组条，按导航语义排序） */
 const ROW_GROUPS = [
-  { label: '经营 · 提成与客户', prefixes: ['commission', 'payment', 'customer', 'customer_opportunity', 'customer_radar', 'employee', 'supervisor'] },
+  { label: '经营 · 提成与客户', prefixes: ['commission', 'commission_my', 'payment', 'customer', 'customer_opportunity', 'customer_radar', 'employee', 'supervisor'] },
   { label: '单据 · 订单与物流', prefixes: [
     'invoice', 'invoice_price', 'invoice_okki', 'invoice_repair',
     'aftersales', 'aftersales_analytics', 'tracking',
@@ -225,6 +261,7 @@ export function usePermissionMatrix({ readonly = false } = {}) {
 
   function rowState(row) { return triState(row.perms) }
   function rowSelectedCount(row) { return row.perms.filter(p => selectedIds.value.has(Number(p.id))).length }
+  function rowsState(rows) { return triState(rows.flatMap(r => r.perms)) }
   function colState(colKey) { return triState(flatRows.value.map(r => r.cells[colKey])) }
   const allState = computed(() => triState(allPerms.value))
 
@@ -255,6 +292,7 @@ export function usePermissionMatrix({ readonly = false } = {}) {
   }
 
   function toggleRow(row) { toggleGroup(row.perms) }
+  function toggleRows(rows) { toggleGroup(rows.flatMap(r => r.perms)) }
   function toggleCol(colKey) { toggleGroup(flatRows.value.map(r => r.cells[colKey])) }
   function toggleAll() { toggleGroup(allPerms.value) }
 
@@ -303,8 +341,8 @@ export function usePermissionMatrix({ readonly = false } = {}) {
     readonly, loading, allPerms, selectedIds, legacySelectedCount, searchText, templateKey,
     codeLabelMap, filteredGroups, allState,
     loadPermissions, initSelection,
-    isSelected, rowState, rowSelectedCount, colState,
-    toggleCell, toggleRow, toggleCol, toggleAll,
+    isSelected, rowState, rowSelectedCount, rowsState, colState,
+    toggleCell, toggleRow, toggleRows, toggleCol, toggleAll,
     activeTemplate, applyTemplate, isTemplateDiff,
     addedCodes, removedCodes, hasChanges, selectedCount, selectedCodesList, selectedIdList,
   })
