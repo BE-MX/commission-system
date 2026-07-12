@@ -155,10 +155,11 @@ def list_reports(
     user: dict = Depends(_require_insight_view),
 ):
     # 内部类型权限校验
+    can_internal = _has_any_perm(user, ["insight:internal_read", "insight:admin"])
     if report_type:
         types = {t.strip() for t in report_type.split(",") if t.strip()}
         internal = types & INTERNAL_REPORT_TYPES
-        if internal and not _has_any_perm(user, ["insight:internal_read", "insight:admin"]):
+        if internal and not can_internal:
             raise HTTPException(status_code=403, detail="无权查看内部经营报告")
     result = service.list_reports(
         db,
@@ -168,6 +169,8 @@ def list_reports(
         status=status,
         page=page,
         page_size=page_size,
+        # 无 internal 权限的裸查询（不带 type）不得枚举内部报告标题/元数据
+        exclude_types=None if (report_type or can_internal) else INTERNAL_REPORT_TYPES,
     )
     return _ok(result)
 

@@ -45,6 +45,7 @@
             <span class="head-hint">多笔订单按回款单号顺序分配日期，请对照 Excel金额 / 回款单金额 核验后再写入（两者因手续费本就不等）</span>
           </div>
           <el-button
+            v-permission="'invoice:admin'"
             type="primary"
             :disabled="!selected.length"
             @click="onApply"

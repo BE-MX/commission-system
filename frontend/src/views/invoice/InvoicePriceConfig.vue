@@ -15,11 +15,11 @@
             <el-select v-model="stdFilter" clearable filterable placeholder="按系列筛选" style="width: 320px" @change="loadStdPrices">
               <el-option v-for="s in stdSeriesOptions" :key="s" :label="s" :value="s" />
             </el-select>
-            <el-button type="primary" @click="openStdDialog()">
+            <el-button v-permission="'invoice:admin'" type="primary" @click="openStdDialog()">
               <el-icon><Plus /></el-icon>
               新增价格
             </el-button>
-            <el-upload :show-file-list="false" accept=".xlsx" :http-request="handleImport">
+            <el-upload v-permission="'invoice:admin'" :show-file-list="false" accept=".xlsx" :http-request="handleImport">
               <el-button>
                 <el-icon><Upload /></el-icon>
                 导入价格表 Excel
@@ -41,11 +41,11 @@
             <el-table-column prop="updated_at" label="更新时间" min-width="170" show-overflow-tooltip />
             <el-table-column label="操作" min-width="140" fixed="right">
               <template #default="{ row }">
-                <el-button link type="primary" @click="openStdDialog(row)">
+                <el-button v-permission="'invoice:admin'" link type="primary" @click="openStdDialog(row)">
                   <el-icon><Edit /></el-icon>
                   编辑
                 </el-button>
-                <el-button link type="danger" @click="removeStd(row)">
+                <el-button v-permission="'invoice:admin'" link type="danger" @click="removeStd(row)">
                   <el-icon><Delete /></el-icon>
                   删除
                 </el-button>
@@ -58,7 +58,7 @@
         <el-tab-pane label="色型映射" name="colors">
           <div class="tab-toolbar">
             <span class="hint">未登记的色号会按命名规则自动推断色型，推断不了则该行显示"无标准价"。</span>
-            <el-button type="primary" @click="colorDialog.visible = true">
+            <el-button v-permission="'invoice:admin'" type="primary" @click="colorDialog.visible = true">
               <el-icon><Plus /></el-icon>
               新增映射
             </el-button>
@@ -72,7 +72,7 @@
             </el-table-column>
             <el-table-column label="操作" min-width="100" fixed="right">
               <template #default="{ row }">
-                <el-button link type="danger" @click="removeColor(row)">
+                <el-button v-permission="'invoice:admin'" link type="danger" @click="removeColor(row)">
                   <el-icon><Delete /></el-icon>
                   删除
                 </el-button>
@@ -89,7 +89,7 @@
               <el-icon><Search /></el-icon>
               筛选
             </el-button>
-            <el-button type="primary" @click="openRuleDialog()">
+            <el-button v-permission="'invoice:admin'" type="primary" @click="openRuleDialog()">
               <el-icon><Plus /></el-icon>
               新增规则
             </el-button>
@@ -110,11 +110,11 @@
             <el-table-column prop="remark" label="备注" min-width="180" show-overflow-tooltip />
             <el-table-column label="操作" min-width="140" fixed="right">
               <template #default="{ row }">
-                <el-button link type="primary" @click="openRuleDialog(row)">
+                <el-button v-permission="'invoice:admin'" link type="primary" @click="openRuleDialog(row)">
                   <el-icon><Edit /></el-icon>
                   编辑
                 </el-button>
-                <el-button link type="danger" @click="removeRule(row)">
+                <el-button v-permission="'invoice:admin'" link type="danger" @click="removeRule(row)">
                   <el-icon><Delete /></el-icon>
                   删除
                 </el-button>
@@ -131,7 +131,7 @@
               <el-icon><Search /></el-icon>
               筛选
             </el-button>
-            <el-button @click="runReconcile">
+            <el-button v-permission="'invoice:admin'" @click="runReconcile">
               <el-icon><Refresh /></el-icon>
               与 OKKI 产品库对账回填
             </el-button>

@@ -60,8 +60,13 @@ def list_reports(
     status: Optional[str] = None,
     page: int = 1,
     page_size: int = 50,
+    exclude_types: Optional[set] = None,
 ) -> dict:
-    """报告列表查询 — 不返回 html_content 字段(性能)。"""
+    """报告列表查询 — 不返回 html_content 字段(性能)。
+
+    exclude_types: 调用方无 internal_read 权限时传 INTERNAL_REPORT_TYPES，
+    防止不带 report_type 的裸查询枚举内部经营报告的标题/元数据（063 审查低-1）。
+    """
     query = db.query(
         InsightReport.id,
         InsightReport.report_type,
@@ -84,6 +89,8 @@ def list_reports(
         query = query.filter(InsightReport.report_date <= end_date)
     if status:
         query = query.filter(InsightReport.status == status)
+    if exclude_types:
+        query = query.filter(InsightReport.report_type.notin_(list(exclude_types)))
 
     total = query.count()
     rows = (

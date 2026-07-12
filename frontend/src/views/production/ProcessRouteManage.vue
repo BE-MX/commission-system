@@ -5,7 +5,7 @@
       <div class="route-list-panel">
         <div class="panel-header">
           <span class="panel-title">工序路线</span>
-          <el-button type="primary" size="small" @click="openRouteForm()">
+          <el-button v-permission="'production:admin'" type="primary" size="small" @click="openRouteForm()">
             <el-icon><Plus /></el-icon> 新建
           </el-button>
         </div>
@@ -22,8 +22,8 @@
               <span>· {{ r.product_count }} 个产品</span>
             </div>
             <div class="route-item-actions">
-              <el-button link size="small" @click.stop="openRouteForm(r)">编辑</el-button>
-              <el-button link size="small" type="danger" @click.stop="deleteRoute(r)">删除</el-button>
+              <el-button v-permission="'production:admin'" link size="small" @click.stop="openRouteForm(r)">编辑</el-button>
+              <el-button v-permission="'production:admin'" link size="small" type="danger" @click.stop="deleteRoute(r)">删除</el-button>
             </div>
           </div>
           <el-empty v-if="!routeLoading && routes.length === 0" description="暂无路线" />
@@ -36,8 +36,8 @@
           <div class="panel-header">
             <span class="panel-title">{{ selectedRoute.name }}</span>
             <div>
-              <el-button size="small" @click="addStep">添加工序</el-button>
-              <el-button type="primary" size="small" :loading="savingSteps" @click="saveSteps">保存顺序</el-button>
+              <el-button v-permission="'production:admin'" size="small" @click="addStep">添加工序</el-button>
+              <el-button v-permission="'production:admin'" type="primary" size="small" :loading="savingSteps" @click="saveSteps">保存顺序</el-button>
             </div>
           </div>
           <div class="step-list">
@@ -47,7 +47,7 @@
                   <span class="drag-handle">≡</span>
                   <span class="step-order">{{ index + 1 }}</span>
                   <span class="step-name">{{ element.process_name }}</span>
-                  <el-button link type="danger" size="small" @click="removeStep(index)">×</el-button>
+                  <el-button v-permission="'production:admin'" link type="danger" size="small" @click="removeStep(index)">×</el-button>
                 </div>
               </template>
             </draggable>
