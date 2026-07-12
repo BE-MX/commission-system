@@ -98,6 +98,17 @@
 > `commission|customer|employee|supervisor|payment` 域权限（此前完全无鉴权）；tracking 详情/刷新/轮询/扫描补权限且详情套用数据范围；
 > `POST /api/shortlink` 要求登录。浏览器直链白名单（无 JWT，注释在端点处）：客户归属导入模板、
 > 报表打印/导出 docx、`/tracking/staging`（m2m 推送）。
+
+> **导航页逐页拆分（2026-07-12 第二批，062/063 迁移）**：左侧导航每个菜单页一个可独立
+> 分配的页面码（kind=page）。062：`aftersales_analytics:read`。063 新增 22 个：
+> `invoice_price|invoice_okki|invoice_repair`、`expo_hair_color|expo_scene|expo_script`、
+> `stock_daily`、`production_product|production_dashboard|production_route`、
+> `asset_favorites|asset_stats`、`color_blend|color_trend`、
+> `insight_library|insight_daily|insight_ai_tools`、`governance_graph|governance_log`、
+> `design_gantt|design_my|design_stats`（均为 `:read`）。各页查询端点 require_any_permission
+> **追加**页面码、旧域码全部保留（kiosk 与既有调用零影响）；063 迁移按旧导航可见性给
+> 持有旧码的角色补授。例外：OKKI 推单设置页 GET 返回凭据，仍锁 `invoice:admin`，
+> `invoice_okki:read` 只控菜单显隐。
   - `PUT /profile` — 修改个人资料（real_name, email, phone, avatar_url）
   - `POST /avatar` — 上传头像（图片文件，最大 2MB，自动删除旧头像）
   - `PUT /profile/password` — 修改密码
