@@ -220,11 +220,15 @@ def seed_role_permissions(db: Session):
         ("tracking:write",        "tracking", "write",        "编辑物流记录"),
         ("tracking:delete",       "tracking", "delete",       "删除运单"),
         ("tracking:daily_report", "tracking", "daily_report", "查看物流日报"),
-        # 设计预约
-        ("design:read",    "design", "read",     "查看设计预约"),
+        # 设计预约（2026-07-12 甘特图/我的预约/设计统计拆独立页面码；
+        # design:read 保留为数据读取码，提交预约=write、审批队列=audit、设计管理=manage 不变）
+        ("design:read",    "design", "read",     "查看设计预约数据"),
         ("design:write",   "design", "write",    "提交/编辑预约"),
         ("design:audit",   "design", "audit",    "审批设计预约"),
         ("design:manage",  "design", "manage",   "设计管理"),
+        ("design_gantt:read", "design", "read",  "查看排期甘特图"),
+        ("design_my:read",    "design", "read",  "查看我的预约"),
+        ("design_stats:read", "design", "read",  "查看设计统计"),
         # 账号体系（2026-07-03 起 user/role 统一挂 module=user，随 upsert 修复 DB 漂移）
         ("user:read",      "user", "read",     "查看用户/角色"),
         ("user:write",     "user", "write",    "创建/编辑用户"),
@@ -239,28 +243,40 @@ def seed_role_permissions(db: Session):
         # AI 接入
         ("ai:admin",       "ai",     "admin",    "AI 接入管理"),
         ("ai:invoke",      "ai",     "invoke",   "AI 调用权限"),
-        # 方舟洞见（2026-07-12 案例库/周会纪要拆分为独立子域，insight:read 只控行业情报三页）
-        ("insight:read",          "insight", "read",          "查看行业情报(速览/采集库/日报)"),
-        ("insight:internal_read", "insight", "internal_read", "查看内部经营报告 / AI 工具速递"),
+        # 方舟洞见（2026-07-12 案例库/周会纪要拆独立子域；同日情报三页+AI 工具速递逐页拆分，
+        # insight:read 保留给行业情报速览页，internal_read 保留给内部经营报告页）
+        ("insight:read",          "insight", "read",          "查看行业情报速览"),
+        ("insight:internal_read", "insight", "internal_read", "查看内部经营报告"),
         ("insight:admin",         "insight", "admin",         "信源管理 / 重新生成报告"),
+        ("insight_library:read",  "insight", "read",          "查看情报采集库"),
+        ("insight_daily:read",    "insight", "read",          "查看行业情报日报"),
+        ("insight_ai_tools:read", "insight", "read",          "查看 AI 工具速递"),
         ("insight_case:read",     "insight", "read",          "查看业务员案例库"),
         ("insight_case:write",    "insight", "write",         "上传/编辑案例"),
         ("insight_minutes:read",  "insight", "read",          "查看周会纪要"),
         ("insight_minutes:write", "insight", "write",         "上传/管理周会纪要"),
-        # 备货管理
-        ("stock:read",            "stock",   "read",          "查看销量备货一览 / 安全库存 / 日报"),
+        # 备货管理（2026-07-12 日报页拆独立码，stock:read 保留给销量备货一览）
+        ("stock:read",            "stock",   "read",          "查看销量备货一览"),
         ("stock:write",           "stock",   "write",         "设置安全库存 / AI 生成建议"),
         ("stock:admin",           "stock",   "admin",         "手动触发日报生成 / 调试推送"),
-        # 生产订单管理
+        ("stock_daily:read",      "stock",   "read",          "查看安全库存日报"),
+        # 生产订单管理（2026-07-12 产品管理/生产看板/工序路线拆独立页面码；
+        # production:read 保留给生产订单管理页+流转卡打印，production:admin 保留给工序管理页+操作）
         ("production:read",       "production", "read",       "查看生产订单"),
         ("production:write",      "production", "write",      "创建/编辑生产订单 / 入库录入"),
         ("production:print",      "production", "print",      "生产订单打印工作台"),
-        ("production:admin",      "production", "admin",      "删除生产订单 / 管理全部订单"),
-        # 订单发票管理
+        ("production:admin",      "production", "admin",      "工序管理页 / 删除生产订单 / 管理全部订单"),
+        ("production_product:read",   "production", "read",   "查看产品管理"),
+        ("production_dashboard:read", "production", "read",   "查看生产看板"),
+        ("production_route:read",     "production", "read",   "查看工序路线"),
+        # 订单发票管理（2026-07-12 三个 admin 配置页拆出独立页面码，invoice:admin 保留为操作码）
         ("invoice:read",          "invoice", "read",          "查看订单发票"),
         ("invoice:write",         "invoice", "write",         "创建/编辑订单发票"),
         ("invoice:sync",          "invoice", "sync",          "同步订单发票到小满"),
-        ("invoice:admin",         "invoice", "admin",         "价格配置 / OKKI 同步配置 / 自定义产品管理"),
+        ("invoice:admin",         "invoice", "admin",         "价格配置 / OKKI 同步配置 / 自定义产品管理(操作)"),
+        ("invoice_price:read",    "invoice", "read",          "查看价格与产品配置页"),
+        ("invoice_okki:read",     "invoice", "read",          "OKKI 推单设置页菜单（页面数据需 invoice:admin）"),
+        ("invoice_repair:read",   "invoice", "read",          "查看回款日期修复页"),
         # 客户售后管理（2026-07-12 售后分析拆为独立码，四页各自独立：单/审/SOP/分析）
         ("aftersales:read",       "aftersales", "read",       "查看授权范围内售后单"),
         ("aftersales:write",      "aftersales", "write",      "登记、分析、提交、审核和关闭售后单"),
@@ -269,29 +285,39 @@ def seed_role_permissions(db: Session):
         ("aftersales_analytics:read", "aftersales", "read",   "查看售后分析"),
         # 钉钉集成
         ("dingtalk:admin",        "dingtalk", "admin",        "手动发送钉钉消息 / 查看消息与回调日志"),
-        # 展会 AI 试戴（2026-07-12 线索台拆分为 expo_lead:*，expo:read 只控素材库页）
-        ("expo:read",             "expo",    "read",          "查看发型库 / 发色库 / 场景图 / 话术卡"),
+        # 展会 AI 试戴（2026-07-12 线索台拆 expo_lead:*；同日四个素材页逐页拆分，
+        # expo:read 保留给发型库页 + kiosk 素材数据读取，端点仍兼容旧码）
+        ("expo:read",             "expo",    "read",          "查看试戴发型库（含 kiosk 素材数据读取）"),
         ("expo:write",            "expo",    "write",         "展位试戴操作(kiosk 设备)"),
         ("expo:admin",            "expo",    "admin",         "发型库话术库维护 / 删除客户数据"),
+        ("expo_hair_color:read",  "expo",    "read",          "查看试戴发色库"),
+        ("expo_scene:read",       "expo",    "read",          "查看场景示意图"),
+        ("expo_script:read",      "expo",    "read",          "查看话术卡库"),
         ("expo_lead:read",        "expo",    "read",          "查看展会线索台"),
         ("expo_lead:write",       "expo",    "write",         "线索操作 / 销售反馈录入"),
-        # 素材管理
-        ("asset:read",            "asset",   "read",          "查看素材库 / 预览 / 下载 / 收藏"),
+        # 素材管理（2026-07-12 收藏/统计页拆独立码，asset:read 保留给素材库页+数据操作）
+        ("asset:read",            "asset",   "read",          "查看素材库（含预览/下载/收藏操作）"),
         ("asset:write",           "asset",   "write",         "上传素材 / 编辑标签 / 版本迭代"),
         ("asset:delete",          "asset",   "delete",        "删除素材"),
         ("asset:admin",           "asset",   "admin",         "标签维度管理 / 权限设置"),
-        # 色彩管理
-        ("color:read",            "color",   "read",          "查看色板数据库 / 色彩趋势"),
+        ("asset_favorites:read",  "asset",   "read",          "查看我的收藏"),
+        ("asset_stats:read",      "asset",   "read",          "查看下载统计"),
+        # 色彩管理（2026-07-12 混合色/趋势页拆独立码，color:read 保留给色板数据库页）
+        ("color:read",            "color",   "read",          "查看色板数据库"),
         ("color:write",           "color",   "write",         "编辑色号 / 混合色 / 生成色板图"),
         ("color:admin",           "color",   "admin",         "管理竞品监控 / 趋势数据源 / 色板图任务"),
+        ("color_blend:read",      "color",   "read",          "查看混合色管理"),
+        ("color_trend:read",      "color",   "read",          "查看色彩趋势看板"),
         # 报表中心（jimureport 集成）
         ("report:read",           "report",  "read",          "查看报表 / 数据大屏"),
         ("report:design",         "report",  "design",        "进入报表设计器 / 编辑报表"),
         ("report:admin",          "report",  "admin",         "管理报表元数据 / 数据源"),
-        # 数据概念治理
-        ("governance:read",       "governance", "read",       "查看概念定义 / 图谱 / 变更历史"),
+        # 数据概念治理（2026-07-12 图谱/变更历史页拆独立码，governance:read 保留给概念注册表+详情）
+        ("governance:read",       "governance", "read",       "查看概念注册表 / 概念详情"),
         ("governance:write",      "governance", "write",      "创建/编辑概念 / 提交审批 / 添加关联"),
         ("governance:admin",      "governance", "admin",      "审批/废弃/回滚/批量导入/删除关联"),
+        ("governance_graph:read", "governance", "read",       "查看全景关系图"),
+        ("governance_log:read",   "governance", "read",       "查看变更历史"),
         # 客户机会台
         ("customer_opportunity:read",   "customer_opportunity", "read",   "查看客户机会（本人）"),
         ("customer_opportunity:write",  "customer_opportunity", "write",  "更新机会状态/添加反馈"),
