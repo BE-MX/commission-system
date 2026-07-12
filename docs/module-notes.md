@@ -18,7 +18,7 @@
 |------|-----------|------|
 | 人员管理 | `employee:read` / `employee:write` | 查看/编辑员工属性 |
 | 客户管理 | `customer:read` / `customer:write` | 查看/编辑客户归属 |
-| 提成管理 | `commission:read` / `commission:write` / `commission:self_read` | 批次查看/管理/查看本人 |
+| 提成管理 | `commission:read` / `commission:write` / `commission:self_read` / `commission_my:read` | 批次查看/管理/本人数据范围/我的提成页（064 拆分） |
 | 提成管理 | `payment:read` / `payment:write` | 回款查看/同步 |
 | 物流跟踪 | `tracking:read` / `tracking:read_all` / `tracking:write` / `tracking:delete` / `tracking:daily_report` | 查看运单(仅本人)/查看全部/编辑/删除运单/查看日报 |
 | 设计预约 | `design:read` / `design:write` / `design:audit` / `design:manage` | 查看/提交/审批/管理 |

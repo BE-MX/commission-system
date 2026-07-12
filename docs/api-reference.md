@@ -23,7 +23,7 @@
     - `POST /batch/{id}/revoke-confirm` — 撤销确认（confirming→calculated）
     - `POST /batch/{id}/void` — 作废批次
     - `GET /batch/{id}/summary` — 批次汇总统计
-  - 业务员端（需 `commission:self_read`）：
+  - 业务员端（页面码 `commission_my:read`，064 起；旧三码 self_read/read/write 兼容保留，`self_read` 退为纯数据范围码）：
     - `GET /self/batch/list` — 我的提成批次（仅 confirming/confirmed 状态可见）
     - `GET /self/batch/{id}` — 我的批次详情
     - `POST /self/batch/{id}/feedback` — 提交问题反馈

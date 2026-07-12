@@ -92,3 +92,10 @@ expo:read  → +expo_lead:read            expo:write     → +expo_lead:write
 - 既有 bug 记录（未修）：GanttView 导出按钮用裸 fetch 直链 GET /api/design/export/tasks
   （端点要求 audit|manage），不带 JWT 应已 401；api/design.js 有带 JWT 的 exportTasksExcel()
   未被使用
+- 收尾（064 迁移）：「我的提成」补独立页面码 commission_my:read（此前 self_read/read/write
+  任一可见、矩阵无独立行），self_read 退为纯数据范围码；/self/batch/* 五端点只加不减，
+  数据口径由 _current_business_context 锚定本人、与授权码无关
+- 权限矩阵 UI 改造：分组条可折叠（带已选计数+分组级三态全选）、页面码按 PAGE_PARENTS
+  树状缩进挂父域行下（父域可单独折叠，折叠显示"+N 子页"）、搜索时自动无视折叠、
+  checkbox/chip 补按压反馈（120ms 强 ease-out，prefers-reduced-motion 兜底）；
+  已实测截图验证（登录 admin 渲染/折叠/搜索三态）
