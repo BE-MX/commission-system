@@ -19,6 +19,9 @@ from app.design.models import (
     DesignUnavailableDate, DesignCapacityConfig, DesignAuditLog,
     DesignRequestSeq, DesignRequestAttachment,
 )
+# auth 模型必须显式导入：aftersales 等表有 FK 指向 ark_users，单跑某个测试文件时
+# 若无其他文件先导入 auth，create_all 报 NoReferencedTableError（2026-07-13 对抗性审查 J1）
+from app.auth import models as _auth_models  # noqa: F401
 
 
 # SQLite 不支持 BIGINT 自增，编译时替换为 INTEGER
