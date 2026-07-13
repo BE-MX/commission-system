@@ -45,7 +45,7 @@ class WigUpsert(BaseModel):
     selling_points: str | None = None
     evidence_refs: list | None = None
     priority: int = 0
-    must_recommend: int = Field(0, ge=0, le=1, description="1=必推(不论脸型都保证进前6推荐)")
+    must_recommend: int = Field(0, ge=0, le=1, description="1=主推(置顶推荐列表最前,仍按性别过滤)")
     is_active: int = Field(1, ge=0, le=1)
 
 

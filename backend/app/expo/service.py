@@ -458,7 +458,8 @@ def list_wigs(db: Session, only_active: bool = False) -> list[ExpoWig]:
     q = db.query(ExpoWig)
     if only_active:
         q = q.filter(ExpoWig.is_active == 1)
-    return q.order_by(ExpoWig.priority.desc(), ExpoWig.id).all()
+    # 主推置顶：管理列表与 kiosk「从发型库选择」picker 共用此排序
+    return q.order_by(ExpoWig.must_recommend.desc(), ExpoWig.priority.desc(), ExpoWig.id).all()
 
 
 def upsert_wig(db: Session, body: WigUpsert, wig_id: int | None = None) -> ExpoWig:

@@ -18,8 +18,8 @@ DEFAULT_TOP_N = 3
 # 优先级小幅折算加分：final = base + min(priority*unit, cap)。cap 远小于单项权重，
 # 只在同评级(相近匹配)内把高优先级款拉前、抬高显示分，不让低匹配款跨大档超过高匹配款。
 DEFAULT_PRIORITY_BOOST = {"unit": 0.2, "cap": 6.0}
-# must_recommend 保证进入前 N 个推荐（不强占第一）；这里的 N 即"推荐列表"长度
-GUARANTEED_LIST_SIZE = 6
+# must_recommend（主推）置顶：排在推荐列表最前，主推之间按匹配分排序
+#（2026-07-13 亮哥指令，覆盖 060 时期"保证前 6 不强占第一"的旧语义）
 
 FACE_SHAPE_LABELS = {
     "oval": "鹅蛋脸", "round": "圆脸", "square": "方脸",
@@ -115,7 +115,7 @@ def score_wig(wig, analysis: dict, reg: dict, weights: dict) -> float:
 
 
 def match_wigs(wigs: list, analysis: dict, reg: dict, batch: int = 0) -> list[dict]:
-    """全量排序 + 至臻锚点，返回 [{wig_id, score, reason}] 的完整排名。
+    """全量排序 + 主推置顶 + 至臻锚点，返回 [{wig_id, score, reason}] 的完整排名。
 
     batch 参数由调用方用 matched_wig_ids[batch*top_n:] 切片实现"换一批"，
     本函数总是返回完整排名（存库后切片，保证换批稳定）。
@@ -148,52 +148,35 @@ def match_wigs(wigs: list, analysis: dict, reg: dict, batch: int = 0) -> list[di
         candidates, key=lambda w: (score_by_id[w.id], w.priority or 0), reverse=True,
     )
 
-    # 至臻锚点：前 6 名中有至臻款但第一批（top_n）没有 → 用至臻款替换第一批末位
+    # 主推置顶：must_recommend 款整体提前（sorted 稳定，主推之间保持分数序）
+    ranked = sorted(ranked, key=lambda w: 0 if getattr(w, "must_recommend", 0) else 1)
+
+    # 至臻锚点：第一批（top_n）没有至臻款 → 用第 4~6 名的至臻款替换第一批末尾的
+    # 非主推位。主推位不可被换出（主推是显式指令，优先级高于锚点）；第一批全是
+    # 主推且无至臻时跳过锚点并 log
     if cfg["zhizhen_anchor"] and len(ranked) > top_n:
         first_batch = ranked[:top_n]
         if not any(w.series == "zhizhen" for w in first_batch):
             pool = ranked[top_n : top_n * 2]
             anchor = next((w for w in pool if w.series == "zhizhen"), None)
-            if anchor:
-                swapped = first_batch[-1]
-                ranked[top_n - 1] = anchor
+            slot = next(
+                (i for i in range(top_n - 1, -1, -1) if not getattr(first_batch[i], "must_recommend", 0)),
+                None,
+            )
+            if anchor and slot is not None:
+                swapped = ranked[slot]
                 anchor_idx = ranked.index(anchor, top_n)
+                ranked[slot] = anchor
                 ranked[anchor_idx] = swapped
-
-    # 必推保证：must_recommend 款一定进前 GUARANTEED_LIST_SIZE，但不强占第一（保留最高分在首位）
-    ranked = _ensure_must_recommend(ranked, GUARANTEED_LIST_SIZE)
+            elif anchor:
+                msg = "[expo] zhizhen anchor skipped: first batch fully occupied by must_recommend wigs"
+                logger.warning(msg)
+                print(msg, flush=True)
 
     return [
         {"wig_id": w.id, "score": score_by_id[w.id], "reason": build_reason(w, analysis, reg)}
         for w in ranked
     ]
-
-
-def _ensure_must_recommend(ranked: list, k: int) -> list:
-    """把排在第 k 名之外的必推款提升进前 k 名（从末位往前填，保留 index 0 最高分不动）。
-
-    多个必推超过可用坑位时 best-effort（只填得下的），并 log 提示。被挤出的按原分留在后面。
-    """
-    if len(ranked) <= k:
-        return ranked  # 全在列表内，无需处理
-    top, rest = ranked[:k], ranked[k:]
-    must_in_rest = [w for w in rest if getattr(w, "must_recommend", 0)]
-    if not must_in_rest:
-        return ranked
-    # 前 k 内可替换的非必推位（index 0 = 最高分，永不替换；从末位开始替换扰动最小）
-    replaceable = [i for i in range(1, k) if not getattr(top[i], "must_recommend", 0)]
-    for must_w in must_in_rest:
-        if not replaceable:
-            msg = f"[expo] must_recommend overflow: only {k - 1} guaranteed slots, some must-recommend wigs stay below top {k}"
-            logger.warning(msg)
-            print(msg, flush=True)
-            break
-        idx = replaceable.pop()  # 末位优先
-        displaced = top[idx]
-        top[idx] = must_w
-        rest.remove(must_w)
-        rest.append(displaced)
-    return top + rest
 
 
 def build_reason(wig, analysis: dict, reg: dict) -> str:
