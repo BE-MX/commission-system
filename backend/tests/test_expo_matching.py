@@ -169,29 +169,80 @@ class TestPriorityBoost:
 
 
 class TestMustRecommend:
-    def test_guaranteed_in_top6_not_first(self):
+    def test_pinned_to_top(self):
+        """主推置顶（2026-07-13 亮哥指令）：即使匹配分为 0 也排第一，高分款顺延不丢失。"""
         good = [_wig(i, face_shapes=["round"]) for i in range(1, 7)]  # 6 款 base 30
-        must = _wig(99, must_recommend=1)                             # base 0 但必推
+        must = _wig(99, must_recommend=1)                             # base 0 但主推
         res = matching.match_wigs(good + [must], ANALYSIS, REG)
         ids = [r["wig_id"] for r in res]
-        assert 99 in ids[:6]   # 必推进前 6
-        assert ids[0] != 99    # 不强占第一
-        assert ids[6] != 99    # 被挤出的高分款落到第 7，不丢失
+        assert ids[0] == 99                    # 主推置顶
+        assert sorted(ids[1:]) == [1, 2, 3, 4, 5, 6]  # 其余按原排名顺延，零丢失
 
-    def test_already_in_top6_untouched(self):
-        wigs = [_wig(i, face_shapes=["round"]) for i in range(1, 7)]
-        wigs.append(_wig(7, must_recommend=1, face_shapes=["round"]))  # 匹配也高，本就在前
-        res = matching.match_wigs(wigs, ANALYSIS, REG)
-        assert 7 in [r["wig_id"] for r in res[:6]]
+    def test_multiple_pinned_keep_score_order(self):
+        """多款主推之间仍按匹配分排序，非主推跟在全部主推之后。"""
+        strong_must = _wig(1, must_recommend=1, face_shapes=["round"], needs=["volume"])  # 55
+        weak_must = _wig(2, must_recommend=1)                                             # 0
+        normal_high = _wig(3, face_shapes=["round"], needs=["volume"], styles=["知性优雅"])  # 70
+        res = matching.match_wigs([normal_high, weak_must, strong_must], ANALYSIS, REG)
+        assert [r["wig_id"] for r in res] == [1, 2, 3]
+
+    def test_pinned_not_displaced_by_zhizhen_anchor(self):
+        """至臻锚点只换第一批的非主推位：主推占位不被换出，至臻换入末尾非主推位。"""
+        must = _wig(99, must_recommend=1)  # 置顶
+        classics = [_wig(i, face_shapes=["round"], needs=["volume"], priority=10 - i) for i in range(1, 4)]
+        zhizhen = _wig(9, series="zhizhen", face_shapes=["round"])  # 第 5 名
+        res = matching.match_wigs([*classics, zhizhen, must], ANALYSIS, REG)
+        ids = [r["wig_id"] for r in res]
+        assert ids[0] == 99      # 主推仍在第一
+        assert 9 in ids[:3]      # 至臻锚进第一批
+        assert sorted(ids) == [1, 2, 3, 9, 99]  # 零丢失
+
+    def test_anchor_skipped_when_top3_all_pinned(self):
+        """第一批被主推占满且无至臻 → 锚点跳过不崩，主推顺序不动。"""
+        musts = [_wig(i, must_recommend=1, face_shapes=["round"], priority=10 - i) for i in range(1, 4)]
+        zhizhen = _wig(9, series="zhizhen", face_shapes=["round"], needs=["volume"])
+        res = matching.match_wigs([*musts, zhizhen], ANALYSIS, REG)
+        ids = [r["wig_id"] for r in res]
+        assert ids[:3] == [1, 2, 3]  # 主推占满第一批，锚点不破坏
+        assert ids[3] == 9
 
     def test_still_gender_filtered(self):
-        """性别硬过滤对必推款同样生效：不给女顾客强推男款。"""
+        """性别硬过滤对主推款同样生效：不给女顾客强推男款。"""
         male_must = _wig(50, must_recommend=1, gender="male")
         female = _wig(1, gender="female", face_shapes=["round"])
         res = matching.match_wigs([male_must, female], ANALYSIS, REG)  # ANALYSIS gender=female
         ids = [r["wig_id"] for r in res]
         assert 50 not in ids
         assert 1 in ids
+
+    def test_more_than_three_pinned_span_batches(self):
+        """主推 >3 款：第 4/5 名主推按分数序落「换一批」页，非主推全部排在主推之后。"""
+        musts = [
+            _wig(i, must_recommend=1, face_shapes=["round"], priority=10 - i) for i in range(1, 6)
+        ]  # 5 款主推，同分靠 priority 决序 → 1,2,3,4,5
+        normals = [_wig(i, face_shapes=["round"], needs=["volume"]) for i in range(10, 13)]  # 55 分
+        res = matching.match_wigs([*normals, *musts], ANALYSIS, REG)
+        ids = [r["wig_id"] for r in res]
+        assert ids[:5] == [1, 2, 3, 4, 5]          # 全部主推在最前且保持分数/priority 序
+        assert all(i in ids[5:] for i in (10, 11, 12))  # 非主推整体靠后
+
+    def test_pinned_survives_gender_fallback(self):
+        """性别过滤全灭触发不过滤兜底后，主推置顶仍生效。"""
+        wigs = [
+            _wig(1, gender="female", face_shapes=["round"], needs=["volume"]),  # 高分
+            _wig(2, gender="female", must_recommend=1),                          # 0 分主推
+        ]
+        analysis = {**ANALYSIS, "gender": "male"}  # 全灭 → fallback 不过滤
+        res = matching.match_wigs(wigs, analysis, REG)
+        assert [r["wig_id"] for r in res] == [2, 1]
+
+    def test_zhizhen_pinned_satisfies_anchor_no_swap(self):
+        """主推款本身是至臻：第一批已含至臻，锚点不触发交换，排序原样。"""
+        must_zz = _wig(1, must_recommend=1, series="zhizhen")
+        classics = [_wig(i, face_shapes=["round"], needs=["volume"], priority=10 - i) for i in range(2, 6)]
+        res = matching.match_wigs([must_zz, *classics], ANALYSIS, REG)
+        ids = [r["wig_id"] for r in res]
+        assert ids == [1, 2, 3, 4, 5]
 
 
 class TestForbiddenWords:
