@@ -50,6 +50,14 @@
         </div>
       </div>
 
+      <!-- 原图 + 效果图（横滑图集，轻触看大图） -->
+      <div v-if="galleryItems.length" class="gallery">
+        <button v-for="(g, i) in galleryItems" :key="i" class="g-item" @click="lightbox = g">
+          <img :src="g.url" alt="" />
+          <span class="g-cap">{{ g.label }}</span>
+        </button>
+      </div>
+
       <div class="forbid">话术规范：不说「便宜 / 划算 / 性价比 / 打折」</div>
 
       <div v-if="detail?.strategy" class="strategy">
@@ -72,6 +80,14 @@
       <div v-if="isMine" class="actions">
         <button class="xk-btn" @click="view = 'feedback'">录入反馈并结束本单</button>
       </div>
+
+      <!-- 大图灯箱：contain 不裁切，轻触任意处关闭 -->
+      <Transition name="glb">
+        <div v-if="lightbox" class="g-lightbox" @click="lightbox = null">
+          <img :src="lightbox.url" alt="" />
+          <span class="g-lb-cap">{{ lightbox.label }} · 轻触任意处返回</span>
+        </div>
+      </Transition>
     </template>
 
     <!-- ── 视图三：本单反馈（原销售接力表单，仅本单客户） ── -->
@@ -204,9 +220,23 @@ function clearDetailPoll() {
   detailTimer = null
 }
 
+// 图集：每个会话的原图在前，随后是该次已完成的效果图（后端已按最新会话在前排序）
+const lightbox = ref(null)
+const galleryItems = computed(() => {
+  const items = []
+  for (const s of detail.value?.sessions || []) {
+    if (s.photo_url) items.push({ url: s.photo_url, label: s.mode === 'scene' ? '佩戴实拍' : '原图' })
+    for (const r of s.results || []) {
+      if (r.image_url) items.push({ url: r.image_url, label: r.wig_name || '效果图' })
+    }
+  }
+  return items
+})
+
 function toList() {
   clearDetailPoll()
   view.value = 'list'
+  lightbox.value = null
   flow.touch()
   loadLeads() // 反馈可能刚提交过，回列表刷新意向徽标
 }
@@ -322,6 +352,50 @@ onBeforeUnmount(() => {
   border: 1px dashed var(--xk-gold-line);
   font-size: 12px; color: var(--xk-mut); letter-spacing: 0.1em;
 }
+/* ── 图集（原图+效果图，横滑；缩略 3:4 竖卡与发型库一致） ── */
+.gallery {
+  flex: none; display: flex; gap: 10px; margin-top: 12px; padding-bottom: 6px;
+  overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+}
+.gallery::-webkit-scrollbar { display: none; }
+.g-item {
+  flex: none; width: 96px; display: flex; flex-direction: column; gap: 6px;
+  padding: 0; border: none; background: transparent; cursor: pointer;
+  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.g-item:active { transform: scale(0.96); }
+.g-item img {
+  width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 12px;
+  border: 1px solid var(--xk-gold-line); background: var(--xk-ink-2);
+}
+.g-cap {
+  font-size: 10px; letter-spacing: 0.1em; color: var(--xk-mut); text-align: center;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.g-lightbox {
+  position: fixed; inset: 0; z-index: 80;
+  background: rgba(12, 10, 8, 0.92);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  display: flex; align-items: center; justify-content: center;
+}
+.g-lightbox img {
+  max-width: 94vw; max-height: 90vh; object-fit: contain; border-radius: 12px;
+  box-shadow: 0 12px 60px rgba(0, 0, 0, 0.6);
+}
+.g-lb-cap {
+  position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
+  font-size: 11px; letter-spacing: 0.2em; color: var(--xk-mut); white-space: nowrap;
+}
+/* 灯箱模态：入场 240ms 强 ease-out，出场更快（非对称）；origin 保持居中 */
+.glb-enter-active { transition: opacity 240ms cubic-bezier(0.23, 1, 0.32, 1); }
+.glb-enter-active img { transition: transform 240ms cubic-bezier(0.23, 1, 0.32, 1); }
+.glb-leave-active { transition: opacity 160ms cubic-bezier(0.23, 1, 0.32, 1); }
+.glb-enter-from, .glb-leave-to { opacity: 0; }
+.glb-enter-from img { transform: scale(0.96); }
+@media (prefers-reduced-motion: reduce) {
+  .glb-enter-from img { transform: none; }
+}
+
 .tried { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .tried-chip {
   font-size: 12px; color: var(--xk-gold-hi); letter-spacing: 0.06em;

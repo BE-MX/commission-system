@@ -486,7 +486,7 @@ frontend/src/
 
 **kiosk 销售面板改版：线索列表+话术查看（2026-07-13，亮哥指令部分覆盖 07-07「话术不落 kiosk」）**
 - 单击品牌字（无会话也可进）→ 三视图：①线索列表（对应 web 线索台，姓名/手机关键词搜索 350ms 防抖，本单客户置顶标「本单」）②话术详情（opener/跟进/异议镜像 ExpoLeads + 试戴款 chips；生成中 5s 静默轮询出话术即停）③本单反馈表单（仅本单客户可进，提交即结束本单）
-- 新端点 `GET /kiosk/leads` + `/kiosk/leads/{id}/strategy`（expo:write）**与 /leads（expo_lead:*）刻意分离**：手机号服务端脱敏、无备注/微信号；话术载荷无 internal 发况、无照片路径——**隐私红线保留一半**：话术可上 kiosk 销售面板，internal 发况与客户流程屏话术仍禁止
+- 新端点 `GET /kiosk/leads` + `/kiosk/leads/{id}/strategy`（expo:write）**与 /leads（expo_lead:*）刻意分离**：手机号服务端脱敏、无备注/微信号；话术载荷含**原图+已完成效果图**（2026-07-13 亮哥指令加图；客户建会话前已签拍照同意，详情页横滑图集+灯箱）但**无 internal 发况**——隐私红线现状：internal 发况与客户流程屏话术仍禁止
 - 共享屏兜底：60s 空闲自动清场回 attract（sales 步不在 NO_IDLE_STEPS 白名单是刻意的）
 
 **kiosk 全流程「上一步/主页」导航（2026-07-13）**
