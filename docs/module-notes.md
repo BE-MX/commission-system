@@ -484,6 +484,11 @@ frontend/src/
 - 后端 `ai_pipeline.save_scene_image(key, upload)` / `delete_scene_image(key)` / `_downscale_scene_image`：存 `uploads/expo/scenes/<key>.<ext>`，**先删同 key 各扩展名旧图**（避免 scene_image_url 探测歧义）+ 超 1200px 降采样；`POST/DELETE /scenes/{key}/image`（expo:admin）。示意图仅甄选页示意、不参与合成
 - 前端替换同扩展名时 URL 不变，`?t=Date.now()` 强制刷新缓存
 
+**kiosk 销售面板改版：线索列表+话术查看（2026-07-13，亮哥指令部分覆盖 07-07「话术不落 kiosk」）**
+- 单击品牌字（无会话也可进）→ 三视图：①线索列表（对应 web 线索台，姓名/手机关键词搜索 350ms 防抖，本单客户置顶标「本单」）②话术详情（opener/跟进/异议镜像 ExpoLeads + 试戴款 chips；生成中 5s 静默轮询出话术即停）③本单反馈表单（仅本单客户可进，提交即结束本单）
+- 新端点 `GET /kiosk/leads` + `/kiosk/leads/{id}/strategy`（expo:write）**与 /leads（expo_lead:*）刻意分离**：手机号服务端脱敏、无备注/微信号；话术载荷无 internal 发况、无照片路径——**隐私红线保留一半**：话术可上 kiosk 销售面板，internal 发况与客户流程屏话术仍禁止
+- 共享屏兜底：60s 空闲自动清场回 attract（sales 步不在 NO_IDLE_STEPS 白名单是刻意的）
+
 **kiosk 全流程「上一步/主页」导航（2026-07-13）**
 - 外壳 ExpoKiosk 头部统一实现（attract 不显示）：左「‹ 上一步」右「⌂ 主页」，7 屏零改模板；返回映射集中在 `useTryOnFlow.goBack()`——register→主页(清场)、capture→register(保留表单)、analyzing/matching/scene→capture(停轮询重拍)、result→matching|scene(**生成中禁用**)、sales→openSales 记录的来源屏（销售面板入口=**单击**品牌字，2026-07-13 亮哥指令由长按 3 秒改单击；仍以 sessionId 存在为前提，客户共享屏不做明显按钮）
 - 主页确认弹层门槛=sessionId 已存在（拍照后流程有实际代价）；无会话直接回；step 回 attract 时自动收弹层（防 60s idle 清场残留）
