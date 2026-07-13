@@ -1,7 +1,7 @@
 # 莱莎方舟平台 项目交接清单
 
-> **版本**：v1.0  
-> **最后更新**：2026-07-03  
+> **版本**：v1.1  
+> **最后更新**：2026-07-13  
 > **项目状态**：运行中，持续迭代
 
 ## 项目概况
@@ -10,17 +10,17 @@
 - **开发周期**：2026-03 至今（约 4 个月；git 仓库首次提交 2026-04-20）
 - **代码规模**：后端 ~25K 行 Python + 前端 ~18K 行 Vue + 微信小程序 ~3K 行
 - **数据库表数**：120 张（commission_db，2026-07-13 information_schema 实测）
-- **数据库迁移数**：066（Alembic，最新 `066_invoice_removed_lines`）
+- **数据库迁移数**：068（Alembic，最新 `068_okki_required_fields`）
 - **用户数**：~30 人（莱莎员工）
 - **日活**：~20 人
 - **部署环境**：生产（腾讯云 + 本地 Windows Server）
 
-## 已完成功能（2026-07-03）
+## 已完成功能（2026-07-13 更新）
 
 ### 核心业务模块（20 个）
 
 1. ✅ **提成管理**：回款单计算、客户归属快照、批次管理、业务员确认流程（confirming 状态 + 反馈/确认机制）
-2. ✅ **订单发票管理**：发票 CRUD、产品级联选择、Excel/PDF/HTML 导出；OKKI 推单 Phase 2 进行中（2026-07-10 鉴权/token 自动续期/订单枚举/设置页/业务员绑定候选同步已上线，推单字段映射待做）
+2. ✅ **订单发票管理**：发票 CRUD、产品级联选择、Excel/PDF/HTML 导出；OKKI 推单闭环（2026-07-13：真实推单 + 幂等编辑 + 非标合并单条通用行 + 企业必填字段部门/订单类型/新成交/包邮/首返 + 同步日志，066/068 迁移）；数据范围权限 `invoice:read_all`（默认只见自己创建的发票，067）；录入自动填充（客户联系人快照复用 + 业务员信息默认当前用户 + 小满标记三开关智能默认）
 3. ✅ **物流跟踪**：DHL/FedEx 自动轮询、关键状态推送、物流日报
 4. ✅ **运单上传**：图片 OCR（AI 多模态）+ 手动录入
 5. ✅ **设计预约**：申请/审批/排期、冲突检测、附件上传、钉钉通知
@@ -60,7 +60,7 @@
 
 - ✅ 定时任务（APScheduler，11 个 job）
 - ✅ 移动端素材管理（Vue 3 CDN 独立页面，UA 守卫分流）
-- ✅ 生产架构（腾讯云 Nginx 静态直出 + SSH 隧道 API 反代）
+- ✅ 生产架构（腾讯云 Nginx 静态直出 + frp 内网穿透 API 反代，frpc 挂 NSSM）
 - ✅ NSSM 服务托管（CommissionSystem + WhatsAppConnector 双服务）
 - ✅ 前端路由 + 菜单单一来源（`navigation.js`）
 - ✅ API client 统一（`clients.js` 集中导出，禁止自建 axios）
@@ -75,7 +75,8 @@
 - ✅ expo 匹配引擎 + 禁用词 + 性别兜底（16 个）+ 发色库/场景/看门狗/JSON重试/图片压缩逻辑测试（39 个，含多场景合一与输出尺寸）+ 话术触发互斥（2 个）——2026-07-07
 - ✅ tracking 状态映射（57）/ stock 状态判定（20）/ 提成批次状态机全矩阵（31）/ invoice 金额（14）——2026-07-03 B-8 补齐
 - ✅ invoice / whatsapp / payment 等模块测试
-- **总计 286 tests（2026-07-07 全绿）**
+- ✅ invoice OKKI 推单专项（payload 映射/状态机/unique_id 传承/非标合并/必填字段）+ 数据范围 scope + 录入自动填充——2026-07-13 补齐
+- **总计 532 tests（2026-07-13 全绿）**
 
 ## 待办事项（优先级递减）
 
@@ -84,15 +85,15 @@
 1. **展会试戴生图稳定性**（2026-07-07 更新：图像模型已接入并启用，单场景合成实测可用 ~130s，但上游拥堵时段仍会 >300s 被 ELBNT 网关 502/504）：持续观察成功率；不达标则评估自动重试或更换生图 Provider；继续 10 真人照 × 5 假发批量实测
 2. ~~ELBNT 账号池 503~~（2026-07-07 已恢复，分析/话术/生图三 preset 均正常出活，留意复发）
 3. **展会物料**（依赖市场部）：15~20 款短发多角度实拍图入发型库、6 个月对比素材、10+ 老客户证言
-4. **稳定性止血收尾（代码侧已完成 2026-07-03）**：调度告警/回滚脚本/备份脚本已落地，剩服务器上三个动作——①编辑 `deployackup-uploads.bat` 的 BACKUP_ROOT 指向备份盘并注册 schtasks 计划任务；②下次部署后演练一次 `rollback.bat`；③角色管理页给相关角色分配新权限 `dingtalk:admin`
+4. **稳定性止血收尾（代码侧已完成 2026-07-03）**：调度告警/回滚脚本/备份脚本已落地，剩服务器上三个动作——①编辑 `deploy\backup-uploads.bat` 的 BACKUP_ROOT 指向备份盘并注册 schtasks 计划任务；②下次部署后演练一次 `rollback.bat`；③角色管理页给相关角色分配新权限 `dingtalk:admin`
 
 ### P1（重要）
 
--1. **OKKI 推单 Phase 2 收尾**（2026-07-10 地基完成：client_credentials 鉴权实测打通、token 自动续期、orderEnums、设置页 `/invoice/okki-settings`、绑定候选同步 42 人）：
+-1. **OKKI 推单收尾**（开发侧 2026-07-13 全部完成：真实推单 + 幂等编辑 + 非标合并 + 企业必填字段 066/068，细节见 docs/module-notes.md invoice 节；首推真单曾被必填字段拒绝，字段已接线待重试）：
    - ①生产服务器 `backend/.env` 加 `OKKI_CLIENT_ID/SECRET` 后部署重启（deploy 不同步 .env）
-   - ②管理员完成业务员绑定（系统管理→外部账号绑定）+ 设置页配置通用产品/默认订单状态
-   - ~~③开发推单主体~~（2026-07-13 已完成：真实推单 + 幂等编辑 + unique_id 传承 + 删行 remove + 同步日志，066 迁移；细节见 docs/module-notes.md invoice 节）
-   - ④首推联调：**无沙箱，产生真实订单**，需指定测试客户；token 明文入库 vs 需求文档"加密"待拍板
+   - ②运营配置三项：业务员 OKKI 部门（用户管理→编辑用户，Stella 建议「专治不服」——历史 676 单中 675 单归属它）；设置页配置**通用产品**（生产单推单必需，目前未配）；其余业务员绑定补齐
+   - ③首推重试（INV20260710-001 已具备条件，差 Stella 部门）：**无沙箱产生真实订单**；推完人工核对订单总额/明细行数/业绩归属/cost_list 计入方式与「运费改 0 重推」语义
+   - ④token 明文入库 vs 需求文档"加密"待拍板；代开票场景（业绩归属=创建人且无编辑入口）出现时需先补「指定业务员」能力
 
 0.5 **展会试戴竖版全身入镜待决策**（2026-07-13）：拍照现为 1:1 中央裁剪，「多露身体」目前只靠取景椭圆上移 + 构图引导在方框内容纳肩颈上身；真竖版全身需改裁剪比例并回归 AI 合成管线（生成尺寸/模板受影响），等亮哥拍板再做
 
@@ -175,14 +176,14 @@
 | 后端环境变量 | `backend/.env` | 数据库/JWT/钉钉/微信/WhatsApp 配置 |
 | 云端 Nginx | `/etc/nginx/conf.d/leshine.conf` | 静态直出 + API 反代 |
 | NSSM 服务配置 | NSSM 注册表 | `nssm edit CommissionSystem` 查看 |
-| SSH 隧道 | 手动启动或 NSSM | `ssh -N -R 8888:localhost:8002 root@119.28.107.92` |
+| frp 内网穿透 | 本地 NSSM 服务 FrpcTunnel + 云端 systemd frps | 云端 `/opt/frp/frps.toml`（:7000，Dashboard :7500）；本地 frpc 代理 ark-backend(:8002)+n8n(:5678)，详见 runbook「配置内网穿透」 |
 
 ### 定期维护（建议频率）
 
 | 任务 | 频率 | 负责人 |
 |------|------|--------|
 | 数据库备份验证 | 每月 | 运维 |
-| uploads/素材盘备份日志抽查（.deploy_stateackup.log） | 每月 | 运维 |
+| uploads/素材盘备份日志抽查（.deploy_state\backup.log） | 每月 | 运维 |
 | SSL 证书续期 | 每 60 天 | 运维 |
 | API Key 轮换 | 每季度 | 技术负责人 |
 | 日志清理 | 每月 | 运维 |
@@ -193,7 +194,7 @@
 
 - **服务器宕机**：重启 NSSM 服务（`nssm restart CommissionSystem`）
 - **数据库连接失败**：检查腾讯云 RDS 白名单 + 密码
-- **前端白屏**：检查云端静态文件 + SSH 隧道
+- **前端白屏**：检查云端静态文件 + frp 穿透（本地 `nssm status FrpcTunnel`）
 - **定时任务未执行**：检查 `SCHEDULER_ENABLED` + 查看日志
 
 ## 团队能力要求
@@ -212,9 +213,9 @@
 
 ### 运维
 
-- **必需**：Windows Server / NSSM / Nginx / SSH
+- **必需**：Windows Server / NSSM / Nginx / frp / SSH
 - **次要**：腾讯云 RDS / Let's Encrypt SSL
-- **业务**：双服务托管 / SSH 隧道 / 前端 dist 同步
+- **业务**：双服务托管 / frp 穿透 / 前端 dist 同步
 
 ## 文档清单
 
@@ -232,7 +233,11 @@
 | [requirements/2026-07-02-order-invoice-management.md](requirements/2026-07-02-order-invoice-management.md) | ✅ | 订单发票管理需求文档 |
 | [requirements/2026-07-03-expo-ai-wig-tryon.md](requirements/2026-07-03-expo-ai-wig-tryon.md) | ✅ | 展会 AI 试戴设计开发文档（配套原型以品牌绿版 v2 为准） |
 | [requirements/2026-07-03-permission-redesign.md](requirements/2026-07-03-permission-redesign.md) | ✅ | 角色权限重设计方案（2026-07-03 已实施：046 迁移+矩阵 UI+审计） |
+| [requirements/2026-07-07-invoice-order-pricing-okki-v2.md](requirements/2026-07-07-invoice-order-pricing-okki-v2.md) | ✅ | 发票 V2：双类型/价格矩阵/OKKI 推单设计（决策 D1-D4） |
+| [requirements/2026-07-12-permission-refinement.md](requirements/2026-07-12-permission-refinement.md) | ✅ | 权限细化与逐页页面码方案（061/063/064 已实施） |
+| [mcp-tracking-integration.md](mcp-tracking-integration.md) | ✅ | MCP 网关物流工具接入说明（051） |
 | [2026-07-03-architecture-assessment.md](2026-07-03-architecture-assessment.md) | ✅ | 平台架构评估与改进路线图（问题清单 + 四批实施计划） |
+| [2026-07-08-db-naming-assessment.md](2026-07-08-db-naming-assessment.md) | ✅ | 数据库命名评估（命名宪法依据） |
 | [../CLAUDE.md](../CLAUDE.md) | ✅ | AI 协作说明（项目根目录） |
 | [../README.md](../README.md) | ✅ | 项目简介、快速开始、技术栈 |
 

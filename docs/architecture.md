@@ -13,7 +13,7 @@
 ```
 外网用户 → 腾讯云 Nginx (119.28.107.92:443)
   ├── 静态文件 (/assets/, /index.html) → Nginx 直接返回 (/var/www/ark/dist/)
-  └── API (/api/, /uploads/, /s/, /health) → SSH 隧道 → 本地 Windows Server (:8002)
+  └── API (/api/, /uploads/, /s/, /health) → frp 内网穿透（云端 frps :7000 / 本地 frpc NSSM 服务）→ 本地 Windows Server (:8002)
 
 局域网用户 → 本地 IP:8002 直连
 ```
@@ -132,8 +132,9 @@ frontend/src/
 | `ark_report_templates` | 报表模板 | `report_code` 唯一 |
 | `commission_batch_feedback` | 提成批次反馈 | `batch_id` FK, `ark_user_id` |
 | `commission_batch_confirmation` | 提成批次确认 | `(batch_id, ark_user_id)` 唯一 |
-| `ark_invoices` | 订单发票主表 | `invoice_no` 唯一, `customer_id`, `status` |
-| `ark_invoice_items` | 发票明细 | `invoice_id` FK CASCADE |
+| `ark_invoices` | 订单发票主表 | `invoice_no` 唯一, `customer_id`, `status`, OKKI 推单状态与三业务标记 |
+| `ark_invoice_items` | 发票明细 | `invoice_id` FK CASCADE, `xiaoman_unique_id` OKKI 行号 |
+| `ark_custom_products` 等发票域 6 表 | 非标沉淀/价格矩阵/客户规则/同步日志/推单设置 | 见 database.md 订单发票节（044/049/066/068） |
 | `ark_expo_customers` | 展会试戴客户 | `consent_at` 非空才允许存照片 |
 | `ark_expo_wigs` | 试戴发型库 | `model_no` 唯一, `series`(classic/zhizhen), `fit_tags` JSON |
 | `ark_expo_hair_colors` | 试戴发色库 | `code` 唯一, `swatch_path` 色板图随合成送模型, `color_description` 喂 prompt（048） |
@@ -175,7 +176,7 @@ frontend/src/
 | `report:read` / `report:design` / `report:admin` | 报表中心（查看 / 编辑模板 / 删除模板） |
 | `governance:read` / `governance:write` / `governance:admin` | 数据概念治理（查看 / 创建编辑 / 审批废弃回滚） |
 | `whatsapp:read` / `whatsapp:write` / `whatsapp:admin` | WhatsApp 同步（查看 / 创建绑定同步 / 管理全部账号） |
-| `invoice:read` / `invoice:write` / `invoice:sync` | 订单发票（查看 / 创建编辑 / 同步到小满） |
+| `invoice:read` / `invoice:write` / `invoice:sync` / `invoice:read_all` | 订单发票（查看 / 创建编辑 / 同步到小满 / 数据范围：默认只见自己创建的发票，read_all 放开全部——067） |
 | `expo:read` / `expo:write` / `expo:admin` | 展会试戴（查看线索发型库 / 展位操作与反馈 / 库维护与删除客户数据） |
 | `dingtalk:admin` | 钉钉手动发送消息 / 查看消息与回调日志（2026-07-03 B-6 收口，原先仅登录即可） |
 
@@ -289,11 +290,12 @@ ACCIO WORK 询盘推送
 - **认证**：`WHATSAPP_CONNECTOR_API_KEY`
 - **详细契约**：[requirements/2026-06-16-whatsapp-connector-contract.md](requirements/2026-06-16-whatsapp-connector-contract.md)
 
-### OKKI 开放平台（订单推送，Phase 2 进行中）
+### OKKI 开放平台（订单推送，2026-07-13 推单已落地）
 
 - **集成方式**：方舟调用 OKKI Open API（`https://api-sandbox.xiaoman.cn`，此即正式域名，无沙箱环境）
 - **认证**：client_credentials（`OKKI_CLIENT_ID` / `OKKI_CLIENT_SECRET`，scope=invoices），token ~8h，缓存于 `ark_xiaoman_settings` 自动续期
-- **HTTP 边界**：`app/invoice/okki_client.py`（token 生命周期 + orderEnums；调用约定见文件头注释）
+- **HTTP 边界**：`app/invoice/okki_client.py`（token 生命周期 + orderEnums + push_order；调用约定见文件头注释）
+- **推单**：`xiaoman_service.build_push_payload`——库存品真实 ID、非标合并单条通用产品行、幂等编辑（order_id + 明细 unique_id + 删行 remove:1）、企业必填字段（业绩归属部门挂用户设置 + 订单类型/新成交/包邮/首返 4 个自定义字段）；每次推送落 `ark_invoice_sync_logs`
 - **配置入口**：订单管理 → OKKI 推单设置（`/invoice/okki-settings`，invoice:admin）
 - **业务员映射**：ark_users → `ark_external_bindings`(provider='okki') → 小满 user_id，候选从业务库 `user_basic` 镜像同步
 - **专题细节与坑**：[module-notes.md](module-notes.md) 的「OKKI 开放平台对接」章节

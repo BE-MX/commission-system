@@ -180,7 +180,7 @@ server {
     }
 
     location ~ ^/(api|uploads|s|health) {
-        proxy_pass http://127.0.0.1:8002;  # SSH 隧道端口（2026-07-10 与云端 /etc/nginx/conf.d/leshine.conf 实况核对，旧文档误写 8888）
+        proxy_pass http://127.0.0.1:8002;  # frp 穿透端口（2026-07-10 与云端 /etc/nginx/conf.d/leshine.conf 实况核对，旧文档误写 8888）
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -286,7 +286,7 @@ nssm restart CommissionSystem
 
 1. 检查云端静态文件：`ssh root@119.28.107.92 "ls -lh /var/www/ark/dist/"`
 2. 检查 Nginx 配置：`ssh root@119.28.107.92 "nginx -t"`
-3. 检查 SSH 隧道：`ssh root@119.28.107.92 "netstat -tlnp | grep 8888"`
+3. 检查 frp 穿透：`ssh root@119.28.107.92 "ss -tlnp | grep 8002"`（云端 frps 是否在听）+ 本地 `nssm status FrpcTunnel`
 4. 重新同步：`deploy\deploy.bat`
 
 ### Q3.5：部署成功但页面还是旧版（2026-07-13 实case）

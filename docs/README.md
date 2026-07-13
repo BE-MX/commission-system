@@ -21,6 +21,7 @@
 | [runbook.md](runbook.md) | 部署步骤、运维命令、故障排查、环境变量清单 | 运维人员、项目交接 |
 | [handoff.md](handoff.md) | 项目状态、已完成功能、待办清单、技术债务 | 项目交接、管理层 |
 | [accio-work-integration-spec.md](accio-work-integration-spec.md) | ACCIO WORK → 方舟 客户机会台集成规范 | ACCIO WORK 开发团队 |
+| [mcp-tracking-integration.md](mcp-tracking-integration.md) | MCP 网关物流工具接入说明（入口无关，个人 token） | AI 客户端接入者 |
 | [requirements/](requirements/) | 需求文档归档 | 产品经理、历史追溯 |
 
 ## 外部集成
