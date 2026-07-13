@@ -520,6 +520,12 @@ frontend/src/
 - 绑定入口：系统管理 → 外部账号绑定 →「同步 OKKI 用户」生成候选（已绑定跳过 / ignored 不复活 / 解绑后候选自动复位 pending）
 - 企业订单状态是专属 ID（来自 `/v1/invoices/order/orderEnums` 的 order_status_list）：草稿 13972831654 / 已完成 13972831656 / 内贸-退货 5642697247486（2026-07-10 实测）
 
+### 推单字段映射（2026-07-13 落地，`xiaoman_service.build_push_payload`）
+- **订单层**：name=发票号+客户名；account_date=invoice_date；company_id=customer_id（customer_info 投影即 OKKI 数字 ID，非数字前置拦截）；status=设置页选定的企业枚举 code；create_user/handler/users[rate=100]=业务员绑定的 OKKI user_id（**未绑定 fail-fast 不推**）；**不传 user_id**（避开操作人权限 404）；**订单级金额一律不传**（OKKI 按 product_list+cost_list 自算，避开汇率×100 口径）；payment_term 并入 remark；联系人字段 v1 不传
+- **明细层**：stock 行=真实 product_id+sku_id；custom 未回填=通用产品 ID + product_name/product_model/unit 透传真实描述；custom 已回填=真实 ID 转正；cost_amount=行小计**必传**（OKKI 不自动算，不传当 0）；运费/附加费走 cost_list（percent_type=0 绝对值）
+- **幂等编辑闭环**：已存 xiaoman_order_id → 带 order_id 编辑推送；明细 unique_id 跨编辑传承（前端回传行 id，`_replace_items` 按 id 承接——多条 custom 行共用通用产品 ID，无 unique_id 会被 OKKI 按 product+sku 去重塌行）；本地删掉的已推行进 `ark_invoices.xiaoman_removed_lines` 快照，下次推单发 remove:1，成功后清空；编辑已同步发票**保留** xiaoman_order_id（清掉会重推出重复订单）
+- 推单前自动跑 `reconcile_custom_products` 对账回填（失败不阻断，custom 行走通用产品兜底）；每次推送落 `ark_invoice_sync_logs`（请求摘要无凭证，可直接查 OKKI 响应原文）
+
 ### 已踩过的坑
 - **页面不要自己 catch 弹错**：axios 拦截器已统一弹出 FastAPI 的 detail，页面 save() 再 catch `err.response.data.message`（undefined）会追加一条英文噪音 toast——OkkiSyncSettings 首版实case
 - okki_products / okki_inventory / user_basic 均为外部同步作业维护的**只读镜像**，OKKI 侧新建品/新账号有同步延迟，解析不到先等镜像

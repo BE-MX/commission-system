@@ -66,7 +66,8 @@
   - `PUT /invoices/{id}` — 更新发票（order_type 创建后不可改）
   - `DELETE /invoices/{id}` — 删除发票（invoice:write；sync_status=synced 拒绝删除）
   - `POST /invoices/{id}/validate` — 同步前校验
-  - `POST /invoices/{id}/sync` — 同步到小满（鉴权已就绪，推单字段映射未实现，当前返回校验结果并标 sync_failed）
+  - `POST /invoices/{id}/sync` — 推单到小满（invoice:sync；真实调 OKKI `POST /v1/invoices/order/push`，无沙箱=真实订单）。已存 xiaoman_order_id 走编辑语义（明细带 unique_id、本地删行发 remove:1）；前置校验（客户数字ID/默认订单状态/业务员OKKI绑定/通用产品）不过返回 issues 不置失败态；推送失败标 sync_failed 并落日志
+  - `GET /invoices/{id}/sync-logs` — OKKI 推单审计日志（invoice:read；倒序 50 条，含请求摘要/响应/错误）
   - `GET /invoices/{id}/export/excel` — 导出 Excel（含 To/From 头块与费用区）
   - `GET /invoices/{id}/export/print` — 打印用 HTML
   - `GET /invoices/{id}/export/pdf` — 导出 PDF
