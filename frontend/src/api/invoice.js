@@ -49,6 +49,10 @@ export function syncInvoice(id) {
   return unwrap(request.post(`/invoices/${id}/sync`, null, { loadingText: '正在同步小满...' }))
 }
 
+export function getInvoiceSyncLogs(id) {
+  return unwrap(request.get(`/invoices/${id}/sync-logs`, { showLoading: false }))
+}
+
 // ── 价格 ─────────────────────────────────────────────
 
 export function resolveInvoicePrice(params) {

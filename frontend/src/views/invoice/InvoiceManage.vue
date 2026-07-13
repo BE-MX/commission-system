@@ -100,7 +100,7 @@
         <el-table-column label="创建时间" min-width="130" max-width="160" show-overflow-tooltip>
           <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" min-width="304" max-width="330" fixed="right">
+        <el-table-column label="操作" min-width="356" max-width="390" fixed="right">
           <template #default="{ row }">
             <div class="row-actions">
               <el-button v-permission="'invoice:write'" link type="primary" @click="openEdit(row.id)">
@@ -124,6 +124,10 @@
               <el-button v-permission="'invoice:sync'" link type="warning" @click="validateAndSync(row.id)">
                 <el-icon><Refresh /></el-icon>
                 同步
+              </el-button>
+              <el-button v-permission="'invoice:read'" link @click="openSyncLogs(row)">
+                <el-icon><Document /></el-icon>
+                日志
               </el-button>
               <el-button v-permission="'invoice:write'" link type="danger" @click="removeInvoice(row)">
                 <el-icon><Delete /></el-icon>
@@ -474,19 +478,41 @@
         </div>
       </template>
     </el-drawer>
+
+    <el-dialog v-model="syncLogsVisible" :title="syncLogsTitle" width="720px">
+      <el-table v-loading="syncLogsLoading" :data="syncLogs" border class="list-table" max-height="420">
+        <el-table-column label="时间" min-width="150" max-width="170" show-overflow-tooltip>
+          <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
+        </el-table-column>
+        <el-table-column label="动作" min-width="96" max-width="110">
+          <template #default="{ row }">{{ actionText(row.action) }}</template>
+        </el-table-column>
+        <el-table-column label="结果" min-width="80" max-width="90">
+          <template #default="{ row }">
+            <el-tag :type="row.success ? 'success' : 'danger'" effect="plain">
+              {{ row.success ? '成功' : '失败' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="信息" min-width="240" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.error_message || (row.success ? 'OKKI 已受理' : '-') }}</template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { ArrowDown, ArrowUp, Delete, Download, Edit, Plus, Printer, Refresh, Search } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowUp, Delete, Document, Download, Edit, Plus, Printer, Refresh, Search } from '@element-plus/icons-vue'
 import { msgSuccess, confirmDanger } from '@/utils/feedback'
 import {
   deleteInvoice,
   downloadInvoiceExcel,
   downloadInvoicePdf,
   fetchInvoicePrintHtml,
+  getInvoiceSyncLogs,
   listInvoices,
   syncInvoice,
   validateInvoice,
@@ -567,10 +593,34 @@ async function validateAndSync(id) {
   const result = await syncInvoice(id)
   if (result.ok) {
     ElMessage.success('已同步到小满')
+  } else if (result.issues?.length) {
+    // 推单前置校验（绑定/通用产品/默认状态缺失）——逐条展示，用户才知道去哪修
+    showIssues(result.issues)
   } else {
     ElMessage.warning(result.message || '小满同步未完成')
   }
   loadInvoices()
+}
+
+const syncLogsVisible = ref(false)
+const syncLogsLoading = ref(false)
+const syncLogs = ref([])
+const syncLogsTitle = ref('')
+
+async function openSyncLogs(row) {
+  syncLogsTitle.value = `同步日志 - ${row.invoice_no}`
+  syncLogsVisible.value = true
+  syncLogsLoading.value = true
+  try {
+    const res = await getInvoiceSyncLogs(row.id)
+    syncLogs.value = res.items || []
+  } finally {
+    syncLogsLoading.value = false
+  }
+}
+
+function actionText(action) {
+  return { create: '首次推送', update: '编辑推送', retry: '重试' }[action] || action
 }
 
 function handleExport(command, row) {

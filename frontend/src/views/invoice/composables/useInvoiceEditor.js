@@ -65,6 +65,8 @@ export function useInvoiceEditor({ onSaved } = {}) {
 
   function normalizeLine(line = {}) {
     return {
+      // 既有行 id 必须回传：后端靠它跨保存传承 OKKI 明细 unique_id（编辑重推不塌行）
+      id: line.id || null,
       item_type: line.item_type || 'stock',
       product_id: line.product_id || null,
       sku_id: line.sku_id || null,
@@ -152,7 +154,8 @@ export function useInvoiceEditor({ onSaved } = {}) {
     const last = form.items[form.items.length - 1]
     if (last) {
       // 按上一行内容自动填充，用户只改变化的参数（改任一关键词会重新匹配/取价）
-      const { options, matching, ...data } = last
+      // id 必须剥离：复制行是新行，带上旧 id 会让两行继承同一个 OKKI unique_id
+      const { options, matching, id, ...data } = last
       form.items.push(normalizeLine({ ...data }))
     } else {
       form.items.push(normalizeLine({ quantity: 1, item_type: isProduction.value ? 'custom' : 'stock' }))
@@ -288,6 +291,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
       internal_shipping_type: form.internal_shipping_type || null,
       remark: form.remark,
       items: form.items.map(line => ({
+        id: line.id || null,
         item_type: line.item_type,
         product_id: line.product_id,
         sku_id: line.sku_id,
