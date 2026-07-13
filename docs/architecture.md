@@ -68,7 +68,7 @@
 - `app/report/` — 报表中心（router/models/schemas/data_service / category_service / docx_export）
 - `app/governance/` — 数据概念治理（router/models/schemas/service facade + concept / relationship / changelog / import_service）
 - `app/invoice/` — 订单发票管理（router/models/schemas/service + product_service / export_service / xiaoman_service）
-- `app/expo/` — 展会 AI 试戴（router/models/schemas/service + matching 规则匹配引擎 + ai_pipeline 三管线（面容分析/效果图合成/双轨话术）+ script_service 话术卡库；合成双入口 mode=tryon 换发（单选发型 + 发色库色板图三图合成 + 可选生成场景 `TRYON_SCENES` 原景/居家/办公/聚会）/ scene 佩戴实拍生成场景大片（跳过分析，场景清单 `ai_pipeline.SCENES` 服务端硬编码）；参考图送模型前统一压缩（最长边 1280）；pending/generating 卡死看门狗读取时自愈；匹配权重 `config/expo_matching.yaml`（性别过滤全灭自动降级）；设计文档 `docs/requirements/2026-07-03-expo-ai-wig-tryon.md`）
+- `app/expo/` — 展会 AI 试戴（router/models/schemas/service + matching 规则匹配引擎 + ai_pipeline 三管线（面容分析/效果图合成/双轨话术）+ script_service 话术卡库；合成双入口 mode=tryon 换发（单选发型 + 发色库色板图三图合成 + 可选生成场景 `TRYON_SCENES` 原景/居家/办公/聚会）/ scene 佩戴实拍生成场景大片（跳过分析，场景清单 `ai_pipeline.SCENES` 服务端硬编码）；参考图送模型前统一压缩（最长边 1280）；pending/generating 卡死看门狗读取时自愈；匹配权重 `config/expo_matching.yaml`（主推 must_recommend 置顶 2026-07-13 起、至臻锚点只换非主推位、性别过滤全灭自动降级）；设计文档 `docs/requirements/2026-07-03-expo-ai-wig-tryon.md`）
 - `app/mini/` — 微信小程序端（router/service/auth/schemas — 扫码报工/历史/总览/撤销/登录绑定）
 
 ## 前端结构
