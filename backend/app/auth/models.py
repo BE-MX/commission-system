@@ -23,6 +23,8 @@ class ArkUser(Base):
     phone = Column(String(20), comment="手机号（可选）")
     dingtalk_id = Column(String(100), unique=True, comment="钉钉用户ID，SSO预留")
     wx_id = Column(String(100), unique=True, nullable=True, comment="微信原始ID（FromUserName），用于报工时匹配方舟账号")
+    okki_department_id = Column(BigInteger, nullable=True, comment="OKKI 业绩归属部门ID（推单 departments 用，选项来自 okki_orders 聚合）")
+    okki_department_name = Column(String(100), nullable=True, comment="OKKI 业绩归属部门名称快照（展示用）")
     avatar_url = Column(String(500), comment="头像URL")
     is_active = Column(Boolean, nullable=False, default=True, comment="1=正常 0=禁用")
     must_change_password = Column(Boolean, nullable=False, default=False, comment="1=首次登录需改密")
