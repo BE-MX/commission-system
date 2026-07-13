@@ -115,6 +115,58 @@ def get_order_enums(db: Session) -> dict:
     }
 
 
+def push_order(db: Session, payload: dict) -> dict:
+    """POST /v1/invoices/order/push — create or edit (payload carries order_id).
+
+    NO SANDBOX: this creates/edits a REAL order in OKKI. Retries once with a
+    forced token refresh on auth failure, same as get_order_enums.
+    """
+    token = ensure_access_token(db)
+    data = _post_json("/v1/invoices/order/push", token, payload, context="订单推送")
+    if data is None:  # auth failure → one forced refresh
+        token = ensure_access_token(db, force=True)
+        data = _post_json("/v1/invoices/order/push", token, payload, context="订单推送")
+        if data is None:
+            raise OkkiApiError("OKKI 订单推送失败：token 刷新后仍被拒绝，请检查凭证与 scope")
+    return data
+
+
+def _post_json(path: str, token: str, payload: dict, *, context: str) -> dict | None:
+    """POST with Bearer auth. Returns payload data; None means auth failure
+    (caller may retry with a fresh token); other failures raise.
+    """
+    try:
+        resp = httpx.post(
+            f"{_base_url()}{path}",
+            headers={"Authorization": f"Bearer {token}"},
+            json=payload,
+            timeout=REQUEST_TIMEOUT,
+        )
+    except httpx.TimeoutException as exc:
+        # 超时时 OKKI 可能已受理：盲目重试会建出第二张真实订单
+        logger.warning("OKKI POST %s timeout: %s", path, exc)
+        print(f"[okki_client] POST {path} timeout: {exc}", flush=True)
+        raise OkkiApiError(
+            f"OKKI {context}请求超时：订单可能已在 OKKI 生成，请先到 OKKI 后台确认，再决定是否重试（避免重复建单）"
+        ) from exc
+    except httpx.HTTPError as exc:
+        logger.warning("OKKI POST %s failed: %s", path, exc)
+        print(f"[okki_client] POST {path} failed: {exc}", flush=True)
+        raise OkkiApiError(f"OKKI {context}请求失败：{exc}") from exc
+
+    if resp.status_code == 401:
+        return None
+    body = _parse_json(resp, context=context)
+    if body.get("error") == "access_denied":
+        return None
+    if resp.status_code != 200 or (body.get("code") not in (None, 200)):
+        detail = body.get("message") or body.get("error_description") or resp.text[:500]
+        logger.warning("OKKI POST %s error %s: %s", path, resp.status_code, detail)
+        print(f"[okki_client] POST {path} error {resp.status_code}: {detail}", flush=True)
+        raise OkkiApiError(f"OKKI {context}失败：{detail}")
+    return body.get("data") if isinstance(body.get("data"), dict) else body
+
+
 def _get_json(path: str, token: str, *, context: str) -> dict | None:
     """GET with Bearer auth. Returns payload data; None means auth failure
     (caller may retry with a fresh token); other failures raise.

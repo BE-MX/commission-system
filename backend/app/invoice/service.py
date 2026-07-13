@@ -1,5 +1,6 @@
 """Business logic for order invoices."""
 
+import json
 from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -71,19 +72,25 @@ def _resolve_user_names(db: Session, user_ids: set[int]) -> dict[int, str]:
 
 
 def delete_invoice(db: Session, invoice: Invoice) -> None:
-    """Synced invoices are OKKI-side documents; deleting locally would orphan them."""
-    if invoice.sync_status == "synced":
-        raise ValueError("已同步小满的发票不允许删除，请先在小满侧处理")
+    """Judge by xiaoman_order_id, not sync_status: editing flips a synced invoice
+    back to not_synced while the real OKKI order still exists, and deleting would
+    orphan it AND cascade-drop its push audit logs."""
+    if invoice.xiaoman_order_id or invoice.sync_status == "synced":
+        raise ValueError("该发票已在小满建单，不允许本地删除，请先在小满侧处理")
     db.delete(invoice)
 
 
-def get_invoice(db: Session, invoice_id: int) -> Invoice | None:
-    return (
+def get_invoice(db: Session, invoice_id: int, *, for_update: bool = False) -> Invoice | None:
+    """for_update: 推单端点用行锁串行化——两个会话同时首推同一发票会各建一张真实
+    OKKI 订单（无沙箱）；持锁期间并发编辑的 header UPDATE 也会阻塞到推单落库。"""
+    query = (
         db.query(Invoice)
         .options(selectinload(Invoice.items))
         .filter(Invoice.id == invoice_id)
-        .first()
     )
+    if for_update:
+        query = query.with_for_update()
+    return query.first()
 
 
 def create_invoice(db: Session, body: InvoiceCreate, user_id: int | None = None) -> Invoice:
@@ -110,10 +117,10 @@ def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: 
     invoice.currency = body.currency or "USD"
     invoice.updated_by = user_id
     if invoice.sync_status == "synced":
+        # 保留 xiaoman_order_id/order_no：下次推单带 order_id 走 OKKI 编辑语义，
+        # 清掉会导致重推产生重复订单（幂等编辑，07-07 设计文档 3.3）
         invoice.sync_status = "not_synced"
         invoice.status = "draft"
-        invoice.xiaoman_order_id = None
-        invoice.xiaoman_order_no = None
         invoice.synced_at = None
     _replace_items(db, invoice, body, user_id=user_id)
     _refresh_invoice_totals(invoice)
@@ -220,9 +227,30 @@ def _replace_items(db: Session, invoice: Invoice, body, user_id: int | None = No
         p.item_type == "custom" and _custom_line_complete(p) for p in body.items
     )
     okki_rows = product_service.load_okki_rows(db) if has_custom else None
+    # 已推 OKKI 的行（有 unique_id）：回传 id 的行传承 unique_id（编辑语义按行更新）；
+    # 未回传的即被删除，进待删快照，下次推单发 remove:1（否则 OKKI 侧留幽灵明细）
+    prior_synced = {item.id: item for item in invoice.items if item.xiaoman_unique_id}
+    echoed_ids = {p.id for p in body.items if p.id}
+    _append_removed_lines(invoice, [
+        {
+            "unique_id": item.xiaoman_unique_id,
+            "item_type": item.item_type,
+            "product_id": item.product_id,
+            "sku_id": item.sku_id,
+            "custom_product_id": item.custom_product_id,
+        }
+        for item_id, item in prior_synced.items() if item_id not in echoed_ids
+    ])
     invoice.items.clear()
+    carried_ids: set[int] = set()
     for idx, payload in enumerate(body.items, start=1):
+        # 同一 id 只允许第一行传承——复制行带旧 id 时若两行共享 unique_id，
+        # OKKI 编辑推单会把两行更新到同一条明细上（金额错且无声）
+        carried = prior_synced.get(payload.id) if payload.id and payload.id not in carried_ids else None
+        if carried:
+            carried_ids.add(payload.id)
         item = InvoiceItem(
+            xiaoman_unique_id=carried.xiaoman_unique_id if carried else None,
             sort_order=idx,
             item_type=payload.item_type,
             product_id=payload.product_id,
@@ -281,6 +309,23 @@ def _replace_items(db: Session, invoice: Invoice, body, user_id: int | None = No
             item.price_source = "manual"
         item.total_price = _money((item.price_per_piece or Decimal("0")) * Decimal(item.quantity))
         invoice.items.append(item)
+
+
+def _append_removed_lines(invoice: Invoice, removed: list[dict]) -> None:
+    """Accumulate pushed-then-deleted line snapshots; dedup by unique_id.
+
+    Cleared by xiaoman_service on a successful push. Kept raw (no generic-product
+    resolution) — push time owns OKKI identity semantics.
+    """
+    if not removed:
+        return
+    try:
+        existing = json.loads(invoice.xiaoman_removed_lines or "[]")
+    except ValueError:
+        existing = []
+    seen = {entry.get("unique_id") for entry in existing}
+    existing.extend(entry for entry in removed if entry.get("unique_id") not in seen)
+    invoice.xiaoman_removed_lines = json.dumps(existing, ensure_ascii=False) if existing else None
 
 
 def _refresh_invoice_totals(invoice: Invoice) -> None:

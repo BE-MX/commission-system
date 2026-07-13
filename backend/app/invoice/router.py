@@ -460,14 +460,26 @@ def validate_invoice(
 def sync_invoice(
     invoice_id: int,
     db: Session = Depends(get_db),
-    _user=Depends(require_permission("invoice:sync")),
+    current_user=Depends(require_permission("invoice:sync")),
+):
+    invoice = service.get_invoice(db, invoice_id, for_update=True)
+    if not invoice:
+        raise HTTPException(404, "发票不存在")
+    result = xiaoman_service.sync_invoice(db, invoice, operator_id=_user_id(current_user))
+    db.commit()
+    return ok(result)
+
+
+@router.get("/invoices/{invoice_id}/sync-logs", summary="OKKI push audit logs")
+def get_sync_logs(
+    invoice_id: int,
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("invoice:read")),
 ):
     invoice = service.get_invoice(db, invoice_id)
     if not invoice:
         raise HTTPException(404, "发票不存在")
-    result = xiaoman_service.sync_invoice(invoice)
-    db.commit()
-    return ok(result)
+    return ok({"items": xiaoman_service.list_sync_logs(db, invoice_id)})
 
 
 @router.get("/invoices/{invoice_id}/export/excel", summary="Export invoice Excel")
