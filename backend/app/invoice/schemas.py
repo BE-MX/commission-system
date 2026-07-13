@@ -48,6 +48,8 @@ class ProductMatchResponse(BaseModel):
 
 
 class InvoiceItemPayload(BaseModel):
+    # 编辑时回传既有行 id，用于跨保存传承 xiaoman_unique_id（OKKI 编辑推单按行更新）
+    id: Optional[int] = None
     item_type: str = Field(default="stock", pattern="^(stock|custom)$")
     product_id: Optional[int] = None
     sku_id: Optional[int] = None

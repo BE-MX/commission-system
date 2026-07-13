@@ -58,6 +58,7 @@ class Invoice(Base):
     xiaoman_order_id = Column(String(64), nullable=True, comment="OKKI 订单ID")
     xiaoman_order_no = Column(String(64), nullable=True, comment="OKKI 订单编号")
     sync_status = Column(String(32), nullable=False, default="not_synced", comment="OKKI 推单状态 not_synced/synced/sync_failed")
+    xiaoman_removed_lines = Column(Text, nullable=True, comment="已推OKKI后本地删除的明细快照JSON[{unique_id,product_id,sku_id}]，下次推单发remove:1，成功后清空")
     sync_error = Column(Text, nullable=True, comment="最近一次推单失败信息")
     synced_at = Column(DateTime, nullable=True, comment="最近成功推单时间")
     created_by = Column(Integer, nullable=True, comment="创建人 user_id")
