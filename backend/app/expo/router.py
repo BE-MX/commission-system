@@ -52,6 +52,21 @@ def register(
     return ok({"customer_id": customer.id}, code=201)
 
 
+@router.put("/customers/{customer_id}", summary="更新客户登记信息（kiosk 返回上一步修改，不重复建档）")
+def update_customer(
+    customer_id: int,
+    body: CustomerRegister,
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("expo:write")),
+):
+    if not body.consent:
+        raise HTTPException(400, "需同意拍照存储方可体验")
+    customer = service.update_customer(db, customer_id, body)
+    if not customer:
+        raise HTTPException(404, "客户不存在")
+    return ok({"customer_id": customer.id})
+
+
 @router.post("/sessions", summary="上传照片建会话（tryon=异步分析+匹配 / scene=直接就绪）")
 def create_session(
     customer_id: int = Query(...),

@@ -49,6 +49,29 @@ def register_customer(db: Session, body: CustomerRegister) -> ExpoCustomer:
     return customer
 
 
+def update_customer(db: Session, customer_id: int, body: CustomerRegister) -> ExpoCustomer | None:
+    """kiosk「返回上一步」修改登记信息：更新既有客户，不重复建档（线索台一客一档）。
+
+    consent_at 只置不清：已同意过的客户改信息不撤销授权时间戳。返回 None=客户不存在。
+    """
+    customer = db.get(ExpoCustomer, customer_id)
+    if not customer:
+        return None
+    customer.name = body.name.strip()
+    customer.phone = body.phone.strip()
+    customer.wechat_id = (body.wechat_id or "").strip() or None
+    customer.primary_need = body.primary_need
+    customer.style_pref = body.style_pref
+    if body.consent and not customer.consent_at:
+        customer.consent_at = datetime.utcnow()
+    # 届次只在显式传值时覆写：schema 默认空串，漏传不擦掉已有 expo_code
+    if body.expo_code and body.expo_code.strip():
+        customer.expo_code = body.expo_code.strip()
+    db.commit()
+    db.refresh(customer)
+    return customer
+
+
 def delete_customer(db: Session, customer_id: int) -> bool:
     """隐私合规：物理删除客户照片、效果图与全部记录。"""
     customer = db.get(ExpoCustomer, customer_id)
