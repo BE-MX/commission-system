@@ -89,6 +89,10 @@ class _InvoiceHeaderPayload(BaseModel):
     internal_received: Optional[Decimal] = None
     internal_balance: Optional[Decimal] = None
     internal_shipping_type: Optional[str] = Field(None, max_length=64)
+    # OKKI 必填业务标记（1是/0否；None=服务端按兜底规则自动判定）
+    okki_new_deal: Optional[int] = Field(None, ge=0, le=1)
+    okki_free_shipping: Optional[int] = Field(None, ge=0, le=1)
+    okki_first_return: Optional[int] = Field(None, ge=0, le=1)
     remark: Optional[str] = None
     items: list[InvoiceItemPayload] = Field(default_factory=list)
 

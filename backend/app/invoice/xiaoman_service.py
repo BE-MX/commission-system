@@ -28,13 +28,20 @@ from sqlalchemy import text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.auth.models import ArkUserExternalBinding
+from app.auth.models import ArkUser, ArkUserExternalBinding
 from app.core.config import get_settings
 from app.invoice import okki_client, product_service
 from app.invoice.models import CustomProduct, Invoice, InvoiceSyncLog, XiaomanSettings
-from app.invoice.service import validate_invoice
+from app.invoice.service import resolve_okki_flags, validate_invoice
 
 logger = logging.getLogger(__name__)
+
+# 企业自定义必填字段（GET /v1/invoices/order/fields 2026-07-13 实测；
+# payload 顶层 key=字段 ID 字符串，值=选项文本）
+FIELD_ORDER_TYPE = "691123983470"     # 订单类型：规格品/定制品
+FIELD_NEW_DEAL = "22595163468"        # 是否新成交：是/否
+FIELD_FREE_SHIPPING = "20528077262544"  # 是否包邮：是/否
+FIELD_FIRST_RETURN = "20528142733548"   # 是否首返：是/否
 
 
 def sync_invoice(db: Session, invoice: Invoice, operator_id: int | None = None) -> dict:
@@ -151,6 +158,12 @@ def build_push_payload(
         who = invoice.sales_user_name or (f"ID {invoice.sales_user_id}" if invoice.sales_user_id else "未设置")
         issues.append({"field": "sales_user_id", "message": f"业务员（{who}）未绑定 OKKI 账号：系统管理 → 外部账号绑定"})
 
+    # 业绩归属部门：OKKI 企业必填，挂在业务员的用户设置上
+    department_id = _resolve_okki_department_id(db, invoice.sales_user_id)
+    if department_id is None:
+        who = invoice.sales_user_name or "业务员"
+        issues.append({"field": "okki_department", "message": f"{who}未设置 OKKI 归属部门：系统管理 → 用户管理 → 编辑用户"})
+
     order_id: int | None = None
     if invoice.xiaoman_order_id:
         if str(invoice.xiaoman_order_id).isdigit():
@@ -177,8 +190,15 @@ def build_push_payload(
         "create_user": okki_user_id,
         "handler": [okki_user_id],
         "users": [{"user_id": okki_user_id, "rate": 100}],
+        "departments": [{"department_id": department_id, "rate": 100}],
+        # 企业自定义必填字段：订单类型自动映射，三个业务标记取发票存值（空值同口径兜底）
+        FIELD_ORDER_TYPE: "定制品" if invoice.order_type == "production" else "规格品",
         "product_list": product_rows,
     }
+    flags = resolve_okki_flags(db, invoice)
+    payload[FIELD_NEW_DEAL] = "是" if flags["okki_new_deal"] else "否"
+    payload[FIELD_FREE_SHIPPING] = "是" if flags["okki_free_shipping"] else "否"
+    payload[FIELD_FIRST_RETURN] = "是" if flags["okki_first_return"] else "否"
     if order_id is not None:
         payload["order_id"] = order_id
         # 快照里仍被当前行使用的 uid 不能删（合并行部分成员被删时，合并行还在用那个 uid）
@@ -215,6 +235,19 @@ def build_push_payload(
         if cost_list:
             payload["cost_list"] = cost_list
     return payload, line_binding, []
+
+
+def _resolve_okki_department_id(db: Session, ark_user_id: int | None) -> int | None:
+    """业务员用户设置里的 OKKI 归属部门（推单 departments 必填）。
+
+    注意 department_id=0（我的企业）是合法值，不能用 falsy 判断。
+    """
+    if not ark_user_id:
+        return None
+    user = db.get(ArkUser, ark_user_id)
+    if user is None or user.okki_department_id is None:
+        return None
+    return int(user.okki_department_id)
 
 
 def _resolve_okki_user_id(db: Session, ark_user_id: int | None) -> int | None:

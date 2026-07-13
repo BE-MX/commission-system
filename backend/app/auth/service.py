@@ -1,8 +1,9 @@
 """Auth 业务逻辑"""
 
+import json
 from datetime import datetime, timedelta
 
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from app.auth.models import ArkUser, ArkLoginLog, ArkRefreshToken
@@ -155,6 +156,43 @@ def init_admin_password(db: Session):
         hashed = _bcrypt.hashpw(b"Admin@leisa2026", _bcrypt.gensalt(rounds=12)).decode("utf-8")
         user.password_hash = hashed
         db.commit()
+
+
+def list_okki_department_options(db: Session) -> list[dict]:
+    """从业务库真实订单聚合 OKKI 在用部门（id+name+单量），用户管理部门下拉用。
+
+    OKKI 无部门清单 API（2026-07-13 实测多个候选路径均 404），真实订单的
+    departments JSON 是唯一可靠来源；按使用量倒序，部门调整后自动跟上。
+    """
+    schema = settings.BUSINESS_DB_NAME
+    rows = db.execute(text(f"""
+        SELECT departments, COUNT(*) AS cnt
+        FROM `{schema}`.okki_orders
+        WHERE departments IS NOT NULL AND departments != '' AND departments != '{{}}'
+        GROUP BY departments
+    """)).all()
+    agg: dict[int, dict] = {}
+    for raw, cnt in rows:
+        try:
+            parsed = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        entries = parsed if isinstance(parsed, list) else [parsed]
+        for entry in entries:
+            # 单条脏数据只跳过该条，不能 500 整个下拉
+            try:
+                if not isinstance(entry, dict):
+                    continue
+                dep_id = entry.get("department_id", entry.get("id"))
+                if dep_id is None:
+                    continue
+                dep_id = int(dep_id)
+                name = str(entry.get("name") or "").strip() or f"部门{dep_id}"
+                slot = agg.setdefault(dep_id, {"department_id": dep_id, "name": name, "order_count": 0})
+                slot["order_count"] += int(cnt)
+            except (TypeError, ValueError):
+                continue
+    return sorted(agg.values(), key=lambda item: -item["order_count"])
 
 
 # kind 派生规则（权限重设计方案）：data=数据范围，read/日报=页面可见，其余=操作级

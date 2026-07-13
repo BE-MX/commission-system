@@ -4,7 +4,7 @@ import json
 from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session, selectinload
 
 from app.auth.models import ArkUser
@@ -18,7 +18,8 @@ _HEADER_FIELDS = (
     "invoice_date", "express_channel", "shipping_fee", "surcharge_name",
     "surcharge_amount", "payment_term", "internal_payment_method", "internal_discount",
     "internal_accessory", "internal_received", "internal_balance",
-    "internal_shipping_type", "remark",
+    "internal_shipping_type", "okki_new_deal", "okki_free_shipping", "okki_first_return",
+    "remark",
 )
 
 
@@ -77,11 +78,13 @@ def _resolve_user_names(db: Session, user_ids: set[int]) -> dict[int, str]:
 
 
 def get_customer_contact_defaults(db: Session, customer_id: str) -> dict:
-    """该客户最近一张带联系信息发票的联系人快照，用于录入页自动填充。
+    """该客户最近一张带联系信息发票的联系人快照 + OKKI 历史订单标记，录入页自动填充用。
 
     组织级共享（刻意不受发票数据范围限制）：联系人/地址是客户数据（OKKI CRM
-    同源），只出 4 个联系字段、不暴露任何金额——否则助理录一次业务员还得重录。
+    同源），只出联系字段、不暴露任何金额——否则助理录一次业务员还得重录。
+    has_xiaoman_orders 供前端预判「是否新成交」开关默认值。
     """
+    defaults: dict = {"has_xiaoman_orders": customer_has_xiaoman_orders(db, customer_id)}
     row = (
         db.query(
             Invoice.contact_name, Invoice.contact_phone,
@@ -99,13 +102,53 @@ def get_customer_contact_defaults(db: Session, customer_id: str) -> dict:
         .order_by(Invoice.created_at.desc(), Invoice.id.desc())
         .first()
     )
-    if row is None:
-        return {}
+    if row is not None:
+        defaults.update({
+            "contact_name": row.contact_name,
+            "contact_phone": row.contact_phone,
+            "contact_email": row.contact_email,
+            "delivery_address": row.delivery_address,
+        })
+    return defaults
+
+
+def customer_has_xiaoman_orders(db: Session, customer_id: str, *, exclude_order_id: str | None = None) -> bool:
+    """该客户在 OKKI 是否已有历史订单（「是否新成交」的兜底判据）。
+
+    exclude_order_id：排除本发票已推出的订单——否则首推成功、投影同步回来后
+    重推同一单，会被自己的订单判成"老客"翻转新成交。
+    """
+    if not str(customer_id or "").strip():
+        return False
+    schema = product_service._schema()
+    sql = f"SELECT 1 FROM `{schema}`.okki_orders WHERE company_id = :cid"
+    params: dict = {"cid": str(customer_id)}
+    if exclude_order_id:
+        sql += " AND order_id != :own"
+        params["own"] = str(exclude_order_id)
+    row = db.execute(text(sql + " LIMIT 1"), params).first()
+    return row is not None
+
+
+def resolve_okki_flags(db: Session, invoice: Invoice) -> dict:
+    """三个 OKKI 必填业务标记；空值兜底：新成交=客户在 OKKI 无历史订单，
+    包邮=运费为 0，首返=否。"""
+    new_deal = invoice.okki_new_deal
+    if new_deal is None:
+        has_history = customer_has_xiaoman_orders(
+            db, invoice.customer_id, exclude_order_id=invoice.xiaoman_order_id,
+        )
+        new_deal = 0 if has_history else 1
+    free_shipping = invoice.okki_free_shipping
+    if free_shipping is None:
+        free_shipping = 1 if Decimal(invoice.shipping_fee or 0) == 0 else 0
+    first_return = invoice.okki_first_return
+    if first_return is None:
+        first_return = 0
     return {
-        "contact_name": row.contact_name,
-        "contact_phone": row.contact_phone,
-        "contact_email": row.contact_email,
-        "delivery_address": row.delivery_address,
+        "okki_new_deal": int(new_deal),
+        "okki_free_shipping": int(free_shipping),
+        "okki_first_return": int(first_return),
     }
 
 
@@ -149,6 +192,9 @@ def create_invoice(db: Session, body: InvoiceCreate, user_id: int | None = None)
             invoice.sales_user_name = invoice.sales_user_name or creator.real_name
             invoice.sales_phone = invoice.sales_phone or creator.phone
             invoice.sales_email = invoice.sales_email or creator.email
+    # OKKI 业务标记空值兜底（null=自动判定）
+    for field, value in resolve_okki_flags(db, invoice).items():
+        setattr(invoice, field, value)
     db.add(invoice)
     _replace_items(db, invoice, body, user_id=user_id)
     _refresh_invoice_totals(invoice)
@@ -167,6 +213,9 @@ def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: 
         invoice.sync_status = "not_synced"
         invoice.status = "draft"
         invoice.synced_at = None
+    # OKKI 业务标记空值兜底（null=自动判定）
+    for field, value in resolve_okki_flags(db, invoice).items():
+        setattr(invoice, field, value)
     _replace_items(db, invoice, body, user_id=user_id)
     _refresh_invoice_totals(invoice)
     db.flush()
@@ -230,6 +279,9 @@ def serialize_detail(invoice: Invoice) -> dict:
         "internal_received": invoice.internal_received,
         "internal_balance": invoice.internal_balance,
         "internal_shipping_type": invoice.internal_shipping_type,
+        "okki_new_deal": invoice.okki_new_deal,
+        "okki_free_shipping": invoice.okki_free_shipping,
+        "okki_first_return": invoice.okki_first_return,
         "remark": invoice.remark,
         "xiaoman_order_id": invoice.xiaoman_order_id,
         "xiaoman_order_no": invoice.xiaoman_order_no,

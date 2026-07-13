@@ -10,6 +10,7 @@ from sqlalchemy import or_, func
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import get_db
+from app.auth import service as auth_service
 from app.auth.dependencies import get_current_user, require_any_permission, require_permission
 from app.auth.models import (
     ArkUser, ArkRole, ArkPermission,
@@ -79,6 +80,8 @@ def list_users(
             real_name=u.real_name,
             email=u.email,
             phone=u.phone,
+            okki_department_id=u.okki_department_id,
+            okki_department_name=u.okki_department_name,
             dingtalk_id=u.dingtalk_id,
             is_active=bool(u.is_active),
             roles=[r.label for r in u.roles],
@@ -92,6 +95,15 @@ def list_users(
     return ResponseModel(data=PageResponse(
         items=items, total=total, page=page, page_size=page_size,
     ))
+
+
+# 注册在 /users/{user_id} 类路由之前，避免字面路径被路径参数吞掉
+@router.get("/users/okki-department-options", summary="OKKI 部门选项（真实订单聚合）")
+def get_okki_department_options(
+    db: Session = Depends(get_db),
+    _current_user: dict = Depends(require_permission("user:read")),
+) -> ResponseModel:
+    return ResponseModel(data={"items": auth_service.list_okki_department_options(db)})
 
 
 @router.post("/users", summary="创建用户")
@@ -114,6 +126,8 @@ def create_user(
         real_name=req.real_name,
         email=req.email,
         phone=req.phone,
+        okki_department_id=req.okki_department_id,
+        okki_department_name=req.okki_department_name,
         is_active=True,
     )
     db.add(user)
@@ -148,6 +162,10 @@ def update_user(
         user.email = req.email
     if req.phone is not None:
         user.phone = req.phone
+    # 部门对按"键是否出现"更新：显式传 null 允许清除归属
+    if "okki_department_id" in req.model_fields_set or "okki_department_name" in req.model_fields_set:
+        user.okki_department_id = req.okki_department_id
+        user.okki_department_name = req.okki_department_name
     if req.is_active is not None:
         user.is_active = req.is_active
 

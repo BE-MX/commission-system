@@ -12,6 +12,8 @@ class UserCreateRequest(BaseModel):
     real_name: str = Field(..., min_length=1, max_length=50)
     email: Optional[str] = None
     phone: Optional[str] = None
+    okki_department_id: Optional[int] = None
+    okki_department_name: Optional[str] = Field(None, max_length=100)
     role_ids: list[int] = []
 
 
@@ -19,6 +21,9 @@ class UserUpdateRequest(BaseModel):
     real_name: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
+    # 部门对按"键是否出现"判断更新（model_fields_set），显式传 null 可清除
+    okki_department_id: Optional[int] = None
+    okki_department_name: Optional[str] = Field(None, max_length=100)
     is_active: Optional[bool] = None
     role_ids: Optional[list[int]] = None
 
@@ -38,6 +43,8 @@ class UserListItem(BaseModel):
     real_name: str
     email: Optional[str] = None
     phone: Optional[str] = None
+    okki_department_id: Optional[int] = None
+    okki_department_name: Optional[str] = None
     dingtalk_id: Optional[str] = None
     is_active: bool
     roles: list[str] = []
