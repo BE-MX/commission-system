@@ -22,6 +22,7 @@ import json
 import logging
 from collections import defaultdict
 from datetime import datetime, timedelta
+from decimal import Decimal
 
 from sqlalchemy import text, update
 from sqlalchemy.exc import IntegrityError
@@ -126,8 +127,9 @@ def build_push_payload(
 ) -> tuple[dict | None, list[tuple], list[dict]]:
     """Map an Ark invoice onto the OKKI push body.
 
-    Returns (payload, line_binding, issues); line_binding pairs each real
-    product row with its InvoiceItem for response unique_id write-back.
+    Returns (payload, line_binding, issues); line_binding pairs each pushed
+    row with its local item LIST (the merged generic row spans every
+    un-backfilled custom item) for response unique_id write-back.
     Any issue aborts the push — partial orders are worse than no order.
     """
     issues: list[dict] = []
@@ -156,7 +158,9 @@ def build_push_payload(
         else:
             issues.append({"field": "xiaoman_order_id", "message": f"已存 OKKI 订单 ID「{invoice.xiaoman_order_id}」非法，请联系管理员核对"})
 
-    product_rows, line_binding, line_issues = _build_product_rows(db, invoice, settings_row, editing=order_id is not None)
+    product_rows, line_binding, line_issues, superseded_uids = _build_product_rows(
+        db, invoice, settings_row, editing=order_id is not None
+    )
     issues.extend(line_issues)
     if issues:
         return None, [], issues
@@ -177,7 +181,22 @@ def build_push_payload(
     }
     if order_id is not None:
         payload["order_id"] = order_id
-        payload["product_list"] = product_rows + _build_remove_rows(db, invoice, settings_row)
+        # 快照里仍被当前行使用的 uid 不能删（合并行部分成员被删时，合并行还在用那个 uid）
+        current_uids = {row["unique_id"] for row in product_rows if row.get("unique_id")}
+        remove_rows = [
+            r for r in _build_remove_rows(db, invoice, settings_row)
+            if r["unique_id"] not in current_uids
+        ]
+        removed_uids = {r["unique_id"] for r in remove_rows}
+        for uid in superseded_uids:
+            if uid not in removed_uids and uid not in current_uids:
+                row = {"unique_id": uid, "remove": 1}
+                # 被取代的历史行几乎都是通用产品行，ID 尽力补齐（uid 才是删除锚点）
+                if settings_row and settings_row.generic_product_id and settings_row.generic_sku_id:
+                    row["product_id"] = int(settings_row.generic_product_id)
+                    row["sku_id"] = int(settings_row.generic_sku_id)
+                remove_rows.append(row)
+        payload["product_list"] = product_rows + remove_rows
     remark = "\n".join(
         part for part in (
             (invoice.remark or "").strip() or None,
@@ -219,7 +238,14 @@ def _resolve_okki_user_id(db: Session, ark_user_id: int | None) -> int | None:
 
 def _build_product_rows(
     db: Session, invoice: Invoice, settings_row: XiaomanSettings | None, *, editing: bool
-) -> tuple[list[dict], list[tuple], list[dict]]:
+) -> tuple[list[dict], list[tuple], list[dict], list[int]]:
+    """Returns (rows, line_binding, issues, superseded_uids).
+
+    line_binding pairs each row with the local item LIST it represents —
+    the merged generic row maps to every un-backfilled custom item.
+    superseded_uids: extra OKKI line ids left over when previously
+    individually-pushed custom lines collapse into one merged row.
+    """
     issues: list[dict] = []
     rows: list[dict] = []
     line_binding: list[tuple] = []
@@ -231,45 +257,79 @@ def _build_product_rows(
     }
     generic_ok = bool(settings_row and settings_row.generic_product_id and settings_row.generic_sku_id)
 
+    # uid 所有权：合并行成功后 uid 会写到每个成员上（共享状态）。成员被回填/转正
+    # 后若仍带着共享 uid 单独成行，payload 里会出现两行同 uid → OKKI 按 uid 锚定
+    # 把两行更新到同一条明细（金额无声少一行）。规则：独占 uid 才允许独立行携带，
+    # 共享 uid 归合并行优先锚定，无人认领的 uid 最后统一发 remove 收掉。
+    uid_holders: dict[str, int] = defaultdict(int)
+    for item in invoice.items:
+        uid = str(item.xiaoman_unique_id or "")
+        if uid.isdigit():
+            uid_holders[uid] += 1
+
+    generic_items: list = []  # 走通用产品的非标行 → 合并为一条推送（亮哥 2026-07-13 指令）
     for idx, item in enumerate(invoice.items, start=1):
         prefix = f"items[{idx}]"
-        row: dict = {
-            "count": int(item.quantity),
-            "unit_price": float(item.price_per_piece),
-            # OKKI 不自动算小计，不传当 0 重存
-            "cost_amount": float(item.total_price),
-        }
-        if editing and item.xiaoman_unique_id and str(item.xiaoman_unique_id).isdigit():
-            row["unique_id"] = int(item.xiaoman_unique_id)
         product_id, sku_id = item.product_id, item.sku_id
         if item.item_type == "custom":
             custom = custom_rows.get(item.custom_product_id)
             if custom and custom.okki_product_id and custom.okki_sku_id:
-                # OKKI 侧已建品并回填 → 临时产品转正，走真实 ID
+                # OKKI 侧已建品并回填 → 临时产品转正，按真实 ID 逐行推（不参与合并）
                 product_id, sku_id = custom.okki_product_id, custom.okki_sku_id
             elif generic_ok:
-                product_id, sku_id = settings_row.generic_product_id, settings_row.generic_sku_id
-                # 通用产品行透传真实描述，OKKI 订单行显示真实产品
-                row["product_name"] = item.product_name
-                if item.model:
-                    row["product_model"] = item.model
-                if item.net_weight_grams:
-                    row["unit"] = item.net_weight_grams
+                generic_items.append(item)
+                continue
             else:
                 issues.append({"field": prefix, "message": "生产单产品需先配置通用产品：订单管理 → OKKI 推单设置"})
                 continue
         if not (product_id and sku_id):
             issues.append({"field": prefix, "message": "缺少 OKKI product_id/sku_id，无法推单"})
             continue
-        row["product_id"] = int(product_id)
-        row["sku_id"] = int(sku_id)
+        row: dict = {
+            "count": int(item.quantity),
+            "unit_price": float(item.price_per_piece),
+            # OKKI 不自动算小计，不传当 0 重存
+            "cost_amount": float(item.total_price),
+            "product_id": int(product_id),
+            "sku_id": int(sku_id),
+        }
+        uid = str(item.xiaoman_unique_id or "")
+        if editing and uid.isdigit() and uid_holders[uid] == 1:
+            row["unique_id"] = int(uid)
         rows.append(row)
-        line_binding.append((item, row))
+        line_binding.append(([item], row))
 
+    if generic_items:
+        # 非标行合并成单条通用产品明细：数量恒 1，单价=总价=非标合计。
+        # 附带把"多条通用行被 OKKI 按 product+sku 去重塌行"的风险从根上消除。
+        total = sum((item.total_price or Decimal("0")) for item in generic_items)
+        merged: dict = {
+            "count": 1,
+            "unit_price": float(total),
+            "cost_amount": float(total),
+            "product_id": int(settings_row.generic_product_id),
+            "sku_id": int(settings_row.generic_sku_id),
+            "product_name": _merged_product_name(generic_items),
+        }
+        if editing:
+            uids: list[int] = []
+            for item in generic_items:
+                uid = str(item.xiaoman_unique_id or "")
+                if uid.isdigit() and int(uid) not in uids:
+                    uids.append(int(uid))
+            if uids:
+                merged["unique_id"] = uids[0]
+        rows.append(merged)
+        line_binding.append((generic_items, merged))
+
+    superseded_uids: list[int] = []
     if editing:
+        # 无人认领的 uid（合并取代的多余行、共享 uid 全员转正后的旧通用行）→ remove 收掉
+        claimed = {str(row["unique_id"]) for row in rows if row.get("unique_id")}
+        superseded_uids = sorted(int(uid) for uid in uid_holders if uid not in claimed)
+
         # 官方硬约束：编辑推单时无 unique_id 的行按 product_id+sku_id 去重只留一条。
-        # 一次新增多条同产品行（最典型：多条共用通用产品的生产明细）会被 OKKI 静默并掉，
-        # 必须前置拦截——分多次推送，每次推完行会拿到 unique_id。
+        # 通用行已合并不会触发；剩余场景是一次新增多条相同库存品/已回填品。
         fresh_counts: dict[tuple[int, int], int] = defaultdict(int)
         for row in rows:
             if not row.get("unique_id"):
@@ -277,9 +337,30 @@ def _build_product_rows(
         if any(count > 1 for count in fresh_counts.values()):
             issues.append({
                 "field": "items",
-                "message": "编辑推单一次只能新增一条相同产品的明细（OKKI 按产品去重会静默合并多条生产单通用产品行）：请先推送保存，再添加下一条后重推",
+                "message": "编辑推单一次只能新增一条相同产品的明细（OKKI 按产品去重会静默合并）：请先推送保存，再添加下一条后重推",
             })
-    return rows, line_binding, issues
+        # 纵深防御：payload 内 unique_id 重复即拦截——两行同 uid 会被 OKKI 互相覆盖
+        row_uid_counts: dict[int, int] = defaultdict(int)
+        for row in rows:
+            if row.get("unique_id"):
+                row_uid_counts[row["unique_id"]] += 1
+        if any(count > 1 for count in row_uid_counts.values()):
+            issues.append({
+                "field": "items",
+                "message": "推单明细出现重复的 OKKI 行号（unique_id），已拦截以防金额错乱，请联系管理员核对",
+            })
+    return rows, line_binding, issues, superseded_uids
+
+
+def _merged_product_name(items: list) -> str:
+    """Aggregated description for the merged generic line, e.g.
+    '非标合计2项: Genius Weft/18/#1/20g x2; .../20g x1'（OKKI 行上可读即可，
+    完整明细以方舟发票为准）。"""
+    parts = "; ".join(
+        f"{(item.product_name or item.product_display or '').strip()} x{item.quantity}" for item in items
+    )
+    name = f"非标合计{len(items)}项: {parts}"
+    return name[:237] + "..." if len(name) > 240 else name
 
 
 def _build_remove_rows(db: Session, invoice: Invoice, settings_row: XiaomanSettings | None) -> list[dict]:
@@ -333,12 +414,14 @@ def _build_cost_list(invoice: Invoice) -> list[dict]:
 def _assign_unique_ids(invoice: Invoice, line_binding: list[tuple], response_rows: list[dict]) -> int:
     """Write OKKI line unique_ids back onto items; return the unassigned count.
 
-    Rows pushed with a unique_id keep it. New rows claim unclaimed response
-    unique_ids grouped by (product_id, sku_id), in order — same-identity rows
-    are interchangeable, so positional assignment within a group is safe.
+    Each binding maps one pushed row to its local item list (the merged generic
+    row spans several items — every member gets the same uid so any surviving
+    subset can anchor the line in later edits). Rows pushed with a unique_id
+    keep it; new rows claim unclaimed response uids grouped by
+    (product_id, sku_id), in order — same-identity rows are interchangeable.
     A non-zero return means OKKI silently dropped rows — caller must surface it.
     """
-    known = {str(row.get("unique_id")) for _item, row in line_binding if row.get("unique_id")}
+    known = {str(row.get("unique_id")) for _items, row in line_binding if row.get("unique_id")}
     pool: dict[tuple[str, str], list] = defaultdict(list)
     for resp in response_rows:
         uid = resp.get("unique_id")
@@ -346,14 +429,17 @@ def _assign_unique_ids(invoice: Invoice, line_binding: list[tuple], response_row
             continue
         pool[(str(resp.get("product_id")), str(resp.get("sku_id")))].append(uid)
     unassigned = 0
-    for item, row in line_binding:
+    for items, row in line_binding:
         if row.get("unique_id"):
-            continue
-        uids = pool.get((str(row.get("product_id")), str(row.get("sku_id"))))
-        if uids:
-            item.xiaoman_unique_id = str(uids.pop(0))
+            uid = str(row["unique_id"])
         else:
-            unassigned += 1
+            uids = pool.get((str(row.get("product_id")), str(row.get("sku_id"))))
+            if not uids:
+                unassigned += 1
+                continue
+            uid = str(uids.pop(0))
+        for item in items:
+            item.xiaoman_unique_id = uid
     if unassigned:
         logger.warning("invoice %s: %s line(s) missing unique_id from OKKI response", invoice.id, unassigned)
         print(f"[xiaoman] invoice {invoice.id}: {unassigned} line(s) missing unique_id in response", flush=True)

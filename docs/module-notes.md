@@ -522,7 +522,8 @@ frontend/src/
 
 ### 推单字段映射（2026-07-13 落地，`xiaoman_service.build_push_payload`）
 - **订单层**：name=发票号+客户名；account_date=invoice_date；company_id=customer_id（customer_info 投影即 OKKI 数字 ID，非数字前置拦截）；status=设置页选定的企业枚举 code；create_user/handler/users[rate=100]=业务员绑定的 OKKI user_id（**未绑定 fail-fast 不推**）；**不传 user_id**（避开操作人权限 404）；**订单级金额一律不传**（OKKI 按 product_list+cost_list 自算，避开汇率×100 口径）；payment_term 并入 remark；联系人字段 v1 不传
-- **明细层**：stock 行=真实 product_id+sku_id；custom 未回填=通用产品 ID + product_name/product_model/unit 透传真实描述；custom 已回填=真实 ID 转正；cost_amount=行小计**必传**（OKKI 不自动算，不传当 0）；运费/附加费走 cost_list（percent_type=0 绝对值）
+- **明细层**：stock 行=真实 product_id+sku_id；custom 未回填的非标行**全部合并成一条通用产品明细**（数量恒 1，单价=总价=非标合计，product_name=「非标合计N项: 名称×数量; ...」240 字符截断，亮哥 2026-07-13 指令）；custom 已回填=真实 ID 转正逐行推（不参与合并）；cost_amount=行小计**必传**（OKKI 不自动算，不传当 0）；运费/附加费走 cost_list（percent_type=0 绝对值）
+- **合并行 uid 所有权规则**（防两行同 uid 被 OKKI 互相覆盖）：合并推送成功后 uid 写到每个成员上（共享）；成员回填转正后**放弃共享 uid 按新行推**，合并行优先锚定；uid 独占才允许独立行携带；无人认领的 uid（合并取代/全员转正）统一发 remove:1 收掉；payload 内出现重复 uid 直接前置拦截
 - **幂等编辑闭环**：已存 xiaoman_order_id → 带 order_id 编辑推送；明细 unique_id 跨编辑传承（前端回传行 id，`_replace_items` 按 id 承接——多条 custom 行共用通用产品 ID，无 unique_id 会被 OKKI 按 product+sku 去重塌行）；本地删掉的已推行进 `ark_invoices.xiaoman_removed_lines` 快照，下次推单发 remove:1，成功后清空；编辑已同步发票**保留** xiaoman_order_id（清掉会重推出重复订单）
 - 推单前自动跑 `reconcile_custom_products` 对账回填（失败不阻断，custom 行走通用产品兜底）；每次推送落 `ark_invoice_sync_logs`（请求摘要无凭证，可直接查 OKKI 响应原文）
 
