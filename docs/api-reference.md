@@ -50,7 +50,7 @@
   - 选项端点：`GET /hair-colors`（发色库列表，`?only_active=0` 管理端取全量；048 起独立表 ark_expo_hair_colors，不再复用 ark_color_palette）、`GET /scenes?mode=scene|tryon`（scene=场景大片五景 / tryon=试戴生成场景 **20 景**：职场专业 12（白领/老师/老板娘/公务员/医生/律师/银行柜员/财务/社区主任/药剂师/小区管理员/高铁出差）+ 长辈生活 8（居家/聚会/喜婆婆/接孙放学/广场舞领舞/老年大学/闺蜜咖啡/晨间公园），key/label/tagline；tryon 额外返回 `image` 示意图 URL（探测 uploads/expo/scenes/&lt;key&gt;.* 存在则给 /uploads 路径否则 null，仅示意不参与合成）+ `category`（career/life，前端分段 Tab 展示，避免 20 景单行长条）；tryon 统一输出 6 寸竖版 1024x1536。multi 多场景合一已于 2026-07-09 下线）；**场景示意图管理**（expo:admin）：`POST /scenes/{key}/image`（multipart photo，存 uploads/expo/scenes/&lt;key&gt;.&lt;ext&gt;，先删同 key 旧图 + 超 1200px 降采样，限 jpg/jpeg/png/webp）、`DELETE /scenes/{key}/image`（删示意图，恢复占位卡）。管理页 `/expo/scene-images`
   - 管理端：`/wigs` CRUD + `/wigs/upload-photo`（发型库；`must_recommend` 主推=置顶推荐列表最前(2026-07-13 起)/多款主推按匹配分排序/仍按性别过滤；`priority` 大→同评级内推荐分小幅折算加高）+ `GET /wigs/picker`（kiosk「从发型库选择」轻量列表：启用发型 wig_id/name/series/cover_url）、`/hair-colors` POST/PUT + `/hair-colors/upload-swatch`（发色库，上传色板图自动提取主色 hex；expo:admin）、`/scripts` CRUD + `POST /scripts/seed`（话术卡库，写入时禁用词强校验）、`/leads` 线索台、`DELETE /customers/{id}`（照片物理删除）
   - H5 kiosk：`/expo/kiosk` 全屏路由（router/index.js 顶层注册，不走 MainLayout）；匹配权重 `config/expo_matching.yaml`；上传文件锚定 REPO_ROOT/uploads/expo（存库相对路径）
-- `/api/invoice` — 订单发票管理（`invoice/router.py`，需 `invoice:read/write/sync/admin`；049 起全部端点走 `ok()` 信封）
+- `/api/invoice` — 订单发票管理（`invoice/router.py`，需 `invoice:read/write/sync/admin`；049 起全部端点走 `ok()` 信封；**数据范围**：默认只见/只能操作自己创建的发票，`invoice:read_all`（kind=data，067）或 super_admin 放开为全部——注意它同时放宽读与写的对象范围）
   - `GET /customers/search` — 客户搜索（invoice:read/write）
   - `GET /products/filter-options` — 产品级联筛选项（model→color→size→unit，库存单用）
   - `GET /products/match` — 按 model/color/size/unit 精确匹配产品
@@ -60,7 +60,7 @@
   - `GET|POST|DELETE /price/std` — 标准价矩阵 CRUD；`POST /price/import` — 导入基础价格表 Excel（价格表+颜色对照表两 sheet，invoice:admin）
   - `GET|POST|DELETE /price/color-types` — 色号→色型映射（solid/piano/ombre/balayage）
   - `GET|POST|DELETE /price/customer-rules` — 客户价格规则（fixed/percent 二选一，有符号）；`GET /price/customer-rules/by-customer/{id}` — 单客户规则
-  - `GET /invoices` — 发票列表（分页+搜索+状态+order_type 筛选）
+  - `GET /invoices` — 发票列表（分页+搜索+状态+order_type 筛选；数据范围由权限自动决定，无 read_all 只返回自己创建的；created_by 为 NULL 的历史发票仅全量范围可见）
   - `POST /invoices` — 创建发票（order_type stock/production；custom 明细自动沉淀产品并服务端定价快照）
   - `GET /invoices/{id}` — 发票详情
   - `PUT /invoices/{id}` — 更新发票（order_type 创建后不可改）

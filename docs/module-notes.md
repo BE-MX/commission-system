@@ -527,6 +527,11 @@ frontend/src/
 - **幂等编辑闭环**：已存 xiaoman_order_id → 带 order_id 编辑推送；明细 unique_id 跨编辑传承（前端回传行 id，`_replace_items` 按 id 承接——多条 custom 行共用通用产品 ID，无 unique_id 会被 OKKI 按 product+sku 去重塌行）；本地删掉的已推行进 `ark_invoices.xiaoman_removed_lines` 快照，下次推单发 remove:1，成功后清空；编辑已同步发票**保留** xiaoman_order_id（清掉会重推出重复订单）
 - 推单前自动跑 `reconcile_custom_products` 对账回填（失败不阻断，custom 行走通用产品兜底）；每次推送落 `ark_invoice_sync_logs`（请求摘要无凭证，可直接查 OKKI 响应原文）
 
+### 数据范围权限（2026-07-13，invoice:read_all）
+- 默认只见/只能操作 `created_by` = 自己的发票（列表过滤 + 9 个单票端点 404 守卫，不可见按不存在处理）；`invoice:read_all`（kind=data，067 迁移，仅授 admin 角色）或 super_admin 放开全部。**码名叫 read_all 但语义是全量数据范围**——持码者配合 write/sync 也能改/推他人发票
+- **存量 4 张发票 created_by=NULL**（历史 `_user_id` bug 所致），系统内无归属编辑入口，只有全量范围可见；需人工 SQL 定归属或按测试数据清理
+- **`_user_id` bug 修复的连带语义**：新发票 `sales_user_id`=创建人 → OKKI 推单业绩归属自动落创建人绑定账号。**若存在代开票场景（财务/助理替业务员开票）业绩会静默归错人**，且 sales_user_id 无编辑入口——出现代开票需求时先补归属编辑能力
+
 ### 已踩过的坑
 - **页面不要自己 catch 弹错**：axios 拦截器已统一弹出 FastAPI 的 detail，页面 save() 再 catch `err.response.data.message`（undefined）会追加一条英文噪音 toast——OkkiSyncSettings 首版实case
 - okki_products / okki_inventory / user_basic 均为外部同步作业维护的**只读镜像**，OKKI 侧新建品/新账号有同步延迟，解析不到先等镜像

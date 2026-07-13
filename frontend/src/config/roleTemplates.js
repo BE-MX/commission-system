@@ -25,7 +25,7 @@ const SUPERVISOR_CODES = [
   'commission:read',
   'customer:write',
   'supervisor:read',
-  'tracking:read_all',
+  'tracking:read_all', 'invoice:read_all',
   'design:audit', 'design_stats:read',
   'insight:internal_read', 'insight_ai_tools:read',
   'insight_minutes:write',
@@ -60,7 +60,7 @@ export const ROLE_TEMPLATES = [
     codes: [
       'commission:read', 'commission:write', 'commission_my:read',
       'payment:read', 'payment:write',
-      'invoice:read', 'invoice:write', 'invoice:sync',
+      'invoice:read', 'invoice:write', 'invoice:sync', 'invoice:read_all',
       'report:read',
     ],
   },
