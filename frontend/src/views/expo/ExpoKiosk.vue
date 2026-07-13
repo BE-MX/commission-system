@@ -111,9 +111,10 @@ function confirmHome() {
 watch(flow.step, s => { if (s === 'attract') homeConfirm.value = false })
 
 // 点击品牌字进入销售面板（2026-07-13 亮哥指令：由长按 3 秒改为单击）。
-// 有会话时才响应；不做明显按钮、不给 pointer 光标——入口对客户保持无痕
+// 面板已是线索列表，无会话也可进（销售随时查话术）；不做明显按钮、不给
+// pointer 光标——入口对客户保持无痕，60s 空闲自动清场兜底共享屏隐私
 function brandClick() {
-  if (!flow.sessionId.value || flow.step.value === 'sales') return
+  if (flow.step.value === 'sales') return
   flow.openSales()
 }
 </script>

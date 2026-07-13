@@ -14,6 +14,15 @@ export function updateCustomer(customerId, data) {
   return expoClient.put(`/customers/${customerId}`, data, { showLoading: false })
 }
 
+// ── kiosk 销售面板（展位设备；手机号脱敏，话术不含 internal 发况） ──
+export function getKioskLeads(params) {
+  return expoClient.get('/kiosk/leads', { params, showLoading: false })
+}
+
+export function getKioskStrategy(customerId) {
+  return expoClient.get(`/kiosk/leads/${customerId}/strategy`, { showLoading: false })
+}
+
 export function createSession(customerId, photoBlob, mode = 'tryon') {
   const form = new FormData()
   form.append('photo', photoBlob, 'photo.jpg')

@@ -34,7 +34,7 @@ export function useTryOnFlow() {
   const selectedColorId = ref(null)  // null = 保持发型原色
   const scenes = ref([])             // 场景大片可选场景
   const selectedSceneKeys = ref([])
-  const salesReturnStep = ref('result') // 销售面板的来源屏（点击品牌字可从任意有会话屏进入）
+  const salesReturnStep = ref('result') // 销售面板的来源屏（单击品牌字任意屏可进，含 attract）
   const guideShown = ref(false)      // 拍摄示范浮层一客只自动弹一次（register↔capture 往返不重弹）
   const tryonScenes = ref([])        // tryon 生成场景选项（职业/生活场景，滑动选择）
   const selectedTryonScene = ref(null) // 默认选中第一个；仅弱网加载失败时留 null=原景兜底
@@ -324,8 +324,8 @@ export function useTryOnFlow() {
   }
 
   // ── 销售面板 ──
-  // 不再拉 internal 载荷：kiosk 是与客户共享的屏幕，话术/发况只在试戴线索台
-  //（顾问自己的设备）展示，本机不落任何内部数据（2026-07-07 用户指令）
+  // 2026-07-13 起面板=线索列表+话术查看（/kiosk/* 专用端点，手机号脱敏）；
+  // internal 发况与客户流程屏话术仍禁止（2026-07-07 红线保留一半，见 cerebrum）
   function openSales() {
     if (step.value !== 'sales') salesReturnStep.value = step.value
     step.value = 'sales'
