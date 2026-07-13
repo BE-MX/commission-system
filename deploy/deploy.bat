@@ -15,6 +15,10 @@ if not defined CONNECTOR_SERVICE_NAME set "CONNECTOR_SERVICE_NAME=WhatsAppConnec
 set "NSSM_EXE=%USERPROFILE%\AppData\Local\Microsoft\WinGet\Links\nssm.exe"
 set "CLOUD_SERVER=root@119.28.107.92"
 set "CLOUD_DIST=/var/www/ark/dist"
+REM All ssh/scp go through these opts (2026-07-13): BatchMode turns any interactive
+REM prompt (host key / password) into an immediate error instead of a silent hang;
+REM ConnectTimeout/ServerAlive bound dead-network waits to ~70s max.
+set "SSH_OPTS=-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=4"
 
 echo.
 echo ==============================
@@ -201,7 +205,7 @@ for /f "delims=" %%P in ('where rsync 2^>nul') do set "RSYNC_PATH=%%P"
 
 if defined RSYNC_PATH (
     echo      Using rsync incremental sync...
-    rsync -avz --delete --chmod=D755,F644 dist/ %CLOUD_SERVER%:%CLOUD_DIST%/
+    rsync -avz --delete --chmod=D755,F644 -e "ssh %SSH_OPTS%" dist/ %CLOUD_SERVER%:%CLOUD_DIST%/
     if not errorlevel 1 (
         set "SYNC_OK=1"
         echo      OK
@@ -238,7 +242,10 @@ REM 利用 ssh+md5sum 比对，只传变化的文件
 set "SMART_FAIL=0"
 REM 1) 获取远程 assets 文件 md5 清单
 echo      Computing diff via ssh...
-ssh %CLOUD_SERVER% "cd %CLOUD_DIST% && find assets/ -type f -exec md5sum {} \; 2>/dev/null" > "%TEMP%\cloud_md5.txt" 2>nul
+ssh %SSH_OPTS% %CLOUD_SERVER% "cd %CLOUD_DIST% && find assets/ -type f -exec md5sum {} \; 2>/dev/null" > "%TEMP%\cloud_md5.txt" 2>nul
+REM ssh failure leaves an EMPTY file behind (the > redirect creates it first);
+REM delete it so we fall through to :scp_full instead of diffing against nothing
+if errorlevel 1 del /q "%TEMP%\cloud_md5.txt" >nul 2>&1
 
 REM 2) 生成本地 md5 清单
 cd /d "%INSTALL_DIR%\frontend\dist"
@@ -246,10 +253,11 @@ if exist "%TEMP%\cloud_md5.txt" (
     REM 有远程清单，做增量比对
     set UPLOAD_COUNT=0
     REM Always upload index.html; its failure means the ssh/scp channel is down = overall fail
-    scp index.html %CLOUD_SERVER%:%CLOUD_DIST%/index.html >nul 2>&1
+    echo      index.html...
+    scp %SSH_OPTS% index.html %CLOUD_SERVER%:%CLOUD_DIST%/index.html
     if errorlevel 1 set "SMART_FAIL=1"
     REM m/ is small (<1MB), always upload
-    scp -r m %CLOUD_SERVER%:%CLOUD_DIST%/ >nul 2>&1
+    scp %SSH_OPTS% -r m %CLOUD_SERVER%:%CLOUD_DIST%/ >nul 2>&1
     REM vendor/ holds ~35MB Stimulsoft that almost never changes: upload only when
     REM git says it changed since the last synced build, or the cloud copy is missing
     set "VENDOR_CHANGED=0"
@@ -260,28 +268,34 @@ if exist "%TEMP%\cloud_md5.txt" (
     )
     git -C "%INSTALL_DIR%" diff --name-only -- frontend/public/vendor/ 2>nul | findstr /R "." >nul 2>&1
     if not errorlevel 1 set "VENDOR_CHANGED=1"
-    ssh %CLOUD_SERVER% "test -d %CLOUD_DIST%/vendor/stimulsoft" >nul 2>&1
+    ssh %SSH_OPTS% %CLOUD_SERVER% "test -d %CLOUD_DIST%/vendor/stimulsoft" >nul 2>&1
     if errorlevel 1 set "VENDOR_CHANGED=1"
     if "!VENDOR_CHANGED!"=="1" (
         echo      vendor/ changed or missing on cloud, uploading ~35MB...
         REM no ^>nul here: a 35MB transfer with output swallowed looks like a hang
-        scp -r vendor %CLOUD_SERVER%:%CLOUD_DIST%/
+        scp %SSH_OPTS% -r vendor %CLOUD_SERVER%:%CLOUD_DIST%/
         if errorlevel 1 set "SMART_FAIL=1"
     ) else (
         echo      vendor/ unchanged, skipped
     )
-    REM 逐个比对 assets 文件
+    REM 逐个比对 assets 文件（每传一个打一行进度——2026-07-13 前这里全程静默，
+    REM 几十个文件 × 每个单开一条 SSH 连接会安静跑数分钟，曾被误判为卡死而中断）
     for /f "delims=" %%F in ('dir /s /b assets\*') do (
         set "RELPATH=%%F"
         set "RELPATH=!RELPATH:%CD%\=!"
         REM 替换反斜杠为正斜杠
         set "RELPATH=!RELPATH:\=/!"
-        REM 检查远程是否有同名且 md5 一致的文件
+        REM 检查远程是否有同名文件（vite 内容 hash 命名，同名即同内容）
         findstr /C:"!RELPATH!" "%TEMP%\cloud_md5.txt" >nul 2>&1
         if errorlevel 1 (
             REM 远程没有此文件，需要上传
-            scp "%%F" %CLOUD_SERVER%:%CLOUD_DIST%/!RELPATH! >nul 2>&1
             set /a UPLOAD_COUNT+=1
+            echo      [!UPLOAD_COUNT!] !RELPATH!
+            scp %SSH_OPTS% "%%F" %CLOUD_SERVER%:%CLOUD_DIST%/!RELPATH! >nul 2>&1
+            if errorlevel 1 (
+                echo      [ERROR] upload failed: !RELPATH!
+                set "SMART_FAIL=1"
+            )
         )
     )
     echo      OK !UPLOAD_COUNT! new/changed assets uploaded
@@ -294,7 +308,9 @@ exit /b !SMART_FAIL!
 
 :scp_full
 echo      Full scp sync...
-scp -r dist/* %CLOUD_SERVER%:%CLOUD_DIST%/
+REM 显式回到 frontend：从 :scp_smart 回退进来时 CWD 在 dist 里，dist/* 会失配
+cd /d "%INSTALL_DIR%\frontend"
+scp %SSH_OPTS% -r dist/* %CLOUD_SERVER%:%CLOUD_DIST%/
 if errorlevel 1 (
     echo [WARNING] SCP sync failed - cloud may be stale
     exit /b 1

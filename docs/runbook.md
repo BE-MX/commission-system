@@ -289,6 +289,18 @@ nssm restart CommissionSystem
 3. 检查 SSH 隧道：`ssh root@119.28.107.92 "netstat -tlnp | grep 8888"`
 4. 重新同步：`deploy\deploy.bat`
 
+### Q3.5：部署成功但页面还是旧版（2026-07-13 实case）
+
+**先别重跑 deploy，八成云端已经是新的，是客户端缓存。** 判定方法（开发机可做）：
+
+1. `curl -sI https://leshine.work/ | findstr Last-Modified` — 时间是不是刚部署的时刻
+2. 拉云端 chunk 验证代码内容：`curl -s https://leshine.work/` 找到 `assets/index-*.js` → 下载后搜其中的懒加载 chunk 名 → 下载目标 chunk 用 `grep` 搜本次改动的特征字符串（比对内容，不要比对 hash——本地构建与服务器构建可能差一个提交）
+3. 若云端确认是新的 → 测试设备强刷（PC Ctrl+F5 / iPad Safari 清除历史与网站数据）
+
+根治已落地（2026-07-13）：云端 nginx 对所有 `.html` 返回 `Cache-Control: no-cache`（每次 ETag 回源验证，未变 304），`/etc/nginx/conf.d/leshine.conf`（改前备份 `leshine.conf.bak-20260713`）；带 hash 的 `/assets/` 维持一年 immutable 缓存。此后部署即刻全员生效，不再需要用户清缓存。
+
+另：deploy.bat 的 assets 增量上传循环**每传一个文件打一行进度**（2026-07-13 加固前全程静默数分钟，曾被误判卡死而手动中断）；所有 ssh/scp 带 `BatchMode=yes -o ConnectTimeout=10`，网络/密钥问题会立即报错而不是无限假死。若报 BatchMode 相关错误 = SSH 免密失效，在服务器上手动 `ssh root@119.28.107.92 "echo ok"` 按提示修复后重跑。
+
 ### Q4：定时任务未执行
 
 1. 检查 `SCHEDULER_ENABLED=true`（`.env`）
