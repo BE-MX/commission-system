@@ -37,9 +37,9 @@
           </template>
         </el-table-column>
         <el-table-column prop="priority" label="优先级" min-width="80" sortable />
-        <el-table-column label="必推" min-width="70">
+        <el-table-column label="主推" min-width="70">
           <template #default="{ row }">
-            <el-tag v-if="row.must_recommend" type="danger" effect="plain" size="small">必推</el-tag>
+            <el-tag v-if="row.must_recommend" type="danger" effect="plain" size="small">主推</el-tag>
             <span v-else style="color: var(--text-muted)">—</span>
           </template>
         </el-table-column>
@@ -154,9 +154,9 @@
           <el-input-number v-model="form.priority" :min="0" :max="999" style="width: 100%" />
           <span style="color: var(--text-muted); font-size: 12px">数字越大，同评级内推荐分越高、排更前（小幅折算，封顶）</span>
         </el-form-item>
-        <el-form-item label="必推">
+        <el-form-item label="主推">
           <el-switch v-model="form.must_recommend" />
-          <span style="margin-left: 8px; color: var(--text-muted); font-size: 12px">开启后不论脸型都保证进前 6 推荐（不强占第一，仍按性别过滤）；建议少量款设为必推，过多会挤占推荐位</span>
+          <span style="margin-left: 8px; color: var(--text-muted); font-size: 12px">开启后置顶推荐列表最前（不论脸型，仍按性别过滤，多款主推之间按匹配分排序）；建议少量款设为主推，过多会挤占匹配推荐位</span>
         </el-form-item>
         <el-form-item label="启用"><el-switch v-model="form.is_active" /></el-form-item>
       </el-form>
