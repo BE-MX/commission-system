@@ -30,8 +30,13 @@ def list_invoices(
     keyword: str | None = None,
     status: str | None = None,
     order_type: str | None = None,
+    created_by: int | None = None,
 ) -> tuple[list[dict], int]:
     query = db.query(Invoice)
+    if created_by is not None:
+        # 数据范围口径（invoice:read_all 缺失时只看自己创建的），
+        # created_by 为 NULL 的历史发票只对全量范围可见
+        query = query.filter(Invoice.created_by == created_by)
     if keyword:
         like = f"%{keyword}%"
         query = query.filter(

@@ -156,7 +156,7 @@ def init_admin_password(db: Session):
 
 
 # kind 派生规则（权限重设计方案）：data=数据范围，read/日报=页面可见，其余=操作级
-_DATA_KIND_CODES = {"tracking:read_all", "commission:self_read", "insight:internal_read"}
+_DATA_KIND_CODES = {"tracking:read_all", "commission:self_read", "insight:internal_read", "invoice:read_all"}
 _PAGE_KIND_EXTRA = {"tracking:daily_report"}
 
 
@@ -274,6 +274,8 @@ def seed_role_permissions(db: Session):
         ("invoice:read",          "invoice", "read",          "查看订单发票"),
         ("invoice:write",         "invoice", "write",         "创建/编辑订单发票"),
         ("invoice:sync",          "invoice", "sync",          "同步订单发票到小满"),
+        # 数据范围码（2026-07-13）：默认只看自己创建的发票，持有此码放开为全部
+        ("invoice:read_all",      "invoice", "read_all",      "查看全部发票（数据范围）"),
         ("invoice:admin",         "invoice", "admin",         "价格配置 / OKKI 同步配置 / 自定义产品管理(操作)"),
         ("invoice_price:read",    "invoice", "read",          "查看价格与产品配置页"),
         ("invoice_okki:read",     "invoice", "read",          "OKKI 推单设置页菜单（页面数据需 invoice:admin）"),

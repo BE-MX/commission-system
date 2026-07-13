@@ -31,9 +31,37 @@ _PRICE_PAGE_READ = require_any_permission("invoice_price:read", "invoice:read", 
 
 
 def _user_id(current_user) -> int | None:
+    # JWT payload 的用户 ID 在 "sub"（字符串）——原先只取 "id" 导致
+    # created_by/operator_id 长期写 NULL（2026-07-13 修复）
     if isinstance(current_user, dict):
-        return current_user.get("id")
-    return getattr(current_user, "id", None)
+        raw = current_user.get("id") or current_user.get("sub")
+    else:
+        raw = getattr(current_user, "id", None)
+    try:
+        return int(raw) if raw is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _can_read_all(current_user) -> bool:
+    """invoice:read_all / super_admin → 全量数据范围，其余只看自己创建的发票"""
+    if not isinstance(current_user, dict):
+        return False
+    return (
+        "invoice:read_all" in current_user.get("permissions", [])
+        or "super_admin" in current_user.get("roles", [])
+    )
+
+
+def _ensure_invoice_visible(invoice, current_user) -> None:
+    """数据范围守卫：不可见的发票按不存在处理（防拿 ID 探测，tracking 同口径）。
+
+    created_by 为 NULL 的历史发票只有 read_all/super_admin 可见。
+    """
+    if _can_read_all(current_user):
+        return
+    if invoice.created_by != _user_id(current_user) or invoice.created_by is None:
+        raise HTTPException(404, "发票不存在")
 
 
 # ── customers / products ─────────────────────────────────────
@@ -375,10 +403,18 @@ def list_invoices(
     status: str | None = Query(None),
     order_type: str | None = Query(None, pattern="^(stock|production)$"),
     db: Session = Depends(get_db),
-    _user=Depends(require_permission("invoice:read")),
+    current_user=Depends(require_permission("invoice:read")),
 ):
+    if _can_read_all(current_user):
+        created_by = None  # 全量范围，不过滤
+    else:
+        created_by = _user_id(current_user)
+        if created_by is None:
+            # fail-closed：身份解析不出时宁可拒绝，不能落到"不过滤=全量"
+            raise HTTPException(403, "无法确认用户身份，禁止访问发票列表")
     items, total = service.list_invoices(
-        db, page=page, page_size=page_size, keyword=keyword, status=status, order_type=order_type
+        db, page=page, page_size=page_size, keyword=keyword, status=status, order_type=order_type,
+        created_by=created_by,
     )
     return ok({"total": total, "page": page, "page_size": page_size, "items": items})
 
@@ -400,11 +436,12 @@ def create_invoice(
 def get_invoice(
     invoice_id: int,
     db: Session = Depends(get_db),
-    _user=Depends(require_permission("invoice:read")),
+    current_user=Depends(require_permission("invoice:read")),
 ):
     invoice = service.get_invoice(db, invoice_id)
     if not invoice:
         raise HTTPException(404, "发票不存在")
+    _ensure_invoice_visible(invoice, current_user)
     return ok(service.serialize_detail(invoice))
 
 
@@ -418,6 +455,7 @@ def update_invoice(
     invoice = service.get_invoice(db, invoice_id)
     if not invoice:
         raise HTTPException(404, "发票不存在")
+    _ensure_invoice_visible(invoice, current_user)
     invoice = service.update_invoice(db, invoice, body, user_id=_user_id(current_user))
     db.commit()
     invoice = service.get_invoice(db, invoice.id)
@@ -428,11 +466,12 @@ def update_invoice(
 def delete_invoice(
     invoice_id: int,
     db: Session = Depends(get_db),
-    _user=Depends(require_permission("invoice:write")),
+    current_user=Depends(require_permission("invoice:write")),
 ):
     invoice = service.get_invoice(db, invoice_id)
     if not invoice:
         raise HTTPException(404, "发票不存在")
+    _ensure_invoice_visible(invoice, current_user)
     try:
         service.delete_invoice(db, invoice)
     except ValueError as exc:
@@ -446,11 +485,12 @@ def validate_invoice(
     invoice_id: int,
     db: Session = Depends(get_db),
     # mutates invoice.status -> read-only users must not reach it
-    _user=Depends(require_any_permission("invoice:write", "invoice:sync")),
+    current_user=Depends(require_any_permission("invoice:write", "invoice:sync")),
 ):
     invoice = service.get_invoice(db, invoice_id)
     if not invoice:
         raise HTTPException(404, "发票不存在")
+    _ensure_invoice_visible(invoice, current_user)
     issues = service.mark_ready_if_valid(invoice)
     db.commit()
     return ok({"ok": not issues, "issues": issues})
@@ -465,6 +505,7 @@ def sync_invoice(
     invoice = service.get_invoice(db, invoice_id, for_update=True)
     if not invoice:
         raise HTTPException(404, "发票不存在")
+    _ensure_invoice_visible(invoice, current_user)
     result = xiaoman_service.sync_invoice(db, invoice, operator_id=_user_id(current_user))
     db.commit()
     return ok(result)
@@ -474,11 +515,12 @@ def sync_invoice(
 def get_sync_logs(
     invoice_id: int,
     db: Session = Depends(get_db),
-    _user=Depends(require_permission("invoice:read")),
+    current_user=Depends(require_permission("invoice:read")),
 ):
     invoice = service.get_invoice(db, invoice_id)
     if not invoice:
         raise HTTPException(404, "发票不存在")
+    _ensure_invoice_visible(invoice, current_user)
     return ok({"items": xiaoman_service.list_sync_logs(db, invoice_id)})
 
 
@@ -486,11 +528,12 @@ def get_sync_logs(
 def export_excel(
     invoice_id: int,
     db: Session = Depends(get_db),
-    _user=Depends(require_permission("invoice:read")),
+    current_user=Depends(require_permission("invoice:read")),
 ):
     invoice = service.get_invoice(db, invoice_id)
     if not invoice:
         raise HTTPException(404, "发票不存在")
+    _ensure_invoice_visible(invoice, current_user)
     stream = export_service.build_invoice_workbook(invoice)
     filename = quote(f"{invoice.invoice_no}.xlsx")
     return StreamingResponse(
@@ -504,11 +547,12 @@ def export_excel(
 def export_print_html(
     invoice_id: int,
     db: Session = Depends(get_db),
-    _user=Depends(require_permission("invoice:read")),
+    current_user=Depends(require_permission("invoice:read")),
 ):
     invoice = service.get_invoice(db, invoice_id)
     if not invoice:
         raise HTTPException(404, "发票不存在")
+    _ensure_invoice_visible(invoice, current_user)
     return HTMLResponse(export_service.build_print_html(invoice))
 
 
@@ -516,11 +560,12 @@ def export_print_html(
 def export_pdf(
     invoice_id: int,
     db: Session = Depends(get_db),
-    _user=Depends(require_permission("invoice:read")),
+    current_user=Depends(require_permission("invoice:read")),
 ):
     invoice = service.get_invoice(db, invoice_id)
     if not invoice:
         raise HTTPException(404, "发票不存在")
+    _ensure_invoice_visible(invoice, current_user)
     stream = export_service.build_invoice_pdf(invoice)
     filename = quote(f"{invoice.invoice_no}.pdf")
     return StreamingResponse(
