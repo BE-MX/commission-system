@@ -217,6 +217,26 @@
   flex: 1;
 }
 
+.okki-flags-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  width: 100%;
+}
+
+.okki-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--invoice-ink);
+}
+
+.okki-flag-tip {
+  font-size: 12px;
+  color: var(--invoice-muted);
+}
+
 .line-header {
   display: flex;
   align-items: center;

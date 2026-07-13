@@ -37,6 +37,10 @@ export function syncAllUsersDingtalk() {
   return authRequest.post('/users/sync-dingtalk-all', {}, { loadingText: '正在批量同步...' }).then(r => r.data)
 }
 
+export function getOkkiDepartmentOptions() {
+  return authRequest.get('/users/okki-department-options', { showLoading: false }).then(r => r.data)
+}
+
 // ── 角色管理 ──────────────────────────────────────────
 
 export function getRoleList() {

@@ -231,6 +231,25 @@
             <el-form-item label="付款条款">
               <el-input v-model="form.payment_term" maxlength="200" placeholder="Payment Term，如 TT 20%" />
             </el-form-item>
+            <el-form-item label="小满标记" class="wide">
+              <div class="okki-flags-row">
+                <span class="okki-flag">
+                  新成交
+                  <el-switch v-model="form.okki_new_deal" :active-value="1" :inactive-value="0"
+                             @change="markOkkiFlagTouched('newDeal')" />
+                </span>
+                <span class="okki-flag">
+                  包邮
+                  <el-switch v-model="form.okki_free_shipping" :active-value="1" :inactive-value="0"
+                             @change="markOkkiFlagTouched('freeShipping')" />
+                </span>
+                <span class="okki-flag">
+                  首返
+                  <el-switch v-model="form.okki_first_return" :active-value="1" :inactive-value="0" />
+                </span>
+                <span class="okki-flag-tip">推小满必填；新成交/包邮已按客户历史与运费预判，可改</span>
+              </div>
+            </el-form-item>
             <el-form-item label="备注" class="wide">
               <el-input v-model="form.remark" type="textarea" :rows="2" maxlength="500" />
             </el-form-item>
@@ -550,6 +569,7 @@ const {
   saveDraft,
   saveAndValidate,
   showIssues,
+  markOkkiFlagTouched,
 } = useInvoiceEditor({ onSaved: () => loadInvoices() })
 
 const drawerTitle = computed(() => {

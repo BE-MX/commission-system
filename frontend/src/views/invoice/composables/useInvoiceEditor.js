@@ -1,4 +1,4 @@
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   createInvoice,
@@ -60,10 +60,25 @@ export function useInvoiceEditor({ onSaved } = {}) {
       internal_received: null,
       internal_balance: null,
       internal_shipping_type: '',
+      okki_new_deal: 1,
+      okki_free_shipping: 1,
+      okki_first_return: 0,
       remark: '',
       items: [],
     }
   }
+
+  // 小满标记的智能默认只在用户没碰过开关时生效；编辑既有单一律尊重存值
+  const okkiFlagsTouched = reactive({ newDeal: false, freeShipping: false })
+
+  function markOkkiFlagTouched(key) {
+    okkiFlagsTouched[key] = true
+  }
+
+  watch(() => form.shipping_fee, fee => {
+    if (okkiFlagsTouched.freeShipping) return
+    form.okki_free_shipping = Number(fee || 0) > 0 ? 0 : 1
+  })
 
   function normalizeLine(line = {}) {
     return {
@@ -100,10 +115,17 @@ export function useInvoiceEditor({ onSaved } = {}) {
   function resetForm(data = emptyForm()) {
     contactFillSeq++
     customerRuleSeq++
+    // 编辑既有单（有 id）时开关视为已人工确认，智能默认不再覆盖
+    okkiFlagsTouched.newDeal = Boolean(data.id)
+    okkiFlagsTouched.freeShipping = Boolean(data.id)
     Object.assign(form, emptyForm(), {
       ...data,
       shipping_fee: Number(data.shipping_fee || 0),
       surcharge_amount: Number(data.surcharge_amount || 0),
+      // 存量 NULL 标记（068 前老单）镜像服务端兜底口径，不要硬填 1 锁死错误值
+      okki_new_deal: data.okki_new_deal ?? 1,
+      okki_free_shipping: data.okki_free_shipping ?? (Number(data.shipping_fee || 0) > 0 ? 0 : 1),
+      okki_first_return: data.okki_first_return ?? 0,
       items: (data.items || []).map(normalizeLine),
     })
     selectedCustomer.value = form.customer_id
@@ -158,6 +180,10 @@ export function useInvoiceEditor({ onSaved } = {}) {
     form.contact_phone = defaults.contact_phone || ''
     form.contact_email = defaults.contact_email || ''
     form.delivery_address = defaults.delivery_address || ''
+    // 「是否新成交」预判：该客户在小满无历史订单 → 新成交（用户碰过开关则不动）
+    if (!okkiFlagsTouched.newDeal && typeof defaults.has_xiaoman_orders === 'boolean') {
+      form.okki_new_deal = defaults.has_xiaoman_orders ? 0 : 1
+    }
   }
 
   async function openCreate(orderType = 'stock') {
@@ -326,6 +352,9 @@ export function useInvoiceEditor({ onSaved } = {}) {
       internal_received: form.internal_received,
       internal_balance: form.internal_balance,
       internal_shipping_type: form.internal_shipping_type || null,
+      okki_new_deal: form.okki_new_deal ?? null,
+      okki_free_shipping: form.okki_free_shipping ?? null,
+      okki_first_return: form.okki_first_return ?? null,
       remark: form.remark,
       items: form.items.map(line => ({
         id: line.id || null,
@@ -395,6 +424,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     saveDraft,
     saveAndValidate,
     showIssues,
+    markOkkiFlagTouched,
   }
 }
 

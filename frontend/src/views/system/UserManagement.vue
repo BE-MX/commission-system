@@ -83,6 +83,12 @@
         <el-form-item label="手机号">
           <el-input v-model="form.phone" placeholder="选填" />
         </el-form-item>
+        <el-form-item label="OKKI部门">
+          <el-select v-model="form.okki_department_id" clearable filterable placeholder="业绩归属部门（推小满订单必填）" style="width: 100%">
+            <el-option v-for="d in deptOptions" :key="d.department_id" :label="d.name" :value="d.department_id" />
+          </el-select>
+          <div class="form-tip">推送小满订单时的业绩归属部门；业务员必须设置，否则推单被拦截</div>
+        </el-form-item>
         <el-form-item label="角色">
           <el-select v-model="form.role_ids" multiple placeholder="选择角色" style="width: 100%">
             <el-option v-for="r in roleOptions" :key="r.id" :label="r.label" :value="r.id" />
@@ -149,7 +155,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getUserList, createUser, updateUser, deleteUser,
   resetUserPassword, toggleUserActive, getRoleList,
-  syncUserDingtalk, syncAllUsersDingtalk,
+  syncUserDingtalk, syncAllUsersDingtalk, getOkkiDepartmentOptions,
 } from '@/api/userManagement'
 import { getActiveProcesses, getUserProcessBindings, updateUserProcessBindings, updateUserWxId } from '@/api/production'
 import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
@@ -190,17 +196,30 @@ async function fetchRoles() {
   }
 }
 
+// ── OKKI 部门选项（真实订单聚合，会话内缓存一次）─────
+const deptOptions = ref([])
+async function fetchDeptOptions() {
+  if (deptOptions.value.length) return
+  try {
+    const res = await getOkkiDepartmentOptions()
+    deptOptions.value = res.data?.items || []
+  } catch {
+    deptOptions.value = []
+  }
+}
+
 // ── 新增 / 编辑 ────────────────────────────────────
 const dialogVisible = ref(false)
 const isEdit = ref(false)
 const editUserId = ref(null)
-const form = ref({ username: '', password: '', real_name: '', email: '', phone: '', role_ids: [] })
+const form = ref({ username: '', password: '', real_name: '', email: '', phone: '', okki_department_id: null, role_ids: [] })
 
 function openCreateDialog() {
   isEdit.value = false
   editUserId.value = null
-  form.value = { username: '', password: '', real_name: '', email: '', phone: '', role_ids: [] }
+  form.value = { username: '', password: '', real_name: '', email: '', phone: '', okki_department_id: null, role_ids: [] }
   fetchRoles()
+  fetchDeptOptions()
   dialogVisible.value = true
 }
 
@@ -213,9 +232,13 @@ function openEditDialog(row) {
     real_name: row.real_name,
     email: row.email || '',
     phone: row.phone || '',
+    // ?? 而非 ||：department_id=0（我的企业）是合法部门
+    okki_department_id: row.okki_department_id ?? null,
+    okki_department_name: row.okki_department_name || '',
     role_ids: row.role_ids || [],
   }
   fetchRoles()
+  fetchDeptOptions()
   loadProcessBindings(row.id)
   loadAllProcesses()
   dialogVisible.value = true
@@ -238,11 +261,19 @@ async function submitForm() {
   }
   saving.value = true
   try {
+    // ?? 而非 ||：department_id=0（我的企业）是合法部门，falsy 判断会把它清成 null
+    const deptId = form.value.okki_department_id ?? null
+    // 名称快照优先取选项列表；原部门不在列表（历史部门未变更）时沿用既有名称
+    const deptName = deptId != null
+      ? (deptOptions.value.find(d => d.department_id === deptId)?.name || form.value.okki_department_name || null)
+      : null
     if (isEdit.value) {
       await updateUser(editUserId.value, {
         real_name: form.value.real_name,
         email: form.value.email || null,
         phone: form.value.phone || null,
+        okki_department_id: deptId,
+        okki_department_name: deptName,
         role_ids: form.value.role_ids,
       })
       ElMessage.success('更新成功')
@@ -253,6 +284,8 @@ async function submitForm() {
         real_name: form.value.real_name,
         email: form.value.email || null,
         phone: form.value.phone || null,
+        okki_department_id: deptId,
+        okki_department_name: deptName,
         role_ids: form.value.role_ids,
       })
       ElMessage.success('创建成功')
