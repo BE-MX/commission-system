@@ -42,8 +42,8 @@
 
     <textarea v-model="form.notes" class="note" placeholder="备注：沟通要点、试戴实物款、约定事项…" />
 
+    <!-- 返回走外壳头部「上一步」（回到进入前的屏，全屏统一导航） -->
     <div class="actions">
-      <button class="xk-btn ghost" @click="backToResult">返回效果页</button>
       <button class="xk-btn" :disabled="!form.intent_level || submitting" @click="submit">
         {{ submitting ? '提交中…' : '提交反馈并结束本单' }}
       </button>
@@ -79,11 +79,6 @@ const lovedNames = computed(() =>
 
 const form = reactive({ intent_level: '', notes: '', next_action: '' })
 const submitting = ref(false)
-
-function backToResult() {
-  flow.step.value = 'result'
-  flow.touch()
-}
 
 async function submit() {
   if (submitting.value) return

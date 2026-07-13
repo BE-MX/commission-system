@@ -10,7 +10,7 @@
 import { computed, onBeforeUnmount, reactive, ref } from 'vue'
 import {
   createSession, generateResults, getHairColors, getScenes, getSession,
-  registerCustomer, setReaction, submitFeedback,
+  registerCustomer, setReaction, submitFeedback, updateCustomer,
 } from '@/api/expo'
 
 const POLL_MS = 2000
@@ -34,6 +34,8 @@ export function useTryOnFlow() {
   const selectedColorId = ref(null)  // null = 保持发型原色
   const scenes = ref([])             // 场景大片可选场景
   const selectedSceneKeys = ref([])
+  const salesReturnStep = ref('result') // 销售面板的来源屏（长按品牌字可从任意有会话屏进入）
+  const guideShown = ref(false)      // 拍摄示范浮层一客只自动弹一次（register↔capture 往返不重弹）
   const tryonScenes = ref([])        // tryon 生成场景选项（职业/生活场景，滑动选择）
   const selectedTryonScene = ref(null) // 默认选中第一个；仅弱网加载失败时留 null=原景兜底
 
@@ -77,6 +79,8 @@ export function useTryOnFlow() {
     selectedColorId.value = null
     selectedSceneKeys.value = []
     selectedTryonScene.value = null
+    salesReturnStep.value = 'result'
+    guideShown.value = false
     Object.assign(regForm, {
       name: '', phone: '', wechat_id: '',
       primary_need: 'volume', style_pref: '知性优雅', consent: false,
@@ -100,11 +104,53 @@ export function useTryOnFlow() {
       errorText.value = '需勾选同意拍照存储'
       return false
     }
-    const res = await registerCustomer({ ...regForm })
-    customerId.value = res.data.customer_id
+    // 「返回上一步」改完信息再提交走更新，不重复建档（线索台一客一档）
+    if (customerId.value) {
+      try {
+        await updateCustomer(customerId.value, { ...regForm })
+      } catch (e) {
+        if (e?.response?.status !== 404) throw e
+        // 客户已被线索台删除的悬空引用：降级重新建档，不困死在登记页
+        customerId.value = null
+      }
+    }
+    if (!customerId.value) {
+      const res = await registerCustomer({ ...regForm })
+      customerId.value = res.data.customer_id
+    }
     step.value = 'capture'
     touch()
     return true
+  }
+
+  // ── 全流程导航：每屏「上一步」的目标（2026-07-13） ──
+  // analyzing/matching/scene 都回 capture 重拍：analyzing 的旧会话弃之不管
+  //（服务端照常跑完，无副作用），重拍会创建新会话
+  function goBack() {
+    const cur = step.value
+    errorText.value = ''
+    if (cur === 'register') {
+      resetAll() // 登记页的上一步就是主页：清空表单保护下一位客户隐私
+      return
+    }
+    if (cur === 'capture') {
+      step.value = 'register' // 表单与 customerId 保留，可修改后重新提交
+    } else if (cur === 'analyzing' || cur === 'matching' || cur === 'scene') {
+      stopPolling()
+      generating.value = false
+      step.value = 'capture'
+    } else if (cur === 'result') {
+      if (generating.value) return // 生成中禁退：回甄选页选了款也按不了生成，徒增困惑
+      if (mode.value === 'scene') reselectScenes()
+      else backToMatching()
+      return
+    } else if (cur === 'sales') {
+      let target = salesReturnStep.value || 'result'
+      // 停留 sales 期间分析失败（轮询已停）时回 analyzing 是永不推进的假加载屏 → 落 capture 重拍
+      if (target === 'analyzing' && (!pollTimer || session.value?.status === 'failed')) target = 'capture'
+      step.value = target
+    }
+    touch()
   }
 
   async function submitPhoto(blob) {
@@ -178,8 +224,12 @@ export function useTryOnFlow() {
 
   async function poll() {
     if (!sessionId.value) return
+    const sid = sessionId.value // 代际守卫：响应落地时校验仍是当前会话
     try {
-      const res = await getSession(sessionId.value)
+      const res = await getSession(sid)
+      // 上一步重拍/返回主页后，弃用会话的迟到响应直接丢弃——否则旧会话的
+      // analyzed 会把状态机拽去 matching 展示旧照片的匹配结果（对抗性审查 S1）
+      if (sid !== sessionId.value) return
       session.value = res.data
       const status = res.data.status
 
@@ -277,6 +327,7 @@ export function useTryOnFlow() {
   // 不再拉 internal 载荷：kiosk 是与客户共享的屏幕，话术/发况只在试戴线索台
   //（顾问自己的设备）展示，本机不落任何内部数据（2026-07-07 用户指令）
   function openSales() {
+    if (step.value !== 'sales') salesReturnStep.value = step.value
     step.value = 'sales'
     touch()
   }
@@ -296,9 +347,9 @@ export function useTryOnFlow() {
   return {
     step, mode, regForm, errorText, generating,
     session, analysis, matches, results, doneResults,
-    selectedWigId, canSwapMatches, swapMatches, backToMatching,
+    selectedWigId, canSwapMatches, swapMatches, backToMatching, goBack,
     customerId, sessionId,
-    hairColors, selectedColorId, scenes, selectedSceneKeys,
+    hairColors, selectedColorId, scenes, selectedSceneKeys, guideShown,
     tryonScenes, selectedTryonScene, loadTryonScenes,
     start, submitRegister, submitPhoto, generate, react,
     loadHairColors, loadScenes, toggleScene, generateScenes, reselectScenes,

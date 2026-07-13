@@ -9,6 +9,11 @@ export function registerCustomer(data) {
   return expoClient.post('/register', data, { showLoading: false })
 }
 
+// kiosk「返回上一步」修改登记信息：更新既有客户，不重复建档
+export function updateCustomer(customerId, data) {
+  return expoClient.put(`/customers/${customerId}`, data, { showLoading: false })
+}
+
 export function createSession(customerId, photoBlob, mode = 'tryon') {
   const form = new FormData()
   form.append('photo', photoBlob, 'photo.jpg')

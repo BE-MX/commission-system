@@ -76,16 +76,15 @@
         <button class="xk-btn" @click="flow.openSales()">请顾问过来</button>
       </div>
 
-      <!-- 分享与返回：二维码独立黑金卡片，不与照片重叠；返回主页仅手动触发 -->
-      <div class="share-row">
-        <div v-if="shareUrl" class="qr-card">
+      <!-- 分享二维码独立黑金卡片，不与照片重叠；返回主页在外壳头部（全屏统一导航） -->
+      <div v-if="shareUrl" class="share-row">
+        <div class="qr-card">
           <canvas ref="qrEl" width="84" height="84" />
           <div class="qr-txt">
             <b>扫码带走</b>
             <span>试戴效果存入手机 · 随时分享</span>
           </div>
         </div>
-        <button class="home-btn" @click="flow.resetAll()">⌂ 返回主页</button>
       </div>
 
       <!-- 完整图灯箱：contain 不裁切，轻触任意处关闭 -->
@@ -337,14 +336,6 @@ watch([shareUrl, qrEl], async () => {
   font-size: 14px; letter-spacing: 0.22em; color: var(--xk-gold-hi);
 }
 .qr-txt span { font-size: 10px; letter-spacing: 0.14em; color: var(--xk-mut); }
-.home-btn {
-  flex: none; align-self: stretch; padding: 0 18px; border-radius: 14px; cursor: pointer;
-  border: 1px solid rgba(141, 131, 113, 0.45); background: transparent;
-  color: var(--xk-mut); font-size: 12px; letter-spacing: 0.16em;
-  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), color 160ms ease, border-color 160ms ease;
-}
-.home-btn:active { transform: scale(0.96); }
-
 .gen-pill {
   position: relative; overflow: hidden;
   margin-top: 12px; padding: 7px 16px; border-radius: 20px;

@@ -97,9 +97,10 @@ const videoEl = ref(null)
 const cameraOn = ref(false)
 const previewUrl = ref('')
 const submitting = ref(false)
-// 首次进拍照屏自动展示拍摄示范（相机在浮层下并行初始化）；分析失败回退重进时
-// 已有 session，不再自动弹——避免与顶部错误条叠加、客户重复看引导（对抗性审查建议）
-const guideOpen = ref(!flow.sessionId.value)
+// 拍摄示范一客只自动弹一次（flow 级标志，resetAll 复位）：register↔capture 往返、
+// 分析失败退回重拍都不重弹——避免同一位客户重复看引导、浮层盖住头部导航
+const guideOpen = ref(!flow.guideShown.value)
+flow.guideShown.value = true
 let stream = null
 let photoBlob = null
 

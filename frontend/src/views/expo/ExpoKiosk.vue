@@ -1,13 +1,23 @@
 <template>
   <div class="xk-root" @pointerdown="flow.touch()">
     <header class="xk-head">
-      <div
-        class="xk-brand"
-        @pointerdown.stop="brandPressStart"
-        @pointerup="brandPressEnd"
-        @pointercancel="brandPressEnd"
-      >莱 莎 · 健 康 假 发</div>
-      <div class="xk-head-right">{{ stepLabel }}</div>
+      <div class="xk-head-side">
+        <Transition name="xnav">
+          <button v-if="showNav" class="xk-nav" :disabled="backDisabled" @click="flow.goBack()">‹ 上一步</button>
+        </Transition>
+        <div
+          class="xk-brand"
+          @pointerdown.stop="brandPressStart"
+          @pointerup="brandPressEnd"
+          @pointercancel="brandPressEnd"
+        >莱 莎 · 健 康 假 发</div>
+      </div>
+      <div class="xk-head-side">
+        <span class="xk-step">{{ stepLabel }}</span>
+        <Transition name="xnav">
+          <button v-if="showNav" class="xk-nav" @click="requestHome">⌂ 主页</button>
+        </Transition>
+      </div>
     </header>
 
     <main class="xk-stage">
@@ -22,6 +32,20 @@
     </main>
 
     <div v-if="flow.errorText.value" class="xk-error">{{ flow.errorText.value }}</div>
+
+    <!-- 返回主页确认：拍照之后流程有实际代价（照片/分析/效果图），误触清场损失大 -->
+    <Transition name="xconfirm">
+      <div v-if="homeConfirm" class="xk-confirm" @click.self="homeConfirm = false">
+        <div class="xk-confirm-panel">
+          <div class="xc-title">返回主页将结束本次体验</div>
+          <div class="xc-sub">当前客户的登记信息与效果图查看将被清空</div>
+          <div class="xc-actions">
+            <button class="xk-btn ghost" @click="homeConfirm = false">继续体验</button>
+            <button class="xk-btn" @click="confirmHome">返回主页</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
 
     <!-- 魔法镜框：流光金环 + 四角饰件 + 金尘粒子（纯装饰层，pointer-events 穿透） -->
     <div class="xk-mirror" aria-hidden="true">
@@ -39,7 +63,7 @@
 </template>
 
 <script setup>
-import { computed, provide } from 'vue'
+import { computed, provide, ref, watch } from 'vue'
 import { useTryOnFlow } from './composables/useTryOnFlow'
 import AttractScreen from './kiosk/AttractScreen.vue'
 import RegisterScreen from './kiosk/RegisterScreen.vue'
@@ -69,6 +93,27 @@ const stepLabel = computed(() => ({
   result: flow.mode.value === 'scene' ? '场景大片' : '试戴效果',
   sales: '销售模式',
 }[flow.step.value] || ''))
+
+// ── 全流程导航（2026-07-13）：attract 之外每屏都有「上一步 / 主页」 ──
+const showNav = computed(() => flow.step.value !== 'attract')
+// 生成中禁退：回甄选页选了款也按不了生成（generate 有忙态互斥），徒增困惑
+const backDisabled = computed(() => flow.step.value === 'result' && flow.generating.value)
+
+const homeConfirm = ref(false)
+function requestHome() {
+  if (!flow.sessionId.value) {
+    flow.resetAll() // 未拍照建会话，流程无实际代价，直接回
+    return
+  }
+  homeConfirm.value = true
+  flow.touch()
+}
+function confirmHome() {
+  homeConfirm.value = false
+  flow.resetAll()
+}
+// 60s 空闲自动清场等其他路径回到 attract 时，收掉残留的确认弹层
+watch(flow.step, s => { if (s === 'attract') homeConfirm.value = false })
 
 // 长按品牌字 3 秒进入销售面板（有会话时才有意义）
 let pressTimer = null
@@ -121,7 +166,51 @@ function brandPressEnd() {
   color: var(--xk-gold-dim);
   letter-spacing: 0.3em;
 }
-.xk-brand { cursor: default; }
+.xk-brand { cursor: default; white-space: nowrap; }
+.xk-head-side { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.xk-step { white-space: nowrap; }
+.xk-nav {
+  flex: none; height: 34px; padding: 0 14px; border-radius: 18px; cursor: pointer;
+  border: 1px solid var(--xk-gold-line); background: rgba(232, 196, 121, 0.04);
+  color: var(--xk-gold-hi); font-size: 12px; letter-spacing: 0.14em;
+  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), border-color 160ms ease, opacity 160ms ease;
+}
+.xk-nav:active { transform: scale(0.96); }
+.xk-nav:disabled { opacity: 0.35; cursor: default; }
+.xk-nav:disabled:active { transform: none; }
+.xnav-enter-active, .xnav-leave-active { transition: opacity 200ms ease; }
+.xnav-enter-from, .xnav-leave-to { opacity: 0; }
+
+/* ── 返回主页确认弹层（z 75：压过镜框 60 与错误条 70，低于灯箱 80） ── */
+.xk-confirm {
+  position: fixed; inset: 0; z-index: 75;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(6, 5, 3, 0.72);
+  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+}
+.xk-confirm-panel {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 30px 34px 26px; border-radius: 20px;
+  border: 1px solid var(--xk-gold-line);
+  background: linear-gradient(160deg, var(--xk-ink-2), var(--xk-ink));
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5), 0 0 40px rgba(232, 196, 121, 0.12);
+}
+.xc-title {
+  font-family: 'Noto Serif SC', serif; font-size: 19px;
+  letter-spacing: 0.1em; color: var(--xk-gold-hi);
+}
+.xc-sub { margin-top: 10px; font-size: 12px; letter-spacing: 0.12em; color: var(--xk-mut); }
+.xc-actions { display: flex; gap: 14px; margin-top: 24px; }
+.xc-actions .xk-btn { height: 46px; padding: 0 30px; font-size: 13px; }
+/* 模态入场 240ms 强 ease-out，出场更快（非对称）；transform-origin 保持居中 */
+.xconfirm-enter-active { transition: opacity 240ms cubic-bezier(0.23, 1, 0.32, 1); }
+.xconfirm-enter-active .xk-confirm-panel { transition: transform 240ms cubic-bezier(0.23, 1, 0.32, 1); }
+.xconfirm-leave-active { transition: opacity 160ms cubic-bezier(0.23, 1, 0.32, 1); }
+.xconfirm-enter-from, .xconfirm-leave-to { opacity: 0; }
+.xconfirm-enter-from .xk-confirm-panel { transform: scale(0.96); }
+@media (prefers-reduced-motion: reduce) {
+  .xconfirm-enter-from .xk-confirm-panel { transform: none; }
+}
 .xk-stage { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .xk-error {
   position: absolute;
