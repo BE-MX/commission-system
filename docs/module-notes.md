@@ -484,8 +484,13 @@ frontend/src/
 - 后端 `ai_pipeline.save_scene_image(key, upload)` / `delete_scene_image(key)` / `_downscale_scene_image`：存 `uploads/expo/scenes/<key>.<ext>`，**先删同 key 各扩展名旧图**（避免 scene_image_url 探测歧义）+ 超 1200px 降采样；`POST/DELETE /scenes/{key}/image`（expo:admin）。示意图仅甄选页示意、不参与合成
 - 前端替换同扩展名时 URL 不变，`?t=Date.now()` 强制刷新缓存
 
-**推荐引擎优化：必推 + 优先级折算 + 从库选择 + 抓拍感（2026-07-11，060 迁移）**
-- **必推 `must_recommend`**（060 加 SmallInteger）：选是则该款不论脸型都保证进前 `GUARANTEED_LIST_SIZE`(6) 推荐，但**不强占第一**（保留最高分在首位），且**仍走性别硬过滤**（不给男顾客强推女款）。`matching._ensure_must_recommend` 从末位往前替换非必推位（index 0 永不动），多必推超坑位 best-effort + log
+**kiosk 拍照页最佳拍摄角度引导（2026-07-13）**
+- 进入拍照屏自动弹「三步拍出高级感」示范浮层（kiosk 用户皆一次性用户，每客展示合理；**分析失败回退重进不重弹**——以 flow.sessionId 已存在判定）：两幅 SVG 金线示意图（机位俯角侧视 + 三分线构图）+ 三条要点（略微俯拍/微侧面容/构图靠上），取景框顶部「拍摄示范 ✦」胶囊可重开，副标题随 tryon/scene 模式切换
+- 取景椭圆中心 46%→40%（头部落上三分之一，下方多容纳肩颈上身）；tryon 底部 tip 同步改角度文案，scene 模式 tip 不动
+- 拍照仍是 1:1 中央裁剪未改——真竖版全身入镜需改裁剪比例并回归合成管线，待单独决策
+
+**推荐引擎优化：主推 + 优先级折算 + 从库选择 + 抓拍感（2026-07-11，060 迁移）**
+- **主推 `must_recommend`**（060 加 SmallInteger，UI 原叫「必推」）：**2026-07-13 起语义升级为置顶**（065 同步列注释）——主推款整体排在推荐列表最前（即使匹配分为 0 也占第一），多款主推之间按匹配分排序，**仍走性别硬过滤**（不给男顾客强推女款）。至臻锚点降级为只替换第一批内的非主推位，第一批被主推占满且无至臻时跳过并 log。`list_wigs`（管理列表 + kiosk picker）同步按 `must_recommend DESC` 首位排序。旧语义（保证前 6 不强占第一）已废弃，`_ensure_must_recommend`/`GUARANTEED_LIST_SIZE` 已删除
 - **优先级折算加分**：`final = base + min(priority*unit, cap)`（默认 unit=0.2/cap=6.0，`config/expo_matching.yaml` 可覆盖 `priority_boost`）。同评级内 priority 高的显示分更高、排更前，封顶保证低匹配高 priority 款不跨大档超过高匹配款（weights 最大 30 ≫ cap 6）。显示 score 与排序 key 用同一 `score_by_id`
 - **从发型库选择**：kiosk 甄选页默认 6 推荐外加「从发型库中选择其他款」按钮 → `GET /wigs/picker`（启用发型轻量列表）网格浮层 → 选一款塑成"自选卡"(score=null、custom 标记)插到 `shownMatches` 最前并 setSelectedWigId，可继续选发色/场景后生成
 - **场景 prompt 抓拍感**：`_TRYON_SCENE_CLAUSE` 收尾改为 candid documentary snapshot——眼神/头自然朝向场景内动作对象、非直视镜头、非摆拍、第三方随手拍的松弛微表情

@@ -119,7 +119,7 @@
   - `ark_receipt_repair_log`（052）— 回款日期修复审计表（batch_id 分组一次执行, cash_collection_id, order_no, company_name, old_date→new_date, source_file, operator_id, created_at）；**唯一写 `lsordertest.okki_receipts.collection_date` 的入口，每条改动留回滚记录**
 - **展会 AI 试戴（7 张表，045 迁移；047 加发色/场景；048 加发色库）**：
   - `ark_expo_customers` — 试戴客户（name 称呼, phone, wechat_id, primary_need volume/gray_cover/style_change, style_pref, **consent_at 非空才允许存照片**, expo_code 届次）
-  - `ark_expo_wigs` — 发型库（model_no UNIQUE, series classic/zhizhen 驱动至臻锚点, angle_photos JSON, composite_prompt, fit_tags JSON, evidence_refs JSON, priority）
+  - `ark_expo_wigs` — 发型库（model_no UNIQUE, series classic/zhizhen 驱动至臻锚点, angle_photos JSON, composite_prompt, fit_tags JSON, evidence_refs JSON, priority, must_recommend 主推=置顶推荐 060 加列/065 语义升级）
   - `ark_expo_hair_colors` — 发色库（code UNIQUE 色号, name, hex_code UI 色块可自动提取, **swatch_path 色板图随合成请求送入模型**, color_description 喂 prompt 的颜色描述, priority, is_active）
   - `ark_expo_scripts` — 话术卡库（script_type opener/demo/objection/closer/faq, track emotional/rational/identity, audience_tags JSON, evidence_points JSON；写入时禁用词强校验）
   - `ark_expo_sessions` — 试戴会话（**mode tryon/scene 双入口**——scene=佩戴实拍生成场景图跳过分析, photo_path, analysis_json 含 **internal 内部字段仅销售端可见**, matched_wig_ids JSON 全量排名, strategy_json 双轨话术（scene 模式不生成）, status pending/analyzed/generating/done/failed）
