@@ -484,8 +484,14 @@ frontend/src/
 - 后端 `ai_pipeline.save_scene_image(key, upload)` / `delete_scene_image(key)` / `_downscale_scene_image`：存 `uploads/expo/scenes/<key>.<ext>`，**先删同 key 各扩展名旧图**（避免 scene_image_url 探测歧义）+ 超 1200px 降采样；`POST/DELETE /scenes/{key}/image`（expo:admin）。示意图仅甄选页示意、不参与合成
 - 前端替换同扩展名时 URL 不变，`?t=Date.now()` 强制刷新缓存
 
+**kiosk 全流程「上一步/主页」导航（2026-07-13）**
+- 外壳 ExpoKiosk 头部统一实现（attract 不显示）：左「‹ 上一步」右「⌂ 主页」，7 屏零改模板；返回映射集中在 `useTryOnFlow.goBack()`——register→主页(清场)、capture→register(保留表单)、analyzing/matching/scene→capture(停轮询重拍)、result→matching|scene(**生成中禁用**)、sales→openSales 记录的来源屏
+- 主页确认弹层门槛=sessionId 已存在（拍照后流程有实际代价）；无会话直接回；step 回 attract 时自动收弹层（防 60s idle 清场残留）
+- **重复建档修复**：capture 退回 register 改信息重提交走 `PUT /customers/{id}`（update_customer，consent_at 只置不清），不再二次 POST /register 污染线索台
+- 屏内重复按钮已拆：ResultScreen share-row 的「返回主页」、SalesPanel「返回效果页」（外壳导航覆盖）
+
 **kiosk 拍照页最佳拍摄角度引导（2026-07-13）**
-- 进入拍照屏自动弹「三步拍出高级感」示范浮层（kiosk 用户皆一次性用户，每客展示合理；**分析失败回退重进不重弹**——以 flow.sessionId 已存在判定）：两幅 SVG 金线示意图（机位俯角侧视 + 三分线构图）+ 三条要点（略微俯拍/微侧面容/构图靠上），取景框顶部「拍摄示范 ✦」胶囊可重开，副标题随 tryon/scene 模式切换
+- 进入拍照屏自动弹「三步拍出高级感」示范浮层（kiosk 用户皆一次性用户，每客展示合理；**一客只自动弹一次**——flow 级 guideShown 标志 resetAll 复位，register↔capture 往返/失败退回均不重弹）：两幅 SVG 金线示意图（机位俯角侧视 + 三分线构图）+ 三条要点（略微俯拍/微侧面容/构图靠上），取景框顶部「拍摄示范 ✦」胶囊可重开，副标题随 tryon/scene 模式切换
 - 取景椭圆中心 46%→40%（头部落上三分之一，下方多容纳肩颈上身）；tryon 底部 tip 同步改角度文案，scene 模式 tip 不动
 - 拍照仍是 1:1 中央裁剪未改——真竖版全身入镜需改裁剪比例并回归合成管线，待单独决策
 
