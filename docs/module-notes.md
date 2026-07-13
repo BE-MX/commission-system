@@ -485,7 +485,7 @@ frontend/src/
 - 前端替换同扩展名时 URL 不变，`?t=Date.now()` 强制刷新缓存
 
 **kiosk 全流程「上一步/主页」导航（2026-07-13）**
-- 外壳 ExpoKiosk 头部统一实现（attract 不显示）：左「‹ 上一步」右「⌂ 主页」，7 屏零改模板；返回映射集中在 `useTryOnFlow.goBack()`——register→主页(清场)、capture→register(保留表单)、analyzing/matching/scene→capture(停轮询重拍)、result→matching|scene(**生成中禁用**)、sales→openSales 记录的来源屏
+- 外壳 ExpoKiosk 头部统一实现（attract 不显示）：左「‹ 上一步」右「⌂ 主页」，7 屏零改模板；返回映射集中在 `useTryOnFlow.goBack()`——register→主页(清场)、capture→register(保留表单)、analyzing/matching/scene→capture(停轮询重拍)、result→matching|scene(**生成中禁用**)、sales→openSales 记录的来源屏（销售面板入口=**单击**品牌字，2026-07-13 亮哥指令由长按 3 秒改单击；仍以 sessionId 存在为前提，客户共享屏不做明显按钮）
 - 主页确认弹层门槛=sessionId 已存在（拍照后流程有实际代价）；无会话直接回；step 回 attract 时自动收弹层（防 60s idle 清场残留）
 - **重复建档修复**：capture 退回 register 改信息重提交走 `PUT /customers/{id}`（update_customer，consent_at 只置不清），不再二次 POST /register 污染线索台
 - 屏内重复按钮已拆：ResultScreen share-row 的「返回主页」、SalesPanel「返回效果页」（外壳导航覆盖）

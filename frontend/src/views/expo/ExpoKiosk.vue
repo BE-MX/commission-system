@@ -5,12 +5,7 @@
         <Transition name="xnav">
           <button v-if="showNav" class="xk-nav" :disabled="backDisabled" @click="flow.goBack()">‹ 上一步</button>
         </Transition>
-        <div
-          class="xk-brand"
-          @pointerdown.stop="brandPressStart"
-          @pointerup="brandPressEnd"
-          @pointercancel="brandPressEnd"
-        >莱 莎 · 健 康 假 发</div>
+        <div class="xk-brand" @click="brandClick">莱 莎 · 健 康 假 发</div>
       </div>
       <div class="xk-head-side">
         <span class="xk-step">{{ stepLabel }}</span>
@@ -115,15 +110,11 @@ function confirmHome() {
 // 60s 空闲自动清场等其他路径回到 attract 时，收掉残留的确认弹层
 watch(flow.step, s => { if (s === 'attract') homeConfirm.value = false })
 
-// 长按品牌字 3 秒进入销售面板（有会话时才有意义）
-let pressTimer = null
-function brandPressStart() {
+// 点击品牌字进入销售面板（2026-07-13 亮哥指令：由长按 3 秒改为单击）。
+// 有会话时才响应；不做明显按钮、不给 pointer 光标——入口对客户保持无痕
+function brandClick() {
   if (!flow.sessionId.value || flow.step.value === 'sales') return
-  pressTimer = setTimeout(() => flow.openSales(), 3000)
-}
-function brandPressEnd() {
-  if (pressTimer) clearTimeout(pressTimer)
-  pressTimer = null
+  flow.openSales()
 }
 </script>
 

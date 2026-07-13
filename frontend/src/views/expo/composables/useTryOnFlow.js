@@ -34,7 +34,7 @@ export function useTryOnFlow() {
   const selectedColorId = ref(null)  // null = 保持发型原色
   const scenes = ref([])             // 场景大片可选场景
   const selectedSceneKeys = ref([])
-  const salesReturnStep = ref('result') // 销售面板的来源屏（长按品牌字可从任意有会话屏进入）
+  const salesReturnStep = ref('result') // 销售面板的来源屏（点击品牌字可从任意有会话屏进入）
   const guideShown = ref(false)      // 拍摄示范浮层一客只自动弹一次（register↔capture 往返不重弹）
   const tryonScenes = ref([])        // tryon 生成场景选项（职业/生活场景，滑动选择）
   const selectedTryonScene = ref(null) // 默认选中第一个；仅弱网加载失败时留 null=原景兜底
