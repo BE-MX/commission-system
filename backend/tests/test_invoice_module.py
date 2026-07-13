@@ -91,6 +91,78 @@ def test_invoice_create_totals_and_validation(db):
     assert service.validate_invoice(invoice) == []
     assert export_service.build_invoice_pdf(invoice).getvalue().startswith(b"%PDF-1.4")
 
+# ── 录入页自动填充 ────────────────────────────────────────────
+
+
+def _header_payload(**overrides):
+    payload = dict(
+        customer_id="123456",
+        customer_name="Customer A",
+        invoice_date=date(2026, 7, 13),
+        items=[],
+    )
+    payload.update(overrides)
+    return InvoiceCreate(**payload)
+
+
+def test_customer_contact_defaults_latest_snapshot(db):
+    # 老单带联系信息
+    old = service.create_invoice(db, _header_payload(
+        contact_name="Alice", contact_phone="111", delivery_address="Old Addr",
+    ), user_id=5)
+    # 最新一单联系信息更新过 → 以它为准（同刻建单靠 id 倒序）
+    new = service.create_invoice(db, _header_payload(
+        contact_name="Alice Wang", contact_email="a@x.com", delivery_address="New Addr",
+    ), user_id=6)
+    # 最新但全空的单不参与（否则一张没填联系人的单会把历史信息洗掉）
+    service.create_invoice(db, _header_payload(), user_id=5)
+    # 其他客户的单不串
+    service.create_invoice(db, _header_payload(
+        customer_id="999", contact_name="Bob",
+    ), user_id=5)
+    db.flush()
+    # 显式拉开建单时间，排序断言不依赖时钟刻度
+    old.created_at = datetime(2026, 3, 1)
+    new.created_at = datetime(2026, 7, 1)
+    db.flush()
+
+    defaults = service.get_customer_contact_defaults(db, "123456")
+    assert defaults["contact_name"] == "Alice Wang"
+    assert defaults["contact_email"] == "a@x.com"
+    assert defaults["delivery_address"] == "New Addr"
+
+    # 排序键是 created_at：老单被系统触碰（推单/校验 bump updated_at）不得顶掉新单
+    old.updated_at = datetime(2026, 12, 31)
+    db.flush()
+    assert service.get_customer_contact_defaults(db, "123456")["contact_name"] == "Alice Wang"
+
+    assert service.get_customer_contact_defaults(db, "no-such") == {}
+
+
+def test_create_invoice_salesperson_fallback(db):
+    from app.auth.models import ArkUser
+
+    user = ArkUser(username="zhang", password_hash="x", real_name="张三",
+                   phone="13800000000", email="zhang@leshine.com")
+    db.add(user)
+    db.flush()
+
+    # 前端没带业务员信息 → 按创建人兜底
+    invoice = service.create_invoice(db, _header_payload(), user_id=user.id)
+    db.flush()
+    assert invoice.sales_user_name == "张三"
+    assert invoice.sales_phone == "13800000000"
+    assert invoice.sales_email == "zhang@leshine.com"
+
+    # 前端带了值 → 尊重传入，只补空位
+    invoice2 = service.create_invoice(db, _header_payload(
+        sales_user_name="李四",
+    ), user_id=user.id)
+    db.flush()
+    assert invoice2.sales_user_name == "李四"
+    assert invoice2.sales_phone == "13800000000"
+
+
 # ── OKKI push settings ────────────────────────────────────────
 
 def _base_settings_kwargs(**overrides):

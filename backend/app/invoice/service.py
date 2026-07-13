@@ -76,6 +76,39 @@ def _resolve_user_names(db: Session, user_ids: set[int]) -> dict[int, str]:
     return {uid: name for uid, name in rows}
 
 
+def get_customer_contact_defaults(db: Session, customer_id: str) -> dict:
+    """该客户最近一张带联系信息发票的联系人快照，用于录入页自动填充。
+
+    组织级共享（刻意不受发票数据范围限制）：联系人/地址是客户数据（OKKI CRM
+    同源），只出 4 个联系字段、不暴露任何金额——否则助理录一次业务员还得重录。
+    """
+    row = (
+        db.query(
+            Invoice.contact_name, Invoice.contact_phone,
+            Invoice.contact_email, Invoice.delivery_address,
+        )
+        .filter(
+            Invoice.customer_id == customer_id,
+            (func.coalesce(Invoice.contact_name, "") != "")
+            | (func.coalesce(Invoice.contact_phone, "") != "")
+            | (func.coalesce(Invoice.contact_email, "") != "")
+            | (func.coalesce(Invoice.delivery_address, "") != ""),
+        )
+        # created_at 而非 updated_at：推单/校验等状态写入都会 bump updated_at，
+        # 会让被系统触碰的老单顶掉真正最新的联系信息
+        .order_by(Invoice.created_at.desc(), Invoice.id.desc())
+        .first()
+    )
+    if row is None:
+        return {}
+    return {
+        "contact_name": row.contact_name,
+        "contact_phone": row.contact_phone,
+        "contact_email": row.contact_email,
+        "delivery_address": row.delivery_address,
+    }
+
+
 def delete_invoice(db: Session, invoice: Invoice) -> None:
     """Judge by xiaoman_order_id, not sync_status: editing flips a synced invoice
     back to not_synced while the real OKKI order still exists, and deleting would
@@ -109,6 +142,13 @@ def create_invoice(db: Session, body: InvoiceCreate, user_id: int | None = None)
     )
     for field in _HEADER_FIELDS:
         setattr(invoice, field, getattr(body, field))
+    # 业务员信息兜底：前端未带出时按当前登录用户补齐（编辑单不动，尊重人工修改）
+    if user_id and not (invoice.sales_user_name and invoice.sales_phone and invoice.sales_email):
+        creator = db.get(ArkUser, user_id)
+        if creator:
+            invoice.sales_user_name = invoice.sales_user_name or creator.real_name
+            invoice.sales_phone = invoice.sales_phone or creator.phone
+            invoice.sales_email = invoice.sales_email or creator.email
     db.add(invoice)
     _replace_items(db, invoice, body, user_id=user_id)
     _refresh_invoice_totals(invoice)

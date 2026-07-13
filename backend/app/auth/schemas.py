@@ -13,6 +13,10 @@ class UserInfo(BaseModel):
     id: int
     username: str
     real_name: str
+    # 与 /me 对齐：auth store 直接以 login 返回的 user 为准，缺字段会让
+    # "新登录会话"拿不到手机/邮箱（发票录入的业务员默认值依赖它们）
+    email: Optional[str] = None
+    phone: Optional[str] = None
     avatar_url: Optional[str] = None
     roles: list[str] = []
     permissions: list[str] = []
