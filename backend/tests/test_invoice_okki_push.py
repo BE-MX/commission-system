@@ -9,7 +9,7 @@ from decimal import Decimal
 
 import pytest
 
-from app.auth.models import ArkUserExternalBinding
+from app.auth.models import ArkUser, ArkUserExternalBinding
 from app.invoice import okki_client, product_service, service, xiaoman_service
 from app.invoice.models import CustomProduct, Invoice, InvoiceItem, InvoiceSyncLog, XiaomanSettings
 from app.invoice.schemas import InvoiceCreate, InvoiceItemPayload, InvoiceUpdate
@@ -34,7 +34,14 @@ def _seed_settings(db, **overrides):
     return row
 
 
-def _seed_binding(db, ark_user_id=1, external_account_id="777001", **overrides):
+def _seed_binding(db, ark_user_id=1, external_account_id="777001", department_id=24925, **overrides):
+    # 推单前置校验需要业务员用户行（部门归属挂在 ark_users 上）
+    if db.get(ArkUser, ark_user_id) is None:
+        db.add(ArkUser(
+            id=ark_user_id, username=f"sales{ark_user_id}", password_hash="x", real_name="张三",
+            okki_department_id=department_id,
+            okki_department_name="多财多亿" if department_id is not None else None,
+        ))
     row = ArkUserExternalBinding(
         ark_user_id=ark_user_id,
         provider="okki",
@@ -161,6 +168,12 @@ def test_build_push_payload_stock_custom_and_backfilled(db):
     assert payload["handler"] == [777001]
     assert payload["users"] == [{"user_id": 777001, "rate": 100}]
     assert "user_id" not in payload
+    # 企业必填：部门（挂业务员用户设置）+ 4 个自定义字段
+    assert payload["departments"] == [{"department_id": 24925, "rate": 100}]
+    assert payload[xiaoman_service.FIELD_ORDER_TYPE] == "定制品"  # production 自动映射
+    assert payload[xiaoman_service.FIELD_NEW_DEAL] == "是"        # okki_orders 无该客户历史
+    assert payload[xiaoman_service.FIELD_FREE_SHIPPING] == "否"   # 运费 10 > 0
+    assert payload[xiaoman_service.FIELD_FIRST_RETURN] == "否"    # 默认否
     # 新建：不带 order_id / unique_id
     assert "order_id" not in payload
 
@@ -210,7 +223,72 @@ def test_build_push_payload_blockers(db):
     assert "customer_id" in fields
     assert "default_order_status" in fields
     assert "sales_user_id" in fields
+    assert "okki_department" in fields
     assert "items[1]" in fields
+
+
+def test_push_flags_explicit_and_stock_order_type(db):
+    _seed_settings(db)
+    _seed_binding(db)
+    invoice = _make_invoice(db, order_type="stock",
+                            okki_new_deal=0, okki_free_shipping=1, okki_first_return=1)
+    invoice.items.append(_stock_item())
+    db.flush()
+
+    payload, _binding, issues = xiaoman_service.build_push_payload(db, invoice)
+    assert issues == []
+    assert payload[xiaoman_service.FIELD_ORDER_TYPE] == "规格品"  # stock 自动映射
+    # 发票存值优先，不走兜底（运费 10>0 但显式标了包邮=是）
+    assert payload[xiaoman_service.FIELD_NEW_DEAL] == "否"
+    assert payload[xiaoman_service.FIELD_FREE_SHIPPING] == "是"
+    assert payload[xiaoman_service.FIELD_FIRST_RETURN] == "是"
+
+
+def test_push_blocked_without_department(db):
+    _seed_settings(db)
+    _seed_binding(db, ark_user_id=2, external_account_id="777002", department_id=None)
+    invoice = _make_invoice(db, sales_user_id=2)
+    invoice.items.append(_stock_item())
+    db.flush()
+
+    _payload, _binding, issues = xiaoman_service.build_push_payload(db, invoice)
+    assert any(issue["field"] == "okki_department" for issue in issues)
+
+
+def test_resolve_okki_flags_history_fallback(db):
+    from sqlalchemy import text as sa_text
+    # 该客户在 OKKI 已有历史订单 → 新成交兜底为否；运费 0 → 包邮兜底为是
+    db.execute(sa_text(
+        "INSERT INTO lsordertest.okki_orders (order_id, company_id) VALUES ('H1', '123456')"
+    ))
+    invoice = _make_invoice(db, shipping_fee=Decimal("0"))
+    db.flush()
+
+    flags = service.resolve_okki_flags(db, invoice)
+    assert flags == {"okki_new_deal": 0, "okki_free_shipping": 1, "okki_first_return": 0}
+
+
+def test_okki_department_options_aggregation(db):
+    from sqlalchemy import text as sa_text
+
+    from app.auth.service import list_okki_department_options
+
+    db.execute(sa_text(
+        "INSERT INTO lsordertest.okki_orders (order_id, company_id, departments) VALUES "
+        "('D1','C1','[{\"name\": \"多财多亿\", \"rate\": 100, \"department_id\": 24925}]'),"
+        "('D2','C1','[{\"name\": \"多财多亿\", \"rate\": 100, \"department_id\": 24925}]'),"
+        "('D3','C2','{\"id\": 24926, \"name\": \"稻乐偲\"}'),"      # dict 格式 + id 键兼容
+        "('D4','C3','not-json'),"                                    # 坏 JSON 只跳过
+        "('D5','C4','[{\"name\": \"我的企业\", \"rate\": 100, \"department_id\": 0}]'),"
+        "('D6','C5','[{\"department_id\": \"abc\"}]')"               # 脏 id 只跳过
+    ))
+    options = list_okki_department_options(db)
+    by_id = {option["department_id"]: option for option in options}
+    assert by_id[24925]["order_count"] == 2 and by_id[24925]["name"] == "多财多亿"
+    assert by_id[24926]["name"] == "稻乐偲"
+    assert 0 in by_id  # 我的企业（id=0）是合法部门
+    assert options[0]["department_id"] == 24925  # 按用量倒序
+    assert "abc" not in str([o["department_id"] for o in options])
 
 
 def test_build_push_payload_inactive_binding_rejected(db):

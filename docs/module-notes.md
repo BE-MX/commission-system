@@ -531,6 +531,11 @@ frontend/src/
 - 绑定入口：系统管理 → 外部账号绑定 →「同步 OKKI 用户」生成候选（已绑定跳过 / ignored 不复活 / 解绑后候选自动复位 pending）
 - 企业订单状态是专属 ID（来自 `/v1/invoices/order/orderEnums` 的 order_status_list）：草稿 13972831654 / 已完成 13972831656 / 内贸-退货 5642697247486（2026-07-10 实测）
 
+### 企业必填字段（2026-07-13 首推真单被拒后接线；字段定义来自 GET /v1/invoices/order/fields——**复数**，单数路径 404）
+- **业绩归属部门 departments**：挂业务员用户设置（ark_users.okki_department_id，用户管理页「OKKI部门」下拉），推单传 `[{department_id, rate:100}]`，未设置 fail-fast。选项无官方 API（多候选路径实测 404），从业务库 okki_orders.departments 实时聚合；**department_id=0（我的企业）是合法值，禁止 falsy 判断**（前后端都栽过）
+- **4 个自定义字段**（payload 顶层 key=字段 ID 字符串，值=选项文本）：订单类型 691123983470（规格品/定制品，order_type 自动映射零人工）、是否新成交 22595163468、是否包邮 20528077262544、是否首返 20528142733548（均是/否）
+- 三标记存发票（okki_* 三列），录单页「小满标记」开关智能默认：新成交=客户在 okki_orders 无历史订单（contact-defaults 返回 has_xiaoman_orders 预判；兜底查询排除本单已推订单防自指翻转）、包邮=运费为 0（watch 联动，碰过开关不再自动改）、首返=否；NULL 推单时服务端同口径兜底
+
 ### 推单字段映射（2026-07-13 落地，`xiaoman_service.build_push_payload`）
 - **订单层**：name=发票号+客户名；account_date=invoice_date；company_id=customer_id（customer_info 投影即 OKKI 数字 ID，非数字前置拦截）；status=设置页选定的企业枚举 code；create_user/handler/users[rate=100]=业务员绑定的 OKKI user_id（**未绑定 fail-fast 不推**）；**不传 user_id**（避开操作人权限 404）；**订单级金额一律不传**（OKKI 按 product_list+cost_list 自算，避开汇率×100 口径）；payment_term 并入 remark；联系人字段 v1 不传
 - **明细层**：stock 行=真实 product_id+sku_id；custom 未回填的非标行**全部合并成一条通用产品明细**（数量恒 1，单价=总价=非标合计，product_name=「非标合计N项: 名称×数量; ...」240 字符截断，亮哥 2026-07-13 指令）；custom 已回填=真实 ID 转正逐行推（不参与合并）；cost_amount=行小计**必传**（OKKI 不自动算，不传当 0）；运费/附加费走 cost_list（percent_type=0 绝对值）

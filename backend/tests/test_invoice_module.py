@@ -136,7 +136,23 @@ def test_customer_contact_defaults_latest_snapshot(db):
     db.flush()
     assert service.get_customer_contact_defaults(db, "123456")["contact_name"] == "Alice Wang"
 
-    assert service.get_customer_contact_defaults(db, "no-such") == {}
+    assert service.get_customer_contact_defaults(db, "no-such") == {"has_xiaoman_orders": False}
+
+
+def test_okki_flags_stored_and_null_recomputes_on_update(db):
+    from app.invoice.schemas import InvoiceUpdate
+
+    # 创建时三标记 None → 服务端兜底后落库（无运费→包邮是；无历史→新成交是）
+    invoice = service.create_invoice(db, _header_payload(), user_id=1)
+    db.flush()
+    assert (invoice.okki_new_deal, invoice.okki_free_shipping, invoice.okki_first_return) == (1, 1, 0)
+
+    # 更新传 null=自动：运费改 50 → 包邮重算为否；显式值优先不重算
+    update = InvoiceUpdate(**{**_header_payload().model_dump(), "shipping_fee": 50, "okki_new_deal": 0})
+    invoice = service.update_invoice(db, invoice, update, user_id=1)
+    db.flush()
+    assert invoice.okki_free_shipping == 0  # null → 按运费重算
+    assert invoice.okki_new_deal == 0       # 显式值保留
 
 
 def test_create_invoice_salesperson_fallback(db):
