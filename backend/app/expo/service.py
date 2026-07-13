@@ -505,8 +505,9 @@ def serialize_kiosk_lead(row: dict) -> dict:
 
 
 def get_kiosk_strategy(db: Session, customer_id: int) -> dict | None:
-    """kiosk 销售面板话术载荷：最新一条已生成话术 + 试戴过的款。
+    """kiosk 销售面板线索详情：话术 + 试戴款 + 原图/效果图（2026-07-13 亮哥指令加图）。
 
+    照片随载荷下发（客户建会话前已签拍照同意）；internal 发况仍不出 kiosk。
     返回 None=客户不存在；strategy=None 且 strategy_pending=True 表示话术
     正在随合成并行生成（前端 5s 静默轮询），两者都 False 则该客户不会有话术。
     """
@@ -535,6 +536,25 @@ def get_kiosk_strategy(db: Session, customer_id: int) -> dict | None:
             name = r.wig.name if r.wig else None
             if name and name not in tried_wigs:
                 tried_wigs.append(name)
+    # 原图 + 已完成效果图（sessions 倒序=最新在前；失败/生成中的结果不出图）
+    sessions_payload = [
+        {
+            "id": s.id,
+            "mode": s.mode,
+            "photo_url": _to_url(s.photo_path),
+            "results": [
+                {
+                    "id": r.id,
+                    "wig_name": r.wig.name if r.wig else (r.scene_json or {}).get("label"),
+                    "image_url": _to_url(r.image_path),
+                    "reaction": r.reaction,
+                }
+                for r in s.results
+                if r.status == "done" and r.image_path
+            ],
+        }
+        for s in sessions
+    ]
     return {
         "customer": {
             "customer_id": customer.id,
@@ -546,6 +566,7 @@ def get_kiosk_strategy(db: Session, customer_id: int) -> dict | None:
         "strategy": strategy,
         "strategy_pending": strategy is None and generating,
         "tried_wigs": tried_wigs,
+        "sessions": sessions_payload,
     }
 
 

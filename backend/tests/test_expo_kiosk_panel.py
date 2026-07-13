@@ -96,10 +96,11 @@ class TestKioskStrategy:
         assert service.mask_phone("07551234") == "0***"
         assert service.mask_phone("075512345678") == "075****5678"
 
-    def test_no_internal_or_photo_leakage(self, db):
+    def test_no_internal_leakage_photos_included(self, db):
+        """照片随载荷下发（2026-07-13 亮哥指令）；internal 发况/微信号仍零泄漏。"""
         c = _customer(db)
         db.add(ExpoSession(
-            customer_id=c.id, photo_path="private.jpg", status="done",
+            customer_id=c.id, photo_path="uploads/expo/photos/c1.jpg", status="done",
             analysis_json={"face_shape": "round", "internal": {"hair_volume": "稀疏"}},
             strategy_json={"opener": "o", "followup": "f", "objections": []},
         ))
@@ -107,8 +108,23 @@ class TestKioskStrategy:
         payload = service.get_kiosk_strategy(db, c.id)
         flat = str(payload)
         assert "internal" not in flat and "稀疏" not in flat  # 发况判断永不出 kiosk
-        assert "private.jpg" not in flat                      # 原始照片路径不出
         assert "wx_secret" not in flat                        # 微信号不出
+        assert payload["sessions"][0]["photo_url"] == "/uploads/expo/photos/c1.jpg"
+
+    def test_sessions_only_expose_done_results(self, db):
+        """效果图只出已完成的：failed/generating 的结果不进图集。"""
+        c = _customer(db)
+        s = ExpoSession(customer_id=c.id, photo_path="p.jpg", status="done",
+                        strategy_json={"opener": "o"})
+        db.add(s)
+        db.flush()
+        db.add(ExpoResult(session_id=s.id, status="done", image_path="uploads/expo/results/ok.jpg"))
+        db.add(ExpoResult(session_id=s.id, status="failed", image_path="uploads/expo/results/bad.jpg"))
+        db.add(ExpoResult(session_id=s.id, status="generating"))
+        db.commit()
+        payload = service.get_kiosk_strategy(db, c.id)
+        urls = [r["image_url"] for r in payload["sessions"][0]["results"]]
+        assert urls == ["/uploads/expo/results/ok.jpg"]
 
     def test_tried_wigs_dedupe(self, db):
         c = _customer(db)
