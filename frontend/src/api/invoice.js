@@ -9,6 +9,12 @@ export function searchInvoiceCustomers(params) {
   return unwrap(request.get('/customers/search', { params, showLoading: false }))
 }
 
+export function getCustomerContactDefaults(customerId) {
+  return unwrap(request.get('/customers/contact-defaults', {
+    params: { customer_id: customerId }, showLoading: false,
+  }))
+}
+
 export function getInvoiceProductOptions(params) {
   return unwrap(request.get('/products/filter-options', { params, showLoading: false }))
 }

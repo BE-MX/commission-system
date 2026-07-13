@@ -2,6 +2,7 @@ import { computed, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   createInvoice,
+  getCustomerContactDefaults,
   getCustomerRule,
   getInvoice,
   getInvoiceEntryOptions,
@@ -12,6 +13,7 @@ import {
   updateInvoice,
   validateInvoice,
 } from '@/api/invoice'
+import { useAuthStore } from '@/stores/auth'
 
 export const CURL_OPTIONS = ['Straight', 'Body Wave', 'Deep Wave', 'Loose Wave', 'Kinky Curly', 'Water Wave']
 
@@ -90,7 +92,14 @@ export function useInvoiceEditor({ onSaved } = {}) {
     }
   }
 
+  // 竞态守卫（cerebrum 2026-05-26 loadMore/doSearch 同款教训）：
+  // 快速切换客户或切换 drawer 时，先发后至的过期响应不得覆盖当前表单
+  let contactFillSeq = 0
+  let customerRuleSeq = 0
+
   function resetForm(data = emptyForm()) {
+    contactFillSeq++
+    customerRuleSeq++
     Object.assign(form, emptyForm(), {
       ...data,
       shipping_fee: Number(data.shipping_fee || 0),
@@ -115,24 +124,52 @@ export function useInvoiceEditor({ onSaved } = {}) {
   }
 
   async function loadCustomerRule() {
+    const seq = ++customerRuleSeq
     try {
-      customerRule.value = form.customer_id ? await getCustomerRule(form.customer_id) : null
+      const rule = form.customer_id ? await getCustomerRule(form.customer_id) : null
+      if (seq === customerRuleSeq) customerRule.value = rule
     } catch {
-      customerRule.value = null
+      if (seq === customerRuleSeq) customerRule.value = null
     }
   }
 
   async function onCustomerChange(customer) {
     form.customer_id = customer?.company_id == null ? '' : String(customer.company_id)
     form.customer_name = customer?.company_name || ''
-    await loadCustomerRule()
+    await Promise.all([loadCustomerRule(), fillContactDefaults()])
     // 客户变化 → 客户价规则变化，所有明细价重算
     await Promise.all(form.items.map(line => refreshLinePrice(line)))
+  }
+
+  // 联系人/地址是客户属性：选客户后用该客户最近一张发票的快照整体覆盖（含清空），
+  // 残留上一个客户的地址是错单风险
+  async function fillContactDefaults() {
+    const seq = ++contactFillSeq
+    let defaults = {}
+    if (form.customer_id) {
+      try {
+        defaults = await getCustomerContactDefaults(form.customer_id) || {}
+      } catch {
+        defaults = {} // 拦截器已统一提示，回填静默跳过
+      }
+    }
+    if (seq !== contactFillSeq) return // 期间又切了客户/换了单据，丢弃过期响应
+    form.contact_name = defaults.contact_name || ''
+    form.contact_phone = defaults.contact_phone || ''
+    form.contact_email = defaults.contact_email || ''
+    form.delivery_address = defaults.delivery_address || ''
   }
 
   async function openCreate(orderType = 'stock') {
     resetForm()
     form.order_type = orderType
+    // 业务员信息默认当前登录用户（可改）；后端 create 对空字段还有一层兜底
+    const me = useAuthStore().user
+    if (me) {
+      form.sales_user_name = me.real_name || ''
+      form.sales_phone = me.phone || ''
+      form.sales_email = me.email || ''
+    }
     addLine()
     drawerVisible.value = true
     searchCustomers('')
