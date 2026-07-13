@@ -475,6 +475,80 @@ def get_lead_detail(db: Session, customer_id: int) -> dict | None:
     }
 
 
+# ---------------- kiosk 销售面板（展位设备 expo:write，2026-07-13） ----------------
+# 与 web 线索台（expo_lead:*）区分：共享屏最小暴露面——手机号脱敏、不带备注/微信号，
+# 话术载荷只出 strategy 与试戴款，internal 发况一律不出（2026-07-07 隐私红线保留）
+
+def mask_phone(phone: str | None) -> str:
+    """共享屏脱敏：138****1234。检索仍走服务端全量号码，展示永不出全号。
+
+    门槛取 11（手机号标准长度）：phone 是自由文本，8~10 位座机/短号若走
+    留3+留4 分支只藏 1~2 位形同裸奔，一律走重脱敏。
+    """
+    p = (phone or "").strip()
+    if len(p) >= 11:
+        return f"{p[:3]}****{p[-4:]}"
+    return f"{p[:1]}***" if p else ""
+
+
+def serialize_kiosk_lead(row: dict) -> dict:
+    """kiosk 线索列表行：与 web 线索台同源（list_leads 输出），裁剪+脱敏。"""
+    return {
+        "customer_id": row["id"],
+        "name": row["name"],
+        "phone_masked": mask_phone(row["phone"]),
+        "intent_level": row["intent_level"],
+        "session_count": row["session_count"],
+        "result_count": row["result_count"],
+        "created_at": row["created_at"],
+    }
+
+
+def get_kiosk_strategy(db: Session, customer_id: int) -> dict | None:
+    """kiosk 销售面板话术载荷：最新一条已生成话术 + 试戴过的款。
+
+    返回 None=客户不存在；strategy=None 且 strategy_pending=True 表示话术
+    正在随合成并行生成（前端 5s 静默轮询），两者都 False 则该客户不会有话术。
+    """
+    customer = db.get(ExpoCustomer, customer_id)
+    if not customer:
+        return None
+    sessions = (
+        db.query(ExpoSession)
+        .options(selectinload(ExpoSession.results).selectinload(ExpoResult.wig))
+        .filter(ExpoSession.customer_id == customer_id)
+        .order_by(ExpoSession.id.desc())
+        .all()
+    )
+    raw = next((s.strategy_json for s in sessions if s.strategy_json), None)
+    # 键白名单：模型输出/回落路径可能夹带多余键（如 fallback 标记），收敛到三段话术
+    strategy = (
+        {k: raw.get(k) for k in ("opener", "followup", "objections")} if raw else None
+    )
+    # scene 会话不生成话术，不计入"生成中"（否则纯场景客户会假显"话术生成中"空转轮询）
+    generating = any(
+        s.status in ("pending", "generating") and s.mode != "scene" for s in sessions
+    )
+    tried_wigs: list[str] = []
+    for s in sessions:
+        for r in s.results:
+            name = r.wig.name if r.wig else None
+            if name and name not in tried_wigs:
+                tried_wigs.append(name)
+    return {
+        "customer": {
+            "customer_id": customer.id,
+            "name": customer.name,
+            "phone_masked": mask_phone(customer.phone),
+            "primary_need": customer.primary_need,
+            "style_pref": customer.style_pref,
+        },
+        "strategy": strategy,
+        "strategy_pending": strategy is None and generating,
+        "tried_wigs": tried_wigs,
+    }
+
+
 # ---------------- 发型库 ----------------
 
 def list_wigs(db: Session, only_active: bool = False) -> list[ExpoWig]:

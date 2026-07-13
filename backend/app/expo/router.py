@@ -251,6 +251,37 @@ p{{color:#8d8371;font-size:13px;line-height:1.9}}.nm{{color:#f7e3b0;font-size:15
 <p>戴上那一刻，状态就回来了<br/>久戴如新 · SGS 安全认证</p></body></html>""")
 
 
+# ---------------- kiosk 销售面板（展位设备 expo:write，2026-07-13） ----------------
+# 与 /leads（expo_lead:*，线索台全量数据）刻意分离：共享屏最小暴露面，
+# 手机号服务端脱敏、话术载荷不含 internal 发况与客户照片
+
+@router.get("/kiosk/leads", summary="kiosk 销售面板线索列表（手机号脱敏，姓名/手机关键词检索）")
+def kiosk_leads(
+    keyword: str | None = Query(None, max_length=64),
+    expo_code: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("expo:write")),
+):
+    items, total = service.list_leads(
+        db, page=page, page_size=page_size, expo_code=expo_code, keyword=keyword,
+    )
+    return ok(page_result([service.serialize_kiosk_lead(r) for r in items], total, page, page_size))
+
+
+@router.get("/kiosk/leads/{customer_id}/strategy", summary="kiosk 销售面板话术（只出话术与试戴款，无 internal 发况）")
+def kiosk_lead_strategy(
+    customer_id: int,
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("expo:write")),
+):
+    payload = service.get_kiosk_strategy(db, customer_id)
+    if payload is None:
+        raise HTTPException(404, "客户不存在")
+    return ok(payload)
+
+
 # ---------------- 线索台（PC，expo_lead:*，2026-07-12 从 expo:read 拆出） ----------------
 
 @router.get("/leads", summary="展会线索列表")
