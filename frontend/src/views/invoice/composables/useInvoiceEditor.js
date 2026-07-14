@@ -1,6 +1,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
+  checkInvoiceNo,
   createInvoice,
   getCustomerContactDefaults,
   getCustomerRule,
@@ -9,7 +10,9 @@ import {
   getInvoiceProductOptions,
   matchInvoiceProduct,
   resolveInvoicePrice,
+  searchInvoiceCustomerContacts,
   searchInvoiceCustomers,
+  suggestInvoiceNo,
   updateInvoice,
   validateInvoice,
 } from '@/api/invoice'
@@ -23,6 +26,16 @@ export function useInvoiceEditor({ onSaved } = {}) {
   const customerOptions = ref([])
   const selectedCustomer = ref(null)
   const customerRule = ref(null)
+  // 联系人维度筛选（与公司筛选联动：选公司收敛联系人，选联系人反向定位公司）
+  const contactLoading = ref(false)
+  const contactOptions = ref([])
+  const selectedContact = ref(null)
+  // 「仅显示私海客户」默认勾选；两个筛选各自独立控制
+  const privateOnlyCompany = ref(true)
+  const privateOnlyContact = ref(true)
+  // false = 当前账号未绑定 OKKI，私海筛选无从判定（前端提示去绑定）
+  const okkiBound = ref(true)
+  const invoiceNoTaken = ref(false)
   const entryOptions = ref({ displays: [], models: [], colors: [], sizes: [], units: [] })
 
   const form = reactive(emptyForm())
@@ -111,10 +124,19 @@ export function useInvoiceEditor({ onSaved } = {}) {
   // 快速切换客户或切换 drawer 时，先发后至的过期响应不得覆盖当前表单
   let contactFillSeq = 0
   let customerRuleSeq = 0
+  let customerSearchSeq = 0
+  let contactSearchSeq = 0
+  let invoiceNoSeq = 0
+  // 用户手输过发票号后，建议号不再覆盖
+  let invoiceNoEdited = false
 
   function resetForm(data = emptyForm()) {
     contactFillSeq++
     customerRuleSeq++
+    invoiceNoSeq++
+    // 编辑既有单（有 id）：发票号视为已确认，建议号不覆盖
+    invoiceNoEdited = Boolean(data.id)
+    invoiceNoTaken.value = false
     // 编辑既有单（有 id）时开关视为已人工确认，智能默认不再覆盖
     okkiFlagsTouched.newDeal = Boolean(data.id)
     okkiFlagsTouched.freeShipping = Boolean(data.id)
@@ -131,19 +153,49 @@ export function useInvoiceEditor({ onSaved } = {}) {
     selectedCustomer.value = form.customer_id
       ? { company_id: form.customer_id, company_name: form.customer_name }
       : null
+    selectedContact.value = null
+    contactOptions.value = []
     customerRule.value = null
     if (form.customer_id) loadCustomerRule()
   }
 
   async function searchCustomers(keyword) {
+    const seq = ++customerSearchSeq
     customerLoading.value = true
     try {
-      const res = await searchInvoiceCustomers({ keyword })
+      const res = await searchInvoiceCustomers({
+        keyword,
+        private_only: privateOnlyCompany.value,
+      })
+      if (seq !== customerSearchSeq) return
       customerOptions.value = res.items || []
+      if (typeof res.okki_bound === 'boolean') okkiBound.value = res.okki_bound
     } finally {
-      customerLoading.value = false
+      if (seq === customerSearchSeq) customerLoading.value = false
     }
   }
+
+  async function searchContacts(keyword) {
+    const seq = ++contactSearchSeq
+    contactLoading.value = true
+    try {
+      const res = await searchInvoiceCustomerContacts({
+        keyword,
+        // 已选公司则收敛到该客户名下（联动）；未选则全局按联系人名搜
+        company_id: form.customer_id || undefined,
+        private_only: privateOnlyContact.value,
+      })
+      if (seq !== contactSearchSeq) return
+      contactOptions.value = res.items || []
+      if (typeof res.okki_bound === 'boolean') okkiBound.value = res.okki_bound
+    } finally {
+      if (seq === contactSearchSeq) contactLoading.value = false
+    }
+  }
+
+  // 勾选切换即刷新候选（保持当前下拉内容与勾选一致）
+  watch(privateOnlyCompany, () => { searchCustomers('') })
+  watch(privateOnlyContact, () => { searchContacts('') })
 
   async function loadCustomerRule() {
     const seq = ++customerRuleSeq
@@ -158,9 +210,38 @@ export function useInvoiceEditor({ onSaved } = {}) {
   async function onCustomerChange(customer) {
     form.customer_id = customer?.company_id == null ? '' : String(customer.company_id)
     form.customer_name = customer?.company_name || ''
+    // 联动：公司变了，已选联系人若不属于新公司即失效；候选收敛到新公司名下
+    if (selectedContact.value && String(selectedContact.value.company_id) !== form.customer_id) {
+      selectedContact.value = null
+    }
+    searchContacts('')
     await Promise.all([loadCustomerRule(), fillContactDefaults()])
     // 客户变化 → 客户价规则变化，所有明细价重算
     await Promise.all(form.items.map(line => refreshLinePrice(line)))
+  }
+
+  async function onContactChange(contact) {
+    selectedContact.value = contact || null
+    if (!contact) return // 清空联系人筛选不动已选客户
+    const companyChanged = String(contact.company_id) !== form.customer_id
+    if (companyChanged) {
+      // 联动：选联系人反向定位其所属客户
+      form.customer_id = String(contact.company_id)
+      form.customer_name = contact.company_name || ''
+      selectedCustomer.value = {
+        company_id: contact.company_id,
+        company_name: contact.company_name,
+        country_name: contact.country_name,
+      }
+      await Promise.all([loadCustomerRule(), fillContactDefaults()])
+    }
+    // 选中联系人是明确意图：整体覆盖联系字段（覆盖快照回填；残留他人联系方式是错单风险）
+    form.contact_name = contact.name || ''
+    form.contact_phone = contact.tel || ''
+    form.contact_email = contact.email || ''
+    if (companyChanged) {
+      await Promise.all(form.items.map(line => refreshLinePrice(line)))
+    }
   }
 
   // 联系人/地址是客户属性：选客户后用该客户最近一张发票的快照整体覆盖（含清空），
@@ -199,6 +280,8 @@ export function useInvoiceEditor({ onSaved } = {}) {
     addLine()
     drawerVisible.value = true
     searchCustomers('')
+    searchContacts('')
+    fetchSuggestedInvoiceNo()
     if (orderType === 'production') loadEntryOptions()
   }
 
@@ -206,7 +289,43 @@ export function useInvoiceEditor({ onSaved } = {}) {
     const data = await getInvoice(id)
     resetForm(data)
     drawerVisible.value = true
+    searchCustomers('')
+    searchContacts('')
     if (form.order_type === 'production') loadEntryOptions()
+  }
+
+  // ── 发票号 ──────────────────────────────────────────
+
+  async function fetchSuggestedInvoiceNo() {
+    const seq = ++invoiceNoSeq
+    try {
+      const res = await suggestInvoiceNo({ order_type: form.order_type })
+      // 期间用户手输过 / 切换了单据则丢弃建议号
+      if (seq === invoiceNoSeq && !invoiceNoEdited && !form.id) {
+        form.invoice_no = res.invoice_no || ''
+      }
+    } catch {
+      // 拦截器已统一提示；建议号取不到时留空，保存由后端按规则生成兜底
+    }
+  }
+
+  function onInvoiceNoInput() {
+    invoiceNoEdited = true
+    invoiceNoTaken.value = false
+  }
+
+  async function onInvoiceNoBlur() {
+    const no = (form.invoice_no || '').trim()
+    if (!no) return
+    const seq = invoiceNoSeq // 期间切换单据（resetForm 递增）则丢弃过期响应
+    try {
+      const res = await checkInvoiceNo({ invoice_no: no, exclude_id: form.id || undefined })
+      if (seq !== invoiceNoSeq || (form.invoice_no || '').trim() !== no) return
+      invoiceNoTaken.value = !res.available
+      if (!res.available) ElMessage.warning(`发票号 ${no} 已存在，请更换`)
+    } catch {
+      // 拦截器已统一提示；保存时后端还有唯一校验兜底
+    }
   }
 
   async function loadEntryOptions() {
@@ -329,6 +448,8 @@ export function useInvoiceEditor({ onSaved } = {}) {
 
   function buildPayload() {
     return {
+      // 空串传 null：新建时后端按规则生成，编辑时保持原号
+      invoice_no: (form.invoice_no || '').trim() || null,
       order_type: form.order_type,
       customer_id: form.customer_id,
       customer_name: form.customer_name,
@@ -405,13 +526,24 @@ export function useInvoiceEditor({ onSaved } = {}) {
     customerOptions,
     selectedCustomer,
     customerRule,
+    contactLoading,
+    contactOptions,
+    selectedContact,
+    privateOnlyCompany,
+    privateOnlyContact,
+    okkiBound,
+    invoiceNoTaken,
     entryOptions,
     form,
     formProductTotal,
     formTotal,
     isProduction,
     searchCustomers,
+    searchContacts,
     onCustomerChange,
+    onContactChange,
+    onInvoiceNoInput,
+    onInvoiceNoBlur,
     openCreate,
     openEdit,
     addLine,
@@ -434,6 +566,13 @@ export function customerLabel(customer) {
   return customer.country_name
     ? `${customer.company_name}(${customer.country_name})`
     : customer.company_name || ''
+}
+
+// 联系人下拉：姓名 — 所属公司（跨公司搜索时靠公司名区分同名联系人）
+export function contactLabel(contact) {
+  if (!contact) return ''
+  const name = contact.name || ''
+  return contact.company_name ? `${name} — ${contact.company_name}` : name
 }
 
 export function describeCustomerRule(rule) {

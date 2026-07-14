@@ -207,6 +207,28 @@
   width: fit-content;
 }
 
+.rule-badge.warn {
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
+}
+
+/* 客户/联系人筛选：下拉 + 「仅私海」勾选同行 */
+.customer-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.customer-filter-select {
+  flex: 1;
+  min-width: 0;
+}
+
+.customer-filter-check {
+  flex-shrink: 0;
+}
+
 .surcharge-row {
   display: flex;
   width: 100%;

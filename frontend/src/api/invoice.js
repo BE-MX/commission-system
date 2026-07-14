@@ -9,6 +9,19 @@ export function searchInvoiceCustomers(params) {
   return unwrap(request.get('/customers/search', { params, showLoading: false }))
 }
 
+// 联系人维度搜客户（与公司筛选联动）；private_only=仅私海
+export function searchInvoiceCustomerContacts(params) {
+  return unwrap(request.get('/customers/contacts', { params, showLoading: false }))
+}
+
+export function suggestInvoiceNo(params) {
+  return unwrap(request.get('/invoices/suggest-no', { params, showLoading: false }))
+}
+
+export function checkInvoiceNo(params) {
+  return unwrap(request.get('/invoices/check-no', { params, showLoading: false }))
+}
+
 export function getCustomerContactDefaults(customerId) {
   return unwrap(request.get('/customers/contact-defaults', {
     params: { customer_id: customerId }, showLoading: false,

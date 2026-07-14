@@ -158,27 +158,58 @@
             <section class="form-col">
               <div class="col-title">客户信息</div>
               <el-form-item label="客户" required>
-                <el-select
-                  v-model="selectedCustomer"
-                  value-key="company_id"
-                  filterable
-                  remote
-                  reserve-keyword
-                  :remote-method="searchCustomers"
-                  :loading="customerLoading"
-                  placeholder="输入客户名称/ID 搜索"
-                  style="width: 100%"
-                  @change="onCustomerChange"
-                >
-                  <el-option
-                    v-for="customer in customerOptions"
-                    :key="customer.company_id"
-                    :label="customerLabel(customer)"
-                    :value="customer"
-                  />
-                </el-select>
+                <div class="customer-filter-row">
+                  <el-select
+                    v-model="selectedCustomer"
+                    value-key="company_id"
+                    filterable
+                    remote
+                    reserve-keyword
+                    :remote-method="searchCustomers"
+                    :loading="customerLoading"
+                    placeholder="输入客户名称/ID 搜索"
+                    class="customer-filter-select"
+                    @change="onCustomerChange"
+                  >
+                    <el-option
+                      v-for="customer in customerOptions"
+                      :key="customer.company_id"
+                      :label="customerLabel(customer)"
+                      :value="customer"
+                    />
+                  </el-select>
+                  <el-checkbox v-model="privateOnlyCompany" class="customer-filter-check">仅私海</el-checkbox>
+                </div>
                 <div v-if="customerRule" class="rule-badge">
                   该客户价格规则：{{ describeCustomerRule(customerRule) }}
+                </div>
+              </el-form-item>
+              <el-form-item label="按联系人">
+                <div class="customer-filter-row">
+                  <el-select
+                    v-model="selectedContact"
+                    value-key="contact_id"
+                    filterable
+                    remote
+                    clearable
+                    reserve-keyword
+                    :remote-method="searchContacts"
+                    :loading="contactLoading"
+                    :placeholder="form.customer_id ? '搜索该客户的联系人' : '输入联系人姓名定位客户'"
+                    class="customer-filter-select"
+                    @change="onContactChange"
+                  >
+                    <el-option
+                      v-for="contact in contactOptions"
+                      :key="contact.contact_id"
+                      :label="contactLabel(contact)"
+                      :value="contact"
+                    />
+                  </el-select>
+                  <el-checkbox v-model="privateOnlyContact" class="customer-filter-check">仅私海</el-checkbox>
+                </div>
+                <div v-if="!okkiBound && (privateOnlyCompany || privateOnlyContact)" class="rule-badge warn">
+                  当前账号未绑定 OKKI，私海筛选无结果：请到 系统管理 → 外部账号绑定 处理，或取消勾选
                 </div>
               </el-form-item>
               <el-form-item label="联系人">
@@ -210,6 +241,15 @@
 
           <div class="col-title order-title">订单信息</div>
           <div class="form-grid">
+            <el-form-item label="发票号" :error="invoiceNoTaken ? '发票号已存在，请更换' : ''">
+              <el-input
+                v-model="form.invoice_no"
+                maxlength="64"
+                placeholder="已自动生成，可修改"
+                @input="onInvoiceNoInput"
+                @blur="onInvoiceNoBlur"
+              />
+            </el-form-item>
             <el-form-item label="日期" required>
               <el-date-picker v-model="form.invoice_date" value-format="YYYY-MM-DD" style="width: 100%" />
             </el-form-item>
@@ -536,7 +576,7 @@ import {
   syncInvoice,
   validateInvoice,
 } from '@/api/invoice'
-import { CURL_OPTIONS, customerLabel, describeCustomerRule, useInvoiceEditor } from './composables/useInvoiceEditor'
+import { CURL_OPTIONS, contactLabel, customerLabel, describeCustomerRule, useInvoiceEditor } from './composables/useInvoiceEditor'
 
 const loading = ref(false)
 const invoices = ref([])
@@ -550,13 +590,24 @@ const {
   customerOptions,
   selectedCustomer,
   customerRule,
+  contactLoading,
+  contactOptions,
+  selectedContact,
+  privateOnlyCompany,
+  privateOnlyContact,
+  okkiBound,
+  invoiceNoTaken,
   entryOptions,
   form,
   formProductTotal,
   formTotal,
   isProduction,
   searchCustomers,
+  searchContacts,
   onCustomerChange,
+  onContactChange,
+  onInvoiceNoInput,
+  onInvoiceNoBlur,
   openCreate,
   openEdit,
   addLine,
