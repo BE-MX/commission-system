@@ -153,10 +153,27 @@ export function useInvoiceEditor({ onSaved } = {}) {
     selectedCustomer.value = form.customer_id
       ? { company_id: form.customer_id, company_name: form.customer_name }
       : null
+    ensureCustomerOption(selectedCustomer.value) // 编辑回显：客户可能不在当前候选里
     selectedContact.value = null
     contactOptions.value = []
     customerRule.value = null
     if (form.customer_id) loadCustomerRule()
+  }
+
+  // el-select 按 value-key 在已渲染 options 里找到匹配项才能显示标签：
+  // 联系人反向定位/编辑回显注入的客户若不在候选里，输入框会显示空白。
+  // 候选里已有同 company_id 的 → selectedCustomer 复用候选对象引用
+  // （顺带消掉 number/string 类型差导致的匹配失败）；没有 → 注入候选头部。
+  function ensureCustomerOption(customer) {
+    if (!customer) return
+    const match = customerOptions.value.find(
+      c => String(c.company_id) === String(customer.company_id),
+    )
+    if (match) {
+      if (match !== customer) selectedCustomer.value = match
+    } else {
+      customerOptions.value.unshift(customer)
+    }
   }
 
   async function searchCustomers(keyword) {
@@ -169,6 +186,8 @@ export function useInvoiceEditor({ onSaved } = {}) {
       })
       if (seq !== customerSearchSeq) return
       customerOptions.value = res.items || []
+      // 搜索响应会整体替换候选，把当前选中项补回去，否则选中标签变空白
+      ensureCustomerOption(selectedCustomer.value)
       if (typeof res.okki_bound === 'boolean') okkiBound.value = res.okki_bound
     } finally {
       if (seq === customerSearchSeq) customerLoading.value = false
@@ -233,6 +252,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
         company_name: contact.company_name,
         country_name: contact.country_name,
       }
+      ensureCustomerOption(selectedCustomer.value)
       await Promise.all([loadCustomerRule(), fillContactDefaults()])
     }
     // 选中联系人是明确意图：整体覆盖联系字段（覆盖快照回填；残留他人联系方式是错单风险）
