@@ -29,7 +29,8 @@
           </div>
         </button>
         <div v-if="!loading && !leads.length" class="empty">
-          {{ keyword ? '没有匹配的客户' : '还没有登记客户' }}
+          <template v-if="loadFailed">线索加载失败，请<button class="empty-retry" @click="loadLeads">重试</button></template>
+          <template v-else>{{ keyword ? '没有匹配的客户' : '还没有登记客户' }}</template>
         </div>
         <div v-if="total > leads.length" class="cap-hint">共 {{ total }} 位，仅显示最近 {{ leads.length }} 位 · 可用搜索定位</div>
       </div>
@@ -147,6 +148,7 @@ const keyword = ref('')
 const leads = ref([])
 const total = ref(0)
 const loading = ref(false)
+const loadFailed = ref(false) // 网络失败与「真没有客户」分开呈现，别误导顾问
 let searchTimer = null
 
 async function loadLeads() {
@@ -160,7 +162,11 @@ async function loadLeads() {
     const payload = res.data ?? res
     leads.value = payload.items || []
     total.value = payload.total ?? leads.value.length
-  } catch (e) { /* 弱网失败拦截器已提示，列表留空态 */ } finally {
+    loadFailed.value = false
+  } catch (e) {
+    // 端点已 suppressToast（客户屏不弹英文报错），用错误空态提示重试
+    loadFailed.value = true
+  } finally {
     loading.value = false
   }
 }
@@ -199,14 +205,16 @@ async function fetchDetail() {
     const res = await getKioskStrategy(id)
     if (id !== detailId.value) return
     detail.value = res.data ?? res
-  } catch (e) { /* 拦截器已提示 */ }
+  } catch (e) { /* 端点已 suppressToast，详情留加载态；armDetailPoll 会继续静默重试 */ }
 }
 
-// 话术随合成并行生成：pending 时 5s 静默刷新（同线索台模式），出话术/离开详情即停
+// 话术随合成并行生成：pending 时 5s 静默刷新（同线索台模式），出话术/离开详情即停；
+// detail 为 null（首次加载失败）也继续重试——suppressToast 后没有任何报错反馈，
+// 不重试就是永久骨架屏（等待态必须有出口，cerebrum 2026-07-04）
 function armDetailPoll() {
   clearDetailPoll()
   detailTimer = setInterval(async () => {
-    if (view.value !== 'detail' || !detail.value?.strategy_pending) {
+    if (view.value !== 'detail' || (detail.value && !detail.value.strategy_pending)) {
       clearDetailPoll()
       return
     }
@@ -227,7 +235,7 @@ const galleryItems = computed(() => {
   for (const s of detail.value?.sessions || []) {
     if (s.photo_url) items.push({ url: s.photo_url, label: s.mode === 'scene' ? '佩戴实拍' : '原图' })
     for (const r of s.results || []) {
-      if (r.image_url) items.push({ url: r.image_url, label: r.wig_name || '效果图' })
+      if (r.image_url) items.push({ url: r.display_url || r.image_url, label: r.wig_name || '效果图' })
     }
   }
   return items
@@ -316,6 +324,10 @@ onBeforeUnmount(() => {
   font-size: 12px; color: var(--xk-gold); border: 1px solid var(--xk-gold);
 }
 .empty { text-align: center; padding: 36px 0; font-size: 13px; color: var(--xk-mut); letter-spacing: 0.14em; }
+.empty-retry {
+  margin: 0 2px; padding: 0 4px; border: none; background: none; cursor: pointer;
+  font-size: 13px; letter-spacing: 0.14em; color: var(--xk-gold); text-decoration: underline;
+}
 .cap-hint { text-align: center; padding: 10px 0 2px; font-size: 11px; color: var(--xk-gold-dim); letter-spacing: 0.1em; }
 
 /* ── 话术详情视图 ── */

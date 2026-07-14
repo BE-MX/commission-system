@@ -5,22 +5,27 @@
 import { expoClient } from './clients'
 
 // ── 试戴主流程（展位设备） ──
+// kiosk 是客户共享屏：所有流程端点必须 suppressToast，禁止拦截器把 axios 原始
+// 报错（英文 "Network Error"）弹到客户面前——错误反馈统一走 useTryOnFlow.errorText
+// 的中文文案与重试路径（2026-07-14 展会现场实case）
+const KIOSK = { showLoading: false, suppressToast: true }
+
 export function registerCustomer(data) {
-  return expoClient.post('/register', data, { showLoading: false })
+  return expoClient.post('/register', data, { ...KIOSK })
 }
 
 // kiosk「返回上一步」修改登记信息：更新既有客户，不重复建档
 export function updateCustomer(customerId, data) {
-  return expoClient.put(`/customers/${customerId}`, data, { showLoading: false })
+  return expoClient.put(`/customers/${customerId}`, data, { ...KIOSK })
 }
 
 // ── kiosk 销售面板（展位设备；手机号脱敏，话术不含 internal 发况） ──
 export function getKioskLeads(params) {
-  return expoClient.get('/kiosk/leads', { params, showLoading: false })
+  return expoClient.get('/kiosk/leads', { params, ...KIOSK })
 }
 
 export function getKioskStrategy(customerId) {
-  return expoClient.get(`/kiosk/leads/${customerId}/strategy`, { showLoading: false })
+  return expoClient.get(`/kiosk/leads/${customerId}/strategy`, { ...KIOSK })
 }
 
 export function createSession(customerId, photoBlob, mode = 'tryon') {
@@ -28,34 +33,39 @@ export function createSession(customerId, photoBlob, mode = 'tryon') {
   form.append('photo', photoBlob, 'photo.jpg')
   return expoClient.post(`/sessions?customer_id=${customerId}&mode=${mode}`, form, {
     headers: { 'Content-Type': 'multipart/form-data' },
-    showLoading: false,
+    ...KIOSK,
   })
 }
 
 export function getSession(sessionId, { internal = false } = {}) {
   return expoClient.get(`/sessions/${sessionId}`, {
     params: { internal: internal ? 1 : 0 },
-    showLoading: false,
+    // 轮询专用短超时：expoClient 默认 300s，弱网下会让在途请求长期占坑，
+    // 轮询守卫（useTryOnFlow.poll 的 pollBusy）会被卡死 5 分钟
+    timeout: 10000,
+    ...KIOSK,
   })
 }
 
 export function generateResults(sessionId, { wigIds = null, batch = 0, hairColorId = null, sceneKey = null, sceneKeys = null } = {}) {
   return expoClient.post(`/sessions/${sessionId}/generate`, {
     wig_ids: wigIds, batch, hair_color_id: hairColorId, scene_key: sceneKey, scene_keys: sceneKeys,
-  }, { showLoading: false })
+  }, { ...KIOSK })
 }
 
-export function getHairColors(params) {
-  return expoClient.get('/hair-colors', { params, showLoading: false })
+// 发色/场景列表被 kiosk 与 PC 管理页（HairColorLibrary/SceneImages）共用：
+// 仅 kiosk 调用传 { kiosk: true } 抑制 toast，PC 侧保留拦截器统一报错
+export function getHairColors(params, { kiosk = false } = {}) {
+  return expoClient.get('/hair-colors', { params, ...(kiosk ? KIOSK : { showLoading: false }) })
 }
 
-export function getScenes(params) {
-  return expoClient.get('/scenes', { params, showLoading: false })
+export function getScenes(params, { kiosk = false } = {}) {
+  return expoClient.get('/scenes', { params, ...(kiosk ? KIOSK : { showLoading: false }) })
 }
 
 // kiosk「从发型库选择」：启用发型轻量列表（id/name/series/cover_url）
 export function getWigPicker() {
-  return expoClient.get('/wigs/picker', { showLoading: false })
+  return expoClient.get('/wigs/picker', { ...KIOSK })
 }
 
 // ── 场景示意图管理（PC；列表复用 getScenes({ mode: 'tryon' })） ──
@@ -72,11 +82,11 @@ export function deleteSceneImage(key) {
 }
 
 export function setReaction(resultId, reaction) {
-  return expoClient.post(`/results/${resultId}/reaction`, { reaction }, { showLoading: false })
+  return expoClient.post(`/results/${resultId}/reaction`, { reaction }, { ...KIOSK })
 }
 
 export function submitFeedback(customerId, data) {
-  return expoClient.post(`/customers/${customerId}/feedback`, data)
+  return expoClient.post(`/customers/${customerId}/feedback`, data, { ...KIOSK })
 }
 
 // ── 线索台（PC） ──

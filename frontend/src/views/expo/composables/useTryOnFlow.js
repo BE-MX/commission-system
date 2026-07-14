@@ -15,6 +15,9 @@ import {
 
 const POLL_MS = 2000
 const IDLE_MS = 60000
+// 轮询连续失败 5 次（约 10s）才提示网络拥堵——单次抖动不打扰客户；恢复后自动撤下
+const POLL_FAIL_HINT_AT = 5
+const NET_CONGESTION_HINT = '现场网络拥堵，生成仍在继续，请稍候…'
 // 不判 idle 的步骤：analyzing=客户在等待不算离开；matching=甄选发型/发色是客户慢慢挑的
 // 决策页；result=展示页。三者都只允许手动返回主页，不自动跳回
 //（用户指令 2026-07-07 result / 2026-07-08 matching——挑款看图不能被清场）
@@ -48,6 +51,9 @@ export function useTryOnFlow() {
 
   let pollTimer = null
   let idleTimer = null
+  let pollBusy = false   // 在途守卫：上一轮未返回不发新请求
+  let pollFails = 0      // 连续失败计数，成功即清零
+  let pollGen = 0        // 轮询代际：旧会话的迟到响应不许解锁新会话的 pollBusy
 
   const analysis = computed(() => session.value?.analysis || null)
   const allMatches = computed(() => session.value?.matches || []) // 后端给前 6 名
@@ -105,18 +111,24 @@ export function useTryOnFlow() {
       return false
     }
     // 「返回上一步」改完信息再提交走更新，不重复建档（线索台一客一档）
-    if (customerId.value) {
-      try {
-        await updateCustomer(customerId.value, { ...regForm })
-      } catch (e) {
-        if (e?.response?.status !== 404) throw e
-        // 客户已被线索台删除的悬空引用：降级重新建档，不困死在登记页
-        customerId.value = null
+    // 端点已 suppressToast（客户屏禁英文裸报错），失败必须在此落中文 errorText
+    try {
+      if (customerId.value) {
+        try {
+          await updateCustomer(customerId.value, { ...regForm })
+        } catch (e) {
+          if (e?.response?.status !== 404) throw e
+          // 客户已被线索台删除的悬空引用：降级重新建档，不困死在登记页
+          customerId.value = null
+        }
       }
-    }
-    if (!customerId.value) {
-      const res = await registerCustomer({ ...regForm })
-      customerId.value = res.data.customer_id
+      if (!customerId.value) {
+        const res = await registerCustomer({ ...regForm })
+        customerId.value = res.data.customer_id
+      }
+    } catch (e) {
+      errorText.value = '登记提交失败，请再试一次或呼叫顾问'
+      return false
     }
     step.value = 'capture'
     touch()
@@ -155,7 +167,14 @@ export function useTryOnFlow() {
 
   async function submitPhoto(blob) {
     errorText.value = ''
-    const res = await createSession(customerId.value, blob, mode.value)
+    let res
+    try {
+      res = await createSession(customerId.value, blob, mode.value)
+    } catch (e) {
+      // 停留拍摄页：photoBlob 还在，用户可直接重按「确认」重传
+      errorText.value = '照片上传失败，请再试一次或呼叫顾问'
+      return
+    }
     sessionId.value = res.data.session_id
     if (mode.value === 'scene') {
       step.value = 'scene'
@@ -174,7 +193,7 @@ export function useTryOnFlow() {
   async function loadHairColors() {
     if (hairColors.value.length) return
     try {
-      const res = await getHairColors()
+      const res = await getHairColors(undefined, { kiosk: true })
       hairColors.value = res.data || []
     } catch (e) { /* 无色板数据时只保留“原色” */ }
   }
@@ -182,7 +201,7 @@ export function useTryOnFlow() {
   async function loadTryonScenes() {
     if (!tryonScenes.value.length) {
       try {
-        const res = await getScenes({ mode: 'tryon' })
+        const res = await getScenes({ mode: 'tryon' }, { kiosk: true })
         tryonScenes.value = res.data || []
       } catch (e) { /* 加载失败留空 → 退回原景兜底(selectedTryonScene=null)，不阻断 */ }
     }
@@ -196,7 +215,7 @@ export function useTryOnFlow() {
   async function loadScenes() {
     if (scenes.value.length) return
     try {
-      const res = await getScenes()
+      const res = await getScenes(undefined, { kiosk: true })
       scenes.value = res.data || []
       selectedSceneKeys.value = scenes.value.slice(0, 3).map(s => s.key)
     } catch (e) {
@@ -213,6 +232,9 @@ export function useTryOnFlow() {
 
   function startPolling() {
     stopPolling()
+    pollBusy = false
+    pollFails = 0
+    pollGen += 1
     pollTimer = setInterval(poll, POLL_MS)
     poll()
   }
@@ -223,13 +245,20 @@ export function useTryOnFlow() {
   }
 
   async function poll() {
-    if (!sessionId.value) return
+    // 在途守卫：上一轮还没返回就跳过本轮——弱网下 2s 间隔会把几十条请求堆进
+    // 拥堵链路（frp 隧道），越堆越死；getSession 已单配 10s 超时兜住占坑上限
+    if (!sessionId.value || pollBusy) return
+    pollBusy = true
+    const gen = pollGen         // 代际快照：finally 只许解锁自己那一代的 busy
     const sid = sessionId.value // 代际守卫：响应落地时校验仍是当前会话
     try {
       const res = await getSession(sid)
       // 上一步重拍/返回主页后，弃用会话的迟到响应直接丢弃——否则旧会话的
       // analyzed 会把状态机拽去 matching 展示旧照片的匹配结果（对抗性审查 S1）
       if (sid !== sessionId.value) return
+      pollFails = 0
+      // 网络恢复即撤下拥堵提示；其他来源的 errorText 不动
+      if (errorText.value === NET_CONGESTION_HINT) errorText.value = ''
       session.value = res.data
       const status = res.data.status
 
@@ -239,6 +268,9 @@ export function useTryOnFlow() {
         // 不让用户思考：默认选中匹配度第一的款，轻触可换
         selectedWigId.value = (res.data.matches || [])[0]?.wig_id || null
         loadHairColors()
+        // 甄选页载荷不再变化且客户可停留数分钟：停轮询省隧道带宽，
+        // 也避免此阶段弱网累计出「生成仍在继续」的错位提示；generate 会重启轮询
+        stopPolling()
         touch()
       }
       if (status === 'failed') {
@@ -258,7 +290,25 @@ export function useTryOnFlow() {
         touch()
       }
     } catch (e) {
-      // 轮询单次失败不打断流程，下一轮继续
+      if (sid !== sessionId.value) return // 弃用会话的迟到失败不计数（finally 仍会执行）
+      // 会话已被线索台删除（级联删光）：再轮询永远 404，还会把失败计数
+      // 顶成误导性的「拥堵」提示——给明确出口
+      if (e?.response?.status === 404) {
+        stopPolling()
+        generating.value = false
+        errorText.value = '会话已失效，请返回主页重新开始'
+        if (step.value === 'analyzing') step.value = 'capture'
+        touch()
+        return
+      }
+      // 轮询单次失败不打断流程，下一轮继续；连续多次失败才给中文提示
+      //（不 stopPolling：后台合成不受前端网络影响，恢复后照常收到结果）
+      pollFails += 1
+      if (pollFails >= POLL_FAIL_HINT_AT && !errorText.value) {
+        errorText.value = NET_CONGESTION_HINT
+      }
+    } finally {
+      if (gen === pollGen) pollBusy = false
     }
   }
 
@@ -333,9 +383,15 @@ export function useTryOnFlow() {
   }
 
   async function submitSales({ intent_level, notes, next_action }) {
-    await submitFeedback(customerId.value, {
-      session_id: sessionId.value, intent_level, notes, next_action,
-    })
+    try {
+      await submitFeedback(customerId.value, {
+        session_id: sessionId.value, intent_level, notes, next_action,
+      })
+    } catch (e) {
+      // 留在面板不清场：表单内容还在，顾问可直接重按提交
+      errorText.value = '反馈提交失败，请再试一次'
+      return
+    }
     resetAll()
   }
 

@@ -32,8 +32,10 @@
       <div ref="stageEl" class="stage" @pointerdown="dragStart" @pointermove="dragMove" @pointerup="dragEnd" @pointercancel="dragEnd">
         <img :src="photoUrl" class="img before" alt="佩戴前" />
         <!-- 切换新效果图时对焦式揭晓：keyed Transition 让旧图淡出、新图 blur→sharp 登场 -->
+        <!-- kiosk 一律走压缩展示版（display_url）：原 PNG 3~5MB 经 frp 隧道回源是现场卡顿主因；
+             历史结果无展示版时回退原图 -->
         <Transition name="swap">
-          <img :key="current.id" :src="current.image_url" class="img after" :style="{ clipPath: `inset(0 0 0 ${sliderPct}%)` }" alt="佩戴后" />
+          <img :key="current.id" :src="current.display_url || current.image_url" class="img after" :style="{ clipPath: `inset(0 0 0 ${sliderPct}%)` }" alt="佩戴后" />
         </Transition>
         <div class="divider" :style="{ left: `${sliderPct}%` }"><span class="knob">⇔</span></div>
         <span class="lbl b">{{ isScene ? '现场实拍' : '佩戴前' }}</span>
@@ -90,7 +92,7 @@
       <!-- 完整图灯箱：contain 不裁切，轻触任意处关闭 -->
       <Transition name="lb">
         <div v-if="lightboxOpen && current" class="lightbox" @click="lightboxOpen = false">
-          <img :src="current.image_url" class="lb-img" alt="完整效果图" />
+          <img :src="current.display_url || current.image_url" class="lb-img" alt="完整效果图" />
           <button class="lb-close" aria-label="关闭">✕</button>
           <span class="lb-hint">轻触任意处返回</span>
         </div>

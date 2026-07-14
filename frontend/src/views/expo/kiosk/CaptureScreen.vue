@@ -170,8 +170,9 @@ async function confirm() {
   if (!photoBlob || submitting.value) return
   submitting.value = true
   try {
+    // 不在此处 stopCamera：上传失败会留在拍摄页（errorText 提示），提前停流
+    // 会让「重拍」露出黑屏死相机；成功离屏时 onBeforeUnmount(stopCamera) 兜底
     await flow.submitPhoto(photoBlob)
-    stopCamera()
   } finally {
     submitting.value = false
   }

@@ -65,6 +65,9 @@
             <span v-if="w.series === 'zhizhen'" class="lib-tag">至臻</span>
             <span class="lib-nm">{{ w.name }}</span>
           </button>
+          <div v-if="!libraryLoading && !libraryWigs.length" class="lib-empty">
+            发型库加载失败，请关闭后重试或呼叫顾问
+          </div>
         </div>
       </div>
     </div>
@@ -168,7 +171,7 @@ async function openLibrary() {
   try {
     const res = await getWigPicker()
     libraryWigs.value = res.data || []
-  } catch (e) { /* 弱网失败拦截器已提示，浮层空态 */ } finally {
+  } catch (e) { /* 端点已 suppressToast，浮层内嵌空态文案兜底；关闭重开会重试 */ } finally {
     libraryLoading.value = false
   }
 }
@@ -381,6 +384,10 @@ onBeforeUnmount(() => { if (scRaf) cancelAnimationFrame(scRaf) })
 .lib-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
   gap: 12px; padding: 18px 22px; overflow-y: auto;
+}
+.lib-empty {
+  grid-column: 1 / -1; padding: 40px 0; text-align: center;
+  font-size: 12px; letter-spacing: 0.14em; color: var(--xk-mut);
 }
 .lib-card {
   position: relative; display: flex; flex-direction: column; gap: 8px; padding: 0;
