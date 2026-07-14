@@ -481,7 +481,7 @@ frontend/src/
 
 **场景示意图后台管理页（2026-07-10）**
 - 新页 `/expo/scene-images`（`views/expo/SceneImages.vue`，navigation.js order 17，`expo:read/admin` 可见、`expo:admin` 可传删）：按分类分组的卡片网格，每景上传/替换/删除示意图，复用 `getScenes({mode:'tryon'})` 拉列表
-- 后端 `ai_pipeline.save_scene_image(key, upload)` / `delete_scene_image(key)` / `_downscale_scene_image`：存 `uploads/expo/scenes/<key>.<ext>`，**先删同 key 各扩展名旧图**（避免 scene_image_url 探测歧义）+ 超 1200px 降采样；`POST/DELETE /scenes/{key}/image`（expo:admin）。示意图仅甄选页示意、不参与合成
+- 后端 `ai_pipeline.save_scene_image(key, upload)` / `delete_scene_image(key)` / `downscale_inplace`（2026-07-14 起统一压缩入口，原 `_downscale_scene_image` 并入）：存 `uploads/expo/scenes/<key>.<ext>`，**先删同 key 各扩展名旧图**（避免 scene_image_url 探测歧义）+ 超 1200px 降采样；`POST/DELETE /scenes/{key}/image`（expo:admin）。示意图仅甄选页示意、不参与合成
 - 前端替换同扩展名时 URL 不变，`?t=Date.now()` 强制刷新缓存
 
 **kiosk 销售面板改版：线索列表+话术查看（2026-07-13，亮哥指令部分覆盖 07-07「话术不落 kiosk」）**
