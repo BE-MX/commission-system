@@ -10,6 +10,7 @@
 import base64
 import json
 import logging
+import os
 import re
 import shutil
 import threading
@@ -126,6 +127,102 @@ def _prep_image(path: Path) -> dict:
         logger.warning(msg)
         print(msg, flush=True)
         return {"filename": path.name, "content": path.read_bytes(), "content_type": _image_content_type(path)}
+
+
+# ── 上传图 / 展示图压缩 ──
+# 生产的 /uploads 全部经 frp 隧道回源（云 Nginx → 本地 8002），图片体积直接决定
+# 展会现场加载速度，也是隧道拥堵把 kiosk 轮询挤成 Network Error 的主因（2026-07-14）
+UPLOAD_MAX_EDGE = 1600          # 素材上传（发型参考图/色板/客户照片）落盘口径
+DISPLAY_MAX_EDGE = 1080         # 结果图 kiosk 展示版最长边（展位屏 1080p，够用）
+_DISPLAY_JPEG_QUALITY = 85
+DISPLAY_SUFFIX = "_disp.jpg"    # 约定式命名：{原图 stem}_disp.jpg 同目录，不入库不迁移
+
+
+_PIL_FORMATS = {".jpg": "JPEG", ".jpeg": "JPEG", ".png": "PNG", ".webp": "WEBP"}
+
+
+def _save_atomic(im, dest: Path, fmt: str, **save_kwargs) -> None:
+    """先写临时文件再 os.replace 原子落位：编码/写盘中途失败（磁盘满、进程被杀）
+    不会毁掉唯一原图，读侧（StaticFiles / display_rel_for 的 exists 探测）也永远
+    看不到半写文件。失败向上抛，由调用方决定是否阻断。"""
+    tmp = dest.with_name(dest.name + ".tmp")
+    try:
+        im.save(tmp, fmt, **save_kwargs)
+        os.replace(tmp, dest)
+    finally:
+        if tmp.exists():
+            tmp.unlink(missing_ok=True)
+
+
+def _flatten_rgb(im):
+    """转 RGB 供 JPEG 编码；带透明通道的先铺白底（直接 convert 会把透明像素露成杂色底）。"""
+    from PIL import Image
+
+    if im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info):
+        rgba = im.convert("RGBA")
+        canvas = Image.new("RGB", rgba.size, (255, 255, 255))
+        canvas.paste(rgba, mask=rgba.getchannel("A"))
+        return canvas
+    return im.convert("RGB")
+
+
+def downscale_inplace(path: Path, max_edge: int = UPLOAD_MAX_EDGE) -> None:
+    """上传图原地降采样重编码（保持文件名与扩展名 → 存库路径/存量引用零变更）。
+
+    尺寸已达标的不动（避免无谓二次有损）；失败静默保留原图，不阻断上传。"""
+    try:
+        from PIL import Image, ImageOps
+
+        with Image.open(path) as src:
+            if max(src.size) <= max_edge:
+                return
+            im = ImageOps.exif_transpose(src)  # 手机原片靠 EXIF 记录旋转，重编码前先转正
+            if im is src:
+                im = src.copy()  # 脱离源文件句柄：Windows 上 os.replace 覆盖打开中的文件会失败
+        im.thumbnail((max_edge, max_edge), Image.LANCZOS)
+        suffix = path.suffix.lower()
+        fmt = _PIL_FORMATS.get(suffix, "PNG")
+        if fmt == "JPEG":
+            _save_atomic(_flatten_rgb(im), path, fmt,
+                         quality=_DISPLAY_JPEG_QUALITY, optimize=True)
+        else:
+            _save_atomic(im, path, fmt)
+    except Exception as exc:  # noqa: BLE001
+        msg = f"[expo] upload downscale skipped ({path.name}): {exc}"
+        logger.warning(msg)
+        print(msg, flush=True)
+
+
+def make_display_image(src: Path) -> Path | None:
+    """结果原图 → kiosk 展示压缩版（{stem}_disp.jpg，长边 1080 q85）。
+
+    原 PNG 完整保留（分享短链/线索台/打印口径不变），展示版只服务展位屏。
+    失败返回 None，serialize 侧回退原图 URL，不阻断合成。"""
+    try:
+        from PIL import Image
+
+        target = src.with_name(src.stem + DISPLAY_SUFFIX)
+        with Image.open(src) as im:
+            flat = _flatten_rgb(im)
+            if max(flat.size) > DISPLAY_MAX_EDGE:
+                flat.thumbnail((DISPLAY_MAX_EDGE, DISPLAY_MAX_EDGE), Image.LANCZOS)
+            _save_atomic(flat, target, "JPEG",
+                         quality=_DISPLAY_JPEG_QUALITY, optimize=True)
+        return target
+    except Exception as exc:  # noqa: BLE001
+        msg = f"[expo] display image skipped ({src.name}): {exc}"
+        logger.warning(msg)
+        print(msg, flush=True)
+        return None
+
+
+def display_rel_for(rel: str | None) -> str | None:
+    """结果图存库路径 → 展示版相对路径；不存在（历史结果/生成失败）返回 None。"""
+    if not rel:
+        return None
+    src = to_abs(rel)
+    disp = src.with_name(src.stem + DISPLAY_SUFFIX)
+    return to_rel(disp) if disp.exists() else None
 
 
 def _parse_json(content: str) -> dict:
@@ -456,19 +553,6 @@ def delete_scene_image(key: str) -> bool:
     return removed
 
 
-def _downscale_scene_image(path: Path) -> None:
-    """最长边超 _SCENE_IMG_MAX_EDGE 时原地降采样（保留格式）；失败静默保留原图不阻断。"""
-    try:
-        from PIL import Image
-        with Image.open(path) as im:
-            if max(im.size) <= _SCENE_IMG_MAX_EDGE:
-                return
-            im.thumbnail((_SCENE_IMG_MAX_EDGE, _SCENE_IMG_MAX_EDGE))
-            im.save(path)
-    except Exception as exc:  # noqa: BLE001
-        print(f"[expo] scene image downscale skipped ({path.name}): {exc}", flush=True)
-
-
 def save_scene_image(key: str, upload) -> str:
     """存场景示意图为 uploads/expo/scenes/<key>.<ext>；先删同 key 旧图（各扩展名）避免探测歧义。
     key 必须是 TRYON_SCENES 里的合法场景；扩展名限 jpg/jpeg/png/webp。返回公开 URL。"""
@@ -482,7 +566,7 @@ def save_scene_image(key: str, upload) -> str:
     target = SCENE_IMAGE_DIR / f"{key}{suffix}"
     with open(target, "wb") as f:
         shutil.copyfileobj(upload.file, f)
-    _downscale_scene_image(target)
+    downscale_inplace(target, _SCENE_IMG_MAX_EDGE)
     return "/" + target.resolve().relative_to(REPO_ROOT).as_posix()
 
 
@@ -690,6 +774,7 @@ def _run_composite(session_id: int, result_id: int) -> None:
             size=size,
         )
         image_path = _save_result_image(result, result_id)
+        make_display_image(image_path)  # kiosk 展示版，失败不阻断（回退原图）
 
         row.image_path = to_rel(image_path)
         row.gen_ms = int((time.monotonic() - started) * 1000)

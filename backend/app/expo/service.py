@@ -92,6 +92,10 @@ def _remove_file(path: str | None) -> None:
     target = ai_pipeline.to_abs(path)
     if target.exists():
         target.unlink(missing_ok=True)
+    # 结果图的 kiosk 展示版（{stem}_disp.jpg）随原图一并清理，不留孤儿文件
+    disp = target.with_name(target.stem + ai_pipeline.DISPLAY_SUFFIX)
+    if disp.exists():
+        disp.unlink(missing_ok=True)
 
 
 # ---------------- 会话 ----------------
@@ -111,6 +115,9 @@ def create_session(
     photo_path = ai_pipeline.PHOTO_DIR / f"c{customer_id}_{uuid.uuid4().hex[:10]}{suffix}"
     with open(photo_path, "wb") as f:
         shutil.copyfileobj(upload_file.file, f)
+    # kiosk 相机件已是 1080px（原样跳过）；顾问文件选择兜底传的手机原片在此压下来——
+    # photo_url 会作为"佩戴前"对比图经 frp 隧道回源展示
+    ai_pipeline.downscale_inplace(photo_path)
 
     session = ExpoSession(
         customer_id=customer_id,
@@ -217,6 +224,8 @@ def serialize_session(db: Session, session: ExpoSession, include_internal: bool 
                 "scene": r.scene_json,
                 "status": r.status,
                 "image_url": _to_url(r.image_path),
+                # kiosk 展示版（压缩 JPEG）：历史结果/生成失败时为 None，前端回退 image_url
+                "display_url": _to_url(ai_pipeline.display_rel_for(r.image_path)),
                 "reaction": r.reaction,
                 "short_code": r.short_code,
                 "gen_ms": r.gen_ms,
@@ -547,6 +556,8 @@ def get_kiosk_strategy(db: Session, customer_id: int) -> dict | None:
                     "id": r.id,
                     "wig_name": r.wig.name if r.wig else (r.scene_json or {}).get("label"),
                     "image_url": _to_url(r.image_path),
+                    # 销售面板图集也在展位设备上看，走展示版；缺失回退原图
+                    "display_url": _to_url(ai_pipeline.display_rel_for(r.image_path)),
                     "reaction": r.reaction,
                 }
                 for r in s.results
