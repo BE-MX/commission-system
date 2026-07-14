@@ -89,7 +89,19 @@ def engine():
                 country_name TEXT,
                 origin_name TEXT,
                 archive_type TEXT,
-                trail_status_name TEXT
+                trail_status_name TEXT,
+                owner_user_ids TEXT
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS lsordertest.customer_contacts (
+                id INTEGER PRIMARY KEY,
+                company_id TEXT,
+                customer_id TEXT,
+                name TEXT,
+                email TEXT,
+                tel TEXT,
+                is_main INTEGER
             )
         """))
         conn.execute(text("""

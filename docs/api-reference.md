@@ -52,7 +52,10 @@
   - 管理端：`/wigs` CRUD + `/wigs/upload-photo`（发型库；`must_recommend` 主推=置顶推荐列表最前(2026-07-13 起)/多款主推按匹配分排序/仍按性别过滤；`priority` 大→同评级内推荐分小幅折算加高）+ `GET /wigs/picker`（kiosk「从发型库选择」轻量列表：启用发型 wig_id/name/series/cover_url）、`/hair-colors` POST/PUT + `/hair-colors/upload-swatch`（发色库，上传色板图自动提取主色 hex；expo:admin）、`/scripts` CRUD + `POST /scripts/seed`（话术卡库，写入时禁用词强校验）、`/leads` 线索台、`DELETE /customers/{id}`（照片物理删除）
   - H5 kiosk：`/expo/kiosk` 全屏路由（router/index.js 顶层注册，不走 MainLayout）；匹配权重 `config/expo_matching.yaml`；上传文件锚定 REPO_ROOT/uploads/expo（存库相对路径）
 - `/api/invoice` — 订单发票管理（`invoice/router.py`，需 `invoice:read/write/sync/admin`；049 起全部端点走 `ok()` 信封；**数据范围**：默认只见/只能操作自己创建的发票，`invoice:read_all`（kind=data，067）或 super_admin 放开为全部——注意它同时放宽读与写的对象范围）
-  - `GET /customers/search` — 客户搜索（invoice:read/write）
+  - `GET /customers/search?keyword=&private_only=` — 客户搜索（invoice:read/write）；`private_only=true` 时过滤 `customer_info.owner_user_ids`（JSON 数组）包含当前用户绑定的 OKKI 账号（私海），未绑定返回 `{items:[], okki_bound:false}`；`okki_bound` 字段仅私海请求返回
+  - `GET /customers/contacts?keyword=&company_id=&private_only=` — 按联系人名搜客户（`lsordertest.customer_contacts` JOIN customer_info，invoice:write——联系人含邮箱/电话 PII）；company_id 给定时收敛到该客户名下（双筛选联动），返回含所属公司信息可反向定位客户；is_main 主联系人排前
+  - `GET /invoices/suggest-no?order_type=` — 新建单默认发票号：`{用户名}-{KC|SC}-{本月该前缀序号}`（invoice:write；跨月撞号自动顺延，用户可改）
+  - `GET /invoices/check-no?invoice_no=&exclude_id=` — 发票号占用检查（invoice:write；exclude_id 编辑时排除自身）
   - `GET /customers/contact-defaults?customer_id=` — 该客户最近一张（created_at 倒序）带联系信息发票的联系人/电话/邮箱/地址快照，录入页自动填充用（invoice:write；组织级共享，刻意不受发票数据范围限制——联系人是客户数据非财务数据）
   - `GET /products/filter-options` — 产品级联筛选项（model→color→size→unit，库存单用）
   - `GET /products/match` — 按 model/color/size/unit 精确匹配产品

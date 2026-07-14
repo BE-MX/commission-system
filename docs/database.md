@@ -24,6 +24,10 @@
 - 业务库 `lsordertest`：只读，跨库查询订单/回款原始数据
 - 两库在同一 RDS 实例，通过库名前缀跨库访问
 
+**业务库常用表口径（lsordertest，OKKI 同步投影，只读）**：
+- `customer_info` — 客户主表（company_id bigint 主键，company_name，country_name，**owner_user_ids JSON 数组**=归属 OKKI user_id 列表、空数组=公海；私海过滤用 `JSON_CONTAINS`）
+- `customer_contacts` — 客户联系人（company_id→customer_info，name/email/tel/is_main；发票录入「按联系人搜客户」数据源，2026-07-14 起）
+
 **主要业务表（commission_db）**：
 - `sys_dict` — 系统字典（type, code, label, sort, is_active）；`(type, code)` 唯一索引
 - `ark_permissions` — 权限表（code 唯一, module, action, label；046 起新增 **kind** page/action/data、**is_legacy** 下架标记、**sort**；seed 为 upsert，元数据每次启动刷新）
