@@ -153,11 +153,11 @@
 
     <el-drawer v-model="drawerVisible" :title="drawerTitle" size="94%">
       <template #default>
-        <el-form ref="formRef" :model="form" label-width="90px" class="invoice-form">
-          <div class="form-columns">
-            <section class="form-col">
-              <div class="col-title">客户信息</div>
-              <el-form-item label="客户" required>
+        <el-form ref="formRef" :model="form" label-width="80px" size="small" class="invoice-form">
+          <section class="head-section">
+            <div class="col-title">客户信息</div>
+            <div class="head-grid">
+              <el-form-item label="客户" required class="span-3">
                 <div class="customer-filter-row">
                   <el-select
                     v-model="selectedCustomer"
@@ -184,7 +184,7 @@
                   该客户价格规则：{{ describeCustomerRule(customerRule) }}
                 </div>
               </el-form-item>
-              <el-form-item label="按联系人">
+              <el-form-item label="按联系人" class="span-3">
                 <div class="customer-filter-row">
                   <el-select
                     v-model="selectedContact"
@@ -212,88 +212,93 @@
                   当前账号未绑定 OKKI，私海筛选无结果：请到 系统管理 → 外部账号绑定 处理，或取消勾选
                 </div>
               </el-form-item>
-              <el-form-item label="联系人">
+              <el-form-item label="联系人" class="span-2">
                 <el-input v-model="form.contact_name" maxlength="100" placeholder="To" />
               </el-form-item>
-              <el-form-item label="电话">
+              <el-form-item label="电话" class="span-2">
                 <el-input v-model="form.contact_phone" maxlength="50" placeholder="TEL/Fax" />
               </el-form-item>
-              <el-form-item label="邮箱">
+              <el-form-item label="邮箱" class="span-2">
                 <el-input v-model="form.contact_email" maxlength="100" placeholder="E-mail" />
               </el-form-item>
-              <el-form-item label="收货地址">
-                <el-input v-model="form.delivery_address" type="textarea" :rows="2" maxlength="500" placeholder="Delivery address" />
+              <el-form-item label="收货地址" class="span-6">
+                <el-input v-model="form.delivery_address" type="textarea" :autosize="{ minRows: 1, maxRows: 3 }" maxlength="500" placeholder="Delivery address" />
               </el-form-item>
-            </section>
-            <section class="form-col">
-              <div class="col-title">业务员信息</div>
-              <el-form-item label="业务员">
+            </div>
+          </section>
+
+          <section class="head-section">
+            <div class="col-title">业务员信息</div>
+            <div class="head-grid">
+              <el-form-item label="业务员" class="span-2">
                 <el-input v-model="form.sales_user_name" maxlength="50" placeholder="From" />
               </el-form-item>
-              <el-form-item label="业务电话">
+              <el-form-item label="业务电话" class="span-2">
                 <el-input v-model="form.sales_phone" maxlength="50" />
               </el-form-item>
-              <el-form-item label="业务邮箱">
+              <el-form-item label="业务邮箱" class="span-2">
                 <el-input v-model="form.sales_email" maxlength="100" />
               </el-form-item>
-            </section>
-          </div>
+            </div>
+          </section>
 
-          <div class="col-title order-title">订单信息</div>
-          <div class="form-grid">
-            <el-form-item label="发票号" :error="invoiceNoTaken ? '发票号已存在，请更换' : ''">
-              <el-input
-                v-model="form.invoice_no"
-                maxlength="64"
-                placeholder="已自动生成，可修改"
-                @input="onInvoiceNoInput"
-                @blur="onInvoiceNoBlur"
-              />
-            </el-form-item>
-            <el-form-item label="日期" required>
-              <el-date-picker v-model="form.invoice_date" value-format="YYYY-MM-DD" style="width: 100%" />
-            </el-form-item>
-            <el-form-item label="币种">
-              <el-input v-model="form.currency" maxlength="16" />
-            </el-form-item>
-            <el-form-item label="快递渠道">
-              <el-input v-model="form.express_channel" maxlength="32" placeholder="如 DHL" />
-            </el-form-item>
-            <el-form-item label="运费">
-              <el-input-number v-model="form.shipping_fee" :min="0" :precision="2" controls-position="right" style="width: 100%" />
-            </el-form-item>
-            <el-form-item label="附加费">
-              <div class="surcharge-row">
-                <el-input v-model="form.surcharge_name" maxlength="64" placeholder="名目，如 Paypal Surcharge" />
-                <el-input-number v-model="form.surcharge_amount" :min="0" :precision="2" controls-position="right" />
-              </div>
-            </el-form-item>
-            <el-form-item label="付款条款">
-              <el-input v-model="form.payment_term" maxlength="200" placeholder="Payment Term，如 TT 20%" />
-            </el-form-item>
-            <el-form-item label="小满标记" class="wide">
-              <div class="okki-flags-row">
-                <span class="okki-flag">
-                  新成交
-                  <el-switch v-model="form.okki_new_deal" :active-value="1" :inactive-value="0"
-                             @change="markOkkiFlagTouched('newDeal')" />
-                </span>
-                <span class="okki-flag">
-                  包邮
-                  <el-switch v-model="form.okki_free_shipping" :active-value="1" :inactive-value="0"
-                             @change="markOkkiFlagTouched('freeShipping')" />
-                </span>
-                <span class="okki-flag">
-                  首返
-                  <el-switch v-model="form.okki_first_return" :active-value="1" :inactive-value="0" />
-                </span>
-                <span class="okki-flag-tip">推小满必填；新成交/包邮已按客户历史与运费预判，可改</span>
-              </div>
-            </el-form-item>
-            <el-form-item label="备注" class="wide">
-              <el-input v-model="form.remark" type="textarea" :rows="2" maxlength="500" />
-            </el-form-item>
-          </div>
+          <section class="head-section">
+            <div class="col-title">订单信息</div>
+            <div class="head-grid">
+              <el-form-item label="发票号" class="span-2" :error="invoiceNoTaken ? '发票号已存在，请更换' : ''">
+                <el-input
+                  v-model="form.invoice_no"
+                  maxlength="64"
+                  placeholder="已自动生成，可修改"
+                  @input="onInvoiceNoInput"
+                  @blur="onInvoiceNoBlur"
+                />
+              </el-form-item>
+              <el-form-item label="日期" required class="span-2">
+                <el-date-picker v-model="form.invoice_date" value-format="YYYY-MM-DD" style="width: 100%" />
+              </el-form-item>
+              <el-form-item label="币种" class="span-1">
+                <el-input v-model="form.currency" maxlength="16" />
+              </el-form-item>
+              <el-form-item label="快递渠道" class="span-1">
+                <el-input v-model="form.express_channel" maxlength="32" placeholder="如 DHL" />
+              </el-form-item>
+              <el-form-item label="运费" class="span-2">
+                <el-input-number v-model="form.shipping_fee" :min="0" :precision="2" controls-position="right" style="width: 100%" />
+              </el-form-item>
+              <el-form-item label="附加费" class="span-2">
+                <div class="surcharge-row">
+                  <el-input v-model="form.surcharge_name" maxlength="64" placeholder="名目，如 Paypal Surcharge" />
+                  <el-input-number v-model="form.surcharge_amount" :min="0" :precision="2" controls-position="right" />
+                </div>
+              </el-form-item>
+              <el-form-item label="付款条款" class="span-2">
+                <el-input v-model="form.payment_term" maxlength="200" placeholder="Payment Term，如 TT 20%" />
+              </el-form-item>
+              <el-form-item label="小满标记" class="span-3">
+                <div class="okki-flags-row">
+                  <span class="okki-flag">
+                    新成交
+                    <el-switch v-model="form.okki_new_deal" :active-value="1" :inactive-value="0"
+                               @change="markOkkiFlagTouched('newDeal')" />
+                  </span>
+                  <span class="okki-flag">
+                    包邮
+                    <el-switch v-model="form.okki_free_shipping" :active-value="1" :inactive-value="0"
+                               @change="markOkkiFlagTouched('freeShipping')" />
+                  </span>
+                  <span class="okki-flag">
+                    首返
+                    <el-switch v-model="form.okki_first_return" :active-value="1" :inactive-value="0" />
+                  </span>
+                  <span class="okki-flag-tip">推小满必填，已按历史预判</span>
+                </div>
+              </el-form-item>
+              <el-form-item label="备注" class="span-3">
+                <el-input v-model="form.remark" type="textarea" :autosize="{ minRows: 1, maxRows: 3 }" maxlength="500" />
+              </el-form-item>
+            </div>
+          </section>
 
           <div class="line-header">
             <div>

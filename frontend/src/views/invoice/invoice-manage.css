@@ -154,40 +154,43 @@
   font-weight: 600;
 }
 
-.form-columns {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0 28px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--invoice-border);
-}
-
-.form-col {
-  min-width: 0;
+/* 头部录入区整体走紧凑密度：表单项默认 18px 下边距对多行网格来说太奢侈 */
+.invoice-form :deep(.el-form-item) {
+  margin-bottom: 10px;
 }
 
 .col-title {
-  margin: 2px 0 12px;
+  margin: 2px 0 8px;
   font-size: 13px;
   font-weight: 700;
   color: var(--invoice-muted);
   letter-spacing: 0.02em;
 }
 
-.order-title {
-  margin-top: 16px;
+/* 头部三段（客户/业务员/订单）：6 列网格 + span-N 控宽，行数压到最少 */
+.head-section {
+  padding-bottom: 2px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--invoice-border);
 }
 
+.head-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0 14px;
+}
+
+.head-grid .span-1 { grid-column: span 1; }
+.head-grid .span-2 { grid-column: span 2; }
+.head-grid .span-3 { grid-column: span 3; }
+.head-grid .span-6 { grid-column: 1 / -1; }
+
+/* 内部结算折叠区沿用 3 列网格 */
 .form-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(180px, 1fr));
   gap: 4px 16px;
   padding: 2px 2px 14px;
-  border-bottom: 1px solid var(--invoice-border);
-}
-
-.form-grid .wide {
-  grid-column: 1 / -1;
 }
 
 .line-header-actions {
@@ -242,7 +245,8 @@
 .okki-flags-row {
   display: flex;
   align-items: center;
-  gap: 20px;
+  flex-wrap: wrap;
+  gap: 4px 14px;
   width: 100%;
 }
 
@@ -391,6 +395,22 @@
   }
 }
 
+@media (max-width: 1100px) {
+  .head-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .head-grid .span-1,
+  .head-grid .span-2 {
+    grid-column: span 1;
+  }
+
+  .head-grid .span-3,
+  .head-grid .span-6 {
+    grid-column: 1 / -1;
+  }
+}
+
 @media (max-width: 900px) {
   .page-header,
   .toolbar,
@@ -400,8 +420,15 @@
   }
 
   .form-grid,
-  .form-columns {
+  .head-grid {
     grid-template-columns: 1fr;
+  }
+
+  .head-grid .span-1,
+  .head-grid .span-2,
+  .head-grid .span-3,
+  .head-grid .span-6 {
+    grid-column: 1 / -1;
   }
 
   .summary-grid {
