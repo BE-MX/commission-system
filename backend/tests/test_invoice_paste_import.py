@@ -1,12 +1,41 @@
 """Invoice clipboard import preview tests."""
 
+from contextlib import contextmanager
+from datetime import date
 from decimal import Decimal
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from app.invoice import import_service
+from app.auth.utils import create_access_token
+from app.core.database import get_db
+from app.invoice import import_service, service
 from app.invoice.models import CustomProduct  # noqa: F401 - register table in test metadata
+from app.invoice.models import StdPrice
+from app.invoice.schemas import InvoiceCreate, InvoiceItemPayload
+
+
+@contextmanager
+def api_client(db, *, permissions):
+    from app.invoice.router import router
+
+    app = FastAPI()
+    app.include_router(router, prefix="/api/invoice")
+
+    def override_db():
+        yield db
+
+    app.dependency_overrides[get_db] = override_db
+    token = create_access_token({
+        "sub": "5",
+        "username": "invoice-import-test",
+        "roles": [],
+        "permissions": permissions,
+    })
+    with TestClient(app, headers={"Authorization": f"Bearer {token}"}) as client:
+        yield client
 
 
 def valid_row(**overrides):
@@ -113,6 +142,7 @@ def test_preview_import_uniquely_matches_product_and_sku(db):
     seed_okki_products(db, [
         (11, "Standard Double Drawn Genius Weft/18/#1B/100g", "#1B", "18", "100g", 9011),
     ])
+    seed_standard_price(db)
 
     result = import_service.preview_import(
         db,
@@ -174,3 +204,173 @@ def test_preview_import_allows_explicit_custom_path_only_for_production(db):
     assert production["status"] == "blocked"
     assert production["can_create_custom"] is True
     assert db.query(CustomProduct).count() == 0
+
+
+def seed_standard_price(db, *, price="36.00", currency="USD"):
+    db.add(StdPrice(
+        series_grade="Standard Double Drawn Genius Weft",
+        length="18",
+        weight_unit="100g",
+        color_type="solid",
+        price=Decimal(price),
+        currency=currency,
+    ))
+    db.commit()
+
+
+def test_preview_import_keeps_excel_price_and_marks_customer_rule_when_equal(db):
+    seed_okki_products(db, [
+        (11, "Standard Double Drawn Genius Weft/18/#1B/100g", "#1B", "18", "100g", 9011),
+    ])
+    seed_standard_price(db, price="36.00")
+
+    row = import_service.preview_import(
+        db, customer_id="CUST001", order_type="stock", currency="USD", raw_rows=[valid_row()],
+    )["rows"][0]
+
+    assert row["normalized"]["unit_price"] == Decimal("36.00")
+    assert row["standard_price"] == Decimal("36.00")
+    assert row["customer_price"] == Decimal("36.00")
+    assert row["price_difference"] == Decimal("0.00")
+    assert row["price_source"] == "customer_rule"
+    assert row["status"] == "passed"
+
+
+def test_preview_import_warns_but_preserves_different_excel_price(db):
+    seed_okki_products(db, [
+        (11, "Standard Double Drawn Genius Weft/18/#1B/100g", "#1B", "18", "100g", 9011),
+    ])
+    seed_standard_price(db, price="36.00")
+
+    row = import_service.preview_import(
+        db,
+        customer_id="CUST001",
+        order_type="stock",
+        currency="USD",
+        raw_rows=[valid_row(unit_price="34.00")],
+    )["rows"][0]
+
+    assert row["normalized"]["unit_price"] == Decimal("34.00")
+    assert row["customer_price"] == Decimal("36.00")
+    assert row["price_difference"] == Decimal("-2.00")
+    assert row["price_source"] == "manual"
+    assert row["status"] == "warning"
+    assert "保留 Excel 成交价" in row["warnings"][0]
+
+
+def test_preview_import_marks_missing_standard_price_as_warning(db):
+    seed_okki_products(db, [
+        (11, "Standard Double Drawn Genius Weft/18/#1B/100g", "#1B", "18", "100g", 9011),
+    ])
+
+    row = import_service.preview_import(
+        db, customer_id="CUST001", order_type="stock", currency="USD", raw_rows=[valid_row()],
+    )["rows"][0]
+
+    assert row["customer_price"] is None
+    assert row["price_difference"] is None
+    assert row["price_source"] == "missing_std"
+    assert row["status"] == "warning"
+    assert "没有可用的 USD 系统价格" in row["warnings"][0]
+
+
+def test_preview_import_does_not_compare_cross_currency_prices(db):
+    seed_okki_products(db, [
+        (11, "Standard Double Drawn Genius Weft/18/#1B/100g", "#1B", "18", "100g", 9011),
+    ])
+    seed_standard_price(db, price="36.00", currency="USD")
+
+    row = import_service.preview_import(
+        db, customer_id="CUST001", order_type="stock", currency="EUR", raw_rows=[valid_row()],
+    )["rows"][0]
+
+    assert row["standard_price"] is None
+    assert row["customer_price"] is None
+    assert row["price_difference"] is None
+    assert row["price_source"] == "missing_std"
+    assert row["status"] == "warning"
+    assert "系统价格币种为 USD" in row["warnings"][0]
+    assert "无法直接比较" in row["warnings"][0]
+
+
+def test_save_does_not_compare_cross_currency_price(db):
+    seed_okki_products(db, [
+        (11, "Standard Double Drawn Genius Weft/18/#1B/100g", "#1B", "18", "100g", 9011),
+    ])
+    seed_standard_price(db, price="36.00", currency="USD")
+    payload = InvoiceCreate(
+        customer_id="CUST001",
+        customer_name="Customer A",
+        order_type="stock",
+        invoice_date=date(2026, 7, 14),
+        currency="EUR",
+        items=[InvoiceItemPayload(
+            item_type="stock",
+            product_id=11,
+            sku_id=9011,
+            product_name="Standard Double Drawn Genius Weft/18/#1B/100g",
+            product_display="Standard Double Drawn Genius Weft",
+            net_weight_grams="100g",
+            color="#1B",
+            length="18",
+            quantity=2,
+            price_per_piece=Decimal("34.00"),
+        )],
+    )
+
+    invoice = service.create_invoice(db, payload, user_id=1)
+    item = invoice.items[0]
+
+    assert item.price_per_piece == Decimal("34.00")
+    assert item.standard_price is None
+    assert item.customer_price is None
+    assert item.price_source == "missing_std"
+
+
+def test_import_preview_endpoint_requires_write_permission(db):
+    seed_okki_products(db, [])
+    body = {
+        "customer_id": "CUST001",
+        "order_type": "production",
+        "currency": "USD",
+        "rows": [valid_row()],
+    }
+
+    with api_client(db, permissions=["invoice:read"]) as client:
+        assert client.post("/api/invoice/import/preview", json=body).status_code == 403
+
+
+def test_import_preview_endpoint_returns_unified_envelope(db):
+    seed_okki_products(db, [
+        (11, "Standard Double Drawn Genius Weft/18/#1B/100g", "#1B", "18", "100g", 9011),
+    ])
+    seed_standard_price(db)
+    body = {
+        "customer_id": "CUST001",
+        "order_type": "stock",
+        "currency": "USD",
+        "rows": [valid_row()],
+    }
+
+    with api_client(db, permissions=["invoice:write"]) as client:
+        response = client.post("/api/invoice/import/preview", json=body)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["code"] == 200
+    assert payload["data"]["summary"]["passed"] == 1
+    assert payload["data"]["rows"][0]["matched_product"]["product_id"] == 11
+
+
+def test_import_preview_endpoint_rejects_more_than_200_rows(db):
+    body = {
+        "customer_id": "CUST001",
+        "order_type": "stock",
+        "currency": "USD",
+        "rows": [valid_row(source_row=index + 1) for index in range(201)],
+    }
+
+    with api_client(db, permissions=["invoice:write"]) as client:
+        response = client.post("/api/invoice/import/preview", json=body)
+
+    assert response.status_code == 422

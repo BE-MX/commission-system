@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.invoice import price_service
 from app.invoice import product_service
+from app.invoice.models import CustomerPriceRule, PriceColorType, StdPrice
 
 MAX_IMPORT_ROWS = 200
 
@@ -73,8 +74,13 @@ def preview_import(
     hits_by_row = [product_index.get(_product_key(row), []) for row in rows]
     product_ids = {int(hit["product_id"]) for hits in hits_by_row for hit in hits}
     sku_map = _load_sku_map(db, product_ids)
+    pricing_context = _load_pricing_context(db, customer_id=str(customer_id))
     results = [
-        _build_match_result(row, hits, sku_map, order_type)
+        _apply_pricing(
+            _build_match_result(row, hits, sku_map, order_type),
+            pricing_context,
+            str(currency).upper(),
+        )
         for row, hits in zip(rows, hits_by_row, strict=True)
     ]
     summary = {"total": len(results), "passed": 0, "warning": 0, "blocked": 0}
@@ -183,6 +189,96 @@ def _build_match_result(row: dict, hits: list[dict], sku_map: dict[int, dict], o
         "errors": errors,
         "warnings": [],
     }
+
+
+def _load_pricing_context(db: Session, *, customer_id: str) -> dict:
+    color_rows = db.query(PriceColorType).all()
+    standard_rows = db.query(StdPrice).all()
+    rule = (
+        db.query(CustomerPriceRule)
+        .filter(CustomerPriceRule.customer_id == customer_id, CustomerPriceRule.enabled == 1)
+        .first()
+    )
+    return {
+        "color_types": {
+            price_service.normalize_color(row.color_code): row.color_type
+            for row in color_rows
+        },
+        "standard_prices": standard_rows,
+        "customer_rule": rule,
+    }
+
+
+def _apply_pricing(result: dict, context: dict, invoice_currency: str) -> dict:
+    row = result["normalized"]
+    color_code = price_service.normalize_color(row["color"])
+    color_type = context["color_types"].get(color_code) or price_service._infer_color_type(color_code)
+    standard = _find_standard_price(
+        context["standard_prices"],
+        product_display=row["product"],
+        length=row["length"],
+        unit=row["weight"],
+        color_type=color_type,
+    ) if color_type else None
+
+    warnings = result["warnings"]
+    if standard is None:
+        warnings.append(f"第 {row['source_row']} 行没有可用的 {invoice_currency} 系统价格，将保留 Excel 成交价")
+    elif str(standard.currency).upper() != invoice_currency:
+        warnings.append(
+            f"第 {row['source_row']} 行系统价格币种为 {str(standard.currency).upper()}，"
+            f"当前发票币种为 {invoice_currency}，无法直接比较；将保留 Excel 成交价"
+        )
+    else:
+        standard_price = Decimal(standard.price)
+        customer_price = price_service.apply_rule(standard_price, context["customer_rule"])
+        difference = (row["unit_price"] - customer_price).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        result["standard_price"] = standard_price
+        result["customer_price"] = customer_price
+        result["price_difference"] = difference
+        if difference == 0:
+            result["price_source"] = "customer_rule"
+        else:
+            result["price_source"] = "manual"
+            warnings.append(
+                f"第 {row['source_row']} 行 Excel 成交价与客户价相差 {difference} {invoice_currency}，"
+                "将保留 Excel 成交价"
+            )
+
+    if result["errors"]:
+        result["status"] = "blocked"
+    elif warnings:
+        result["status"] = "warning"
+    else:
+        result["status"] = "passed"
+    return result
+
+
+def _find_standard_price(
+    rows: list[StdPrice],
+    *,
+    product_display: str,
+    length: str,
+    unit: str,
+    color_type: str,
+) -> StdPrice | None:
+    display_norm = price_service.normalize_text(product_display)
+    candidates = [
+        row for row in rows
+        if row.length == price_service.normalize_length(length)
+        and row.weight_unit == price_service.normalize_text(unit)
+        and row.color_type == color_type
+    ]
+    matched = []
+    for row in candidates:
+        series_norm = price_service.normalize_text(row.series_grade)
+        if series_norm and (display_norm.startswith(series_norm) or series_norm.startswith(display_norm)):
+            matched.append(row)
+    if not matched:
+        return None
+    if len({price_service.normalize_text(row.series_grade) for row in matched}) > 1:
+        return None
+    return matched[0]
 
 
 def _display_text(value: object) -> str:

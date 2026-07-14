@@ -58,6 +58,7 @@
   - `GET /invoices/check-no?invoice_no=&exclude_id=` — 发票号占用检查（invoice:write；exclude_id 编辑时排除自身）
   - `GET /customers/contact-defaults?customer_id=` — 该客户最近一张（created_at 倒序）带联系信息发票的联系人/电话/邮箱/地址快照，录入页自动填充用（invoice:write；组织级共享，刻意不受发票数据范围限制——联系人是客户数据非财务数据）
   - `GET /products/filter-options` — 产品级联筛选项（model→color→size→unit，库存单用）
+  - `POST /import/preview` — Excel/WPS 粘贴明细批量预检（invoice:write）：请求含客户、订单类型、币种和最多 200 行标准字段；只读返回 passed/warning/blocked、产品/SKU 候选、同币种客户价差与批次指纹，不创建发票/定制产品、不自动换汇
   - `GET /products/match` — 按 model/color/size/unit 精确匹配产品
   - `GET /products/entry-options` — 生产单自由录入候选值（okki UNION ark_custom_products，含 displays）
   - `GET /custom-products` — 沉淀产品列表；`POST /custom-products/reconcile` — 与 okki 产品库对账回填（invoice:admin）

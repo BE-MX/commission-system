@@ -16,6 +16,7 @@ from app.core.database import get_db
 from app.core.response import ok
 from app.invoice import (
     export_service,
+    import_service,
     okki_client,
     price_service,
     product_service,
@@ -23,7 +24,7 @@ from app.invoice import (
     service,
     xiaoman_service,
 )
-from app.invoice.schemas import InvoiceCreate, InvoiceUpdate
+from app.invoice.schemas import InvoiceCreate, InvoiceImportPreviewRequest, InvoiceUpdate
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +168,25 @@ def get_entry_options(
     _user=Depends(_READ_OR_WRITE),
 ):
     return ok(product_service.get_entry_options(db))
+
+
+@router.post("/import/preview", summary="Preview pasted invoice lines")
+def preview_invoice_import(
+    body: InvoiceImportPreviewRequest,
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("invoice:write")),
+):
+    try:
+        result = import_service.preview_import(
+            db,
+            customer_id=body.customer_id,
+            order_type=body.order_type,
+            currency=body.currency,
+            raw_rows=[row.model_dump() for row in body.rows],
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return ok(result)
 
 
 @router.get("/custom-products", summary="List sunk custom products")

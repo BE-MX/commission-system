@@ -450,13 +450,17 @@ def _replace_items(db: Session, invoice: Invoice, body, user_id: int | None = No
             unit=item.net_weight_grams,
             color=item.color,
         )
-        item.standard_price = pricing["standard_price"]
-        item.customer_price = pricing["customer_price"]
+        same_currency = (
+            pricing["standard_price"] is None
+            or str(pricing["currency"] or "").upper() == str(body.currency or "USD").upper()
+        )
+        item.standard_price = pricing["standard_price"] if same_currency else None
+        item.customer_price = pricing["customer_price"] if same_currency else None
         if item.price_per_piece is None:
-            item.price_per_piece = pricing["customer_price"]
-        if pricing["customer_price"] is None:
+            item.price_per_piece = item.customer_price
+        if item.customer_price is None:
             item.price_source = "missing_std"
-        elif item.price_per_piece == pricing["customer_price"]:
+        elif item.price_per_piece == item.customer_price:
             item.price_source = "customer_rule"
         else:
             item.price_source = "manual"

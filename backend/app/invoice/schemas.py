@@ -47,6 +47,23 @@ class ProductMatchResponse(BaseModel):
     matches: list[ProductMatchItem] = []
 
 
+class InvoiceImportRow(BaseModel):
+    source_row: int = Field(..., ge=1)
+    product: str = Field(..., min_length=1, max_length=256)
+    length: str = Field(..., min_length=1, max_length=128)
+    color: str = Field(..., min_length=1, max_length=128)
+    weight: str = Field(..., min_length=1, max_length=64)
+    quantity: int = Field(..., gt=0)
+    unit_price: Decimal = Field(..., gt=0)
+
+
+class InvoiceImportPreviewRequest(BaseModel):
+    customer_id: str = Field(..., min_length=1, max_length=64)
+    order_type: str = Field(..., pattern="^(stock|production)$")
+    currency: str = Field(..., min_length=1, max_length=16)
+    rows: list[InvoiceImportRow] = Field(..., min_length=1, max_length=200)
+
+
 class InvoiceItemPayload(BaseModel):
     # 编辑时回传既有行 id，用于跨保存传承 xiaoman_unique_id（OKKI 编辑推单按行更新）
     id: Optional[int] = None
