@@ -571,15 +571,8 @@ def save_scene_image(key: str, upload) -> str:
 
 
 # 发色注入合成 prompt，来源 ark_expo_hair_colors 快照。
-# 有色板图时把它作为最后一张参考图随图送入模型，描述与图互为锚点；无图时退化为纯文本描述
-_COLOR_SWATCH_CLAUSE = (
-    " The LAST reference image is a hair color swatch. After replacing the hair, "
-    "recolor it to exactly match the swatch: {name} (color code {code}{hex_part}). "
-    "{description}The color must look like naturally grown human hair with realistic "
-    "depth, dimension and shine under the final lighting. Do not change the "
-    "hairstyle shape or length, and do not alter the face."
-)
-
+# 只用文本锚点（名称/色号/hex），色板图**不再**随图送入模型——实测色板参考图会把
+# 合成结果拽偏（构图/人物位置偏移严重），hex 主色在上传色板时已提取（2026-07-14 亮哥指令）
 _COLOR_TEXT_CLAUSE = (
     " After replacing the hair, recolor it to this exact hair color: {name} "
     "(color code {code}{hex_part}). {description}The color must look like naturally "
@@ -624,20 +617,12 @@ def resolve_scenes(keys: list[str] | None) -> list[dict]:
     return [by_key[k] for k in dict.fromkeys(keys) if k in by_key]
 
 
-def _color_swatch_path(color: dict | None) -> Path | None:
-    """快照里的色板图 → 存在才作为参考图送入模型。"""
-    if not color or not color.get("swatch_path"):
-        return None
-    path = to_abs(color["swatch_path"])
-    return path if path.exists() else None
-
-
-def _color_clause(color: dict | None, with_swatch: bool = False) -> str:
+def _color_clause(color: dict | None) -> str:
     if not color:
         return ""
     hex_val = color.get("hex") or ""
     description = (color.get("description") or "").strip()
-    template = _COLOR_SWATCH_CLAUSE if with_swatch else _COLOR_TEXT_CLAUSE
+    template = _COLOR_TEXT_CLAUSE
     return template.format(
         name=color.get("name_en") or color.get("name") or "",
         code=color.get("code") or "",
@@ -730,11 +715,8 @@ def _build_prompt(
     refs = [to_abs(p) for p in (wig.angle_photos or [])[:3] if to_abs(p).exists()]
     if not refs and wig.cover_path and to_abs(wig.cover_path).exists():
         refs = [to_abs(wig.cover_path)]
-    # 三图合成：自拍 + 发型参考图 + 色板图（色板图固定放末位，与 prompt 的 LAST/最后一张 指代对齐）
-    swatch = _color_swatch_path(row.hair_color_json)
+    # 随图只送 自拍 + 发型参考图；发色不送色板图（会把合成拽偏），只走文本颜色锚点
     images = [to_abs(session.photo_path), *refs]
-    if swatch:
-        images.append(swatch)
 
     tryon_scene = resolve_tryon_scene((row.scene_json or {}).get("key"))
     scene_clause = (
@@ -746,7 +728,7 @@ def _build_prompt(
             description=wig.wig_description or wig.name,
             extra=wig.composite_prompt or "",
         )
-        + _color_clause(row.hair_color_json, with_swatch=swatch is not None)
+        + _color_clause(row.hair_color_json)
         + scene_clause
         + _TRYON_STYLE_TAIL
         + _PORTRAIT_SPEC_CLAUSE

@@ -324,8 +324,8 @@ def delete_hair_color(db: Session, color_id: int) -> bool:
     可直接硬删。返回 False=不存在。
 
     注意：历史 result 的 hair_color_json.swatch_path 仍指向这里删掉的色板图文件，
-    但历史展示只用 hex+name 不渲染该图；对 pending/failed result 重合成时
-    `ai_pipeline._color_swatch_path` 有 exists() 守卫，文件缺失自动降级为纯文本色描述。
+    但该字段仅作快照溯源——展示只用 hex+name，合成自 2026-07-14 起也只用文本色锚点
+    （色板图不再随图送模型），删文件无任何运行时影响。
     """
     row = db.get(ExpoHairColor, color_id)
     if not row:
@@ -337,7 +337,8 @@ def delete_hair_color(db: Session, color_id: int) -> bool:
 
 
 def snapshot_hair_color(db: Session, hair_color_id: int) -> dict:
-    """选定发色 → 随 result 落库的快照（色板图 + 描述），与发色库后续变更解耦。"""
+    """选定发色 → 随 result 落库的快照，与发色库后续变更解耦。
+    swatch_path 仅溯源用：合成只用 name/code/hex/description 文本锚点（2026-07-14 起）。"""
     row = db.get(ExpoHairColor, hair_color_id)
     if not row or not row.is_active:
         raise ValueError("发色不存在或已停用")

@@ -52,13 +52,15 @@ def test_color_clause_text_mode_carries_description():
     assert "LAST reference image" not in clause  # 无色板图走纯文本模板
 
 
-def test_color_clause_swatch_mode_references_last_image():
+def test_color_clause_ignores_swatch_path_stays_text_mode():
+    """快照带 swatch_path 也只走文本模板：色板图不再进合成（2026-07-14 亮哥指令，
+    色板参考图会把合成结果拽偏）。"""
     clause = ai_pipeline._color_clause(
-        {"name": "栗棕", "code": "6", "hex": "#5a3a26", "description": "暖调栗棕"},
-        with_swatch=True,
+        {"name": "栗棕", "code": "6", "hex": "#5a3a26", "description": "暖调栗棕",
+         "swatch_path": "uploads/expo/hair_colors/swatch_x.png"},
     )
-    assert "LAST reference image" in clause
-    assert "栗棕" in clause and "暖调栗棕" in clause
+    assert "LAST reference image" not in clause
+    assert "栗棕" in clause and "暖调栗棕" in clause and "hex #5a3a26" in clause
 
 
 def test_color_clause_none_is_empty():
@@ -70,12 +72,6 @@ def test_color_clause_missing_hex_and_description_omitted():
     assert "hex" not in clause
     assert "Color description" not in clause
     assert "深棕" in clause
-
-
-def test_color_swatch_path_missing_file_returns_none():
-    assert ai_pipeline._color_swatch_path({"swatch_path": "uploads/expo/hair_colors/nope.png"}) is None
-    assert ai_pipeline._color_swatch_path(None) is None
-    assert ai_pipeline._color_swatch_path({"name": "x"}) is None
 
 
 # ---------------- _build_prompt 双模板 ----------------
@@ -107,8 +103,8 @@ def test_build_prompt_tryon_appends_color_clause():
     assert len(images) == 1  # 参考图文件不存在时只剩客户照片
 
 
-def test_build_prompt_tryon_swatch_image_appended_last(tmp_path):
-    """三图合成：自拍 + 发型参考图 + 色板图，色板图必须在末位且 prompt 用 LAST 指代。"""
+def test_build_prompt_tryon_swatch_image_never_sent(tmp_path):
+    """色板图存在也不随图送模型（会把合成拽偏），发色只走文本锚点（名称/色号/hex）。"""
     swatch = tmp_path / "swatch_6.png"
     swatch.write_bytes(b"fake-png")
     session = _session()
@@ -121,9 +117,10 @@ def test_build_prompt_tryon_swatch_image_appended_last(tmp_path):
         },
     )
     prompt, images, size = ai_pipeline._build_prompt(session, row, wig)
-    assert "LAST reference image" in prompt
-    assert images[-1] == swatch
-    assert len(images) == 2  # 自拍 + 色板图（发型参考图文件不存在）
+    assert "LAST reference image" not in prompt
+    assert swatch not in images
+    assert len(images) == 1  # 只剩自拍（发型参考图文件不存在）
+    assert "栗棕" in prompt and "hex #5a3a26" in prompt
 
 
 def test_build_prompt_tryon_without_color_has_no_clause():
@@ -262,7 +259,7 @@ def test_scene_mode_home_key_not_confused_with_tryon_home():
 
 
 def test_build_prompt_color_and_scene_combined(tmp_path):
-    """发色（色板图）× 生成场景 组合：LAST 指代仍成立且色板图仍在末位。"""
+    """发色 × 生成场景 组合：色板图不进 images，文本色锚点与场景描述同时在场。"""
     swatch = tmp_path / "sw.png"
     swatch.write_bytes(b"fake")
     session = _session()
@@ -273,9 +270,11 @@ def test_build_prompt_color_and_scene_combined(tmp_path):
         scene_json={"key": "gathering", "label": "聚会"},
     )
     prompt, images, size = ai_pipeline._build_prompt(session, row, wig)
-    assert "LAST reference image" in prompt
+    assert "LAST reference image" not in prompt
+    assert "栗棕" in prompt
     assert "dinner party" in prompt
-    assert images[-1] == swatch
+    assert swatch not in images
+    assert len(images) == 1
 
 
 # ---------------- 批次切片边界（换一批上界） ----------------
