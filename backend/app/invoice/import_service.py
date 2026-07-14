@@ -69,25 +69,46 @@ def preview_import(
     if not str(currency or "").strip():
         raise ValueError("currency 必填")
 
-    rows = normalize_rows(raw_rows)
+    if not raw_rows:
+        raise ValueError("导入数据至少包含 1 行")
+    if len(raw_rows) > MAX_IMPORT_ROWS:
+        raise ValueError(f"单次最多导入 {MAX_IMPORT_ROWS} 行")
+
+    parsed_rows: list[dict] = []
+    valid_rows: list[dict] = []
+    for raw in raw_rows:
+        try:
+            normalized = normalize_row(raw)
+        except ValueError as exc:
+            parsed_rows.append(_invalid_result(raw, str(exc)))
+        else:
+            parsed_rows.append({"normalized": normalized})
+            valid_rows.append(normalized)
+
     product_index = _load_product_index(db)
-    hits_by_row = [product_index.get(_product_key(row), []) for row in rows]
+    hits_by_row = [product_index.get(_product_key(row), []) for row in valid_rows]
     product_ids = {int(hit["product_id"]) for hits in hits_by_row for hit in hits}
     sku_map = _load_sku_map(db, product_ids)
     pricing_context = _load_pricing_context(db, customer_id=str(customer_id))
-    results = [
+    valid_results = iter([
         _apply_pricing(
             _build_match_result(row, hits, sku_map, order_type),
             pricing_context,
             str(currency).upper(),
         )
-        for row, hits in zip(rows, hits_by_row, strict=True)
+        for row, hits in zip(valid_rows, hits_by_row, strict=True)
+    ])
+    results = [
+        parsed if "status" in parsed else next(valid_results)
+        for parsed in parsed_rows
     ]
     summary = {"total": len(results), "passed": 0, "warning": 0, "blocked": 0}
     for row in results:
         summary[row["status"]] += 1
     return {
-        "batch_fingerprint": make_batch_fingerprint(rows),
+        "batch_fingerprint": make_batch_fingerprint([
+            parsed["normalized"] for parsed in parsed_rows
+        ]),
         "context": {
             "customer_id": str(customer_id),
             "order_type": order_type,
@@ -100,7 +121,7 @@ def preview_import(
 
 def _load_product_index(db: Session) -> dict[tuple[str, str, str, str], list[dict]]:
     index: dict[tuple[str, str, str, str], list[dict]] = {}
-    for row in product_service.load_okki_rows(db):
+    for row in product_service.load_okki_rows(db, limit=None):
         product_name = str(row["product_name"] or "")
         product_display = product_name.split("/", 1)[0].strip()
         item = {
@@ -119,6 +140,33 @@ def _load_product_index(db: Session) -> dict[tuple[str, str, str, str], list[dic
         )
         index.setdefault(key, []).append(item)
     return index
+
+
+def _invalid_result(raw: Mapping[str, object], error: str) -> dict:
+    source_row = int(raw.get("source_row") or 1)
+    normalized = {
+        "source_row": source_row,
+        "product": _display_text(raw.get("product")),
+        "length": _display_text(raw.get("length")),
+        "color": _display_text(raw.get("color")),
+        "weight": _display_text(raw.get("weight")),
+        "quantity": raw.get("quantity"),
+        "unit_price": raw.get("unit_price"),
+    }
+    return {
+        "source_row": source_row,
+        "normalized": normalized,
+        "matched_product": None,
+        "candidates": [],
+        "can_create_custom": False,
+        "customer_price": None,
+        "standard_price": None,
+        "price_difference": None,
+        "price_source": "missing_std",
+        "status": "blocked",
+        "errors": [f"第 {source_row} 行{error}，请回到 Excel 修正后重新校验"],
+        "warnings": [],
+    }
 
 
 def _load_sku_map(db: Session, product_ids: set[int]) -> dict[int, list[int]]:

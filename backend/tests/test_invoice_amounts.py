@@ -11,6 +11,8 @@
 from datetime import date
 from decimal import Decimal
 
+from sqlalchemy import text
+
 from app.invoice import service
 from app.invoice.models import Invoice, InvoiceItem  # noqa: F401 - register metadata for create_all
 from app.invoice.schemas import InvoiceCreate, InvoiceItemPayload, InvoiceUpdate
@@ -35,6 +37,29 @@ def _item(quantity: int, price, **overrides) -> InvoiceItemPayload:
 
 
 def _create(db, items) -> Invoice:
+    db.execute(text("""
+        CREATE TABLE IF NOT EXISTS lsordertest.okki_products (
+            product_id INTEGER PRIMARY KEY, name TEXT, color TEXT, size TEXT, unit TEXT, disable_flag INTEGER
+        )
+    """))
+    db.execute(text("""
+        CREATE TABLE IF NOT EXISTS lsordertest.okki_inventory (
+            product_id INTEGER, sku_id INTEGER, disable_flag INTEGER
+        )
+    """))
+    db.execute(text("""
+        INSERT OR IGNORE INTO lsordertest.okki_products
+            (product_id, name, color, size, unit, disable_flag)
+        VALUES (1, 'Raw Hair/Body Wave', 'Natural', '18', '100g', 0)
+    """))
+    exists = db.execute(text("""
+        SELECT 1 FROM lsordertest.okki_inventory WHERE product_id = 1 AND sku_id = 9001
+    """)).first()
+    if not exists:
+        db.execute(text("""
+            INSERT INTO lsordertest.okki_inventory (product_id, sku_id, disable_flag)
+            VALUES (1, 9001, 0)
+        """))
     payload = InvoiceCreate(
         customer_id="CUST001",
         customer_name="Customer A",

@@ -374,6 +374,17 @@ def _next_invoice_no(db: Session) -> str:
 
 
 def _replace_items(db: Session, invoice: Invoice, body, user_id: int | None = None) -> None:
+    if body.order_type != "production" and any(item.item_type == "custom" for item in body.items):
+        raise ValueError("库存单不能包含定制产品，请改为生产单或选择已有产品")
+    stock_pairs = {
+        (int(item.product_id), int(item.sku_id))
+        for item in body.items
+        if item.item_type == "stock" and item.product_id is not None and item.sku_id is not None
+    }
+    invalid_pairs = stock_pairs - product_service.valid_okki_product_skus(db, stock_pairs)
+    if invalid_pairs:
+        raise ValueError("产品与 SKU 不匹配或已停用，请重新选择产品")
+
     # re-saving an invoice must not inflate use_count of already-referenced products
     prior_custom_ids = {item.custom_product_id for item in invoice.items if item.custom_product_id}
     has_custom = any(

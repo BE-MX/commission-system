@@ -62,6 +62,7 @@ def test_product_filter_options_and_unique_match(db):
 
 
 def test_invoice_create_totals_and_validation(db):
+    _seed_products(db)
     payload = InvoiceCreate(
         customer_id="CUST001",
         customer_name="Customer A",

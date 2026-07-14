@@ -9,7 +9,7 @@ import logging
 from decimal import Decimal
 from typing import Iterable
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -288,7 +288,7 @@ def get_entry_options(db: Session) -> dict[str, list[str]]:
     return options
 
 
-def load_okki_rows(db: Session) -> list:
+def load_okki_rows(db: Session, *, limit: int | None = 10000) -> list:
     """Attribute projection of okki_products for in-memory matching.
 
     Deterministic ORDER BY so a future >10000-row library degrades loudly
@@ -299,13 +299,36 @@ def load_okki_rows(db: Session) -> list:
     if not {"color", "size", "unit", "product_id"}.issubset(product_columns):
         return []
     name_expr = _quoted_column(product_columns, "product_name", "name")
+    limit_sql = f"LIMIT {int(limit)}" if limit else ""
     return db.execute(text(f"""
         SELECT p.product_id, {name_expr} AS product_name, p.color, p.size, p.unit
         FROM `{schema}`.okki_products p
         WHERE {_disable_filter("okki_products", product_columns, alias="p")}
         ORDER BY p.product_id DESC
-        LIMIT 10000
+        {limit_sql}
     """)).mappings().all()
+
+
+def valid_okki_product_skus(db: Session, pairs: set[tuple[int, int]]) -> set[tuple[int, int]]:
+    """Return active product/SKU pairs in one query for final-save verification."""
+    if not pairs:
+        return set()
+    product_columns = _table_columns(db, "okki_products")
+    inventory_columns = _table_columns(db, "okki_inventory")
+    if not {"product_id"}.issubset(product_columns) or not {"product_id", "sku_id"}.issubset(inventory_columns):
+        return set()
+    schema = _schema()
+    statement = text(f"""
+        SELECT DISTINCT i.product_id, i.sku_id
+        FROM `{schema}`.okki_inventory i
+        JOIN `{schema}`.okki_products p ON p.product_id = i.product_id
+        WHERE i.product_id IN :product_ids
+          AND {_disable_filter("okki_inventory", inventory_columns, alias="i")}
+          AND {_disable_filter("okki_products", product_columns, alias="p")}
+    """).bindparams(bindparam("product_ids", expanding=True))
+    rows = db.execute(statement, {"product_ids": sorted({product_id for product_id, _ in pairs})}).mappings().all()
+    available = {(int(row["product_id"]), int(row["sku_id"])) for row in rows if row["sku_id"] is not None}
+    return pairs & available
 
 
 def find_okki_by_attributes(
@@ -486,4 +509,3 @@ def _map_product_row(row) -> dict:
         "price_per_piece": None,
         "price_source": "missing",
     }
-

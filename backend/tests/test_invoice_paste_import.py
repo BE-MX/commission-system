@@ -5,6 +5,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from pydantic import ValidationError
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import text
@@ -88,6 +89,24 @@ def test_normalize_rows_rejects_empty_and_over_limit_batches():
         import_service.normalize_rows([])
     with pytest.raises(ValueError, match="最多导入 200 行"):
         import_service.normalize_rows([valid_row(source_row=index + 1) for index in range(201)])
+
+
+def test_invoice_currency_is_normalized_and_rejects_non_three_letter_codes():
+    payload = InvoiceCreate(
+        customer_id="CUST001",
+        customer_name="Customer A",
+        invoice_date=date(2026, 7, 14),
+        currency=" eur ",
+    )
+    assert payload.currency == "EUR"
+
+    with pytest.raises(ValidationError):
+        InvoiceCreate(
+            customer_id="CUST001",
+            customer_name="Customer A",
+            invoice_date=date(2026, 7, 14),
+            currency="USDD",
+        )
 
 
 def test_batch_fingerprint_is_stable_and_ignores_mapping_order():
@@ -227,6 +246,26 @@ def test_preview_import_allows_explicit_custom_path_only_for_production(db):
     assert db.query(CustomProduct).count() == 0
 
 
+def test_preview_import_returns_field_errors_without_aborting_valid_rows(db):
+    seed_okki_products(db, [
+        (11, "Standard Double Drawn Genius Weft/18/#1B/100g", "#1B", "18", "100g", 9011),
+    ])
+
+    result = import_service.preview_import(
+        db,
+        customer_id="CUST001",
+        order_type="stock",
+        currency="USD",
+        raw_rows=[valid_row(), valid_row(source_row=3, quantity="half")],
+    )
+
+    assert result["rows"][0]["matched_product"]["sku_id"] == 9011
+    assert result["rows"][1]["status"] == "blocked"
+    assert result["rows"][1]["source_row"] == 3
+    assert "quantity 必须是正整数" in result["rows"][1]["errors"][0]
+    assert result["summary"] == {"total": 2, "passed": 0, "warning": 1, "blocked": 1}
+
+
 def seed_standard_price(db, *, price="36.00", currency="USD"):
     db.add(StdPrice(
         series_grade="Standard Double Drawn Genius Weft",
@@ -348,6 +387,54 @@ def test_save_does_not_compare_cross_currency_price(db):
     assert item.price_source == "missing_std"
 
 
+def test_save_rejects_custom_lines_on_stock_invoice(db):
+    payload = InvoiceCreate(
+        customer_id="CUST001",
+        customer_name="Customer A",
+        order_type="stock",
+        invoice_date=date(2026, 7, 14),
+        items=[InvoiceItemPayload(
+            item_type="custom",
+            product_display="Custom Weft",
+            net_weight_grams="100g",
+            color="#1B",
+            length="18",
+            quantity=1,
+            price_per_piece=Decimal("34.00"),
+        )],
+    )
+
+    with pytest.raises(ValueError, match="库存单不能包含定制产品"):
+        service.create_invoice(db, payload, user_id=1)
+
+
+def test_save_rejects_mismatched_product_sku_pair(db):
+    seed_okki_products(db, [
+        (11, "Standard Double Drawn Genius Weft/18/#1B/100g", "#1B", "18", "100g", 9011),
+    ])
+    payload = InvoiceCreate(
+        customer_id="CUST001",
+        customer_name="Customer A",
+        order_type="stock",
+        invoice_date=date(2026, 7, 14),
+        items=[InvoiceItemPayload(
+            item_type="stock",
+            product_id=11,
+            sku_id=9999,
+            product_name="Standard Double Drawn Genius Weft/18/#1B/100g",
+            product_display="Standard Double Drawn Genius Weft",
+            net_weight_grams="100g",
+            color="#1B",
+            length="18",
+            quantity=1,
+            price_per_piece=Decimal("34.00"),
+        )],
+    )
+
+    with pytest.raises(ValueError, match="产品与 SKU 不匹配"):
+        service.create_invoice(db, payload, user_id=1)
+
+
 def test_import_preview_endpoint_requires_write_permission(db):
     seed_okki_products(db, [])
     body = {
@@ -381,6 +468,21 @@ def test_import_preview_endpoint_returns_unified_envelope(db):
     assert payload["code"] == 200
     assert payload["data"]["summary"]["passed"] == 1
     assert payload["data"]["rows"][0]["matched_product"]["product_id"] == 11
+
+
+def test_import_preview_endpoint_returns_invalid_row_as_blocked(db):
+    body = {
+        "customer_id": "CUST001",
+        "order_type": "stock",
+        "currency": "USD",
+        "rows": [valid_row(quantity="half")],
+    }
+
+    with api_client(db, permissions=["invoice:write"]) as client:
+        response = client.post("/api/invoice/import/preview", json=body)
+
+    assert response.status_code == 200
+    assert response.json()["data"]["rows"][0]["status"] == "blocked"
 
 
 def test_import_preview_endpoint_rejects_more_than_200_rows(db):

@@ -49,19 +49,24 @@ class ProductMatchResponse(BaseModel):
 
 class InvoiceImportRow(BaseModel):
     source_row: int = Field(..., ge=1)
-    product: str = Field(..., min_length=1, max_length=256)
-    length: str = Field(..., min_length=1, max_length=128)
-    color: str = Field(..., min_length=1, max_length=128)
-    weight: str = Field(..., min_length=1, max_length=64)
-    quantity: int = Field(..., gt=0)
-    unit_price: Decimal = Field(..., gt=0)
+    product: str = Field(..., max_length=256)
+    length: str = Field(..., max_length=128)
+    color: str = Field(..., max_length=128)
+    weight: str = Field(..., max_length=64)
+    quantity: int | str
+    unit_price: Decimal | str
 
 
 class InvoiceImportPreviewRequest(BaseModel):
     customer_id: str = Field(..., min_length=1, max_length=64)
     order_type: str = Field(..., pattern="^(stock|production)$")
-    currency: str = Field(..., min_length=1, max_length=16)
+    currency: str = Field(..., pattern="^[A-Z]{3}$")
     rows: list[InvoiceImportRow] = Field(..., min_length=1, max_length=200)
+
+    @field_validator("currency", mode="before")
+    @classmethod
+    def _normalize_currency(cls, value):
+        return str(value or "").strip().upper()
 
 
 class InvoiceItemPayload(BaseModel):
@@ -96,7 +101,7 @@ class _InvoiceHeaderPayload(BaseModel):
     sales_phone: Optional[str] = Field(None, max_length=100)
     sales_email: Optional[str] = Field(None, max_length=256)
     invoice_date: date
-    currency: str = Field(default="USD", max_length=16)
+    currency: str = Field(default="USD", pattern="^[A-Z]{3}$")
     express_channel: Optional[str] = Field(None, max_length=64)
     shipping_fee: Decimal = Field(default=Decimal("0"), ge=0)
     surcharge_name: Optional[str] = Field(None, max_length=128)
@@ -119,6 +124,11 @@ class _InvoiceHeaderPayload(BaseModel):
     @classmethod
     def _coerce_customer_id(cls, value):
         return "" if value is None else str(value)
+
+    @field_validator("currency", mode="before")
+    @classmethod
+    def _normalize_currency(cls, value):
+        return str(value or "").strip().upper()
 
 
 class InvoiceCreate(_InvoiceHeaderPayload):
