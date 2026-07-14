@@ -87,6 +87,140 @@ class TestDesignShootReminder:
 
         mock_notifier.send_to_users.assert_not_called()
 
+    @staticmethod
+    def _seed_scheduled_task(session, *, designer_dingtalk_id):
+        """预填充：一条今天开始的已排期任务 + 被指派设计师。
+
+        request 不留任何字典 code(避免 dict 表依赖)、salesperson_id 指向
+        不存在的 ArkUser(申请人无钉钉)、无 design_staff 角色成员——
+        收件人只可能来自被指派设计师本人。
+        """
+        from datetime import date, timedelta
+        from app.design.models import (
+            DesignDesigner, DesignScheduleRequest, DesignScheduleTask,
+        )
+
+        today = date.today()
+        designer = DesignDesigner(name="测试设计师", dingtalk_id=designer_dingtalk_id)
+        session.add(designer)
+        session.flush()
+
+        req = DesignScheduleRequest(
+            request_no="DSR-TEST-0001",
+            customer_name="客户X",
+            salesperson_id=99999,   # 不存在的 ArkUser → 申请人拿不到钉钉ID
+            salesperson_name="业务员X",
+            shoot_type="",
+            expect_start_date=today - timedelta(days=8),
+            expect_end_date=today - timedelta(days=8),
+            status="scheduled",
+        )
+        session.add(req)
+        session.flush()
+
+        task = DesignScheduleTask(
+            request_id=req.id,
+            task_no="DST-TEST-0001",
+            designer_id=designer.id,
+            status="scheduled",
+            plan_start_date=today,
+            plan_end_date=today,
+            plan_start_period="am",
+            plan_end_period="pm",
+        )
+        session.add(task)
+        session.commit()
+        return today
+
+    async def test_scheduled_task_pushes_to_assigned_designer(
+        self, session_factory, monkeypatch,
+    ):
+        """回归(2026-07-14 李辉漏推)：已排期任务必须直达被指派设计师本人,
+        且提醒内容用任务计划日期而非预约单过时的期望日期"""
+        from datetime import timedelta
+
+        session = session_factory()
+        today = self._seed_scheduled_task(session, designer_dingtalk_id="dd_designer_001")
+        session.close()
+
+        monkeypatch.setattr("app.design.scheduler.SessionLocal", session_factory)
+        mock_notifier = MagicMock(send_to_users=AsyncMock())
+        monkeypatch.setattr("app.dingtalk.work_notify.get_work_notifier",
+                            lambda: mock_notifier)
+
+        from app.design.scheduler import check_today_shoot_reminders
+        await check_today_shoot_reminders()
+
+        mock_notifier.send_to_users.assert_called_once()
+        kwargs = mock_notifier.send_to_users.call_args.kwargs
+        assert "dd_designer_001" in kwargs["user_ids"]
+
+        md = kwargs["markdown_text"]
+        assert str(today) in md                            # 任务计划日期
+        assert str(today - timedelta(days=8)) not in md    # 不再是过时的期望日期
+        assert "设计师：测试设计师" in md
+
+    async def test_designer_without_dingtalk_no_recipient_skips(
+        self, session_factory, monkeypatch,
+    ):
+        """设计师未绑定钉钉且无其他收件人时,跳过发送(不炸、不空发)"""
+        session = session_factory()
+        self._seed_scheduled_task(session, designer_dingtalk_id=None)
+        session.close()
+
+        monkeypatch.setattr("app.design.scheduler.SessionLocal", session_factory)
+        mock_notifier = MagicMock(send_to_users=AsyncMock())
+        monkeypatch.setattr("app.dingtalk.work_notify.get_work_notifier",
+                            lambda: mock_notifier)
+
+        from app.design.scheduler import check_today_shoot_reminders
+        await check_today_shoot_reminders()
+
+        mock_notifier.send_to_users.assert_not_called()
+
+    async def test_pending_request_still_uses_expect_date(
+        self, session_factory, monkeypatch,
+    ):
+        """待确认预约单(无排期任务)仍按期望日期提醒,推给申请人"""
+        from datetime import date
+        from app.auth.models import ArkUser
+        from app.design.models import DesignScheduleRequest
+
+        today = date.today()
+        session = session_factory()
+        applicant = ArkUser(
+            username="tester_sp", password_hash="x", real_name="业务员X",
+            dingtalk_id="dd_applicant_001",
+        )
+        session.add(applicant)
+        session.flush()
+        session.add(DesignScheduleRequest(
+            request_no="DSR-TEST-0002",
+            customer_name="客户Y",
+            salesperson_id=applicant.id,
+            salesperson_name="业务员X",
+            shoot_type="",
+            expect_start_date=today,
+            expect_end_date=today,
+            status="pending_design",
+        ))
+        session.commit()
+        session.close()
+
+        monkeypatch.setattr("app.design.scheduler.SessionLocal", session_factory)
+        mock_notifier = MagicMock(send_to_users=AsyncMock())
+        monkeypatch.setattr("app.dingtalk.work_notify.get_work_notifier",
+                            lambda: mock_notifier)
+
+        from app.design.scheduler import check_today_shoot_reminders
+        await check_today_shoot_reminders()
+
+        mock_notifier.send_to_users.assert_called_once()
+        kwargs = mock_notifier.send_to_users.call_args.kwargs
+        assert kwargs["user_ids"] == ["dd_applicant_001"]
+        assert str(today) in kwargs["markdown_text"]
+        assert "今日有预约待处理" in kwargs["markdown_text"]
+
 
 class TestShippingDailyReport:
     async def test_empty_db_returns_zero_counts(self, session_factory, monkeypatch):
