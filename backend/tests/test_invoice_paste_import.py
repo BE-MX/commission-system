@@ -12,7 +12,7 @@ from sqlalchemy import text
 
 from app.auth.utils import create_access_token
 from app.core.database import get_db
-from app.invoice import import_service, service
+from app.invoice import import_service, price_service, product_service, service
 from app.invoice.models import CustomProduct  # noqa: F401 - register table in test metadata
 from app.invoice.models import StdPrice
 from app.invoice.schemas import InvoiceCreate, InvoiceItemPayload
@@ -433,6 +433,48 @@ def test_save_rejects_mismatched_product_sku_pair(db):
 
     with pytest.raises(ValueError, match="产品与 SKU 不匹配"):
         service.create_invoice(db, payload, user_id=1)
+
+
+def test_production_custom_save_loads_full_okki_projection(db, monkeypatch):
+    captured = {}
+
+    def fake_load(_db, *, limit=10000):
+        captured["limit"] = limit
+        return []
+
+    monkeypatch.setattr(product_service, "load_okki_rows", fake_load)
+    monkeypatch.setattr(product_service, "ensure_custom_product", lambda *_args, **_kwargs: {
+        "custom_product_id": None,
+        "product_id": None,
+        "sku_id": None,
+        "product_name": "",
+        "source": "custom",
+    })
+    monkeypatch.setattr(price_service, "resolve_price", lambda *_args, **_kwargs: {
+        "standard_price": None,
+        "customer_price": None,
+        "currency": "USD",
+        "color_type_source": "",
+    })
+    payload = InvoiceCreate(
+        customer_id="CUST001",
+        customer_name="Customer A",
+        order_type="production",
+        invoice_date=date(2026, 7, 14),
+        items=[InvoiceItemPayload(
+            item_type="custom",
+            product_display="Custom Weft",
+            net_weight_grams="100g",
+            color="#1B",
+            length="18",
+            quantity=1,
+            price_per_piece=Decimal("34.00"),
+        )],
+    )
+
+    service.create_invoice(db, payload, user_id=1)
+
+    assert captured["limit"] is None
 
 
 def test_import_preview_endpoint_requires_write_permission(db):

@@ -390,7 +390,7 @@ def _replace_items(db: Session, invoice: Invoice, body, user_id: int | None = No
     has_custom = any(
         p.item_type == "custom" and _custom_line_complete(p) for p in body.items
     )
-    okki_rows = product_service.load_okki_rows(db) if has_custom else None
+    okki_rows = product_service.load_okki_rows(db, limit=None) if has_custom else None
     # 已推 OKKI 的行（有 unique_id）：回传 id 的行传承 unique_id（编辑语义按行更新）；
     # 未回传的即被删除，进待删快照，下次推单发 remove:1（否则 OKKI 侧留幽灵明细）
     prior_synced = {item.id: item for item in invoice.items if item.xiaoman_unique_id}
