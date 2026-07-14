@@ -121,7 +121,7 @@ def _load_product_index(db: Session) -> dict[tuple[str, str, str, str], list[dic
     return index
 
 
-def _load_sku_map(db: Session, product_ids: set[int]) -> dict[int, dict]:
+def _load_sku_map(db: Session, product_ids: set[int]) -> dict[int, list[int]]:
     if not product_ids:
         return {}
     columns = product_service._table_columns(db, "okki_inventory")
@@ -130,19 +130,17 @@ def _load_sku_map(db: Session, product_ids: set[int]) -> dict[int, dict]:
     schema = product_service._schema()
     active = product_service._disable_filter("okki_inventory", columns)
     statement = text(f"""
-        SELECT product_id, MIN(sku_id) AS sku_id, COUNT(DISTINCT sku_id) AS sku_count
+        SELECT DISTINCT product_id, sku_id
         FROM `{schema}`.okki_inventory
         WHERE product_id IN :product_ids AND {active}
-        GROUP BY product_id
+        ORDER BY product_id, sku_id
     """).bindparams(bindparam("product_ids", expanding=True))
     rows = db.execute(statement, {"product_ids": sorted(product_ids)}).mappings().all()
-    return {
-        int(row["product_id"]): {
-            "sku_id": int(row["sku_id"]) if row["sku_id"] is not None else None,
-            "sku_count": int(row["sku_count"] or 0),
-        }
-        for row in rows
-    }
+    result: dict[int, list[int]] = {}
+    for row in rows:
+        if row["sku_id"] is not None:
+            result.setdefault(int(row["product_id"]), []).append(int(row["sku_id"]))
+    return result
 
 
 def _product_key(row: Mapping[str, object]) -> tuple[str, str, str, str]:
@@ -154,17 +152,21 @@ def _product_key(row: Mapping[str, object]) -> tuple[str, str, str, str]:
     )
 
 
-def _build_match_result(row: dict, hits: list[dict], sku_map: dict[int, dict], order_type: str) -> dict:
+def _build_match_result(row: dict, hits: list[dict], sku_map: dict[int, list[int]], order_type: str) -> dict:
     candidates = []
     for hit in sorted(hits, key=lambda item: item["product_id"]):
-        candidate = {**hit, **sku_map.get(hit["product_id"], {"sku_id": None, "sku_count": 0})}
-        candidates.append(candidate)
+        sku_ids = sku_map.get(hit["product_id"], [])
+        candidates.extend({**hit, "sku_id": sku_id} for sku_id in sku_ids)
+        if not sku_ids:
+            candidates.append({**hit, "sku_id": None})
 
     matched = candidates[0] if len(candidates) == 1 else None
     errors: list[str] = []
     can_create_custom = False
     if len(candidates) > 1:
-        errors.append(f"第 {row['source_row']} 行找到 {len(candidates)} 个产品，请选择正确的 SKU")
+        product_count = len({candidate["product_id"] for candidate in candidates})
+        subject = f"{product_count} 个产品" if product_count > 1 else f"{len(candidates)} 个 SKU"
+        errors.append(f"第 {row['source_row']} 行找到 {subject}，请选择正确的 SKU")
     elif matched is None:
         can_create_custom = order_type == "production"
         errors.append(

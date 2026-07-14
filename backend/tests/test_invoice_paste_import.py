@@ -175,6 +175,27 @@ def test_preview_import_blocks_ambiguous_products_with_candidates(db):
     assert "找到 2 个产品" in row["errors"][0]
 
 
+def test_preview_import_blocks_multiple_skus_for_one_product(db):
+    seed_okki_products(db, [
+        (11, "Standard Double Drawn Genius Weft/18/#1B/100g", "#1B", "18", "100g", 9011),
+    ])
+    db.execute(text("""
+        INSERT INTO lsordertest.okki_inventory (product_id, sku_id, disable_flag)
+        VALUES (11, 9012, 0)
+    """))
+    db.commit()
+
+    row = import_service.preview_import(
+        db, customer_id="CUST001", order_type="stock", currency="USD", raw_rows=[valid_row()],
+    )["rows"][0]
+
+    assert row["status"] == "blocked"
+    assert row["matched_product"] is None
+    assert [(item["product_id"], item["sku_id"]) for item in row["candidates"]] == [
+        (11, 9011), (11, 9012),
+    ]
+
+
 @pytest.mark.parametrize("sku_id", [None])
 def test_preview_import_blocks_stock_product_without_sku(db, sku_id):
     seed_okki_products(db, [
