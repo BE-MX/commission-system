@@ -1,0 +1,557 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#07513a">
+  <meta name="description" content="莱莎健康假发6010产品介绍、全文朗读、佩戴细节、洗护售后与真人发丝动态展示。">
+  <meta property="og:title" content="莱莎健康假发｜6010产品详情">
+  <meta property="og:description" content="查看产品内容、细节照片并播放真人发丝动态视频。">
+  <meta property="og:image" content="assets/og.png">
+  <title>莱莎健康假发｜6010产品详情</title>
+  <style>
+    :root {
+      --green-950: #073d2d;
+      --green-900: #07513a;
+      --green-800: #0b6b4c;
+      --green-700: #14805d;
+      --cream: #f8f4ec;
+      --paper: #fffdf8;
+      --ink: #17362d;
+      --muted: #647a72;
+      --rose: #d6949d;
+      --rose-light: #f3d9dd;
+      --line: rgba(7, 81, 58, .12);
+      --shadow: 0 20px 54px rgba(10, 67, 50, .11);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 8% 28%, rgba(214, 148, 157, .1), transparent 25rem),
+        radial-gradient(circle at 92% 75%, rgba(11, 107, 76, .08), transparent 28rem),
+        var(--cream);
+      font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Arial, sans-serif;
+      text-rendering: optimizeLegibility;
+    }
+    img { display: block; width: 100%; }
+    button, video { font: inherit; }
+
+    .hero {
+      position: relative;
+      min-height: min(92vh, 900px);
+      display: flex;
+      align-items: flex-end;
+      padding: clamp(130px, 22vh, 220px) 28px 78px;
+      overflow: hidden;
+      color: white;
+      background: linear-gradient(145deg, var(--green-950), var(--green-800));
+      isolation: isolate;
+    }
+    .hero::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: -2;
+      background-image:
+        linear-gradient(to bottom, rgba(4, 44, 32, .06), rgba(4, 44, 32, .62)),
+        url("assets/brand.jpg");
+      background-position: center top;
+      background-size: cover;
+      opacity: .76;
+    }
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto 0 0;
+      height: 50%;
+      z-index: -1;
+      background: linear-gradient(to top, rgba(3, 43, 31, .98), transparent);
+    }
+    .hero-logo {
+      position: absolute;
+      top: 20px;
+      left: max(20px, calc((100% - 1180px) / 2));
+      width: 132px;
+      height: 74px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, .25);
+      border-radius: 16px;
+      box-shadow: 0 14px 36px rgba(0, 0, 0, .18);
+    }
+    .hero-logo img { height: 100%; object-fit: cover; }
+    .hero-inner { width: min(100%, 1180px); margin: 0 auto; }
+    .eyebrow, .kicker {
+      margin: 0 0 12px;
+      color: #f1c7cd;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .18em;
+    }
+    .hero h1 {
+      margin: 0;
+      max-width: 760px;
+      font-family: "Songti SC", "STSong", serif;
+      font-size: clamp(52px, 8vw, 96px);
+      font-weight: 500;
+      line-height: 1.08;
+      letter-spacing: -.04em;
+    }
+    .hero-subtitle {
+      margin: 24px 0 0;
+      color: rgba(255, 255, 255, .82);
+      font-size: 16px;
+      letter-spacing: .13em;
+    }
+    .hero-guide {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 50px;
+      padding-top: 18px;
+      border-top: 1px solid rgba(255, 255, 255, .24);
+      color: rgba(255, 255, 255, .68);
+      font-size: 12px;
+      letter-spacing: .12em;
+    }
+
+    .narration-button {
+      position: fixed;
+      z-index: 30;
+      top: max(18px, env(safe-area-inset-top));
+      right: max(16px, calc((100% - 1180px) / 2));
+      width: 172px;
+      min-height: 60px;
+      display: grid;
+      grid-template-columns: 38px 1fr;
+      align-items: center;
+      gap: 9px;
+      padding: 9px 13px;
+      overflow: hidden;
+      color: white;
+      text-align: left;
+      background: rgba(8, 67, 49, .94);
+      border: 1px solid rgba(255, 255, 255, .28);
+      border-radius: 19px;
+      box-shadow: 0 12px 36px rgba(3, 44, 31, .3);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      cursor: pointer;
+    }
+    .narration-button:hover { background: rgba(11, 107, 76, .97); }
+    .narration-button:active { transform: scale(.98); }
+    .narration-button.is-playing { background: rgba(174, 99, 111, .96); }
+    .narration-icon {
+      display: grid;
+      place-items: center;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, .17);
+      font-size: 14px;
+    }
+    .narration-copy { display: flex; flex-direction: column; gap: 2px; }
+    .narration-copy strong { font-size: 13px; }
+    .narration-copy small { color: rgba(255, 255, 255, .7); font-size: 10px; }
+    .narration-progress {
+      position: absolute;
+      inset: auto auto 0 0;
+      width: 0;
+      height: 3px;
+      background: #f2c7cd;
+    }
+
+    .page-shell { width: min(100%, 1180px); margin: 0 auto; padding: 36px 24px 96px; }
+    .section { margin-top: 84px; }
+    .intro-card {
+      display: grid;
+      grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
+      align-items: end;
+      gap: 38px;
+      margin-top: -26px;
+      padding: 42px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 30px;
+      box-shadow: var(--shadow);
+    }
+    .intro-card h2 {
+      margin: 0;
+      font-family: "Songti SC", "STSong", serif;
+      font-size: clamp(30px, 4vw, 46px);
+      font-weight: 600;
+      line-height: 1.3;
+    }
+    .intro-card > p, .section-lead {
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.95;
+    }
+    .section-heading {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      margin-bottom: 28px;
+    }
+    .section-heading > span {
+      display: grid;
+      place-items: center;
+      width: 42px;
+      height: 42px;
+      flex: 0 0 auto;
+      color: white;
+      background: var(--green-800);
+      border-radius: 50%;
+      box-shadow: 0 8px 20px rgba(11, 107, 76, .2);
+      font-size: 11px;
+      letter-spacing: .08em;
+    }
+    .section-heading h2 {
+      margin: 0;
+      font-family: "Songti SC", "STSong", serif;
+      font-size: clamp(28px, 3.2vw, 38px);
+      font-weight: 600;
+    }
+
+    .faq-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .faq-card {
+      display: grid;
+      grid-template-columns: 42px 1fr;
+      gap: 14px;
+      min-height: 190px;
+      padding: 26px 24px;
+      background: rgba(255, 253, 248, .86);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+    }
+    .faq-number { color: var(--rose); font: 19px Georgia, serif; }
+    .faq-card h3 { margin: 0 0 10px; font-size: 17px; line-height: 1.55; }
+    .faq-card p, .after-card p, .script-card p {
+      margin: 0;
+      color: #516a61;
+      font-size: 14px;
+      line-height: 1.92;
+    }
+
+    .fact-grid { display: grid; grid-template-columns: 1.15fr .85fr; gap: 16px; }
+    .fact-card {
+      min-height: 210px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 28px;
+      color: white;
+      border-radius: 28px;
+      box-shadow: 0 16px 36px rgba(7, 81, 58, .14);
+    }
+    .fact-card.price { background: linear-gradient(145deg, var(--green-950), var(--green-700)); }
+    .fact-card.margin { background: linear-gradient(145deg, #b87680, var(--rose)); }
+    .fact-card > span { font-size: 13px; letter-spacing: .12em; opacity: .8; }
+    .fact-card strong { font: 48px Georgia, serif; white-space: nowrap; }
+    .fact-card strong small { font-size: .45em; }
+    .fact-card p { margin: 0; font-size: 11px; opacity: .68; }
+
+    .care-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; align-items: start; }
+    .steps { margin: 0; padding: 0; list-style: none; }
+    .steps li {
+      position: relative;
+      display: grid;
+      grid-template-columns: 46px 1fr;
+      gap: 14px;
+      padding-bottom: 22px;
+    }
+    .steps li:not(:last-child)::after {
+      content: "";
+      position: absolute;
+      left: 22px;
+      top: 44px;
+      bottom: 0;
+      width: 1px;
+      background: rgba(11, 107, 76, .18);
+    }
+    .steps li > span {
+      display: grid;
+      place-items: center;
+      width: 46px;
+      height: 46px;
+      color: var(--green-800);
+      background: white;
+      border: 1px solid rgba(11, 107, 76, .15);
+      border-radius: 50%;
+      font: 600 16px Georgia, serif;
+    }
+    .steps p { margin: 7px 0 0; color: #405b52; font-size: 15px; line-height: 1.8; }
+    .after-list { display: grid; gap: 14px; }
+    .after-card {
+      padding: 22px 22px;
+      background: var(--paper);
+      border-left: 3px solid var(--rose);
+      border-radius: 0 20px 20px 0;
+    }
+    .after-title { display: flex; align-items: center; gap: 10px; margin-bottom: 11px; }
+    .after-title span { color: var(--rose); font: 17px Georgia, serif; }
+    .after-title h3 { margin: 0; font-size: 17px; }
+    .after-card p + p { margin-top: 8px; }
+
+    .script-section {
+      padding: 46px;
+      color: white;
+      background: linear-gradient(150deg, var(--green-950), #0a684b);
+      border-radius: 34px;
+      box-shadow: 0 24px 64px rgba(7, 81, 58, .2);
+    }
+    .script-section .section-heading > span { color: var(--green-950); background: #f3ccd1; }
+    .script-section .section-heading h2 { color: white; }
+    .script-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 30px; }
+    .script-card { padding: 24px 0; border-top: 1px solid rgba(255, 255, 255, .14); }
+    .script-card p { color: rgba(255, 255, 255, .78); }
+    .script-label {
+      display: inline-block;
+      margin-bottom: 11px;
+      color: #f1c7cd;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .2em;
+    }
+    .script-card h3 { margin: 0 0 12px; color: white; font-size: 17px; line-height: 1.5; }
+    .script-card h3::before { content: "Q · "; color: #f1c7cd; font-family: Georgia, serif; }
+
+    .section-lead { margin: -14px 0 24px 58px; }
+    .gallery-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .image-card {
+      margin: 0;
+      overflow: hidden;
+      background: var(--paper);
+      border-radius: 28px;
+      box-shadow: var(--shadow);
+    }
+    .image-card img { aspect-ratio: 1; object-fit: cover; }
+    .image-card figcaption { display: flex; align-items: center; gap: 12px; padding: 18px 20px 20px; }
+    .image-card figcaption span { color: var(--rose); font: 17px Georgia, serif; }
+    .image-card figcaption strong { font-size: 15px; }
+
+    .video-layout { display: grid; grid-template-columns: minmax(0, .75fr) minmax(300px, .4fr); gap: 40px; align-items: center; }
+    .video-copy {
+      padding: 36px;
+      color: white;
+      background: var(--green-900);
+      border-radius: 28px;
+    }
+    .video-copy h3 { margin: 0 0 14px; font-family: "Songti SC", "STSong", serif; font-size: 34px; }
+    .video-copy p { margin: 0; color: rgba(255, 255, 255, .72); line-height: 1.9; }
+    .video-frame { padding: 9px; background: var(--green-950); border-radius: 28px; box-shadow: 0 22px 54px rgba(7, 61, 45, .2); }
+    .video-frame video { display: block; width: 100%; max-height: 76vh; background: #031d15; border-radius: 21px; }
+
+    footer {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 64px 24px calc(48px + env(safe-area-inset-bottom));
+      color: white;
+      text-align: center;
+      background: var(--green-950);
+    }
+    footer img { width: 190px; border-radius: 18px; }
+    footer p { margin: 26px 0 8px; font-family: "Songti SC", "STSong", serif; font-size: 21px; letter-spacing: .08em; }
+    footer span { color: rgba(255, 255, 255, .55); font-size: 12px; letter-spacing: .14em; }
+
+    @media (max-width: 900px) {
+      .hero-logo { left: 20px; }
+      .narration-button { right: 16px; }
+      .intro-card, .care-layout, .video-layout { grid-template-columns: 1fr; }
+      .faq-grid, .script-grid { grid-template-columns: 1fr; }
+      .faq-card { min-height: 0; }
+      .video-layout { gap: 18px; }
+      .video-copy { order: 2; }
+      .video-frame { width: min(100%, 520px); margin: 0 auto; }
+    }
+
+    @media (max-width: 620px) {
+      .hero { min-height: 88vh; padding: 130px 20px 66px; }
+      .hero-logo { width: 118px; height: 66px; }
+      .hero h1 { font-size: clamp(48px, 14vw, 70px); }
+      .hero-subtitle { font-size: 14px; }
+      .page-shell { padding: 32px 18px 78px; }
+      .section { margin-top: 70px; }
+      .intro-card { gap: 22px; margin-top: -22px; padding: 30px 24px; border-radius: 27px; }
+      .section-heading { margin-bottom: 24px; }
+      .section-heading h2 { font-size: 28px; }
+      .faq-card { grid-template-columns: 38px 1fr; padding: 22px 19px; }
+      .fact-grid, .gallery-grid { grid-template-columns: 1fr; }
+      .fact-card { min-height: 170px; padding: 23px; }
+      .fact-card strong { font-size: clamp(34px, 10vw, 46px); }
+      .script-section { margin-inline: -2px; padding: 34px 21px; border-radius: 30px; }
+      .section-lead { margin-left: 0; }
+      .video-copy { padding: 27px 23px; }
+      .video-copy h3 { font-size: 28px; }
+    }
+
+    @media (max-width: 390px) {
+      .narration-button { width: 58px; grid-template-columns: 1fr; padding: 10px; border-radius: 50%; }
+      .narration-copy { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+      .hero { min-height: 84vh; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      * { transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <audio id="narration" src="assets/6010-natural-narration.mp3" preload="metadata"></audio>
+  <button class="narration-button" id="narrationButton" type="button" aria-label="播放全文朗读">
+    <span class="narration-icon" id="narrationIcon" aria-hidden="true">▶</span>
+    <span class="narration-copy">
+      <strong id="narrationTitle">播放全文</strong>
+      <small id="narrationStatus">点击听自然女声</small>
+    </span>
+    <span class="narration-progress" id="narrationProgress"></span>
+  </button>
+
+  <header class="hero">
+    <div class="hero-logo"><img src="assets/brand.jpg" alt="莱莎健康假发品牌标志"></div>
+    <div class="hero-inner">
+      <p class="eyebrow">LESHINE · PRODUCT 6010</p>
+      <h1>精致短发，<br>让美自然发生</h1>
+      <p class="hero-subtitle">真保鳞 · 真健康 · 自然有型</p>
+      <div class="hero-guide"><span>向下滑动查看详情</span><span aria-hidden="true">↓</span></div>
+    </div>
+  </header>
+
+  <main class="page-shell">
+    <section class="intro-card">
+      <div>
+        <p class="kicker">6010 产品详情</p>
+        <h2>知性干练，<br>也可以很温柔</h2>
+      </div>
+      <p>斜刘海搭配精致层次，修饰脸型与轮廓。这里汇集顾客常见问题、价格信息、洗护售后和店员讲解话术。点击页面右上角按钮，即可听取自然女声全文讲解。</p>
+    </section>
+
+    <section class="section" aria-labelledby="faqHeading">
+      <div class="section-heading"><span>01</span><h2 id="faqHeading">顾客常见问题</h2></div>
+      <div class="faq-grid">
+        <article class="faq-card"><div class="faq-number">01</div><div><h3>戴上去会不会很假？发际线真不真？</h3><p>短发最怕的就是“戴了顶帽子”的感觉。保鳞发的好处是发丝呈现自然质感，钩织按照真人头发生长方向完成，上头逼真，正常社交距离都看不出来。</p></div></article>
+        <article class="faq-card"><div class="faq-number">02</div><div><h3>戴着勒不勒？夏天热不热？</h3><p>发网采用轻薄进口网底，透气不闷汗，而且短发很凉快，不堆在脖子上，很清爽。夏天室外会有一点闷，但比戴帽子舒服得多，空调房里完全没问题。</p></div></article>
+        <article class="faq-card"><div class="faq-number">03</div><div><h3>我头围大或小，能戴吗？</h3><p>可以。我们会测量头围，根据您的头围大小进行定制。</p></div></article>
+        <article class="faq-card"><div class="faq-number">04</div><div><h3>会不会被风吹掉？</h3><p>不会。发网贴合头型，正常走路、骑车和遇到大风都没有问题。但游泳、洗澡、睡觉时需要摘下，这些场景不是为佩戴设计的。</p></div></article>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="priceHeading">
+      <div class="section-heading"><span>02</span><h2 id="priceHeading">价格与门店信息</h2></div>
+      <div class="fact-grid">
+        <article class="fact-card price"><span>建议零售价</span><strong><small>¥</small> 3,598–5,998</strong><p>最终价格以门店实际配置为准</p></article>
+        <article class="fact-card margin"><span>门店毛利</span><strong>70%–80%</strong><p>产品资料参考</p></article>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="careHeading">
+      <div class="section-heading"><span>03</span><h2 id="careHeading">洗护与售后</h2></div>
+      <div class="care-layout">
+        <div>
+          <p class="kicker">头套护理贴士</p>
+          <ol class="steps">
+            <li><span>1</span><p>将假发用40°C温水浸泡5分钟。</p></li>
+            <li><span>2</span><p>加入适量洗发水，采用按压方式清洗。</p></li>
+            <li><span>3</span><p>按压清洗干净后，换清水冲洗干净。</p></li>
+            <li><span>4</span><p>在清水中加入护发素，浸泡10分钟，再用清水冲洗干净。</p></li>
+            <li><span>5</span><p>用柔软的干毛巾轻轻按压假发，最后自然晾干。</p></li>
+          </ol>
+        </div>
+        <div class="after-list">
+          <article class="after-card"><div class="after-title"><span>01</span><h3>洗护手法</h3></div><p>建议回店洗护。头发具有方向性，错误手法容易损伤发质；如需自行清洗，请先认真学习教程。</p><p>禁用碱性洗发水。洗发水需要先起泡再轻按，并使用护发素闭合毛鳞片。</p><p>严禁揉搓、扭转或拧干。请用毛巾按压吸水，并用40°C温水顺向冲净。</p></article>
+          <article class="after-card"><div class="after-title"><span>02</span><h3>洗护频率</h3></div><p>出油、出汗较多时，建议1至2周清洗一次；日常佩戴可2至3周清洗一次。不脏不洗，减少损耗。</p></article>
+          <article class="after-card"><div class="after-title"><span>03</span><h3>梳理顺序</h3></div><p>从发尾开始，一点一点向上梳，最后梳理发根，绝对不要硬拽。</p></article>
+          <article class="after-card"><div class="after-title"><span>04</span><h3>佩戴与存放</h3></div><p>避油：佩戴前手上不要涂护手霜或精油。油脂沾上后难以洗净，也容易吸附灰尘。</p><p>避晒：不佩戴时请放在发架上，严禁暴晒，防止氧化。</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section script-section" aria-labelledby="scriptHeading">
+      <div class="section-heading"><span>04</span><h2 id="scriptHeading">店员讲解话术</h2></div>
+      <div class="script-grid">
+        <article class="script-card"><span class="script-label">开场</span><p>宋姐，您看这款6010——斜刘海加精致层次。斜刘海从额角斜切过去，把视线从颧骨引开，圆润的脸型一下子就有了立体感；层次感让整个轮廓看起来更修长，脸小了一圈，气场反而大了。您这种五官精致的，配上这种知性干练的短款，镜子里呈现出的感觉——不是换了发型，是换了状态。</p></article>
+        <article class="script-card"><span class="script-label">跟进</span><p>6010是一款短款精致层次设计，主打显脸小、显专业、显气质。选用22岁以下原生辫发，经过5道筛选；保鳞工艺不烫、不染、不酸洗，毛鳞片完整。佩戴8小时没有闷感、没有异味，质感如同自己长出来的一样。经过SGS认证，网料采用医用级亲肤材质——这一点很多顾客购买前没有想到，戴过之后都会感受到差别。</p></article>
+        <article class="script-card"><span class="script-label">异议解答</span><h3>短发会不会显得比较硬朗，不够温柔？</h3><p>这款恰好专门设计了弧度与层次，不是板直的硬短发。层次打出来之后线条是柔和的，斜刘海本身也有弧度，整体是知性干练中带着温柔，不是强硬路线。您试一下就知道，上头效果会和想象中不一样。</p></article>
+        <article class="script-card"><span class="script-label">异议解答</span><h3>3,000多元，有点贵，值吗？</h3><p>护肤品您用好的，衣服穿好的——每天贴着头皮8小时的产品，值得用挑选护肤品的标准对待。正常保养下，佩戴寿命为12至18个月，折算下来每天不到7元，还节省了每天打理头发的时间。买的不只是一顶发，更是出门就有好状态的底气——这个对您来说值不值，您比我更清楚。</p></article>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="detailHeading">
+      <div class="section-heading"><span>05</span><h2 id="detailHeading">细节近看</h2></div>
+      <p class="section-lead">细看自然走向、发缝过渡与发丝质感。</p>
+      <div class="gallery-grid">
+        <figure class="image-card"><img src="assets/hairline.jpg" alt="6010假发发际线近景" loading="lazy"><figcaption><span>01</span><strong>发际线近景</strong></figcaption></figure>
+        <figure class="image-card"><img src="assets/parting.jpg" alt="6010假发发缝近景" loading="lazy"><figcaption><span>02</span><strong>发缝近景</strong></figcaption></figure>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="videoHeading">
+      <div class="section-heading"><span>06</span><h2 id="videoHeading">真人发丝动态</h2></div>
+      <div class="video-layout">
+        <div class="video-copy"><h3>自然发丝，动态可见</h3><p>点击视频播放按钮，观看发丝在真实动态下的自然质感。视频不会自动播放，声音和进度都由您手动控制。</p></div>
+        <div class="video-frame">
+          <video controls playsinline preload="metadata" poster="assets/parting.jpg" aria-label="6010真人发丝动态视频">
+            <source src="assets/real-hair.mp4" type="video/mp4">
+            您的浏览器暂不支持视频播放。
+          </video>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <img src="assets/brand.jpg" alt="莱莎健康假发">
+    <p>真保鳞 · 真健康 · 让美真真真久</p>
+    <span>34年健康假发的坚守者</span>
+  </footer>
+
+  <script>
+    (function () {
+      const audio = document.getElementById('narration');
+      const button = document.getElementById('narrationButton');
+      const icon = document.getElementById('narrationIcon');
+      const title = document.getElementById('narrationTitle');
+      const status = document.getElementById('narrationStatus');
+      const progress = document.getElementById('narrationProgress');
+
+      function setPlaying(playing) {
+        button.classList.toggle('is-playing', playing);
+        button.setAttribute('aria-label', playing ? '暂停全文朗读' : '播放全文朗读');
+        icon.textContent = playing ? 'Ⅱ' : '▶';
+        title.textContent = playing ? '暂停朗读' : '播放全文';
+        status.textContent = playing ? '自然女声朗读中' : '点击听自然女声';
+      }
+
+      button.addEventListener('click', async function () {
+        if (audio.paused) {
+          try {
+            await audio.play();
+            setPlaying(true);
+          } catch (error) {
+            setPlaying(false);
+          }
+        } else {
+          audio.pause();
+          setPlaying(false);
+        }
+      });
+
+      audio.addEventListener('timeupdate', function () {
+        const percent = audio.duration ? (audio.currentTime / audio.duration) * 100 : 0;
+        progress.style.width = percent + '%';
+      });
+
+      audio.addEventListener('ended', function () {
+        progress.style.width = '0%';
+        setPlaying(false);
+      });
+    })();
+  </script>
+</body>
+</html>
