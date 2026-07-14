@@ -63,6 +63,30 @@ def seed_customers(db):
 @pytest.fixture
 def bound_user(db):
     """id=5 的方舟用户 stella，绑定 OKKI 账号 OKKI_UID"""
+    db.execute(text("""
+        CREATE TABLE IF NOT EXISTS lsordertest.okki_products (
+            product_id INTEGER PRIMARY KEY, product_no TEXT, name TEXT, model TEXT,
+            color TEXT, size TEXT, unit TEXT, disable_flag INTEGER
+        )
+    """))
+    db.execute(text("""
+        CREATE TABLE IF NOT EXISTS lsordertest.okki_inventory (
+            product_id INTEGER, sku_id INTEGER, disable_flag INTEGER
+        )
+    """))
+    db.execute(text("""
+        INSERT OR IGNORE INTO lsordertest.okki_products
+            (product_id, product_no, name, model, color, size, unit, disable_flag)
+        VALUES (1, 'P001', 'Raw Hair/18/#1/100g', '', '#1', '18', '100g', 0)
+    """))
+    exists = db.execute(text("""
+        SELECT 1 FROM lsordertest.okki_inventory WHERE product_id = 1 AND sku_id = 9001
+    """)).first()
+    if not exists:
+        db.execute(text("""
+            INSERT INTO lsordertest.okki_inventory (product_id, sku_id, disable_flag)
+            VALUES (1, 9001, 0)
+        """))
     user = ArkUser(id=5, username="stella", password_hash="x", real_name="Stella")
     db.add(user)
     db.add(ArkUserExternalBinding(

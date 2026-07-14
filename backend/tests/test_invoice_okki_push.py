@@ -8,6 +8,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from sqlalchemy import text
 
 from app.auth.models import ArkUser, ArkUserExternalBinding
 from app.invoice import okki_client, product_service, service, xiaoman_service
@@ -595,6 +596,7 @@ def test_merged_uid_removed_when_all_members_backfilled(db):
 
 
 def test_replace_items_carries_unique_id_and_accumulates_removed(db):
+    _seed_save_pairs(db)
     create_payload = InvoiceCreate(
         customer_id="123456",
         customer_name="Customer A",
@@ -690,6 +692,7 @@ def test_replace_items_carries_unique_id_and_accumulates_removed(db):
 
 
 def test_replace_items_duplicate_echoed_id_only_first_carries(db):
+    _seed_save_pairs(db)
     # 前端复制行若带上旧 id（或恶意请求），同一 unique_id 绝不能落到两行——
     # OKKI 编辑推单按 unique_id 锚定，两行同 ID 会互相覆盖且金额无声出错
     create_payload = InvoiceCreate(
@@ -731,3 +734,37 @@ def test_replace_items_duplicate_echoed_id_only_first_carries(db):
     assert invoice.items[1].xiaoman_unique_id is None
     # id 被回传（即使重复）不算删除，快照不应记录
     assert invoice.xiaoman_removed_lines is None
+
+
+def _seed_save_pairs(db):
+    db.execute(text("""
+        CREATE TABLE IF NOT EXISTS lsordertest.okki_products (
+            product_id INTEGER PRIMARY KEY, product_no TEXT, name TEXT, model TEXT,
+            color TEXT, size TEXT, unit TEXT, disable_flag INTEGER
+        )
+    """))
+    db.execute(text("""
+        CREATE TABLE IF NOT EXISTS lsordertest.okki_inventory (
+            product_id INTEGER, sku_id INTEGER, disable_flag INTEGER
+        )
+    """))
+    for product_id, sku_id, length in [(1, 9001, "18"), (2, 9002, "20"), (3, 9003, "22")]:
+        db.execute(text("""
+            INSERT OR IGNORE INTO lsordertest.okki_products
+                (product_id, product_no, name, model, color, size, unit, disable_flag)
+            VALUES (:product_id, :product_no, :name, '', '#1', :length, '100g', 0)
+        """), {
+            "product_id": product_id,
+            "product_no": f"P{product_id:03d}",
+            "name": f"Raw Hair/{length}/#1/100g",
+            "length": length,
+        })
+        exists = db.execute(text("""
+            SELECT 1 FROM lsordertest.okki_inventory
+            WHERE product_id = :product_id AND sku_id = :sku_id
+        """), {"product_id": product_id, "sku_id": sku_id}).first()
+        if not exists:
+            db.execute(text("""
+                INSERT INTO lsordertest.okki_inventory (product_id, sku_id, disable_flag)
+                VALUES (:product_id, :sku_id, 0)
+            """), {"product_id": product_id, "sku_id": sku_id})

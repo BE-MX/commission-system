@@ -7,6 +7,7 @@ from decimal import Decimal
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 
 from app.auth.utils import create_access_token
 from app.core.database import get_db
@@ -14,6 +15,33 @@ from app.invoice import service
 from app.invoice.models import Invoice  # noqa: F401 - register metadata
 from app.invoice.router import _can_read_all, _ensure_invoice_visible, _user_id
 from app.invoice.schemas import InvoiceCreate, InvoiceItemPayload
+
+
+@pytest.fixture(autouse=True)
+def seed_invoice_product_pair(db):
+    db.execute(text("""
+        CREATE TABLE IF NOT EXISTS lsordertest.okki_products (
+            product_id INTEGER PRIMARY KEY, product_no TEXT, name TEXT, model TEXT,
+            color TEXT, size TEXT, unit TEXT, disable_flag INTEGER
+        )
+    """))
+    db.execute(text("""
+        CREATE TABLE IF NOT EXISTS lsordertest.okki_inventory (
+            product_id INTEGER, sku_id INTEGER, disable_flag INTEGER
+        )
+    """))
+    db.execute(text("""
+        INSERT OR IGNORE INTO lsordertest.okki_products
+            (product_id, product_no, name, model, color, size, unit, disable_flag)
+        VALUES (1, 'P001', 'Raw Hair/18/#1/100g', '', '#1', '18', '100g', 0)
+    """))
+    if not db.execute(text("""
+        SELECT 1 FROM lsordertest.okki_inventory WHERE product_id = 1 AND sku_id = 9001
+    """)).first():
+        db.execute(text("""
+            INSERT INTO lsordertest.okki_inventory (product_id, sku_id, disable_flag)
+            VALUES (1, 9001, 0)
+        """))
 
 
 @contextmanager
