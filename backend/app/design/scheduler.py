@@ -30,6 +30,11 @@ async def check_today_shoot_reminders():
             DesignScheduleTask.plan_start_date == today,
         ).all()
 
+        # 按 request 聚合今天的排期任务：精确定位被指派设计师 + 展示实际排期日期
+        tasks_by_request: dict[int, list[DesignScheduleTask]] = {}
+        for task in scheduled_tasks:
+            tasks_by_request.setdefault(task.request_id, []).append(task)
+
         # 合并去重：以 request 为单位
         seen_ids = set()
         requests = []
@@ -49,11 +54,22 @@ async def check_today_shoot_reminders():
             return
 
         from app.auth.models import ArkUser
+        from app.design.models import DesignDesigner
         from app.design.notifications import _find_role_dingtalk_ids, _translate_dict_fields, _fmt_schedule_date, _get_designer_name
 
         design_ids = _find_role_dingtalk_ids(db, "design_staff")
 
+        # 被指派设计师的钉钉ID在 design_designer 表（与 design_staff 角色是两套独立名单，
+        # 设计师账号通常挂 designer 角色，不在 design_staff 广播名单里——必须按任务到人）
+        assigned_ids = {t.designer_id for t in scheduled_tasks}
+        designers_by_id = {
+            d.id: d
+            for d in db.query(DesignDesigner).filter(DesignDesigner.id.in_(assigned_ids)).all()
+        } if assigned_ids else {}
+
         for req in requests:
+            today_tasks = tasks_by_request.get(req.id, [])
+
             # 查申请人钉钉ID
             applicant_dingtalk_id = ""
             if req.salesperson_id:
@@ -61,17 +77,44 @@ async def check_today_shoot_reminders():
                 if applicant and applicant.dingtalk_id:
                     applicant_dingtalk_id = applicant.dingtalk_id
 
-            all_ids = list(set(([applicant_dingtalk_id] if applicant_dingtalk_id else []) + design_ids))
+            # 被指派设计师：排期任务的提醒必须直达本人，不依赖角色广播
+            designer_dingtalk_ids = []
+            designer_names = []
+            for t in today_tasks:
+                d = designers_by_id.get(t.designer_id)
+                if d is None:
+                    continue
+                designer_names.append(d.name)
+                if d.dingtalk_id:
+                    designer_dingtalk_ids.append(d.dingtalk_id)
+                else:
+                    msg = f"设计师 {d.name}(id={d.id}) 未绑定钉钉ID，今日排期提醒无法直达 (任务: {t.task_no})"
+                    logger.warning(msg)
+                    print(msg, flush=True)
+
+            designer_names = list(dict.fromkeys(designer_names))  # 同一设计师多任务去重
+            all_ids = list(set(
+                ([applicant_dingtalk_id] if applicant_dingtalk_id else [])
+                + design_ids + designer_dingtalk_ids
+            ))
             if not all_ids:
                 continue
 
             level_label, type_label, props_label = _translate_dict_fields(
                 db, req.customer_level or "", req.shoot_type or "", req.props_requirement or "",
             )
-            schedule_date = _fmt_schedule_date(
-                req.expect_start_date, req.expect_end_date,
-                req.expect_start_period, req.expect_end_period,
-            )
+            # 已排期任务展示任务的计划日期（预约单的期望日期可能早已过时）
+            if today_tasks:
+                t0 = today_tasks[0]
+                schedule_date = _fmt_schedule_date(
+                    t0.plan_start_date, t0.plan_end_date,
+                    t0.plan_start_period, t0.plan_end_period,
+                )
+            else:
+                schedule_date = _fmt_schedule_date(
+                    req.expect_start_date, req.expect_end_date,
+                    req.expect_start_period, req.expect_end_period,
+                )
             preferred_name = _get_designer_name(db, req.preferred_designer_id) or "随机分配"
 
             from app.dingtalk.work_notify import get_work_notifier
@@ -95,6 +138,7 @@ async def check_today_shoot_reminders():
                 priority=req.priority or "normal",
                 remark=req.remark or "",
                 preferred_designer=preferred_name,
+                extra_lines=[f"设计师：{'、'.join(designer_names)}"] if designer_names else None,
             )
 
             notifier = get_work_notifier()
@@ -107,6 +151,7 @@ async def check_today_shoot_reminders():
                 logger.info("拍摄提醒已发送: %s -> %s", req.request_no, all_ids)
             except Exception as e:
                 logger.warning("拍摄提醒发送失败 %s: %s", req.request_no, e)
+                print(f"拍摄提醒发送失败 {req.request_no}: {e}", flush=True)
     finally:
         db.close()
 
