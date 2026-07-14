@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "check": "vite build"
+    "check": "vite build",
+    "test:invoice-import": "node --test tests/invoicePasteImport.test.mjs"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.0",
