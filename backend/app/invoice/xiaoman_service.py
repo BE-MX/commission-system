@@ -153,7 +153,7 @@ def build_push_payload(
         issues.append({"field": "default_order_status", "message": "未配置默认订单状态：订单管理 → OKKI 推单设置"})
 
     # 业绩归属：业务员必须已绑定 OKKI 账号——管钱字段宁可失败也不静默归属 token 账号
-    okki_user_id = _resolve_okki_user_id(db, invoice.sales_user_id)
+    okki_user_id = resolve_okki_user_id(db, invoice.sales_user_id)
     if okki_user_id is None:
         who = invoice.sales_user_name or (f"ID {invoice.sales_user_id}" if invoice.sales_user_id else "未设置")
         issues.append({"field": "sales_user_id", "message": f"业务员（{who}）未绑定 OKKI 账号：系统管理 → 外部账号绑定"})
@@ -250,7 +250,8 @@ def _resolve_okki_department_id(db: Session, ark_user_id: int | None) -> int | N
     return int(user.okki_department_id)
 
 
-def _resolve_okki_user_id(db: Session, ark_user_id: int | None) -> int | None:
+def resolve_okki_user_id(db: Session, ark_user_id: int | None) -> int | None:
+    """方舟用户 → 绑定的 OKKI user_id（推单业绩归属 / 客户私海过滤共用）。"""
     if not ark_user_id:
         return None
     binding = (

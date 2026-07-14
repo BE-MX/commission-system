@@ -1,5 +1,6 @@
 """FastAPI router for order invoice management."""
 
+import logging
 from datetime import datetime
 from decimal import Decimal
 from urllib.parse import quote
@@ -7,6 +8,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_any_permission, require_permission
@@ -22,6 +24,8 @@ from app.invoice import (
     xiaoman_service,
 )
 from app.invoice.schemas import InvoiceCreate, InvoiceUpdate
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -66,14 +70,61 @@ def _ensure_invoice_visible(invoice, current_user) -> None:
 
 # ── customers / products ─────────────────────────────────────
 
+def _resolve_private_owner(db: Session, current_user) -> tuple[int | None, bool]:
+    """私海筛选的 owner：当前登录用户绑定的 OKKI 账号。
+
+    返回 (okki_user_id, okki_bound)：未绑定时无从判定私海，调用方返回空列表 +
+    okki_bound=False，前端据此提示去「系统管理 → 外部账号绑定」。
+    """
+    okki_user_id = xiaoman_service.resolve_okki_user_id(db, _user_id(current_user))
+    return okki_user_id, okki_user_id is not None
+
+
 @router.get("/customers/search", summary="Search invoice customers")
 def search_customers(
     keyword: str | None = Query(None),
+    private_only: bool = Query(False, description="仅显示私海客户（owner 含当前用户绑定的 OKKI 账号）"),
     limit: int = Query(20, ge=1, le=50),
     db: Session = Depends(get_db),
-    _user=Depends(_PRICE_PAGE_READ),
+    current_user=Depends(_PRICE_PAGE_READ),
 ):
-    return ok({"items": product_service.search_customers(db, keyword=keyword, limit=limit)})
+    owner_okki_id = None
+    payload: dict = {}
+    if private_only:
+        owner_okki_id, bound = _resolve_private_owner(db, current_user)
+        if not bound:
+            return ok({"items": [], "okki_bound": False})
+        # okki_bound 只随私海请求返回：非私海请求不知道绑定状态，回 True 会把
+        # 前端「未绑定」提示错误冲掉（对抗性审查 2026-07-14）
+        payload["okki_bound"] = True
+    payload["items"] = product_service.search_customers(
+        db, keyword=keyword, limit=limit, owner_okki_id=owner_okki_id,
+    )
+    return ok(payload)
+
+
+@router.get("/customers/contacts", summary="Search customers by contact name")
+def search_customer_contacts(
+    keyword: str | None = Query(None),
+    company_id: str | None = Query(None, max_length=64),
+    private_only: bool = Query(False),
+    limit: int = Query(20, ge=1, le=50),
+    db: Session = Depends(get_db),
+    # 联系人含邮箱/电话 PII，口径对齐 contact-defaults：录入场景专用
+    current_user=Depends(require_permission("invoice:write")),
+):
+    owner_okki_id = None
+    payload: dict = {}
+    if private_only:
+        owner_okki_id, bound = _resolve_private_owner(db, current_user)
+        if not bound:
+            return ok({"items": [], "okki_bound": False})
+        payload["okki_bound"] = True  # 同 search：非私海请求不返回该字段
+    payload["items"] = product_service.search_customer_contacts(
+        db, keyword=keyword, company_id=company_id,
+        owner_okki_id=owner_okki_id, limit=limit,
+    )
+    return ok(payload)
 
 
 @router.get("/customers/contact-defaults", summary="Latest contact snapshot for a customer")
@@ -429,14 +480,55 @@ def list_invoices(
     return ok({"total": total, "page": page, "page_size": page_size, "items": items})
 
 
+# 固定路径必须注册在 /invoices/{invoice_id} 之前（cerebrum 2026-05-20：路径参数吞噬）
+
+@router.get("/invoices/suggest-no", summary="Suggested invoice number for a new invoice")
+def suggest_invoice_no(
+    order_type: str = Query("stock", pattern="^(stock|production)$"),
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("invoice:write")),
+):
+    return ok({"invoice_no": service.suggest_invoice_no(db, _user_id(current_user), order_type)})
+
+
+@router.get("/invoices/check-no", summary="Check invoice number availability")
+def check_invoice_no(
+    invoice_no: str = Query(..., min_length=1, max_length=64),
+    exclude_id: int | None = Query(None, description="编辑既有发票时排除自身"),
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("invoice:write")),
+):
+    return ok({"available": not service.invoice_no_exists(db, invoice_no.strip(), exclude_id=exclude_id)})
+
+
+def _write_invoice_or_400(db: Session, write):
+    """执行发票写入（service 调用 + commit），业务校验失败与唯一约束竞态统一转 400。
+
+    IntegrityError 必须覆盖整个写入：service 末尾的 flush 就会把 INSERT/UPDATE
+    发往 DB，竞态冲突（预查通过后另一会话先落库）在 flush 处就抛，只包 commit 接不住。
+    """
+    try:
+        result = write()
+        db.commit()
+        return result
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except IntegrityError as exc:
+        db.rollback()  # flush/commit 失败必须 rollback，否则 session 污染（cerebrum 2026-05-26）
+        logger.warning("invoice 写入唯一约束冲突: %s", exc)
+        print(f"[invoice] integrity error on write: {exc}", flush=True)
+        raise HTTPException(400, "发票号已被占用（并发冲突），请修改后重试")
+
+
 @router.post("/invoices", summary="Create invoice", status_code=201)
 def create_invoice(
     body: InvoiceCreate,
     db: Session = Depends(get_db),
     current_user=Depends(require_permission("invoice:write")),
 ):
-    invoice = service.create_invoice(db, body, user_id=_user_id(current_user))
-    db.commit()
+    invoice = _write_invoice_or_400(
+        db, lambda: service.create_invoice(db, body, user_id=_user_id(current_user)),
+    )
     db.refresh(invoice)
     invoice = service.get_invoice(db, invoice.id)
     return ok(service.serialize_detail(invoice))
@@ -466,8 +558,9 @@ def update_invoice(
     if not invoice:
         raise HTTPException(404, "发票不存在")
     _ensure_invoice_visible(invoice, current_user)
-    invoice = service.update_invoice(db, invoice, body, user_id=_user_id(current_user))
-    db.commit()
+    invoice = _write_invoice_or_400(
+        db, lambda: service.update_invoice(db, invoice, body, user_id=_user_id(current_user)),
+    )
     invoice = service.get_invoice(db, invoice.id)
     return ok(service.serialize_detail(invoice))
 

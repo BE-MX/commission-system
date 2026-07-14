@@ -175,8 +175,14 @@ def get_invoice(db: Session, invoice_id: int, *, for_update: bool = False) -> In
 
 
 def create_invoice(db: Session, body: InvoiceCreate, user_id: int | None = None) -> Invoice:
+    invoice_no = (body.invoice_no or "").strip()
+    if invoice_no:
+        if invoice_no_exists(db, invoice_no):
+            raise ValueError(f"发票号 {invoice_no} 已存在，请更换")
+    else:
+        invoice_no = suggest_invoice_no(db, user_id, body.order_type)
     invoice = Invoice(
-        invoice_no=_next_invoice_no(db),
+        invoice_no=invoice_no,
         order_type=body.order_type,
         currency=body.currency or "USD",
         sales_user_id=user_id,
@@ -203,6 +209,12 @@ def create_invoice(db: Session, body: InvoiceCreate, user_id: int | None = None)
 
 
 def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: int | None = None) -> Invoice:
+    # 发票号开放编辑：空值=不改；改动需全库唯一（排除自身）
+    new_no = (body.invoice_no or "").strip()
+    if new_no and new_no != invoice.invoice_no:
+        if invoice_no_exists(db, new_no, exclude_id=invoice.id):
+            raise ValueError(f"发票号 {new_no} 已存在，请更换")
+        invoice.invoice_no = new_no
     for field in _HEADER_FIELDS:
         setattr(invoice, field, getattr(body, field))
     invoice.currency = body.currency or "USD"
@@ -296,6 +308,50 @@ def _custom_line_complete(payload) -> bool:
     return all(str(v or "").strip() for v in (
         payload.product_display, payload.color, payload.length, payload.net_weight_grams,
     ))
+
+
+_INVOICE_TYPE_CODES = {"stock": "KC", "production": "SC"}
+
+
+def invoice_no_exists(db: Session, invoice_no: str, exclude_id: int | None = None) -> bool:
+    query = db.query(Invoice.id).filter(Invoice.invoice_no == invoice_no)
+    if exclude_id is not None:
+        query = query.filter(Invoice.id != exclude_id)
+    return query.first() is not None
+
+
+def suggest_invoice_no(db: Session, user_id: int | None, order_type: str) -> str:
+    """默认发票号：{用户名}-{KC|SC}-{本月该前缀第几单}。
+
+    号内不含月份成分，跨月重置序号会撞全库唯一约束——默认号只是建议值，
+    先按当月同前缀最大序号 +1，再逐一顺延到全库不冲突为止（用户可手改）。
+    序号按前缀（=用户名+类型）而非 created_by 计数：号是用户可编辑的，
+    以号面前缀为准才能保证「同前缀序号连续」的直觉不被代开/改号打破。
+    """
+    user = db.get(ArkUser, user_id) if user_id else None
+    username = (user.username or "").strip() if user else ""
+    if not username:
+        return _next_invoice_no(db)  # 定位不到用户名（理论不可达）退回旧 INV 规则
+    type_code = _INVOICE_TYPE_CODES.get(order_type, "KC")
+    prefix = f"{username}-{type_code}-"
+    escaped = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    # created_at 存的是 utcnow（models 默认值）：「本月」按本地自然月起点换算到 UTC 存储系比较
+    now = datetime.now()
+    month_start = datetime(now.year, now.month, 1) - (datetime.now() - datetime.utcnow())
+    existing = db.execute(
+        select(Invoice.invoice_no)
+        .where(Invoice.invoice_no.like(f"{escaped}%", escape="\\"))
+        .where(Invoice.created_at >= month_start)
+    ).scalars().all()
+    seq = 0
+    for no in existing:
+        suffix = str(no)[len(prefix):]
+        if suffix.isdigit():
+            seq = max(seq, int(suffix))
+    seq += 1
+    while invoice_no_exists(db, f"{prefix}{seq}"):
+        seq += 1
+    return f"{prefix}{seq}"
 
 
 def _next_invoice_no(db: Session) -> str:

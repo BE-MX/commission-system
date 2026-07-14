@@ -50,18 +50,80 @@ def _product_display(product_name: str) -> str:
     return product_name.split("/", 1)[0].strip() or product_name
 
 
-def search_customers(db: Session, keyword: str | None = None, limit: int = 20) -> list[dict]:
+def _owner_filter_clause(db: Session, owner_okki_id: int, alias: str = "ci") -> tuple[str, dict]:
+    """私海过滤：owner_user_ids（JSON 数组，空数组=公海）包含指定 OKKI user_id。
+
+    SQLite（测试态）没有 JSON_CONTAINS，用 LIKE 子串近似——夹具值可控；
+    生产 MySQL 一律走 JSON_CONTAINS 精确匹配，不受子串误伤。
+    """
+    bind = db.get_bind()
+    if bind is not None and bind.dialect.name == "sqlite":
+        return f"{alias}.owner_user_ids LIKE :owner_like", {"owner_like": f"%{owner_okki_id}%"}
+    return f"JSON_CONTAINS({alias}.owner_user_ids, :owner_json)", {"owner_json": str(owner_okki_id)}
+
+
+def search_customers(
+    db: Session,
+    keyword: str | None = None,
+    limit: int = 20,
+    owner_okki_id: int | None = None,
+) -> list[dict]:
     schema = _schema()
     params: dict[str, object] = {"limit": min(max(limit, 1), 50)}
-    where = ""
+    clauses: list[str] = []
     if keyword:
-        where = "WHERE company_id LIKE :kw OR company_name LIKE :kw"
+        clauses.append("(ci.company_id LIKE :kw OR ci.company_name LIKE :kw)")
         params["kw"] = f"%{keyword}%"
+    if owner_okki_id is not None:
+        clause, extra = _owner_filter_clause(db, owner_okki_id)
+        clauses.append(clause)
+        params.update(extra)
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     rows = db.execute(text(f"""
-        SELECT company_id, company_name, country_name
-        FROM `{schema}`.customer_info
+        SELECT ci.company_id, ci.company_name, ci.country_name
+        FROM `{schema}`.customer_info ci
         {where}
-        ORDER BY company_name
+        ORDER BY ci.company_name
+        LIMIT :limit
+    """), params).mappings().all()
+    return [dict(row) for row in rows]
+
+
+def search_customer_contacts(
+    db: Session,
+    *,
+    keyword: str | None = None,
+    company_id: str | None = None,
+    owner_okki_id: int | None = None,
+    limit: int = 20,
+) -> list[dict]:
+    """联系人维度搜客户：customer_contacts JOIN customer_info（双筛选联动）。
+
+    company_id 给定时收敛到该客户名下（公司→联系人联动）；keyword 匹配联系人
+    姓名；owner_okki_id 私海口径与 search_customers 一致。返回带公司信息，
+    前端选中联系人即可反向定位客户。
+    """
+    schema = _schema()
+    params: dict[str, object] = {"limit": min(max(limit, 1), 50)}
+    clauses: list[str] = []
+    if keyword:
+        clauses.append("cc.name LIKE :kw")
+        params["kw"] = f"%{keyword}%"
+    if company_id:
+        clauses.append("cc.company_id = :company_id")
+        params["company_id"] = str(company_id)
+    if owner_okki_id is not None:
+        clause, extra = _owner_filter_clause(db, owner_okki_id)
+        clauses.append(clause)
+        params.update(extra)
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    rows = db.execute(text(f"""
+        SELECT cc.id AS contact_id, cc.name, cc.email, cc.tel, cc.is_main,
+               ci.company_id, ci.company_name, ci.country_name
+        FROM `{schema}`.customer_contacts cc
+        JOIN `{schema}`.customer_info ci ON ci.company_id = cc.company_id
+        {where}
+        ORDER BY cc.is_main DESC, cc.name
         LIMIT :limit
     """), params).mappings().all()
     return [dict(row) for row in rows]
