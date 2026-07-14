@@ -307,6 +307,18 @@
               <span v-else>四个关键词选择完整后自动匹配唯一 Product_name。</span>
             </div>
             <div class="line-header-actions">
+              <el-tooltip :disabled="canPasteImport" :content="pasteImportDisabledReason">
+                <span>
+                  <el-button
+                    v-permission="'invoice:write'"
+                    :disabled="!canPasteImport"
+                    @click="pasteImportVisible = true"
+                  >
+                    <el-icon><DocumentCopy /></el-icon>
+                    从 Excel 粘贴
+                  </el-button>
+                </span>
+              </el-tooltip>
               <el-button link type="primary" @click="showOptionalCols = !showOptionalCols">
                 <el-icon><component :is="showOptionalCols ? ArrowUp : ArrowDown" /></el-icon>
                 {{ showOptionalCols ? '收起选填列' : '展开选填列' }}
@@ -543,6 +555,16 @@
       </template>
     </el-drawer>
 
+    <InvoicePasteImport
+      v-model="pasteImportVisible"
+      :customer-id="form.customer_id"
+      :customer-name="form.customer_name"
+      :order-type="form.order_type"
+      :currency="form.currency"
+      :existing-items="form.items"
+      @append="appendPastedLines"
+    />
+
     <el-dialog v-model="syncLogsVisible" :title="syncLogsTitle" width="720px">
       <el-table v-loading="syncLogsLoading" :data="syncLogs" border class="list-table" max-height="420">
         <el-table-column label="时间" min-width="150" max-width="170" show-overflow-tooltip>
@@ -569,7 +591,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { ArrowDown, ArrowUp, Delete, Document, Download, Edit, Plus, Printer, Refresh, Search } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowUp, Delete, Document, DocumentCopy, Download, Edit, Plus, Printer, Refresh, Search } from '@element-plus/icons-vue'
 import { msgSuccess, confirmDanger } from '@/utils/feedback'
 import {
   deleteInvoice,
@@ -582,10 +604,12 @@ import {
   validateInvoice,
 } from '@/api/invoice'
 import { CURL_OPTIONS, contactLabel, customerLabel, describeCustomerRule, useInvoiceEditor } from './composables/useInvoiceEditor'
+import InvoicePasteImport from './components/InvoicePasteImport.vue'
 
 const loading = ref(false)
 const invoices = ref([])
 const showOptionalCols = ref(false)
+const pasteImportVisible = ref(false)
 const filters = reactive({ keyword: '', status: '', order_type: '' })
 const pagination = reactive({ page: 1, page_size: 20, total: 0 })
 
@@ -622,11 +646,29 @@ const {
   onCustomFieldChange,
   onPriceInput,
   updateLineTotal,
+  appendImportedLines,
   saveDraft,
   saveAndValidate,
   showIssues,
   markOkkiFlagTouched,
 } = useInvoiceEditor({ onSaved: () => loadInvoices() })
+
+const canPasteImport = computed(() => Boolean(form.customer_id && form.order_type && form.currency))
+const pasteImportDisabledReason = computed(() => {
+  const missing = []
+  if (!form.customer_id) missing.push('客户')
+  if (!form.order_type) missing.push('订单类型')
+  if (!form.currency) missing.push('币种')
+  return missing.length ? `请先选择${missing.join('、')}` : ''
+})
+
+function appendPastedLines({ rows, fingerprint }) {
+  if (!appendImportedLines(rows, fingerprint)) {
+    ElMessage.warning('这批数据已经加入当前发票')
+    return
+  }
+  ElMessage.success(`已加入 ${rows.length} 条产品明细，发票尚未保存`)
+}
 
 const drawerTitle = computed(() => {
   const typeLabel = form.order_type === 'production' ? '生产单' : '库存单'

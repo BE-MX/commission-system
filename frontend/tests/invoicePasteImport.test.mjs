@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 
 import {
   hasImportedBatch,
@@ -103,4 +104,36 @@ test('batch duplicate protection lasts only while a batch line remains', () => {
   const items = [{ _importBatchFingerprint: 'batch-1' }, { product_display: 'manual row' }]
   assert.equal(hasImportedBatch(items, 'batch-1'), true)
   assert.equal(hasImportedBatch(items.slice(1), 'batch-1'), false)
+})
+
+
+test('invoice editor exposes a contextual Excel paste entry and append-only integration', () => {
+  const view = readFileSync(new URL('../src/views/invoice/InvoiceManage.vue', import.meta.url), 'utf8')
+  const editor = readFileSync(new URL('../src/views/invoice/composables/useInvoiceEditor.js', import.meta.url), 'utf8')
+
+  assert.match(view, /InvoicePasteImport/)
+  assert.match(view, /从 Excel 粘贴/)
+  assert.match(view, /:disabled="!canPasteImport"/)
+  assert.match(view, /@append="appendPastedLines"/)
+  assert.match(editor, /function appendImportedLines/)
+  assert.match(editor, /_importBatchFingerprint/)
+  assert.match(editor, /preserveImportedPrice/)
+})
+
+
+test('paste import dialog keeps preview validation ahead of append', () => {
+  const component = readFileSync(
+    new URL('../src/views/invoice/components/InvoicePasteImport.vue', import.meta.url),
+    'utf8',
+  )
+  const api = readFileSync(new URL('../src/api/invoice.js', import.meta.url), 'utf8')
+
+  assert.match(api, /export function previewInvoiceImport/)
+  assert.match(component, /粘贴数据/)
+  assert.match(component, /校验与修正/)
+  assert.match(component, /完成/)
+  assert.match(component, /hasBlockedRows/)
+  assert.match(component, /locateStatus/)
+  assert.match(component, /加入当前发票/)
+  assert.match(component, /visible\.value = false/)
 })

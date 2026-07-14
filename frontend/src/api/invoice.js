@@ -40,6 +40,12 @@ export function getInvoiceEntryOptions() {
   return unwrap(request.get('/products/entry-options', { showLoading: false }))
 }
 
+export function previewInvoiceImport(data) {
+  return unwrap(request.post('/import/preview', data, {
+    loadingText: '正在校验导入明细...',
+  }))
+}
+
 export function listInvoices(params) {
   return unwrap(request.get('/invoices', { params, showLoading: false }))
 }

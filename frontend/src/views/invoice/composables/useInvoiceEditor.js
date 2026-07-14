@@ -17,6 +17,7 @@ import {
   validateInvoice,
 } from '@/api/invoice'
 import { useAuthStore } from '@/stores/auth'
+import { hasImportedBatch, mapPreviewRowToInvoiceLine } from './useInvoicePasteImport'
 
 export const CURL_OPTIONS = ['Straight', 'Body Wave', 'Deep Wave', 'Loose Wave', 'Kinky Curly', 'Water Wave']
 
@@ -115,6 +116,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
       price_per_piece: line.price_per_piece == null ? null : Number(line.price_per_piece),
       total_price: Number(line.total_price || 0),
       price_source: line.price_source || 'manual',
+      _importBatchFingerprint: line._importBatchFingerprint || '',
       options: { models: [], colors: [], sizes: [], units: [] },
       matching: false,
     }
@@ -443,9 +445,10 @@ export function useInvoiceEditor({ onSaved } = {}) {
     row.standard_price = res.standard_price == null ? null : Number(res.standard_price)
     row.customer_price = res.customer_price == null ? null : Number(res.customer_price)
     row.color_type_source = res.color_type_source || ''
+    const preserveImportedPrice = Boolean(row._importBatchFingerprint)
     if (row.customer_price != null) {
-      row.price_per_piece = row.customer_price
-      row.price_source = 'customer_rule'
+      if (!preserveImportedPrice) row.price_per_piece = row.customer_price
+      row.price_source = Number(row.price_per_piece) === row.customer_price ? 'customer_rule' : 'manual'
     } else {
       row.price_source = 'missing_std'
     }
@@ -462,6 +465,15 @@ export function useInvoiceEditor({ onSaved } = {}) {
   function updateLineTotal(row) {
     // 与后端 Decimal ROUND_HALF_UP 口径对齐，避免浮点差 1 分
     row.total_price = Math.round(Number(row.quantity || 0) * Number(row.price_per_piece || 0) * 100) / 100
+  }
+
+  function appendImportedLines(rows, batchFingerprint) {
+    if (hasImportedBatch(form.items, batchFingerprint)) return false
+    const lines = rows.map(row => normalizeLine(
+      mapPreviewRowToInvoiceLine(row, batchFingerprint, form.order_type),
+    ))
+    form.items.push(...lines)
+    return true
   }
 
   // ── 保存 ────────────────────────────────────────────
@@ -573,6 +585,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     onCustomFieldChange,
     onPriceInput,
     updateLineTotal,
+    appendImportedLines,
     saveDraft,
     saveAndValidate,
     showIssues,
