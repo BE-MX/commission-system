@@ -1,8 +1,10 @@
 """Standard pricing for accessories bound to active OKKI product/SKU rows."""
 
 from decimal import Decimal, ROUND_HALF_UP
+import logging
 
 from sqlalchemy import or_, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.invoice import price_service, product_service
@@ -10,20 +12,20 @@ from app.invoice.models import StdPrice
 
 
 _DISPLAY_MONEY = Decimal("0.01")
+logger = logging.getLogger(__name__)
+
+
+class AccessoryCatalogUnavailable(RuntimeError):
+    """The synchronized OKKI product catalog cannot safely serve requests."""
+
+
+_CATALOG_GUIDANCE = "配件目录暂不可用，请检查OKKI产品同步任务/同步表"
 
 
 def search_candidates(db: Session, keyword: str | None, limit: int = 50) -> list[dict]:
     """Return one active OKKI product/SKU candidate per SKU."""
-    product_columns = product_service._table_columns(db, "okki_products")
-    sku_columns = product_service._table_columns(db, "okki_product_skus")
-    required_product = {"product_id", "model", "color", "disable_flag"}
-    required_sku = {"product_id", "sku_id", "disable_flag"}
-    if not required_product.issubset(product_columns) or not required_sku.issubset(sku_columns):
-        return []
-
+    product_columns, _sku_columns = _catalog_columns(db)
     name_column = _name_column(product_columns)
-    if not name_column:
-        return []
 
     params: dict[str, object] = {"limit": min(max(int(limit), 1), 50)}
     keyword_clause = ""
@@ -144,13 +146,8 @@ def _name_column(columns: set[str]) -> str | None:
 
 
 def _load_active_snapshot(db: Session, product_id: int, sku_id: int) -> dict:
-    product_columns = product_service._table_columns(db, "okki_products")
-    sku_columns = product_service._table_columns(db, "okki_product_skus")
+    product_columns, _sku_columns = _catalog_columns(db)
     name_column = _name_column(product_columns)
-    if not name_column or not {"product_id", "model", "color", "disable_flag"}.issubset(product_columns):
-        raise ValueError("OKKI 产品表缺少必要字段，请联系管理员检查同步后重新选择")
-    if not {"product_id", "sku_id", "disable_flag"}.issubset(sku_columns):
-        raise ValueError("OKKI SKU 表缺少必要字段，请联系管理员检查同步后重新选择")
 
     schema = product_service._schema()
     product = db.execute(text(f"""
@@ -184,6 +181,34 @@ def _load_active_snapshot(db: Session, product_id: int, sku_id: int) -> dict:
     if missing:
         raise ValueError(f"OKKI 产品缺少 {'/'.join(missing)}，请修正产品资料后重新选择")
     return snapshot
+
+
+def _catalog_columns(db: Session) -> tuple[set[str], set[str]]:
+    try:
+        product_columns = product_service._table_columns(db, "okki_products")
+        sku_columns = product_service._table_columns(db, "okki_product_skus")
+    except SQLAlchemyError as exc:
+        message = f"OKKI配件目录同步表探测失败: {exc}"
+        logger.warning(message)
+        print(f"[invoice] {message}", flush=True)
+        raise AccessoryCatalogUnavailable(_CATALOG_GUIDANCE) from exc
+
+    required_product = {"product_id", "model", "color", "disable_flag"}
+    required_sku = {"product_id", "sku_id", "disable_flag"}
+    product_missing = required_product - product_columns
+    sku_missing = required_sku - sku_columns
+    if not _name_column(product_columns):
+        product_missing.add("name/product_name")
+    if product_missing or sku_missing:
+        message = (
+            "OKKI配件目录同步表缺少必要列: "
+            f"okki_products={sorted(product_missing)}, "
+            f"okki_product_skus={sorted(sku_missing)}"
+        )
+        logger.warning(message)
+        print(f"[invoice] {message}", flush=True)
+        raise AccessoryCatalogUnavailable(_CATALOG_GUIDANCE)
+    return product_columns, sku_columns
 
 
 def _serialize_price(row: StdPrice, rule) -> dict:

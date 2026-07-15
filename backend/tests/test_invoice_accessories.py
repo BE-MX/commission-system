@@ -10,8 +10,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 import pytest
-from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import event, text
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app.auth.utils import create_access_token
 from app.core.database import get_db
@@ -284,6 +284,21 @@ def test_accessory_price_payload_rejects_invalid_required_values(override, field
     assert exc_info.value.errors()[0]["loc"] == (field,)
 
 
+@pytest.mark.parametrize("price", [Decimal("1.23456"), Decimal("123456789.1234")])
+def test_accessory_price_payload_rejects_database_precision_overflow(price):
+    with pytest.raises(ValidationError) as exc_info:
+        schemas.AccessoryPricePayload(
+            product_id=REAL_PRODUCT_ID,
+            sku_id=REAL_SKU_ID,
+            accessory_name="Hair Gripper",
+            accessory_model="魔术贴",
+            accessory_color="Hair Gripper",
+            price=price,
+        )
+
+    assert exc_info.value.errors()[0]["loc"] == ("price",)
+
+
 # ── accessory standard pricing ───────────────────────────────
 
 REAL_PRODUCT_ID = 104881553777436
@@ -381,6 +396,46 @@ def _api_client(db, *, permissions):
 
 def test_accessory_price_service_module_exists():
     assert _accessory_price_service()
+
+
+def test_candidate_search_missing_catalog_tables_is_not_an_empty_result(db, caplog, capsys):
+    pricing = _accessory_price_service()
+    assert hasattr(pricing, "AccessoryCatalogUnavailable")
+
+    with pytest.raises(pricing.AccessoryCatalogUnavailable, match="同步任务|同步表"):
+        pricing.search_candidates(db, keyword=None)
+
+    assert "OKKI" in caplog.text
+    assert "OKKI" in capsys.readouterr().out
+
+
+def test_candidate_search_missing_required_columns_is_catalog_unavailable(db, caplog, capsys):
+    db.execute(text("CREATE TABLE lsordertest.okki_products (product_id INTEGER, name TEXT)"))
+    db.execute(text("CREATE TABLE lsordertest.okki_product_skus (product_id INTEGER, sku_id INTEGER)"))
+    pricing = _accessory_price_service()
+
+    with pytest.raises(pricing.AccessoryCatalogUnavailable, match="同步任务|同步表"):
+        pricing.search_candidates(db, keyword=None)
+
+    assert "缺少" in caplog.text
+    assert "缺少" in capsys.readouterr().out
+
+
+def test_catalog_column_probe_failure_is_wrapped_and_logged(db, monkeypatch, caplog, capsys):
+    from app.invoice import product_service
+
+    pricing = _accessory_price_service()
+
+    def fail_probe(_db, _table_name):
+        raise OperationalError("SHOW COLUMNS", {}, Exception("catalog offline"))
+
+    monkeypatch.setattr(product_service, "_table_columns", fail_probe)
+
+    with pytest.raises(pricing.AccessoryCatalogUnavailable, match="同步任务|同步表"):
+        pricing.search_candidates(db, keyword=None)
+
+    assert "探测" in caplog.text
+    assert "探测" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("keyword", ["Hair Gripper", "魔术贴", "Hair Gripper"])
@@ -617,14 +672,73 @@ def test_accessory_price_api_maps_actionable_business_errors(db):
     assert "配件价格" in missing.json()["detail"]
 
 
-def test_accessory_price_api_rolls_back_concurrent_duplicate(db, monkeypatch):
+def test_accessory_catalog_api_returns_actionable_503(db):
+    body = _payload().model_dump(mode="json")
+
+    with _api_client(db, permissions=["invoice_price:read"]) as client:
+        candidates = client.get("/api/invoice/price/accessory-candidates")
+    with _api_client(db, permissions=["invoice_price:write"]) as client:
+        saved = client.post("/api/invoice/price/accessories", json=body)
+
+    assert candidates.status_code == 503
+    assert saved.status_code == 503
+    assert "检查OKKI产品同步任务/同步表" in candidates.json()["detail"]
+    assert "检查OKKI产品同步任务/同步表" in saved.json()["detail"]
+
+
+@pytest.mark.parametrize("price", ["1.23456", "123456789.1234"])
+def test_accessory_price_api_rejects_database_precision_overflow(db, price):
+    body = _payload().model_dump(mode="json")
+    body["price"] = price
+
+    with _api_client(db, permissions=["invoice_price:write"]) as client:
+        response = client.post("/api/invoice/price/accessories", json=body)
+
+    assert response.status_code == 422
+
+
+def test_accessory_price_api_rolls_back_real_sqlite_duplicate(db):
+    _seed_accessory_candidates(db)
+    body = _payload().model_dump(mode="json")
+
+    def inject_competing_row(session, _flush_context, _instances):
+        session.connection().execute(text("""
+            INSERT INTO ark_std_prices
+            (product_kind, accessory_name, accessory_model, accessory_color,
+             product_id, sku_id, price, currency, created_at, updated_at)
+            VALUES
+            ('accessory', 'Concurrent Hair Gripper', '魔术贴', 'Hair Gripper',
+             :product_id, :sku_id, 10.0000, 'USD', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        """), {"product_id": REAL_PRODUCT_ID, "sku_id": REAL_SKU_ID})
+
+    event.listen(db, "before_flush", inject_competing_row, once=True)
+
+    with _api_client(db, permissions=["invoice_price:write"]) as client:
+        response = client.post("/api/invoice/price/accessories", json=body)
+
+    assert response.status_code == 400
+    assert "已配置" in response.json()["detail"]
+    assert db.query(StdPrice).filter_by(product_kind="accessory").count() == 0
+    assert db.execute(text("SELECT 1")).scalar_one() == 1
+
+
+@pytest.mark.parametrize(
+    "original_error",
+    [
+        Exception(1452, "Cannot add or update a child row"),
+        Exception(1062, "Duplicate entry for key 'some_other_constraint'"),
+    ],
+)
+def test_accessory_price_api_does_not_misreport_other_integrity_errors(
+    db, monkeypatch, caplog, capsys, original_error,
+):
     _seed_accessory_candidates(db)
     body = _payload().model_dump(mode="json")
     original_rollback = db.rollback
     rolled_back = {"value": False}
 
     def fail_commit():
-        raise IntegrityError("INSERT ark_std_prices", {}, Exception("duplicate"))
+        raise IntegrityError("INSERT ark_std_prices", {}, original_error)
 
     def track_rollback():
         rolled_back["value"] = True
@@ -636,6 +750,7 @@ def test_accessory_price_api_rolls_back_concurrent_duplicate(db, monkeypatch):
     with _api_client(db, permissions=["invoice_price:write"]) as client:
         response = client.post("/api/invoice/price/accessories", json=body)
 
-    assert response.status_code == 400
-    assert "已配置" in response.json()["detail"]
+    assert response.status_code == 500
     assert rolled_back["value"] is True
+    assert "完整性错误" in caplog.text
+    assert "integrity error" in capsys.readouterr().out

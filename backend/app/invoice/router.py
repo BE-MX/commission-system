@@ -218,7 +218,11 @@ def search_accessory_candidates(
     # Shared price-page read guard: require_any_permission is defined in _PRICE_PAGE_READ.
     _user=Depends(_PRICE_PAGE_READ),
 ):
-    return ok({"items": accessory_price_service.search_candidates(db, keyword=keyword)})
+    try:
+        items = accessory_price_service.search_candidates(db, keyword=keyword)
+    except accessory_price_service.AccessoryCatalogUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+    return ok({"items": items})
 
 
 @router.get("/price/accessories", summary="List accessory standard prices")
@@ -246,17 +250,40 @@ def upsert_accessory_price(
     try:
         row = accessory_price_service.upsert_price(db, body, _user_id(current_user))
         db.commit()
+    except accessory_price_service.AccessoryCatalogUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     except IntegrityError as exc:
         db.rollback()
-        logger.warning("配件标准价产品/SKU 唯一约束冲突: %s", exc)
-        print(f"[invoice] accessory price duplicate: {exc}", flush=True)
-        raise HTTPException(
-            400,
-            "该 OKKI 产品/SKU 已配置配件标准价，请刷新列表后编辑现有记录",
-        ) from exc
+        if _is_accessory_price_duplicate(exc):
+            logger.warning("配件标准价产品/SKU 唯一约束冲突: %s", exc)
+            print(f"[invoice] accessory price duplicate: {exc}", flush=True)
+            raise HTTPException(
+                400,
+                "该 OKKI 产品/SKU 已配置配件标准价，请刷新列表后编辑现有记录",
+            ) from exc
+        logger.warning("配件标准价写入完整性错误: %s", exc)
+        print(f"[invoice] accessory price integrity error: {exc}", flush=True)
+        raise
     return ok({"id": row.id}, message="已保存")
+
+
+def _is_accessory_price_duplicate(exc: IntegrityError) -> bool:
+    original = exc.orig
+    args = getattr(original, "args", ())
+    message = " ".join(str(part) for part in args) or str(original)
+    if args and args[0] == 1062:
+        return "uq_ark_std_accessory_sku" in message
+    sqlite_message = str(original).lower()
+    return "unique constraint failed" in sqlite_message and all(
+        column in sqlite_message
+        for column in (
+            "ark_std_prices.product_kind",
+            "ark_std_prices.product_id",
+            "ark_std_prices.sku_id",
+        )
+    )
 
 
 @router.delete("/price/accessories/{price_id}", summary="Delete an accessory standard price")

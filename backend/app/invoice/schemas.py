@@ -103,7 +103,7 @@ class AccessoryPricePayload(BaseModel):
     accessory_name: str = Field(..., min_length=1, max_length=256)
     accessory_model: str = Field(..., min_length=1, max_length=128)
     accessory_color: str = Field(..., min_length=1, max_length=128)
-    price: Decimal = Field(..., ge=0)
+    price: Decimal = Field(..., ge=0, max_digits=12, decimal_places=4)
     currency: str = Field(default="USD", pattern="^[A-Z]{3}$")
 
 
