@@ -6,11 +6,12 @@
         <p>标准参考价矩阵、色型映射、客户价格规则与生产单沉淀产品管理。</p>
       </div>
     </div>
-
     <section class="table-card">
       <el-tabs v-model="activeTab">
         <!-- ── 标准价格表 ── -->
         <el-tab-pane label="标准价格表" name="std">
+          <el-tabs v-model="activePriceKind">
+            <el-tab-pane label="头发价格" name="hair">
           <div class="tab-toolbar">
             <el-select v-model="stdFilter" clearable filterable placeholder="按系列筛选" style="width: 320px" @change="loadStdPrices">
               <el-option v-for="s in stdSeriesOptions" :key="s" :label="s" :value="s" />
@@ -52,8 +53,12 @@
               </template>
             </el-table-column>
           </el-table>
+            </el-tab-pane>
+            <el-tab-pane label="配件价格" name="accessory" lazy>
+              <AccessoryPriceConfig />
+            </el-tab-pane>
+          </el-tabs>
         </el-tab-pane>
-
         <!-- ── 色型映射 ── -->
         <el-tab-pane label="色型映射" name="colors">
           <div class="tab-toolbar">
@@ -80,7 +85,6 @@
             </el-table-column>
           </el-table>
         </el-tab-pane>
-
         <!-- ── 客户价格规则 ── -->
         <el-tab-pane label="客户价格规则" name="rules">
           <div class="tab-toolbar">
@@ -122,7 +126,6 @@
             </el-table-column>
           </el-table>
         </el-tab-pane>
-
         <!-- ── 自定义产品 ── -->
         <el-tab-pane label="生产单沉淀产品" name="custom">
           <div class="tab-toolbar">
@@ -153,7 +156,6 @@
         </el-tab-pane>
       </el-tabs>
     </section>
-
     <!-- 标准价编辑 -->
     <el-dialog v-model="stdDialog.visible" :title="stdDialog.form.id ? '编辑标准价' : '新增标准价'" width="520px">
       <el-form :model="stdDialog.form" label-width="110px">
@@ -182,7 +184,6 @@
         <el-button type="primary" @click="saveStd">保存</el-button>
       </template>
     </el-dialog>
-
     <!-- 色型映射新增 -->
     <el-dialog v-model="colorDialog.visible" title="新增色型映射" width="420px">
       <el-form :model="colorDialog.form" label-width="90px">
@@ -200,7 +201,6 @@
         <el-button type="primary" @click="saveColor">保存</el-button>
       </template>
     </el-dialog>
-
     <!-- 客户规则编辑 -->
     <el-dialog v-model="ruleDialog.visible" :title="ruleDialog.form.id ? '编辑客户价格规则' : '新增客户价格规则'" width="520px">
       <el-form :model="ruleDialog.form" label-width="110px">
@@ -249,13 +249,13 @@
     </el-dialog>
   </div>
 </template>
-
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Delete, Edit, Plus, Refresh, Search, Upload } from '@element-plus/icons-vue'
 import { msgSuccess, confirmDanger } from '@/utils/feedback'
 import { customerLabel } from './composables/useInvoiceEditor'
+import AccessoryPriceConfig from './components/AccessoryPriceConfig.vue'
 import {
   deleteColorType,
   deleteCustomerRule,
@@ -271,23 +271,19 @@ import {
   upsertCustomerRule,
   upsertStdPrice,
 } from '@/api/invoice'
-
 const COLOR_TYPE_TEXT = { solid: '纯色 Solid', piano: '钢琴色 Piano', ombre: '渐变 Ombre', balayage: '巴拉雅奇 Balayage' }
-
 const activeTab = ref('std')
-
+const activePriceKind = ref('hair')
 // 标准价
 const stdLoading = ref(false)
 const stdPrices = ref([])
 const stdFilter = ref('')
 const stdDialog = reactive({ visible: false, form: emptyStd() })
 const stdSeriesOptions = computed(() => [...new Set(stdPrices.value.map(r => r.series_grade))])
-
 // 色型
 const colorLoading = ref(false)
 const colorTypes = ref([])
 const colorDialog = reactive({ visible: false, form: { color_code: '', color_type: 'solid' } })
-
 // 客户规则
 const ruleLoading = ref(false)
 const rules = ref([])
@@ -295,31 +291,25 @@ const ruleKeyword = ref('')
 const ruleCustomerLoading = ref(false)
 const ruleCustomerOptions = ref([])
 const ruleDialog = reactive({ visible: false, customer: null, form: emptyRule() })
-
 // 自定义产品
 const customLoading = ref(false)
 const customProducts = ref([])
 const customKeyword = ref('')
-
 onMounted(() => {
   loadStdPrices()
   loadColorTypes()
   loadRules()
   loadCustom()
 })
-
 function emptyStd() {
   return { id: null, series_grade: '', length: '', weight_unit: '', color_type: 'solid', price: null, currency: 'USD' }
 }
-
 function emptyRule() {
   return { id: null, customer_id: '', customer_name: '', adjust_type: 'fixed', adjust_value: 0, enabled: true, remark: '' }
 }
-
 function colorTypeText(key) {
   return COLOR_TYPE_TEXT[key] || key
 }
-
 function ruleText(row) {
   const sign = Number(row.adjust_value) >= 0 ? '+' : ''
   return row.adjust_type === 'percent'
@@ -338,14 +328,12 @@ async function loadStdPrices() {
     stdLoading.value = false
   }
 }
-
 function openStdDialog(row) {
   stdDialog.form = row
     ? { ...row, price: Number(row.price) }
     : emptyStd()
   stdDialog.visible = true
 }
-
 async function saveStd() {
   const f = stdDialog.form
   if (!f.series_grade || !f.length || !f.weight_unit || f.price == null) {
@@ -357,14 +345,12 @@ async function saveStd() {
   msgSuccess('保存')
   loadStdPrices()
 }
-
 async function removeStd(row) {
   await confirmDanger('删除', `${row.series_grade} ${row.length}/${row.weight_unit} 的标准价`)
   await deleteStdPrice(row.id)
   msgSuccess('删除')
   loadStdPrices()
 }
-
 async function handleImport({ file }) {
   const formData = new FormData()
   formData.append('file', file)
@@ -385,7 +371,6 @@ async function loadColorTypes() {
     colorLoading.value = false
   }
 }
-
 async function saveColor() {
   if (!colorDialog.form.color_code) {
     ElMessage.warning('请输入色号')
@@ -397,7 +382,6 @@ async function saveColor() {
   msgSuccess('保存')
   loadColorTypes()
 }
-
 async function removeColor(row) {
   await confirmDanger('删除', `色号 ${row.color_code} 的映射`)
   await deleteColorType(row.id)
@@ -416,7 +400,6 @@ async function loadRules() {
     ruleLoading.value = false
   }
 }
-
 async function searchRuleCustomers(keyword) {
   ruleCustomerLoading.value = true
   try {
@@ -426,12 +409,10 @@ async function searchRuleCustomers(keyword) {
     ruleCustomerLoading.value = false
   }
 }
-
 function onRuleCustomerChange(customer) {
   ruleDialog.form.customer_id = customer?.company_id == null ? '' : String(customer.company_id)
   ruleDialog.form.customer_name = customer?.company_name || ''
 }
-
 function openRuleDialog(row) {
   ruleDialog.form = row
     ? { ...row, adjust_value: Number(row.adjust_value), enabled: !!row.enabled }
@@ -440,7 +421,6 @@ function openRuleDialog(row) {
   ruleDialog.visible = true
   searchRuleCustomers('')
 }
-
 async function saveRule() {
   const f = ruleDialog.form
   if (!f.customer_id) {
@@ -452,7 +432,6 @@ async function saveRule() {
   msgSuccess('保存')
   loadRules()
 }
-
 async function removeRule(row) {
   await confirmDanger('删除', `${row.customer_name || row.customer_id} 的价格规则`)
   await deleteCustomerRule(row.id)
@@ -471,59 +450,50 @@ async function loadCustom() {
     customLoading.value = false
   }
 }
-
 async function runReconcile() {
   const result = await reconcileCustomProducts()
   ElMessage.success(`对账完成：检查 ${result.checked} 条，回填 ${result.linked} 条`)
   loadCustom()
 }
 </script>
-
 <style scoped>
 .price-config-page {
   padding: 24px 28px;
 }
-
 .page-header h2 {
   margin: 0 0 6px;
   font-family: var(--font-display);
   font-size: 17px;
   font-weight: 700;
 }
-
 .page-header p {
   margin: 0 0 18px;
   font-size: 14px;
   color: var(--text-secondary, #4a5568);
 }
-
 .table-card {
   padding: 4px 16px 16px;
   border: 1px solid var(--border-color, #e2e5ef);
   border-radius: 12px;
   background: var(--card-bg, #ffffff);
 }
-
 .tab-toolbar {
   display: flex;
   align-items: center;
   gap: 10px;
   margin-bottom: 12px;
 }
-
 .tab-toolbar .hint {
   flex: 1;
   color: var(--text-muted, #a0aec0);
   font-size: 13px;
 }
-
 .dialog-hint {
   margin-top: 4px;
   color: var(--text-muted, #a0aec0);
   font-size: 12px;
   line-height: 1.5;
 }
-
 .list-table {
   width: 100%;
 }
