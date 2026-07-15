@@ -11,7 +11,7 @@ from app.invoice import price_service, product_service
 from app.invoice.models import StdPrice
 
 
-_DISPLAY_MONEY = Decimal("0.01")
+_API_MONEY = Decimal("0.0001")
 logger = logging.getLogger(__name__)
 
 
@@ -78,53 +78,32 @@ def list_prices(
             StdPrice.accessory_model.like(like),
             StdPrice.accessory_color.like(like),
         ))
-    rows = query.order_by(StdPrice.accessory_name, StdPrice.accessory_model, StdPrice.id).all()
     if active_only:
-        active_identities = _load_active_identities(db, rows)
-        rows = [
-            row for row in rows
-            if row.product_id is not None
-            and row.sku_id is not None
-            and (int(row.product_id), int(row.sku_id)) in active_identities
-        ]
-    rule = price_service.get_customer_rule_row(db, customer_id) if customer_id else None
-    return [_serialize_price(row, rule) for row in rows]
-
-
-def _load_active_identities(db: Session, rows: list[StdPrice]) -> set[tuple[int, int]]:
-    """Return configured identities that still map to active OKKI product/SKU rows."""
-    _catalog_columns(db)
-    identities = [
-        (int(row.product_id), int(row.sku_id))
-        for row in rows
-        if row.product_id is not None and row.sku_id is not None
-    ]
-    if not identities:
-        return set()
-
-    params: dict[str, int] = {}
-    pairs: list[str] = []
-    for index, (product_id, sku_id) in enumerate(identities):
-        params[f"product_{index}"] = product_id
-        params[f"sku_{index}"] = sku_id
-        pairs.append(f"(:product_{index}, :sku_{index})")
-
-    schema = product_service._schema()
+        _catalog_columns(db)
+        schema = product_service._schema()
+        query = query.filter(text(f"""
+            EXISTS (
+                SELECT 1
+                FROM `{schema}`.okki_products p
+                JOIN `{schema}`.okki_product_skus s
+                  ON s.product_id = p.product_id
+                 AND s.sku_id = ark_std_prices.sku_id
+                 AND s.disable_flag = 0
+                WHERE p.product_id = ark_std_prices.product_id
+                  AND p.disable_flag = 0
+            )
+        """))
     try:
-        result = db.execute(text(f"""
-            SELECT p.product_id, s.sku_id
-            FROM `{schema}`.okki_products p
-            JOIN `{schema}`.okki_product_skus s ON s.product_id = p.product_id
-            WHERE p.disable_flag = 0
-              AND s.disable_flag = 0
-              AND (p.product_id, s.sku_id) IN ({', '.join(pairs)})
-        """), params).all()
+        rows = query.order_by(StdPrice.accessory_name, StdPrice.accessory_model, StdPrice.id).all()
     except SQLAlchemyError as exc:
+        if not active_only:
+            raise
         message = f"OKKI配件目录活跃产品查询失败: {exc}"
         logger.warning(message)
         print(f"[invoice] {message}", flush=True)
         raise AccessoryCatalogUnavailable(_CATALOG_GUIDANCE) from exc
-    return {(int(row[0]), int(row[1])) for row in result}
+    rule = price_service.get_customer_rule_row(db, customer_id) if customer_id else None
+    return [_serialize_price(row, rule) for row in rows]
 
 
 def upsert_price(db: Session, payload, user_id: int | None) -> StdPrice:
@@ -323,8 +302,8 @@ def _serialize_price(row: StdPrice, rule) -> dict:
         "accessory_name": row.accessory_name,
         "accessory_model": row.accessory_model,
         "accessory_color": row.accessory_color,
-        "standard_price": standard_price.quantize(_DISPLAY_MONEY, rounding=ROUND_HALF_UP),
-        "customer_price": customer_price.quantize(_DISPLAY_MONEY, rounding=ROUND_HALF_UP),
+        "standard_price": standard_price.quantize(_API_MONEY, rounding=ROUND_HALF_UP),
+        "customer_price": customer_price.quantize(_API_MONEY, rounding=ROUND_HALF_UP),
         "currency": row.currency,
         "updated_at": row.updated_at,
     }

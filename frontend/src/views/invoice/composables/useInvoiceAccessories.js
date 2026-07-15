@@ -4,9 +4,11 @@ import { listAccessoryPrices } from '@/api/invoice'
 import {
   accessoryDiscount,
   accessoryGross,
+  applyAccessorySelection,
   normalizeAccessoryRow,
   calculateAccessoryTotal,
   createLatestRequestGate,
+  removeItemByReference,
 } from './accessoryPricing.js'
 import { normalizeDiscount, sumLineDiscount, sumLineGross } from './invoiceSettlement.js'
 
@@ -32,6 +34,7 @@ export function useInvoiceAccessories(form) {
   async function searchAccessoryOptions(keyword = '') {
     const customerId = form.customer_id || ''
     const token = searchGate.issue(customerId)
+    accessoryOptions.value = []
     accessoryLoading.value = true
     try {
       const result = await listAccessoryPrices({
@@ -45,6 +48,8 @@ export function useInvoiceAccessories(form) {
         customer_price: customerId ? option.customer_price : null,
         _customer_id: customerId,
       }))
+    } catch {
+      if (searchGate.isCurrent(token, form.customer_id || '')) accessoryOptions.value = []
     } finally {
       if (searchGate.isCurrent(token, form.customer_id || '')) accessoryLoading.value = false
     }
@@ -55,24 +60,13 @@ export function useInvoiceAccessories(form) {
   }
 
   function selectAccessory(row, option) {
-    if (!option) return
-    if (option._customer_id == null || String(option._customer_id) !== String(form.customer_id || '')) {
+    if (!applyAccessorySelection(row, option, form.customer_id)) {
       ElMessage.warning('客户已变化，请重新搜索并选择配件')
-      return
     }
-    const id = row.id
-    Object.assign(row, normalizeAccessoryRow({
-      ...option,
-      id,
-      quantity: row.quantity,
-      discount_amount: row.discount_amount,
-      customer_price: form.customer_id ? option.customer_price : null,
-    }))
   }
 
   function removeAccessory(row) {
-    const index = form.items.indexOf(row)
-    if (index >= 0) form.items.splice(index, 1)
+    removeItemByReference(form.items, row)
   }
 
   function updateAccessoryTotal(row) {

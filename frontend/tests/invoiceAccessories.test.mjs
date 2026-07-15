@@ -5,8 +5,10 @@ import {
   accessoryDiscount,
   accessoryGross,
   accessoryNet,
+  applyAccessorySelection,
   createLatestRequestGate,
   normalizeAccessoryRow,
+  removeItemByReference,
 } from '../src/views/invoice/composables/accessoryPricing.js'
 import { buildInvoicePayload } from '../src/views/invoice/composables/invoiceEditorState.js'
 import {
@@ -90,6 +92,47 @@ test('accessory money rounds the extended row amount instead of rounding four-de
   assert.equal(accessoryNet(rows), 27.55)
 })
 
+test('four-decimal customer price becomes the default transaction price without a manual marker', () => {
+  const row = normalizeAccessoryRow({
+    product_id: 1,
+    sku_id: 2,
+    accessory_name: 'Hair Gripper',
+    standard_price: '12.3500',
+    customer_price: '13.5850',
+    quantity: 10,
+  })
+  assert.equal(row.standard_price, 12.35)
+  assert.equal(row.customer_price, 13.585)
+  assert.equal(row.price_per_piece, 13.585)
+  assert.equal(row.total_price, 135.85)
+  assert.equal(row.price_source, 'customer_rule')
+})
+
+test('selection validates customer context and deletion removes the exact row object from payload', () => {
+  const hair = { id: 1, product_kind: 'hair', quantity: 1, price_per_piece: 10 }
+  const accessory = normalizeAccessoryRow({ id: 2, quantity: 10 })
+  const other = normalizeAccessoryRow({ id: 3, quantity: 1 })
+  const items = [hair, accessory, other]
+  const option = {
+    _customer_id: 'C-2', product_id: 11, sku_id: 22,
+    accessory_name: 'Hair Gripper', accessory_model: 'Tape', accessory_color: 'Black',
+    standard_price: '12.3500', customer_price: '13.5850',
+  }
+
+  assert.equal(applyAccessorySelection(accessory, option, 'C-1'), false)
+  assert.equal(accessory.product_id, null)
+  assert.equal(applyAccessorySelection(accessory, option, 'C-2'), true)
+  assert.equal(accessory.total_price, 135.85)
+  assert.equal(accessory.price_source, 'customer_rule')
+  assert.equal(removeItemByReference(items, accessory), true)
+  assert.deepEqual(items.map(row => row.id), [1, 3])
+  const payload = buildInvoicePayload({
+    customer_id: 'C-2', customer_name: 'Customer', invoice_date: '2026-07-15',
+    currency: 'USD', order_type: 'stock', items,
+  }, 0)
+  assert.deepEqual(payload.items.map(row => row.id), [1, 3])
+})
+
 test('hair and accessory summaries share per-line currency rounding and settlement payload totals', () => {
   const hair = [
     { quantity: 1, price_per_piece: 10.005, discount_amount: -0.01 },
@@ -158,8 +201,10 @@ test('changing customer immediately clears accessory options and rejects stale c
   assert.match(invalidation, /accessoryOptions\.value = \[\]/)
   assert.match(invalidation, /accessoryLoading\.value = false/)
   assert.match(accessoryState, /_customer_id: customerId/)
-  assert.match(accessoryState, /String\(option\._customer_id\) !== String\(form\.customer_id \|\| ''\)/)
+  assert.match(accessoryState, /applyAccessorySelection\(row, option, form\.customer_id\)/)
   assert.match(invoiceEditor, /form\.customer_name = customer\?\.company_name \|\| ''\s*\n\s*accessories\.invalidateCustomerContext\(\)/)
+  assert.match(accessoryState, /const token = searchGate\.issue\(customerId\)\s*\n\s*accessoryOptions\.value = \[\]/)
+  assert.match(accessoryState, /catch\s*{[\s\S]*searchGate\.isCurrent\(token,[\s\S]*accessoryOptions\.value = \[\]/)
 })
 
 test('invoice accessory lookups request active catalog rows without changing price configuration history', () => {
@@ -179,6 +224,8 @@ test('invoice accessory entry exposes only configured real-identity columns', ()
   assert.match(accessoryTable, /readonly/)
   assert.match(accessoryTable, /product_id/)
   assert.match(accessoryTable, /sku_id/)
+  assert.doesNotMatch(accessoryTable, /\bclearable\b/)
+  assert.match(accessoryTable, /\.accessory-line-table :deep\(\.el-input-number\)[^}]*width:\s*100%/s)
 })
 
 test('invoice editor splits and recombines hair and accessory items', () => {

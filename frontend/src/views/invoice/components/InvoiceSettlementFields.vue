@@ -73,6 +73,7 @@ defineProps({
 .head-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0 16px; align-items: start; }
 .span-1 { grid-column: span 1; } .span-2 { grid-column: span 2; }
 .head-grid :deep(.el-form-item__content) { width: 100%; min-width: 0; max-width: 360px; }
+.head-grid :deep(.el-input-number) { width: 100%; }
 .span-1 :deep(.el-form-item__content) { max-width: 180px; }
 .calculated-amount :deep(.el-input__wrapper) { background: var(--table-header-bg); }
 .calculated-amount :deep(.el-input__inner), .negative-field :deep(input) { font-variant-numeric: tabular-nums; }

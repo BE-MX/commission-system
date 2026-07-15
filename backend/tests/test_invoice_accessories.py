@@ -794,11 +794,11 @@ def test_accessory_list_filters_kind_keyword_and_applies_customer_rules(db):
     missing = pricing.list_prices(db, customer_id="NO-RULE")
 
     assert [item["id"] for item in no_rule] == [accessory.id]
-    assert no_rule[0]["standard_price"] == Decimal("12.35")
-    assert no_rule[0]["customer_price"] == Decimal("12.35")
-    assert fixed[0]["customer_price"] == Decimal("13.58")
-    assert percent[0]["customer_price"] == Decimal("13.58")
-    assert missing[0]["customer_price"] == Decimal("12.35")
+    assert no_rule[0]["standard_price"] == Decimal("12.3456")
+    assert no_rule[0]["customer_price"] == Decimal("12.3456")
+    assert fixed[0]["customer_price"] == Decimal("13.5801")
+    assert percent[0]["customer_price"] == Decimal("13.5802")
+    assert missing[0]["customer_price"] == Decimal("12.3456")
     assert no_rule[0]["currency"] == "USD"
     assert db.get(StdPrice, accessory.id).price == Decimal("12.3456")
 
@@ -842,7 +842,32 @@ def test_accessory_price_read_api_uses_price_page_permission_and_ok_envelope(db)
         assert client.get("/api/invoice/price/accessories").status_code == 403
 
 
-def test_accessory_price_list_keeps_history_by_default_and_filters_inactive_for_invoice(db):
+def test_accessory_price_api_preserves_four_decimal_customer_rule_for_invoice(db):
+    _seed_accessory_okki_product(db)
+    row = _accessory_std_price(db)
+    row.price = Decimal("12.3500")
+    db.add(CustomerPriceRule(
+        customer_id="PERCENT-4DP",
+        adjust_type="percent",
+        adjust_value=Decimal("10.0000"),
+        enabled=1,
+    ))
+    db.flush()
+
+    with _api_client(db, permissions=["invoice_price:read"]) as client:
+        response = client.get("/api/invoice/price/accessories", params={
+            "customer_id": "PERCENT-4DP",
+            "active_only": "true",
+        })
+
+    assert response.status_code == 200
+    item = response.json()["data"]["items"][0]
+    assert Decimal(str(item["standard_price"])) == Decimal("12.3500")
+    assert Decimal(str(item["customer_price"])) == Decimal("13.5850")
+
+
+@pytest.mark.parametrize("disable_product", [True, False], ids=["product-disabled", "sku-disabled"])
+def test_accessory_price_list_keeps_history_by_default_and_filters_inactive_for_invoice(db, disable_product):
     _seed_accessory_okki_product(db)
     historical = _accessory_std_price(db)
     db.add(StdPrice(
@@ -856,11 +881,18 @@ def test_accessory_price_list_keeps_history_by_default_and_filters_inactive_for_
         currency="USD",
     ))
     db.flush()
-    db.execute(text("""
-        UPDATE lsordertest.okki_product_skus
-        SET disable_flag = 1
-        WHERE product_id = 104881553777436 AND sku_id = 104881553777819
-    """))
+    if disable_product:
+        db.execute(text("""
+            UPDATE lsordertest.okki_products
+            SET disable_flag = 1
+            WHERE product_id = 104881553777436
+        """))
+    else:
+        db.execute(text("""
+            UPDATE lsordertest.okki_product_skus
+            SET disable_flag = 1
+            WHERE product_id = 104881553777436 AND sku_id = 104881553777819
+        """))
 
     pricing = _accessory_price_service()
     assert historical.id in [row["id"] for row in pricing.list_prices(db)]

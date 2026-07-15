@@ -33,6 +33,12 @@ const totalsFooter = readFileSync(
   'utf8',
 )
 
+test('settlement and accessory numeric controls fill their bounded containers', () => {
+  assert.match(settlementFields, /\.head-grid :deep\(\.el-input-number\)[^}]*width:\s*100%/s)
+  const numericControls = settlementFields.match(/<el-input-number\b/g) || []
+  assert.equal(numericControls.length, 5)
+})
+
 test('settlement options use the approved fixed values', () => {
   assert.deepEqual(PAYMENT_METHOD_OPTIONS, ['PayPal', '大莱莎信保', '小莱莎信保', '新莱莎信保', 'TT'])
   assert.deepEqual(EXPRESS_CHANNEL_OPTIONS, ['DHL', 'FEDEX', '其他'])

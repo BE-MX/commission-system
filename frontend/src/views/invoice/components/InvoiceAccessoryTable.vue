@@ -20,7 +20,6 @@
               filterable
               remote
               reserve-keyword
-              clearable
               :remote-method="searchOptions"
               :loading="loading"
               placeholder="搜索已配置配件"
@@ -137,6 +136,8 @@ const handleSelect = (row, key) => {
 .line-table-wrap { overflow-x: auto; border: 1px solid var(--border-color); border-radius: var(--card-radius); }
 .line-table { width: 100%; }
 .price-cell { display: flex; align-items: center; gap: 6px; }
+.price-cell :deep(.el-input-number) { min-width: 0; flex: 1; }
+.accessory-line-table :deep(.el-input-number) { width: 100%; }
 .price-cell.is-manual :deep(.el-input__wrapper) { background: var(--color-warning-bg); }
 .std-price, .customer-price-reference { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .customer-price-reference { min-width: 36px; font-size: 11px; }

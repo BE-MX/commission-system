@@ -55,6 +55,28 @@ export function normalizeAccessoryRow(row = {}) {
   return normalized
 }
 
+export function applyAccessorySelection(row, option, customerId) {
+  if (!option || option._customer_id == null || String(option._customer_id) !== String(customerId || '')) {
+    return false
+  }
+  const id = row.id
+  Object.assign(row, normalizeAccessoryRow({
+    ...option,
+    id,
+    quantity: row.quantity,
+    discount_amount: row.discount_amount,
+    customer_price: customerId ? option.customer_price : null,
+  }))
+  return true
+}
+
+export function removeItemByReference(items, row) {
+  const index = items.indexOf(row)
+  if (index < 0) return false
+  items.splice(index, 1)
+  return true
+}
+
 export function accessoryGross(rows) {
   return sumLineGross(rows)
 }
