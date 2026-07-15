@@ -126,6 +126,13 @@ import { ElMessage } from 'element-plus'
 import { Delete, Edit, Plus, Search } from '@element-plus/icons-vue'
 import { confirmDanger, msgSuccess } from '@/utils/feedback'
 import {
+  buildAccessoryEditorState,
+  createLatestAccessorySearch,
+  deleteAccessoryPriceRow,
+  emptyAccessoryPriceForm,
+  saveAccessoryPriceForm,
+} from '../composables/accessoryPriceConfigState'
+import {
   deleteAccessoryPrice,
   listAccessoryPrices,
   saveAccessoryPrice,
@@ -138,32 +145,14 @@ const keyword = ref('')
 const rows = ref([])
 const candidateLoading = ref(false)
 const candidates = ref([])
-const dialog = reactive({ visible: false, candidate: null, form: emptyForm() })
+const dialog = reactive({ visible: false, candidate: null, form: emptyAccessoryPriceForm() })
+const runCandidateSearch = createLatestAccessorySearch({
+  request: searchAccessoryCandidates,
+  applyItems: items => { candidates.value = items },
+  applyLoading: value => { candidateLoading.value = value },
+})
 
 onMounted(loadRows)
-
-function emptyForm() {
-  return {
-    id: null,
-    product_id: null,
-    sku_id: null,
-    accessory_name: '',
-    accessory_model: '',
-    accessory_color: '',
-    price: null,
-    currency: 'USD',
-  }
-}
-
-function candidateFromRow(row) {
-  return {
-    product_id: row.product_id,
-    sku_id: row.sku_id,
-    accessory_name: row.accessory_name,
-    accessory_model: row.accessory_model,
-    accessory_color: row.accessory_color,
-  }
-}
 
 function candidateLabel(row) {
   return `${row.accessory_name} / ${row.accessory_model} / ${row.accessory_color} · SKU ${row.sku_id}`
@@ -180,36 +169,30 @@ async function loadRows() {
     const result = await listAccessoryPrices(keyword.value.trim() ? { keyword: keyword.value.trim() } : {})
     rows.value = result.items || []
   } catch {
-    rows.value = []
+    // 保留已显示数据；请求拦截器已给出失败反馈。
   } finally {
     loading.value = false
   }
 }
 
 async function searchCandidates(query) {
-  candidateLoading.value = true
   try {
-    const result = await searchAccessoryCandidates(query?.trim() ? { keyword: query.trim() } : {})
-    candidates.value = result.items || []
+    await runCandidateSearch(query?.trim() ? { keyword: query.trim() } : {})
   } catch {
-    candidates.value = []
-  } finally {
-    candidateLoading.value = false
+    // latest-request 控制器负责最新失败清空；拦截器负责可行动提示。
   }
 }
 
 function selectCandidate(candidate) {
   if (!candidate) return
-  Object.assign(dialog.form, candidateFromRow(candidate))
+  Object.assign(dialog.form, candidate)
 }
 
 function openDialog(row) {
-  const candidate = row ? candidateFromRow(row) : null
-  dialog.form = row
-    ? { ...emptyForm(), ...candidate, id: row.id, price: Number(row.standard_price), currency: row.currency || 'USD' }
-    : emptyForm()
-  dialog.candidate = candidate
-  candidates.value = candidate ? [candidate] : []
+  const editor = buildAccessoryEditorState(row)
+  dialog.form = editor.form
+  dialog.candidate = editor.candidate
+  candidates.value = editor.candidate ? [editor.candidate] : []
   dialog.visible = true
 }
 
@@ -233,20 +216,36 @@ async function saveRow() {
   }
   saving.value = true
   try {
-    await saveAccessoryPrice({ ...form, price: Number(form.price).toFixed(2) })
-    dialog.visible = false
-    msgSuccess('保存')
-    await loadRows()
+    await saveAccessoryPriceForm({
+      form,
+      save: saveAccessoryPrice,
+      onSuccess: async () => {
+        dialog.visible = false
+        msgSuccess('保存')
+        await loadRows()
+      },
+    })
+  } catch (error) {
+    if (!error?.response) ElMessage.error(`保存失败：${error?.message || error}`)
   } finally {
     saving.value = false
   }
 }
 
 async function removeRow(row) {
-  await confirmDanger('删除', `${row.accessory_name} · SKU ${row.sku_id} 的标准价`)
-  await deleteAccessoryPrice(row.id)
-  msgSuccess('删除')
-  await loadRows()
+  try {
+    await deleteAccessoryPriceRow({
+      row,
+      confirm: () => confirmDanger('删除', `${row.accessory_name} · SKU ${row.sku_id} 的标准价`),
+      remove: deleteAccessoryPrice,
+      onSuccess: async () => {
+        msgSuccess('删除')
+        await loadRows()
+      },
+    })
+  } catch (error) {
+    if (!error?.response) ElMessage.error(`删除失败：${error?.message || error}`)
+  }
 }
 </script>
 

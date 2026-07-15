@@ -249,6 +249,7 @@
     </el-dialog>
   </div>
 </template>
+
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
@@ -271,19 +272,24 @@ import {
   upsertCustomerRule,
   upsertStdPrice,
 } from '@/api/invoice'
+
 const COLOR_TYPE_TEXT = { solid: '纯色 Solid', piano: '钢琴色 Piano', ombre: '渐变 Ombre', balayage: '巴拉雅奇 Balayage' }
+
 const activeTab = ref('std')
 const activePriceKind = ref('hair')
+
 // 标准价
 const stdLoading = ref(false)
 const stdPrices = ref([])
 const stdFilter = ref('')
 const stdDialog = reactive({ visible: false, form: emptyStd() })
 const stdSeriesOptions = computed(() => [...new Set(stdPrices.value.map(r => r.series_grade))])
+
 // 色型
 const colorLoading = ref(false)
 const colorTypes = ref([])
 const colorDialog = reactive({ visible: false, form: { color_code: '', color_type: 'solid' } })
+
 // 客户规则
 const ruleLoading = ref(false)
 const rules = ref([])
@@ -291,25 +297,31 @@ const ruleKeyword = ref('')
 const ruleCustomerLoading = ref(false)
 const ruleCustomerOptions = ref([])
 const ruleDialog = reactive({ visible: false, customer: null, form: emptyRule() })
+
 // 自定义产品
 const customLoading = ref(false)
 const customProducts = ref([])
 const customKeyword = ref('')
+
 onMounted(() => {
   loadStdPrices()
   loadColorTypes()
   loadRules()
   loadCustom()
 })
+
 function emptyStd() {
   return { id: null, series_grade: '', length: '', weight_unit: '', color_type: 'solid', price: null, currency: 'USD' }
 }
+
 function emptyRule() {
   return { id: null, customer_id: '', customer_name: '', adjust_type: 'fixed', adjust_value: 0, enabled: true, remark: '' }
 }
+
 function colorTypeText(key) {
   return COLOR_TYPE_TEXT[key] || key
 }
+
 function ruleText(row) {
   const sign = Number(row.adjust_value) >= 0 ? '+' : ''
   return row.adjust_type === 'percent'
@@ -328,12 +340,14 @@ async function loadStdPrices() {
     stdLoading.value = false
   }
 }
+
 function openStdDialog(row) {
   stdDialog.form = row
     ? { ...row, price: Number(row.price) }
     : emptyStd()
   stdDialog.visible = true
 }
+
 async function saveStd() {
   const f = stdDialog.form
   if (!f.series_grade || !f.length || !f.weight_unit || f.price == null) {
@@ -345,12 +359,14 @@ async function saveStd() {
   msgSuccess('保存')
   loadStdPrices()
 }
+
 async function removeStd(row) {
   await confirmDanger('删除', `${row.series_grade} ${row.length}/${row.weight_unit} 的标准价`)
   await deleteStdPrice(row.id)
   msgSuccess('删除')
   loadStdPrices()
 }
+
 async function handleImport({ file }) {
   const formData = new FormData()
   formData.append('file', file)
@@ -371,6 +387,7 @@ async function loadColorTypes() {
     colorLoading.value = false
   }
 }
+
 async function saveColor() {
   if (!colorDialog.form.color_code) {
     ElMessage.warning('请输入色号')
@@ -382,6 +399,7 @@ async function saveColor() {
   msgSuccess('保存')
   loadColorTypes()
 }
+
 async function removeColor(row) {
   await confirmDanger('删除', `色号 ${row.color_code} 的映射`)
   await deleteColorType(row.id)
@@ -400,6 +418,7 @@ async function loadRules() {
     ruleLoading.value = false
   }
 }
+
 async function searchRuleCustomers(keyword) {
   ruleCustomerLoading.value = true
   try {
@@ -409,10 +428,12 @@ async function searchRuleCustomers(keyword) {
     ruleCustomerLoading.value = false
   }
 }
+
 function onRuleCustomerChange(customer) {
   ruleDialog.form.customer_id = customer?.company_id == null ? '' : String(customer.company_id)
   ruleDialog.form.customer_name = customer?.company_name || ''
 }
+
 function openRuleDialog(row) {
   ruleDialog.form = row
     ? { ...row, adjust_value: Number(row.adjust_value), enabled: !!row.enabled }
@@ -421,6 +442,7 @@ function openRuleDialog(row) {
   ruleDialog.visible = true
   searchRuleCustomers('')
 }
+
 async function saveRule() {
   const f = ruleDialog.form
   if (!f.customer_id) {
@@ -432,6 +454,7 @@ async function saveRule() {
   msgSuccess('保存')
   loadRules()
 }
+
 async function removeRule(row) {
   await confirmDanger('删除', `${row.customer_name || row.customer_id} 的价格规则`)
   await deleteCustomerRule(row.id)
@@ -450,51 +473,12 @@ async function loadCustom() {
     customLoading.value = false
   }
 }
+
 async function runReconcile() {
   const result = await reconcileCustomProducts()
   ElMessage.success(`对账完成：检查 ${result.checked} 条，回填 ${result.linked} 条`)
   loadCustom()
 }
 </script>
-<style scoped>
-.price-config-page {
-  padding: 24px 28px;
-}
-.page-header h2 {
-  margin: 0 0 6px;
-  font-family: var(--font-display);
-  font-size: 17px;
-  font-weight: 700;
-}
-.page-header p {
-  margin: 0 0 18px;
-  font-size: 14px;
-  color: var(--text-secondary, #4a5568);
-}
-.table-card {
-  padding: 4px 16px 16px;
-  border: 1px solid var(--border-color, #e2e5ef);
-  border-radius: 12px;
-  background: var(--card-bg, #ffffff);
-}
-.tab-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
-}
-.tab-toolbar .hint {
-  flex: 1;
-  color: var(--text-muted, #a0aec0);
-  font-size: 13px;
-}
-.dialog-hint {
-  margin-top: 4px;
-  color: var(--text-muted, #a0aec0);
-  font-size: 12px;
-  line-height: 1.5;
-}
-.list-table {
-  width: 100%;
-}
-</style>
+
+<style scoped src="./invoice-price-config.css"></style>
