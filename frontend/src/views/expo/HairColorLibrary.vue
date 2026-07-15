@@ -73,7 +73,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getHairColors, createHairColor, updateHairColor, deleteHairColor, uploadHairColorSwatch } from '@/api/expo'
+import { getHairColors, createHairColor, updateHairColor, deleteHairColor, uploadHairColorSwatch, getHairColorUsage } from '@/api/expo'
 import { confirmDanger, msgSuccess } from '@/utils/feedback'
 
 const colors = ref([])
@@ -175,8 +175,15 @@ async function toggleActive(row, value) {
 }
 
 async function handleDelete(row) {
+  // 先查影响面：删发色会一并抹掉各发型对该色的三角度备图（合成会回退原色）
+  let extra = ''
   try {
-    await confirmDanger('删除', `发色 ${row.code}`, '将物理删除该发色及其色板图。历史效果图存的是发色快照，不受影响。')
+    const res = await getHairColorUsage(row.id)
+    const n = (res.data ?? res)?.combo_count || 0
+    if (n) extra = `⚠️ 已有 ${n} 个发型为该色备了三角度试戴图，删除会一并清除，这些发型将退回原色。`
+  } catch { /* 查影响面失败不阻断删除，保守用通用文案 */ }
+  try {
+    await confirmDanger('删除', `发色 ${row.code}`, `将物理删除该发色及其色板图。历史效果图存的是发色快照，不受影响。${extra}`)
   } catch { return }
   try {
     await deleteHairColor(row.id)

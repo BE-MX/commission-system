@@ -159,6 +159,43 @@
           <span style="margin-left: 8px; color: var(--text-muted); font-size: 12px">开启后置顶推荐列表最前（不论脸型，仍按性别过滤，多款主推之间按匹配分排序）；建议少量款设为主推，过多会挤占匹配推荐位</span>
         </el-form-item>
         <el-form-item label="启用"><el-switch v-model="form.is_active" /></el-form-item>
+
+        <!-- 发色×三角度参考图：仅编辑态（需已保存的发型 id）；客户端只显示已备图的发色 -->
+        <template v-if="isEdit">
+          <el-divider content-position="left">发色 × 三角度参考图</el-divider>
+          <p class="cm-hint">
+            为该发型准备各发色的三角度实拍图，合成时直接照搬（含颜色）。
+            客户端只显示<b>已备图</b>的发色；未备图的走「原色」（发型自身多角度图）。
+          </p>
+          <div v-loading="colorMatrixLoading" class="cm-list">
+            <div v-for="c in colorMatrix" :key="c.hair_color_id" class="cm-row">
+              <div class="cm-color">
+                <img v-if="c.swatch_url" :src="c.swatch_url" class="cm-sw" alt="" />
+                <i v-else class="cm-sw" :style="{ background: c.hex || '#ccc' }" />
+                <div class="cm-meta"><b>{{ c.name }}</b><small>{{ c.code }}</small></div>
+              </div>
+              <div class="angle-list">
+                <div v-for="(p, i) in c.photos" :key="p.path" class="angle-item">
+                  <el-image :src="p.url" fit="cover" class="upload-preview" />
+                  <span class="angle-remove" @click="c.photos.splice(i, 1)">×</span>
+                </div>
+                <el-upload
+                  v-if="c.photos.length < 3" :show-file-list="false"
+                  :http-request="(o) => uploadColorAngle(c, o)" accept="image/*"
+                >
+                  <div class="upload-slot">+ 添加</div>
+                </el-upload>
+              </div>
+              <div class="cm-actions">
+                <GlassButton variant="primary" size="sm" :loading="c.saving" @click="saveColor(c)">保存该色</GlassButton>
+                <GlassButton v-if="c.has_images" variant="ghost" size="sm" @click="clearColor(c)">清除</GlassButton>
+              </div>
+            </div>
+            <div v-if="!colorMatrixLoading && !colorMatrix.length" class="cm-empty">
+              发色库暂无启用发色，请先到发色库添加发色
+            </div>
+          </div>
+        </template>
       </el-form>
       <template #footer>
         <GlassButton variant="ghost" @click="drawerVisible = false">取消</GlassButton>
@@ -171,7 +208,10 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getWigs, createWig, updateWig, deleteWig, uploadWigPhoto } from '@/api/expo'
+import {
+  getWigs, createWig, updateWig, deleteWig, uploadWigPhoto,
+  getWigColorImages, saveWigColorImages, deleteWigColorImages,
+} from '@/api/expo'
 import { confirmDanger, msgSuccess } from '@/utils/feedback'
 
 // 选项词汇对齐《发型推荐分析表》的业务语言；value 是 AI 分析枚举，不可改
@@ -226,6 +266,9 @@ const saving = ref(false)
 const formRef = ref()
 const coverPreview = ref('')
 const anglePhotos = ref([]) // [{path, url}]
+// 发色矩阵：每项 {hair_color_id, code, name, hex, swatch_url, has_images, saving, photos:[{path,url}]}
+const colorMatrix = ref([])
+const colorMatrixLoading = ref(false)
 
 function emptyForm() {
   return {
@@ -273,6 +316,7 @@ function openCreate() {
   form.value = emptyForm()
   coverPreview.value = ''
   anglePhotos.value = []
+  colorMatrix.value = [] // 新建态无 wig id，发色矩阵在首次保存后再编辑
   drawerVisible.value = true
 }
 
@@ -295,6 +339,54 @@ function openEdit(row) {
   const urls = row.angle_urls || []
   anglePhotos.value = (row.angle_photos || []).map((p, i) => ({ path: p, url: urls[i] || `/${p}` }))
   drawerVisible.value = true
+  loadColorMatrix(row.id)
+}
+
+async function loadColorMatrix(wigId) {
+  colorMatrix.value = []
+  colorMatrixLoading.value = true
+  try {
+    const res = await getWigColorImages(wigId)
+    colorMatrix.value = (res.data || []).map((c) => ({
+      hair_color_id: c.hair_color_id, code: c.code, name: c.name,
+      hex: c.hex, swatch_url: c.swatch_url, has_images: c.has_images, saving: false,
+      photos: (c.angle_photos || []).map((p, i) => ({ path: p, url: (c.angle_urls || [])[i] || `/${p}` })),
+    }))
+  } catch { /* 拦截器已提示，矩阵留空 */ } finally {
+    colorMatrixLoading.value = false
+  }
+}
+
+async function uploadColorAngle(item, { file }) {
+  if (item.photos.length >= 3) { ElMessage.warning('每个发色最多三张'); return }
+  const res = await uploadWigPhoto(file)
+  item.photos.push({ path: res.data.path, url: res.data.url })
+}
+
+async function saveColor(item) {
+  if (!item.photos.length) { ElMessage.warning('请先上传至少一张参考图'); return }
+  item.saving = true
+  try {
+    await saveWigColorImages(editId.value, item.hair_color_id, {
+      angle_photos: item.photos.map((p) => p.path),
+    })
+    item.has_images = true
+    msgSuccess(`已保存「${item.name}」参考图`)
+  } catch { /* 拦截器已提示 */ } finally {
+    item.saving = false
+  }
+}
+
+async function clearColor(item) {
+  const ok = await confirmDanger('清除', `「${item.name}」参考图`, '将删除该发色的三角度图组及落盘文件，客户端会退回该发型的原色。')
+    .then(() => true).catch(() => false)
+  if (!ok) return
+  try {
+    await deleteWigColorImages(editId.value, item.hair_color_id)
+    item.photos = []
+    item.has_images = false
+    msgSuccess('已清除')
+  } catch { /* 拦截器已提示 */ }
 }
 
 async function uploadCover({ file }) {
@@ -376,4 +468,18 @@ onMounted(fetchWigs)
   text-align: center; border-radius: 50%; background: var(--color-danger); color: #fff;
   font-size: 12px; cursor: pointer; z-index: 1;
 }
+/* 发色×三角度矩阵 */
+.cm-hint { margin: 0 0 12px; color: var(--text-muted); font-size: 12px; line-height: 1.6; }
+.cm-list { display: flex; flex-direction: column; gap: 14px; }
+.cm-row {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--toolbar-bg);
+}
+.cm-color { display: flex; align-items: center; gap: 8px; }
+.cm-sw { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--border-color); flex: none; object-fit: cover; }
+.cm-meta { display: flex; flex-direction: column; line-height: 1.3; }
+.cm-meta b { font-size: 13px; }
+.cm-meta small { color: var(--text-muted); font-size: 11px; }
+.cm-actions { display: flex; gap: 8px; }
+.cm-empty { color: var(--text-muted); font-size: 12px; padding: 8px 0; }
 </style>
