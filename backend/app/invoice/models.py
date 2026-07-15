@@ -14,6 +14,7 @@ from sqlalchemy import (
     SmallInteger,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 
@@ -93,17 +94,18 @@ class InvoiceItem(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
     invoice_id = Column(BigInteger, ForeignKey("ark_invoices.id", ondelete="CASCADE"), nullable=False, comment="关联发票ID（ark_invoices.id）")
     sort_order = Column(Integer, nullable=False, default=0, comment="明细行排序号")
+    product_kind = Column(String(16), nullable=False, default="hair", server_default="hair", comment="hair/accessory")
     item_type = Column(String(16), nullable=False, default="stock", comment="stock/custom")
     product_id = Column(BigInteger, nullable=True, comment="okki_products.product_id; NULL for custom lines")
     sku_id = Column(BigInteger, nullable=True, comment="okki_inventory.sku_id")
     custom_product_id = Column(BigInteger, nullable=True, comment="ark_custom_products.id, no FK by design")
     product_name = Column(String(512), nullable=False, comment="产品全名（display/size/color/unit 组合）")
     product_display = Column(String(256), nullable=False, comment="发票 Product 列展示名（series+grade）")
-    net_weight_grams = Column(String(64), nullable=False, comment="Mapped from okki_products.unit")
+    net_weight_grams = Column(String(64), nullable=True, comment="Mapped from okki_products.unit")
     curl = Column(String(64), nullable=True, comment="卷度")
     model = Column(String(128), nullable=True, comment="production model; optional for custom lines")
     color = Column(String(128), nullable=False, comment="颜色/色号")
-    length = Column(String(128), nullable=False, comment="Mapped from okki_products.size")
+    length = Column(String(128), nullable=True, comment="Mapped from okki_products.size")
     quantity = Column(Integer, nullable=False, comment="数量（件）")
     standard_price = Column(Numeric(12, 4), nullable=True, comment="matrix std price snapshot")
     customer_price = Column(Numeric(12, 4), nullable=True, comment="rule-adjusted price snapshot")
@@ -172,17 +174,26 @@ class StdPrice(Base):
     __tablename__ = "ark_std_prices"
 
     id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
-    series_grade = Column(String(128), nullable=False, comment="e.g. Super Double Drawn Genius")
-    length = Column(String(32), nullable=False, comment="normalized, inch mark stripped")
-    weight_unit = Column(String(32), nullable=False, comment="e.g. 20g")
-    color_type = Column(String(16), nullable=False, comment="计价颜色类型 solid/piano/ombre/balayage")
+    product_kind = Column(String(16), nullable=False, default="hair", server_default="hair", comment="hair/accessory")
+    accessory_name = Column(String(256), nullable=True, comment="Accessory display name")
+    accessory_model = Column(String(128), nullable=True, comment="Accessory model")
+    accessory_color = Column(String(128), nullable=True, comment="Accessory color")
+    product_id = Column(BigInteger, nullable=True, comment="OKKI product ID")
+    sku_id = Column(BigInteger, nullable=True, comment="OKKI SKU ID")
+    series_grade = Column(String(128), nullable=True, comment="e.g. Super Double Drawn Genius")
+    length = Column(String(32), nullable=True, comment="normalized, inch mark stripped")
+    weight_unit = Column(String(32), nullable=True, comment="e.g. 20g")
+    color_type = Column(String(16), nullable=True, comment="计价颜色类型 solid/piano/ombre/balayage")
     price = Column(Numeric(12, 4), nullable=False, comment="标准参考单价/件（currency 币种，客户价调整前基准）")
     currency = Column(String(8), nullable=False, default="USD", comment="币种，默认 USD")
     updated_by = Column(Integer, nullable=True, comment="最后修改人 user_id")
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="最后修改时间")
 
-    __table_args__ = ({"comment": "标准价格矩阵（系列档次×长度×克重×颜色类型）"},)
+    __table_args__ = (
+        UniqueConstraint("product_kind", "product_id", "sku_id", name="uq_ark_std_accessory_sku"),
+        {"comment": "标准价格矩阵（系列档次×长度×克重×颜色类型）"},
+    )
 
 
 class CustomerPriceRule(Base):

@@ -72,16 +72,17 @@ class InvoiceImportPreviewRequest(BaseModel):
 class InvoiceItemPayload(BaseModel):
     # 编辑时回传既有行 id，用于跨保存传承 xiaoman_unique_id（OKKI 编辑推单按行更新）
     id: Optional[int] = None
+    product_kind: str = Field(default="hair", pattern="^(hair|accessory)$")
     item_type: str = Field(default="stock", pattern="^(stock|custom)$")
     product_id: Optional[int] = None
     sku_id: Optional[int] = None
     product_name: str = Field(default="", max_length=512)
     product_display: str = Field(..., max_length=256)
-    net_weight_grams: str = Field(..., max_length=64)
+    net_weight_grams: Optional[str] = Field(None, max_length=64)
     curl: Optional[str] = Field(None, max_length=64)
     model: Optional[str] = Field(None, max_length=128)
     color: str = Field(..., max_length=128)
-    length: str = Field(..., max_length=128)
+    length: Optional[str] = Field(None, max_length=128)
     quantity: int = Field(..., gt=0)
     price_per_piece: Optional[Decimal] = Field(None, gt=0)
     discount_amount: Decimal = Field(default=Decimal("0"), le=0)
@@ -93,6 +94,17 @@ class InvoiceItemPayload(BaseModel):
         if value is None or value == "":
             return Decimal("0")
         return -abs(Decimal(str(value)))
+
+
+class AccessoryPricePayload(BaseModel):
+    id: Optional[int] = None
+    product_id: int
+    sku_id: int
+    accessory_name: str = Field(..., min_length=1, max_length=256)
+    accessory_model: str = Field(..., min_length=1, max_length=128)
+    accessory_color: str = Field(..., min_length=1, max_length=128)
+    price: Decimal = Field(..., ge=0)
+    currency: str = Field(default="USD", pattern="^[A-Z]{3}$")
 
 
 class _InvoiceHeaderPayload(BaseModel):
