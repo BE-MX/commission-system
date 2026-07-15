@@ -68,6 +68,11 @@ export function getWigPicker() {
   return expoClient.get('/wigs/picker', { ...KIOSK })
 }
 
+// kiosk：某发型已备三角度图的发色列表（发色随发型过滤，「原色」由前端恒定提供）
+export function getWigColors(wigId) {
+  return expoClient.get(`/wigs/${wigId}/colors`, { ...KIOSK })
+}
+
 // ── 场景示意图管理（PC；列表复用 getScenes({ mode: 'tryon' })） ──
 export function uploadSceneImage(key, file) {
   const form = new FormData()
@@ -128,6 +133,19 @@ export function uploadWigPhoto(file) {
   })
 }
 
+// ── 发型×发色组合参考图（PC 管理端） ──
+export function getWigColorImages(wigId) {
+  return expoClient.get(`/wigs/${wigId}/color-images`)
+}
+
+export function saveWigColorImages(wigId, colorId, data) {
+  return expoClient.put(`/wigs/${wigId}/color-images/${colorId}`, data)
+}
+
+export function deleteWigColorImages(wigId, colorId) {
+  return expoClient.delete(`/wigs/${wigId}/color-images/${colorId}`)
+}
+
 // ── 发色库（PC；列表复用主流程的 getHairColors） ──
 export function createHairColor(data) {
   return expoClient.post('/hair-colors', data)
@@ -139,6 +157,11 @@ export function updateHairColor(id, data) {
 
 export function deleteHairColor(id) {
   return expoClient.delete(`/hair-colors/${id}`)
+}
+
+// 删发色前查影响面：被多少发型备了三角度图（删发色会一并清除这些组合图）
+export function getHairColorUsage(id) {
+  return expoClient.get(`/hair-colors/${id}/usage`, { showLoading: false })
 }
 
 export function uploadHairColorSwatch(file) {

@@ -140,7 +140,7 @@ const skinLabel = computed(() => {
 })
 
 function pickWig(id) {
-  flow.selectedWigId.value = id
+  flow.selectWig(id) // 换发型即重置为原色并加载该发型可选发色
   flow.touch()
 }
 
@@ -188,7 +188,7 @@ function pickFromLibrary(w) {
     series: w.series, cover_url: w.cover_url,
     reason: '您从发型库选择的款式', score: null, custom: true,
   }
-  flow.selectedWigId.value = w.wig_id
+  flow.selectWig(w.wig_id) // 从库选款同样重置原色 + 加载该款发色
   libraryOpen.value = false
   flow.touch()
 }
@@ -276,7 +276,7 @@ function centerScene(i) {
 }
 
 onMounted(async () => {
-  flow.loadHairColors()
+  // 发色随发型加载（selectWig 在 analyzed→matching 时已触发首个发型的发色）
   await flow.loadTryonScenes()
   // 默认分类 = 默认选中场景（flow 设的首个场景）所属分类
   const cur = flow.tryonScenes.value.find(s => s.key === flow.selectedTryonScene.value)
