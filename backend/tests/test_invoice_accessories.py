@@ -115,6 +115,30 @@ def test_existing_hair_invoice_item_defaults_product_kind_to_hair():
     assert item.product_kind == "hair"
 
 
+@pytest.mark.parametrize("product_kind", ["hair", "accessory"])
+@pytest.mark.parametrize("price_per_piece", ["1.000049", "100000000.0000"])
+def test_invoice_api_rejects_prices_outside_numeric_12_4_boundary(
+    db, product_kind, price_per_piece,
+):
+    with _api_client(db, permissions=["invoice:write"]) as client:
+        response = client.post("/api/invoice/invoices", json={
+            "customer_id": "CUST-DECIMAL",
+            "customer_name": "Decimal Boundary Customer",
+            "invoice_date": "2026-07-15",
+            "items": [{
+                "product_kind": product_kind,
+                "item_type": "stock",
+                "product_display": "Boundary Item",
+                "color": "Black",
+                "quantity": 999,
+                "price_per_piece": price_per_piece,
+            }],
+        })
+
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"][-1] == "price_per_piece"
+
+
 def test_accessory_invoice_item_roundtrip_preserves_product_kind(db):
     _seed_accessory_okki_product(db)
     _accessory_std_price(db)

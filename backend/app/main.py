@@ -16,6 +16,7 @@ from app.bootstrap import (
     seed_admin_and_permissions, auto_init_ai_presets,
     seed_asset_dimensions,
     mount_uploads, mount_frontend,
+    check_pdf_export_resources,
 )
 from app.routers import register_routers
 from app.mcp.server import mount_mcp, mcp_session_lifespan
@@ -33,6 +34,7 @@ async def lifespan(app: FastAPI):
     # MCP streamable-http session manager 需在整个 app 生命周期内运行
     async with mcp_session_lifespan():
         # --- 启动 ---
+        check_pdf_export_resources()
         check_database_connection()
         load_business_rules()
         seed_admin_and_permissions()

@@ -4,13 +4,14 @@ from io import BytesIO
 from html import escape
 from decimal import Decimal
 from functools import lru_cache
-from pathlib import Path
 import zlib
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
+from app.core.config import get_settings
+from app.invoice import pdf_font
 from app.invoice.models import Invoice
 from app.invoice.service import summarize_items
 
@@ -364,17 +365,8 @@ def _pdf_escape(value: str) -> str:
 
 @lru_cache(maxsize=16)
 def _cjk_font(size: int):
-    candidates = [
-        Path("C:/Windows/Fonts/msyh.ttc"),
-        Path("C:/Windows/Fonts/simhei.ttf"),
-        Path("C:/Windows/Fonts/simsun.ttc"),
-        Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
-        Path("/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"),
-    ]
-    for path in candidates:
-        if path.exists():
-            return ImageFont.truetype(str(path), size)
-    raise RuntimeError("未找到可用的中文字体，无法生成不丢字的发票 PDF")
+    settings = get_settings()
+    return pdf_font.load_configured_cjk_font(settings.PDF_CJK_FONT_PATH, size)
 
 
 def _render_cjk_line(value: str, size: int) -> tuple[int, int, float, float, bytes]:

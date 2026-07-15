@@ -84,7 +84,9 @@ class InvoiceItemPayload(BaseModel):
     color: str = Field(..., max_length=128)
     length: Optional[str] = Field(None, max_length=128)
     quantity: int = Field(..., gt=0)
-    price_per_piece: Optional[Decimal] = Field(None, gt=0)
+    price_per_piece: Optional[Decimal] = Field(
+        None, gt=0, max_digits=12, decimal_places=4,
+    )
     discount_amount: Decimal = Field(default=Decimal("0"), le=0)
     price_source: str = Field(default="manual", max_length=32)
 
