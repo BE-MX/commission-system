@@ -60,6 +60,12 @@ test('accessory editor selects a real OKKI product and SKU and keeps its snapsho
   assert.match(accessoryConfig, /<el-input[^>]*:model-value="dialog\.form\.accessory_color"[^>]*readonly/s)
 })
 
+test('accessory editor invalidates remote searches when opening or closing a dialog session', () => {
+  assert.match(accessoryConfig, /@close="invalidateCandidateSearch"/)
+  assert.match(accessoryConfig, /function openDialog\(row\)\s*{\s*invalidateCandidateSearch\(\)/)
+  assert.match(accessoryConfig, /runCandidateSearch\.invalidate\(\)/)
+})
+
 test('invoice API exposes the complete accessory price lifecycle through the existing client', () => {
   assert.match(api, /export function searchAccessoryCandidates\(params\)/)
   assert.match(api, /request\.get\('\/price\/accessory-candidates'/)

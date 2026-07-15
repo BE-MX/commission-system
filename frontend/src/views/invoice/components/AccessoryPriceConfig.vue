@@ -59,6 +59,7 @@
       :title="dialog.form.id ? '编辑配件标准价' : '新增配件标准价'"
       width="560px"
       destroy-on-close
+      @close="invalidateCandidateSearch"
     >
       <el-form :model="dialog.form" label-width="92px">
         <el-form-item label="OKKI SKU" required>
@@ -131,6 +132,7 @@ import {
   deleteAccessoryPriceRow,
   emptyAccessoryPriceForm,
   saveAccessoryPriceForm,
+  shouldShowAccessoryLocalError,
 } from '../composables/accessoryPriceConfigState'
 import {
   deleteAccessoryPrice,
@@ -189,11 +191,16 @@ function selectCandidate(candidate) {
 }
 
 function openDialog(row) {
+  invalidateCandidateSearch()
   const editor = buildAccessoryEditorState(row)
   dialog.form = editor.form
   dialog.candidate = editor.candidate
   candidates.value = editor.candidate ? [editor.candidate] : []
   dialog.visible = true
+}
+
+function invalidateCandidateSearch() {
+  runCandidateSearch.invalidate()
 }
 
 function setCurrency(value) {
@@ -226,7 +233,7 @@ async function saveRow() {
       },
     })
   } catch (error) {
-    if (!error?.response) ElMessage.error(`保存失败：${error?.message || error}`)
+    if (shouldShowAccessoryLocalError(error)) ElMessage.error(`保存失败：${error?.message || error}`)
   } finally {
     saving.value = false
   }
@@ -244,7 +251,7 @@ async function removeRow(row) {
       },
     })
   } catch (error) {
-    if (!error?.response) ElMessage.error(`删除失败：${error?.message || error}`)
+    if (shouldShowAccessoryLocalError(error)) ElMessage.error(`删除失败：${error?.message || error}`)
   }
 }
 </script>

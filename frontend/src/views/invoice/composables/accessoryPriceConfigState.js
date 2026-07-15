@@ -40,7 +40,7 @@ export function buildAccessoryEditorState(row) {
 
 export function createLatestAccessorySearch({ request, applyItems, applyLoading }) {
   let latestRequestId = 0
-  return async params => {
+  const search = async params => {
     const requestId = ++latestRequestId
     applyLoading(true)
     try {
@@ -54,6 +54,15 @@ export function createLatestAccessorySearch({ request, applyItems, applyLoading 
       if (requestId === latestRequestId) applyLoading(false)
     }
   }
+  search.invalidate = () => {
+    latestRequestId += 1
+    applyLoading(false)
+  }
+  return search
+}
+
+export function shouldShowAccessoryLocalError(error) {
+  return !error?.isAxiosError
 }
 
 export async function saveAccessoryPriceForm({ form, save, onSuccess }) {

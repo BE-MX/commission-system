@@ -5,6 +5,7 @@ import {
   createLatestAccessorySearch,
   deleteAccessoryPriceRow,
   saveAccessoryPriceForm,
+  shouldShowAccessoryLocalError,
 } from '../src/views/invoice/composables/accessoryPriceConfigState.js'
 
 function deferred() {
@@ -70,6 +71,35 @@ test('only the latest failed accessory search may clear candidates', async () =>
   assert.deepEqual(candidates, [])
 })
 
+test('invalidating a search session ends loading and blocks its late result from a reopened dialog', async () => {
+  const staleRequest = deferred()
+  const currentRequest = deferred()
+  const requests = [staleRequest, currentRequest]
+  let candidates = []
+  let loading = false
+  const search = createLatestAccessorySearch({
+    request: () => requests.shift().promise,
+    applyItems: items => { candidates = items },
+    applyLoading: value => { loading = value },
+  })
+
+  const stale = search({ keyword: 'closed dialog' })
+  search.invalidate()
+  assert.equal(loading, false)
+
+  candidates = [{ sku_id: 'reopened' }]
+  const current = search({ keyword: 'reopened dialog' })
+  staleRequest.resolve({ items: [{ sku_id: 'stale' }] })
+  await stale
+  assert.deepEqual(candidates, [{ sku_id: 'reopened' }])
+  assert.equal(loading, true)
+
+  currentRequest.resolve({ items: [{ sku_id: 'current' }] })
+  await current
+  assert.deepEqual(candidates, [{ sku_id: 'current' }])
+  assert.equal(loading, false)
+})
+
 test('editing an accessory keeps the record and real OKKI identities in the payload', async () => {
   const state = buildAccessoryEditorState({
     id: 9,
@@ -130,4 +160,9 @@ test('delete API failures still propagate for request feedback', async () => {
     }),
     /delete failed/,
   )
+})
+
+test('Axios failures are left exclusively to the shared interceptor', () => {
+  assert.equal(shouldShowAccessoryLocalError({ isAxiosError: true, message: 'Network Error' }), false)
+  assert.equal(shouldShowAccessoryLocalError(new Error('local callback failed')), true)
 })
