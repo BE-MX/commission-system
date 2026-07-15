@@ -9,7 +9,7 @@
  */
 import { computed, onBeforeUnmount, reactive, ref } from 'vue'
 import {
-  createSession, generateResults, getHairColors, getScenes, getSession,
+  createSession, generateResults, getScenes, getSession, getWigColors,
   registerCustomer, setReaction, submitFeedback, updateCustomer,
 } from '@/api/expo'
 
@@ -189,13 +189,25 @@ export function useTryOnFlow() {
     startPolling()
   }
 
+  // ── 发型选择：换发型即换发色可选集（发色随发型过滤，2026-07-15） ──
+  // 「原色」永远可选（=发型自身多角度图，不上色），故换发型统一先回原色
+  function selectWig(id) {
+    selectedWigId.value = id
+    selectedColorId.value = null
+    loadWigColors(id)
+  }
+
   // ── 发色 / 场景选项（弱网失败静默降级：不选也能走通） ──
-  async function loadHairColors() {
-    if (hairColors.value.length) return
+  // 只列该发型已备三角度图的发色；无图发色不出现，客户选不到无图组合
+  async function loadWigColors(wigId) {
+    hairColors.value = []
+    if (!wigId) return
     try {
-      const res = await getHairColors(undefined, { kiosk: true })
+      const res = await getWigColors(wigId)
+      // 代际守卫：快速换发型时，旧发型的迟到响应不覆盖当前发型的发色集
+      if (selectedWigId.value !== wigId) return
       hairColors.value = res.data || []
-    } catch (e) { /* 无色板数据时只保留“原色” */ }
+    } catch (e) { /* 弱网失败：发色列表留空，只保留原色 */ }
   }
 
   async function loadTryonScenes() {
@@ -265,9 +277,8 @@ export function useTryOnFlow() {
       if (step.value === 'analyzing' && status === 'analyzed') {
         step.value = 'matching'
         matchPage.value = 0
-        // 不让用户思考：默认选中匹配度第一的款，轻触可换
-        selectedWigId.value = (res.data.matches || [])[0]?.wig_id || null
-        loadHairColors()
+        // 不让用户思考：默认选中匹配度第一的款，轻触可换（selectWig 顺带加载该款发色）
+        selectWig((res.data.matches || [])[0]?.wig_id || null)
         // 甄选页载荷不再变化且客户可停留数分钟：停轮询省隧道带宽，
         // 也避免此阶段弱网累计出「生成仍在继续」的错位提示；generate 会重启轮询
         stopPolling()
@@ -331,10 +342,10 @@ export function useTryOnFlow() {
     }
   }
 
-  // 候选换一批：Top3 ⇄ 第 4~6 名，切换后默认选中新页第一款
+  // 候选换一批：Top3 ⇄ 第 4~6 名，切换后默认选中新页第一款（顺带换发色可选集）
   function swapMatches() {
     matchPage.value = matchPage.value ? 0 : 1
-    selectedWigId.value = matches.value[0]?.wig_id || null
+    selectWig(matches.value[0]?.wig_id || null)
     touch()
   }
 
@@ -403,12 +414,12 @@ export function useTryOnFlow() {
   return {
     step, mode, regForm, errorText, generating,
     session, analysis, matches, results, doneResults,
-    selectedWigId, canSwapMatches, swapMatches, backToMatching, goBack,
+    selectedWigId, selectWig, canSwapMatches, swapMatches, backToMatching, goBack,
     customerId, sessionId,
     hairColors, selectedColorId, scenes, selectedSceneKeys, guideShown,
     tryonScenes, selectedTryonScene, loadTryonScenes,
     start, submitRegister, submitPhoto, generate, react,
-    loadHairColors, loadScenes, toggleScene, generateScenes, reselectScenes,
+    loadScenes, toggleScene, generateScenes, reselectScenes,
     openSales, submitSales, resetAll, touch,
   }
 }
