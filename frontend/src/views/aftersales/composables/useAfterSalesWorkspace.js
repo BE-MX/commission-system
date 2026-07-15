@@ -89,6 +89,7 @@ export function useAfterSalesWorkspace() {
   const canReviewWaiver = computed(() => (
     caseData.current_status === 'awaiting_evidence_waiver'
     && currentUserId.value === Number(caseData.supervisor_user_id_snapshot)
+    && auth.hasPermission('aftersales:review')
   ))
   const isProxyReview = computed(() => (
     auth.roles.includes('super_admin')
@@ -96,8 +97,10 @@ export function useAfterSalesWorkspace() {
     && currentUserId.value !== Number(caseData.current_owner_user_id)
   ))
   const canReview = computed(() => (
-    (caseData.current_status === 'awaiting_supervisor' && currentUserId.value === caseData.supervisor_user_id_snapshot)
-    || (caseData.current_status === 'awaiting_director' && currentUserId.value === caseData.director_user_id_snapshot)
+    (
+      (caseData.current_status === 'awaiting_supervisor' && currentUserId.value === Number(caseData.supervisor_user_id_snapshot))
+      || (caseData.current_status === 'awaiting_director' && currentUserId.value === Number(caseData.director_user_id_snapshot))
+    ) && auth.hasPermission('aftersales:review')
     || isProxyReview.value
   ))
 

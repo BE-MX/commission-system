@@ -216,7 +216,7 @@ def _pending_notification_ids(db: Session, case_id: int) -> list[int]:
 
 
 @router.get("/options", summary="售后问题、措施和证据规则")
-def options(_payload=Depends(require_any_permission("aftersales:read", "aftersales:write", "aftersales:admin"))):
+def options(_payload=Depends(require_any_permission("aftersales:read", "aftersales:write", "aftersales:review", "aftersales:admin"))):
     return ok(
         {
             "issue_types": [
@@ -255,7 +255,7 @@ def list_cases(
     assigned_to_me: bool = False,
     scope: str = "mine",
     db: Session = Depends(get_db),
-    payload=Depends(require_any_permission("aftersales:read", "aftersales:write", "aftersales:admin")),
+    payload=Depends(require_any_permission("aftersales:read", "aftersales:write", "aftersales:review", "aftersales:admin")),
 ):
     user = _ark_user(db, payload)
     query = db.query(AfterSalesCase).filter(AfterSalesCase.deleted_at.is_(None))
@@ -325,7 +325,7 @@ def customer_search(
     keyword: str = "",
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
-    _payload=Depends(require_any_permission("aftersales:read", "aftersales:write", "aftersales:admin")),
+    _payload=Depends(require_any_permission("aftersales:read", "aftersales:write", "aftersales:review", "aftersales:admin")),
 ):
     return ok({"items": query_service.search_customers(db, keyword, limit)})
 
@@ -336,7 +336,7 @@ def order_search(
     keyword: str = "",
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
-    _payload=Depends(require_any_permission("aftersales:read", "aftersales:write", "aftersales:admin")),
+    _payload=Depends(require_any_permission("aftersales:read", "aftersales:write", "aftersales:review", "aftersales:admin")),
 ):
     try:
         return ok({"items": query_service.search_orders(db, customer_id, keyword, limit)})
@@ -349,7 +349,7 @@ def product_search(
     keyword: str = "",
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
-    _payload=Depends(require_any_permission("aftersales:read", "aftersales:write", "aftersales:admin")),
+    _payload=Depends(require_any_permission("aftersales:read", "aftersales:write", "aftersales:review", "aftersales:admin")),
 ):
     return ok({"items": query_service.search_products(db, keyword, limit)})
 
@@ -385,7 +385,7 @@ def people_search(
     keyword: str = "",
     limit: int = Query(50, ge=1, le=100),
     db: Session = Depends(get_db),
-    _payload=Depends(require_any_permission("aftersales:read", "aftersales:write", "aftersales:admin")),
+    _payload=Depends(require_any_permission("aftersales:read", "aftersales:write", "aftersales:review", "aftersales:admin")),
 ):
     query = db.query(ArkUser).filter(ArkUser.is_active.is_(True), ArkUser.deleted_at.is_(None))
     if keyword.strip():
@@ -450,7 +450,7 @@ def delete_case(
 def get_case(
     case_id: int,
     db: Session = Depends(get_db),
-    payload=Depends(require_any_permission("aftersales:read", "aftersales:write", "aftersales:admin")),
+    payload=Depends(require_any_permission("aftersales:read", "aftersales:write", "aftersales:review", "aftersales:admin")),
 ):
     user = _ark_user(db, payload)
     case = _get_visible_case(db, case_id, user, payload)
@@ -518,7 +518,7 @@ async def upload_evidence(
 def download_evidence(
     evidence_id: int,
     db: Session = Depends(get_db),
-    payload=Depends(require_any_permission("aftersales:read", "aftersales:write", "aftersales:admin")),
+    payload=Depends(require_any_permission("aftersales:read", "aftersales:write", "aftersales:review", "aftersales:admin")),
 ):
     user = _ark_user(db, payload)
     item = (
@@ -652,7 +652,7 @@ def review_case_evidence_waiver(
     body: EvidenceWaiverReviewRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    payload=Depends(require_permission("aftersales:write")),
+    payload=Depends(require_permission("aftersales:review")),
 ):
     user = _ark_user(db, payload)
     try:
@@ -710,7 +710,7 @@ def review_case(
     body: ReviewRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    payload=Depends(require_permission("aftersales:write")),
+    payload=Depends(require_permission("aftersales:review")),
 ):
     user = _ark_user(db, payload)
     try:
@@ -847,7 +847,7 @@ def reopen_case(
 def case_timeline(
     case_id: int,
     db: Session = Depends(get_db),
-    payload=Depends(require_any_permission("aftersales:read", "aftersales:write", "aftersales:admin")),
+    payload=Depends(require_any_permission("aftersales:read", "aftersales:write", "aftersales:review", "aftersales:admin")),
 ):
     user = _ark_user(db, payload)
     case = _get_visible_case(db, case_id, user, payload)

@@ -52,9 +52,9 @@
   - 管理端：`/wigs` CRUD + `/wigs/upload-photo`（发型库；`must_recommend` 主推=置顶推荐列表最前(2026-07-13 起)/多款主推按匹配分排序/仍按性别过滤；`priority` 大→同评级内推荐分小幅折算加高）+ `GET /wigs/picker`（kiosk「从发型库选择」轻量列表：启用发型 wig_id/name/series/cover_url）、`/hair-colors` POST/PUT + `/hair-colors/upload-swatch`（发色库，上传色板图自动提取主色 hex；expo:admin）；**上传落盘即压**：wig/swatch/客户照片统一 `downscale_inplace` 长边 1600（保持文件名扩展名，存库路径零变更；存量补压跑 `backend/scripts/compress_expo_uploads.py`，2026-07-14）、`/scripts` CRUD + `POST /scripts/seed`（话术卡库，写入时禁用词强校验）、`/leads` 线索台、`DELETE /customers/{id}`（照片物理删除）
   - H5 kiosk：`/expo/kiosk` 全屏路由（router/index.js 顶层注册，不走 MainLayout）；匹配权重 `config/expo_matching.yaml`；上传文件锚定 REPO_ROOT/uploads/expo（存库相对路径）
 - `/api/invoice` — 订单发票管理（`invoice/router.py`，需 `invoice:read/write/sync/admin`；049 起全部端点走 `ok()` 信封；**数据范围**：默认只见/只能操作自己创建的发票，`invoice:read_all`（kind=data，067）或 super_admin 放开为全部——注意它同时放宽读与写的对象范围）
-  - `GET /customers/search?keyword=&private_only=` — 客户搜索（invoice:read/write）；`private_only=true` 时过滤 `customer_info.owner_user_ids`（JSON 数组）包含当前用户绑定的 OKKI 账号（私海），未绑定返回 `{items:[], okki_bound:false}`；`okki_bound` 字段仅私海请求返回
+  - `GET /customers/search?keyword=&private_only=` — 客户搜索（invoice:read/write）；`private_only=true` 时过滤 `customer_info.owner_user_ids`（JSON 数组）包含当前用户绑定的 OKKI 账号（私海），未绑定返回 `{items:[], okki_bound:false}`；`okki_bound` 字段仅私海请求返回。前端所有人默认私海，「仅私海」勾选框显隐由 `invoice_private_filter:read` 控制（=能否切全量视图；便利筛选非数据边界，端点不校验该码）
   - `GET /customers/contacts?keyword=&company_id=&private_only=` — 按联系人名搜客户（`lsordertest.customer_contacts` JOIN customer_info，invoice:write——联系人含邮箱/电话 PII）；company_id 给定时收敛到该客户名下（双筛选联动），返回含所属公司信息可反向定位客户；is_main 主联系人排前
-  - `GET /invoices/suggest-no?order_type=` — 新建单默认发票号：`{用户名}-{KC|SC}-{本月该前缀序号}`（invoice:write；跨月撞号自动顺延，用户可改）
+  - `GET /invoices/suggest-no?order_type=` — 新建单默认发票号（invoice:write，2026-07-14 版）：库存单 `{用户名}-KC-{MM}{NN}`（NN=该用户本月第几张，两位零填充）、生产单 `SC-{MM}{NN}`（全公司本月序列，不含用户名）；跨年撞号自动顺延，用户可改
   - `GET /invoices/check-no?invoice_no=&exclude_id=` — 发票号占用检查（invoice:write；exclude_id 编辑时排除自身）
   - `GET /customers/contact-defaults?customer_id=` — 该客户最近一张（created_at 倒序）带联系信息发票的联系人/电话/邮箱/地址快照，录入页自动填充用（invoice:write；组织级共享，刻意不受发票数据范围限制——联系人是客户数据非财务数据）
   - `GET /products/filter-options` — 产品级联筛选项（model→color→size→unit，库存单用）
@@ -375,4 +375,4 @@
 - AI 与决策：`POST /cases/{id}/analyze`、`POST /cases/{id}/decision`；AI 输出包含内部中文建议与可编辑的英文客户回复草稿。
 - 流程：`POST /cases/{id}/evidence-waiver/request|review`、`submit`、`review`、`transfer`、`withdraw`、`execute`、`close`、`reopen`。
 - 运维：`POST /notifications/{id}/retry`；`GET|POST /sop/versions`、`POST /sop/versions/{id}/activate`。
-- 权限：读接口使用 `aftersales:read`；写流程使用 `aftersales:write`；SOP、转交、重开和通知重试使用 `aftersales:admin`；`aftersales:read_all` 仅控制数据范围。
+- 权限：看单接口（`options`/`cases`/`cases/{id}`/`timeline`/证据下载）`read`、`write`、`review`、`admin` 任一即可；录单流程（创建/编辑/证据/决策/证据豁免申请/`submit`/`withdraw`/`execute`/`close`）用 `aftersales:write`；审核决策（`review` 单据终审、`evidence-waiver/review` 证据豁免批复）用 `aftersales:review`；SOP、转交、重开和通知重试用 `aftersales:admin`；`aftersales_analytics:read` 控售后分析页，`aftersales:read_all` 仅控数据范围。角色三档：仅录单=`write`、录单+审核=`write`+`review`、仅审核=`review`（069 迁移已给存量 write 角色补授 review）。

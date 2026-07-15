@@ -320,9 +320,13 @@ def seed_role_permissions(db: Session):
         ("invoice_price:read",    "invoice", "read",          "查看价格与产品配置页"),
         ("invoice_okki:read",     "invoice", "read",          "OKKI 推单设置页菜单（页面数据需 invoice:admin）"),
         ("invoice_repair:read",   "invoice", "read",          "查看回款日期修复页"),
-        # 客户售后管理（2026-07-12 售后分析拆为独立码，四页各自独立：单/审/SOP/分析）
+        # 发票录入「仅私海」勾选（2026-07-14）：控勾选框显隐，不控数据安全边界
+        ("invoice_private_filter:read", "invoice", "read",    "客户私海筛选（录入页「仅私海」勾选）"),
+        # 客户售后管理（2026-07-12 售后分析拆独立码；2026-07-14 审核拆 aftersales:review，
+        # 支持 仅录单 / 录单+审核 / 仅审核 三档，069 迁移已给存量 write 角色补授 review）
         ("aftersales:read",       "aftersales", "read",       "查看授权范围内售后单"),
-        ("aftersales:write",      "aftersales", "write",      "登记、分析、提交、审核和关闭售后单"),
+        ("aftersales:write",      "aftersales", "write",      "登记、分析、提交、执行和关闭售后单"),
+        ("aftersales:review",     "aftersales", "review",     "审核售后单据与证据豁免"),
         ("aftersales:admin",      "aftersales", "admin",      "维护 SOP、重试通知和处理异常售后单"),
         ("aftersales:read_all",   "aftersales", "read_all",   "查看全部售后单"),
         ("aftersales_analytics:read", "aftersales", "read",   "查看售后分析"),

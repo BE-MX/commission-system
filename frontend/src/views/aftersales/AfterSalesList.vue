@@ -113,10 +113,14 @@ function actionSummary(actions) { return (actions || []).map(action => actionOpt
 
 watch(() => route.name, fetchList)
 onMounted(async () => {
-  const response = await getAfterSalesOptions()
-  issueTypes.value = response.data?.issue_types || []
-  actionOptions.value = response.data?.actions || []
-  people.value = (await searchAfterSalesPeople({ keyword: '' })).data?.items || []
+  try {
+    const response = await getAfterSalesOptions()
+    issueTypes.value = response.data?.issue_types || []
+    actionOptions.value = response.data?.actions || []
+    people.value = (await searchAfterSalesPeople({ keyword: '' })).data?.items || []
+  } catch {
+    // 下拉选项/人员加载失败时降级为空，绝不阻断主列表加载
+  }
   fetchList()
 })
 </script>

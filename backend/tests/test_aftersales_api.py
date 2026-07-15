@@ -297,7 +297,7 @@ def test_http_decision_submit_and_supervisor_approval_flow(db, monkeypatch, tmp_
         assert submitted.json()["data"]["current_status"] == "awaiting_supervisor"
         version = submitted.json()["data"]["version"]
 
-    with _client(db, supervisor, ["aftersales:read", "aftersales:write"]) as client:
+    with _client(db, supervisor, ["aftersales:read", "aftersales:review"]) as client:
         reviewed = client.post(
             f"/api/aftersales/cases/{case_id}/review",
             json={
@@ -378,3 +378,106 @@ def test_analytics_covers_product_batch_grade_responsibility_and_cycle_time(db):
     assert {item["name"] for item in data["by_customer_grade"]} == {"A", "B"}
     assert {item["name"] for item in data["by_responsibility"]} == {"A", "D"}
     assert {item["name"] for item in data["by_batch"]} == {"BATCH-1", "BATCH-2"}
+
+
+def _case_at_awaiting_supervisor(db, monkeypatch, tmp_path, suffix):
+    """走完整流程把一个售后单推进到 awaiting_supervisor（含 supervisor 快照），
+    供审核权限边界测试复用。返回 (case_id, version, sales, supervisor)。"""
+    monkeypatch.setattr("app.aftersales.router._storage_root", lambda: tmp_path)
+
+    async def _skip_delivery(_notification_ids):
+        return None
+    monkeypatch.setattr("app.aftersales.router._deliver_notification_task", _skip_delivery)
+
+    sales = _user(db, f"api-{suffix}-sales")
+    supervisor = _user(db, f"api-{suffix}-supervisor")
+    db.add_all(
+        [
+            ArkUserExternalBinding(
+                ark_user_id=sales.id, provider="okki",
+                external_account_id=f"SP-{suffix}", binding_status="active", is_primary=True,
+            ),
+            ArkUserExternalBinding(
+                ark_user_id=supervisor.id, provider="okki",
+                external_account_id=f"SV-{suffix}", binding_status="active", is_primary=True,
+            ),
+            SupervisorRelationHistory(
+                salesperson_id=f"SP-{suffix}", supervisor_id=f"SV-{suffix}",
+                effective_start=date(2026, 1, 1), is_current=True,
+            ),
+        ]
+    )
+    db.commit()
+
+    with _client(db, sales, ["aftersales:read", "aftersales:write"]) as client:
+        case_id = client.post(
+            "/api/aftersales/cases", json={**_payload(), "batch_no": None}
+        ).json()["data"]["id"]
+        case = db.get(AfterSalesCase, case_id)
+        case.current_status = "awaiting_sales_decision"
+        db.commit()
+        for evidence_type in ("overview_image", "closeup_image"):
+            client.post(
+                f"/api/aftersales/cases/{case_id}/evidence",
+                data={"evidence_type": evidence_type},
+                files={"file": (f"{evidence_type}.jpg", b"image", "image/jpeg")},
+            )
+        version = client.post(
+            f"/api/aftersales/cases/{case_id}/decision",
+            json={
+                "responsibility_class": "D",
+                "responsibility_reason": "责任暂不明确",
+                "actions": [{
+                    "code": "return_inspection",
+                    "freight_payer": "customer",
+                    "return_address": "LeShine Quality Center",
+                    "expected_completion_date": "2026-07-20",
+                }],
+                "customer_reply_draft": "Please return the affected hair for inspection.",
+                "requires_return": True,
+            },
+        ).json()["data"]["version"]
+        submitted = client.post(
+            f"/api/aftersales/cases/{case_id}/submit",
+            json={"version": version, "idempotency_key": f"{suffix}-submit"},
+        )
+        assert submitted.json()["data"]["current_status"] == "awaiting_supervisor"
+        version = submitted.json()["data"]["version"]
+    return case_id, version, sales, supervisor
+
+
+def test_review_endpoint_requires_review_permission(db, monkeypatch, tmp_path):
+    case_id, version, _sales, supervisor = _case_at_awaiting_supervisor(
+        db, monkeypatch, tmp_path, "revperm"
+    )
+    # 仅录单（write，无 review）：即使是当前审批人也不能审核
+    with _client(db, supervisor, ["aftersales:read", "aftersales:write"]) as client:
+        denied = client.post(
+            f"/api/aftersales/cases/{case_id}/review",
+            json={"decision": "approve", "comment": "x", "version": version, "idempotency_key": "revperm-deny"},
+        )
+    assert denied.status_code == 403
+    # 仅审核（review）：可以完成审核
+    with _client(db, supervisor, ["aftersales:read", "aftersales:review"]) as client:
+        approved = client.post(
+            f"/api/aftersales/cases/{case_id}/review",
+            json={"decision": "approve", "comment": "同意", "version": version, "idempotency_key": "revperm-ok"},
+        )
+    assert approved.status_code == 200
+    assert approved.json()["data"]["current_status"] == "approved"
+
+
+def test_review_only_role_cannot_register_case(db):
+    reviewer = _user(db, "api-review-only")
+    with _client(db, reviewer, ["aftersales:read", "aftersales:review"]) as client:
+        response = client.post("/api/aftersales/cases", json=_payload())
+    assert response.status_code == 403
+
+
+def test_review_only_role_can_open_review_queue(db):
+    """纯 aftersales:review（不带 read）也能加载「待我审核」页 onMounted 必调的接口。"""
+    user = _user(db, "api-review-queue")
+    with _client(db, user, ["aftersales:review"]) as client:
+        assert client.get("/api/aftersales/options").status_code == 200
+        assert client.get("/api/aftersales/people/search").status_code == 200
+        assert client.get("/api/aftersales/cases?assigned_to_me=true").status_code == 200

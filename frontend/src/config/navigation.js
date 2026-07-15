@@ -49,7 +49,7 @@ export const MENU_GROUPS = {
   aftersales: {
     title: '售后管理',
     icon: Notebook,
-    anyPermission: ['aftersales:read', 'aftersales:write', 'aftersales:admin', 'aftersales_analytics:read'],
+    anyPermission: ['aftersales:read', 'aftersales:write', 'aftersales:review', 'aftersales:admin', 'aftersales_analytics:read'],
   },
   expo: {
     title: '展会营销',
@@ -264,10 +264,10 @@ export const NAV_ENTRIES = [
     name: 'AfterSalesReviews',
     component: () => import('@/views/aftersales/AfterSalesList.vue'),
     title: '待我审核',
-    permission: 'aftersales:write',
+    permission: 'aftersales:review',
     menu: {
       group: 'aftersales', title: '待我审核', icon: Stamp, order: 20,
-      permission: 'aftersales:write',
+      permission: 'aftersales:review',
     },
   },
   {
@@ -283,7 +283,7 @@ export const NAV_ENTRIES = [
     name: 'AfterSalesWorkspace',
     component: () => import('@/views/aftersales/AfterSalesWorkspace.vue'),
     title: '售后单工作台',
-    anyPermission: ['aftersales:read', 'aftersales:write', 'aftersales:admin'],
+    anyPermission: ['aftersales:read', 'aftersales:write', 'aftersales:review', 'aftersales:admin'],
     hideInMenu: true,
   },
   {
