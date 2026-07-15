@@ -36,9 +36,9 @@ def build_invoice_workbook(invoice: Invoice) -> BytesIO:
     ]
     for row_idx, (label_l, value_l, label_r, value_r) in enumerate(header_pairs, start=3):
         ws.cell(row=row_idx, column=1, value=label_l).font = Font(bold=True)
-        ws.cell(row=row_idx, column=2, value=str(value_l or ""))
+        ws.cell(row=row_idx, column=2, value=_excel_text(value_l))
         ws.cell(row=row_idx, column=6, value=label_r).font = Font(bold=True)
-        ws.cell(row=row_idx, column=7, value=str(value_r or ""))
+        ws.cell(row=row_idx, column=7, value=_excel_text(value_r))
 
     headers = [
         "Product_name", "Product", "Net Weight Grams", "Curl", "Model",
@@ -68,15 +68,15 @@ def build_invoice_workbook(invoice: Invoice) -> BytesIO:
             float(item.total_price or 0),
         ]
         for col, value in enumerate(values, start=1):
-            ws.cell(row=row_idx, column=col, value=value)
+            ws.cell(row=row_idx, column=col, value=_excel_value(value))
 
     current_row = start_row + len(hair_items)
     if accessory_items:
         title_row = current_row + 2
-        ws.merge_cells(start_row=title_row, start_column=1, end_row=title_row, end_column=8)
+        ws.merge_cells(start_row=title_row, start_column=1, end_row=title_row, end_column=9)
         ws.cell(row=title_row, column=1, value="Accessories").font = Font(size=13, bold=True)
         accessory_headers = [
-            "Name", "Model", "Color", "Standard Price", "Customer Price",
+            "Name", "Model", "Color", "Standard Price", "Customer Price", "Transaction Price",
             "Quantity", "Discount", "TotalPrice",
         ]
         accessory_header_row = title_row + 1
@@ -92,12 +92,13 @@ def build_invoice_workbook(invoice: Invoice) -> BytesIO:
                 item.color,
                 float(item.standard_price or 0),
                 float(item.customer_price or 0),
+                float(item.price_per_piece or 0),
                 item.quantity,
                 float(item.discount_amount or 0),
                 float(item.total_price or 0),
             ]
             for col, value in enumerate(values, start=1):
-                ws.cell(row=row_idx, column=col, value=value)
+                ws.cell(row=row_idx, column=col, value=_excel_value(value))
         current_row = accessory_header_row + len(accessory_items)
 
     summary = summarize_items(invoice)
@@ -166,6 +167,7 @@ def build_print_html(invoice: Invoice) -> str:
           <td>{escape(item.color or "")}</td>
           <td class="num">{"" if item.standard_price is None else item.standard_price}</td>
           <td class="num">{"" if item.customer_price is None else item.customer_price}</td>
+          <td class="num">{"" if item.price_per_piece is None else item.price_per_piece}</td>
           <td class="num">{item.quantity}</td>
           <td class="num">{item.discount_amount or 0}</td>
           <td class="num">{item.total_price or ""}</td>
@@ -177,7 +179,7 @@ def build_print_html(invoice: Invoice) -> str:
   <h2>Accessories</h2>
   <table>
     <thead>
-      <tr><th>Name</th><th>Model</th><th>Color</th><th>Standard Price</th><th>Customer Price</th><th>Quantity</th><th>Discount</th><th>TotalPrice</th></tr>
+      <tr><th>Name</th><th>Model</th><th>Color</th><th>Standard Price</th><th>Customer Price</th><th>Transaction Price</th><th>Quantity</th><th>Discount</th><th>TotalPrice</th></tr>
     </thead>
     <tbody>{''.join(accessory_rows)}</tbody>
   </table>
@@ -293,6 +295,7 @@ def build_invoice_pdf(invoice: Invoice) -> BytesIO:
             amount_line = (
                 f"Standard Price: {'' if item.standard_price is None else item.standard_price} | "
                 f"Customer Price: {'' if item.customer_price is None else item.customer_price} | "
+                f"Transaction Price: {'' if item.price_per_piece is None else item.price_per_piece} | "
                 f"Quantity: {item.quantity} | Discount: {item.discount_amount or 0} | "
                 f"TotalPrice: {item.total_price or ''}"
             )
@@ -339,6 +342,17 @@ def build_invoice_pdf(invoice: Invoice) -> BytesIO:
         y -= 16
 
     return _write_pdf_pages(pages)
+
+
+def _excel_text(value: object) -> str:
+    text = str(value or "")
+    if text.lstrip().startswith(("=", "+", "-", "@")):
+        return f"'{text}"
+    return text
+
+
+def _excel_value(value: object) -> object:
+    return _excel_text(value) if isinstance(value, str) else value
 
 
 def _wrap_pdf_field(label: str, value: str, width: int = 68) -> list[str]:

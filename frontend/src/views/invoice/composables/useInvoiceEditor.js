@@ -222,6 +222,12 @@ export function useInvoiceEditor({ onSaved } = {}) {
     await accessories.refreshAccessoryPrices()
   }
 
+  async function onCurrencyChange() {
+    form.currency = String(form.currency || '').trim().toUpperCase()
+    accessories.invalidateCustomerContext()
+    await accessories.refreshAccessoryPrices()
+  }
+
   async function onContactChange(contact) {
     selectedContact.value = contact || null
     if (!contact) return // 清空联系人筛选不动已选客户
@@ -404,6 +410,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     searchCustomers,
     searchContacts,
     onCustomerChange,
+    onCurrencyChange,
     onContactChange,
     onInvoiceNoInput,
     onInvoiceNoBlur,

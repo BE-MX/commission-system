@@ -23,6 +23,7 @@ export function useInvoiceAccessories(form) {
   const accessoryDiscountTotal = computed(() => accessoryDiscount(accessoryItems.value))
   const searchGate = createLatestRequestGate()
   const priceGate = createLatestRequestGate()
+  const pricingContext = () => `${form.customer_id || ''}|${String(form.currency || '').toUpperCase()}`
 
   function invalidateCustomerContext() {
     searchGate.invalidate()
@@ -33,25 +34,28 @@ export function useInvoiceAccessories(form) {
 
   async function searchAccessoryOptions(keyword = '') {
     const customerId = form.customer_id || ''
-    const token = searchGate.issue(customerId)
+    const currency = String(form.currency || '').toUpperCase()
+    const token = searchGate.issue(pricingContext())
     accessoryOptions.value = []
     accessoryLoading.value = true
     try {
       const result = await listAccessoryPrices({
         keyword: keyword.trim() || undefined,
         customer_id: customerId || undefined,
+        currency: currency || undefined,
         active_only: true,
       })
-      if (!searchGate.isCurrent(token, form.customer_id || '')) return
+      if (!searchGate.isCurrent(token, pricingContext())) return
       accessoryOptions.value = (result.items || []).map(option => ({
         ...option,
         customer_price: customerId ? option.customer_price : null,
         _customer_id: customerId,
+        _currency: currency,
       }))
     } catch {
-      if (searchGate.isCurrent(token, form.customer_id || '')) accessoryOptions.value = []
+      if (searchGate.isCurrent(token, pricingContext())) accessoryOptions.value = []
     } finally {
-      if (searchGate.isCurrent(token, form.customer_id || '')) accessoryLoading.value = false
+      if (searchGate.isCurrent(token, pricingContext())) accessoryLoading.value = false
     }
   }
 
@@ -60,8 +64,8 @@ export function useInvoiceAccessories(form) {
   }
 
   function selectAccessory(row, option) {
-    if (!applyAccessorySelection(row, option, form.customer_id)) {
-      ElMessage.warning('客户已变化，请重新搜索并选择配件')
+    if (!applyAccessorySelection(row, option, form.customer_id, form.currency)) {
+      ElMessage.warning('客户或币种已变化，请重新搜索并选择配件')
     }
   }
 
@@ -79,14 +83,16 @@ export function useInvoiceAccessories(form) {
 
   async function refreshAccessoryPrices() {
     const customerId = form.customer_id || ''
-    const token = priceGate.issue(customerId)
+    const currency = String(form.currency || '').toUpperCase()
+    const token = priceGate.issue(pricingContext())
     if (!accessoryItems.value.length) return
     try {
       const result = await listAccessoryPrices({
         customer_id: customerId || undefined,
+        currency: currency || undefined,
         active_only: true,
       })
-      if (!priceGate.isCurrent(token, form.customer_id || '')) return
+      if (!priceGate.isCurrent(token, pricingContext())) return
       const options = result.items || []
       let invalidCount = 0
       for (const row of accessoryItems.value) {

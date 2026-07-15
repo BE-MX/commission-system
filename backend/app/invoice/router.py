@@ -230,6 +230,7 @@ def list_accessory_prices(
     keyword: str | None = Query(None),
     customer_id: str | None = Query(None, max_length=64),
     active_only: bool = Query(False),
+    currency: str | None = Query(None, max_length=8),
     db: Session = Depends(get_db),
     _user=Depends(_PRICE_PAGE_READ),
 ):
@@ -239,6 +240,7 @@ def list_accessory_prices(
             keyword=keyword,
             customer_id=customer_id,
             active_only=active_only,
+            currency=currency,
         )
     except accessory_price_service.AccessoryCatalogUnavailable as exc:
         raise HTTPException(503, str(exc)) from exc

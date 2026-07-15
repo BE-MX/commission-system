@@ -191,6 +191,10 @@ class StdPrice(Base):
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="最后修改时间")
 
     __table_args__ = (
+        UniqueConstraint(
+            "product_kind", "series_grade", "length", "weight_unit", "color_type",
+            name="uq_ark_std_prices_key",
+        ),
         UniqueConstraint("product_kind", "product_id", "sku_id", name="uq_ark_std_accessory_sku"),
         {"comment": "标准价格矩阵（系列档次×长度×克重×颜色类型）"},
     )

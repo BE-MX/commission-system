@@ -21,6 +21,12 @@ export function calculateAccessoryTotal(quantity, pricePerPiece, discountAmount 
   return calculateLineTotal(quantity, pricePerPiece, discountAmount)
 }
 
+export function accessoryStandardPriceState(row = {}) {
+  if (row.standard_price != null) return 'priced'
+  if (row.product_id && row.sku_id) return 'invalid'
+  return 'empty'
+}
+
 export function normalizeAccessoryRow(row = {}) {
   const standardPrice = row.standard_price == null ? null : Number(row.standard_price)
   const customerPrice = row.customer_price == null ? null : Number(row.customer_price)
@@ -55,8 +61,12 @@ export function normalizeAccessoryRow(row = {}) {
   return normalized
 }
 
-export function applyAccessorySelection(row, option, customerId) {
-  if (!option || option._customer_id == null || String(option._customer_id) !== String(customerId || '')) {
+export function applyAccessorySelection(row, option, customerId, currency) {
+  const currentCurrency = String(currency || '').toUpperCase()
+  if (!option
+    || option._customer_id == null
+    || String(option._customer_id) !== String(customerId || '')
+    || String(option._currency || '').toUpperCase() !== currentCurrency) {
     return false
   }
   const id = row.id

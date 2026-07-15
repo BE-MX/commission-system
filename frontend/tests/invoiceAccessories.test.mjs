@@ -5,12 +5,14 @@ import {
   accessoryDiscount,
   accessoryGross,
   accessoryNet,
+  accessoryStandardPriceState,
   applyAccessorySelection,
   createLatestRequestGate,
   normalizeAccessoryRow,
   removeItemByReference,
 } from '../src/views/invoice/composables/accessoryPricing.js'
 import { buildInvoicePayload } from '../src/views/invoice/composables/invoiceEditorState.js'
+import { createLatestAccessorySearch } from '../src/views/invoice/composables/accessoryPriceConfigState.js'
 import {
   calculateBalance,
   calculateInvoiceTotal,
@@ -114,14 +116,15 @@ test('selection validates customer context and deletion removes the exact row ob
   const other = normalizeAccessoryRow({ id: 3, quantity: 1 })
   const items = [hair, accessory, other]
   const option = {
-    _customer_id: 'C-2', product_id: 11, sku_id: 22,
+    _customer_id: 'C-2', _currency: 'USD', product_id: 11, sku_id: 22,
     accessory_name: 'Hair Gripper', accessory_model: 'Tape', accessory_color: 'Black',
     standard_price: '12.3500', customer_price: '13.5850',
   }
 
-  assert.equal(applyAccessorySelection(accessory, option, 'C-1'), false)
+  assert.equal(applyAccessorySelection(accessory, option, 'C-1', 'USD'), false)
   assert.equal(accessory.product_id, null)
-  assert.equal(applyAccessorySelection(accessory, option, 'C-2'), true)
+  assert.equal(applyAccessorySelection(accessory, option, 'C-2', 'EUR'), false)
+  assert.equal(applyAccessorySelection(accessory, option, 'C-2', 'USD'), true)
   assert.equal(accessory.total_price, 135.85)
   assert.equal(accessory.price_source, 'customer_rule')
   assert.equal(removeItemByReference(items, accessory), true)
@@ -167,13 +170,13 @@ test('hair and accessory summaries share per-line currency rounding and settleme
   assert.match(invoiceEditor, /const formProductTotal = computed\(\(\) => sumLineNet\(form\.items\)\)/)
 })
 
-test('accessory customer repricing discards responses from an older customer', () => {
+test('accessory repricing discards responses from an older customer or currency', () => {
   const gate = createLatestRequestGate()
-  const oldCustomer = gate.issue('customer-a')
-  const currentCustomer = gate.issue('customer-b')
-  assert.equal(gate.isCurrent(oldCustomer, 'customer-a'), false)
-  assert.equal(gate.isCurrent(currentCustomer, 'customer-b'), true)
-  assert.equal(gate.isCurrent(currentCustomer, 'customer-c'), false)
+  const oldCustomer = gate.issue('customer-a|USD')
+  const currentCurrency = gate.issue('customer-b|EUR')
+  assert.equal(gate.isCurrent(oldCustomer, 'customer-a|USD'), false)
+  assert.equal(gate.isCurrent(currentCurrency, 'customer-b|EUR'), true)
+  assert.equal(gate.isCurrent(currentCurrency, 'customer-b|USD'), false)
 })
 
 test('an older hair price response cannot overwrite or mark the current customer price as manual', () => {
@@ -201,16 +204,21 @@ test('changing customer immediately clears accessory options and rejects stale c
   assert.match(invalidation, /accessoryOptions\.value = \[\]/)
   assert.match(invalidation, /accessoryLoading\.value = false/)
   assert.match(accessoryState, /_customer_id: customerId/)
-  assert.match(accessoryState, /applyAccessorySelection\(row, option, form\.customer_id\)/)
+  assert.match(accessoryState, /_currency: currency/)
+  assert.match(accessoryState, /applyAccessorySelection\(row, option, form\.customer_id, form\.currency\)/)
   assert.match(invoiceEditor, /form\.customer_name = customer\?\.company_name \|\| ''\s*\n\s*accessories\.invalidateCustomerContext\(\)/)
-  assert.match(accessoryState, /const token = searchGate\.issue\(customerId\)\s*\n\s*accessoryOptions\.value = \[\]/)
+  assert.match(accessoryState, /const token = searchGate\.issue\(pricingContext\(\)\)\s*\n\s*accessoryOptions\.value = \[\]/)
   assert.match(accessoryState, /catch\s*{[\s\S]*searchGate\.isCurrent\(token,[\s\S]*accessoryOptions\.value = \[\]/)
+  assert.match(invoiceEditor, /async function onCurrencyChange\(\)[\s\S]*invalidateCustomerContext\(\)[\s\S]*refreshAccessoryPrices\(\)/)
 })
 
 test('invoice accessory lookups request active catalog rows without changing price configuration history', () => {
   const activeRequests = accessoryState.match(/listAccessoryPrices\(\{[\s\S]*?\}\)/g) || []
   assert.equal(activeRequests.length, 2)
-  for (const request of activeRequests) assert.match(request, /active_only: true/)
+  for (const request of activeRequests) {
+    assert.match(request, /active_only: true/)
+    assert.match(request, /currency/)
+  }
   assert.doesNotMatch(accessoryConfig, /active_only:\s*true/)
 })
 
@@ -226,6 +234,12 @@ test('invoice accessory entry exposes only configured real-identity columns', ()
   assert.match(accessoryTable, /sku_id/)
   assert.doesNotMatch(accessoryTable, /\bclearable\b/)
   assert.match(accessoryTable, /\.accessory-line-table :deep\(\.el-input-number\)[^}]*width:\s*100%/s)
+})
+
+test('blank accessory rows stay neutral until a selected SKU becomes invalid', () => {
+  assert.equal(accessoryStandardPriceState({}), 'empty')
+  assert.equal(accessoryStandardPriceState({ product_id: 1, sku_id: 2 }), 'invalid')
+  assert.equal(accessoryStandardPriceState({ product_id: 1, sku_id: 2, standard_price: 0 }), 'priced')
 })
 
 test('invoice editor splits and recombines hair and accessory items', () => {
@@ -307,8 +321,10 @@ test('accessory editor selects a real OKKI product and SKU and keeps its snapsho
   assert.match(accessoryConfig, /sku_id/)
   const priceInput = accessoryConfig.match(/<el-input-number[^>]*v-model="dialog\.form\.price"[^>]*>/s)?.[0]
   assert.ok(priceInput, 'standard price input should exist')
+  assert.match(priceInput, /:min="0\.01"/)
   assert.match(priceInput, /:precision="2"/)
   assert.match(priceInput, /:max="99999999\.99"/)
+  assert.match(accessoryConfig, /Number\(form\.price\) <= 0/)
   assert.match(accessoryConfig, /<el-input[^>]*:model-value="dialog\.form\.accessory_name"[^>]*readonly/s)
   assert.match(accessoryConfig, /<el-input[^>]*:model-value="dialog\.form\.accessory_model"[^>]*readonly/s)
   assert.match(accessoryConfig, /<el-input[^>]*:model-value="dialog\.form\.accessory_color"[^>]*readonly/s)
@@ -318,6 +334,38 @@ test('accessory editor invalidates remote searches when opening or closing a dia
   assert.match(accessoryConfig, /@close="invalidateCandidateSearch"/)
   assert.match(accessoryConfig, /function openDialog\(row\)\s*{\s*invalidateCandidateSearch\(\)/)
   assert.match(accessoryConfig, /runCandidateSearch\.invalidate\(\)/)
+})
+
+test('accessory price list only applies the latest response and preserves rows on current failure', async () => {
+  const pending = []
+  const applied = []
+  const loading = []
+  const run = createLatestAccessorySearch({
+    request: params => new Promise((resolve, reject) => pending.push({ params, resolve, reject })),
+    applyItems: items => applied.push(items),
+    applyLoading: value => loading.push(value),
+    clearOnError: false,
+  })
+
+  const oldRequest = run({ keyword: 'old' })
+  const newRequest = run({ keyword: 'new' })
+  pending[1].resolve({ items: ['new'] })
+  await newRequest
+  pending[0].resolve({ items: ['old'] })
+  await oldRequest
+  assert.deepEqual(applied, [['new']])
+  assert.equal(loading.at(-1), false)
+
+  const failedRequest = run({ keyword: 'failed' })
+  pending[2].reject(new Error('network'))
+  await assert.rejects(failedRequest, /network/)
+  assert.deepEqual(applied, [['new']])
+})
+
+test('accessory price screen routes list loading through the latest-request controller', () => {
+  assert.match(accessoryConfig, /const runPriceList = createLatestAccessorySearch/)
+  assert.match(accessoryConfig, /clearOnError:\s*false/)
+  assert.match(accessoryConfig, /await runPriceList\(/)
 })
 
 test('invoice API exposes the complete accessory price lifecycle through the existing client', () => {

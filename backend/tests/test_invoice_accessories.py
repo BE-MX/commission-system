@@ -13,6 +13,8 @@ import pytest
 from sqlalchemy import event, text
 from sqlalchemy.exc import IntegrityError, OperationalError
 
+from app.auth import service as auth_service
+from app.auth.models import ArkPermission, ArkRole, ArkRolePermission
 from app.auth.utils import create_access_token
 from app.core.database import get_db
 from app.invoice import import_service, price_service, schemas, service
@@ -467,6 +469,7 @@ def test_accessory_price_payload_accepts_bound_okki_sku():
         ({"accessory_model": ""}, "accessory_model"),
         ({"accessory_color": ""}, "accessory_color"),
         ({"price": Decimal("-0.01")}, "price"),
+        ({"price": Decimal("0")}, "price"),
     ],
 )
 def test_accessory_price_payload_rejects_invalid_required_values(override, field):
@@ -500,6 +503,52 @@ def test_accessory_price_payload_rejects_database_precision_overflow(price):
         )
 
     assert exc_info.value.errors()[0]["loc"] == ("price",)
+
+
+def test_std_price_metadata_keeps_hair_and_accessory_unique_constraints():
+    constraints = {constraint.name: constraint for constraint in StdPrice.__table__.constraints}
+
+    assert "uq_ark_std_prices_key" in constraints
+    assert "uq_ark_std_accessory_sku" in constraints
+    assert [column.name for column in constraints["uq_ark_std_prices_key"].columns] == [
+        "product_kind", "series_grade", "length", "weight_unit", "color_type",
+    ]
+
+
+def test_permission_seed_registers_accessory_price_write_and_backfills_invoice_admin_roles(db):
+    role = ArkRole(name="invoice_price_manager", label="Invoice price manager", is_system=False)
+    invoice_admin = ArkPermission(
+        code="invoice:admin",
+        module="invoice",
+        action="admin",
+        label="价格配置",
+        kind="action",
+        is_legacy=0,
+        sort=10,
+    )
+    db.add_all([role, invoice_admin])
+    db.flush()
+    db.add(ArkRolePermission(role_id=role.id, permission_id=invoice_admin.id))
+    db.commit()
+
+    auth_service.seed_role_permissions(db)
+
+    price_write = db.query(ArkPermission).filter(ArkPermission.code == "invoice_price:write").one()
+    assert db.query(ArkRolePermission).filter_by(
+        role_id=role.id,
+        permission_id=price_write.id,
+    ).one_or_none() is not None
+
+    db.query(ArkRolePermission).filter_by(
+        role_id=role.id,
+        permission_id=price_write.id,
+    ).delete()
+    db.commit()
+    auth_service.seed_role_permissions(db)
+    assert db.query(ArkRolePermission).filter_by(
+        role_id=role.id,
+        permission_id=price_write.id,
+    ).one_or_none() is None
 
 
 # ── accessory standard pricing ───────────────────────────────
@@ -803,6 +852,31 @@ def test_accessory_list_filters_kind_keyword_and_applies_customer_rules(db):
     assert db.get(StdPrice, accessory.id).price == Decimal("12.3456")
 
 
+def test_accessory_list_filters_invoice_currency_without_hiding_other_history(db):
+    usd = StdPrice(
+        product_kind="accessory", accessory_name="USD Tool", accessory_model="M1",
+        accessory_color="Black", product_id=101, sku_id=1001,
+        price=Decimal("2.0000"), currency="USD",
+    )
+    eur = StdPrice(
+        product_kind="accessory", accessory_name="EUR Tool", accessory_model="M2",
+        accessory_color="Brown", product_id=102, sku_id=1002,
+        price=Decimal("3.0000"), currency="EUR",
+    )
+    db.add_all([usd, eur])
+    db.flush()
+
+    pricing = _accessory_price_service()
+    assert {row["id"] for row in pricing.list_prices(db)} == {usd.id, eur.id}
+    assert [row["id"] for row in pricing.list_prices(db, currency="usd")] == [usd.id]
+
+    with _api_client(db, permissions=["invoice_price:read"]) as client:
+        response = client.get("/api/invoice/price/accessories", params={"currency": "EUR"})
+
+    assert response.status_code == 200
+    assert [row["id"] for row in response.json()["data"]["items"]] == [eur.id]
+
+
 def test_accessory_delete_cannot_delete_hair_or_missing_rows(db):
     _seed_accessory_candidates(db)
     pricing = _accessory_price_service()
@@ -927,6 +1001,32 @@ def test_accessory_price_active_only_wraps_catalog_query_failure(db, monkeypatch
 
     with pytest.raises(pricing.AccessoryCatalogUnavailable, match="同步任务|同步表"):
         pricing.list_prices(db, active_only=True)
+
+    assert "查询失败" in caplog.text
+    assert "查询失败" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("operation", ["search", "upsert"])
+def test_accessory_catalog_select_failures_are_actionable(operation, db, monkeypatch, caplog, capsys):
+    from app.invoice import product_service
+
+    def pretend_catalog_columns_exist(_db, table_name):
+        if table_name == "okki_products":
+            return {"product_id", "name", "model", "color", "disable_flag"}
+        return {"product_id", "sku_id", "disable_flag"}
+
+    def fail_catalog_query(*_args, **_kwargs):
+        raise OperationalError("SELECT", {}, RuntimeError("catalog offline"))
+
+    monkeypatch.setattr(product_service, "_table_columns", pretend_catalog_columns_exist)
+    monkeypatch.setattr(db, "execute", fail_catalog_query)
+    pricing = _accessory_price_service()
+
+    with pytest.raises(pricing.AccessoryCatalogUnavailable, match="同步任务|同步表"):
+        if operation == "search":
+            pricing.search_candidates(db, keyword="Gripper")
+        else:
+            pricing.upsert_price(db, _payload(), user_id=9)
 
     assert "查询失败" in caplog.text
     assert "查询失败" in capsys.readouterr().out

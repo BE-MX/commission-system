@@ -97,7 +97,7 @@
         <el-form-item label="标准价" required>
           <el-input-number
             v-model="dialog.form.price"
-            :min="0"
+            :min="0.01"
             :max="99999999.99"
             :precision="2"
             :step="0.01"
@@ -153,6 +153,12 @@ const runCandidateSearch = createLatestAccessorySearch({
   applyItems: items => { candidates.value = items },
   applyLoading: value => { candidateLoading.value = value },
 })
+const runPriceList = createLatestAccessorySearch({
+  request: listAccessoryPrices,
+  applyItems: items => { rows.value = items },
+  applyLoading: value => { loading.value = value },
+  clearOnError: false,
+})
 
 onMounted(loadRows)
 
@@ -166,14 +172,10 @@ function formatDateTime(value) {
 }
 
 async function loadRows() {
-  loading.value = true
   try {
-    const result = await listAccessoryPrices(keyword.value.trim() ? { keyword: keyword.value.trim() } : {})
-    rows.value = result.items || []
+    await runPriceList(keyword.value.trim() ? { keyword: keyword.value.trim() } : {})
   } catch {
     // 保留已显示数据；请求拦截器已给出失败反馈。
-  } finally {
-    loading.value = false
   }
 }
 
@@ -213,7 +215,7 @@ async function saveRow() {
     ElMessage.warning('请搜索并选择真实的 OKKI 产品/SKU')
     return
   }
-  if (form.price == null || Number(form.price) < 0) {
+  if (form.price == null || Number(form.price) <= 0) {
     ElMessage.warning('请输入有效的标准价')
     return
   }

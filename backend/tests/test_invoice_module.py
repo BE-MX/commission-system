@@ -211,12 +211,12 @@ def test_mixed_invoice_exports_independent_accessory_table_and_full_summary(db):
     sheet = workbook["Invoice"]
     values = list(sheet.iter_rows(values_only=True))
     accessory_header = (
-        "Name", "Model", "Color", "Standard Price", "Customer Price",
+        "Name", "Model", "Color", "Standard Price", "Customer Price", "Transaction Price",
         "Quantity", "Discount", "TotalPrice",
     )
-    assert any(tuple(row[:8]) == accessory_header for row in values)
-    assert any(tuple(row[:8]) == (
-        "Hair Gripper", "魔术贴", "黑色", 0, 0, 2, -2, 28,
+    assert any(tuple(row[:9]) == accessory_header for row in values)
+    assert any(tuple(row[:9]) == (
+        "Hair Gripper", "魔术贴", "黑色", 0, 0, 15, 2, -2, 28,
     ) for row in values)
     summary_labels = [row[9] for row in values if row[9]]
     assert summary_labels[-9:] == [
@@ -229,6 +229,8 @@ def test_mixed_invoice_exports_independent_accessory_table_and_full_summary(db):
     html = export_service.build_print_html(invoice)
     assert "<h2>Accessories</h2>" in html
     assert "<th>Name</th><th>Model</th><th>Color</th>" in html
+    assert "<th>Transaction Price</th>" in html
+    assert '<td class="num">15</td>' in html
     assert "Accessory Amount: USD 30.00" in html
     assert "Accessory Discount: USD -2.00" in html
     assert "<td class=\"num\">0.0000</td>" in html
@@ -241,7 +243,7 @@ def test_mixed_invoice_exports_independent_accessory_table_and_full_summary(db):
     assert "Model: 魔术贴" in pdf_text
     assert "Color: 黑色" in pdf_text
     assert (
-        "Standard Price: 0.0000 | Customer Price: 0.0000 | Quantity: 2 | "
+        "Standard Price: 0.0000 | Customer Price: 0.0000 | Transaction Price: 15 | Quantity: 2 | "
         "Discount: -2.00 | TotalPrice: 28.00"
     ) in pdf_text
     assert "Accessory Amount: USD 30.00" in pdf_text
@@ -315,7 +317,7 @@ def test_invoice_pdf_paginates_without_omitting_rows_or_negative_coordinates():
     assert long_model in compact_text
     assert long_color in compact_text
     assert (
-        "Standard Price: 123.4567 | Customer Price: 124.4567 | Quantity: 7 | "
+        "Standard Price: 123.4567 | Customer Price: 124.4567 | Transaction Price: 1 | Quantity: 7 | "
         "Discount: -1.23 | TotalPrice: 869.97"
     ) in text_content
     assert "魔术贴".encode("utf-16-be").hex().upper().encode("ascii") in pdf
@@ -328,6 +330,51 @@ def test_invoice_pdf_paginates_without_omitting_rows_or_negative_coordinates():
             for value in re.findall(rb"1 0 0 1 \d+ (-?\d+) Tm", page_stream)
         ]
         assert len(page_y_positions) == len(set(page_y_positions))
+
+
+def test_invoice_workbook_neutralizes_formula_like_external_text():
+    invoice = Invoice(
+        invoice_no="=HYPERLINK(\"https://evil.invalid\",\"open\")",
+        customer_id="CUST-FORMULA",
+        customer_name="+Customer",
+        contact_name="@Contact",
+        delivery_address="-Address",
+        invoice_date=date(2026, 7, 15),
+        currency="USD",
+        total_amount=Decimal("1"),
+    )
+    invoice.items.extend([
+        InvoiceItem(
+            product_kind="hair",
+            product_name="=CMD()",
+            product_display="+Hair",
+            model="@Model",
+            color="-Color",
+            quantity=1,
+            price_per_piece=Decimal("1"),
+            discount_amount=Decimal("0"),
+            total_price=Decimal("1"),
+        ),
+        InvoiceItem(
+            product_kind="accessory",
+            product_name="=Accessory",
+            product_display="=Accessory",
+            model="+Tool",
+            color="@Black",
+            quantity=1,
+            price_per_piece=Decimal("1"),
+            discount_amount=Decimal("0"),
+            total_price=Decimal("1"),
+        ),
+    ])
+
+    workbook = load_workbook(export_service.build_invoice_workbook(invoice), data_only=False)
+    sheet = workbook["Invoice"]
+    external_cells = ["B3", "B4", "B7", "A11", "B11", "E11", "F11", "A15", "B15", "C15"]
+    for coordinate in external_cells:
+        cell = sheet[coordinate]
+        assert cell.data_type != "f"
+        assert str(cell.value).startswith("'")
 
 # ── 录入页自动填充 ────────────────────────────────────────────
 

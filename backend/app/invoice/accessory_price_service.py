@@ -3,7 +3,7 @@
 from decimal import Decimal, ROUND_HALF_UP
 import logging
 
-from sqlalchemy import or_, text
+from sqlalchemy import func, or_, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -37,7 +37,7 @@ def search_candidates(db: Session, keyword: str | None, limit: int = 50) -> list
         params["keyword"] = f"%{keyword.strip()}%"
 
     schema = product_service._schema()
-    rows = db.execute(text(f"""
+    rows = _execute_catalog(db, text(f"""
         SELECT DISTINCT
                p.product_id,
                s.sku_id,
@@ -51,7 +51,7 @@ def search_candidates(db: Session, keyword: str | None, limit: int = 50) -> list
           {keyword_clause}
         ORDER BY p.`{name_column}`, p.product_id, s.sku_id
         LIMIT :limit
-    """), params).mappings().all()
+    """), params, operation="候选产品").mappings().all()
     return [
         {
             "product_id": int(row["product_id"]),
@@ -69,8 +69,11 @@ def list_prices(
     keyword: str | None = None,
     customer_id: str | None = None,
     active_only: bool = False,
+    currency: str | None = None,
 ) -> list[dict]:
     query = db.query(StdPrice).filter(StdPrice.product_kind == "accessory")
+    if currency and currency.strip():
+        query = query.filter(func.upper(StdPrice.currency) == currency.strip().upper())
     if keyword and keyword.strip():
         like = f"%{keyword.strip()}%"
         query = query.filter(or_(
@@ -174,25 +177,25 @@ def _load_active_snapshot(db: Session, product_id: int, sku_id: int) -> dict:
     name_column = _name_column(product_columns)
 
     schema = product_service._schema()
-    product = db.execute(text(f"""
+    product = _execute_catalog(db, text(f"""
         SELECT p.`{name_column}` AS accessory_name,
                p.model AS accessory_model,
                p.color AS accessory_color
         FROM `{schema}`.okki_products p
         WHERE p.product_id = :product_id AND p.disable_flag = 0
         LIMIT 1
-    """), {"product_id": product_id}).mappings().first()
+    """), {"product_id": product_id}, operation="产品快照").mappings().first()
     if not product:
         raise ValueError("OKKI 产品不存在或已停用，请重新搜索并选择有效产品")
 
-    sku_exists = db.execute(text(f"""
+    sku_exists = _execute_catalog(db, text(f"""
         SELECT 1
         FROM `{schema}`.okki_product_skus s
         WHERE s.product_id = :product_id
           AND s.sku_id = :sku_id
           AND s.disable_flag = 0
         LIMIT 1
-    """), {"product_id": product_id, "sku_id": sku_id}).first()
+    """), {"product_id": product_id, "sku_id": sku_id}, operation="SKU快照").first()
     if not sku_exists:
         raise ValueError("OKKI SKU 不存在、已停用或不属于该产品，请重新搜索并选择有效 SKU")
 
@@ -233,6 +236,16 @@ def _catalog_columns(db: Session) -> tuple[set[str], set[str]]:
         print(f"[invoice] {message}", flush=True)
         raise AccessoryCatalogUnavailable(_CATALOG_GUIDANCE)
     return product_columns, sku_columns
+
+
+def _execute_catalog(db: Session, statement, params: dict, *, operation: str):
+    try:
+        return db.execute(statement, params)
+    except SQLAlchemyError as exc:
+        message = f"OKKI配件目录{operation}查询失败: {exc}"
+        logger.warning(message)
+        print(f"[invoice] {message}", flush=True)
+        raise AccessoryCatalogUnavailable(_CATALOG_GUIDANCE) from exc
 
 
 def resolve_configured_price(

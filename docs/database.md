@@ -117,7 +117,7 @@
   - `ark_invoice_items` — 发票明细（invoice_id FK CASCADE, `product_kind` hair/accessory（073）, item_type stock/custom, product_id 可空, sku_id, custom_product_id, product_name/display, net_weight_grams/curl/length 对配件可空, model 可空, color, quantity, standard_price+customer_price 双价快照, price_per_piece, discount_amount 行级折扣负数/0——070 迁移, total_price=`ROUND_HALF_UP(单价×数量,2)+ROUND_HALF_UP(折扣,2)`, price_source customer_rule/manual/missing_std, xiaoman_unique_id）。hair 保持原规格校验；accessory 仅使用 Name/Model/Color 与真实 product_id+sku_id。
   - `ark_custom_products`（049）— 生产单沉淀产品（match_key UNIQUE=归一化 display|model|color|size|unit, product_display/name, model/color/size/unit, okki_product_id/okki_sku_id 对账回填, use_count）；**okki_products 保持只读，本地产品一律进此表**
   - `ark_price_color_types`（049）— 色号→色型（color_code UNIQUE 归一化小写无#, color_type solid/piano/ombre/balayage）
-  - `ark_std_prices`（049，073 扩展）— 标准价矩阵。`product_kind=hair` 使用 series_grade+length+weight_unit+color_type；`product_kind=accessory` 使用 product_id+sku_id 唯一组合及 accessory_name/model/color 快照。配件不从 OKKI `group_name` 推断，一个 SKU 一条标准价。
+  - `ark_std_prices`（049，073 扩展，074 唯一键隔离）— 标准价矩阵。`product_kind=hair` 使用 product_kind+series_grade+length+weight_unit+color_type 唯一键；`product_kind=accessory` 使用 product_kind+product_id+sku_id 唯一组合及 accessory_name/model/color 快照。配件不从 OKKI `group_name` 推断，一个 SKU 一条标准价。
   - `ark_customer_price_rules`（049）— 客户调价规则（customer_id UNIQUE, adjust_type fixed/percent, adjust_value 有符号, enabled, preferred_template）
   - `ark_invoice_sync_logs`（049）— OKKI 推送日志（invoice_id FK CASCADE, action, success, request_digest/response_body/error_message, operator_id）
   - `ark_xiaoman_settings`（049）— OKKI 推送配置单行表（generic_product_no/id/sku_id 通用产品, default_order_status, default_currency, access_token）

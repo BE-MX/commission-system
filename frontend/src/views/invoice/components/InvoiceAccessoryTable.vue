@@ -47,7 +47,8 @@
         <el-table-column label="标准价" min-width="92" max-width="125" align="right">
           <template #default="{ row }">
             <span v-if="row.standard_price != null" class="std-price">{{ money4(row.standard_price) }}</span>
-            <el-tag v-else size="small" type="warning" effect="plain">需重新配置</el-tag>
+            <el-tag v-else-if="accessoryStandardPriceState(row) === 'invalid'" size="small" type="warning" effect="plain">需重新配置</el-tag>
+            <span v-else class="std-price">—</span>
           </template>
         </el-table-column>
         <el-table-column label="客户价" min-width="135" max-width="175">
@@ -96,6 +97,7 @@
 
 <script setup>
 import { Delete, Plus } from '@element-plus/icons-vue'
+import { accessoryStandardPriceState } from '../composables/accessoryPricing.js'
 
 const props = defineProps({
   items: { type: Array, required: true },

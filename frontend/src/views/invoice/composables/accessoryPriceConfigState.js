@@ -38,7 +38,7 @@ export function buildAccessoryEditorState(row) {
   }
 }
 
-export function createLatestAccessorySearch({ request, applyItems, applyLoading }) {
+export function createLatestAccessorySearch({ request, applyItems, applyLoading, clearOnError = true }) {
   let latestRequestId = 0
   const search = async params => {
     const requestId = ++latestRequestId
@@ -48,7 +48,7 @@ export function createLatestAccessorySearch({ request, applyItems, applyLoading 
       if (requestId === latestRequestId) applyItems(result.items || [])
       return result
     } catch (error) {
-      if (requestId === latestRequestId) applyItems([])
+      if (requestId === latestRequestId && clearOnError) applyItems([])
       throw error
     } finally {
       if (requestId === latestRequestId) applyLoading(false)

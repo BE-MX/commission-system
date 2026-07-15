@@ -260,7 +260,7 @@
                 <el-date-picker v-model="form.invoice_date" value-format="YYYY-MM-DD" style="width: 100%" />
               </el-form-item>
               <el-form-item label="币种" class="span-1">
-                <el-input v-model="form.currency" maxlength="16" />
+                <el-input v-model="form.currency" maxlength="16" @change="onCurrencyChange" />
               </el-form-item>
               <el-form-item label="小满标记" required class="span-3">
                 <div class="okki-flags-row">
@@ -410,7 +410,7 @@ const {
   canTogglePrivate, okkiBound, invoiceNoTaken, entryOptions, form, hairItems, accessoryItems,
   accessoryOptions, accessoryLoading, formHairPrice, formLineDiscountTotal, formAccessoryAmount,
   formAccessoryDiscount, formTotal, settlementError, isProduction, searchCustomers, searchContacts,
-  onCustomerChange, onContactChange, onInvoiceNoInput, onInvoiceNoBlur, openCreate, openEdit,
+  onCustomerChange, onCurrencyChange, onContactChange, onInvoiceNoInput, onInvoiceNoBlur, openCreate, openEdit,
   addLine, addAccessory, selectAccessory, removeAccessory, searchAccessoryOptions,
   updateAccessoryTotal, removeLine, loadLineOptions, onLineFilterChange, onCustomFieldChange,
   onPriceInput, onLineDiscountChange, updateLineTotal, appendImportedLines, saveDraft,
