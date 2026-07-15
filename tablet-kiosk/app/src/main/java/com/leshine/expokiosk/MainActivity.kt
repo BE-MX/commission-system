@@ -80,8 +80,9 @@ class MainActivity : ComponentActivity() {
                 params: FileChooserParams?,
             ): Boolean {
                 pendingFileCallback = filePathCallback
+                val intent = params?.createIntent() ?: run { pendingFileCallback = null; return false }
                 return try {
-                    startActivityForResult(params?.createIntent(), FILE_CHOOSER_REQ)
+                    startActivityForResult(intent, FILE_CHOOSER_REQ)
                     true
                 } catch (e: Exception) {
                     pendingFileCallback = null
