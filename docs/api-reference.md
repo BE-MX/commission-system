@@ -50,6 +50,7 @@
   - 选项端点：`GET /hair-colors`（发色库列表，`?only_active=0` 管理端取全量；048 起独立表 ark_expo_hair_colors，不再复用 ark_color_palette）、`GET /scenes?mode=scene|tryon`（scene=场景大片五景 / tryon=试戴生成场景 **20 景**：职场专业 12（白领/老师/老板娘/公务员/医生/律师/银行柜员/财务/社区主任/药剂师/小区管理员/高铁出差）+ 长辈生活 8（居家/聚会/喜婆婆/接孙放学/广场舞领舞/老年大学/闺蜜咖啡/晨间公园），key/label/tagline；tryon 额外返回 `image` 示意图 URL（探测 uploads/expo/scenes/&lt;key&gt;.* 存在则给 /uploads 路径否则 null，仅示意不参与合成）+ `category`（career/life，前端分段 Tab 展示，避免 20 景单行长条）；tryon 统一输出 6 寸竖版 1024x1536。multi 多场景合一已于 2026-07-09 下线）；**场景示意图管理**（expo:admin）：`POST /scenes/{key}/image`（multipart photo，存 uploads/expo/scenes/&lt;key&gt;.&lt;ext&gt;，先删同 key 旧图 + 超 1200px 降采样，限 jpg/jpeg/png/webp）、`DELETE /scenes/{key}/image`（删示意图，恢复占位卡）。管理页 `/expo/scene-images`
   - **kiosk 销售面板**（展位设备 expo:write，2026-07-13）：`GET /kiosk/leads`（线索列表，keyword 姓名/手机检索 + expo_code + 分页，**手机号服务端脱敏** 138****1234，不带备注/微信号）、`GET /kiosk/leads/{customer_id}/strategy`（话术 opener/followup/objections + tried_wigs + strategy_pending + **sessions 图集**（各会话原图 photo_url + 已完成效果图 image_url/display_url/wig_name/reaction，2026-07-13 亮哥指令加图），**internal 发况仍不出**；与 /leads 的 expo_lead:* 全量数据刻意分离）
   - 管理端：`/wigs` CRUD + `/wigs/upload-photo`（发型库；`must_recommend` 主推=置顶推荐列表最前(2026-07-13 起)/多款主推按匹配分排序/仍按性别过滤；`priority` 大→同评级内推荐分小幅折算加高）+ `GET /wigs/picker`（kiosk「从发型库选择」轻量列表：启用发型 wig_id/name/series/cover_url）、`/hair-colors` POST/PUT + `/hair-colors/upload-swatch`（发色库，上传色板图自动提取主色 hex；expo:admin）；**上传落盘即压**：wig/swatch/客户照片统一 `downscale_inplace` 长边 1600（保持文件名扩展名，存库路径零变更；存量补压跑 `backend/scripts/compress_expo_uploads.py`，2026-07-14）、`/scripts` CRUD + `POST /scripts/seed`（话术卡库，写入时禁用词强校验）、`/leads` 线索台、`DELETE /customers/{id}`（照片物理删除）
+  - **发型×发色组合参考图**（072，2026-07-15）：`GET /wigs/{id}/colors`（kiosk：该发型已备三角度图的发色列表，供客户端过滤发色；「原色」由前端恒定提供）、`GET /wigs/{id}/color-images`（管理端矩阵：所有启用发色 + 各自图组，expo:admin）、`PUT /wigs/{id}/color-images/{color_id}`（新建/替换某组合三角度图，1~3 张，替换时清旧文件）、`DELETE /wigs/{id}/color-images/{color_id}`（删组合，退回原色）。合成时选定发色且组合有图 → 直接用该图组当参考、连颜色照搬不加 recolor 文字；缺图/文件丢失 → 回退发型 angle_photos + 文字上色；原色 → 发型 angle_photos 不上色（存 result.hair_color_json.ref_photos 快照）
   - H5 kiosk：`/expo/kiosk` 全屏路由（router/index.js 顶层注册，不走 MainLayout）；匹配权重 `config/expo_matching.yaml`；上传文件锚定 REPO_ROOT/uploads/expo（存库相对路径）
 - `/api/invoice` — 订单发票管理（`invoice/router.py`，需 `invoice:read/write/sync/admin`；049 起全部端点走 `ok()` 信封；**数据范围**：默认只见/只能操作自己创建的发票，`invoice:read_all`（kind=data，067）或 super_admin 放开为全部——注意它同时放宽读与写的对象范围）
   - `GET /customers/search?keyword=&private_only=` — 客户搜索（invoice:read/write）；`private_only=true` 时过滤 `customer_info.owner_user_ids`（JSON 数组）包含当前用户绑定的 OKKI 账号（私海），未绑定返回 `{items:[], okki_bound:false}`；`okki_bound` 字段仅私海请求返回。前端所有人默认私海，「仅私海」勾选框显隐由 `invoice_private_filter:read` 控制（=能否切全量视图；便利筛选非数据边界，端点不校验该码）
@@ -63,16 +64,16 @@
   - `GET /products/entry-options` — 生产单自由录入候选值（okki UNION ark_custom_products，含 displays）
   - `GET /custom-products` — 沉淀产品列表；`POST /custom-products/reconcile` — 与 okki 产品库对账回填（invoice:admin）
   - `GET /price/resolve` — 取价（标准价+客户价+色型+规则描述，参数 customer_id/product_display/length/unit/color）
-  - `GET|POST|DELETE /price/std` — 标准价矩阵 CRUD；`POST /price/import` — 导入基础价格表 Excel（价格表+颜色对照表两 sheet，invoice:admin）
+  - `GET|POST|DELETE /price/std` — 标准价矩阵 CRUD；`POST /price/import` — 从 Excel 导入“价格表”sheet，标准价按 ROUND_HALF_UP 保留 2 位小数，忽略“颜色对照表”（invoice:admin）
   - `GET|POST|DELETE /price/color-types` — 色号→色型映射（solid/piano/ombre/balayage）
   - `GET|POST|DELETE /price/customer-rules` — 客户价格规则（fixed/percent 二选一，有符号）；`GET /price/customer-rules/by-customer/{id}` — 单客户规则
   - `GET /invoices` — 发票列表（分页+搜索+状态+order_type 筛选；数据范围由权限自动决定，无 read_all 只返回自己创建的；created_by 为 NULL 的历史发票仅全量范围可见）
-  - `POST /invoices` — 创建发票（order_type stock/production；custom 明细自动沉淀产品并服务端定价快照）
+  - `POST /invoices` — 创建发票（order_type stock/production；custom 明细自动沉淀产品并服务端定价快照；明细 `discount_amount` 自动归一为负数，头部 `internal_discount` 由服务端覆盖为明细折扣合计快照；`packaging_quantity` 只记录包装数量、不参与金额乘算；总额=明细净额+包装费+运费+手续费）
   - `GET /invoices/{id}` — 发票详情
-  - `PUT /invoices/{id}` — 更新发票（order_type 创建后不可改）
+  - `PUT /invoices/{id}` — 更新发票（order_type 创建后不可改；金额与折扣由服务端重算，预付款+尾款必须等于总额）
   - `DELETE /invoices/{id}` — 删除发票（invoice:write；sync_status=synced 拒绝删除）
   - `POST /invoices/{id}/validate` — 同步前校验
-  - `POST /invoices/{id}/sync` — 推单到小满（invoice:sync；真实调 OKKI `POST /v1/invoices/order/push`，无沙箱=真实订单）。已存 xiaoman_order_id 走编辑语义（明细带 unique_id、本地删行发 remove:1）；前置校验（客户数字ID/默认订单状态/业务员OKKI绑定/**业务员归属部门**/通用产品）不过返回 issues 不置失败态；payload 含企业必填字段：departments（业务员用户设置的部门）+ 4 个自定义字段（订单类型 691123983470 按 order_type 自动映射规格品/定制品，新成交 22595163468 / 包邮 20528077262544 / 首返 20528142733548 取发票三标记）；推送失败标 sync_failed 并落日志
+  - `POST /invoices/{id}/sync` — 推单到小满（invoice:sync；真实调 OKKI `POST /v1/invoices/order/push`，无沙箱=真实订单）。已存 xiaoman_order_id 走编辑语义（明细带 unique_id、本地删行发 remove:1）；前置校验（客户数字ID/默认订单状态/业务员OKKI绑定/**业务员归属部门**/通用产品）不过返回 issues 不置失败态；payload 含企业必填字段：departments（业务员用户设置的部门）+ 4 个自定义字段（订单类型 691123983470 按 order_type 自动映射规格品/定制品，新成交 22595163468 / 包邮 20528077262544 / 首返 20528142733548 取发票三标记）；明细折扣已计入 product_list 的 `cost_amount`，不再进入 cost_list，Packaging/Shipping Fee/Handling Fee 用 percent_type=0 加绝对值；推送失败标 sync_failed 并落日志
   - `GET /invoices/{id}/sync-logs` — OKKI 推单审计日志（invoice:read；倒序 50 条，含请求摘要/响应/错误）
   - `GET /invoices/{id}/export/excel` — 导出 Excel（含 To/From 头块与费用区）
   - `GET /invoices/{id}/export/print` — 打印用 HTML
