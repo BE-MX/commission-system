@@ -7,9 +7,30 @@
 - service：kiosk 发色过滤 / 管理端矩阵 / upsert / delete
 """
 
+from contextlib import contextmanager
+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from app.auth.utils import create_access_token
+from app.core.database import get_db
 from app.expo import ai_pipeline, service
 from app.expo.models import ExpoHairColor, ExpoResult, ExpoSession, ExpoWig, ExpoWigColor
 from app.expo.schemas import HairColorUpsert, WigColorImagesUpsert, WigUpsert
+
+
+@contextmanager
+def _client(db, permissions):
+    from app.expo.router import router
+    app = FastAPI()
+    app.include_router(router, prefix="/api/expo")
+
+    def override_db():
+        yield db
+    app.dependency_overrides[get_db] = override_db
+    token = create_access_token({"sub": "1", "username": "u1", "roles": [], "permissions": permissions})
+    with TestClient(app, headers={"Authorization": f"Bearer {token}"}) as c:
+        yield c
 
 
 def _session(photo="uploads/expo/photos/x.jpg"):
@@ -214,6 +235,23 @@ def test_delete_hair_color_cleans_combo_files_and_rows(db, tmp_path, monkeypatch
     from app.expo.models import ExpoHairColor as _HC
     assert db.get(_HC, color.id) is None
     assert all(not f.exists() for f in files)
+
+
+def test_put_color_images_persists_and_reads_back(db):
+    """路由级复现：PUT 保存组合图 → GET 矩阵能读回（用户报告『保存成功但没存下来』）。"""
+    wig = _make_wig(db, "LS-PUT")
+    color = _make_color(db, "6", "栗棕")
+    with _client(db, ["expo:admin"]) as c:
+        r = c.put(f"/api/expo/wigs/{wig.id}/color-images/{color.id}",
+                  json={"angle_photos": ["uploads/expo/wigs/a.jpg", "uploads/expo/wigs/b.jpg"]})
+        assert r.status_code == 200, r.text
+        g = c.get(f"/api/expo/wigs/{wig.id}/color-images")
+        assert g.status_code == 200
+        by_id = {m["hair_color_id"]: m for m in g.json()["data"]}
+        assert by_id[color.id]["has_images"] is True
+        assert by_id[color.id]["angle_photos"] == ["uploads/expo/wigs/a.jpg", "uploads/expo/wigs/b.jpg"]
+    # 直查 DB 确认真落库
+    assert db.query(ExpoWigColor).filter_by(wig_id=wig.id, hair_color_id=color.id).count() == 1
 
 
 def test_delete_wig_cleans_combo_files(db, tmp_path, monkeypatch):
