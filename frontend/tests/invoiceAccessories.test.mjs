@@ -32,6 +32,20 @@ test('accessory price table only exposes its supported identity and pricing fiel
   assert.doesNotMatch(accessoryConfig, /align="center"/)
 })
 
+test('accessory price list separates currency and update time with bounded columns', () => {
+  assert.match(accessoryConfig, /label="Name"[^>]*min-width="180"[^>]*max-width="320"/)
+  assert.match(accessoryConfig, /label="Model"[^>]*min-width="150"[^>]*max-width="240"/)
+  assert.match(accessoryConfig, /label="Color"[^>]*min-width="150"[^>]*max-width="240"/)
+  assert.match(accessoryConfig, /label="标准价"[^>]*min-width="110"[^>]*max-width="150"/)
+  assert.match(accessoryConfig, /label="币种"[^>]*min-width="90"[^>]*max-width="110"/)
+  assert.match(accessoryConfig, /label="更新时间"[^>]*min-width="170"[^>]*max-width="240"/)
+  assert.match(accessoryConfig, /label="操作"[^>]*width="160"[^>]*fixed="right"/)
+  assert.match(accessoryConfig, /formatDateTime\(row\.updated_at\)/)
+  assert.match(accessoryConfig, /if \(!value\) return '—'/)
+  assert.match(accessoryConfig, /Number\(row\.standard_price\)\.toFixed\(2\)/)
+  assert.doesNotMatch(accessoryConfig, /row\.currency\s*}}\s*{{\s*formatPrice/)
+})
+
 test('accessory editor selects a real OKKI product and SKU and keeps its snapshot readonly', () => {
   assert.match(accessoryConfig, /remote-method="searchCandidates"/)
   assert.match(accessoryConfig, /product_id/)

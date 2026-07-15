@@ -27,15 +27,19 @@
 
     <div class="table-card accessory-table-card">
       <el-table v-loading="loading" :data="rows" class="list-table" border>
-        <el-table-column prop="accessory_name" label="Name" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="accessory_model" label="Model" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="accessory_color" label="Color" min-width="150" show-overflow-tooltip />
-        <el-table-column label="标准价" min-width="130">
+        <el-table-column prop="accessory_name" label="Name" min-width="180" max-width="320" show-overflow-tooltip />
+        <el-table-column prop="accessory_model" label="Model" min-width="150" max-width="240" show-overflow-tooltip />
+        <el-table-column prop="accessory_color" label="Color" min-width="150" max-width="240" show-overflow-tooltip />
+        <el-table-column label="标准价" min-width="110" max-width="150">
           <template #default="{ row }">
-            {{ row.currency }} {{ formatPrice(row.standard_price) }}
+            {{ Number(row.standard_price).toFixed(2) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" min-width="160">
+        <el-table-column prop="currency" label="币种" min-width="90" max-width="110" />
+        <el-table-column label="更新时间" min-width="170" max-width="240" show-overflow-tooltip>
+          <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
             <el-button v-permission="'invoice_price:write'" link type="primary" @click="openDialog(row)">
               <el-icon><Edit /></el-icon>
@@ -165,8 +169,9 @@ function candidateLabel(row) {
   return `${row.accessory_name} / ${row.accessory_model} / ${row.accessory_color} · SKU ${row.sku_id}`
 }
 
-function formatPrice(value) {
-  return Number(value || 0).toFixed(2)
+function formatDateTime(value) {
+  if (!value) return '—'
+  return String(value).replace('T', ' ').slice(0, 16)
 }
 
 async function loadRows() {
