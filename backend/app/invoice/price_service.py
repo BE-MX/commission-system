@@ -369,12 +369,18 @@ def delete_customer_rule(db: Session, rule_id: int) -> bool:
 
 
 def get_customer_rule(db: Session, customer_id: str) -> dict | None:
-    row = (
+    row = get_customer_rule_row(db, customer_id)
+    return _serialize_rule(row) if row else None
+
+
+def get_customer_rule_row(db: Session, customer_id: str | None) -> CustomerPriceRule | None:
+    if not customer_id:
+        return None
+    return (
         db.query(CustomerPriceRule)
         .filter(CustomerPriceRule.customer_id == str(customer_id), CustomerPriceRule.enabled == 1)
         .first()
     )
-    return _serialize_rule(row) if row else None
 
 
 # ── Excel import (business price sheet format) ────────────────

@@ -63,6 +63,9 @@
   - `GET /products/match` — 按 model/color/size/unit 精确匹配产品
   - `GET /products/entry-options` — 生产单自由录入候选值（okki UNION ark_custom_products，含 displays）
   - `GET /custom-products` — 沉淀产品列表；`POST /custom-products/reconcile` — 与 okki 产品库对账回填（invoice:admin）
+  - `GET /price/accessory-candidates?keyword=`（`_PRICE_PAGE_READ`）— 联结 `lsordertest.okki_products` 与 `okki_product_skus`，仅返回产品和 SKU 均启用的记录，一 SKU 一行；keyword 匹配 Name/Model/Color，不依赖 `group_name`，返回真实 product_id/sku_id 与三属性
+  - `GET /price/accessories?keyword=&customer_id=`（`_PRICE_PAGE_READ`）— 仅返回 `product_kind=accessory`，可按三属性过滤；customer_id 给定时复用现有 fixed/percent 客户调价规则，返回两位展示的 standard_price/customer_price 与币种，库内标准价仍保留 `Numeric(12,4)`
+  - `POST /price/accessories`、`DELETE /price/accessories/{price_id}`（`invoice_price:write`）— 写入时重新校验真实且启用的 OKKI 产品/SKU，并以 OKKI 当前 Name/Model/Color 覆盖客户端快照；product_id+sku_id 不可重复；只可编辑、删除配件行，不影响头发标准价
   - `GET /price/resolve` — 取价（标准价+客户价+色型+规则描述，参数 customer_id/product_display/length/unit/color）
   - `GET|POST|DELETE /price/std` — 标准价矩阵 CRUD；`POST /price/import` — 从 Excel 导入“价格表”sheet，标准价按 ROUND_HALF_UP 保留 2 位小数，忽略“颜色对照表”（invoice:admin）
   - `GET|POST|DELETE /price/color-types` — 色号→色型映射（solid/piano/ombre/balayage）

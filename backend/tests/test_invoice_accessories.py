@@ -1,14 +1,22 @@
-"""Schema coverage for accessory invoice products."""
+"""Accessory invoice products and standard-pricing coverage."""
 
+from contextlib import contextmanager
 from datetime import date
 from decimal import Decimal
+import importlib
+import importlib.util
 
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
+from app.auth.utils import create_access_token
+from app.core.database import get_db
 from app.invoice import import_service, price_service, schemas, service
-from app.invoice.models import InvoiceItem, StdPrice
+from app.invoice.models import CustomerPriceRule, InvoiceItem, StdPrice
 from app.invoice.schemas import InvoiceCreate, InvoiceItemPayload
 
 
@@ -274,3 +282,360 @@ def test_accessory_price_payload_rejects_invalid_required_values(override, field
         schemas.AccessoryPricePayload(**values)
 
     assert exc_info.value.errors()[0]["loc"] == (field,)
+
+
+# ── accessory standard pricing ───────────────────────────────
+
+REAL_PRODUCT_ID = 104881553777436
+REAL_SKU_ID = 104881553777819
+
+
+def _accessory_price_service():
+    module_name = "app.invoice.accessory_price_service"
+    assert importlib.util.find_spec(module_name) is not None, "accessory pricing service is missing"
+    return importlib.import_module(module_name)
+
+
+def _create_accessory_candidate_tables(db):
+    db.execute(text("""
+        CREATE TABLE IF NOT EXISTS lsordertest.okki_products (
+            product_id INTEGER PRIMARY KEY,
+            product_no TEXT,
+            name TEXT,
+            model TEXT,
+            color TEXT,
+            group_name TEXT,
+            disable_flag INTEGER
+        )
+    """))
+    db.execute(text("""
+        CREATE TABLE IF NOT EXISTS lsordertest.okki_product_skus (
+            product_id INTEGER,
+            sku_id INTEGER,
+            disable_flag INTEGER
+        )
+    """))
+
+
+def _seed_accessory_candidates(db):
+    _create_accessory_candidate_tables(db)
+    db.execute(text("""
+        INSERT INTO lsordertest.okki_products
+        (product_id, product_no, name, model, color, group_name, disable_flag)
+        VALUES
+        (:real_pid, 'ACC001', 'Hair Gripper', '魔术贴', 'Hair Gripper', '假发产品', 0),
+        (2002, 'ACC002', 'Needle Tool', 'Hook Model', 'Silver', 'Hair ExtensionsTools Fee', 0),
+        (2003, 'ACC003', 'Disabled Product', 'Disabled Model', 'Black', 'Other', 1)
+    """), {"real_pid": REAL_PRODUCT_ID})
+    db.execute(text("""
+        INSERT INTO lsordertest.okki_product_skus (product_id, sku_id, disable_flag)
+        VALUES
+        (:real_pid, :real_sku, 0),
+        (:real_pid, 104881553777820, 0),
+        (:real_pid, 104881553777821, 1),
+        (2002, 22001, 0),
+        (2003, 23001, 0)
+    """), {"real_pid": REAL_PRODUCT_ID, "real_sku": REAL_SKU_ID})
+    db.commit()
+
+
+def _payload(**overrides):
+    values = {
+        "product_id": REAL_PRODUCT_ID,
+        "sku_id": REAL_SKU_ID,
+        # These are deliberately forged. The service must take a live OKKI snapshot.
+        "accessory_name": "Forged Name",
+        "accessory_model": "Forged Model",
+        "accessory_color": "Forged Color",
+        "price": Decimal("12.3456"),
+        "currency": "USD",
+    }
+    values.update(overrides)
+    return schemas.AccessoryPricePayload(**values)
+
+
+@contextmanager
+def _api_client(db, *, permissions):
+    from app.invoice.router import router
+
+    app = FastAPI()
+    app.include_router(router, prefix="/api/invoice")
+
+    def override_db():
+        yield db
+
+    app.dependency_overrides[get_db] = override_db
+    token = create_access_token({
+        "sub": "9",
+        "username": "accessory-tester",
+        "roles": [],
+        "permissions": permissions,
+    })
+    with TestClient(
+        app,
+        headers={"Authorization": f"Bearer {token}"},
+        raise_server_exceptions=False,
+    ) as client:
+        yield client
+
+
+def test_accessory_price_service_module_exists():
+    assert _accessory_price_service()
+
+
+@pytest.mark.parametrize("keyword", ["Hair Gripper", "魔术贴", "Hair Gripper"])
+def test_candidate_search_joins_active_products_and_skus_without_group_dependency(db, keyword):
+    _seed_accessory_candidates(db)
+
+    rows = _accessory_price_service().search_candidates(db, keyword=keyword, limit=50)
+
+    assert rows == [
+        {
+            "product_id": REAL_PRODUCT_ID,
+            "sku_id": REAL_SKU_ID,
+            "accessory_name": "Hair Gripper",
+            "accessory_model": "魔术贴",
+            "accessory_color": "Hair Gripper",
+        },
+        {
+            "product_id": REAL_PRODUCT_ID,
+            "sku_id": 104881553777820,
+            "accessory_name": "Hair Gripper",
+            "accessory_model": "魔术贴",
+            "accessory_color": "Hair Gripper",
+        },
+    ]
+
+
+def test_candidate_search_filters_disabled_rows_and_caps_limit(db):
+    _create_accessory_candidate_tables(db)
+    for offset in range(55):
+        db.execute(text("""
+            INSERT INTO lsordertest.okki_products
+            (product_id, product_no, name, model, color, group_name, disable_flag)
+            VALUES (:pid, :pno, :name, 'Model', 'Color', NULL, 0)
+        """), {"pid": 3000 + offset, "pno": f"P{offset}", "name": f"Tool {offset:02d}"})
+        db.execute(text("""
+            INSERT INTO lsordertest.okki_product_skus (product_id, sku_id, disable_flag)
+            VALUES (:pid, :sku, 0)
+        """), {"pid": 3000 + offset, "sku": 4000 + offset})
+    db.commit()
+
+    rows = _accessory_price_service().search_candidates(db, keyword="Tool", limit=500)
+
+    assert len(rows) == 50
+    assert len({row["sku_id"] for row in rows}) == 50
+
+
+def test_accessory_upsert_refreshes_okki_snapshot_and_preserves_four_decimals(db):
+    _seed_accessory_candidates(db)
+
+    row = _accessory_price_service().upsert_price(db, _payload(), user_id=9)
+    db.flush()
+
+    assert row.product_kind == "accessory"
+    assert row.product_id == REAL_PRODUCT_ID
+    assert row.sku_id == REAL_SKU_ID
+    assert row.accessory_name == "Hair Gripper"
+    assert row.accessory_model == "魔术贴"
+    assert row.accessory_color == "Hair Gripper"
+    assert row.price == Decimal("12.3456")
+    assert row.currency == "USD"
+    assert row.updated_by == 9
+
+
+def test_accessory_upsert_rejects_duplicate_product_sku(db):
+    _seed_accessory_candidates(db)
+    pricing = _accessory_price_service()
+    pricing.upsert_price(db, _payload(), user_id=9)
+    db.flush()
+
+    with pytest.raises(ValueError, match="已配置"):
+        pricing.upsert_price(db, _payload(price=Decimal("15.0000")), user_id=9)
+
+
+def test_accessory_edit_only_accepts_accessory_rows_and_refreshes_snapshot(db):
+    _seed_accessory_candidates(db)
+    pricing = _accessory_price_service()
+    accessory = pricing.upsert_price(db, _payload(), user_id=9)
+    hair = StdPrice(
+        product_kind="hair",
+        series_grade="Hair Matrix",
+        length="18",
+        weight_unit="100g",
+        color_type="solid",
+        price=Decimal("20.0000"),
+        currency="USD",
+    )
+    db.add(hair)
+    db.flush()
+    db.execute(text("""
+        UPDATE lsordertest.okki_products
+        SET name='Hair Gripper New', model='魔术贴 New', color='Hair Gripper New'
+        WHERE product_id=:pid
+    """), {"pid": REAL_PRODUCT_ID})
+
+    edited = pricing.upsert_price(
+        db,
+        _payload(id=accessory.id, price=Decimal("13.4567")),
+        user_id=10,
+    )
+    assert edited.id == accessory.id
+    assert edited.accessory_name == "Hair Gripper New"
+    assert edited.accessory_model == "魔术贴 New"
+    assert edited.accessory_color == "Hair Gripper New"
+    assert edited.price == Decimal("13.4567")
+
+    with pytest.raises(ValueError, match="配件价格"):
+        pricing.upsert_price(db, _payload(id=hair.id), user_id=9)
+
+
+@pytest.mark.parametrize(
+    ("mutation", "error_fragment"),
+    [
+        ("DELETE FROM lsordertest.okki_products WHERE product_id=:pid", "产品"),
+        ("UPDATE lsordertest.okki_products SET disable_flag=1 WHERE product_id=:pid", "产品"),
+        ("DELETE FROM lsordertest.okki_product_skus WHERE sku_id=:sku", "SKU"),
+        ("UPDATE lsordertest.okki_product_skus SET disable_flag=1 WHERE sku_id=:sku", "SKU"),
+    ],
+)
+def test_accessory_upsert_rejects_missing_or_disabled_okki_identity(db, mutation, error_fragment):
+    _seed_accessory_candidates(db)
+    db.execute(text(mutation), {"pid": REAL_PRODUCT_ID, "sku": REAL_SKU_ID})
+
+    with pytest.raises(ValueError, match=f"{error_fragment}.*重新"):
+        _accessory_price_service().upsert_price(db, _payload(), user_id=9)
+
+
+def test_accessory_list_filters_kind_keyword_and_applies_customer_rules(db):
+    _seed_accessory_candidates(db)
+    pricing = _accessory_price_service()
+    accessory = pricing.upsert_price(db, _payload(), user_id=9)
+    db.add(StdPrice(
+        product_kind="hair",
+        series_grade="Hair Gripper Hair",
+        length="18",
+        weight_unit="100g",
+        color_type="solid",
+        price=Decimal("99.0000"),
+        currency="USD",
+    ))
+    db.add_all([
+        CustomerPriceRule(
+            customer_id="FIXED", adjust_type="fixed", adjust_value=Decimal("1.2345"), enabled=1,
+        ),
+        CustomerPriceRule(
+            customer_id="PERCENT", adjust_type="percent", adjust_value=Decimal("10.0000"), enabled=1,
+        ),
+    ])
+    db.flush()
+
+    no_rule = pricing.list_prices(db, keyword="魔术贴", customer_id=None)
+    fixed = pricing.list_prices(db, keyword="Gripper", customer_id="FIXED")
+    percent = pricing.list_prices(db, customer_id="PERCENT")
+    missing = pricing.list_prices(db, customer_id="NO-RULE")
+
+    assert [item["id"] for item in no_rule] == [accessory.id]
+    assert no_rule[0]["standard_price"] == Decimal("12.35")
+    assert no_rule[0]["customer_price"] == Decimal("12.35")
+    assert fixed[0]["customer_price"] == Decimal("13.58")
+    assert percent[0]["customer_price"] == Decimal("13.58")
+    assert missing[0]["customer_price"] == Decimal("12.35")
+    assert no_rule[0]["currency"] == "USD"
+    assert db.get(StdPrice, accessory.id).price == Decimal("12.3456")
+
+
+def test_accessory_delete_cannot_delete_hair_or_missing_rows(db):
+    _seed_accessory_candidates(db)
+    pricing = _accessory_price_service()
+    accessory = pricing.upsert_price(db, _payload(), user_id=9)
+    hair = StdPrice(
+        product_kind="hair",
+        series_grade="Hair Matrix",
+        length="18",
+        weight_unit="100g",
+        color_type="solid",
+        price=Decimal("20.0000"),
+        currency="USD",
+    )
+    db.add(hair)
+    db.flush()
+
+    assert pricing.delete_price(db, hair.id) is False
+    assert db.get(StdPrice, hair.id) is hair
+    assert pricing.delete_price(db, 999999) is False
+    assert pricing.delete_price(db, accessory.id) is True
+
+
+def test_accessory_price_read_api_uses_price_page_permission_and_ok_envelope(db):
+    _seed_accessory_candidates(db)
+
+    with _api_client(db, permissions=["invoice_price:read"]) as client:
+        candidates = client.get("/api/invoice/price/accessory-candidates", params={"keyword": "魔术贴"})
+        prices = client.get("/api/invoice/price/accessories")
+
+    assert candidates.status_code == 200
+    assert candidates.json()["code"] == 200
+    assert candidates.json()["data"]["items"][0]["product_id"] == REAL_PRODUCT_ID
+    assert prices.status_code == 200
+    assert prices.json() == {"code": 200, "message": "ok", "data": {"items": []}}
+
+    with _api_client(db, permissions=[]) as client:
+        assert client.get("/api/invoice/price/accessories").status_code == 403
+
+
+def test_accessory_price_write_delete_api_require_invoice_price_write(db):
+    _seed_accessory_candidates(db)
+    body = _payload().model_dump(mode="json")
+
+    with _api_client(db, permissions=["invoice_price:read"]) as client:
+        assert client.post("/api/invoice/price/accessories", json=body).status_code == 403
+    with _api_client(db, permissions=["invoice:admin"]) as client:
+        assert client.post("/api/invoice/price/accessories", json=body).status_code == 403
+    with _api_client(db, permissions=["invoice_price:write"]) as client:
+        created = client.post("/api/invoice/price/accessories", json=body)
+        price_id = db.query(StdPrice).filter_by(product_kind="accessory").one().id
+        deleted = client.delete(f"/api/invoice/price/accessories/{price_id}")
+
+    assert created.status_code == 200
+    assert created.json()["code"] == 200
+    assert deleted.status_code == 200
+    assert deleted.json()["code"] == 200
+
+
+def test_accessory_price_api_maps_actionable_business_errors(db):
+    _create_accessory_candidate_tables(db)
+    body = _payload().model_dump(mode="json")
+
+    with _api_client(db, permissions=["invoice_price:write"]) as client:
+        invalid = client.post("/api/invoice/price/accessories", json=body)
+        missing = client.delete("/api/invoice/price/accessories/999999")
+
+    assert invalid.status_code == 400
+    assert "重新" in invalid.json()["detail"]
+    assert missing.status_code == 404
+    assert "配件价格" in missing.json()["detail"]
+
+
+def test_accessory_price_api_rolls_back_concurrent_duplicate(db, monkeypatch):
+    _seed_accessory_candidates(db)
+    body = _payload().model_dump(mode="json")
+    original_rollback = db.rollback
+    rolled_back = {"value": False}
+
+    def fail_commit():
+        raise IntegrityError("INSERT ark_std_prices", {}, Exception("duplicate"))
+
+    def track_rollback():
+        rolled_back["value"] = True
+        original_rollback()
+
+    monkeypatch.setattr(db, "commit", fail_commit)
+    monkeypatch.setattr(db, "rollback", track_rollback)
+
+    with _api_client(db, permissions=["invoice_price:write"]) as client:
+        response = client.post("/api/invoice/price/accessories", json=body)
+
+    assert response.status_code == 400
+    assert "已配置" in response.json()["detail"]
+    assert rolled_back["value"] is True
