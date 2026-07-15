@@ -262,6 +262,11 @@ def resolve_configured_price(
     }
 
 
+def validate_active_identity(db: Session, *, product_id: int, sku_id: int) -> dict:
+    """Re-check an accessory against the live OKKI catalog before pushing."""
+    return _load_active_snapshot(db, int(product_id), int(sku_id))
+
+
 def _serialize_price(row: StdPrice, rule) -> dict:
     standard_price = Decimal(row.price)
     customer_price = price_service.apply_rule(standard_price, rule)

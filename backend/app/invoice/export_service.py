@@ -3,9 +3,13 @@
 from io import BytesIO
 from html import escape
 from decimal import Decimal
+from functools import lru_cache
+from pathlib import Path
+import zlib
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from PIL import Image, ImageDraw, ImageFont
 
 from app.invoice.models import Invoice
 from app.invoice.service import summarize_items
@@ -284,26 +288,30 @@ def build_invoice_pdf(invoice: Invoice) -> BytesIO:
             y -= 8
         page.append(("ACCESSORIES", 50, y, 11))
         y -= 18
-        page.append(("Name | Model | Color | Standard Price | Customer Price | Quantity | Discount | TotalPrice", 50, y, 8))
-        y -= 18
         for item in accessory_items:
-            if y < 64:
+            amount_line = (
+                f"Standard Price: {'' if item.standard_price is None else item.standard_price} | "
+                f"Customer Price: {'' if item.customer_price is None else item.customer_price} | "
+                f"Quantity: {item.quantity} | Discount: {item.discount_amount or 0} | "
+                f"TotalPrice: {item.total_price or ''}"
+            )
+            detail_lines = [amount_line]
+            detail_lines.extend(_wrap_pdf_field("Name", item.product_display or item.product_name or ""))
+            detail_lines.extend(_wrap_pdf_field("Model", item.model or ""))
+            detail_lines.extend(_wrap_pdf_field("Color", item.color or ""))
+            required_height = len(detail_lines) * 12 + 8
+            if y - required_height < 40:
                 page, y = new_page()
                 page.append(("ACCESSORIES (continued)", 50, y, 11))
                 y -= 18
-                page.append(("Name | Model | Color | Standard Price | Customer Price | Quantity | Discount | TotalPrice", 50, y, 8))
-                y -= 18
-            name = (item.product_display or item.product_name or "")[:18]
-            model = (item.model or "")[:10]
-            color = (item.color or "")[:10]
-            row = (
-                f"{name} | {model} | {color} | "
-                f"{'' if item.standard_price is None else item.standard_price} | "
-                f"{'' if item.customer_price is None else item.customer_price} | {item.quantity} | "
-                f"{item.discount_amount or 0} | {item.total_price or ''}"
-            )
-            page.append((row, 50, y, 7))
-            y -= 16
+            for line in detail_lines:
+                if y < 52:
+                    page, y = new_page()
+                    page.append(("ACCESSORIES (continued)", 50, y, 11))
+                    y -= 18
+                page.append((line, 50, y, 7))
+                y -= 12
+            y -= 8
 
     item_summary = summarize_items(invoice)
     summary = [
@@ -332,42 +340,137 @@ def build_invoice_pdf(invoice: Invoice) -> BytesIO:
     return _write_pdf_pages(pages)
 
 
+def _wrap_pdf_field(label: str, value: str, width: int = 68) -> list[str]:
+    text = str(value or "")
+    prefix = f"{label}: "
+    first_width = max(width - len(prefix), 1)
+    lines = [prefix + text[:first_width]]
+    remainder = text[first_width:]
+    lines.extend(remainder[index:index + width] for index in range(0, len(remainder), width))
+    return lines
+
+
 def _gross_hair_amount(invoice: Invoice) -> Decimal:
     return summarize_items(invoice)["hair_amount"]
+
+
+def _pdf_unicode_hex(value: str) -> str:
+    return str(value).encode("utf-16-be").hex().upper()
 
 
 def _pdf_escape(value: str) -> str:
     return str(value).replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
 
+@lru_cache(maxsize=16)
+def _cjk_font(size: int):
+    candidates = [
+        Path("C:/Windows/Fonts/msyh.ttc"),
+        Path("C:/Windows/Fonts/simhei.ttf"),
+        Path("C:/Windows/Fonts/simsun.ttc"),
+        Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
+        Path("/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"),
+    ]
+    for path in candidates:
+        if path.exists():
+            return ImageFont.truetype(str(path), size)
+    raise RuntimeError("未找到可用的中文字体，无法生成不丢字的发票 PDF")
+
+
+def _render_cjk_line(value: str, size: int) -> tuple[int, int, float, float, bytes]:
+    scale = 3
+    font = _cjk_font(size * scale)
+    left, top, right, bottom = font.getbbox(value)
+    pixel_width = max(right - left, 1)
+    pixel_height = max(bottom - top, 1)
+    image = Image.new("L", (pixel_width, pixel_height), 255)
+    ImageDraw.Draw(image).text((-left, -top), value, font=font, fill=0)
+    return (
+        pixel_width,
+        pixel_height,
+        pixel_width / scale,
+        pixel_height / scale,
+        zlib.compress(image.tobytes()),
+    )
+
+
 def _write_pdf_pages(pages: list[list[tuple[str, int, int, int]]]) -> BytesIO:
     page_count = len(pages)
     page_ids = list(range(3, 3 + page_count))
-    font_id = 3 + page_count
-    content_ids = list(range(font_id + 1, font_id + 1 + page_count))
+    latin_font_id = 3 + page_count
+    cjk_font_id = latin_font_id + 1
+    descendant_font_id = cjk_font_id + 1
+    content_ids = list(range(descendant_font_id + 1, descendant_font_id + 1 + page_count))
+    next_image_id = content_ids[-1] + 1
+    page_images: list[list[tuple[str, int, int, float, float, bytes]]] = []
+    for lines in pages:
+        images = []
+        for value, _x, _y_pos, size in lines:
+            if any(ord(char) > 127 for char in value):
+                pixel_width, pixel_height, width, height, data = _render_cjk_line(value, size)
+                images.append((f"Im{len(images) + 1}", pixel_width, pixel_height, width, height, data))
+        page_images.append(images)
+    image_ids_by_page: list[list[int]] = []
+    for images in page_images:
+        ids = list(range(next_image_id, next_image_id + len(images)))
+        image_ids_by_page.append(ids)
+        next_image_id += len(images)
     kids = " ".join(f"{page_id} 0 R" for page_id in page_ids)
     objects: list[bytes] = [
         b"<< /Type /Catalog /Pages 2 0 R >>",
         f"<< /Type /Pages /Kids [{kids}] /Count {page_count} >>".encode("ascii"),
     ]
-    for content_id in content_ids:
+    for content_id, images, image_ids in zip(content_ids, page_images, image_ids_by_page):
+        xobjects = " ".join(
+            f"/{image[0]} {image_id} 0 R" for image, image_id in zip(images, image_ids)
+        )
+        xobject_resource = f" /XObject << {xobjects} >>" if xobjects else ""
         objects.append(
             f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] "
-            f"/Resources << /Font << /F1 {font_id} 0 R >> >> /Contents {content_id} 0 R >>".encode("ascii")
+            f"/Resources << /Font << /F1 {latin_font_id} 0 R /F2 {cjk_font_id} 0 R >>"
+            f"{xobject_resource} >> /Contents {content_id} 0 R >>".encode("ascii")
         )
     objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
-    for lines in pages:
-        commands = ["BT"]
+    objects.append(
+        f"<< /Type /Font /Subtype /Type0 /BaseFont /STSong-Light "
+        f"/Encoding /UniGB-UTF16-H /DescendantFonts [{descendant_font_id} 0 R] >>".encode("ascii")
+    )
+    objects.append(
+        b"<< /Type /Font /Subtype /CIDFontType0 /BaseFont /STSong-Light "
+        b"/CIDSystemInfo << /Registry (Adobe) /Ordering (GB1) /Supplement 4 >> /DW 1000 >>"
+    )
+    for lines, images in zip(pages, page_images):
+        commands = []
+        image_index = 0
         for value, x, y_pos, size in lines:
-            commands.append(f"/F1 {size} Tf")
-            commands.append(f"1 0 0 1 {x} {y_pos} Tm")
-            commands.append(f"({_pdf_escape(value)}) Tj")
-        commands.append("ET")
-        content = "\n".join(commands).encode("latin-1", errors="replace")
+            if any(ord(char) > 127 for char in value):
+                image_name, _pixel_width, _pixel_height, width, height, _data = images[image_index]
+                image_index += 1
+                commands.append(
+                    f"BT /F2 {size} Tf 3 Tr 1 0 0 1 {x} {y_pos} Tm "
+                    f"<{_pdf_unicode_hex(value)}> Tj 0 Tr ET"
+                )
+                commands.append(
+                    f"q {width:.3f} 0 0 {height:.3f} {x} {y_pos - height * 0.2:.3f} cm /{image_name} Do Q"
+                )
+            else:
+                commands.append(
+                    f"BT /F1 {size} Tf 1 0 0 1 {x} {y_pos} Tm ({_pdf_escape(value)}) Tj ET"
+                )
+        content = "\n".join(commands).encode("ascii")
         objects.append(
             b"<< /Length " + str(len(content)).encode("ascii") + b" >>\nstream\n"
             + content + b"\nendstream"
         )
+    for images in page_images:
+        for _name, pixel_width, pixel_height, _width, _height, data in images:
+            objects.append(
+                f"<< /Type /XObject /Subtype /Image /Width {pixel_width} /Height {pixel_height} "
+                f"/ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode "
+                f"/Length {len(data)} >>\nstream\n".encode("ascii")
+                + data
+                + b"\nendstream"
+            )
     return _write_pdf(objects)
 
 

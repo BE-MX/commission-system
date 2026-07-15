@@ -11,6 +11,18 @@ from app.invoice.models import Invoice, InvoiceItem, StdPrice, XiaomanSettings  
 from app.invoice.schemas import InvoiceCreate, InvoiceItemPayload
 
 
+def _extract_pdf_text(content: bytes) -> str:
+    unicode_chunks = [
+        bytes.fromhex(chunk.decode("ascii")).decode("utf-16-be")
+        for chunk in re.findall(rb"<([0-9A-F]+)> Tj", content)
+    ]
+    latin_chunks = [
+        chunk.decode("latin-1").replace("\\(", "(").replace("\\)", ")").replace("\\\\", "\\")
+        for chunk in re.findall(rb"\((.*?)\) Tj", content)
+    ]
+    return "\n".join([*unicode_chunks, *latin_chunks])
+
+
 def _seed_products(db):
     db.execute(text("""
         CREATE TABLE IF NOT EXISTS lsordertest.okki_products (
@@ -115,8 +127,9 @@ def test_invoice_create_totals_and_validation(db):
     assert "Packaging: USD 3.00" in html
     pdf = export_service.build_invoice_pdf(invoice).getvalue()
     assert pdf.startswith(b"%PDF-1.4")
-    assert b"Packaging Quantity: 4" in pdf
-    assert b"Packaging: USD 3.00" in pdf
+    pdf_text = _extract_pdf_text(pdf)
+    assert "Packaging Quantity: 4" in pdf_text
+    assert "Packaging: USD 3.00" in pdf_text
 
 
 def test_mixed_invoice_exports_independent_accessory_table_and_full_summary(db):
@@ -130,7 +143,7 @@ def test_mixed_invoice_exports_independent_accessory_table_and_full_summary(db):
         INSERT INTO lsordertest.okki_products
             (product_id, product_no, name, model, color, size, unit, disable_flag)
         VALUES
-            (4, 'ACC004', 'Hair Gripper', 'Magic Tape', 'Black', NULL, NULL, 0)
+            (4, 'ACC004', 'Hair Gripper', '魔术贴', '黑色', NULL, NULL, 0)
     """))
     db.execute(text("""
         INSERT INTO lsordertest.okki_inventory (product_id, sku_id, disable_flag)
@@ -145,8 +158,8 @@ def test_mixed_invoice_exports_independent_accessory_table_and_full_summary(db):
         product_id=4,
         sku_id=9004,
         accessory_name="Hair Gripper",
-        accessory_model="Magic Tape",
-        accessory_color="Black",
+        accessory_model="魔术贴",
+        accessory_color="黑色",
         price=Decimal("0.0000"),
         currency="USD",
     ))
@@ -183,8 +196,8 @@ def test_mixed_invoice_exports_independent_accessory_table_and_full_summary(db):
                     sku_id=9004,
                     product_name="Hair Gripper",
                     product_display="Hair Gripper",
-                    model="Magic Tape",
-                    color="Black",
+                    model="Forged Model",
+                    color="Forged Color",
                     quantity=2,
                     price_per_piece=Decimal("15"),
                     discount_amount=Decimal("-2"),
@@ -203,7 +216,7 @@ def test_mixed_invoice_exports_independent_accessory_table_and_full_summary(db):
     )
     assert any(tuple(row[:8]) == accessory_header for row in values)
     assert any(tuple(row[:8]) == (
-        "Hair Gripper", "Magic Tape", "Black", 0, 0, 2, -2, 28,
+        "Hair Gripper", "魔术贴", "黑色", 0, 0, 2, -2, 28,
     ) for row in values)
     summary_labels = [row[9] for row in values if row[9]]
     assert summary_labels[-9:] == [
@@ -222,11 +235,23 @@ def test_mixed_invoice_exports_independent_accessory_table_and_full_summary(db):
     assert "9004" not in html
 
     pdf = export_service.build_invoice_pdf(invoice).getvalue()
-    assert b"ACCESSORIES" in pdf
-    assert b"Hair Gripper | Magic Tape | Black | 0.0000 | 0.0000 | 2 | -2.00 | 28.00" in pdf
-    assert b"Accessory Amount: USD 30.00" in pdf
-    assert b"Accessory Discount: USD -2.00" in pdf
-    assert b"9004" not in pdf
+    pdf_text = _extract_pdf_text(pdf)
+    assert "ACCESSORIES" in pdf_text
+    assert "Name: Hair Gripper" in pdf_text
+    assert "Model: 魔术贴" in pdf_text
+    assert "Color: 黑色" in pdf_text
+    assert (
+        "Standard Price: 0.0000 | Customer Price: 0.0000 | Quantity: 2 | "
+        "Discount: -2.00 | TotalPrice: 28.00"
+    ) in pdf_text
+    assert "Accessory Amount: USD 30.00" in pdf_text
+    assert "Accessory Discount: USD -2.00" in pdf_text
+    assert "9004" not in pdf_text
+    assert "魔术贴".encode("utf-16-be").hex().upper().encode("ascii") in pdf
+    assert b"/Subtype /Type0" in pdf
+    assert b"/BaseFont /STSong-Light" in pdf
+    assert b"/Encoding /UniGB-UTF16-H" in pdf
+    assert b"/Subtype /Image" in pdf
 
 
 def test_invoice_pdf_paginates_without_omitting_rows_or_negative_coordinates():
@@ -259,16 +284,19 @@ def test_invoice_pdf_paginates_without_omitting_rows_or_negative_coordinates():
             discount_amount=Decimal("0"),
             total_price=Decimal("1"),
         ))
+    long_name = "Accessory-14-" + "超长配件名称" * 18
+    long_model = "魔术贴-" + "超长型号" * 14
+    long_color = "黑色-" + "超长颜色" * 14
     for index in range(15):
         is_last = index == 14
         invoice.items.append(InvoiceItem(
             sort_order=36 + index,
             product_kind="accessory",
             item_type="stock",
-            product_name=(f"Accessory-{index:02d}-" + "X" * 80) if is_last else f"Accessory-{index:02d}",
-            product_display=(f"Accessory-{index:02d}-" + "X" * 80) if is_last else f"Accessory-{index:02d}",
-            model=("Long Model " + "Y" * 40) if is_last else "Tool",
-            color=("Long Color " + "Z" * 40) if is_last else "Black",
+            product_name=long_name if is_last else f"Accessory-{index:02d}",
+            product_display=long_name if is_last else f"Accessory-{index:02d}",
+            model=long_model if is_last else "Tool",
+            color=long_color if is_last else "Black",
             quantity=7 if is_last else 1,
             standard_price=Decimal("123.4567") if is_last else Decimal("1"),
             customer_price=Decimal("124.4567") if is_last else Decimal("1"),
@@ -277,14 +305,29 @@ def test_invoice_pdf_paginates_without_omitting_rows_or_negative_coordinates():
             total_price=Decimal("869.97") if is_last else Decimal("1"),
         ))
 
-    content = export_service.build_invoice_pdf(invoice).getvalue().decode("latin-1")
+    pdf = export_service.build_invoice_pdf(invoice).getvalue()
+    content = pdf.decode("latin-1")
+    text_content = _extract_pdf_text(pdf)
+    compact_text = text_content.replace("\n", "")
 
-    assert "Hair-34" in content
-    assert "Accessory-14" in content
-    assert "123.4567 | 124.4567 | 7 | -1.23 | 869.97" in content
+    assert "Hair-34" in text_content
+    assert long_name in compact_text
+    assert long_model in compact_text
+    assert long_color in compact_text
+    assert (
+        "Standard Price: 123.4567 | Customer Price: 124.4567 | Quantity: 7 | "
+        "Discount: -1.23 | TotalPrice: 869.97"
+    ) in text_content
+    assert "魔术贴".encode("utf-16-be").hex().upper().encode("ascii") in pdf
     assert "/Count 1" not in content
     y_positions = [int(value) for value in re.findall(r"1 0 0 1 \d+ (-?\d+) Tm", content)]
     assert y_positions and min(y_positions) > 0
+    for page_stream in re.findall(rb"stream\n(.*?)\nendstream", pdf, re.DOTALL):
+        page_y_positions = [
+            int(value)
+            for value in re.findall(rb"1 0 0 1 \d+ (-?\d+) Tm", page_stream)
+        ]
+        assert len(page_y_positions) == len(set(page_y_positions))
 
 # ── 录入页自动填充 ────────────────────────────────────────────
 

@@ -214,6 +214,7 @@ def test_build_push_payload_stock_custom_and_backfilled(db):
 def test_build_push_payload_sends_accessory_as_real_individual_product_row(db):
     _seed_settings(db)
     _seed_binding(db)
+    _seed_live_accessory_catalog(db)
     invoice = _make_invoice(
         db,
         internal_accessory=Decimal("2"),
@@ -232,9 +233,9 @@ def test_build_push_payload_sends_accessory_as_real_individual_product_row(db):
         net_weight_grams=None,
         curl=None,
         quantity=10,
-        price_per_piece=Decimal("3.00"),
-        discount_amount=Decimal("-2.00"),
-        total_price=Decimal("28.00"),
+        price_per_piece=Decimal("2.75"),
+        discount_amount=Decimal("-1.00"),
+        total_price=Decimal("26.50"),
     ))
     db.flush()
 
@@ -243,8 +244,8 @@ def test_build_push_payload_sends_accessory_as_real_individual_product_row(db):
     assert issues == []
     assert payload["product_list"] == [{
         "count": 10,
-        "unit_price": 3.0,
-        "cost_amount": 28.0,
+        "unit_price": 2.75,
+        "cost_amount": 26.5,
         "product_id": 104881553777436,
         "sku_id": 104881553777819,
     }]
@@ -254,8 +255,90 @@ def test_build_push_payload_sends_accessory_as_real_individual_product_row(db):
     assert all("Discount" not in cost["cost_name"] for cost in payload["cost_list"])
 
 
+def _seed_live_accessory_catalog(db):
+    db.execute(text("""
+        CREATE TABLE lsordertest.okki_products (
+            product_id INTEGER PRIMARY KEY, name TEXT, model TEXT, color TEXT,
+            disable_flag INTEGER
+        )
+    """))
+    db.execute(text("""
+        CREATE TABLE lsordertest.okki_product_skus (
+            product_id INTEGER, sku_id INTEGER, disable_flag INTEGER
+        )
+    """))
+    db.execute(text("""
+        INSERT INTO lsordertest.okki_products
+            (product_id, name, model, color, disable_flag)
+        VALUES (104881553777436, 'Hair Gripper', '魔术贴', '黑色', 0)
+    """))
+    db.execute(text("""
+        INSERT INTO lsordertest.okki_product_skus (product_id, sku_id, disable_flag)
+        VALUES (104881553777436, 104881553777819, 0)
+    """))
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "DELETE FROM lsordertest.okki_products WHERE product_id = 104881553777436",
+        "UPDATE lsordertest.okki_products SET disable_flag = 1 WHERE product_id = 104881553777436",
+        "DELETE FROM lsordertest.okki_product_skus WHERE sku_id = 104881553777819",
+        "UPDATE lsordertest.okki_product_skus SET disable_flag = 1 WHERE sku_id = 104881553777819",
+    ],
+)
+@pytest.mark.parametrize("xiaoman_order_id", [None, "424242"])
+def test_sync_blocks_stale_accessory_identity_before_calling_okki(
+    db, monkeypatch, no_reconcile, mutation, xiaoman_order_id,
+):
+    _seed_settings(db)
+    _seed_binding(db)
+    _seed_live_accessory_catalog(db)
+    db.execute(text(mutation))
+    invoice = _make_invoice(db, xiaoman_order_id=xiaoman_order_id)
+    invoice.items.append(_stock_item(
+        product_kind="accessory",
+        product_id=104881553777436,
+        sku_id=104881553777819,
+        product_name="Hair Gripper",
+        product_display="Hair Gripper",
+        model="魔术贴",
+        color="黑色",
+        length=None,
+        net_weight_grams=None,
+        curl=None,
+        quantity=10,
+        price_per_piece=Decimal("2.75"),
+        discount_amount=Decimal("-1.00"),
+        total_price=Decimal("26.50"),
+    ))
+    db.flush()
+    called = {"value": False}
+
+    def unexpected_push(_db, _payload):
+        called["value"] = True
+        return {
+            "order_id": 999,
+            "product_list": [{
+                "product_id": 104881553777436,
+                "sku_id": 104881553777819,
+                "unique_id": 1,
+            }],
+        }
+
+    monkeypatch.setattr(okki_client, "push_order", unexpected_push)
+
+    result = xiaoman_service.sync_invoice(db, invoice, operator_id=1)
+
+    assert result["ok"] is False
+    assert called["value"] is False
+    assert result["issues"][0]["field"] in {"items[1].product_id", "items[1].sku_id"}
+    assert "重新选择" in result["issues"][0]["message"]
+
+
 def test_accessory_edit_reuses_unique_id_and_protects_duplicate_fresh_sku(db):
     settings = _seed_settings(db)
+    _seed_live_accessory_catalog(db)
     invoice = _make_invoice(db, xiaoman_order_id="424242")
     existing = _stock_item(
         product_kind="accessory",

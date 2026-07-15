@@ -30,7 +30,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.models import ArkUser, ArkUserExternalBinding
 from app.core.config import get_settings
-from app.invoice import okki_client, product_service
+from app.invoice import accessory_price_service, okki_client, product_service
 from app.invoice.models import CustomProduct, Invoice, InvoiceSyncLog, XiaomanSettings
 from app.invoice.service import resolve_okki_flags, validate_invoice
 
@@ -302,6 +302,7 @@ def _build_product_rows(
             uid_holders[uid] += 1
 
     generic_items: list = []  # 走通用产品的非标行 → 合并为一条推送（亮哥 2026-07-13 指令）
+    validated_accessory_pairs: set[tuple[int, int]] = set()
     for idx, item in enumerate(invoice.items, start=1):
         prefix = f"items[{idx}]"
         product_id, sku_id = item.product_id, item.sku_id
@@ -325,6 +326,27 @@ def _build_product_rows(
         if not (product_id and sku_id):
             issues.append({"field": prefix, "message": "缺少 OKKI product_id/sku_id，无法推单"})
             continue
+        if item.product_kind == "accessory":
+            pair = (int(product_id), int(sku_id))
+            if pair not in validated_accessory_pairs:
+                try:
+                    accessory_price_service.validate_active_identity(
+                        db, product_id=pair[0], sku_id=pair[1],
+                    )
+                except accessory_price_service.AccessoryCatalogUnavailable:
+                    issues.append({
+                        "field": prefix,
+                        "message": "配件目录暂不可用，请检查 OKKI 产品同步任务/同步表后重试",
+                    })
+                    continue
+                except ValueError as exc:
+                    field = "sku_id" if "SKU" in str(exc) else "product_id"
+                    issues.append({
+                        "field": f"{prefix}.{field}",
+                        "message": "配件产品/SKU 已失效，请回到发票编辑页重新选择有效配件后再同步",
+                    })
+                    continue
+                validated_accessory_pairs.add(pair)
         row: dict = {
             "count": int(item.quantity),
             "unit_price": float(item.price_per_piece),
