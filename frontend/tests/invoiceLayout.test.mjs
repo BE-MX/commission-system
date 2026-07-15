@@ -10,6 +10,10 @@ const invoiceStyles = readFileSync(
   new URL('../src/views/invoice/invoice-manage.css', import.meta.url),
   'utf8',
 )
+const settlementFields = readFileSync(
+  new URL('../src/views/invoice/components/InvoiceSettlementFields.vue', import.meta.url),
+  'utf8',
+)
 
 test('invoice editor uses one 36px control height instead of mixed size variants', () => {
   const invoiceFormTag = invoiceView.match(/<el-form\b[^>]*class="invoice-form"[^>]*>/s)?.[0]
@@ -44,7 +48,7 @@ test('invoice editor caps desktop field widths and releases them on narrow scree
 test('invoice editor keeps metadata in a readable canvas on wide screens', () => {
   assert.match(invoiceStyles, /\.head-section\s*{[^}]*max-width:\s*1400px;/s)
   assert.match(invoiceStyles, /\.col-title\s*{[^}]*font-size:\s*14px;/s)
-  assert.match(invoiceView, /<el-form-item label="运费" class="span-2">/)
+  assert.match(settlementFields, /<el-form-item label="运费" class="span-2">/)
 })
 
 test('unbound OKKI guidance is concise helper text rather than a warning pill', () => {

@@ -20,6 +20,18 @@ const invoiceEditor = readFileSync(
   new URL('../src/views/invoice/composables/useInvoiceEditor.js', import.meta.url),
   'utf8',
 )
+const settlementFields = readFileSync(
+  new URL('../src/views/invoice/components/InvoiceSettlementFields.vue', import.meta.url),
+  'utf8',
+)
+const hairTable = readFileSync(
+  new URL('../src/views/invoice/components/InvoiceHairTable.vue', import.meta.url),
+  'utf8',
+)
+const totalsFooter = readFileSync(
+  new URL('../src/views/invoice/components/InvoiceTotalsFooter.vue', import.meta.url),
+  'utf8',
+)
 
 test('settlement options use the approved fixed values', () => {
   assert.deepEqual(PAYMENT_METHOD_OPTIONS, ['PayPal', '大莱莎信保', '小莱莎信保', '新莱莎信保', 'TT'])
@@ -50,20 +62,22 @@ test('settlement validation rejects missing, excessive, and mismatched amounts',
 })
 
 test('fee settlement is always visible before product details and exposes derived balance', () => {
-  const settlementIndex = invoiceView.indexOf('费用与结算信息')
-  const productIndex = invoiceView.indexOf('<strong>产品明细</strong>')
+  const settlementIndex = invoiceView.indexOf('<InvoiceSettlementFields')
+  const productIndex = invoiceView.indexOf('<InvoiceHairTable')
   assert.ok(settlementIndex >= 0 && settlementIndex < productIndex)
   assert.doesNotMatch(invoiceView, /<el-collapse[^>]*class="internal-collapse"/)
-  assert.match(invoiceView, /<el-select v-model="form\.internal_payment_method"/)
-  assert.match(invoiceView, /<el-select v-model="form\.express_channel"/)
-  assert.match(invoiceView, /label="预付款"/)
-  assert.match(invoiceView, /label="尾款"/)
-  assert.match(invoiceView, /根据订单总额与预付款自动计算/)
-  assert.match(invoiceView, /label="头发金额"[\s\S]*:model-value="money\(formHairPrice\)"[\s\S]*readonly[\s\S]*>Hair Price</)
-  assert.match(invoiceView, /label="折扣金额"[\s\S]*:model-value="money\(formLineDiscountTotal\)"[\s\S]*readonly[\s\S]*>Discount</)
+  assert.match(settlementFields, /<el-select v-model="form\.internal_payment_method"/)
+  assert.match(settlementFields, /<el-select v-model="form\.express_channel"/)
+  assert.match(settlementFields, /label="预付款"/)
+  assert.match(settlementFields, /label="尾款"/)
+  assert.match(settlementFields, /根据订单总额与预付款自动计算/)
+  assert.match(settlementFields, /label="头发金额"[\s\S]*readonly[\s\S]*Hair Price/)
+  assert.match(settlementFields, /label="头发折扣"/)
+  assert.match(settlementFields, /label="配件金额"/)
+  assert.match(settlementFields, /label="配件折扣"/)
   assert.doesNotMatch(invoiceView, /v-model="form\.internal_discount"/)
-  assert.match(invoiceView, /label="包装费用"/)
-  assert.match(invoiceView, /label="手续费"/)
+  assert.match(settlementFields, /label="包装费用"/)
+  assert.match(settlementFields, /label="手续费"/)
   assert.doesNotMatch(invoiceView, /label="[^\"]+（(?:Hair Price|Discount|Packaging|Shipping Fee|Handling Fee)）"/)
 })
 
@@ -80,18 +94,16 @@ test('order section only contains the approved five fields', () => {
 })
 
 test('product discount precedes TotalPrice and packaging quantity precedes its fee', () => {
-  const discountIndex = invoiceView.indexOf('<el-table-column label="折扣"')
-  const totalPriceIndex = invoiceView.indexOf('<el-table-column label="TotalPrice"')
+  const discountIndex = hairTable.indexOf('<el-table-column label="折扣"')
+  const totalPriceIndex = hairTable.indexOf('<el-table-column label="TotalPrice"')
   assert.ok(discountIndex >= 0 && discountIndex < totalPriceIndex)
-  assert.match(invoiceView, /v-model="row\.discount_amount"/)
-  const packagingQuantityIndex = invoiceView.indexOf('label="包装数量"')
-  const packagingFeeIndex = invoiceView.indexOf('label="包装费用"')
+  assert.match(hairTable, /v-model="row\.discount_amount"/)
+  const packagingQuantityIndex = settlementFields.indexOf('label="包装数量"')
+  const packagingFeeIndex = settlementFields.indexOf('label="包装费用"')
   assert.ok(packagingQuantityIndex >= 0 && packagingQuantityIndex < packagingFeeIndex)
 
-  const footerStart = invoiceView.indexOf('<template #footer>')
-  const footerEnd = invoiceView.indexOf('</template>', footerStart)
-  const footer = invoiceView.slice(footerStart, footerEnd)
-  for (const label of ['头发金额', '折扣金额', '包装费用', '运费', '手续费']) {
+  const footer = totalsFooter
+  for (const label of ['头发金额', '头发折扣', '配件金额', '配件折扣', '包装费用', '运费', '手续费']) {
     assert.ok(footer.includes(label), `${label} should appear in the footer`)
   }
   assert.doesNotMatch(footer, /Hair Price|Line Discount|Packaging|Shipping Fee|Handling Fee/)

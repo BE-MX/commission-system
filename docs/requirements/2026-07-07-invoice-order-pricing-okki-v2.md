@@ -132,7 +132,14 @@ ark_customer_price_rules 客户价格规则（每客户一条，二选一）
 - 我方块：`sales_user_id / sales_user_name / sales_phone / sales_email`（默认当前用户）
 - 订单信息区只展示：发票号、日期、币种、小满标记（必填）、备注。
 - 费用与结算信息区常驻展示（不折叠）：付款方式、预付款、尾款、头发金额、折扣金额、包装数量、包装费用、快递渠道、运费、手续费。头发金额和折扣金额只读，其中折扣金额为全部明细折扣之和；英文说明仅作为金额框内的弱提示。尾款按总金额减预付款自动计算，并校验预付款+尾款=总金额。包装数量只记录数量，不参与包装费用乘算。
-- 总额口径：`Σ(单价×数量+行级折扣) + internal_accessory（包装费用） + shipping_fee + surcharge_amount（手续费）`。`internal_discount` 仅保存明细折扣合计快照，不再次计入总额。
+- 总额口径：`Σ(单价×数量+行级折扣) + internal_accessory（包装费用） + shipping_fee + surcharge_amount（手续费）`。头发与配件都在明细净额中计算，折扣不重复扣减；`internal_discount` 仅保存头发折扣快照以兼容旧代码。
+
+### 3.6 配件产品增补（2026-07-15）
+
+- 配件使用独立明细表，字段限 Name / Model / Color / 标准价 / 客户价 / Quantity / 折扣 / TotalPrice，不显示 Length、Net Weight、Curl 和选填列。
+- Name 仅能选择已配置标准价的 OKKI 真实 product_id+sku_id；Model/Color 是权威快照只读。配件不按 `group_name` 推断，避免 Hair Gripper 等真实配件被错分。
+- 客户价必须通过后端应用既有客户调价规则；客户变更后按精确 product_id+sku_id 重新解析，不在前端复制调价公式。
+- 发票 Excel 粘贴快速导入保持头发专用，不扩展配件自动识别。导出与 OKKI 推单则包含独立配件区与逐 SKU 真实明细。
 - 明细补：`standard_price DECIMAL(12,4)`、`item_type`、`custom_product_id`（FK ark_custom_products，可空）、`discount_amount DECIMAL(14,2)`（负数或 0）。
 
 导出双模板：

@@ -1,6 +1,14 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import {
+  accessoryDiscount,
+  accessoryGross,
+  accessoryNet,
+  createLatestRequestGate,
+  normalizeAccessoryRow,
+} from '../src/views/invoice/composables/accessoryPricing.js'
+import { buildInvoicePayload } from '../src/views/invoice/composables/invoiceEditorState.js'
 
 const priceConfig = readFileSync(
   new URL('../src/views/invoice/InvoicePriceConfig.vue', import.meta.url),
@@ -11,6 +19,143 @@ const accessoryConfig = readFileSync(
   'utf8',
 )
 const api = readFileSync(new URL('../src/api/invoice.js', import.meta.url), 'utf8')
+const invoiceView = readFileSync(
+  new URL('../src/views/invoice/InvoiceManage.vue', import.meta.url),
+  'utf8',
+)
+const accessoryTable = readFileSync(
+  new URL('../src/views/invoice/components/InvoiceAccessoryTable.vue', import.meta.url),
+  'utf8',
+)
+const invoiceEditor = readFileSync(
+  new URL('../src/views/invoice/composables/useInvoiceEditor.js', import.meta.url),
+  'utf8',
+)
+const accessoryState = readFileSync(
+  new URL('../src/views/invoice/composables/useInvoiceAccessories.js', import.meta.url),
+  'utf8',
+)
+const hairState = readFileSync(
+  new URL('../src/views/invoice/composables/useInvoiceHairItems.js', import.meta.url),
+  'utf8',
+)
+const editorState = readFileSync(
+  new URL('../src/views/invoice/composables/invoiceEditorState.js', import.meta.url),
+  'utf8',
+)
+const totalsFooter = readFileSync(
+  new URL('../src/views/invoice/components/InvoiceTotalsFooter.vue', import.meta.url),
+  'utf8',
+)
+const tokens = readFileSync(new URL('../src/styles/tokens.css', import.meta.url), 'utf8')
+
+test('accessory calculations normalize discounts and avoid floating point drift', () => {
+  const row = normalizeAccessoryRow({
+    product_id: 104881553777436,
+    sku_id: 104881553777819,
+    accessory_name: 'Hair Gripper',
+    accessory_model: '魔术贴',
+    accessory_color: 'Hair Gripper',
+    standard_price: '2.7500',
+    customer_price: '2.7500',
+    quantity: 10,
+    discount_amount: 1,
+  })
+  assert.equal(row.product_kind, 'accessory')
+  assert.equal(row.discount_amount, -1)
+  assert.equal(row.total_price, 26.5)
+  assert.equal(accessoryGross([row]), 27.5)
+  assert.equal(accessoryDiscount([row]), -1)
+  assert.equal(accessoryNet([row]), 26.5)
+  assert.equal(normalizeAccessoryRow({ discount_amount: 0 }).discount_amount, 0)
+  assert.equal(accessoryGross([{ quantity: 3, price_per_piece: 0.1 }]), 0.3)
+})
+
+test('accessory customer repricing discards responses from an older customer', () => {
+  const gate = createLatestRequestGate()
+  const oldCustomer = gate.issue('customer-a')
+  const currentCustomer = gate.issue('customer-b')
+  assert.equal(gate.isCurrent(oldCustomer, 'customer-a'), false)
+  assert.equal(gate.isCurrent(currentCustomer, 'customer-b'), true)
+  assert.equal(gate.isCurrent(currentCustomer, 'customer-c'), false)
+})
+
+test('an older hair price response cannot overwrite or mark the current customer price as manual', () => {
+  const gate = createLatestRequestGate()
+  const row = { customer_price: 22, price_per_piece: 22, price_source: 'customer_rule' }
+  const oldRequest = gate.issue('customer-a|product-1|black|18|100')
+  const currentRequest = gate.issue('customer-b|product-1|black|18|100')
+  const apply = (token, context, customerPrice) => {
+    if (!gate.isCurrent(token, context)) return
+    row.customer_price = customerPrice
+    row.price_per_piece = customerPrice
+    row.price_source = 'customer_rule'
+  }
+  apply(currentRequest, 'customer-b|product-1|black|18|100', 30)
+  apply(oldRequest, 'customer-b|product-1|black|18|100', 20)
+  assert.deepEqual(row, { customer_price: 30, price_per_piece: 30, price_source: 'customer_rule' })
+  assert.match(hairState, /const linePriceGates = new WeakMap\(\)/)
+  assert.match(hairState, /gate\.isCurrent\(token, linePriceContext\(row\)\)/)
+})
+
+test('changing customer immediately clears accessory options and rejects stale customer options', () => {
+  const invalidation = accessoryState.match(/function invalidateCustomerContext\(\)\s*{([\s\S]*?)\n  }/)?.[1] || ''
+  assert.match(invalidation, /searchGate\.invalidate\(\)/)
+  assert.match(invalidation, /priceGate\.invalidate\(\)/)
+  assert.match(invalidation, /accessoryOptions\.value = \[\]/)
+  assert.match(invalidation, /accessoryLoading\.value = false/)
+  assert.match(accessoryState, /_customer_id: customerId/)
+  assert.match(accessoryState, /String\(option\._customer_id\) !== String\(form\.customer_id \|\| ''\)/)
+  assert.match(invoiceEditor, /form\.customer_name = customer\?\.company_name \|\| ''\s*\n\s*accessories\.invalidateCustomerContext\(\)/)
+})
+
+test('invoice accessory entry exposes only configured real-identity columns', () => {
+  for (const label of ['#', 'Name', 'Model', 'Color', '标准价', '客户价', 'Quantity', '折扣', 'TotalPrice', '操作']) {
+    assert.match(accessoryTable, new RegExp(`label="${label.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}"`))
+  }
+  assert.doesNotMatch(accessoryTable, /Length|Net Weight|Curl|展开选填列/)
+  assert.doesNotMatch(accessoryTable, /align="center"/)
+  assert.match(accessoryTable, /remote-method="searchOptions"/)
+  assert.match(accessoryTable, /readonly/)
+  assert.match(accessoryTable, /product_id/)
+  assert.match(accessoryTable, /sku_id/)
+})
+
+test('invoice editor splits and recombines hair and accessory items', () => {
+  assert.match(accessoryState, /const hairItems = computed/)
+  assert.match(accessoryState, /const accessoryItems = computed/)
+  assert.match(editorState, /product_kind: line\.product_kind/)
+  assert.match(invoiceView, /<InvoiceHairTable[\s\S]*:items="hairItems"/)
+  assert.match(invoiceView, /<InvoiceAccessoryTable/)
+})
+
+test('invoice payload round-trips mixed rows and preserves accessory identity', () => {
+  const payload = buildInvoicePayload({
+    invoice_no: 'INV-1', order_type: 'stock', customer_id: '88', customer_name: 'Test',
+    invoice_date: '2026-07-15', currency: 'USD', items: [
+      { id: 1, product_kind: 'hair', item_type: 'stock', quantity: 1, price_per_piece: 100, discount_amount: -10 },
+      { id: 2, product_kind: 'accessory', item_type: 'stock', product_id: 104881553777436,
+        sku_id: 104881553777819, product_name: 'Hair Gripper', product_display: 'Hair Gripper',
+        model: '魔术贴', color: 'Hair Gripper', quantity: 10, price_per_piece: 2.75, discount_amount: -1 },
+    ],
+  }, -10)
+  assert.equal(payload.items.length, 2)
+  assert.equal(payload.items[1].id, 2)
+  assert.equal(payload.items[1].product_kind, 'accessory')
+  assert.equal(payload.items[1].product_id, 104881553777436)
+  assert.equal(payload.items[1].sku_id, 104881553777819)
+  assert.equal(payload.items[1].length, undefined)
+})
+
+test('footer uses eight token-backed amount chips without new motion', () => {
+  for (const kind of ['hair', 'hair-discount', 'accessory', 'accessory-discount', 'packaging', 'shipping', 'handling', 'total']) {
+    assert.match(totalsFooter, new RegExp(`summary-chip ${kind}`))
+    assert.match(tokens, new RegExp(`--invoice-summary-${kind}-fg:`))
+    assert.match(tokens, new RegExp(`--invoice-summary-${kind}-bg:`))
+    assert.match(totalsFooter, new RegExp(`--invoice-summary-${kind}-fg`))
+  }
+  assert.doesNotMatch(accessoryTable, /transition\s*:|animation\s*:|@keyframes/)
+})
 
 test('price configuration separates hair and accessory prices without duplicating shared panels', () => {
   assert.match(priceConfig, /label="头发价格"/)
