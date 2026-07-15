@@ -79,7 +79,7 @@
               <el-image :src="p.url" fit="cover" class="upload-preview" />
               <span class="angle-remove" @click="anglePhotos.splice(i, 1)">×</span>
             </div>
-            <el-upload :show-file-list="false" :http-request="uploadAngle" accept="image/*">
+            <el-upload multiple :show-file-list="false" :http-request="uploadAngle" accept="image/*">
               <div class="upload-slot">+ 添加</div>
             </el-upload>
           </div>
@@ -180,7 +180,7 @@
                   <span class="angle-remove" @click="c.photos.splice(i, 1)">×</span>
                 </div>
                 <el-upload
-                  v-if="c.photos.length < 3" :show-file-list="false"
+                  v-if="c.photos.length + (c.reserving || 0) < 3" multiple :show-file-list="false"
                   :http-request="(o) => uploadColorAngle(c, o)" accept="image/*"
                 >
                   <div class="upload-slot">+ 添加</div>
@@ -357,10 +357,21 @@ async function loadColorMatrix(wigId) {
   }
 }
 
+// 支持一次多选：多张文件的回调near-同步触发,await 前 photos.length 还没涨,
+// 光靠它判上限会全部放行→超 3 张。用 reserving 同步占坑,保证并发上传也卡在三张
 async function uploadColorAngle(item, { file }) {
-  if (item.photos.length >= 3) { ElMessage.warning('每个发色最多三张'); return }
-  const res = await uploadWigPhoto(file)
-  item.photos.push({ path: res.data.path, url: res.data.url })
+  if (item.photos.length + (item.reserving || 0) >= 3) {
+    if (!item._warnedFull) { ElMessage.warning('每个发色最多三张，多余的已忽略'); item._warnedFull = true }
+    return
+  }
+  item.reserving = (item.reserving || 0) + 1
+  item._warnedFull = false
+  try {
+    const res = await uploadWigPhoto(file)
+    item.photos.push({ path: res.data.path, url: res.data.url })
+  } catch { /* 拦截器已提示 */ } finally {
+    item.reserving -= 1
+  }
 }
 
 async function saveColor(item) {
@@ -396,10 +407,10 @@ async function uploadCover({ file }) {
   ElMessage.success('封面上传成功')
 }
 
+// 支持一次多选：el-upload 逐文件回调本函数，缩略图逐张出现即反馈，不再逐张弹 toast（多选会刷屏）
 async function uploadAngle({ file }) {
   const res = await uploadWigPhoto(file)
   anglePhotos.value.push({ path: res.data.path, url: res.data.url })
-  ElMessage.success('图片上传成功')
 }
 
 async function submit() {
