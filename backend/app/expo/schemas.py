@@ -59,6 +59,14 @@ class HairColorUpsert(BaseModel):
     is_active: int = Field(1, ge=0, le=1)
 
 
+class WigColorImagesUpsert(BaseModel):
+    """发型×发色组合的三角度参考图上传（管理端）。路径由 /wigs/upload-photo 先取得。"""
+
+    angle_photos: list[str] = Field(..., min_length=1, max_length=3, description="三角度参考图相对路径（1~3 张）")
+    cover_path: str | None = Field(None, max_length=512, description="缩略图相对路径，不传取首张")
+    is_active: int = Field(1, ge=0, le=1)
+
+
 class ScriptUpsert(BaseModel):
     script_type: str = Field(..., pattern="^(opener|demo|objection|closer|faq)$")
     track: str = Field("emotional", pattern="^(emotional|rational|identity)$")

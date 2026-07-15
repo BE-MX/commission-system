@@ -13,6 +13,7 @@ from sqlalchemy import (
     SmallInteger,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 
@@ -86,6 +87,32 @@ class ExpoHairColor(Base):
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
 
     __table_args__ = (Index("idx_ark_expo_hair_colors_active", "is_active"), {"comment": "展会AI试戴-发色库（色板图+颜色描述喂给合成管线）"})
+
+
+class ExpoWigColor(Base):
+    """发型×发色组合的三角度参考图（072 迁移）。
+
+    一行=一个 (wig_id, hair_color_id) 组合；angle_photos 是该发型该发色的三角度实拍图组，
+    合成时按选择匹配到唯一颜色的这组图，参考图本身即目标色（取代文字/色板图上色）。
+    稀疏存储：只存备了图的组合；「原色」用发型自身 angle_photos，不在此表。
+    """
+
+    __tablename__ = "ark_expo_wig_colors"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
+    wig_id = Column(BigInteger, ForeignKey("ark_expo_wigs.id", ondelete="CASCADE"), nullable=False, comment="发型 ark_expo_wigs.id")
+    hair_color_id = Column(BigInteger, ForeignKey("ark_expo_hair_colors.id", ondelete="CASCADE"), nullable=False, comment="发色 ark_expo_hair_colors.id")
+    angle_photos = Column(JSON, nullable=True, comment="该发型该发色的三角度参考图路径列表")
+    cover_path = Column(String(512), nullable=True, comment="缩略图相对路径，默认取首张")
+    is_active = Column(SmallInteger, nullable=False, default=1, comment="1=启用,0=停用")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+
+    __table_args__ = (
+        Index("idx_ark_expo_wig_colors_wig", "wig_id"),
+        UniqueConstraint("wig_id", "hair_color_id", name="uq_ark_expo_wig_colors_pair"),
+        {"comment": "展会AI试戴-发型×发色组合三角度参考图（合成按选择匹配唯一颜色图组）"},
+    )
 
 
 class ExpoScript(Base):
