@@ -21,6 +21,7 @@ from app.expo.schemas import (
     HairColorUpsert,
     ReactionRequest,
     ScriptUpsert,
+    WigColorImagesUpsert,
     WigUpsert,
 )
 
@@ -138,7 +139,7 @@ def generate(
         missing = [i for i in wig_ids if i not in found]
         if missing:
             raise HTTPException(400, f"发型不存在: {missing}")
-    ai_pipeline.start_composites(session_id, wig_ids, hair_color=hair_color, scene=tryon_scene)
+    ai_pipeline.start_composites(session_id, wig_ids, hair_color=hair_color, scene=tryon_scene, db=db)
     return ok({"wig_ids": wig_ids})
 
 
@@ -403,6 +404,57 @@ def upload_wig_photo(
     return ok({"path": rel, "url": f"/{rel}"}, code=201)
 
 
+# ---------------- 发型×发色组合参考图（072；kiosk 过滤 + 管理端矩阵） ----------------
+
+@router.get("/wigs/{wig_id}/colors", summary="kiosk：某发型已备图的发色列表（过滤发色选项）")
+def list_wig_colors(
+    wig_id: int,
+    db: Session = Depends(get_db),
+    # kiosk 设备账号持 expo:write；管理端预览走 admin
+    _user=Depends(require_any_permission("expo:read", "expo:write", "expo:admin")),
+):
+    return ok(service.list_wig_color_options(db, wig_id))
+
+
+@router.get("/wigs/{wig_id}/color-images", summary="管理端：某发型的发色×三角度矩阵")
+def list_wig_color_images(
+    wig_id: int,
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("expo:admin")),
+):
+    try:
+        return ok(service.list_wig_color_images(db, wig_id))
+    except ValueError as exc:
+        raise HTTPException(404, str(exc))
+
+
+@router.put("/wigs/{wig_id}/color-images/{color_id}", summary="管理端：新建/替换某组合三角度图")
+def upsert_wig_color_images(
+    wig_id: int,
+    color_id: int,
+    body: WigColorImagesUpsert,
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("expo:admin")),
+):
+    try:
+        row = service.upsert_wig_color_images(db, wig_id, color_id, body)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return ok({"wig_id": row.wig_id, "hair_color_id": row.hair_color_id})
+
+
+@router.delete("/wigs/{wig_id}/color-images/{color_id}", summary="管理端：删除某组合图组")
+def delete_wig_color_images(
+    wig_id: int,
+    color_id: int,
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("expo:admin")),
+):
+    if not service.delete_wig_color_images(db, wig_id, color_id):
+        raise HTTPException(404, "该发色组合无参考图")
+    return ok()
+
+
 # ---------------- 发色库（PC，expo:admin 管理；列表复用上方 GET /hair-colors） ----------------
 
 @router.post("/hair-colors", summary="新建发色")
@@ -430,6 +482,15 @@ def update_hair_color(
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     return ok(service.serialize_hair_color(row))
+
+
+@router.get("/hair-colors/{color_id}/usage", summary="删发色前查影响面：被多少发型备了图")
+def hair_color_usage(
+    color_id: int,
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("expo:admin")),
+):
+    return ok({"combo_count": service.count_wig_color_combos_by_color(db, color_id)})
 
 
 @router.delete("/hair-colors/{color_id}", summary="删除发色（效果图存 JSON 快照，删除不影响历史）")

@@ -17,8 +17,15 @@ from app.expo.models import (
     ExpoResult,
     ExpoSession,
     ExpoWig,
+    ExpoWigColor,
 )
-from app.expo.schemas import CustomerRegister, FeedbackCreate, HairColorUpsert, WigUpsert
+from app.expo.schemas import (
+    CustomerRegister,
+    FeedbackCreate,
+    HairColorUpsert,
+    WigColorImagesUpsert,
+    WigUpsert,
+)
 
 logger = logging.getLogger("commission.expo")
 
@@ -96,6 +103,29 @@ def _remove_file(path: str | None) -> None:
     disp = target.with_name(target.stem + ai_pipeline.DISPLAY_SUFFIX)
     if disp.exists():
         disp.unlink(missing_ok=True)
+
+
+def _remove_files_quietly(paths) -> None:
+    """删一批落盘文件，单个失败（Win 文件占用/权限）只 log 不抛——
+    用于「DB 已落库、仅清理磁盘」的收尾场景，不让清理失败把成功操作顶成 500。"""
+    for p in paths or []:
+        try:
+            _remove_file(p)
+        except Exception as exc:  # noqa: BLE001
+            msg = f"[expo] orphan file cleanup skipped ({p}): {exc}"
+            logger.warning(msg)
+            print(msg, flush=True)
+
+
+def _remove_wig_color_files(db: Session, *, wig_id: int | None = None, color_id: int | None = None) -> None:
+    """删发型/发色前，清掉将被 FK CASCADE 带走的组合行的三角度图文件（否则文件成孤儿占盘）。"""
+    q = db.query(ExpoWigColor)
+    if wig_id is not None:
+        q = q.filter(ExpoWigColor.wig_id == wig_id)
+    if color_id is not None:
+        q = q.filter(ExpoWigColor.hair_color_id == color_id)
+    for combo in q.all():
+        _remove_files_quietly(combo.angle_photos)
 
 
 # ---------------- 会话 ----------------
@@ -326,14 +356,23 @@ def delete_hair_color(db: Session, color_id: int) -> bool:
     注意：历史 result 的 hair_color_json.swatch_path 仍指向这里删掉的色板图文件，
     但该字段仅作快照溯源——展示只用 hex+name，合成自 2026-07-14 起也只用文本色锚点
     （色板图不再随图送模型），删文件无任何运行时影响。
+
+    该发色被各发型备的组合图（ark_expo_wig_colors）由 FK CASCADE 连带删行，
+    但落盘图文件要手动清（否则孤儿占盘）——删发色会一并抹掉所有发型对该色的备图。
     """
     row = db.get(ExpoHairColor, color_id)
     if not row:
         return False
     _remove_file(row.swatch_path)
+    _remove_wig_color_files(db, color_id=color_id)
     db.delete(row)
     db.commit()
     return True
+
+
+def count_wig_color_combos_by_color(db: Session, color_id: int) -> int:
+    """该发色被多少个发型备了图——删发色前给前端提示影响面。"""
+    return db.query(ExpoWigColor.id).filter(ExpoWigColor.hair_color_id == color_id).count()
 
 
 def snapshot_hair_color(db: Session, hair_color_id: int) -> dict:
@@ -350,6 +389,138 @@ def snapshot_hair_color(db: Session, hair_color_id: int) -> dict:
         "swatch_path": row.swatch_path,
         "description": row.color_description,
     }
+
+
+# ---------------- 发型×发色组合参考图（072 迁移） ----------------
+
+def list_wig_color_options(db: Session, wig_id: int) -> list[dict]:
+    """kiosk：某发型已备三角度图的发色列表（供客户端过滤发色）。
+
+    只回「组合启用 + 有 angle_photos + 发色本身启用」的项，形态对齐 serialize_hair_color
+    的客户端字段（id/code/name/hex/swatch_url）。「原色」由前端恒定提供，不在此列。
+    """
+    rows = (
+        db.query(ExpoHairColor)
+        .join(ExpoWigColor, ExpoWigColor.hair_color_id == ExpoHairColor.id)
+        .filter(
+            ExpoWigColor.wig_id == wig_id,
+            ExpoWigColor.is_active == 1,
+            ExpoHairColor.is_active == 1,
+        )
+        .order_by(ExpoHairColor.priority.desc(), ExpoHairColor.id)
+        .all()
+    )
+    # angle_photos 为空的组合不算「已备图」——过滤后返回
+    combos = {
+        c.hair_color_id: c
+        for c in db.query(ExpoWigColor).filter(
+            ExpoWigColor.wig_id == wig_id, ExpoWigColor.is_active == 1
+        ).all()
+    }
+    return [
+        {
+            "id": r.id,
+            "code": r.code,
+            "name": r.name,
+            "hex": r.hex_code,
+            "swatch_url": _to_url(r.swatch_path),
+        }
+        for r in rows
+        if combos.get(r.id) and combos[r.id].angle_photos
+    ]
+
+
+def list_wig_color_images(db: Session, wig_id: int) -> list[dict]:
+    """管理端：某发型的发色矩阵——所有启用发色 + 各自组合图组（未备图的 angle_photos=[]）。"""
+    if not db.get(ExpoWig, wig_id):
+        raise ValueError("发型不存在")
+    colors = (
+        db.query(ExpoHairColor)
+        .filter(ExpoHairColor.is_active == 1)
+        .order_by(ExpoHairColor.priority.desc(), ExpoHairColor.id)
+        .all()
+    )
+    combos = {
+        c.hair_color_id: c
+        for c in db.query(ExpoWigColor).filter(ExpoWigColor.wig_id == wig_id).all()
+    }
+    out = []
+    for color in colors:
+        combo = combos.get(color.id)
+        photos = (combo.angle_photos or []) if combo else []
+        out.append({
+            "hair_color_id": color.id,
+            "code": color.code,
+            "name": color.name,
+            "hex": color.hex_code,
+            "swatch_url": _to_url(color.swatch_path),
+            "is_active": combo.is_active if combo else 1,
+            "angle_photos": photos,
+            "angle_urls": [_to_url(p) for p in photos],
+            "has_images": bool(photos),
+        })
+    return out
+
+
+def upsert_wig_color_images(db: Session, wig_id: int, color_id: int, body: WigColorImagesUpsert) -> ExpoWigColor:
+    """管理端：新建/替换某(发型,发色)组合的三角度图组。旧图组的落盘文件一并清理。"""
+    if not db.get(ExpoWig, wig_id):
+        raise ValueError("发型不存在")
+    if not db.get(ExpoHairColor, color_id):
+        raise ValueError("发色不存在")
+    photos = [p for p in (body.angle_photos or []) if p]
+    if not photos:
+        raise ValueError("至少需要一张参考图")
+    row = (
+        db.query(ExpoWigColor)
+        .filter(ExpoWigColor.wig_id == wig_id, ExpoWigColor.hair_color_id == color_id)
+        .first()
+    )
+    old_photos = list(row.angle_photos or []) if row else []
+    inserting = row is None
+    if inserting:
+        row = ExpoWigColor(wig_id=wig_id, hair_color_id=color_id)
+        db.add(row)
+    row.angle_photos = photos
+    row.cover_path = body.cover_path or photos[0]
+    row.is_active = body.is_active
+    try:
+        db.commit()
+    except IntegrityError:
+        # 并发同 (wig,color) 双 INSERT 撞 UNIQUE：回滚后按 UPDATE 语义重试一次
+        db.rollback()
+        row = (
+            db.query(ExpoWigColor)
+            .filter(ExpoWigColor.wig_id == wig_id, ExpoWigColor.hair_color_id == color_id)
+            .first()
+        )
+        if row is None:
+            raise ValueError("保存失败，请重试")
+        old_photos = list(row.angle_photos or [])
+        row.angle_photos = photos
+        row.cover_path = body.cover_path or photos[0]
+        row.is_active = body.is_active
+        db.commit()
+    db.refresh(row)
+    # 被替换掉的旧图（不在新列表里的）删文件，避免孤儿占盘；清理失败只 log 不顶 500
+    _remove_files_quietly([p for p in old_photos if p not in photos])
+    return row
+
+
+def delete_wig_color_images(db: Session, wig_id: int, color_id: int) -> bool:
+    """管理端：删除某组合及其落盘图片。返回 False=不存在。"""
+    row = (
+        db.query(ExpoWigColor)
+        .filter(ExpoWigColor.wig_id == wig_id, ExpoWigColor.hair_color_id == color_id)
+        .first()
+    )
+    if not row:
+        return False
+    photos = list(row.angle_photos or [])
+    db.delete(row)
+    db.commit()
+    _remove_files_quietly(photos)  # 先落库再清盘：删文件失败不顶 500
+    return True
 
 
 # ---------------- 反应 / 反馈 ----------------
@@ -620,6 +791,8 @@ def delete_wig(db: Session, wig_id: int) -> bool:
     _remove_file(wig.cover_path)
     for path in wig.angle_photos or []:
         _remove_file(path)
+    # 该发型各发色的组合图（ark_expo_wig_colors）由 FK CASCADE 删行，落盘文件手动清
+    _remove_wig_color_files(db, wig_id=wig_id)
     db.delete(wig)
     try:
         db.commit()
