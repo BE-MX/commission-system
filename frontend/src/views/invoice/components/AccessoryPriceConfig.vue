@@ -39,7 +39,7 @@
         <el-table-column label="更新时间" min-width="170" max-width="240" show-overflow-tooltip>
           <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="160" fixed="right">
+        <el-table-column label="操作" min-width="150" max-width="190" fixed="right">
           <template #default="{ row }">
             <el-button v-permission="'invoice_price:write'" link type="primary" @click="openDialog(row)">
               <el-icon><Edit /></el-icon>
