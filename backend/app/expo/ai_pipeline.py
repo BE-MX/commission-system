@@ -22,7 +22,7 @@ from pathlib import Path
 
 from app.core.database import SessionLocal
 from app.expo import matching, script_service
-from app.expo.models import ExpoResult, ExpoSession, ExpoWig
+from app.expo.models import ExpoResult, ExpoSession, ExpoWig, ExpoWigColor
 
 logger = logging.getLogger("commission.expo")
 
@@ -580,6 +580,14 @@ _COLOR_TEXT_CLAUSE = (
     "lighting. Do not change the hairstyle shape or length, and do not alter the face."
 )
 
+# 组合参考图路径：三角度图本身就是「该发型该发色」实拍，参考图既定发型也既定发色，
+# 所以只需让模型连颜色一起照搬，不再有 recolor 指令（2026-07-15 起，取代色板图/文字上色）
+_COLOR_FROM_REFERENCE_CLAUSE = (
+    " Match the hair color exactly as shown in the wig reference images - reproduce their "
+    "hue, depth, tone and highlights faithfully. Do not recolor or shift the color; the "
+    "reference images already show the exact target color."
+)
+
 # scene 模式：客户佩戴假发实拍 → 保持人与发型不变，置换到场景（prompt 只在服务端）
 SCENES = [
     {"key": "business", "label": "商务会议", "tagline": "职场气场 · 从容主导",
@@ -633,19 +641,52 @@ def _color_clause(color: dict | None) -> str:
 
 def start_composites(
     session_id: int, wig_ids: list[int],
-    hair_color: dict | None = None, scene: dict | None = None,
+    hair_color: dict | None = None, scene: dict | None = None, db=None,
 ) -> None:
-    """tryon 模式：每款一条 result，发色/场景快照随 result 落库并注入 prompt。"""
+    """tryon 模式：每款一条 result，发色/场景快照随 result 落库并注入 prompt。
+
+    发色选定时，按 wig 解析「该发型该发色」的组合三角度图组（ark_expo_wig_colors），
+    把路径写进各 result 的 hair_color_json.ref_photos——合成时直接拿这组图当参考、
+    连颜色一起照搬，不再文字上色（2026-07-15）。无组合图的 wig 走文字上色兜底。
+    """
     scene_snapshot = {"key": scene["key"], "label": scene["label"]} if scene else None
-    rows = [
-        ExpoResult(
+    color_id = (hair_color or {}).get("hair_color_id")
+    combo_photos = _resolve_combo_photos(wig_ids, color_id, db) if color_id else {}
+    rows = []
+    for wig_id in wig_ids:
+        snap = hair_color
+        if hair_color and combo_photos.get(wig_id):
+            snap = {**hair_color, "ref_photos": combo_photos[wig_id]}
+        rows.append(ExpoResult(
             session_id=session_id, wig_id=wig_id,
-            hair_color_json=hair_color, scene_json=scene_snapshot,
+            hair_color_json=snap, scene_json=scene_snapshot,
             status="generating",
-        )
-        for wig_id in wig_ids
-    ]
+        ))
     _start_batch(session_id, rows)
+
+
+def _resolve_combo_photos(wig_ids: list[int], color_id: int, db=None) -> dict[int, list[str]]:
+    """{wig_id: 组合三角度图路径} — 只取启用且有图的组合。
+
+    db 由请求线程传入时直接复用（省一次连接、且测试可见事务内数据）；
+    未传时自建短连接（防御性，正常调用链都带 db）。"""
+    own = db is None
+    if own:
+        db = SessionLocal()
+    try:
+        combos = (
+            db.query(ExpoWigColor)
+            .filter(
+                ExpoWigColor.hair_color_id == color_id,
+                ExpoWigColor.wig_id.in_(wig_ids),
+                ExpoWigColor.is_active == 1,
+            )
+            .all()
+        )
+        return {c.wig_id: list(c.angle_photos) for c in combos if c.angle_photos}
+    finally:
+        if own:
+            db.close()
 
 
 def start_scene_composites(session_id: int, scenes: list[dict]) -> None:
@@ -711,11 +752,19 @@ def _build_prompt(
         prompt = _SCENE_TEMPLATE.format(scene=scene["prompt"] if scene else row.scene_json.get("label", ""))
         return prompt, [to_abs(session.photo_path)], None
 
-    # 多角度参考图取前 3 张（正面/45度/侧面），与模板的 multiple angles 声明对应
-    refs = [to_abs(p) for p in (wig.angle_photos or [])[:3] if to_abs(p).exists()]
-    if not refs and wig.cover_path and to_abs(wig.cover_path).exists():
-        refs = [to_abs(wig.cover_path)]
-    # 随图只送 自拍 + 发型参考图；发色不送色板图（会把合成拽偏），只走文本颜色锚点
+    # 发色优先用「该发型该发色」的组合三角度实拍图（参考图即目标色）；文件在才算数。
+    # 缺组合 / 文件丢失 → 回退发型自身多角度图 + 文字上色（原色时文字为空），不留空参考
+    color = row.hair_color_json or {}
+    combo_refs = [to_abs(p) for p in (color.get("ref_photos") or [])[:3] if to_abs(p).exists()]
+    if combo_refs:
+        refs = combo_refs
+        color_clause = _COLOR_FROM_REFERENCE_CLAUSE  # 连颜色一起照搬，无 recolor
+    else:
+        refs = [to_abs(p) for p in (wig.angle_photos or [])[:3] if to_abs(p).exists()]
+        if not refs and wig.cover_path and to_abs(wig.cover_path).exists():
+            refs = [to_abs(wig.cover_path)]
+        color_clause = _color_clause(row.hair_color_json)  # 文字上色兜底（原色为空）
+    # 随图只送 自拍 + 发型参考图（组合图或原色图），不送色板图（会把合成拽偏）
     images = [to_abs(session.photo_path), *refs]
 
     tryon_scene = resolve_tryon_scene((row.scene_json or {}).get("key"))
@@ -728,7 +777,7 @@ def _build_prompt(
             description=wig.wig_description or wig.name,
             extra=wig.composite_prompt or "",
         )
-        + _color_clause(row.hair_color_json)
+        + color_clause
         + scene_clause
         + _TRYON_STYLE_TAIL
         + _PORTRAIT_SPEC_CLAUSE
