@@ -1,12 +1,13 @@
 from datetime import date, datetime
 from decimal import Decimal
+import re
 
 import pytest
 from openpyxl import load_workbook
 from sqlalchemy import text
 
 from app.invoice import export_service, product_service, service, xiaoman_service
-from app.invoice.models import Invoice, InvoiceItem, XiaomanSettings  # noqa: F401 - register metadata for test create_all
+from app.invoice.models import Invoice, InvoiceItem, StdPrice, XiaomanSettings  # noqa: F401 - register metadata for test create_all
 from app.invoice.schemas import InvoiceCreate, InvoiceItemPayload
 
 
@@ -104,8 +105,9 @@ def test_invoice_create_totals_and_validation(db):
     assert [sheet.cell(10, col).value for col in range(1, 12)][-2:] == ["Discount", "TotalPrice"]
     assert sheet["J11"].value == -2
     assert sheet["K11"].value == 35.5
-    assert [sheet.cell(row, 10).value for row in range(12, 19)] == [
-        "Hair Price", "Discount", "Packaging Quantity", "Packaging", "Shipping Fee", "Handling Fee", "Total",
+    assert [sheet.cell(row, 10).value for row in range(12, 21)] == [
+        "Hair Price", "Hair Discount", "Accessory Amount", "Accessory Discount",
+        "Packaging Quantity", "Packaging", "Shipping Fee", "Handling Fee", "Total",
     ]
     html = export_service.build_print_html(invoice)
     assert "<th>Discount</th><th>TotalPrice</th>" in html
@@ -115,6 +117,174 @@ def test_invoice_create_totals_and_validation(db):
     assert pdf.startswith(b"%PDF-1.4")
     assert b"Packaging Quantity: 4" in pdf
     assert b"Packaging: USD 3.00" in pdf
+
+
+def test_mixed_invoice_exports_independent_accessory_table_and_full_summary(db):
+    _seed_products(db)
+    db.execute(text("""
+        CREATE TABLE lsordertest.okki_product_skus (
+            product_id INTEGER, sku_id INTEGER, disable_flag INTEGER
+        )
+    """))
+    db.execute(text("""
+        INSERT INTO lsordertest.okki_products
+            (product_id, product_no, name, model, color, size, unit, disable_flag)
+        VALUES
+            (4, 'ACC004', 'Hair Gripper', 'Magic Tape', 'Black', NULL, NULL, 0)
+    """))
+    db.execute(text("""
+        INSERT INTO lsordertest.okki_inventory (product_id, sku_id, disable_flag)
+        VALUES (4, 9004, 0)
+    """))
+    db.execute(text("""
+        INSERT INTO lsordertest.okki_product_skus (product_id, sku_id, disable_flag)
+        VALUES (4, 9004, 0)
+    """))
+    db.add(StdPrice(
+        product_kind="accessory",
+        product_id=4,
+        sku_id=9004,
+        accessory_name="Hair Gripper",
+        accessory_model="Magic Tape",
+        accessory_color="Black",
+        price=Decimal("0.0000"),
+        currency="USD",
+    ))
+    db.flush()
+    invoice = service.create_invoice(
+        db,
+        InvoiceCreate(
+            customer_id="CUST001",
+            customer_name="Customer A",
+            invoice_date=date(2026, 7, 15),
+            packaging_quantity=4,
+            internal_accessory=Decimal("3"),
+            shipping_fee=Decimal("7"),
+            surcharge_amount=Decimal("2"),
+            items=[
+                InvoiceItemPayload(
+                    product_id=1,
+                    sku_id=9001,
+                    product_name="Raw Hair/Body Wave",
+                    product_display="Raw Hair",
+                    net_weight_grams="100g",
+                    curl="Body Wave",
+                    model="M1",
+                    color="Natural",
+                    length="18",
+                    quantity=1,
+                    price_per_piece=Decimal("100"),
+                    discount_amount=Decimal("-10"),
+                ),
+                InvoiceItemPayload(
+                    product_kind="accessory",
+                    item_type="stock",
+                    product_id=4,
+                    sku_id=9004,
+                    product_name="Hair Gripper",
+                    product_display="Hair Gripper",
+                    model="Magic Tape",
+                    color="Black",
+                    quantity=2,
+                    price_per_piece=Decimal("15"),
+                    discount_amount=Decimal("-2"),
+                ),
+            ],
+        ),
+        user_id=1,
+    )
+
+    workbook = load_workbook(export_service.build_invoice_workbook(invoice), data_only=True)
+    sheet = workbook["Invoice"]
+    values = list(sheet.iter_rows(values_only=True))
+    accessory_header = (
+        "Name", "Model", "Color", "Standard Price", "Customer Price",
+        "Quantity", "Discount", "TotalPrice",
+    )
+    assert any(tuple(row[:8]) == accessory_header for row in values)
+    assert any(tuple(row[:8]) == (
+        "Hair Gripper", "Magic Tape", "Black", 0, 0, 2, -2, 28,
+    ) for row in values)
+    summary_labels = [row[9] for row in values if row[9]]
+    assert summary_labels[-9:] == [
+        "Hair Price", "Hair Discount", "Accessory Amount", "Accessory Discount",
+        "Packaging Quantity", "Packaging", "Shipping Fee", "Handling Fee", "Total",
+    ]
+    flattened = " ".join(str(value) for row in values for value in row if value is not None)
+    assert "9004" not in flattened
+
+    html = export_service.build_print_html(invoice)
+    assert "<h2>Accessories</h2>" in html
+    assert "<th>Name</th><th>Model</th><th>Color</th>" in html
+    assert "Accessory Amount: USD 30.00" in html
+    assert "Accessory Discount: USD -2.00" in html
+    assert "<td class=\"num\">0.0000</td>" in html
+    assert "9004" not in html
+
+    pdf = export_service.build_invoice_pdf(invoice).getvalue()
+    assert b"ACCESSORIES" in pdf
+    assert b"Hair Gripper | Magic Tape | Black | 0.0000 | 0.0000 | 2 | -2.00 | 28.00" in pdf
+    assert b"Accessory Amount: USD 30.00" in pdf
+    assert b"Accessory Discount: USD -2.00" in pdf
+    assert b"9004" not in pdf
+
+
+def test_invoice_pdf_paginates_without_omitting_rows_or_negative_coordinates():
+    invoice = Invoice(
+        invoice_no="INV-LONG-001",
+        customer_id="CUST-LONG",
+        customer_name="Long Invoice Customer",
+        invoice_date=date(2026, 7, 15),
+        currency="USD",
+        internal_accessory=Decimal("0"),
+        shipping_fee=Decimal("0"),
+        surcharge_amount=Decimal("0"),
+        total_amount=Decimal("50"),
+    )
+    for index in range(35):
+        invoice.items.append(InvoiceItem(
+            sort_order=index + 1,
+            product_kind="hair",
+            item_type="stock",
+            product_name=f"Hair-{index:02d}",
+            product_display=f"Hair-{index:02d}",
+            net_weight_grams="100g",
+            model="M1",
+            color="Black",
+            length="18",
+            quantity=1,
+            standard_price=Decimal("1"),
+            customer_price=Decimal("1"),
+            price_per_piece=Decimal("1"),
+            discount_amount=Decimal("0"),
+            total_price=Decimal("1"),
+        ))
+    for index in range(15):
+        is_last = index == 14
+        invoice.items.append(InvoiceItem(
+            sort_order=36 + index,
+            product_kind="accessory",
+            item_type="stock",
+            product_name=(f"Accessory-{index:02d}-" + "X" * 80) if is_last else f"Accessory-{index:02d}",
+            product_display=(f"Accessory-{index:02d}-" + "X" * 80) if is_last else f"Accessory-{index:02d}",
+            model=("Long Model " + "Y" * 40) if is_last else "Tool",
+            color=("Long Color " + "Z" * 40) if is_last else "Black",
+            quantity=7 if is_last else 1,
+            standard_price=Decimal("123.4567") if is_last else Decimal("1"),
+            customer_price=Decimal("124.4567") if is_last else Decimal("1"),
+            price_per_piece=Decimal("1"),
+            discount_amount=Decimal("-1.23") if is_last else Decimal("0"),
+            total_price=Decimal("869.97") if is_last else Decimal("1"),
+        ))
+
+    content = export_service.build_invoice_pdf(invoice).getvalue().decode("latin-1")
+
+    assert "Hair-34" in content
+    assert "Accessory-14" in content
+    assert "123.4567 | 124.4567 | 7 | -1.23 | 869.97" in content
+    assert "/Count 1" not in content
+    y_positions = [int(value) for value in re.findall(r"1 0 0 1 \d+ (-?\d+) Tm", content)]
+    assert y_positions and min(y_positions) > 0
 
 # ── 录入页自动填充 ────────────────────────────────────────────
 

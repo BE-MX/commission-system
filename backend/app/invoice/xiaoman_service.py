@@ -305,6 +305,12 @@ def _build_product_rows(
     for idx, item in enumerate(invoice.items, start=1):
         prefix = f"items[{idx}]"
         product_id, sku_id = item.product_id, item.sku_id
+        if item.product_kind == "accessory" and item.item_type != "stock":
+            issues.append({
+                "field": f"{prefix}.item_type",
+                "message": "配件必须绑定真实 OKKI 产品/SKU，不能使用通用产品",
+            })
+            continue
         if item.item_type == "custom":
             custom = custom_rows.get(item.custom_product_id)
             if custom and custom.okki_product_id and custom.okki_sku_id:

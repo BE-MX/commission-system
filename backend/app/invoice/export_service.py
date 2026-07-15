@@ -2,12 +2,13 @@
 
 from io import BytesIO
 from html import escape
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
 from app.invoice.models import Invoice
+from app.invoice.service import summarize_items
 
 
 def build_invoice_workbook(invoice: Invoice) -> BytesIO:
@@ -45,7 +46,9 @@ def build_invoice_workbook(invoice: Invoice) -> BytesIO:
         cell.fill = PatternFill("solid", fgColor="2F5597")
         cell.alignment = Alignment(horizontal="center", vertical="center")
 
-    for row_idx, item in enumerate(invoice.items, start=start_row + 1):
+    hair_items = [item for item in invoice.items if item.product_kind != "accessory"]
+    accessory_items = [item for item in invoice.items if item.product_kind == "accessory"]
+    for row_idx, item in enumerate(hair_items, start=start_row + 1):
         values = [
             item.product_name,
             item.product_display,
@@ -62,9 +65,42 @@ def build_invoice_workbook(invoice: Invoice) -> BytesIO:
         for col, value in enumerate(values, start=1):
             ws.cell(row=row_idx, column=col, value=value)
 
+    current_row = start_row + len(hair_items)
+    if accessory_items:
+        title_row = current_row + 2
+        ws.merge_cells(start_row=title_row, start_column=1, end_row=title_row, end_column=8)
+        ws.cell(row=title_row, column=1, value="Accessories").font = Font(size=13, bold=True)
+        accessory_headers = [
+            "Name", "Model", "Color", "Standard Price", "Customer Price",
+            "Quantity", "Discount", "TotalPrice",
+        ]
+        accessory_header_row = title_row + 1
+        for col, header in enumerate(accessory_headers, start=1):
+            cell = ws.cell(row=accessory_header_row, column=col, value=header)
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill("solid", fgColor="2F5597")
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+        for row_idx, item in enumerate(accessory_items, start=accessory_header_row + 1):
+            values = [
+                item.product_display or item.product_name,
+                item.model,
+                item.color,
+                float(item.standard_price or 0),
+                float(item.customer_price or 0),
+                item.quantity,
+                float(item.discount_amount or 0),
+                float(item.total_price or 0),
+            ]
+            for col, value in enumerate(values, start=1):
+                ws.cell(row=row_idx, column=col, value=value)
+        current_row = accessory_header_row + len(accessory_items)
+
+    summary = summarize_items(invoice)
     fee_rows = [
         ("Hair Price", float(_gross_hair_amount(invoice))),
-        ("Discount", float(invoice.internal_discount or 0)),
+        ("Hair Discount", float(summary["hair_discount"])),
+        ("Accessory Amount", float(summary["accessory_amount"])),
+        ("Accessory Discount", float(summary["accessory_discount"])),
         ("Packaging Quantity", int(invoice.packaging_quantity or 0)),
         ("Packaging", float(invoice.internal_accessory or 0)),
         ("Shipping Fee", float(invoice.shipping_fee or 0)),
@@ -72,7 +108,7 @@ def build_invoice_workbook(invoice: Invoice) -> BytesIO:
         ("Total", float(invoice.total_amount or 0)),
     ]
 
-    total_row = start_row + len(invoice.items)
+    total_row = current_row
     for label, amount in fee_rows:
         total_row += 1
         ws.cell(row=total_row, column=10, value=label).font = Font(bold=True)
@@ -97,6 +133,8 @@ def build_invoice_workbook(invoice: Invoice) -> BytesIO:
 def build_print_html(invoice: Invoice) -> str:
     rows = []
     for item in invoice.items:
+        if item.product_kind == "accessory":
+            continue
         rows.append(f"""
         <tr>
           <td>{escape(item.product_name or "")}</td>
@@ -112,6 +150,34 @@ def build_print_html(invoice: Invoice) -> str:
           <td class="num">{item.total_price or ""}</td>
         </tr>
         """)
+    accessory_rows = []
+    for item in invoice.items:
+        if item.product_kind != "accessory":
+            continue
+        accessory_rows.append(f"""
+        <tr>
+          <td>{escape(item.product_display or item.product_name or "")}</td>
+          <td>{escape(item.model or "")}</td>
+          <td>{escape(item.color or "")}</td>
+          <td class="num">{"" if item.standard_price is None else item.standard_price}</td>
+          <td class="num">{"" if item.customer_price is None else item.customer_price}</td>
+          <td class="num">{item.quantity}</td>
+          <td class="num">{item.discount_amount or 0}</td>
+          <td class="num">{item.total_price or ""}</td>
+        </tr>
+        """)
+    accessory_section = ""
+    if accessory_rows:
+        accessory_section = f"""
+  <h2>Accessories</h2>
+  <table>
+    <thead>
+      <tr><th>Name</th><th>Model</th><th>Color</th><th>Standard Price</th><th>Customer Price</th><th>Quantity</th><th>Discount</th><th>TotalPrice</th></tr>
+    </thead>
+    <tbody>{''.join(accessory_rows)}</tbody>
+  </table>
+        """
+    summary = summarize_items(invoice)
     return f"""<!doctype html>
 <html>
 <head>
@@ -154,9 +220,12 @@ def build_print_html(invoice: Invoice) -> str:
     </thead>
     <tbody>{''.join(rows)}</tbody>
   </table>
+  {accessory_section}
   <div class="total">
     <div>Hair Price: {invoice.currency} {_gross_hair_amount(invoice)}</div>
-    <div>Discount: {invoice.currency} {invoice.internal_discount or 0}</div>
+    <div>Hair Discount: {invoice.currency} {summary['hair_discount']}</div>
+    <div>Accessory Amount: {invoice.currency} {summary['accessory_amount']}</div>
+    <div>Accessory Discount: {invoice.currency} {summary['accessory_discount']}</div>
     <div>Packaging Quantity: {invoice.packaging_quantity or 0}</div>
     <div>Packaging: {invoice.currency} {invoice.internal_accessory or 0}</div>
     <div>Shipping Fee: {invoice.currency} {invoice.shipping_fee or 0}</div>
@@ -168,68 +237,138 @@ def build_print_html(invoice: Invoice) -> str:
 
 
 def build_invoice_pdf(invoice: Invoice) -> BytesIO:
-    lines = [
-        ("COMMERCIAL INVOICE", 220, 800, 18),
-        (f"Invoice No.: {invoice.invoice_no}", 50, 760, 11),
-        (f"Date: {invoice.invoice_date}", 50, 742, 11),
-        (f"Customer: {invoice.customer_name}", 50, 724, 11),
-        (f"Currency: {invoice.currency}", 50, 706, 11),
-        ("Product | Model | Color | Length | Qty | Price | Discount | Total", 50, 668, 9),
-    ]
-    y = 650
-    for item in invoice.items[:28]:
+    pages: list[list[tuple[str, int, int, int]]] = []
+
+    def new_page(*, first: bool = False) -> tuple[list[tuple[str, int, int, int]], int]:
+        page: list[tuple[str, int, int, int]] = []
+        pages.append(page)
+        if first:
+            page.extend([
+                ("COMMERCIAL INVOICE", 220, 800, 18),
+                (f"Invoice No.: {invoice.invoice_no}", 50, 760, 11),
+                (f"Date: {invoice.invoice_date}", 50, 742, 11),
+                (f"Customer: {invoice.customer_name}", 50, 724, 11),
+                (f"Currency: {invoice.currency}", 50, 706, 11),
+            ])
+            return page, 668
+        page.append((f"COMMERCIAL INVOICE - {invoice.invoice_no} (continued)", 50, 800, 12))
+        return page, 770
+
+    page, y = new_page(first=True)
+    hair_items = [item for item in invoice.items if item.product_kind != "accessory"]
+    accessory_items = [item for item in invoice.items if item.product_kind == "accessory"]
+
+    page.append(("HAIR PRODUCTS", 50, y, 11))
+    y -= 18
+    page.append(("Product | Model | Color | Length | Qty | Price | Discount | Total", 50, y, 9))
+    y -= 18
+    for item in hair_items:
+        if y < 64:
+            page, y = new_page()
+            page.append(("HAIR PRODUCTS (continued)", 50, y, 11))
+            y -= 18
+            page.append(("Product | Model | Color | Length | Qty | Price | Discount | Total", 50, y, 9))
+            y -= 18
         product = (item.product_display or item.product_name or "")[:24]
         row = (
-            f"{product} | {item.model or ''} | {item.color} | {item.length} | "
+            f"{product} | {item.model or ''} | {item.color or ''} | {item.length or ''} | "
             f"{item.quantity} | {item.price_per_piece or ''} | {item.discount_amount or 0} | {item.total_price or ''}"
         )
-        lines.append((row[:105], 50, y, 8))
+        page.append((row[:105], 50, y, 8))
         y -= 16
-    summary_y = y - 8
+
+    if accessory_items:
+        if y < 100:
+            page, y = new_page()
+        else:
+            y -= 8
+        page.append(("ACCESSORIES", 50, y, 11))
+        y -= 18
+        page.append(("Name | Model | Color | Standard Price | Customer Price | Quantity | Discount | TotalPrice", 50, y, 8))
+        y -= 18
+        for item in accessory_items:
+            if y < 64:
+                page, y = new_page()
+                page.append(("ACCESSORIES (continued)", 50, y, 11))
+                y -= 18
+                page.append(("Name | Model | Color | Standard Price | Customer Price | Quantity | Discount | TotalPrice", 50, y, 8))
+                y -= 18
+            name = (item.product_display or item.product_name or "")[:18]
+            model = (item.model or "")[:10]
+            color = (item.color or "")[:10]
+            row = (
+                f"{name} | {model} | {color} | "
+                f"{'' if item.standard_price is None else item.standard_price} | "
+                f"{'' if item.customer_price is None else item.customer_price} | {item.quantity} | "
+                f"{item.discount_amount or 0} | {item.total_price or ''}"
+            )
+            page.append((row, 50, y, 7))
+            y -= 16
+
+    item_summary = summarize_items(invoice)
     summary = [
-        ("Hair Price", _gross_hair_amount(invoice)),
-        ("Discount", invoice.internal_discount or 0),
+        ("Hair Price", item_summary["hair_amount"]),
+        ("Hair Discount", item_summary["hair_discount"]),
+        ("Accessory Amount", item_summary["accessory_amount"]),
+        ("Accessory Discount", item_summary["accessory_discount"]),
         ("Packaging Quantity", invoice.packaging_quantity or 0),
         ("Packaging", invoice.internal_accessory or 0),
         ("Shipping Fee", invoice.shipping_fee or 0),
         ("Handling Fee", invoice.surcharge_amount or 0),
         ("Total", invoice.total_amount or 0),
     ]
+    required_height = len(summary) * 16 + 12
+    if y - required_height < 40:
+        page, y = new_page()
+        page.append(("SUMMARY", 360, y, 11))
+        y -= 20
+    else:
+        y -= 8
     for label, amount in summary:
         value = str(amount) if label == "Packaging Quantity" else f"{invoice.currency} {amount}"
-        lines.append((f"{label}: {value}", 360, summary_y, 10 if label != "Total" else 12))
-        summary_y -= 16
+        page.append((f"{label}: {value}", 330, y, 10 if label != "Total" else 12))
+        y -= 16
 
-    content = ["BT"]
-    for text, x, y_pos, size in lines:
-        content.append(f"/F1 {size} Tf")
-        content.append(f"1 0 0 1 {x} {y_pos} Tm")
-        content.append(f"({_pdf_escape(text)}) Tj")
-    content.append("ET")
-    content_bytes = "\n".join(content).encode("latin-1", errors="replace")
-
-    objects = [
-        b"<< /Type /Catalog /Pages 2 0 R >>",
-        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] "
-        b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
-        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-        b"<< /Length " + str(len(content_bytes)).encode("ascii") + b" >>\nstream\n" + content_bytes + b"\nendstream",
-    ]
-    return _write_pdf(objects)
+    return _write_pdf_pages(pages)
 
 
 def _gross_hair_amount(invoice: Invoice) -> Decimal:
-    return sum((
-        (
-            Decimal(item.price_per_piece or 0) * Decimal(item.quantity or 0)
-        ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        for item in invoice.items
-    ), Decimal("0"))
+    return summarize_items(invoice)["hair_amount"]
 
 
 def _pdf_escape(value: str) -> str:
     return str(value).replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
+def _write_pdf_pages(pages: list[list[tuple[str, int, int, int]]]) -> BytesIO:
+    page_count = len(pages)
+    page_ids = list(range(3, 3 + page_count))
+    font_id = 3 + page_count
+    content_ids = list(range(font_id + 1, font_id + 1 + page_count))
+    kids = " ".join(f"{page_id} 0 R" for page_id in page_ids)
+    objects: list[bytes] = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        f"<< /Type /Pages /Kids [{kids}] /Count {page_count} >>".encode("ascii"),
+    ]
+    for content_id in content_ids:
+        objects.append(
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] "
+            f"/Resources << /Font << /F1 {font_id} 0 R >> >> /Contents {content_id} 0 R >>".encode("ascii")
+        )
+    objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    for lines in pages:
+        commands = ["BT"]
+        for value, x, y_pos, size in lines:
+            commands.append(f"/F1 {size} Tf")
+            commands.append(f"1 0 0 1 {x} {y_pos} Tm")
+            commands.append(f"({_pdf_escape(value)}) Tj")
+        commands.append("ET")
+        content = "\n".join(commands).encode("latin-1", errors="replace")
+        objects.append(
+            b"<< /Length " + str(len(content)).encode("ascii") + b" >>\nstream\n"
+            + content + b"\nendstream"
+        )
+    return _write_pdf(objects)
 
 
 def _write_pdf(objects: list[bytes]) -> BytesIO:

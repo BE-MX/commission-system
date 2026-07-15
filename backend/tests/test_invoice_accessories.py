@@ -16,7 +16,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from app.auth.utils import create_access_token
 from app.core.database import get_db
 from app.invoice import import_service, price_service, schemas, service
-from app.invoice.models import CustomerPriceRule, InvoiceItem, StdPrice
+from app.invoice.models import CustomerPriceRule, Invoice, InvoiceItem, StdPrice
 from app.invoice.schemas import InvoiceCreate, InvoiceItemPayload
 
 
@@ -34,6 +34,11 @@ def _seed_accessory_okki_product(db):
         )
     """))
     db.execute(text("""
+        CREATE TABLE IF NOT EXISTS lsordertest.okki_product_skus (
+            product_id INTEGER, sku_id INTEGER, disable_flag INTEGER
+        )
+    """))
+    db.execute(text("""
         INSERT INTO lsordertest.okki_products
         (product_id, product_no, name, model, color, size, unit, disable_flag)
         VALUES
@@ -42,6 +47,10 @@ def _seed_accessory_okki_product(db):
     """))
     db.execute(text("""
         INSERT INTO lsordertest.okki_inventory (product_id, sku_id, disable_flag)
+        VALUES (104881553777436, 104881553777819, 0)
+    """))
+    db.execute(text("""
+        INSERT INTO lsordertest.okki_product_skus (product_id, sku_id, disable_flag)
         VALUES (104881553777436, 104881553777819, 0)
     """))
     db.commit()
@@ -108,6 +117,7 @@ def test_existing_hair_invoice_item_defaults_product_kind_to_hair():
 
 def test_accessory_invoice_item_roundtrip_preserves_product_kind(db):
     _seed_accessory_okki_product(db)
+    _accessory_std_price(db)
     invoice = service.create_invoice(
         db,
         InvoiceCreate(
@@ -140,6 +150,175 @@ def test_accessory_invoice_item_roundtrip_preserves_product_kind(db):
 
     assert persisted.product_kind == "accessory"
     assert service._serialize_item(persisted)["product_kind"] == "accessory"
+
+
+def test_accessory_validation_uses_accessory_fields_without_hair_dimensions():
+    invoice = Invoice(
+        customer_id="CUST-ACCESSORY",
+        customer_name="Accessory Customer",
+        invoice_date=date(2026, 7, 15),
+    )
+    invoice.items.append(InvoiceItem(
+        product_kind="accessory",
+        item_type="custom",
+        product_id=None,
+        sku_id=None,
+        product_name="",
+        product_display="",
+        model=None,
+        color="",
+        length=None,
+        net_weight_grams=None,
+        curl=None,
+        quantity=0,
+        price_per_piece=Decimal("0"),
+        discount_amount=Decimal("-1"),
+        total_price=Decimal("-1"),
+    ))
+
+    issues = service.validate_invoice(invoice)
+    fields = {issue["field"] for issue in issues}
+
+    assert {
+        "items[1].item_type",
+        "items[1].product_id",
+        "items[1].sku_id",
+        "items[1].product_name",
+        "items[1].product_display",
+        "items[1].model",
+        "items[1].color",
+        "items[1].quantity",
+        "items[1].price_per_piece",
+        "items[1].discount_amount",
+    } <= fields
+    assert "items[1].length" not in fields
+    assert "items[1].net_weight_grams" not in fields
+    assert "items[1].curl" not in fields
+
+
+def test_hair_validation_still_requires_length_and_weight():
+    invoice = Invoice(
+        customer_id="CUST-HAIR",
+        customer_name="Hair Customer",
+        invoice_date=date(2026, 7, 15),
+    )
+    invoice.items.append(InvoiceItem(
+        product_kind="hair",
+        item_type="stock",
+        product_id=1,
+        sku_id=2,
+        product_name="Raw Hair",
+        product_display="Raw Hair",
+        model="M1",
+        color="Natural",
+        length=None,
+        net_weight_grams=None,
+        quantity=1,
+        price_per_piece=Decimal("10"),
+        discount_amount=Decimal("0"),
+        total_price=Decimal("10"),
+    ))
+
+    fields = {issue["field"] for issue in service.validate_invoice(invoice)}
+
+    assert "items[1].length" in fields
+    assert "items[1].net_weight_grams" in fields
+
+
+def test_accessory_save_snapshots_exact_configured_price_and_keeps_transaction_price(db):
+    _seed_accessory_okki_product(db)
+    _accessory_std_price(db)
+    db.add(CustomerPriceRule(
+        customer_id="CUST-ACCESSORY",
+        adjust_type="fixed",
+        adjust_value=Decimal("0.2500"),
+        enabled=1,
+    ))
+    db.flush()
+
+    invoice = service.create_invoice(
+        db,
+        InvoiceCreate(
+            customer_id="CUST-ACCESSORY",
+            customer_name="Accessory Customer",
+            invoice_date=date(2026, 7, 15),
+            items=[InvoiceItemPayload(
+                product_kind="accessory",
+                item_type="stock",
+                product_id=104881553777436,
+                sku_id=104881553777819,
+                product_name="Forged Name",
+                product_display="Forged Display",
+                model="Forged Model",
+                color="Forged Color",
+                quantity=2,
+                price_per_piece=Decimal("4.20"),
+            )],
+        ),
+    )
+
+    item = invoice.items[0]
+    assert item.standard_price == Decimal("2.7500")
+    assert item.customer_price == Decimal("3.0000")
+    assert item.price_per_piece == Decimal("4.20")
+    assert item.price_source == "manual"
+    assert item.total_price == Decimal("8.40")
+    assert item.product_name == "Hair Gripper"
+    assert item.product_display == "Hair Gripper"
+    assert item.model == "Magic Tape"
+    assert item.color == "Hair Gripper"
+
+
+def test_accessory_price_resolver_distinguishes_catalog_outage_from_stale_config(db):
+    _accessory_std_price(db)
+
+    with pytest.raises(ValueError) as exc_info:
+        _accessory_price_service().resolve_configured_price(
+            db,
+            customer_id="CUST-ACCESSORY",
+            product_id=104881553777436,
+            sku_id=104881553777819,
+            currency="USD",
+        )
+
+    assert "同步" in str(exc_info.value)
+    assert "重新选择" not in str(exc_info.value)
+
+
+@pytest.mark.parametrize("disabled", [False, True])
+def test_accessory_save_requires_an_active_exact_standard_price(db, disabled):
+    _seed_accessory_okki_product(db)
+    if disabled:
+        _accessory_std_price(db)
+        db.execute(text("""
+            UPDATE lsordertest.okki_product_skus
+            SET disable_flag = 1
+            WHERE product_id = 104881553777436 AND sku_id = 104881553777819
+        """))
+
+    with pytest.raises(ValueError) as exc_info:
+        service.create_invoice(
+            db,
+            InvoiceCreate(
+                customer_id="CUST-ACCESSORY",
+                customer_name="Accessory Customer",
+                invoice_date=date(2026, 7, 15),
+                items=[InvoiceItemPayload(
+                    product_kind="accessory",
+                    item_type="stock",
+                    product_id=104881553777436,
+                    sku_id=104881553777819,
+                    product_name="Hair Gripper",
+                    product_display="Hair Gripper",
+                    model="Magic Tape",
+                    color="Hair Gripper",
+                    quantity=2,
+                    price_per_piece=Decimal("4.20"),
+                )],
+            ),
+        )
+
+    assert "标准价格表" in str(exc_info.value)
 
 
 def test_legacy_hair_lookup_and_list_exclude_accessory_prices(db):

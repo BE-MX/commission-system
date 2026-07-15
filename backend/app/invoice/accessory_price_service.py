@@ -211,6 +211,57 @@ def _catalog_columns(db: Session) -> tuple[set[str], set[str]]:
     return product_columns, sku_columns
 
 
+def resolve_configured_price(
+    db: Session,
+    *,
+    customer_id: str | None,
+    product_id: int,
+    sku_id: int,
+    currency: str,
+) -> dict:
+    """Resolve one accessory price by its exact OKKI identity.
+
+    Invoice saving must never use catalog keyword candidates: one wrong match
+    changes a financial snapshot. The configured product/SKU pair and currency
+    therefore have to match exactly and still be active in the OKKI catalog.
+    """
+    row = (
+        db.query(StdPrice)
+        .filter(
+            StdPrice.product_kind == "accessory",
+            StdPrice.product_id == int(product_id),
+            StdPrice.sku_id == int(sku_id),
+        )
+        .first()
+    )
+    invoice_currency = str(currency or "USD").upper()
+    if row is None or str(row.currency or "").upper() != invoice_currency:
+        raise ValueError(
+            f"配件 product_id={product_id}, sku_id={sku_id} 未配置 {invoice_currency} 标准价格；"
+            "请先到发票标准价格表配置后再保存"
+        )
+    try:
+        snapshot = _load_active_snapshot(db, int(product_id), int(sku_id))
+    except AccessoryCatalogUnavailable as exc:
+        raise ValueError(
+            "配件目录暂不可用；请检查 OKKI 产品同步任务/同步表后重试"
+        ) from exc
+    except ValueError as exc:
+        raise ValueError(
+            f"配件 product_id={product_id}, sku_id={sku_id} 的标准价格配置已失效；"
+            "请到发票标准价格表重新选择有效的 OKKI 产品/SKU"
+        ) from exc
+
+    standard_price = Decimal(row.price).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+    rule = price_service.get_customer_rule_row(db, customer_id)
+    return {
+        "standard_price": standard_price,
+        "customer_price": price_service.apply_rule(standard_price, rule),
+        "currency": row.currency,
+        **snapshot,
+    }
+
+
 def _serialize_price(row: StdPrice, rule) -> dict:
     standard_price = Decimal(row.price)
     customer_price = price_service.apply_rule(standard_price, rule)
