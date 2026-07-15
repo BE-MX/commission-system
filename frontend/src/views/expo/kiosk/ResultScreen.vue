@@ -77,6 +77,8 @@
         <button v-else class="xk-btn ghost" :disabled="flow.generating.value" @click="flow.backToMatching()">试试其他发型</button>
         <button class="xk-btn" @click="flow.openSales()">请顾问过来</button>
       </div>
+      <!-- 一键打印：平板 APK 里走原生桥（存相册→确认→开打印App）；普通浏览器兜底开图 -->
+      <button class="xk-btn print" @click="printCurrent">🖨 打印这张</button>
 
       <!-- 分享二维码独立黑金卡片，不与照片重叠；返回主页在外壳头部（全屏统一导航） -->
       <div v-if="shareUrl" class="share-row">
@@ -153,6 +155,20 @@ const metaLine = computed(() => {
 function retryGenerate() {
   if (isScene.value) flow.reselectScenes()
   else flow.generate()
+}
+
+// 一键打印：把当前合成「原图」（非压缩展示版，保打印清晰度）交给平板 APK 原生桥，
+// 由它存进系统相册并确认后再打开打印 App；非 APK 环境（普通浏览器）兜底新开图便于取用
+function printCurrent() {
+  const r = current.value
+  if (!r?.image_url) return
+  const url = r.image_url.startsWith('http') ? r.image_url : location.origin + r.image_url
+  const bridge = window.Android
+  if (bridge && typeof bridge.printPhoto === 'function') {
+    bridge.printPhoto(url)
+  } else {
+    window.open(url, '_blank')
+  }
 }
 
 // ── 前后对比滑块 ──
@@ -400,4 +416,5 @@ watch([shareUrl, qrEl], async () => {
 .react.liked { color: var(--xk-ink); border: none; background: linear-gradient(110deg, var(--xk-gold), var(--xk-gold-hi)); }
 .actions { display: flex; gap: 12px; margin-top: 14px; width: min(72vw, 460px); }
 .actions .xk-btn { flex: 1; padding: 0; height: 48px; font-size: 13px; }
+.xk-btn.print { width: min(72vw, 460px); height: 48px; margin-top: 12px; font-size: 14px; letter-spacing: 0.1em; }
 </style>
