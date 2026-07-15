@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">莱莎AI试戴</string>
+
+    <!-- ========= 上机前只需改这两项 ========= -->
+
+    <!-- kiosk 起始地址 -->
+    <string name="start_url">https://leshine.work/expo/kiosk</string>
+
+    <!-- 打印机 App 的包名（留空则「打印」按钮走系统「打开方式」让工作人员选 App）。
+         查包名：设置 → 应用 → 打开打印 App 看详情，或电脑 adb shell pm list packages | grep 关键词。
+         例：com.canon.eos.selphy / com.hp.printercontrol 等，按你的打印机填。 -->
+    <string name="printer_package"></string>
+</resources>
