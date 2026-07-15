@@ -375,7 +375,7 @@ def import_price_workbook(db: Session, content: bytes, user_id: int | None = Non
 
     Sheet '价格表': blocks of [Price List----<series>] > <grade> > header >
     rows (length, weight, 4 prices for solid/piano/ombre/balayage).
-    Sheet '颜色对照表': 4 columns of color codes, one per color type.
+    Color mapping sheets are intentionally ignored; they are maintained separately.
     """
     wb = load_workbook(BytesIO(content), data_only=True)
     prices_imported = 0
@@ -385,7 +385,6 @@ def import_price_workbook(db: Session, content: bytes, user_id: int | None = Non
     for ws in wb.worksheets:
         header = [str(c or "").strip().lower() for c in next(ws.iter_rows(min_row=1, max_row=1, values_only=True), ())]
         if header and header[0].startswith("solid"):
-            colors_imported += _import_color_sheet(db, ws)
             continue
         imported, sheet_skipped = _import_price_sheet(db, ws, user_id)
         prices_imported += imported
@@ -432,7 +431,7 @@ def _import_price_sheet(db: Session, ws, user_id: int | None) -> tuple[int, list
                     length=first,
                     weight_unit=weight,
                     color_type=color_type,
-                    price=Decimal(str(price)),
+                    price=Decimal(str(price)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
                     user_id=user_id,
                 )
                 imported += 1

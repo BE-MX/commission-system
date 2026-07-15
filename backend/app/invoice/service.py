@@ -17,7 +17,7 @@ _HEADER_FIELDS = (
     "delivery_address", "sales_user_name", "sales_phone", "sales_email",
     "invoice_date", "express_channel", "shipping_fee", "surcharge_name",
     "surcharge_amount", "payment_term", "internal_payment_method", "internal_discount",
-    "internal_accessory", "internal_received", "internal_balance",
+    "packaging_quantity", "internal_accessory", "internal_received", "internal_balance",
     "internal_shipping_type", "okki_new_deal", "okki_free_shipping", "okki_first_return",
     "remark",
 )
@@ -195,7 +195,7 @@ def create_invoice(db: Session, body: InvoiceCreate, user_id: int | None = None)
     if user_id and not (invoice.sales_user_name and invoice.sales_phone and invoice.sales_email):
         creator = db.get(ArkUser, user_id)
         if creator:
-            invoice.sales_user_name = invoice.sales_user_name or creator.real_name
+            invoice.sales_user_name = invoice.sales_user_name or creator.username
             invoice.sales_phone = invoice.sales_phone or creator.phone
             invoice.sales_email = invoice.sales_email or creator.email
     # OKKI 业务标记空值兜底（null=自动判定）
@@ -204,6 +204,7 @@ def create_invoice(db: Session, body: InvoiceCreate, user_id: int | None = None)
     db.add(invoice)
     _replace_items(db, invoice, body, user_id=user_id)
     _refresh_invoice_totals(invoice)
+    _validate_internal_settlement(invoice)
     db.flush()
     return invoice
 
@@ -230,6 +231,7 @@ def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: 
         setattr(invoice, field, value)
     _replace_items(db, invoice, body, user_id=user_id)
     _refresh_invoice_totals(invoice)
+    _validate_internal_settlement(invoice)
     db.flush()
     return invoice
 
@@ -260,6 +262,8 @@ def validate_invoice(invoice: Invoice) -> list[dict]:
             issues.append({"field": f"{prefix}.quantity", "message": "Quantity 必须大于 0"})
         if item.price_per_piece is None or item.price_per_piece <= 0:
             issues.append({"field": f"{prefix}.price_per_piece", "message": "Price/Piece 必须大于 0"})
+        if item.total_price is not None and item.total_price < 0:
+            issues.append({"field": f"{prefix}.discount_amount", "message": "产品行折扣不能超过该行金额"})
     return issues
 
 
@@ -287,6 +291,7 @@ def serialize_detail(invoice: Invoice) -> dict:
         "product_amount": invoice.product_amount,
         "internal_payment_method": invoice.internal_payment_method,
         "internal_discount": invoice.internal_discount,
+        "packaging_quantity": invoice.packaging_quantity,
         "internal_accessory": invoice.internal_accessory,
         "internal_received": invoice.internal_received,
         "internal_balance": invoice.internal_balance,
@@ -310,9 +315,6 @@ def _custom_line_complete(payload) -> bool:
     ))
 
 
-_INVOICE_TYPE_CODES = {"stock": "KC", "production": "SC"}
-
-
 def invoice_no_exists(db: Session, invoice_no: str, exclude_id: int | None = None) -> bool:
     query = db.query(Invoice.id).filter(Invoice.invoice_no == invoice_no)
     if exclude_id is not None:
@@ -321,22 +323,27 @@ def invoice_no_exists(db: Session, invoice_no: str, exclude_id: int | None = Non
 
 
 def suggest_invoice_no(db: Session, user_id: int | None, order_type: str) -> str:
-    """默认发票号：{用户名}-{KC|SC}-{本月该前缀第几单}。
+    """默认发票号（2026-07-14 亮哥定版）：
+    库存单 `{用户名}-KC-{MM}{NN}`，NN=该用户本月第几张库存单；
+    生产单 `SC-{MM}{NN}`，NN=全公司本月第几张生产单（号不含用户名，全局计数）。
 
-    号内不含月份成分，跨月重置序号会撞全库唯一约束——默认号只是建议值，
-    先按当月同前缀最大序号 +1，再逐一顺延到全库不冲突为止（用户可手改）。
-    序号按前缀（=用户名+类型）而非 created_by 计数：号是用户可编辑的，
-    以号面前缀为准才能保证「同前缀序号连续」的直觉不被代开/改号打破。
+    序号按「当月同前缀号面最大序号 +1」推算，不按 order_type 行数计数——
+    旧 INV 格式存量单不进新序列，号面与序号永远自洽。号内无年份，跨年同月
+    同序会撞全库唯一约束——默认号只是建议值，生成后逐一顺延到不冲突为止。
+    NN 用两位零填充，超 99 自然进三位。
     """
-    user = db.get(ArkUser, user_id) if user_id else None
-    username = (user.username or "").strip() if user else ""
-    if not username:
-        return _next_invoice_no(db)  # 定位不到用户名（理论不可达）退回旧 INV 规则
-    type_code = _INVOICE_TYPE_CODES.get(order_type, "KC")
-    prefix = f"{username}-{type_code}-"
+    now = datetime.now()
+    month = f"{now.month:02d}"
+    if order_type == "production":
+        prefix = f"SC-{month}"
+    else:
+        user = db.get(ArkUser, user_id) if user_id else None
+        username = (user.username or "").strip() if user else ""
+        if not username:
+            return _next_invoice_no(db)  # 定位不到用户名（理论不可达）退回旧 INV 规则
+        prefix = f"{username}-KC-{month}"
     escaped = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     # created_at 存的是 utcnow（models 默认值）：「本月」按本地自然月起点换算到 UTC 存储系比较
-    now = datetime.now()
     month_start = datetime(now.year, now.month, 1) - (datetime.now() - datetime.utcnow())
     existing = db.execute(
         select(Invoice.invoice_no)
@@ -349,9 +356,9 @@ def suggest_invoice_no(db: Session, user_id: int | None, order_type: str) -> str
         if suffix.isdigit():
             seq = max(seq, int(suffix))
     seq += 1
-    while invoice_no_exists(db, f"{prefix}{seq}"):
+    while invoice_no_exists(db, f"{prefix}{seq:02d}"):
         seq += 1
-    return f"{prefix}{seq}"
+    return f"{prefix}{seq:02d}"
 
 
 def _next_invoice_no(db: Session) -> str:
@@ -428,6 +435,7 @@ def _replace_items(db: Session, invoice: Invoice, body, user_id: int | None = No
             length=payload.length,
             quantity=payload.quantity,
             price_per_piece=payload.price_per_piece,
+            discount_amount=payload.discount_amount,
         )
         if payload.item_type == "custom" and _custom_line_complete(payload):
             resolved = product_service.ensure_custom_product(
@@ -475,7 +483,11 @@ def _replace_items(db: Session, invoice: Invoice, body, user_id: int | None = No
             item.price_source = "customer_rule"
         else:
             item.price_source = "manual"
-        item.total_price = _money((item.price_per_piece or Decimal("0")) * Decimal(item.quantity))
+        gross_amount = _money((item.price_per_piece or Decimal("0")) * Decimal(item.quantity))
+        item.discount_amount = _money(Decimal(item.discount_amount or 0))
+        if gross_amount + item.discount_amount < 0:
+            raise ValueError("产品行折扣不能超过该行金额")
+        item.total_price = _money(gross_amount + item.discount_amount)
         invoice.items.append(item)
 
 
@@ -497,14 +509,31 @@ def _append_removed_lines(invoice: Invoice, removed: list[dict]) -> None:
 
 
 def _refresh_invoice_totals(invoice: Invoice) -> None:
+    invoice.internal_discount = _money(sum(
+        (item.discount_amount or Decimal("0")) for item in invoice.items
+    ))
     invoice.product_amount = _money(sum((item.total_price or Decimal("0")) for item in invoice.items))
     invoice.total_amount = _money(
         invoice.product_amount
+        + Decimal(invoice.internal_accessory or 0)
         + Decimal(invoice.shipping_fee or 0)
         + Decimal(invoice.surcharge_amount or 0)
     )
+    if invoice.total_amount < 0:
+        raise ValueError("折扣金额不能超过订单中可抵扣的金额")
     if invoice.sync_status != "synced":
         invoice.status = "ready" if invoice.items and not validate_invoice(invoice) else "draft"
+
+
+def _validate_internal_settlement(invoice: Invoice) -> None:
+    prepayment = invoice.internal_received
+    balance = invoice.internal_balance
+    if prepayment is None and balance is None:
+        return
+    if prepayment is None or balance is None:
+        raise ValueError("预付款和尾款必须同时填写")
+    if _money(Decimal(prepayment) + Decimal(balance)) != _money(Decimal(invoice.total_amount or 0)):
+        raise ValueError("预付款与尾款之和必须等于总金额")
 
 
 def _money(value: Decimal) -> Decimal:
@@ -548,7 +577,7 @@ def _serialize_item(item: InvoiceItem) -> dict:
         "standard_price": item.standard_price,
         "customer_price": item.customer_price,
         "price_per_piece": item.price_per_piece,
+        "discount_amount": item.discount_amount,
         "price_source": item.price_source,
         "total_price": item.total_price,
     }
-

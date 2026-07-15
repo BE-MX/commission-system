@@ -36,7 +36,7 @@
               </template>
             </el-table-column>
             <el-table-column label="标准价" min-width="120" align="right">
-              <template #default="{ row }">{{ row.currency }} {{ Number(row.price).toFixed(4) }}</template>
+              <template #default="{ row }">{{ row.currency }} {{ Number(row.price).toFixed(2) }}</template>
             </el-table-column>
             <el-table-column prop="updated_at" label="更新时间" min-width="170" show-overflow-tooltip />
             <el-table-column label="操作" min-width="140" fixed="right">
@@ -174,7 +174,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="标准价" required>
-          <el-input-number v-model="stdDialog.form.price" :min="0" :precision="4" controls-position="right" style="width: 100%" />
+          <el-input-number v-model="stdDialog.form.price" :min="0" :precision="2" controls-position="right" style="width: 100%" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -369,7 +369,7 @@ async function handleImport({ file }) {
   const formData = new FormData()
   formData.append('file', file)
   const result = await importPriceWorkbook(formData)
-  ElMessage.success(`导入完成：价格 ${result.prices_imported} 格，色号 ${result.colors_imported} 条${result.skipped?.length ? `，跳过 ${result.skipped.length} 行` : ''}`)
+  ElMessage.success(`导入完成：标准价格 ${result.prices_imported} 格，已按两位小数四舍五入${result.skipped?.length ? `，跳过 ${result.skipped.length} 行` : ''}`)
   loadStdPrices()
   loadColorTypes()
 }

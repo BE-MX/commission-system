@@ -2,6 +2,7 @@
 
 from io import BytesIO
 from html import escape
+from decimal import Decimal, ROUND_HALF_UP
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -14,7 +15,7 @@ def build_invoice_workbook(invoice: Invoice) -> BytesIO:
     ws = wb.active
     ws.title = "Invoice"
 
-    ws.merge_cells("A1:J1")
+    ws.merge_cells("A1:K1")
     ws["A1"] = "COMMERCIAL INVOICE"
     ws["A1"].font = Font(size=18, bold=True)
     ws["A1"].alignment = Alignment(horizontal="center")
@@ -35,7 +36,7 @@ def build_invoice_workbook(invoice: Invoice) -> BytesIO:
 
     headers = [
         "Product_name", "Product", "Net Weight Grams", "Curl", "Model",
-        "Color", "Length", "Quantity", "Price/Piece", "TotalPrice",
+        "Color", "Length", "Quantity", "Price/Piece", "Discount", "TotalPrice",
     ]
     start_row = 10
     for col, header in enumerate(headers, start=1):
@@ -55,31 +56,35 @@ def build_invoice_workbook(invoice: Invoice) -> BytesIO:
             item.length,
             item.quantity,
             float(item.price_per_piece or 0),
+            float(item.discount_amount or 0),
             float(item.total_price or 0),
         ]
         for col, value in enumerate(values, start=1):
             ws.cell(row=row_idx, column=col, value=value)
 
-    fee_rows = [("Hair cost in total", float(invoice.product_amount or 0))]
-    if invoice.shipping_fee:
-        fee_rows.append(("Shipping fee", float(invoice.shipping_fee)))
-    if invoice.surcharge_amount:
-        fee_rows.append((invoice.surcharge_name or "Surcharge", float(invoice.surcharge_amount)))
-    fee_rows.append(("Total", float(invoice.total_amount or 0)))
+    fee_rows = [
+        ("Hair Price", float(_gross_hair_amount(invoice))),
+        ("Discount", float(invoice.internal_discount or 0)),
+        ("Packaging Quantity", int(invoice.packaging_quantity or 0)),
+        ("Packaging", float(invoice.internal_accessory or 0)),
+        ("Shipping Fee", float(invoice.shipping_fee or 0)),
+        ("Handling Fee", float(invoice.surcharge_amount or 0)),
+        ("Total", float(invoice.total_amount or 0)),
+    ]
 
     total_row = start_row + len(invoice.items)
     for label, amount in fee_rows:
         total_row += 1
-        ws.cell(row=total_row, column=9, value=label).font = Font(bold=True)
-        ws.cell(row=total_row, column=10, value=amount).font = Font(bold=(label == "Total"))
+        ws.cell(row=total_row, column=10, value=label).font = Font(bold=True)
+        ws.cell(row=total_row, column=11, value=amount).font = Font(bold=(label == "Total"))
 
     thin = Side(style="thin", color="D9E2F3")
-    for row in ws.iter_rows(min_row=start_row, max_row=total_row, min_col=1, max_col=10):
+    for row in ws.iter_rows(min_row=start_row, max_row=total_row, min_col=1, max_col=11):
         for cell in row:
             cell.border = Border(top=thin, right=thin, bottom=thin, left=thin)
             cell.alignment = Alignment(vertical="center", wrap_text=True)
 
-    widths = [28, 18, 18, 12, 14, 14, 12, 12, 14, 14]
+    widths = [28, 18, 18, 12, 14, 14, 12, 12, 14, 14, 14]
     for idx, width in enumerate(widths, start=1):
         ws.column_dimensions[chr(64 + idx)].width = width
 
@@ -103,6 +108,7 @@ def build_print_html(invoice: Invoice) -> str:
           <td>{escape(item.length or "")}</td>
           <td class="num">{item.quantity}</td>
           <td class="num">{item.price_per_piece or ""}</td>
+          <td class="num">{item.discount_amount or 0}</td>
           <td class="num">{item.total_price or ""}</td>
         </tr>
         """)
@@ -143,15 +149,18 @@ def build_print_html(invoice: Invoice) -> str:
     <thead>
       <tr>
         <th>Product_name</th><th>Product</th><th>Net Weight Grams</th><th>Curl</th><th>Model</th>
-        <th>Color</th><th>Length</th><th>Quantity</th><th>Price/Piece</th><th>TotalPrice</th>
+        <th>Color</th><th>Length</th><th>Quantity</th><th>Price/Piece</th><th>Discount</th><th>TotalPrice</th>
       </tr>
     </thead>
     <tbody>{''.join(rows)}</tbody>
   </table>
   <div class="total">
-    <div>Hair cost in total: {invoice.currency} {invoice.product_amount}</div>
-    <div>Shipping fee: {invoice.currency} {invoice.shipping_fee or 0}</div>
-    <div>{escape(invoice.surcharge_name or 'Surcharge')}: {invoice.currency} {invoice.surcharge_amount or 0}</div>
+    <div>Hair Price: {invoice.currency} {_gross_hair_amount(invoice)}</div>
+    <div>Discount: {invoice.currency} {invoice.internal_discount or 0}</div>
+    <div>Packaging Quantity: {invoice.packaging_quantity or 0}</div>
+    <div>Packaging: {invoice.currency} {invoice.internal_accessory or 0}</div>
+    <div>Shipping Fee: {invoice.currency} {invoice.shipping_fee or 0}</div>
+    <div>Handling Fee: {invoice.currency} {invoice.surcharge_amount or 0}</div>
     <div>Total: {invoice.currency} {invoice.total_amount}</div>
   </div>
 </body>
@@ -165,18 +174,31 @@ def build_invoice_pdf(invoice: Invoice) -> BytesIO:
         (f"Date: {invoice.invoice_date}", 50, 742, 11),
         (f"Customer: {invoice.customer_name}", 50, 724, 11),
         (f"Currency: {invoice.currency}", 50, 706, 11),
-        ("Product | Model | Color | Length | Qty | Price | Total", 50, 668, 9),
+        ("Product | Model | Color | Length | Qty | Price | Discount | Total", 50, 668, 9),
     ]
     y = 650
     for item in invoice.items[:28]:
         product = (item.product_display or item.product_name or "")[:24]
         row = (
             f"{product} | {item.model or ''} | {item.color} | {item.length} | "
-            f"{item.quantity} | {item.price_per_piece or ''} | {item.total_price or ''}"
+            f"{item.quantity} | {item.price_per_piece or ''} | {item.discount_amount or 0} | {item.total_price or ''}"
         )
         lines.append((row[:105], 50, y, 8))
         y -= 16
-    lines.append((f"Total: {invoice.currency} {invoice.total_amount}", 390, max(y - 12, 72), 12))
+    summary_y = y - 8
+    summary = [
+        ("Hair Price", _gross_hair_amount(invoice)),
+        ("Discount", invoice.internal_discount or 0),
+        ("Packaging Quantity", invoice.packaging_quantity or 0),
+        ("Packaging", invoice.internal_accessory or 0),
+        ("Shipping Fee", invoice.shipping_fee or 0),
+        ("Handling Fee", invoice.surcharge_amount or 0),
+        ("Total", invoice.total_amount or 0),
+    ]
+    for label, amount in summary:
+        value = str(amount) if label == "Packaging Quantity" else f"{invoice.currency} {amount}"
+        lines.append((f"{label}: {value}", 360, summary_y, 10 if label != "Total" else 12))
+        summary_y -= 16
 
     content = ["BT"]
     for text, x, y_pos, size in lines:
@@ -195,6 +217,15 @@ def build_invoice_pdf(invoice: Invoice) -> BytesIO:
         b"<< /Length " + str(len(content_bytes)).encode("ascii") + b" >>\nstream\n" + content_bytes + b"\nendstream",
     ]
     return _write_pdf(objects)
+
+
+def _gross_hair_amount(invoice: Invoice) -> Decimal:
+    return sum((
+        (
+            Decimal(item.price_per_piece or 0) * Decimal(item.quantity or 0)
+        ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        for item in invoice.items
+    ), Decimal("0"))
 
 
 def _pdf_escape(value: str) -> str:

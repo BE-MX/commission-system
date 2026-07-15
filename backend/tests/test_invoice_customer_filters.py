@@ -171,32 +171,53 @@ def test_search_endpoint_private_only_without_binding(db, seed_customers):
         assert len(data["items"]) >= 3
 
 
-# ── 发票号生成规则：{用户名}-{KC|SC}-{本月序号} ─────────────
+# ── 发票号生成规则（2026-07-14 版）─────────────────────────
+# 库存单 {用户名}-KC-{MM}{NN} 按用户计数；生产单 SC-{MM}{NN} 全局计数
+
+_MM = f"{datetime.now().month:02d}"
 
 
-def test_suggest_invoice_no_per_user_type_month(db, bound_user):
-    assert service.suggest_invoice_no(db, 5, "stock") == "stella-KC-1"
-    assert service.suggest_invoice_no(db, 5, "production") == "stella-SC-1"
+def test_suggest_stock_no_per_user_month(db, bound_user):
+    assert service.suggest_invoice_no(db, 5, "stock") == f"stella-KC-{_MM}01"
 
     service.create_invoice(db, InvoiceCreate(**_payload()), user_id=5)
     db.flush()
-    # 已有 stella-KC-1 → 下一单 2；SC 序号独立
-    assert service.suggest_invoice_no(db, 5, "stock") == "stella-KC-2"
-    assert service.suggest_invoice_no(db, 5, "production") == "stella-SC-1"
+    # 已有 stella-KC-MM01 → 下一单 02；库存单序号不影响生产单
+    assert service.suggest_invoice_no(db, 5, "stock") == f"stella-KC-{_MM}02"
+    assert service.suggest_invoice_no(db, 5, "production") == f"SC-{_MM}01"
 
 
-def test_suggest_invoice_no_cross_month_collision_bumps(db, bound_user):
-    # 上月已有 stella-KC-1（不计入本月序号，但占用了全库唯一）
-    last_month = datetime.now().replace(day=1) - timedelta(days=1)
-    old = service.create_invoice(db, InvoiceCreate(**_payload(invoice_no="stella-KC-1")), user_id=5)
+def test_suggest_production_no_counts_all_users(db, bound_user):
+    # 生产单不含用户名，全公司一条序列
+    assert service.suggest_invoice_no(db, 5, "production") == f"SC-{_MM}01"
+
+    other = ArkUser(id=6, username="bob", password_hash="x", real_name="Bob")
+    db.add(other)
+    db.flush()
+    service.create_invoice(
+        db, InvoiceCreate(**_payload(order_type="production")), user_id=6,
+    )
+    db.flush()
+    # bob 建了 SC-MM01 → stella 的下一张生产单是全局第 2 张
+    assert service.suggest_invoice_no(db, 5, "production") == f"SC-{_MM}02"
+    # 生产单序号不影响 stella 的库存单序列
+    assert service.suggest_invoice_no(db, 5, "stock") == f"stella-KC-{_MM}01"
+
+
+def test_suggest_invoice_no_cross_year_collision_bumps(db, bound_user):
+    # 去年同月已有 stella-KC-MM01（号内无年份：不计入本月序号，但占用全库唯一）
+    last_period = datetime.now().replace(day=1) - timedelta(days=1)
+    old = service.create_invoice(
+        db, InvoiceCreate(**_payload(invoice_no=f"stella-KC-{_MM}01")), user_id=5,
+    )
     db.flush()
     db.execute(
         text("UPDATE ark_invoices SET created_at = :ts WHERE id = :id"),
-        {"ts": last_month, "id": old.id},
+        {"ts": last_period, "id": old.id},
     )
     db.flush()
-    # 本月第 1 单撞上月的号 → 顺延到 2
-    assert service.suggest_invoice_no(db, 5, "stock") == "stella-KC-2"
+    # 本月第 1 单撞历史号 → 顺延到 02
+    assert service.suggest_invoice_no(db, 5, "stock") == f"stella-KC-{_MM}02"
 
 
 def test_suggest_invoice_no_fallback_without_user(db):
@@ -236,29 +257,30 @@ def test_update_invoice_no_unique_excluding_self(db, bound_user):
 
 
 def test_suggest_and_check_endpoints(db, bound_user):
-    service.create_invoice(db, InvoiceCreate(**_payload(invoice_no="stella-KC-1")), user_id=5)
+    first_no = f"stella-KC-{_MM}01"
+    service.create_invoice(db, InvoiceCreate(**_payload(invoice_no=first_no)), user_id=5)
     db.commit()
     with _client(db, sub="5", permissions=["invoice:write"]) as client:
         data = client.get(
             "/api/invoice/invoices/suggest-no", params={"order_type": "stock"},
         ).json()["data"]
-        assert data["invoice_no"] == "stella-KC-2"
+        assert data["invoice_no"] == f"stella-KC-{_MM}02"
 
         taken = client.get(
-            "/api/invoice/invoices/check-no", params={"invoice_no": "stella-KC-1"},
+            "/api/invoice/invoices/check-no", params={"invoice_no": first_no},
         ).json()["data"]
         assert taken["available"] is False
 
         free = client.get(
-            "/api/invoice/invoices/check-no", params={"invoice_no": "stella-KC-9"},
+            "/api/invoice/invoices/check-no", params={"invoice_no": "stella-KC-9999"},
         ).json()["data"]
         assert free["available"] is True
 
         # 编辑场景排除自身
-        own = db.query(Invoice).filter(Invoice.invoice_no == "stella-KC-1").first()
+        own = db.query(Invoice).filter(Invoice.invoice_no == first_no).first()
         self_ok = client.get(
             "/api/invoice/invoices/check-no",
-            params={"invoice_no": "stella-KC-1", "exclude_id": own.id},
+            params={"invoice_no": first_no, "exclude_id": own.id},
         ).json()["data"]
         assert self_ok["available"] is True
 

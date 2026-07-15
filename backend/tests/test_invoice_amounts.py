@@ -2,8 +2,8 @@
 
 覆盖 app/invoice/service.py：
 - _money: 两位小数 ROUND_HALF_UP
-- 明细行 total_price = quantity × price_per_piece
-- 发票 total_amount = Σ 明细 total_price
+- 明细行 total_price = quantity × price_per_piece + 行级折扣
+- 发票 total_amount = Σ 明细 total_price + 订单折扣 + 包装费 + 运费 + 手续费
 - validate_invoice 对数量/单价的金额校验
 - update_invoice 重算金额
 """
@@ -36,7 +36,7 @@ def _item(quantity: int, price, **overrides) -> InvoiceItemPayload:
     return InvoiceItemPayload(**base)
 
 
-def _create(db, items) -> Invoice:
+def _create(db, items, **header_overrides) -> Invoice:
     db.execute(text("""
         CREATE TABLE IF NOT EXISTS lsordertest.okki_products (
             product_id INTEGER PRIMARY KEY, name TEXT, color TEXT, size TEXT, unit TEXT, disable_flag INTEGER
@@ -65,6 +65,7 @@ def _create(db, items) -> Invoice:
         customer_name="Customer A",
         invoice_date=date(2026, 7, 3),
         items=items,
+        **header_overrides,
     )
     invoice = service.create_invoice(db, payload, user_id=1)
     db.flush()
@@ -132,6 +133,88 @@ class TestLineAndInvoiceTotals:
         db.flush()
         assert len(invoice.items) == 1
         assert invoice.total_amount == Decimal("20.00")
+
+    def test_line_discount_is_normalized_negative_and_reduces_total(self, db):
+        invoice = _create(db, [_item(2, Decimal("10.00"), discount_amount=Decimal("5.00"))])
+
+        assert invoice.items[0].discount_amount == Decimal("-5.00")
+        assert invoice.items[0].total_price == Decimal("15.00")
+        assert invoice.product_amount == Decimal("15.00")
+        assert invoice.total_amount == Decimal("15.00")
+
+    def test_invoice_total_uses_line_discount_once_and_persists_packaging_quantity(self, db):
+        invoice = _create(
+            db,
+            [_item(2, Decimal("50.00"), discount_amount=Decimal("-10.00"))],
+            internal_discount=Decimal("5.00"),
+            internal_accessory=Decimal("3.00"),
+            packaging_quantity=4,
+            shipping_fee=Decimal("7.00"),
+            surcharge_amount=Decimal("2.00"),
+            internal_received=Decimal("20.00"),
+            internal_balance=Decimal("82.00"),
+        )
+
+        assert invoice.product_amount == Decimal("90.00")
+        assert invoice.internal_discount == Decimal("-10.00")
+        assert invoice.packaging_quantity == 4
+        assert invoice.total_amount == Decimal("102.00")
+        assert invoice.internal_balance == Decimal("82.00")
+
+    def test_line_discount_cannot_exceed_gross_line_amount(self, db):
+        import pytest
+
+        with pytest.raises(ValueError, match="产品行折扣不能超过该行金额"):
+            _create(db, [_item(1, Decimal("10.00"), discount_amount=Decimal("-10.01"))])
+
+
+class TestInternalSettlement:
+    def test_prepayment_and_balance_must_equal_grand_total(self, db):
+        invoice = _create(
+            db,
+            [_item(1, Decimal("90.00"))],
+            shipping_fee=Decimal("8.00"),
+            surcharge_amount=Decimal("2.00"),
+            internal_received=Decimal("30.00"),
+            internal_balance=Decimal("70.00"),
+        )
+        assert invoice.total_amount == Decimal("100.00")
+        assert invoice.internal_received == Decimal("30.00")
+        assert invoice.internal_balance == Decimal("70.00")
+
+    def test_mismatched_settlement_is_rejected(self, db):
+        import pytest
+
+        with pytest.raises(ValueError, match="预付款与尾款之和必须等于总金额"):
+            _create(
+                db,
+                [_item(1, Decimal("100.00"))],
+                internal_received=Decimal("30.00"),
+                internal_balance=Decimal("60.00"),
+            )
+
+    def test_incomplete_settlement_is_rejected(self, db):
+        import pytest
+
+        with pytest.raises(ValueError, match="预付款和尾款必须同时填写"):
+            _create(
+                db,
+                [_item(1, Decimal("100.00"))],
+                internal_received=Decimal("30.00"),
+            )
+
+    def test_excessive_prepayment_is_rejected_by_schema(self):
+        import pytest
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            InvoiceCreate(
+                customer_id="CUST001",
+                customer_name="Customer A",
+                invoice_date=date(2026, 7, 3),
+                internal_received=Decimal("-0.01"),
+                items=[_item(1, Decimal("100.00"))],
+            )
 
 
 class TestValidateAmounts:
