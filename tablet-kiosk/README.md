@@ -17,8 +17,12 @@
 **方式一（推荐，最省事）**：用 Android Studio 打开本目录 `tablet-kiosk/`，等 Gradle 同步完，
 菜单 Build → Build Bundle(s)/APK(s) → Build APK(s)。产物在 `app/build/outputs/apk/`。
 
-**方式二（命令行）**：装好 JDK 17 + Android SDK，在本目录执行
-`./gradlew assembleRelease`（首次会自动装 Gradle Wrapper）。
+**方式二（命令行）**：装好 JDK 17+ 与 Android SDK（本仓库开发机已具备），在本目录执行
+`./gradlew assembleDebug`。若 `./gradlew` 因网络取不到 Gradle 发行包，直接用已缓存的 gradle：
+`~/.gradle/wrapper/dists/gradle-8.7-bin/*/gradle-8.7/bin/gradle assembleDebug`。
+
+> 已在开发机验证可构建（2026-07-16）：产物 `app/build/outputs/apk/debug/app-debug.apk`（约 2.1MB），
+> compileSdk 35 / AGP 8.5.2 / Gradle 8.7 / JDK 21(JBR)。debug 版可直接装测试；正式展位用签名 release。
 
 **签名**：展位内部使用，用一个自签名 keystore 即可（Android Studio: Build → Generate Signed
 Bundle/APK，一路新建 keystore）。debug 版也能装，但每次重装会清数据（含登录态），正式用签名 release。
