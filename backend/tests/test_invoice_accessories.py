@@ -842,6 +842,64 @@ def test_accessory_price_read_api_uses_price_page_permission_and_ok_envelope(db)
         assert client.get("/api/invoice/price/accessories").status_code == 403
 
 
+def test_accessory_price_list_keeps_history_by_default_and_filters_inactive_for_invoice(db):
+    _seed_accessory_okki_product(db)
+    historical = _accessory_std_price(db)
+    db.add(StdPrice(
+        product_kind="accessory",
+        accessory_name="Legacy orphan",
+        accessory_model="Legacy",
+        accessory_color="Black",
+        product_id=None,
+        sku_id=None,
+        price=Decimal("1.0000"),
+        currency="USD",
+    ))
+    db.flush()
+    db.execute(text("""
+        UPDATE lsordertest.okki_product_skus
+        SET disable_flag = 1
+        WHERE product_id = 104881553777436 AND sku_id = 104881553777819
+    """))
+
+    pricing = _accessory_price_service()
+    assert historical.id in [row["id"] for row in pricing.list_prices(db)]
+    assert pricing.list_prices(db, active_only=True) == []
+
+
+def test_accessory_price_active_only_catalog_outage_is_actionable_503_but_history_still_lists(db):
+    _accessory_std_price(db)
+
+    with _api_client(db, permissions=["invoice_price:read"]) as client:
+        history = client.get("/api/invoice/price/accessories")
+        active = client.get("/api/invoice/price/accessories", params={"active_only": "true"})
+
+    assert history.status_code == 200
+    assert len(history.json()["data"]["items"]) == 1
+    assert active.status_code == 503
+    assert "检查OKKI产品同步任务/同步表" in active.json()["detail"]
+
+
+def test_accessory_price_active_only_wraps_catalog_query_failure(db, monkeypatch, caplog, capsys):
+    from app.invoice import product_service
+
+    _accessory_std_price(db)
+
+    def pretend_catalog_columns_exist(_db, table_name):
+        if table_name == "okki_products":
+            return {"product_id", "name", "model", "color", "disable_flag"}
+        return {"product_id", "sku_id", "disable_flag"}
+
+    monkeypatch.setattr(product_service, "_table_columns", pretend_catalog_columns_exist)
+    pricing = _accessory_price_service()
+
+    with pytest.raises(pricing.AccessoryCatalogUnavailable, match="同步任务|同步表"):
+        pricing.list_prices(db, active_only=True)
+
+    assert "查询失败" in caplog.text
+    assert "查询失败" in capsys.readouterr().out
+
+
 def test_accessory_price_write_delete_api_require_invoice_price_write(db):
     _seed_accessory_candidates(db)
     body = _payload().model_dump(mode="json")

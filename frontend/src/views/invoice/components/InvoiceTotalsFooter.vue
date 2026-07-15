@@ -41,8 +41,8 @@ defineEmits(['cancel', 'save', 'validate'])
 <style scoped>
 .drawer-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 0 2px; }
 .total-box { display: flex; min-width: 0; flex: 1; align-items: baseline; flex-wrap: wrap; gap: 6px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-.summary-chip { display: inline-flex; min-height: 30px; align-items: center; gap: 5px; padding: 4px 9px; border-radius: 8px; background: var(--invoice-summary-bg); color: var(--invoice-summary-fg); white-space: nowrap; }
-.summary-chip strong { font-weight: 700; }
+.summary-chip { display: inline-flex; min-height: 30px; align-items: center; gap: 5px; padding: 4px 9px; border-radius: 8px; background: var(--invoice-summary-bg); color: var(--text-secondary); white-space: nowrap; }
+.summary-chip strong { color: var(--invoice-summary-fg); font-weight: 700; }
 .hair { --invoice-summary-fg: var(--invoice-summary-hair-fg); --invoice-summary-bg: var(--invoice-summary-hair-bg); }
 .hair-discount { --invoice-summary-fg: var(--invoice-summary-hair-discount-fg); --invoice-summary-bg: var(--invoice-summary-hair-discount-bg); }
 .accessory { --invoice-summary-fg: var(--invoice-summary-accessory-fg); --invoice-summary-bg: var(--invoice-summary-accessory-bg); }

@@ -229,16 +229,20 @@ def search_accessory_candidates(
 def list_accessory_prices(
     keyword: str | None = Query(None),
     customer_id: str | None = Query(None, max_length=64),
+    active_only: bool = Query(False),
     db: Session = Depends(get_db),
     _user=Depends(_PRICE_PAGE_READ),
 ):
-    return ok({
-        "items": accessory_price_service.list_prices(
+    try:
+        items = accessory_price_service.list_prices(
             db,
             keyword=keyword,
             customer_id=customer_id,
+            active_only=active_only,
         )
-    })
+    except accessory_price_service.AccessoryCatalogUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+    return ok({"items": items})
 
 
 @router.post("/price/accessories", summary="Create/update an accessory standard price")

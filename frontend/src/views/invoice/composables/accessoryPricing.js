@@ -1,7 +1,10 @@
-import { normalizeDiscount } from './invoiceSettlement.js'
-
-const cents = value => Math.round((Number(value) || 0) * 100)
-const money = value => cents(value) / 100
+import {
+  calculateLineTotal,
+  normalizeDiscount,
+  sumLineDiscount,
+  sumLineGross,
+  sumLineNet,
+} from './invoiceSettlement.js'
 
 export function createLatestRequestGate() {
   let sequence = 0
@@ -15,8 +18,7 @@ export function createLatestRequestGate() {
 }
 
 export function calculateAccessoryTotal(quantity, pricePerPiece, discountAmount = 0) {
-  const grossCents = Math.round((Number(quantity) || 0) * cents(pricePerPiece))
-  return (grossCents + cents(normalizeDiscount(discountAmount))) / 100
+  return calculateLineTotal(quantity, pricePerPiece, discountAmount)
 }
 
 export function normalizeAccessoryRow(row = {}) {
@@ -54,13 +56,13 @@ export function normalizeAccessoryRow(row = {}) {
 }
 
 export function accessoryGross(rows) {
-  return money(rows.reduce((sum, row) => sum + Math.round((Number(row.quantity) || 0) * cents(row.price_per_piece)), 0) / 100)
+  return sumLineGross(rows)
 }
 
 export function accessoryDiscount(rows) {
-  return money(rows.reduce((sum, row) => sum + cents(normalizeDiscount(row.discount_amount)), 0) / 100)
+  return sumLineDiscount(rows)
 }
 
 export function accessoryNet(rows) {
-  return money(accessoryGross(rows) + accessoryDiscount(rows))
+  return sumLineNet(rows)
 }

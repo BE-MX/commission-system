@@ -18,6 +18,7 @@ import {
   calculateInvoiceTotal,
   normalizeDiscount,
   settlementMatchesTotal,
+  sumLineNet,
 } from './invoiceSettlement'
 import { normalizeAccessoryRow } from './accessoryPricing'
 import { useInvoiceAccessories } from './useInvoiceAccessories'
@@ -59,8 +60,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
 
   const formHairPrice = accessories.hairAmount
   const formLineDiscountTotal = accessories.hairDiscount
-  const formProductTotal = computed(() =>
-    form.items.reduce((sum, line) => sum + Number(line.total_price || 0), 0))
+  const formProductTotal = computed(() => sumLineNet(form.items))
   const formTotal = computed(() => calculateInvoiceTotal(
     formProductTotal.value,
     form.internal_accessory,

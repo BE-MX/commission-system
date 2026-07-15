@@ -8,19 +8,15 @@ import {
   calculateAccessoryTotal,
   createLatestRequestGate,
 } from './accessoryPricing.js'
-import { normalizeDiscount } from './invoiceSettlement.js'
+import { normalizeDiscount, sumLineDiscount, sumLineGross } from './invoiceSettlement.js'
 
 export function useInvoiceAccessories(form) {
   const accessoryOptions = ref([])
   const accessoryLoading = ref(false)
   const hairItems = computed(() => form.items.filter(item => item.product_kind !== 'accessory'))
   const accessoryItems = computed(() => form.items.filter(item => item.product_kind === 'accessory'))
-  const hairAmount = computed(() => hairItems.value.reduce(
-    (sum, row) => sum + (Number(row.quantity) || 0) * (Number(row.price_per_piece) || 0), 0,
-  ))
-  const hairDiscount = computed(() => hairItems.value.reduce(
-    (sum, row) => sum + normalizeDiscount(row.discount_amount), 0,
-  ))
+  const hairAmount = computed(() => sumLineGross(hairItems.value))
+  const hairDiscount = computed(() => sumLineDiscount(hairItems.value))
   const accessoryAmount = computed(() => accessoryGross(accessoryItems.value))
   const accessoryDiscountTotal = computed(() => accessoryDiscount(accessoryItems.value))
   const searchGate = createLatestRequestGate()
@@ -41,6 +37,7 @@ export function useInvoiceAccessories(form) {
       const result = await listAccessoryPrices({
         keyword: keyword.trim() || undefined,
         customer_id: customerId || undefined,
+        active_only: true,
       })
       if (!searchGate.isCurrent(token, form.customer_id || '')) return
       accessoryOptions.value = (result.items || []).map(option => ({
@@ -91,7 +88,10 @@ export function useInvoiceAccessories(form) {
     const token = priceGate.issue(customerId)
     if (!accessoryItems.value.length) return
     try {
-      const result = await listAccessoryPrices({ customer_id: customerId || undefined })
+      const result = await listAccessoryPrices({
+        customer_id: customerId || undefined,
+        active_only: true,
+      })
       if (!priceGate.isCurrent(token, form.customer_id || '')) return
       const options = result.items || []
       let invalidCount = 0

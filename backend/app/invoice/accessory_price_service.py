@@ -68,6 +68,7 @@ def list_prices(
     db: Session,
     keyword: str | None = None,
     customer_id: str | None = None,
+    active_only: bool = False,
 ) -> list[dict]:
     query = db.query(StdPrice).filter(StdPrice.product_kind == "accessory")
     if keyword and keyword.strip():
@@ -78,8 +79,52 @@ def list_prices(
             StdPrice.accessory_color.like(like),
         ))
     rows = query.order_by(StdPrice.accessory_name, StdPrice.accessory_model, StdPrice.id).all()
+    if active_only:
+        active_identities = _load_active_identities(db, rows)
+        rows = [
+            row for row in rows
+            if row.product_id is not None
+            and row.sku_id is not None
+            and (int(row.product_id), int(row.sku_id)) in active_identities
+        ]
     rule = price_service.get_customer_rule_row(db, customer_id) if customer_id else None
     return [_serialize_price(row, rule) for row in rows]
+
+
+def _load_active_identities(db: Session, rows: list[StdPrice]) -> set[tuple[int, int]]:
+    """Return configured identities that still map to active OKKI product/SKU rows."""
+    _catalog_columns(db)
+    identities = [
+        (int(row.product_id), int(row.sku_id))
+        for row in rows
+        if row.product_id is not None and row.sku_id is not None
+    ]
+    if not identities:
+        return set()
+
+    params: dict[str, int] = {}
+    pairs: list[str] = []
+    for index, (product_id, sku_id) in enumerate(identities):
+        params[f"product_{index}"] = product_id
+        params[f"sku_{index}"] = sku_id
+        pairs.append(f"(:product_{index}, :sku_{index})")
+
+    schema = product_service._schema()
+    try:
+        result = db.execute(text(f"""
+            SELECT p.product_id, s.sku_id
+            FROM `{schema}`.okki_products p
+            JOIN `{schema}`.okki_product_skus s ON s.product_id = p.product_id
+            WHERE p.disable_flag = 0
+              AND s.disable_flag = 0
+              AND (p.product_id, s.sku_id) IN ({', '.join(pairs)})
+        """), params).all()
+    except SQLAlchemyError as exc:
+        message = f"OKKI配件目录活跃产品查询失败: {exc}"
+        logger.warning(message)
+        print(f"[invoice] {message}", flush=True)
+        raise AccessoryCatalogUnavailable(_CATALOG_GUIDANCE) from exc
+    return {(int(row[0]), int(row[1])) for row in result}
 
 
 def upsert_price(db: Session, payload, user_id: int | None) -> StdPrice:

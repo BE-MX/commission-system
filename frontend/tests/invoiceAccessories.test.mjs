@@ -9,6 +9,13 @@ import {
   normalizeAccessoryRow,
 } from '../src/views/invoice/composables/accessoryPricing.js'
 import { buildInvoicePayload } from '../src/views/invoice/composables/invoiceEditorState.js'
+import {
+  calculateBalance,
+  calculateInvoiceTotal,
+  sumLineDiscount,
+  sumLineGross,
+  sumLineNet,
+} from '../src/views/invoice/composables/invoiceSettlement.js'
 
 const priceConfig = readFileSync(
   new URL('../src/views/invoice/InvoicePriceConfig.vue', import.meta.url),
@@ -71,6 +78,52 @@ test('accessory calculations normalize discounts and avoid floating point drift'
   assert.equal(accessoryGross([{ quantity: 3, price_per_piece: 0.1 }]), 0.3)
 })
 
+test('accessory money rounds the extended row amount instead of rounding four-decimal unit price first', () => {
+  const rows = [
+    normalizeAccessoryRow({ quantity: 10, price_per_piece: 2.755, discount_amount: -1 }),
+    normalizeAccessoryRow({ quantity: 3, price_per_piece: 0.335, discount_amount: -0.01 }),
+  ]
+  assert.equal(rows[0].total_price, 26.55)
+  assert.equal(rows[1].total_price, 1)
+  assert.equal(accessoryGross(rows), 28.56)
+  assert.equal(accessoryDiscount(rows), -1.01)
+  assert.equal(accessoryNet(rows), 27.55)
+})
+
+test('hair and accessory summaries share per-line currency rounding and settlement payload totals', () => {
+  const hair = [
+    { quantity: 1, price_per_piece: 10.005, discount_amount: -0.01 },
+    { quantity: 3, price_per_piece: 0.335, discount_amount: 0 },
+  ]
+  const accessories = [
+    { quantity: 10, price_per_piece: 2.755, discount_amount: -1 },
+  ]
+  assert.equal(sumLineGross(hair), 11.02)
+  assert.equal(sumLineDiscount(hair), -0.01)
+  assert.equal(sumLineNet(hair), 11.01)
+  assert.equal(sumLineGross(accessories), 27.55)
+  assert.equal(sumLineNet(accessories), 26.55)
+
+  const productTotal = sumLineNet([...hair, ...accessories])
+  const total = calculateInvoiceTotal(productTotal, 1.01, 2.01, 0.01)
+  const prepayment = 20.01
+  const balance = calculateBalance(total, prepayment)
+  const payload = buildInvoicePayload({
+    invoice_no: 'ROUND-1', order_type: 'stock', customer_id: '88', customer_name: 'Test',
+    invoice_date: '2026-07-15', currency: 'USD', internal_accessory: 1.01,
+    shipping_fee: 2.01, surcharge_amount: 0.01, internal_received: prepayment,
+    internal_balance: balance, items: [...hair, ...accessories],
+  }, sumLineDiscount(hair))
+
+  assert.equal(productTotal, 37.56)
+  assert.equal(total, 40.59)
+  assert.equal(balance, 20.58)
+  assert.equal(payload.internal_received, 20.01)
+  assert.equal(payload.internal_balance, 20.58)
+  assert.equal(payload.internal_discount, -0.01)
+  assert.match(invoiceEditor, /const formProductTotal = computed\(\(\) => sumLineNet\(form\.items\)\)/)
+})
+
 test('accessory customer repricing discards responses from an older customer', () => {
   const gate = createLatestRequestGate()
   const oldCustomer = gate.issue('customer-a')
@@ -107,6 +160,13 @@ test('changing customer immediately clears accessory options and rejects stale c
   assert.match(accessoryState, /_customer_id: customerId/)
   assert.match(accessoryState, /String\(option\._customer_id\) !== String\(form\.customer_id \|\| ''\)/)
   assert.match(invoiceEditor, /form\.customer_name = customer\?\.company_name \|\| ''\s*\n\s*accessories\.invalidateCustomerContext\(\)/)
+})
+
+test('invoice accessory lookups request active catalog rows without changing price configuration history', () => {
+  const activeRequests = accessoryState.match(/listAccessoryPrices\(\{[\s\S]*?\}\)/g) || []
+  assert.equal(activeRequests.length, 2)
+  for (const request of activeRequests) assert.match(request, /active_only: true/)
+  assert.doesNotMatch(accessoryConfig, /active_only:\s*true/)
 })
 
 test('invoice accessory entry exposes only configured real-identity columns', () => {
@@ -155,6 +215,8 @@ test('footer uses eight token-backed amount chips without new motion', () => {
     assert.match(totalsFooter, new RegExp(`--invoice-summary-${kind}-fg`))
   }
   assert.doesNotMatch(accessoryTable, /transition\s*:|animation\s*:|@keyframes/)
+  assert.match(totalsFooter, /\.summary-chip[^}]*color:\s*var\(--text-secondary\)/)
+  assert.match(totalsFooter, /\.summary-chip strong[^}]*color:\s*var\(--invoice-summary-fg\)/)
 })
 
 test('price configuration separates hair and accessory prices without duplicating shared panels', () => {

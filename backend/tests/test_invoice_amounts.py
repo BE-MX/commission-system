@@ -284,6 +284,44 @@ class TestLineAndInvoiceTotals:
         assert invoice.internal_discount == Decimal("-10.00")
         assert invoice.internal_balance == Decimal("117.00")
 
+    def test_four_decimal_unit_price_uses_extended_line_rounding_for_saved_settlement(self, db):
+        _seed_accessory_for_amounts(db)
+        hair = _item(1, Decimal("10.0050"))
+        accessory = _item(
+            10,
+            Decimal("2.7550"),
+            product_kind="accessory",
+            product_id=2,
+            sku_id=9002,
+            product_name="Hair Gripper",
+            product_display="Hair Gripper",
+            model="Magic Tape",
+            color="Black",
+            length=None,
+            net_weight_grams=None,
+            curl=None,
+            discount_amount=Decimal("-1.00"),
+        )
+
+        invoice = _create(
+            db,
+            [hair, accessory],
+            internal_received=Decimal("20.01"),
+            internal_balance=Decimal("0.00"),
+        )
+
+        assert service.summarize_items(invoice) == {
+            "hair_amount": Decimal("10.01"),
+            "hair_discount": Decimal("0.00"),
+            "accessory_amount": Decimal("27.55"),
+            "accessory_discount": Decimal("-1.00"),
+        }
+        assert invoice.items[1].total_price == Decimal("26.55")
+        assert invoice.product_amount == Decimal("36.56")
+        assert invoice.total_amount == Decimal("36.56")
+        assert invoice.internal_received == Decimal("20.01")
+        assert invoice.internal_balance == Decimal("16.55")
+
     def test_line_discount_cannot_exceed_gross_line_amount(self, db):
         import pytest
 

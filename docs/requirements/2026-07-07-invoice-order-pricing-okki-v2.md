@@ -131,7 +131,7 @@ ark_customer_price_rules 客户价格规则（每客户一条，二选一）
 - 客户块：`contact_name / contact_phone / contact_email / delivery_address`（选客户自动带出，可改，存快照）
 - 我方块：`sales_user_id / sales_user_name / sales_phone / sales_email`（默认当前用户）
 - 订单信息区只展示：发票号、日期、币种、小满标记（必填）、备注。
-- 费用与结算信息区常驻展示（不折叠）：付款方式、预付款、尾款、头发金额、折扣金额、包装数量、包装费用、快递渠道、运费、手续费。头发金额和折扣金额只读，其中折扣金额为全部明细折扣之和；英文说明仅作为金额框内的弱提示。尾款按总金额减预付款自动计算，并校验预付款+尾款=总金额。包装数量只记录数量，不参与包装费用乘算。
+- 费用与结算信息区常驻展示（不折叠）：付款方式、预付款、尾款、头发金额、头发折扣、配件金额、配件折扣、包装数量、包装费用、快递渠道、运费、手续费。四项分组金额只读，头发折扣仅汇总头发明细，配件折扣仅汇总配件明细；英文说明仅作为金额框内的弱提示。尾款按总金额减预付款自动计算，并校验预付款+尾款=总金额。包装数量只记录数量，不参与包装费用乘算。
 - 总额口径：`Σ(单价×数量+行级折扣) + internal_accessory（包装费用） + shipping_fee + surcharge_amount（手续费）`。头发与配件都在明细净额中计算，折扣不重复扣减；`internal_discount` 仅保存头发折扣快照以兼容旧代码。
 
 ### 3.6 配件产品增补（2026-07-15）
@@ -144,7 +144,7 @@ ark_customer_price_rules 客户价格规则（每客户一条，二选一）
 
 导出双模板：
 
-- **模板 A**（按件计价）：Product/Net Weight Grams/Curl/Color/Length/Quantity(20g piece)/Price/Piece/Discount/TotalPrice，费用区 Hair Price + Discount + Packaging Quantity + Packaging + Shipping Fee + Handling Fee + Total。
+- **模板 A**（按件计价）：Product/Net Weight Grams/Curl/Color/Length/Quantity(20g piece)/Price/Piece/Discount/TotalPrice，九项摘要统一为 Hair Price + Hair Discount + Accessory Amount + Accessory Discount + Packaging Quantity + Packaging + Shipping Fee + Handling Fee + Total。
 - **模板 B**（按 100g 计价）：多 SHE Color 列（客户自有色号，MVP 手填，二期做客户色号映射表）、支持分组小标题行（如 `22" Invisible Weft`）。
 - 导出时选模板，客户上可设默认模板偏好（`ark_customer_price_rules` 顺带加 `preferred_template` 列，避免多建一张表）。
 
