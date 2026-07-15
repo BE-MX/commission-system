@@ -164,20 +164,21 @@
         <template v-if="isEdit">
           <el-divider content-position="left">发色 × 三角度参考图</el-divider>
           <p class="cm-hint">
-            为该发型准备各发色的三角度实拍图，合成时直接照搬（含颜色）。
-            客户端只显示<b>已备图</b>的发色；未备图的走「原色」（发型自身多角度图）。
+            为各发色上传三角度实拍图，合成时直接照搬（含颜色）。<b>上传后点最底部「保存」一并生效</b>；
+            某发色不备图则客户端走「原色」（发型自身多角度图）。
           </p>
           <div v-loading="colorMatrixLoading" class="cm-list">
-            <div v-for="c in colorMatrix" :key="c.hair_color_id" class="cm-row">
+            <div v-for="c in colorMatrix" :key="c.hair_color_id" class="cm-row" :class="{ dirty: c.dirty }">
               <div class="cm-color">
                 <img v-if="c.swatch_url" :src="c.swatch_url" class="cm-sw" alt="" />
                 <i v-else class="cm-sw" :style="{ background: c.hex || '#ccc' }" />
                 <div class="cm-meta"><b>{{ c.name }}</b><small>{{ c.code }}</small></div>
+                <span v-if="c.dirty" class="cm-unsaved">未保存</span>
               </div>
               <div class="angle-list">
                 <div v-for="(p, i) in c.photos" :key="p.path" class="angle-item">
                   <el-image :src="p.url" fit="cover" class="upload-preview" />
-                  <span class="angle-remove" @click="c.photos.splice(i, 1)">×</span>
+                  <span class="angle-remove" @click="removeColorPhoto(c, i)">×</span>
                 </div>
                 <el-upload
                   v-if="c.photos.length + (c.reserving || 0) < 3" multiple :show-file-list="false"
@@ -185,10 +186,6 @@
                 >
                   <div class="upload-slot">+ 添加</div>
                 </el-upload>
-              </div>
-              <div class="cm-actions">
-                <GlassButton variant="primary" size="sm" :loading="c.saving" @click="saveColor(c)">保存该色</GlassButton>
-                <GlassButton v-if="c.has_images" variant="ghost" size="sm" @click="clearColor(c)">清除</GlassButton>
               </div>
             </div>
             <div v-if="!colorMatrixLoading && !colorMatrix.length" class="cm-empty">
@@ -349,7 +346,7 @@ async function loadColorMatrix(wigId) {
     const res = await getWigColorImages(wigId)
     colorMatrix.value = (res.data || []).map((c) => ({
       hair_color_id: c.hair_color_id, code: c.code, name: c.name,
-      hex: c.hex, swatch_url: c.swatch_url, has_images: c.has_images, saving: false,
+      hex: c.hex, swatch_url: c.swatch_url, has_images: c.has_images, dirty: false,
       photos: (c.angle_photos || []).map((p, i) => ({ path: p, url: (c.angle_urls || [])[i] || `/${p}` })),
     }))
   } catch { /* 拦截器已提示，矩阵留空 */ } finally {
@@ -369,35 +366,31 @@ async function uploadColorAngle(item, { file }) {
   try {
     const res = await uploadWigPhoto(file)
     item.photos.push({ path: res.data.path, url: res.data.url })
+    item.dirty = true // 待底部「保存」一并落库
   } catch { /* 拦截器已提示 */ } finally {
     item.reserving -= 1
   }
 }
 
-async function saveColor(item) {
-  if (!item.photos.length) { ElMessage.warning('请先上传至少一张参考图'); return }
-  item.saving = true
-  try {
-    await saveWigColorImages(editId.value, item.hair_color_id, {
-      angle_photos: item.photos.map((p) => p.path),
-    })
-    item.has_images = true
-    msgSuccess(`已保存「${item.name}」参考图`)
-  } catch { /* 拦截器已提示 */ } finally {
-    item.saving = false
-  }
+// 移除某张（本地暂存，随底部「保存」提交）
+function removeColorPhoto(item, i) {
+  item.photos.splice(i, 1)
+  item.dirty = true
 }
 
-async function clearColor(item) {
-  const ok = await confirmDanger('清除', `「${item.name}」参考图`, '将删除该发色的三角度图组及落盘文件，客户端会退回该发型的原色。')
-    .then(() => true).catch(() => false)
-  if (!ok) return
-  try {
-    await deleteWigColorImages(editId.value, item.hair_color_id)
-    item.photos = []
-    item.has_images = false
-    msgSuccess('已清除')
-  } catch { /* 拦截器已提示 */ }
+// 底部「保存」时随发型一起落库：改动过的发色行——有图 upsert、清空且原有图则删
+async function reconcileColorMatrix() {
+  for (const c of colorMatrix.value) {
+    if (!c.dirty) continue
+    if (c.photos.length) {
+      await saveWigColorImages(editId.value, c.hair_color_id, { angle_photos: c.photos.map((p) => p.path) })
+      c.has_images = true
+    } else if (c.has_images) {
+      await deleteWigColorImages(editId.value, c.hair_color_id)
+      c.has_images = false
+    }
+    c.dirty = false
+  }
 }
 
 async function uploadCover({ file }) {
@@ -421,6 +414,7 @@ async function submit() {
     const body = { ...toUpsert(form.value), angle_photos: anglePhotos.value.map((p) => p.path) }
     if (isEdit.value) {
       await updateWig(editId.value, body)
+      await reconcileColorMatrix() // 发色三角度图随本次「保存」一并落库（去掉了逐行保存按钮）
       ElMessage.success('更新成功')
     } else {
       await createWig(body)
@@ -491,6 +485,7 @@ onMounted(fetchWigs)
 .cm-meta { display: flex; flex-direction: column; line-height: 1.3; }
 .cm-meta b { font-size: 13px; }
 .cm-meta small { color: var(--text-muted); font-size: 11px; }
-.cm-actions { display: flex; gap: 8px; }
+.cm-row.dirty { border-color: var(--color-warning, #e6a23c); background: var(--color-warning-bg, rgba(230, 162, 60, 0.08)); }
+.cm-unsaved { margin-left: auto; font-size: 11px; color: var(--color-warning, #e6a23c); border: 1px solid currentColor; border-radius: 10px; padding: 1px 8px; }
 .cm-empty { color: var(--text-muted); font-size: 12px; padding: 8px 0; }
 </style>
