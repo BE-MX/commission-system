@@ -15,6 +15,46 @@ branch_labels = None
 depends_on = None
 
 
+def _assert_downgrade_safe(connection) -> None:
+    counts = {
+        "accessory_std": connection.scalar(sa.text(
+            "SELECT COUNT(*) FROM ark_std_prices WHERE product_kind = 'accessory'"
+        )),
+        "accessory_items": connection.scalar(sa.text(
+            "SELECT COUNT(*) FROM ark_invoice_items WHERE product_kind = 'accessory'"
+        )),
+        "invalid_hair_std": connection.scalar(sa.text(
+            "SELECT COUNT(*) FROM ark_std_prices WHERE product_kind = 'hair' "
+            "AND (series_grade IS NULL OR length IS NULL OR weight_unit IS NULL OR color_type IS NULL)"
+        )),
+        "invalid_hair_items": connection.scalar(sa.text(
+            "SELECT COUNT(*) FROM ark_invoice_items WHERE product_kind = 'hair' "
+            "AND (length IS NULL OR net_weight_grams IS NULL)"
+        )),
+    }
+    counts = {key: int(value or 0) for key, value in counts.items()}
+    problems = []
+    if counts["accessory_std"] or counts["accessory_items"]:
+        problems.append(
+            "accessory rows exist: "
+            f"ark_std_prices={counts['accessory_std']}, "
+            f"ark_invoice_items={counts['accessory_items']}"
+        )
+    if counts["invalid_hair_std"] or counts["invalid_hair_items"]:
+        problems.append(
+            "hair rows violate the 072 NOT NULL schema: "
+            f"ark_std_prices NULL dimensions={counts['invalid_hair_std']}, "
+            "ark_invoice_items NULL length/net_weight_grams="
+            f"{counts['invalid_hair_items']}"
+        )
+    if problems:
+        raise RuntimeError(
+            "Refusing downgrade 073_invoice_accessory_products: "
+            + "; ".join(problems)
+            + ". Migrate or repair these rows before downgrading; no schema changes were made."
+        )
+
+
 def upgrade() -> None:
     op.add_column(
         "ark_std_prices",
@@ -114,8 +154,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     connection = op.get_bind()
-    connection.execute(sa.text("DELETE FROM ark_invoice_items WHERE product_kind = 'accessory'"))
-    connection.execute(sa.text("DELETE FROM ark_std_prices WHERE product_kind = 'accessory'"))
+    _assert_downgrade_safe(connection)
 
     op.drop_constraint("uq_ark_std_accessory_sku", "ark_std_prices", type_="unique")
 

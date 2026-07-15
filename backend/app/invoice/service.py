@@ -423,6 +423,7 @@ def _replace_items(db: Session, invoice: Invoice, body, user_id: int | None = No
         item = InvoiceItem(
             xiaoman_unique_id=carried.xiaoman_unique_id if carried else None,
             sort_order=idx,
+            product_kind=payload.product_kind,
             item_type=payload.item_type,
             product_id=payload.product_id,
             sku_id=payload.sku_id,
@@ -562,6 +563,7 @@ def _serialize_item(item: InvoiceItem) -> dict:
     return {
         "id": item.id,
         "sort_order": item.sort_order,
+        "product_kind": item.product_kind,
         "item_type": item.item_type,
         "product_id": item.product_id,
         "sku_id": item.sku_id,

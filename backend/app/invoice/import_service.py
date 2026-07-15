@@ -243,7 +243,7 @@ def _build_match_result(row: dict, hits: list[dict], sku_map: dict[int, list[int
 
 def _load_pricing_context(db: Session, *, customer_id: str) -> dict:
     color_rows = db.query(PriceColorType).all()
-    standard_rows = db.query(StdPrice).all()
+    standard_rows = db.query(StdPrice).filter(StdPrice.product_kind == "hair").all()
     rule = (
         db.query(CustomerPriceRule)
         .filter(CustomerPriceRule.customer_id == customer_id, CustomerPriceRule.enabled == 1)
@@ -315,7 +315,8 @@ def _find_standard_price(
     display_norm = price_service.normalize_text(product_display)
     candidates = [
         row for row in rows
-        if row.length == price_service.normalize_length(length)
+        if row.product_kind == "hair"
+        and row.length == price_service.normalize_length(length)
         and row.weight_unit == price_service.normalize_text(unit)
         and row.color_type == color_type
     ]
