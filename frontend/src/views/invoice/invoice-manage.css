@@ -1,14 +1,14 @@
 .invoice-page {
   --invoice-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --invoice-ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
-  --invoice-border: var(--border-color, #e2e5ef);
-  --invoice-border-hover: var(--border-hover, #c5cce0);
-  --invoice-muted: var(--text-secondary, #4a5568);
-  --invoice-placeholder: var(--text-muted, #a0aec0);
-  --invoice-ink: var(--text-primary, #1a1a2e);
-  --invoice-surface: var(--card-bg, #ffffff);
-  --invoice-soft: var(--table-header-bg, #fafbfe);
-  --invoice-gold: var(--color-primary, #d4941c);
+  --invoice-border: var(--border-color);
+  --invoice-border-hover: var(--border-hover);
+  --invoice-muted: var(--text-secondary);
+  --invoice-placeholder: var(--text-muted);
+  --invoice-ink: var(--text-primary);
+  --invoice-surface: var(--card-bg);
+  --invoice-soft: var(--table-header-bg);
+  --invoice-gold: var(--color-primary);
   --invoice-gold-light: var(--color-primary-light, rgba(212, 148, 28, 0.08));
   --invoice-warn-bg: var(--color-warning-light, rgba(230, 162, 60, 0.1));
   padding: 24px 28px;
@@ -86,7 +86,7 @@
 
 .summary-card.emphasis {
   border-color: rgba(212, 148, 28, 0.35);
-  background: linear-gradient(180deg, #ffffff 0%, rgba(212, 148, 28, 0.08) 100%);
+  background: linear-gradient(180deg, var(--card-bg) 0%, var(--color-primary-light) 100%);
 }
 
 .invoice-panel {
@@ -359,34 +359,6 @@
 
 .price-cell.is-manual :deep(.el-input__wrapper) {
   background: var(--invoice-warn-bg);
-}
-
-.drawer-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 10px 0 2px;
-}
-
-.total-box {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 16px;
-  color: var(--invoice-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.total-breakdown {
-  line-height: 1.6;
-}
-
-.total-box .grand strong {
-  color: var(--invoice-ink);
-  font-size: 18px;
 }
 
 .invoice-page :deep(.el-drawer__body) {

@@ -318,6 +318,7 @@ def seed_role_permissions(db: Session):
         ("invoice:read_all",      "invoice", "read_all",      "查看全部发票（数据范围）"),
         ("invoice:admin",         "invoice", "admin",         "价格配置 / OKKI 同步配置 / 自定义产品管理(操作)"),
         ("invoice_price:read",    "invoice", "read",          "查看价格与产品配置页"),
+        ("invoice_price:write",   "invoice", "write",         "维护价格与产品配置"),
         ("invoice_okki:read",     "invoice", "read",          "OKKI 推单设置页菜单（页面数据需 invoice:admin）"),
         ("invoice_repair:read",   "invoice", "read",          "查看回款日期修复页"),
         # 发票录入「仅私海」勾选（2026-07-14）：控勾选框显隐，不控数据安全边界
@@ -386,6 +387,7 @@ def seed_role_permissions(db: Session):
     ]
     # upsert：活跃权限 + 已下架权限统一处理，元数据每次启动刷新
     existing_map = {p.code: p for p in db.query(ArkPermission).all()}
+    invoice_price_write_created = "invoice_price:write" not in existing_map
     module_counter: dict = {}
     for entry in [(s, 0) for s in seeds] + [(s, 1) for s in LEGACY_SEEDS]:
         (code, module, action, label), legacy = entry
@@ -403,6 +405,21 @@ def seed_role_permissions(db: Session):
         else:
             db.add(ArkPermission(code=code, **meta))
     db.flush()
+
+    # invoice:admin 原本包含价格维护能力；拆出写权限后为既有价格管理员补授。
+    invoice_admin_perm = db.query(ArkPermission).filter(ArkPermission.code == "invoice:admin").first()
+    invoice_price_write_perm = db.query(ArkPermission).filter(ArkPermission.code == "invoice_price:write").first()
+    if invoice_price_write_created and invoice_admin_perm and invoice_price_write_perm:
+        role_ids = [row[0] for row in db.query(ArkRolePermission.role_id).filter(
+            ArkRolePermission.permission_id == invoice_admin_perm.id,
+        ).all()]
+        for role_id in role_ids:
+            link = db.query(ArkRolePermission).filter(
+                ArkRolePermission.role_id == role_id,
+                ArkRolePermission.permission_id == invoice_price_write_perm.id,
+            ).first()
+            if not link:
+                db.add(ArkRolePermission(role_id=role_id, permission_id=invoice_price_write_perm.id))
 
     # 给 admin 角色补齐所有非 legacy 权限（跳过已下架，避免复活死码授权）
     admin_role = db.query(ArkRole).filter(ArkRole.name == "admin").first()

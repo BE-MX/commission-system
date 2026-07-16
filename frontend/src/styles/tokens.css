@@ -47,6 +47,24 @@
   --color-info-bg:        rgba(107, 140, 186, 0.08);
   --color-info-text:      #6B8CBA;
 
+  /* ── Invoice amount-summary chips ── */
+  --invoice-summary-hair-fg: #2563eb;
+  --invoice-summary-hair-bg: rgba(37, 99, 235, 0.09);
+  --invoice-summary-hair-discount-fg: #b42332;
+  --invoice-summary-hair-discount-bg: rgba(220, 53, 69, 0.09);
+  --invoice-summary-accessory-fg: #157f76;
+  --invoice-summary-accessory-bg: rgba(21, 127, 118, 0.1);
+  --invoice-summary-accessory-discount-fg: #c24124;
+  --invoice-summary-accessory-discount-bg: rgba(194, 65, 36, 0.1);
+  --invoice-summary-packaging-fg: #8b6914;
+  --invoice-summary-packaging-bg: rgba(212, 148, 28, 0.12);
+  --invoice-summary-shipping-fg: #287ca7;
+  --invoice-summary-shipping-bg: rgba(40, 124, 167, 0.1);
+  --invoice-summary-handling-fg: #7048a8;
+  --invoice-summary-handling-bg: rgba(112, 72, 168, 0.1);
+  --invoice-summary-total-fg: #8b5e0a;
+  --invoice-summary-total-bg: rgba(212, 148, 28, 0.18);
+
   /* ── Text ── */
   --text-primary:         #1a1a2e;
   --text-secondary:       #4a5568;

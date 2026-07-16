@@ -15,6 +15,7 @@ from app.auth.dependencies import require_any_permission, require_permission
 from app.core.database import get_db
 from app.core.response import ok
 from app.invoice import (
+    accessory_price_service,
     export_service,
     import_service,
     okki_client,
@@ -24,7 +25,7 @@ from app.invoice import (
     service,
     xiaoman_service,
 )
-from app.invoice.schemas import InvoiceCreate, InvoiceImportPreviewRequest, InvoiceUpdate
+from app.invoice.schemas import AccessoryPricePayload, InvoiceCreate, InvoiceImportPreviewRequest, InvoiceUpdate
 
 logger = logging.getLogger(__name__)
 
@@ -209,6 +210,99 @@ def reconcile_custom_products(
 
 
 # ── pricing ──────────────────────────────────────────────────
+
+@router.get("/price/accessory-candidates", summary="Search active OKKI accessory candidates")
+def search_accessory_candidates(
+    keyword: str | None = Query(None),
+    db: Session = Depends(get_db),
+    # Shared price-page read guard: require_any_permission is defined in _PRICE_PAGE_READ.
+    _user=Depends(_PRICE_PAGE_READ),
+):
+    try:
+        items = accessory_price_service.search_candidates(db, keyword=keyword)
+    except accessory_price_service.AccessoryCatalogUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+    return ok({"items": items})
+
+
+@router.get("/price/accessories", summary="List accessory standard prices")
+def list_accessory_prices(
+    keyword: str | None = Query(None),
+    customer_id: str | None = Query(None, max_length=64),
+    active_only: bool = Query(False),
+    currency: str | None = Query(None, max_length=8),
+    db: Session = Depends(get_db),
+    # Shared price-page read guard: require_any_permission is defined in _PRICE_PAGE_READ.
+    _user=Depends(_PRICE_PAGE_READ),
+):
+    try:
+        items = accessory_price_service.list_prices(
+            db,
+            keyword=keyword,
+            customer_id=customer_id,
+            active_only=active_only,
+            currency=currency,
+        )
+    except accessory_price_service.AccessoryCatalogUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+    return ok({"items": items})
+
+
+@router.post("/price/accessories", summary="Create/update an accessory standard price")
+def upsert_accessory_price(
+    body: AccessoryPricePayload,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("invoice_price:write")),
+):
+    try:
+        row = accessory_price_service.upsert_price(db, body, _user_id(current_user))
+        db.commit()
+    except accessory_price_service.AccessoryCatalogUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except IntegrityError as exc:
+        db.rollback()
+        if _is_accessory_price_duplicate(exc):
+            logger.warning("配件标准价产品/SKU 唯一约束冲突: %s", exc)
+            print(f"[invoice] accessory price duplicate: {exc}", flush=True)
+            raise HTTPException(
+                400,
+                "该 OKKI 产品/SKU 已配置配件标准价，请刷新列表后编辑现有记录",
+            ) from exc
+        logger.warning("配件标准价写入完整性错误: %s", exc)
+        print(f"[invoice] accessory price integrity error: {exc}", flush=True)
+        raise
+    return ok({"id": row.id}, message="已保存")
+
+
+def _is_accessory_price_duplicate(exc: IntegrityError) -> bool:
+    original = exc.orig
+    args = getattr(original, "args", ())
+    message = " ".join(str(part) for part in args) or str(original)
+    if args and args[0] == 1062:
+        return "uq_ark_std_accessory_sku" in message
+    sqlite_message = str(original).lower()
+    return "unique constraint failed" in sqlite_message and all(
+        column in sqlite_message
+        for column in (
+            "ark_std_prices.product_kind",
+            "ark_std_prices.product_id",
+            "ark_std_prices.sku_id",
+        )
+    )
+
+
+@router.delete("/price/accessories/{price_id}", summary="Delete an accessory standard price")
+def delete_accessory_price(
+    price_id: int,
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("invoice_price:write")),
+):
+    if not accessory_price_service.delete_price(db, price_id):
+        raise HTTPException(404, "配件价格记录不存在")
+    db.commit()
+    return ok(message="已删除")
 
 @router.get("/price/resolve", summary="Resolve standard + customer price for a line")
 def resolve_price(

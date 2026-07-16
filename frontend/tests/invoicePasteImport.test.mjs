@@ -109,15 +109,16 @@ test('batch duplicate protection lasts only while a batch line remains', () => {
 
 test('invoice editor exposes a contextual Excel paste entry and append-only integration', () => {
   const view = readFileSync(new URL('../src/views/invoice/InvoiceManage.vue', import.meta.url), 'utf8')
-  const editor = readFileSync(new URL('../src/views/invoice/composables/useInvoiceEditor.js', import.meta.url), 'utf8')
+  const hairTable = readFileSync(new URL('../src/views/invoice/components/InvoiceHairTable.vue', import.meta.url), 'utf8')
+  const hairEditor = readFileSync(new URL('../src/views/invoice/composables/useInvoiceHairItems.js', import.meta.url), 'utf8')
 
   assert.match(view, /InvoicePasteImport/)
-  assert.match(view, /从 Excel 粘贴/)
-  assert.match(view, /:disabled="!canPasteImport"/)
+  assert.match(hairTable, /从 Excel 粘贴/)
+  assert.match(hairTable, /:disabled="!canPasteImport"/)
   assert.match(view, /@append="appendPastedLines"/)
-  assert.match(editor, /function appendImportedLines/)
-  assert.match(editor, /_importBatchFingerprint/)
-  assert.match(editor, /preserveImportedPrice/)
+  assert.match(hairEditor, /function appendImportedLines/)
+  assert.match(hairEditor, /_importBatchFingerprint/)
+  assert.match(hairEditor, /if \(!row\._importBatchFingerprint\)/)
 })
 
 

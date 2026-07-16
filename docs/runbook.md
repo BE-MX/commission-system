@@ -69,6 +69,9 @@ OKKI_CLIENT_ID=<OKKI 企业管理→外部对接→API对接>
 OKKI_CLIENT_SECRET=<同上>
 # OKKI_API_BASE 默认 https://api-sandbox.xiaoman.cn（即正式域名），一般不用配
 
+# 发票 PDF 中文字体（部署与应用启动都会预检；默认值适用于 Windows Server）
+PDF_CJK_FONT_PATH=C:\Windows\Fonts\msyh.ttc
+
 # 素材存储（可选，2026-07-03 起走 Settings 统一管理，默认值即当前生产值）
 ASSET_STORAGE_ROOT=D:\WORKSOURCE
 ASSET_SIGN_SECRET=<签名密钥>
@@ -78,6 +81,9 @@ XPOZ_TARGET_ACCOUNTS=<逗号分隔账号，色彩趋势采集用>
 # 调度器
 SCHEDULER_ENABLED=true
 ```
+
+`deploy.bat` 会在数据库迁移和服务重启前执行发票 PDF 字体预检。若失败，按错误提示修正
+`PDF_CJK_FONT_PATH` 后重新部署；不要等到用户导出发票时再处理。
 
 ## 首次部署
 

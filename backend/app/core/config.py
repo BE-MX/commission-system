@@ -137,6 +137,9 @@ class Settings(BaseSettings):
     OKKI_CLIENT_SECRET: str = ""
     OKKI_API_BASE: str = "https://api-sandbox.xiaoman.cn"  # api-sandbox 即正式域名（官方文档确认）
 
+    # 发票 PDF 中文字体：部署/启动时强制预检，避免用户导出时才失败。
+    PDF_CJK_FONT_PATH: str = "C:\\Windows\\Fonts\\msyh.ttc"
+
     @field_validator("CORS_ALLOW_ORIGINS", mode="before")
     @classmethod
     def _split_origins(cls, v):

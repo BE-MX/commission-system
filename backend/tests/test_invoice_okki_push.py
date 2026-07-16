@@ -211,6 +211,228 @@ def test_build_push_payload_stock_custom_and_backfilled(db):
     assert len(line_binding) == 3
 
 
+def test_build_push_payload_sends_accessory_as_real_individual_product_row(db):
+    _seed_settings(db)
+    _seed_binding(db)
+    _seed_live_accessory_catalog(db)
+    invoice = _make_invoice(
+        db,
+        internal_accessory=Decimal("2"),
+        shipping_fee=Decimal("0"),
+        surcharge_amount=Decimal("0"),
+    )
+    invoice.items.append(_stock_item(
+        product_kind="accessory",
+        product_id=104881553777436,
+        sku_id=104881553777819,
+        product_name="Hair Gripper",
+        product_display="Hair Gripper",
+        model="Magic Tape",
+        color="Black",
+        length=None,
+        net_weight_grams=None,
+        curl=None,
+        quantity=10,
+        price_per_piece=Decimal("2.75"),
+        discount_amount=Decimal("-1.00"),
+        total_price=Decimal("26.50"),
+    ))
+    db.flush()
+
+    payload, line_binding, issues = xiaoman_service.build_push_payload(db, invoice)
+
+    assert issues == []
+    assert payload["product_list"] == [{
+        "count": 10,
+        "unit_price": 2.75,
+        "cost_amount": 26.5,
+        "product_id": 104881553777436,
+        "sku_id": 104881553777819,
+    }]
+    assert len(line_binding) == 1
+    assert payload["product_list"][0]["product_id"] != 888
+    assert [cost["cost_name"] for cost in payload["cost_list"]] == ["Packaging"]
+    assert all("Discount" not in cost["cost_name"] for cost in payload["cost_list"])
+
+
+def _seed_live_accessory_catalog(db):
+    db.execute(text("""
+        CREATE TABLE lsordertest.okki_products (
+            product_id INTEGER PRIMARY KEY, name TEXT, model TEXT, color TEXT,
+            disable_flag INTEGER
+        )
+    """))
+    db.execute(text("""
+        CREATE TABLE lsordertest.okki_product_skus (
+            product_id INTEGER, sku_id INTEGER, disable_flag INTEGER
+        )
+    """))
+    db.execute(text("""
+        INSERT INTO lsordertest.okki_products
+            (product_id, name, model, color, disable_flag)
+        VALUES (104881553777436, 'Hair Gripper', '魔术贴', '黑色', 0)
+    """))
+    db.execute(text("""
+        INSERT INTO lsordertest.okki_product_skus (product_id, sku_id, disable_flag)
+        VALUES (104881553777436, 104881553777819, 0)
+    """))
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "DELETE FROM lsordertest.okki_products WHERE product_id = 104881553777436",
+        "UPDATE lsordertest.okki_products SET disable_flag = 1 WHERE product_id = 104881553777436",
+        "DELETE FROM lsordertest.okki_product_skus WHERE sku_id = 104881553777819",
+        "UPDATE lsordertest.okki_product_skus SET disable_flag = 1 WHERE sku_id = 104881553777819",
+    ],
+)
+@pytest.mark.parametrize("xiaoman_order_id", [None, "424242"])
+def test_sync_blocks_stale_accessory_identity_before_calling_okki(
+    db, monkeypatch, no_reconcile, mutation, xiaoman_order_id,
+):
+    _seed_settings(db)
+    _seed_binding(db)
+    _seed_live_accessory_catalog(db)
+    db.execute(text(mutation))
+    invoice = _make_invoice(db, xiaoman_order_id=xiaoman_order_id)
+    invoice.items.append(_stock_item(
+        product_kind="accessory",
+        product_id=104881553777436,
+        sku_id=104881553777819,
+        product_name="Hair Gripper",
+        product_display="Hair Gripper",
+        model="魔术贴",
+        color="黑色",
+        length=None,
+        net_weight_grams=None,
+        curl=None,
+        quantity=10,
+        price_per_piece=Decimal("2.75"),
+        discount_amount=Decimal("-1.00"),
+        total_price=Decimal("26.50"),
+    ))
+    db.flush()
+    called = {"value": False}
+
+    def unexpected_push(_db, _payload):
+        called["value"] = True
+        return {
+            "order_id": 999,
+            "product_list": [{
+                "product_id": 104881553777436,
+                "sku_id": 104881553777819,
+                "unique_id": 1,
+            }],
+        }
+
+    monkeypatch.setattr(okki_client, "push_order", unexpected_push)
+
+    result = xiaoman_service.sync_invoice(db, invoice, operator_id=1)
+
+    assert result["ok"] is False
+    assert called["value"] is False
+    assert result["issues"][0]["field"] in {"items[1].product_id", "items[1].sku_id"}
+    assert "重新选择" in result["issues"][0]["message"]
+
+
+def test_accessory_edit_reuses_unique_id_and_protects_duplicate_fresh_sku(db):
+    settings = _seed_settings(db)
+    _seed_live_accessory_catalog(db)
+    invoice = _make_invoice(db, xiaoman_order_id="424242")
+    existing = _stock_item(
+        product_kind="accessory",
+        product_id=104881553777436,
+        sku_id=104881553777819,
+        product_name="Hair Gripper",
+        product_display="Hair Gripper",
+        model="Magic Tape",
+        color="Black",
+        length=None,
+        net_weight_grams=None,
+        xiaoman_unique_id="501",
+    )
+    fresh_one = _stock_item(
+        product_kind="accessory",
+        product_id=104881553777436,
+        sku_id=104881553777819,
+        product_name="Hair Gripper",
+        product_display="Hair Gripper",
+        model="Magic Tape",
+        color="Black",
+        length=None,
+        net_weight_grams=None,
+        xiaoman_unique_id=None,
+    )
+    fresh_two = _stock_item(
+        product_kind="accessory",
+        product_id=104881553777436,
+        sku_id=104881553777819,
+        product_name="Hair Gripper",
+        product_display="Hair Gripper",
+        model="Magic Tape",
+        color="Black",
+        length=None,
+        net_weight_grams=None,
+        xiaoman_unique_id=None,
+    )
+    invoice.items.extend([existing, fresh_one, fresh_two])
+    db.flush()
+
+    rows, _bindings, issues, _superseded = xiaoman_service._build_product_rows(
+        db, invoice, settings, editing=True,
+    )
+
+    assert rows[0]["unique_id"] == 501
+    assert any(issue["field"] == "items" and "相同产品" in issue["message"] for issue in issues)
+
+
+def test_accessory_custom_line_never_falls_back_to_generic_product(db):
+    settings = _seed_settings(db)
+    invoice = _make_invoice(db)
+    invoice.items.append(_stock_item(
+        product_kind="accessory",
+        item_type="custom",
+        product_id=None,
+        sku_id=None,
+        custom_product_id=None,
+        product_name="Hair Gripper",
+        product_display="Hair Gripper",
+        model="Magic Tape",
+        color="Black",
+        length=None,
+        net_weight_grams=None,
+    ))
+    db.flush()
+
+    rows, bindings, issues, _superseded = xiaoman_service._build_product_rows(
+        db, invoice, settings, editing=False,
+    )
+
+    assert rows == []
+    assert bindings == []
+    assert any(issue["field"] == "items[1].item_type" for issue in issues)
+
+
+def test_accessory_deleted_line_snapshot_keeps_real_okki_identity(db):
+    invoice = _make_invoice(db, xiaoman_order_id="424242")
+    invoice.xiaoman_removed_lines = json.dumps([{
+        "unique_id": "502",
+        "product_kind": "accessory",
+        "item_type": "stock",
+        "product_id": 104881553777436,
+        "sku_id": 104881553777819,
+        "custom_product_id": None,
+    }])
+
+    assert xiaoman_service._build_remove_rows(db, invoice, None) == [{
+        "unique_id": 502,
+        "remove": 1,
+        "product_id": 104881553777436,
+        "sku_id": 104881553777819,
+    }]
+
+
 def test_build_push_payload_blockers(db):
     # 无 settings、无绑定、客户 ID 非数字、custom 行无通用产品 → 全部前置拦截
     cp = _make_custom_product(db, "key-blocker")

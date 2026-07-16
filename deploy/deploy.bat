@@ -1,5 +1,5 @@
-@echo off
 chcp 65001 >nul
+@echo off
 setlocal enabledelayedexpansion
 title LeShine Ark Platform - Sync
 REM ============================================================
@@ -105,6 +105,13 @@ if errorlevel 1 (
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt -q
 if errorlevel 1 (
     echo [ERROR] pip install failed
+    goto :error
+)
+REM Fail before migration/service restart when invoice PDF Chinese font is unavailable.
+.\.venv\Scripts\python.exe -m app.invoice.pdf_font
+if errorlevel 1 (
+    echo [ERROR] Invoice PDF CJK font preflight failed
+    echo         Set PDF_CJK_FONT_PATH in backend\.env to an existing Chinese .ttf/.ttc font
     goto :error
 )
 echo      OK

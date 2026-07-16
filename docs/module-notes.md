@@ -525,6 +525,15 @@ frontend/src/
 - 产品匹配使用 `Product` 首段 + 颜色 + 长度 + 克重的规范化组合键；库存单无唯一产品/SKU时阻断，生产单可由用户显式选择作为定制产品，禁止静默降级。
 - Excel Unit Price 是本次成交价，预览和最终保存都不得被系统价覆盖；仅同币种展示客户价差，跨币种不换汇、不比较数值。
 - `batch_fingerprint` 只存在当前前端编辑会话，用于阻止重复追加；预检与「加入当前发票」都不保存，最终仍走原发票保存、校验和 OKKI 推单链路。
+- 粘贴导入仅处理头发产品，不自动识别或导入配件；配件必须在独立配件明细表里选择已配置的真实 OKKI SKU。
+
+## 订单发票配件与分组金额（2026-07-15）
+
+- 配件类型对外标识为 `Hair ExtensionsTools Fee`，录入属性仅 Name / Model / Color；标准价候选来自同步投影 `okki_products + okki_product_skus`，产品和 SKU 都必须启用。分类不读 `group_name`，因为真实配件 Hair Gripper 在 OKKI 也可能归到「假发产品」。
+- 客户切换时，前端不复制调价规则；它按 product_id+sku_id 调后端配件价格列表重新解析，丢弃过期客户响应。发票选品和重解析固定传 `active_only=true`，由数据库侧关联过滤 product+sku 双启用状态；失效 SKU 不进入新增候选，当前失效行引导用户到「价格与产品配置 → 标准价格表」重新配置。价格配置页保持默认 `active_only=false`，继续显示历史配置。API 与发票成交价保留四位精度，配置列表仅将标准价格式化显示为两位。
+- 金额口径：每行先按 `ROUND_HALF_UP(单价×数量, 2)` 得到原价，再加已规范为负数/0且量化两位的行折扣，形成行净额；头发金额/头发折扣/配件金额/配件折扣均由逐行已量化结果相加。`product_amount = Σ所有明细净额`；`total_amount = product_amount + Packaging + Shipping Fee + Handling Fee`。行折扣已进 total_price，不再重复扣减；兼容字段 `internal_discount` 仅保存头发折扣。录入与导出九项摘要统一为 Hair Price / Hair Discount / Accessory Amount / Accessory Discount / Packaging Quantity / Packaging / Shipping Fee / Handling Fee / Total。
+- OKKI 推单时配件按真实 product_id+sku_id 逐 SKU 逐行推送，`cost_amount` 为含配件行折扣的净额，不合并到通用产品，也不把配件折扣再写入 cost_list。
+- Excel/HTML/PDF 导出将头发与配件分成两个明细区，配件区同时保留标准价、客户价和实际成交价以便审计，汇总顺序与录入页一致。Excel 对 `= + - @` 起始的外部文本加文本前缀，防止公式注入。导出 PDF 启动前需通过字体预检，当前使用项目既有中文字体回退链，禁止静默丢失中文字形。
 - 设计与验收基线：`docs/superpowers/specs/2026-07-14-invoice-quick-paste-import-design.md`；核心回归测试：`backend/tests/test_invoice_paste_import.py`、`frontend/tests/invoicePasteImport.test.mjs`。
 
 ## OKKI 开放平台对接（订单发票推单，2026-07-10 鉴权打通）

@@ -14,7 +14,7 @@ from decimal import Decimal
 from sqlalchemy import text
 
 from app.invoice import service
-from app.invoice.models import Invoice, InvoiceItem  # noqa: F401 - register metadata for create_all
+from app.invoice.models import Invoice, InvoiceItem, StdPrice  # noqa: F401 - register metadata for create_all
 from app.invoice.schemas import InvoiceCreate, InvoiceItemPayload, InvoiceUpdate
 
 
@@ -39,11 +39,17 @@ def _item(quantity: int, price, **overrides) -> InvoiceItemPayload:
 def _create(db, items, **header_overrides) -> Invoice:
     db.execute(text("""
         CREATE TABLE IF NOT EXISTS lsordertest.okki_products (
-            product_id INTEGER PRIMARY KEY, name TEXT, color TEXT, size TEXT, unit TEXT, disable_flag INTEGER
+            product_id INTEGER PRIMARY KEY, name TEXT, model TEXT, color TEXT,
+            size TEXT, unit TEXT, disable_flag INTEGER
         )
     """))
     db.execute(text("""
         CREATE TABLE IF NOT EXISTS lsordertest.okki_inventory (
+            product_id INTEGER, sku_id INTEGER, disable_flag INTEGER
+        )
+    """))
+    db.execute(text("""
+        CREATE TABLE IF NOT EXISTS lsordertest.okki_product_skus (
             product_id INTEGER, sku_id INTEGER, disable_flag INTEGER
         )
     """))
@@ -70,6 +76,49 @@ def _create(db, items, **header_overrides) -> Invoice:
     invoice = service.create_invoice(db, payload, user_id=1)
     db.flush()
     return invoice
+
+
+def _seed_accessory_for_amounts(db):
+    db.execute(text("""
+        CREATE TABLE IF NOT EXISTS lsordertest.okki_products (
+            product_id INTEGER PRIMARY KEY, name TEXT, model TEXT, color TEXT,
+            size TEXT, unit TEXT, disable_flag INTEGER
+        )
+    """))
+    db.execute(text("""
+        CREATE TABLE IF NOT EXISTS lsordertest.okki_inventory (
+            product_id INTEGER, sku_id INTEGER, disable_flag INTEGER
+        )
+    """))
+    db.execute(text("""
+        CREATE TABLE IF NOT EXISTS lsordertest.okki_product_skus (
+            product_id INTEGER, sku_id INTEGER, disable_flag INTEGER
+        )
+    """))
+    db.execute(text("""
+        INSERT INTO lsordertest.okki_products
+            (product_id, name, model, color, size, unit, disable_flag)
+        VALUES (2, 'Hair Gripper', 'Magic Tape', 'Black', NULL, NULL, 0)
+    """))
+    db.execute(text("""
+        INSERT INTO lsordertest.okki_inventory (product_id, sku_id, disable_flag)
+        VALUES (2, 9002, 0)
+    """))
+    db.execute(text("""
+        INSERT INTO lsordertest.okki_product_skus (product_id, sku_id, disable_flag)
+        VALUES (2, 9002, 0)
+    """))
+    db.add(StdPrice(
+        product_kind="accessory",
+        product_id=2,
+        sku_id=9002,
+        accessory_name="Hair Gripper",
+        accessory_model="Magic Tape",
+        accessory_color="Black",
+        price=Decimal("15.0000"),
+        currency="USD",
+    ))
+    db.flush()
 
 
 class TestMoneyRounding:
@@ -161,6 +210,118 @@ class TestLineAndInvoiceTotals:
         assert invoice.total_amount == Decimal("102.00")
         assert invoice.internal_balance == Decimal("82.00")
 
+    def test_mixed_hair_accessory_totals_roundtrip_and_balance_refresh(self, db):
+        _seed_accessory_for_amounts(db)
+        hair = _item(1, Decimal("100.00"), discount_amount=Decimal("-10.00"))
+        accessory = _item(
+            2,
+            Decimal("15.00"),
+            product_kind="accessory",
+            product_id=2,
+            sku_id=9002,
+            product_name="Hair Gripper",
+            product_display="Hair Gripper",
+            model="Magic Tape",
+            color="Black",
+            length=None,
+            net_weight_grams=None,
+            curl=None,
+            discount_amount=Decimal("-2.00"),
+        )
+        invoice = _create(
+            db,
+            [hair, accessory],
+            internal_accessory=Decimal("3.00"),
+            packaging_quantity=4,
+            shipping_fee=Decimal("7.00"),
+            surcharge_amount=Decimal("2.00"),
+            internal_received=Decimal("20.00"),
+            internal_balance=Decimal("0.00"),
+        )
+
+        assert service.summarize_items(invoice) == {
+            "hair_amount": Decimal("100.00"),
+            "hair_discount": Decimal("-10.00"),
+            "accessory_amount": Decimal("30.00"),
+            "accessory_discount": Decimal("-2.00"),
+        }
+        assert invoice.product_amount == Decimal("118.00")
+        assert invoice.total_amount == Decimal("130.00")
+        assert invoice.internal_discount == Decimal("-10.00")
+        assert invoice.internal_balance == Decimal("110.00")
+        detail = service.serialize_detail(invoice)
+        assert detail["hair_amount"] == Decimal("100.00")
+        assert detail["hair_discount"] == Decimal("-10.00")
+        assert detail["accessory_amount"] == Decimal("30.00")
+        assert detail["accessory_discount"] == Decimal("-2.00")
+        assert [item["product_kind"] for item in detail["items"]] == ["hair", "accessory"]
+
+        updated_accessory = accessory.model_copy(update={
+            "quantity": 2,
+            "price_per_piece": Decimal("20.00"),
+            "discount_amount": Decimal("-5.00"),
+        })
+        service.update_invoice(
+            db,
+            invoice,
+            InvoiceUpdate(
+                customer_id="CUST001",
+                customer_name="Customer A",
+                invoice_date=date(2026, 7, 3),
+                internal_accessory=Decimal("3.00"),
+                packaging_quantity=4,
+                shipping_fee=Decimal("7.00"),
+                surcharge_amount=Decimal("2.00"),
+                internal_received=Decimal("20.00"),
+                internal_balance=Decimal("110.00"),
+                items=[hair, updated_accessory],
+            ),
+            user_id=1,
+        )
+
+        assert invoice.product_amount == Decimal("125.00")
+        assert invoice.total_amount == Decimal("137.00")
+        assert invoice.internal_discount == Decimal("-10.00")
+        assert invoice.internal_balance == Decimal("117.00")
+
+    def test_four_decimal_unit_price_uses_extended_line_rounding_for_saved_settlement(self, db):
+        _seed_accessory_for_amounts(db)
+        hair = _item(1, Decimal("10.0050"))
+        accessory = _item(
+            10,
+            Decimal("2.7550"),
+            product_kind="accessory",
+            product_id=2,
+            sku_id=9002,
+            product_name="Hair Gripper",
+            product_display="Hair Gripper",
+            model="Magic Tape",
+            color="Black",
+            length=None,
+            net_weight_grams=None,
+            curl=None,
+            discount_amount=Decimal("-1.00"),
+        )
+
+        invoice = _create(
+            db,
+            [hair, accessory],
+            internal_received=Decimal("20.01"),
+            internal_balance=Decimal("0.00"),
+        )
+
+        assert service.summarize_items(invoice) == {
+            "hair_amount": Decimal("10.01"),
+            "hair_discount": Decimal("0.00"),
+            "accessory_amount": Decimal("27.55"),
+            "accessory_discount": Decimal("-1.00"),
+        }
+        assert invoice.items[1].total_price == Decimal("26.55")
+        assert invoice.product_amount == Decimal("36.56")
+        assert invoice.total_amount == Decimal("36.56")
+        assert invoice.internal_received == Decimal("20.01")
+        assert invoice.internal_balance == Decimal("16.55")
+
     def test_line_discount_cannot_exceed_gross_line_amount(self, db):
         import pytest
 
@@ -182,26 +343,22 @@ class TestInternalSettlement:
         assert invoice.internal_received == Decimal("30.00")
         assert invoice.internal_balance == Decimal("70.00")
 
-    def test_mismatched_settlement_is_rejected(self, db):
-        import pytest
+    def test_stale_balance_is_recalculated_from_prepayment(self, db):
+        invoice = _create(
+            db,
+            [_item(1, Decimal("100.00"))],
+            internal_received=Decimal("30.00"),
+            internal_balance=Decimal("60.00"),
+        )
+        assert invoice.internal_balance == Decimal("70.00")
 
-        with pytest.raises(ValueError, match="预付款与尾款之和必须等于总金额"):
-            _create(
-                db,
-                [_item(1, Decimal("100.00"))],
-                internal_received=Decimal("30.00"),
-                internal_balance=Decimal("60.00"),
-            )
-
-    def test_incomplete_settlement_is_rejected(self, db):
-        import pytest
-
-        with pytest.raises(ValueError, match="预付款和尾款必须同时填写"):
-            _create(
-                db,
-                [_item(1, Decimal("100.00"))],
-                internal_received=Decimal("30.00"),
-            )
+    def test_balance_is_derived_when_only_prepayment_is_entered(self, db):
+        invoice = _create(
+            db,
+            [_item(1, Decimal("100.00"))],
+            internal_received=Decimal("30.00"),
+        )
+        assert invoice.internal_balance == Decimal("70.00")
 
     def test_excessive_prepayment_is_rejected_by_schema(self):
         import pytest
