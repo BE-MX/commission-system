@@ -118,7 +118,12 @@ class MainActivity : ComponentActivity() {
             )
     }
 
-    /** 设备所有者时把「自身 + 打印 App」加进 Lock Task 白名单并进入锁定；未授权则无害跳过。 */
+    /**
+     * 仅当本应用是「设备所有者」时才真 Lock Task 锁定（含打印 App 白名单）。
+     * 非设备所有者**不调** startLockTask()——否则会触发烦人的「屏幕固定」（可被 Back+Recents 退出、
+     * 且每次 onResume 反复固定）。要硬锁展位平板请按 README 用 ADB 设为设备所有者；
+     * 不设时应用仍是全屏沉浸，只是不强制固定屏幕。
+     */
     private fun setupLockTask() {
         try {
             val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
@@ -127,9 +132,9 @@ class MainActivity : ComponentActivity() {
                 val pkgs = mutableListOf(packageName)
                 getString(R.string.printer_package).trim().takeIf { it.isNotEmpty() }?.let { pkgs.add(it) }
                 dpm.setLockTaskPackages(admin, pkgs.toTypedArray())
+                startLockTask()
             }
-            startLockTask()
-        } catch (e: Exception) { /* 非设备所有者/不支持时忽略，仍是全屏沉浸 */ }
+        } catch (e: Exception) { /* 忽略，仍是全屏沉浸 */ }
     }
 
     /** 展位不允许返回退出 kiosk：吞掉返回键。 */
