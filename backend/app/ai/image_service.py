@@ -1,11 +1,14 @@
 """AI image generation/editing calls for OpenAI-compatible providers."""
 
 import json
+import logging
 import time
 from typing import Optional, TypedDict
 
 import httpx
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger("commission.ai.image")
 
 from app.ai.http_client import build_headers, build_image_url
 from app.ai.keyring import decrypt_key
@@ -36,6 +39,47 @@ IMAGE_PARAMETER_KEYS = {
 # 三格模板（expo tryon 16:9 三场景拼接）实测单图 184~200s，180 会掐死正常请求；
 # 调此值需联动 expo/service.py 的 STALE_GENERATING_SECS（看门狗必须大于本超时）
 MIN_IMAGE_EDIT_TIMEOUT_SEC = 300
+
+# 只重试**快速失败**的 502/503（网关立即拒绝，2026-07-16 生产实证 ~13% 失败多为 502，重试能救回）。
+# **504 不重试**：它是「网关等上游超时」本质就慢，重试会叠加拖长；连同不重试的 ReadTimeout，都是
+# 为了守住 expo 看门狗预算——单次超时 300s、看门狗 STALE_GENERATING_SECS(420s)，2 次慢速请求即越界，
+# 迟到成功会被看门狗判死后覆写、但前端已 stopPolling 离场，造成 DB 有成品/前端已报错的错位。
+_IMAGE_RETRY_STATUS = {502, 503}
+_IMAGE_MAX_ATTEMPTS = 3          # 首次 + 2 次重试
+_IMAGE_RETRY_BACKOFF_SEC = 1.5   # 线性退避 1.5s / 3s
+# 连接/写入超时收紧到 15s（快速失败），只放长 read 给生图本身——否则 ConnectTimeout 也吃满 300s
+_IMAGE_CONNECT_TIMEOUT_SEC = 15.0
+
+
+def _post_image_edits(url, headers, data, files, timeout_sec: int, caller_module: str) -> dict:
+    """POST 到 /images/edits，对 502/503 与连接瞬断自动重试；504/ReadTimeout 不重试直接抛。"""
+    timeout = httpx.Timeout(timeout_sec, connect=_IMAGE_CONNECT_TIMEOUT_SEC, write=30.0)
+    last_exc: Exception | None = None
+    for attempt in range(1, _IMAGE_MAX_ATTEMPTS + 1):
+        try:
+            with httpx.Client(timeout=timeout) as client:
+                response = client.post(url, headers=headers, data=data, files=files)
+            response.raise_for_status()
+            return response.json()
+        except httpx.ReadTimeout as exc:
+            raise TimeoutError(
+                f"图片生成超时：上游 {timeout_sec} 秒内未返回。"
+                "这通常是生图模型排队或代理池响应慢，请稍后重试或提高 Provider 超时时间。"
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code not in _IMAGE_RETRY_STATUS:
+                raise
+            last_exc = exc
+        except httpx.TransportError as exc:  # 连接/网络瞬断（ReadTimeout 已在上面拦掉）
+            last_exc = exc
+        if attempt < _IMAGE_MAX_ATTEMPTS:
+            msg = (f"[{caller_module}] image edit transient error, retry {attempt}/"
+                   f"{_IMAGE_MAX_ATTEMPTS - 1}: {type(last_exc).__name__}: {last_exc}")
+            logger.warning(msg)
+            print(msg, flush=True)
+            time.sleep(_IMAGE_RETRY_BACKOFF_SEC * attempt)
+    raise last_exc
+
 
 def _get_enabled_direct_preset(db: Session, preset_name: str) -> tuple[AiPreset, object]:
     preset = (
@@ -163,21 +207,9 @@ def edit_image(
         url = build_image_url(provider.api_base, "edits")
 
         timeout_sec = _effective_timeout_sec(provider)
-        with httpx.Client(timeout=timeout_sec) as client:
-            try:
-                response = client.post(
-                    url,
-                    headers=headers,
-                    data=_image_params(preset, prompt, size),
-                    files=files,
-                )
-            except httpx.ReadTimeout as exc:
-                raise TimeoutError(
-                    f"图片生成超时：上游 {timeout_sec} 秒内未返回。"
-                    "这通常是生图模型排队或代理池响应慢，请稍后重试或提高 Provider 超时时间。"
-                ) from exc
-            response.raise_for_status()
-            result = response.json()
+        result = _post_image_edits(
+            url, headers, _image_params(preset, prompt, size), files, timeout_sec, caller_module,
+        )
 
         content = _extract_image_content(result)
         if not content:

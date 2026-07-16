@@ -77,7 +77,8 @@ def test_edit_image_posts_openai_compatible_image_edit_request(db, monkeypatch):
     )
 
     assert captured["url"] == "https://example.test/v1/images/edits"
-    assert captured["timeout"] == image_service.MIN_IMAGE_EDIT_TIMEOUT_SEC
+    # 生图有效超时=read 分量（connect/write 已收紧为快速失败，2026-07-16）
+    assert captured["timeout"].read == image_service.MIN_IMAGE_EDIT_TIMEOUT_SEC
     assert captured["headers"]["Authorization"] == "Bearer sk-test"
     assert "Content-Type" not in captured["headers"]
     assert captured["data"] == {
@@ -133,7 +134,7 @@ def test_edit_image_keeps_provider_timeout_when_it_exceeds_image_minimum(db, mon
         caller_module="ai_preset_test",
     )
 
-    assert captured["timeout"] == image_service.MIN_IMAGE_EDIT_TIMEOUT_SEC + 60
+    assert captured["timeout"].read == image_service.MIN_IMAGE_EDIT_TIMEOUT_SEC + 60
 
 
 def test_edit_image_timeout_error_mentions_effective_timeout(db, monkeypatch):
