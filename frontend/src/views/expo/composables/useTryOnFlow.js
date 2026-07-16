@@ -54,6 +54,9 @@ export function useTryOnFlow() {
   let pollBusy = false   // 在途守卫：上一轮未返回不发新请求
   let pollFails = 0      // 连续失败计数，成功即清零
   let pollGen = 0        // 轮询代际：旧会话的迟到响应不许解锁新会话的 pollBusy
+  let registerPromise = null // 乐观切换：后台建档 promise，submitPhoto 前 await 兑现
+  let registerGen = 0        // 建档代际：resetAll(换客户/idle)后，旧后台建档的迟到结果不许回写 customerId
+  let registerInFlight = false // 防「下一步」双击建双档：在途期间忽略二次提交
 
   const analysis = computed(() => session.value?.analysis || null)
   const allMatches = computed(() => session.value?.matches || []) // 后端给前 6 名
@@ -73,6 +76,9 @@ export function useTryOnFlow() {
   function resetAll() {
     stopPolling()
     if (idleTimer) clearTimeout(idleTimer)
+    registerPromise = null
+    registerInFlight = false
+    registerGen += 1 // 作废在途后台建档：其迟到结果不再回写（防污染下一位客户）
     step.value = 'attract'
     mode.value = 'tryon'
     customerId.value = null
@@ -110,29 +116,34 @@ export function useTryOnFlow() {
       errorText.value = '需勾选同意拍照存储'
       return false
     }
-    // 「返回上一步」改完信息再提交走更新，不重复建档（线索台一客一档）
-    // 端点已 suppressToast（客户屏禁英文裸报错），失败必须在此落中文 errorText
-    try {
-      if (customerId.value) {
-        try {
-          await updateCustomer(customerId.value, { ...regForm })
-        } catch (e) {
-          if (e?.response?.status !== 404) throw e
-          // 客户已被线索台删除的悬空引用：降级重新建档，不困死在登记页
-          customerId.value = null
-        }
-      }
-      if (!customerId.value) {
-        const res = await registerCustomer({ ...regForm })
-        customerId.value = res.data.customer_id
-      }
-    } catch (e) {
-      errorText.value = '登记提交失败，请再试一次或呼叫顾问'
-      return false
-    }
+    // 乐观切换：立即进拍摄页，register 放后台跑（与相机启动并行）——frp 隧道每请求 ~1.5-2s，
+    // 傻等 register 返回才切页会卡 ~3s；这段延迟被拍摄引导浮层 + 相机启动天然盖住。
+    // 真正的登记结果在 submitPhoto 拍完照 await 时兑现（那时早已完成）。
+    if (registerInFlight) return true // 双击守卫：在途建档未完成前不重复提交
+    registerInFlight = true
     step.value = 'capture'
     touch()
+    registerPromise = doRegister().finally(() => { registerInFlight = false })
+    registerPromise.catch(() => {}) // 吞掉未处理 rejection 警告；错误在 submitPhoto 暴露
     return true
+  }
+
+  // 建档/更新（一客一档：有 customerId 走更新，悬空引用降级重建）
+  async function doRegister() {
+    const gen = registerGen  // 代际快照：resetAll 后迟到结果丢弃，不回写 customerId
+    const form = { ...regForm } // 表单快照：await 期间即使 regForm 被清场也用提交时的值
+    if (customerId.value) {
+      try {
+        await updateCustomer(customerId.value, form)
+        return
+      } catch (e) {
+        if (e?.response?.status !== 404) throw e
+        if (gen === registerGen) customerId.value = null // 客户已被线索台删除 → 降级重新建档
+      }
+    }
+    const res = await registerCustomer(form)
+    if (gen !== registerGen) return // 已换客户/idle 清场，丢弃这次建档结果
+    customerId.value = res.data.customer_id
   }
 
   // ── 全流程导航：每屏「上一步」的目标（2026-07-13） ──
@@ -167,6 +178,19 @@ export function useTryOnFlow() {
 
   async function submitPhoto(blob) {
     errorText.value = ''
+    // 乐观切换下 register 可能仍在后台跑：先确保它完成拿到 customerId
+    if (registerPromise) {
+      try {
+        await registerPromise
+      } catch (e) {
+        errorText.value = '登记提交失败，请返回上一步重试'
+        return
+      }
+    }
+    if (!customerId.value) {
+      errorText.value = '登记未完成，请返回上一步重试'
+      return
+    }
     let res
     try {
       res = await createSession(customerId.value, blob, mode.value)
