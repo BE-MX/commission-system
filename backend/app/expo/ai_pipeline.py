@@ -238,14 +238,41 @@ def _parse_json(content: str) -> dict:
         raise ValueError(f"AI 返回内容无法解析为 JSON: {text[:200]}")
 
 
-def _chat_json(db, preset_name: str, messages: list, retries: int = 1) -> dict:
-    """chat + JSON 解析；解析失败带纠错反馈重试（模型偶发输出非法 JSON，
-    如字符串值内未转义双引号——线上 session=9/10 实case）。"""
+# 只重试快速失败的 502/503（与合成同口径）。**504 不重试**：网关等上游超时本质就慢，
+# 分析走多模态 chat 单次超时下限 120s、分析看门狗 STALE_PENDING_SECS(240s)，2 次慢速请求即越界，
+# 迟到成功会被看门狗判死后覆写、前端已离场——同图片侧看门狗预算论证。
+_CHAT_RETRY_STATUS = {502, 503}
+_CHAT_MAX_ATTEMPTS = 3  # 首次 + 2 次重试
+
+
+def _chat_with_transient_retry(db, preset_name: str, messages: list) -> dict:
+    """chat 调用对上游 502/503 自动重试（与合成同口径；分析也偶发网关 502，2026-07-16 实证）。
+    504/超时/其他错误不重试，按原样抛（守看门狗预算，见上方常量注释）。"""
+    import urllib.error
     from app.ai.service import chat
 
     last_exc: Exception | None = None
+    for attempt in range(1, _CHAT_MAX_ATTEMPTS + 1):
+        try:
+            return chat(db=db, preset_name=preset_name, messages=messages, caller_module="expo")
+        except urllib.error.HTTPError as exc:
+            if exc.code not in _CHAT_RETRY_STATUS:
+                raise
+            last_exc = exc
+        if attempt < _CHAT_MAX_ATTEMPTS:
+            msg = f"[expo] {preset_name} transient {getattr(last_exc,'code','?')}, retry {attempt}/{_CHAT_MAX_ATTEMPTS-1}"
+            logger.warning(msg)
+            print(msg, flush=True)
+            time.sleep(1.5 * attempt)
+    raise last_exc
+
+
+def _chat_json(db, preset_name: str, messages: list, retries: int = 1) -> dict:
+    """chat + JSON 解析；解析失败带纠错反馈重试（模型偶发输出非法 JSON，
+    如字符串值内未转义双引号——线上 session=9/10 实case）。"""
+    last_exc: Exception | None = None
     for attempt in range(retries + 1):
-        result = chat(db=db, preset_name=preset_name, messages=messages, caller_module="expo")
+        result = _chat_with_transient_retry(db, preset_name, messages)
         content = result.get("content", "")
         try:
             return _parse_json(content)
