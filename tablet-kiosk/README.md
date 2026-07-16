@@ -47,7 +47,8 @@ adb shell dpm set-device-owner com.leshine.expokiosk/.AdminReceiver
 设成功后 App 会自动 `startLockTask()`，并把「自身 + strings.xml 里的打印 App 包名」加进白名单，
 其余一律锁死。撤销：`adb shell dpm remove-active-admin com.leshine.expokiosk/.AdminReceiver`。
 
-> 不想动 ADB：可用系统自带「屏幕固定」做软锁，锁定较弱但零配置。
+> **未设为设备所有者时，App 不会强制固定屏幕**（只全屏沉浸），可自由切出去——方便测试/调试。
+> 只有设为设备所有者后才真锁定。不想动 ADB 的软锁方案：用系统自带「屏幕固定」手动固定（较弱、可退出）。
 
 ## 行为要点
 
