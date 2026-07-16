@@ -365,11 +365,17 @@ def _run_analysis(session_id: int) -> None:
 # 撞上游网关 504 结构性走不通，场景改为用户单选，见 TRYON_SCENES）。
 # 组装顺序：锚（主体锁定） + 发色子句 + 场景子句（原景/置换二选一） + 色机魂收尾。
 _COMPOSITE_TEMPLATE = (
-    "The FIRST image is the customer's own photo. The following wig reference image(s) "
-    "show the exact wig to use, from multiple angles: {description}. Replace the "
-    "customer's hair with this wig, matching its length, layering, fringe and volume "
-    "exactly. Keep the customer's face, facial features and skin tone exactly the same "
-    "as the first image, with light natural makeup. The hairline "
+    "The FIRST image is the customer's own photo — use it ONLY for the face, body and "
+    "pose. The following wig reference image(s) show the EXACT wig to put on the customer, "
+    "from multiple angles: {description}. CRITICAL: the customer's hair in the output MUST "
+    "come entirely from these wig reference images. COMPLETELY remove and replace the "
+    "customer's original hair from the first image — do NOT keep, retain or blend in any "
+    "part of the original hairstyle (its length, shape, silhouette, parting, fringe, "
+    "volume, texture or color); not a single strand of the original hair may remain. "
+    "Reproduce the wig's exact silhouette, length, layering, fringe, volume, parting and "
+    "texture precisely as shown in the reference images, even if it looks very different "
+    "from the original hair. Keep the customer's face, facial features and skin tone "
+    "exactly the same as the first image, with light natural makeup. The hairline "
     "transition must look naturally grown, with realistic fine baby hairs at the "
     "temples. {extra}"
 )
