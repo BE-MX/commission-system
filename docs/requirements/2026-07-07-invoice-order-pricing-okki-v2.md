@@ -34,7 +34,7 @@
 | G2 | 无产品沉淀机制 | 目标要求生产单属性可自由录入且再次录入能直接匹配 |
 | G3 | 无价格体系 | 无标准参考价表、无客户价格规则、无双价展示 |
 | G4 | OKKI 推送未实现 | 无 token 管理、无 orderEnums、无通用产品映射、无同步日志表 |
-| G5 | 发票头字段缺失 | 无 To/TEL/E-mail/Delivery address/From（业务员）/Express；无运费/附加费/付款条款；无内部结算区（付款方式/折扣/配件/实际到账/尾款/发货方式/提成） |
+| G5 | 发票头字段缺失 | 无 To/TEL/E-mail/Delivery address/From（业务员）/Express；无运费/附加费/付款条款；无内部结算区（付款方式/折扣/配件/预付款/尾款/发货方式/提成） |
 | G6 | 导出模板不符 | 格式 A（Price/Piece，20g/piece）与格式 B（Unit Price per 100grams + SHE Color + 分组小标题）均未支持 |
 
 ### 2.3 关键事实核查（真实库 + 接口文档）
@@ -120,7 +120,7 @@ ark_customer_price_rules 客户价格规则（每客户一条，二选一）
 1. `color` → `ark_price_color_types` → 色型（未登记色号的兜底策略见决策点 D3）。
 2. 矩阵查 `standard_price`；查不到 → 返回"无标准价"，走决策点 D3 的策略。
 3. 客户规则：`customer_price = standard + value`（fixed）或 `standard × (1 + value/100)`（percent）；无规则 = 标准价。
-4. 明细行返回 `{standard_price, customer_price, rule_desc}`，`total_price = quantity × customer_price`，`price_source` 枚举扩为 `standard / customer_rule / manual`。
+4. 明细行返回 `{standard_price, customer_price, rule_desc}`，`total_price = quantity × customer_price + discount_amount`；`discount_amount` 默认为 0，非零时恒按负数保存，且不能超过行原价；`price_source` 枚举扩为 `standard / customer_rule / manual`。
 
 **录单展示**：明细行同列双价——标准价（灰色只读）+ 客户价（默认填充单价框）；客户选定后头部显示价格规则徽标（如"该客户：标准价 +5%"）。手工改价策略见决策点 D2。
 
@@ -130,13 +130,14 @@ ark_customer_price_rules 客户价格规则（每客户一条，二选一）
 
 - 客户块：`contact_name / contact_phone / contact_email / delivery_address`（选客户自动带出，可改，存快照）
 - 我方块：`sales_user_id / sales_user_name / sales_phone / sales_email`（默认当前用户）
-- 物流费用：`express_channel`（DHL 等）、`shipping_fee`、`surcharge_name + surcharge_amount`（Paypal Surcharge 等可配名目）、`payment_term`
-- 内部结算区（不出现在客户版导出）：`internal_payment_method / internal_discount / internal_accessory / internal_received / internal_balance / internal_shipping_type`；提成字段与提成模块口径有耦合，本期只留字段不自动计算
-- 明细补：`standard_price DECIMAL(12,4)`、`item_type`、`custom_product_id`（FK ark_custom_products，可空）
+- 订单信息区只展示：发票号、日期、币种、小满标记（必填）、备注。
+- 费用与结算信息区常驻展示（不折叠）：付款方式、预付款、尾款、头发金额、折扣金额、包装数量、包装费用、快递渠道、运费、手续费。头发金额和折扣金额只读，其中折扣金额为全部明细折扣之和；英文说明仅作为金额框内的弱提示。尾款按总金额减预付款自动计算，并校验预付款+尾款=总金额。包装数量只记录数量，不参与包装费用乘算。
+- 总额口径：`Σ(单价×数量+行级折扣) + internal_accessory（包装费用） + shipping_fee + surcharge_amount（手续费）`。`internal_discount` 仅保存明细折扣合计快照，不再次计入总额。
+- 明细补：`standard_price DECIMAL(12,4)`、`item_type`、`custom_product_id`（FK ark_custom_products，可空）、`discount_amount DECIMAL(14,2)`（负数或 0）。
 
 导出双模板：
 
-- **模板 A**（按件计价）：Product/Net Weight Grams/Curl/Color/Length/Quantity(20g piece)/Price/Piece/Total，费用区 Hair cost + Shipping fee + Surcharge + Total。
+- **模板 A**（按件计价）：Product/Net Weight Grams/Curl/Color/Length/Quantity(20g piece)/Price/Piece/Discount/TotalPrice，费用区 Hair Price + Discount + Packaging Quantity + Packaging + Shipping Fee + Handling Fee + Total。
 - **模板 B**（按 100g 计价）：多 SHE Color 列（客户自有色号，MVP 手填，二期做客户色号映射表）、支持分组小标题行（如 `22" Invisible Weft`）。
 - 导出时选模板，客户上可设默认模板偏好（`ark_customer_price_rules` 顺带加 `preferred_template` 列，避免多建一张表）。
 

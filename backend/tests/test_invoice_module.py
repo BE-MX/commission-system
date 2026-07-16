@@ -2,6 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 import pytest
+from openpyxl import load_workbook
 from sqlalchemy import text
 
 from app.invoice import export_service, product_service, service, xiaoman_service
@@ -80,17 +81,40 @@ def test_invoice_create_totals_and_validation(db):
                 length="18",
                 quantity=3,
                 price_per_piece=Decimal("12.50"),
+                discount_amount=Decimal("-2.00"),
             )
         ],
+        internal_accessory=Decimal("3.00"),
+        packaging_quantity=4,
+        shipping_fee=Decimal("4.00"),
+        surcharge_amount=Decimal("1.00"),
     )
 
     invoice = service.create_invoice(db, payload, user_id=1)
     db.flush()
 
-    assert invoice.total_amount == Decimal("37.50")
+    assert invoice.items[0].total_price == Decimal("35.50")
+    assert invoice.internal_discount == Decimal("-2.00")
+    assert invoice.packaging_quantity == 4
+    assert invoice.total_amount == Decimal("43.50")
     assert invoice.status == "ready"
     assert service.validate_invoice(invoice) == []
-    assert export_service.build_invoice_pdf(invoice).getvalue().startswith(b"%PDF-1.4")
+    workbook = load_workbook(export_service.build_invoice_workbook(invoice), data_only=True)
+    sheet = workbook["Invoice"]
+    assert [sheet.cell(10, col).value for col in range(1, 12)][-2:] == ["Discount", "TotalPrice"]
+    assert sheet["J11"].value == -2
+    assert sheet["K11"].value == 35.5
+    assert [sheet.cell(row, 10).value for row in range(12, 19)] == [
+        "Hair Price", "Discount", "Packaging Quantity", "Packaging", "Shipping Fee", "Handling Fee", "Total",
+    ]
+    html = export_service.build_print_html(invoice)
+    assert "<th>Discount</th><th>TotalPrice</th>" in html
+    assert "Packaging Quantity: 4" in html
+    assert "Packaging: USD 3.00" in html
+    pdf = export_service.build_invoice_pdf(invoice).getvalue()
+    assert pdf.startswith(b"%PDF-1.4")
+    assert b"Packaging Quantity: 4" in pdf
+    assert b"Packaging: USD 3.00" in pdf
 
 # ── 录入页自动填充 ────────────────────────────────────────────
 
@@ -167,7 +191,7 @@ def test_create_invoice_salesperson_fallback(db):
     # 前端没带业务员信息 → 按创建人兜底
     invoice = service.create_invoice(db, _header_payload(), user_id=user.id)
     db.flush()
-    assert invoice.sales_user_name == "张三"
+    assert invoice.sales_user_name == "zhang"
     assert invoice.sales_phone == "13800000000"
     assert invoice.sales_email == "zhang@leshine.com"
 

@@ -153,7 +153,7 @@
 
     <el-drawer v-model="drawerVisible" :title="drawerTitle" size="94%">
       <template #default>
-        <el-form ref="formRef" :model="form" label-width="80px" size="small" class="invoice-form">
+        <el-form ref="formRef" :model="form" label-width="80px" class="invoice-form">
           <section class="head-section">
             <div class="col-title">客户信息</div>
             <div class="head-grid">
@@ -178,7 +178,7 @@
                       :value="customer"
                     />
                   </el-select>
-                  <el-checkbox v-model="privateOnlyCompany" class="customer-filter-check">仅私海</el-checkbox>
+                  <el-checkbox v-permission="'invoice_private_filter:read'" v-model="privateOnlyCompany" class="customer-filter-check">仅私海</el-checkbox>
                 </div>
                 <div v-if="customerRule" class="rule-badge">
                   该客户价格规则：{{ describeCustomerRule(customerRule) }}
@@ -206,10 +206,12 @@
                       :value="contact"
                     />
                   </el-select>
-                  <el-checkbox v-model="privateOnlyContact" class="customer-filter-check">仅私海</el-checkbox>
+                  <el-checkbox v-permission="'invoice_private_filter:read'" v-model="privateOnlyContact" class="customer-filter-check">仅私海</el-checkbox>
                 </div>
-                <div v-if="!okkiBound && (privateOnlyCompany || privateOnlyContact)" class="rule-badge warn">
-                  当前账号未绑定 OKKI，私海筛选无结果：请到 系统管理 → 外部账号绑定 处理，或取消勾选
+                <div v-if="!okkiBound && (privateOnlyCompany || privateOnlyContact)" class="binding-helper">
+                  {{ canTogglePrivate
+                    ? '未绑定 OKKI，私海筛选无结果。请取消“仅私海”或前往外部账号绑定。'
+                    : '未绑定 OKKI，暂无法搜索私海客户。请到 系统管理 → 外部账号绑定 处理。' }}
                 </div>
               </el-form-item>
               <el-form-item label="联系人" class="span-2">
@@ -260,22 +262,7 @@
               <el-form-item label="币种" class="span-1">
                 <el-input v-model="form.currency" maxlength="16" />
               </el-form-item>
-              <el-form-item label="快递渠道" class="span-1">
-                <el-input v-model="form.express_channel" maxlength="32" placeholder="如 DHL" />
-              </el-form-item>
-              <el-form-item label="运费" class="span-2">
-                <el-input-number v-model="form.shipping_fee" :min="0" :precision="2" controls-position="right" style="width: 100%" />
-              </el-form-item>
-              <el-form-item label="附加费" class="span-2">
-                <div class="surcharge-row">
-                  <el-input v-model="form.surcharge_name" maxlength="64" placeholder="名目，如 Paypal Surcharge" />
-                  <el-input-number v-model="form.surcharge_amount" :min="0" :precision="2" controls-position="right" />
-                </div>
-              </el-form-item>
-              <el-form-item label="付款条款" class="span-2">
-                <el-input v-model="form.payment_term" maxlength="200" placeholder="Payment Term，如 TT 20%" />
-              </el-form-item>
-              <el-form-item label="小满标记" class="span-3">
+              <el-form-item label="小满标记" required class="span-3">
                 <div class="okki-flags-row">
                   <span class="okki-flag">
                     新成交
@@ -296,6 +283,52 @@
               </el-form-item>
               <el-form-item label="备注" class="span-3">
                 <el-input v-model="form.remark" type="textarea" :autosize="{ minRows: 1, maxRows: 3 }" maxlength="500" />
+              </el-form-item>
+            </div>
+          </section>
+
+          <section class="head-section settlement-section">
+            <div class="col-title">费用与结算信息</div>
+            <div class="head-grid">
+              <el-form-item label="付款方式" class="span-2">
+                <el-select v-model="form.internal_payment_method" clearable placeholder="请选择">
+                  <el-option v-for="option in PAYMENT_METHOD_OPTIONS" :key="option" :label="option" :value="option" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="预付款" class="span-2" :error="settlementError">
+                <el-input-number v-model="form.internal_received" :min="0" :max="formTotal" :precision="2" controls-position="right" style="width: 100%" />
+              </el-form-item>
+              <el-form-item label="尾款" class="span-2">
+                <el-input :model-value="form.internal_balance == null ? '' : money(form.internal_balance)" readonly class="balance-field">
+                  <template #append>根据订单总额与预付款自动计算</template>
+                </el-input>
+              </el-form-item>
+              <el-form-item label="头发金额" class="span-2">
+                <el-input :model-value="money(formHairPrice)" readonly class="calculated-amount">
+                  <template #suffix><span class="amount-note">Hair Price</span></template>
+                </el-input>
+              </el-form-item>
+              <el-form-item label="折扣金额" class="span-2 negative-field">
+                <el-input :model-value="money(formLineDiscountTotal)" readonly class="calculated-amount">
+                  <template #suffix><span class="amount-note">Discount</span></template>
+                </el-input>
+              </el-form-item>
+              <el-form-item label="包装数量" class="span-1">
+                <el-input-number v-model="form.packaging_quantity" :min="0" :precision="0" controls-position="right" style="width: 100%" />
+              </el-form-item>
+              <el-form-item label="包装费用" class="span-1">
+                <el-input-number v-model="form.internal_accessory" :min="0" :precision="2" controls-position="right" style="width: 100%" />
+              </el-form-item>
+              <el-form-item label="快递渠道" class="span-2">
+                <el-select v-model="form.express_channel" clearable placeholder="请选择">
+                  <el-option v-for="option in EXPRESS_CHANNEL_OPTIONS" :key="option" :label="option" :value="option" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="运费" class="span-2">
+                <el-input-number v-model="form.shipping_fee" :min="0" :precision="2" controls-position="right" style="width: 100%" />
+              </el-form-item>
+              <el-form-item label="手续费" class="span-2">
+                <el-input-number v-model="form.surcharge_amount" :min="0" :precision="2" controls-position="right" style="width: 100%" />
               </el-form-item>
             </div>
           </section>
@@ -499,6 +532,18 @@
                 </template>
               </el-table-column>
 
+              <el-table-column label="折扣" min-width="110" max-width="150">
+                <template #default="{ row }">
+                  <el-input-number
+                    v-model="row.discount_amount"
+                    :precision="2"
+                    :controls="false"
+                    class="line-discount-input"
+                    @change="onLineDiscountChange(row)"
+                  />
+                </template>
+              </el-table-column>
+
               <el-table-column label="TotalPrice" min-width="100" max-width="150" align="right">
                 <template #default="{ row }">{{ money(row.total_price) }}</template>
               </el-table-column>
@@ -513,37 +558,19 @@
             </el-table>
           </div>
 
-          <el-collapse class="internal-collapse">
-            <el-collapse-item title="内部结算（不出现在客户发票）" name="internal">
-              <div class="form-grid">
-                <el-form-item label="付款方式">
-                  <el-input v-model="form.internal_payment_method" maxlength="32" placeholder="如 TT / Paypal" />
-                </el-form-item>
-                <el-form-item label="折扣">
-                  <el-input-number v-model="form.internal_discount" :precision="2" controls-position="right" style="width: 100%" />
-                </el-form-item>
-                <el-form-item label="配件">
-                  <el-input-number v-model="form.internal_accessory" :precision="2" controls-position="right" style="width: 100%" />
-                </el-form-item>
-                <el-form-item label="实际到账">
-                  <el-input-number v-model="form.internal_received" :precision="2" controls-position="right" style="width: 100%" />
-                </el-form-item>
-                <el-form-item label="尾款">
-                  <el-input-number v-model="form.internal_balance" :precision="2" controls-position="right" style="width: 100%" />
-                </el-form-item>
-                <el-form-item label="发货方式">
-                  <el-input v-model="form.internal_shipping_type" maxlength="32" placeholder="如 普货" />
-                </el-form-item>
-              </div>
-            </el-collapse-item>
-          </el-collapse>
         </el-form>
       </template>
 
       <template #footer>
         <div class="drawer-footer">
           <div class="total-box">
-            <span>货款 {{ money(formProductTotal) }} + 运费 {{ money(form.shipping_fee) }} + 附加费 {{ money(form.surcharge_amount) }}</span>
+            <span class="total-breakdown">
+              头发金额 {{ money(formHairPrice) }}
+              + 折扣金额 {{ money(formLineDiscountTotal) }}
+              + 包装费用 {{ money(form.internal_accessory) }}（数量 {{ form.packaging_quantity }}）
+              + 运费 {{ money(form.shipping_fee) }}
+              + 手续费 {{ money(form.surcharge_amount) }}
+            </span>
             <span class="grand">Total: <strong>{{ form.currency }} {{ money(formTotal) }}</strong></span>
           </div>
           <div>
@@ -603,6 +630,7 @@ import {
   syncInvoice,
   validateInvoice,
 } from '@/api/invoice'
+import { EXPRESS_CHANNEL_OPTIONS, PAYMENT_METHOD_OPTIONS } from './composables/invoiceSettlement'
 import { CURL_OPTIONS, contactLabel, customerLabel, describeCustomerRule, useInvoiceEditor } from './composables/useInvoiceEditor'
 import InvoicePasteImport from './components/InvoicePasteImport.vue'
 
@@ -624,12 +652,15 @@ const {
   selectedContact,
   privateOnlyCompany,
   privateOnlyContact,
+  canTogglePrivate,
   okkiBound,
   invoiceNoTaken,
   entryOptions,
   form,
-  formProductTotal,
+  formHairPrice,
+  formLineDiscountTotal,
   formTotal,
+  settlementError,
   isProduction,
   searchCustomers,
   searchContacts,
@@ -645,6 +676,7 @@ const {
   onLineFilterChange,
   onCustomFieldChange,
   onPriceInput,
+  onLineDiscountChange,
   updateLineTotal,
   appendImportedLines,
   saveDraft,

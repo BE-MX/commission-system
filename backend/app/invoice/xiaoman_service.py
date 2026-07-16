@@ -428,8 +428,11 @@ def _build_remove_rows(db: Session, invoice: Invoice, settings_row: XiaomanSetti
 
 
 def _build_cost_list(invoice: Invoice) -> list[dict]:
-    """Shipping fee + surcharge as absolute-value additions (percent_type=0)."""
+    """Line discounts already live in product cost_amount; only positive fees belong here."""
     costs: list[dict] = []
+    packaging = float(invoice.internal_accessory or 0)
+    if packaging > 0:
+        costs.append({"cost_name": "Packaging", "percent_type": 0, "percent_amount": packaging, "cost": packaging})
     shipping = float(invoice.shipping_fee or 0)
     if shipping > 0:
         name = f"Shipping fee ({invoice.express_channel})" if invoice.express_channel else "Shipping fee"
@@ -437,7 +440,7 @@ def _build_cost_list(invoice: Invoice) -> list[dict]:
     surcharge = float(invoice.surcharge_amount or 0)
     if surcharge > 0:
         costs.append({
-            "cost_name": invoice.surcharge_name or "Surcharge",
+            "cost_name": "Handling Fee",
             "percent_type": 0,
             "percent_amount": surcharge,
             "cost": surcharge,

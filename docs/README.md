@@ -23,6 +23,7 @@
 | [accio-work-integration-spec.md](accio-work-integration-spec.md) | ACCIO WORK → 方舟 客户机会台集成规范 | ACCIO WORK 开发团队 |
 | [mcp-tracking-integration.md](mcp-tracking-integration.md) | MCP 网关物流工具接入说明（入口无关，个人 token） | AI 客户端接入者 |
 | [requirements/](requirements/) | 需求文档归档 | 产品经理、历史追溯 |
+| [superpowers/specs/2026-07-14-invoice-quick-paste-import-design.md](superpowers/specs/2026-07-14-invoice-quick-paste-import-design.md) | 发票 Excel/WPS 快速粘贴导入：用户流程、匹配与价格安全规则 | 产品、前后端开发、测试 |
 
 ## 外部集成
 

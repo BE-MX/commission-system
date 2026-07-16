@@ -150,7 +150,7 @@ def test_build_push_payload_stock_custom_and_backfilled(db):
     cp_pending = _make_custom_product(db, "key-pending")
     cp_backfilled = _make_custom_product(db, "key-backfilled", okki_product_id=555, okki_sku_id=556)
 
-    invoice = _make_invoice(db)
+    invoice = _make_invoice(db, internal_discount=Decimal("-3"), internal_accessory=Decimal("2"))
     invoice.items.append(_stock_item())
     invoice.items.append(_custom_item(cp_pending.id))
     invoice.items.append(_custom_item(cp_backfilled.id, sort_order=3, quantity=1, total_price=Decimal("8.00")))
@@ -195,12 +195,13 @@ def test_build_push_payload_stock_custom_and_backfilled(db):
     assert "Genius Weft/18/#1/20g x2" in rows[2]["product_name"]
     assert "product_model" not in rows[2] and "unit" not in rows[2]
 
-    # 费用：运费+附加费各一条绝对值
+    # 明细 cost_amount 已含行折扣，费用清单不能再次推 Discount；这里只推正费用
     costs = payload["cost_list"]
-    assert len(costs) == 2
+    assert len(costs) == 3
     assert all(c["percent_type"] == 0 for c in costs)
-    assert costs[0]["cost"] == 10.0 and costs[1]["cost"] == 5.0
-    assert costs[1]["cost_name"] == "Paypal Surcharge"
+    assert [c["percent_amount"] for c in costs] == [2.0, 10.0, 5.0]
+    assert [c["cost"] for c in costs] == [2.0, 10.0, 5.0]
+    assert [c["cost_name"] for c in costs] == ["Packaging", "Shipping fee", "Handling Fee"]
     # 付款条款并入备注
     assert "hello" in payload["remark"] and "30% deposit" in payload["remark"]
     # 订单级金额不传，OKKI 自算

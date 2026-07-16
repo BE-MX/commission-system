@@ -12,15 +12,15 @@
 - **数据库表数**：120 张（commission_db，2026-07-13 information_schema 实测）
 - **数据库迁移数**：068（Alembic，最新 `068_okki_required_fields`）
 - **用户数**：~30 人（莱莎员工）
-- **日活**：~20 人
+- **日活**：~30 人
 - **部署环境**：生产（腾讯云 + 本地 Windows Server）
 
-## 已完成功能（2026-07-13 更新）
+## 已完成功能（2026-07-15 更新）
 
 ### 核心业务模块（20 个）
 
 1. ✅ **提成管理**：回款单计算、客户归属快照、批次管理、业务员确认流程（confirming 状态 + 反馈/确认机制）
-2. ✅ **订单发票管理**：发票 CRUD、产品级联选择、Excel/PDF/HTML 导出；OKKI 推单闭环（2026-07-13：真实推单 + 幂等编辑 + 非标合并单条通用行 + 企业必填字段部门/订单类型/新成交/包邮/首返 + 同步日志，066/068 迁移）；数据范围权限 `invoice:read_all`（默认只见自己创建的发票，067）；录入自动填充（客户联系人快照复用 + 业务员信息默认当前用户 + 小满标记三开关智能默认）
+2. ✅ **订单发票管理**：发票 CRUD、产品级联选择、Excel/PDF/HTML 导出；OKKI 推单闭环（2026-07-13：真实推单 + 幂等编辑 + 非标合并单条通用行 + 企业必填字段部门/订单类型/新成交/包邮/首返 + 同步日志，066/068 迁移）；数据范围权限 `invoice:read_all`（默认只见自己创建的发票，067）；录入自动填充（客户联系人快照复用 + 业务员信息默认当前用户 + 小满标记三开关智能默认）；2026-07-14 录入体验增强：客户双筛选（公司名 / 联系人名联动，`/customers/contacts`）+ 私海过滤（所有人默认私海，`invoice_private_filter:read` 控切换）+ 发票号可编辑（库存 `{用户名}-KC-{MM}{NN}` 按人、生产 `SC-{MM}{NN}` 全局）+ Excel/WPS 粘贴明细批量导入预检（`/import/preview`）
 3. ✅ **物流跟踪**：DHL/FedEx 自动轮询、关键状态推送、物流日报
 4. ✅ **运单上传**：图片 OCR（AI 多模态）+ 手动录入
 5. ✅ **设计预约**：申请/审批/排期、冲突检测、附件上传、钉钉通知
@@ -234,6 +234,7 @@
 | [requirements/2026-07-03-expo-ai-wig-tryon.md](requirements/2026-07-03-expo-ai-wig-tryon.md) | ✅ | 展会 AI 试戴设计开发文档（配套原型以品牌绿版 v2 为准） |
 | [requirements/2026-07-03-permission-redesign.md](requirements/2026-07-03-permission-redesign.md) | ✅ | 角色权限重设计方案（2026-07-03 已实施：046 迁移+矩阵 UI+审计） |
 | [requirements/2026-07-07-invoice-order-pricing-okki-v2.md](requirements/2026-07-07-invoice-order-pricing-okki-v2.md) | ✅ | 发票 V2：双类型/价格矩阵/OKKI 推单设计（决策 D1-D4） |
+| [superpowers/specs/2026-07-14-invoice-quick-paste-import-design.md](superpowers/specs/2026-07-14-invoice-quick-paste-import-design.md) | ✅ | 发票 Excel/WPS 快速粘贴导入设计与验收口径（2026-07-15 已实操验收） |
 | [requirements/2026-07-12-permission-refinement.md](requirements/2026-07-12-permission-refinement.md) | ✅ | 权限细化与逐页页面码方案（061/063/064 已实施） |
 | [mcp-tracking-integration.md](mcp-tracking-integration.md) | ✅ | MCP 网关物流工具接入说明（051） |
 | [2026-07-03-architecture-assessment.md](2026-07-03-architecture-assessment.md) | ✅ | 平台架构评估与改进路线图（问题清单 + 四批实施计划） |

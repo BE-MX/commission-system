@@ -17,6 +17,13 @@ import {
   validateInvoice,
 } from '@/api/invoice'
 import { useAuthStore } from '@/stores/auth'
+import {
+  calculateBalance,
+  calculateInvoiceTotal,
+  calculateLineTotal,
+  normalizeDiscount,
+  settlementMatchesTotal,
+} from './invoiceSettlement'
 import { hasImportedBatch, mapPreviewRowToInvoiceLine } from './useInvoicePasteImport'
 
 export const CURL_OPTIONS = ['Straight', 'Body Wave', 'Deep Wave', 'Loose Wave', 'Kinky Curly', 'Water Wave']
@@ -31,7 +38,10 @@ export function useInvoiceEditor({ onSaved } = {}) {
   const contactLoading = ref(false)
   const contactOptions = ref([])
   const selectedContact = ref(null)
-  // 「仅显示私海客户」默认勾选；两个筛选各自独立控制
+  // 「仅显示私海客户」（2026-07-14 亮哥定版）：所有人默认私海；
+  // invoice_private_filter:read 只控制勾选框显隐=能否切到全量视图。
+  // 无权限用户勾选框隐藏、恒定私海——未绑定 OKKI 时唯一出路是去绑定（提示文案区分）
+  const canTogglePrivate = computed(() => useAuthStore().hasPermission('invoice_private_filter:read'))
   const privateOnlyCompany = ref(true)
   const privateOnlyContact = ref(true)
   // false = 当前账号未绑定 OKKI，私海筛选无从判定（前端提示去绑定）
@@ -41,10 +51,29 @@ export function useInvoiceEditor({ onSaved } = {}) {
 
   const form = reactive(emptyForm())
 
+  const formHairPrice = computed(() => form.items.reduce(
+    (sum, line) => sum + calculateLineTotal(line.quantity, line.price_per_piece),
+    0,
+  ))
+  const formLineDiscountTotal = computed(() => form.items.reduce(
+    (sum, line) => sum + normalizeDiscount(line.discount_amount),
+    0,
+  ))
   const formProductTotal = computed(() =>
     form.items.reduce((sum, line) => sum + Number(line.total_price || 0), 0))
-  const formTotal = computed(() =>
-    formProductTotal.value + Number(form.shipping_fee || 0) + Number(form.surcharge_amount || 0))
+  const formTotal = computed(() => calculateInvoiceTotal(
+    formProductTotal.value,
+    form.internal_accessory,
+    form.shipping_fee,
+    form.surcharge_amount,
+  ))
+  const settlementError = computed(() => {
+    if (form.internal_received == null) return ''
+    if (Number(form.internal_received) > formTotal.value) return '预付款不能超过总金额'
+    return settlementMatchesTotal(formTotal.value, form.internal_received, form.internal_balance)
+      ? ''
+      : '预付款与尾款之和必须等于总金额'
+  })
   const isProduction = computed(() => form.order_type === 'production')
 
   function emptyForm() {
@@ -69,8 +98,9 @@ export function useInvoiceEditor({ onSaved } = {}) {
       surcharge_amount: 0,
       payment_term: '',
       internal_payment_method: '',
-      internal_discount: null,
-      internal_accessory: null,
+      internal_discount: 0,
+      packaging_quantity: 0,
+      internal_accessory: 0,
       internal_received: null,
       internal_balance: null,
       internal_shipping_type: '',
@@ -94,6 +124,10 @@ export function useInvoiceEditor({ onSaved } = {}) {
     form.okki_free_shipping = Number(fee || 0) > 0 ? 0 : 1
   })
 
+  watch([formTotal, () => form.internal_received], ([total, prepayment]) => {
+    form.internal_balance = calculateBalance(total, prepayment)
+  }, { flush: 'sync' })
+
   function normalizeLine(line = {}) {
     return {
       // 既有行 id 必须回传：后端靠它跨保存传承 OKKI 明细 unique_id（编辑重推不塌行）
@@ -114,6 +148,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
       customer_price: line.customer_price == null ? null : Number(line.customer_price),
       color_type_source: line.color_type_source || '',
       price_per_piece: line.price_per_piece == null ? null : Number(line.price_per_piece),
+      discount_amount: normalizeDiscount(line.discount_amount),
       total_price: Number(line.total_price || 0),
       price_source: line.price_source || 'manual',
       _importBatchFingerprint: line._importBatchFingerprint || '',
@@ -136,6 +171,9 @@ export function useInvoiceEditor({ onSaved } = {}) {
     contactFillSeq++
     customerRuleSeq++
     invoiceNoSeq++
+    // 每次开单复位为默认私海（上一单里切过全量不带到下一单）
+    privateOnlyCompany.value = true
+    privateOnlyContact.value = true
     // 编辑既有单（有 id）：发票号视为已确认，建议号不覆盖
     invoiceNoEdited = Boolean(data.id)
     invoiceNoTaken.value = false
@@ -146,6 +184,9 @@ export function useInvoiceEditor({ onSaved } = {}) {
       ...data,
       shipping_fee: Number(data.shipping_fee || 0),
       surcharge_amount: Number(data.surcharge_amount || 0),
+      internal_discount: normalizeDiscount(data.internal_discount),
+      packaging_quantity: Number(data.packaging_quantity || 0),
+      internal_accessory: Number(data.internal_accessory || 0),
       // 存量 NULL 标记（068 前老单）镜像服务端兜底口径，不要硬填 1 锁死错误值
       okki_new_deal: data.okki_new_deal ?? 1,
       okki_free_shipping: data.okki_free_shipping ?? (Number(data.shipping_fee || 0) > 0 ? 0 : 1),
@@ -295,7 +336,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     // 业务员信息默认当前登录用户（可改）；后端 create 对空字段还有一层兜底
     const me = useAuthStore().user
     if (me) {
-      form.sales_user_name = me.real_name || ''
+      form.sales_user_name = me.username || ''
       form.sales_phone = me.phone || ''
       form.sales_email = me.email || ''
     }
@@ -463,8 +504,12 @@ export function useInvoiceEditor({ onSaved } = {}) {
   }
 
   function updateLineTotal(row) {
-    // 与后端 Decimal ROUND_HALF_UP 口径对齐，避免浮点差 1 分
-    row.total_price = Math.round(Number(row.quantity || 0) * Number(row.price_per_piece || 0) * 100) / 100
+    row.total_price = calculateLineTotal(row.quantity, row.price_per_piece, row.discount_amount)
+  }
+
+  function onLineDiscountChange(row) {
+    row.discount_amount = normalizeDiscount(row.discount_amount)
+    updateLineTotal(row)
   }
 
   function appendImportedLines(rows, batchFingerprint) {
@@ -496,12 +541,13 @@ export function useInvoiceEditor({ onSaved } = {}) {
       currency: form.currency || 'USD',
       express_channel: form.express_channel || null,
       shipping_fee: Number(form.shipping_fee || 0),
-      surcharge_name: form.surcharge_name || null,
+      surcharge_name: Number(form.surcharge_amount || 0) ? 'Handling Fee' : null,
       surcharge_amount: Number(form.surcharge_amount || 0),
       payment_term: form.payment_term || null,
       internal_payment_method: form.internal_payment_method || null,
-      internal_discount: form.internal_discount,
-      internal_accessory: form.internal_accessory,
+      internal_discount: formLineDiscountTotal.value,
+      packaging_quantity: Number(form.packaging_quantity || 0),
+      internal_accessory: Number(form.internal_accessory || 0),
       internal_received: form.internal_received,
       internal_balance: form.internal_balance,
       internal_shipping_type: form.internal_shipping_type || null,
@@ -523,22 +569,37 @@ export function useInvoiceEditor({ onSaved } = {}) {
         length: line.length,
         quantity: line.quantity,
         price_per_piece: line.price_per_piece,
+        discount_amount: normalizeDiscount(line.discount_amount),
         price_source: line.price_source || 'manual',
       })),
     }
   }
 
   async function saveDraft() {
+    if (form.items.some(line => Number(line.total_price || 0) < 0)) {
+      ElMessage.warning('产品行折扣不能超过该行金额')
+      return null
+    }
+    if (formTotal.value < 0) {
+      ElMessage.warning('折扣金额不能超过订单中可抵扣的金额')
+      return null
+    }
+    if (settlementError.value) {
+      ElMessage.warning(settlementError.value)
+      return null
+    }
     const saved = form.id
       ? await updateInvoice(form.id, buildPayload())
       : await createInvoice(buildPayload())
     resetForm(saved)
     ElMessage.success('发票已保存')
     onSaved?.()
+    return saved
   }
 
   async function saveAndValidate() {
-    await saveDraft() // saveDraft 内已触发 onSaved 刷新列表
+    const saved = await saveDraft() // saveDraft 内已触发 onSaved 刷新列表
+    if (!saved) return
     const res = await validateInvoice(form.id)
     if (res.ok) {
       ElMessage.success('校验通过，可以同步小满')
@@ -563,12 +624,16 @@ export function useInvoiceEditor({ onSaved } = {}) {
     selectedContact,
     privateOnlyCompany,
     privateOnlyContact,
+    canTogglePrivate,
     okkiBound,
     invoiceNoTaken,
     entryOptions,
     form,
+    formHairPrice,
+    formLineDiscountTotal,
     formProductTotal,
     formTotal,
+    settlementError,
     isProduction,
     searchCustomers,
     searchContacts,
@@ -584,6 +649,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     onLineFilterChange,
     onCustomFieldChange,
     onPriceInput,
+    onLineDiscountChange,
     updateLineTotal,
     appendImportedLines,
     saveDraft,

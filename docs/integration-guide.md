@@ -1,7 +1,7 @@
 # 莱莎方舟平台 API 接入指南
 
 > **版本**：v1.0  
-> **最后更新**：2026-07-01  
+> **最后更新**：2026-07-15
 > **目标读者**：下游系统开发者、外部集成方
 
 ## 接入流程
@@ -259,6 +259,32 @@ Content-Type: application/json
 }
 ```
 
+### 5. 订单发票 Excel/WPS 粘贴预检
+
+该端点供方舟发票编辑器批量校验剪贴板明细。调用前必须已选择客户、订单类型和币种，并具有 `invoice:write` 权限。预检是只读操作，不创建发票、明细或定制产品。
+
+```bash
+curl -X POST https://leshine.work/api/invoice/import/preview \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "customer_id": "<customer_id>",
+    "order_type": "production",
+    "currency": "USD",
+    "rows": [{
+      "source_row": 2,
+      "product": "Standard Double Drawn Genius Weft",
+      "length": "18",
+      "color": "#1B",
+      "weight": "100g",
+      "quantity": 2,
+      "unit_price": "36.00"
+    }]
+  }'
+```
+
+响应 `data.summary` 给出 `passed`、`warning`、`blocked` 数量，`data.rows` 返回规范化值、产品/SKU 候选和同币种价格差异，`data.batch_fingerprint` 用于当前编辑会话的重复追加防护。单批最多 200 行；Excel 成交价始终保留，系统不会自动换汇。
+
 ## 对外库存查询 API（Public Inventory，无需登录）
 
 > 2026-07-07 新增。面向**客户系统**（如客户 Shopify 店铺库存同步、客户官网嵌入页），
@@ -393,6 +419,7 @@ A：
 
 A：
 - 客户机会台：使用 ACCIO WORK 集成规范（见 [accio-work-integration-spec.md](accio-work-integration-spec.md)）
+- 订单发票：新建或编辑发票时选择客户、订单类型和币种，点击「从 Excel 粘贴」，校验后加入当前产品列表；加入列表不等于保存
 - 其他模块：联系技术支持提供批量导入脚本
 
 ### Q4：移动端如何接入？

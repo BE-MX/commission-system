@@ -258,6 +258,15 @@ tail -f D:\MyProgram\commission-system\logs\service.log
 }
 ```
 
+订单发票 Excel/WPS 粘贴导入上线后，可用真实客户 ID 做一次只读预检冒烟；返回 200 且 `data.summary.total=1` 即表示解析与批量匹配链路可用。该请求不会写库：
+
+```bash
+curl -X POST http://localhost:8001/api/invoice/import/preview \
+  -H "Authorization: Bearer <invoice_write_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"customer_id":"<customer_id>","order_type":"production","currency":"USD","rows":[{"source_row":2,"product":"Standard Double Drawn Genius Weft","length":"18","color":"#1B","weight":"100g","quantity":1,"unit_price":"36.00"}]}'
+```
+
 ## 常见问题排查
 
 ### Q1：端口被占用（8001）

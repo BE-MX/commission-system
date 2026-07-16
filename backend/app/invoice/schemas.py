@@ -84,7 +84,15 @@ class InvoiceItemPayload(BaseModel):
     length: str = Field(..., max_length=128)
     quantity: int = Field(..., gt=0)
     price_per_piece: Optional[Decimal] = Field(None, gt=0)
+    discount_amount: Decimal = Field(default=Decimal("0"), le=0)
     price_source: str = Field(default="manual", max_length=32)
+
+    @field_validator("discount_amount", mode="before")
+    @classmethod
+    def _normalize_line_discount(cls, value):
+        if value is None or value == "":
+            return Decimal("0")
+        return -abs(Decimal(str(value)))
 
 
 class _InvoiceHeaderPayload(BaseModel):
@@ -108,10 +116,11 @@ class _InvoiceHeaderPayload(BaseModel):
     surcharge_amount: Decimal = Field(default=Decimal("0"), ge=0)
     payment_term: Optional[str] = Field(None, max_length=256)
     internal_payment_method: Optional[str] = Field(None, max_length=64)
-    internal_discount: Optional[Decimal] = None
-    internal_accessory: Optional[Decimal] = None
-    internal_received: Optional[Decimal] = None
-    internal_balance: Optional[Decimal] = None
+    internal_discount: Optional[Decimal] = Field(None, le=0)
+    packaging_quantity: int = Field(default=0, ge=0)
+    internal_accessory: Optional[Decimal] = Field(None, ge=0)
+    internal_received: Optional[Decimal] = Field(None, ge=0)
+    internal_balance: Optional[Decimal] = Field(None, ge=0)
     internal_shipping_type: Optional[str] = Field(None, max_length=64)
     # OKKI 必填业务标记（1是/0否；None=服务端按兜底规则自动判定）
     okki_new_deal: Optional[int] = Field(None, ge=0, le=1)
@@ -129,6 +138,13 @@ class _InvoiceHeaderPayload(BaseModel):
     @classmethod
     def _normalize_currency(cls, value):
         return str(value or "").strip().upper()
+
+    @field_validator("internal_discount", mode="before")
+    @classmethod
+    def _normalize_order_discount(cls, value):
+        if value is None or value == "":
+            return None
+        return -abs(Decimal(str(value)))
 
 
 class InvoiceCreate(_InvoiceHeaderPayload):

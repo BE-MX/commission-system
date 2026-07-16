@@ -67,7 +67,7 @@
 - `app/production/` — 生产报工（router/models/schemas/service facade + process / route / binding / report / dashboard_service）
 - `app/report/` — 报表中心（router/models/schemas/data_service / category_service / docx_export）
 - `app/governance/` — 数据概念治理（router/models/schemas/service facade + concept / relationship / changelog / import_service）
-- `app/invoice/` — 订单发票管理（router/models/schemas/service + product_service / export_service / xiaoman_service）
+- `app/invoice/` — 订单发票管理（router/models/schemas/service + product_service / import_service / price_service / export_service / xiaoman_service）
 - `app/expo/` — 展会 AI 试戴（router/models/schemas/service + matching 规则匹配引擎 + ai_pipeline 三管线（面容分析/效果图合成/双轨话术）+ script_service 话术卡库；合成双入口 mode=tryon 换发（单选发型 + 发色库色板图三图合成 + 可选生成场景 `TRYON_SCENES` 原景/居家/办公/聚会）/ scene 佩戴实拍生成场景大片（跳过分析，场景清单 `ai_pipeline.SCENES` 服务端硬编码）；参考图送模型前统一压缩（最长边 1280）；pending/generating 卡死看门狗读取时自愈；匹配权重 `config/expo_matching.yaml`（主推 must_recommend 置顶 2026-07-13 起、至臻锚点只换非主推位、性别过滤全灭自动降级）；设计文档 `docs/requirements/2026-07-03-expo-ai-wig-tryon.md`）
 - `app/mini/` — 微信小程序端（router/service/auth/schemas — 扫码报工/历史/总览/撤销/登录绑定）
 
@@ -274,6 +274,25 @@ ACCIO WORK 询盘推送
   └── 4 条批量 SQL + 内存聚合（无 N+1）
 ```
 
+### 5. 订单发票 Excel/WPS 快速导入数据流
+
+```
+Excel/WPS 框选六列明细 → 浏览器读取 text/plain 制表符文本
+  ├── 前端解析表头、保留来源行号、限制单批最多 200 行
+  └── POST /api/invoice/import/preview（invoice:write）
+
+后端只读批量预检
+  ├── 一次加载 OKKI 产品投影并建立规范化索引
+  ├── 批量解析 SKU、标准价与客户价，返回 passed/warning/blocked
+  ├── 保留 Excel 成交价；跨币种不换汇、不直接比较
+  └── 返回 batch_fingerprint；不创建发票或定制产品、不写数据库
+
+用户处理阻断行 → 加入当前编辑器产品列表
+  └── 仍走原发票保存、校验与 OKKI 推单流程；加入列表本身不保存
+```
+
+详细字段、匹配规则和验收口径见 [发票 Excel 快速粘贴导入设计](superpowers/specs/2026-07-14-invoice-quick-paste-import-design.md)。
+
 ## 外部集成
 
 ### ACCIO WORK（客户机会台）
@@ -309,7 +328,7 @@ ACCIO WORK 询盘推送
 
 ## 技术债务
 
-1. **测试覆盖不足**：当前覆盖提成 27 + design 状态机/冲突引擎 34 + scheduler smoke 10 = 71 tests；tracking 轮询 / insight 完整链路 / stock 计算 / design router 端到端仍欠
+1. **测试覆盖不均**：截至 2026-07-15，`backend/tests` 可收集 587 个测试；核心业务已有回归覆盖，但外部集成和部分端到端链路仍需持续补强
 2. **ORM relationship lazy 策略**：历史遗留 `lazy="selectin"` 在大表上有 N+1 风险，新增表应默认 `lazy="noload"`，由 query 显式控制加载
 3. **批量循环服务容易漏 import**：`folder_upload_service` 这类「逐文件 + try/except」结构里，循环体用到的名字漏 import 时 `NameError` 被外层 except 吞掉，表现为"任务跑完但全部 failed"
 
@@ -323,6 +342,6 @@ ACCIO WORK 询盘推送
 
 ## 参考资料
 
-- **项目根 CLAUDE.md**：完整的 AI 协作说明（930 行）
-- **alembic/versions/**：数据库迁移历史（044 个迁移文件）
+- **项目根 CLAUDE.md**：精简后的 AI 协作宪法
+- **alembic/versions/**：数据库迁移历史（截至 2026-07-15 共 71 个迁移文件）
 - **backend/sql/**：DDL 脚本归档
