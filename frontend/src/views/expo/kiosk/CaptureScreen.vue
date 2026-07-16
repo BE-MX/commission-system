@@ -4,6 +4,7 @@
       <!-- 相机可用：实时取景；不可用：文件选择兜底 -->
       <video v-show="cameraOn && !previewUrl" ref="videoEl" autoplay playsinline muted />
       <img v-if="previewUrl" :src="previewUrl" class="preview" alt="预览" />
+      <div v-if="flashing" class="flash" aria-hidden="true" />
 
       <div v-if="!previewUrl" class="guide" />
       <div class="corner tl" /><div class="corner tr" />
@@ -126,7 +127,10 @@ onMounted(async () => {
   }
 })
 
-onBeforeUnmount(stopCamera)
+onBeforeUnmount(() => {
+  stopCamera()
+  if (flashTimer) clearTimeout(flashTimer)
+})
 
 function stopCamera() {
   if (stream) {
@@ -137,6 +141,10 @@ function stopCamera() {
 
 function snap() {
   const video = videoEl.value
+  // 即时反馈：先冻结取景画面 + 快门闪一下，再做异步 toBlob——否则平板 WebView 上
+  // toBlob 有可感延迟，快门像"点了没反应"
+  video.pause()
+  triggerFlash()
   const size = Math.min(video.videoWidth, video.videoHeight)
   const canvas = document.createElement('canvas')
   canvas.width = canvas.height = Math.min(size, 1080)
@@ -147,9 +155,18 @@ function snap() {
     0, 0, canvas.width, canvas.height,
   )
   canvas.toBlob(blob => {
+    if (!blob) { video.play?.()?.catch(() => {}); return } // 极端失败恢复取景
     photoBlob = blob
     previewUrl.value = URL.createObjectURL(blob)
   }, 'image/jpeg', 0.9)
+}
+
+const flashing = ref(false)
+let flashTimer = null
+function triggerFlash() {
+  flashing.value = true
+  if (flashTimer) clearTimeout(flashTimer)
+  flashTimer = setTimeout(() => { flashing.value = false }, 180)
 }
 
 function onFilePick(event) {
@@ -164,6 +181,8 @@ function retake() {
   if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
   previewUrl.value = ''
   photoBlob = null
+  // 恢复取景（snap 时 pause 了）；仅相机路径，文件选择兜底下 video 无流，play() 会 reject
+  if (cameraOn.value) videoEl.value?.play?.()?.catch(() => {})
 }
 
 async function confirm() {
@@ -191,6 +210,10 @@ video, .preview {
   object-fit: cover; transform: scaleX(-1); /* 镜像取景更符合直觉 */
 }
 .preview { transform: none; }
+/* 快门闪：按下即时反馈，白幕快速淡出 */
+.flash { position: absolute; inset: 0; z-index: 6; background: #fff; animation: shutter-flash 180ms ease-out forwards; }
+@keyframes shutter-flash { from { opacity: 0.85; } to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .flash { animation-duration: 90ms; } }
 .guide {
   /* 中心 40%：头部落在画面上三分之一附近，下方多容纳肩颈上身（2026-07-13 拍摄构图引导） */
   position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%);
