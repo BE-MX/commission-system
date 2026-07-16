@@ -25,6 +25,7 @@ class ImageInput(TypedDict):
 
 IMAGE_PARAMETER_KEYS = {
     "background",
+    "input_fidelity",  # gpt-image edits：high 强力保留输入图脸部/细节（治合成脸变形，2026-07-16）
     "moderation",
     "n",
     "output_compression",
