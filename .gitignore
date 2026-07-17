@@ -55,3 +55,6 @@ backend/reference.docx
 
 # unknowns 实现笔记（临时，验收后删除）
 docs/implementation-notes.md
+
+# PM Hub 资料文件（商业数据，永不进 git）
+backend/data/

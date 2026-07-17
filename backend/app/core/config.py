@@ -137,6 +137,13 @@ class Settings(BaseSettings):
     OKKI_CLIENT_SECRET: str = ""
     OKKI_API_BASE: str = "https://api-sandbox.xiaoman.cn"  # api-sandbox 即正式域名（官方文档确认）
 
+    # ── PM 项目资料协作站 ─────────────────────────────────
+    PM_TOKEN_SECRET: str = ""  # HMAC 签名密钥；留空回退 JWT_SECRET_KEY
+    PM_TOKEN_TTL_DAYS: int = 30  # 进入 token 有效期（天）
+    PM_TOKEN_EPOCH: int = 1  # 全局版本号 salt：+1 即全员重新验证（极端情况兜底）
+    PM_FILE_SIGN_TTL_SECONDS: int = 300  # 下载/预览签名 URL 短时效（秒）
+    PM_MAX_UPLOAD_MB: int = 50  # 单文件上传上限（frp 隧道带宽是全站稀缺资源）
+
     @field_validator("CORS_ALLOW_ORIGINS", mode="before")
     @classmethod
     def _split_origins(cls, v):
