@@ -43,6 +43,9 @@ async def lifespan(app: FastAPI):
 
         auto_init_ai_presets()
 
+        from app.pm.bootstrap import init_pm_module
+        init_pm_module()  # PM 协作站：存储目录自检 + pm_diff preset + 差异看门狗
+
         yield
         # --- 关闭 ---
         shutdown_scheduler(_scheduler)

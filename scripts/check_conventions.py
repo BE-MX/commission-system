@@ -29,11 +29,12 @@ REPO = Path(__file__).resolve().parent.parent
 AUTH_PATTERNS = re.compile(
     r"require_permission|require_any_permission|get_current_user"
     r"|get_current_mini_user|_require_\w+|_verify_\w+"
+    r"|require_pm_member"  # PM 协作站自定义鉴权（验签+回查白名单），登记即逐端点强制
 )
 # 无鉴权豁免的 router 文件（机器对机器/公开入口，均有刻意决策记录）
 AUTH_EXEMPT_FILES = ("mini/router.py", "auth/router.py", "api/short_link.py", "stock/public_router.py")
 # 无鉴权豁免的端点路径关键词
-AUTH_EXEMPT_ROUTES = ("share", "callback", "login", "health", "print/")
+AUTH_EXEMPT_ROUTES = ("share", "callback", "login", "health", "print/", "entry")  # entry=PM门牌换token(限速+防枚举)
 
 FORBIDDEN_EXPO_WORDS = ["便宜", "划算", "性价比", "打折", "薅羊毛"]
 
@@ -105,8 +106,8 @@ def check(base: str) -> list[tuple[str, str, str]]:
 
     for file, lines in changes.items():
         posix = file.replace("\\", "/")
-        is_vue_view = posix.startswith("frontend/src/views/") and posix.endswith(".vue")
-        is_frontend = posix.startswith("frontend/src/")
+        is_vue_view = (posix.startswith(("frontend/src/views/", "frontend-pm/src/views/")) and posix.endswith(".vue"))
+        is_frontend = posix.startswith(("frontend/src/", "frontend-pm/src/"))
         is_backend = posix.startswith("backend/app/")
 
         for n, line in lines:

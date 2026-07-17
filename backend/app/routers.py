@@ -29,6 +29,7 @@ from app.invoice.router import router as invoice_router
 from app.expo.router import router as expo_router
 from app.aftersales.router import router as aftersales_router
 from app.mcp.token_admin import router as mcp_token_router
+from app.pm.router import router as pm_router
 
 
 def register_routers(app: FastAPI) -> None:
@@ -62,3 +63,4 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(expo_router, prefix="/api/expo", tags=["展会 AI 试戴"])
     app.include_router(aftersales_router, prefix="/api/aftersales", tags=["客户售后管理"])
     app.include_router(mcp_token_router, prefix="/api/mcp", tags=["MCP 网关 token 管理"])
+    app.include_router(pm_router, prefix="/api/pm", tags=["PM 项目资料协作站"])

@@ -1,0 +1,284 @@
+"""PM Hub router。全部端点（除 entry 与签名文件服务）走 require_pm_member。
+
+文件下载/预览端点 `/files/{version_id}` 刻意无 Depends——浏览器 <a>/<img>/iframe
+不带 Authorization header，用短时效签名 URL（素材模块同款模式），端点内
+_verify_pm_signature 校验签名 + 软删状态 + nosniff + HTML 强制 attachment。
+"""
+
+import logging
+import mimetypes
+from pathlib import Path
+from typing import Optional
+
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse
+from sqlalchemy.orm import Session
+
+from app.core.database import get_db
+from app.core.response import ok
+from app.pm import activity_service, material_service, task_service
+from app.pm.auth import (
+    PmIdentity,
+    check_entry_rate,
+    entry_fail,
+    issue_pm_token,
+    require_pm_member,
+)
+from app.pm.diff_service import run_diff_in_background
+from app.pm.models import PmMember
+from app.pm.schemas import EntryRequest, MaterialCreate, MaterialUpdate, TaskCreate, TaskUpdate
+from app.pm.service import (
+    audit,
+    build_signed_file_url,
+    get_default_project,
+    verify_file_sign,
+)
+
+logger = logging.getLogger("commission")
+
+router = APIRouter()
+
+
+# ── 进入与身份 ───────────────────────────────────────────────────────
+
+@router.post("/entry")
+def entry(payload: EntryRequest, db: Session = Depends(get_db)):
+    """门牌：白名单用户名换 token。失败提示统一，不区分原因（防枚举）。"""
+    username = payload.username.strip()
+    check_entry_rate(username)
+    member = (
+        db.query(PmMember)
+        .filter(PmMember.username == username, PmMember.is_active == 1)
+        .first()
+    )
+    if not member:
+        raise entry_fail()
+    token = issue_pm_token(member.username)
+    try:
+        project = get_default_project(db)
+        audit(db, project.id, member.username, "entry", "member", member.id, member.display_name)
+        db.commit()
+    except ValueError as exc:  # 项目未 seed 时不阻塞进入（seed 脚本执行前的窗口期）
+        logger.warning("[PM] entry audit skipped (project missing): %s", exc)
+        print(f"[PM] entry audit skipped (project missing): {exc}", flush=True)
+    return ok({"token": token, "username": member.username, "display_name": member.display_name})
+
+
+@router.get("/me")
+def me(identity: PmIdentity = Depends(require_pm_member)):
+    return ok({"username": identity.username, "display_name": identity.display_name})
+
+
+@router.get("/members")
+def list_members(db: Session = Depends(get_db), identity: PmIdentity = Depends(require_pm_member)):
+    members = (
+        db.query(PmMember)
+        .filter(PmMember.is_active == 1)
+        .order_by(PmMember.id)
+        .all()
+    )
+    return ok([{"username": m.username, "display_name": m.display_name} for m in members])
+
+
+# ── 仪表盘 ───────────────────────────────────────────────────────────
+
+@router.get("/dashboard")
+def get_dashboard(db: Session = Depends(get_db), identity: PmIdentity = Depends(require_pm_member)):
+    project = get_default_project(db)
+    return ok(activity_service.dashboard(db, project.id))
+
+
+# ── 资料库 ───────────────────────────────────────────────────────────
+
+@router.get("/materials")
+def list_materials(db: Session = Depends(get_db), identity: PmIdentity = Depends(require_pm_member)):
+    project = get_default_project(db)
+    return ok(material_service.list_materials(db, project.id))
+
+
+@router.post("/materials")
+def create_material(payload: MaterialCreate, db: Session = Depends(get_db),
+                    identity: PmIdentity = Depends(require_pm_member)):
+    project = get_default_project(db)
+    material = material_service.create_material(db, project.id, identity.username, payload.model_dump())
+    return ok(material_service.material_to_dict(material), message="已新增资料条目")
+
+
+@router.get("/materials/{material_id}")
+def material_detail(material_id: int, db: Session = Depends(get_db),
+                    identity: PmIdentity = Depends(require_pm_member)):
+    material = material_service.get_material(db, material_id)
+    if not material:
+        raise HTTPException(status_code=404, detail="资料不存在")
+    versions = material_service.list_versions(db, material_id)
+    current = material_service.current_version(db, material_id)
+    data = material_service.material_to_dict(material, current, len([v for v in versions if not v["is_deleted"]]))
+    data["versions"] = versions
+    return ok(data)
+
+
+@router.put("/materials/{material_id}")
+def update_material(material_id: int, payload: MaterialUpdate, db: Session = Depends(get_db),
+                    identity: PmIdentity = Depends(require_pm_member)):
+    material = material_service.get_material(db, material_id)
+    if not material:
+        raise HTTPException(status_code=404, detail="资料不存在")
+    data = payload.model_dump(exclude_unset=True)
+    material = material_service.update_material(db, material, identity.username, data)
+    return ok(material_service.material_to_dict(material), message="已保存")
+
+
+@router.delete("/materials/{material_id}")
+def delete_material(material_id: int, db: Session = Depends(get_db),
+                    identity: PmIdentity = Depends(require_pm_member)):
+    material = material_service.get_material(db, material_id)
+    if not material:
+        raise HTTPException(status_code=404, detail="资料不存在")
+    material_service.delete_material(db, material, identity.username)
+    return ok(message="已删除（软删除，留痕可恢复）")
+
+
+# ── 版本 ─────────────────────────────────────────────────────────────
+
+@router.post("/materials/{material_id}/versions")
+async def upload_version(material_id: int, background_tasks: BackgroundTasks,
+                         file: UploadFile = File(...), change_note: str = Form(""),
+                         db: Session = Depends(get_db),
+                         identity: PmIdentity = Depends(require_pm_member)):
+    material = material_service.get_material(db, material_id)
+    if not material:
+        raise HTTPException(status_code=404, detail="资料不存在")
+    content = await file.read()
+    version = material_service.upload_version(
+        db, material, identity.username,
+        file.filename or "unnamed", content, file.content_type, change_note,
+    )
+    if version.diff_status == "pending":
+        background_tasks.add_task(run_diff_in_background, version.id)
+    return ok(material_service.version_to_dict(version, material), message=f"已上传 v{version.version_no}")
+
+
+@router.delete("/versions/{version_id}")
+def delete_version(version_id: int, db: Session = Depends(get_db),
+                   identity: PmIdentity = Depends(require_pm_member)):
+    version = material_service.get_version(db, version_id)
+    if not version or version.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="版本不存在")
+    material_service.delete_version(db, version, identity.username)
+    return ok(message="已删除该版本")
+
+
+@router.get("/versions/{version_id}/file-link")
+def file_link(version_id: int, disposition: str = Query("attachment", pattern="^(attachment|inline)$"),
+              db: Session = Depends(get_db), identity: PmIdentity = Depends(require_pm_member)):
+    """签发短时效下载/预览 URL（浏览器直链不带 Authorization，故走签名）。"""
+    version = material_service.get_version(db, version_id)
+    if not version or version.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="版本不存在或已删除")
+    material = material_service.get_material(db, version.material_id)
+    if not material:
+        raise HTTPException(status_code=404, detail="资料不存在或已删除")
+    if disposition == "inline" and not material_service.inline_disposition_allowed(version):
+        disposition = "attachment"
+    return ok({
+        "url": build_signed_file_url(version.id, disposition),
+        "download_name": material_service.download_name(material.name, version),
+    })
+
+
+@router.post("/versions/{version_id}/retry-diff")
+def retry_diff(version_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db),
+               identity: PmIdentity = Depends(require_pm_member)):
+    version = material_service.get_version(db, version_id)
+    if not version or version.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="版本不存在")
+    if version.diff_status not in ("failed", "pending"):
+        raise HTTPException(status_code=400, detail="当前状态无需重试")
+    material_service.mark_diff_running(db, version.id)
+    project = get_default_project(db)
+    audit(db, project.id, identity.username, "retry_diff", "version", version.id, f"v{version.version_no}")
+    db.commit()
+    background_tasks.add_task(run_diff_in_background, version.id)
+    return ok(message="已重新加入差异概要队列")
+
+
+# ── 签名文件服务（无 Depends：签名即鉴权，见文件头注释）──────────────────
+
+def _verify_pm_signature(version_id: int, token: str, expires: int) -> None:
+    if not verify_file_sign(version_id, token, expires):
+        raise HTTPException(status_code=403, detail="链接已过期或无效")
+
+
+@router.get("/files/{version_id}")
+def serve_file(version_id: int, token: str = Query(""), expires: int = Query(0),
+               disposition: str = Query("attachment"), db: Session = Depends(get_db)):
+    _verify_pm_signature(version_id, token, expires)
+    version = material_service.get_version(db, version_id)
+    if not version or version.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="文件不存在或已删除")
+    material = material_service.get_material(db, version.material_id)
+    if not material:
+        raise HTTPException(status_code=404, detail="资料不存在或已删除")
+    abs_path = material_service.to_abs(version.file_path)
+    if not abs_path.exists():
+        raise HTTPException(status_code=404, detail="文件已丢失，请联系管理员")
+    ext = Path(version.original_name).suffix.lower()
+    inline = disposition == "inline" and material_service.inline_disposition_allowed(version)
+    media_type = mimetypes.guess_type(f"a{ext}")[0] or "application/octet-stream"
+    if inline and ext in (".md", ".markdown", ".txt", ".log", ".csv", ".json"):
+        media_type = "text/plain; charset=utf-8"  # MD 由前端 sanitize 后渲染，不内联 HTML
+    return FileResponse(
+        str(abs_path),
+        filename=material_service.download_name(material.name, version),
+        media_type=media_type,
+        content_disposition_type="inline" if inline else "attachment",
+        headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store"},
+    )
+
+
+# ── 任务看板 ─────────────────────────────────────────────────────────
+
+@router.get("/tasks")
+def list_tasks(assignee: Optional[str] = None, phase: Optional[int] = None,
+               db: Session = Depends(get_db), identity: PmIdentity = Depends(require_pm_member)):
+    project = get_default_project(db)
+    return ok(task_service.list_tasks(db, project.id, assignee, phase))
+
+
+@router.post("/tasks")
+def create_task(payload: TaskCreate, db: Session = Depends(get_db),
+                identity: PmIdentity = Depends(require_pm_member)):
+    project = get_default_project(db)
+    task = task_service.create_task(db, project.id, identity.username, payload.model_dump())
+    return ok(task_service.task_to_dict(task), message="已创建任务")
+
+
+@router.put("/tasks/{task_id}")
+def update_task(task_id: int, payload: TaskUpdate, db: Session = Depends(get_db),
+                identity: PmIdentity = Depends(require_pm_member)):
+    task = task_service.get_task(db, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    data = payload.model_dump(exclude_unset=True)
+    task = task_service.update_task(db, task, identity.username, data)
+    return ok(task_service.task_to_dict(task), message="已保存")
+
+
+@router.delete("/tasks/{task_id}")
+def delete_task(task_id: int, db: Session = Depends(get_db),
+                identity: PmIdentity = Depends(require_pm_member)):
+    task = task_service.get_task(db, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    task_service.delete_task(db, task, identity.username)
+    return ok(message="已删除任务")
+
+
+# ── 全站动态 ─────────────────────────────────────────────────────────
+
+@router.get("/activity")
+def list_activity(username: Optional[str] = None, object_type: Optional[str] = None,
+                  limit: int = Query(50, le=200), offset: int = 0,
+                  db: Session = Depends(get_db), identity: PmIdentity = Depends(require_pm_member)):
+    project = get_default_project(db)
+    return ok(activity_service.list_activity(db, project.id, username, object_type, limit, offset))
