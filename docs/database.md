@@ -143,3 +143,9 @@
 - `ark_aftersales_events`：不可变审计事件；`case_id` 可空以记录 SOP 启用等模块级事件。
 - `ark_aftersales_sop_versions`：原始 SOP、解析条款、问题映射、版本状态及启用信息。
 - `ark_aftersales_notification_logs`：按业务事件与接收人幂等的钉钉 outbox、重试次数和下次重试时间；接收人未绑定钉钉时 ID 可空。
+
+## 培训速递（迁移 075）
+
+- `ark_training_digests`：培训速递主表——基本信息（培训名/机构/讲师/日期/参训人/标签）、一句话总结、`sections_json` 结构化分区（重点/亮点/可应用点/方法/参训人点评）、draft/published 状态、阅读时长与浏览/有用计数。
+- `ark_training_digest_files`：原始资料附件元数据，`storage_path` 相对 `TRAINING_STORAGE_ROOT` 私有目录；删除主表行时 service 层负责删行+清盘（不依赖 CASCADE）。
+- `ark_training_digest_feedback`：「有用」轻反馈，`(digest_id, user_id, kind)` 唯一约束防重复。
