@@ -1,0 +1,54 @@
+/* ─────────────────────────────────────────────────────────────
+   PM Hub 设计系统 · tokens
+   气质：独立、克制、有编辑感——一份精心排版的项目文件，不是管理后台。
+   与方舟平台零视觉血缘：纸面 + 墨色 + 一点朱砂。
+   ───────────────────────────────────────────────────────────── */
+
+:root {
+  /* 纸面与墨色 */
+  --paper: #faf8f5;
+  --paper-raised: #ffffff;
+  --paper-sunken: #f3f0ea;
+  --ink: #1c1b19;
+  --ink-2: #57534d;
+  --ink-3: #8a857c;
+  --ink-4: #b5afa4;
+  --hairline: #e6e1d8;
+  --hairline-strong: #d4cec2;
+
+  /* 朱砂——唯一主色，用于关键动作、必须项、当前态 */
+  --cinnabar: #b23a26;
+  --cinnabar-deep: #96301f;
+  --cinnabar-wash: #f7e9e5;
+  --cinnabar-line: #e5c4bc;
+
+  /* 状态色（仅用于徽标，不作装饰） */
+  --amber: #9a6a1c;
+  --amber-wash: #f5eedd;
+  --amber-line: #e0cfa3;
+  --sage: #4e6e54;
+  --sage-wash: #e9efe7;
+  --sage-line: #c2d2c0;
+  --slate: #4a5a6a;
+  --slate-wash: #e9edf1;
+  --slate-line: #c3cdd6;
+
+  /* 字体 */
+  --font-serif: "Songti SC", "STSong", "STZhongsong", "SimSun", "Noto Serif SC", Georgia, "Times New Roman", serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-mono: "SF Mono", "JetBrains Mono", "Cascadia Mono", Consolas, "Courier New", monospace;
+
+  /* 动效（Emil Kowalski 纪律：自定义强曲线、UI <300ms、只动 transform/opacity） */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --dur-fast: 140ms;
+  --dur-med: 220ms;
+
+  /* 尺度 */
+  --radius: 3px;
+  --radius-lg: 5px;
+  --shadow-raised: 0 1px 2px rgba(28, 27, 25, 0.05), 0 4px 16px rgba(28, 27, 25, 0.05);
+  --shadow-overlay: 0 2px 6px rgba(28, 27, 25, 0.06), 0 12px 40px rgba(28, 27, 25, 0.12);
+  --content-max: 1160px;
+}
