@@ -18,6 +18,7 @@ const SALESPERSON_CODES = [
   'asset:read', 'asset_favorites:read', 'asset_stats:read',
   'design:read', 'design:write', 'design_gantt:read', 'design_my:read',
   'expo:write', 'expo_lead:read', 'expo_lead:write',
+  'training:read', 'training:write',
 ]
 
 const SUPERVISOR_CODES = [
@@ -45,6 +46,7 @@ export const ROLE_TEMPLATES = [
       'color:read', 'color:write', 'color_blend:read', 'color_trend:read',
       'insight:read', 'insight_library:read', 'insight_daily:read',
       'insight_case:read', 'insight_minutes:read',
+      'training:read', 'training:write',
     ],
   },
   {
@@ -62,6 +64,7 @@ export const ROLE_TEMPLATES = [
       'payment:read', 'payment:write',
       'invoice:read', 'invoice:write', 'invoice:sync', 'invoice:read_all',
       'report:read',
+      'training:read', 'training:write',
     ],
   },
   { key: 'admin', label: '管理员', all: true, codes: [] },

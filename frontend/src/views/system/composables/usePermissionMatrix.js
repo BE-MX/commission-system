@@ -65,6 +65,7 @@ export const PREFIX_LABELS = {
   governance: '数据治理',
   governance_graph: '全景关系图',
   governance_log: '变更历史',
+  training: '培训速递',
   external_binding: '外部账号绑定',
   whatsapp: 'WhatsApp 同步',
   dingtalk: '钉钉集成',
@@ -120,6 +121,7 @@ const ROW_GROUPS = [
   { label: '营销 · 展会与洞见', prefixes: [
     'expo', 'expo_hair_color', 'expo_scene', 'expo_script', 'expo_lead',
     'insight', 'insight_library', 'insight_daily', 'insight_ai_tools', 'insight_case', 'insight_minutes',
+    'training',
     'asset', 'asset_favorites', 'asset_stats',
     'color', 'color_blend', 'color_trend',
     'design', 'design_gantt', 'design_my', 'design_stats',
