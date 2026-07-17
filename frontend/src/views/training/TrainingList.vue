@@ -85,7 +85,7 @@
           <template #default="{ row }">
             <GlassButton variant="link" left-icon="View" @click.stop="openDetail(row)">查看</GlassButton>
             <GlassButton
-              v-if="row.can_edit || mineOnly"
+              v-if="canEditRow(row)"
               variant="link"
               left-icon="Edit"
               @click.stop="router.push(`/training/digests/${row.id}/edit`)"
@@ -114,10 +114,16 @@ import { useRouter } from 'vue-router'
 import { listDigests } from '@/api/training'
 import { useListPage } from '@/composables/useListPage'
 import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
+import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
+const auth = useAuthStore()
 const { tableRef, maxHeight } = useTableMaxHeight()
 const mineOnly = ref(false)
+
+function canEditRow(row) {
+  return row.created_by === auth.user?.id || auth.hasPermission('training:admin')
+}
 
 const {
   loading, list, total, page, pageSize, searchForm: filters,

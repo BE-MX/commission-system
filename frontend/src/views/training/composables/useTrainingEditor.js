@@ -5,7 +5,7 @@
  */
 import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   createDigest, getDigest, updateDigest, uploadDigestFile, deleteDigestFile,
   generateDraft, publishDigest,
@@ -251,6 +251,10 @@ export function useTrainingEditor() {
       sections.applications = d.applications || []
       sections.methods = d.methods || []
       draftDone.value = true
+      // 立即静默落库：AI 结果只在内存的话，关页即丢、token 白烧
+      try {
+        await updateDigest(id, payload())
+      } catch { /* 保存失败拦截器已提示，不阻断进入校对 */ }
       msgSuccess('AI 草稿生成')
       step.value = 3
     } finally {
@@ -275,7 +279,8 @@ export function useTrainingEditor() {
     try {
       await ensureCreated()
       const res = await publishDigest(digestId.value)
-      msgSuccess(res.data?.pushed ? '发布并推送钉钉群' : '发布')
+      // 用后端 message：推送失败时会指路"可在详情页重推"
+      ElMessage.success(res.message || '已发布')
       router.replace(`/training/digests/${digestId.value}`)
     } finally {
       publishing.value = false

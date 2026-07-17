@@ -29,6 +29,7 @@
         </div>
         <div class="action-row">
           <GlassButton
+            v-if="detail.status === 'published'"
             :variant="detail.my_useful ? 'primary' : 'outline'"
             left-icon="Star"
             @click="onToggleUseful"
@@ -126,7 +127,7 @@
 import { computed, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getDigest, toggleUseful, pushDigest, downloadDigestFile } from '@/api/training'
-import { msgSuccess } from '@/utils/feedback'
+import { msgSuccess, msgError } from '@/utils/feedback'
 
 const route = useRoute()
 const router = useRouter()
@@ -189,6 +190,9 @@ async function onDownload(f) {
     a.download = f.file_name
     a.click()
     URL.revokeObjectURL(url)
+  } catch (err) {
+    // blob 错误响应体是 Blob，拦截器读不出中文 detail；404 已 suppress，由这里给唯一提示
+    if (err?.response?.status === 404) msgError('附件文件缺失，请联系发布人重新上传')
   } finally {
     downloadingId.value = null
   }

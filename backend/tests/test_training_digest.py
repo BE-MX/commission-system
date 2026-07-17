@@ -132,6 +132,44 @@ def test_useful_toggle_and_unique_guard(db):
     db.rollback()
 
 
+def test_push_published_actually_awaits_webhook(db, monkeypatch):
+    """守护 2026-07-17 审查 P0：send_action_card 是 async，必须真正执行而非裸调协程。"""
+    user = _user(db, "pusher")
+    digest = _create(db, user)
+    _fill_valid_sections(db, digest)
+    service.publish_digest(db, digest)
+
+    calls = []
+
+    class _StubSender:
+        async def send_action_card(self, title, text, btns, btn_orientation="1"):
+            calls.append((title, btns))
+            return True
+
+    monkeypatch.setattr("app.dingtalk.webhook.get_webhook_sender", lambda: _StubSender())
+    from app.training import push_service
+
+    assert push_service.push_published(digest, "亮哥") is True
+    assert calls, "webhook 协程未被真正执行"
+    assert str(digest.id) in calls[0][1][0]["actionURL"]
+
+
+def test_push_published_returns_false_on_sender_error(db, monkeypatch):
+    user = _user(db, "pusher2")
+    digest = _create(db, user)
+    _fill_valid_sections(db, digest)
+    service.publish_digest(db, digest)
+
+    class _BrokenSender:
+        async def send_action_card(self, *a, **kw):
+            raise RuntimeError("webhook 未配置")
+
+    monkeypatch.setattr("app.dingtalk.webhook.get_webhook_sender", lambda: _BrokenSender())
+    from app.training import push_service
+
+    assert push_service.push_published(digest, "亮哥") is False
+
+
 # ---------------- AI 草稿清洗 ----------------
 
 def test_sanitize_draft_clamps_untrusted_ai_output():

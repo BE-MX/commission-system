@@ -273,10 +273,16 @@ def toggle_useful(db: Session, digest: TrainingDigest, user_id: int) -> dict:
         .first()
     )
     if existing:
-        db.delete(existing)
-        db.query(TrainingDigest).filter(
-            TrainingDigest.id == digest.id, TrainingDigest.useful_count > 0
-        ).update({TrainingDigest.useful_count: TrainingDigest.useful_count - 1})
+        # 按行数确认删除：并发双取消时只有真正删掉行的那个事务扣减，防止双倍下漂
+        deleted = (
+            db.query(TrainingDigestFeedback)
+            .filter(TrainingDigestFeedback.id == existing.id)
+            .delete()
+        )
+        if deleted:
+            db.query(TrainingDigest).filter(
+                TrainingDigest.id == digest.id, TrainingDigest.useful_count > 0
+            ).update({TrainingDigest.useful_count: TrainingDigest.useful_count - 1})
         db.commit()
         marked = False
     else:

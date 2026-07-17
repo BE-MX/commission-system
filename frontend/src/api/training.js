@@ -34,11 +34,13 @@ export function deleteDigestFile(fileId) {
   return trainingClient.delete(`/files/${fileId}`)
 }
 
-// 附件下载：浏览器直链不带 JWT（cerebrum 2026-07-12），必须 axios blob
+// 附件下载：浏览器直链不带 JWT（cerebrum 2026-07-12），必须 axios blob；
+// 404 静默交给调用方给中文提示（blob 错误体拦截器解不出 detail）
 export function downloadDigestFile(fileId) {
   return trainingClient.get(`/files/${fileId}/download`, {
     responseType: 'blob',
     timeout: 300000,
+    suppressNotFound: true,
   })
 }
 

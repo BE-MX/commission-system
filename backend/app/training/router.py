@@ -8,6 +8,7 @@ import logging
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_any_permission, require_permission
@@ -126,15 +127,21 @@ async def upload_file(
     except file_service.FileValidationError as e:
         raise HTTPException(status_code=400, detail=str(e))
     rel_path = file_service.store_bytes(file.filename or "file", content)
-    item = service.add_file(
-        db,
-        digest,
-        file_name=file.filename or "file",
-        storage_path=rel_path,
-        file_size=len(content),
-        mime_type=file.content_type or "application/octet-stream",
-        uploaded_by=int(current_user["sub"]),
-    )
+    try:
+        item = service.add_file(
+            db,
+            digest,
+            file_name=file.filename or "file",
+            storage_path=rel_path,
+            file_size=len(content),
+            mime_type=file.content_type or "application/octet-stream",
+            uploaded_by=int(current_user["sub"]),
+        )
+    except IntegrityError:
+        # 主单被并发删除：回滚 + 回收已落盘文件，不留孤儿
+        db.rollback()
+        file_service.remove_quietly(rel_path)
+        raise HTTPException(status_code=409, detail="这条速递已被删除，请刷新后重试")
     return ok(
         {"id": item.id, "file_name": item.file_name, "file_size": item.file_size, "mime_type": item.mime_type},
         message="资料已上传",

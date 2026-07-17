@@ -30,7 +30,7 @@ def upgrade():
         sa.Column("org", sa.String(120), comment="主办机构/平台"),
         sa.Column("lecturer", sa.String(120), comment="讲师"),
         sa.Column("trained_at", sa.Date(), nullable=False, comment="培训日期"),
-        sa.Column("attendees_json", sa.JSON(), comment="参训人 [{user_id,name}]，含非平台用户时 user_id 为空"),
+        sa.Column("attendees_json", sa.JSON(), comment="参训人姓名列表 [str]"),
         sa.Column("tags_json", sa.JSON(), comment="标签 [str]：平台类(TikTok/亚马逊…)+主题类(投流/选品/AI工具…)"),
         sa.Column("summary", sa.String(200), comment="一句话总结（模板★区，发布时必填）"),
         sa.Column("sections_json", sa.JSON(), comment="结构化分区内容，schema 见 app/training/schemas.py TEMPLATE_SECTIONS"),
