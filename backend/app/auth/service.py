@@ -365,6 +365,10 @@ def seed_role_permissions(db: Session):
         ("governance:admin",      "governance", "admin",      "审批/废弃/回滚/批量导入/删除关联"),
         ("governance_graph:read", "governance", "read",       "查看全景关系图"),
         ("governance_log:read",   "governance", "read",       "查看变更历史"),
+        # 培训速递
+        ("training:read",         "training",   "read",       "查看培训速递"),
+        ("training:write",        "training",   "write",      "发布/编辑自己的培训速递 / AI 提炼 / 上传资料 / 钉钉推送"),
+        ("training:admin",        "training",   "admin",      "管理全部培训速递（编辑/下架/删除）"),
         # 客户机会台
         ("customer_opportunity:read",   "customer_opportunity", "read",   "查看客户机会（本人）"),
         ("customer_opportunity:write",  "customer_opportunity", "write",  "更新机会状态/添加反馈"),
