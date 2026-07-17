@@ -107,7 +107,7 @@ def seed() -> None:
             print(f"[seed_pm] 任务已存在 {task_count} 条，跳过")
 
         db.commit()
-        print("[seed_pm] done ✓")
+        print("[seed_pm] done")
         if do_reset:
             print("[seed_pm] 提示：backend/data/pm/ 下的旧文件仍在盘上（软删原则保留），确认无用后可手动清理")
 

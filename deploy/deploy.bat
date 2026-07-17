@@ -136,6 +136,12 @@ if errorlevel 1 (
     echo [ERROR] alembic migration failed
     goto :error
 )
+REM PM 协作站预置数据（幂等：已存在自动跳过，--reset 需手动执行）
+.\.venv\Scripts\python.exe scripts\seed_pm.py
+if errorlevel 1 (
+    echo [ERROR] PM seed failed
+    goto :error
+)
 REM Migration validation
 for /f "delims=" %%V in ('.\.venv\Scripts\python.exe -m alembic current 2^>nul') do set "CURRENT_REVISION=%%V"
 echo      Current revision: %CURRENT_REVISION%

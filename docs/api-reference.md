@@ -379,7 +379,7 @@
 - 运维：`POST /notifications/{id}/retry`；`GET|POST /sop/versions`、`POST /sop/versions/{id}/activate`。
 - 权限：看单接口（`options`/`cases`/`cases/{id}`/`timeline`/证据下载）`read`、`write`、`review`、`admin` 任一即可；录单流程（创建/编辑/证据/决策/证据豁免申请/`submit`/`withdraw`/`execute`/`close`）用 `aftersales:write`；审核决策（`review` 单据终审、`evidence-waiver/review` 证据豁免批复）用 `aftersales:review`；SOP、转交、重开和通知重试用 `aftersales:admin`；`aftersales_analytics:read` 控售后分析页，`aftersales:read_all` 仅控数据范围。角色三档：仅录单=`write`、录单+审核=`write`+`review`、仅审核=`review`（069 迁移已给存量 write 角色补授 review）。
 
-## PM 项目资料协作站（`/api/pm`，073 迁移，2026-07-17）
+## PM 项目资料协作站（`/api/pm`，076 迁移，2026-07-17）
 
 独立站点 pm.leshine.work 的后端。**鉴权独立于平台 RBAC**：`POST /entry` 用户名白名单换 HMAC token（30 天，PM_TOKEN_EPOCH 全局版本号 +1 全员重签）；其余端点统一 `require_pm_member`（验签 + 每请求回查 `ark_pm_members.is_active`——移除名单立即生效）。写操作全部落 `ark_pm_activity_logs` 审计。
 

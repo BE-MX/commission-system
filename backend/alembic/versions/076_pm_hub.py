@@ -1,23 +1,23 @@
 """pm hub: project material collaboration tables
 
-Revision ID: 073_pm_hub
-Revises: 072_expo_wig_color_images
+Revision ID: 076_pm_hub
+Revises: 075_training_digest
 Create Date: 2026-07-17
 
 PM 项目资料协作站（设计稿 docs/requirements/2026-07-17-pm-material-hub.md）。
 8 张表：项目/白名单/资料条目/资料版本/任务/任务资料关联/评论(P2)/审计日志。
 
-注意（并行 agent 约定）：若 codex 分支的 073_invoice_accessory_products /
-074_invoice_price_kind_key 先合并入 main，本迁移的 down_revision 需先改为
-074_invoice_price_kind_key 再执行 alembic upgrade head（多头分支取其一顺延）。
+沿革：原 073_pm_hub（down_revision=072）。合并时发现共享库已被 codex 的
+073_invoice/074_invoice/075_training_digest（后者当时未提交）占头——
+已把那三份迁移文件一并收编上 main，本迁移顺延为 076 接 075。
 """
 
 from alembic import op
 import sqlalchemy as sa
 
 
-revision = "073_pm_hub"
-down_revision = "072_expo_wig_color_images"
+revision = "076_pm_hub"
+down_revision = "075_training_digest"
 branch_labels = None
 depends_on = None
 

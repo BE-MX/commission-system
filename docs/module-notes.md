@@ -574,7 +574,7 @@ frontend/src/
 - 版本口径：版本号只增不复用（max 含已删 +1）；当前版本=未删除最大版本号；AI 差异「上一版」同口径。唯一约束 `(material_id, version_no)` + IntegrityError 重试 3 次（重试 helper `_next_version_no` 便于测试注入）。资料名项目内唯一，软删改名 `name#del{id}` 让位。
 - AI 差异管线：本地先算精确 diff（文本 difflib / xlsx openpyxl data_only 全 sheet 单元格级 / docx python-docx 含表格 / pdf pypdf 抽出为空=扫描件落 not_applicable），diff 截断 12k 字符再喂 `pm_diff` preset（启动时 bootstrap 幂等创建，复用 seed_ai._auto_create_preset）；BackgroundTask 内自建 SessionLocal（红线 4 线程池许可场景）；失败标 failed 可手动重试，不影响版本保存；启动看门狗回收 pending>600s。
 - 时间戳统一北京时间 `bj_now()`（同生产报工口径）。
-- 迁移编号冲突预警：本分支 `073_pm_hub` 与 codex 分支 `073_invoice_accessory_products`/`074_*` 同源于 072——**后到 main 的一方需把 down_revision 改指对方末尾再 `alembic upgrade head`**（alembic 多头会报错）。
+- 迁移编号冲突（已解决并落地）：合并时发现共享库被 codex 的 `073_invoice_accessory_products`/`074_invoice_price_kind_key`/`075_training_digest`（后者当时未提交进任何分支）占头。处理：三份迁移文件收编上 main（内容逐字不动），本模块迁移顺延为 `076_pm_hub`（down_revision=075_training_digest），DB 已升级到 076。**启示：建迁移先查 `git log --all` + DB alembic_version，codex 合并其分支时 075 与 main 内容一致可干净落并**
 
 **本地预览（无需 MySQL/.env）**
 `python backend/scripts/pm_dev_server.py --port 8003`：SQLite 文件库 + 演示数据 + 托管 `frontend-pm/dist`；`/dev-enter?u=<username>` 开发专用免门牌写 localStorage 直进。前端开发：`cd frontend-pm && npm run dev`（:3100，代理 /api → PM_API_TARGET 或 localhost:8001）。

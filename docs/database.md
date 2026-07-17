@@ -144,7 +144,7 @@
 - `ark_aftersales_sop_versions`：原始 SOP、解析条款、问题映射、版本状态及启用信息。
 - `ark_aftersales_notification_logs`：按业务事件与接收人幂等的钉钉 outbox、重试次数和下次重试时间；接收人未绑定钉钉时 ID 可空。
 
-## PM 项目资料协作站（迁移 073_pm_hub，8 张表，2026-07-17）
+## PM 项目资料协作站（迁移 076_pm_hub，8 张表，2026-07-17）
 
 - `ark_pm_projects`：咨询项目（本期仅 1 条 alibaba-ai-agent；code UNIQUE，project 维度为后续项目复用留口）。
 - `ark_pm_members`：用户名白名单（username UNIQUE 非真名拼音；is_active=0 即移出名单，token 每请求回查立即失效）。
