@@ -354,3 +354,75 @@ class TestApiFlow:
             task = next(t for t in resp.json()["data"] if t["id"] == tid)
             assert task["status"] == "blocked"
             assert task["materials"][0]["name"] == "价格体系"
+
+
+# ── 对抗性审查回归（2026-07-17）─────────────────────────────────────
+
+class TestAdversarialRegression:
+    def test_external_url_scheme_rejected(self, db, pm_seed):
+        """javascript: 外链是存储型 XSS（本站 token 即身份）——必须拒绝。"""
+        with pytest.raises(ValueError, match="http"):
+            material_service.create_material(
+                db, pm_seed["project"].id, "liang.xz26",
+                {"name": "恶意链接", "delivery_type": "link", "external_url": "javascript:alert(1)"},
+            )
+        # update 路径同样拒绝
+        m = pm_seed["material"]
+        with pytest.raises(ValueError, match="http"):
+            material_service.update_material(db, m, "liang.xz26", {"external_url": "data:text/html,x"})
+
+    def test_link_type_requires_url(self, db, pm_seed):
+        with pytest.raises(ValueError, match="链接地址"):
+            material_service.create_material(
+                db, pm_seed["project"].id, "liang.xz26",
+                {"name": "视频库", "delivery_type": "link"},
+            )
+
+    def test_update_rename_collision_returns_400_not_500(self, db, pm_seed):
+        m2 = material_service.create_material(
+            db, pm_seed["project"].id, "liang.xz26", {"name": "另一个条目", "delivery_type": "file"}
+        )
+        with pytest.raises(ValueError, match="唯一"):
+            material_service.update_material(db, m2, "liang.xz26", {"name": "价格体系"})
+
+    def test_blocked_task_partial_update_not_killed(self, db, pm_seed):
+        """已 blocked 的任务改负责人（不带 blocked_reason）不应被必填校验误杀。"""
+        from app.pm.task_service import create_task, update_task
+        task = create_task(db, pm_seed["project"].id, "liang.xz26",
+                           {"title": "等权限", "status": "blocked", "blocked_reason": "等顾问"})
+        update_task(db, task, "liang.xz26", {"assignee": "sunzh.qm41"})
+        db.refresh(task)
+        assert task.assignee == "sunzh.qm41"
+        assert task.blocked_reason == "等顾问"  # 原因保留
+
+    def test_retry_diff_pending_rejected(self, db, pm_seed):
+        m = pm_seed["material"]
+        _upload(db, m, content=b"1")
+        v2 = _upload(db, m, content=b"2")
+        assert v2.diff_status == "pending"
+        with pm_client(db) as client:
+            token = _entry(client)["token"]
+            resp = client.post(f"/api/pm/versions/{v2.id}/retry-diff", headers=_auth(token))
+            assert resp.status_code == 400  # pending 重入会并发重复调 AI
+
+    def test_svg_forced_attachment(self, db, pm_seed):
+        m = pm_seed["material"]
+        v = _upload(db, m, name="icon.svg", content=b"<svg onload=alert(1)></svg>")
+        from app.pm.material_service import inline_disposition_allowed
+        assert not inline_disposition_allowed(v)
+
+    def test_delete_material_long_name_no_overflow(self, db, pm_seed):
+        m = material_service.create_material(
+            db, pm_seed["project"].id, "liang.xz26", {"name": "长" * 250, "delivery_type": "file"}
+        )
+        material_service.delete_material(db, m, "liang.xz26")
+        db.refresh(m)
+        assert len(m.name) <= 256
+        assert m.name.endswith(f"#del{m.id}")
+
+    def test_success_does_not_consume_rate_limit(self, db, pm_seed):
+        """限速只计失败：连续 5 次成功进入后第 6 次仍放行。"""
+        with pm_client(db) as client:
+            for _ in range(6):
+                resp = client.post("/api/pm/entry", json={"username": "liang.xz26"})
+                assert resp.status_code == 200

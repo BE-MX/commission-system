@@ -12,45 +12,45 @@ class EntryRequest(BaseModel):
 
 class MaterialCreate(BaseModel):
     name: str = Field(min_length=1, max_length=256)
-    description: Optional[str] = None
-    category: Optional[str] = "其他"
-    importance: Optional[str] = "important"
+    description: Optional[str] = Field(default=None, max_length=1024)
+    category: Optional[str] = Field(default="其他", max_length=64)
+    importance: Optional[str] = Field(default="important", max_length=16)
     phase: Optional[int] = None
-    delivery_type: Optional[str] = "file"
-    external_url: Optional[str] = None
-    delivery_remark: Optional[str] = None
-    owner: Optional[str] = None
+    delivery_type: Optional[str] = Field(default="file", max_length=16)
+    external_url: Optional[str] = Field(default=None, max_length=512)
+    delivery_remark: Optional[str] = Field(default=None, max_length=512)
+    owner: Optional[str] = Field(default=None, max_length=64)
 
 
 class MaterialUpdate(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
-    category: Optional[str] = None
-    importance: Optional[str] = None
+    name: Optional[str] = Field(default=None, max_length=256)
+    description: Optional[str] = Field(default=None, max_length=1024)
+    category: Optional[str] = Field(default=None, max_length=64)
+    importance: Optional[str] = Field(default=None, max_length=16)
     phase: Optional[int] = None
-    status: Optional[str] = None
-    external_url: Optional[str] = None
-    delivery_remark: Optional[str] = None
-    owner: Optional[str] = None
+    status: Optional[str] = Field(default=None, max_length=16)
+    external_url: Optional[str] = Field(default=None, max_length=512)
+    delivery_remark: Optional[str] = Field(default=None, max_length=512)
+    owner: Optional[str] = Field(default=None, max_length=64)
 
 
 class TaskCreate(BaseModel):
     title: str = Field(min_length=1, max_length=256)
-    description: Optional[str] = None
-    status: Optional[str] = "todo"
-    blocked_reason: Optional[str] = None
-    assignee: Optional[str] = None
+    description: Optional[str] = Field(default=None, max_length=2048)
+    status: Optional[str] = Field(default="todo", max_length=16)
+    blocked_reason: Optional[str] = Field(default=None, max_length=512)
+    assignee: Optional[str] = Field(default=None, max_length=64)
     due_date: Optional[date] = None
     phase: Optional[int] = None
     material_ids: Optional[list[int]] = None
 
 
 class TaskUpdate(BaseModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
-    status: Optional[str] = None
-    blocked_reason: Optional[str] = None
-    assignee: Optional[str] = None
+    title: Optional[str] = Field(default=None, max_length=256)
+    description: Optional[str] = Field(default=None, max_length=2048)
+    status: Optional[str] = Field(default=None, max_length=16)
+    blocked_reason: Optional[str] = Field(default=None, max_length=512)
+    assignee: Optional[str] = Field(default=None, max_length=64)
     due_date: Optional[date] = None
     phase: Optional[int] = None
     material_ids: Optional[list[int]] = None

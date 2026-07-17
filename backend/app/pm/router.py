@@ -14,6 +14,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.response import ok
 from app.pm import activity_service, material_service, task_service
@@ -21,6 +22,7 @@ from app.pm.auth import (
     PmIdentity,
     check_entry_rate,
     entry_fail,
+    entry_rate_exceeded,
     issue_pm_token,
     require_pm_member,
 )
@@ -43,15 +45,22 @@ router = APIRouter()
 
 @router.post("/entry")
 def entry(payload: EntryRequest, db: Session = Depends(get_db)):
-    """门牌：白名单用户名换 token。失败提示统一，不区分原因（防枚举）。"""
+    """门牌：白名单用户名换 token。失败提示统一，不区分原因（防枚举）。
+
+    限速只计失败尝试（设计稿 §3.1）：先只读预检，验证失败才计数，
+    避免合法用户被自己的成功进入误伤。"""
     username = payload.username.strip()
-    check_entry_rate(username)
+    if entry_rate_exceeded(username):
+        logger.warning("[PM] entry rate limited: %s", username)
+        print(f"[PM] entry rate limited: {username}", flush=True)
+        raise HTTPException(status_code=429, detail="无法验证，请联系亮哥")
     member = (
         db.query(PmMember)
         .filter(PmMember.username == username, PmMember.is_active == 1)
         .first()
     )
     if not member:
+        check_entry_rate(username)  # 记一次失败；达到阈值后后续预检拦截
         raise entry_fail()
     token = issue_pm_token(member.username)
     try:
@@ -142,12 +151,16 @@ def delete_material(material_id: int, db: Session = Depends(get_db),
 
 @router.post("/materials/{material_id}/versions")
 async def upload_version(material_id: int, background_tasks: BackgroundTasks,
-                         file: UploadFile = File(...), change_note: str = Form(""),
+                         file: UploadFile = File(...), change_note: str = Form("", max_length=512),
                          db: Session = Depends(get_db),
                          identity: PmIdentity = Depends(require_pm_member)):
     material = material_service.get_material(db, material_id)
     if not material:
         raise HTTPException(status_code=404, detail="资料不存在")
+    # 先按声明的 Content-Length 挡超限，避免大文件全量读进内存再拒绝
+    max_bytes = get_settings().PM_MAX_UPLOAD_MB * 1024 * 1024
+    if file.size is not None and file.size > max_bytes:
+        raise HTTPException(status_code=400, detail=f"单文件上限 {get_settings().PM_MAX_UPLOAD_MB}MB——超限请改用「外部链接」类型备注网盘地址")
     content = await file.read()
     version = material_service.upload_version(
         db, material, identity.username,
@@ -192,8 +205,9 @@ def retry_diff(version_id: int, background_tasks: BackgroundTasks, db: Session =
     version = material_service.get_version(db, version_id)
     if not version or version.deleted_at is not None:
         raise HTTPException(status_code=404, detail="版本不存在")
-    if version.diff_status not in ("failed", "pending"):
-        raise HTTPException(status_code=400, detail="当前状态无需重试")
+    # 仅 failed 可重试：pending 说明在途或待看门狗回收，重入会并发重复调 AI
+    if version.diff_status != "failed":
+        raise HTTPException(status_code=400, detail="当前状态无需重试（生成中请稍候，超时由看门狗回收）")
     material_service.mark_diff_running(db, version.id)
     project = get_default_project(db)
     audit(db, project.id, identity.username, "retry_diff", "version", version.id, f"v{version.version_no}")

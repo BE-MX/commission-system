@@ -161,6 +161,16 @@ def _assert_name_unique(db: Session, project_id: int, name: str, exclude_id: Opt
         raise ValueError(f"已存在同名资料「{name}」——名称在项目内必须唯一")
 
 
+def _validate_external_url(url: Optional[str]) -> Optional[str]:
+    """外部链接只放行 http/https——javascript: 等 scheme 是存储型 XSS（本站 token 即身份）。"""
+    if not url:
+        return None
+    url = url.strip()
+    if not url.lower().startswith(("http://", "https://")):
+        raise ValueError("外部链接必须以 http:// 或 https:// 开头")
+    return url[:512]
+
+
 VALID_MATERIAL_STATUSES = ("not_started", "preparing", "submitted", "confirmed", "not_required")
 VALID_DELIVERY_TYPES = ("file", "offline", "link")
 VALID_IMPORTANCE = ("required", "important", "optional")
@@ -177,17 +187,20 @@ def create_material(db: Session, project_id: int, username: str, data: dict) -> 
     if importance not in VALID_IMPORTANCE:
         raise ValueError("重要级不合法")
     _assert_name_unique(db, project_id, name)
+    external_url = _validate_external_url(data.get("external_url"))
+    if delivery_type == "link" and not external_url:
+        raise ValueError("外部链接类型必须填写链接地址")
     material = PmMaterial(
         project_id=project_id,
-        name=name,
-        description=(data.get("description") or "").strip() or None,
-        category=(data.get("category") or "其他").strip(),
+        name=name[:256],
+        description=(data.get("description") or "").strip()[:1024] or None,
+        category=(data.get("category") or "其他").strip()[:64],
         importance=importance,
-        phase=data.get("phase"),
+        phase=data.get("phase") if data.get("phase") in (1, 2, 3, 4) else None,
         delivery_type=delivery_type,
-        external_url=(data.get("external_url") or "").strip() or None,
-        delivery_remark=(data.get("delivery_remark") or "").strip() or None,
-        owner=data.get("owner") or None,
+        external_url=external_url,
+        delivery_remark=(data.get("delivery_remark") or "").strip()[:512] or None,
+        owner=(data.get("owner") or None) and str(data.get("owner"))[:64],
     )
     db.add(material)
     try:
@@ -205,19 +218,27 @@ def update_material(db: Session, material: PmMaterial, username: str, data: dict
     changes: dict = {}
     if "name" in data and data["name"] and data["name"].strip() != material.name:
         _assert_name_unique(db, material.project_id, data["name"].strip(), exclude_id=material.id)
-        changes["name"] = {"from": material.name, "to": data["name"].strip()}
-        material.name = data["name"].strip()
+        changes["name"] = {"from": material.name, "to": data["name"].strip()[:256]}
+        material.name = data["name"].strip()[:256]
     if "status" in data and data["status"] and data["status"] != material.status:
         if data["status"] not in VALID_MATERIAL_STATUSES:
             raise ValueError("状态不合法")
         changes["status"] = {"from": material.status, "to": data["status"]}
         material.status = data["status"]
-    for field in ("description", "category", "external_url", "delivery_remark", "owner"):
+    _FIELD_CAPS = {"description": 1024, "category": 64, "delivery_remark": 512, "owner": 64}
+    for field, cap in _FIELD_CAPS.items():
         if field in data:
-            new_val = (data[field] or "").strip() or None
+            new_val = ((data[field] or "").strip() or None)
+            if new_val:
+                new_val = new_val[:cap]
             if new_val != getattr(material, field):
                 changes[field] = {"from": getattr(material, field), "to": new_val}
                 setattr(material, field, new_val)
+    if "external_url" in data:
+        new_url = _validate_external_url(data["external_url"])
+        if new_url != material.external_url:
+            changes["external_url"] = {"from": material.external_url, "to": new_url}
+            material.external_url = new_url
     if "importance" in data and data["importance"]:
         if data["importance"] not in VALID_IMPORTANCE:
             raise ValueError("重要级不合法")
@@ -225,23 +246,28 @@ def update_material(db: Session, material: PmMaterial, username: str, data: dict
             changes["importance"] = {"from": material.importance, "to": data["importance"]}
             material.importance = data["importance"]
     if "phase" in data:
-        if data["phase"] != material.phase:
-            changes["phase"] = {"from": material.phase, "to": data["phase"]}
-            material.phase = data["phase"]
+        new_phase = data["phase"] if data["phase"] in (1, 2, 3, 4) else None
+        if new_phase != material.phase:
+            changes["phase"] = {"from": material.phase, "to": new_phase}
+            material.phase = new_phase
     if not changes:
         return material
     material.updated_at = bj_now()
     audit(db, material.project_id, username, "update_material", "material", material.id, material.name, changes)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:  # 并发改名撞唯一约束（TOCTOU），转友好 400（cerebrum 2026-07-14）
+        db.rollback()
+        raise ValueError(f"已存在同名资料「{material.name}」——名称在项目内必须唯一")
     db.refresh(material)
     return material
 
 
 def delete_material(db: Session, material: PmMaterial, username: str) -> None:
-    """软删整条资料。改名让位唯一约束（历史名称留在审计快照里）。"""
+    """软删整条资料。改名让位唯一约束（截断防溢出 VARCHAR(256)）。"""
     material.deleted_at = bj_now()
     original_name = material.name
-    material.name = f"{original_name}#del{material.id}"
+    material.name = f"{original_name[:240]}#del{material.id}"
     audit(db, material.project_id, username, "delete_material", "material", material.id, original_name)
     db.commit()
 
@@ -284,10 +310,10 @@ def upload_version(db: Session, material: PmMaterial, username: str,
             material_id=material.id,
             version_no=next_no,
             file_path=rel_path,
-            original_name=filename,
+            original_name=filename[:256],
             file_size=len(content),
-            content_type=content_type,
-            change_note=(change_note or "").strip() or None,
+            content_type=(content_type or None) and content_type[:128],
+            change_note=(change_note or "").strip()[:512] or None,
             diff_status="not_applicable" if next_no == 1 else "pending",
             uploaded_by=username,
             created_at=bj_now(),
@@ -301,9 +327,6 @@ def upload_version(db: Session, material: PmMaterial, username: str,
             if attempt == UPLOAD_RETRY - 1:
                 _remove_file_quietly(rel_path)
                 raise ValueError("版本号分配冲突，请重试")
-    else:
-        _remove_file_quietly(rel_path)
-        raise ValueError("版本号分配冲突，请重试")
 
     # 上传成功即推进条目状态（未开始/准备中 → 已提交），已有更进一步状态则不回退
     if material.status in ("not_started", "preparing"):
@@ -316,10 +339,10 @@ def upload_version(db: Session, material: PmMaterial, username: str,
     )
     try:
         db.commit()
-    except IntegrityError:
+    except Exception:  # DB 失败必须带走已落盘文件，否则留下无 DB 引用的孤儿
         db.rollback()
         _remove_file_quietly(rel_path)
-        raise ValueError("版本号分配冲突，请重试")
+        raise
     db.refresh(version)
     return version
 

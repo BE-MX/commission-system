@@ -55,9 +55,8 @@ export function fmtSize(bytes) {
 
 export function relTime(iso) {
   if (!iso) return ''
-  const then = new Date(String(iso).replace(' ', 'T'))
-  const diff = Date.now() - then.getTime() - 8 * 3600 * 1000 * 0 // 服务器时间即北京时间
-  const abs = Math.abs(diff)
+  const then = new Date(String(iso).replace(' ', 'T')) // 服务器时间即北京时间（bj_now）
+  const diff = Date.now() - then.getTime()
   const mins = Math.round(diff / 60000)
   if (mins < 1) return '刚刚'
   if (mins < 60) return `${mins} 分钟前`

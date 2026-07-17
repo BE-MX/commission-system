@@ -12,7 +12,11 @@ logger = logging.getLogger("commission")
 
 
 def init_pm_module() -> None:
-    ensure_storage_root()
+    try:
+        ensure_storage_root()
+    except OSError as exc:  # 存储目录不可建不阻塞平台启动（首次上传时会再报）
+        logger.warning("[PM] storage root init failed: %s", exc)
+        print(f"[PM] storage root init failed: {exc}", flush=True)
     _seed_diff_preset()
     recover_stale_diffs()
 

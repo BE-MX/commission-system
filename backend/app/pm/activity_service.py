@@ -2,13 +2,12 @@
 
 import json
 import logging
-from datetime import date
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
 from app.pm.material_service import list_materials
-from app.pm.models import PmActivityLog, PmMaterial, PmMaterialVersion, PmTask
+from app.pm.models import PmActivityLog, PmMaterial, PmMaterialVersion, PmTask, bj_now
 from app.pm.service import DONE_STATUSES
 
 logger = logging.getLogger("commission")
@@ -146,7 +145,7 @@ def dashboard(db: Session, project_id: int) -> dict:
     for t in tasks:
         task_counts[t.status] = task_counts.get(t.status, 0) + 1
 
-    today = date.today()
+    today = bj_now().date()  # 与全模块北京时间口径一致，不用服务器本地时区
     overdue = [
         {"id": t.id, "title": t.title, "assignee": t.assignee, "due_date": t.due_date.isoformat()}
         for t in tasks
@@ -162,7 +161,7 @@ def dashboard(db: Session, project_id: int) -> dict:
     names = _display_names(db)
     logs = (
         db.query(PmActivityLog)
-        .filter(PmActivityLog.project_id == project_id)
+        .filter(PmActivityLog.project_id == project_id, PmActivityLog.action != "entry")
         .order_by(PmActivityLog.id.desc())
         .limit(10)
         .all()

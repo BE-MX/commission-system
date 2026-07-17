@@ -13,7 +13,7 @@ import {
 import { toast } from '../stores/toast.js'
 
 const POLL_INTERVAL = 3000
-const POLL_MAX = 60 // 3 分钟封顶，防忘了关页面空转
+const POLL_MAX = 220 // 11 分钟封顶（必须大于后端看门狗 600s，否则失败态还没落库轮询先停）
 
 export function useMaterialDetail() {
   const route = useRoute()

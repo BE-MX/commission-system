@@ -119,9 +119,11 @@ def update_task(db: Session, task: PmTask, username: str, data: dict) -> PmTask:
         task.status = data["status"]
         if task.status != "blocked":
             task.blocked_reason = None
-    if "blocked_reason" in data or task.status == "blocked":
-        new_reason = (data.get("blocked_reason") or "").strip() or None
-        if task.status == "blocked" and not new_reason:
+    # 仅「显式置 blocked」或「显式传 blocked_reason」时校验必填——
+    # 已 blocked 任务的其它字段局部更新不被误杀（对抗性审查 🟡-3）
+    if task.status == "blocked":
+        new_reason = (data["blocked_reason"] or "").strip() if "blocked_reason" in data else task.blocked_reason
+        if not new_reason:
             raise ValueError("受阻状态必须填写受阻原因")
         if new_reason != task.blocked_reason:
             changes["blocked_reason"] = {"from": task.blocked_reason, "to": new_reason}

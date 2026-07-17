@@ -96,16 +96,28 @@ def require_pm_member(request: Request, db: Session = Depends(get_db)) -> PmIden
     return PmIdentity(username=member.username, display_name=member.display_name)
 
 
-class _EntryRateLimiter:
-    """entry 接口按用户名维度的内存滑动窗口限速（单机单进程够用）。"""
+class EntryRateLimiter:
+    """entry 接口按用户名维度的内存滑动窗口限速（单机单进程够用）。
+
+    只计失败尝试——合法用户不被自己历史的成功进入误伤；
+    定期淘汰过期 key，防长期运行内存缓涨。"""
 
     def __init__(self) -> None:
         self._hits: dict[str, deque] = {}
         self._lock = threading.Lock()
+        self._last_gc = time.time()
 
-    def allow(self, username: str) -> bool:
+    def _gc(self, now: float) -> None:
+        if now - self._last_gc < _ENTRY_RATE_WINDOW * 5:
+            return
+        self._last_gc = now
+        for key in [k for k, v in self._hits.items() if not v or v[-1] < now - _ENTRY_RATE_WINDOW]:
+            self._hits.pop(key, None)
+
+    def hit_and_check(self, username: str) -> bool:
         now = time.time()
         with self._lock:
+            self._gc(now)
             hits = self._hits.setdefault(username, deque())
             while hits and hits[0] < now - _ENTRY_RATE_WINDOW:
                 hits.popleft()
@@ -115,14 +127,30 @@ class _EntryRateLimiter:
             return True
 
 
-entry_rate_limiter = _EntryRateLimiter()
+entry_rate_limiter = EntryRateLimiter()
 
 
 def check_entry_rate(username: str) -> None:
-    if not entry_rate_limiter.allow(username):
+    """失败前置检查：命中限速时抛 429（提示与验证失败一致，防枚举）。
+
+    调用方只有在验证失败后才应再调用本函数记录一次失败——
+    实现上为「先查后计」合并为一次调用，由 router 保证只在失败路径调用。"""
+    if not entry_rate_limiter.hit_and_check(username):
         logger.warning("[PM] entry rate limited: %s", username)
         print(f"[PM] entry rate limited: {username}", flush=True)
         raise HTTPException(status_code=429, detail=_ENTRY_FAIL_MESSAGE)
+
+
+def entry_rate_exceeded(username: str) -> bool:
+    """只读检查（不计数）：用于验证前预检。"""
+    now = time.time()
+    with entry_rate_limiter._lock:
+        hits = entry_rate_limiter._hits.get(username)
+        if not hits:
+            return False
+        while hits and hits[0] < now - _ENTRY_RATE_WINDOW:
+            hits.popleft()
+        return len(hits) >= _ENTRY_RATE_LIMIT
 
 
 def entry_fail() -> HTTPException:

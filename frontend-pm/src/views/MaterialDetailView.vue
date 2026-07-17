@@ -25,7 +25,7 @@
           <span v-if="material.phase" class="mono meta-chip">Phase {{ material.phase }}</span>
           <span class="meta-chip">{{ DELIVERY_TYPE[material.delivery_type].label }}</span>
           <span v-if="material.owner" class="meta-chip">负责：{{ nameOf(material.owner) }}</span>
-          <a v-if="material.external_url" :href="material.external_url" target="_blank" rel="noopener" class="meta-link">打开外部链接 ↗</a>
+          <a v-if="safeExternalUrl" :href="safeExternalUrl" target="_blank" rel="noopener" class="meta-link">打开外部链接 ↗</a>
         </div>
 
         <!-- 状态手动流转（无审批流） -->
@@ -174,6 +174,12 @@ const deletingVersion = ref(null)
 const visibleVersions = computed(() => material.value?.versions || [])
 
 const flowIndex = (status) => MATERIAL_STATUS_FLOW.indexOf(status)
+
+// 外链双保险：后端已校验 scheme，前端渲染层也只放行 http(s)（防 javascript: 存储型 XSS）
+const safeExternalUrl = computed(() => {
+  const url = material.value?.external_url || ''
+  return /^https?:\/\//i.test(url) ? url : ''
+})
 
 // 「上一版」统一口径：未删除的最大前一版（与后端 previous_version 同规则）
 function prevNo(v) {

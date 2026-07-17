@@ -81,7 +81,8 @@ async function submit() {
     identity.signIn(data)
     router.replace({ name: 'dashboard' })
   } catch (err) {
-    errorText.value = err?.status === 0 ? '网络异常，请稍后再试' : '无法验证，请联系亮哥'
+    // HTTP 错误（401/429）统一防枚举提示；网络层错误（无 status）提示连接问题
+    errorText.value = err?.status ? '无法验证，请联系亮哥' : '网络异常，请稍后再试'
     errorShown.value = true
     busy.value = false
     inputEl.value?.focus()
