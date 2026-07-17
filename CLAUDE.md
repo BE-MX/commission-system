@@ -34,12 +34,13 @@ backend/app/
 ├── api/ services/ models/ schemas/ utils/       # 共享层（提成域老代码）——已冻结，不加新业务
 ├── auth/ design/ system/ dingtalk/ ai/ insight/ # 领域模块：app/<domain>/ 自包含
 │   stock/ tracking/ asset/ color/ production/   #   router.py models.py schemas.py service.py(+子service)
-│   report/ governance/ invoice/ expo/ mini/ whatsapp/
+│   report/ governance/ invoice/ expo/ mini/ whatsapp/ pm/   # pm=资料协作站(独立鉴权,不接RBAC)
 frontend/src/
 ├── config/navigation.js    # 路由+菜单唯一来源
 ├── api/clients.js          # axios client 唯一来源（auth.js 是唯一例外）
 ├── views/<domain>/         # 页面按域分目录；大页拆 composables/use*.js
 ├── composables/ components/ styles/tokens.css   # 共享层；tokens.css 是颜色唯一真相源
+frontend-pm/                # PM 协作站独立前端（自研设计系统，无 Element Plus，与主站互不引用）
 miniprogram/  services/whatsapp-connector/  deploy/  docs/  config/
 ```
 

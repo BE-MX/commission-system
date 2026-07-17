@@ -31,12 +31,16 @@ robocopy "%INSTALL_DIR%\uploads" "%BACKUP_ROOT%\uploads" /MIR /R:2 /W:5 /NP /NFL
 set "RC1=%ERRORLEVEL%"
 robocopy "D:\WORKSOURCE" "%BACKUP_ROOT%\WORKSOURCE" /MIR /R:2 /W:5 /NP /NFL /NDL >> "%LOG_FILE%" 2>&1
 set "RC2=%ERRORLEVEL%"
+REM PM 协作站资料文件（backend/data/pm，商业数据唯一副本，2026-07-17 起纳入）
+robocopy "%INSTALL_DIR%\backend\data" "%BACKUP_ROOT%\backend_data" /MIR /R:2 /W:5 /NP /NFL /NDL >> "%LOG_FILE%" 2>&1
+set "RC3=%ERRORLEVEL%"
 
 if %RC1% GEQ 8 goto :fail
 if %RC2% GEQ 8 goto :fail
-echo [%date% %time%] backup OK (uploads rc=%RC1%, worksource rc=%RC2%) >> "%LOG_FILE%"
+if %RC3% GEQ 8 goto :fail
+echo [%date% %time%] backup OK (uploads rc=%RC1%, worksource rc=%RC2%, backend_data rc=%RC3%) >> "%LOG_FILE%"
 exit /b 0
 
 :fail
-echo [%date% %time%] [ERROR] backup FAILED (uploads rc=%RC1%, worksource rc=%RC2%) >> "%LOG_FILE%"
+echo [%date% %time%] [ERROR] backup FAILED (uploads rc=%RC1%, worksource rc=%RC2%, backend_data rc=%RC3%) >> "%LOG_FILE%"
 exit /b 1

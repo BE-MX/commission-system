@@ -477,3 +477,41 @@ grep "job completed" logs\service.log | tail -20
 - **项目负责人**：亮哥
 - **技术支持**：内部技术支持群
 - **紧急联系**：<电话>
+
+## PM 项目资料协作站（pm.leshine.work）部署
+
+后端复用现有 frp 链路（本地 8002），**零新增进程/NSSM 服务**；前端独立静态站点。上线 checklist：
+
+1. **DNS**：`pm.leshine.work` A 记录 → 腾讯云服务器 IP（第 1 天发起，生效不可控）
+2. **证书**：现有 Let's Encrypt 为单域名证书——子域名需单独签发或换泛域名（DNS-01 验证）
+3. **云 Nginx server block**（静态直出 + /api 走既有 frp 隧道）：
+   ```nginx
+   server {
+       listen 443 ssl;
+       server_name pm.leshine.work;
+       ssl_certificate     /etc/letsencrypt/live/pm.leshine.work/fullchain.pem;
+       ssl_certificate_key /etc/letsencrypt/live/pm.leshine.work/privkey.pem;
+
+       root /var/www/pm/dist;
+       index index.html;
+
+       # 防收录（设计稿 §8.4）
+       add_header X-Robots-Tag "noindex, nofollow" always;
+
+       location /api/ {
+           proxy_pass http://127.0.0.1:8001;   # 与主站同一 frp 反代通道
+           proxy_set_header Host $host;
+           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+           client_max_body_size 60m;            # 略大于 PM_MAX_UPLOAD_MB=50
+       }
+       location / {
+           try_files $uri $uri/ /index.html;    # SPA 回退
+       }
+       location ~* \.html$ { add_header Cache-Control "no-cache"; }
+   }
+   ```
+4. **数据库**：`alembic upgrade head`（073_pm_hub；若 codex 073/074 先合入，先把本迁移 down_revision 改指 074）→ `python scripts/seed_pm.py` 预置项目/白名单/35 项材料/5 条 workshop 任务
+5. **.env 可选配置**：`PM_TOKEN_SECRET`（留空回退 JWT_SECRET_KEY，生产建议独立随机串）、`PM_TOKEN_EPOCH`（默认 1，+1 全员重签）、`PM_MAX_UPLOAD_MB`（默认 50）、`PM_FILE_SIGN_TTL_SECONDS`（默认 300）
+6. **部署**：deploy.bat 已含 frontend-pm 构建 + SCP（/var/www/pm/dist，marker 增量，失败留标重试）；资料文件备份已由 backup-uploads.bat 覆盖（backend/data → backend_data）
+7. **限速启用 IP 维度的前置**：确认云 Nginx 已设 X-Forwarded-For 且 uvicorn 开 `--proxy-headers` 后再加（当前仅用户名维度）
+8. **下线**：摘 server block + DNS 记录即可，后端模块留存不影响平台

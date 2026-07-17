@@ -562,3 +562,19 @@ frontend/src/
 - 无赔偿：直属主管终审；有赔偿：直属主管初审后销售总监终审。审批人提交时快照，管理员转交与 super_admin 代理审核都必须记录原因。
 - 通知采用 outbox，由每分钟任务补发 pending/failed 项，最多 3 次指数退避；缺少钉钉绑定不得回滚业务事务。
 - 重新打开已关闭/拒绝单据时，上一轮执行结果保存在 `reopened` 审计事件，本轮执行与客户反馈字段清空。
+
+## PM 项目资料协作站（pm，2026-07-17）
+
+设计稿 `docs/requirements/2026-07-17-pm-material-hub.md`。后端 `app/pm/` 领域模块 + 独立前端 `frontend-pm/`（自研设计系统：纸面/墨色/朱砂，tokens.css 与方舟零共享）。
+
+**架构要点**
+- 鉴权不接平台 RBAC：`POST /api/pm/entry` 白名单换 HMAC token（payload=username+exp+epoch，PM_TOKEN_SECRET 留空回退 JWT_SECRET_KEY；PM_TOKEN_EPOCH +1 全员重签）；`require_pm_member` 每请求验签 + 回查 `ark_pm_members.is_active`（移除立即生效）。entry 统一失败提示防枚举 + 内存滑动窗口限速（5 次/分/用户名；frp 隧道全员同 IP，IP 维度待 XFF 确认）。
+- check_conventions 登记方式：`require_pm_member` 加进脚本的 AUTH_PATTERNS（不把 router 文件加白名单，漏写依赖仍查得出）；`/entry` 走 AUTH_EXEMPT_ROUTES；签名文件端点靠端点内 `_verify_pm_signature` 匹配 `_verify_\w+` 过机检。
+- 文件存储红线：`REPO_ROOT/backend/data/pm/{material_id}/{uuid}{ext}`，绝不放 uploads/（StaticFiles 无鉴权公开 + 主站存储型 XSS 风险）；`.gitignore` 已排除 `backend/data/`；备份 backup-uploads.bat 已纳入。下载/预览走 300s 签名 URL（sign=HMAC(version_id+expires)），软删即 404，HTML 强制 attachment，MD 由前端取原文 sanitize 渲染（marked + DOMPurify）。
+- 版本口径：版本号只增不复用（max 含已删 +1）；当前版本=未删除最大版本号；AI 差异「上一版」同口径。唯一约束 `(material_id, version_no)` + IntegrityError 重试 3 次（重试 helper `_next_version_no` 便于测试注入）。资料名项目内唯一，软删改名 `name#del{id}` 让位。
+- AI 差异管线：本地先算精确 diff（文本 difflib / xlsx openpyxl data_only 全 sheet 单元格级 / docx python-docx 含表格 / pdf pypdf 抽出为空=扫描件落 not_applicable），diff 截断 12k 字符再喂 `pm_diff` preset（启动时 bootstrap 幂等创建，复用 seed_ai._auto_create_preset）；BackgroundTask 内自建 SessionLocal（红线 4 线程池许可场景）；失败标 failed 可手动重试，不影响版本保存；启动看门狗回收 pending>600s。
+- 时间戳统一北京时间 `bj_now()`（同生产报工口径）。
+- 迁移编号冲突预警：本分支 `073_pm_hub` 与 codex 分支 `073_invoice_accessory_products`/`074_*` 同源于 072——**后到 main 的一方需把 down_revision 改指对方末尾再 `alembic upgrade head`**（alembic 多头会报错）。
+
+**本地预览（无需 MySQL/.env）**
+`python backend/scripts/pm_dev_server.py --port 8003`：SQLite 文件库 + 演示数据 + 托管 `frontend-pm/dist`；`/dev-enter?u=<username>` 开发专用免门牌写 localStorage 直进。前端开发：`cd frontend-pm && npm run dev`（:3100，代理 /api → PM_API_TARGET 或 localhost:8001）。

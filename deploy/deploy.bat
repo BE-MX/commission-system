@@ -15,6 +15,7 @@ if not defined CONNECTOR_SERVICE_NAME set "CONNECTOR_SERVICE_NAME=WhatsAppConnec
 set "NSSM_EXE=%USERPROFILE%\AppData\Local\Microsoft\WinGet\Links\nssm.exe"
 set "CLOUD_SERVER=root@119.28.107.92"
 set "CLOUD_DIST=/var/www/ark/dist"
+set "CLOUD_PM_DIST=/var/www/pm/dist"
 REM All ssh/scp go through these opts (2026-07-13): BatchMode turns any interactive
 REM prompt (host key / password) into an immediate error instead of a silent hang;
 REM ConnectTimeout/ServerAlive bound dead-network waits to ~70s max.
@@ -175,7 +176,7 @@ if "%FRONTEND_CHANGED%"=="0" (
     echo.
     echo [6/7] Sync dist to cloud... SKIPPED
     echo.
-    goto :restart_service
+    goto :pm_hub_sync
 )
 
 REM ---------- [5/7] Build frontend ----------
@@ -235,7 +236,7 @@ REM Advance the frontend build marker only after a confirmed successful sync
 if not exist "%INSTALL_DIR%\.deploy_state" mkdir "%INSTALL_DIR%\.deploy_state"
 for /f "delims=" %%H in ('git -C "%INSTALL_DIR%" rev-parse HEAD') do set "CURRENT_HEAD=%%H"
 echo !CURRENT_HEAD!>"%FRONTEND_MARKER%"
-goto :restart_service
+goto :pm_hub_sync
 
 :scp_smart
 REM 利用 ssh+md5sum 比对，只传变化的文件
@@ -317,6 +318,53 @@ if errorlevel 1 (
 )
 echo      OK
 exit /b 0
+
+:pm_hub_sync
+REM ---------- PM Hub (frontend-pm) 构建 + 同步（独立站点 pm.leshine.work） ----------
+if not exist "%INSTALL_DIR%\frontend-pm\package.json" (
+    echo [PM] frontend-pm not present, skipped
+    goto :restart_service
+)
+set "PM_CHANGED=0"
+set "PM_MARKER=%INSTALL_DIR%\.deploy_state\pm_build_commit.txt"
+set "PM_BASE="
+if exist "%PM_MARKER%" set /p PM_BASE=<"%PM_MARKER%"
+if not defined PM_BASE (
+    set "PM_CHANGED=1"
+) else (
+    git diff --name-only %PM_BASE% HEAD -- frontend-pm/ 2>nul | findstr /R "." >nul 2>&1
+    if not errorlevel 1 set "PM_CHANGED=1"
+)
+REM 未提交的本地改动也触发构建
+git diff --name-only -- frontend-pm/ 2>nul | findstr /R "." >nul 2>&1
+if not errorlevel 1 set "PM_CHANGED=1"
+if "%PM_CHANGED%"=="0" (
+    echo [PM] frontend-pm unchanged, skipped
+    goto :restart_service
+)
+echo [PM] Build frontend-pm...
+cd /d "%INSTALL_DIR%\frontend-pm"
+call npm install --silent
+if errorlevel 1 (
+    echo [ERROR] frontend-pm npm install failed
+    goto :error
+)
+call npm run build
+if errorlevel 1 (
+    echo [ERROR] frontend-pm build failed
+    goto :error
+)
+ssh %SSH_OPTS% %CLOUD_SERVER% "mkdir -p %CLOUD_PM_DIST%"
+echo [PM] Sync dist to %CLOUD_SERVER%:%CLOUD_PM_DIST% ...
+scp %SSH_OPTS% -r dist/* %CLOUD_SERVER%:%CLOUD_PM_DIST%/
+if errorlevel 1 (
+    echo [ERROR] PM dist sync FAILED - marker left unchanged so the next deploy retries
+    goto :error
+)
+for /f "delims=" %%H in ('git -C "%INSTALL_DIR%" rev-parse HEAD') do set "CURRENT_HEAD=%%H"
+echo !CURRENT_HEAD!>"%PM_MARKER%"
+echo      OK
+echo.
 
 :restart_service
 REM ---------- [7/7] Restart services ----------

@@ -143,3 +143,14 @@
 - `ark_aftersales_events`：不可变审计事件；`case_id` 可空以记录 SOP 启用等模块级事件。
 - `ark_aftersales_sop_versions`：原始 SOP、解析条款、问题映射、版本状态及启用信息。
 - `ark_aftersales_notification_logs`：按业务事件与接收人幂等的钉钉 outbox、重试次数和下次重试时间；接收人未绑定钉钉时 ID 可空。
+
+## PM 项目资料协作站（迁移 073_pm_hub，8 张表，2026-07-17）
+
+- `ark_pm_projects`：咨询项目（本期仅 1 条 alibaba-ai-agent；code UNIQUE，project 维度为后续项目复用留口）。
+- `ark_pm_members`：用户名白名单（username UNIQUE 非真名拼音；is_active=0 即移出名单，token 每请求回查立即失效）。
+- `ark_pm_materials`：资料条目。`(project_id, name)` UNIQUE——名称即下载文件名前缀，软删时改名 `name#del{id}` 让位；delivery_type=file/offline(凭据禁传原文)/link(外部链接)；status 状态机 not_started/preparing/submitted/confirmed/not_required；phase 1-4 按清单「准备顺序」批次，与 importance 无关。
+- `ark_pm_material_versions`：资料版本。`(material_id, version_no)` UNIQUE 并发上传靠约束+重试；版本号只增不复用，当前版本=未删除最大版本号；diff_status=pending/done/failed/not_applicable + diff_summary/diff_error；软删后下载端点立即拒绝。
+- `ark_pm_tasks` / `ark_pm_task_materials`：任务看板（todo/in_progress/done/blocked，blocked_reason 必填）与任务-资料关联（复合主键 task_id+material_id）。
+- `ark_pm_comments`：评论（Phase 2 划线锚点 anchor_text/anchor_context + 文件级；Phase 1 只建表不开放端点）。
+- `ark_pm_activity_logs`：审计日志（username/action/object_type/object_id/object_name 快照/detail JSON；idx (project_id, created_at)）。
+- 文件存储：`REPO_ROOT/backend/data/pm/{material_id}/{uuid}{ext}`——**绝不放 uploads/**（公开静态挂载）；下载/预览一律 300s 短时效签名 URL（PM_TOKEN_SECRET 派生 HMAC）。时间戳统一北京时间（bj_now）。
