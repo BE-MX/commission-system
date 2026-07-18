@@ -85,7 +85,7 @@
             <div class="tl-card">
               <header class="tl-head">
                 <span class="tl-ver mono">v{{ v.version_no }}</span>
-                <StatusBadge v-if="v.is_current" label="当前版本" tone="cinnabar" />
+                <StatusBadge v-if="v.is_current" label="当前版本" tone="gold" />
                 <span v-if="v.is_deleted" class="tl-deleted-tag">已删除</span>
                 <time class="tl-time mono">{{ fmtTime(v.created_at) }}</time>
                 <span class="tl-by">{{ nameOf(v.uploaded_by) }} 上传</span>
@@ -214,7 +214,7 @@ async function onDeleteVersion() {
   transition: color var(--dur-fast) var(--ease-out);
 }
 @media (hover: hover) and (pointer: fine) {
-  .crumb-back:hover { color: var(--cinnabar); }
+  .crumb-back:hover { color: var(--gold-deep); }
 }
 
 .detail-loading { display: flex; justify-content: center; padding: 120px 0; }
@@ -241,7 +241,7 @@ async function onDeleteVersion() {
 }
 .meta-link {
   font-size: 12px;
-  color: var(--cinnabar);
+  color: var(--gold-deep);
   text-decoration: underline;
   text-underline-offset: 3px;
 }
@@ -293,8 +293,8 @@ async function onDeleteVersion() {
   display: flex;
   gap: 14px;
   align-items: center;
-  border: 1px solid var(--cinnabar-line);
-  background: var(--cinnabar-wash);
+  border: 1px solid var(--gold-line);
+  background: var(--gold-wash);
   border-radius: var(--radius-lg);
   padding: 16px 20px;
   margin-bottom: 30px;
@@ -305,14 +305,14 @@ async function onDeleteVersion() {
   justify-content: center;
   width: 34px;
   height: 34px;
-  border: 1.5px solid var(--cinnabar);
+  border: 1.5px solid var(--gold-strong);
   border-radius: 50%;
-  color: var(--cinnabar);
+  color: var(--gold-deep);
   font-size: 15px;
   flex-shrink: 0;
 }
-.offline-title { font-size: 13.5px; font-weight: 600; color: var(--cinnabar-deep); }
-.offline-sub { font-size: 12px; color: var(--cinnabar-deep); opacity: 0.85; margin-top: 2px; }
+.offline-title { font-size: 13.5px; font-weight: 600; color: var(--gold-deep); }
+.offline-sub { font-size: 12px; color: var(--gold-deep); opacity: 0.85; margin-top: 2px; }
 
 .tl-title {
   font-family: var(--font-serif);
@@ -335,7 +335,7 @@ async function onDeleteVersion() {
   background: var(--paper);
   flex-shrink: 0;
 }
-.tl-dot.current { border-color: var(--cinnabar); background: var(--cinnabar); }
+.tl-dot.current { border-color: var(--gold-strong); background: var(--gold-strong); }
 .tl-rail::after {
   content: '';
   flex: 1;
@@ -355,7 +355,7 @@ async function onDeleteVersion() {
 }
 .tl-item.deleted .tl-card { opacity: 0.55; }
 .tl-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.tl-ver { font-size: 16px; font-weight: 600; color: var(--cinnabar); }
+.tl-ver { font-size: 16px; font-weight: 600; color: var(--gold-deep); }
 .tl-item.deleted .tl-ver { color: var(--ink-3); }
 .tl-deleted-tag { font-size: 11px; color: var(--ink-4); border: 1px solid var(--hairline); border-radius: 2px; padding: 1px 6px; }
 .tl-time { font-size: 12px; color: var(--ink-3); }
@@ -380,9 +380,9 @@ async function onDeleteVersion() {
   border-radius: var(--radius);
 }
 .diff-done { border-left: 2px solid var(--sage-line); }
-.diff-failed { border-left: 2px solid var(--cinnabar-line); align-items: center; }
+.diff-failed { border-left: 2px solid var(--danger-line); align-items: center; }
 .diff-label { font-size: 12px; color: var(--ink-3); }
-.diff-label.failed { color: var(--cinnabar); flex: 1; }
+.diff-label.failed { color: var(--danger); flex: 1; }
 .diff-done .diff-label { color: var(--sage); font-weight: 600; margin-bottom: 6px; display: block; }
 .diff-body {
   font-family: var(--font-serif);

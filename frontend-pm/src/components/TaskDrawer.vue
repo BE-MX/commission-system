@@ -146,7 +146,7 @@ async function submit() {
   transition: background var(--dur-fast) var(--ease-out);
 }
 .mat-option:last-child { border-bottom: none; }
-.mat-option input { accent-color: var(--cinnabar); }
+.mat-option input { accent-color: var(--gold-strong); }
 .mat-option.checked { background: var(--paper-sunken); }
 .mat-option-name { flex: 1; }
 .mat-empty { padding: 16px; text-align: center; color: var(--ink-4); font-size: 12.5px; }

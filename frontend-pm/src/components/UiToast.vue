@@ -44,7 +44,7 @@ import { toastStore } from '../stores/toast.js'
   box-shadow: var(--shadow-overlay);
   max-width: min(480px, 90vw);
 }
-.toast-error { background: var(--cinnabar-deep); }
+.toast-error { background: var(--danger-deep); }
 .toast-mark { display: inline-flex; flex-shrink: 0; }
 
 /* 空间一致性：从下方进入、向下方离开 */

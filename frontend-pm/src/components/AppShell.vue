@@ -144,7 +144,7 @@ function switchIdentity() {
 .identity-name {
   font-size: 13px;
   font-weight: 600;
-  color: var(--cinnabar);
+  color: var(--gold-deep);
 }
 .identity-switch {
   font-size: 12px;

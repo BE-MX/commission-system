@@ -35,7 +35,7 @@
             </div>
             <div class="figure-label">必须材料备齐率</div>
             <div class="figure-sub">
-              <span class="dot-cinnabar" aria-hidden="true"></span>
+              <span class="dot-gold" aria-hidden="true"></span>
               必须项 {{ data.materials.required_done }}/{{ data.materials.required_total }}
               · 全部材料 {{ data.materials.done }}/{{ data.materials.total }}
             </div>
@@ -181,9 +181,9 @@ function goMaterials(query) {
 
 /* ── 风险提示条 ─────────────────────────── */
 .risks {
-  border: 1px solid var(--cinnabar-line);
-  border-left: 3px solid var(--cinnabar);
-  background: var(--cinnabar-wash);
+  border: 1px solid var(--danger-line);
+  border-left: 3px solid var(--danger);
+  background: var(--danger-wash);
   border-radius: var(--radius);
   padding: 16px 20px;
   margin-bottom: 24px;
@@ -196,13 +196,13 @@ function goMaterials(query) {
   width: 17px;
   height: 17px;
   border-radius: 50%;
-  background: var(--cinnabar);
+  background: var(--danger);
   color: #fff;
   font-size: 11px;
   font-weight: 700;
 }
-.risks-title { font-family: var(--font-serif); font-size: 15px; color: var(--cinnabar-deep); }
-.risks-list { margin: 0; padding-left: 26px; font-size: 13px; color: var(--cinnabar-deep); }
+.risks-title { font-family: var(--font-serif); font-size: 15px; color: var(--danger-deep); }
+.risks-list { margin: 0; padding-left: 26px; font-size: 13px; color: var(--danger-deep); }
 .risks-list li { margin: 3px 0; }
 
 /* ── 项目脉搏 ─────────────────────────── */
@@ -245,8 +245,8 @@ function goMaterials(query) {
   gap: 6px;
 }
 .figure-divider { width: 1px; background: var(--hairline); }
-.dot-cinnabar { width: 6px; height: 6px; border-radius: 50%; background: var(--cinnabar); }
-.blocked-text { color: var(--cinnabar); }
+.dot-gold { width: 6px; height: 6px; border-radius: 50%; background: var(--gold-strong); }
+.blocked-text { color: var(--danger); }
 
 .phases {
   display: grid;
@@ -277,12 +277,12 @@ function goMaterials(query) {
   transition: transform 600ms var(--ease-out);
 }
 .phase-fill-required {
-  background: var(--cinnabar);
+  background: var(--gold-strong);
   transition: transform 600ms var(--ease-out) 80ms;
 }
 .phase-sub { margin-top: 7px; font-size: 11.5px; color: var(--ink-4); }
 @media (hover: hover) and (pointer: fine) {
-  .phase:hover .phase-name { color: var(--cinnabar); }
+  .phase:hover .phase-name { color: var(--gold-deep); }
 }
 .phase { transition: transform var(--dur-fast) var(--ease-out); }
 .phase:active { transform: scale(0.98); }
@@ -312,7 +312,7 @@ function goMaterials(query) {
   transition: color var(--dur-fast) var(--ease-out);
 }
 @media (hover: hover) and (pointer: fine) {
-  .panel-more:hover { color: var(--cinnabar); }
+  .panel-more:hover { color: var(--gold-deep); }
 }
 
 .imp-list { display: flex; flex-direction: column; gap: 4px; }
@@ -368,7 +368,7 @@ function goMaterials(query) {
   margin-top: 4px;
   font-family: var(--font-serif);
   font-size: 12.5px;
-  color: var(--cinnabar);
+  color: var(--gold-deep);
   padding-left: 2px;
 }
 .feed-empty { color: var(--ink-4); font-size: 13px; padding: 24px 0; text-align: center; }

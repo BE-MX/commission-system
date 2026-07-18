@@ -125,7 +125,7 @@ async function download() {
   border-bottom: 1px solid var(--hairline);
 }
 .preview-title { display: flex; align-items: baseline; gap: 10px; font-weight: 600; font-size: 14px; }
-.preview-ver { color: var(--cinnabar); font-weight: 600; }
+.preview-ver { color: var(--gold-deep); font-weight: 600; }
 .preview-actions { display: flex; align-items: center; gap: 8px; }
 .preview-close {
   padding: 6px;

@@ -165,9 +165,9 @@ async function submit() {
   cursor: pointer;
   transition: border-color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
 }
-.delivery-option input { accent-color: var(--cinnabar); grid-row: span 2; }
+.delivery-option input { accent-color: var(--gold-strong); grid-row: span 2; }
 .delivery-option.checked { border-color: var(--ink); background: var(--paper-raised); }
 .delivery-name { font-size: 13px; font-weight: 600; }
 .delivery-desc { font-size: 12px; color: var(--ink-3); }
-.offline-hint { margin-top: 8px; font-size: 12px; color: var(--cinnabar); }
+.offline-hint { margin-top: 8px; font-size: 12px; color: var(--gold-deep); }
 </style>

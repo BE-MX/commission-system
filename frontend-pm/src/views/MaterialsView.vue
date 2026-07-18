@@ -196,9 +196,9 @@ async function onCreate(payload) {
 }
 @media (hover: hover) and (pointer: fine) {
   .row:hover { background: var(--paper-sunken); }
-  .row:hover .row-chevron { transform: translateX(3px); color: var(--cinnabar); }
+  .row:hover .row-chevron { transform: translateX(3px); color: var(--gold-deep); }
 }
-.row:focus-visible { outline: 2px solid var(--cinnabar); outline-offset: -2px; }
+.row:focus-visible { outline: 2px solid var(--gold-strong); outline-offset: -2px; }
 .row-no { font-size: 12.5px; color: var(--ink-4); }
 .row-main { min-width: 0; }
 .row-name {
@@ -211,8 +211,8 @@ async function onCreate(payload) {
 .row-flag {
   font-size: 10.5px;
   letter-spacing: 0.06em;
-  color: var(--cinnabar);
-  border: 1px solid var(--cinnabar-line);
+  color: var(--gold-deep);
+  border: 1px solid var(--gold-line);
   border-radius: 2px;
   padding: 0 5px;
   line-height: 1.8;
@@ -234,7 +234,7 @@ async function onCreate(payload) {
   font-size: 12px;
   color: var(--ink-3);
 }
-.row-ver { color: var(--cinnabar); font-weight: 600; }
+.row-ver { color: var(--gold-deep); font-weight: 600; }
 .row-updated {
   display: flex;
   flex-direction: column;

@@ -22,8 +22,8 @@ body {
 }
 
 ::selection {
-  background: var(--cinnabar-wash);
-  color: var(--cinnabar-deep);
+  background: var(--gold-wash);
+  color: var(--gold-deep);
 }
 
 h1, h2, h3, h4 {
@@ -92,15 +92,16 @@ time,
   color: var(--paper);
 }
 @media (hover: hover) and (pointer: fine) {
-  .btn-primary:hover { background: var(--cinnabar); border-color: var(--cinnabar); color: #fff; }
+  .btn-primary:hover { background: var(--gold-strong); border-color: var(--gold-strong); color: var(--ink); }
 }
 .btn-accent {
-  background: var(--cinnabar);
-  border-color: var(--cinnabar);
-  color: #fff;
+  background: var(--gold);
+  border-color: var(--gold);
+  color: var(--ink);
+  font-weight: 600;
 }
 @media (hover: hover) and (pointer: fine) {
-  .btn-accent:hover { background: var(--cinnabar-deep); border-color: var(--cinnabar-deep); color: #fff; }
+  .btn-accent:hover { background: var(--gold-strong); border-color: var(--gold-strong); color: var(--ink); }
 }
 .btn-ghost {
   border-color: transparent;
@@ -111,10 +112,10 @@ time,
   .btn-ghost:hover { color: var(--ink); background: var(--paper-sunken); border-color: transparent; }
 }
 .btn-danger {
-  color: var(--cinnabar);
+  color: var(--danger);
 }
 @media (hover: hover) and (pointer: fine) {
-  .btn-danger:hover { border-color: var(--cinnabar-line); color: var(--cinnabar-deep); background: var(--cinnabar-wash); }
+  .btn-danger:hover { border-color: var(--danger-line); color: var(--danger-deep); background: var(--danger-wash); }
 }
 .btn[disabled] {
   opacity: 0.45;

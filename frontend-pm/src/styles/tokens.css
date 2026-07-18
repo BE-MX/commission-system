@@ -1,7 +1,7 @@
 /* ─────────────────────────────────────────────────────────────
    PM Hub 设计系统 · tokens
    气质：独立、克制、有编辑感——一份精心排版的项目文件，不是管理后台。
-   与方舟平台零视觉血缘：纸面 + 墨色 + 一点朱砂。
+   品牌：LeShine Hair logo（金底 × 黑色手写体）——纸面 + 墨色 + LeShine 金。
    ───────────────────────────────────────────────────────────── */
 
 :root {
@@ -16,11 +16,20 @@
   --hairline: #e6e1d8;
   --hairline-strong: #d4cec2;
 
-  /* 朱砂——唯一主色，用于关键动作、必须项、当前态 */
-  --cinnabar: #b23a26;
-  --cinnabar-deep: #96301f;
-  --cinnabar-wash: #f7e9e5;
-  --cinnabar-line: #e5c4bc;
+  /* LeShine 金——品牌主色。只与墨黑搭配（logo 同款关系）：
+     大面积铺底/徽标用 gold，文字级强调用 gold-deep（对比度达标） */
+  --gold: #f5c73b;
+  --gold-strong: #eab617;
+  --gold-deep: #8f6d0d;
+  --gold-wash: #fbf3d5;
+  --gold-line: #ebd48a;
+
+  /* 语义红——仅用于风险/删除/失败/受阻（原朱砂降级为纯状态色） */
+  --danger: #b23a26;
+  --danger-deep: #96301f;
+  --danger-wash: #f7e9e5;
+  --danger-line: #e5c4bc;
+  --danger-on-gold: #7c2413;  /* 金底上的错误文字（对比度加深的语义红） */
 
   /* 状态色（仅用于徽标，不作装饰） */
   --amber: #9a6a1c;

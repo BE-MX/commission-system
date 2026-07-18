@@ -301,8 +301,8 @@ function askDelete(task) {
 .task-blocked {
   margin-top: 6px;
   font-size: 12px;
-  color: var(--cinnabar);
-  border-left: 2px solid var(--cinnabar-line);
+  color: var(--danger);
+  border-left: 2px solid var(--danger-line);
   padding-left: 8px;
 }
 .task-mats { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
@@ -322,7 +322,8 @@ function askDelete(task) {
   .task-mat:hover { border-color: var(--ink-3); color: var(--ink); }
 }
 .mat-dot { width: 5px; height: 5px; border-radius: 50%; }
-.tone-bg-cinnabar { background: var(--cinnabar); }
+.tone-bg-gold { background: var(--gold-strong); }
+.tone-bg-danger { background: var(--danger); }
 .tone-bg-amber { background: var(--amber); }
 .tone-bg-sage { background: var(--sage); }
 .tone-bg-slate { background: var(--slate); }
@@ -339,7 +340,7 @@ function askDelete(task) {
 .task-assignee { color: var(--ink-2); font-weight: 500; }
 .task-assignee.none { color: var(--ink-4); font-weight: 400; }
 .task-due { color: var(--ink-3); }
-.task-due.overdue, .overdue { color: var(--cinnabar); }
+.task-due.overdue, .overdue { color: var(--danger); }
 .task-phase { color: var(--ink-4); }
 .task-status-slot { margin-left: auto; }
 .status-click { display: inline-block; transition: transform var(--dur-fast) var(--ease-out); }

@@ -3,15 +3,15 @@
 export const MATERIAL_STATUS = {
   not_started: { label: '未开始', tone: 'muted' },
   preparing: { label: '准备中', tone: 'slate' },
-  submitted: { label: '已提交', tone: 'amber' },
+  submitted: { label: '已提交', tone: 'gold' },
   confirmed: { label: '顾问确认', tone: 'sage' },
   not_required: { label: '无需提供', tone: 'muted' },
 }
 export const MATERIAL_STATUS_FLOW = ['not_started', 'preparing', 'submitted', 'confirmed']
 
 export const IMPORTANCE = {
-  required: { label: '必须', tone: 'cinnabar', mark: '●' },
-  important: { label: '重要', tone: 'amber', mark: '●' },
+  required: { label: '必须', tone: 'ink', mark: '●' },
+  important: { label: '重要', tone: 'gold', mark: '●' },
   optional: { label: '锦上添花', tone: 'sage', mark: '●' },
 }
 
@@ -25,14 +25,14 @@ export const TASK_STATUS = {
   todo: { label: '待办', tone: 'muted' },
   in_progress: { label: '进行中', tone: 'slate' },
   done: { label: '已完成', tone: 'sage' },
-  blocked: { label: '受阻', tone: 'cinnabar' },
+  blocked: { label: '受阻', tone: 'danger' },
 }
 export const TASK_STATUS_ORDER = ['todo', 'in_progress', 'done', 'blocked']
 
 export const DIFF_STATUS = {
   pending: { label: 'AI 差异概要生成中', tone: 'slate' },
   done: { label: 'AI 差异概要', tone: 'sage' },
-  failed: { label: '差异概要生成失败', tone: 'cinnabar' },
+  failed: { label: '差异概要生成失败', tone: 'danger' },
   not_applicable: { label: '不支持对比', tone: 'muted' },
 }
 

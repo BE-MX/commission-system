@@ -75,7 +75,7 @@ const byDay = computed(() => {
   return groups
 })
 
-const OBJECT_TONE = { version: 'cinnabar', material: 'amber', task: 'slate', member: 'muted', comment: 'sage' }
+const OBJECT_TONE = { version: 'gold', material: 'slate', task: 'ink', member: 'muted', comment: 'sage' }
 const dotTone = (log) => OBJECT_TONE[log.object_type] || 'muted'
 
 function detailText(log) {
@@ -132,7 +132,8 @@ function detailText(log) {
   border-radius: 50%;
   margin-top: 7px;
 }
-.tone-bg-cinnabar { background: var(--cinnabar); }
+.tone-bg-gold { background: var(--gold-strong); }
+.tone-bg-ink { background: var(--ink); }
 .tone-bg-amber { background: var(--amber); }
 .tone-bg-sage { background: var(--sage); }
 .tone-bg-slate { background: var(--slate); }
@@ -144,7 +145,7 @@ function detailText(log) {
   margin-top: 4px;
   font-family: var(--font-serif);
   font-size: 12.5px;
-  color: var(--cinnabar);
+  color: var(--gold-deep);
 }
 .act-detail { margin-top: 3px; font-size: 12px; color: var(--ink-3); }
 

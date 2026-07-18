@@ -30,7 +30,7 @@ const html = computed(() =>
 .md li { margin: 0.25em 0; }
 .md blockquote {
   margin: 0.8em 0; padding: 2px 0 2px 14px;
-  border-left: 2px solid var(--cinnabar-line); color: var(--ink-2);
+  border-left: 2px solid var(--gold-line); color: var(--ink-2);
 }
 .md code {
   font-family: var(--font-mono); font-size: 0.88em;
@@ -45,6 +45,6 @@ const html = computed(() =>
 .md th, .md td { border: 1px solid var(--hairline-strong); padding: 6px 10px; text-align: left; }
 .md th { background: var(--paper-sunken); font-weight: 600; }
 .md hr { border: none; border-top: 1px solid var(--hairline); margin: 1.4em 0; }
-.md a { color: var(--cinnabar); text-decoration: underline; text-underline-offset: 3px; }
+.md a { color: var(--gold-deep); text-decoration: underline; text-underline-offset: 3px; }
 .md img { max-width: 100%; border-radius: var(--radius); }
 </style>

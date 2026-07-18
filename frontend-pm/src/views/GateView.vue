@@ -5,13 +5,13 @@
     <main class="gate-main">
       <div class="gate-seal rise">
         <svg width="92" height="92" viewBox="0 0 92 92" role="img" aria-label="莱莎项目站印鉴">
-          <circle class="seal-ring seal-ring-outer" cx="46" cy="46" r="41" fill="none" stroke="currentColor" stroke-width="2.2"/>
-          <circle class="seal-ring seal-ring-inner" cx="46" cy="46" r="32" fill="none" stroke="currentColor" stroke-width="0.9"/>
-          <text x="46" y="56" text-anchor="middle" font-size="33" fill="currentColor" style="font-family: var(--font-serif)">莱</text>
+          <circle class="seal-ring seal-ring-outer" cx="46" cy="46" r="41" fill="none" stroke="currentColor" stroke-width="2.4"/>
+          <circle class="seal-ring seal-ring-inner" cx="46" cy="46" r="32" fill="none" stroke="currentColor" stroke-width="1"/>
+          <text x="46" y="57" text-anchor="middle" font-size="33" fill="currentColor" style="font-family: var(--font-serif)">莱</text>
         </svg>
       </div>
 
-      <p class="gate-eyebrow rise rise-1">LESHINE ARK · PM HUB</p>
+      <p class="gate-eyebrow rise rise-1">LESHINE HAIR · PM HUB</p>
       <h1 class="gate-title rise rise-2">莱莎 AI 陪跑项目站</h1>
       <p class="gate-sub rise rise-3">阿里国际站智能体搭建 · 资料与任务协作</p>
 
@@ -32,7 +32,7 @@
             @input="errorShown = false"
           />
           <button class="gate-go" type="submit" :disabled="busy || !username" aria-label="进入">
-            <span v-if="busy" class="spinner"></span>
+            <span v-if="busy" class="spinner spinner-ink"></span>
             <svg v-else viewBox="0 0 20 20" width="18" height="18">
               <path d="M3 10h12M11 5.5 15.5 10 11 14.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
@@ -91,6 +91,7 @@ async function submit() {
 </script>
 
 <style scoped>
+/* 门牌页 = 一张放大的 LeShine logo 金卡：金底 × 墨字，品牌第一眼 */
 .gate {
   min-height: 100vh;
   display: flex;
@@ -100,14 +101,16 @@ async function submit() {
   position: relative;
   overflow: hidden;
   padding: 40px 24px;
+  background: var(--gold);
+  color: var(--ink);
 }
 
-/* 纸面肌理：极淡的网点 + 中央暖晕，近看有质感、远看是留白 */
+/* 金面肌理：极淡的墨点 + 中央提亮，近看有质感、远看是整块金 */
 .gate-texture {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background-image: radial-gradient(rgba(28, 27, 25, 0.055) 1px, transparent 1px);
+  background-image: radial-gradient(rgba(28, 27, 25, 0.13) 1px, transparent 1px);
   background-size: 26px 26px;
   mask-image: radial-gradient(ellipse 62% 52% at 50% 46%, transparent 30%, black 78%);
   -webkit-mask-image: radial-gradient(ellipse 62% 52% at 50% 46%, transparent 30%, black 78%);
@@ -116,7 +119,7 @@ async function submit() {
   content: '';
   position: absolute;
   inset: 0;
-  background: radial-gradient(ellipse 54% 42% at 50% 44%, rgba(178, 58, 38, 0.045), transparent 70%);
+  background: radial-gradient(ellipse 54% 42% at 50% 44%, rgba(255, 255, 255, 0.22), transparent 70%);
 }
 
 .gate-main {
@@ -129,7 +132,7 @@ async function submit() {
   width: 100%;
 }
 
-.gate-seal { color: var(--cinnabar); margin-bottom: 30px; }
+.gate-seal { color: var(--ink); margin-bottom: 30px; }
 /* 印鉴画圆：首访一次的仪式感（此后不再出现，不做循环动画） */
 .seal-ring {
   stroke-dasharray: 300;
@@ -145,7 +148,7 @@ async function submit() {
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.34em;
-  color: var(--ink-3);
+  color: rgba(28, 27, 25, 0.62);
   margin: 0 0 18px;
 }
 .gate-title {
@@ -157,7 +160,7 @@ async function submit() {
 }
 .gate-sub {
   margin: 14px 0 0;
-  color: var(--ink-3);
+  color: rgba(28, 27, 25, 0.68);
   font-size: 14px;
   letter-spacing: 0.08em;
 }
@@ -173,12 +176,12 @@ async function submit() {
 .gate-rule::after {
   content: '';
   flex: 1;
-  border-top: 1px solid var(--hairline-strong);
+  border-top: 1px solid rgba(28, 27, 25, 0.4);
 }
 .gate-rule span {
   width: 5px;
   height: 5px;
-  background: var(--cinnabar);
+  background: var(--ink);
   transform: rotate(45deg);
 }
 
@@ -187,12 +190,12 @@ async function submit() {
   display: flex;
   align-items: center;
   gap: 10px;
-  border-bottom: 1px solid var(--hairline-strong);
+  border-bottom: 1.5px solid rgba(28, 27, 25, 0.45);
   padding-bottom: 10px;
   transition: border-color var(--dur-med) var(--ease-out);
 }
 .gate-field:focus-within { border-bottom-color: var(--ink); }
-.gate-field.failed { border-bottom-color: var(--cinnabar); animation: shake 380ms var(--ease-out); }
+.gate-field.failed { border-bottom-color: var(--danger-on-gold); animation: shake 380ms var(--ease-out); }
 @keyframes shake {
   20% { transform: translateX(-5px); }
   45% { transform: translateX(4px); }
@@ -209,7 +212,7 @@ async function submit() {
   color: var(--ink);
   letter-spacing: 0.02em;
 }
-.gate-input::placeholder { color: var(--ink-4); }
+.gate-input::placeholder { color: rgba(28, 27, 25, 0.42); }
 .gate-go {
   display: inline-flex;
   align-items: center;
@@ -217,20 +220,24 @@ async function submit() {
   width: 34px;
   height: 34px;
   border-radius: 50%;
-  color: var(--ink-3);
-  transition: color var(--dur-fast) var(--ease-out),
-              background var(--dur-fast) var(--ease-out),
-              transform var(--dur-fast) var(--ease-out);
+  background: var(--ink);
+  color: var(--gold);
+  transition: transform var(--dur-fast) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
 }
 .gate-go:active { transform: scale(0.94); }
-.gate-go:disabled { opacity: 0.4; cursor: not-allowed; }
+.gate-go:disabled { opacity: 0.35; cursor: not-allowed; }
 @media (hover: hover) and (pointer: fine) {
-  .gate-go:not(:disabled):hover { color: #fff; background: var(--cinnabar); }
+  .gate-go:not(:disabled):hover { transform: scale(1.06); }
+}
+.spinner-ink {
+  border-color: rgba(245, 199, 59, 0.35);
+  border-top-color: var(--gold);
 }
 .gate-error {
   margin: 10px 0 0;
   font-size: 12.5px;
-  color: var(--cinnabar);
+  color: var(--danger-on-gold);
+  font-weight: 600;
   opacity: 0;
   transform: translateY(-3px);
   transition: opacity var(--dur-med) var(--ease-out), transform var(--dur-med) var(--ease-out);
@@ -241,14 +248,14 @@ async function submit() {
 .gate-note {
   margin-top: 44px;
   font-size: 12px;
-  color: var(--ink-4);
+  color: rgba(28, 27, 25, 0.55);
   letter-spacing: 0.12em;
 }
 .gate-foot {
   position: absolute;
   bottom: 26px;
   font-size: 12px;
-  color: var(--ink-4);
+  color: rgba(28, 27, 25, 0.55);
   letter-spacing: 0.04em;
 }
 </style>

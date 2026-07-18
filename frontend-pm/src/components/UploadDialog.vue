@@ -86,7 +86,7 @@ async function submit() {
 .up-input { display: none; }
 .up-icon { font-size: 16px; }
 .up-name em { font-style: normal; color: var(--ink-3); margin-left: 6px; }
-.up-error { font-size: 12px; color: var(--cinnabar); }
+.up-error { font-size: 12px; color: var(--danger); }
 .up-hint { font-size: 12px; color: var(--ink-4); }
 .form-item { display: block; }
 .up-foot { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
