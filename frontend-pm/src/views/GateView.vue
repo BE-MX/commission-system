@@ -4,11 +4,7 @@
 
     <main class="gate-main">
       <div class="gate-seal rise">
-        <svg width="92" height="92" viewBox="0 0 92 92" role="img" aria-label="莱莎项目站印鉴">
-          <circle class="seal-ring seal-ring-outer" cx="46" cy="46" r="41" fill="none" stroke="currentColor" stroke-width="2.4"/>
-          <circle class="seal-ring seal-ring-inner" cx="46" cy="46" r="32" fill="none" stroke="currentColor" stroke-width="1"/>
-          <text x="46" y="57" text-anchor="middle" font-size="33" fill="currentColor" style="font-family: var(--font-serif)">莱</text>
-        </svg>
+        <img class="gate-seal-img" src="/seal-logo.png" width="120" height="120" alt="LeShine Hair" />
       </div>
 
       <p class="gate-eyebrow rise rise-1">LESHINE HAIR · PM HUB</p>
@@ -27,7 +23,7 @@
             autocomplete="off"
             autocapitalize="off"
             spellcheck="false"
-            placeholder="输入项目用户名（口头分发的那串，不是姓名）"
+            placeholder="输入项目用户名（非姓名）"
             :disabled="busy"
             @input="errorShown = false"
           />
@@ -132,17 +128,17 @@ async function submit() {
   width: 100%;
 }
 
-.gate-seal { color: var(--ink); margin-bottom: 30px; }
-/* 印鉴画圆：首访一次的仪式感（此后不再出现，不做循环动画） */
-.seal-ring {
-  stroke-dasharray: 300;
-  stroke-dashoffset: 300;
-  transform-origin: center;
-  transform: rotate(-90deg);
-  animation: seal-draw 900ms var(--ease-in-out) 120ms forwards;
+.gate-seal { margin-bottom: 30px; }
+/* 圆形 logo 徽章入场：首访一次的仪式感（此后不再出现） */
+.gate-seal-img {
+  display: block;
+  border-radius: 50%;
+  animation: seal-in 700ms var(--ease-out) 120ms both;
 }
-.seal-ring-inner { animation-delay: 420ms; animation-duration: 700ms; }
-@keyframes seal-draw { to { stroke-dashoffset: 0; } }
+@keyframes seal-in {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
 
 .gate-eyebrow {
   font-family: var(--font-mono);
