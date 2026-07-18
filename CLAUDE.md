@@ -21,6 +21,7 @@ cd backend && alembic upgrade head          # 迁移
 cd frontend && npm run dev                  # 前端 dev :3000（代理 /api → 8001）
 cd frontend && npm run build                # 构建
 python scripts/check_conventions.py        # 完工前跑约定检查（见 DoD）
+python scripts/git_sweep.py --open         # git 欠账巡检 + 可视化看板（tmp/git-sweep.html）
 deploy\deploy.bat                           # 服务器部署（拉码→依赖→迁移→构建→SCP→重启双服务）
 ```
 
@@ -71,11 +72,12 @@ miniprogram/  services/whatsapp-connector/  deploy/  docs/  config/
 ### 通用
 
 16. bat 脚本：UTF-8 + 首行 `chcp 65001 >nul`；`set VAR=value` 不带引号
-17. 密钥/token/密码不进代码；git push 仅跨设备同步，等用户说才执行
+17. 密钥/token/密码不进代码；**main 的 push 等用户说才执行**；feature 分支 `push -u` 是备份、随时可推（2026-07-18 起）
 18. **搬移/重命名函数前全局 grep 旧引用**（含函数体内延迟 import）——注册期不报错、运行期才炸
 19. **小步提交**：一个功能拆 3~5 个提交（迁移/后端/前端/测试），每个提交可独立回滚
 20. 展会试戴(expo)文案禁用词：便宜/划算/性价比/打折/薅羊毛；发量头皮判断只进 internal 字段
 21. **移动端 `/m/` 冻结为素材域专用**，不再往里加新领域；新移动端需求走主站响应式或微信小程序两条既有路径
+22. **多智能体并行 Git**（细则见根目录 `AGENTS.md`，两处同步维护）：①分支 `<tool>/<topic>`（claude/codex/kimi），每个代理固定用自己的 worktree，merge 回 main 只在主目录做，合并后立删本地+远端分支；②分支创建当天 `push -u`；③零散小改动不开新分支；④同模块同时只允许一个代理，接力者先 rebase 最新 main 且当天合并；⑤commit 前 `git branch --show-current` 确认分支、建迁移前 `git log --all --oneline -- backend/alembic/versions/` 查撞号；⑥收工跑 `python scripts/git_sweep.py`（每日 18:00 定时巡检推钉钉）
 
 ## 完工 DoD（每次改动落地前自查）
 

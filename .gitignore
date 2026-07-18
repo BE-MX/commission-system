@@ -58,3 +58,10 @@ docs/implementation-notes.md
 
 # PM Hub 资料文件（商业数据，永不进 git）
 backend/data/
+
+# 临时演示/生成物（git-sweep 看板等）
+/tmp/
+
+# 其他编码代理的本机配置（codex / superpowers）
+.codex/
+.superpowers/
