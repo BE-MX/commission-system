@@ -94,7 +94,7 @@ MATERIALS_SEED: list[tuple] = [
 
 # (username, display_name)——不用真名拼音，口头分发（设计稿 §8.3）
 MEMBERS_SEED: list[tuple] = [
-    ("liang.xz26", "亮哥"),
+    ("liang.xz26", "牟亮亮"),
     ("sunzh.qm41", "孙正华"),
     ("liuxz.wt73", "刘训政"),
     ("bixz.kd28", "毕晓珍"),
