@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.pm import material_service
-from app.pm.auth import entry_rate_limiter, issue_pm_token, verify_pm_token
+from app.pm.auth import entry_ip_rate_limiter, entry_rate_limiter, issue_pm_token, verify_pm_token
 from app.pm.models import PmMaterial, PmMaterialVersion, PmMember, PmProject
 from app.pm.router import router as pm_router
 from app.pm.seed_data import MEMBERS_SEED
@@ -29,6 +29,7 @@ def pm_seed(db, tmp_path, monkeypatch):
     monkeypatch.setattr("app.pm.service.PM_STORAGE_ROOT", tmp_path)
     monkeypatch.setattr("app.pm.router.run_diff_in_background", lambda vid: None)
     entry_rate_limiter._hits.clear()
+    entry_ip_rate_limiter._hits.clear()
     project = PmProject(name="测试项目", code="alibaba-ai-agent")
     db.add(project)
     for username, display in MEMBERS_SEED[:3]:
@@ -110,6 +111,30 @@ class TestToken:
             resp = client.post("/api/pm/entry", json={"username": "bad.actor77"})
             assert resp.status_code == 429
             assert resp.json()["detail"] == "无法验证，请联系亮哥"  # 提示仍不区分原因
+
+    def test_entry_ip_rate_limit_rotating_usernames(self, db, pm_seed):
+        """轮换用户名绕不过 IP 维度：同一 IP 20 次失败后第 21 个新用户名也被拦。"""
+        with pm_client(db) as client:
+            for i in range(20):
+                client.post("/api/pm/entry", json={"username": f"rotate.{i:02d}"})
+            resp = client.post("/api/pm/entry", json={"username": "rotate.fresh"})
+            assert resp.status_code == 429
+            # 合法用户名同样被同 IP 拦截（预检在白名单查询之前）
+            resp = client.post("/api/pm/entry", json={"username": MEMBERS_SEED[0][0]})
+            assert resp.status_code == 429
+
+    def test_client_ip_header_priority(self):
+        """X-Real-IP（云 Nginx 覆盖式写入）优先；XFF 只信末位；无头落直连地址。"""
+        from types import SimpleNamespace
+
+        from app.pm.auth import client_ip
+
+        def _req(headers, host="10.0.0.1"):
+            return SimpleNamespace(headers=headers, client=SimpleNamespace(host=host))
+
+        assert client_ip(_req({"X-Real-IP": "1.2.3.4", "X-Forwarded-For": "9.9.9.9, 1.2.3.4"})) == "1.2.3.4"
+        assert client_ip(_req({"X-Forwarded-For": "attacker-fake, 5.6.7.8"})) == "5.6.7.8"
+        assert client_ip(_req({})) == "10.0.0.1"
 
     def test_expired_token_rejected(self, db, pm_seed):
         settings = get_settings()

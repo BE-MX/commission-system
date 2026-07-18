@@ -10,7 +10,7 @@ import mimetypes
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -21,6 +21,7 @@ from app.pm import activity_service, material_service, task_service
 from app.pm.auth import (
     PmIdentity,
     check_entry_rate,
+    client_ip,
     entry_fail,
     entry_rate_exceeded,
     issue_pm_token,
@@ -44,15 +45,16 @@ router = APIRouter()
 # ── 进入与身份 ───────────────────────────────────────────────────────
 
 @router.post("/entry")
-def entry(payload: EntryRequest, db: Session = Depends(get_db)):
+def entry(payload: EntryRequest, request: Request, db: Session = Depends(get_db)):
     """门牌：白名单用户名换 token。失败提示统一，不区分原因（防枚举）。
 
-    限速只计失败尝试（设计稿 §3.1）：先只读预检，验证失败才计数，
-    避免合法用户被自己的成功进入误伤。"""
+    限速只计失败尝试（设计稿 §3.1），双维度：用户名 + 真实 IP（client_ip 取头）。
+    先只读预检，验证失败才计数，避免合法用户被自己的成功进入误伤。"""
     username = payload.username.strip()
-    if entry_rate_exceeded(username):
-        logger.warning("[PM] entry rate limited: %s", username)
-        print(f"[PM] entry rate limited: {username}", flush=True)
+    ip = client_ip(request)
+    if entry_rate_exceeded(username, ip):
+        logger.warning("[PM] entry rate limited: %s (ip=%s)", username, ip)
+        print(f"[PM] entry rate limited: {username} (ip={ip})", flush=True)
         raise HTTPException(status_code=429, detail="无法验证，请联系亮哥")
     member = (
         db.query(PmMember)
@@ -60,7 +62,7 @@ def entry(payload: EntryRequest, db: Session = Depends(get_db)):
         .first()
     )
     if not member:
-        check_entry_rate(username)  # 记一次失败；达到阈值后后续预检拦截
+        check_entry_rate(username, ip)  # 双维度各记一次失败；达到阈值后后续预检拦截
         raise entry_fail()
     token = issue_pm_token(member.username)
     try:

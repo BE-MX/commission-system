@@ -4,8 +4,9 @@
 - token = base64url(username|exp|epoch) + "." + HMAC-SHA256 截断签名，30 天有效
 - require_pm_member 每请求验签 + 回查 ark_pm_members.is_active——移除名单立即生效
 - PM_TOKEN_EPOCH 是全局版本号 salt，极端情况 +1 全员重新验证
-- entry 失败提示不区分原因（防枚举），按用户名维度限速 5 次/分钟
-  （生产链路 frp 隧道全员同 IP，IP 维度限速待 X-Forwarded-For 确认后再启用）
+- entry 失败提示不区分原因（防枚举），限速双维度：用户名 5 次/分钟 + 真实 IP 20 次/分钟
+  （IP 取云 Nginx 的 X-Real-IP——proxy_set_header 覆盖式写入不可伪造，2026-07-18 已核实
+  pm.leshine.conf；XFF 只信末位；全办公室共享出口 IP，IP 阈值须容纳全员并发进入）
 """
 
 import base64
@@ -28,7 +29,8 @@ from app.pm.models import PmMember
 logger = logging.getLogger("commission")
 
 _ENTRY_FAIL_MESSAGE = "无法验证，请联系亮哥"
-_ENTRY_RATE_LIMIT = 5  # 同一用户名每分钟最多尝试次数
+_ENTRY_RATE_LIMIT = 5  # 同一用户名每分钟最多失败次数
+_ENTRY_IP_RATE_LIMIT = 20  # 同一真实 IP 每分钟最多失败次数（办公室全员共享一个出口 IP）
 _ENTRY_RATE_WINDOW = 60
 
 
@@ -97,12 +99,13 @@ def require_pm_member(request: Request, db: Session = Depends(get_db)) -> PmIden
 
 
 class EntryRateLimiter:
-    """entry 接口按用户名维度的内存滑动窗口限速（单机单进程够用）。
+    """entry 接口内存滑动窗口限速，key 任意（用户名 / 真实 IP），单机单进程够用。
 
     只计失败尝试——合法用户不被自己历史的成功进入误伤；
     定期淘汰过期 key，防长期运行内存缓涨。"""
 
-    def __init__(self) -> None:
+    def __init__(self, limit: int) -> None:
+        self._limit = limit
         self._hits: dict[str, deque] = {}
         self._lock = threading.Lock()
         self._last_gc = time.time()
@@ -114,43 +117,63 @@ class EntryRateLimiter:
         for key in [k for k, v in self._hits.items() if not v or v[-1] < now - _ENTRY_RATE_WINDOW]:
             self._hits.pop(key, None)
 
-    def hit_and_check(self, username: str) -> bool:
+    def hit_and_check(self, key: str) -> bool:
         now = time.time()
         with self._lock:
             self._gc(now)
-            hits = self._hits.setdefault(username, deque())
+            hits = self._hits.setdefault(key, deque())
             while hits and hits[0] < now - _ENTRY_RATE_WINDOW:
                 hits.popleft()
-            if len(hits) >= _ENTRY_RATE_LIMIT:
+            if len(hits) >= self._limit:
                 return False
             hits.append(now)
             return True
 
+    def exceeded(self, key: str) -> bool:
+        """只读检查（不计数）：用于验证前预检。"""
+        now = time.time()
+        with self._lock:
+            hits = self._hits.get(key)
+            if not hits:
+                return False
+            while hits and hits[0] < now - _ENTRY_RATE_WINDOW:
+                hits.popleft()
+            return len(hits) >= self._limit
 
-entry_rate_limiter = EntryRateLimiter()
+
+entry_rate_limiter = EntryRateLimiter(_ENTRY_RATE_LIMIT)
+entry_ip_rate_limiter = EntryRateLimiter(_ENTRY_IP_RATE_LIMIT)
 
 
-def check_entry_rate(username: str) -> None:
-    """失败前置检查：命中限速时抛 429（提示与验证失败一致，防枚举）。
+def client_ip(request: Request) -> str:
+    """生产链路（云 Nginx → frp → 本地）后端直连 addr 恒为隧道地址，真实 IP 只能取头。
 
-    调用方只有在验证失败后才应再调用本函数记录一次失败——
-    实现上为「先查后计」合并为一次调用，由 router 保证只在失败路径调用。"""
-    if not entry_rate_limiter.hit_and_check(username):
-        logger.warning("[PM] entry rate limited: %s", username)
-        print(f"[PM] entry rate limited: {username}", flush=True)
+    X-Real-IP 由云 Nginx proxy_set_header 覆盖式写入（客户端伪造值到不了后端）；
+    XFF 用 $proxy_add_x_forwarded_for 追加，只有末位可信；本地开发直连无头，落 client.host。"""
+    real_ip = request.headers.get("X-Real-IP", "").strip()
+    if real_ip:
+        return real_ip
+    xff = request.headers.get("X-Forwarded-For", "")
+    if xff:
+        return xff.rsplit(",", 1)[-1].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def check_entry_rate(username: str, ip: str) -> None:
+    """失败计数：双维度各记一次，任一维度到阈值抛 429（提示与验证失败一致，防枚举）。
+
+    调用方只有在验证失败后才应调用本函数——由 router 保证只在失败路径调用。"""
+    user_ok = entry_rate_limiter.hit_and_check(username)
+    ip_ok = entry_ip_rate_limiter.hit_and_check(ip)
+    if not user_ok or not ip_ok:
+        logger.warning("[PM] entry rate limited: %s (ip=%s)", username, ip)
+        print(f"[PM] entry rate limited: {username} (ip={ip})", flush=True)
         raise HTTPException(status_code=429, detail=_ENTRY_FAIL_MESSAGE)
 
 
-def entry_rate_exceeded(username: str) -> bool:
-    """只读检查（不计数）：用于验证前预检。"""
-    now = time.time()
-    with entry_rate_limiter._lock:
-        hits = entry_rate_limiter._hits.get(username)
-        if not hits:
-            return False
-        while hits and hits[0] < now - _ENTRY_RATE_WINDOW:
-            hits.popleft()
-        return len(hits) >= _ENTRY_RATE_LIMIT
+def entry_rate_exceeded(username: str, ip: str) -> bool:
+    """只读预检（不计数）：任一维度已达阈值即拦。"""
+    return entry_rate_limiter.exceeded(username) or entry_ip_rate_limiter.exceeded(ip)
 
 
 def entry_fail() -> HTTPException:
