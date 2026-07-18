@@ -73,6 +73,11 @@ def _entry(client, username="liang.xz26"):
     return resp.json()["data"]
 
 
+def _display_name(username):
+    """从 MEMBERS_SEED 取期望显示名，避免断言硬编码具体名字。"""
+    return next(d for u, d in MEMBERS_SEED if u == username)
+
+
 def _auth(token):
     return {"Authorization": f"Bearer {token}"}
 
@@ -87,7 +92,7 @@ class TestToken:
     def test_entry_ok_and_me(self, db, pm_seed):
         with pm_client(db) as client:
             data = _entry(client)
-            assert data["display_name"] == "亮哥"
+            assert data["display_name"] == _display_name("liang.xz26")
             resp = client.get("/api/pm/me", headers=_auth(data["token"]))
             assert resp.status_code == 200
             assert resp.json()["data"]["username"] == "liang.xz26"
@@ -330,7 +335,7 @@ class TestApiFlow:
             actions = {a["action"] for a in acts}
             assert "upload_version" in actions and "entry" in actions
             up = next(a for a in acts if a["action"] == "upload_version")
-            assert up["display_name"] == "亮哥"
+            assert up["display_name"] == _display_name("liang.xz26")
             assert up["object_name"] == "价格体系 v1"
 
     def test_task_crud_and_blocked_reason_required(self, db, pm_seed):
