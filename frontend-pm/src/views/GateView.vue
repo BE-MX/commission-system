@@ -27,7 +27,7 @@
             autocomplete="off"
             autocapitalize="off"
             spellcheck="false"
-            placeholder="输入你的项目用户名"
+            placeholder="输入项目用户名（口头分发的那串，不是姓名）"
             :disabled="busy"
             @input="errorShown = false"
           />
