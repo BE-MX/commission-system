@@ -1,7 +1,7 @@
 """PM Hub 预置数据 seed 脚本（设计稿 §5.7：迁移 + seed 脚本一次性写入）。
 
 用法（在 backend/ 目录下）：
-    python scripts/seed_pm.py           # 幂等写入：项目/白名单/35 项材料/5 条 workshop 任务
+    python scripts/seed_pm.py           # 幂等写入：项目/白名单/35 项材料/14 条行动任务
     python scripts/seed_pm.py --reset   # 清空 pm 业务数据后重灌（材料清单核对修正后用）
 
 幂等口径：项目按 code upsert；白名单按 username 补缺（不动已有行）；
@@ -85,7 +85,7 @@ def seed() -> None:
         else:
             print(f"[seed_pm] 材料已存在 {material_count} 项，跳过（要重灌用 --reset）")
 
-        # 4. workshop 任务（仅当项目下为空）
+        # 4. 行动清单任务（仅当项目下为空）
         db.flush()
         task_count = db.query(PmTask).filter(PmTask.project_id == project.id).count()
         if task_count == 0:
@@ -93,16 +93,17 @@ def seed() -> None:
                 m.list_no: m.id
                 for m in db.query(PmMaterial).filter(PmMaterial.project_id == project.id).all()
             }
-            for title, desc, link_no in TASKS_SEED:
+            for i, (title, desc, phase, link_nos) in enumerate(TASKS_SEED):
                 task = PmTask(
                     project_id=project.id, title=title, description=desc,
-                    status="todo", created_by="seed",
+                    status="todo", phase=phase, sort_order=i, created_by="seed",
                 )
                 db.add(task)
                 db.flush()
-                if link_no in no_to_id:
-                    db.add(PmTaskMaterial(task_id=task.id, material_id=no_to_id[link_no], created_at=bj_now()))
-            print(f"[seed_pm] 写入 workshop 任务 {len(TASKS_SEED)} 条")
+                for link_no in link_nos:
+                    if link_no in no_to_id:
+                        db.add(PmTaskMaterial(task_id=task.id, material_id=no_to_id[link_no], created_at=bj_now()))
+            print(f"[seed_pm] 写入行动任务 {len(TASKS_SEED)} 条")
         else:
             print(f"[seed_pm] 任务已存在 {task_count} 条，跳过")
 
