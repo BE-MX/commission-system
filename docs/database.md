@@ -154,3 +154,8 @@
 - `ark_pm_comments`：评论（Phase 2 划线锚点 anchor_text/anchor_context + 文件级；Phase 1 只建表不开放端点）。
 - `ark_pm_activity_logs`：审计日志（username/action/object_type/object_id/object_name 快照/detail JSON；idx (project_id, created_at)）。
 - 文件存储：`REPO_ROOT/backend/data/pm/{material_id}/{uuid}{ext}`——**绝不放 uploads/**（公开静态挂载）；下载/预览一律 300s 短时效签名 URL（PM_TOKEN_SECRET 派生 HMAC）。时间戳统一北京时间（bj_now）。
+## 培训速递（迁移 075）
+
+- `ark_training_digests`：培训速递主表——基本信息（培训名/机构/讲师/日期/参训人/标签）、一句话总结、`sections_json` 结构化分区（重点/亮点/可应用点/方法/参训人点评）、draft/published 状态、阅读时长与浏览/有用计数。
+- `ark_training_digest_files`：原始资料附件元数据，`storage_path` 相对 `TRAINING_STORAGE_ROOT` 私有目录；删除主表行时 service 层负责删行+清盘（不依赖 CASCADE）。
+- `ark_training_digest_feedback`：「有用」轻反馈，`(digest_id, user_id, kind)` 唯一约束防重复。

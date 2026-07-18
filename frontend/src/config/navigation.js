@@ -106,6 +106,7 @@ export const MENU_GROUPS = {
       'insight_case:read', 'insight_case:write',
       'insight_minutes:read', 'insight_minutes:write',
       'customer_opportunity:read', 'customer_radar:read',
+      'training:read', 'training:write', 'training:admin',
     ],
   },
   design: {
@@ -676,6 +677,43 @@ export const NAV_ENTRIES = [
   },
 
   // ── 方舟洞见 ───────────────────────────────────────────
+  // ── 培训速递 ───────────────────────────────────────────
+  {
+    path: '/training/digests',
+    name: 'TrainingList',
+    component: () => import('@/views/training/TrainingList.vue'),
+    title: '培训速递',
+    anyPermission: ['training:read', 'training:write', 'training:admin'],
+    menu: {
+      group: 'insight', title: '培训速递', icon: Reading, order: 3,
+      anyPermission: ['training:read', 'training:write', 'training:admin'],
+    },
+  },
+  {
+    path: '/training/digests/new',
+    name: 'TrainingEditorNew',
+    component: () => import('@/views/training/TrainingEditor.vue'),
+    title: '发布培训速递',
+    permission: 'training:write',
+    hideInMenu: true,
+  },
+  {
+    path: '/training/digests/:id',
+    name: 'TrainingDetail',
+    component: () => import('@/views/training/TrainingDetail.vue'),
+    title: '培训速览',
+    anyPermission: ['training:read', 'training:write', 'training:admin'],
+    hideInMenu: true,
+  },
+  {
+    path: '/training/digests/:id/edit',
+    name: 'TrainingEditorEdit',
+    component: () => import('@/views/training/TrainingEditor.vue'),
+    title: '编辑培训速递',
+    permission: 'training:write',
+    hideInMenu: true,
+  },
+
   {
     path: '/insight/intelligence',
     name: 'InsightIntelligenceOverview',

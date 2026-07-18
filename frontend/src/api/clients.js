@@ -25,3 +25,4 @@ export const expoClient = createApiClient({ baseURL: '/api/expo', timeout: 30000
 export const aftersalesClient = createApiClient({ baseURL: '/api/aftersales', timeout: 300000 })
 export const adminClient = createApiClient({ baseURL: '/api/auth', timeout: 30000 }) // 用户/角色/绑定等管理端点（登录语义仍走 auth.js）
 export const publicStockClient = createApiClient({ baseURL: '/api/public/stock', timeout: 30000 }) // 对外库存查询（无登录，key 门禁）
+export const trainingClient = createApiClient({ baseURL: '/api/training', timeout: 30000 }) // 培训速递（AI 提炼单独放长超时）

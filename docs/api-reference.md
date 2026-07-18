@@ -392,3 +392,10 @@
 - 动态：`GET /activity?username&object_type&limit&offset`。
 - AI 差异管线：本地精确 diff（文本 difflib / xlsx openpyxl 单元格级 / docx python-docx / pdf pypdf）→ `ai.service.chat` preset `pm_diff`（启动自动初始化）转述概要；`pending/done/failed/not_applicable`，v1 与扫描件/不支持类型落 not_applicable，失败可重试；启动时回收超时 pending（看门狗 600s）。
 - 预置：`python backend/scripts/seed_pm.py`（项目 + 8 人白名单 + 35 项材料 + 5 条 workshop 任务；`--reset` 重灌）。本地预览：`python backend/scripts/pm_dev_server.py --port 8003`（SQLite + demo 数据，免 MySQL/.env）。
+## 培训速递（`/api/training`）
+
+- 查询：`GET ''`（列表：`keyword`/`tag`/`mine`/`status` 分页，默认只见已发布）、`GET /{id}`（详情，已发布他人浏览自动 +1 view）。
+- 编辑：`POST ''`（创建草稿）、`PUT /{id}`、`DELETE /{id}`（已发布仅 admin 可删）。
+- 附件：`POST /{id}/files`（白名单后缀+大小校验，私有目录 TRAINING_STORAGE_ROOT）、`DELETE /files/{file_id}`、`GET /files/{file_id}/download`（JWT 鉴权 FileResponse，前端 axios blob）。
+- AI 与发布：`POST /{id}/draft`（AI 提炼：粘贴文字+图片多模态+PDF 抽文本 → 结构化草稿，preset `training_digest_draft`）、`POST /{id}/publish`（★必填分区校验不过 400；成功即推钉钉群 actionCard）、`POST /{id}/push`（手动重推）、`POST /{id}/useful`（有用标记 toggle，唯一约束防重复）。
+- 权限：`training:read` 查看；`training:write` 自助发布（编辑仅限本人创建，草稿仅本人可见）；`training:admin` 管理全部。
