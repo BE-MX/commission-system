@@ -54,7 +54,8 @@ export function useTasks() {
       await apiCreateTask(payload)
       toast.success('任务已创建')
     }
-    await load()
+    // 刷新失败不算保存失败——抛出去会让抽屉判定"需重试"，重试就重复建任务
+    try { await load() } catch { /* 拦截器已提示 */ }
   }
 
   async function changeStatus(task, status, blockedReason) {

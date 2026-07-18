@@ -65,7 +65,8 @@ export function useMaterials() {
   async function create(payload) {
     await apiCreateMaterial(payload)
     toast.success('资料条目已新增')
-    await load()
+    // 刷新失败不算新增失败——抛出去会让抽屉判定"需重试"
+    try { await load() } catch { /* 拦截器已提示 */ }
   }
 
   return { materials, loading, filters, filtered, grouped, summary, load, create }
