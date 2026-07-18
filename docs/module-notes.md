@@ -587,12 +587,13 @@ frontend/src/
 设计稿 `docs/requirements/2026-07-17-pm-material-hub.md`。后端 `app/pm/` 领域模块 + 独立前端 `frontend-pm/`（自研设计系统：纸面/墨色/朱砂，tokens.css 与方舟零共享）。
 
 **架构要点**
-- 鉴权不接平台 RBAC：`POST /api/pm/entry` 白名单换 HMAC token（payload=username+exp+epoch，PM_TOKEN_SECRET 留空回退 JWT_SECRET_KEY；PM_TOKEN_EPOCH +1 全员重签）；`require_pm_member` 每请求验签 + 回查 `ark_pm_members.is_active`（移除立即生效）。entry 统一失败提示防枚举 + 内存滑动窗口限速（5 次/分/用户名；frp 隧道全员同 IP，IP 维度待 XFF 确认）。
+- 鉴权不接平台 RBAC：`POST /api/pm/entry` 白名单换 HMAC token（payload=username+exp+epoch，PM_TOKEN_SECRET 留空回退 JWT_SECRET_KEY；PM_TOKEN_EPOCH +1 全员重签）；`require_pm_member` 每请求验签 + 回查 `ark_pm_members.is_active`（移除立即生效）。entry 统一失败提示防枚举 + 内存滑动窗口失败限速双维度（5 次/分/用户名 + 20 次/分/真实 IP，2026-07-18 起）：IP 经 `client_ip()` 取云 Nginx 覆盖式写入的 X-Real-IP（不可伪造，pm.leshine.conf 已核实），XFF 只信末位，本地直连落 client.host；IP 阈值放宽因办公室全员共享一个出口 IP。
 - check_conventions 登记方式：`require_pm_member` 加进脚本的 AUTH_PATTERNS（不把 router 文件加白名单，漏写依赖仍查得出）；`/entry` 走 AUTH_EXEMPT_ROUTES；签名文件端点靠端点内 `_verify_pm_signature` 匹配 `_verify_\w+` 过机检。
 - 文件存储红线：`REPO_ROOT/backend/data/pm/{material_id}/{uuid}{ext}`，绝不放 uploads/（StaticFiles 无鉴权公开 + 主站存储型 XSS 风险）；`.gitignore` 已排除 `backend/data/`；备份 backup-uploads.bat 已纳入。下载/预览走 300s 签名 URL（sign=HMAC(version_id+expires)），软删即 404，HTML 强制 attachment，MD 由前端取原文 sanitize 渲染（marked + DOMPurify）。
 - 版本口径：版本号只增不复用（max 含已删 +1）；当前版本=未删除最大版本号；AI 差异「上一版」同口径。唯一约束 `(material_id, version_no)` + IntegrityError 重试 3 次（重试 helper `_next_version_no` 便于测试注入）。资料名项目内唯一，软删改名 `name#del{id}` 让位。
 - AI 差异管线：本地先算精确 diff（文本 difflib / xlsx openpyxl data_only 全 sheet 单元格级 / docx python-docx 含表格 / pdf pypdf 抽出为空=扫描件落 not_applicable），diff 截断 12k 字符再喂 `pm_diff` preset（启动时 bootstrap 幂等创建，复用 seed_ai._auto_create_preset）；BackgroundTask 内自建 SessionLocal（红线 4 线程池许可场景）；失败标 failed 可手动重试，不影响版本保存；启动看门狗回收 pending>600s。
 - 时间戳统一北京时间 `bj_now()`（同生产报工口径）。
+- 在线编辑（Phase 2 §6.1，2026-07-18）：`POST /materials/{id}/versions/text` 复用 `upload_version` 整条通道（`save_text_version` 仅做 ext 白名单 `.md/.markdown/.txt` + 空内容拦截 + utf-8 编码），文件名承接基准版本 original_name（下载名/可编辑性由扩展名派生，编辑链不变）；审计 action=`edit_version` 带 `based_on`，activity 的 diff_hint 过滤器须同时收 upload_version/edit_version（两处）。前端 `MdEditor.vue` 全屏分屏（z-index 830：压抽屉 800、让确认弹窗 850），保存前重取 material 对比打开时的头版本号，变了先弹「有更新的版本」确认再存（后端不拒绝，版本号唯一约束兜底）；脏内容关闭需确认，Ctrl+S 保存、Tab 缩进两格。
 - 迁移编号冲突（已解决并落地）：合并时发现共享库被 codex 的 `073_invoice_accessory_products`/`074_invoice_price_kind_key`/`075_training_digest`（后者当时未提交进任何分支）占头。处理：三份迁移文件收编上 main（内容逐字不动），本模块迁移顺延为 `076_pm_hub`（down_revision=075_training_digest），DB 已升级到 076。**启示：建迁移先查 `git log --all` + DB alembic_version，codex 合并其分支时 075 与 main 内容一致可干净落并**
 
 **本地预览（无需 MySQL/.env）**

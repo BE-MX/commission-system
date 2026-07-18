@@ -60,7 +60,8 @@
     - 无密码门牌：用户名白名单换 HMAC token（30 天 + epoch 全局重签兜底），每请求回查白名单（移除立即生效），统一失败提示防枚举 + 用户名维度限速；顶栏身份常显可一键切换
     - 35 项材料清单（五分类 × 重要级 × Phase 批次；seed 按设计稿锚点重建，**待亮哥用顾问原清单核对后 `seed_pm.py --reset` 重灌**）；版本自动编号只增不复用、软删回落、下载自动重命名 `名称_vN.ext`、凭据类禁传原文；AI 差异概要=本地精确 diff（difflib/openpyxl/docx/pypdf）+ pm_diff preset 转述，pending 看门狗启动回收
     - 轻量看板（四状态 + 受阻必填原因 + 关联资料徽标）、全站动态（审计日志用户侧）；文件存 `backend/data/pm/`（非公开静态），下载/预览 300s 签名 URL
-    - **待完成**：生产 `.env` 可选项 `PM_TOKEN_SECRET` 独立随机串（当前回退 JWT_SECRET_KEY，见 runbook PM 节步骤 5）；Phase 2（MD 在线编辑、划线评论）未启动
+    - 2026-07-18 追加：上传对话框/抽屉 await-emit 修复（真等待+失败留窗）+ 拖拽上传；IP 维度 entry 限速（X-Real-IP，20 次/分）；**Phase 2 之 MD 在线编辑已完成**（`POST /versions/text` + MdEditor 分屏编辑器，基线冲突确认，走上传同一版本通道）
+    - **待完成**：生产 `.env` 可选项 `PM_TOKEN_SECRET` 独立随机串（当前回退 JWT_SECRET_KEY，见 runbook PM 节步骤 5，服务器上一条命令+重启，会全员重新进门牌）；Phase 2 之划线评论未启动（表已建）
 22. ✅ **培训速递**（2026-07-18 合入 main）：参训人自助发布 + AI 提炼草稿（粘贴文字/图片多模态/PDF 抽文本 → 结构化分区）+ 4 步强引导向导 + 发布必填分区校验 + 钉钉群 actionCard 推送 + 「有用」轻反馈；`training:read/write/admin` 权限；075 迁移，3 张表
 
 ### 基础设施

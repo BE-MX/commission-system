@@ -21,8 +21,8 @@ export const uploadVersion = (id, file, changeNote) => {
 }
 export const saveTextVersion = (id, data) => api.post(`/api/pm/materials/${id}/versions/text`, data)
 export const deleteVersion = (versionId) => api.del(`/api/pm/versions/${versionId}`)
-export const fetchFileLink = (versionId, disposition = 'attachment') =>
-  api.get(`/api/pm/versions/${versionId}/file-link?disposition=${disposition}`)
+export const fetchFileLink = (versionId, disposition = 'attachment', opts) =>
+  api.get(`/api/pm/versions/${versionId}/file-link?disposition=${disposition}`, opts)
 export const retryDiff = (versionId) => api.post(`/api/pm/versions/${versionId}/retry-diff`)
 
 export const fetchTasks = (params = {}) => {

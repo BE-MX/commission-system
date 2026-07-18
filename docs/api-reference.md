@@ -386,10 +386,10 @@
 
 独立站点 pm.leshine.work 的后端。**鉴权独立于平台 RBAC**：`POST /entry` 用户名白名单换 HMAC token（30 天，PM_TOKEN_EPOCH 全局版本号 +1 全员重签）；其余端点统一 `require_pm_member`（验签 + 每请求回查 `ark_pm_members.is_active`——移除名单立即生效）。写操作全部落 `ark_pm_activity_logs` 审计。
 
-- 门牌与身份：`POST /entry`（统一失败提示防枚举 + 用户名维度限速 5 次/分）、`GET /me`、`GET /members`（白名单，供负责人下拉）。
+- 门牌与身份：`POST /entry`（统一失败提示防枚举 + 双维度失败限速：用户名 5 次/分、真实 IP 20 次/分——IP 取云 Nginx X-Real-IP，XFF 只信末位，2026-07-18 起）、`GET /me`、`GET /members`（白名单，供负责人下拉）。
 - 仪表盘：`GET /dashboard` — 材料/任务完成率、按重要级分组统计、Phase 1-4 分段进度、风险条（逾期任务 + Phase 1 未齐必须材料）、最近 10 条动态（附 AI 差异一句话）。
 - 资料：`GET|POST /materials`、`GET|PUT|DELETE /materials/{id}`（软删；名称项目内唯一，删除改名让位）。状态机 `not_started→preparing→submitted→confirmed` + `not_required` 终态，手动流转记审计。
-- 版本：`POST /materials/{id}/versions`（multipart；版本号条目内自增只增不复用，`(material_id,version_no)` 唯一约束+冲突重试；offline 凭据类/link 链接类拒绝上传；>50MB 拒绝；v2+ 自动后台触发 AI 差异管线）、`DELETE /versions/{id}`（软删后当前版本回落上一未删版）、`GET /versions/{id}/file-link?disposition=`（签发 300s 短时效签名 URL，下发自动重命名 `名称_vN.ext`）、`POST /versions/{id}/retry-diff`。
+- 版本：`POST /materials/{id}/versions`（multipart；版本号条目内自增只增不复用，`(material_id,version_no)` 唯一约束+冲突重试；offline 凭据类/link 链接类拒绝上传；>50MB 拒绝；v2+ 自动后台触发 AI 差异管线）、`POST /materials/{id}/versions/text`（在线编辑保存，Phase 2 §6.1，2026-07-18：JSON `{content, change_note?, base_version_no?}`，基准版本须为 .md/.markdown/.txt；复用上传同一版本通道，审计 action=`edit_version` 带 based_on；基线冲突由前端提示用户自行决定，后端不拒绝）、`DELETE /versions/{id}`（软删后当前版本回落上一未删版）、`GET /versions/{id}/file-link?disposition=`（签发 300s 短时效签名 URL，下发自动重命名 `名称_vN.ext`）、`POST /versions/{id}/retry-diff`。
 - 文件服务：`GET /files/{version_id}?token&expires&disposition`（**签名即鉴权**——浏览器直链不带 Authorization，素材模块同款模式；校验软删、nosniff、HTML 类强制 attachment）。
 - 任务：`GET|POST /tasks`、`PUT|DELETE /tasks/{id}`（`?assignee&phase` 筛选；blocked 必填 blocked_reason；`material_ids` 关联资料）。
 - 动态：`GET /activity?username&object_type&limit&offset`。

@@ -1,7 +1,7 @@
 <template>
   <Teleport to="body">
     <transition name="ed" appear>
-      <div class="ed-root" role="dialog" aria-label="在线编辑">
+      <div class="ed-root" role="dialog" aria-label="在线编辑" @keydown="onRootKeydown">
         <header class="ed-head">
           <div class="ed-title-wrap">
             <span class="ed-eyebrow mono">EDIT · 基于 v{{ baseVersion.version_no }}</span>
@@ -56,12 +56,11 @@
     </transition>
 
     <UiModal
-      :model-value="conflictHead !== null"
+      v-model="conflictOpen"
       title="有更新的版本"
       :message="`你编辑期间，已有人保存了 v${conflictHead}。继续保存会把你基于 v${baseVersion.version_no} 的修改另存为更新的版本，不会覆盖任何人的内容。`"
       confirm-text="继续保存"
       cancel-text="返回编辑"
-      @update:model-value="conflictHead = null"
       @confirm="confirmConflictSave"
     />
     <UiModal
@@ -97,9 +96,14 @@ const content = ref('')
 const originalContent = ref('')
 const note = ref('')
 const pane = ref('edit') // 窄屏用；宽屏 CSS 恒双栏
+const conflictOpen = ref(false)
 const conflictHead = ref(null)
 const discardConfirm = ref(false)
 const srcEl = ref(null)
+
+// 冲突基线取打开瞬间的快照——prop 是 live computed，父级 3s 轮询会把它推着走，
+// 用 prop 直比会让「编辑期间有人保存」恰好在多人活跃时漏检
+const headAtOpen = props.headVersionNo
 
 const isMd = computed(() => ['.md', '.markdown'].includes(props.baseVersion.ext))
 const dirty = computed(() => content.value !== originalContent.value)
@@ -107,8 +111,8 @@ const canSave = computed(() => loaded.value && dirty.value && !!content.value.tr
 
 onMounted(async () => {
   try {
-    // 签名 URL 直取原文（与 PreviewModal 同款路径）；原生 fetch 无拦截器，这里自己兜错
-    const link = await fetchFileLink(props.baseVersion.id, 'inline')
+    // 签名 URL 直取原文（与 PreviewModal 同款路径）；silent 免拦截器 toast，这里统一兜错
+    const link = await fetchFileLink(props.baseVersion.id, 'inline', { silent: true })
     const resp = await fetch(link.url)
     if (!resp.ok) throw new Error(`load ${resp.status}`)
     originalContent.value = await resp.text()
@@ -134,8 +138,14 @@ async function requestSave() {
   try {
     const fresh = await fetchMaterial(props.material.id)
     const freshHead = latestNo(fresh)
-    if (freshHead !== props.headVersionNo) {
+    if (freshHead === null) {
+      // 全部版本已被删——后端也会因基准已删拒绝，明确指路而不是静默失败
+      toast.error('全部版本已被他人删除，无法保存——请复制内容后关闭，重新上传为新文件')
+      return
+    }
+    if (freshHead !== headAtOpen) {
       conflictHead.value = freshHead // 交由冲突弹窗决定（§6.1：提示后用户自行选择）
+      conflictOpen.value = true
       return
     }
     await doSave()
@@ -146,7 +156,7 @@ async function requestSave() {
 }
 
 async function confirmConflictSave() {
-  conflictHead.value = null
+  conflictOpen.value = false
   busy.value = true
   try {
     await doSave()
@@ -176,12 +186,15 @@ function requestClose() {
   emit('close')
 }
 
-function onKeydown(e) {
+// Ctrl+S 挂在根容器：焦点在修改说明输入框时也要拦掉浏览器的「保存网页」
+function onRootKeydown(e) {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
     e.preventDefault()
     requestSave()
-    return
   }
+}
+
+function onKeydown(e) {
   if (e.key === 'Tab' && !e.shiftKey) {
     e.preventDefault()
     const el = e.target
