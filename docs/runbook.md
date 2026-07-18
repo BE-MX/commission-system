@@ -514,41 +514,49 @@ grep "job completed" logs\service.log | tail -20
      --non-interactive --agree-tos -m <邮箱>
    ```
    续期靠 certbot systemd timer 自动跑，依赖 80 端口的 `/.well-known/acme-challenge/` → `/var/www/letsencrypt` 通道，**该 location 不可删**
-3. **云 Nginx server block**：`/etc/nginx/conf.d/pm.leshine.conf`（2026-07-18 已部署，静态直出 + /api 走既有 frp 隧道）：
+3. **云 Nginx server block**：`/etc/nginx/conf.d/pm.leshine.conf`（2026-07-18 已部署，静态直出 + /api 走既有 frp 隧道；对抗性审查后加安全头/http2/正则收口）。安全头抽到 `snippets/pm-headers.conf` 统一维护，规避 `add_header` 不跨含 add_header 的子 location 继承的坑：
+
+   `/etc/nginx/snippets/pm-headers.conf`：
+   ```nginx
+   add_header Strict-Transport-Security "max-age=31536000" always;   # 不含 includeSubDomains，不波及父域
+   add_header X-Content-Type-Options "nosniff" always;
+   add_header X-Frame-Options "SAMEORIGIN" always;                   # 同源——PDF 预览用同源 iframe，DENY 会拦掉
+   add_header X-Robots-Tag "noindex, nofollow" always;               # 内部站防收录（设计稿 §8.4）
+   ```
+
+   `/etc/nginx/conf.d/pm.leshine.conf`：
    ```nginx
    server {
        listen 80;
        server_name pm.leshine.work;
-       location /.well-known/acme-challenge/ { root /var/www/letsencrypt; }
+       location /.well-known/acme-challenge/ { root /var/www/letsencrypt; }   # ACME 通道，不可删
        location / { return 301 https://$host$request_uri; }
    }
    server {
-       listen 443 ssl;
+       listen 443 ssl http2;   # nginx 1.24 用 listen 内联式；独立 `http2 on;` 指令要 1.25.1+，1.24 写会 nginx -t 报 unknown directive
        server_name pm.leshine.work;
        ssl_certificate     /etc/letsencrypt/live/pm.leshine.work/fullchain.pem;
        ssl_certificate_key /etc/letsencrypt/live/pm.leshine.work/privkey.pem;
        ssl_protocols TLSv1.2 TLSv1.3;
        ssl_ciphers HIGH:!aNULL:!MD5;
+       server_tokens off;
 
        root /var/www/pm/dist;
        index index.html;
 
-       # 防收录（设计稿 §8.4）；注意 location 内自带 add_header 会屏蔽继承，需逐处重复
-       add_header X-Robots-Tag "noindex, nofollow" always;
+       include snippets/pm-headers.conf;   # server 级；无自身 add_header 的子块（/、^~ /api/）自动继承
 
        location /assets/ {
            expires 1y;
            add_header Cache-Control "public, immutable";
-           add_header X-Robots-Tag "noindex, nofollow" always;
+           include snippets/pm-headers.conf;   # 本块有 add_header，必须重新 include 补头
        }
        location ~* \.html$ {
            add_header Cache-Control "no-cache";
-           add_header X-Robots-Tag "noindex, nofollow" always;
+           include snippets/pm-headers.conf;
        }
-       location / {
-           try_files $uri $uri/ /index.html;    # SPA 回退
-       }
-       location /api/ {
+       # ^~ 提升前缀优先级压过上面 \.html$ 正则，确保 /api/**.html 也反代到后端而非被正则截胡成静态 404
+       location ^~ /api/ {
            proxy_pass http://127.0.0.1:8002;   # 与主站同一 frp 反代通道（云端监听 8002，不是 8001）
            proxy_set_header Host $host;
            proxy_set_header X-Real-IP $remote_addr;
@@ -557,10 +565,13 @@ grep "job completed" logs\service.log | tail -20
            proxy_read_timeout 120s;
            client_max_body_size 60m;            # 略大于 PM_MAX_UPLOAD_MB=50
        }
+       location / {
+           try_files $uri $uri/ /index.html;    # SPA 回退
+       }
    }
    ```
 4. **数据库**：`alembic upgrade head`（073_pm_hub；若 codex 073/074 先合入，先把本迁移 down_revision 改指 074）→ `python scripts/seed_pm.py` 预置项目/白名单/35 项材料/5 条 workshop 任务
 5. **.env 可选配置**：`PM_TOKEN_SECRET`（留空回退 JWT_SECRET_KEY，生产建议独立随机串）、`PM_TOKEN_EPOCH`（默认 1，+1 全员重签）、`PM_MAX_UPLOAD_MB`（默认 50）、`PM_FILE_SIGN_TTL_SECONDS`（默认 300）
 6. **部署**：deploy.bat 已含 frontend-pm 构建 + SCP（/var/www/pm/dist，marker 增量，失败留标重试）；资料文件备份已由 backup-uploads.bat 覆盖（backend/data → backend_data）
-7. **限速启用 IP 维度的前置**：确认云 Nginx 已设 X-Forwarded-For 且 uvicorn 开 `--proxy-headers` 后再加（当前仅用户名维度）
+7. **限速启用 IP 维度的前置（红线，2026-07-18 审查发现）**：不仅要 Nginx 设 X-Forwarded-For + uvicorn 开 `--proxy-headers`，**更前置的是先关闭后端 8002 端口的公网直连**。当前 frps 把 8002 以 `0.0.0.0` 暴露公网、明文 HTTP 可达，任何人 `curl -H 'X-Forwarded-For: 伪造IP' http://<服务器>:8002/api/pm/entry` 就能绕过 Nginx 直打后端并伪造 XFF——此时启用 IP 限速/IP 审计等于给攻击者递了伪造入口。修复：frps 代理端口绑 `127.0.0.1`（Nginx 本就 proxy 到 127.0.0.1:8002，零影响）或安全组封 8002 公网入站，仅放行 localhost。**注意 MCP 网关 mount 在 `/mcp`，主站/PM 的 Nginx 都不反代它**——封 8002 前先确认没有 MCP 客户端靠直连 8002 使用（若有需另开受控入口）
 8. **下线**：摘 server block + DNS 记录即可，后端模块留存不影响平台
