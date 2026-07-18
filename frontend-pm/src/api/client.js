@@ -30,6 +30,7 @@ async function request(path, { method = 'GET', body, formData, silent } = {}) {
     }
     const err = new Error('unauthorized')
     err.unauthorized = true
+    err.status = 401 // 门牌页要靠它区分「用户名不对」与真·网络异常
     throw err
   }
 
