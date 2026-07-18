@@ -227,6 +227,23 @@ nssm start FrpcTunnel
 
 ⚠️ frpc.toml 必须有 `loginFailExit = false`：断电重启时网络比服务起得慢，没这行 frpc 首连失败即退出，隧道不会自愈。
 
+#### frps 端口封禁（2026-07-18 安全加固）
+
+对抗性审查发现 frps 面板 7500（弱口令可公网登入看内网拓扑）与后端隧道端口 8002（公网明文可达、XFF 可伪造绕过 nginx）暴露公网。用 iptables 只放行 loopback 解决，**零重启零中断**（未动 frps/frpc/auth.token）：
+
+```bash
+# 幂等脚本（先删后插到 INPUT 最前），已落 /usr/local/sbin/frp-fw-lockdown.sh
+for p in 7500 8002; do
+  iptables -D INPUT -p tcp --dport $p ! -i lo -j DROP 2>/dev/null
+  iptables -I INPUT 1 -p tcp --dport $p ! -i lo -j DROP
+done
+```
+
+- 原理：云服务器 eth0 是内网 IP（10.3.0.14，公网经腾讯云 NAT），无独立公网网卡，故按 `! -i lo` 区分——nginx 走 `127.0.0.1:8002`(loopback) 与 SSH 转发到 7500 都走 lo 放行，一切经 eth0 进来的公网/内网直连 DROP。7000（frpc 建隧道用）与 22/80/443 不动。
+- 持久化：`/etc/cron.d/frp-fw-lockdown`（`@reboot` 恢复 + `*/15` 重放，防被云镜等 flush 后长期消失）。无 netfilter-persistent，靠 cron 幂等重放。
+- 验证：**必须从外部机器**测 `curl --connect-timeout 6 http://119.28.107.92:8002/`（应 000 超时）——服务器本机 curl 自己 eth0 IP 会走 lo 放行，测不出封禁效果。
+- 剩余纵深项：dashboard 口令与 `auth.token`（`Cola…2026!` 规律）仍弱，换 `auth.token` 必须同步本地 frpc.toml 否则隧道永久断；建议腾讯云安全组也封 7500/8002（云层）。
+
 ## 日常更新
 
 运行 `deploy\deploy.bat`，自动执行：

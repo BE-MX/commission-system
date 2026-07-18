@@ -88,10 +88,10 @@
 
 ## 待办事项（优先级递减）
 
-### P0（安全，2026-07-18 PM 上线对抗性审查发现，需亮哥拍板执行——均为既有架构问题，非 PM 引入）
+### 安全（2026-07-18 PM 上线对抗性审查发现，均为既有架构问题，非 PM 引入）
 
-- **frps 管理面板 7500 公网可登入 + 弱口令**：`webServer.addr=0.0.0.0:7500` 直接暴露公网，口令是可猜规律，实测能登入看全内网隧道拓扑。修复：`webServer.addr` 改绑 `127.0.0.1`（面板仅走 SSH 转发）或安全组封 7500，并把 dashboard 口令 + `auth.token` 换随机强密钥（改 `/opt/frp/frps.toml` 后需重启 frps=**全站隧道瞬断几秒**，择低峰做）
-- **后端 8002 裸端口公网明文可达 + XFF 可伪造**：见 runbook PM 节第 7 条红线。修复前不要启用任何 IP 维度限速。封端口前先确认 MCP（mount /mcp，Nginx 不反代）没有靠直连 8002 的客户端
+- ✅ **frps 面板 7500 + 后端 8002 公网暴露已封（2026-07-18 iptables 解决）**：两端口经 `iptables ! -i lo -j DROP` 只允许 loopback（nginx 127.0.0.1、SSH 转发）访问，公网直连超时不可达；nginx→8002 走 lo 不受影响，实测主站/PM 全绿；**零重启零中断**（未动 frps/frpc/auth.token）。持久化 = `/usr/local/sbin/frp-fw-lockdown.sh`（幂等）+ `/etc/cron.d/frp-fw-lockdown`（@reboot 恢复 + 每 15 分钟重放）。详见 runbook「frps 端口封禁」节。
+  - 剩余（已从 P0 降级——公网攻击面已消除）：①dashboard 弱口令与 `auth.token`（`Cola…2026!` 规律）仍是内网/纵深风险，换需改 `/opt/frp/frps.toml`，其中 `auth.token` 必须同步本地 frpc.toml 否则隧道断，择低峰一起做；②建议在腾讯云安全组也封 7500/8002 公网入站（云层纵深，防 iptables 被云镜 flush）；③启用 IP 维度限速前确认 XFF 信任链（8002 已封，公网伪造入口已堵）
 
 ### P0（关键，8 月展会倒排）
 
