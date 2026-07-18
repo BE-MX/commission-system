@@ -56,11 +56,11 @@
     - 2026-07-13 推荐与拍照体验：**主推置顶**（must_recommend 语义升级——置顶推荐列表最前，多主推按匹配分排序，至臻锚点只换第一批非主推位；065 迁移同步列注释；管理列表与 kiosk 从库选择同步置顶）；kiosk 拍照页「三步拍出高级感」引导浮层（略俯拍/微侧面容/构图靠上，SVG 金线示意图 ×2，首次进屏自动弹、失败回退不重弹）+ 取景椭圆上移（头部落上三分之一）
     - **待完成**：云雾 Provider 偶发 500 与多场景合一成功率观察；**12 款新发型无参考图/封面**（multi 与单场景合成均退化为文字描述，还原度打折，待市场部实拍图）；心动款 reaction 不进前置话术（如需"点心动后重生成话术"再加）；kiosk 品牌绿换肤待做
 21. ✅ **PM 项目资料协作站**（2026-07-17，阿里国际站智能体陪跑项目；设计稿 docs/requirements/2026-07-17-pm-material-hub.md）：
-    - 独立子站 `pm.leshine.work`（待 DNS/证书）：后端 `app/pm/` 领域模块（8 表，076 迁移），前端 `frontend-pm/` 完全独立应用（自研编辑感设计系统，无 Element Plus，与方舟零视觉血缘）
+    - 独立子站 `pm.leshine.work`（**2026-07-18 已上线**：DNSPod A 记录 + Let's Encrypt 证书 certbot webroot + 云 Nginx `/etc/nginx/conf.d/pm.leshine.conf`，门牌页/API 反代/HTTP 跳转全链路实测通过）：后端 `app/pm/` 领域模块（8 表，076 迁移），前端 `frontend-pm/` 完全独立应用（自研编辑感设计系统，无 Element Plus，与方舟零视觉血缘）
     - 无密码门牌：用户名白名单换 HMAC token（30 天 + epoch 全局重签兜底），每请求回查白名单（移除立即生效），统一失败提示防枚举 + 用户名维度限速；顶栏身份常显可一键切换
     - 35 项材料清单（五分类 × 重要级 × Phase 批次；seed 按设计稿锚点重建，**待亮哥用顾问原清单核对后 `seed_pm.py --reset` 重灌**）；版本自动编号只增不复用、软删回落、下载自动重命名 `名称_vN.ext`、凭据类禁传原文；AI 差异概要=本地精确 diff（difflib/openpyxl/docx/pypdf）+ pm_diff preset 转述，pending 看门狗启动回收
     - 轻量看板（四状态 + 受阻必填原因 + 关联资料徽标）、全站动态（审计日志用户侧）；文件存 `backend/data/pm/`（非公开静态），下载/预览 300s 签名 URL
-    - **待完成**：pm.leshine.work DNS + 证书 + 云 Nginx server block（见 docs/runbook.md PM 节）；deploy.bat 已含 frontend-pm 构建+SCP；Phase 2（MD 在线编辑、划线评论）未启动
+    - **待完成**：生产 `.env` 可选项 `PM_TOKEN_SECRET` 独立随机串（当前回退 JWT_SECRET_KEY，见 runbook PM 节步骤 5）；Phase 2（MD 在线编辑、划线评论）未启动
 22. ✅ **培训速递**（2026-07-18 合入 main）：参训人自助发布 + AI 提炼草稿（粘贴文字/图片多模态/PDF 抽文本 → 结构化分区）+ 4 步强引导向导 + 发布必填分区校验 + 钉钉群 actionCard 推送 + 「有用」轻反馈；`training:read/write/admin` 权限；075 迁移，3 张表
 
 ### 基础设施

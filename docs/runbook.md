@@ -507,32 +507,56 @@ grep "job completed" logs\service.log | tail -20
 
 后端复用现有 frp 链路（本地 8002），**零新增进程/NSSM 服务**；前端独立静态站点。上线 checklist：
 
-1. **DNS**：`pm.leshine.work` A 记录 → 腾讯云服务器 IP（第 1 天发起，生效不可控）
-2. **证书**：现有 Let's Encrypt 为单域名证书——子域名需单独签发或换泛域名（DNS-01 验证）
-3. **云 Nginx server block**（静态直出 + /api 走既有 frp 隧道）：
+1. **DNS**：`pm.leshine.work` A 记录 → 腾讯云服务器 IP（DNSPod，权威 NS 为 source/daffodil.dnspod.net）
+2. **证书**：主站用的是腾讯云证书（`/etc/nginx/ssl/leshine.work_bundle.crt`），**不覆盖子域名**；PM 站用 Let's Encrypt（certbot 2.9.0 已装，2026-07-18），webroot 模式签发：
+   ```bash
+   certbot certonly --webroot -w /var/www/letsencrypt -d pm.leshine.work \
+     --non-interactive --agree-tos -m <邮箱>
+   ```
+   续期靠 certbot systemd timer 自动跑，依赖 80 端口的 `/.well-known/acme-challenge/` → `/var/www/letsencrypt` 通道，**该 location 不可删**
+3. **云 Nginx server block**：`/etc/nginx/conf.d/pm.leshine.conf`（2026-07-18 已部署，静态直出 + /api 走既有 frp 隧道）：
    ```nginx
+   server {
+       listen 80;
+       server_name pm.leshine.work;
+       location /.well-known/acme-challenge/ { root /var/www/letsencrypt; }
+       location / { return 301 https://$host$request_uri; }
+   }
    server {
        listen 443 ssl;
        server_name pm.leshine.work;
        ssl_certificate     /etc/letsencrypt/live/pm.leshine.work/fullchain.pem;
        ssl_certificate_key /etc/letsencrypt/live/pm.leshine.work/privkey.pem;
+       ssl_protocols TLSv1.2 TLSv1.3;
+       ssl_ciphers HIGH:!aNULL:!MD5;
 
        root /var/www/pm/dist;
        index index.html;
 
-       # 防收录（设计稿 §8.4）
+       # 防收录（设计稿 §8.4）；注意 location 内自带 add_header 会屏蔽继承，需逐处重复
        add_header X-Robots-Tag "noindex, nofollow" always;
 
-       location /api/ {
-           proxy_pass http://127.0.0.1:8001;   # 与主站同一 frp 反代通道
-           proxy_set_header Host $host;
-           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-           client_max_body_size 60m;            # 略大于 PM_MAX_UPLOAD_MB=50
+       location /assets/ {
+           expires 1y;
+           add_header Cache-Control "public, immutable";
+           add_header X-Robots-Tag "noindex, nofollow" always;
+       }
+       location ~* \.html$ {
+           add_header Cache-Control "no-cache";
+           add_header X-Robots-Tag "noindex, nofollow" always;
        }
        location / {
            try_files $uri $uri/ /index.html;    # SPA 回退
        }
-       location ~* \.html$ { add_header Cache-Control "no-cache"; }
+       location /api/ {
+           proxy_pass http://127.0.0.1:8002;   # 与主站同一 frp 反代通道（云端监听 8002，不是 8001）
+           proxy_set_header Host $host;
+           proxy_set_header X-Real-IP $remote_addr;
+           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+           proxy_set_header X-Forwarded-Proto $scheme;
+           proxy_read_timeout 120s;
+           client_max_body_size 60m;            # 略大于 PM_MAX_UPLOAD_MB=50
+       }
    }
    ```
 4. **数据库**：`alembic upgrade head`（073_pm_hub；若 codex 073/074 先合入，先把本迁移 down_revision 改指 074）→ `python scripts/seed_pm.py` 预置项目/白名单/35 项材料/5 条 workshop 任务
