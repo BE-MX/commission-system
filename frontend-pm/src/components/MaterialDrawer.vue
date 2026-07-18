@@ -1,5 +1,5 @@
 <template>
-  <UiDrawer :model-value="modelValue" :title="material ? '编辑资料' : '新增资料条目'" eyebrow="MATERIAL" @update:model-value="emit('update:modelValue', $event)">
+  <UiDrawer :model-value="modelValue" :title="material ? '编辑资料' : '新增资料条目'" eyebrow="MATERIAL" @update:model-value="onToggle">
     <form class="mat-form" @submit.prevent="submit">
       <div class="form-item">
         <label class="field-label">名称 *（项目内唯一，即下载文件名前缀）</label>
@@ -63,7 +63,7 @@
       </div>
     </form>
     <template #footer>
-      <button class="btn" type="button" @click="emit('update:modelValue', false)">取消</button>
+      <button class="btn" type="button" :disabled="busy" @click="onToggle(false)">取消</button>
       <button class="btn btn-primary" type="button" :disabled="busy || !canSubmit" @click="submit">
         <span v-if="busy" class="spinner"></span>{{ material ? '保存' : '新增' }}
       </button>
@@ -80,8 +80,10 @@ const props = defineProps({
   modelValue: Boolean,
   material: { type: Object, default: null }, // null = 新增；否则编辑（交付类型不可改）
   members: { type: Array, default: () => [] },
+  // @save 以函数 prop 承接：emit() 拿不到监听器返回的 Promise，无法等保存完成再关抽屉
+  onSave: Function,
 })
-const emit = defineEmits(['update:modelValue', 'save'])
+const emit = defineEmits(['update:modelValue'])
 
 const deliveryHints = {
   file: '直接上传文件，版本自动编号',
@@ -128,11 +130,16 @@ const canSubmit = computed(() => {
   return true
 })
 
+function onToggle(open) {
+  if (!open && busy.value) return // 保存中不许关抽屉，失败时表单要留在原地可重试
+  emit('update:modelValue', open)
+}
+
 async function submit() {
   if (busy.value) return
   busy.value = true
   try {
-    await emit('save', {
+    await props.onSave?.({
       name: form.name,
       description: form.description || null,
       category: form.category,
@@ -144,6 +151,8 @@ async function submit() {
       delivery_remark: form.delivery_remark || null,
     })
     emit('update:modelValue', false)
+  } catch {
+    // 失败留在抽屉内可改后重试；错误提示已由 api client 统一弹出
   } finally {
     busy.value = false
   }

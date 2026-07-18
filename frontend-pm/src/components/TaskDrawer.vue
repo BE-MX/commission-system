@@ -1,5 +1,5 @@
 <template>
-  <UiDrawer :model-value="modelValue" :title="task ? '编辑任务' : '新建任务'" eyebrow="TASK" @update:model-value="emit('update:modelValue', $event)">
+  <UiDrawer :model-value="modelValue" :title="task ? '编辑任务' : '新建任务'" eyebrow="TASK" @update:model-value="onToggle">
     <form class="task-form" @submit.prevent="submit">
       <div class="form-item">
         <label class="field-label">标题 *</label>
@@ -54,7 +54,7 @@
       </div>
     </form>
     <template #footer>
-      <button class="btn" type="button" @click="emit('update:modelValue', false)">取消</button>
+      <button class="btn" type="button" :disabled="busy" @click="onToggle(false)">取消</button>
       <button class="btn btn-primary" type="button" :disabled="busy || !form.title" @click="submit">
         <span v-if="busy" class="spinner"></span>{{ task ? '保存' : '创建' }}
       </button>
@@ -73,8 +73,10 @@ const props = defineProps({
   task: { type: Object, default: null }, // null = 新建
   members: { type: Array, default: () => [] },
   materialOptions: { type: Array, default: () => [] },
+  // @save 以函数 prop 承接：emit() 拿不到监听器返回的 Promise，无法等保存完成再关抽屉
+  onSave: Function,
 })
-const emit = defineEmits(['update:modelValue', 'save'])
+const emit = defineEmits(['update:modelValue'])
 
 const busy = ref(false)
 const form = reactive({
@@ -105,12 +107,17 @@ watch(
   { immediate: true }
 )
 
+function onToggle(open) {
+  if (!open && busy.value) return // 保存中不许关抽屉，失败时表单要留在原地可重试
+  emit('update:modelValue', open)
+}
+
 async function submit() {
   if (busy.value) return
   if (form.status === 'blocked' && !form.blocked_reason) return
   busy.value = true
   try {
-    await emit('save', props.task?.id || null, {
+    await props.onSave?.(props.task?.id || null, {
       title: form.title,
       description: form.description || null,
       assignee: form.assignee || null,
@@ -120,6 +127,8 @@ async function submit() {
       material_ids: form.material_ids,
     })
     emit('update:modelValue', false)
+  } catch {
+    // 失败留在抽屉内可改后重试；错误提示已由 api client 统一弹出
   } finally {
     busy.value = false
   }
