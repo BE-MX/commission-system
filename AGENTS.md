@@ -4,10 +4,10 @@
 
 ## Worktree 与分支
 
-- 每个代理固定在自己的 worktree 工作，**禁止在别的代理的目录里 commit**：
+- 每个代理固定在自己的 worktree 工作，**禁止在别的代理的目录里 commit**；worktree 归属以其检出分支的 `<tool>/` 前缀为准，目录名不作准：
   - `commission-system`（主目录）= Claude Code，**merge 回 main 只能在这里做**
   - `commission-system-kimi` = Kimi Code
-  - 其余 `commission-system-*` = Codex 按任务创建
+  - 其余 `commission-system-*` = 按任务临时创建，用完 `git worktree remove` 清理
 - 分支命名 `<tool>/<topic>`：`claude/...`、`codex/...`、`kimi/...`
 - commit 前先 `git branch --show-current` 确认当前分支——`.git/HEAD` 等引用是全 worktree 共享的，别的代理可能刚动过（2026-07-14 提交落错分支实翻车，见 .wolf/cerebrum.md）
 

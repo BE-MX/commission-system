@@ -145,6 +145,21 @@ class Report:
             + len(self.stashes) + len(self.migration_collisions) + main_drift
         )
 
+    @property
+    def stale_unmerged(self) -> list[Branch]:
+        return [b for b in self.unmerged_branches if b.idle_days >= 3]
+
+    @property
+    def notify_worthy(self) -> bool:
+        """结构性欠账才推钉钉：正常 WIP（worktree 里新鲜的未合并分支）不算，防告警疲劳。"""
+        m = self.main_branch
+        main_drift = bool(m and (m.ahead_upstream or m.behind_upstream))
+        return bool(
+            self.dirty_worktrees or self.unpushed_branches or self.deletable_branches
+            or self.stashes or self.migration_collisions or self.stale_unmerged
+            or main_drift
+        )
+
 
 # ──────────────────────────────── 采集 ────────────────────────────────
 
@@ -176,13 +191,15 @@ def collect_worktrees() -> list[Worktree]:
 def collect_branches(worktrees: list[Worktree]) -> list[Branch]:
     fmt = "%(refname:short)\x01%(objectname:short)\x01%(upstream:short)\x01%(upstream:track)\x01%(committerdate:unix)\x01%(subject)"
     out = git("for-each-ref", "refs/heads", f"--format={fmt}")
+    # 不用 git branch --merged：worktree detached 时它会混入 "(HEAD detached at x)" 伪条目
     merged = set(
-        git("branch", "--merged", MAIN, "--format=%(refname:short)").split()
+        git("for-each-ref", "refs/heads", f"--merged={MAIN}",
+            "--format=%(refname:short)").splitlines()
     )
     checkout_map = {w.branch: w.path for w in worktrees if w.branch}
     branches: list[Branch] = []
     for line in out.splitlines():
-        parts = line.split("\x01")
+        parts = line.split("\x01", 5)
         if len(parts) != 6:
             continue
         name, sha, upstream, track, cunix, subject = parts
@@ -204,8 +221,8 @@ def collect_branches(worktrees: list[Worktree]) -> list[Branch]:
                 counts = git("rev-list", "--left-right", "--count", f"{MAIN}...{name}")
                 left, right = counts.split()
                 b.behind_main, b.ahead_main = int(left), int(right)
-            except (RuntimeError, ValueError):
-                pass
+            except (RuntimeError, ValueError, subprocess.TimeoutExpired):
+                pass  # 分支可能刚被并行代理删掉——降级不中断
         branches.append(b)
     return branches
 
@@ -220,13 +237,16 @@ def collect_stashes() -> list[str]:
 
 def collect_migration_collisions(branches: list[Branch]) -> list[str]:
     """跨分支扫 Alembic 迁移编号：同一数字前缀出现 ≥2 个不同文件名即撞号。
-    全部文件都已在 main 里的（历史上已解决的撞号）不再报。"""
+    全部文件都已在 main 里的（历史上已解决的撞号）不再报。
+    已知误报：旧分支带着 main 上已改名/删除的迁移文件时会天天报——清掉旧分支即自愈。"""
     prefix_files: dict[str, dict[str, set[str]]] = {}
     main_files: set[str] = set()
     for b in branches:
         try:
             out = git("ls-tree", "-r", "--name-only", b.name, "--", MIGRATION_DIR)
         except RuntimeError:
+            continue
+        except subprocess.TimeoutExpired:
             continue
         for path in out.splitlines():
             fname = path.rsplit("/", 1)[-1]
@@ -465,15 +485,7 @@ def render_html(r: Report) -> str:
 
 # ──────────────────────────────── 钉钉通知 ────────────────────────────────
 
-def notify_dingtalk(r: Report) -> None:
-    """复用后端告警机器人（与定时任务告警同一群）。仅在有欠账时调用。"""
-    sys.path.insert(0, str(REPO_ROOT / "backend"))
-    try:
-        import asyncio
-        from app.dingtalk.webhook import get_webhook_sender  # noqa: 需 backend/.venv 环境
-    except ImportError as exc:
-        print(f"[warn] 钉钉通知不可用（需用 backend/.venv 的 python 运行）: {exc}", flush=True)
-        return
+def build_notify_markdown(r: Report) -> str:
     lines = [f"### Git 巡检 {r.generated_at}"]
     m = r.main_branch
     if m and m.ahead_upstream:
@@ -481,7 +493,10 @@ def notify_dingtalk(r: Report) -> None:
     if m and m.behind_upstream:
         lines.append(f"- **main 落后远端 {m.behind_upstream} 个提交**（需 pull）")
     if r.dirty_worktrees:
-        detail = "；".join(f"{Path(w.path).name}[{w.branch}] {w.dirty_total} 个文件" for w in r.dirty_worktrees)
+        detail = "；".join(
+            f"{Path(w.path).name}[{w.branch or 'detached'}] {w.dirty_total} 个文件"
+            for w in r.dirty_worktrees
+        )
         lines.append(f"- 未提交：{detail}")
     if r.unpushed_branches:
         lines.append(f"- 未推送：{'、'.join(b.name for b in r.unpushed_branches)}")
@@ -495,9 +510,36 @@ def notify_dingtalk(r: Report) -> None:
     if r.stashes:
         lines.append(f"- stash：{len(r.stashes)} 条未处理")
     lines.append("\n> 开发机看板：tmp/git-sweep.html")
+    return "\n".join(lines)
+
+
+def notify_dingtalk(r: Report, userids: list[str]) -> None:
+    """优先走告警群 webhook（与定时任务告警同一机器人）；
+    webhook 未配置时降级走企业应用工作通知（需 --notify-user 给钉钉 userid）。"""
+    sys.path.insert(0, str(REPO_ROOT / "backend"))
     try:
-        asyncio.run(get_webhook_sender().send_markdown("Git 巡检", "\n".join(lines)))
-        print("[ok] 钉钉巡检通知已发送", flush=True)
+        import asyncio
+        from app.core.config import get_settings  # noqa: 需 backend/.venv 环境
+    except ImportError as exc:
+        print(f"[warn] 钉钉通知不可用（需用 backend/.venv 的 python 运行）: {exc}", flush=True)
+        return
+    md = build_notify_markdown(r)
+    try:
+        if get_settings().DINGTALK_WEBHOOK_URL:
+            from app.dingtalk.webhook import get_webhook_sender
+            asyncio.run(get_webhook_sender().send_markdown("Git 巡检", md))
+            print("[ok] 钉钉巡检通知已发送（告警群 webhook）", flush=True)
+        elif userids:
+            from app.dingtalk.work_notify import get_work_notifier
+            ok = asyncio.run(get_work_notifier().send_to_users(userids, "Git 巡检", md))
+            print(f"[{'ok' if ok else 'warn'}] 钉钉工作通知 → {userids}：{'已发送' if ok else '失败'}", flush=True)
+        else:
+            print(
+                "[warn] 通知未发送：DINGTALK_WEBHOOK_URL 未配置且未指定 --notify-user。\n"
+                "       修法：backend/.env 配置告警群机器人 webhook（一并修复定时任务告警/培训推送），\n"
+                "       或定时任务命令加 --notify-user <钉钉userid>",
+                flush=True,
+            )
     except Exception as exc:  # 通知失败不影响巡检本身
         print(f"[warn] 钉钉通知发送失败: {exc}", flush=True)
 
@@ -507,7 +549,9 @@ def notify_dingtalk(r: Report) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="git 欠账巡检 + 可视化看板")
     parser.add_argument("--open", action="store_true", help="生成后用浏览器打开看板")
-    parser.add_argument("--notify", action="store_true", help="有欠账时推送钉钉")
+    parser.add_argument("--notify", action="store_true", help="有结构性欠账时推送钉钉")
+    parser.add_argument("--notify-user", action="append", default=[],
+                        help="webhook 未配置时的工作通知收件人（钉钉 userid，可多次）")
     parser.add_argument("--no-fetch", action="store_true", help="跳过 git fetch")
     args = parser.parse_args()
 
@@ -521,12 +565,17 @@ def main() -> int:
         import os
         os.startfile(OUTPUT_HTML)  # noqa: Windows only
     if args.notify:
-        if r.debt_count == 0:
-            print("[ok] 无欠账，不打扰。", flush=True)
+        if not r.notify_worthy:
+            print("[ok] 无结构性欠账，不打扰。", flush=True)
         else:
-            notify_dingtalk(r)
+            notify_dingtalk(r, args.notify_user)
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except Exception:  # 巡检自身崩溃：非零退出码 + 完整栈（定时任务历史里可见）
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
