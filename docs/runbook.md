@@ -49,6 +49,11 @@ ARK_AI_ENCRYPTION_KEY=<32字节hex>
 DINGTALK_APP_KEY=<企业内部应用 Key>
 DINGTALK_APP_SECRET=<企业内部应用 Secret>
 DINGTALK_AGENT_ID=<Agent ID>
+# 告警群自定义机器人（加签模式）——定时任务告警 / 培训速递推送 / git 巡检通知三条管道共用。
+# 2026-07-18 前此两项为空导致三条管道全部静默失效；配置后必须手动验证一次
+#（python scripts/git_sweep.py --notify 应看到「已发送」）
+DINGTALK_WEBHOOK_URL=<告警群机器人 Webhook URL>
+DINGTALK_WEBHOOK_SECRET=<机器人加签 Secret>
 
 # 微信小程序
 WX_MINI_APPID=wx4dea4f10fe1bda19
@@ -233,6 +238,20 @@ nssm start FrpcTunnel
 5. `npm run build` 构建前端
 6. `scp dist/* → root@119.28.107.92:/var/www/ark/dist/` 同步静态文件到云端
 7. `nssm restart CommissionSystem` + `nssm restart WhatsAppConnector` 重启双服务
+
+## 开发机 git 巡检（多智能体协作）
+
+开发机由 Claude Code / Codex / Kimi 三个 AI 代理在各自 git worktree 并行开发，协作约定见仓库根 `AGENTS.md`（与 CLAUDE.md 硬约定 22 同步维护）。
+
+- 手动巡检：`python scripts/git_sweep.py --open` — 扫全部 worktree/分支的未提交、未推送、未合并、可删分支、stash、跨分支 Alembic 迁移撞号，生成 `tmp/git-sweep.html` 可视化看板
+- 定时巡检：Windows 计划任务 `LeShine-GitSweep`（每日 18:00，`--notify` 只在有结构性欠账时推钉钉告警群）。重建命令：
+
+```bash
+schtasks /Create /TN LeShine-GitSweep /SC DAILY /ST 18:00 /F /TR "\"D:\MyProgram\commission-system\backend\.venv\Scripts\python.exe\" \"D:\MyProgram\commission-system\scripts\git_sweep.py\" --notify"
+```
+
+- webhook 未配置时可用 `--notify-user <钉钉userid>` 降级走企业应用工作通知
+- 存疑旧分支的处置模式：`git tag archive/<name>-<date>` 推远端后再删分支（可随时找回）
 
 ## 健康检查
 

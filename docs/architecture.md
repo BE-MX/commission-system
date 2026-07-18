@@ -70,6 +70,8 @@
 - `app/invoice/` — 订单发票管理（router/models/schemas/service + product_service / export_service / xiaoman_service）
 - `app/expo/` — 展会 AI 试戴（router/models/schemas/service + matching 规则匹配引擎 + ai_pipeline 三管线（面容分析/效果图合成/双轨话术）+ script_service 话术卡库；合成双入口 mode=tryon 换发（单选发型 + 发色库色板图三图合成 + 可选生成场景 `TRYON_SCENES` 原景/居家/办公/聚会）/ scene 佩戴实拍生成场景大片（跳过分析，场景清单 `ai_pipeline.SCENES` 服务端硬编码）；参考图送模型前统一压缩（最长边 1280）；pending/generating 卡死看门狗读取时自愈；匹配权重 `config/expo_matching.yaml`（主推 must_recommend 置顶 2026-07-13 起、至臻锚点只换非主推位、性别过滤全灭自动降级）；设计文档 `docs/requirements/2026-07-03-expo-ai-wig-tryon.md`）
 - `app/mini/` — 微信小程序端（router/service/auth/schemas — 扫码报工/历史/总览/撤销/登录绑定）
+- `app/training/` — 培训速递（router/models/schemas/service + push_service 钉钉推送；参训人自助发布 + AI 提炼草稿（文字/图片/PDF 多模态）+ 发布必填分区校验，075 迁移，2026-07-18 合入）
+- `app/pm/` — PM 项目资料协作站（**独立 HMAC 门牌鉴权，不接平台 RBAC**；材料/版本/任务/动态审计 + AI 差异管线，076 迁移；前端为 `frontend-pm/` 独立应用，2026-07-18 合入）
 
 ## 前端结构
 
@@ -87,6 +89,8 @@ frontend/src/
 ```
 
 **API client 规则**：所有 API 模块从 `clients.js` 取，禁止新建 axios 实例（`auth.js` 是唯一例外）。
+
+**frontend-pm/**：PM 协作站独立前端应用（自研设计系统，无 Element Plus，与主站互不引用）；构建与 SCP 同步已入 `deploy.bat`。
 
 ## 数据库设计
 
@@ -142,6 +146,8 @@ frontend/src/
 | `ark_expo_sessions` | 试戴会话 | `mode`(tryon/scene) 双入口, `analysis_json.internal` 仅销售端可见 |
 | `ark_expo_results` | 试戴效果图 | `wig_id` 可空(scene), `hair_color_json` 发色快照, `scene_json` 场景快照, `short_code` 分享短码, `reaction`(loved/soso) |
 | `ark_expo_feedback` | 销售反馈 | `intent_level`(A/B/C/D) 直通客户机会台口径 |
+| `ark_training_digests` 等培训域 3 表 | 培训速递（主表/附件/有用反馈） | 见 database.md 培训速递节（075） |
+| `ark_pm_members` 等 PM 域 8 表 | PM 资料协作站（独立鉴权，文件存 `backend/data/pm/`） | 见 database.md PM 节（076） |
 
 完整表结构见 `backend/sql/` 或 `alembic/versions/`。
 
