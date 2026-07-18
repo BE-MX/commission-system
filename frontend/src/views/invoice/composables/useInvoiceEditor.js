@@ -6,10 +6,6 @@ import {
   getCustomerContactDefaults,
   getCustomerRule,
   getInvoice,
-  getInvoiceEntryOptions,
-  getInvoiceProductOptions,
-  matchInvoiceProduct,
-  resolveInvoicePrice,
   searchInvoiceCustomerContacts,
   searchInvoiceCustomers,
   suggestInvoiceNo,
@@ -17,7 +13,17 @@ import {
   validateInvoice,
 } from '@/api/invoice'
 import { useAuthStore } from '@/stores/auth'
-import { hasImportedBatch, mapPreviewRowToInvoiceLine } from './useInvoicePasteImport'
+import {
+  calculateBalance,
+  calculateInvoiceTotal,
+  normalizeDiscount,
+  settlementMatchesTotal,
+  sumLineNet,
+} from './invoiceSettlement'
+import { normalizeAccessoryRow } from './accessoryPricing'
+import { useInvoiceAccessories } from './useInvoiceAccessories'
+import { buildInvoicePayload, emptyInvoiceForm, normalizeHairRow } from './invoiceEditorState'
+import { useInvoiceHairItems } from './useInvoiceHairItems'
 
 export const CURL_OPTIONS = ['Straight', 'Body Wave', 'Deep Wave', 'Loose Wave', 'Kinky Curly', 'Water Wave']
 
@@ -31,7 +37,10 @@ export function useInvoiceEditor({ onSaved } = {}) {
   const contactLoading = ref(false)
   const contactOptions = ref([])
   const selectedContact = ref(null)
-  // 「仅显示私海客户」默认勾选；两个筛选各自独立控制
+  // 「仅显示私海客户」（2026-07-14 亮哥定版）：所有人默认私海；
+  // invoice_private_filter:read 只控制勾选框显隐=能否切到全量视图。
+  // 无权限用户勾选框隐藏、恒定私海——未绑定 OKKI 时唯一出路是去绑定（提示文案区分）
+  const canTogglePrivate = computed(() => useAuthStore().hasPermission('invoice_private_filter:read'))
   const privateOnlyCompany = ref(true)
   const privateOnlyContact = ref(true)
   // false = 当前账号未绑定 OKKI，私海筛选无从判定（前端提示去绑定）
@@ -39,48 +48,32 @@ export function useInvoiceEditor({ onSaved } = {}) {
   const invoiceNoTaken = ref(false)
   const entryOptions = ref({ displays: [], models: [], colors: [], sizes: [], units: [] })
 
-  const form = reactive(emptyForm())
-
-  const formProductTotal = computed(() =>
-    form.items.reduce((sum, line) => sum + Number(line.total_price || 0), 0))
-  const formTotal = computed(() =>
-    formProductTotal.value + Number(form.shipping_fee || 0) + Number(form.surcharge_amount || 0))
+  const form = reactive(emptyInvoiceForm())
+  const accessories = useInvoiceAccessories(form)
   const isProduction = computed(() => form.order_type === 'production')
+  const hair = useInvoiceHairItems(form, accessories.hairItems, isProduction, entryOptions)
+  const {
+    addLine, appendImportedLines, loadEntryOptions, loadLineOptions, onCustomFieldChange,
+    onLineDiscountChange, onLineFilterChange, onPriceInput, refreshLinePrice, removeLine,
+    updateLineTotal,
+  } = hair
 
-  function emptyForm() {
-    return {
-      id: null,
-      invoice_no: '',
-      order_type: 'stock',
-      customer_id: '',
-      customer_name: '',
-      contact_name: '',
-      contact_phone: '',
-      contact_email: '',
-      delivery_address: '',
-      sales_user_name: '',
-      sales_phone: '',
-      sales_email: '',
-      invoice_date: new Date().toISOString().slice(0, 10),
-      currency: 'USD',
-      express_channel: '',
-      shipping_fee: 0,
-      surcharge_name: '',
-      surcharge_amount: 0,
-      payment_term: '',
-      internal_payment_method: '',
-      internal_discount: null,
-      internal_accessory: null,
-      internal_received: null,
-      internal_balance: null,
-      internal_shipping_type: '',
-      okki_new_deal: 1,
-      okki_free_shipping: 1,
-      okki_first_return: 0,
-      remark: '',
-      items: [],
-    }
-  }
+  const formHairPrice = accessories.hairAmount
+  const formLineDiscountTotal = accessories.hairDiscount
+  const formProductTotal = computed(() => sumLineNet(form.items))
+  const formTotal = computed(() => calculateInvoiceTotal(
+    formProductTotal.value,
+    form.internal_accessory,
+    form.shipping_fee,
+    form.surcharge_amount,
+  ))
+  const settlementError = computed(() => {
+    if (form.internal_received == null) return ''
+    if (Number(form.internal_received) > formTotal.value) return '预付款不能超过总金额'
+    return settlementMatchesTotal(formTotal.value, form.internal_received, form.internal_balance)
+      ? ''
+      : '预付款与尾款之和必须等于总金额'
+  })
 
   // 小满标记的智能默认只在用户没碰过开关时生效；编辑既有单一律尊重存值
   const okkiFlagsTouched = reactive({ newDeal: false, freeShipping: false })
@@ -94,33 +87,13 @@ export function useInvoiceEditor({ onSaved } = {}) {
     form.okki_free_shipping = Number(fee || 0) > 0 ? 0 : 1
   })
 
-  function normalizeLine(line = {}) {
-    return {
-      // 既有行 id 必须回传：后端靠它跨保存传承 OKKI 明细 unique_id（编辑重推不塌行）
-      id: line.id || null,
-      item_type: line.item_type || 'stock',
-      product_id: line.product_id || null,
-      sku_id: line.sku_id || null,
-      custom_product_id: line.custom_product_id || null,
-      product_name: line.product_name || '',
-      product_display: line.product_display || '',
-      net_weight_grams: line.net_weight_grams || '',
-      curl: line.curl || '',
-      model: line.model || '',
-      color: line.color || '',
-      length: line.length || '',
-      quantity: Number(line.quantity || 1),
-      standard_price: line.standard_price == null ? null : Number(line.standard_price),
-      customer_price: line.customer_price == null ? null : Number(line.customer_price),
-      color_type_source: line.color_type_source || '',
-      price_per_piece: line.price_per_piece == null ? null : Number(line.price_per_piece),
-      total_price: Number(line.total_price || 0),
-      price_source: line.price_source || 'manual',
-      _importBatchFingerprint: line._importBatchFingerprint || '',
-      options: { models: [], colors: [], sizes: [], units: [] },
-      matching: false,
-    }
-  }
+  watch([formTotal, () => form.internal_received], ([total, prepayment]) => {
+    form.internal_balance = calculateBalance(total, prepayment)
+  }, { flush: 'sync' })
+
+  const normalizeLine = line => line.product_kind === 'accessory'
+    ? normalizeAccessoryRow(line)
+    : normalizeHairRow(line)
 
   // 竞态守卫（cerebrum 2026-05-26 loadMore/doSearch 同款教训）：
   // 快速切换客户或切换 drawer 时，先发后至的过期响应不得覆盖当前表单
@@ -132,20 +105,26 @@ export function useInvoiceEditor({ onSaved } = {}) {
   // 用户手输过发票号后，建议号不再覆盖
   let invoiceNoEdited = false
 
-  function resetForm(data = emptyForm()) {
+  function resetForm(data = emptyInvoiceForm()) {
     contactFillSeq++
     customerRuleSeq++
     invoiceNoSeq++
+    // 每次开单复位为默认私海（上一单里切过全量不带到下一单）
+    privateOnlyCompany.value = true
+    privateOnlyContact.value = true
     // 编辑既有单（有 id）：发票号视为已确认，建议号不覆盖
     invoiceNoEdited = Boolean(data.id)
     invoiceNoTaken.value = false
     // 编辑既有单（有 id）时开关视为已人工确认，智能默认不再覆盖
     okkiFlagsTouched.newDeal = Boolean(data.id)
     okkiFlagsTouched.freeShipping = Boolean(data.id)
-    Object.assign(form, emptyForm(), {
+    Object.assign(form, emptyInvoiceForm(), {
       ...data,
       shipping_fee: Number(data.shipping_fee || 0),
       surcharge_amount: Number(data.surcharge_amount || 0),
+      internal_discount: normalizeDiscount(data.internal_discount),
+      packaging_quantity: Number(data.packaging_quantity || 0),
+      internal_accessory: Number(data.internal_accessory || 0),
       // 存量 NULL 标记（068 前老单）镜像服务端兜底口径，不要硬填 1 锁死错误值
       okki_new_deal: data.okki_new_deal ?? 1,
       okki_free_shipping: data.okki_free_shipping ?? (Number(data.shipping_fee || 0) > 0 ? 0 : 1),
@@ -231,6 +210,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
   async function onCustomerChange(customer) {
     form.customer_id = customer?.company_id == null ? '' : String(customer.company_id)
     form.customer_name = customer?.company_name || ''
+    accessories.invalidateCustomerContext()
     // 联动：公司变了，已选联系人若不属于新公司即失效；候选收敛到新公司名下
     if (selectedContact.value && String(selectedContact.value.company_id) !== form.customer_id) {
       selectedContact.value = null
@@ -238,7 +218,14 @@ export function useInvoiceEditor({ onSaved } = {}) {
     searchContacts('')
     await Promise.all([loadCustomerRule(), fillContactDefaults()])
     // 客户变化 → 客户价规则变化，所有明细价重算
-    await Promise.all(form.items.map(line => refreshLinePrice(line)))
+    await Promise.all(accessories.hairItems.value.map(line => refreshLinePrice(line)))
+    await accessories.refreshAccessoryPrices()
+  }
+
+  async function onCurrencyChange() {
+    form.currency = String(form.currency || '').trim().toUpperCase()
+    accessories.invalidateCustomerContext()
+    await accessories.refreshAccessoryPrices()
   }
 
   async function onContactChange(contact) {
@@ -255,6 +242,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
         country_name: contact.country_name,
       }
       ensureCustomerOption(selectedCustomer.value)
+      accessories.invalidateCustomerContext()
       await Promise.all([loadCustomerRule(), fillContactDefaults()])
     }
     // 选中联系人是明确意图：整体覆盖联系字段（覆盖快照回填；残留他人联系方式是错单风险）
@@ -262,7 +250,8 @@ export function useInvoiceEditor({ onSaved } = {}) {
     form.contact_phone = contact.tel || ''
     form.contact_email = contact.email || ''
     if (companyChanged) {
-      await Promise.all(form.items.map(line => refreshLinePrice(line)))
+      await Promise.all(accessories.hairItems.value.map(line => refreshLinePrice(line)))
+      await accessories.refreshAccessoryPrices()
     }
   }
 
@@ -295,7 +284,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     // 业务员信息默认当前登录用户（可改）；后端 create 对空字段还有一层兜底
     const me = useAuthStore().user
     if (me) {
-      form.sales_user_name = me.real_name || ''
+      form.sales_user_name = me.username || ''
       form.sales_phone = me.phone || ''
       form.sales_email = me.email || ''
     }
@@ -350,195 +339,33 @@ export function useInvoiceEditor({ onSaved } = {}) {
     }
   }
 
-  async function loadEntryOptions() {
-    entryOptions.value = await getInvoiceEntryOptions()
-  }
-
-  function addLine() {
-    const last = form.items[form.items.length - 1]
-    if (last) {
-      // 按上一行内容自动填充，用户只改变化的参数（改任一关键词会重新匹配/取价）
-      // id 必须剥离：复制行是新行，带上旧 id 会让两行继承同一个 OKKI unique_id
-      const { options, matching, id, ...data } = last
-      form.items.push(normalizeLine({ ...data }))
-    } else {
-      form.items.push(normalizeLine({ quantity: 1, item_type: isProduction.value ? 'custom' : 'stock' }))
-    }
-  }
-
-  function removeLine(index) {
-    form.items.splice(index, 1)
-  }
-
-  // ── 库存单：四维级联 ────────────────────────────────
-
-  async function loadLineOptions(row) {
-    const res = await getInvoiceProductOptions({
-      model: row.model || undefined,
-      color: row.color || undefined,
-      size: row.length || undefined,
-      unit: row.net_weight_grams || undefined,
-    })
-    row.options = {
-      models: res.models || [],
-      colors: res.colors || [],
-      sizes: res.sizes || [],
-      units: res.units || [],
-    }
-  }
-
-  async function onLineFilterChange(row) {
-    row.product_id = null
-    row.sku_id = null
-    row.product_name = ''
-    row.product_display = ''
-    await loadLineOptions(row)
-    if (row.model && row.color && row.length && row.net_weight_grams) {
-      await matchLineProduct(row)
-    }
-  }
-
-  async function matchLineProduct(row) {
-    row.matching = true
-    try {
-      const res = await matchInvoiceProduct({
-        model: row.model,
-        color: row.color,
-        size: row.length,
-        unit: row.net_weight_grams,
-      })
-      if (!res.is_unique) {
-        ElMessage.warning((res.matches || []).length ? '当前条件匹配到多个产品，请继续确认规格' : '当前条件未匹配到产品')
-        return
-      }
-      const item = res.item
-      row.product_id = item.product_id
-      row.sku_id = item.sku_id
-      row.product_name = item.product_name
-      row.product_display = item.product_display
-      await refreshLinePrice(row)
-    } finally {
-      row.matching = false
-    }
-  }
-
-  // ── 生产单：自由录入 ────────────────────────────────
-
-  async function onCustomFieldChange(row) {
-    row.product_name = ''
-    if (row.product_display && row.color && row.length && row.net_weight_grams) {
-      await refreshLinePrice(row)
-    }
-  }
-
-  // ── 双价 ────────────────────────────────────────────
-
-  async function refreshLinePrice(row) {
-    if (!row.product_display || !row.color || !row.length || !row.net_weight_grams) return
-    const res = await resolveInvoicePrice({
-      customer_id: form.customer_id || undefined,
-      product_display: row.product_display,
-      length: row.length,
-      unit: row.net_weight_grams,
-      color: row.color,
-    })
-    row.standard_price = res.standard_price == null ? null : Number(res.standard_price)
-    row.customer_price = res.customer_price == null ? null : Number(res.customer_price)
-    row.color_type_source = res.color_type_source || ''
-    const preserveImportedPrice = Boolean(row._importBatchFingerprint)
-    if (row.customer_price != null) {
-      if (!preserveImportedPrice) row.price_per_piece = row.customer_price
-      row.price_source = Number(row.price_per_piece) === row.customer_price ? 'customer_rule' : 'manual'
-    } else {
-      row.price_source = 'missing_std'
-    }
-    updateLineTotal(row)
-  }
-
-  function onPriceInput(row) {
-    if (row.customer_price != null) {
-      row.price_source = Number(row.price_per_piece) === row.customer_price ? 'customer_rule' : 'manual'
-    }
-    updateLineTotal(row)
-  }
-
-  function updateLineTotal(row) {
-    // 与后端 Decimal ROUND_HALF_UP 口径对齐，避免浮点差 1 分
-    row.total_price = Math.round(Number(row.quantity || 0) * Number(row.price_per_piece || 0) * 100) / 100
-  }
-
-  function appendImportedLines(rows, batchFingerprint) {
-    if (hasImportedBatch(form.items, batchFingerprint)) return false
-    const lines = rows.map(row => normalizeLine(
-      mapPreviewRowToInvoiceLine(row, batchFingerprint, form.order_type),
-    ))
-    form.items.push(...lines)
-    return true
-  }
-
   // ── 保存 ────────────────────────────────────────────
 
-  function buildPayload() {
-    return {
-      // 空串传 null：新建时后端按规则生成，编辑时保持原号
-      invoice_no: (form.invoice_no || '').trim() || null,
-      order_type: form.order_type,
-      customer_id: form.customer_id,
-      customer_name: form.customer_name,
-      contact_name: form.contact_name || null,
-      contact_phone: form.contact_phone || null,
-      contact_email: form.contact_email || null,
-      delivery_address: form.delivery_address || null,
-      sales_user_name: form.sales_user_name || null,
-      sales_phone: form.sales_phone || null,
-      sales_email: form.sales_email || null,
-      invoice_date: form.invoice_date,
-      currency: form.currency || 'USD',
-      express_channel: form.express_channel || null,
-      shipping_fee: Number(form.shipping_fee || 0),
-      surcharge_name: form.surcharge_name || null,
-      surcharge_amount: Number(form.surcharge_amount || 0),
-      payment_term: form.payment_term || null,
-      internal_payment_method: form.internal_payment_method || null,
-      internal_discount: form.internal_discount,
-      internal_accessory: form.internal_accessory,
-      internal_received: form.internal_received,
-      internal_balance: form.internal_balance,
-      internal_shipping_type: form.internal_shipping_type || null,
-      okki_new_deal: form.okki_new_deal ?? null,
-      okki_free_shipping: form.okki_free_shipping ?? null,
-      okki_first_return: form.okki_first_return ?? null,
-      remark: form.remark,
-      items: form.items.map(line => ({
-        id: line.id || null,
-        item_type: line.item_type,
-        product_id: line.product_id,
-        sku_id: line.sku_id,
-        product_name: line.product_name,
-        product_display: line.product_display,
-        net_weight_grams: line.net_weight_grams,
-        curl: line.curl || null,
-        model: line.model || null,
-        color: line.color,
-        length: line.length,
-        quantity: line.quantity,
-        price_per_piece: line.price_per_piece,
-        price_source: line.price_source || 'manual',
-      })),
-    }
-  }
-
   async function saveDraft() {
+    if (form.items.some(line => Number(line.total_price || 0) < 0)) {
+      ElMessage.warning('产品行折扣不能超过该行金额')
+      return null
+    }
+    if (formTotal.value < 0) {
+      ElMessage.warning('折扣金额不能超过订单中可抵扣的金额')
+      return null
+    }
+    if (settlementError.value) {
+      ElMessage.warning(settlementError.value)
+      return null
+    }
     const saved = form.id
-      ? await updateInvoice(form.id, buildPayload())
-      : await createInvoice(buildPayload())
+      ? await updateInvoice(form.id, buildInvoicePayload(form, formLineDiscountTotal.value))
+      : await createInvoice(buildInvoicePayload(form, formLineDiscountTotal.value))
     resetForm(saved)
     ElMessage.success('发票已保存')
     onSaved?.()
+    return saved
   }
 
   async function saveAndValidate() {
-    await saveDraft() // saveDraft 内已触发 onSaved 刷新列表
+    const saved = await saveDraft() // saveDraft 内已触发 onSaved 刷新列表
+    if (!saved) return
     const res = await validateInvoice(form.id)
     if (res.ok) {
       ElMessage.success('校验通过，可以同步小满')
@@ -563,27 +390,44 @@ export function useInvoiceEditor({ onSaved } = {}) {
     selectedContact,
     privateOnlyCompany,
     privateOnlyContact,
+    canTogglePrivate,
     okkiBound,
     invoiceNoTaken,
     entryOptions,
     form,
+    hairItems: accessories.hairItems,
+    accessoryItems: accessories.accessoryItems,
+    accessoryOptions: accessories.accessoryOptions,
+    accessoryLoading: accessories.accessoryLoading,
+    formHairPrice,
+    formLineDiscountTotal,
+    formAccessoryAmount: accessories.accessoryAmount,
+    formAccessoryDiscount: accessories.accessoryDiscountTotal,
     formProductTotal,
     formTotal,
+    settlementError,
     isProduction,
     searchCustomers,
     searchContacts,
     onCustomerChange,
+    onCurrencyChange,
     onContactChange,
     onInvoiceNoInput,
     onInvoiceNoBlur,
     openCreate,
     openEdit,
     addLine,
+    addAccessory: accessories.addAccessory,
+    selectAccessory: accessories.selectAccessory,
+    removeAccessory: accessories.removeAccessory,
+    searchAccessoryOptions: accessories.searchAccessoryOptions,
+    updateAccessoryTotal: accessories.updateAccessoryTotal,
     removeLine,
     loadLineOptions,
     onLineFilterChange,
     onCustomFieldChange,
     onPriceInput,
+    onLineDiscountChange,
     updateLineTotal,
     appendImportedLines,
     saveDraft,

@@ -159,6 +159,7 @@ def _lookup_std_price(db: Session, product_display: str, length: str, unit: str,
     candidates = (
         db.query(StdPrice)
         .filter(
+            StdPrice.product_kind == "hair",
             StdPrice.length == normalize_length(length),
             StdPrice.weight_unit == normalize_text(unit),
             StdPrice.color_type == color_type,
@@ -185,7 +186,7 @@ def _lookup_std_price(db: Session, product_display: str, length: str, unit: str,
 # ── admin CRUD ────────────────────────────────────────────────
 
 def list_std_prices(db: Session, *, series_grade: str | None = None) -> list[dict]:
-    query = db.query(StdPrice)
+    query = db.query(StdPrice).filter(StdPrice.product_kind == "hair")
     if series_grade:
         query = query.filter(StdPrice.series_grade == series_grade)
     rows = query.order_by(StdPrice.series_grade, StdPrice.weight_unit, StdPrice.length, StdPrice.color_type).all()
@@ -211,13 +212,18 @@ def upsert_std_price(
     if price_id:
         # explicit edit: mutate that row in place so changing a key field
         # does not leave the old cell behind in the matrix
-        row = db.query(StdPrice).filter(StdPrice.id == price_id).first()
+        row = (
+            db.query(StdPrice)
+            .filter(StdPrice.id == price_id, StdPrice.product_kind == "hair")
+            .first()
+        )
         if not row:
             raise ValueError("价格记录不存在")
         duplicate = (
             db.query(StdPrice)
             .filter(
                 StdPrice.id != price_id,
+                StdPrice.product_kind == "hair",
                 StdPrice.series_grade == series_grade.strip(),
                 StdPrice.length == length_n,
                 StdPrice.weight_unit == unit_n,
@@ -238,6 +244,7 @@ def upsert_std_price(
     row = (
         db.query(StdPrice)
         .filter(
+            StdPrice.product_kind == "hair",
             StdPrice.series_grade == series_grade.strip(),
             StdPrice.length == length_n,
             StdPrice.weight_unit == unit_n,
@@ -251,6 +258,7 @@ def upsert_std_price(
         row.updated_by = user_id
     else:
         row = StdPrice(
+            product_kind="hair",
             series_grade=series_grade.strip(),
             length=length_n,
             weight_unit=unit_n,
@@ -264,7 +272,11 @@ def upsert_std_price(
 
 
 def delete_std_price(db: Session, price_id: int) -> bool:
-    row = db.query(StdPrice).filter(StdPrice.id == price_id).first()
+    row = (
+        db.query(StdPrice)
+        .filter(StdPrice.id == price_id, StdPrice.product_kind == "hair")
+        .first()
+    )
     if not row:
         return False
     db.delete(row)
@@ -357,12 +369,18 @@ def delete_customer_rule(db: Session, rule_id: int) -> bool:
 
 
 def get_customer_rule(db: Session, customer_id: str) -> dict | None:
-    row = (
+    row = get_customer_rule_row(db, customer_id)
+    return _serialize_rule(row) if row else None
+
+
+def get_customer_rule_row(db: Session, customer_id: str | None) -> CustomerPriceRule | None:
+    if not customer_id:
+        return None
+    return (
         db.query(CustomerPriceRule)
         .filter(CustomerPriceRule.customer_id == str(customer_id), CustomerPriceRule.enabled == 1)
         .first()
     )
-    return _serialize_rule(row) if row else None
 
 
 # ── Excel import (business price sheet format) ────────────────
@@ -375,7 +393,7 @@ def import_price_workbook(db: Session, content: bytes, user_id: int | None = Non
 
     Sheet '价格表': blocks of [Price List----<series>] > <grade> > header >
     rows (length, weight, 4 prices for solid/piano/ombre/balayage).
-    Sheet '颜色对照表': 4 columns of color codes, one per color type.
+    Color mapping sheets are intentionally ignored; they are maintained separately.
     """
     wb = load_workbook(BytesIO(content), data_only=True)
     prices_imported = 0
@@ -385,7 +403,6 @@ def import_price_workbook(db: Session, content: bytes, user_id: int | None = Non
     for ws in wb.worksheets:
         header = [str(c or "").strip().lower() for c in next(ws.iter_rows(min_row=1, max_row=1, values_only=True), ())]
         if header and header[0].startswith("solid"):
-            colors_imported += _import_color_sheet(db, ws)
             continue
         imported, sheet_skipped = _import_price_sheet(db, ws, user_id)
         prices_imported += imported
@@ -432,7 +449,7 @@ def _import_price_sheet(db: Session, ws, user_id: int | None) -> tuple[int, list
                     length=first,
                     weight_unit=weight,
                     color_type=color_type,
-                    price=Decimal(str(price)),
+                    price=Decimal(str(price)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
                     user_id=user_id,
                 )
                 imported += 1

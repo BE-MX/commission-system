@@ -29,6 +29,7 @@ export const PREFIX_LABELS = {
   invoice_price: '价格与产品配置',
   invoice_okki: 'OKKI 推单设置',
   invoice_repair: '回款日期修复',
+  invoice_private_filter: '私海客户筛选',
   tracking: '物流跟踪',
   stock: '备货一览',
   stock_daily: '安全库存日报',
@@ -85,6 +86,7 @@ export const PAGE_PARENTS = {
   invoice_price: 'invoice',
   invoice_okki: 'invoice',
   invoice_repair: 'invoice',
+  invoice_private_filter: 'invoice',
   expo_hair_color: 'expo',
   expo_scene: 'expo',
   expo_script: 'expo',
@@ -113,7 +115,7 @@ export const PAGE_PARENTS = {
 const ROW_GROUPS = [
   { label: '经营 · 提成与客户', prefixes: ['commission', 'commission_my', 'payment', 'customer', 'customer_opportunity', 'customer_radar', 'employee', 'supervisor'] },
   { label: '单据 · 订单与物流', prefixes: [
-    'invoice', 'invoice_price', 'invoice_okki', 'invoice_repair',
+    'invoice', 'invoice_price', 'invoice_okki', 'invoice_repair', 'invoice_private_filter',
     'aftersales', 'aftersales_analytics', 'tracking',
     'stock', 'stock_daily',
     'production', 'production_product', 'production_dashboard', 'production_route',

@@ -6,11 +6,12 @@
         <p>标准参考价矩阵、色型映射、客户价格规则与生产单沉淀产品管理。</p>
       </div>
     </div>
-
     <section class="table-card">
       <el-tabs v-model="activeTab">
         <!-- ── 标准价格表 ── -->
         <el-tab-pane label="标准价格表" name="std">
+          <el-tabs v-model="activePriceKind">
+            <el-tab-pane label="头发价格" name="hair">
           <div class="tab-toolbar">
             <el-select v-model="stdFilter" clearable filterable placeholder="按系列筛选" style="width: 320px" @change="loadStdPrices">
               <el-option v-for="s in stdSeriesOptions" :key="s" :label="s" :value="s" />
@@ -36,7 +37,7 @@
               </template>
             </el-table-column>
             <el-table-column label="标准价" min-width="120" align="right">
-              <template #default="{ row }">{{ row.currency }} {{ Number(row.price).toFixed(4) }}</template>
+              <template #default="{ row }">{{ row.currency }} {{ Number(row.price).toFixed(2) }}</template>
             </el-table-column>
             <el-table-column prop="updated_at" label="更新时间" min-width="170" show-overflow-tooltip />
             <el-table-column label="操作" min-width="140" fixed="right">
@@ -52,8 +53,12 @@
               </template>
             </el-table-column>
           </el-table>
+            </el-tab-pane>
+            <el-tab-pane label="配件价格" name="accessory" lazy>
+              <AccessoryPriceConfig />
+            </el-tab-pane>
+          </el-tabs>
         </el-tab-pane>
-
         <!-- ── 色型映射 ── -->
         <el-tab-pane label="色型映射" name="colors">
           <div class="tab-toolbar">
@@ -80,7 +85,6 @@
             </el-table-column>
           </el-table>
         </el-tab-pane>
-
         <!-- ── 客户价格规则 ── -->
         <el-tab-pane label="客户价格规则" name="rules">
           <div class="tab-toolbar">
@@ -122,7 +126,6 @@
             </el-table-column>
           </el-table>
         </el-tab-pane>
-
         <!-- ── 自定义产品 ── -->
         <el-tab-pane label="生产单沉淀产品" name="custom">
           <div class="tab-toolbar">
@@ -153,7 +156,6 @@
         </el-tab-pane>
       </el-tabs>
     </section>
-
     <!-- 标准价编辑 -->
     <el-dialog v-model="stdDialog.visible" :title="stdDialog.form.id ? '编辑标准价' : '新增标准价'" width="520px">
       <el-form :model="stdDialog.form" label-width="110px">
@@ -174,7 +176,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="标准价" required>
-          <el-input-number v-model="stdDialog.form.price" :min="0" :precision="4" controls-position="right" style="width: 100%" />
+          <el-input-number v-model="stdDialog.form.price" :min="0" :precision="2" controls-position="right" style="width: 100%" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -182,7 +184,6 @@
         <el-button type="primary" @click="saveStd">保存</el-button>
       </template>
     </el-dialog>
-
     <!-- 色型映射新增 -->
     <el-dialog v-model="colorDialog.visible" title="新增色型映射" width="420px">
       <el-form :model="colorDialog.form" label-width="90px">
@@ -200,7 +201,6 @@
         <el-button type="primary" @click="saveColor">保存</el-button>
       </template>
     </el-dialog>
-
     <!-- 客户规则编辑 -->
     <el-dialog v-model="ruleDialog.visible" :title="ruleDialog.form.id ? '编辑客户价格规则' : '新增客户价格规则'" width="520px">
       <el-form :model="ruleDialog.form" label-width="110px">
@@ -256,6 +256,7 @@ import { ElMessage } from 'element-plus'
 import { Delete, Edit, Plus, Refresh, Search, Upload } from '@element-plus/icons-vue'
 import { msgSuccess, confirmDanger } from '@/utils/feedback'
 import { customerLabel } from './composables/useInvoiceEditor'
+import AccessoryPriceConfig from './components/AccessoryPriceConfig.vue'
 import {
   deleteColorType,
   deleteCustomerRule,
@@ -275,6 +276,7 @@ import {
 const COLOR_TYPE_TEXT = { solid: '纯色 Solid', piano: '钢琴色 Piano', ombre: '渐变 Ombre', balayage: '巴拉雅奇 Balayage' }
 
 const activeTab = ref('std')
+const activePriceKind = ref('hair')
 
 // 标准价
 const stdLoading = ref(false)
@@ -369,7 +371,7 @@ async function handleImport({ file }) {
   const formData = new FormData()
   formData.append('file', file)
   const result = await importPriceWorkbook(formData)
-  ElMessage.success(`导入完成：价格 ${result.prices_imported} 格，色号 ${result.colors_imported} 条${result.skipped?.length ? `，跳过 ${result.skipped.length} 行` : ''}`)
+  ElMessage.success(`导入完成：标准价格 ${result.prices_imported} 格，已按两位小数四舍五入${result.skipped?.length ? `，跳过 ${result.skipped.length} 行` : ''}`)
   loadStdPrices()
   loadColorTypes()
 }
@@ -479,52 +481,4 @@ async function runReconcile() {
 }
 </script>
 
-<style scoped>
-.price-config-page {
-  padding: 24px 28px;
-}
-
-.page-header h2 {
-  margin: 0 0 6px;
-  font-family: var(--font-display);
-  font-size: 17px;
-  font-weight: 700;
-}
-
-.page-header p {
-  margin: 0 0 18px;
-  font-size: 14px;
-  color: var(--text-secondary, #4a5568);
-}
-
-.table-card {
-  padding: 4px 16px 16px;
-  border: 1px solid var(--border-color, #e2e5ef);
-  border-radius: 12px;
-  background: var(--card-bg, #ffffff);
-}
-
-.tab-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
-}
-
-.tab-toolbar .hint {
-  flex: 1;
-  color: var(--text-muted, #a0aec0);
-  font-size: 13px;
-}
-
-.dialog-hint {
-  margin-top: 4px;
-  color: var(--text-muted, #a0aec0);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.list-table {
-  width: 100%;
-}
-</style>
+<style scoped src="./invoice-price-config.css"></style>

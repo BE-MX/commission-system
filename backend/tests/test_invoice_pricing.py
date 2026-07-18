@@ -383,6 +383,9 @@ def test_delete_invoice_blocked_when_synced(db):
 # ── workbook import ───────────────────────────────────────────
 
 def test_import_price_workbook(db):
+    db.add(PriceColorType(color_code="existing", color_type="solid"))
+    db.flush()
+
     wb = Workbook()
     ws = wb.active
     ws.title = "价格表"
@@ -403,15 +406,16 @@ def test_import_price_workbook(db):
     result = price_service.import_price_workbook(db, stream.getvalue())
     db.flush()
     assert result["prices_imported"] == 8
-    assert result["colors_imported"] == 6
+    assert result["colors_imported"] == 0
     assert result["skipped"] == []
+    assert db.query(PriceColorType).count() == 1
+    assert db.query(PriceColorType).filter_by(color_code="existing", color_type="solid").count() == 1
 
-    resolved = price_service.resolve_price(
-        db, customer_id=None,
-        product_display="Standard Double Drawn Genius Weft",
-        length="18", unit="20g", color="Cookies Cream",
-    )
-    # display 'Standard Double Drawn Genius Weft' vs series 'Standard Double Drawn Genius':
-    # series is a prefix of the display, so the matrix row is found
-    assert resolved["standard_price"] == Decimal("26.109")
-    assert resolved["color_type"] == "balayage"
+    prices = {
+        (row.length, row.color_type): row.price
+        for row in db.query(StdPrice).filter_by(series_grade="Standard Double Drawn Genius").all()
+    }
+    assert prices[("16", "solid")] == Decimal("17.22")
+    assert prices[("16", "piano")] == Decimal("17.85")
+    assert prices[("18", "solid")] == Decimal("23.80")
+    assert prices[("18", "balayage")] == Decimal("26.11")

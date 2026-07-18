@@ -1,0 +1,139 @@
+import { computed, ref } from 'vue'
+import { ElMessage } from 'element-plus'
+import { listAccessoryPrices } from '@/api/invoice'
+import {
+  accessoryDiscount,
+  accessoryGross,
+  applyAccessorySelection,
+  normalizeAccessoryRow,
+  calculateAccessoryTotal,
+  createLatestRequestGate,
+  removeItemByReference,
+} from './accessoryPricing.js'
+import { normalizeDiscount, sumLineDiscount, sumLineGross } from './invoiceSettlement.js'
+
+export function useInvoiceAccessories(form) {
+  const accessoryOptions = ref([])
+  const accessoryLoading = ref(false)
+  const hairItems = computed(() => form.items.filter(item => item.product_kind !== 'accessory'))
+  const accessoryItems = computed(() => form.items.filter(item => item.product_kind === 'accessory'))
+  const hairAmount = computed(() => sumLineGross(hairItems.value))
+  const hairDiscount = computed(() => sumLineDiscount(hairItems.value))
+  const accessoryAmount = computed(() => accessoryGross(accessoryItems.value))
+  const accessoryDiscountTotal = computed(() => accessoryDiscount(accessoryItems.value))
+  const searchGate = createLatestRequestGate()
+  const priceGate = createLatestRequestGate()
+  const pricingContext = () => `${form.customer_id || ''}|${String(form.currency || '').toUpperCase()}`
+
+  function invalidateCustomerContext() {
+    searchGate.invalidate()
+    priceGate.invalidate()
+    accessoryOptions.value = []
+    accessoryLoading.value = false
+  }
+
+  async function searchAccessoryOptions(keyword = '') {
+    const customerId = form.customer_id || ''
+    const currency = String(form.currency || '').toUpperCase()
+    const token = searchGate.issue(pricingContext())
+    accessoryOptions.value = []
+    accessoryLoading.value = true
+    try {
+      const result = await listAccessoryPrices({
+        keyword: keyword.trim() || undefined,
+        customer_id: customerId || undefined,
+        currency: currency || undefined,
+        active_only: true,
+      })
+      if (!searchGate.isCurrent(token, pricingContext())) return
+      accessoryOptions.value = (result.items || []).map(option => ({
+        ...option,
+        customer_price: customerId ? option.customer_price : null,
+        _customer_id: customerId,
+        _currency: currency,
+      }))
+    } catch {
+      if (searchGate.isCurrent(token, pricingContext())) accessoryOptions.value = []
+    } finally {
+      if (searchGate.isCurrent(token, pricingContext())) accessoryLoading.value = false
+    }
+  }
+
+  function addAccessory() {
+    form.items.push(normalizeAccessoryRow())
+  }
+
+  function selectAccessory(row, option) {
+    if (!applyAccessorySelection(row, option, form.customer_id, form.currency)) {
+      ElMessage.warning('客户或币种已变化，请重新搜索并选择配件')
+    }
+  }
+
+  function removeAccessory(row) {
+    removeItemByReference(form.items, row)
+  }
+
+  function updateAccessoryTotal(row) {
+    row.discount_amount = normalizeDiscount(row.discount_amount)
+    row.total_price = calculateAccessoryTotal(row.quantity, row.price_per_piece, row.discount_amount)
+    row.price_source = row.customer_price != null && Number(row.price_per_piece) === Number(row.customer_price)
+      ? 'customer_rule'
+      : 'manual'
+  }
+
+  async function refreshAccessoryPrices() {
+    const customerId = form.customer_id || ''
+    const currency = String(form.currency || '').toUpperCase()
+    const token = priceGate.issue(pricingContext())
+    if (!accessoryItems.value.length) return
+    try {
+      const result = await listAccessoryPrices({
+        customer_id: customerId || undefined,
+        currency: currency || undefined,
+        active_only: true,
+      })
+      if (!priceGate.isCurrent(token, pricingContext())) return
+      const options = result.items || []
+      let invalidCount = 0
+      for (const row of accessoryItems.value) {
+        const option = options.find(item =>
+          String(item.product_id) === String(row.product_id)
+          && String(item.sku_id) === String(row.sku_id))
+        if (!option) {
+          row.standard_price = null
+          row.customer_price = null
+          row.price_source = 'missing_std'
+          invalidCount++
+          continue
+        }
+        row.standard_price = Number(option.standard_price)
+        row.customer_price = customerId ? Number(option.customer_price) : null
+        row.price_per_piece = row.customer_price ?? row.standard_price
+        updateAccessoryTotal(row)
+      }
+      if (invalidCount) {
+        ElMessage.warning(`${invalidCount} 条配件价格已失效，请到“价格与产品配置 → 标准价格表”重新配置`)
+      }
+    } catch {
+      // API interceptor already gives the recovery message; keep the transaction snapshot unchanged.
+    }
+  }
+
+  return {
+    accessoryAmount,
+    accessoryDiscountTotal,
+    accessoryItems,
+    accessoryLoading,
+    accessoryOptions,
+    hairAmount,
+    hairDiscount,
+    hairItems,
+    addAccessory,
+    invalidateCustomerContext,
+    refreshAccessoryPrices,
+    removeAccessory,
+    searchAccessoryOptions,
+    selectAccessory,
+    updateAccessoryTotal,
+  }
+}

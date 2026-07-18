@@ -147,6 +147,8 @@ class Settings(BaseSettings):
     PM_TOKEN_EPOCH: int = 1  # 全局版本号 salt：+1 即全员重新验证（极端情况兜底）
     PM_FILE_SIGN_TTL_SECONDS: int = 300  # 下载/预览签名 URL 短时效（秒）
     PM_MAX_UPLOAD_MB: int = 50  # 单文件上传上限（frp 隧道带宽是全站稀缺资源）
+    # 发票 PDF 中文字体：部署/启动时强制预检，避免用户导出时才失败。
+    PDF_CJK_FONT_PATH: str = "C:\\Windows\\Fonts\\msyh.ttc"
 
     @field_validator("CORS_ALLOW_ORIGINS", mode="before")
     @classmethod

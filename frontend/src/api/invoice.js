@@ -96,6 +96,22 @@ export function deleteStdPrice(id) {
   return unwrap(request.delete(`/price/std/${id}`))
 }
 
+export function searchAccessoryCandidates(params) {
+  return unwrap(request.get('/price/accessory-candidates', { params, showLoading: false }))
+}
+
+export function listAccessoryPrices(params) {
+  return unwrap(request.get('/price/accessories', { params, showLoading: false }))
+}
+
+export function saveAccessoryPrice(data) {
+  return unwrap(request.post('/price/accessories', data, { loadingText: '正在保存配件价格...' }))
+}
+
+export function deleteAccessoryPrice(id) {
+  return unwrap(request.delete(`/price/accessories/${id}`))
+}
+
 export function importPriceWorkbook(formData) {
   return unwrap(request.post('/price/import', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },

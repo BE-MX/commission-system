@@ -8,7 +8,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session, selectinload
 
 from app.auth.models import ArkUser
-from app.invoice import price_service, product_service
+from app.invoice import accessory_price_service, price_service, product_service
 from app.invoice.models import Invoice, InvoiceItem
 from app.invoice.schemas import InvoiceCreate, InvoiceUpdate
 
@@ -17,7 +17,7 @@ _HEADER_FIELDS = (
     "delivery_address", "sales_user_name", "sales_phone", "sales_email",
     "invoice_date", "express_channel", "shipping_fee", "surcharge_name",
     "surcharge_amount", "payment_term", "internal_payment_method", "internal_discount",
-    "internal_accessory", "internal_received", "internal_balance",
+    "packaging_quantity", "internal_accessory", "internal_received", "internal_balance",
     "internal_shipping_type", "okki_new_deal", "okki_free_shipping", "okki_first_return",
     "remark",
 )
@@ -195,7 +195,7 @@ def create_invoice(db: Session, body: InvoiceCreate, user_id: int | None = None)
     if user_id and not (invoice.sales_user_name and invoice.sales_phone and invoice.sales_email):
         creator = db.get(ArkUser, user_id)
         if creator:
-            invoice.sales_user_name = invoice.sales_user_name or creator.real_name
+            invoice.sales_user_name = invoice.sales_user_name or creator.username
             invoice.sales_phone = invoice.sales_phone or creator.phone
             invoice.sales_email = invoice.sales_email or creator.email
     # OKKI 业务标记空值兜底（null=自动判定）
@@ -204,6 +204,7 @@ def create_invoice(db: Session, body: InvoiceCreate, user_id: int | None = None)
     db.add(invoice)
     _replace_items(db, invoice, body, user_id=user_id)
     _refresh_invoice_totals(invoice)
+    _validate_internal_settlement(invoice)
     db.flush()
     return invoice
 
@@ -230,6 +231,7 @@ def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: 
         setattr(invoice, field, value)
     _replace_items(db, invoice, body, user_id=user_id)
     _refresh_invoice_totals(invoice)
+    _validate_internal_settlement(invoice)
     db.flush()
     return invoice
 
@@ -242,24 +244,43 @@ def validate_invoice(invoice: Invoice) -> list[dict]:
         issues.append({"field": "items", "message": "至少需要一条产品明细"})
     for idx, item in enumerate(invoice.items, start=1):
         prefix = f"items[{idx}]"
-        if item.item_type == "custom":
-            if not item.product_display:
-                issues.append({"field": prefix, "message": "生产单产品需填写 Product 描述"})
-        else:
-            if not item.product_id or not item.product_name:
-                issues.append({"field": prefix, "message": "产品未匹配到唯一产品"})
+        if item.product_kind == "accessory":
+            if item.item_type != "stock":
+                issues.append({"field": f"{prefix}.item_type", "message": "配件只能选择 OKKI 库存产品"})
+            if not item.product_id:
+                issues.append({"field": f"{prefix}.product_id", "message": "配件缺少 OKKI product_id"})
             if not item.sku_id:
-                issues.append({"field": f"{prefix}.sku_id", "message": "缺少 sku_id，无法同步小满订单"})
-        if not item.net_weight_grams:
-            issues.append({"field": f"{prefix}.net_weight_grams", "message": "Net Weight Grams 必填"})
-        if not item.color:
-            issues.append({"field": f"{prefix}.color", "message": "Color 必填"})
-        if not item.length:
-            issues.append({"field": f"{prefix}.length", "message": "Length 必填"})
+                issues.append({"field": f"{prefix}.sku_id", "message": "配件缺少 OKKI sku_id"})
+            if not str(item.product_name or "").strip():
+                issues.append({"field": f"{prefix}.product_name", "message": "配件 Name 必填"})
+            if not str(item.product_display or "").strip():
+                issues.append({"field": f"{prefix}.product_display", "message": "配件显示名称必填"})
+            if not str(item.model or "").strip():
+                issues.append({"field": f"{prefix}.model", "message": "配件 Model 必填"})
+            if not str(item.color or "").strip():
+                issues.append({"field": f"{prefix}.color", "message": "配件 Color 必填"})
+        else:
+            if item.item_type == "custom":
+                if not item.product_display:
+                    issues.append({"field": prefix, "message": "生产单产品需填写 Product 描述"})
+            else:
+                if not item.product_id or not item.product_name:
+                    issues.append({"field": prefix, "message": "产品未匹配到唯一产品"})
+                if not item.sku_id:
+                    issues.append({"field": f"{prefix}.sku_id", "message": "缺少 sku_id，无法同步小满订单"})
+            if not item.net_weight_grams:
+                issues.append({"field": f"{prefix}.net_weight_grams", "message": "Net Weight Grams 必填"})
+            if not item.color:
+                issues.append({"field": f"{prefix}.color", "message": "Color 必填"})
+            if not item.length:
+                issues.append({"field": f"{prefix}.length", "message": "Length 必填"})
         if not item.quantity or item.quantity <= 0:
             issues.append({"field": f"{prefix}.quantity", "message": "Quantity 必须大于 0"})
         if item.price_per_piece is None or item.price_per_piece <= 0:
             issues.append({"field": f"{prefix}.price_per_piece", "message": "Price/Piece 必须大于 0"})
+        gross = Decimal(item.price_per_piece or 0) * Decimal(item.quantity or 0)
+        if gross + Decimal(item.discount_amount or 0) < 0:
+            issues.append({"field": f"{prefix}.discount_amount", "message": "产品行折扣不能超过该行金额"})
     return issues
 
 
@@ -270,6 +291,7 @@ def mark_ready_if_valid(invoice: Invoice) -> list[dict]:
 
 
 def serialize_detail(invoice: Invoice) -> dict:
+    summary = summarize_items(invoice)
     return {
         **_invoice_list_row(invoice, len(invoice.items)),
         "contact_name": invoice.contact_name,
@@ -285,8 +307,10 @@ def serialize_detail(invoice: Invoice) -> dict:
         "surcharge_amount": invoice.surcharge_amount,
         "payment_term": invoice.payment_term,
         "product_amount": invoice.product_amount,
+        **summary,
         "internal_payment_method": invoice.internal_payment_method,
         "internal_discount": invoice.internal_discount,
+        "packaging_quantity": invoice.packaging_quantity,
         "internal_accessory": invoice.internal_accessory,
         "internal_received": invoice.internal_received,
         "internal_balance": invoice.internal_balance,
@@ -310,9 +334,6 @@ def _custom_line_complete(payload) -> bool:
     ))
 
 
-_INVOICE_TYPE_CODES = {"stock": "KC", "production": "SC"}
-
-
 def invoice_no_exists(db: Session, invoice_no: str, exclude_id: int | None = None) -> bool:
     query = db.query(Invoice.id).filter(Invoice.invoice_no == invoice_no)
     if exclude_id is not None:
@@ -321,22 +342,27 @@ def invoice_no_exists(db: Session, invoice_no: str, exclude_id: int | None = Non
 
 
 def suggest_invoice_no(db: Session, user_id: int | None, order_type: str) -> str:
-    """默认发票号：{用户名}-{KC|SC}-{本月该前缀第几单}。
+    """默认发票号（2026-07-14 亮哥定版）：
+    库存单 `{用户名}-KC-{MM}{NN}`，NN=该用户本月第几张库存单；
+    生产单 `SC-{MM}{NN}`，NN=全公司本月第几张生产单（号不含用户名，全局计数）。
 
-    号内不含月份成分，跨月重置序号会撞全库唯一约束——默认号只是建议值，
-    先按当月同前缀最大序号 +1，再逐一顺延到全库不冲突为止（用户可手改）。
-    序号按前缀（=用户名+类型）而非 created_by 计数：号是用户可编辑的，
-    以号面前缀为准才能保证「同前缀序号连续」的直觉不被代开/改号打破。
+    序号按「当月同前缀号面最大序号 +1」推算，不按 order_type 行数计数——
+    旧 INV 格式存量单不进新序列，号面与序号永远自洽。号内无年份，跨年同月
+    同序会撞全库唯一约束——默认号只是建议值，生成后逐一顺延到不冲突为止。
+    NN 用两位零填充，超 99 自然进三位。
     """
-    user = db.get(ArkUser, user_id) if user_id else None
-    username = (user.username or "").strip() if user else ""
-    if not username:
-        return _next_invoice_no(db)  # 定位不到用户名（理论不可达）退回旧 INV 规则
-    type_code = _INVOICE_TYPE_CODES.get(order_type, "KC")
-    prefix = f"{username}-{type_code}-"
+    now = datetime.now()
+    month = f"{now.month:02d}"
+    if order_type == "production":
+        prefix = f"SC-{month}"
+    else:
+        user = db.get(ArkUser, user_id) if user_id else None
+        username = (user.username or "").strip() if user else ""
+        if not username:
+            return _next_invoice_no(db)  # 定位不到用户名（理论不可达）退回旧 INV 规则
+        prefix = f"{username}-KC-{month}"
     escaped = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     # created_at 存的是 utcnow（models 默认值）：「本月」按本地自然月起点换算到 UTC 存储系比较
-    now = datetime.now()
     month_start = datetime(now.year, now.month, 1) - (datetime.now() - datetime.utcnow())
     existing = db.execute(
         select(Invoice.invoice_no)
@@ -349,9 +375,9 @@ def suggest_invoice_no(db: Session, user_id: int | None, order_type: str) -> str
         if suffix.isdigit():
             seq = max(seq, int(suffix))
     seq += 1
-    while invoice_no_exists(db, f"{prefix}{seq}"):
+    while invoice_no_exists(db, f"{prefix}{seq:02d}"):
         seq += 1
-    return f"{prefix}{seq}"
+    return f"{prefix}{seq:02d}"
 
 
 def _next_invoice_no(db: Session) -> str:
@@ -379,7 +405,12 @@ def _replace_items(db: Session, invoice: Invoice, body, user_id: int | None = No
     stock_pairs = {
         (int(item.product_id), int(item.sku_id))
         for item in body.items
-        if item.item_type == "stock" and item.product_id is not None and item.sku_id is not None
+        if (
+            item.product_kind == "hair"
+            and item.item_type == "stock"
+            and item.product_id is not None
+            and item.sku_id is not None
+        )
     }
     invalid_pairs = stock_pairs - product_service.valid_okki_product_skus(db, stock_pairs)
     if invalid_pairs:
@@ -398,6 +429,7 @@ def _replace_items(db: Session, invoice: Invoice, body, user_id: int | None = No
     _append_removed_lines(invoice, [
         {
             "unique_id": item.xiaoman_unique_id,
+            "product_kind": item.product_kind,
             "item_type": item.item_type,
             "product_id": item.product_id,
             "sku_id": item.sku_id,
@@ -416,6 +448,7 @@ def _replace_items(db: Session, invoice: Invoice, body, user_id: int | None = No
         item = InvoiceItem(
             xiaoman_unique_id=carried.xiaoman_unique_id if carried else None,
             sort_order=idx,
+            product_kind=payload.product_kind,
             item_type=payload.item_type,
             product_id=payload.product_id,
             sku_id=payload.sku_id,
@@ -428,6 +461,7 @@ def _replace_items(db: Session, invoice: Invoice, body, user_id: int | None = No
             length=payload.length,
             quantity=payload.quantity,
             price_per_piece=payload.price_per_piece,
+            discount_amount=payload.discount_amount,
         )
         if payload.item_type == "custom" and _custom_line_complete(payload):
             resolved = product_service.ensure_custom_product(
@@ -453,21 +487,41 @@ def _replace_items(db: Session, invoice: Invoice, body, user_id: int | None = No
 
         # Pricing snapshot is authoritative on the server: the client shows the
         # same numbers, but totals must not trust client-side arithmetic.
-        pricing = price_service.resolve_price(
-            db,
-            customer_id=body.customer_id,
-            product_display=item.product_display,
-            length=item.length,
-            unit=item.net_weight_grams,
-            color=item.color,
-        )
+        if item.product_kind == "accessory" and item.product_id and item.sku_id:
+            pricing = accessory_price_service.resolve_configured_price(
+                db,
+                customer_id=body.customer_id,
+                product_id=int(item.product_id),
+                sku_id=int(item.sku_id),
+                currency=body.currency or "USD",
+            )
+        elif item.product_kind == "accessory":
+            pricing = {
+                "standard_price": None,
+                "customer_price": None,
+                "currency": body.currency or "USD",
+            }
+        else:
+            pricing = price_service.resolve_price(
+                db,
+                customer_id=body.customer_id,
+                product_display=item.product_display,
+                length=item.length,
+                unit=item.net_weight_grams,
+                color=item.color,
+            )
         same_currency = (
             pricing["standard_price"] is None
             or str(pricing["currency"] or "").upper() == str(body.currency or "USD").upper()
         )
         item.standard_price = pricing["standard_price"] if same_currency else None
         item.customer_price = pricing["customer_price"] if same_currency else None
-        if item.price_per_piece is None:
+        if item.product_kind == "accessory" and item.standard_price is not None:
+            item.product_name = pricing["accessory_name"]
+            item.product_display = pricing["accessory_name"]
+            item.model = pricing["accessory_model"]
+            item.color = pricing["accessory_color"]
+        if item.product_kind == "hair" and item.price_per_piece is None:
             item.price_per_piece = item.customer_price
         if item.customer_price is None:
             item.price_source = "missing_std"
@@ -475,7 +529,11 @@ def _replace_items(db: Session, invoice: Invoice, body, user_id: int | None = No
             item.price_source = "customer_rule"
         else:
             item.price_source = "manual"
-        item.total_price = _money((item.price_per_piece or Decimal("0")) * Decimal(item.quantity))
+        gross_amount = _money((item.price_per_piece or Decimal("0")) * Decimal(item.quantity))
+        item.discount_amount = _money(Decimal(item.discount_amount or 0))
+        if gross_amount + item.discount_amount < 0:
+            raise ValueError(f"items[{idx}].discount_amount: 产品行折扣不能超过该行金额")
+        item.total_price = _money(gross_amount + item.discount_amount)
         invoice.items.append(item)
 
 
@@ -496,15 +554,54 @@ def _append_removed_lines(invoice: Invoice, removed: list[dict]) -> None:
     invoice.xiaoman_removed_lines = json.dumps(existing, ensure_ascii=False) if existing else None
 
 
+def summarize_items(invoice: Invoice) -> dict[str, Decimal]:
+    summary = {
+        "hair_amount": Decimal("0"),
+        "hair_discount": Decimal("0"),
+        "accessory_amount": Decimal("0"),
+        "accessory_discount": Decimal("0"),
+    }
+    for item in invoice.items:
+        prefix = "accessory" if item.product_kind == "accessory" else "hair"
+        gross = _money(Decimal(item.price_per_piece or 0) * Decimal(item.quantity or 0))
+        discount = _money(Decimal(item.discount_amount or 0))
+        summary[f"{prefix}_amount"] += gross
+        summary[f"{prefix}_discount"] += discount
+    return {key: _money(value) for key, value in summary.items()}
+
+
 def _refresh_invoice_totals(invoice: Invoice) -> None:
-    invoice.product_amount = _money(sum((item.total_price or Decimal("0")) for item in invoice.items))
+    summary = summarize_items(invoice)
+    invoice.internal_discount = summary["hair_discount"]
+    invoice.product_amount = _money(sum(summary.values(), Decimal("0")))
     invoice.total_amount = _money(
         invoice.product_amount
+        + Decimal(invoice.internal_accessory or 0)
         + Decimal(invoice.shipping_fee or 0)
         + Decimal(invoice.surcharge_amount or 0)
     )
+    if invoice.total_amount < 0:
+        raise ValueError("折扣金额不能超过订单中可抵扣的金额")
+    if invoice.internal_received is None:
+        invoice.internal_balance = None
+    else:
+        balance = _money(invoice.total_amount - Decimal(invoice.internal_received))
+        if balance < 0:
+            raise ValueError("预付款不能超过发票总金额")
+        invoice.internal_balance = balance
     if invoice.sync_status != "synced":
         invoice.status = "ready" if invoice.items and not validate_invoice(invoice) else "draft"
+
+
+def _validate_internal_settlement(invoice: Invoice) -> None:
+    prepayment = invoice.internal_received
+    balance = invoice.internal_balance
+    if prepayment is None and balance is None:
+        return
+    if prepayment is None or balance is None:
+        raise ValueError("尾款必须由预付款和发票总金额自动计算")
+    if _money(Decimal(prepayment) + Decimal(balance)) != _money(Decimal(invoice.total_amount or 0)):
+        raise ValueError("预付款与尾款之和必须等于总金额")
 
 
 def _money(value: Decimal) -> Decimal:
@@ -533,6 +630,7 @@ def _serialize_item(item: InvoiceItem) -> dict:
     return {
         "id": item.id,
         "sort_order": item.sort_order,
+        "product_kind": item.product_kind,
         "item_type": item.item_type,
         "product_id": item.product_id,
         "sku_id": item.sku_id,
@@ -548,7 +646,7 @@ def _serialize_item(item: InvoiceItem) -> dict:
         "standard_price": item.standard_price,
         "customer_price": item.customer_price,
         "price_per_piece": item.price_per_piece,
+        "discount_amount": item.discount_amount,
         "price_source": item.price_source,
         "total_price": item.total_price,
     }
-

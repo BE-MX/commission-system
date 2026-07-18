@@ -72,19 +72,41 @@ class InvoiceImportPreviewRequest(BaseModel):
 class InvoiceItemPayload(BaseModel):
     # 编辑时回传既有行 id，用于跨保存传承 xiaoman_unique_id（OKKI 编辑推单按行更新）
     id: Optional[int] = None
+    product_kind: str = Field(default="hair", pattern="^(hair|accessory)$")
     item_type: str = Field(default="stock", pattern="^(stock|custom)$")
     product_id: Optional[int] = None
     sku_id: Optional[int] = None
     product_name: str = Field(default="", max_length=512)
     product_display: str = Field(..., max_length=256)
-    net_weight_grams: str = Field(..., max_length=64)
+    net_weight_grams: Optional[str] = Field(None, max_length=64)
     curl: Optional[str] = Field(None, max_length=64)
     model: Optional[str] = Field(None, max_length=128)
     color: str = Field(..., max_length=128)
-    length: str = Field(..., max_length=128)
+    length: Optional[str] = Field(None, max_length=128)
     quantity: int = Field(..., gt=0)
-    price_per_piece: Optional[Decimal] = Field(None, gt=0)
+    price_per_piece: Optional[Decimal] = Field(
+        None, gt=0, max_digits=12, decimal_places=4,
+    )
+    discount_amount: Decimal = Field(default=Decimal("0"), le=0)
     price_source: str = Field(default="manual", max_length=32)
+
+    @field_validator("discount_amount", mode="before")
+    @classmethod
+    def _normalize_line_discount(cls, value):
+        if value is None or value == "":
+            return Decimal("0")
+        return -abs(Decimal(str(value)))
+
+
+class AccessoryPricePayload(BaseModel):
+    id: Optional[int] = None
+    product_id: int
+    sku_id: int
+    accessory_name: str = Field(..., min_length=1, max_length=256)
+    accessory_model: str = Field(..., min_length=1, max_length=128)
+    accessory_color: str = Field(..., min_length=1, max_length=128)
+    price: Decimal = Field(..., gt=0, max_digits=12, decimal_places=4)
+    currency: str = Field(default="USD", pattern="^[A-Z]{3}$")
 
 
 class _InvoiceHeaderPayload(BaseModel):
@@ -108,10 +130,11 @@ class _InvoiceHeaderPayload(BaseModel):
     surcharge_amount: Decimal = Field(default=Decimal("0"), ge=0)
     payment_term: Optional[str] = Field(None, max_length=256)
     internal_payment_method: Optional[str] = Field(None, max_length=64)
-    internal_discount: Optional[Decimal] = None
-    internal_accessory: Optional[Decimal] = None
-    internal_received: Optional[Decimal] = None
-    internal_balance: Optional[Decimal] = None
+    internal_discount: Optional[Decimal] = Field(None, le=0)
+    packaging_quantity: int = Field(default=0, ge=0)
+    internal_accessory: Optional[Decimal] = Field(None, ge=0)
+    internal_received: Optional[Decimal] = Field(None, ge=0)
+    internal_balance: Optional[Decimal] = Field(None, ge=0)
     internal_shipping_type: Optional[str] = Field(None, max_length=64)
     # OKKI 必填业务标记（1是/0否；None=服务端按兜底规则自动判定）
     okki_new_deal: Optional[int] = Field(None, ge=0, le=1)
@@ -129,6 +152,13 @@ class _InvoiceHeaderPayload(BaseModel):
     @classmethod
     def _normalize_currency(cls, value):
         return str(value or "").strip().upper()
+
+    @field_validator("internal_discount", mode="before")
+    @classmethod
+    def _normalize_order_discount(cls, value):
+        if value is None or value == "":
+            return None
+        return -abs(Decimal(str(value)))
 
 
 class InvoiceCreate(_InvoiceHeaderPayload):

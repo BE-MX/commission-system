@@ -517,6 +517,25 @@ frontend/src/
 - **卡死状态看门狗（2026-07-07 线上 session=6 实case）**：后台合成线程随进程重启丢失 → result 永久 generating、session 永久 generating、前端无限轮询。修复：`service.get_session` 读取时自愈——pending 超 180s / generating 超 300s 标 failed（有成品则 session 推 done 照常展示），logger+print 双写
 - **性别硬过滤全灭必须兜底（2026-07-07 线上 session=5 实case）**：男顾客 × 全女款库 → gender 过滤剔掉全部候选 → kiosk「为您甄选 0 款」死屏。修复：`match_wigs` 过滤后候选为空且库非空时降级为不过滤照常排名（logger+print 双写告警）；有任一款存活则不触发兜底。打分制下其余维度只影响排序不会清零，0 款仅两种可能：性别全灭（已兜底）或发型库全部停用
 - `POST /generate` 用 `status=generating` 做幂等挡板；`_refresh_session_status` 用条件 UPDATE（`WHERE status='generating'`）做多线程收尾互斥，避免重复触发话术生成
+
+## 订单发票 Excel/WPS 粘贴导入
+
+- 前端只负责解析剪贴板文本和交互，后端 `invoice/import_service.py` 必须重新校验并批量匹配；`POST /api/invoice/import/preview` 需要 `invoice:write`，且保持零写入。
+- 标准输入为 Product / Length / Color / Weight / Quantity / Unit Price 六列，兼容历史模板别名和无表头标准顺序；空行忽略，单批最多 200 行，错误必须带原 Excel 行号。
+- 产品匹配使用 `Product` 首段 + 颜色 + 长度 + 克重的规范化组合键；库存单无唯一产品/SKU时阻断，生产单可由用户显式选择作为定制产品，禁止静默降级。
+- Excel Unit Price 是本次成交价，预览和最终保存都不得被系统价覆盖；仅同币种展示客户价差，跨币种不换汇、不比较数值。
+- `batch_fingerprint` 只存在当前前端编辑会话，用于阻止重复追加；预检与「加入当前发票」都不保存，最终仍走原发票保存、校验和 OKKI 推单链路。
+- 粘贴导入仅处理头发产品，不自动识别或导入配件；配件必须在独立配件明细表里选择已配置的真实 OKKI SKU。
+
+## 订单发票配件与分组金额（2026-07-15）
+
+- 配件类型对外标识为 `Hair ExtensionsTools Fee`，录入属性仅 Name / Model / Color；标准价候选来自同步投影 `okki_products + okki_product_skus`，产品和 SKU 都必须启用。分类不读 `group_name`，因为真实配件 Hair Gripper 在 OKKI 也可能归到「假发产品」。
+- 客户切换时，前端不复制调价规则；它按 product_id+sku_id 调后端配件价格列表重新解析，丢弃过期客户响应。发票选品和重解析固定传 `active_only=true`，由数据库侧关联过滤 product+sku 双启用状态；失效 SKU 不进入新增候选，当前失效行引导用户到「价格与产品配置 → 标准价格表」重新配置。价格配置页保持默认 `active_only=false`，继续显示历史配置。API 与发票成交价保留四位精度，配置列表仅将标准价格式化显示为两位。
+- 金额口径：每行先按 `ROUND_HALF_UP(单价×数量, 2)` 得到原价，再加已规范为负数/0且量化两位的行折扣，形成行净额；头发金额/头发折扣/配件金额/配件折扣均由逐行已量化结果相加。`product_amount = Σ所有明细净额`；`total_amount = product_amount + Packaging + Shipping Fee + Handling Fee`。行折扣已进 total_price，不再重复扣减；兼容字段 `internal_discount` 仅保存头发折扣。录入与导出九项摘要统一为 Hair Price / Hair Discount / Accessory Amount / Accessory Discount / Packaging Quantity / Packaging / Shipping Fee / Handling Fee / Total。
+- OKKI 推单时配件按真实 product_id+sku_id 逐 SKU 逐行推送，`cost_amount` 为含配件行折扣的净额，不合并到通用产品，也不把配件折扣再写入 cost_list。
+- Excel/HTML/PDF 导出将头发与配件分成两个明细区，配件区同时保留标准价、客户价和实际成交价以便审计，汇总顺序与录入页一致。Excel 对 `= + - @` 起始的外部文本加文本前缀，防止公式注入。导出 PDF 启动前需通过字体预检，当前使用项目既有中文字体回退链，禁止静默丢失中文字形。
+- 设计与验收基线：`docs/superpowers/specs/2026-07-14-invoice-quick-paste-import-design.md`；核心回归测试：`backend/tests/test_invoice_paste_import.py`、`frontend/tests/invoicePasteImport.test.mjs`。
+
 ## OKKI 开放平台对接（订单发票推单，2026-07-10 鉴权打通）
 
 ### 鉴权与域名
@@ -538,7 +557,7 @@ frontend/src/
 
 ### 推单字段映射（2026-07-13 落地，`xiaoman_service.build_push_payload`）
 - **订单层**：name=发票号+客户名；account_date=invoice_date；company_id=customer_id（customer_info 投影即 OKKI 数字 ID，非数字前置拦截）；status=设置页选定的企业枚举 code；create_user/handler/users[rate=100]=业务员绑定的 OKKI user_id（**未绑定 fail-fast 不推**）；**不传 user_id**（避开操作人权限 404）；**订单级金额一律不传**（OKKI 按 product_list+cost_list 自算，避开汇率×100 口径）；payment_term 并入 remark；联系人字段 v1 不传
-- **明细层**：stock 行=真实 product_id+sku_id；custom 未回填的非标行**全部合并成一条通用产品明细**（数量恒 1，单价=总价=非标合计，product_name=「非标合计N项: 名称×数量; ...」240 字符截断，亮哥 2026-07-13 指令）；custom 已回填=真实 ID 转正逐行推（不参与合并）；cost_amount=行小计**必传**（OKKI 不自动算，不传当 0）；运费/附加费走 cost_list（percent_type=0 绝对值）
+- **明细层**：stock 行=真实 product_id+sku_id；custom 未回填的非标行**全部合并成一条通用产品明细**（数量恒 1，单价=总价=非标合计，product_name=「非标合计N项: 名称×数量; ...」240 字符截断，亮哥 2026-07-13 指令）；custom 已回填=真实 ID 转正逐行推（不参与合并）；cost_amount=含行级 Discount 后的行小计**必传**（OKKI 不自动算，不传当 0）；行级折扣不再重复进入 cost_list，Packaging/Shipping Fee/Handling Fee 用 percent_type=0（加绝对值）
 - **合并行 uid 所有权规则**（防两行同 uid 被 OKKI 互相覆盖）：合并推送成功后 uid 写到每个成员上（共享）；成员回填转正后**放弃共享 uid 按新行推**，合并行优先锚定；uid 独占才允许独立行携带；无人认领的 uid（合并取代/全员转正）统一发 remove:1 收掉；payload 内出现重复 uid 直接前置拦截
 - **幂等编辑闭环**：已存 xiaoman_order_id → 带 order_id 编辑推送；明细 unique_id 跨编辑传承（前端回传行 id，`_replace_items` 按 id 承接——多条 custom 行共用通用产品 ID，无 unique_id 会被 OKKI 按 product+sku 去重塌行）；本地删掉的已推行进 `ark_invoices.xiaoman_removed_lines` 快照，下次推单发 remove:1，成功后清空；编辑已同步发票**保留** xiaoman_order_id（清掉会重推出重复订单）
 - 推单前自动跑 `reconcile_custom_products` 对账回填（失败不阻断，custom 行走通用产品兜底）；每次推送落 `ark_invoice_sync_logs`（请求摘要无凭证，可直接查 OKKI 响应原文）
