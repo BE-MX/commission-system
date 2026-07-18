@@ -11,6 +11,7 @@ import base64
 import json
 import logging
 import os
+import random
 import re
 import shutil
 import threading
@@ -380,6 +381,80 @@ _COMPOSITE_TEMPLATE = (
     "temples. {extra}"
 )
 
+# 夏季衣橱子句（2026-07-17 亮哥指令：展会在夏天）：凡换装路径（tryon 场景置换 + scene
+# 场景大片）统一夏季着装——轻薄短袖/无袖，单品限定裙装/T恤/POLO/短袖旗袍四类；样式要有
+# 设计感、凸显气质，走国际大牌常青款的克制高级感。**不写具体品牌名**：图像模型见品牌名
+# 易生成 logo/花押字（侵权+穿帮），故用风格描述并显式禁 logo。制服场景（医生/药剂师/
+# 银行/律师）职业属性优先，只换轻薄短袖夏季版。原景保持路径锁定原服装，不注入本子句
+_SUMMER_WARDROBE_CLAUSE = (
+    " It is summer: dress her in summer clothing that suits the scene - lightweight "
+    "breathable fabrics with short sleeves or sleeveless cuts, choosing whichever fits "
+    "the setting best among an elegant dress, a well-cut T-shirt, a polo shirt or a "
+    "short-sleeve qipao; if the scene calls for professional attire or a uniform, keep "
+    "that attire but in a light short-sleeve summer version. The outfit must look "
+    "thoughtfully designed, with a refined flattering silhouette that elevates her "
+    "presence and the photo's overall quality - the understated, timeless elegance of a "
+    "luxury fashion house's classic summer line, premium fabric texture and impeccable "
+    "tailoring, with no visible brand logos or monograms."
+)
+
+# 穿搭变奏池（2026-07-17 亮哥反馈：裙装款式/花纹/颜色太单一、纯黑高频、首饰永远是
+# 心形坠长项链）。静态 prompt 必然收敛到模型最高概率输出——多样性只能靠每次合成随机
+# 抽一个具体方向注入。配色避开纯黑（藏青白这类经典组合保留）；首饰按目标客群（中老年
+# 女性）选珍珠/玉/金/真丝/贝母等有真实材质感的小件，并显式禁掉心形坠长项链
+_OUTFIT_PALETTES = [
+    "soft cream and ivory tones",
+    "light champagne gold",
+    "pale sage green",
+    "dusty rose pink",
+    "airy sky blue",
+    "gentle lavender",
+    "warm apricot",
+    "classic navy-and-white",
+    "crisp white with subtle contrast piping",
+    "muted terracotta",
+]
+_OUTFIT_PATTERNS = [
+    "in a solid color with elegant seam and cut details",
+    "with a delicate small floral print",
+    "with fine polka dots",
+    "with subtle vertical pinstripes",
+    "with a soft watercolor botanical print",
+    "with a classic fine gingham check",
+    "with a tonal jacquard weave texture",
+    "with an artistic brush-stroke print",
+]
+_JEWELRY_OPTIONS = [
+    "small pearl stud earrings",
+    "a slim jade bangle and simple gold ear studs",
+    "delicate gold huggie earrings",
+    "a fine gold chain with a tiny mother-of-pearl charm worn close to the collarbone",
+    "an elegant patterned silk scarf knotted lightly at the neck",
+    "a tasteful vintage brooch on the chest",
+    "small celadon-glazed ceramic earrings",
+    "a short string of freshwater pearls sitting at the collarbone",
+]
+
+
+def _wardrobe_variation_clause(uniform: bool = False) -> str:
+    """每次合成随机抽穿搭方向，打散模型的默认收敛（小黑裙+心形长项链）。
+
+    制服场景（医生/药剂师/银行/律师）职业着装颜色不能动，只注入首饰变奏。"""
+    jewelry = random.choice(_JEWELRY_OPTIONS)
+    jewelry_part = (
+        f" Accessorize with {jewelry} - small, tasteful pieces in quietly luxurious "
+        "materials with real texture (pearl, jade, gold, silk, mother-of-pearl). "
+        "Never use a long necklace with a heart-shaped pendant."
+    )
+    if uniform:
+        return jewelry_part
+    palette = random.choice(_OUTFIT_PALETTES)
+    pattern = random.choice(_OUTFIT_PATTERNS)
+    return (
+        f" For this shot, style the outfit in {palette}, {pattern} - "
+        "not a plain all-black look." + jewelry_part
+    )
+
 # 场景子句：默认保持原景（body/背景/景深全锁定）；选场景时置换背景（可换装，
 # 85mm 浅景深只在此路径——原景路径不能既要背景原封又要虚化）。prompt 只在服务端
 _TRYON_KEEP_BG_CLAUSE = (
@@ -405,7 +480,7 @@ _TRYON_SCENE_CLAUSE = (
     "scene (toward what she is doing, looking at or speaking to), not fixed straight at the "
     "camera unless that truly fits the moment, with a relaxed natural micro-expression rather "
     "than a stiff, posed, camera-facing studio look."
-)
+) + _SUMMER_WARDROBE_CLAUSE
 
 # 色 + 魂 收尾
 _TRYON_STYLE_TAIL = (
@@ -427,36 +502,38 @@ _PORTRAIT_SPEC_CLAUSE = (
 # 结构=场景空间 + 单人自信动作/姿态 + 主光源方向 + 虚化背景（含仅暗示的第二人物）。
 # 职业场景带强动作（演示/讲解/接待/看材料/检查），叙事化但收敛为单人主体（用户定稿 2026-07-09）。
 # 光源方向显式声明，发丝受光跟随场景。顺序即卡片顺序，默认选中第一个。
+# 2026-07-17：服装全面夏季化（展会在夏天）——场景内单品词与尾部 _SUMMER_WARDROBE_CLAUSE
+# 双重锚定（场景内具体单品权重更高，只靠尾部子句压不住 blazer/suit 这类厚重词）。
 # 2026-07-10 扩到 20 景：新增银行/律师/药剂师/财务/社区主任/小区管理员/高铁出差等职场，及喜婆婆/
 # 接孙放学/广场舞/老年大学/闺蜜咖啡/晨间公园等长辈生活景。长辈景用 poised/graceful/radiant/refreshed
 # 等气质词表达「假发衬得更精致」，靠发型+光营造，不写 younger 以免与身份锁（保脸/保年龄）冲突。
 TRYON_SCENES = [
     {"key": "whitecollar", "label": "白领高管", "tagline": "从容主场",
      "prompt": ("a bright modern corporate boardroom during a meeting, she stands "
-                "confidently mid-presentation in a tailored blazer, one hand gesturing "
+                "confidently mid-presentation in a chic tailored short-sleeve sheath dress, one hand gesturing "
                 "naturally toward a softly glowing presentation screen, cool daylight "
                 "from tall windows on her front-left as the key light, a long conference "
                 "table and blurred out-of-focus seated colleagues far behind")},
     {"key": "teacher", "label": "老师", "tagline": "讲台风采",
      "prompt": ("a warm university lecture hall at the podium, she stands poised while "
-                "teaching with an engaging open-hand gesture in a smart light blazer, "
+                "teaching with an engaging open-hand gesture in an elegant short-sleeve silk blouse and A-line skirt, "
                 "soft daylight from her front as the key light, a blurred blackboard or "
                 "projection behind and out-of-focus students seated far below, suggested "
                 "only as soft shapes")},
     {"key": "shopowner", "label": "老板娘", "tagline": "门店主理",
      "prompt": ("an elegant boutique storefront, she stands warmly welcoming a guest "
                 "with an inviting open gesture toward tasteful product displays in a "
-                "refined casual outfit, soft warm shop lighting from her front-right as "
+                "refined short-sleeve qipao, soft warm shop lighting from her front-right as "
                 "the key light, blurred shelves of merchandise and a faint out-of-focus "
                 "customer beside her")},
     {"key": "civilservant", "label": "公务员", "tagline": "沉稳干练",
      "prompt": ("a composed government office meeting room, she sits in the front row "
-                "reviewing documents with a calm attentive expression in a neat formal "
-                "shirt, even soft ceiling lighting as the key light, a blurred long "
+                "reviewing documents with a calm attentive expression in a crisp "
+                "short-sleeve formal shirt, even soft ceiling lighting as the key light, a blurred long "
                 "table and out-of-focus colleagues seated further back")},
-    {"key": "doctor", "label": "医生", "tagline": "专业信赖",
+    {"key": "doctor", "label": "医生", "tagline": "专业信赖", "uniform": True,
      "prompt": ("a clean bright clinic consulting room, she stands professionally in a "
-                "white coat with a stethoscope, attentive and reassuring as she reviews "
+                "short-sleeve white coat with a stethoscope, attentive and reassuring as she reviews "
                 "a chart, cool clinical daylight from her front as the key light, blurred "
                 "medical shelving and a faintly out-of-focus patient seated to the side")},
     {"key": "home", "label": "居家", "tagline": "温馨日常",
@@ -466,56 +543,57 @@ TRYON_SCENES = [
      "prompt": ("an evening dinner party, warm pendant light overhead as the key "
                 "light, golden bokeh of string lights and candles behind")},
     # ── 职场专业（2026-07-10 扩充） ──
-    {"key": "lawyer", "label": "律师", "tagline": "庭上锋芒",
+    {"key": "lawyer", "label": "律师", "tagline": "庭上锋芒", "uniform": True,
      "prompt": ("a solemn courtroom, she stands confidently delivering her argument with "
                 "a composed articulate expression and a measured hand gesture in a sharp "
-                "dark suit, focused daylight from her front as the key light, blurred "
+                "lightweight dark summer suit over a silk short-sleeve blouse, focused "
+                "daylight from her front as the key light, blurred "
                 "wooden benches and out-of-focus figures seated behind")},
-    {"key": "banker", "label": "银行柜员", "tagline": "专业干练",
+    {"key": "banker", "label": "银行柜员", "tagline": "专业干练", "uniform": True,
      "prompt": ("a bright modern bank hall counter, she stands poised serving a customer "
-                "with a courteous professional smile in a tidy uniform, cool even ceiling "
+                "with a courteous professional smile in a tidy short-sleeve summer uniform, cool even ceiling "
                 "lighting as the key light, blurred glass partitions and a faint "
                 "out-of-focus customer in front of the counter")},
     {"key": "accountant", "label": "公司财务", "tagline": "沉稳可靠",
      "prompt": ("a tidy modern office by a filing cabinet, she stands retrieving a "
-                "document with a calm capable expression in a neat blouse, soft daylight "
+                "document with a calm capable expression in an elegant short-sleeve silk blouse, soft daylight "
                 "as the key light, a blurred desk with a monitor and a faint out-of-focus "
                 "colleague waiting beside her")},
     {"key": "director", "label": "社区主任", "tagline": "亲切为民",
      "prompt": ("a warm community service center, she sits attentively helping an elderly "
-                "resident fill out a form with a kind patient smile, pen in hand, in a neat "
-                "casual blazer, soft daylight from a side window as the key light, blurred "
+                "resident fill out a form with a kind patient smile, pen in hand, in a smart "
+                "short-sleeve polo shirt, soft daylight from a side window as the key light, blurred "
                 "notice boards and a faint out-of-focus elderly resident across the desk")},
-    {"key": "pharmacist", "label": "药剂师", "tagline": "专业亲和",
+    {"key": "pharmacist", "label": "药剂师", "tagline": "专业亲和", "uniform": True,
      "prompt": ("a clean bright pharmacy, she stands filling a prescription at the medicine "
-                "shelves with a warm attentive expression in a white pharmacist coat, soft "
+                "shelves with a warm attentive expression in a short-sleeve white pharmacist coat, soft "
                 "even lighting from her front as the key light, blurred rows of medicine "
                 "drawers and a faint out-of-focus customer waiting at the counter")},
     {"key": "propertymanager", "label": "小区管理员", "tagline": "邻里亲和",
      "prompt": ("a residential compound lobby, she stands chatting warmly with a resident "
-                "while holding a notebook, a friendly approachable smile in a simple neat "
-                "outfit, soft daylight from the entrance as the key light, blurred mailboxes "
+                "while holding a notebook, a friendly approachable smile in a neat polo shirt "
+                "and light summer slacks, soft daylight from the entrance as the key light, blurred mailboxes "
                 "and a faint out-of-focus resident beside her")},
     {"key": "hsrtravel", "label": "高铁出差", "tagline": "出差精致",
      "prompt": ("a high-speed train window seat, she sits looking composed and put-together "
-                "with a subtle confident expression in a smart blazer, a laptop on the tray, "
+                "with a subtle confident expression in a crisp short-sleeve shirtdress, a laptop on the tray, "
                 "bright daylight streaming through the large train window as the key light, "
                 "blurred landscape rushing past outside")},
     # ── 长辈 / 退休生活（发型提升气质，从容优雅，不改脸/年龄） ──
     {"key": "weddinghost", "label": "喜婆婆", "tagline": "喜庆体面",
      "prompt": ("an elegant wedding banquet entrance, she stands graciously welcoming guests "
-                "with a warm delighted smile in a refined festive dress with tasteful "
+                "with a warm delighted smile in a refined festive short-sleeve silk qipao with tasteful "
                 "jewelry, looking poised and radiant, warm golden banquet lighting as the "
                 "key light, a blurred floral arch and out-of-focus guests arriving behind")},
     {"key": "schoolpickup", "label": "接孙放学", "tagline": "校门风采",
      "prompt": ("a primary school gate in the afternoon, she stands waiting to pick up her "
-                "grandchild with a warm expectant smile, neatly and elegantly dressed and "
+                "grandchild with a warm expectant smile, in an elegant breezy summer dress and "
                 "looking notably graceful, soft afternoon daylight as the key light, a "
                 "blurred school gate and out-of-focus parents and grandparents around her")},
     {"key": "squaredance", "label": "广场舞领舞", "tagline": "广场C位",
      "prompt": ("a community plaza at dusk, she leads a group dance rehearsal at the front "
-                "with an energetic radiant smile mid-gesture in bright comfortable "
-                "activewear, warm low evening light as the key light, blurred plaza trees "
+                "with an energetic radiant smile mid-gesture in a bright well-cut T-shirt "
+                "and comfortable summer activewear, warm low evening light as the key light, blurred plaza trees "
                 "and out-of-focus dancers following behind her")},
     {"key": "seniorcollege", "label": "老年大学", "tagline": "老有所乐",
      "prompt": ("a bright senior-university classroom, she sits gracefully learning a "
@@ -524,13 +602,13 @@ TRYON_SCENES = [
                 "and out-of-focus classmates around her")},
     {"key": "seniorcafe", "label": "闺蜜咖啡", "tagline": "闺蜜时光",
      "prompt": ("a cozy sunlit cafe, she sits chatting happily over coffee with friends, a "
-                "relaxed radiant smile in a tasteful casual outfit, warm afternoon window "
+                "relaxed radiant smile in a tasteful breezy summer dress, warm afternoon window "
                 "light as the key light, a blurred cafe interior and out-of-focus friends "
                 "across the small table")},
     {"key": "parkwalk", "label": "晨间公园", "tagline": "晨间从容",
      "prompt": ("a green park path in the morning, she takes a leisurely walk looking "
-                "refreshed and at ease with a gentle serene smile in comfortable elegant "
-                "casual wear, soft golden morning light from her side as the key light, "
+                "refreshed and at ease with a gentle serene smile in an elegant cotton "
+                "T-shirt and light summer trousers, soft golden morning light from her side as the key light, "
                 "blurred trees and greenery behind")},
 ]
 
@@ -625,19 +703,19 @@ _COLOR_FROM_REFERENCE_CLAUSE = (
 SCENES = [
     {"key": "business", "label": "商务会议", "tagline": "职场气场 · 从容主导",
      "prompt": ("a bright modern executive boardroom with floor-to-ceiling windows, "
-                "she wears elegant business attire and presents with confidence, soft daylight")},
+                "she wears an elegant short-sleeve summer business dress and presents with confidence, soft daylight")},
     {"key": "banquet", "label": "晚宴礼遇", "tagline": "高定光影 · 优雅登场",
      "prompt": ("an elegant evening banquet hall with warm golden bokeh lights, "
-                "she wears a refined evening dress, cinematic warm portrait lighting")},
+                "she wears a refined short-sleeve silk qipao, cinematic warm portrait lighting")},
     {"key": "cafe", "label": "午后咖啡", "tagline": "松弛日常 · 精致在线",
-     "prompt": ("a sunlit boutique coffee shop by the window, casual chic outfit, "
+     "prompt": ("a sunlit boutique coffee shop by the window, a breezy chic summer dress, "
                 "warm afternoon light with shallow depth of field")},
     {"key": "travel", "label": "户外旅行", "tagline": "自然光下 · 状态满分",
      "prompt": ("an outdoor seaside promenade on a sunny day with a gentle breeze, "
-                "light stylish travel outfit, natural golden-hour sunlight")},
+                "a light stylish summer travel outfit with a breezy short-sleeve top, natural golden-hour sunlight")},
     {"key": "home", "label": "温馨居家", "tagline": "舒适自在 · 优雅如常",
-     "prompt": ("a cozy warm home living room with soft lamp light, comfortable "
-                "premium knitwear, relaxed and genuine atmosphere")},
+     "prompt": ("a cozy warm home living room with soft lamp light, a soft breathable "
+                "cotton summer home dress, relaxed and genuine atmosphere")},
 ]
 
 _SCENE_TEMPLATE = (
@@ -645,8 +723,9 @@ _SCENE_TEMPLATE = (
     "person's face, facial features, hairstyle, hair color and hair length exactly the "
     "same as in the photo. Recreate it as a high-end magazine-quality portrait "
     "photograph set in {scene}. Naturally adapt the background, outfit and lighting to "
-    "the scene while keeping the person clearly recognizable and the hair identical. "
-    "The result must look like a real photograph, not an illustration."
+    "the scene while keeping the person clearly recognizable and the hair identical."
+    + _SUMMER_WARDROBE_CLAUSE +
+    " The result must look like a real photograph, not an illustration."
 )
 
 
@@ -782,7 +861,10 @@ def _build_prompt(
     """
     if row.wig_id is None and row.scene_json:
         scene = next((s for s in SCENES if s["key"] == row.scene_json.get("key")), None)
-        prompt = _SCENE_TEMPLATE.format(scene=scene["prompt"] if scene else row.scene_json.get("label", ""))
+        prompt = (
+            _SCENE_TEMPLATE.format(scene=scene["prompt"] if scene else row.scene_json.get("label", ""))
+            + _wardrobe_variation_clause()  # scene 模式 5 景均非制服
+        )
         return prompt, [to_abs(session.photo_path)], None
 
     # 发色优先用「该发型该发色」的组合三角度实拍图（参考图即目标色）；文件在才算数。
@@ -802,8 +884,10 @@ def _build_prompt(
 
     tryon_scene = resolve_tryon_scene((row.scene_json or {}).get("key"))
     scene_clause = (
-        _TRYON_SCENE_CLAUSE.format(scene=tryon_scene["prompt"]) if tryon_scene
-        else _TRYON_KEEP_BG_CLAUSE
+        _TRYON_SCENE_CLAUSE.format(scene=tryon_scene["prompt"])
+        + _wardrobe_variation_clause(uniform=bool(tryon_scene.get("uniform")))
+        if tryon_scene
+        else _TRYON_KEEP_BG_CLAUSE  # 原景保持：服装整体锁定，不注入变奏
     )
     prompt = (
         _COMPOSITE_TEMPLATE.format(

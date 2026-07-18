@@ -167,6 +167,10 @@ server {
     listen 443 ssl http2;
     server_name leshine.work;
 
+    # 上传体积上限（2026-07-17：默认 1m 导致 expo kiosk 相册原图上传 413，调至 5m；
+    # 改前备份 leshine.conf.bak-20260717）
+    client_max_body_size 5m;
+
     ssl_certificate /etc/nginx/ssl/leshine.work.crt;
     ssl_certificate_key /etc/nginx/ssl/leshine.work.key;
 

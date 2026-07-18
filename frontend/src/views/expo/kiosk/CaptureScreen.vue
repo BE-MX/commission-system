@@ -2,7 +2,8 @@
   <div class="capture">
     <div class="viewport">
       <!-- 相机可用：实时取景；不可用：文件选择兜底 -->
-      <video v-show="cameraOn && !previewUrl" ref="videoEl" autoplay playsinline muted />
+      <video v-show="cameraOn && !previewUrl" ref="videoEl" autoplay playsinline muted
+             :class="{ rear: facing === 'environment' }" />
       <img v-if="previewUrl" :src="previewUrl" class="preview" alt="预览" />
       <div v-if="flashing" class="flash" aria-hidden="true" />
 
@@ -33,7 +34,7 @@
       </template>
       <!-- 三槽布局：快门始终居中，本地相册为右侧次级入口（不带 capture，直达相册） -->
       <template v-else-if="cameraOn">
-        <span class="side" aria-hidden="true" />
+        <button class="xk-btn ghost side" @click="flipCamera">反转镜头</button>
         <button class="shutter" aria-label="拍照" @click="snap"><i /></button>
         <label class="xk-btn ghost side album">
           本地相册
@@ -115,17 +116,37 @@ function closeGuide() {
   flow.touch()
 }
 
-onMounted(async () => {
+// 默认前置自拍；「反转镜头」切后置（顾问帮客户拍/平板朝外摆位）。facingMode 传裸值
+// 是 ideal 语义：单摄设备请求后置不报错，浏览器自动回退可用摄像头——所以成功后回读
+// 实际 facing 同步状态，防止单摄平板上按钮切了状态、画面却还是前置导致镜像方向错
+const facing = ref('user')
+let flipping = false
+
+async function startCamera() {
+  stopCamera()
   try {
     stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 1280 } },
+      video: { facingMode: facing.value, width: { ideal: 1280 }, height: { ideal: 1280 } },
     })
     videoEl.value.srcObject = stream
     cameraOn.value = true
+    const actual = stream.getVideoTracks()[0]?.getSettings?.().facingMode
+    if (actual) facing.value = actual // 桌面摄像头常无此字段 → 保留请求值
   } catch (e) {
     cameraOn.value = false // 无摄像头/未授权 → 文件选择兜底
   }
-})
+}
+
+onMounted(startCamera)
+
+async function flipCamera() {
+  if (flipping) return // 双击守卫：在途 getUserMedia 未归还前不重复发起（防流泄漏）
+  flipping = true
+  facing.value = facing.value === 'user' ? 'environment' : 'user'
+  await startCamera()
+  flipping = false
+  flow.touch()
+}
 
 onBeforeUnmount(() => {
   stopCamera()
@@ -169,12 +190,40 @@ function triggerFlash() {
   flashTimer = setTimeout(() => { flashing.value = false }, 180)
 }
 
-function onFilePick(event) {
+// 相册/系统相机原片先在端上压到与拍照路径同口径（1080px JPEG）再传：
+// 原图 3~15MB 会撞云 Nginx 5m 上限（2026-07-17 展会 413 实case），且过 frp 隧道极慢。
+// 不做方形裁切——相册照人脸位置任意，居中裁可能切脸；等比缩放交给取景框 object-fit 展示
+const PICK_MAX_EDGE = 1080
+const PICK_RAW_OK_BYTES = 1024 * 1024 // 尺寸达标且 ≤1MB 的原图直接用，避免无谓二次有损
+
+async function downscalePickedPhoto(file) {
+  const url = URL.createObjectURL(file)
+  try {
+    const img = new Image()
+    img.src = url
+    await img.decode()
+    const scale = PICK_MAX_EDGE / Math.max(img.naturalWidth, img.naturalHeight)
+    if (scale >= 1 && file.size <= PICK_RAW_OK_BYTES) return file
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.round(img.naturalWidth * Math.min(scale, 1))
+    canvas.height = Math.round(img.naturalHeight * Math.min(scale, 1))
+    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height)
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9))
+    return blob || file
+  } catch (e) {
+    return file // 解码失败（损坏/罕见格式）：退回原图直传，后端 downscale_inplace 兜底
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
+async function onFilePick(event) {
   const file = event.target.files?.[0]
-  if (!file) return
-  photoBlob = file
-  previewUrl.value = URL.createObjectURL(file)
   event.target.value = ''
+  if (!file) return
+  const blob = await downscalePickedPhoto(file)
+  photoBlob = blob
+  previewUrl.value = URL.createObjectURL(blob)
 }
 
 function retake() {
@@ -210,6 +259,7 @@ video, .preview {
   object-fit: cover; transform: scaleX(-1); /* 镜像取景更符合直觉 */
 }
 .preview { transform: none; }
+video.rear { transform: none; } /* 后置不镜像：所见即实景方向 */
 /* 快门闪：按下即时反馈，白幕快速淡出 */
 .flash { position: absolute; inset: 0; z-index: 6; background: #fff; animation: shutter-flash 180ms ease-out forwards; }
 @keyframes shutter-flash { from { opacity: 0.85; } to { opacity: 0; } }
