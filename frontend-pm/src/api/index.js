@@ -19,6 +19,7 @@ export const uploadVersion = (id, file, changeNote) => {
   formData.append('change_note', changeNote || '')
   return api.postForm(`/api/pm/materials/${id}/versions`, formData)
 }
+export const saveTextVersion = (id, data) => api.post(`/api/pm/materials/${id}/versions/text`, data)
 export const deleteVersion = (versionId) => api.del(`/api/pm/versions/${versionId}`)
 export const fetchFileLink = (versionId, disposition = 'attachment') =>
   api.get(`/api/pm/versions/${versionId}/file-link?disposition=${disposition}`)

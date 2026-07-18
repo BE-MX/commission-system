@@ -93,6 +93,7 @@
                 <template v-if="!v.is_deleted">
                   <button class="btn btn-sm btn-ghost" type="button" @click="download(v)">下载</button>
                   <button v-if="v.previewable" class="btn btn-sm btn-ghost" type="button" @click="previewing = v">预览</button>
+                  <button v-if="isEditable(v)" class="btn btn-sm btn-ghost" type="button" @click="editingVersion = v">编辑</button>
                   <button class="btn btn-sm btn-ghost btn-danger" type="button" @click="deletingVersion = v">删除</button>
                 </template>
               </header>
@@ -127,6 +128,14 @@
     <UploadDialog v-model="uploadOpen" @upload="upload" />
     <MaterialDrawer v-model="editOpen" :material="material" :members="members" @save="saveEdit" />
     <PreviewModal v-if="previewing" :version="previewing" :title="material?.name" @close="previewing = null" />
+    <MdEditor
+      v-if="editingVersion"
+      :material="material"
+      :base-version="editingVersion"
+      :head-version-no="currentVersionNo"
+      @close="editingVersion = null"
+      @saved="afterEditorSaved"
+    />
     <UiModal
       v-model="deleteConfirm"
       title="删除资料"
@@ -152,6 +161,7 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import EmptyState from '../components/EmptyState.vue'
 import MaterialDrawer from '../components/MaterialDrawer.vue'
+import MdEditor from '../components/MdEditor.vue'
 import PreviewModal from '../components/PreviewModal.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import UiModal from '../components/UiModal.vue'
@@ -163,6 +173,7 @@ const router = useRouter()
 const {
   material, members, loading, notFound,
   nameOf, canUpload, setStatus, saveEdit, upload, removeVersion, retryDiff, removeMaterial, download,
+  afterEditorSaved,
 } = useMaterialDetail()
 
 const uploadOpen = ref(false)
@@ -170,8 +181,17 @@ const editOpen = ref(false)
 const previewing = ref(null)
 const deleteConfirm = ref(false)
 const deletingVersion = ref(null)
+const editingVersion = ref(null)
 
 const visibleVersions = computed(() => material.value?.versions || [])
+
+const EDITABLE_EXTS = ['.md', '.markdown', '.txt'] // 与后端 EDITABLE_TEXT_EXTS 同口径
+const isEditable = (v) => EDITABLE_EXTS.includes(v.ext)
+
+const currentVersionNo = computed(() => {
+  const alive = visibleVersions.value.filter((v) => !v.is_deleted)
+  return alive.length ? Math.max(...alive.map((v) => v.version_no)) : null
+})
 
 const flowIndex = (status) => MATERIAL_STATUS_FLOW.indexOf(status)
 

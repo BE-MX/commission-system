@@ -88,6 +88,12 @@ export function useMaterialDetail() {
     await load()
   }
 
+  // 在线编辑保存成功后的刷新（保存与提示由 MdEditor 自己完成）
+  async function afterEditorSaved() {
+    pollCount = 0
+    await load()
+  }
+
   async function removeVersion(version) {
     await apiDeleteVersion(version.id)
     toast.success(`已删除 v${version.version_no}`)
@@ -119,5 +125,6 @@ export function useMaterialDetail() {
   return {
     id, material, members, loading, notFound,
     nameOf, canUpload, load, setStatus, saveEdit, upload, removeVersion, retryDiff, removeMaterial, download,
+    afterEditorSaved,
   }
 }
