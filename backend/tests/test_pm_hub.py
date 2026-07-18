@@ -386,6 +386,94 @@ class TestApiFlow:
             assert task["materials"][0]["name"] == "价格体系"
 
 
+# ── 在线编辑保存（Phase 2 §6.1）─────────────────────────────────────
+
+class TestTextEdit:
+    """编辑与上传共用同一版本通道：版本号只增、状态推进、diff 触发全部一致。"""
+
+    def _save(self, client, token, material_id, content, base_no=None, note=None):
+        payload = {"content": content}
+        if base_no is not None:
+            payload["base_version_no"] = base_no
+        if note is not None:
+            payload["change_note"] = note
+        return client.post(
+            f"/api/pm/materials/{material_id}/versions/text",
+            json=payload, headers=_auth(token),
+        )
+
+    def test_save_text_creates_next_version_same_ext(self, db, pm_seed):
+        from app.pm.service import to_abs
+
+        m = pm_seed["material"]
+        _upload(db, m, name="说明.md", content="# v1\n".encode("utf-8"))
+        with pm_client(db) as client:
+            token = _entry(client)["token"]
+            resp = self._save(client, token, m.id, "# v2\n新增一行", base_no=1, note="在线编辑")
+            assert resp.status_code == 200
+            data = resp.json()["data"]
+            assert data["version_no"] == 2
+            assert data["ext"] == ".md"
+            assert data["diff_status"] == "pending"
+        v2 = material_service.get_version_by_no(db, m.id, 2)
+        assert to_abs(v2.file_path).read_text(encoding="utf-8") == "# v2\n新增一行"
+        assert v2.original_name == "说明.md"  # 文件名承接被编辑版本
+
+    def test_save_text_audited_as_edit_version(self, db, pm_seed):
+        from app.pm.models import PmActivityLog
+
+        m = pm_seed["material"]
+        _upload(db, m, name="说明.md", content=b"# v1")
+        with pm_client(db) as client:
+            token = _entry(client)["token"]
+            assert self._save(client, token, m.id, "# v2").status_code == 200
+        log = db.query(PmActivityLog).filter(PmActivityLog.action == "edit_version").first()
+        assert log is not None
+        assert '"based_on": 1' in log.detail
+
+    def test_save_text_defaults_to_current_head(self, db, pm_seed):
+        m = pm_seed["material"]
+        _upload(db, m, name="说明.md", content=b"1")
+        _upload(db, m, name="说明.md", content=b"2")
+        with pm_client(db) as client:
+            token = _entry(client)["token"]
+            resp = self._save(client, token, m.id, "基于头版编辑")
+            assert resp.json()["data"]["version_no"] == 3
+
+    def test_save_text_on_old_base_still_next_no(self, db, pm_seed):
+        """基于旧版编辑不回填旧号：版本号永远 max+1（设计稿基线冲突口径）。"""
+        m = pm_seed["material"]
+        _upload(db, m, name="说明.md", content=b"1")
+        _upload(db, m, name="说明.md", content=b"2")
+        with pm_client(db) as client:
+            token = _entry(client)["token"]
+            resp = self._save(client, token, m.id, "基于 v1 改的", base_no=1)
+            assert resp.json()["data"]["version_no"] == 3
+
+    def test_save_text_rejects_non_text_base(self, db, pm_seed):
+        m = pm_seed["material"]
+        _upload(db, m, name="报价.xlsx", content=b"fake xlsx")
+        with pm_client(db) as client:
+            token = _entry(client)["token"]
+            resp = self._save(client, token, m.id, "improper")
+            assert resp.status_code == 400
+            assert "在线编辑" in resp.json()["message"]
+
+    def test_save_text_blank_content_rejected(self, db, pm_seed):
+        m = pm_seed["material"]
+        _upload(db, m, name="说明.md", content=b"# v1")
+        with pm_client(db) as client:
+            token = _entry(client)["token"]
+            resp = self._save(client, token, m.id, "   \n  ")
+            assert resp.status_code == 400
+
+    def test_save_text_no_versions_404(self, db, pm_seed):
+        with pm_client(db) as client:
+            token = _entry(client)["token"]
+            resp = self._save(client, token, pm_seed["material"].id, "无中生有")
+            assert resp.status_code == 404
+
+
 # ── 对抗性审查回归（2026-07-17）─────────────────────────────────────
 
 class TestAdversarialRegression:

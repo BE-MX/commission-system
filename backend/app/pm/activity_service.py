@@ -18,6 +18,7 @@ ACTION_LABELS = {
     "update_material": "更新了资料",
     "delete_material": "删除了资料",
     "upload_version": "上传了新版本",
+    "edit_version": "在线编辑保存了新版本",
     "delete_version": "删除了版本",
     "retry_diff": "重试差异概要",
     "create_task": "创建了任务",
@@ -65,7 +66,7 @@ def list_activity(db: Session, project_id: int, username: Optional[str] = None,
     total = q.count()
     logs = q.order_by(PmActivityLog.id.desc()).offset(offset).limit(limit).all()
     names = _display_names(db)
-    hints = _diff_hints(db, [l for l in logs if l.object_type == "version" and l.action == "upload_version"])
+    hints = _diff_hints(db, [l for l in logs if l.object_type == "version" and l.action in ("upload_version", "edit_version")])
     return {
         "total": total,
         "items": [log_to_dict(l, names, hints.get(l.object_id)) for l in logs],
@@ -166,7 +167,7 @@ def dashboard(db: Session, project_id: int) -> dict:
         .limit(10)
         .all()
     )
-    hints = _diff_hints(db, [l for l in logs if l.object_type == "version" and l.action == "upload_version"])
+    hints = _diff_hints(db, [l for l in logs if l.object_type == "version" and l.action in ("upload_version", "edit_version")])
 
     return {
         "materials": {

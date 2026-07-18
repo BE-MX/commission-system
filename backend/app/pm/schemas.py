@@ -34,6 +34,14 @@ class MaterialUpdate(BaseModel):
     owner: Optional[str] = Field(default=None, max_length=64)
 
 
+class VersionTextCreate(BaseModel):
+    """在线编辑保存（Phase 2 §6.1）。content 字符上限兜住 JSON 解析，字节级上限仍由 service 强制。"""
+
+    content: str = Field(min_length=1, max_length=2_000_000)
+    change_note: Optional[str] = Field(default=None, max_length=512)
+    base_version_no: Optional[int] = Field(default=None, ge=1)
+
+
 class TaskCreate(BaseModel):
     title: str = Field(min_length=1, max_length=256)
     description: Optional[str] = Field(default=None, max_length=2048)

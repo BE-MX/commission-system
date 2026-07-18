@@ -29,7 +29,7 @@ from app.pm.auth import (
 )
 from app.pm.diff_service import run_diff_in_background
 from app.pm.models import PmMember
-from app.pm.schemas import EntryRequest, MaterialCreate, MaterialUpdate, TaskCreate, TaskUpdate
+from app.pm.schemas import EntryRequest, MaterialCreate, MaterialUpdate, TaskCreate, TaskUpdate, VersionTextCreate
 from app.pm.service import (
     audit,
     build_signed_file_url,
@@ -171,6 +171,30 @@ async def upload_version(material_id: int, background_tasks: BackgroundTasks,
     if version.diff_status == "pending":
         background_tasks.add_task(run_diff_in_background, version.id)
     return ok(material_service.version_to_dict(version, material), message=f"已上传 v{version.version_no}")
+
+
+@router.post("/materials/{material_id}/versions/text")
+def save_text_version(material_id: int, payload: VersionTextCreate, background_tasks: BackgroundTasks,
+                      db: Session = Depends(get_db), identity: PmIdentity = Depends(require_pm_member)):
+    """在线编辑保存为新版本（Phase 2 §6.1）。
+
+    基线冲突（编辑期间别人先存了新版）由前端提示、用户自行决定——后端不拒绝，
+    版本号唯一约束保证并发保存也各得其号。"""
+    material = material_service.get_material(db, material_id)
+    if not material:
+        raise HTTPException(status_code=404, detail="资料不存在")
+    if payload.base_version_no is not None:
+        base = material_service.get_version_by_no(db, material_id, payload.base_version_no)
+    else:
+        base = material_service.current_version(db, material_id)
+    if not base or base.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="基准版本不存在或已删除")
+    version = material_service.save_text_version(
+        db, material, identity.username, base, payload.content, payload.change_note,
+    )
+    if version.diff_status == "pending":
+        background_tasks.add_task(run_diff_in_background, version.id)
+    return ok(material_service.version_to_dict(version, material), message=f"已保存 v{version.version_no}")
 
 
 @router.delete("/versions/{version_id}")

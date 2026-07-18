@@ -24,6 +24,7 @@ logger = logging.getLogger("commission")
 
 PREVIEWABLE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".pdf", ".md", ".markdown", ".txt"}
 FORCED_DOWNLOAD_EXTS = {".html", ".htm", ".svg", ".xml", ".js"}  # 强制 attachment，防存储型 XSS
+EDITABLE_TEXT_EXTS = {".md", ".markdown", ".txt"}  # 在线编辑（§6.1）只开放文本类
 UPLOAD_RETRY = 3
 
 
@@ -286,7 +287,9 @@ def _next_version_no(db: Session, material_id: int) -> int:
 
 def upload_version(db: Session, material: PmMaterial, username: str,
                    filename: str, content: bytes, content_type: Optional[str],
-                   change_note: Optional[str]) -> PmMaterialVersion:
+                   change_note: Optional[str],
+                   audit_action: str = "upload_version",
+                   audit_extra: Optional[dict] = None) -> PmMaterialVersion:
     """上传新版本。版本号并发安全：唯一约束 + IntegrityError 重试。"""
     if material.delivery_type == "offline":
         raise ValueError("该材料为凭据类线下交付，禁止上传原文——只跟踪状态与备注")
@@ -333,9 +336,9 @@ def upload_version(db: Session, material: PmMaterial, username: str,
         material.status = "submitted"
         material.updated_at = bj_now()
     audit(
-        db, material.project_id, username, "upload_version", "version", version.id,
+        db, material.project_id, username, audit_action, "version", version.id,
         f"{material.name} v{version.version_no}",
-        {"change_note": version.change_note, "size": len(content)},
+        {"change_note": version.change_note, "size": len(content), **(audit_extra or {})},
     )
     try:
         db.commit()
@@ -345,6 +348,37 @@ def upload_version(db: Session, material: PmMaterial, username: str,
         raise
     db.refresh(version)
     return version
+
+
+def get_version_by_no(db: Session, material_id: int, version_no: int) -> Optional[PmMaterialVersion]:
+    return (
+        db.query(PmMaterialVersion)
+        .filter(PmMaterialVersion.material_id == material_id, PmMaterialVersion.version_no == version_no)
+        .first()
+    )
+
+
+def save_text_version(db: Session, material: PmMaterial, username: str,
+                      base_version: PmMaterialVersion, content_text: str,
+                      change_note: Optional[str]) -> PmMaterialVersion:
+    """在线编辑保存：与上传走完全相同的版本通道（设计稿 §6.1，模型上无特例）。
+
+    文件名承接被编辑版本的 original_name——下载名/预览类型/后续可编辑性都由扩展名派生，
+    编辑链上保持不变。"""
+    ext = Path(base_version.original_name).suffix.lower()
+    if ext not in EDITABLE_TEXT_EXTS:
+        raise ValueError("仅 Markdown / 纯文本类版本支持在线编辑")
+    if not content_text.strip():
+        raise ValueError("内容为空，未保存")
+    return upload_version(
+        db, material, username,
+        filename=base_version.original_name,
+        content=content_text.encode("utf-8"),
+        content_type="text/markdown" if ext in (".md", ".markdown") else "text/plain",
+        change_note=change_note,
+        audit_action="edit_version",
+        audit_extra={"based_on": base_version.version_no},
+    )
 
 
 def delete_version(db: Session, version: PmMaterialVersion, username: str) -> None:
