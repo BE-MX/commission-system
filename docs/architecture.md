@@ -71,7 +71,7 @@
 - `app/expo/` — 展会 AI 试戴（router/models/schemas/service + matching 规则匹配引擎 + ai_pipeline 三管线（面容分析/效果图合成/双轨话术）+ script_service 话术卡库；合成双入口 mode=tryon 换发（单选发型 + 发色库色板图三图合成 + 可选生成场景 `TRYON_SCENES` 原景/居家/办公/聚会）/ scene 佩戴实拍生成场景大片（跳过分析，场景清单 `ai_pipeline.SCENES` 服务端硬编码）；参考图送模型前统一压缩（最长边 1280）；pending/generating 卡死看门狗读取时自愈；匹配权重 `config/expo_matching.yaml`（主推 must_recommend 置顶 2026-07-13 起、至臻锚点只换非主推位、性别过滤全灭自动降级）；设计文档 `docs/requirements/2026-07-03-expo-ai-wig-tryon.md`）
 - `app/mini/` — 微信小程序端（router/service/auth/schemas — 扫码报工/历史/总览/撤销/登录绑定）
 - `app/training/` — 培训速递（router/models/schemas/service + push_service 钉钉推送；参训人自助发布 + AI 提炼草稿（文字/图片/PDF 多模态）+ 发布必填分区校验，075 迁移，2026-07-18 合入）
-- `app/pm/` — PM 项目资料协作站（**独立 HMAC 门牌鉴权，不接平台 RBAC**；材料/版本/任务/动态审计 + AI 差异管线，076 迁移；前端为 `frontend-pm/` 独立应用，2026-07-18 合入）
+- `app/pm/` — PM 项目资料协作站（**独立 HMAC 门牌鉴权，不接平台 RBAC**；材料/版本/版本评论/任务/动态审计 + AI 差异管线，076 迁移；前端为 `frontend-pm/` 独立应用，2026-07-18 合入，版本评论 2026-07-19）
 
 ## 前端结构
 

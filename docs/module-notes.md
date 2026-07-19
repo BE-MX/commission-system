@@ -518,6 +518,10 @@ frontend/src/
 - **性别硬过滤全灭必须兜底（2026-07-07 线上 session=5 实case）**：男顾客 × 全女款库 → gender 过滤剔掉全部候选 → kiosk「为您甄选 0 款」死屏。修复：`match_wigs` 过滤后候选为空且库非空时降级为不过滤照常排名（logger+print 双写告警）；有任一款存活则不触发兜底。打分制下其余维度只影响排序不会清零，0 款仅两种可能：性别全灭（已兜底）或发型库全部停用
 - `POST /generate` 用 `status=generating` 做幂等挡板；`_refresh_session_status` 用条件 UPDATE（`WHERE status='generating'`）做多线程收尾互斥，避免重复触发话术生成
 
+**夏季衣橱子句 + kiosk 相机切换（2026-07-18 开发，2026-07-19 合入 main，待部署与展会前实测）**
+- `ai_pipeline._SUMMER_WARDROBE_CLAUSE`：换装路径（tryon 场景置换 + scene 场景大片）统一注入夏季着装子句——轻薄短袖/无袖，单品限定裙装/T恤/POLO/短袖旗袍，制服场景职业属性优先只换夏季版；**原景保持路径锁定原服装不注入**。不写具体品牌名（图像模型见品牌名易生成 logo/花押字，侵权+穿帮），用风格描述 + 显式禁 logo
+- kiosk 拍照页（CaptureScreen）支持前/后置摄像头切换；云 Nginx body-size 相关注记已进 runbook
+
 ## 订单发票 Excel/WPS 粘贴导入
 
 - 前端只负责解析剪贴板文本和交互，后端 `invoice/import_service.py` 必须重新校验并批量匹配；`POST /api/invoice/import/preview` 需要 `invoice:write`，且保持零写入。
@@ -595,6 +599,7 @@ frontend/src/
 - 时间戳统一北京时间 `bj_now()`（同生产报工口径）。
 - 在线编辑（Phase 2 §6.1，2026-07-18）：`POST /materials/{id}/versions/text` 复用 `upload_version` 整条通道（`save_text_version` 仅做 ext 白名单 `.md/.markdown/.txt` + 空内容拦截 + utf-8 编码），文件名承接基准版本 original_name（下载名/可编辑性由扩展名派生，编辑链不变）；审计 action=`edit_version` 带 `based_on`，activity 的 diff_hint 过滤器须同时收 upload_version/edit_version（两处）。前端 `MdEditor.vue` 全屏分屏（z-index 830：压抽屉 800、让确认弹窗 850），保存前重取 material 对比打开时的头版本号，变了先弹「有更新的版本」确认再存（后端不拒绝，版本号唯一约束兜底）；脏内容关闭需确认，Ctrl+S 保存、Tab 缩进两格。
 - 迁移编号冲突（已解决并落地）：合并时发现共享库被 codex 的 `073_invoice_accessory_products`/`074_invoice_price_kind_key`/`075_training_digest`（后者当时未提交进任何分支）占头。处理：三份迁移文件收编上 main（内容逐字不动），本模块迁移顺延为 `076_pm_hub`（down_revision=075_training_digest），DB 已升级到 076。**启示：建迁移先查 `git log --all` + DB alembic_version，codex 合并其分支时 075 与 main 内容一致可干净落并**
+- 版本评论（Phase 2，2026-07-19，零迁移——076 建表时预留）：评论挂**具体版本**（首版误做资料级被纠偏返工，教训：协作类功能先确认锚定粒度）。`POST /versions/{id}/comments`（已删版本/已删资料 404）+ `GET /materials/{id}/comments`（一次取全，前端按 version_no 分组进版本卡）+ `DELETE /comments/{id}`（**仅作者**，403 其他人——与站内信任制人人可删刻意不同）。规则：单层回复、回复「回复」自动拍平挂顶层；回复继承线程顶层的 version_id 不随发布入口漂移（继承目标版本已删则 400 封侧门）；软删顶层有活回复时以占位返回（body=null+is_deleted）且可续贴；`comment_count`（资料列表/详情）过滤 NULL version_id 与前端可见性同口径。审计 create/delete 对称带 `vN` 锚点，activity object_type=comment。前端 `VersionComments.vue` 自包含（展开态/发布/回复/删除/加载失败重试），评论数据在 useMaterialDetail 一次拉取分组下发；正文一律 `{{ }}` 插值渲染防 XSS。两轮对抗性审查教训：**重写组件时先盘点旧组件承载的历史修复**（加载失败态修了又丢了一次）。
 
 **本地预览（无需 MySQL/.env）**
 `python backend/scripts/pm_dev_server.py --port 8003`：SQLite 文件库 + 演示数据 + 托管 `frontend-pm/dist`；`/dev-enter?u=<username>` 开发专用免门牌写 localStorage 直进。前端开发：`cd frontend-pm && npm run dev`（:3100，代理 /api → PM_API_TARGET 或 localhost:8001）。

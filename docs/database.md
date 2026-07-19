@@ -151,7 +151,7 @@
 - `ark_pm_materials`：资料条目。`(project_id, name)` UNIQUE——名称即下载文件名前缀，软删时改名 `name#del{id}` 让位；delivery_type=file/offline(凭据禁传原文)/link(外部链接)；status 状态机 not_started/preparing/submitted/confirmed/not_required；phase 1-4 按清单「准备顺序」批次，与 importance 无关。
 - `ark_pm_material_versions`：资料版本。`(material_id, version_no)` UNIQUE 并发上传靠约束+重试；版本号只增不复用，当前版本=未删除最大版本号；diff_status=pending/done/failed/not_applicable + diff_summary/diff_error；软删后下载端点立即拒绝。
 - `ark_pm_tasks` / `ark_pm_task_materials`：任务看板（todo/in_progress/done/blocked，blocked_reason 必填）与任务-资料关联（复合主键 task_id+material_id）。
-- `ark_pm_comments`：评论（Phase 2 划线锚点 anchor_text/anchor_context + 文件级；Phase 1 只建表不开放端点）。
+- `ark_pm_comments`：评论（2026-07-19 起**版本评论已启用**：version_id 必挂未删版本、parent_id 单层回复、软删占位；anchor_text/anchor_context 留给划线锚点评论，未启用）。
 - `ark_pm_activity_logs`：审计日志（username/action/object_type/object_id/object_name 快照/detail JSON；idx (project_id, created_at)）。
 - 文件存储：`REPO_ROOT/backend/data/pm/{material_id}/{uuid}{ext}`——**绝不放 uploads/**（公开静态挂载）；下载/预览一律 300s 短时效签名 URL（PM_TOKEN_SECRET 派生 HMAC）。时间戳统一北京时间（bj_now）。
 ## 培训速递（迁移 075）
