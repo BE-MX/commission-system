@@ -15,6 +15,9 @@
         <el-table-column label="#" type="index" min-width="48" max-width="60" fixed />
         <el-table-column label="Name" min-width="190" max-width="300">
           <template #default="{ row }">
+            <!-- 不要加 @visible-change 预取：EP 2.13 起该事件绑内部 dropdownMenuVisible
+                 （随 loading/option 挂载数翻转），配合请求会形成无限刷新环；
+                 展开时 EP 自动调 remote-method('')，预取本就冗余 -->
             <el-select
               :model-value="identityValue(row)"
               filterable
@@ -23,7 +26,6 @@
               :remote-method="searchOptions"
               :loading="loading"
               placeholder="搜索已配置配件"
-              @visible-change="visible => visible && searchOptions('')"
               @change="key => handleSelect(row, key)"
             >
               <el-option

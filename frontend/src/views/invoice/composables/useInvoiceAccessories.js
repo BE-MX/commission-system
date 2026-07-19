@@ -35,8 +35,9 @@ export function useInvoiceAccessories(form) {
   async function searchAccessoryOptions(keyword = '') {
     const customerId = form.customer_id || ''
     const currency = String(form.currency || '').toUpperCase()
+    // 请求开始不清空旧选项（对齐 searchCustomers）：清空会让 el-select 的
+    // dropdownMenuVisible 在响应落地瞬间翻转（option 未挂载空窗），下拉闪烁
     const token = searchGate.issue(pricingContext())
-    accessoryOptions.value = []
     accessoryLoading.value = true
     try {
       const result = await listAccessoryPrices({
