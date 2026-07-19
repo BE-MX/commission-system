@@ -279,24 +279,30 @@ def serve_file(version_id: int, token: str = Query(""), expires: int = Query(0),
     )
 
 
-# ── 资料级评论（文件级；划线锚点评论属 Phase 2 另一条线）─────────────────
+# ── 版本评论（评论挂具体版本；划线锚点评论属 Phase 2 另一条线）─────────────
 
 @router.get("/materials/{material_id}/comments")
 def list_comments(material_id: int, db: Session = Depends(get_db),
                   identity: PmIdentity = Depends(require_pm_member)):
+    """一次取整份资料的全部评论（含 version_no），前端按版本分组进各版本卡。"""
     material = material_service.get_material(db, material_id)
     if not material:
         raise HTTPException(status_code=404, detail="资料不存在")
     return ok(comment_service.list_comments(db, material_id))
 
 
-@router.post("/materials/{material_id}/comments")
-def create_comment(material_id: int, payload: CommentCreate, db: Session = Depends(get_db),
+@router.post("/versions/{version_id}/comments")
+def create_comment(version_id: int, payload: CommentCreate, db: Session = Depends(get_db),
                    identity: PmIdentity = Depends(require_pm_member)):
-    material = material_service.get_material(db, material_id)
+    version = material_service.get_version(db, version_id)
+    if not version or version.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="版本不存在或已删除")
+    material = material_service.get_material(db, version.material_id)
     if not material:
         raise HTTPException(status_code=404, detail="资料不存在")
-    comment = comment_service.create_comment(db, material, identity.username, payload.body, payload.parent_id)
+    comment = comment_service.create_comment(
+        db, material, version, identity.username, payload.body, payload.parent_id,
+    )
     return ok(comment_service.comment_to_dict(db, comment), message="已发布评论")
 
 

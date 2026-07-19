@@ -26,7 +26,7 @@ export const fetchFileLink = (versionId, disposition = 'attachment', opts) =>
 export const retryDiff = (versionId) => api.post(`/api/pm/versions/${versionId}/retry-diff`)
 
 export const fetchComments = (materialId) => api.get(`/api/pm/materials/${materialId}/comments`)
-export const createComment = (materialId, data) => api.post(`/api/pm/materials/${materialId}/comments`, data)
+export const createComment = (versionId, data) => api.post(`/api/pm/versions/${versionId}/comments`, data)
 export const deleteComment = (commentId) => api.del(`/api/pm/comments/${commentId}`)
 
 export const fetchTasks = (params = {}) => {

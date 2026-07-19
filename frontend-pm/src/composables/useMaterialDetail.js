@@ -3,6 +3,7 @@ import { useRoute } from 'vue-router'
 import {
   deleteMaterial as apiDeleteMaterial,
   deleteVersion as apiDeleteVersion,
+  fetchComments,
   fetchFileLink,
   fetchMaterial,
   fetchMembers,
@@ -22,6 +23,7 @@ export function useMaterialDetail() {
   const members = ref([])
   const loading = ref(true)
   const notFound = ref(false)
+  const comments = ref([])
 
   let pollTimer = null
   let pollCount = 0
@@ -38,6 +40,23 @@ export function useMaterialDetail() {
       loading.value = false
     }
   }
+
+  // 评论一次取全资料，按版本号分组进各版本卡（失败不阻断详情，client.js 已 toast）
+  async function refreshComments() {
+    try {
+      comments.value = (await fetchComments(id)) || []
+    } catch { /* 详情主体照常展示 */ }
+  }
+
+  const threadsByVersion = computed(() => {
+    const map = {}
+    for (const c of comments.value) {
+      if (!c.version_no) continue // 版本维度评论必有版本号；脏数据不进任何卡
+      ;(map[c.version_no] ||= []).push(c)
+    }
+    return map
+  })
+  const threadsFor = (versionNo) => threadsByVersion.value[versionNo] || []
 
   // 有 pending 的差异任务才轮询；全部落定即停（固定间隔+在途守卫由 load 串行保证）
   function schedulePoll() {
@@ -59,6 +78,7 @@ export function useMaterialDetail() {
 
   onMounted(async () => {
     load()
+    refreshComments()
     try {
       members.value = (await fetchMembers()) || []
     } catch { /* 辅助数据缺失不阻断 */ }
@@ -125,6 +145,6 @@ export function useMaterialDetail() {
   return {
     id, material, members, loading, notFound,
     nameOf, canUpload, load, setStatus, saveEdit, upload, removeVersion, retryDiff, removeMaterial, download,
-    afterEditorSaved,
+    afterEditorSaved, threadsFor, refreshComments,
   }
 }

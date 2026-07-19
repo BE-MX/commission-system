@@ -1,10 +1,11 @@
-"""PM Hub 资料级评论（文件级，划线锚点评论属 Phase 2 另一条线，本文件不涉及）。
+"""PM Hub 版本评论（评论挂具体版本，划线锚点评论属 Phase 2 另一条线，本文件不涉及）。
 
 规则：
-- 单层回复：parent_id 只指向顶层评论；回复「回复」时自动拍平挂到顶层父级
+- 评论的宿主是版本：新评论必须挂在未删除版本上（无版本资料没有评论）
+- 单层回复：parent_id 只指向顶层评论；回复「回复」时自动拍平挂到顶层父级；
+  回复继承线程所在版本（顶层的 version_id），线程不跨版本漂移
 - 删除仅限作者本人（资料/版本全站可删是信任制，评论是个人发言，语义不同）
 - 软删父评论若仍有活回复，列表返回占位（body 置空 + is_deleted），防孤儿回复
-- version_id 锚定评论时的当前版本（资料无版本则为 NULL），供「说的是哪一版」溯源
 """
 
 import logging
@@ -13,7 +14,6 @@ from typing import Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.pm.material_service import current_version
 from app.pm.models import PmComment, PmMaterial, PmMaterialVersion, bj_now
 from app.pm.service import audit
 
@@ -97,12 +97,13 @@ def list_comments(db: Session, material_id: int) -> list[dict]:
     return list(top.values())
 
 
-def create_comment(db: Session, material: PmMaterial, username: str,
-                   body: str, parent_id: Optional[int] = None) -> PmComment:
+def create_comment(db: Session, material: PmMaterial, version: PmMaterialVersion,
+                   username: str, body: str, parent_id: Optional[int] = None) -> PmComment:
     text = body.strip()
     if not text:
         raise ValueError("评论内容不能为空")
     resolved_parent_id = None
+    version_id = version.id
     if parent_id is not None:
         # 父评论查询不过滤软删：已删顶层的线程以占位形式仍然可见（见 list_comments），
         # 续贴必须被允许，否则 UI 上的「回复」是个结构性死按钮（对抗性审查 2026-07-19）
@@ -111,10 +112,13 @@ def create_comment(db: Session, material: PmMaterial, username: str,
             raise ValueError("被回复的评论不存在")
         # 单层回复：回复「回复」自动拍平到顶层父级
         resolved_parent_id = parent.parent_id or parent.id
-    cur = current_version(db, material.id)
+        # 回复继承线程所在版本（顶层的 version_id），不取 URL 版本——线程不跨卡漂移
+        top = parent if parent.parent_id is None else db.query(PmComment).filter(PmComment.id == parent.parent_id).first()
+        if top and top.version_id:
+            version_id = top.version_id
     comment = PmComment(
         material_id=material.id,
-        version_id=cur.id if cur else None,
+        version_id=version_id,
         parent_id=resolved_parent_id,
         body=text[:2048],
         author=username,
@@ -122,9 +126,15 @@ def create_comment(db: Session, material: PmMaterial, username: str,
     )
     db.add(comment)
     db.flush()
+    if version_id == version.id:
+        anchored_no = version.version_no
+    else:  # 回复继承了线程版本，取其版本号入审计
+        v = db.query(PmMaterialVersion.version_no).filter(PmMaterialVersion.id == version_id).first()
+        anchored_no = v[0] if v else None
     audit(
         db, material.project_id, username, "create_comment", "comment", comment.id,
-        material.name, {"snippet": text[:120], "material_id": material.id, "reply": resolved_parent_id is not None},
+        f"{material.name} v{anchored_no}" if anchored_no else material.name,
+        {"snippet": text[:120], "material_id": material.id, "reply": resolved_parent_id is not None},
     )
     db.commit()
     db.refresh(comment)

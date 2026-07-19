@@ -17,7 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.pm.models import PmComment, PmMaterial, PmMaterialVersion, bj_now
+from app.pm.models import PmMaterial, PmMaterialVersion, bj_now
 from app.pm.service import audit, ensure_storage_root, to_abs
 
 logger = logging.getLogger("commission")
@@ -83,12 +83,8 @@ def list_materials(db: Session, project_id: int) -> list[dict]:
         counts[v.material_id] = counts.get(v.material_id, 0) + 1
         if v.material_id not in latest or v.version_no > latest[v.material_id].version_no:
             latest[v.material_id] = v
-    comment_counts = dict(
-        db.query(PmComment.material_id, func.count(PmComment.id))
-        .filter(PmComment.material_id.in_(ids), PmComment.deleted_at.is_(None))
-        .group_by(PmComment.material_id)
-        .all()
-    )
+    from app.pm.comment_service import comment_counts as _comment_counts  # 延迟 import 防环（comment_service 不依赖本模块）
+    comment_counts = _comment_counts(db, ids)
     return [
         material_to_dict(m, latest.get(m.id), counts.get(m.id, 0), comment_counts.get(m.id, 0))
         for m in materials
