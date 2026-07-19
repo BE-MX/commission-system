@@ -10,7 +10,7 @@
       莱 莎 · 健 康 假 发
     </div>
     <h2 class="slogan">莱莎帮你<br />遇到<em>最喜欢的自己</em></h2>
-    <div class="line">AI 智能试戴 · 60 秒焕新形象</div>
+    <div class="line">AI 佩戴大模型 · 场景式智能引流</div>
     <button class="xk-btn cta" @click="$emit('start', 'tryon')">AI 试戴新发型</button>
     <button class="xk-btn ghost cta2" @click="$emit('start', 'scene')">
       已佩戴 · 拍场景大片

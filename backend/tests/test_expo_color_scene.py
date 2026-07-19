@@ -277,6 +277,61 @@ def test_build_prompt_color_and_scene_combined(tmp_path):
     assert len(images) == 1
 
 
+# ---------------- 穿搭变奏子句（2026-07-17 夏装多样性） ----------------
+
+def test_wardrobe_variation_non_uniform_has_palette_and_bans():
+    clause = ai_pipeline._wardrobe_variation_clause(uniform=False)
+    assert "For this shot, style the outfit in" in clause  # 配色/花纹变奏在场
+    assert "not a plain all-black look" in clause          # 禁纯黑
+    assert "heart-shaped pendant" in clause                # 禁心形坠长项链
+    assert "Accessorize with" in clause
+
+
+def test_wardrobe_variation_uniform_only_jewelry():
+    """制服场景（医生/药剂师/银行/律师）不得改职业着装配色，只注入首饰变奏。"""
+    clause = ai_pipeline._wardrobe_variation_clause(uniform=True)
+    assert "For this shot, style the outfit in" not in clause
+    assert "all-black" not in clause
+    assert "Accessorize with" in clause
+    assert "heart-shaped pendant" in clause
+
+
+def test_build_prompt_scene_swap_injects_variation_uniform_aware():
+    session = _session()
+    wig = ExpoWig(model_no="LS-1", name="轻盈波波", wig_description="short bob")
+    # 非制服景（白领高管）：完整变奏
+    row = ExpoResult(session_id=1, wig_id=1,
+                     scene_json={"key": "whitecollar", "label": "白领高管"})
+    prompt, _, _ = ai_pipeline._build_prompt(session, row, wig)
+    assert "For this shot, style the outfit in" in prompt
+    assert "heart-shaped pendant" in prompt
+    # 制服景（医生白大褂）：不动配色，只有首饰
+    row_uni = ExpoResult(session_id=1, wig_id=1,
+                         scene_json={"key": "doctor", "label": "医生"})
+    prompt_uni, _, _ = ai_pipeline._build_prompt(session, row_uni, wig)
+    assert "For this shot, style the outfit in" not in prompt_uni
+    assert "Accessorize with" in prompt_uni
+
+
+def test_build_prompt_keep_bg_has_no_variation():
+    """原景保持路径服装整体锁定：夏装子句与穿搭变奏都不得注入。"""
+    session = _session()
+    wig = ExpoWig(model_no="LS-1", name="轻盈波波", wig_description="short bob")
+    row = ExpoResult(session_id=1, wig_id=1)
+    prompt, _, _ = ai_pipeline._build_prompt(session, row, wig)
+    assert "It is summer" not in prompt
+    assert "Accessorize with" not in prompt
+    assert "For this shot, style the outfit in" not in prompt
+
+
+def test_build_prompt_scene_mode_injects_variation():
+    session = _session(mode="scene")
+    row = ExpoResult(session_id=1, wig_id=None, scene_json={"key": "cafe", "label": "午后咖啡"})
+    prompt, _, _ = ai_pipeline._build_prompt(session, row, None)
+    assert "For this shot, style the outfit in" in prompt
+    assert "heart-shaped pendant" in prompt
+
+
 # ---------------- 批次切片边界（换一批上界） ----------------
 
 def test_pick_batch_beyond_ranking_returns_empty():
