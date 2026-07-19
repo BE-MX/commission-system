@@ -23,6 +23,10 @@
 
     <div v-if="loading" class="cmt-loading"><span class="spinner"></span></div>
 
+    <p v-else-if="loadFailed" class="cmt-empty">
+      评论加载失败。<button class="btn-bare retry" type="button" @click="reload">重试</button>
+    </p>
+
     <p v-else-if="!comments.length" class="cmt-empty">还没有评论——第一条意见从这里开始。</p>
 
     <TransitionGroup v-else name="fade" tag="div" class="cmt-list">
@@ -78,7 +82,7 @@
     <UiModal
       :model-value="!!deleting"
       title="删除评论"
-      message="确定删除这条评论？删除后其他成员不再可见。"
+      message="确定删除这条评论？删除后不再显示，操作留痕。"
       confirm-text="删除"
       danger
       @update:model-value="deleting = null"
@@ -102,6 +106,7 @@ const props = defineProps({
 
 const comments = ref([])
 const loading = ref(true)
+const loadFailed = ref(false)
 const posting = ref(false)
 const draft = ref('')
 const replyDraft = ref('')
@@ -117,11 +122,19 @@ const flatCount = computed(() =>
 async function load() {
   try {
     comments.value = (await fetchComments(props.materialId)) || []
+    loadFailed.value = false
+  } catch {
+    loadFailed.value = true // client.js 已 toast；空态文案不能谎报「还没有评论」
   } finally {
     loading.value = false
   }
 }
 onMounted(load)
+
+function reload() {
+  loading.value = true
+  load()
+}
 
 async function submit(parentId = null) {
   const body = (parentId ? replyDraft : draft).value.trim()
@@ -199,6 +212,7 @@ async function onDelete() {
 
 .cmt-loading { display: flex; justify-content: center; padding: 30px 0; }
 .cmt-empty { font-size: 12.5px; color: var(--ink-4); padding: 6px 2px; }
+.btn-bare.retry { color: var(--gold-deep); text-decoration: underline; text-underline-offset: 3px; }
 
 .cmt-list { display: flex; flex-direction: column; gap: 14px; }
 .cmt-item {

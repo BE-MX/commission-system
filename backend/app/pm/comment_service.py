@@ -104,9 +104,11 @@ def create_comment(db: Session, material: PmMaterial, username: str,
         raise ValueError("评论内容不能为空")
     resolved_parent_id = None
     if parent_id is not None:
-        parent = get_comment(db, parent_id)
+        # 父评论查询不过滤软删：已删顶层的线程以占位形式仍然可见（见 list_comments），
+        # 续贴必须被允许，否则 UI 上的「回复」是个结构性死按钮（对抗性审查 2026-07-19）
+        parent = db.query(PmComment).filter(PmComment.id == parent_id).first()
         if not parent or parent.material_id != material.id:
-            raise ValueError("被回复的评论不存在或已删除")
+            raise ValueError("被回复的评论不存在")
         # 单层回复：回复「回复」自动拍平到顶层父级
         resolved_parent_id = parent.parent_id or parent.id
     cur = current_version(db, material.id)

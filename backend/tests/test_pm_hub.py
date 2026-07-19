@@ -656,3 +656,21 @@ class TestComments:
             # 空白正文 → 400（纯空格绕过 schema min_length，由 service 拦）
             assert client.post(f"/api/pm/materials/{mid}/comments",
                                json={"body": "   "}, headers=_auth(token)).status_code == 400
+
+    def test_reply_to_deleted_top_continues_placeholder_thread(self, db, pm_seed):
+        """占位线程可续贴：顶层被删后，对其回复不能是死按钮（审查 P1 回归）。"""
+        mid = pm_seed["material"].id
+        with pm_client(db) as client:
+            t1 = _entry(client, "liang.xz26")["token"]
+            t2 = _entry(client, "sunzh.qm41")["token"]
+            top = client.post(f"/api/pm/materials/{mid}/comments",
+                              json={"body": "顶层"}, headers=_auth(t1)).json()["data"]
+            client.post(f"/api/pm/materials/{mid}/comments",
+                        json={"body": "回复1", "parent_id": top["id"]}, headers=_auth(t2))
+            client.delete(f"/api/pm/comments/{top['id']}", headers=_auth(t1))
+            resp = client.post(f"/api/pm/materials/{mid}/comments",
+                               json={"body": "续贴", "parent_id": top["id"]}, headers=_auth(t2))
+            assert resp.status_code == 200, resp.text
+            items = client.get(f"/api/pm/materials/{mid}/comments", headers=_auth(t1)).json()["data"]
+            assert items[0]["is_deleted"] is True
+            assert [r["body"] for r in items[0]["replies"]] == ["回复1", "续贴"]
