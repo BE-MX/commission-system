@@ -17,7 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.pm.models import PmMaterial, PmMaterialVersion, bj_now
+from app.pm.models import PmComment, PmMaterial, PmMaterialVersion, bj_now
 from app.pm.service import audit, ensure_storage_root, to_abs
 
 logger = logging.getLogger("commission")
@@ -83,10 +83,20 @@ def list_materials(db: Session, project_id: int) -> list[dict]:
         counts[v.material_id] = counts.get(v.material_id, 0) + 1
         if v.material_id not in latest or v.version_no > latest[v.material_id].version_no:
             latest[v.material_id] = v
-    return [material_to_dict(m, latest.get(m.id), counts.get(m.id, 0)) for m in materials]
+    comment_counts = dict(
+        db.query(PmComment.material_id, func.count(PmComment.id))
+        .filter(PmComment.material_id.in_(ids), PmComment.deleted_at.is_(None))
+        .group_by(PmComment.material_id)
+        .all()
+    )
+    return [
+        material_to_dict(m, latest.get(m.id), counts.get(m.id, 0), comment_counts.get(m.id, 0))
+        for m in materials
+    ]
 
 
-def material_to_dict(m: PmMaterial, latest: Optional[PmMaterialVersion] = None, version_count: int = 0) -> dict:
+def material_to_dict(m: PmMaterial, latest: Optional[PmMaterialVersion] = None,
+                     version_count: int = 0, comment_count: int = 0) -> dict:
     return {
         "id": m.id,
         "list_no": m.list_no,
@@ -102,6 +112,7 @@ def material_to_dict(m: PmMaterial, latest: Optional[PmMaterialVersion] = None, 
         "owner": m.owner,
         "current_version_no": latest.version_no if latest else None,
         "version_count": version_count,
+        "comment_count": comment_count,
         "last_uploaded_by": latest.uploaded_by if latest else None,
         "last_uploaded_at": latest.created_at.isoformat(sep=" ") if latest else None,
         "updated_at": m.updated_at.isoformat(sep=" ") if m.updated_at else None,

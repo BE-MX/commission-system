@@ -42,6 +42,11 @@ class VersionTextCreate(BaseModel):
     base_version_no: Optional[int] = Field(default=None, ge=1)
 
 
+class CommentCreate(BaseModel):
+    body: str = Field(min_length=1, max_length=2000)
+    parent_id: Optional[int] = Field(default=None, ge=1)
+
+
 class TaskCreate(BaseModel):
     title: str = Field(min_length=1, max_length=256)
     description: Optional[str] = Field(default=None, max_length=2048)

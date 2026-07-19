@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.response import ok
-from app.pm import activity_service, material_service, task_service
+from app.pm import activity_service, comment_service, material_service, task_service
 from app.pm.auth import (
     PmIdentity,
     check_entry_rate,
@@ -29,7 +29,7 @@ from app.pm.auth import (
 )
 from app.pm.diff_service import run_diff_in_background
 from app.pm.models import PmMember
-from app.pm.schemas import EntryRequest, MaterialCreate, MaterialUpdate, TaskCreate, TaskUpdate, VersionTextCreate
+from app.pm.schemas import CommentCreate, EntryRequest, MaterialCreate, MaterialUpdate, TaskCreate, TaskUpdate, VersionTextCreate
 from app.pm.service import (
     audit,
     build_signed_file_url,
@@ -123,7 +123,10 @@ def material_detail(material_id: int, db: Session = Depends(get_db),
         raise HTTPException(status_code=404, detail="资料不存在")
     versions = material_service.list_versions(db, material_id)
     current = material_service.current_version(db, material_id)
-    data = material_service.material_to_dict(material, current, len([v for v in versions if not v["is_deleted"]]))
+    comment_count = comment_service.comment_counts(db, [material_id]).get(material_id, 0)
+    data = material_service.material_to_dict(
+        material, current, len([v for v in versions if not v["is_deleted"]]), comment_count,
+    )
     data["versions"] = versions
     return ok(data)
 
@@ -274,6 +277,42 @@ def serve_file(version_id: int, token: str = Query(""), expires: int = Query(0),
         content_disposition_type="inline" if inline else "attachment",
         headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store"},
     )
+
+
+# ── 资料级评论（文件级；划线锚点评论属 Phase 2 另一条线）─────────────────
+
+@router.get("/materials/{material_id}/comments")
+def list_comments(material_id: int, db: Session = Depends(get_db),
+                  identity: PmIdentity = Depends(require_pm_member)):
+    material = material_service.get_material(db, material_id)
+    if not material:
+        raise HTTPException(status_code=404, detail="资料不存在")
+    return ok(comment_service.list_comments(db, material_id))
+
+
+@router.post("/materials/{material_id}/comments")
+def create_comment(material_id: int, payload: CommentCreate, db: Session = Depends(get_db),
+                   identity: PmIdentity = Depends(require_pm_member)):
+    material = material_service.get_material(db, material_id)
+    if not material:
+        raise HTTPException(status_code=404, detail="资料不存在")
+    comment = comment_service.create_comment(db, material, identity.username, payload.body, payload.parent_id)
+    return ok(comment_service.comment_to_dict(db, comment), message="已发布评论")
+
+
+@router.delete("/comments/{comment_id}")
+def delete_comment(comment_id: int, db: Session = Depends(get_db),
+                   identity: PmIdentity = Depends(require_pm_member)):
+    comment = comment_service.get_comment(db, comment_id)
+    if not comment:
+        raise HTTPException(status_code=404, detail="评论不存在或已删除")
+    if comment.author != identity.username:
+        raise HTTPException(status_code=403, detail="只能删除自己发布的评论")
+    material = material_service.get_material(db, comment.material_id, include_deleted=True)
+    if not material:
+        raise HTTPException(status_code=404, detail="资料不存在")
+    comment_service.delete_comment(db, comment, material, identity.username)
+    return ok(message="已删除评论")
 
 
 # ── 任务看板 ─────────────────────────────────────────────────────────

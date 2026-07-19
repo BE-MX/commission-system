@@ -24,6 +24,8 @@ ACTION_LABELS = {
     "create_task": "创建了任务",
     "update_task": "更新了任务",
     "delete_task": "删除了任务",
+    "create_comment": "评论了资料",
+    "delete_comment": "删除了评论",
 }
 
 

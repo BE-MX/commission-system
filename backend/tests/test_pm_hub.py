@@ -544,3 +544,115 @@ class TestAdversarialRegression:
             for _ in range(6):
                 resp = client.post("/api/pm/entry", json={"username": "liang.xz26"})
                 assert resp.status_code == 200
+
+
+# ── 资料级评论 ───────────────────────────────────────────────────────
+
+class TestComments:
+    def test_comment_crud_count_and_activity(self, db, pm_seed):
+        mid = pm_seed["material"].id
+        with pm_client(db) as client:
+            token = _entry(client)["token"]
+            resp = client.post(f"/api/pm/materials/{mid}/comments",
+                               json={"body": "价格矩阵缺 FOB 条款说明"}, headers=_auth(token))
+            assert resp.status_code == 200, resp.text
+            created = resp.json()["data"]
+            assert created["author"] == "liang.xz26"
+            assert created["version_no"] is None  # 无版本时不锚定
+
+            items = client.get(f"/api/pm/materials/{mid}/comments", headers=_auth(token)).json()["data"]
+            assert len(items) == 1 and items[0]["body"] == "价格矩阵缺 FOB 条款说明"
+
+            detail = client.get(f"/api/pm/materials/{mid}", headers=_auth(token)).json()["data"]
+            assert detail["comment_count"] == 1
+            listing = client.get("/api/pm/materials", headers=_auth(token)).json()["data"]
+            assert next(m for m in listing if m["id"] == mid)["comment_count"] == 1
+
+            acts = client.get("/api/pm/activity?object_type=comment", headers=_auth(token)).json()["data"]
+            assert acts["total"] == 1
+            assert acts["items"][0]["action_label"] == "评论了资料"
+            assert acts["items"][0]["object_name"] == "价格体系"
+
+    def test_reply_flattens_to_top_level(self, db, pm_seed):
+        mid = pm_seed["material"].id
+        with pm_client(db) as client:
+            t1 = _entry(client, "liang.xz26")["token"]
+            t2 = _entry(client, "sunzh.qm41")["token"]
+            top = client.post(f"/api/pm/materials/{mid}/comments",
+                              json={"body": "顶层"}, headers=_auth(t1)).json()["data"]
+            reply = client.post(f"/api/pm/materials/{mid}/comments",
+                                json={"body": "一层回复", "parent_id": top["id"]},
+                                headers=_auth(t2)).json()["data"]
+            assert reply["parent_id"] == top["id"]
+            # 回复「回复」→ 自动拍平挂到顶层
+            nested = client.post(f"/api/pm/materials/{mid}/comments",
+                                 json={"body": "楼中楼", "parent_id": reply["id"]},
+                                 headers=_auth(t1)).json()["data"]
+            assert nested["parent_id"] == top["id"]
+
+            items = client.get(f"/api/pm/materials/{mid}/comments", headers=_auth(t1)).json()["data"]
+            assert len(items) == 1
+            assert [r["body"] for r in items[0]["replies"]] == ["一层回复", "楼中楼"]
+
+    def test_delete_author_only(self, db, pm_seed):
+        mid = pm_seed["material"].id
+        with pm_client(db) as client:
+            t1 = _entry(client, "liang.xz26")["token"]
+            t2 = _entry(client, "sunzh.qm41")["token"]
+            cid = client.post(f"/api/pm/materials/{mid}/comments",
+                              json={"body": "待删"}, headers=_auth(t1)).json()["data"]["id"]
+            assert client.delete(f"/api/pm/comments/{cid}", headers=_auth(t2)).status_code == 403
+            assert client.delete(f"/api/pm/comments/{cid}", headers=_auth(t1)).status_code == 200
+            # 已删除后再删 → 404；列表不再返回；计数归零
+            assert client.delete(f"/api/pm/comments/{cid}", headers=_auth(t1)).status_code == 404
+            assert client.get(f"/api/pm/materials/{mid}/comments", headers=_auth(t1)).json()["data"] == []
+            detail = client.get(f"/api/pm/materials/{mid}", headers=_auth(t1)).json()["data"]
+            assert detail["comment_count"] == 0
+
+    def test_deleted_parent_keeps_placeholder_for_alive_replies(self, db, pm_seed):
+        mid = pm_seed["material"].id
+        with pm_client(db) as client:
+            t1 = _entry(client, "liang.xz26")["token"]
+            t2 = _entry(client, "sunzh.qm41")["token"]
+            top = client.post(f"/api/pm/materials/{mid}/comments",
+                              json={"body": "顶层"}, headers=_auth(t1)).json()["data"]
+            client.post(f"/api/pm/materials/{mid}/comments",
+                        json={"body": "回复", "parent_id": top["id"]}, headers=_auth(t2))
+            client.delete(f"/api/pm/comments/{top['id']}", headers=_auth(t1))
+
+            items = client.get(f"/api/pm/materials/{mid}/comments", headers=_auth(t1)).json()["data"]
+            assert len(items) == 1
+            assert items[0]["is_deleted"] is True and items[0]["body"] is None
+            assert [r["body"] for r in items[0]["replies"]] == ["回复"]
+            # 占位父评论不计数，只计活回复
+            detail = client.get(f"/api/pm/materials/{mid}", headers=_auth(t1)).json()["data"]
+            assert detail["comment_count"] == 1
+
+    def test_comment_anchors_current_version(self, db, pm_seed):
+        material = pm_seed["material"]
+        _upload(db, material)
+        with pm_client(db) as client:
+            token = _entry(client)["token"]
+            created = client.post(f"/api/pm/materials/{material.id}/comments",
+                                  json={"body": "针对 v1 的意见"}, headers=_auth(token)).json()["data"]
+            assert created["version_no"] == 1
+
+    def test_invalid_targets_rejected(self, db, pm_seed):
+        mid = pm_seed["material"].id
+        other_id = pm_seed["offline"].id
+        with pm_client(db) as client:
+            token = _entry(client)["token"]
+            assert client.post("/api/pm/materials/999999/comments",
+                               json={"body": "x"}, headers=_auth(token)).status_code == 404
+            assert client.post(f"/api/pm/materials/{mid}/comments",
+                               json={"body": "x", "parent_id": 999999},
+                               headers=_auth(token)).status_code == 400
+            # 跨资料回复：父评论属于另一条资料 → 400
+            top = client.post(f"/api/pm/materials/{mid}/comments",
+                              json={"body": "顶层"}, headers=_auth(token)).json()["data"]
+            assert client.post(f"/api/pm/materials/{other_id}/comments",
+                               json={"body": "x", "parent_id": top["id"]},
+                               headers=_auth(token)).status_code == 400
+            # 空白正文 → 400（纯空格绕过 schema min_length，由 service 拦）
+            assert client.post(f"/api/pm/materials/{mid}/comments",
+                               json={"body": "   "}, headers=_auth(token)).status_code == 400
