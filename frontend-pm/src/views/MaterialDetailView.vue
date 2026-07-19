@@ -123,6 +123,9 @@
         </div>
         <EmptyState v-else title="还没有版本" hint="上传第一份文件，版本从 v1 开始" />
       </section>
+
+      <!-- 资料级评论（全部交付类型可评：线下/链接类的缺口讨论同样发生在这里） -->
+      <CommentSection :material-id="material.id" :name-of="nameOf" class="rise rise-3" />
     </template>
 
     <UploadDialog v-model="uploadOpen" @upload="upload" />
@@ -159,6 +162,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import CommentSection from '../components/CommentSection.vue'
 import EmptyState from '../components/EmptyState.vue'
 import MaterialDrawer from '../components/MaterialDrawer.vue'
 import MdEditor from '../components/MdEditor.vue'

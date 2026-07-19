@@ -14,6 +14,7 @@
           <option value="material">资料</option>
           <option value="version">版本</option>
           <option value="task">任务</option>
+          <option value="comment">评论</option>
           <option value="member">成员</option>
         </select>
         <span class="total-hint num">共 {{ total }} 条</span>

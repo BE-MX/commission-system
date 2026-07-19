@@ -71,6 +71,7 @@
               <span v-else class="meta-none">—</span>
               <span v-if="m.current_version_no" class="mono row-ver">v{{ m.current_version_no }}</span>
               <span v-else class="meta-none">无版本</span>
+              <span v-if="m.comment_count" class="mono row-cmt" :title="`${m.comment_count} 条评论`">❞ {{ m.comment_count }}</span>
             </div>
             <div class="row-updated">
               <template v-if="m.last_uploaded_by">
@@ -235,6 +236,7 @@ async function onCreate(payload) {
   color: var(--ink-3);
 }
 .row-ver { color: var(--gold-deep); font-weight: 600; }
+.row-cmt { color: var(--ink-3); font-size: 11.5px; }
 .row-updated {
   display: flex;
   flex-direction: column;

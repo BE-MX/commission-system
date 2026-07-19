@@ -392,6 +392,7 @@
 - 版本：`POST /materials/{id}/versions`（multipart；版本号条目内自增只增不复用，`(material_id,version_no)` 唯一约束+冲突重试；offline 凭据类/link 链接类拒绝上传；>50MB 拒绝；v2+ 自动后台触发 AI 差异管线）、`POST /materials/{id}/versions/text`（在线编辑保存，Phase 2 §6.1，2026-07-18：JSON `{content, change_note?, base_version_no?}`，基准版本须为 .md/.markdown/.txt；复用上传同一版本通道，审计 action=`edit_version` 带 based_on；基线冲突由前端提示用户自行决定，后端不拒绝）、`DELETE /versions/{id}`（软删后当前版本回落上一未删版）、`GET /versions/{id}/file-link?disposition=`（签发 300s 短时效签名 URL，下发自动重命名 `名称_vN.ext`）、`POST /versions/{id}/retry-diff`。
 - 文件服务：`GET /files/{version_id}?token&expires&disposition`（**签名即鉴权**——浏览器直链不带 Authorization，素材模块同款模式；校验软删、nosniff、HTML 类强制 attachment）。
 - 任务：`GET|POST /tasks`、`PUT|DELETE /tasks/{id}`（`?assignee&phase` 筛选；blocked 必填 blocked_reason；`material_ids` 关联资料）。
+- 评论（资料级，2026-07-19；划线锚点评论未做）：`GET|POST /materials/{id}/comments`（POST `{body, parent_id?}`；单层回复，回复「回复」自动拍平挂顶层；锚定评论时当前版本号供溯源）、`DELETE /comments/{id}`（**仅作者本人**可软删，403 其他人；已删顶层若有活回复以占位返回）。资料列表/详情响应含 `comment_count`（不计占位）。
 - 动态：`GET /activity?username&object_type&limit&offset`。
 - AI 差异管线：本地精确 diff（文本 difflib / xlsx openpyxl 单元格级 / docx python-docx / pdf pypdf）→ `ai.service.chat` preset `pm_diff`（启动自动初始化）转述概要；`pending/done/failed/not_applicable`，v1 与扫描件/不支持类型落 not_applicable，失败可重试；启动时回收超时 pending（看门狗 600s）。
 - 预置：`python backend/scripts/seed_pm.py`（项目 + 8 人白名单 + 35 项材料 + 5 条 workshop 任务；`--reset` 重灌）。本地预览：`python backend/scripts/pm_dev_server.py --port 8003`（SQLite + demo 数据，免 MySQL/.env）。

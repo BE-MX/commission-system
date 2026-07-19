@@ -25,6 +25,10 @@ export const fetchFileLink = (versionId, disposition = 'attachment', opts) =>
   api.get(`/api/pm/versions/${versionId}/file-link?disposition=${disposition}`, opts)
 export const retryDiff = (versionId) => api.post(`/api/pm/versions/${versionId}/retry-diff`)
 
+export const fetchComments = (materialId) => api.get(`/api/pm/materials/${materialId}/comments`)
+export const createComment = (materialId, data) => api.post(`/api/pm/materials/${materialId}/comments`, data)
+export const deleteComment = (commentId) => api.del(`/api/pm/comments/${commentId}`)
+
 export const fetchTasks = (params = {}) => {
   const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString()
   return api.get(`/api/pm/tasks${qs ? `?${qs}` : ''}`)
