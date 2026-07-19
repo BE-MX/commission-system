@@ -42,10 +42,14 @@ export function useMaterialDetail() {
   }
 
   // 评论一次取全资料，按版本号分组进各版本卡（失败不阻断详情，client.js 已 toast）
+  const commentsFailed = ref(false)
   async function refreshComments() {
     try {
       comments.value = (await fetchComments(id)) || []
-    } catch { /* 详情主体照常展示 */ }
+      commentsFailed.value = false
+    } catch {
+      commentsFailed.value = true // 卡内显示失败态，空态文案不能谎报「还没有评论」
+    }
   }
 
   const threadsByVersion = computed(() => {
@@ -145,6 +149,6 @@ export function useMaterialDetail() {
   return {
     id, material, members, loading, notFound,
     nameOf, canUpload, load, setStatus, saveEdit, upload, removeVersion, retryDiff, removeMaterial, download,
-    afterEditorSaved, threadsFor, refreshComments,
+    afterEditorSaved, threadsFor, refreshComments, commentsFailed,
   }
 }

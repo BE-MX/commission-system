@@ -125,7 +125,9 @@
                 :threads="threadsFor(v.version_no)"
                 :name-of="nameOf"
                 :can-post="!v.is_deleted"
+                :failed="commentsFailed"
                 @changed="refreshComments"
+                @retry="refreshComments"
               />
             </div>
           </article>
@@ -183,7 +185,7 @@ const router = useRouter()
 const {
   material, members, loading, notFound,
   nameOf, canUpload, setStatus, saveEdit, upload, removeVersion, retryDiff, removeMaterial, download,
-  afterEditorSaved, threadsFor, refreshComments,
+  afterEditorSaved, threadsFor, refreshComments, commentsFailed,
 } = useMaterialDetail()
 
 const uploadOpen = ref(false)

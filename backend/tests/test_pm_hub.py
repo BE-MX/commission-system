@@ -704,3 +704,32 @@ class TestComments:
             # 空白正文 → 400（纯空格绕过 schema min_length，由 service 拦）
             assert client.post(f"/api/pm/versions/{v1.id}/comments",
                                json={"body": "   "}, headers=_auth(token)).status_code == 400
+
+    def test_reply_inherits_version_audit_and_deleted_thread_sidedoor(self, db, pm_seed):
+        """继承版本的审计锚点是线程版本号；线程所在版本已删则经存活版本续贴也 400。"""
+        material = pm_seed["material"]
+        v1 = _upload(db, material)
+        with pm_client(db) as client:
+            token = _entry(client)["token"]
+            top = client.post(f"/api/pm/versions/{v1.id}/comments",
+                              json={"body": "针对 v1"}, headers=_auth(token)).json()["data"]
+            v2 = _upload(db, material, name="v2.txt", content=b"hello2")
+            client.post(f"/api/pm/versions/{v2.id}/comments",
+                        json={"body": "补充", "parent_id": top["id"]}, headers=_auth(token))
+            acts = client.get("/api/pm/activity?object_type=comment", headers=_auth(token)).json()["data"]
+            assert acts["items"][0]["object_name"] == "价格体系 v1"  # 回复审计锚点=线程版本
+
+            client.delete(f"/api/pm/versions/{v1.id}", headers=_auth(token))
+            resp = client.post(f"/api/pm/versions/{v2.id}/comments",
+                               json={"body": "侧门", "parent_id": top["id"]}, headers=_auth(token))
+            assert resp.status_code == 400
+
+    def test_comment_on_version_of_deleted_material_rejected(self, db, pm_seed):
+        material = pm_seed["material"]
+        v1 = _upload(db, material)
+        with pm_client(db) as client:
+            token = _entry(client)["token"]
+            client.delete(f"/api/pm/materials/{material.id}", headers=_auth(token))
+            resp = client.post(f"/api/pm/versions/{v1.id}/comments",
+                               json={"body": "x"}, headers=_auth(token))
+            assert resp.status_code == 404

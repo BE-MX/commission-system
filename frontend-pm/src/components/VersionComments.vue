@@ -1,7 +1,12 @@
 <template>
   <!-- 已删版本且无历史评论：整块隐藏，不给死入口 -->
-  <div v-if="canPost || flatCount" class="vc">
-    <button class="vc-toggle" type="button" :aria-expanded="expanded" @click="expanded = !expanded">
+  <div v-if="failed || canPost || flatCount" class="vc">
+    <!-- 加载失败：不渲染「0 条评论」谎报空态，给重试入口 -->
+    <button v-if="failed" class="vc-toggle failed" type="button" @click="emit('retry')">
+      <span class="vc-mark" aria-hidden="true">❞</span>
+      <span>评论加载失败 · 点击重试</span>
+    </button>
+    <button v-else class="vc-toggle" type="button" :aria-expanded="expanded" @click="expanded = !expanded">
       <span class="vc-mark" aria-hidden="true">❞</span>
       <span>{{ flatCount ? `${flatCount} 条评论` : '评论' }}</span>
       <svg class="vc-chevron" :class="{ open: expanded }" viewBox="0 0 12 12" width="10" height="10" aria-hidden="true">
@@ -10,7 +15,7 @@
     </button>
 
     <Transition name="fade">
-      <div v-if="expanded" class="vc-body">
+      <div v-if="expanded && !failed" class="vc-body">
         <div v-if="threads.length" class="vc-list">
           <article v-for="c in threads" :key="c.id" class="vc-item">
             <p v-if="c.is_deleted" class="vc-deleted">该评论已被作者删除</p>
@@ -103,8 +108,9 @@ const props = defineProps({
   threads: { type: Array, default: () => [] }, // 本版本的顶层评论（含 replies），父组件按版本分好
   nameOf: { type: Function, default: (u) => u },
   canPost: { type: Boolean, default: true }, // 已删版本 false：历史可看，不可新增
+  failed: { type: Boolean, default: false }, // 评论拉取失败：显示重试入口，不谎报空态
 })
-const emit = defineEmits(['changed'])
+const emit = defineEmits(['changed', 'retry'])
 
 const expanded = ref(false)
 const posting = ref(false)
@@ -184,6 +190,7 @@ async function onDelete() {
   .vc-toggle:hover { color: var(--gold-deep); }
 }
 .vc-mark { color: var(--gold-deep); font-size: 13px; }
+.vc-toggle.failed { color: var(--danger); }
 .vc-chevron { transition: transform var(--dur-fast) var(--ease-out); }
 .vc-chevron.open { transform: rotate(180deg); }
 

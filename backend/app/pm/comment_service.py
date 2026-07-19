@@ -29,12 +29,19 @@ def get_comment(db: Session, comment_id: int) -> Optional[PmComment]:
 
 
 def comment_counts(db: Session, material_ids: list[int]) -> dict[int, int]:
-    """未删除评论数（占位用的已删父评论不计——计数只反映可读发言量）。"""
+    """未删除评论数（占位用的已删父评论不计——计数只反映可读发言量）。
+
+    过滤 version_id 为 NULL 的行：前端按版本分组展示，无版本行不落任何卡，
+    计数必须与可见性同口径（对抗性审查 2026-07-19 P2）。"""
     if not material_ids:
         return {}
     rows = (
         db.query(PmComment.material_id, func.count(PmComment.id))
-        .filter(PmComment.material_id.in_(material_ids), PmComment.deleted_at.is_(None))
+        .filter(
+            PmComment.material_id.in_(material_ids),
+            PmComment.deleted_at.is_(None),
+            PmComment.version_id.isnot(None),
+        )
         .group_by(PmComment.material_id)
         .all()
     )
@@ -112,9 +119,15 @@ def create_comment(db: Session, material: PmMaterial, version: PmMaterialVersion
             raise ValueError("被回复的评论不存在")
         # 单层回复：回复「回复」自动拍平到顶层父级
         resolved_parent_id = parent.parent_id or parent.id
-        # 回复继承线程所在版本（顶层的 version_id），不取 URL 版本——线程不跨卡漂移
+        # 回复继承线程所在版本（顶层的 version_id），不取 URL 版本——线程不跨卡漂移；
+        # 线程所在版本已删则拒绝（UI 在已删卡隐藏回复，API 必须同口径封死侧门）
         top = parent if parent.parent_id is None else db.query(PmComment).filter(PmComment.id == parent.parent_id).first()
-        if top and top.version_id:
+        if top and top.version_id and top.version_id != version.id:
+            tv = db.query(PmMaterialVersion).filter(PmMaterialVersion.id == top.version_id).first()
+            if not tv or tv.deleted_at is not None:
+                raise ValueError("该线程所在版本已删除，不能继续回复")
+            version_id = tv.id
+        elif top and top.version_id:
             version_id = top.version_id
     comment = PmComment(
         material_id=material.id,
@@ -144,9 +157,14 @@ def create_comment(db: Session, material: PmMaterial, version: PmMaterialVersion
 def delete_comment(db: Session, comment: PmComment, material: PmMaterial, username: str) -> None:
     """软删。权限（仅作者）由 router 层校验——service 不重复判，保持单一职责。"""
     comment.deleted_at = bj_now()
+    anchored_no = None
+    if comment.version_id:  # 审计锚点与 create 对称：同带 vN
+        v = db.query(PmMaterialVersion.version_no).filter(PmMaterialVersion.id == comment.version_id).first()
+        anchored_no = v[0] if v else None
     audit(
         db, material.project_id, username, "delete_comment", "comment", comment.id,
-        material.name, {"snippet": (comment.body or "")[:120]},
+        f"{material.name} v{anchored_no}" if anchored_no else material.name,
+        {"snippet": (comment.body or "")[:120]},
     )
     db.commit()
 
