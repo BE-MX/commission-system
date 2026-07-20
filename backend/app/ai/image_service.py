@@ -26,6 +26,7 @@ class ImageInput(TypedDict):
 IMAGE_PARAMETER_KEYS = {
     "background",
     "input_fidelity",  # gpt-image edits：high 强力保留输入图脸部/细节（治合成脸变形，2026-07-16）
+                       # 2026-07-20 起 wlai 中转站不再认 gpt-image-2+此参数（400），靠摘参重试兜底
     "moderation",
     "n",
     "output_compression",
@@ -52,7 +53,60 @@ _IMAGE_RETRY_BACKOFF_SEC = 1.5   # 线性退避 1.5s / 3s
 _IMAGE_CONNECT_TIMEOUT_SEC = 15.0
 
 
+def _enrich_status_error(exc: httpx.HTTPStatusError) -> httpx.HTTPStatusError:
+    """httpx 的 raise_for_status 消息不含响应体，而中转站的真实失败原因全在体内
+    error.message（2026-07-20 排障实证：光看 '400 Bad Request' 无从下手）——追加截断片段。"""
+    try:
+        body = (exc.response.text or "").strip()
+    except Exception:
+        body = ""
+    if not body:
+        return exc
+    return httpx.HTTPStatusError(
+        f"{exc.args[0] if exc.args else exc} | 响应体: {body[:300]}",
+        request=exc.request, response=exc.response,
+    )
+
+
+def _unsupported_param(exc: httpx.HTTPStatusError, data: dict) -> Optional[str]:
+    """400 响应显式指认某参数不支持（error.param）且该参数确在本次请求里才返回参数名。
+    model/prompt 是请求本体不算：摘了它们等于换了个请求。"""
+    if exc.response.status_code != 400:
+        return None
+    try:
+        err = (exc.response.json() or {}).get("error") or {}
+    except Exception:
+        return None
+    param = err.get("param")
+    if param and param in data and param not in ("model", "prompt"):
+        return param
+    return None
+
+
 def _post_image_edits(url, headers, data, files, timeout_sec: int, caller_module: str) -> dict:
+    """带摘参兜底的 edits 调用：上游 400 明确指认某可选参数不支持时（2026-07-20 中转站
+    突然不认 gpt-image-2 + input_fidelity，preset 配置没变、上游能力漂移），摘掉该参数
+    重发而不是硬失败——展位 kiosk 的可用性优先于单个参数带来的增强效果，摘参会大声记日志。
+    每个参数只摘一次，防上游反复指认同一参数造成死循环。"""
+    data = dict(data)  # 本地副本：摘参不改坏调用方字典
+    stripped: set[str] = set()
+    while True:
+        try:
+            return _post_image_edits_once(url, headers, data, files, timeout_sec, caller_module)
+        except httpx.HTTPStatusError as exc:
+            bad = _unsupported_param(exc, data)
+            if not bad or bad in stripped:
+                raise
+            stripped.add(bad)
+            data.pop(bad, None)
+            msg = (f"[{caller_module}] 上游拒收参数 {bad}（HTTP 400），已摘除重发。"
+                   f"若长期如此请在 AI 后台把该参数从 preset 移除。响应体: "
+                   f"{(exc.response.text or '')[:200]}")
+            logger.warning(msg)
+            print(msg, flush=True)
+
+
+def _post_image_edits_once(url, headers, data, files, timeout_sec: int, caller_module: str) -> dict:
     """POST 到 /images/edits，对 502/503 与连接瞬断自动重试；504/ReadTimeout 不重试直接抛。"""
     timeout = httpx.Timeout(timeout_sec, connect=_IMAGE_CONNECT_TIMEOUT_SEC, write=30.0)
     last_exc: Exception | None = None
@@ -69,7 +123,7 @@ def _post_image_edits(url, headers, data, files, timeout_sec: int, caller_module
             ) from exc
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code not in _IMAGE_RETRY_STATUS:
-                raise
+                raise _enrich_status_error(exc) from exc
             last_exc = exc
         except httpx.TransportError as exc:  # 连接/网络瞬断（ReadTimeout 已在上面拦掉）
             last_exc = exc
@@ -79,6 +133,8 @@ def _post_image_edits(url, headers, data, files, timeout_sec: int, caller_module
             logger.warning(msg)
             print(msg, flush=True)
             time.sleep(_IMAGE_RETRY_BACKOFF_SEC * attempt)
+    if isinstance(last_exc, httpx.HTTPStatusError):
+        raise _enrich_status_error(last_exc) from last_exc
     raise last_exc
 
 
