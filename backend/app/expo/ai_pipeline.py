@@ -390,7 +390,8 @@ _COMPOSITE_TEMPLATE = (
 # 短袖夏季版。原景保持路径锁定原服装，不注入本子句
 _SUMMER_WARDROBE_CLAUSE = (
     " It is summer: dress her in lightweight breathable summer clothing with short "
-    "sleeves or sleeveless cuts, in a clean French-minimalist everyday-chic register - "
+    "or elbow-length sleeves or sleeveless cuts, in a clean French-minimalist "
+    "everyday-chic register - "
     "effortless mix-and-match separates such as crisp shirts, fine knit tops, flowing "
     "midi skirts, straight or wide-leg trousers and well-cut jeans, in a calm neutral "
     "palette of white, cream, black, navy, light blue, grey, khaki-camel and denim "
@@ -468,9 +469,11 @@ def _wardrobe_variation_clause(uniform: bool = False) -> str:
         return jewelry_part
     look = random.choice(_OUTFIT_LOOKS)
     return (
-        f" For this shot, dress her in {look}, adapted naturally in fit and formality "
-        "to suit the scene while keeping these exact garment types and colors - "
-        "not a plain all-black look and not a generic dress." + jewelry_part
+        f" For this shot, dress her in {look}, keeping these colors and this overall "
+        "styling; in a formal or professional setting, render any casual pieces "
+        "(denim, sneakers, white-socks styling) as polished tailored equivalents in "
+        "the same tones - not a plain all-black look and not a generic dress."
+        + jewelry_part
     )
 
 # 场景子句：默认保持原景（body/背景/景深全锁定）；选场景时置换背景（可换装，
@@ -726,7 +729,6 @@ SCENES = [
      "prompt": ("a bright modern executive boardroom with floor-to-ceiling windows, "
                 "she wears a chic lightweight summer outfit and presents with confidence, soft daylight")},
     {"key": "banquet", "label": "晚宴礼遇", "tagline": "高定光影 · 优雅登场", "uniform": True,  # 晚宴旗袍是场景规定装
-
      "prompt": ("an elegant evening banquet hall with warm golden bokeh lights, "
                 "she wears a refined short-sleeve silk qipao, cinematic warm portrait lighting")},
     {"key": "cafe", "label": "午后咖啡", "tagline": "松弛日常 · 精致在线",
@@ -734,7 +736,7 @@ SCENES = [
                 "warm afternoon light with shallow depth of field")},
     {"key": "travel", "label": "户外旅行", "tagline": "自然光下 · 状态满分",
      "prompt": ("an outdoor seaside promenade on a sunny day with a gentle breeze, "
-                "a light stylish summer travel outfit with a breezy short-sleeve top, natural golden-hour sunlight")},
+                "a light stylish summer travel outfit, natural golden-hour sunlight")},
     {"key": "home", "label": "温馨居家", "tagline": "舒适自在 · 优雅如常",
      "prompt": ("a cozy warm home living room with soft lamp light, a soft comfortable "
                 "summer outfit, relaxed and genuine atmosphere")},

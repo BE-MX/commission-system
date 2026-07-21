@@ -4,6 +4,7 @@
 不触数据库的部分全部直测；prompt 组装用未落库的 ORM 实例。
 """
 
+import re
 from datetime import datetime, timedelta
 
 import pytest
@@ -318,16 +319,30 @@ def test_build_prompt_scene_prescribed_attire_locked():
     """场景规定装（喜婆婆旗袍/广场舞舞蹈装/晚宴旗袍）不注入 look，只注首饰。"""
     session = _session()
     wig = ExpoWig(model_no="LS-1", name="轻盈波波", wig_description="short bob")
-    for key in ("weddinghost", "squaredance"):
+    for key, garment in (("weddinghost", "qipao"), ("squaredance", "activewear")):
         row = ExpoResult(session_id=1, wig_id=1, scene_json={"key": key, "label": key})
         prompt, _, _ = ai_pipeline._build_prompt(session, row, wig)
         assert "For this shot, dress her in" not in prompt
         assert "Accessorize with" in prompt
+        assert garment in prompt  # 场景规定装保留
     row = ExpoResult(session_id=1, wig_id=None,
                      scene_json={"key": "banquet", "label": "晚宴礼遇"})
     prompt, _, _ = ai_pipeline._build_prompt(_session(mode="scene"), row, None)
     assert "For this shot, dress her in" not in prompt
     assert "silk qipao" in prompt  # 场景规定装保留
+
+
+def test_unlocked_scene_prompts_have_no_hardcoded_garments():
+    """非锁定景不得写死具体单品词（2026-07-21 起单品由 look 池接管）——防回填回归。"""
+    garment = re.compile(
+        r"dress|blouse|qipao|polo|slacks|activewear|sheath|suit\b|coat|uniform",
+        re.IGNORECASE,
+    )
+    for s in ai_pipeline.TRYON_SCENES + ai_pipeline.SCENES:
+        if s.get("uniform"):
+            continue
+        m = garment.search(s["prompt"])
+        assert not m, f"{s['key']} 泄漏单品词 {m.group() if m else ''}: {s['prompt']}"
 
 
 def test_build_prompt_keep_bg_has_no_variation():
