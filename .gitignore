@@ -17,6 +17,7 @@ Thumbs.db
 
 # Build
 dist/
+dist-lan/
 build/
 *.spec
 
@@ -36,6 +37,9 @@ logs/
 # Design reference assets (临时素材，不入库)
 frontend/kimi-ref.*
 frontend/kimi-dom.html
+
+# Session working notes (unknowns skill 实现笔记，验收后删除)
+docs/implementation-notes.md
 
 # Uploads
 backend/uploads/

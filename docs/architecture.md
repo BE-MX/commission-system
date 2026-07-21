@@ -90,7 +90,7 @@ frontend/src/
 
 **API client 规则**：所有 API 模块从 `clients.js` 取，禁止新建 axios 实例（`auth.js` 是唯一例外）。
 
-**frontend-pm/**：PM 协作站独立前端应用（自研设计系统，无 Element Plus，与主站互不引用）；构建与 SCP 同步已入 `deploy.bat`。
+**frontend-pm/**：PM 协作站独立前端应用（自研设计系统，无 Element Plus，与主站互不引用）；构建与 SCP 同步已入 `deploy.bat`。双入口（2026-07-21 起）：外网 pm.leshine.work（云 Nginx 静态直出 `dist/` + frp 反代 API），内网 `http://192.168.101.193:8001/pm/`（本机后端托管 `dist-lan/`，base=/pm/ 构建，大文件上传绕开隧道；`bootstrap/static_files.py::_mount_pm_lan_entry`）。
 
 ## 数据库设计
 

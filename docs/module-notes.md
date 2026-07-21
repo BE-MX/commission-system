@@ -601,5 +601,7 @@ frontend/src/
 - 迁移编号冲突（已解决并落地）：合并时发现共享库被 codex 的 `073_invoice_accessory_products`/`074_invoice_price_kind_key`/`075_training_digest`（后者当时未提交进任何分支）占头。处理：三份迁移文件收编上 main（内容逐字不动），本模块迁移顺延为 `076_pm_hub`（down_revision=075_training_digest），DB 已升级到 076。**启示：建迁移先查 `git log --all` + DB alembic_version，codex 合并其分支时 075 与 main 内容一致可干净落并**
 - 版本评论（Phase 2，2026-07-19，零迁移——076 建表时预留）：评论挂**具体版本**（首版误做资料级被纠偏返工，教训：协作类功能先确认锚定粒度）。`POST /versions/{id}/comments`（已删版本/已删资料 404）+ `GET /materials/{id}/comments`（一次取全，前端按 version_no 分组进版本卡）+ `DELETE /comments/{id}`（**仅作者**，403 其他人——与站内信任制人人可删刻意不同）。规则：单层回复、回复「回复」自动拍平挂顶层；回复继承线程顶层的 version_id 不随发布入口漂移（继承目标版本已删则 400 封侧门）；软删顶层有活回复时以占位返回（body=null+is_deleted）且可续贴；`comment_count`（资料列表/详情）过滤 NULL version_id 与前端可见性同口径。审计 create/delete 对称带 `vN` 锚点，activity object_type=comment。前端 `VersionComments.vue` 自包含（展开态/发布/回复/删除/加载失败重试），评论数据在 useMaterialDetail 一次拉取分组下发；正文一律 `{{ }}` 插值渲染防 XSS。两轮对抗性审查教训：**重写组件时先盘点旧组件承载的历史修复**（加载失败态修了又丢了一次）。
 
+- 内网入口（2026-07-21）：主后端 `/pm/` 子路径托管 `frontend-pm/dist-lan`（deploy.bat 双构建之二，`--base=/pm/`），内网 `http://192.168.101.193:8001/pm/` 直连上传绕开 frp 隧道；路由注册在主站 catch-all 之前（`_mount_pm_lan_entry`），resolve+is_relative_to 防穿越，深链 fallback index.html。前端唯一改动 `createWebHistory(import.meta.env.BASE_URL)`（云端 base='/' 行为不变）。内外网 localStorage 隔离，各自过一次门牌属预期。
+
 **本地预览（无需 MySQL/.env）**
 `python backend/scripts/pm_dev_server.py --port 8003`：SQLite 文件库 + 演示数据 + 托管 `frontend-pm/dist`；`/dev-enter?u=<username>` 开发专用免门牌写 localStorage 直进。前端开发：`cd frontend-pm && npm run dev`（:3100，代理 /api → PM_API_TARGET 或 localhost:8001）。

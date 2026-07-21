@@ -374,6 +374,14 @@ if errorlevel 1 (
     echo [ERROR] PM dist sync FAILED - marker left unchanged so the next deploy retries
     goto :error
 )
+REM 内网入口构建（base=/pm/），本机后端托管，供局域网大文件上传绕开 frp 隧道
+REM 放在云端 scp 之后：LAN 构建失败不连累外网 pm.leshine.work 部署（marker 未写，下次一并重试）
+echo [PM] Build LAN entry (dist-lan, base=/pm/)...
+call npm run build -- --base=/pm/ --outDir dist-lan
+if errorlevel 1 (
+    echo [ERROR] frontend-pm LAN build failed
+    goto :error
+)
 for /f "delims=" %%H in ('git -C "%INSTALL_DIR%" rev-parse HEAD') do set "CURRENT_HEAD=%%H"
 echo !CURRENT_HEAD!>"%PM_MARKER%"
 echo      OK
