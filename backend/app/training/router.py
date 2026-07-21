@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from fastapi.responses import FileResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.exc import ObjectDeletedError, StaleDataError
 
 from app.auth.dependencies import require_any_permission, require_permission
 from app.auth.models import ArkUser
@@ -182,7 +183,12 @@ def update_file_meta(
     _require_manage(digest, current_user)
     if payload.file_type is not None:
         _validate_file_type(payload.file_type)
-    item = service.update_file_meta(db, item, payload)
+    try:
+        item = service.update_file_meta(db, item, payload)
+    except (StaleDataError, ObjectDeletedError):
+        # 查到行之后、commit 之前附件被并发删除（如主单整体删除），口径与上传的 409 兜底一致
+        db.rollback()
+        raise HTTPException(status_code=404, detail="附件已被删除，请刷新后重试")
     return ok(_file_payload(item), message="附件信息已更新")
 
 

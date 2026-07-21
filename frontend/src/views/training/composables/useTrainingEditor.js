@@ -107,6 +107,7 @@ export function useTrainingEditor() {
       review: data.sections?.review || '',
     })
     files.value = data.files || []
+    files.value.forEach(rememberFileMeta)
   }
 
   async function load() {
@@ -210,6 +211,7 @@ export function useTrainingEditor() {
       onProgress,
     })
     files.value = [...files.value, res.data]
+    rememberFileMeta(res.data)
     return { path: String(res.data.id), url: '', name: res.data.file_name }
   }
 
@@ -228,10 +230,23 @@ export function useTrainingEditor() {
     msgSuccess('删除')
   }
 
-  /** 行内改类型/备注，成功后用后端返回值刷新本行（备注去空白等以后端为准） */
+  // 行内输入框 v-model 直接改行对象，这里存"最后保存成功"的快照供失败回滚
+  const savedFileMeta = new Map()
+  function rememberFileMeta(f) {
+    savedFileMeta.set(f.id, { file_type: f.file_type ?? null, remark: f.remark ?? null })
+  }
+
+  /** 行内改类型/备注，成功以后端返回值为准（备注去空白等）；失败回滚显示值，不让 UI 冒充已保存 */
   async function saveFileMeta(f, patch) {
-    const res = await updateDigestFileMeta(f.id, patch)
-    files.value = files.value.map(x => (x.id === f.id ? { ...x, ...res.data } : x))
+    try {
+      const res = await updateDigestFileMeta(f.id, patch)
+      files.value = files.value.map(x => (x.id === f.id ? { ...x, ...res.data } : x))
+      rememberFileMeta(res.data)
+    } catch {
+      // 拦截器已弹错误提示，这里只负责把行内值恢复成最后保存成功的状态
+      const before = savedFileMeta.get(f.id)
+      if (before) files.value = files.value.map(x => (x.id === f.id ? { ...x, ...before } : x))
+    }
   }
 
   // ---------- AI 提炼 ----------

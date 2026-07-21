@@ -130,6 +130,7 @@ import { computed, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getDigest, toggleUseful, pushDigest, downloadDigestFile, FILE_TYPE_LABELS } from '@/api/training'
 import { msgSuccess, msgError } from '@/utils/feedback'
+import { formatSize } from '@/utils/format'
 
 const route = useRoute()
 const router = useRouter()
@@ -202,12 +203,6 @@ async function onDownload(f) {
 
 function scrollTo(id) {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-}
-
-function formatSize(bytes) {
-  if (!bytes) return ''
-  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
 onMounted(fetchDetail)

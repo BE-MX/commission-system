@@ -1,9 +1,10 @@
 <template>
   <div class="app-upload">
+    <!-- 数量上限只走 beforeUpload 计数：el-upload 自身 :limit 按内部只增不减的
+         fileList 累计，删除文件不回收额度且超限时整批静默丢弃、零提示 -->
     <el-upload
       :accept="accept"
       :multiple="multiple"
-      :limit="limit"
       :show-file-list="false"
       :http-request="doUpload"
       :before-upload="beforeUpload"
@@ -16,9 +17,12 @@
     <div v-if="inflight.length" class="progress-list">
       <div v-for="it in inflight" :key="it.uid" class="progress-item">
         <span class="progress-name">{{ it.name }}</span>
+        <!-- percent=0（调用方不回调进度/代理丢 e.total）时给 50% 宽的往返滑块：
+             el-progress 的 indeterminate 动画只动 left，条宽恒为 percentage，0 宽什么都看不见 -->
         <el-progress
-          :percentage="Math.min(it.percent, 100)"
+          :percentage="it.percent === 0 ? 50 : Math.min(it.percent, 100)"
           :indeterminate="it.percent === 0"
+          :show-text="it.percent > 0"
           :stroke-width="6"
           class="progress-bar"
         />
@@ -49,6 +53,9 @@
  * 组件只管选择/校验/进度/列表/预览/移除——新页面统一用它，不再各写 el-upload。
  * onProgress(percent 0~100) 由 uploadFn 自行接到 axios onUploadProgress，不接则进度条走 indeterminate。
  * show-list=false 时调用方自渲染已传文件列表（如培训速递的类型标签+备注富列表），组件只管选择与进度。
+ * 注意：完成时 emit 的 [...props.modelValue, result] 是 props 快照——并发上传相继完成时
+ * props 可能还没随父组件重渲染更新，v-model 调用方存在丢行竞态；需要强一致的页面
+ * 应改走 show-list=false + uploadFn 内自写状态（参照 useTrainingEditor），不要依赖 v-model 回写。
  */
 import { computed, reactive, ref } from 'vue'
 import { Close } from '@element-plus/icons-vue'
