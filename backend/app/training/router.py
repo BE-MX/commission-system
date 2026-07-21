@@ -6,7 +6,7 @@
 
 import logging
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -17,7 +17,7 @@ from app.core.database import get_db
 from app.core.response import ok
 from app.training import draft_service, file_service, push_service, service
 from app.training.models import TrainingDigest, TrainingDigestFile
-from app.training.schemas import DigestCreate, DigestUpdate, DraftRequest
+from app.training.schemas import FILE_TYPE_OPTIONS, DigestCreate, DigestUpdate, DraftRequest, FileMetaUpdate
 
 logger = logging.getLogger("commission")
 
@@ -112,15 +112,36 @@ def delete_digest(
     return ok(message="已删除")
 
 
+def _validate_file_type(file_type: str) -> str:
+    if file_type not in FILE_TYPE_OPTIONS:
+        allowed = " ".join(f"{k}({v})" for k, v in FILE_TYPE_OPTIONS.items())
+        raise HTTPException(status_code=400, detail=f"附件类型无效，允许：{allowed}")
+    return file_type
+
+
+def _file_payload(item: TrainingDigestFile) -> dict:
+    return {
+        "id": item.id,
+        "file_name": item.file_name,
+        "file_size": item.file_size,
+        "mime_type": item.mime_type,
+        "file_type": item.file_type,
+        "remark": item.remark,
+    }
+
+
 @router.post("/{digest_id}/files", summary="上传原始资料附件")
 async def upload_file(
     digest_id: int,
     file: UploadFile = File(...),
+    file_type: str = Form("other"),
+    remark: str = Form("", max_length=200),
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_permission("training:write")),
 ):
     digest = _get_digest_or_404(db, digest_id)
     _require_manage(digest, current_user)
+    _validate_file_type(file_type)
     content = await file.read()
     try:
         file_service.validate_upload(file.filename or "", file.content_type or "", len(content))
@@ -136,16 +157,33 @@ async def upload_file(
             file_size=len(content),
             mime_type=file.content_type or "application/octet-stream",
             uploaded_by=int(current_user["sub"]),
+            file_type=file_type,
+            remark=remark,
         )
     except IntegrityError:
         # 主单被并发删除：回滚 + 回收已落盘文件，不留孤儿
         db.rollback()
         file_service.remove_quietly(rel_path)
         raise HTTPException(status_code=409, detail="这条速递已被删除，请刷新后重试")
-    return ok(
-        {"id": item.id, "file_name": item.file_name, "file_size": item.file_size, "mime_type": item.mime_type},
-        message="资料已上传",
-    )
+    return ok(_file_payload(item), message="资料已上传")
+
+
+@router.patch("/files/{file_id}", summary="编辑附件类型/备注")
+def update_file_meta(
+    file_id: int,
+    payload: FileMetaUpdate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_permission("training:write")),
+):
+    item = db.query(TrainingDigestFile).filter(TrainingDigestFile.id == file_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="附件不存在")
+    digest = _get_digest_or_404(db, item.digest_id)
+    _require_manage(digest, current_user)
+    if payload.file_type is not None:
+        _validate_file_type(payload.file_type)
+    item = service.update_file_meta(db, item, payload)
+    return ok(_file_payload(item), message="附件信息已更新")
 
 
 @router.delete("/files/{file_id}", summary="删除附件")

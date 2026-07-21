@@ -276,3 +276,60 @@ def test_delete_digest_removes_rows_and_files(db, tmp_path, monkeypatch):
     assert not (tmp_path / rel).exists()
     remaining = service.list_digests(db, page=1, page_size=20, user_id=user.id, mine=True)
     assert remaining["total"] == 0
+
+
+# ---------------- 附件类型/备注（077） ----------------
+
+def _add_file(db, digest, user, **kwargs):
+    return service.add_file(
+        db, digest, file_name="讲义.pdf", storage_path="ab/x.pdf",
+        file_size=9, mime_type="application/pdf", uploaded_by=user.id, **kwargs,
+    )
+
+
+def test_add_file_stores_type_and_strips_remark(db):
+    user = _user(db)
+    digest = _create(db, user)
+    item = _add_file(db, digest, user, file_type="courseware", remark="  第一天上午场  ")
+    assert item.file_type == "courseware"
+    assert item.remark == "第一天上午场"
+
+    detail = service.get_detail(db, digest, _claims(user), count_view=False)
+    assert detail["files"][0]["file_type"] == "courseware"
+    assert detail["files"][0]["remark"] == "第一天上午场"
+
+
+def test_add_file_defaults_other_and_null_remark(db):
+    user = _user(db)
+    digest = _create(db, user)
+    item = _add_file(db, digest, user)
+    assert item.file_type == "other"
+    assert item.remark is None
+
+
+def test_update_file_meta_partial(db):
+    from app.training.schemas import FileMetaUpdate
+
+    user = _user(db)
+    digest = _create(db, user)
+    item = _add_file(db, digest, user, file_type="photo", remark="白板照片")
+
+    # 只改 remark，file_type 不动
+    service.update_file_meta(db, item, FileMetaUpdate(remark="第二天白板"))
+    assert item.file_type == "photo"
+    assert item.remark == "第二天白板"
+
+    # remark 传空串清空为 NULL，file_type 换类型
+    service.update_file_meta(db, item, FileMetaUpdate(file_type="notes", remark=""))
+    assert item.file_type == "notes"
+    assert item.remark is None
+
+
+def test_file_type_whitelist_validation():
+    from app.training.router import _validate_file_type
+
+    assert _validate_file_type("photo") == "photo"
+    with pytest.raises(HTTPException) as ei:
+        _validate_file_type("virus")
+    assert ei.value.status_code == 400
+    assert "附件类型无效" in ei.value.detail
