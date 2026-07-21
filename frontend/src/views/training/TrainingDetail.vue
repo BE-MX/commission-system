@@ -109,7 +109,9 @@
       <section v-if="detail.files.length" class="section" id="sec-files">
         <h2 class="section-title">原始资料</h2>
         <div v-for="f in detail.files" :key="f.id" class="file-row">
+          <el-tag size="small" effect="plain" class="file-type-tag">{{ FILE_TYPE_LABELS[f.file_type] || '未分类' }}</el-tag>
           <span class="file-name">{{ f.file_name }}</span>
+          <span v-if="f.remark" class="file-remark" :title="f.remark">{{ f.remark }}</span>
           <span class="file-size">{{ formatSize(f.file_size) }}</span>
           <GlassButton
             variant="link"
@@ -126,7 +128,7 @@
 <script setup>
 import { computed, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getDigest, toggleUseful, pushDigest, downloadDigestFile } from '@/api/training'
+import { getDigest, toggleUseful, pushDigest, downloadDigestFile, FILE_TYPE_LABELS } from '@/api/training'
 import { msgSuccess, msgError } from '@/utils/feedback'
 
 const route = useRoute()
@@ -460,6 +462,20 @@ onMounted(fetchDetail)
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-primary);
+}
+
+.file-type-tag {
+  flex-shrink: 0;
+}
+
+.file-remark {
+  max-width: 260px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .file-size {
