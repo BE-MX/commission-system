@@ -4,7 +4,7 @@
 
     <main class="gate-main">
       <div class="gate-seal rise">
-        <img class="gate-seal-img" src="/seal-logo.png" width="120" height="120" alt="LeShine Hair" />
+        <img class="gate-seal-img" :src="sealUrl" width="120" height="120" alt="LeShine Hair" />
       </div>
 
       <p class="gate-eyebrow rise rise-1">LESHINE HAIR · PM HUB</p>
@@ -52,6 +52,8 @@ import { useRouter } from 'vue-router'
 import { entry } from '../api/index.js'
 import { identity } from '../stores/identity.js'
 
+// public 资产带构建 base 前缀，内网 /pm/ 入口下才不会落到主站根路径
+const sealUrl = import.meta.env.BASE_URL + 'seal-logo.png'
 const router = useRouter()
 const username = ref('')
 const busy = ref(false)
