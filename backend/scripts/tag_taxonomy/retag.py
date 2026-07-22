@@ -54,9 +54,10 @@ for _codes, _fam in [
 
 def derive_family(code: str) -> str:
     body = code.lstrip("#").upper().replace(" ", "")
-    if body.startswith("M"):
+    # 结构前缀必须是 字母+数字（#M2-60 / #P1B-2），否则 #Pink 会被误判成挑染
+    if re.match(r"^M\d", body):
         return "混色"
-    if body.startswith("P"):
+    if re.match(r"^P\d", body):
         return "挑染"
     if "TP" in body:
         return "双段渐变"

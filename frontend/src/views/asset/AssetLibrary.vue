@@ -23,7 +23,7 @@
 
       <div class="filter-groups">
         <div
-          v-for="dim in filteredDimensions"
+          v-for="dim in commonDimensions"
           :key="dim.id"
           class="filter-group"
           :style="getDimDividerStyle(dim)"
@@ -36,7 +36,7 @@
               class="filter-tag"
               :class="{ active: isTagSelected(dim.name, val.id) }"
               :style="getTagStyle(dim.name, val.id, val.color_hex)"
-              @click="toggleTag(dim.name, val.id)"
+              @click="toggleTag(dim.name, val.id, dim)"
             >
               <img
                 v-if="val.image_path"
@@ -47,6 +47,41 @@
             </div>
           </div>
         </div>
+
+        <!-- 高级筛选：细分维度默认折叠，渐进展示 -->
+        <template v-if="advancedDimensions.length">
+          <div class="advanced-toggle" @click="showAdvanced = !showAdvanced">
+            <span>高级筛选</span>
+            <el-icon :class="{ rotated: showAdvanced }"><ArrowDown /></el-icon>
+          </div>
+          <template v-if="showAdvanced">
+            <div
+              v-for="dim in advancedDimensions"
+              :key="dim.id"
+              class="filter-group"
+              :style="getDimDividerStyle(dim)"
+            >
+              <div class="filter-label">{{ dim.label }}</div>
+              <div class="filter-tag-list">
+                <div
+                  v-for="val in filteredValues(dim)"
+                  :key="val.id"
+                  class="filter-tag"
+                  :class="{ active: isTagSelected(dim.name, val.id) }"
+                  :style="getTagStyle(dim.name, val.id, val.color_hex)"
+                  @click="toggleTag(dim.name, val.id, dim)"
+                >
+                  <img
+                    v-if="val.image_path"
+                    :src="getTagImageUrl(val.image_path)"
+                    class="filter-tag-thumb"
+                  />
+                  {{ val.value }}
+                </div>
+              </div>
+            </div>
+          </template>
+        </template>
       </div>
     </aside>
 
@@ -271,7 +306,7 @@ import { ref, reactive, watch, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Search, Grid, List, Download, Star, Picture,
-  VideoPlay, Document, Folder, MagicStick,
+  VideoPlay, Document, Folder, MagicStick, ArrowDown,
 } from '@element-plus/icons-vue'
 import {
   getAssetList, getTagDimensions, downloadAsset, getFavoriteFolders,
@@ -309,12 +344,26 @@ const filteredDimensions = computed(() => {
   return dims.filter(dim => dim.values?.some(v => v.value.toLowerCase().includes(kw)))
 })
 
+// 分组渐进展示：细分维度收进「高级筛选」折叠区（体系 v2 切换后生效；
+// 旧体系维度不在此集合，展示行为不变）
+const ADVANCED_DIM_NAMES = new Set(['color_code', 'texture', 'shoot_style', 'process_step', 'theme', 'media_trait'])
+const showAdvanced = ref(false)
+const commonDimensions = computed(() => filteredDimensions.value.filter(d => !ADVANCED_DIM_NAMES.has(d.name)))
+const advancedDimensions = computed(() => filteredDimensions.value.filter(d => ADVANCED_DIM_NAMES.has(d.name)))
+
+// 跨维度 parent 级联：content_type 的值挂靠 content_category 的值
+const categorySelectedIds = computed(() => new Set(activeFilters['content_category'] || []))
+
 // 获取某个维度下过滤后的标签值
 function filteredValues(dim) {
   let values = dim.values || []
   if (filterKeyword.value.trim()) {
     const kw = filterKeyword.value.toLowerCase()
     values = values.filter(v => v.value.toLowerCase().includes(kw))
+  }
+  // 级联：已选内容大类时，内容子类只显示挂靠该大类的值
+  if (dim.name === 'content_type' && categorySelectedIds.value.size > 0) {
+    values = values.filter(v => !v.parent_value_id || categorySelectedIds.value.has(v.parent_value_id))
   }
   // 联动筛选：当用户已选择某些标签且已加载素材时，只显示当前结果中存在的标签
   const hasActiveFilter = Object.values(activeFilters).some(arr => arr && arr.length > 0)
@@ -329,16 +378,24 @@ function isTagSelected(dimName, valId) {
   return (activeFilters[dimName] || []).includes(valId)
 }
 
+// 同维度子级（产品族展开：选中「发帘类」= 族值+全部子型号一起进筛选）
+function sameDimChildren(dim, valId) {
+  if (!dim?.values) return []
+  const ownIds = new Set(dim.values.map(v => v.id))
+  return dim.values.filter(v => v.parent_value_id === valId && ownIds.has(v.parent_value_id)).map(v => v.id)
+}
+
 // 切换标签选中状态
-function toggleTag(dimName, valId) {
+function toggleTag(dimName, valId, dim) {
   if (!activeFilters[dimName]) {
     activeFilters[dimName] = []
   }
+  const group = [valId, ...sameDimChildren(dim, valId)]
   const idx = activeFilters[dimName].indexOf(valId)
   if (idx >= 0) {
-    activeFilters[dimName].splice(idx, 1)
+    activeFilters[dimName] = activeFilters[dimName].filter(id => !group.includes(id))
   } else {
-    activeFilters[dimName].push(valId)
+    activeFilters[dimName] = [...new Set([...activeFilters[dimName], ...group])]
   }
 }
 
@@ -647,6 +704,27 @@ onMounted(async () => {
   font-size: 15px;
   color: #1e1e2d;
 }
+.advanced-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 4px;
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--text-secondary, #909399);
+  cursor: pointer;
+  user-select: none;
+  border-top: 1px dashed var(--border-light, #e4e7ed);
+}
+
+.advanced-toggle .el-icon {
+  transition: transform 0.2s ease;
+}
+
+.advanced-toggle .el-icon.rotated {
+  transform: rotate(180deg);
+}
+
 .filter-group {
   margin-bottom: 12px;
   padding: 10px 12px;

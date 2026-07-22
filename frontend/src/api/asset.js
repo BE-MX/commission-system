@@ -1,8 +1,11 @@
 import { assetClient } from './clients'
 
 // ── 标签维度 ────────────────────────────────────────────
-export function getTagDimensions() {
-  return assetClient.get('/tags/dimensions', { showLoading: false })
+export function getTagDimensions(includeHidden = false) {
+  return assetClient.get('/tags/dimensions', {
+    showLoading: false,
+    params: includeHidden ? { include_hidden: 1 } : undefined,
+  })
 }
 
 export function createDimension(data) {

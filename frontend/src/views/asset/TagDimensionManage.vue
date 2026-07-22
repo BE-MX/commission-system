@@ -34,12 +34,17 @@
             <el-tag v-if="dim.is_single_select" size="small" type="warning">单选</el-tag>
             <el-tag v-else size="small" type="success">多选</el-tag>
             <el-tag v-if="dim.is_required" size="small" type="danger">必填</el-tag>
+            <el-tag v-if="!dim.is_visible" size="small" type="info" effect="plain">未启用</el-tag>
+            <el-tag v-if="dim.is_managed" size="small" type="warning" effect="plain">系统托管</el-tag>
           </div>
           <div class="dim-actions">
+            <el-button link type="primary" size="small" @click="toggleDimVisible(dim)">
+              {{ dim.is_visible ? '停用' : '启用' }}
+            </el-button>
             <el-button link type="primary" size="small" @click="openEditDim(dim)">
               <el-icon><Edit /></el-icon>编辑
             </el-button>
-            <el-button link type="primary" size="small" @click="openCreateValue(dim)">
+            <el-button v-if="!dim.is_managed" link type="primary" size="small" @click="openCreateValue(dim)">
               <el-icon><Plus /></el-icon>添加值
             </el-button>
             <el-button
@@ -90,8 +95,9 @@
               {{ val.value }}
             </el-tag>
           </div>
+            <span v-if="val.name_en" class="value-name-en">{{ val.name_en }}</span>
             <span v-if="!val.is_active" class="value-inactive">(已禁用)</span>
-            <div class="value-actions">
+            <div v-if="!dim.is_managed" class="value-actions">
               <el-button link type="primary" size="small" @click="openEditValue(dim, val)">
                 编辑
               </el-button>
@@ -157,6 +163,12 @@
         <el-form-item label="标签值" required>
           <el-input v-model="valueForm.value" placeholder="如 #1B、20\"" />
         </el-form-item>
+        <el-form-item label="英文名">
+          <el-input v-model="valueForm.name_en" placeholder="agent 检索用，如 Genius Weft" />
+        </el-form-item>
+        <el-form-item label="别名">
+          <el-input v-model="valueForm.aliasesText" placeholder="逗号分隔，如 天才,Halo" />
+        </el-form-item>
         <el-form-item label="颜色">
           <el-color-picker v-model="valueForm.color_hex" show-alpha />
         </el-form-item>
@@ -220,12 +232,33 @@ const sortedDimensions = computed(() => {
 async function loadData() {
   loading.value = true
   try {
-    const res = await getTagDimensions()
+    // 管理页需要看到未启用（并存期隐藏）的维度
+    const res = await getTagDimensions(true)
     dimensions.value = res.data || []
   } catch (e) {
     ElMessage.error('加载标签维度失败')
   } finally {
     loading.value = false
+  }
+}
+
+async function toggleDimVisible(dim) {
+  const next = dim.is_visible ? 0 : 1
+  try {
+    if (next === 0) {
+      await ElMessageBox.confirm(
+        `停用后「${dim.label}」将不在筛选、上传和文件夹匹配中出现（已打的标签保留）。确定停用？`,
+        '确认停用',
+        { type: 'warning' },
+      )
+    }
+    await updateDimension(dim.id, { is_visible: next })
+    ElMessage.success(next ? '已启用' : '已停用')
+    await loadData()
+  } catch (e) {
+    if (e !== 'cancel') {
+      ElMessage.error(e.response?.data?.message || '操作失败')
+    }
   }
 }
 
@@ -319,6 +352,8 @@ const currentDim = ref(null)
 const currentValue = ref(null)
 const valueForm = ref({
   value: '',
+  name_en: '',
+  aliasesText: '',
   color_hex: null,
   image_path: null,
   sort_order: 0,
@@ -330,6 +365,8 @@ function openCreateValue(dim) {
   isEditValue.value = false
   valueForm.value = {
     value: '',
+    name_en: '',
+    aliasesText: '',
     color_hex: null,
     image_path: null,
     sort_order: dim.values?.length || 0,
@@ -343,6 +380,8 @@ function openEditValue(dim, val) {
   isEditValue.value = true
   valueForm.value = {
     value: val.value,
+    name_en: val.name_en || '',
+    aliasesText: (val.aliases || []).join(','),
     color_hex: val.color_hex,
     image_path: val.image_path,
     sort_order: val.sort_order,
@@ -359,6 +398,10 @@ async function submitValue() {
   try {
     const payload = {
       value: valueForm.value.value,
+      name_en: valueForm.value.name_en?.trim() || null,
+      aliases: valueForm.value.aliasesText
+        ? valueForm.value.aliasesText.split(/[,，]/).map(s => s.trim()).filter(Boolean)
+        : [],
       color_hex: valueForm.value.color_hex,
       image_path: valueForm.value.image_path,
       sort_order: valueForm.value.sort_order,
@@ -588,6 +631,11 @@ onMounted(() => {
 .value-inactive {
   font-size: 12px;
   color: #999;
+}
+
+.value-name-en {
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 .value-actions {
