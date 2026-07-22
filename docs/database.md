@@ -27,6 +27,8 @@
 **业务库常用表口径（lsordertest，OKKI 同步投影，只读）**：
 - `customer_info` — 客户主表（company_id bigint 主键，company_name，country_name，**owner_user_ids JSON 数组**=归属 OKKI user_id 列表、空数组=公海；私海过滤用 `JSON_CONTAINS`）
 - `customer_contacts` — 客户联系人（company_id→customer_info，name/email/tel/is_main；发票录入「按联系人搜客户」数据源，2026-07-14 起）
+- `customer_contact_socials` — 联系人社交账号（customer_id→customer_contacts.customer_id，platform/value；社媒客户 MCP 查询源）
+- 社媒客户 MCP 查询索引（2026-07-22，业务库手工在线 DDL，不进 Alembic）：`customer_info.idx_social_mcp_customer_email(email(191))`、`customer_contacts.idx_social_mcp_contact_phone(tel)`、`customer_contact_socials.idx_social_mcp_social_value(value(191))`
 
 **主要业务表（commission_db）**：
 - `sys_dict` — 系统字典（type, code, label, sort, is_active）；`(type, code)` 唯一索引

@@ -665,5 +665,17 @@ grep "job completed" logs\service.log | tail -20
 4. **数据库**：`alembic upgrade head`（073_pm_hub；若 codex 073/074 先合入，先把本迁移 down_revision 改指 074）→ `python scripts/seed_pm.py` 预置项目/白名单/35 项材料/5 条 workshop 任务
 5. **.env 可选配置**：`PM_TOKEN_SECRET`（留空回退 JWT_SECRET_KEY，生产建议独立随机串）、`PM_TOKEN_EPOCH`（默认 1，+1 全员重签）、`PM_MAX_UPLOAD_MB`（默认 50）、`PM_FILE_SIGN_TTL_SECONDS`（默认 300）
 6. **部署**：deploy.bat 已含 frontend-pm 构建 + SCP（/var/www/pm/dist，marker 增量，失败留标重试）；资料文件备份已由 backup-uploads.bat 覆盖（backend/data → backend_data）。2026-07-21 起同段额外产出**内网入口构建** `frontend-pm/dist-lan`（`--base=/pm/`），由本机后端托管在 `/pm/`——内网访问 `http://192.168.101.193:8001/pm/`，大文件上传直连后端绕开 frp 隧道；两份构建同步产出，PM_CHANGED 跳过时两边一致陈旧不漂移。注意 bat 里 `--base=/pm/` 只能在 cmd 环境跑，Git Bash 会把 `/pm/` 改写成 MSYS 路径
-7. **限速启用 IP 维度的前置（红线，2026-07-18 审查发现）**：不仅要 Nginx 设 X-Forwarded-For + uvicorn 开 `--proxy-headers`，**更前置的是先关闭后端 8002 端口的公网直连**。当前 frps 把 8002 以 `0.0.0.0` 暴露公网、明文 HTTP 可达，任何人 `curl -H 'X-Forwarded-For: 伪造IP' http://<服务器>:8002/api/pm/entry` 就能绕过 Nginx 直打后端并伪造 XFF——此时启用 IP 限速/IP 审计等于给攻击者递了伪造入口。修复：frps 代理端口绑 `127.0.0.1`（Nginx 本就 proxy 到 127.0.0.1:8002，零影响）或安全组封 8002 公网入站，仅放行 localhost。**注意 MCP 网关 mount 在 `/mcp`，主站/PM 的 Nginx 都不反代它**——封 8002 前先确认没有 MCP 客户端靠直连 8002 使用（若有需另开受控入口）
+7. **限速启用 IP 维度的前置（红线，2026-07-18 审查发现）**：不仅要 Nginx 设 X-Forwarded-For + uvicorn 开 `--proxy-headers`，**更前置的是先关闭后端 8002 端口的公网直连**。当前 frps 把 8002 以 `0.0.0.0` 暴露公网、明文 HTTP 可达，任何人 `curl -H 'X-Forwarded-For: 伪造IP' http://<服务器>:8002/api/pm/entry` 就能绕过 Nginx 直打后端并伪造 XFF——此时启用 IP 限速/IP 审计等于给攻击者递了伪造入口。修复：frps 代理端口绑 `127.0.0.1`（Nginx 本就 proxy 到 127.0.0.1:8002，零影响）或安全组封 8002 公网入站，仅放行 localhost。**主应用物流 MCP 仍 mount 在 `/mcp` 且未由主站/PM Nginx 反代；2026-07-22 新增的 `/mcp/social-customer/` 是云端 8100 独立服务，不走 8002。**
 8. **下线**：摘 server block + DNS 记录即可，后端模块留存不影响平台
+
+## 社媒客户查询 MCP（云端独立服务）
+
+- 公网：`https://leshine.work/mcp/social-customer/`
+- systemd：`social-customer-mcp.service`
+- 安装目录：`/opt/social-customer-mcp`
+- 本机健康检查：`curl -fsS http://127.0.0.1:8100/health`
+- 日志：`journalctl -u social-customer-mcp -n 100 --no-pager`
+- 重启：`systemctl restart social-customer-mcp`
+- Nginx：主站 `/etc/nginx/conf.d/leshine.conf` 内独立 location，30 请求/分钟/IP；修改前必须备份并先测候选配置
+- RDS：独立 `social_customer_mcp` 账号，只授予四张 `lsordertest` 表的 SELECT
+- 完整部署、token 轮换和客户端示例：`docs/social-customer-mcp.md`

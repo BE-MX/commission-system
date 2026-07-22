@@ -13,7 +13,8 @@
 ```
 外网用户 → 腾讯云 Nginx (119.28.107.92:443)
   ├── 静态文件 (/assets/, /index.html) → Nginx 直接返回 (/var/www/ark/dist/)
-  └── API (/api/, /uploads/, /s/, /health) → frp 内网穿透（云端 frps :7000 / 本地 frpc NSSM 服务）→ 本地 Windows Server (:8002)
+  ├── API (/api/, /uploads/, /s/, /health) → frp 内网穿透（云端 frps :7000 / 本地 frpc NSSM 服务）→ 本地 Windows Server (:8002)
+  └── 社媒客户 MCP (/mcp/social-customer/) → 云端 systemd Python (:8100 loopback) → RDS lsordertest（只读账号）
 
 局域网用户 → 本地 IP:8002 直连
 ```
@@ -21,6 +22,7 @@
 - **云端 Nginx**：静态资源直出 + gzip + SSL（证书 `/etc/nginx/ssl/`）
 - **本地后端**：NSSM 托管 `CommissionSystem` 服务（uvicorn）
 - **WhatsApp Connector**：独立 Node.js 服务，NSSM 托管 `WhatsAppConnector`
+- **社媒客户 MCP**：独立 Python/FastMCP 云端服务，systemd 托管 `social-customer-mcp`；不经过 frp，Bearer 鉴权，端口仅监听 loopback
 
 ## 技术栈
 
