@@ -842,7 +842,9 @@ fi
 token=$(/bin/cat "$token_file")
 token=$(printf '%s' "$token" | /usr/bin/sed 's/\r$//')
 [ -n "$token" ] || fail "token 文件为空"
-printf '%s\n' "$token" | LC_ALL=C /usr/bin/grep -Eq '^[A-Za-z0-9._~+/=-]{32,512}$' || fail "token 格式不符合要求"
+printf '%s\n' "$token" | LC_ALL=C /usr/bin/grep -Eq '^[A-Za-z0-9._~+/=-]+$' || fail "token 只能包含规定字符"
+token_length=${#token}
+[ "$token_length" -ge 32 ] && [ "$token_length" -le 512 ] || fail "token 长度必须为 32–512 个字符"
 
 temporary_base=${TMPDIR:-/tmp}
 temporary_directory=$(/usr/bin/mktemp -d "$temporary_base/leshine-social-mcp.XXXXXX")
@@ -928,7 +930,9 @@ session_id=$(
     ' "$response_headers"
 )
 if [ -n "$session_id" ]; then
-    printf '%s\n' "$session_id" | LC_ALL=C /usr/bin/grep -Eq '^[A-Za-z0-9._~-]{1,256}$' || fail "服务返回了非法 session ID"
+    printf '%s\n' "$session_id" | LC_ALL=C /usr/bin/grep -Eq '^[A-Za-z0-9._~-]+$' || fail "服务返回了包含非法字符的 session ID"
+    session_id_length=${#session_id}
+    [ "$session_id_length" -le 256 ] || fail "服务返回的 session ID 超过 256 个字符"
     printf 'Mcp-Session-Id: %s\n' "$session_id" >> "$request_headers"
 fi
 
