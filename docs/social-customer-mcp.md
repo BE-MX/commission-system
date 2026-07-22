@@ -22,7 +22,7 @@
 
 向服务管理员领取 MCP token。token 不写进仓库、聊天群或共享文档。
 
-如果调用方使用 Windows Codex App、Codex CLI 或 Codex IDE 扩展，不要使用下方通用 JSON 让 Agent 自行猜测配置格式。应直接把 [`codex-social-customer-mcp-auto-setup.md`](codex-social-customer-mcp-auto-setup.md) 完整交给 Codex；该文档会要求用户提供 token 文件路径，并自动验证服务、备份和更新 `config.toml`、写入用户级 token 环境变量。
+如果调用方使用 Windows 或 macOS 上的 Codex App、Codex CLI 或 Codex IDE 扩展，不要使用下方通用 JSON 让 Agent 自行猜测配置格式。应直接把 [`codex-social-customer-mcp-auto-setup.md`](codex-social-customer-mcp-auto-setup.md) 完整交给 Codex；该文档会自动识别平台，要求用户提供 token 文件路径，并完成服务验证、配置备份、`config.toml` 更新和用户级 token 注入。
 
 其他支持远程 MCP 的客户端可参考以下通用配置；不同客户端外层字段名可能不同，关键是 URL、Streamable HTTP 和 Authorization 头：
 
