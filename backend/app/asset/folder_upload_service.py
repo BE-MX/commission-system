@@ -159,17 +159,20 @@ def validate_folder_tags(db: Session, tag_names: list[str]) -> TagValidationResu
     # 去重，保持顺序
     unique_names = list(dict.fromkeys(tag_names))
 
-    # 一次加载所有活跃标签值到内存
+    # 只加载可见维度的活跃标签值：并存期新旧体系同名值共存，
+    # 若不限维度会全员歧义（is_visible 是体系切换的执行机制）
+    from app.asset.models import TagDimension
+
     all_values = (
         db.query(TagValue)
-        .filter(TagValue.is_active == 1)
+        .join(TagDimension, TagDimension.id == TagValue.dimension_id)
+        .filter(TagValue.is_active == 1, TagDimension.is_visible == 1)
         .all()
     )
 
-    # 规范化值 -> [匹配记录]
+    # 规范化值 -> [匹配记录]；value / name_en / aliases 三路进索引
     normalized_map: dict[str, list[dict]] = {}
     for v in all_values:
-        norm = _normalize_text(v.value)
         entry = {
             "dimension_name": v.dimension.name,
             "dimension_label": v.dimension.label,
@@ -177,7 +180,16 @@ def validate_folder_tags(db: Session, tag_names: list[str]) -> TagValidationResu
             "tag_value_id": v.id,
             "original_value": v.value,
         }
-        normalized_map.setdefault(norm, []).append(entry)
+        candidates = [v.value]
+        if v.name_en:
+            candidates.append(v.name_en)
+        if v.aliases:
+            candidates.extend(a for a in v.aliases if isinstance(a, str))
+        for cand in candidates:
+            norm = _normalize_text(cand)
+            bucket = normalized_map.setdefault(norm, [])
+            if not any(e["tag_value_id"] == entry["tag_value_id"] for e in bucket):
+                bucket.append(entry)
 
     for name in unique_names:
         norm_name = _normalize_text(name)
@@ -258,24 +270,35 @@ def _tags_match(
     asset_id: int,
     tag_items: list[AssetTagItem],
 ) -> bool:
-    """比较已有素材的标签与目标标签是否完全一致。
+    """判定「同名文件是否视为同一素材」：目标标签 ⊆ 已有素材的可见维度标签。
 
-    比较维度：dimension_id + tag_value_id 的集合。
+    只看可见且非托管的维度——存量重打标/派生脚本给素材追加的隐藏维度或
+    托管维度（色系）标签不在路径映射的目标集里，若做全集相等比较，
+    重传同一文件夹会把所有同名文件误判为新素材、批量建重。
+    子集语义的代价：同名但标签更少的不同文件可能被误并为新版本
+    （相机文件名跨拍摄批次复用时），版本历史可回溯，风险可接受。
     """
-    from app.asset.models import asset_tag_association as ata
+    from app.asset.models import TagDimension, asset_tag_association as ata
+
+    comparable_dims = {
+        d.id for d in db.query(TagDimension)
+        .filter(TagDimension.is_visible == 1, TagDimension.is_managed == 0)
+    }
 
     existing_rows = db.query(
         ata.c.dimension_id,
         ata.c.tag_value_id,
     ).filter(ata.c.asset_id == asset_id).all()
-    existing_set = {(r.dimension_id, r.tag_value_id) for r in existing_rows}
+    existing_set = {(r.dimension_id, r.tag_value_id) for r in existing_rows
+                    if r.dimension_id in comparable_dims}
 
     target_set = set()
     for item in tag_items:
         for tv_id in item.tag_value_ids:
-            target_set.add((item.dimension_id, tv_id))
+            if item.dimension_id in comparable_dims:
+                target_set.add((item.dimension_id, tv_id))
 
-    return existing_set == target_set
+    return bool(target_set) and target_set <= existing_set
 
 
 # ── 执行入库 ────────────────────────────────────────────

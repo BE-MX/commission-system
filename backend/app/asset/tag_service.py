@@ -58,25 +58,38 @@ def seed_default_dimensions(db: Session) -> None:
 
     for dim_def in TAXONOMY_V2:
         create_taxonomy_dimension(db, dim_def, is_visible=1)
-    _link_content_type_parents(db)
+    link_taxonomy_parents(db)
     db.commit()
 
 
-def _link_content_type_parents(db: Session) -> None:
-    """回填 content_type 值的 parent_value_id → content_category 对应值。"""
-    cat_dim = db.query(TagDimension).filter(TagDimension.name == "content_category").first()
-    type_dim = db.query(TagDimension).filter(TagDimension.name == "content_type").first()
-    if not cat_dim or not type_dim:
-        return
-    cat_ids = {v.value: v.id for v in db.query(TagValue).filter(TagValue.dimension_id == cat_dim.id)}
-    type_def = next((d for d in TAXONOMY_V2 if d["name"] == "content_type"), None)
-    if not type_def:
-        return
-    parent_map = {v["value"]: v["parent"] for _, v in iter_values(type_def) if v["parent"]}
-    for tv in db.query(TagValue).filter(TagValue.dimension_id == type_dim.id):
-        parent_name = parent_map.get(tv.value)
-        if parent_name and cat_ids.get(parent_name):
-            tv.parent_value_id = cat_ids[parent_name]
+def link_taxonomy_parents(db: Session) -> None:
+    """按 taxonomy_def 回填 parent_value_id。
+
+    两类挂靠：content_type 的 parent 在 content_category（跨维度）；
+    product_type 的 parent 是同维度的产品族值。解析顺序：同维度优先，
+    找不到再查 content_category。幂等，可重复执行。
+    """
+    dims = {d.name: d for d in db.query(TagDimension).all()}
+    cat_dim = dims.get("content_category")
+    cat_ids = ({v.value: v.id for v in db.query(TagValue).filter(TagValue.dimension_id == cat_dim.id)}
+               if cat_dim else {})
+
+    for dim_def in TAXONOMY_V2:
+        parent_map = {v["value"]: v["parent"] for _, v in iter_values(dim_def) if v["parent"]}
+        if not parent_map:
+            continue
+        dim = dims.get(dim_def["name"])
+        if not dim:
+            continue
+        own_values = db.query(TagValue).filter(TagValue.dimension_id == dim.id).all()
+        own_ids = {v.value: v.id for v in own_values}
+        for tv in own_values:
+            parent_name = parent_map.get(tv.value)
+            if not parent_name:
+                continue
+            parent_id = own_ids.get(parent_name) or cat_ids.get(parent_name)
+            if parent_id and tv.parent_value_id != parent_id:
+                tv.parent_value_id = parent_id
     db.flush()
 
 

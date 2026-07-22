@@ -23,6 +23,7 @@ from app.asset import service
 from sqlalchemy import and_, desc, func
 from app.asset.analyze_service import analyze_asset_tags
 from app.asset.tag_service import ManagedDimensionError
+from app.asset.asset_service import SingleSelectViolation
 from app.asset.models import Asset, FavoriteFolder, FavoriteItem, DownloadLog, TagValue
 from app.auth.models import ArkUser  # noqa: F401 — registers ark_users for FK resolution
 from app.asset.folder_upload_service import (
@@ -62,12 +63,19 @@ router = APIRouter()
 
 @router.get("/tags/dimensions")
 def get_dimensions(
+    include_hidden: int = Query(0, description="1=含隐藏维度(标签维度管理页用)"),
     db: Session = Depends(get_db),
     _user: dict = Depends(require_permission("asset:read")),
 ):
-    """标签维度列表（含标签值）— 带 60 秒进程内缓存"""
+    """标签维度列表（含标签值）— 带 60 秒进程内缓存。
+
+    默认只返回可见维度：新旧标签体系并存期，筛选/上传/移动端零改动即只见当前体系。
+    """
     from app.asset.tag_service import list_dimensions_cached
-    return _ok(list_dimensions_cached(db))
+    dims = list_dimensions_cached(db)
+    if not include_hidden:
+        dims = [d for d in dims if d.get("is_visible", 1)]
+    return _ok(dims)
 
 
 @router.post("/tags/dimensions")
@@ -249,18 +257,21 @@ def upload_asset(
         allow_download=allow_download,
     )
 
-    asset = service.create_asset(
-        db,
-        file_name=file.filename,
-        file_type=file_type,
-        file_format=ext,
-        file_size=file_size,
-        temp_storage_path=temp_path,
-        uploader_id=user_id,
-        tags=tags,
-        permission=perm,
-        remark=remark,
-    )
+    try:
+        asset = service.create_asset(
+            db,
+            file_name=file.filename,
+            file_type=file_type,
+            file_format=ext,
+            file_size=file_size,
+            temp_storage_path=temp_path,
+            uploader_id=user_id,
+            tags=tags,
+            permission=perm,
+            remark=remark,
+        )
+    except SingleSelectViolation as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return _ok({"id": asset.id, "file_name": asset.file_name})
 
 
@@ -650,8 +661,11 @@ def patch_asset_tags(
     db: Session = Depends(get_db),
     _user: dict = Depends(require_permission("asset:write")),
 ):
-    """更新素材标签"""
-    asset = service.update_asset_tags(db, asset_id, req.tags)
+    """更新素材标签（按维度合并：只覆盖请求中出现的维度，清空需显式传空列表）"""
+    try:
+        asset = service.update_asset_tags(db, asset_id, req.tags)
+    except SingleSelectViolation as e:
+        raise HTTPException(status_code=400, detail=str(e))
     if not asset:
         raise HTTPException(status_code=404, detail="素材不存在")
     return _ok(None, message="标签已更新")

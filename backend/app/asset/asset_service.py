@@ -188,6 +188,27 @@ def create_asset(
     return asset
 
 
+class SingleSelectViolation(Exception):
+    """单选维度收到多个标签值。"""
+
+
+def _validate_single_select(db: Session, tags: list[AssetTagItem]) -> None:
+    """单选维度每素材至多一个值，违反抛 SingleSelectViolation（router 转 400）。"""
+    from app.asset.models import TagDimension
+
+    multi = {item.dimension_id for item in tags if len(item.tag_value_ids) > 1}
+    if not multi:
+        return
+    rows = (
+        db.query(TagDimension)
+        .filter(TagDimension.id.in_(multi), TagDimension.is_single_select == 1)
+        .all()
+    )
+    if rows:
+        labels = "、".join(d.label for d in rows)
+        raise SingleSelectViolation(f"单选维度[{labels}]只能选择一个标签值")
+
+
 def _apply_tags(
     db: Session,
     asset_id: int,
@@ -195,6 +216,7 @@ def _apply_tags(
     tags: list[AssetTagItem],
 ) -> None:
     """将标签关联写入 asset_tag_association。"""
+    _validate_single_select(db, tags)
     for item in tags:
         for tv_id in item.tag_value_ids:
             db.execute(
@@ -207,13 +229,24 @@ def _apply_tags(
             )
 
 
-def _clear_tags(db: Session, asset_id: int, version_id: Optional[int] = None) -> None:
-    """清除素材的全部标签关联（version_id 保留参数兼容，实际已忽略）。"""
-    db.execute(
-        asset_tag_association.delete().where(
-            asset_tag_association.c.asset_id == asset_id,
-        )
+def _clear_tags(
+    db: Session,
+    asset_id: int,
+    version_id: Optional[int] = None,
+    dimension_ids: Optional[list[int]] = None,
+) -> None:
+    """清除素材标签关联。
+
+    dimension_ids 给定时只清这些维度（按维度合并语义——编辑请求未提及的
+    维度保持原样，避免并存期一次保存抹掉另一套体系的标签）；
+    None = 全清（仅供内部工具使用）。version_id 保留参数兼容，实际已忽略。
+    """
+    stmt = asset_tag_association.delete().where(
+        asset_tag_association.c.asset_id == asset_id,
     )
+    if dimension_ids is not None:
+        stmt = stmt.where(asset_tag_association.c.dimension_id.in_(dimension_ids))
+    db.execute(stmt)
 
 
 # ── 查询素材 ────────────────────────────────────────────
@@ -355,12 +388,15 @@ def update_asset_tags(
     asset_id: int,
     tags: list[AssetTagItem],
 ) -> Optional[Asset]:
+    """按维度合并更新标签：只覆盖请求中出现的维度（含空列表=清空该维度），
+    未出现的维度保持原样。前端清空某维度需显式传 tag_value_ids=[]。"""
     asset = get_asset_detail(db, asset_id)
     if not asset:
         return None
 
     version_id = asset.current_version_id
-    _clear_tags(db, asset_id, version_id)
+    touched_dims = [item.dimension_id for item in tags]
+    _clear_tags(db, asset_id, version_id, dimension_ids=touched_dims)
     _apply_tags(db, asset_id, version_id, tags)
     db.commit()
     db.refresh(asset)
