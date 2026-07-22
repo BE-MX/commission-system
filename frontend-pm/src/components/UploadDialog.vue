@@ -12,10 +12,10 @@
       >
         <input id="up-file-input" type="file" class="up-input" :disabled="busy" @change="onPick" />
         <span class="up-icon" aria-hidden="true">↥</span>
-        <span v-if="!file">点击选择或拖入文件（单文件 ≤ {{ maxMb }}MB）</span>
+        <span v-if="!file">点击选择或拖入文件（单文件 ≤ {{ fmtSize(maxBytes) }}）</span>
         <span v-else class="up-name">{{ file.name }} <em class="num">{{ fmtSize(file.size) }}</em></span>
       </label>
-      <p v-if="oversize" class="up-error">超过 {{ maxMb }}MB 上限——大文件请改用「外部链接」类型备注网盘地址</p>
+      <p v-if="oversize" class="up-error">{{ oversizeHint }}</p>
       <p v-else-if="dropError" class="up-error">{{ dropError }}</p>
       <div class="form-item">
         <label class="field-label">修改说明（选填，一句话）</label>
@@ -37,10 +37,13 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import UiModal from './UiModal.vue'
 import { fmtSize } from '../utils/labels.js'
+import { MAX_UPLOAD_BYTES, OVERSIZE_HINT } from '../utils/uploadLimit.js'
 
 const props = defineProps({
   modelValue: Boolean,
-  maxMb: { type: Number, default: 50 },
+  // 上限按入口走（外网 512KB / 内网 50MB，见 utils/uploadLimit.js），不是后端口径
+  maxBytes: { type: Number, default: MAX_UPLOAD_BYTES },
+  oversizeHint: { type: String, default: OVERSIZE_HINT },
   // @upload 以函数 prop 承接：emit() 拿不到监听器返回的 Promise，无法等上传完成再关窗
   onUpload: Function,
 })
@@ -52,7 +55,7 @@ const busy = ref(false)
 const dragging = ref(false)
 const dropError = ref('')
 
-const oversize = computed(() => file.value && file.value.size > props.maxMb * 1024 * 1024)
+const oversize = computed(() => file.value && file.value.size > props.maxBytes)
 
 watch(
   () => props.modelValue,

@@ -396,7 +396,48 @@ nssm restart FrpcTunnel
 curl https://leshine.work/health
 ```
 
-穿透断的常见诱因：断电/重启后 frpc 未自启（必须挂 NSSM 自启）、frpc 首连失败退出（必须配 `loginFailExit = false`）。
+穿透断的常见诱因：断电/重启后 frpc 未自启（必须挂 NSSM 自启）、frpc 首连失败退出（必须配 `loginFailExit = false`）、**外网大文件上传把整条会话灌死（见 Q9）**。
+
+### Q9：外网上传文件 502/504，且上传瞬间全站 API 抖一下（2026-07-22 实测定位）
+
+**根因是链路物理上限，不是代码。** 主站云服务器在**腾讯云新加坡**（`lh-1259007308-lhins-qcp19s2v`，S5.MEDIUM4，`ap-singapore`），
+用户传的文件必须由新加坡再经 frp 推回济南办公室的后端，而**新加坡→中国方向**这一跳实测只有 15~120 KB/s：
+
+| 链路 | 实测吞吐 |
+|------|----------|
+| 新加坡云 → Cloudflare（国际方向） | 8.2 MB/s 上行 / 76 MB/s 下行 |
+| 中国 → 新加坡云（入站方向） | 276 KB/s |
+| **新加坡云 → 办公室（隧道推送）** | **5~120 KB/s，5MB 推 92 秒未完成** |
+| 新加坡云 → 国内客户端（HTTPS 静态） | 81 KB/s（scp 5MB 用了 6 分 40 秒）|
+
+云主机本身带宽富余，烂的只有回中国这一段。两个可观测后果：
+
+1. **~20 秒的硬墙**：推不完就被切。云端直推实测 256KB ✓ / 512KB ✓ / 1MB ✗；走完整公网路径 50KB ✓ / 100KB ✓ / 300KB ✗
+2. **一次大上传打死整条隧道**：frpc 默认 `transport.tcpMux = true`，控制连接与全部业务连接复用同一条 TCP。
+   大 body 灌进这条又慢又抖的跨境连接 → 心跳挤不出去 → frpc 判定会话已死 → 重连。
+   frps 日志签名是 `client exit success` + 约 8 秒后 `client login info`。**隧道一断，leshine.work 全站 API 和 n8n 一起 502 约 10 秒**
+
+已做的缓解（2026-07-22）：
+
+- 云 nginx `pm.leshine.conf` 的 `/api/` `client_max_body_size` 60m → **1m**，超限秒回 413 不进隧道（备份 `pm.leshine.conf.bak-20260722`）
+- 前端 `frontend-pm/src/utils/uploadLimit.js` 按入口分档：公网构建 **256KB**、内网构建（`--base=/pm/`）仍 50MB；
+  后端 `PM_MAX_UPLOAD_MB` **保持 50 不动**——它是全局的，压低会连带废掉健康的内网入口（20MB 实测 3.3 秒）
+- PM 前端 api client 对 413/502/504 给可执行文案（引导内网入口 / 外部链接）
+
+未做的根治（按优先级）：
+
+1. **frpc + frps 同时关 `transport.tcpMux`**（两端必须一致），让业务连接各走各的 TCP，消除"一次上传抖全站"的连带故障。改 frpc.toml 后 `nssm restart FrpcTunnel`
+2. **PM 文件走国内 COS 直传直下**：浏览器 ↔ COS（广州），后端只存 key，文件字节彻底离开跨境链路和 frp
+3. **主站迁回国内**（需 ICP 备案）：现状是国内用户访问 leshine.work 的每个字节都以 ~0.5Mbps 从新加坡回传，慢的不止上传
+
+排障命令：
+
+```bash
+# 看隧道是否被大上传打死（client exit + 秒级重登 = 中招）
+ssh root@119.28.107.92 "journalctl -u frps --since today | grep -E 'client login|client exit'"
+# 量一次云→办公室的推送吞吐（会短暂抖隧道，慎用；256KB 以内相对安全）
+ssh root@119.28.107.92 "head -c 262144 /dev/zero > /tmp/t.bin; curl -s -o /dev/null -w 'http=%{http_code} time=%{time_total}s up=%{speed_upload}B/s\n' --max-time 120 -H 'Content-Type: application/json' --data-binary @/tmp/t.bin http://127.0.0.1:8002/api/pm/entry; rm -f /tmp/t.bin"
+```
 
 ## 日志位置
 
@@ -613,7 +654,8 @@ grep "job completed" logs\service.log | tail -20
            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
            proxy_set_header X-Forwarded-Proto $scheme;
            proxy_read_timeout 120s;
-           client_max_body_size 60m;            # 略大于 PM_MAX_UPLOAD_MB=50
+           client_max_body_size 1m;             # 2026-07-22 由 60m 降下来，理由见 Q9——外网入口传不动文件，
+                                                # 超限在 nginx 秒回 413，绝不能让大 body 进隧道
        }
        location / {
            try_files $uri $uri/ /index.html;    # SPA 回退

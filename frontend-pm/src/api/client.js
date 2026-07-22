@@ -4,6 +4,14 @@
 import { identity } from '../stores/identity.js'
 import { toast } from '../stores/toast.js'
 import { router } from '../router/index.js'
+import { LAN_ENTRY_URL } from '../utils/uploadLimit.js'
+
+// 云 Nginx / frp 隧道直接返回的错误（非 JSON，没有 detail），逐个给可执行的下一步
+const GATEWAY_HINT = {
+  413: `文件超出外网入口上限——请在公司内网打开 ${LAN_ENTRY_URL} 上传，或改用「外部链接」类型`,
+  502: '服务网关暂时无响应（内网穿透可能瞬断），请稍等十几秒后重试',
+  504: '服务网关响应超时，若是上传大文件请改走内网入口或「外部链接」类型',
+}
 
 async function request(path, { method = 'GET', body, formData, silent } = {}) {
   const headers = {}
@@ -42,7 +50,9 @@ async function request(path, { method = 'GET', body, formData, silent } = {}) {
   }
 
   if (!resp.ok) {
-    const message = payload?.detail || payload?.message || `请求失败（${resp.status}）`
+    // 网关自己吐的错没有信封，报「请求失败（502）」等于什么都没说——按状态码给下一步动作
+    const message =
+      payload?.detail || payload?.message || GATEWAY_HINT[resp.status] || `请求失败（${resp.status}）`
     if (!silent) toast.error(typeof message === 'string' ? message : '请求失败')
     const err = new Error(message)
     err.status = resp.status

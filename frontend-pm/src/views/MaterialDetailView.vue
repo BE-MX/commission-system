@@ -52,7 +52,7 @@
       <!-- 上传区（线下交付禁传原文；外部链接只维护 URL） -->
       <section v-if="canUpload" class="upload-strip rise rise-1">
         <button class="btn btn-accent" type="button" @click="uploadOpen = true">↥ 上传新版本</button>
-        <span class="upload-hint">版本号自动 +1 · AI 自动对比上一版 · 单文件 ≤ 50MB</span>
+        <span class="upload-hint">{{ UPLOAD_STRIP_HINT }}</span>
       </section>
       <section v-else-if="material.delivery_type === 'offline'" class="offline-strip rise rise-1">
         <span class="offline-mark" aria-hidden="true">⇄</span>
@@ -180,6 +180,7 @@ import UploadDialog from '../components/UploadDialog.vue'
 import VersionComments from '../components/VersionComments.vue'
 import { useMaterialDetail } from '../composables/useMaterialDetail.js'
 import { DELIVERY_TYPE, fmtSize, fmtTime, IMPORTANCE, MATERIAL_STATUS, MATERIAL_STATUS_FLOW } from '../utils/labels.js'
+import { UPLOAD_STRIP_HINT } from '../utils/uploadLimit.js'
 
 const router = useRouter()
 const {
