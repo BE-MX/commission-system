@@ -114,6 +114,33 @@ def _delete_file(rel_path: Optional[str]) -> None:
         print(f"[asset] file delete failed: {rel_path} err={exc}", flush=True)
 
 
+def _compute_orientation(abs_path, file_type: str) -> Optional[str]:
+    """从文件宽高计算画幅（landscape/portrait/square）。失败不阻断上传。"""
+    try:
+        w = h = None
+        if file_type == "image":
+            from PIL import Image
+            with Image.open(abs_path) as im:
+                w, h = im.size
+        elif file_type == "video":
+            import cv2
+            cap = cv2.VideoCapture(str(abs_path))
+            w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            cap.release()
+        if not w or not h:
+            return None
+        if w > h * 1.05:
+            return "landscape"
+        if h > w * 1.05:
+            return "portrait"
+        return "square"
+    except Exception as exc:
+        logger.warning("orientation compute failed: %s err=%s", abs_path, exc)
+        print(f"[asset] orientation compute failed: {abs_path} err={exc}", flush=True)
+        return None
+
+
 # ── 创建素材 ────────────────────────────────────────────
 
 def create_asset(
@@ -149,6 +176,7 @@ def create_asset(
         storage_path=rel_path,
         file_size=file_size,
         thumbnail_path=thumbnail_path,
+        orientation=_compute_orientation(abs_path, file_type),
         uploader_id=uploader_id,
         status="latest",
         remark=remark,
@@ -450,6 +478,9 @@ def upload_new_version(
             str(ASSET_STORAGE_ROOT / rel_path), rel_path
         )
 
+    # 文件被替换，画幅重算
+    asset.orientation = _compute_orientation(str(ASSET_STORAGE_ROOT / rel_path), asset.file_type)
+
     # 计算版本号
     max_ver = (
         db.query(func.max(AssetVersion.version_number))
@@ -528,6 +559,38 @@ def delete_asset(db: Session, asset_id: int) -> bool:
 
 
 # ── 下载 ────────────────────────────────────────────────
+
+def build_download_filename(asset: Asset) -> str:
+    """按标签生成语义化下载名：产品_色号_内容_原名。
+
+    只改下载时的 Content-Disposition，物理文件与 file_name 字段不动
+    （方案第六节：不改名，下载动态命名）。标签取可见维度；无标签时退回原名。
+    """
+    parts: list[str] = []
+    try:
+        picks = {"product_type": None, "color_code": None, "content_type": None, "shoot_style": None}
+        for tv in (asset.tags or []):
+            dim = tv.dimension
+            if dim is None or not getattr(dim, "is_visible", 1):
+                continue
+            if dim.name in picks and picks[dim.name] is None:
+                # 产品维度跳过族级值（带"类"后缀的父级），优先具体产品
+                if dim.name == "product_type" and tv.parent_value_id is None and tv.value.endswith("类"):
+                    continue
+                picks[dim.name] = tv.value
+        parts = [picks["product_type"], picks["color_code"],
+                 picks["content_type"] or picks["shoot_style"]]
+        parts = [p for p in parts if p]
+    except Exception:
+        parts = []
+    if not parts:
+        return asset.file_name
+    base = "_".join(parts)
+    # 去掉文件系统危险字符，限长
+    for ch in '\\/:*?"<>|':
+        base = base.replace(ch, "-")
+    return f"{base}_{asset.file_name}"[:150]
+
 
 def get_asset_download_url(asset: Asset, expiry_seconds: int = SIGNED_URL_EXPIRY) -> str:
     """生成签名下载 URL。"""

@@ -808,9 +808,11 @@ def download_asset(
     if not abs_path.exists():
         raise HTTPException(status_code=404, detail="文件不存在")
 
+    from app.asset.asset_service import build_download_filename
+
     return FileResponse(
         str(abs_path),
-        filename=asset.file_name,
+        filename=build_download_filename(asset),
         media_type="application/octet-stream",
     )
 
@@ -828,10 +830,13 @@ def batch_download_assets(
     import io
 
     data, filename = service.batch_download(db, req.asset_ids)
+    # RFC 5987：中文 zip 名裸塞 header 会炸 latin-1 编码
+    from urllib.parse import quote
+    quoted = quote(filename)
     return StreamingResponse(
         io.BytesIO(data),
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quoted}"},
     )
 
 

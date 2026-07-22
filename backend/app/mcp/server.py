@@ -15,6 +15,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from app.mcp.tools import register_tools
+from app.mcp.asset_tools import register_asset_tools
 
 logger = logging.getLogger("commission.mcp.server")
 
@@ -32,6 +33,7 @@ mcp = FastMCP(
     transport_security=_transport_security,
 )
 register_tools(mcp)
+register_asset_tools(mcp)
 
 # 构建 ASGI 子应用（同时初始化 session_manager）
 _mcp_asgi_app = mcp.streamable_http_app()
@@ -40,7 +42,10 @@ _mcp_asgi_app = mcp.streamable_http_app()
 def mount_mcp(app: FastAPI) -> None:
     """把 MCP streamable-http 子应用挂到主 app 的 /mcp 路径。"""
     app.mount("/mcp", _mcp_asgi_app)
-    logger.info("MCP tracking server mounted at /mcp (tools: record_shipment/track_shipment/list_my_shipments)")
+    logger.info(
+        "MCP server mounted at /mcp (tools: record_shipment/track_shipment/list_my_shipments"
+        "/list_asset_taxonomy/search_assets)"
+    )
 
 
 def mcp_session_lifespan():
