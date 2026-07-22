@@ -542,6 +542,17 @@ grep "job completed" logs\service.log | tail -20
 - **技术支持**：内部技术支持群
 - **紧急联系**：<电话>
 
+## 云端展会实例（154.8.205.162，2026-07-22 搭建）
+
+北京轻量服务器（4C8G/12M，Ubuntu 24.04）跑方舟完整后端 + 前端静态，**专门服务展会场景**（备案批复前 IP 访问，批复后切域名+HTTPS）。与办公室生产实例共用北京 RDS（同区延迟 2.1ms）；`.env` 三处差异：`SCHEDULER_ENABLED=false`（定时任务只在办公室跑，expo 看门狗是读取时自愈不受影响）、`WHATSAPP_AUTO_SYNC_ENABLED=false`、`TFT_SERVICE_ENABLED=false`（内网服务不可达），另加 `PDF_CJK_FONT_PATH` 指向 Noto CJK。
+
+- 布局：代码 `/home/ubuntu/commission-system`（clone 自本机 bare 仓库 `/home/ubuntu/repo.git`）；前端 `/var/www/ark-dist`；日志 `logs/service.log`
+- 服务：`sudo systemctl status|restart ark-backend`（uvicorn 单 worker，127.0.0.1:8001，nginx 80 反代）
+- **部署更新（不走 GitHub）**：开发机 `git push cloud main`（remote `cloud` = ssh bare 仓库）→ `ssh ubuntu@154.8.205.162 "cd ~/commission-system && git pull && sudo systemctl restart ark-backend"`；前端变更时开发机 `npm run build` 后 `tar czf - dist | ssh ubuntu@154.8.205.162 "cd /tmp && tar xzf - && sudo rsync -a --delete dist/ /var/www/ark-dist/ && rm -rf dist"`
+- 素材：`uploads/expo/`（wigs/hair_colors/scenes/results）2026-07-22 从开发机同步；**切流量前需与办公室生产核对增量**
+- 安全：仅密钥登录（密码/root 已禁）；8001 不对外；系统防火墙无 ufw，靠腾讯云控制台防火墙（默认 22/80/443）
+- Linux 跨平台备忘：OpenCV 需 `libgl1 libglib2.0-0`；PDF 导出需 `fonts-noto-cjk`（缺了这些 pytest 挂 invoice/expo 图像用例）
+
 ## PM 项目资料协作站（pm.leshine.work）部署
 
 后端复用现有 frp 链路（本地 8002），**零新增进程/NSSM 服务**；前端独立静态站点。上线 checklist：
