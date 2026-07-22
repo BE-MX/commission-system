@@ -459,6 +459,24 @@ copy backend\.env D:\Backup\ark-env-2026-07-01.txt
 
 ## 性能监控
 
+### 云 Nginx expo 素材代理缓存（2026-07-22）
+
+素材（发型封面/发色卡/场景图/结果展示图）经 frp 隧道回源每请求 ~2s。云 Nginx 对
+`location /uploads/expo/` 开了代理缓存（`/etc/nginx/conf.d/leshine.conf`，缓存目录
+`/var/cache/nginx/expo_uploads`，TTL 30 天，`use_stale` 隧道断连时仍出已缓存素材）。
+实测同一素材 MISS 1.06s → HIT 0.015s。响应头 `X-Cache-Status` 可判命中。
+
+**缓存更新机制**：素材除场景示意图外全部 uuid 命名——换素材=新 URL，天然不脏。
+场景示意图（`uploads/expo/scenes/<key>.<ext>` 固定名覆盖式替换）由后端
+`scene_image_url()` 拼 `?v=<mtime>` 版本号破缓存（cache key 含 query string）。
+
+**注意**：`?v=` 版本号随 2026-07-22 后端代码生效——该版本部署前若替换过场景示意图，
+需手动清一次缓存：
+
+```bash
+ssh root@119.28.107.92 "rm -rf /var/cache/nginx/expo_uploads/* && systemctl reload nginx"
+```
+
 ### 数据库慢查询
 
 腾讯云控制台 → RDS → 性能优化 → 慢查询日志

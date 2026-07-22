@@ -203,13 +203,14 @@ def test_scene_image_url_missing_returns_none(tmp_path, monkeypatch):
 
 
 def test_scene_image_url_found_returns_public_path(tmp_path, monkeypatch):
-    """约定目录放了 <key>.jpg → 返回 /uploads 开头的公开 URL。"""
+    """约定目录放了 <key>.jpg → 返回 /uploads 开头的公开 URL，带 ?v=mtime 版本号。"""
     scene_dir = tmp_path / "scenes"
     scene_dir.mkdir()
     (scene_dir / "doctor.jpg").write_bytes(b"fake")
     monkeypatch.setattr(ai_pipeline, "SCENE_IMAGE_DIR", scene_dir)
     monkeypatch.setattr(ai_pipeline, "REPO_ROOT", tmp_path)
-    assert ai_pipeline.scene_image_url("doctor") == "/scenes/doctor.jpg"
+    url = ai_pipeline.scene_image_url("doctor")
+    assert re.fullmatch(r"/scenes/doctor\.jpg\?v=\d+", url)  # 固定名素材靠版本号破缓存
     assert ai_pipeline.scene_image_url("teacher") is None
 
 
@@ -227,11 +228,11 @@ def test_save_scene_image_writes_replaces_and_deletes(tmp_path, monkeypatch):
     monkeypatch.setattr(ai_pipeline, "REPO_ROOT", tmp_path)
 
     url = ai_pipeline.save_scene_image("doctor", _FakeUpload("x.PNG"))  # 扩展名大小写归一
-    assert url == "/scenes/doctor.png"
+    assert url.startswith("/scenes/doctor.png?v=")
     assert (scene_dir / "doctor.png").exists()
 
     url2 = ai_pipeline.save_scene_image("doctor", _FakeUpload("y.jpg"))
-    assert url2 == "/scenes/doctor.jpg"
+    assert url2.startswith("/scenes/doctor.jpg?v=")
     assert (scene_dir / "doctor.jpg").exists()
     assert not (scene_dir / "doctor.png").exists()  # 旧扩展名已清
 
