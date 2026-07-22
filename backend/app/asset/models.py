@@ -32,6 +32,8 @@ class TagDimension(Base):
     is_single_select = Column(SmallInteger, nullable=False, default=0, comment="0=多选,1=单选")
     is_system = Column(SmallInteger, nullable=False, default=0, comment="0=自定义,1=系统内置")
     is_required = Column(SmallInteger, nullable=False, default=0, comment="0=选填,1=必填")
+    is_visible = Column(SmallInteger, nullable=False, default=1, comment="0=隐藏(前端/folder_upload匹配均不参与),1=可见")
+    is_managed = Column(SmallInteger, nullable=False, default=0, comment="1=系统托管,值由派生脚本写入,禁人工编辑")
     sort_order = Column(Integer, nullable=False, default=0, comment="排序权重")
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
 
@@ -52,6 +54,10 @@ class TagValue(Base):
     id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
     dimension_id = Column(Integer, ForeignKey("ark_tag_dimensions.id"), nullable=False, comment="所属标签维度ID")
     value = Column(String(128), nullable=False, comment="标签值")
+    name_en = Column(String(128), nullable=True, comment="英文名(agent 检索用)")
+    aliases = Column(JSON, nullable=True, comment="别名数组(中英混合,agent 模糊匹配用)")
+    parent_value_id = Column(Integer, ForeignKey("ark_tag_values.id"), nullable=True,
+                             comment="父级标签值ID(内容子类→内容大类挂靠)")
     color_hex = Column(String(32), nullable=True, comment="颜色值,支持hex或rgb格式")
     image_path = Column(String(512), nullable=True, comment="标签图片路径")
     sort_order = Column(Integer, nullable=False, default=0, comment="排序权重")
@@ -93,6 +99,7 @@ class Asset(Base):
     storage_path = Column(String(512), nullable=False, comment="服务器存储路径")
     file_size = Column(BigInteger, nullable=False, default=0, comment="文件大小(字节)")
     thumbnail_path = Column(String(512), nullable=True, comment="缩略图路径")
+    orientation = Column(String(16), nullable=True, comment="画幅 landscape/portrait/square,自动计算")
     uploader_id = Column(Integer, ForeignKey("ark_users.id"), nullable=False, comment="上传人用户ID")
     current_version_id = Column(Integer, ForeignKey("ark_asset_versions.id"), nullable=True, comment="当前生效版本ID")
     status = Column(String(32), nullable=False, default="latest", comment="latest/history/offline")

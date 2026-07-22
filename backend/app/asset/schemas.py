@@ -44,6 +44,9 @@ class TagValueCreate(BaseModel):
     color_hex: Optional[str] = Field(None, max_length=32)
     image_path: Optional[str] = Field(None, max_length=512)
     sort_order: int = 0
+    name_en: Optional[str] = Field(None, max_length=128)
+    aliases: Optional[list[str]] = None
+    parent_value_id: Optional[int] = None
 
 
 class TagDimensionCreate(BaseModel):
@@ -59,6 +62,7 @@ class TagDimensionUpdate(BaseModel):
     is_single_select: Optional[int] = Field(None, ge=0, le=1)
     is_required: Optional[int] = Field(None, ge=0, le=1)
     sort_order: Optional[int] = None
+    is_visible: Optional[int] = Field(None, ge=0, le=1)
 
 
 # ── 素材 ────────────────────────────────────────────────

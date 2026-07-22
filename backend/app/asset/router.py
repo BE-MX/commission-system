@@ -22,6 +22,7 @@ from app.core.response import ok as _ok
 from app.asset import service
 from sqlalchemy import and_, desc, func
 from app.asset.analyze_service import analyze_asset_tags
+from app.asset.tag_service import ManagedDimensionError
 from app.asset.models import Asset, FavoriteFolder, FavoriteItem, DownloadLog, TagValue
 from app.auth.models import ArkUser  # noqa: F401 — registers ark_users for FK resolution
 from app.asset.folder_upload_service import (
@@ -99,6 +100,7 @@ def update_dimension(
         is_single_select=req.is_single_select,
         is_required=req.is_required,
         sort_order=req.sort_order,
+        is_visible=req.is_visible,
     )
     if not dim:
         raise HTTPException(status_code=404, detail="维度不存在")
@@ -157,10 +159,14 @@ def create_tag_value(
     dim = service.get_dimension(db, dim_id)
     if not dim:
         raise HTTPException(status_code=404, detail="维度不存在")
-    tv = service.create_dimension_value(
-        db, dimension_id=dim_id, value=req.value,
-        color_hex=req.color_hex, image_path=req.image_path, sort_order=req.sort_order,
-    )
+    try:
+        tv = service.create_dimension_value(
+            db, dimension_id=dim_id, value=req.value,
+            color_hex=req.color_hex, image_path=req.image_path, sort_order=req.sort_order,
+            name_en=req.name_en, aliases=req.aliases, parent_value_id=req.parent_value_id,
+        )
+    except ManagedDimensionError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return _ok({"id": tv.id, "value": tv.value})
 
 
@@ -172,10 +178,14 @@ def update_tag_value(
     _user: dict = Depends(require_permission("asset:admin")),
 ):
     """更新标签值"""
-    tv = service.update_dimension_value(
-        db, value_id, value=req.value,
-        color_hex=req.color_hex, image_path=req.image_path, sort_order=req.sort_order,
-    )
+    try:
+        tv = service.update_dimension_value(
+            db, value_id, value=req.value,
+            color_hex=req.color_hex, image_path=req.image_path, sort_order=req.sort_order,
+            name_en=req.name_en, aliases=req.aliases, parent_value_id=req.parent_value_id,
+        )
+    except ManagedDimensionError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     if not tv:
         raise HTTPException(status_code=404, detail="标签值不存在")
     return _ok({"id": tv.id})
@@ -188,7 +198,10 @@ def delete_tag_value(
     _user: dict = Depends(require_permission("asset:admin")),
 ):
     """删除标签值"""
-    ok = service.delete_dimension_value(db, value_id)
+    try:
+        ok = service.delete_dimension_value(db, value_id)
+    except ManagedDimensionError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     if not ok:
         raise HTTPException(status_code=404, detail="标签值不存在")
     return _ok(None)

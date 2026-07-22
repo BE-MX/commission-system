@@ -6,57 +6,78 @@ import time
 from sqlalchemy.orm import Session
 
 from app.asset.models import TagDimension, TagValue
+from app.asset.taxonomy_def import TAXONOMY_V2, iter_values
 
-# ── 内置维度定义 ───────────────────────────────────────
+# ── 内置维度种子 ───────────────────────────────────────
 
-DEFAULT_DIMENSIONS = [
-    {"name": "asset_type",     "label": "素材类型",  "is_single_select": 1, "is_system": 1, "is_required": 1, "sort_order": 1,
-     "values": ["产品图", "场景图", "证书", "工艺流程", "活动图", "教程", "营销物料", "价格表"]},
-    {"name": "product_line",   "label": "产品线",    "is_single_select": 1, "is_system": 1, "is_required": 1, "sort_order": 2,
-     "values": ["天才发帘", "贴发", "接发", "打孔发帘", "其他"]},
-    {"name": "product_model",  "label": "产品型号",  "is_single_select": 0, "is_system": 1, "is_required": 0, "sort_order": 3,
-     "values": ["K-Tip", "V-Tip", "U-Tip", "I-Tip", "Flat Tip", "Tape-in", "Clip-in"]},
-    {"name": "color",          "label": "颜色",      "is_single_select": 0, "is_system": 1, "is_required": 0, "sort_order": 4,
-     "values": ["#1", "#1B", "#2", "#4", "#613", "Balayage", "Ombre", "Ash Blonde", "Copper"]},
-    {"name": "length",         "label": "长度",      "is_single_select": 0, "is_system": 1, "is_required": 0, "sort_order": 5,
-     "values": ["12\"", "14\"", "16\"", "18\"", "20\"", "22\"", "24\""]},
-    {"name": "weight",         "label": "克重",      "is_single_select": 0, "is_system": 1, "is_required": 0, "sort_order": 6,
-     "values": ["50g", "100g", "150g", "200g", "220g"]},
-    {"name": "craft",          "label": "工艺",      "is_single_select": 0, "is_system": 1, "is_required": 0, "sort_order": 7,
-     "values": ["保鳞", "低温慢漂", "Remy", "Virgin"]},
-    {"name": "scene",          "label": "用途场景",  "is_single_select": 0, "is_system": 1, "is_required": 0, "sort_order": 8,
-     "values": ["阿里巴巴主图", "A+页面", "详情页", "社媒推广", "展会", "客户报价"]},
-    {"name": "market",         "label": "市场地区",  "is_single_select": 0, "is_system": 1, "is_required": 0, "sort_order": 9,
-     "values": ["美国", "英国", "德国", "澳大利亚", "通用"]},
-]
+
+def create_taxonomy_dimension(db: Session, dim_def: dict, is_visible: int = 1,
+                              force_optional: bool = False) -> TagDimension:
+    """按 taxonomy_def 定义创建单个维度及其值（含 parent 挂靠/name_en/aliases）。
+
+    调用方负责 commit。存量库并存期用 is_visible=0 + force_optional=True
+    （必填在前端切换日才生效，避免上传表单被新维度卡死）。
+    """
+    dim = TagDimension(
+        name=dim_def["name"],
+        label=dim_def["label"],
+        is_single_select=dim_def["is_single_select"],
+        is_system=1,
+        is_required=0 if force_optional else dim_def["is_required"],
+        is_visible=is_visible,
+        is_managed=dim_def.get("is_managed", 0),
+        sort_order=dim_def["sort_order"],
+    )
+    db.add(dim)
+    db.flush()
+
+    for i, v in iter_values(dim_def):
+        tv = TagValue(
+            dimension_id=dim.id,
+            value=v["value"],
+            name_en=v["name_en"],
+            aliases=v["aliases"],
+            sort_order=i,
+            is_active=1,
+        )
+        db.add(tv)
+    db.flush()
+    # content_type 值的 parent_value_id 指向 content_category 的值，
+    # 需两个维度都建完后由 _link_content_type_parents 统一回填
+    return dim
 
 
 def seed_default_dimensions(db: Session) -> None:
-    """初始化内置标签维度。仅在表为空时创建，后续由用户管理。"""
+    """初始化内置标签维度（taxonomy v2）。仅在表为空时创建，后续由用户管理。
+
+    生产存量库不会走到这里（表非空），存量库的新维度由
+    scripts/tag_taxonomy/setup_dimensions.py 以 is_visible=0 创建。
+    """
     if db.query(TagDimension).first() is not None:
         return
 
-    for dim_data in DEFAULT_DIMENSIONS:
-        dim = TagDimension(
-            name=dim_data["name"],
-            label=dim_data["label"],
-            is_single_select=dim_data["is_single_select"],
-            is_system=dim_data["is_system"],
-            is_required=dim_data["is_required"],
-            sort_order=dim_data["sort_order"],
-        )
-        db.add(dim)
-        db.flush()
-
-        for i, val in enumerate(dim_data["values"]):
-            tv = TagValue(
-                dimension_id=dim.id,
-                value=val,
-                sort_order=i,
-                is_active=1,
-            )
-            db.add(tv)
+    for dim_def in TAXONOMY_V2:
+        create_taxonomy_dimension(db, dim_def, is_visible=1)
+    _link_content_type_parents(db)
     db.commit()
+
+
+def _link_content_type_parents(db: Session) -> None:
+    """回填 content_type 值的 parent_value_id → content_category 对应值。"""
+    cat_dim = db.query(TagDimension).filter(TagDimension.name == "content_category").first()
+    type_dim = db.query(TagDimension).filter(TagDimension.name == "content_type").first()
+    if not cat_dim or not type_dim:
+        return
+    cat_ids = {v.value: v.id for v in db.query(TagValue).filter(TagValue.dimension_id == cat_dim.id)}
+    type_def = next((d for d in TAXONOMY_V2 if d["name"] == "content_type"), None)
+    if not type_def:
+        return
+    parent_map = {v["value"]: v["parent"] for _, v in iter_values(type_def) if v["parent"]}
+    for tv in db.query(TagValue).filter(TagValue.dimension_id == type_dim.id):
+        parent_name = parent_map.get(tv.value)
+        if parent_name and cat_ids.get(parent_name):
+            tv.parent_value_id = cat_ids[parent_name]
+    db.flush()
 
 
 # ── 维度查询 ────────────────────────────────────────────
@@ -77,11 +98,16 @@ def _build_dim_payload(dims: list[TagDimension]) -> list[dict]:
         "is_single_select": d.is_single_select,
         "is_system": d.is_system,
         "is_required": d.is_required,
+        "is_visible": d.is_visible,
+        "is_managed": d.is_managed,
         "sort_order": d.sort_order,
         "values": [{
             "id": v.id,
             "dimension_id": v.dimension_id,
             "value": v.value,
+            "name_en": v.name_en,
+            "aliases": v.aliases,
+            "parent_value_id": v.parent_value_id,
             "color_hex": v.color_hex,
             "image_path": v.image_path,
             "sort_order": v.sort_order,
@@ -136,6 +162,16 @@ def get_dimension(db: Session, dim_id: int) -> TagDimension | None:
 
 # ── 标签值 CRUD ─────────────────────────────────────────
 
+class ManagedDimensionError(Exception):
+    """托管维度（is_managed=1，如色系）的值由派生脚本独占写入，禁止人工增删改。"""
+
+
+def _guard_managed(db: Session, dimension_id: int) -> None:
+    dim = db.query(TagDimension).filter(TagDimension.id == dimension_id).first()
+    if dim and dim.is_managed:
+        raise ManagedDimensionError(f"维度[{dim.label}]为系统托管，值由系统自动维护")
+
+
 def create_dimension_value(
     db: Session,
     dimension_id: int,
@@ -143,10 +179,17 @@ def create_dimension_value(
     color_hex: str | None = None,
     image_path: str | None = None,
     sort_order: int = 0,
+    name_en: str | None = None,
+    aliases: list[str] | None = None,
+    parent_value_id: int | None = None,
 ) -> TagValue:
+    _guard_managed(db, dimension_id)
     tv = TagValue(
         dimension_id=dimension_id,
         value=value,
+        name_en=name_en,
+        aliases=aliases,
+        parent_value_id=parent_value_id,
         color_hex=color_hex,
         image_path=image_path,
         sort_order=sort_order,
@@ -167,10 +210,14 @@ def update_dimension_value(
     image_path: str | None = None,
     sort_order: int | None = None,
     is_active: int | None = None,
+    name_en: str | None = None,
+    aliases: list[str] | None = None,
+    parent_value_id: int | None = None,
 ) -> TagValue | None:
     tv = db.query(TagValue).filter(TagValue.id == value_id).first()
     if not tv:
         return None
+    _guard_managed(db, tv.dimension_id)
     if value is not None:
         tv.value = value
     if color_hex is not None:
@@ -181,6 +228,12 @@ def update_dimension_value(
         tv.sort_order = sort_order
     if is_active is not None:
         tv.is_active = is_active
+    if name_en is not None:
+        tv.name_en = name_en
+    if aliases is not None:
+        tv.aliases = aliases
+    if parent_value_id is not None:
+        tv.parent_value_id = parent_value_id
     db.commit()
     db.refresh(tv)
     invalidate_dim_cache()
@@ -188,10 +241,14 @@ def update_dimension_value(
 
 
 def delete_dimension_value(db: Session, value_id: int) -> bool:
-    """删除标签值。返回是否成功。"""
+    """删除标签值。返回是否成功。托管维度与仍有子级挂靠的值拒删。"""
     tv = db.query(TagValue).filter(TagValue.id == value_id).first()
     if not tv:
         return False
+    _guard_managed(db, tv.dimension_id)
+    children = db.query(TagValue).filter(TagValue.parent_value_id == value_id).count()
+    if children:
+        raise ManagedDimensionError(f"标签值[{tv.value}]仍有 {children} 个子级挂靠，先解除挂靠再删除")
     db.delete(tv)
     db.commit()
     invalidate_dim_cache()
@@ -231,6 +288,7 @@ def update_dimension(
     is_single_select: int | None = None,
     is_required: int | None = None,
     sort_order: int | None = None,
+    is_visible: int | None = None,
 ) -> TagDimension | None:
     dim = db.query(TagDimension).filter(TagDimension.id == dim_id).first()
     if not dim:
@@ -243,6 +301,8 @@ def update_dimension(
         dim.is_required = is_required
     if sort_order is not None:
         dim.sort_order = sort_order
+    if is_visible is not None:
+        dim.is_visible = is_visible
     db.commit()
     db.refresh(dim)
     invalidate_dim_cache()
