@@ -518,9 +518,16 @@ frontend/src/
 - **性别硬过滤全灭必须兜底（2026-07-07 线上 session=5 实case）**：男顾客 × 全女款库 → gender 过滤剔掉全部候选 → kiosk「为您甄选 0 款」死屏。修复：`match_wigs` 过滤后候选为空且库非空时降级为不过滤照常排名（logger+print 双写告警）；有任一款存活则不触发兜底。打分制下其余维度只影响排序不会清零，0 款仅两种可能：性别全灭（已兜底）或发型库全部停用
 - `POST /generate` 用 `status=generating` 做幂等挡板；`_refresh_session_status` 用条件 UPDATE（`WHERE status='generating'`）做多线程收尾互斥，避免重复触发话术生成
 
-**夏季衣橱子句 + kiosk 相机切换（2026-07-18 开发，2026-07-19 合入 main，待部署与展会前实测）**
-- `ai_pipeline._SUMMER_WARDROBE_CLAUSE`：换装路径（tryon 场景置换 + scene 场景大片）统一注入夏季着装子句——轻薄短袖/无袖，单品限定裙装/T恤/POLO/短袖旗袍，制服场景职业属性优先只换夏季版；**原景保持路径锁定原服装不注入**。不写具体品牌名（图像模型见品牌名易生成 logo/花押字，侵权+穿帮），用风格描述 + 显式禁 logo
-- kiosk 拍照页（CaptureScreen）支持前/后置摄像头切换；云 Nginx body-size 相关注记已进 runbook
+**夏季衣橱子句 + kiosk 相机切换（2026-07-18 开发，2026-07-19 合入 main）**
+- `ai_pipeline._SUMMER_WARDROBE_CLAUSE`：换装路径（tryon 场景置换 + scene 场景大片）统一注入夏季着装子句，**原景保持路径锁定原服装不注入**。不写具体品牌名（图像模型见品牌名易生成 logo/花押字，侵权+穿帮），用风格描述 + 显式禁 logo
+- kiosk 拍照页（CaptureScreen）支持前/后置摄像头切换 + 拍照/相册端上压缩（1080px JPEG，2026-07-22 确认已在生产）；云 Nginx body-size 相关注记已进 runbook
+
+**穿搭 look 池取代裙装单一枚举（2026-07-21 合入 main 并部署）**
+- 原「裙装/T恤/POLO/短袖旗袍」四类枚举 + 配色×花纹变奏收敛为裙装单一输出，依亮哥两组参考图重写：`_OUTFIT_LOOKS` 16 套完整搭配（法式极简通勤，衬衫/针织/半裙/阔腿裤/牛仔裤，中性色盘）每次合成随机抽一套注入；非锁定场景 prompt 的写死单品词全部泛化为 "lightweight summer outfit"
+- `uniform: True` 语义从「制服」外扩为「场景规定装」：weddinghost 旗袍 / squaredance 舞蹈装 / scene 模式 banquet 旗袍加锁只注首饰；正式场景下休闲单品（牛仔/球鞋）由 prompt 指示转译为同色系正装款；参考图牛仔迷你裙调整为及膝（客群中老年女性）；防回填回归测试锚定非锁定景不得再写死单品词
+
+**素材云端代理缓存 + 场景图版本号（2026-07-22）**
+- 云 Nginx `/uploads/expo/` 开 proxy_cache（30d TTL + use_stale 隧道断连出旧图），实测 MISS 1.06s → HIT 0.015s；素材除场景示意图外全 uuid 命名换图即换 URL 天然不脏，场景图固定名由 `scene_image_url()` 拼 `?v=<mtime>` 破缓存。清缓存命令与注意事项见 runbook「性能监控」节
 
 ## 订单发票 Excel/WPS 粘贴导入
 

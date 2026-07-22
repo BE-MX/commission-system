@@ -11,18 +11,25 @@
 ### 部署架构
 
 ```
-外网用户 → 腾讯云 Nginx (119.28.107.92:443)
+外网用户 → 腾讯云 Nginx (119.28.107.92:443, 新加坡)
   ├── 静态文件 (/assets/, /index.html) → Nginx 直接返回 (/var/www/ark/dist/)
   ├── API (/api/, /uploads/, /s/, /health) → frp 内网穿透（云端 frps :7000 / 本地 frpc NSSM 服务）→ 本地 Windows Server (:8002)
+  ├── /uploads/expo/ → 代理缓存直出（2026-07-22 起，30d TTL + use_stale，素材二次访问不走隧道）
+  ├── hair.leshine.work → 静态直出 /var/www/hair-styles（16 款发型展示站，展会二维码落地页）
   └── 社媒客户 MCP (/mcp/social-customer/) → 云端 systemd Python (:8100 loopback) → RDS lsordertest（只读账号）
+
+展会流量 → 北京云展会实例 (154.8.205.162, 腾讯云北京轻量 4C8G, Ubuntu 24.04)
+  └── nginx :80 → 前端静态 /var/www/ark-dist + uvicorn :8001（方舟完整后端，
+      SCHEDULER_ENABLED=false 防定时任务双跑；与办公室实例共用北京 RDS，同区 ~2ms）
 
 局域网用户 → 本地 IP:8002 直连
 ```
 
-- **云端 Nginx**：静态资源直出 + gzip + SSL（证书 `/etc/nginx/ssl/`）
+- **云端 Nginx**（新加坡）：静态资源直出 + gzip + SSL（证书 `/etc/nginx/ssl/`；hair 子域 certbot 自动续期）
 - **本地后端**：NSSM 托管 `CommissionSystem` 服务（uvicorn）
 - **WhatsApp Connector**：独立 Node.js 服务，NSSM 托管 `WhatsAppConnector`
 - **社媒客户 MCP**：独立 Python/FastMCP 云端服务，systemd 托管 `social-customer-mcp`；不经过 frp，Bearer 鉴权，端口仅监听 loopback
+- **北京云展会实例**（2026-07-22 搭建，展会专用）：systemd 托管 `ark-backend`；部署走开发机 `git push cloud`（服务器本地 bare 仓库，不经 GitHub）；leshine.cloud 域名当天遭未备案拦截弃用，现用 IP 入口，终局等 leshine.work 备案；运维细节见 runbook「云端展会实例」节；展会后计划以此机为基础全量迁移上云
 
 ## 技术栈
 

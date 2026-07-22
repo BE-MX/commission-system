@@ -9,7 +9,7 @@
 - 后端：Python 3.12 + FastAPI + SQLAlchemy 2.0 + Alembic + APScheduler
 - 前端：Vue 3 + Element Plus + Vite 5；微信小程序（生产报工）
 - 数据库：腾讯云 RDS MySQL 双库——`commission_db`（读写）+ `lsordertest`（业务库只读跨查）；**开发/生产共用同一套库，迁移创建并验证后在开发机直接 `alembic upgrade head`，不等生产部署**（2026-07-12 亮哥指令；迁移必须兼容"老代码 + 新 schema"过渡期）
-- 部署：Windows Server + NSSM；生产 = 腾讯云 Nginx 静态直出 + frp 内网穿透反代本地 8002（云端 frps，本地 frpc 挂 NSSM——不是 SSH 隧道，2026-07-10 核实）
+- 部署：Windows Server + NSSM；生产 = 腾讯云 Nginx 静态直出 + frp 内网穿透反代本地 8002（云端 frps，本地 frpc 挂 NSSM——不是 SSH 隧道，2026-07-10 核实）；2026-07-22 起另有**北京云展会实例**（154.8.205.162，方舟全量、SCHEDULER 关闭防定时任务双跑、开发机 `git push cloud` 部署，运维见 runbook「云端展会实例」节）
 - 环境变量：`backend/.env`（不进 git）；配置一律走 `app/core/config.py` 的 Settings，**禁止直读 os.environ**
 
 ## 命令与端口
