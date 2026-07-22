@@ -544,7 +544,7 @@ grep "job completed" logs\service.log | tail -20
 
 ## 云端展会实例（https://leshine.cloud → 154.8.205.162，2026-07-22 搭建）
 
-北京轻量服务器（4C8G/12M，Ubuntu 24.04）跑方舟完整后端 + 前端静态，**专门服务展会场景**。三入口：`https://leshine.cloud` 主站（相机可用）、http 域名 301 跳 https、`http://154.8.205.162` IP 兜底。**证书 TrustAsia 90 天期，2026-10-19 到期需续**（/etc/nginx/ssl/）。⚠️ leshine.cloud 未备案（.cloud 后缀疑似不可备案，待腾讯云备案控制台核实）——机房对未备案域名周期扫描拦截，**随时可能失效**，被拦即退 IP 入口，正式方案等 leshine.work 备案。与办公室生产实例共用北京 RDS（同区延迟 2.1ms）；`.env` 三处差异：`SCHEDULER_ENABLED=false`（定时任务只在办公室跑，expo 看门狗是读取时自愈不受影响）、`WHATSAPP_AUTO_SYNC_ENABLED=false`、`TFT_SERVICE_ENABLED=false`（内网服务不可达），另加 `PDF_CJK_FONT_PATH` 指向 Noto CJK。
+北京轻量服务器（4C8G/12M，Ubuntu 24.04）跑方舟完整后端 + 前端静态，**专门服务展会场景**。三入口：`https://leshine.cloud` 主站（相机可用）、http 域名 301 跳 https、`http://154.8.205.162` IP 兜底。**证书 TrustAsia 90 天期，2026-10-19 到期需续**（/etc/nginx/ssl/，主域与 hair 子域两张同批到期）。同机挂 **hair.leshine.cloud**：16 款明星发型静态展示站（/var/www/hair-styles，nginx sites-available/hair-styles.conf），展会二维码指向 `https://hair.leshine.cloud/#/p/<产品编号>`，16 张码图在亮哥 Downloads\莱莎16款明星发型静态网页\qrcodes\。⚠️ leshine.cloud 未备案（.cloud 后缀疑似不可备案，待腾讯云备案控制台核实）——机房对未备案域名周期扫描拦截，**随时可能失效**，被拦即退 IP 入口，正式方案等 leshine.work 备案。与办公室生产实例共用北京 RDS（同区延迟 2.1ms）；`.env` 三处差异：`SCHEDULER_ENABLED=false`（定时任务只在办公室跑，expo 看门狗是读取时自愈不受影响）、`WHATSAPP_AUTO_SYNC_ENABLED=false`、`TFT_SERVICE_ENABLED=false`（内网服务不可达），另加 `PDF_CJK_FONT_PATH` 指向 Noto CJK。
 
 - 布局：代码 `/home/ubuntu/commission-system`（clone 自本机 bare 仓库 `/home/ubuntu/repo.git`）；前端 `/var/www/ark-dist`；日志 `logs/service.log`
 - 服务：`sudo systemctl status|restart ark-backend`（uvicorn 单 worker，127.0.0.1:8001，nginx 80 反代）
