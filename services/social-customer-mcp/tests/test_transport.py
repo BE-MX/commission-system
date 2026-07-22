@@ -56,7 +56,7 @@ async def test_transport_rejects_missing_and_invalid_token():
 
 
 @pytest.mark.asyncio
-async def test_mcp_transport_contract_and_nonblocking_queries(monkeypatch):
+async def test_mcp_transport_contract_and_nonblocking_queries(monkeypatch, caplog):
     app_module = import_module("social_customer_mcp.app")
     monkeypatch.setattr(app_module.query_service, "search", lambda _params: _result())
     transport = httpx.ASGITransport(app=app)
@@ -94,6 +94,26 @@ async def test_mcp_transport_contract_and_nonblocking_queries(monkeypatch):
                     "params": {
                         "name": "social_customer_search",
                         "arguments": {"params": {"email": "sales@example.com"}},
+                    },
+                },
+            )
+
+            secret_lookup = "victim@example.com"
+
+            def failed_search(_params):
+                raise RuntimeError(secret_lookup)
+
+            monkeypatch.setattr(app_module.query_service, "search", failed_search)
+            failed = await client.post(
+                "/",
+                headers=_headers(),
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 31,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "social_customer_search",
+                        "arguments": {"params": {"email": secret_lookup}},
                     },
                 },
             )
@@ -150,6 +170,8 @@ async def test_mcp_transport_contract_and_nonblocking_queries(monkeypatch):
     result = called.json()["result"]
     assert result["isError"] is False
     assert result["structuredContent"]["items"][0]["owner_user_name"] == "未进入私海"
+    assert failed.json()["result"]["isError"] is True
+    assert secret_lookup not in caplog.text
     assert health.status_code == 200
     assert concurrent_call.status_code == 200
     assert bad_host.status_code == 421

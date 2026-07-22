@@ -35,7 +35,7 @@ def _sample_lookups():
     engine = create_db_engine()
     try:
         with engine.connect() as conn:
-            samples = {
+            indexed_samples = {
                 "email": conn.execute(
                     text(
                         "SELECT email FROM customer_info "
@@ -45,8 +45,7 @@ def _sample_lookups():
                 "social_account": conn.execute(
                     text(
                         "SELECT value FROM customer_contact_socials "
-                        "WHERE value IS NOT NULL AND value <> '' "
-                        "GROUP BY customer_id, platform, value HAVING COUNT(*) > 1 LIMIT 1"
+                        "WHERE value IS NOT NULL AND value <> '' LIMIT 1"
                     )
                 ).scalar_one(),
                 "contact_phone": conn.execute(
@@ -56,7 +55,7 @@ def _sample_lookups():
                     )
                 ).scalar_one(),
             }
-            for matched_by, lookup in samples.items():
+            for matched_by, lookup in indexed_samples.items():
                 plan_rows = conn.execute(
                     text(f"EXPLAIN WITH {_MATCHED_CTES[matched_by]} SELECT * FROM matched"),
                     {"lookup": lookup},
@@ -68,6 +67,29 @@ def _sample_lookups():
                     row["type"] == "ALL" or not row["key"] for row in base_table_rows
                 ):
                     raise RuntimeError(f"{matched_by} exact-match plan is not fully indexed")
+            samples = {
+                "customer_email": ("email", indexed_samples["email"]),
+                "contact_email": (
+                    "email",
+                    conn.execute(
+                        text(
+                            "SELECT email FROM customer_contacts "
+                            "WHERE email IS NOT NULL AND email <> '' LIMIT 1"
+                        )
+                    ).scalar_one(),
+                ),
+                "social_account": ("social_account", indexed_samples["social_account"]),
+                "contact_phone": ("contact_phone", indexed_samples["contact_phone"]),
+            }
+            duplicate_social = conn.execute(
+                text(
+                    "SELECT value FROM customer_contact_socials "
+                    "WHERE value IS NOT NULL AND value <> '' "
+                    "GROUP BY customer_id, platform, value HAVING COUNT(*) > 1 LIMIT 1"
+                )
+            ).scalar_one_or_none()
+            if duplicate_social is not None:
+                samples["duplicate_social_account"] = ("social_account", duplicate_social)
             return samples
     finally:
         engine.dispose()
@@ -115,13 +137,19 @@ async def main():
     summary = {}
 
     async with httpx.AsyncClient(headers=headers, timeout=30) as client:
+        invalid_token = await client.post(
+            endpoint,
+            headers={"Authorization": "Bearer invalid"},
+        )
+        if invalid_token.status_code != 401:
+            raise RuntimeError("invalid-token request was not rejected with HTTP 401")
         async with streamable_http_client(endpoint, http_client=client) as streams:
             async with ClientSession(streams[0], streams[1]) as session:
                 await session.initialize()
                 tools = await session.list_tools()
                 if [tool.name for tool in tools.tools] != ["social_customer_search"]:
                     raise RuntimeError("unexpected MCP tool list")
-                for matched_by, lookup in samples.items():
+                for label, (matched_by, lookup) in samples.items():
                     first = await _collect(session, matched_by, lookup)
                     second = await _collect(session, matched_by, lookup)
                     serialized_first = [json.dumps(item, ensure_ascii=False, sort_keys=True) for item in first]
@@ -130,7 +158,7 @@ async def main():
                         raise RuntimeError(f"{matched_by} pagination order is unstable")
                     if len(serialized_first) != len(set(serialized_first)):
                         raise RuntimeError(f"{matched_by} returned duplicate public rows")
-                    summary[matched_by] = {"ok": True, "count": len(first)}
+                    summary[label] = {"ok": True, "count": len(first)}
 
     print(json.dumps({"status": "ok", "checks": summary}, ensure_ascii=False))
 

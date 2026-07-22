@@ -72,8 +72,8 @@ async def social_customer_search(
     except SQLAlchemyError:
         logger.exception("social customer database query failed")
         raise ToolError("客户查询暂时不可用，请稍后重试；持续失败请联系服务管理员") from None
-    except Exception:
-        logger.exception("unexpected social customer query failure")
+    except Exception as exc:
+        logger.error("unexpected social customer query failure: %s", type(exc).__name__)
         raise ToolError("客户查询失败，请稍后重试；持续失败请联系服务管理员") from None
 
 
