@@ -22,6 +22,7 @@
 | [handoff.md](handoff.md) | 项目状态、已完成功能、待办清单、技术债务 | 项目交接、管理层 |
 | [accio-work-integration-spec.md](accio-work-integration-spec.md) | ACCIO WORK → 方舟 客户机会台集成规范 | ACCIO WORK 开发团队 |
 | [mcp-tracking-integration.md](mcp-tracking-integration.md) | MCP 网关物流工具接入说明（入口无关，个人 token） | AI 客户端接入者 |
+| [social-customer-mcp.md](social-customer-mcp.md) | 社媒客户查询 MCP：调用、部署、鉴权与运维完整说明 | AI 客户端接入者、运维、DBA |
 | [requirements/](requirements/) | 需求文档归档 | 产品经理、历史追溯 |
 
 ## 外部集成
