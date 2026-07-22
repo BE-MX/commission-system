@@ -217,19 +217,50 @@ systemctl reload nginx
 - 云端：`frps 0.61.2`（`/opt/frp/frps.toml`，systemd 服务 `frps`，bindPort 7000，Dashboard :7500，token/密码见服务器上的 toml 文件——**不写进文档**）
 - 本地 Windows Server：`frpc` 客户端，注册两个代理：`ark-backend`（远程 8002 → 本地方舟后端）、`n8n`（远程 5678）
 
-frpc 必须注册成 NSSM 服务开机自启（2026-07-09 断电事故：frpc 是手动启动的裸进程，重启后无人拉起，全站 502 一晚）：
+frpc 必须注册成服务开机自启（2026-07-09 断电事故：frpc 是手动启动的裸进程，重启后无人拉起，全站 502 一晚）。
 
-```bat
-nssm install FrpcTunnel "<frpc.exe 路径>"
-nssm set FrpcTunnel AppParameters "-c <frpc.toml 路径>"
-nssm set FrpcTunnel AppDirectory "<frp 目录>"
-nssm set FrpcTunnel Start SERVICE_AUTO_START
-nssm set FrpcTunnel AppExit Default Restart
-nssm set FrpcTunnel AppRestartDelay 5000
-nssm start FrpcTunnel
+**生产实况（2026-07-22 核实）：服务名是 `frpc`，不是本文档此前写的 `FrpcTunnel`**，由 `C:\frp\frpc-service.exe` 包装，配置在 `C:\frp\frpc.toml`。
+按错名字操作会得到"找不到服务"，白绕一圈。查真名不要靠记忆，按二进制路径反查：
+
+```powershell
+Get-CimInstance Win32_Service | Where-Object { $_.PathName -like "*frp*" } | Select-Object Name,State,PathName
+Restart-Service frpc          # NSSM/包装器注册的就是普通 Windows 服务，不需要 nssm 在 PATH
 ```
 
-⚠️ frpc.toml 必须有 `loginFailExit = false`：断电重启时网络比服务起得慢，没这行 frpc 首连失败即退出，隧道不会自愈。
+首次注册（若服务不存在）：
+
+```bat
+nssm install frpc "<frpc.exe 路径>"
+nssm set frpc AppParameters "-c <frpc.toml 路径>"
+nssm set frpc AppDirectory "<frp 目录>"
+nssm set frpc Start SERVICE_AUTO_START
+nssm set frpc AppExit Default Restart
+nssm set frpc AppRestartDelay 5000
+nssm start frpc
+```
+
+**frpc.toml 三项必需配置**（2026-07-22 核实前两项此前均缺失）：
+
+```toml
+loginFailExit = false      # 断电重启时网络比服务起得慢，没这行 frpc 首连失败即退出，隧道不自愈
+transport.tcpMux = false   # 关闭多路复用，见下方说明；必须与 frps.toml 同值，配不齐客户端登录直接失败
+transport.poolCount = 5    # 关 mux 后每条业务连接都要新建工作连接，预热 5 条抵消跨境握手延迟
+                           # （5 是 frps 端 maxPoolCount 默认上限，再高需同时改服务端）
+```
+
+**为什么关 tcpMux（2026-07-22）**：开启时控制连接与全部业务连接复用同一条 TCP，大 body 灌满这条又慢又抖的跨境链路
+→ yamux 心跳写超时 → frpc 判会话已死重连 → **全站 API 与 n8n 一起 502 约 10 秒**。实测对照：关闭前 1MB 推送必失败且必断隧道，
+关闭后 1MB/2MB 均正常返回（59s/166s，慢但成功），全程 `client exit` 为 0。详见 Q9。
+
+改配置的正确姿势——两端都能用二进制自验语法，别直接重启赌：
+
+```bash
+/opt/frp/frps verify -c /opt/frp/frps.toml     # 云端
+.\frpc.exe verify -c .\frpc.toml               # Windows（PowerShell 必须带 .\）
+```
+
+两端 `tcpMux` 必须同值，改动顺序：先改 frpc.toml（不重启）→ 改 frps.toml 并 `systemctl restart frps` → 立即 `Restart-Service frpc`。
+中断窗口 10~30 秒。回滚 = 两端各删该行、按同样顺序重启（云端备份 `frps.toml.bak-20260722`）。
 
 #### frps 端口封禁（2026-07-18 安全加固）
 
@@ -332,7 +363,7 @@ nssm restart CommissionSystem
 
 1. 检查云端静态文件：`ssh root@119.28.107.92 "ls -lh /var/www/ark/dist/"`
 2. 检查 Nginx 配置：`ssh root@119.28.107.92 "nginx -t"`
-3. 检查 frp 穿透：`ssh root@119.28.107.92 "ss -tlnp | grep 8002"`（云端 frps 是否在听）+ 本地 `nssm status FrpcTunnel`
+3. 检查 frp 穿透：`ssh root@119.28.107.92 "ss -tlnp | grep 8002"`（云端 frps 是否在听）+ 本地 `Get-Service frpc`
 4. 重新同步：`deploy\deploy.bat`
 
 ### Q3.5：部署成功但页面还是旧版（2026-07-13 实case）
@@ -388,9 +419,11 @@ nssm restart CommissionSystem
 ssh root@119.28.107.92 "ss -tlnp | grep 8002"
 ssh root@119.28.107.92 "journalctl -u frps -n 20"   # 看 ark-backend 代理何时 client exit / 有无重连
 
-# 2. 生产 Windows Server 上恢复：
-nssm restart FrpcTunnel
-# 服务不存在说明 frpc 还是裸进程，按「配置内网穿透」一节注册 NSSM 服务
+# 2. 生产 Windows Server 上恢复（服务名是 frpc，不是 FrpcTunnel——2026-07-22 核实）：
+Restart-Service frpc
+# 报"找不到服务"先按二进制路径反查真名：
+#   Get-CimInstance Win32_Service | Where-Object { $_.PathName -like "*frp*" } | Select-Object Name,State,PathName
+# 确实查无此服务才说明 frpc 是裸进程，按「配置内网穿透」一节注册
 
 # 3. 恢复验证（任意机器）：
 curl https://leshine.work/health
@@ -424,11 +457,25 @@ curl https://leshine.work/health
   后端 `PM_MAX_UPLOAD_MB` **保持 50 不动**——它是全局的，压低会连带废掉健康的内网入口（20MB 实测 3.3 秒）
 - PM 前端 api client 对 413/502/504 给可执行文案（引导内网入口 / 外部链接）
 
-未做的根治（按优先级）：
+**已根治：关闭 tcpMux（2026-07-22 16:22 生效）**
 
-1. **frpc + frps 同时关 `transport.tcpMux`**（两端必须一致），让业务连接各走各的 TCP，消除"一次上传抖全站"的连带故障。改 frpc.toml 后 `nssm restart FrpcTunnel`
-2. **PM 文件走国内 COS 直传直下**：浏览器 ↔ COS（广州），后端只存 key，文件字节彻底离开跨境链路和 frp
-3. **主站迁回国内**（需 ICP 备案）：现状是国内用户访问 leshine.work 的每个字节都以 ~0.5Mbps 从新加坡回传，慢的不止上传
+两端同时置 `transport.tcpMux = false`（frpc 另加 `poolCount = 5` 抵消握手延迟、补回缺失的 `loginFailExit = false`），
+业务连接各走各的 TCP，控制通道不再被大 body 堵死。**改动前后同条件对照**：
+
+| 载荷（云端直推 8002） | 关 mux 前 | 关 mux 后 |
+|---|---|---|
+| 1MB | 失败，隧道被打死 | **422 正常返回**（59s） |
+| 2MB | 失败 | **422 正常返回**（166s） |
+| 300KB（走完整公网路径） | 502 | **401 正常返回**（19~28s） |
+| frps `client exit` | 每次失败必断 | **全程 0** |
+
+上面第 1 条"~20 秒硬墙"随之消失——证实那就是 yamux 会话被写超时打死。**带宽约束依然存在**（1MB 仍需 59s），
+所以外网入口的 256KB 闸门保持不动；现在的区别是超限只失败它自己，不再连累全站。
+
+剩余根治（按优先级）：
+
+1. **PM 文件走国内 COS 直传直下**：浏览器 ↔ COS（广州），后端只存 key，文件字节彻底离开跨境链路和 frp
+2. **主站迁回国内**（需 ICP 备案）：现状是国内用户访问 leshine.work 的每个字节都以 ~0.5Mbps 从新加坡回传，慢的不止上传
 
 排障命令：
 

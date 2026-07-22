@@ -193,7 +193,7 @@
 | 后端环境变量 | `backend/.env` | 数据库/JWT/钉钉/微信/WhatsApp 配置 |
 | 云端 Nginx | `/etc/nginx/conf.d/leshine.conf` | 静态直出 + API 反代 |
 | NSSM 服务配置 | NSSM 注册表 | `nssm edit CommissionSystem` 查看 |
-| frp 内网穿透 | 本地 NSSM 服务 FrpcTunnel + 云端 systemd frps | 云端 `/opt/frp/frps.toml`（:7000，Dashboard :7500）；本地 frpc 代理 ark-backend(:8002)+n8n(:5678)，详见 runbook「配置内网穿透」 |
+| frp 内网穿透 | 本地 Windows 服务 `frpc`（C:rprpc-service.exe）+ 云端 systemd frps | 云端 `/opt/frp/frps.toml`（:7000，Dashboard :7500）；本地 frpc 代理 ark-backend(:8002)+n8n(:5678)，详见 runbook「配置内网穿透」 |
 
 ### 定期维护（建议频率）
 
@@ -211,7 +211,7 @@
 
 - **服务器宕机**：重启 NSSM 服务（`nssm restart CommissionSystem`）
 - **数据库连接失败**：检查腾讯云 RDS 白名单 + 密码
-- **前端白屏**：检查云端静态文件 + frp 穿透（本地 `nssm status FrpcTunnel`）
+- **前端白屏**：检查云端静态文件 + frp 穿透（本地 `Get-Service frpc`）
 - **定时任务未执行**：检查 `SCHEDULER_ENABLED` + 查看日志
 
 ## 团队能力要求
