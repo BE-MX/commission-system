@@ -32,8 +32,8 @@
             {{ resolved.product.product_name }}（ID {{ resolved.product.product_id }}）
           </el-tag>
           <el-tag v-else type="danger" effect="plain">产品库中未找到该编号</el-tag>
-          <el-tag v-if="resolved.found && !skuOptions.length" type="warning" effect="plain" class="sku-warn">
-            该产品无启用 SKU，推单时无法带 SKU
+          <el-tag v-if="resolved.found && !skuOptions.length" type="danger" effect="plain" class="sku-warn">
+            该产品无启用 SKU，不能作为通用产品推单，请更换为有 SKU 的产品
           </el-tag>
         </el-form-item>
         <el-form-item v-if="skuOptions.length > 1" label="SKU">
@@ -43,6 +43,12 @@
         </el-form-item>
         <el-form-item v-else-if="current.generic_sku_id" label="SKU">
           <el-tag effect="plain">SKU {{ current.generic_sku_id }}（已关联）</el-tag>
+        </el-form-item>
+        <!-- 已配产品但没落下 SKU 的坏配置，加载时即暴露（否则要等推单才报错） -->
+        <el-form-item v-else-if="!resolved && current.generic_product_no" label="SKU 状态">
+          <el-tag type="danger" effect="plain">
+            当前通用产品未关联 SKU，生产单产品无法推单，请重新解析并选择有 SKU 的产品
+          </el-tag>
         </el-form-item>
 
         <h3 class="section-title">推单默认参数</h3>

@@ -289,7 +289,8 @@ def _build_product_rows(
         row.id: row
         for row in (db.query(CustomProduct).filter(CustomProduct.id.in_(custom_ids)).all() if custom_ids else [])
     }
-    generic_ok = bool(settings_row and settings_row.generic_product_id and settings_row.generic_sku_id)
+    generic_product_configured = bool(settings_row and settings_row.generic_product_id)
+    generic_ok = generic_product_configured and bool(settings_row.generic_sku_id)
 
     # uid 所有权：合并行成功后 uid 会写到每个成员上（共享状态）。成员被回填/转正
     # 后若仍带着共享 uid 单独成行，payload 里会出现两行同 uid → OKKI 按 uid 锚定
@@ -321,7 +322,12 @@ def _build_product_rows(
                 generic_items.append(item)
                 continue
             else:
-                issues.append({"field": prefix, "message": "生产单产品需先配置通用产品：订单管理 → OKKI 推单设置"})
+                # 配了通用产品却缺 SKU 时，"需先配置"会让人以为没配——区分两种情况给出可执行提示
+                if generic_product_configured:
+                    msg = "通用产品未关联 SKU，无法推单：请到「订单管理 → OKKI 推单设置」更换为有 SKU 的产品"
+                else:
+                    msg = "生产单产品需先配置通用产品：订单管理 → OKKI 推单设置"
+                issues.append({"field": prefix, "message": msg})
                 continue
         if not (product_id and sku_id):
             issues.append({"field": prefix, "message": "缺少 OKKI product_id/sku_id，无法推单"})
