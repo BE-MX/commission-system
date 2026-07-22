@@ -1,0 +1,41 @@
+[Unit]
+Description=LeShine Social Customer MCP
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=social-customer-mcp
+Group=social-customer-mcp
+WorkingDirectory=/opt/social-customer-mcp/social_customer_mcp
+EnvironmentFile=/opt/social-customer-mcp/.env
+Environment=PYTHONPATH=/opt/social-customer-mcp
+ExecStart=/opt/social-customer-mcp/.venv/bin/python -m uvicorn social_customer_mcp.app:app --host 127.0.0.1 --port 8100 --proxy-headers --forwarded-allow-ips=127.0.0.1
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectClock=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectProc=invisible
+ProcSubset=pid
+LockPersonality=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+RemoveIPC=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
