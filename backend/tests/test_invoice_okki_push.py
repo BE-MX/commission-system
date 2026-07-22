@@ -162,7 +162,8 @@ def test_build_push_payload_stock_custom_and_backfilled(db):
     assert payload["company_id"] == 123456
     assert payload["status"] == 13972831654
     assert payload["currency"] == "USD"
-    assert payload["name"].startswith("INV20260713-001")
+    # 订单名就是发票号本身，不允许再拼客户名等任何后缀
+    assert payload["name"] == "INV20260713-001"
     assert payload["account_date"] == "2026-07-13"
     # 人员：绑定的 OKKI 用户做创建人/处理人/业绩归属，不传 user_id（避开权限 404）
     assert payload["create_user"] == 777001

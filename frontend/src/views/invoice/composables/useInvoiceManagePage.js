@@ -1,5 +1,4 @@
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
 import { msgSuccess, confirmDanger } from '@/utils/feedback'
 import {
   deleteInvoice,
@@ -8,9 +7,8 @@ import {
   fetchInvoicePrintHtml,
   getInvoiceSyncLogs,
   listInvoices,
-  syncInvoice,
-  validateInvoice,
 } from '@/api/invoice'
+import { validateThenSync } from './invoiceSyncFlow'
 
 export function useInvoiceManagePage() {
   const loading = ref(false)
@@ -45,12 +43,7 @@ export function useInvoiceManagePage() {
   }
 
   async function validateAndSync(id) {
-    const validation = await validateInvoice(id)
-    if (!validation.ok) return showIssues(validation.issues)
-    const result = await syncInvoice(id)
-    if (result.ok) ElMessage.success('已同步到小满')
-    else if (result.issues?.length) showIssues(result.issues)
-    else ElMessage.warning(result.message || '小满同步未完成')
+    await validateThenSync(id, showIssues)
     loadInvoices()
   }
 

@@ -349,12 +349,20 @@ def _normalize_weight(value: object) -> str:
     text = _display_text(value).lower()
     match = re.fullmatch(r"(\d+(?:\.\d+)?)\s*(kg|g)?", text)
     if not match:
-        raise ValueError("Weight 必须是克或千克，例如 100g")
+        raise ValueError("Weight 必须是克或千克，例如 100g / 37.5g")
     amount = Decimal(match.group(1))
     grams = amount * (Decimal("1000") if match.group(2) == "kg" else Decimal("1"))
-    if grams <= 0 or grams != grams.to_integral_value():
-        raise ValueError("Weight 必须能换算为正整数克")
-    return f"{int(grams)}g"
+    if grams <= 0:
+        raise ValueError("Weight 必须大于 0")
+    return f"{_format_grams(grams)}g"
+
+
+def _format_grams(grams: Decimal) -> str:
+    """100 / 100.00 -> '100'；37.50 -> '37.5'（去掉无意义的尾随 0，保留小数克重）。"""
+    trimmed = grams.normalize()
+    if trimmed == trimmed.to_integral_value():
+        trimmed = trimmed.quantize(Decimal(1))
+    return format(trimmed, "f")
 
 
 def _positive_int(value: object, field: str) -> int:

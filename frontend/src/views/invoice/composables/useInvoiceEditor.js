@@ -10,8 +10,8 @@ import {
   searchInvoiceCustomers,
   suggestInvoiceNo,
   updateInvoice,
-  validateInvoice,
 } from '@/api/invoice'
+import { validateThenSync } from './invoiceSyncFlow'
 import { useAuthStore } from '@/stores/auth'
 import {
   calculateBalance,
@@ -363,15 +363,13 @@ export function useInvoiceEditor({ onSaved } = {}) {
     return saved
   }
 
-  async function saveAndValidate() {
+  // 保存 → 校验 → 推送小满一步到位；校验/推送失败留在抽屉里让用户就地修，成功才收工关闭
+  async function saveAndSync() {
     const saved = await saveDraft() // saveDraft 内已触发 onSaved 刷新列表
     if (!saved) return
-    const res = await validateInvoice(form.id)
-    if (res.ok) {
-      ElMessage.success('校验通过，可以同步小满')
-    } else {
-      showIssues(res.issues)
-    }
+    const synced = await validateThenSync(form.id, showIssues)
+    onSaved?.() // 同步会改单据状态，列表需按最新状态再刷一次
+    if (synced) drawerVisible.value = false
   }
 
   function showIssues(issues = []) {
@@ -431,7 +429,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     updateLineTotal,
     appendImportedLines,
     saveDraft,
-    saveAndValidate,
+    saveAndSync,
     showIssues,
     markOkkiFlagTouched,
   }

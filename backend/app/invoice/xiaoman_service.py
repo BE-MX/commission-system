@@ -179,8 +179,9 @@ def build_push_payload(
         return None, [], issues
 
     payload: dict = {
-        # 订单名 = 方舟发票号 + 客户名，OKKI 列表一眼可溯源
-        "name": f"{invoice.invoice_no} {invoice.customer_name}".strip(),
+        # 订单名 = 方舟发票号，不再拼客户名：OKKI 列表自带客户列，拼进订单名只会污染
+        # 发票号本身（搜索/对账时按号匹配不上）。invoice_no 恒非空（留空则自动生成）
+        "name": (invoice.invoice_no or "").strip(),
         "account_date": invoice.invoice_date.isoformat(),
         "currency": invoice.currency or (settings_row.default_currency if settings_row else None) or "USD",
         "company_id": int(company_id),

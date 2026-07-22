@@ -72,6 +72,18 @@ def test_normalize_import_row_accepts_historical_formats():
     }
 
 
+@pytest.mark.parametrize(("raw", "expected"), [
+    ("37.5g", "37.5g"),
+    ("37.50", "37.5g"),
+    ("0.0375kg", "37.5g"),
+    ("100.00g", "100g"),
+    ("0.5g", "0.5g"),
+])
+def test_normalize_import_row_accepts_decimal_weight(raw, expected):
+    row = import_service.normalize_row(valid_row(weight=raw))
+    assert row["weight"] == expected
+
+
 @pytest.mark.parametrize(("field", "value"), [
     ("quantity", 0),
     ("quantity", 1.5),

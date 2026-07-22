@@ -346,7 +346,7 @@
           :money="money"
           @cancel="drawerVisible = false"
           @save="saveDraft"
-          @validate="saveAndValidate"
+          @sync="saveAndSync"
         />
       </template>
     </el-drawer>
@@ -414,7 +414,7 @@ const {
   addLine, addAccessory, selectAccessory, removeAccessory, searchAccessoryOptions,
   updateAccessoryTotal, removeLine, loadLineOptions, onLineFilterChange, onCustomFieldChange,
   onPriceInput, onLineDiscountChange, updateLineTotal, appendImportedLines, saveDraft,
-  saveAndValidate, showIssues, markOkkiFlagTouched,
+  saveAndSync, showIssues, markOkkiFlagTouched,
 } = useInvoiceEditor({ onSaved: loadInvoices })
 bindIssueHandler(showIssues)
 
