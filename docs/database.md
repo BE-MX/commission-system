@@ -80,10 +80,10 @@
   - `ark_customer_profiles` — 客户活画像（customer_external_id UNIQUE，customer_name + customer_region 组合查重，owner_user_id FK ark_users，priority_score 优先级分，total_opportunities/total_events 统计，profile_tags/profile_signals_json/profile_judgement 画像数据，suggested_message 推荐话术，status active）
   - `ark_customer_profile_events` — 客户事件流（profile_id FK CASCADE，event_source/event_type 分类，event_score 正负评分，opportunity_id FK ark_customer_opportunities，actor_user_id 操作人）
   - `ark_customer_actions` — 行动候选池（profile_id FK CASCADE，owner_user_id FK ark_users，thread_group 线索分组，thread_priority 优先级，action_status pending/completed/dismissed/snoozed，snoozed_until 延后截止，action_date 行动日期）
-- **素材管理（7 张表，020 迁移）**：
-  - `ark_tag_dimensions` — 标签维度
-  - `ark_tag_values` — 标签值
-  - `ark_assets` — 素材主表
+- **素材管理（7 张表，020 迁移；078 标签体系 v2 加列）**：
+  - `ark_tag_dimensions` — 标签维度（078 加 `is_visible` 可见开关=新旧体系并存/退役机制、`is_managed` 系统托管标记——色系维度由派生脚本独占写入禁人工编辑）
+  - `ark_tag_values` — 标签值（078 加 `name_en` 英文名、`aliases` JSON 别名数组（agent 检索匹配用）、`parent_value_id` 自引用 FK unsigned——内容子类挂内容大类/产品型号挂产品族）
+  - `ark_assets` — 素材主表（078 加 `orientation` 画幅 landscape/portrait/square，上传时自动算，存量由 `scripts/tag_taxonomy/retag.py` 回填）
   - `ark_asset_versions` — 版本历史
   - `ark_asset_tags` — 素材-标签关联
   - `ark_asset_permissions` — 权限

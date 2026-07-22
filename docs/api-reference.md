@@ -296,7 +296,7 @@
   - `GET /scan/overview/detail` — 指定日期+工序的明细列表
   - `POST /scan/revoke` — 撤销报工（只能撤销自己的最后一道已完成工序）
 - `/api/assets` — 素材管理（标签化素材中台）
-  - `GET /tags/dimensions` — 标签维度列表（含标签值，需 `asset:read`）
+  - `GET /tags/dimensions` — 标签维度列表（含标签值，需 `asset:read`；默认只返回 `is_visible=1` 维度——标签体系新旧并存/切换的执行机制，`?include_hidden=1` 返回全部供维度管理页用）
   - `POST /tags/dimensions` — 新建标签维度（需 `asset:admin`）
   - `PUT /tags/dimensions/{id}` — 更新标签维度（需 `asset:admin`）
   - `DELETE /tags/dimensions/{id}` — 删除标签维度（仅限非系统维度，需 `asset:admin`）
@@ -372,6 +372,8 @@
   - `record_shipment(waybill_no, carrier[DHL/FEDEX], recipient_name, recipient_country, ship_date)` — 录单+启动跟踪+立即回状态（需 `tracking:write`；复用 `upload_service.create_waybill_with_tracking`；归属落调用者）
   - `track_shipment(waybill_no, refresh=false)` — 查状态与轨迹（需 `tracking:read`；**先 `apply_data_scope` 归属校验**，非本人且无 `read_all` 视为未跟踪，不泄露他人 PII；复用 `shipment_service.get_shipment_detail`，refresh 时先 `polling_service.refresh_single`）
   - `list_my_shipments(status?, keyword?, limit?)` — 列本人名下运单（需 `tracking:read`；复用 `shipment_service.list_shipments`，`apply_data_scope` 按 dingtalk_user_id 归属过滤）
+  - `list_asset_taxonomy()` — 素材库标签词表发现（需 `asset:read`；返回可见维度/值/英文别名/用法说明；`app/mcp/asset_tools.py`）
+  - `search_assets(content_category?, content_type?, product_type?, color_code?, color_family?, texture?, shoot_style?, process_step?, theme?, year?, media_trait?, file_type?, orientation?, keyword?, limit?)` — 素材检索（需 `asset:read`；参数自由字符串，运行时按 value/name_en/aliases 三路解析，产品族值自动展开子级；解析失败回相近候选；**结果侧过滤 AssetPermission**（all/specific 含本人可见，design_dept/sales 仅 admin），返回 24h 签名下载 URL）
 - `https://leshine.work/mcp/social-customer/` — **独立云端社媒客户查询 MCP**（Streamable HTTP、stateless JSON、Bearer token、systemd `social-customer-mcp`、不经过 frp）。唯一工具 `social_customer_search(params)`：`email`/`social_account`/`contact_phone` 三选一精确查询，返回公司、客户简称、联系人、双方邮箱、电话、社交平台/账号、负责人；负责人为空固定返回“未进入私海”；limit 默认 20、最大 50。完整说明见 `docs/social-customer-mcp.md`。
 
 ## 客户售后管理（`/api/aftersales`）
