@@ -56,9 +56,8 @@
             placeholder="粘贴任何文字材料。录音建议先用钉钉 AI 听记转文字再贴入。" />
         </el-form-item>
         <el-form-item label="文件材料（照片会走多模态识别，PDF 自动抽文本；PPT 请导出 PDF 或拍照）">
-          <AppUpload v-model="filesModel" :upload-fn="uploadFn" multiple :limit="20" :max-size-mb="300"
-            accept=".jpg,.jpeg,.png,.webp,.pdf,.ppt,.pptx,.doc,.docx,.xls,.xlsx,.txt,.md,.zip,.mp4,.mp3,.m4a"
-            button-text="上传材料" />
+          <AttachFilesPanel :files="files" :attach="attach" :files-model="filesModel"
+            :upload-fn="uploadFn" :remove-file="removeFile" :save-file-meta="saveFileMeta" />
         </el-form-item>
       </el-form>
       <div class="ai-box">
@@ -177,7 +176,7 @@
 <script setup>
 import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import AppUpload from '@/components/AppUpload.vue'
+import AttachFilesPanel from './components/AttachFilesPanel.vue'
 import { useTrainingEditor } from './composables/useTrainingEditor'
 
 const router = useRouter()
@@ -185,9 +184,9 @@ const {
   STEP_TITLES, ROLE_OPTIONS, TAG_SUGGESTIONS,
   MIN_HIGHLIGHTS, MAX_HIGHLIGHTS, MIN_REVIEW_CHARS, MAX_SUMMARY_CHARS,
   digestId, step, status, loading, saving, drafting, publishing, draftDone,
-  basic, summary, sections, files, textMaterials, filesModel,
+  basic, summary, sections, files, textMaterials, filesModel, attach,
   publishProblems,
-  load, saveDraft, nextStep, prevStep, uploadFn, runDraft, publish,
+  load, saveDraft, nextStep, prevStep, uploadFn, removeFile, saveFileMeta, runDraft, publish,
   addHighlight, addInsight, addApplication, addMethod, removeAt,
 } = useTrainingEditor()
 

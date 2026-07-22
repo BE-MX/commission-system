@@ -9,6 +9,15 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
+# 附件类型白名单：存库用 code，前端下拉同一套口径（api/training.js FILE_TYPE_OPTIONS）
+FILE_TYPE_OPTIONS = {
+    "courseware": "课件讲义",
+    "photo": "现场照片",
+    "recording": "录音录像",
+    "notes": "笔记文档",
+    "other": "其他",
+}
+
 
 # ---------------------------------------------------------------------------
 # 模板分区（V1 培训模板；将来扩展类型时按 digest_type 挑模板）
@@ -64,6 +73,12 @@ class DigestUpdate(BaseModel):
     tags: Optional[list[str]] = None
     summary: Optional[str] = Field(default=None, max_length=200)
     sections: Optional[DigestSections] = None
+
+
+class FileMetaUpdate(BaseModel):
+    """附件元信息编辑（类型/备注），只更新传入字段；file_type 白名单校验在 router 给中文 400"""
+    file_type: Optional[str] = Field(default=None, max_length=32)
+    remark: Optional[str] = Field(default=None, max_length=200)
 
 
 class DraftRequest(BaseModel):

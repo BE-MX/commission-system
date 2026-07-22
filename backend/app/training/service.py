@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.auth.models import ArkUser
 from app.training import file_service
 from app.training.models import TrainingDigest, TrainingDigestFeedback, TrainingDigestFile
-from app.training.schemas import DigestCreate, DigestSections, DigestUpdate
+from app.training.schemas import DigestCreate, DigestSections, DigestUpdate, FileMetaUpdate
 
 logger = logging.getLogger("commission")
 
@@ -250,6 +250,8 @@ def get_detail(db: Session, digest: TrainingDigest, user: dict, *, count_view: b
                     "file_name": f.file_name,
                     "file_size": f.file_size,
                     "mime_type": f.mime_type,
+                    "file_type": f.file_type,
+                    "remark": f.remark,
                     "created_at": f.created_at.isoformat() if f.created_at else None,
                 }
                 for f in files
@@ -313,7 +315,8 @@ def delete_digest(db: Session, digest: TrainingDigest) -> None:
 
 
 def add_file(db: Session, digest: TrainingDigest, *, file_name: str, storage_path: str,
-             file_size: int, mime_type: str, uploaded_by: int) -> TrainingDigestFile:
+             file_size: int, mime_type: str, uploaded_by: int,
+             file_type: str = "other", remark: str = "") -> TrainingDigestFile:
     item = TrainingDigestFile(
         digest_id=digest.id,
         file_name=file_name,
@@ -321,8 +324,20 @@ def add_file(db: Session, digest: TrainingDigest, *, file_name: str, storage_pat
         file_size=file_size,
         mime_type=mime_type,
         uploaded_by=uploaded_by,
+        file_type=file_type,
+        remark=remark.strip() or None,
     )
     db.add(item)
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+def update_file_meta(db: Session, item: TrainingDigestFile, payload: FileMetaUpdate) -> TrainingDigestFile:
+    if payload.file_type is not None:
+        item.file_type = payload.file_type
+    if payload.remark is not None:
+        item.remark = payload.remark.strip() or None
     db.commit()
     db.refresh(item)
     return item

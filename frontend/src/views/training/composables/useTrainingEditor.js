@@ -8,9 +8,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   createDigest, getDigest, updateDigest, uploadDigestFile, deleteDigestFile,
-  generateDraft, publishDigest,
+  updateDigestFileMeta, inferFileType, generateDraft, publishDigest,
 } from '@/api/training'
-import { msgSuccess, msgError } from '@/utils/feedback'
+import { msgSuccess, msgError, confirmDanger } from '@/utils/feedback'
 
 // 与后端 draft_service.ROLE_OPTIONS / service 校验阈值保持同一口径
 export const ROLE_OPTIONS = ['业务/销售', '电商运营', '设计', '生产', '管理层', 'AI/技术', '全员']
@@ -53,8 +53,10 @@ export function useTrainingEditor() {
     methods: [],
     review: '',
   })
-  const files = ref([]) // [{id, file_name, file_size, mime_type}]
+  const files = ref([]) // [{id, file_name, file_size, mime_type, file_type, remark}]
   const textMaterials = ref('')
+  // 上传栏批次选择：类型默认按扩展名自动识别，可整批覆盖；备注整批套用
+  const attach = reactive({ fileType: 'auto', remark: '' })
 
   // ---------- 校验（与后端同口径，发布按钮的唯一开关） ----------
   const step1Problems = computed(() => {
@@ -105,6 +107,7 @@ export function useTrainingEditor() {
       review: data.sections?.review || '',
     })
     files.value = data.files || []
+    files.value.forEach(rememberFileMeta)
   }
 
   async function load() {
@@ -199,25 +202,52 @@ export function useTrainingEditor() {
     if (step.value > 1) step.value -= 1
   }
 
-  // ---------- 附件（AppUpload 注入式契约） ----------
-  async function uploadFn(file) {
+  // ---------- 附件（AppUpload 注入式契约，页面自渲染富列表 show-list=false） ----------
+  async function uploadFn(file, onProgress) {
     const id = await ensureCreated()
-    const res = await uploadDigestFile(id, file)
+    const res = await uploadDigestFile(id, file, {
+      fileType: attach.fileType === 'auto' ? inferFileType(file.name) : attach.fileType,
+      remark: attach.remark,
+      onProgress,
+    })
     files.value = [...files.value, res.data]
+    rememberFileMeta(res.data)
     return { path: String(res.data.id), url: '', name: res.data.file_name }
   }
 
-  const filesModel = computed({
-    get: () => files.value.map(f => ({ path: String(f.id), url: '', name: f.file_name })),
-    set: next => {
-      const keep = new Set(next.map(f => f.path))
-      const removed = files.value.filter(f => !keep.has(String(f.id)))
-      removed.forEach(f => {
-        deleteDigestFile(f.id).catch(() => {})
-      })
-      files.value = files.value.filter(f => keep.has(String(f.id)))
-    },
-  })
+  // 只读映射：给 AppUpload 做数量上限判断；增删都走 uploadFn / removeFile，
+  // 不走 v-model 回写（多选并发上传时 emit 的快照是旧数组，回写会误删刚传完的文件）
+  const filesModel = computed(() => files.value.map(f => ({ path: String(f.id), url: '', name: f.file_name })))
+
+  async function removeFile(f) {
+    try {
+      await confirmDanger('删除', `附件 ${f.file_name}`)
+    } catch {
+      return
+    }
+    await deleteDigestFile(f.id)
+    files.value = files.value.filter(x => x.id !== f.id)
+    msgSuccess('删除')
+  }
+
+  // 行内输入框 v-model 直接改行对象，这里存"最后保存成功"的快照供失败回滚
+  const savedFileMeta = new Map()
+  function rememberFileMeta(f) {
+    savedFileMeta.set(f.id, { file_type: f.file_type ?? null, remark: f.remark ?? null })
+  }
+
+  /** 行内改类型/备注，成功以后端返回值为准（备注去空白等）；失败回滚显示值，不让 UI 冒充已保存 */
+  async function saveFileMeta(f, patch) {
+    try {
+      const res = await updateDigestFileMeta(f.id, patch)
+      files.value = files.value.map(x => (x.id === f.id ? { ...x, ...res.data } : x))
+      rememberFileMeta(res.data)
+    } catch {
+      // 拦截器已弹错误提示，这里只负责把行内值恢复成最后保存成功的状态
+      const before = savedFileMeta.get(f.id)
+      if (before) files.value = files.value.map(x => (x.id === f.id ? { ...x, ...before } : x))
+    }
+  }
 
   // ---------- AI 提炼 ----------
   const hasDraftContent = computed(
@@ -291,9 +321,9 @@ export function useTrainingEditor() {
     STEP_TITLES, ROLE_OPTIONS, TAG_SUGGESTIONS,
     MIN_HIGHLIGHTS, MAX_HIGHLIGHTS, MIN_REVIEW_CHARS, MAX_SUMMARY_CHARS,
     digestId, step, status, loading, saving, drafting, publishing, draftDone,
-    basic, summary, sections, files, textMaterials, filesModel,
+    basic, summary, sections, files, textMaterials, filesModel, attach,
     step1Problems, publishProblems, hasDraftContent,
-    load, saveDraft, nextStep, prevStep, uploadFn, runDraft, publish,
+    load, saveDraft, nextStep, prevStep, uploadFn, removeFile, saveFileMeta, runDraft, publish,
     addHighlight, addInsight, addApplication, addMethod, removeAt,
   }
 }

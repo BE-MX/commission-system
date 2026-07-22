@@ -56,6 +56,8 @@ class TrainingDigestFile(Base):
     storage_path = Column(String(500), nullable=False, comment="相对 TRAINING_STORAGE_ROOT 的存储路径")
     file_size = Column(BigInteger, nullable=False, server_default="0", comment="字节数")
     mime_type = Column(String(100), comment="MIME 类型")
+    file_type = Column(String(32), comment="附件类型 code，白名单见 schemas.FILE_TYPE_OPTIONS；NULL=未分类")
+    remark = Column(String(200), comment="附件备注（上传人填写）")
     uploaded_by = Column(USER_ID, ForeignKey("ark_users.id"), nullable=False, comment="上传人")
     created_at = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
 
