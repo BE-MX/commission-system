@@ -1,0 +1,42 @@
+<evaluation>
+  <qa_pair>
+    <question>连接服务并列出可用工具。社媒客户查询工具的准确名称是什么？</question>
+    <answer>social_customer_search</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>不提供 email、social_account、contact_phone 中任何一个字段调用查询，结果应是什么？</question>
+    <answer>输入校验失败：三个查询字段必须且只能填写一个</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>同时提供 email 和 contact_phone 调用查询，结果应是什么？</question>
+    <answer>输入校验失败：三个查询字段必须且只能填写一个</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>查询一个 owner_user_ids 为空数组的客户，owner_user_name 应返回什么？</question>
+    <answer>未进入私海</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>调用方把 limit 设置为 51，服务应接受还是拒绝？</question>
+    <answer>拒绝，limit 最大为 50</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>通过 email 参数查询时，服务会匹配哪两个源字段？</question>
+    <answer>customer_info.email 和 customer_contacts.email</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>通过 social_account 查询成功后，哪个返回字段说明账号所属的平台？</question>
+    <answer>social_platform</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>查询结果还有下一页时，客户端应读取哪两个分页字段？</question>
+    <answer>has_more 和 next_offset</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>不携带 Authorization 头初始化 MCP，HTTP 状态码应是什么？</question>
+    <answer>401</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>一个客户有多个负责人时，owner_user_name 如何表示？</question>
+    <answer>负责人名称去重后按名称排序，并用英文逗号加空格连接</answer>
+  </qa_pair>
+</evaluation>
