@@ -18,10 +18,12 @@ from sqlalchemy.orm import Session
 from app.asset.asset_service import (
     ASSET_STORAGE_ROOT,
     _build_storage_path,
+    _compute_orientation,
     _generate_thumbnail,
     _generate_video_thumbnail,
     _save_upload_file,
 )
+from app.asset.color_rules import sync_color_family
 from app.asset.models import Asset, AssetPermission, AssetVersion, TagDimension, TagValue
 from app.asset.schemas import AssetPermissionIn, AssetTagItem
 
@@ -159,14 +161,16 @@ def validate_folder_tags(db: Session, tag_names: list[str]) -> TagValidationResu
     # 去重，保持顺序
     unique_names = list(dict.fromkeys(tag_names))
 
-    # 只加载可见维度的活跃标签值：并存期新旧体系同名值共存，
-    # 若不限维度会全员歧义（is_visible 是体系切换的执行机制）
+    # 只加载可见且非托管维度的活跃标签值：并存期新旧体系同名值共存，
+    # 若不限维度会全员歧义（is_visible 是体系切换的执行机制）；
+    # 托管维度（色系）由派生脚本独占写入，文件夹名不允许匹配进去
     from app.asset.models import TagDimension
 
     all_values = (
         db.query(TagValue)
         .join(TagDimension, TagDimension.id == TagValue.dimension_id)
-        .filter(TagValue.is_active == 1, TagDimension.is_visible == 1)
+        .filter(TagValue.is_active == 1, TagDimension.is_visible == 1,
+                TagDimension.is_managed == 0)
         .all()
     )
 
@@ -265,40 +269,34 @@ def preview_files(
 
 # ── 标签匹配 ────────────────────────────────────────────
 
-def _tags_match(
-    db: Session,
-    asset_id: int,
-    tag_items: list[AssetTagItem],
-) -> bool:
-    """判定「同名文件是否视为同一素材」：目标标签 ⊆ 已有素材的可见维度标签。
+def _comparable_dim_ids(db: Session) -> set[int]:
+    """合并判定可比较的维度：可见且非托管。
 
-    只看可见且非托管的维度——存量重打标/派生脚本给素材追加的隐藏维度或
-    托管维度（色系）标签不在路径映射的目标集里，若做全集相等比较，
-    重传同一文件夹会把所有同名文件误判为新素材、批量建重。
-    子集语义的代价：同名但标签更少的不同文件可能被误并为新版本
-    （相机文件名跨拍摄批次复用时），版本历史可回溯，风险可接受。
+    存量重打标/派生脚本给素材追加的隐藏维度或托管维度（色系）标签不在
+    路径映射的目标集里，若做全维度比较，重传同一文件夹会把所有同名文件
+    误判为新素材、批量建重。
     """
-    from app.asset.models import TagDimension, asset_tag_association as ata
+    from app.asset.models import TagDimension
 
-    comparable_dims = {
+    return {
         d.id for d in db.query(TagDimension)
         .filter(TagDimension.is_visible == 1, TagDimension.is_managed == 0)
     }
 
-    existing_rows = db.query(
-        ata.c.dimension_id,
-        ata.c.tag_value_id,
-    ).filter(ata.c.asset_id == asset_id).all()
-    existing_set = {(r.dimension_id, r.tag_value_id) for r in existing_rows
-                    if r.dimension_id in comparable_dims}
 
-    target_set = set()
-    for item in tag_items:
-        for tv_id in item.tag_value_ids:
-            if item.dimension_id in comparable_dims:
-                target_set.add((item.dimension_id, tv_id))
+def _tags_match(
+    existing_tags: set[tuple[int, int]],
+    target_set: set[tuple[int, int]],
+    comparable_dims: set[int],
+) -> bool:
+    """判定「同名文件是否视为同一素材」：目标标签 ⊆ 已有素材的可比较维度标签。
 
-    return bool(target_set) and target_set <= existing_set
+    子集语义的代价：同名但标签更少的不同文件可能被误并为新版本
+    （相机文件名跨拍摄批次复用时），版本历史可回溯，风险可接受。
+    """
+    existing_cmp = {t for t in existing_tags if t[0] in comparable_dims}
+    target_cmp = {t for t in target_set if t[0] in comparable_dims}
+    return bool(target_cmp) and target_cmp <= existing_cmp
 
 
 # ── 执行入库 ────────────────────────────────────────────
@@ -403,6 +401,9 @@ def execute_folder_upload(
         ).fetchall()
         version_numbers = {r.asset_id: int(r.max_v or 0) for r in ver_rows}
         print(f"[folder-upload] preload: loaded version numbers for {len(version_numbers)} assets", flush=True)
+
+    # 1d. 合并判定只看可见非托管维度（详见 _comparable_dim_ids docstring）
+    comparable_dims = _comparable_dim_ids(db)
     print(f"[folder-upload] preload done, start ingesting", flush=True)
 
     # ── 2. 批量入库 ────────────────────────────────────────
@@ -433,7 +434,10 @@ def execute_folder_upload(
                     existing = existing_map.get((file_name, file_type))
                     should_merge = (
                         existing is not None
-                        and asset_tags_map.get(existing.id, set()) == target_set
+                        and _tags_match(
+                            asset_tags_map.get(existing.id, set()),
+                            target_set, comparable_dims,
+                        )
                     )
 
                     if should_merge and not update_duplicates:
@@ -475,9 +479,16 @@ def execute_folder_upload(
                         existing.file_size = file_size
                         existing.storage_path = rel_path
                         existing.thumbnail_path = thumbnail_path
+                        existing.orientation = _compute_orientation(abs_storage, file_type)
 
-                        # 清除旧标签并写入新标签
-                        db.execute(ata.delete().where(ata.c.asset_id == eid))
+                        # 按维度合并：只清目标涉及的维度，重打标/派生脚本
+                        # 写入的其他维度标签（隐藏体系、色系）保留
+                        touched_dims = list({item.dimension_id for item in tag_items})
+                        if touched_dims:
+                            db.execute(ata.delete().where(
+                                ata.c.asset_id == eid,
+                                ata.c.dimension_id.in_(touched_dims),
+                            ))
                         for item in tag_items:
                             for tv_id in item.tag_value_ids:
                                 db.execute(
@@ -488,6 +499,7 @@ def execute_folder_upload(
                                         tag_value_id=tv_id,
                                     )
                                 )
+                        sync_color_family(db, eid, version.id)
 
                         new_version_count += 1
                         success += 1
@@ -511,6 +523,7 @@ def execute_folder_upload(
                             storage_path=rel_path,
                             file_size=file_size,
                             thumbnail_path=thumbnail_path,
+                            orientation=_compute_orientation(abs_storage, file_type),
                             uploader_id=uploader_id,
                             status="latest",
                         )
@@ -539,6 +552,8 @@ def execute_folder_upload(
                                         tag_value_id=tv_id,
                                     )
                                 )
+
+                        sync_color_family(db, asset.id, version.id)
 
                         perm = AssetPermission(
                             asset_id=asset.id,

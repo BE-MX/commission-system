@@ -223,7 +223,8 @@ def register_asset_tools(mcp) -> None:
         值不认识时会报错并给出相近候选；完整词表用 list_asset_taxonomy 查看。
 
         Returns:
-          成功: {"ok": true, "total": int, "count": int, "items": [{id, file_name,
+          成功: {"ok": true, "total_matched": int（标签命中总数，含无权限查看项）,
+                 "count": int（实际返回条数，已过滤权限）, "items": [{id, file_name,
                  file_type, orientation, tags: {维度label: [值]}, download_url}]}
           值无法解析: {"ok": false, "error": "...", "unresolved": [...], "suggestions": {...}}
         """
@@ -303,4 +304,4 @@ def register_asset_tools(mcp) -> None:
                 if len(out) >= params.limit:
                     break
 
-            return _ok({"total": total, "count": len(out), "items": out})
+            return _ok({"total_matched": total, "count": len(out), "items": out})

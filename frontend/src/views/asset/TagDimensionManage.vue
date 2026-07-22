@@ -169,6 +169,11 @@
         <el-form-item label="别名">
           <el-input v-model="valueForm.aliasesText" placeholder="逗号分隔，如 天才,Halo" />
         </el-form-item>
+        <el-form-item v-if="parentOptions.length" label="挂靠父级">
+          <el-select v-model="valueForm.parent_value_id" clearable placeholder="不挂靠" style="width: 100%">
+            <el-option v-for="opt in parentOptions" :key="opt.id" :label="opt.value" :value="opt.id" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="颜色">
           <el-color-picker v-model="valueForm.color_hex" show-alpha />
         </el-form-item>
@@ -227,6 +232,17 @@ function filteredValues(dim) {
 
 const sortedDimensions = computed(() => {
   return [...dimensions.value].sort((a, b) => a.sort_order - b.sort_order)
+})
+
+// 挂靠父级候选：内容子类 → 内容大类的值；其他维度 → 本维度未挂靠的值（产品族）
+const parentOptions = computed(() => {
+  const dim = currentDim.value
+  if (!dim) return []
+  if (dim.name === 'content_type') {
+    const cat = dimensions.value.find(d => d.name === 'content_category')
+    return cat?.values || []
+  }
+  return (dim.values || []).filter(v => !v.parent_value_id && v.id !== currentValue.value?.id)
 })
 
 async function loadData() {
@@ -354,6 +370,7 @@ const valueForm = ref({
   value: '',
   name_en: '',
   aliasesText: '',
+  parent_value_id: null,
   color_hex: null,
   image_path: null,
   sort_order: 0,
@@ -367,6 +384,7 @@ function openCreateValue(dim) {
     value: '',
     name_en: '',
     aliasesText: '',
+    parent_value_id: null,
     color_hex: null,
     image_path: null,
     sort_order: dim.values?.length || 0,
@@ -382,6 +400,7 @@ function openEditValue(dim, val) {
     value: val.value,
     name_en: val.name_en || '',
     aliasesText: (val.aliases || []).join(','),
+    parent_value_id: val.parent_value_id || null,
     color_hex: val.color_hex,
     image_path: val.image_path,
     sort_order: val.sort_order,
@@ -402,6 +421,7 @@ async function submitValue() {
       aliases: valueForm.value.aliasesText
         ? valueForm.value.aliasesText.split(/[,，]/).map(s => s.trim()).filter(Boolean)
         : [],
+      parent_value_id: valueForm.value.parent_value_id || null,
       color_hex: valueForm.value.color_hex,
       image_path: valueForm.value.image_path,
       sort_order: valueForm.value.sort_order,

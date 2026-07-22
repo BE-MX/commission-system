@@ -158,6 +158,9 @@ def create_asset(
     copy: bool = False,
 ) -> Asset:
     """创建素材（含第一版版本记录）。"""
+    # 校验先于落盘：否则 400 回滚后存储区留孤儿文件+缩略图
+    _validate_single_select(db, tags)
+
     rel_path = _build_storage_path(file_type, file_format)
     abs_path = _save_upload_file(temp_storage_path, rel_path, copy=copy)
 
@@ -198,8 +201,10 @@ def create_asset(
     # 更新当前版本
     asset.current_version_id = version.id
 
-    # 写入标签
+    # 写入标签 + 色系派生（color_family 托管维度唯一常态写入路径）
     _apply_tags(db, asset.id, version.id, tags)
+    from app.asset.color_rules import sync_color_family
+    sync_color_family(db, asset.id, version.id)
 
     # 写入权限
     perm = AssetPermission(
@@ -243,9 +248,21 @@ def _apply_tags(
     version_id: int,
     tags: list[AssetTagItem],
 ) -> None:
-    """将标签关联写入 asset_tag_association。"""
+    """将标签关联写入 asset_tag_association。
+
+    托管维度（色系）由派生脚本独占写入，用户侧提交的托管维度项跳过并留痕。
+    """
+    from app.asset.models import TagDimension
+
     _validate_single_select(db, tags)
+    managed_ids = {d.id for d in db.query(TagDimension).filter(
+        TagDimension.id.in_({t.dimension_id for t in tags} or {0}),
+        TagDimension.is_managed == 1)}
     for item in tags:
+        if item.dimension_id in managed_ids:
+            logger.warning("skip managed dimension tag write: dim=%s asset=%s", item.dimension_id, asset_id)
+            print(f"[asset] skip managed dim tag write dim={item.dimension_id} asset={asset_id}", flush=True)
+            continue
         for tv_id in item.tag_value_ids:
             db.execute(
                 asset_tag_association.insert().values(
@@ -426,6 +443,8 @@ def update_asset_tags(
     touched_dims = [item.dimension_id for item in tags]
     _clear_tags(db, asset_id, version_id, dimension_ids=touched_dims)
     _apply_tags(db, asset_id, version_id, tags)
+    from app.asset.color_rules import sync_color_family
+    sync_color_family(db, asset_id, version_id)
     db.commit()
     db.refresh(asset)
     return asset

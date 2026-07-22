@@ -1086,7 +1086,8 @@ def get_popular_tags(
     from sqlalchemy import func
     from app.asset.models import TagDimension, TagValue, asset_tag_association, Asset
 
-    dims = db.query(TagDimension).filter(TagValue.is_active == 1).all()
+    # 只统计可见维度（原实现误把 TagValue.is_active 过滤到维度查询上，属交叉过滤 bug）
+    dims = db.query(TagDimension).filter(TagDimension.is_visible == 1).all()
     result = []
 
     for dim in dims:
