@@ -81,7 +81,7 @@
             <span class="stat-item muted">阅 {{ row.view_count }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" min-width="150" fixed="right">
+        <el-table-column label="操作" min-width="200" fixed="right">
           <template #default="{ row }">
             <GlassButton variant="link" left-icon="View" @click.stop="openDetail(row)">查看</GlassButton>
             <GlassButton
@@ -90,6 +90,13 @@
               left-icon="Edit"
               @click.stop="router.push(`/training/digests/${row.id}/edit`)"
             >编辑</GlassButton>
+            <GlassButton
+              v-if="canDeleteRow(row)"
+              variant="link"
+              link-tone="danger"
+              left-icon="Delete"
+              @click.stop="handleDelete(row)"
+            >删除</GlassButton>
           </template>
         </el-table-column>
       </el-table>
@@ -111,9 +118,10 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { listDigests } from '@/api/training'
+import { listDigests, deleteDigest } from '@/api/training'
 import { useListPage } from '@/composables/useListPage'
 import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
+import { confirmDanger, msgSuccess } from '@/utils/feedback'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
@@ -125,9 +133,16 @@ function canEditRow(row) {
   return row.created_by === auth.user?.id || auth.hasPermission('training:admin')
 }
 
+// 已发布的速递只有管理员能删（与后端 router.delete_digest 同一口径），
+// 普通发布人只在草稿阶段可删，避免点了才吃 403
+function canDeleteRow(row) {
+  if (!canEditRow(row)) return false
+  return row.status !== 'published' || auth.hasPermission('training:admin')
+}
+
 const {
   loading, list, total, page, pageSize, searchForm: filters,
-  handleSearch: search, handlePageChange, handleSizeChange,
+  fetchList, handleSearch: search, handlePageChange, handleSizeChange,
 } = useListPage(
   async ({ page, page_size, ...form }) => {
     const params = { page, page_size }
@@ -152,6 +167,19 @@ function filterByTag(tag) {
 function clearTag() {
   filters.tag = ''
   search()
+}
+
+async function handleDelete(row) {
+  try {
+    await confirmDanger('删除', row.title)
+  } catch {
+    return
+  }
+  await deleteDigest(row.id)
+  msgSuccess('删除')
+  // 删掉当前页最后一条时回退一页，否则停在空页上
+  if (list.value.length === 1 && page.value > 1) await handlePageChange(page.value - 1)
+  else await fetchList()
 }
 </script>
 
