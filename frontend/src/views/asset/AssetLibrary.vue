@@ -104,7 +104,8 @@
             placeholder="搜索文件名或备注"
             clearable
             style="width: 280px"
-            @keyup.enter="loadData"
+            @keyup.enter="onKeywordSearch"
+            @clear="onKeywordSearch"
           >
             <template #prefix><el-icon><Search /></el-icon></template>
           </el-input>
@@ -119,11 +120,42 @@
 
       <!-- 内容区（可滚动） -->
       <div class="content-wrapper">
-        <div v-if="loading" class="loading-wrap">
+        <!-- 引导态：未产生检索意图（未选标签、未输关键词）前不展示素材，先指路 -->
+        <div v-if="!hasSearchIntent" class="guide-wrap">
+          <div class="guide-inner">
+            <svg class="guide-illustration" viewBox="0 0 240 180" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <circle class="gi-backdrop" cx="118" cy="86" r="74" />
+              <g class="gi-pill">
+                <rect x="46" y="46" width="78" height="22" rx="11" />
+                <circle class="gi-dot" cx="60" cy="57" r="4" />
+              </g>
+              <g class="gi-pill gi-pill--active">
+                <rect x="46" y="76" width="104" height="26" rx="13" />
+                <circle class="gi-dot" cx="61" cy="89" r="4.5" />
+                <path class="gi-check" d="M110 89 l5 5 l10 -11" />
+              </g>
+              <g class="gi-pill">
+                <rect x="46" y="110" width="66" height="22" rx="11" />
+                <circle class="gi-dot" cx="60" cy="121" r="4" />
+              </g>
+              <g class="gi-glass">
+                <circle cx="158" cy="112" r="30" />
+                <line x1="180" y1="134" x2="196" y2="150" />
+              </g>
+            </svg>
+            <h3 class="guide-title">选择标签，开始检索</h3>
+            <p class="guide-desc">在左侧选择标签即可查看对应素材。标签集会随你的选择自动收窄，越选越精准。</p>
+            <p class="guide-hint">
+              <el-icon><Search /></el-icon>
+              也可在左上角搜索框按关键字快速定位标签
+            </p>
+          </div>
+        </div>
+        <div v-else-if="loading" class="loading-wrap">
           <el-skeleton :rows="5" animated />
         </div>
         <div v-else-if="assets.length === 0" class="empty-wrap">
-          <el-empty description="暂无素材" />
+          <el-empty description="未找到匹配的素材" />
         </div>
 
         <!-- 网格视图 -->
@@ -224,7 +256,7 @@
       </div>
 
       <!-- 分页 -->
-      <div class="pagination-bar">
+      <div v-if="hasSearchIntent && assets.length" class="pagination-bar">
         <el-pagination
           v-model:current-page="page"
           v-model:page-size="pageSize"
@@ -334,6 +366,18 @@ const filterKeyword = ref('')
 // 当前已加载素材拥有的标签 ID 集合（用于联动筛选）
 const availableTagIds = ref(new Set())
 
+// 是否已选中任一标签
+const hasActiveTagFilter = computed(() =>
+  Object.values(activeFilters).some(arr => arr && arr.length > 0)
+)
+// 已提交的文件名关键词（回车/清空时更新，非实时输入）——避免边打字边闪「未找到」
+const committedKeyword = ref('')
+// 是否产生了检索意图：选了标签 或 已提交文件名关键词。
+// 无意图时右侧只展示引导插画，不拉全量素材（避免一进来就把整库倾倒出来）
+const hasSearchIntent = computed(() =>
+  hasActiveTagFilter.value || !!committedKeyword.value.trim()
+)
+
 // 根据关键字过滤后的维度（只包含有匹配标签值的维度）
 const filteredDimensions = computed(() => {
   const dims = dimensions.value
@@ -366,8 +410,7 @@ function filteredValues(dim) {
     values = values.filter(v => !v.parent_value_id || categorySelectedIds.value.has(v.parent_value_id))
   }
   // 联动筛选：当用户已选择某些标签且已加载素材时，只显示当前结果中存在的标签
-  const hasActiveFilter = Object.values(activeFilters).some(arr => arr && arr.length > 0)
-  if (hasActiveFilter && assets.value.length > 0 && availableTagIds.value.size > 0) {
+  if (hasActiveTagFilter.value && assets.value.length > 0 && availableTagIds.value.size > 0) {
     values = values.filter(v => availableTagIds.value.has(v.id))
   }
   return values
@@ -465,11 +508,33 @@ watch(dimensions, (dims) => {
   })
 }, { immediate: true })
 
-// 标签筛选变化时自动加载
+// 标签筛选变化时自动加载；取消全部选择后回到引导态
 watch(activeFilters, () => {
   page.value = 1
-  loadData()
+  if (hasSearchIntent.value) {
+    loadData()
+  } else {
+    resetResults()
+  }
 }, { deep: true })
+
+// 顶部关键词检索：回车或清空时提交关键词，有意图则检索，否则回到引导态
+function onKeywordSearch() {
+  committedKeyword.value = keyword.value.trim()
+  page.value = 1
+  if (hasSearchIntent.value) {
+    loadData()
+  } else {
+    resetResults()
+  }
+}
+
+// 清空右侧结果，回到引导插画
+function resetResults() {
+  assets.value = []
+  total.value = 0
+  availableTagIds.value = new Set()
+}
 
 async function handleAiAnalyze(asset) {
   if (!asset) return
@@ -529,12 +594,13 @@ async function loadData() {
 
 function resetFilters() {
   keyword.value = ''
+  committedKeyword.value = ''
   filterKeyword.value = ''
   for (const key in activeFilters) {
     activeFilters[key] = []
   }
   page.value = 1
-  loadData()
+  resetResults()
 }
 
 function openPreview(asset) {
@@ -661,10 +727,9 @@ function fileTypeTag(type) {
 }
 
 onMounted(async () => {
-  // 移动端检测已移至路由守卫，此处仅加载数据
-  // 先等标签维度加载完，避免 watch(activeFilters) 触发二次 loadData
+  // 移动端检测已移至路由守卫，此处仅加载标签维度。
+  // 不再默认拉素材：等用户选标签或输关键词产生检索意图后再检索（见 hasSearchIntent）
   await loadDimensions()
-  loadData()
 })
 </script>
 
@@ -999,6 +1064,99 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* ── 引导态：未检索时的指路插画 ── */
+.guide-wrap {
+  min-height: 460px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 24px;
+}
+.guide-inner {
+  max-width: 360px;
+  text-align: center;
+  animation: guideIn 380ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+.guide-illustration {
+  width: 184px;
+  height: auto;
+  display: block;
+  margin: 0 auto 20px;
+}
+.gi-backdrop { fill: var(--color-gold-soft); }
+.gi-pill rect {
+  fill: var(--card-bg);
+  stroke: var(--border-color);
+  stroke-width: 1.5;
+}
+.gi-pill .gi-dot { fill: var(--text-muted); }
+.gi-pill--active rect {
+  fill: var(--color-primary-light);
+  stroke: var(--color-primary);
+  stroke-width: 1.5;
+}
+.gi-pill--active .gi-dot { fill: var(--color-primary); }
+.gi-check {
+  fill: none;
+  stroke: var(--color-primary);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.gi-glass circle {
+  fill: var(--color-primary-light);
+  stroke: var(--color-primary);
+  stroke-width: 3;
+}
+.gi-glass line {
+  stroke: var(--color-primary);
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+/* 插画元素依次淡入，营造「层层收窄」的节奏（仅透明度，跨浏览器安全） */
+.guide-illustration g { animation: giFade 300ms cubic-bezier(0.23, 1, 0.32, 1) both; }
+.guide-illustration g:nth-of-type(1) { animation-delay: 60ms; }
+.guide-illustration g:nth-of-type(2) { animation-delay: 120ms; }
+.guide-illustration g:nth-of-type(3) { animation-delay: 180ms; }
+.guide-illustration g:nth-of-type(4) { animation-delay: 240ms; }
+.guide-title {
+  margin: 0 0 8px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.guide-desc {
+  margin: 0 0 14px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-secondary);
+}
+.guide-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--color-primary);
+  background: var(--color-primary-light);
+}
+.guide-hint .el-icon { font-size: 13px; }
+
+@keyframes guideIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes giFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .guide-inner,
+  .guide-illustration g { animation: none; }
 }
 
 .mr-4 {
