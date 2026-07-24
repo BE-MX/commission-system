@@ -6,11 +6,56 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+    <!-- 非阻塞加载：字体拿不到也不该拖住首屏渲染（展位平板网络不可控） -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap"
+          rel="stylesheet" media="print" onload="this.media='all'">
     <title>莱莎方舟平台</title>
+    <style>
+      /* 启动态：首屏 JS 到位前顶着，别让用户对着一片纯黑猜是不是死机。
+         纯 CSS 自动消失——Vue 一挂载 #app 就非空，:empty 不再匹配。 */
+      #boot {
+        position: fixed; inset: 0; z-index: 2147483000;
+        display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+        background: #f0f2f7; transition: opacity 200ms ease;
+      }
+      #app:not(:empty) + #boot { display: none; }
+      #boot .ring {
+        width: 34px; height: 34px; border-radius: 50%;
+        border: 2px solid rgba(212, 148, 28, 0.18);
+        border-top-color: #D4941C;
+        animation: boot-spin 700ms linear infinite;  /* 转快一点，加载就"显得"快 */
+      }
+      #boot .hint {
+        margin: 0; font-size: 13px; letter-spacing: 0.18em;
+        color: #a0aec0; font-family: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
+      }
+      /* 展会 kiosk 是黑金语系，浅色启动屏会闪一下白 */
+      html.boot-dark #boot { background: #0c0a08; }
+      html.boot-dark #boot .ring { border-color: rgba(232, 196, 121, 0.16); border-top-color: #e8c479; }
+      html.boot-dark #boot .hint { color: #8d8371; }
+      /* 久等不回：从"转圈"升级成一句能指导下一步的话 */
+      #boot.slow .hint::after { content: "网络较慢，仍在载入…"; }
+      #boot.slow .hint span { display: none; }
+      @keyframes boot-spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) { #boot .ring { animation-duration: 2s; } }
+    </style>
+    <script>
+      // 在任何资源下载前就定好配色，避免深色页面先闪一帧白
+      if (location.pathname.indexOf('/expo/') === 0) document.documentElement.className += ' boot-dark';
+    </script>
   </head>
   <body>
     <div id="app"></div>
+    <div id="boot" aria-hidden="true">
+      <div class="ring"></div>
+      <p class="hint"><span>正在载入…</span></p>
+    </div>
+    <script>
+      setTimeout(function () {
+        var b = document.getElementById('boot');
+        if (b && !document.getElementById('app').hasChildNodes()) b.className = 'slow';
+      }, 8000);
+    </script>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
