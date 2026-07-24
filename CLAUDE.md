@@ -37,6 +37,7 @@ backend/app/
 ├── auth/ design/ system/ dingtalk/ ai/ insight/ # 领域模块：app/<domain>/ 自包含
 │   stock/ tracking/ asset/ color/ production/   #   router.py models.py schemas.py service.py(+子service)
 │   report/ governance/ invoice/ expo/ mini/ whatsapp/ pm/   # pm=资料协作站(独立鉴权,不接RBAC)
+│   training/ mcp/                                # mcp=MCP网关(个人token,mount /mcp,物流+素材工具)
 frontend/src/
 ├── config/navigation.js    # 路由+菜单唯一来源
 ├── api/clients.js          # axios client 唯一来源（auth.js 是唯一例外）
@@ -56,7 +57,7 @@ miniprogram/  services/whatsapp-connector/  deploy/  docs/  config/
 4. **session**：请求用 `from app.core.database import get_db`；仅 scheduler / 线程池 / bootstrap 三类场景允许自建 `SessionLocal()`
 5. **数据库变更只走 Alembic**：revision ID ≤32 字符；创建后立即 `git add`；FK 类型与目标列完全一致（含 unsigned）；MySQL DDL 不可回滚，迁移前自查
 6. **异常不许无声吞**：except 至少 `logger.warning` + `print(flush=True)`（NSSM service.log 只认 print）；批量循环用 savepoint 隔离单条失败，commit 失败后必须 rollback
-7. **AI 调用**只走 `from app.ai.service import chat`（preset 后台可配）；多模态 image_url 不传 detail；参数用 max_tokens
+7. **AI 调用**只走 `from app.ai.service import chat`（preset 后台可配）；多模态 image_url 不传 detail；参数用 max_tokens；**枚举值域禁止写死在 prompt 里**，必须运行时从 DB 注入 user message（写死则体系一变静默失效，见 cerebrum 2026-07-22）
 8. **新增权限三步**：`auth/service.py` 的 `seed_role_permissions` 加 code（seed 是 **upsert**，元数据每次启动刷新）→ 重启后端 → 角色管理页分配。动作词汇只允许 read/write/delete/admin + 已登记特例（白名单见 scripts/check_conventions.py 的 ALLOWED_PERM_ACTIONS）；数据范围权限（read_all/self_read 类）kind=data，控查询口径不控显隐
 9. ORM relationship 默认 `noload`，由查询显式 selectinload/joinedload（主表有 LIMIT 或关联均值 >3 行用 selectinload）
 
