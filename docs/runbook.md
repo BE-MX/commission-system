@@ -666,6 +666,15 @@ grep "job completed" logs\service.log | tail -20
 
 北京轻量服务器（4C8G/12M，Ubuntu 24.04）跑方舟完整后端 + 前端静态，**专门服务展会场景**。三入口：`https://leshine.cloud` 主站（相机可用）、http 域名 301 跳 https、`http://154.8.205.162` IP 兜底。**证书 TrustAsia 90 天期，2026-10-19 到期需续**（/etc/nginx/ssl/，主域与 hair 子域两张同批到期）。发型静态展示站曾挂本机 hair.leshine.cloud——**2026-07-22 当天 leshine.cloud 全域被未备案拦截**（80 跳 dnspod webblock 页、443 TLS RST，灰度铺开「部分手机能开」），当日迁至新加坡机 `hair.leshine.work`（/var/www/hair-styles，conf.d/hair.leshine.conf，certbot webroot 证书 2026-10-20 到期**自动续期**）；展会二维码指向 `https://hair.leshine.work/#/p/<产品编号>`，16 张码图在亮哥 Downloads\莱莎16款明星发型静态网页\qrcodes\（.cloud 旧码已覆盖作废）。本机保留 IP 兜底入口：主站 `http://154.8.205.162`、发型站 `http://154.8.205.162/hair/`（子路径挂站注意 `^~` 防 .html 正则截胡，见 cerebrum 2026-07-22）。⚠️ leshine.cloud 未备案（.cloud 后缀疑似不可备案，待腾讯云备案控制台核实）——机房对未备案域名周期扫描拦截，**随时可能失效**，被拦即退 IP 入口，正式方案等 leshine.work 备案。与办公室生产实例共用北京 RDS（同区延迟 2.1ms）；`.env` 三处差异：`SCHEDULER_ENABLED=false`（定时任务只在办公室跑，expo 看门狗是读取时自愈不受影响）、`WHATSAPP_AUTO_SYNC_ENABLED=false`、`TFT_SERVICE_ENABLED=false`（内网服务不可达），另加 `PDF_CJK_FONT_PATH` 指向 Noto CJK。
 
+- **发型静态站改内容要同步两份副本（2026-07-24 踩）**：这个站有**两处线上部署**，只更一处会让兜底入口继续发旧版——
+  ①新加坡 `root@119.28.107.92:/var/www/hair-styles`（正式域名 hair.leshine.work，二维码指向这里）；
+  ②北京 `ubuntu@154.8.205.162:/var/www/hair-styles`（IP 兜底 `/hair/`，`/var/www/hair` 是指向它的软链）。
+  北京机 **root 拒登、只能用 ubuntu**（有免密 sudo，但该目录 ubuntu 属主可直接写）；新加坡机用 root。
+  源文件是亮哥 `Downloads\莱莎16款明星发型静态网页\index.html`（单文件 SPA，16 款产品数据以 `window.PRODUCTS` 内联，
+  hash 路由 `#/p/<slug>`）——注意**本地 `assets/` 是空的**，图片音频 33MB 只存在于服务器，
+  所以视觉验收必须截线上，本地打开只有骨架。改法：先 `md5sum` 比对本地与服务器确认没有更新的线上版本 →
+  服务器 `cp -a index.html index.html.bak-<日期>` → scp 覆盖 → curl 复验。
+
 - **展位平板专用 HTTPS 入口（2026-07-24 加）**：`https://154.8.205.162/expo/kiosk`。IP 申请不到 CA 证书，
   用 10 年自签证书 `/etc/nginx/ssl/expo-ip.{crt,key}`（CN=154.8.205.162，含 IP SAN，2036-07-21 到期），
   配在 `sites-available/ark-ip-ssl.conf` 的 `listen 443 ssl default_server` 块——只接管「无 SNI / IP 直连」，
