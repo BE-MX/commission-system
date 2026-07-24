@@ -406,3 +406,10 @@
 - 附件：`POST /{id}/files`（白名单后缀+大小校验，私有目录 TRAINING_STORAGE_ROOT；Form 可带 `file_type`（类型白名单 courseware/photo/recording/notes/other，默认 other）与 `remark`（≤200 字））、`PATCH /files/{file_id}`（编辑附件类型/备注，仅本人或管理员）、`DELETE /files/{file_id}`、`GET /files/{file_id}/download`（JWT 鉴权 FileResponse，前端 axios blob）。
 - AI 与发布：`POST /{id}/draft`（AI 提炼：粘贴文字+图片多模态+PDF 抽文本 → 结构化草稿，preset `training_digest_draft`）、`POST /{id}/publish`（★必填分区校验不过 400；成功即推钉钉群 actionCard）、`POST /{id}/push`（手动重推）、`POST /{id}/useful`（有用标记 toggle，唯一约束防重复）。
 - 权限：`training:read` 查看；`training:write` 自助发布（编辑仅限本人创建，草稿仅本人可见）；`training:admin` 管理全部。
+
+## 工作台配置（`/api/dashboard`，080 迁移，2026-07-25）
+
+- `GET /preference` — 读当前用户工作台布局配置（无配置返回 `data: null`，前端按注册表默认渲染）。
+- `PUT /preference` — 保存布局（整体覆盖式 upsert）；body 形状 `{version, metrics:{hidden,order}, actions:{hidden,order}}`，服务端只校验形状不校验卡片 key（key 真相源在前端 `views/dashboard/cards.js` 注册表，未知 key 渲染时忽略）。
+- `DELETE /preference` — 删行恢复默认布局。
+- 鉴权：三端点均 `get_current_user`（个人域数据，user_id 取 JWT sub 行级隔离，同 `/api/auth/me` 模式，不挂 require_permission——工作台是全员落地页无页面权限码）。
