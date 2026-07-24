@@ -666,6 +666,18 @@ grep "job completed" logs\service.log | tail -20
 
 北京轻量服务器（4C8G/12M，Ubuntu 24.04）跑方舟完整后端 + 前端静态，**专门服务展会场景**。三入口：`https://leshine.cloud` 主站（相机可用）、http 域名 301 跳 https、`http://154.8.205.162` IP 兜底。**证书 TrustAsia 90 天期，2026-10-19 到期需续**（/etc/nginx/ssl/，主域与 hair 子域两张同批到期）。发型静态展示站曾挂本机 hair.leshine.cloud——**2026-07-22 当天 leshine.cloud 全域被未备案拦截**（80 跳 dnspod webblock 页、443 TLS RST，灰度铺开「部分手机能开」），当日迁至新加坡机 `hair.leshine.work`（/var/www/hair-styles，conf.d/hair.leshine.conf，certbot webroot 证书 2026-10-20 到期**自动续期**）；展会二维码指向 `https://hair.leshine.work/#/p/<产品编号>`，16 张码图在亮哥 Downloads\莱莎16款明星发型静态网页\qrcodes\（.cloud 旧码已覆盖作废）。本机保留 IP 兜底入口：主站 `http://154.8.205.162`、发型站 `http://154.8.205.162/hair/`（子路径挂站注意 `^~` 防 .html 正则截胡，见 cerebrum 2026-07-22）。⚠️ leshine.cloud 未备案（.cloud 后缀疑似不可备案，待腾讯云备案控制台核实）——机房对未备案域名周期扫描拦截，**随时可能失效**，被拦即退 IP 入口，正式方案等 leshine.work 备案。与办公室生产实例共用北京 RDS（同区延迟 2.1ms）；`.env` 三处差异：`SCHEDULER_ENABLED=false`（定时任务只在办公室跑，expo 看门狗是读取时自愈不受影响）、`WHATSAPP_AUTO_SYNC_ENABLED=false`、`TFT_SERVICE_ENABLED=false`（内网服务不可达），另加 `PDF_CJK_FONT_PATH` 指向 Noto CJK。
 
+- **展位平板专用 HTTPS 入口（2026-07-24 加）**：`https://154.8.205.162/expo/kiosk`。IP 申请不到 CA 证书，
+  用 10 年自签证书 `/etc/nginx/ssl/expo-ip.{crt,key}`（CN=154.8.205.162，含 IP SAN，2036-07-21 到期），
+  配在 `sites-available/ark-ip-ssl.conf` 的 `listen 443 ssl default_server` 块——只接管「无 SNI / IP 直连」，
+  `leshine.cloud` 域名仍走 ark-cloud.conf。改前备份在 `~/nginx-backup-20260724/`。
+  - **为什么要它**：http 下浏览器不给 secure context，网页 `getUserMedia` 被禁用 → kiosk 内嵌取景框起不来。
+    换 https 后即使证书不受信，secure context 判定只看 scheme，相机恢复可用，不必等备案。
+  - **平板 APK 侧配套**：`tablet-kiosk` 用**证书指纹 pinning**（不是无脑放行 SSL 错误）——
+    指纹写在 `strings.xml` 的 `pinned_cert_sha256`，WebView 的 `onReceivedSslError` 和「一键打印」
+    用的裸 `HttpURLConnection` 两条链路共用 `PinnedTls.kt`。**换证书必须同步更新指纹并重打 APK**：
+    `sudo openssl x509 -in /etc/nginx/ssl/expo-ip.crt -noout -fingerprint -sha256`
+  - **分享二维码仍走 http**：客户手机不认自签证书（微信内置浏览器直接白屏），`ResultScreen.vue`
+    在 host 为裸 IP 且无显式端口时把分享链接降回 http；备案换正规证书后自动恢复 https
 - 布局：代码 `/home/ubuntu/commission-system`（clone 自本机 bare 仓库 `/home/ubuntu/repo.git`）；前端 `/var/www/ark-dist`；日志 `logs/service.log`
 - 服务：`sudo systemctl status|restart ark-backend`（uvicorn 单 worker，127.0.0.1:8001，nginx 80 反代）
 - **部署更新（不走 GitHub）**：开发机 `git push cloud main`（remote `cloud` = ssh bare 仓库）→ `ssh ubuntu@154.8.205.162 "cd ~/commission-system && git pull && sudo systemctl restart ark-backend"`；前端变更时开发机 `npm run build` 后 `tar czf - dist | ssh ubuntu@154.8.205.162 "cd /tmp && tar xzf - && sudo rsync -a --delete dist/ /var/www/ark-dist/ && rm -rf dist"`
