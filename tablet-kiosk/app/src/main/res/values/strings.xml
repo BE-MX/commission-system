@@ -15,8 +15,10 @@
 
     <!-- 打印机 App 的包名（留空则「打印」按钮走系统「打开方式」让工作人员选 App）。
          查包名：设置 → 应用 → 打开打印 App 看详情，或电脑 adb shell pm list packages | grep 关键词。
-         例：com.canon.eos.selphy / com.hp.printercontrol 等，按你的打印机填。 -->
-    <string name="printer_package">com.hannto.fennel.overseas</string>
+         例：com.canon.eos.selphy / com.hp.printercontrol 等，按你的打印机填。
+         极印photo 的真实包名是 com.hannto.jiyin（2026-07-24 adb 核实）——
+         注意别被它启动 Activity 的类名 com.hannto.fennel.overseas.* 误导，那不是包名。 -->
+    <string name="printer_package">com.hannto.jiyin</string>
 
     <!-- ========= 现场地址配置（三指长按 2.5 秒呼出） ========= -->
     <string name="config_title">服务器地址</string>
