@@ -33,10 +33,11 @@ defineEmits(['start'])
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 18px;
-  padding-bottom: 6vh;
+  gap: 26px;
+  padding-bottom: 4vh;
 }
-.orbit-wrap { position: relative; width: min(46vw, 320px); aspect-ratio: 1; }
+/* 大平板竖屏下内容占比偏小、显空——整体放大约 1.35x，并解除 orbit 的 320px 上限 */
+.orbit-wrap { position: relative; width: min(62vw, 460px); aspect-ratio: 1; }
 .orbit {
   position: absolute; inset: 0; border-radius: 50%;
   border: 1px solid var(--xk-gold-line);
@@ -60,25 +61,26 @@ defineEmits(['start'])
   50% { opacity: 1; transform: scale(1.035); }
 }
 .brand-name {
-  display: flex; flex-direction: column; align-items: center; gap: 7px;
+  display: flex; flex-direction: column; align-items: center; gap: 9px;
   margin-top: -4px;
   font-family: 'Noto Serif SC', 'STSong', serif;
-  font-size: 17px; color: var(--xk-gold-hi);
+  font-size: 22px; color: var(--xk-gold-hi);
   letter-spacing: 0.42em; text-indent: 0.42em; /* 补偿末字间距保证视觉居中 */
 }
 .brand-name .en {
   font-family: 'PingFang SC', sans-serif;
-  font-size: 10px; letter-spacing: 0.6em; text-indent: 0.6em;
+  font-size: 13px; letter-spacing: 0.6em; text-indent: 0.6em;
   color: var(--xk-gold-dim);
 }
 .slogan {
   font-family: 'Noto Serif SC', 'STSong', serif;
-  font-size: clamp(28px, 5vw, 44px);
+  font-size: clamp(34px, 7.4vw, 60px);
   font-weight: 600; text-align: center; line-height: 1.4; margin: 0;
 }
 .slogan em { font-style: italic; color: var(--xk-gold); }
-.line { font-size: 13px; letter-spacing: 0.3em; color: var(--xk-mut); }
-.cta { position: relative; margin-top: 14px; }
+.line { font-size: 16px; letter-spacing: 0.3em; color: var(--xk-mut); }
+/* 覆盖全局 .xk-btn 尺寸（scoped [data-v] 特异性高于全局）：主 CTA 放大更醒目 */
+.cta { position: relative; margin-top: 18px; height: 64px; padding: 0 58px; font-size: 18px; }
 .cta::after {
   content: ''; position: absolute; inset: -8px; border-radius: 36px;
   border: 1px solid var(--xk-gold-line);
@@ -91,13 +93,13 @@ defineEmits(['start'])
 .cta2 {
   height: auto;
   flex-direction: column;
-  gap: 4px;
-  padding: 12px 36px;
+  gap: 5px;
+  padding: 16px 46px;
   letter-spacing: 0.18em;
-  font-size: 13px;
+  font-size: 15px;
 }
 .cta2 small {
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.12em;
   color: var(--xk-mut);
 }
