@@ -15,6 +15,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
+import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -116,9 +117,13 @@ class MainActivity : ComponentActivity() {
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
+                Log.i(TAG, "onPageFinished loadFailed=$loadFailed url=$url")
                 // 保险：标记桌面模式，杜绝任何移动端重定向（/expo 已豁免，这里再兜一层）
                 view?.evaluateJavascript("try{sessionStorage.setItem('ark_desktop_mode','1')}catch(e){}", null)
                 if (!loadFailed) hideError() // 顺带把退避计数清零
+                // 首帧保险：个别 ROM 上 WebView 渲染完成却不触发绘制（2026-07-24 荣耀平板实测过一次，
+                // DOM 正常但整屏纯黑），主动要一次重绘，代价可忽略
+                view?.postDelayed({ view.invalidate() }, 120)
             }
 
             /**
@@ -135,8 +140,10 @@ class MainActivity : ComponentActivity() {
                 val der = error?.certificate
                     ?.let { SslCertificate.saveState(it).getByteArray("x509-certificate") }
                 if (PinnedTls.matches(this@MainActivity, der)) {
+                    Log.i(TAG, "ssl pinned ok ${error?.url}")
                     handler?.proceed()
                 } else {
+                    Log.w(TAG, "ssl pin MISMATCH ${error?.url} primary=${error?.primaryError}")
                     handler?.cancel()
                     showError(error?.url, "证书校验未通过")
                 }
@@ -149,6 +156,7 @@ class MainActivity : ComponentActivity() {
                 error: WebResourceError?,
             ) {
                 if (request?.isForMainFrame == true) {
+                    Log.w(TAG, "onReceivedError ${request.url} ${error?.description}")
                     showError(request.url?.toString(), error?.description?.toString())
                 }
             }
@@ -203,6 +211,7 @@ class MainActivity : ComponentActivity() {
         }
 
         webView.addJavascriptInterface(WebBridge(), "Android")
+        Log.i(TAG, "loadUrl ${KioskUrl.get(this)}")
         webView.loadUrl(KioskUrl.get(this))
     }
 
@@ -307,12 +316,19 @@ class MainActivity : ComponentActivity() {
 
     // ---------------- 加载失败兜底页 ----------------
 
+    /**
+     * 注意：**这里绝不能碰 webView.onPause()/onResume()**。
+     * 1.4/1.5 版为「盖住就别让底下跑」在 showError 里 onPause、hideError 里 onResume，而 hideError
+     * 是在 onPageFinished 里调的——等于在页面回调里驱动本该跟随 Activity 生命周期的开关。
+     * 荣耀平板（com.hihonor.webview）上会让合成器丢掉首帧：DOM 渲染完好（CDP 截图正常）、
+     * Android 侧却一直不绘制，表现为**整屏纯黑**，直到任意外部事件触发一次重绘才突然出现。
+     * 2026-07-24 用 CDP 实测确诊。省那点 CPU（展位平板插着电）远不值这个风险，errorView 遮盖已足够。
+     */
     private fun showError(failedUrl: String?, reason: String?) {
         loadFailed = true
         ui.removeCallbacks(autoRetryTask)
         errorDetail.text = "${failedUrl ?: KioskUrl.get(this)}\n${reason.orEmpty()}"
         errorView.visibility = View.VISIBLE
-        webView.onPause() // 盖住就别让底下继续跑 JS/轮询
         // 展位无人值守：展馆 WiFi 抖一下不能就此挂着等人来点「重试」，退避自动重连
         ui.postDelayed(autoRetryTask, retryDelayMs)
         retryDelayMs = (retryDelayMs * 2).coerceAtMost(RETRY_MAX_MS)
@@ -323,7 +339,6 @@ class MainActivity : ComponentActivity() {
         retryDelayMs = RETRY_MIN_MS
         loadFailed = false
         errorView.visibility = View.GONE
-        webView.onResume()
     }
 
     private fun reload() {
@@ -577,6 +592,7 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
+        private const val TAG = "ExpoKiosk"
         private const val FILE_CHOOSER_REQ = 1001
         private const val PERM_REQ = 100
         private const val CONFIG_FINGERS = 3
