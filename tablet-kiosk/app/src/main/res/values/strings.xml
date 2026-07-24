@@ -3,11 +3,32 @@
 
     <!-- ========= 上机前只需改这两项 ========= -->
 
-    <!-- kiosk 起始地址 -->
-    <string name="start_url">https://leshine.work/expo/kiosk</string>
+    <!-- kiosk 起始地址（默认值）。平板上可三指长按改服务器地址，改完存本地、优先于此值。
+         走 https 是为了让浏览器把页面判为 secure context，网页相机（getUserMedia）才可用；
+         IP 申请不到 CA 证书，服务器挂的是自签证书，靠下面的指纹 pin 放行。 -->
+    <string name="start_url">https://154.8.205.162/expo/kiosk</string>
+
+    <!-- 允许放行的自签证书 SHA-256 指纹（冒号可留可去，大小写不限）。留空 = 不放行任何证书错误。
+         服务器换证书时同步更新：ssh ubuntu@<IP> "sudo openssl x509 -in /etc/nginx/ssl/expo-ip.crt -noout -fingerprint -sha256"
+         当前这张：CN=154.8.205.162，2026-07-24 签发，2036-07-21 到期。 -->
+    <string name="pinned_cert_sha256">D0:FE:91:FE:CD:03:F1:CD:CB:5B:0E:25:7C:72:3E:A2:65:89:78:41:A8:14:89:0D:CE:0D:67:46:3A:F1:8B:DA</string>
 
     <!-- 打印机 App 的包名（留空则「打印」按钮走系统「打开方式」让工作人员选 App）。
          查包名：设置 → 应用 → 打开打印 App 看详情，或电脑 adb shell pm list packages | grep 关键词。
          例：com.canon.eos.selphy / com.hp.printercontrol 等，按你的打印机填。 -->
     <string name="printer_package">com.hannto.fennel.overseas</string>
+
+    <!-- ========= 现场地址配置（三指长按 2.5 秒呼出） ========= -->
+    <string name="config_title">服务器地址</string>
+    <string name="config_hint">换服务器时在这里改，不用重装 App。只填 IP 或域名即可（可带 :端口），页面路径固定 /expo/kiosk。换地址后需重新登录展会账号。</string>
+    <string name="config_save">保存并重载</string>
+    <string name="config_reset">恢复默认</string>
+    <string name="config_cancel">取消</string>
+    <string name="config_invalid">地址格式不对，请检查后重填</string>
+
+    <!-- ========= 加载失败兜底页 / 文件选择 ========= -->
+    <string name="error_title">页面打不开</string>
+    <string name="error_retry">重试</string>
+    <string name="error_config">改地址</string>
+    <string name="chooser_title">拍照或选图</string>
 </resources>

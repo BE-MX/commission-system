@@ -1,14 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- targetSdk 30+ 的包可见性限制下，不声明就 resolve 不到系统相机/文档选择器/打印 App，
+         Lock Task 白名单和「打开打印」会静默失灵。打印 App 包名在 strings.xml 里可改，
+         用 <queries> 精确声明会漏配，本应用只内部分发不上架，直接放开查询。 -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
     <!-- 拍照合成要用前置摄像头 -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <!-- Android 9 及以下写相册需要此权限；Android 10+ 走 MediaStore 无需 -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
 
+    <!-- 展会实例目前是 IP 直连（http://154.8.205.162，域名未备案下不来 HTTPS），
+         Android 9+ 默认禁明文会直接 ERR_CLEARTEXT_NOT_PERMITTED 白屏，故放行。
+         备案通过换 HTTPS 域名后可改回 false。副作用：http 非安全上下文 →
+         网页 getUserMedia 不可用，拍照自动降级为系统相机（CaptureScreen 已有兜底）。 -->
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
@@ -16,7 +26,7 @@
         android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="false"
         android:theme="@style/Theme.ExpoKiosk"
-        android:usesCleartextTraffic="false">
+        android:usesCleartextTraffic="true">
 
         <activity
             android:name=".MainActivity"
