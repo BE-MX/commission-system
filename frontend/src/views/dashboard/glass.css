@@ -1,0 +1,114 @@
+/* ===================================================
+   工作台 Liquid Glass 基元（仅 Dashboard 页引用）
+   卡片玻璃 / 编辑态控件 / 拖拽幽灵，供各 section 组件共用。
+   颜色一律引用 tokens.css 变量（宪法 13）。
+   =================================================== */
+
+/* ── 玻璃卡片基元 ── */
+.dash-glass-card {
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.5);
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.5);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--card-radius);
+  box-shadow: var(--glass-highlight), var(--glass-shadow);
+  /* 只 transition 具体属性，不用 all（Emil）；backdrop-filter 静态存在不参与动画 */
+  transition:
+    transform 200ms var(--ease-out-strong),
+    box-shadow 200ms var(--ease-out-strong),
+    border-color 200ms var(--ease-out-strong),
+    opacity 200ms var(--ease-out-strong);
+}
+
+/* backdrop-filter 不可用时降级为实心白卡 */
+@supports not (backdrop-filter: blur(1px)) {
+  .dash-glass-card {
+    background: var(--card-bg);
+    border-color: var(--border-color);
+  }
+}
+
+/* hover 上浮：仅精确指针设备（触屏 tap 会误触发 hover） */
+@media (hover: hover) and (pointer: fine) {
+  .dash-glass-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--glass-highlight), var(--glass-shadow-hover);
+    border-color: rgba(255, 255, 255, 0.85);
+  }
+  /* 非交互面板 hover 不位移，只加深阴影 */
+  .dash-glass-card.is-static:hover {
+    transform: none;
+  }
+}
+
+/* 可点卡片按压反馈（Emil：按钮必须回应按压） */
+.dash-glass-card:not(.is-static):active {
+  transform: scale(0.98);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dash-glass-card:hover,
+  .dash-glass-card:active {
+    transform: none;
+  }
+}
+
+/* ── 编辑态 ── */
+/* 隐藏卡：留在原位降透明度，可再点亮 */
+.dash-card-dimmed {
+  opacity: 0.38;
+}
+
+/* 拖拽把手 */
+.dash-drag-handle {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: grab;
+  background: var(--glass-bg-strong);
+  border: 1px solid var(--border-color);
+}
+.dash-drag-handle:active {
+  cursor: grabbing;
+}
+
+/* 显隐眼睛按钮 */
+.dash-eye-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--glass-bg-strong);
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 120ms var(--ease-out-strong), color 120ms ease;
+}
+.dash-eye-btn:active {
+  transform: scale(0.9);
+}
+@media (hover: hover) and (pointer: fine) {
+  .dash-eye-btn:hover {
+    color: var(--color-primary);
+  }
+}
+
+/* 拖拽中的占位幽灵 */
+.drag-ghost {
+  opacity: 0.4;
+  border-style: dashed;
+  border-color: var(--color-primary);
+}
