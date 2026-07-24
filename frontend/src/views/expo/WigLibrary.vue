@@ -146,7 +146,8 @@
             <el-option v-for="o in NOT_SUITABLE" :key="o" :label="o" :value="o" />
           </el-select>
         </el-form-item>
-        <el-form-item label="卖点"><el-input v-model="form.selling_points" type="textarea" :rows="2" placeholder="核心卖点，供话术引用" /></el-form-item>
+        <el-form-item label="卖点"><el-input v-model="form.selling_points" type="textarea" :rows="2" placeholder="核心卖点+吸引点，供话术引用" /></el-form-item>
+        <el-form-item label="销售描述"><el-input v-model="form.sales_description" type="textarea" :rows="3" placeholder="发型特点解说+门店一句话解说，供线索话术引用（不进生图，与「发型描述」分开）" /></el-form-item>
         <el-form-item label="证据引用">
           <el-select v-model="form.evidence_refs" multiple filterable allow-create default-first-option placeholder="自由输入证据编号 / 来源" style="width: 100%" />
         </el-form-item>
@@ -270,7 +271,7 @@ const colorMatrixLoading = ref(false)
 function emptyForm() {
   return {
     model_no: '', name: '', series: 'classic', cover_path: '',
-    wig_description: '', composite_prompt: '', selling_points: '',
+    wig_description: '', composite_prompt: '', selling_points: '', sales_description: '',
     evidence_refs: [], priority: 0, must_recommend: false, is_active: true,
     fit_tags: {
       gender: 'female', face_shapes: [], skin_depths: [], undertones: [], age_ranges: [], needs: [], styles: [], length: '',
@@ -302,6 +303,7 @@ function toUpsert(src) {
     angle_photos: src.angle_photos || [],
     wig_description: src.wig_description || '', composite_prompt: src.composite_prompt || '',
     fit_tags: src.fit_tags || {}, selling_points: src.selling_points || '',
+    sales_description: src.sales_description || '',
     evidence_refs: src.evidence_refs || [], priority: src.priority || 0,
     must_recommend: !!src.must_recommend, is_active: !!src.is_active,
   }

@@ -1099,7 +1099,9 @@ def _tried_wigs_block(session: ExpoSession) -> str:
             continue
         seen.add(wig.id)
         mark = "【客户心动】" if r.reaction == "loved" else ""
-        line = f"- {mark}{wig.name}：特征={wig.wig_description or '无'}；卖点={wig.selling_points or '无'}"
+        # 发型描述优先用销售描述（发型特点解说+门店一句话解说），存量无则回退生图用的视觉描述
+        desc = wig.sales_description or wig.wig_description or "无"
+        line = f"- {mark}{wig.name}：发型描述={desc}；卖点={wig.selling_points or '无'}"
         if reason_map.get(wig.id):
             line += f"；匹配理由={reason_map[wig.id]}"
         lines.append(line)
@@ -1140,11 +1142,14 @@ def _run_strategy(session_id: int) -> None:
             '请输出 JSON：{"opener":"情感线开场话术，口语化2-3句","followup":"理性线跟进要点，2-3句",'
             '"objections":[{"q":"客户可能的问题","a":"应对"}]}（恰好 2 条 objections）\n'
             "硬性要求：\n"
-            "1. opener 必须点名一款推荐发型（有心动款优先选心动款），并把该发型的具体特征与客户脸型"
-            "特征做因果挂钩，讲清「这个特征为什么修饰这种脸型」（例：内扣发尾贴合下颌线，刚好柔化圆脸轮廓）；\n"
-            "2. followup 围绕所点名发型的特征、卖点与可引用证据展开，不写与发型无关的泛泛赞美；\n"
-            "3. 发型细节只能引用上面「推荐发型」清单里明确写到的内容——清单没提刘海就不许说刘海，"
-            "没提发色就不许说发色，禁止杜撰发型不具备的特征。"
+            "1. opener 必须点名一款推荐发型（有心动款优先选心动款），并从该发型的「发型描述」里取一个"
+            "具体特征与客户脸型特征做因果挂钩，讲清「这个特征为什么修饰这种脸型」"
+            "（例：内扣发尾贴合下颌线，刚好柔化圆脸轮廓）；\n"
+            "2. followup 围绕所点名发型的「发型描述」与「卖点」展开（两项都有内容时都要用到；"
+            "某项为空则只用另一项，两项皆空才退回匹配理由，任何情况都不得编造）；"
+            "结合可引用证据，不写与发型无关的泛泛赞美；\n"
+            "3. 发型细节只能引用上面「推荐发型」清单里该款「发型描述」「卖点」明确写到的内容——"
+            "清单没提刘海就不许说刘海，没提发色就不许说发色，禁止杜撰发型不具备的特征。"
         )
         strategy = _generate_checked_strategy(db, context)
         session.strategy_json = strategy

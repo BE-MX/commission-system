@@ -821,6 +821,7 @@ def serialize_wig(wig: ExpoWig) -> dict:
         "composite_prompt": wig.composite_prompt,
         "fit_tags": wig.fit_tags or {},
         "selling_points": wig.selling_points,
+        "sales_description": wig.sales_description,
         "evidence_refs": wig.evidence_refs or [],
         "priority": wig.priority,
         "must_recommend": wig.must_recommend,
