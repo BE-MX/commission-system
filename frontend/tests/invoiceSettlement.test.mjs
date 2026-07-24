@@ -5,9 +5,12 @@ import { readFileSync } from 'node:fs'
 import {
   EXPRESS_CHANNEL_OPTIONS,
   PAYMENT_METHOD_OPTIONS,
+  PAYMENT_METHOD_RATES,
   calculateBalance,
   calculateInvoiceTotal,
   calculateLineTotal,
+  computeHandlingFee,
+  handlingFeeRate,
   normalizeDiscount,
   settlementMatchesTotal,
 } from '../src/views/invoice/composables/invoiceSettlement.js'
@@ -40,8 +43,68 @@ test('settlement and accessory numeric controls fill their bounded containers', 
 })
 
 test('settlement options use the approved fixed values', () => {
-  assert.deepEqual(PAYMENT_METHOD_OPTIONS, ['PayPal', '大莱莎信保', '小莱莎信保', '新莱莎信保', 'TT'])
+  // 3 个店铺信保各拆便捷发货/报关，共 8 项
+  assert.deepEqual(PAYMENT_METHOD_OPTIONS, [
+    'PayPal',
+    '大莱莎信保（便捷发货）', '大莱莎信保（报关）',
+    '小莱莎信保（便捷发货）', '小莱莎信保（报关）',
+    '新莱莎信保（便捷发货）', '新莱莎信保（报关）',
+    'TT',
+  ])
   assert.deepEqual(EXPRESS_CHANNEL_OPTIONS, ['DHL', 'FEDEX', '其他'])
+})
+
+test('handling fee rate: paypal 5%, 便捷发货 3%, TT 0, 报关/未选 manual', () => {
+  assert.equal(handlingFeeRate('PayPal'), 0.05)
+  assert.equal(handlingFeeRate('大莱莎信保（便捷发货）'), 0.03)
+  assert.equal(handlingFeeRate('小莱莎信保（便捷发货）'), 0.03)
+  assert.equal(handlingFeeRate('新莱莎信保（便捷发货）'), 0.03)
+  assert.equal(handlingFeeRate('TT'), 0)
+  // 报关与未选：null = 不自动算、手填
+  assert.equal(handlingFeeRate('大莱莎信保（报关）'), null)
+  assert.equal(handlingFeeRate(''), null)
+  assert.equal(handlingFeeRate(undefined), null)
+  // 每个便捷发货项都有费率、每个报关项都手填
+  for (const method of PAYMENT_METHOD_OPTIONS) {
+    if (method.includes('便捷发货')) assert.equal(PAYMENT_METHOD_RATES[method], 0.03)
+    if (method.includes('报关')) assert.equal(method in PAYMENT_METHOD_RATES, false)
+  }
+})
+
+test('computeHandlingFee = rate x base with currency rounding', () => {
+  assert.equal(computeHandlingFee(0.05, 1000), 50)
+  assert.equal(computeHandlingFee(0.03, 980), 29.4)
+  assert.equal(computeHandlingFee(0, 1000), 0)
+  // 分位四舍五入：0.05 * 333.33 = 16.6665 → 16.67
+  assert.equal(computeHandlingFee(0.05, 333.33), 16.67)
+})
+
+test('order total (base) excludes the handling fee for auto-calc', () => {
+  // 基数 = 产品+包装+运费（handling=0），不含手续费 → 破循环依赖
+  assert.equal(calculateInvoiceTotal(900, 20, 80, 0), 1000)
+  // 应付合计（结算/导出口径）仍含手续费
+  assert.equal(calculateInvoiceTotal(900, 20, 80, 50), 1050)
+})
+
+test('editor wires payment-method auto-calc and base amount', () => {
+  assert.match(invoiceEditor, /formBaseAmount/)
+  assert.match(invoiceEditor, /handlingFeeRate/)
+  assert.match(invoiceEditor, /handlingFeeTouched/)
+  assert.match(invoiceEditor, /onPaymentMethodChange/)
+  assert.match(settlementFields, /@change="onPaymentMethodChange"/)
+  assert.match(settlementFields, /@change="onHandlingFeeInput"/)
+})
+
+test('footer separates order total (base) from the deducted handling fee', () => {
+  assert.match(totalsFooter, /订单总金额/)
+  assert.match(totalsFooter, /应付合计/)
+  assert.match(totalsFooter, /OKKI 侧扣减/)
+  assert.match(invoiceView, /:base-amount="formBaseAmount"/)
+})
+
+test('first-return shows the customer last order date reference', () => {
+  assert.match(invoiceView, /lastOrderDate/)
+  assert.match(invoiceView, /上次订单成交日期/)
 })
 
 test('line discounts are negative and invoice totals do not subtract them twice', () => {

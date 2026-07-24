@@ -12,10 +12,12 @@
       <span class="summary-chip packaging">包装费用 <strong>{{ money(form.internal_accessory) }}</strong> · {{ form.packaging_quantity }} 件</span>
       <span class="summary-operator">+</span>
       <span class="summary-chip shipping">运费 <strong>{{ money(form.shipping_fee) }}</strong></span>
-      <span class="summary-operator">+</span>
-      <span class="summary-chip handling">手续费 <strong>{{ money(form.surcharge_amount) }}</strong></span>
       <span class="summary-operator">=</span>
-      <span class="summary-chip total">Total <strong>{{ form.currency }} {{ money(total) }}</strong></span>
+      <span class="summary-chip base">订单总金额 <strong>{{ form.currency }} {{ money(baseAmount) }}</strong></span>
+      <span class="summary-divider">·</span>
+      <span class="summary-chip handling">手续费 <strong>{{ money(form.surcharge_amount) }}</strong><em class="chip-note">OKKI 侧扣减</em></span>
+      <span class="summary-operator">→</span>
+      <span class="summary-chip total">应付合计 <strong>{{ form.currency }} {{ money(total) }}</strong></span>
     </div>
     <div class="footer-actions">
       <el-button @click="$emit('cancel')">取消</el-button>
@@ -33,6 +35,7 @@ import { useAuthStore } from '@/stores/auth'
 defineProps({
   form: { type: Object, required: true },
   total: { type: Number, required: true },
+  baseAmount: { type: Number, required: true },
   hairAmount: { type: Number, required: true },
   hairDiscount: { type: Number, required: true },
   accessoryAmount: { type: Number, required: true },
@@ -56,8 +59,12 @@ const canSync = computed(() => useAuthStore().hasPermission('invoice:sync'))
 .packaging { --invoice-summary-fg: var(--invoice-summary-packaging-fg); --invoice-summary-bg: var(--invoice-summary-packaging-bg); }
 .shipping { --invoice-summary-fg: var(--invoice-summary-shipping-fg); --invoice-summary-bg: var(--invoice-summary-shipping-bg); }
 .handling { --invoice-summary-fg: var(--invoice-summary-handling-fg); --invoice-summary-bg: var(--invoice-summary-handling-bg); }
+.base { --invoice-summary-fg: var(--invoice-summary-total-fg); --invoice-summary-bg: var(--invoice-summary-total-bg); padding-inline: 12px; }
+.base strong { font-size: 15px; }
 .total { --invoice-summary-fg: var(--invoice-summary-total-fg); --invoice-summary-bg: var(--invoice-summary-total-bg); padding-inline: 12px; font-size: 14px; }
 .total strong { font-size: 17px; } .summary-operator { color: var(--text-secondary); }
+.summary-divider { color: var(--text-muted); }
+.chip-note { margin-left: 5px; color: var(--text-muted); font-size: 11px; font-style: normal; }
 .footer-actions { display: flex; flex-shrink: 0; gap: 8px; }
 @media (max-width: 900px) { .drawer-footer { align-items: stretch; flex-direction: column; } }
 </style>

@@ -16,6 +16,8 @@ import { useAuthStore } from '@/stores/auth'
 import {
   calculateBalance,
   calculateInvoiceTotal,
+  computeHandlingFee,
+  handlingFeeRate,
   normalizeDiscount,
   settlementMatchesTotal,
   sumLineNet,
@@ -61,6 +63,15 @@ export function useInvoiceEditor({ onSaved } = {}) {
   const formHairPrice = accessories.hairAmount
   const formLineDiscountTotal = accessories.hairDiscount
   const formProductTotal = computed(() => sumLineNet(form.items))
+  // 订单总金额（基数）= 产品+包装+运费，不含手续费（重定义 2026-07-24）：
+  // 既是手续费自动计算的乘数基数，也是页脚「订单总金额」展示口径
+  const formBaseAmount = computed(() => calculateInvoiceTotal(
+    formProductTotal.value,
+    form.internal_accessory,
+    form.shipping_fee,
+    0,
+  ))
+  // 应付合计（含手续费）= 基数 + 手续费：结算/尾款/导出的对外口径（保持不变）
   const formTotal = computed(() => calculateInvoiceTotal(
     formProductTotal.value,
     form.internal_accessory,
@@ -85,6 +96,36 @@ export function useInvoiceEditor({ onSaved } = {}) {
   watch(() => form.shipping_fee, fee => {
     if (okkiFlagsTouched.freeShipping) return
     form.okki_free_shipping = Number(fee || 0) > 0 ? 0 : 1
+  })
+
+  // 手续费自动计算（2026-07-24）：选付款方式（PayPal 5% / 信保便捷发货 3% / TT 0）
+  // 或订单总金额变化时，按 费率×基数 自动填手续费；报关/未选=不自动、用户手填；
+  // 用户手改过手续费后不再自动覆盖，直到重新选付款方式。
+  // 「上次订单成交日期」参考，仅展示（新成交时为空）。
+  const lastOrderDate = ref('')
+  let handlingFeeTouched = false
+
+  function markHandlingFeeTouched() {
+    handlingFeeTouched = true
+  }
+
+  function autofillHandlingFee() {
+    const rate = handlingFeeRate(form.internal_payment_method)
+    if (rate == null) return // 报关/未选：不自动算，保留用户手填值
+    form.surcharge_amount = computeHandlingFee(rate, formBaseAmount.value)
+  }
+
+  // 付款方式用 @change 触发（仅用户操作，避开 resetForm 程序化赋值误触发覆盖存值）
+  function onPaymentMethodChange() {
+    handlingFeeTouched = false
+    autofillHandlingFee()
+  }
+
+  // 基数变化：已选比例方式且用户未手改时跟随重算。编辑既有单 touched 起始为 true，
+  // 不会在加载明细时冲掉存值；新建时付款方式为空、autofill 天然是 no-op
+  watch(formBaseAmount, () => {
+    if (handlingFeeTouched) return
+    autofillHandlingFee()
   })
 
   watch([formTotal, () => form.internal_received], ([total, prepayment]) => {
@@ -118,6 +159,9 @@ export function useInvoiceEditor({ onSaved } = {}) {
     // 编辑既有单（有 id）时开关视为已人工确认，智能默认不再覆盖
     okkiFlagsTouched.newDeal = Boolean(data.id)
     okkiFlagsTouched.freeShipping = Boolean(data.id)
+    // 编辑既有单：手续费视为已确认，加载明细/基数变化不自动覆盖存值
+    handlingFeeTouched = Boolean(data.id)
+    lastOrderDate.value = ''
     Object.assign(form, emptyInvoiceForm(), {
       ...data,
       shipping_fee: Number(data.shipping_fee || 0),
@@ -138,7 +182,11 @@ export function useInvoiceEditor({ onSaved } = {}) {
     selectedContact.value = null
     contactOptions.value = []
     customerRule.value = null
-    if (form.customer_id) loadCustomerRule()
+    if (form.customer_id) {
+      loadCustomerRule()
+      // 编辑回显路径不走 fillContactDefaults（避免覆盖存的联系人），单独取上次订单日期
+      refreshLastOrderDate()
+    }
   }
 
   // el-select 按 value-key 在已渲染 options 里找到匹配项才能显示标签：
@@ -276,6 +324,24 @@ export function useInvoiceEditor({ onSaved } = {}) {
     if (!okkiFlagsTouched.newDeal && typeof defaults.has_xiaoman_orders === 'boolean') {
       form.okki_new_deal = defaults.has_xiaoman_orders ? 0 : 1
     }
+    // 首返旁「上次订单成交日期」参考（新成交无历史单 → 空）
+    lastOrderDate.value = defaults.last_order_date || ''
+  }
+
+  // 编辑回显专用：只取上次订单日期，不触碰联系人/新成交等存值
+  let lastOrderSeq = 0
+  async function refreshLastOrderDate() {
+    const seq = ++lastOrderSeq
+    let date = ''
+    if (form.customer_id) {
+      try {
+        const defaults = await getCustomerContactDefaults(form.customer_id) || {}
+        date = defaults.last_order_date || ''
+      } catch {
+        date = '' // 拦截器已统一提示，参考信息静默跳过
+      }
+    }
+    if (seq === lastOrderSeq) lastOrderDate.value = date
   }
 
   async function openCreate(orderType = 'stock') {
@@ -402,7 +468,9 @@ export function useInvoiceEditor({ onSaved } = {}) {
     formAccessoryAmount: accessories.accessoryAmount,
     formAccessoryDiscount: accessories.accessoryDiscountTotal,
     formProductTotal,
+    formBaseAmount,
     formTotal,
+    lastOrderDate,
     settlementError,
     isProduction,
     searchCustomers,
@@ -432,6 +500,8 @@ export function useInvoiceEditor({ onSaved } = {}) {
     saveAndSync,
     showIssues,
     markOkkiFlagTouched,
+    onPaymentMethodChange,
+    markHandlingFeeTouched,
   }
 }
 

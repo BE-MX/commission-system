@@ -3,7 +3,7 @@
     <div class="col-title">费用与结算信息</div>
     <div class="head-grid">
       <el-form-item label="付款方式" class="span-2">
-        <el-select v-model="form.internal_payment_method" clearable placeholder="请选择">
+        <el-select v-model="form.internal_payment_method" clearable placeholder="请选择" @change="onPaymentMethodChange">
           <el-option v-for="option in paymentMethods" :key="option" :label="option" :value="option" />
         </el-select>
       </el-form-item>
@@ -46,14 +46,24 @@
         <el-input-number v-model="form.shipping_fee" :min="0" :precision="2" controls-position="right" />
       </el-form-item>
       <el-form-item label="手续费" class="span-2">
-        <el-input-number v-model="form.surcharge_amount" :min="0" :precision="2" controls-position="right" />
+        <el-input-number
+          v-model="form.surcharge_amount"
+          :min="0"
+          :precision="2"
+          controls-position="right"
+          @change="onHandlingFeeInput"
+        />
+        <div v-if="handlingHint" class="handling-hint">{{ handlingHint }}</div>
       </el-form-item>
     </div>
   </section>
 </template>
 
 <script setup>
-defineProps({
+import { computed } from 'vue'
+import { handlingFeeRate } from '../composables/invoiceSettlement'
+
+const props = defineProps({
   form: { type: Object, required: true },
   total: { type: Number, required: true },
   settlementError: { type: String, default: '' },
@@ -64,6 +74,16 @@ defineProps({
   paymentMethods: { type: Array, required: true },
   expressChannels: { type: Array, required: true },
   money: { type: Function, required: true },
+  onPaymentMethodChange: { type: Function, default: () => {} },
+  onHandlingFeeInput: { type: Function, default: () => {} },
+})
+
+// 手续费提示：比例方式显示自动费率、报关提示手填，其余留空
+const handlingHint = computed(() => {
+  const method = props.form.internal_payment_method
+  const rate = handlingFeeRate(method)
+  if (rate == null) return method && method.includes('报关') ? '报关：手动填写手续费' : ''
+  return `${method} ${(rate * 100).toFixed(0)}% 自动（可手改）`
 })
 </script>
 
@@ -79,6 +99,7 @@ defineProps({
 .calculated-amount :deep(.el-input__inner), .negative-field :deep(input) { font-variant-numeric: tabular-nums; }
 .negative-field :deep(input) { color: var(--color-danger); }
 .amount-note { color: var(--text-muted); font-size: 11px; white-space: nowrap; }
+.handling-hint { margin-top: 2px; color: var(--text-muted); font-size: 11px; line-height: 1.3; }
 .balance-field :deep(.el-input-group__append) { padding: 0 10px; color: var(--text-secondary); font-size: 11px; white-space: nowrap; }
 @media (max-width: 1100px) { .head-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 900px) { .head-grid { grid-template-columns: 1fr; } .span-1, .span-2 { grid-column: 1 / -1; } }

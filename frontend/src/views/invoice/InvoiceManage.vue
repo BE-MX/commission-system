@@ -278,6 +278,7 @@
                     首返
                     <el-switch v-model="form.okki_first_return" :active-value="1" :inactive-value="0" />
                   </span>
+                  <span v-if="lastOrderDate" class="okki-last-order">上次订单成交日期：{{ lastOrderDate }}</span>
                   <span class="okki-flag-tip">推小满必填，已按历史预判</span>
                 </div>
               </el-form-item>
@@ -298,6 +299,8 @@
             :payment-methods="PAYMENT_METHOD_OPTIONS"
             :express-channels="EXPRESS_CHANNEL_OPTIONS"
             :money="money"
+            :on-payment-method-change="onPaymentMethodChange"
+            :on-handling-fee-input="markHandlingFeeTouched"
           />
 
           <InvoiceHairTable
@@ -339,6 +342,7 @@
         <InvoiceTotalsFooter
           :form="form"
           :total="formTotal"
+          :base-amount="formBaseAmount"
           :hair-amount="formHairPrice"
           :hair-discount="formLineDiscountTotal"
           :accessory-amount="formAccessoryAmount"
@@ -409,12 +413,13 @@ const {
   contactLoading, contactOptions, selectedContact, privateOnlyCompany, privateOnlyContact,
   canTogglePrivate, okkiBound, invoiceNoTaken, entryOptions, form, hairItems, accessoryItems,
   accessoryOptions, accessoryLoading, formHairPrice, formLineDiscountTotal, formAccessoryAmount,
-  formAccessoryDiscount, formTotal, settlementError, isProduction, searchCustomers, searchContacts,
+  formAccessoryDiscount, formBaseAmount, formTotal, lastOrderDate, settlementError, isProduction,
+  searchCustomers, searchContacts,
   onCustomerChange, onCurrencyChange, onContactChange, onInvoiceNoInput, onInvoiceNoBlur, openCreate, openEdit,
   addLine, addAccessory, selectAccessory, removeAccessory, searchAccessoryOptions,
   updateAccessoryTotal, removeLine, loadLineOptions, onLineFilterChange, onCustomFieldChange,
   onPriceInput, onLineDiscountChange, updateLineTotal, appendImportedLines, saveDraft,
-  saveAndSync, showIssues, markOkkiFlagTouched,
+  saveAndSync, showIssues, markOkkiFlagTouched, onPaymentMethodChange, markHandlingFeeTouched,
 } = useInvoiceEditor({ onSaved: loadInvoices })
 bindIssueHandler(showIssues)
 
