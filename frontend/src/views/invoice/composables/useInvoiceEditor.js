@@ -118,6 +118,12 @@ export function useInvoiceEditor({ onSaved } = {}) {
   // 付款方式用 @change 触发（仅用户操作，避开 resetForm 程序化赋值误触发覆盖存值）
   function onPaymentMethodChange() {
     handlingFeeTouched = false
+    const rate = handlingFeeRate(form.internal_payment_method)
+    if (rate == null) {
+      // 切到报关/清空：清掉别的付款方式公式留下的自动残值，由用户显式手填
+      form.surcharge_amount = 0
+      return
+    }
     autofillHandlingFee()
   }
 

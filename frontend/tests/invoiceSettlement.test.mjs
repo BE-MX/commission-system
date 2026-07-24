@@ -95,6 +95,17 @@ test('editor wires payment-method auto-calc and base amount', () => {
   assert.match(settlementFields, /@change="onHandlingFeeInput"/)
 })
 
+test('switching to a manual/no-rate method clears the stale auto handling fee', () => {
+  // P1-A：切到报关/清空付款方式时清掉别的方法公式留下的自动残值
+  assert.match(invoiceEditor, /if \(rate == null\) \{\s*\n\s*\/\/[^\n]*\n\s*form\.surcharge_amount = 0/)
+})
+
+test('handling hint warns when the fee no longer matches the rate x base', () => {
+  // P2-1：编辑单改产品/手改后手续费与费率不符时给重算引导
+  assert.match(settlementFields, /重选付款方式可重算/)
+  assert.match(settlementFields, /computeHandlingFee/)
+})
+
 test('footer separates order total (base) from the deducted handling fee', () => {
   assert.match(totalsFooter, /订单总金额/)
   assert.match(totalsFooter, /应付合计/)

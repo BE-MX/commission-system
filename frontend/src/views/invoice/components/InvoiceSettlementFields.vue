@@ -61,7 +61,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { handlingFeeRate } from '../composables/invoiceSettlement'
+import { computeHandlingFee, handlingFeeRate } from '../composables/invoiceSettlement'
 
 const props = defineProps({
   form: { type: Object, required: true },
@@ -78,12 +78,20 @@ const props = defineProps({
   onHandlingFeeInput: { type: Function, default: () => {} },
 })
 
-// 手续费提示：比例方式显示自动费率、报关提示手填，其余留空
+// 手续费提示：比例方式显示自动费率；当前值与费率×基数不符时（如编辑单改了产品、
+// 或手动改过）给出重算引导；报关提示手填，其余留空
 const handlingHint = computed(() => {
   const method = props.form.internal_payment_method
   const rate = handlingFeeRate(method)
   if (rate == null) return method && method.includes('报关') ? '报关：手动填写手续费' : ''
-  return `${method} ${(rate * 100).toFixed(0)}% 自动（可手改）`
+  const pct = `${(rate * 100).toFixed(0)}%`
+  // 基数（订单总金额，不含手续费）= 应付合计(total) − 手续费
+  const base = Number(props.total || 0) - Number(props.form.surcharge_amount || 0)
+  const expected = computeHandlingFee(rate, base)
+  if (Math.abs(Number(props.form.surcharge_amount || 0) - expected) > 0.005) {
+    return `与 ${pct}（应 ${expected.toFixed(2)}）不符，重选付款方式可重算`
+  }
+  return `${method} ${pct} 自动（可手改）`
 })
 </script>
 

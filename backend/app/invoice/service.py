@@ -138,16 +138,19 @@ def customer_has_xiaoman_orders(db: Session, customer_id: str, *, exclude_order_
 def customer_last_order_date(db: Session, customer_id: str, *, exclude_order_id: str | None = None):
     """该客户在 OKKI 最新一张订单的成交日期（account_date）。
 
-    「首返」旁的参考信息：新成交（无历史单）返回 None。account_date 在业务镜像里
-    存为字符串（TEXT），原样返回由上层 JSON 序列化；exclude_order_id 备用（当前
-    contact-defaults 按客户维度取数、不排除本单）。
+    「首返」旁的参考信息：新成交（无历史单）返回 None。生产库
+    `lsordertest.okki_orders.account_date` 是真 DATE 列（app/models/business.py:52），
+    SQLAlchemy 返回 datetime.date，由端点 ok() 经 jsonable_encoder 序列化为 ISO 串。
+    注意 DATE 列不可能等于空串 —— 只需 IS NOT NULL；写 `!= ''` 会在 MySQL 里把
+    '' 转成非法日期 → NULL → 整表被排除（SQLite 存 TEXT 会掩盖此差异）。
+    exclude_order_id 备用（当前 contact-defaults 按客户维度取数、不排除本单）。
     """
     if not str(customer_id or "").strip():
         return None
     schema = product_service._schema()
     sql = (
         f"SELECT account_date FROM `{schema}`.okki_orders "
-        "WHERE company_id = :cid AND account_date IS NOT NULL AND account_date != ''"
+        "WHERE company_id = :cid AND account_date IS NOT NULL"
     )
     params: dict = {"cid": str(customer_id)}
     if exclude_order_id:

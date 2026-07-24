@@ -512,12 +512,12 @@ def test_build_cost_list_handling_fee_is_negative(db):
 
 def test_customer_contact_defaults_returns_last_order_date(db):
     from sqlalchemy import text as sa_text
-    # 该客户两张历史单，取 account_date 最新的一张；新成交客户返回 None
+    # 该客户两张历史单，取 account_date 最新的一张（DESC LIMIT 1）；新成交客户返回 None。
+    # account_date 生产是真 DATE 列、只按 IS NOT NULL 过滤（不写 != ''，见 service 注释）
     db.execute(sa_text(
         "INSERT INTO lsordertest.okki_orders (order_id, company_id, account_date) VALUES "
         "('O1', '900001', '2026-05-18'),"
-        "('O2', '900001', '2026-06-30'),"
-        "('O3', '900001', '')"                # 空日期不参与
+        "('O2', '900001', '2026-06-30')"
     ))
     db.flush()
     defaults = service.get_customer_contact_defaults(db, "900001")
