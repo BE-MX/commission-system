@@ -196,12 +196,13 @@ def test_build_push_payload_stock_custom_and_backfilled(db):
     assert "Genius Weft/18/#1/20g x2" in rows[2]["product_name"]
     assert "product_model" not in rows[2] and "unit" not in rows[2]
 
-    # 明细 cost_amount 已含行折扣，费用清单不能再次推 Discount；这里只推正费用
+    # 明细 cost_amount 已含行折扣，费用清单不能再次推 Discount。
+    # 包装/运费按正数加项；手续费用户填正数(5)、OKKI 侧取负扣减(-5)
     costs = payload["cost_list"]
     assert len(costs) == 3
     assert all(c["percent_type"] == 0 for c in costs)
-    assert [c["percent_amount"] for c in costs] == [2.0, 10.0, 5.0]
-    assert [c["cost"] for c in costs] == [2.0, 10.0, 5.0]
+    assert [c["percent_amount"] for c in costs] == [2.0, 10.0, -5.0]
+    assert [c["cost"] for c in costs] == [2.0, 10.0, -5.0]
     assert [c["cost_name"] for c in costs] == ["Packaging", "Shipping fee", "Handling Fee"]
     # 付款条款并入备注
     assert "hello" in payload["remark"] and "30% deposit" in payload["remark"]
@@ -491,6 +492,42 @@ def test_resolve_okki_flags_history_fallback(db):
 
     flags = service.resolve_okki_flags(db, invoice)
     assert flags == {"okki_new_deal": 0, "okki_free_shipping": 1, "okki_first_return": 0}
+
+
+def test_build_cost_list_handling_fee_is_negative(db):
+    # 用户填正数手续费，推 OKKI 的 cost_list 取负（扣减，不抬高订单总额）
+    invoice = _make_invoice(
+        db, shipping_fee=Decimal("0"), internal_accessory=Decimal("0"),
+        surcharge_amount=Decimal("12.34"),
+    )
+    costs = xiaoman_service._build_cost_list(invoice)
+    assert costs == [{
+        "cost_name": "Handling Fee", "percent_type": 0,
+        "percent_amount": -12.34, "cost": -12.34,
+    }]
+    # 无手续费时不推该行
+    invoice.surcharge_amount = Decimal("0")
+    assert xiaoman_service._build_cost_list(invoice) == []
+
+
+def test_customer_contact_defaults_returns_last_order_date(db):
+    from sqlalchemy import text as sa_text
+    # 该客户两张历史单，取 account_date 最新的一张；新成交客户返回 None
+    db.execute(sa_text(
+        "INSERT INTO lsordertest.okki_orders (order_id, company_id, account_date) VALUES "
+        "('O1', '900001', '2026-05-18'),"
+        "('O2', '900001', '2026-06-30'),"
+        "('O3', '900001', '')"                # 空日期不参与
+    ))
+    db.flush()
+    defaults = service.get_customer_contact_defaults(db, "900001")
+    assert defaults["has_xiaoman_orders"] is True
+    assert defaults["last_order_date"] == "2026-06-30"
+
+    # 无历史订单 → 新成交 → 无上次订单日期
+    fresh = service.get_customer_contact_defaults(db, "900999")
+    assert fresh["has_xiaoman_orders"] is False
+    assert fresh["last_order_date"] is None
 
 
 def test_okki_department_options_aggregation(db):

@@ -463,7 +463,13 @@ def _build_remove_rows(db: Session, invoice: Invoice, settings_row: XiaomanSetti
 
 
 def _build_cost_list(invoice: Invoice) -> list[dict]:
-    """Line discounts already live in product cost_amount; only positive fees belong here."""
+    """Line discounts already live in product cost_amount; packaging/shipping are
+    positive add-ons. The handling fee is stored positive locally but pushed to
+    OKKI as a NEGATIVE cost: it represents money deducted from proceeds (PayPal /
+    信保便捷发货 processor cut), so it must reduce OKKI's auto-computed order total,
+    not inflate it (亮哥 2026-07-24). NO SANDBOX — verify the sign on the first
+    real push against the OKKI order总额.
+    """
     costs: list[dict] = []
     packaging = float(invoice.internal_accessory or 0)
     if packaging > 0:
@@ -474,11 +480,12 @@ def _build_cost_list(invoice: Invoice) -> list[dict]:
         costs.append({"cost_name": name, "percent_type": 0, "percent_amount": shipping, "cost": shipping})
     surcharge = float(invoice.surcharge_amount or 0)
     if surcharge > 0:
+        # 用户填正数、OKKI 侧取负扣减
         costs.append({
             "cost_name": "Handling Fee",
             "percent_type": 0,
-            "percent_amount": surcharge,
-            "cost": surcharge,
+            "percent_amount": -surcharge,
+            "cost": -surcharge,
         })
     return costs
 

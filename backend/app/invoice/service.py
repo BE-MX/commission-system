@@ -84,7 +84,12 @@ def get_customer_contact_defaults(db: Session, customer_id: str) -> dict:
     同源），只出联系字段、不暴露任何金额——否则助理录一次业务员还得重录。
     has_xiaoman_orders 供前端预判「是否新成交」开关默认值。
     """
-    defaults: dict = {"has_xiaoman_orders": customer_has_xiaoman_orders(db, customer_id)}
+    defaults: dict = {
+        "has_xiaoman_orders": customer_has_xiaoman_orders(db, customer_id),
+        # 首返旁展示「上次订单成交日期」参考（仅展示，不落库不推 OKKI）；
+        # 新成交（无历史单）时为 None → 前端留空
+        "last_order_date": customer_last_order_date(db, customer_id),
+    }
     row = (
         db.query(
             Invoice.contact_name, Invoice.contact_phone,
@@ -128,6 +133,29 @@ def customer_has_xiaoman_orders(db: Session, customer_id: str, *, exclude_order_
         params["own"] = str(exclude_order_id)
     row = db.execute(text(sql + " LIMIT 1"), params).first()
     return row is not None
+
+
+def customer_last_order_date(db: Session, customer_id: str, *, exclude_order_id: str | None = None):
+    """该客户在 OKKI 最新一张订单的成交日期（account_date）。
+
+    「首返」旁的参考信息：新成交（无历史单）返回 None。account_date 在业务镜像里
+    存为字符串（TEXT），原样返回由上层 JSON 序列化；exclude_order_id 备用（当前
+    contact-defaults 按客户维度取数、不排除本单）。
+    """
+    if not str(customer_id or "").strip():
+        return None
+    schema = product_service._schema()
+    sql = (
+        f"SELECT account_date FROM `{schema}`.okki_orders "
+        "WHERE company_id = :cid AND account_date IS NOT NULL AND account_date != ''"
+    )
+    params: dict = {"cid": str(customer_id)}
+    if exclude_order_id:
+        sql += " AND order_id != :own"
+        params["own"] = str(exclude_order_id)
+    sql += " ORDER BY account_date DESC LIMIT 1"
+    row = db.execute(text(sql), params).first()
+    return row[0] if row else None
 
 
 def resolve_okki_flags(db: Session, invoice: Invoice) -> dict:
