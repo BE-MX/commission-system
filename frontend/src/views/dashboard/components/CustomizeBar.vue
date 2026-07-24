@@ -8,7 +8,7 @@
       <div class="bar-actions">
         <GlassButton variant="ghost" size="sm" @click="onReset">恢复默认</GlassButton>
         <GlassButton variant="secondary" size="sm" @click="$emit('cancel')">取消</GlassButton>
-        <GlassButton variant="primary" size="sm" :loading="saving" @click="$emit('save')">
+        <GlassButton variant="primary" size="sm" :loading="saving" :disabled="!dirty" @click="$emit('save')">
           保存布局
         </GlassButton>
       </div>
@@ -24,6 +24,7 @@ import { confirmDanger } from '@/utils/feedback'
 defineProps({
   editing: { type: Boolean, default: false },
   saving: { type: Boolean, default: false },
+  dirty: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['save', 'cancel', 'reset'])
@@ -53,7 +54,7 @@ function onReset() {
   border: 1px solid var(--glass-border);
   box-shadow: var(--glass-highlight), var(--glass-shadow-hover);
 }
-@supports not (backdrop-filter: blur(1px)) {
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .customize-bar {
     background: var(--card-bg);
   }
@@ -88,13 +89,6 @@ function onReset() {
   opacity: 0;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .bar-slide-enter-from,
-  .bar-slide-leave-to {
-    transform: translateX(-50%);
-  }
-}
-
 @media (max-width: 767px) {
   .customize-bar {
     left: 12px;
@@ -109,6 +103,21 @@ function onReset() {
   .bar-slide-enter-from,
   .bar-slide-leave-to {
     transform: translateY(calc(100% + 28px));
+  }
+}
+
+/* 放在响应式块之后：手机 + 减少动态用户也要去掉滑入位移（审查 P2） */
+@media (prefers-reduced-motion: reduce) {
+  .bar-slide-enter-from,
+  .bar-slide-leave-to {
+    transform: translateX(-50%);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) and (max-width: 767px) {
+  .bar-slide-enter-from,
+  .bar-slide-leave-to {
+    transform: none;
   }
 }
 </style>

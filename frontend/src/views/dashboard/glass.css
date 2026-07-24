@@ -20,8 +20,8 @@
     opacity 200ms var(--ease-out-strong);
 }
 
-/* backdrop-filter 不可用时降级为实心白卡 */
-@supports not (backdrop-filter: blur(1px)) {
+/* backdrop-filter 不可用时降级为实心白卡（含 -webkit- 前缀探测，Safari 15-17） */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .dash-glass-card {
     background: var(--card-bg);
     border-color: var(--border-color);

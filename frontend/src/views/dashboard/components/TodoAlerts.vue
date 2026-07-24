@@ -148,7 +148,7 @@ const authStore = useAuthStore()
   color: var(--color-danger);
 }
 
-@supports not (backdrop-filter: blur(1px)) {
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .todo-alert-warning { background: var(--color-warning-bg); }
   .todo-alert-primary { background: var(--color-primary-light); }
   .todo-alert-danger  { background: var(--color-danger-bg); }

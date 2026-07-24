@@ -55,7 +55,7 @@ const authStore = useAuthStore()
   min-height: 140px;
   box-shadow: var(--glass-shadow);
 }
-@supports not (backdrop-filter: blur(1px)) {
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .dashboard-hero {
     background: linear-gradient(135deg, var(--sidebar-bg-from), var(--sidebar-bg-to));
   }

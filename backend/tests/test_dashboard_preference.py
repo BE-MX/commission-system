@@ -1,10 +1,16 @@
-"""工作台配置：roundtrip / upsert 幂等 / 用户隔离 / 重置 / 形状校验 / 并发兜底"""
+"""工作台配置：roundtrip / upsert 幂等 / 用户隔离 / 重置 / 形状校验 / 并发兜底 / HTTP 层"""
+
+from contextlib import contextmanager
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 
 from app.auth.models import ArkUser
+from app.auth.utils import create_access_token
+from app.core.database import get_db
 from app.dashboard import service
 from app.dashboard.models import DashboardPreference
 from app.dashboard.router import get_preference, reset_preference, save_preference
@@ -103,6 +109,58 @@ def test_schema_ignores_unknown_keys_for_forward_compat():
     dumped = prefs.model_dump()
     assert "future_section" not in dumped
     assert "future_field" not in dumped["metrics"]
+
+
+# ---------------- HTTP 层（真实鉴权 + 校验管道，直调函数测不到 401/422） ----------------
+
+@contextmanager
+def _client(db, user=None):
+    from app.dashboard.router import router
+
+    app = FastAPI()
+    app.include_router(router, prefix="/api/dashboard")
+
+    def override_db():
+        yield db
+
+    app.dependency_overrides[get_db] = override_db
+    headers = {}
+    if user is not None:
+        token = create_access_token({
+            "sub": str(user.id), "username": user.username,
+            "real_name": user.real_name, "roles": [], "permissions": [],
+        })
+        headers = {"Authorization": f"Bearer {token}"}
+    with TestClient(app, headers=headers) as client:
+        yield client
+
+
+def test_http_requires_token(db):
+    with _client(db) as client:
+        # HTTPBearer 缺 header 默认 403，token 无效为 401——两者都算拦住
+        assert client.get("/api/dashboard/preference").status_code in (401, 403)
+        assert client.put("/api/dashboard/preference", json={}).status_code in (401, 403)
+        assert client.delete("/api/dashboard/preference").status_code in (401, 403)
+
+
+def test_http_invalid_payload_422(db):
+    user = _user(db, "http_user")
+    with _client(db, user) as client:
+        resp = client.put("/api/dashboard/preference", json={"metrics": {"hidden": "not-a-list", "order": []}})
+        assert resp.status_code == 422
+
+
+def test_http_roundtrip(db):
+    user = _user(db, "http_user2")
+    payload = {"version": 1, "metrics": {"hidden": ["batch"], "order": []}, "actions": {"hidden": [], "order": ["tracking_list"]}}
+    with _client(db, user) as client:
+        put_resp = client.put("/api/dashboard/preference", json=payload)
+        assert put_resp.status_code == 200
+        assert put_resp.json()["data"]["metrics"]["hidden"] == ["batch"]
+
+        get_resp = client.get("/api/dashboard/preference")
+        assert get_resp.status_code == 200
+        assert get_resp.json()["data"]["actions"]["order"] == ["tracking_list"]
 
 
 # ---------------- 并发兜底（cerebrum 2026-07-14：模拟竞态窗口断言不落 500） ----------------

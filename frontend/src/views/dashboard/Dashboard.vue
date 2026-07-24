@@ -1,5 +1,5 @@
 <template>
-  <div class="dashboard-page">
+  <div class="dashboard-page" :class="{ 'is-editing': editing }">
     <!-- 金色极光背景（纯装饰，transform 慢漂移；玻璃卡的 blur 透出它） -->
     <div class="dashboard-aurora" aria-hidden="true">
       <div class="aurora-blob aurora-gold" />
@@ -62,6 +62,7 @@
     <CustomizeBar
       :editing="editing"
       :saving="saving"
+      :dirty="dirty"
       @save="saveEdit"
       @cancel="cancelEdit"
       @reset="resetToDefault"
@@ -102,7 +103,7 @@ const authStore = useAuthStore()
 const dash = reactive(useDashboardData())
 
 const {
-  editing, saving,
+  editing, saving, dirty,
   arrange, isHidden,
   enterEdit, cancelEdit, toggleHidden, reorder, saveEdit, resetToDefault,
 } = useDashboardConfig()
@@ -118,6 +119,10 @@ const actionCards = computed(() => arrange('actions', ACTION_CARDS))
   max-width: 1440px;
   margin: 0 auto;
   padding: 24px 28px;
+}
+/* 编辑态底部 fixed 操作条会盖住末行卡片的眼睛/把手，留出滚动余量（审查 P1） */
+.dashboard-page.is-editing {
+  padding-bottom: 120px;
 }
 
 .dashboard-aurora {

@@ -20,12 +20,23 @@ function emptySection() {
   return { hidden: [], order: [] }
 }
 
+// localStorage 镜像没有 pydantic 保形状——合法 JSON 但字段类型损坏（截断/篡改/
+// 版本回滚）不能让全员落地页渲染炸掉，数组字段必须逐个兜底（对抗性审查 P1 2026-07-25）
+function normalizeList(value) {
+  return Array.isArray(value) ? value.filter(item => typeof item === 'string') : []
+}
+
+function normalizeSection(raw) {
+  const section = raw && typeof raw === 'object' ? raw : {}
+  return { hidden: normalizeList(section.hidden), order: normalizeList(section.order) }
+}
+
 function normalizePrefs(raw) {
   if (!raw || typeof raw !== 'object') return null
   return {
-    version: raw.version || 1,
-    metrics: { ...emptySection(), ...(raw.metrics || {}) },
-    actions: { ...emptySection(), ...(raw.actions || {}) },
+    version: Number.isInteger(raw.version) && raw.version >= 1 ? raw.version : 1,
+    metrics: normalizeSection(raw.metrics),
+    actions: normalizeSection(raw.actions),
   }
 }
 
