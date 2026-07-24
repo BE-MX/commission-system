@@ -66,7 +66,7 @@
     - **2026-07-19：Phase 2 之版本评论已完成**（合入 main，待部署）：评论挂具体版本、版本卡内展开；单层回复自动拍平、仅作者可删、占位线程可续贴；无版本资料（offline/link）无评论；资料库列表 `❞ N` 角标 + 动态流「评论」筛选；两轮对抗性审查（细节见 module-notes PM 节）
     - **待完成**：生产 `.env` 可选项 `PM_TOKEN_SECRET` 独立随机串（当前回退 JWT_SECRET_KEY，见 runbook PM 节步骤 5，服务器上一条命令+重启，会全员重新进门牌）；Phase 2 之划线锚点评论未启动（anchor 字段已预留且评论表已在用）
 22. ✅ **培训速递**（2026-07-18 合入 main）：参训人自助发布 + AI 提炼草稿（粘贴文字/图片多模态/PDF 抽文本 → 结构化分区）+ 4 步强引导向导 + 发布必填分区校验 + 钉钉群 actionCard 推送 + 「有用」轻反馈；`training:read/write/admin` 权限；075 迁移，3 张表
-    - **2026-07-23 列表删除动作接线**（⚠️ **尚未上生产**）：`deleteDigest` API 与后端端点早就存在但前端从没调用过（操作列只有查看/编辑）；行级可见性镜像后端规则（作者本人或 `training:admin`，已发布行仅 admin），避免点进去吃 403。2026-07-24 核实线上 TrainingList 包仍无「删除」——该 commit 尚未 push 到 origin，deploy.bat 拉不到
+    - **2026-07-23 列表删除动作接线**（✅ 已 push origin，⏳ 待生产 deploy.bat）：`deleteDigest` API 与后端端点早就存在但前端从没调用过（操作列只有查看/编辑）；行级可见性镜像后端规则（作者本人或 `training:admin`，已发布行仅 admin），避免点进去吃 403。2026-07-24 已推到 origin/main，线上仍无「删除」是因为**生产服务器还没跑 deploy.bat**（deploy 只能在办公室 Windows Server 的 D:\commission-system 上跑，开发机跑不了）——下次部署即生效
     - **2026-07-21 附件增强**（077 迁移，**2026-07-24 核实已上生产**：线上 TrainingEditor 包含「自动识别」）：附件类型白名单下拉（默认按扩展名自动识别）+ 批次备注 + 多选上传逐文件进度 + 列表行内改类型/备注（`PATCH /files/{id}`，失败回滚显示值）；存量附件显示「未分类」；公共组件 `AppUpload` 新增 uploadFn onProgress 第二参数与 `show-list` 开关（向后兼容）；编辑器附件区拆 `AttachFilesPanel.vue`
 
 ### 基础设施
@@ -91,7 +91,7 @@
 - ✅ invoice / whatsapp / payment 等模块测试
 - ✅ invoice OKKI 推单专项（payload 映射/状态机/unique_id 传承/非标合并/必填字段）+ 数据范围 scope + 录入自动填充——2026-07-13 补齐
 - ✅ 素材标签体系 v2 专项（`test_asset_taxonomy.py`：维度可见性口径 / 按维度合并语义 / 单选校验 / folder_upload 子集合并 / 色系派生规则）——2026-07-22
-- **总计 532 tests（2026-07-13 全绿）→ 753 tests（2026-07-18 全绿，培训速递/PM 站/发票配件合入后；PM display_name 断言已随 seed 改名修复为从 MEMBERS_SEED 派生）→ 777 tests（2026-07-19 全绿，PM 版本评论 + expo 夏季衣橱合入后）→ 786 tests（2026-07-21 全绿，培训附件类型/备注合入后）→ 825 tests（2026-07-24 实测全绿，素材标签体系 v2 + 发票粘贴导入/推单修复合入后）**
+- **总计 532 tests（2026-07-13 全绿）→ 753 tests（2026-07-18 全绿，培训速递/PM 站/发票配件合入后；PM display_name 断言已随 seed 改名修复为从 MEMBERS_SEED 派生）→ 777 tests（2026-07-19 全绿，PM 版本评论 + expo 夏季衣橱合入后）→ 786 tests（2026-07-21 全绿，培训附件类型/备注合入后）→ 825 tests（2026-07-24 实测全绿，素材标签体系 v2 + 发票粘贴导入/推单修复合入后）→ **827 backend tests + 70 frontend node tests（2026-07-24 晚，多代理分支收拢后全绿）**：修了 origin/main 上 2 个陈旧断言（`test_customer_contact_defaults_latest_snapshot` 缺 last_order_date 键 / `invoiceAccessories` 断言了被有意移除的"请求开始清空选项"旧行为，非逻辑 bug）；前端 node 测试跑法 `cd frontend && node --test tests/<file>.test.mjs`（7 个 invoice/aftersales 测试文件）**
 
 ## 待办事项（优先级递减）
 
