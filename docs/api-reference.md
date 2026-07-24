@@ -57,7 +57,7 @@
   - `GET /customers/contacts?keyword=&company_id=&private_only=` — 按联系人名搜客户（`lsordertest.customer_contacts` JOIN customer_info，invoice:write——联系人含邮箱/电话 PII）；company_id 给定时收敛到该客户名下（双筛选联动），返回含所属公司信息可反向定位客户；is_main 主联系人排前
   - `GET /invoices/suggest-no?order_type=` — 新建单默认发票号（invoice:write，2026-07-14 版）：库存单 `{用户名}-KC-{MM}{NN}`（NN=该用户本月第几张，两位零填充）、生产单 `SC-{MM}{NN}`（全公司本月序列，不含用户名）；跨年撞号自动顺延，用户可改
   - `GET /invoices/check-no?invoice_no=&exclude_id=` — 发票号占用检查（invoice:write；exclude_id 编辑时排除自身）
-  - `GET /customers/contact-defaults?customer_id=` — 该客户最近一张（created_at 倒序）带联系信息发票的联系人/电话/邮箱/地址快照，录入页自动填充用（invoice:write；组织级共享，刻意不受发票数据范围限制——联系人是客户数据非财务数据）
+  - `GET /customers/contact-defaults?customer_id=` — 该客户最近一张（created_at 倒序）带联系信息发票的联系人/电话/邮箱/地址快照，录入页自动填充用（invoice:write；组织级共享，刻意不受发票数据范围限制——联系人是客户数据非财务数据）。附带 `has_xiaoman_orders`（新成交预判）+ `last_order_date`（该客户 okki_orders 最新 account_date，「首返」旁参考展示，新成交为 null，仅展示不落库不推 OKKI）
   - `GET /products/filter-options` — 产品级联筛选项（model→color→size→unit，库存单用）
   - `POST /import/preview` — Excel/WPS 粘贴明细批量预检（invoice:write）：请求含客户、订单类型、币种和最多 200 行标准字段；只读返回 passed/warning/blocked、产品/SKU 候选、同币种客户价差与批次指纹，不创建发票/定制产品、不自动换汇
   - `GET /products/match` — 按 model/color/size/unit 精确匹配产品
@@ -71,7 +71,7 @@
   - `GET|POST|DELETE /price/color-types` — 色号→色型映射（solid/piano/ombre/balayage）
   - `GET|POST|DELETE /price/customer-rules` — 客户价格规则（fixed/percent 二选一，有符号）；`GET /price/customer-rules/by-customer/{id}` — 单客户规则
   - `GET /invoices` — 发票列表（分页+搜索+状态+order_type 筛选；数据范围由权限自动决定，无 read_all 只返回自己创建的；created_by 为 NULL 的历史发票仅全量范围可见）
-  - `POST /invoices` — 创建发票（order_type stock/production；custom 明细自动沉淀产品并服务端定价快照；明细 `discount_amount` 自动归一为负数，头部 `internal_discount` 由服务端覆盖为明细折扣合计快照；`packaging_quantity` 只记录包装数量、不参与金额乘算；总额=明细净额+包装费+运费+手续费）
+  - `POST /invoices` — 创建发票（order_type stock/production；custom 明细自动沉淀产品并服务端定价快照；明细 `discount_amount` 自动归一为负数，头部 `internal_discount` 由服务端覆盖为明细折扣合计快照；`packaging_quantity` 只记录包装数量、不参与金额乘算；`total_amount`=明细净额+包装费+运费+手续费（含手续费，对外/结算口径不变）。**付款方式**（`internal_payment_method`，前端 8 项：PayPal 5% / 大·小·新莱莎信保各拆〔便捷发货 3%〕〔报关 手填〕/ TT 0）驱动前端自动填手续费=费率×订单总金额（=产品+包装+运费，不含手续费），可手改；`surcharge_amount` 存正数，推 OKKI 时 `cost_list` 取**负数**扣减）
   - `GET /invoices/{id}` — 发票详情
   - `PUT /invoices/{id}` — 更新发票（order_type 创建后不可改；金额与折扣由服务端重算，预付款+尾款必须等于总额）
   - `DELETE /invoices/{id}` — 删除发票（invoice:write；sync_status=synced 拒绝删除）
