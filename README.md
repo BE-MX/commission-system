@@ -23,15 +23,16 @@
 cp backend/.env.example backend/.env
 # 编辑 .env 填入实际数据库连接信息和 SHORT_LINK_BASE_URL
 
-# 2. 安装依赖（后端 + 前端）
-cd backend && pip install -r requirements.txt && cd ..
+# 2. 安装依赖（后端建 venv + 前端）
+#    注意：必须用 venv 里的 python，不要依赖 PATH——开发机上其他软件自带的 Python 会污染 PATH
+cd backend && python -m venv .venv && .venv\Scripts\python.exe -m pip install -r requirements.txt && cd ..
 cd frontend && npm install && cd ..
 
 # 3. 本地开发（使用 start.bat 一键启动）
 start.bat
 
-# 4. 数据库迁移
-cd backend && alembic upgrade head
+# 4. 数据库迁移（开发/生产共用同一套 RDS，迁移一次生效）
+cd backend && .venv\Scripts\python.exe -m alembic upgrade head
 
 # 5. 健康检查
 curl http://localhost:8001/health
@@ -60,14 +61,20 @@ commission-system/
 │   │   ├── insight/      # 方舟洞见 (service.py facade + sources/reports/item/collector/intelligence/customer_opportunity/customer_radar/customer_profile/customer_source + dependencies.py)
 │   │   ├── stock/        # 备货管理 (service.py facade + constants/sku_query/overview/safety/daily_report_service)
 │   │   ├── tracking/     # 物流跟踪 (router + shipment/upload/ocr/polling/staging/daily_report/push_service + carriers/ + status.py + templates/)
-│   │   └── asset/        # 素材管理 (router/models/schemas/service facade + analyze/batch/stats/tag/favorite/asset_service 子模块)
-│   │   ├── color/         # 发色数字化 (router/models/schemas/service facade + palette/blend/calc/trend/swatch/social_extract 子模块)
-│   │   ├── report/        # 报表中心 Stimulsoft (router/models/schemas/data_service — 模板 CRUD + JSON 数据组装)
-│   │   ├── production/    # 生产报工 (router/models/schemas/service facade + process/route/binding/report_service 子模块)
-│   │   ├── governance/    # 数据概念治理 (router/models/schemas/service facade + concept/relationship/changelog/import_service)
-│   │   └── mini/          # 微信小程序端 (router/service/auth/schemas — 扫码报工/历史/总览/撤销/登录绑定)
+│   │   ├── asset/        # 素材管理 (router/models/schemas/service facade + analyze/batch/stats/tag/favorite/asset_service/folder_upload_service + taxonomy_def.py 标签体系唯一真相源 + color_rules.py)
+│   │   ├── color/        # 发色数字化 (router/models/schemas/service facade + palette/blend/calc/trend/swatch/social_extract 子模块)
+│   │   ├── report/       # 报表中心 Stimulsoft (router/models/schemas/data_service — 模板 CRUD + JSON 数据组装)
+│   │   ├── production/   # 生产报工 (router/models/schemas/service facade + process/route/binding/report_service 子模块)
+│   │   ├── governance/   # 数据概念治理 (router/models/schemas/service facade + concept/relationship/changelog/import_service)
+│   │   ├── invoice/      # 订单发票 (router/models/schemas/service + product_service/export_service/import_service/xiaoman_service OKKI 推单)
+│   │   ├── expo/         # 展会 AI 试戴 (router/models/schemas/service + matching 匹配引擎 + ai_pipeline 三管线 + script_service 话术)
+│   │   ├── training/     # 培训速递 (router/models/schemas/service + draft_service AI 提炼 + file_service + push_service 钉钉)
+│   │   ├── pm/           # PM 资料协作站 (独立 HMAC 门牌鉴权，不接平台 RBAC；前端在 frontend-pm/)
+│   │   ├── mcp/          # MCP 网关 (mount /mcp — tools.py 物流 3 工具 + asset_tools.py 素材 2 工具，个人 token 鉴权)
+│   │   └── mini/         # 微信小程序端 (router/service/auth/schemas — 扫码报工/历史/总览/撤销/登录绑定)
 │   ├── alembic/          # 数据库迁移
 │   ├── config/           # 业务规则配置
+│   ├── scripts/          # 运维脚本 (tag_taxonomy/ 标签体系迁移与目录骨架生成等)
 │   └── sql/              # DDL 脚本
 ├── services/
 │   └── whatsapp-connector/  # WhatsApp Web Node.js 独立服务（whatsapp-web.js）
@@ -81,8 +88,10 @@ commission-system/
 │   │   ├── router/       # Vue Router（从 navigation.js 生成）
 │   │   └── utils/        # 工具函数
 │   └── dist/             # 构建产物
+├── frontend-pm/            # PM 资料协作站独立前端（自研设计系统，无 Element Plus，与主站互不引用）
 ├── miniprogram/            # 微信小程序（扫码报工/历史/总览，AppID wx4dea4f10fe1bda19）
-├── deploy/                # NSSM 部署脚本
+├── scripts/                # 仓库级脚本（check_conventions.py 约定检查 / git_sweep.py 欠账巡检）
+├── deploy/                 # NSSM 部署脚本
 └── docker-compose.yml
 ```
 
@@ -92,13 +101,17 @@ commission-system/
 |----------|------|
 | 后端 API | 8001 |
 | 前端 dev | 3000 (代理 /api → 8001) |
+| PM 站前端 dev | 3100 (代理 /api → 8001；start.bat 不含它) |
+| 本地生产后端 | 8002 (frp 隧道反代目标，服务器上只能用 deploy.bat 启动) |
 | 前端生产 | 443 (腾讯云 Nginx, 静态直出 + API 反代隧道) |
 
 ## 文档导航
 
 | 文档 | 用途 | 适合谁 |
 |------|------|--------|
-| [CLAUDE.md](./CLAUDE.md) | AI 协作说明（930 行） | AI Agent |
+| [CLAUDE.md](./CLAUDE.md) | AI 协作宪法（只写改变行为的规则，清单类内容在 docs/） | AI Agent |
+| [AGENTS.md](./AGENTS.md) | 多智能体 Git 协作约定（分支/worktree/合并纪律） | AI Agent、多人协作 |
+| [DESIGN.md](./DESIGN.md) | 设计系统，UI 决策以此为准 | 前端开发、设计 |
 | [docs/README.md](./docs/README.md) | 文档总导航 | 所有人 |
 | [docs/architecture.md](./docs/architecture.md) | 系统架构、数据库表结构 | 技术接手人 |
 | [docs/integration-guide.md](./docs/integration-guide.md) | API 接入指南、示例代码 | 下游系统开发者 |

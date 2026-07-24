@@ -71,7 +71,7 @@
 - `app/insight/` — 方舟洞见（service.py facade + sources / reports / item / collector / intelligence / customer_opportunity / customer_radar / customer_profile）
 - `app/stock/` — 备货管理（service.py facade + constants / sku_query / overview / safety / daily_report_service / production_cart_service / production_order_service）
 - `app/tracking/` — 物流跟踪（router + shipment / upload / ocr / polling / staging / daily_report / push_service + carriers/ + status.py）
-- `app/asset/` — 素材管理（router/models/schemas/service facade + analyze / batch / stats / tag / favorite / asset_service）
+- `app/asset/` — 素材管理（router/models/schemas/service facade + analyze / batch / stats / tag / favorite / asset_service / folder_upload_service；标签体系定义 `taxonomy_def.py` 是唯一真相源，色系派生规则 `color_rules.py`；11 维正交标签体系 2026-07-22 切换，078 迁移，专题见 `docs/module-notes.md`）
 - `app/color/` — 发色数字化（router/models/schemas/service facade + palette / blend / calc / trend / swatch / social_extract）
 - `app/production/` — 生产报工（router/models/schemas/service facade + process / route / binding / report / dashboard_service）
 - `app/report/` — 报表中心（router/models/schemas/data_service / category_service / docx_export）
@@ -81,6 +81,7 @@
 - `app/mini/` — 微信小程序端（router/service/auth/schemas — 扫码报工/历史/总览/撤销/登录绑定）
 - `app/training/` — 培训速递（router/models/schemas/service + push_service 钉钉推送；参训人自助发布 + AI 提炼草稿（文字/图片/PDF 多模态）+ 发布必填分区校验，075 迁移，2026-07-18 合入）
 - `app/pm/` — PM 项目资料协作站（**独立 HMAC 门牌鉴权，不接平台 RBAC**；材料/版本/版本评论/任务/动态审计 + AI 差异管线，076 迁移；前端为 `frontend-pm/` 独立应用，2026-07-18 合入，版本评论 2026-07-19）
+- `app/mcp/` — MCP 网关（FastMCP streamable HTTP，`mount("/mcp")`；`tools.py` 物流 3 工具 + `asset_tools.py` 素材 2 工具；**个人 opaque token 鉴权**，解析出与登录 JWT 完全一致的 claims 从而零改动复用下游 service 的 data_scope；051 迁移，素材工具 2026-07-22 加。接入说明 `docs/mcp-tracking-integration.md`）
 
 ## 前端结构
 
@@ -324,7 +325,7 @@ ACCIO WORK 询盘推送
 
 ## 技术债务
 
-1. **测试覆盖不足**：当前覆盖提成 27 + design 状态机/冲突引擎 34 + scheduler smoke 10 = 71 tests；tracking 轮询 / insight 完整链路 / stock 计算 / design router 端到端仍欠
+1. **测试覆盖不足**：当前 825 tests（2026-07-24 实测全绿，明细见 `docs/handoff.md`）；仍欠 tracking 轮询编排 / insight 完整链路 / stock 跨库 SQL 聚合 / design router 端到端
 2. **ORM relationship lazy 策略**：历史遗留 `lazy="selectin"` 在大表上有 N+1 风险，新增表应默认 `lazy="noload"`，由 query 显式控制加载
 3. **批量循环服务容易漏 import**：`folder_upload_service` 这类「逐文件 + try/except」结构里，循环体用到的名字漏 import 时 `NameError` 被外层 except 吞掉，表现为"任务跑完但全部 failed"
 
@@ -338,6 +339,6 @@ ACCIO WORK 询盘推送
 
 ## 参考资料
 
-- **项目根 CLAUDE.md**：完整的 AI 协作说明（930 行）
-- **alembic/versions/**：数据库迁移历史（044 个迁移文件）
+- **项目根 CLAUDE.md**：AI 协作宪法（2026-07-03 瘦身为 ~110 行，只写改变行为的规则；清单类内容拆到 `docs/`）
+- **alembic/versions/**：数据库迁移历史（head `078_tag_taxonomy_v2`）
 - **backend/sql/**：DDL 脚本归档

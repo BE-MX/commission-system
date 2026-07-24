@@ -1,7 +1,7 @@
 # 莱莎方舟平台 项目交接清单
 
-> **版本**：v1.4  
-> **最后更新**：2026-07-22  
+> **版本**：v1.5  
+> **最后更新**：2026-07-24  
 > **项目状态**：运行中，持续迭代
 
 ## 项目概况
@@ -10,17 +10,17 @@
 - **开发周期**：2026-03 至今（约 4 个月；git 仓库首次提交 2026-04-20）
 - **代码规模**：后端 ~25K 行 Python + 前端 ~18K 行 Vue + 微信小程序 ~3K 行
 - **数据库表数**：120 张（commission_db，2026-07-13 information_schema 实测）
-- **数据库迁移数**：077（Alembic head `077_training_file_meta`，2026-07-21；073/074 发票配件、075 培训速递、076 PM 站、077 培训附件类型/备注）
+- **数据库迁移数**：078（Alembic head `078_tag_taxonomy_v2`，2026-07-22；073/074 发票配件、075 培训速递、076 PM 站、077 培训附件类型/备注、078 素材标签体系 v2 加列）
 - **用户数**：~30 人（莱莎员工）
 - **日活**：~20 人
 - **部署环境**：生产（腾讯云新加坡 Nginx + 本地 Windows Server + 北京云展会实例 2026-07-22 起，拓扑见 docs/architecture.md）
 
-## 已完成功能（2026-07-13 更新）
+## 已完成功能（2026-07-24 更新）
 
-### 核心业务模块（20 个）
+### 核心业务模块（22 个）
 
 1. ✅ **提成管理**：回款单计算、客户归属快照、批次管理、业务员确认流程（confirming 状态 + 反馈/确认机制）
-2. ✅ **订单发票管理**：发票 CRUD、产品级联选择、Excel/PDF/HTML 导出；OKKI 推单闭环（2026-07-13：真实推单 + 幂等编辑 + 非标合并单条通用行 + 企业必填字段部门/订单类型/新成交/包邮/首返 + 同步日志，066/068 迁移）；数据范围权限 `invoice:read_all`（默认只见自己创建的发票，067）；录入自动填充（客户联系人快照复用 + 业务员信息默认当前用户 + 小满标记三开关智能默认）；**配件双类型**（2026-07-18 合入：明细 `product_kind` hair/accessory、配件标准价按真实 product_id+sku_id 唯一、金额 ROUND_HALF_UP 口径、PDF 中文字体预检，073/074 迁移）
+2. ✅ **订单发票管理**：发票 CRUD、产品级联选择、Excel/PDF/HTML 导出；OKKI 推单闭环（2026-07-13：真实推单 + 幂等编辑 + 非标合并单条通用行 + 企业必填字段部门/订单类型/新成交/包邮/首返 + 同步日志，066/068 迁移）；数据范围权限 `invoice:read_all`（默认只见自己创建的发票，067）；录入自动填充（客户联系人快照复用 + 业务员信息默认当前用户 + 小满标记三开关智能默认）；**配件双类型**（2026-07-18 合入：明细 `product_kind` hair/accessory、配件标准价按真实 product_id+sku_id 唯一、金额 ROUND_HALF_UP 口径、PDF 中文字体预检，073/074 迁移）；2026-07-23 修复三项：粘贴导入支持非整数克重（37.5g / 0.0375kg，尾零规范化）、编辑器页脚「保存并校验」改为「保存并同步」（校验+推单一步走，走同一 `validateThenSync`）、OKKI 推单订单名只用发票号不再拼客户名
 3. ✅ **物流跟踪**：DHL/FedEx 自动轮询、关键状态推送、物流日报
 4. ✅ **运单上传**：图片 OCR（AI 多模态）+ 手动录入
 5. ✅ **设计预约**：申请/审批/排期、冲突检测、附件上传、钉钉通知
@@ -36,6 +36,8 @@
    - **客户机会台**（ACCIO 询盘导入 + 归属解析 + 机会卡 + 话术）
    - **客户经营雷达**（活画像 + 事件流 + 6 线索分组 + 行动推荐）
 9. ✅ **素材管理**：标签化中台、AI 打标签、版本迭代、收藏分享、移动端独立页面
+   - **标签体系 v2**（2026-07-22 切换 + 同日退役旧维度，078 迁移）：11 维正交体系取代文件夹平移来的 5 维老体系；`is_visible` 作为并存/切换/退役开关；体系定义唯一真相源 `taxonomy_def.py`，AI 值域运行时注入（不再硬编码进 prompt）；前端分组渐进筛选（常用展开/高级折叠）；迁移脚本链 `backend/scripts/tag_taxonomy/`（含设计部日常用的上传目录骨架生成器）。退役实测：删 39,556 关联行/412 值/4 维度，零素材失标；**备份表已于 2026-07-24 清理**（DROP 前后各复查一次，回滚 SQL 导出在 `backend/tmp/asset_taxonomy_backup_2026-07-24.sql`）。踩坑与运维见 `docs/module-notes.md` 素材节
+   - **MCP 素材工具**（2026-07-22）：`list_asset_taxonomy` + `search_assets`，业务员在自己的 agent 里直接检索素材并拿 24h 签名下载链接
 10. ✅ **发色数字化**：色板数据库、混合色管理、色彩趋势、AI 色板图生成
 11. ✅ **备货管理**：安全库存设置、销量备货一览、库存日报、低库存钉钉推送
 12. ✅ **生产订单**：购物车 → 批量下单 → 订单跟踪 → 入库录入
@@ -64,7 +66,8 @@
     - **2026-07-19：Phase 2 之版本评论已完成**（合入 main，待部署）：评论挂具体版本、版本卡内展开；单层回复自动拍平、仅作者可删、占位线程可续贴；无版本资料（offline/link）无评论；资料库列表 `❞ N` 角标 + 动态流「评论」筛选；两轮对抗性审查（细节见 module-notes PM 节）
     - **待完成**：生产 `.env` 可选项 `PM_TOKEN_SECRET` 独立随机串（当前回退 JWT_SECRET_KEY，见 runbook PM 节步骤 5，服务器上一条命令+重启，会全员重新进门牌）；Phase 2 之划线锚点评论未启动（anchor 字段已预留且评论表已在用）
 22. ✅ **培训速递**（2026-07-18 合入 main）：参训人自助发布 + AI 提炼草稿（粘贴文字/图片多模态/PDF 抽文本 → 结构化分区）+ 4 步强引导向导 + 发布必填分区校验 + 钉钉群 actionCard 推送 + 「有用」轻反馈；`training:read/write/admin` 权限；075 迁移，3 张表
-    - **2026-07-21 附件增强**（077 迁移，待部署）：附件类型白名单下拉（默认按扩展名自动识别）+ 批次备注 + 多选上传逐文件进度 + 列表行内改类型/备注（`PATCH /files/{id}`，失败回滚显示值）；存量附件显示「未分类」；公共组件 `AppUpload` 新增 uploadFn onProgress 第二参数与 `show-list` 开关（向后兼容）；编辑器附件区拆 `AttachFilesPanel.vue`
+    - **2026-07-23 列表删除动作接线**（⚠️ **尚未上生产**）：`deleteDigest` API 与后端端点早就存在但前端从没调用过（操作列只有查看/编辑）；行级可见性镜像后端规则（作者本人或 `training:admin`，已发布行仅 admin），避免点进去吃 403。2026-07-24 核实线上 TrainingList 包仍无「删除」——该 commit 尚未 push 到 origin，deploy.bat 拉不到
+    - **2026-07-21 附件增强**（077 迁移，**2026-07-24 核实已上生产**：线上 TrainingEditor 包含「自动识别」）：附件类型白名单下拉（默认按扩展名自动识别）+ 批次备注 + 多选上传逐文件进度 + 列表行内改类型/备注（`PATCH /files/{id}`，失败回滚显示值）；存量附件显示「未分类」；公共组件 `AppUpload` 新增 uploadFn onProgress 第二参数与 `show-list` 开关（向后兼容）；编辑器附件区拆 `AttachFilesPanel.vue`
 
 ### 基础设施
 
@@ -87,7 +90,8 @@
 - ✅ tracking 状态映射（57）/ stock 状态判定（20）/ 提成批次状态机全矩阵（31）/ invoice 金额（14）——2026-07-03 B-8 补齐
 - ✅ invoice / whatsapp / payment 等模块测试
 - ✅ invoice OKKI 推单专项（payload 映射/状态机/unique_id 传承/非标合并/必填字段）+ 数据范围 scope + 录入自动填充——2026-07-13 补齐
-- **总计 532 tests（2026-07-13 全绿）→ 753 tests（2026-07-18 全绿，培训速递/PM 站/发票配件合入后；PM display_name 断言已随 seed 改名修复为从 MEMBERS_SEED 派生）→ 777 tests（2026-07-19 全绿，PM 版本评论 + expo 夏季衣橱合入后）→ 786 tests（2026-07-21 全绿，培训附件类型/备注合入后）**
+- ✅ 素材标签体系 v2 专项（`test_asset_taxonomy.py`：维度可见性口径 / 按维度合并语义 / 单选校验 / folder_upload 子集合并 / 色系派生规则）——2026-07-22
+- **总计 532 tests（2026-07-13 全绿）→ 753 tests（2026-07-18 全绿，培训速递/PM 站/发票配件合入后；PM display_name 断言已随 seed 改名修复为从 MEMBERS_SEED 派生）→ 777 tests（2026-07-19 全绿，PM 版本评论 + expo 夏季衣橱合入后）→ 786 tests（2026-07-21 全绿，培训附件类型/备注合入后）→ 825 tests（2026-07-24 实测全绿，素材标签体系 v2 + 发票粘贴导入/推单修复合入后）**
 
 ## 待办事项（优先级递减）
 
@@ -253,7 +257,16 @@
 | [requirements/2026-07-03-permission-redesign.md](requirements/2026-07-03-permission-redesign.md) | ✅ | 角色权限重设计方案（2026-07-03 已实施：046 迁移+矩阵 UI+审计） |
 | [requirements/2026-07-07-invoice-order-pricing-okki-v2.md](requirements/2026-07-07-invoice-order-pricing-okki-v2.md) | ✅ | 发票 V2：双类型/价格矩阵/OKKI 推单设计（决策 D1-D4） |
 | [requirements/2026-07-12-permission-refinement.md](requirements/2026-07-12-permission-refinement.md) | ✅ | 权限细化与逐页页面码方案（061/063/064 已实施） |
-| [mcp-tracking-integration.md](mcp-tracking-integration.md) | ✅ | MCP 网关物流工具接入说明（051） |
+| [requirements/2026-07-17-training-digest.md](requirements/2026-07-17-training-digest.md) | ✅ | 培训速递需求（075/077 已实施） |
+| [requirements/2026-07-17-pm-material-hub.md](requirements/2026-07-17-pm-material-hub.md) | ✅ | PM 资料协作站设计稿（076 已实施） |
+| [requirements/2026-07-21-salary-module.md](requirements/2026-07-21-salary-module.md) | 📝 | 薪资计算模块设计草案（**未开工**，12 个开放问题待拍板，2026-03 工资表复算为验收标准） |
+| [requirements/2026-07-22-asset-tag-taxonomy.md](requirements/2026-07-22-asset-tag-taxonomy.md) | ✅ | 素材标签体系 v2 重构方案（078 已实施并完成切换/退役） |
+| [requirements/2026-07-10-customer-after-sales-management.md](requirements/2026-07-10-customer-after-sales-management.md) | 📝 | 客户售后管理需求 + 实施计划（模块笔记见 module-notes 售后节） |
+| [mcp-tracking-integration.md](mcp-tracking-integration.md) | ✅ | 方舟 MCP 网关接入说明：物流 3 工具（051）+ 素材 2 工具（2026-07-22） |
+| [social-customer-mcp.md](social-customer-mcp.md) | ✅ | 社媒客户查询 MCP（云端独立服务，与方舟网关不是同一套） |
+| [codex-social-customer-mcp-auto-setup.md](codex-social-customer-mcp-auto-setup.md) | ✅ | Windows/macOS Codex 自动接入社媒客户 MCP |
+| [expo-kiosk-tablet-setup.md](expo-kiosk-tablet-setup.md) | ✅ | 展会 kiosk 平板现场配置 |
+| [README.md](README.md) | ✅ | docs 目录导航（按读者角色分流） |
 | [2026-07-03-architecture-assessment.md](2026-07-03-architecture-assessment.md) | ✅ | 平台架构评估与改进路线图（问题清单 + 四批实施计划） |
 | [2026-07-08-db-naming-assessment.md](2026-07-08-db-naming-assessment.md) | ✅ | 数据库命名评估（命名宪法依据） |
 | [../CLAUDE.md](../CLAUDE.md) | ✅ | AI 协作说明（项目根目录） |

@@ -529,6 +529,42 @@ frontend/src/
 **素材云端代理缓存 + 场景图版本号（2026-07-22）**
 - 云 Nginx `/uploads/expo/` 开 proxy_cache（30d TTL + use_stale 隧道断连出旧图），实测 MISS 1.06s → HIT 0.015s；素材除场景示意图外全 uuid 命名换图即换 URL 天然不脏，场景图固定名由 `scene_image_url()` 拼 `?v=<mtime>` 破缓存。清缓存命令与注意事项见 runbook「性能监控」节
 
+## 素材中台标签体系 v2（asset，2026-07-22 切换并退役旧维度）
+
+方案全文 `docs/requirements/2026-07-22-asset-tag-taxonomy.md`。旧 5 维体系是文件夹路径逐层平移的产物（文件夹=单层浏览结构，标签=多维正交检索结构，平移必乱），重构为 11 维正交体系。
+
+### 改这个模块前必须知道的
+
+- **`is_visible` 是新旧体系并存/切换/退役的唯一执行开关**，不是显示偏好。`GET /tags/dimensions` 默认只回 `is_visible=1`；前端筛选面板、`folder_upload` 路径匹配、AI 建议标签**三条链路全部只认可见维度**。维度管理页用 `?include_hidden=1` 才看得到隐藏维度。
+- **体系定义唯一真相源是 `app/asset/taxonomy_def.py`（`TAXONOMY_V2`）**，含英文名/别名/parent 挂靠，种子与迁移脚本共用。`tag_service.py` 的 `DEFAULT_DIMENSIONS` 已换成新 11 维——否则新环境/测试库会初始化出第三套体系。
+- **值域绝不能硬编码进 prompt 或代码**。这是上一代体系失效的根因：`asset_analyze` preset 与响应解析侧 `_DIMENSION_MAP` 都写死了 9 维老值域，体系一改就**静默失效**（AI 照常返回，标签全打不上）。现在值域在运行时注入 user message，preset 的 system prompt 保持通用；`seed_ai.py` 对存量行做「市场地区」签名检测触发升级。
+- **编辑标签是「按维度合并」语义**：`PATCH` 只覆盖请求中出现的维度，未出现的维度保持原样，清空要显式传空列表。不是整体替换。
+- **单选维度违规抛 `SingleSelectViolation` → 400**。
+- **`folder_upload` 合并判定是子集语义**（目标标签 ⊆ 已有可见维度标签才算同一素材的新版本），防止重传把同一批素材建成一堆重复。
+- **`color_family`（色系）是 `is_managed` 托管维度**，由 `derive_family` 规则从色号推导，禁人工编辑：`P+数字`=挑染 / `T`=渐变 / `TP`=双段 / `M+数字`=混色。注意 `#Pink` 不能按 P 前缀误判。
+- `list_dimensions` 结果有 **60 秒 TTL 缓存**（`list_dimensions_cached`），共库改维度后线上实例自然过期，不必重启。
+- `orientation`（画幅 landscape/portrait/square）在上传时自动算，不是标签维度里的人工值。
+
+### 运维脚本（`backend/scripts/tag_taxonomy/`，backend 目录下执行）
+
+| 脚本 | 用途 |
+|------|------|
+| `setup_dimensions.py` | 建新维度（建出来即 `is_visible=0`，不影响线上） |
+| `export_mapping.py` | 导出新旧映射 Excel 给设计部确认 |
+| `retag.py` | 存量重打标签，`--dry-run` / `--execute`；INSERT IGNORE 幂等 + 备份表 `ark_asset_tags_bak_taxv2` + 单选 priority 裁决 + orientation/色系派生 |
+| `switch_taxonomy.py` | 切换日：新维度可见 + 必填生效 + 旧维度隐藏；`--rollback` 回退并存态 |
+| `retire_old_dims.py` | 退役：备份 `*_bak_retire` 三表后按 FK 顺序删旧维度 |
+| `gen_folder_skeleton.py` | **设计部日常用**：按当前标签库实时生成上传目录骨架（空文件夹 + 使用说明 README），文件夹名 = 规范标签值，folder_upload 路径匹配 100% 命中。新增标签值后重跑一次即可 |
+
+- 这些是 **DML 脚本不是 Alembic 迁移**：开发/生产/云展会三实例共用一套库，走 Alembic 会被跑多次；DML 一次生效更合适（但脚本自身必须幂等）。
+- 2026-07-22 退役已执行（亮哥指令跳过两周观察期）：删 39,556 关联行 / 412 值 / 4 维度，零素材失标。
+- **2026-07-24 备份表已清理**：`ark_asset_tags_bak_taxv2`(51,833) / `ark_asset_tags_bak_retire`(39,556) / `ark_tag_values_bak_retire`(412) / `ark_tag_dimensions_bak_retire`(4) 四张表 DROP 前复查通过（11 维度 / 12,277 素材全部有标签 / 失标 0 / 孤儿关联行 0），DROP 后复查一致。回滚闭包已导出为可回灌 SQL：`backend/tmp/asset_taxonomy_backup_2026-07-24.sql`（2.07MB，含 CREATE TABLE + INSERT，`mysql commission_db < 该文件` 即可还原）——该目录已 gitignore，需要长期留存请另存到备份盘。
+- 迁移过程产物（retag 日志、映射 Excel）落 `backend/tmp/`，已 gitignore，不要提交。
+
+### MCP 素材工具
+
+`list_asset_taxonomy()` 发现词表 → `search_assets(...)` 检索。自由字符串三路解析（规范值/英文别名/模糊）+ 产品族展开，结果侧走 `AssetPermission` 过滤，返回 24h 签名 URL。下载文件名由 `build_download_filename` 动态拼（产品_色号_内容_原名），物理文件名不动。接入说明见 `mcp-tracking-integration.md`。
+
 ## 订单发票 Excel/WPS 粘贴导入
 
 - 前端只负责解析剪贴板文本和交互，后端 `invoice/import_service.py` 必须重新校验并批量匹配；`POST /api/invoice/import/preview` 需要 `invoice:write`，且保持零写入。

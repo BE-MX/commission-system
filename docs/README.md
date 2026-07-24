@@ -21,10 +21,14 @@
 | [runbook.md](runbook.md) | 部署步骤、运维命令、故障排查、环境变量清单 | 运维人员、项目交接 |
 | [handoff.md](handoff.md) | 项目状态、已完成功能、待办清单、技术债务 | 项目交接、管理层 |
 | [accio-work-integration-spec.md](accio-work-integration-spec.md) | ACCIO WORK → 方舟 客户机会台集成规范 | ACCIO WORK 开发团队 |
-| [mcp-tracking-integration.md](mcp-tracking-integration.md) | MCP 网关物流工具接入说明（入口无关，个人 token） | AI 客户端接入者 |
+| [mcp-tracking-integration.md](mcp-tracking-integration.md) | 方舟 MCP 网关接入说明：物流录单/查询 + 素材库检索共 5 个工具（入口无关，个人 token） | AI 客户端接入者 |
 | [social-customer-mcp.md](social-customer-mcp.md) | 社媒客户查询 MCP：调用、部署、鉴权与运维完整说明 | AI 客户端接入者、运维、DBA |
 | [codex-social-customer-mcp-auto-setup.md](codex-social-customer-mcp-auto-setup.md) | Windows + macOS Codex 自动接入社媒客户 MCP：安全读取 token 文件、备份并更新配置、重启验收 | Codex 用户、服务管理员 |
+| [expo-kiosk-tablet-setup.md](expo-kiosk-tablet-setup.md) | 展会 kiosk 平板现场配置 | 展会执行、现场支持 |
+| [2026-07-03-architecture-assessment.md](2026-07-03-architecture-assessment.md) | 平台架构评估与治理路线图 | 技术负责人 |
+| [2026-07-08-db-naming-assessment.md](2026-07-08-db-naming-assessment.md) | 数据库命名评估（命名宪法依据） | 后端开发、DBA |
 | [requirements/](requirements/) | 需求文档归档 | 产品经理、历史追溯 |
+| [../DESIGN.md](../DESIGN.md) | 设计系统（颜色/字体/间距/组件），UI 决策以此为准 | 前端开发、设计 |
 
 ## 外部集成
 
