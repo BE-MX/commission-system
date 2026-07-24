@@ -34,9 +34,23 @@
       </template>
       <!-- 三槽布局：快门始终居中，本地相册为右侧次级入口（不带 capture，直达相册） -->
       <template v-else-if="cameraOn">
-        <button class="xk-btn ghost side" @click="flipCamera">反转镜头</button>
+        <button class="xk-btn ghost side" @click="flipCamera">
+          <svg class="btn-ico" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20.5 12a8.5 8.5 0 0 0-8.5-8.5 9 9 0 0 0-6.4 2.6L3.5 8.2" />
+            <path d="M3.5 3.6v4.6h4.6" />
+            <path d="M3.5 12a8.5 8.5 0 0 0 8.5 8.5 9 9 0 0 0 6.4-2.6l2.1-2.1" />
+            <path d="M20.5 20.4v-4.6h-4.6" />
+            <circle class="dot" cx="12" cy="12" r="2.2" />
+          </svg>
+          反转镜头
+        </button>
         <button class="shutter" aria-label="拍照" @click="snap"><i /></button>
         <label class="xk-btn ghost side album">
+          <svg class="btn-ico" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="4.5" width="18" height="15" rx="2.5" />
+            <circle cx="8.6" cy="9.6" r="1.7" />
+            <path d="M21 15.4l-4.6-4.6L7 20.2" />
+          </svg>
           本地相册
           <input type="file" accept="image/*" hidden @change="onFilePick" />
         </label>
@@ -291,9 +305,20 @@ video.rear { transform: none; } /* 后置不镜像：所见即实景方向 */
   flex: none; display: flex; justify-content: center; gap: 16px;
   padding-top: 18px; min-height: 88px; align-items: center;
 }
-/* 快门两侧等宽占位，保证快门绝对居中；相册入口做次级视觉弱化 */
-.side { width: 112px; flex: none; }
+/* 快门两侧等宽占位，保证快门绝对居中；相册入口做次级视觉弱化。
+   宽度必须容得下「图标 + 四字 + 字距」：xk-btn 自带 padding 0 44px，沿用的话内容区只剩
+   112-88=24px，比一个字还窄，四个字会被挤成竖排——这里覆盖掉 padding 并给足宽度。 */
+/* box-sizing 必须显式写：button 的 UA 默认是 border-box，label 是 content-box，
+   同样的 width 在两者上差出 padding+border（26px），快门就不居中了 */
+.side { width: 148px; flex: none; padding: 0 12px; gap: 8px; box-sizing: border-box; }
 .album { display: flex; justify-content: center; cursor: pointer; }
+.btn-ico {
+  width: 18px; height: 18px; flex: none;
+  fill: none; stroke: currentColor; stroke-width: 1.6;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+/* 镜头点画实心：18px 下空心小圆会糊成一团 */
+.btn-ico .dot { fill: currentColor; stroke: none; }
 .shutter {
   width: 72px; height: 72px; border-radius: 50%;
   border: 2px solid var(--xk-gold); background: transparent;
