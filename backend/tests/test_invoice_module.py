@@ -421,7 +421,11 @@ def test_customer_contact_defaults_latest_snapshot(db):
     db.flush()
     assert service.get_customer_contact_defaults(db, "123456")["contact_name"] == "Alice Wang"
 
-    assert service.get_customer_contact_defaults(db, "no-such") == {"has_xiaoman_orders": False}
+    # 无历史客户：仍返回 last_order_date 键（值 None），首返旁展示用——2026-07-13 加的功能
+    assert service.get_customer_contact_defaults(db, "no-such") == {
+        "has_xiaoman_orders": False,
+        "last_order_date": None,
+    }
 
 
 def test_okki_flags_stored_and_null_recomputes_on_update(db):
