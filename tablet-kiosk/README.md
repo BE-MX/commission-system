@@ -119,6 +119,28 @@ result——客户点「拍照/选图」毫无反应，且此后所有 file inpu
 品牌花体 S（自字标原尺抠出）+ 墨底金渐变，与 kiosk 页面同一套黑金语系。
 源图、生成脚本与设计取舍记录在 `icon/`（一条命令可重新生成全套密度资源）。
 
+## 排障：整屏纯黑（2026-07-24 实战）
+
+现象是打开 App 一片纯黑、看不到任何内容，**但页面其实好好的**。判定与手段：
+
+```bash
+# 1. 先确认屏幕不是息屏（否则 screencap 拍到的黑毫无意义）
+adb shell dumpsys power | grep mWakefulness   # Asleep 就先 input keyevent KEYCODE_WAKEUP
+
+# 2. debug 包的 WebView 自带 devtools，直接问它页面状态
+adb forward tcp:9333 localabstract:webview_devtools_remote_$(adb shell pidof com.leshine.expokiosk)
+curl http://127.0.0.1:9333/json/list        # 看 url / title 对不对
+# 再用 CDP 的 Page.captureScreenshot 拿 WebView 自己渲染的那一帧
+```
+
+**若 CDP 截图正常、设备 screencap 纯黑 → 问题在"绘制"不在"加载"**，别再查网络和证书。
+本次真凶：`showError` 里 `webView.onPause()` + `hideError` 里 `onResume()`，而 hideError 由
+`onPageFinished` 调用——等于用页面回调驱动本该跟随 Activity 生命周期的开关，荣耀 WebView 上
+合成器会丢掉首帧。**这两个方法只能在 Activity 的 onPause/onResume 里成对调用，或者干脆不用。**
+
+顺带记两条 adb 实况：`adb install` 会被荣耀弹两层确认框挡住（「继续」→ 勾选风险知情 →「继续安装」，
+不点就一直挂着）；`adb shell uiautomator dump` 在本机取不到内容，看界面直接用 `exec-out screencap`。
+
 ## 相关
 
 - 平板锁定/账号/网络等现场配置：`../docs/expo-kiosk-tablet-setup.md`
