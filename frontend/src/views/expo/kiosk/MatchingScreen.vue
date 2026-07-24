@@ -397,8 +397,12 @@ onBeforeUnmount(() => { if (scRaf) cancelAnimationFrame(scRaf) })
 }
 .lib-card:active { transform: scale(0.97); }
 .lib-card.on { border-color: var(--xk-gold); box-shadow: 0 0 16px rgba(232, 196, 121, 0.2); }
-.lib-thumb { width: 100%; aspect-ratio: 3 / 4; display: flex; align-items: center; justify-content: center; }
-.lib-thumb img { width: 100%; height: 100%; object-fit: cover; }
+/* img 必须 position:absolute 脱离文档流——否则流内的 <img height:100%> 会用图片自身比例
+   撑高缩略框，本机荣耀 WebView 上 aspect-ratio 被架空：2:3 封面把框顶高、名字被挤出
+   overflow:hidden 裁掉，只有恰好 3:4 的封面幸免（2026-07-24 CDP 实测定位）。绝对定位后
+   框高纯由 aspect-ratio 决定，各卡统一，名字恒可见。 */
+.lib-thumb { position: relative; width: 100%; aspect-ratio: 3 / 4; display: flex; align-items: center; justify-content: center; }
+.lib-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .lib-ph { font-size: 12px; letter-spacing: 0.3em; color: var(--xk-gold-dim); }
 .lib-nm { font-size: 12px; color: var(--xk-paper); text-align: center; padding: 0 6px 10px; line-height: 1.4; }
 .lib-tag {
