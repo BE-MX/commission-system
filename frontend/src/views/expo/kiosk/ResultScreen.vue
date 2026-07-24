@@ -4,13 +4,19 @@
     <div v-if="!current" class="waiting">
       <div class="halo-wrap">
         <div class="ring" />
+        <div class="ring ring2" />
         <div class="halo" />
+        <div class="spark s1" /><div class="spark s2" /><div class="spark s3" />
         <span class="halo-count">{{ doneCount }}<i>/{{ totalCount }}</i></span>
       </div>
-      <div class="wait-text">
+      <div class="wait-title">
         {{ isScene ? '正在为您生成场景大片' : '正在为您合成试戴效果' }}
-        <small>AI 正在精细处理发丝与光影 · 约需 2 分钟</small>
+        <small>预计 1-2 分钟 · AI 精细处理中</small>
       </div>
+      <!-- 随机专业语句：给长等待注入"正在做正经事"的质感（纯观感文案，非流程承诺） -->
+      <Transition name="phrase" mode="out-in">
+        <div class="phrase" :key="phraseIdx"><i class="live" />{{ phrases[phraseIdx] }}</div>
+      </Transition>
       <div class="bar" aria-hidden="true"><i /></div>
       <div v-if="!isScene" class="stages"><span>解析面容</span><span>甄选发型</span><span class="on">生成效果</span></div>
       <div v-else class="stages"><span>佩戴实拍</span><span>场景甄选</span><span class="on">生成大片</span></div>
@@ -118,18 +124,41 @@ const BRAND_CARDS = [
   { tag: '至臻系列', text: '全手工钩织 · 一顶一匠 · 为重要场合而生' },
 ]
 const brandIdx = ref(0)
+
+// 等待中轮换的"专业工序"语句：标题说真话（正在生成），这排短语堆专业质感。
+// 按模式给不同工序词 + 通用词，2.6s 换一句、随机不重复。
+const PHRASE_POOL = {
+  tryon: ['正在渲染发丝细节', '正在匹配肤色与发色', '正在优化面部融合', '正在校准佩戴贴合度'],
+  scene: ['正在生成 AI 场景', '正在设计服饰形象', '正在布置场景光线', '正在构建空间氛围'],
+  common: ['正在调整光影效果', '正在润色整体色调', '正在精修画面细节', '正在校准色彩平衡', '正在合成高清成片'],
+}
+const phrases = computed(() => [
+  ...(flow.mode.value === 'scene' ? PHRASE_POOL.scene : PHRASE_POOL.tryon),
+  ...PHRASE_POOL.common,
+])
+const phraseIdx = ref(0)
+function nextPhrase() {
+  const n = phrases.value.length
+  if (n <= 1) return
+  let i = phraseIdx.value
+  while (i === phraseIdx.value) i = Math.floor(Math.random() * n)
+  phraseIdx.value = i
+}
+
 let brandTimer = null
-function syncBrandTimer(waiting) {
-  if (waiting && !brandTimer) {
-    brandTimer = setInterval(() => {
+let phraseTimer = null
+function syncWaitTimers(waiting) {
+  if (waiting) {
+    if (!brandTimer) brandTimer = setInterval(() => {
       brandIdx.value = (brandIdx.value + 1) % BRAND_CARDS.length
     }, 6000)
-  } else if (!waiting && brandTimer) {
-    clearInterval(brandTimer)
-    brandTimer = null
+    if (!phraseTimer) phraseTimer = setInterval(nextPhrase, 2600)
+  } else {
+    if (brandTimer) { clearInterval(brandTimer); brandTimer = null }
+    if (phraseTimer) { clearInterval(phraseTimer); phraseTimer = null }
   }
 }
-onBeforeUnmount(() => syncBrandTimer(false))
+onBeforeUnmount(() => syncWaitTimers(false))
 
 const photoUrl = computed(() => flow.session.value?.photo_url || '')
 const doneList = computed(() => flow.doneResults.value)
@@ -142,7 +171,7 @@ const current = computed(() => doneList.value[currentIndex.value] || null)
 const lightboxOpen = ref(false)
 // 成品被清空（重新生成/清场）时收起灯箱，避免空引用的黑屏遮罩
 watch(current, v => { if (!v) lightboxOpen.value = false })
-watch(() => !current.value, syncBrandTimer, { immediate: true })
+watch(() => !current.value, syncWaitTimers, { immediate: true })
 // 新成品出炉自动切到最新一张（回头再生成第二款时不停留在旧图）
 watch(doneCount, (n, old) => {
   if (n > (old || 0)) currentIndex.value = n - 1
@@ -215,44 +244,78 @@ watch([shareUrl, qrEl], async () => {
 
 <style scoped>
 .result { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 0 5vw 2.5vh; overflow-y: auto; }
-.waiting { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; }
-.halo-wrap { position: relative; width: 150px; height: 150px; display: flex; align-items: center; justify-content: center; }
+.waiting { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 26px; }
+.halo-wrap { position: relative; width: 200px; height: 200px; display: flex; align-items: center; justify-content: center; }
 .halo {
-  position: absolute; inset: 6px; border-radius: 50%;
+  position: absolute; inset: 10px; border-radius: 50%;
   border: 1px solid var(--xk-gold-line);
-  background: radial-gradient(circle, rgba(232, 196, 121, 0.18), transparent 70%);
+  background: radial-gradient(circle, rgba(232, 196, 121, 0.22), transparent 68%);
   animation: halo 2.2s ease-in-out infinite;
 }
-@keyframes halo { 0%, 100% { transform: scale(0.94); opacity: 0.6; } 50% { transform: scale(1.06); opacity: 1; } }
-/* 匀速旋转的金弧：constant motion 用 linear */
+@keyframes halo { 0%, 100% { transform: scale(0.92); opacity: 0.55; } 50% { transform: scale(1.08); opacity: 1; } }
+/* 匀速旋转的金弧：constant motion 用 linear。主弧顺时针，内弧反向更细，叠出"精密仪器"感 */
 .ring {
   position: absolute; inset: 0; border-radius: 50%;
-  background: conic-gradient(from 0deg, transparent 0 286deg, rgba(232, 196, 121, 0.9) 330deg, transparent 360deg);
-  -webkit-mask: radial-gradient(closest-side, transparent calc(100% - 2.5px), #000 0);
-  mask: radial-gradient(closest-side, transparent calc(100% - 2.5px), #000 0);
-  animation: ring-spin 2.2s linear infinite;
+  background: conic-gradient(from 0deg, transparent 0 280deg, rgba(232, 196, 121, 0.95) 332deg, transparent 360deg);
+  -webkit-mask: radial-gradient(closest-side, transparent calc(100% - 3px), #000 0);
+  mask: radial-gradient(closest-side, transparent calc(100% - 3px), #000 0);
+  animation: ring-spin 2.4s linear infinite;
+}
+.ring2 {
+  inset: 15%;
+  background: conic-gradient(from 180deg, transparent 0 300deg, rgba(247, 227, 176, 0.75) 342deg, transparent 360deg);
+  -webkit-mask: radial-gradient(closest-side, transparent calc(100% - 2px), #000 0);
+  mask: radial-gradient(closest-side, transparent calc(100% - 2px), #000 0);
+  animation: ring-spin 3.6s linear infinite reverse;
 }
 @keyframes ring-spin { to { transform: rotate(360deg); } }
-.halo-count { position: relative; font-family: 'Noto Serif SC', serif; font-size: 28px; color: var(--xk-gold-hi); }
-.halo-count i { font-style: normal; font-size: 13px; color: var(--xk-mut); margin-left: 2px; }
-.wait-text { text-align: center; font-size: 15px; letter-spacing: 0.2em; color: var(--xk-gold-hi); }
-.wait-text small { display: block; margin-top: 10px; font-size: 11px; color: var(--xk-mut); letter-spacing: 0.14em; }
+/* 三颗环绕光点：不同半径 + 不同速度 + 有正反，营造"多线程处理"的动感 */
+.spark { position: absolute; inset: 0; border-radius: 50%; }
+.spark::after {
+  content: ''; position: absolute; top: -2px; left: 50%; margin-left: -3px;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--xk-gold-hi); box-shadow: 0 0 12px var(--xk-gold);
+}
+.s1 { animation: ring-spin 3.2s linear infinite; }
+.s2 { inset: 15%; animation: ring-spin 4.8s linear infinite reverse; }
+.s3 { inset: 30%; animation: ring-spin 2.3s linear infinite; }
+.halo-count { position: relative; font-family: 'Noto Serif SC', serif; font-size: 38px; color: var(--xk-gold-hi); }
+.halo-count i { font-style: normal; font-size: 16px; color: var(--xk-mut); margin-left: 3px; }
+.wait-title {
+  text-align: center; font-family: 'Noto Serif SC', serif;
+  font-size: 20px; letter-spacing: 0.22em; color: var(--xk-gold-hi);
+}
+.wait-title small { display: block; margin-top: 10px; font-size: 12px; color: var(--xk-mut); letter-spacing: 0.14em; }
+/* 随机工序短语：live 点脉冲表达"进行中"，换句用 blur 掩护交叉 */
+.phrase {
+  display: flex; align-items: center; gap: 10px; min-height: 24px;
+  font-size: 16px; letter-spacing: 0.18em; color: var(--xk-gold);
+}
+.phrase .live {
+  width: 7px; height: 7px; border-radius: 50%; flex: none;
+  background: var(--xk-gold-hi); box-shadow: 0 0 10px var(--xk-gold);
+  animation: halo-fade 1.1s ease-in-out infinite;
+}
+.phrase-enter-active { transition: opacity 360ms cubic-bezier(0.23, 1, 0.32, 1), transform 360ms cubic-bezier(0.23, 1, 0.32, 1), filter 360ms ease; }
+.phrase-leave-active { transition: opacity 200ms ease, transform 200ms ease, filter 200ms ease; }
+.phrase-enter-from { opacity: 0; transform: translateY(8px); filter: blur(5px); }
+.phrase-leave-to { opacity: 0; transform: translateY(-6px); filter: blur(5px); }
 /* 不确定进度流光条：匀速 linear，宽度恒定只动 transform */
-.bar { width: min(52vw, 300px); height: 2px; border-radius: 2px; background: rgba(232, 196, 121, 0.14); overflow: hidden; }
+.bar { width: min(60vw, 360px); height: 3px; border-radius: 3px; background: rgba(232, 196, 121, 0.14); overflow: hidden; }
 .bar i {
-  display: block; height: 100%; width: 38%; border-radius: 2px;
+  display: block; height: 100%; width: 38%; border-radius: 3px;
   background: linear-gradient(90deg, transparent, var(--xk-gold), transparent);
   animation: bar-slide 1.5s linear infinite;
 }
 @keyframes bar-slide { from { transform: translateX(-110%); } to { transform: translateX(380%); } }
-.stages { display: flex; gap: 30px; font-size: 11px; letter-spacing: 0.2em; color: var(--xk-mut); }
-.stages .on { color: var(--xk-gold); border-bottom: 1px solid var(--xk-gold); padding-bottom: 6px; }
+.stages { display: flex; gap: 40px; font-size: 14px; letter-spacing: 0.2em; color: var(--xk-mut); }
+.stages .on { color: var(--xk-gold); border-bottom: 1px solid var(--xk-gold); padding-bottom: 8px; }
 .brand-card {
-  width: min(72vw, 460px); padding: 14px 18px;
-  border: 1px solid var(--xk-gold-line); border-radius: 14px;
+  width: min(80vw, 560px); padding: 18px 24px;
+  border: 1px solid var(--xk-gold-line); border-radius: 16px;
   background: rgba(232, 196, 121, 0.05);
-  display: flex; align-items: center; gap: 12px;
-  font-size: 12px; color: var(--xk-mut); line-height: 1.8; letter-spacing: 0.06em;
+  display: flex; align-items: center; gap: 14px;
+  font-size: 14.5px; color: var(--xk-mut); line-height: 1.8; letter-spacing: 0.06em;
 }
 .brand-card b { color: var(--xk-gold); font-weight: 400; letter-spacing: 0.16em; flex: none; }
 /* 卡片轮换：入场强 ease-out + blur 掩护交叉，出场更快（非对称时长） */
@@ -260,12 +323,13 @@ watch([shareUrl, qrEl], async () => {
 .bcard-leave-active { transition: opacity 200ms ease, transform 200ms ease, filter 200ms ease; }
 .bcard-enter-from { opacity: 0; transform: translateY(12px); filter: blur(6px); }
 .bcard-leave-to { opacity: 0; transform: translateY(-8px); filter: blur(6px); }
-.wait-actions { display: flex; gap: 12px; margin-top: 8px; }
-.wait-actions .xk-btn { height: 44px; padding: 0 28px; font-size: 13px; }
+.wait-actions { display: flex; gap: 14px; margin-top: 8px; }
+.wait-actions .xk-btn { height: 52px; padding: 0 34px; font-size: 15px; }
 @media (prefers-reduced-motion: reduce) {
-  .ring, .bar i { animation: none; }
+  .ring, .ring2, .spark, .bar i { animation: none; }
+  .spark { display: none; }
   .halo { animation-name: halo-fade; }
-  .bcard-enter-from, .bcard-leave-to { transform: none; filter: none; }
+  .bcard-enter-from, .bcard-leave-to, .phrase-enter-from, .phrase-leave-to { transform: none; filter: none; }
 }
 @keyframes halo-fade { 0%, 100% { opacity: 0.6; } 50% { opacity: 1; } }
 
