@@ -1,5 +1,12 @@
 <template>
   <div class="product-manage">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="product-manage-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <!-- 工具栏 -->
     <div class="toolbar">
       <div class="toolbar-left">
@@ -11,13 +18,13 @@
           <el-option label="已绑定" value="bound" />
           <el-option label="未绑定" value="unbound" />
         </el-select>
-        <el-button type="primary" @click="loadData">搜索</el-button>
+        <GlassButton variant="primary" @click="loadData">搜索</GlassButton>
         <el-checkbox v-model="showDisabled" @change="loadData">显示已禁用</el-checkbox>
       </div>
       <div class="toolbar-right">
         <template v-if="selectedProducts.length > 0">
           <el-tag>已选 {{ selectedProducts.length }} 项</el-tag>
-          <el-button v-permission="'production:write'" type="primary" size="small" @click="openBatchBind">批量绑定路线</el-button>
+          <GlassButton v-permission="'production:write'" variant="primary" size="sm" @click="openBatchBind">批量绑定路线</GlassButton>
         </template>
       </div>
     </div>
@@ -219,7 +226,37 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.product-manage { padding: 20px; }
+.product-manage { padding: 20px; position: relative; }
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台） */
+.product-manage-aurora { inset: -24px -28px; }
+
+/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
+   el-dialog 默认就地渲染（append-to-body=false），通配会覆盖
+   .el-overlay 的 position: fixed，弹窗打开后看不见 */
+.product-manage .toolbar,
+.product-manage .table-card,
+.product-manage .pagination-wrap {
+  position: relative;
+  z-index: 1;
+}
+
+/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 白底） */
+.product-manage .table-card {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+}
+
+/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
+.product-manage .table-card :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+}
 .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .toolbar-left { display: flex; gap: 10px; align-items: center; }
 .toolbar-right { display: flex; gap: 8px; align-items: center; }

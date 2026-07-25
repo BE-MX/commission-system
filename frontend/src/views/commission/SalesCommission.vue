@@ -1,5 +1,12 @@
 <template>
   <div class="sales-commission-page">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="sales-commission-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <div class="filter-bar">
       <el-radio-group v-model="filters.status" @change="fetchList">
         <el-radio-button value="">全部</el-radio-button>
@@ -39,27 +46,27 @@
     </div>
 
     <div class="summary-grid">
-      <div class="metric-item payment">
+      <div class="metric-item payment lg-card">
         <div class="metric-icon"><el-icon><Money /></el-icon></div>
         <span>回款总额</span>
         <strong>{{ money(selectedSummary.total_payment_amount) }}</strong>
       </div>
-      <div class="metric-item sales">
+      <div class="metric-item sales lg-card">
         <div class="metric-icon"><el-icon><User /></el-icon></div>
         <span>业务员提成</span>
         <strong>{{ money(selectedSummary.total_salesperson_commission) }}</strong>
       </div>
-      <div class="metric-item supervisor">
+      <div class="metric-item supervisor lg-card">
         <div class="metric-icon"><el-icon><UserFilled /></el-icon></div>
         <span>一级主管提成</span>
         <strong>{{ money(selectedSummary.total_supervisor_commission) }}</strong>
       </div>
-      <div class="metric-item second-supervisor">
+      <div class="metric-item second-supervisor lg-card">
         <div class="metric-icon"><el-icon><Connection /></el-icon></div>
         <span>二级主管提成</span>
         <strong>{{ money(selectedSummary.total_second_supervisor_commission) }}</strong>
       </div>
-      <div class="metric-item total">
+      <div class="metric-item total lg-card">
         <div class="metric-icon"><el-icon><TrendCharts /></el-icon></div>
         <span>总提成</span>
         <strong>{{ money(selectedSummary.total_commission) }}</strong>
@@ -327,7 +334,20 @@ watch(currentUserKey, () => {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  /* 极光层（.lg-aurora，与工作台同源）定位上下文 */
+  position: relative;
 }
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台/发票页） */
+.sales-commission-aurora { inset: -24px -28px; }
+
+/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
+   本页有就地渲染的 el-dialog，通配会压掉 .el-overlay 的 position: fixed */
+.sales-commission-page .filter-bar,
+.sales-commission-page .selected-batch-bar,
+.sales-commission-page .summary-grid,
+.sales-commission-page .table-card,
+.sales-commission-page .pagination { position: relative; z-index: 1; }
 
 .filter-bar {
   display: flex;
@@ -336,10 +356,11 @@ watch(currentUserKey, () => {
   gap: 16px;
   flex-wrap: wrap;
   padding: 14px 16px;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.82);
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05);
+  /* 筛选条：同款渐变玻璃 */
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
   animation: surface-in 220ms var(--commission-ease-out) both;
 }
 
@@ -383,18 +404,16 @@ watch(currentUserKey, () => {
   font-size: 15px;
 }
 
+/* 玻璃质感由 .lg-card 提供（渐变磨砂 + 暖金彩色阴影 + hover 上浮），
+   这里只留布局；各变体的语义色保留在文字/图标上 */
 .metric-item {
   position: relative;
   min-height: 82px;
   padding: 14px 16px;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: #fff;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   overflow: hidden;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
 }
 
 .metric-icon {
@@ -413,11 +432,6 @@ watch(currentUserKey, () => {
   pointer-events: none;
 }
 
-.metric-item.payment {
-  background: linear-gradient(135deg, #eef6ff 0%, #ffffff 72%);
-  border-color: #cfe4ff;
-}
-
 .metric-item.payment .metric-icon {
   color: #2563eb;
 }
@@ -428,11 +442,6 @@ watch(currentUserKey, () => {
 
 .metric-item.payment strong {
   color: #1d4ed8;
-}
-
-.metric-item.sales {
-  background: linear-gradient(135deg, #f0fdf4 0%, #ffffff 72%);
-  border-color: #bbf7d0;
 }
 
 .metric-item.sales .metric-icon {
@@ -447,11 +456,6 @@ watch(currentUserKey, () => {
   color: #15803d;
 }
 
-.metric-item.supervisor {
-  background: linear-gradient(135deg, #fff7ed 0%, #ffffff 72%);
-  border-color: #fed7aa;
-}
-
 .metric-item.supervisor .metric-icon {
   color: #ea580c;
 }
@@ -464,11 +468,6 @@ watch(currentUserKey, () => {
   color: #c2410c;
 }
 
-.metric-item.second-supervisor {
-  background: linear-gradient(135deg, #f5f3ff 0%, #ffffff 72%);
-  border-color: #ddd6fe;
-}
-
 .metric-item.second-supervisor .metric-icon {
   color: #7c3aed;
 }
@@ -479,11 +478,6 @@ watch(currentUserKey, () => {
 
 .metric-item.second-supervisor strong {
   color: #6d28d9;
-}
-
-.metric-item.total {
-  background: linear-gradient(135deg, #ecfeff 0%, #ffffff 72%);
-  border-color: #a5f3fc;
 }
 
 .metric-item.total .metric-icon {
@@ -513,14 +507,30 @@ watch(currentUserKey, () => {
   font-variant-numeric: tabular-nums;
 }
 
+/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */
 .table-card {
-  background: #fff;
-  border-radius: 8px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
   overflow: hidden;
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05);
   animation: surface-in 260ms var(--commission-ease-out) 80ms both;
 }
+
+/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
+.table-card :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+}
+
+/* 右侧固定操作列：sticky 单元格 + background: inherit，行透明时会透底重影，
+   改成磨砂不透明的暖白，表头/hover 态同步（同 invoice-manage.css） */
+.table-card :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
+.table-card :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
+.table-card :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
 
 .list-table {
   width: 100%;

@@ -1,5 +1,12 @@
 <template>
   <div class="insight-page report-page">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="daily-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <div class="insight-toolbar" v-if="canAdmin">
       <GlassButton variant="link" left-icon="Setting" @click="goSources">信源配置</GlassButton>
       <GlassButton variant="link" left-icon="RefreshRight" @click="refreshAll">刷新列表</GlassButton>
@@ -173,6 +180,20 @@ onMounted(refreshAll)
   flex-direction: column;
   height: calc(100vh - 130px);
   min-height: 540px;
+  /* 极光层（.lg-aurora，与工作台同源）定位上下文 */
+  position: relative;
+}
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台/发票页） */
+.daily-aurora {
+  inset: -24px -28px;
+}
+
+/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配 */
+.insight-page .insight-toolbar,
+.insight-page .insight-body {
+  position: relative;
+  z-index: 1;
 }
 
 .insight-toolbar {
@@ -197,11 +218,13 @@ onMounted(refreshAll)
   min-height: 0;
 }
 
+/* 日报树面板：同款渐变玻璃（覆盖原白底） */
 .report-tree {
   width: 240px;
-  background: #fff;
-  border: 1px solid var(--border-color, #e5dfd6);
-  border-radius: 12px;
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -310,11 +333,13 @@ onMounted(refreshAll)
   font-weight: 600;
 }
 
+/* 日报正文面板：同款渐变玻璃（覆盖原白底） */
 .report-content {
   flex: 1;
-  background: #fff;
-  border: 1px solid var(--border-color, #e5dfd6);
-  border-radius: 12px;
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
   overflow: hidden;
   position: relative;
 }

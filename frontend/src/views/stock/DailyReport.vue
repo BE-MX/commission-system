@@ -1,5 +1,12 @@
 <template>
   <div class="daily-report-page">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="daily-report-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <!-- 深色头部 -->
     <div class="report-header-card">
       <div class="header-content">
@@ -29,21 +36,21 @@
               {{ formatTime(reportData.sent_at) }}
             </span>
           </div>
-          <el-button
+          <GlassButton
             v-if="authStore.hasPermission('stock:admin')"
-            type="warning"
-            size="small"
-            :icon="Promotion"
+            variant="warning"
+            size="sm"
+            :left-icon="Promotion"
             :loading="pushLoading"
             @click="pushDingTalk"
-          >推送钉钉</el-button>
+          >推送钉钉</GlassButton>
         </div>
       </div>
     </div>
 
     <!-- 统计卡 -->
     <div v-if="reportData" class="stats-row">
-      <div class="stat-card shortage">
+      <div class="stat-card lg-card shortage">
         <div class="stat-bg-icon"><el-icon :size="60" color="rgba(231,76,60,0.06)"><WarningFilled /></el-icon></div>
         <div class="stat-inner">
           <div style="margin-bottom:8px;"><el-tag size="small" type="danger" effect="dark">● 紧缺</el-tag></div>
@@ -51,7 +58,7 @@
           <div class="stat-unit">个 SKU 低于安全库存</div>
         </div>
       </div>
-      <div class="stat-card warning">
+      <div class="stat-card lg-card warning">
         <div class="stat-bg-icon"><el-icon :size="60" color="rgba(243,156,18,0.06)"><Timer /></el-icon></div>
         <div class="stat-inner">
           <div style="margin-bottom:8px;"><el-tag size="small" type="warning" effect="dark">● 预警</el-tag></div>
@@ -59,7 +66,7 @@
           <div class="stat-unit">个 SKU 低于安全库存 × 1.5</div>
         </div>
       </div>
-      <div class="stat-card sufficient">
+      <div class="stat-card lg-card sufficient">
         <div class="stat-bg-icon"><el-icon :size="60" color="rgba(39,174,96,0.06)"><CircleCheckFilled /></el-icon></div>
         <div class="stat-inner">
           <div style="margin-bottom:8px;"><el-tag size="small" type="success" effect="dark">● 充足</el-tag></div>
@@ -70,11 +77,11 @@
     </div>
 
     <!-- 空数据 -->
-    <div v-else-if="!loading" class="no-data-card">
+    <div v-else-if="!loading" class="no-data-card lg-card">
       <el-empty description="该日期暂无日报数据">
-        <el-button v-if="authStore.hasPermission('stock:admin')" type="primary" @click="generateToday">
+        <GlassButton v-if="authStore.hasPermission('stock:admin')" variant="primary" @click="generateToday">
           手动生成日报
-        </el-button>
+        </GlassButton>
       </el-empty>
     </div>
 
@@ -247,7 +254,21 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.daily-report-page { display: flex; flex-direction: column; gap: 20px; }
+.daily-report-page { display: flex; flex-direction: column; gap: 20px; position: relative; }
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台） */
+.daily-report-aurora { inset: -24px -28px; }
+
+/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
+   el-dialog 默认就地渲染（append-to-body=false），通配会覆盖
+   .el-overlay 的 position: fixed，弹窗打开后看不见 */
+.daily-report-page .report-header-card,
+.daily-report-page .stats-row,
+.daily-report-page .no-data-card,
+.daily-report-page .table-section {
+  position: relative;
+  z-index: 1;
+}
 
 /* 深色头部 */
 .report-header-card {
@@ -271,7 +292,8 @@ onMounted(() => {
 
 /* 统计卡 */
 .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-.stat-card { background: #ffffff; border-radius: 16px; padding: 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); display: flex; align-items: center; position: relative; overflow: hidden; }
+/* 统计卡：玻璃质感由 .lg-card 提供，这里只留布局 */
+.stat-card { padding: 24px; display: flex; align-items: center; position: relative; overflow: hidden; }
 .stat-bg-icon { position: absolute; right: 20px; top: 50%; transform: translateY(-50%); }
 .stat-inner { position: relative; z-index: 1; }
 .stat-value { font-size: 28px; font-weight: 700; color: #1e1e2d; line-height: 1.2; }
@@ -284,11 +306,27 @@ onMounted(() => {
 .warning-header { background: linear-gradient(90deg, #fefcf5, #fff); border-bottom: 2px solid #f39c12; }
 .section-title { display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 600; color: #1e1e2d; }
 
-/* 空数据 */
-.no-data-card { background: #ffffff; border-radius: 16px; padding: 60px 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); text-align: center; }
+/* 空数据：玻璃质感由 .lg-card 提供，这里只留布局 */
+.no-data-card { padding: 60px 24px; text-align: center; }
 
-/* 卡片和表格通用 */
-.card { background: #ffffff; border-radius: 16px; padding: 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
+/* 卡片和表格通用：表格面板同款渐变玻璃（模板内联 style 把上圆角收平与板块头相接） */
+.card {
+  padding: 24px;
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+  overflow: hidden;
+}
+
+/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
+.card :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+}
 .product-name-cell { display: flex; flex-direction: column; }
 .product-name { font-weight: 500; color: #1e1e2d; font-size: 14px; }
 .product-id { font-size: 12px; color: #999; margin-top: 2px; }

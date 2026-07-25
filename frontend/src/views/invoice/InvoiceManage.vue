@@ -1,36 +1,41 @@
 <template>
   <div class="invoice-page">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="invoice-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <div class="page-header">
       <div>
         <h2>订单发票管理</h2>
         <p>客户发票、产品明细、价格管控、导出与小满同步集中处理。</p>
       </div>
       <div class="header-actions">
-        <el-button v-permission="'invoice:write'" type="primary" class="primary-action" @click="openCreate('stock')">
-          <el-icon><Plus /></el-icon>
+        <GlassButton v-permission="'invoice:write'" variant="primary" :left-icon="Plus" class="primary-action" @click="openCreate('stock')">
           新建库存单
-        </el-button>
-        <el-button v-permission="'invoice:write'" @click="openCreate('production')">
-          <el-icon><Plus /></el-icon>
+        </GlassButton>
+        <GlassButton v-permission="'invoice:write'" variant="secondary" :left-icon="Plus" @click="openCreate('production')">
           新建生产单
-        </el-button>
+        </GlassButton>
       </div>
     </div>
 
     <div class="summary-grid">
-      <div class="summary-card">
+      <div class="summary-card lg-card">
         <span>发票数</span>
         <strong>{{ summary.total }}</strong>
       </div>
-      <div class="summary-card">
+      <div class="summary-card lg-card">
         <span>可同步</span>
         <strong>{{ summary.ready }}</strong>
       </div>
-      <div class="summary-card">
+      <div class="summary-card lg-card">
         <span>草稿</span>
         <strong>{{ summary.draft }}</strong>
       </div>
-      <div class="summary-card emphasis">
+      <div class="summary-card emphasis lg-card">
         <span>当前页金额</span>
         <strong>USD {{ money(summary.amount) }}</strong>
       </div>

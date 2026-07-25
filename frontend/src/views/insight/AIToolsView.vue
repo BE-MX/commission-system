@@ -1,5 +1,12 @@
 <template>
   <div class="insight-page tools-page">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="ai-tools-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <div class="tools-toolbar">
       <div class="search-row">
         <el-input
@@ -42,7 +49,7 @@
           <article
             v-for="(tool, idx) in grp.tools"
             :key="`${grp.date}-${idx}-${tool.title || tool.name}`"
-            class="tool-card"
+            class="tool-card lg-card"
           >
             <div class="card-head">
               <div class="card-title-row">
@@ -218,12 +225,28 @@ onMounted(loadAll)
   display: flex;
   flex-direction: column;
   min-height: 540px;
+  /* 极光层（.lg-aurora，与工作台同源）定位上下文 */
+  position: relative;
 }
 
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台/发票页） */
+.ai-tools-aurora {
+  inset: -24px -28px;
+}
+
+/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配 */
+.insight-page .tools-toolbar,
+.insight-page .tools-grid {
+  position: relative;
+  z-index: 1;
+}
+
+/* 工具栏面板：同款渐变玻璃（覆盖原白底） */
 .tools-toolbar {
-  background: #fff;
-  border: 1px solid var(--border-color, #e5dfd6);
-  border-radius: 12px;
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
   padding: 12px 16px;
   margin-bottom: 16px;
 }
@@ -267,10 +290,9 @@ onMounted(loadAll)
   gap: 12px;
 }
 
+/* 玻璃质感由 .lg-card 提供（渐变磨砂 + 暖金彩色阴影 + hover 上浮），
+   这里只留布局与本页专属 hover 描边 */
 .tool-card {
-  background: #fff;
-  border: 1px solid var(--border-color, #e5dfd6);
-  border-radius: 12px;
   padding: 16px;
   display: flex;
   flex-direction: column;

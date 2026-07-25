@@ -17,14 +17,16 @@
   --color-gold-muted:     #B8860B;
 
   /* ── Sidebar Dark ── */
+  /* 2026-07-25 侧栏为深灰磨砂玻璃（与暖金内容区互补的冷板岩灰，MainLayout.vue）。
+     bg-from/to 仅保留给 Hero @supports 降级渐变等深色场景使用 */
   --sidebar-bg-from:      #141210;
   --sidebar-bg-to:        #1E1B18;
   --sidebar-active:       var(--color-gold);
-  --sidebar-text:         #9C9590;
-  --sidebar-text-hover:   #D4C4A8;
-  --sidebar-subtitle:     #5C5550;
-  --sidebar-label:        #3D3832;
-  --sidebar-popup-border: #332E28;
+  /* 侧栏深灰磨砂：底色渐变 + 两团静态微光（金光呼应品牌、岩蓝光增加冷灰纵深） */
+  --sidebar-glass-from:   #262a33;
+  --sidebar-glass-to:     #1e2129;
+  --sidebar-glow-gold:    rgba(245, 203, 92, 0.16);
+  --sidebar-glow-slate:   rgba(107, 140, 186, 0.12);
 
   /* ── Semantic Colors ── */
   --color-success:        #2D9F6F;
@@ -97,16 +99,35 @@
   --card-shadow:          0 1px 2px rgba(26, 24, 22, 0.04), 0 1px 3px rgba(26, 24, 22, 0.05);
   --card-shadow-hover:    0 4px 16px rgba(26, 24, 22, 0.08), 0 2px 4px rgba(26, 24, 22, 0.04);
 
-  /* ── Liquid Glass（工作台 2026-07-25 起；浅色玻璃卡 + 深色玻璃 Hero） ── */
-  --glass-bg:             rgba(255, 255, 255, 0.62);
-  --glass-bg-strong:      rgba(255, 255, 255, 0.78);
-  --glass-border:         rgba(255, 255, 255, 0.65);
-  --glass-highlight:      inset 0 1px 0 rgba(255, 255, 255, 0.8);
-  --glass-blur:           20px;
-  --glass-shadow:         0 8px 32px rgba(26, 24, 22, 0.08);
-  --glass-shadow-hover:   0 12px 40px rgba(26, 24, 22, 0.12);
-  --glass-dark-bg:        rgba(20, 18, 16, 0.85);
-  --glass-dark-border:    rgba(245, 203, 92, 0.18);
+  /* ── Liquid Glass（材质配方对齐「方案B-赛事直播频道-v2」大屏 2026-07-25：
+     0.78→0.5 白色渐变玻璃卡 + 亮白描边 + 彩色环境阴影 + 大圆角，色调保暖金） ──
+     经 styles/liquid-glass.css 共享给工作台、订单发票管理等页面（--dash- 是历史命名）。
+     命名警告：必须用 --dash-glass-* 前缀，不能用裸 --glass-*——
+     kimi-design.css 深色主题在 :root 重定义了 --glass-bg/--glass-border
+     且 main.js 后加载，会把卡片染成深灰（2026-07-25 实翻车）。
+     性能约定：实时 backdrop-filter 只留给 Hero/待办等 ≤5 个浮层；
+     大量小卡走「预模糊极光 wash + 渐变玻璃」的静态配方，
+     否则滚动时逐帧重采样会卡顿（2026-07-25 实翻车）。 */
+  --dash-glass-bg:             linear-gradient(160deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.5));
+  --dash-glass-bg-strong:      rgba(255, 255, 255, 0.85);
+  --dash-glass-border:         rgba(255, 255, 255, 0.85);
+  --dash-glass-highlight:      inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --dash-glass-blur:           16px;
+  --dash-glass-shadow:         0 10px 30px rgba(146, 103, 24, 0.14);
+  --dash-glass-shadow-hover:   0 14px 36px rgba(146, 103, 24, 0.18);
+  --dash-glass-dark-border:    rgba(245, 203, 92, 0.24);
+
+  /* ── 工作台极光层（dashboard 专用；暖金三色 wash + 斜向光带。
+     低透明度大半径渐变本身是软的，禁止再叠 filter blur） ── */
+  --dash-wash-from:       #fdf8ec;
+  --dash-wash-mid:        #f8f3ea;
+  --dash-wash-to:         #f9efe7;
+  --dash-aurora-gold:     rgba(245, 203, 92, 0.55);
+  --dash-aurora-amber:    rgba(230, 160, 60, 0.45);
+  --dash-aurora-peach:    rgba(242, 165, 110, 0.38);
+  --dash-card-radius:     16px;
+  --dash-icon-dark-from:  #7a726b;
+  --dash-icon-dark-to:    #292420;
 
   /* ── Motion（Emil 强化曲线；内置 ease 太弱） ── */
   --ease-out-strong:      cubic-bezier(0.23, 1, 0.32, 1);

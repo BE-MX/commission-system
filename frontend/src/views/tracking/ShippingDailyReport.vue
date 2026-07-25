@@ -1,5 +1,12 @@
 <template>
   <div class="daily-report-page">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="daily-report-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <!-- Page Header -->
     <div class="page-header">
       <div class="header-title">
@@ -15,7 +22,7 @@
     <div class="report-layout">
       <!-- ===== 左侧日历 ===== -->
       <div class="left-panel">
-        <div class="calendar-card">
+        <div class="calendar-card lg-card is-static">
           <!-- 日历头部 -->
           <div class="calendar-header">
             <div class="calendar-title">
@@ -80,7 +87,7 @@
 
         <!-- 快捷统计卡 -->
         <div class="quick-stats">
-          <div class="quick-stat-card blue">
+          <div class="quick-stat-card blue lg-card">
             <div class="quick-stat-icon">
               <el-icon><Box /></el-icon>
             </div>
@@ -89,7 +96,7 @@
               <div class="quick-stat-value">{{ monthTotal }}</div>
             </div>
           </div>
-          <div class="quick-stat-card green">
+          <div class="quick-stat-card green lg-card">
             <div class="quick-stat-icon">
               <el-icon><TrendCharts /></el-icon>
             </div>
@@ -103,11 +110,11 @@
 
       <!-- ===== 右侧内容区 ===== -->
       <div class="right-panel">
-        <div v-if="loading" class="loading-state">
+        <div v-if="loading" class="loading-state lg-card is-static">
           <el-skeleton :rows="12" animated />
         </div>
 
-        <div v-else-if="!reportExists" class="empty-state" key="empty">
+        <div v-else-if="!reportExists" class="empty-state lg-card is-static" key="empty">
           <div class="empty-icon-wrap">
             <div class="empty-icon-bg" />
             <el-icon class="empty-icon"><MessageBox /></el-icon>
@@ -117,35 +124,34 @@
             <el-icon><Clock /></el-icon>
             日报将于每日 08:30 自动生成
           </p>
-          <el-button
-            type="primary"
-            size="default"
+          <GlassButton
+            variant="primary"
+            :left-icon="Refresh"
             :loading="generating"
-            @click="handleGenerate"
             style="margin-top: 16px"
+            @click="handleGenerate"
           >
-            <el-icon><Refresh /></el-icon>
             生成日报
-          </el-button>
+          </GlassButton>
         </div>
 
         <div v-else class="report-content" key="content">
           <!-- 日期标题栏 -->
-          <div class="report-header-bar">
+          <div class="report-header-bar lg-card is-static">
             <div>
               <h3 class="report-date-title">{{ selectedDate }} 物流日报</h3>
               <p v-if="reportSummary" class="report-summary">{{ reportSummary }}</p>
             </div>
             <div class="report-actions">
-              <el-button
-                type="primary"
-                size="small"
+              <GlassButton
+                variant="primary"
+                size="sm"
+                :left-icon="Refresh"
                 :loading="generating"
                 @click="handleGenerate"
               >
-                <el-icon><Refresh /></el-icon>
                 生成日报
-              </el-button>
+              </GlassButton>
               <el-tag v-if="reportData?.is_pushed" type="success" size="small">已推送</el-tag>
               <el-tag v-else type="info" size="small">未推送</el-tag>
             </div>
@@ -153,28 +159,28 @@
 
           <!-- 四宫格统计 -->
           <div class="stats-grid">
-            <div class="stat-card total">
+            <div class="stat-card total lg-card">
               <div class="stat-icon">
                 <el-icon><Grid /></el-icon>
               </div>
               <div class="stat-label">总运单</div>
               <div class="stat-value">{{ reportStats.total }}</div>
             </div>
-            <div class="stat-card transit">
+            <div class="stat-card transit lg-card">
               <div class="stat-icon">
                 <el-icon><Van /></el-icon>
               </div>
               <div class="stat-label">运输中</div>
               <div class="stat-value">{{ reportStats.transit }}</div>
             </div>
-            <div class="stat-card delivered">
+            <div class="stat-card delivered lg-card">
               <div class="stat-icon">
                 <el-icon><CircleCheck /></el-icon>
               </div>
               <div class="stat-label">已签收</div>
               <div class="stat-value">{{ reportStats.delivered }}</div>
             </div>
-            <div class="stat-card exception">
+            <div class="stat-card exception lg-card">
               <div class="stat-icon">
                 <el-icon><Warning /></el-icon>
               </div>
@@ -207,7 +213,7 @@
           </div>
 
           <!-- 日报 HTML（后端渲染） -->
-          <div v-if="reportHtml" class="html-section">
+          <div v-if="reportHtml" class="html-section lg-card is-static">
             <div class="report-html" v-html="reportHtml" />
           </div>
         </div>
@@ -240,6 +246,21 @@ const {
 <style scoped>
 .daily-report-page {
   padding: 20px;
+  /* 极光层（.lg-aurora，与工作台同源）定位上下文 */
+  position: relative;
+}
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台/发票页） */
+.daily-report-aurora {
+  inset: -24px -28px;
+}
+
+/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
+   会覆盖就地渲染的 el-drawer/el-dialog 的 .el-overlay position: fixed */
+.daily-report-page .page-header,
+.daily-report-page .report-layout {
+  position: relative;
+  z-index: 1;
 }
 .page-header {
   margin-bottom: 20px;
@@ -290,11 +311,8 @@ const {
 }
 
 /* ===== 日历卡片 ===== */
+/* 玻璃质感由 .lg-card 提供（渐变磨砂 + 暖金彩色阴影），这里只留布局 */
 .calendar-card {
-  background: #fff;
-  border-radius: 16px;
-  border: 1px solid #e2e5ef;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
   overflow: hidden;
 }
 .calendar-header {
@@ -461,15 +479,12 @@ const {
   gap: 12px;
   margin-top: 16px;
 }
+/* 玻璃质感由 .lg-card 提供，这里只留布局 */
 .quick-stat-card {
-  background: #fff;
-  border-radius: 12px;
-  border: 1px solid #e2e5ef;
   padding: 16px;
   display: flex;
   align-items: center;
   gap: 12px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
 }
 .quick-stat-icon {
   width: 32px;
@@ -506,16 +521,11 @@ const {
 }
 
 /* ===== 右侧内容 ===== */
+/* 玻璃质感由 .lg-card 提供，这里只留布局 */
 .loading-state {
-  background: #fff;
-  border-radius: 16px;
   padding: 24px;
-  border: 1px solid #e2e5ef;
 }
 .empty-state {
-  background: #fff;
-  border-radius: 16px;
-  border: 1px solid #e2e5ef;
   min-height: 500px;
   display: flex;
   flex-direction: column;
@@ -564,14 +574,10 @@ const {
   gap: 16px;
 }
 .report-header-bar {
-  background: #fff;
-  border-radius: 12px;
-  border: 1px solid #e2e5ef;
   padding: 20px 24px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
 }
 .report-date-title {
   font-size: 17px;
@@ -596,16 +602,10 @@ const {
   grid-template-columns: repeat(4, 1fr);
   gap: 12px;
 }
+/* 玻璃质感由 .lg-card 提供（含 hover 上浮），这里只留布局与状态描边色 */
 .stat-card {
-  background: #fff;
-  border-radius: 12px;
   padding: 16px;
-  border: 1px solid;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
   transition: transform 0.2s;
-}
-.stat-card:hover {
-  transform: translateY(-2px);
 }
 .stat-card.total {
   border-color: #bfdbfe;
@@ -669,12 +669,23 @@ const {
 }
 
 /* ===== 运单表格 ===== */
+/* 表格面板：同款渐变玻璃（同 invoice-manage.css 的 .invoice-panel） */
 .shipment-section {
-  background: #fff;
-  border-radius: 12px;
-  border: 1px solid #e2e5ef;
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+  overflow: hidden;
   padding: 20px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+
+/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
+.shipment-section :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
 }
 .section-title {
   font-size: 14px;
@@ -708,12 +719,9 @@ const {
 .status-returned { background: #f3f4f6; color: #4b5563; }
 
 /* ===== HTML 日报 ===== */
+/* 玻璃质感由 .lg-card 提供，这里只留布局 */
 .html-section {
-  background: #fff;
-  border-radius: 12px;
-  border: 1px solid #e2e5ef;
   padding: 20px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
 }
 .report-html {
   overflow-x: auto;

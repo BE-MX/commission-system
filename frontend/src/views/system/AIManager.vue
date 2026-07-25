@@ -1,9 +1,15 @@
 <template>
   <div class="ai-manager-page">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="ai-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
     <!-- 统计卡片 -->
     <el-row :gutter="16" class="stats-row">
       <el-col :xs="12" :sm="6" v-for="s in stats" :key="s.label">
-        <div class="stat-card">
+        <div class="stat-card lg-card is-static">
           <div class="stat-main">
             <div>
               <p class="stat-label">{{ s.label }}</p>
@@ -164,7 +170,7 @@
         <!-- 汇总卡片 -->
         <el-row :gutter="12" class="log-summary-row">
           <el-col :xs="8" :sm="4" v-for="s in logSummary" :key="s.label">
-            <div class="log-summary-card">
+            <div class="log-summary-card lg-card is-static">
               <div class="log-summary-header">
                 <el-icon :size="14" :color="s.color"><component :is="s.icon" /></el-icon>
                 <span class="log-summary-label">{{ s.label }}</span>
@@ -712,5 +718,71 @@ const {
 .pagination {
   margin-top: 16px;
   justify-content: flex-end;
+}
+/* ── Liquid Glass 材质（追加覆盖上文 scoped 白底；同特异性后者胜） ── */
+/* 极光层（.lg-aurora，与工作台同源）定位上下文 */
+.ai-manager-page {
+  position: relative;
+}
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台） */
+.ai-aurora {
+  inset: -24px -28px;
+}
+
+/* 内容压到极光之上。必须点名内容块，不能用 > :not(.lg-aurora)——
+   el-dialog 默认就地渲染，通配会覆盖 .el-overlay 的 position: fixed */
+.ai-manager-page .stats-row,
+.ai-manager-page .ai-tabs {
+  position: relative;
+  z-index: 1;
+}
+
+/* 统计卡/日志汇总卡：玻璃质感由 .lg-card 提供（is-static 不上浮/不按压），
+   这里抵消上文的 scoped 白底三件套 */
+.stat-card,
+.log-summary-card {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+}
+
+/* Tab 容器：同款渐变玻璃面板 */
+.ai-tabs {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+  overflow: hidden;
+}
+
+.ai-tabs :deep(.el-tabs__header) {
+  border-radius: var(--dash-card-radius) var(--dash-card-radius) 0 0;
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.ai-tabs :deep(.el-tabs__item.is-active) {
+  background: rgba(255, 255, 255, 0.72);
+}
+
+/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
+.ai-tabs :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+}
+
+/* 右侧固定操作列：磨砂但不透明的暖白，表头/hover 态同步 */
+.ai-tabs :deep(.el-table-fixed-column--right) {
+  background-color: rgba(249, 244, 234, 0.97);
+}
+.ai-tabs :deep(th.el-table-fixed-column--right) {
+  background-color: rgba(246, 239, 226, 0.98);
+}
+.ai-tabs :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) {
+  background-color: rgba(245, 236, 220, 0.98);
 }
 </style>

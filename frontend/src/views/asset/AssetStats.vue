@@ -1,5 +1,12 @@
 <template>
   <div class="asset-stats-page">
+    <!-- 金色极光背景（纯装饰；与工作台/发票页同源 styles/liquid-glass.css） -->
+    <div class="asset-stats-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <div class="toolbar">
       <h2 class="page-title">
         <el-icon><TrendCharts /></el-icon>
@@ -14,15 +21,15 @@
     <template v-else>
       <!-- 概览卡片 -->
       <div class="stats-cards">
-        <div class="stat-card">
+        <div class="stat-card emphasis lg-card">
           <div class="stat-label">总下载量</div>
           <div class="stat-value">{{ stats.total_downloads }}</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card lg-card">
           <div class="stat-label">今日下载</div>
           <div class="stat-value">{{ stats.today_downloads }}</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card lg-card">
           <div class="stat-label">素材总数</div>
           <div class="stat-value">{{ stats.total_assets }}</div>
         </div>
@@ -150,6 +157,22 @@ onMounted(() => {
 <style scoped>
 .asset-stats-page {
   padding: 20px 28px;
+  /* 极光层（.lg-aurora，与工作台同源）定位上下文 */
+  position: relative;
+}
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环 */
+.asset-stats-aurora {
+  inset: -24px -28px;
+}
+
+/* 内容压到极光之上（点名内容块） */
+.asset-stats-page .toolbar,
+.asset-stats-page .loading-wrap,
+.asset-stats-page .stats-cards,
+.asset-stats-page .stats-layout {
+  position: relative;
+  z-index: 1;
 }
 
 .toolbar {
@@ -178,12 +201,17 @@ onMounted(() => {
   margin-bottom: 24px;
 }
 
+/* 概览卡片：玻璃质感由 .lg-card 提供（渐变磨砂 + 暖金彩色阴影 + hover 上浮），
+   这里只留布局 */
 .stat-card {
-  background: #fff;
-  border-radius: 12px;
   padding: 24px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
   text-align: center;
+}
+
+/* 强调卡（总下载量）：金调渐变玻璃（scoped 优先级高于全局 .lg-card） */
+.stat-card.emphasis {
+  background: linear-gradient(165deg, rgba(255, 255, 255, 0.8) 0%, rgba(245, 203, 92, 0.16) 100%);
+  border-color: rgba(212, 148, 28, 0.4);
 }
 
 .stat-label {
@@ -205,11 +233,14 @@ onMounted(() => {
   gap: 20px;
 }
 
+/* 统计面板：同款渐变玻璃（覆盖原白底卡片） */
 .stats-panel {
-  background: #fff;
-  border-radius: 12px;
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
   padding: 20px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  overflow: hidden;
 }
 
 .panel-title {
@@ -224,6 +255,15 @@ onMounted(() => {
 
 .stats-table {
   width: 100%;
+}
+
+/* 表格融进玻璃：行/表头半透明，透出极光（本表无固定列） */
+.stats-panel :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
 }
 
 /* 趋势图 */

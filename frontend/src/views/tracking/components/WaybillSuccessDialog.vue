@@ -107,16 +107,19 @@
         </div>
         <div class="copy-box">
           <span class="copy-text">{{ resultData.short_link }}</span>
-          <el-button
-            type="primary"
+          <GlassButton
+            variant="primary"
+            size="sm"
             class="copy-btn"
             :class="{ copied: copiedLink }"
             @click="copyLink"
           >
-            <el-icon v-if="!copiedLink"><CopyDocument /></el-icon>
-            <el-icon v-else><Check /></el-icon>
-            <span>{{ copiedLink ? '已复制' : '复制' }}</span>
-          </el-button>
+            <template #left-icon>
+              <el-icon v-if="!copiedLink"><CopyDocument /></el-icon>
+              <el-icon v-else><Check /></el-icon>
+            </template>
+            {{ copiedLink ? '已复制' : '复制' }}
+          </GlassButton>
         </div>
       </div>
 
@@ -128,23 +131,26 @@
         </div>
         <div class="notify-template">
           <pre class="template-text">{{ resultData.notifyTemplate }}</pre>
-          <el-button
-            type="primary"
+          <GlassButton
+            variant="primary"
+            size="sm"
             class="copy-btn template-copy-btn"
             :class="{ copied: copiedTemplate }"
             @click="copyTemplate"
           >
-            <el-icon v-if="!copiedTemplate"><CopyDocument /></el-icon>
-            <el-icon v-else><Check /></el-icon>
-            <span>{{ copiedTemplate ? '已复制' : '复制' }}</span>
-          </el-button>
+            <template #left-icon>
+              <el-icon v-if="!copiedTemplate"><CopyDocument /></el-icon>
+              <el-icon v-else><Check /></el-icon>
+            </template>
+            {{ copiedTemplate ? '已复制' : '复制' }}
+          </GlassButton>
         </div>
       </div>
 
       <!-- 底部按钮 -->
       <div class="dialog-footer">
         <el-button class="btn-secondary" @click="handleClose">关闭</el-button>
-        <el-button type="primary" class="btn-primary" @click="handleContinue">继续上传</el-button>
+        <GlassButton variant="primary" size="lg" @click="handleContinue">继续上传</GlassButton>
       </div>
     </div>
   </el-dialog>
@@ -482,25 +488,14 @@ function handleContinue() {
   white-space: nowrap;
 }
 
+/* 视觉（金渐变/尺寸/圆角）由 GlassButton variant="primary" size="sm" 提供，
+   这里只留布局与「已复制」绿色反馈 */
 .copy-btn {
   flex-shrink: 0;
-  height: 32px;
-  padding: 0 14px;
-  background: linear-gradient(135deg, #d4af6e, #c49b52);
-  border: none;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 500;
-  color: #fff;
-  transition: all 0.25s ease;
 }
 
-.copy-btn:hover {
-  background: linear-gradient(135deg, #c49b52, #b08d4f);
-  box-shadow: 0 2px 10px rgba(212, 175, 110, 0.3);
-}
-
-.copy-btn.copied {
+.copy-btn.copied,
+.copy-btn.copied:hover {
   background: linear-gradient(135deg, #059669, #16a34a);
 }
 
@@ -601,22 +596,6 @@ function handleContinue() {
 .btn-secondary:hover {
   border-color: #d4af6e;
   color: #b08d4f;
-}
-
-.btn-primary {
-  height: 40px;
-  padding: 0 28px;
-  background: linear-gradient(135deg, #d4af6e, #c49b52);
-  border: none;
-  border-radius: 10px;
-  font-size: 14px;
-  font-weight: 500;
-  color: #fff;
-}
-
-.btn-primary:hover {
-  background: linear-gradient(135deg, #c49b52, #b08d4f);
-  box-shadow: 0 4px 14px rgba(212, 175, 110, 0.3);
 }
 
 /* 弹窗动画 */

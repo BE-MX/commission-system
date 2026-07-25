@@ -1,7 +1,13 @@
 <template>
   <div class="sop-page">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="sop-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
     <div class="page-heading"><div><h1>售后 SOP 管理</h1><p>上传后先检查解析和问题映射，再启用；历史售后仍保留原版本引用。</p></div><GlassButton v-permission="'aftersales:admin'" variant="primary" left-icon="Upload" @click="dialogVisible = true">上传新版本</GlassButton></div>
-    <div class="table-card">
+    <div class="table-card sop-panel">
       <el-table :data="versions" v-loading="loading" border class="list-table" style="width: 100%">
         <el-table-column prop="version_no" label="版本号" min-width="130" max-width="190" show-overflow-tooltip />
         <el-table-column prop="original_filename" label="文件名" min-width="190" max-width="320" show-overflow-tooltip />
@@ -60,5 +66,33 @@ onMounted(fetchVersions)
 </script>
 
 <style scoped>
+.sop-page { position: relative; }
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台/发票页） */
+.sop-aurora { inset: -24px -28px; }
+/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
+   本页有就地渲染的 el-dialog/el-drawer，通配会压掉 .el-overlay 的 position: fixed */
+.sop-page .page-heading,
+.sop-page .sop-panel { position: relative; z-index: 1; }
+/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */
+.sop-panel {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+  overflow: hidden;
+}
+/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
+.sop-panel :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+}
+/* 右侧固定操作列：sticky 单元格 + background: inherit，行透明时会透底重影，
+   改成磨砂不透明的暖白，表头/hover 态同步（同 invoice-manage.css） */
+.sop-panel :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
+.sop-panel :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
+.sop-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
 .page-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 20px; }.page-heading h1 { margin: 0 0 4px; color: var(--text-primary); font: 700 20px/1.3 var(--font-display); }.page-heading p { margin: 0; color: var(--text-secondary); font-size: 13px; }.preview-summary { display: flex; justify-content: space-between; gap: 12px; padding: 12px; border-radius: 8px; background: var(--color-gold-soft); color: var(--text-secondary); font-size: 12px; }.preview-summary strong { color: var(--text-primary); }.preview-body section { padding: 14px 0; border-bottom: 1px solid var(--border-color); }.preview-body h3 { color: var(--text-primary); font-size: 15px; }.preview-body p { color: var(--text-secondary); font-size: 13px; line-height: 1.7; }
 </style>

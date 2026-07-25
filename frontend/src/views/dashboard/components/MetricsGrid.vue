@@ -13,7 +13,7 @@
   >
     <template #item="{ element: card }">
       <div
-        class="metric-card dash-glass-card"
+        class="metric-card lg-card"
         :class="{
           'metric-highlight': !editing && card.highlight?.(data),
           'dash-card-dimmed': editing && isHiddenFn('metrics', card.key),

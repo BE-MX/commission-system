@@ -1,5 +1,12 @@
 <template>
   <div class="asset-library-page">
+    <!-- 金色极光背景（纯装饰；与工作台/发票页同源 styles/liquid-glass.css） -->
+    <div class="asset-library-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <!-- 左侧筛选面板 -->
     <aside class="filter-sidebar" :class="{ collapsed: sidebarCollapsed }">
       <div class="sidebar-header">
@@ -90,10 +97,8 @@
       <!-- 批量操作栏 -->
       <div v-if="isBatchMode" class="batch-toolbar">
         <span class="batch-info">已选择 {{ selectedAssets.length }} 项</span>
-        <el-button type="primary" size="small" @click="handleBatchDownload">
-          <el-icon><Download /></el-icon>批量下载
-        </el-button>
-        <el-button size="small" @click="clearSelection">取消选择</el-button>
+        <GlassButton variant="primary" size="sm" :left-icon="Download" @click="handleBatchDownload">批量下载</GlassButton>
+        <GlassButton variant="secondary" size="sm" @click="clearSelection">取消选择</GlassButton>
       </div>
 
       <!-- 顶部工具栏 -->
@@ -163,7 +168,7 @@
         <div
           v-for="asset in assets"
           :key="asset.id"
-          class="asset-card"
+          class="asset-card lg-card"
           :class="{ selected: isAssetSelected(asset) }"
           @click="openPreview(asset)"
         >
@@ -212,7 +217,7 @@
       </div>
 
       <!-- 列表视图 -->
-      <el-table v-else :data="assets" style="width: 100%" @row-click="openPreview" @sort-change="orderSort.onSortChange">
+      <el-table v-else :data="assets" class="asset-list-table" style="width: 100%" @row-click="openPreview" @sort-change="orderSort.onSortChange">
         <el-table-column label="缩略图" width="80">
           <template #default="{ row }">
             <img v-if="row.file_type === 'image' || (row.file_type === 'video' && row.thumbnail_path)" :src="getThumbUrl(row.thumbnail_path || row.storage_path)" class="table-thumb" />
@@ -295,15 +300,9 @@
             <el-tag v-for="tag in previewAiTags" :key="tag.id" size="small" type="warning" effect="plain">{{ tag.value }}</el-tag>
           </div>
           <div class="preview-actions">
-            <el-button type="primary" @click="handleDownload(previewAsset)">
-              <el-icon><Download /></el-icon>下载
-            </el-button>
-            <el-button @click="handleFavorite(previewAsset)">
-              <el-icon><Star /></el-icon>收藏
-            </el-button>
-            <el-button :loading="aiAnalyzing" @click="handleAiAnalyze(previewAsset)">
-              <el-icon><MagicStick /></el-icon>AI 分析
-            </el-button>
+            <GlassButton variant="primary" :left-icon="Download" @click="handleDownload(previewAsset)">下载</GlassButton>
+            <GlassButton variant="secondary" :left-icon="Star" @click="handleFavorite(previewAsset)">收藏</GlassButton>
+            <GlassButton variant="secondary" :left-icon="MagicStick" :loading="aiAnalyzing" @click="handleAiAnalyze(previewAsset)">AI 分析</GlassButton>
           </div>
         </div>
       </div>
@@ -325,8 +324,8 @@
       </div>
       <el-empty v-else description="暂无收藏夹，请先创建" />
       <template #footer>
-        <el-button @click="favoriteDialogVisible = false">取消</el-button>
-        <el-button type="primary" :disabled="!selectedFolderId" @click="confirmFavorite">确定</el-button>
+        <GlassButton variant="ghost" @click="favoriteDialogVisible = false">取消</GlassButton>
+        <GlassButton variant="primary" :disabled="!selectedFolderId" @click="confirmFavorite">确定</GlassButton>
       </template>
     </el-dialog>
 
@@ -737,16 +736,36 @@ onMounted(async () => {
 .asset-library-page {
   display: flex;
   gap: 16px;
+  /* 极光层（.lg-aurora，与工作台同源）定位上下文 */
+  position: relative;
+}
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台） */
+.asset-library-aurora {
+  inset: -24px -28px;
+}
+
+/* 内容压到极光之上。注意必须点名内容块，不能用 > :not(.lg-aurora)——
+   el-dialog 默认就地渲染（append-to-body=false），通配选择器
+   会覆盖 .el-overlay 的 position: fixed，弹窗打开后看不见 */
+.asset-library-page .main-content {
+  position: relative;
+  z-index: 1;
+}
+/* 侧栏本身是 sticky（已有 position），只补层级，不能改 position */
+.asset-library-page .filter-sidebar {
+  z-index: 1;
 }
 
 /* 左侧筛选 */
 .filter-sidebar {
   width: 220px;
   flex-shrink: 0;
-  background: #fff;
-  border-radius: 12px;
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
   padding: 16px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
   position: sticky;
   top: 0;
   align-self: flex-start;
@@ -857,14 +876,17 @@ onMounted(async () => {
   min-width: 0;
 }
 
+/* 顶部工具栏：sticky 悬浮条，内容会从底下滚过，
+   用更实的玻璃底（--dash-glass-bg-strong），避免透出下方卡片文字 */
 .toolbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: #fff;
-  border-radius: 12px;
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg-strong);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
   padding: 12px 16px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
   position: sticky;
   top: 0;
   z-index: 10;
@@ -886,18 +908,12 @@ onMounted(async () => {
   gap: 16px;
   padding: 4px;
 }
+/* 网格卡片：玻璃质感由 .lg-card 提供（渐变磨砂 + 暖金彩色阴影 + hover 上浮），
+   这里只留布局；选中金环的 scoped 优先级高于 .lg-card/:hover，不会被盖掉 */
 .asset-card {
-  background: #fff;
-  border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   cursor: pointer;
-  transition: transform 0.15s, box-shadow 0.15s;
   position: relative;
-}
-.asset-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
 }
 .card-thumb {
   aspect-ratio: 1;
@@ -972,6 +988,27 @@ onMounted(async () => {
   height: 48px;
   object-fit: cover;
   border-radius: 6px;
+}
+
+/* 列表视图：表格融进极光（本表无卡片面板包裹，直接透明化浮在极光上） */
+.asset-list-table {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+}
+
+/* 右侧固定操作列：sticky 单元格 + background: inherit，行透明时会透上来重影，
+   改成磨砂但不透明的暖白，表头/hover 态同步 */
+.main-content :deep(.el-table-fixed-column--right) {
+  background-color: rgba(249, 244, 234, 0.97);
+}
+.main-content :deep(th.el-table-fixed-column--right) {
+  background-color: rgba(246, 239, 226, 0.98);
+}
+.main-content :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) {
+  background-color: rgba(245, 236, 220, 0.98);
 }
 
 /* 分页 */
@@ -1177,16 +1214,17 @@ onMounted(async () => {
   border: 1px solid #e4e7ed;
 }
 
-/* 批量操作栏 */
+/* 批量操作栏：同为 sticky 悬浮条，用更实的玻璃底 */
 .batch-toolbar {
   display: flex;
   align-items: center;
   gap: 12px;
-  background: #fff;
-  border-radius: 12px;
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg-strong);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
   padding: 12px 16px;
   margin-bottom: 16px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
   position: sticky;
   top: 0;
   z-index: 10;

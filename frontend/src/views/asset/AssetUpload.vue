@@ -1,10 +1,15 @@
 <template>
   <div class="asset-upload-page">
+    <!-- 金色极光背景（纯装饰；与工作台/发票页同源 styles/liquid-glass.css） -->
+    <div class="asset-upload-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <div class="page-header-row">
       <el-page-header content="素材上传" @back="$router.back()" />
-      <el-button type="primary" plain @click="openFolderUpload">
-        <el-icon><FolderOpened /></el-icon>文件夹批量上传
-      </el-button>
+      <GlassButton variant="primary" :left-icon="FolderOpened" @click="openFolderUpload">文件夹批量上传</GlassButton>
     </div>
 
     <div class="upload-layout">
@@ -30,9 +35,7 @@
                   <p>{{ selectedFile?.name }}</p>
                 </div>
                 <div class="preview-actions">
-                  <el-button size="small" type="danger" plain @click.stop="clearFile">
-                    移除文件
-                  </el-button>
+                  <GlassButton variant="danger" size="sm" @click.stop="clearFile">移除文件</GlassButton>
                 </div>
               </div>
             </template>
@@ -209,15 +212,13 @@
 
         <!-- 提交 -->
         <div class="form-actions">
-          <el-button @click="$router.back()">取消</el-button>
-          <el-button
-            type="primary"
+          <GlassButton variant="secondary" @click="$router.back()">取消</GlassButton>
+          <GlassButton
+            variant="primary"
             :loading="submitting"
             :disabled="!canSubmit"
             @click="handleSubmit"
-          >
-            确认上传
-          </el-button>
+          >确认上传</GlassButton>
         </div>
       </div>
     </div>
@@ -252,8 +253,8 @@
           </el-form-item>
         </el-form>
         <div class="dialog-footer">
-          <el-button @click="folderUploadVisible = false">取消</el-button>
-          <el-button type="primary" @click="startFolderValidate">开始校验</el-button>
+          <GlassButton variant="ghost" @click="folderUploadVisible = false">取消</GlassButton>
+          <GlassButton variant="primary" @click="startFolderValidate">开始校验</GlassButton>
         </div>
       </div>
 
@@ -315,8 +316,8 @@
           </div>
         </div>
         <div class="dialog-footer">
-          <el-button @click="folderUploadStep = 'input'">返回修改</el-button>
-          <el-button @click="folderUploadVisible = false">关闭</el-button>
+          <GlassButton variant="ghost" @click="folderUploadStep = 'input'">返回修改</GlassButton>
+          <GlassButton variant="ghost" @click="folderUploadVisible = false">关闭</GlassButton>
         </div>
       </div>
 
@@ -371,8 +372,8 @@
           </el-radio-group>
         </div>
         <div class="dialog-footer">
-          <el-button @click="folderUploadStep = 'input'">返回</el-button>
-          <el-button type="primary" @click="confirmFolderUpload">确认上传</el-button>
+          <GlassButton variant="ghost" @click="folderUploadStep = 'input'">返回</GlassButton>
+          <GlassButton variant="primary" @click="confirmFolderUpload">确认上传</GlassButton>
         </div>
       </div>
 
@@ -417,8 +418,8 @@
           <el-table-column label="原因" prop="reason" sortable />
         </el-table>
         <div class="dialog-footer">
-          <el-button @click="folderUploadVisible = false">关闭</el-button>
-          <el-button type="primary" @click="handleViewUploaded">查看素材库</el-button>
+          <GlassButton variant="ghost" @click="folderUploadVisible = false">关闭</GlassButton>
+          <GlassButton variant="primary" @click="handleViewUploaded">查看素材库</GlassButton>
         </div>
       </div>
     </el-dialog>
@@ -860,6 +861,21 @@ function handleViewUploaded() {
 <style scoped>
 .asset-upload-page {
   padding: 20px 28px;
+  /* 极光层（.lg-aurora，与工作台同源）定位上下文 */
+  position: relative;
+}
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环 */
+.asset-upload-aurora {
+  inset: -24px -28px;
+}
+
+/* 内容压到极光之上（点名内容块，不能用 > :not(.lg-aurora) 通配——
+   会压掉就地渲染的 el-dialog .el-overlay 的 position: fixed） */
+.asset-upload-page .page-header-row,
+.asset-upload-page .upload-layout {
+  position: relative;
+  z-index: 1;
 }
 
 .upload-layout {
@@ -874,20 +890,23 @@ function handleViewUploaded() {
   flex-shrink: 0;
 }
 
+/* 表单面板：同款渐变玻璃（覆盖原白底卡片） */
 .right-panel {
   flex: 1;
-  background: #fff;
-  border-radius: 12px;
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
   padding: 24px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
 }
 
 /* 上传区 */
 .upload-section {
-  background: #fff;
-  border-radius: 12px;
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
   padding: 20px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
 }
 
 .asset-uploader :deep(.el-upload-dragger) {
@@ -935,11 +954,12 @@ function handleViewUploaded() {
 
 /* 文件信息 */
 .file-info-section {
-  background: #fff;
-  border-radius: 12px;
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
   padding: 16px 20px;
   margin-top: 16px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
 }
 
 .info-row {

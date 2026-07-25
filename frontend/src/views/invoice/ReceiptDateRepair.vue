@@ -1,5 +1,12 @@
 <template>
   <div class="repair-page">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="repair-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <div class="page-head">
       <h2>回款日期修复</h2>
       <p class="sub">
@@ -22,17 +29,17 @@
 
     <template v-if="plan">
       <div class="stat-row">
-        <div class="stat" :class="{ active: true }">
+        <div class="stat lg-card" :class="{ active: true }">
           <div class="num">{{ plan.summary.total_rows }}</div><div class="label">工作表行数</div>
         </div>
-        <div class="stat change">
+        <div class="stat lg-card change">
           <div class="num">{{ plan.summary.will_change_receipts }}</div>
           <div class="label">待修改回款单（{{ plan.summary.will_change_orders }} 单）</div>
         </div>
-        <div class="stat ok">
+        <div class="stat lg-card ok">
           <div class="num">{{ plan.summary.already_ok }}</div><div class="label">日期已正确</div>
         </div>
-        <div class="stat miss">
+        <div class="stat lg-card miss">
           <div class="num">{{ plan.summary.unmatched }}</div><div class="label">无法匹配</div>
         </div>
       </div>
@@ -44,12 +51,12 @@
             <span class="block-title">待修改（勾选后写入）</span>
             <span class="head-hint">多笔订单按回款单号顺序分配日期，请对照 Excel金额 / 回款单金额 核验后再写入（两者因手续费本就不等）</span>
           </div>
-          <el-button
+          <GlassButton
             v-permission="'invoice:admin'"
-            type="primary"
+            variant="primary"
             :disabled="!selected.length"
             @click="onApply"
-          >确认修复选中 {{ selected.length }} 条</el-button>
+          >确认修复选中 {{ selected.length }} 条</GlassButton>
         </div>
         <el-table
           ref="tableRef"
@@ -92,7 +99,7 @@
       <el-card v-if="plan.unmatched.length" class="block" shadow="never">
         <div class="block-head">
           <span class="block-title">无法匹配（{{ plan.unmatched.length }} 条）</span>
-          <el-button @click="onExportUnmatched">导出无法匹配 Excel</el-button>
+          <GlassButton variant="secondary" @click="onExportUnmatched">导出无法匹配 Excel</GlassButton>
         </div>
         <div class="reason-tags">
           <el-tag
@@ -211,16 +218,30 @@ async function onExportUnmatched() {
 </script>
 
 <style scoped>
-.repair-page { padding: 4px 2px; }
+.repair-page { padding: 4px 2px; position: relative; }
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台） */
+.repair-aurora { inset: -24px -28px; }
+
+/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
+   el-dialog 默认就地渲染（append-to-body=false），通配会覆盖
+   .el-overlay 的 position: fixed，弹窗打开后看不见 */
+.repair-page .page-head,
+.repair-page .upload-card,
+.repair-page .stat-row,
+.repair-page .block {
+  position: relative;
+  z-index: 1;
+}
 .page-head h2 { margin: 0 0 6px; color: var(--text-primary); }
 .page-head .sub { margin: 0 0 16px; color: var(--text-secondary); font-size: 13px; line-height: 1.7; max-width: 900px; }
 .upload-card { border-radius: var(--radius-lg); margin-bottom: 16px; }
 .src-hint { margin-left: 12px; color: var(--text-secondary); font-size: 12px; }
 
 .stat-row { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+/* 玻璃质感由 .lg-card 提供，这里只留布局 */
 .stat {
-  flex: 1; min-width: 140px; background: var(--card-bg); border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg); padding: 14px 16px; text-align: center;
+  flex: 1; min-width: 140px; padding: 14px 16px; text-align: center;
 }
 .stat .num { font-size: 26px; font-weight: 700; color: var(--text-primary); line-height: 1.1; }
 .stat .label { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
@@ -229,7 +250,24 @@ async function onExportUnmatched() {
 .stat.ok .num { color: var(--color-success-text); }
 .stat.miss .num { color: var(--color-danger-text); }
 
-.block { border-radius: var(--radius-lg); margin-bottom: 16px; }
+.block { border-radius: var(--dash-card-radius); margin-bottom: 16px; }
+
+/* 上传/列表卡片：同款渐变玻璃（scoped 覆盖 el-card 白底；el-alert 提示条不动） */
+.repair-page .upload-card,
+.repair-page .block:not(.el-alert) {
+  border: 1px solid var(--dash-glass-border);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+}
+
+/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
+.repair-page .block :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+}
 .block-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .block-title { font-weight: 600; color: var(--text-primary); }
 .head-hint { margin-left: 10px; font-size: 12px; color: var(--text-secondary); }

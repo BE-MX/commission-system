@@ -4,6 +4,13 @@
 -->
 <template>
   <div class="page" v-loading="loading">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="training-editor-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <div class="editor-head">
       <div class="head-left">
         <GlassButton variant="link" left-icon="ArrowLeft" @click="router.back()">返回</GlassButton>
@@ -198,6 +205,23 @@ onMounted(load)
   max-width: 860px;
   margin: 0 auto;
   padding: 16px 16px 80px;
+  /* 极光层（.lg-aurora，与工作台同源）定位上下文 */
+  position: relative;
+}
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台/发票页） */
+.training-editor-aurora {
+  inset: -24px -28px;
+}
+
+/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
+   会覆盖就地渲染的 el-dialog 的 .el-overlay position: fixed */
+.page .editor-head,
+.page .wizard-steps,
+.page .panel,
+.page .wizard-nav {
+  position: relative;
+  z-index: 1;
 }
 
 .editor-head {
@@ -225,10 +249,12 @@ onMounted(load)
   margin-bottom: 20px;
 }
 
+/* 表单面板：同款渐变玻璃（覆盖原白底卡片） */
 .panel {
-  background: var(--card-bg);
-  border: 1px solid var(--border-color);
-  border-radius: var(--card-radius);
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
   padding: 20px 24px;
 }
 

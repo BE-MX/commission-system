@@ -1,8 +1,15 @@
 <template>
   <div class="swatch-page">
+    <!-- 金色极光背景（纯装饰；与工作台/发票页同源 styles/liquid-glass.css） -->
+    <div class="swatch-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <div class="generator-layout">
       <!-- 左侧：选择色号 -->
-      <div class="selector-panel">
+      <div class="selector-panel lg-card is-static">
         <h3>选择色号</h3>
         <el-select-v2
           v-model="selectedColorId"
@@ -36,13 +43,13 @@
           </el-form-item>
         </el-form>
 
-        <el-button type="primary" size="large" :loading="generating" @click="generate" style="width: 100%; margin-top: 16px;">
+        <GlassButton variant="primary" size="lg" full-width :loading="generating" :left-icon="MagicStick" style="margin-top: 16px;" @click="generate">
           生成色板图
-        </el-button>
+        </GlassButton>
       </div>
 
       <!-- 右侧：预览区 -->
-      <div class="preview-panel">
+      <div class="preview-panel lg-card is-static">
         <div v-if="!currentTask" class="preview-placeholder">
           <el-icon :size="48" color="#c0c4cc"><Picture /></el-icon>
           <p>选择色号并点击生成</p>
@@ -73,8 +80,8 @@
               </el-tag>
             </div>
             <div class="preview-actions">
-              <el-button type="primary">下载</el-button>
-              <el-button>入素材库</el-button>
+              <GlassButton variant="primary" :left-icon="Download">下载</GlassButton>
+              <GlassButton variant="secondary">入素材库</GlassButton>
             </div>
           </template>
           <el-result
@@ -128,7 +135,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Picture } from '@element-plus/icons-vue'
+import { Download, MagicStick, Picture } from '@element-plus/icons-vue'
 import { useTableSort } from '@/composables/useTableSort'
 import { generateSwatch, getColors, getSwatches, getSwatchStatus } from '@/api/color'
 
@@ -230,13 +237,49 @@ function statusLabel(s) {
 </script>
 
 <style scoped>
-.swatch-page { padding: 20px; }
+.swatch-page {
+  padding: 20px;
+  /* 极光层（.lg-aurora，与工作台同源）定位上下文 */
+  position: relative;
+}
+
+/* 极光外溢一圈，盖住 main-content 的 padding 环（同工作台/发票页） */
+.swatch-aurora {
+  inset: -24px -28px;
+}
+
+/* 内容压到极光之上。必须点名内容块，不能用 > :not(.lg-aurora) 通配 */
+.swatch-page .generator-layout,
+.swatch-page .history-section {
+  position: relative;
+  z-index: 1;
+}
+
 .generator-layout { display: flex; gap: 24px; margin-bottom: 32px; }
-.selector-panel { width: 360px; flex-shrink: 0; background: var(--el-bg-color); padding: 20px; border-radius: 12px; border: 1px solid var(--el-border-color-lighter); }
-.preview-panel { flex: 1; background: var(--el-bg-color); padding: 20px; border-radius: 12px; border: 1px solid var(--el-border-color-lighter); min-height: 400px; display: flex; align-items: center; justify-content: center; }
+/* 玻璃质感由 .lg-card 提供（渐变磨砂 + 暖金彩色阴影），这里只留布局 */
+.selector-panel { width: 360px; flex-shrink: 0; padding: 20px; }
+.preview-panel { flex: 1; padding: 20px; min-height: 400px; display: flex; align-items: center; justify-content: center; }
 .preview-placeholder { text-align: center; color: var(--el-text-color-placeholder); }
 .preview-image { max-width: 100%; max-height: 360px; border-radius: 8px; }
 .verify-info { margin-top: 16px; display: flex; gap: 16px; align-items: center; justify-content: center; }
 .preview-actions { margin-top: 16px; display: flex; gap: 12px; justify-content: center; }
-.history-section { background: var(--el-bg-color); padding: 20px; border-radius: 12px; border: 1px solid var(--el-border-color-lighter); }
+
+/* 历史记录表格面板：同款渐变玻璃 */
+.history-section {
+  padding: 20px;
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+  overflow: hidden;
+}
+
+/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
+.history-section :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+}
 </style>

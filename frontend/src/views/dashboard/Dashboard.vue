@@ -1,10 +1,10 @@
 <template>
   <div class="dashboard-page" :class="{ 'is-editing': editing }">
-    <!-- 金色极光背景（纯装饰，transform 慢漂移；玻璃卡的 blur 透出它） -->
-    <div class="dashboard-aurora" aria-hidden="true">
-      <div class="aurora-blob aurora-gold" />
-      <div class="aurora-blob aurora-amber" />
-      <div class="aurora-blob aurora-blue" />
+    <!-- 金色极光背景（纯装饰；本体在 styles/liquid-glass.css，发票页共享） -->
+    <div class="dashboard-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
     <div class="dashboard-sections anim-stagger">
@@ -125,59 +125,11 @@ const actionCards = computed(() => arrange('actions', ACTION_CARDS))
   padding-bottom: 120px;
 }
 
+/* 极光层本体在 styles/liquid-glass.css（.lg-aurora，发票等页面共享）。
+   这里只做页面级外溢：盖住 main-content 的 24/28 padding 环，
+   否则 wash 与 --page-bg 的色差会在页面边缘形成硬接缝 */
 .dashboard-aurora {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  pointer-events: none;
-  z-index: 0;
-}
-
-.aurora-blob {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(70px);
-  will-change: transform;
-}
-
-.aurora-gold {
-  width: 560px;
-  height: 560px;
-  top: -140px;
-  right: -80px;
-  background: radial-gradient(circle, rgba(245, 203, 92, 0.20), transparent 65%);
-  animation: auroraDrift 70s ease-in-out infinite alternate;
-}
-
-.aurora-amber {
-  width: 480px;
-  height: 480px;
-  top: 320px;
-  left: -160px;
-  background: radial-gradient(circle, rgba(212, 148, 28, 0.14), transparent 65%);
-  animation: auroraDrift 90s ease-in-out infinite alternate-reverse;
-}
-
-.aurora-blue {
-  width: 520px;
-  height: 520px;
-  bottom: -120px;
-  right: 15%;
-  background: radial-gradient(circle, rgba(107, 140, 186, 0.12), transparent 65%);
-  animation: auroraDrift 80s ease-in-out infinite alternate;
-}
-
-@keyframes auroraDrift {
-  from { transform: translate(0, 0) scale(1); }
-  33%  { transform: translate(60px, 40px) scale(1.08); }
-  66%  { transform: translate(-40px, 80px) scale(0.96); }
-  to   { transform: translate(30px, -30px) scale(1.04); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .aurora-blob {
-    animation: none;
-  }
+  inset: -24px -28px;
 }
 
 /* ========== 分区容器 ========== */
@@ -236,6 +188,9 @@ const actionCards = computed(() => arrange('actions', ACTION_CARDS))
 @media (max-width: 767px) {
   .dashboard-page {
     padding: 16px;
+  }
+  .dashboard-aurora {
+    inset: -16px;
   }
 }
 </style>

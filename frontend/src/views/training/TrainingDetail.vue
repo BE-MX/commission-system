@@ -4,6 +4,13 @@
 -->
 <template>
   <div class="page" v-loading="loading">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="training-detail-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <template v-if="detail">
       <div class="back-row">
         <GlassButton variant="link" left-icon="ArrowLeft" @click="router.push('/training/digests')">返回培训速递</GlassButton>
@@ -213,16 +220,34 @@ onMounted(fetchDetail)
   max-width: 860px;
   margin: 0 auto;
   padding: 16px 16px 48px;
+  /* 极光层（.lg-aurora，与工作台同源）定位上下文 */
+  position: relative;
+}
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台/发票页） */
+.training-detail-aurora {
+  inset: -24px -28px;
+}
+
+/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配 */
+.page .back-row,
+.page .digest-header,
+.page .toc,
+.page .section {
+  position: relative;
+  z-index: 1;
 }
 
 .back-row {
   margin-bottom: 4px;
 }
 
+/* 元信息头：同款渐变玻璃（覆盖原白底卡片） */
 .digest-header {
-  background: var(--card-bg);
-  border: 1px solid var(--border-color);
-  border-radius: var(--card-radius);
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
   padding: 24px;
   margin-bottom: 16px;
 }
@@ -272,7 +297,8 @@ onMounted(fetchDetail)
   gap: 8px 20px;
   padding: 12px 16px;
   margin-bottom: 16px;
-  background: var(--toolbar-bg);
+  /* 工具栏条半透明白，透出极光 */
+  background: rgba(255, 255, 255, 0.4);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
 }
@@ -294,10 +320,12 @@ onMounted(fetchDetail)
   margin-right: 4px;
 }
 
+/* 分区卡片：同款渐变玻璃（覆盖原白底卡片）；.summary-box 的金底在后面覆盖 */
 .section {
-  background: var(--card-bg);
-  border: 1px solid var(--border-color);
-  border-radius: var(--card-radius);
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
   padding: 20px 24px;
   margin-bottom: 16px;
   animation: section-in 200ms cubic-bezier(0.23, 1, 0.32, 1) both;

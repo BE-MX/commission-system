@@ -1,38 +1,45 @@
 <template>
   <div class="concept-registry">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="registry-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <!-- 页面标题 -->
     <div class="page-header">
       <h2>数据治理 · 概念注册表</h2>
       <div class="header-actions">
-        <el-button type="primary" :icon="Plus" @click="handleCreate"
+        <GlassButton variant="primary" :left-icon="Plus" @click="handleCreate"
           v-if="authStore.hasAnyPermission(['governance:write', 'governance:admin'])">
           新建概念
-        </el-button>
-        <el-button :icon="Download" @click="handleExport">导出</el-button>
-        <el-button :icon="UploadFilled" @click="handleSeed"
+        </GlassButton>
+        <GlassButton variant="secondary" :left-icon="Download" @click="handleExport">导出</GlassButton>
+        <GlassButton variant="secondary" :left-icon="UploadFilled" @click="handleSeed"
           v-if="authStore.hasAnyPermission(['governance:admin'])">
           初始化种子数据
-        </el-button>
+        </GlassButton>
       </div>
     </div>
 
     <!-- 进度看板 -->
     <div class="stats-cards" v-loading="statsLoading">
-      <div class="stat-card stat-card--active">
+      <div class="stat-card stat-card--active lg-card">
         <div class="stat-value">{{ stats.active || 0 }}</div>
         <div class="stat-label">已完成概念</div>
         <div class="stat-pct">{{ activePct }}%</div>
       </div>
-      <div class="stat-card stat-card--pending">
+      <div class="stat-card stat-card--pending lg-card">
         <div class="stat-value">{{ stats.by_priority?.P1 || 0 }}</div>
         <div class="stat-label">待补充 P1</div>
         <div class="stat-sub">最高优先级</div>
       </div>
-      <div class="stat-card stat-card--progress">
+      <div class="stat-card stat-card--progress lg-card">
         <div class="stat-value">{{ stats.by_priority?.P2 || 0 }}</div>
         <div class="stat-label">待补充 P2</div>
       </div>
-      <div class="stat-card stat-card--review">
+      <div class="stat-card stat-card--review lg-card">
         <div class="stat-value">{{ stats.by_priority?.P3 || 0 }}</div>
         <div class="stat-label">待补充 P3</div>
       </div>
@@ -58,12 +65,12 @@
       </el-select>
       <el-input v-model="filters.keyword" placeholder="搜索概念ID/名称" clearable :prefix-icon="Search"
         style="width: 220px" @keyup.enter="loadConcepts" />
-      <el-button type="primary" :icon="Search" @click="loadConcepts">搜索</el-button>
-      <el-button @click="resetFilters">重置</el-button>
+      <GlassButton variant="primary" :left-icon="Search" @click="loadConcepts">搜索</GlassButton>
+      <GlassButton variant="secondary" @click="resetFilters">重置</GlassButton>
     </div>
 
     <!-- 概念表格 -->
-    <div class="table-card">
+    <div class="table-card registry-panel">
       <el-table :data="concepts" v-loading="loading" border class="list-table" @sort-change="handleSortChange"
         style="width: 100%">
         <el-table-column prop="id" label="概念 ID" min-width="160" max-width="240" sortable="custom" show-overflow-tooltip>
@@ -337,6 +344,23 @@ onMounted(() => {
 <style scoped>
 .concept-registry {
   padding: 20px;
+  /* 极光层（.lg-aurora，与工作台同源）定位上下文 */
+  position: relative;
+}
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台） */
+.registry-aurora {
+  inset: -24px -28px;
+}
+
+/* 内容压到极光之上。必须点名内容块，不能用 > :not(.lg-aurora) 通配 */
+.concept-registry .page-header,
+.concept-registry .stats-cards,
+.concept-registry .filter-bar,
+.concept-registry .registry-panel,
+.concept-registry .pagination-wrap {
+  position: relative;
+  z-index: 1;
 }
 
 .page-header {
@@ -364,10 +388,8 @@ onMounted(() => {
   margin-bottom: 20px;
 }
 
+/* 玻璃质感由 .lg-card 提供，这里只留布局 + 左侧语义强调边 */
 .stat-card {
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
   padding: 16px;
   text-align: center;
   border-left: 3px solid var(--el-color-primary);
@@ -408,6 +430,34 @@ onMounted(() => {
   align-items: center;
   margin-bottom: 16px;
   flex-wrap: wrap;
+}
+
+/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */
+.registry-panel {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+}
+
+/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
+.registry-panel :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+}
+
+/* 右侧固定操作列：磨砂但不透明的暖白，表头/hover 态同步 */
+.registry-panel :deep(.el-table-fixed-column--right) {
+  background-color: rgba(249, 244, 234, 0.97);
+}
+.registry-panel :deep(th.el-table-fixed-column--right) {
+  background-color: rgba(246, 239, 226, 0.98);
+}
+.registry-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) {
+  background-color: rgba(245, 236, 220, 0.98);
 }
 
 .concept-link {

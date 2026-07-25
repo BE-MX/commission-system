@@ -1,5 +1,11 @@
 <template>
   <div v-loading="loading" class="workspace-page">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="workspace-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
     <header class="workspace-header">
       <div class="header-left">
         <GlassButton variant="ghost" left-icon="ArrowLeft" @click="$router.push('/aftersales/cases')">返回</GlassButton>
@@ -146,7 +152,36 @@ onMounted(initialize)
 <style scoped>
 .header-actions { display: flex; align-items: center; gap: 8px; }
 .notification-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border-color); }.notification-row > div { display: flex; flex-direction: column; gap: 2px; }.notification-row span, .notification-row small { color: var(--text-secondary); font-size: 11px; }.notification-row small { color: var(--color-danger-text); }
-.workspace-page { min-width: 0; padding-bottom: 96px; }.workspace-header, .header-left, .title-line, .action-buttons { display: flex; align-items: center; }.workspace-header { justify-content: space-between; gap: 16px; margin-bottom: 16px; }.header-left { gap: 10px; }.title-line { gap: 10px; }.title-line h1 { margin: 0; color: var(--text-primary); font: 700 20px/1.3 var(--font-display); }.header-left p { margin: 3px 0 0; color: var(--text-secondary); font-size: 12px; }.progress-strip { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; padding: 12px 16px; margin-bottom: 16px; border: 1px solid var(--border-color); border-radius: var(--card-radius); background: var(--card-bg); }.progress-item { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--text-muted); }.progress-item span { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; background: var(--border-hover); }.progress-item strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }.progress-item.done span { background: var(--color-success); }.progress-item.active span { background: var(--color-primary); box-shadow: 0 0 0 4px var(--color-primary-light); }.progress-item.active strong { color: var(--text-primary); }.workspace-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(360px, .85fr); gap: 16px; align-items: start; }.registration-column, .decision-column { display: grid; gap: 16px; }.evidence-placeholder, .execution-card { display: flex; gap: 12px; padding: 18px; border: 1px dashed var(--border-hover); border-radius: var(--card-radius); background: var(--toolbar-bg); color: var(--text-secondary); }.evidence-placeholder div { display: flex; flex-direction: column; gap: 4px; }.evidence-placeholder span, .execution-card span { font-size: 12px; }.execution-card { display: block; border-style: solid; background: var(--card-bg); }.execution-card .section-title { color: var(--text-primary); font-weight: 700; }.execution-card p { color: var(--text-secondary); line-height: 1.6; }.sticky-actions { position: fixed; z-index: 10; right: 28px; bottom: 18px; left: 268px; }.standard-actions { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 12px 16px; border: 1px solid var(--border-color); border-radius: 14px; background: var(--card-bg); box-shadow: var(--card-shadow-hover); }.action-hint { color: var(--text-secondary); font-size: 12px; }.action-buttons { justify-content: flex-end; gap: 8px; flex-wrap: wrap; } :deep(.el-timeline-item__content p) { color: var(--text-secondary); font-size: 12px; }
+.workspace-page { min-width: 0; padding-bottom: 96px; position: relative; }.workspace-header, .header-left, .title-line, .action-buttons { display: flex; align-items: center; }.workspace-header { justify-content: space-between; gap: 16px; margin-bottom: 16px; }.header-left { gap: 10px; }.title-line { gap: 10px; }.title-line h1 { margin: 0; color: var(--text-primary); font: 700 20px/1.3 var(--font-display); }.header-left p { margin: 3px 0 0; color: var(--text-secondary); font-size: 12px; }.progress-strip { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; padding: 12px 16px; margin-bottom: 16px; border: 1px solid var(--border-color); border-radius: var(--card-radius); background: var(--card-bg); }.progress-item { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--text-muted); }.progress-item span { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; background: var(--border-hover); }.progress-item strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }.progress-item.done span { background: var(--color-success); }.progress-item.active span { background: var(--color-primary); box-shadow: 0 0 0 4px var(--color-primary-light); }.progress-item.active strong { color: var(--text-primary); }.workspace-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(360px, .85fr); gap: 16px; align-items: start; }.registration-column, .decision-column { display: grid; gap: 16px; }.evidence-placeholder, .execution-card { display: flex; gap: 12px; padding: 18px; border: 1px dashed var(--border-hover); border-radius: var(--card-radius); background: var(--toolbar-bg); color: var(--text-secondary); }.evidence-placeholder div { display: flex; flex-direction: column; gap: 4px; }.evidence-placeholder span, .execution-card span { font-size: 12px; }.execution-card { display: block; border-style: solid; background: var(--card-bg); }.execution-card .section-title { color: var(--text-primary); font-weight: 700; }.execution-card p { color: var(--text-secondary); line-height: 1.6; }.sticky-actions { position: fixed; z-index: 10; right: 28px; bottom: 18px; left: 268px; }.standard-actions { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 12px 16px; border: 1px solid var(--border-color); border-radius: 14px; background: var(--card-bg); box-shadow: var(--card-shadow-hover); }.action-hint { color: var(--text-secondary); font-size: 12px; }.action-buttons { justify-content: flex-end; gap: 8px; flex-wrap: wrap; } :deep(.el-timeline-item__content p) { color: var(--text-secondary); font-size: 12px; }
 @media (max-width: 1100px) { .workspace-grid { grid-template-columns: 1fr; }.sticky-actions { left: 96px; }.progress-strip { overflow-x: auto; grid-template-columns: repeat(6, minmax(120px, 1fr)); } }
 @media (max-width: 760px) { .workspace-header, .standard-actions { align-items: stretch; flex-direction: column; }.sticky-actions { right: 12px; bottom: 12px; left: 12px; }.action-buttons { justify-content: stretch; }.action-buttons :deep(button) { flex: 1; } }
+
+/* ── Liquid Glass 材质（2026-07-25 体系：极光 + 玻璃面板，配方同工作台/发票页） ── */
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环 */
+.workspace-aurora { inset: -24px -28px; }
+/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
+   本页有就地渲染的 el-drawer/el-dialog，通配会压掉 .el-overlay 的 position: fixed。
+   .sticky-actions 本身是 position: fixed + z-index: 10，已在极光之上，不列入 */
+.workspace-page .workspace-header,
+.workspace-page .progress-strip,
+.workspace-page .workspace-grid { position: relative; z-index: 1; }
+/* 工作区卡片/面板玻璃化：进度条、执行结果卡，以及子组件的登记/证据/AI 决策/审批路由卡
+   （只改表面材质，不动内部表单布局与逻辑） */
+.workspace-page .progress-strip,
+.workspace-page .execution-card,
+.workspace-grid :deep(.surface-section),
+.workspace-grid :deep(.decision-panel),
+.workspace-grid :deep(.approval-card) {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+}
+/* 底部悬浮操作条：悬浮层用更实的玻璃底（--dash-glass-bg-strong），避免下方内容透出干扰阅读 */
+.workspace-page .standard-actions {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg-strong);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+}
 </style>

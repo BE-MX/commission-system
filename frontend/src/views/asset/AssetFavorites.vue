@@ -1,5 +1,12 @@
 <template>
   <div class="asset-favorites-page">
+    <!-- 金色极光背景（纯装饰；与工作台/发票页同源 styles/liquid-glass.css） -->
+    <div class="asset-favorites-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <!-- 顶部工具栏 -->
     <div class="toolbar">
       <div class="toolbar-left">
@@ -9,10 +16,7 @@
         </h2>
       </div>
       <div class="toolbar-right">
-        <el-button type="primary" @click="showCreateFolder = true">
-          <el-icon><FolderAdd /></el-icon>
-          新建收藏夹
-        </el-button>
+        <GlassButton variant="primary" :left-icon="FolderAdd" @click="showCreateFolder = true">新建收藏夹</GlassButton>
       </div>
     </div>
 
@@ -53,16 +57,14 @@
         </div>
         <div v-else-if="items.length === 0" class="empty-wrap">
           <el-empty description="该收藏夹暂无素材">
-            <el-button type="primary" @click="$router.push('/asset/library')">
-              去素材库逛逛
-            </el-button>
+            <GlassButton variant="primary" @click="$router.push('/asset/library')">去素材库逛逛</GlassButton>
           </el-empty>
         </div>
         <div v-else class="asset-grid">
           <div
             v-for="item in items"
             :key="item.id"
-            class="asset-card"
+            class="asset-card lg-card"
             @click="openPreview(item.asset)"
           >
             <div class="card-thumb">
@@ -108,10 +110,8 @@
         @keyup.enter="createFolder"
       />
       <template #footer>
-        <el-button @click="showCreateFolder = false">取消</el-button>
-        <el-button type="primary" :disabled="!newFolderName.trim()" @click="createFolder">
-          创建
-        </el-button>
+        <GlassButton variant="ghost" @click="showCreateFolder = false">取消</GlassButton>
+        <GlassButton variant="primary" :disabled="!newFolderName.trim()" @click="createFolder">创建</GlassButton>
       </template>
     </el-dialog>
 
@@ -125,10 +125,8 @@
         @keyup.enter="confirmRename"
       />
       <template #footer>
-        <el-button @click="showRenameFolder = false">取消</el-button>
-        <el-button type="primary" :disabled="!renameFolderName.trim()" @click="confirmRename">
-          确认
-        </el-button>
+        <GlassButton variant="ghost" @click="showRenameFolder = false">取消</GlassButton>
+        <GlassButton variant="primary" :disabled="!renameFolderName.trim()" @click="confirmRename">确认</GlassButton>
       </template>
     </el-dialog>
 
@@ -143,7 +141,7 @@
         </el-input>
       </div>
       <template #footer>
-        <el-button @click="showShareDialog = false">关闭</el-button>
+        <GlassButton variant="ghost" @click="showShareDialog = false">关闭</GlassButton>
       </template>
     </el-dialog>
 
@@ -391,6 +389,21 @@ onMounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
+  /* 极光层（.lg-aurora，与工作台同源）定位上下文 */
+  position: relative;
+}
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环 */
+.asset-favorites-aurora {
+  inset: -24px -28px;
+}
+
+/* 内容压到极光之上（点名内容块，不能用 > :not(.lg-aurora) 通配——
+   会压掉就地渲染的 el-dialog .el-overlay 的 position: fixed） */
+.asset-favorites-page .toolbar,
+.asset-favorites-page .favorites-layout {
+  position: relative;
+  z-index: 1;
 }
 
 .toolbar {
@@ -418,14 +431,15 @@ onMounted(() => {
   overflow: hidden;
 }
 
-/* 左侧收藏夹 */
+/* 左侧收藏夹：同款渐变玻璃（覆盖原白底卡片） */
 .folder-sidebar {
   width: 240px;
   flex-shrink: 0;
-  background: #fff;
-  border-radius: 12px;
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
   padding: 12px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
   overflow-y: auto;
 }
 
@@ -472,13 +486,14 @@ onMounted(() => {
   background: #e8e8e8;
 }
 
-/* 右侧内容 */
+/* 右侧内容：同款渐变玻璃（覆盖原白底卡片） */
 .content-area {
   flex: 1;
-  background: #fff;
-  border-radius: 12px;
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
   padding: 20px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
   overflow-y: auto;
 }
 
@@ -498,19 +513,12 @@ onMounted(() => {
   gap: 16px;
 }
 
+/* 素材卡片：玻璃质感由 .lg-card 提供（渐变磨砂 + 暖金彩色阴影 + hover 上浮），
+   这里只留布局 */
 .asset-card {
-  background: #fff;
-  border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   cursor: pointer;
-  transition: transform 0.15s, box-shadow 0.15s;
   position: relative;
-}
-
-.asset-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
 }
 
 .card-thumb {

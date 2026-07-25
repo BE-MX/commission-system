@@ -1,7 +1,7 @@
 <template>
   <div class="dashboard-overview">
     <!-- 左侧：最近动态 -->
-    <div class="overview-panel dash-glass-card is-static">
+    <div class="overview-panel lg-card is-static">
       <div class="panel-header">
         <h3 class="panel-title">最近动态</h3>
       </div>
@@ -70,7 +70,7 @@
     </div>
 
     <!-- 右侧：状态分布 -->
-    <div class="overview-panel dash-glass-card is-static">
+    <div class="overview-panel lg-card is-static">
       <div class="panel-header">
         <h3 class="panel-title">状态分布</h3>
       </div>

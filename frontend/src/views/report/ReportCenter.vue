@@ -1,7 +1,14 @@
 <template>
   <div class="report-center-page">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="report-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <!-- 模板列表 -->
-    <div v-if="!designerMode">
+    <div v-if="!designerMode" class="template-list">
       <div class="card-header" style="margin-bottom: 16px;">
         <span class="header-title">报表模板</span>
         <GlassButton
@@ -13,7 +20,7 @@
         </GlassButton>
       </div>
 
-      <div class="table-card">
+      <div class="table-card report-panel">
         <el-table
           :data="templates"
           v-loading="loading"
@@ -450,6 +457,22 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  /* 极光层（.lg-aurora，与工作台同源）定位上下文 */
+  position: relative;
+}
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台） */
+.report-aurora {
+  inset: -24px -28px;
+}
+
+/* 内容压到极光之上。必须点名内容块，不能用 > :not(.lg-aurora)——
+   el-dialog 默认就地渲染，通配会覆盖 .el-overlay 的 position: fixed。
+   designer 分支（第三方设计器本体）仅抬层级，材质不动 */
+.report-center-page .template-list,
+.report-center-page .designer-page {
+  position: relative;
+  z-index: 1;
 }
 
 .card-header {
@@ -462,6 +485,34 @@ onMounted(() => {
   font-size: 16px;
   font-weight: 600;
   color: #1e1e2d;
+}
+
+/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */
+.report-panel {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+}
+
+/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
+.report-panel :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+}
+
+/* 右侧固定操作列：磨砂但不透明的暖白，表头/hover 态同步 */
+.report-panel :deep(.el-table-fixed-column--right) {
+  background-color: rgba(249, 244, 234, 0.97);
+}
+.report-panel :deep(th.el-table-fixed-column--right) {
+  background-color: rgba(246, 239, 226, 0.98);
+}
+.report-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) {
+  background-color: rgba(245, 236, 220, 0.98);
 }
 
 .preview-toolbar {

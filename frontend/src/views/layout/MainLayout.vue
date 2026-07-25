@@ -160,15 +160,43 @@ function handleUserCommand(cmd) {
   height: 100vh;
 }
 
-/* ===== Sidebar ===== */
+/* ===== Sidebar =====
+   深灰磨砂玻璃（2026-07-25）：与暖金内容区互补的冷板岩灰，
+   自带静态微光；菜单项是浮在其上的暗色磨砂，激活项金渐变胶囊呼应品牌 */
 .aside {
-  background: linear-gradient(180deg, var(--sidebar-bg-from) 0%, var(--sidebar-bg-to) 100%);
+  background: linear-gradient(180deg, var(--sidebar-glass-from) 0%, var(--sidebar-glass-to) 100%);
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 4px 0 24px rgba(20, 18, 16, 0.25);
   transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;
   display: flex;
   flex-direction: column;
   position: relative;
   z-index: 10;
+}
+
+/* 侧栏静态微光（同 .lg-aurora 配方：大半径渐变自然衰减，禁动画/禁 filter blur） */
+.aside::before {
+  content: "";
+  position: absolute;
+  width: 280px;
+  height: 280px;
+  top: -90px;
+  right: -110px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--sidebar-glow-gold) 0%, rgba(245, 203, 92, 0) 68%);
+  pointer-events: none;
+}
+.aside::after {
+  content: "";
+  position: absolute;
+  width: 300px;
+  height: 300px;
+  bottom: -110px;
+  left: -130px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--sidebar-glow-slate) 0%, rgba(107, 140, 186, 0) 68%);
+  pointer-events: none;
 }
 
 .sidebar-grain {
@@ -188,6 +216,7 @@ function handleUserCommand(cmd) {
   gap: 12px;
   flex-shrink: 0;
   position: relative;
+  z-index: 1;
 }
 .logo-img {
   width: 36px;
@@ -211,7 +240,7 @@ function handleUserCommand(cmd) {
 }
 .logo-sub {
   font-family: var(--font-display);
-  color: #5C5550;
+  color: rgba(255, 255, 255, 0.4);
   font-size: 9px;
   font-weight: 500;
   letter-spacing: 0.08em;
@@ -225,9 +254,11 @@ function handleUserCommand(cmd) {
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.12em;
-  color: #3D3832;
+  color: rgba(255, 255, 255, 0.32);
   padding: 20px 20px 8px;
   text-transform: uppercase;
+  position: relative;
+  z-index: 1;
 }
 
 /* Menu */
@@ -237,6 +268,8 @@ function handleUserCommand(cmd) {
   flex: 1;
   overflow-y: auto;
   padding: 0 8px;
+  position: relative;
+  z-index: 1;
 }
 .side-menu:not(.el-menu--collapse) {
   width: 240px;
@@ -248,7 +281,7 @@ function handleUserCommand(cmd) {
 }
 :deep(.el-menu-item),
 :deep(.el-sub-menu__title) {
-  color: #9C9590;
+  color: rgba(255, 255, 255, 0.55);
   height: 42px;
   line-height: 42px;
   margin: 1px 0;
@@ -261,46 +294,41 @@ function handleUserCommand(cmd) {
 }
 :deep(.el-menu-item:hover),
 :deep(.el-sub-menu__title:hover) {
-  background-color: rgba(245,203,92,0.04);
-  color: #D4C4A8;
+  background-color: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.92);
 }
 
-/* Active state: gold left accent bar */
+/* 激活项：金渐变胶囊（同 GlassButton primary），白色文字 + 暖金投影 */
 :deep(.el-menu-item.is-active) {
-  color: var(--color-gold);
-  background: rgba(245,203,92,0.08);
+  color: #fff;
+  background: linear-gradient(135deg, var(--color-gold), var(--color-primary));
+  box-shadow: 0 4px 14px rgba(212, 148, 28, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.35);
   font-weight: 600;
 }
-:deep(.el-menu-item.is-active::before) {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 8px;
-  bottom: 8px;
-  width: 3px;
-  border-radius: 0 3px 3px 0;
-  background: var(--color-gold);
-  box-shadow: 0 0 8px rgba(245,203,92,0.4);
+:deep(.el-menu-item.is-active .el-icon) {
+  color: #fff;
+}
+/* 激活项 hover 保持胶囊，不回落成磨砂 */
+:deep(.el-menu-item.is-active:hover) {
+  background: linear-gradient(135deg, var(--color-gold), var(--color-primary-hover));
+  color: #fff;
 }
 :deep(.el-sub-menu.is-active > .el-sub-menu__title) {
-  color: #D4C4A8;
+  color: var(--color-gold);
+  font-weight: 600;
 }
 :deep(.el-sub-menu .el-menu-item) {
   padding-left: 52px !important;
   font-size: 13px;
 }
-:deep(.el-menu--popup) {
-  background-color: #1E1B18;
-  border: 1px solid #332E28;
-  border-radius: 10px;
-  padding: 4px;
-}
 
 /* Sidebar bottom */
 .sidebar-bottom {
   padding: 16px;
-  border-top: 1px solid rgba(245,203,92,0.06);
+  border-top: 1px solid rgba(245, 203, 92, 0.1);
   flex-shrink: 0;
+  position: relative;
+  z-index: 1;
 }
 .env-badge {
   font-family: var(--font-display);
@@ -308,7 +336,7 @@ function handleUserCommand(cmd) {
   font-weight: 700;
   letter-spacing: 0.1em;
   color: var(--color-gold);
-  background: rgba(245,203,92,0.08);
+  background: rgba(245, 203, 92, 0.12);
   padding: 4px 8px;
   border-radius: 4px;
   text-align: center;
@@ -322,7 +350,8 @@ function handleUserCommand(cmd) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: #fff;
+  /* 与液态玻璃体系同源的磨砂白（顶栏是布局栏不叠内容，无需 backdrop-filter） */
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.68));
   padding: 0 28px;
   height: var(--header-height);
   border-bottom: 1px solid var(--border-color);
@@ -420,5 +449,31 @@ function handleUserCommand(cmd) {
 .user-trigger .arrow {
   font-size: 10px;
   margin-left: 2px;
+}
+</style>
+
+<!-- 折叠态弹出子菜单 teleport 到 body，scoped 够不到，用全局样式；与侧栏同色系深灰磨砂 -->
+<style>
+.el-menu--popup {
+  background: rgba(34, 37, 46, 0.92) !important;
+  backdrop-filter: blur(var(--dash-glass-blur)) saturate(1.5);
+  -webkit-backdrop-filter: blur(var(--dash-glass-blur)) saturate(1.5);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(20, 18, 16, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  padding: 4px;
+}
+.el-menu--popup .el-menu-item {
+  color: rgba(255, 255, 255, 0.55);
+  border-radius: 8px;
+}
+.el-menu--popup .el-menu-item:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.92);
+}
+.el-menu--popup .el-menu-item.is-active {
+  color: #fff;
+  background: linear-gradient(135deg, var(--color-gold), var(--color-primary));
+  box-shadow: 0 4px 14px rgba(212, 148, 28, 0.35);
 }
 </style>

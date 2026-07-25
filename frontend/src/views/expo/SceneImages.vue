@@ -1,11 +1,18 @@
 <template>
   <div class="scene-img-page">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="scene-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <div class="page-hint">
       上传各生成场景的示意图 —— 仅供试戴「甄选发型」页滑动选择时示意，<b>不参与合成</b>。
       建议竖版 3:4，支持 jpg / png / webp，上传后自动降采样控体积。未上传的场景在甄选页显示占位卡。
     </div>
 
-    <div v-loading="loading">
+    <div v-loading="loading" class="scene-body">
       <div v-for="cat in groupedScenes" :key="cat.key" class="cat-block">
         <div class="cat-title">{{ cat.label }}<small>{{ cat.scenes.length }} 景 · 已上传 {{ cat.doneCount }}</small></div>
         <div class="scene-grid">
@@ -111,7 +118,19 @@ onMounted(fetchScenes)
 </script>
 
 <style scoped>
-.scene-img-page { padding-bottom: 24px; }
+.scene-img-page {
+  padding-bottom: 24px;
+  /* 极光层（.lg-aurora，与工作台同源）定位上下文 */
+  position: relative;
+}
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台/发票页） */
+.scene-aurora { inset: -24px -28px; }
+
+/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
+   会覆盖就地渲染的 el-drawer/el-dialog 的 .el-overlay position: fixed */
+.scene-img-page .page-hint,
+.scene-img-page .scene-body { position: relative; z-index: 1; }
 .page-hint {
   margin-bottom: 18px; padding: 12px 16px; border-radius: 10px;
   background: var(--toolbar-bg); border: 1px solid var(--border-color);

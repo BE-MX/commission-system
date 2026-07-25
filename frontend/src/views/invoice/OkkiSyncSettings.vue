@@ -1,5 +1,12 @@
 <template>
   <div class="okki-settings-page">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="okki-settings-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <div class="page-header">
       <div>
         <h2>OKKI 推单设置</h2>
@@ -20,10 +27,7 @@
               style="width: 280px"
               @change="onProductNoChange"
             />
-            <el-button :loading="resolving" :disabled="!form.generic_product_no" @click="resolveProduct">
-              <el-icon><Search /></el-icon>
-              解析
-            </el-button>
+            <GlassButton variant="secondary" :left-icon="Search" :loading="resolving" :disabled="!form.generic_product_no" @click="resolveProduct">解析</GlassButton>
           </div>
           <div class="field-hint">保存时后端会按产品编号重新解析并校验，留空表示未配置通用产品。</div>
         </el-form-item>
@@ -79,10 +83,9 @@
         </el-form-item>
         <el-form-item label="Access Token">
           <div class="inline-row">
-            <el-button type="primary" :disabled="!current.client_configured" :loading="fetchingToken" @click="fetchToken">
-              <el-icon><Refresh /></el-icon>
+            <GlassButton variant="primary" :left-icon="Refresh" :disabled="!current.client_configured" :loading="fetchingToken" @click="fetchToken">
               {{ current.has_token ? '刷新 Token' : '获取 Token' }}
-            </el-button>
+            </GlassButton>
             <el-tag v-if="current.has_token" type="success" effect="plain">
               {{ current.access_token_masked }}，{{ tokenExpiryText }}
             </el-tag>
@@ -112,7 +115,7 @@
         </el-form-item>
 
         <el-form-item>
-          <el-button type="primary" :loading="saving" @click="save">保存设置</el-button>
+          <GlassButton variant="primary" :loading="saving" @click="save">保存设置</GlassButton>
           <span v-if="current.updated_at" class="field-hint">上次保存：{{ formatTime(current.updated_at) }}</span>
         </el-form-item>
       </el-form>
@@ -280,6 +283,19 @@ function formatTime(iso) {
 <style scoped>
 .okki-settings-page {
   padding: 24px 28px;
+  position: relative;
+}
+
+/* 极光外溢一圈，盖住自身 24/28 padding 环（同工作台） */
+.okki-settings-aurora { inset: -24px -28px; }
+
+/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
+   el-dialog 默认就地渲染（append-to-body=false），通配会覆盖
+   .el-overlay 的 position: fixed，弹窗打开后看不见 */
+.okki-settings-page .page-header,
+.okki-settings-page .table-card {
+  position: relative;
+  z-index: 1;
 }
 
 .page-header h2 {
@@ -295,11 +311,14 @@ function formatTime(iso) {
   color: var(--text-secondary);
 }
 
+/* 表单面板：同款渐变玻璃 */
 .table-card {
   padding: 20px 24px;
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
-  background: var(--card-bg);
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+  overflow: hidden;
 }
 
 .settings-form {

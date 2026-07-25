@@ -1,6 +1,7 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import './styles/tokens.css'
+import './styles/liquid-glass.css'
 import './styles/kimi-design.css'
 import './styles/dashboard-theme.css'
 import ElementPlus from 'element-plus'

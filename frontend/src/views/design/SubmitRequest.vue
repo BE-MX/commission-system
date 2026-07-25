@@ -1,5 +1,12 @@
 <template>
-  <div>
+  <div class="submit-page">
+    <!-- 金色极光背景（纯装饰；与工作台/发票页同源 styles/liquid-glass.css） -->
+    <div class="submit-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <div class="form-card">
       <div class="form-card-header">
         <h3>提交设计预约</h3>
@@ -476,10 +483,28 @@ function resetForm() {
 </script>
 
 <style scoped>
+/* 极光层（.lg-aurora）定位上下文 */
+.submit-page {
+  position: relative;
+}
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环 */
+.submit-aurora {
+  inset: -24px -28px;
+}
+
+/* 内容压到极光之上 */
+.submit-page .form-card {
+  position: relative;
+  z-index: 1;
+}
+
+/* 表单面板：同款渐变玻璃（覆盖原白底卡片；overflow:hidden 保留给深色页头带） */
 .form-card {
-  background: #fff;
-  border-radius: 12px;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
   overflow: hidden;
 }
 .form-card-header {

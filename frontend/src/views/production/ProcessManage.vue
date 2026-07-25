@@ -1,5 +1,12 @@
 <template>
   <div class="process-manage">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="process-manage-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <!-- 工具栏 -->
     <div class="toolbar">
       <div class="toolbar-left">
@@ -10,11 +17,9 @@
           <el-option label="启用" :value="1" />
           <el-option label="禁用" :value="0" />
         </el-select>
-        <el-button type="primary" @click="loadData">搜索</el-button>
+        <GlassButton variant="primary" @click="loadData">搜索</GlassButton>
       </div>
-      <el-button type="primary" @click="openForm()">
-        <el-icon><Plus /></el-icon> 新增工序
-      </el-button>
+      <GlassButton variant="primary" :left-icon="Plus" @click="openForm()">新增工序</GlassButton>
     </div>
 
     <!-- 表格 -->
@@ -165,7 +170,43 @@ onMounted(loadData)
 </script>
 
 <style scoped>
-.process-manage { padding: 20px; }
+.process-manage { padding: 20px; position: relative; }
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台） */
+.process-manage-aurora { inset: -24px -28px; }
+
+/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
+   el-dialog 默认就地渲染（append-to-body=false），通配会覆盖
+   .el-overlay 的 position: fixed，弹窗打开后看不见 */
+.process-manage .toolbar,
+.process-manage .table-card,
+.process-manage .pagination-wrap {
+  position: relative;
+  z-index: 1;
+}
+
+/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 白底） */
+.process-manage .table-card {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+}
+
+/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
+.process-manage .table-card :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+}
+
+/* 右侧固定操作列：sticky 单元格 background:inherit，行透明时滑到它下面的
+   内容会透上来重影。改磨砂不透明暖白，表头/hover 态同步 */
+.process-manage .table-card :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
+.process-manage .table-card :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
+.process-manage .table-card :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
 .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .toolbar-left { display: flex; gap: 10px; align-items: center; }
 .pagination-wrap { display: flex; justify-content: flex-end; margin-top: 16px; }

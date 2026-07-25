@@ -1,5 +1,12 @@
 <template>
-  <div>
+  <div class="tracking-detail-page">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="tracking-detail-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <!-- 返回 + 刷新 -->
     <el-row class="toolbar" justify="space-between" align="middle">
       <el-col :span="12">
@@ -12,7 +19,7 @@
       </el-col>
     </el-row>
 
-    <div v-loading="loading">
+    <div v-loading="loading" class="detail-body">
       <!-- 运单信息卡片 -->
       <div class="info-banner" v-if="shipment">
         <div class="info-top">
@@ -179,6 +186,24 @@ onMounted(fetchDetail)
 </script>
 
 <style scoped>
+/* 极光层（.lg-aurora，与工作台同源）定位上下文 */
+.tracking-detail-page {
+  position: relative;
+}
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台/发票页） */
+.tracking-detail-aurora {
+  inset: -24px -28px;
+}
+
+/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
+   会覆盖就地渲染的 el-drawer/el-dialog 的 .el-overlay position: fixed */
+.tracking-detail-page .toolbar,
+.tracking-detail-page .detail-body {
+  position: relative;
+  z-index: 1;
+}
+
 .toolbar { margin-bottom: 16px; }
 
 .info-banner {

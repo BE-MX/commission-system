@@ -1,5 +1,12 @@
 <template>
   <div class="palette-page">
+    <!-- 金色极光背景（纯装饰；与工作台/发票页同源 styles/liquid-glass.css） -->
+    <div class="palette-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <!-- 筛选栏 -->
     <div class="filter-bar">
       <el-select v-model="filters.color_family" placeholder="色族" clearable>
@@ -12,9 +19,9 @@
         <el-option v-for="l in filterOptions.luminance_levels" :key="l" :label="l" :value="l" />
       </el-select>
       <el-input v-model="filters.keyword" placeholder="搜索色号/名称..." clearable style="width: 200px;" />
-      <el-button type="primary" @click="loadData">查询</el-button>
-      <el-button @click="resetFilters">重置</el-button>
-      <el-button v-if="canWrite" type="success" @click="openCreate">+ 新增色号</el-button>
+      <GlassButton variant="primary" :left-icon="Search" @click="loadData">查询</GlassButton>
+      <GlassButton variant="secondary" :left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
+      <GlassButton v-if="canWrite" variant="success" :left-icon="Plus" @click="openCreate">新增色号</GlassButton>
     </div>
 
     <!-- 色块网格 -->
@@ -144,6 +151,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Plus, RefreshLeft, Search } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import {
   createColor,
@@ -363,7 +371,25 @@ function sourceLabel(s) {
 <style scoped>
 .palette-page {
   padding: 20px;
+  /* 极光层（.lg-aurora，与工作台同源）定位上下文 */
+  position: relative;
 }
+
+/* 极光外溢一圈，盖住 main-content 的 padding 环（同工作台/发票页） */
+.palette-aurora {
+  inset: -24px -28px;
+}
+
+/* 内容压到极光之上。必须点名内容块，不能用 > :not(.lg-aurora) 通配——
+   el-dialog 默认就地渲染，通配会覆盖 .el-overlay 的 position: fixed */
+.palette-page .filter-bar,
+.palette-page .palette-grid,
+.palette-page .el-empty,
+.palette-page .el-pagination {
+  position: relative;
+  z-index: 1;
+}
+
 .filter-bar {
   display: flex;
   gap: 12px;

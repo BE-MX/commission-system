@@ -1,5 +1,10 @@
 <template>
   <div class="customer-radar">
+    <div class="radar-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
     <!-- 页头 -->
     <div class="cr-header">
       <div>
@@ -7,8 +12,8 @@
         <p class="cr-subtitle">AI 把新询盘、样单反馈、大客户、复购和公海客户放在同一张雷达里，直接告诉你今天先看谁、为什么、怎么做。</p>
       </div>
       <div class="cr-header-actions">
-        <el-button @click="refresh" :icon="RefreshRight" :loading="loading">刷新信号</el-button>
-        <el-button type="primary" :icon="CircleCheck" @click="selectThread('all')">按推荐先看</el-button>
+        <GlassButton variant="secondary" :left-icon="RefreshRight" :loading="loading" @click="refresh">刷新信号</GlassButton>
+        <GlassButton variant="primary" :left-icon="CircleCheck" @click="selectThread('all')">按推荐先看</GlassButton>
       </div>
     </div>
 
@@ -163,18 +168,10 @@
 
         <!-- 操作按钮 -->
         <div class="cr-profile-actions">
-          <el-button v-permission="'customer_radar:write'" type="primary" @click="completeAction(selectedActionId)">
-            <el-icon><SuccessFilled /></el-icon>已跟进
-          </el-button>
-          <el-button v-permission="'customer_radar:write'" @click="snoozeAction(selectedActionId, snoozeUntil)">
-            <el-icon><Clock /></el-icon>今天先不看
-          </el-button>
-          <el-button v-permission="'customer_radar:write'" @click="sendFeedback(selectedActionId, 'useful')">
-            <el-icon><Top /></el-icon>客户质量更高
-          </el-button>
-          <el-button v-permission="'customer_radar:write'" @click="sendFeedback(selectedActionId, 'not_useful')">
-            <el-icon><Bottom /></el-icon>推荐不准
-          </el-button>
+          <GlassButton v-permission="'customer_radar:write'" variant="primary" :left-icon="SuccessFilled" @click="completeAction(selectedActionId)">已跟进</GlassButton>
+          <GlassButton v-permission="'customer_radar:write'" variant="secondary" :left-icon="Clock" @click="snoozeAction(selectedActionId, snoozeUntil)">今天先不看</GlassButton>
+          <GlassButton v-permission="'customer_radar:write'" variant="secondary" :left-icon="Top" @click="sendFeedback(selectedActionId, 'useful')">客户质量更高</GlassButton>
+          <GlassButton v-permission="'customer_radar:write'" variant="secondary" :left-icon="Bottom" @click="sendFeedback(selectedActionId, 'not_useful')">推荐不准</GlassButton>
         </div>
       </div>
 
@@ -258,7 +255,17 @@ import { ElMessage } from 'element-plus'
 </script>
 
 <style scoped>
-.customer-radar { padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; height: calc(100vh - 56px); overflow: hidden; }
+.customer-radar { padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; height: calc(100vh - 56px); overflow: hidden; position: relative; }
+
+/* 极光外溢到页面自身 padding 边缘（本页 overflow:hidden，无法再外溢到 main-content 环） */
+.radar-aurora { inset: -18px -20px; }
+
+/* 内容压到极光之上（点名内容块，不用通配，避免压住 el-drawer 的 .el-overlay） */
+.customer-radar .cr-header,
+.customer-radar .cr-workspace {
+  position: relative;
+  z-index: 1;
+}
 
 .cr-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-shrink: 0; }
 .cr-header h1 { margin: 0; font-size: 22px; font-weight: 800; }
@@ -269,7 +276,9 @@ import { ElMessage } from 'element-plus'
 
 /* 左栏 */
 .cr-thread-panel, .cr-action-panel, .cr-profile-panel {
-  background: #fff; border: 1px solid #e0e6ef; border-radius: 8px; box-shadow: 0 1px 2px rgba(15,23,42,.05);
+  /* 玻璃面板：渐变磨砂 + 暖金彩色阴影 */
+  border: 1px solid var(--dash-glass-border); border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg); box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
   display: flex; flex-direction: column; overflow: hidden;
 }
 .cr-panel-title { min-height: 42px; padding: 0 13px; border-bottom: 1px solid #e0e6ef; display: flex; align-items: center; justify-content: space-between; font-weight: 800; font-size: 14px; }

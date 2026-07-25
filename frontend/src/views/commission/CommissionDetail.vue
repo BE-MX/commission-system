@@ -1,5 +1,12 @@
 <template>
-  <div>
+  <div class="commission-detail-page">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="detail-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <!-- 批次摘要卡片 -->
     <div v-if="summary" class="summary-banner">
       <div class="summary-top">
@@ -54,7 +61,7 @@
     </el-row>
 
     <!-- 明细表格 -->
-    <div class="table-card">
+    <div class="table-card detail-panel">
     <el-table ref="tableRef" :data="tableData" v-loading="loading" class="list-table" border :max-height="maxHeight" @sort-change="orderSort.onSortChange">
       <el-table-column prop="payment_id" label="回款ID" min-width="160" max-width="240" show-overflow-tooltip />
       <el-table-column prop="order_id" label="订单ID" min-width="160" max-width="240" show-overflow-tooltip />
@@ -161,6 +168,31 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.commission-detail-page { position: relative; }
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台/发票页） */
+.detail-aurora { inset: -24px -28px; }
+/* 内容压到极光之上（点名内容块，不用通配）。.summary-banner 是深色 Hero 横幅，
+   属页面强调元素而非独立深色大屏主题，保留原样只补层叠 */
+.commission-detail-page .summary-banner,
+.commission-detail-page .toolbar,
+.commission-detail-page .detail-panel,
+.commission-detail-page .pagination { position: relative; z-index: 1; }
+/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */
+.detail-panel {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+  overflow: hidden;
+}
+/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白（本表无固定列） */
+.detail-panel :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+}
 .toolbar { margin-bottom: 16px; }
 .pagination { margin-top: 16px; justify-content: flex-end; }
 

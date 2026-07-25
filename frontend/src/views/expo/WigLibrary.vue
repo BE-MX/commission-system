@@ -1,5 +1,12 @@
 <template>
   <div class="wig-page">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="wig-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <el-row :gutter="16" class="toolbar">
       <el-col :span="8">
         <el-input v-model="keyword" placeholder="搜索型号 / 名称" clearable prefix-icon="Search" />
@@ -9,7 +16,7 @@
       </el-col>
     </el-row>
 
-    <div class="table-card">
+    <div class="table-card wig-panel">
       <el-table :data="filteredWigs" v-loading="loading" border class="list-table" style="width: 100%">
         <el-table-column label="封面" min-width="70">
           <template #default="{ row }">
@@ -452,6 +459,41 @@ onMounted(fetchWigs)
 </script>
 
 <style scoped>
+/* 极光层（.lg-aurora，与工作台同源）定位上下文 */
+.wig-page { position: relative; }
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台/发票页） */
+.wig-aurora { inset: -24px -28px; }
+
+/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
+   会覆盖就地渲染的 el-drawer/el-dialog 的 .el-overlay position: fixed */
+.wig-page .toolbar,
+.wig-page .wig-panel { position: relative; z-index: 1; }
+
+/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */
+.wig-panel {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+  overflow: hidden;
+}
+
+/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
+.wig-panel :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+}
+
+/* 右侧固定操作列：sticky 单元格 + background: inherit，行透明时会透底重影，
+   改成磨砂不透明的暖白，表头/hover 态同步（同 invoice-manage.css） */
+.wig-panel :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
+.wig-panel :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
+.wig-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
+
 .toolbar { margin-bottom: 16px; }
 .cover-thumb { width: 40px; height: 40px; border-radius: 6px; display: block; }
 .cover-empty { color: var(--text-muted); font-size: 12px; }

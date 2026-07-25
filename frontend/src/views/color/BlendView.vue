@@ -1,5 +1,12 @@
 <template>
   <div class="blend-page">
+    <!-- 金色极光背景（纯装饰；与工作台/发票页同源 styles/liquid-glass.css） -->
+    <div class="blend-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <div class="filter-bar">
       <el-select v-model="filters.blend_type" placeholder="混合类型" clearable>
         <el-option label="钢琴色 (Piano)" value="piano" />
@@ -13,12 +20,13 @@
         <el-option v-for="s in filterOptions.sources" :key="s" :label="sourceLabel(s)" :value="s" />
       </el-select>
       <el-input v-model="filters.keyword" placeholder="搜索编码/名称..." clearable style="width: 200px;" />
-      <el-button type="primary" @click="loadData">查询</el-button>
-      <el-button @click="resetFilters">重置</el-button>
-      <el-button v-if="canWrite" type="success" @click="openCreate">+ 新增混合色</el-button>
+      <GlassButton variant="primary" :left-icon="Search" @click="loadData">查询</GlassButton>
+      <GlassButton variant="secondary" :left-icon="RefreshLeft" @click="resetFilters">重置</GlassButton>
+      <GlassButton v-if="canWrite" variant="success" :left-icon="Plus" @click="openCreate">新增混合色</GlassButton>
     </div>
 
-    <el-table v-loading="loading" :data="blendList" style="width: 100%;" @sort-change="orderSort.onSortChange">
+    <section class="table-card blend-panel">
+      <el-table v-loading="loading" :data="blendList" style="width: 100%;" @sort-change="orderSort.onSortChange">
       <el-table-column label="综合色" width="80">
         <template #default="{ row }">
           <div class="blend-preview" :style="{ backgroundColor: row.computed_hex }"></div>
@@ -57,7 +65,8 @@
           <el-button v-if="canAdmin" size="small" type="danger" @click="confirmDelete(row)">删除</el-button>
         </template>
       </el-table-column>
-    </el-table>
+      </el-table>
+    </section>
 
     <el-pagination
       v-if="total > 0"
@@ -188,7 +197,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Delete } from '@element-plus/icons-vue'
+import { Delete, Plus, RefreshLeft, Search } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import {
   createBlend,
@@ -414,8 +423,52 @@ function positionLabel(p) {
 </script>
 
 <style scoped>
-.blend-page { padding: 20px; }
+.blend-page {
+  padding: 20px;
+  /* 极光层（.lg-aurora，与工作台同源）定位上下文 */
+  position: relative;
+}
+
+/* 极光外溢一圈，盖住 main-content 的 padding 环（同工作台/发票页） */
+.blend-aurora {
+  inset: -24px -28px;
+}
+
+/* 内容压到极光之上。必须点名内容块，不能用 > :not(.lg-aurora) 通配——
+   el-dialog 默认就地渲染，通配会覆盖 .el-overlay 的 position: fixed */
+.blend-page .filter-bar,
+.blend-page .blend-panel,
+.blend-page .el-pagination {
+  position: relative;
+  z-index: 1;
+}
+
 .filter-bar { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; align-items: center; }
+
+/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */
+.blend-panel {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+  overflow: hidden;
+}
+
+/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
+.blend-panel :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+}
+
+/* 右侧固定操作列：sticky 单元格 + background: inherit，行透明时会透底重影，
+   改成磨砂不透明的暖白，表头/hover 态同步（同 invoice-manage.css） */
+.blend-panel :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
+.blend-panel :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
+.blend-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
+
 .blend-preview { width: 40px; height: 40px; border-radius: 6px; border: 1px solid var(--el-border-color-lighter); }
 .component-tags { display: flex; flex-wrap: wrap; gap: 4px; }
 .components-section { padding: 0 12px; }

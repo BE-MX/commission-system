@@ -1,5 +1,12 @@
 <template>
   <div class="waybill-upload-page">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="upload-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <el-page-header content="运单上传" @back="$router.back()" />
 
     <div class="upload-layout">
@@ -72,7 +79,7 @@
       </div>
 
       <!-- 右侧：AI 识别结果 / 手录表单 -->
-      <div class="right-panel">
+      <div class="right-panel lg-card is-static">
         <div class="right-panel-title">
           <span>{{ mode === 'ocr' ? 'AI 识别结果' : '运单信息' }}</span>
           <el-tag v-if="mode === 'ocr'" type="success" size="small">图片模式</el-tag>
@@ -183,15 +190,15 @@
             </el-form-item>
 
             <el-form-item>
-              <el-button
-                type="primary"
+              <GlassButton
+                variant="primary"
+                full-width
                 :loading="submitting"
                 :disabled="!!duplicateInfo || checkingDuplicate"
                 @click="handleSubmit"
-                style="width: 100%"
               >
                 {{ submitting ? '提交中...' : '确认提交' }}
-              </el-button>
+              </GlassButton>
             </el-form-item>
           </el-form>
         </template>
@@ -229,6 +236,21 @@ const {
   padding: 24px;
   max-width: 1200px;
   margin: 0 auto;
+  /* 极光层（.lg-aurora，与工作台同源）定位上下文 */
+  position: relative;
+}
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台/发票页） */
+.upload-aurora {
+  inset: -24px -28px;
+}
+
+/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
+   会覆盖就地渲染的 el-drawer/el-dialog 的 .el-overlay position: fixed */
+.waybill-upload-page .el-page-header,
+.waybill-upload-page .upload-layout {
+  position: relative;
+  z-index: 1;
 }
 
 .upload-layout {
@@ -244,11 +266,9 @@ const {
   gap: 20px;
 }
 
+/* 玻璃质感由 .lg-card 提供（渐变磨砂 + 暖金彩色阴影），这里只留布局 */
 .right-panel {
   flex: 1;
-  background: #fff;
-  border: 1px solid #e4e7ed;
-  border-radius: 8px;
   padding: 24px;
 }
 

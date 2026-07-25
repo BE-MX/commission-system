@@ -1,7 +1,14 @@
 <template>
   <div class="safety-config-page">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="safety-config-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <!-- 全局参数 -->
-    <div class="global-params-card">
+    <div class="global-params-card lg-card">
       <div class="params-header">
         <div style="display:flex;align-items:center;gap:12px;">
           <el-icon :size="20" color="#d4af6e"><Setting /></el-icon>
@@ -9,12 +16,8 @@
           <el-tag size="small" type="info" effect="plain">应用于所有 SKU</el-tag>
         </div>
         <div style="display:flex;gap:10px;align-items:center;">
-          <el-button type="primary" :loading="aiLoading" @click="aiBatchGenerate" v-if="authStore.hasPermission('stock:write')">
-            <el-icon style="margin-right:4px"><MagicStick /></el-icon> AI 批量生成
-          </el-button>
-          <el-button type="success" :loading="saveLoading" @click="saveAll" v-if="authStore.hasPermission('stock:write')">
-            <el-icon style="margin-right:4px"><Check /></el-icon> 保存所有
-          </el-button>
+          <GlassButton v-if="authStore.hasPermission('stock:write')" variant="primary" :left-icon="MagicStick" :loading="aiLoading" @click="aiBatchGenerate">AI 批量生成</GlassButton>
+          <GlassButton v-if="authStore.hasPermission('stock:write')" variant="success" :left-icon="Check" :loading="saveLoading" @click="saveAll">保存所有</GlassButton>
           <!-- 购物车图标 -->
           <el-badge :value="cartCount" :hidden="cartCount === 0" class="cart-badge" v-if="authStore.hasPermission('production:write')">
             <el-button circle @click="cartDrawerVisible = true">
@@ -62,7 +65,7 @@
     </div>
 
     <!-- 数据表 -->
-    <div class="card card-gold-border">
+    <div class="card">
       <div class="table-toolbar">
         <div class="toolbar-left">
           <span class="toolbar-title">SKU 安全库存配置</span>
@@ -92,8 +95,8 @@
             <el-option label="备货中" value="stocking" />
             <el-option label="加急中" value="urgent" />
           </el-select>
-          <el-button type="primary" size="small" @click="applyFilters"><el-icon><Filter /></el-icon>筛选</el-button>
-          <el-button size="small" @click="resetFilters">重置</el-button>
+          <GlassButton variant="primary" size="sm" :left-icon="Filter" @click="applyFilters">筛选</GlassButton>
+          <GlassButton variant="secondary" size="sm" @click="resetFilters">重置</GlassButton>
         </div>
       </div>
       <el-table :data="tableData" style="width:100%" :header-cell-style="headerStyle" v-loading="loading" @sort-change="handleSortChange">
@@ -874,9 +877,23 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.safety-config-page { display: flex; flex-direction: column; gap: 20px; }
+.safety-config-page { display: flex; flex-direction: column; gap: 20px; position: relative; }
 
-.global-params-card { background: #ffffff; border-radius: 16px; padding: 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); border: 1px solid rgba(212,175,110,0.15); }
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台） */
+.safety-config-aurora { inset: -24px -28px; }
+
+/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
+   el-drawer/el-dialog 默认就地渲染（append-to-body=false），通配会覆盖
+   .el-overlay 的 position: fixed，抽屉/弹窗打开后看不见 */
+.safety-config-page .global-params-card,
+.safety-config-page .ai-preview-banner,
+.safety-config-page .card {
+  position: relative;
+  z-index: 1;
+}
+
+/* 全局参数卡：玻璃质感由 .lg-card 提供，这里只留布局 */
+.global-params-card { padding: 24px; }
 .params-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
 .params-row { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; padding: 16px; background: linear-gradient(135deg, #faf8f3, #f5f0e6); border-radius: 12px; }
 .param-item { display: flex; align-items: center; gap: 10px; }
@@ -892,8 +909,30 @@ onMounted(() => {
 .banner-content { display: flex; align-items: center; gap: 10px; font-size: 14px; color: #5a4a2a; }
 .banner-hint { color: #d4af6e; font-size: 13px; font-style: italic; }
 
-.card { background: #ffffff; border-radius: 16px; padding: 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
-.card-gold-border { border: 1px solid rgba(212,175,110,0.15); }
+/* 表格面板：同款渐变玻璃 */
+.card {
+  padding: 24px;
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+  overflow: hidden;
+}
+
+/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
+.card :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+}
+
+/* 右侧固定操作列：sticky 单元格 background:inherit，行透明时滑到它下面的
+   内容会透上来重影。改磨砂不透明暖白，表头/hover 态同步 */
+.card :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
+.card :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
+.card :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
 .table-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .toolbar-left { display: flex; align-items: center; gap: 10px; }
 .toolbar-title { font-size: 16px; font-weight: 600; color: #1e1e2d; }

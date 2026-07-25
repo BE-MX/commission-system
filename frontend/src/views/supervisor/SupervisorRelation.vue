@@ -1,5 +1,12 @@
 <template>
-  <div>
+  <div class="supervisor-rel-page">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="supervisor-rel-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <!-- 搜索栏 -->
     <el-row :gutter="16" class="toolbar">
       <el-col :span="8">
@@ -8,7 +15,7 @@
         </el-input>
       </el-col>
       <el-col :span="4">
-        <GlassButton left-icon="Search" @click="fetchList">查询</GlassButton>
+        <GlassButton variant="primary" left-icon="Search" @click="fetchList">查询</GlassButton>
         <GlassButton v-permission="'supervisor:write'" left-icon="Upload" @click="importDialogVisible = true">批量导入</GlassButton>
       </el-col>
     </el-row>
@@ -225,6 +232,38 @@ onMounted(fetchList)
 </script>
 
 <style scoped>
+.supervisor-rel-page { position: relative; }
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台） */
+.supervisor-rel-aurora { inset: -24px -28px; }
+
+/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
+   el-drawer/el-dialog 默认就地渲染（append-to-body=false），通配会覆盖
+   .el-overlay 的 position: fixed，抽屉/弹窗打开后看不见 */
+.supervisor-rel-page .toolbar,
+.supervisor-rel-page .table-card,
+.supervisor-rel-page .pagination {
+  position: relative;
+  z-index: 1;
+}
+
+/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 白底） */
+.supervisor-rel-page .table-card {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+}
+
+/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
+.supervisor-rel-page .table-card :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+}
+
 .toolbar { margin-bottom: 16px; }
 .pagination { margin-top: 16px; justify-content: flex-end; }
 .history-range { color: var(--text-muted); font-size: 12px; margin-left: 4px; }

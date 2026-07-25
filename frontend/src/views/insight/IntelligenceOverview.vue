@@ -1,14 +1,21 @@
 <template>
   <div class="page-wrapper">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="insight-overview-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <div class="page-header">
       <h1>行业情报速览</h1>
       <div class="header-actions">
-        <el-button type="primary" @click="showGenerateDialog = true" v-if="authStore.hasPermission('insight:admin')">
-          <el-icon><Plus /></el-icon> 新建速览
-        </el-button>
-        <el-button @click="showScheduleDialog = true" v-if="authStore.hasPermission('insight:admin')">
-          <el-icon><Setting /></el-icon> 定时设置
-        </el-button>
+        <GlassButton variant="primary" :left-icon="Plus" @click="showGenerateDialog = true" v-if="authStore.hasPermission('insight:admin')">
+          新建速览
+        </GlassButton>
+        <GlassButton variant="secondary" :left-icon="Setting" @click="showScheduleDialog = true" v-if="authStore.hasPermission('insight:admin')">
+          定时设置
+        </GlassButton>
       </div>
     </div>
 
@@ -16,7 +23,7 @@
     <div class="report-cards" v-loading="loading">
       <el-empty v-if="reports.length === 0" description="暂无速览报告" />
 
-      <div v-for="report in reports" :key="report.id" class="report-card" :class="{ pinned: report.is_pinned }">
+      <div v-for="report in reports" :key="report.id" class="report-card lg-card" :class="{ pinned: report.is_pinned }">
         <div class="card-header">
           <div class="card-title">
             <el-icon v-if="report.is_pinned" class="pin-icon"><Top /></el-icon>
@@ -293,6 +300,22 @@ onMounted(() => {
 <style scoped>
 .page-wrapper {
   padding: 24px;
+  /* 极光层（.lg-aurora，与工作台同源）定位上下文 */
+  position: relative;
+}
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台/发票页） */
+.insight-overview-aurora {
+  inset: -24px -28px;
+}
+
+/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
+   会覆盖就地渲染的 el-dialog 的 .el-overlay position: fixed */
+.page-wrapper .page-header,
+.page-wrapper .report-cards,
+.page-wrapper .pagination {
+  position: relative;
+  z-index: 1;
 }
 .page-header {
   display: flex;
@@ -314,12 +337,9 @@ onMounted(() => {
   flex-direction: column;
   gap: 16px;
 }
+/* 玻璃质感由 .lg-card 提供（渐变磨砂 + 暖金彩色阴影 + hover 上浮），这里只留布局 */
 .report-card {
-  background: #fff;
-  border-radius: 12px;
   padding: 20px 24px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-  border: 1px solid transparent;
 }
 .report-card.pinned {
   border-color: #f59e0b;

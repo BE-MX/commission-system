@@ -1,17 +1,24 @@
 <template>
-  <div>
+  <div class="audit-queue-page">
+    <!-- 金色极光背景（纯装饰；与工作台/发票页同源 styles/liquid-glass.css） -->
+    <div class="audit-queue-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <!-- 统计卡片 -->
     <div class="stats-banner">
       <div class="stats-grid">
-        <div class="stat-item pending">
+        <div class="stat-item pending lg-card">
           <div class="stat-value">{{ stats.pending }}</div>
           <div class="stat-label">待审批</div>
         </div>
-        <div class="stat-item approved">
+        <div class="stat-item lg-card">
           <div class="stat-value">{{ stats.today_approved }}</div>
           <div class="stat-label">今日通过</div>
         </div>
-        <div class="stat-item rejected">
+        <div class="stat-item lg-card">
           <div class="stat-value">{{ stats.today_rejected }}</div>
           <div class="stat-label">今日拒绝</div>
         </div>
@@ -19,7 +26,7 @@
     </div>
 
     <!-- 表格 -->
-    <div class="table-card">
+    <div class="table-card audit-queue-panel">
     <el-table
       ref="tableRef"
       :data="tableData"
@@ -289,6 +296,55 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* 极光层（.lg-aurora）定位上下文 */
+.audit-queue-page {
+  position: relative;
+}
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环 */
+.audit-queue-aurora {
+  inset: -24px -28px;
+}
+
+/* 内容压到极光之上（点名内容块，不能用 > :not(.lg-aurora) 通配——
+   会压掉就地渲染的 el-dialog/el-drawer .el-overlay 的 position: fixed） */
+.audit-queue-page .stats-banner,
+.audit-queue-page .audit-queue-panel,
+.audit-queue-page .pagination {
+  position: relative;
+  z-index: 1;
+}
+
+/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */
+.audit-queue-panel {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+  overflow: hidden;
+}
+
+/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
+.audit-queue-panel :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+}
+
+/* 右侧固定操作列：sticky 单元格 + background: inherit，行透明时会透上来重影，
+   改成磨砂但不透明的暖白，表头/hover 态同步 */
+.audit-queue-panel :deep(.el-table-fixed-column--right) {
+  background-color: rgba(249, 244, 234, 0.97);
+}
+.audit-queue-panel :deep(th.el-table-fixed-column--right) {
+  background-color: rgba(246, 239, 226, 0.98);
+}
+.audit-queue-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) {
+  background-color: rgba(245, 236, 220, 0.98);
+}
+
 .toolbar { margin-bottom: 16px; }
 .pagination { margin-top: 16px; justify-content: flex-end; }
 .text-muted { color: var(--text-secondary); font-size: 12px; }
@@ -332,34 +388,32 @@ onMounted(() => {
 }
 
 .stats-banner {
-  background: linear-gradient(135deg, var(--sidebar-bg-from) 0%, var(--sidebar-bg-to) 60%, var(--sidebar-bg-from) 100%);
-  border-radius: 16px;
-  padding: 24px 32px;
   margin-bottom: 16px;
-  color: #fff;
 }
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 16px;
 }
+/* 玻璃质感由 .lg-card 提供（渐变磨砂 + 暖金彩色阴影 + hover 上浮），这里只留布局 */
 .stat-item {
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
   padding: 16px;
   text-align: center;
 }
-.stat-item.pending { background: var(--color-warning-bg-strong); }
-.stat-item.approved { background: var(--color-success-bg-strong); }
-.stat-item.rejected { background: var(--color-danger-bg-strong); }
+/* 强调卡（待审批）：金调渐变玻璃（scoped 优先级高于全局 .lg-card，可覆盖其背景/描边） */
+.stat-item.pending {
+  background: linear-gradient(165deg, rgba(255, 255, 255, 0.8) 0%, rgba(245, 203, 92, 0.16) 100%);
+  border-color: rgba(212, 148, 28, 0.4);
+}
 .stat-value {
   font-size: 28px;
   font-weight: 700;
   line-height: 1.2;
+  font-variant-numeric: tabular-nums;
 }
 .stat-label {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.65);
+  color: var(--text-secondary);
   margin-top: 4px;
 }
 </style>

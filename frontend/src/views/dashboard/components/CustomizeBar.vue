@@ -48,11 +48,11 @@ function onReset() {
   gap: 20px;
   padding: 12px 20px;
   border-radius: 16px;
-  background: var(--glass-bg-strong);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.5);
-  backdrop-filter: blur(var(--glass-blur)) saturate(1.5);
-  border: 1px solid var(--glass-border);
-  box-shadow: var(--glass-highlight), var(--glass-shadow-hover);
+  background: var(--dash-glass-bg-strong);
+  -webkit-backdrop-filter: blur(var(--dash-glass-blur)) saturate(1.5);
+  backdrop-filter: blur(var(--dash-glass-blur)) saturate(1.5);
+  border: 1px solid var(--dash-glass-border);
+  box-shadow: var(--dash-glass-highlight), var(--dash-glass-shadow-hover);
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .customize-bar {

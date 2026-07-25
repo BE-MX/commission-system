@@ -1,5 +1,10 @@
 <template>
   <div class="insight-page case-page">
+    <div class="case-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
     <!-- 工具栏 -->
     <div class="toolbar-card">
       <div class="toolbar-left">
@@ -40,7 +45,7 @@
         <article
           v-for="c in cases"
           :key="c.id"
-          class="case-card"
+          class="case-card lg-card"
           @click="openDetail(c)"
         >
           <div class="card-head-row">
@@ -75,7 +80,7 @@
         <div
           v-for="c in cases"
           :key="c.id"
-          class="list-item"
+          class="list-item lg-card"
           :class="{ active: detailVisible && currentCase && currentCase.id === c.id }"
           @click="openDetail(c)"
         >
@@ -392,12 +397,24 @@ const {
 </script>
 
 <style scoped>
-.case-page { display: flex; flex-direction: column; gap: 16px; }
+.case-page { display: flex; flex-direction: column; gap: 16px; position: relative; }
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环 */
+.case-aurora { inset: -24px -28px; }
+
+/* 内容压到极光之上（点名内容块，不用通配，避免压住 el-drawer/el-dialog 的 .el-overlay） */
+.case-page .toolbar-card,
+.case-page .cases-area {
+  position: relative;
+  z-index: 1;
+}
 
 .toolbar-card {
-  background: #fff;
-  border: 1px solid var(--border-color, #e5dfd6);
-  border-radius: 12px;
+  /* 玻璃面板：渐变磨砂 + 暖金彩色阴影 */
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
   padding: 12px 16px;
   display: flex;
   align-items: center;
@@ -423,22 +440,13 @@ const {
   gap: 14px;
 }
 
+/* 玻璃质感由 .lg-card 提供（渐变磨砂 + 暖金彩色阴影 + hover 上浮），这里只留布局 */
 .case-card {
-  background: #fff;
-  border: 1px solid var(--border-color, #e5dfd6);
-  border-radius: 12px;
   padding: 16px;
   cursor: pointer;
-  transition: all 0.2s;
   display: flex;
   flex-direction: column;
   gap: 10px;
-}
-
-.case-card:hover {
-  border-color: var(--color-gold, #d4af6e);
-  box-shadow: 0 4px 14px rgba(176, 141, 79, 0.08);
-  transform: translateY(-1px);
 }
 
 .card-head-row {
@@ -518,13 +526,10 @@ const {
 
 .list-view { display: flex; flex-direction: column; gap: 8px; }
 
+/* 玻璃质感由 .lg-card 提供，这里只留布局 */
 .list-item {
-  background: #fff;
-  border: 1px solid var(--border-color, #e5dfd6);
-  border-radius: 10px;
   padding: 12px 16px;
   cursor: pointer;
-  transition: all 0.15s;
 }
 
 .list-item:hover { border-color: var(--color-gold, #d4af6e); }

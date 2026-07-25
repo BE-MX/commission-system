@@ -302,8 +302,23 @@ onMounted(fetchDates)
   gap: 12px;
   margin-bottom: 12px;
   padding: 8px 12px;
-  background: var(--toolbar-bg);
+  /* 实底改半透明，透出父页面（DesignManage）的极光 */
+  background: rgba(255, 255, 255, 0.4);
   border-radius: 6px;
+}
+
+/* 日历主面板：同款渐变玻璃（极光层在父页面 DesignManage，这里不再叠加） */
+.calendar-config :deep(.el-calendar) {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+  overflow: hidden;
+}
+
+/* 面板头部（月份切换工具条）半透明，融入玻璃 */
+.calendar-config :deep(.el-calendar__header) {
+  background: rgba(255, 255, 255, 0.4);
 }
 
 /* Calendar cell */
@@ -377,8 +392,10 @@ onMounted(fetchDates)
 }
 
 .upcoming-list {
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
   overflow: hidden;
 }
 
@@ -395,7 +412,7 @@ onMounted(fetchDates)
 }
 
 .upcoming-item:hover {
-  background: var(--toolbar-bg);
+  background: rgba(255, 255, 255, 0.5);
 }
 
 .upcoming-info {

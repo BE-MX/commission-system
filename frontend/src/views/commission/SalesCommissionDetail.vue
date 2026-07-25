@@ -1,5 +1,12 @@
 <template>
   <div class="sales-commission-detail">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="sales-detail-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <div class="page-header">
       <div>
         <h2>{{ detail.batch?.batch_name || '我的提成明细' }}</h2>
@@ -17,27 +24,27 @@
 
     <div v-loading="loading" class="content-stack">
       <div class="summary-grid">
-        <div class="metric-item payment">
+        <div class="metric-item payment lg-card">
           <div class="metric-icon"><el-icon><Money /></el-icon></div>
           <span>{{ metricTitle('回款总额') }}</span>
           <strong>{{ usd(activeSummary.total_payment_amount) }}</strong>
         </div>
-        <div class="metric-item sales">
+        <div class="metric-item sales lg-card">
           <div class="metric-icon"><el-icon><User /></el-icon></div>
           <span>{{ metricTitle('业务员提成') }}</span>
           <strong>{{ usd(activeSummary.total_salesperson_commission) }}</strong>
         </div>
-        <div class="metric-item supervisor">
+        <div class="metric-item supervisor lg-card">
           <div class="metric-icon"><el-icon><UserFilled /></el-icon></div>
           <span>{{ metricTitle('一级主管提成') }}</span>
           <strong>{{ usd(activeSummary.total_supervisor_commission) }}</strong>
         </div>
-        <div class="metric-item second-supervisor">
+        <div class="metric-item second-supervisor lg-card">
           <div class="metric-icon"><el-icon><Connection /></el-icon></div>
           <span>{{ metricTitle('二级主管提成') }}</span>
           <strong>{{ usd(activeSummary.total_second_supervisor_commission) }}</strong>
         </div>
-        <div class="metric-item total">
+        <div class="metric-item total lg-card">
           <div class="metric-icon"><el-icon><TrendCharts /></el-icon></div>
           <span>{{ metricTitle('总提成') }}</span>
           <strong>{{ usd(activeSummary.total_commission) }}</strong>
@@ -415,7 +422,17 @@ watch([batchId, currentUserKey], fetchDetail, { immediate: true })
   display: flex;
   flex-direction: column;
   gap: 16px;
+  /* 极光层（.lg-aurora，与工作台同源）定位上下文 */
+  position: relative;
 }
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台/发票页） */
+.sales-detail-aurora { inset: -24px -28px; }
+
+/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
+   本页有就地渲染的 el-dialog，通配会压掉 .el-overlay 的 position: fixed */
+.sales-commission-detail .page-header,
+.sales-commission-detail .content-stack { position: relative; z-index: 1; }
 
 .page-header {
   display: flex;
@@ -458,18 +475,16 @@ watch([batchId, currentUserKey], fetchDetail, { immediate: true })
   animation: surface-in 240ms var(--commission-ease-out) 40ms both;
 }
 
+/* 玻璃质感由 .lg-card 提供（渐变磨砂 + 暖金彩色阴影 + hover 上浮），
+   这里只留布局；各变体的语义色保留在文字/图标上 */
 .metric-item {
   position: relative;
   min-height: 82px;
   padding: 14px 16px;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: #fff;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   overflow: hidden;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
 }
 
 .metric-icon {
@@ -494,11 +509,6 @@ watch([batchId, currentUserKey], fetchDetail, { immediate: true })
   font-size: 60px;
 }
 
-.metric-item.payment {
-  background: linear-gradient(135deg, #eef6ff 0%, #ffffff 72%);
-  border-color: #cfe4ff;
-}
-
 .metric-item.payment .metric-icon {
   color: #2563eb;
 }
@@ -509,11 +519,6 @@ watch([batchId, currentUserKey], fetchDetail, { immediate: true })
 
 .metric-item.payment strong {
   color: #1d4ed8;
-}
-
-.metric-item.sales {
-  background: linear-gradient(135deg, #f0fdf4 0%, #ffffff 72%);
-  border-color: #bbf7d0;
 }
 
 .metric-item.sales .metric-icon {
@@ -528,11 +533,6 @@ watch([batchId, currentUserKey], fetchDetail, { immediate: true })
   color: #15803d;
 }
 
-.metric-item.supervisor {
-  background: linear-gradient(135deg, #fff7ed 0%, #ffffff 72%);
-  border-color: #fed7aa;
-}
-
 .metric-item.supervisor .metric-icon {
   color: #ea580c;
 }
@@ -545,11 +545,6 @@ watch([batchId, currentUserKey], fetchDetail, { immediate: true })
   color: #c2410c;
 }
 
-.metric-item.second-supervisor {
-  background: linear-gradient(135deg, #f5f3ff 0%, #ffffff 72%);
-  border-color: #ddd6fe;
-}
-
 .metric-item.second-supervisor .metric-icon {
   color: #7c3aed;
 }
@@ -560,11 +555,6 @@ watch([batchId, currentUserKey], fetchDetail, { immediate: true })
 
 .metric-item.second-supervisor strong {
   color: #6d28d9;
-}
-
-.metric-item.total {
-  background: linear-gradient(135deg, #ecfeff 0%, #ffffff 72%);
-  border-color: #a5f3fc;
 }
 
 .metric-item.total .metric-icon {
@@ -594,13 +584,24 @@ watch([batchId, currentUserKey], fetchDetail, { immediate: true })
   font-variant-numeric: tabular-nums;
 }
 
+/* 月度汇总面板 / 明细窗口：同款渐变玻璃 */
 .section-panel,
 .detail-window {
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #fff;
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
   overflow: hidden;
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05);
+}
+
+/* 两张表融进玻璃：行/表头半透明，透出极光；hover 用更实的白（均无固定列） */
+.monthly-panel :deep(.el-table),
+.detail-window :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
 }
 
 .monthly-panel {
@@ -644,13 +645,14 @@ watch([batchId, currentUserKey], fetchDetail, { immediate: true })
   min-width: 0;
 }
 
+/* 吸顶 tabs 头：与固定列同款磨砂暖白，玻璃面板上吸顶时不透底、也不是死白 */
 :deep(.detail-tabs > .el-tabs__header) {
   position: sticky;
   top: 0;
   z-index: 6;
   margin: 0;
   padding-top: 14px;
-  background: #fff;
+  background: rgba(249, 244, 234, 0.97);
 }
 
 :deep(.detail-tabs .el-tabs__content) {

@@ -1,5 +1,12 @@
 <template>
   <div class="aftersales-list-page">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="aftersales-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <div class="page-heading">
       <div>
         <h1>{{ reviewMode ? '待我审核' : '售后单' }}</h1>
@@ -33,7 +40,7 @@
       <GlassButton variant="secondary" left-icon="Refresh" @click="fetchList">刷新</GlassButton>
     </div>
 
-    <div class="table-card">
+    <div class="table-card aftersales-panel">
       <el-table :data="cases" v-loading="loading" border class="list-table" style="width: 100%" @row-dblclick="openCase">
         <el-table-column prop="case_no" label="售后单号" min-width="150" max-width="210" show-overflow-tooltip>
           <template #default="{ row }"><button class="case-link" @click="openCase(row)">{{ row.case_no }}</button></template>
@@ -126,13 +133,42 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.aftersales-list-page { min-width: 0; }
+.aftersales-list-page { min-width: 0; position: relative; }
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台/发票页） */
+.aftersales-aurora { inset: -24px -28px; }
+/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
+   会覆盖就地渲染的 el-drawer/el-dialog 的 .el-overlay position: fixed */
+.aftersales-list-page .page-heading,
+.aftersales-list-page .toolbar,
+.aftersales-list-page .aftersales-panel,
+.aftersales-list-page .pager { position: relative; z-index: 1; }
 .page-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 20px; }
 .page-heading h1 { margin: 0 0 4px; font: 700 20px/1.3 var(--font-display); color: var(--text-primary); }
 .page-heading p { margin: 0; color: var(--text-secondary); font-size: 13px; }
 .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
 .toolbar .keyword { width: 280px; }
 .toolbar :deep(.el-select) { width: 150px; }
+/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */
+.aftersales-panel {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+  overflow: hidden;
+}
+/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
+.aftersales-panel :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+}
+/* 右侧固定操作列：sticky 单元格 + background: inherit，行透明时会透底重影，
+   改成磨砂不透明的暖白，表头/hover 态同步（同 invoice-manage.css） */
+.aftersales-panel :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
+.aftersales-panel :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
+.aftersales-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
 .case-link { border: 0; padding: 0; background: transparent; color: var(--color-primary); font: 600 13px/1.4 var(--font-body); cursor: pointer; }
 .tabular { font-variant-numeric: tabular-nums; }
 .pager { margin-top: 16px; justify-content: flex-end; }

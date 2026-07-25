@@ -1,5 +1,10 @@
 <template>
   <div class="insight-page minutes-page">
+    <div class="minutes-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
     <div class="minutes-toolbar">
       <h3 class="page-subtitle">周会纪要</h3>
       <GlassButton v-if="canWrite" variant="primary" left-icon="Plus" @click="openUpload">上传本周纪要</GlassButton>
@@ -327,7 +332,17 @@ onMounted(refreshList)
 </script>
 
 <style scoped>
-.minutes-page { display: flex; flex-direction: column; gap: 16px; height: calc(100vh - 130px); min-height: 540px; }
+.minutes-page { display: flex; flex-direction: column; gap: 16px; height: calc(100vh - 130px); min-height: 540px; position: relative; }
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环 */
+.minutes-aurora { inset: -24px -28px; }
+
+/* 内容压到极光之上（点名内容块，不用通配，避免压住 el-dialog 的 .el-overlay） */
+.minutes-page .minutes-toolbar,
+.minutes-page .minutes-body {
+  position: relative;
+  z-index: 1;
+}
 
 .minutes-toolbar {
   display: flex;
@@ -342,9 +357,11 @@ onMounted(refreshList)
 
 .timeline-panel {
   width: 280px;
-  background: #fff;
-  border: 1px solid var(--border-color, #e5dfd6);
-  border-radius: 12px;
+  /* 玻璃面板：渐变磨砂 + 暖金彩色阴影 */
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -454,9 +471,11 @@ onMounted(refreshList)
 
 .detail-panel {
   flex: 1;
-  background: #fff;
-  border: 1px solid var(--border-color, #e5dfd6);
-  border-radius: 12px;
+  /* 玻璃面板：渐变磨砂 + 暖金彩色阴影 */
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
   overflow: auto;
   position: relative;
 }

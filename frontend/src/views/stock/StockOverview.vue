@@ -1,8 +1,15 @@
 <template>
   <div class="stock-overview-page">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="stock-overview-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <!-- 统计卡 -->
     <div class="stats-row">
-      <div class="stat-card shortage" @click="applyStatusFilter('shortage')">
+      <div class="stat-card lg-card shortage" @click="applyStatusFilter('shortage')">
         <div class="stat-icon-bg">
           <el-icon :size="28" color="#e74c3c"><WarningFilled /></el-icon>
         </div>
@@ -13,7 +20,7 @@
         </div>
         <el-tag size="small" type="danger" effect="dark">需立即补货</el-tag>
       </div>
-      <div class="stat-card warning" @click="applyStatusFilter('warning')">
+      <div class="stat-card lg-card warning" @click="applyStatusFilter('warning')">
         <div class="stat-icon-bg">
           <el-icon :size="28" color="#f39c12"><Timer /></el-icon>
         </div>
@@ -24,7 +31,7 @@
         </div>
         <el-tag size="small" type="warning" effect="dark">建议备货</el-tag>
       </div>
-      <div class="stat-card sufficient" @click="applyStatusFilter('sufficient')">
+      <div class="stat-card lg-card sufficient" @click="applyStatusFilter('sufficient')">
         <div class="stat-icon-bg">
           <el-icon :size="28" color="#27ae60"><CircleCheckFilled /></el-icon>
         </div>
@@ -86,12 +93,8 @@
         <div class="filter-group">
           <el-input v-model="filters.keyword" placeholder="搜索产品名或型号" :prefix-icon="Search" clearable style="width:200px" @input="handleSearch" />
         </div>
-        <el-button type="primary" @click="applyFilters">
-          <el-icon><Filter /></el-icon> 筛选
-        </el-button>
-        <el-button @click="resetFilters">
-          <el-icon><RefreshRight /></el-icon> 重置
-        </el-button>
+        <GlassButton variant="primary" :left-icon="Filter" @click="applyFilters">筛选</GlassButton>
+        <GlassButton variant="secondary" :left-icon="RefreshRight" @click="resetFilters">重置</GlassButton>
       </div>
     </div>
 
@@ -457,11 +460,25 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.stock-overview-page { display: flex; flex-direction: column; gap: 20px; }
+.stock-overview-page { display: flex; flex-direction: column; gap: 20px; position: relative; }
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台） */
+.stock-overview-aurora { inset: -24px -28px; }
+
+/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
+   el-dialog 默认就地渲染（append-to-body=false），通配会覆盖
+   .el-overlay 的 position: fixed，弹窗打开后看不见 */
+.stock-overview-page .stats-row,
+.stock-overview-page .toolbar-card,
+.stock-overview-page .card {
+  position: relative;
+  z-index: 1;
+}
 
 /* 统计卡 */
 .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-.stat-card { background: #ffffff; border-radius: 16px; padding: 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); display: flex; align-items: center; gap: 16px; position: relative; overflow: hidden; cursor: pointer; transition: transform .15s; }
+/* 玻璃质感由 .lg-card 提供（渐变磨砂 + 暖金彩色阴影 + hover 上浮），这里只留布局 */
+.stat-card { padding: 24px; display: flex; align-items: center; gap: 16px; position: relative; overflow: hidden; cursor: pointer; transition: transform .15s; }
 .stat-card:hover { transform: translateY(-2px); }
 .stat-card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; }
 .stat-card.shortage::before { background: linear-gradient(180deg, #e74c3c, #c0392b); }
@@ -476,15 +493,40 @@ onMounted(() => {
 .stat-value { font-size: 28px; font-weight: 700; color: #1e1e2d; line-height: 1.2; }
 .stat-sub { font-size: 12px; color: #aaa; margin-top: 2px; }
 
-/* 筛选栏 */
-.toolbar-card { background: #ffffff; border-radius: 16px; padding: 20px 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
+/* 筛选栏/表格面板：同款渐变玻璃（scoped 覆盖白底） */
+.toolbar-card,
+.card {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+  overflow: hidden;
+}
+.toolbar-card { padding: 20px 24px; }
 .filter-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .filter-group { display: flex; align-items: center; gap: 8px; }
 .filter-label { font-size: 13px; font-weight: 500; color: #666; white-space: nowrap; }
 .sort-hint { font-size: 12px; color: #aaa; white-space: nowrap; }
 
 /* 卡片和表格 */
-.card { background: #ffffff; border-radius: 16px; padding: 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
+.card { padding: 24px; }
+
+/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
+.card :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  --el-table-striped-bg-color: rgba(255, 255, 255, 0.35);
+  background: transparent;
+}
+
+/* 右侧固定「状态」列：sticky 单元格 background:inherit，行透明时滑到它下面的
+   内容会透上来重影。改磨砂不透明暖白，表头/hover 态同步 */
+.card :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
+.card :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
+.card :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
+
 .pagination-bar { margin-top: 16px; display: flex; justify-content: flex-end; }
 .value-gold { color: #d4af6e; font-weight: 600; }
 .value-danger { color: #e74c3c; font-weight: 600; }

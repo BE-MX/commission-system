@@ -1,5 +1,12 @@
 <template>
   <div class="leads-page">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="leads-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <el-row :gutter="16" class="toolbar">
       <el-col :span="6">
         <el-input v-model="filters.keyword" placeholder="搜索姓名 / 电话 / 微信" clearable prefix-icon="Search" @keyup.enter="search" @clear="search" />
@@ -17,7 +24,7 @@
       </el-col>
     </el-row>
 
-    <div class="table-card">
+    <div class="table-card leads-panel">
       <el-table :data="leads" v-loading="loading" border class="list-table" style="width: 100%">
         <el-table-column prop="name" label="姓名" min-width="100" show-overflow-tooltip />
         <el-table-column prop="phone" label="电话" min-width="120" show-overflow-tooltip />
@@ -217,6 +224,41 @@ async function handleDelete(row) {
 </script>
 
 <style scoped>
+/* 极光层（.lg-aurora，与工作台同源）定位上下文 */
+.leads-page { position: relative; }
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台/发票页） */
+.leads-aurora { inset: -24px -28px; }
+
+/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
+   会覆盖就地渲染的 el-drawer/el-dialog 的 .el-overlay position: fixed */
+.leads-page .toolbar,
+.leads-page .leads-panel { position: relative; z-index: 1; }
+
+/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */
+.leads-panel {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+  overflow: hidden;
+}
+
+/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
+.leads-panel :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+}
+
+/* 右侧固定操作列：sticky 单元格 + background: inherit，行透明时会透底重影，
+   改成磨砂不透明的暖白，表头/hover 态同步（同 invoice-manage.css） */
+.leads-panel :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
+.leads-panel :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
+.leads-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
+
 .toolbar { margin-bottom: 16px; }
 .pager { margin-top: 16px; justify-content: flex-end; }
 .muted { color: var(--text-muted); font-size: 12px; }

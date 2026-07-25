@@ -1,5 +1,12 @@
 <template>
   <div class="change-log-page">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="changelog-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <div class="page-header">
       <h2>数据治理 · 变更历史</h2>
     </div>
@@ -9,14 +16,14 @@
       <el-select v-model="filters.action" placeholder="操作类型" clearable style="width: 140px">
         <el-option v-for="a in actionOptions" :key="a.value" :label="a.label" :value="a.value" />
       </el-select>
-      <el-button type="primary" :icon="Search" @click="loadLogs">搜索</el-button>
+      <GlassButton variant="primary" :left-icon="Search" @click="loadLogs">搜索</GlassButton>
     </div>
 
-    <el-timeline>
+    <el-timeline class="log-timeline">
       <el-timeline-item v-for="log in logs" :key="log.id"
         :timestamp="formatDate(log.timestamp)" placement="top"
         :type="actionColor(log.action)">
-        <el-card shadow="hover" class="log-card">
+        <el-card shadow="never" class="log-card lg-card">
           <div class="log-header">
             <el-tag :type="actionTagType(log.action)" size="small">{{ actionLabels[log.action] }}</el-tag>
             <span v-if="log.concept_name_zh" class="log-concept">
@@ -130,6 +137,22 @@ onMounted(() => loadLogs())
 <style scoped>
 .change-log-page {
   padding: 20px;
+  /* 极光层（.lg-aurora，与工作台同源）定位上下文 */
+  position: relative;
+}
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台） */
+.changelog-aurora {
+  inset: -24px -28px;
+}
+
+/* 内容压到极光之上。必须点名内容块，不能用 > :not(.lg-aurora) 通配 */
+.change-log-page .page-header,
+.change-log-page .filter-bar,
+.change-log-page .log-timeline,
+.change-log-page .pagination-wrap {
+  position: relative;
+  z-index: 1;
 }
 
 .page-header {
@@ -148,6 +171,7 @@ onMounted(() => loadLogs())
   margin-bottom: 20px;
 }
 
+/* 玻璃质感由 .lg-card 提供，这里只留布局 */
 .log-card {
   margin-bottom: 0;
 }

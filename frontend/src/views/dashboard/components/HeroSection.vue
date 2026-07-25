@@ -39,21 +39,24 @@ const authStore = useAuthStore()
 </script>
 
 <style scoped>
-/* 深色玻璃 Hero：半透明深底 + blur，让 aurora 光斑隐约透进来 */
+/* 深色玻璃 Hero：右上金色光晕 + 半透明深底 + 实时 blur（全页仅 Hero 与
+   待办提醒保留实时模糊，见 glass.css 头部性能约定），aurora 光斑透进来 */
 .dashboard-hero {
   position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
   overflow: hidden;
-  background: var(--glass-dark-bg);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
-  backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
-  border: 1px solid var(--glass-dark-border);
+  background:
+    radial-gradient(120% 180% at 88% -10%, rgba(245, 203, 92, 0.16) 0%, rgba(245, 203, 92, 0) 55%),
+    linear-gradient(135deg, rgba(22, 19, 16, 0.92) 0%, rgba(34, 29, 24, 0.86) 100%);
+  -webkit-backdrop-filter: blur(var(--dash-glass-blur)) saturate(1.4);
+  backdrop-filter: blur(var(--dash-glass-blur)) saturate(1.4);
+  border: 1px solid var(--dash-glass-dark-border);
   border-radius: 16px;
   padding: 36px 40px;
   min-height: 140px;
-  box-shadow: var(--glass-shadow);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--dash-glass-shadow);
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .dashboard-hero {

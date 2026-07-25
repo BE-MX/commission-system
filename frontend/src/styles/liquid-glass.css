@@ -1,0 +1,102 @@
+/* ===================================================
+   Liquid Glass 共享基元（工作台首发；订单发票管理等页面复用）
+   .lg-aurora  极光 backdrop：三色 wash + 斜向光带，全静态
+   .lg-card    渐变玻璃卡：0.78→0.5 白磨砂 + 亮白描边 + 暖金彩色阴影
+   颜色一律引用 tokens.css 的 --dash-glass-* / --dash-aurora-*
+   （--dash- 前缀是历史命名，令牌本身已跨页面共享）。
+
+   性能约定（2026-07-25 滚动卡顿的教训）：
+   - backdrop 保持静态，禁止给光斑加无限位移动画——动态 backdrop 会让
+     与之重叠的 backdrop-filter 表面每帧重采样，合成器持续满负载；
+   - .lg-card 不用 backdrop-filter：整页 20+ 张卡滚动时逐帧重采样会卡，
+     极光本身柔和，视觉上无需实时模糊。实时 blur 只留给 Hero/提醒条等
+     少数浮层。
+   =================================================== */
+
+/* ── 极光 backdrop ── */
+.lg-aurora {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+  background: linear-gradient(155deg, var(--dash-wash-from) 0%, var(--dash-wash-mid) 52%, var(--dash-wash-to) 100%);
+}
+
+/* 斜向光带（材质配方抄自「方案B-赛事直播频道-v2」大屏：两条 115deg 高光带）。
+   第一层是底缘淡出：内容不满一屏时，极光层在内容底部结束，
+   用它把 wash/光斑柔和地融进 --page-bg，避免出现硬接缝 */
+.lg-aurora::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, transparent calc(100% - 260px), var(--page-bg) 100%),
+    linear-gradient(115deg, transparent 58%, rgba(255, 255, 255, 0.55) 62%, rgba(255, 255, 255, 0.18) 72%, transparent 78%),
+    linear-gradient(115deg, transparent 76%, rgba(245, 203, 92, 0.30) 80%, rgba(245, 203, 92, 0.10) 88%, transparent 92%);
+}
+
+.lg-aurora__blob {
+  position: absolute;
+  border-radius: 50%;
+}
+.lg-aurora__blob--gold {
+  width: 640px;
+  height: 640px;
+  top: -180px;
+  right: -120px;
+  background: radial-gradient(circle, var(--dash-aurora-gold) 0%, rgba(245, 203, 92, 0) 68%);
+}
+.lg-aurora__blob--amber {
+  width: 560px;
+  height: 560px;
+  top: 340px;
+  left: -200px;
+  background: radial-gradient(circle, var(--dash-aurora-amber) 0%, rgba(224, 158, 44, 0) 68%);
+}
+.lg-aurora__blob--peach {
+  width: 600px;
+  height: 600px;
+  bottom: -160px;
+  right: 12%;
+  background: radial-gradient(circle, var(--dash-aurora-peach) 0%, rgba(242, 165, 110, 0) 68%);
+}
+
+/* ── 渐变玻璃卡 ── */
+.lg-card {
+  background: var(--dash-glass-bg);
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+  /* 只 transition 具体属性，不用 all（Emil） */
+  transition:
+    transform 200ms var(--ease-out-strong),
+    box-shadow 200ms var(--ease-out-strong),
+    border-color 200ms var(--ease-out-strong),
+    opacity 200ms var(--ease-out-strong);
+}
+
+/* hover 上浮：仅精确指针设备（触屏 tap 会误触发 hover） */
+@media (hover: hover) and (pointer: fine) {
+  .lg-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--dash-glass-shadow-hover), var(--dash-glass-highlight);
+    border-color: rgba(255, 255, 255, 0.95);
+  }
+  /* 非交互面板 hover 不位移，只加深阴影 */
+  .lg-card.is-static:hover {
+    transform: none;
+  }
+}
+
+/* 可点卡片按压反馈（Emil：按钮必须回应按压） */
+.lg-card:not(.is-static):active {
+  transform: scale(0.98);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lg-card:hover,
+  .lg-card:active {
+    transform: none;
+  }
+}

@@ -1,13 +1,18 @@
 <template>
   <div class="process-route-manage">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="route-manage-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <div class="split-layout">
       <!-- 左侧：路线列表 -->
       <div class="route-list-panel">
         <div class="panel-header">
           <span class="panel-title">工序路线</span>
-          <el-button v-permission="'production:admin'" type="primary" size="small" @click="openRouteForm()">
-            <el-icon><Plus /></el-icon> 新建
-          </el-button>
+          <GlassButton v-permission="'production:admin'" variant="primary" size="sm" :left-icon="Plus" @click="openRouteForm()">新建</GlassButton>
         </div>
         <div class="route-list" v-loading="routeLoading">
           <div
@@ -36,8 +41,8 @@
           <div class="panel-header">
             <span class="panel-title">{{ selectedRoute.name }}</span>
             <div>
-              <el-button v-permission="'production:admin'" size="small" @click="addStep">添加工序</el-button>
-              <el-button v-permission="'production:admin'" type="primary" size="small" :loading="savingSteps" @click="saveSteps">保存顺序</el-button>
+              <GlassButton v-permission="'production:admin'" variant="secondary" size="sm" @click="addStep">添加工序</GlassButton>
+              <GlassButton v-permission="'production:admin'" variant="primary" size="sm" :loading="savingSteps" @click="saveSteps">保存顺序</GlassButton>
             </div>
           </div>
           <div class="step-list">
@@ -239,10 +244,29 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.process-route-manage { padding: 20px; height: calc(100vh - 120px); }
+.process-route-manage { padding: 20px; height: calc(100vh - 120px); position: relative; }
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台） */
+.route-manage-aurora { inset: -24px -28px; }
+
+/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
+   el-dialog 默认就地渲染（append-to-body=false），通配会覆盖
+   .el-overlay 的 position: fixed，弹窗打开后看不见 */
+.process-route-manage .split-layout { position: relative; z-index: 1; }
+
 .split-layout { display: flex; gap: 16px; height: 100%; }
-.route-list-panel { width: 320px; flex-shrink: 0; border: 1px solid #ebeef5; border-radius: 4px; display: flex; flex-direction: column; }
-.route-detail-panel { flex: 1; border: 1px solid #ebeef5; border-radius: 4px; display: flex; flex-direction: column; }
+
+/* 左右面板：同款渐变玻璃 */
+.route-list-panel,
+.route-detail-panel {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+  overflow: hidden;
+}
+.route-list-panel { width: 320px; flex-shrink: 0; display: flex; flex-direction: column; }
+.route-detail-panel { flex: 1; display: flex; flex-direction: column; }
 .panel-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid #ebeef5; }
 .panel-title { font-weight: 600; font-size: 15px; }
 .route-list { flex: 1; overflow-y: auto; padding: 8px; }

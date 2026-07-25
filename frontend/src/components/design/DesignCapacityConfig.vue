@@ -1,7 +1,7 @@
 <template>
   <div class="capacity-config" v-loading="loading">
     <!-- Global default capacity -->
-    <el-card shadow="never" class="config-card">
+    <el-card shadow="never" class="config-card lg-card">
       <template #header>
         <div class="card-header">
           <span>全局默认容量</span>
@@ -24,7 +24,7 @@
     </el-card>
 
     <!-- Scheduling mode -->
-    <el-card shadow="never" class="config-card">
+    <el-card shadow="never" class="config-card lg-card">
       <template #header>
         <div class="card-header">
           <span>排期模式</span>
@@ -49,7 +49,7 @@
     </el-card>
 
     <!-- Specific date capacity overrides -->
-    <el-card shadow="never" class="config-card">
+    <el-card shadow="never" class="config-card lg-card">
       <template #header>
         <div class="card-header">
           <span>特定日期容量</span>
@@ -270,8 +270,28 @@ onMounted(fetchAll)
   max-width: 800px;
 }
 
+/* 玻璃质感覆盖 el-card 白底（Element 样式后于 liquid-glass.css 加载，且
+   shadow="never" 的 is-never-shadow 优先级更高，必须在 scoped 里重写
+   底/描边/圆角/阴影；hover 上浮与过渡由 lg-card 提供） */
 .config-card {
   margin-bottom: 16px;
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+}
+
+/* 表格融进玻璃：行/表头半透明，透出极光；stripe 行保持半透明白 */
+.config-card :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+}
+
+.config-card :deep(.el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell) {
+  background: rgba(255, 255, 255, 0.35);
 }
 
 .card-header {

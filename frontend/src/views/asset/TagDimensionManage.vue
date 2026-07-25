@@ -1,15 +1,19 @@
 <template>
   <div class="tag-dimension-page">
+    <!-- 金色极光背景（纯装饰；与工作台/发票页同源 styles/liquid-glass.css） -->
+    <div class="tag-dimension-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <!-- 顶部工具栏 -->
     <div class="toolbar">
       <h2 class="page-title">
         <el-icon><CollectionTag /></el-icon>
         标签维度管理
       </h2>
-      <el-button type="primary" @click="showCreateDim = true">
-        <el-icon><Plus /></el-icon>
-        新建维度
-      </el-button>
+      <GlassButton variant="primary" :left-icon="Plus" @click="showCreateDim = true">新建维度</GlassButton>
     </div>
 
     <!-- 维度列表 -->
@@ -143,10 +147,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showDimDialog = false">取消</el-button>
-        <el-button type="primary" :loading="dimSubmitting" @click="submitDim">
-          确认
-        </el-button>
+        <GlassButton variant="ghost" @click="showDimDialog = false">取消</GlassButton>
+        <GlassButton variant="primary" :loading="dimSubmitting" @click="submitDim">确认</GlassButton>
       </template>
     </el-dialog>
 
@@ -198,10 +200,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showValueDialog = false">取消</el-button>
-        <el-button type="primary" :loading="valueSubmitting" @click="submitValue">
-          确认
-        </el-button>
+        <GlassButton variant="ghost" @click="showValueDialog = false">取消</GlassButton>
+        <GlassButton variant="primary" :loading="valueSubmitting" @click="submitValue">确认</GlassButton>
       </template>
     </el-dialog>
   </div>
@@ -481,6 +481,23 @@ onMounted(() => {
 <style scoped>
 .tag-dimension-page {
   padding: 20px 28px;
+  /* 极光层（.lg-aurora，与工作台同源）定位上下文 */
+  position: relative;
+}
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环 */
+.tag-dimension-aurora {
+  inset: -24px -28px;
+}
+
+/* 内容压到极光之上（点名内容块，不能用 > :not(.lg-aurora) 通配——
+   会压掉就地渲染的 el-dialog .el-overlay 的 position: fixed） */
+.tag-dimension-page .toolbar,
+.tag-dimension-page .loading-wrap,
+.tag-dimension-page .empty-wrap,
+.tag-dimension-page .dimension-list {
+  position: relative;
+  z-index: 1;
 }
 
 .toolbar {
@@ -512,13 +529,16 @@ onMounted(() => {
   gap: 16px;
 }
 
+/* 维度卡片：同款渐变玻璃（覆盖原白底卡片） */
 .dimension-card {
-  background: #fff;
-  border-radius: 12px;
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
   padding: 20px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
 }
 
+/* 系统内置维度保留金色左缘标识（优先级高于上面的整圈玻璃描边，只改左边） */
 .dimension-card.is-system {
   border-left: 4px solid #d4941c;
 }

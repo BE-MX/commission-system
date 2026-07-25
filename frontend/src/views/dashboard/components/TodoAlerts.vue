@@ -79,12 +79,12 @@ const authStore = useAuthStore()
   justify-content: space-between;
   gap: 12px;
   padding: 14px 18px;
-  border-radius: 10px;
+  border-radius: 14px;
   cursor: pointer;
-  -webkit-backdrop-filter: blur(var(--glass-blur));
-  backdrop-filter: blur(var(--glass-blur));
-  border: 1px solid var(--glass-border);
-  box-shadow: var(--glass-highlight);
+  -webkit-backdrop-filter: blur(var(--dash-glass-blur));
+  backdrop-filter: blur(var(--dash-glass-blur));
+  border: 1px solid var(--dash-glass-border);
+  box-shadow: var(--dash-glass-highlight);
   transition: transform 200ms var(--ease-out-strong), box-shadow 200ms var(--ease-out-strong);
 }
 .todo-alert:active {
@@ -93,7 +93,7 @@ const authStore = useAuthStore()
 @media (hover: hover) and (pointer: fine) {
   .todo-alert:hover {
     transform: translateY(-1px);
-    box-shadow: var(--glass-highlight), var(--glass-shadow-hover);
+    box-shadow: var(--dash-glass-highlight), var(--dash-glass-shadow-hover);
   }
 }
 @media (prefers-reduced-motion: reduce) {

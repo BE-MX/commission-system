@@ -1,14 +1,21 @@
 <template>
   <div class="page-wrapper">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="insight-library-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <div class="page-header">
       <h1>情报采集库</h1>
       <div class="header-actions">
-        <el-button type="primary" @click="showSourceDialog = true" v-if="authStore.hasPermission('insight:admin')">
-          <el-icon><Plus /></el-icon> 添加信源
-        </el-button>
-        <el-button @click="showUploadDialog = true" v-if="authStore.hasPermission('insight:admin')">
-          <el-icon><Upload /></el-icon> 上传 MD
-        </el-button>
+        <GlassButton variant="primary" :left-icon="Plus" @click="showSourceDialog = true" v-if="authStore.hasPermission('insight:admin')">
+          添加信源
+        </GlassButton>
+        <GlassButton variant="secondary" :left-icon="Upload" @click="showUploadDialog = true" v-if="authStore.hasPermission('insight:admin')">
+          上传 MD
+        </GlassButton>
       </div>
     </div>
 
@@ -322,6 +329,23 @@ onMounted(loadItems)
 <style scoped>
 .page-wrapper {
   padding: 24px;
+  /* 极光层（.lg-aurora，与工作台同源）定位上下文 */
+  position: relative;
+}
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台/发票页） */
+.insight-library-aurora {
+  inset: -24px -28px;
+}
+
+/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
+   会覆盖就地渲染的 el-dialog 的 .el-overlay position: fixed。
+   .batch-bar 本身是 position: fixed + z-index:100，天然在极光之上，不列入 */
+.page-wrapper .page-header,
+.page-wrapper .filter-card,
+.page-wrapper .list-card {
+  position: relative;
+  z-index: 1;
 }
 .page-header {
   display: flex;
@@ -338,11 +362,42 @@ onMounted(loadItems)
   display: flex;
   gap: 8px;
 }
+/* 筛选/列表面板：同款渐变玻璃（scoped 覆盖 el-card 白底） */
 .filter-card {
   margin-bottom: 16px;
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
 }
 .list-card {
   margin-bottom: 16px;
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+  overflow: hidden;
+}
+
+/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
+.list-card :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+}
+
+/* 右侧固定操作列：sticky 单元格 + background: inherit，行透明时会透底重影，
+   改成磨砂不透明的暖白，表头/hover 态同步（同 invoice-manage.css） */
+.list-card :deep(.el-table-fixed-column--right) {
+  background-color: rgba(249, 244, 234, 0.97);
+}
+.list-card :deep(th.el-table-fixed-column--right) {
+  background-color: rgba(246, 239, 226, 0.98);
+}
+.list-card :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) {
+  background-color: rgba(245, 236, 220, 0.98);
 }
 .item-title {
   display: flex;

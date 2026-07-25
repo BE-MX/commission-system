@@ -1,5 +1,10 @@
 <template>
   <div class="sources-page">
+    <div class="sources-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
     <div class="page-header">
       <div>
         <h2>信源配置管理</h2>
@@ -11,7 +16,8 @@
       </div>
     </div>
 
-    <el-table :data="sources" v-loading="loading" border class="source-table" style="width: 100%">
+    <div class="sources-panel">
+      <el-table :data="sources" v-loading="loading" border class="source-table" style="width: 100%">
       <el-table-column prop="id" label="ID" width="60" sortable />
       <el-table-column prop="sort_order" label="排序" width="80" sortable />
       <el-table-column prop="name" label="名称" min-width="160" show-overflow-tooltip sortable />
@@ -55,7 +61,8 @@
           <GlassButton variant="link" link-tone="danger" left-icon="Delete" @click="disable(row)">禁用</GlassButton>
         </template>
       </el-table-column>
-    </el-table>
+      </el-table>
+    </div>
 
     <!-- 新增/编辑 -->
     <el-dialog v-model="dialogVisible" :title="isEdit ? '编辑信源' : '新增信源'" width="600px" :close-on-click-modal="false">
@@ -305,7 +312,17 @@ onMounted(refresh)
 </script>
 
 <style scoped>
-.sources-page { padding: 0; }
+.sources-page { padding: 0; position: relative; }
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环 */
+.sources-aurora { inset: -24px -28px; }
+
+/* 内容压到极光之上（点名内容块，不用通配，避免压住 el-dialog 的 .el-overlay） */
+.sources-page .page-header,
+.sources-page .sources-panel {
+  position: relative;
+  z-index: 1;
+}
 
 .page-header {
   display: flex;
@@ -330,10 +347,33 @@ onMounted(refresh)
 
 .header-actions { display: flex; gap: 8px; flex-shrink: 0; }
 
-.source-table {
-  background: #fff;
-  border-radius: 12px;
+/* 表格面板：渐变玻璃（同发票页 .invoice-panel） */
+.sources-panel {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
   overflow: hidden;
+}
+
+/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
+.sources-panel :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+}
+
+/* 右侧固定操作列磨砂不透明（sticky 单元格 + background: inherit，行透明时会重影） */
+.sources-panel :deep(.el-table-fixed-column--right) {
+  background-color: rgba(249, 244, 234, 0.97);
+}
+.sources-panel :deep(th.el-table-fixed-column--right) {
+  background-color: rgba(246, 239, 226, 0.98);
+}
+.sources-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) {
+  background-color: rgba(245, 236, 220, 0.98);
 }
 
 .health.ok { color: #16a34a; font-size: 12px; }

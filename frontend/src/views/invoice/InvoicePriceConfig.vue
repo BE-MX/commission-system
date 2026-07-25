@@ -1,5 +1,12 @@
 <template>
   <div class="price-config-page">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="price-config-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <div class="page-header">
       <div>
         <h2>价格与产品配置</h2>
@@ -16,15 +23,9 @@
             <el-select v-model="stdFilter" clearable filterable placeholder="按系列筛选" style="width: 320px" @change="loadStdPrices">
               <el-option v-for="s in stdSeriesOptions" :key="s" :label="s" :value="s" />
             </el-select>
-            <el-button v-permission="'invoice:admin'" type="primary" @click="openStdDialog()">
-              <el-icon><Plus /></el-icon>
-              新增价格
-            </el-button>
+            <GlassButton v-permission="'invoice:admin'" variant="primary" :left-icon="Plus" @click="openStdDialog()">新增价格</GlassButton>
             <el-upload v-permission="'invoice:admin'" :show-file-list="false" accept=".xlsx" :http-request="handleImport">
-              <el-button>
-                <el-icon><Upload /></el-icon>
-                导入价格表 Excel
-              </el-button>
+              <GlassButton variant="secondary" :left-icon="Upload">导入价格表 Excel</GlassButton>
             </el-upload>
           </div>
           <el-table v-loading="stdLoading" :data="stdPrices" border class="list-table">
@@ -63,10 +64,7 @@
         <el-tab-pane label="色型映射" name="colors">
           <div class="tab-toolbar">
             <span class="hint">未登记的色号会按命名规则自动推断色型，推断不了则该行显示"无标准价"。</span>
-            <el-button v-permission="'invoice:admin'" type="primary" @click="colorDialog.visible = true">
-              <el-icon><Plus /></el-icon>
-              新增映射
-            </el-button>
+            <GlassButton v-permission="'invoice:admin'" variant="primary" :left-icon="Plus" @click="colorDialog.visible = true">新增映射</GlassButton>
           </div>
           <el-table v-loading="colorLoading" :data="colorTypes" border class="list-table">
             <el-table-column prop="color_code" label="色号" min-width="160" />
@@ -89,14 +87,8 @@
         <el-tab-pane label="客户价格规则" name="rules">
           <div class="tab-toolbar">
             <el-input v-model="ruleKeyword" clearable placeholder="搜索客户" style="width: 240px" @keyup.enter="loadRules" />
-            <el-button @click="loadRules">
-              <el-icon><Search /></el-icon>
-              筛选
-            </el-button>
-            <el-button v-permission="'invoice:admin'" type="primary" @click="openRuleDialog()">
-              <el-icon><Plus /></el-icon>
-              新增规则
-            </el-button>
+            <GlassButton variant="secondary" :left-icon="Search" @click="loadRules">筛选</GlassButton>
+            <GlassButton v-permission="'invoice:admin'" variant="primary" :left-icon="Plus" @click="openRuleDialog()">新增规则</GlassButton>
           </div>
           <el-table v-loading="ruleLoading" :data="rules" border class="list-table">
             <el-table-column prop="customer_name" label="客户" min-width="220" show-overflow-tooltip />
@@ -130,14 +122,8 @@
         <el-tab-pane label="生产单沉淀产品" name="custom">
           <div class="tab-toolbar">
             <el-input v-model="customKeyword" clearable placeholder="搜索产品名/型号" style="width: 260px" @keyup.enter="loadCustom" />
-            <el-button @click="loadCustom">
-              <el-icon><Search /></el-icon>
-              筛选
-            </el-button>
-            <el-button v-permission="'invoice:admin'" @click="runReconcile">
-              <el-icon><Refresh /></el-icon>
-              与 OKKI 产品库对账回填
-            </el-button>
+            <GlassButton variant="secondary" :left-icon="Search" @click="loadCustom">筛选</GlassButton>
+            <GlassButton v-permission="'invoice:admin'" variant="secondary" :left-icon="Refresh" @click="runReconcile">与 OKKI 产品库对账回填</GlassButton>
           </div>
           <el-table v-loading="customLoading" :data="customProducts" border class="list-table">
             <el-table-column prop="product_name" label="产品名" min-width="300" show-overflow-tooltip />

@@ -1,5 +1,10 @@
 <template>
   <div class="insight-page report-page">
+    <div class="report-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
     <div class="insight-body">
       <aside class="report-tree">
         <div class="tree-header">
@@ -158,6 +163,17 @@ onMounted(refreshAll)
   flex-direction: column;
   height: calc(100vh - 130px);
   min-height: 540px;
+  /* 极光层（.lg-aurora，与工作台/发票页同源）定位上下文 */
+  position: relative;
+}
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环 */
+.report-aurora { inset: -24px -28px; }
+
+/* 内容压到极光之上（点名内容块，不用 > :not 通配，避免压住弹层） */
+.insight-page .insight-body {
+  position: relative;
+  z-index: 1;
 }
 
 .insight-body {
@@ -169,9 +185,11 @@ onMounted(refreshAll)
 
 .report-tree {
   width: 280px;
-  background: #fff;
-  border: 1px solid var(--border-color, #e5dfd6);
-  border-radius: 12px;
+  /* 玻璃面板：渐变磨砂 + 暖金彩色阴影（同发票页 .invoice-panel） */
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -284,9 +302,11 @@ onMounted(refreshAll)
 
 .report-content {
   flex: 1;
-  background: #fff;
-  border: 1px solid var(--border-color, #e5dfd6);
-  border-radius: 12px;
+  /* 玻璃面板：渐变磨砂 + 暖金彩色阴影 */
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
   overflow: hidden;
   position: relative;
 }

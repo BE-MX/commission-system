@@ -1,8 +1,13 @@
 <template>
   <div class="customer-opportunity">
+    <div class="opportunity-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
     <!-- 顶部统计 -->
     <div class="co-stats">
-      <div class="co-stat red clickable" @click="filters.status='pending'; applyFilters()">
+      <div class="co-stat red clickable lg-card" @click="filters.status='pending'; applyFilters()">
         <div class="stat-icon"><el-icon><AlarmClock /></el-icon></div>
         <div>
           <div class="stat-label">今天还要跟进</div>
@@ -10,7 +15,7 @@
           <div class="stat-hint danger-hint">↑ 先处理超时的</div>
         </div>
       </div>
-      <div class="co-stat gold clickable" @click="filters.priority_level='A'; applyFilters()">
+      <div class="co-stat gold clickable lg-card" @click="filters.priority_level='A'; applyFilters()">
         <div class="stat-icon"><el-icon><Medal /></el-icon></div>
         <div>
           <div class="stat-label">高价值客户等你回复</div>
@@ -18,7 +23,7 @@
           <div class="stat-hint gold-hint">点击查看 →</div>
         </div>
       </div>
-      <div class="co-stat orange clickable" @click="filters.status='pending'; applyFilters()">
+      <div class="co-stat orange clickable lg-card" @click="filters.status='pending'; applyFilters()">
         <div class="stat-icon"><el-icon><Timer /></el-icon></div>
         <div>
           <div class="stat-label">已超过最佳回复窗口</div>
@@ -26,7 +31,7 @@
           <div class="stat-hint orange-hint">点击快速处理 →</div>
         </div>
       </div>
-      <div class="co-stat green">
+      <div class="co-stat green lg-card is-static">
         <div class="stat-icon"><el-icon><Phone /></el-icon></div>
         <div>
           <div class="stat-label">今天你已处理</div>
@@ -254,7 +259,7 @@
           <!-- 底部操作栏 -->
           <div class="detail-actions">
             <div class="detail-actions-primary">
-              <el-button type="warning" size="default" @click="changeStatusAndNext('contacted')">✓ 标记已联系，处理下一条</el-button>
+              <GlassButton variant="warning" full-width @click="changeStatusAndNext('contacted')">✓ 标记已联系，处理下一条</GlassButton>
             </div>
             <div class="detail-actions-secondary">
               <el-button size="small" @click="changeStatus('replied')">有回复</el-button>
@@ -384,17 +389,26 @@ async function copyText(text) {
 </script>
 
 <style scoped>
-.customer-opportunity { padding: 24px 28px; display: flex; flex-direction: column; gap: 16px; height: 100%; }
+.customer-opportunity { padding: 24px 28px; display: flex; flex-direction: column; gap: 16px; height: 100%; position: relative; }
+
+/* 极光外溢一圈，盖住页面自身 padding 环（同发票页） */
+.opportunity-aurora { inset: -24px -28px; }
+
+/* 内容压到极光之上（点名内容块，不用通配） */
+.customer-opportunity .co-stats,
+.customer-opportunity .co-toolbar,
+.customer-opportunity .co-workspace {
+  position: relative;
+  z-index: 1;
+}
 
 /* 统计卡 */
 .co-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+/* 玻璃质感由 .lg-card 提供（渐变磨砂 + 暖金彩色阴影 + hover 上浮），这里只留布局 */
 .co-stat {
-  background: var(--card-bg); border: 1px solid var(--border-color);
-  border-radius: var(--card-radius); padding: 14px 16px; display: flex; align-items: center; gap: 12px;
-  box-shadow: var(--card-shadow);
+  padding: 14px 16px; display: flex; align-items: center; gap: 12px;
 }
-.co-stat.clickable { cursor: pointer; transition: box-shadow .16s, transform .16s; }
-.co-stat.clickable:hover { box-shadow: 0 4px 12px rgba(0,0,0,.08); transform: translateY(-1px); }
+.co-stat.clickable { cursor: pointer; }
 .stat-icon { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0; }
 .stat-icon .el-icon { font-size: 18px; }
 .co-stat.red .stat-icon { color: var(--el-color-danger); background: rgba(245,108,108,.08); }
@@ -419,8 +433,10 @@ async function copyText(text) {
 
 /* 左: 筛选 */
 .co-filter-panel {
-  background: var(--card-bg); border: 1px solid var(--border-color);
-  border-radius: var(--card-radius); padding: 10px; overflow: auto;
+  /* 玻璃面板：渐变磨砂 + 暖金彩色阴影 */
+  border: 1px solid var(--dash-glass-border); border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg); box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+  padding: 10px; overflow: auto;
 }
 .panel-header { font-weight: 700; font-size: 13px; padding: 6px 4px; color: var(--text-secondary); border-bottom: 1px solid var(--border-color); margin-bottom: 6px; }
 .filter-group { display: flex; flex-direction: column; gap: 2px; }
@@ -434,9 +450,19 @@ async function copyText(text) {
 
 /* 中: 队列 */
 .co-queue-panel {
-  background: var(--card-bg); border: 1px solid var(--border-color);
-  border-radius: var(--card-radius); padding: 12px; overflow: auto; display: flex; flex-direction: column;
-  box-shadow: var(--card-shadow);
+  /* 玻璃面板：渐变磨砂 + 暖金彩色阴影 */
+  border: 1px solid var(--dash-glass-border); border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg); box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+  padding: 12px; overflow: auto; display: flex; flex-direction: column;
+}
+
+/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
+.co-queue-panel :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
 }
 .customer-name { font-weight: 700; font-size: 13px; color: var(--text-primary); }
 .customer-meta { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
@@ -459,9 +485,10 @@ async function copyText(text) {
 
 /* 右: 详情 */
 .co-detail-panel {
-  background: var(--card-bg); border: 1px solid var(--border-color);
-  border-radius: var(--card-radius); display: flex; flex-direction: column; min-height: 0; overflow: hidden;
-  box-shadow: var(--card-shadow);
+  /* 玻璃面板：渐变磨砂 + 暖金彩色阴影 */
+  border: 1px solid var(--dash-glass-border); border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg); box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+  display: flex; flex-direction: column; min-height: 0; overflow: hidden;
 }
 .detail-header { padding: 15px 16px; border-bottom: 1px solid var(--border-color); }
 .detail-header h3 { margin: 0; font-size: 17px; font-family: var(--font-display); line-height: 1.3; color: var(--text-primary); }
@@ -539,7 +566,7 @@ async function copyText(text) {
   display: flex; flex-direction: column; gap: 8px;
   padding: 12px 14px; border-top: 1px solid var(--border-color);
 }
-.detail-actions-primary .el-button { width: 100%; height: 38px; font-size: 14px; }
+.detail-actions-primary .glass-button { height: 38px; font-size: 14px; }
 .detail-actions-secondary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .detail-actions-secondary .el-button { justify-content: center; }
 .detail-actions-edge { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }

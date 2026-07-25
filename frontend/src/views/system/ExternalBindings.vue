@@ -1,5 +1,12 @@
 <template>
   <div class="external-bindings">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="bindings-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <div class="page-header">
       <h2>外部账号绑定候选</h2>
       <p>系统自动发现的未绑定外部账号，管理员可在此快速绑定到方舟用户。</p>
@@ -16,7 +23,7 @@
       <GlassButton v-permission="'external_binding:write'" variant="ghost" left-icon="Connection" :loading="syncingOkki" @click="handleSyncOkki">同步 OKKI 用户</GlassButton>
     </div>
 
-    <div class="table-card">
+    <div class="table-card bindings-panel">
       <el-table :data="candidates" v-loading="loading" border class="list-table" style="width: 100%">
         <el-table-column label="平台" min-width="120" max-width="180">
           <template #default="{ row }">{{ providerLabel(row.provider) }}</template>
@@ -173,10 +180,57 @@ onMounted(() => loadCandidates())
 </script>
 
 <style scoped>
-.external-bindings { padding: 24px 28px; }
+/* 极光层（.lg-aurora，与工作台同源）定位上下文 */
+.external-bindings {
+  padding: 24px 28px;
+  position: relative;
+}
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台） */
+.bindings-aurora {
+  inset: -24px -28px;
+}
+
+/* 内容压到极光之上。必须点名内容块，不能用 > :not(.lg-aurora)——
+   el-dialog 默认就地渲染，通配会覆盖 .el-overlay 的 position: fixed */
+.external-bindings .page-header,
+.external-bindings .co-toolbar,
+.external-bindings .bindings-panel {
+  position: relative;
+  z-index: 1;
+}
+
 .page-header { margin-bottom: 16px; }
 .page-header h2 { margin: 0; font-size: 20px; font-family: var(--font-display); color: var(--text-primary); }
 .page-header p { margin: 4px 0 0; color: var(--text-muted); font-size: 13px; }
 .co-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
 .text-muted { color: var(--text-muted); }
+
+/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */
+.bindings-panel {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+}
+
+/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
+.bindings-panel :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+}
+
+/* 右侧固定操作列：磨砂但不透明的暖白，表头/hover 态同步 */
+.bindings-panel :deep(.el-table-fixed-column--right) {
+  background-color: rgba(249, 244, 234, 0.97);
+}
+.bindings-panel :deep(th.el-table-fixed-column--right) {
+  background-color: rgba(246, 239, 226, 0.98);
+}
+.bindings-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) {
+  background-color: rgba(245, 236, 220, 0.98);
+}
 </style>

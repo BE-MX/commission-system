@@ -1,5 +1,12 @@
 <template>
-  <div>
+  <div class="payment-sync-page">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="payment-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <!-- 同步操作区 -->
     <div class="sync-action-card">
       <div class="sync-action-left">
@@ -28,7 +35,7 @@
     </div>
 
     <!-- 同步结果卡片 -->
-    <el-card v-if="syncResult" shadow="never" style="margin-bottom:16px">
+    <el-card v-if="syncResult" shadow="never" class="sync-result-card" style="margin-bottom:16px">
       <el-row :gutter="20">
         <el-col :span="4">
           <el-statistic title="回款总数" :value="syncResult.total_payments" />
@@ -64,7 +71,7 @@
     </el-card>
 
     <!-- 已同步回款列表 -->
-    <el-card shadow="never">
+    <el-card shadow="never" class="payment-panel">
       <template #header>
         <el-row :gutter="16" align="middle">
           <el-col :span="6">
@@ -194,19 +201,50 @@ async function fetchPayments() {
 </script>
 
 <style scoped>
+.payment-sync-page { position: relative; }
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台/发票页） */
+.payment-aurora { inset: -24px -28px; }
+/* 内容压到极光之上（点名内容块，不用 > :not(.lg-aurora) 通配，避免误伤弹层定位）。
+   .sync-action-card 本身是 sticky + z-index: 3，已在极光之上，不列入 */
+.payment-sync-page .sync-result-card,
+.payment-sync-page .payment-panel { position: relative; z-index: 1; }
 .sync-action-card {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: #fff;
-  border-radius: var(--card-radius);
+  /* 吸顶操作条：玻璃底用更实的 --dash-glass-bg-strong，滚动时下方内容透出也不干扰阅读 */
+  background: var(--dash-glass-bg-strong);
+  border-radius: var(--dash-card-radius);
   padding: 20px 24px;
   margin-bottom: 16px;
-  box-shadow: var(--card-shadow);
-  border: 1px solid var(--border-color);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+  border: 1px solid var(--dash-glass-border);
   position: sticky;
   top: 0;
   z-index: 3;
+}
+/* 同步结果卡 / 列表面板：同款渐变玻璃（scoped 覆盖 el-card 白底） */
+.sync-result-card,
+.payment-panel {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+}
+/* 面板内嵌的 .table-card 只是结构容器，去掉全局白底，避免玻璃里再套白卡 */
+.payment-panel .table-card {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白（本表无固定列） */
+.payment-panel :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
 }
 .sync-action-left {
   display: flex;

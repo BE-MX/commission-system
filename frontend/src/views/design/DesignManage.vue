@@ -1,5 +1,12 @@
 <template>
-  <div>
+  <div class="design-manage-page">
+    <!-- 金色极光背景（纯装饰；与工作台/发票页同源 styles/liquid-glass.css） -->
+    <div class="design-manage-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <el-tabs v-model="activeTab" @tab-change="onTabChange">
       <!-- Tab 1: 待确认任务 -->
       <el-tab-pane label="待确认任务" name="pending">
@@ -15,7 +22,7 @@
           </el-select>
           <el-date-picker v-model="pendingFilters.expectDateRange" type="daterange" start-placeholder="期望开始" end-placeholder="期望结束" value-format="YYYY-MM-DD" style="width: 260px" @change="fetchPending" />
         </div>
-        <div class="table-card">
+        <div class="table-card design-manage-panel">
         <el-table
           ref="pendingTableRef"
           :data="pendingData"
@@ -94,7 +101,7 @@
           </el-select>
           <el-date-picker v-model="scheduledFilters.planDateRange" type="daterange" start-placeholder="排期开始" end-placeholder="排期结束" value-format="YYYY-MM-DD" style="width: 260px" @change="fetchScheduled" />
         </div>
-        <div class="table-card">
+        <div class="table-card design-manage-panel">
         <el-table
           ref="scheduledTableRef"
           :data="scheduledData"
@@ -209,7 +216,7 @@
           </el-select>
           <el-date-picker v-model="completedFilters.planDateRange" type="daterange" start-placeholder="排期开始" end-placeholder="排期结束" value-format="YYYY-MM-DD" style="width: 260px" @change="fetchCompleted" />
         </div>
-        <div class="table-card">
+        <div class="table-card design-manage-panel">
         <el-table
           ref="completedTableRef"
           :data="completedData"
@@ -269,7 +276,7 @@
         <el-row style="margin-bottom: 12px" justify="end">
           <GlassButton variant="primary" left-icon="Plus" @click="openDesignerDialog(null)">新建设计师</GlassButton>
         </el-row>
-        <div class="table-card">
+        <div class="table-card design-manage-panel">
         <el-table
           :data="designerData"
           v-loading="designerLoading"
@@ -579,6 +586,53 @@ const {
 </script>
 
 <style scoped>
+/* 极光层（.lg-aurora）定位上下文 */
+.design-manage-page {
+  position: relative;
+}
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环 */
+.design-manage-aurora {
+  inset: -24px -28px;
+}
+
+/* 内容压到极光之上（点名顶层内容块，不能用 > :not(.lg-aurora) 通配——
+   会压掉就地渲染的 el-dialog/el-drawer .el-overlay 的 position: fixed） */
+.design-manage-page > .el-tabs {
+  position: relative;
+  z-index: 1;
+}
+
+/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */
+.design-manage-panel {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+  overflow: hidden;
+}
+
+/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
+.design-manage-panel :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+}
+
+/* 右侧固定操作列：sticky 单元格 + background: inherit，行透明时会透上来重影，
+   改成磨砂但不透明的暖白，表头/hover 态同步 */
+.design-manage-panel :deep(.el-table-fixed-column--right) {
+  background-color: rgba(249, 244, 234, 0.97);
+}
+.design-manage-panel :deep(th.el-table-fixed-column--right) {
+  background-color: rgba(246, 239, 226, 0.98);
+}
+.design-manage-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) {
+  background-color: rgba(245, 236, 220, 0.98);
+}
+
 .tab-toolbar { margin-bottom: 12px; display: flex; justify-content: flex-end; }
 .filter-bar { margin-bottom: 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .pagination { margin-top: 16px; justify-content: flex-end; }

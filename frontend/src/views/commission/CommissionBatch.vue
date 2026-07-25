@@ -1,5 +1,12 @@
 <template>
-  <div>
+  <div class="commission-batch-page">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="batch-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <!-- 状态Tab + 新建 -->
     <el-row class="toolbar" justify="space-between" align="middle">
       <el-col :span="18">
@@ -18,7 +25,7 @@
     </el-row>
 
     <!-- 表格 -->
-    <div class="table-card">
+    <div class="table-card batch-panel">
     <el-table ref="tableRef" :data="tableData" v-loading="loading" class="list-table" border :max-height="maxHeight" @sort-change="orderSort.onSortChange">
       <el-table-column prop="batch_name" label="批次名称" min-width="140" max-width="210" show-overflow-tooltip sortable="custom" />
       <el-table-column label="周期类型" min-width="90" max-width="140">
@@ -404,6 +411,35 @@ onMounted(fetchList)
 </script>
 
 <style scoped>
+.commission-batch-page { position: relative; }
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台/发票页） */
+.batch-aurora { inset: -24px -28px; }
+/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
+   本页有 3 个就地渲染的 el-dialog，通配会压掉 .el-overlay 的 position: fixed */
+.commission-batch-page .toolbar,
+.commission-batch-page .batch-panel,
+.commission-batch-page .pagination { position: relative; z-index: 1; }
+/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */
+.batch-panel {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+  overflow: hidden;
+}
+/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
+.batch-panel :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+}
+/* 右侧固定操作列：sticky 单元格 + background: inherit，行透明时会透底重影，
+   改成磨砂不透明的暖白，表头/hover 态同步（同 invoice-manage.css） */
+.batch-panel :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
+.batch-panel :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
+.batch-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
 .toolbar { margin-bottom: 16px; }
 .pagination { margin-top: 16px; justify-content: flex-end; }
 .confirm-progress {

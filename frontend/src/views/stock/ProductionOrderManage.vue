@@ -1,8 +1,15 @@
 <template>
   <div class="production-order-page">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="prod-order-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <!-- 统计卡 -->
     <div class="stats-row">
-      <div class="stat-card submitted">
+      <div class="stat-card lg-card submitted">
         <div class="stat-icon-bg">
           <el-icon :size="28" color="#409eff"><Document /></el-icon>
         </div>
@@ -11,7 +18,7 @@
           <div class="stat-value">{{ statusCount.submitted }}</div>
         </div>
       </div>
-      <div class="stat-card terminated">
+      <div class="stat-card lg-card terminated">
         <div class="stat-icon-bg">
           <el-icon :size="28" color="#909399"><CircleClose /></el-icon>
         </div>
@@ -20,7 +27,7 @@
           <div class="stat-value">{{ statusCount.terminated }}</div>
         </div>
       </div>
-      <div class="stat-card completed">
+      <div class="stat-card lg-card completed">
         <div class="stat-icon-bg">
           <el-icon :size="28" color="#67c23a"><CircleCheck /></el-icon>
         </div>
@@ -42,8 +49,8 @@
             <el-option label="已完成" :value="2" />
           </el-select>
           <el-input v-model="orderFilters.keyword" placeholder="搜索单号/批次号" clearable style="width:200px" @input="handleOrderSearch" />
-          <el-button type="primary" size="small" @click="loadOrderList"><el-icon><Filter /></el-icon> 筛选</el-button>
-          <el-button size="small" @click="resetOrderFilters">重置</el-button>
+          <GlassButton variant="primary" size="sm" :left-icon="Filter" @click="loadOrderList">筛选</GlassButton>
+          <GlassButton variant="secondary" size="sm" @click="resetOrderFilters">重置</GlassButton>
         </div>
         <div class="table-card">
         <el-table :data="orderList" style="width:100%" :header-cell-style="headerStyle" v-loading="orderLoading" border class="list-table" @sort-change="handleOrderSortChange">
@@ -103,8 +110,8 @@
             <el-option label="已完成" :value="2" />
           </el-select>
           <el-input v-model="itemFilters.keyword" placeholder="搜索产品/单号/批次号" clearable style="width:200px" @input="handleItemSearch" />
-          <el-button type="primary" size="small" @click="loadItemList"><el-icon><Filter /></el-icon> 筛选</el-button>
-          <el-button size="small" @click="resetItemFilters">重置</el-button>
+          <GlassButton variant="primary" size="sm" :left-icon="Filter" @click="loadItemList">筛选</GlassButton>
+          <GlassButton variant="secondary" size="sm" @click="resetItemFilters">重置</GlassButton>
         </div>
         <div class="table-card">
         <el-table :data="itemList" style="width:100%" :header-cell-style="headerStyle" v-loading="itemLoading" border class="list-table" @sort-change="handleItemSortChange">
@@ -793,11 +800,24 @@ function printOrderHtml(row) {
 </script>
 
 <style scoped>
-.production-order-page { display: flex; flex-direction: column; gap: 20px; }
+.production-order-page { display: flex; flex-direction: column; gap: 20px; position: relative; }
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台） */
+.prod-order-aurora { inset: -24px -28px; }
+
+/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
+   el-dialog 默认就地渲染（append-to-body=false），通配会覆盖
+   .el-overlay 的 position: fixed，弹窗打开后看不见 */
+.production-order-page .stats-row,
+.production-order-page .order-tabs {
+  position: relative;
+  z-index: 1;
+}
 
 /* 统计卡 */
 .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-.stat-card { background: #ffffff; border-radius: 16px; padding: 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); display: flex; align-items: center; gap: 16px; }
+/* 统计卡：玻璃质感由 .lg-card 提供，这里只留布局 */
+.stat-card { padding: 24px; display: flex; align-items: center; gap: 16px; }
 .stat-icon-bg { width: 56px; height: 56px; border-radius: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .stat-card.submitted .stat-icon-bg { background: linear-gradient(135deg, #e6f2ff, #cce0ff); }
 .stat-card.terminated .stat-icon-bg { background: linear-gradient(135deg, #f0f0f0, #e0e0e0); }
@@ -809,6 +829,29 @@ function printOrderHtml(row) {
 /* 标签页 */
 .order-tabs :deep(.el-tabs__header) { margin-bottom: 16px; }
 .tab-toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+
+/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 白底） */
+.production-order-page .table-card {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+}
+
+/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
+.production-order-page .table-card :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+}
+
+/* 右侧固定操作列：sticky 单元格 background:inherit，行透明时滑到它下面的
+   内容会透上来重影。改磨砂不透明暖白，表头/hover 态同步 */
+.production-order-page .table-card :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
+.production-order-page .table-card :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
+.production-order-page .table-card :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
 
 /* 分页 */
 .pagination-bar { margin-top: 16px; display: flex; justify-content: flex-end; }

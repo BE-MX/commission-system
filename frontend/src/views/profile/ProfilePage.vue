@@ -1,7 +1,14 @@
 <template>
   <div class="profile-page">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="profile-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <!-- 头像 -->
-    <el-card shadow="never" class="profile-card">
+    <el-card shadow="never" class="profile-card lg-card is-static">
       <template #header>
         <div class="card-header">头像</div>
       </template>
@@ -30,7 +37,7 @@
     </el-card>
 
     <!-- 基本信息 -->
-    <el-card shadow="never" class="profile-card">
+    <el-card shadow="never" class="profile-card lg-card is-static">
       <template #header>
         <div class="card-header">基本信息</div>
       </template>
@@ -56,7 +63,7 @@
     </el-card>
 
     <!-- 修改密码 -->
-    <el-card shadow="never" class="profile-card">
+    <el-card shadow="never" class="profile-card lg-card is-static">
       <template #header>
         <div class="card-header">修改密码</div>
       </template>
@@ -201,7 +208,22 @@ onMounted(() => {
 <style scoped>
 .profile-page {
   max-width: 560px;
+  /* 极光层（.lg-aurora，与工作台同源）定位上下文 */
+  position: relative;
 }
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台） */
+.profile-aurora {
+  inset: -24px -28px;
+}
+
+/* 内容压到极光之上。必须点名内容块，不能用 > :not(.lg-aurora) 通配 */
+.profile-page .profile-card {
+  position: relative;
+  z-index: 1;
+}
+
+/* 玻璃质感由 .lg-card 提供（is-static：表单卡不上浮/不按压），这里只留布局 */
 .profile-card {
   margin-bottom: 20px;
 }

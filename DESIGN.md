@@ -97,6 +97,81 @@
 - **Metric card:** 大数字 + 状态圆点 + 操作链接，hover 上浮
 - **Dialog:** 16px 圆角，header 带 bottom border
 
+## Liquid Glass 页面材质体系（2026-07-25 起）
+
+工作台首发的整页材质方案，已推广至订单发票管理及备货/售后/物流/设计预约模块全部列表页。材质配方源自「方案B-赛事直播频道-v2」大屏（渐变玻璃卡 + 彩色环境阴影 + 斜向光带），色调保持品牌暖金。
+
+实现载体：`frontend/src/styles/liquid-glass.css`（main.js 全局引入）+ `tokens.css` 的 `--dash-glass-*` / `--dash-wash-*` / `--dash-aurora-*` / `--dash-card-radius` 令牌（`--dash-` 前缀是历史命名，令牌本身已跨页面共享）。
+
+### 命名红线
+
+禁止新增裸 `--glass-*` 变量或 `.glass-card` 类名：`kimi-design.css`（登录页深色主题）在 `:root` 重定义了 `--glass-bg`/`--glass-border` 且 main.js 后加载，会覆盖同名令牌把卡片染成深灰（2026-07-25 实翻车）。页面级玻璃一律用 `--dash-glass-*` 令牌 + `.lg-*` 类。
+
+### 极光 backdrop（.lg-aurora）
+
+页面根容器 `position: relative`，第一个子元素放：
+
+```html
+<div class="xxx-aurora lg-aurora" aria-hidden="true">
+  <div class="lg-aurora__blob lg-aurora__blob--gold" />
+  <div class="lg-aurora__blob lg-aurora__blob--amber" />
+  <div class="lg-aurora__blob lg-aurora__blob--peach" />
+</div>
+```
+
+- **底色 wash**：`linear-gradient(155deg, #fdf8ec 0%, #f8f3ea 52%, #f9efe7 100%)`（暖米白→暖桃）
+- **三色 wash 光斑（全部静态）**：金 `rgba(245,203,92,.55)` 右上 640px / 琥珀 `rgba(230,160,60,.45)` 左中 560px / 蜜桃 `rgba(242,165,110,.38)` 右下 600px，径向渐变 68% 处衰减至透明
+- **斜向光带**：两条 115° 高光带横扫（白 .55→.18、金 .30→.10）
+- **底缘淡出**：最后 260px 渐出到 `--page-bg`，内容不满一屏时无硬接缝
+- **页面级外溢**：scoped 里写 `.xxx-aurora { inset: -24px -28px; }`，盖住 main-content 的 padding 环
+- **内容层叠**：点名列出内容块（页头/卡片栅格/面板/分页）设 `position: relative; z-index: 1`。**禁止** `> :not(.lg-aurora)` 通配——el-drawer/el-dialog 默认 `append-to-body=false` 就地渲染，通配选择器会覆盖 `.el-overlay` 的 `position: fixed`，抽屉打开后不可见（2026-07-25 实翻车）
+
+### 玻璃卡片（.lg-card）
+
+| 参数 | 值 |
+|------|------|
+| 背景 | `linear-gradient(160deg, rgba(255,255,255,.78), rgba(255,255,255,.5))`（0.78→0.5 白磨砂渐变） |
+| 描边 | `1px solid rgba(255,255,255,.85)`，hover `.95` |
+| 圆角 | `--dash-card-radius: 16px` |
+| 阴影 | `0 10px 30px rgba(146,103,24,.14)`（暖金调彩色阴影，**不用灰色**）+ 顶部内高光 `inset 0 1px 0 rgba(255,255,255,.9)` |
+| hover 阴影 | `0 14px 36px rgba(146,103,24,.18)` |
+| hover 位移 | `translateY(-2px)`（仅 `@media (hover:hover) and (pointer:fine)`）；`.is-static` 非交互卡只加深阴影不上浮 |
+| 按压 | `scale(.98)`（`:active`） |
+| 过渡 | 200ms `cubic-bezier(0.23, 1, 0.32, 1)`，只 transition 具体属性不用 all |
+
+### 表格融入玻璃
+
+表格面板容器用 `--dash-glass-bg` 同款渐变 + 上述描边/阴影/圆角（scoped 覆盖全局 `.table-card` 白底），内部 el-table 透明化：
+
+```css
+.xxx-panel :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+}
+```
+
+- 工具栏条：`background: rgba(255,255,255,.4)` + 底部 1px `var(--border-color)` 分隔线
+- **固定列必须磨砂不透明**（Element 2.13 起固定列是 sticky 单元格 + `background: inherit`，行透明时滑到它下面的内容会重影；Element 的 hover 规则还会把固定列刷回半透明白，必须单独覆盖）：
+
+```css
+.xxx-panel :deep(.el-table-fixed-column--right) { background-color: rgba(249, 244, 234, 0.97); }
+.xxx-panel :deep(th.el-table-fixed-column--right) { background-color: rgba(246, 239, 226, 0.98); }
+.xxx-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
+```
+
+### 页头按钮
+
+页头/工具栏主按钮用 GlassButton（见 Button Spec）：主操作 `variant="primary"`（金渐变 `#D4941C→#BB8218`），次操作 `variant="secondary"`（半透明白磨砂），替换 Element 默认蓝/白按钮；`v-permission` 行为不变。操作列 link 按钮维持 List Page Spec 不变。
+
+### 性能红线（2026-07-25 滚动卡顿的教训）
+
+- **backdrop 全静态**：禁止给极光光斑加无限位移动画——动态 backdrop 会让与之重叠的 `backdrop-filter` 表面每帧重采样，合成器持续满负载、滚动掉帧
+- **大面积重复卡片/表格禁用 backdrop-filter**（20+ 张卡滚动时逐帧重采样必卡）；实时模糊只留给 ≤5 个小浮层（Hero、提醒条、悬浮按钮），规格 `blur(16px) saturate(1.4~1.6)`
+- **禁止给大面积元素叠 `filter: blur()`**——柔和效果一律用大半径径向渐变实现
+
 ## Button Spec
 
 按钮统一使用 **Glass Button** 设计体系（浅色毛玻璃风格），覆盖中后台所有常见按钮场景。
@@ -317,3 +392,4 @@ token 见 `tokens.css` 的 `--badge-dev-*` / `--badge-assign-*`。
 | 2026-04-29 | 操作列按钮统一规范 | link style + `<el-icon>` 前缀图标 + 文字，无 `size` 属性；适用所有表格操作列；参考基准：CommissionBatch.vue |
 | 2026-05-01 | 登录页采用 kimi 深色科技风设计 | 与内部页面差异化，营造进入平台的仪式感；Canvas 世界地图强化全球业务属性 |
 | 2026-05-01 | 中性色从暖灰切换到冷灰（蓝调） | tokens.css 已落地新调色（页底 #f0f2f7、文字 #1a1a2e、表头 #fafbfe），DESIGN.md 同步对齐；列表页规范从 frontend/DESIGN.md 合并为 List Page Spec 节 |
+| 2026-07-25 | 整页 Liquid Glass 材质体系（.lg-aurora + .lg-card + --dash-glass-* 令牌） | 工作台首发，配方源自赛事大屏、色调保暖金；含命名/层叠/固定列/性能四条红线（均为当日实翻车教训）；同日推广至发票/备货/售后/物流/设计预约模块 |

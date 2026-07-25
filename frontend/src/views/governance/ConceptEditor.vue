@@ -1,9 +1,16 @@
 <template>
   <div class="concept-editor" v-loading="loading">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="editor-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <!-- 顶部导航 -->
     <div class="editor-header">
       <div class="header-left">
-        <el-button :icon="ArrowLeft" @click="goBack">返回列表</el-button>
+        <GlassButton variant="secondary" :left-icon="ArrowLeft" @click="goBack">返回列表</GlassButton>
         <span class="concept-title">{{ concept.name_zh || '新概念' }}</span>
         <el-tag v-if="concept.status" :type="statusTagType(concept.status)" size="small">
           {{ statusLabels[concept.status] }}
@@ -22,12 +29,12 @@
 
         <!-- 操作按钮 -->
         <template v-if="canEdit">
-          <el-button @click="handleSave" :loading="saving">保存草稿</el-button>
+          <GlassButton variant="secondary" :loading="saving" @click="handleSave">保存草稿</GlassButton>
         </template>
-        <el-button v-if="concept.status === 'pending' && canEdit" type="success" @click="handleClaim">
+        <GlassButton v-if="concept.status === 'pending' && canEdit" variant="success" @click="handleClaim">
           认领补充
-        </el-button>
-        <el-button v-if="canSubmit" type="primary" @click="handleSubmit"
+        </GlassButton>
+        <GlassButton v-if="canSubmit" variant="primary" @click="handleSubmit"
           :disabled="!completeness.is_submittable">
           提交审批
           <el-tooltip v-if="!completeness.is_submittable && concept.id"
@@ -35,10 +42,10 @@
             placement="bottom">
             <el-icon style="margin-left: 4px"><Warning /></el-icon>
           </el-tooltip>
-        </el-button>
-        <el-button v-if="canApprove" type="success" @click="handleApprove">审批通过</el-button>
-        <el-button v-if="canApprove" type="warning" @click="handleReject">驳回修改</el-button>
-        <el-button v-if="canDeprecate" type="danger" @click="handleDeprecate">废弃概念</el-button>
+        </GlassButton>
+        <GlassButton v-if="canApprove" variant="success" @click="handleApprove">审批通过</GlassButton>
+        <GlassButton v-if="canApprove" variant="warning" @click="handleReject">驳回修改</GlassButton>
+        <GlassButton v-if="canDeprecate" variant="danger" @click="handleDeprecate">废弃概念</GlassButton>
       </div>
     </div>
 
@@ -55,7 +62,7 @@
 
       <div class="section-content">
         <!-- 1. 基本信息 -->
-        <section id="sec-basic" class="form-section">
+        <section id="sec-basic" class="form-section lg-card is-static">
           <h3>📋 基本信息</h3>
           <el-form :model="form" label-width="100px" :disabled="!canEdit">
             <el-row :gutter="20">
@@ -99,7 +106,7 @@
         </section>
 
         <!-- 2. 定义 -->
-        <section id="sec-definition" class="form-section">
+        <section id="sec-definition" class="form-section lg-card is-static">
           <h3>📖 定义</h3>
           <el-form :model="form" label-width="100px" :disabled="!canEdit">
             <el-form-item label="一句话定义" required>
@@ -112,7 +119,7 @@
         </section>
 
         <!-- 3. 边界 -->
-        <section id="sec-boundary" class="form-section">
+        <section id="sec-boundary" class="form-section lg-card is-static">
           <h3>🔲 边界</h3>
           <el-form :model="form" label-width="100px" :disabled="!canEdit">
             <el-form-item label="包含范围" required>
@@ -139,7 +146,7 @@
         </section>
 
         <!-- 4. 计算 -->
-        <section id="sec-calculation" class="form-section">
+        <section id="sec-calculation" class="form-section lg-card is-static">
           <h3>🧮 计算</h3>
           <el-form :model="form" label-width="100px" :disabled="!canEdit">
             <el-form-item label="计算公式">
@@ -164,7 +171,7 @@
         </section>
 
         <!-- 5. 数据源 -->
-        <section id="sec-datasource" class="form-section">
+        <section id="sec-datasource" class="form-section lg-card is-static">
           <h3>🗄 数据源</h3>
           <el-form :model="form" label-width="100px" :disabled="!canEdit">
             <el-row :gutter="20">
@@ -203,7 +210,7 @@
         </section>
 
         <!-- 6. 维度 -->
-        <section id="sec-dimension" class="form-section">
+        <section id="sec-dimension" class="form-section lg-card is-static">
           <h3>📐 维度</h3>
           <el-form :model="form" label-width="100px" :disabled="!canEdit">
             <el-form-item label="时间粒度" required>
@@ -232,7 +239,7 @@
         </section>
 
         <!-- 7. 关联（Phase 2 完整实现，Phase 1 只读展示） -->
-        <section id="sec-relationships" class="form-section">
+        <section id="sec-relationships" class="form-section lg-card is-static">
           <h3>🔗 关联关系</h3>
           <el-table :data="relationships" stripe style="width: 100%">
             <el-table-column prop="relation_type" label="关系类型" width="150">
@@ -261,7 +268,7 @@
         </section>
 
         <!-- 8. 元数据 -->
-        <section id="sec-metadata" class="form-section">
+        <section id="sec-metadata" class="form-section lg-card is-static">
           <h3>ℹ️ 元数据</h3>
           <el-form :model="form" label-width="100px" :disabled="!canEdit">
             <el-row :gutter="20">
@@ -606,6 +613,21 @@ onMounted(() => {
 <style scoped>
 .concept-editor {
   padding: 20px;
+  /* 极光层（.lg-aurora，与工作台同源）定位上下文 */
+  position: relative;
+}
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台） */
+.editor-aurora {
+  inset: -24px -28px;
+}
+
+/* 内容压到极光之上。必须点名内容块，不能用 > :not(.lg-aurora)——
+   el-drawer 默认就地渲染，通配会覆盖 .el-overlay 的 position: fixed */
+.concept-editor .editor-header,
+.concept-editor .editor-body {
+  position: relative;
+  z-index: 1;
 }
 
 .editor-header {
@@ -686,10 +708,8 @@ onMounted(() => {
   min-width: 0;
 }
 
+/* 玻璃质感由 .lg-card 提供（is-static：表单分区卡不上浮/不按压），这里只留布局 */
 .form-section {
-  background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
   padding: 20px 24px;
   margin-bottom: 16px;
 }

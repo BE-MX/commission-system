@@ -1,5 +1,12 @@
 <template>
   <div class="whatsapp-page">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="whatsapp-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <div class="page-header">
       <div>
         <h2>WhatsApp 同步</h2>
@@ -12,22 +19,22 @@
     </div>
 
     <div class="metric-strip">
-      <div class="metric-item">
+      <div class="metric-item lg-card is-static">
         <span class="metric-label">已绑定</span>
         <strong>{{ activeCount }}</strong>
       </div>
-      <div class="metric-item">
+      <div class="metric-item lg-card is-static">
         <span class="metric-label">异常</span>
         <strong>{{ errorCount }}</strong>
       </div>
-      <div class="metric-item">
+      <div class="metric-item lg-card is-static">
         <span class="metric-label">最近同步</span>
         <strong>{{ latestSyncText }}</strong>
       </div>
     </div>
 
     <div class="content-grid">
-      <div class="table-card">
+      <div class="table-card whatsapp-panel">
         <el-table :data="accounts" v-loading="loading" border class="list-table" style="width: 100%">
           <el-table-column label="账号" min-width="180" max-width="270" show-overflow-tooltip>
             <template #default="{ row }">
@@ -79,7 +86,7 @@
         </el-table>
       </div>
 
-      <div class="conversation-panel">
+      <div class="conversation-panel lg-card is-static">
         <div class="panel-title">
           <div>
             <span>对话记录</span>
@@ -364,7 +371,26 @@ onMounted(loadAccounts)
 </script>
 
 <style scoped>
-.whatsapp-page { padding: 24px 28px; }
+.whatsapp-page {
+  padding: 24px 28px;
+  /* 极光层（.lg-aurora，与工作台同源）定位上下文 */
+  position: relative;
+}
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台） */
+.whatsapp-aurora {
+  inset: -24px -28px;
+}
+
+/* 内容压到极光之上。必须点名内容块，不能用 > :not(.lg-aurora)——
+   el-dialog 默认就地渲染，通配会覆盖 .el-overlay 的 position: fixed */
+.whatsapp-page .page-header,
+.whatsapp-page .metric-strip,
+.whatsapp-page .content-grid {
+  position: relative;
+  z-index: 1;
+}
+
 .page-header {
   display: flex;
   justify-content: space-between;
@@ -381,11 +407,9 @@ onMounted(loadAccounts)
   gap: 12px;
   margin-bottom: 14px;
 }
+/* 玻璃质感由 .lg-card 提供（is-static：指标卡不上浮/不按压），这里只留布局 */
 .metric-item {
   min-height: 64px;
-  border: 1px solid rgba(212, 148, 28, 0.18);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.72);
   padding: 12px 14px;
 }
 .metric-label { display: block; color: var(--text-muted); font-size: 12px; margin-bottom: 6px; }
@@ -395,10 +419,37 @@ onMounted(loadAccounts)
   grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.85fr);
   gap: 14px;
 }
+
+/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */
+.whatsapp-panel {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+}
+
+/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
+.whatsapp-panel :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+}
+
+/* 右侧固定操作列：磨砂但不透明的暖白，表头/hover 态同步 */
+.whatsapp-panel :deep(.el-table-fixed-column--right) {
+  background-color: rgba(249, 244, 234, 0.97);
+}
+.whatsapp-panel :deep(th.el-table-fixed-column--right) {
+  background-color: rgba(246, 239, 226, 0.98);
+}
+.whatsapp-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) {
+  background-color: rgba(245, 236, 220, 0.98);
+}
+
+/* 玻璃质感由 .lg-card 提供（is-static），这里只留布局 */
 .conversation-panel {
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.88);
   padding: 14px;
   min-height: 520px;
 }

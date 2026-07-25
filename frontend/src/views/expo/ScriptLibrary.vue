@@ -1,5 +1,12 @@
 <template>
   <div class="script-page">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="script-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <div class="rule-banner">品牌话术规范：禁用 便宜 / 划算 / 性价比 / 打折 / 薅羊毛（保存时后端强校验）</div>
 
     <el-row :gutter="16" class="toolbar">
@@ -19,7 +26,7 @@
     </el-row>
 
     <div v-loading="loading" class="card-grid">
-      <div v-for="card in filteredScripts" :key="card.id" class="script-card" @click="openEdit(card)">
+      <div v-for="card in filteredScripts" :key="card.id" class="script-card lg-card" @click="openEdit(card)">
         <div class="card-head">
           <el-tag size="small" :class="'track-' + (card.track || 'rational')">{{ trackLabel(card.track) }}</el-tag>
           <el-tag size="small" effect="plain">{{ typeLabel(card.script_type) }}</el-tag>
@@ -191,6 +198,18 @@ onMounted(fetchScripts)
 </script>
 
 <style scoped>
+/* 极光层（.lg-aurora，与工作台同源）定位上下文 */
+.script-page { position: relative; }
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台/发票页） */
+.script-aurora { inset: -24px -28px; }
+
+/* 内容压到极光之上。点名内容块，不能用 > :not(.lg-aurora) 通配——
+   会覆盖就地渲染的 el-drawer/el-dialog 的 .el-overlay position: fixed */
+.script-page .rule-banner,
+.script-page .toolbar,
+.script-page .card-grid { position: relative; z-index: 1; }
+
 .rule-banner {
   margin-bottom: 16px; padding: 10px 16px; border-radius: 8px;
   background: var(--color-warning-bg); color: var(--color-warning-text);
@@ -203,12 +222,11 @@ onMounted(fetchScripts)
   gap: 16px; min-height: 120px; position: relative;
 }
 .grid-empty { grid-column: 1 / -1; }
+/* 玻璃质感由 .lg-card 提供（渐变磨砂 + 暖金彩色阴影 + hover 上浮/过渡），
+   这里只留布局；本地 transition/:hover 会盖掉 lg-card 的过渡，一并去掉 */
 .script-card {
-  background: var(--card-bg); border: 1px solid var(--border-color);
-  border-radius: var(--card-radius); box-shadow: var(--card-shadow);
-  padding: 14px 16px; cursor: pointer; transition: box-shadow 0.2s, border-color 0.2s;
+  padding: 14px 16px; cursor: pointer;
 }
-.script-card:hover { box-shadow: var(--card-shadow-hover); border-color: var(--border-hover); }
 .card-head { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
 .card-switch { margin-left: auto; }
 .card-title { font-weight: 600; color: var(--text-primary); margin-bottom: 6px; }

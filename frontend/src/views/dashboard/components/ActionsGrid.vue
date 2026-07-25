@@ -14,7 +14,7 @@
       <component
         :is="editing ? 'div' : RouterLink"
         :to="editing ? undefined : card.route"
-        class="action-card dash-glass-card"
+        class="action-card lg-card"
         :class="{ 'dash-card-dimmed': editing && isHiddenFn('actions', card.key) }"
       >
         <div class="action-icon-wrapper" :class="`action-bg-${card.bg}`">
@@ -106,13 +106,16 @@ function emitReorder() {
   border-radius: 10px;
   flex-shrink: 0;
   color: #fff;
+  /* 顶部内高光 + 投影：给图标块一点厚度，贴合玻璃主题 */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 2px 6px rgba(26, 24, 22, 0.14);
 }
 
 .action-bg-gold {
   background: linear-gradient(135deg, var(--color-gold), var(--color-primary));
 }
 .action-bg-dark {
-  background: linear-gradient(135deg, var(--text-secondary), var(--ink-dark));
+  /* 暖墨渐变（原蓝灰 text-secondary→ink-dark 与暖金品牌色打架，2026-07-25 修正） */
+  background: linear-gradient(135deg, var(--dash-icon-dark-from), var(--dash-icon-dark-to));
 }
 
 .action-info {

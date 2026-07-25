@@ -1,5 +1,12 @@
 <template>
-  <div>
+  <div class="role-page">
+    <!-- 金色极光背景（纯装饰；与工作台同源 styles/liquid-glass.css） -->
+    <div class="role-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <!-- 操作栏 -->
     <el-row :gutter="16" class="toolbar">
       <el-col :span="24">
@@ -8,7 +15,7 @@
     </el-row>
 
     <!-- 角色列表 -->
-    <div class="table-card">
+    <div class="table-card role-panel">
     <el-table ref="tableRef" :data="tableData" v-loading="loading" border class="list-table" style="width: 100%" :max-height="maxHeight">
       <el-table-column prop="name" label="角色标识" min-width="140" max-width="210" show-overflow-tooltip sortable />
       <el-table-column prop="label" label="角色名称" min-width="140" max-width="210" show-overflow-tooltip sortable />
@@ -286,8 +293,54 @@ onMounted(fetchList)
 </script>
 
 <style scoped>
+/* 极光层（.lg-aurora，与工作台同源）定位上下文 */
+.role-page {
+  position: relative;
+}
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环（同工作台） */
+.role-aurora {
+  inset: -24px -28px;
+}
+
+/* 内容压到极光之上。必须点名内容块，不能用 > :not(.lg-aurora)——
+   el-dialog/el-drawer 默认就地渲染，通配会覆盖 .el-overlay 的 position: fixed */
+.role-page .toolbar,
+.role-page .role-panel {
+  position: relative;
+  z-index: 1;
+}
+
 .toolbar { margin-bottom: 16px; }
 .form-tip { font-size: 12px; color: var(--text-secondary, #718096); }
+
+/* 表格面板：同款渐变玻璃（scoped 覆盖全局 .table-card 的白底） */
+.role-panel {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+}
+
+/* 表格融进玻璃：行/表头半透明，透出极光；hover 用更实的白 */
+.role-panel :deep(.el-table) {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+}
+
+/* 右侧固定操作列：磨砂但不透明的暖白，表头/hover 态同步 */
+.role-panel :deep(.el-table-fixed-column--right) {
+  background-color: rgba(249, 244, 234, 0.97);
+}
+.role-panel :deep(th.el-table-fixed-column--right) {
+  background-color: rgba(246, 239, 226, 0.98);
+}
+.role-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) {
+  background-color: rgba(245, 236, 220, 0.98);
+}
 
 /* ── 抽屉框架（对照原型亮色金主题） ── */
 .perm-drawer :deep(.el-drawer__body) { padding: 0; }
