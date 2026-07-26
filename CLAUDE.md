@@ -96,7 +96,7 @@ miniprogram/  services/whatsapp-connector/  deploy/  docs/  config/
 - **生成代码前读 `.wolf/cerebrum.md`**（Do-Not-Repeat 是硬教训清单）
 - **被用户纠正 / 踩到新坑 → 立即更新 cerebrum**（含日期）；模块知识 → auto-memory `project_*.md`
 - 会话结束沉淀收敛为一条：有教训进 cerebrum，有模块知识进 auto-memory，都没有就不写
-- `.wolf/` 的 anatomy.md / memory.md / buglog.json 已停用（2026-07-03 治理），不再读写
+- `.wolf/` 的 anatomy.md / memory.md / buglog.json 已停用（2026-07-03 治理），不再读写；2026-07-25 连同写它们的 6 个 `.wolf/hooks/*.js` 一起摘除，文件与脚本已归档到 `.wolf/_retired-2026-07-25/`（`.claude/settings.json` 现无 hooks 段，勿再挂回）
 
 ## 指针区（参考资料按需查阅，改动时同步更新对应文件——**清单类内容永远不写回本文件**，文档同步类任务如 /neat-freak 同样遵守此分层）
 

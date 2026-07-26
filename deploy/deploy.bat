@@ -219,10 +219,9 @@ for /f "delims=" %%P in ('where rsync 2^>nul') do set "RSYNC_PATH=%%P"
 
 if defined RSYNC_PATH (
     echo      Using rsync incremental sync...
-    rsync -avz --delete --chmod=D755,F644 -e "ssh %SSH_OPTS%" dist/ %CLOUD_SERVER%:%CLOUD_DIST%/
+    call :rsync_sync
     if not errorlevel 1 (
         set "SYNC_OK=1"
-        echo      OK
     ) else (
         echo [WARNING] rsync failed, fallback to scp...
         call :scp_full
@@ -251,12 +250,29 @@ for /f "delims=" %%H in ('git -C "%INSTALL_DIR%" rev-parse HEAD') do set "CURREN
 echo !CURRENT_HEAD!>"%FRONTEND_MARKER%"
 goto :pm_hub_sync
 
+:rsync_sync
+REM 2026-07-26: 两趟同步，index.html 必须最后翻（原子切换）。
+REM 起因：2026-07-25 22:04 index.html 先落地、22:16-22:37 才传 assets，其中一个
+REM assets 上传失败 → 线上 index.html 指向不存在的 CSS，生产站无样式近 2 小时。
+REM --delete 不会删被 --exclude 保护的 index.html，所以失败时云端保持旧页面可用。
+cd /d "%INSTALL_DIR%\frontend"
+rsync -avz --delete --exclude=index.html --chmod=D755,F644 -e "ssh %SSH_OPTS%" dist/ %CLOUD_SERVER%:%CLOUD_DIST%/
+if errorlevel 1 exit /b 1
+rsync -avz --chmod=F644 -e "ssh %SSH_OPTS%" dist/index.html %CLOUD_SERVER%:%CLOUD_DIST%/index.html
+if errorlevel 1 (
+    echo [ERROR] assets synced OK but index.html flip FAILED - cloud still serves the previous page
+    exit /b 1
+)
+echo      OK
+exit /b 0
+
 :scp_smart
 REM 利用 ssh+md5sum 比对，只传变化的文件
 set "SMART_FAIL=0"
 REM 1) 获取远程 assets 文件 md5 清单
 echo      Computing diff via ssh...
-ssh %SSH_OPTS% %CLOUD_SERVER% "cd %CLOUD_DIST% && find assets/ -type f -exec md5sum {} \; 2>/dev/null" > "%TEMP%\cloud_md5.txt" 2>nul
+REM stderr 不再吞（2026-07-26）：ssh 失败的原因必须可见，远程 find 自己已经 2>/dev/null
+ssh %SSH_OPTS% %CLOUD_SERVER% "cd %CLOUD_DIST% && find assets/ -type f -exec md5sum {} \; 2>/dev/null" > "%TEMP%\cloud_md5.txt"
 REM ssh failure leaves an EMPTY file behind (the > redirect creates it first);
 REM delete it so we fall through to :scp_full instead of diffing against nothing
 if errorlevel 1 del /q "%TEMP%\cloud_md5.txt" >nul 2>&1
@@ -266,12 +282,10 @@ cd /d "%INSTALL_DIR%\frontend\dist"
 if exist "%TEMP%\cloud_md5.txt" (
     REM 有远程清单，做增量比对
     set UPLOAD_COUNT=0
-    REM Always upload index.html; its failure means the ssh/scp channel is down = overall fail
-    echo      index.html...
-    scp %SSH_OPTS% index.html %CLOUD_SERVER%:%CLOUD_DIST%/index.html
-    if errorlevel 1 set "SMART_FAIL=1"
+    REM index.html 不在这里传——挪到全部 assets/vendor 成功之后（见本块末尾的原子切换）
     REM m/ is small (<1MB), always upload
-    scp %SSH_OPTS% -r m %CLOUD_SERVER%:%CLOUD_DIST%/ >nul 2>&1
+    scp %SSH_OPTS% -r m %CLOUD_SERVER%:%CLOUD_DIST%/ >nul
+    if errorlevel 1 echo      [WARNING] m/ upload failed ^(mobile pages may be stale^) - not fatal
     REM vendor/ holds ~35MB Stimulsoft that almost never changes: upload only when
     REM git says it changed since the last synced build, or the cloud copy is missing
     set "VENDOR_CHANGED=0"
@@ -305,7 +319,9 @@ if exist "%TEMP%\cloud_md5.txt" (
             REM 远程没有此文件，需要上传
             set /a UPLOAD_COUNT+=1
             echo      [!UPLOAD_COUNT!] !RELPATH!
-            scp %SSH_OPTS% "%%F" %CLOUD_SERVER%:%CLOUD_DIST%/!RELPATH! >nul 2>&1
+            REM stderr 不再吞（2026-07-26）：2026-07-25 就是因为这里 2^>^&1 把唯一一个
+            REM 失败文件的原因抹掉了，只剩一句 upload failed，无法定位
+            scp %SSH_OPTS% "%%F" %CLOUD_SERVER%:%CLOUD_DIST%/!RELPATH! >nul
             if errorlevel 1 (
                 echo      [ERROR] upload failed: !RELPATH!
                 set "SMART_FAIL=1"
@@ -313,6 +329,14 @@ if exist "%TEMP%\cloud_md5.txt" (
         )
     )
     echo      OK !UPLOAD_COUNT! new/changed assets uploaded
+    REM 原子切换：index.html 最后传，且只在前面全部成功时才翻
+    if "!SMART_FAIL!"=="0" (
+        echo      index.html ^(last - atomic switch^)...
+        scp %SSH_OPTS% index.html %CLOUD_SERVER%:%CLOUD_DIST%/index.html
+        if errorlevel 1 set "SMART_FAIL=1"
+    ) else (
+        echo      [SKIP] index.html NOT updated - assets incomplete, cloud keeps serving the previous page
+    )
 ) else (
     REM 无法获取远程清单，回退全量 scp
     call :scp_full
@@ -324,9 +348,28 @@ exit /b !SMART_FAIL!
 echo      Full scp sync...
 REM 显式回到 frontend：从 :scp_smart 回退进来时 CWD 在 dist 里，dist/* 会失配
 cd /d "%INSTALL_DIR%\frontend"
-scp %SSH_OPTS% -r dist/* %CLOUD_SERVER%:%CLOUD_DIST%/
+if not exist "dist\index.html" (
+    echo [ERROR] dist\index.html missing - build did not produce a dist
+    exit /b 1
+)
+set "FULL_FAIL=0"
+REM 逐个顶层项上传，index.html 留到最后（原子切换，同 :rsync_sync 的理由）
+for /f "delims=" %%E in ('dir /b dist') do (
+    if /i not "%%E"=="index.html" (
+        scp %SSH_OPTS% -r "dist/%%E" %CLOUD_SERVER%:%CLOUD_DIST%/
+        if errorlevel 1 (
+            echo [WARNING] scp failed: %%E
+            set "FULL_FAIL=1"
+        )
+    )
+)
+if "!FULL_FAIL!"=="1" (
+    echo [WARNING] SCP sync failed - index.html NOT updated, cloud keeps serving the previous page
+    exit /b 1
+)
+scp %SSH_OPTS% dist/index.html %CLOUD_SERVER%:%CLOUD_DIST%/index.html
 if errorlevel 1 (
-    echo [WARNING] SCP sync failed - cloud may be stale
+    echo [ERROR] assets synced OK but index.html flip FAILED - cloud still serves the previous page
     exit /b 1
 )
 echo      OK

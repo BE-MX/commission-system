@@ -77,7 +77,7 @@
 - ✅ NSSM 服务托管（CommissionSystem + WhatsAppConnector 双服务）
 - ✅ 前端路由 + 菜单单一来源（`navigation.js`）
 - ✅ API client 统一（`clients.js` 集中导出，禁止自建 axios）
-- ✅ 项目记忆精简协议（`.wolf/cerebrum.md` 唯一教训库；anatomy/memory/buglog 已于 2026-07-03 停用存档）+ `scripts/check_conventions.py` 增量约定检查
+- ✅ 项目记忆精简协议（`.wolf/cerebrum.md` 唯一教训库；anatomy/memory/buglog 2026-07-03 宣布停用，**但写它们的 6 个 `.wolf/hooks/*.js` 直到 2026-07-25 才从 `.claude/settings.json` 摘除**，文件与脚本同日归档到 `.wolf/_retired-2026-07-25/`——教训见 cerebrum「文档宣布停用≠hook 停了」）+ `scripts/check_conventions.py` 增量约定检查
 - ✅ 权限矩阵配置（2026-07-03：23×5 矩阵抽屉 + 6 角色模板 + 按导航反查 + 变更审计 + v-permission 指令；81 权限清理为 69 有效）
 - ✅ **多智能体 Git 协作治理**（2026-07-18）：`AGENTS.md` 约定（分支 `<tool>/<topic>`、每代理独立 worktree、feature 分支随时推 / main push 等指令、合并只在主 worktree）+ `scripts/git_sweep.py` 巡检看板（六类欠账含跨分支 Alembic 撞号检测）+ Windows 计划任务 `LeShine-GitSweep` 每日 18:00 推钉钉；同日发现并修复 `DINGTALK_WEBHOOK_URL` 长期为空——定时任务告警/培训推送/巡检通知三条管道此前全部静默失效
 
@@ -288,7 +288,7 @@
 
 ## 备注
 
-- 项目记忆用精简版协议（2026-07-03 治理）：`.wolf/cerebrum.md` 是唯一教训库，anatomy/memory/buglog 已停用存档；模块知识在 AI 的 auto-memory
+- 项目记忆用精简版协议（2026-07-03 治理）：`.wolf/cerebrum.md` 是唯一教训库，anatomy/memory/buglog 已停用并于 2026-07-25 连同 6 个写它们的 hook 一起归档到 `.wolf/_retired-2026-07-25/`（`.claude/settings.json` 现无 hooks 段，勿再挂回）；模块知识在 AI 的 auto-memory
 - CLAUDE.md 已瘦身为 ~110 行宪法；API 清单在 `docs/api-reference.md`、表结构在 `docs/database.md`、模块专题在 `docs/module-notes.md`
 - 完工前跑 `python scripts/check_conventions.py`（增量约定检查，红=必须修）
 - 所有 UI 决策以 `DESIGN.md` 为准
