@@ -1,126 +1,218 @@
-/* pages/login/login.wxss */
+/* pages/login/login.wxss
+   旧版三个毛病：①黑→灰的渐变在中段糊成脏灰；②padding-top 固定 180rpx，
+   小屏挤大屏空；③内容全堆上半屏、下半屏空着。
+   现在改成：品牌黑底 + 金绿双光晕（与入口页同源），品牌区弹性占上方，
+   表单贴底成面板——移动端登录的成熟形态，拇指够得到、键盘不顶飞。 */
 
 .login-page {
+  position: relative;
   min-height: 100vh;
-  background: linear-gradient(180deg, #1A1A1A 0%, #2D2D2D 50%, #F2F3F5 100%);
+  background: #141210;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── 背景：金呼应外贸、绿呼应内贸，和入口页是一套 ── */
+.bg-wash { position: absolute; inset: 0; pointer-events: none; }
+
+.bg-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(70rpx);
+}
+
+.bg-blob--gold {
+  top: -120rpx;
+  right: -160rpx;
+  width: 620rpx;
+  height: 620rpx;
+  background: radial-gradient(circle, rgba(245, 213, 71, 0.30) 0%, rgba(245, 213, 71, 0) 70%);
+}
+
+.bg-blob--green {
+  top: 380rpx;
+  left: -220rpx;
+  width: 560rpx;
+  height: 560rpx;
+  background: radial-gradient(circle, rgba(10, 166, 111, 0.26) 0%, rgba(10, 166, 111, 0) 70%);
+}
+
+/* ── 品牌区：flex 弹性占位，不用固定 padding-top 定高 ── */
+.brand {
+  position: relative;
+  flex: 1;
+  min-height: 300rpx;
+  /* 封顶：加载态的面板比表单矮，不封顶品牌区会被撑高、LOGO 在两态之间跳位。
+     多出来的空间落到下方深色区，LOGO 位置就稳定了。 */
+  max-height: 46vh;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding-top: 180rpx;
+  justify-content: center;
+  padding: 0 60rpx;
 }
 
-/* ── Logo ── */
-.logo-area {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  margin-bottom: 80rpx;
-}
-.logo-wrap {
-  display: flex;
-  flex-direction: row;
-  align-items: baseline;
-  line-height: 1;
-}
-.logo-le {
-  font-size: 52rpx;
-  font-weight: 700;
-  color: #F5D547;
-  letter-spacing: 0;
-  font-style: italic;
-}
-.logo-shine {
-  font-size: 52rpx;
-  font-weight: 900;
-  color: #F5D547;
-  letter-spacing: -1rpx;
-  font-style: italic;
-}
-.logo-hair {
-  font-size: 52rpx;
-  font-weight: 900;
-  color: rgba(245,213,71,0.6);
-  letter-spacing: -1rpx;
-  font-style: italic;
-}
-.logo-subtitle {
-  font-size: 28rpx;
-  color: rgba(255,255,255,0.7);
-  margin-top: 24rpx;
-  font-weight: 500;
-}
-
-/* ── 表单 ── */
-.form-area {
-  width: 600rpx;
-  background: #FFFFFF;
-  border-radius: 24rpx;
-  padding: 48rpx 40rpx;
-  box-shadow: 0 8rpx 40rpx rgba(0,0,0,0.12);
-}
-.form-title {
-  font-size: 32rpx;
-  font-weight: 700;
-  color: #1A1A1A;
-  margin-bottom: 16rpx;
-}
-.form-desc {
-  font-size: 24rpx;
-  color: #999999;
-  margin-bottom: 40rpx;
-  line-height: 1.6;
-}
-.form-input {
-  width: 100%;
-  height: 88rpx;
-  background: #F2F3F5;
-  border-radius: 16rpx;
-  padding: 0 28rpx;
-  font-size: 28rpx;
-  color: #1A1A1A;
+.brand-logo {
+  width: 300rpx;
+  height: 108rpx;
   margin-bottom: 32rpx;
-  box-sizing: border-box;
 }
-.input-placeholder {
-  color: #C4CDD6;
+
+.brand-title {
+  font-size: 36rpx;
+  font-weight: 600;
+  color: #FFFFFF;
+  letter-spacing: 2rpx;
 }
-.btn-bind {
+
+.brand-sub {
+  margin-top: 14rpx;
+  font-size: 26rpx;
+  color: rgba(255, 255, 255, 0.5);
+  letter-spacing: 1rpx;
+}
+
+/* ── 底部面板：只在上方切圆角，视觉上"从屏幕底部升起" ── */
+.panel {
+  position: relative;
+  /* 品牌区封顶后不再吸收剩余空间，这里把面板顶到底部，
+     多出来的高度落在品牌区与面板之间的深色区 */
+  margin-top: auto;
+  background: #FFFFFF;
+  border-radius: 40rpx 40rpx 0 0;
+  padding: 48rpx 44rpx calc(48rpx + env(safe-area-inset-bottom));
+  box-shadow: 0 -12rpx 48rpx rgba(0, 0, 0, 0.28);
+
+  /* 入场：从下方升起 + 淡入，不从 scale(0) 冒出来 */
+  animation: panel-in 360ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+@keyframes panel-in {
+  from { opacity: 0; transform: translateY(40rpx); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.panel-title {
+  font-size: 40rpx;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.tag-dev {
+  font-size: 20rpx;
+  font-weight: 700;
+  letter-spacing: 1rpx;
+  color: var(--warning);
+  background: rgba(255, 107, 53, 0.12);
+  padding: 4rpx 14rpx;
+  border-radius: 8rpx;
+}
+
+.panel-desc {
+  display: block;
+  margin-top: 14rpx;
+  font-size: 26rpx;
+  line-height: 1.6;
+  color: var(--text-sub);
+}
+
+/* ── 输入 ── */
+.field { margin-top: 40rpx; }
+
+.field-label {
+  display: block;
+  margin-bottom: 14rpx;
+  font-size: 26rpx;
+  font-weight: 600;
+  color: var(--text-sub);
+}
+
+.field-input {
   width: 100%;
-  height: 88rpx;
-  border-radius: 44rpx;
-  background: #F5D547;
-  color: #1A1A1A;
-  font-size: 30rpx;
+  height: 96rpx;
+  padding: 0 28rpx;
+  box-sizing: border-box;
+  background: var(--gray-bg);
+  border: 2rpx solid transparent;
+  border-radius: 20rpx;
+  font-size: 32rpx;
+  color: var(--text-main);
+}
+
+.field-ph { color: #B4BDC4; }
+
+/* ── 主按钮：品牌黄底黑字（12:1 对比度） ── */
+.btn-primary {
+  width: 100%;
+  height: 96rpx;
+  margin-top: 36rpx;
+  border: none;
+  border-radius: 24rpx;
+  background: var(--brand-yellow);
+  color: var(--brand-black);
+  font-size: 32rpx;
   font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: none;
-}
-.btn-bind[disabled] {
-  background: #E5E5E5;
-  color: #999999;
+  box-shadow: 0 8rpx 24rpx rgba(212, 182, 32, 0.32);
+  transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
-/* ── 自动登录 ── */
-.auto-login {
+.btn-primary:active { transform: scale(0.97); }
+
+.btn-primary[disabled] {
+  background: #EDEFF1;
+  color: #AEB6BD;
+  box-shadow: none;
+}
+
+.btn-primary::after { border: none; }   /* 去掉小程序 button 默认边框 */
+
+.panel-foot {
+  display: block;
+  margin-top: 28rpx;
+  text-align: center;
+  font-size: 24rpx;
+  color: var(--text-muted);
+}
+
+/* ── 自动登录态：与表单同一个面板骨架，不另起一套 ── */
+.panel--loading {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 24rpx;
+  padding-top: 72rpx;
+  padding-bottom: calc(72rpx + env(safe-area-inset-bottom));
 }
+
 .spinner {
-  width: 64rpx;
-  height: 64rpx;
-  border: 6rpx solid rgba(245,213,71,0.3);
-  border-top-color: #F5D547;
+  width: 72rpx;
+  height: 72rpx;
+  border: 6rpx solid var(--border);
+  border-top-color: var(--brand-yellow-d);
   border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+  animation: spin 800ms linear infinite;
 }
-@keyframes spin {
-  to { transform: rotate(360deg); }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.loading-text {
+  margin-top: 28rpx;
+  font-size: 32rpx;
+  font-weight: 600;
+  color: var(--text-main);
 }
-.auto-login-text {
-  color: rgba(255,255,255,0.7);
-  font-size: 28rpx;
+
+.loading-sub {
+  margin-top: 10rpx;
+  font-size: 26rpx;
+  color: var(--text-sub);
 }

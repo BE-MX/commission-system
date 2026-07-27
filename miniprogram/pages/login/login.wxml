@@ -1,57 +1,79 @@
-<!-- pages/login/login.wxml -->
+<!-- pages/login/login.wxml
+     移动端登录的标准形态：品牌区占上半屏（弹性分配，不靠固定 padding 定位），
+     表单贴底成面板——拇指够得到，键盘弹起时也不会把内容顶飞。
+     与入口页同一套视觉：品牌黑底 + 金绿双光晕。 -->
 <view class="login-page">
-  <!-- Logo 区 -->
-  <view class="logo-area">
-    <view class="logo-wrap">
-      <text class="logo-le">Le</text>
-      <text class="logo-shine">Shine®</text>
-      <text class="logo-hair"> Hair</text>
-    </view>
-    <text class="logo-subtitle">生产报工系统</text>
+  <view class="bg-wash" aria-hidden="true">
+    <view class="bg-blob bg-blob--gold"></view>
+    <view class="bg-blob bg-blob--green"></view>
   </view>
 
-  <!-- 开发模式：用工号直接登录 -->
-  <view class="form-area" wx:if="{{devMode}}">
-    <view class="form-title">开发调试登录</view>
-    <view class="form-desc">输入方舟平台工号，直接换取 Token</view>
-    <input
-      class="form-input"
-      placeholder="工号"
-      placeholder-class="input-placeholder"
-      value="{{devIdentifier}}"
-      bindinput="onDevIdentifierInput"
-      bindconfirm="onDevLogin"
-    />
-    <button class="btn-bind" bindtap="onDevLogin" disabled="{{!devIdentifier || loading}}">
-      <text wx:if="{{loading}}">登录中...</text>
+  <!-- 品牌区 -->
+  <view class="brand">
+    <image class="brand-logo" src="/assets/logo-gold.png" mode="aspectFit" />
+    <text class="brand-title">莱莎方舟 · 生产报工</text>
+    <text class="brand-sub">扫码报工 · 工序流转 · 订单速查</text>
+  </view>
+
+  <!-- 自动登录中：独占一屏，不与表单同时出现（旧版三块同屏像三张卡） -->
+  <view class="panel panel--loading" wx:if="{{!devMode && isLoggingIn}}">
+    <view class="spinner"></view>
+    <text class="loading-text">正在识别微信身份</text>
+    <text class="loading-sub">首次使用需要绑定工号</text>
+  </view>
+
+  <!-- 开发调试登录 -->
+  <view class="panel" wx:elif="{{devMode}}">
+    <view class="panel-head">
+      <text class="panel-title">开发调试登录</text>
+      <text class="tag-dev">DEV</text>
+    </view>
+    <text class="panel-desc">输入方舟平台工号直接换 Token，仅本地调试可用</text>
+
+    <view class="field">
+      <text class="field-label">工号</text>
+      <input
+        class="field-input"
+        placeholder="请输入工号"
+        placeholder-class="field-ph"
+        confirm-type="go"
+        value="{{devIdentifier}}"
+        bindinput="onDevIdentifierInput"
+        bindconfirm="onDevLogin"
+      />
+    </view>
+
+    <button class="btn-primary" bindtap="onDevLogin" disabled="{{!devIdentifier || loading}}">
+      <text wx:if="{{loading}}">登录中…</text>
       <text wx:else>登录</text>
     </button>
   </view>
 
-  <!-- 正式模式：自动 wx.login → 绑定 -->
-  <block wx:if="{{!devMode}}">
-    <!-- 绑定表单（未绑定时显示）-->
-    <view class="form-area" wx:if="{{!isLoggingIn}}">
-      <view class="form-title">绑定方舟账号</view>
-      <view class="form-desc">请输入您的方舟平台工号，首次使用需绑定微信</view>
+  <!-- 绑定方舟账号 -->
+  <view class="panel" wx:else>
+    <view class="panel-head">
+      <text class="panel-title">绑定方舟账号</text>
+    </view>
+    <text class="panel-desc">首次使用把微信和工号绑在一起，之后打开就直接进</text>
+
+    <view class="field">
+      <text class="field-label">工号 / 手机号</text>
       <input
-        class="form-input"
-        placeholder="工号"
-        placeholder-class="input-placeholder"
+        class="field-input"
+        placeholder="请输入工号或手机号"
+        placeholder-class="field-ph"
+        confirm-type="go"
         value="{{identifier}}"
         bindinput="onIdentifierInput"
         bindconfirm="onBind"
       />
-      <button class="btn-bind" bindtap="onBind" disabled="{{!identifier || loading}}">
-        <text wx:if="{{loading}}">绑定中...</text>
-        <text wx:else>绑定并登录</text>
-      </button>
     </view>
 
-    <!-- 自动登录中 -->
-    <view class="auto-login" wx:if="{{isLoggingIn}}">
-      <view class="spinner"></view>
-      <text class="auto-login-text">登录中...</text>
-    </view>
-  </block>
+    <button class="btn-primary" bindtap="onBind" disabled="{{!identifier || loading}}">
+      <text wx:if="{{loading}}">绑定中…</text>
+      <text wx:else>绑定并登录</text>
+    </button>
+
+    <text class="panel-foot">工号不清楚？问车间主管或 IT</text>
+  </view>
 </view>
