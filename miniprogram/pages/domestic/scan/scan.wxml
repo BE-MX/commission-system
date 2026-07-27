@@ -133,7 +133,7 @@
 
   <!-- 报工成功 -->
   <view class="success-overlay" wx:if="{{successVisible}}" catchtap="onSuccessTap">
-    <view class="success-card" catchtap="">
+    <view class="success-card" catchtap="noop">
       <view class="success-icon-wrap">
         <view class="success-icon-bg"></view>
         <text class="success-icon-check">✓</text>
@@ -146,7 +146,7 @@
 
   <!-- 错误/警告 -->
   <view class="error-overlay" wx:if="{{errorVisible}}" catchtap="onErrorTap">
-    <view class="error-card" catchtap="">
+    <view class="error-card" catchtap="noop">
       <view class="error-icon-wrap">
         <view class="error-icon-bg"></view>
         <text class="error-icon-char">!</text>
@@ -160,7 +160,7 @@
 
   <!-- 撤销确认 -->
   <view class="error-overlay" wx:if="{{revokeVisible}}" catchtap="onRevokeCancel">
-    <view class="error-card" catchtap="">
+    <view class="error-card" catchtap="noop">
       <view class="error-icon-wrap">
         <view class="error-icon-bg revoke-bg"></view>
         <text class="error-icon-char revoke-char">↩</text>

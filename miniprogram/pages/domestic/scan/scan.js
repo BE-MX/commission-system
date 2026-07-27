@@ -357,6 +357,9 @@ Page({
     this.setData({ errorVisible: true, errorTitle: title, errorMessage: message })
   },
 
+  // catch 需要真实存在的方法名，catchtap="" 挡不住冒泡（点弹层内容会误关）
+  noop: function () {},
+
   onErrorTap: function () { this.setData({ errorVisible: false }) },
   onSuccessTap: function () { this.setData({ successVisible: false }) }
 })

@@ -1,8 +1,10 @@
 <!-- components/domestic-sheet/domestic-sheet.wxml
      结构与 confirm-sheet（外贸）逐块对齐，只多了内贸独有的「报工数量」和参考图。
      工序清单默认折叠：点进度条才开时间轴弹层，和外贸一致。 -->
-<view class="confirm-overlay" wx:if="{{visible}}" catchtap="onOverlayTap">
-  <view class="confirm-sheet" catchtap="">
+<!-- 遮罩只在「真的点在遮罩上」时才关闭：靠 e.target.id 判定，不依赖 catch 冒泡语义。
+     此前点数量输入框会被当成点遮罩、整个弹层被收掉（2026-07-27 亮哥反馈）。 -->
+<view class="confirm-overlay" id="dom-sheet-mask" wx:if="{{visible}}" bindtap="onOverlayTap">
+  <view class="confirm-sheet" catchtap="noop">
     <view class="sheet-handle"></view>
 
     <view class="sheet-brand-strip">
@@ -53,11 +55,13 @@
           <text class="sheet-sec-label" style="margin:0">报工数量</text>
           <text class="qty-max">最多 {{maxQty}} 件 · 下单 {{item.order_qty}} 件</text>
         </view>
-        <view class="qty-control">
-          <view class="qty-btn {{qty <= 1 ? 'is-off' : ''}}" bindtap="onMinus">−</view>
-          <input class="qty-input" type="number" value="{{qty}}" bindinput="onInput" bindblur="onBlur" />
-          <view class="qty-btn {{qty >= maxQty ? 'is-off' : ''}}" bindtap="onPlus">+</view>
-          <view class="qty-all {{qty === maxQty ? 'is-on' : ''}}" bindtap="onAll">全部</view>
+        <!-- 整行 catch 掉 tap：输入框获得焦点的那一下绝不能冒到遮罩上去 -->
+        <view class="qty-control" catchtap="noop">
+          <view class="qty-btn {{qty <= 1 ? 'is-off' : ''}}" catchtap="onMinus">−</view>
+          <input class="qty-input" type="number" confirm-type="done"
+                 value="{{qtyText}}" bindinput="onInput" bindblur="onBlur" bindconfirm="onBlur" />
+          <view class="qty-btn {{qty >= maxQty ? 'is-off' : ''}}" catchtap="onPlus">+</view>
+          <view class="qty-all {{qty === maxQty ? 'is-on' : ''}}" catchtap="onAll">全部</view>
         </view>
         <view class="qty-tip" wx:if="{{qty < maxQty}}">
           <text class="qty-tip-dot"></text>
@@ -103,8 +107,8 @@
 </view>
 
 <!-- 工序时间轴弹层（与外贸同一套结构与层级） -->
-<view class="timeline-overlay" wx:if="{{showTimeline}}" catchtap="onTimelineMaskTap">
-  <view class="timeline-sheet" catchtap="">
+<view class="timeline-overlay" id="dom-timeline-mask" wx:if="{{showTimeline}}" bindtap="onTimelineMaskTap">
+  <view class="timeline-sheet" catchtap="noop">
     <view class="sheet-handle"></view>
     <view class="timeline-header">
       <text class="timeline-title">工序进度详情</text>
