@@ -115,8 +115,8 @@ def generate(
         scenes = ai_pipeline.resolve_scenes(body.scene_keys)
         if not scenes:
             raise HTTPException(400, "场景选择无效")
-        ai_pipeline.start_scene_composites(session_id, scenes)
-        return ok({"scene_keys": [s["key"] for s in scenes]})
+        ai_pipeline.start_scene_composites(session_id, scenes, quality=body.quality)
+        return ok({"scene_keys": [s["key"] for s in scenes], "quality": body.quality})
 
     if session.status == "pending":
         raise HTTPException(400, "面容分析尚未完成")
@@ -139,8 +139,10 @@ def generate(
         missing = [i for i in wig_ids if i not in found]
         if missing:
             raise HTTPException(400, f"发型不存在: {missing}")
-    ai_pipeline.start_composites(session_id, wig_ids, hair_color=hair_color, scene=tryon_scene, db=db)
-    return ok({"wig_ids": wig_ids})
+    ai_pipeline.start_composites(
+        session_id, wig_ids, hair_color=hair_color, scene=tryon_scene, db=db, quality=body.quality,
+    )
+    return ok({"wig_ids": wig_ids, "quality": body.quality})
 
 
 @router.get("/hair-colors", summary="发色库列表（kiosk 默认只取启用项）")

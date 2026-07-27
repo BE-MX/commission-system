@@ -175,6 +175,7 @@ class ExpoResult(Base):
     hair_color_json = Column(JSON, nullable=True, comment="发色快照（048 起 hair_color_id/code/name/hex/swatch_path/description；历史行为 palette 旧形态）")
     scene_json = Column(JSON, nullable=True, comment="scene 模式的场景快照（key/label）")
     image_path = Column(String(512), nullable=True, comment="效果图相对路径")
+    quality = Column(String(16), nullable=True, comment="出图档位 high=精致大片 / medium=形象速览；空=用 preset 默认")
     gen_ms = Column(Integer, nullable=True, comment="生成耗时（毫秒）")
     status = Column(String(16), nullable=False, default="pending", comment="pending/generating/done/failed")
     reaction = Column(String(16), nullable=True, comment="loved/soso")

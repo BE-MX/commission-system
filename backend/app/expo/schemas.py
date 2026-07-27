@@ -19,6 +19,12 @@ class GenerateRequest(BaseModel):
     hair_color_id: int | None = Field(None, description="发色库 ark_expo_hair_colors.id，不传则保持发型原色（tryon 模式）")
     scene_key: str | None = Field(None, max_length=32, description="tryon 生成场景 key（home/office/gathering），不传保持原照片背景")
     scene_keys: list[str] | None = Field(None, max_length=6, description="场景 key 列表，不传则取默认前 3 个（scene 模式）")
+    # 值域收在 pattern 里而不是自由字符串：这个值会直接进上游请求参数，
+    # 放开等于把上游 400 的口子留给前端（实测 high≈107s / medium≈55s）
+    quality: str | None = Field(
+        None, pattern="^(high|medium)$",
+        description="出图档位 high=精致大片 / medium=形象速览；不传则用 AI preset 配置",
+    )
 
 
 class ReactionRequest(BaseModel):
