@@ -503,6 +503,26 @@ _TRYON_SCENE_CLAUSE = (
     "than a stiff, posed, camera-facing studio look."
 ) + _SUMMER_WARDROBE_CLAUSE
 
+# 构图与人体比例（2026-07-27 亮哥反馈「人物与背景比例不协调、融入感差」「头身比不协调」）：
+# 两个症状同源——取景太近。近距离拍同时造成透视畸变（头被放大→头身比失衡）和背景压缩
+# （人物像贴在背板上）。改造前全篇只有 _TRYON_SCENE_CLAUSE 里一句 85mm，且那句
+# 「focused on the face and hair」反而在推模型往脸上怼，取景范围/拍摄距离/头身比全无约束。
+# 四件事一次压住：拍摄距离+焦距治畸变、取景范围+头顶留白+占画面中间三分之一治人物过大、
+# 头身比给显式数值(1/7)治头大、透视一致+接地+三层景深治融入感。
+# **只用于场景置换路径**：原景保持(_TRYON_KEEP_BG_CLAUSE)要求构图与原图完全一致，冲突。
+_FRAMING_CLAUSE = (
+    " Framing and human proportion: photograph her from about 3 metres away on the 85mm lens, "
+    "framing her from mid-thigh up so the room reads clearly around and behind her, with "
+    "comfortable breathing space above her head - never a tight head-and-shoulders close-up, "
+    "and she should occupy roughly the central third of the frame's width. Her head must stay "
+    "in correct natural proportion to her body, about one-seventh of her full standing height; "
+    "no enlarged head, no wide-angle facial distortion, no foreshortened torso or legs. "
+    "She must stand convincingly inside the space, sharing one consistent perspective, eye "
+    "level and horizon with the room, properly grounded, with genuine foreground, mid-ground "
+    "and background depth layers so she belongs in the scene rather than being a cut-out "
+    "pasted onto a backdrop."
+)
+
 # 色 + 魂 收尾
 _TRYON_STYLE_TAIL = (
     " Photorealistic straight-out-of-camera quality: true skin texture with visible "
@@ -784,6 +804,7 @@ def _color_clause(color: dict | None) -> str:
 def start_composites(
     session_id: int, wig_ids: list[int],
     hair_color: dict | None = None, scene: dict | None = None, db=None,
+    quality: str | None = None,
 ) -> None:
     """tryon 模式：每款一条 result，发色/场景快照随 result 落库并注入 prompt。
 
@@ -802,6 +823,7 @@ def start_composites(
         rows.append(ExpoResult(
             session_id=session_id, wig_id=wig_id,
             hair_color_json=snap, scene_json=scene_snapshot,
+            quality=quality,
             status="generating",
         ))
     _start_batch(session_id, rows)
@@ -831,12 +853,13 @@ def _resolve_combo_photos(wig_ids: list[int], color_id: int, db=None) -> dict[in
             db.close()
 
 
-def start_scene_composites(session_id: int, scenes: list[dict]) -> None:
+def start_scene_composites(session_id: int, scenes: list[dict], quality: str | None = None) -> None:
     """scene 模式：每个场景一条 result（wig_id 为空，场景快照落库）。"""
     rows = [
         ExpoResult(
             session_id=session_id, wig_id=None,
             scene_json={"key": scene["key"], "label": scene["label"]},
+            quality=quality,
             status="generating",
         )
         for scene in scenes
@@ -917,6 +940,7 @@ def _build_prompt(
     scene_clause = (
         _TRYON_SCENE_CLAUSE.format(scene=tryon_scene["prompt"])
         + _wardrobe_variation_clause(uniform=bool(tryon_scene.get("uniform")))
+        + _FRAMING_CLAUSE  # 构图约束只跟场景置换走（原景保持要求构图不变，见该常量注释）
         if tryon_scene
         else _TRYON_KEEP_BG_CLAUSE  # 原景保持：服装整体锁定，不注入变奏
     )
@@ -951,6 +975,7 @@ def _run_composite(session_id: int, result_id: int) -> None:
             images=[_prep_image(path) for path in images],
             caller_module="expo",
             size=size,
+            quality=row.quality,  # 客户在甄选页选的档位；空则回落 preset 配置
         )
         image_path = _save_result_image(result, result_id)
         make_display_image(image_path)  # kiosk 展示版，失败不阻断（回退原图）
