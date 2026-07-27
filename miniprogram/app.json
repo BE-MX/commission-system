@@ -6,7 +6,9 @@
     "pages/assistant/assistant",
     "pages/login/login",
     "pages/history/history",
-    "pages/overview/overview"
+    "pages/overview/overview",
+    "pages/domestic/scan/scan",
+    "pages/domestic/orders/orders"
   ],
   "tabBar": {
     "custom": true,

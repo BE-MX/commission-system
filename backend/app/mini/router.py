@@ -2,6 +2,7 @@
 
 import logging
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -12,7 +13,12 @@ from app.mini import service
 from app.mini.schemas import (
     MiniBindRequest, MiniLoginRequest,
     ScanSubmitRequest, RevokeRequest,
+    DomesticSubmitRequest, DomesticRevokeRequest,
 )
+from app.domestic import file_service as domestic_file_service
+from app.domestic import order_service as domestic_order_service
+from app.domestic import report_service as domestic_report_service
+from app.domestic.constants import QR_PREFIX as DOMESTIC_QR_PREFIX
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -197,3 +203,126 @@ async def vision_recognize(
 ):
     _ = current_user
     return {"status": "coming_soon", "message": "图片识别功能即将上线"}
+
+
+# ── 内贸报工 ──────────────────────────────────────────────
+# 业务逻辑全在 app/domestic/report_service，这里只做薄路由。
+# 与上面的外贸报工两点不同：二维码前缀是 ARK-D、报工带数量（支持拆批）。
+# 鉴权沿用 get_current_mini_user（小程序端一贯不接 RBAC，见 docs/api-reference.md）。
+
+@router.get("/domestic/scan/{item_id}", summary="内贸扫码：取明细与可报数量")
+async def domestic_scan(
+    item_id: int,
+    sign: str = Query(..., description="二维码 HMAC 签名"),
+    current_user: ArkUser = Depends(get_current_mini_user),
+    db: Session = Depends(get_db),
+):
+    valid, signed_id = domestic_report_service.verify_qr_data(
+        f"{DOMESTIC_QR_PREFIX}:{item_id}:{sign}"
+    )
+    if not valid or signed_id != item_id:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "SIGN_INVALID", "message": "二维码无效，请用系统打印的内贸流转卡"},
+        )
+    return domestic_report_service.scan_item(db, item_id, current_user.id)
+
+
+@router.post("/domestic/scan/submit", summary="内贸报工（带数量，可拆批）")
+async def domestic_submit(
+    body: DomesticSubmitRequest,
+    current_user: ArkUser = Depends(get_current_mini_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        return domestic_report_service.submit_report(
+            db, item_id=body.item_id, progress_id=body.progress_id,
+            qty=body.qty, user_id=current_user.id, source="mini",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"code": "SUBMIT_FAILED", "message": str(exc)})
+
+
+@router.post("/domestic/scan/revoke", summary="内贸撤销报工")
+async def domestic_revoke(
+    body: DomesticRevokeRequest,
+    current_user: ArkUser = Depends(get_current_mini_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        return domestic_report_service.revoke_report(db, body.log_id, current_user.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"code": "REVOKE_FAILED", "message": str(exc)})
+
+
+@router.get("/domestic/history", summary="内贸今日报工记录")
+async def domestic_history(
+    current_user: ArkUser = Depends(get_current_mini_user),
+    db: Session = Depends(get_db),
+):
+    records = domestic_report_service.list_today_reports(db, current_user.id)
+    active = [r for r in records if not r["revoked"]]
+    return {
+        "today_count": len(active),
+        "today_qty": sum(r["report_qty"] for r in active),
+        "records": records,
+    }
+
+
+@router.get("/domestic/history/all", summary="内贸历史报工记录（分页）")
+async def domestic_history_all(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    current_user: ArkUser = Depends(get_current_mini_user),
+    db: Session = Depends(get_db),
+):
+    items, total = domestic_report_service.list_reports(
+        db, page=page, page_size=page_size, user_id=current_user.id,
+    )
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
+@router.get("/domestic/images/{rel_path:path}", summary="内贸参考图（小程序）")
+async def domestic_image(
+    rel_path: str,
+    current_user: ArkUser = Depends(get_current_mini_user),
+):
+    """小程序 token 里没有 RBAC 声明，走不了主站那个 domestic:read 图片端点，
+    所以这里给一个同源的 mini 版本——车间要在手机上看清参考图才能做对活。"""
+    _ = current_user
+    try:
+        abs_path = domestic_file_service.resolve_path(rel_path)
+    except domestic_file_service.FileValidationError as exc:
+        raise HTTPException(status_code=400, detail={"code": "BAD_PATH", "message": str(exc)})
+    if not abs_path.is_file():
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "图片不存在"})
+    return FileResponse(abs_path)
+
+
+@router.get("/domestic/orders", summary="内贸订单进度（车间/跟单查看）")
+async def domestic_orders(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    keyword: str = Query(""),
+    status: int | None = Query(None),
+    current_user: ArkUser = Depends(get_current_mini_user),
+    db: Session = Depends(get_db),
+):
+    _ = current_user
+    items, total = domestic_order_service.list_orders(
+        db, page=page, page_size=page_size, keyword=keyword, status=status,
+    )
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
+@router.get("/domestic/orders/{order_id}", summary="内贸订单明细进度")
+async def domestic_order_detail(
+    order_id: int,
+    current_user: ArkUser = Depends(get_current_mini_user),
+    db: Session = Depends(get_db),
+):
+    _ = current_user
+    try:
+        return domestic_order_service.get_order_detail(db, order_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": str(exc)})

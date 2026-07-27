@@ -1,0 +1,278 @@
+/* pages/domestic/scan/scan.wxss — 沿用主站小程序的品牌黑 + 品牌黄 */
+.dom-page {
+  min-height: 100vh;
+  background: var(--gray-bg);
+  padding-bottom: 40rpx;
+}
+
+.brand-bar {
+  background: var(--brand-black);
+  padding-bottom: 20rpx;
+}
+
+.brand-bar-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16rpx 32rpx 0;
+}
+
+.back-link,
+.brand-right {
+  color: var(--brand-yellow);
+  font-size: 28rpx;
+}
+
+.brand-title {
+  color: #FFFFFF;
+  font-size: 32rpx;
+  font-weight: 600;
+}
+
+.user-bar {
+  background: var(--card-bg);
+  padding: 24rpx 32rpx;
+  margin-bottom: 20rpx;
+}
+
+.user-info { display: flex; flex-direction: column; }
+.user-name { font-size: 30rpx; font-weight: 600; color: var(--text-main); }
+.user-count { font-size: 24rpx; color: var(--text-sub); margin-top: 4rpx; }
+
+/* 扫码区 */
+.scan-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 60rpx 0 40rpx;
+}
+
+.scan-btn {
+  width: 260rpx;
+  height: 260rpx;
+  border-radius: 50%;
+  background: var(--brand-yellow);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8rpx 24rpx rgba(212, 182, 32, 0.35);
+}
+
+.scan-btn-text {
+  font-size: 44rpx;
+  font-weight: 700;
+  color: var(--brand-black);
+  letter-spacing: 4rpx;
+}
+
+.scan-hint {
+  margin-top: 28rpx;
+  font-size: 26rpx;
+  color: var(--text-sub);
+}
+
+/* 确认卡 */
+.confirm-card {
+  background: var(--card-bg);
+  margin: 0 24rpx;
+  border-radius: 20rpx;
+  padding: 28rpx;
+}
+
+.product-head { margin-bottom: 20rpx; }
+.product-name { font-size: 32rpx; font-weight: 600; color: var(--text-main); display: block; }
+.product-sub { font-size: 24rpx; color: var(--text-sub); margin-top: 6rpx; display: block; }
+
+.step-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  padding: 20rpx;
+  background: var(--brand-yellow-bg);
+  border-radius: 12rpx;
+  margin-bottom: 24rpx;
+}
+
+.step-label { font-size: 24rpx; color: var(--text-sub); }
+.step-value { font-size: 32rpx; font-weight: 700; color: var(--text-main); }
+.step-order { font-size: 24rpx; color: var(--text-sub); margin-left: auto; }
+
+/* 数量区：整批一键、拆批调小 */
+.qty-block { margin-bottom: 24rpx; }
+
+.qty-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 14rpx;
+}
+
+.qty-label { font-size: 28rpx; font-weight: 600; color: var(--text-main); }
+.qty-max { font-size: 24rpx; color: var(--text-sub); }
+
+.qty-control { display: flex; align-items: center; gap: 16rpx; }
+
+.qty-btn {
+  width: 88rpx;
+  height: 88rpx;
+  border-radius: 12rpx;
+  background: var(--gray-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 44rpx;
+  color: var(--text-main);
+}
+
+.qty-input {
+  flex: 1;
+  height: 88rpx;
+  text-align: center;
+  font-size: 40rpx;
+  font-weight: 700;
+  border: 2rpx solid var(--border);
+  border-radius: 12rpx;
+  background: #FFFFFF;
+}
+
+.qty-all {
+  padding: 0 24rpx;
+  height: 88rpx;
+  line-height: 88rpx;
+  border-radius: 12rpx;
+  background: var(--brand-yellow);
+  color: var(--brand-black);
+  font-size: 26rpx;
+  font-weight: 600;
+}
+
+.qty-tip {
+  display: block;
+  margin-top: 12rpx;
+  font-size: 24rpx;
+  color: var(--warning);
+}
+
+/* 图文要求 */
+.req-block {
+  padding: 20rpx;
+  background: var(--gray-bg);
+  border-radius: 12rpx;
+  margin-bottom: 16rpx;
+}
+
+.req-row { display: flex; margin-bottom: 10rpx; }
+.req-label { width: 80rpx; font-size: 24rpx; color: var(--text-sub); flex-shrink: 0; }
+.req-text { flex: 1; font-size: 26rpx; color: var(--text-main); }
+
+.img-grid { display: flex; flex-wrap: wrap; gap: 12rpx; margin-bottom: 20rpx; }
+
+.req-img {
+  width: 160rpx;
+  height: 160rpx;
+  border-radius: 12rpx;
+  background: var(--gray-bg);
+}
+
+/* 工序清单 */
+.steps-block { margin-bottom: 24rpx; }
+.steps-title { font-size: 26rpx; color: var(--text-sub); margin-bottom: 10rpx; }
+
+.step-line {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 12rpx 0;
+  border-bottom: 2rpx solid var(--border);
+}
+
+.line-order {
+  width: 40rpx;
+  height: 40rpx;
+  line-height: 40rpx;
+  text-align: center;
+  border-radius: 50%;
+  background: var(--gray-bg);
+  font-size: 22rpx;
+  color: var(--text-sub);
+}
+
+.line-name { flex: 1; font-size: 26rpx; color: var(--text-main); }
+.line-qty { font-size: 26rpx; color: var(--text-sub); }
+
+.confirm-actions { display: flex; gap: 16rpx; }
+
+.btn-ghost,
+.btn-primary {
+  flex: 1;
+  height: 92rpx;
+  line-height: 92rpx;
+  text-align: center;
+  border-radius: 14rpx;
+  font-size: 30rpx;
+  font-weight: 600;
+}
+
+.btn-ghost { background: var(--gray-bg); color: var(--text-main); }
+.btn-primary { background: var(--brand-yellow); color: var(--brand-black); flex: 2; }
+.btn-primary.is-disabled { opacity: 0.6; }
+
+/* 今日记录 */
+.section-header { padding: 24rpx 32rpx 12rpx; }
+.section-title { font-size: 28rpx; font-weight: 600; color: var(--text-main); }
+
+.record-list { margin: 0 24rpx; }
+
+.record-item {
+  display: flex;
+  align-items: center;
+  background: var(--card-bg);
+  border-radius: 14rpx;
+  padding: 22rpx 24rpx;
+  margin-bottom: 12rpx;
+}
+
+.record-item.is-revoked { opacity: 0.55; }
+.record-main { flex: 1; }
+.record-product { font-size: 28rpx; color: var(--text-main); display: block; }
+.record-meta { font-size: 24rpx; color: var(--text-sub); margin-top: 4rpx; display: block; }
+.record-revoked { font-size: 24rpx; color: var(--text-muted); }
+
+.record-action {
+  padding: 10rpx 24rpx;
+  border-radius: 10rpx;
+  border: 2rpx solid var(--danger);
+  color: var(--danger);
+  font-size: 24rpx;
+}
+
+.record-empty {
+  text-align: center;
+  padding: 60rpx 0;
+  font-size: 26rpx;
+  color: var(--text-muted);
+}
+
+/* 提示层 */
+.toast-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.toast-card {
+  width: 560rpx;
+  background: #FFFFFF;
+  border-radius: 20rpx;
+  padding: 40rpx 32rpx;
+  text-align: center;
+}
+
+.toast-title { font-size: 32rpx; font-weight: 700; display: block; margin-bottom: 12rpx; }
+.toast-text { font-size: 26rpx; color: var(--text-sub); display: block; }
+.toast-success .toast-title { color: var(--success); }
+.toast-error .toast-title { color: var(--danger); }

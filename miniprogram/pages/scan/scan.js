@@ -281,6 +281,17 @@ Page({
 
   _handleScanResult: function (scan) {
     var raw = scan.result || ''
+
+    // 内贸流转卡（ARK-D）走内贸报工页：工人从哪个入口扫都不会扫错，零思考
+    var domestic = raw.match(/^ARK-D:(\d+):([a-f0-9]+)$/)
+    if (domestic) {
+      this.setData({ state: 'idle' })
+      wx.navigateTo({
+        url: '/pages/domestic/scan/scan?itemId=' + domestic[1] + '&sign=' + domestic[2]
+      })
+      return
+    }
+
     var match = raw.match(/^ARK-P:(\d+):([a-f0-9]+)$/)
     if (!match) {
       this._showError('二维码无效', '请扫描正确的工艺流转卡二维码')
@@ -436,6 +447,10 @@ Page({
 
   onAllRecordsTap: function () {
     wx.navigateTo({ url: '/pages/history/history' })
+  },
+
+  onDomesticTap: function () {
+    wx.navigateTo({ url: '/pages/domestic/scan/scan' })
   },
 
   // ─── 错误处理 ──────────────────────────────

@@ -1,0 +1,65 @@
+<!-- pages/domestic/orders/orders.wxml — 内贸订单进度 -->
+<view class="orders-page">
+  <view class="filter-bar">
+    <view class="search-row">
+      <input class="search-input" placeholder="搜单号 / 客户订单号" value="{{keyword}}" bindinput="onKeywordInput" bindconfirm="onSearchTap" />
+      <view class="search-btn" bindtap="onSearchTap">搜索</view>
+    </view>
+    <scroll-view class="chip-row" scroll-x>
+      <view
+        wx:for="{{statusOptions}}" wx:key="value"
+        class="chip {{statusFilter === item.value ? 'is-active' : ''}}"
+        data-value="{{item.value}}" bindtap="onStatusTap"
+      >{{item.label}}</view>
+    </scroll-view>
+  </view>
+
+  <view class="order-list">
+    <view class="order-card" wx:for="{{orders}}" wx:key="id" data-id="{{item.id}}" bindtap="onOrderTap">
+      <view class="order-head">
+        <text class="order-no">{{item.domestic_no}}</text>
+        <text class="order-status status-{{item.status}}">{{item.status_label}}</text>
+      </view>
+      <text class="order-customer">{{item.customer_name}} · 单号 {{item.order_no}}</text>
+      <view class="order-meta">
+        <text>{{item.item_count}} 行 / {{item.total_qty}} 件</text>
+        <text>{{item.order_type_label}}</text>
+        <text>{{item.order_date}}</text>
+      </view>
+      <view class="progress-track">
+        <view class="progress-fill" style="width: {{item.progress_pct}}%"></view>
+      </view>
+      <text class="progress-text">生产进度 {{item.progress_pct}}%</text>
+    </view>
+
+    <view class="list-empty" wx:if="{{orders.length === 0 && !loading}}">没有符合条件的订单</view>
+    <view class="list-more" wx:if="{{loading}}">加载中…</view>
+    <view class="list-more" wx:elif="{{noMore && orders.length > 0}}">没有更多了</view>
+  </view>
+
+  <!-- 明细进度弹层 -->
+  <view class="detail-mask" wx:if="{{detailVisible}}" bindtap="onDetailClose">
+    <view class="detail-sheet" catchtap="noop">
+      <view class="detail-head">
+        <text class="detail-title">{{detail.domestic_no}}</text>
+        <text class="detail-close" bindtap="onDetailClose">关闭</text>
+      </view>
+      <text class="detail-sub">{{detail.customer_name}} · {{detail.status_label}}</text>
+
+      <scroll-view class="detail-body" scroll-y>
+        <view class="detail-item" wx:for="{{detail.items}}" wx:key="id">
+          <view class="detail-item-head">
+            <text class="detail-product">{{item.product_name}}</text>
+            <text class="detail-qty">{{item.order_qty}} 件</text>
+          </view>
+          <text class="detail-current">当前：{{item.current_process}}</text>
+          <view class="detail-step" wx:for="{{item.steps}}" wx:for-item="step" wx:key="progress_id">
+            <text class="detail-step-name">{{step.step_order}}. {{step.process_name}}</text>
+            <text class="detail-step-qty">{{step.completed_qty}} / {{step.order_qty}}</text>
+            <text class="detail-step-wait" wx:if="{{step.reportable_qty > 0}}">可报 {{step.reportable_qty}}</text>
+          </view>
+        </view>
+      </scroll-view>
+    </view>
+  </view>
+</view>

@@ -241,6 +241,29 @@
   letter-spacing: 0.5px;
 }
 
+/* 内贸报工直达入口 */
+.domestic-entry {
+  margin-top: 20rpx;
+  padding: 12rpx 28rpx;
+  border-radius: 32rpx;
+  border: 2rpx solid var(--brand-yellow-d);
+  background: var(--brand-yellow-bg);
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+}
+
+.domestic-entry-text {
+  font-size: 26rpx;
+  color: #7A6410;
+  font-weight: 500;
+}
+
+.domestic-entry-arrow {
+  font-size: 26rpx;
+  color: #7A6410;
+}
+
 /* ── 今日记录 ── */
 .section-header {
   display: flex;
