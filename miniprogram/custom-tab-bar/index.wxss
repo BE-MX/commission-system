@@ -264,3 +264,62 @@
   height: 4px;
   border-radius: 50%;
 }
+
+
+/* ══════════════════════════════════════════
+   图标4：叠卡 — 两张错位卡片（对应「按数量拆批」）
+   统一线宽 2px、圆角 3px，与其余三个图标同一套描边语言
+   ══════════════════════════════════════════ */
+.icon-layers view {
+  position: absolute;
+  width: 17px;
+  height: 17px;
+  border: 2px solid rgba(255,255,255,0.72);
+  border-radius: 3px;
+  box-sizing: border-box;
+}
+
+/* 后面那张：右上，只描边 */
+.ly-back {
+  top: 2px;
+  right: 2px;
+  background: transparent !important;
+}
+
+/* 前面那张：左下，用底栏底色填充把后面那张遮住一角，才有叠放的层次 */
+.ly-front {
+  bottom: 2px;
+  left: 2px;
+  background: #1A1A1A !important;
+}
+
+.tab-item.active .icon-layers view {
+  border-color: #F5D547;
+}
+
+/* ══════════════════════════════════════════
+   内贸 tab 的激活色：品牌绿（外贸是品牌黄）
+   —— 底栏是共用外壳，用激活色告诉工人当前在哪一侧
+   颜色写死不用变量：本文件其余部分同样写死（自定义组件样式隔离，
+   保持一处风格，不引入「有的用变量有的不用」的混乱）
+   ══════════════════════════════════════════ */
+.tab-item--domestic.active .tab-label {
+  color: #0AA66F;
+}
+
+.tab-item--domestic.active::after {
+  background: #0AA66F;
+}
+
+.tab-item--domestic.active .tab-icon {
+  filter: drop-shadow(0 0 5px rgba(10, 166, 111, 0.7));
+}
+
+.tab-item--domestic.active .icon-layers view {
+  border-color: #0AA66F;
+}
+
+/* 前卡的填充始终是底栏底色，不能被激活态的 background 规则改掉 */
+.tab-item--domestic.active .ly-front {
+  background: #1A1A1A !important;
+}

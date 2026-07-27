@@ -44,13 +44,24 @@ Page({
       statusBarHeight: info.statusBarHeight || 20,
       userName: (app.globalData.userInfo && app.globalData.userInfo.name) || ''
     })
-    // 从主扫码页按 ARK-D 前缀分流过来时直接带着 itemId/sign，不用再扫一次
+    // 本页现在是 tabBar 页，正常不会带 query；保留这条是为了兼容旧的
+    // navigateTo 链接（比如别处写死的路径）
     if (options && options.itemId && options.sign) {
       this._loadItem(parseInt(options.itemId), options.sign)
     }
   },
 
   onShow: function () {
+    if (typeof this.getTabBar === 'function' && this.getTabBar()) {
+      this.getTabBar().setData({ selected: 1, hide: false })
+    }
+    // switchTab 不能带 query 参数，所以外贸页扫到 ARK-D 码时把 payload
+    // 暂存在 globalData 里，切过来后在这里取出并清掉（只消费一次）
+    var pending = app.globalData.pendingDomesticScan
+    if (pending) {
+      app.globalData.pendingDomesticScan = null
+      this._loadItem(pending.itemId, pending.sign)
+    }
     this._loadHistory()
   },
 
@@ -73,11 +84,11 @@ Page({
         var raw = scan.result || ''
         var match = raw.match(/^ARK-D:(\d+):([a-f0-9]+)$/)
         if (!match) {
-          // 扫到外贸卡：说清楚发生了什么再送回外贸报工页，别让工人一头雾水
+          // 扫到外贸卡：说清楚发生了什么再切到外贸报工，别让工人一头雾水
           if (/^ARK-P:/.test(raw)) {
             self.setData({ state: 'idle' })
-            wx.showToast({ title: '这是外贸流转卡，帮你切回外贸报工', icon: 'none', duration: 2000 })
-            setTimeout(function () { wx.navigateBack() }, 1200)
+            wx.showToast({ title: '这是外贸流转卡，帮你切到外贸报工', icon: 'none', duration: 2000 })
+            setTimeout(function () { wx.switchTab({ url: '/pages/scan/scan' }) }, 1200)
             return
           }
           self._showError('二维码无效', BLOCK_HINTS.SIGN_INVALID)
@@ -240,8 +251,12 @@ Page({
           state: 'idle', successVisible: true, successText: text,
           scanned: null, nextStep: null, images: []
         })
+        self._setTabBarHidden(true)
         self._loadHistory()
-        setTimeout(function () { self.setData({ successVisible: false }) }, 2500)
+        setTimeout(function () {
+          self.setData({ successVisible: false })
+          self._setTabBarHidden(false)
+        }, 2500)
       },
       fail: function () {
         self._showError('网络异常', '请检查网络后重试')
@@ -310,15 +325,33 @@ Page({
     wx.navigateTo({ url: '/pages/domestic/orders/orders' })
   },
 
+  onSwitchModuleTap: function () {
+    // tabBar 页的页面栈是空的，只能 reLaunch 回落地页
+    wx.reLaunch({ url: '/pages/entry/entry' })
+  },
+
   // ─── 错误处理 ──────────────────────────────
+
+  // 底栏是 fixed z-index 999，弹层遮罩盖不住它（跨组件 z-index 不可比），
+  // 所以弹层期间直接把底栏收起来——外贸页弹确认框时也是这么做的
+  _setTabBarHidden: function (hidden) {
+    if (typeof this.getTabBar === 'function' && this.getTabBar()) {
+      this.getTabBar().setData({ hide: hidden })
+    }
+  },
 
   _showError: function (title, detail) {
     var self = this
     this.setData({ errorVisible: true, errorTitle: title, errorDetail: detail })
-    setTimeout(function () { self.setData({ errorVisible: false }) }, 3000)
+    this._setTabBarHidden(true)
+    setTimeout(function () {
+      self.setData({ errorVisible: false })
+      self._setTabBarHidden(false)
+    }, 3000)
   },
 
   onErrorClose: function () {
     this.setData({ errorVisible: false })
+    this._setTabBarHidden(false)
   }
 })

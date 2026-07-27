@@ -2,7 +2,8 @@
 .dom-page {
   min-height: 100vh;
   background: var(--gray-bg);
-  padding-bottom: 40rpx;
+  /* 底栏是 fixed 的（83px + 安全区），内容要让开否则确认按钮被压在下面 */
+  padding-bottom: calc(200rpx + env(safe-area-inset-bottom));
 }
 
 .brand-bar {

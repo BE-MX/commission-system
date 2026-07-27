@@ -1,8 +1,9 @@
 <!-- custom-tab-bar/index.wxml -->
-<!-- 底栏：品牌黑底 + 统一线条风格图标 + 黄色光晕 + 激活指示条 -->
+<!-- 底栏：品牌黑底 + 统一线条风格图标 + 激活指示条
+     激活色按模块区分：外贸=品牌黄，内贸=品牌绿（与各自页面配色一致） -->
 
 <view class="tabbar safe-bottom" wx:if="{{!hide}}">
-  <!-- 扫码报工：扫描框 — 四角取景框 + 扫描线 -->
+  <!-- 0 外贸报工：扫描框 — 四角取景框 + 扫描线 -->
   <view class="tab-item {{selected === 0 ? 'active' : ''}}" bindtap="onTabTap" data-index="0">
     <view class="tab-icon icon-scan">
       <view class="sc-c sc-tl"></view>
@@ -11,11 +12,21 @@
       <view class="sc-c sc-br"></view>
       <view class="sc-line"></view>
     </view>
-    <text class="tab-label">扫码报工</text>
+    <text class="tab-label">外贸报工</text>
   </view>
 
-  <!-- 拍照上传：相机 — 机身 + 镜头 + 闪光灯（功能未上线，showReserved 控制显隐） -->
-  <view class="tab-item {{selected === 1 ? 'active' : ''}}" bindtap="onTabTap" data-index="1" wx:if="{{showReserved}}">
+  <!-- 1 内贸报工：叠卡 — 两张错位卡片，对应「按数量拆批」；
+       与扫描框同为 2px 描边风格，不用实心块（实心横条会读成菜单图标） -->
+  <view class="tab-item tab-item--domestic {{selected === 1 ? 'active' : ''}}" bindtap="onTabTap" data-index="1">
+    <view class="tab-icon icon-layers">
+      <view class="ly-back"></view>
+      <view class="ly-front"></view>
+    </view>
+    <text class="tab-label">内贸报工</text>
+  </view>
+
+  <!-- 2 拍照上传：相机 — 机身 + 镜头 + 闪光灯（功能未上线，showReserved 控制显隐） -->
+  <view class="tab-item {{selected === 2 ? 'active' : ''}}" bindtap="onTabTap" data-index="2" wx:if="{{showReserved}}">
     <view class="tab-icon icon-camera">
       <view class="cam-body"></view>
       <view class="cam-lens"></view>
@@ -24,8 +35,8 @@
     <text class="tab-label">拍照上传</text>
   </view>
 
-  <!-- 生产助手：客服耳机 — 头带弧 + 耳罩 + 麦克风（功能未上线，showReserved 控制显隐） -->
-  <view class="tab-item {{selected === 2 ? 'active' : ''}}" bindtap="onTabTap" data-index="2" wx:if="{{showReserved}}">
+  <!-- 3 生产助手：客服耳机 — 头带弧 + 耳罩 + 麦克风（功能未上线，showReserved 控制显隐） -->
+  <view class="tab-item {{selected === 3 ? 'active' : ''}}" bindtap="onTabTap" data-index="3" wx:if="{{showReserved}}">
     <view class="tab-icon icon-headset">
       <view class="hs-band"></view>
       <view class="hs-ear-l"></view>

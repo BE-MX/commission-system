@@ -282,13 +282,16 @@ Page({
   _handleScanResult: function (scan) {
     var raw = scan.result || ''
 
-    // 内贸流转卡（ARK-D）走内贸报工页：工人从哪个入口扫都不会扫错，零思考
+    // 内贸流转卡（ARK-D）自动切到内贸报工：工人从哪个入口扫都不会扫错，零思考。
+    // switchTab 不能带 query，payload 先存 globalData，内贸页 onShow 取走
     var domestic = raw.match(/^ARK-D:(\d+):([a-f0-9]+)$/)
     if (domestic) {
       this.setData({ state: 'idle' })
-      wx.navigateTo({
-        url: '/pages/domestic/scan/scan?itemId=' + domestic[1] + '&sign=' + domestic[2]
-      })
+      app.globalData.pendingDomesticScan = {
+        itemId: parseInt(domestic[1]),
+        sign: domestic[2]
+      }
+      wx.switchTab({ url: '/pages/domestic/scan/scan' })
       return
     }
 

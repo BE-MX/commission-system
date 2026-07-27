@@ -2,7 +2,8 @@
 <view class="dom-page">
   <view class="brand-bar" style="padding-top: {{statusBarHeight}}px">
     <view class="brand-bar-inner">
-      <navigator open-type="navigateBack" class="back-link">‹ 返回</navigator>
+      <!-- tabBar 页没有返回栈，用「切换模块」回落地页（与外贸页同一套做法） -->
+      <text class="back-link" bindtap="onSwitchModuleTap">切换模块</text>
       <text class="brand-title">内贸报工</text>
       <text class="brand-right" bindtap="onOrdersTap">订单进度</text>
     </view>

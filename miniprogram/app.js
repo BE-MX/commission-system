@@ -3,6 +3,9 @@ App({
   globalData: {
     userInfo: null,
     token: null,
+    // 外贸页扫到 ARK-D 码时的暂存位：switchTab 不能带 query 参数，
+    // 内贸页 onShow 取走后立即置回 null（只消费一次）
+    pendingDomesticScan: null,
     // baseUrl: 'http://10.91.3.182:8001'    // 本地开发（真机调试用）
     baseUrl: 'https://leshine.work'             // 生产/体验版
   },

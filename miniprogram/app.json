@@ -20,7 +20,11 @@
     "list": [
       {
         "pagePath": "pages/scan/scan",
-        "text": "扫码报工"
+        "text": "外贸报工"
+      },
+      {
+        "pagePath": "pages/domestic/scan/scan",
+        "text": "内贸报工"
       },
       {
         "pagePath": "pages/photo/photo",

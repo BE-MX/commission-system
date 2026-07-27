@@ -40,7 +40,8 @@ Page({
   },
 
   onDomesticTap: function () {
-    wx.navigateTo({ url: '/pages/domestic/scan/scan' })
+    // 内贸页现在也是 tabBar 页，同样只能 switchTab
+    wx.switchTab({ url: '/pages/domestic/scan/scan' })
   },
 
   onLogoutTap: function () {
