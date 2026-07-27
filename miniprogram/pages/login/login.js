@@ -34,7 +34,7 @@ Page({
           success: function (res) {
             if (res.statusCode === 200 && res.data.bound) {
               app.saveAuth(res.data.token, res.data.user)
-              wx.switchTab({ url: '/pages/scan/scan' })
+              wx.reLaunch({ url: '/pages/entry/entry' })
             } else if (res.statusCode === 200) {
               self.setData({ openId: res.data.open_id, isLoggingIn: false })
             } else {
@@ -79,7 +79,7 @@ Page({
         self.setData({ loading: false })
         if (res.statusCode === 200) {
           app.saveAuth(res.data.token, res.data.user)
-          wx.switchTab({ url: '/pages/scan/scan' })
+          wx.reLaunch({ url: '/pages/entry/entry' })
         } else {
           var msg = (res.data && res.data.detail && res.data.detail.message) || '绑定失败'
           wx.showToast({ title: msg, icon: 'none', duration: 3000 })
@@ -108,7 +108,7 @@ Page({
         self.setData({ loading: false })
         if (res.statusCode === 200) {
           app.saveAuth(res.data.token, res.data.user)
-          wx.switchTab({ url: '/pages/scan/scan' })
+          wx.reLaunch({ url: '/pages/entry/entry' })
         } else {
           var msg = (res.data && res.data.detail && res.data.detail.message) || '登录失败'
           wx.showToast({ title: msg, icon: 'none', duration: 3000 })

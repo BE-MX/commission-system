@@ -45,10 +45,10 @@
       </view>
     </view>
     <text class="scan-hint">点击扫描工艺流转卡</text>
-    <!-- 内贸卡也能用上面的主扫码按钮（按 ARK-D 前缀自动分流），这里给个直达入口 -->
-    <view class="domestic-entry" bindtap="onDomesticTap">
-      <text class="domestic-entry-text">内贸报工</text>
-      <text class="domestic-entry-arrow">›</text>
+    <!-- 回模块选择页；内贸卡即使在这里扫也会按 ARK-D 前缀自动分流过去 -->
+    <view class="switch-entry" bindtap="onSwitchModuleTap">
+      <text class="switch-entry-text">切换模块</text>
+      <text class="switch-entry-arrow">›</text>
     </view>
   </view>
 

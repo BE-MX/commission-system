@@ -241,27 +241,26 @@
   letter-spacing: 0.5px;
 }
 
-/* 内贸报工直达入口 */
-.domestic-entry {
+/* 回模块选择页 */
+.switch-entry {
   margin-top: 20rpx;
   padding: 12rpx 28rpx;
   border-radius: 32rpx;
-  border: 2rpx solid var(--brand-yellow-d);
-  background: var(--brand-yellow-bg);
+  border: 2rpx solid var(--border);
+  background: var(--card-bg);
   display: flex;
   align-items: center;
   gap: 6rpx;
 }
 
-.domestic-entry-text {
+.switch-entry-text {
   font-size: 26rpx;
-  color: #7A6410;
-  font-weight: 500;
+  color: var(--text-sub);
 }
 
-.domestic-entry-arrow {
+.switch-entry-arrow {
   font-size: 26rpx;
-  color: #7A6410;
+  color: var(--text-muted);
 }
 
 /* ── 今日记录 ── */

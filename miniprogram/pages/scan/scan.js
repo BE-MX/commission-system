@@ -449,8 +449,9 @@ Page({
     wx.navigateTo({ url: '/pages/history/history' })
   },
 
-  onDomesticTap: function () {
-    wx.navigateTo({ url: '/pages/domestic/scan/scan' })
+  onSwitchModuleTap: function () {
+    // scan 是 tabBar 页，页面栈是空的，只能 reLaunch 回选择页
+    wx.reLaunch({ url: '/pages/entry/entry' })
   },
 
   // ─── 错误处理 ──────────────────────────────
