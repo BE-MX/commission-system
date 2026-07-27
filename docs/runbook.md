@@ -670,10 +670,24 @@ grep "job completed" logs\service.log | tail -20
   ①新加坡 `root@119.28.107.92:/var/www/hair-styles`（正式域名 hair.leshine.work，二维码指向这里）；
   ②北京 `ubuntu@154.8.205.162:/var/www/hair-styles`（IP 兜底 `/hair/`，`/var/www/hair` 是指向它的软链）。
   北京机 **root 拒登、只能用 ubuntu**（有免密 sudo，但该目录 ubuntu 属主可直接写）；新加坡机用 root。
-  源文件是亮哥 `Downloads\莱莎16款明星发型静态网页\index.html`（单文件 SPA，16 款产品数据以 `window.PRODUCTS` 内联，
-  hash 路由 `#/p/<slug>`）——注意**本地 `assets/` 是空的**，图片音频 33MB 只存在于服务器，
+  源文件是亮哥 `Downloads\00_Inbox\莱莎16款明星发型静态网页\`（`index.html` = 单文件 SPA，16 款产品数据以
+  `window.PRODUCTS` 内联，hash 路由 `#/p/<slug>`）——注意**本地 `assets/` 是空的**，图片音频 33MB 只存在于服务器，
   所以视觉验收必须截线上，本地打开只有骨架。改法：先 `md5sum` 比对本地与服务器确认没有更新的线上版本 →
   服务器 `cp -a index.html index.html.bak-<日期>` → scp 覆盖 → curl 复验。
+
+- **站内独立子路径页（2026-07-27 起，首例 `/yidaoqie/` 一刀切）**：外部做好的整份静态站（自带 css/js/图/音视频）
+  不必改写进 `window.PRODUCTS`，直接放 `/var/www/hair-styles/<slug>/` 即可服务——新加坡走 `location / { try_files }`，
+  北京兜底走 `location ^~ /hair/` 的 `$uri/`，两处都命中子目录 index.html，**nginx 零改动**。三条硬要求：
+  ①页面内资源引用必须全相对（`url("/x.webp")`、`src="/og.png"` 这类前导斜杠在子路径下必 404，og:image 改写成完整
+  URL）；②返回总览的链接用 `../` 而不是 `/`（北京挂在 `/hair/` 下，`/` 会跳去方舟主站）；③SPA 侧把对应产品条目换成
+  带 `external` 字段的卡片（`productCard` 用 `location.href` 取代 `selectProduct`，`renderFromHash` 对 external 条目
+  `location.replace` 跳转），卡片图要用**真人竖构图**（`.card-image img` 是 `object-fit:cover; object-position:top`，
+  发架实拍混在 16 宫格里会明显突兀）。源码回存 `Downloads\00_Inbox\莱莎16款明星发型静态网页\<slug>\` 与线上同构。
+
+- **展会二维码规格（复刻自 qrcodes/ 既有 16 张）**：984×1074 画布（码区 984 + 标签带 90），纠错 H，码点 `#0d6e4b`，
+  中心 265×265 圆角徽章（半径 35，**直接从既有码图 crop (359,359,624,624) + 圆角遮罩**，比重画 logo 保真），
+  底部 Arial Bold 大写 slug、cap-height 32px、色 `(110,130,122)`。生成后必须用 `cv2.QRCodeDetector` 在
+  984/400/250 三个尺度各解一次，全 PASS 才算数（250px 模拟远距离扫）。二维码存 `qrcodes/<slug>.png`。
 
 - **展位平板专用 HTTPS 入口（2026-07-24 加）**：`https://154.8.205.162/expo/kiosk`。IP 申请不到 CA 证书，
   用 10 年自签证书 `/etc/nginx/ssl/expo-ip.{crt,key}`（CN=154.8.205.162，含 IP SAN，2036-07-21 到期），
