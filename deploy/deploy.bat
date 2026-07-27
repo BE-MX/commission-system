@@ -269,78 +269,55 @@ exit /b 0
 :scp_smart
 REM 利用 ssh+md5sum 比对，只传变化的文件
 set "SMART_FAIL=0"
-REM 1) 获取远程 assets 文件 md5 清单
-echo      Computing diff via ssh...
-REM stderr 不再吞（2026-07-26）：ssh 失败的原因必须可见，远程 find 自己已经 2>/dev/null
-ssh %SSH_OPTS% %CLOUD_SERVER% "cd %CLOUD_DIST% && find assets/ -type f -exec md5sum {} \; 2>/dev/null" > "%TEMP%\cloud_md5.txt"
-REM ssh failure leaves an EMPTY file behind (the > redirect creates it first);
-REM delete it so we fall through to :scp_full instead of diffing against nothing
-if errorlevel 1 del /q "%TEMP%\cloud_md5.txt" >nul 2>&1
-
-REM 2) 生成本地 md5 清单
 cd /d "%INSTALL_DIR%\frontend\dist"
-if exist "%TEMP%\cloud_md5.txt" (
-    REM 有远程清单，做增量比对
-    set UPLOAD_COUNT=0
-    REM index.html 不在这里传——挪到全部 assets/vendor 成功之后（见本块末尾的原子切换）
-    REM m/ is small (<1MB), always upload
-    scp %SSH_OPTS% -r m %CLOUD_SERVER%:%CLOUD_DIST%/ >nul
-    if errorlevel 1 echo      [WARNING] m/ upload failed ^(mobile pages may be stale^) - not fatal
-    REM vendor/ holds ~35MB Stimulsoft that almost never changes: upload only when
-    REM git says it changed since the last synced build, or the cloud copy is missing
-    set "VENDOR_CHANGED=0"
-    if not defined FRONTEND_BASE set "VENDOR_CHANGED=1"
-    if defined FRONTEND_BASE (
-        git -C "%INSTALL_DIR%" diff --name-only %FRONTEND_BASE% HEAD -- frontend/public/vendor/ 2>nul | findstr /R "." >nul 2>&1
-        if not errorlevel 1 set "VENDOR_CHANGED=1"
-    )
-    git -C "%INSTALL_DIR%" diff --name-only -- frontend/public/vendor/ 2>nul | findstr /R "." >nul 2>&1
+REM m/ is small (<1MB), always upload
+scp %SSH_OPTS% -r m %CLOUD_SERVER%:%CLOUD_DIST%/ >nul
+if errorlevel 1 echo      [WARNING] m/ upload failed ^(mobile pages may be stale^) - not fatal
+REM vendor/ holds ~35MB Stimulsoft that almost never changes: upload only when
+REM git says it changed since the last synced build, or the cloud copy is missing
+set "VENDOR_CHANGED=0"
+if not defined FRONTEND_BASE set "VENDOR_CHANGED=1"
+if defined FRONTEND_BASE (
+    git -C "%INSTALL_DIR%" diff --name-only %FRONTEND_BASE% HEAD -- frontend/public/vendor/ 2>nul | findstr /R "." >nul 2>&1
     if not errorlevel 1 set "VENDOR_CHANGED=1"
-    ssh %SSH_OPTS% %CLOUD_SERVER% "test -d %CLOUD_DIST%/vendor/stimulsoft" >nul 2>&1
-    if errorlevel 1 set "VENDOR_CHANGED=1"
-    if "!VENDOR_CHANGED!"=="1" (
-        echo      vendor/ changed or missing on cloud, uploading ~35MB...
-        REM no ^>nul here: a 35MB transfer with output swallowed looks like a hang
-        scp %SSH_OPTS% -r vendor %CLOUD_SERVER%:%CLOUD_DIST%/
-        if errorlevel 1 set "SMART_FAIL=1"
+)
+git -C "%INSTALL_DIR%" diff --name-only -- frontend/public/vendor/ 2>nul | findstr /R "." >nul 2>&1
+if not errorlevel 1 set "VENDOR_CHANGED=1"
+ssh %SSH_OPTS% %CLOUD_SERVER% "test -d %CLOUD_DIST%/vendor/stimulsoft" >nul 2>&1
+if errorlevel 1 set "VENDOR_CHANGED=1"
+if "!VENDOR_CHANGED!"=="1" (
+    echo      vendor/ changed or missing on cloud, uploading ~35MB...
+    REM no ^>nul here: a 35MB transfer with output swallowed looks like a hang
+    scp %SSH_OPTS% -r vendor %CLOUD_SERVER%:%CLOUD_DIST%/
+    if errorlevel 1 set "SMART_FAIL=1"
+) else (
+    echo      vendor/ unchanged, skipped
+)
+REM 2026-07-26: assets 整目录一次传完，取代原来的 md5 逐文件比对。
+REM 实测一次 build = 211 文件 / 5.2MB，其中 193 个 / 4.0MB 是新 hash——vite 每次 build
+REM 都换文件名，"只传变化的"只省 23% 流量，却要开 191 条 SSH 连接、跑 27 分钟，
+REM 且每条连接都是一次失败机会（2026-07-25 就是其中一条挂了）。
+echo      Uploading assets in one connection...
+ssh %SSH_OPTS% %CLOUD_SERVER% "rm -rf %CLOUD_DIST%/assets.new %CLOUD_DIST%/index.html.new"
+scp %SSH_OPTS% -r assets %CLOUD_SERVER%:%CLOUD_DIST%/assets.new
+if errorlevel 1 set "SMART_FAIL=1"
+scp %SSH_OPTS% index.html %CLOUD_SERVER%:%CLOUD_DIST%/index.html.new
+if errorlevel 1 set "SMART_FAIL=1"
+if "!SMART_FAIL!"=="0" (
+    REM assets 与 index.html 在同一条远端命令里一起翻，中间不存在"新页面配旧资源"的窗口。
+    REM 切换同时把历史 hash 文件清掉（旧 assets 整个变成 assets.old，下次部署才删，
+    REM 出事可以 ssh 上去 mv 回来）。
+    echo      Switching cloud to the new build...
+    ssh %SSH_OPTS% %CLOUD_SERVER% "cd %CLOUD_DIST% && rm -rf assets.old; mv assets assets.old 2>/dev/null; mv assets.new assets && mv index.html.new index.html"
+    if errorlevel 1 (
+        echo [ERROR] remote switch FAILED - cloud still serves the previous page
+        set "SMART_FAIL=1"
     ) else (
-        echo      vendor/ unchanged, skipped
-    )
-    REM 逐个比对 assets 文件（每传一个打一行进度——2026-07-13 前这里全程静默，
-    REM 几十个文件 × 每个单开一条 SSH 连接会安静跑数分钟，曾被误判为卡死而中断）
-    for /f "delims=" %%F in ('dir /s /b assets\*') do (
-        set "RELPATH=%%F"
-        set "RELPATH=!RELPATH:%CD%\=!"
-        REM 替换反斜杠为正斜杠
-        set "RELPATH=!RELPATH:\=/!"
-        REM 检查远程是否有同名文件（vite 内容 hash 命名，同名即同内容）
-        findstr /C:"!RELPATH!" "%TEMP%\cloud_md5.txt" >nul 2>&1
-        if errorlevel 1 (
-            REM 远程没有此文件，需要上传
-            set /a UPLOAD_COUNT+=1
-            echo      [!UPLOAD_COUNT!] !RELPATH!
-            REM stderr 不再吞（2026-07-26）：2026-07-25 就是因为这里 2^>^&1 把唯一一个
-            REM 失败文件的原因抹掉了，只剩一句 upload failed，无法定位
-            scp %SSH_OPTS% "%%F" %CLOUD_SERVER%:%CLOUD_DIST%/!RELPATH! >nul
-            if errorlevel 1 (
-                echo      [ERROR] upload failed: !RELPATH!
-                set "SMART_FAIL=1"
-            )
-        )
-    )
-    echo      OK !UPLOAD_COUNT! new/changed assets uploaded
-    REM 原子切换：index.html 最后传，且只在前面全部成功时才翻
-    if "!SMART_FAIL!"=="0" (
-        echo      index.html ^(last - atomic switch^)...
-        scp %SSH_OPTS% index.html %CLOUD_SERVER%:%CLOUD_DIST%/index.html
-        if errorlevel 1 set "SMART_FAIL=1"
-    ) else (
-        echo      [SKIP] index.html NOT updated - assets incomplete, cloud keeps serving the previous page
+        echo      OK
     )
 ) else (
-    REM 无法获取远程清单，回退全量 scp
-    call :scp_full
-    if errorlevel 1 set "SMART_FAIL=1"
+    echo      [SKIP] switch aborted - cloud keeps serving the previous page
+    ssh %SSH_OPTS% %CLOUD_SERVER% "rm -rf %CLOUD_DIST%/assets.new %CLOUD_DIST%/index.html.new" >nul
 )
 exit /b !SMART_FAIL!
 
