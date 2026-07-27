@@ -307,6 +307,10 @@ def seed_role_permissions(db: Session):
         ("production:write",      "production", "write",      "创建/编辑生产订单 / 入库录入"),
         ("production:print",      "production", "print",      "生产订单打印工作台"),
         ("production:admin",      "production", "admin",      "工序管理页 / 删除生产订单 / 管理全部订单"),
+        # 内贸订单管理（2026-07-27）：与外贸生产订单平行的一套，按数量拆批报工
+        ("domestic:read",         "domestic", "read",         "查看内贸订单/产品/客户"),
+        ("domestic:write",        "domestic", "write",        "内贸下单/编辑/发货登记/报工"),
+        ("domestic:admin",        "domestic", "admin",        "工艺路线映射 / 产品改绑 / 删单 / 撤销他人报工"),
         ("production_product:read",   "production", "read",   "查看产品管理"),
         ("production_dashboard:read", "production", "read",   "查看生产看板"),
         ("production_route:read",     "production", "read",   "查看工序路线"),

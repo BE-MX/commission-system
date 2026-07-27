@@ -1,0 +1,563 @@
+"""内贸订单管理 — API 路由
+
+权限：domestic:read（查看）/ domestic:write（下单、编辑、发货、报工）/
+domestic:admin（工艺路线映射、产品改绑、删单、撤销他人报工）。
+统一信封 ok()；用户 ID 一律 int(current_user["sub"])（cerebrum 2026-07-13）。
+"""
+
+import base64
+import io
+import logging
+from datetime import date, datetime
+
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse
+from sqlalchemy.orm import Session
+
+from app.auth.dependencies import require_any_permission, require_permission
+from app.core.database import get_db
+from app.core.response import ok, page_result
+from app.domestic import constants as C
+from app.domestic import (
+    customer_service,
+    file_service,
+    order_service,
+    product_service,
+    progress_service,
+    report_service,
+)
+from app.domestic.models import DomesticOrder, DomesticOrderItem
+from app.domestic.schemas import (
+    CraftRouteUpsert,
+    CustomerCreate,
+    CustomerUpdate,
+    ItemShipRequest,
+    OrderCreate,
+    OrderItemInput,
+    OrderItemUpdate,
+    OrderStatusUpdate,
+    OrderUpdate,
+    ProductRouteRebind,
+    ReportRevoke,
+    ReportSubmit,
+)
+from app.production.models import Process, ProcessRoute, ProcessRouteStep
+from app.system.models import SysDict
+
+logger = logging.getLogger("commission")
+
+router = APIRouter()
+
+_READ = ("domestic:read", "domestic:write", "domestic:admin")
+
+
+def _uid(current_user: dict) -> int:
+    return int(current_user["sub"])
+
+
+def _has_admin(current_user: dict) -> bool:
+    if "super_admin" in (current_user.get("roles") or []):
+        return True
+    return "domestic:admin" in (current_user.get("permissions") or [])
+
+
+# ── 下拉值域 ──────────────────────────────────────────
+
+
+@router.get("/options", summary="下单表单的全部下拉值域")
+def get_options(
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission(*_READ)),
+):
+    """一次给全：产品类型、订单类型 + 各属性字典。前端按 product_type 条件渲染。"""
+    dict_types = sorted({t for mapping in C.ATTR_DICTS.values() for t in mapping.values()})
+    rows = (
+        db.query(SysDict)
+        .filter(SysDict.type.in_(dict_types), SysDict.is_active.is_(True))
+        .order_by(SysDict.type.asc(), SysDict.sort.asc(), SysDict.id.asc())
+        .all()
+    )
+    values: dict[str, list[str]] = {t: [] for t in dict_types}
+    for row in rows:
+        values[row.type].append(row.code)
+
+    return ok({
+        "product_types": [{"value": k, "label": v} for k, v in C.PRODUCT_TYPES.items()],
+        "order_types": [{"value": k, "label": v} for k, v in C.ORDER_TYPES.items()],
+        "attr_dicts": C.ATTR_DICTS,
+        "values": values,
+    })
+
+
+@router.get("/process-routes", summary="可选工艺路线（配映射/改绑用）")
+def list_process_routes(
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission(*_READ)),
+):
+    routes = db.query(ProcessRoute).filter(ProcessRoute.status == 1).order_by(ProcessRoute.id.asc()).all()
+    steps = db.query(ProcessRouteStep.route_id, ProcessRouteStep.process_id, ProcessRouteStep.step_order).all()
+    names = dict(db.query(Process.id, Process.name).all())
+    by_route: dict[int, list] = {}
+    for route_id, process_id, step_order in steps:
+        by_route.setdefault(route_id, []).append((step_order, names.get(process_id, "")))
+    return ok([{
+        "id": r.id,
+        "name": r.name,
+        "description": r.description,
+        "step_count": len(by_route.get(r.id, [])),
+        "steps": [n for _, n in sorted(by_route.get(r.id, []))],
+    } for r in routes])
+
+
+# ── 客户 ──────────────────────────────────────────────
+
+
+@router.get("/customers", summary="内贸客户列表")
+def list_customers(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=200),
+    keyword: str = Query(""),
+    status: int | None = Query(None),
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission(*_READ)),
+):
+    items, total = customer_service.list_customers(
+        db, page=page, page_size=page_size, keyword=keyword, status=status
+    )
+    return ok(page_result(items, total, page, page_size))
+
+
+@router.post("/customers", summary="新建客户")
+def create_customer(
+    payload: CustomerCreate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_permission("domestic:write")),
+):
+    try:
+        customer = customer_service.create_customer(db, payload, _uid(current_user))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ok({"id": customer.id}, message="客户已创建")
+
+
+@router.put("/customers/{customer_id}", summary="编辑客户")
+def update_customer(
+    customer_id: int,
+    payload: CustomerUpdate,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("domestic:write")),
+):
+    try:
+        customer_service.update_customer(db, customer_id, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ok(message="已保存")
+
+
+@router.delete("/customers/{customer_id}", summary="删除客户")
+def delete_customer(
+    customer_id: int,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("domestic:admin")),
+):
+    try:
+        customer_service.delete_customer(db, customer_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ok(message="已删除")
+
+
+# ── 产品与工艺路线映射 ────────────────────────────────
+
+
+@router.get("/products", summary="内贸产品列表（下单自动沉淀）")
+def list_products(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=200),
+    keyword: str = Query(""),
+    product_type: str = Query(""),
+    route_bound: str = Query("", pattern="^(bound|unbound)?$"),
+    sort_field: str = Query(""),
+    sort_order: str = Query(""),
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission(*_READ)),
+):
+    items, total = product_service.list_products(
+        db, page=page, page_size=page_size, keyword=keyword,
+        product_type=product_type, route_bound=route_bound,
+        sort_field=sort_field, sort_order=sort_order,
+    )
+    return ok(page_result(items, total, page, page_size))
+
+
+@router.put("/products/{product_id}/route", summary="人工改绑产品工艺路线")
+def rebind_product_route(
+    product_id: int,
+    payload: ProductRouteRebind,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("domestic:admin")),
+):
+    try:
+        product_service.rebind_product_route(db, product_id, payload.route_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ok(message="已保存；仅对之后的新明细生效，在制明细保持下单时的路线")
+
+
+@router.get("/craft-routes", summary="工艺→工艺路线映射列表")
+def list_craft_routes(
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission(*_READ)),
+):
+    return ok(product_service.list_craft_routes(db))
+
+
+@router.post("/craft-routes", summary="配置工艺→路线映射")
+def upsert_craft_route(
+    payload: CraftRouteUpsert,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_permission("domestic:admin")),
+):
+    try:
+        product_service.upsert_craft_route(
+            db, product_type=payload.product_type, craft=payload.craft,
+            route_id=payload.route_id, user_id=_uid(current_user),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ok(message="映射已保存，同工艺下未配路线的产品已自动补齐")
+
+
+@router.delete("/craft-routes/{mapping_id}", summary="删除工艺映射")
+def delete_craft_route(
+    mapping_id: int,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("domestic:admin")),
+):
+    try:
+        product_service.delete_craft_route(db, mapping_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ok(message="已删除")
+
+
+# ── 订单 ──────────────────────────────────────────────
+
+
+@router.post("/orders", summary="内贸下单")
+def create_order(
+    payload: OrderCreate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_permission("domestic:write")),
+):
+    try:
+        data = order_service.create_order(db, payload, _uid(current_user))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    message = "下单成功"
+    if data["warnings"]:
+        message = "下单成功，但有明细暂时不能开工，见提示"
+    return ok(data, message=message)
+
+
+@router.get("/orders", summary="内贸订单列表")
+def list_orders(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=200),
+    keyword: str = Query(""),
+    status: int | None = Query(None),
+    customer_id: int | None = Query(None),
+    order_type: str = Query("", pattern="^(normal|special)?$"),
+    date_start: date | None = Query(None),
+    date_end: date | None = Query(None),
+    sort_field: str = Query(""),
+    sort_order: str = Query(""),
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission(*_READ)),
+):
+    items, total = order_service.list_orders(
+        db, page=page, page_size=page_size, keyword=keyword, status=status,
+        customer_id=customer_id, order_type=order_type,
+        date_start=date_start, date_end=date_end,
+        sort_field=sort_field, sort_order=sort_order,
+    )
+    return ok(page_result(items, total, page, page_size))
+
+
+@router.get("/orders/{order_id}", summary="订单详情（含逐明细工序进度）")
+def get_order(
+    order_id: int,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission(*_READ)),
+):
+    try:
+        return ok(order_service.get_order_detail(db, order_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.put("/orders/{order_id}", summary="编辑订单头")
+def update_order(
+    order_id: int,
+    payload: OrderUpdate,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("domestic:write")),
+):
+    try:
+        order_service.update_order(db, order_id, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ok(message="已保存")
+
+
+@router.post("/orders/{order_id}/status", summary="终止订单")
+def update_order_status(
+    order_id: int,
+    payload: OrderStatusUpdate,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("domestic:write")),
+):
+    try:
+        order_service.terminate_order(db, order_id, payload.reason)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ok(message="订单已终止")
+
+
+@router.delete("/orders/{order_id}", summary="删除订单（软删）")
+def delete_order(
+    order_id: int,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("domestic:admin")),
+):
+    try:
+        order_service.delete_order(db, order_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ok(message="已删除")
+
+
+# ── 明细 ──────────────────────────────────────────────
+
+
+@router.post("/orders/{order_id}/items", summary="追加明细")
+def add_item(
+    order_id: int,
+    payload: OrderItemInput,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("domestic:write")),
+):
+    try:
+        data = order_service.add_item(db, order_id, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ok(data, message=data.get("warning") or "明细已添加")
+
+
+@router.put("/items/{item_id}", summary="编辑明细")
+def update_item(
+    item_id: int,
+    payload: OrderItemUpdate,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("domestic:write")),
+):
+    try:
+        order_service.update_item(db, item_id, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ok(message="已保存")
+
+
+@router.delete("/items/{item_id}", summary="删除明细")
+def delete_item(
+    item_id: int,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("domestic:write")),
+):
+    try:
+        order_service.delete_item(db, item_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ok(message="已删除")
+
+
+@router.post("/items/{item_id}/attach-route", summary="给缺路线的明细补配工艺路线")
+def attach_route(
+    item_id: int,
+    payload: ProductRouteRebind,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("domestic:write")),
+):
+    try:
+        data = order_service.attach_route(db, item_id, payload.route_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ok(data, message=f"已展开 {data['step_count']} 道工序，可以开工了")
+
+
+@router.post("/items/{item_id}/ship", summary="登记发货（时间 + 克重）")
+def ship_item(
+    item_id: int,
+    payload: ItemShipRequest,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_permission("domestic:write")),
+):
+    try:
+        order_service.ship_item(db, item_id, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ok(message="发货已登记")
+
+
+@router.get("/items/{item_id}/progress", summary="明细工序进度（含每道可报数量）")
+def get_item_progress(
+    item_id: int,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission(*_READ)),
+):
+    item = db.query(DomesticOrderItem).get(item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="订单明细不存在")
+    return ok({
+        "item_id": item.id,
+        "product_name": item.product_name,
+        "order_qty": item.order_qty,
+        "status": item.status,
+        "steps": progress_service.build_progress_view(db, item),
+    })
+
+
+@router.get("/items/{item_id}/print-card", summary="流转卡打印数据（含二维码）")
+def get_print_card(
+    item_id: int,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission(*_READ)),
+):
+    item = db.query(DomesticOrderItem).get(item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="订单明细不存在")
+    order = db.query(DomesticOrder).get(item.order_id)
+    detail = order_service.get_order_detail(db, item.order_id)
+    item_view = next((i for i in detail["items"] if i["id"] == item_id), None)
+
+    qr_data = report_service.generate_qr_data(item_id)
+    return ok({
+        "item": item_view,
+        "domestic_no": order.domestic_no,
+        "order_no": order.order_no,
+        "order_date": order.order_date,
+        "customer_name": detail["customer_name"],
+        "order_type_label": detail["order_type_label"],
+        "qr_data": qr_data,
+        "qr_code_base64": _qr_png_base64(qr_data),
+        "printed_at": datetime.now(),
+    })
+
+
+def _qr_png_base64(qr_data: str) -> str | None:
+    """二维码 PNG。qrcode 库缺失不该让整张卡打不出来，降级为只给文本。"""
+    try:
+        import qrcode
+
+        img = qrcode.make(qr_data)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("domestic qrcode render failed: %s", exc)
+        print(f"[domestic] 二维码渲染失败，降级为纯文本: {exc}", flush=True)
+        return None
+
+
+# ── 报工（主站侧：查询 + 代报 + 撤销）──────────────────
+
+
+@router.get("/reports", summary="报工流水查询")
+def list_reports(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=200),
+    user_id: int | None = Query(None),
+    item_id: int | None = Query(None),
+    date_start: datetime | None = Query(None),
+    date_end: datetime | None = Query(None),
+    include_revoked: bool = Query(True),
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission(*_READ)),
+):
+    items, total = report_service.list_reports(
+        db, page=page, page_size=page_size, user_id=user_id, item_id=item_id,
+        date_start=date_start, date_end=date_end, include_revoked=include_revoked,
+    )
+    return ok(page_result(items, total, page, page_size))
+
+
+@router.post("/reports", summary="主站代报工")
+def submit_report(
+    payload: ReportSubmit,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_permission("domestic:write")),
+):
+    try:
+        data = report_service.submit_report(
+            db, item_id=payload.item_id, progress_id=payload.progress_id,
+            qty=payload.qty, user_id=_uid(current_user), source="web",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ok(data, message=f"已报 {payload.qty} 件")
+
+
+@router.post("/reports/revoke", summary="撤销报工")
+def revoke_report(
+    payload: ReportRevoke,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_permission("domestic:write")),
+):
+    try:
+        data = report_service.revoke_report(
+            db, payload.log_id, _uid(current_user), is_admin=_has_admin(current_user)
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ok(data, message="已撤销")
+
+
+@router.get("/reports/workload", summary="按人×工序的报工量汇总")
+def workload_summary(
+    date_start: datetime = Query(...),
+    date_end: datetime = Query(...),
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission(*_READ)),
+):
+    return ok(report_service.get_workload_summary(db, date_start=date_start, date_end=date_end))
+
+
+# ── 参考图 ────────────────────────────────────────────
+
+
+@router.post("/images", summary="上传参考图")
+async def upload_image(
+    file: UploadFile = File(...),
+    _user: dict = Depends(require_permission("domestic:write")),
+):
+    content = await file.read()
+    try:
+        file_service.validate_upload(file.filename, file.content_type or "", len(content))
+        rel_path = file_service.store_bytes(file.filename, content)
+    except file_service.FileValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ok({"path": rel_path, "name": file.filename})
+
+
+@router.get("/images/{rel_path:path}", summary="读取参考图")
+def get_image(
+    rel_path: str,
+    _user: dict = Depends(require_any_permission(*_READ)),
+):
+    try:
+        abs_path = file_service.resolve_path(rel_path)
+    except file_service.FileValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if not abs_path.is_file():
+        raise HTTPException(status_code=404, detail="图片不存在")
+    return FileResponse(abs_path)
