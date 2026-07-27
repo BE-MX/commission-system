@@ -1,7 +1,7 @@
 # 莱莎方舟平台 架构说明
 
 > **版本**：v1.0  
-> **最后更新**：2026-07-03  
+> **最后更新**：2026-07-27  
 > **目标读者**：技术接手人、新后端开发
 
 ## 系统概览
@@ -17,12 +17,16 @@
   ├── 静态文件 (/assets/, /index.html) → Nginx 直接返回 (/var/www/ark/dist/)
   ├── API (/api/, /uploads/, /s/, /health) → frp 内网穿透（云端 frps :7000 / 本地 frpc NSSM 服务）→ 本地 Windows Server (:8002)
   ├── /uploads/expo/ → 代理缓存直出（2026-07-22 起，30d TTL + use_stale，素材二次访问不走隧道）
-  ├── hair.leshine.work → 静态直出 /var/www/hair-styles（16 款发型展示站，展会二维码落地页）
+  ├── hair.leshine.work → 静态直出 /var/www/hair-styles（发型展示站，展会二维码落地页；**正式入口**）
+  │     ├── /            → 单文件 SPA，16 款产品内联 window.PRODUCTS，hash 路由 #/p/<slug>
+  │     └── /<slug>/     → 子路径独立页（整份外部静态站原样放子目录，nginx 零改动；首例 /yidaoqie/）
   └── 社媒客户 MCP (/mcp/social-customer/) → 云端 systemd Python (:8100 loopback) → RDS lsordertest（只读账号）
 
 展会流量 → 北京云展会实例 (154.8.205.162, 腾讯云北京轻量 4C8G, Ubuntu 24.04)
-  └── nginx :80 → 前端静态 /var/www/ark-dist + uvicorn :8001（方舟完整后端，
-      SCHEDULER_ENABLED=false 防定时任务双跑；与办公室实例共用北京 RDS，同区 ~2ms）
+  ├── nginx :80 → 前端静态 /var/www/ark-dist + uvicorn :8001（方舟完整后端，
+  │   SCHEDULER_ENABLED=false 防定时任务双跑；与办公室实例共用北京 RDS，同区 ~2ms）
+  ├── nginx :443 → 自签证书（CN=IP，2036 到期）仅接管 IP 直连，为平板 kiosk 拿回相机所需 secure context
+  └── /hair/ → 发型站**兜底副本**（^~ 前缀挂载，root /var/www，/var/www/hair 软链至 /var/www/hair-styles）
 
 局域网用户 → 本地 IP:8002 直连
 ```
@@ -32,6 +36,7 @@
 - **WhatsApp Connector**：独立 Node.js 服务，NSSM 托管 `WhatsAppConnector`
 - **社媒客户 MCP**：独立 Python/FastMCP 云端服务，systemd 托管 `social-customer-mcp`；不经过 frp，Bearer 鉴权，端口仅监听 loopback
 - **北京云展会实例**（2026-07-22 搭建，展会专用）：systemd 托管 `ark-backend`；部署走开发机 `git push cloud`（服务器本地 bare 仓库，不经 GitHub）；leshine.cloud 域名当天遭未备案拦截弃用，现用 IP 入口，终局等 leshine.work 备案；运维细节见 runbook「云端展会实例」节；展会后计划以此机为基础全量迁移上云
+- **发型展示站（hair）有两份线上副本，改内容必须同步**：新加坡 `/var/www/hair-styles`（正式域名，二维码指向这里）与北京 `/var/www/hair-styles`（IP 兜底 `/hair/`）。两机同结构、同内容（以 md5 校验为准），只更一处会让兜底入口继续发旧版。站点与方舟主站完全解耦——不进 `frontend/`、不走 deploy.bat、不受前端重建影响，源码回存在亮哥 `Downloads\00_Inbox\莱莎16款明星发型静态网页\`。更新步骤、子路径页三个约束（资源须相对路径 / 返回链接用 `../` / 卡片图竖构图）与展会二维码复刻规格见 runbook 同节
 
 ## 技术栈
 
