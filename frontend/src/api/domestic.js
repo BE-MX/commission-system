@@ -143,3 +143,14 @@ export async function fetchImageBlobUrl(path) {
   const res = await domesticClient.get(`/images/${path}`, { responseType: 'blob' })
   return URL.createObjectURL(res.data)
 }
+
+// 打印文档要塞进 iframe，blob URL 在跨文档场景不可靠，一律转 data URL
+export async function fetchImageDataUrl(path) {
+  const res = await domesticClient.get(`/images/${path}`, { responseType: 'blob' })
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = reject
+    reader.readAsDataURL(res.data)
+  })
+}

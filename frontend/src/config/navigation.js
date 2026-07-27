@@ -623,9 +623,9 @@ export const NAV_ENTRIES = [
       anyPermission: ['domestic:read', 'domestic:write', 'domestic:admin'],
     },
   },
-  // 内贸的两个打印页（流转卡 / 二维码标签）不在这里：
-  // 它们是全屏页，在 router/index.js 顶层注册（宪法 10 的既有例外）——
-  // 挂在 MainLayout 下会把侧边栏和顶栏一起打印出来。
+  // 流转卡 / 二维码标签没有独立路由：它们是订单详情里的打印弹框
+  // （views/domestic/print/DomesticPrintDialog.vue），内容渲染在 iframe 的
+  // 独立文档里——打印只出那份文档，用户也不用离开订单页。
 
   // ── 素材管理 ───────────────────────────────────────────
   {

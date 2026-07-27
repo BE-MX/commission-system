@@ -199,19 +199,16 @@ export function useDomesticOrders() {
     await listApi.fetchList()
   }
 
-  // 打印页是独立于 MainLayout 的全屏页（否则 window.print() 会把侧边栏一起打出来）。
-  // 开新标签页而不是本页跳转：打完关掉标签即可，订单抽屉和筛选条件都还在。
-  function openInNewTab(name, item) {
-    const { href } = router.resolve({ name, params: { id: item.id } })
-    window.open(href, '_blank')
-  }
+  // 打印弹框：内容渲染在 iframe 里的独立文档中，打印只出那份文档，
+  // 但弹框本身停在订单页上——关掉就回到原来的列表和抽屉，不用按浏览器后退
+  const printDialog = reactive({ visible: false, mode: 'card', itemId: null })
 
   function openPrintCard(item) {
-    openInNewTab('DomesticPrintCard', item)
+    Object.assign(printDialog, { visible: true, mode: 'card', itemId: item.id })
   }
 
   function openQrLabel(item) {
-    openInNewTab('DomesticQrLabel', item)
+    Object.assign(printDialog, { visible: true, mode: 'label', itemId: item.id })
   }
 
   function goCreate() {
@@ -230,6 +227,7 @@ export function useDomesticOrders() {
     reportDialog, openReport, confirmReport,
     logDialog, openLogs, handleRevokeReport,
     attachDialog, openAttachRoute, confirmAttachRoute,
-    handleTerminate, handleDelete, openPrintCard, openQrLabel, goCreate,
+    printDialog, openPrintCard, openQrLabel,
+    handleTerminate, handleDelete, goCreate,
   }
 }

@@ -215,6 +215,11 @@
       </template>
     </el-dialog>
 
+    <DomesticPrintDialog
+      v-model:visible="printDialog.visible"
+      :mode="printDialog.mode" :item-id="printDialog.itemId"
+    />
+
     <el-dialog v-model="attachDialog.visible" title="配工艺路线" width="460px">
       <el-form label-width="90px">
         <el-form-item label="工艺路线">
@@ -240,6 +245,7 @@ import { DETAIL_SECTIONS, ORDER_STATUS, ORDER_STATUS_TAGS } from '@/api/domestic
 import DetailDrawer from '@/components/DetailDrawer.vue'
 import GlassButton from '@/components/GlassButton.vue'
 import DomesticImages from '@/components/domestic/DomesticImages.vue'
+import DomesticPrintDialog from './print/DomesticPrintDialog.vue'
 import { useDomesticOrders } from './composables/useDomesticOrders'
 
 const {
@@ -250,7 +256,8 @@ const {
   reportDialog, openReport, confirmReport,
   logDialog, openLogs, handleRevokeReport,
   attachDialog, openAttachRoute, confirmAttachRoute,
-  handleTerminate, handleDelete, openPrintCard, openQrLabel, goCreate,
+  printDialog, openPrintCard, openQrLabel,
+  handleTerminate, handleDelete, goCreate,
 } = useDomesticOrders()
 </script>
 
