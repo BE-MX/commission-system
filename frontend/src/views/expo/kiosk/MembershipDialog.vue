@@ -18,7 +18,9 @@
             <div v-if="plan.hot" class="xm-badge">推荐</div>
             <div class="xm-name">{{ plan.name }}</div>
             <div class="xm-price">
-              <b>¥{{ plan.price }}</b><span>/ {{ plan.unit }}</span>
+              <b>¥{{ plan.price }}</b>
+              <span class="xm-slash">/</span>
+              <span class="xm-unit">{{ plan.unit }}</span>
             </div>
             <div class="xm-daily">{{ plan.daily }}</div>
             <p class="xm-pitch">{{ plan.pitch }}</p>
@@ -167,12 +169,19 @@ const plans = [
   font-family: 'Noto Serif SC', 'STSong', serif;
   font-size: 18px; letter-spacing: 0.2em; color: var(--xk-gold-hi);
 }
-.xm-price { display: flex; align-items: baseline; gap: 8px; margin-top: 12px; }
+.xm-price { display: flex; align-items: baseline; gap: 7px; margin-top: 12px; }
 .xm-price b {
   font-family: 'Noto Serif SC', 'STSong', serif;
   font-size: 40px; font-weight: 600; line-height: 1; color: var(--xk-gold);
 }
-.xm-price span { font-size: 14px; letter-spacing: 0.16em; color: var(--xk-mut); }
+/* 「季 / 年」是两档会员唯一容易被看漏、又最不能看漏的区别（并排时眼睛只抓 999 与 2999）：
+   分隔斜杠保持小而暗，周期单位放大到价格的 0.65 倍、提亮到高光金，并沿用同一套衬线体 */
+.xm-slash { font-size: 18px; line-height: 1; color: var(--xk-gold-dim); }
+.xm-unit {
+  font-family: 'Noto Serif SC', 'STSong', serif;
+  font-size: 26px; font-weight: 600; line-height: 1;
+  letter-spacing: 0.04em; color: var(--xk-gold-hi);
+}
 .xm-daily { margin-top: 8px; font-size: 12px; letter-spacing: 0.12em; color: var(--xk-gold-dim); }
 .xm-pitch { margin: 14px 0 0; font-size: 13px; letter-spacing: 0.08em; color: var(--xk-paper); opacity: 0.86; }
 .xm-inherit {
