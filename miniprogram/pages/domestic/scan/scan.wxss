@@ -1,279 +1,71 @@
-/* pages/domestic/scan/scan.wxss — 内贸品牌绿（与外贸黑金同布局同动效，只换配色）*/
+/* pages/domestic/scan/scan.wxss
+   整套结构与动效直接复用外贸报工页，只覆盖配色变量 ——
+   两侧因此永远长一样，改版只需改一处。 */
+@import "../../scan/scan.wxss";
+
 .dom-page {
-  min-height: 100vh;
-  background: var(--gray-bg);
-  /* 底栏是 fixed 的（83px + 安全区），内容要让开否则确认按钮被压在下面 */
-  padding-bottom: calc(200rpx + env(safe-area-inset-bottom));
+  /* 内贸品牌绿（取自 LOGO 孔雀主色 #007348 / 亮部 #0AA66F） */
+  --m-accent: #0AA66F;
+  --m-accent-d: #007348;
+  --m-accent-l: #C9EFDF;
+  --m-accent-bg: #E8F5EF;
+  --m-accent-rgb: 10,166,111;
+  /* 底栏 fixed 83px + 安全区，内容要让开 */
+  padding-bottom: calc(180rpx + env(safe-area-inset-bottom));
 }
 
-.brand-bar {
-  background: var(--brand-green-d);
-  padding-bottom: 20rpx;
-}
-
-.brand-bar-inner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16rpx 32rpx 0;
-}
-
-.back-link,
-.brand-right {
-  color: #7FE0B8;
-  font-size: 28rpx;
-}
-
-.brand-title {
+/* 绿色实底上的文字一律白色：黄底黑字那套换成绿只有 1.29:1，读不出来。
+   下面几处是外贸用 --m-ink（黑）当前景、内贸必须改白的地方。 */
+.dom-page .scan-btn-text,
+.dom-page .user-avatar,
+.dom-page .history-btn,
+.dom-page .swipe-action-text,
+.dom-page .revoke-btn-confirm,
+.dom-page .error-btn {
   color: #FFFFFF;
-  font-size: 32rpx;
-  font-weight: 600;
 }
 
-.user-bar {
-  background: var(--card-bg);
-  padding: 24rpx 32rpx;
-  margin-bottom: 20rpx;
+/* 顶栏 LOGO：外贸是文字字标，内贸用孔雀图形块（反白版） */
+.dom-page .brand-logo {
+  width: 52rpx;
+  height: 44rpx;
+  flex-shrink: 0;
 }
 
-.user-info { display: flex; flex-direction: column; }
-.user-name { font-size: 30rpx; font-weight: 600; color: var(--text-main); }
-.user-count { font-size: 24rpx; color: var(--text-sub); margin-top: 4rpx; }
-
-/* 扫码区 */
-.scan-center {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 60rpx 0 40rpx;
-}
-
-.scan-btn {
-  width: 260rpx;
-  height: 260rpx;
-  border-radius: 50%;
-  background: var(--brand-green);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 8rpx 24rpx rgba(0, 96, 60, 0.32);
-}
-
-.scan-btn-text {
-  font-size: 44rpx;
-  font-weight: 700;
-  color: #FFFFFF;
-  letter-spacing: 4rpx;
-}
-
-.scan-hint {
-  margin-top: 28rpx;
-  font-size: 26rpx;
-  color: var(--text-sub);
-}
-
-/* 确认卡 */
-.confirm-card {
-  background: var(--card-bg);
-  margin: 0 24rpx;
-  border-radius: 20rpx;
-  padding: 28rpx;
-}
-
-.product-head { margin-bottom: 20rpx; }
-.product-name { font-size: 32rpx; font-weight: 600; color: var(--text-main); display: block; }
-.product-sub { font-size: 24rpx; color: var(--text-sub); margin-top: 6rpx; display: block; }
-
-.step-row {
+.dom-page .logo-wrap {
   display: flex;
   align-items: center;
   gap: 12rpx;
-  padding: 20rpx;
-  background: var(--brand-green-bg);
-  border-radius: 12rpx;
-  margin-bottom: 24rpx;
 }
 
-.step-label { font-size: 24rpx; color: var(--text-sub); }
-.step-value { font-size: 32rpx; font-weight: 700; color: var(--text-main); }
-.step-order { font-size: 24rpx; color: var(--text-sub); margin-left: auto; }
-
-/* 数量区：整批一键、拆批调小 */
-.qty-block { margin-bottom: 24rpx; }
-
-.qty-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin-bottom: 14rpx;
-}
-
-.qty-label { font-size: 28rpx; font-weight: 600; color: var(--text-main); }
-.qty-max { font-size: 24rpx; color: var(--text-sub); }
-
-.qty-control { display: flex; align-items: center; gap: 16rpx; }
-
-.qty-btn {
-  width: 88rpx;
-  height: 88rpx;
-  border-radius: 12rpx;
-  background: var(--gray-bg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 44rpx;
-  color: var(--text-main);
-}
-
-.qty-input {
-  flex: 1;
-  height: 88rpx;
-  text-align: center;
-  font-size: 40rpx;
-  font-weight: 700;
-  border: 2rpx solid var(--border);
-  border-radius: 12rpx;
-  background: #FFFFFF;
-}
-
-.qty-all {
-  padding: 0 24rpx;
-  height: 88rpx;
-  line-height: 88rpx;
-  border-radius: 12rpx;
-  background: var(--brand-green);
-  color: #FFFFFF;
-  font-size: 26rpx;
-  font-weight: 600;
-}
-
-.qty-tip {
-  display: block;
-  margin-top: 12rpx;
-  font-size: 24rpx;
-  color: var(--warning);
-}
-
-/* 图文要求 */
-.req-block {
-  padding: 20rpx;
-  background: var(--gray-bg);
-  border-radius: 12rpx;
-  margin-bottom: 16rpx;
-}
-
-.req-row { display: flex; margin-bottom: 10rpx; }
-.req-label { width: 80rpx; font-size: 24rpx; color: var(--text-sub); flex-shrink: 0; }
-.req-text { flex: 1; font-size: 26rpx; color: var(--text-main); }
-
-.img-grid { display: flex; flex-wrap: wrap; gap: 12rpx; margin-bottom: 20rpx; }
-
-.req-img {
-  width: 160rpx;
-  height: 160rpx;
-  border-radius: 12rpx;
-  background: var(--gray-bg);
-}
-
-/* 工序清单 */
-.steps-block { margin-bottom: 24rpx; }
-.steps-title { font-size: 26rpx; color: var(--text-sub); margin-bottom: 10rpx; }
-
-.step-line {
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-  padding: 12rpx 0;
-  border-bottom: 2rpx solid var(--border);
-}
-
-.line-order {
-  width: 40rpx;
-  height: 40rpx;
-  line-height: 40rpx;
-  text-align: center;
-  border-radius: 50%;
-  background: var(--gray-bg);
-  font-size: 22rpx;
-  color: var(--text-sub);
-}
-
-.line-name { flex: 1; font-size: 26rpx; color: var(--text-main); }
-.line-qty { font-size: 26rpx; color: var(--text-sub); }
-
-.confirm-actions { display: flex; gap: 16rpx; }
-
-.btn-ghost,
-.btn-primary {
-  flex: 1;
-  height: 92rpx;
-  line-height: 92rpx;
-  text-align: center;
-  border-radius: 14rpx;
+.dom-page .logo-hair {
   font-size: 30rpx;
   font-weight: 600;
+  color: #FFFFFF;
+  letter-spacing: 1rpx;
 }
 
-.btn-ghost { background: var(--gray-bg); color: var(--text-main); }
-.btn-primary { background: var(--brand-green); color: #FFFFFF; flex: 2; }
-.btn-primary.is-disabled { opacity: 0.6; }
-
-/* 今日记录 */
-.section-header { padding: 24rpx 32rpx 12rpx; }
-.section-title { font-size: 28rpx; font-weight: 600; color: var(--text-main); }
-
-.record-list { margin: 0 24rpx; }
-
-.record-item {
-  display: flex;
-  align-items: center;
-  background: var(--card-bg);
-  border-radius: 14rpx;
-  padding: 22rpx 24rpx;
-  margin-bottom: 12rpx;
+/* 已撤销的记录淡出，但保留在列表里（撤销要留痕） */
+.dom-page .record-card.is-revoked {
+  opacity: 0.5;
 }
 
-.record-item.is-revoked { opacity: 0.55; }
-.record-main { flex: 1; }
-.record-product { font-size: 28rpx; color: var(--text-main); display: block; }
-.record-meta { font-size: 24rpx; color: var(--text-sub); margin-top: 4rpx; display: block; }
-.record-revoked { font-size: 24rpx; color: var(--text-muted); }
-
-.record-action {
-  padding: 10rpx 24rpx;
-  border-radius: 10rpx;
-  border: 2rpx solid var(--danger);
-  color: var(--danger);
-  font-size: 24rpx;
+.dom-page .record-card.is-revoked .record-dot {
+  background: var(--text-muted);
 }
 
-.record-empty {
-  text-align: center;
-  padding: 60rpx 0;
-  font-size: 26rpx;
-  color: var(--text-muted);
+/* 撤销确认弹层的强调色（外贸那处是内联样式写死金色，这里走类） */
+.dom-page .revoke-bg {
+  background: var(--m-accent);
+  opacity: 0.15;
 }
 
-/* 提示层 */
-.toast-mask {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
+.dom-page .revoke-char {
+  background: var(--m-accent);
+  color: #FFFFFF;
+  box-shadow: 0 4px 16px rgba(var(--m-accent-rgb), 0.5);
 }
 
-.toast-card {
-  width: 560rpx;
-  background: #FFFFFF;
-  border-radius: 20rpx;
-  padding: 40rpx 32rpx;
-  text-align: center;
+.dom-page .revoke-bar {
+  background: var(--m-accent);
 }
-
-.toast-title { font-size: 32rpx; font-weight: 700; display: block; margin-bottom: 12rpx; }
-.toast-text { font-size: 26rpx; color: var(--text-sub); display: block; }
-.toast-success .toast-title { color: var(--success); }
-.toast-error .toast-title { color: var(--danger); }

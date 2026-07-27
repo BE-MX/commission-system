@@ -1,0 +1,140 @@
+<!-- components/domestic-sheet/domestic-sheet.wxml
+     结构与 confirm-sheet（外贸）逐块对齐，只多了内贸独有的「报工数量」和参考图。
+     工序清单默认折叠：点进度条才开时间轴弹层，和外贸一致。 -->
+<view class="confirm-overlay" wx:if="{{visible}}" catchtap="onOverlayTap">
+  <view class="confirm-sheet" catchtap="">
+    <view class="sheet-handle"></view>
+
+    <view class="sheet-brand-strip">
+      <text class="sheet-brand-name">莱莎健康假发</text>
+      <text class="sheet-brand-sub">确认报工信息</text>
+    </view>
+
+    <scroll-view class="sheet-scroll" scroll-y>
+      <!-- 产品信息 -->
+      <view class="sheet-section">
+        <text class="sheet-sec-label">产品信息</text>
+        <view class="info-row">
+          <text class="info-lbl">产品</text>
+          <view class="info-val-wrap">
+            <text class="info-val lg">{{item.product_name || '-'}}</text>
+            <text class="tag-urgent" wx:if="{{item.order_type_label === '特单'}}">特单</text>
+          </view>
+        </view>
+        <view class="info-row">
+          <text class="info-lbl">客户</text>
+          <text class="info-val">{{item.customer_name || '-'}}</text>
+        </view>
+        <view class="info-row">
+          <text class="info-lbl">所属订单</text>
+          <text class="info-val" style="color:var(--text-sub)">{{item.order_no || '-'}}</text>
+        </view>
+      </view>
+
+      <!-- 报工工序 -->
+      <view class="sheet-section">
+        <text class="sheet-sec-label">报工工序</text>
+        <view class="info-row">
+          <text class="info-lbl">当前工序</text>
+          <text class="info-val process-tag">{{nextStep.process_name || '-'}}</text>
+        </view>
+        <!-- 工序清单不默认展开，点这条进度条才展开时间轴 -->
+        <view class="proc-bar-wrap" bindtap="onProgressTap">
+          <text class="proc-bar-label">工序进度 · 第 {{nextStep.step_order || 0}} 道 / 共 {{totalSteps}} 道 ›</text>
+          <view class="proc-bar-bg">
+            <view class="proc-bar-fill" style="width: {{progressPercent}}%"></view>
+          </view>
+        </view>
+      </view>
+
+      <!-- 报工数量（内贸独有：整批一键、拆批调小） -->
+      <view class="sheet-section">
+        <view class="qty-head">
+          <text class="sheet-sec-label" style="margin:0">报工数量</text>
+          <text class="qty-max">最多 {{maxQty}} 件 · 下单 {{item.order_qty}} 件</text>
+        </view>
+        <view class="qty-control">
+          <view class="qty-btn {{qty <= 1 ? 'is-off' : ''}}" bindtap="onMinus">−</view>
+          <input class="qty-input" type="number" value="{{qty}}" bindinput="onInput" bindblur="onBlur" />
+          <view class="qty-btn {{qty >= maxQty ? 'is-off' : ''}}" bindtap="onPlus">+</view>
+          <view class="qty-all {{qty === maxQty ? 'is-on' : ''}}" bindtap="onAll">全部</view>
+        </view>
+        <view class="qty-tip" wx:if="{{qty < maxQty}}">
+          <text class="qty-tip-dot"></text>
+          <text>拆批：剩下 {{maxQty - qty}} 件留在上一道，之后扫同一张卡继续报</text>
+        </view>
+      </view>
+
+      <!-- 图文要求：车间照着做活的依据，默认折叠 -->
+      <view class="sheet-section" wx:if="{{hasRequirement}}">
+        <view class="req-head" bindtap="onToggleReq">
+          <text class="sheet-sec-label" style="margin:0">图文要求</text>
+          <text class="req-toggle">{{reqOpen ? '收起 ⌃' : '展开 ⌄'}}</text>
+        </view>
+        <view class="req-body" wx:if="{{reqOpen}}">
+          <view class="req-row" wx:if="{{item.hairstyle}}"><text class="req-lbl">发型</text><text class="req-txt">{{item.hairstyle}}</text></view>
+          <view class="req-row" wx:if="{{item.color}}"><text class="req-lbl">颜色</text><text class="req-txt">{{item.color}}</text></view>
+          <view class="req-row" wx:if="{{item.style_requirement}}"><text class="req-lbl">要求</text><text class="req-txt">{{item.style_requirement}}</text></view>
+          <view class="req-row" wx:if="{{item.remark}}"><text class="req-lbl">备注</text><text class="req-txt">{{item.remark}}</text></view>
+          <view class="img-grid" wx:if="{{images.length > 0}}">
+            <image wx:for="{{images}}" wx:key="*this" src="{{item}}" mode="aspectFill"
+                   class="req-img" data-index="{{index}}" bindtap="onPreview" />
+          </view>
+        </view>
+      </view>
+
+      <view class="sheet-section" style="margin-bottom:0">
+        <text class="sheet-sec-label">操作人</text>
+        <view class="info-row" style="border:none;padding-bottom:0">
+          <text class="info-lbl">当前用户</text>
+          <text class="info-val">{{userName}}</text>
+        </view>
+      </view>
+    </scroll-view>
+
+    <view class="sheet-btns">
+      <button class="btn-cancel" bindtap="onCancel">取消</button>
+      <button class="btn-confirm" bindtap="onConfirm" disabled="{{submitting}}">
+        <text wx:if="{{submitting}}">提交中...</text>
+        <block wx:else>✓ 确认报 {{qty}} 件</block>
+      </button>
+    </view>
+  </view>
+</view>
+
+<!-- 工序时间轴弹层（与外贸同一套结构与层级） -->
+<view class="timeline-overlay" wx:if="{{showTimeline}}" catchtap="onTimelineMaskTap">
+  <view class="timeline-sheet" catchtap="">
+    <view class="sheet-handle"></view>
+    <view class="timeline-header">
+      <text class="timeline-title">工序进度详情</text>
+      <text class="timeline-close" bindtap="onTimelineClose">✕</text>
+    </view>
+
+    <scroll-view class="timeline-body" scroll-y>
+      <view class="timeline-list">
+        <view class="timeline-item {{item.done ? 'done' : 'pending'}}" wx:for="{{stepList}}" wx:key="progress_id">
+          <view class="tl-track">
+            <view class="tl-dot"></view>
+            <view class="tl-line" wx:if="{{index < stepList.length - 1}}"></view>
+          </view>
+          <view class="tl-content">
+            <view class="tl-top">
+              <text class="tl-step">第 {{item.step_order}} 道</text>
+              <text class="tl-status {{item.done ? 'status-done' : 'status-pending'}}">{{item.done ? '已做完' : '进行中'}}</text>
+            </view>
+            <text class="tl-name">{{item.process_name}}</text>
+            <!-- 内贸按数量流转，时间轴上直接给数量条 -->
+            <view class="tl-qty">
+              <view class="tl-qty-bar"><view class="tl-qty-fill" style="width:{{item.pct}}%"></view></view>
+              <text class="tl-qty-text">{{item.completed_qty}} / {{item.order_qty}} 件</text>
+            </view>
+            <view class="tl-detail" wx:if="{{item.last_reported_at}}">
+              <text class="tl-time">{{item.last_reported_at}}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+    </scroll-view>
+  </view>
+</view>

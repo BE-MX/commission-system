@@ -1,51 +1,61 @@
-// pages/domestic/scan/scan.js — 内贸扫码报工（按数量，可拆批）
-// 零 import，纯回调（与 pages/scan/scan.js 同一套风格）
+// pages/domestic/scan/scan.js — 内贸扫码报工
+// 状态机、左滑撤销、各类遮罩与外贸报工页（pages/scan/scan.js）一一对应，
+// 内贸独有的只有「报工数量」和图文要求，都收在 domestic-sheet 里。
+// 零 import，纯回调（与其余页面同一套风格）
 var app = getApp()
 
-var BLOCK_HINTS = {
+var SWIPE_THRESHOLD = 60
+var SWIPE_OPEN = -72
+
+var BLOCK_MESSAGES = {
+  SIGN_INVALID: '二维码无效，请扫内贸流转卡',
   ITEM_NOT_FOUND: '找不到这张卡对应的订单明细',
   NO_ROUTE: '这个产品还没配工艺路线，请联系跟单',
-  ORDER_TERMINATED: '订单已终止，不能报工',
+  ORDER_TERMINATED: '订单已终止或已删除，不能报工',
   ALL_DONE: '这批货所有工序都做完了',
   NOT_ASSIGNED: '你没有被分配到这道工序',
-  NOTHING_REPORTABLE: '上一道工序还没做出可接的数量，请稍后再扫',
-  SIGN_INVALID: '二维码无效，请扫内贸流转卡'
+  NOTHING_REPORTABLE: '上一道工序还没做出可接的数量，请稍后再扫'
 }
 
 Page({
   data: {
+    state: 'idle',              // idle | showing-confirm
     statusBarHeight: 20,
-    state: 'idle',            // idle | scanning | validating | showing-confirm | submitting
-    loading: false,
     userName: '',
+    avatarLetter: '',
     todayCount: 0,
     todayQty: 0,
     todayRecords: [],
 
-    scanned: null,            // 扫码返回的明细信息
-    nextStep: null,           // 该报的工序
-    reportQty: 0,             // 本次报工数量（默认可报全量，拆批就调小）
-    maxQty: 0,
-    images: [],               // 参考图临时路径
+    scanned: null,              // 扫码返回的明细
+    nextStep: null,             // 该报的工序
+    images: [],                 // 参考图临时路径
 
+    submitting: false,
+    loading: false,
+    successVisible: false,
+    successTitle: '报工成功',
+    successMessage: '',
     errorVisible: false,
     errorTitle: '',
-    errorDetail: '',
-    successVisible: false,
-    successText: ''
+    errorMessage: '',
+    revokeVisible: false,
+    revokeLogId: null,
+    revokeProcessName: '',
+    revokeIndex: -1
   },
 
+  // ─── 左滑状态 ──────────────────────────────
+  _swipeStartX: 0,
+  _swipeStartY: 0,
+  _swipeOpenIndex: -1,
   _imageBatch: 0,
   _requestId: '',
 
   onLoad: function (options) {
     var info = wx.getSystemInfoSync()
-    this.setData({
-      statusBarHeight: info.statusBarHeight || 20,
-      userName: (app.globalData.userInfo && app.globalData.userInfo.name) || ''
-    })
-    // 本页现在是 tabBar 页，正常不会带 query；保留这条是为了兼容旧的
-    // navigateTo 链接（比如别处写死的路径）
+    this.setData({ statusBarHeight: info.statusBarHeight || 20 })
+    // 本页是 tabBar 页，正常不带 query；保留兼容旧的 navigateTo 链接
     if (options && options.itemId && options.sign) {
       this._loadItem(parseInt(options.itemId), options.sign)
     }
@@ -55,96 +65,113 @@ Page({
     if (typeof this.getTabBar === 'function' && this.getTabBar()) {
       this.getTabBar().setData({ selected: 1, hide: false })
     }
-    // switchTab 不能带 query 参数，所以外贸页扫到 ARK-D 码时把 payload
-    // 暂存在 globalData 里，切过来后在这里取出并清掉（只消费一次）
+    var user = app.globalData.userInfo
+    if (user) {
+      var name = user.name || ''
+      this.setData({ userName: name, avatarLetter: name ? name.charAt(0) : '' })
+    }
+    // switchTab 不能带 query：外贸页扫到 ARK-D 码时把 payload 存 globalData，这里取走
     var pending = app.globalData.pendingDomesticScan
     if (pending) {
       app.globalData.pendingDomesticScan = null
       this._loadItem(pending.itemId, pending.sign)
     }
-    this._loadHistory()
+    if (this.data.state === 'idle') this.loadTodayHistory()
+  },
+
+  onPullDownRefresh: function () {
+    this.loadTodayHistory()
+    wx.stopPullDownRefresh()
   },
 
   _header: function () {
     var header = { 'Content-Type': 'application/json' }
-    if (app.globalData.token) {
-      header['Authorization'] = 'Bearer ' + app.globalData.token
-    }
+    if (app.globalData.token) header['Authorization'] = 'Bearer ' + app.globalData.token
     return header
+  },
+
+  // ─── 今日记录 ──────────────────────────────
+
+  loadTodayHistory: function () {
+    var self = this
+    wx.request({
+      url: app.globalData.baseUrl + '/api/mini/domestic/history',
+      method: 'GET',
+      header: this._header(),
+      timeout: 30000,
+      success: function (res) {
+        if (res.statusCode === 401) { app.logout(); return }
+        if (res.statusCode !== 200) return
+        var data = res.data || {}
+        self.setData({
+          todayCount: data.today_count || 0,
+          todayQty: data.today_qty || 0,
+          todayRecords: data.records || []
+        })
+        self._swipeOpenIndex = -1
+      }
+    })
   },
 
   // ─── 扫码 ──────────────────────────────
 
   onScanTap: function () {
     var self = this
-    this.setData({ state: 'scanning' })
     wx.scanCode({
       scanType: ['qrCode'],
       success: function (scan) {
         var raw = scan.result || ''
-        var match = raw.match(/^ARK-D:(\d+):([a-f0-9]+)$/)
-        if (!match) {
-          // 扫到外贸卡：说清楚发生了什么再切到外贸报工，别让工人一头雾水
+        var m = raw.match(/^ARK-D:(\d+):([a-f0-9]+)$/)
+        if (!m) {
+          // 扫到外贸卡：说清楚再切过去，别让工人一头雾水
           if (/^ARK-P:/.test(raw)) {
-            self.setData({ state: 'idle' })
             wx.showToast({ title: '这是外贸流转卡，帮你切到外贸报工', icon: 'none', duration: 2000 })
             setTimeout(function () { wx.switchTab({ url: '/pages/scan/scan' }) }, 1200)
             return
           }
-          self._showError('二维码无效', BLOCK_HINTS.SIGN_INVALID)
-          self.setData({ state: 'idle' })
+          self._error('二维码无效', BLOCK_MESSAGES.SIGN_INVALID)
           return
         }
-        self._loadItem(parseInt(match[1]), match[2])
-      },
-      fail: function () {
-        self.setData({ state: 'idle' })
+        self._loadItem(parseInt(m[1]), m[2])
       }
     })
   },
 
   _loadItem: function (itemId, sign) {
     var self = this
-    this.setData({ state: 'validating', loading: true })
+    this.setData({ loading: true })
     wx.request({
       url: app.globalData.baseUrl + '/api/mini/domestic/scan/' + itemId + '?sign=' + sign,
       method: 'GET',
       header: this._header(),
+      timeout: 30000,
       success: function (res) {
+        self.setData({ loading: false })
         if (res.statusCode === 401) { app.logout(); return }
         if (res.statusCode !== 200) {
           var detail = (res.data && res.data.detail) || {}
-          self._showError('扫码失败', detail.message || '请重试')
-          self.setData({ state: 'idle', loading: false })
+          self._error('扫码失败', detail.message || '请重试')
           return
         }
         var data = res.data || {}
         if (!data.can_submit) {
-          self._showError('暂时不能报工', data.block_message || BLOCK_HINTS[data.block_reason] || '请联系跟单')
-          self.setData({ state: 'idle', loading: false, scanned: data })
-          self._loadImages(data)
+          self._error('暂时不能报工',
+            data.block_message || BLOCK_MESSAGES[data.block_reason] || '请联系跟单')
           return
         }
-        self.setData({
-          state: 'showing-confirm',
-          loading: false,
-          scanned: data,
-          nextStep: data.next_step,
-          reportQty: data.next_step.reportable_qty,
-          maxQty: data.next_step.reportable_qty
-        })
+        self._requestId = ''
+        self.setData({ state: 'showing-confirm', scanned: data, nextStep: data.next_step })
         self._loadImages(data)
       },
       fail: function () {
-        self._showError('网络异常', '请检查网络后重试')
-        self.setData({ state: 'idle', loading: false })
+        self.setData({ loading: false })
+        self._error('网络异常', '请检查网络后重试')
       }
     })
   },
 
   // 图片端点要鉴权，<image src> 带不了 header，用 downloadFile 带上再显示。
-  // 批次令牌不能省：连扫两张卡时先发起的那批（图可能 20MB）后完成会覆盖，
-  // 工人就会对着上一张卡的参考图做活。
+  // 批次令牌不能省：连扫两张卡时先发起的那批后完成会覆盖，工人会对着上一张卡的图做活。
   _loadImages: function (data) {
     var self = this
     var batch = ++this._imageBatch
@@ -163,70 +190,39 @@ Page({
       wx.downloadFile({
         url: app.globalData.baseUrl + '/api/mini/domestic/images/' + path,
         header: self._header(),
-        success: function (res) {
-          if (res.statusCode === 200) loaded.push(res.tempFilePath)
-        },
+        success: function (res) { if (res.statusCode === 200) loaded.push(res.tempFilePath) },
         complete: function () {
           pending -= 1
-          if (pending === 0 && batch === self._imageBatch) {
-            self.setData({ images: loaded })
-          }
+          if (pending === 0 && batch === self._imageBatch) self.setData({ images: loaded })
         }
       })
     })
   },
 
-  onPreviewImage: function (e) {
-    var index = e.currentTarget.dataset.index
-    wx.previewImage({ current: this.data.images[index], urls: this.data.images })
+  // ─── 确认弹层回调 ──────────────────────────────
+
+  onCancelConfirm: function () {
+    this._requestId = ''
+    this.setData({ state: 'idle', scanned: null, nextStep: null, images: [] })
   },
 
-  // ─── 数量调整 ──────────────────────────────
-
-  onQtyInput: function (e) {
-    var value = parseInt(e.detail.value) || 0
-    this.setData({ reportQty: value })
+  onInvalidQty: function (e) {
+    this._error('数量不对', '本次最多能报 ' + (e.detail.maxQty || 0) + ' 件')
   },
 
-  onQtyBlur: function () {
-    var qty = this.data.reportQty
-    if (qty < 1) qty = 1
-    if (qty > this.data.maxQty) qty = this.data.maxQty
-    this.setData({ reportQty: qty })
-  },
-
-  onQtyMinus: function () {
-    if (this.data.reportQty > 1) this.setData({ reportQty: this.data.reportQty - 1 })
-  },
-
-  onQtyPlus: function () {
-    if (this.data.reportQty < this.data.maxQty) this.setData({ reportQty: this.data.reportQty + 1 })
-  },
-
-  onQtyAll: function () {
-    this.setData({ reportQty: this.data.maxQty })
-  },
-
-  // ─── 提交 ──────────────────────────────
-
-  onConfirmTap: function () {
+  onConfirmSubmit: function (e) {
     var self = this
-    var qty = this.data.reportQty
-    if (!(qty > 0) || qty > this.data.maxQty) {
-      this._showError('数量不对', '本次最多能报 ' + this.data.maxQty + ' 件')
-      return
-    }
-    // 幂等键在同一次确认里复用：弱网下"服务端已提交、响应丢了"时工人再点一次，
-    // 服务端认出是同一笔，返回首次结果而不是再记一笔
+    var qty = e.detail.qty
+    // 幂等键在同一次确认里复用：弱网下"已提交但响应丢了"时再点一次不会报两次
     if (!this._requestId) {
       this._requestId = Date.now() + '-' + Math.random().toString(36).slice(2, 12)
     }
-
-    this.setData({ state: 'submitting' })
+    this.setData({ submitting: true })
     wx.request({
       url: app.globalData.baseUrl + '/api/mini/domestic/scan/submit',
       method: 'POST',
       header: this._header(),
+      timeout: 30000,
       data: {
         item_id: this.data.scanned.item_id,
         progress_id: this.data.nextStep.progress_id,
@@ -234,124 +230,133 @@ Page({
         request_id: this._requestId
       },
       success: function (res) {
+        self.setData({ submitting: false })
         if (res.statusCode === 401) { app.logout(); return }
-        if (res.statusCode !== 200) {
+        if (res.statusCode >= 400) {
           var detail = (res.data && res.data.detail) || {}
-          self._showError('报工失败', detail.message || '请重试')
-          self.setData({ state: 'showing-confirm' })
+          self._error('报工失败', detail.message || '请重试')
           return
         }
         var data = res.data || {}
-        var text = '已报 ' + data.reported_qty + ' 件 · ' + data.process_name
-        if (data.replayed) text = '这笔已经报过了 · ' + text
-        else if (data.item_finished) text += '（这批货全部做完了）'
-        else if (data.step_finished) text += '（本道工序做满）'
-        self._requestId = ''   // 本笔收尾，下次确认换新的幂等键
+        var msg = data.process_name + ' · ' + data.reported_qty + ' 件'
+        var title = '报工成功'
+        if (data.replayed) title = '这笔已经报过了'
+        else if (data.item_finished) msg += '，这批货全部做完了'
+        else if (data.step_finished) msg += '，本道工序做满'
+        self._requestId = ''
         self.setData({
-          state: 'idle', successVisible: true, successText: text,
-          scanned: null, nextStep: null, images: []
+          state: 'idle', scanned: null, nextStep: null, images: [],
+          successVisible: true, successTitle: title, successMessage: msg
         })
-        self._setTabBarHidden(true)
-        self._loadHistory()
-        setTimeout(function () {
-          self.setData({ successVisible: false })
-          self._setTabBarHidden(false)
-        }, 2500)
+        self.loadTodayHistory()
+        setTimeout(function () { self.setData({ successVisible: false }) }, 2200)
       },
       fail: function () {
-        self._showError('网络异常', '请检查网络后重试')
-        self.setData({ state: 'showing-confirm' })
+        self.setData({ submitting: false })
+        self._error('网络异常', '请检查网络后重试')
       }
     })
   },
 
-  onCancelTap: function () {
-    this._requestId = ''
-    this.setData({ state: 'idle', scanned: null, nextStep: null, images: [] })
+  // ─── 左滑撤销 ──────────────────────────────
+
+  onSwipeStart: function (e) {
+    this._swipeStartX = e.touches[0].clientX
+    this._swipeStartY = e.touches[0].clientY
   },
 
-  // ─── 今日记录 ──────────────────────────────
+  onSwipeMove: function (e) {
+    var dx = e.touches[0].clientX - this._swipeStartX
+    var dy = e.touches[0].clientY - this._swipeStartY
+    if (Math.abs(dy) > Math.abs(dx)) return          // 纵向滑动不处理
 
-  _loadHistory: function () {
-    var self = this
-    wx.request({
-      url: app.globalData.baseUrl + '/api/mini/domestic/history',
-      method: 'GET',
-      header: this._header(),
-      success: function (res) {
-        if (res.statusCode === 401) { app.logout(); return }
-        if (res.statusCode !== 200) return
-        var data = res.data || {}
-        self.setData({
-          todayCount: data.today_count || 0,
-          todayQty: data.today_qty || 0,
-          todayRecords: data.records || []
-        })
-      }
-    })
+    var idx = e.currentTarget.dataset.index
+    if (this._swipeOpenIndex >= 0 && this._swipeOpenIndex !== idx) this._closeSwipe()
+
+    var obj = {}
+    obj['todayRecords[' + idx + ']._swipeX'] = Math.min(0, Math.max(SWIPE_OPEN, dx))
+    obj['todayRecords[' + idx + ']._animating'] = false
+    this.setData(obj)
+  },
+
+  onSwipeEnd: function (e) {
+    var dx = e.changedTouches[0].clientX - this._swipeStartX
+    var idx = e.currentTarget.dataset.index
+    var shouldOpen = dx < -SWIPE_THRESHOLD
+    var obj = {}
+    obj['todayRecords[' + idx + ']._swipeX'] = shouldOpen ? SWIPE_OPEN : 0
+    obj['todayRecords[' + idx + ']._animating'] = true
+    this.setData(obj)
+    if (shouldOpen) this._swipeOpenIndex = idx
+    else if (this._swipeOpenIndex === idx) this._swipeOpenIndex = -1
+  },
+
+  _closeSwipe: function () {
+    if (this._swipeOpenIndex < 0) return
+    var obj = {}
+    obj['todayRecords[' + this._swipeOpenIndex + ']._swipeX'] = 0
+    obj['todayRecords[' + this._swipeOpenIndex + ']._animating'] = true
+    this.setData(obj)
+    this._swipeOpenIndex = -1
   },
 
   onRevokeTap: function (e) {
+    this.setData({
+      revokeVisible: true,
+      revokeLogId: e.currentTarget.dataset.logId,
+      revokeProcessName: e.currentTarget.dataset.processName,
+      revokeIndex: e.currentTarget.dataset.index
+    })
+  },
+
+  onRevokeCancel: function () {
+    this.setData({ revokeVisible: false, revokeLogId: null, revokeProcessName: '' })
+    this._closeSwipe()
+  },
+
+  onRevokeConfirm: function () {
     var self = this
-    var logId = e.currentTarget.dataset.logId
-    wx.showModal({
-      title: '撤销这次报工？',
-      content: '撤销后这道工序的完成数量会相应减少。',
-      confirmText: '撤销',
-      confirmColor: '#E53935',
-      success: function (modal) {
-        if (!modal.confirm) return
-        wx.request({
-          url: app.globalData.baseUrl + '/api/mini/domestic/scan/revoke',
-          method: 'POST',
-          header: self._header(),
-          data: { log_id: logId },
-          success: function (res) {
-            if (res.statusCode === 401) { app.logout(); return }
-            if (res.statusCode !== 200) {
-              var detail = (res.data && res.data.detail) || {}
-              self._showError('撤销失败', detail.message || '请重试')
-              return
-            }
-            wx.showToast({ title: '已撤销', icon: 'success' })
-            self._loadHistory()
-          }
+    var logId = this.data.revokeLogId
+    this.setData({ revokeVisible: false, submitting: true })
+    wx.request({
+      url: app.globalData.baseUrl + '/api/mini/domestic/scan/revoke',
+      method: 'POST',
+      header: this._header(),
+      timeout: 30000,
+      data: { log_id: logId },
+      success: function (res) {
+        self.setData({ submitting: false })
+        if (res.statusCode === 401) { app.logout(); return }
+        if (res.statusCode >= 400) {
+          var detail = (res.data && res.data.detail) || {}
+          self._error('撤销失败', detail.message || '请重试')
+          return
+        }
+        self._closeSwipe()
+        self.setData({
+          successVisible: true, successTitle: '已撤销',
+          successMessage: '该工序完成数量已相应减少'
         })
+        self.loadTodayHistory()
+        setTimeout(function () { self.setData({ successVisible: false }) }, 1800)
+      },
+      fail: function () {
+        self.setData({ submitting: false })
+        self._error('网络异常', '请检查网络后重试')
       }
     })
   },
 
-  onOrdersTap: function () {
-    wx.navigateTo({ url: '/pages/domestic/orders/orders' })
+  // ─── 导航与提示 ──────────────────────────────
+
+  onOrdersTap: function () { wx.navigateTo({ url: '/pages/domestic/orders/orders' }) },
+  onAllRecordsTap: function () { wx.navigateTo({ url: '/pages/domestic/orders/orders' }) },
+  onSwitchModuleTap: function () { wx.reLaunch({ url: '/pages/entry/entry' }) },
+
+  _error: function (title, message) {
+    this.setData({ errorVisible: true, errorTitle: title, errorMessage: message })
   },
 
-  onSwitchModuleTap: function () {
-    // tabBar 页的页面栈是空的，只能 reLaunch 回落地页
-    wx.reLaunch({ url: '/pages/entry/entry' })
-  },
-
-  // ─── 错误处理 ──────────────────────────────
-
-  // 底栏是 fixed z-index 999，弹层遮罩盖不住它（跨组件 z-index 不可比），
-  // 所以弹层期间直接把底栏收起来——外贸页弹确认框时也是这么做的
-  _setTabBarHidden: function (hidden) {
-    if (typeof this.getTabBar === 'function' && this.getTabBar()) {
-      this.getTabBar().setData({ hide: hidden })
-    }
-  },
-
-  _showError: function (title, detail) {
-    var self = this
-    this.setData({ errorVisible: true, errorTitle: title, errorDetail: detail })
-    this._setTabBarHidden(true)
-    setTimeout(function () {
-      self.setData({ errorVisible: false })
-      self._setTabBarHidden(false)
-    }, 3000)
-  },
-
-  onErrorClose: function () {
-    this.setData({ errorVisible: false })
-    this._setTabBarHidden(false)
-  }
+  onErrorTap: function () { this.setData({ errorVisible: false }) },
+  onSuccessTap: function () { this.setData({ successVisible: false }) }
 })

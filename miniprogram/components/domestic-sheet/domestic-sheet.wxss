@@ -1,0 +1,180 @@
+/* components/domestic-sheet/domestic-sheet.wxss
+   直接复用外贸确认弹层的全部结构与动效，只覆盖配色变量 ——
+   这样内外贸的弹层永远长一样，不会各自漂移。 */
+@import "../confirm-sheet/confirm-sheet.wxss";
+
+.confirm-overlay,
+.timeline-overlay {
+  /* 内贸品牌绿（取自 LOGO 孔雀主色）；其余变量沿用 import 进来的默认值 */
+  --m-accent: #0AA66F;
+  --m-accent-d: #007348;
+  --m-accent-l: #C9EFDF;
+  --m-accent-bg: #E8F5EF;
+  --m-accent-rgb: 10,166,111;
+}
+
+/* 绿色实底上的文字要白 —— 黄底黑字那套换成绿色只有 1.29:1，读不出来 */
+.btn-confirm {
+  color: #FFFFFF;
+}
+
+/* 工序名是 34px 大字块（外贸原设计：车间要一眼看清）。外贸是金底黑字，
+   换绿后必须白字——深绿字配绿底读不出来。用深一档的绿做底保对比度。 */
+.process-tag {
+  background: var(--m-accent-d);
+  color: #FFFFFF;
+}
+
+/* 弹层内容变长（多了数量与图文要求），给个滚动区，按钮常驻底部 */
+.sheet-scroll {
+  max-height: 52vh;
+}
+
+/* ── 报工数量 ── */
+.qty-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 16rpx;
+}
+
+.qty-max {
+  font-size: 24rpx;
+  color: var(--text-sub);
+}
+
+.qty-control {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.qty-btn {
+  width: 88rpx;
+  height: 88rpx;
+  /* 不锁 shrink 的话整行会被压扁、「全部」被挤出屏幕（实测 x=391.9 > 390） */
+  flex-shrink: 0;
+  border-radius: 14rpx;
+  background: var(--gray-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 44rpx;
+  color: var(--text-main);
+  transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1), opacity 140ms ease;
+}
+
+.qty-btn:active { transform: scale(0.94); }
+.qty-btn.is-off { opacity: 0.35; }
+
+.qty-input {
+  flex: 1;
+  min-width: 0;          /* 允许收缩，否则内容撑出去把兄弟挤走 */
+  height: 88rpx;
+  text-align: center;
+  font-size: 44rpx;
+  font-weight: 700;
+  color: var(--text-main);
+  border: 2rpx solid var(--border);
+  border-radius: 14rpx;
+  background: #FFFFFF;
+}
+
+.qty-all {
+  padding: 0 26rpx;
+  height: 88rpx;
+  flex-shrink: 0;
+  line-height: 88rpx;
+  border-radius: 14rpx;
+  background: var(--m-accent-bg);
+  color: var(--m-accent-d);
+  font-size: 26rpx;
+  font-weight: 600;
+  border: 2rpx solid transparent;
+  transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.qty-all:active { transform: scale(0.94); }
+
+.qty-all.is-on {
+  background: var(--m-accent);
+  color: #FFFFFF;
+}
+
+.qty-tip {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  margin-top: 16rpx;
+  font-size: 24rpx;
+  color: var(--warning);
+}
+
+.qty-tip-dot {
+  width: 10rpx;
+  height: 10rpx;
+  border-radius: 50%;
+  background: var(--warning);
+  flex-shrink: 0;
+}
+
+/* ── 图文要求（默认折叠）── */
+.req-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.req-toggle {
+  font-size: 24rpx;
+  color: var(--m-accent-d);
+}
+
+.req-body { margin-top: 16rpx; }
+
+.req-row { display: flex; margin-bottom: 12rpx; }
+.req-lbl { width: 80rpx; font-size: 24rpx; color: var(--text-sub); flex-shrink: 0; }
+.req-txt { flex: 1; font-size: 26rpx; color: var(--text-main); }
+
+.img-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-top: 8rpx;
+}
+
+.req-img {
+  width: 150rpx;
+  height: 150rpx;
+  border-radius: 12rpx;
+  background: var(--gray-bg);
+}
+
+/* ── 时间轴上的数量条（内贸按数量流转，外贸只有 0/1）── */
+.tl-qty {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-top: 10rpx;
+}
+
+.tl-qty-bar {
+  flex: 1;
+  height: 10rpx;
+  border-radius: 5rpx;
+  background: var(--gray-bg);
+  overflow: hidden;
+}
+
+.tl-qty-fill {
+  height: 100%;
+  border-radius: 5rpx;
+  background: var(--m-accent);
+  transition: width 260ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.tl-qty-text {
+  font-size: 22rpx;
+  color: var(--text-sub);
+  flex-shrink: 0;
+}

@@ -1,9 +1,23 @@
 /* components/confirm-sheet/confirm-sheet.wxss */
 
+/* 模块配色变量：外贸=品牌黑金。内贸的 domestic-sheet @import 本文件后只覆盖这几个值 */
+.confirm-overlay,
+.timeline-overlay {
+  /* 模块配色变量：外贸=品牌黑金。内贸页 @import 本文件后只覆盖这几个值，
+     结构与动效因此天生一致，不会各自漂移（2026-07-27） */
+  --m-accent: #F5D547;
+  --m-accent-d: #D4B620;
+  --m-accent-l: #FDF0A0;
+  --m-accent-bg: #FFFBE8;
+  --m-ink: #1A1A1A;
+  --m-accent-rgb: 245,213,71;
+  --m-ink-rgb: 26,26,26;
+}
+
 .confirm-overlay {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(26,26,26,0.55);
+  background: rgba(var(--m-ink-rgb), 0.55);
   backdrop-filter: blur(3px);
   z-index: 1999;
   display: flex;
@@ -29,7 +43,7 @@
 
 /* ── 品牌条 ── */
 .sheet-brand-strip {
-  background: #F5D547;
+  background: var(--m-accent);
   border-radius: 12px;
   padding: 10px 16px;
   margin-bottom: 18px;
@@ -40,12 +54,12 @@
 .sheet-brand-name {
   font-size: 14px;
   font-weight: 800;
-  color: #1A1A1A;
+  color: var(--m-ink);
   font-style: italic;
 }
 .sheet-brand-sub {
   font-size: 12px;
-  color: rgba(26,26,26,0.55);
+  color: rgba(var(--m-ink-rgb), 0.55);
 }
 
 /* ── Section ── */
@@ -80,7 +94,7 @@
 .info-val {
   font-size: 15px;
   font-weight: 700;
-  color: #1A1A1A;
+  color: var(--m-ink);
 }
 .info-val.lg {
   font-size: 18px;
@@ -105,8 +119,8 @@
 
 /* ── 工序 Tag ── */
 .process-tag {
-  background: #F5D547;
-  color: #1A1A1A;
+  background: var(--m-accent);
+  color: var(--m-ink);
   padding: 5px 16px;
   border-radius: 10px;
   font-size: 34px;
@@ -132,7 +146,7 @@
 .proc-bar-fill {
   height: 100%;
   border-radius: 4px;
-  background: linear-gradient(90deg, #F5D547, #D4B620);
+  background: linear-gradient(90deg, var(--m-accent), var(--m-accent-d));
 }
 
 /* ── 按钮 ── */
@@ -145,8 +159,8 @@
   flex: 1;
   height: 54px;
   border-radius: 27px;
-  border: 2px solid #1A1A1A;
-  color: #1A1A1A;
+  border: 2px solid var(--m-ink);
+  color: var(--m-ink);
   font-size: 17px;
   font-weight: 600;
   background: transparent;
@@ -158,8 +172,8 @@
   flex: 2;
   height: 54px;
   border-radius: 27px;
-  background: #F5D547;
-  color: #1A1A1A;
+  background: var(--m-accent);
+  color: var(--m-ink);
   font-size: 17px;
   font-weight: 800;
   border: none;
@@ -167,7 +181,7 @@
   align-items: center;
   justify-content: center;
   gap: 7px;
-  box-shadow: 0 6px 20px rgba(245,213,71,0.5);
+  box-shadow: 0 6px 20px rgba(var(--m-accent-rgb), 0.5);
 }
 .btn-confirm[disabled] {
   background: #E5E5E5;
@@ -183,7 +197,7 @@
 .timeline-overlay {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(26,26,26,0.55);
+  background: rgba(var(--m-ink-rgb), 0.55);
   backdrop-filter: blur(3px);
   z-index: 2999;
   display: flex;
@@ -213,7 +227,7 @@
 .timeline-title {
   font-size: 18px;
   font-weight: 800;
-  color: #1A1A1A;
+  color: var(--m-ink);
 }
 .timeline-close {
   width: 32px;
@@ -267,11 +281,11 @@
 
 /* 已完成态 */
 .timeline-item.done .tl-dot {
-  background: #F5D547;
-  border-color: #D4B620;
+  background: var(--m-accent);
+  border-color: var(--m-accent-d);
 }
 .timeline-item.done .tl-line {
-  background: #F5D547;
+  background: var(--m-accent);
 }
 
 /* 右侧内容 */
@@ -297,8 +311,8 @@
   border-radius: 6px;
 }
 .status-done {
-  background: #FFFBE8;
-  color: #D4B620;
+  background: var(--m-accent-bg);
+  color: var(--m-accent-d);
 }
 .status-pending {
   background: #F2F3F5;
@@ -308,7 +322,7 @@
 .tl-name {
   font-size: 16px;
   font-weight: 700;
-  color: #1A1A1A;
+  color: var(--m-ink);
   display: block;
   margin-bottom: 6px;
 }
@@ -324,9 +338,9 @@
 }
 .tl-user {
   font-size: 13px;
-  color: #F5D547;
+  color: var(--m-accent);
   font-weight: 700;
-  background: #FFFBE8;
+  background: var(--m-accent-bg);
   padding: 1px 8px;
   border-radius: 4px;
 }
