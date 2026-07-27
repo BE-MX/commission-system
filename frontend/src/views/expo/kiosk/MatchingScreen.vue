@@ -1,117 +1,119 @@
 <template>
   <div class="matching">
-    <h2 class="xk-title">为您甄选 <em>{{ flow.matches.value.length }}</em> 款</h2>
-    <div class="xk-sub">依据您的脸型 · 肤色 · 气质定制推荐 · 轻触选择一款</div>
+    <div class="m-scroll">
+      <h2 class="xk-title">为您甄选 <em>{{ flow.matches.value.length }}</em> 款</h2>
+      <div class="xk-sub">依据您的脸型 · 肤色 · 气质定制推荐 · 轻触选择一款</div>
 
-    <!-- AI 面容解读：只展示 serialize 剥离 internal 后的正面公开字段 -->
-    <div v-if="flow.analysis.value" class="reading">
-      <div v-if="flow.analysis.value.display_notes" class="reading-note">{{ flow.analysis.value.display_notes }}</div>
-      <div class="reading-chips">
-        <span v-if="faceLabel" class="rchip"><b>脸型</b>{{ faceLabel }}</span>
-        <span v-if="skinLabel" class="rchip"><b>肤色</b>{{ skinLabel }}</span>
-        <span v-if="flow.analysis.value.temperament" class="rchip"><b>气质</b>{{ flow.analysis.value.temperament }}</span>
+      <!-- AI 面容解读：只展示 serialize 剥离 internal 后的正面公开字段 -->
+      <div v-if="flow.analysis.value" class="reading">
+        <div v-if="flow.analysis.value.display_notes" class="reading-note">{{ flow.analysis.value.display_notes }}</div>
+        <div class="reading-chips">
+          <span v-if="faceLabel" class="rchip"><b>脸型</b>{{ faceLabel }}</span>
+          <span v-if="skinLabel" class="rchip"><b>肤色</b>{{ skinLabel }}</span>
+          <span v-if="flow.analysis.value.temperament" class="rchip"><b>气质</b>{{ flow.analysis.value.temperament }}</span>
+        </div>
       </div>
-    </div>
 
-    <div class="cards">
-      <div
-        v-for="(match, i) in shownMatches" :key="match.wig_id"
-        class="card" :class="{ zhizhen: match.series === 'zhizhen', custom: match.custom, sel: flow.selectedWigId.value === match.wig_id }"
-        :style="{ animationDelay: `${0.15 + i * 0.25}s` }"
-        @click="pickWig(match.wig_id)"
-      >
-        <span v-if="match.custom" class="badge badge-custom">自选</span>
-        <span v-else-if="match.series === 'zhizhen'" class="badge">至臻系列</span>
-        <div class="thumb">
-          <img v-if="match.cover_url" :src="match.cover_url" alt="" />
-          <span v-else class="thumb-ph">莱莎</span>
+      <div class="cards">
+        <div
+          v-for="(match, i) in shownMatches" :key="match.wig_id"
+          class="card" :class="{ zhizhen: match.series === 'zhizhen', custom: match.custom, sel: flow.selectedWigId.value === match.wig_id }"
+          :style="{ animationDelay: `${0.15 + i * 0.25}s` }"
+          @click="pickWig(match.wig_id)"
+        >
+          <span v-if="match.custom" class="badge badge-custom">自选</span>
+          <span v-else-if="match.series === 'zhizhen'" class="badge">至臻系列</span>
+          <div class="thumb">
+            <img v-if="match.cover_url" :src="match.cover_url" alt="" />
+            <span v-else class="thumb-ph">莱莎</span>
+          </div>
+          <div class="info">
+            <div class="no">{{ match.model_no }}</div>
+            <div class="nm">{{ match.name }}</div>
+            <div class="why">{{ match.reason }}</div>
+          </div>
+          <div v-if="match.custom" class="pct pct-custom">自选<small>发型库</small></div>
+          <div v-else-if="match.must_recommend" class="pct pct-custom">主推<small>为您优选</small></div>
+          <div v-else-if="match.score != null" class="pct">{{ Math.round(match.score) }}<small>匹配</small></div>
+          <span class="tick" :class="{ on: flow.selectedWigId.value === match.wig_id }">✓</span>
         </div>
-        <div class="info">
-          <div class="no">{{ match.model_no }}</div>
-          <div class="nm">{{ match.name }}</div>
-          <div class="why">{{ match.reason }}</div>
-        </div>
-        <div v-if="match.custom" class="pct pct-custom">自选<small>发型库</small></div>
-        <div v-else-if="match.must_recommend" class="pct pct-custom">主推<small>为您优选</small></div>
-        <div v-else-if="match.score != null" class="pct">{{ Math.round(match.score) }}<small>匹配</small></div>
-        <span class="tick" :class="{ on: flow.selectedWigId.value === match.wig_id }">✓</span>
       </div>
-    </div>
 
-    <div class="match-actions">
-      <button v-if="flow.canSwapMatches.value" class="swap" @click="doSwap">
-        换一批候选 ⟳
-      </button>
-      <button class="swap lib-entry" @click="openLibrary">从发型库中选择其他款 ›</button>
-    </div>
+      <div class="match-actions">
+        <button v-if="flow.canSwapMatches.value" class="swap" @click="doSwap">
+          换一批候选 ⟳
+        </button>
+        <button class="swap lib-entry" @click="openLibrary">从发型库中选择其他款 ›</button>
+      </div>
 
-    <!-- 从发型库选择：全部启用发型网格，滑动挑一款 -->
-    <div v-if="libraryOpen" class="lib-overlay" @click.self="libraryOpen = false">
-      <div class="lib-panel">
-        <div class="lib-head">
-          <span class="lib-title">从发型库选择</span>
-          <button class="lib-close" @click="libraryOpen = false">✕</button>
-        </div>
-        <div v-loading="libraryLoading" class="lib-grid">
-          <button
-            v-for="w in libraryWigs" :key="w.wig_id"
-            class="lib-card" :class="{ on: flow.selectedWigId.value === w.wig_id }"
-            @click="pickFromLibrary(w)"
-          >
-            <span class="lib-thumb">
-              <img v-if="w.cover_url" :src="w.cover_url" alt="" />
-              <span v-else class="lib-ph">莱莎</span>
-            </span>
-            <span v-if="w.series === 'zhizhen'" class="lib-tag">至臻</span>
-            <span class="lib-nm">{{ w.name }}</span>
-          </button>
-          <div v-if="!libraryLoading && !libraryWigs.length" class="lib-empty">
-            发型库加载失败，请关闭后重试或呼叫顾问
+      <!-- 从发型库选择：全部启用发型网格，滑动挑一款 -->
+      <div v-if="libraryOpen" class="lib-overlay" @click.self="libraryOpen = false">
+        <div class="lib-panel">
+          <div class="lib-head">
+            <span class="lib-title">从发型库选择</span>
+            <button class="lib-close" @click="libraryOpen = false">✕</button>
+          </div>
+          <div v-loading="libraryLoading" class="lib-grid">
+            <button
+              v-for="w in libraryWigs" :key="w.wig_id"
+              class="lib-card" :class="{ on: flow.selectedWigId.value === w.wig_id }"
+              @click="pickFromLibrary(w)"
+            >
+              <span class="lib-thumb">
+                <img v-if="w.cover_url" :src="w.cover_url" alt="" />
+                <span v-else class="lib-ph">莱莎</span>
+              </span>
+              <span v-if="w.series === 'zhizhen'" class="lib-tag">至臻</span>
+              <span class="lib-nm">{{ w.name }}</span>
+            </button>
+            <div v-if="!libraryLoading && !libraryWigs.length" class="lib-empty">
+              发型库加载失败，请关闭后重试或呼叫顾问
+            </div>
           </div>
         </div>
       </div>
-    </div>
 
-    <div v-if="flow.hairColors.value.length" class="color-pick">
-      <div class="cp-title">甄选发色<small>可选 · 默认保持款式原色</small></div>
-      <div class="chips">
-        <button
-          class="chip" :class="{ on: !flow.selectedColorId.value }"
-          @click="pickColor(null)"
-        ><i class="sw origin" />原色</button>
-        <button
-          v-for="c in flow.hairColors.value" :key="c.id"
-          class="chip" :class="{ on: flow.selectedColorId.value === c.id }"
-          @click="pickColor(c.id)"
-        ><img v-if="c.swatch_url" class="sw" :src="c.swatch_url" alt="" />
-          <i v-else class="sw" :style="{ background: c.hex || 'var(--xk-ink-2)' }" />{{ c.name }}</button>
+      <div v-if="flow.hairColors.value.length" class="color-pick">
+        <div class="cp-title">甄选发色<small>可选 · 默认保持款式原色</small></div>
+        <div class="chips">
+          <button
+            class="chip" :class="{ on: !flow.selectedColorId.value }"
+            @click="pickColor(null)"
+          ><i class="sw origin" />原色</button>
+          <button
+            v-for="c in flow.hairColors.value" :key="c.id"
+            class="chip" :class="{ on: flow.selectedColorId.value === c.id }"
+            @click="pickColor(c.id)"
+          ><img v-if="c.swatch_url" class="sw" :src="c.swatch_url" alt="" />
+            <i v-else class="sw" :style="{ background: c.hex || 'var(--xk-ink-2)' }" />{{ c.name }}</button>
+        </div>
       </div>
-    </div>
 
-    <div v-if="flow.tryonScenes.value.length" class="scene-pick">
-      <div class="cp-title">生成场景<small>选类别 · 左右滑动选择 · 场景图仅示意</small></div>
-      <div v-if="categories.length > 1" class="scene-cats">
-        <button
-          v-for="c in categories" :key="c.key"
-          class="scene-cat" :class="{ on: selectedCategory === c.key }"
-          @click="switchCategory(c.key)"
-        >{{ c.label }}</button>
-      </div>
-      <div ref="trackRef" class="scene-track" @scroll="onSceneScroll">
-        <button
-          v-for="(s, i) in visibleScenes" :key="s.key"
-          class="scard" :class="{ on: sceneActive === i }"
-          @click="centerScene(i)"
-        >
-          <span class="scard-pic">
-            <img v-if="s.image" :src="s.image" alt="" />
-            <span v-else class="scard-ph"><span class="scard-emoji">{{ sceneEmoji(s.key) }}</span></span>
-          </span>
-          <span class="scard-cap">
-            <span class="scard-lb">{{ s.label }}</span>
-            <span class="scard-tg">{{ s.tagline }}</span>
-          </span>
-        </button>
+      <div v-if="flow.tryonScenes.value.length" class="scene-pick">
+        <div class="cp-title">生成场景<small>选类别 · 左右滑动选择 · 场景图仅示意</small></div>
+        <div v-if="categories.length > 1" class="scene-cats">
+          <button
+            v-for="c in categories" :key="c.key"
+            class="scene-cat" :class="{ on: selectedCategory === c.key }"
+            @click="switchCategory(c.key)"
+          >{{ c.label }}</button>
+        </div>
+        <div ref="trackRef" class="scene-track" @scroll="onSceneScroll">
+          <button
+            v-for="(s, i) in visibleScenes" :key="s.key"
+            class="scard" :class="{ on: sceneActive === i }"
+            @click="centerScene(i)"
+          >
+            <span class="scard-pic">
+              <img v-if="s.image" :src="s.image" alt="" />
+              <span v-else class="scard-ph"><span class="scard-emoji">{{ sceneEmoji(s.key) }}</span></span>
+            </span>
+            <span class="scard-cap">
+              <span class="scard-lb">{{ s.label }}</span>
+              <span class="scard-tg">{{ s.tagline }}</span>
+            </span>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -294,7 +296,14 @@ onBeforeUnmount(() => { if (scRaf) cancelAnimationFrame(scRaf) })
 </script>
 
 <style scoped>
-.matching { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 2vh 6vw 3vh; overflow-y: auto; }
+/* 滚动交给内层 .m-scroll，CTA 留在外层常驻可见——这一屏内容长（解读+6 张卡+发色+场景），
+   小屏上按钮跟着内容滚出屏幕后，客户挑完款找不到「生成」。目标是选完就能按下，不是滚到底去找 */
+.matching { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; padding: 2vh 6vw 3vh; overflow: hidden; }
+.m-scroll {
+  flex: 1; min-height: 0; width: 100%;
+  display: flex; flex-direction: column; align-items: center;
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
+}
 .reading {
   width: min(88vw, 560px); margin-top: 2vh; padding: 14px 18px;
   border: 1px solid var(--xk-gold-line); border-radius: 16px;
@@ -443,8 +452,9 @@ onBeforeUnmount(() => { if (scRaf) cancelAnimationFrame(scRaf) })
 }
 .pct small { display: block; font-style: normal; font-size: 9px; letter-spacing: 0.2em; color: var(--xk-mut); }
 /* 发色区与 CTA 作为一组吸底（无色板数据时 CTA 自身吸底，布局同改造前） */
+/* margin-top:auto 仍在（把发色区顶到滚动区底部）；原先的 .color-pick + .go 已失效——
+   CTA 移出 .m-scroll 后不再是它的兄弟，间距统一由 .go 自己的 margin-top 给 */
 .color-pick { width: min(88vw, 560px); margin-top: auto; padding-top: 16px; }
-.color-pick + .go { margin-top: 16px; }
 .cp-title {
   font-size: 11px; letter-spacing: 0.24em; color: var(--xk-gold-dim);
   display: flex; align-items: baseline; gap: 10px;
@@ -536,12 +546,20 @@ onBeforeUnmount(() => { if (scRaf) cancelAnimationFrame(scRaf) })
   .scard:active .scard-pic { transform: none; }
 }
 
+/* 64px 对齐首屏主 CTA 的分量：这是全流程的终点动作，52px 的通用按钮压不住。
+   第二道墨色阴影（向上偏移 + 扩散）把滚动内容在按钮上沿柔化掉——否则卡片被拦腰切断，
+   看起来像内容被裁没了，而不是「还能往下滑」 */
+.go {
+  flex: none; margin-top: 16px; margin-bottom: 1vh; min-width: 300px; height: 64px; font-size: 17px;
+  box-shadow: 0 6px 26px rgba(232, 196, 121, 0.3), 0 -14px 22px 18px var(--xk-ink);
+}
+.go:disabled { opacity: 0.4; }
 /* ── 手机竖屏（≤560px）── 横向留白让给内容：88vw 在 390px 屏上只剩 343px，
    而卡片内 缩略图76 + 匹配度48 + 两道 gap 是固定开销，发型名与推荐理由被压到不足 160px */
 @media (max-width: 560px) {
   .matching { padding: 1.5vh 4vw 2vh; }
   .reading, .cards, .color-pick, .scene-pick { width: 100%; }
-  .go { min-width: 0; width: 100%; }
+  .go { min-width: 0; width: 100%; height: 56px; font-size: 16px; }
   .info .nm { font-size: 17px; }
   .pct { font-size: 21px; }
   .lib-head { padding: 14px 16px; }
@@ -549,8 +567,4 @@ onBeforeUnmount(() => { if (scRaf) cancelAnimationFrame(scRaf) })
   .lib-grid { padding: 14px 16px; gap: 10px; }
   .lib-nm { font-size: 13px; padding: 0 6px 12px; }
 }
-
-.go { margin-top: auto; margin-bottom: 1vh; min-width: 300px; }
-.scene-pick + .go { margin-top: 16px; }
-.go:disabled { opacity: 0.4; }
 </style>

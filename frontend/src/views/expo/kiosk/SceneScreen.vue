@@ -1,19 +1,21 @@
 <template>
   <div class="scene">
-    <h2 class="xk-title">选择您的<em>场景大片</em></h2>
-    <div class="xk-sub">保持此刻佩戴效果 · 最多选 3 个场景</div>
+    <div class="s-scroll">
+      <h2 class="xk-title">选择您的<em>场景大片</em></h2>
+      <div class="xk-sub">保持此刻佩戴效果 · 最多选 3 个场景</div>
 
-    <div class="cards">
-      <button
-        v-for="(s, i) in flow.scenes.value" :key="s.key"
-        class="card" :class="{ on: selected(s.key) }"
-        :style="{ animationDelay: `${0.1 + i * 0.12}s` }"
-        @click="flow.toggleScene(s.key)"
-      >
-        <span class="mark">{{ selected(s.key) ? '✓' : '' }}</span>
-        <span class="lb">{{ s.label }}</span>
-        <span class="tg">{{ s.tagline }}</span>
-      </button>
+      <div class="cards">
+        <button
+          v-for="(s, i) in flow.scenes.value" :key="s.key"
+          class="card" :class="{ on: selected(s.key) }"
+          :style="{ animationDelay: `${0.1 + i * 0.12}s` }"
+          @click="flow.toggleScene(s.key)"
+        >
+          <span class="mark">{{ selected(s.key) ? '✓' : '' }}</span>
+          <span class="lb">{{ s.label }}</span>
+          <span class="tg">{{ s.tagline }}</span>
+        </button>
+      </div>
     </div>
 
     <button
@@ -39,7 +41,13 @@ function selected(key) {
 </script>
 
 <style scoped>
-.scene { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 2vh 6vw 3vh; overflow-y: auto; }
+/* 同 MatchingScreen：滚动交给内层，CTA 常驻——场景卡多时按钮会跟着滚出屏幕 */
+.scene { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; padding: 2vh 6vw 3vh; overflow: hidden; }
+.s-scroll {
+  flex: 1; min-height: 0; width: 100%;
+  display: flex; flex-direction: column; align-items: center;
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
+}
 .cards {
   width: min(88vw, 560px);
   display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;
@@ -73,13 +81,17 @@ function selected(key) {
 .card.on .mark { background: linear-gradient(110deg, var(--xk-gold), var(--xk-gold-hi)); border: none; }
 .lb { font-family: 'Noto Serif SC', serif; font-size: 18px; color: var(--xk-gold-hi); }
 .tg { font-size: 11px; letter-spacing: 0.12em; color: var(--xk-mut); }
-.go { margin-top: auto; margin-bottom: 1vh; min-width: 300px; }
+/* 同 MatchingScreen：第二道墨色阴影柔化按钮上沿被切断的滚动内容 */
+.go {
+  flex: none; margin-top: 16px; margin-bottom: 1vh; min-width: 300px; height: 64px; font-size: 17px;
+  box-shadow: 0 6px 26px rgba(232, 196, 121, 0.3), 0 -14px 22px 18px var(--xk-ink);
+}
 .go:disabled { opacity: 0.4; }
 
 /* 手机竖屏：min-width:300 在 390px 屏上只剩 43px 余量，撑满比留一线更稳也更好点 */
 @media (max-width: 560px) {
   .scene { padding: 1.5vh 4vw 2vh; }
   .cards { width: 100%; }
-  .go { min-width: 0; width: 100%; }
+  .go { min-width: 0; width: 100%; height: 56px; font-size: 16px; }
 }
 </style>
