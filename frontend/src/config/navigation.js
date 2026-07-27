@@ -18,7 +18,7 @@ import {
   Money, Refresh, List, Van, Upload, Box, Setting, Aim, Reading,
   MagicStick, Notebook, Calendar, Camera, EditPen, Stamp, TrendCharts,
   Lock, Lightning, Picture, Collection, CollectionTag, DataBoard,
-  DataLine, Printer, Brush,
+  DataLine, Printer, Brush, Tickets, Goods,
 } from '@element-plus/icons-vue'
 
 /**
@@ -80,6 +80,11 @@ export const MENU_GROUPS = {
       'production:read', 'production:write', 'production:print', 'production:admin',
       'production_product:read', 'production_dashboard:read', 'production_route:read',
     ],
+  },
+  domestic: {
+    title: '内贸订单',
+    icon: Tickets,
+    anyPermission: ['domestic:read', 'domestic:write', 'domestic:admin'],
   },
   asset: {
     title: '素材管理',
@@ -570,6 +575,60 @@ export const NAV_ENTRIES = [
     component: () => import('@/views/production/PrintCard.vue'),
     title: '工艺流转卡打印',
     permission: 'production:read',
+    hideInMenu: true,
+  },
+
+  // ── 内贸订单 ───────────────────────────────────────────
+  {
+    path: '/domestic/orders',
+    name: 'DomesticOrders',
+    component: () => import('@/views/domestic/DomesticOrders.vue'),
+    title: '内贸订单',
+    permission: 'domestic:read',
+    menu: {
+      group: 'domestic', title: '订单管理', icon: List, order: 10,
+      permission: 'domestic:read',
+    },
+  },
+  {
+    path: '/domestic/orders/create',
+    name: 'DomesticOrderCreate',
+    component: () => import('@/views/domestic/DomesticOrderCreate.vue'),
+    title: '内贸下单',
+    permission: 'domestic:write',
+    menu: {
+      group: 'domestic', title: '新建订单', icon: EditPen, order: 11,
+      permission: 'domestic:write',
+    },
+  },
+  {
+    path: '/domestic/products',
+    name: 'DomesticProducts',
+    component: () => import('@/views/domestic/DomesticProducts.vue'),
+    title: '内贸产品与工艺',
+    permission: 'domestic:read',
+    menu: {
+      group: 'domestic', title: '产品与工艺', icon: Goods, order: 12,
+      permission: 'domestic:read',
+    },
+  },
+  {
+    path: '/domestic/customers',
+    name: 'DomesticCustomers',
+    component: () => import('@/views/domestic/DomesticCustomers.vue'),
+    title: '内贸客户',
+    permission: 'domestic:read',
+    menu: {
+      group: 'domestic', title: '客户管理', icon: OfficeBuilding, order: 13,
+      permission: 'domestic:read',
+    },
+  },
+  {
+    path: '/domestic/print-card/:id',
+    name: 'DomesticPrintCard',
+    component: () => import('@/views/domestic/DomesticPrintCard.vue'),
+    title: '内贸流转卡打印',
+    permission: 'domestic:read',
     hideInMenu: true,
   },
 
