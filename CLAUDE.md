@@ -89,7 +89,7 @@ miniprogram/  services/whatsapp-connector/  deploy/  docs/  config/
 4. **报告实际跑出的验证证据**，不说"应该没问题"
 5. 满足任一条件派独立 agent 对抗性审查：跨 3+ 文件 / 涉提成·发票·回款·库存数量 / 状态机变更 / 迁移脚本（审查视角：边界条件、并发写、幂等、前后端契约）
 6. 文档同步：新端点→`docs/api-reference.md`；新表→`docs/database.md`；新模块→auto-memory 建 `project_<domain>.md`
-7. 详细清单（含新模块 9 步 checklist）见 `.claude/rules/checklists.md`
+7. 详细清单（含新模块 9 步 checklist）走 skill：`completion-checklist`（按需加载，不常驻上下文）
 
 ## 记忆协议（取代原 OpenWolf 全量协议）
 
