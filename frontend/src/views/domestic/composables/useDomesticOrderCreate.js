@@ -4,7 +4,7 @@
  * 关键交互决策：工艺路线不让下单人选。选完属性后前端就地查「工艺→路线」映射，
  * 当场显示会走哪条路线；没配映射的当场标红提示，而不是等下单成功后才在列表里发现开不了工。
  */
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -98,10 +98,33 @@ export function useDomesticOrderCreate() {
     form.items.splice(index, 1)
   }
 
-  async function handleUpload(file) {
-    const res = await uploadImage(file)
-    return { path: res.data.path, name: res.data.name, url: URL.createObjectURL(file) }
+  // AppUpload 的 v-model 回写在并发上传时会丢行（组件头注释里写明了），
+  // 所以走它文档推荐的 show-list=false + uploadFn 自管状态：
+  // 直接 push 进 reactive 数组，每次调用各自独立，不依赖 props 快照
+  function makeUploadFn(item, imageKey) {
+    return async file => {
+      const res = await uploadImage(file)
+      item[imageKey].push({
+        path: res.data.path,
+        name: res.data.name,
+        url: URL.createObjectURL(file),
+      })
+      return res.data
+    }
   }
+
+  function removeImage(item, imageKey, index) {
+    const [removed] = item[imageKey].splice(index, 1)
+    if (removed?.url) URL.revokeObjectURL(removed.url)
+  }
+
+  onBeforeUnmount(() => {
+    for (const item of form.items) {
+      for (const section of ['hairstyle_images', 'color_images', 'style_images', 'remark_images']) {
+        item[section].forEach(f => f.url && URL.revokeObjectURL(f.url))
+      }
+    }
+  })
 
   async function searchCustomers(keyword) {
     customerLoading.value = true
@@ -200,6 +223,6 @@ export function useDomesticOrderCreate() {
     loading, submitting, options, customers, customerLoading, form,
     attrOptions, hasField, routeOf, unroutedCount,
     onProductTypeChange, addItem, copyItem, removeItem,
-    handleUpload, searchCustomers, submit,
+    makeUploadFn, removeImage, searchCustomers, submit,
   }
 }

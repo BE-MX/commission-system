@@ -98,6 +98,9 @@ class DomesticSubmitRequest(BaseModel):
     item_id: int = Field(..., description="内贸订单明细 ID")
     progress_id: int = Field(..., description="工序进度行 ID")
     qty: int = Field(..., gt=0, description="本次报工数量；整批就填可报全量，拆批填小于它的数")
+    request_id: Optional[str] = Field(
+        None, max_length=64, description="幂等键：弱网重试用同一个值，不会重复累加",
+    )
 
 
 class DomesticRevokeRequest(BaseModel):

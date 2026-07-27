@@ -35,6 +35,9 @@ Page({
     successText: ''
   },
 
+  _imageBatch: 0,
+  _requestId: '',
+
   onLoad: function (options) {
     var info = wx.getSystemInfoSync()
     this.setData({
@@ -70,10 +73,11 @@ Page({
         var raw = scan.result || ''
         var match = raw.match(/^ARK-D:(\d+):([a-f0-9]+)$/)
         if (!match) {
-          // 扫到外贸卡就送回外贸报工页，别让工人自己判断扫错了哪种卡
+          // 扫到外贸卡：说清楚发生了什么再送回外贸报工页，别让工人一头雾水
           if (/^ARK-P:/.test(raw)) {
             self.setData({ state: 'idle' })
-            wx.navigateBack()
+            wx.showToast({ title: '这是外贸流转卡，帮你切回外贸报工', icon: 'none', duration: 2000 })
+            setTimeout(function () { wx.navigateBack() }, 1200)
             return
           }
           self._showError('二维码无效', BLOCK_HINTS.SIGN_INVALID)
@@ -127,16 +131,20 @@ Page({
     })
   },
 
-  // 图片端点要鉴权，<image src> 带不了 header，用 downloadFile 带上再显示
+  // 图片端点要鉴权，<image src> 带不了 header，用 downloadFile 带上再显示。
+  // 批次令牌不能省：连扫两张卡时先发起的那批（图可能 20MB）后完成会覆盖，
+  // 工人就会对着上一张卡的参考图做活。
   _loadImages: function (data) {
     var self = this
+    var batch = ++this._imageBatch
     var paths = []
     var fields = ['hairstyle_images', 'color_images', 'style_images', 'remark_images']
     for (var i = 0; i < fields.length; i++) {
       var list = data[fields[i]] || []
       for (var j = 0; j < list.length; j++) paths.push(list[j])
     }
-    if (!paths.length) { self.setData({ images: [] }); return }
+    self.setData({ images: [] })
+    if (!paths.length) return
 
     var loaded = []
     var pending = paths.length
@@ -149,7 +157,9 @@ Page({
         },
         complete: function () {
           pending -= 1
-          if (pending === 0) self.setData({ images: loaded })
+          if (pending === 0 && batch === self._imageBatch) {
+            self.setData({ images: loaded })
+          }
         }
       })
     })
@@ -195,6 +205,12 @@ Page({
       this._showError('数量不对', '本次最多能报 ' + this.data.maxQty + ' 件')
       return
     }
+    // 幂等键在同一次确认里复用：弱网下"服务端已提交、响应丢了"时工人再点一次，
+    // 服务端认出是同一笔，返回首次结果而不是再记一笔
+    if (!this._requestId) {
+      this._requestId = Date.now() + '-' + Math.random().toString(36).slice(2, 12)
+    }
+
     this.setData({ state: 'submitting' })
     wx.request({
       url: app.globalData.baseUrl + '/api/mini/domestic/scan/submit',
@@ -203,7 +219,8 @@ Page({
       data: {
         item_id: this.data.scanned.item_id,
         progress_id: this.data.nextStep.progress_id,
-        qty: qty
+        qty: qty,
+        request_id: this._requestId
       },
       success: function (res) {
         if (res.statusCode === 401) { app.logout(); return }
@@ -215,8 +232,10 @@ Page({
         }
         var data = res.data || {}
         var text = '已报 ' + data.reported_qty + ' 件 · ' + data.process_name
-        if (data.item_finished) text += '（这批货全部做完了）'
+        if (data.replayed) text = '这笔已经报过了 · ' + text
+        else if (data.item_finished) text += '（这批货全部做完了）'
         else if (data.step_finished) text += '（本道工序做满）'
+        self._requestId = ''   // 本笔收尾，下次确认换新的幂等键
         self.setData({
           state: 'idle', successVisible: true, successText: text,
           scanned: null, nextStep: null, images: []
@@ -232,6 +251,7 @@ Page({
   },
 
   onCancelTap: function () {
+    this._requestId = ''
     this.setData({ state: 'idle', scanned: null, nextStep: null, images: [] })
   },
 
@@ -244,6 +264,7 @@ Page({
       method: 'GET',
       header: this._header(),
       success: function (res) {
+        if (res.statusCode === 401) { app.logout(); return }
         if (res.statusCode !== 200) return
         var data = res.data || {}
         self.setData({
@@ -271,6 +292,7 @@ Page({
           header: self._header(),
           data: { log_id: logId },
           success: function (res) {
+            if (res.statusCode === 401) { app.logout(); return }
             if (res.statusCode !== 200) {
               var detail = (res.data && res.data.detail) || {}
               self._showError('撤销失败', detail.message || '请重试')

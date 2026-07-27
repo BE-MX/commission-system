@@ -51,9 +51,13 @@ def store_bytes(original_filename: str, content: bytes) -> str:
 
 
 def resolve_path(rel_path: str) -> Path:
-    """相对路径 → 绝对路径，挡住 ../ 穿越。"""
+    """相对路径 → 绝对路径，挡住 ../ 穿越。
+
+    用 is_relative_to 而非字符串前缀比较（与 training/aftersales 同一写法）：
+    前缀比较放得过同级同前缀目录，如 ../domestic-backup/x 也 startswith 得上。
+    """
     root = storage_root().resolve()
     target = (root / (rel_path or "")).resolve()
-    if not str(target).startswith(str(root)):
+    if not target.is_relative_to(root):
         raise FileValidationError("非法的图片路径")
     return target

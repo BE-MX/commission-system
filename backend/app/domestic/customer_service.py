@@ -1,11 +1,15 @@
 """内贸客户 service —— 店名是业务主标识，下单时可就地新建"""
 
+import logging
+
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.domestic.models import DomesticCustomer, DomesticOrder
 from app.domestic.schemas import CustomerCreate, CustomerUpdate
+
+logger = logging.getLogger("commission")
 
 
 def list_customers(
@@ -67,12 +71,17 @@ def find_or_create_by_shop_name(db: Session, shop_name: str, user_id: int) -> Do
         return existing
 
     customer = DomesticCustomer(shop_name=name, status=1, created_by=user_id)
+    # savepoint 而非 db.rollback()：下单链路上全事务回滚会牵连已落库的其他行
+    savepoint = db.begin_nested()
     db.add(customer)
     try:
         db.flush()
+        savepoint.commit()
     except IntegrityError:
         # 并发：两笔下单同时新建同一店名，撞 unique 后改取已存在的行
-        db.rollback()
+        savepoint.rollback()
+        logger.warning("domestic customer race on shop_name=%s, refetch", name)
+        print(f"[domestic] customer race shop_name={name}, refetch", flush=True)
         existing = db.query(DomesticCustomer).filter(DomesticCustomer.shop_name == name).first()
         if existing is None:  # 理论不可达
             raise

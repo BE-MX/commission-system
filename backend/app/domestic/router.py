@@ -41,7 +41,8 @@ from app.domestic.schemas import (
     ReportRevoke,
     ReportSubmit,
 )
-from app.production.models import Process, ProcessRoute, ProcessRouteStep
+from app.auth.models import ArkUser
+from app.production.models import Process, ProcessRoute, ProcessRouteStep, UserProcessBinding
 from app.system.models import SysDict
 
 logger = logging.getLogger("commission")
@@ -437,7 +438,10 @@ def get_print_card(
     if not item:
         raise HTTPException(status_code=404, detail="订单明细不存在")
     order = db.query(DomesticOrder).get(item.order_id)
-    detail = order_service.get_order_detail(db, item.order_id)
+    try:
+        detail = order_service.get_order_detail(db, item.order_id)
+    except ValueError as exc:  # 订单已软删
+        raise HTTPException(status_code=404, detail=str(exc))
     item_view = next((i for i in detail["items"] if i["id"] == item_id), None)
 
     qr_data = report_service.generate_qr_data(item_id)
@@ -497,14 +501,33 @@ def submit_report(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_permission("domestic:write")),
 ):
+    """跟单替车间录入。必须指明实际做活的工人 —— 件数记错人就等于工资算错人。"""
     try:
         data = report_service.submit_report(
             db, item_id=payload.item_id, progress_id=payload.progress_id,
             qty=payload.qty, user_id=_uid(current_user), source="web",
+            request_id=payload.request_id,
+            on_behalf_user_id=payload.on_behalf_user_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return ok(data, message=f"已报 {payload.qty} 件")
+
+
+@router.get("/process-workers", summary="某道工序有哪些工人（代报工选人用）")
+def list_process_workers(
+    process_id: int = Query(..., gt=0),
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission(*_READ)),
+):
+    rows = (
+        db.query(ArkUser.id, ArkUser.real_name)
+        .join(UserProcessBinding, UserProcessBinding.user_id == ArkUser.id)
+        .filter(UserProcessBinding.process_id == process_id, ArkUser.is_active.is_(True))
+        .order_by(ArkUser.real_name.asc())
+        .all()
+    )
+    return ok([{"id": uid, "name": name} for uid, name in rows])
 
 
 @router.post("/reports/revoke", summary="撤销报工")

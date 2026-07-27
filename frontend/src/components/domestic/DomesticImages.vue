@@ -22,6 +22,10 @@ const props = defineProps({
 })
 
 const urls = ref([])
+// 批次令牌：快速切换详情时旧批次可能后完成，直接覆盖会让 object URL 泄漏、
+// 而且显示的是上一条明细的图。过期批次一律就地回收。
+let batch = 0
+let alive = true
 
 function revokeAll() {
   urls.value.forEach(url => URL.revokeObjectURL(url))
@@ -29,19 +33,29 @@ function revokeAll() {
 }
 
 watch(() => props.paths, async paths => {
+  const mine = ++batch
   revokeAll()
   if (!paths?.length) return
-  const loaded = await Promise.all(paths.map(async path => {
+
+  const loaded = (await Promise.all(paths.map(async path => {
     try {
       return await fetchImageBlobUrl(path)
     } catch {
       return ''
     }
-  }))
-  urls.value = loaded.filter(Boolean)
+  }))).filter(Boolean)
+
+  if (mine !== batch || !alive) {
+    loaded.forEach(url => URL.revokeObjectURL(url))
+    return
+  }
+  urls.value = loaded
 }, { immediate: true, deep: true })
 
-onBeforeUnmount(revokeAll)
+onBeforeUnmount(() => {
+  alive = false
+  revokeAll()
+})
 </script>
 
 <style scoped>

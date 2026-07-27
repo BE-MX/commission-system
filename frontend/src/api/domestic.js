@@ -31,6 +31,16 @@ export function getProcessRoutes() {
   return domesticClient.get('/process-routes')
 }
 
+export function listProcessWorkers(processId) {
+  return domesticClient.get('/process-workers', { params: { process_id: processId } })
+}
+
+// 报工幂等键：提交失败重试时复用同一个值，服务端不会重复累加数量
+export function newRequestId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID()
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`
+}
+
 // ── 客户 ──
 export function listCustomers(params) {
   return domesticClient.get('/customers', { params })
@@ -95,28 +105,12 @@ export function deleteOrder(id) {
 }
 
 // ── 明细 ──
-export function addOrderItem(orderId, data) {
-  return domesticClient.post(`/orders/${orderId}/items`, data)
-}
-
-export function updateOrderItem(itemId, data) {
-  return domesticClient.put(`/items/${itemId}`, data)
-}
-
-export function deleteOrderItem(itemId) {
-  return domesticClient.delete(`/items/${itemId}`)
-}
-
 export function attachItemRoute(itemId, routeId) {
   return domesticClient.post(`/items/${itemId}/attach-route`, { route_id: routeId })
 }
 
 export function shipItem(itemId, data) {
   return domesticClient.post(`/items/${itemId}/ship`, data)
-}
-
-export function getItemProgress(itemId) {
-  return domesticClient.get(`/items/${itemId}/progress`)
 }
 
 export function getPrintCard(itemId) {

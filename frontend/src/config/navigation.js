@@ -584,10 +584,10 @@ export const NAV_ENTRIES = [
     name: 'DomesticOrders',
     component: () => import('@/views/domestic/DomesticOrders.vue'),
     title: '内贸订单',
-    permission: 'domestic:read',
+    anyPermission: ['domestic:read', 'domestic:write', 'domestic:admin'],
     menu: {
       group: 'domestic', title: '订单管理', icon: List, order: 10,
-      permission: 'domestic:read',
+      anyPermission: ['domestic:read', 'domestic:write', 'domestic:admin'],
     },
   },
   {
@@ -606,10 +606,10 @@ export const NAV_ENTRIES = [
     name: 'DomesticProducts',
     component: () => import('@/views/domestic/DomesticProducts.vue'),
     title: '内贸产品与工艺',
-    permission: 'domestic:read',
+    anyPermission: ['domestic:read', 'domestic:write', 'domestic:admin'],
     menu: {
       group: 'domestic', title: '产品与工艺', icon: Goods, order: 12,
-      permission: 'domestic:read',
+      anyPermission: ['domestic:read', 'domestic:write', 'domestic:admin'],
     },
   },
   {
@@ -617,10 +617,10 @@ export const NAV_ENTRIES = [
     name: 'DomesticCustomers',
     component: () => import('@/views/domestic/DomesticCustomers.vue'),
     title: '内贸客户',
-    permission: 'domestic:read',
+    anyPermission: ['domestic:read', 'domestic:write', 'domestic:admin'],
     menu: {
       group: 'domestic', title: '客户管理', icon: OfficeBuilding, order: 13,
-      permission: 'domestic:read',
+      anyPermission: ['domestic:read', 'domestic:write', 'domestic:admin'],
     },
   },
   {
@@ -628,7 +628,7 @@ export const NAV_ENTRIES = [
     name: 'DomesticPrintCard',
     component: () => import('@/views/domestic/DomesticPrintCard.vue'),
     title: '内贸流转卡打印',
-    permission: 'domestic:read',
+    anyPermission: ['domestic:read', 'domestic:write', 'domestic:admin'],
     hideInMenu: true,
   },
 

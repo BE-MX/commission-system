@@ -1,6 +1,9 @@
 <template>
   <div class="print-card-page">
-    <div v-if="!card" class="loading-state">
+    <div v-if="loadError" class="loading-state">
+      <span>{{ loadError }}</span>
+    </div>
+    <div v-else-if="!card" class="loading-state">
       <el-icon class="is-loading" :size="32"><Loading /></el-icon>
       <span>加载打印数据…</span>
     </div>
@@ -79,6 +82,7 @@ import DomesticImages from '@/components/domestic/DomesticImages.vue'
 
 const route = useRoute()
 const card = ref(null)
+const loadError = ref('')
 
 const item = computed(() => card.value?.item || {})
 
@@ -91,8 +95,13 @@ function doPrint() {
 }
 
 onMounted(async () => {
-  const res = await getPrintCard(route.params.id)
-  card.value = res.data
+  try {
+    const res = await getPrintCard(route.params.id)
+    card.value = res.data
+  } catch {
+    // 订单被软删/明细不存在时不能一直转圈，给个明确交代
+    loadError.value = '这张流转卡对应的明细已经不存在了（订单可能已被删除）'
+  }
 })
 </script>
 

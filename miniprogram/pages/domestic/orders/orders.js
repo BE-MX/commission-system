@@ -93,6 +93,7 @@ Page({
       method: 'GET',
       header: this._header(),
       success: function (res) {
+        if (res.statusCode === 401) { app.logout(); return }
         if (res.statusCode !== 200) {
           wx.showToast({ title: '加载失败', icon: 'none' })
           return

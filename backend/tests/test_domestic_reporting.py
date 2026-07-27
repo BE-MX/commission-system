@@ -493,6 +493,216 @@ def test_piece_ignores_net_color_in_identity(db):
     assert product_service.build_attrs_key(with_color) == product_service.build_attrs_key(without)
 
 
+# ── 对抗性审查补测（2026-07-27）────────────────────────
+
+
+def test_deleted_order_blocks_scanning_and_reporting(db, craft_mapping, workers):
+    """卡片还贴在车间墙上：软删订单后那张码必须失效，否则工时挂在查不到的单上。"""
+    creator = _user(db, "planner")
+    order_id = _create_order(db, creator, qty=20)["id"]
+    item = _item_of(db, order_id)
+    order_service.delete_order(db, order_id)
+
+    view = report_service.scan_item(db, item.id, workers[0].id)
+    assert view["block_reason"] == report_service.BLOCK_ORDER_TERMINATED
+
+    with pytest.raises(ValueError, match="订单已删除"):
+        _report(db, item, 0, workers[0], 5)
+
+
+def test_terminated_order_blocks_shipping(db, craft_mapping, workers):
+    """否则会出现「订单已终止但货已发出」的自相矛盾状态。"""
+    creator = _user(db, "planner")
+    order_id = _create_order(db, creator, qty=5)["id"]
+    item = _item_of(db, order_id)
+    for idx, worker in enumerate(workers):
+        _report(db, item, idx, worker, 5)
+    order_service.terminate_order(db, order_id, "客户取消")
+
+    with pytest.raises(ValueError, match="订单已终止"):
+        order_service.ship_item(
+            db, item.id,
+            ItemShipRequest(ship_time=datetime(2026, 7, 28, 9, 0), ship_weight=Decimal("38")),
+        )
+
+
+def test_request_id_makes_submit_idempotent(db, craft_mapping, workers):
+    """弱网重试：同一个 request_id 再提交一次不能变成报两次。"""
+    creator = _user(db, "planner")
+    item = _item_of(db, _create_order(db, creator, qty=20)["id"])
+    steps = _steps(db, item)
+    kwargs = dict(
+        item_id=item.id, progress_id=steps[0]["progress_id"],
+        qty=5, user_id=workers[0].id, source="mini", request_id="req-abc",
+    )
+
+    first = report_service.submit_report(db, **kwargs)
+    replay = report_service.submit_report(db, **kwargs)
+
+    assert replay["log_id"] == first["log_id"]
+    assert replay.get("replayed") is True
+    assert _steps(db, item)[0]["completed_qty"] == 5
+    assert db.query(DomesticReportLog).filter(DomesticReportLog.item_id == item.id).count() == 1
+
+
+def test_different_request_ids_still_accumulate(db, craft_mapping, workers):
+    creator = _user(db, "planner")
+    item = _item_of(db, _create_order(db, creator, qty=20)["id"])
+    steps = _steps(db, item)
+    for req in ("r1", "r2"):
+        report_service.submit_report(
+            db, item_id=item.id, progress_id=steps[0]["progress_id"],
+            qty=5, user_id=workers[0].id, source="mini", request_id=req,
+        )
+    assert _steps(db, item)[0]["completed_qty"] == 10
+
+
+def test_on_behalf_report_credits_the_actual_worker(db, craft_mapping, workers):
+    """代报工：件数必须记在做活的工人名下，不是记在操作电脑的跟单名下。"""
+    planner = _user(db, "planner")
+    item = _item_of(db, _create_order(db, planner, qty=20)["id"])
+    steps = _steps(db, item)
+
+    # 跟单自己没绑工序，不指定工人时应当被拒
+    with pytest.raises(ValueError, match="你没有被分配到这道工序"):
+        report_service.submit_report(
+            db, item_id=item.id, progress_id=steps[0]["progress_id"],
+            qty=5, user_id=planner.id, source="web",
+        )
+
+    report_service.submit_report(
+        db, item_id=item.id, progress_id=steps[0]["progress_id"],
+        qty=5, user_id=planner.id, source="web", on_behalf_user_id=workers[0].id,
+    )
+    log = db.query(DomesticReportLog).filter(DomesticReportLog.item_id == item.id).first()
+    assert log.reported_by_user_id == workers[0].id
+    assert log.source == "web"
+
+
+def test_on_behalf_rejects_worker_without_that_process(db, craft_mapping, workers):
+    planner = _user(db, "planner")
+    item = _item_of(db, _create_order(db, planner, qty=20)["id"])
+    steps = _steps(db, item)
+
+    with pytest.raises(ValueError, match="该工人没有被分配到这道工序"):
+        report_service.submit_report(
+            db, item_id=item.id, progress_id=steps[0]["progress_id"],
+            qty=5, user_id=planner.id, source="web", on_behalf_user_id=workers[1].id,
+        )
+
+
+def test_attach_route_refuses_when_report_logs_exist(db, craft_mapping, workers, route):
+    """重建进度会级联删掉流水（含已撤销的），审计不能断档。"""
+    creator = _user(db, "planner")
+    item = _item_of(db, _create_order(db, creator, qty=20)["id"])
+    result = _report(db, item, 0, workers[0], 5)
+    report_service.revoke_report(db, result["log_id"], workers[0].id)
+
+    # 数量已归零，但流水还在 —— 仍不允许重建
+    assert _steps(db, item)[0]["completed_qty"] == 0
+    with pytest.raises(ValueError, match="已有 1 条报工记录"):
+        order_service.attach_route(db, item.id, route.id)
+
+
+def test_progress_steps_renumbered_from_one(db, route):
+    """路线侧序号跳号也不能影响上下游口径 —— 展开时自己按位置重排。"""
+    steps = product_service.get_route_steps(db, route.id)
+    steps[-1].step_order = 9
+    db.flush()
+
+    creator = _user(db, "planner")
+    db.add(DomesticCraftRoute(product_type="cap", craft="递针顶", route_id=route.id))
+    db.flush()
+    item = _item_of(db, _create_order(db, creator, qty=6, craft="递针顶")["id"])
+
+    assert [s["step_order"] for s in _steps(db, item)] == [1, 2, 3]
+
+
+def test_workload_summary_excludes_revoked(db, craft_mapping, workers):
+    """计件工资的唯一口径：撤销掉的件数不能算钱。"""
+    creator = _user(db, "planner")
+    item = _item_of(db, _create_order(db, creator, qty=20)["id"])
+    first = _report(db, item, 0, workers[0], 12)
+    _report(db, item, 0, workers[0], 8)
+    report_service.revoke_report(db, first["log_id"], workers[0].id)
+
+    rows = report_service.get_workload_summary(
+        db, date_start=datetime(2026, 1, 1), date_end=datetime(2099, 1, 1)
+    )
+    mine = [r for r in rows if r["user_id"] == workers[0].id]
+    assert len(mine) == 1
+    assert mine[0]["total_qty"] == 8
+    assert mine[0]["report_count"] == 1
+
+
+def test_multi_item_order_status_rolls_up_partially(db, craft_mapping, workers):
+    """一单多品：一行做完不等于整单做完，一行发货不等于整单发货。"""
+    creator = _user(db, "planner")
+    payload = OrderCreate(
+        order_no="712", order_date=date(2026, 7, 27), customer_shop_name="马姐假发",
+        items=[
+            OrderItemInput(attrs=_attrs(), order_qty=3),
+            OrderItemInput(attrs=_attrs(), order_qty=5),
+        ],
+    )
+    order_id = order_service.create_order(db, payload, creator.id)["id"]
+    items = db.query(DomesticOrderItem).filter(DomesticOrderItem.order_id == order_id).all()
+    assert len(items) == 2
+
+    for idx, worker in enumerate(workers):
+        _report(db, items[0], idx, worker, 3)
+
+    assert order_service.get_order_detail(db, order_id)["status"] == C.ORDER_PRODUCING
+
+    ship = ItemShipRequest(ship_time=datetime(2026, 7, 28, 9, 0), ship_weight=Decimal("38"))
+    order_service.ship_item(db, items[0].id, ship)
+    assert order_service.get_order_detail(db, order_id)["status"] == C.ORDER_PRODUCING
+
+    for idx, worker in enumerate(workers):
+        _report(db, items[1], idx, worker, 5)
+    assert order_service.get_order_detail(db, order_id)["status"] == C.ORDER_DONE
+
+    order_service.ship_item(db, items[1].id, ship)
+    assert order_service.get_order_detail(db, order_id)["status"] == C.ORDER_SHIPPED
+
+
+def test_enlarging_quantity_reopens_completed_item(db, craft_mapping, workers):
+    creator = _user(db, "planner")
+    order_id = _create_order(db, creator, qty=5)["id"]
+    item = _item_of(db, order_id)
+    for idx, worker in enumerate(workers):
+        _report(db, item, idx, worker, 5)
+
+    order_service.update_item(db, item.id, OrderItemUpdate(order_qty=9))
+
+    db.refresh(item)
+    assert item.status == C.ITEM_PRODUCING
+    assert _steps(db, item)[0]["reportable_qty"] == 4
+    assert order_service.get_order_detail(db, order_id)["status"] == C.ORDER_PRODUCING
+
+
+def test_scan_blocks_when_no_route_and_when_all_done(db, route, craft_mapping, workers):
+    creator = _user(db, "planner")
+    unrouted = _item_of(db, _create_order(db, creator, qty=2, craft="没配过的工艺")["id"])
+    assert report_service.scan_item(db, unrouted.id, workers[0].id)["block_reason"] == \
+        report_service.BLOCK_NO_ROUTE
+
+    done = _item_of(db, _create_order(db, creator, qty=2)["id"])
+    for idx, worker in enumerate(workers):
+        _report(db, done, idx, worker, 2)
+    assert report_service.scan_item(db, done.id, workers[0].id)["block_reason"] == \
+        report_service.BLOCK_ALL_DONE
+
+
+def test_oversized_attrs_rejected_as_validation_error(db):
+    attrs = ProductAttrs(
+        product_type="cap", craft="工" * 64, net_color="色" * 64,
+        size="码" * 64, length="长" * 32, density="量" * 32,
+    )
+    with pytest.raises(ValueError, match="属性值太长"):
+        product_service.build_attrs_key(attrs)
+
+
 def test_configuring_mapping_backfills_products_missing_route(db, route):
     creator = _user(db, "planner")
     result = _create_order(db, creator, qty=5, craft="递针顶")

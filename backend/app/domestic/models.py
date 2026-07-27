@@ -205,6 +205,8 @@ class DomesticReportLog(Base):
     reported_by_user_id = Column(_UINT, ForeignKey("ark_users.id"), nullable=False, comment="报工人")
     reported_by_name = Column(String(60), comment="报工人姓名快照")
     source = Column(String(16), nullable=False, default="mini", comment="mini=小程序,web=主站")
+    request_id = Column(String(64), unique=True,
+                        comment="客户端幂等键：弱网重试同一个 id 不重复累加数量")
     reported_at = Column(DateTime, nullable=False, comment="报工时间（北京时）")
     revoked = Column(SmallInteger, nullable=False, default=0, comment="0=有效,1=已撤销")
     revoked_at = Column(DateTime, comment="撤销时间")

@@ -74,7 +74,7 @@ BLOCK_NOTHING_REPORTABLE = "NOTHING_REPORTABLE"
 BLOCK_MESSAGES = {
     BLOCK_ITEM_NOT_FOUND: "找不到这张卡对应的订单明细",
     BLOCK_NO_ROUTE: "这个产品还没配工艺路线，请联系跟单",
-    BLOCK_ORDER_TERMINATED: "订单已终止，不能报工",
+    BLOCK_ORDER_TERMINATED: "订单已终止或已删除，不能报工",
     BLOCK_ALL_DONE: "这批货所有工序都做完了",
     BLOCK_NOT_ASSIGNED: "你没有被分配到这道工序",
     BLOCK_NOTHING_REPORTABLE: "上一道工序还没做出可接的数量，请稍后再扫",
@@ -85,6 +85,41 @@ def _user_process_ids(db: Session, user_id: int) -> set[int]:
     return {
         pid for (pid,) in db.query(UserProcessBinding.process_id)
         .filter(UserProcessBinding.user_id == user_id).all()
+    }
+
+
+def _assert_order_reportable(db: Session, order_id: int) -> None:
+    """终止或已软删的订单一律不能再报工。
+
+    软删这条容易漏：卡片还贴在车间墙上，二维码不含时效也不含订单状态，
+    删单之后工人照样扫得动——工时就会挂在一张查不到的订单上。
+    """
+    order = db.query(DomesticOrder).get(order_id)
+    if not order:
+        raise ValueError("订单不存在")
+    if order.deleted_flag:
+        raise ValueError("订单已删除，不能报工")
+    if order.status == C.ORDER_TERMINATED:
+        raise ValueError("订单已终止，不能报工")
+
+
+def _replay_result(db: Session, log: DomesticReportLog) -> dict:
+    """幂等重放：同一个 request_id 再来一次，原样返回首次的结果。"""
+    progress = db.query(DomesticItemProgress).get(log.progress_id)
+    item = db.query(DomesticOrderItem).get(log.item_id)
+    process_name = db.query(Process.name).filter(Process.id == log.process_id).scalar()
+    return {
+        "log_id": log.id,
+        "item_id": log.item_id,
+        "process_name": process_name,
+        "step_order": log.step_order,
+        "reported_qty": log.report_qty,
+        "step_completed_qty": progress.completed_qty if progress else 0,
+        "order_qty": item.order_qty if item else 0,
+        "step_finished": bool(progress and progress.status == 1),
+        "item_finished": bool(item and item.status >= C.ITEM_DONE),
+        "reported_at": log.reported_at,
+        "replayed": True,
     }
 
 
@@ -127,7 +162,7 @@ def scan_item(db: Session, item_id: int, user_id: int) -> dict:
         return {**base, "can_submit": False, "block_reason": reason,
                 "block_message": BLOCK_MESSAGES[reason], "next_step": None}
 
-    if order and order.status == C.ORDER_TERMINATED:
+    if not order or order.deleted_flag or order.status == C.ORDER_TERMINATED:
         return blocked(BLOCK_ORDER_TERMINATED)
     if not steps:
         return blocked(BLOCK_NO_ROUTE)
@@ -158,14 +193,33 @@ def submit_report(
     qty: int,
     user_id: int,
     source: str = "mini",
+    request_id: str | None = None,
+    on_behalf_user_id: int | None = None,
 ) -> dict:
     """提交一次报工。数量守恒由「上游累计 − 本道累计」当场校验。
 
-    并发用行锁：同一道工序两人同时报，后到者读到的是前者提交后的累计数，
-    不会双写超发。计件数量算错比慢一点严重，所以用悲观锁而非乐观重试。
+    并发：先锁明细行，把同一明细上的所有数量变更串行化；跨行读上游用锁定读
+    （RR 隔离级别下普通读拿的是旧快照，见 progress_service._get_step）。
+
+    幂等：带 request_id 时同一个 id 重复提交返回首次结果，不重复累加——
+    车间弱网下"提交成功但响应丢了"是常态，工人再点一次不能变成报两次。
     """
     if qty <= 0:
         raise ValueError("报工数量必须大于 0")
+
+    if request_id:
+        existing = (
+            db.query(DomesticReportLog)
+            .filter(DomesticReportLog.request_id == request_id)
+            .first()
+        )
+        if existing:
+            return _replay_result(db, existing)
+
+    # 明细行锁放最前：同一明细的所有报工/撤销在这里排队，锁顺序统一避免死锁
+    item = db.query(DomesticOrderItem).filter(DomesticOrderItem.id == item_id).with_for_update().first()
+    if not item:
+        raise ValueError("订单明细不存在")
 
     progress = (
         db.query(DomesticItemProgress)
@@ -176,18 +230,15 @@ def submit_report(
     if not progress or progress.item_id != item_id:
         raise ValueError("工序进度不存在或与这张卡不匹配")
 
-    item = db.query(DomesticOrderItem).filter(DomesticOrderItem.id == item_id).with_for_update().first()
-    if not item:
-        raise ValueError("订单明细不存在")
+    _assert_order_reportable(db, item.order_id)
 
-    order = db.query(DomesticOrder).get(item.order_id)
-    if order and order.status == C.ORDER_TERMINATED:
-        raise ValueError("订单已终止，不能报工")
+    # 代报工：件数记到实际做活的人头上，不是记到操作电脑的人头上（计件工资口径）
+    worker_id = on_behalf_user_id or user_id
+    if progress.process_id not in _user_process_ids(db, worker_id):
+        who = "该工人" if on_behalf_user_id else "你"
+        raise ValueError(f"{who}没有被分配到这道工序")
 
-    if progress.process_id not in _user_process_ids(db, user_id):
-        raise ValueError("你没有被分配到这道工序")
-
-    available = progress_service.reportable_qty(db, progress, item)
+    available = progress_service.reportable_qty(db, progress, item, lock=True)
     if available <= 0:
         raise ValueError("上一道工序还没做出可接的数量")
     if qty > available:
@@ -200,16 +251,17 @@ def submit_report(
         progress.first_reported_at = now
     progress_service.sync_progress_row_status(progress, item.order_qty)
 
-    user = db.query(ArkUser).get(user_id)
+    worker = db.query(ArkUser).get(worker_id)
     log = DomesticReportLog(
         item_id=item.id,
         progress_id=progress.id,
         process_id=progress.process_id,
         step_order=progress.step_order,
         report_qty=qty,
-        reported_by_user_id=user_id,
-        reported_by_name=getattr(user, "real_name", None) or getattr(user, "username", None),
+        reported_by_user_id=worker_id,
+        reported_by_name=getattr(worker, "real_name", None) or getattr(worker, "username", None),
         source=source,
+        request_id=request_id,
         reported_at=now,
         revoked=0,
     )
@@ -249,6 +301,13 @@ def revoke_report(db: Session, log_id: int, user_id: int, is_admin: bool = False
     if log.reported_by_user_id != user_id and not is_admin:
         raise ValueError("只能撤销自己的报工记录")
 
+    # 与 submit_report 保持同一把锁、同一个顺序（先明细后进度），避免死锁
+    item = db.query(DomesticOrderItem).filter(DomesticOrderItem.id == log.item_id).with_for_update().first()
+    if not item:
+        raise ValueError("订单明细不存在")
+    if item.status == C.ITEM_SHIPPED:
+        raise ValueError("该明细已发货，不能撤销报工")
+
     progress = (
         db.query(DomesticItemProgress)
         .filter(DomesticItemProgress.id == log.progress_id)
@@ -258,14 +317,8 @@ def revoke_report(db: Session, log_id: int, user_id: int, is_admin: bool = False
     if not progress:
         raise ValueError("工序进度不存在")
 
-    item = db.query(DomesticOrderItem).filter(DomesticOrderItem.id == log.item_id).with_for_update().first()
-    if not item:
-        raise ValueError("订单明细不存在")
-    if item.status == C.ITEM_SHIPPED:
-        raise ValueError("该明细已发货，不能撤销报工")
-
     remaining = progress.completed_qty - log.report_qty
-    downstream = progress_service.downstream_completed_qty(db, item.id, progress.step_order)
+    downstream = progress_service.downstream_completed_qty(db, item.id, progress.step_order, lock=True)
     if remaining < downstream:
         raise ValueError(
             f"下一道工序已经做了 {downstream} 件，撤销后本道只剩 {remaining} 件，数量对不上；"

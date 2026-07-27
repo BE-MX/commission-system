@@ -9,10 +9,16 @@
 不存冗余的「待做数量」字段：推导值永远自洽，冗余字段必然漂移。
 """
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.domestic import constants as C
-from app.domestic.models import DomesticItemProgress, DomesticOrder, DomesticOrderItem
+from app.domestic.models import (
+    DomesticItemProgress,
+    DomesticOrder,
+    DomesticOrderItem,
+    DomesticReportLog,
+)
 from app.domestic.product_service import get_route_steps
 from app.production.models import Process
 
@@ -20,7 +26,8 @@ from app.production.models import Process
 def init_item_progress(db: Session, item: DomesticOrderItem, route_id: int | None = None) -> int:
     """按工艺路线把明细展开成逐工序进度行。返回展开的工序数。
 
-    已有报工数量时拒绝重建 —— 重建会抹掉车间已经做完的量。
+    有过报工痕迹（哪怕已全部撤销）就拒绝重建：进度行是报工流水的 FK 父，
+    删掉会连带级联抹掉撤销记录，审计断档。
     """
     rid = route_id or item.route_id
     if not rid:
@@ -29,19 +36,28 @@ def init_item_progress(db: Session, item: DomesticOrderItem, route_id: int | Non
     if not steps:
         return 0
 
+    log_count = db.query(func.count(DomesticReportLog.id)).filter(
+        DomesticReportLog.item_id == item.id
+    ).scalar() or 0
+    if log_count:
+        raise ValueError(f"该明细已有 {log_count} 条报工记录，不能重建工序进度")
+
     existing = db.query(DomesticItemProgress).filter(DomesticItemProgress.item_id == item.id).all()
     if any(p.completed_qty > 0 for p in existing):
-        raise ValueError("该明细已有报工记录，不能重建工序进度")
+        raise ValueError("该明细已有报工数量，不能重建工序进度")
     for p in existing:
         db.delete(p)
     db.flush()
 
-    for step in steps:
+    # 序号自己按位置重排，不沿用路线表的 step_order —— 全部数量口径都建立在
+    # 「相邻序号 = 上下游」上，路线侧一旦出现跳号（那是另一个域的实现细节），
+    # 上游就会算错。这里重排等于把这个假设焊死在自己域内。
+    for idx, step in enumerate(steps, start=1):
         db.add(DomesticItemProgress(
             item_id=item.id,
             route_id=rid,
             process_id=step.process_id,
-            step_order=step.step_order,
+            step_order=idx,
             completed_qty=0,
             status=0,
         ))
@@ -87,33 +103,37 @@ def build_progress_view(db: Session, item: DomesticOrderItem) -> list[dict]:
     return view
 
 
-def reportable_qty(db: Session, progress: DomesticItemProgress, item: DomesticOrderItem) -> int:
+def _get_step(db: Session, item_id: int, step_order: int, lock: bool = False):
+    """取某道工序进度行。
+
+    lock=True 走锁定读：MySQL 默认 REPEATABLE READ 下，普通 SELECT 读的是事务
+    开头建立的快照（鉴权那次查库就已经建好了），拿着行锁也照样读到旧值。
+    跨行的守恒校验必须用锁定读，否则上下游同时写会读到过期的邻道数量。
+    """
+    q = db.query(DomesticItemProgress).filter(
+        DomesticItemProgress.item_id == item_id,
+        DomesticItemProgress.step_order == step_order,
+    )
+    if lock:
+        q = q.with_for_update()
+    return q.first()
+
+
+def reportable_qty(
+    db: Session, progress: DomesticItemProgress, item: DomesticOrderItem, lock: bool = False
+) -> int:
     """单道工序的可报数量。上游是上一道的累计完成数，首道是下单数量。"""
     if progress.step_order <= 1:
         upstream = item.order_qty
     else:
-        prev = (
-            db.query(DomesticItemProgress)
-            .filter(
-                DomesticItemProgress.item_id == item.id,
-                DomesticItemProgress.step_order == progress.step_order - 1,
-            )
-            .first()
-        )
+        prev = _get_step(db, item.id, progress.step_order - 1, lock=lock)
         upstream = prev.completed_qty if prev else 0
     return max(0, upstream - progress.completed_qty)
 
 
-def downstream_completed_qty(db: Session, item_id: int, step_order: int) -> int:
+def downstream_completed_qty(db: Session, item_id: int, step_order: int, lock: bool = False) -> int:
     """下一道已完成多少 —— 撤销时不能把本道累计减到低于它。"""
-    nxt = (
-        db.query(DomesticItemProgress)
-        .filter(
-            DomesticItemProgress.item_id == item_id,
-            DomesticItemProgress.step_order == step_order + 1,
-        )
-        .first()
-    )
+    nxt = _get_step(db, item_id, step_order + 1, lock=lock)
     return nxt.completed_qty if nxt else 0
 
 

@@ -3,7 +3,7 @@
 import logging
 from datetime import date
 
-from sqlalchemy import func, text
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -34,17 +34,22 @@ _IMAGE_FIELDS = ("hairstyle_images", "color_images", "style_images", "remark_ima
 def _generate_domestic_no(db: Session) -> str:
     """系统单号 DO{YYYYMMDD}-{NNN}，按天自增。撞号由调用方 savepoint 重试。"""
     prefix = f"DO{date.today().strftime('%Y%m%d')}-"
-    row = db.execute(
-        text(
-            "SELECT domestic_no FROM ark_domestic_orders "
-            "WHERE domestic_no LIKE :prefix ORDER BY domestic_no DESC LIMIT 1"
-        ),
-        {"prefix": f"{prefix}%"},
-    ).mappings().first()
+    # 锁定读是必须的：MySQL 默认 RR 下普通读走事务开头的快照，撞号后重试
+    # 会一直读到同一个旧最大值，5 次全撞同一个号永远不收敛。
+    # 走 ORM 而不是裸 SQL —— with_for_update 会按方言决定是否发 FOR UPDATE，
+    # 裸 SQL 写死会让 SQLite（测试库）直接语法错误。
+    row = (
+        db.query(DomesticOrder.domestic_no)
+        .filter(DomesticOrder.domestic_no.like(f"{prefix}%"))
+        .order_by(DomesticOrder.domestic_no.desc())
+        .limit(1)
+        .with_for_update()
+        .first()
+    )
     seq = 1
     if row:
         try:
-            seq = int(row["domestic_no"].split("-")[-1]) + 1
+            seq = int(row[0].split("-")[-1]) + 1
         except (ValueError, IndexError):
             seq = 1
     return f"{prefix}{seq:03d}"
@@ -114,6 +119,7 @@ def create_order(db: Session, payload: OrderCreate, user_id: int) -> dict:
             # 同日并发下单撞单号，换下一个序号重试
             savepoint.rollback()
             logger.warning("domestic order no collision, retry")
+            print("[domestic] 单号撞号，换序号重试", flush=True)
     if order is None:
         raise ValueError("订单号生成冲突，请重试")
 
@@ -318,8 +324,12 @@ def _get_order_or_raise(db: Session, order_id: int) -> DomesticOrder:
     return order
 
 
-def _get_item_or_raise(db: Session, item_id: int) -> DomesticOrderItem:
-    item = db.query(DomesticOrderItem).get(item_id)
+def _get_item_or_raise(db: Session, item_id: int, lock: bool = False) -> DomesticOrderItem:
+    """lock=True 与报工走同一把明细行锁，防止改量/发货与报工并发时读到旧数量。"""
+    q = db.query(DomesticOrderItem).filter(DomesticOrderItem.id == item_id)
+    if lock:
+        q = q.with_for_update()
+    item = q.first()
     if not item:
         raise ValueError("订单明细不存在")
     return item
@@ -330,8 +340,11 @@ def update_order(db: Session, order_id: int, payload: OrderUpdate) -> DomesticOr
     if order.status == C.ORDER_TERMINATED:
         raise ValueError("已终止的订单不能编辑")
     data = payload.model_dump(exclude_unset=True)
-    if data.get("customer_id") and not db.query(DomesticCustomer).get(data["customer_id"]):
-        raise ValueError("客户不存在")
+    if "customer_id" in data:
+        if not data["customer_id"]:
+            raise ValueError("订单必须有客户")
+        if not db.query(DomesticCustomer).get(data["customer_id"]):
+            raise ValueError("客户不存在")
     for field, value in data.items():
         setattr(order, field, value)
     db.commit()
@@ -350,20 +363,26 @@ def add_item(db: Session, order_id: int, payload: OrderItemInput) -> dict:
 
 def update_item(db: Session, item_id: int, payload: OrderItemUpdate) -> DomesticOrderItem:
     """改明细。数量不能改到低于任一工序已完成的数量 —— 那会让守恒关系失真。"""
-    item = _get_item_or_raise(db, item_id)
+    item = _get_item_or_raise(db, item_id, lock=True)
     if item.status == C.ITEM_SHIPPED:
         raise ValueError("已发货的明细不能编辑")
 
     data = payload.model_dump(exclude_unset=True)
     new_qty = data.get("order_qty")
     if new_qty is not None and new_qty != item.order_qty:
-        max_done = db.query(func.max(DomesticItemProgress.completed_qty)).filter(
-            DomesticItemProgress.item_id == item.id
-        ).scalar() or 0
+        # 锁定读整组进度行再取最大值：聚合函数配 FOR UPDATE 各库行为不一，
+        # 拿到行本身再在内存里比更稳，也顺带锁住了并发报工
+        rows = (
+            db.query(DomesticItemProgress)
+            .filter(DomesticItemProgress.item_id == item.id)
+            .with_for_update()
+            .all()
+        )
+        max_done = max((r.completed_qty for r in rows), default=0)
         if new_qty < max_done:
             raise ValueError(f"已有工序完成 {max_done} 件，数量不能改到小于它")
         item.order_qty = new_qty
-        for row in db.query(DomesticItemProgress).filter(DomesticItemProgress.item_id == item.id).all():
+        for row in rows:
             progress_service.sync_progress_row_status(row, new_qty)
 
     for field in _TEXT_FIELDS:
@@ -425,9 +444,13 @@ def attach_route(db: Session, item_id: int, route_id: int | None = None) -> dict
 
 def ship_item(db: Session, item_id: int, payload: ItemShipRequest) -> DomesticOrderItem:
     """登记发货。首版要求全工序做齐才允许发货。"""
-    item = _get_item_or_raise(db, item_id)
+    item = _get_item_or_raise(db, item_id, lock=True)
     if item.status == C.ITEM_SHIPPED:
         raise ValueError("该明细已发货")
+    order = _get_order_or_raise(db, item.order_id)
+    if order.status == C.ORDER_TERMINATED:
+        # 否则会出现「订单已终止但货已发出」的自相矛盾状态，且此后撤销被永久锁死
+        raise ValueError("订单已终止，不能登记发货")
     progress_service.recalc_item_status(db, item)
     if item.status != C.ITEM_DONE:
         raise ValueError("该明细还没做完，不能登记发货")
@@ -446,7 +469,8 @@ def terminate_order(db: Session, order_id: int, reason: str | None) -> DomesticO
         raise ValueError("已发货的订单不能终止")
     order.status = C.ORDER_TERMINATED
     if reason:
-        order.remark = f"{order.remark or ''}\n[终止] {reason}".strip()
+        # remark 列宽 1000，拼接后截断——超长该是提示不是 500
+        order.remark = f"{order.remark or ''}\n[终止] {reason}".strip()[:1000]
     db.commit()
     return order
 

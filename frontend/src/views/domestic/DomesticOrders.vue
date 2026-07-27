@@ -100,6 +100,7 @@
             <span class="item-current">当前：{{ item.current_process }}</span>
             <div class="item-actions">
               <GlassButton variant="link" left-icon="Printer" @click="openPrintCard(item)">流转卡</GlassButton>
+              <GlassButton variant="link" left-icon="Tickets" @click="openLogs(item)">报工流水</GlassButton>
               <GlassButton v-if="!item.route_id" v-permission="'domestic:write'" variant="link" left-icon="Connection" @click="openAttachRoute(item)">配工艺路线</GlassButton>
               <GlassButton v-if="item.status === 1" v-permission="'domestic:write'" variant="link" left-icon="Van" @click="openShip(item)">登记发货</GlassButton>
             </div>
@@ -161,10 +162,19 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="reportDialog.visible" title="主站代报工" width="420px">
-      <el-form label-width="90px">
+    <el-dialog v-model="reportDialog.visible" title="代车间报工" width="460px">
+      <el-form label-width="100px" v-loading="reportDialog.loading">
         <el-form-item label="工序">
           <span>{{ reportDialog.step?.process_name }}</span>
+        </el-form-item>
+        <el-form-item label="做活的工人" required>
+          <!-- 件数必须记在实际做活的人头上，否则计件工资算错人 -->
+          <el-select v-model="reportDialog.workerId" placeholder="选择工人" filterable style="width: 100%">
+            <el-option v-for="w in reportDialog.workers" :key="w.id" :label="w.name" :value="w.id" />
+          </el-select>
+          <span v-if="!reportDialog.loading && !reportDialog.workers.length" class="unit-hint">
+            这道工序还没有绑定工人，请先去用户管理里绑
+          </span>
         </el-form-item>
         <el-form-item label="报工数量">
           <el-input-number v-model="reportDialog.qty" :min="1" :max="reportDialog.step?.reportable_qty || 1" style="width: 100%" />
@@ -174,6 +184,33 @@
       <template #footer>
         <GlassButton variant="ghost" @click="reportDialog.visible = false">取消</GlassButton>
         <GlassButton variant="primary" @click="confirmReport">确定</GlassButton>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="logDialog.visible" title="报工流水" width="680px">
+      <el-table :data="logDialog.logs" v-loading="logDialog.loading" size="small" border style="width: 100%">
+        <el-table-column prop="process_name" label="工序" min-width="100" />
+        <el-table-column prop="report_qty" label="数量" min-width="70" />
+        <el-table-column prop="reported_by_name" label="报工人" min-width="90" />
+        <el-table-column prop="reported_at" label="时间" min-width="150" show-overflow-tooltip />
+        <el-table-column label="状态" min-width="80">
+          <template #default="{ row }">
+            <el-tag v-if="row.revoked" size="small" type="info" effect="plain">已撤销</el-tag>
+            <el-tag v-else size="small" type="success" effect="plain">有效</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="90">
+          <template #default="{ row }">
+            <GlassButton
+              v-if="!row.revoked" v-permission="'domestic:write'"
+              variant="link" link-tone="danger" left-icon="RefreshLeft"
+              @click="handleRevokeReport(row.log_id)"
+            >撤销</GlassButton>
+          </template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <GlassButton variant="ghost" @click="logDialog.visible = false">关闭</GlassButton>
       </template>
     </el-dialog>
 
@@ -210,6 +247,7 @@ const {
   detailVisible, detailLoading, detail, routes, hasUnrouted, openDetail,
   shipDialog, openShip, confirmShip,
   reportDialog, openReport, confirmReport,
+  logDialog, openLogs, handleRevokeReport,
   attachDialog, openAttachRoute, confirmAttachRoute,
   handleTerminate, handleDelete, openPrintCard, goCreate,
 } = useDomesticOrders()

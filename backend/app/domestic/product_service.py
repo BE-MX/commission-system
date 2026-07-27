@@ -19,9 +19,12 @@ from app.production.models import ProcessRoute, ProcessRouteStep
 logger = logging.getLogger("commission")
 
 
+ATTRS_KEY_MAX = 255  # 与 ark_domestic_products.attrs_key 列宽一致
+
+
 def build_attrs_key(attrs: ProductAttrs) -> str:
     """属性组合唯一键。中文直接入 key —— 可读性在排查时比紧凑更值钱。"""
-    return "|".join([
+    key = "|".join([
         attrs.product_type,
         attrs.craft,
         attrs.net_color or "",
@@ -29,6 +32,10 @@ def build_attrs_key(attrs: ProductAttrs) -> str:
         attrs.length,
         attrs.density,
     ])
+    # 各字段单独都在列宽内，拼起来可能超 —— 这里挡住换成 400 提示，别到 DB 报 500
+    if len(key) > ATTRS_KEY_MAX:
+        raise ValueError("属性值太长了，请检查工艺/尺寸等选项是否填了超长内容")
+    return key
 
 
 def build_display_name(attrs: ProductAttrs) -> str:
@@ -68,7 +75,7 @@ def find_or_create_product(db: Session, attrs: ProductAttrs) -> DomesticProduct:
 
     product = DomesticProduct(
         attrs_key=key,
-        name=build_display_name(attrs),
+        name=build_display_name(attrs)[:255],
         product_type=attrs.product_type,
         craft=attrs.craft,
         net_color=attrs.net_color,
@@ -79,12 +86,16 @@ def find_or_create_product(db: Session, attrs: ProductAttrs) -> DomesticProduct:
         status=1,
         use_count=0,
     )
+    # 用 savepoint 而不是 db.rollback()：这函数被 create_order 在订单行落库之后调用，
+    # 全事务回滚会连订单和刚建的客户一起抹掉，随后明细插入撞 FK 直接 500
+    savepoint = db.begin_nested()
     db.add(product)
     try:
         db.flush()
+        savepoint.commit()
     except IntegrityError:
-        # 并发：另一笔下单刚建了同一组合。回滚这一条改取已存在的行
-        db.rollback()
+        # 并发：另一笔下单刚建了同一组合，改取已存在的行
+        savepoint.rollback()
         logger.warning("domestic product race on attrs_key=%s, refetch", key)
         print(f"[domestic] product race attrs_key={key}, refetch", flush=True)
         product = db.query(DomesticProduct).filter(DomesticProduct.attrs_key == key).first()

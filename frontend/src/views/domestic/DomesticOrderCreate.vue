@@ -127,11 +127,19 @@
                 v-model="item[section.key]" type="textarea" :rows="2"
                 :placeholder="section.placeholder"
               />
+              <!-- show-list=false + uploadFn 自管状态：AppUpload 的 v-model 回写
+                   在并发上传时会丢行（见组件头注释） -->
               <AppUpload
-                v-model="item[section.imageKey]" :upload-fn="handleUpload"
+                :upload-fn="makeUploadFn(item, section.imageKey)"
                 accept="image/*" :max-size-mb="20" multiple :limit="6"
-                button-text="加参考图" class="section-upload"
+                :show-list="false" button-text="加参考图" class="section-upload"
               />
+              <div v-if="item[section.imageKey].length" class="thumb-row">
+                <div v-for="(img, i) in item[section.imageKey]" :key="img.path" class="thumb">
+                  <el-image :src="img.url" fit="cover" class="thumb-img" />
+                  <span class="thumb-del" @click="removeImage(item, section.imageKey, i)">×</span>
+                </div>
+              </div>
             </el-form-item>
           </el-col>
         </el-row>
@@ -162,7 +170,7 @@ const {
   loading, submitting, options, customers, customerLoading, form,
   attrOptions, hasField, routeOf, unroutedCount,
   onProductTypeChange, addItem, copyItem, removeItem,
-  handleUpload, searchCustomers, submit,
+  makeUploadFn, removeImage, searchCustomers, submit,
 } = useDomesticOrderCreate()
 </script>
 
@@ -197,6 +205,37 @@ const {
 
 .new-customer { margin-top: 8px; }
 .section-upload { margin-top: 8px; }
+
+.thumb-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.thumb { position: relative; }
+
+.thumb-img {
+  width: 72px;
+  height: 72px;
+  border-radius: 8px;
+  border: 1px solid var(--el-border-color-lighter);
+}
+
+.thumb-del {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 18px;
+  height: 18px;
+  line-height: 16px;
+  text-align: center;
+  border-radius: 50%;
+  background: var(--el-color-danger);
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+}
 
 .footer-panel {
   display: flex;

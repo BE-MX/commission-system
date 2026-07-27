@@ -51,6 +51,20 @@ def _existing_tables() -> set:
     return set(sa.inspect(op.get_bind()).get_table_names())
 
 
+def _ensure_index(name: str, table: str, columns: list) -> None:
+    """索引单独判存在性，不跟在建表的 if 里。
+
+    否则「建表成功、建索引中途失败」后重跑会因为表已存在而整块跳过，
+    索引永久缺失且不报错。
+    """
+    inspector = sa.inspect(op.get_bind())
+    if table not in inspector.get_table_names():
+        return
+    if name in {idx["name"] for idx in inspector.get_indexes(table)}:
+        return
+    op.create_index(name, table, columns)
+
+
 def upgrade():
     # MySQL DDL 自动提交不可回滚，逐表幂等检查防半执行状态
     existing = _existing_tables()
@@ -92,8 +106,6 @@ def upgrade():
             sa.Column("updated_at", sa.DateTime(), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"), comment="更新时间"),
             comment="内贸产品（下单选属性自动沉淀）",
         )
-        op.create_index("idx_dom_product_type", "ark_domestic_products", ["product_type", "status"])
-        op.create_index("idx_dom_product_route", "ark_domestic_products", ["route_id"])
 
     if "ark_domestic_craft_routes" not in existing:
         op.create_table(
@@ -129,10 +141,6 @@ def upgrade():
             sa.Column("updated_at", sa.DateTime(), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"), comment="更新时间"),
             comment="内贸订单主表",
         )
-        op.create_index("idx_dom_order_status", "ark_domestic_orders", ["status", "deleted_flag"])
-        op.create_index("idx_dom_order_customer", "ark_domestic_orders", ["customer_id"])
-        op.create_index("idx_dom_order_date", "ark_domestic_orders", ["order_date"])
-        op.create_index("idx_dom_order_no", "ark_domestic_orders", ["order_no"])
 
     if "ark_domestic_order_items" not in existing:
         op.create_table(
@@ -163,9 +171,6 @@ def upgrade():
             sa.Column("updated_at", sa.DateTime(), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"), comment="更新时间"),
             comment="内贸订单明细（一单多品，每行独立走工艺路线）",
         )
-        op.create_index("idx_dom_item_order", "ark_domestic_order_items", ["order_id"])
-        op.create_index("idx_dom_item_status", "ark_domestic_order_items", ["status"])
-        op.create_index("idx_dom_item_product", "ark_domestic_order_items", ["product_id"])
 
     if "ark_domestic_item_progress" not in existing:
         op.create_table(
@@ -188,8 +193,6 @@ def upgrade():
             sa.UniqueConstraint("item_id", "step_order", name="uk_dom_progress_item_step"),
             comment="内贸明细工序进度（按数量累计，非 0/1 流转）",
         )
-        op.create_index("idx_dom_progress_item", "ark_domestic_item_progress", ["item_id"])
-        op.create_index("idx_dom_progress_process", "ark_domestic_item_progress", ["process_id", "status"])
 
     if "ark_domestic_report_logs" not in existing:
         op.create_table(
@@ -211,9 +214,22 @@ def upgrade():
             sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP"), comment="创建时间"),
             comment="内贸报工流水（支持撤销回减与计件统计，外贸侧没有这张表）",
         )
-        op.create_index("idx_dom_log_item", "ark_domestic_report_logs", ["item_id", "step_order"])
-        op.create_index("idx_dom_log_user_time", "ark_domestic_report_logs", ["reported_by_user_id", "reported_at"])
-        op.create_index("idx_dom_log_progress", "ark_domestic_report_logs", ["progress_id", "revoked"])
+
+    # 索引统一在建表块之外幂等创建，重跑能补齐半执行状态缺的索引
+    _ensure_index("idx_dom_product_type", "ark_domestic_products", ["product_type", "status"])
+    _ensure_index("idx_dom_product_route", "ark_domestic_products", ["route_id"])
+    _ensure_index("idx_dom_order_status", "ark_domestic_orders", ["status", "deleted_flag"])
+    _ensure_index("idx_dom_order_customer", "ark_domestic_orders", ["customer_id"])
+    _ensure_index("idx_dom_order_date", "ark_domestic_orders", ["order_date"])
+    _ensure_index("idx_dom_order_no", "ark_domestic_orders", ["order_no"])
+    _ensure_index("idx_dom_item_order", "ark_domestic_order_items", ["order_id"])
+    _ensure_index("idx_dom_item_status", "ark_domestic_order_items", ["status"])
+    _ensure_index("idx_dom_item_product", "ark_domestic_order_items", ["product_id"])
+    _ensure_index("idx_dom_progress_item", "ark_domestic_item_progress", ["item_id"])
+    _ensure_index("idx_dom_progress_process", "ark_domestic_item_progress", ["process_id", "status"])
+    _ensure_index("idx_dom_log_item", "ark_domestic_report_logs", ["item_id", "step_order"])
+    _ensure_index("idx_dom_log_user_time", "ark_domestic_report_logs", ["reported_by_user_id", "reported_at"])
+    _ensure_index("idx_dom_log_progress", "ark_domestic_report_logs", ["progress_id", "revoked"])
 
     _seed_dicts()
 
@@ -252,5 +268,11 @@ def downgrade():
             op.drop_table(table)
     bind = op.get_bind()
     if "sys_dict" in existing:
-        for dict_type in DICT_SEEDS:
-            bind.execute(sa.text("DELETE FROM sys_dict WHERE type = :t"), {"t": dict_type})
+        # 只删自己种下的那批 code，不按 type 一刀切 ——
+        # 主管后来自己加的工艺/尺寸选项是用户数据，降级不该连坐
+        for dict_type, labels in DICT_SEEDS.items():
+            for label in labels:
+                bind.execute(
+                    sa.text("DELETE FROM sys_dict WHERE type = :t AND code = :c"),
+                    {"t": dict_type, "c": label},
+                )

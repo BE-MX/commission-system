@@ -238,6 +238,7 @@ async def domestic_submit(
         return domestic_report_service.submit_report(
             db, item_id=body.item_id, progress_id=body.progress_id,
             qty=body.qty, user_id=current_user.id, source="mini",
+            request_id=body.request_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail={"code": "SUBMIT_FAILED", "message": str(exc)})

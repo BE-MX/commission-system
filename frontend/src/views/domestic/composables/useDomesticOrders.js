@@ -6,7 +6,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   attachItemRoute, deleteOrder, getOrder, getProcessRoutes, listOrders,
-  revokeReport, shipItem, submitReport, terminateOrder,
+  listProcessWorkers, listReports, newRequestId, revokeReport, shipItem,
+  submitReport, terminateOrder,
 } from '@/api/domestic'
 import { useListPage } from '@/composables/useListPage'
 import { confirmDanger, msgSuccess } from '@/utils/feedback'
@@ -86,39 +87,75 @@ export function useDomesticOrders() {
   async function confirmShip() {
     if (!shipDialog.ship_time) return ElMessage.warning('请填发货时间')
     if (!(shipDialog.ship_weight > 0)) return ElMessage.warning('请填发货克重')
-    await shipItem(shipDialog.item.id, {
-      ship_time: shipDialog.ship_time,
-      ship_weight: shipDialog.ship_weight,
-    })
+    try {
+      await shipItem(shipDialog.item.id, {
+        ship_time: shipDialog.ship_time,
+        ship_weight: shipDialog.ship_weight,
+      })
+    } catch { return }
     shipDialog.visible = false
     msgSuccess('发货登记')
     await refreshAll()
   }
 
   // ── 主站代报工（车间没带手机时的兜底口子）──
-  const reportDialog = reactive({ visible: false, item: null, step: null, qty: 1 })
+  // 必须选实际做活的工人：件数记错人 = 计件工资算错人
+  const reportDialog = reactive({
+    visible: false, item: null, step: null, qty: 1, workerId: null, workers: [], loading: false,
+  })
 
-  function openReport(item, step) {
-    Object.assign(reportDialog, { visible: true, item, step, qty: step.reportable_qty })
+  async function openReport(item, step) {
+    Object.assign(reportDialog, {
+      visible: true, item, step, qty: step.reportable_qty,
+      workerId: null, workers: [], loading: true,
+    })
+    try {
+      const res = await listProcessWorkers(step.process_id)
+      reportDialog.workers = res.data || []
+      if (reportDialog.workers.length === 1) reportDialog.workerId = reportDialog.workers[0].id
+    } catch { /* 拦截器已提示 */ } finally {
+      reportDialog.loading = false
+    }
   }
 
   async function confirmReport() {
     if (!(reportDialog.qty > 0)) return ElMessage.warning('请填报工数量')
-    await submitReport({
-      item_id: reportDialog.item.id,
-      progress_id: reportDialog.step.progress_id,
-      qty: reportDialog.qty,
-    })
+    if (!reportDialog.workerId) return ElMessage.warning('请选择实际做活的工人')
+    try {
+      await submitReport({
+        item_id: reportDialog.item.id,
+        progress_id: reportDialog.step.progress_id,
+        qty: reportDialog.qty,
+        on_behalf_user_id: reportDialog.workerId,
+        request_id: newRequestId(),
+      })
+    } catch { return }
     reportDialog.visible = false
     msgSuccess('报工')
     await refreshAll()
   }
 
+  // ── 报工流水与撤销 ──
+  const logDialog = reactive({ visible: false, item: null, logs: [], loading: false })
+
+  async function openLogs(item) {
+    Object.assign(logDialog, { visible: true, item, logs: [], loading: true })
+    try {
+      const res = await listReports({ item_id: item.id, page: 1, page_size: 100 })
+      logDialog.logs = res.data?.items || []
+    } catch { /* 拦截器已提示 */ } finally {
+      logDialog.loading = false
+    }
+  }
+
   async function handleRevokeReport(logId) {
-    await confirmDanger('撤销', '这条报工记录', '撤销后本道累计数量会相应减少。')
+    try {
+      await confirmDanger('撤销', '这条报工记录', '撤销后本道累计数量会相应减少。')
+    } catch { return }
     await revokeReport(logId)
     msgSuccess('撤销')
     await refreshAll()
+    if (logDialog.item) await openLogs(logDialog.item)
   }
 
   // ── 补配路线 ──
@@ -130,7 +167,10 @@ export function useDomesticOrders() {
 
   async function confirmAttachRoute() {
     if (!attachDialog.route_id) return ElMessage.warning('请选择工艺路线')
-    const res = await attachItemRoute(attachDialog.item.id, attachDialog.route_id)
+    let res
+    try {
+      res = await attachItemRoute(attachDialog.item.id, attachDialog.route_id)
+    } catch { return }
     attachDialog.visible = false
     ElMessage.success(res.message || '已配好工艺路线')
     await refreshAll()
@@ -138,16 +178,21 @@ export function useDomesticOrders() {
 
   // ── 订单动作 ──
   async function handleTerminate(row) {
-    const { value } = await ElMessageBox.prompt('终止后这张单不能再报工。填个原因：', '终止订单', {
-      type: 'warning', inputPlaceholder: '如：客户取消',
-    })
+    let value
+    try {
+      ({ value } = await ElMessageBox.prompt('终止后这张单不能再报工。填个原因：', '终止订单', {
+        type: 'warning', inputPlaceholder: '如：客户取消',
+      }))
+    } catch { return }  // 用户点了取消
     await terminateOrder(row.id, value)
     msgSuccess('终止')
     await refreshAll()
   }
 
   async function handleDelete(row) {
-    await confirmDanger('删除', `订单 ${row.domestic_no}`)
+    try {
+      await confirmDanger('删除', `订单 ${row.domestic_no}`)
+    } catch { return }
     await deleteOrder(row.id)
     msgSuccess('删除')
     detailVisible.value = false
@@ -171,7 +216,8 @@ export function useDomesticOrders() {
     detailVisible, detailLoading, detail, routes, hasUnrouted,
     openDetail, refreshAll,
     shipDialog, openShip, confirmShip,
-    reportDialog, openReport, confirmReport, handleRevokeReport,
+    reportDialog, openReport, confirmReport,
+    logDialog, openLogs, handleRevokeReport,
     attachDialog, openAttachRoute, confirmAttachRoute,
     handleTerminate, handleDelete, openPrintCard, goCreate,
   }
