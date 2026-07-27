@@ -1,5 +1,6 @@
 """AI image generation/editing calls for OpenAI-compatible providers."""
 
+import base64
 import json
 import logging
 import time
@@ -10,7 +11,7 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger("commission.ai.image")
 
-from app.ai.http_client import build_headers, build_image_url
+from app.ai.http_client import build_chat_url, build_headers, build_image_url
 from app.ai.keyring import decrypt_key
 from app.ai.log_snapshot import serialize_response_snapshot
 from app.ai.models import AiCallLog, AiPreset
@@ -38,6 +39,17 @@ IMAGE_PARAMETER_KEYS = {
     "stream",
     "user",
 }
+# ── 生图有两种 API 契约，按模型家族分（2026-07-27）──
+# OpenAI 系（gpt-image-*/dall-e-*）走 /v1/images/edits：multipart 上传，size/quality 是请求参数。
+# Google 系（gemini-*-image 等）不认这个端点——中转站会以 500 + code=local:convert_request_failed
+# 拒绝，因为它压根无法把 multipart 转成 Gemini 的入参；这些模型走 /v1/chat/completions，
+# 图片作为多模态 message content 传，产物是 content 里的 markdown data URL。
+# 判据放 preset.parameters 的 api_style 而不是按模型名前缀硬编码：换模型是后台配置动作，
+# 不该每次都改代码。该键不在下面任何白名单里，因此永远不会被当成请求参数发出去。
+API_STYLE_KEY = "api_style"
+API_STYLE_CHAT = "chat"
+# chat 端点的可透传参数（size/quality 是 images/edits 专有，混进来会被上游拒收）
+CHAT_IMAGE_PARAMETER_KEYS = {"max_tokens", "temperature", "top_p", "seed"}
 # 三格模板（expo tryon 16:9 三场景拼接）实测单图 184~200s，180 会掐死正常请求；
 # 调此值需联动 expo/service.py 的 STALE_GENERATING_SECS（看门狗必须大于本超时）
 MIN_IMAGE_EDIT_TIMEOUT_SEC = 300
@@ -107,13 +119,34 @@ def _post_image_edits(url, headers, data, files, timeout_sec: int, caller_module
 
 
 def _post_image_edits_once(url, headers, data, files, timeout_sec: int, caller_module: str) -> dict:
-    """POST 到 /images/edits，对 502/503 与连接瞬断自动重试；504/ReadTimeout 不重试直接抛。"""
+    """POST 到 /images/edits（multipart）。"""
+    return _send_with_retry(
+        lambda client: client.post(url, headers=headers, data=data, files=files),
+        timeout_sec, caller_module, "image edit",
+    )
+
+
+def _post_chat_image(url, headers, payload, timeout_sec: int, caller_module: str) -> dict:
+    """POST 到 /chat/completions（JSON 多模态）——Google 系生图模型的调用形态。
+
+    没有 edits 那套摘参兜底：chat 入参白名单本就极窄（CHAT_IMAGE_PARAMETER_KEYS），
+    不存在 size/quality 这类会被上游临时拒收的可选增强参数。"""
+    return _send_with_retry(
+        lambda client: client.post(url, headers=headers, json=payload),
+        timeout_sec, caller_module, "chat image",
+    )
+
+
+def _send_with_retry(do_send, timeout_sec: int, caller_module: str, label: str) -> dict:
+    """两条生图链路共用的发送+重试：对 502/503 与连接瞬断自动重试；504/ReadTimeout 不重试直接抛。
+
+    do_send(client) -> httpx.Response —— 由调用方决定 body 是 multipart 还是 JSON。"""
     timeout = httpx.Timeout(timeout_sec, connect=_IMAGE_CONNECT_TIMEOUT_SEC, write=30.0)
     last_exc: Exception | None = None
     for attempt in range(1, _IMAGE_MAX_ATTEMPTS + 1):
         try:
             with httpx.Client(timeout=timeout) as client:
-                response = client.post(url, headers=headers, data=data, files=files)
+                response = do_send(client)
             response.raise_for_status()
             return response.json()
         except httpx.ReadTimeout as exc:
@@ -128,7 +161,7 @@ def _post_image_edits_once(url, headers, data, files, timeout_sec: int, caller_m
         except httpx.TransportError as exc:  # 连接/网络瞬断（ReadTimeout 已在上面拦掉）
             last_exc = exc
         if attempt < _IMAGE_MAX_ATTEMPTS:
-            msg = (f"[{caller_module}] image edit transient error, retry {attempt}/"
+            msg = (f"[{caller_module}] {label} transient error, retry {attempt}/"
                    f"{_IMAGE_MAX_ATTEMPTS - 1}: {type(last_exc).__name__}: {last_exc}")
             logger.warning(msg)
             print(msg, flush=True)
@@ -188,6 +221,51 @@ def _image_params(preset: AiPreset, prompt: str, size: Optional[str] = None) -> 
     if size:  # 请求级尺寸覆盖 preset 配置（如 expo 竖版/横版按场景切换）
         params["size"] = size
     return params
+
+
+def _uses_chat_style(preset: AiPreset) -> bool:
+    return str((preset.parameters or {}).get(API_STYLE_KEY, "")).strip().lower() == API_STYLE_CHAT
+
+
+def _chat_image_payload(preset: AiPreset, prompt: str, images: list[ImageInput]) -> dict:
+    """多模态 chat 入参：文本在前、图片按传入顺序在后——顺序即 prompt 里
+    「The FIRST image is the customer's own photo」这类位置锚点的依据，不可打乱。"""
+    content: list[dict] = [{"type": "text", "text": prompt}]
+    for image in images:
+        encoded = base64.b64encode(image["content"]).decode()
+        content.append({
+            "type": "image_url",
+            # 不传 detail：见 CLAUDE.md 硬约定，部分网关收到该字段会静默丢图
+            "image_url": {"url": f"data:{image['content_type']};base64,{encoded}"},
+        })
+    payload = {"model": preset.model, "messages": [{"role": "user", "content": content}]}
+    for key, value in (preset.parameters or {}).items():
+        if key in CHAT_IMAGE_PARAMETER_KEYS:
+            payload[key] = value
+    return payload
+
+
+def _extract_chat_image_content(result: dict) -> str:
+    """从 chat 响应取图。实测 wlai + gemini-3-pro-image 的产物是 content 里的一段
+    markdown data URL（`![image](data:image/png;base64,...)`），整段回给调用方即可——
+    上层的图片解析器已能吃 data URL / 裸 base64 / http URL 三种形态。"""
+    choices = result.get("choices") or []
+    if not choices:
+        return ""
+    content = (choices[0].get("message") or {}).get("content")
+    if isinstance(content, list):  # 部分网关返回内容块数组，拼平后再交给正则
+        parts: list[str] = []
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            if block.get("text"):
+                parts.append(str(block["text"]))
+            image_url = block.get("image_url")
+            url = image_url.get("url") if isinstance(image_url, dict) else image_url
+            if url:
+                parts.append(str(url))
+        content = " ".join(parts)
+    return content if isinstance(content, str) else ""
 
 
 def _extract_image_content(result: dict) -> str:
@@ -252,23 +330,33 @@ def edit_image(
     try:
         api_key = decrypt_key(provider.api_key) if provider.api_key else None
         headers = build_headers(provider, api_key)
-        headers.pop("Content-Type", None)
-
-        files = [
-            (
-                "image",
-                (image["filename"], image["content"], image["content_type"]),
-            )
-            for image in images
-        ]
-        url = build_image_url(provider.api_base, "edits")
-
         timeout_sec = _effective_timeout_sec(provider)
-        result = _post_image_edits(
-            url, headers, _image_params(preset, prompt, size), files, timeout_sec, caller_module,
-        )
 
-        content = _extract_image_content(result)
+        if _uses_chat_style(preset):
+            # size 在 chat 端点没有对应入参，输出规格只能靠 prompt 内的文字锚定
+            # （expo 的 _PORTRAIT_SPEC_CLAUSE 已声明 6 寸 2:3 竖版）
+            url = build_chat_url(provider.api_base, provider.api_type or "openai")
+            result = _post_chat_image(
+                url, headers, _chat_image_payload(preset, prompt, images), timeout_sec, caller_module,
+            )
+            content = _extract_chat_image_content(result)
+        else:
+            headers.pop("Content-Type", None)  # multipart 的 boundary 交给 httpx 生成
+
+            files = [
+                (
+                    "image",
+                    (image["filename"], image["content"], image["content_type"]),
+                )
+                for image in images
+            ]
+            url = build_image_url(provider.api_base, "edits")
+
+            result = _post_image_edits(
+                url, headers, _image_params(preset, prompt, size), files, timeout_sec, caller_module,
+            )
+            content = _extract_image_content(result)
+
         if not content:
             raise ValueError("图片接口响应中未找到 url 或 b64_json")
 
