@@ -248,6 +248,43 @@ def list_orders(
     return items, total
 
 
+def lookup_order(db: Session, code: str) -> dict:
+    """订单速查：一个输入框吃三种东西 —— 扫来的二维码、系统单号、客户订单号。
+
+    让系统去认，而不是让车间先选"我要按哪个查"。同一个客户订单号可能对应多张单
+    （客户自己的编号不保证唯一），这时返回最近的一张。
+    """
+    from app.domestic import report_service   # 延迟导入避免与 report_service 循环
+
+    code = (code or "").strip()
+    if not code:
+        raise ValueError("请输入订单号或扫描流转卡")
+
+    # 1) 扫来的内贸流转卡：验签后直接定位到它所属的订单
+    if code.upper().startswith(C.QR_PREFIX):
+        valid, item_id = report_service.verify_qr_data(code)
+        if not valid:
+            raise ValueError("二维码无效，请扫内贸流转卡")
+        item = db.query(DomesticOrderItem).get(item_id)
+        if not item:
+            raise ValueError("找不到这张卡对应的订单明细")
+        return get_order_detail(db, item.order_id)
+
+    # 2) 系统单号或客户订单号（都按精确匹配，模糊搜索走列表页）
+    order = (
+        db.query(DomesticOrder)
+        .filter(
+            DomesticOrder.deleted_flag == 0,
+            (DomesticOrder.domestic_no == code) | (DomesticOrder.order_no == code),
+        )
+        .order_by(DomesticOrder.id.desc())
+        .first()
+    )
+    if not order:
+        raise ValueError(f"没找到订单「{code}」，请核对单号")
+    return get_order_detail(db, order.id)
+
+
 def get_order_detail(db: Session, order_id: int) -> dict:
     order = db.query(DomesticOrder).filter(
         DomesticOrder.id == order_id, DomesticOrder.deleted_flag == 0

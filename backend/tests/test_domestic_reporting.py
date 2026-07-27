@@ -716,3 +716,57 @@ def test_configuring_mapping_backfills_products_missing_route(db, route):
         product_service.DomesticProduct.craft == "递针顶"
     ).first()
     assert product.route_id == route.id
+
+
+def test_progress_view_carries_last_reporter(db, craft_mapping, workers):
+    """车间查进度最想知道的两件事：这道工序最近是谁报的、报了多少。"""
+    creator = _user(db, "planner")
+    item = _item_of(db, _create_order(db, creator, qty=20)["id"])
+    _report(db, item, 0, workers[0], 12)
+    _report(db, item, 0, workers[0], 8)
+
+    first = _steps(db, item)[0]
+    assert first["last_reported_by"] == workers[0].real_name
+    assert first["last_report_qty"] == 8          # 最近一次，不是首次也不是合计
+    assert _steps(db, item)[1]["last_reported_by"] is None
+
+
+def test_revoked_report_not_shown_as_last_reporter(db, craft_mapping, workers):
+    creator = _user(db, "planner")
+    item = _item_of(db, _create_order(db, creator, qty=20)["id"])
+    result = _report(db, item, 0, workers[0], 5)
+    report_service.revoke_report(db, result["log_id"], workers[0].id)
+
+    assert _steps(db, item)[0]["last_reported_by"] is None
+
+
+def test_lookup_by_system_no_customer_no_and_qr(db, craft_mapping, workers):
+    """速查一个输入框吃三种东西，车间不用先选按什么查。"""
+    creator = _user(db, "planner")
+    created = _create_order(db, creator, qty=20)
+    item = _item_of(db, created["id"])
+
+    by_sys = order_service.lookup_order(db, created["domestic_no"])
+    by_cust = order_service.lookup_order(db, "710")
+    by_qr = order_service.lookup_order(db, report_service.generate_qr_data(item.id))
+
+    assert by_sys["id"] == by_cust["id"] == by_qr["id"] == created["id"]
+    assert by_qr["items"][0]["steps"][0]["process_name"] == PROCESS_NAMES[0]
+
+
+def test_lookup_rejects_unknown_and_bad_qr(db, craft_mapping):
+    with pytest.raises(ValueError, match="没找到订单"):
+        order_service.lookup_order(db, "不存在的单号")
+    with pytest.raises(ValueError, match="二维码无效"):
+        order_service.lookup_order(db, "ARK-D:999:deadbeef")
+    with pytest.raises(ValueError, match="请输入订单号"):
+        order_service.lookup_order(db, "  ")
+
+
+def test_lookup_skips_deleted_orders(db, craft_mapping, workers):
+    creator = _user(db, "planner")
+    created = _create_order(db, creator, qty=20)
+    order_service.delete_order(db, created["id"])
+
+    with pytest.raises(ValueError, match="没找到订单"):
+        order_service.lookup_order(db, created["domestic_no"])

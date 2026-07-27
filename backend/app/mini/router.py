@@ -316,6 +316,19 @@ async def domestic_orders(
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
+@router.get("/domestic/lookup", summary="订单速查：单号或扫码直接查进度")
+async def domestic_lookup(
+    code: str = Query(..., description="二维码内容 / 系统单号 / 客户订单号，服务端自行分辨"),
+    current_user: ArkUser = Depends(get_current_mini_user),
+    db: Session = Depends(get_db),
+):
+    _ = current_user
+    try:
+        return domestic_order_service.lookup_order(db, code)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": str(exc)})
+
+
 @router.get("/domestic/orders/{order_id}", summary="内贸订单明细进度")
 async def domestic_order_detail(
     order_id: int,

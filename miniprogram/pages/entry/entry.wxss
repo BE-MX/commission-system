@@ -1,54 +1,80 @@
 /* pages/entry/entry.wxss — 模块选择
-   两张卡的结构、尺寸、动效完全一致，只有配色不同：
-   外贸 = 品牌黑金，内贸 = 品牌绿（取自内贸 LOGO 孔雀主色 #007348 / #0AA66F）。 */
+   三张卡共用一套骨架（LOGO 区 / 标题+箭头 / 副标题）、一套动效，
+   靠配色区分：外贸=品牌黑金，内贸=品牌绿，速查=浅色工具档。
+   背景把金与绿揉进同一块画布，三张卡才像一家人而不是三个贴纸。 */
 
 .entry-page {
+  position: relative;
   min-height: 100vh;
-  background: var(--gray-bg);
+  background: #F4F6F5;
   display: flex;
   flex-direction: column;
-  padding-bottom: 40rpx;
+  padding-bottom: 24rpx;
+  overflow: hidden;
+}
+
+/* ── 背景 ── */
+.bg-wash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.bg-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(60rpx);
+}
+
+/* 金色团在右上（呼应外贸卡），绿色团在左下（呼应内贸卡） */
+.bg-blob--gold {
+  top: 240rpx;
+  right: -160rpx;
+  width: 520rpx;
+  height: 520rpx;
+  background: radial-gradient(circle, rgba(245, 213, 71, 0.28) 0%, rgba(245, 213, 71, 0) 70%);
+}
+
+.bg-blob--green {
+  bottom: 40rpx;
+  left: -180rpx;
+  width: 620rpx;
+  height: 620rpx;
+  background: radial-gradient(circle, rgba(10, 166, 111, 0.22) 0%, rgba(10, 166, 111, 0) 70%);
 }
 
 /* ── 顶部 ── */
 .topbar {
-  padding: 0 40rpx 36rpx;
+  position: relative;
+  padding: 0 40rpx 34rpx;
   background: var(--brand-black);
 }
 
 .topbar-inner {
-  padding-top: 28rpx;
+  padding-top: 24rpx;
   display: flex;
   align-items: baseline;
   gap: 12rpx;
 }
 
-.greeting {
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 28rpx;
-}
-
-.user-name {
-  color: #FFFFFF;
-  font-size: 40rpx;
-  font-weight: 600;
-}
+.greeting { color: rgba(255, 255, 255, 0.7); font-size: 28rpx; }
+.user-name { color: #FFFFFF; font-size: 40rpx; font-weight: 600; }
 
 .topbar-sub {
   display: block;
-  margin-top: 10rpx;
+  margin-top: 8rpx;
   color: rgba(255, 255, 255, 0.55);
   font-size: 26rpx;
 }
 
-/* ── 卡片 ── */
+/* ── 卡片区 ── */
 .cards {
+  position: relative;
   flex: 1;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 28rpx;
-  /* 上下留白压到 24rpx：320 宽小屏上 40rpx 会让两张大卡挤出一屏 */
+  gap: 24rpx;
   padding: 24rpx 32rpx;
 }
 
@@ -56,8 +82,7 @@
   position: relative;
   overflow: hidden;
   border-radius: 32rpx;
-  padding: 48rpx 44rpx;
-  min-height: 420rpx;
+  padding: 40rpx 40rpx;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -69,21 +94,18 @@
               transform 320ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
-.card.is-in {
-  opacity: 1;
-  transform: translateY(0);
-}
+.card.is-in { opacity: 1; transform: translateY(0); }
 
-/* 两张卡错开 70ms 入场，形成级联而不是同时砸下来 */
+/* 三张卡依次错开 70ms 入场，形成级联而不是同时砸下来 */
 .card--domestic { transition-delay: 70ms; }
+.card--lookup { transition-delay: 140ms; }
 
-/* 按压反馈：只动 transform，160ms 内回弹 */
+/* 按压反馈：只动 transform，140ms 回弹 */
 .card--press {
   transform: translateY(0) scale(0.97);
   transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
-/* 右上角柔光，给卡片一点厚度，不抢主体 */
 .card-glow {
   position: absolute;
   top: -120rpx;
@@ -94,14 +116,12 @@
   pointer-events: none;
 }
 
-/* 统一的 LOGO 容纳区：两个 LOGO 比例差很大（金色是 2.8:1 横版字标，
-   绿色是 1.18:1 方形图形块），等高会让绿色小成一个点。
-   给同一个 200×96 的框、各自 aspectFit——字标撑满宽、图形块撑满高，
-   视觉重量才对得上。 */
+/* 统一 LOGO 容纳区：金色是 2.8:1 横版字标、绿色是 1.18:1 图形块，
+   等高会让绿色小成一个点，同框各自 aspectFit 视觉重量才对得上 */
 .card-logo {
-  width: 200rpx;
-  height: 96rpx;
-  margin-bottom: 32rpx;
+  width: 190rpx;
+  height: 88rpx;
+  margin-bottom: 26rpx;
 }
 
 .card-title-row {
@@ -116,18 +136,13 @@
   letter-spacing: 2rpx;
 }
 
-.card-arrow {
-  font-size: 40rpx;
-  opacity: 0.75;
-}
+.card-arrow { font-size: 40rpx; opacity: 0.75; }
 
-.card-sub {
-  margin-top: 12rpx;
-  font-size: 26rpx;
-}
+.card-sub { margin-top: 10rpx; font-size: 26rpx; }
 
 /* ── 外贸：品牌黑金 ── */
 .card--export {
+  min-height: 320rpx;
   background: linear-gradient(145deg, #262320 0%, #16150F 100%);
   box-shadow: 0 12rpx 32rpx rgba(0, 0, 0, 0.22);
 }
@@ -136,12 +151,13 @@
   background: radial-gradient(circle, rgba(245, 213, 71, 0.22) 0%, rgba(245, 213, 71, 0) 70%);
 }
 
-.card--export .card-title { color: var(--brand-yellow); }
+.card--export .card-title,
 .card--export .card-arrow { color: var(--brand-yellow); }
 .card--export .card-sub { color: rgba(255, 255, 255, 0.55); }
 
-/* ── 内贸：品牌绿（LOGO 主色 #007348，亮部 #0AA66F）── */
+/* ── 内贸：品牌绿 ── */
 .card--domestic {
+  min-height: 320rpx;
   background: linear-gradient(145deg, #0A8A5B 0%, #00603C 100%);
   box-shadow: 0 12rpx 32rpx rgba(0, 96, 60, 0.26);
 }
@@ -150,17 +166,73 @@
   background: radial-gradient(circle, rgba(255, 255, 255, 0.20) 0%, rgba(255, 255, 255, 0) 70%);
 }
 
-.card--domestic .card-title { color: #FFFFFF; }
+.card--domestic .card-title,
 .card--domestic .card-arrow { color: #FFFFFF; }
 .card--domestic .card-sub { color: rgba(255, 255, 255, 0.72); }
 
-/* ── 底部 ── */
-.footer {
-  text-align: center;
-  padding: 12rpx 0 20rpx;
+/* ── 速查：浅色工具档（层级低一档，但骨架与绿色同源）── */
+.card--lookup {
+  min-height: 168rpx;
+  padding: 28rpx 36rpx;
+  background: rgba(255, 255, 255, 0.92);
+  border: 2rpx solid rgba(0, 115, 72, 0.14);
+  box-shadow: 0 8rpx 24rpx rgba(0, 96, 60, 0.10);
 }
 
-.logout {
-  font-size: 26rpx;
-  color: var(--text-muted);
+.card--lookup .card-glow {
+  background: radial-gradient(circle, rgba(10, 166, 111, 0.16) 0%, rgba(10, 166, 111, 0) 70%);
 }
+
+.card--lookup .card-title {
+  font-size: 38rpx;
+  color: var(--brand-green-d);
+}
+
+.card--lookup .card-arrow { color: var(--brand-green); }
+.card--lookup .card-sub { color: var(--text-sub); margin-top: 6rpx; }
+
+.lookup-row { display: flex; align-items: center; gap: 24rpx; }
+.lookup-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+/* 速查图标：取景框 + 放大镜，与报工页的扫码图标同一套线条语言 */
+.lookup-icon {
+  width: 76rpx;
+  height: 76rpx;
+  flex-shrink: 0;
+  position: relative;
+  border-radius: 18rpx;
+  background: var(--brand-green-bg);
+}
+
+.lk-c {
+  position: absolute;
+  width: 18rpx;
+  height: 18rpx;
+  border: 4rpx solid var(--brand-green);
+}
+
+.lk-tl { top: 16rpx; left: 16rpx; border-right: none; border-bottom: none; }
+.lk-tr { top: 16rpx; right: 16rpx; border-left: none; border-bottom: none; }
+.lk-bl { bottom: 16rpx; left: 16rpx; border-right: none; border-top: none; }
+.lk-br { bottom: 16rpx; right: 16rpx; border-left: none; border-top: none; }
+
+.lk-mag {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 26rpx;
+  height: 26rpx;
+  margin: -13rpx 0 0 -13rpx;
+  border-radius: 50%;
+  border: 4rpx solid var(--brand-green-d);
+  box-sizing: border-box;
+}
+
+/* ── 底部 ── */
+.footer {
+  position: relative;
+  text-align: center;
+  padding: 8rpx 0 16rpx;
+}
+
+.logout { font-size: 26rpx; color: var(--text-muted); }

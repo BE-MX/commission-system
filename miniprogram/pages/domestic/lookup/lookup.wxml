@@ -1,0 +1,99 @@
+<!-- pages/domestic/lookup/lookup.wxml — 订单速查 -->
+<view class="lk-page">
+  <view class="lk-top" style="padding-top: {{statusBarHeight}}px">
+    <view class="lk-top-inner">
+      <text class="lk-back" bindtap="onBack">‹ 返回</text>
+      <text class="lk-title">订单速查</text>
+      <text class="lk-top-right"></text>
+    </view>
+
+    <!-- 一个输入框吃三种：系统单号 / 客户订单号 / 扫码。让系统去认，不让工人先选 -->
+    <view class="lk-search">
+      <input class="lk-input" type="text" confirm-type="search"
+             placeholder="输入订单号，或点右侧扫码"
+             placeholder-class="lk-ph"
+             value="{{keyword}}" bindinput="onInput" bindconfirm="onSearch" />
+      <view class="lk-scan-btn" catchtap="onScanTap">
+        <view class="lk-scan-icon">
+          <view class="lk-c lk-tl"></view><view class="lk-c lk-tr"></view>
+          <view class="lk-c lk-bl"></view><view class="lk-c lk-br"></view>
+        </view>
+      </view>
+      <view class="lk-go" catchtap="onSearch">查询</view>
+    </view>
+  </view>
+
+  <!-- 空态 / 加载 / 错误 -->
+  <view class="lk-hint" wx:if="{{loading}}">
+    <view class="lk-spin"></view><text class="lk-hint-text">查询中…</text>
+  </view>
+  <view class="lk-hint" wx:elif="{{errorText}}">
+    <text class="lk-hint-icon">!</text>
+    <text class="lk-hint-title">{{errorText}}</text>
+  </view>
+  <view class="lk-hint" wx:elif="{{!order}}">
+    <text class="lk-hint-icon lk-hint-icon--idle">?</text>
+    <text class="lk-hint-title">输入单号或扫流转卡</text>
+    <text class="lk-hint-sub">系统单号（DO 开头）、客户订单号都能查</text>
+  </view>
+
+  <!-- 查询结果 -->
+  <block wx:if="{{order && !loading}}">
+    <view class="lk-order">
+      <view class="lk-order-head">
+        <text class="lk-order-no">{{order.domestic_no}}</text>
+        <text class="lk-badge lk-badge--s{{order.status}}">{{order.status_label}}</text>
+      </view>
+      <text class="lk-order-cust">{{order.customer_name}} · 客户单号 {{order.order_no}}</text>
+      <view class="lk-order-meta">
+        <text>{{order.order_type_label}}</text>
+        <text>下单 {{order.order_date}}</text>
+      </view>
+    </view>
+
+    <view class="lk-item" wx:for="{{order.items}}" wx:key="id" wx:for-item="it">
+      <view class="lk-item-head">
+        <text class="lk-item-name">{{it.product_name}}</text>
+        <view class="lk-item-qty"><text class="lk-qty-num">{{it.order_qty}}</text><text class="lk-qty-unit">件</text></view>
+      </view>
+      <view class="lk-item-sub">
+        <text class="lk-badge lk-badge--i{{it.status}}">{{it.status_label}}</text>
+        <text class="lk-cur">当前：{{it.current_process}}</text>
+      </view>
+
+      <!-- 工序进度：颜色区分状态，字号放大到车间抬眼能读 -->
+      <view class="lk-steps">
+        <view class="lk-step lk-step--{{step.state}}" wx:for="{{it.stepView}}" wx:key="progress_id" wx:for-item="step">
+          <view class="lk-step-rail">
+            <view class="lk-step-dot"><text class="lk-step-no">{{step.step_order}}</text></view>
+            <view class="lk-step-line" wx:if="{{index < it.stepView.length - 1}}"></view>
+          </view>
+
+          <view class="lk-step-body">
+            <view class="lk-step-top">
+              <text class="lk-step-name">{{step.process_name}}</text>
+              <text class="lk-step-state">{{step.stateText}}</text>
+            </view>
+
+            <view class="lk-bar"><view class="lk-bar-fill" style="width:{{step.pct}}%"></view></view>
+            <view class="lk-step-nums">
+              <text class="lk-done">{{step.completed_qty}}</text>
+              <text class="lk-slash">/ {{step.order_qty}} 件</text>
+              <text class="lk-wait" wx:if="{{step.reportable_qty > 0}}">待做 {{step.reportable_qty}}</text>
+            </view>
+
+            <!-- 最近一次报工：谁、什么时候、报了多少 -->
+            <view class="lk-last" wx:if="{{step.last_reported_by}}">
+              <text class="lk-last-who">{{step.last_reported_by}}</text>
+              <text class="lk-last-qty">报 {{step.last_report_qty}} 件</text>
+              <text class="lk-last-at">{{step.last_reported_at}}</text>
+            </view>
+            <text class="lk-last lk-last--none" wx:else>还没有人报这道工序</text>
+          </view>
+        </view>
+      </view>
+
+      <view class="lk-noroute" wx:if="{{it.stepView.length === 0}}">未配工艺路线，还没有工序进度</view>
+    </view>
+  </block>
+</view>

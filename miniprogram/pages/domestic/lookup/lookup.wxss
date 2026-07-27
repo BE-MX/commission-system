@@ -1,0 +1,391 @@
+/* pages/domestic/lookup/lookup.wxss — 订单速查
+   车间抬眼要能读：正文最小 26rpx，关键数字 40rpx+；
+   工序四态各有专属色，扫一眼就分得出哪道能开工、哪道在等上道。 */
+
+.lk-page {
+  min-height: 100vh;
+  background: var(--gray-bg);
+  padding-bottom: 60rpx;
+}
+
+/* ── 顶部：深绿到品牌绿的渐变，和内贸模块一脉 ── */
+.lk-top {
+  background: linear-gradient(160deg, #0A8A5B 0%, #00603C 100%);
+  padding-bottom: 28rpx;
+}
+
+.lk-top-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16rpx 32rpx 0;
+}
+
+.lk-back, .lk-top-right {
+  width: 120rpx;
+  font-size: 28rpx;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.lk-top-right { text-align: right; }
+
+.lk-title {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #FFFFFF;
+}
+
+/* ── 搜索条 ── */
+.lk-search {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  margin: 28rpx 32rpx 0;
+}
+
+.lk-input {
+  flex: 1;
+  min-width: 0;
+  height: 88rpx;
+  padding: 0 26rpx;
+  border-radius: 18rpx;
+  background: rgba(255, 255, 255, 0.96);
+  font-size: 30rpx;
+  color: var(--text-main);
+}
+
+.lk-ph { color: #9AA5A0; }
+
+.lk-scan-btn {
+  width: 88rpx;
+  height: 88rpx;
+  flex-shrink: 0;
+  border-radius: 18rpx;
+  background: rgba(255, 255, 255, 0.18);
+  border: 2rpx solid rgba(255, 255, 255, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.lk-scan-btn:active { transform: scale(0.94); }
+
+/* 扫码图标：四角取景框，与报工页同一套线条语言 */
+.lk-scan-icon { width: 40rpx; height: 40rpx; position: relative; }
+
+.lk-c {
+  position: absolute;
+  width: 14rpx;
+  height: 14rpx;
+  border: 3rpx solid #FFFFFF;
+}
+
+.lk-tl { top: 0; left: 0; border-right: none; border-bottom: none; }
+.lk-tr { top: 0; right: 0; border-left: none; border-bottom: none; }
+.lk-bl { bottom: 0; left: 0; border-right: none; border-top: none; }
+.lk-br { bottom: 0; right: 0; border-left: none; border-top: none; }
+
+.lk-go {
+  flex-shrink: 0;
+  height: 88rpx;
+  line-height: 88rpx;
+  padding: 0 30rpx;
+  border-radius: 18rpx;
+  background: #FFFFFF;
+  color: var(--brand-green-d);
+  font-size: 30rpx;
+  font-weight: 700;
+  transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.lk-go:active { transform: scale(0.94); }
+
+/* ── 提示态 ── */
+.lk-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 140rpx 60rpx;
+}
+
+.lk-hint-icon {
+  width: 96rpx;
+  height: 96rpx;
+  line-height: 96rpx;
+  text-align: center;
+  border-radius: 50%;
+  background: rgba(229, 57, 53, 0.1);
+  color: var(--danger);
+  font-size: 48rpx;
+  font-weight: 700;
+  margin-bottom: 24rpx;
+}
+
+.lk-hint-icon--idle {
+  background: var(--brand-green-bg);
+  color: var(--brand-green);
+}
+
+.lk-hint-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: var(--text-main);
+  text-align: center;
+}
+
+.lk-hint-sub {
+  margin-top: 12rpx;
+  font-size: 26rpx;
+  color: var(--text-sub);
+  text-align: center;
+}
+
+.lk-hint-text { font-size: 28rpx; color: var(--text-sub); }
+
+.lk-spin {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 50%;
+  border: 6rpx solid var(--border);
+  border-top-color: var(--brand-green);
+  margin-bottom: 20rpx;
+  animation: lk-rotate 800ms linear infinite;
+}
+
+@keyframes lk-rotate { to { transform: rotate(360deg); } }
+
+/* ── 订单头卡 ── */
+.lk-order {
+  margin: 28rpx 24rpx 0;
+  padding: 28rpx;
+  border-radius: 24rpx;
+  background: var(--card-bg);
+  box-shadow: 0 6rpx 20rpx rgba(0, 0, 0, 0.05);
+}
+
+.lk-order-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.lk-order-no {
+  font-size: 38rpx;
+  font-weight: 700;
+  color: var(--text-main);
+  letter-spacing: 1rpx;
+}
+
+.lk-order-cust {
+  display: block;
+  margin-top: 10rpx;
+  font-size: 28rpx;
+  color: var(--text-sub);
+}
+
+.lk-order-meta {
+  display: flex;
+  gap: 24rpx;
+  margin-top: 12rpx;
+  font-size: 26rpx;
+  color: var(--text-muted);
+}
+
+/* ── 状态徽标 ── */
+.lk-badge {
+  font-size: 24rpx;
+  font-weight: 600;
+  padding: 6rpx 18rpx;
+  border-radius: 22rpx;
+}
+
+.lk-badge--s1, .lk-badge--i0 { background: var(--brand-green-bg); color: var(--brand-green-ink); }
+.lk-badge--s2, .lk-badge--i1 { background: rgba(0, 196, 140, 0.14); color: #00996E; }
+.lk-badge--s3, .lk-badge--i2 { background: rgba(0, 0, 0, 0.06); color: var(--text-sub); }
+.lk-badge--s4 { background: rgba(229, 57, 53, 0.1); color: var(--danger); }
+
+/* ── 明细卡 ── */
+.lk-item {
+  margin: 24rpx 24rpx 0;
+  padding: 28rpx;
+  border-radius: 24rpx;
+  background: var(--card-bg);
+  box-shadow: 0 6rpx 20rpx rgba(0, 0, 0, 0.05);
+}
+
+.lk-item-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+
+.lk-item-name {
+  flex: 1;
+  font-size: 32rpx;
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.35;
+}
+
+.lk-item-qty {
+  flex-shrink: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 4rpx;
+}
+
+.lk-qty-num {
+  font-size: 44rpx;
+  font-weight: 800;
+  color: var(--brand-green-d);
+  line-height: 1;
+}
+
+.lk-qty-unit { font-size: 24rpx; color: var(--text-sub); }
+
+.lk-item-sub {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-top: 16rpx;
+}
+
+.lk-cur { font-size: 26rpx; color: var(--text-sub); }
+
+/* ── 工序进度 ── */
+.lk-steps { margin-top: 24rpx; }
+
+.lk-step { display: flex; gap: 20rpx; }
+
+.lk-step-rail {
+  width: 56rpx;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.lk-step-dot {
+  width: 56rpx;
+  height: 56rpx;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.lk-step-no { font-size: 26rpx; font-weight: 700; }
+
+.lk-step-line {
+  flex: 1;
+  width: 4rpx;
+  min-height: 40rpx;
+  background: var(--border);
+  margin: 6rpx 0;
+}
+
+.lk-step-body { flex: 1; min-width: 0; padding-bottom: 30rpx; }
+
+.lk-step-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 12rpx;
+}
+
+.lk-step-name {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.lk-step-state { font-size: 28rpx; font-weight: 700; }
+
+.lk-bar {
+  height: 14rpx;
+  border-radius: 7rpx;
+  background: var(--gray-bg);
+  overflow: hidden;
+}
+
+.lk-bar-fill {
+  height: 100%;
+  border-radius: 7rpx;
+  transition: width 320ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.lk-step-nums {
+  display: flex;
+  align-items: baseline;
+  gap: 10rpx;
+  margin-top: 12rpx;
+}
+
+.lk-done { font-size: 36rpx; font-weight: 800; line-height: 1; }
+.lk-slash { font-size: 28rpx; color: var(--text-sub); }
+
+.lk-wait {
+  margin-left: auto;
+  font-size: 24rpx;
+  font-weight: 600;
+  color: var(--warning);
+  background: rgba(255, 107, 53, 0.12);
+  padding: 4rpx 14rpx;
+  border-radius: 18rpx;
+}
+
+/* 最近一次报工 */
+.lk-last {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  margin-top: 14rpx;
+  padding: 12rpx 16rpx;
+  border-radius: 12rpx;
+  background: var(--gray-bg);
+  font-size: 28rpx;
+}
+
+.lk-last-who { font-weight: 700; color: var(--text-main); }
+.lk-last-qty { color: var(--text-sub); }
+.lk-last-at { margin-left: auto; color: var(--text-muted); font-size: 26rpx; }
+
+.lk-last--none {
+  color: var(--text-muted);
+  background: transparent;
+  padding-left: 0;
+}
+
+/* ── 四态配色：一眼分清 ── */
+.lk-step--done .lk-step-dot { background: #00C48C; }
+.lk-step--done .lk-step-no { color: #FFFFFF; }
+.lk-step--done .lk-step-state { color: #00996E; }
+.lk-step--done .lk-bar-fill { background: #00C48C; }
+.lk-step--done .lk-done { color: #00996E; }
+.lk-step--done .lk-step-line { background: #00C48C; }
+
+.lk-step--doing .lk-step-dot { background: var(--brand-green); }
+.lk-step--doing .lk-step-no { color: #FFFFFF; }
+.lk-step--doing .lk-step-state { color: var(--brand-green-d); }
+.lk-step--doing .lk-bar-fill { background: var(--brand-green); }
+.lk-step--doing .lk-done { color: var(--brand-green-d); }
+
+.lk-step--ready .lk-step-dot { background: #FFF0E6; border: 3rpx solid var(--warning); }
+.lk-step--ready .lk-step-no { color: var(--warning); }
+.lk-step--ready .lk-step-state { color: var(--warning); }
+.lk-step--ready .lk-bar-fill { background: var(--warning); }
+.lk-step--ready .lk-done { color: var(--warning); }
+
+.lk-step--wait .lk-step-dot { background: var(--gray-bg); border: 3rpx solid var(--border); }
+.lk-step--wait .lk-step-no { color: var(--text-muted); }
+.lk-step--wait .lk-step-state { color: var(--text-muted); }
+.lk-step--wait .lk-done { color: var(--text-muted); }
+
+.lk-noroute {
+  margin-top: 20rpx;
+  font-size: 26rpx;
+  color: var(--warning);
+}

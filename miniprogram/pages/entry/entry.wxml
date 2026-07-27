@@ -1,17 +1,23 @@
 <!-- pages/entry/entry.wxml — 登录后的模块选择 -->
 <view class="entry-page">
+  <!-- 背景把金与绿两种模块色揉进同一块画布，三张卡才像一家人 -->
+  <view class="bg-wash" aria-hidden="true">
+    <view class="bg-blob bg-blob--gold"></view>
+    <view class="bg-blob bg-blob--green"></view>
+  </view>
+
   <view class="topbar" style="padding-top: {{statusBarHeight}}px">
     <view class="topbar-inner">
       <text class="greeting">{{greeting}}</text>
       <text class="user-name">{{userName}}</text>
     </view>
-    <text class="topbar-sub">选择今天要做的报工</text>
+    <text class="topbar-sub">选择今天要做的事</text>
   </view>
 
   <view class="cards">
-    <!-- 两张卡结构完全一致，只有配色不同 -->
+    <!-- 三张卡同一套骨架：LOGO 区 / 标题+箭头 / 副标题，只有配色不同 -->
     <view class="card card--export {{entered ? 'is-in' : ''}}" hover-class="card--press" hover-stay-time="80" bindtap="onExportTap">
-      <view class="card-glow" />
+      <view class="card-glow"></view>
       <image class="card-logo" src="/assets/logo-gold.png" mode="aspectFit" />
       <view class="card-title-row">
         <text class="card-title">外贸报工</text>
@@ -21,13 +27,30 @@
     </view>
 
     <view class="card card--domestic {{entered ? 'is-in' : ''}}" hover-class="card--press" hover-stay-time="80" bindtap="onDomesticTap">
-      <view class="card-glow" />
+      <view class="card-glow"></view>
       <image class="card-logo" src="/assets/logo-green.png" mode="aspectFit" />
       <view class="card-title-row">
         <text class="card-title">内贸报工</text>
         <text class="card-arrow">→</text>
       </view>
       <text class="card-sub">内贸订单 · 按数量拆批</text>
+    </view>
+
+    <!-- 速查是查询工具不是报工模块，用浅色一档区分层级，但骨架与配色仍同源 -->
+    <view class="card card--lookup {{entered ? 'is-in' : ''}}" hover-class="card--press" hover-stay-time="80" bindtap="onLookupTap">
+      <view class="card-glow"></view>
+      <view class="lookup-row">
+        <view class="lookup-icon">
+          <view class="lk-c lk-tl"></view><view class="lk-c lk-tr"></view>
+          <view class="lk-c lk-bl"></view><view class="lk-c lk-br"></view>
+          <view class="lk-mag"></view>
+        </view>
+        <view class="lookup-text">
+          <text class="card-title">订单速查</text>
+          <text class="card-sub">输入单号或扫码 · 看每道工序进度</text>
+        </view>
+        <text class="card-arrow">→</text>
+      </view>
     </view>
   </view>
 

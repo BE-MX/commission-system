@@ -44,6 +44,10 @@ Page({
     wx.switchTab({ url: '/pages/domestic/scan/scan' })
   },
 
+  onLookupTap: function () {
+    wx.navigateTo({ url: '/pages/domestic/lookup/lookup' })
+  },
+
   onLogoutTap: function () {
     wx.showModal({
       title: '退出登录',

@@ -82,10 +82,12 @@ def build_progress_view(db: Session, item: DomesticOrderItem) -> list[dict]:
         .filter(Process.id.in_({r.process_id for r in rows}))
         .all()
     )
+    last_by = _last_reporter_map(db, item.id)
 
     view = []
     upstream = item.order_qty
     for r in rows:
+        last = last_by.get(r.step_order) or {}
         view.append({
             "progress_id": r.id,
             "step_order": r.step_order,
@@ -98,9 +100,32 @@ def build_progress_view(db: Session, item: DomesticOrderItem) -> list[dict]:
             "status": r.status,
             "first_reported_at": r.first_reported_at,
             "last_reported_at": r.last_reported_at,
+            # 最近一次有效报工是谁、什么时候 —— 车间查进度时最想知道的两件事
+            "last_reported_by": last.get("name"),
+            "last_report_qty": last.get("qty"),
         })
         upstream = r.completed_qty
     return view
+
+
+def _last_reporter_map(db: Session, item_id: int) -> dict[int, dict]:
+    """每道工序最近一次未撤销报工的人与数量。一条 SQL 取全部流水后在内存归并，
+    不在工序循环里逐条查（那是 N+1）。单个明细的流水量级很小。"""
+    logs = (
+        db.query(
+            DomesticReportLog.step_order,
+            DomesticReportLog.reported_by_name,
+            DomesticReportLog.report_qty,
+            DomesticReportLog.reported_at,
+        )
+        .filter(DomesticReportLog.item_id == item_id, DomesticReportLog.revoked == 0)
+        .order_by(DomesticReportLog.reported_at.asc(), DomesticReportLog.id.asc())
+        .all()
+    )
+    out: dict[int, dict] = {}
+    for step_order, name, qty, _at in logs:   # 升序遍历，后写的覆盖前面的 = 最近一次
+        out[step_order] = {"name": name, "qty": qty}
+    return out
 
 
 def _get_step(db: Session, item_id: int, step_order: int, lock: bool = False):

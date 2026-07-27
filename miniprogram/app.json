@@ -9,7 +9,8 @@
     "pages/history/history",
     "pages/overview/overview",
     "pages/domestic/scan/scan",
-    "pages/domestic/orders/orders"
+    "pages/domestic/orders/orders",
+    "pages/domestic/lookup/lookup"
   ],
   "tabBar": {
     "custom": true,
