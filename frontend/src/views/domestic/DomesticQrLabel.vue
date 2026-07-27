@@ -23,6 +23,7 @@
           <el-input-number v-model="copies" :min="1" :max="50" size="small" />
           <span class="copies-hint">份</span>
           <el-button type="primary" @click="doPrint">打印标签</el-button>
+          <el-button @click="closeTab">关闭</el-button>
         </div>
         <p class="tip">
           打印前把打印机纸张设为 <strong>30 × 20 mm</strong>、缩放选「实际大小 / 100%」，
@@ -49,18 +50,25 @@
  * 标签是贴在货品/周转筐上的扫码入口，只要认得出品牌 + 扫得动。
  */
 import { onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { Loading } from '@element-plus/icons-vue'
 import { getPrintCard } from '@/api/domestic'
 import logoUrl from '@/assets/domestic-logo.png'
 
 const route = useRoute()
+const router = useRouter()
 const card = ref(null)
 const loadError = ref('')
 const copies = ref(1)
 
 function doPrint() {
   window.print()
+}
+
+function closeTab() {
+  // 从订单页开的新标签能关掉；直接粘链接进来的关不掉，退回订单列表
+  window.close()
+  setTimeout(() => router.push({ name: 'DomesticOrders' }), 100)
 }
 
 onMounted(async () => {
@@ -104,19 +112,19 @@ onMounted(async () => {
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
 }
 
-/* 左侧 LOGO：竖版图，按高度撑满、宽度自适应 */
+/* 左侧 LOGO：只取孔雀图形块（横向比例 1.18），高度居中留白 */
 .label-logo {
   height: 100%;
-  width: 10mm;
+  width: 11mm;
   object-fit: contain;
   flex-shrink: 0;
 }
 
 /* 右侧二维码：吃满剩余宽度，尽量大 —— 小标签上扫得动比好看重要。
-   宽度算式：30 − 左右各 1 内边距 − LOGO 10 − 间距 0.8 = 17.2 */
+   宽度算式：30 − 左右各 1 内边距 − LOGO 11 − 间距 0.8 = 16.2 */
 .label-qr {
   height: 100%;
-  width: 17.2mm;
+  width: 16.2mm;
   object-fit: contain;
   flex-shrink: 0;
   image-rendering: pixelated;   /* 缩放时不做平滑，保住码点边缘 */

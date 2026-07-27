@@ -67,6 +67,8 @@
 
       <div class="no-print print-btn-wrap">
         <el-button type="primary" size="large" @click="doPrint">打印此卡</el-button>
+        <el-button size="large" @click="closeTab">关闭</el-button>
+        <p class="print-tip">打印对话框里缩放选「实际大小 / 100%」，否则卡片会被整体缩小。</p>
       </div>
     </template>
   </div>
@@ -75,12 +77,13 @@
 <script setup>
 /** 内贸流转卡。二维码前缀 ARK-D，与外贸 ARK-P 分流互不干扰。 */
 import { computed, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { Loading } from '@element-plus/icons-vue'
 import { DETAIL_SECTIONS, getPrintCard } from '@/api/domestic'
 import DomesticImages from '@/components/domestic/DomesticImages.vue'
 
 const route = useRoute()
+const router = useRouter()
 const card = ref(null)
 const loadError = ref('')
 
@@ -92,6 +95,12 @@ const visibleSections = computed(
 
 function doPrint() {
   window.print()
+}
+
+function closeTab() {
+  // 从订单页开的新标签能关掉；直接粘链接进来的关不掉，退回订单列表
+  window.close()
+  setTimeout(() => router.push({ name: 'DomesticOrders' }), 100)
 }
 
 onMounted(async () => {
@@ -265,8 +274,20 @@ onMounted(async () => {
   margin-top: 20px;
 }
 
+.print-tip {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: #888;
+}
+
 @media print {
-  .print-card-page { padding: 0; background: #fff; }
+  /* 卡片本身就是 210mm 宽（A4 满宽），页边距归零由卡片自己的 12mm 内边距承担 */
+  @page {
+    size: A4;
+    margin: 0;
+  }
+
+  .print-card-page { padding: 0; background: #fff; min-height: 0; }
   .card { box-shadow: none; width: auto; margin: 0; }
   .no-print { display: none !important; }
 }

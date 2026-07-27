@@ -623,22 +623,9 @@ export const NAV_ENTRIES = [
       anyPermission: ['domestic:read', 'domestic:write', 'domestic:admin'],
     },
   },
-  {
-    path: '/domestic/print-card/:id',
-    name: 'DomesticPrintCard',
-    component: () => import('@/views/domestic/DomesticPrintCard.vue'),
-    title: '内贸流转卡打印',
-    anyPermission: ['domestic:read', 'domestic:write', 'domestic:admin'],
-    hideInMenu: true,
-  },
-  {
-    path: '/domestic/qr-label/:id',
-    name: 'DomesticQrLabel',
-    component: () => import('@/views/domestic/DomesticQrLabel.vue'),
-    title: '内贸二维码标签打印',
-    anyPermission: ['domestic:read', 'domestic:write', 'domestic:admin'],
-    hideInMenu: true,
-  },
+  // 内贸的两个打印页（流转卡 / 二维码标签）不在这里：
+  // 它们是全屏页，在 router/index.js 顶层注册（宪法 10 的既有例外）——
+  // 挂在 MainLayout 下会把侧边栏和顶栏一起打印出来。
 
   // ── 素材管理 ───────────────────────────────────────────
   {

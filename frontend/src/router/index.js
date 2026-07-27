@@ -29,6 +29,28 @@ const routes = [
     meta: { title: 'AI 智能试戴', permission: 'expo:write' },
   },
   {
+    // 内贸流转卡 — 独立于 MainLayout 的全屏打印页。
+    // 挂在 MainLayout 下时 window.print() 会把侧边栏和顶栏一起打出来，
+    // 打印页必须是整个文档就是要打的那张纸。
+    path: '/domestic/print-card/:id',
+    name: 'DomesticPrintCard',
+    component: () => import('@/views/domestic/DomesticPrintCard.vue'),
+    meta: {
+      title: '内贸流转卡打印',
+      anyPermission: ['domestic:read', 'domestic:write', 'domestic:admin'],
+    },
+  },
+  {
+    // 内贸二维码标签（30×20mm 不干胶）— 同上，全屏独立页
+    path: '/domestic/qr-label/:id',
+    name: 'DomesticQrLabel',
+    component: () => import('@/views/domestic/DomesticQrLabel.vue'),
+    meta: {
+      title: '内贸二维码标签打印',
+      anyPermission: ['domestic:read', 'domestic:write', 'domestic:admin'],
+    },
+  },
+  {
     // 对外库存查询 — 客户官网外链嵌入（无登录；数据门禁在 API 层 key 参数）
     path: '/inventory',
     name: 'PublicInventory',

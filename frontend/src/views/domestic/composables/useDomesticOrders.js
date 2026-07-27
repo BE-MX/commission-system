@@ -199,12 +199,19 @@ export function useDomesticOrders() {
     await listApi.fetchList()
   }
 
+  // 打印页是独立于 MainLayout 的全屏页（否则 window.print() 会把侧边栏一起打出来）。
+  // 开新标签页而不是本页跳转：打完关掉标签即可，订单抽屉和筛选条件都还在。
+  function openInNewTab(name, item) {
+    const { href } = router.resolve({ name, params: { id: item.id } })
+    window.open(href, '_blank')
+  }
+
   function openPrintCard(item) {
-    router.push({ name: 'DomesticPrintCard', params: { id: item.id } })
+    openInNewTab('DomesticPrintCard', item)
   }
 
   function openQrLabel(item) {
-    router.push({ name: 'DomesticQrLabel', params: { id: item.id } })
+    openInNewTab('DomesticQrLabel', item)
   }
 
   function goCreate() {
