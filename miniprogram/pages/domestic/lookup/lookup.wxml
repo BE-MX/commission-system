@@ -51,7 +51,7 @@
       </view>
     </view>
 
-    <view class="lk-item" wx:for="{{order.items}}" wx:key="id" wx:for-item="it">
+    <view class="lk-item" wx:for="{{order.items}}" wx:key="id" wx:for-item="it" wx:for-index="idx">
       <view class="lk-item-head">
         <text class="lk-item-name">{{it.product_name}}</text>
         <view class="lk-item-qty"><text class="lk-qty-num">{{it.order_qty}}</text><text class="lk-qty-unit">件</text></view>
@@ -61,12 +61,19 @@
         <text class="lk-cur">当前：{{it.current_process}}</text>
       </view>
 
-      <!-- 工序进度：颜色区分状态，字号放大到车间抬眼能读 -->
+      <!-- 工序进度：颜色区分状态，字号放大到车间抬眼能读。
+           默认只出前 3 道（长路线不至于把一屏占满），其余点展开 -->
       <view class="lk-steps">
-        <view class="lk-step lk-step--{{step.state}}" wx:for="{{it.stepView}}" wx:key="progress_id" wx:for-item="step">
+        <!-- wx:for 与 wx:if 不放同一元素：block 负责循环，view 负责显隐 -->
+        <block wx:for="{{it.stepView}}" wx:key="progress_id" wx:for-item="step">
+        <view
+          class="lk-step lk-step--{{step.state}} {{index > 2 ? 'lk-step--extra' : ''}}"
+          wx:if="{{index < 3 || it.expanded}}"
+        >
           <view class="lk-step-rail">
             <view class="lk-step-dot"><text class="lk-step-no">{{step.step_order}}</text></view>
-            <view class="lk-step-line" wx:if="{{index < it.stepView.length - 1}}"></view>
+            <!-- 连接线画到「最后一个可见项」为止，收起时第 3 道不拖一条断线 -->
+            <view class="lk-step-line" wx:if="{{it.expanded ? index < it.stepView.length - 1 : index < 2}}"></view>
           </view>
 
           <view class="lk-step-body">
@@ -91,6 +98,13 @@
             <text class="lk-last lk-last--none" wx:else>还没有人报这道工序</text>
           </view>
         </view>
+        </block>
+      </view>
+
+      <!-- 展开/收起：箭头随状态转 180°，是同一个图标在动，不是换一个图标 -->
+      <view class="lk-more" wx:if="{{it.stepView.length > 3}}" catchtap="onToggleSteps" data-idx="{{idx}}">
+        <text class="lk-more-text">{{it.expanded ? '收起工序' : '展开全部 ' + it.stepView.length + ' 道工序'}}</text>
+        <view class="lk-chev {{it.expanded ? 'is-open' : ''}}"></view>
       </view>
 
       <view class="lk-noroute" wx:if="{{it.stepView.length === 0}}">未配工艺路线，还没有工序进度</view>

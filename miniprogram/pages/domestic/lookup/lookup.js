@@ -107,9 +107,18 @@ Page({
         })
       }
       items[i].stepView = view
+      items[i].expanded = false   // 默认只出前 3 道
     }
     order.items = items
     return order
+  },
+
+  onToggleSteps: function (e) {
+    var idx = e.currentTarget.dataset.idx
+    var key = 'order.items[' + idx + '].expanded'
+    var obj = {}
+    obj[key] = !this.data.order.items[idx].expanded
+    this.setData(obj)
   },
 
   onBack: function () {
