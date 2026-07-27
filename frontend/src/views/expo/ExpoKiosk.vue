@@ -185,17 +185,6 @@ function brandClick() {
 .xk-head-side { display: flex; align-items: center; gap: 14px; min-width: 0; }
 .xk-step { white-space: nowrap; }
 
-/* ── 手机竖屏（≤560px）：顶栏保命断点 ──
-   390px 屏上顶栏内容需 ~410px、可用仅 346px。两个 nowrap 文本被 flex 压缩后没有 overflow 收口，
-   直接溢出各自盒子互相覆盖。取舍是砍掉步骤标签：每一屏都有大标题说明当前在哪一步，
-   而导航按钮点不着是硬故障——装饰性信息给功能性按钮让路。*/
-@media (max-width: 560px) {
-  .xk-head { height: 46px; padding: 0 12px; }
-  .xk-step { display: none; }
-  .xk-head-side { gap: 10px; }
-  .xk-brand { min-width: 0; overflow: hidden; text-overflow: ellipsis; letter-spacing: 0.14em; }
-  .xk-nav { height: 36px; padding: 0 12px; letter-spacing: 0.08em; }
-}
 .xk-nav {
   flex: none; height: 34px; padding: 0 14px; border-radius: 18px; cursor: pointer;
   border: 1px solid var(--xk-gold-line); background: rgba(232, 196, 121, 0.04);
@@ -372,5 +361,16 @@ function brandClick() {
   color: var(--xk-mut);
   letter-spacing: 0.2em;
   margin-top: 8px;
+}
+/* ── 手机竖屏（≤560px）：顶栏保命断点 ──
+   390px 屏上顶栏内容需 ~410px、可用仅 346px。两个 nowrap 文本被 flex 压缩后没有 overflow 收口，
+   直接溢出各自盒子互相覆盖。取舍是砍掉步骤标签：每一屏都有大标题说明当前在哪一步，
+   而导航按钮点不着是硬故障——装饰性信息给功能性按钮让路。*/
+@media (max-width: 560px) {
+  .xk-head { height: 46px; padding: 0 12px; }
+  .xk-step { display: none; }
+  .xk-head-side { gap: 10px; }
+  .xk-brand { min-width: 0; overflow: hidden; text-overflow: ellipsis; letter-spacing: 0.14em; }
+  .xk-nav { height: 36px; padding: 0 12px; letter-spacing: 0.08em; }
 }
 </style>
