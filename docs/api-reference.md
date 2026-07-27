@@ -283,6 +283,7 @@
   - `GET /order-products/{id}/progress` — 获取工序进度
   - `GET /order-products/{id}/qrcode` — 生成二维码
   - `GET /order-products/{id}/print-card` — 获取打印卡数据
+- `/api/domestic` — 内贸订单（独立领域模块 `app/domestic/`，与外贸生产订单/报工平行的一套，按数量拆批报工；详见文末专章）
 - `/api/mini` — 微信小程序端（独立领域模块 `app/mini/`，JWT 鉴权，无 RBAC 权限）
   - `POST /auth/dev-login` — 开发调试登录（非 production 可用）
   - `POST /auth/login` — wx.login code 换 token（→ jscode2session → 查绑定）
@@ -413,3 +414,26 @@
 - `PUT /preference` — 保存布局（整体覆盖式 upsert）；body 形状 `{version, metrics:{hidden,order}, actions:{hidden,order}}`，服务端只校验形状不校验卡片 key（key 真相源在前端 `views/dashboard/cards.js` 注册表，未知 key 渲染时忽略）。
 - `DELETE /preference` — 删行恢复默认布局。
 - 鉴权：三端点均 `get_current_user`（个人域数据，user_id 取 JWT sub 行级隔离，同 `/api/auth/me` 模式，不挂 require_permission——工作台是全员落地页无页面权限码）。
+
+## 内贸订单（`/api/domestic`，081/082 迁移，2026-07-27）
+
+内贸生产的下单 + 按数量拆批报工。与外贸「生产订单（`/api/stock/production`）+ 生产报工（`/api/production`）」是**平行的两套**：外贸报工整行 0/1 流转，内贸带数量。只共用工序/工艺路线/工人工序绑定三类全局资产。
+
+- 值域与路线：`GET /options`（下单表单全部下拉：产品类型、订单类型 + 各属性字典值，属性值域存 `sys_dict` 的 `domestic_*` type，内贸主管在「数据字典」页自助增删）、`GET /process-routes`（可选工艺路线含工序链）、`GET /process-workers?process_id=`（该工序绑定的工人，代报工选人用）。
+- 客户：`GET /customers`（分页 keyword/status）、`POST /customers`、`PUT /customers/{id}`、`DELETE /customers/{id}`（`domestic:admin`；有订单的客户拒删，改停用）。
+- 产品与工艺映射：`GET /products`（分页 keyword/product_type/route_bound）、`PUT /products/{id}/route`（人工改绑，`domestic:admin`，只影响之后的新明细）、`GET /craft-routes`、`POST /craft-routes`（配「产品类型+工艺 → 路线」映射，`domestic:admin`；保存时自动回填此前因缺映射而未绑路线的同工艺产品）、`DELETE /craft-routes/{id}`。
+- 订单：`POST /orders`（下单：属性 find-or-create 产品 → 按映射自动配路线 → 展开工序进度；返回 `warnings` 列出不能开工的明细）、`GET /orders`（分页 keyword/status/customer_id/order_type/日期区间，含 `progress_pct`）、`GET /orders/{id}`（详情含逐明细逐工序数量进度）、`PUT /orders/{id}`、`POST /orders/{id}/status`（终止）、`DELETE /orders/{id}`（软删，`domestic:admin`；有未撤销报工记录时拒删，改用终止）。
+- 明细：`POST /orders/{id}/items`、`PUT /items/{id}`（改数量不得低于任一工序已完成数）、`DELETE /items/{id}`、`POST /items/{id}/attach-route`（给缺路线的在制明细补配路线；有报工流水时拒绝重建）、`POST /items/{id}/ship`（发货登记：时间 + 克重，要求全工序做齐且订单未终止）、`GET /items/{id}/progress`、`GET /items/{id}/print-card`（流转卡数据，含 `ARK-D:` 二维码 base64）。
+- 报工：`GET /reports`（流水查询）、`POST /reports`（主站代报工，**必须传 `on_behalf_user_id` 指明实际做活的工人**——件数记错人等于工资算错人；支持 `request_id` 幂等键）、`POST /reports/revoke`（撤销；只能撤自己的，`domestic:admin` 可撤他人）、`GET /reports/workload`（按人×工序汇总有效件数，计件统计基础，已撤销不计）。
+- 参考图：`POST /images`（只收 jpg/png/webp ≤20MB，落 `DOMESTIC_STORAGE_ROOT` 私有目录）、`GET /images/{path}`（鉴权 FileResponse，前端 axios blob 取图）。
+- 权限：`domestic:read` 查看 / `domestic:write` 下单编辑发货报工 / `domestic:admin` 工艺映射、产品改绑、删单、撤销他人报工。
+
+### 内贸报工（小程序，`/api/mini/domestic/*`）
+
+沿用 mini 既有例外：`get_current_mini_user` 鉴权、不接 RBAC、返回裸 dict、错误走 `HTTPException(detail={code,message})`。
+
+- `GET /scan/{item_id}?sign=` — 扫码取明细、图文要求、逐工序数量与「该报哪道、能报多少」；不能报时给 `block_reason`（`ITEM_NOT_FOUND`/`NO_ROUTE`/`ORDER_TERMINATED`/`ALL_DONE`/`NOT_ASSIGNED`/`NOTHING_REPORTABLE`）。
+- `POST /scan/submit` — `{item_id, progress_id, qty, request_id?}`，qty 即拆批数量；`request_id` 幂等重放返回首次结果（`replayed: true`）。
+- `POST /scan/revoke` — `{log_id}`；`GET /history` 今日、`GET /history/all` 分页。
+- `GET /orders` / `GET /orders/{id}` — 车间/跟单看订单进度。
+- `GET /images/{path}` — 参考图（小程序 token 无 RBAC 声明，走不了主站图片端点，故有这个同源版本）。

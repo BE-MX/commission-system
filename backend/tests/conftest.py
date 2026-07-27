@@ -23,6 +23,11 @@ from app.design.models import (
 # 若无其他文件先导入 auth，create_all 报 NoReferencedTableError（2026-07-13 对抗性审查 J1）
 from app.auth import models as _auth_models  # noqa: F401
 from app.asset import models as _asset_models  # noqa: F401
+# 内贸表 FK 指向 process / process_route（app.production）与 ark_users，同理需显式导入；
+# production 自身的进度表又 FK 到 ark_production_order_items（app.stock），一并带上
+from app.stock import models as _stock_models  # noqa: F401
+from app.production import models as _production_models  # noqa: F401
+from app.domestic import models as _domestic_models  # noqa: F401
 
 
 # SQLite 不支持 BIGINT 自增，编译时替换为 INTEGER

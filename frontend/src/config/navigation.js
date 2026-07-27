@@ -18,7 +18,7 @@ import {
   Money, Refresh, List, Van, Upload, Box, Setting, Aim, Reading,
   MagicStick, Notebook, Calendar, Camera, EditPen, Stamp, TrendCharts,
   Lock, Lightning, Picture, Collection, CollectionTag, DataBoard,
-  DataLine, Printer, Brush,
+  DataLine, Printer, Brush, Tickets, Goods,
 } from '@element-plus/icons-vue'
 
 /**
@@ -80,6 +80,11 @@ export const MENU_GROUPS = {
       'production:read', 'production:write', 'production:print', 'production:admin',
       'production_product:read', 'production_dashboard:read', 'production_route:read',
     ],
+  },
+  domestic: {
+    title: '内贸订单',
+    icon: Tickets,
+    anyPermission: ['domestic:read', 'domestic:write', 'domestic:admin'],
   },
   asset: {
     title: '素材管理',
@@ -572,6 +577,55 @@ export const NAV_ENTRIES = [
     permission: 'production:read',
     hideInMenu: true,
   },
+
+  // ── 内贸订单 ───────────────────────────────────────────
+  {
+    path: '/domestic/orders',
+    name: 'DomesticOrders',
+    component: () => import('@/views/domestic/DomesticOrders.vue'),
+    title: '内贸订单',
+    anyPermission: ['domestic:read', 'domestic:write', 'domestic:admin'],
+    menu: {
+      group: 'domestic', title: '订单管理', icon: List, order: 10,
+      anyPermission: ['domestic:read', 'domestic:write', 'domestic:admin'],
+    },
+  },
+  {
+    path: '/domestic/orders/create',
+    name: 'DomesticOrderCreate',
+    component: () => import('@/views/domestic/DomesticOrderCreate.vue'),
+    title: '内贸下单',
+    permission: 'domestic:write',
+    menu: {
+      group: 'domestic', title: '新建订单', icon: EditPen, order: 11,
+      permission: 'domestic:write',
+    },
+  },
+  {
+    path: '/domestic/products',
+    name: 'DomesticProducts',
+    component: () => import('@/views/domestic/DomesticProducts.vue'),
+    title: '内贸产品与工艺',
+    anyPermission: ['domestic:read', 'domestic:write', 'domestic:admin'],
+    menu: {
+      group: 'domestic', title: '产品与工艺', icon: Goods, order: 12,
+      anyPermission: ['domestic:read', 'domestic:write', 'domestic:admin'],
+    },
+  },
+  {
+    path: '/domestic/customers',
+    name: 'DomesticCustomers',
+    component: () => import('@/views/domestic/DomesticCustomers.vue'),
+    title: '内贸客户',
+    anyPermission: ['domestic:read', 'domestic:write', 'domestic:admin'],
+    menu: {
+      group: 'domestic', title: '客户管理', icon: OfficeBuilding, order: 13,
+      anyPermission: ['domestic:read', 'domestic:write', 'domestic:admin'],
+    },
+  },
+  // 流转卡 / 二维码标签没有独立路由：它们是订单详情里的打印弹框
+  // （views/domestic/print/DomesticPrintDialog.vue），内容渲染在 iframe 的
+  // 独立文档里——打印只出那份文档，用户也不用离开订单页。
 
   // ── 素材管理 ───────────────────────────────────────────
   {

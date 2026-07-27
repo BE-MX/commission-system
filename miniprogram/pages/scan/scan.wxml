@@ -45,7 +45,11 @@
       </view>
     </view>
     <text class="scan-hint">点击扫描工艺流转卡</text>
-
+    <!-- 回模块选择页；内贸卡即使在这里扫也会按 ARK-D 前缀自动分流过去 -->
+    <view class="switch-entry" bindtap="onSwitchModuleTap">
+      <text class="switch-entry-text">切换模块</text>
+      <text class="switch-entry-arrow">›</text>
+    </view>
   </view>
 
   <!-- 今日报工记录 -->

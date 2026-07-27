@@ -7,6 +7,15 @@ page {
   --brand-yellow-d: #D4B620;
   --brand-yellow-l: #FDF0A0;
   --brand-yellow-bg: #FFFBE8;
+
+  /* 内贸品牌绿：取自内贸 LOGO 孔雀主色（#007348 占 45%，亮部 #0AA66F）。
+     内外贸的布局与动效一律保持一致，只有这组颜色不同。 */
+  --brand-green: #007348;
+  --brand-green-l: #0AA66F;
+  --brand-green-d: #00603C;
+  --brand-green-bg: #E8F5EF;
+  --brand-green-ink: #005434;   /* 浅绿底上的文字色，保证对比度 */
+
   --gray-bg: #F2F3F5;
   --card-bg: #FFFFFF;
   --text-main: #1A1A1A;

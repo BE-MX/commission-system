@@ -90,3 +90,18 @@ class HistoryRecord(BaseModel):
 class HistoryResponse(BaseModel):
     today_count: int = 0
     records: list[HistoryRecord] = []
+
+
+# ── 内贸报工（按数量流转，与上面的外贸整行流转不是一套）──────
+
+class DomesticSubmitRequest(BaseModel):
+    item_id: int = Field(..., description="内贸订单明细 ID")
+    progress_id: int = Field(..., description="工序进度行 ID")
+    qty: int = Field(..., gt=0, description="本次报工数量；整批就填可报全量，拆批填小于它的数")
+    request_id: Optional[str] = Field(
+        None, max_length=64, description="幂等键：弱网重试用同一个值，不会重复累加",
+    )
+
+
+class DomesticRevokeRequest(BaseModel):
+    log_id: int = Field(..., description="要撤销的报工流水 ID")

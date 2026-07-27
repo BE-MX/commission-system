@@ -32,6 +32,7 @@ from app.aftersales.router import router as aftersales_router
 from app.mcp.token_admin import router as mcp_token_router
 from app.pm.router import router as pm_router
 from app.dashboard.router import router as dashboard_router
+from app.domestic.router import router as domestic_router
 
 
 def register_routers(app: FastAPI) -> None:
@@ -68,3 +69,4 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(mcp_token_router, prefix="/api/mcp", tags=["MCP 网关 token 管理"])
     app.include_router(pm_router, prefix="/api/pm", tags=["PM 项目资料协作站"])
     app.include_router(dashboard_router, prefix="/api/dashboard", tags=["工作台配置"])
+    app.include_router(domestic_router, prefix="/api/domestic", tags=["内贸订单"])

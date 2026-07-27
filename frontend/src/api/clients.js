@@ -27,3 +27,4 @@ export const adminClient = createApiClient({ baseURL: '/api/auth', timeout: 3000
 export const publicStockClient = createApiClient({ baseURL: '/api/public/stock', timeout: 30000 }) // 对外库存查询（无登录，key 门禁）
 export const trainingClient = createApiClient({ baseURL: '/api/training', timeout: 30000 }) // 培训速递（AI 提炼单独放长超时）
 export const dashboardClient = createApiClient({ baseURL: '/api/dashboard', timeout: 15000 }) // 工作台布局配置
+export const domesticClient = createApiClient({ baseURL: '/api/domestic', timeout: 60000 }) // 内贸订单（图片上传放宽超时）

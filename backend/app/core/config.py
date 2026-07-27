@@ -96,6 +96,9 @@ class Settings(BaseSettings):
     TRAINING_STORAGE_ROOT: str = "D:\\WORKSOURCE\\training"
     TRAINING_DETAIL_BASE_URL: str = "https://leshine.work/training/digests"
 
+    # ── 内贸订单（明细图文要求的参考图）────────────────────
+    DOMESTIC_STORAGE_ROOT: str = "D:\\WORKSOURCE\\domestic"
+
     # ── 色彩趋势 ─────────────────────────────────────────
     XPOZ_TARGET_ACCOUNTS: str = ""  # 逗号分隔的目标账号
 

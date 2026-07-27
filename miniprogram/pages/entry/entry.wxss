@@ -1,0 +1,166 @@
+/* pages/entry/entry.wxss — 模块选择
+   两张卡的结构、尺寸、动效完全一致，只有配色不同：
+   外贸 = 品牌黑金，内贸 = 品牌绿（取自内贸 LOGO 孔雀主色 #007348 / #0AA66F）。 */
+
+.entry-page {
+  min-height: 100vh;
+  background: var(--gray-bg);
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 40rpx;
+}
+
+/* ── 顶部 ── */
+.topbar {
+  padding: 0 40rpx 36rpx;
+  background: var(--brand-black);
+}
+
+.topbar-inner {
+  padding-top: 28rpx;
+  display: flex;
+  align-items: baseline;
+  gap: 12rpx;
+}
+
+.greeting {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 28rpx;
+}
+
+.user-name {
+  color: #FFFFFF;
+  font-size: 40rpx;
+  font-weight: 600;
+}
+
+.topbar-sub {
+  display: block;
+  margin-top: 10rpx;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 26rpx;
+}
+
+/* ── 卡片 ── */
+.cards {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 28rpx;
+  /* 上下留白压到 24rpx：320 宽小屏上 40rpx 会让两张大卡挤出一屏 */
+  padding: 24rpx 32rpx;
+}
+
+.card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 32rpx;
+  padding: 48rpx 44rpx;
+  min-height: 420rpx;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+
+  /* 入场：位移 + 淡入，不从 scale(0) 出现 */
+  opacity: 0;
+  transform: translateY(24rpx);
+  transition: opacity 320ms cubic-bezier(0.23, 1, 0.32, 1),
+              transform 320ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.card.is-in {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* 两张卡错开 70ms 入场，形成级联而不是同时砸下来 */
+.card--domestic { transition-delay: 70ms; }
+
+/* 按压反馈：只动 transform，160ms 内回弹 */
+.card--press {
+  transform: translateY(0) scale(0.97);
+  transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+/* 右上角柔光，给卡片一点厚度，不抢主体 */
+.card-glow {
+  position: absolute;
+  top: -120rpx;
+  right: -100rpx;
+  width: 320rpx;
+  height: 320rpx;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+/* 统一的 LOGO 容纳区：两个 LOGO 比例差很大（金色是 2.8:1 横版字标，
+   绿色是 1.18:1 方形图形块），等高会让绿色小成一个点。
+   给同一个 200×96 的框、各自 aspectFit——字标撑满宽、图形块撑满高，
+   视觉重量才对得上。 */
+.card-logo {
+  width: 200rpx;
+  height: 96rpx;
+  margin-bottom: 32rpx;
+}
+
+.card-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.card-title {
+  font-size: 46rpx;
+  font-weight: 700;
+  letter-spacing: 2rpx;
+}
+
+.card-arrow {
+  font-size: 40rpx;
+  opacity: 0.75;
+}
+
+.card-sub {
+  margin-top: 12rpx;
+  font-size: 26rpx;
+}
+
+/* ── 外贸：品牌黑金 ── */
+.card--export {
+  background: linear-gradient(145deg, #262320 0%, #16150F 100%);
+  box-shadow: 0 12rpx 32rpx rgba(0, 0, 0, 0.22);
+}
+
+.card--export .card-glow {
+  background: radial-gradient(circle, rgba(245, 213, 71, 0.22) 0%, rgba(245, 213, 71, 0) 70%);
+}
+
+.card--export .card-title { color: var(--brand-yellow); }
+.card--export .card-arrow { color: var(--brand-yellow); }
+.card--export .card-sub { color: rgba(255, 255, 255, 0.55); }
+
+/* ── 内贸：品牌绿（LOGO 主色 #007348，亮部 #0AA66F）── */
+.card--domestic {
+  background: linear-gradient(145deg, #0A8A5B 0%, #00603C 100%);
+  box-shadow: 0 12rpx 32rpx rgba(0, 96, 60, 0.26);
+}
+
+.card--domestic .card-glow {
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.20) 0%, rgba(255, 255, 255, 0) 70%);
+}
+
+.card--domestic .card-title { color: #FFFFFF; }
+.card--domestic .card-arrow { color: #FFFFFF; }
+.card--domestic .card-sub { color: rgba(255, 255, 255, 0.72); }
+
+/* ── 底部 ── */
+.footer {
+  text-align: center;
+  padding: 12rpx 0 20rpx;
+}
+
+.logout {
+  font-size: 26rpx;
+  color: var(--text-muted);
+}

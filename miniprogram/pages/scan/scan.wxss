@@ -241,6 +241,28 @@
   letter-spacing: 0.5px;
 }
 
+/* 回模块选择页 */
+.switch-entry {
+  margin-top: 20rpx;
+  padding: 12rpx 28rpx;
+  border-radius: 32rpx;
+  border: 2rpx solid var(--border);
+  background: var(--card-bg);
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+}
+
+.switch-entry-text {
+  font-size: 26rpx;
+  color: var(--text-sub);
+}
+
+.switch-entry-arrow {
+  font-size: 26rpx;
+  color: var(--text-muted);
+}
+
 /* ── 今日记录 ── */
 .section-header {
   display: flex;

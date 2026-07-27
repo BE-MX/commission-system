@@ -165,3 +165,15 @@
 ## 工作台配置（迁移 080，2026-07-25）
 
 - `ark_dashboard_preference`：每用户一行的工作台布局配置。`user_id`（INT UNSIGNED FK→ark_users.id ON DELETE CASCADE，UNIQUE）+ `prefs`（JSON：`{version, metrics:{hidden,order}, actions:{hidden,order}}`）+ 时间戳。卡片 key 的合法性不在库层校验——真相源是前端 `views/dashboard/cards.js` 注册表，未知 key 前端忽略（注册表增删卡片对存量配置向前兼容）。
+
+## 内贸订单（迁移 081，报工幂等键 082，2026-07-27）
+
+与外贸生产订单/报工**平行**的一套表。不复用 `order_product_process_progress`：那张表 FK 硬绑 `ark_production_order_items` 且是整行 0/1 流转，内贸要按数量拆批，结构不同；平行建表换取外贸链路零改动。共用的是 `process` / `process_route` / `process_route_step` / `user_process_binding`（工序、路线、工人分工内外贸同一套）。
+
+- `ark_domestic_customers`：内贸客户，`shop_name` UNIQUE（店名是业务主标识，下单可就地新建）。有订单的客户禁删只停用。
+- `ark_domestic_products`：下单选属性后 find-or-create 沉淀，`attrs_key`（`type|craft|net_color|size|length|density`，中文直接入 key）UNIQUE 即产品身份；`route_id` 按工艺映射自动绑定，可人工改绑。属性值域在 `sys_dict` 的 `domestic_*` type（081 种初值，之后归用户管；刻意不做 bootstrap upsert，否则删掉的选项每次重启复活）。
+- `ark_domestic_craft_routes`：`(product_type, craft)` UNIQUE → `route_id`。这张表是「下单人零操作」的支点：配一次，之后同工艺的新产品自动带路线。
+- `ark_domestic_orders`：`domestic_no`（系统号 `DO{YYYYMMDD}-{NNN}` UNIQUE）+ `order_no`（客户订单号，格式不统一只存不约束）+ 客户 + 普货/特单 + `status`（1生产中/2已完工/3已发货/4已终止）+ 软删。
+- `ark_domestic_order_items`：一单多品，每行独立走路线。含发型/颜色/发型要求/备注四组「文字 + 图片路径 JSON」、`route_id` 下单时快照（后改映射不影响在制单）、`ship_time` + `ship_weight`（发货登记在**明细级**——克重是单件属性）。
+- `ark_domestic_item_progress`：**按数量累计，不是 0/1**。`(item_id, step_order)` UNIQUE，`completed_qty` 是本道累计完成数。全系统唯一口径：`可报数量(第N道) = completed_qty(第N-1道) − completed_qty(第N道)`，首道上游 = `order_qty`。刻意不存冗余的「待做数量」字段——推导值永远自洽。`step_order` 由 `init_item_progress` 按位置从 1 重排，不沿用路线表编号（跳号会让相邻序号不等于上下游）。
+- `ark_domestic_report_logs`：报工流水（外贸侧没有这张表，撤销即抹掉不可追溯）。撤销是 `revoked=1` 而非删行；`request_id` UNIQUE 是客户端幂等键（弱网重试不重复累加，NULL 不参与唯一性判定）。计件统计口径 = `revoked=0` 的 `report_qty` 求和。

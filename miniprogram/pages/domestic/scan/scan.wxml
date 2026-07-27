@@ -1,0 +1,115 @@
+<!-- pages/domestic/scan/scan.wxml — 内贸扫码报工 -->
+<view class="dom-page">
+  <view class="brand-bar" style="padding-top: {{statusBarHeight}}px">
+    <view class="brand-bar-inner">
+      <!-- tabBar 页没有返回栈，用「切换模块」回落地页（与外贸页同一套做法） -->
+      <text class="back-link" bindtap="onSwitchModuleTap">切换模块</text>
+      <text class="brand-title">内贸报工</text>
+      <text class="brand-right" bindtap="onOrdersTap">订单进度</text>
+    </view>
+  </view>
+
+  <view class="user-bar">
+    <view class="user-info">
+      <text class="user-name">{{userName}}</text>
+      <text class="user-count">今日 {{todayCount}} 次 · {{todayQty}} 件</text>
+    </view>
+  </view>
+
+  <!-- 扫码区（未进入确认时显示） -->
+  <view class="scan-center" wx:if="{{state !== 'showing-confirm' && state !== 'submitting'}}">
+    <view class="scan-btn" bindtap="onScanTap">
+      <text class="scan-btn-text">扫 码</text>
+    </view>
+    <text class="scan-hint">扫内贸流转卡，报工可拆批</text>
+  </view>
+
+  <!-- 报工确认区 -->
+  <view class="confirm-card" wx:if="{{state === 'showing-confirm' || state === 'submitting'}}">
+    <view class="product-head">
+      <text class="product-name">{{scanned.product_name}}</text>
+      <text class="product-sub">{{scanned.customer_name}} · 单号 {{scanned.order_no}}</text>
+    </view>
+
+    <view class="step-row">
+      <text class="step-label">本道工序</text>
+      <text class="step-value">{{nextStep.process_name}}</text>
+      <text class="step-order">第 {{nextStep.step_order}} 道</text>
+    </view>
+
+    <view class="qty-block">
+      <view class="qty-head">
+        <text class="qty-label">报工数量</text>
+        <text class="qty-max">最多 {{maxQty}} 件（下单 {{scanned.order_qty}} 件）</text>
+      </view>
+      <view class="qty-control">
+        <view class="qty-btn" bindtap="onQtyMinus">−</view>
+        <input class="qty-input" type="number" value="{{reportQty}}" bindinput="onQtyInput" bindblur="onQtyBlur" />
+        <view class="qty-btn" bindtap="onQtyPlus">+</view>
+        <view class="qty-all" bindtap="onQtyAll">全部</view>
+      </view>
+      <text class="qty-tip" wx:if="{{reportQty < maxQty}}">拆批：剩下 {{maxQty - reportQty}} 件留在上一道，之后扫同一张码继续报</text>
+    </view>
+
+    <!-- 图文要求：车间照着做活的依据 -->
+    <view class="req-block" wx:if="{{scanned.hairstyle || scanned.color || scanned.style_requirement || scanned.remark}}">
+      <view class="req-row" wx:if="{{scanned.hairstyle}}"><text class="req-label">发型</text><text class="req-text">{{scanned.hairstyle}}</text></view>
+      <view class="req-row" wx:if="{{scanned.color}}"><text class="req-label">颜色</text><text class="req-text">{{scanned.color}}</text></view>
+      <view class="req-row" wx:if="{{scanned.style_requirement}}"><text class="req-label">要求</text><text class="req-text">{{scanned.style_requirement}}</text></view>
+      <view class="req-row" wx:if="{{scanned.remark}}"><text class="req-label">备注</text><text class="req-text">{{scanned.remark}}</text></view>
+    </view>
+
+    <view class="img-grid" wx:if="{{images.length > 0}}">
+      <image
+        wx:for="{{images}}" wx:key="*this" src="{{item}}" mode="aspectFill"
+        class="req-img" data-index="{{index}}" bindtap="onPreviewImage"
+      />
+    </view>
+
+    <view class="steps-block">
+      <view class="steps-title">全部工序</view>
+      <view class="step-line" wx:for="{{scanned.steps}}" wx:key="progress_id">
+        <text class="line-order">{{item.step_order}}</text>
+        <text class="line-name">{{item.process_name}}</text>
+        <text class="line-qty">{{item.completed_qty}} / {{item.order_qty}}</text>
+      </view>
+    </view>
+
+    <view class="confirm-actions">
+      <view class="btn-ghost" bindtap="onCancelTap">取消</view>
+      <view class="btn-primary {{state === 'submitting' ? 'is-disabled' : ''}}" bindtap="onConfirmTap">
+        {{state === 'submitting' ? '提交中…' : '确认报 ' + reportQty + ' 件'}}
+      </view>
+    </view>
+  </view>
+
+  <!-- 今日记录 -->
+  <view class="section-header" wx:if="{{state !== 'showing-confirm' && state !== 'submitting'}}">
+    <text class="section-title">今日内贸报工</text>
+  </view>
+  <view class="record-list" wx:if="{{state !== 'showing-confirm' && state !== 'submitting'}}">
+    <view class="record-item {{item.revoked ? 'is-revoked' : ''}}" wx:for="{{todayRecords}}" wx:key="log_id">
+      <view class="record-main">
+        <text class="record-product">{{item.product_name}}</text>
+        <text class="record-meta">{{item.process_name}} · {{item.report_qty}} 件 · {{item.reported_at}}</text>
+      </view>
+      <text class="record-revoked" wx:if="{{item.revoked}}">已撤销</text>
+      <view class="record-action" wx:else data-log-id="{{item.log_id}}" bindtap="onRevokeTap">撤销</view>
+    </view>
+    <view class="record-empty" wx:if="{{todayRecords.length === 0}}">今天还没有内贸报工记录</view>
+  </view>
+
+  <!-- 结果提示 -->
+  <view class="toast-mask" wx:if="{{successVisible}}">
+    <view class="toast-card toast-success">
+      <text class="toast-title">报工成功</text>
+      <text class="toast-text">{{successText}}</text>
+    </view>
+  </view>
+  <view class="toast-mask" wx:if="{{errorVisible}}" bindtap="onErrorClose">
+    <view class="toast-card toast-error">
+      <text class="toast-title">{{errorTitle}}</text>
+      <text class="toast-text">{{errorDetail}}</text>
+    </view>
+  </view>
+</view>

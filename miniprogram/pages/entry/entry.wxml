@@ -1,0 +1,37 @@
+<!-- pages/entry/entry.wxml — 登录后的模块选择 -->
+<view class="entry-page">
+  <view class="topbar" style="padding-top: {{statusBarHeight}}px">
+    <view class="topbar-inner">
+      <text class="greeting">{{greeting}}</text>
+      <text class="user-name">{{userName}}</text>
+    </view>
+    <text class="topbar-sub">选择今天要做的报工</text>
+  </view>
+
+  <view class="cards">
+    <!-- 两张卡结构完全一致，只有配色不同 -->
+    <view class="card card--export {{entered ? 'is-in' : ''}}" hover-class="card--press" hover-stay-time="80" bindtap="onExportTap">
+      <view class="card-glow" />
+      <image class="card-logo" src="/assets/logo-gold.png" mode="aspectFit" />
+      <view class="card-title-row">
+        <text class="card-title">外贸报工</text>
+        <text class="card-arrow">→</text>
+      </view>
+      <text class="card-sub">生产订单 · 整单流转</text>
+    </view>
+
+    <view class="card card--domestic {{entered ? 'is-in' : ''}}" hover-class="card--press" hover-stay-time="80" bindtap="onDomesticTap">
+      <view class="card-glow" />
+      <image class="card-logo" src="/assets/logo-green.png" mode="aspectFit" />
+      <view class="card-title-row">
+        <text class="card-title">内贸报工</text>
+        <text class="card-arrow">→</text>
+      </view>
+      <text class="card-sub">内贸订单 · 按数量拆批</text>
+    </view>
+  </view>
+
+  <view class="footer">
+    <text class="logout" bindtap="onLogoutTap">退出登录</text>
+  </view>
+</view>

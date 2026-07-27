@@ -281,6 +281,20 @@ Page({
 
   _handleScanResult: function (scan) {
     var raw = scan.result || ''
+
+    // 内贸流转卡（ARK-D）自动切到内贸报工：工人从哪个入口扫都不会扫错，零思考。
+    // switchTab 不能带 query，payload 先存 globalData，内贸页 onShow 取走
+    var domestic = raw.match(/^ARK-D:(\d+):([a-f0-9]+)$/)
+    if (domestic) {
+      this.setData({ state: 'idle' })
+      app.globalData.pendingDomesticScan = {
+        itemId: parseInt(domestic[1]),
+        sign: domestic[2]
+      }
+      wx.switchTab({ url: '/pages/domestic/scan/scan' })
+      return
+    }
+
     var match = raw.match(/^ARK-P:(\d+):([a-f0-9]+)$/)
     if (!match) {
       this._showError('二维码无效', '请扫描正确的工艺流转卡二维码')
@@ -436,6 +450,11 @@ Page({
 
   onAllRecordsTap: function () {
     wx.navigateTo({ url: '/pages/history/history' })
+  },
+
+  onSwitchModuleTap: function () {
+    // scan 是 tabBar 页，页面栈是空的，只能 reLaunch 回选择页
+    wx.reLaunch({ url: '/pages/entry/entry' })
   },
 
   // ─── 错误处理 ──────────────────────────────
