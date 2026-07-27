@@ -100,6 +100,7 @@
             <span class="item-current">当前：{{ item.current_process }}</span>
             <div class="item-actions">
               <GlassButton variant="link" left-icon="Printer" @click="openPrintCard(item)">流转卡</GlassButton>
+              <GlassButton variant="link" left-icon="Grid" @click="openQrLabel(item)">二维码</GlassButton>
               <GlassButton variant="link" left-icon="Tickets" @click="openLogs(item)">报工流水</GlassButton>
               <GlassButton v-if="!item.route_id" v-permission="'domestic:write'" variant="link" left-icon="Connection" @click="openAttachRoute(item)">配工艺路线</GlassButton>
               <GlassButton v-if="item.status === 1" v-permission="'domestic:write'" variant="link" left-icon="Van" @click="openShip(item)">登记发货</GlassButton>
@@ -249,7 +250,7 @@ const {
   reportDialog, openReport, confirmReport,
   logDialog, openLogs, handleRevokeReport,
   attachDialog, openAttachRoute, confirmAttachRoute,
-  handleTerminate, handleDelete, openPrintCard, goCreate,
+  handleTerminate, handleDelete, openPrintCard, openQrLabel, goCreate,
 } = useDomesticOrders()
 </script>
 

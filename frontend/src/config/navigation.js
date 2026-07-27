@@ -631,6 +631,14 @@ export const NAV_ENTRIES = [
     anyPermission: ['domestic:read', 'domestic:write', 'domestic:admin'],
     hideInMenu: true,
   },
+  {
+    path: '/domestic/qr-label/:id',
+    name: 'DomesticQrLabel',
+    component: () => import('@/views/domestic/DomesticQrLabel.vue'),
+    title: '内贸二维码标签打印',
+    anyPermission: ['domestic:read', 'domestic:write', 'domestic:admin'],
+    hideInMenu: true,
+  },
 
   // ── 素材管理 ───────────────────────────────────────────
   {

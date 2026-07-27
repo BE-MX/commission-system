@@ -203,6 +203,10 @@ export function useDomesticOrders() {
     router.push({ name: 'DomesticPrintCard', params: { id: item.id } })
   }
 
+  function openQrLabel(item) {
+    router.push({ name: 'DomesticQrLabel', params: { id: item.id } })
+  }
+
   function goCreate() {
     router.push({ name: 'DomesticOrderCreate' })
   }
@@ -219,6 +223,6 @@ export function useDomesticOrders() {
     reportDialog, openReport, confirmReport,
     logDialog, openLogs, handleRevokeReport,
     attachDialog, openAttachRoute, confirmAttachRoute,
-    handleTerminate, handleDelete, openPrintCard, goCreate,
+    handleTerminate, handleDelete, openPrintCard, openQrLabel, goCreate,
   }
 }
