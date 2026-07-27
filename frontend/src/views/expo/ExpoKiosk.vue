@@ -58,7 +58,7 @@
 </template>
 
 <script setup>
-import { computed, provide, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 import { useTryOnFlow } from './composables/useTryOnFlow'
 import AttractScreen from './kiosk/AttractScreen.vue'
 import RegisterScreen from './kiosk/RegisterScreen.vue'
@@ -71,6 +71,24 @@ import SalesPanel from './kiosk/SalesPanel.vue'
 
 const flow = useTryOnFlow()
 provide('tryonFlow', flow)
+
+// ── 刘海屏安全区（2026-07-27）──
+// APK 的 themes.xml 声明 windowLayoutInDisplayCutoutMode=shortEdges + 全屏沉浸，页面会被主动
+// 画到刘海/状态栏底下。没有 viewport-fit=cover 时 WebView 不暴露 env(safe-area-inset-*)，
+// 52px 高的顶栏正好整条落进系统手势区——「上一步 / 主页」看得见点不着（手机实测）。
+// 只在本页改 meta、离开还原：全站其余页面（含 PC 与 /m/）的视口行为一个字不动。
+let prevViewport = null
+const viewportMeta = () => document.querySelector('meta[name="viewport"]')
+onMounted(() => {
+  const meta = viewportMeta()
+  if (!meta || meta.content.includes('viewport-fit')) return
+  prevViewport = meta.content
+  meta.content = `${prevViewport}, viewport-fit=cover`
+})
+onBeforeUnmount(() => {
+  const meta = viewportMeta()
+  if (meta && prevViewport !== null) meta.content = prevViewport
+})
 
 // 金尘粒子：挂载时一次性生成随机轨迹；负延迟让首屏就有粒子在途，不用等一个周期
 const dust = Array.from({ length: 18 }, () => ({
@@ -136,6 +154,11 @@ function brandClick() {
   display: flex;
   flex-direction: column;
   height: 100dvh;
+  /* 安全区一次性收口：全局 box-sizing:border-box 让 padding 计进 100dvh，背景仍铺满刘海（不留白边），
+     而 .xk-head/.xk-stage 以及 absolute inset:0 的装饰镜框、错误条都以 padding box 为准，自动避让 */
+  padding:
+    env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) env(safe-area-inset-left);
   background:
     radial-gradient(70vw 40vh at 70% -10%, rgba(232, 196, 121, 0.08), transparent 60%),
     radial-gradient(50vw 30vh at 10% 110%, rgba(232, 196, 121, 0.05), transparent 60%),
@@ -161,6 +184,18 @@ function brandClick() {
 .xk-brand { cursor: default; white-space: nowrap; }
 .xk-head-side { display: flex; align-items: center; gap: 14px; min-width: 0; }
 .xk-step { white-space: nowrap; }
+
+/* ── 手机竖屏（≤560px）：顶栏保命断点 ──
+   390px 屏上顶栏内容需 ~410px、可用仅 346px。两个 nowrap 文本被 flex 压缩后没有 overflow 收口，
+   直接溢出各自盒子互相覆盖。取舍是砍掉步骤标签：每一屏都有大标题说明当前在哪一步，
+   而导航按钮点不着是硬故障——装饰性信息给功能性按钮让路。*/
+@media (max-width: 560px) {
+  .xk-head { height: 46px; padding: 0 12px; }
+  .xk-step { display: none; }
+  .xk-head-side { gap: 10px; }
+  .xk-brand { min-width: 0; overflow: hidden; text-overflow: ellipsis; letter-spacing: 0.14em; }
+  .xk-nav { height: 36px; padding: 0 12px; letter-spacing: 0.08em; }
+}
 .xk-nav {
   flex: none; height: 34px; padding: 0 14px; border-radius: 18px; cursor: pointer;
   border: 1px solid var(--xk-gold-line); background: rgba(232, 196, 121, 0.04);
@@ -175,8 +210,12 @@ function brandClick() {
 
 /* ── 返回主页确认弹层（z 75：压过镜框 60 与错误条 70，低于灯箱 80） ── */
 .xk-confirm {
+  /* fixed 相对视口，不吃 .xk-root 的安全区 padding，得自己收口 */
   position: fixed; inset: 0; z-index: 75;
   display: flex; align-items: center; justify-content: center;
+  padding:
+    calc(16px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right))
+    calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
   background: rgba(6, 5, 3, 0.72);
   -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
 }
@@ -207,7 +246,7 @@ function brandClick() {
 .xk-error {
   position: absolute;
   left: 50%;
-  bottom: 24px;
+  bottom: calc(24px + env(safe-area-inset-bottom)); /* 同上：绝对定位不吃父级安全区 padding */
   z-index: 70; /* 压在魔法镜框装饰层之上 */
   transform: translateX(-50%);
   background: rgba(224, 144, 107, 0.15);
@@ -220,7 +259,14 @@ function brandClick() {
 }
 
 /* ── 魔法镜框（装饰层，z-index 60；xk-error 抬到 70 保证可读） ── */
-.xk-mirror { position: absolute; inset: 0; pointer-events: none; z-index: 60; overflow: hidden; }
+/* 绝对定位以父级 padding box 的「边界」为基准，.xk-root 的安全区 padding 推不动它——
+   四边得自己写 env()，否则金环顶部被刘海啃掉一段 */
+.xk-mirror {
+  position: absolute;
+  top: env(safe-area-inset-top); right: env(safe-area-inset-right);
+  bottom: env(safe-area-inset-bottom); left: env(safe-area-inset-left);
+  pointer-events: none; z-index: 60; overflow: hidden;
+}
 /* 流光金环：conic 高光沿边框匀速巡游（constant motion 用 linear）；
    @property 不支持的旧内核不插值 → 退化为静态金环，不报错 */
 @property --xk-sweep {
