@@ -93,6 +93,14 @@
 - ✅ 素材标签体系 v2 专项（`test_asset_taxonomy.py`：维度可见性口径 / 按维度合并语义 / 单选校验 / folder_upload 子集合并 / 色系派生规则）——2026-07-22
 - **总计 532 tests（2026-07-13 全绿）→ 753 tests（2026-07-18 全绿，培训速递/PM 站/发票配件合入后；PM display_name 断言已随 seed 改名修复为从 MEMBERS_SEED 派生）→ 777 tests（2026-07-19 全绿，PM 版本评论 + expo 夏季衣橱合入后）→ 786 tests（2026-07-21 全绿，培训附件类型/备注合入后）→ 825 tests（2026-07-24 实测全绿，素材标签体系 v2 + 发票粘贴导入/推单修复合入后）→ **827 backend tests + 70 frontend node tests（2026-07-24 晚，多代理分支收拢后全绿）**：修了 origin/main 上 2 个陈旧断言（`test_customer_contact_defaults_latest_snapshot` 缺 last_order_date 键 / `invoiceAccessories` 断言了被有意移除的"请求开始清空选项"旧行为，非逻辑 bug）；前端 node 测试跑法 `cd frontend && node --test tests/<file>.test.mjs`（7 个 invoice/aftersales 测试文件）**
 
+23. ✅ **内贸订单管理**（2026-07-27 合入 main 并已上生产；需求稿 docs/requirements/2026-07-27-domestic-orders.md）：
+    - 与外贸「生产订单 + 生产报工」**平行的一套**，不共用订单/产品/进度表——外贸报工是整行 0/1 流转，内贸要按数量拆批，进度表结构不同；只共用 `process` / `process_route` / `process_route_step` / `user_process_binding` 四类全局资产
+    - 主站：下单（选属性 → find-or-create 产品 → 按「工艺→路线」映射自动配路线）、订单跟踪（逐明细逐工序数量进度）、产品与工艺映射、客户管理、流转卡与 30×20mm 二维码标签打印
+    - 小程序：登录后落在模块选择页（外贸报工 / 内贸报工 / 订单速查），内贸报工并入 tabBar 第 2 项；扫码按数量报工可拆批，报工流水可撤销
+    - 081/082 迁移，7 张表 + 报工幂等键；`domestic:read/write/admin` 权限
+    - **上线后仍需人工配置**：角色管理页分配 `domestic:*` 权限 → 「产品与工艺」页配好「工艺→路线」映射 → 给内贸工人绑工序。**不配映射的单能下但开不了工**
+
+
 ## 待办事项（优先级递减）
 
 ### 安全（2026-07-18 PM 上线对抗性审查发现，均为既有架构问题，非 PM 引入）

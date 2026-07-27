@@ -648,3 +648,23 @@ frontend/src/
 
 **本地预览（无需 MySQL/.env）**
 `python backend/scripts/pm_dev_server.py --port 8003`：SQLite 文件库 + 演示数据 + 托管 `frontend-pm/dist`；`/dev-enter?u=<username>` 开发专用免门牌写 localStorage 直进。前端开发：`cd frontend-pm && npm run dev`（:3100，代理 /api → PM_API_TARGET 或 localhost:8001）。
+
+## 内贸订单管理（domestic，2026-07-27）
+
+**与外贸的关系**：`app/domestic/` 是与「生产订单（app/stock）+ 生产报工（app/production）」**平行的一套**，订单/产品/客户/进度全部独立建表。不复用 `order_product_process_progress` 的原因：那张表 FK 硬绑 `ark_production_order_items` 且是整行 0/1 流转，没有数量字段；内贸要拆批必须改结构，动老表要牵动报工/看板/小程序/打印/重置工艺 5 处。共用的只有 `process` / `process_route` / `process_route_step` / `user_process_binding`。
+
+**数量口径（唯一定义在 `progress_service.py`）**：`可报数量(第N道) = completed_qty(第N-1道) − completed_qty(第N道)`，首道上游 = `order_qty`。不存冗余「待做数量」字段。拆批 = 报工时填个更小的数，剩余量停在上一道，之后扫**同一张卡**继续报。
+
+**二维码前缀**：内贸 `ARK-D:`，外贸 `ARK-P:`，共用 `QR_SIGN_SECRET` 签名。小程序两侧互扫会自动分流到对方模块。
+
+**属性值域**走 `sys_dict` 的 `domestic_*` type（081 种初值），内贸主管在「数据字典」页自助增删；**产品类型（头套/发片）与普货/特单不进字典**——它们驱动条件渲染和映射结构，加值必须改代码。
+
+**已踩坑（详见 .wolf/cerebrum.md 2026-07-27 条目）**：
+- MySQL 默认 RR 下普通 SELECT 读事务开头的快照，跨行的守恒校验必须 `with_for_update()`；裸 SQL 写 `FOR UPDATE` 会让 SQLite 测试库语法错误，一律走 ORM 的 `with_for_update()`。
+- 报工端点必须带 `request_id` 幂等键（弱网重试会重复计数，**拆批场景才是暴露面**——整批时余量校验会挡住）。
+- `db.rollback()` 不能用在下单链路中段的 find-or-create，会连订单和客户一起回滚；用 `db.begin_nested()`。
+- 二维码不含时效也不含订单状态，软删/终止订单必须在 scan 和 submit 两处都挡。
+- 进度行是报工流水的 FK 父（CASCADE），重建会连已撤销流水一起删；`attach_route` 的守卫看「有没有流水」而不是「数量是不是 0」。
+- 代报工必须传 `on_behalf_user_id`，否则件数记到操作电脑的人头上，计件工资算错人。
+
+**上线后的人工配置**（漏了单能下但开不了工）：角色管理页分配 `domestic:read/write/admin` → 「产品与工艺」页配「工艺→路线」映射 → 给内贸工人绑工序。

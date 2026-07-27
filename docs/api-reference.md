@@ -424,6 +424,7 @@
 - 产品与工艺映射：`GET /products`（分页 keyword/product_type/route_bound）、`PUT /products/{id}/route`（人工改绑，`domestic:admin`，只影响之后的新明细）、`GET /craft-routes`、`POST /craft-routes`（配「产品类型+工艺 → 路线」映射，`domestic:admin`；保存时自动回填此前因缺映射而未绑路线的同工艺产品）、`DELETE /craft-routes/{id}`。
 - 订单：`POST /orders`（下单：属性 find-or-create 产品 → 按映射自动配路线 → 展开工序进度；返回 `warnings` 列出不能开工的明细）、`GET /orders`（分页 keyword/status/customer_id/order_type/日期区间，含 `progress_pct`）、`GET /orders/{id}`（详情含逐明细逐工序数量进度）、`PUT /orders/{id}`、`POST /orders/{id}/status`（终止）、`DELETE /orders/{id}`（软删，`domestic:admin`；有未撤销报工记录时拒删，改用终止）。
 - 明细：`POST /orders/{id}/items`、`PUT /items/{id}`（改数量不得低于任一工序已完成数）、`DELETE /items/{id}`、`POST /items/{id}/attach-route`（给缺路线的在制明细补配路线；有报工流水时拒绝重建）、`POST /items/{id}/ship`（发货登记：时间 + 克重，要求全工序做齐且订单未终止）、`GET /items/{id}/progress`、`GET /items/{id}/print-card`（流转卡数据，含 `ARK-D:` 二维码 base64）。
+- 逐工序进度对象（订单详情 / `items/{id}/progress` / 速查共用同一形状）：`progress_id / step_order / process_name / order_qty / upstream_qty / completed_qty / reportable_qty / status / first_reported_at / last_reported_at`，外加 **`last_reported_by` + `last_report_qty`**（该工序最近一次**未撤销**报工的人与数量；无有效报工时为 null）。
 - 报工：`GET /reports`（流水查询）、`POST /reports`（主站代报工，**必须传 `on_behalf_user_id` 指明实际做活的工人**——件数记错人等于工资算错人；支持 `request_id` 幂等键）、`POST /reports/revoke`（撤销；只能撤自己的，`domestic:admin` 可撤他人）、`GET /reports/workload`（按人×工序汇总有效件数，计件统计基础，已撤销不计）。
 - 参考图：`POST /images`（只收 jpg/png/webp ≤20MB，落 `DOMESTIC_STORAGE_ROOT` 私有目录）、`GET /images/{path}`（鉴权 FileResponse，前端 axios blob 取图）。
 - 权限：`domestic:read` 查看 / `domestic:write` 下单编辑发货报工 / `domestic:admin` 工艺映射、产品改绑、删单、撤销他人报工。
@@ -432,6 +433,7 @@
 
 沿用 mini 既有例外：`get_current_mini_user` 鉴权、不接 RBAC、返回裸 dict、错误走 `HTTPException(detail={code,message})`。
 
+- `GET /lookup?code=` — **订单速查**：一个参数吃三种输入（二维码原文 `ARK-D:...` / 系统单号 `DO...` / 客户订单号），服务端自行分辨，直接返回订单详情（含逐明细逐工序进度）。查不到或二维码验签失败返回 404 `{code:"NOT_FOUND", message}`；已软删订单一律查不到。
 - `GET /scan/{item_id}?sign=` — 扫码取明细、图文要求、逐工序数量与「该报哪道、能报多少」；不能报时给 `block_reason`（`ITEM_NOT_FOUND`/`NO_ROUTE`/`ORDER_TERMINATED`/`ALL_DONE`/`NOT_ASSIGNED`/`NOTHING_REPORTABLE`）。
 - `POST /scan/submit` — `{item_id, progress_id, qty, request_id?}`，qty 即拆批数量；`request_id` 幂等重放返回首次结果（`replayed: true`）。
 - `POST /scan/revoke` — `{log_id}`；`GET /history` 今日、`GET /history/all` 分页。
