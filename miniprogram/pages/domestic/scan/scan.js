@@ -90,6 +90,18 @@ Page({
     return header
   },
 
+  // 底栏是 fixed 的 83px，且跨组件 z-index 不可比 —— 弹层期间必须把它收起来，
+  // 否则正好压住确认弹层底部的「取消 / 确认报 N 件」。
+  // 单一真相：任何遮罩/弹层在场就收起，避免逐个转场漏调。
+  _syncTabBar: function () {
+    var d = this.data
+    var covered = d.state === 'showing-confirm' || d.loading || d.submitting ||
+                  d.successVisible || d.errorVisible || d.revokeVisible
+    if (typeof this.getTabBar === 'function' && this.getTabBar()) {
+      this.getTabBar().setData({ hide: covered })
+    }
+  },
+
   // ─── 今日记录 ──────────────────────────────
 
   loadTodayHistory: function () {
@@ -140,6 +152,7 @@ Page({
   _loadItem: function (itemId, sign) {
     var self = this
     this.setData({ loading: true })
+    this._syncTabBar()
     wx.request({
       url: app.globalData.baseUrl + '/api/mini/domestic/scan/' + itemId + '?sign=' + sign,
       method: 'GET',
@@ -147,6 +160,7 @@ Page({
       timeout: 30000,
       success: function (res) {
         self.setData({ loading: false })
+        self._syncTabBar()
         if (res.statusCode === 401) { app.logout(); return }
         if (res.statusCode !== 200) {
           var detail = (res.data && res.data.detail) || {}
@@ -161,10 +175,12 @@ Page({
         }
         self._requestId = ''
         self.setData({ state: 'showing-confirm', scanned: data, nextStep: data.next_step })
+        self._syncTabBar()
         self._loadImages(data)
       },
       fail: function () {
         self.setData({ loading: false })
+        self._syncTabBar()
         self._error('网络异常', '请检查网络后重试')
       }
     })
@@ -204,6 +220,7 @@ Page({
   onCancelConfirm: function () {
     this._requestId = ''
     this.setData({ state: 'idle', scanned: null, nextStep: null, images: [] })
+    this._syncTabBar()
   },
 
   onInvalidQty: function (e) {
@@ -218,6 +235,7 @@ Page({
       this._requestId = Date.now() + '-' + Math.random().toString(36).slice(2, 12)
     }
     this.setData({ submitting: true })
+    this._syncTabBar()
     wx.request({
       url: app.globalData.baseUrl + '/api/mini/domestic/scan/submit',
       method: 'POST',
@@ -231,6 +249,7 @@ Page({
       },
       success: function (res) {
         self.setData({ submitting: false })
+        self._syncTabBar()
         if (res.statusCode === 401) { app.logout(); return }
         if (res.statusCode >= 400) {
           var detail = (res.data && res.data.detail) || {}
@@ -249,10 +268,11 @@ Page({
           successVisible: true, successTitle: title, successMessage: msg
         })
         self.loadTodayHistory()
-        setTimeout(function () { self.setData({ successVisible: false }) }, 2200)
+        setTimeout(function () { self.setData({ successVisible: false }); self._syncTabBar() }, 2200)
       },
       fail: function () {
         self.setData({ submitting: false })
+        self._syncTabBar()
         self._error('网络异常', '请检查网络后重试')
       }
     })
@@ -307,10 +327,12 @@ Page({
       revokeProcessName: e.currentTarget.dataset.processName,
       revokeIndex: e.currentTarget.dataset.index
     })
+    this._syncTabBar()
   },
 
   onRevokeCancel: function () {
     this.setData({ revokeVisible: false, revokeLogId: null, revokeProcessName: '' })
+    this._syncTabBar()
     this._closeSwipe()
   },
 
@@ -318,6 +340,7 @@ Page({
     var self = this
     var logId = this.data.revokeLogId
     this.setData({ revokeVisible: false, submitting: true })
+    this._syncTabBar()
     wx.request({
       url: app.globalData.baseUrl + '/api/mini/domestic/scan/revoke',
       method: 'POST',
@@ -326,6 +349,7 @@ Page({
       data: { log_id: logId },
       success: function (res) {
         self.setData({ submitting: false })
+        self._syncTabBar()
         if (res.statusCode === 401) { app.logout(); return }
         if (res.statusCode >= 400) {
           var detail = (res.data && res.data.detail) || {}
@@ -338,10 +362,11 @@ Page({
           successMessage: '该工序完成数量已相应减少'
         })
         self.loadTodayHistory()
-        setTimeout(function () { self.setData({ successVisible: false }) }, 1800)
+        setTimeout(function () { self.setData({ successVisible: false }); self._syncTabBar() }, 1800)
       },
       fail: function () {
         self.setData({ submitting: false })
+        self._syncTabBar()
         self._error('网络异常', '请检查网络后重试')
       }
     })
@@ -355,11 +380,12 @@ Page({
 
   _error: function (title, message) {
     this.setData({ errorVisible: true, errorTitle: title, errorMessage: message })
+    this._syncTabBar()
   },
 
   // catch 需要真实存在的方法名，catchtap="" 挡不住冒泡（点弹层内容会误关）
   noop: function () {},
 
-  onErrorTap: function () { this.setData({ errorVisible: false }) },
-  onSuccessTap: function () { this.setData({ successVisible: false }) }
+  onErrorTap: function () { this.setData({ errorVisible: false }); this._syncTabBar() },
+  onSuccessTap: function () { this.setData({ successVisible: false }); this._syncTabBar() }
 })
