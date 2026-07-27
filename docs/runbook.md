@@ -689,6 +689,21 @@ grep "job completed" logs\service.log | tail -20
   底部 Arial Bold 大写 slug、cap-height 32px、色 `(110,130,122)`。生成后必须用 `cv2.QRCodeDetector` 在
   984/400/250 三个尺度各解一次，全 PASS 才算数（250px 模拟远距离扫）。二维码存 `qrcodes/<slug>.png`。
 
+- **两台机的 nginx 配置目录 2026-07-27 做过一次清理**，改前完整备份都在各自的 `~/nginx-backup-20260727/`：
+  新加坡 `conf.d/` 里 9 个不以 `.conf` 结尾的历史备份（`*.bak-*` 与 `video.leshine.conf.pending`）移到
+  `~/nginx-retired-20260727/conf.d-backups/`——它们从不被 `include conf.d/*.conf` 加载，纯目录噪音，
+  搬走后 conf.d 只剩四份生效配置：`hair.leshine.conf` / `leshine.conf` / `pm.leshine.conf` / `video.leshine.conf`。
+  **备份配置一律不要留在 conf.d/ 里**（哪怕改了后缀），下次改配置把备份直接写到 `~/nginx-backup-<日期>/`。
+  遗留告警两条（既有、非本次引入，暂未处理）：`hair.leshine.conf:26` gzip_types 重复声明 text/html（无害，
+  nginx 默认就压 text/html）；`video.leshine.conf:15` 对 `0.0.0.0:443` 重定义 protocol options——同一 listen
+  地址只有第一个 server block 的 `ssl_protocols` 生效，video 站那份被忽略，需要时统一到一处再改。
+
+- **北京机 nginx 已摘掉 hair.leshine.cloud 的 server block（2026-07-27）**：`sites-enabled/hair-styles.conf` 软链删除、
+  `sites-available/hair-styles.conf` 移到 `~/nginx-retired-20260727/`（带 README 说明恢复步骤），reload 后
+  `/hair/` 兜底、方舟主站、kiosk 443 四条入口复验全 200。摘它是因为 .cloud 域名 2026-07-22 起再无流量，
+  留着会让人误以为该域名还在服务。**443 的 `default_server` 由 `ark-ip-ssl.conf` 显式持有，与本次摘除无关**；
+  改前全量备份在 `~/nginx-backup-20260727/`。证书 `hair.leshine.cloud_bundle.crt` 2026-10-19 到期不再续。
+
 - **展位平板专用 HTTPS 入口（2026-07-24 加）**：`https://154.8.205.162/expo/kiosk`。IP 申请不到 CA 证书，
   用 10 年自签证书 `/etc/nginx/ssl/expo-ip.{crt,key}`（CN=154.8.205.162，含 IP SAN，2036-07-21 到期），
   配在 `sites-available/ark-ip-ssl.conf` 的 `listen 443 ssl default_server` 块——只接管「无 SNI / IP 直连」，
