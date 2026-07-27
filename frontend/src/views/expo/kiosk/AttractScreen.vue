@@ -9,21 +9,29 @@
       <span class="en">L E S H I N E</span>
       莱 莎 · 健 康 假 发
     </div>
-    <h2 class="slogan">莱莎帮你<br />遇到<em>最喜欢的自己</em></h2>
-    <div class="line">AI 佩戴大模型 · 场景式智能引流</div>
+    <h2 class="slogan">门店 AI<br /><em>智能试戴</em>会员</h2>
+    <div class="line">一套门店引流与辅助成交工具</div>
     <button class="xk-btn cta" @click="$emit('start', 'tryon')">AI 试戴新发型</button>
     <button class="xk-btn ghost cta2" @click="$emit('start', 'scene')">
       已佩戴 · 拍场景大片
       <small>实拍生成商务 / 晚宴 / 旅行等场景效果</small>
     </button>
+    <!-- 会员政策：面向门店老板的次级入口，不与体验主 CTA 争视觉权重 -->
+    <button class="member-link" @click="memberOpen = true">会员权益与价格 ›</button>
+
+    <MembershipDialog :open="memberOpen" @close="memberOpen = false" />
   </div>
 </template>
 
 <script setup>
+import { ref } from 'vue'
 // 品牌 LOGO 黑金重制版：原绿色 LOGO 经去底 + 亮度映射到主题金色阶（脚本处理，源图见品牌物料）
 import logoGold from '@/assets/expo-logo-gold.png'
+import MembershipDialog from './MembershipDialog.vue'
 
 defineEmits(['start'])
+
+const memberOpen = ref(false)
 </script>
 
 <style scoped>
@@ -33,6 +41,10 @@ defineEmits(['start'])
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  /* safe center：小尺寸平板上内容超高时退化为顶对齐 + 滚动，
+     不会像纯 center 那样把顶部（LOGO/品牌名）裁掉；不支持的内核忽略此行回退到上面的 center */
+  justify-content: safe center;
+  overflow-y: auto;
   gap: 26px;
   padding-bottom: 4vh;
 }
@@ -102,5 +114,22 @@ defineEmits(['start'])
   font-size: 12px;
   letter-spacing: 0.12em;
   color: var(--xk-mut);
+}
+/* 次级入口：无边框纯文字，靠 cta2 收紧（负 margin 抵掉一半父级 gap），
+   仍留 44px 触摸高度保证平板可点 */
+.member-link {
+  margin-top: -14px;
+  padding: 12px 18px;
+  border: none;
+  background: none;
+  color: var(--xk-gold-dim);
+  font-size: 13px;
+  letter-spacing: 0.2em;
+  cursor: pointer;
+  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), color 160ms ease;
+}
+.member-link:active { transform: scale(0.97); color: var(--xk-gold-hi); }
+@media (hover: hover) and (pointer: fine) {
+  .member-link:hover { color: var(--xk-gold); }
 }
 </style>
