@@ -75,7 +75,7 @@ onBeforeUnmount(() => clearInterval(proofTimer))
 <style scoped>
 .analyzing { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 0 6vw 3vh; }
 .scan-stage {
-  position: relative; width: min(64vw, 420px); flex: 1; min-height: 0; max-height: 46vh;
+  position: relative; width: min(64vw, 420px); flex: 1; min-height: 0; max-height: 46dvh;
   border-radius: 24px; overflow: hidden;
   background: radial-gradient(60% 55% at 50% 45%, #2c251c, #15110c 75%);
 }

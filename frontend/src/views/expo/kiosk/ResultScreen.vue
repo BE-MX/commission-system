@@ -334,7 +334,7 @@ watch([shareUrl, qrEl], async () => {
 @keyframes halo-fade { 0%, 100% { opacity: 0.6; } 50% { opacity: 1; } }
 
 .stage {
-  position: relative; width: min(72vw, 460px); flex: 1; min-height: 0; max-height: 52vh;
+  position: relative; width: min(72vw, 460px); flex: 1; min-height: 0; max-height: 52dvh;
   border-radius: 24px; overflow: hidden; touch-action: none;
   background: radial-gradient(60% 55% at 50% 40%, #34291c, #17110c 78%);
 }
@@ -375,17 +375,23 @@ watch([shareUrl, qrEl], async () => {
 /* ── 完整图灯箱（z-index 80：压过魔法镜框装饰层 60 与错误条 70） ── */
 .lightbox {
   position: fixed; inset: 0; z-index: 80;
+  /* 安全区收口 + 图片改用相对本容器的百分比：92vh 在手机上会把图底推到刘海/手势条外 */
+  padding:
+    calc(12px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right))
+    calc(12px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left));
   background: rgba(12, 10, 8, 0.92);
   -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
   display: flex; align-items: center; justify-content: center;
 }
 .lb-img {
-  max-width: 94vw; max-height: 92vh; object-fit: contain;
+  max-width: 100%; max-height: 100%; object-fit: contain;
   border-radius: 12px;
   box-shadow: 0 12px 60px rgba(0, 0, 0, 0.6);
 }
 .lb-close {
-  position: absolute; top: 18px; right: 18px;
+  /* 绝对定位不吃 .lightbox 的安全区 padding，自己加——否则关闭键落进刘海/状态栏手势区点不着 */
+  position: absolute;
+  top: calc(18px + env(safe-area-inset-top)); right: calc(18px + env(safe-area-inset-right));
   width: 44px; height: 44px; border-radius: 50%; cursor: pointer;
   border: 1px solid var(--xk-gold-line); background: rgba(12, 10, 8, 0.7);
   color: var(--xk-gold); font-size: 15px;
@@ -394,7 +400,7 @@ watch([shareUrl, qrEl], async () => {
 }
 .lb-close:active { transform: scale(0.94); }
 .lb-hint {
-  position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
+  position: absolute; bottom: calc(24px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%);
   font-size: 11px; letter-spacing: 0.24em; color: var(--xk-mut);
 }
 /* 灯箱是模态：transform-origin 保持居中；入场 240ms 强 ease-out，出场更快 160ms（非对称时长） */

@@ -363,11 +363,16 @@ onBeforeUnmount(() => { if (scRaf) cancelAnimationFrame(scRaf) })
 /* 从发型库选择浮层 */
 .lib-overlay {
   position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center;
+  /* fixed 不吃 .xk-root 的安全区 padding，自己收口；面板高度随之改成相对本容器的百分比，
+     一并解开「vh ≠ 手机可见高度」——地址栏或刘海会把 84vh 的底部推到屏幕外 */
+  padding:
+    calc(16px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right))
+    calc(16px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left));
   background: rgba(6, 5, 3, 0.72); backdrop-filter: blur(4px); animation: lib-fade 200ms ease;
 }
 @keyframes lib-fade { from { opacity: 0; } to { opacity: 1; } }
 .lib-panel {
-  width: min(92vw, 720px); max-height: 84vh; display: flex; flex-direction: column;
+  width: min(92vw, 720px); max-height: 100%; display: flex; flex-direction: column;
   border: 1px solid var(--xk-gold-line); border-radius: 20px;
   background: linear-gradient(160deg, var(--xk-ink-2), var(--xk-ink));
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5), 0 0 40px rgba(232, 196, 121, 0.12);
@@ -379,7 +384,11 @@ onBeforeUnmount(() => { if (scRaf) cancelAnimationFrame(scRaf) })
   padding: 18px 22px; border-bottom: 1px solid var(--xk-gold-line);
 }
 .lib-title { font-family: 'Noto Serif SC', serif; font-size: 18px; color: var(--xk-gold-hi); letter-spacing: 0.08em; }
-.lib-close { background: transparent; border: none; color: var(--xk-mut); font-size: 18px; cursor: pointer; padding: 4px 8px; }
+/* 44px 是最小可靠触摸目标：原来 26x34 的裸文字按钮在手机上要点两三次才中 */
+.lib-close {
+  flex: none; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
+  background: transparent; border: none; color: var(--xk-mut); font-size: 18px; cursor: pointer;
+}
 .lib-close:active { transform: scale(0.9); }
 .lib-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
@@ -401,10 +410,12 @@ onBeforeUnmount(() => { if (scRaf) cancelAnimationFrame(scRaf) })
    撑高缩略框，本机荣耀 WebView 上 aspect-ratio 被架空：2:3 封面把框顶高、名字被挤出
    overflow:hidden 裁掉，只有恰好 3:4 的封面幸免（2026-07-24 CDP 实测定位）。绝对定位后
    框高纯由 aspect-ratio 决定，各卡统一，名字恒可见。 */
-.lib-thumb { position: relative; width: 100%; aspect-ratio: 3 / 4; display: flex; align-items: center; justify-content: center; }
+/* flex:none 是配套保险——2026-07-24 那次是 img 撑高缩略框把名字挤出 overflow:hidden，
+   而缩略框本身作为 flex item 默认可收缩，同样能在名字与图之间挤掉一方。两端都锁死才稳。 */
+.lib-thumb { flex: none; position: relative; width: 100%; aspect-ratio: 3 / 4; display: flex; align-items: center; justify-content: center; }
 .lib-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .lib-ph { font-size: 12px; letter-spacing: 0.3em; color: var(--xk-gold-dim); }
-.lib-nm { font-size: 12px; color: var(--xk-paper); text-align: center; padding: 0 6px 10px; line-height: 1.4; }
+.lib-nm { flex: none; font-size: 12px; color: var(--xk-paper); text-align: center; padding: 0 6px 10px; line-height: 1.4; }
 .lib-tag {
   position: absolute; top: 8px; right: 8px; font-size: 9px; letter-spacing: 0.1em; color: var(--xk-ink);
   background: linear-gradient(110deg, var(--xk-gold), var(--xk-gold-hi)); padding: 2px 8px; border-radius: 10px;
@@ -523,6 +534,20 @@ onBeforeUnmount(() => { if (scRaf) cancelAnimationFrame(scRaf) })
   .scard { transition: opacity 200ms ease; transform: none; opacity: 0.55; }
   .scard.on { transform: none; opacity: 1; }
   .scard:active .scard-pic { transform: none; }
+}
+
+/* ── 手机竖屏（≤560px）── 横向留白让给内容：88vw 在 390px 屏上只剩 343px，
+   而卡片内 缩略图76 + 匹配度48 + 两道 gap 是固定开销，发型名与推荐理由被压到不足 160px */
+@media (max-width: 560px) {
+  .matching { padding: 1.5vh 4vw 2vh; }
+  .reading, .cards, .color-pick, .scene-pick { width: 100%; }
+  .go { min-width: 0; width: 100%; }
+  .info .nm { font-size: 17px; }
+  .pct { font-size: 21px; }
+  .lib-head { padding: 14px 16px; }
+  .lib-title { font-size: 16px; }
+  .lib-grid { padding: 14px 16px; gap: 10px; }
+  .lib-nm { font-size: 13px; padding: 0 6px 12px; }
 }
 
 .go { margin-top: auto; margin-bottom: 1vh; min-width: 300px; }

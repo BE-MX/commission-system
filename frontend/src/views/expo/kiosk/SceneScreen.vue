@@ -75,4 +75,11 @@ function selected(key) {
 .tg { font-size: 11px; letter-spacing: 0.12em; color: var(--xk-mut); }
 .go { margin-top: auto; margin-bottom: 1vh; min-width: 300px; }
 .go:disabled { opacity: 0.4; }
+
+/* 手机竖屏：min-width:300 在 390px 屏上只剩 43px 余量，撑满比留一线更稳也更好点 */
+@media (max-width: 560px) {
+  .scene { padding: 1.5vh 4vw 2vh; }
+  .cards { width: 100%; }
+  .go { min-width: 0; width: 100%; }
+}
 </style>

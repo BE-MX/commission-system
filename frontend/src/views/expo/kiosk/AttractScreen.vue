@@ -132,4 +132,16 @@ const memberOpen = ref(false)
 @media (hover: hover) and (pointer: fine) {
   .member-link:hover { color: var(--xk-gold); }
 }
+
+/* 手机竖屏：整屏纵向内容按平板比例排下来约 774px，而 390x844 的手机扣掉顶栏与安全区
+   只剩 ~714px。徽标环是最大的一块（62vw=242px），压到 46vw 就能把全屏塞回一屏内，
+   不必靠滚动——首屏要的是一眼看完并按下 CTA */
+@media (max-width: 560px) {
+  .attract { gap: 20px; }
+  .orbit-wrap { width: min(46vw, 300px); }
+  .brand-name { font-size: 18px; letter-spacing: 0.32em; text-indent: 0.32em; }
+  .cta { height: 56px; padding: 0 36px; font-size: 16px; }
+  .cta2 { padding: 14px 28px; }
+  .member-link { margin-top: -10px; }
+}
 </style>

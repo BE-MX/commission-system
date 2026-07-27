@@ -386,16 +386,20 @@ onBeforeUnmount(() => {
 }
 .g-lightbox {
   position: fixed; inset: 0; z-index: 80;
+  /* 安全区收口；图片改相对本容器，同时给底部图注留出 48px 不被压 */
+  padding:
+    calc(12px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right))
+    calc(48px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left));
   background: rgba(12, 10, 8, 0.92);
   -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
   display: flex; align-items: center; justify-content: center;
 }
 .g-lightbox img {
-  max-width: 94vw; max-height: 90vh; object-fit: contain; border-radius: 12px;
+  max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 12px;
   box-shadow: 0 12px 60px rgba(0, 0, 0, 0.6);
 }
 .g-lb-cap {
-  position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
+  position: absolute; bottom: calc(24px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%);
   font-size: 11px; letter-spacing: 0.2em; color: var(--xk-mut); white-space: nowrap;
 }
 /* 灯箱模态：入场 240ms 强 ease-out，出场更快（非对称）；origin 保持居中 */

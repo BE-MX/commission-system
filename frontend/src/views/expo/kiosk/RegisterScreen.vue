@@ -115,4 +115,10 @@ const STYLES = ['知性优雅', '减龄轻盈', '自然日常', '端庄大气', 
   border: solid var(--xk-gold); border-width: 0 2px 2px 0; transform: rotate(40deg);
 }
 .submit { margin: 26px auto 4vh; min-width: 280px; }
+
+/* 手机竖屏：表单本身靠 auto-fit 已能自适应降列，只需收紧留白与撑满提交按钮 */
+@media (max-width: 560px) {
+  .reg { padding: 1.5vh 4vw 0; }
+  .submit { min-width: 0; width: 100%; margin: 22px 0 3vh; }
+}
 </style>

@@ -99,14 +99,16 @@ const plans = [
 .xk-member {
   position: fixed; inset: 0; z-index: 76;
   display: flex; align-items: center; justify-content: center;
-  padding: 24px;
+  padding:
+    calc(16px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right))
+    calc(16px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left));
   background: rgba(6, 5, 3, 0.78);
   -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px);
 }
 .xm-panel {
   position: relative;
   display: flex; flex-direction: column;
-  width: min(100%, 1040px); max-height: 88dvh;
+  width: min(100%, 1040px); max-height: 100%;
   padding: 30px 30px 22px; border-radius: 22px;
   border: 1px solid var(--xk-gold-line);
   background: linear-gradient(160deg, var(--xk-ink-2), var(--xk-ink));

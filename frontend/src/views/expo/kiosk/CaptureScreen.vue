@@ -344,11 +344,15 @@ video.rear { transform: none; } /* 后置不镜像：所见即实景方向 */
 /* ── 拍摄示范浮层（黑金浮层，复用 kiosk lib-overlay 模式） ── */
 .gd-overlay {
   position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center;
+  /* 同 lib-overlay：fixed 不吃 .xk-root 的安全区，面板高度改为相对本容器（vh ≠ 手机可见高度） */
+  padding:
+    calc(16px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right))
+    calc(16px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left));
   background: rgba(6, 5, 3, 0.72); backdrop-filter: blur(4px); animation: gd-fade 200ms ease;
 }
 @keyframes gd-fade { from { opacity: 0; } }
 .gd-panel {
-  width: min(92vw, 560px); max-height: 88vh; overflow-y: auto;
+  width: min(92vw, 560px); max-height: 100%; overflow-y: auto;
   display: flex; flex-direction: column; align-items: center;
   padding: 30px 30px 26px; border: 1px solid var(--xk-gold-line); border-radius: 22px;
   background: linear-gradient(160deg, var(--xk-ink-2), var(--xk-ink));
@@ -398,5 +402,11 @@ video.rear { transform: none; } /* 后置不镜像：所见即实景方向 */
 @media (prefers-reduced-motion: reduce) {
   .gd-panel { animation: gd-fade 200ms ease; }
   .gd-fig, .gd-tips li { animation: gd-fade 200ms ease backwards; }
+}
+
+/* 手机竖屏：示范浮层收紧内边距，CTA 撑满 */
+@media (max-width: 560px) {
+  .gd-panel { padding: 22px 18px 20px; }
+  .gd-go { min-width: 0; width: 100%; }
 }
 </style>
