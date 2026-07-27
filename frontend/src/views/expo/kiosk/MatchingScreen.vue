@@ -117,6 +117,8 @@
       </div>
     </div>
 
+    <!-- 档位与 CTA 一组常驻在滚动区外：这是按下生成前的最后一个决定，不该翻回去找 -->
+    <QualityPicker v-model="flow.selectedQuality.value" class="quality-bar" />
     <button class="xk-btn go" :disabled="!flow.selectedWigId.value" @click="flow.generate()">
       生成我的试戴效果
     </button>
@@ -126,6 +128,7 @@
 <script setup>
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { getWigPicker } from '@/api/expo'
+import QualityPicker from './QualityPicker.vue'
 
 const flow = inject('tryonFlow')
 
@@ -546,6 +549,9 @@ onBeforeUnmount(() => { if (scRaf) cancelAnimationFrame(scRaf) })
   .scard:active .scard-pic { transform: none; }
 }
 
+/* 档位选择器与 CTA 同宽同栏：两者是一组「确认出图」的动作 */
+.quality-bar { width: min(88vw, 560px); margin-top: 14px; }
+
 /* 64px 对齐首屏主 CTA 的分量：这是全流程的终点动作，52px 的通用按钮压不住。
    第二道墨色阴影（向上偏移 + 扩散）把滚动内容在按钮上沿柔化掉——否则卡片被拦腰切断，
    看起来像内容被裁没了，而不是「还能往下滑」 */
@@ -558,7 +564,7 @@ onBeforeUnmount(() => { if (scRaf) cancelAnimationFrame(scRaf) })
    而卡片内 缩略图76 + 匹配度48 + 两道 gap 是固定开销，发型名与推荐理由被压到不足 160px */
 @media (max-width: 560px) {
   .matching { padding: 1.5vh 4vw 2vh; }
-  .reading, .cards, .color-pick, .scene-pick { width: 100%; }
+  .reading, .cards, .color-pick, .scene-pick, .quality-bar { width: 100%; }
   .go { min-width: 0; width: 100%; height: 56px; font-size: 16px; }
   .info .nm { font-size: 17px; }
   .pct { font-size: 21px; }

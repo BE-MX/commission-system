@@ -18,6 +18,7 @@
       </div>
     </div>
 
+    <QualityPicker v-model="flow.selectedQuality.value" class="quality-bar" />
     <button
       class="xk-btn go"
       :disabled="!flow.selectedSceneKeys.value.length"
@@ -30,6 +31,7 @@
 
 <script setup>
 import { inject, onMounted } from 'vue'
+import QualityPicker from './QualityPicker.vue'
 
 const flow = inject('tryonFlow')
 
@@ -81,6 +83,8 @@ function selected(key) {
 .card.on .mark { background: linear-gradient(110deg, var(--xk-gold), var(--xk-gold-hi)); border: none; }
 .lb { font-family: 'Noto Serif SC', serif; font-size: 18px; color: var(--xk-gold-hi); }
 .tg { font-size: 11px; letter-spacing: 0.12em; color: var(--xk-mut); }
+.quality-bar { width: min(88vw, 560px); margin-top: 14px; }
+
 /* 同 MatchingScreen：第二道墨色阴影柔化按钮上沿被切断的滚动内容 */
 .go {
   flex: none; margin-top: 16px; margin-bottom: 1vh; min-width: 300px; height: 64px; font-size: 17px;
@@ -91,7 +95,7 @@ function selected(key) {
 /* 手机竖屏：min-width:300 在 390px 屏上只剩 43px 余量，撑满比留一线更稳也更好点 */
 @media (max-width: 560px) {
   .scene { padding: 1.5vh 4vw 2vh; }
-  .cards { width: 100%; }
+  .cards, .quality-bar { width: 100%; }
   .go { min-width: 0; width: 100%; height: 56px; font-size: 16px; }
 }
 </style>

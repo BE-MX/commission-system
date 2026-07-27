@@ -41,6 +41,9 @@ export function useTryOnFlow() {
   const guideShown = ref(false)      // 拍摄示范浮层一客只自动弹一次（register↔capture 往返不重弹）
   const tryonScenes = ref([])        // tryon 生成场景选项（职业/生活场景，滑动选择）
   const selectedTryonScene = ref(null) // 默认选中第一个；仅弱网加载失败时留 null=原景兜底
+  // 出图档位：默认精致大片。展位递到客户手里的就是这张照片，画质是产品本身，
+  // 赶时间（排队/客户急）才降到形象速览换速度（实测 high≈107s / medium≈55s）
+  const selectedQuality = ref('high')
 
   const regForm = reactive({
     name: '', phone: '', wechat_id: '',
@@ -91,6 +94,7 @@ export function useTryOnFlow() {
     selectedColorId.value = null
     selectedSceneKeys.value = []
     selectedTryonScene.value = null
+    selectedQuality.value = 'high' // 上一位客户改过档位，不许带给下一位
     salesReturnStep.value = 'result'
     guideShown.value = false
     Object.assign(regForm, {
@@ -357,7 +361,7 @@ export function useTryOnFlow() {
     try {
       await generateResults(sessionId.value, {
         wigIds: [selectedWigId.value], hairColorId: selectedColorId.value,
-        sceneKey: selectedTryonScene.value,
+        sceneKey: selectedTryonScene.value, quality: selectedQuality.value,
       })
       startPolling()
     } catch (e) {
@@ -386,7 +390,9 @@ export function useTryOnFlow() {
     step.value = 'result'
     touch() // 同 generate：清残留 idle 定时器
     try {
-      await generateResults(sessionId.value, { sceneKeys: [...selectedSceneKeys.value] })
+      await generateResults(sessionId.value, {
+        sceneKeys: [...selectedSceneKeys.value], quality: selectedQuality.value,
+      })
       startPolling()
     } catch (e) {
       generating.value = false
@@ -441,7 +447,7 @@ export function useTryOnFlow() {
     selectedWigId, selectWig, canSwapMatches, swapMatches, backToMatching, goBack,
     customerId, sessionId,
     hairColors, selectedColorId, scenes, selectedSceneKeys, guideShown,
-    tryonScenes, selectedTryonScene, loadTryonScenes,
+    tryonScenes, selectedTryonScene, loadTryonScenes, selectedQuality,
     start, submitRegister, submitPhoto, generate, react,
     loadScenes, toggleScene, generateScenes, reselectScenes,
     openSales, submitSales, resetAll, touch,
