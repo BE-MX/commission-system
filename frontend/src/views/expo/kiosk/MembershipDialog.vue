@@ -15,16 +15,17 @@
             v-for="(plan, i) in plans" :key="plan.name"
             class="xm-card" :class="{ hot: plan.hot }" :style="{ '--stagger': `${i * 70}ms` }"
           >
-            <div v-if="plan.hot" class="xm-badge">推荐</div>
+            <div v-if="plan.badge" class="xm-badge">{{ plan.badge }}</div>
             <div class="xm-name">{{ plan.name }}</div>
             <div class="xm-price">
+              <span v-if="plan.prefix" class="xm-prefix">{{ plan.prefix }}</span>
               <b>¥{{ plan.price }}</b>
               <span class="xm-slash">/</span>
               <span class="xm-unit">{{ plan.unit }}</span>
             </div>
             <p class="xm-pitch">{{ plan.pitch }}</p>
             <div v-if="plan.inherit" class="xm-inherit">{{ plan.inherit }}</div>
-            <ul class="xm-list">
+            <ul v-if="plan.items.length" class="xm-list">
               <li v-for="item in plan.items" :key="item">{{ item }}</li>
             </ul>
           </section>
@@ -59,37 +60,38 @@ onBeforeUnmount(clearIdle)
 
 // 会员权益为展会现场固定物料，不走后台配置：改价改权益的频率远低于一次展会周期，
 // 落 DB 反而多一层同步成本。调整直接改此处文案。
+// 两档只有价格差（新店 4999 / 老店 3999），权益完全一致：清单只在新门店卡展示一份，
+// 老门店卡用继承线声明一致，不重复 11 行。
 const plans = [
   {
-    name: '季度体验版',
-    price: '???',
-    unit: '季',
-    pitch: '先让顾客愿意坐下来试一次',
+    name: '新门店会员',
+    price: '4999',
+    unit: '年',
+    pitch: '把试戴沉淀成门店自己的获客资产',
     items: [
       '单门店授权使用',
-      'AI 生成图 100 张额度',
+      'AI 生成图 500 张额度',
       'AI 场景试戴：商务 / 晚宴 / 旅行等成片直接出',
       '品牌现有产品库全量开放，想试哪款试哪款',
+      '会员期内产品库持续更新，品牌上新即到店',
+      '门店专属二维码，顾客扫码进的是你的店',
+      '试戴页展示门店名称，每张成片都带着你的招牌传播',
       '试戴照片保存与分享，顾客发一次朋友圈就是一次曝光',
-      '每月同步指定数量的新品到店',
       '基础使用培训，店员当天上手',
       '标准版门店引流海报，打印即用',
       '试戴入口可发给顾客，人不在店也能试',
     ],
   },
   {
-    name: '年度经营版',
-    price: '???',
+    name: '老门店会员',
+    price: '3999',
     unit: '年',
-    pitch: '把试戴沉淀成门店自己的获客资产',
+    prefix: '仅需',
+    pitch: '已合作门店，老朋友直接开通',
     hot: true,
-    inherit: '含季度体验版全部权益，另加',
-    items: [
-      'AI 生成图 500 张额度',
-      '会员期内产品库持续更新，品牌上新即到店',
-      '门店专属二维码，顾客扫码进的是你的店',
-      '试戴页展示门店名称，每张成片都带着你的招牌传播',
-    ],
+    badge: '老店专享',
+    inherit: '权益与新门店会员完全一致',
+    items: [],
   },
 ]
 </script>
@@ -173,21 +175,22 @@ const plans = [
   font-family: 'Noto Serif SC', 'STSong', serif;
   font-size: 40px; font-weight: 600; line-height: 1; color: var(--xk-gold);
 }
-/* 价格隐去后两张卡都是 ¥???，「季 / 年」成了两档之间唯一的可见区别，只能重不能轻：
-   分隔斜杠保持小而暗，周期单位放大到价格的 0.65 倍、提亮到高光金，并沿用同一套衬线体 */
-.xm-slash { font-size: 18px; line-height: 1; color: var(--xk-gold-dim); }
+/* 价格恢复明码后回到常规定价层级：数字是主角，「仅需」与「/ 年」都退为注脚 */
+.xm-prefix { font-size: 13px; letter-spacing: 0.2em; color: var(--xk-gold-dim); }
+.xm-slash { font-size: 16px; line-height: 1; color: var(--xk-gold-dim); }
 .xm-unit {
   font-family: 'Noto Serif SC', 'STSong', serif;
-  font-size: 26px; font-weight: 600; line-height: 1;
-  letter-spacing: 0.04em; color: var(--xk-gold-hi);
+  font-size: 16px; font-weight: 500; line-height: 1;
+  letter-spacing: 0.08em; color: var(--xk-gold-dim);
 }
-/* 价格隐去后 pitch 直接接在 40px 大字下面：16px 补回原「日均」行让出的呼吸空间 */
 .xm-pitch { margin: 16px 0 0; font-size: 13px; letter-spacing: 0.08em; color: var(--xk-paper); opacity: 0.86; }
 .xm-inherit {
   margin-top: 16px; padding-bottom: 12px;
   border-bottom: 1px dashed var(--xk-gold-line);
   font-size: 12px; letter-spacing: 0.14em; color: var(--xk-gold-dim);
 }
+/* 老门店卡无权益清单，继承线是最后一行：收掉虚线免得像被裁掉的半截 */
+.xm-inherit:last-child { border-bottom: none; padding-bottom: 0; }
 .xm-list { margin: 16px 0 0; padding: 0; list-style: none; }
 .xm-list li {
   position: relative; padding-left: 22px;
