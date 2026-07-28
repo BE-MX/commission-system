@@ -9,17 +9,17 @@
       <span class="en">L E S H I N E</span>
       莱 莎 · 健 康 假 发
     </div>
-    <h2 class="slogan">门店 AI<br /><em>智能试戴</em>会员</h2>
+    <h2 class="slogan">门店 AI<br /><em>智能试戴</em></h2>
     <div class="line">一套门店引流与辅助成交工具</div>
     <button class="xk-btn cta" @click="$emit('start', 'tryon')">AI 试戴新发型</button>
     <button class="xk-btn ghost cta2" @click="$emit('start', 'scene')">
       已佩戴 · 拍场景大片
       <small>实拍生成商务 / 晚宴 / 旅行等场景效果</small>
     </button>
-    <!-- 会员政策：面向门店老板的次级入口，不与体验主 CTA 争视觉权重 -->
-    <button class="member-link" @click="memberOpen = true">会员权益与价格 ›</button>
+    <!-- 合作政策：面向门店老板的次级入口，不与体验主 CTA 争视觉权重 -->
+    <button class="member-link" @click="memberOpen = true">首发合作与价格 ›</button>
 
-    <MembershipDialog :open="memberOpen" @close="memberOpen = false" />
+    <LaunchOfferDialog :open="memberOpen" @close="memberOpen = false" />
   </div>
 </template>
 
@@ -27,7 +27,9 @@
 import { ref } from 'vue'
 // 品牌 LOGO 黑金重制版：原绿色 LOGO 经去底 + 亮度映射到主题金色阶（脚本处理，源图见品牌物料）
 import logoGold from '@/assets/expo-logo-gold.png'
-import MembershipDialog from './MembershipDialog.vue'
+// 2026-07-28 起入口指向首发合作方案（2999 首发 / 1500 押金 7 天试用）；
+// 年费旧方案封存于 MembershipDialog.vue，换回改此行即可
+import LaunchOfferDialog from './LaunchOfferDialog.vue'
 
 defineEmits(['start'])
 
