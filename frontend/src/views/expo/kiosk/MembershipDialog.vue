@@ -19,12 +19,15 @@
             <div class="xm-name">{{ plan.name }}</div>
             <div class="xm-price">
               <span v-if="plan.prefix" class="xm-prefix">{{ plan.prefix }}</span>
-              <b>¥{{ plan.price }}</b>
+              <span class="xm-cur">¥</span><b>{{ plan.price }}</b>
               <span class="xm-slash">/</span>
               <span class="xm-unit">{{ plan.unit }}</span>
             </div>
+            <div v-if="plan.chips" class="xm-chips">
+              <span v-for="chip in plan.chips" :key="chip" class="xm-chip">{{ chip }}</span>
+            </div>
+            <div v-if="plan.daily" class="xm-daily">{{ plan.daily }}</div>
             <p class="xm-pitch">{{ plan.pitch }}</p>
-            <div v-if="plan.inherit" class="xm-inherit">{{ plan.inherit }}</div>
             <ul v-if="plan.items.length" class="xm-list">
               <li v-for="item in plan.items" :key="item">{{ item }}</li>
             </ul>
@@ -61,7 +64,7 @@ onBeforeUnmount(clearIdle)
 // 会员权益为展会现场固定物料，不走后台配置：改价改权益的频率远低于一次展会周期，
 // 落 DB 反而多一层同步成本。调整直接改此处文案。
 // 两档只有价格差（新店 4999 / 老店 3999），权益完全一致：清单只在新门店卡展示一份，
-// 老门店卡用继承线声明一致，不重复 11 行。
+// 老门店卡用对比筹码声明一致，不重复 11 行；日均换算 3999/365≈10.95，改价记得同步。
 const plans = [
   {
     name: '新门店会员',
@@ -90,7 +93,8 @@ const plans = [
     pitch: '已合作门店，老朋友直接开通',
     hot: true,
     badge: '老店专享',
-    inherit: '权益与新门店会员完全一致',
+    chips: ['比新门店少 ¥1000', '权益一条不少'],
+    daily: '折合每天不到 ¥11，店里多一位全年无休的 AI 试戴顾问',
     items: [],
   },
 ]
@@ -177,20 +181,55 @@ const plans = [
 }
 /* 价格恢复明码后回到常规定价层级：数字是主角，「仅需」与「/ 年」都退为注脚 */
 .xm-prefix { font-size: 13px; letter-spacing: 0.2em; color: var(--xk-gold-dim); }
+.xm-cur { font-family: 'Noto Serif SC', 'STSong', serif; font-size: 22px; line-height: 1; color: var(--xk-gold); }
 .xm-slash { font-size: 16px; line-height: 1; color: var(--xk-gold-dim); }
 .xm-unit {
   font-family: 'Noto Serif SC', 'STSong', serif;
   font-size: 16px; font-weight: 500; line-height: 1;
   letter-spacing: 0.08em; color: var(--xk-gold-dim);
 }
-.xm-pitch { margin: 16px 0 0; font-size: 13px; letter-spacing: 0.08em; color: var(--xk-paper); opacity: 0.86; }
-.xm-inherit {
-  margin-top: 16px; padding-bottom: 12px;
-  border-bottom: 1px dashed var(--xk-gold-line);
-  font-size: 12px; letter-spacing: 0.14em; color: var(--xk-gold-dim);
+/* 老店卡把 3999 抬成全场最大字号：与 4999 拉开一整档，价差本身就是卖点 */
+.xm-card.hot .xm-prefix { font-size: 15px; color: var(--xk-gold); }
+.xm-card.hot .xm-cur { font-size: 30px; }
+.xm-card.hot .xm-price b {
+  font-size: 56px;
+  /* 高光带扫过数字（背面渐变裁进文字）：常速运动用 linear；两端同色保证平铺无缝。
+     background-position 非合成器属性，但作用面只有一个词的文字区域，实测无压力 */
+  background: linear-gradient(110deg,
+    var(--xk-gold) 0%, var(--xk-gold) 42%,
+    var(--xk-gold-hi) 50%,
+    var(--xk-gold) 58%, var(--xk-gold) 100%);
+  background-size: 200% 100%;
+  background-position: 100% 0;
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: xm-shimmer 3.6s linear 1.2s infinite;
 }
-/* 老门店卡无权益清单，继承线是最后一行：收掉虚线免得像被裁掉的半截 */
-.xm-inherit:last-child { border-bottom: none; padding-bottom: 0; }
+/* 100% → -100% 恰好平移一个平铺周期（bg 宽 200%），循环首尾帧一致 */
+@keyframes xm-shimmer { to { background-position: -100% 0; } }
+/* 对比筹码：胶囊形数字锚点，回答「3999 到底值在哪」 */
+.xm-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.xm-chip {
+  padding: 5px 12px; border-radius: 999px;
+  border: 1px solid rgba(232, 196, 121, 0.35);
+  background: rgba(232, 196, 121, 0.08);
+  font-size: 12.5px; letter-spacing: 0.08em; color: var(--xk-gold-hi);
+}
+.xm-daily { margin-top: 14px; font-size: 13px; line-height: 1.7; letter-spacing: 0.05em; color: var(--xk-paper); opacity: 0.78; }
+.xm-pitch { margin: 16px 0 0; font-size: 13px; letter-spacing: 0.08em; color: var(--xk-paper); opacity: 0.86; }
+/* 老店卡子元素接力入场：接在卡片 rise（70ms 起、320ms 止）尾部，逐行 70ms 落位；
+   纯装饰不阻塞交互，复用 xm-rise 与全 kiosk 同一条 ease-out 曲线 */
+.xm-card.hot .xm-price,
+.xm-card.hot .xm-chips,
+.xm-card.hot .xm-daily,
+.xm-card.hot .xm-pitch {
+  opacity: 0; transform: translateY(8px);
+  animation: xm-rise 300ms cubic-bezier(0.23, 1, 0.32, 1) forwards;
+}
+.xm-card.hot .xm-price { animation-delay: 240ms; }
+.xm-card.hot .xm-chips { animation-delay: 310ms; }
+.xm-card.hot .xm-daily { animation-delay: 380ms; }
+.xm-card.hot .xm-pitch { animation-delay: 450ms; }
 .xm-list { margin: 16px 0 0; padding: 0; list-style: none; }
 .xm-list li {
   position: relative; padding-left: 22px;
@@ -220,5 +259,11 @@ const plans = [
 @media (prefers-reduced-motion: reduce) {
   .xmem-enter-from .xm-panel { transform: none; }
   .xm-card { opacity: 1; transform: none; animation: none; }
+  .xm-card.hot .xm-price,
+  .xm-card.hot .xm-chips,
+  .xm-card.hot .xm-daily,
+  .xm-card.hot .xm-pitch { opacity: 1; transform: none; animation: none; }
+  /* 减动效下高光带停在静止金色，字号层级保留 */
+  .xm-card.hot .xm-price b { animation: none; background: none; -webkit-text-fill-color: var(--xk-gold); }
 }
 </style>
