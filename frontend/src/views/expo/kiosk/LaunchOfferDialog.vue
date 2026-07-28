@@ -50,7 +50,10 @@
           </div>
         </div>
 
-        <footer class="xm-foot">设备暂不提供免费外借 · 详情请咨询展位顾问</footer>
+        <footer class="xm-foot">
+          设备暂不提供免费外借 · 详情请咨询展位顾问
+          <span class="xm-legal">最终解释权归莱莎公司所有</span>
+        </footer>
       </div>
     </div>
   </Transition>
@@ -319,6 +322,8 @@ const steps = [
   border-top: 1px solid var(--xk-gold-line);
   text-align: center; font-size: 12px; letter-spacing: 0.18em; color: var(--xk-mut);
 }
+/* 免责行：全场最小最暗，惯例居末 */
+.xm-legal { display: block; margin-top: 6px; font-size: 11px; letter-spacing: 0.14em; color: var(--xk-mut); opacity: 0.75; }
 
 /* 模态入场对齐 kiosk 既有 xconfirm 手感：240ms 强 ease-out 进、160ms 出（非对称） */
 .xmem-enter-active { transition: opacity 240ms cubic-bezier(0.23, 1, 0.32, 1); }
