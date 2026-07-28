@@ -104,6 +104,11 @@ export function deleteOrder(id) {
   return domesticClient.delete(`/orders/${id}`)
 }
 
+// 订单进度小程序码：微信扫码免登录看进度，可发客户
+export function getOrderWxacode(id) {
+  return domesticClient.get(`/orders/${id}/wxacode`)
+}
+
 // ── 明细 ──
 export function attachItemRoute(itemId, routeId) {
   return domesticClient.post(`/items/${itemId}/attach-route`, { route_id: routeId })

@@ -57,9 +57,10 @@
             <el-tag size="small" :type="ORDER_STATUS_TAGS[row.status]">{{ row.status_label }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" min-width="170" fixed="right">
+        <el-table-column label="操作" min-width="230" fixed="right">
           <template #default="{ row }">
             <GlassButton variant="link" left-icon="View" @click="openDetail(row)">详情</GlassButton>
+            <GlassButton variant="link" left-icon="Grid" @click="openWxacode(row)">进度码</GlassButton>
             <GlassButton v-permission="'domestic:write'" variant="link" left-icon="CircleClose" :disabled="row.status >= 3" @click="handleTerminate(row)">终止</GlassButton>
             <GlassButton v-permission="'domestic:admin'" variant="link" link-tone="danger" left-icon="Delete" @click="handleDelete(row)">删除</GlassButton>
           </template>
@@ -220,6 +221,24 @@
       :mode="printDialog.mode" :item-id="printDialog.itemId"
     />
 
+    <el-dialog v-model="wxacodeDialog.visible" title="订单进度码" width="420px">
+      <div v-loading="wxacodeDialog.loading" class="wxacode-body">
+        <template v-if="wxacodeDialog.image">
+          <img :src="wxacodeDialog.image" class="wxacode-img" alt="订单进度小程序码" />
+          <div class="wxacode-no">{{ wxacodeDialog.order?.domestic_no }} · {{ wxacodeDialog.order?.customer_name }}</div>
+          <div v-if="wxacodeDialog.envVersion !== 'release'" class="wxacode-hint wxacode-warn">
+            这是{{ wxacodeDialog.envVersion === 'trial' ? '体验版' : '开发版' }}码：只有小程序体验成员能扫开，<b>不要发给客户</b>
+          </div>
+          <div v-else class="wxacode-hint">微信扫码直接看本单生产进度，不用登录，可以转发给客户</div>
+        </template>
+        <el-empty v-else-if="!wxacodeDialog.loading" description="码没生成出来，原因见右上角报错提示" :image-size="80" />
+      </div>
+      <template #footer>
+        <GlassButton variant="ghost" @click="wxacodeDialog.visible = false">关闭</GlassButton>
+        <GlassButton variant="primary" left-icon="Download" :disabled="!wxacodeDialog.image" @click="downloadWxacode">下载 PNG</GlassButton>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="attachDialog.visible" title="配工艺路线" width="460px">
       <el-form label-width="90px">
         <el-form-item label="工艺路线">
@@ -257,6 +276,7 @@ const {
   logDialog, openLogs, handleRevokeReport,
   attachDialog, openAttachRoute, confirmAttachRoute,
   printDialog, openPrintCard, openQrLabel,
+  wxacodeDialog, openWxacode, downloadWxacode,
   handleTerminate, handleDelete, goCreate,
 } = useDomesticOrders()
 </script>
@@ -372,4 +392,26 @@ const {
   font-size: 12px;
   color: var(--el-text-color-secondary);
 }
+
+.wxacode-body {
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.wxacode-img {
+  width: 240px;
+  height: 240px;
+}
+
+.wxacode-no { font-weight: 600; }
+
+.wxacode-hint {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.wxacode-warn { color: var(--el-color-warning); }
 </style>

@@ -5,9 +5,9 @@ import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  attachItemRoute, deleteOrder, getOrder, getProcessRoutes, listOrders,
-  listProcessWorkers, listReports, newRequestId, revokeReport, shipItem,
-  submitReport, terminateOrder,
+  attachItemRoute, deleteOrder, getOrder, getOrderWxacode, getProcessRoutes,
+  listOrders, listProcessWorkers, listReports, newRequestId, revokeReport,
+  shipItem, submitReport, terminateOrder,
 } from '@/api/domestic'
 import { useListPage } from '@/composables/useListPage'
 import { confirmDanger, msgSuccess } from '@/utils/feedback'
@@ -211,6 +211,30 @@ export function useDomesticOrders() {
     Object.assign(printDialog, { visible: true, mode: 'label', itemId: item.id })
   }
 
+  // ── 订单进度小程序码（微信扫码免登录看进度，可发客户）──
+  const wxacodeDialog = reactive({ visible: false, loading: false, order: null, image: '', envVersion: 'release' })
+
+  async function openWxacode(row) {
+    Object.assign(wxacodeDialog, { visible: true, loading: true, order: row, image: '', envVersion: 'release' })
+    try {
+      const res = await getOrderWxacode(row.id)
+      wxacodeDialog.image = res.data?.image_base64 || ''
+      wxacodeDialog.envVersion = res.data?.env_version || 'release'
+    } catch { /* 拦截器已提示（正式版未发布 / IP 白名单没配会在这里报出来）*/ } finally {
+      wxacodeDialog.loading = false
+    }
+  }
+
+  function downloadWxacode() {
+    if (!wxacodeDialog.image) return
+    // 扩展名跟着 data URL 的实际 MIME 走（微信返回的是 jpeg，别写死 png）
+    const ext = wxacodeDialog.image.startsWith('data:image/png') ? 'png' : 'jpg'
+    const a = document.createElement('a')
+    a.href = wxacodeDialog.image
+    a.download = `进度码-${wxacodeDialog.order?.domestic_no || 'order'}.${ext}`
+    a.click()
+  }
+
   function goCreate() {
     router.push({ name: 'DomesticOrderCreate' })
   }
@@ -228,6 +252,7 @@ export function useDomesticOrders() {
     logDialog, openLogs, handleRevokeReport,
     attachDialog, openAttachRoute, confirmAttachRoute,
     printDialog, openPrintCard, openQrLabel,
+    wxacodeDialog, openWxacode, downloadWxacode,
     handleTerminate, handleDelete, goCreate,
   }
 }
