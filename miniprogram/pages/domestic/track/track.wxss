@@ -1,0 +1,13 @@
+/* pages/domestic/track/track.wxss — 订单进度（免登录）
+   整份复用订单速查的样式（lk- 类），只加本页专属的顶部副标题。 */
+@import "../lookup/lookup.wxss";
+
+.tk-top { padding-bottom: 24rpx; }
+
+.tk-sub {
+  display: block;
+  margin: 10rpx 32rpx 0;
+  text-align: center;
+  font-size: 24rpx;
+  color: #7FE0B8;   /* 深绿导航上的次要文字用浅绿（4.84:1），同内贸报工页 */
+}

@@ -10,7 +10,8 @@
     "pages/overview/overview",
     "pages/domestic/scan/scan",
     "pages/domestic/orders/orders",
-    "pages/domestic/lookup/lookup"
+    "pages/domestic/lookup/lookup",
+    "pages/domestic/track/track"
   ],
   "tabBar": {
     "custom": true,

@@ -17,6 +17,9 @@ App({
       this.globalData.token = token
       this.globalData.userInfo = userInfo
     } else {
+      // 扫「订单进度码」进来的客户没有方舟账号，免登录页不许踢去登录
+      var launch = wx.getLaunchOptionsSync()
+      if ((launch.path || '').indexOf('pages/domestic/track/track') === 0) return
       wx.redirectTo({ url: '/pages/login/login' })
     }
   },
