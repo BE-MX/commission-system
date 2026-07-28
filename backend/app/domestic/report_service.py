@@ -61,6 +61,49 @@ def verify_qr_data(qr_data: str) -> tuple[bool, int]:
     return hmac.compare_digest(match.group(2), expected), item_id
 
 
+# ── 订单进度小程序码（微信扫码免登录查看）──────────────
+#
+# scene 是微信小程序码的带参字段，限 32 个可见字符，格式 `o:<order_id>:<hmac16>`。
+# 签名消息域用 ARK-DO:<order_id>（订单级），与流转卡的 ARK-D:<item_id>（明细级）
+# 隔离——拿一张流转卡的签名拼不出订单进度码，反之亦然。
+# 签名取 16 hex（64 bit）：这个口子完全免登录，8 hex 对在线遍历只是"贵"
+# 不是"不可行"；scene 预算 32 字符足够放 16。
+
+
+def qr_secret_is_default() -> bool:
+    """QR_SIGN_SECRET 还是仓库里的默认字面量 = 任何能读代码的人都能离线伪造签名。
+
+    免登录端点的整个授权模型压在这个密钥上，默认值等于没锁——
+    生成和验证两侧都必须拒绝服务，逼着部署时配好 .env。
+    """
+    from app.core.config import Settings
+
+    return settings.QR_SIGN_SECRET == Settings.model_fields["QR_SIGN_SECRET"].default
+
+
+def generate_order_scene_sign(order_id: int, secret: str) -> str:
+    message = f"{C.QR_PREFIX}O:{order_id}"
+    return hmac.new(key=secret.encode(), msg=message.encode(), digestmod=hashlib.sha256).hexdigest()[:16]
+
+
+def generate_order_scene(order_id: int) -> str:
+    return f"o:{order_id}:{generate_order_scene_sign(order_id, settings.QR_SIGN_SECRET)}"
+
+
+def verify_order_scene(scene: str) -> tuple[bool, int]:
+    """校验小程序码 scene，返回 (是否有效, order_id)。
+
+    这是免登录进度页的**唯一**授权凭证：签名对得上 = 拿到了主站有权限
+    的人生成的码 = 被授权看这一单。
+    """
+    match = re.match(r"^o:(\d+):([a-f0-9]{16})$", (scene or "").strip())
+    if not match:
+        return False, 0
+    order_id = int(match.group(1))
+    expected = generate_order_scene_sign(order_id, settings.QR_SIGN_SECRET)
+    return hmac.compare_digest(match.group(2), expected), order_id
+
+
 # ── 扫码：工人看到什么 ────────────────────────────────
 
 

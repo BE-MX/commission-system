@@ -458,6 +458,49 @@ def get_print_card(
     })
 
 
+@router.get("/orders/{order_id}/wxacode", summary="订单进度小程序码（微信扫码免登录看进度）")
+def get_order_wxacode(
+    order_id: int,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission(*_READ)),
+):
+    """生成指向小程序免登录进度页的小程序码，永久有效，可发客户/贴单据。
+
+    生成失败（正式版未发布 / IP 白名单未配）时返回 502 并透传微信侧原因，
+    不发出一张扫开是白屏的坏码。
+    """
+    from app.core.config import get_settings
+    from app.mini import wx_client
+
+    # 免登录端点的授权全押在这个签名密钥上，默认值 = 谁都能伪造，拒绝出码
+    if report_service.qr_secret_is_default():
+        raise HTTPException(
+            status_code=503,
+            detail="QR_SIGN_SECRET 还是仓库默认值，进度码已锁定——在 .env 配置随机密钥后重启",
+        )
+
+    order = db.query(DomesticOrder).filter(
+        DomesticOrder.id == order_id, DomesticOrder.deleted_flag == 0
+    ).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="订单不存在")
+
+    scene = report_service.generate_order_scene(order_id)
+    try:
+        image = wx_client.get_wxacode_base64(scene, page=C.TRACK_PAGE)
+    except wx_client.WxApiError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    return ok({
+        "domestic_no": order.domestic_no,
+        "order_no": order.order_no,
+        "scene": scene,
+        "image_base64": image,
+        # trial 码只有体验成员能扫开，前端据此提醒「勿发客户」
+        "env_version": get_settings().WX_MINI_ENV_VERSION or "release",
+    })
+
+
 def _qr_png_base64(qr_data: str) -> str | None:
     """二维码 PNG。qrcode 库缺失不该让整张卡打不出来，降级为只给文本。"""
     try:

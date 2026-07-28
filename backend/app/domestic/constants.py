@@ -52,3 +52,5 @@ ITEM_STATUS_LABELS = {0: "生产中", 1: "已完工", 2: "已发货"}
 
 # 二维码前缀。外贸是 ARK-P，内贸 ARK-D，小程序按前缀分流互不干扰
 QR_PREFIX = "ARK-D"
+# 小程序免登录进度页路径（订单进度小程序码 page 参数）
+TRACK_PAGE = "pages/domestic/track/track"

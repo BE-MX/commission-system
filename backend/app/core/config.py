@@ -138,6 +138,9 @@ class Settings(BaseSettings):
     # ── 微信小程序 ────────────────────────────────────────
     WX_MINI_APPID: str = ""  # 微信小程序 AppID
     WX_MINI_SECRET: str = ""  # 微信小程序 AppSecret
+    # 小程序码指向的版本：release / trial / develop。
+    # 正式版发布前设 trial（仅体验成员能扫开），发布后删掉此配置回落 release
+    WX_MINI_ENV_VERSION: str = "release"
 
     # ── OKKI 开放平台（订单推送，client_credentials 鉴权）─
     OKKI_CLIENT_ID: str = ""
