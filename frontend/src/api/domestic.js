@@ -104,9 +104,9 @@ export function deleteOrder(id) {
   return domesticClient.delete(`/orders/${id}`)
 }
 
-// 订单进度小程序码：微信扫码免登录看进度，可发客户
-export function getOrderWxacode(id) {
-  return domesticClient.get(`/orders/${id}/wxacode`)
+// 订单产品进度小程序码：微信扫码免登录看该明细进度，可发客户
+export function getItemWxacode(itemId) {
+  return domesticClient.get(`/items/${itemId}/wxacode`)
 }
 
 // ── 明细 ──

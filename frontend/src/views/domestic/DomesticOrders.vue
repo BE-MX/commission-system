@@ -57,10 +57,9 @@
             <el-tag size="small" :type="ORDER_STATUS_TAGS[row.status]">{{ row.status_label }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" min-width="230" fixed="right">
+        <el-table-column label="操作" min-width="170" fixed="right">
           <template #default="{ row }">
             <GlassButton variant="link" left-icon="View" @click="openDetail(row)">详情</GlassButton>
-            <GlassButton variant="link" left-icon="Grid" @click="openWxacode(row)">进度码</GlassButton>
             <GlassButton v-permission="'domestic:write'" variant="link" left-icon="CircleClose" :disabled="row.status >= 3" @click="handleTerminate(row)">终止</GlassButton>
             <GlassButton v-permission="'domestic:admin'" variant="link" link-tone="danger" left-icon="Delete" @click="handleDelete(row)">删除</GlassButton>
           </template>
@@ -102,6 +101,7 @@
             <div class="item-actions">
               <GlassButton variant="link" left-icon="Printer" @click="openPrintCard(item)">流转卡</GlassButton>
               <GlassButton variant="link" left-icon="Grid" @click="openQrLabel(item)">二维码</GlassButton>
+              <GlassButton variant="link" left-icon="Share" @click="openWxacode(item)">进度码</GlassButton>
               <GlassButton variant="link" left-icon="Tickets" @click="openLogs(item)">报工流水</GlassButton>
               <GlassButton v-if="!item.route_id" v-permission="'domestic:write'" variant="link" left-icon="Connection" @click="openAttachRoute(item)">配工艺路线</GlassButton>
               <GlassButton v-if="item.status === 1" v-permission="'domestic:write'" variant="link" left-icon="Van" @click="openShip(item)">登记发货</GlassButton>
@@ -218,18 +218,18 @@
 
     <DomesticPrintDialog
       v-model:visible="printDialog.visible"
-      :mode="printDialog.mode" :item-id="printDialog.itemId" :order-id="printDialog.orderId"
+      :mode="printDialog.mode" :item-id="printDialog.itemId"
     />
 
-    <el-dialog v-model="wxacodeDialog.visible" title="订单进度码" width="420px">
+    <el-dialog v-model="wxacodeDialog.visible" title="产品进度码" width="420px">
       <div v-loading="wxacodeDialog.loading" class="wxacode-body">
         <template v-if="wxacodeDialog.image">
-          <img :src="wxacodeDialog.image" class="wxacode-img" alt="订单进度小程序码" />
-          <div class="wxacode-no">{{ wxacodeDialog.order?.domestic_no }} · {{ wxacodeDialog.order?.customer_name }}</div>
+          <img :src="wxacodeDialog.image" class="wxacode-img" alt="产品进度小程序码" />
+          <div class="wxacode-no">{{ wxacodeDialog.info?.domestic_no }} · {{ wxacodeDialog.info?.product_name }}</div>
           <div v-if="wxacodeDialog.envVersion !== 'release'" class="wxacode-hint wxacode-warn">
             这是{{ wxacodeDialog.envVersion === 'trial' ? '体验版' : '开发版' }}码：只有小程序体验成员能扫开，<b>不要发给客户</b>
           </div>
-          <div v-else class="wxacode-hint">微信扫码直接看本单生产进度，不用登录，可以转发给客户</div>
+          <div v-else class="wxacode-hint">微信扫码直接看这个产品的生产进度，不用登录，可以转发给客户</div>
         </template>
         <el-empty v-else-if="!wxacodeDialog.loading" description="码没生成出来，原因见右上角报错提示" :image-size="80" />
       </div>

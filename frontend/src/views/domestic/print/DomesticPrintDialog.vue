@@ -43,7 +43,7 @@
  */
 import { computed, ref, watch } from 'vue'
 import { Loading } from '@element-plus/icons-vue'
-import { fetchImageDataUrl, getOrderWxacode, getPrintCard } from '@/api/domestic'
+import { fetchImageDataUrl, getItemWxacode, getPrintCard } from '@/api/domestic'
 import GlassButton from '@/components/GlassButton.vue'
 import logoUrl from '@/assets/domestic-logo.png'
 import { buildCardDoc, buildLabelDoc, buildWxacodeLabelDoc } from './printDocs'
@@ -51,8 +51,7 @@ import { buildCardDoc, buildLabelDoc, buildWxacodeLabelDoc } from './printDocs'
 const props = defineProps({
   visible: { type: Boolean, default: false },
   mode: { type: String, default: 'card' },   // card=流转卡 / label=二维码标签 / wxacode=进度码标签
-  itemId: { type: [Number, String], default: null },
-  orderId: { type: [Number, String], default: null },   // wxacode 模式用（订单级）
+  itemId: { type: [Number, String], default: null },   // 三种模式都是明细级
 })
 const emit = defineEmits(['update:visible'])
 
@@ -108,7 +107,7 @@ async function load() {
   copies.value = 1
   try {
     if (props.mode === 'wxacode') {
-      const res = await getOrderWxacode(props.orderId)
+      const res = await getItemWxacode(props.itemId)
       card.value = res.data
     } else {
       const res = await getPrintCard(props.itemId)
@@ -138,8 +137,8 @@ function close() {
   emit('update:visible', false)
 }
 
-watch(() => [props.visible, props.itemId, props.orderId, props.mode], ([isOpen]) => {
-  if (isOpen && (props.mode === 'wxacode' ? props.orderId : props.itemId)) load()
+watch(() => [props.visible, props.itemId, props.mode], ([isOpen]) => {
+  if (isOpen && props.itemId) load()
 }, { immediate: true })
 </script>
 

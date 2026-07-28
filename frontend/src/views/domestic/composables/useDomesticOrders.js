@@ -5,7 +5,7 @@ import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  attachItemRoute, deleteOrder, getOrder, getOrderWxacode, getProcessRoutes,
+  attachItemRoute, deleteOrder, getItemWxacode, getOrder, getProcessRoutes,
   listOrders, listProcessWorkers, listReports, newRequestId, revokeReport,
   shipItem, submitReport, terminateOrder,
 } from '@/api/domestic'
@@ -201,29 +201,30 @@ export function useDomesticOrders() {
 
   // 打印弹框：内容渲染在 iframe 里的独立文档中，打印只出那份文档，
   // 但弹框本身停在订单页上——关掉就回到原来的列表和抽屉，不用按浏览器后退
-  const printDialog = reactive({ visible: false, mode: 'card', itemId: null, orderId: null })
+  const printDialog = reactive({ visible: false, mode: 'card', itemId: null })
 
   function openPrintCard(item) {
-    Object.assign(printDialog, { visible: true, mode: 'card', itemId: item.id, orderId: null })
+    Object.assign(printDialog, { visible: true, mode: 'card', itemId: item.id })
   }
 
   function openQrLabel(item) {
-    Object.assign(printDialog, { visible: true, mode: 'label', itemId: item.id, orderId: null })
+    Object.assign(printDialog, { visible: true, mode: 'label', itemId: item.id })
   }
 
   // 进度码的 30×20 标签版（左 LOGO 右码，与流转卡二维码标签同版式）
   function openWxacodeLabel() {
-    if (!wxacodeDialog.order) return
-    Object.assign(printDialog, { visible: true, mode: 'wxacode', itemId: null, orderId: wxacodeDialog.order.id })
+    if (!wxacodeDialog.item) return
+    Object.assign(printDialog, { visible: true, mode: 'wxacode', itemId: wxacodeDialog.item.id })
   }
 
-  // ── 订单进度小程序码（微信扫码免登录看进度，可发客户）──
-  const wxacodeDialog = reactive({ visible: false, loading: false, order: null, image: '', envVersion: 'release' })
+  // ── 订单产品进度小程序码（明细级，微信扫码免登录看该产品进度，可发客户）──
+  const wxacodeDialog = reactive({ visible: false, loading: false, item: null, info: null, image: '', envVersion: 'release' })
 
-  async function openWxacode(row) {
-    Object.assign(wxacodeDialog, { visible: true, loading: true, order: row, image: '', envVersion: 'release' })
+  async function openWxacode(item) {
+    Object.assign(wxacodeDialog, { visible: true, loading: true, item, info: null, image: '', envVersion: 'release' })
     try {
-      const res = await getOrderWxacode(row.id)
+      const res = await getItemWxacode(item.id)
+      wxacodeDialog.info = res.data || null
       wxacodeDialog.image = res.data?.image_base64 || ''
       wxacodeDialog.envVersion = res.data?.env_version || 'release'
     } catch { /* 拦截器已提示（正式版未发布 / IP 白名单没配会在这里报出来）*/ } finally {
@@ -237,7 +238,7 @@ export function useDomesticOrders() {
     const ext = wxacodeDialog.image.startsWith('data:image/png') ? 'png' : 'jpg'
     const a = document.createElement('a')
     a.href = wxacodeDialog.image
-    a.download = `进度码-${wxacodeDialog.order?.domestic_no || 'order'}.${ext}`
+    a.download = `进度码-${wxacodeDialog.info?.domestic_no || 'order'}-${wxacodeDialog.item?.id || ''}.${ext}`
     a.click()
   }
 
