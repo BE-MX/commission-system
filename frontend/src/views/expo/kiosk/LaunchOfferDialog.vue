@@ -37,6 +37,12 @@
                 <li v-for="duty in plan.duties" :key="duty">{{ duty }}</li>
               </ul>
             </div>
+            <div v-if="plan.terms" class="xm-duty">
+              <div class="xm-duty-label">{{ plan.termsLabel }}</div>
+              <ul class="xm-duty-list single">
+                <li v-for="term in plan.terms" :key="term">{{ term }}</li>
+              </ul>
+            </div>
             <p class="xm-pitch">{{ plan.pitch }}</p>
           </section>
         </div>
@@ -107,7 +113,7 @@ const plans = [
     prefix: '押金',
     price: '1500',
     pitch: '先放店里真试七天，再决定要不要同行',
-    chips: ['合适 · 补 ¥1499 转首年', '不合适 · 退回平板全额退押金'],
+    chips: ['合适 · 补 ¥1499 转首年', '不合适 · 平板完好退回，押金全退'],
     items: [
       '一个门店账号 · AI 生成 30 次',
       '开放标准产品库',
@@ -124,6 +130,12 @@ const plans = [
       '记录最终购买产品的人数',
       '反馈 AI 效果与实物的差异',
       '至少一位员工接受使用培训',
+    ],
+    // 返还期限「约定时间」指现场签约时约定，需求未给固定天数（2026-07-28）；要写死天数改此处
+    termsLabel: '设备与押金',
+    terms: [
+      '试用结束未转正，请在约定时间内完好返还平板',
+      '试用期内平板如有损坏，将按实际损失从押金中扣除',
     ],
   },
 ]
@@ -286,6 +298,8 @@ const steps = [
   margin: 10px 0 0; padding: 0; list-style: none;
   display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px;
 }
+/* 长句条款（设备与押金）单栏，避免双栏折行破碎 */
+.xm-duty-list.single { grid-template-columns: 1fr; }
 .xm-duty-list li {
   position: relative; padding-left: 16px;
   font-size: 12.5px; line-height: 1.6; letter-spacing: 0.03em;
