@@ -31,6 +31,12 @@
             <ul class="xm-list">
               <li v-for="item in plan.items" :key="item">{{ item }}</li>
             </ul>
+            <div v-if="plan.duties" class="xm-duty">
+              <div class="xm-duty-label">{{ plan.dutyLabel }}</div>
+              <ul class="xm-duty-list">
+                <li v-for="duty in plan.duties" :key="duty">{{ duty }}</li>
+              </ul>
+            </div>
             <p class="xm-pitch">{{ plan.pitch }}</p>
           </section>
         </div>
@@ -105,6 +111,16 @@ const plans = [
       '生成图片带轻量品牌标识',
       '不含门店专属页面与品牌定制',
       '到期自动停止生成',
+    ],
+    // 种子门店的数据回传义务：50 家真实案例的原料就从这六条来
+    dutyLabel: '试用期间 · 店面需配合',
+    duties: [
+      '提供真实顾客体验',
+      '记录顾客最喜欢的发型',
+      '记录进一步咨询产品的人数',
+      '记录最终购买产品的人数',
+      '反馈 AI 效果与实物的差异',
+      '至少一位员工接受使用培训',
     ],
   },
 ]
@@ -259,6 +275,24 @@ const steps = [
 .xm-card.hot .xm-chips { animation-delay: 310ms; }
 .xm-card.hot .xm-list { animation-delay: 380ms; }
 .xm-card.hot .xm-pitch { animation-delay: 450ms; }
+
+/* 试用义务：与权益清单虚线分隔；「给」用暗金小菱钻区别于「得」的亮金菱钻，双栏收紧高度 */
+.xm-duty { margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--xk-gold-line); }
+.xm-duty-label { font-size: 12px; letter-spacing: 0.14em; color: var(--xk-gold-dim); }
+.xm-duty-list {
+  margin: 10px 0 0; padding: 0; list-style: none;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px;
+}
+.xm-duty-list li {
+  position: relative; padding-left: 16px;
+  font-size: 12.5px; line-height: 1.6; letter-spacing: 0.03em;
+  color: var(--xk-paper); opacity: 0.85;
+}
+.xm-duty-list li::before {
+  content: ''; position: absolute; left: 2px; top: 7px;
+  width: 5px; height: 5px; transform: rotate(45deg);
+  background: var(--xk-gold-dim);
+}
 
 /* 交付时间线：四步等宽，虚线框呼应「流程」的过程感；窄屏退化为纵向堆叠 */
 .xm-steps { flex: none; display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 18px; }
