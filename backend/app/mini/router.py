@@ -329,26 +329,36 @@ async def domestic_lookup(
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": str(exc)})
 
 
-@router.get("/domestic/track", summary="订单进度（小程序码免登录查看）")
+@router.get("/domestic/track", summary="订单产品进度（小程序码免登录查看）")
 async def domestic_track(
-    scene: str = Query(..., description="小程序码 scene：o:<order_id>:<hmac8>"),
+    scene: str = Query(..., description="小程序码 scene：i:<item_id>:<hmac16>"),
     db: Session = Depends(get_db),
 ):
-    """无鉴权白名单端点：微信扫「订单进度小程序码」进来的客户没有方舟账号。
+    """无鉴权白名单端点：微信扫「进度小程序码」进来的客户没有方舟账号。
     授权凭证是 scene 里的 HMAC 签名——码只能由主站有 domestic 权限的人生成，
-    拿到码 = 被授权看这一单；验签不过一律 403，order_id 遍历不可行（签名 4 字节）。
+    拿到码 = 被授权看这一个订单产品；验签不过一律 403。
     亮哥 2026-07-28 拍板：进度信息对客户公开，字段不遮挡。
+    返回形状与订单详情一致，但 items 只含码指向的那一条明细（码是明细级授权，
+    不能连带看到同单其他产品）。
     """
     # 密钥还是仓库默认值时签名可被离线伪造，验证侧同样必须拒绝服务
     if domestic_report_service.qr_secret_is_default():
         raise HTTPException(status_code=503, detail={"code": "NOT_CONFIGURED", "message": "服务未完成安全配置，请联系莱莎跟单"})
-    valid, order_id = domestic_report_service.verify_order_scene(scene)
+    valid, item_id = domestic_report_service.verify_track_scene(scene)
     if not valid:
-        raise HTTPException(status_code=403, detail={"code": "BAD_SCENE", "message": "二维码无效，请扫订单进度码"})
+        raise HTTPException(status_code=403, detail={"code": "BAD_SCENE", "message": "二维码无效，请扫产品进度码"})
+
+    from app.domestic.models import DomesticOrderItem
+
+    item = db.query(DomesticOrderItem).get(item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "订单明细不存在"})
     try:
-        return domestic_order_service.get_order_detail(db, order_id)
+        detail = domestic_order_service.get_order_detail(db, item.order_id)
     except ValueError:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "订单不存在或已删除"})
+    detail["items"] = [i for i in detail["items"] if i["id"] == item_id]
+    return detail
 
 
 @router.get("/domestic/orders/{order_id}", summary="内贸订单明细进度")

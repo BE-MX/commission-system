@@ -458,13 +458,14 @@ def get_print_card(
     })
 
 
-@router.get("/orders/{order_id}/wxacode", summary="订单进度小程序码（微信扫码免登录看进度）")
-def get_order_wxacode(
-    order_id: int,
+@router.get("/items/{item_id}/wxacode", summary="订单产品进度小程序码（微信扫码免登录看该明细进度）")
+def get_item_wxacode(
+    item_id: int,
     db: Session = Depends(get_db),
     _user: dict = Depends(require_any_permission(*_READ)),
 ):
-    """生成指向小程序免登录进度页的小程序码，永久有效，可发客户/贴单据。
+    """生成指向小程序免登录进度页的小程序码（明细级，与流转卡同粒度），
+    永久有效，可发客户/贴单据。
 
     生成失败（正式版未发布 / IP 白名单未配）时返回 502 并透传微信侧原因，
     不发出一张扫开是白屏的坏码。
@@ -479,13 +480,16 @@ def get_order_wxacode(
             detail="QR_SIGN_SECRET 还是仓库默认值，进度码已锁定——在 .env 配置随机密钥后重启",
         )
 
+    item = db.query(DomesticOrderItem).get(item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="订单明细不存在")
     order = db.query(DomesticOrder).filter(
-        DomesticOrder.id == order_id, DomesticOrder.deleted_flag == 0
+        DomesticOrder.id == item.order_id, DomesticOrder.deleted_flag == 0
     ).first()
     if not order:
         raise HTTPException(status_code=404, detail="订单不存在")
 
-    scene = report_service.generate_order_scene(order_id)
+    scene = report_service.generate_track_scene(item_id)
     try:
         image = wx_client.get_wxacode_base64(scene, page=C.TRACK_PAGE)
     except wx_client.WxApiError as exc:
@@ -494,6 +498,8 @@ def get_order_wxacode(
     return ok({
         "domestic_no": order.domestic_no,
         "order_no": order.order_no,
+        "product_name": item.product_name,
+        "order_qty": item.order_qty,
         "scene": scene,
         "image_base64": image,
         # trial 码只有体验成员能扫开，前端据此提醒「勿发客户」

@@ -1,7 +1,8 @@
-"""内贸订单进度小程序码：scene 签名 / 免登录 track 端点 / 码生成端点
+"""内贸订单产品进度小程序码：scene 签名 / 免登录 track 端点 / 码生成端点
 
-免登录端点的唯一授权凭证是 HMAC 签名——签名域隔离（订单级 vs 明细级）、
-伪签拒绝、软删单拦截，都是这个口子的安全边界，必须钉死。
+免登录端点的唯一授权凭证是 HMAC 签名——签名域隔离（track vs 流转卡，同一个
+item_id 两个域）、伪签拒绝、软删单拦截、明细过滤（一码只看一条），都是这个
+口子的安全边界，必须钉死。
 """
 
 import hashlib
@@ -18,7 +19,7 @@ from app.auth.utils import create_access_token
 from app.core.config import Settings, get_settings
 from app.core.database import get_db
 from app.domestic import order_service, report_service
-from app.domestic.models import DomesticOrder
+from app.domestic.models import DomesticOrder, DomesticOrderItem
 from app.domestic.schemas import OrderCreate, OrderItemInput, ProductAttrs
 
 _DEFAULT_SECRET = Settings.model_fields["QR_SIGN_SECRET"].default
@@ -41,21 +42,34 @@ def _user(db, username="wxacode-user"):
     return user
 
 
-def _create_order(db, user):
+def _attrs(craft="递针旋全头套"):
+    return ProductAttrs(
+        product_type="cap", craft=craft, net_color="呼吸红",
+        size="s", length="15厘米", density="65%",
+    )
+
+
+def _create_order(db, user, item_count=1):
     payload = OrderCreate(
         order_no="710",
         order_date=date(2026, 7, 28),
         customer_shop_name="马姐假发",
         order_type="normal",
-        items=[OrderItemInput(
-            attrs=ProductAttrs(
-                product_type="cap", craft="递针旋全头套", net_color="呼吸红",
-                size="s", length="15厘米", density="65%",
-            ),
-            order_qty=10,
-        )],
+        items=[
+            OrderItemInput(attrs=_attrs(f"递针旋全头套{i or ''}"), order_qty=10 + i)
+            for i in range(item_count)
+        ],
     )
     return order_service.create_order(db, payload, user.id)
+
+
+def _items_of(db, order_id):
+    return (
+        db.query(DomesticOrderItem)
+        .filter(DomesticOrderItem.order_id == order_id)
+        .order_by(DomesticOrderItem.id.asc())
+        .all()
+    )
 
 
 @contextmanager
@@ -96,74 +110,81 @@ def _domestic_client(db, user, permissions=("domestic:read",)):
 # ── scene 签名 ────────────────────────────────────────
 
 
-def test_order_scene_roundtrip():
-    scene = report_service.generate_order_scene(123)
-    assert scene.startswith("o:123:")
+def test_track_scene_roundtrip():
+    scene = report_service.generate_track_scene(123)
+    assert scene.startswith("i:123:")
     assert len(scene) <= 32  # 微信 scene 上限
     sign = scene.rsplit(":", 1)[1]
     assert len(sign) == 16  # 免登录口子用 64-bit 签名，8 hex 不够
-    valid, order_id = report_service.verify_order_scene(scene)
-    assert valid and order_id == 123
+    valid, item_id = report_service.verify_track_scene(scene)
+    assert valid and item_id == 123
 
 
-def test_order_scene_rejects_tampering():
-    scene = report_service.generate_order_scene(123)
+def test_track_scene_rejects_tampering():
+    scene = report_service.generate_track_scene(123)
     sign = scene.rsplit(":", 1)[1]
-    # 换 order_id 不换签名 → 拒
-    assert report_service.verify_order_scene(f"o:124:{sign}") == (False, 124)
+    # 换 item_id 不换签名 → 拒
+    assert report_service.verify_track_scene(f"i:124:{sign}") == (False, 124)
     # 伪造签名（格式合法的 16 hex）→ 拒
-    assert report_service.verify_order_scene("o:123:" + "0" * 16)[0] is False
-    # 乱七八糟的输入 → 拒且不炸
-    for garbage in ("", None, "o:abc:" + "1" * 16, "ARK-D:1:aaaaaaaa", "o:1:zzzzzzzz", "o:1:abcd1234"):
-        assert report_service.verify_order_scene(garbage)[0] is False
+    assert report_service.verify_track_scene("i:123:" + "0" * 16)[0] is False
+    # 乱七八糟的输入（含旧版订单级 o: 格式）→ 拒且不炸
+    for garbage in ("", None, "i:abc:" + "1" * 16, "o:123:" + "1" * 16,
+                    "ARK-D:1:aaaaaaaa", "i:1:zzzzzzzz", "i:1:abcd1234"):
+        assert report_service.verify_track_scene(garbage)[0] is False
 
 
-def test_order_scene_domain_isolated_from_item_qr():
-    """明细流转卡的签名域（ARK-D:<id>）不能拼成订单进度码（ARK-DO:<id>）"""
-    item_domain_sign = hmac_mod.new(
-        get_settings().QR_SIGN_SECRET.encode(), b"ARK-D:5", hashlib.sha256
-    ).hexdigest()[:16]
-    assert report_service.verify_order_scene(f"o:5:{item_domain_sign}")[0] is False
+def test_track_scene_domain_isolated_from_item_qr():
+    """同一个 item_id 有两个签名域：流转卡 ARK-D:<id>（贴在车间人人可见）
+    与进度码 ARK-DT:<id>。流转卡的 HMAC 拼不出进度码。"""
+    secret = get_settings().QR_SIGN_SECRET.encode()
+    card_domain_sign = hmac_mod.new(secret, b"ARK-D:5", hashlib.sha256).hexdigest()[:16]
+    assert report_service.verify_track_scene(f"i:5:{card_domain_sign}")[0] is False
 
 
 def test_default_secret_locks_generation_and_verification(db, monkeypatch):
     """QR_SIGN_SECRET 停在仓库默认值 = 谁都能离线伪造签名，两侧都必须拒绝服务"""
     creator = _user(db)
     order = _create_order(db, creator)
+    item = _items_of(db, order["id"])[0]
     monkeypatch.setattr(get_settings(), "QR_SIGN_SECRET", _DEFAULT_SECRET)
     assert report_service.qr_secret_is_default() is True
 
     with _mini_client(db) as client:
-        resp = client.get("/api/mini/domestic/track", params={"scene": "o:1:" + "a" * 16})
+        resp = client.get("/api/mini/domestic/track", params={"scene": "i:1:" + "a" * 16})
     assert resp.status_code == 503
 
     with _domestic_client(db, creator) as client:
-        resp = client.get(f"/api/domestic/orders/{order['id']}/wxacode")
+        resp = client.get(f"/api/domestic/items/{item.id}/wxacode")
     assert resp.status_code == 503
 
 
 # ── 免登录 track 端点 ─────────────────────────────────
 
 
-def test_track_returns_order_detail_without_auth(db):
+def test_track_returns_only_scanned_item(db):
+    """两条明细的订单，扫 A 产品的码只能看到 A——码是明细级授权"""
     creator = _user(db)
-    order = _create_order(db, creator)
-    scene = report_service.generate_order_scene(order["id"])
+    order = _create_order(db, creator, item_count=2)
+    first, second = _items_of(db, order["id"])
+    scene = report_service.generate_track_scene(first.id)
 
     with _mini_client(db) as client:
         resp = client.get("/api/mini/domestic/track", params={"scene": scene})
     assert resp.status_code == 200
     data = resp.json()
     assert data["id"] == order["id"]
-    assert data["items"][0]["order_qty"] == 10
+    assert [i["id"] for i in data["items"]] == [first.id]
+    assert data["items"][0]["order_qty"] == first.order_qty
+    assert second.id not in [i["id"] for i in data["items"]]
 
 
 def test_track_rejects_bad_signature(db):
     creator = _user(db)
     order = _create_order(db, creator)
+    item = _items_of(db, order["id"])[0]
 
     with _mini_client(db) as client:
-        resp = client.get("/api/mini/domestic/track", params={"scene": f"o:{order['id']}:00000000"})
+        resp = client.get("/api/mini/domestic/track", params={"scene": f"i:{item.id}:" + "0" * 16})
     assert resp.status_code == 403
 
 
@@ -171,10 +192,19 @@ def test_track_blocks_soft_deleted_order(db):
     """码贴在外面收不回来，删单后必须在服务端挡住"""
     creator = _user(db)
     order = _create_order(db, creator)
-    scene = report_service.generate_order_scene(order["id"])
+    item = _items_of(db, order["id"])[0]
+    scene = report_service.generate_track_scene(item.id)
     db.query(DomesticOrder).filter(DomesticOrder.id == order["id"]).update({"deleted_flag": 1})
     db.flush()
 
+    with _mini_client(db) as client:
+        resp = client.get("/api/mini/domestic/track", params={"scene": scene})
+    assert resp.status_code == 404
+
+
+def test_track_404_on_missing_item(db):
+    """签名合法但明细不存在（比如明细被删）→ 404 不炸"""
+    scene = report_service.generate_track_scene(999999)
     with _mini_client(db) as client:
         resp = client.get("/api/mini/domestic/track", params={"scene": scene})
     assert resp.status_code == 404
@@ -188,6 +218,7 @@ def test_wxacode_endpoint_returns_image(db, monkeypatch):
 
     creator = _user(db)
     order = _create_order(db, creator)
+    item = _items_of(db, order["id"])[0]
     captured = {}
 
     def fake_b64(scene, page):
@@ -197,11 +228,12 @@ def test_wxacode_endpoint_returns_image(db, monkeypatch):
     monkeypatch.setattr(wx_client, "get_wxacode_base64", fake_b64)
 
     with _domestic_client(db, creator) as client:
-        resp = client.get(f"/api/domestic/orders/{order['id']}/wxacode")
+        resp = client.get(f"/api/domestic/items/{item.id}/wxacode")
     assert resp.status_code == 200
     data = resp.json()["data"]
     assert data["image_base64"].startswith("data:image/jpeg;base64,")
-    assert data["scene"] == report_service.generate_order_scene(order["id"])
+    assert data["scene"] == report_service.generate_track_scene(item.id)
+    assert data["product_name"] == item.product_name
     assert data["env_version"] in ("release", "trial", "develop")  # 前端据此提示「勿发客户」
     assert captured["page"] == "pages/domestic/track/track"
 
@@ -211,12 +243,13 @@ def test_wxacode_endpoint_404_on_deleted_order(db, monkeypatch):
 
     creator = _user(db)
     order = _create_order(db, creator)
+    item = _items_of(db, order["id"])[0]
     db.query(DomesticOrder).filter(DomesticOrder.id == order["id"]).update({"deleted_flag": 1})
     db.flush()
     monkeypatch.setattr(wx_client, "get_wxacode_base64", lambda *a, **k: "unused")
 
     with _domestic_client(db, creator) as client:
-        resp = client.get(f"/api/domestic/orders/{order['id']}/wxacode")
+        resp = client.get(f"/api/domestic/items/{item.id}/wxacode")
     assert resp.status_code == 404
 
 
@@ -226,6 +259,7 @@ def test_wxacode_endpoint_502_when_wx_fails(db, monkeypatch):
 
     creator = _user(db)
     order = _create_order(db, creator)
+    item = _items_of(db, order["id"])[0]
 
     def boom(scene, page):
         raise wx_client.WxApiError("生成小程序码失败: 41030 invalid page")
@@ -233,7 +267,7 @@ def test_wxacode_endpoint_502_when_wx_fails(db, monkeypatch):
     monkeypatch.setattr(wx_client, "get_wxacode_base64", boom)
 
     with _domestic_client(db, creator) as client:
-        resp = client.get(f"/api/domestic/orders/{order['id']}/wxacode")
+        resp = client.get(f"/api/domestic/items/{item.id}/wxacode")
     assert resp.status_code == 502
     assert "41030" in resp.json()["detail"]
 
@@ -275,7 +309,7 @@ def test_wxacode_retries_once_on_stale_token(monkeypatch):
     monkeypatch.setattr(wx_client, "get_access_token", fake_token)
     monkeypatch.setattr(wx_client.httpx, "Client", FakeClient)
 
-    content, mime = wx_client.get_wxacode_image("o:1:" + "a" * 16, "pages/domestic/track/track")
+    content, mime = wx_client.get_wxacode_image("i:1:" + "a" * 16, "pages/domestic/track/track")
     assert content == b"jpeg-bytes"
     assert mime == "image/jpeg"
     assert calls["post"] == 2  # 第一次 40001，强刷 token 后成功
