@@ -218,7 +218,7 @@
 
     <DomesticPrintDialog
       v-model:visible="printDialog.visible"
-      :mode="printDialog.mode" :item-id="printDialog.itemId"
+      :mode="printDialog.mode" :item-id="printDialog.itemId" :order-id="printDialog.orderId"
     />
 
     <el-dialog v-model="wxacodeDialog.visible" title="订单进度码" width="420px">
@@ -235,7 +235,8 @@
       </div>
       <template #footer>
         <GlassButton variant="ghost" @click="wxacodeDialog.visible = false">关闭</GlassButton>
-        <GlassButton variant="primary" left-icon="Download" :disabled="!wxacodeDialog.image" @click="downloadWxacode">下载 PNG</GlassButton>
+        <GlassButton variant="ghost" left-icon="Printer" :disabled="!wxacodeDialog.image" @click="openWxacodeLabel">打印标签</GlassButton>
+        <GlassButton variant="primary" left-icon="Download" :disabled="!wxacodeDialog.image" @click="downloadWxacode">下载图片</GlassButton>
       </template>
     </el-dialog>
 
@@ -275,7 +276,7 @@ const {
   reportDialog, openReport, confirmReport,
   logDialog, openLogs, handleRevokeReport,
   attachDialog, openAttachRoute, confirmAttachRoute,
-  printDialog, openPrintCard, openQrLabel,
+  printDialog, openPrintCard, openQrLabel, openWxacodeLabel,
   wxacodeDialog, openWxacode, downloadWxacode,
   handleTerminate, handleDelete, goCreate,
 } = useDomesticOrders()

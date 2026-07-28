@@ -1,6 +1,6 @@
 <template>
   <el-dialog
-    :model-value="visible" :title="title" :width="mode === 'label' ? '520px' : '900px'"
+    :model-value="visible" :title="title" :width="isLabel ? '520px' : '900px'"
     top="5vh" destroy-on-close @update:model-value="close"
   >
     <div v-if="loadError" class="state-line">{{ loadError }}</div>
@@ -11,17 +11,20 @@
          所见即所印，也不会把订单页和侧边栏带进去 -->
     <iframe
       v-show="!loading && !loadError" ref="frameRef" class="preview-frame"
-      :class="mode === 'label' ? 'preview-frame--label' : 'preview-frame--card'"
+      :class="isLabel ? 'preview-frame--label' : 'preview-frame--card'"
       :srcdoc="docHtml" title="打印预览"
     />
 
     <template #footer>
       <div class="footer-bar">
-        <div v-if="mode === 'label'" class="copies">
+        <div v-if="isLabel" class="copies">
           <span class="copies-label">份数</span>
           <el-input-number v-model="copies" :min="1" :max="50" size="small" />
         </div>
-        <span class="tip">打印对话框里缩放选「实际大小 / 100%」{{ mode === 'label' ? '，纸张设为 30 × 20mm' : '' }}</span>
+        <span v-if="mode === 'wxacode' && card && card.env_version !== 'release'" class="tip tip--warn">
+          体验版码：只有小程序体验成员能扫开，别贴给客户看的单据
+        </span>
+        <span v-else class="tip">打印对话框里缩放选「实际大小 / 100%」{{ isLabel ? '，纸张设为 30 × 20mm' : '' }}</span>
         <div class="footer-actions">
           <GlassButton variant="ghost" @click="close">关闭</GlassButton>
           <GlassButton variant="primary" left-icon="Printer" :disabled="loading || !!loadError" @click="doPrint">
@@ -35,20 +38,21 @@
 
 <script setup>
 /**
- * 内贸打印弹框（流转卡 / 二维码标签共用）。
+ * 内贸打印弹框（流转卡 / 二维码标签 / 进度码标签共用）。
  * 弹框停留在订单页上，用户关掉就回到原来的列表和抽屉，不用按浏览器后退。
  */
 import { computed, ref, watch } from 'vue'
 import { Loading } from '@element-plus/icons-vue'
-import { fetchImageDataUrl, getPrintCard } from '@/api/domestic'
+import { fetchImageDataUrl, getOrderWxacode, getPrintCard } from '@/api/domestic'
 import GlassButton from '@/components/GlassButton.vue'
 import logoUrl from '@/assets/domestic-logo.png'
-import { buildCardDoc, buildLabelDoc } from './printDocs'
+import { buildCardDoc, buildLabelDoc, buildWxacodeLabelDoc } from './printDocs'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
-  mode: { type: String, default: 'card' },   // card=流转卡 / label=二维码标签
+  mode: { type: String, default: 'card' },   // card=流转卡 / label=二维码标签 / wxacode=进度码标签
   itemId: { type: [Number, String], default: null },
+  orderId: { type: [Number, String], default: null },   // wxacode 模式用（订单级）
 })
 const emit = defineEmits(['update:visible'])
 
@@ -58,10 +62,22 @@ const card = ref(null)
 const copies = ref(1)
 const frameRef = ref(null)
 
-const title = computed(() => (props.mode === 'label' ? '二维码标签（30×20mm）' : '工艺流转卡'))
+const isLabel = computed(() => props.mode !== 'card')
+const title = computed(() => ({
+  label: '二维码标签（30×20mm）',
+  wxacode: '进度码标签（30×20mm）',
+}[props.mode] || '工艺流转卡'))
 
 const docHtml = computed(() => {
   if (!card.value) return ''
+  if (props.mode === 'wxacode') {
+    return buildWxacodeLabelDoc({
+      image: card.value.image_base64,
+      domesticNo: card.value.domestic_no,
+      logoUrl,
+      copies: copies.value,
+    })
+  }
   return props.mode === 'label'
     ? buildLabelDoc({ card: card.value, logoUrl, copies: copies.value })
     : buildCardDoc({ card: card.value, imageMap: imageMap.value })
@@ -91,13 +107,20 @@ async function load() {
   imageMap.value = {}
   copies.value = 1
   try {
-    const res = await getPrintCard(props.itemId)
-    card.value = res.data
-    if (props.mode === 'card') {
-      imageMap.value = await loadReferenceImages(res.data.item || {})
+    if (props.mode === 'wxacode') {
+      const res = await getOrderWxacode(props.orderId)
+      card.value = res.data
+    } else {
+      const res = await getPrintCard(props.itemId)
+      card.value = res.data
+      if (props.mode === 'card') {
+        imageMap.value = await loadReferenceImages(res.data.item || {})
+      }
     }
   } catch {
-    loadError.value = '这张卡对应的明细已经不存在了（订单可能已被删除）'
+    loadError.value = props.mode === 'wxacode'
+      ? '进度码没生成出来，原因见右上角报错提示'
+      : '这张卡对应的明细已经不存在了（订单可能已被删除）'
   } finally {
     loading.value = false
   }
@@ -115,8 +138,8 @@ function close() {
   emit('update:visible', false)
 }
 
-watch(() => [props.visible, props.itemId, props.mode], ([isOpen]) => {
-  if (isOpen && props.itemId) load()
+watch(() => [props.visible, props.itemId, props.orderId, props.mode], ([isOpen]) => {
+  if (isOpen && (props.mode === 'wxacode' ? props.orderId : props.itemId)) load()
 }, { immediate: true })
 </script>
 
@@ -164,6 +187,8 @@ watch(() => [props.visible, props.itemId, props.mode], ([isOpen]) => {
   font-size: 12px;
   color: var(--el-text-color-secondary);
 }
+
+.tip--warn { color: var(--el-color-warning); }
 
 .footer-actions {
   display: flex;

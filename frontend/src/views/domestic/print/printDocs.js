@@ -65,6 +65,12 @@ export function buildLabelDoc({ card, logoUrl, copies = 1 }) {
   return wrapDoc(`二维码标签 ${card.domestic_no}`, LABEL_CSS, one.repeat(Math.max(1, copies)))
 }
 
+// 订单进度小程序码标签：同一版式（左 LOGO 右码），码换成微信小程序码
+export function buildWxacodeLabelDoc({ image, domesticNo, logoUrl, copies = 1 }) {
+  const one = `<div class="label">${img(logoUrl, 'label-logo', '莱莎健康假发')}${img(image, 'label-qr', '订单进度码')}</div>`
+  return wrapDoc(`进度码标签 ${domesticNo}`, LABEL_CSS, one.repeat(Math.max(1, copies)))
+}
+
 // ── 工艺流转卡 A4 ─────────────────────────────────────
 
 const CARD_CSS = `

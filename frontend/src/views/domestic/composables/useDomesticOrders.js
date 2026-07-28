@@ -201,14 +201,20 @@ export function useDomesticOrders() {
 
   // 打印弹框：内容渲染在 iframe 里的独立文档中，打印只出那份文档，
   // 但弹框本身停在订单页上——关掉就回到原来的列表和抽屉，不用按浏览器后退
-  const printDialog = reactive({ visible: false, mode: 'card', itemId: null })
+  const printDialog = reactive({ visible: false, mode: 'card', itemId: null, orderId: null })
 
   function openPrintCard(item) {
-    Object.assign(printDialog, { visible: true, mode: 'card', itemId: item.id })
+    Object.assign(printDialog, { visible: true, mode: 'card', itemId: item.id, orderId: null })
   }
 
   function openQrLabel(item) {
-    Object.assign(printDialog, { visible: true, mode: 'label', itemId: item.id })
+    Object.assign(printDialog, { visible: true, mode: 'label', itemId: item.id, orderId: null })
+  }
+
+  // 进度码的 30×20 标签版（左 LOGO 右码，与流转卡二维码标签同版式）
+  function openWxacodeLabel() {
+    if (!wxacodeDialog.order) return
+    Object.assign(printDialog, { visible: true, mode: 'wxacode', itemId: null, orderId: wxacodeDialog.order.id })
   }
 
   // ── 订单进度小程序码（微信扫码免登录看进度，可发客户）──
@@ -251,7 +257,7 @@ export function useDomesticOrders() {
     reportDialog, openReport, confirmReport,
     logDialog, openLogs, handleRevokeReport,
     attachDialog, openAttachRoute, confirmAttachRoute,
-    printDialog, openPrintCard, openQrLabel,
+    printDialog, openPrintCard, openQrLabel, openWxacodeLabel,
     wxacodeDialog, openWxacode, downloadWxacode,
     handleTerminate, handleDelete, goCreate,
   }
