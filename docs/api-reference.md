@@ -427,6 +427,7 @@
 - 逐工序进度对象（订单详情 / `items/{id}/progress` / 速查共用同一形状）：`progress_id / step_order / process_name / order_qty / upstream_qty / completed_qty / reportable_qty / status / first_reported_at / last_reported_at`，外加 **`last_reported_by` + `last_report_qty`**（该工序最近一次**未撤销**报工的人与数量；无有效报工时为 null）。
 - 报工：`GET /reports`（流水查询）、`POST /reports`（主站代报工，**必须传 `on_behalf_user_id` 指明实际做活的工人**——件数记错人等于工资算错人；支持 `request_id` 幂等键）、`POST /reports/revoke`（撤销；只能撤自己的，`domestic:admin` 可撤他人）、`GET /reports/workload`（按人×工序汇总有效件数，计件统计基础，已撤销不计）。
 - 参考图：`POST /images`（只收 jpg/png/webp ≤20MB，落 `DOMESTIC_STORAGE_ROOT` 私有目录）、`GET /images/{path}`（鉴权 FileResponse，前端 axios blob 取图）。
+- 进度小程序码：`GET /orders/{id}/wxacode`（2026-07-28）——生成指向小程序免登录进度页的微信小程序码（`wxacode.getUnlimited`，scene=`o:<order_id>:<hmac16>`，永久有效），返回 `{scene, image_base64, domestic_no, order_no, env_version}`（image 的 MIME 按微信实际返回，是 jpeg；env_version 非 release 时前端警示「勿发客户」），可下载发客户。微信侧失败（正式版未发布 41030 / IP 白名单 40164）返回 502 并透传原因；`QR_SIGN_SECRET` 还是仓库默认值时 503 拒绝出码。依赖 `.env` 的 `WX_MINI_APPID/SECRET` + `WX_MINI_ENV_VERSION`（默认 release，体验期设 trial）。
 - 权限：`domestic:read` 查看 / `domestic:write` 下单编辑发货报工 / `domestic:admin` 工艺映射、产品改绑、删单、撤销他人报工。
 
 ### 内贸报工（小程序，`/api/mini/domestic/*`）
@@ -439,3 +440,4 @@
 - `POST /scan/revoke` — `{log_id}`；`GET /history` 今日、`GET /history/all` 分页。
 - `GET /orders` / `GET /orders/{id}` — 车间/跟单看订单进度。
 - `GET /images/{path}` — 参考图（小程序 token 无 RBAC 声明，走不了主站图片端点，故有这个同源版本）。
+- `GET /track?scene=` — **免登录**订单进度（2026-07-28）：微信扫「订单进度小程序码」进来的客户没有方舟账号，凭 scene 里的 16 hex HMAC 签名（域 `ARK-DO:<order_id>`，与流转卡 `ARK-D:<item_id>` 隔离）授权看这一单，返回与 `/lookup` 同形状的订单详情。验签不过 403，软删单 404；`QR_SIGN_SECRET` 还是仓库默认值时 503 拒绝服务（默认值人人可伪造签名）。消费方是小程序页 `pages/domestic/track/track`（页面无搜索/扫码入口，防遍历）。

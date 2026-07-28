@@ -668,3 +668,11 @@ frontend/src/
 - 代报工必须传 `on_behalf_user_id`，否则件数记到操作电脑的人头上，计件工资算错人。
 
 **上线后的人工配置**（漏了单能下但开不了工）：角色管理页分配 `domestic:read/write/admin` → 「产品与工艺」页配「工艺→路线」映射 → 给内贸工人绑工序。
+
+**订单进度小程序码（2026-07-28）**：主站订单列表「进度码」按钮 → `GET /api/domestic/orders/{id}/wxacode` 生成微信小程序码（`wxacode.getUnlimited`，scene=`o:<order_id>:<hmac16>`，永久有效），微信扫一扫拉起小程序落到**免登录**页 `pages/domestic/track/track`（调 `GET /api/mini/domestic/track?scene=`）。要点：
+- 免登录的唯一授权凭证是 scene 的 16 hex HMAC 签名（免登录口子 8 hex 不够，64-bit 才谈得上防在线遍历），域 `ARK-DO:<order_id>` 与流转卡 `ARK-D:<item_id>` 隔离；track 页无搜索/扫码入口防遍历；软删单 404。进度信息对客户公开不遮挡（亮哥 2026-07-28 拍板）。
+- **`QR_SIGN_SECRET` 停在仓库默认值时，出码端点和 track 端点都 503 拒绝服务**——默认值进了 git，人人可离线伪造签名，整个免登录授权模型就没了。部署前必须在 `.env` 配随机值；注意换密钥会让已打印的 `ARK-D:` 流转卡验签失效（流转卡与进度码共用此密钥），若生产已在默认值下印过卡，换钥后需重打。
+- `app/mini/wx_client.py`：access_token 走 **stable_token**（幂等不顶号），内存缓存提前 300s 刷新；**该接口要求服务器出口 IP 在微信公众平台 IP 白名单**（jscode2session 不要求，登录正常≠这里能通，报 40164 就是白名单）。
+- `WX_MINI_ENV_VERSION`（默认 release）：正式版发布前设 trial（体验版码只有体验成员能扫开，**客户扫不开**）；release 时 check_path=True，页面未发布直接报 41030 拒绝出码，不发坏码。
+- 小程序 `app.js` onLaunch 对 track 冷启动路径豁免登录跳转（`wx.getLaunchOptionsSync().path`），否则客户被踢去登录页。
+- **上线前提**：发布包含 track 页的小程序**正式版** + 微信平台配好 IP 白名单，两者缺一功能不可用（主站会报 502 提示原因）。
