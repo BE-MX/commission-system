@@ -9,11 +9,13 @@
 
 from __future__ import annotations
 
+import json
+import logging
 import os
 import shutil
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.deps import get_db
@@ -28,10 +30,18 @@ from app.asset.models import Asset, FavoriteFolder, FavoriteItem, DownloadLog, T
 from app.auth.models import ArkUser  # noqa: F401 — registers ark_users for FK resolution
 from app.asset.folder_upload_service import (
     ASYNC_FILE_THRESHOLD,
+    DIRECT_UPLOAD_CHUNK_BYTES,
+    cleanup_direct_upload_root,
+    create_direct_upload_session,
     execute_folder_upload,
     extract_tags_from_path,
+    extract_tags_from_relative_path,
+    finalize_direct_upload_session,
     get_folder_upload_job,
+    load_direct_upload_session,
+    preview_manifest_files,
     preview_files,
+    save_direct_upload_chunk,
     scan_folder,
     start_folder_upload_async,
     validate_folder_tags,
@@ -48,6 +58,7 @@ from app.asset.schemas import (
     FavoriteFolderCreate,
     FavoriteFolderUpdate,
     FavoriteItemCreate,
+    FolderUploadDirectRequest,
     FolderUploadExecuteRequest,
     FolderUploadPreviewRequest,
     FolderUploadValidateRequest,
@@ -57,6 +68,17 @@ from app.asset.schemas import (
 )
 
 router = APIRouter()
+logger = logging.getLogger("asset.router")
+
+
+def _require_auto_create_permission(user: dict, auto_create_tags: dict[str, int]) -> None:
+    """内联创建标签仍属于标签管理能力，不能随素材上传权限一并放开。"""
+    if not auto_create_tags:
+        return
+    roles = user.get("roles") or []
+    permissions = user.get("permissions") or []
+    if "super_admin" not in roles and "asset:admin" not in permissions:
+        raise HTTPException(status_code=403, detail="自动创建标签需要素材管理权限")
 
 
 # ── 标签维度 ────────────────────────────────────────────
@@ -346,21 +368,49 @@ def folder_upload_validate(
     _user: dict = Depends(require_permission("asset:write")),
 ):
     """校验文件夹标签：扫描文件夹 → 提取候选标签 → 匹配标签库。"""
-    files = scan_folder(req.folder_path)
+    if not req.folder_path and not req.relative_paths:
+        raise HTTPException(status_code=400, detail="请选择文件夹或填写服务器路径")
+
+    candidate_sources: dict[str, set[str]] = {}
+    all_tags: list[str] = []
+
+    if req.relative_paths:
+        files = req.relative_paths
+        for relative_path in files:
+            folder_tags = extract_tags_from_relative_path(relative_path)
+            for tag in folder_tags:
+                candidate_sources.setdefault(tag, set()).add("folder")
+                all_tags.append(tag)
+            if req.include_filename_tags:
+                tags_with_filename = extract_tags_from_relative_path(relative_path, True)
+                for tag in tags_with_filename[len(folder_tags):]:
+                    candidate_sources.setdefault(tag, set()).add("filename")
+                    all_tags.append(tag)
+    else:
+        files = scan_folder(req.folder_path)
+        for file_path in files:
+            folder_tags = extract_tags_from_path(file_path, req.folder_path)
+            for tag in folder_tags:
+                candidate_sources.setdefault(tag, set()).add("folder")
+                all_tags.append(tag)
+            if req.include_filename_tags:
+                tags_with_filename = extract_tags_from_path(
+                    file_path, req.folder_path, include_filename_tag=True,
+                )
+                for tag in tags_with_filename[len(folder_tags):]:
+                    candidate_sources.setdefault(tag, set()).add("filename")
+                    all_tags.append(tag)
+
     if not files:
         return _ok({
             "is_valid": False,
             "total_files": 0,
             "matched": [],
+            "suggested": [],
             "missing": [],
             "ambiguous": [],
-            "message": "所选文件夹中未找到图片文件",
+            "message": "所选文件夹中未找到支持的图片或视频",
         })
-
-    # 收集所有候选标签
-    all_tags: list[str] = []
-    for fp in files:
-        all_tags.extend(extract_tags_from_path(fp, req.folder_path))
 
     result = validate_folder_tags(db, all_tags)
 
@@ -368,7 +418,11 @@ def folder_upload_validate(
         "is_valid": result.is_valid,
         "total_files": len(files),
         "candidate_tags": list(dict.fromkeys(all_tags)),
+        "candidate_sources": {
+            name: sorted(sources) for name, sources in candidate_sources.items()
+        },
         "matched": result.matched,
+        "suggested": result.suggested,
         "missing": result.missing,
         "ambiguous": result.ambiguous,
     })
@@ -381,7 +435,21 @@ def folder_upload_preview(
     _user: dict = Depends(require_permission("asset:write")),
 ):
     """预览即将入库的文件清单。"""
-    files = preview_files(db, req.folder_path, req.tag_mapping)
+    if req.relative_paths:
+        files = preview_manifest_files(
+            req.relative_paths,
+            req.tag_mapping,
+            include_filename_tags=req.include_filename_tags,
+        )
+    elif req.folder_path:
+        files = preview_files(
+            db,
+            req.folder_path,
+            req.tag_mapping,
+            include_filename_tags=req.include_filename_tags,
+        )
+    else:
+        raise HTTPException(status_code=400, detail="缺少文件夹来源")
 
     # 统计使用的标签维度
     dim_stats: dict[int, dict] = {}
@@ -407,9 +475,10 @@ def folder_upload_execute(
     db: Session = Depends(get_db),
     user: dict = Depends(require_permission("asset:write")),
 ):
-    """执行文件夹批量入库。>100 文件时后台异步执行。"""
+    """执行服务器路径批量入库；超过阈值时转后台处理。"""
     from app.core.database import SessionLocal
 
+    _require_auto_create_permission(user, req.auto_create_tags)
     user_id = int(user.get("sub") or user.get("user_id") or 0)
     files = scan_folder(req.folder_path)
 
@@ -422,6 +491,8 @@ def folder_upload_execute(
             req.extra_tags,
             user_id,
             update_duplicates=req.update_duplicates,
+            include_filename_tags=req.include_filename_tags,
+            auto_create_tags=req.auto_create_tags,
         )
         return _ok({
             "async": True,
@@ -430,29 +501,165 @@ def folder_upload_execute(
             "message": f"共 {len(files)} 个文件，已提交后台处理",
         })
 
-    report = execute_folder_upload(
-        db,
-        folder_path=req.folder_path,
-        tag_mapping=req.tag_mapping,
-        permission=req.permission,
-        extra_tags=req.extra_tags,
-        uploader_id=user_id,
-        copy=True,
-        update_duplicates=req.update_duplicates,
-    )
+    try:
+        report = execute_folder_upload(
+            db,
+            folder_path=req.folder_path,
+            tag_mapping=req.tag_mapping,
+            permission=req.permission,
+            extra_tags=req.extra_tags,
+            uploader_id=user_id,
+            copy=True,
+            update_duplicates=req.update_duplicates,
+            include_filename_tags=req.include_filename_tags,
+            auto_create_tags=req.auto_create_tags,
+        )
+    except ValueError as exc:
+        logger.warning("Server folder upload rejected: %s", exc)
+        print(f"[folder-upload] server upload rejected: {exc}", flush=True)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _ok({
         "async": False,
         "report": report,
     })
 
 
+@router.post("/folder-upload/direct/session")
+def create_folder_upload_direct_session(
+    req: FolderUploadDirectRequest,
+    user: dict = Depends(require_permission("asset:write")),
+):
+    """创建浏览器文件夹分块上传会话，避免网关单请求大小限制。"""
+    _require_auto_create_permission(user, req.auto_create_tags)
+    user_id = int(user.get("sub") or user.get("user_id") or 0)
+    try:
+        upload_id, _ = create_direct_upload_session(
+            req.relative_paths,
+            req.file_sizes,
+            user_id,
+            req.model_dump(mode="json"),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _ok({
+        "upload_id": upload_id,
+        "chunk_size": DIRECT_UPLOAD_CHUNK_BYTES,
+        "total_files": len(req.relative_paths),
+    })
+
+
+@router.post("/folder-upload/direct/{upload_id}/chunk")
+def upload_folder_direct_chunk(
+    upload_id: str,
+    relative_path: str = Form(...),
+    chunk_index: int = Form(...),
+    total_chunks: int = Form(...),
+    chunk: UploadFile = File(...),
+    user: dict = Depends(require_permission("asset:write")),
+):
+    """接收一个文件块；同一块可覆盖重传。"""
+    user_id = int(user.get("sub") or user.get("user_id") or 0)
+    try:
+        result = save_direct_upload_chunk(
+            upload_id,
+            user_id,
+            relative_path,
+            chunk_index,
+            total_chunks,
+            chunk,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _ok(result)
+
+
+@router.delete("/folder-upload/direct/{upload_id}")
+def cancel_folder_upload_direct(
+    upload_id: str,
+    user: dict = Depends(require_permission("asset:write")),
+):
+    """取消未完成的直传并回收临时文件。"""
+    user_id = int(user.get("sub") or user.get("user_id") or 0)
+    try:
+        staging_root, _ = load_direct_upload_session(upload_id, user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    cleanup_direct_upload_root(staging_root)
+    return _ok({"cancelled": True})
+
+
+@router.post("/folder-upload/direct/{upload_id}/complete")
+def complete_folder_upload_direct(
+    upload_id: str,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("asset:write")),
+):
+    """校验并组装全部文件块，然后复用文件夹批量入库流程。"""
+    user_id = int(user.get("sub") or user.get("user_id") or 0)
+    staging_root = None
+    try:
+        staging_root, manifest = finalize_direct_upload_session(upload_id, user_id)
+        req = FolderUploadDirectRequest(**manifest["payload"])
+        _require_auto_create_permission(user, req.auto_create_tags)
+        file_count = len(req.relative_paths)
+        if file_count > ASYNC_FILE_THRESHOLD:
+            from app.core.database import SessionLocal
+            job_id = start_folder_upload_async(
+                SessionLocal,
+                str(staging_root),
+                req.tag_mapping,
+                req.permission,
+                req.extra_tags,
+                user_id,
+                update_duplicates=req.update_duplicates,
+                copy=False,
+                include_filename_tags=req.include_filename_tags,
+                include_root_name=False,
+                auto_create_tags=req.auto_create_tags,
+                cleanup_dir=str(staging_root),
+            )
+            staging_root = None
+            return _ok({
+                "async": True,
+                "job_id": job_id,
+                "total_files": file_count,
+                "message": f"共 {file_count} 个文件，已提交后台处理",
+            })
+        report = execute_folder_upload(
+            db,
+            folder_path=str(staging_root),
+            tag_mapping=req.tag_mapping,
+            permission=req.permission,
+            extra_tags=req.extra_tags,
+            uploader_id=user_id,
+            copy=False,
+            update_duplicates=req.update_duplicates,
+            include_filename_tags=req.include_filename_tags,
+            include_root_name=False,
+            auto_create_tags=req.auto_create_tags,
+        )
+        return _ok({"async": False, "report": report})
+    except ValueError as exc:
+        logger.warning("Direct folder upload rejected: %s", exc)
+        print(f"[folder-upload] direct upload rejected: {exc}", flush=True)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Direct folder upload failed")
+        print(f"[folder-upload] direct upload failed: {exc}", flush=True)
+        raise
+    finally:
+        if staging_root is not None:
+            cleanup_direct_upload_root(staging_root)
+
+
 @router.get("/folder-upload/status/{job_id}")
 def folder_upload_status(
     job_id: str,
-    _user: dict = Depends(require_permission("asset:write")),
+    user: dict = Depends(require_permission("asset:write")),
 ):
     """查询异步文件夹上传任务状态。"""
-    job = get_folder_upload_job(job_id)
+    user_id = int(user.get("sub") or user.get("user_id") or 0)
+    job = get_folder_upload_job(job_id, user_id)
     if not job:
         raise HTTPException(status_code=404, detail="任务不存在")
     return _ok(job)

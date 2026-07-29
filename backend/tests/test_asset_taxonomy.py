@@ -195,6 +195,245 @@ def test_tags_match_subset_ignores_hidden_and_managed():
     assert _tags_match(existing, set(), comparable) is False
 
 
+def test_browser_folder_tags_include_optional_filename_without_suffix():
+    from app.asset.folder_upload_service import extract_tags_from_relative_path
+
+    path = "产品素材/白底图/天才发帘.v2.jpg"
+    assert extract_tags_from_relative_path(path) == ["产品素材", "白底图"]
+    assert extract_tags_from_relative_path(path, include_filename_tag=True) == [
+        "产品素材", "白底图", "天才发帘.v2",
+    ]
+
+
+def test_build_file_tags_keeps_multiple_values_for_multi_select_dimension(tmp_path):
+    from app.asset.folder_upload_service import _build_file_tag_items
+
+    root = tmp_path / "产品素材"
+    file_path = root / "白底图" / "场景图.jpg"
+    file_path.parent.mkdir(parents=True)
+    file_path.write_bytes(b"image")
+    mapping = {
+        "产品素材": {"dimension_id": 1, "tag_value_id": 10},
+        "白底图": {"dimension_id": 2, "tag_value_id": 20},
+        "场景图": {"dimension_id": 2, "tag_value_id": 21},
+    }
+
+    items, target = _build_file_tag_items(
+        str(file_path),
+        str(root),
+        mapping,
+        [],
+        single_select_dims={1},
+        include_filename_tags=True,
+    )
+
+    by_dimension = {item.dimension_id: item.tag_value_ids for item in items}
+    assert by_dimension == {1: [10], 2: [20, 21]}
+    assert target == {(1, 10), (2, 20), (2, 21)}
+
+
+def test_folder_tag_validation_recommends_closest_keyword(db):
+    from app.asset.folder_upload_service import validate_folder_tags
+    from app.asset.models import TagDimension, TagValue
+
+    dim = TagDimension(
+        name="tx_style",
+        label="拍摄风格",
+        is_visible=1,
+        is_managed=0,
+    )
+    db.add(dim)
+    db.flush()
+    db.add_all([
+        TagValue(dimension_id=dim.id, value="白底图", aliases=["产品白底"]),
+        TagValue(dimension_id=dim.id, value="场景图"),
+    ])
+    db.flush()
+
+    result = validate_folder_tags(db, ["产品白底", "白底照", "ZXQ-987654"])
+
+    assert result.matched[0]["original_value"] == "白底图"
+    assert result.suggested[0]["tag_name"] == "白底照"
+    assert result.suggested[0]["recommended"]["original_value"] == "白底图"
+    assert result.missing == ["ZXQ-987654"]
+    assert result.is_valid is False
+
+
+def test_folder_upload_auto_create_tag_reuses_existing_value(db):
+    from app.asset.folder_upload_service import _resolve_auto_create_tags
+    from app.asset.models import TagDimension, TagValue
+
+    dim = TagDimension(
+        name="tx_custom",
+        label="自定义分类",
+        is_visible=1,
+        is_managed=0,
+    )
+    db.add(dim)
+    db.flush()
+
+    mapping, created = _resolve_auto_create_tags(db, {}, {"新标签": dim.id})
+    assert len(created) == 1
+    assert mapping["新标签"]["tag_value_id"]
+
+    mapping_again, created_again = _resolve_auto_create_tags(db, {}, {"新标签": dim.id})
+    assert created_again == []
+    assert mapping_again["新标签"]["tag_value_id"] == mapping["新标签"]["tag_value_id"]
+    assert db.query(TagValue).filter_by(dimension_id=dim.id, value="新标签").count() == 1
+
+
+def test_folder_upload_removes_auto_created_tag_when_every_file_fails(
+    db,
+    tmp_path,
+    monkeypatch,
+):
+    from app.asset import folder_upload_service
+    from app.asset.models import TagDimension, TagValue
+    from app.asset.schemas import AssetPermissionIn
+
+    dim = TagDimension(
+        name="tx_failed_upload",
+        label="失败上传分类",
+        is_visible=1,
+        is_managed=0,
+    )
+    db.add(dim)
+    db.commit()
+
+    upload_root = tmp_path / "upload"
+    source = upload_root / "待回收标签" / "photo.jpg"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"not-a-real-image")
+
+    def fail_save(*_args, **_kwargs):
+        raise OSError("simulated storage failure")
+
+    monkeypatch.setattr(folder_upload_service, "_save_upload_file", fail_save)
+    report = folder_upload_service.execute_folder_upload(
+        db,
+        folder_path=str(upload_root),
+        tag_mapping={},
+        permission=AssetPermissionIn(),
+        extra_tags=[],
+        uploader_id=7,
+        copy=True,
+        include_root_name=False,
+        auto_create_tags={"待回收标签": dim.id},
+    )
+
+    assert report["success"] == 0
+    assert len(report["failed"]) == 1
+    assert report["created_tags"] == []
+    assert db.query(TagValue).filter_by(
+        dimension_id=dim.id,
+        value="待回收标签",
+    ).count() == 0
+
+
+def test_chunked_direct_upload_session_assembles_file(tmp_path, monkeypatch):
+    from io import BytesIO
+    from types import SimpleNamespace
+    from app.asset import folder_upload_service
+
+    monkeypatch.setattr(folder_upload_service, "UPLOAD_STAGING_ROOT", str(tmp_path))
+    monkeypatch.setattr(folder_upload_service, "DIRECT_UPLOAD_CHUNK_BYTES", 4)
+    upload_id, staged_root = folder_upload_service.create_direct_upload_session(
+        ["产品素材/白底图/photo.jpg"],
+        [5],
+        uploader_id=7,
+        payload={"relative_paths": ["产品素材/白底图/photo.jpg"], "file_sizes": [5]},
+    )
+    folder_upload_service.save_direct_upload_chunk(
+        upload_id,
+        uploader_id=7,
+        relative_path="产品素材/白底图/photo.jpg",
+        chunk_index=0,
+        total_chunks=2,
+        upload=SimpleNamespace(file=BytesIO(b"imag")),
+    )
+    folder_upload_service.save_direct_upload_chunk(
+        upload_id,
+        uploader_id=7,
+        relative_path="产品素材/白底图/photo.jpg",
+        chunk_index=1,
+        total_chunks=2,
+        upload=SimpleNamespace(file=BytesIO(b"e")),
+    )
+
+    finalized_root, manifest = folder_upload_service.finalize_direct_upload_session(
+        upload_id,
+        uploader_id=7,
+    )
+    try:
+        assert finalized_root == staged_root
+        assert manifest["uploader_id"] == 7
+        assert (finalized_root / "产品素材" / "白底图" / "photo.jpg").read_bytes() == b"image"
+        assert not (finalized_root / ".chunks").exists()
+    finally:
+        folder_upload_service.cleanup_direct_upload_root(finalized_root)
+
+
+def test_chunked_direct_upload_session_rejects_path_traversal(tmp_path, monkeypatch):
+    from app.asset import folder_upload_service
+
+    monkeypatch.setattr(folder_upload_service, "UPLOAD_STAGING_ROOT", str(tmp_path))
+    with pytest.raises(ValueError, match="无效的文件相对路径"):
+        folder_upload_service.create_direct_upload_session(
+            ["../photo.jpg"],
+            [5],
+            uploader_id=7,
+            payload={},
+        )
+
+
+def test_chunked_direct_upload_session_rejects_other_user(tmp_path, monkeypatch):
+    from app.asset import folder_upload_service
+
+    monkeypatch.setattr(folder_upload_service, "UPLOAD_STAGING_ROOT", str(tmp_path))
+    upload_id, staged_root = folder_upload_service.create_direct_upload_session(
+        ["photo.jpg"],
+        [5],
+        uploader_id=7,
+        payload={},
+    )
+    try:
+        with pytest.raises(ValueError, match="无权使用"):
+            folder_upload_service.load_direct_upload_session(upload_id, uploader_id=8)
+    finally:
+        folder_upload_service.cleanup_direct_upload_root(staged_root)
+
+
+def test_auto_create_tag_requires_asset_admin():
+    from fastapi import HTTPException
+    from app.asset.router import _require_auto_create_permission
+
+    with pytest.raises(HTTPException) as exc_info:
+        _require_auto_create_permission(
+            {"roles": [], "permissions": ["asset:write"]},
+            {"新标签": 1},
+        )
+    assert exc_info.value.status_code == 403
+    _require_auto_create_permission(
+        {"roles": [], "permissions": ["asset:write", "asset:admin"]},
+        {"新标签": 1},
+    )
+
+
+def test_folder_upload_job_status_is_scoped_to_uploader(monkeypatch):
+    from app.asset import folder_upload_service
+
+    monkeypatch.setattr(folder_upload_service, "_folder_upload_jobs", {
+        "job-1": {
+            "id": "job-1",
+            "status": "running",
+            "created_at": "2026-07-29T10:00:00",
+            "uploader_id": 7,
+        },
+    })
+    assert folder_upload_service.get_folder_upload_job("job-1", 7)["status"] == "running"
+    assert folder_upload_service.get_folder_upload_job("job-1", 8) is None
+
+
 # ── MCP 权限过滤 ─────────────────────────────────────────
 
 class _StubPerm:

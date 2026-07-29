@@ -307,10 +307,14 @@
   - `POST /tag-image-upload` — 上传标签值图片（multipart，返回相对路径，存 `uploads/tag_images/`，需 `asset:admin`）
   - `POST /upload` — 上传素材（multipart，需 `asset:write`）
   - `POST /analyze-preview` — AI 预分析（上传前根据文件名建议标签，需 `asset:write`）
-  - `POST /folder-upload/validate` — 校验文件夹标签匹配（扫描+提取标签+匹配标签库，需 `asset:write`）
-  - `POST /folder-upload/preview` — 预览即将入库的文件清单（需 `asset:write`）
-  - `POST /folder-upload/execute` — 执行文件夹批量入库（>20 文件后台异步执行，需 `asset:write`；body `update_duplicates: bool = true` 控制同名同标签策略：true=新版本、false=直接跳过）
-  - `GET /folder-upload/status/{job_id}` — 查询异步文件夹上传任务状态（需 `asset:write`）
+  - `POST /folder-upload/validate` — 校验文件夹标签匹配（支持服务器路径或浏览器相对路径清单；可选文件名去后缀识别；返回精确命中、相似推荐、歧义和缺失项，需 `asset:write`）
+  - `POST /folder-upload/preview` — 根据服务器路径或浏览器文件清单预览即将入库的文件及标签（需 `asset:write`）
+  - `POST /folder-upload/execute` — 执行服务器路径批量入库（>20 文件后台异步执行，需 `asset:write`；自动建标签另需 `asset:admin`）
+  - `POST /folder-upload/direct/session` — 创建浏览器直传会话并校验文件清单（单文件 ≤500MB、单次 ≤2000 文件/20GB，需 `asset:write`；请求自动建标签时还需 `asset:admin`）
+  - `POST /folder-upload/direct/{upload_id}/chunk` — 上传一个 ≤4MB 文件块，规避生产网关 5MB 单请求限制（需 `asset:write`，仅会话创建者可写）
+  - `POST /folder-upload/direct/{upload_id}/complete` — 校验并组装全部文件块后执行入库；>20 文件后台处理（需 `asset:write`）
+  - `DELETE /folder-upload/direct/{upload_id}` — 取消未完成会话并清理暂存文件（需 `asset:write`，仅会话创建者可操作）
+  - `GET /folder-upload/status/{job_id}` — 查询本人发起的异步文件夹上传任务状态（需 `asset:write`）
   - `GET /list` — 素材列表（支持标签筛选/关键词/排序/分页，需 `asset:read`）
   - `GET /{asset_id}` — 素材详情（含版本历史、标签，需 `asset:read`）
   - `PATCH /{asset_id}/tags` — 更新标签（需 `asset:write`）
