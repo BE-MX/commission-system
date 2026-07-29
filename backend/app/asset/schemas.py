@@ -236,23 +236,40 @@ class TagMappingItem(BaseModel):
 
 
 class FolderUploadValidateRequest(BaseModel):
-    folder_path: str = Field(..., min_length=1)
+    folder_path: Optional[str] = Field(None, min_length=1)
+    relative_paths: list[str] = Field(default_factory=list)
+    include_filename_tags: bool = False
 
 
 class FolderUploadPreviewRequest(BaseModel):
-    folder_path: str = Field(..., min_length=1)
-    tag_mapping: dict[str, TagMappingItem] = {}
+    folder_path: Optional[str] = Field(None, min_length=1)
+    relative_paths: list[str] = Field(default_factory=list)
+    include_filename_tags: bool = False
+    tag_mapping: dict[str, TagMappingItem] = Field(default_factory=dict)
 
 
 class FolderUploadExecuteRequest(BaseModel):
     folder_path: str = Field(..., min_length=1)
-    tag_mapping: dict[str, TagMappingItem] = {}
+    tag_mapping: dict[str, TagMappingItem] = Field(default_factory=dict)
     permission: AssetPermissionIn = AssetPermissionIn()
-    extra_tags: list[AssetTagItem] = []
+    extra_tags: list[AssetTagItem] = Field(default_factory=list)
+    include_filename_tags: bool = False
+    auto_create_tags: dict[str, int] = Field(default_factory=dict)
     update_duplicates: bool = Field(
         True,
         description="同名同标签文件是否更新为新版本; False 时直接跳过",
     )
+
+
+class FolderUploadDirectRequest(BaseModel):
+    relative_paths: list[str] = Field(..., min_length=1)
+    file_sizes: list[int] = Field(..., min_length=1)
+    tag_mapping: dict[str, TagMappingItem] = Field(default_factory=dict)
+    permission: AssetPermissionIn = AssetPermissionIn()
+    extra_tags: list[AssetTagItem] = Field(default_factory=list)
+    include_filename_tags: bool = False
+    auto_create_tags: dict[str, int] = Field(default_factory=dict)
+    update_duplicates: bool = True
 
 
 # ── 移动端 ──────────────────────────────────────────────

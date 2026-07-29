@@ -1,0 +1,276 @@
+.asset-upload-page {
+  padding: 20px 28px;
+  /* 极光层（.lg-aurora，与工作台同源）定位上下文 */
+  position: relative;
+}
+
+/* 极光外溢一圈，盖住 main-content 的 24/28 padding 环 */
+.asset-upload-aurora {
+  inset: -24px -28px;
+}
+
+/* 内容压到极光之上（点名内容块，不能用 > :not(.lg-aurora) 通配——
+   会压掉就地渲染的 el-dialog .el-overlay 的 position: fixed） */
+.asset-upload-page .page-header-row,
+.asset-upload-page .upload-layout {
+  position: relative;
+  z-index: 1;
+}
+
+.upload-layout {
+  display: flex;
+  gap: 24px;
+  margin-top: 20px;
+  align-items: flex-start;
+}
+
+.left-panel {
+  width: 420px;
+  flex-shrink: 0;
+}
+
+/* 表单面板：同款渐变玻璃（覆盖原白底卡片） */
+.right-panel {
+  flex: 1;
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+  padding: 24px;
+}
+
+/* 上传区 */
+.upload-section {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+  padding: 20px;
+}
+
+.asset-uploader :deep(.el-upload-dragger) {
+  width: 100%;
+  height: 280px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.preview-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.preview-image {
+  max-width: 100%;
+  max-height: 240px;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.preview-video {
+  max-width: 100%;
+  max-height: 240px;
+  border-radius: 8px;
+}
+
+.preview-doc {
+  text-align: center;
+  color: #999;
+}
+
+.preview-actions {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+/* 文件信息 */
+.file-info-section {
+  border: 1px solid var(--dash-glass-border);
+  border-radius: var(--dash-card-radius);
+  background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+  padding: 16px 20px;
+  margin-top: 16px;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.info-row:last-child {
+  border-bottom: none;
+}
+
+.info-label {
+  color: #999;
+  font-size: 13px;
+}
+
+.info-value {
+  color: #1a1a2e;
+  font-size: 13px;
+  font-weight: 500;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 右侧面板 */
+.panel-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1a1a2e;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.form-section {
+  margin-bottom: 24px;
+}
+
+.section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a1a2e;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* AI 建议标签 */
+.ai-section {
+  background: rgba(212, 148, 28, 0.04);
+  border: 1px solid rgba(212, 148, 28, 0.15);
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.ai-suggestion-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ai-suggestion-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.ai-dim-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #666;
+  min-width: 70px;
+  padding-top: 4px;
+}
+
+.ai-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+}
+
+.ai-tag {
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+  border-color: #d4941c;
+  color: #d4941c;
+}
+
+.ai-tag:hover {
+  background: rgba(212, 148, 28, 0.08);
+}
+
+.ai-tag.accepted {
+  background: #d4941c;
+  color: #fff;
+  border-color: #d4941c;
+}
+
+.check-icon {
+  margin-left: 4px;
+  font-size: 10px;
+}
+
+/* 维度标签 */
+.dimension-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.dimension-item {
+  padding: 12px;
+  background: #fafbfe;
+  border-radius: 8px;
+}
+
+.dimension-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #4a5568;
+  margin-bottom: 8px;
+}
+
+.dimension-item :deep(.el-checkbox-group),
+.dimension-item :deep(.el-radio-group) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dim-loading {
+  padding: 12px;
+}
+
+.dim-empty {
+  padding: 20px;
+  text-align: center;
+}
+
+/* 权限表单 */
+.permission-form {
+  padding: 12px;
+  background: #fafbfe;
+  border-radius: 8px;
+}
+
+.permission-form :deep(.el-form-item) {
+  margin-bottom: 16px;
+}
+
+.permission-form :deep(.el-form-item:last-child) {
+  margin-bottom: 0;
+}
+
+/* 提交区 */
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 20px;
+  border-top: 1px solid #f0f0f0;
+}
+
+/* 页面头部 */
+.page-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}

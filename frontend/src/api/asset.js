@@ -92,38 +92,130 @@ export function analyzePreview(fileName, directoryPath) {
 }
 
 // ── 文件夹批量上传 ──────────────────────────────────────
-export function validateFolderUpload(folderPath) {
-  return assetClient.post('/folder-upload/validate', { folder_path: folderPath }, {
+export function validateFolderUpload({ folderPath, relativePaths = [], includeFilenameTags = false }) {
+  return assetClient.post('/folder-upload/validate', {
+    folder_path: folderPath || undefined,
+    relative_paths: relativePaths,
+    include_filename_tags: includeFilenameTags,
+  }, {
     loadingText: '正在扫描文件夹...',
     timeout: 30000,
   })
 }
 
-export function previewFolderUpload(folderPath, tagMapping) {
+export function previewFolderUpload({
+  folderPath,
+  relativePaths = [],
+  tagMapping,
+  includeFilenameTags = false,
+}) {
   return assetClient.post('/folder-upload/preview', {
-    folder_path: folderPath,
+    folder_path: folderPath || undefined,
+    relative_paths: relativePaths,
     tag_mapping: tagMapping,
+    include_filename_tags: includeFilenameTags,
   }, {
     loadingText: '正在生成预览...',
     timeout: 30000,
   })
 }
 
-export function executeFolderUpload(folderPath, tagMapping, permission, extraTags, updateDuplicates = true) {
+export function executeFolderUpload({
+  folderPath,
+  tagMapping,
+  permission,
+  extraTags,
+  updateDuplicates = true,
+  includeFilenameTags = false,
+  autoCreateTags = {},
+}) {
   return assetClient.post('/folder-upload/execute', {
     folder_path: folderPath,
     tag_mapping: tagMapping,
     permission,
     extra_tags: extraTags,
     update_duplicates: updateDuplicates,
+    include_filename_tags: includeFilenameTags,
+    auto_create_tags: autoCreateTags,
   }, {
     loadingText: '正在入库...',
     timeout: 600000,
   })
 }
 
+export async function uploadFolderDirect({
+  files,
+  relativePaths,
+  tagMapping,
+  permission,
+  extraTags,
+  updateDuplicates = true,
+  includeFilenameTags = false,
+  autoCreateTags = {},
+  onProgress,
+}) {
+  const sessionResponse = await assetClient.post('/folder-upload/direct/session', {
+    relative_paths: relativePaths,
+    file_sizes: files.map(file => file.size),
+    tag_mapping: tagMapping,
+    permission,
+    extra_tags: extraTags,
+    update_duplicates: updateDuplicates,
+    include_filename_tags: includeFilenameTags,
+    auto_create_tags: autoCreateTags,
+  }, {
+    loadingText: '正在准备文件夹上传...',
+    timeout: 30000,
+  })
+  const { upload_id: uploadId, chunk_size: chunkSize } = sessionResponse.data
+  const totalBytes = files.reduce((sum, file) => sum + file.size, 0)
+  let uploadedBytes = 0
+
+  try {
+    for (let fileIndex = 0; fileIndex < files.length; fileIndex += 1) {
+      const file = files[fileIndex]
+      const totalChunks = Math.max(1, Math.ceil(file.size / chunkSize))
+      for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex += 1) {
+        const start = chunkIndex * chunkSize
+        const end = Math.min(file.size, start + chunkSize)
+        const formData = new FormData()
+        formData.append('relative_path', relativePaths[fileIndex])
+        formData.append('chunk_index', String(chunkIndex))
+        formData.append('total_chunks', String(totalChunks))
+        formData.append('chunk', file.slice(start, end), file.name)
+        await assetClient.post(`/folder-upload/direct/${uploadId}/chunk`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          showLoading: false,
+          timeout: 120000,
+        })
+        uploadedBytes += end - start
+        onProgress?.({
+          uploadedBytes,
+          totalBytes,
+          fileIndex: fileIndex + 1,
+          totalFiles: files.length,
+          fileName: file.name,
+        })
+      }
+    }
+
+    return await assetClient.post(`/folder-upload/direct/${uploadId}/complete`, {}, {
+      loadingText: '文件已上传，正在入库...',
+      timeout: 600000,
+    })
+  } catch (error) {
+    await assetClient.delete(`/folder-upload/direct/${uploadId}`, {
+      showLoading: false,
+    }).catch(() => {})
+    throw error
+  }
+}
+
 export function getFolderUploadStatus(jobId) {
-  return assetClient.get(`/folder-upload/status/${jobId}`, { showLoading: false })
+  return assetClient.get(`/folder-upload/status/${jobId}`, {
+    showLoading: false,
+    suppressToast: true,
+  })
 }
 
 export function batchDownload(assetIds) {

@@ -3,16 +3,22 @@
 流程：扫描文件夹 → 提取候选标签 → 校验标签库匹配 → 预览 → 执行入库
 """
 
+import json
 import os
+import re
+import shutil
 import threading
+import time
 import unicodedata
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
+from difflib import SequenceMatcher
+from pathlib import Path, PurePosixPath
 from typing import Optional
 
 from sqlalchemy import bindparam, func, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.asset.asset_service import (
@@ -53,6 +59,16 @@ UPLOAD_STAGING_ROOT = get_settings().ASSET_UPLOAD_STAGING
 
 # 异步执行文件数量阈值
 ASYNC_FILE_THRESHOLD = 20
+
+# 浏览器直传限制。分块保持在常见 5MB 网关限制内，清单限制避免临时盘被单次请求打满。
+DIRECT_UPLOAD_CHUNK_BYTES = 4 * 1024 * 1024
+DIRECT_UPLOAD_MAX_FILE_BYTES = 500 * 1024 * 1024
+DIRECT_UPLOAD_MAX_TOTAL_BYTES = 20 * 1024 * 1024 * 1024
+DIRECT_UPLOAD_MAX_FILES = 2000
+DIRECT_UPLOAD_MAX_DEPTH = 20
+DIRECT_UPLOAD_MAX_PATH_LENGTH = 1024
+DIRECT_UPLOAD_SESSION_FILE = ".upload-session.json"
+DIRECT_UPLOAD_INGEST_FILE = ".ingest-active"
 
 # 异步任务状态存储（内存中，重启后丢失）
 _folder_upload_jobs: dict[str, dict] = {}
@@ -103,7 +119,251 @@ def scan_folder(folder_path: str) -> list[str]:
     return sorted(result)
 
 
-def extract_tags_from_path(file_path: str, root_path: str) -> list[str]:
+def _safe_relative_upload_path(relative_path: str) -> PurePosixPath:
+    """校验浏览器相对路径，阻止绝对路径和目录穿越。"""
+    normalized = relative_path.replace("\\", "/").strip("/")
+    rel = PurePosixPath(normalized)
+    if (
+        not normalized
+        or rel.is_absolute()
+        or any(part in {"", ".", ".."} for part in rel.parts)
+        or any(":" in part for part in rel.parts)
+    ):
+        raise ValueError(f"无效的文件相对路径: {relative_path}")
+    if rel.suffix.lower() not in SUPPORTED_FILE_EXTS:
+        raise ValueError(f"不支持的文件类型: {rel.name}")
+    if len(normalized) > DIRECT_UPLOAD_MAX_PATH_LENGTH:
+        raise ValueError(f"文件相对路径超过 {DIRECT_UPLOAD_MAX_PATH_LENGTH} 个字符: {rel.name}")
+    if len(rel.parts) > DIRECT_UPLOAD_MAX_DEPTH:
+        raise ValueError(f"文件夹层级超过 {DIRECT_UPLOAD_MAX_DEPTH} 层: {rel.name}")
+    return rel
+
+
+def validate_direct_upload_manifest(
+    relative_paths: list[str],
+    file_sizes: list[int],
+) -> list[str]:
+    """校验浏览器上传清单并返回规范化路径。"""
+    if len(relative_paths) != len(file_sizes):
+        raise ValueError("上传文件数量与大小清单不一致")
+    if not relative_paths:
+        raise ValueError("上传清单不能为空")
+    if len(relative_paths) > DIRECT_UPLOAD_MAX_FILES:
+        raise ValueError(f"单次最多上传 {DIRECT_UPLOAD_MAX_FILES} 个文件")
+
+    normalized_paths = [str(_safe_relative_upload_path(path)) for path in relative_paths]
+    path_keys = [_normalize_text(path) for path in normalized_paths]
+    if len(path_keys) != len(set(path_keys)):
+        raise ValueError("上传路径清单中存在重复文件")
+
+    total_size = 0
+    for relative_path, file_size in zip(normalized_paths, file_sizes):
+        if file_size < 0:
+            raise ValueError(f"文件大小无效: {relative_path}")
+        if file_size > DIRECT_UPLOAD_MAX_FILE_BYTES:
+            raise ValueError(f"文件超过 500MB 限制: {PurePosixPath(relative_path).name}")
+        total_size += file_size
+    if total_size > DIRECT_UPLOAD_MAX_TOTAL_BYTES:
+        raise ValueError("单次文件夹上传总大小不能超过 20GB")
+    return normalized_paths
+
+
+def _direct_upload_root(upload_id: str) -> Path:
+    """解析并约束浏览器直传会话目录。"""
+    if not re.fullmatch(r"[0-9a-f]{32}", upload_id):
+        raise ValueError("上传会话 ID 无效")
+    staging_root = Path(UPLOAD_STAGING_ROOT).resolve()
+    target = (staging_root / f".web-upload-{upload_id}").resolve()
+    if target.parent != staging_root:
+        raise ValueError("上传会话目录不合法")
+    return target
+
+
+def cleanup_stale_direct_upload_sessions(max_age_hours: int = 24) -> None:
+    """回收浏览器中断后遗留的未完成会话，不触碰已进入异步入库的目录。"""
+    staging_root = Path(UPLOAD_STAGING_ROOT).resolve()
+    if not staging_root.is_dir():
+        return
+    cutoff = time.time() - max_age_hours * 3600
+    for batch_root in staging_root.glob(".web-upload-*"):
+        activity_files = [
+            batch_root / DIRECT_UPLOAD_SESSION_FILE,
+            batch_root / DIRECT_UPLOAD_INGEST_FILE,
+        ]
+        try:
+            active_file = next((path for path in activity_files if path.is_file()), None)
+            if active_file and active_file.stat().st_mtime < cutoff:
+                cleanup_direct_upload_root(batch_root)
+        except OSError:
+            continue
+
+
+def create_direct_upload_session(
+    relative_paths: list[str],
+    file_sizes: list[int],
+    uploader_id: int,
+    payload: dict,
+) -> tuple[str, Path]:
+    """创建可分块上传的受控会话，元数据落盘以支持进程重启后的重试。"""
+    normalized_paths = validate_direct_upload_manifest(relative_paths, file_sizes)
+    staging_root = Path(UPLOAD_STAGING_ROOT).resolve()
+    staging_root.mkdir(parents=True, exist_ok=True)
+    cleanup_stale_direct_upload_sessions()
+    upload_id = uuid.uuid4().hex
+    batch_root = _direct_upload_root(upload_id)
+    batch_root.mkdir(parents=True, exist_ok=False)
+    manifest = {
+        "upload_id": upload_id,
+        "uploader_id": uploader_id,
+        "relative_paths": normalized_paths,
+        "file_sizes": file_sizes,
+        "payload": payload,
+        "created_at": datetime.now().isoformat(),
+    }
+    (batch_root / DIRECT_UPLOAD_SESSION_FILE).write_text(
+        json.dumps(manifest, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    return upload_id, batch_root
+
+
+def load_direct_upload_session(upload_id: str, uploader_id: int) -> tuple[Path, dict]:
+    """读取上传会话，并校验当前用户是会话创建者。"""
+    batch_root = _direct_upload_root(upload_id)
+    manifest_path = batch_root / DIRECT_UPLOAD_SESSION_FILE
+    if not manifest_path.is_file():
+        raise ValueError("上传会话不存在或已结束")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("上传会话数据损坏，请重新选择文件夹") from exc
+    if int(manifest.get("uploader_id") or 0) != uploader_id:
+        raise ValueError("无权使用该上传会话")
+    return batch_root, manifest
+
+
+def save_direct_upload_chunk(
+    upload_id: str,
+    uploader_id: int,
+    relative_path: str,
+    chunk_index: int,
+    total_chunks: int,
+    upload,
+) -> dict:
+    """保存一个不超过 4MB 的文件块；块按路径隔离，可安全重传。"""
+    batch_root, manifest = load_direct_upload_session(upload_id, uploader_id)
+    normalized = str(_safe_relative_upload_path(relative_path))
+    try:
+        file_index = manifest["relative_paths"].index(normalized)
+    except ValueError as exc:
+        raise ValueError("文件不在当前上传清单中") from exc
+    file_size = int(manifest["file_sizes"][file_index])
+    expected_chunks = max(1, (file_size + DIRECT_UPLOAD_CHUNK_BYTES - 1) // DIRECT_UPLOAD_CHUNK_BYTES)
+    if total_chunks != expected_chunks or chunk_index < 0 or chunk_index >= expected_chunks:
+        raise ValueError("文件分块参数无效")
+
+    expected_size = min(
+        DIRECT_UPLOAD_CHUNK_BYTES,
+        max(0, file_size - chunk_index * DIRECT_UPLOAD_CHUNK_BYTES),
+    )
+    chunk = upload.file.read(DIRECT_UPLOAD_CHUNK_BYTES + 1)
+    if len(chunk) != expected_size:
+        raise ValueError(f"文件块大小不一致: {PurePosixPath(normalized).name}")
+
+    rel = PurePosixPath(normalized)
+    chunk_dir = batch_root / ".chunks" / Path(*rel.parts)
+    chunk_dir.mkdir(parents=True, exist_ok=True)
+    target = chunk_dir / f"{chunk_index:04d}.part"
+    temp_target = chunk_dir / f"{chunk_index:04d}.tmp"
+    temp_target.write_bytes(chunk)
+    temp_target.replace(target)
+    # 清理器以 manifest 活跃时间判断过期；长时间上传期间持续续期，避免误删。
+    os.utime(batch_root / DIRECT_UPLOAD_SESSION_FILE, None)
+    return {
+        "relative_path": normalized,
+        "chunk_index": chunk_index,
+        "uploaded_bytes": expected_size,
+    }
+
+
+def finalize_direct_upload_session(upload_id: str, uploader_id: int) -> tuple[Path, dict]:
+    """验证所有文件块后组装文件，返回可复用既有入库流程的暂存目录。"""
+    batch_root, manifest = load_direct_upload_session(upload_id, uploader_id)
+    plans: list[tuple[PurePosixPath, list[Path], int]] = []
+    for relative_path, file_size in zip(manifest["relative_paths"], manifest["file_sizes"]):
+        rel = PurePosixPath(relative_path)
+        chunk_count = max(1, (file_size + DIRECT_UPLOAD_CHUNK_BYTES - 1) // DIRECT_UPLOAD_CHUNK_BYTES)
+        chunk_dir = batch_root / ".chunks" / Path(*rel.parts)
+        chunks = [chunk_dir / f"{index:04d}.part" for index in range(chunk_count)]
+        if any(not chunk.is_file() for chunk in chunks):
+            raise ValueError(f"文件尚未上传完整: {rel.name}")
+        if sum(chunk.stat().st_size for chunk in chunks) != file_size:
+            raise ValueError(f"文件大小校验失败: {rel.name}")
+        plans.append((rel, chunks, file_size))
+
+    for rel, chunks, file_size in plans:
+        target = (batch_root / Path(*rel.parts)).resolve()
+        if not target.is_relative_to(batch_root):
+            raise ValueError(f"文件路径越界: {rel}")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with target.open("wb") as output:
+            for chunk in chunks:
+                with chunk.open("rb") as source:
+                    shutil.copyfileobj(source, output)
+        if target.stat().st_size != file_size:
+            raise ValueError(f"文件组装失败: {rel.name}")
+
+    shutil.rmtree(batch_root / ".chunks", ignore_errors=True)
+    (batch_root / DIRECT_UPLOAD_INGEST_FILE).touch()
+    (batch_root / DIRECT_UPLOAD_SESSION_FILE).unlink(missing_ok=True)
+    return batch_root, manifest
+
+
+def cleanup_direct_upload_root(folder_path: str | Path) -> None:
+    """仅清理浏览器直传创建的受控临时目录。"""
+    staging_root = Path(UPLOAD_STAGING_ROOT).resolve()
+    target = Path(folder_path).resolve()
+    if (
+        target.parent == staging_root
+        and target.name.startswith(".web-upload-")
+        and target.is_dir()
+    ):
+        shutil.rmtree(target, ignore_errors=True)
+
+
+def _filename_tag(file_name: str) -> str:
+    """文件名候选标签：只移除最后一个扩展名，保留名称中的其他点号。"""
+    return Path(file_name).stem.strip()
+
+
+def extract_tags_from_relative_path(
+    relative_path: str,
+    include_filename_tag: bool = False,
+) -> list[str]:
+    """从浏览器提供的相对路径提取文件夹名和可选文件名标签。"""
+    rel = PurePosixPath(relative_path.replace("\\", "/"))
+    reserved_norm = {_normalize_text(label) for label in RESERVED_DIMENSION_LABELS}
+    tags: list[str] = []
+
+    for part in rel.parent.parts:
+        normalized = _normalize_text(part)
+        if not normalized or normalized in reserved_norm or part in {".", ".."}:
+            continue
+        tags.append(part)
+
+    if include_filename_tag:
+        file_tag = _filename_tag(rel.name)
+        if file_tag:
+            tags.append(file_tag)
+    return tags
+
+
+def extract_tags_from_path(
+    file_path: str,
+    root_path: str,
+    include_filename_tag: bool = False,
+    include_root_name: bool = True,
+) -> list[str]:
     """从文件路径提取文件夹名作为候选标签（排除根目录和保留维度名）。
 
     返回原始文件夹名（保持原始大小写/字符），用于展示和后续匹配。
@@ -120,17 +380,23 @@ def extract_tags_from_path(file_path: str, root_path: str) -> list[str]:
 
     tags: list[str] = []
 
-    # 所选文件夹本身的名称也作为标签
-    root_name = root_p.name
-    norm_root = _normalize_text(root_name)
-    if norm_root and norm_root not in reserved_norm:
-        tags.append(root_name)
+    # 所选文件夹本身的名称也作为标签；浏览器直传的临时根目录除外
+    if include_root_name:
+        root_name = root_p.name
+        norm_root = _normalize_text(root_name)
+        if norm_root and norm_root not in reserved_norm:
+            tags.append(root_name)
 
     for part in rel.parent.parts:
         normalized = _normalize_text(part)
         if not normalized or normalized in reserved_norm:
             continue
         tags.append(part)
+
+    if include_filename_tag:
+        file_tag = _filename_tag(rel.name)
+        if file_tag:
+            tags.append(file_tag)
 
     return tags
 
@@ -140,12 +406,45 @@ def extract_tags_from_path(file_path: str, root_path: str) -> list[str]:
 @dataclass
 class TagValidationResult:
     matched: list[dict] = field(default_factory=list)
+    suggested: list[dict] = field(default_factory=list)
     missing: list[str] = field(default_factory=list)
     ambiguous: list[dict] = field(default_factory=list)
 
     @property
     def is_valid(self) -> bool:
-        return len(self.missing) == 0 and len(self.ambiguous) == 0
+        return (
+            len(self.suggested) == 0
+            and len(self.missing) == 0
+            and len(self.ambiguous) == 0
+        )
+
+
+SIMILARITY_THRESHOLD = 0.58
+
+
+def _similarity_score(source: str, candidate: str) -> float:
+    """关键词友好的相似度：兼顾错别字、分隔符和长文件名包含短标签。"""
+    source_norm = _normalize_text(source)
+    candidate_norm = _normalize_text(candidate)
+    source_compact = re.sub(r"[\W_]+", "", source_norm, flags=re.UNICODE)
+    candidate_compact = re.sub(r"[\W_]+", "", candidate_norm, flags=re.UNICODE)
+    if not source_compact or not candidate_compact:
+        return 0.0
+    if source_compact == candidate_compact:
+        return 1.0
+
+    score = SequenceMatcher(None, source_compact, candidate_compact).ratio()
+    shorter, longer = sorted((source_compact, candidate_compact), key=len)
+    if len(shorter) >= 2 and shorter in longer:
+        containment = min(0.95, 0.72 + 0.23 * len(shorter) / len(longer))
+        score = max(score, containment)
+
+    source_tokens = {token for token in re.split(r"[\W_]+", source_norm) if token}
+    candidate_tokens = {token for token in re.split(r"[\W_]+", candidate_norm) if token}
+    if source_tokens and candidate_tokens:
+        overlap = len(source_tokens & candidate_tokens) / len(source_tokens | candidate_tokens)
+        score = max(score, overlap)
+    return round(score, 4)
 
 
 def validate_folder_tags(db: Session, tag_names: list[str]) -> TagValidationResult:
@@ -176,6 +475,7 @@ def validate_folder_tags(db: Session, tag_names: list[str]) -> TagValidationResu
 
     # 规范化值 -> [匹配记录]；value / name_en / aliases 三路进索引
     normalized_map: dict[str, list[dict]] = {}
+    similarity_candidates: list[tuple[str, dict]] = []
     for v in all_values:
         entry = {
             "dimension_name": v.dimension.name,
@@ -194,13 +494,37 @@ def validate_folder_tags(db: Session, tag_names: list[str]) -> TagValidationResu
             bucket = normalized_map.setdefault(norm, [])
             if not any(e["tag_value_id"] == entry["tag_value_id"] for e in bucket):
                 bucket.append(entry)
+            similarity_candidates.append((cand, entry))
 
     for name in unique_names:
         norm_name = _normalize_text(name)
         matches = normalized_map.get(norm_name, [])
 
         if len(matches) == 0:
-            result.missing.append(name)
+            best_by_value: dict[int, dict] = {}
+            for candidate_text, entry in similarity_candidates:
+                score = _similarity_score(name, candidate_text)
+                current = best_by_value.get(entry["tag_value_id"])
+                if score >= SIMILARITY_THRESHOLD and (
+                    current is None or score > current["score"]
+                ):
+                    best_by_value[entry["tag_value_id"]] = {
+                        **entry,
+                        "score": score,
+                        "matched_keyword": candidate_text,
+                    }
+            ranked = sorted(
+                best_by_value.values(),
+                key=lambda item: (-item["score"], item["original_value"]),
+            )[:3]
+            if ranked:
+                result.suggested.append({
+                    "tag_name": name,
+                    "recommended": ranked[0],
+                    "alternatives": ranked,
+                })
+            else:
+                result.missing.append(name)
         elif len(matches) == 1:
             result.matched.append({
                 "tag_name": name,
@@ -239,13 +563,20 @@ def preview_files(
     db: Session,
     folder_path: str,
     tag_mapping: dict[str, dict],
+    include_filename_tags: bool = False,
+    include_root_name: bool = True,
 ) -> list[dict]:
     """预览即将入库的文件清单。"""
     files = scan_folder(folder_path)
 
     result: list[dict] = []
     for file_path in files:
-        tags = extract_tags_from_path(file_path, folder_path)
+        tags = extract_tags_from_path(
+            file_path,
+            folder_path,
+            include_filename_tag=include_filename_tags,
+            include_root_name=include_root_name,
+        )
 
         file_tags: list[dict] = []
         for tag in tags:
@@ -264,6 +595,33 @@ def preview_files(
             "tags": file_tags,
         })
 
+    return result
+
+
+def preview_manifest_files(
+    relative_paths: list[str],
+    tag_mapping: dict[str, dict],
+    include_filename_tags: bool = False,
+) -> list[dict]:
+    """无需上传文件本体，根据浏览器文件清单生成确认预览。"""
+    result: list[dict] = []
+    for relative_path in relative_paths:
+        tags = extract_tags_from_relative_path(relative_path, include_filename_tags)
+        file_tags: list[dict] = []
+        for tag in tags:
+            mapping = tag_mapping.get(tag) or tag_mapping.get(_normalize_text(tag))
+            if mapping:
+                file_tags.append({
+                    "dimension_id": _get_mapping_value(mapping, "dimension_id"),
+                    "tag_value_id": _get_mapping_value(mapping, "tag_value_id"),
+                    "dimension_name": _get_mapping_value(mapping, "dimension_name", ""),
+                    "tag_value": _get_mapping_value(mapping, "original_value", tag),
+                })
+        result.append({
+            "file_path": relative_path,
+            "file_name": PurePosixPath(relative_path.replace("\\", "/")).name,
+            "tags": file_tags,
+        })
     return result
 
 
@@ -306,11 +664,19 @@ def _build_file_tag_items(
     folder_path: str,
     tag_mapping: dict[str, dict],
     extra_tags: list[AssetTagItem],
+    single_select_dims: Optional[set[int]] = None,
+    include_filename_tags: bool = False,
+    include_root_name: bool = True,
 ) -> tuple[list[AssetTagItem], set[tuple[int, int]]]:
     """构建文件的标签项列表和目标标签集合。"""
-    tags = extract_tags_from_path(file_path, folder_path)
-    tag_items: list[AssetTagItem] = []
-    used_dimensions: set[int] = set()
+    tags = extract_tags_from_path(
+        file_path,
+        folder_path,
+        include_filename_tag=include_filename_tags,
+        include_root_name=include_root_name,
+    )
+    values_by_dimension: dict[int, list[int]] = {}
+    single_select_dims = single_select_dims or set()
 
     for tag in tags:
         mapping = tag_mapping.get(tag) or tag_mapping.get(_normalize_text(tag))
@@ -318,16 +684,21 @@ def _build_file_tag_items(
             continue
         dim_id = _get_mapping_value(mapping, "dimension_id")
         tv_id = _get_mapping_value(mapping, "tag_value_id")
-        if dim_id in used_dimensions:
+        values = values_by_dimension.setdefault(dim_id, [])
+        if dim_id in single_select_dims and values:
             continue
-        used_dimensions.add(dim_id)
-        tag_items.append(AssetTagItem(dimension_id=dim_id, tag_value_ids=[tv_id]))
+        if tv_id not in values:
+            values.append(tv_id)
 
     for item in extra_tags:
-        if item.dimension_id in used_dimensions:
+        if item.dimension_id in values_by_dimension:
             continue
-        used_dimensions.add(item.dimension_id)
-        tag_items.append(item)
+        values_by_dimension[item.dimension_id] = list(dict.fromkeys(item.tag_value_ids))
+
+    tag_items = [
+        AssetTagItem(dimension_id=dimension_id, tag_value_ids=value_ids)
+        for dimension_id, value_ids in values_by_dimension.items()
+    ]
 
     target_set: set[tuple[int, int]] = set()
     for item in tag_items:
@@ -335,6 +706,90 @@ def _build_file_tag_items(
             target_set.add((item.dimension_id, tv_id))
 
     return tag_items, target_set
+
+
+def _resolve_auto_create_tags(
+    db: Session,
+    tag_mapping: dict[str, dict],
+    auto_create_tags: dict[str, int],
+) -> tuple[dict[str, dict], list[dict]]:
+    """在上传事务内创建缺失标签，并补齐路径映射。"""
+    if not auto_create_tags:
+        return dict(tag_mapping), []
+
+    resolved = dict(tag_mapping)
+    created: list[dict] = []
+    dimension_ids = set(auto_create_tags.values())
+    dimensions = {
+        dim.id: dim
+        for dim in db.query(TagDimension).filter(TagDimension.id.in_(dimension_ids)).all()
+    }
+
+    for tag_name, dimension_id in auto_create_tags.items():
+        clean_name = tag_name.strip()
+        dim = dimensions.get(dimension_id)
+        if not clean_name:
+            raise ValueError("自动创建的标签名不能为空")
+        if len(clean_name) > 128:
+            raise ValueError(f"标签[{clean_name[:20]}…]超过 128 个字符，不能自动创建")
+        if not dim or not dim.is_visible:
+            raise ValueError(f"标签[{clean_name}]选择的维度不存在或不可见")
+        if dim.is_managed:
+            raise ValueError(f"维度[{dim.label}]由系统维护，不能自动创建标签")
+
+        existing = (
+            db.query(TagValue)
+            .filter(
+                TagValue.dimension_id == dimension_id,
+                func.lower(TagValue.value) == clean_name.lower(),
+            )
+            .first()
+        )
+        if existing and not existing.is_active:
+            raise ValueError(f"标签[{clean_name}]已存在但已停用，请联系管理员启用")
+        if existing:
+            tag_value = existing
+        else:
+            try:
+                with db.begin_nested():
+                    tag_value = TagValue(
+                        dimension_id=dimension_id,
+                        value=clean_name,
+                        sort_order=0,
+                        is_active=1,
+                    )
+                    db.add(tag_value)
+                    db.flush()
+            except IntegrityError:
+                # 并发上传可能同时创建同一标签；唯一索引裁决后复用胜者。
+                tag_value = (
+                    db.query(TagValue)
+                    .filter(
+                        TagValue.dimension_id == dimension_id,
+                        func.lower(TagValue.value) == clean_name.lower(),
+                        TagValue.is_active == 1,
+                    )
+                    .with_for_update()
+                    .first()
+                )
+                if not tag_value:
+                    raise
+            else:
+                created.append({
+                    "dimension_id": dimension_id,
+                    "dimension_name": dim.label,
+                    "tag_value_id": tag_value.id,
+                    "tag_value": clean_name,
+                })
+
+        resolved[tag_name] = {
+            "dimension_id": dimension_id,
+            "dimension_name": dim.label,
+            "tag_value_id": tag_value.id,
+            "original_value": tag_value.value,
+        }
+
+    return resolved, created
 
 
 def execute_folder_upload(
@@ -346,6 +801,9 @@ def execute_folder_upload(
     uploader_id: int,
     copy: bool = False,
     update_duplicates: bool = True,
+    include_filename_tags: bool = False,
+    include_root_name: bool = True,
+    auto_create_tags: Optional[dict[str, int]] = None,
 ) -> dict:
     """执行文件夹批量上传（优化版）。
 
@@ -361,6 +819,10 @@ def execute_folder_upload(
     total = len(files)
     if total == 0:
         return {"total": 0, "success": 0, "new_version_count": 0, "skipped": 0, "failed": []}
+
+    tag_mapping, created_tags = _resolve_auto_create_tags(
+        db, tag_mapping, auto_create_tags or {},
+    )
 
     # ── 1. 预加载：一次性消除循环内的所有查询 ──────────────
     file_names = [Path(f).name for f in files]
@@ -404,6 +866,11 @@ def execute_folder_upload(
 
     # 1d. 合并判定只看可见非托管维度（详见 _comparable_dim_ids docstring）
     comparable_dims = _comparable_dim_ids(db)
+    single_select_dims = {
+        dim.id for dim in db.query(TagDimension)
+        .filter(TagDimension.is_single_select == 1)
+        .all()
+    }
     print(f"[folder-upload] preload done, start ingesting", flush=True)
 
     # ── 2. 批量入库 ────────────────────────────────────────
@@ -412,6 +879,8 @@ def execute_folder_upload(
     new_version_count = 0
     skipped = 0
     failed: list[dict] = []
+    created_tag_cache_invalidated = False
+    ingest_marker = Path(folder_path) / DIRECT_UPLOAD_INGEST_FILE
 
     for i in range(0, total, BATCH_SIZE):
         batch = files[i : i + BATCH_SIZE]
@@ -428,7 +897,13 @@ def execute_folder_upload(
                     file_type = _detect_file_type(ext)
 
                     tag_items, target_set = _build_file_tag_items(
-                        file_path, folder_path, tag_mapping, extra_tags
+                        file_path,
+                        folder_path,
+                        tag_mapping,
+                        extra_tags,
+                        single_select_dims=single_select_dims,
+                        include_filename_tags=include_filename_tags,
+                        include_root_name=include_root_name,
                     )
 
                     existing = existing_map.get((file_name, file_type))
@@ -575,6 +1050,34 @@ def execute_folder_upload(
                 traceback.print_exc()
 
         db.commit()
+        if ingest_marker.is_file():
+            os.utime(ingest_marker, None)
+        if created_tags and not created_tag_cache_invalidated:
+            from app.asset.tag_service import invalidate_dim_cache
+            invalidate_dim_cache()
+            created_tag_cache_invalidated = True
+
+    if created_tags and success == 0:
+        # 所有文件均失败时不留下孤立标签；标签创建本身不应成为失败上传的副作用。
+        created_ids = [item["tag_value_id"] for item in created_tags]
+        used_ids = {
+            row.tag_value_id for row in db.execute(
+                ata.select().where(ata.c.tag_value_id.in_(created_ids))
+            ).fetchall()
+        }
+        removable_ids = [tag_id for tag_id in created_ids if tag_id not in used_ids]
+        if removable_ids:
+            db.query(TagValue).filter(TagValue.id.in_(removable_ids)).delete(
+                synchronize_session=False,
+            )
+            db.commit()
+            created_tags = [
+                item for item in created_tags if item["tag_value_id"] not in removable_ids
+            ]
+
+    if created_tags or created_tag_cache_invalidated:
+        from app.asset.tag_service import invalidate_dim_cache
+        invalidate_dim_cache()
 
     return {
         "total": total,
@@ -582,6 +1085,7 @@ def execute_folder_upload(
         "new_version_count": new_version_count,
         "skipped": skipped,
         "failed": failed,
+        "created_tags": created_tags,
     }
 
 
@@ -595,6 +1099,11 @@ def start_folder_upload_async(
     extra_tags: list,
     uploader_id: int,
     update_duplicates: bool = True,
+    copy: bool = True,
+    include_filename_tags: bool = False,
+    include_root_name: bool = True,
+    auto_create_tags: Optional[dict[str, int]] = None,
+    cleanup_dir: Optional[str] = None,
 ) -> str:
     """启动异步文件夹上传，返回 job_id。"""
     import logging
@@ -606,6 +1115,7 @@ def start_folder_upload_async(
         "status": "pending",
         "created_at": datetime.now().isoformat(),
         "folder_path": folder_path,
+        "uploader_id": uploader_id,
     }
 
     def _run():
@@ -617,8 +1127,11 @@ def start_folder_upload_async(
                         job_id, folder_path, update_duplicates)
             report = execute_folder_upload(
                 db, folder_path, tag_mapping, permission, extra_tags, uploader_id,
-                copy=True,
+                copy=copy,
                 update_duplicates=update_duplicates,
+                include_filename_tags=include_filename_tags,
+                include_root_name=include_root_name,
+                auto_create_tags=auto_create_tags,
             )
             print(f"[folder-upload {job_id}] DONE report={report}", flush=True)
             logger.info("[folder-upload %s] done report=%s", job_id, report)
@@ -639,15 +1152,17 @@ def start_folder_upload_async(
             })
         finally:
             db.close()
+            if cleanup_dir:
+                cleanup_direct_upload_root(cleanup_dir)
 
     threading.Thread(target=_run, daemon=True).start()
     return job_id
 
 
-def get_folder_upload_job(job_id: str) -> Optional[dict]:
-    """获取异步任务状态。"""
+def get_folder_upload_job(job_id: str, uploader_id: int) -> Optional[dict]:
+    """获取当前上传者自己的异步任务状态。"""
     job = _folder_upload_jobs.get(job_id)
-    if not job:
+    if not job or int(job.get("uploader_id") or 0) != uploader_id:
         return None
     # 返回副本，避免外部修改
     return {
