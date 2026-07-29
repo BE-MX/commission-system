@@ -1,0 +1,1029 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案 D · AI 赛事频道 Crystal Holo Glass — 2026 采购节大屏</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:100%; height:100%; background:#e9eefb; overflow:hidden;
+    font-family:"Microsoft YaHei","PingFang SC","Segoe UI",sans-serif; }
+  #stage { position:absolute; left:50%; top:50%; width:1920px; height:1080px;
+    transform-origin:center center; color:#1d2545; overflow:hidden;
+    background:
+      radial-gradient(1000px 700px at 86% 112%, rgba(255,175,120,.36), transparent 60%),
+      radial-gradient(900px 650px at -8% 116%, rgba(170,190,255,.42), transparent 58%),
+      radial-gradient(780px 540px at 6% -8%, rgba(185,210,255,.6), transparent 62%),
+      radial-gradient(1250px 820px at 50% 36%, rgba(255,255,255,.8), transparent 64%),
+      radial-gradient(520px 400px at 72% 18%, rgba(220,190,255,.32), transparent 60%),
+      linear-gradient(180deg, #f4f6fb 0%, #ebf0f8 52%, #eef1f8 100%);
+  }
+  /* 左上全息彩虹光带 + 斜向天光(参考图2 背景语言) · 缓慢漂移模拟环境光 */
+  #stage::before { content:""; position:absolute; inset:-48px; pointer-events:none;
+    background:
+      radial-gradient(980px 640px at 10% -10%, rgba(255,255,255,.88), transparent 62%),
+      linear-gradient(128deg, rgba(255,150,210,.30) 0%, rgba(150,190,255,.32) 7%, rgba(150,235,225,.26) 14%,
+        rgba(200,170,255,.24) 21%, rgba(255,210,170,.18) 27%, transparent 36%),
+      linear-gradient(128deg, transparent 40%, rgba(255,255,255,.5) 47%, transparent 56%),
+      linear-gradient(115deg, transparent 62%, rgba(255,255,255,.4) 68%, transparent 76%);
+    animation:skyDrift 24s ease-in-out infinite alternate;
+  }
+  @keyframes skyDrift { from{transform:translate3d(-16px,-8px,0)} to{transform:translate3d(20px,12px,0)} }
+  .orb { position:absolute; border-radius:50%; filter:blur(70px); opacity:.55; pointer-events:none;
+    animation:drift 16s ease-in-out infinite; }
+  .orb.o1 { width:420px; height:420px; background:#cfe0ff; right:6%; top:12%; }
+  .orb.o2 { width:340px; height:340px; background:#e8dcff; left:8%; bottom:14%; animation-delay:-6s; }
+  .orb.o3 { width:260px; height:260px; background:#ffe3cb; left:44%; top:6%; animation-delay:-11s; }
+  @keyframes drift { 0%,100%{transform:translate(0,0)} 50%{transform:translate(26px,-22px)} }
+
+  /* 虹彩角度注册:让 conic-gradient 的 from 角可以平滑动画(琉璃流光) */
+  @property --ga { syntax:'<angle>'; inherits:false; initial-value:0deg; }
+
+  :root{
+    --pri:#4f7cff; --vio:#8b5cf6; --coral:#ff6b5c; --mint:#1fbf94; --amber:#f0a93c;
+    --ink:#1d2545; --sub:#5d6b8f;
+    /* ===== 液态水晶玻璃材质系统 v4(对标参考图2)=====
+       5 个独立视觉层:
+       ① 主容器(box-shadow)     = 环境悬浮阴影 + 内凹阴影 + 内侧高光线
+       ② 主容器 background      = 厚玻璃边(液态虹彩+角部聚色+体积明暗) + 通透面板
+       ③ ::before(蒙版圆环)     = 最外侧 2px 虹彩亮边/白色高光线
+       ④ ::after                = 顶部镜面线/斜向反射光带/椭圆光斑/底部折射带
+       ⑤ 大卡片 box-reflect     = 台面倒影
+       方向光:顶+左高光最强,右侧青紫折射,底部蓝紫+暖橙折射 */
+    --holo: conic-gradient(from var(--ga,0deg),
+      #ffffff 0deg, #ffd8f0 10deg, #c09aff 22deg,
+      #6ab4ff 36deg, #3fd0ff 50deg, #2fd9de 64deg,
+      #5ec8ff 78deg, #8a6dff 92deg, #b44dff 106deg,
+      #8f5fff 122deg, #4f78ff 138deg, #3f8dff 152deg,
+      #7f8bff 166deg, #ff9f40 184deg, #ff8a5e 198deg,
+      #c86fff 216deg, #8a4dff 232deg, #5ea4ff 248deg,
+      #a484ff 262deg, #e884d0 278deg, #ffaad8 296deg,
+      #ffd9ee 312deg, #ffffff 330deg, #ffffff 360deg);
+    --holo-gold: conic-gradient(from var(--ga,0deg),
+      #fffdf4 0deg, #ffe9b8 20deg, #f5c96e 42deg, #ffd88f 64deg, #ffffff 90deg,
+      #ffe3a0 120deg, #f0c070 150deg, #fff0c8 180deg, #ffd98f 210deg,
+      #ffe7ae 240deg, #e8b45c 290deg, #fff6dd 330deg, #fffdf4 360deg);
+    --holo-warm: conic-gradient(from var(--ga,0deg),
+      #ffffff 0deg, #ffd9ea 24deg, #ffb37e 60deg, #ffe2cc 96deg, #f0a0c0 132deg,
+      #ffc98f 168deg, #ff9d7a 200deg, #ffd0e0 240deg, #e8a0d8 280deg, #ffe9d2 320deg, #ffffff 360deg);
+    /* 长条形容器用的珍珠白管(避免横贯全屏的彩边) */
+    --holo-pearl: conic-gradient(from var(--ga,0deg),
+      #ffffff 0deg, #f6e6f6 45deg, #dceaff 90deg, #d6f4f4 135deg, #ffffff 180deg,
+      #e4ecff 225deg, #f2e8ff 270deg, #e0f2ff 315deg, #ffffff 360deg);
+    /* 外缘白色剪切高光(收在顶/左边缘,不盖住虹彩) */
+    --sheen: linear-gradient(118deg,
+      rgba(255,255,255,1) 1%, rgba(255,255,255,.08) 12%, rgba(255,255,255,.5) 24%,
+      rgba(255,255,255,.04) 45%, rgba(255,255,255,.3) 66%, rgba(255,255,255,.04) 84%, rgba(255,255,255,.4) 98%);
+    /* 管体体积明暗:左上受光微亮 → 右下侧面冷色积光(轻量,保持虹彩可见) */
+    --tube-shade: linear-gradient(135deg,
+      rgba(255,255,255,.55) 0%, rgba(255,255,255,.05) 32%,
+      rgba(255,255,255,.02) 55%, rgba(90,110,195,.18) 100%);
+    /* 液态流丝:管体内部的斜向折射细丝 */
+    --facets: repeating-linear-gradient(118deg,
+      transparent 0 14px, rgba(255,255,255,.25) 14px 15px, transparent 15px 36px);
+    /* 通透面板:亮白玻璃底(近不透) + 内部光斑 + 斜向微光,边色仅在面板边缘微渗 */
+    --panel:
+      radial-gradient(ellipse 58% 38% at 22% 6%, rgba(255,255,255,.8), transparent 58%),
+      radial-gradient(ellipse 44% 36% at 86% 78%, rgba(130,215,255,.14), transparent 55%),
+      radial-gradient(ellipse 36% 30% at 6% 88%, rgba(160,140,255,.12), transparent 55%),
+      linear-gradient(145deg, rgba(255,255,255,.6), rgba(244,248,255,.38) 48%, rgba(255,255,255,.48)),
+      linear-gradient(145deg, rgba(252,253,255,.84), rgba(243,247,255,.78));
+    --panel-warm:
+      radial-gradient(ellipse 58% 38% at 22% 6%, rgba(255,255,255,.8), transparent 58%),
+      radial-gradient(ellipse 44% 36% at 86% 78%, rgba(255,200,150,.14), transparent 55%),
+      linear-gradient(145deg, rgba(255,253,248,.62), rgba(255,244,228,.4) 48%, rgba(255,250,240,.5)),
+      linear-gradient(145deg, rgba(255,252,246,.85), rgba(255,245,232,.8));
+    /* 环境阴影 + 内凹阴影 + 内侧高光线 */
+    --drop:
+      6px 22px 35px rgba(40,73,145,.18),
+      3px 8px 14px rgba(45,100,190,.13),
+      16px 40px 70px -20px rgba(120,110,220,.38),
+      0 0 0 1px rgba(255,255,255,.85),
+      inset 0 2px 2px rgba(255,255,255,.95),
+      inset 2px 0 4px rgba(255,255,255,.6),
+      inset -3px 0 5px rgba(140,150,235,.4),
+      inset 0 -3px 5px rgba(120,130,220,.22),
+      inset 0 0 18px rgba(255,255,255,.25),
+      inset 0 0 2px var(--tube) rgba(255,255,255,.55),
+      inset 0 0 12px var(--tube) rgba(80,95,180,.16);
+  }
+  /* 玻璃块截面:上/左为薄亮受光面,右/下为厚侧面(平行四边形截面 → 凸出感) */
+  .num { font-variant-numeric:tabular-nums; }
+  .glass { --tube:19px; --r:46px; --pn:var(--panel); --hl:var(--holo);
+    --tb:calc(var(--tube) * .78);  /* 上/左受光面厚度 */
+    --ts:calc(var(--tube) * 1.22); /* 右侧面厚度 */
+    --tb2:calc(var(--tube) * 1.42);/* 底侧面厚度 */
+    position:relative; overflow:hidden;
+    border-style:solid; border-color:transparent;
+    border-width:var(--tb) var(--ts) var(--tb2) var(--tb);
+    border-radius:var(--r);
+    background:
+      /* —— 面板区(变量内含光斑+玻璃底) —— */
+      var(--pn) padding-box,
+      /* —— 边框区:外缘剪切高光 + 边线焦散亮点 + 四角聚色 + 流丝 + 体积明暗 + 液态虹彩 —— */
+      var(--sheen) border-box,
+      radial-gradient(90px 26px at 25% 0%, rgba(255,255,255,.95), transparent 70%) border-box,
+      radial-gradient(28px 90px at 100% 45%, rgba(255,255,255,.8), transparent 70%) border-box,
+      radial-gradient(110px 30px at 62% 100%, rgba(255,255,255,.9), transparent 70%) border-box,
+      radial-gradient(55% 90px at 50% 102%, rgba(150,120,255,.42), transparent 72%) border-box,
+      radial-gradient(26px 80px at 0% 55%, rgba(255,255,255,.75), transparent 70%) border-box,
+      radial-gradient(150px 120px at 0% 0%, rgba(255,170,225,.42), transparent 70%) border-box,
+      radial-gradient(150px 120px at 100% 0%, rgba(110,225,240,.45), transparent 70%) border-box,
+      radial-gradient(160px 130px at 0% 100%, rgba(140,110,255,.45), transparent 70%) border-box,
+      radial-gradient(160px 130px at 100% 100%, rgba(255,170,90,.5), transparent 70%) border-box,
+      var(--facets) border-box,
+      var(--tube-shade) border-box,
+      var(--hl) border-box;
+    box-shadow:var(--drop);
+    backdrop-filter:blur(20px) saturate(1.65);
+    -webkit-backdrop-filter:blur(20px) saturate(1.65);
+    animation:holoSpin 38s linear infinite;
+    animation-delay:calc(var(--i, 0) * -3.1s); }
+  /* 大面板:更强折射,管边明显虚化背后流光 */
+  .glass.deep { backdrop-filter:blur(26px) saturate(1.75) brightness(1.05);
+    -webkit-backdrop-filter:blur(26px) saturate(1.75) brightness(1.05); }
+  /* ③ 最外侧 2px 虹彩亮边:蒙版圆环,只留边缘一圈 */
+  .glass::before { content:""; position:absolute; z-index:1; pointer-events:none;
+    inset:1px; border-radius:calc(var(--r) - 1px); padding:2px;
+    background:conic-gradient(from var(--ga,0deg),
+      rgba(255,255,255,.98), rgba(120,190,255,.85), rgba(255,255,255,.9),
+      rgba(80,225,230,.9), rgba(210,110,255,.8), rgba(255,255,255,.92),
+      rgba(255,200,120,.9), rgba(140,150,255,.85), rgba(255,255,255,.98));
+    -webkit-mask:linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite:xor; mask-composite:exclude;
+    filter:blur(.3px); opacity:.9;
+    animation:holoSpin 38s linear infinite;
+    animation-delay:calc(var(--i, 0) * -3.1s); }
+  /* ④ 反射光层:顶部镜面线/斜向光带/椭圆光斑/底部折射带 */
+  .glass::after { content:""; position:absolute; z-index:2; pointer-events:none;
+    inset:calc(-1 * var(--tb)) calc(-1 * var(--ts)) calc(-1 * var(--tb2)) calc(-1 * var(--tb));
+    border-radius:var(--r);
+    background:
+      linear-gradient(180deg, rgba(255,255,255,.98), rgba(255,255,255,0) 4px),
+      linear-gradient(90deg, rgba(255,255,255,.85), rgba(255,255,255,0) 3px),
+      radial-gradient(ellipse 42% 24% at 18% 4%, rgba(255,255,255,.75), transparent 62%),
+      radial-gradient(ellipse 30% 22% at 88% 86%, rgba(130,215,255,.2), transparent 58%),
+      radial-gradient(ellipse 26% 20% at 6% 90%, rgba(150,130,255,.18), transparent 58%),
+      linear-gradient(115deg, transparent 28%, rgba(255,255,255,.34) 37%, rgba(255,255,255,.05) 45%, transparent 52%),
+      linear-gradient(115deg, transparent 56%, rgba(255,255,255,.24) 62%, rgba(255,255,255,.04) 69%, transparent 75%),
+      linear-gradient(0deg, rgba(120,135,255,.18), transparent 14px); }
+  @keyframes holoSpin { to { --ga:360deg; } }
+  /* ⑤ 台面倒影:底部留空的大卡片映出柔和镜像(Chromium/Safari,Firefox 自动忽略) */
+  .headline, .sidecard, .board, .vs-card, .giant {
+    -webkit-box-reflect:below 4px linear-gradient(rgba(255,255,255,.4), transparent 16%); }
+  /* 使用同款虹彩管的小元件同步流光 */
+  .score-chip, .kicker, .marquee, .lane, .t-horse, .hero .avatar,
+  #aiBubble, .g-item.on, .lt .lt-tag, .lt .lt-body, .lt .combo {
+    animation:holoSpin 38s linear infinite; }
+  .grad-text { background:linear-gradient(92deg,var(--pri),var(--vio));
+    -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+    filter:drop-shadow(0 2px 0 rgba(255,255,255,.9)) drop-shadow(0 6px 10px rgba(40,100,210,.22)); }
+  .spark { color:var(--vio); }
+
+  /* ============ 频道顶栏 ============ */
+  header.ch { position:absolute; left:0; right:0; top:0; height:88px; z-index:30;
+    display:flex; align-items:center; gap:22px; padding:0 30px;
+    background:linear-gradient(180deg, rgba(255,255,255,.85), rgba(250,252,255,.6));
+    backdrop-filter:blur(20px) saturate(1.4); -webkit-backdrop-filter:blur(20px) saturate(1.4);
+    border-bottom:1px solid rgba(255,255,255,.95);
+    box-shadow:inset 0 1px 0 #fff, 0 1px 0 rgba(214,180,255,.35), 0 2px 0 rgba(170,215,255,.3),
+      0 10px 30px rgba(120,140,200,.12); }
+  .live { display:flex; align-items:center; gap:8px; color:#ff4d5e; font-weight:900; font-size:15px;
+    letter-spacing:2px; padding:8px 18px 8px 14px; border-radius:16px;
+    border:5px solid transparent;
+    background:
+      linear-gradient(180deg, #ffffff, #fff3f2) padding-box,
+      var(--sheen) border-box,
+      linear-gradient(135deg, #ffd9dc, #ffe9e0, #ffd2d8) border-box;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.95), 0 0 0 1px rgba(255,255,255,.8),
+      0 6px 16px rgba(255,100,110,.3);
+    animation:livePulse 2.6s ease-in-out infinite; }
+  @keyframes livePulse {
+    0%,100% { box-shadow:inset 0 0 0 1px rgba(255,255,255,.95), 0 0 0 1px rgba(255,255,255,.8),
+      0 6px 16px rgba(255,100,110,.3); }
+    50% { box-shadow:inset 0 0 0 1px rgba(255,255,255,.95), 0 0 0 1px rgba(255,255,255,.8),
+      0 6px 26px rgba(255,90,110,.6); } }
+  .live i { width:9px; height:9px; border-radius:50%; background:#ff4d5e;
+    box-shadow:0 0 8px rgba(255,77,94,.8); animation:blink 1.2s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.2} }
+  .ch-logo { font-size:28px; font-weight:900; letter-spacing:1px; color:var(--ink); display:flex; align-items:center; gap:10px; }
+  .ch-logo .ai-star { width:38px; height:38px; border-radius:12px; display:flex; align-items:center; justify-content:center;
+    background:linear-gradient(180deg, rgba(255,255,255,.45), rgba(255,255,255,0) 55%),
+      linear-gradient(140deg,var(--pri),var(--vio)); color:#fff; font-size:20px;
+    box-shadow:inset 0 1.5px 1px rgba(255,255,255,.7), 0 0 0 3px rgba(255,255,255,.9),
+      0 0 0 4px rgba(200,215,255,.6), 0 6px 16px rgba(99,102,241,.45); }
+  .ch-logo em { font-style:normal; }
+  .ch-logo small { display:block; font-size:11px; letter-spacing:3px; color:var(--sub); font-weight:500; }
+  .ch-goals { flex:1; display:flex; justify-content:center; gap:14px; }
+  .score-chip { display:flex; align-items:baseline; gap:8px; font-size:14px; color:var(--sub);
+    padding:8px 18px; border-radius:18px;
+    border:6px solid transparent;
+    background:
+      var(--panel) padding-box,
+      var(--sheen) border-box,
+      var(--holo) border-box;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.95), 0 0 0 1px rgba(255,255,255,.8),
+      0 8px 18px rgba(120,140,200,.16); }
+  .score-chip b { font-size:24px; font-weight:900; }
+  .score-chip .gd { background:linear-gradient(92deg,var(--pri),var(--vio)); -webkit-background-clip:text;
+    background-clip:text; -webkit-text-fill-color:transparent; }
+  .score-chip .hot { color:var(--coral); }
+  .ch-clock { text-align:right; font-size:12px; color:var(--sub); }
+  .ch-clock b { display:block; font-size:24px; color:var(--ink); letter-spacing:1px; }
+
+  /* ============ 节目区 ============ */
+  main { position:absolute; left:0; right:0; top:88px; bottom:66px; }
+  .show { position:absolute; inset:0; padding:20px 32px 8px; visibility:hidden; opacity:0; z-index:1;
+    transform:translateX(50px); }
+  .show.active { visibility:visible; opacity:1; transform:none; z-index:2;
+    transition:transform .4s cubic-bezier(.77,0,.175,1), opacity .3s; }
+  .show.leaving { visibility:visible; opacity:1; z-index:1; }
+
+  .kicker { display:inline-flex; align-items:center; gap:7px; color:#3b5bd6; font-size:14px; font-weight:900;
+    letter-spacing:3px; padding:6px 18px 6px 14px; border-radius:16px;
+    border:5px solid transparent;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,.8), rgba(242,246,255,.5)) padding-box,
+      var(--sheen) border-box,
+      var(--holo) border-box;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.95), 0 0 0 1px rgba(255,255,255,.8),
+      0 6px 16px rgba(120,140,200,.2);
+    margin-bottom:10px; }
+  .kicker.coral { color:#e8702a;
+    background:
+      linear-gradient(180deg, #fffdf9, #fff2e6) padding-box,
+      var(--sheen) border-box,
+      linear-gradient(135deg, #ffe2c8, #fff0dc, #ffd9c4) border-box; }
+  .show h2 { font-size:30px; font-weight:900; letter-spacing:2px; color:var(--ink); margin-bottom:14px; }
+  .show h2 em { font-style:normal; }
+
+  /* ---- B1 头条 ---- */
+  .b1 { display:grid; grid-template-columns:1.22fr .78fr; gap:24px; height:calc(100% - 58px); }
+  .headline { position:relative; overflow:hidden; padding:44px 52px;
+    display:flex; flex-direction:column; justify-content:center;
+    --tube:24px; --r:52px; --pn:var(--panel-warm);
+    --hl:var(--holo-warm); }
+  /* 暖光呼吸灯(覆盖琉璃扫光伪元素,需复位扫光遗留的几何/变换属性) */
+  .headline::after { content:""; position:absolute; left:auto; bottom:auto; right:-60px; top:-50px;
+    width:360px; height:360px; transform:none;
+    background:radial-gradient(circle, rgba(255,170,110,.2), transparent 65%); pointer-events:none;
+    animation:warmBreath 5s ease-in-out infinite; }
+  @keyframes warmBreath { 0%,100%{opacity:.6; transform:scale(1)} 50%{opacity:1; transform:scale(1.08)} }
+  .headline .hl-tag { font-size:17px; letter-spacing:6px; font-weight:800; display:flex; align-items:center; gap:10px; }
+  .headline .hl-name { font-size:104px; font-weight:900; line-height:1.15; color:var(--ink); }
+  .headline .hl-amt { font-size:72px; font-weight:900; }
+  .headline .hl-sub { margin-top:14px; font-size:19px; color:var(--sub); line-height:1.65; }
+  .headline .hl-sub b { color:var(--ink); }
+  .headline .ai-quote { margin-top:18px; display:flex; gap:10px; align-items:flex-start; max-width:760px;
+    padding:12px 18px; border-radius:16px;
+    background:linear-gradient(180deg, rgba(255,255,255,.55), rgba(247,245,255,.32));
+    border:1px solid rgba(255,255,255,.85);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.9), inset 0 -4px 8px rgba(139,92,246,.08),
+      0 4px 12px rgba(120,140,200,.15); }
+  .headline .ai-quote .ico { flex:none; width:30px; height:30px; border-radius:9px; color:#fff; font-size:15px;
+    display:flex; align-items:center; justify-content:center; background:linear-gradient(140deg,var(--pri),var(--vio)); }
+  .headline .ai-quote p { font-size:16px; color:#46357e; line-height:1.55; }
+  .sidecol { display:flex; flex-direction:column; gap:16px; }
+  .sidecard { flex:1; padding:18px 24px; position:relative; overflow:hidden;
+    display:flex; flex-direction:column; justify-content:center;
+    --tube:14px; --r:34px; }
+  .sidecard h3 { font-size:14px; letter-spacing:3px; color:var(--vio); margin-bottom:8px; display:flex; align-items:center; gap:8px; }
+  .sidecard .big-line { font-size:24px; font-weight:900; color:var(--ink); line-height:1.4; }
+  .sidecard p { font-size:14px; color:var(--sub); line-height:1.7; margin-top:6px; }
+  .sidecard p b { color:var(--ink); }
+  .sidecard .fade-pane { transition:opacity .45s; }
+  .sidecard .fade-pane.hide { opacity:0; position:absolute; pointer-events:none; }
+
+  /* ---- B2 新签英雄榜 ---- */
+  .heroes { display:grid; grid-template-columns:repeat(5,1fr); gap:18px; margin-top:10px; height:600px; }
+  .hero { position:relative; padding:26px 18px 22px; text-align:center;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; overflow:hidden;
+    --tube:14px; --r:36px; }
+  .hero.first { --hl:var(--holo-gold); --pn:var(--panel-warm);
+    box-shadow:
+      6px 22px 35px rgba(40,73,145,.14),
+      0 26px 54px -18px rgba(240,169,60,.5),
+      0 0 0 1px rgba(255,255,255,.85),
+      inset 0 2px 2px rgba(255,255,255,.95),
+      inset 2px 0 4px rgba(255,255,255,.6),
+      inset -3px 0 5px rgba(235,190,120,.4),
+      inset 0 -3px 5px rgba(214,160,60,.3),
+      inset 0 0 18px rgba(255,255,255,.25),
+      inset 0 0 2px var(--tube) rgba(255,255,255,.55),
+      inset 0 0 12px var(--tube) rgba(180,140,60,.14); }
+  .hero .rk { position:absolute; top:20px; left:22px; width:40px; height:40px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center; font-size:19px; font-weight:900; color:#5b6ee0;
+    background:radial-gradient(circle at 35% 30%, #ffffff, #eef3ff 70%, #dfe8ff);
+    box-shadow:inset 0 1px 0 #fff, inset 0 -2px 3px rgba(140,160,230,.25),
+      0 0 0 1px rgba(255,255,255,.9), 0 4px 10px rgba(120,140,200,.25); }
+  .hero.first .rk { color:#c88a1e;
+    background:radial-gradient(circle at 35% 30%, #fffdf4, #fff2d4 70%, #ffe7b5);
+    box-shadow:inset 0 1px 0 #fff, inset 0 -2px 3px rgba(214,160,60,.3),
+      0 0 0 1px rgba(255,255,255,.9), 0 4px 10px rgba(214,160,60,.3); }
+  .hero .avatar { width:112px; height:112px; margin:6px auto 12px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center; font-size:40px; font-weight:900; color:#5b6ee0;
+    border:7px solid transparent;
+    background:
+      radial-gradient(circle at 40% 32%, rgba(255,255,255,.9), rgba(240,245,255,.55) 75%, rgba(226,235,255,.45)) padding-box,
+      var(--sheen) border-box,
+      var(--holo) border-box;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.9), inset 0 -6px 10px rgba(140,160,230,.18),
+      0 0 0 1px rgba(255,255,255,.85), 0 10px 24px rgba(120,140,210,.3); }
+  .hero.first .avatar { width:132px; height:132px; font-size:50px; color:#c88a1e;
+    background:
+      radial-gradient(circle at 40% 32%, rgba(255,254,248,.92), rgba(255,244,218,.6) 75%, rgba(255,233,189,.5)) padding-box,
+      var(--sheen) border-box,
+      var(--holo-gold) border-box;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.9), inset 0 -6px 10px rgba(214,160,60,.2),
+      0 0 0 1px rgba(255,255,255,.85), 0 12px 30px rgba(214,160,60,.4); }
+  .hero .nm { font-size:27px; font-weight:900; color:var(--ink); }
+  .hero .pts { font-size:42px; font-weight:900; }
+  .hero .pts small { font-size:15px; color:var(--sub); font-weight:400; }
+  .hero .meta { font-size:14px; color:var(--sub); margin-top:4px; }
+  .hero .trend { position:absolute; top:14px; right:14px; font-size:13px; font-weight:800; padding:3px 10px; border-radius:999px; }
+  .trend.up { color:#0f9d6e; background:rgba(31,191,148,.14); }
+  .trend.flat { color:var(--sub); background:rgba(93,107,143,.1); }
+  .marquee { margin-top:18px; padding:12px 0 4px; overflow:hidden; border-radius:20px;
+    border-style:solid; border-color:transparent; border-width:4px 7px 9px 5px;
+    background:
+      var(--panel) padding-box,
+      var(--sheen) border-box,
+      var(--tube-shade) border-box,
+      var(--holo-pearl) border-box;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.95), 0 0 0 1px rgba(255,255,255,.8),
+      0 8px 20px rgba(120,140,200,.14); }
+  .marquee .mq-inner { display:inline-flex; gap:44px; white-space:nowrap; animation:mq 26s linear infinite; padding-left:20px; }
+  @keyframes mq { to { transform:translateX(-50%); } }
+  .mq-item { font-size:16px; color:var(--sub); }
+  .mq-item b { color:var(--ink); } .mq-item span { color:var(--vio); font-weight:700; }
+
+  /* ---- B3 复购双榜 ---- */
+  .b3 { display:grid; grid-template-columns:1fr 1fr; gap:24px; height:calc(100% - 58px); }
+  .board { padding:20px 26px; --tube:18px; --r:42px; }
+  .board h3 { font-size:22px; font-weight:900; color:var(--ink); letter-spacing:2px; margin-bottom:8px;
+    display:flex; align-items:center; gap:12px; }
+  .board h3 small { font-size:13px; color:var(--sub); font-weight:400; }
+  .board h3 .award { margin-left:auto; font-size:12px; color:#7a5af5; background:rgba(139,92,246,.1);
+    border:1px solid rgba(139,92,246,.35); padding:3px 12px; border-radius:999px; }
+  .b-row { display:flex; align-items:center; gap:16px; height:124px; border-bottom:1px solid rgba(93,107,143,.14); }
+  .b-row:last-child { border-bottom:none; }
+  .b-row .rk { width:52px; height:52px; flex:none; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    font-size:24px; font-weight:900; color:#8494c0;
+    background:radial-gradient(circle at 35% 30%, #ffffff, #eef3ff 70%, #dfe8ff);
+    box-shadow:inset 0 1px 0 #fff, inset 0 -2px 3px rgba(140,160,230,.25),
+      0 0 0 1px rgba(255,255,255,.9), 0 4px 10px rgba(120,140,200,.22); }
+  .b-row:nth-child(2) .rk, .b-row:nth-child(3) .rk { color:#5b6ee0; }
+  .b-row:first-child .rk { color:#c88a1e;
+    background:radial-gradient(circle at 35% 30%, #fffdf4, #fff2d4 70%, #ffe7b5); }
+  .b-row .nm { width:190px; font-size:30px; font-weight:900; color:var(--ink); }
+  .b-row .val { flex:1; text-align:right; }
+  .b-row .val b { font-size:42px; font-weight:900; }
+  .b-row .val span { display:block; font-size:14px; color:var(--sub); }
+
+  /* ---- B4 阵营对决 ---- */
+  .versus { display:grid; grid-template-columns:1fr 110px 1fr 110px 1fr; align-items:stretch; gap:8px;
+    height:calc(100% - 58px); }
+  .vs-card { padding:26px; position:relative; overflow:hidden; display:flex; flex-direction:column;
+    --tube:19px; --r:46px;
+    --pn:
+      radial-gradient(ellipse 58% 38% at 22% 6%, rgba(255,255,255,.8), transparent 58%),
+      radial-gradient(ellipse 50% 40% at 88% 82%, color-mix(in srgb, var(--cc) 14%, transparent), transparent 62%),
+      linear-gradient(145deg, rgba(255,255,255,.6), color-mix(in srgb, var(--cc) 5%, rgba(244,248,255,.38)) 52%, rgba(255,255,255,.48)),
+      linear-gradient(145deg, rgba(252,253,255,.84), rgba(243,247,255,.78));
+    --hl:conic-gradient(from var(--ga,0deg),
+      color-mix(in srgb, var(--cc) 45%, #fff), #f0f5ff, color-mix(in srgb, var(--cc) 24%, #fff),
+      #fdf3ff, color-mix(in srgb, var(--cc) 52%, #fff), #f2f7ff, color-mix(in srgb, var(--cc) 45%, #fff));
+    box-shadow:
+      6px 22px 35px rgba(40,73,145,.16),
+      0 28px 56px -20px color-mix(in srgb, var(--cc) 45%, transparent),
+      0 0 0 1px rgba(255,255,255,.85),
+      inset 0 2px 2px rgba(255,255,255,.95),
+      inset 2px 0 4px rgba(255,255,255,.6),
+      inset -3px 0 5px rgba(140,150,235,.4),
+      inset 0 -3px 5px rgba(120,130,220,.22),
+      inset 0 0 18px rgba(255,255,255,.25),
+      inset 0 0 2px var(--tube) rgba(255,255,255,.55),
+      inset 0 0 12px var(--tube) rgba(80,95,180,.16); }
+  .vs-card .c-tier { font-size:14px; color:var(--sub); letter-spacing:2px; }
+  .vs-card .c-name { font-size:42px; font-weight:900; color:var(--ink); letter-spacing:4px; margin:4px 0 2px; }
+  .vs-card .c-pct { font-size:86px; font-weight:900; line-height:1.1;
+    background:linear-gradient(180deg, color-mix(in srgb, var(--cc) 72%, #fff), var(--cc));
+    -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+    filter:drop-shadow(0 2px 0 rgba(255,255,255,.9)) drop-shadow(0 6px 10px rgba(40,100,210,.22)); }
+  .vs-card .c-sub { font-size:16px; color:var(--sub); }
+  .vs-card .c-sub b { color:var(--ink); }
+  .vs-card .c-bar { margin:16px 0 8px; height:20px; border-radius:10px;
+    background:linear-gradient(180deg, rgba(255,255,255,.5), rgba(236,242,255,.28));
+    border:1px solid rgba(255,255,255,.85);
+    box-shadow:inset 0 1.5px 0 rgba(255,255,255,.9), inset 0 -3px 5px rgba(110,130,210,.18),
+      0 3px 8px rgba(120,140,200,.16);
+    overflow:hidden; }
+  .vs-card .c-fill { height:100%; border-radius:10px;
+    background:linear-gradient(180deg, rgba(255,255,255,.7), rgba(255,255,255,0) 42%),
+      linear-gradient(90deg, color-mix(in srgb, var(--cc) 55%, #fff), var(--cc));
+    box-shadow:inset 0 1.5px 1px rgba(255,255,255,.85), inset 0 -2px 3px color-mix(in srgb, var(--cc) 60%, transparent),
+      0 0 12px color-mix(in srgb, var(--cc) 50%, transparent); }
+  .vs-card .lamps { display:flex; gap:9px; margin-top:14px; align-items:center; }
+  .vs-card .lamps span { font-size:13px; color:var(--sub); margin-right:4px; }
+  .lamp { width:18px; height:18px; border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, #ffffff, #e8edf8);
+    border:1px solid rgba(255,255,255,.95);
+    box-shadow:inset 0 -1px 2px rgba(140,160,230,.25), 0 2px 5px rgba(120,140,200,.2); }
+  .lamp.on { background:radial-gradient(circle at 35% 35%, #e9dcff, var(--vio)); border-color:#fff;
+    box-shadow:0 0 12px rgba(139,92,246,.7); }
+  .vs-mid { display:flex; align-items:center; justify-content:center; font-size:48px; font-weight:900;
+    color:var(--coral); transform:skewX(-8deg); text-shadow:0 4px 18px rgba(255,108,92,.35); }
+
+  /* ---- B5 分队积分战 ---- */
+  .race { height:calc(100% - 96px); display:flex; flex-direction:column; gap:12px; }
+  .lane { flex:1; display:grid; grid-template-columns:150px 1fr 300px; gap:16px; align-items:center;
+    padding:0 20px; border-radius:26px;
+    border-style:solid; border-color:transparent; border-width:6px 10px 12px 6px;
+    background:
+      var(--panel) padding-box,
+      var(--sheen) border-box,
+      var(--tube-shade) border-box,
+      var(--holo-pearl) border-box;
+    box-shadow:inset 0 1.5px 0 rgba(255,255,255,.95), inset 0 -4px 8px rgba(110,130,210,.15),
+      inset 0 0 0 1px rgba(255,255,255,.9), 0 0 0 1px rgba(255,255,255,.8),
+      4px 10px 22px rgba(120,140,200,.18); }
+  .lane .t-name { font-size:21px; font-weight:900; color:var(--ink); }
+  .lane .t-name small { display:block; font-size:12px; color:var(--sub); font-weight:400; }
+  .lane .t-track { height:26px; border-radius:13px; position:relative;
+    background:linear-gradient(180deg, rgba(255,255,255,.5), rgba(236,242,255,.28));
+    border:1px solid rgba(255,255,255,.85);
+    box-shadow:inset 0 1.5px 0 rgba(255,255,255,.9), inset 0 -3px 5px rgba(110,130,210,.18),
+      0 3px 8px rgba(120,140,200,.16); }
+  .lane .t-track::after { content:""; position:absolute; right:6%; top:-5px; bottom:-5px; width:3px;
+    background:repeating-linear-gradient(0deg, var(--pri) 0 6px, transparent 6px 12px); opacity:.7; }
+  .lane .t-horse { position:absolute; top:50%; transform:translate(-50%,-50%); min-width:66px; height:36px; padding:0 12px;
+    border-radius:14px; color:#4a63d8; font-weight:900; font-size:16px;
+    border:4px solid transparent;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,.85), rgba(240,245,255,.6)) padding-box,
+      var(--sheen) border-box,
+      var(--holo) border-box;
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.95), 0 0 0 1px rgba(255,255,255,.8), 0 5px 14px rgba(120,140,210,.3);
+    transition:left 1.2s cubic-bezier(.77,0,.175,1); }
+  .lane:first-child .t-horse { color:#c88a1e;
+    background:
+      linear-gradient(180deg, #fffdf6, #fff3d8) padding-box,
+      var(--sheen) border-box,
+      var(--holo-gold) border-box;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.95), 0 0 0 1px rgba(255,255,255,.85), 0 5px 16px rgba(214,160,60,.4); }
+  .lane .t-vals { text-align:right; font-size:14px; color:var(--sub); }
+  .lane .t-vals b { font-size:22px; font-weight:900; color:var(--ink); }
+  .lane .t-vals .sep { margin:0 8px; opacity:.4; }
+
+  /* ---- B6 全员数据墙 ---- */
+  .wall { display:grid; grid-template-columns:repeat(8,1fr); grid-template-rows:repeat(3,1fr); gap:14px;
+    height:calc(100% - 54px); }
+  .card { padding:14px 16px; display:flex; flex-direction:column;
+    --tube:9px; --r:22px;
+    opacity:0; transform:translateY(14px); }
+  .show.active .card { animation:rise .5s cubic-bezier(.23,1,.32,1) forwards, holoSpin 38s linear infinite;
+    animation-delay:calc(var(--i)*50ms), calc(var(--i, 0) * -3.1s); }
+  @keyframes rise { to { opacity:1; transform:none; } }
+  .card .c-nm { font-size:20px; font-weight:900; color:var(--ink); display:flex; align-items:center; gap:8px; white-space:nowrap; }
+  .card .c-nm .nm-txt { overflow:hidden; text-overflow:ellipsis; }
+  .card .c-nm .camp-dot { flex:none; width:10px; height:10px; border-radius:3px; transform:rotate(45deg);
+    background:var(--cc); box-shadow:0 0 8px color-mix(in srgb, var(--cc) 70%, transparent); }
+  .card .c-rank { margin-left:auto; font-size:11px; color:#7a5af5; background:rgba(139,92,246,.1);
+    border:1px solid rgba(139,92,246,.4); padding:1px 7px; border-radius:6px; white-space:nowrap; }
+  .card .quad { flex:1; display:grid; grid-template-columns:1fr 1fr; gap:6px 10px; margin-top:10px; }
+  .card .q b { display:block; font-size:23px; font-weight:900; color:var(--ink); }
+  .card .q.o b { color:#f2662f; } .card .q.c b { color:var(--pri); }
+  .card .q span { font-size:11px; color:var(--sub); }
+  .card .c-amt { margin-top:8px; padding-top:8px; border-top:1px dashed rgba(93,107,143,.25);
+    font-size:13px; color:var(--sub); }
+  .card .c-amt b { color:#0f9d6e; font-size:17px; }
+
+  /* ---- B7 倒计时冲刺 ---- */
+  .b7 { height:calc(100% - 58px); display:grid; grid-template-columns:repeat(3,1fr); gap:24px; align-items:stretch; }
+  .giant { position:relative; overflow:hidden; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; }
+  .giant .g-label { font-size:19px; letter-spacing:4px; color:var(--sub); }
+  .giant .g-num { font-size:146px; font-weight:900; line-height:1;
+    background:linear-gradient(180deg, #3a4a80, #4f7cff);
+    -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+    filter:drop-shadow(0 2px 0 rgba(255,255,255,.9)) drop-shadow(0 8px 14px rgba(40,100,210,.25)); }
+  .giant .g-unit { font-size:20px; color:var(--sub); }
+  .giant { --tube:21px; --r:50px; }
+  .giant.hot { --pn:var(--panel-warm);
+    --hl:var(--holo-warm);
+    box-shadow:
+      6px 22px 35px rgba(40,73,145,.14),
+      0 26px 54px -18px rgba(255,140,90,.42),
+      0 0 0 1px rgba(255,255,255,.85),
+      inset 0 2px 2px rgba(255,255,255,.95),
+      inset 2px 0 4px rgba(255,255,255,.6),
+      inset -3px 0 5px rgba(235,170,140,.4),
+      inset 0 -3px 5px rgba(220,130,90,.32),
+      inset 0 0 18px rgba(255,255,255,.25),
+      inset 0 0 2px var(--tube) rgba(255,255,255,.55),
+      inset 0 0 12px var(--tube) rgba(180,110,80,.14); }
+  .giant.hot .g-num { background:linear-gradient(180deg, #ff9a7e, var(--coral));
+    -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+    filter:drop-shadow(0 2px 0 rgba(255,255,255,.9)) drop-shadow(0 8px 16px rgba(230,90,70,.3)); }
+  .giant.violet .g-num { background:linear-gradient(92deg,var(--pri),var(--vio));
+    -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+  .giant .g-sub { font-size:15px; color:var(--sub); }
+  .giant .ai-pred { margin-top:10px; display:flex; align-items:center; gap:8px; font-size:14px; color:#46357e;
+    padding:8px 16px; border-radius:999px;
+    background:linear-gradient(180deg, rgba(255,255,255,.55), rgba(247,245,255,.32));
+    border:1px solid rgba(255,255,255,.85);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.9), inset 0 -3px 6px rgba(139,92,246,.1),
+      0 4px 12px rgba(120,140,200,.15); }
+
+  /* ============ AI 助手气泡 ============ */
+  #aiBubble { position:absolute; right:30px; bottom:78px; z-index:44; width:520px;
+    display:flex; gap:12px; align-items:flex-start; padding:14px 18px; border-radius:26px;
+    border:9px solid transparent;
+    background:
+      var(--panel) padding-box,
+      var(--sheen) border-box,
+      var(--holo) border-box;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.95), 0 0 0 1px rgba(255,255,255,.8),
+      0 12px 30px rgba(120,140,200,.2); }
+  #aiBubble .ava { flex:none; width:40px; height:40px; border-radius:13px; color:#fff; font-size:19px;
+    display:flex; align-items:center; justify-content:center;
+    background:linear-gradient(140deg,var(--pri),var(--vio)); box-shadow:0 6px 14px rgba(99,102,241,.4); }
+  #aiBubble .who { font-size:12px; font-weight:800; color:var(--vio); letter-spacing:1px; margin-bottom:3px;
+    display:flex; align-items:center; gap:6px; }
+  #aiBubble .who i { width:6px; height:6px; border-radius:50%; background:var(--mint); animation:blink 1.6s infinite; }
+  #aiBubble .txt { font-size:15px; color:var(--ink); line-height:1.55; transition:opacity .4s; }
+  #aiBubble .txt.fade { opacity:0; }
+
+  /* ============ 底部节目单 ============ */
+  footer.guide { position:absolute; left:0; right:0; bottom:0; height:66px; z-index:30;
+    display:flex; align-items:center; gap:8px; padding:0 30px;
+    background:linear-gradient(0deg, rgba(255,255,255,.88), rgba(250,252,255,.62));
+    backdrop-filter:blur(20px) saturate(1.4); -webkit-backdrop-filter:blur(20px) saturate(1.4);
+    border-top:1px solid rgba(255,255,255,.95);
+    box-shadow:inset 0 1px 0 #fff, 0 -1px 0 rgba(214,180,255,.3), 0 -2px 0 rgba(170,215,255,.25),
+      0 -10px 28px rgba(120,140,200,.1); }
+  .g-item { font-size:14px; color:var(--sub); padding:7px 15px; border-radius:999px; letter-spacing:1px;
+    white-space:nowrap; transition:all .3s; cursor:pointer; }
+  .g-item.on { color:#3b5bd6; font-weight:900;
+    border:4px solid transparent; padding:3px 11px;
+    background:
+      linear-gradient(180deg, #ffffff, #f0f5ff) padding-box,
+      var(--sheen) border-box,
+      var(--holo) border-box;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.95), 0 0 0 1px rgba(255,255,255,.8),
+      0 5px 14px rgba(120,140,210,.28); }
+  .g-right { margin-left:auto; font-size:13px; color:var(--sub); }
+  .g-right b { color:var(--vio); }
+
+  /* ============ lower-third 插播条 ============ */
+  #lower3rd { position:absolute; left:0; right:0; bottom:66px; height:120px; z-index:40; pointer-events:none;
+    display:flex; align-items:center; overflow:hidden; }
+  .lt { display:flex; align-items:stretch; transform:translateX(-105%); }
+  .lt.slide { animation:ltIn 4.8s cubic-bezier(.23,1,.32,1) forwards; }
+  @keyframes ltIn { 0%{transform:translateX(-105%)} 8%{transform:translateX(0)} 88%{transform:translateX(0)} 100%{transform:translateX(-105%)} }
+  .lt .lt-tag { display:flex; align-items:center; gap:8px; color:#ff5040; font-size:17px; font-weight:900;
+    letter-spacing:2px; padding:0 22px; border-radius:20px 0 0 20px;
+    border:6px solid transparent; border-right:none;
+    background:
+      linear-gradient(180deg, #fffdf9, #fff0ea) padding-box,
+      var(--sheen) border-box,
+      linear-gradient(135deg, #ffdccc, #fff0dc, #ffd2c4) border-box;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.95), 0 0 0 1px rgba(255,255,255,.8),
+      0 8px 20px rgba(255,120,100,.3); }
+  .lt .lt-body { display:flex; align-items:center; gap:16px; padding:14px 56px 14px 28px;
+    border-radius:0 20px 20px 0;
+    border:6px solid transparent; border-left:none;
+    background:
+      var(--panel) padding-box,
+      var(--sheen) border-box,
+      var(--holo) border-box;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.95), 0 0 0 1px rgba(255,255,255,.8),
+      0 10px 26px rgba(120,140,200,.18); }
+  .lt .lt-name { font-size:32px; font-weight:900; color:var(--ink); }
+  .lt .lt-type { font-size:17px; color:var(--sub); }
+  .lt .lt-amt { font-size:32px; font-weight:900; }
+  .lt .combo { font-size:20px; font-weight:900; color:#5b3bd6;
+    border:4px solid transparent;
+    background:
+      linear-gradient(180deg, #ffffff, #f3f0ff) padding-box,
+      var(--sheen) border-box,
+      var(--holo) border-box;
+    padding:4px 14px; border-radius:12px; transform:skewX(-8deg);
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.95), 0 0 0 1px rgba(255,255,255,.8), 0 5px 14px rgba(120,140,210,.3); }
+
+  /* ============ L3 进球回放全屏卡 ============ */
+  #replay { position:absolute; inset:0; z-index:50; display:none; align-items:center; justify-content:center;
+    background:rgba(233,238,251,.72); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); }
+  #replay.on { display:flex; }
+  #replay .rp-card { text-align:center; transform:scale(.95); opacity:0; filter:blur(4px);
+    padding:70px 130px; border-radius:56px;
+    border:26px solid transparent;
+    background:
+      var(--panel-warm) padding-box,
+      var(--sheen) border-box,
+      var(--holo-warm) border-box;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.95), 0 0 0 1px rgba(255,255,255,.85),
+      0 30px 80px rgba(99,102,241,.28), 0 40px 90px -30px rgba(255,120,70,.35); }
+  #replay.on .rp-card { animation:rpIn 5.2s cubic-bezier(.34,1.3,.5,1) forwards; }
+  @keyframes rpIn { 0%{transform:scale(.95);opacity:0;filter:blur(4px)} 8%{transform:scale(1);opacity:1;filter:blur(0)}
+    90%{transform:scale(1);opacity:1} 100%{transform:scale(.98);opacity:0} }
+  #replay .rp-tag { font-size:20px; letter-spacing:8px; font-weight:900; color:var(--coral); }
+  #replay .rp-name { font-size:110px; font-weight:900; color:var(--ink); line-height:1.2; }
+  #replay .rp-amt { font-size:92px; font-weight:900; }
+  #replay .rp-sub { font-size:22px; color:var(--sub); margin-top:10px; }
+  #replay .rp-ai { margin-top:16px; display:inline-flex; align-items:center; gap:8px; font-size:15px; color:#46357e;
+    padding:8px 18px; border-radius:999px; background:rgba(139,92,246,.1); border:1px solid rgba(139,92,246,.3); }
+  #replay .fire { position:absolute; font-size:40px; animation:fw 2.2s ease-out forwards; }
+  @keyframes fw { 0%{transform:translateY(60px) scale(.4);opacity:0} 20%{opacity:1} 100%{transform:translateY(-320px) scale(1.2);opacity:0} }
+
+  #demo-note { position:absolute; left:30px; bottom:72px; z-index:45; font-size:11px; color:rgba(93,107,143,.85); letter-spacing:1px; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="orb o1"></div><div class="orb o2"></div><div class="orb o3"></div>
+
+  <!-- ======== 频道顶栏 ======== -->
+  <header class="ch">
+    <div class="live"><i></i>LIVE</div>
+    <div class="ch-logo">
+      <span class="ai-star">✦</span>
+      <div>采购节 · <em class="grad-text">AI 赛事频道</em>
+        <small>2026 PROCUREMENT FESTIVAL · AI-POWERED SALES LIVE</small>
+      </div>
+    </div>
+    <div class="ch-goals">
+      <div class="score-chip">8月新签 <b class="num gd" id="chipNew">123</b> / 149</div>
+      <div class="score-chip">8+9月业绩 <b class="num gd">$1.85M</b> / $3.26M</div>
+      <div class="score-chip">新签窗口 <b class="num hot">7</b> 天</div>
+    </div>
+    <div class="ch-clock"><b class="num" id="clock">14:32:00</b>2026-08-24 周一 · 数据截至 14:30 · AI 工具全面应用首届</div>
+  </header>
+
+  <!-- ======== 节目区 ======== -->
+  <main id="shows">
+
+    <!-- B1 头条 -->
+    <section class="show active" data-name="B1 头条">
+      <span class="kicker coral">HEADLINE · 头条</span>
+      <div class="b1">
+        <div class="headline glass deep" style="--i:0">
+          <div class="hl-tag grad-text">✦ 今日最大单 · TOP DEAL</div>
+          <div class="hl-name">毕晓珍</div>
+          <div class="hl-amt grad-text num">$12,000</div>
+          <div class="hl-sub">开发类新签 · 个人当日第 <b>2</b> 单（×2 COMBO）<br>
+            新签积分 <b>10.5</b> 继续领跑 ｜ 距阵营门槛 9 单 <b>已达标 ✓</b></div>
+          <div class="ai-quote">
+            <span class="ico">✦</span>
+            <p><b>AI 解说</b>：这单由 AI 客户背调辅助跟进成交——毕晓珍将领先优势扩大到 0.5 分，若保持当前节奏，本周即可锁定阶段冠军。</p>
+          </div>
+        </div>
+        <div class="sidecol">
+          <div class="sidecard glass" style="--i:1">
+            <h3>✦ 本阶段冠军争夺</h3>
+            <div class="big-line">第 2 阶段 · 领跑者 毕晓珍 <b>9 单</b></div>
+            <p>追赶：刘琳琳 9 单 · 周露露 8 单<br>阶段划分口径待评审确认（A-3）</p>
+          </div>
+          <div class="sidecard glass" id="sideSwap" style="--i:2">
+            <h3>✦ <span id="swapTitle">AI 赛事预测</span></h3>
+            <div class="fade-pane" id="paneAI">
+              <div class="big-line">149 目标预计 <b>8/29</b> 提前撞线</div>
+              <p>按当前日均 5.1 单测算 · 阵营胜率：破晓 46% / 烈火 33% / 雷霆 21%（示例）</p>
+            </div>
+            <div class="fade-pane hide" id="paneLog">
+              <p>🏁 8/02 首单红包 · <b>代晴玉</b><br>👑 8/15 第 1 阶段冠军 · <b>刘琳琳</b><br>
+                 🎆 8/21 公司新签达成 <b>80%</b><br>🔥 8/23 <b>烈火营</b>完成率 85% 反超领跑</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- B2 新签英雄榜 -->
+    <section class="show" data-name="B2 新签英雄榜">
+      <span class="kicker">NEW SIGNING · 新签英雄榜</span>
+      <h2>TOP 5 <em class="grad-text">英雄卡</em> · 8 月新签积分</h2>
+      <div class="heroes" id="heroes"></div>
+      <div class="marquee"><div class="mq-inner" id="heroMq"></div></div>
+    </section>
+
+    <!-- B3 复购双榜 -->
+    <section class="show" data-name="B3 复购双榜">
+      <span class="kicker coral">REPURCHASE · 复购双榜</span>
+      <div class="b3">
+        <div class="board glass deep" style="--i:0">
+          <h3>首返客户数 · TOP 5<small>客户只记一次</small><span class="award">前二奖 1288 / 888</span></h3>
+          <div id="bFirst"></div>
+        </div>
+        <div class="board glass deep" style="--i:1">
+          <h3>新客复购金额 · TOP 5<small>限 2025–2026 新签客户</small><span class="award">前二奖 1888 / 1288</span></h3>
+          <div id="bRe"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- B4 阵营对决 -->
+    <section class="show" data-name="B4 阵营对决">
+      <span class="kicker">CAMP VS · 阵营对决</span>
+      <div class="versus" id="versus"></div>
+    </section>
+
+    <!-- B5 分队积分战 -->
+    <section class="show" data-name="B5 分队积分战">
+      <span class="kicker">TEAM RACE · 分队积分战</span>
+      <h2>人均积分 <em class="grad-text">赛道</em> · 司龄加权</h2>
+      <div class="race" id="race"></div>
+    </section>
+
+    <!-- B6 全员数据墙 -->
+    <section class="show" data-name="B6 全员数据墙">
+      <span class="kicker coral">DATA WALL · 全员数据墙</span>
+      <div class="wall" id="wall"></div>
+    </section>
+
+    <!-- B7 倒计时冲刺 -->
+    <section class="show" data-name="B7 倒计时冲刺">
+      <span class="kicker">COUNTDOWN · 冲刺倒计时</span>
+      <div class="b7">
+        <div class="giant glass deep hot" style="--i:0">
+          <div class="g-label">距 8月新签 149 个</div>
+          <div class="g-num num">26</div>
+          <div class="g-unit">个缺口 · 窗口仅剩 7 天</div>
+          <div class="g-sub">日均需 3.7 单（当前日均 5.1 单 ✓）</div>
+          <div class="ai-pred">✦ AI 预测：8/29 提前 2 天撞线</div>
+        </div>
+        <div class="giant glass deep violet" style="--i:1">
+          <div class="g-label">距 8+9月业绩 $326万</div>
+          <div class="g-num num">141</div>
+          <div class="g-unit">万美金缺口 · 完成 56.6%</div>
+          <div class="g-sub">日均需 $3.8 万（当前日均 $8.0 万 ✓）</div>
+          <div class="ai-pred">✦ AI 预测：9/21 达成，盈余约 9%</div>
+        </div>
+        <div class="giant glass deep" style="--i:2">
+          <div class="g-label">距活动收官 9/30</div>
+          <div class="g-num num">37</div>
+          <div class="g-unit">天 · 第 2 阶段进行中</div>
+          <div class="g-sub">9/1 起切换「复购单线冲刺」叙事</div>
+          <div class="ai-pred">✦ AI 提醒：新人队 8 月权重红利最大化</div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ======== AI 助手气泡 ======== -->
+  <div id="aiBubble">
+    <div class="ava">✦</div>
+    <div>
+      <div class="who"><i></i>AI 赛事助手 · 实时播报</div>
+      <div class="txt" id="aiTxt">AI 预测：按当前日均 5.1 单，149 新签目标预计 8/29 提前撞线。</div>
+    </div>
+  </div>
+
+  <!-- ======== lower-third 插播条 ======== -->
+  <div id="lower3rd"></div>
+
+  <!-- ======== L3 进球回放 ======== -->
+  <div id="replay">
+    <div class="rp-card">
+      <div class="rp-tag">✦ GOAL REPLAY · 超级大单回放</div>
+      <div class="rp-name">毕晓珍</div>
+      <div class="rp-amt grad-text num">$12,000</div>
+      <div class="rp-sub">新签榜排名不变 · 第 1 位 ｜ 领先第 2 名 0.5 分</div>
+      <div class="rp-ai">✦ AI 复盘：AI 客户背调辅助成交 · 跟进周期 11 天，低于均值 32%</div>
+    </div>
+  </div>
+
+  <!-- ======== 底部节目单 ======== -->
+  <footer class="guide" id="guide">
+    <span class="g-right">每日 09:00 <b>AI 昨日战报</b> · 18:00 <b>AI 今日收盘</b>（AI 自动生成）｜ 示例数据 · 演示稿</span>
+  </footer>
+
+  <div id="demo-note">方案 D · Crystal Holo Glass × AI 主题 · UI 效果演示稿 ｜ ← → 切换栏目 · 空格 暂停/恢复</div>
+</div>
+
+<script>
+/* ================= 示例数据（与 v1 同源） ================= */
+const CAMPS = [
+  { name:'破晓营', tier:'档位3 · 60个 · ¥2400', req:60, prize:2400, thA:9, thD:7, color:'#8b5cf6' },
+  { name:'雷霆营', tier:'档位2 · 50个 · ¥1200', req:50, prize:1200, thA:7, thD:5, color:'#4f7cff' },
+  { name:'烈火营', tier:'档位1 · 40个 · ¥800',  req:40, prize:800,  thA:6, thD:4, color:'#ff6b5c' },
+];
+const PEOPLE = [
+  { n:'毕晓珍',  team:'专治不服', camp:0, type:'A', yrs:8, q:6, d:3, amt:42800, first:5, re:18600, trend:'up' },
+  { n:'代晴玉',  team:'专治不服', camp:1, type:'A', yrs:8, q:6, d:1, amt:26300, first:4, re:12400, trend:'flat' },
+  { n:'刘源',    team:'专治不服', camp:2, type:'D', yrs:5, q:3, d:2, amt:21500, first:3, re:9800,  trend:'up' },
+  { n:'张砚斐',  team:'专治不服', camp:2, type:'A', yrs:3, q:5, d:1, amt:21200, first:4, re:15300, trend:'up' },
+  { n:'刘琳琳',  team:'多财多亿', camp:0, type:'A', yrs:8, q:7, d:2, amt:38100, first:6, re:22700, trend:'up' },
+  { n:'翟佳盟',  team:'多财多亿', camp:1, type:'A', yrs:5, q:4, d:1, amt:18400, first:3, re:11200, trend:'flat' },
+  { n:'高瑞杰',  team:'多财多亿', camp:1, type:'D', yrs:1, q:2, d:2, amt:15600, first:2, re:6400,  trend:'flat' },
+  { n:'胡宁宁',  team:'多财多亿', camp:2, type:'A', yrs:0, q:3, d:1, amt:12800, first:1, re:3200,  trend:'up' },
+  { n:'夏新月',  team:'稻乐俪',   camp:0, type:'A', yrs:8, q:4, d:2, amt:28900, first:5, re:19500, trend:'flat' },
+  { n:'潘康衡',  team:'稻乐俪',   camp:1, type:'A', yrs:7, q:3, d:2, amt:22400, first:4, re:14800, trend:'up' },
+  { n:'宋化通',  team:'稻乐俪',   camp:2, type:'A', yrs:6, q:5, d:1, amt:22100, first:3, re:10600, trend:'up' },
+  { n:'李宝珠',  team:'星星之火', camp:0, type:'D', yrs:5, q:3, d:2, amt:23700, first:4, re:13900, trend:'flat' },
+  { n:'刘行行',  team:'星星之火', camp:1, type:'A', yrs:2, q:2, d:2, amt:16300, first:2, re:8100,  trend:'up' },
+  { n:'刘也',    team:'星星之火', camp:2, type:'D', yrs:0, q:3, d:1, amt:11900, first:2, re:5600,  trend:'up' },
+  { n:'隋晓茹',  team:'星星之火', camp:2, type:'A', yrs:0, q:2, d:1, amt:9400,  first:1, re:4200,  trend:'flat' },
+  { n:'宋皓月',  team:'行则将至', camp:0, type:'A', yrs:6, q:4, d:2, amt:27500, first:5, re:17300, trend:'flat' },
+  { n:'张笑',    team:'行则将至', camp:1, type:'D', yrs:2, q:4, d:1, amt:16200, first:3, re:9700,  trend:'up' },
+  { n:'罗謦瑜',  team:'行则将至', camp:2, type:'A', yrs:1, q:2, d:1, amt:10800, first:2, re:6800,  trend:'flat' },
+  { n:'田雯',    team:'乘风',     camp:0, type:'A', yrs:4, q:5, d:1, amt:21800, first:3, re:12100, trend:'up' },
+  { n:'曲冉',    team:'乘风',     camp:1, type:'D', yrs:2, q:2, d:2, amt:15100, first:2, re:7900,  trend:'up' },
+  { n:'凯丽比努尔', team:'乘风',  camp:2, type:'A', yrs:0, q:2, d:1, amt:8900,  first:1, re:3800,  trend:'flat' },
+  { n:'尹德魁',  team:'无名',     camp:0, type:'A', yrs:3, q:3, d:1, amt:13600, first:2, re:8400,  trend:'flat' },
+  { n:'张心茹',  team:'无名',     camp:1, type:'A', yrs:0, q:2, d:0, amt:6200,  first:1, re:2900,  trend:'flat' },
+  { n:'周露露',  team:'个人',     camp:0, type:'A', yrs:3, q:6, d:2, amt:30400, first:4, re:15700, trend:'up' },
+];
+PEOPLE.forEach(p => {
+  p.cnt = p.q + p.d;
+  p.pts = p.q + p.d * 1.5;
+  p.rePts = Math.round((p.first * 1.5 + p.re / 1000) * 10) / 10;
+  const th = p.type === 'A' ? CAMPS[p.camp].thA : CAMPS[p.camp].thD;
+  p.ok = p.cnt >= th;
+  const w = p.yrs >= 2 ? [.5,.5] : p.yrs >= 1 ? [.6,.4] : [.7,.3];
+  p.wScore = p.pts * w[0] + p.rePts * w[1];
+});
+const byPts   = [...PEOPLE].sort((a,b)=> b.pts - a.pts || b.amt - a.amt);
+const byFirst = [...PEOPLE].sort((a,b)=> b.first - a.first || b.re - a.re);
+const byRe    = [...PEOPLE].sort((a,b)=> b.re - a.re);
+const fmt$ = v => '$' + Math.round(v).toLocaleString();
+const rankOf = (p, arr) => arr.indexOf(p) + 1;
+
+/* ================= 画幅自适应 ================= */
+const stage = document.getElementById('stage');
+function fit(){ const s = Math.min(innerWidth/1920, innerHeight/1080);
+  stage.style.transform = `translate(-50%,-50%) scale(${s})`; }
+addEventListener('resize', fit); fit();
+
+/* mock 时钟 */
+let mock = new Date('2026-08-24T14:32:00').getTime();
+setInterval(()=>{ mock += 1000;
+  document.getElementById('clock').textContent = new Date(mock).toTimeString().slice(0,8); }, 1000);
+
+/* ================= B1 副卡轮换（AI 预测 / 大事记） ================= */
+let swapFlag = false;
+setInterval(()=>{
+  swapFlag = !swapFlag;
+  document.getElementById('paneAI').classList.toggle('hide', swapFlag);
+  document.getElementById('paneLog').classList.toggle('hide', !swapFlag);
+  document.getElementById('swapTitle').textContent = swapFlag ? '活动大事记' : 'AI 赛事预测';
+}, 6000);
+
+/* ================= B2 英雄榜 ================= */
+document.getElementById('heroes').innerHTML = byPts.slice(0,5).map((p,i)=>`
+  <div class="hero glass ${i===0?'first':''}" style="--i:${i}">
+    <span class="rk num">${i+1}</span>
+    <span class="trend ${p.trend==='up'?'up':'flat'}">${p.trend==='up'?'▲ 上升':'— 持平'}</span>
+    <div class="avatar">${p.n.slice(0,1)}</div>
+    <div class="nm">${p.n}</div>
+    <div class="pts grad-text num">${p.pts}<small> 分</small></div>
+    <div class="meta">${p.cnt} 单 · ${CAMPS[p.camp].name}${p.ok?' · 已达标✓':''}</div>
+  </div>`).join('');
+const mq = byPts.slice(5,15).map((p,i)=>`<span class="mq-item">${i+6}. <b>${p.n}</b> <span class="num">${p.pts}分</span></span>`).join('');
+document.getElementById('heroMq').innerHTML = mq + mq;
+
+/* ================= B3 复购双榜 ================= */
+document.getElementById('bFirst').innerHTML = byFirst.slice(0,5).map((p,i)=>`
+  <div class="b-row"><span class="rk num">${i+1}</span><span class="nm">${p.n}</span>
+    <span class="val"><b class="grad-text num">${p.first}</b><span>首返客户（个）· 复购 ${fmt$(p.re)} · ${p.rePts} 分</span></span>
+  </div>`).join('');
+document.getElementById('bRe').innerHTML = byRe.slice(0,5).map((p,i)=>`
+  <div class="b-row"><span class="rk num">${i+1}</span><span class="nm">${p.n}</span>
+    <span class="val"><b class="grad-text num">${fmt$(p.re)}</b><span>复购金额 · 首返 ${p.first} 个 · ${p.rePts} 分</span></span>
+  </div>`).join('');
+
+/* ================= B4 阵营对决 ================= */
+document.getElementById('versus').innerHTML = CAMPS.map((c,ci)=>{
+  const ms = PEOPLE.filter(p=>p.camp===ci);
+  const done = ms.reduce((s,p)=>s+p.cnt,0);
+  const pct = done/c.req*100;
+  const okN = ms.filter(p=>p.ok).length;
+  return `${ci? '<div class="vs-mid">VS</div>':''}
+  <div class="vs-card glass deep" style="--cc:${c.color}; --i:${ci}">
+    <div class="c-tier">${c.tier}</div>
+    <div class="c-name">${c.name}</div>
+    <div class="c-pct num">${pct.toFixed(0)}<small style="font-size:40px">%</small></div>
+    <div class="c-sub">新签 <b class="num">${done}</b> / ${c.req} 个 ｜ 奖池 ¥${c.prize}（每超10% +10%）</div>
+    <div class="c-bar"><div class="c-fill" style="width:${Math.min(100,pct)}%"></div></div>
+    <div class="lamps"><span>门槛达标 ${okN}/8</span>${ms.map(p=>`<div class="lamp ${p.ok?'on':''}"></div>`).join('')}</div>
+  </div>`;
+}).join('');
+
+/* ================= B5 分队赛道 ================= */
+const TEAMS = ['专治不服','多财多亿','稻乐俪','星星之火','行则将至','乘风','无名'];
+const teamRows = TEAMS.map(t=>{
+  const ms = PEOPLE.filter(p=>p.team===t);
+  const total = ms.reduce((s,p)=>s+p.wScore,0);
+  return { t, n:ms.length, total, per: total/ms.length };
+}).sort((a,b)=> b.per - a.per);
+const maxPer = Math.max(...teamRows.map(r=>r.per));
+document.getElementById('race').innerHTML = teamRows.map((r,i)=>`
+  <div class="lane">
+    <div class="t-name">${i+1}. ${r.t}<small>${r.n} 人</small></div>
+    <div class="t-track"><div class="t-horse num" style="left:${6 + r.per/maxPer*86}%">${r.per.toFixed(1)}</div></div>
+    <div class="t-vals">团队 <b class="num">${r.total.toFixed(1)}</b><span class="sep">｜</span>人均 <b class="num">${r.per.toFixed(1)}</b></div>
+  </div>`).join('');
+
+/* ================= B6 数据墙 ================= */
+document.getElementById('wall').innerHTML = PEOPLE.map((p,i)=>{
+  let badge = '';
+  const rN = rankOf(p, byPts);
+  if(rN<=3) badge = `新签#${rN}`;
+  else { const rR = rankOf(p, byRe); if(rR<=2) badge = `金额#${rR}`; }
+  if(!badge){ const rF = rankOf(p, byFirst); if(rF<=2) badge = `首返#${rF}`; }
+  return `<div class="card glass" style="--i:${Math.min(i,14)}; --cc:${CAMPS[p.camp].color}">
+    <div class="c-nm"><span class="camp-dot"></span><span class="nm-txt">${p.n}</span>${badge?`<span class="c-rank">${badge}</span>`:''}</div>
+    <div class="quad">
+      <div class="q o"><b class="num">${p.cnt}</b><span>新签个数</span></div>
+      <div class="q o"><b class="num">${p.pts}</b><span>新签积分</span></div>
+      <div class="q c"><b class="num">${p.first}</b><span>首返数</span></div>
+      <div class="q c"><b class="num">${p.rePts}</b><span>复购积分</span></div>
+    </div>
+    <div class="c-amt">复购金额 <b class="num">${fmt$(p.re)}</b>${p.ok?' · 门槛✓':''}</div>
+  </div>`;
+}).join('');
+
+/* ================= 底部节目单 ================= */
+const shows = [...document.querySelectorAll('.show')];
+const guide = document.getElementById('guide');
+shows.forEach((s,i)=>{ const g = document.createElement('span'); g.className = 'g-item'+(i?'':' on');
+  g.textContent = s.dataset.name; g.onclick = ()=>go(i);
+  guide.insertBefore(g, guide.querySelector('.g-right')); });
+
+/* ================= 轮播控制 ================= */
+let cur = 0, timer = null, paused = false;
+function go(i){
+  if(i===cur) return;
+  const old = shows[cur];
+  old.classList.add('leaving'); old.classList.remove('active');
+  setTimeout(()=>old.classList.remove('leaving'), 420);
+  shows[i].classList.add('active');
+  guide.querySelectorAll('.g-item').forEach((g,k)=>g.classList.toggle('on', k===i));
+  cur = i;
+}
+function play(){ timer = setInterval(()=>go((cur+1)%shows.length), 10000); }
+play();
+addEventListener('keydown', e=>{
+  if(e.key==='ArrowRight') go((cur+1)%shows.length);
+  if(e.key==='ArrowLeft') go((cur-1+shows.length)%shows.length);
+  if(e.key===' '){ e.preventDefault(); paused ? play() : clearInterval(timer); paused = !paused; }
+});
+
+/* ================= AI 助手气泡轮播 ================= */
+const AI_LINES = [
+  'AI 预测：按当前日均 5.1 单，149 新签目标预计 8/29 提前撞线。',
+  'AI 提示：雷霆营完成率落后破晓营 16pp，关注高瑞杰、曲冉（开发类）的 5 单门槛。',
+  'AI 战报：今日已产生 10 单，毕晓珍 ×2 连击领跑今日榜，田雯贡献最新一单。',
+  'AI 提醒：新签积分窗口仅剩 7 天，9/1 起大屏自动切换复购冲刺叙事。',
+  'AI 观察：星星之火、乘风新人占比高（新签权重 70%），8 月冲刺收益最大。',
+  'AI 复盘：本活动 AI 工具辅助成交占比 63%（示例），背调平均耗时下降 41%。',
+];
+let aiIdx = 0;
+setInterval(()=>{
+  aiIdx = (aiIdx+1) % AI_LINES.length;
+  const el = document.getElementById('aiTxt');
+  el.classList.add('fade');
+  setTimeout(()=>{ el.textContent = AI_LINES[aiIdx]; el.classList.remove('fade'); }, 400);
+}, 8000);
+
+/* ================= lower-third 插播演示 ================= */
+const LT_EVENTS = [
+  { tag:'最新报单', name:'田雯',   type:'新签 · 询盘类', amt:'$3,200',  combo:'' },
+  { tag:'最新报单', name:'曲冉',   type:'复购 · 新客',   amt:'$1,850',  combo:'' },
+  { tag:'连击',     name:'毕晓珍', type:'新签 · 开发类', amt:'$12,000', combo:'×2 COMBO' },
+  { tag:'最新报单', name:'宋化通', type:'新签 · 询盘类', amt:'$4,600',  combo:'' },
+  { tag:'达标',     name:'张笑',   type:'达成阵营门槛 5 单', amt:'点灯 ✦', combo:'' },
+  { tag:'连击',     name:'刘琳琳', type:'新签 · 询盘类', amt:'$6,700',  combo:'×3 COMBO' },
+];
+let ltIdx = 0;
+function fireLower3rd(){
+  const e = LT_EVENTS[ltIdx++ % LT_EVENTS.length];
+  const box = document.getElementById('lower3rd');
+  box.innerHTML = `<div class="lt slide">
+    <div class="lt-tag">⚡ ${e.tag}</div>
+    <div class="lt-body"><span class="lt-name">${e.name}</span><span class="lt-type">${e.type}</span>
+      <span class="lt-amt grad-text num">${e.amt}</span>${e.combo?`<span class="combo">${e.combo}</span>`:''}</div>
+  </div>`;
+}
+setTimeout(fireLower3rd, 2500);
+setInterval(fireLower3rd, 9000);
+
+/* ================= L3 进球回放演示 ================= */
+function fireReplay(){
+  const rp = document.getElementById('replay');
+  rp.querySelectorAll('.fire').forEach(f=>f.remove());
+  for(let i=0;i<10;i++){ const f = document.createElement('span'); f.className='fire';
+    f.textContent = ['✦','🎆','✨'][i%3];
+    f.style.left = (8 + Math.random()*84) + '%';
+    f.style.bottom = (10 + Math.random()*30) + '%';
+    f.style.animationDelay = (Math.random()*0.9) + 's';
+    rp.appendChild(f); }
+  rp.classList.add('on');
+  setTimeout(()=>rp.classList.remove('on'), 5200);
+}
+setTimeout(fireReplay, 16000);
+setInterval(fireReplay, 45000);
+document.getElementById('replay').onclick = ()=>document.getElementById('replay').classList.remove('on');
+</script>
+</body>
+</html>
