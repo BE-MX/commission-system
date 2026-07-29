@@ -35,7 +35,7 @@ async def mini_dev_login(body: dict, db: Session = Depends(get_db)):
 
     identifier = body.get("identifier", "").strip()
     if not identifier:
-        raise HTTPException(status_code=400, detail={"code": "MISSING_IDENTIFIER", "message": "请输入工号或手机号"})
+        raise HTTPException(status_code=400, detail={"code": "MISSING_IDENTIFIER", "message": "请输入工号"})
 
     user = db.query(ArkUser).filter(
         (ArkUser.phone == identifier) | (ArkUser.username == identifier)
@@ -79,7 +79,9 @@ async def mini_bind(body: MiniBindRequest, db: Session = Depends(get_db)):
     if not result["success"]:
         error = result["error"]
         status_map = {
-            "USER_NOT_FOUND": (404, "找不到匹配的用户，请检查工号或手机号"),
+            # 文案只提工号：小程序隐私审核不允许出现"手机号"字样（2026-07-29）；
+            # 匹配逻辑仍兼容手机号，老用户不受影响
+            "USER_NOT_FOUND": (404, "找不到匹配的用户，请检查工号"),
             "ALREADY_BOUND": (409, "该方舟用户已绑定其他微信"),
             "OPEN_ID_TAKEN": (409, "该微信已绑定其他方舟用户"),
         }

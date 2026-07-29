@@ -57,10 +57,10 @@
     <text class="panel-desc">首次使用把微信和工号绑在一起，之后打开就直接进</text>
 
     <view class="field">
-      <text class="field-label">工号 / 手机号</text>
+      <text class="field-label">工号</text>
       <input
         class="field-input"
-        placeholder="请输入工号或手机号"
+        placeholder="请输入工号"
         placeholder-class="field-ph"
         confirm-type="go"
         value="{{identifier}}"
