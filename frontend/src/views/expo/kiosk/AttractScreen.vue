@@ -9,7 +9,7 @@
       <span class="en">L E S H I N E</span>
       莱 莎 · 健 康 假 发
     </div>
-    <h2 class="slogan">门店 AI<br /><em>智能试戴</em></h2>
+    <h2 class="slogan">AI 试戴大模型<br />门店<em>智能成交</em>系统</h2>
     <div class="line">一套门店引流与辅助成交工具</div>
     <button class="xk-btn cta" @click="$emit('start', 'tryon')">AI 试戴新发型</button>
     <button class="xk-btn ghost cta2" @click="$emit('start', 'scene')">
