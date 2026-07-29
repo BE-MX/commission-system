@@ -84,10 +84,13 @@ def mount_frontend(app: FastAPI) -> None:
             if file.is_relative_to(root):
                 if file.is_file():
                     return FileResponse(file)
-                # 目录路径（如 /m/）优先返回目录下的 index.html
+                # 目录路径（如 /m/）优先返回目录下的 index.html；
+                # 无末尾斜杠必须先 307 补斜杠（同 nginx），否则页面内相对链接会解析到根路径
                 if file.is_dir():
                     index_file = file / "index.html"
                     if index_file.is_file():
+                        if full_path and not full_path.endswith("/"):
+                            return RedirectResponse(f"/{full_path}/")
                         return FileResponse(index_file)
         except (OSError, ValueError):
             pass  # 非法路径字符按未命中处理
