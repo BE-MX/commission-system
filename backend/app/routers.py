@@ -33,6 +33,7 @@ from app.mcp.token_admin import router as mcp_token_router
 from app.pm.router import router as pm_router
 from app.dashboard.router import router as dashboard_router
 from app.domestic.router import router as domestic_router
+from app.festival.public_router import router as festival_public_router
 
 
 def register_routers(app: FastAPI) -> None:
@@ -70,3 +71,4 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(pm_router, prefix="/api/pm", tags=["PM 项目资料协作站"])
     app.include_router(dashboard_router, prefix="/api/dashboard", tags=["工作台配置"])
     app.include_router(domestic_router, prefix="/api/domestic", tags=["内贸订单"])
+    app.include_router(festival_public_router, prefix="/api/public/festival", tags=["采购节大屏"])
