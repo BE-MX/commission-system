@@ -51,14 +51,22 @@ def generate_qr_data(item_id: int) -> str:
     return f"{C.QR_PREFIX}:{item_id}:{generate_qr_sign(item_id, settings.QR_SIGN_SECRET)}"
 
 
+def qr_sign_matches(item_id: int, sign: str) -> bool:
+    """同外贸侧（production/report_service）：登录后报工扫码的密钥轮换兜底；
+    免登录的进度码（verify_track_scene）不走这里，永远只认当前密钥。"""
+    if hmac.compare_digest(sign, generate_qr_sign(item_id, settings.QR_SIGN_SECRET)):
+        return True
+    legacy = settings.QR_SIGN_SECRET_LEGACY
+    return bool(legacy) and hmac.compare_digest(sign, generate_qr_sign(item_id, legacy))
+
+
 def verify_qr_data(qr_data: str) -> tuple[bool, int]:
     """校验内贸二维码，返回 (是否有效, item_id)。外贸的 ARK-P 码在这里一律无效。"""
     match = re.match(rf"^{C.QR_PREFIX}:(\d+):([a-f0-9]{{8}})$", qr_data or "")
     if not match:
         return False, 0
     item_id = int(match.group(1))
-    expected = generate_qr_sign(item_id, settings.QR_SIGN_SECRET)
-    return hmac.compare_digest(match.group(2), expected), item_id
+    return qr_sign_matches(item_id, match.group(2)), item_id
 
 
 # ── 订单产品进度小程序码（微信扫码免登录查看单个明细）──

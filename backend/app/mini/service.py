@@ -125,14 +125,10 @@ def bind_user(db: Session, open_id: str, identifier: str) -> dict:
 
 def scan_product(db: Session, order_product_id: int, sign: str, current_user: ArkUser) -> dict:
     """扫码获取产品信息和工序状态"""
-    from app.production.report_service import generate_qr_sign
-    from app.core.config import get_settings
-    settings = get_settings()
+    from app.production.report_service import qr_sign_matches
 
-    # Step 1: 验证签名
-    expected_sign = generate_qr_sign(order_product_id, settings.QR_SIGN_SECRET)
-    import hmac as _hmac
-    if not _hmac.compare_digest(sign, expected_sign):
+    # Step 1: 验证签名（含密钥轮换过渡期的旧密钥兜底，见 qr_sign_matches）
+    if not qr_sign_matches(order_product_id, sign):
         return {"can_submit": False, "block_reason": "SIGN_INVALID", "product": None, "next_process": None}
 
     # Step 2: 查订单产品

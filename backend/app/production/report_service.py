@@ -40,15 +40,26 @@ def generate_qr_data(order_product_id: int) -> str:
     return f"ARK-P:{order_product_id}:{sign}"
 
 
+def qr_sign_matches(order_product_id: int, sign: str) -> bool:
+    """当前密钥验签，不过再用轮换前的旧密钥兜底（QR_SIGN_SECRET_LEGACY，配置了才生效）。
+
+    兜底只服务登录后的报工扫码——2026-07-30 生产换签名密钥后，
+    车间已打印的卡不作废，随在制订单自然消亡；
+    免登录的内贸进度码不走这里，永远只认当前密钥。
+    """
+    if hmac.compare_digest(sign, generate_qr_sign(order_product_id, settings.QR_SIGN_SECRET)):
+        return True
+    legacy = settings.QR_SIGN_SECRET_LEGACY
+    return bool(legacy) and hmac.compare_digest(sign, generate_qr_sign(order_product_id, legacy))
+
+
 def verify_qr_data(qr_data: str) -> tuple[bool, int]:
     """Returns (is_valid, order_product_id)"""
     match = re.match(r"^ARK-P:(\d+):([a-f0-9]{8})$", qr_data)
     if not match:
         return False, 0
     op_id = int(match.group(1))
-    sign_received = match.group(2)
-    sign_expected = generate_qr_sign(op_id, settings.QR_SIGN_SECRET)
-    return hmac.compare_digest(sign_received, sign_expected), op_id
+    return qr_sign_matches(op_id, match.group(2)), op_id
 
 
 # ── 进度初始化 ────────────────────────────────────────────

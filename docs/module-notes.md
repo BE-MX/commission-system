@@ -674,7 +674,8 @@ frontend/src/
 
 **产品进度小程序码（2026-07-28；明细级，与流转卡同粒度）**：主站订单详情抽屉明细动作区「进度码」按钮 → `GET /api/domestic/items/{id}/wxacode` 生成微信小程序码（`wxacode.getUnlimited`，scene=`i:<item_id>:<hmac16>`，永久有效），弹窗可下载图片或打印 30×20mm 标签（左 LOGO 右码，与流转卡二维码标签同版式）。微信扫一扫拉起小程序落到**免登录**页 `pages/domestic/track/track`（调 `GET /api/mini/domestic/track?scene=`），只显示码指向的那一条明细。要点：
 - 免登录的唯一授权凭证是 scene 的 16 hex HMAC 签名（免登录口子 8 hex 不够，64-bit 才谈得上防在线遍历），域 `ARK-DT:<item_id>` 与流转卡 `ARK-D:<item_id>` 隔离——同一个 item_id 两个域，流转卡贴在车间人尽可见且只截 8 hex，共用域会泄露签名前半。track 端点把 items 过滤到一条（一码一品）；track 页无搜索/扫码入口防遍历；软删单 404。进度信息对客户公开不遮挡（亮哥 2026-07-28 拍板）。
-- **`QR_SIGN_SECRET` 停在仓库默认值时，出码端点和 track 端点都 503 拒绝服务**——默认值进了 git，人人可离线伪造签名，整个免登录授权模型就没了。部署前必须在 `.env` 配随机值；注意换密钥会让已打印的 `ARK-D:` 流转卡验签失效（流转卡与进度码共用此密钥），若生产已在默认值下印过卡，换钥后需重打。
+- **`QR_SIGN_SECRET` 停在仓库默认值时，出码端点和 track 端点都 503 拒绝服务**——默认值进了 git，人人可离线伪造签名，整个免登录授权模型就没了。部署前必须在 `.env` 配随机值。
+- **密钥轮换过渡（2026-07-30）**：这把密钥同时签外贸 ARK-P 打印卡——2026-07-30 生产换钥后全部已印卡（外贸+内贸）验签失效。补了 `QR_SIGN_SECRET_LEGACY` 兜底：登录后的报工扫码（外贸 `production/report_service.qr_sign_matches`、内贸 `domestic/report_service.qr_sign_matches`）当前密钥验不过时用旧密钥再试；**免登录进度码 `verify_track_scene` 永远只认当前密钥**（有测试钉死）。在制订单消化完后删掉该配置关闭兜底。
 - `app/mini/wx_client.py`：access_token 走 **stable_token**（幂等不顶号），内存缓存提前 300s 刷新；**该接口要求服务器出口 IP 在微信公众平台 IP 白名单**（jscode2session 不要求，登录正常≠这里能通，报 40164 就是白名单）。
 - `WX_MINI_ENV_VERSION`（默认 release）：正式版发布前设 trial（体验版码只有体验成员能扫开，**客户扫不开**）；release 时 check_path=True，页面未发布直接报 41030 拒绝出码，不发坏码。
 - 小程序 `app.js` onLaunch 对 track 冷启动路径豁免登录跳转（`wx.getLaunchOptionsSync().path`），否则客户被踢去登录页。

@@ -55,6 +55,10 @@ class Settings(BaseSettings):
     # 逗号分隔的访问 key，可按客户发放与单独吊销；留空 = 端点整体关闭
     PUBLIC_STOCK_KEYS: str = ""
 
+    # ── 采购节大屏（免登录局域网大屏取数） ─────────────────
+    # 逗号分隔访问 key；留空 = 不设门禁（内网大屏场景），配置后强制校验
+    FESTIVAL_SCREEN_KEYS: str = ""
+
     # ── 设计预约模块 ──────────────────────────────────────
     DESIGN_DEFAULT_DAILY_CAPACITY: int = 3
     DESIGN_REQUEST_NO_PREFIX: str = "DSR"
@@ -124,6 +128,10 @@ class Settings(BaseSettings):
 
     # ── 生产报工 ──────────────────────────────────────────
     QR_SIGN_SECRET: str = "change-this-to-a-random-32-char-secret"  # 二维码 HMAC 签名密钥
+    # 密钥轮换过渡期的旧密钥：报工扫码（外贸 ARK-P / 内贸 ARK-D，都在登录后端点）
+    # 用当前密钥验不过时拿它兜底，让换钥前已打印的卡继续有效；
+    # 免登录的进度码（ARK-DT）永远只认当前密钥。在制订单消化完后删除此配置即关闭兜底。
+    QR_SIGN_SECRET_LEGACY: str = ""
     PRODUCTION_API_KEY: str = ""  # ACCIO WORK 调用报工接口的 API Key
 
     # ── WhatsApp Connector ───────────────────────────────
