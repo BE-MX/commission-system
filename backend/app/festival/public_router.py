@@ -88,3 +88,17 @@ def camps_board(
     date_to = _norm_date(date_to, "date_to")
     return ok(_cached("camps", date_from, date_to,
                       lambda: service.get_camps_payload(db, date_from, date_to)))
+
+
+@router.get("/teams", summary="团队人均积分榜（大屏取数，免登录白名单）")
+def teams_board(
+    key: str | None = Query(None, max_length=128),
+    date_from: str | None = Query(None, description="预览窗口起（默认活动窗口 2026-08-01）"),
+    date_to: str | None = Query(None, description="预览窗口止（默认 2026-09-30 复购窗）"),
+    db: Session = Depends(get_db),
+):
+    _require_key(key)
+    date_from = _norm_date(date_from, "date_from")
+    date_to = _norm_date(date_to, "date_to")
+    return ok(_cached("teams", date_from, date_to,
+                      lambda: service.get_teams_payload(db, date_from, date_to)))

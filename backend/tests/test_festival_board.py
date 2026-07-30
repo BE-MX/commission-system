@@ -200,6 +200,52 @@ def test_camps_dirty_camp_value_reconciliation(db):
     assert payload["unassigned"] == 1                                   # 阵营X 上报不静默
 
 
+def test_repurchase_points_floor():
+    """A-6/A-7：首返 1.5/客户 + 每满 $1000 记 1 分（按人汇总向下取整）"""
+    assert service.repurchase_points(0, 0) == 0
+    assert service.repurchase_points(2, 2500) == 5.0    # 3.0 + 2
+    assert service.repurchase_points(1, 999) == 1.5     # 金额不足 $1000 记 0
+    assert service.repurchase_points(1, 3000) == 4.5
+
+
+def test_teams_weighted_scoring(db):
+    """§1.5 周年加权 + 人均排序 + 个人队排除"""
+    _setup(db)
+    # 换成真实分队名：U1/U2 乘风，U3 无名；快照外人员按 50/50 档
+    db.execute(text("UPDATE lsordertest.user_rel_team SET Team='乘风' WHERE user_id IN ('U1','U2')"))
+    db.execute(text("UPDATE lsordertest.user_rel_team SET Team='无名' WHERE user_id='U3'"))
+    db.flush()
+
+    payload = service.get_teams_payload(db, None, None)  # 默认活动窗口（测试数据在 8-9 月）
+    teams = {t["name"]: t for t in payload["teams"]}
+
+    # U1：新签 2 分、无复购 → 2×0.5 = 1.0
+    # U2：新签 1.5 分；O8 复购单 $3000 且带首返标记（C3 有 2026-08 新成交单，池内）
+    #     → 复购积分 = 1.5 + 3 = 4.5 → 加权 1.5×0.5 + 4.5×0.5 = 3.0
+    cf = teams["乘风"]
+    by = {m["user_id"]: m for m in cf["members"]}
+    assert by["U2"]["re_points"] == 4.5
+    assert by["U2"]["score"] == 3.0
+    assert by["U1"]["score"] == 1.0
+    assert cf["total"] == 4.0 and cf["avg"] == 2.0 and cf["count"] == 2
+    assert cf["rank"] == 1
+    # 成员按加权分降序：U2 在前
+    assert [m["user_id"] for m in cf["members"]] == ["U2", "U1"]
+    # 空队与零分队都在榜（7 队全出），无名 avg 0
+    assert teams["无名"]["avg"] == 0.0
+    assert len(payload["teams"]) == 7
+    assert payload["unassigned"] == 0
+
+
+def test_teams_weight_snapshot_applied(db):
+    """0 周年档 70/30：快照内成员的新签权重更高"""
+    _setup(db)
+    # 把 U1 的 user_id 换成快照里的 0 周年 id 做不进去（FK 无），改为直接断言权重函数
+    assert service.member_weights("57010933") == (0.7, 0.3)   # 胡宁宁 0 周年
+    assert service.member_weights("56843323") == (0.6, 0.4)   # 罗馨瑜 1 周年
+    assert service.member_weights("55278725") == (0.5, 0.5)   # 代晴玉 ≥2 周年默认档
+
+
 def test_require_key_fail_closed(monkeypatch):
     """未配置 key 时端点整体关闭；配置后必须匹配"""
     import pytest

@@ -28,8 +28,12 @@ COMPANY_NEW_SIGN_TARGET = 149
 COMPANY_GMV_TARGET = 3_260_000  # 326 万美金
 
 # 新成交 + 定制品：两字段在 custom_fields 序列化中确实相邻（data-layer 文档 §3 实测），
-# 首返字段不相邻，未来做首返榜时必须拆成两个独立 LIKE。
+# 首返字段不相邻，必须拆成两个独立 LIKE（邻接匹配实测 0 行）。
 NEW_SIGN_MARK = '%"22595163468": "是", "691123983470": "定制品"%'
+RE_MARK = '%"22595163468": "否", "691123983470": "定制品"%'
+FIRST_RETURN_MARK = '%"20528142733548": "是"%'
+CUSTOM_MARK = '%"691123983470": "定制品"%'
+NEW_ANY_MARK = '%"22595163468": "是"%'
 
 _DEPT_IDS = ("24925", "24926", "25198", "258938", "258940", "258941", "258942")
 
@@ -181,6 +185,47 @@ def _summary(db: Session, ns, gmv, preview: bool) -> dict:
     }
 
 
+def get_repurchase_stats(db: Session, date_from: str, date_to: str) -> dict:
+    """每人复购口径：首返客户数（A-5 有史以来第一次返单，标记源自 OKKI 首返字段；
+    拆分 LIKE）+ 复购金额（限 2025-01-01 起有新成交单的客户池，A-6/A-10 口径）。"""
+    stats: dict = {}
+    first_rows = db.execute(text(
+        "SELECT a2.user_id, COUNT(DISTINCT a2.company_id) AS cnt "
+        "FROM lsordertest.okki_orders a2 "
+        "JOIN lsordertest.user_rel_team t ON t.user_id = a2.user_id "
+        "WHERE a2.custom_fields LIKE :m1 AND a2.custom_fields LIKE :m2 "
+        "  AND a2.account_date >= :d1 AND a2.account_date <= :d2"
+        + _common_filter("a2") + " GROUP BY a2.user_id"
+    ), {"m1": FIRST_RETURN_MARK, "m2": CUSTOM_MARK,
+        "d1": date_from, "d2": date_to}).mappings().all()
+    for r in first_rows:
+        stats.setdefault(r["user_id"], {"first_count": 0, "re_amount": 0.0})
+        stats[r["user_id"]]["first_count"] = int(r["cnt"])
+    re_rows = db.execute(text(
+        "SELECT a2.user_id, COALESCE(SUM(a2.amount_usd), 0) AS amt "
+        "FROM lsordertest.okki_orders a2 "
+        "JOIN lsordertest.user_rel_team t ON t.user_id = a2.user_id "
+        "WHERE a2.custom_fields LIKE :mr "
+        "  AND a2.account_date >= :d1 AND a2.account_date <= :d2"
+        + _common_filter("a2") +
+        "  AND EXISTS (SELECT 1 FROM lsordertest.okki_orders o"
+        "              WHERE o.company_id = a2.company_id"
+        "                AND o.custom_fields LIKE :mn"
+        "                AND o.account_date >= '2025-01-01')"
+        " GROUP BY a2.user_id"
+    ), {"mr": RE_MARK, "mn": NEW_ANY_MARK,
+        "d1": date_from, "d2": date_to}).mappings().all()
+    for r in re_rows:
+        stats.setdefault(r["user_id"], {"first_count": 0, "re_amount": 0.0})
+        stats[r["user_id"]]["re_amount"] = float(r["amt"])
+    return stats
+
+
+def repurchase_points(first_count: int, re_amount: float) -> float:
+    """复购积分 = 首返 1.5 分/客户 + 每满 $1000 记 1 分（按人汇总向下取整，A-6/A-7 叠加口径）"""
+    return first_count * 1.5 + int(re_amount // 1000)
+
+
 def get_screen_payload(db: Session, date_from: str | None, date_to: str | None) -> dict:
     """个人新签积分榜：榜单 + 双目标进度。"""
     ns, gmv, custom = _windows(date_from, date_to)
@@ -272,6 +317,82 @@ def get_camps_payload(db: Session, date_from: str | None, date_to: str | None) -
     return {
         "summary": _summary(db, ns, gmv, custom),
         "camps": camps,
+        "unassigned": unassigned,
+        "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+
+
+# ── 团队（分队）积分榜（§1.5，周年加权；周年数以附录 C 权威表为准全程固定）──────
+TEAM_NAMES = ("专治不服", "多财多亿", "稻乐偲", "星星之火", "行则将至", "乘风", "无名")
+EXCLUDED_TEAMS = ("个人队",)  # 周露露个人参赛，不评团队奖（§1.7-5），刻意排除非脏值
+
+# 周年权重快照（附录 C，B-8 关闭裁决：全程固定不随入职周年跨档切换）
+# (新签权重, 复购权重)；未列出者 = 两周年及以上档 50/50
+WEIGHT_SNAPSHOT_2026 = {
+    "56786146": (0.6, 0.4), "56843323": (0.6, 0.4),                      # 1 周年：高瑞杰 罗馨瑜
+    "57010933": (0.7, 0.3), "57125949": (0.7, 0.3), "57130433": (0.7, 0.3),  # 0 周年：胡宁宁 刘也 隋晓茹
+    "57130855": (0.7, 0.3), "57180994": (0.7, 0.3),                      # 0 周年：凯丽 张心茹
+}
+
+
+def member_weights(user_id: str) -> tuple:
+    return WEIGHT_SNAPSHOT_2026.get(user_id, (0.5, 0.5))
+
+
+def get_teams_payload(db: Session, date_from: str | None, date_to: str | None) -> dict:
+    """团队人均积分榜：团队积分 = Σ成员(新签积分×新签权重 + 复购积分×复购权重)，
+    人均 = 团队积分÷人数（保留 1 位小数）；并列比人均复购金额（B-10）。"""
+    ns, gmv, custom = _windows(date_from, date_to)
+    items = get_new_sign_board(db, ns[0], ns[1])["items"]
+    re_stats = get_repurchase_stats(db, gmv[0], gmv[1])
+
+    grouped: dict = {name: [] for name in TEAM_NAMES}
+    unassigned = 0
+    for i in items:
+        team = (i["team"] or "").strip()
+        if team in EXCLUDED_TEAMS:
+            continue
+        if team not in grouped:
+            unassigned += 1
+            continue
+        rs = re_stats.get(i["user_id"], {"first_count": 0, "re_amount": 0.0})
+        rp = repurchase_points(rs["first_count"], rs["re_amount"])
+        wn, wr = member_weights(i["user_id"])
+        grouped[team].append({
+            "user_id": i["user_id"],
+            "name": i["name"],
+            "new_points": i["new_points"],
+            "re_points": rp,
+            "re_amount": rs["re_amount"],
+            "score": round(i["new_points"] * wn + rp * wr, 1),
+        })
+    if unassigned:
+        msg = (f"[festival] {unassigned} 名成员的 Team 值不在 TEAM_NAMES，"
+               f"未计入任何分队——检查 lsordertest.user_rel_team.Team 脏值")
+        logger.warning(msg)
+        print(msg, flush=True)
+
+    teams = []
+    for name in TEAM_NAMES:
+        members = sorted(grouped[name], key=lambda m: (-m["score"], m["name"]))
+        n = len(members)
+        total = sum(m["score"] for m in members)
+        per_re = (sum(m["re_amount"] for m in members) / n) if n else 0.0
+        teams.append({
+            "name": name,
+            "count": n,
+            "total": round(total, 1),
+            "avg": round(total / n, 1) if n else 0.0,
+            "per_capita_re_amount": round(per_re, 2),
+            "members": members,
+        })
+    # 人均积分降序；并列比人均复购金额（B-10）；队名兜底保证确定性
+    teams.sort(key=lambda t: (-t["avg"], -t["per_capita_re_amount"], t["name"]))
+    for idx, t in enumerate(teams):
+        t["rank"] = idx + 1
+    return {
+        "summary": _summary(db, ns, gmv, custom),
+        "teams": teams,
         "unassigned": unassigned,
         "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
