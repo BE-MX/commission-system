@@ -128,11 +128,13 @@ def get_new_sign_board(db: Session, date_from: str, date_to: str,
     }
 
     if _data_source(source) == "ark":
+        # 不做 order_type 过滤：方舟"生产订单"与小满"定制品"不是一个概念（2026-07-30 用户裁决），
+        # 主轨以发票业务标记为准、全量发票计入
         rows = db.execute(text(
             "SELECT t.user_id, COUNT(DISTINCT i.customer_id) AS cnt,"
             f"       COALESCE(SUM({_ARK_AMOUNT}), 0) AS amt"
             + _ARK_JOIN +
-            "   AND i.okki_new_deal = 1 AND i.order_type = 'production'"
+            "   AND i.okki_new_deal = 1"
             "   AND i.invoice_date >= :d1 AND i.invoice_date <= :d2"
             " GROUP BY t.user_id"
         ), {"d1": date_from, "d2": date_to}).mappings().all()
@@ -180,7 +182,7 @@ def get_company_new_total(db: Session, date_from: str, date_to: str,
         val = db.execute(text(
             "SELECT COUNT(DISTINCT i.customer_id)"
             + _ARK_JOIN +
-            "   AND i.okki_new_deal = 1 AND i.order_type = 'production'"
+            "   AND i.okki_new_deal = 1"
             "   AND i.invoice_date >= :d1 AND i.invoice_date <= :d2"
         ), {"d1": date_from, "d2": date_to}).scalar()
         return int(val or 0)
@@ -253,7 +255,7 @@ def get_repurchase_stats(db: Session, date_from: str, date_to: str,
         first_rows = db.execute(text(
             "SELECT t.user_id, COUNT(DISTINCT i.customer_id) AS cnt"
             + _ARK_JOIN +
-            "   AND i.okki_first_return = 1 AND i.order_type = 'production'"
+            "   AND i.okki_first_return = 1"
             "   AND i.invoice_date >= :d1 AND i.invoice_date <= :d2"
             " GROUP BY t.user_id"
         ), {"d1": date_from, "d2": date_to}).mappings().all()
@@ -263,7 +265,7 @@ def get_repurchase_stats(db: Session, date_from: str, date_to: str,
         re_rows = db.execute(text(
             f"SELECT t.user_id, COALESCE(SUM({_ARK_AMOUNT}), 0) AS amt"
             + _ARK_JOIN +
-            "   AND i.okki_new_deal = 0 AND i.order_type = 'production'"
+            "   AND i.okki_new_deal = 0"
             "   AND i.invoice_date >= :d1 AND i.invoice_date <= :d2"
             + _ARK_POOL +
             " GROUP BY t.user_id"

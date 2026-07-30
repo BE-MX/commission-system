@@ -320,7 +320,7 @@ def _setup_ark(db):
         inv("AK1", "K1", 101, D(2026, 8, 2), 6100, fee=100, new_deal=1, xo="XO1"),
         inv("AK2", "K2", 101, D(2026, 8, 5), 2000, new_deal=1, xo="XO2"),
         inv("AK3", "K3", 101, D(2026, 8, 6), 9000, new_deal=1, sync="not_synced"),
-        # U1：规格品新签不计（定制品口径）
+        # U1：库存单新签同样计入（2026-07-30 裁决：不做 order_type 过滤）
         inv("AK4", "K4", 101, D(2026, 8, 7), 500, otype="stock", new_deal=1, xo="XO4"),
         # U2：首返单（K1 池内：K1 有 8 月方舟新成交）$3200，同时是复购金额
         inv("AK5", "K1", 102, D(2026, 9, 3), 3200, new_deal=0, first_ret=1, xo="XO5"),
@@ -331,14 +331,14 @@ def _setup_ark(db):
 
 
 def test_ark_track_new_sign_synced_only_and_fee(db):
-    """主轨：仅 synced（决策②）、金额扣手续费（决策①）、定制品口径"""
+    """主轨：仅 synced（决策②）、金额扣手续费（决策①）、不做 order_type 过滤"""
     _setup_ark(db)
     board = service.get_new_sign_board(db, "2026-08-01", "2026-08-31", source="ark")
     by = {i["user_id"]: i for i in board["items"]}
-    assert by["U1"]["new_count"] == 2            # K1+K2；K3 未推单排除、K4 规格品排除
-    assert by["U1"]["new_amount"] == 8000.0      # 6100-100 + 2000
+    assert by["U1"]["new_count"] == 3            # K1+K2+K4（库存单也计）；K3 未推单排除
+    assert by["U1"]["new_amount"] == 8500.0      # 6100-100 + 2000 + 500
     assert by["U2"]["new_count"] == 0
-    assert service.get_company_new_total(db, "2026-08-01", "2026-08-31", source="ark") == 2
+    assert service.get_company_new_total(db, "2026-08-01", "2026-08-31", source="ark") == 3
     # GMV 全 order_type（含 K4 规格品与 9 月复购单），扣手续费、仅 synced
     gmv = service.get_gmv_total(db, "2026-08-01", "2026-09-30", source="ark")
     assert gmv == 8000 + 500 + 3200 + 8000
@@ -357,8 +357,8 @@ def test_reconcile_diff_rows(db):
     _setup_ark(db)
     rec = service.get_reconcile(db, None, None)
     by = {r["user_id"]: r for r in rec["rows"]}
-    # okki 轨 U1 新签 2（C1/C2），ark 轨也是 2 → 该项一致；U2 okki 首返 1、ark 首返 1
-    assert by["U1"]["sign_okki"] == 2 and by["U1"]["sign_ark"] == 2
+    # okki 轨 U1 新签 2（C1/C2），ark 轨 3（K1/K2/K4，库存单也计）→ 两轨口径差可被对账捕捉
+    assert by["U1"]["sign_okki"] == 2 and by["U1"]["sign_ark"] == 3
     assert by["U2"]["first_okki"] == 1 and by["U2"]["first_ark"] == 1
     # 复购金额两轨不同（okki 3000 vs ark 3200）→ 必有差异计数
     assert rec["diff_count"] >= 1

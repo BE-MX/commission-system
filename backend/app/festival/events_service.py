@@ -99,7 +99,7 @@ def _first_sign_candidate(db: Session, date_from: str, date_to: str,
             "SELECT t.Name AS name, t.user_id AS user_id,"
             f"       {fsvc._ARK_AMOUNT} AS amt"
             + fsvc._ARK_JOIN +
-            "   AND i.okki_new_deal = 1 AND i.order_type = 'production'"
+            "   AND i.okki_new_deal = 1"
             "   AND i.invoice_date >= :d1 AND i.invoice_date <= :d2"
             " ORDER BY i.invoice_date ASC, i.id ASC LIMIT 1"
         ), {"d1": date_from, "d2": date_to}).mappings().first()
