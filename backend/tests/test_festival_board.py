@@ -125,6 +125,81 @@ def test_sort_tiebreak_by_amount(db):
     assert order[:2] == ["U3", "U1"]
 
 
+def test_camp_prize_steps():
+    """A-2：超额向下取整到 10% 整档，无封顶；未达标不加成"""
+    assert service.camp_prize(2400, 59, 60) == 2400   # 未达标
+    assert service.camp_prize(2400, 60, 60) == 2400   # 100% 无超额
+    assert service.camp_prize(2400, 65, 60) == 2400   # 108%：不足一档
+    assert service.camp_prize(2400, 66, 60) == 2640   # 110%：+10%
+    assert service.camp_prize(800, 56, 40) == 1120    # 140%：+40%
+    assert service.camp_prize(1200, 100, 50) == 2400  # 200%：+100%（无封顶）
+
+
+def _add_camp2_pair(db, amt4, amt5):
+    """增补 U4/U5（阵营二，开发类），各 1 单，金额可配"""
+    db.execute(text(
+        "INSERT INTO lsordertest.user_rel_team"
+        " (id, Name, user_id, En_name, Team, Camp, gmv_t, newclient_t) VALUES"
+        " (4,'赵四','U4','D4','队四','阵营二',0,7), (5,'钱五','U5','E5','队五','阵营二',0,7)"))
+    for emp in ("U4", "U5"):
+        db.add(EmployeeAttributeHistory(
+            employee_id=emp, attribute_type="develop",
+            effective_start=date(2025, 1, 1), is_current=True))
+    db.flush()
+    _insert_order(db, "O21", "C21", amt4, "U4", "2026-08-16")
+    _insert_order(db, "O22", "C22", amt5, "U5", "2026-08-17")
+
+
+def test_camps_payload_leader_and_aggregation(db):
+    """阵营第一 = 排除全司前三后的阵营内第一且置顶；前三成员带 is_top3；聚合口径正确"""
+    _setup(db)
+    _add_camp2_pair(db, 9000, 100)
+
+    payload = service.get_camps_payload(db, "2026-08-01", "2026-08-31")
+    camps = {c["name"]: c for c in payload["camps"]}
+
+    # 全司前三 = U1(2分)、U4(1.5分/$9000)、U2(1.5分/$2000)
+    c2 = camps["阵营二"]
+    assert [m["user_id"] for m in c2["members"] if m["is_first"]] == ["U5"]
+    assert c2["members"][0]["user_id"] == "U5"                     # 阵营第一置顶
+    flags = {m["user_id"]: m["is_top3"] for m in c2["members"]}
+    assert flags == {"U5": False, "U4": True, "U3": False}         # 前三标识
+    # 阵营一/三全员都在全司前三 → 无阵营第一标记，但有 is_top3
+    assert not any(m["is_first"] for m in camps["阵营一"]["members"])
+    assert camps["阵营一"]["members"][0]["is_top3"] is True
+    assert not any(m["is_first"] for m in camps["阵营三"]["members"])
+    # 聚合口径
+    assert camps["阵营一"]["done"] == 2 and camps["阵营一"]["prize"] == 800
+    assert c2["done"] == 2 and c2["reached_count"] == 0
+    assert payload["unassigned"] == 0
+    assert [c["name"] for c in payload["camps"]] == ["阵营一", "阵营二", "阵营三"]
+
+
+def test_camps_top3_tie_expansion(db):
+    """第 3/4 名 (积分,金额) 完全并列 → 同为全司前三（并列发奖），同不参与阵营第一"""
+    _setup(db)
+    _add_camp2_pair(db, 500, 500)
+    payload = service.get_camps_payload(db, "2026-08-01", "2026-08-31")
+    c2 = {c["name"]: c for c in payload["camps"]}["阵营二"]
+    top3 = {m["user_id"] for m in c2["members"] if m["is_top3"]}
+    assert top3 == {"U4", "U5"}
+    assert not any(m["is_first"] for m in c2["members"])
+
+
+def test_camps_dirty_camp_value_reconciliation(db):
+    """Camp 脏值：尾随空格归位、未知值计入 unassigned 上报而非静默丢失"""
+    _setup(db)
+    db.execute(text(
+        "INSERT INTO lsordertest.user_rel_team"
+        " (id, Name, user_id, En_name, Team, Camp, gmv_t, newclient_t) VALUES"
+        " (6,'孙六','U6','F6','队六','阵营一 ',0,6), (7,'周七','U7','G7','队七','阵营X',0,6)"))
+    db.flush()
+    payload = service.get_camps_payload(db, "2026-08-01", "2026-08-31")
+    camps = {c["name"]: c for c in payload["camps"]}
+    assert "U6" in [m["user_id"] for m in camps["阵营一"]["members"]]  # 空格 strip 归位
+    assert payload["unassigned"] == 1                                   # 阵营X 上报不静默
+
+
 def test_require_key_fail_closed(monkeypatch):
     """未配置 key 时端点整体关闭；配置后必须匹配"""
     import pytest

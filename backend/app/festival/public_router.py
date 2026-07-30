@@ -10,6 +10,7 @@
 业务员实名 + 新签金额 + 公司 GMV 匿名暴露。只读，只出榜单聚合数，无客户明细。
 """
 
+import time
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -32,13 +33,33 @@ def _require_key(key: str | None) -> None:
         raise HTTPException(403, "Invalid or missing access key")
 
 
-def _valid_date(value: str | None, field: str) -> None:
+def _norm_date(value: str | None, field: str) -> str | None:
+    """校验并归一化为 YYYY-MM-DD（fromisoformat 接受 20260801 等变体，回填标准形再进 SQL）。"""
     if value is None:
-        return
+        return None
     try:
-        date.fromisoformat(value)
+        return date.fromisoformat(value).isoformat()
     except ValueError:
         raise HTTPException(422, f"{field} 需为合法的 YYYY-MM-DD 日期")
+
+
+# 进程内 30s 缓存：两屏 60s 轮询 × 多客户端时，把 custom_fields LIKE 全表扫的频率封顶。
+# 单进程部署（NSSM 单 worker）无一致性问题；as_of 随缓存冻结，语义即“数据截至”。
+_CACHE: dict[tuple, tuple[float, dict]] = {}
+_CACHE_TTL = 30.0
+
+
+def _cached(kind: str, date_from: str | None, date_to: str | None, fn) -> dict:
+    key = (kind, date_from, date_to)
+    now = time.monotonic()
+    hit = _CACHE.get(key)
+    if hit and now - hit[0] < _CACHE_TTL:
+        return hit[1]
+    if len(_CACHE) > 64:  # 预览窗口任意组合的增长兜底
+        _CACHE.clear()
+    data = fn()
+    _CACHE[key] = (now, data)
+    return data
 
 
 @router.get("/new-sign", summary="个人新签积分榜（大屏取数，免登录白名单）")
@@ -49,6 +70,21 @@ def new_sign_board(
     db: Session = Depends(get_db),
 ):
     _require_key(key)
-    _valid_date(date_from, "date_from")
-    _valid_date(date_to, "date_to")
-    return ok(service.get_screen_payload(db, date_from, date_to))
+    date_from = _norm_date(date_from, "date_from")
+    date_to = _norm_date(date_to, "date_to")
+    return ok(_cached("new-sign", date_from, date_to,
+                      lambda: service.get_screen_payload(db, date_from, date_to)))
+
+
+@router.get("/camps", summary="阵营新签 PK 榜（大屏取数，免登录白名单）")
+def camps_board(
+    key: str | None = Query(None, max_length=128),
+    date_from: str | None = Query(None, description="预览窗口起（默认活动窗口 2026-08-01）"),
+    date_to: str | None = Query(None, description="预览窗口止（默认 2026-08-31）"),
+    db: Session = Depends(get_db),
+):
+    _require_key(key)
+    date_from = _norm_date(date_from, "date_from")
+    date_to = _norm_date(date_to, "date_to")
+    return ok(_cached("camps", date_from, date_to,
+                      lambda: service.get_camps_payload(db, date_from, date_to)))
