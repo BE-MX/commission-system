@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>莱莎采购节 · 摘要头条</title>
+<style>
+  /* UI 复用《采购节大屏DEMO-像素版》（Pixel × Glass × AI 赛事频道）设计语言；
+     布局：左半屏排名汇总 / 右上 2/3 事件滚动流 / 右下 1/3 AI 赛事助手；
+     弹窗：L4 全屏回放卡 + L3 lower-third 插播条（事件由后端幂等留档驱动） */
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:100%; height:100%; background:#e9eefb; overflow:hidden;
+    font-family:"Microsoft YaHei","PingFang SC","Segoe UI",sans-serif; }
+  #stage { position:absolute; left:50%; top:50%; width:1920px; height:1080px;
+    transform:translate(-50%,-50%) scale(1); transform-origin:center center;
+    color:#1d2545; overflow:hidden;
+    background:
+      radial-gradient(1000px 640px at 82% -14%, rgba(255,255,255,.55), transparent 60%),
+      radial-gradient(760px 520px at 50% 120%, rgba(255,200,160,.28), transparent 55%),
+      linear-gradient(180deg, #9fd0ff 0%, #bfe0ff 34%, #e2f1ff 66%, #f2ecff 100%); }
+  #stage::before { content:""; position:absolute; inset:0; pointer-events:none;
+    background:
+      repeating-linear-gradient(0deg, rgba(90,140,255,.055) 0 1px, transparent 1px 24px),
+      repeating-linear-gradient(90deg, rgba(90,140,255,.055) 0 1px, transparent 1px 24px),
+      linear-gradient(115deg, transparent 55%, rgba(255,255,255,.4) 62%, rgba(255,255,255,.12) 72%, transparent 80%); }
+  /* 8-bit 像素云 */
+  .pxc { position:absolute; width:14px; height:14px; background:transparent; pointer-events:none; z-index:0; opacity:.92;
+    box-shadow:
+      42px 0 #fff, 56px 0 #fff, 70px 0 #fff,
+      28px 14px #fff, 42px 14px #fff, 56px 14px #fff, 70px 14px #fff, 84px 14px #fff, 98px 14px #fff,
+      14px 28px #fff, 28px 28px #fff, 42px 28px #fff, 56px 28px #fff, 70px 28px #fff, 84px 28px #fff, 98px 28px #fff, 112px 28px #fff,
+      0 42px #d8e9ff, 14px 42px #d8e9ff, 28px 42px #d8e9ff, 42px 42px #d8e9ff, 56px 42px #d8e9ff,
+      70px 42px #d8e9ff, 84px 42px #d8e9ff, 98px 42px #d8e9ff, 112px 42px #d8e9ff, 126px 42px #d8e9ff;
+    animation:cloudMove linear infinite; }
+  .pxc.c1 { top:150px; scale:1;   animation-duration:110s; animation-delay:-30s; }
+  .pxc.c2 { top:330px; scale:.62; animation-duration:150s; animation-delay:-90s; opacity:.7; }
+  .pxc.c3 { top:70px;  scale:1.35;animation-duration:80s;  animation-delay:-62s; }
+  @keyframes cloudMove { from { translate:-260px 0; } to { translate:2160px 0; } }
+  /* 体素浮岛 */
+  .pxi { position:absolute; width:12px; height:12px; background:transparent; pointer-events:none; z-index:0;
+    animation:isleFloat 7s ease-in-out infinite, isleHue 18s ease-in-out infinite alternate; }
+  .pxi.i1 { left:96px; bottom:150px;
+    box-shadow:
+      24px 0 #8ce39a, 36px 0 #6fd680, 48px 0 #6fd680, 60px 0 #5ecb70, 72px 0 #5ecb70, 84px 0 #52c065,
+      12px 12px #49b45c, 24px 12px #49b45c, 36px 12px #44ad56, 48px 12px #44ad56, 60px 12px #3fa552, 72px 12px #3fa552, 84px 12px #3fa552, 96px 12px #389a4a,
+      24px 24px #c29063, 36px 24px #c29063, 48px 24px #b5835a, 60px 24px #b5835a, 72px 24px #a87850,
+      36px 36px #a5744c, 48px 36px #9a6b45, 60px 36px #9a6b45,
+      48px 48px #86593a, 60px 48px #86593a; }
+  .pxi.i2 { right:150px; top:210px; animation-delay:-3s;
+    box-shadow:
+      36px 0 #d4c6ff,
+      24px 12px #c3aeff, 36px 12px #b49aff, 48px 12px #9d82f0,
+      12px 24px #c3aeff, 24px 24px #b49aff, 36px 24px #a78cf5, 48px 24px #9d82f0, 60px 24px #8a6ee0,
+      0 36px #c3aeff, 12px 36px #b49aff, 24px 36px #a78cf5, 36px 36px #9d82f0, 48px 36px #8f76e6, 60px 36px #8a6ee0, 72px 36px #7a5fd0; }
+  @keyframes isleFloat { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-12px)} }
+  @keyframes isleHue { from{filter:hue-rotate(0deg)} to{filter:hue-rotate(46deg)} }
+
+  :root{
+    --pri:#4f7cff; --vio:#8b5cf6; --coral:#ff6b5c; --mint:#1fbf94; --amber:#f0a93c;
+    --ink:#1d2545; --sub:#5d6b8f; --glass-brd:rgba(255,255,255,.65);
+    --glass-bg:
+      linear-gradient(115deg, transparent 32%, rgba(255,255,255,.5) 43%, rgba(255,255,255,.1) 52%, transparent 60%),
+      radial-gradient(130% 100% at 88% 112%, rgba(139,92,246,.14), transparent 55%),
+      linear-gradient(165deg, rgba(255,255,255,.45), rgba(255,255,255,.2) 55%, rgba(255,255,255,.3));
+    --glass-shadow:
+      inset 0 2px 1px rgba(255,255,255,.95),
+      inset 2px 0 2px rgba(255,255,255,.4), inset -2px 0 2px rgba(255,255,255,.35),
+      inset 0 -3px 4px rgba(122,146,235,.2),
+      0 0 0 1.5px rgba(255,255,255,.55),
+      0 14px 34px rgba(74,96,180,.16),
+      0 26px 54px -22px rgba(139,92,246,.4);
+  }
+  .num { font-variant-numeric:tabular-nums; }
+  .glass { position:relative; background:var(--glass-bg); backdrop-filter:blur(22px) saturate(1.65);
+    -webkit-backdrop-filter:blur(22px) saturate(1.65);
+    border:1px solid var(--glass-brd); box-shadow:var(--glass-shadow); border-radius:22px; }
+  .glass::before { content:""; position:absolute; inset:9px; pointer-events:none; opacity:.5; z-index:0;
+    background:
+      linear-gradient(#4f7cff 0 0) left top/14px 4px no-repeat,   linear-gradient(#4f7cff 0 0) left top/4px 14px no-repeat,
+      linear-gradient(#ff5c9d 0 0) right top/14px 4px no-repeat,  linear-gradient(#ff5c9d 0 0) right top/4px 14px no-repeat,
+      linear-gradient(#00b8d4 0 0) left bottom/14px 4px no-repeat, linear-gradient(#00b8d4 0 0) left bottom/4px 14px no-repeat,
+      linear-gradient(#f0a93c 0 0) right bottom/14px 4px no-repeat, linear-gradient(#f0a93c 0 0) right bottom/4px 14px no-repeat; }
+  .grad-text { background:linear-gradient(92deg,var(--pri),var(--vio),#ff5c9d,#00b8d4,var(--pri));
+    background-size:320% 100%;
+    -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+    animation:gradFlow 9s linear infinite; }
+  @keyframes gradFlow { to { background-position:320% 0; } }
+
+  /* ============ 频道顶栏（DEMO 同款） ============ */
+  header.ch { position:absolute; left:0; right:0; top:0; height:88px; z-index:30;
+    display:flex; align-items:center; gap:22px; padding:0 30px;
+    background:linear-gradient(180deg, rgba(255,255,255,.42), rgba(255,255,255,.18));
+    backdrop-filter:blur(24px) saturate(1.6); -webkit-backdrop-filter:blur(24px) saturate(1.6);
+    border-bottom:1px solid rgba(255,255,255,.75);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.9), 0 1px 0 rgba(255,255,255,.35), 0 8px 28px rgba(74,96,180,.12); }
+  .live { display:flex; align-items:center; gap:8px; color:#fff; font-weight:800; font-size:15px;
+    letter-spacing:2px; padding:8px 18px 8px 14px; border-radius:10px;
+    background:linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,.08) 45%, rgba(255,255,255,0) 62%),
+      linear-gradient(92deg,#ff7a5c,#ff5c72);
+    box-shadow:inset 0 1px 1px rgba(255,255,255,.85), inset 0 -5px 10px rgba(230,50,60,.35),
+      0 0 0 1px rgba(255,255,255,.4), 4px 4px 0 rgba(180,40,60,.28), 0 6px 18px rgba(255,108,92,.5); }
+  .live i { width:9px; height:9px; border-radius:2px; background:#fff; animation:blink 1.2s steps(1) infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.2} }
+  .ch-logo { font-size:20px; font-weight:900; letter-spacing:1px; color:var(--ink); display:flex; align-items:center; gap:10px; }
+  .ch-logo .ai-star { width:38px; height:38px; border-radius:12px; display:flex; align-items:center; justify-content:center;
+    background:linear-gradient(180deg, rgba(255,255,255,.45), rgba(255,255,255,0) 55%),
+      linear-gradient(140deg,var(--pri),var(--vio)); color:#fff; font-size:20px;
+    box-shadow:inset 0 1.5px 1px rgba(255,255,255,.7), 0 0 0 1px rgba(255,255,255,.35),
+      3px 3px 0 rgba(79,124,255,.3), 0 6px 16px rgba(99,102,241,.45);
+    animation:starSpin 6s steps(1) infinite; }
+  @keyframes starSpin { 0%,88%,100%{transform:none} 90%{transform:rotate(90deg)} 92%{transform:rotate(180deg)}
+    94%{transform:rotate(270deg)} 96%{transform:rotate(360deg)} }
+  .ch-logo em { font-style:normal; }
+  .ch-logo small { display:block; font-size:11px; letter-spacing:3px; color:var(--sub); font-weight:500; }
+  .ch-goals { flex:1; display:flex; justify-content:center; gap:14px; }
+  .score-chip { display:flex; align-items:baseline; gap:8px; font-size:14px; color:var(--sub);
+    padding:8px 18px; border-radius:12px; white-space:nowrap;
+    background:linear-gradient(180deg, rgba(255,255,255,.5), rgba(255,255,255,.2));
+    border:1px solid rgba(255,255,255,.7);
+    backdrop-filter:blur(14px) saturate(1.5); -webkit-backdrop-filter:blur(14px) saturate(1.5);
+    box-shadow:inset 0 1.5px 1px rgba(255,255,255,.95), inset 0 -2px 3px rgba(122,146,235,.16),
+      0 0 0 1px rgba(255,255,255,.45), 3px 3px 0 rgba(79,124,255,.16), 0 6px 16px rgba(74,96,180,.12); }
+  .score-chip b { font-size:30px; font-weight:900; }
+  .score-chip .gd { background:linear-gradient(92deg,var(--pri),var(--vio)); -webkit-background-clip:text;
+    background-clip:text; -webkit-text-fill-color:transparent; }
+  .score-chip .hot { color:var(--coral); }
+  .ch-clock { text-align:right; font-size:12px; color:var(--sub); }
+  .ch-clock b { display:block; font-size:24px; color:var(--ink); letter-spacing:1px; }
+  .ch-clock.warn { color:#e2543f; font-weight:700; }
+
+  .kicker { display:inline-flex; align-items:center; gap:7px; color:#fff; font-size:14px; font-weight:800;
+    letter-spacing:3px; padding:6px 18px 6px 14px; border-radius:8px; position:relative;
+    background:linear-gradient(180deg, rgba(255,255,255,.5), rgba(255,255,255,.06) 50%, rgba(255,255,255,0) 65%),
+      linear-gradient(92deg,var(--pri),var(--vio));
+    box-shadow:inset 0 1px 1px rgba(255,255,255,.8), inset 0 -4px 8px rgba(40,40,160,.28),
+      0 0 0 1px rgba(255,255,255,.35), 4px 4px 0 rgba(79,124,255,.25), 0 6px 16px rgba(99,102,241,.4); }
+  .kicker.coral { background:linear-gradient(180deg, rgba(255,255,255,.5), rgba(255,255,255,.06) 50%, rgba(255,255,255,0) 65%),
+      linear-gradient(92deg,#ff7a5c,#ff5c72);
+    box-shadow:inset 0 1px 1px rgba(255,255,255,.8), inset 0 -4px 8px rgba(200,40,60,.3),
+      0 0 0 1px rgba(255,255,255,.35), 4px 4px 0 rgba(255,92,114,.28), 0 6px 16px rgba(255,108,92,.4); }
+
+  /* ============ 左半屏：排名汇总 ============ */
+  .left { position:absolute; left:24px; top:102px; width:924px; bottom:78px;
+    display:flex; flex-direction:column; gap:12px; }
+  /* 四栏拉伸占满左侧高度，内容垂直居中不留大白 */
+  .left .panel { flex:1; display:flex; flex-direction:column; }
+  .left .panel > *:last-child { margin-top:auto; margin-bottom:auto; }
+  .panel { padding:14px 20px; }
+  .p-title { font-size:15px; font-weight:900; letter-spacing:2px; color:var(--vio);
+    display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+  .p-title .aw { margin-left:auto; font-size:11px; color:#7a5af5; font-weight:400;
+    background:rgba(139,92,246,.1); border:1px solid rgba(139,92,246,.3);
+    padding:2px 10px; border-radius:999px; }
+  /* 新签前3 */
+  .sign3 { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+  .s3card { display:flex; align-items:center; gap:10px; padding:8px 12px; border-radius:14px;
+    background:rgba(255,255,255,.35); border:1px solid rgba(255,255,255,.65); }
+  .s3card .rk { font-size:30px; font-weight:900; color:rgba(29,37,69,.18); width:26px; }
+  .s3card.r1 .rk { color:var(--amber); }
+  .s3card img { width:52px; height:52px; border-radius:50%; object-fit:cover;
+    box-shadow:0 0 0 2px rgba(255,255,255,.9); }
+  .s3card .nm { font-size:19px; font-weight:900; color:var(--ink); line-height:1.2; }
+  .s3card .pt { font-size:14px; color:var(--sub); }
+  .s3card .pt b { font-size:20px; font-weight:900;
+    background:linear-gradient(92deg,var(--pri),var(--vio)); -webkit-background-clip:text;
+    background-clip:text; -webkit-text-fill-color:transparent; }
+  /* 首返/复购前2 */
+  .re2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .re2 .half .hh { font-size:12px; color:var(--sub); letter-spacing:2px; margin-bottom:6px; }
+  .re-row { display:flex; align-items:center; gap:8px; padding:4px 0; }
+  .re-row .rk { width:18px; font-size:16px; font-weight:900; color:rgba(29,37,69,.25); }
+  .re-row img { width:36px; height:36px; border-radius:50%; object-fit:cover;
+    box-shadow:0 0 0 2px rgba(255,255,255,.85); }
+  .re-row .nm { font-size:17px; font-weight:800; color:var(--ink); flex:1;
+    white-space:nowrap; overflow:hidden; }
+  .re-row .vl { font-size:19px; font-weight:900; color:var(--pri); }
+  /* 阵营进度 */
+  .camps3 { display:flex; flex-direction:column; gap:9px; }
+  .cp-row { display:grid; grid-template-columns:86px 1fr 130px 170px; gap:12px; align-items:center; }
+  .cp-row .cn { font-size:17px; font-weight:900; color:var(--cc); }
+  .cp-row .bar { height:14px; border-radius:7px; background:rgba(93,107,143,.14); overflow:hidden; }
+  .cp-row .fill { height:100%; border-radius:7px; width:0%;
+    background:linear-gradient(90deg, color-mix(in srgb, var(--cc) 55%, #fff), var(--cc));
+    transition:width 900ms cubic-bezier(.77,0,.175,1); }
+  .cp-row .st { font-size:14px; color:var(--sub); white-space:nowrap; }
+  .cp-row .st b { font-size:17px; color:var(--ink); }
+  .cp-row .fst { font-size:13px; color:var(--sub); white-space:nowrap; overflow:hidden; }
+  .cp-row .fst b { color:var(--cc); font-size:15px; }
+  /* 团队前三 */
+  .team3 { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+  .t3card { display:flex; align-items:center; gap:10px; padding:6px 12px; border-radius:14px;
+    background:rgba(255,255,255,.35); border:1px solid rgba(255,255,255,.65); }
+  .t3card .rk { font-size:24px; font-weight:900; color:rgba(29,37,69,.18); }
+  .t3card.r1 .rk { color:var(--amber); }
+  .t3card img { width:46px; height:46px; object-fit:contain; }
+  .t3card .nm { font-size:17px; font-weight:900; color:var(--ink); line-height:1.25; }
+  .t3card .av { font-size:13px; color:var(--sub); }
+  .t3card .av b { font-size:18px; font-weight:900;
+    background:linear-gradient(92deg,var(--pri),var(--vio)); -webkit-background-clip:text;
+    background-clip:text; -webkit-text-fill-color:transparent; }
+
+  /* ============ 右上：事件滚动流 ============ */
+  .feedbox { position:absolute; left:964px; right:24px; top:102px; height:590px; padding:16px 20px 14px; }
+  .feed { position:absolute; top:56px; bottom:14px; left:20px; right:16px; overflow:hidden;
+    -webkit-mask-image:linear-gradient(180deg, transparent, #000 4%, #000 95%, transparent);
+            mask-image:linear-gradient(180deg, transparent, #000 4%, #000 95%, transparent); }
+  .feed .inner { position:absolute; left:0; right:0; }
+  .feed .inner.roll { animation:rollY var(--dur, 50s) linear infinite; }
+  @keyframes rollY { to { transform:translateY(-50%); } }
+  .ev { display:flex; align-items:center; gap:12px; height:58px;
+    border-bottom:1px dashed rgba(110,130,180,.16); }
+  .ev .tag { flex:none; width:118px; text-align:center; font-size:13px; font-weight:800;
+    color:#fff; padding:4px 0; border-radius:8px; letter-spacing:1px;
+    background:linear-gradient(180deg, rgba(255,255,255,.45), rgba(255,255,255,.05) 50%, rgba(255,255,255,0) 65%),
+      linear-gradient(92deg,var(--pri),var(--vio));
+    box-shadow:inset 0 1px 1px rgba(255,255,255,.7), 0 0 0 1px rgba(255,255,255,.3); }
+  .ev.l4 .tag { background:linear-gradient(180deg, rgba(255,255,255,.5), rgba(255,255,255,.06) 50%, rgba(255,255,255,0) 65%),
+      linear-gradient(92deg,#ff7a5c,#ff5c72); }
+  .ev img.pav { flex:none; width:40px; height:40px; border-radius:50%; object-fit:cover;
+    box-shadow:0 0 0 2px rgba(255,255,255,.85); }
+  .ev img.tlg { flex:none; width:42px; height:42px; object-fit:contain; }
+  .ev .cbadge { flex:none; width:40px; height:40px; border-radius:12px; display:flex;
+    align-items:center; justify-content:center; color:#fff; font-size:16px; font-weight:900;
+    background:linear-gradient(140deg,var(--pri),var(--vio)); }
+  .ev .nm { font-size:20px; font-weight:900; color:var(--ink); white-space:nowrap;
+    max-width:220px; overflow:hidden; }
+  .ev .dt { font-size:15px; color:var(--sub); flex:1; white-space:nowrap; overflow:hidden; }
+  .ev .dt b { color:#0f9d6e; }
+  .ev .amt { font-size:20px; font-weight:900;
+    background:linear-gradient(92deg,var(--pri),var(--vio)); -webkit-background-clip:text;
+    background-clip:text; -webkit-text-fill-color:transparent; }
+  .ev .tm { flex:none; font-size:12px; color:#93a0bd; width:80px; text-align:right; }
+
+  /* ============ 右下：AI 赛事助手 ============ */
+  .aibox { position:absolute; left:964px; right:24px; top:706px; bottom:78px;
+    padding:18px 24px; display:flex; gap:16px; align-items:flex-start; }
+  .aibox .ava { flex:none; width:52px; height:52px; border-radius:16px; color:#fff; font-size:24px;
+    display:flex; align-items:center; justify-content:center;
+    background:linear-gradient(140deg,var(--pri),var(--vio));
+    box-shadow:0 6px 14px rgba(99,102,241,.4); }
+  .aibox .who { font-size:13px; font-weight:800; color:var(--vio); letter-spacing:2px; margin-bottom:8px;
+    display:flex; align-items:center; gap:8px; }
+  .aibox .who i { width:7px; height:7px; border-radius:50%; background:var(--mint); animation:blink 1.6s infinite; }
+  .aibox .who small { font-weight:400; color:#93a0bd; letter-spacing:0; }
+  .aibox .txt { font-size:20px; color:var(--ink); line-height:1.75; transition:opacity .4s; }
+  .aibox .txt.fade { opacity:0; }
+
+  /* ============ lower-third 插播条（L3） ============ */
+  #lower3rd { position:absolute; left:0; right:0; bottom:66px; height:120px; z-index:40; pointer-events:none;
+    display:flex; align-items:center; overflow:hidden; }
+  .lt { display:flex; align-items:stretch; transform:translateX(-105%); }
+  .lt.slide { animation:ltIn 4.8s cubic-bezier(.23,1,.32,1) forwards; }
+  @keyframes ltIn { 0%{transform:translateX(-105%)} 8%{transform:translateX(0)} 88%{transform:translateX(0)} 100%{transform:translateX(-105%)} }
+  .lt .lt-tag { display:flex; align-items:center; gap:8px; color:#fff; font-size:17px; font-weight:900;
+    letter-spacing:2px; padding:0 22px; border-radius:12px 0 0 12px;
+    background:linear-gradient(180deg, rgba(255,255,255,.5), rgba(255,255,255,.06) 45%, rgba(255,255,255,0) 62%),
+      linear-gradient(92deg,#ff7a5c,#ff5c72);
+    box-shadow:inset 0 1px 1px rgba(255,255,255,.8), inset 0 -5px 10px rgba(220,45,60,.32),
+      4px 4px 0 rgba(200,50,70,.3), 0 8px 20px rgba(255,108,92,.45); }
+  .lt .lt-body { display:flex; align-items:center; gap:16px; padding:14px 56px 14px 28px;
+    border-radius:0 12px 12px 0; background:linear-gradient(90deg, rgba(255,255,255,.6), rgba(255,255,255,.28));
+    backdrop-filter:blur(20px) saturate(1.6); -webkit-backdrop-filter:blur(20px) saturate(1.6);
+    border:1px solid rgba(255,255,255,.8); border-left:none;
+    box-shadow:inset 0 1.5px 1px rgba(255,255,255,.95), inset 0 -2px 3px rgba(122,146,235,.15),
+      0 0 0 1px rgba(255,255,255,.4), 0 10px 26px rgba(74,96,180,.16); }
+  .lt img { width:56px; height:56px; border-radius:50%; object-fit:cover;
+    box-shadow:0 0 0 3px rgba(255,255,255,.9); }
+  .lt .lt-name { font-size:32px; font-weight:900; color:var(--ink); }
+  .lt .lt-type { font-size:17px; color:var(--sub); }
+  .lt .lt-amt { font-size:32px; font-weight:900; }
+
+  /* ============ L4 全屏回放弹窗 ============ */
+  #replay { position:absolute; inset:0; z-index:50; display:none; align-items:center; justify-content:center;
+    background:rgba(233,238,251,.72); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); }
+  #replay.on { display:flex; }
+  #replay .rp-card { position:relative; text-align:center; transform:scale(.95); opacity:0; filter:blur(4px);
+    padding:70px 130px; border-radius:36px;
+    background:
+      linear-gradient(115deg, transparent 34%, rgba(255,255,255,.55) 44%, rgba(255,255,255,.12) 52%, transparent 60%),
+      radial-gradient(110% 90% at 88% 112%, rgba(255,150,92,.16), transparent 55%),
+      radial-gradient(110% 90% at 10% -10%, rgba(139,92,246,.14), transparent 55%),
+      linear-gradient(160deg, rgba(255,255,255,.55), rgba(255,255,255,.26));
+    backdrop-filter:blur(26px) saturate(1.6); -webkit-backdrop-filter:blur(26px) saturate(1.6);
+    border:1px solid rgba(255,255,255,.85);
+    box-shadow:inset 0 2px 1px rgba(255,255,255,.95), inset 0 -3px 5px rgba(200,150,255,.2),
+      0 0 0 1.5px rgba(255,255,255,.6), 0 30px 80px rgba(99,102,241,.28), 0 40px 90px -30px rgba(255,120,70,.35); }
+  #replay.on .rp-card { animation:rpIn 5.2s cubic-bezier(.34,1.3,.5,1) forwards; }
+  @keyframes rpIn { 0%{transform:scale(.95);opacity:0;filter:blur(4px)} 8%{transform:scale(1);opacity:1;filter:blur(0)}
+    90%{transform:scale(1);opacity:1} 100%{transform:scale(.98);opacity:0} }
+  #replay .rp-card::before { content:""; position:absolute; inset:14px; pointer-events:none; opacity:.55;
+    background:
+      linear-gradient(#4f7cff 0 0) left top/20px 5px no-repeat,   linear-gradient(#4f7cff 0 0) left top/5px 20px no-repeat,
+      linear-gradient(#ff5c9d 0 0) right top/20px 5px no-repeat,  linear-gradient(#ff5c9d 0 0) right top/5px 20px no-repeat,
+      linear-gradient(#00b8d4 0 0) left bottom/20px 5px no-repeat, linear-gradient(#00b8d4 0 0) left bottom/5px 20px no-repeat,
+      linear-gradient(#f0a93c 0 0) right bottom/20px 5px no-repeat, linear-gradient(#f0a93c 0 0) right bottom/5px 20px no-repeat; }
+  #replay .rp-tag { font-size:20px; letter-spacing:8px; font-weight:900; color:var(--coral); }
+  #replay .rp-ava { width:120px; height:120px; border-radius:50%; object-fit:cover; margin:18px auto 0;
+    display:block; box-shadow:0 0 0 4px rgba(255,255,255,.95), 0 12px 30px rgba(99,102,241,.35); }
+  #replay .rp-name { font-size:96px; font-weight:900; color:var(--ink); line-height:1.2; }
+  #replay .rp-amt { font-size:84px; font-weight:900; }
+  #replay .rp-sub { font-size:22px; color:var(--sub); margin-top:10px; }
+  #replay .fire { position:absolute; font-size:40px; animation:fw 2.2s ease-out forwards; }
+  @keyframes fw { 0%{transform:translateY(60px) scale(.4);opacity:0} 20%{opacity:1} 100%{transform:translateY(-320px) scale(1.2);opacity:0} }
+
+  /* ============ 底部节目单 ============ */
+  footer.guide { position:absolute; left:0; right:0; bottom:0; height:66px; z-index:30;
+    display:flex; align-items:center; justify-content:center; gap:10px; padding:0 30px;
+    background:linear-gradient(0deg, rgba(255,255,255,.4), rgba(255,255,255,.16));
+    backdrop-filter:blur(24px) saturate(1.6); -webkit-backdrop-filter:blur(24px) saturate(1.6);
+    border-top:1px solid rgba(255,255,255,.7);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.8), 0 -8px 24px rgba(74,96,180,.08); }
+  .g-item { font-size:14px; color:var(--sub); padding:7px 15px; border-radius:8px; letter-spacing:1px;
+    white-space:nowrap; text-decoration:none; }
+  .g-item.on { color:#fff; font-weight:800;
+    background:linear-gradient(180deg, rgba(255,255,255,.5), rgba(255,255,255,.06) 50%, rgba(255,255,255,0) 65%),
+      linear-gradient(92deg,var(--pri),var(--vio));
+    box-shadow:inset 0 1px 1px rgba(255,255,255,.8), inset 0 -4px 8px rgba(40,40,160,.25),
+      0 0 0 1px rgba(255,255,255,.35), 3px 3px 0 rgba(79,124,255,.3), 0 6px 16px rgba(99,102,241,.45); }
+  .g-note { position:absolute; right:30px; font-size:12px; color:var(--sub); }
+  .g-note b { color:var(--vio); }
+
+  .preview-badge { position:absolute; top:100px; right:28px; z-index:35; display:none;
+    background:rgba(255,176,32,.92); color:#5b3c00;
+    font-size:13px; font-weight:700; padding:5px 14px; border-radius:999px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .pxc, .pxi, .ai-star, .grad-text, .live i, .aibox .who i { animation:none; }
+    .feed .inner.roll { animation:none; }
+    #replay.on .rp-card { animation:none; opacity:1; transform:none; filter:none; }
+    .lt.slide { animation:none; transform:none; }
+    #replay .fire { animation:none; opacity:0; }
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="pxc c1"></div><div class="pxc c2"></div><div class="pxc c3"></div>
+  <div class="pxi i1"></div><div class="pxi i2"></div>
+
+  <header class="ch">
+    <div class="live"><i></i>LIVE</div>
+    <div class="ch-logo">
+      <span class="ai-star">✦</span>
+      <div>2026莱莎采购节 · <em class="grad-text">新签/首返/复购赛事实时大屏</em>
+        <small>2026 PROCUREMENT FESTIVAL · AI-POWERED SALES LIVE</small>
+      </div>
+    </div>
+    <div class="ch-goals">
+      <div class="score-chip">8月新签 <b class="num gd" id="newTotal">--</b> / <span id="newTarget">149</span></div>
+      <div class="score-chip">8+9月业绩 <b class="num gd" id="gmvTotal">--</b> / <span id="gmvTarget">$3,260,000</span></div>
+      <div class="score-chip"><span id="phaseLabel">新签窗口</span> <b class="num hot" id="phaseDays">--</b> 天</div>
+    </div>
+    <div class="ch-clock" id="clockBox"><b class="num" id="clock">--:--:--</b><span id="dateline">加载中…</span></div>
+  </header>
+
+  <div class="preview-badge" id="previewBadge">预览数据窗口</div>
+
+  <!-- 左半屏：排名汇总 -->
+  <div class="left">
+    <div class="panel glass">
+      <div class="p-title">✦ 新签积分前三 <span class="aw">前三奖 1288/888/666</span></div>
+      <div class="sign3" id="sign3"></div>
+    </div>
+    <div class="panel glass">
+      <div class="p-title">✦ 首返 · 复购金额前二 <span class="aw">1288/888 · 1888/1288</span></div>
+      <div class="re2">
+        <div class="half"><div class="hh">首返客户数 TOP2</div><div id="first2"></div></div>
+        <div class="half"><div class="hh">复购金额 TOP2</div><div id="amount2"></div></div>
+      </div>
+    </div>
+    <div class="panel glass">
+      <div class="p-title">✦ 阵营新签进度 <span class="aw">每超额10% 奖池+10%</span></div>
+      <div class="camps3" id="camps3"></div>
+    </div>
+    <div class="panel glass">
+      <div class="p-title">✦ 团队人均积分前三 <span class="aw">2188/1588/888</span></div>
+      <div class="team3" id="team3"></div>
+    </div>
+  </div>
+
+  <!-- 右上 2/3：关键播报滚动流 -->
+  <div class="feedbox glass">
+    <span class="kicker coral">LIVE FEED · 48小时关键播报</span>
+    <div class="feed"><div class="inner" id="feedInner"></div></div>
+  </div>
+
+  <!-- 右下 1/3：AI 赛事助手 -->
+  <div class="aibox glass">
+    <div class="ava">✦</div>
+    <div>
+      <div class="who"><i></i>AI 赛事助手 · 实时分析 <small id="aiSrc"></small></div>
+      <div class="txt" id="aiTxt">正在分析当前战况…</div>
+    </div>
+  </div>
+
+  <div id="lower3rd"></div>
+
+  <div id="replay">
+    <div class="rp-card">
+      <div class="rp-tag" id="rpTag">✦ 超级大单</div>
+      <img class="rp-ava" id="rpAva" alt="" style="display:none">
+      <div class="rp-name" id="rpName">—</div>
+      <div class="rp-amt grad-text num" id="rpAmt"></div>
+      <div class="rp-sub" id="rpSub"></div>
+    </div>
+  </div>
+
+  <footer class="guide">
+    <a class="g-item on" href="zhaiyao.html">摘要大屏</a>
+    <a class="g-item" href="xinqian.html">个人新签榜</a>
+    <a class="g-item" href="fugou.html">首返·复购榜</a>
+    <a class="g-item" href="zhenying.html">阵营PK榜</a>
+    <a class="g-item" href="tuandui.html">团队积分榜</a>
+    <span class="g-note">大单 <b>≥$5000</b> · 超级大单 <b>≥$30000</b> · 事件永久留档 · AI 每 10 分钟更新</span>
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var REFRESH_MS = 30 * 1000;
+  var AI_MS = 5 * 60 * 1000;
+  var STALE_MS = 5 * 60 * 1000;
+  var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var qs = new URLSearchParams(location.search);
+  var isPreview = qs.get("preview") === "1";
+
+  var LOGOS = {
+    "专治不服": "zhuanzhibufu", "多财多亿": "duocaiduoyi", "稻乐偲": "daolesi",
+    "星星之火": "xingxingzhihuo", "行则将至": "xingzejiangzhi", "乘风": "chengfeng",
+    "无名": "wuming"
+  };
+  var CAMP_COLORS = { "阵营一": "#3b6cf0", "阵营二": "#7c5ce0", "阵营三": "#1fb0d6" };
+
+  var stage = document.getElementById("stage");
+  function fit() {
+    var s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    stage.style.transform = "translate(-50%,-50%) scale(" + s + ")";
+  }
+  window.addEventListener("resize", fit);
+  fit();
+
+  /* 底栏导航透传 key/preview 参数（fail-closed 门禁下裸链接会 403 死屏） */
+  if (location.search) {
+    document.querySelectorAll(".g-item[href]").forEach(function (a) {
+      var href = a.getAttribute("href");
+      if (href && href.slice(-5) === ".html") a.setAttribute("href", href + location.search);
+    });
+  }
+
+  /* 轮播：每屏停留 30s 切下一屏（URL 加 &stay=1 可固定本屏） */
+  if (qs.get("stay") !== "1") {
+    setTimeout(function () { location.href = "xinqian.html" + location.search; }, 30000);
+  }
+
+  var WEEK = ["周日","周一","周二","周三","周四","周五","周六"];
+  function pad(n) { return n < 10 ? "0" + n : "" + n; }
+  var lastFetchAt = Date.now(), asOfText = "--:--";
+  function tickClock() {
+    var d = new Date();
+    document.getElementById("clock").textContent =
+      pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+    document.getElementById("dateline").textContent =
+      d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate())
+      + " " + WEEK[d.getDay()] + " · 数据截至 " + asOfText;
+    document.getElementById("clockBox").classList.toggle(
+      "warn", Date.now() - lastFetchAt > STALE_MS);
+    /* 阶段倒计时：开赛前→距开赛；8月→新签窗口；9月→复购冲刺 */
+    var day = 24 * 3600 * 1000;
+    var start = new Date("2026-08-01T00:00:00"), aug = new Date("2026-09-01T00:00:00"),
+        end = new Date("2026-10-01T00:00:00");
+    var label, days;
+    if (d < start) { label = "距开赛"; days = Math.ceil((start - d) / day); }
+    else if (d < aug) { label = "新签竞赛倒计时"; days = Math.ceil((aug - d) / day); }
+    else if (d < end) { label = "首返/复购竞赛倒计时"; days = Math.ceil((end - d) / day); }
+    else { label = "活动已收官"; days = 0; }
+    document.getElementById("phaseLabel").textContent = label;
+    document.getElementById("phaseDays").textContent = days;
+  }
+  setInterval(tickClock, 1000);
+  tickClock();
+
+  function apiQuery() {
+    var p = new URLSearchParams();
+    if (qs.get("key")) p.set("key", qs.get("key"));
+    if (isPreview) {
+      p.set("date_from", qs.get("date_from") || "2026-06-01");
+      p.set("date_to", qs.get("date_to") || "2026-07-29");
+    } else {
+      if (qs.get("date_from")) p.set("date_from", qs.get("date_from"));
+      if (qs.get("date_to")) p.set("date_to", qs.get("date_to"));
+    }
+    var s = p.toString();
+    return s ? "?" + s : "";
+  }
+
+  function easeOutQuart(t) { return 1 - Math.pow(1 - t, 4); }
+  function fmtInt(v) { return String(Math.round(v)); }
+  function countTo(el, target, fmt) {
+    fmt = fmt || fmtInt;
+    var from = parseFloat(el.dataset.value || "0") || 0;
+    if (from === target || reduceMotion) {
+      el.dataset.value = target; el.textContent = fmt(target); return;
+    }
+    var start = null;
+    function step(ts) {
+      if (!start) start = ts;
+      var t = Math.min((ts - start) / 700, 1);
+      el.textContent = fmt(from + (target - from) * easeOutQuart(t));
+      if (t < 1) requestAnimationFrame(step);
+      else { el.dataset.value = target; el.textContent = fmt(target); }
+    }
+    requestAnimationFrame(step);
+  }
+  function fmtGmv(v) { return "$" + Math.round(v).toLocaleString("en-US"); }
+  function money(v) { return "$" + Math.round(v).toLocaleString("en-US"); }
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+  function avatarImg(uid, cls) {
+    return '<img class="' + cls + '" src="assets/avatars/' + esc(uid) + '.png"' +
+      ' onerror="this.style.visibility=\'hidden\'" alt="">';
+  }
+
+  /* ── 左半屏渲染（数据未变不重建，24h 免 GC/图片重解码噪音） ── */
+  var lastLeftKey = "";
+  function renderLeft(d) {
+    var key = JSON.stringify([d.sign_top3, d.first_top2, d.amount_top2, d.camps, d.teams_top3]);
+    if (key === lastLeftKey) return;
+    lastLeftKey = key;
+    var s3 = document.getElementById("sign3");
+    s3.innerHTML = (d.sign_top3 || []).map(function (i, idx) {
+      return '<div class="s3card' + (idx === 0 ? ' r1' : '') + '">' +
+        '<span class="rk num">' + (idx + 1) + '</span>' + avatarImg(i.user_id, "") +
+        '<div><div class="nm">' + esc(i.name) + '</div>' +
+        '<div class="pt"><b class="num">' + i.new_points + '</b> 分 · ' + i.new_count + ' 单</div></div></div>';
+    }).join("") || '<div style="color:#93a0bd;font-size:15px;padding:12px">暂无新签，虚位以待</div>';
+
+    function reRows(rows, valFn) {
+      return (rows || []).map(function (r, idx) {
+        return '<div class="re-row"><span class="rk num">' + (idx + 1) + '</span>' +
+          avatarImg(r.user_id, "") +
+          '<span class="nm">' + esc(r.name) + '</span>' +
+          '<span class="vl num">' + valFn(r) + '</span></div>';
+      }).join("") || '<div style="color:#93a0bd;font-size:14px;padding:8px 0">虚位以待</div>';
+    }
+    document.getElementById("first2").innerHTML =
+      reRows(d.first_top2, function (r) { return r.first_count + " 个"; });
+    document.getElementById("amount2").innerHTML =
+      reRows(d.amount_top2, function (r) { return money(r.re_amount); });
+
+    document.getElementById("camps3").innerHTML = (d.camps || []).map(function (c) {
+      var cc = CAMP_COLORS[c.name] || "#4f7cff";
+      return '<div class="cp-row" style="--cc:' + cc + '">' +
+        '<span class="cn">' + esc(c.name) + '</span>' +
+        '<div class="bar"><div class="fill" style="width:' + Math.min(100, c.pct) + '%"></div></div>' +
+        '<span class="st"><b class="num">' + c.pct + '%</b> · ' + c.done + '/' + c.req + '</span>' +
+        '<span class="fst">奖池 ¥' + c.prize + (c.first ? ' · 第一 <b>' + esc(c.first) + '</b>' : '') + '</span></div>';
+    }).join("");
+
+    document.getElementById("team3").innerHTML = (d.teams_top3 || []).map(function (t, idx) {
+      var key = LOGOS[t.name];
+      return '<div class="t3card' + (idx === 0 ? ' r1' : '') + '">' +
+        '<span class="rk num">' + t.rank + '</span>' +
+        (key ? '<img src="assets/team-logos/' + key + '.png" alt="">' : '') +
+        '<div><div class="nm">' + esc(t.name) + '</div>' +
+        '<div class="av">人均 <b class="num">' + t.avg.toFixed(1) + '</b> 分</div></div></div>';
+    }).join("");
+  }
+
+  /* ── 事件滚动流 ── */
+  var lastFeedKey = "";
+  function subjectIcon(e) {
+    if (e.subject_type === "person") return avatarImg(e.subject_id, "pav");
+    if (e.subject_type === "team") {
+      var key = LOGOS[e.subject_name];
+      if (key) return '<img class="tlg" src="assets/team-logos/' + key + '.png" alt="">';
+    }
+    var cc = CAMP_COLORS[e.subject_name] || "#7c5ce0";
+    return '<span class="cbadge" style="background:linear-gradient(140deg,' + cc + ', #8b5cf6)">' +
+      esc(e.subject_name.slice(-1)) + '</span>';
+  }
+  function renderFeed(events) {
+    var key = JSON.stringify(events.map(function (e) { return e.id; }));
+    if (key === lastFeedKey) return;
+    lastFeedKey = key;
+    var html = events.map(function (e) {
+      return '<div class="ev ' + (e.level === "L4" ? "l4" : "l3") + '">' +
+        '<span class="tag">' + esc(e.label) + '</span>' + subjectIcon(e) +
+        '<span class="nm">' + esc(e.subject_name) + '</span>' +
+        '<span class="dt">' + esc(e.detail || "") + '</span>' +
+        (e.amount ? '<span class="amt num">' + money(e.amount) + '</span>' : '') +
+        '<span class="tm">' + esc(e.created_at || "") + '</span></div>';
+    }).join("") || '<div style="color:#93a0bd;font-size:16px;padding:20px">近 48 小时暂无关键播报…</div>';
+    var inner = document.getElementById("feedInner");
+    var visible = Math.floor(520 / 58);
+    if (events.length > visible && !reduceMotion) {
+      inner.innerHTML = html + html;
+      inner.style.setProperty("--dur", (events.length * 2.6) + "s");
+      inner.classList.add("roll");
+    } else {
+      inner.innerHTML = html;
+      inner.classList.remove("roll");
+    }
+  }
+
+  /* ── 弹窗（L4 全屏回放 / L3 lower-third） ── */
+  var seenKey = "festival_seen_max" + (isPreview ? "_pv" : "");
+  var popupQueue = [], popupBusy = false;
+  function playNext() {
+    if (popupBusy || !popupQueue.length) return;
+    popupBusy = true;
+    var e = popupQueue.shift();
+    if (e.level === "L4") {
+      var rp = document.getElementById("replay");
+      document.getElementById("rpTag").textContent = "✦ " + e.label;
+      document.getElementById("rpName").textContent = e.subject_name;
+      document.getElementById("rpAmt").textContent = e.amount ? money(e.amount) : "";
+      document.getElementById("rpSub").textContent = e.detail || "";
+      var av = document.getElementById("rpAva");
+      if (e.subject_type === "person") {
+        av.src = "assets/avatars/" + e.subject_id + ".png";
+        av.style.display = "block";
+        av.onerror = function () { av.style.display = "none"; };
+      } else { av.style.display = "none"; }
+      rp.querySelectorAll(".fire").forEach(function (f) { f.remove(); });
+      for (var i = 0; i < 10; i++) {
+        var f = document.createElement("span");
+        f.className = "fire";
+        f.textContent = ["✦", "🎆", "✨"][i % 3];
+        f.style.left = (8 + Math.random() * 84) + "%";
+        f.style.bottom = (10 + Math.random() * 30) + "%";
+        f.style.animationDelay = (Math.random() * 0.9) + "s";
+        rp.appendChild(f);
+      }
+      rp.classList.add("on");
+      setTimeout(function () { rp.classList.remove("on"); popupBusy = false; playNext(); }, 5300);
+    } else {
+      var box = document.getElementById("lower3rd");
+      box.innerHTML = '<div class="lt slide">' +
+        '<div class="lt-tag">⚡ ' + esc(e.label) + '</div>' +
+        '<div class="lt-body">' +
+        (e.subject_type === "person" ? avatarImg(e.subject_id, "") : subjectIcon(e)) +
+        '<span class="lt-name">' + esc(e.subject_name) + '</span>' +
+        '<span class="lt-type">' + esc(e.detail || "") + '</span>' +
+        (e.amount ? '<span class="lt-amt grad-text num">' + money(e.amount) + '</span>' : '') +
+        '</div></div>';
+      setTimeout(function () { popupBusy = false; playNext(); }, 5000);
+    }
+  }
+  function handlePopups(events) {
+    if (!events.length) return;
+    var maxId = Math.max.apply(null, events.map(function (e) { return e.id; }));
+    var seen = parseInt(localStorage.getItem(seenKey) || "0", 10);
+    if (!seen) {
+      /* 首次打开：全部标记已见，避免开屏轰炸；预览模式补一次演示弹窗 */
+      localStorage.setItem(seenKey, String(maxId));
+      if (isPreview) {
+        var l4 = events.find(function (e) { return e.level === "L4"; });
+        var l3 = events.find(function (e) { return e.level === "L3"; });
+        if (l4) popupQueue.push(l4);
+        if (l3) popupQueue.push(l3);
+        setTimeout(playNext, 2500);
+      }
+      return;
+    }
+    var fresh = events.filter(function (e) { return e.id > seen; });
+    if (fresh.length) {
+      /* 新事件从旧到新排队，最多连播 3 条（风暴限流） */
+      fresh.sort(function (a, b) { return a.id - b.id; });
+      fresh.slice(-3).forEach(function (e) { popupQueue.push(e); });
+      localStorage.setItem(seenKey, String(maxId));
+      playNext();
+    }
+  }
+
+  function refresh() {
+    fetch("/api/public/festival/headline" + apiQuery())
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (body) {
+        var d = body.data || body;
+        lastFetchAt = Date.now();
+        asOfText = (d.as_of || "").slice(11, 16) || "--:--";
+        var s = d.summary || {};
+        countTo(document.getElementById("newTotal"), s.new_total || 0);
+        document.getElementById("newTarget").textContent = s.new_target || 149;
+        countTo(document.getElementById("gmvTotal"), s.gmv_total || 0, fmtGmv);
+        document.getElementById("gmvTarget").textContent = fmtGmv(s.gmv_target || 3260000);
+        if (s.window && s.window.preview) {
+          var badge = document.getElementById("previewBadge");
+          badge.style.display = "block";
+          badge.textContent = "预览数据 " + s.window.from + " ~ " + s.window.to;
+        }
+        renderLeft(d);
+        renderFeed(d.events || []);
+        handlePopups(d.events || []);
+        tickClock();
+      })
+      .catch(function () { tickClock(); });
+  }
+
+  function refreshAi() {
+    fetch("/api/public/festival/ai-tip" + apiQuery())
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (body) {
+        var d = body.data || body;
+        var el = document.getElementById("aiTxt");
+        el.classList.add("fade");
+        setTimeout(function () {
+          el.textContent = d.tip || "";
+          document.getElementById("aiSrc").textContent =
+            d.source === "ai" ? "· AI 生成" : "· 规则播报";
+          el.classList.remove("fade");
+        }, 400);
+      })
+      .catch(function () {});
+  }
+
+  refresh();
+  refreshAi();
+  setInterval(refresh, REFRESH_MS);
+  setInterval(refreshAi, AI_MS);
+})();
+</script>
+</body>
+</html>
