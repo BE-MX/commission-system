@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>莱莎采购节 · 个人新签积分榜</title>
+<style>
+  /* 设计系统源自《采购节大屏DEMO-像素版》（Pixel × Glass × AI 赛事频道），
+     主体区按效果图改为 24 人卡片墙（真实素材 + 实时数据） */
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:100%; height:100%; background:#dfe1ee; overflow:hidden;
+    font-family:"Microsoft YaHei","PingFang SC","Segoe UI",sans-serif; }
+  :root{
+    --pri:#4f7cff; --vio:#8b5cf6; --coral:#ff6b5c;
+    --ink:#1d2545; --sub:#5d6b8f;
+    --count:#5b50c7; --points:#8a63e8; --label:#8583c0;
+    --ease-out:cubic-bezier(.23,1,.32,1); --ease-in-out:cubic-bezier(.77,0,.175,1);
+  }
+  .num { font-variant-numeric:tabular-nums; }
+  #stage { position:absolute; left:50%; top:50%; width:1920px; height:1080px;
+    transform:translate(-50%,-50%) scale(1); transform-origin:center center;
+    color:var(--ink); overflow:hidden;
+    background:linear-gradient(180deg,#eef0f8,#e2e4f2); }
+  /* 背景图整体下移到顶栏之下，保住烘焙标题完整可见 */
+  #stage::before { content:""; position:absolute; left:0; right:0; top:84px; bottom:0;
+    background:url(assets/bg.jpg) center top / cover no-repeat; }
+
+  /* ============ 频道顶栏（DEMO 同款） ============ */
+  header.ch { position:absolute; left:0; right:0; top:0; height:84px; z-index:30;
+    display:flex; align-items:center; gap:22px; padding:0 30px;
+    background:linear-gradient(180deg, rgba(255,255,255,.5), rgba(255,255,255,.22));
+    backdrop-filter:blur(24px) saturate(1.6); -webkit-backdrop-filter:blur(24px) saturate(1.6);
+    border-bottom:1px solid rgba(255,255,255,.75);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.9), 0 1px 0 rgba(255,255,255,.35), 0 8px 28px rgba(74,96,180,.12); }
+  .live { position:relative; display:flex; align-items:center; gap:8px; color:#fff; font-weight:800;
+    font-size:15px; letter-spacing:2px; padding:8px 18px 8px 14px; border-radius:10px;
+    background:linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,.08) 45%, rgba(255,255,255,0) 62%),
+      linear-gradient(92deg,#ff7a5c,#ff5c72);
+    box-shadow:inset 0 1px 1px rgba(255,255,255,.85), inset 0 -5px 10px rgba(230,50,60,.35),
+      0 0 0 1px rgba(255,255,255,.4), 4px 4px 0 rgba(180,40,60,.28), 0 6px 18px rgba(255,108,92,.5); }
+  .live::after { content:""; position:absolute; inset:-6px; border-radius:14px; pointer-events:none;
+    box-shadow:0 0 26px 6px rgba(255,108,92,.55); opacity:0; animation:liveGlow 4s ease-in-out infinite; }
+  @keyframes liveGlow { 0%,100%{opacity:0} 50%{opacity:.8} }
+  .live i { width:9px; height:9px; border-radius:2px; background:#fff; animation:blink 1.2s steps(1) infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.2} }
+  .ch-logo { font-size:28px; font-weight:900; letter-spacing:1px; color:var(--ink);
+    display:flex; align-items:center; gap:10px; white-space:nowrap; }
+  .ch-logo .ai-star { width:38px; height:38px; border-radius:12px; flex:none;
+    display:flex; align-items:center; justify-content:center;
+    background:linear-gradient(180deg, rgba(255,255,255,.45), rgba(255,255,255,0) 55%),
+      linear-gradient(140deg,var(--pri),var(--vio)); color:#fff; font-size:20px;
+    box-shadow:inset 0 1.5px 1px rgba(255,255,255,.7), 0 0 0 1px rgba(255,255,255,.35),
+      3px 3px 0 rgba(79,124,255,.3), 0 6px 16px rgba(99,102,241,.45);
+    animation:starSpin 6s steps(1) infinite; }
+  @keyframes starSpin { 0%,88%,100%{transform:none} 90%{transform:rotate(90deg)} 92%{transform:rotate(180deg)}
+    94%{transform:rotate(270deg)} 96%{transform:rotate(360deg)} }
+  .grad-text { background:linear-gradient(92deg,var(--pri),var(--vio),#ff5c9d,#00b8d4,var(--pri));
+    background-size:320% 100%;
+    -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+    animation:gradFlow 9s linear infinite; }
+  @keyframes gradFlow { to { background-position:320% 0; } }
+  .ch-logo em { font-style:normal; }
+  .ch-logo small { display:block; font-size:11px; letter-spacing:3px; color:var(--sub); font-weight:500; }
+  .ch-goals { flex:1; display:flex; justify-content:center; gap:14px; }
+  .score-chip { display:flex; align-items:baseline; gap:8px; font-size:14px; color:var(--sub);
+    padding:8px 18px; border-radius:12px; white-space:nowrap;
+    background:linear-gradient(180deg, rgba(255,255,255,.5), rgba(255,255,255,.2));
+    border:1px solid rgba(255,255,255,.7);
+    backdrop-filter:blur(14px) saturate(1.5); -webkit-backdrop-filter:blur(14px) saturate(1.5);
+    box-shadow:inset 0 1.5px 1px rgba(255,255,255,.95), inset 0 -2px 3px rgba(122,146,235,.16),
+      0 0 0 1px rgba(255,255,255,.45), 3px 3px 0 rgba(79,124,255,.16), 0 6px 16px rgba(74,96,180,.12); }
+  .score-chip b { font-size:24px; font-weight:900; }
+  .score-chip .gd { background:linear-gradient(92deg,var(--pri),var(--vio)); -webkit-background-clip:text;
+    background-clip:text; -webkit-text-fill-color:transparent; }
+  .ch-clock { text-align:right; font-size:12px; color:var(--sub); white-space:nowrap; }
+  .ch-clock b { display:block; font-size:24px; color:var(--ink); letter-spacing:1px; }
+  .ch-clock.warn { color:#e2543f; font-weight:700; }
+
+  /* ============ 24 人卡片墙（效果图布局） ============ */
+  .grid { position:absolute; top:238px; left:64px; right:64px;
+    display:grid; grid-template-columns:repeat(8,194px); justify-content:space-between;
+    row-gap:16px; }
+  .pcard { position:relative; aspect-ratio:548/698;
+    background:url(assets/card.png) center / 100% 100% no-repeat;
+    will-change:transform; }
+  /* 圆孔实测：圆心 (49.5%, 33%)，直径≈57% 宽；头像取 56% 留出彩虹描边 */
+  .avatar { position:absolute; left:49.5%; top:11%; width:56%; aspect-ratio:1;
+    transform:translateX(-50%); border-radius:50%; overflow:hidden;
+    display:flex; align-items:center; justify-content:center;
+    background:linear-gradient(160deg,#cfd4f6,#b8a9ef); color:#fff; font-size:42px; font-weight:900; }
+  /* 前三名专属卡面（圆孔实测：圆心 49.6%/31.3%，直径 55.6% 宽——比默认卡略小略高） */
+  .pcard.top1 { background-image:url(assets/card-top1.png); }
+  .pcard.top2 { background-image:url(assets/card-top2.png); }
+  .pcard.top3 { background-image:url(assets/card-top3.png); }
+  .pcard.top .avatar { width:54%; left:49.6%; top:10.2%; }
+  .medal { position:absolute; top:2.5%; right:3.5%; width:31%; display:none;
+    pointer-events:none; z-index:3; filter:drop-shadow(0 4px 8px rgba(140,110,40,.35)); }
+  .pcard.top .medal { display:block; }
+  .avatar img { width:100%; height:100%; object-fit:cover; display:block; }
+  .pname { position:absolute; top:58%; left:0; right:0; text-align:center;
+    font-size:21px; font-weight:900; color:#37345a; letter-spacing:1px; }
+  .pname.long { font-size:15px; letter-spacing:0; top:58.8%; }
+  .nums { position:absolute; top:69.5%; left:0; right:0;
+    display:flex; justify-content:space-around; padding:0 10%; }
+  .nums .n { font-size:30px; font-weight:900; }
+  .nums .n.count { color:var(--count); }
+  .nums .n.points { color:var(--points); }
+  .labels { position:absolute; top:84%; left:0; right:0;
+    display:flex; justify-content:space-around; padding:0 4%;
+    font-size:12.5px; color:var(--label); }
+
+  /* 首屏入场 stagger（一次性装饰） */
+  .pcard.enter { opacity:0; transform:translateY(10px); animation:cardIn 300ms var(--ease-out) forwards; }
+  @keyframes cardIn { to { opacity:1; transform:translateY(0); } }
+
+  /* ============ 底部节目单（DEMO 同款） ============ */
+  footer.guide { position:absolute; left:0; right:0; bottom:0; height:60px; z-index:30;
+    display:flex; align-items:center; justify-content:center; gap:10px; padding:0 30px;
+    background:linear-gradient(0deg, rgba(255,255,255,.42), rgba(255,255,255,.18));
+    backdrop-filter:blur(24px) saturate(1.6); -webkit-backdrop-filter:blur(24px) saturate(1.6);
+    border-top:1px solid rgba(255,255,255,.7);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.8), 0 -8px 24px rgba(74,96,180,.08); }
+  .g-item { font-size:14px; color:var(--sub); padding:7px 16px; border-radius:8px; letter-spacing:1px;
+    white-space:nowrap; text-decoration:none; }
+  .g-item.on { color:#fff; font-weight:800;
+    background:linear-gradient(180deg, rgba(255,255,255,.5), rgba(255,255,255,.06) 50%, rgba(255,255,255,0) 65%),
+      linear-gradient(92deg,var(--pri),var(--vio));
+    box-shadow:inset 0 1px 1px rgba(255,255,255,.8), inset 0 -4px 8px rgba(40,40,160,.25),
+      0 0 0 1px rgba(255,255,255,.35), 3px 3px 0 rgba(79,124,255,.3), 0 6px 16px rgba(99,102,241,.45); }
+  .g-note { position:absolute; right:30px; font-size:12px; color:var(--sub); }
+  .g-note b { color:var(--vio); }
+
+  .preview-badge { position:absolute; top:96px; right:28px; z-index:35; display:none;
+    background:rgba(255,176,32,.92); color:#5b3c00;
+    font-size:13px; font-weight:700; padding:5px 14px; border-radius:999px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .pcard.enter { animation-duration:1ms; }
+    .live::after, .ai-star, .grad-text, .live i { animation:none; }
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <header class="ch">
+    <div class="live"><i></i>LIVE</div>
+    <div class="ch-logo">
+      <span class="ai-star">✦</span>
+      <div>采购节 · <em class="grad-text">AI 赛事频道</em>
+        <small>2026 PROCUREMENT FESTIVAL · AI-POWERED SALES LIVE</small>
+      </div>
+    </div>
+    <div class="ch-goals">
+      <div class="score-chip">8月新签 <b class="num gd" id="newTotal">--</b> / <span id="newTarget">149</span></div>
+      <div class="score-chip">8+9月业绩 <b class="num gd" id="gmvTotal">--</b> / <span id="gmvTarget">$3.26M</span></div>
+    </div>
+    <div class="ch-clock" id="clockBox"><b class="num" id="clock">--:--:--</b><span id="dateline">加载中…</span></div>
+  </header>
+
+  <div class="preview-badge" id="previewBadge">预览数据窗口</div>
+  <div class="grid" id="grid"></div>
+
+  <footer class="guide">
+    <a class="g-item" href="#">摘要大屏</a>
+    <a class="g-item on" href="xinqian.html">个人新签榜</a>
+    <a class="g-item" href="#">首返·复购榜</a>
+    <a class="g-item" href="#">阵营PK榜</a>
+    <a class="g-item" href="#">团队积分榜</a>
+    <span class="g-note">新签积分窗口 <b>8/1–8/31</b> · 复购窗口至 <b>9/30</b></span>
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var REFRESH_MS = 60 * 1000;
+  var STALE_MS = 5 * 60 * 1000;
+  var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var qs = new URLSearchParams(location.search);
+
+  /* 画幅自适应（1920×1080 设计稿） */
+  var stage = document.getElementById("stage");
+  function fit() {
+    var s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    stage.style.transform = "translate(-50%,-50%) scale(" + s + ")";
+  }
+  window.addEventListener("resize", fit);
+  fit();
+
+  /* 时钟 + 数据新鲜度 */
+  var WEEK = ["周日","周一","周二","周三","周四","周五","周六"];
+  function pad(n) { return n < 10 ? "0" + n : "" + n; }
+  /* 初始化为页面加载时间：开机后首次取数就失败也能在 5 分钟后触发警示色 */
+  var lastFetchAt = Date.now(), asOfText = "--:--";
+  function tickClock() {
+    var d = new Date();
+    document.getElementById("clock").textContent =
+      pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+    document.getElementById("dateline").textContent =
+      d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate())
+      + " " + WEEK[d.getDay()] + " · 数据截至 " + asOfText;
+    document.getElementById("clockBox").classList.toggle(
+      "warn", lastFetchAt > 0 && Date.now() - lastFetchAt > STALE_MS);
+  }
+  setInterval(tickClock, 1000);
+  tickClock();
+
+  /* 取数 URL：key / 预览窗口透传 */
+  function apiUrl() {
+    var p = new URLSearchParams();
+    if (qs.get("key")) p.set("key", qs.get("key"));
+    if (qs.get("preview") === "1") {
+      p.set("date_from", qs.get("date_from") || "2026-06-01");
+      p.set("date_to", qs.get("date_to") || "2026-07-29");
+    } else {
+      if (qs.get("date_from")) p.set("date_from", qs.get("date_from"));
+      if (qs.get("date_to")) p.set("date_to", qs.get("date_to"));
+    }
+    var query = p.toString();
+    return "/api/public/festival/new-sign" + (query ? "?" + query : "");
+  }
+
+  /* 数字滚动：700ms 强 ease-out，变化才动 */
+  function easeOutQuart(t) { return 1 - Math.pow(1 - t, 4); }
+  function fmtNum(v) { return Math.abs(v - Math.round(v)) < 1e-9 ? String(Math.round(v)) : v.toFixed(1); }
+  function countTo(el, target, fmt) {
+    fmt = fmt || fmtNum;
+    var from = parseFloat(el.dataset.value || "0") || 0;
+    if (from === target || reduceMotion) {
+      el.dataset.value = target; el.textContent = fmt(target); return;
+    }
+    var start = null;
+    function step(ts) {
+      if (!start) start = ts;
+      var t = Math.min((ts - start) / 700, 1);
+      el.textContent = fmt(from + (target - from) * easeOutQuart(t));
+      if (t < 1) requestAnimationFrame(step);
+      else { el.dataset.value = target; el.textContent = fmt(target); }
+    }
+    requestAnimationFrame(step);
+  }
+  function fmtGmv(v) {
+    if (v >= 1e6) return "$" + (v / 1e6).toFixed(2) + "M";
+    if (v >= 1e3) return "$" + Math.round(v / 1e3) + "k";
+    return "$" + Math.round(v);
+  }
+
+  /* 卡片按 user_id 复用 DOM，名次变化走 FLIP（900ms 强 ease-in-out，§4.3 超越叙事） */
+  var cards = {};
+  var firstRender = true;
+
+  function buildCard(item) {
+    var el = document.createElement("div");
+    el.className = "pcard";
+    el.innerHTML =
+      '<div class="avatar"><img alt=""></div>' +
+      '<img class="medal" alt="">' +
+      '<div class="pname"></div>' +
+      '<div class="nums"><div class="n count num" data-value="0">0</div>' +
+      '<div class="n points num" data-value="0">0</div></div>' +
+      '<div class="labels"><span>新签个数</span><span>新签积分</span></div>';
+    var img = el.querySelector("img");
+    img.src = "assets/avatars/" + item.user_id + ".png";
+    img.onerror = function () {
+      img.remove();
+      el.querySelector(".avatar").textContent = item.name.charAt(0);
+    };
+    var nameEl = el.querySelector(".pname");
+    nameEl.textContent = item.name;
+    if (item.name.length > 5) nameEl.classList.add("long");
+    return el;
+  }
+
+  function applyRank(el, i) {
+    el.classList.remove("top", "top1", "top2", "top3");
+    var medal = el.querySelector(".medal");
+    if (i < 3) {
+      el.classList.add("top", "top" + (i + 1));
+      var want = "assets/badge-top" + (i + 1) + ".png";
+      if (medal.getAttribute("src") !== want) medal.setAttribute("src", want);
+    } else if (medal.getAttribute("src")) {
+      medal.removeAttribute("src");
+    }
+  }
+
+  function render(data) {
+    var grid = document.getElementById("grid");
+    var items = data.items || [];
+
+    /* 名册收缩（如离职剔除）时移除残留卡片，防止旧卡置顶冻结 */
+    var liveIds = {};
+    items.forEach(function (it) { liveIds[it.user_id] = true; });
+    Object.keys(cards).forEach(function (id) {
+      if (!liveIds[id]) { cards[id].remove(); delete cards[id]; }
+    });
+
+    var firstRects = {};
+    if (!firstRender && !reduceMotion) {
+      Object.keys(cards).forEach(function (id) {
+        firstRects[id] = cards[id].getBoundingClientRect();
+      });
+    }
+
+    items.forEach(function (item, i) {
+      var el = cards[item.user_id];
+      if (!el) {
+        el = buildCard(item);
+        cards[item.user_id] = el;
+        if (firstRender && !reduceMotion) {
+          el.classList.add("enter");
+          el.style.animationDelay = (i * 30) + "ms";
+        }
+      }
+      grid.appendChild(el);  /* 追加顺序 = 新名次 */
+      applyRank(el, i);      /* 前三名换专属卡面 + 奖杯角标（DOM 复用，每轮刷新都要重算） */
+      countTo(el.querySelector(".n.count"), item.new_count);
+      countTo(el.querySelector(".n.points"), item.new_points);
+    });
+
+    if (!firstRender && !reduceMotion) {
+      var scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080) || 1;
+      Object.keys(firstRects).forEach(function (id) {
+        var el = cards[id];
+        var last = el.getBoundingClientRect();
+        var dx = (firstRects[id].left - last.left) / scale;
+        var dy = (firstRects[id].top - last.top) / scale;
+        if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+        el.style.transition = "none";
+        el.style.transform = "translate(" + dx + "px," + dy + "px)";
+        requestAnimationFrame(function () {
+          el.style.transition = "transform 900ms cubic-bezier(.77,0,.175,1)";
+          el.style.transform = "translate(0,0)";
+          el.addEventListener("transitionend", function h() {
+            el.style.transition = ""; el.removeEventListener("transitionend", h);
+          });
+        });
+      });
+    }
+
+    var s = data.summary || {};
+    countTo(document.getElementById("newTotal"), s.new_total || 0);
+    document.getElementById("newTarget").textContent = s.new_target || 149;
+    countTo(document.getElementById("gmvTotal"), s.gmv_total || 0, fmtGmv);
+    document.getElementById("gmvTarget").textContent = fmtGmv(s.gmv_target || 3260000);
+
+    if (s.window && s.window.preview) {
+      var badge = document.getElementById("previewBadge");
+      badge.style.display = "block";
+      badge.textContent = "预览数据 " + s.window.from + " ~ " + s.window.to;
+    }
+    firstRender = false;
+  }
+
+  function refresh() {
+    fetch(apiUrl())
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (body) {
+        var data = body.data || body;
+        lastFetchAt = Date.now();
+        asOfText = (data.as_of || "").slice(11, 16) || "--:--";
+        render(data);
+        tickClock();
+      })
+      .catch(function () { tickClock(); /* 保留旧数据，超 5 分钟顶栏时间线变警示色 */ });
+  }
+  refresh();
+  setInterval(refresh, REFRESH_MS);
+})();
+</script>
+</body>
+</html>
