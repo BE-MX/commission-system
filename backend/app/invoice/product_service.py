@@ -137,17 +137,30 @@ def get_filter_options(
     size: str | None = None,
     unit: str | None = None,
 ) -> dict[str, list[str]]:
-    return {
-        "models": _distinct_values(db, "model", {"model": model, "color": color, "size": size, "unit": unit}),
-        "colors": _distinct_values(db, "color", {"model": model, "color": color, "size": size, "unit": unit}),
-        "sizes": _distinct_values(db, "size", {"model": model, "color": color, "size": size, "unit": unit}),
-        "units": _distinct_values(db, "unit", {"model": model, "color": color, "size": size, "unit": unit}),
-    }
+    """级联候选：models/colors/sizes/units 按其余维度过滤（自身维度不参与）；
+    all_* 为该维度全量候选，供前端「全部」分组——整行复制后其余三维已满时，
+    级联列表会锁死换型号的路，全量组是唯一出口。其余维度无过滤时 all == 级联结果，
+    不重复查询。
+    """
+    filters = {"model": model, "color": color, "size": size, "unit": unit}
+    columns = _table_columns(db, "okki_products")
+    result: dict[str, list[str]] = {}
+    for target, key in (("model", "models"), ("color", "colors"), ("size", "sizes"), ("unit", "units")):
+        matched = _distinct_values(db, target, filters, columns=columns)
+        others_active = any(value for dim, value in filters.items() if dim != target)
+        result[key] = matched
+        result[f"all_{key}"] = _distinct_values(db, target, {}, columns=columns) if others_active else matched
+    return result
 
 
-def _distinct_values(db: Session, target: str, filters: dict[str, str | None]) -> list[str]:
+def _distinct_values(
+    db: Session,
+    target: str,
+    filters: dict[str, str | None],
+    columns: set[str] | None = None,
+) -> list[str]:
     schema = _schema()
-    product_columns = _table_columns(db, "okki_products")
+    product_columns = _table_columns(db, "okki_products") if columns is None else columns
     if target not in product_columns:
         return []
     where, params = _build_product_where(product_columns, filters, exclude={target})

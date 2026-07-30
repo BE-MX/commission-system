@@ -66,6 +66,24 @@ def test_product_filter_options_and_unique_match(db):
     assert options["colors"] == ["Natural"]
     assert options["sizes"] == ["18", "20"]
     assert options["units"] == ["100g"]
+    # all_* 全量候选不受其余维度过滤（前端「全部」分组用）
+    assert options["all_models"] == ["M1", "M2"]
+    assert options["all_colors"] == ["Natural", "Piano"]
+    assert options["all_sizes"] == ["18", "20"]
+    assert options["all_units"] == ["100g", "120g"]
+
+    # 无过滤时 all_* 与级联候选一致（不多跑一次查询的复用路径）
+    no_filter = product_service.get_filter_options(db)
+    assert no_filter["models"] == ["M1", "M2"]
+    assert no_filter["all_models"] == no_filter["models"]
+    assert no_filter["all_units"] == no_filter["units"] == ["100g", "120g"]
+
+    # 仅自身维度有值：自身不参与过滤（models 仍全量），其余维度被它过滤
+    only_self = product_service.get_filter_options(db, model="M1")
+    assert only_self["models"] == ["M1", "M2"]
+    assert only_self["all_models"] == only_self["models"]
+    assert only_self["colors"] == ["Natural"]
+    assert only_self["all_colors"] == ["Natural", "Piano"]
 
     match = product_service.match_product(db, model="M1", color="Natural", size="18", unit="100g")
     assert match["is_unique"] is True

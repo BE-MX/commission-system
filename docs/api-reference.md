@@ -58,7 +58,7 @@
   - `GET /invoices/suggest-no?order_type=` — 新建单默认发票号（invoice:write，2026-07-14 版）：库存单 `{用户名}-KC-{MM}{NN}`（NN=该用户本月第几张，两位零填充）、生产单 `SC-{MM}{NN}`（全公司本月序列，不含用户名）；跨年撞号自动顺延，用户可改
   - `GET /invoices/check-no?invoice_no=&exclude_id=` — 发票号占用检查（invoice:write；exclude_id 编辑时排除自身）
   - `GET /customers/contact-defaults?customer_id=` — 该客户最近一张（created_at 倒序）带联系信息发票的联系人/电话/邮箱/地址快照，录入页自动填充用（invoice:write；组织级共享，刻意不受发票数据范围限制——联系人是客户数据非财务数据）。附带 `has_xiaoman_orders`（新成交预判）+ `last_order_date`（该客户 okki_orders 最新 account_date，「首返」旁参考展示，新成交为 null，仅展示不落库不推 OKKI）
-  - `GET /products/filter-options` — 产品级联筛选项（model→color→size→unit，库存单用）
+  - `GET /products/filter-options` — 产品级联筛选项（model→color→size→unit，库存单用）；每维度返回级联候选 `models/colors/sizes/units`（按其余已选维度过滤）+ 全量候选 `all_models/all_colors/all_sizes/all_units`（前端「匹配当前组合/全部」双分组用，2026-07-30）
   - `POST /import/preview` — Excel/WPS 粘贴明细批量预检（invoice:write）：请求含客户、订单类型、币种和最多 200 行标准字段；只读返回 passed/warning/blocked、产品/SKU 候选、同币种客户价差与批次指纹，不创建发票/定制产品、不自动换汇
   - `GET /products/match` — 按 model/color/size/unit 精确匹配产品
   - `GET /products/entry-options` — 生产单自由录入候选值（okki UNION ark_custom_products，含 displays）
