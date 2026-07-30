@@ -821,3 +821,5 @@ grep "job completed" logs\service.log | tail -20
 - **静态页生效方式**：源文件在 `frontend/public/festival/`（含 assets 头像/背景）；改动后需拷贝进 `frontend/dist/festival/` 即时生效（同 /caigoujie/ 先例），或走 npm run build。
 - **数据口径**：读 lsordertest（小满同步），参数表 `lsordertest.user_rel_team`（24 人名册/阵营/个人目标）；分配/开发属性已在代码内快照固化（`app/festival/service.py` ATTR_SNAPSHOT_2026），活动期内改 employee_attribute_history 不影响大屏积分。
 - **大屏断更表现**：顶栏"数据截至"超 5 分钟自动变红；页面每 60s 轮询一次。
+- **摘要屏 AI 提示**：需在「AI 接入」后台创建预设 `festival_screen_tip`（system prompt 可空，模型任选），否则右下角走规则兜底文案（标"·规则播报"）；AI 生成每 10 分钟一次。
+- **事件留档**：`ark_festival_events`（commission_db）永久留档弹窗/进榜记录，幂等键去重；清空重跑活动前需手动 TRUNCATE。
