@@ -4,9 +4,11 @@ import { readFileSync } from 'node:fs'
 
 import {
   hasImportedBatch,
+  isBlankInvoiceLine,
   mapPreviewRowToInvoiceLine,
   parseInvoiceClipboard,
 } from '../src/views/invoice/composables/useInvoicePasteImport.js'
+import { normalizeHairRow } from '../src/views/invoice/composables/invoiceEditorState.js'
 
 
 test('parses the standard six-column clipboard format', () => {
@@ -76,6 +78,23 @@ test('rejects batches over 200 rows', () => {
   const header = 'Product\tLength\tColor\tWeight\tQuantity\tUnit Price'
   const row = 'Genius Weft\t18\t#1B\t100g\t1\t20'
   assert.throws(() => parseInvoiceClipboard([header, ...Array(201).fill(row)].join('\n')), /最多导入 200 行/)
+})
+
+
+test('openCreate seeded blank line is recognized so import can replace it', () => {
+  assert.equal(isBlankInvoiceLine(normalizeHairRow({ quantity: 1, item_type: 'stock' })), true)
+  assert.equal(isBlankInvoiceLine(normalizeHairRow({ quantity: 1, item_type: 'custom' })), true)
+})
+
+
+test('touched or accessory lines are never treated as blank', () => {
+  assert.equal(isBlankInvoiceLine(normalizeHairRow({ quantity: 3 })), false)
+  assert.equal(isBlankInvoiceLine(normalizeHairRow({ model: 'M1' })), false)
+  assert.equal(isBlankInvoiceLine(normalizeHairRow({ color: '#1B' })), false)
+  assert.equal(isBlankInvoiceLine(normalizeHairRow({ price_per_piece: 12.5 })), false)
+  assert.equal(isBlankInvoiceLine(normalizeHairRow({ discount_amount: -1 })), false)
+  assert.equal(isBlankInvoiceLine(normalizeHairRow({ product_id: 7, sku_id: 9 })), false)
+  assert.equal(isBlankInvoiceLine({ product_kind: 'accessory' }), false)
 })
 
 

@@ -7,7 +7,7 @@ import {
 } from '@/api/invoice'
 import { calculateLineTotal, normalizeDiscount } from './invoiceSettlement.js'
 import { createLatestRequestGate } from './accessoryPricing.js'
-import { hasImportedBatch, mapPreviewRowToInvoiceLine } from './useInvoicePasteImport.js'
+import { hasImportedBatch, isBlankInvoiceLine, mapPreviewRowToInvoiceLine } from './useInvoicePasteImport.js'
 import { normalizeHairRow } from './invoiceEditorState.js'
 
 export function useInvoiceHairItems(form, hairItems, isProduction, entryOptions) {
@@ -102,6 +102,9 @@ export function useInvoiceHairItems(form, hairItems, isProduction, entryOptions)
   }
   function appendImportedLines(rows, fingerprint) {
     if (hasImportedBatch(form.items, fingerprint)) return false
+    for (let i = form.items.length - 1; i >= 0; i--) {
+      if (isBlankInvoiceLine(form.items[i])) form.items.splice(i, 1)
+    }
     form.items.push(...rows.map(row => normalizeHairRow(mapPreviewRowToInvoiceLine(row, fingerprint, form.order_type))))
     return true
   }
