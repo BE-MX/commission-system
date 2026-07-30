@@ -683,6 +683,12 @@ grep "job completed" logs\service.log | tail -20
   带 `external` 字段的卡片（`productCard` 用 `location.href` 取代 `selectProduct`，`renderFromHash` 对 external 条目
   `location.replace` 跳转），卡片图要用**真人竖构图**（`.card-image img` 是 `object-fit:cover; object-position:top`，
   发架实拍混在 16 宫格里会明显突兀）。源码回存 `Downloads\00_Inbox\莱莎16款明星发型静态网页\<slug>\` 与线上同构。
+  **供应商交付的新版会回退全部适配项**（2026-07-29 yidaoqie v2 实测：og 又是 `/og.png`、styles.css 又是
+  `url("/brand-logo.webp")`、「门店参考毛利」「店员讲解话术」重新出现、返回总览链接和 `.catalog-return` 样式缺失），
+  每次替换必须重做：og/twitter image 改完整 URL、CSS 前导斜杠去掉、删毛利/话术（话术标题改「产品解读」）、
+  `</main>` 前补 `catalog-return` div、CSS 尾部补 `.catalog-return` 块（从上一版线上 styles.css 抄）。
+  替换流程：scp 到 `/tmp` → 旧目录 `mv` 为 `yidaoqie.bak-<日期>` → 换入 → 两机 `md5sum` 与本地比对 + curl 断言
+  （无毛利/话术、og 完整 URL、catalog-return 在位、资产全 200）。
 
 - **展会二维码规格（复刻自 qrcodes/ 既有 16 张）**：984×1074 画布（码区 984 + 标签带 90），纠错 H，码点 `#0d6e4b`，
   中心 265×265 圆角徽章（半径 35，**直接从既有码图 crop (359,359,624,624) + 圆角遮罩**，比重画 logo 保真），
@@ -808,3 +814,10 @@ grep "job completed" logs\service.log | tail -20
 - Nginx：主站 `/etc/nginx/conf.d/leshine.conf` 内独立 location，30 请求/分钟/IP；修改前必须备份并先测候选配置
 - RDS：独立 `social_customer_mcp` 账号，只授予四张 `lsordertest` 表的 SELECT
 - 完整部署、token 轮换和客户端示例：`docs/social-customer-mcp.md`
+
+## 采购节大屏（2026-08 活动期）
+
+- **访问**：局域网免登录 `http://192.168.101.193:8001/festival/xinqian.html?key=<FESTIVAL_SCREEN_KEYS 中任一值>`；key 配在 `backend/.env` 的 `FESTIVAL_SCREEN_KEYS`（逗号分隔可发多屏、可单独吊销）。**不配 key 端点整体关闭**（fail-closed，公网反代场景防裸奔）。
+- **静态页生效方式**：源文件在 `frontend/public/festival/`（含 assets 头像/背景）；改动后需拷贝进 `frontend/dist/festival/` 即时生效（同 /caigoujie/ 先例），或走 npm run build。
+- **数据口径**：读 lsordertest（小满同步），参数表 `lsordertest.user_rel_team`（24 人名册/阵营/个人目标）；分配/开发属性已在代码内快照固化（`app/festival/service.py` ATTR_SNAPSHOT_2026），活动期内改 employee_attribute_history 不影响大屏积分。
+- **大屏断更表现**：顶栏"数据截至"超 5 分钟自动变红；页面每 60s 轮询一次。
