@@ -74,7 +74,7 @@
   @keyframes liveGlow { 0%,100%{opacity:0} 50%{opacity:.8} }
   .live i { width:9px; height:9px; border-radius:2px; background:#fff; animation:blink 1.2s steps(1) infinite; }
   @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.2} }
-  .ch-logo { font-size:28px; font-weight:900; letter-spacing:1px; color:var(--ink);
+  .ch-logo { font-size:20px; font-weight:900; letter-spacing:1px; color:var(--ink);
     display:flex; align-items:center; gap:10px; white-space:nowrap; }
   .ch-logo .ai-star { width:38px; height:38px; border-radius:12px; flex:none;
     display:flex; align-items:center; justify-content:center;
@@ -100,7 +100,8 @@
     backdrop-filter:blur(14px) saturate(1.5); -webkit-backdrop-filter:blur(14px) saturate(1.5);
     box-shadow:inset 0 1.5px 1px rgba(255,255,255,.95), inset 0 -2px 3px rgba(122,146,235,.16),
       0 0 0 1px rgba(255,255,255,.45), 3px 3px 0 rgba(79,124,255,.16), 0 6px 16px rgba(74,96,180,.12); }
-  .score-chip b { font-size:24px; font-weight:900; }
+  .score-chip b { font-size:30px; font-weight:900; }
+  .score-chip .hot { color:#ff5c50; }
   .score-chip .gd { background:linear-gradient(92deg,var(--pri),var(--vio)); -webkit-background-clip:text;
     background-clip:text; -webkit-text-fill-color:transparent; }
   .ch-clock { text-align:right; font-size:12px; color:var(--sub); white-space:nowrap; }
@@ -124,10 +125,21 @@
   .pcard.top2 { background-image:url(assets/card-top2.png); }
   .pcard.top3 { background-image:url(assets/card-top3.png); }
   .pcard.top .avatar { width:54%; left:49.6%; top:10.2%; }
-  /* 奖杯放大 20% 并出血到卡片边框外，增强立体感（2026-07-30） */
+  /* 奖杯放大 20% 出血压角 + 呼吸浮动光效（摆动±18° / 浮动±8px / 金光呼吸） */
   .medal { position:absolute; top:-4.5%; right:-4.5%; width:37.2%; display:none;
-    pointer-events:none; z-index:3; filter:drop-shadow(0 6px 12px rgba(140,110,40,.4)); }
+    pointer-events:none; z-index:3;
+    animation:medalFloat 5.5s ease-in-out infinite,
+              medalGlowGold 4s ease-in-out infinite; }
   .pcard.top .medal { display:block; }
+  .pcard.top2 .medal { animation-delay:-1.8s, -1.3s; }
+  .pcard.top3 .medal { animation-delay:-3.6s, -2.6s; }
+  @keyframes medalFloat {
+    0%   { transform:perspective(300px) translateY(-8px) rotateY(-18deg); }
+    50%  { transform:perspective(300px) translateY(8px) rotateY(18deg); }
+    100% { transform:perspective(300px) translateY(-8px) rotateY(-18deg); } }
+  @keyframes medalGlowGold {
+    0%,100% { filter:drop-shadow(0 6px 12px rgba(160,125,40,.35)); }
+    50%     { filter:drop-shadow(0 10px 22px rgba(230,180,70,.7)); } }
   .avatar img { width:100%; height:100%; object-fit:cover; display:block; }
   .pname { position:absolute; top:58%; left:0; right:0; text-align:center;
     font-size:21px; font-weight:900; color:#37345a; letter-spacing:1px; }
@@ -168,7 +180,7 @@
 
   @media (prefers-reduced-motion: reduce) {
     .pcard.enter { animation-duration:1ms; }
-    .live::after, .ai-star, .grad-text, .live i, .fx i { animation:none; }
+    .live::after, .ai-star, .grad-text, .live i, .fx i, .medal { animation:none; }
   }
 </style>
 </head>
@@ -178,13 +190,14 @@
     <div class="live"><i></i>LIVE</div>
     <div class="ch-logo">
       <span class="ai-star">✦</span>
-      <div>采购节 · <em class="grad-text">AI 赛事频道</em>
+      <div>2026莱莎采购节 · <em class="grad-text">新签/首返/复购赛事实时大屏</em>
         <small>2026 PROCUREMENT FESTIVAL · AI-POWERED SALES LIVE</small>
       </div>
     </div>
     <div class="ch-goals">
       <div class="score-chip">8月新签 <b class="num gd" id="newTotal">--</b> / <span id="newTarget">149</span></div>
-      <div class="score-chip">8+9月业绩 <b class="num gd" id="gmvTotal">--</b> / <span id="gmvTarget">$3.26M</span></div>
+      <div class="score-chip">8+9月业绩 <b class="num gd" id="gmvTotal">--</b> / <span id="gmvTarget">$3,260,000</span></div>
+      <div class="score-chip"><span id="phaseLabel">--</span> <b class="num hot" id="phaseDays">--</b> 天</div>
     </div>
     <div class="ch-clock" id="clockBox"><b class="num" id="clock">--:--:--</b><span id="dateline">加载中…</span></div>
   </header>
@@ -195,9 +208,9 @@
   <div class="grid" id="grid"></div>
 
   <footer class="guide">
-    <a class="g-item" href="#">摘要大屏</a>
+    <a class="g-item" href="zhaiyao.html">摘要大屏</a>
     <a class="g-item on" href="xinqian.html">个人新签榜</a>
-    <a class="g-item" href="#">首返·复购榜</a>
+    <a class="g-item" href="fugou.html">首返·复购榜</a>
     <a class="g-item" href="zhenying.html">阵营PK榜</a>
     <a class="g-item" href="tuandui.html">团队积分榜</a>
     <span class="g-note">新签积分窗口 <b>8/1–8/31</b> · 复购窗口至 <b>9/30</b></span>
@@ -221,6 +234,19 @@
   window.addEventListener("resize", fit);
   fit();
 
+  /* 底栏导航透传 key/preview 参数（fail-closed 门禁下裸链接会 403 死屏） */
+  if (location.search) {
+    document.querySelectorAll(".g-item[href]").forEach(function (a) {
+      var href = a.getAttribute("href");
+      if (href && href.slice(-5) === ".html") a.setAttribute("href", href + location.search);
+    });
+  }
+
+  /* 轮播：每屏停留 30s 切下一屏（URL 加 &stay=1 可固定本屏） */
+  if (qs.get("stay") !== "1") {
+    setTimeout(function () { location.href = "fugou.html" + location.search; }, 30000);
+  }
+
   /* 时钟 + 数据新鲜度 */
   var WEEK = ["周日","周一","周二","周三","周四","周五","周六"];
   function pad(n) { return n < 10 ? "0" + n : "" + n; }
@@ -235,6 +261,16 @@
       + " " + WEEK[d.getDay()] + " · 数据截至 " + asOfText;
     document.getElementById("clockBox").classList.toggle(
       "warn", lastFetchAt > 0 && Date.now() - lastFetchAt > STALE_MS);
+    var day = 24 * 3600 * 1000;
+    var t0 = new Date("2026-08-01T00:00:00"), t1 = new Date("2026-09-01T00:00:00"),
+        t2 = new Date("2026-10-01T00:00:00");
+    var lab, dd;
+    if (d < t0) { lab = "\u8ddd\u5f00\u8d5b"; dd = Math.ceil((t0 - d) / day); }
+    else if (d < t1) { lab = "\u65b0\u7b7e\u7ade\u8d5b\u5012\u8ba1\u65f6"; dd = Math.ceil((t1 - d) / day); }
+    else if (d < t2) { lab = "\u9996\u8fd4/\u590d\u8d2d\u7ade\u8d5b\u5012\u8ba1\u65f6"; dd = Math.ceil((t2 - d) / day); }
+    else { lab = "\u6d3b\u52a8\u5df2\u6536\u5b98"; dd = 0; }
+    document.getElementById("phaseLabel").textContent = lab;
+    document.getElementById("phaseDays").textContent = dd;
   }
   setInterval(tickClock, 1000);
   tickClock();
@@ -273,11 +309,7 @@
     }
     requestAnimationFrame(step);
   }
-  function fmtGmv(v) {
-    if (v >= 1e6) return "$" + (v / 1e6).toFixed(2) + "M";
-    if (v >= 1e3) return "$" + Math.round(v / 1e3) + "k";
-    return "$" + Math.round(v);
-  }
+  function fmtGmv(v) { return "$" + Math.round(v).toLocaleString("en-US"); }
 
   /* 卡片按 user_id 复用 DOM，名次变化走 FLIP（900ms 强 ease-in-out，§4.3 超越叙事） */
   var cards = {};
