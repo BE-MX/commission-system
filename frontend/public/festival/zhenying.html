@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>莱莎采购节 · 阵营积分榜</title>
+<style>
+  /* 设计系统同 xinqian.html（Pixel × Glass × AI 赛事频道）；
+     三块玻璃面板与标题已烘焙在 bg-camps.jpg 中，内容按面板坐标对位叠加 */
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:100%; height:100%; background:#eef0f4; overflow:hidden;
+    font-family:"Microsoft YaHei","PingFang SC","Segoe UI",sans-serif; }
+  :root{
+    --pri:#4f7cff; --vio:#8b5cf6; --ink:#1d2545; --sub:#5d6b8f;
+    --ease-out:cubic-bezier(.23,1,.32,1); --ease-in-out:cubic-bezier(.77,0,.175,1);
+  }
+  .num { font-variant-numeric:tabular-nums; }
+  #stage { position:absolute; left:50%; top:50%; width:1920px; height:1080px;
+    transform:translate(-50%,-50%) scale(1); transform-origin:center center;
+    color:var(--ink); overflow:hidden;
+    background:linear-gradient(180deg,#f2f4f8,#f4ecdf); }
+  #stage::before { content:""; position:absolute; left:0; right:0; top:84px; bottom:0;
+    background:url(assets/bg-camps.jpg) center top / cover no-repeat; }
+
+  /* ============ 频道顶栏（同款） ============ */
+  header.ch { position:absolute; left:0; right:0; top:0; height:84px; z-index:30;
+    display:flex; align-items:center; gap:22px; padding:0 30px;
+    background:linear-gradient(180deg, rgba(255,255,255,.5), rgba(255,255,255,.22));
+    backdrop-filter:blur(24px) saturate(1.6); -webkit-backdrop-filter:blur(24px) saturate(1.6);
+    border-bottom:1px solid rgba(255,255,255,.75);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.9), 0 1px 0 rgba(255,255,255,.35), 0 8px 28px rgba(74,96,180,.12); }
+  .live { position:relative; display:flex; align-items:center; gap:8px; color:#fff; font-weight:800;
+    font-size:15px; letter-spacing:2px; padding:8px 18px 8px 14px; border-radius:10px;
+    background:linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,.08) 45%, rgba(255,255,255,0) 62%),
+      linear-gradient(92deg,#ff7a5c,#ff5c72);
+    box-shadow:inset 0 1px 1px rgba(255,255,255,.85), inset 0 -5px 10px rgba(230,50,60,.35),
+      0 0 0 1px rgba(255,255,255,.4), 4px 4px 0 rgba(180,40,60,.28), 0 6px 18px rgba(255,108,92,.5); }
+  .live::after { content:""; position:absolute; inset:-6px; border-radius:14px; pointer-events:none;
+    box-shadow:0 0 26px 6px rgba(255,108,92,.55); opacity:0; animation:liveGlow 4s ease-in-out infinite; }
+  @keyframes liveGlow { 0%,100%{opacity:0} 50%{opacity:.8} }
+  .live i { width:9px; height:9px; border-radius:2px; background:#fff; animation:blink 1.2s steps(1) infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.2} }
+  .ch-logo { font-size:28px; font-weight:900; letter-spacing:1px; color:var(--ink);
+    display:flex; align-items:center; gap:10px; white-space:nowrap; }
+  .ch-logo .ai-star { width:38px; height:38px; border-radius:12px; flex:none;
+    display:flex; align-items:center; justify-content:center;
+    background:linear-gradient(180deg, rgba(255,255,255,.45), rgba(255,255,255,0) 55%),
+      linear-gradient(140deg,var(--pri),var(--vio)); color:#fff; font-size:20px;
+    box-shadow:inset 0 1.5px 1px rgba(255,255,255,.7), 0 0 0 1px rgba(255,255,255,.35),
+      3px 3px 0 rgba(79,124,255,.3), 0 6px 16px rgba(99,102,241,.45);
+    animation:starSpin 6s steps(1) infinite; }
+  @keyframes starSpin { 0%,88%,100%{transform:none} 90%{transform:rotate(90deg)} 92%{transform:rotate(180deg)}
+    94%{transform:rotate(270deg)} 96%{transform:rotate(360deg)} }
+  .grad-text { background:linear-gradient(92deg,var(--pri),var(--vio),#ff5c9d,#00b8d4,var(--pri));
+    background-size:320% 100%;
+    -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+    animation:gradFlow 9s linear infinite; }
+  @keyframes gradFlow { to { background-position:320% 0; } }
+  .ch-logo em { font-style:normal; }
+  .ch-logo small { display:block; font-size:11px; letter-spacing:3px; color:var(--sub); font-weight:500; }
+  .pills { display:flex; gap:14px; margin-left:auto; margin-right:24px; }
+  .pill { background:rgba(255,255,255,.85); border-radius:999px; padding:9px 22px;
+    font-size:17px; color:var(--ink); white-space:nowrap;
+    box-shadow:0 2px 10px rgba(90,90,150,.10); }
+  .pill b { font-size:24px; font-weight:800; color:#7645e8; font-variant-numeric:tabular-nums; }
+  .pill span.den { color:#85839f; }
+  .ch-clock { text-align:right; font-size:12px; color:var(--sub); white-space:nowrap; }
+  .ch-clock b { display:block; font-size:24px; color:var(--ink); letter-spacing:1px; }
+  .ch-clock.warn { color:#e2543f; font-weight:700; }
+
+  /* ============ 三营面板内容（对位烘焙面板） ============ */
+  .col { position:absolute; top:262px; width:470px; height:734px; }
+  .col.c1 { left:92px;  --cc:#3b6cf0; --cc-soft:#7ea1ff; }
+  .col.c2 { left:725px; --cc:#7c5ce0; --cc-soft:#a98ff2; }
+  .col.c3 { left:1358px; --cc:#1fb0d6; --cc-soft:#5fd2ee; }
+  .camp-name { position:absolute; top:14px; left:0; right:0; text-align:center;
+    font-size:32px; font-weight:900; letter-spacing:4px; color:var(--cc); }
+  .camp-name::before, .camp-name::after { content:"—"; font-weight:400; opacity:.5;
+    margin:0 14px; letter-spacing:0; }
+  .camp-pct { position:absolute; top:56px; left:0; right:0; text-align:center;
+    font-size:70px; font-weight:900; color:var(--cc); line-height:1.1; }
+  .camp-pct small { font-size:30px; font-weight:800; }
+  .bar { position:absolute; top:148px; left:30px; right:30px; height:16px; border-radius:8px;
+    background:rgba(110,120,170,.16); overflow:hidden;
+    box-shadow:inset 0 1px 2px rgba(80,90,140,.18); }
+  .bar .fill { position:relative; height:100%; width:0%; border-radius:8px; overflow:hidden;
+    background:linear-gradient(90deg, var(--cc-soft), var(--cc));
+    box-shadow:0 0 12px color-mix(in srgb, var(--cc) 55%, transparent);
+    transition:width 900ms cubic-bezier(.77,0,.175,1); }
+  .bar .fill::after { content:""; position:absolute; top:0; bottom:0; width:70px;
+    background:linear-gradient(90deg, transparent, rgba(255,255,255,.75), transparent);
+    animation:sweep 4s linear infinite; }
+  @keyframes sweep { from { transform:translateX(-90px); } to { transform:translateX(480px); } }
+
+  .members { position:absolute; top:186px; left:39px; width:392px;
+    display:grid; grid-template-columns:repeat(2,188px); justify-content:space-between;
+    row-gap:9px; }
+  .chip { position:relative; width:188px; aspect-ratio:168/97;
+    background:url(assets/chip.png) center / 100% 100% no-repeat; will-change:transform; }
+  .c1 .chip.first { background-image:url(assets/chip-first-1.png); }
+  .c2 .chip.first { background-image:url(assets/chip-first-2.png); }
+  .c3 .chip.first { background-image:url(assets/chip-first-3.png); }
+  /* 达成 = 水晶字盖章覆层（右上角，微倾斜盖出章感）；未达标 = 素底无任何标记 */
+  .chip .c-ok { position:absolute; top:-6%; right:3%; width:36.8%; display:none;
+    pointer-events:none; transform:rotate(-8deg); z-index:2;
+    filter:drop-shadow(0 5px 10px rgba(90,110,200,.3)); }
+  .chip.ok .c-ok { display:block; }
+  .chip .c-name { position:absolute; top:28%; left:12%; max-width:58%;
+    font-size:24px; font-weight:900; color:#2c2a4e; letter-spacing:.5px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .chip .c-name.long { font-size:15px; top:34%; max-width:84%; letter-spacing:0; }
+  /* 全司前三：金色流光文字（消歧义——前三奖得主不参与"阵营第一"高亮） */
+  .chip .c-top3 { position:absolute; top:7%; left:12%; display:none;
+    font-size:14px; font-weight:900; letter-spacing:3px;
+    background:linear-gradient(92deg,#e08a1e,#ff7a5c,#f6c453,#e08a1e);
+    background-size:280% 100%;
+    -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+    animation:top3Flow 4s linear infinite; }
+  .chip.top3 .c-top3 { display:block; }
+  @keyframes top3Flow { to { background-position:280% 0; } }
+  .chip .c-row { position:absolute; bottom:14%; left:12%; right:12%;
+    display:flex; justify-content:space-between; align-items:baseline; }
+  .chip .c-row span { font-size:14px; color:color-mix(in srgb, var(--cc) 78%, #5d6b8f); }
+  .chip .c-row b { font-size:28px; font-weight:900; color:var(--cc); }
+  .chip.first .c-name, .chip.first .c-row span, .chip.first .c-row b { color:#fff; }
+
+  .camp-foot { position:absolute; top:648px; left:30px; right:30px; text-align:center;
+    font-size:19px; color:var(--sub); }
+  .camp-foot b { font-size:26px; font-weight:900; color:var(--cc); }
+  .camp-foot .dot { margin:0 12px; opacity:.5; }
+
+  /* 首屏入场 stagger */
+  .chip.enter { opacity:0; transform:translateY(8px); animation:chipIn 300ms var(--ease-out) forwards; }
+  @keyframes chipIn { to { opacity:1; transform:translateY(0); } }
+
+  /* ============ 底部节目单 ============ */
+  footer.guide { position:absolute; left:0; right:0; bottom:0; height:60px; z-index:30;
+    display:flex; align-items:center; justify-content:center; gap:10px; padding:0 30px;
+    background:linear-gradient(0deg, rgba(255,255,255,.42), rgba(255,255,255,.18));
+    backdrop-filter:blur(24px) saturate(1.6); -webkit-backdrop-filter:blur(24px) saturate(1.6);
+    border-top:1px solid rgba(255,255,255,.7);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.8), 0 -8px 24px rgba(74,96,180,.08); }
+  .g-item { font-size:14px; color:var(--sub); padding:7px 16px; border-radius:8px; letter-spacing:1px;
+    white-space:nowrap; text-decoration:none; }
+  .g-item.on { color:#fff; font-weight:800;
+    background:linear-gradient(180deg, rgba(255,255,255,.5), rgba(255,255,255,.06) 50%, rgba(255,255,255,0) 65%),
+      linear-gradient(92deg,var(--pri),var(--vio));
+    box-shadow:inset 0 1px 1px rgba(255,255,255,.8), inset 0 -4px 8px rgba(40,40,160,.25),
+      0 0 0 1px rgba(255,255,255,.35), 3px 3px 0 rgba(79,124,255,.3), 0 6px 16px rgba(99,102,241,.45); }
+  .g-note { position:absolute; right:30px; font-size:12px; color:var(--sub); }
+  .g-note b { color:var(--vio); }
+
+  .preview-badge { position:absolute; top:96px; right:28px; z-index:35; display:none;
+    background:rgba(255,176,32,.92); color:#5b3c00;
+    font-size:13px; font-weight:700; padding:5px 14px; border-radius:999px; }
+  .unassigned-badge { position:absolute; top:134px; right:28px; z-index:35; display:none;
+    background:rgba(226,84,63,.94); color:#fff;
+    font-size:13px; font-weight:700; padding:5px 14px; border-radius:999px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .chip.enter { animation-duration:1ms; }
+    .live::after, .ai-star, .grad-text, .live i, .bar .fill::after, .chip .c-top3 { animation:none; }
+    .bar .fill { transition:none; }
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <header class="ch">
+    <div class="live"><i></i>LIVE</div>
+    <div class="ch-logo">
+      <span class="ai-star">✦</span>
+      <div>采购节 · <em class="grad-text">AI 赛事频道</em>
+        <small>2026 PROCUREMENT FESTIVAL · AI-POWERED SALES LIVE</small>
+      </div>
+    </div>
+    <div class="pills">
+      <div class="pill">8月新签 <b class="num" id="newTotal">--</b> <span class="den">/ <span id="newTarget">149</span></span></div>
+      <div class="pill">8+9月业绩 <b class="num" id="gmvTotal">--</b> <span class="den">/ <span id="gmvTarget">$3.26M</span></span></div>
+    </div>
+    <div class="ch-clock" id="clockBox"><b class="num" id="clock">--:--:--</b><span id="dateline">加载中…</span></div>
+  </header>
+
+  <div class="preview-badge" id="previewBadge">预览数据窗口</div>
+  <div class="unassigned-badge" id="unassignedBadge"></div>
+
+  <div class="col c1" data-camp="阵营一">
+    <div class="camp-name">阵营一</div>
+    <div class="camp-pct"><span class="num pct" data-value="0">0</span><small>%</small></div>
+    <div class="bar"><div class="fill"></div></div>
+    <div class="members"></div>
+    <div class="camp-foot">已完成 <b><span class="num done" data-value="0">0</span>/<span class="req">40</span></b><span class="dot">·</span>奖池 <b>¥<span class="num prize" data-value="0">0</span></b></div>
+  </div>
+  <div class="col c2" data-camp="阵营二">
+    <div class="camp-name">阵营二</div>
+    <div class="camp-pct"><span class="num pct" data-value="0">0</span><small>%</small></div>
+    <div class="bar"><div class="fill"></div></div>
+    <div class="members"></div>
+    <div class="camp-foot">已完成 <b><span class="num done" data-value="0">0</span>/<span class="req">50</span></b><span class="dot">·</span>奖池 <b>¥<span class="num prize" data-value="0">0</span></b></div>
+  </div>
+  <div class="col c3" data-camp="阵营三">
+    <div class="camp-name">阵营三</div>
+    <div class="camp-pct"><span class="num pct" data-value="0">0</span><small>%</small></div>
+    <div class="bar"><div class="fill"></div></div>
+    <div class="members"></div>
+    <div class="camp-foot">已完成 <b><span class="num done" data-value="0">0</span>/<span class="req">60</span></b><span class="dot">·</span>奖池 <b>¥<span class="num prize" data-value="0">0</span></b></div>
+  </div>
+
+  <footer class="guide">
+    <a class="g-item" href="#">摘要大屏</a>
+    <a class="g-item" href="xinqian.html">个人新签榜</a>
+    <a class="g-item" href="#">首返·复购榜</a>
+    <a class="g-item on" href="zhenying.html">阵营PK榜</a>
+    <a class="g-item" href="#">团队积分榜</a>
+    <span class="g-note">团队达标 且 个人达门槛者按新签个数占比瓜分 · 每超额10% 奖池+10%</span>
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var REFRESH_MS = 60 * 1000;
+  var STALE_MS = 5 * 60 * 1000;
+  var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var qs = new URLSearchParams(location.search);
+
+  var stage = document.getElementById("stage");
+  function fit() {
+    var s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    stage.style.transform = "translate(-50%,-50%) scale(" + s + ")";
+  }
+  window.addEventListener("resize", fit);
+  fit();
+
+  var WEEK = ["周日","周一","周二","周三","周四","周五","周六"];
+  function pad(n) { return n < 10 ? "0" + n : "" + n; }
+  var lastFetchAt = Date.now(), asOfText = "--:--";
+  function tickClock() {
+    var d = new Date();
+    document.getElementById("clock").textContent =
+      pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+    document.getElementById("dateline").textContent =
+      d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate())
+      + " " + WEEK[d.getDay()] + " · 数据截至 " + asOfText;
+    document.getElementById("clockBox").classList.toggle(
+      "warn", Date.now() - lastFetchAt > STALE_MS);
+  }
+  setInterval(tickClock, 1000);
+  tickClock();
+
+  function apiUrl() {
+    var p = new URLSearchParams();
+    if (qs.get("key")) p.set("key", qs.get("key"));
+    if (qs.get("preview") === "1") {
+      p.set("date_from", qs.get("date_from") || "2026-06-01");
+      p.set("date_to", qs.get("date_to") || "2026-07-29");
+    } else {
+      if (qs.get("date_from")) p.set("date_from", qs.get("date_from"));
+      if (qs.get("date_to")) p.set("date_to", qs.get("date_to"));
+    }
+    var query = p.toString();
+    return "/api/public/festival/camps" + (query ? "?" + query : "");
+  }
+
+  function easeOutQuart(t) { return 1 - Math.pow(1 - t, 4); }
+  function fmtNum(v) { return Math.abs(v - Math.round(v)) < 1e-9 ? String(Math.round(v)) : v.toFixed(1); }
+  function countTo(el, target, fmt) {
+    fmt = fmt || fmtNum;
+    var from = parseFloat(el.dataset.value || "0") || 0;
+    if (from === target || reduceMotion) {
+      el.dataset.value = target; el.textContent = fmt(target); return;
+    }
+    var start = null;
+    function step(ts) {
+      if (!start) start = ts;
+      var t = Math.min((ts - start) / 700, 1);
+      el.textContent = fmt(from + (target - from) * easeOutQuart(t));
+      if (t < 1) requestAnimationFrame(step);
+      else { el.dataset.value = target; el.textContent = fmt(target); }
+    }
+    requestAnimationFrame(step);
+  }
+  function fmtGmv(v) {
+    if (v >= 1e6) return "$" + (v / 1e6).toFixed(2) + "M";
+    if (v >= 1e3) return "$" + Math.round(v / 1e3) + "k";
+    return "$" + Math.round(v);
+  }
+
+  var cols = {};
+  document.querySelectorAll(".col").forEach(function (c) { cols[c.dataset.camp] = c; });
+  var chips = {};   // user_id -> element
+  var firstRender = true;
+
+  function buildChip(m) {
+    var el = document.createElement("div");
+    el.className = "chip";
+    el.innerHTML =
+      '<div class="c-name"></div>' +
+      '<div class="c-top3">全司前三</div>' +
+      '<img class="c-ok" src="assets/stamp-ok.png" alt="达成">' +
+      '<div class="c-row"><span>新签个数</span><b class="num" data-value="0">0</b></div>';
+    var nameEl = el.querySelector(".c-name");
+    nameEl.textContent = m.name;
+    if (m.name.length > 5) nameEl.classList.add("long");
+    return el;
+  }
+
+  function render(data) {
+    var camps = data.camps || [];
+
+    var firstRects = {};
+    if (!firstRender && !reduceMotion) {
+      Object.keys(chips).forEach(function (id) {
+        firstRects[id] = chips[id].getBoundingClientRect();
+      });
+    }
+
+    var seq = 0;
+    camps.forEach(function (camp) {
+      var col = cols[camp.name];
+      if (!col) return;
+      countTo(col.querySelector(".pct"), camp.pct);
+      col.querySelector(".fill").style.width = Math.min(100, camp.pct) + "%";
+      countTo(col.querySelector(".done"), camp.done);
+      col.querySelector(".req").textContent = camp.req;
+      countTo(col.querySelector(".prize"), camp.prize);
+
+      var box = col.querySelector(".members");
+      camp.members.forEach(function (m) {
+        var el = chips[m.user_id];
+        if (!el) {
+          el = buildChip(m);
+          chips[m.user_id] = el;
+          if (firstRender && !reduceMotion) {
+            el.classList.add("enter");
+            el.style.animationDelay = (seq * 30) + "ms";
+          }
+        }
+        seq++;
+        el.classList.toggle("ok", !!m.reached);
+        el.classList.toggle("first", !!m.is_first);
+        el.classList.toggle("top3", !!m.is_top3);
+        box.appendChild(el);   /* 追加顺序 = 阵营内名次 */
+        countTo(el.querySelector(".c-row b"), m.new_count);
+      });
+    });
+
+    /* 名册收缩清理 */
+    var live = {};
+    camps.forEach(function (c) { c.members.forEach(function (m) { live[m.user_id] = true; }); });
+    Object.keys(chips).forEach(function (id) {
+      if (!live[id]) { chips[id].remove(); delete chips[id]; }
+    });
+
+    /* FLIP：名次位移 */
+    if (!firstRender && !reduceMotion) {
+      var scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080) || 1;
+      Object.keys(firstRects).forEach(function (id) {
+        var el = chips[id];
+        if (!el) return;
+        var last = el.getBoundingClientRect();
+        var dx = (firstRects[id].left - last.left) / scale;
+        var dy = (firstRects[id].top - last.top) / scale;
+        if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+        el.style.transition = "none";
+        el.style.transform = "translate(" + dx + "px," + dy + "px)";
+        requestAnimationFrame(function () {
+          el.style.transition = "transform 900ms cubic-bezier(.77,0,.175,1)";
+          el.style.transform = "translate(0,0)";
+          el.addEventListener("transitionend", function h() {
+            el.style.transition = ""; el.removeEventListener("transitionend", h);
+          });
+        });
+      });
+    }
+
+    var s = data.summary || {};
+    countTo(document.getElementById("newTotal"), s.new_total || 0);
+    document.getElementById("newTarget").textContent = s.new_target || 149;
+    countTo(document.getElementById("gmvTotal"), s.gmv_total || 0, fmtGmv);
+    document.getElementById("gmvTarget").textContent = fmtGmv(s.gmv_target || 3260000);
+
+    if (s.window && s.window.preview) {
+      var badge = document.getElementById("previewBadge");
+      badge.style.display = "block";
+      badge.textContent = "预览数据 " + s.window.from + " ~ " + s.window.to;
+    }
+    var ub = document.getElementById("unassignedBadge");
+    if (data.unassigned > 0) {
+      ub.style.display = "block";
+      ub.textContent = "⚠ " + data.unassigned + " 人未归入任何阵营（检查 user_rel_team.Camp）";
+    } else {
+      ub.style.display = "none";
+    }
+    firstRender = false;
+  }
+
+  function refresh() {
+    fetch(apiUrl())
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (body) {
+        var data = body.data || body;
+        lastFetchAt = Date.now();
+        asOfText = (data.as_of || "").slice(11, 16) || "--:--";
+        render(data);
+        tickClock();
+      })
+      .catch(function () { tickClock(); });
+  }
+  refresh();
+  setInterval(refresh, REFRESH_MS);
+})();
+</script>
+</body>
+</html>
