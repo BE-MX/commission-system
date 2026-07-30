@@ -302,6 +302,14 @@ content = result["content"]
 - 前端 `GanttChart.vue` 把日期/时段表头包在 `el-tooltip` 里,hover 显示"全天不可用：XX"或"上午不可用：XX / 下午不可用：YY"
 - 排期视图 `GanttView.vue` 的图例下方加了一行灰色色块说明,告知用户不可预约日的颜色含义
 
+**同步不可用日期的生命周期（2026-07-30 BUG 修复后的契约）**：确认排期勾选 sync_unavailable 时，按 `reason = "排期任务 {task_no}"` 写入全天(period=NULL)不可用行，这个 reason 精确匹配是行与任务的**唯一关联**（表无 task_id 列）。写入点固定三处：confirm 创建（request_service）、reschedule 迁移（schedule_service，删旧+按新区间重建，跳过已被占日期）、cancel 释放（request_service）。已知取舍：
+- 两任务同步区间重叠时，后确认的任务在重叠日不建行（确认时按日期查重）；先确认任务改期离开后重叠日会被整体释放，后确认任务补不回来
+- 任务改期进入全被占用的区间会重建 0 行 → 该任务失去同步标记，之后改期不再迁移（有 logger.warning + service.log print + 审计快照 moved_unavailable_dates 可追溯）
+- 半天(am/pm)手工行会挡住同日全天同步行的创建（与 confirm 语义一致）
+- 根治方案是给表加 task_id 列、reason 退为纯展示，暂不做
+- complete 动作不释放「实际完成日 ~ 计划结束日」之间的尾部占用，提前完成需手工去日历删（待办）
+- 前端技术债：`GanttChart.vue` emit 的 `reschedule` 事件全前端无监听（拖拽改期路径不通，`useDesignManage.handleReschedule` 是死代码）
+
 ## 物流跟踪数据范围
 
 数据范围由系统权限控制，用户无法在页面上切换：
