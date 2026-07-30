@@ -43,6 +43,10 @@ export function useInvoiceHairItems(form, hairItems, isProduction, entryOptions)
     row.options = {
       models: result.models || [], colors: result.colors || [],
       sizes: result.sizes || [], units: result.units || [],
+      all_models: result.all_models || result.models || [],
+      all_colors: result.all_colors || result.colors || [],
+      all_sizes: result.all_sizes || result.sizes || [],
+      all_units: result.all_units || result.units || [],
     }
   }
   async function onLineFilterChange(row) {
@@ -53,7 +57,8 @@ export function useInvoiceHairItems(form, hairItems, isProduction, entryOptions)
     try {
       const result = await matchInvoiceProduct({ model: row.model, color: row.color, size: row.length, unit: row.net_weight_grams })
       if (!result.is_unique) {
-        ElMessage.warning((result.matches || []).length ? '当前条件匹配到多个产品，请继续确认规格' : '当前条件未匹配到产品')
+        if ((result.matches || []).length) ElMessage.warning('当前条件匹配到多个产品，请继续确认规格')
+        else ElMessage.info('该组合暂无产品，请在其余下拉的「全部」分组继续调整颜色/长度/克重')
         return
       }
       Object.assign(row, {

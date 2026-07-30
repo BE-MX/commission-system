@@ -38,7 +38,14 @@
               <el-option v-for="value in entryOptions.models" :key="value" :label="value" :value="value" />
             </el-select>
             <el-select v-else v-model="row.model" filterable placeholder="Model" @visible-change="visible => visible && loadLineOptions(row)" @change="onLineFilterChange(row)">
-              <el-option v-for="value in row.options.models" :key="value" :label="value" :value="value" />
+              <template v-for="group in lineOptionGroups(row.options, 'models')" :key="group.label">
+                <el-option-group v-if="group.label" :label="group.label">
+                  <el-option v-for="value in group.options" :key="value" :label="value" :value="value" />
+                </el-option-group>
+                <template v-else>
+                  <el-option v-for="value in group.options" :key="value" :label="value" :value="value" />
+                </template>
+              </template>
             </el-select>
           </template>
         </el-table-column>
@@ -48,7 +55,14 @@
               <el-option v-for="value in entryOptions.colors" :key="value" :label="value" :value="value" />
             </el-select>
             <el-select v-else v-model="row.color" filterable placeholder="Color" @visible-change="visible => visible && loadLineOptions(row)" @change="onLineFilterChange(row)">
-              <el-option v-for="value in row.options.colors" :key="value" :label="value" :value="value" />
+              <template v-for="group in lineOptionGroups(row.options, 'colors')" :key="group.label">
+                <el-option-group v-if="group.label" :label="group.label">
+                  <el-option v-for="value in group.options" :key="value" :label="value" :value="value" />
+                </el-option-group>
+                <template v-else>
+                  <el-option v-for="value in group.options" :key="value" :label="value" :value="value" />
+                </template>
+              </template>
             </el-select>
           </template>
         </el-table-column>
@@ -58,7 +72,14 @@
               <el-option v-for="value in entryOptions.sizes" :key="value" :label="value" :value="value" />
             </el-select>
             <el-select v-else v-model="row.length" filterable placeholder="Length" @visible-change="visible => visible && loadLineOptions(row)" @change="onLineFilterChange(row)">
-              <el-option v-for="value in row.options.sizes" :key="value" :label="value" :value="value" />
+              <template v-for="group in lineOptionGroups(row.options, 'sizes')" :key="group.label">
+                <el-option-group v-if="group.label" :label="group.label">
+                  <el-option v-for="value in group.options" :key="value" :label="value" :value="value" />
+                </el-option-group>
+                <template v-else>
+                  <el-option v-for="value in group.options" :key="value" :label="value" :value="value" />
+                </template>
+              </template>
             </el-select>
           </template>
         </el-table-column>
@@ -68,7 +89,14 @@
               <el-option v-for="value in entryOptions.units" :key="value" :label="value" :value="value" />
             </el-select>
             <el-select v-else v-model="row.net_weight_grams" filterable placeholder="Unit" @visible-change="visible => visible && loadLineOptions(row)" @change="onLineFilterChange(row)">
-              <el-option v-for="value in row.options.units" :key="value" :label="value" :value="value" />
+              <template v-for="group in lineOptionGroups(row.options, 'units')" :key="group.label">
+                <el-option-group v-if="group.label" :label="group.label">
+                  <el-option v-for="value in group.options" :key="value" :label="value" :value="value" />
+                </el-option-group>
+                <template v-else>
+                  <el-option v-for="value in group.options" :key="value" :label="value" :value="value" />
+                </template>
+              </template>
             </el-select>
           </template>
         </el-table-column>
@@ -146,6 +174,20 @@ defineProps({
 })
 defineEmits(['paste', 'add', 'remove'])
 const showOptionalCols = ref(false)
+
+const OPTION_GROUP_LABELS = { models: '全部型号', colors: '全部颜色', sizes: '全部长度', units: '全部克重' }
+// 级联候选（按行内其余维度过滤）置顶，全量差集垫底：整行复制后其余维度已满时，
+// 全量组是换型号/换色的唯一出口。差集为空（无过滤态）时平铺不分组。
+function lineOptionGroups(options, key) {
+  const matched = options[key] || []
+  const matchedSet = new Set(matched)
+  const rest = (options[`all_${key}`] || []).filter(value => !matchedSet.has(value))
+  if (!rest.length) return [{ label: '', options: matched }]
+  return [
+    { label: '匹配当前组合', options: matched },
+    { label: OPTION_GROUP_LABELS[key], options: rest },
+  ].filter(group => group.options.length)
+}
 </script>
 
 <style scoped>

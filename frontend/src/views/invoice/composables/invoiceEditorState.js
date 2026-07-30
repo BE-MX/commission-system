@@ -38,7 +38,7 @@ export function normalizeHairRow(line = {}) {
     total_price: Number(line.total_price || 0),
     price_source: line.price_source || 'manual',
     _importBatchFingerprint: line._importBatchFingerprint || '',
-    options: { models: [], colors: [], sizes: [], units: [] },
+    options: { models: [], colors: [], sizes: [], units: [], all_models: [], all_colors: [], all_sizes: [], all_units: [] },
     matching: false,
   }
 }
