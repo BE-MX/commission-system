@@ -1,6 +1,6 @@
 """设计预约 — 排期 / 容量 / 不可日 / 调度模式 / 甘特图"""
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -111,6 +111,13 @@ def reschedule_task(
     if task.status in ("completed", "cancelled"):
         raise ValueError(f"任务状态 {task.status} 不允许改期")
 
+    # 区间倒置会让下面的同步行重建循环一次不跑：旧行已删、新行零建且不可恢复
+    if data.plan_end_date < data.plan_start_date:
+        raise ValueError("结束日期不能早于开始日期")
+    if data.plan_end_date == data.plan_start_date and \
+            (data.plan_start_period or "am") == "pm" and (data.plan_end_period or "pm") == "am":
+        raise ValueError("同一天内开始时段不能晚于结束时段")
+
     old_start = task.plan_start_date
     old_start_period = task.plan_start_period
     old_end = task.plan_end_date
@@ -124,6 +131,38 @@ def reschedule_task(
     if data.designer_id is not None:
         task.designer_id = data.designer_id
     task.updated_at = datetime.now()
+
+    # 迁移确认排期时同步创建的不可用日期（reason 契约为 "排期任务 {task_no}"，
+    # 见 request_service.action_request 的 confirm 分支）：旧日期释放、新区间补齐；
+    # 确认时未勾选同步的任务这里查不到行，保持不同步
+    sync_reason = f"排期任务 {task.task_no}"
+    synced_rows = db.query(DesignUnavailableDate).filter(
+        DesignUnavailableDate.reason == sync_reason,
+    ).all()
+    moved_dates = []
+    if synced_rows:
+        for row in synced_rows:
+            db.delete(row)
+        db.flush()  # SessionLocal autoflush=False：不先落删除，下面的查重会看到旧行而漏建重叠日
+        current = data.plan_start_date
+        while current <= data.plan_end_date:
+            exists = db.query(DesignUnavailableDate).filter(
+                DesignUnavailableDate.date == current,
+            ).first()
+            if not exists:
+                db.add(DesignUnavailableDate(
+                    date=current,
+                    period=None,
+                    reason=sync_reason,
+                    created_by=operator_id,
+                ))
+                moved_dates.append(current.isoformat())
+            current += timedelta(days=1)
+        if not moved_dates:
+            # 新区间全被其他不可用行覆盖 → 本任务的同步标记行归零，之后改期不会再迁移
+            msg = f"任务 {task.task_no} 改期后同步不可用日期重建 0 行（新区间已全部被占），该任务失去同步标记"
+            logger.warning(msg)
+            print(msg, flush=True)
 
     _write_audit_log(
         db,
@@ -147,6 +186,8 @@ def reschedule_task(
             "new_end": data.plan_end_date.isoformat(),
             "new_end_period": data.plan_end_period or "pm",
             "new_designer_id": data.designer_id,
+            "synced_unavailable": bool(synced_rows),
+            "moved_unavailable_dates": moved_dates,
         },
     )
     db.commit()

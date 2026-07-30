@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.design.models import (
     DesignScheduleRequest,
     DesignScheduleTask,
+    DesignUnavailableDate,
 )
 from app.design.state_machine import RequestStatus, OperatorRole, transition
 from app.design.conflict_engine import check_conflict
@@ -190,7 +191,6 @@ def action_request(
         # 同步设置为不可用日期（跳过已存在的）
         if data.sync_unavailable:
             from datetime import timedelta
-            from app.design.models import DesignUnavailableDate
 
             current = data.plan_start_date or req.expect_start_date
             end = data.plan_end_date or req.expect_end_date
@@ -237,6 +237,10 @@ def action_request(
             if t.status not in ("completed", "cancelled"):
                 t.status = "cancelled"
                 t.updated_at = datetime.now()
+                # 释放确认排期时同步创建的不可用日期（reason 契约同 confirm 分支）
+                db.query(DesignUnavailableDate).filter(
+                    DesignUnavailableDate.reason == f"排期任务 {t.task_no}",
+                ).delete(synchronize_session=False)
 
     _write_audit_log(
         db,
