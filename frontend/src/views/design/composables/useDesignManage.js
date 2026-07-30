@@ -67,6 +67,7 @@ export function useDesignManage() {
   // ── Tab / Detail drawer ───────────────────────────────
   const activeTab = ref('pending')
   const tabMaxHeight = ref(700)
+  const calendarConfigRef = ref() // 不可用日期 tab 的 DesignCalendarConfig 实例
   const detailVisible = ref(false)
   const detailRequestId = ref(null)
 
@@ -403,6 +404,9 @@ export function useDesignManage() {
     else if (tab === 'scheduled') fetchScheduled()
     else if (tab === 'completed') fetchCompleted()
     else if (tab === 'designers') fetchDesigners()
+    // 排期改期会联动增删不可用日期，切回日历 tab 必须重拉
+    // （lazy tab 首次激活时组件尚未挂载，ref 为空 → 由其 onMounted 自行加载）
+    else if (tab === 'unavailable') calendarConfigRef.value?.fetchDates()
   }
 
   // ── Designer create/edit ──────────────────────────────
@@ -625,6 +629,7 @@ export function useDesignManage() {
     periodLabel, TASK_STATUS_MAP, TASK_STATUS_TAG,
     // Tab + Detail
     activeTab, tabMaxHeight, detailVisible, detailRequestId, openDetail, onTabChange,
+    calendarConfigRef,
     // Edit dialogs
     editDateVisible, editDateSaving, editDateForm, openEditDateDialog, submitEditDate,
     remarkVisible, remarkSaving, remarkForm, openRemarkDialog, submitRemark,

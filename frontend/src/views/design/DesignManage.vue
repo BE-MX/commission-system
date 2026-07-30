@@ -313,7 +313,7 @@
 
       <!-- Tab 5: 不可用日期 -->
       <el-tab-pane label="不可用日期" name="unavailable" lazy>
-        <DesignCalendarConfig />
+        <DesignCalendarConfig ref="calendarConfigRef" />
       </el-tab-pane>
 
       <!-- Tab 6: 容量配置 -->
@@ -548,6 +548,7 @@ const {
   periodLabel, TASK_STATUS_MAP, TASK_STATUS_TAG,
   // Tab + Detail
   activeTab, tabMaxHeight, detailVisible, detailRequestId, openDetail, onTabChange,
+  calendarConfigRef,
   // Edit dialogs
   editDateVisible, editDateSaving, editDateForm, openEditDateDialog, submitEditDate,
   remarkVisible, remarkSaving, remarkForm, openRemarkDialog, submitRemark,

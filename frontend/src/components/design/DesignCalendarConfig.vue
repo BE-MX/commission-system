@@ -202,7 +202,10 @@ function handleDateClick(dateStr) {
   }
 
   if (isUnavailable(dateStr)) {
+    // 按该日实际行的时段发起删除，并清掉上一次列表删除残留的 removePeriod
+    const item = unavailableList.value.find(d => (d.date || d) === dateStr)
     removeDate.value = dateStr
+    removePeriod.value = item?.period || null
     removeDialogVisible.value = true
   } else {
     addForm.value = { date: dateStr, period: null, reason: '' }
@@ -289,6 +292,9 @@ async function submitRemove() {
 }
 
 onMounted(fetchDates)
+
+// 父页面（DesignManage）在切回本 tab 时调用，刷新排期改动同步过来的数据
+defineExpose({ fetchDates })
 </script>
 
 <style scoped>
