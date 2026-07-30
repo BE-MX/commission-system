@@ -5,6 +5,7 @@ from datetime import date
 from sqlalchemy import text
 
 from app.festival import service
+from app.festival.models import FestivalEvent  # noqa: F401 —— 注册进 Base.metadata 供 conftest 建表
 from app.models.employee import EmployeeAttributeHistory
 
 DEPT = '[{"department_id": 24925, "rate": 100}]'
@@ -13,6 +14,7 @@ MARK_RE = '{"22595163468": "否", "691123983470": "定制品", "20528142733548":
 
 
 def _setup(db):
+    db.query(FestivalEvent).delete()  # 事件表跨测试隔离（commit 不受 fixture 回滚保护）
     db.execute(text(
         "CREATE TABLE IF NOT EXISTS lsordertest.user_rel_team ("
         " id INTEGER PRIMARY KEY, Name TEXT, user_id TEXT, En_name TEXT,"
@@ -244,6 +246,53 @@ def test_teams_weight_snapshot_applied(db):
     assert service.member_weights("57010933") == (0.7, 0.3)   # 胡宁宁 0 周年
     assert service.member_weights("56843323") == (0.6, 0.4)   # 罗馨瑜 1 周年
     assert service.member_weights("55278725") == (0.5, 0.5)   # 代晴玉 ≥2 周年默认档
+
+
+def test_repurchase_boards_sorting(db):
+    """首返榜个数同看金额；金额榜金额降序；全员在榜（零值也出）"""
+    _setup(db)
+    # U1 也造一个首返客户（金额小于 U2 的 3000）：C2 有 8 月新成交单（池内），9 月首返 $1200
+    db.execute(text(
+        "INSERT INTO lsordertest.okki_orders (order_id, company_id, amount_usd, user_id,"
+        " custom_fields, account_date, trail, status, status_name, departments)"
+        " VALUES ('O41', 'C2', 1200, 'U1', :cf, '2026-09-10', '公司', '13972831656', NULL, :dp)"),
+        {"cf": MARK_RE, "dp": DEPT})
+    payload = service.get_repurchase_payload(db, None, None)
+    fb = payload["first_board"]
+    ab = payload["amount_board"]
+    # 首返数 U1=1 U2=1 并列 → 比复购金额：U2($3000) 在前
+    assert [r["user_id"] for r in fb[:2]] == ["U2", "U1"]
+    assert fb[0]["first_count"] == 1 and fb[0]["re_points"] == 4.5
+    # 金额榜：U2 3000 > U1 1200 > U3 0
+    assert [r["user_id"] for r in ab[:3]] == ["U2", "U1", "U3"]
+    assert len(fb) == 3 and len(ab) == 3  # 全员在榜
+
+
+def test_headline_events_dedup_and_thresholds(db):
+    """B-11 阈值分级 + 幂等落库：同一事实重跑不重复"""
+    _setup(db)
+    _insert_order(db, "O51", "C51", 6000, "U1", "2026-08-20")    # 大单
+    _insert_order(db, "O52", "C52", 35000, "U2", "2026-08-21")   # 超级大单
+    payload1 = service.get_headline_payload(db, None, None)      # 真实窗口 → 落库
+    types = {e["event_type"] for e in payload1["events"]}
+    assert {"first_sign", "big_deal", "super_deal"} <= types
+    # 阈值边界：$2000/$3000 的单不产生 deal 事件
+    deal_amts = {e["amount"] for e in payload1["events"] if e["event_type"].endswith("deal")}
+    assert deal_amts == {6000.0, 35000.0}
+    # 首单归属：account_date 最早（O1 8/2 U1）
+    fs = next(e for e in payload1["events"] if e["event_type"] == "first_sign")
+    assert fs["subject_id"] == "U1" and fs["level"] == "L4"
+    # 幂等：重跑事件数不变
+    payload2 = service.get_headline_payload(db, None, None)
+    assert len(payload2["events"]) == len(payload1["events"])
+
+
+def test_headline_preview_not_persisted(db):
+    """预览窗口只出内存候选，不落库"""
+    _setup(db)
+    payload = service.get_headline_payload(db, "2026-08-01", "2026-08-31")
+    assert payload["events"], "预览应有内存态候选"
+    assert db.query(FestivalEvent).count() == 0
 
 
 def test_require_key_fail_closed(monkeypatch):

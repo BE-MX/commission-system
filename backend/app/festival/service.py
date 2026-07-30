@@ -226,6 +226,146 @@ def repurchase_points(first_count: int, re_amount: float) -> float:
     return first_count * 1.5 + int(re_amount // 1000)
 
 
+def get_headline_payload(db: Session, date_from: str | None, date_to: str | None) -> dict:
+    """摘要头条屏一次取全：左屏排名汇总 + 右屏事件滚动流。
+
+    事件检测在此入口顺带执行（真实窗口幂等落库；预览窗口只出内存候选不落库）。
+    """
+    from app.festival import events_service
+
+    ns, gmv, custom = _windows(date_from, date_to)
+    # 快照复用：board / 复购统计 / summary 各算一次，四个子 payload 共用（防冗余全表扫）
+    items = get_new_sign_board(db, ns[0], ns[1])["items"]
+    re_stats = get_repurchase_stats(db, gmv[0], gmv[1])
+    summary = _summary(db, ns, gmv, custom)
+    camps_payload = get_camps_payload(db, date_from, date_to, items=items, summary=summary)
+    teams_payload = get_teams_payload(db, date_from, date_to,
+                                      items=items, re_stats=re_stats, summary=summary)
+    rep = get_repurchase_payload(db, date_from, date_to, re_stats=re_stats, summary=summary)
+
+    sign_top3 = [
+        {"user_id": i["user_id"], "name": i["name"],
+         "new_count": i["new_count"], "new_points": i["new_points"]}
+        for i in items[:3] if i["new_points"] > 0
+    ]
+    camps_mini = [
+        {"name": c["name"], "pct": c["pct"], "done": c["done"], "req": c["req"],
+         "prize": c["prize"],
+         "first": next((m["name"] for m in c["members"] if m["is_first"]), None)}
+        for c in camps_payload["camps"]
+    ]
+    teams_top3 = [
+        {"name": t["name"], "avg": t["avg"], "rank": t["rank"], "count": t["count"]}
+        for t in teams_payload["teams"][:3]
+    ]
+
+    candidates = events_service.detect_candidates(
+        db, ns, gmv, items, camps_payload["camps"], teams_payload["teams"],
+        rep["first_board"], rep["amount_board"])
+    if custom:
+        # 预览窗口：内存候选倒序模拟事件流，不落库（无真实时间戳，占位显示）
+        events = [{**c, "id": idx + 1, "created_at": "预览"}
+                  for idx, c in enumerate(reversed(candidates))]
+        events.reverse()
+    else:
+        events_service.persist_new(db, candidates)
+        events = events_service.feed(db)
+
+    return {
+        "summary": summary,
+        "sign_top3": sign_top3,
+        "first_top2": [r for r in rep["first_board"][:2] if r["first_count"] > 0],
+        "amount_top2": [r for r in rep["amount_board"][:2] if r["re_amount"] > 0],
+        "camps": camps_mini,
+        "teams_top3": teams_top3,
+        "events": events,
+        "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+
+
+def build_ai_tip(db: Session, headline: dict) -> dict:
+    """AI 赛事助手：基于当前排名/进度产出正向鼓励与预测（预设缺失/失败时规则兜底）。"""
+    s = headline["summary"]
+    lines = [
+        f"公司进度：8月新签 {s['new_total']}/{s['new_target']} 个，"
+        f"8+9月GMV ${s['gmv_total']:,.0f}/${s['gmv_target']:,.0f}。",
+    ]
+    if headline["sign_top3"]:
+        lines.append("新签前三：" + "、".join(
+            f"{i['name']}{i['new_points']:g}分" for i in headline["sign_top3"]))
+    if headline["first_top2"]:
+        lines.append("首返前二：" + "、".join(
+            f"{r['name']}{r['first_count']}个" for r in headline["first_top2"]))
+    if headline["amount_top2"]:
+        lines.append("复购金额前二：" + "、".join(
+            f"{r['name']}${r['re_amount']:,.0f}" for r in headline["amount_top2"]))
+    lines.append("阵营进度：" + "、".join(
+        f"{c['name']}{c['pct']}%" for c in headline["camps"]))
+    if headline["teams_top3"]:
+        lines.append("团队人均前三：" + "、".join(
+            f"{t['name']}{t['avg']:.1f}分" for t in headline["teams_top3"]))
+    status_text = "\n".join(lines)
+
+    try:
+        from app.ai.service import chat
+        result = chat(
+            db,
+            preset_name="festival_screen_tip",
+            messages=[{
+                "role": "user",
+                "content": (
+                    "你是采购节大屏的 AI 赛事助手。以下是当前实时战况，请输出一句 40~70 字的"
+                    "正向鼓励播报（可含预测或看点提示），面向全体销售，禁止批评任何个人或团队，"
+                    "不要重复罗列数字，语气热烈专业：\n" + status_text
+                ),
+            }],
+            caller_module="festival",
+        )
+        tip = (result.get("content") or "").strip()
+        if tip:
+            return {"tip": tip, "source": "ai"}
+    except Exception as exc:  # 预设未配置/调用失败 → 规则兜底，屏上永不空窗
+        logger.warning("[festival] AI 提示生成失败，走兜底: %s", exc)
+        print(f"[festival] AI 提示生成失败，走兜底: {exc}", flush=True)
+
+    pct = round(s["new_total"] / s["new_target"] * 100) if s["new_target"] else 0
+    leader = headline["sign_top3"][0]["name"] if headline["sign_top3"] else None
+    tip = (f"149 个新签目标已完成 {pct}%，"
+           + (f"{leader} 暂列新签榜首，" if leader else "")
+           + "各阵营咬得很紧——每一单都可能改写榜单，冲！")
+    return {"tip": tip, "source": "fallback"}
+
+
+def get_repurchase_payload(db: Session, date_from: str | None, date_to: str | None,
+                           re_stats: dict | None = None, summary: dict | None = None) -> dict:
+    """首返·复购双榜：全员 24 人（周露露参与个人奖）。
+    首返榜：个数降序，个数相同看复购金额（§1.4）；复购金额榜：金额降序，同额比首返数。"""
+    ns, gmv, custom = _windows(date_from, date_to)
+    roster = db.execute(text(
+        "SELECT user_id, Name AS name FROM lsordertest.user_rel_team ORDER BY id"
+    )).mappings().all()
+    stats = re_stats if re_stats is not None else get_repurchase_stats(db, gmv[0], gmv[1])
+
+    rows = []
+    for m in roster:
+        rs = stats.get(m["user_id"], {"first_count": 0, "re_amount": 0.0})
+        rows.append({
+            "user_id": m["user_id"],
+            "name": m["name"],
+            "first_count": rs["first_count"],
+            "re_amount": round(rs["re_amount"], 2),
+            "re_points": repurchase_points(rs["first_count"], rs["re_amount"]),
+        })
+    first_board = sorted(rows, key=lambda r: (-r["first_count"], -r["re_amount"], r["name"]))
+    amount_board = sorted(rows, key=lambda r: (-r["re_amount"], -r["first_count"], r["name"]))
+    return {
+        "summary": _summary(db, ns, gmv, custom),
+        "first_board": first_board,
+        "amount_board": amount_board,
+        "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+
+
 def get_screen_payload(db: Session, date_from: str | None, date_to: str | None) -> dict:
     """个人新签积分榜：榜单 + 双目标进度。"""
     ns, gmv, custom = _windows(date_from, date_to)
@@ -256,10 +396,14 @@ def camp_prize(base: int, done: int, req: int) -> int:
     return round(base * (1 + steps / 10))
 
 
-def get_camps_payload(db: Session, date_from: str | None, date_to: str | None) -> dict:
-    """阵营新签 PK 榜：三营进度/奖池/达标灯 + 成员芯片（含"阵营第一"标记）。"""
+def get_camps_payload(db: Session, date_from: str | None, date_to: str | None,
+                      items: list | None = None, summary: dict | None = None) -> dict:
+    """阵营新签 PK 榜：三营进度/奖池/达标灯 + 成员芯片（含"阵营第一"标记）。
+
+    items/summary 可由调用方传入预计算结果（headline 快照复用，避免重复全表扫）。"""
     ns, gmv, custom = _windows(date_from, date_to)
-    items = get_new_sign_board(db, ns[0], ns[1])["items"]  # 已全局按积分/金额排序
+    if items is None:
+        items = get_new_sign_board(db, ns[0], ns[1])["items"]  # 已全局按积分/金额排序
 
     # 全司新签积分前三（前三奖得主，§1.4 阵营第一奖将其排除；2026-07-30 二次裁决：
     # 屏上高亮同样按排除口径，前三成员卡片另加"全司前三"动效标识消歧义）。
@@ -315,7 +459,7 @@ def get_camps_payload(db: Session, date_from: str | None, date_to: str | None) -
         logger.warning(msg)
         print(msg, flush=True)
     return {
-        "summary": _summary(db, ns, gmv, custom),
+        "summary": summary if summary is not None else _summary(db, ns, gmv, custom),
         "camps": camps,
         "unassigned": unassigned,
         "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -339,12 +483,16 @@ def member_weights(user_id: str) -> tuple:
     return WEIGHT_SNAPSHOT_2026.get(user_id, (0.5, 0.5))
 
 
-def get_teams_payload(db: Session, date_from: str | None, date_to: str | None) -> dict:
+def get_teams_payload(db: Session, date_from: str | None, date_to: str | None,
+                      items: list | None = None, re_stats: dict | None = None,
+                      summary: dict | None = None) -> dict:
     """团队人均积分榜：团队积分 = Σ成员(新签积分×新签权重 + 复购积分×复购权重)，
     人均 = 团队积分÷人数（保留 1 位小数）；并列比人均复购金额（B-10）。"""
     ns, gmv, custom = _windows(date_from, date_to)
-    items = get_new_sign_board(db, ns[0], ns[1])["items"]
-    re_stats = get_repurchase_stats(db, gmv[0], gmv[1])
+    if items is None:
+        items = get_new_sign_board(db, ns[0], ns[1])["items"]
+    if re_stats is None:
+        re_stats = get_repurchase_stats(db, gmv[0], gmv[1])
 
     grouped: dict = {name: [] for name in TEAM_NAMES}
     unassigned = 0
@@ -391,7 +539,7 @@ def get_teams_payload(db: Session, date_from: str | None, date_to: str | None) -
     for idx, t in enumerate(teams):
         t["rank"] = idx + 1
     return {
-        "summary": _summary(db, ns, gmv, custom),
+        "summary": summary if summary is not None else _summary(db, ns, gmv, custom),
         "teams": teams,
         "unassigned": unassigned,
         "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
