@@ -172,6 +172,7 @@
   - `GET /products?key=&keyword=&page=&page_size=` — 产品可用库存分页（只出 product_id/name/model/available/availability 三档，无经营数据）；配套前端公开页 `/inventory?key=`（英文，Lisla 客户官网风格）；对接细节见 `docs/integration-guide.md`
 - `/api/public/festival` — 采购节大屏取数（`festival/public_router.py`，**无 JWT**——key 参数门禁，`FESTIVAL_SCREEN_KEYS` 配置，**留空即整体关闭（fail-closed）**；宪法 3 白名单已登记 check_conventions）
   - `GET /new-sign?key=&date_from=&date_to=` — 个人新签积分榜 + 公司双目标进度（24 人名册全员，date_from/to 仅预览用，默认活动窗口 8/1–8/31 与 8/1–9/30）；口径详见 `docs/requirements/2026-07-29-procurement-festival-data-layer.md`；配套大屏静态页 `/festival/xinqian.html?key=`
+  - `GET /camps?key=&date_from=&date_to=` — 阵营新签 PK 榜（三营进度/实时奖池(超额加成)/达标数/成员芯片含"阵营内第一"标记与 unassigned 脏值计数）；配套静态页 `/festival/zhenying.html?key=`；两端点均有 30s 进程内缓存（"数据截至"即缓存时间）
 - `/health` — 健康检查（含数据库连通性）
 - `POST /api/shortlink` — 生成短链（接收 `{"url": "..."}`,返回 `{"short_url": "https://leshine.work/s/xxxxxx"}`）
 - `/s/{code}` — 短链 302 跳转(双查找:先查 `ark_short_links` 命中即跳并 `click_count+1`;落空查 `shipment_tracking.short_code` 跳承运商官网;都未命中跳 `SHORT_LINK_BASE_URL` 兜底页)

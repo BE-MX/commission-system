@@ -25,6 +25,37 @@
   #stage::before { content:""; position:absolute; left:0; right:0; top:84px; bottom:0;
     background:url(assets/bg.jpg) center top / cover no-repeat; }
 
+  /* ── 背景光影流动层（24h 大屏红线：只动 transform/opacity，周期 ≥14s，静态可读） ── */
+  .fx { position:absolute; left:0; right:0; top:84px; bottom:0;
+    pointer-events:none; overflow:hidden; }
+  .fx i { position:absolute; display:block; }
+  /* 斜向高光带：像光滑过玻璃面，14s 一次（含 40% 停歇），soft-light 不压内容 */
+  .fx .sweep { top:-25%; bottom:-25%; left:-45%; width:42%;
+    background:linear-gradient(105deg, transparent,
+      rgba(255,255,255,.5) 42%, rgba(214,222,255,.28) 55%, rgba(255,255,255,.12) 66%, transparent);
+    transform:rotate(14deg);
+    animation:fxSweep 14s ease-in-out infinite; }
+  @keyframes fxSweep {
+    0%   { transform:translateX(0) rotate(14deg); }
+    60%  { transform:translateX(530%) rotate(14deg); }
+    100% { transform:translateX(530%) rotate(14deg); } }
+  /* 琉璃柔光斑 ×3：呼应背景彩带的蓝紫/粉/青，缓慢漂移 + 呼吸
+     （不用混合模式——亮底上 screen 等于隐形；实色低透明度柔光在浅底可见） */
+  .fx .orb { width:560px; height:560px; border-radius:50%; }
+  .fx .o1 { left:-150px; top:6%;
+    background:radial-gradient(circle, rgba(118,110,240,.42), rgba(118,110,240,.16) 45%, transparent 68%);
+    animation:fxDrift1 18s ease-in-out infinite alternate, fxBreath 7s ease-in-out infinite; }
+  .fx .o2 { right:-170px; bottom:-12%;
+    background:radial-gradient(circle, rgba(255,122,196,.34), rgba(255,122,196,.12) 45%, transparent 68%);
+    animation:fxDrift2 22s ease-in-out infinite alternate, fxBreath 9s ease-in-out infinite; }
+  .fx .o3 { left:38%; top:52%; width:700px; height:700px;
+    background:radial-gradient(circle, rgba(56,182,220,.3), rgba(56,182,220,.1) 45%, transparent 68%);
+    animation:fxDrift3 26s ease-in-out infinite alternate, fxBreath 11s ease-in-out infinite; }
+  @keyframes fxDrift1 { to { transform:translate(190px, 100px); } }
+  @keyframes fxDrift2 { to { transform:translate(-170px, -120px); } }
+  @keyframes fxDrift3 { to { transform:translate(-210px, 70px); } }
+  @keyframes fxBreath { 0%,100% { opacity:.4; } 50% { opacity:.9; } }
+
   /* ============ 频道顶栏（DEMO 同款） ============ */
   header.ch { position:absolute; left:0; right:0; top:0; height:84px; z-index:30;
     display:flex; align-items:center; gap:22px; padding:0 30px;
@@ -93,8 +124,9 @@
   .pcard.top2 { background-image:url(assets/card-top2.png); }
   .pcard.top3 { background-image:url(assets/card-top3.png); }
   .pcard.top .avatar { width:54%; left:49.6%; top:10.2%; }
-  .medal { position:absolute; top:2.5%; right:3.5%; width:31%; display:none;
-    pointer-events:none; z-index:3; filter:drop-shadow(0 4px 8px rgba(140,110,40,.35)); }
+  /* 奖杯放大 20% 并出血到卡片边框外，增强立体感（2026-07-30） */
+  .medal { position:absolute; top:-4.5%; right:-4.5%; width:37.2%; display:none;
+    pointer-events:none; z-index:3; filter:drop-shadow(0 6px 12px rgba(140,110,40,.4)); }
   .pcard.top .medal { display:block; }
   .avatar img { width:100%; height:100%; object-fit:cover; display:block; }
   .pname { position:absolute; top:58%; left:0; right:0; text-align:center;
@@ -136,7 +168,7 @@
 
   @media (prefers-reduced-motion: reduce) {
     .pcard.enter { animation-duration:1ms; }
-    .live::after, .ai-star, .grad-text, .live i { animation:none; }
+    .live::after, .ai-star, .grad-text, .live i, .fx i { animation:none; }
   }
 </style>
 </head>
@@ -157,6 +189,8 @@
     <div class="ch-clock" id="clockBox"><b class="num" id="clock">--:--:--</b><span id="dateline">加载中…</span></div>
   </header>
 
+  <div class="fx"><i class="sweep"></i><i class="orb o1"></i><i class="orb o2"></i><i class="orb o3"></i></div>
+
   <div class="preview-badge" id="previewBadge">预览数据窗口</div>
   <div class="grid" id="grid"></div>
 
@@ -164,7 +198,7 @@
     <a class="g-item" href="#">摘要大屏</a>
     <a class="g-item on" href="xinqian.html">个人新签榜</a>
     <a class="g-item" href="#">首返·复购榜</a>
-    <a class="g-item" href="#">阵营PK榜</a>
+    <a class="g-item" href="zhenying.html">阵营PK榜</a>
     <a class="g-item" href="#">团队积分榜</a>
     <span class="g-note">新签积分窗口 <b>8/1–8/31</b> · 复购窗口至 <b>9/30</b></span>
   </footer>
