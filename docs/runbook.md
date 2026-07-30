@@ -823,3 +823,4 @@ grep "job completed" logs\service.log | tail -20
 - **大屏断更表现**：顶栏"数据截至"超 5 分钟自动变红；页面每 60s 轮询一次。
 - **摘要屏 AI 提示**：需在「AI 接入」后台创建预设 `festival_screen_tip`（system prompt 可空，模型任选），否则右下角走规则兜底文案（标"·规则播报"）；AI 生成每 10 分钟一次。
 - **事件留档**：`ark_festival_events`（commission_db）永久留档弹窗/进榜记录，幂等键去重；清空重跑活动前需手动 TRUNCATE。
+- **大屏双轨切换**：`.env` 的 `FESTIVAL_DATA_SOURCE`（okki=小满同步保底轨 / ark=方舟发票主轨，主轨仅统计已推单发票、金额扣手续费）。切轨前看 `GET /api/public/festival/reconcile?key=` 对账，连续 3 天 diff_count=0 再切；改配置需重启后端；建议自然日 0 点切。主轨前提=全员从方舟录单并推单。

@@ -108,3 +108,47 @@ GROUP BY t.user_id, t.Name;
 | D-2 | ~~newclient_t 与门槛的关系~~：旧值作废，**全表重填为阵营门槛 × 属性**——个人新签目标与瓜分门槛就是同一套数（A-8 口径再次坐实）；大屏"达成个人新签目标"即按 newclient_t（=门槛）判定。 |
 | D-3 | ~~score 列~~：**弃用**，不再进任何积分口径；新签积分一律按人属性计算。 |
 | D-4 | ~~分队名写法~~：正字 = **无名、稻乐偲、个人队**（表内"无名@"与文档"稻乐俪"均已订正）。 |
+
+## 6. 主轨统计方案：基于 commission_db 发票域（2026-07-30 设计并当日实现）
+
+> **三项裁决（2026-07-30 用户拍板）**：①金额口径 = **总金额扣手续费**（total_amount − surcharge_amount）；②统计范围 = **仅 sync_status='synced'**（已推 OKKI 的发票）；③切轨策略照 §6.3 执行（保底轨开赛 + 并跑对账，连续 3 天零差异切 ark）。
+> **实现状态**：已落地——`Settings.FESTIVAL_DATA_SOURCE=okki|ark` 全局开关；六个取数函数双轨分发；全部大屏端点支持 `?source=` 调试覆盖；对账端点 `GET /api/public/festival/reconcile?key=`（按人三列 diff，差异行置顶，diff_count=0 即出"可切 ark"结论）；测试 20 个含主轨 3 项（仅 synced/扣手续费/客户池双通道）。
+
+### 6.1 可行性实测（2026-07-30，窗口 6/1–7/29）
+
+| 检查项 | 结果 | 结论 |
+|--------|------|------|
+| 名册 24 人 OKKI 绑定（ark_user_external_bindings） | **24/24 全绑定** | sales_user_id→okki user_id→user_rel_team 桥完整 ✓ |
+| 三标记填充（okki_new_deal/first_return） | 12 张发票 0 个 NULL | 录入即有值，无需兜底推断 ✓ |
+| 币种 | 全部 USD | 无汇率问题 ✓ |
+| customer_id | = OKKI company_id（同 customer_info） | 客户去重/客户池口径与保底轨同源 ✓ |
+| **窗口内覆盖率** | ark_invoices **12 张** vs okki_orders **1414 单** | **⚠ 核心风险：主轨成立的硬前提是 8 月起全部订单走方舟录入** |
+
+### 6.2 口径映射（保底轨 → 主轨）
+
+| 指标 | 保底轨（lsordertest.okki_orders） | 主轨（commission_db.ark_invoices） |
+|------|------|------|
+| 时间归属 | account_date | **invoice_date**（推单时它就是 account_date 的来源，天然同口径） |
+| 定制品过滤 | custom_fields 邻接 LIKE | **order_type='production'**（结构化字段，不再靠字符串匹配） |
+| 新签 | 新成交"是"+定制品，COUNT(DISTINCT company_id) | okki_new_deal=1 AND order_type='production'，COUNT(DISTINCT customer_id)；NULL 兜底复刻推单逻辑（跨库查该客户无 okki 历史单） |
+| 首返 | 首返"是"拆分 LIKE | okki_first_return=1 AND order_type='production' |
+| 复购金额 | 新成交"否"+定制品+客户池 EXISTS | okki_new_deal=0 AND production + 客户池 = EXISTS(lsordertest 2025+新成交) **OR** EXISTS(ark_invoices okki_new_deal=1 且 invoice_date≥2025)——历史判定仍跨库（同 RDS 零成本），未来纯方舟时代自洽 |
+| 业务员归属 | okki_orders.user_id | sales_user_id → ark_user_external_bindings(provider=okki) → user_rel_team |
+| GMV | SUM(amount_usd) 全订单类型 | SUM(total_amount) 全 order_type——**决策点①：total_amount 含运费/包装费/手续费，product_amount 是行净额，用哪个** |
+| 大单事件 | amount_usd ≥5000，dedup deal:{order_id} | total_amount ≥5000，dedup 优先 deal:{xiaoman_order_id}（与保底轨天然同键，切轨不重报），未推单用 deal:ark:{invoice_no} |
+| trail 排除"个人" | NOT LIKE '%个人%' | 无对应概念（发票均为公司业务，天然干净）——差异点知悉 |
+| 统计范围 | 状态 13972831656 或 已结清 | **决策点②：建议 status≠draft 的全部发票（录入即上屏，不等推单成功——这是主轨"更快"的价值）；发票删除机制需确认（无软删列）** |
+
+### 6.3 切换与对账设计
+
+- **provider 开关**：Settings 加 `FESTIVAL_DATA_SOURCE=okki|ark`（默认 okki）；service 层六个取数函数（新签榜/复购统计/GMV/公司去重/大单扫描/首单）各出 ark 实现同签名，`_windows` 之上按开关分发；调试可用 `?source=` 参数临时指定。
+- **事件留档兼容**：进榜/达标类 dedup_key 已是业务语义键（user_id/阵营名），轨道无关；仅 deal 键按上表规则对齐，**切轨不产生重复弹窗**。
+- **并跑对账**：内部端点 `/api/public/festival/reconcile?key=`——两轨按人输出新签数/首返数/复购金额三列 diff；8 月第一周每日人工看一次（或接钉钉），差异来源只有两种：没走方舟录入的单、未推单的滞后。**差异连续 3 天为 0 → 正式切 ark**。
+- **切轨纪律**：赛中切轨只影响取数源不影响已留档事件；建议在自然日 0 点切，避免当日榜单口径混合。
+
+### 6.4 实施步骤（待确认后执行，估算 1 天内）
+
+1. 决策点①②拍板 + 「全员方舟录单」运营纪律确认（8/1 生效）；
+2. service 层 ark provider 六函数 + Settings 开关 + 单测（复用现有 conftest，ark_invoices 走 Base.metadata 建表零额外 infra）；
+3. reconcile 对账端点 + runbook 操作项；
+4. 8/1 起 okki 轨开赛 + ark 并跑对账 → 达标后切换（或运营拍板直接 ark 起步）。
