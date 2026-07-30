@@ -54,8 +54,26 @@ def _cand(event_type, subject_type, subject_id, subject_name,
     }
 
 
-def _deal_candidates(db: Session, date_from: str, date_to: str) -> list:
-    """大单/超级大单：任意订单（新签或复购，公共过滤内）单笔 ≥$5000，按 order_id 幂等。"""
+def _deal_candidates(db: Session, date_from: str, date_to: str,
+                     source: str | None = None) -> list:
+    """大单/超级大单：任意订单单笔 ≥$5000。幂等键对齐 OKKI 订单号——
+    主轨优先用 xiaoman_order_id（与保底轨同键，切轨不重报），未推单兜底发票号。"""
+    out = []
+    if fsvc._data_source(source) == "ark":
+        rows = db.execute(text(
+            "SELECT i.xiaoman_order_id, i.invoice_no,"
+            f"       {fsvc._ARK_AMOUNT} AS amt, t.Name AS name, t.user_id AS user_id"
+            + fsvc._ARK_JOIN +
+            f"   AND {fsvc._ARK_AMOUNT} >= :thr"
+            "   AND i.invoice_date >= :d1 AND i.invoice_date <= :d2"
+        ), {"thr": BIG_DEAL_USD, "d1": date_from, "d2": date_to}).mappings().all()
+        for r in rows:
+            amt = float(r["amt"])
+            key = r["xiaoman_order_id"] or f"ark:{r['invoice_no']}"
+            etype = "super_deal" if amt >= SUPER_DEAL_USD else "big_deal"
+            out.append(_cand(etype, "person", r["user_id"], r["name"],
+                             f"deal:{key}", amount=amt, detail=f"${amt:,.0f}"))
+        return out
     rows = db.execute(text(
         "SELECT a2.order_id, a2.amount_usd, t.Name AS name, t.user_id AS user_id "
         "FROM lsordertest.okki_orders a2 "
@@ -64,7 +82,6 @@ def _deal_candidates(db: Session, date_from: str, date_to: str) -> list:
         "  AND a2.account_date >= :d1 AND a2.account_date <= :d2"
         + fsvc._common_filter("a2")
     ), {"thr": BIG_DEAL_USD, "d1": date_from, "d2": date_to}).mappings().all()
-    out = []
     for r in rows:
         amt = float(r["amount_usd"])
         etype = "super_deal" if amt >= SUPER_DEAL_USD else "big_deal"
@@ -74,8 +91,23 @@ def _deal_candidates(db: Session, date_from: str, date_to: str) -> list:
     return out
 
 
-def _first_sign_candidate(db: Session, date_from: str, date_to: str) -> list:
-    """首单新签：全活动第一单独享（B-6：account_date 最早，同日按 order_id 兜底定序）。"""
+def _first_sign_candidate(db: Session, date_from: str, date_to: str,
+                          source: str | None = None) -> list:
+    """首单新签：全活动第一单独享（B-6：日期最早，同日按主键兜底定序）。"""
+    if fsvc._data_source(source) == "ark":
+        row = db.execute(text(
+            "SELECT t.Name AS name, t.user_id AS user_id,"
+            f"       {fsvc._ARK_AMOUNT} AS amt"
+            + fsvc._ARK_JOIN +
+            "   AND i.okki_new_deal = 1 AND i.order_type = 'production'"
+            "   AND i.invoice_date >= :d1 AND i.invoice_date <= :d2"
+            " ORDER BY i.invoice_date ASC, i.id ASC LIMIT 1"
+        ), {"d1": date_from, "d2": date_to}).mappings().first()
+        if not row:
+            return []
+        return [_cand("first_sign", "person", row["user_id"], row["name"],
+                      "first_sign", amount=float(row["amt"] or 0),
+                      detail="全活动第一单 · 红包 ¥66")]
     row = db.execute(text(
         "SELECT t.Name AS name, t.user_id AS user_id, a2.amount_usd "
         "FROM lsordertest.okki_orders a2 "
@@ -94,11 +126,12 @@ def _first_sign_candidate(db: Session, date_from: str, date_to: str) -> list:
 
 def detect_candidates(db: Session, ns: tuple, gmv: tuple,
                       items: list, camps: list, teams: list,
-                      first_board: list, amount_board: list) -> list:
+                      first_board: list, amount_board: list,
+                      source: str | None = None) -> list:
     """从当前状态推导全部候选事件（零态不触发）。"""
     cands = []
-    cands += _first_sign_candidate(db, ns[0], ns[1])
-    cands += _deal_candidates(db, gmv[0], gmv[1])
+    cands += _first_sign_candidate(db, ns[0], ns[1], source=source)
+    cands += _deal_candidates(db, gmv[0], gmv[1], source=source)
 
     for i in items[:3]:
         if i["new_points"] > 0:

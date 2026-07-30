@@ -6,6 +6,8 @@ from sqlalchemy import text
 
 from app.festival import service
 from app.festival.models import FestivalEvent  # noqa: F401 —— 注册进 Base.metadata 供 conftest 建表
+from app.invoice.models import Invoice  # noqa: F401 —— 主轨测试建表（同上）
+from app.auth.models import ArkUserExternalBinding  # noqa: F401
 from app.models.employee import EmployeeAttributeHistory
 
 DEPT = '[{"department_id": 24925, "rate": 100}]'
@@ -293,6 +295,74 @@ def test_headline_preview_not_persisted(db):
     payload = service.get_headline_payload(db, "2026-08-01", "2026-08-31")
     assert payload["events"], "预览应有内存态候选"
     assert db.query(FestivalEvent).count() == 0
+
+
+def _setup_ark(db):
+    """主轨测试基座：绑定桥 + 发票。U1↔ark101、U2↔ark102"""
+    _setup(db)
+    from app.auth.models import ArkUserExternalBinding
+    from app.invoice.models import Invoice
+    for ark_id, okki_id in ((101, "U1"), (102, "U2")):
+        db.add(ArkUserExternalBinding(
+            ark_user_id=ark_id, provider="okki", external_account_id=okki_id,
+            binding_status="active"))
+    def inv(no, cust, user, d, total, fee=0, otype="production",
+            new_deal=0, first_ret=0, sync="synced", xo=None):
+        return Invoice(
+            invoice_no=no, order_type=otype, customer_id=cust, customer_name=cust,
+            sales_user_id=user, invoice_date=d, currency="USD",
+            total_amount=total, surcharge_amount=fee,
+            okki_new_deal=new_deal, okki_first_return=first_ret,
+            sync_status=sync, xiaoman_order_id=xo)
+    from datetime import date as D
+    db.add_all([
+        # U1：新签 2 客户（K1 含 $100 手续费）；K3 未推单（决策②应排除）
+        inv("AK1", "K1", 101, D(2026, 8, 2), 6100, fee=100, new_deal=1, xo="XO1"),
+        inv("AK2", "K2", 101, D(2026, 8, 5), 2000, new_deal=1, xo="XO2"),
+        inv("AK3", "K3", 101, D(2026, 8, 6), 9000, new_deal=1, sync="not_synced"),
+        # U1：规格品新签不计（定制品口径）
+        inv("AK4", "K4", 101, D(2026, 8, 7), 500, otype="stock", new_deal=1, xo="XO4"),
+        # U2：首返单（K1 池内：K1 有 8 月方舟新成交）$3200，同时是复购金额
+        inv("AK5", "K1", 102, D(2026, 9, 3), 3200, new_deal=0, first_ret=1, xo="XO5"),
+        # U2：池外客户 K9 复购（lsordertest 与方舟都无 2025+ 新成交）→ 金额不计
+        inv("AK6", "K9", 102, D(2026, 9, 5), 8000, new_deal=0, xo="XO6"),
+    ])
+    db.flush()
+
+
+def test_ark_track_new_sign_synced_only_and_fee(db):
+    """主轨：仅 synced（决策②）、金额扣手续费（决策①）、定制品口径"""
+    _setup_ark(db)
+    board = service.get_new_sign_board(db, "2026-08-01", "2026-08-31", source="ark")
+    by = {i["user_id"]: i for i in board["items"]}
+    assert by["U1"]["new_count"] == 2            # K1+K2；K3 未推单排除、K4 规格品排除
+    assert by["U1"]["new_amount"] == 8000.0      # 6100-100 + 2000
+    assert by["U2"]["new_count"] == 0
+    assert service.get_company_new_total(db, "2026-08-01", "2026-08-31", source="ark") == 2
+    # GMV 全 order_type（含 K4 规格品与 9 月复购单），扣手续费、仅 synced
+    gmv = service.get_gmv_total(db, "2026-08-01", "2026-09-30", source="ark")
+    assert gmv == 8000 + 500 + 3200 + 8000
+
+
+def test_ark_track_repurchase_pool(db):
+    """主轨：首返计数 + 复购金额限 2025+ 客户池（方舟自家新成交也算池内）"""
+    _setup_ark(db)
+    stats = service.get_repurchase_stats(db, "2026-08-01", "2026-09-30", source="ark")
+    assert stats["U2"]["first_count"] == 1       # AK5 首返
+    assert stats["U2"]["re_amount"] == 3200.0    # K1 池内；K9 池外 $8000 不计
+
+
+def test_reconcile_diff_rows(db):
+    """双轨对账：差异行置顶并计数"""
+    _setup_ark(db)
+    rec = service.get_reconcile(db, None, None)
+    by = {r["user_id"]: r for r in rec["rows"]}
+    # okki 轨 U1 新签 2（C1/C2），ark 轨也是 2 → 该项一致；U2 okki 首返 1、ark 首返 1
+    assert by["U1"]["sign_okki"] == 2 and by["U1"]["sign_ark"] == 2
+    assert by["U2"]["first_okki"] == 1 and by["U2"]["first_ark"] == 1
+    # 复购金额两轨不同（okki 3000 vs ark 3200）→ 必有差异计数
+    assert rec["diff_count"] >= 1
+    assert rec["rows"][0]["match"] is False      # 差异行置顶
 
 
 def test_require_key_fail_closed(monkeypatch):

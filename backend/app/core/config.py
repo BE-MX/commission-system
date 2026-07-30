@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     # ── 采购节大屏（免登录局域网大屏取数） ─────────────────
     # 逗号分隔访问 key；留空 = 不设门禁（内网大屏场景），配置后强制校验
     FESTIVAL_SCREEN_KEYS: str = ""
+    # 取数轨道：okki=保底轨(lsordertest 小满同步) / ark=主轨(方舟发票域，仅 synced)
+    # 切轨策略见 data-layer 文档 §6.3：并跑对账连续 3 天零差异后切 ark
+    FESTIVAL_DATA_SOURCE: str = "okki"
 
     # ── 设计预约模块 ──────────────────────────────────────
     DESIGN_DEFAULT_DAILY_CAPACITY: int = 3

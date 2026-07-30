@@ -49,8 +49,9 @@ _CACHE: dict[tuple, tuple[float, dict]] = {}
 _CACHE_TTL = 55.0  # 与 30s/60s 前端轮询错拍，避免每次轮询都恰好 miss 全量重算
 
 
-def _cached(kind: str, date_from: str | None, date_to: str | None, fn) -> dict:
-    key = (kind, date_from, date_to)
+def _cached(kind: str, date_from: str | None, date_to: str | None, fn,
+            source: str | None = None) -> dict:
+    key = (kind, date_from, date_to, source)
     now = time.monotonic()
     hit = _CACHE.get(key)
     if hit and now - hit[0] < _CACHE_TTL:
@@ -62,18 +63,31 @@ def _cached(kind: str, date_from: str | None, date_to: str | None, fn) -> dict:
     return data
 
 
+def _norm_source(value: str | None) -> str | None:
+    """取数轨道调试参数：okki/ark；缺省走 Settings.FESTIVAL_DATA_SOURCE。"""
+    if value is None:
+        return None
+    v = value.strip().lower()
+    if v not in ("okki", "ark"):
+        raise HTTPException(422, "source 仅支持 okki / ark")
+    return v
+
+
 @router.get("/new-sign", summary="个人新签积分榜（大屏取数，免登录白名单）")
 def new_sign_board(
     key: str | None = Query(None, max_length=128),
     date_from: str | None = Query(None, description="预览窗口起（默认活动窗口 2026-08-01）"),
     date_to: str | None = Query(None, description="预览窗口止（默认 2026-08-31）"),
+    source: str | None = Query(None, description="取数轨道调试覆盖 okki/ark"),
     db: Session = Depends(get_db),
 ):
     _require_key(key)
     date_from = _norm_date(date_from, "date_from")
     date_to = _norm_date(date_to, "date_to")
+    source = _norm_source(source)
     return ok(_cached("new-sign", date_from, date_to,
-                      lambda: service.get_screen_payload(db, date_from, date_to)))
+                      lambda: service.get_screen_payload(db, date_from, date_to, source=source),
+                      source=source))
 
 
 @router.get("/camps", summary="阵营新签 PK 榜（大屏取数，免登录白名单）")
@@ -81,13 +95,16 @@ def camps_board(
     key: str | None = Query(None, max_length=128),
     date_from: str | None = Query(None, description="预览窗口起（默认活动窗口 2026-08-01）"),
     date_to: str | None = Query(None, description="预览窗口止（默认 2026-08-31）"),
+    source: str | None = Query(None, description="取数轨道调试覆盖 okki/ark"),
     db: Session = Depends(get_db),
 ):
     _require_key(key)
     date_from = _norm_date(date_from, "date_from")
     date_to = _norm_date(date_to, "date_to")
+    source = _norm_source(source)
     return ok(_cached("camps", date_from, date_to,
-                      lambda: service.get_camps_payload(db, date_from, date_to)))
+                      lambda: service.get_camps_payload(db, date_from, date_to, source=source),
+                      source=source))
 
 
 @router.get("/headline", summary="摘要头条屏（排名汇总 + 事件滚动流，免登录白名单）")
@@ -95,13 +112,16 @@ def headline_board(
     key: str | None = Query(None, max_length=128),
     date_from: str | None = Query(None, description="预览窗口起（预览时事件不落库）"),
     date_to: str | None = Query(None, description="预览窗口止"),
+    source: str | None = Query(None, description="取数轨道调试覆盖 okki/ark"),
     db: Session = Depends(get_db),
 ):
     _require_key(key)
     date_from = _norm_date(date_from, "date_from")
     date_to = _norm_date(date_to, "date_to")
+    source = _norm_source(source)
     return ok(_cached("headline", date_from, date_to,
-                      lambda: service.get_headline_payload(db, date_from, date_to)))
+                      lambda: service.get_headline_payload(db, date_from, date_to, source=source),
+                      source=source))
 
 
 _AI_TIP_TTL = 600.0  # AI 提示 10 分钟重算一次
@@ -134,13 +154,16 @@ def repurchase_board(
     key: str | None = Query(None, max_length=128),
     date_from: str | None = Query(None, description="预览窗口起（默认活动窗口 2026-08-01）"),
     date_to: str | None = Query(None, description="预览窗口止（默认 2026-09-30 复购窗）"),
+    source: str | None = Query(None, description="取数轨道调试覆盖 okki/ark"),
     db: Session = Depends(get_db),
 ):
     _require_key(key)
     date_from = _norm_date(date_from, "date_from")
     date_to = _norm_date(date_to, "date_to")
+    source = _norm_source(source)
     return ok(_cached("repurchase", date_from, date_to,
-                      lambda: service.get_repurchase_payload(db, date_from, date_to)))
+                      lambda: service.get_repurchase_payload(db, date_from, date_to, source=source),
+                      source=source))
 
 
 @router.get("/teams", summary="团队人均积分榜（大屏取数，免登录白名单）")
@@ -148,10 +171,27 @@ def teams_board(
     key: str | None = Query(None, max_length=128),
     date_from: str | None = Query(None, description="预览窗口起（默认活动窗口 2026-08-01）"),
     date_to: str | None = Query(None, description="预览窗口止（默认 2026-09-30 复购窗）"),
+    source: str | None = Query(None, description="取数轨道调试覆盖 okki/ark"),
     db: Session = Depends(get_db),
 ):
     _require_key(key)
     date_from = _norm_date(date_from, "date_from")
     date_to = _norm_date(date_to, "date_to")
+    source = _norm_source(source)
     return ok(_cached("teams", date_from, date_to,
-                      lambda: service.get_teams_payload(db, date_from, date_to)))
+                      lambda: service.get_teams_payload(db, date_from, date_to, source=source),
+                      source=source))
+
+
+@router.get("/reconcile", summary="双轨对账 okki vs ark（并跑期运维用，免登录白名单）")
+def reconcile(
+    key: str | None = Query(None, max_length=128),
+    date_from: str | None = Query(None, description="对账窗口起（默认活动窗口）"),
+    date_to: str | None = Query(None, description="对账窗口止"),
+    db: Session = Depends(get_db),
+):
+    _require_key(key)
+    date_from = _norm_date(date_from, "date_from")
+    date_to = _norm_date(date_to, "date_to")
+    return ok(_cached("reconcile", date_from, date_to,
+                      lambda: service.get_reconcile(db, date_from, date_to)))

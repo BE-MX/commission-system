@@ -19,7 +19,37 @@ from datetime import datetime
 from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
+
 logger = logging.getLogger(__name__)
+
+
+def _data_source(source: str | None = None) -> str:
+    """取数轨道：okki（保底轨，默认）/ ark（主轨，方舟发票域）。?source= 可临时覆盖调试。"""
+    s = (source or get_settings().FESTIVAL_DATA_SOURCE or "okki").lower()
+    return s if s in ("okki", "ark") else "okki"
+
+
+# ── 主轨（commission_db.ark_invoices）公共件 ─────────────────────
+# 统计范围（2026-07-30 决策②）：仅 sync_status='synced'（已推 OKKI 的发票）
+# 金额口径（决策①）：总金额扣手续费（surcharge_amount 附加费/Paypal Surcharge）
+_ARK_AMOUNT = "(i.total_amount - COALESCE(i.surcharge_amount, 0))"
+_ARK_JOIN = (
+    " FROM ark_invoices i"
+    " JOIN ark_user_external_bindings b ON b.ark_user_id = i.sales_user_id"
+    "   AND b.provider = 'okki' AND b.binding_status = 'active' AND b.deleted_at IS NULL"
+    " JOIN lsordertest.user_rel_team t ON t.user_id = b.external_account_id"
+    " WHERE i.sync_status = 'synced'"
+)
+# 复购客户池（2025+ 新签）：老客历史看 lsordertest，方舟时代新客看自家发票，双通道 OR 自洽
+_ARK_POOL = (
+    "  AND ( EXISTS (SELECT 1 FROM lsordertest.okki_orders o"
+    "               WHERE o.company_id = i.customer_id"
+    "                 AND o.custom_fields LIKE :mn AND o.account_date >= '2025-01-01')"
+    "     OR EXISTS (SELECT 1 FROM ark_invoices o2"
+    "               WHERE o2.customer_id = i.customer_id AND o2.okki_new_deal = 1"
+    "                 AND o2.sync_status = 'synced' AND o2.invoice_date >= '2025-01-01') )"
+)
 
 # 活动常量（规则文档 §1.1）
 ACTIVITY_NEW_SIGN_WINDOW = ("2026-08-01", "2026-08-31")   # 新签窗口（B-1：只统计 8 月）
@@ -80,7 +110,8 @@ def new_sign_points(count: int, attribute: str | None) -> float:
     return count * factor
 
 
-def get_new_sign_board(db: Session, date_from: str, date_to: str) -> dict:
+def get_new_sign_board(db: Session, date_from: str, date_to: str,
+                       source: str | None = None) -> dict:
     """个人新签积分榜：24 人全员（无单也出 0 值卡），按积分降序、新签金额决胜（B-10）。"""
     roster = db.execute(text(
         "SELECT user_id, Name AS name, En_name AS en_name, Team AS team, Camp AS camp,"
@@ -96,15 +127,25 @@ def get_new_sign_board(db: Session, date_from: str, date_to: str) -> dict:
         )).mappings()
     }
 
-    rows = db.execute(text(
-        "SELECT a2.user_id, COUNT(DISTINCT a2.company_id) AS cnt,"
-        "       COALESCE(SUM(a2.amount_usd), 0) AS amt "
-        "FROM lsordertest.okki_orders a2 "
-        "WHERE a2.custom_fields LIKE :mark "
-        "  AND a2.account_date >= :d1 AND a2.account_date <= :d2"
-        + _common_filter("a2") +
-        " GROUP BY a2.user_id"
-    ), {"mark": NEW_SIGN_MARK, "d1": date_from, "d2": date_to}).mappings().all()
+    if _data_source(source) == "ark":
+        rows = db.execute(text(
+            "SELECT t.user_id, COUNT(DISTINCT i.customer_id) AS cnt,"
+            f"       COALESCE(SUM({_ARK_AMOUNT}), 0) AS amt"
+            + _ARK_JOIN +
+            "   AND i.okki_new_deal = 1 AND i.order_type = 'production'"
+            "   AND i.invoice_date >= :d1 AND i.invoice_date <= :d2"
+            " GROUP BY t.user_id"
+        ), {"d1": date_from, "d2": date_to}).mappings().all()
+    else:
+        rows = db.execute(text(
+            "SELECT a2.user_id, COUNT(DISTINCT a2.company_id) AS cnt,"
+            "       COALESCE(SUM(a2.amount_usd), 0) AS amt "
+            "FROM lsordertest.okki_orders a2 "
+            "WHERE a2.custom_fields LIKE :mark "
+            "  AND a2.account_date >= :d1 AND a2.account_date <= :d2"
+            + _common_filter("a2") +
+            " GROUP BY a2.user_id"
+        ), {"mark": NEW_SIGN_MARK, "d1": date_from, "d2": date_to}).mappings().all()
     stats = {r["user_id"]: r for r in rows}
 
     items = []
@@ -131,9 +172,18 @@ def get_new_sign_board(db: Session, date_from: str, date_to: str) -> dict:
     return {"items": items}
 
 
-def get_company_new_total(db: Session, date_from: str, date_to: str) -> int:
+def get_company_new_total(db: Session, date_from: str, date_to: str,
+                          source: str | None = None) -> int:
     """公司 149 进度：全局 COUNT(DISTINCT company_id)——A-4"同一客户只计一次"
     在公司口径同样成立（同一客户被两名业务员各报一单时，个人各计、公司只计一次）。"""
+    if _data_source(source) == "ark":
+        val = db.execute(text(
+            "SELECT COUNT(DISTINCT i.customer_id)"
+            + _ARK_JOIN +
+            "   AND i.okki_new_deal = 1 AND i.order_type = 'production'"
+            "   AND i.invoice_date >= :d1 AND i.invoice_date <= :d2"
+        ), {"d1": date_from, "d2": date_to}).scalar()
+        return int(val or 0)
     roster_ids = [r[0] for r in db.execute(text(
         "SELECT user_id FROM lsordertest.user_rel_team"
     )).fetchall()]
@@ -150,8 +200,16 @@ def get_company_new_total(db: Session, date_from: str, date_to: str) -> int:
     return int(val or 0)
 
 
-def get_gmv_total(db: Session, date_from: str, date_to: str) -> float:
-    """公司业绩进度：名册内订单总额（A-13 GMV 口径，不限订单类型）。"""
+def get_gmv_total(db: Session, date_from: str, date_to: str,
+                  source: str | None = None) -> float:
+    """公司业绩进度：名册内订单总额（A-13 GMV 口径，不限订单类型；主轨扣手续费）。"""
+    if _data_source(source) == "ark":
+        val = db.execute(text(
+            f"SELECT COALESCE(SUM({_ARK_AMOUNT}), 0)"
+            + _ARK_JOIN +
+            "   AND i.invoice_date >= :d1 AND i.invoice_date <= :d2"
+        ), {"d1": date_from, "d2": date_to}).scalar()
+        return round(float(val or 0), 2)
     roster_ids = [r[0] for r in db.execute(text(
         "SELECT user_id FROM lsordertest.user_rel_team"
     )).fetchall()]
@@ -175,20 +233,45 @@ def _windows(date_from: str | None, date_to: str | None):
     return ns, gmv, custom
 
 
-def _summary(db: Session, ns, gmv, preview: bool) -> dict:
+def _summary(db: Session, ns, gmv, preview: bool, source: str | None = None) -> dict:
     return {
-        "new_total": get_company_new_total(db, ns[0], ns[1]),
+        "new_total": get_company_new_total(db, ns[0], ns[1], source=source),
         "new_target": COMPANY_NEW_SIGN_TARGET,
-        "gmv_total": get_gmv_total(db, gmv[0], gmv[1]),
+        "gmv_total": get_gmv_total(db, gmv[0], gmv[1], source=source),
         "gmv_target": COMPANY_GMV_TARGET,
+        "source": _data_source(source),
         "window": {"from": ns[0], "to": ns[1], "preview": preview},
     }
 
 
-def get_repurchase_stats(db: Session, date_from: str, date_to: str) -> dict:
+def get_repurchase_stats(db: Session, date_from: str, date_to: str,
+                         source: str | None = None) -> dict:
     """每人复购口径：首返客户数（A-5 有史以来第一次返单，标记源自 OKKI 首返字段；
     拆分 LIKE）+ 复购金额（限 2025-01-01 起有新成交单的客户池，A-6/A-10 口径）。"""
     stats: dict = {}
+    if _data_source(source) == "ark":
+        first_rows = db.execute(text(
+            "SELECT t.user_id, COUNT(DISTINCT i.customer_id) AS cnt"
+            + _ARK_JOIN +
+            "   AND i.okki_first_return = 1 AND i.order_type = 'production'"
+            "   AND i.invoice_date >= :d1 AND i.invoice_date <= :d2"
+            " GROUP BY t.user_id"
+        ), {"d1": date_from, "d2": date_to}).mappings().all()
+        for r in first_rows:
+            stats.setdefault(r["user_id"], {"first_count": 0, "re_amount": 0.0})
+            stats[r["user_id"]]["first_count"] = int(r["cnt"])
+        re_rows = db.execute(text(
+            f"SELECT t.user_id, COALESCE(SUM({_ARK_AMOUNT}), 0) AS amt"
+            + _ARK_JOIN +
+            "   AND i.okki_new_deal = 0 AND i.order_type = 'production'"
+            "   AND i.invoice_date >= :d1 AND i.invoice_date <= :d2"
+            + _ARK_POOL +
+            " GROUP BY t.user_id"
+        ), {"mn": NEW_ANY_MARK, "d1": date_from, "d2": date_to}).mappings().all()
+        for r in re_rows:
+            stats.setdefault(r["user_id"], {"first_count": 0, "re_amount": 0.0})
+            stats[r["user_id"]]["re_amount"] = float(r["amt"])
+        return stats
     first_rows = db.execute(text(
         "SELECT a2.user_id, COUNT(DISTINCT a2.company_id) AS cnt "
         "FROM lsordertest.okki_orders a2 "
@@ -226,7 +309,8 @@ def repurchase_points(first_count: int, re_amount: float) -> float:
     return first_count * 1.5 + int(re_amount // 1000)
 
 
-def get_headline_payload(db: Session, date_from: str | None, date_to: str | None) -> dict:
+def get_headline_payload(db: Session, date_from: str | None, date_to: str | None,
+                         source: str | None = None) -> dict:
     """摘要头条屏一次取全：左屏排名汇总 + 右屏事件滚动流。
 
     事件检测在此入口顺带执行（真实窗口幂等落库；预览窗口只出内存候选不落库）。
@@ -235,9 +319,9 @@ def get_headline_payload(db: Session, date_from: str | None, date_to: str | None
 
     ns, gmv, custom = _windows(date_from, date_to)
     # 快照复用：board / 复购统计 / summary 各算一次，四个子 payload 共用（防冗余全表扫）
-    items = get_new_sign_board(db, ns[0], ns[1])["items"]
-    re_stats = get_repurchase_stats(db, gmv[0], gmv[1])
-    summary = _summary(db, ns, gmv, custom)
+    items = get_new_sign_board(db, ns[0], ns[1], source=source)["items"]
+    re_stats = get_repurchase_stats(db, gmv[0], gmv[1], source=source)
+    summary = _summary(db, ns, gmv, custom, source=source)
     camps_payload = get_camps_payload(db, date_from, date_to, items=items, summary=summary)
     teams_payload = get_teams_payload(db, date_from, date_to,
                                       items=items, re_stats=re_stats, summary=summary)
@@ -261,7 +345,7 @@ def get_headline_payload(db: Session, date_from: str | None, date_to: str | None
 
     candidates = events_service.detect_candidates(
         db, ns, gmv, items, camps_payload["camps"], teams_payload["teams"],
-        rep["first_board"], rep["amount_board"])
+        rep["first_board"], rep["amount_board"], source=source)
     if custom:
         # 预览窗口：内存候选倒序模拟事件流，不落库（无真实时间戳，占位显示）
         events = [{**c, "id": idx + 1, "created_at": "预览"}
@@ -279,6 +363,45 @@ def get_headline_payload(db: Session, date_from: str | None, date_to: str | None
         "camps": camps_mini,
         "teams_top3": teams_top3,
         "events": events,
+        "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+
+
+def get_reconcile(db: Session, date_from: str | None, date_to: str | None) -> dict:
+    """双轨对账（§6.3）：okki vs ark 按人输出新签数/首返数/复购金额三列 diff。
+    差异只有两种来源：没走方舟录入的单、未推单（synced 前）的滞后。"""
+    ns, gmv, _ = _windows(date_from, date_to)
+    per_track: dict = {}
+    for src in ("okki", "ark"):
+        board = {i["user_id"]: i for i in get_new_sign_board(db, ns[0], ns[1], source=src)["items"]}
+        re_stats = get_repurchase_stats(db, gmv[0], gmv[1], source=src)
+        per_track[src] = (board, re_stats)
+
+    rows = []
+    diff_count = 0
+    for uid, base in per_track["okki"][0].items():
+        ark_item = per_track["ark"][0].get(uid, {})
+        re_o = per_track["okki"][1].get(uid, {"first_count": 0, "re_amount": 0.0})
+        re_a = per_track["ark"][1].get(uid, {"first_count": 0, "re_amount": 0.0})
+        row = {
+            "user_id": uid,
+            "name": base["name"],
+            "sign_okki": base["new_count"], "sign_ark": ark_item.get("new_count", 0),
+            "first_okki": re_o["first_count"], "first_ark": re_a["first_count"],
+            "re_okki": round(re_o["re_amount"], 2), "re_ark": round(re_a["re_amount"], 2),
+        }
+        row["match"] = (row["sign_okki"] == row["sign_ark"]
+                        and row["first_okki"] == row["first_ark"]
+                        and abs(row["re_okki"] - row["re_ark"]) < 0.01)
+        if not row["match"]:
+            diff_count += 1
+        rows.append(row)
+    rows.sort(key=lambda r: (r["match"], r["name"]))  # 差异行置顶
+    return {
+        "window": {"sign": list(ns), "repurchase": list(gmv)},
+        "rows": rows,
+        "diff_count": diff_count,
+        "verdict": "两轨一致，可切 ark" if diff_count == 0 else f"{diff_count} 人存在差异",
         "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
 
@@ -337,14 +460,15 @@ def build_ai_tip(db: Session, headline: dict) -> dict:
 
 
 def get_repurchase_payload(db: Session, date_from: str | None, date_to: str | None,
-                           re_stats: dict | None = None, summary: dict | None = None) -> dict:
+                           re_stats: dict | None = None, summary: dict | None = None,
+                           source: str | None = None) -> dict:
     """首返·复购双榜：全员 24 人（周露露参与个人奖）。
     首返榜：个数降序，个数相同看复购金额（§1.4）；复购金额榜：金额降序，同额比首返数。"""
     ns, gmv, custom = _windows(date_from, date_to)
     roster = db.execute(text(
         "SELECT user_id, Name AS name FROM lsordertest.user_rel_team ORDER BY id"
     )).mappings().all()
-    stats = re_stats if re_stats is not None else get_repurchase_stats(db, gmv[0], gmv[1])
+    stats = re_stats if re_stats is not None else get_repurchase_stats(db, gmv[0], gmv[1], source=source)
 
     rows = []
     for m in roster:
@@ -359,19 +483,20 @@ def get_repurchase_payload(db: Session, date_from: str | None, date_to: str | No
     first_board = sorted(rows, key=lambda r: (-r["first_count"], -r["re_amount"], r["name"]))
     amount_board = sorted(rows, key=lambda r: (-r["re_amount"], -r["first_count"], r["name"]))
     return {
-        "summary": _summary(db, ns, gmv, custom),
+        "summary": summary if summary is not None else _summary(db, ns, gmv, custom, source=source),
         "first_board": first_board,
         "amount_board": amount_board,
         "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
 
 
-def get_screen_payload(db: Session, date_from: str | None, date_to: str | None) -> dict:
+def get_screen_payload(db: Session, date_from: str | None, date_to: str | None,
+                       source: str | None = None) -> dict:
     """个人新签积分榜：榜单 + 双目标进度。"""
     ns, gmv, custom = _windows(date_from, date_to)
-    board = get_new_sign_board(db, ns[0], ns[1])
+    board = get_new_sign_board(db, ns[0], ns[1], source=source)
     return {
-        "summary": _summary(db, ns, gmv, custom),
+        "summary": _summary(db, ns, gmv, custom, source=source),
         "items": board["items"],
         "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
@@ -397,13 +522,14 @@ def camp_prize(base: int, done: int, req: int) -> int:
 
 
 def get_camps_payload(db: Session, date_from: str | None, date_to: str | None,
-                      items: list | None = None, summary: dict | None = None) -> dict:
+                      items: list | None = None, summary: dict | None = None,
+                      source: str | None = None) -> dict:
     """阵营新签 PK 榜：三营进度/奖池/达标灯 + 成员芯片（含"阵营第一"标记）。
 
     items/summary 可由调用方传入预计算结果（headline 快照复用，避免重复全表扫）。"""
     ns, gmv, custom = _windows(date_from, date_to)
     if items is None:
-        items = get_new_sign_board(db, ns[0], ns[1])["items"]  # 已全局按积分/金额排序
+        items = get_new_sign_board(db, ns[0], ns[1], source=source)["items"]
 
     # 全司新签积分前三（前三奖得主，§1.4 阵营第一奖将其排除；2026-07-30 二次裁决：
     # 屏上高亮同样按排除口径，前三成员卡片另加"全司前三"动效标识消歧义）。
@@ -459,7 +585,7 @@ def get_camps_payload(db: Session, date_from: str | None, date_to: str | None,
         logger.warning(msg)
         print(msg, flush=True)
     return {
-        "summary": summary if summary is not None else _summary(db, ns, gmv, custom),
+        "summary": summary if summary is not None else _summary(db, ns, gmv, custom, source=source),
         "camps": camps,
         "unassigned": unassigned,
         "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -485,14 +611,14 @@ def member_weights(user_id: str) -> tuple:
 
 def get_teams_payload(db: Session, date_from: str | None, date_to: str | None,
                       items: list | None = None, re_stats: dict | None = None,
-                      summary: dict | None = None) -> dict:
+                      summary: dict | None = None, source: str | None = None) -> dict:
     """团队人均积分榜：团队积分 = Σ成员(新签积分×新签权重 + 复购积分×复购权重)，
     人均 = 团队积分÷人数（保留 1 位小数）；并列比人均复购金额（B-10）。"""
     ns, gmv, custom = _windows(date_from, date_to)
     if items is None:
-        items = get_new_sign_board(db, ns[0], ns[1])["items"]
+        items = get_new_sign_board(db, ns[0], ns[1], source=source)["items"]
     if re_stats is None:
-        re_stats = get_repurchase_stats(db, gmv[0], gmv[1])
+        re_stats = get_repurchase_stats(db, gmv[0], gmv[1], source=source)
 
     grouped: dict = {name: [] for name in TEAM_NAMES}
     unassigned = 0
@@ -539,7 +665,7 @@ def get_teams_payload(db: Session, date_from: str | None, date_to: str | None,
     for idx, t in enumerate(teams):
         t["rank"] = idx + 1
     return {
-        "summary": summary if summary is not None else _summary(db, ns, gmv, custom),
+        "summary": summary if summary is not None else _summary(db, ns, gmv, custom, source=source),
         "teams": teams,
         "unassigned": unassigned,
         "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
