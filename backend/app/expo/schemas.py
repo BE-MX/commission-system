@@ -1,16 +1,39 @@
 """Pydantic schemas for the expo try-on module."""
 
-from pydantic import BaseModel, Field
+import re
+import unicodedata
+
+from pydantic import BaseModel, Field, field_validator
 
 
 class CustomerRegister(BaseModel):
     name: str = Field(..., max_length=64, description="称呼")
-    phone: str = Field(..., max_length=32)
+    phone: str = Field(..., max_length=32, description="11 位手机号，落库前归一为纯数字")
     wechat_id: str | None = Field(None, max_length=64)
     primary_need: str = Field("volume", pattern="^(volume|gray_cover|style_change)$")
     style_pref: str | None = Field(None, max_length=32)
     consent: bool = Field(..., description="必须同意拍照存储")
     expo_code: str = Field("", max_length=64)
+
+    @field_validator("phone")
+    @classmethod
+    def _normalise_phone(cls, raw: str) -> str:
+        """先归一再校验，而不是直接卡格式。
+
+        展位是触屏输入、客户自己填，「138 0013 8000」「138-0013-8000」「+86138…」
+        都是常见写法。这些不是错误输入，只是写法差异——系统能推断的就别退回去让
+        客户重填（这条是产品原则，不是代码洁癖）。NFKC 顺带把中文输入法的全角
+        数字折成半角，否则客户会遇到「明明填了 11 位却说格式不对」的鬼故事。
+
+        归一后的纯数字是**落库值**：phone 同时用于线索台关键词检索与 mask_phone
+        脱敏，库里混着「138-0013-8000」和「13800138000」会让检索静默漏命中。
+        """
+        digits = re.sub(r"\D", "", unicodedata.normalize("NFKC", raw or ""))
+        if len(digits) == 13 and digits.startswith("86"):
+            digits = digits[2:]          # +86 前缀是写法不是内容
+        if len(digits) != 11:
+            raise ValueError("手机号需为 11 位数字")
+        return digits
 
 
 class GenerateRequest(BaseModel):
