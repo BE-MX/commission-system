@@ -346,6 +346,39 @@ def test_unlocked_scene_prompts_have_no_hardcoded_garments():
         assert not m, f"{s['key']} 泄漏单品词 {m.group() if m else ''}: {s['prompt']}"
 
 
+def test_scene_swap_framing_is_waist_up_with_both_bounds():
+    """构图锚点（2026-07-31）：这条子句已在 07-27 与 07-31 之间来回过一次，
+    且回退是静默的——原有 `assert "85mm" in prompt` 挡不住任何回退（85mm 在
+    _TRYON_SCENE_CLAUSE 里另有一份）。上下两道边界必须同时在场：
+    收太远发丝看不清，放太近就是 07-27 的大头畸变。"""
+    session = _session()
+    wig = ExpoWig(model_no="LS-9", name="胎毛波波", wig_description="airy bob")
+    row = ExpoResult(session_id=1, wig_id=9,
+                     scene_json={"key": "whitecollar", "label": "白领高管"})
+    prompt, _, _ = ai_pipeline._build_prompt(session, row, wig)
+
+    assert "waist-up" in prompt                      # 下限：收到腰上，发丝可辨
+    assert "one third of the frame height" in prompt  # 上限：头占画面高约 1/3
+    assert "shoulders and upper torso must stay in frame" in prompt
+    assert "no wide-angle facial distortion" in prompt  # 防 07-27 畸变复发
+    # 已被证伪的旧口径不得回填
+    assert "mid-thigh" not in prompt
+    assert "one-seventh" not in prompt
+    # 「主体/subject」是摆拍语义，会顶掉 07-09 定稿的抓拍感
+    assert "subject of this photograph" not in prompt
+
+
+def test_keep_bg_path_has_no_framing_clause():
+    """原景保持要求构图与客户原照片一致，构图子句注入进去就是自相矛盾。"""
+    session = _session()
+    wig = ExpoWig(model_no="LS-8", name="轻盈波波", wig_description="short bob")
+    row = ExpoResult(session_id=1, wig_id=8)  # 无 scene_json → keep_bg 分支
+    prompt, _, _ = ai_pipeline._build_prompt(session, row, wig)
+    assert "waist-up" not in prompt
+    assert "mid-thigh" not in prompt
+    assert "background and framing exactly the same" in prompt
+
+
 def test_build_prompt_keep_bg_has_no_variation():
     """原景保持路径服装整体锁定：夏装子句与穿搭变奏都不得注入。"""
     session = _session()
