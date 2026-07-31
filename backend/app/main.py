@@ -16,7 +16,7 @@ from app.bootstrap import (
     seed_admin_and_permissions, auto_init_ai_presets,
     seed_asset_dimensions,
     mount_uploads, mount_frontend,
-    check_pdf_export_resources,
+    check_pdf_export_resources, check_expo_watermark,
 )
 from app.routers import register_routers
 from app.mcp.server import mount_mcp, mcp_session_lifespan
@@ -35,6 +35,7 @@ async def lifespan(app: FastAPI):
     async with mcp_session_lifespan():
         # --- 启动 ---
         check_pdf_export_resources()
+        check_expo_watermark()   # 缺失只告警不阻断：没水印 ≪ 展位后端起不来
         check_database_connection()
         load_business_rules()
         seed_admin_and_permissions()

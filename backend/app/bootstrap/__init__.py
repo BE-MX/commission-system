@@ -5,9 +5,10 @@ from app.bootstrap.seed_auth import seed_admin_and_permissions
 from app.bootstrap.seed_ai import auto_init_ai_presets
 from app.bootstrap.seed_asset import seed_asset_dimensions
 from app.bootstrap.static_files import mount_uploads, mount_frontend
-from app.bootstrap.resources import check_pdf_export_resources
+from app.bootstrap.resources import check_pdf_export_resources, check_expo_watermark
 
 __all__ = [
+    "check_expo_watermark",
     "check_database_connection",
     "load_business_rules",
     "seed_admin_and_permissions",
