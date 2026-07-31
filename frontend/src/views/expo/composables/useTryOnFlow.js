@@ -23,6 +23,21 @@ const NET_CONGESTION_HINT = '现场网络拥堵，生成仍在继续，请稍候
 //（用户指令 2026-07-07 result / 2026-07-08 matching——挑款看图不能被清场）
 const NO_IDLE_STEPS = ['analyzing', 'matching', 'result']
 
+/**
+ * 手机号归一 + 校验，返回 11 位纯数字；不合格返回 ''。
+ *
+ * 与后端 CustomerRegister._normalise_phone 是同一套规则，两处同步维护。
+ * 前端这份不是「防线」（kiosk 页面可绕过，真关卡在后端），而是为了让客户在点
+ * 「下一步」当场知道错在哪——等后端 422 回来只会得到一句笼统的提交失败。
+ * normalize('NFKC') 折全角数字：中文输入法全角态下打出的「１３８…」肉眼看着对，
+ * 不折就会卡在「填了 11 位却说格式不对」。
+ */
+function normalisePhone(raw) {
+  const digits = (raw || '').normalize('NFKC').replace(/\D/g, '')
+  const local = digits.length === 13 && digits.startsWith('86') ? digits.slice(2) : digits
+  return local.length === 11 ? local : ''
+}
+
 export function useTryOnFlow() {
   const step = ref('attract')
   const mode = ref('tryon')          // tryon=AI 换发试戴 / scene=佩戴实拍场景大片
@@ -116,6 +131,14 @@ export function useTryOnFlow() {
       errorText.value = '请填写称呼和手机号'
       return false
     }
+    // 与后端 CustomerRegister._normalise_phone 同一套规则（两处同步维护）：
+    // 归一后回写表单，客户看到的就是落库值，不会「提交成功但显示的还是带横杠的」
+    const phone = normalisePhone(regForm.phone)
+    if (!phone) {
+      errorText.value = '手机号需为 11 位数字'
+      return false
+    }
+    regForm.phone = phone
     if (!regForm.consent) {
       errorText.value = '需勾选同意拍照存储'
       return false

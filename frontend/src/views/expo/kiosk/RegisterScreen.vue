@@ -11,7 +11,8 @@
         </div>
         <div class="field">
           <label>手机号 <i>*</i></label>
-          <input v-model="flow.regForm.phone" inputmode="tel" placeholder="用于接收效果图" />
+          <!-- 提前说清 11 位要求，别让客户填完点了「下一步」才被退回来（页头已说明用途） -->
+          <input v-model="flow.regForm.phone" inputmode="tel" placeholder="11 位手机号" />
         </div>
         <div class="field">
           <label>微信号（选填）</label>
