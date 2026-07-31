@@ -618,24 +618,28 @@ _TRYON_SCENE_CLAUSE = (
     "than a stiff, posed, camera-facing studio look."
 ) + _SUMMER_WARDROBE_CLAUSE
 
-# 构图与人体比例（2026-07-27 亮哥反馈「人物与背景比例不协调、融入感差」「头身比不协调」）：
-# 两个症状同源——取景太近。近距离拍同时造成透视畸变（头被放大→头身比失衡）和背景压缩
-# （人物像贴在背板上）。改造前全篇只有 _TRYON_SCENE_CLAUSE 里一句 85mm，且那句
-# 「focused on the face and hair」反而在推模型往脸上怼，取景范围/拍摄距离/头身比全无约束。
-# 四件事一次压住：拍摄距离+焦距治畸变、取景范围+头顶留白+占画面中间三分之一治人物过大、
-# 头身比给显式数值(1/7)治头大、透视一致+接地+三层景深治融入感。
+# 构图与人体比例（2026-07-27 亮哥反馈「人物与背景比例不协调、融入感差」「头身比不协调」，
+# 2026-07-31 亮哥反馈「全是全身远景，体现不出写真效果和头发质感」——上一版矫枉过正）：
+# **两轮反馈是两个不同的病，别再来回推翻**：
+#   头身比失衡 / 贴图感 ← 相机太近造成的**透视畸变**与背景压缩，靠「拍摄距离 + 85mm 长焦」
+#                          治，不是靠把人拍小治；
+#   发丝质感看不清      ← **景别**太远，只能靠把取景收到腰以上治。
+# 故本版两头同时拿住：距离/焦距/头身比/融入感四道防畸变约束原样保留，只把取景范围从
+# 「3 米外·大腿以上·占画面中间三分之一·禁止头肩特写」收到「1.5 米·腰以上·头发是主体」。
+# 85mm 配 1.5m 正是经典半身人像组合，收景别不会把 7-27 的畸变问题带回来。
+# 试戴产品的主体就是那顶假发——发丝质感看不清，这张照片对客户就没有价值。
 # **只用于场景置换路径**：原景保持(_TRYON_KEEP_BG_CLAUSE)要求构图与原图完全一致，冲突。
 _FRAMING_CLAUSE = (
-    " Framing and human proportion: photograph her from about 3 metres away on the 85mm lens, "
-    "framing her from mid-thigh up so the room reads clearly around and behind her, with "
-    "comfortable breathing space above her head - never a tight head-and-shoulders close-up, "
-    "and she should occupy roughly the central third of the frame's width. Her head must stay "
-    "in correct natural proportion to her body, about one-seventh of her full standing height; "
-    "no enlarged head, no wide-angle facial distortion, no foreshortened torso or legs. "
-    "She must stand convincingly inside the space, sharing one consistent perspective, eye "
-    "level and horizon with the room, properly grounded, with genuine foreground, mid-ground "
-    "and background depth layers so she belongs in the scene rather than being a cut-out "
-    "pasted onto a backdrop."
+    " Framing and human proportion: photograph her from about 1.5 metres away on the 85mm lens "
+    "as a waist-up portrait. The hairstyle is the subject of this photograph: her head and hair "
+    "must fill a generous share of the frame so that individual strands, the cut's layering, its "
+    "silhouette and its sheen all read clearly at a glance. Keep her entire hairstyle inside the "
+    "frame with comfortable space above it - never crop the top, the sides or the ends of the "
+    "hair. Her head must stay in correct natural proportion to her shoulders and torso; no "
+    "enlarged head, no wide-angle facial distortion. Keep the room readable behind and beside "
+    "her but softly out of focus, sharing one consistent perspective, eye level and lighting "
+    "with her, with genuine depth separation between her and the background, so she belongs in "
+    "the scene rather than being a cut-out pasted onto a backdrop."
 )
 
 # 色 + 魂 收尾
