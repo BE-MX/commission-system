@@ -210,8 +210,18 @@ _LOGO_MARGIN_RATIO = 0.04        # 右/下边距 ÷ 图片短边
 # 只去代码里的光晕、留着素材白底等于没去（本轮实测 alpha=255 的纯白 105k 像素）。
 # 该素材约束由 test_logo_asset_has_no_opaque_backing 守住——品牌物料重新导出时
 # 极易带回白底，而那是一种"图正常、只是水印丑了"的静默回归，现场没人会报障。
-# 已知代价：深色照片上深绿的「莱莎健康假发」偏闷。若要兼顾，下一步是水印整体
-# 改单色（白/金）版本，而不是把底加回来。
+#
+# 深色背景的可读性改由**单色反白版**解决（2026-07-31 亮哥指令，取代加底的老思路）：
+# 落点够暗时整枚水印换成纯白线稿，否则用品牌彩色原版。白版**运行时从同一素材的
+# alpha 通道派生、不落第二个文件**——两份 PNG 必然随品牌物料更新而漂移，而漂移的那份
+# 只在深色照片上才露头，是最难发现的一类回归。
+# 阈值实测定标（2026-07-31，平底 20/50/80/110/140/170/200 七档逐档目视）：
+#   彩版在 ≤80 时深绿中文明显发闷，110 以上可读；白版 ≤140 都清楚，≥170 开始发虚。
+#   两版可读性交叉点其实在 150 附近，但**故意不取 150**：真按交叉点切，实拍照片
+#   （两张样张落点墨迹加权实测 138 / 121）会几乎全部落进白版，品牌色等于废弃。
+#   取 100 的含义是「彩版是默认，只有真正暗的落点才翻白」，代价是 100~150 这一带
+#   继续用偏闷但可读的彩版，换品牌色在常规照片上始终在场。
+_LOGO_DARK_BG_LUMA = 100         # 落点墨迹加权亮度低于此值判为深色背景（0~255）
 _STAMP_MARK = "leshine_stamp"    # 已盖章标记，写进 PNG text chunk / JPEG comment
 
 
@@ -237,12 +247,43 @@ def _stamp_meta(fmt: str) -> dict:
     return {"pnginfo": meta}
 
 
+def _mono_white(logo):
+    """品牌彩色 LOGO → 纯白单色版（形状不变，只换颜色）。
+
+    保留原 alpha（含抗锯齿的半透明边），只把 RGB 全部压成白：线稿的可辨性来自
+    形状而非内部色差，实测水印尺寸下（短边的 15%，徽章约 150px）人脸的眼唇细节
+    本就只有 1~2px，压成白不损失可读信息，却能在深色照片上把整枚水印托起来。
+    """
+    from PIL import Image
+
+    white = Image.new("RGBA", logo.size, (255, 255, 255, 255))
+    white.putalpha(logo.getchannel("A"))
+    return white
+
+
+def _is_dark_backdrop(base, box, ink) -> bool:
+    """水印落点是否为深色背景。ink = 缩放后 LOGO 的 alpha 通道，用作统计掩码。
+
+    两处刻意的选择：
+    ①只测角标那块矩形，不测整图——水印只跟自己压住的那一小块发生关系，
+      整图亮度对它没有意义（样张实测整图 136/126、落点 142/119，方向都能反）。
+    ②按墨迹加权而非框内平均——线稿稀疏，框里大半是透明区，那些像素根本不参与
+      可读性，算进平均只会稀释真正压在墨迹下的明暗。
+    """
+    from PIL import ImageStat
+
+    return ImageStat.Stat(base.crop(box).convert("L"), ink).mean[0] < _LOGO_DARK_BG_LUMA
+
+
 def stamp_logo(path: Path) -> bool:
     """结果图右下角叠加品牌 LOGO，原地覆盖。成功 True / 失败 False（不阻断合成）。
 
     尺寸与边距按图片短边取比例而非写死像素：中转站并不严格遵守 size 入参，
     同一档配置实测回过 1024x1536 与 887x1774 两种规格（2026-07-31），
     写死像素会让角标在不同产物上忽大忽小。
+
+    落点深色时自动换纯白单色版——水印没有底板托底，深绿的「莱莎健康假发」
+    压在深发/深地毯上会糊掉，换色是唯一不引入异物块的解法。
 
     幂等：已盖章的图直接返回 True 不二次叠加——存量补水印脚本重跑一遍
     会把半透明线稿越叠越实（审查 2026-07-31 实证，当时叠的是底板）。
@@ -279,6 +320,9 @@ def stamp_logo(path: Path) -> bool:
         overlay = Image.new("RGBA", base.size, (255, 255, 255, 0))
         logo_x, logo_y = width - margin - logo_w, height - margin - logo_h
 
+        box = (logo_x, logo_y, logo_x + logo_w, logo_y + logo_h)
+        if _is_dark_backdrop(base, box, logo.getchannel("A")):
+            logo = _mono_white(logo)
         overlay.alpha_composite(logo, (logo_x, logo_y))
         merged = Image.alpha_composite(base, overlay)
 

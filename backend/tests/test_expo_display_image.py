@@ -121,28 +121,65 @@ class TestStampLogo:
         large = self._stamped_bbox(tmp_path / "l.png", (1600, 2400))
         assert abs((small[2] - small[0]) / 800 - (large[2] - large[0]) / 1600) < 0.02
 
-    def test_watermark_leaves_no_backing_plate(self, tmp_path):
-        """水印是裸线稿：灰底板、白外发光都已废弃（2026-07-31 亮哥两次指令）。
+    @staticmethod
+    def _stamp_stats(path, level):
+        """在指定灰度平底上盖章，回角标框内的统计量。
 
-        判据是角标框内的**中位亮度仍等于背景**、且明显偏亮的像素只占零头——
-        线稿本身稀疏，实测 ±6 内原样透出 72%、偏亮仅 4%。任何一种「底」回来，
-        这两个数都会立刻塌掉；而只看「有没有像素被改写」是测不出底的。
+        返回 (中位亮度, >150 占比, 最亮值, 有色像素占比)。有色 = max-min 通道差 >25，
+        用来区分品牌彩版与纯白单色版——只看亮度是分不出这两者的。
         """
         import statistics
 
         from PIL import ImageChops
 
-        bg = (128, 128, 128)
-        p = _write_img(tmp_path / "bare.png", size=(1024, 1536), color=bg)
+        p = _write_img(path, size=(1024, 1536), color=(level, level, level))
         base = Image.open(p).convert("RGB").copy()
-        ai_pipeline.stamp_logo(p)
+        assert ai_pipeline.stamp_logo(p) is True
         with Image.open(p) as im:
             im = im.convert("RGB")
-            box = ImageChops.difference(im, base).getbbox()
-            lum = [sum(px) / 3 for px in im.crop(box).getdata()]
-        bright = sum(1 for v in lum if v > 150) / len(lum)
-        assert abs(statistics.median(lum) - 128) <= 3, "角标框中位亮度偏离背景，疑似有底板"
-        assert bright < 0.15, f"角标框内 {bright:.0%} 的像素明显偏亮，疑似底板/外发光回归"
+            px = list(im.crop(ImageChops.difference(im, base).getbbox()).getdata())
+        lum = [sum(v) / 3 for v in px]
+        return (statistics.median(lum),
+                sum(1 for v in lum if v > 150) / len(px),
+                max(lum),
+                sum(1 for r, g, b in px if max(r, g, b) - min(r, g, b) > 25) / len(px))
+
+    def test_watermark_leaves_no_backing_plate(self, tmp_path):
+        """水印是裸线稿：灰底板、白外发光都已废弃（2026-07-31 亮哥两次指令）。
+
+        判据是角标框内的**中位亮度仍等于背景**——线稿稀疏，压不动中位数；
+        任何一种「底」铺进来都会立刻把它顶走。只看「有没有像素被改写」测不出底。
+        中位数这条对彩版白版都成立，故两条路径都验（实测 128 底 →128、40 底 →41）。
+        """
+        light = self._stamp_stats(tmp_path / "bare_light.png", 128)
+        dark = self._stamp_stats(tmp_path / "bare_dark.png", 40)
+        assert abs(light[0] - 128) <= 3, f"浅底上角标中位亮度 {light[0]:.0f}，疑似有底板"
+        assert abs(dark[0] - 40) <= 3, f"深底上角标中位亮度 {dark[0]:.0f}，疑似有底板"
+        assert light[1] < 0.15, f"浅底上 {light[1]:.0%} 的像素明显偏亮，疑似底板/外发光回归"
+
+    def test_dark_backdrop_switches_to_white_variant(self, tmp_path):
+        """深色落点换纯白单色版——这是「不加底又要可读」的唯一解法。
+
+        两条断言缺一不可：够亮（最亮 >200，可读性回来了）+ 没有品牌色残留
+        （有色像素 <2%，确认真的换了版而不是彩版凑巧撞上亮像素）。
+        """
+        median, _, brightest, saturated = self._stamp_stats(tmp_path / "dk.png", 40)
+        assert brightest > 200, f"深底上水印最亮仅 {brightest:.0f}，中文会糊进背景"
+        assert saturated < 0.02, f"深底上仍有 {saturated:.0%} 有色像素，没切到单色版"
+
+    def test_light_backdrop_keeps_brand_colour(self, tmp_path):
+        """浅色落点保留品牌彩版——阈值取 100 而非可读性交叉点 150，就是为了这个：
+        实拍照片落点多在 120~140，按交叉点切会让品牌色几乎不再出现（实测样张 138/121）。
+        """
+        *_, saturated = self._stamp_stats(tmp_path / "lt.png", 128)
+        assert saturated > 0.15, f"浅底上有色像素仅 {saturated:.0%}，品牌彩版丢了"
+
+    def test_variant_switch_tracks_the_threshold(self, tmp_path):
+        """阈值两侧各取一档，锁住切换方向本身——单看某一档过不了防反接。"""
+        below = self._stamp_stats(tmp_path / "below.png", 80)[3]
+        above = self._stamp_stats(tmp_path / "above.png", 140)[3]
+        assert below < 0.02, f"落点亮度 80 应判深色走白版，实得有色像素 {below:.0%}"
+        assert above > 0.15, f"落点亮度 140 应判浅色走彩版，实得有色像素 {above:.0%}"
 
     def test_logo_asset_has_no_opaque_backing(self):
         """素材侧的同一条约束：孔雀徽章内部不得是不透明纯白。
