@@ -241,7 +241,10 @@ def _image_params(
             params[key] = value
     if size:  # 请求级尺寸覆盖 preset 配置（如 expo 竖版/横版按场景切换）
         params["size"] = size
-    if quality:  # 请求级档位覆盖（expo 让客户自选精致大片/形象速览，实测 high≈107s、medium≈55s）
+    # 请求级档位覆盖 preset。注意：云雾中转站(api.wlai.vip)**不透传该参数**——2026-07-31
+    # 同输入实测 high/medium/low 耗时(165~180s)、体积、output_tokens、目视画质全无差别，
+    # expo 的客户端档位选择器已据此撤除。逻辑保留给将来真正支持该参数的通道。
+    if quality:
         params["quality"] = quality
     return params
 

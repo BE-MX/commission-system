@@ -20,7 +20,10 @@ class GenerateRequest(BaseModel):
     scene_key: str | None = Field(None, max_length=32, description="tryon 生成场景 key（home/office/gathering），不传保持原照片背景")
     scene_keys: list[str] | None = Field(None, max_length=6, description="场景 key 列表，不传则取默认前 3 个（scene 模式）")
     # 值域收在 pattern 里而不是自由字符串：这个值会直接进上游请求参数，
-    # 放开等于把上游 400 的口子留给前端（实测 high≈107s / medium≈55s）
+    # 放开等于把上游 400 的口子留给前端。
+    # **2026-07-31 起 kiosk 不再传这个值**：实测云雾中转站不透传 quality，三档耗时
+    # (165~180s)、体积、output_tokens、目视画质全无差别，前端选择器已撤（见 module-notes）。
+    # 字段保留是为了换到真正支持该参数的通道后能直接复用，届时时长须重新实测。
     quality: str | None = Field(
         None, pattern="^(high|medium)$",
         description="出图档位 high=精致大片 / medium=形象速览；不传则用 AI preset 配置",
