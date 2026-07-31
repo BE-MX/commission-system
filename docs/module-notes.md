@@ -537,6 +537,15 @@ frontend/src/
 **素材云端代理缓存 + 场景图版本号（2026-07-22）**
 - 云 Nginx `/uploads/expo/` 开 proxy_cache（30d TTL + use_stale 隧道断连出旧图），实测 MISS 1.06s → HIT 0.015s；素材除场景示意图外全 uuid 命名换图即换 URL 天然不脏，场景图固定名由 `scene_image_url()` 拼 `?v=<mtime>` 破缓存。清缓存命令与注意事项见 runbook「性能监控」节
 
+**生图 provider 切 TeamRouter（2026-07-31 晚，云雾当日 24 点停服倒逼）**
+- 云雾（wlai）gpt-image 模型 2026-07-31 24:00 停服。`expo_wig_composite` 切到 **TeamRouter**（provider id=10，`https://api.teamorouter.com`），model 仍是 `gpt-image-2`
+- **preset parameters 必须带 `{"input_fidelity": "high"}`**：该参数专治合成脸变形，wlai 自 2026-07-20 起拒收、只能靠摘参兜底，TeamRouter 接受且带上后反而更快。实测不带它时五张里有一张把客户圆脸做成瘦脸尖下巴眼睛放大；带上后四张脸颊饱满度/眼睛大小/轮廓都忠实。**漏配等于放弃保真控制**
+- `quality` 已从 parameters 移除（在 wlai 上已证伪不生效，在 TeamRouter 上未验证，22s 已够快不必冒不确定性）
+- **实测**：走 `edit_image` 真实链路 21.3/50.2/26.8s；裸测 12 次采样中位 27s、最慢 50.2s；云雾同期 165~190s，**快 6~8 倍**。TeamRouter 13 次调用全成功，云雾同期 3 次挂 1 次
+- **直连可达免隧道**：`api.teamorouter.com` 从北京云机直连 0.2s。`.env` 的 `AI_IMAGE_PROXY` 已注释——**只改 preset 不改 .env 会立刻全失败**（代理有值就强制走隧道，而隧道 permitopen 白名单不含新域名，sshd 直接拒连报 `SOCKS Malformed reply`）。改 .env 后必须重启后端
+- api_base 不带 `/v1` 无妨：`build_image_url` 会自动补，拼成 `/v1/images/edits`
+- 待办：生图从 180s 降到 25s 后，`MIN_IMAGE_EDIT_TIMEOUT_SEC=300` 与 `STALE_GENERATING_SECS=420` 显得过宽（provider 挂了客户要等 5 分钟才见错误），可评估收紧，但需先摸清展位并发下的排队分布
+
 **出图档位选择器撤除（2026-07-31）**
 - 实测云雾中转站(api.wlai.vip)**根本不透传 quality 参数**。同输入同 prompt 只改档位：耗时 high 168.5s / medium 165.8s / low 172.4s / 不传 180.6s；`output_tokens` high 与「不传」同为 5402、medium 与 low 同为 5488（随机分组，与档位无关）；体积反而 low(2134KB) > medium(2036KB) > high(1912KB)，**与 quality 语义完全相反**；目视发丝/皮肤/五官细节无可辨差异
 - 撤掉的理由不是「参数没用」而是**它在向客户撒谎**：kiosk 上承诺「形象速览 快一倍·约1分钟·画质略简」，实际两档都是 165~180s、画质相同。销售照着这个跟客户说"赶时间选速览"，客户照样等三分钟——假选择 + 错3倍的时长承诺，直接烧信任
