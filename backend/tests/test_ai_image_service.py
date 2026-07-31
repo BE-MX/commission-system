@@ -1,5 +1,15 @@
+import pytest
+
 from app.ai import image_service
 from app.ai.models import AiCallLog, AiPreset, AiProvider
+
+
+@pytest.fixture(autouse=True)
+def _no_image_proxy(monkeypatch):
+    # 隔离真实 .env 的 AI_IMAGE_PROXY（展会云机有配）：假 Client 只收 timeout 参数
+    class _S:
+        AI_IMAGE_PROXY = ""
+    monkeypatch.setattr(image_service, "get_settings", lambda: _S())
 
 
 def _create_image_preset(db):

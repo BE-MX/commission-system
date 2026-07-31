@@ -21,6 +21,8 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+import httpx
+
 from app.core.database import SessionLocal
 from app.expo import matching, script_service
 from app.expo.models import ExpoResult, ExpoSession, ExpoWig, ExpoWigColor
@@ -1016,9 +1018,17 @@ def _save_result_image(ai_result: dict, result_id: int) -> Path:
 
     url_match = re.search(r"https?://\S+?\.(?:png|jpe?g|webp)\S*", content)
     if url_match:
-        req = urllib.request.Request(url_match.group(0), headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            target.write_bytes(resp.read())
+        # 下载与生图请求走同一条出口（AI_IMAGE_PROXY）：结果图若挂在被 SNI 阻断
+        # 域名的 CDN 上，直连会在展会云机复现"API 成功、下载失败"（审查 2026-07-31）
+        from app.core.config import get_settings
+        kwargs: dict = {"timeout": 60, "headers": {"User-Agent": "Mozilla/5.0"},
+                        "follow_redirects": True}
+        proxy = (get_settings().AI_IMAGE_PROXY or "").strip()
+        if proxy:
+            kwargs["proxy"] = proxy
+        resp = httpx.get(url_match.group(0), **kwargs)
+        resp.raise_for_status()
+        target.write_bytes(resp.content)
         return target
 
     stripped = content.strip()

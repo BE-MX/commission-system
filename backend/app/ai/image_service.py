@@ -168,6 +168,17 @@ def _send_with_retry(do_send, timeout_sec: int, caller_module: str, label: str) 
             last_exc = exc
         except httpx.TransportError as exc:  # 连接/网络瞬断（ReadTimeout 已在上面拦掉）
             last_exc = exc
+        except Exception as exc:
+            # 隧道 sshd 按 permitopen 拒绝目标域名时不回 SOCKS 错误帧、直接断连，
+            # socksio 报 ProtocolError("Malformed reply")——对现场是天书，翻译成可行动信息。
+            # 按类名判而不 import socksio：不配代理的环境根本没装它。
+            if client_kwargs.get("proxy") and type(exc).__name__ == "ProtocolError":
+                raise RuntimeError(
+                    "生图代理隧道拒绝了目标域名（SOCKS Malformed reply）——若刚更换生图 "
+                    "provider 域名，需在隧道出口机 authorized_keys 加 permitopen 并重启 "
+                    "wlai-tunnel，见 runbook「云端展会实例」节"
+                ) from exc
+            raise
         if attempt < _IMAGE_MAX_ATTEMPTS:
             msg = (f"[{caller_module}] {label} transient error, retry {attempt}/"
                    f"{_IMAGE_MAX_ATTEMPTS - 1}: {type(last_exc).__name__}: {last_exc}")

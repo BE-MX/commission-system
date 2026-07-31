@@ -52,6 +52,13 @@ def _no_sleep(monkeypatch):
     monkeypatch.setattr(image_service.time, "sleep", lambda s: None)
 
 
+@pytest.fixture(autouse=True)
+def _no_image_proxy(monkeypatch):
+    # 隔离真实 .env：在配了 AI_IMAGE_PROXY 的机器（展会云机）上跑测试，
+    # 假 Client 收不到意外的 proxy 参数（审查 2026-07-31）
+    monkeypatch.setattr(image_service, "get_settings", lambda: _FakeSettings(""))
+
+
 def _patch_sequence(monkeypatch, seq):
     it = iter(seq)
     monkeypatch.setattr(image_service.httpx, "Client", lambda timeout=None: _FakeClient(next(it)))
@@ -204,3 +211,14 @@ def test_no_proxy_kwarg_when_unset(monkeypatch):
     monkeypatch.setattr(image_service, "get_settings", lambda: _FakeSettings(""))
     assert _call() == {"ok": 1}
     assert "proxy" not in seen
+
+
+def test_proxy_protocol_error_translated(monkeypatch):
+    # 隧道 permitopen 拒目标域名 → socksio ProtocolError → 翻译成可行动的 RuntimeError
+    class ProtocolError(Exception):
+        pass
+    monkeypatch.setattr(image_service.httpx, "Client",
+                        lambda timeout=None, proxy=None: _FakeClient(ProtocolError("Malformed reply")))
+    monkeypatch.setattr(image_service, "get_settings", lambda: _FakeSettings("socks5://127.0.0.1:1081"))
+    with pytest.raises(RuntimeError, match="permitopen"):
+        _call()
