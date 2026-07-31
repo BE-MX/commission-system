@@ -90,6 +90,12 @@ class Settings(BaseSettings):
     # ── AI 加密 ──────────────────────────────────────────
     ARK_AI_ENCRYPTION_KEY: str = ""  # production 模式下必须显式配置
 
+    # ── AI 生图代理（可选，仅 image_service 生图链路走；文本 chat 不受影响）──
+    # 北京展会实例出口对 api.wlai.vip 存在 SNI 阻断（2026-07-31 实证），该实例配
+    # socks5://127.0.0.1:1081 借 SSH 隧道从新加坡机出境；办公室生产留空=直连。
+    # socks5 依赖 httpx[socks]；隧道运维见 runbook「云端展会实例」节。
+    AI_IMAGE_PROXY: str = ""
+
     # ── 素材存储（治理 B-5：收敛自 os.environ 直读）──────
     ASSET_STORAGE_ROOT: str = "D:\\WORKSOURCE"
     ASSET_SIGN_SECRET: str = "leshine-asset-secret"

@@ -13,6 +13,7 @@ logger = logging.getLogger("commission.ai.image")
 
 from app.ai.http_client import build_chat_url, build_headers, build_image_url
 from app.ai.keyring import decrypt_key
+from app.core.config import get_settings
 from app.ai.log_snapshot import serialize_response_snapshot
 from app.ai.models import AiCallLog, AiPreset
 from app.ai.provider_service import get_provider
@@ -142,10 +143,17 @@ def _send_with_retry(do_send, timeout_sec: int, caller_module: str, label: str) 
 
     do_send(client) -> httpx.Response —— 由调用方决定 body 是 multipart 还是 JSON。"""
     timeout = httpx.Timeout(timeout_sec, connect=_IMAGE_CONNECT_TIMEOUT_SEC, write=30.0)
+    client_kwargs: dict = {"timeout": timeout}
+    # 生图专用代理（AI_IMAGE_PROXY，默认空=不传参，维持 httpx 既有行为）。
+    # 配置时显式传参、只作用于生图两条链路——不用进程级 HTTP(S)_PROXY 正是为了
+    # 别把文本 chat（elbnt 直连正常）一起拽进代理。
+    proxy = (get_settings().AI_IMAGE_PROXY or "").strip()
+    if proxy:
+        client_kwargs["proxy"] = proxy
     last_exc: Exception | None = None
     for attempt in range(1, _IMAGE_MAX_ATTEMPTS + 1):
         try:
-            with httpx.Client(timeout=timeout) as client:
+            with httpx.Client(**client_kwargs) as client:
                 response = do_send(client)
             response.raise_for_status()
             return response.json()

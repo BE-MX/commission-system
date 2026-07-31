@@ -174,3 +174,33 @@ def test_status_error_message_includes_body(monkeypatch):
     _patch_sequence(monkeypatch, [_FakeResp(400, body={"error": {"message": "余额不足", "param": ""}})])
     with pytest.raises(httpx.HTTPStatusError, match="余额不足"):
         _call()
+
+
+# ── 生图专用代理（2026-07-31 北京展会实例 api.wlai.vip 被 SNI 阻断，借道隧道） ──
+
+class _FakeSettings:
+    def __init__(self, proxy=""):
+        self.AI_IMAGE_PROXY = proxy
+
+
+def test_proxy_setting_passed_to_client(monkeypatch):
+    seen = {}
+    def make(timeout=None, proxy=None):
+        seen["proxy"] = proxy
+        return _FakeClient(_FakeResp(200, {"ok": 1}))
+    monkeypatch.setattr(image_service.httpx, "Client", make)
+    monkeypatch.setattr(image_service, "get_settings", lambda: _FakeSettings("socks5://127.0.0.1:1081"))
+    assert _call() == {"ok": 1}
+    assert seen["proxy"] == "socks5://127.0.0.1:1081"
+
+
+def test_no_proxy_kwarg_when_unset(monkeypatch):
+    # 未配置时不往 Client 传 proxy 参数——办公室生产直连行为零变化
+    seen = {}
+    def make(**kwargs):
+        seen.update(kwargs)
+        return _FakeClient(_FakeResp(200, {"ok": 1}))
+    monkeypatch.setattr(image_service.httpx, "Client", make)
+    monkeypatch.setattr(image_service, "get_settings", lambda: _FakeSettings(""))
+    assert _call() == {"ok": 1}
+    assert "proxy" not in seen
