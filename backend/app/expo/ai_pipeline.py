@@ -196,6 +196,119 @@ def downscale_inplace(path: Path, max_edge: int = UPLOAD_MAX_EDGE) -> None:
         print(msg, flush=True)
 
 
+# ── 品牌水印（2026-07-31）──
+# LOGO 是确定性品牌资产，只能出图后叠加：写进 prompt 让模型画必然变形、中文必错乱。
+# 叠加在结果原图上、且早于 make_display_image —— kiosk 展示版由原图派生，
+# 分享短链/线索台/打印又都读 image_path，一次叠加即覆盖全部对外出口。
+LOGO_PATH = Path(__file__).resolve().parent / "assets" / "watermark_logo.png"
+_LOGO_WIDTH_RATIO = 0.15         # LOGO 宽 ÷ 图片短边（0.12 中文偏小、0.19 喧宾夺主）
+_LOGO_MARGIN_RATIO = 0.04        # 右/下边距 ÷ 图片短边
+_LOGO_PLATE_ALPHA = 184          # 白色底板不透明度 0~255：深色背景上保住深绿文字的可读性
+_LOGO_PLATE_PAD_RATIO = 0.13     # 底板内边距 ÷ LOGO 宽
+_LOGO_PLATE_RADIUS_RATIO = 0.14  # 底板圆角半径 ÷ 底板宽
+_STAMP_MARK = "leshine_stamp"    # 已盖章标记，写进 PNG text chunk / JPEG comment
+
+
+def _already_stamped(im) -> bool:
+    """图内是否已带盖章标记（PNG text chunk / JPEG comment）。"""
+    info = im.info or {}
+    if info.get(_STAMP_MARK):
+        return True
+    comment = info.get("comment")
+    if isinstance(comment, bytes):
+        comment = comment.decode("utf-8", "ignore")
+    return bool(comment and _STAMP_MARK in comment)
+
+
+def _stamp_meta(fmt: str) -> dict:
+    """按格式生成盖章标记的保存参数（WEBP 无通用文本槽，标记只能省略）。"""
+    if fmt != "PNG":
+        return {}
+    from PIL import PngImagePlugin
+
+    meta = PngImagePlugin.PngInfo()
+    meta.add_text(_STAMP_MARK, "1")
+    return {"pnginfo": meta}
+
+
+def stamp_logo(path: Path, *, plate: bool = True) -> bool:
+    """结果图右下角叠加品牌 LOGO，原地覆盖。成功 True / 失败 False（不阻断合成）。
+
+    尺寸与边距按图片短边取比例而非写死像素：中转站并不严格遵守 size 入参，
+    同一档配置实测回过 1024x1536 与 887x1774 两种规格（2026-07-31），
+    写死像素会让角标在不同产物上忽大忽小。
+
+    plate=True 叠一层白色半透明底板托住 LOGO：实测无底板时深绿的中文字样
+    压在深灰地毯等深色背景上完全不可辨，水印失去意义。
+
+    幂等：已盖章的图直接返回 True 不二次叠加——存量补水印脚本重跑一遍
+    会把半透明底板叠成不透明色块（审查 2026-07-31 实证）。
+    """
+    try:
+        from PIL import Image, ImageDraw
+
+        if not LOGO_PATH.exists():
+            raise FileNotFoundError(f"水印 LOGO 缺失: {LOGO_PATH}")
+
+        with Image.open(path) as src:
+            if _already_stamped(src):
+                return True  # 幂等：存量补水印脚本重跑不会叠出第二层底板
+            had_alpha = src.mode in ("RGBA", "LA") or (
+                src.mode == "P" and "transparency" in src.info)
+            # 编码格式认真实内容而非扩展名：_save_result_image 一律写 .png，但它的 URL
+            # 分支明确接受 jpg/webp，换生图供应商后一张 300KB JPEG 会被当 PNG 重编码成
+            # ~2MB 打进隧道（审查 2026-07-31）。按原格式写回，扩展名与存库路径都不动。
+            fmt = src.format if src.format in ("PNG", "JPEG", "WEBP") else \
+                _PIL_FORMATS.get(path.suffix.lower(), "PNG")
+            base = src.convert("RGBA")
+        with Image.open(LOGO_PATH) as raw:
+            logo = raw.convert("RGBA")
+
+        width, height = base.size
+        # 基准取**短边**而非宽度：LOGO 是竖长条（宽高比 0.735），按宽度定比例时
+        # scene 模式的横版/方形产物上会撑到画面高度的 30%。短边为基准后各种画幅一致收敛。
+        ref = min(width, height)
+        logo_w = max(1, int(ref * _LOGO_WIDTH_RATIO))
+        logo_h = max(1, round(logo_w * logo.height / logo.width))
+        logo = logo.resize((logo_w, logo_h), Image.LANCZOS)
+
+        margin = int(ref * _LOGO_MARGIN_RATIO)
+        overlay = Image.new("RGBA", base.size, (255, 255, 255, 0))
+
+        if plate:
+            pad = int(logo_w * _LOGO_PLATE_PAD_RATIO)
+            plate_w, plate_h = logo_w + pad * 2, logo_h + pad * 2
+            px, py = width - margin - plate_w, height - margin - plate_h
+            ImageDraw.Draw(overlay).rounded_rectangle(
+                (px, py, px + plate_w, py + plate_h),
+                radius=int(plate_w * _LOGO_PLATE_RADIUS_RATIO),
+                fill=(255, 255, 255, _LOGO_PLATE_ALPHA),
+            )
+            logo_x, logo_y = px + pad, py + pad
+        else:
+            logo_x, logo_y = width - margin - logo_w, height - margin - logo_h
+
+        overlay.alpha_composite(logo, (logo_x, logo_y))
+        merged = Image.alpha_composite(base, overlay)
+
+        if fmt == "JPEG":
+            _save_atomic(_flatten_rgb(merged), path, fmt,
+                         quality=_DISPLAY_JPEG_QUALITY, optimize=True,
+                         comment=f"{_STAMP_MARK}=1".encode())
+        elif had_alpha:
+            _save_atomic(merged, path, fmt, **_stamp_meta(fmt))
+        else:
+            # 原图本就不透明就别凭空留一条 alpha 通道：RGBA PNG 比 RGB 大三成，
+            # 而结果图要经隧道回源到展位屏，体积直接吃现场加载速度
+            _save_atomic(merged.convert("RGB"), path, fmt, **_stamp_meta(fmt))
+        return True
+    except Exception as exc:  # noqa: BLE001
+        msg = f"[expo] logo stamp skipped ({path.name}): {exc}"
+        logger.warning(msg)
+        print(msg, flush=True)
+        return False
+
+
 def make_display_image(src: Path) -> Path | None:
     """结果原图 → kiosk 展示压缩版（{stem}_disp.jpg，长边 1080 q85）。
 
@@ -980,6 +1093,7 @@ def _run_composite(session_id: int, result_id: int) -> None:
             quality=row.quality,  # 客户在甄选页选的档位；空则回落 preset 配置
         )
         image_path = _save_result_image(result, result_id)
+        stamp_logo(image_path)          # 品牌水印，必须早于展示版派生
         make_display_image(image_path)  # kiosk 展示版，失败不阻断（回退原图）
 
         row.image_path = to_rel(image_path)
