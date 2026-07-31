@@ -104,14 +104,14 @@ class TestStampLogo:
         assert self._topleft(p) == before_top     # 画面主体不受影响
 
     @staticmethod
-    def _stamped_bbox(path, size, **kwargs):
-        """盖章前后的差异框。底图用中灰而非纯白——白底上白色底板不产生像素差，
-        测出来的只是 LOGO 本体，底板缩放改坏了测试照样绿（审查 2026-07-31）。"""
+    def _stamped_bbox(path, size):
+        """盖章前后的差异框。底图用中灰而非纯白——白底上浅色水印像素差极小，
+        缩放改坏了测试照样绿（审查 2026-07-31）。"""
         from PIL import ImageChops
 
         _write_img(path, size=size, color=(128, 128, 128))
         base = Image.open(path).convert("RGB").copy()
-        ai_pipeline.stamp_logo(path, **kwargs)
+        ai_pipeline.stamp_logo(path)
         with Image.open(path) as im:
             return ImageChops.difference(im.convert("RGB"), base).getbbox()
 
@@ -121,12 +121,42 @@ class TestStampLogo:
         large = self._stamped_bbox(tmp_path / "l.png", (1600, 2400))
         assert abs((small[2] - small[0]) / 800 - (large[2] - large[0]) / 1600) < 0.02
 
-    def test_plate_is_larger_than_bare_logo(self, tmp_path):
-        """plate=True/False 是两条真实分支：底板必须实际包住 LOGO 并更大一圈。"""
-        with_plate = self._stamped_bbox(tmp_path / "wp.png", (1024, 1536), plate=True)
-        bare = self._stamped_bbox(tmp_path / "bp.png", (1024, 1536), plate=False)
-        assert (with_plate[2] - with_plate[0]) > (bare[2] - bare[0])
-        assert (with_plate[3] - with_plate[1]) > (bare[3] - bare[1])
+    def test_watermark_leaves_no_backing_plate(self, tmp_path):
+        """水印是裸线稿：灰底板、白外发光都已废弃（2026-07-31 亮哥两次指令）。
+
+        判据是角标框内的**中位亮度仍等于背景**、且明显偏亮的像素只占零头——
+        线稿本身稀疏，实测 ±6 内原样透出 72%、偏亮仅 4%。任何一种「底」回来，
+        这两个数都会立刻塌掉；而只看「有没有像素被改写」是测不出底的。
+        """
+        import statistics
+
+        from PIL import ImageChops
+
+        bg = (128, 128, 128)
+        p = _write_img(tmp_path / "bare.png", size=(1024, 1536), color=bg)
+        base = Image.open(p).convert("RGB").copy()
+        ai_pipeline.stamp_logo(p)
+        with Image.open(p) as im:
+            im = im.convert("RGB")
+            box = ImageChops.difference(im, base).getbbox()
+            lum = [sum(px) / 3 for px in im.crop(box).getdata()]
+        bright = sum(1 for v in lum if v > 150) / len(lum)
+        assert abs(statistics.median(lum) - 128) <= 3, "角标框中位亮度偏离背景，疑似有底板"
+        assert bright < 0.15, f"角标框内 {bright:.0%} 的像素明显偏亮，疑似底板/外发光回归"
+
+    def test_logo_asset_has_no_opaque_backing(self):
+        """素材侧的同一条约束：孔雀徽章内部不得是不透明纯白。
+
+        只去代码里的光晕、留着素材白底等于没去。品牌物料重新导出极易带回白底，
+        而那是「图正常、只是水印像贴纸」的静默回归，展位现场没人会报障。
+        """
+        with Image.open(ai_pipeline.LOGO_PATH) as raw:
+            logo = raw.convert("RGBA")
+        px = logo.load()
+        w, h = logo.size
+        solid_white = sum(1 for y in range(0, h, 3) for x in range(0, w, 3)
+                          if px[x, y][3] > 250 and min(px[x, y][:3]) >= 250)
+        assert solid_white == 0, f"素材仍有 {solid_white} 个不透明纯白像素（抽样），白底没去干净"
 
     def test_idempotent_second_stamp_is_noop(self, tmp_path):
         """存量补水印脚本重跑一遍不能把半透明底板叠成不透明色块。"""

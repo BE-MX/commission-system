@@ -203,9 +203,15 @@ def downscale_inplace(path: Path, max_edge: int = UPLOAD_MAX_EDGE) -> None:
 LOGO_PATH = Path(__file__).resolve().parent / "assets" / "watermark_logo.png"
 _LOGO_WIDTH_RATIO = 0.15         # LOGO 宽 ÷ 图片短边（0.12 中文偏小、0.19 喧宾夺主）
 _LOGO_MARGIN_RATIO = 0.04        # 右/下边距 ÷ 图片短边
-_LOGO_PLATE_ALPHA = 184          # 白色底板不透明度 0~255：深色背景上保住深绿文字的可读性
-_LOGO_PLATE_PAD_RATIO = 0.13     # 底板内边距 ÷ LOGO 宽
-_LOGO_PLATE_RADIUS_RATIO = 0.14  # 底板圆角半径 ÷ 底板宽
+# 水印一律裸贴，任何形式的「底」都已废弃（2026-07-31 亮哥两次指令，逐步收敛到此）：
+#   半透明灰底板 → 白色外发光 → 全部去掉。底与光晕都能提升深色背景上的中文可读性，
+#   代价是照片右下角永远挂着一块糊白/灰的异物，浅色照片上尤其像贴纸而非水印。
+# 与之配套，素材 watermark_logo.png 本身也已去白底：孔雀徽章内部原是不透明纯白，
+# 只去代码里的光晕、留着素材白底等于没去（本轮实测 alpha=255 的纯白 105k 像素）。
+# 该素材约束由 test_logo_asset_has_no_opaque_backing 守住——品牌物料重新导出时
+# 极易带回白底，而那是一种"图正常、只是水印丑了"的静默回归，现场没人会报障。
+# 已知代价：深色照片上深绿的「莱莎健康假发」偏闷。若要兼顾，下一步是水印整体
+# 改单色（白/金）版本，而不是把底加回来。
 _STAMP_MARK = "leshine_stamp"    # 已盖章标记，写进 PNG text chunk / JPEG comment
 
 
@@ -231,28 +237,25 @@ def _stamp_meta(fmt: str) -> dict:
     return {"pnginfo": meta}
 
 
-def stamp_logo(path: Path, *, plate: bool = True) -> bool:
+def stamp_logo(path: Path) -> bool:
     """结果图右下角叠加品牌 LOGO，原地覆盖。成功 True / 失败 False（不阻断合成）。
 
     尺寸与边距按图片短边取比例而非写死像素：中转站并不严格遵守 size 入参，
     同一档配置实测回过 1024x1536 与 887x1774 两种规格（2026-07-31），
     写死像素会让角标在不同产物上忽大忽小。
 
-    plate=True 叠一层白色半透明底板托住 LOGO：实测无底板时深绿的中文字样
-    压在深灰地毯等深色背景上完全不可辨，水印失去意义。
-
     幂等：已盖章的图直接返回 True 不二次叠加——存量补水印脚本重跑一遍
-    会把半透明底板叠成不透明色块（审查 2026-07-31 实证）。
+    会把半透明线稿越叠越实（审查 2026-07-31 实证，当时叠的是底板）。
     """
     try:
-        from PIL import Image, ImageDraw
+        from PIL import Image
 
         if not LOGO_PATH.exists():
             raise FileNotFoundError(f"水印 LOGO 缺失: {LOGO_PATH}")
 
         with Image.open(path) as src:
             if _already_stamped(src):
-                return True  # 幂等：存量补水印脚本重跑不会叠出第二层底板
+                return True  # 幂等：存量补水印脚本重跑不会把线稿叠成第二层
             had_alpha = src.mode in ("RGBA", "LA") or (
                 src.mode == "P" and "transparency" in src.info)
             # 编码格式认真实内容而非扩展名：_save_result_image 一律写 .png，但它的 URL
@@ -274,19 +277,7 @@ def stamp_logo(path: Path, *, plate: bool = True) -> bool:
 
         margin = int(ref * _LOGO_MARGIN_RATIO)
         overlay = Image.new("RGBA", base.size, (255, 255, 255, 0))
-
-        if plate:
-            pad = int(logo_w * _LOGO_PLATE_PAD_RATIO)
-            plate_w, plate_h = logo_w + pad * 2, logo_h + pad * 2
-            px, py = width - margin - plate_w, height - margin - plate_h
-            ImageDraw.Draw(overlay).rounded_rectangle(
-                (px, py, px + plate_w, py + plate_h),
-                radius=int(plate_w * _LOGO_PLATE_RADIUS_RATIO),
-                fill=(255, 255, 255, _LOGO_PLATE_ALPHA),
-            )
-            logo_x, logo_y = px + pad, py + pad
-        else:
-            logo_x, logo_y = width - margin - logo_w, height - margin - logo_h
+        logo_x, logo_y = width - margin - logo_w, height - margin - logo_h
 
         overlay.alpha_composite(logo, (logo_x, logo_y))
         merged = Image.alpha_composite(base, overlay)
