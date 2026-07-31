@@ -537,6 +537,20 @@ frontend/src/
 **素材云端代理缓存 + 场景图版本号（2026-07-22）**
 - 云 Nginx `/uploads/expo/` 开 proxy_cache（30d TTL + use_stale 隧道断连出旧图），实测 MISS 1.06s → HIT 0.015s；素材除场景示意图外全 uuid 命名换图即换 URL 天然不脏，场景图固定名由 `scene_image_url()` 拼 `?v=<mtime>` 破缓存。清缓存命令与注意事项见 runbook「性能监控」节
 
+**结果图品牌水印（2026-07-31）**
+- `ai_pipeline.stamp_logo(path, *, plate=True)` 在右下角叠加 `app/expo/assets/watermark_logo.png`，调用点在 `_run_composite` 里 `_save_result_image` 之后、`make_display_image` 之前——**顺序是硬要求**：kiosk 展示版由原图派生，分享短链/线索台/平板打印又都读 `image_path`，盖在原图上一次即覆盖全部对外出口；顺序反了展示版就没水印
+- **LOGO 绝不能写进 prompt 让模型画**：生成模型画标识必变形、中文必错乱。品牌资产只能出图后用确定性图像处理叠加
+- **尺寸/边距按图片宽度取比例，不写死像素**：中转站不严格遵守 `size` 入参，同一档配置实测回过 1024x1536 与 887x1774 两种规格（2026-07-31），写死像素会让角标忽大忽小
+- **白色半透明底板（alpha=184）是必需的，不是装饰**：实测无底板方案在深灰地毯等深色背景上，深绿的「莱莎健康假发」中文完全糊掉不可辨。宽度比 0.15 是选型结果——0.12 中文偏小、0.19 喧宾夺主
+- 不透明原图盖章后存回 RGB 而非 RGBA：RGBA PNG 体积多三成，结果图要经隧道回源到展位屏。实测 1831KB→1630KB
+- 失败（LOGO 缺失/图损坏/编码失败）返回 False 且不动原图，只 logger+print 告警，不阻断合成
+- 单次盖章实测 ~666ms（其中 LOGO 解码仅 32ms），5 线程并发 wall 763ms（Pillow 放 GIL），相对生图 ~180s 占 0.4%，**刻意不做 LOGO 缓存**——省 32ms 不值得引入跨线程共享状态
+- **编码格式认 `im.format` 而非扩展名**：`_save_result_image` 一律写 `.png`，但它的 URL 分支明确接受 jpg/webp，换生图供应商后若真回 JPEG，按扩展名当 PNG 重编码会膨胀数倍打进隧道
+- **幂等**：已盖章的图带 PNG text chunk / JPEG comment 标记 `leshine_stamp`，二次调用直接返回不叠加——实测连盖 3 次白底板会从 alpha 184 累积到近乎不透明
+- 启动自检 `bootstrap.check_expo_watermark()`：LOGO 缺失只告警不阻断（没水印 ≪ 展位后端起不来）。缺失时的表现是「图正常出、就是没水印」，现场察觉不到，所以必须在启动期喊出来
+- 历史结果图（本次改动前生成的）没有水印，未做回溯补盖。**若将来要补，两个坑**：①先加幂等标记再动手（已加，见上）；②`scripts/compress_expo_uploads.py:88` 是 `if disp.exists(): continue`，补完原图必须先删 `_disp.jpg` 再重生成，否则 kiosk 屏和线索台缩略图仍是无水印版
+- 已知局限：LOGO 是竖版全套锁标，缩到 153px 宽时「莱莎健康假发」六字约 14px 高、孔雀细羽线条并团。**建议设计部另出一枚角标专用简化横版锁标**（图形 + LESHINE，去细描线）
+
 ## 素材中台标签体系 v2（asset，2026-07-22 切换并退役旧维度）
 
 方案全文 `docs/requirements/2026-07-22-asset-tag-taxonomy.md`。旧 5 维体系是文件夹路径逐层平移的产物（文件夹=单层浏览结构，标签=多维正交检索结构，平移必乱），重构为 11 维正交体系。
