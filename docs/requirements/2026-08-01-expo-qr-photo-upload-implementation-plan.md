@@ -597,6 +597,14 @@ class TestUploadPage:
                           files={"photo": ("p.jpg", _jpeg_bytes(), "image/jpeg")})
         assert res.status_code == 400
 
+    def test_blank_pending_photo_is_a_clean_400(self, client, db):
+        """空串必须归一为 None 后走二选一守卫，得到 400——不能漏成 AttributeError 的 500。
+        multipart 里「字段在但值为空」很常见（Task 3 实测发现）。"""
+        customer = _customer(db)
+        res = client.post(f"/api/expo/sessions?customer_id={customer.id}",
+                          data={"pending_photo": "   "})
+        assert res.status_code == 400
+
     def test_mangled_url_does_not_500(self, client):
         """免鉴权端点上非 ASCII 签名段必须走 400 而非 500（Task 1 审查 I2）：
         微信改写链接、URL 被截断都会命中，客户看到的应是说明而不是内部错误。"""
@@ -794,6 +802,11 @@ def create_session(
     db: Session = Depends(get_db),
     current_user=Depends(require_permission("expo:write")),
 ):
+    # 空串归一为 None：multipart 表单里「字段在但值为空」很常见（前端条件 append 漏判、
+    # 客户端库补空字段），而 `"" is not None` 会骗过 service 的二选一守卫，接着在
+    # upload_file 为 None 时取 .filename 炸出 AttributeError 而不是干净的 400
+    #（Task 3 实现者实测发现）。归一放在这一层：service 收到的应当已是规范输入
+    pending_photo = (pending_photo or "").strip() or None
     try:
         session = service.create_session(
             db, customer_id, photo, _user_id(current_user),
