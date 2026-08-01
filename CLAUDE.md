@@ -111,4 +111,4 @@ miniprogram/  services/whatsapp-connector/  deploy/  docs/  config/
 | 架构评估与治理路线图 | `docs/2026-07-03-architecture-assessment.md` |
 | 设计系统（颜色/字体/间距/组件） | `DESIGN.md` |
 | 历史教训 | `.wolf/cerebrum.md` |
-| 需求与原型 | `docs/requirements/` |
+| 需求与原型 | `docs/requirements/`（现役约定）；另有 5 份 2026-07 的设计/计划在 `docs/superpowers/{specs,plans}/`（skill 默认路径遗留，未合并，找不到时记得也翻这里） |
