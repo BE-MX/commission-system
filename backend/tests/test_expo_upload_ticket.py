@@ -159,8 +159,27 @@ class TestPendingFiles:
         assert upload_service.latest_pending(42) is None
 
     def test_resolve_pending_blocks_path_traversal(self):
+        """粗粒度冒烟：basename 都对不上任何客户前缀，靠归属校验就能挡下来——
+        真正戳穿"路径穿越守卫是否起作用"的是下面那条 sibling-directory 用例。"""
         with pytest.raises(ValueError, match="非法"):
             upload_service.resolve_pending(42, "../../etc/passwd")
+
+    def test_resolve_pending_blocks_sibling_directory_traversal(self):
+        """真实攻击面：展会永久试戴照片目录（app/expo/service.py 里的
+        PHOTO_DIR）与待取目录（PENDING_DIR）是 UPLOAD_ROOT 下的平级目录，
+        且两边用的是同一套 c{customer_id}_{uuid4().hex[:10]}{suffix} 命名。
+
+        这意味着 "../photos/c42_<真实uuid>.jpg" 这个 payload 能直接通过归属
+        校验（前缀对得上）和存在性校验（文件真实存在）——只有路径穿越校验
+        （candidate.parent != root）能挡住它。上面那条 ../../etc/passwd 用例
+        basename 连前缀都凑不上，归属校验单独就能拦下来，测不出这道最关键的
+        守卫是否还在——这条才是。"""
+        sibling = upload_service.PENDING_DIR.parent / "photos"
+        sibling.mkdir(parents=True)
+        (sibling / "c42_abcdef1234.jpg").write_bytes(self._jpeg_bytes())
+
+        with pytest.raises(ValueError, match="非法"):
+            upload_service.resolve_pending(42, "../photos/c42_abcdef1234.jpg")
 
     def test_resolve_pending_blocks_other_customers_file(self):
         name = upload_service.save_pending(99, self._jpeg_bytes(), "x.jpg")
@@ -170,6 +189,13 @@ class TestPendingFiles:
     def test_resolve_pending_missing_file(self):
         with pytest.raises(ValueError, match="不存在"):
             upload_service.resolve_pending(42, "c42_deadbeef.jpg")
+
+    def test_resolve_pending_does_not_create_pending_dir(self):
+        """纯查找不应有副作用：待取目录还不存在时，一次失败的 resolve 不该
+        顺手把它建出来（同一目录树下 save_pending 才该建目录）。"""
+        with pytest.raises(ValueError, match="不存在"):
+            upload_service.resolve_pending(42, "c42_deadbeef.jpg")
+        assert not upload_service.PENDING_DIR.exists()
 
     def test_sweep_stale_removes_only_expired(self):
         import os
@@ -184,5 +210,25 @@ class TestPendingFiles:
         assert not (upload_service.PENDING_DIR / stale).exists()
 
     def test_sweep_stale_survives_missing_dir(self):
-        """目录尚未创建时清理不得抛异常——它挂在发码路径上，抛了就发不出码。"""
+        """目录尚未创建时清理不得抛异常——它挂在发码路径上，抛了就发不出码。
+
+        注：当前 Python 的 Path.glob() 对不存在的目录直接返回空迭代器，
+        所以这条测试对"提前 return"那行代码本身不是判定性的（删掉那行、
+        全靠下面的 glob 也一样能让本用例通过）；它锁定的是函数级契约
+        ——"目录不在＝返回 0、不抛异常"——这份契约现在由显式 return 与
+        外层 try/except OSError 共同兜底，删掉任一个都不会让这条测试变红。"""
+        assert upload_service.sweep_stale() == 0
+
+    def test_sweep_stale_survives_listing_failure(self, monkeypatch):
+        """glob() 本身抛出的 OSError 不能穿透函数边界——外层 try 必须把
+        "迭代目录"这一步也纳入保护，不能只护住循环体内部的 unlink/stat。"""
+
+        class _ExplodingDir:
+            def exists(self):
+                return True
+
+            def glob(self, pattern):
+                raise PermissionError("simulated AV lock contention")
+
+        monkeypatch.setattr(upload_service, "PENDING_DIR", _ExplodingDir())
         assert upload_service.sweep_stale() == 0

@@ -128,8 +128,20 @@ def latest_pending(customer_id: int) -> Path | None:
 
 
 def resolve_pending(customer_id: int, name: str) -> Path:
-    """待取文件名 → 绝对路径，三道校验：路径穿越、归属、存在性。"""
-    root = _pending_dir().resolve()
+    """待取文件名 → 绝对路径，三道校验：路径穿越、归属、存在性。
+
+    纯查找，不建目录：直接 resolve PENDING_DIR 而不经 _pending_dir()，一次读取
+    请求没有理由在磁盘上留下副作用（目录不存在时会自然落到"不存在"分支）。
+
+    三道校验里，**只有第一道（路径穿越）是真正的防线**。展会的永久试戴照片
+    （app/expo/service.py 里 c{customer_id}_{uuid4().hex[:10]}{suffix} 命名）
+    与待取照片用的是同一套命名规则，且落在 UPLOAD_ROOT 下的平级目录
+    （photos/ 与 pending/）。这意味着 "../photos/c42_<真实uuid>.jpg" 这样的
+    payload 能直接通过归属校验（前缀对得上）和存在性校验（文件真实存在）——
+    挡住它的只有 candidate.parent != root。归属/存在性校验只对"pending 目录内
+    文件名被篡改/文件已被清走"这类良性场景有意义，绝不能指望它们防穿越。
+    """
+    root = PENDING_DIR.resolve()
     candidate = (root / name).resolve()
     if candidate.parent != root:
         raise ValueError("待取照片名非法")
@@ -146,18 +158,31 @@ def sweep_stale(now: float | None = None) -> int:
     **不能挂定时任务**：云端展会实例 SCHEDULER_ENABLED=false（防与办公室实例双跑），
     而那台正是跑展会的机器。改为发码与确认两个路径上机会式触发，残留上界由此有保证。
     绝不抛异常——它挂在发码路径上，抛了就发不出码。
+
+    因此 glob() 本身也纳入 try/except：目录列举途中被并发删除、AV 锁库等都会
+    从这里冒出 OSError，若只包住循环体内部、不包住迭代器本身，这类异常会直接
+    穿透函数边界，砸掉发码路径。
     """
+    # 显式判断只是快路径/自文档，不是安全依赖：当前 pathlib 对不存在目录调用
+    # glob() 直接返回空迭代器（已验证），且下面 try 已经把迭代本身纳入保护，
+    # 即便未来某个 Python/OS 组合让 glob() 在此抛 FileNotFoundError，也会被
+    # 下面的 except OSError 兜住而不传播，不依赖这行提前 return。
     if not PENDING_DIR.exists():
         return 0
     deadline = (now or time.time()) - STALE_AFTER_SECONDS
     removed = 0
-    for path in PENDING_DIR.glob("c*"):
-        try:
-            if path.is_file() and path.stat().st_mtime < deadline:
-                path.unlink()
-                removed += 1
-        except OSError as exc:
-            msg = f"[expo] pending sweep skipped {path.name}: {exc}"
-            logger.warning(msg)
-            print(msg, flush=True)
+    try:
+        for path in PENDING_DIR.glob("c*"):
+            try:
+                if path.is_file() and path.stat().st_mtime < deadline:
+                    path.unlink()
+                    removed += 1
+            except OSError as exc:
+                msg = f"[expo] pending sweep skipped {path.name}: {exc}"
+                logger.warning(msg)
+                print(msg, flush=True)
+    except OSError as exc:
+        msg = f"[expo] pending sweep listing failed: {exc}"
+        logger.warning(msg)
+        print(msg, flush=True)
     return removed
