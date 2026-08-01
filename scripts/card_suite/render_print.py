@@ -68,6 +68,7 @@ def main():
     common = {
         "BRAND_YELLOW": brand["brand_yellow"],
         "LOGO_BLACK_URI": file_uri(os.path.join(OUT_ASSETS, "logo_black.png")),
+        "BOOTH": data.get("booth", ""),
     }
 
     for person in data["people"]:

@@ -69,15 +69,15 @@
   /* ---------- BACK ---------- */
   .back { background: var(--yellow); }
   .back-inner {
-    position: absolute; inset: 0; padding: 6.4mm 12mm 5.4mm;
+    position: absolute; inset: 0; padding: 5.8mm 12mm 5.2mm;
     display: flex; flex-direction: column; align-items: center;
   }
-  .backlogo { width: 37mm; margin-top: 0; }
+  .backlogo { width: 35mm; margin-top: 0; }
   .howto {
-    margin-top: 2.9mm; font-size: 2.3mm; font-weight: 700; letter-spacing: 0.85mm;
+    margin-top: 2.4mm; font-size: 2.3mm; font-weight: 700; letter-spacing: 0.85mm;
     text-transform: uppercase; color: var(--ink);
   }
-  .steps { margin-top: 2.2mm; width: 71mm; display: flex; flex-direction: column; gap: 1.7mm; }
+  .steps { margin-top: 1.9mm; width: 71mm; display: flex; flex-direction: column; gap: 1.5mm; }
   .step { display: flex; align-items: flex-start; gap: 2.2mm; }
   .num {
     flex: 0 0 auto; width: 4mm; height: 4mm; border-radius: 50%;
@@ -86,6 +86,11 @@
   }
   .step p { font-size: 2.2mm; line-height: 1.36; color: #1c1c1c; padding-top: 0.35mm; }
   .step b { font-weight: 650; }
+  .booth-badge {
+    margin-top: auto; background: var(--ink); color: var(--yellow);
+    border-radius: 99mm; padding: 1.2mm 5.2mm 1.5mm;
+    font-size: 2.55mm; font-weight: 800; letter-spacing: 0.5mm; text-transform: uppercase;
+  }
   .backsite {
     margin-top: auto; text-align: center;
     font-size: 2.4mm; font-weight: 700; letter-spacing: 0.5mm; color: var(--ink);
@@ -123,6 +128,7 @@
         <div class="step"><div class="num">2</div><p>Browse hair FAQs and message <b>{{NAME}}</b> directly — anytime, anywhere.</p></div>
         <div class="step"><div class="num">3</div><p>Enter your <b>passcode</b> (your e-mail or WhatsApp number) to open your private expo file &amp; photos.</p></div>
       </div>
+      <div class="booth-badge">Expo Booth&nbsp;&nbsp;{{BOOTH}}</div>
     </div>
   </div>
 </body>
