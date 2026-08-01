@@ -181,3 +181,12 @@
 ## 采购节大屏（迁移 084，2026-07-30）
 
 - `ark_festival_events` — 大屏事件流（摘要屏滚动记录 + 弹窗触发源）：event_type/level(L3插播条|L4全屏弹窗)/subject_type(person|team|camp)/subject_id/subject_name/amount/detail，**dedup_key UNIQUE 幂等**——同一事实（某人首次进前三、某单大单等）只记一次，检测重跑/重启不重复；事件由 /api/public/festival/headline 请求顺带检测落库（真实活动窗口才写，预览只出内存候选）。人员/阵营/团队参数源是 lsordertest.user_rel_team（业务库，非本库表）。
+
+## 名片管家（迁移 086，2026-08-01）
+
+业务员电子名片（`leshine.work/card/<slug>/`）的口令层。口令 = 客户自己的邮箱或 WhatsApp 号，归一化（邮箱小写去空格 / 号码纯数字，<5 位数字视为无效）后存查询列——录入与解锁两侧共用 `service.normalize_passcode` 同一入口，防「录得进、解不开」。
+
+- `ark_card_salespersons` — 业务员档案：`slug` UNIQUE（**与印刷二维码绑定，禁改**，086 种子 ginny/janny/katy/sylvia）、name/title/email/whatsapp（可空待补）/intro/links_json/is_active。
+- `ark_card_customers` — 客户档案：`email_norm`/`whatsapp_norm`（各自建索引，即口令查询口径，至少一个非空由端点校验）、display_name（解锁问候语）、expo_code 届次、remark 内部备注（不对客户展示）、created_by（ark_users.id，无 FK 随 expo 先例）。同口令重复建档时 unlock 取最新一条（现场录重是常态）。
+- `ark_card_entries` — 沟通纪要：entry_type text/image、title/content、attachment_path（`uploads/card/` uuid 命名，公开静态可读）；客户凭口令可见，FK CASCADE 随客户删除。
+- `ark_card_inquiries` — 客户询盘：contact 原文 + message、customer_id 命中档案时回填（FK SET NULL）、status new/handled 驱动跟进。

@@ -456,3 +456,19 @@
 - `GET /orders` / `GET /orders/{id}` — 车间/跟单看订单进度。
 - `GET /images/{path}` — 参考图（小程序 token 无 RBAC 声明，走不了主站图片端点，故有这个同源版本）。
 - `GET /track?scene=` — **免登录**订单产品进度（2026-07-28）：微信扫「产品进度小程序码」进来的客户没有方舟账号，凭 scene（`i:<item_id>:<hmac16>`）里的 HMAC 签名（域 `ARK-DT:<item_id>`，与流转卡 `ARK-D:<item_id>` 隔离——流转卡人尽可见且只截 8 hex，共用域会泄露签名前半）授权看这**一条明细**：返回与订单详情同形状，但 `items` 过滤到码指向的那一条（一码一品，看不到同单其他产品）。验签不过 403，软删单/明细不存在 404；`QR_SIGN_SECRET` 还是仓库默认值时 503 拒绝服务。消费方是小程序页 `pages/domestic/track/track`（页面无搜索/扫码入口，防遍历）。
+
+## 名片管家（`/api/card`，086 迁移，2026-08-01）
+
+业务员印刷名片二维码 → `leshine.work/card/<slug>/` 烘焙静态页（frontend/public/card/，生成脚本 scripts/card_suite/build_pages.py）→ 口令层动态端点。
+
+公开端点（`card/public_router.py`，无 JWT，AUTH_EXEMPT_FILES 已登记；消费方是客户手机浏览器）：
+- `POST /{slug}/unlock` — 口令解锁：body `{passcode}`（客户自己的邮箱或 WhatsApp 号，服务端归一化：邮箱小写 / 号码纯数字≥5位），返回该业务员名下命中客户的 `{customer:{name,expo_code}, entries:[{title,content,attachment_url,created_at}]}`；slug 不存在/口令无效/未命中一律 `code:404` 同一句英文文案（HTTP 状态恒 200，防枚举）。
+- `POST /{slug}/inquiries` — 客户询盘：body `{contact, message}`（≤128/≤2000），联系方式命中客户档案时回填 customer_id。
+
+管理端点（`card/router.py`，`card:read` 查 / `card:write` 写；**注册顺序：admin 字面量路由先于 `{slug}` 参数路由**，防吞噬）：
+- `GET|POST /admin/salespersons` — 档案列表 / slug 幂等 upsert（slug 印在名片上，禁改）。
+- `GET|POST /admin/customers`、`PUT|DELETE /admin/customers/{id}` — 客户档案 CRUD；录入侧口令归一化与 unlock 同源（`service.apply_customer_contacts`，邮箱漏 @ / 号码不足 5 位显式 422，不静默），邮箱和 WhatsApp 至少一个。
+- `GET|POST /admin/customers/{id}/entries`、`DELETE /admin/entries/{id}` — 沟通纪要（客户凭口令可见）。
+- `POST /admin/attachments` — 纪要图片上传（jpg/png/webp ≤10MB，uuid 落 `uploads/card/`，公开可读）。
+- `GET /admin/inquiries`、`PUT /admin/inquiries/{id}` — 询盘列表 / 状态流转（new/handled）。
+- 前端：`views/card/CardButler.vue`（导航「展会营销 → 名片管家」）；印刷管线与静态页模板在 `scripts/card_suite/`（README 即 spec：docs/requirements/2026-08-01-sales-card-suite.md）。

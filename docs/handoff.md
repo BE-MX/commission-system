@@ -125,6 +125,12 @@
    - **列表缩略图 + 素材缓存头**：`{stem}_thumb.jpg` 长边 400（实测封面 205MB→2.3MB、解码 65MP→4.4MP）；云端 nginx `/uploads/expo/` 加 30 天缓存、`results/` 刻意排除。**存量脚本 `python -m scripts.build_expo_thumbs` 尚未在办公室生产实例跑过**（不跑功能正常，只是不快）。
    - **两项现场实测未做，是最大残余未知**：①微信内置浏览器下的扫码上传（手机页 JS 只在桌面 Chrome 用 Playwright 验过 EXIF 旋转，而展会扫码几乎全走微信）；②三版出图差异是否肉眼可分——上一个出图档位选择器就是因为「看着有选择、实际没差别」被撤的，**三版分不出来就说明它还是个假选择**。
 
+7. **业务员名片套件（2026-08-01 夜交付，086 迁移已执行，静态主页已上云）**：印刷 PDF 在 `scripts/card_suite/out/print/`（名片×4 双面 94×58 含 2mm 出血 + 海报 A1 含 3mm 出血）；`leshine.work/card/<slug>/` 四页已线上验证。剩余动作：
+   - ①**生产 office 后端未部署**：`/api/card` 口令解锁与询盘要等 push + deploy.bat 后才通（静态主页不受影响，公开层照常打开）；main push 等亮哥指令。
+   - ②WhatsApp 号 + 店铺/独立站链接到齐 → 改 `scripts/card_suite/data.json` → 重跑 `build_pages.py`（主页）与 `render_print.py`（如需名片上版）→ scp 上云。
+   - ③FAQ 真实内容替换页面里的 SAMPLE 条目（改 `page_template.html` 或后续做成后台配置）；海报展位号手填或改模板重出。
+   - ④角色管理页给相关角色分配 `card:read` / `card:write`（seed 已入，重启即出现在权限矩阵）。
+
 ### P1（重要）
 
 -1. **OKKI 推单收尾**（开发侧 2026-07-13 全部完成：真实推单 + 幂等编辑 + 非标合并 + 企业必填字段 066/068，细节见 docs/module-notes.md invoice 节；首推真单曾被必填字段拒绝，字段已接线待重试）：
