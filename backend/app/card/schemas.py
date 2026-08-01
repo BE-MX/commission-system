@@ -19,7 +19,8 @@ class InquiryCreate(BaseModel):
 # ---------- 管理端点 ----------
 
 class SalespersonUpsert(BaseModel):
-    slug: str = Field(..., min_length=2, max_length=32, pattern=r"^[a-z0-9-]+$")
+    # (?!admin$) ：slug=admin 会与 /admin/* 管理路由字面前缀纠缠（审查 P2-6）
+    slug: str = Field(..., min_length=2, max_length=32, pattern=r"^(?!admin$)[a-z0-9-]+$")
     name: str = Field(..., min_length=1, max_length=64)
     title: str = Field("Sales Manager", max_length=64)
     email: str = Field(..., max_length=128)
@@ -49,7 +50,10 @@ class CustomerUpdate(BaseModel):
 class EntryCreate(BaseModel):
     title: Optional[str] = Field(None, max_length=128)
     content: Optional[str] = Field(None, max_length=8000)
-    attachment_path: Optional[str] = Field(None, max_length=512)
+    # 只认本模块上传端点产出的路径形状，防把其他模块的 /uploads 文件投影进客户可见纪要（审查 P2-3）
+    attachment_path: Optional[str] = Field(
+        None, max_length=512, pattern=r"^card/[0-9a-f]{32}\.(jpg|jpeg|png|webp)$",
+    )
 
 
 class InquiryStatusUpdate(BaseModel):

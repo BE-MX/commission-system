@@ -15,6 +15,7 @@ from app.card.models import CardCustomer, CardEntry, CardInquiry, CardSalesperso
 logger = logging.getLogger("commission.card")
 
 _MIN_WA_DIGITS = 5  # 短于 5 位的纯数字当作无效口令，避免 "123" 之类碰撞
+_WA_SUFFIX_LEN = 9  # 国家码差异兜底：精确未命中时按尾部 9 位后缀匹配（对抗性审查 P1-2）
 
 
 def normalize_passcode(raw: str) -> tuple[Optional[str], Optional[str]]:
@@ -55,7 +56,10 @@ def entry_dict(entry: CardEntry) -> dict:
 def unlock(db: Session, slug: str, passcode: str) -> Optional[dict]:
     """口令解锁：返回该业务员名下命中客户的档案+纪要；未命中返回 None。
 
-    多条命中（同客户重复建档）取最新一条，不报错——展会现场录重是常态。
+    多条命中（同客户重复建档）：称呼取最新一条，纪要**聚合全部命中档案**——
+    take-latest 会让旧档案里录的照片对客户永久隐身（对抗性审查 P2-4）。
+    WhatsApp 精确未命中时按尾部 9 位后缀兜底：业务员录 +86 全号 / 客户输本地号
+    是最常见的现实差异，精确等值会「录得进、解不开」（P1-2）。
     """
     sp = get_salesperson(db, slug)
     if sp is None:
@@ -63,27 +67,37 @@ def unlock(db: Session, slug: str, passcode: str) -> Optional[dict]:
     email_norm, wa_norm = normalize_passcode(passcode)
     if email_norm is None and wa_norm is None:
         return None
-    q = (
+    base = (
         db.query(CardCustomer)
         .options(selectinload(CardCustomer.entries))
         .filter(CardCustomer.salesperson_id == sp.id)
     )
     if email_norm is not None:
-        q = q.filter(CardCustomer.email_norm == email_norm)
+        customers = base.filter(CardCustomer.email_norm == email_norm).order_by(CardCustomer.id.desc()).all()
     else:
-        q = q.filter(CardCustomer.whatsapp_norm == wa_norm)
-    customer = q.order_by(CardCustomer.id.desc()).first()
-    if customer is None:
+        customers = base.filter(CardCustomer.whatsapp_norm == wa_norm).order_by(CardCustomer.id.desc()).all()
+        if not customers and len(wa_norm) >= _WA_SUFFIX_LEN:
+            suffix = wa_norm[-_WA_SUFFIX_LEN:]
+            customers = (
+                base.filter(CardCustomer.whatsapp_norm.like(f"%{suffix}"))
+                .order_by(CardCustomer.id.desc()).all()
+            )
+    if not customers:
         return None
-    entries = sorted(customer.entries, key=lambda e: (e.created_at, e.id))
+    latest = customers[0]
+    all_entries = [e for c in customers for e in c.entries]
+    entries = sorted(all_entries, key=lambda e: (e.created_at, e.id))
     return {
-        "customer": {"name": customer.display_name, "expo_code": customer.expo_code},
+        "customer": {"name": latest.display_name, "expo_code": latest.expo_code},
         "entries": [entry_dict(e) for e in entries],
     }
 
 
 def create_inquiry(db: Session, slug: str, contact: str, message: str) -> Optional[CardInquiry]:
     """公开表单落库；联系方式若命中该业务员的客户档案则回填 customer_id。"""
+    message = (message or "").strip()
+    if not message:  # " " 能过 Pydantic min_length，strip 后空串不落库（审查 P3-3）
+        return None
     sp = get_salesperson(db, slug)
     if sp is None:
         return None

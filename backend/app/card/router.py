@@ -6,6 +6,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_permission
@@ -57,13 +58,31 @@ def upsert_salesperson(
     db: Session = Depends(get_db),
     _user: dict = Depends(require_permission("card:write")),
 ):
+    # exclude_unset：未传字段不改——否则前端表单没带的 links_json 会被静默清空（审查 P2-1）
+    data = payload.model_dump(exclude_unset=True)
+    data.pop("slug", None)
+
+    def _apply(target: CardSalesperson) -> None:
+        for field in ("name", "title", "email", "whatsapp", "intro", "links_json", "is_active"):
+            if field in data:
+                setattr(target, field, data[field])
+
     row = db.query(CardSalesperson).filter(CardSalesperson.slug == payload.slug).first()
     if row is None:
         row = CardSalesperson(slug=payload.slug)
         db.add(row)
-    for field in ("name", "title", "email", "whatsapp", "intro", "links_json", "is_active"):
-        setattr(row, field, getattr(payload, field))
-    db.commit()
+    _apply(row)
+    try:
+        db.commit()
+    except IntegrityError:  # 并发 upsert 同 slug 撞唯一约束（审查 P3-1）：回滚后按已存在行重放
+        db.rollback()
+        logger.warning("card salesperson upsert race on slug=%s, retrying as update", payload.slug)
+        print(f"[card] upsert race on slug={payload.slug}", flush=True)
+        row = db.query(CardSalesperson).filter(CardSalesperson.slug == payload.slug).first()
+        if row is None:
+            raise
+        _apply(row)
+        db.commit()
     db.refresh(row)
     return ok({"id": row.id, "slug": row.slug})
 

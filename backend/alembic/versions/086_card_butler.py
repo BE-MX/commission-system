@@ -11,6 +11,10 @@ entries（手工纪要）/ inquiries（公开表单询盘）。
 种子 4 位业务员（ginny/janny/katy/sylvia）随迁移插入（WHERE NOT EXISTS 幂等）——
 名片明早印刷，slug 必须当晚固化；档案细节后续在管理页维护。
 纯新增表，无老表改动，天然满足「老代码 + 新 schema」过渡期。
+
+留档：本迁移最初以 `note` 列名执行（2026-08-01 当晚），随后因命名宪法（note→remark）
+在共享库人工 `RENAME COLUMN` 并同步改写本文件——文件与库现状一致，但与首次执行
+历史不同；重建环境直接跑本文件即得正确 schema。
 """
 
 import sqlalchemy as sa

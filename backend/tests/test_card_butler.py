@@ -92,7 +92,8 @@ def test_unlock_inactive_salesperson_is_none(db):
     assert service.unlock(db, "ginny", "maria@buyer.com") is None
 
 
-def test_unlock_duplicate_customer_takes_latest(db):
+def test_unlock_duplicate_customer_latest_name_merged_entries(db):
+    """重复建档：称呼取最新，纪要聚合全部命中档案（旧档照片不许对客户隐身）。"""
     sp, _, first = _seed(db)
     dup = CardCustomer(
         salesperson_id=sp.id, display_name="Maria (new)", email_norm="maria@buyer.com",
@@ -101,6 +102,31 @@ def test_unlock_duplicate_customer_takes_latest(db):
     db.flush()
     data = service.unlock(db, "ginny", "maria@buyer.com")
     assert data["customer"]["name"] == "Maria (new)"
+    assert len(data["entries"]) == 2  # 旧档案的两条纪要仍然可见
+
+
+def test_unlock_whatsapp_suffix_bridges_country_code(db):
+    """库存 +86 全号、客户输本地号（或反向）——尾部 9 位后缀兜底。"""
+    _seed(db)  # 库存 8613800138000
+    data = service.unlock(db, "ginny", "13800138000")
+    assert data is not None and data["customer"]["name"] == "Maria"
+
+
+def test_unlock_whatsapp_suffix_reverse_direction(db):
+    sp, _, _ = _seed(db)
+    local = CardCustomer(
+        salesperson_id=sp.id, display_name="LocalNo", whatsapp_norm="15500001111",
+    )
+    db.add(local)
+    db.flush()
+    data = service.unlock(db, "ginny", "+86 155 0000 1111")
+    assert data is not None and data["customer"]["name"] == "LocalNo"
+
+
+def test_unlock_short_number_no_suffix_fallback(db):
+    """不足 9 位的号码只做精确匹配，不做后缀兜底（防短串误撞）。"""
+    _seed(db)
+    assert service.unlock(db, "ginny", "38000") is None
 
 
 # ---------- 录入侧归一化（与口令同源） ----------
@@ -146,3 +172,8 @@ def test_inquiry_unknown_contact_unlinked(db):
 def test_inquiry_invalid_slug_is_none(db):
     _seed(db)
     assert service.create_inquiry(db, "ghost", "a@b.com", "hi") is None
+
+
+def test_inquiry_blank_message_rejected(db):
+    _seed(db)
+    assert service.create_inquiry(db, "ginny", "a@b.com", "   ") is None
