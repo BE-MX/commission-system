@@ -131,7 +131,7 @@
   - `ark_expo_wig_colors` — 发型×发色组合三角度参考图（072）：wig_id/hair_color_id 双 FK（BigInteger，ON DELETE CASCADE）, UNIQUE(wig_id,hair_color_id), angle_photos JSON 三角度图组, cover_path, is_active。稀疏存储只存备图组合；合成时按选择匹配唯一颜色图组（参考图即目标色，取代文字/色板图上色）；「原色」用发型自身 angle_photos 不在此表
   - `ark_expo_scripts` — 话术卡库（script_type opener/demo/objection/closer/faq, track emotional/rational/identity, audience_tags JSON, evidence_points JSON；写入时禁用词强校验）
   - `ark_expo_sessions` — 试戴会话（**mode tryon/scene 双入口**——scene=佩戴实拍生成场景图跳过分析, photo_path, analysis_json 含 **internal 内部字段仅销售端可见**, matched_wig_ids JSON 全量排名, strategy_json 双轨话术（scene 模式不生成）, status pending/analyzed/generating/done/failed）
-  - `ark_expo_results` — 效果图（session_id FK CASCADE, **wig_id 可空**——scene 模式为 NULL, hair_color_json 发色快照（048 起 hair_color_id/code/name/hex/swatch_path/description；历史行为 palette 旧形态）, scene_json 场景快照 key/label, reaction loved/soso, short_code 分享码, gen_ms）
+  - `ark_expo_results` — 效果图（session_id FK CASCADE, **wig_id 可空**——scene 模式为 NULL, hair_color_json 发色快照（048 起 hair_color_id/code/name/hex/swatch_path/description；历史行为 palette 旧形态）, scene_json 场景快照 key/label, reaction loved/soso, short_code 分享码, gen_ms, quality 出图档位（083，2026-07-31 起弃用新行为空）, prompt_variant 合成版本 real/soft/beauty（085；空=回落 real，085 之前的历史行全为 NULL 且当时压根没注入面部子句，故「复现同一张图」对历史行不成立））
   - `ark_expo_feedback` — 销售反馈（intent_level A/B/C/D 直通客户机会台口径, next_action）
 - **MCP 网关（1 张表，051 迁移）**：
   - `ark_mcp_tokens`（053 更名，原 mcp_tokens）— 业务员个人 access token（token_hash sha256 UNIQUE 只存哈希, user_id FK ark_users.id CASCADE 归属, label 用途备注, is_active 停用即撤销, last_used_at, created_by）；`(user_id)` 索引。供入口无关的 MCP 工具鉴权→复用登录 claims 产出 current_user dict

@@ -374,7 +374,6 @@ def test_scene_swap_framing_is_waist_up_with_both_bounds():
 
 def _variant_prompts(variant="real"):
     """三条出图路径各取一份 prompt：换发的两条场景分支 + 场景大片。"""
-    clause = ai_pipeline.resolve_prompt_variant(variant)
     wig = ExpoWig(model_no="LS-7", name="空气刘海", wig_description="airy fringe")
     swap = ExpoResult(session_id=1, wig_id=7,
                       scene_json={"key": "whitecollar", "label": "白领高管"})
@@ -383,9 +382,9 @@ def _variant_prompts(variant="real"):
                        scene_json={"key": "banquet", "label": "晚宴礼遇"})
     build = ai_pipeline._build_prompt
     return {
-        "场景置换": build(_session(), swap, wig, variant_clause=clause)[0],
-        "原景保持": build(_session(), keep, wig, variant_clause=clause)[0],
-        "场景大片": build(_session(mode="scene"), scene, None, variant_clause=clause)[0],
+        "场景置换": build(_session(), swap, wig, variant=variant)[0],
+        "原景保持": build(_session(), keep, wig, variant=variant)[0],
+        "场景大片": build(_session(mode="scene"), scene, None, variant=variant)[0],
     }
 
 
@@ -435,10 +434,93 @@ class TestPromptVariantSwitch:
     def test_default_is_the_first_option_shown_to_customers(self):
         assert ai_pipeline.DEFAULT_PROMPT_VARIANT == ai_pipeline.PROMPT_VARIANTS[0] == "real"
 
+    def test_beauty_prompt_has_no_self_contradiction(self):
+        """审查 C1：收尾句排在版本子句之后且是全篇最后一句，位置权重更高。
+        美颜版要磨皮，收尾句若仍写 no over-smoothing / visible pores，就是自相矛盾——
+        文字看着变了，指令未必活到出图，那是换了形态的假选择。"""
+        for name, prompt in _variant_prompts(variant="beauty").items():
+            assert "soften fine lines and wrinkles" in prompt, f"{name} 没吃到美颜版"
+            # 这两条是矛盾本体，三条路径都不该出现
+            assert "no over-smoothing" not in prompt, f"{name} 收尾句仍禁磨皮，与美颜版打架"
+            assert "true skin texture with visible pores" not in prompt, f"{name} 收尾句仍要求毛孔"
+            if "场景大片" in name:
+                continue  # scene 模式不带 tryon 收尾句，它有自己的 _SCENE_TAIL 做 realism 锚
+            # 换发两条路径：realism 与发丝保护不能跟着矛盾项一起被摘掉
+            assert "individual hair strands with natural sheen" in prompt, f"{name} 丢了发丝要求"
+            assert "No plastic skin" in prompt, f"{name} 丢了禁塑料感"
+
+    def test_texture_variants_keep_the_strict_tail(self):
+        """真实/柔光两版必须保留原收尾句——它们本来就不修皮肤，禁项与子句一致。"""
+        for variant in ("real", "soft"):
+            for name, prompt in _variant_prompts(variant=variant).items():
+                if "场景大片" in name:
+                    continue  # scene 模式本就没有 tryon 收尾句
+                assert "no over-smoothing" in prompt, f"{variant}/{name} 丢了禁磨皮"
+
     def test_variant_reaches_every_output_path(self):
         """三条出图路径都要吃到版本子句——漏一条就是「有的图修了有的没修」。"""
         for name, prompt in _variant_prompts(variant="beauty").items():
             assert "soften fine lines and wrinkles" in prompt, f"{name} 没吃到版本"
+
+
+class TestPromptVariantWiring:
+    """接线覆盖（2026-08-01 对抗性审查 C2）。
+
+    审查做了三个变异——start_composites 不写该字段、start_scene_composites 不写、
+    _run_composite 写死 "real"——每一个都等价于「客户点的那一下永远到不了图上」，
+    而 1074 条测试**全部照常通过**。当时的测试全压在提示词文本上，接线一根没测。
+    这正是 2026-07-31 那个「假选择」档位选择器犯过一次的错，不能再犯第二次。
+    """
+
+    @staticmethod
+    def _captured_rows(monkeypatch, call):
+        """打桩 _start_batch 捕获「构造出来的 result 行」。
+
+        真调 start_composites 会自建 session 并起线程打 AI——测试里不能跑，
+        而要防的那两个变异（构造时漏写字段）恰好就发生在打桩点之前。
+        """
+        seen = []
+        monkeypatch.setattr(ai_pipeline, "_start_batch", lambda sid, rows: seen.extend(rows))
+        call()
+        return seen
+
+    def test_tryon_choice_lands_on_every_row(self, monkeypatch):
+        """一次 generate 生成多条 result，每条都要带上客户选的版本。"""
+        rows = self._captured_rows(
+            monkeypatch,
+            lambda: ai_pipeline.start_composites(1, [11, 22], prompt_variant="beauty"),
+        )
+        assert len(rows) == 2
+        assert {r.prompt_variant for r in rows} == {"beauty"}
+
+    def test_scene_choice_lands_on_every_row(self, monkeypatch):
+        scenes = [{"key": "cafe", "label": "午后咖啡"}, {"key": "home", "label": "温馨居家"}]
+        rows = self._captured_rows(
+            monkeypatch,
+            lambda: ai_pipeline.start_scene_composites(1, scenes, prompt_variant="soft"),
+        )
+        assert len(rows) == 2
+        assert {r.prompt_variant for r in rows} == {"soft"}
+
+    def test_composite_reads_the_stored_choice(self):
+        """_run_composite 必须把 row.prompt_variant 传给 _build_prompt。
+
+        直接锚源码：打桩整条 _run_composite 要 mock 掉 DB/AI/文件系统三层，
+        维护成本高于它能挡的风险（同 test_stamp_precedes_display 的既有取舍）。
+        写死任何字面量都会让这条挂掉。
+        """
+        import inspect
+
+        src = inspect.getsource(ai_pipeline._run_composite)
+        assert "variant=row.prompt_variant" in src, "合成没有读取落库的版本，选择到不了图上"
+
+    def test_generate_request_accepts_and_rejects_the_right_values(self):
+        for good in ai_pipeline.PROMPT_VARIANTS:
+            assert GenerateRequest(prompt_variant=good).prompt_variant == good
+        assert GenerateRequest().prompt_variant is None  # 老客户端不传 → 后端回落
+        for bad in ("REAL", "glam", "美颜", "real "):
+            with pytest.raises(ValidationError):
+                GenerateRequest(prompt_variant=bad)
 
 
 class TestLightingBase:

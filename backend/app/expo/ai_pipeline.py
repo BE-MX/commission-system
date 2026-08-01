@@ -789,13 +789,34 @@ def resolve_prompt_variant(name: str | None) -> str:
     print(msg, flush=True)
     return _PROMPT_VARIANT_CLAUSES[DEFAULT_PROMPT_VARIANT]
 
-# 色 + 魂 收尾
-_TRYON_STYLE_TAIL = (
+# 色 + 魂 收尾。**必须跟着版本走**（2026-08-01 对抗性审查 C1）：这句排在版本子句之后、
+# 且是全篇最后一句，而图像模型的位置权重偏向句尾。原来那句写死了
+# 「true skin texture with visible pores」和「no over-smoothing」，与美颜版要的磨皮
+# 相距 685 字符正面打架，禁项还在后——文字确实不同了，指令却不一定活到出图，
+# 那就是换了个形态的假选择。美颜版换用兼容收尾：realism / 发丝 / 禁塑料感全部保留，
+# 只摘掉与磨皮直接冲突的那两处。
+_STYLE_TAIL_TEXTURE_KEPT = (
     " Photorealistic straight-out-of-camera quality: true skin texture with visible "
     "pores, individual hair strands with natural sheen and realistic physics. No "
     "plastic skin, no over-smoothing, no painterly or illustration look, no wig-cap "
     "artificiality, no heavy filter grading - one real moment of daily life."
 )
+_STYLE_TAIL_RETOUCH_OK = (
+    " Photorealistic straight-out-of-camera quality: individual hair strands with "
+    "natural sheen and realistic physics. No plastic skin, no painterly or illustration "
+    "look, no wig-cap artificiality, no heavy filter grading - one real moment of "
+    "daily life."
+)
+_VARIANT_STYLE_TAILS = {
+    "real": _STYLE_TAIL_TEXTURE_KEPT,
+    "soft": _STYLE_TAIL_TEXTURE_KEPT,
+    "beauty": _STYLE_TAIL_RETOUCH_OK,
+}
+
+
+def resolve_style_tail(name: str | None) -> str:
+    """版本名 → 收尾句。与 resolve_prompt_variant 同一套回落语义。"""
+    return _VARIANT_STYLE_TAILS.get(name or "", _VARIANT_STYLE_TAILS[DEFAULT_PROMPT_VARIANT])
 
 # 输出规格：6 寸照片，单场景竖版 102×152mm（2:3 → 1024x1536）。size 走 /v1/images/edits
 # 请求参数，prompt 内的规格文字只是二重锚定，真正的像素约束靠 size 参数
@@ -1176,7 +1197,7 @@ def _start_batch(session_id: int, rows: list[ExpoResult]) -> None:
 
 def _build_prompt(
     session: ExpoSession, row: ExpoResult, wig: ExpoWig | None,
-    variant_clause: str = "",
+    variant: str | None = None,
 ) -> tuple[str, list[Path], str | None]:
     """按 result 形态组装 (prompt, 图片, 输出尺寸)。
 
@@ -1184,8 +1205,8 @@ def _build_prompt(
     有发型=tryon 换发（竖版 6 寸），scene_json 是生成场景（弱网未选=原景保持原背景，
     否则置换到 TRYON_SCENES 中选定的职业/生活场景）。
 
-    variant_clause 收**已解析好的子句文本**而不是版本名：本函数保持纯函数、不碰 DB，
-    版本解析（含空值/未知值回落）由调用方用 resolve_prompt_variant 做完再传进来。
+    variant 收**版本名**：子句与收尾句必须同源解析（审查 C1——分两处传，迟早出现
+    「子句要磨皮、收尾句禁磨皮」这种自相矛盾）。解析本身是纯函数、不碰 DB。
     """
     if row.wig_id is None and row.scene_json:
         scene = next((s for s in SCENES if s["key"] == row.scene_json.get("key")), None)
@@ -1193,7 +1214,7 @@ def _build_prompt(
             _SCENE_TEMPLATE.format(scene=scene["prompt"] if scene else row.scene_json.get("label", ""))
             # banquet 旗袍属场景规定装（uniform），只注首饰；其余 4 景注入完整 look
             + _wardrobe_variation_clause(uniform=bool(scene and scene.get("uniform")))
-            + variant_clause
+            + resolve_prompt_variant(variant)
             + _SCENE_TAIL
         )
         return prompt, [to_abs(session.photo_path)], None
@@ -1228,8 +1249,8 @@ def _build_prompt(
         )
         + color_clause
         + scene_clause
-        + variant_clause  # 两条场景路径都要：脸的用光与皮肤处理跟场景无关
-        + _TRYON_STYLE_TAIL
+        + resolve_prompt_variant(variant)  # 两条场景路径都要：用光与皮肤处理跟场景无关
+        + resolve_style_tail(variant)      # 收尾句同源，不能与上一句自相矛盾
         + _PORTRAIT_SPEC_CLAUSE
     )
     return prompt, images, _SIZE_PORTRAIT
@@ -1245,10 +1266,9 @@ def _run_composite(session_id: int, result_id: int) -> None:
         session = db.get(ExpoSession, session_id)
         wig = db.get(ExpoWig, row.wig_id) if row.wig_id else None
 
-        # 面部神采子句的版本由预设参数决定（后台可切，见 FACE_VITALITY_KEY 处注释）。
-        # 取预设失败不能拖垮合成：读不到就按默认 off 走，只出声不抛
+        # 版本是客户在甄选页选的，随 result 落库（085）；空值/非法值在 resolve_* 里回落
         prompt, images, size = _build_prompt(
-            session, row, wig, variant_clause=resolve_prompt_variant(row.prompt_variant),
+            session, row, wig, variant=row.prompt_variant,
         )
         result = edit_image(
             db=db,

@@ -83,7 +83,7 @@ miniprogram/  services/whatsapp-connector/  deploy/  docs/  config/
 
 ## 完工 DoD（每次改动落地前自查）
 
-1. `python scripts/check_conventions.py --base $(git merge-base main HEAD)` 无红项（查增量 diff：自建 axios / 新增裸 hex / 超 500 行 / 无权限端点 / 吞异常 / 迁移 ID 超长 / 共享层新增；`--base` 默认 `HEAD`=仅工作区未提交改动，commit 之后再跑会检查不到任何东西）
+1. `python scripts/check_conventions.py` 无红项（查增量 diff：自建 axios / 新增裸 hex / 超 500 行 / 无权限端点 / 吞异常 / 迁移 ID 超长 / 共享层新增）。**提交前跑**——`--base` 默认 `HEAD` 即工作区未提交改动。已提交后要查得显式给基点：feature 分支用 `--base $(git merge-base main HEAD)`；**直接在 main 上提交时该写法退化成 `--base HEAD` 又变成空转**（2026-08-01 实际踩中并误报「无违规」），得用 `--base HEAD~N` 或 `--base origin/main`
 2. 涉及后端：`pytest` 通过；管钱管货的计算/状态机必须有测试
 3. 涉及前端：`npm run build` 通过；UI 对照 DESIGN.md
 4. **报告实际跑出的验证证据**，不说"应该没问题"
