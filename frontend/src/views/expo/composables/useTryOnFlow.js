@@ -9,10 +9,10 @@
  */
 import { computed, onBeforeUnmount, reactive, ref } from 'vue'
 import {
-  createSession, createUploadTicket, generateResults, getPendingPhoto, getScenes,
+  createSession, generateResults, getScenes,
   getSession, getWigColors, registerCustomer, setReaction, submitFeedback, updateCustomer,
 } from '@/api/expo'
-import { publicOrigin } from '@/views/expo/kiosk/publicUrl'
+import { useQrUpload } from './useQrUpload'
 
 const POLL_MS = 2000
 const IDLE_MS = 60000
@@ -55,9 +55,6 @@ export function useTryOnFlow() {
   const selectedSceneKeys = ref([])
   const salesReturnStep = ref('result') // 销售面板的来源屏（单击品牌字任意屏可进，含 attract）
   const guideShown = ref(false)      // 拍摄示范浮层一客只自动弹一次（register↔capture 往返不重弹）
-  const qrUrl = ref('')          // 非空 = 二维码面板开启中
-  const qrExpiresAt = ref(0)     // 毫秒时间戳；到点自动关面板并重新武装 idle
-  const pendingName = ref('')    // 待取照片文件名，确认时随 createSession 提交
   const tryonScenes = ref([])        // tryon 生成场景选项（职业/生活场景，滑动选择）
   const selectedTryonScene = ref(null) // 默认选中第一个；仅弱网加载失败时留 null=原景兜底
   // 出图档位选择器已于 2026-07-31 撤除：实测云雾中转站不透传 quality，high/medium/low
@@ -80,6 +77,15 @@ export function useTryOnFlow() {
   let registerPromise = null // 乐观切换：后台建档 promise，submitPhoto 前 await 兑现
   let registerGen = 0        // 建档代际：resetAll(换客户/idle)后，旧后台建档的迟到结果不许回写 customerId
   let registerInFlight = false // 防「下一步」双击建双档：在途期间忽略二次提交
+
+  // 扫码传照片子状态机（useQrUpload.js，2026-08-01 抽出）：touch 传引用即可（hoisted）；
+  // getRegisterPromise 传取值器——registerPromise 会被重新赋值，直接传值只拿得到此刻的快照
+  const {
+    qrUrl, qrExpiresAt, pendingName, openQr, closeQr, setPendingHandler, disposeQr,
+  } = useQrUpload({
+    customerId, errorText, touch, getRegisterPromise: () => registerPromise,
+    pollMs: POLL_MS, pollFailHintAt: POLL_FAIL_HINT_AT, netCongestionHint: NET_CONGESTION_HINT,
+  })
 
   const analysis = computed(() => session.value?.analysis || null)
   const allMatches = computed(() => session.value?.matches || []) // 后端给前 6 名
@@ -119,10 +125,8 @@ export function useTryOnFlow() {
     selectedTryonScene.value = null
     salesReturnStep.value = 'result'
     guideShown.value = false
-    // 顺序要求：必须放在 step.value = 'attract' 之后——closeQr 内部会调 touch()，
-    // touch() 见 step 已是 attract 会直接返回不武装新定时器；若挪到 resetAll 顶部
-    // （彼时 step 还是旧值），会在本函数末尾把 idleTimer 悄悄重新武装，
-    // 污染下一位客户的会话（旧的 60s 计时器到点后把新客户也清场）
+    // 必须放在 step='attract' 之后：closeQr 内部调 touch()，touch() 见 attract 直接返回不
+    // 武装新定时器；挪到顶部的话会在本函数末尾悄悄武装一个计时器，到点后把下一位客户也清场
     closeQr()
     pendingName.value = ''
     Object.assign(regForm, {
@@ -184,88 +188,6 @@ export function useTryOnFlow() {
     const res = await registerCustomer(form)
     if (gen !== registerGen) return // 已换客户/idle 清场，丢弃这次建档结果
     customerId.value = res.data.customer_id
-  }
-
-  // ── 扫码上传照片 ──
-  let qrTimer = null
-  let pendingPollFails = 0    // 待取照片轮询连续失败计数，复用会话轮询同一套阈值与提示文案
-  let onPendingArrived = null // CaptureScreen（Task 7）注册的回调：待取照片到达时把它显示为预览
-                               // 提前声明在 pollPending 之前只是为了可读性——两者都在 useTryOnFlow()
-                               // 同步执行期完成初始化，pollPending 真正跑起来时它必已赋值，声明顺序不影响运行
-
-  function setPendingHandler(fn) { onPendingArrived = fn }
-
-  async function openQr() {
-    if (qrUrl.value) return // 面板已开：拦掉触屏误双击重复取号（否则旧 qrTimer/pollPending 变孤儿，见下）
-    errorText.value = ''
-    // 建档可能仍在后台跑（乐观切换）：与 submitPhoto 同一套「先等 registerPromise、
-    // 再判 customerId」模式，避免拿一个未兑现/悬空的 customerId 去换二维码
-    //（后端会 404，或者——万一 registerPromise 尚未来得及赋值——直接打到 undefined）
-    if (registerPromise) {
-      try {
-        await registerPromise
-      } catch (e) {
-        errorText.value = '登记提交失败，请返回上一步重试'
-        return
-      }
-    }
-    if (!customerId.value) {
-      errorText.value = '登记未完成，请返回上一步重试'
-      return
-    }
-    try {
-      const res = await createUploadTicket(customerId.value)
-      qrUrl.value = `${publicOrigin()}${res.data.path}`
-      qrExpiresAt.value = Date.now() + res.data.expires_in * 1000
-      touch()                          // 立即生效：qrUrl 非空后 touch() 不再武装，清掉已有的 idle 计时
-      qrTimer = setTimeout(closeQr, res.data.expires_in * 1000)
-      pendingPollFails = 0
-      pollPending()
-    } catch (e) {
-      // 503=密钥未配置（部署缺陷，重试无用，得报修）；其余按网络类故障处理，重试/直拍都可行——
-      // 两种文案不同是因为前者「让顾问再点一次」是在浪费顾客时间，得让顾问知道该报修而非重试
-      errorText.value = e?.response?.status === 503
-        ? '扫码上传未配置，请联系管理员或直接拍照'
-        : '二维码获取失败，请直接拍照或呼叫顾问'
-    }
-  }
-
-  function closeQr() {
-    if (qrTimer) { clearTimeout(qrTimer); qrTimer = null }
-    qrUrl.value = ''
-    qrExpiresAt.value = 0
-    touch()                            // 重新武装 idle；resetAll 内调用时 step 已是 attract，
-                                        // touch() 见 attract 直接返回，不会误武装（见 resetAll 注释）
-  }
-
-  // 待取照片轮询：与会话轮询（poll）不同——这里用「上一轮结束才排下一轮」的递归 setTimeout，
-  // 天然互斥，不需要 pollBusy 那种在途守卫；重试也不会无限跑：二维码 10 分钟到期后
-  // closeQr 清空 qrUrl，本函数入口与两条分支落地时都先查 qrUrl，过期后自然停止
-  function pollPending() {
-    if (!qrUrl.value) return
-    getPendingPhoto(customerId.value)
-      .then((res) => {
-        if (!qrUrl.value) return       // 轮询在途期间面板已关（到期/清场），丢弃这次结果
-        pendingPollFails = 0
-        if (errorText.value === NET_CONGESTION_HINT) errorText.value = ''
-        if (res.data.pending) {
-          pendingName.value = res.data.pending.name
-          const url = res.data.pending.photo_url
-          closeQr()                    // 面板任务已完成：关闭并重新武装 idle——
-                                        // 客户需要回到平板确认/重拍，这段等待同样受 60s 保护
-          onPendingArrived?.(url)
-          return
-        }
-        setTimeout(pollPending, POLL_MS)
-      })
-      .catch(() => {
-        if (!qrUrl.value) return       // 已关闭面板后的迟到失败不计数、不提示（避免串味到别的屏）
-        pendingPollFails += 1
-        if (pendingPollFails >= POLL_FAIL_HINT_AT && !errorText.value) {
-          errorText.value = NET_CONGESTION_HINT
-        }
-        setTimeout(pollPending, POLL_MS)
-      })
   }
 
   // ── 全流程导航：每屏「上一步」的目标（2026-07-13） ──
@@ -558,7 +480,7 @@ export function useTryOnFlow() {
   onBeforeUnmount(() => {
     stopPolling()
     if (idleTimer) clearTimeout(idleTimer)
-    if (qrTimer) clearTimeout(qrTimer)
+    disposeQr()
   })
 
   return {
