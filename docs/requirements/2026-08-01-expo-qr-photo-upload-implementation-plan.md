@@ -518,11 +518,22 @@ def create_session(
         raise ValueError("客户未同意拍照存储，无法创建会话")
 
     ai_pipeline.ensure_dirs()
-    if pending_name:
+    if pending_name is not None:
         source = upload_service.resolve_pending(customer_id, pending_name)
-        photo_path = ai_pipeline.PHOTO_DIR / f"c{customer_id}_{uuid.uuid4().hex[:10]}{source.suffix}"
-        # 移动而非复制：同一张照片没有在磁盘上留两份的理由，且待取目录随之自然收敛
-        shutil.move(str(source), str(photo_path))
+        photo_path = ai_pipeline.PHOTO_DIR / upload_service.photo_filename(customer_id, source.suffix)
+        # 复制而非移动，且 commit 成功后才删待取原件（Task 3 审查 I1 推翻了本计划原稿）：
+        # 原稿写「移动，避免磁盘留两份」，探针证伪——commit 失败时照片已经没了、会话也
+        # 没建成，客户只能重新扫码重传。而「省一份磁盘」本来就由 sweep_stale 的 2 小时
+        # 窗口保证，不靠这里的移动。等于拿崩溃安全性换一个已经拥有的性质。
+        # copy 失败归为 OSError→ValueError（Task 3 审查 I2）：resolve_pending 的 is_file()
+        # 与此处之间有 TOCTOU 窗口，裸 OSError 会漏过 router 的 except ValueError 变成 500
+        try:
+            shutil.copy(str(source), str(photo_path))
+        except OSError as exc:
+            msg = f"[expo] pending photo copy failed customer={customer_id} name={pending_name}: {exc}"
+            logger.warning(msg)
+            print(msg, flush=True)
+            raise ValueError("照片已失效，请重新扫码上传") from None
     else:
         suffix = Path(upload_file.filename or "photo.jpg").suffix.lower() or ".jpg"
         photo_path = ai_pipeline.PHOTO_DIR / f"c{customer_id}_{uuid.uuid4().hex[:10]}{suffix}"
