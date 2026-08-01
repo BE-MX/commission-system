@@ -8,7 +8,7 @@ import time
 import pytest
 
 from app.core.config import Settings, get_settings
-from app.expo import upload_service
+from app.expo import ai_pipeline, upload_service
 
 _DEFAULT_SECRET = Settings.model_fields["EXPO_UPLOAD_SIGN_SECRET"].default
 
@@ -102,3 +102,87 @@ class TestSecretIsDefault:
     def test_false_once_overridden(self, monkeypatch):
         monkeypatch.setattr(get_settings(), "EXPO_UPLOAD_SIGN_SECRET", "a-real-deployment-secret")
         assert upload_service.secret_is_default() is False
+
+
+class TestPendingFiles:
+    @pytest.fixture(autouse=True)
+    def _isolate_pending_dir(self, tmp_path, monkeypatch):
+        """待取目录指向 tmp，避免测试污染真实 uploads/expo/pending。"""
+        monkeypatch.setattr(upload_service, "PENDING_DIR", tmp_path / "pending")
+
+    @staticmethod
+    def _jpeg_bytes(size=(80, 120)):
+        import io
+
+        from PIL import Image
+
+        buf = io.BytesIO()
+        Image.new("RGB", size, (120, 90, 70)).save(buf, "JPEG")
+        return buf.getvalue()
+
+    def test_save_pending_writes_file_named_for_customer(self):
+        name = upload_service.save_pending(42, self._jpeg_bytes(), "my photo.JPG")
+        assert name.startswith("c42_")
+        assert name.endswith(".jpg")
+        assert (upload_service.PENDING_DIR / name).exists()
+
+    def test_save_pending_rejects_non_image(self):
+        with pytest.raises(ValueError, match="不是有效的图片"):
+            upload_service.save_pending(42, b"definitely-not-an-image", "x.jpg")
+
+    def test_save_pending_rejects_oversize(self):
+        oversize = b"\xff" * (upload_service.MAX_UPLOAD_BYTES + 1)
+        with pytest.raises(ValueError, match="过大"):
+            upload_service.save_pending(42, oversize, "big.jpg")
+
+    def test_save_pending_downscales_large_image(self):
+        from PIL import Image
+
+        name = upload_service.save_pending(42, self._jpeg_bytes((4000, 3000)), "p.jpg")
+        with Image.open(upload_service.PENDING_DIR / name) as im:
+            assert max(im.size) <= ai_pipeline.UPLOAD_MAX_EDGE
+
+    def test_latest_pending_returns_newest_of_many(self):
+        import os
+
+        first = upload_service.save_pending(42, self._jpeg_bytes(), "a.jpg")
+        second = upload_service.save_pending(42, self._jpeg_bytes(), "b.jpg")
+        # mtime 分辨率在部分文件系统上不足以区分同秒写入，显式拉开
+        os.utime(upload_service.PENDING_DIR / first, (time.time() - 60,) * 2)
+        assert upload_service.latest_pending(42).name == second
+
+    def test_latest_pending_ignores_other_customers(self):
+        upload_service.save_pending(99, self._jpeg_bytes(), "other.jpg")
+        assert upload_service.latest_pending(42) is None
+
+    def test_latest_pending_none_when_empty(self):
+        assert upload_service.latest_pending(42) is None
+
+    def test_resolve_pending_blocks_path_traversal(self):
+        with pytest.raises(ValueError, match="非法"):
+            upload_service.resolve_pending(42, "../../etc/passwd")
+
+    def test_resolve_pending_blocks_other_customers_file(self):
+        name = upload_service.save_pending(99, self._jpeg_bytes(), "x.jpg")
+        with pytest.raises(ValueError, match="不属于该客户"):
+            upload_service.resolve_pending(42, name)
+
+    def test_resolve_pending_missing_file(self):
+        with pytest.raises(ValueError, match="不存在"):
+            upload_service.resolve_pending(42, "c42_deadbeef.jpg")
+
+    def test_sweep_stale_removes_only_expired(self):
+        import os
+
+        fresh = upload_service.save_pending(42, self._jpeg_bytes(), "fresh.jpg")
+        stale = upload_service.save_pending(42, self._jpeg_bytes(), "stale.jpg")
+        old = time.time() - upload_service.STALE_AFTER_SECONDS - 60
+        os.utime(upload_service.PENDING_DIR / stale, (old, old))
+
+        assert upload_service.sweep_stale() == 1
+        assert (upload_service.PENDING_DIR / fresh).exists()
+        assert not (upload_service.PENDING_DIR / stale).exists()
+
+    def test_sweep_stale_survives_missing_dir(self):
+        """目录尚未创建时清理不得抛异常——它挂在发码路径上，抛了就发不出码。"""
+        assert upload_service.sweep_stale() == 0

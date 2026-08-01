@@ -81,3 +81,83 @@ def parse_token(token: str | None) -> int:
     if not hmac.compare_digest(parts[2], _sign(customer_id, exp)):
         raise ValueError(_INVALID_TOKEN_MSG)
     return customer_id
+
+
+def _pending_dir() -> Path:
+    """每次现取而不是模块级缓存：测试用 monkeypatch 换 PENDING_DIR 才能生效。"""
+    PENDING_DIR.mkdir(parents=True, exist_ok=True)
+    return PENDING_DIR
+
+
+def save_pending(customer_id: int, raw: bytes, filename: str | None) -> str:
+    """落一张待取照片，返回纯文件名。非图片 / 超限抛 ValueError。
+
+    免鉴权端点，体积与内容双重校验：Content-Type 可以伪造，能不能被 Pillow 解析不能。
+    """
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise ValueError(f"照片过大，请压缩后重试（上限 {MAX_UPLOAD_BYTES // 1024 // 1024}MB）")
+
+    import io
+
+    from PIL import Image
+
+    try:
+        with Image.open(io.BytesIO(raw)) as probe:
+            probe.verify()          # verify 后对象不可再用，仅作有效性探针
+    except Exception:
+        raise ValueError("上传的文件不是有效的图片") from None
+
+    suffix = Path(filename or "photo.jpg").suffix.lower()
+    if suffix not in (".jpg", ".jpeg", ".png", ".webp"):
+        suffix = ".jpg"
+    target = _pending_dir() / f"c{customer_id}_{uuid.uuid4().hex[:10]}{suffix}"
+    target.write_bytes(raw)
+    # 手机原片动辄 3~5MB，落盘即压：这张图要经隧道回源到展位屏做「佩戴前」对比
+    ai_pipeline.downscale_inplace(target)
+    return target.name
+
+
+def latest_pending(customer_id: int) -> Path | None:
+    """该客户最新的待取照片；没有则 None。客户可能连传多张，取最后一张。"""
+    if not PENDING_DIR.exists():
+        return None
+    files = [p for p in PENDING_DIR.glob(f"c{customer_id}_*") if p.is_file()]
+    if not files:
+        return None
+    return max(files, key=lambda p: p.stat().st_mtime)
+
+
+def resolve_pending(customer_id: int, name: str) -> Path:
+    """待取文件名 → 绝对路径，三道校验：路径穿越、归属、存在性。"""
+    root = _pending_dir().resolve()
+    candidate = (root / name).resolve()
+    if candidate.parent != root:
+        raise ValueError("待取照片名非法")
+    if not candidate.name.startswith(f"c{customer_id}_"):
+        raise ValueError("待取照片不属于该客户")
+    if not candidate.is_file():
+        raise ValueError("待取照片不存在或已被清理")
+    return candidate
+
+
+def sweep_stale(now: float | None = None) -> int:
+    """删除超过 STALE_AFTER_SECONDS 的待取照片，返回删除条数。
+
+    **不能挂定时任务**：云端展会实例 SCHEDULER_ENABLED=false（防与办公室实例双跑），
+    而那台正是跑展会的机器。改为发码与确认两个路径上机会式触发，残留上界由此有保证。
+    绝不抛异常——它挂在发码路径上，抛了就发不出码。
+    """
+    if not PENDING_DIR.exists():
+        return 0
+    deadline = (now or time.time()) - STALE_AFTER_SECONDS
+    removed = 0
+    for path in PENDING_DIR.glob("c*"):
+        try:
+            if path.is_file() and path.stat().st_mtime < deadline:
+                path.unlink()
+                removed += 1
+        except OSError as exc:
+            msg = f"[expo] pending sweep skipped {path.name}: {exc}"
+            logger.warning(msg)
+            print(msg, flush=True)
+    return removed
