@@ -196,6 +196,7 @@ export function useTryOnFlow() {
   function setPendingHandler(fn) { onPendingArrived = fn }
 
   async function openQr() {
+    if (qrUrl.value) return // 面板已开：拦掉触屏误双击重复取号（否则旧 qrTimer/pollPending 变孤儿，见下）
     errorText.value = ''
     // 建档可能仍在后台跑（乐观切换）：与 submitPhoto 同一套「先等 registerPromise、
     // 再判 customerId」模式，避免拿一个未兑现/悬空的 customerId 去换二维码
