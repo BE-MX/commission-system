@@ -315,7 +315,8 @@ export function useTryOnFlow() {
     }
     let res
     try {
-      res = await createSession(customerId.value, blob, mode.value)
+      // 第四参：待取照片文件名（扫码上传来源）；本地拍照走 blob 时为空，两者二选一
+      res = await createSession(customerId.value, blob, mode.value, pendingName.value || null)
     } catch (e) {
       // 停留拍摄页：photoBlob 还在，用户可直接重按「确认」重传
       errorText.value = '照片上传失败，请再试一次或呼叫顾问'

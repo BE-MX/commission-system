@@ -4,7 +4,9 @@
       <!-- 相机可用：实时取景；不可用：文件选择兜底 -->
       <video v-show="cameraOn && !previewUrl" ref="videoEl" autoplay playsinline muted
              :class="{ rear: facing === 'environment' }" />
-      <img v-if="previewUrl" :src="previewUrl" class="preview" alt="预览" />
+      <img v-if="previewUrl" :src="previewUrl" class="preview" alt="预览"
+           @load="onPreviewLoaded" @error="onPreviewError" />
+      <div v-if="previewLoading" class="preview-loading">图片加载中…</div>
       <div v-if="flashing" class="flash" aria-hidden="true" />
 
       <div v-if="!previewUrl" class="guide" />
@@ -22,6 +24,19 @@
           从相册选择 / 调用系统相机
           <input type="file" accept="image/*" capture="user" hidden @change="onFilePick" />
         </label>
+        <!-- 平板摄像头不可用时最需要这条路：客户用自己手机拍/选，比在这台设备上翻相册更从容 -->
+        <button class="xk-btn ghost" @click="flow.openQr()">
+          <svg class="btn-ico" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="3" width="6" height="6" rx="1" />
+            <rect x="15" y="3" width="6" height="6" rx="1" />
+            <rect x="3" y="15" width="6" height="6" rx="1" />
+            <rect class="blk" x="14.5" y="14.5" width="2.6" height="2.6" />
+            <rect class="blk" x="18.5" y="14.5" width="2" height="2" />
+            <rect class="blk" x="14.5" y="18.5" width="2" height="2" />
+            <rect class="blk" x="18" y="18" width="3" height="3" />
+          </svg>
+          扫码传照片
+        </button>
       </div>
     </div>
 
@@ -32,7 +47,8 @@
           {{ submitting ? '上传中…' : '就用这张' }}
         </button>
       </template>
-      <!-- 三槽布局：快门始终居中，本地相册为右侧次级入口（不带 capture，直达相册） -->
+      <!-- 三槽布局：快门始终居中。右侧槽改双层堆叠（本地相册 + 扫码传照片）而非并列加第 4 项——
+           并列会让快门偏左，破坏下面 .side 注释里说的居中约束 -->
       <template v-else-if="cameraOn">
         <button class="xk-btn ghost side" @click="flipCamera">
           <svg class="btn-ico" viewBox="0 0 24 24" aria-hidden="true">
@@ -45,15 +61,29 @@
           反转镜头
         </button>
         <button class="shutter" aria-label="拍照" @click="snap"><i /></button>
-        <label class="xk-btn ghost side album">
-          <svg class="btn-ico" viewBox="0 0 24 24" aria-hidden="true">
-            <rect x="3" y="4.5" width="18" height="15" rx="2.5" />
-            <circle cx="8.6" cy="9.6" r="1.7" />
-            <path d="M21 15.4l-4.6-4.6L7 20.2" />
-          </svg>
-          本地相册
-          <input type="file" accept="image/*" hidden @change="onFilePick" />
-        </label>
+        <div class="side-stack">
+          <label class="xk-btn ghost">
+            <svg class="btn-ico" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="3" y="4.5" width="18" height="15" rx="2.5" />
+              <circle cx="8.6" cy="9.6" r="1.7" />
+              <path d="M21 15.4l-4.6-4.6L7 20.2" />
+            </svg>
+            本地相册
+            <input type="file" accept="image/*" hidden @change="onFilePick" />
+          </label>
+          <button class="xk-btn ghost" @click="flow.openQr()">
+            <svg class="btn-ico" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="3" y="3" width="6" height="6" rx="1" />
+              <rect x="15" y="3" width="6" height="6" rx="1" />
+              <rect x="3" y="15" width="6" height="6" rx="1" />
+              <rect class="blk" x="14.5" y="14.5" width="2.6" height="2.6" />
+              <rect class="blk" x="18.5" y="14.5" width="2" height="2" />
+              <rect class="blk" x="14.5" y="18.5" width="2" height="2" />
+              <rect class="blk" x="18" y="18" width="3" height="3" />
+            </svg>
+            扫码传照片
+          </button>
+        </div>
       </template>
     </div>
 
@@ -100,11 +130,24 @@
         <button class="xk-btn gd-go" @click="closeGuide">知道了，开始拍摄</button>
       </div>
     </div>
+
+    <!-- 二维码上传浮层：拍摄页的次级入口，快门主路径行为不变。点背景关闭与拍摄示范浮层
+         同一套约定；意外点关不丢数据——pending-photo 按 customer_id 查找而非按令牌，
+         重新点「扫码传照片」拿新令牌照样能立刻捞到客户手机那边已传完的照片 -->
+    <div v-if="flow.qrUrl.value" class="qr-overlay" @click.self="flow.closeQr()">
+      <div class="qr-panel">
+        <div class="qr-title">用手机上传照片</div>
+        <div class="qr-sub">相册里的美照、或用手机拍一张，都比现场更从容</div>
+        <canvas ref="qrCanvas" width="220" height="220" class="qr-canvas" />
+        <div class="qr-hint">微信扫一扫 · 上传后本屏自动显示 · {{ qrValidMinutes }} 分钟内有效</div>
+        <button class="xk-btn ghost" @click="flow.closeQr()">取消，我现场拍</button>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { computed, inject, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 const flow = inject('tryonFlow')
 const isScene = computed(() => flow.mode.value === 'scene')
@@ -165,6 +208,10 @@ async function flipCamera() {
 onBeforeUnmount(() => {
   stopCamera()
   if (flashTimer) clearTimeout(flashTimer)
+  // 本实例即将销毁：清掉指向本实例 previewUrl 的回调。拍摄页会在 capture↔register/
+  // analyzing 之间反复挂载/卸载，而 pollPending 的轮询活在 flow 里跨挂载持续跑；
+  // 不清的话，旧实例卸载后若待取照片才到达，会把 URL 写进一个没人看得见的死引用里
+  flow.setPendingHandler(null)
 })
 
 function stopCamera() {
@@ -173,6 +220,56 @@ function stopCamera() {
     stream = null
   }
 }
+
+// ── 扫码上传：画二维码 + 接收待取照片 ──
+const qrCanvas = ref(null)
+// 扫码来源的预览是服务端图片，弱网下有真实加载耗时；现场拍照走本地 blob 是同步可用的，
+// 不需要这个状态（两条路径共用同一个 <img>，靠这个 ref 区分要不要露加载提示）
+const previewLoading = ref(false)
+
+// 二维码：qrcode 动态引入，失败静默降级为不显示（与 ResultScreen 同策略）
+watch([() => flow.qrUrl.value, qrCanvas], async () => {
+  if (!flow.qrUrl.value) return
+  await nextTick()
+  if (!qrCanvas.value) return
+  try {
+    const QRCode = (await import('qrcode')).default
+    // 墨色码点 + 暖米底：黑金语系里可扫性最稳的组合（反色码部分扫码器不认）。
+    // 这两个是字面 hex 而非裸写的 CSS 颜色——qrcode 库自己解析颜色字符串，不认
+    // var(--xk-*)，只能传真实色值；check_conventions 的裸 hex 红线管的是 <style>
+    // 里的样式声明，不是画布 API 的参数，这里不算违反宪法 13
+    await QRCode.toCanvas(qrCanvas.value, flow.qrUrl.value, {
+      width: 220, margin: 1,
+      color: { dark: '#0c0a08', light: '#f3ead9' },
+    })
+  } catch (e) { /* 依赖缺失时不显示二维码，不阻断流程 */ }
+}, { immediate: true })
+
+// 面板有效期提示：qrExpiresAt 是开面板那一刻定下的绝对时间戳，取一次差值即可——
+// 不需要每秒重算的倒计时，也就不用额外定时器；只是让「10 分钟后静默消失」变得可预期，
+// 不是让客户盯着表看
+const qrValidMinutes = computed(() => {
+  if (!flow.qrExpiresAt.value) return 10
+  return Math.max(1, Math.round((flow.qrExpiresAt.value - Date.now()) / 60000))
+})
+
+// 手机传到的照片直接进既有预览态：与现场拍照共用「重拍 / 就用这张」两个按钮，
+// 顾问在同一个位置做同一个决定
+function openPendingPhoto(photoUrl) {
+  previewLoading.value = true
+  previewUrl.value = photoUrl
+}
+function onPreviewLoaded() {
+  previewLoading.value = false
+}
+function onPreviewError() {
+  previewLoading.value = false
+  if (previewUrl.value.startsWith('blob:')) return // 本地 blob 极少加载失败，出现也不该报「服务器已收到」
+  // 后端已经从待取目录把这张照片收下了，缩略图加载失败不影响提交——不清 previewUrl/pendingName，
+  // 客户仍可直接点「就用这张」，只是看不到确认用的缩略图
+  flow.errorText.value = '预览图加载较慢或失败，可直接点“就用这张”提交（服务器已收到照片）'
+}
+flow.setPendingHandler(openPendingPhoto)
 
 function snap() {
   const video = videoEl.value
@@ -192,6 +289,10 @@ function snap() {
   canvas.toBlob(blob => {
     if (!blob) { video.play?.()?.catch(() => {}); return } // 极端失败恢复取景
     photoBlob = blob
+    // 防串源：新拍的照片作废旧的扫码待取名。createSession 按「有 pendingName 就优先用它」
+    // 判断来源，不清的话——分析失败自动退回本屏是既有路径（poll() 里直接跳 step，不经过
+    // retake()）——现场重拍会静默提交回那张旧的扫码照，而不是刚拍的这张
+    flow.pendingName.value = ''
     previewUrl.value = URL.createObjectURL(blob)
   }, 'image/jpeg', 0.9)
 }
@@ -237,19 +338,25 @@ async function onFilePick(event) {
   if (!file) return
   const blob = await downscalePickedPhoto(file)
   photoBlob = blob
+  flow.pendingName.value = '' // 同 snap()：本地相册/系统相机取到新照片同样要作废旧的扫码待取名
   previewUrl.value = URL.createObjectURL(blob)
 }
 
 function retake() {
-  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
+  // 只对本地 blob 调 revoke：待取照片的 previewUrl 是服务端 URL，
+  // 对非 blob URL 调 revokeObjectURL 是无声的错用
+  if (previewUrl.value.startsWith('blob:')) URL.revokeObjectURL(previewUrl.value)
   previewUrl.value = ''
+  previewLoading.value = false
   photoBlob = null
+  flow.pendingName.value = ''   // 不清则「重拍」后仍会提交上一张扫码传来的照片
   // 恢复取景（snap 时 pause 了）；仅相机路径，文件选择兜底下 video 无流，play() 会 reject
   if (cameraOn.value) videoEl.value?.play?.()?.catch(() => {})
 }
 
 async function confirm() {
-  if (!photoBlob || submitting.value) return
+  // 两种来源二选一即可提交：现场拍照有 blob，扫码上传有待取文件名
+  if ((!photoBlob && !flow.pendingName.value) || submitting.value) return
   submitting.value = true
   try {
     // 不在此处 stopCamera：上传失败会留在拍摄页（errorText 提示），提前停流
@@ -300,7 +407,15 @@ video.rear { transform: none; } /* 后置不镜像：所见即实景方向 */
   font-size: 14px; letter-spacing: 0.2em; color: var(--xk-gold-hi);
 }
 .tip small { display: block; margin-top: 6px; font-size: 11px; color: var(--xk-mut); letter-spacing: 0.14em; }
-.fallback { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); }
+.fallback {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+}
+.preview-loading {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  padding: 8px 18px; border-radius: 16px; font-size: 12px; letter-spacing: 0.12em;
+  color: var(--xk-gold-hi); background: rgba(8, 6, 4, 0.55); backdrop-filter: blur(3px);
+}
 .actions {
   flex: none; display: flex; justify-content: center; gap: 16px;
   padding-top: 18px; min-height: 88px; align-items: center;
@@ -311,14 +426,21 @@ video.rear { transform: none; } /* 后置不镜像：所见即实景方向 */
 /* box-sizing 必须显式写：button 的 UA 默认是 border-box，label 是 content-box，
    同样的 width 在两者上差出 padding+border（26px），快门就不居中了 */
 .side { width: 148px; flex: none; padding: 0 12px; gap: 8px; box-sizing: border-box; }
-.album { display: flex; justify-content: center; cursor: pointer; }
+/* 右侧槽堆叠（本地相册 + 扫码传照片）：外层只管 148px 宽与列排布，
+   .side 那份 padding/gap/box-sizing 是给单个按钮内部 icon+文字排布用的，
+   堆叠后改由每个子按钮各自套用（撑满 100% 宽），跟左侧反转镜头保持视觉对称 */
+.side-stack { width: 148px; flex: none; display: flex; flex-direction: column; gap: 8px; }
+.side-stack > .xk-btn {
+  width: 100%; padding: 0 12px; gap: 8px; box-sizing: border-box;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
 .btn-ico {
   width: 18px; height: 18px; flex: none;
   fill: none; stroke: currentColor; stroke-width: 1.6;
   stroke-linecap: round; stroke-linejoin: round;
 }
-/* 镜头点画实心：18px 下空心小圆会糊成一团 */
-.btn-ico .dot { fill: currentColor; stroke: none; }
+/* 镜头点/二维码数据块画实心：18px 下空心小图形会糊成一团 */
+.btn-ico .dot, .btn-ico .blk { fill: currentColor; stroke: none; }
 .shutter {
   width: 72px; height: 72px; border-radius: 50%;
   border: 2px solid var(--xk-gold); background: transparent;
@@ -409,4 +531,20 @@ video.rear { transform: none; } /* 后置不镜像：所见即实景方向 */
   .gd-panel { padding: 22px 18px 20px; }
   .gd-go { min-width: 0; width: 100%; }
 }
+
+/* ── 二维码上传浮层 ── */
+.qr-overlay {
+  position: fixed; inset: 0; z-index: 40; display: flex;
+  align-items: center; justify-content: center;
+  background: rgba(6, 5, 4, 0.82); backdrop-filter: blur(6px);
+}
+.qr-panel {
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
+  padding: 32px 34px; border-radius: 20px;
+  border: 1px solid var(--xk-gold-line); background: var(--xk-ink);
+}
+.qr-title { font-size: 17px; color: var(--xk-gold); letter-spacing: 0.1em; }
+.qr-sub { font-size: 12px; color: var(--xk-mut); }
+.qr-canvas { border-radius: 12px; }
+.qr-hint { font-size: 12px; color: var(--xk-gold-dim); letter-spacing: 0.08em; }
 </style>
