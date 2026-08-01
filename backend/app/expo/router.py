@@ -280,8 +280,16 @@ def create_upload_ticket(
     #（照 app/domestic/router.py 对 qr_secret_is_default 的处理；Task 1 代码审查 C1）
     if upload_service.secret_is_default():
         raise HTTPException(503, "扫码上传未配置签名密钥，请联系管理员")
-    if not db.get(ExpoCustomer, customer_id):
+    customer = db.get(ExpoCustomer, customer_id)
+    if not customer:
         raise HTTPException(404, "客户不存在")
+    # 模块内其余落盘路径（create_session）都在 consent_at 前提一致：现场拍照/扫码
+    # 确认二选一都得客户已同意才能落盘。这里在 happy path 下永远为真（register
+    # 强制 consent 才建档），但发码是"照片落地磁盘、且经 /uploads 公开 URL 可读"
+    # 之前的唯一关卡——不能只靠"调用方应该都是先 register 过的"这个假设撑住
+    # 隐私红线，补一道显式校验，与模块其余写路径的口径保持一致（I7）。
+    if not customer.consent_at:
+        raise HTTPException(400, "客户未同意拍照存储，无法生成上传链接")
     upload_service.sweep_stale()   # 机会式清理：云端展会实例无调度器，只能挂在这条路上
     token = upload_service.make_token(customer_id)
     return ok({

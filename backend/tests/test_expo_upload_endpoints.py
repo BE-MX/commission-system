@@ -384,6 +384,19 @@ class TestUploadTicketFailClosed:
         assert resp.status_code == 200
         assert resp.json()["data"]["token"]
 
+    def test_rejects_customer_without_consent(self, db):
+        """I7：模块内其余落盘路径（create_session）都以 consent_at 为前提；发码
+        端点在 happy path 下（register 强制 consent 才建档）也总是成立，但照片
+        经这里落到磁盘、且经 /uploads 公开 URL 可读——发码是那道隐私红线生效前的
+        最后一关，不该只靠"调用方应该都先 register 过"这个假设撑住。"""
+        customer = ExpoCustomer(name="未同意", phone="13800138002", expo_code="t")
+        db.add(customer)
+        db.commit()
+        db.refresh(customer)
+        with _full_client(db) as client:
+            resp = client.post(f"/api/expo/kiosk/upload-ticket?customer_id={customer.id}")
+        assert resp.status_code == 400
+
 
 class TestCreateSessionPendingPhotoForm:
     """POST /sessions 的 pending_photo 表单字段：空串归一化守卫。"""
