@@ -83,7 +83,7 @@ export function useTryOnFlow() {
   const {
     qrUrl, qrExpiresAt, pendingName, openQr, closeQr, setPendingHandler, disposeQr,
   } = useQrUpload({
-    customerId, errorText, touch, getRegisterPromise: () => registerPromise,
+    customerId, step, errorText, touch, getRegisterPromise: () => registerPromise,
     pollMs: POLL_MS, pollFailHintAt: POLL_FAIL_HINT_AT, netCongestionHint: NET_CONGESTION_HINT,
   })
 
