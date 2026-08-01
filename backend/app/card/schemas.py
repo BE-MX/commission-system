@@ -35,7 +35,7 @@ class CustomerCreate(BaseModel):
     email: Optional[str] = Field(None, max_length=128)
     whatsapp: Optional[str] = Field(None, max_length=64)
     expo_code: str = Field("", max_length=64)
-    note: Optional[str] = None
+    remark: Optional[str] = None
 
 
 class CustomerUpdate(BaseModel):
@@ -43,7 +43,7 @@ class CustomerUpdate(BaseModel):
     email: Optional[str] = Field(None, max_length=128)
     whatsapp: Optional[str] = Field(None, max_length=64)
     expo_code: Optional[str] = Field(None, max_length=64)
-    note: Optional[str] = None
+    remark: Optional[str] = None
 
 
 class EntryCreate(BaseModel):

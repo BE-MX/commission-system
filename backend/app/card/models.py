@@ -63,7 +63,7 @@ class CardCustomer(Base):
     email_norm = Column(String(128), nullable=True, comment="口令-邮箱（小写归一）")
     whatsapp_norm = Column(String(32), nullable=True, comment="口令-WhatsApp（纯数字归一）")
     expo_code = Column(String(64), nullable=False, default="", comment="届次标记，如 2026-08")
-    note = Column(Text, nullable=True, comment="内部备注（不对客户展示）")
+    remark = Column(Text, nullable=True, comment="内部备注（不对客户展示）")
     created_by = Column(Integer, nullable=True, comment="录入人 ark_users.id（无 FK，随 expo.operator_user_id 先例）")
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")

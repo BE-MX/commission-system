@@ -51,7 +51,7 @@ def upgrade():
         sa.Column("email_norm", sa.String(128), nullable=True, comment="口令-邮箱（小写归一）"),
         sa.Column("whatsapp_norm", sa.String(32), nullable=True, comment="口令-WhatsApp（纯数字归一）"),
         sa.Column("expo_code", sa.String(64), nullable=False, server_default="", comment="届次标记，如 2026-08"),
-        sa.Column("note", sa.Text(), nullable=True, comment="内部备注（不对客户展示）"),
+        sa.Column("remark", sa.Text(), nullable=True, comment="内部备注（不对客户展示）"),
         sa.Column("created_by", sa.Integer(), nullable=True, comment="录入人 ark_users.id（无 FK）"),
         sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP"), comment="创建时间"),
         sa.Column("updated_at", sa.DateTime(), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"), comment="更新时间"),

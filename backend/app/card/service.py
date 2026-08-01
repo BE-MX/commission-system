@@ -117,7 +117,7 @@ def customer_dict(c: CardCustomer, entry_count: Optional[int] = None) -> dict:
         "email_norm": c.email_norm,
         "whatsapp_norm": c.whatsapp_norm,
         "expo_code": c.expo_code,
-        "note": c.note,
+        "remark": c.remark,
         "entry_count": entry_count if entry_count is not None else len(c.entries),
         "created_at": c.created_at.strftime("%Y-%m-%d %H:%M") if c.created_at else None,
     }

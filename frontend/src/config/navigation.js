@@ -18,7 +18,7 @@ import {
   Money, Refresh, List, Van, Upload, Box, Setting, Aim, Reading,
   MagicStick, Notebook, Calendar, Camera, EditPen, Stamp, TrendCharts,
   Lock, Lightning, Picture, Collection, CollectionTag, DataBoard,
-  DataLine, Printer, Brush, Tickets, Goods,
+  DataLine, Printer, Brush, Tickets, Goods, Postcard,
 } from '@element-plus/icons-vue'
 
 /**
@@ -57,6 +57,7 @@ export const MENU_GROUPS = {
     anyPermission: [
       'expo:read', 'expo:write', 'expo:admin', 'expo_lead:read', 'expo_lead:write',
       'expo_hair_color:read', 'expo_scene:read', 'expo_script:read',
+      'card:read', 'card:write',
     ],
   },
   commission: {
@@ -369,6 +370,17 @@ export const NAV_ENTRIES = [
     menu: {
       group: 'expo', title: '展会线索台', icon: Aim, order: 30,
       anyPermission: ['expo_lead:read', 'expo_lead:write'],
+    },
+  },
+  {
+    path: '/expo/card-butler',
+    name: 'CardButler',
+    component: () => import('@/views/card/CardButler.vue'),
+    title: '名片管家',
+    anyPermission: ['card:read', 'card:write'],
+    menu: {
+      group: 'expo', title: '名片管家', icon: Postcard, order: 35,
+      anyPermission: ['card:read', 'card:write'],
     },
   },
 

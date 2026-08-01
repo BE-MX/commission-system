@@ -116,7 +116,7 @@ def create_customer(
         raise HTTPException(404, "业务员不存在")
     customer = CardCustomer(
         salesperson_id=sp.id, display_name=payload.display_name.strip(),
-        expo_code=payload.expo_code.strip(), note=payload.note,
+        expo_code=payload.expo_code.strip(), remark=payload.remark,
         created_by=int(user.get("sub", 0)) or None,
     )
     try:
@@ -145,8 +145,8 @@ def update_customer(
         customer.display_name = payload.display_name.strip()
     if payload.expo_code is not None:
         customer.expo_code = payload.expo_code.strip()
-    if payload.note is not None:
-        customer.note = payload.note
+    if payload.remark is not None:
+        customer.remark = payload.remark
     try:
         service.apply_customer_contacts(customer, payload.email, payload.whatsapp)
     except ValueError as exc:
