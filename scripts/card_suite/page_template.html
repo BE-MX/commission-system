@@ -52,6 +52,12 @@
   }
   .tagline { margin-top: 12px; font-size: 15px; color: var(--muted); }
   .tagline b { color: var(--text); font-weight: 600; }
+  .chips { margin-top: 16px; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+  .chip {
+    background: var(--card); border: 1px solid var(--line); border-radius: 999px;
+    padding: 6px 13px; font-size: 12.5px; font-weight: 600; color: var(--text);
+  }
+  .factory { margin-top: 10px; font-size: 13px; color: var(--yellow); font-weight: 600; }
 
   /* actions */
   .actions { margin-top: 22px; display: flex; flex-direction: column; gap: 10px; }
@@ -145,6 +151,12 @@
     <h1>{{NAME}}</h1>
     <div class="role">{{TITLE}} · leShine Hair</div>
     <p class="tagline">Your personal <b>hair-business butler</b>.<br>Any question about hair business — just ask me.</p>
+    <div class="chips">
+      <span class="chip">Hair Extensions</span>
+      <span class="chip">Tape-In Extensions</span>
+      <span class="chip">Genius Weft</span>
+    </div>
+    <div class="factory">The patent-source factory of Genius Weft</div>
     <div class="actions">
       <a class="btn btn-primary" href="mailto:{{EMAIL}}">Email {{NAME}}</a>
       {{WA_BUTTON}}

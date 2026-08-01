@@ -92,10 +92,10 @@ def main():
 
     with open(os.path.join(ROOT, "poster_template.html"), encoding="utf-8") as f:
         poster_tpl = f.read()
-    avatars = [file_uri(os.path.join(ASSETS, p["avatar"])) for p in data["people"]]
+    # 海报二维码预留 Janny 的（用户指定）
     html = fill(poster_tpl, {
         **common,
-        "AV1": avatars[0], "AV2": avatars[1], "AV3": avatars[2], "AV4": avatars[3],
+        "QR_URI": file_uri(os.path.join(OUT_ASSETS, "qr_janny.png")),
     })
     html_path = os.path.join(OUT_HTML, "poster_a1.html")
     with open(html_path, "w", encoding="utf-8") as f:

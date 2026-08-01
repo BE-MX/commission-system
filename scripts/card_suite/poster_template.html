@@ -49,11 +49,23 @@
 
   .bonus {
     border: 1.6mm solid var(--ink); border-radius: 99mm;
-    padding: 5.5mm 16mm 6.5mm; text-align: center;
-    font-size: 10.5mm; font-weight: 700; letter-spacing: 0.8mm; color: var(--ink);
+    padding: 5mm 14mm 6mm; text-align: center;
+    font-size: 9.5mm; font-weight: 700; letter-spacing: 0.7mm; color: var(--ink);
     text-transform: uppercase;
   }
   .bonus .free { background: var(--ink); color: var(--yellow); border-radius: 99mm; padding: 1.6mm 6mm 2mm; margin-right: 5mm; }
+
+  /* 扫码引导排：左=福利+手写 Scan me!+手绘箭头，右=大二维码 */
+  .scanrow { display: flex; align-items: center; justify-content: center; gap: 8mm; }
+  .scanleft { display: flex; flex-direction: column; align-items: center; gap: 7mm; }
+  .scanme {
+    font-family: "Segoe Script", "Comic Sans MS", cursive;
+    font-size: 27mm; font-weight: 700; color: var(--ink);
+    transform: rotate(-5deg);
+  }
+  .arrow { width: 105mm; height: 62mm; transform: rotate(6deg); }
+  .qrbig { background: #ffffff; border-radius: 10mm; padding: 5mm; }
+  .qrbig img { display: block; width: 132mm; height: 132mm; }
 
   .band {
     position: absolute; left: 0; right: 0; bottom: 0; height: 196mm; background: var(--black);
@@ -85,7 +97,19 @@
         <div class="l2">Show-special sample prices &mdash; <b>TODAY</b></div>
       </div>
 
-      <div class="bonus"><span class="free">Free</span>AI Hair Try-On &middot; AI Portrait Photo &amp; Frame</div>
+      <div class="scanrow">
+        <div class="scanleft">
+          <div class="bonus"><span class="free">Free</span>AI Hair Try-On &middot; AI Portrait &amp; Frame</div>
+          <div class="scanme">Scan me!</div>
+          <svg class="arrow" viewBox="0 0 200 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M14 28 C 66 -6, 118 92, 178 62" stroke="#171717" stroke-width="9"
+                  stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M178 62 L 152 60 M178 62 L 167 39" stroke="#171717" stroke-width="9"
+                  stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="qrbig"><img src="{{QR_URI}}" alt="QR"></div>
+      </div>
     </div>
 
     <div class="band">
