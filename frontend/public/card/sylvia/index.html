@@ -136,6 +136,17 @@
   }
   .faq-empty { margin-top: 12px; font-size: 14px; color: var(--muted); display: none; }
 
+  /* FAQ 口令门：默认上锁，解锁后整块展开 */
+  .locked-card { text-align: center; padding: 26px 18px 24px; }
+  .locked-card svg { width: 34px; height: 34px; margin: 0 auto 10px; display: block; }
+  .locked-card h3 { font-size: 16px; font-weight: 650; }
+  .locked-card p { margin-top: 8px; font-size: 13.5px; line-height: 1.55; color: var(--muted); }
+  .locked-card p b { color: var(--text); font-weight: 600; }
+  .locked-card .btn { margin-top: 16px; width: 100%; }
+  .faq-gated { display: none; }
+  body.unlocked .faq-gated { display: block; animation: rise 420ms var(--ease-out); }
+  body.unlocked #faqLock { display: none; }
+
   footer { margin-top: 44px; text-align: center; }
   footer img { height: 26px; opacity: 0.9; }
   footer .fx { margin-top: 8px; font-size: 12px; letter-spacing: 1.6px; color: #6f6f75; }
@@ -169,10 +180,10 @@
 
   
 
-  <section class="rise d1">
-    <div class="sec-label">Your private expo file</div>
+  <section class="rise d1" id="unlockSection">
+    <div class="sec-label">Unlock your butler service</div>
     <div class="card">
-      <p class="desc">Met us at the expo? Enter your passcode — the <b>e-mail or WhatsApp number</b> you left with Sylvia — to open your private file &amp; photos.</p>
+      <p class="desc">This page is exclusive to leShine customers. Enter your passcode — the <b>e-mail or WhatsApp number you left with Sylvia</b> — to open your private expo file &amp; photos and unlock the full hair-business FAQ below.</p>
       <input class="field" id="passcode" type="text" autocomplete="off"
              placeholder="Your e-mail or WhatsApp (incl. country code)">
       <button class="btn btn-primary" id="unlockBtn" style="margin-top:12px;width:100%">
@@ -202,6 +213,18 @@
 
   <section class="rise d3">
     <div class="sec-label">Hair business FAQ</div>
+
+    <div class="card locked-card" id="faqLock">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#ffe252" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="4" y="10.5" width="16" height="9.5" rx="2.4"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>
+      </svg>
+      <h3>FAQ is reserved for leShine customers</h3>
+      <p>40+ real answers on ordering, hair quality, customization, exclusivity &amp; shipping — unlocked with your passcode: <b>the e-mail or WhatsApp number you left with Sylvia</b>.</p>
+      <p>Haven&#39;t left your contact yet? Send it via <b>&ldquo;Ask me anything&rdquo;</b> above and Sylvia will activate your access.</p>
+      <button class="btn btn-primary" id="faqLockBtn">Enter my passcode</button>
+    </div>
+
+    <div class="faq-gated">
     <input class="field faq-search" id="faqSearch" type="search" placeholder="Search FAQs…">
     <div id="faqList">
       <div class="faq-group">
@@ -409,6 +432,7 @@
       </div>
     </div>
     <div class="faq-empty" id="faqEmpty">No matching question — ask Sylvia directly above.</div>
+    </div><!-- /.faq-gated -->
   </section>
 
   <footer class="rise d4">
@@ -421,6 +445,26 @@
 (function () {
   var SLUG = "sylvia";
   var API = "/api/card/" + SLUG;
+  var UNLOCK_KEY = "card_unlock_" + SLUG;
+
+  function revealFaq() {
+    document.body.classList.add("unlocked");
+  }
+  function renderFile(d) {
+    document.getElementById("fileName").textContent = "Hello, " + d.customer.name + " — your expo file:";
+    var html = "";
+    (d.entries || []).forEach(function (e) {
+      html += '<div class="entry">';
+      if (e.title) html += '<div class="et">' + esc(e.title) + "</div>";
+      if (e.content) html += '<div class="ec">' + esc(e.content) + "</div>";
+      if (e.attachment_url) html += '<img src="' + esc(e.attachment_url) + '" alt="" loading="lazy">';
+      if (e.created_at) html += '<div class="ed">' + esc(e.created_at) + "</div>";
+      html += "</div>";
+    });
+    if (!html) html = '<div class="entry"><div class="ec">Your file is being prepared — check back soon.</div></div>';
+    document.getElementById("entries").innerHTML = html;
+    document.getElementById("fileBox").style.display = "block";
+  }
 
   function show(el, text, ok) {
     el.textContent = text;
@@ -465,25 +509,37 @@
         show(hint, res.message || "No file found for this passcode yet. Please check with your butler.");
         return;
       }
-      hint.style.display = "none";
-      var d = res.data;
-      document.getElementById("fileName").textContent = "Hello, " + d.customer.name + " — your expo file:";
-      var html = "";
-      (d.entries || []).forEach(function (e) {
-        html += '<div class="entry">';
-        if (e.title) html += '<div class="et">' + esc(e.title) + "</div>";
-        if (e.content) html += '<div class="ec">' + esc(e.content) + "</div>";
-        if (e.attachment_url) html += '<img src="' + esc(e.attachment_url) + '" alt="" loading="lazy">';
-        if (e.created_at) html += '<div class="ed">' + esc(e.created_at) + "</div>";
-        html += "</div>";
-      });
-      if (!html) html = '<div class="entry"><div class="ec">Your file is being prepared — check back soon.</div></div>';
-      document.getElementById("entries").innerHTML = html;
-      box.style.display = "block";
+      show(hint, "Unlocked — your expo file and the full FAQ are now open.", true);
+      renderFile(res.data);
+      revealFaq();
+      try { localStorage.setItem(UNLOCK_KEY, code); } catch (e) {}
     }).catch(function () {
       busy(unlockBtn, document.getElementById("unlockSpin"), false);
       show(hint, "Network hiccup — please try again in a few seconds.");
     });
+  });
+
+  /* 回访免重输：本地存过口令则静默复验；网络不可用时对老客户放行 FAQ */
+  (function () {
+    var saved = null;
+    try { saved = localStorage.getItem(UNLOCK_KEY); } catch (e) {}
+    if (!saved) return;
+    post("/unlock", { passcode: saved }).then(function (res) {
+      if (res && res.code === 200 && res.data && res.data.customer) {
+        renderFile(res.data);
+        revealFaq();
+      } else if (res && res.code === 404) {
+        try { localStorage.removeItem(UNLOCK_KEY); } catch (e) {}
+      } else {
+        revealFaq(); // 后端暂不可达（信封缺失/限流），曾解锁过的客户先放行 FAQ
+      }
+    }).catch(function () { revealFaq(); });
+  })();
+
+  /* FAQ 锁卡片按钮：滚到口令框并聚焦 */
+  document.getElementById("faqLockBtn").addEventListener("click", function () {
+    document.getElementById("unlockSection").scrollIntoView({ behavior: "smooth", block: "start" });
+    setTimeout(function () { document.getElementById("passcode").focus(); }, 450);
   });
 
   /* inquiry */
