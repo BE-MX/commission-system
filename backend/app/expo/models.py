@@ -178,6 +178,7 @@ class ExpoResult(Base):
     # 2026-07-31 起 kiosk 不再写入（档位选择器已撤，中转站实测不透传该参数）：
     # 历史行留 high/medium，新行一律 NULL。全仓无消费方，保留供换通道后复用
     quality = Column(String(16), nullable=True, comment="出图档位（2026-07-31 起弃用，新行为空）")
+    prompt_variant = Column(String(16), nullable=True, comment="合成版本 real=真实 / soft=柔光 / beauty=美颜；空=回落默认版")
     gen_ms = Column(Integer, nullable=True, comment="生成耗时（毫秒）")
     status = Column(String(16), nullable=False, default="pending", comment="pending/generating/done/failed")
     reaction = Column(String(16), nullable=True, comment="loved/soso")

@@ -11,7 +11,8 @@
     "test:invoice-layout": "node --test tests/invoiceLayout.test.mjs",
     "test:invoice-import": "node --test tests/invoicePasteImport.test.mjs",
     "test:invoice-settlement": "node --test tests/invoiceSettlement.test.mjs",
-    "test:expo-publicurl": "node --test tests/expoPublicUrl.test.mjs"
+    "test:expo-publicurl": "node --test tests/expoPublicUrl.test.mjs",
+    "test:expo-variants": "node --test tests/expoPromptVariants.test.mjs"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.0",

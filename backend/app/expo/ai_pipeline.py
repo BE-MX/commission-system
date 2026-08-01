@@ -702,47 +702,92 @@ _FRAMING_CLAUSE = (
 #   硬派一盏新主光会让脸与背景光不咬合，反而更像贴图；
 # ③不提年龄：prompt 里出现 mature/elderly 会把人往老里推，而 age_range 是模型估的本就
 #   不可靠。这条对所有年龄都成立，故全量注入、不做条件分支。
-# 版本可后台切换（2026-08-01 亮哥指令「让我可以自己切换不同版本的提示词」）：
-# 选哪版由 AI 预设 expo_wig_composite 的 parameters 里的 face_vitality 键决定，在
-# 系统管理 → AI 管理页改一个词、下一次生成即生效，不重启不部署。
-# **该键不会被发给上游**：image_service._image_params 按 IMAGE_PARAMETER_KEYS 白名单
-# 过滤，同 api_style 那个既有先例（见 image_service 顶部注释）。
-# 版本写在代码里而不是存库：提示词是这个模块最容易改坏又最难发现改坏的东西，留在代码里
-# 才有 review、有测试、能 git blame 回溯；后台只决定「用哪版」，不决定「写什么」。
-# 默认 off = 与 2026-08-01 之前行为完全一致，需要主动切 v1 才启用——部署本身零行为变化。
-FACE_VITALITY_KEY = "face_vitality"
-_DEFAULT_FACE_VITALITY = "off"
+# 合成版本（2026-08-01 亮哥指令）：客户在甄选页必选一个，三版差别**只在皮肤怎么处理**，
+# 用光一律打好——「真实版」是真实的好照片，不是没打光的照片。若真实版不打光，今早那条
+# 反馈对每一个不改默认值的客户就原封不动地留着，而绝大多数客户不会去改默认值。
+#
+# 落库到 ExpoResult.prompt_variant（085 迁移）而不是只做运行时参数：合成在后台线程里读
+# 那一行跑，运行时参数根本传不到；且「客户当时选的哪版」是排障与复现的唯一依据。
+#
+# 上一版做过一个「后台 preset 参数切换」（face_vitality 键），已随本次改动删除——同一段
+# 提示词留两个控制入口就是两份真相，界面选择既然是必选项，后台默认值永远轮不上。
+PROMPT_VARIANTS = ("real", "soft", "beauty")
+DEFAULT_PROMPT_VARIANT = "real"
 
-_FACE_VITALITY_VARIANTS = {
-    "off": "",
-    "v1": (
+# 三版共用的用光底座：补的是**摄影用光与眼神**，不是美颜。
+# 三条刻意为之的措辞，改动前先读：
+# ①不写 radiant/glowing/youthful——这些是美颜滤镜触发词，一写就翻车成磨皮脸（真实/柔光两版
+#   尤其不能出现；美颜版另有专门措辞，见下）；
+# ②不指定主光位，只说「跟随现场光方向再塑形」——原景保持路径要求沿用客户原照片的光，
+#   硬派一盏新主光会让脸与背景光不咬合，反而更像贴图；
+# ③不提年龄：prompt 里出现 mature/elderly 会把人往老里推，而 age_range 是模型估的本就不可靠。
+_LIGHTING_BASE = (
     " Give her face the same attention a portrait photographer would: follow the existing "
     "light direction of the scene, but shape it - lift the shadow side with gentle fill and "
     "let a soft key catch the cheekbones and brow, so her face reads three-dimensional and "
     "never flat, dim or muddy. Her eyes must look clear, awake and engaged, with distinct "
-    "catchlights. Keep the skin alive rather than smooth: a fine specular sheen on the "
-    "forehead, cheekbones, nose bridge and lips, and natural blood warmth in the cheeks and "
-    "lips. Every pore, fine line, wrinkle, eye bag and age spot stays exactly as in the "
-    "original photo - do not smooth, retouch, plump, lighten or rejuvenate the skin, do not "
-    "slim the face or enlarge the eyes. The liveliness must come from light, gaze and colour, "
-    "never from erasing her age."
+    "catchlights."
+)
+
+# 皮肤纹理不可动的措辞（真实版）：逐项写死，堵掉模型「变年轻=变好看」的捷径
+_SKIN_UNTOUCHED = (
+    " Keep the skin alive rather than smooth: a fine specular sheen on the forehead, "
+    "cheekbones, nose bridge and lips, and natural blood warmth in the cheeks and lips. "
+    "Every pore, fine line, wrinkle, eye bag and age spot stays exactly as in the original "
+    "photo - do not smooth, retouch, plump, lighten or rejuvenate the skin, do not slim the "
+    "face or enlarge the eyes. The liveliness must come from light, gaze and colour, never "
+    "from erasing her age."
+)
+
+# 头发保护句：只出现在美颜版。磨皮会连带把发丝磨成塑料感，而发丝正是这个产品要卖的东西，
+# 所以修皮肤的同时必须把头发显式圈出来保护（2026-08-01 亮哥知情并拍板要做美颜版）
+_HAIR_FIDELITY_GUARD = (
+    " The retouching applies to facial skin ONLY. The wig must stay perfectly crisp: keep "
+    "every individual hair strand, the cut's layering and its natural sheen exactly as sharp "
+    "and detailed as in the reference - never soften, blur, smooth or plasticise the hair."
+)
+
+_PROMPT_VARIANT_CLAUSES = {
+    # 真实版：打光 + 皮肤一动不动
+    "real": _LIGHTING_BASE + _SKIN_UNTOUCHED,
+    # 柔光版：更柔的光、暗部更亮，皮肤纹理仍然保留——观感更润，但不是磨皮
+    "soft": (
+        _LIGHTING_BASE
+        + " Use a softer, more diffused light overall - a large gentle source with the shadow "
+        "side lifted further, so contrast is low and the modelling is smooth rather than "
+        "sculpted, the way a beauty dish with heavy fill renders a face."
+        + _SKIN_UNTOUCHED
+    ),
+    # 美颜版：真磨皮提亮。这里刻意允许上面禁掉的那类词，因为这正是本版要的效果；
+    # 但范围死死限定在面部皮肤，并配上头发保护句
+    "beauty": (
+        _LIGHTING_BASE
+        + " Use a soft, flattering beauty light. Retouch her facial skin the way a magazine "
+        "portrait is finished: even out the complexion, soften fine lines and wrinkles, reduce "
+        "under-eye shadows and blemishes, and give the skin a smooth, luminous finish - while "
+        "keeping her facial features, bone structure and identity unmistakably the same person, "
+        "and keeping enough skin texture that she still reads as a photograph rather than an "
+        "illustration. Do not slim the face or enlarge the eyes."
+        + _HAIR_FIDELITY_GUARD
     ),
 }
 
 
-def resolve_face_vitality(parameters: dict | None) -> str:
-    """按预设参数选面部神采子句；未知版本名回落 off 并出声。
+def resolve_prompt_variant(name: str | None) -> str:
+    """版本名 → 子句文本；空值/未知值回落默认版并出声。
 
-    绝不因为一个配置笔误就抛异常——展位现场生不出图的代价远大于少一段子句。
+    绝不因为一个非法值就抛异常——展位现场生不出图的代价远大于用错一个版本。
+    空值是**正常情况**（085 迁移之前的老数据、老代码写的行），不出声。
     """
-    name = str((parameters or {}).get(FACE_VITALITY_KEY, _DEFAULT_FACE_VITALITY)).strip()
-    if name in _FACE_VITALITY_VARIANTS:
-        return _FACE_VITALITY_VARIANTS[name]
-    msg = (f"[expo] 未知的 {FACE_VITALITY_KEY}={name!r}，回落 {_DEFAULT_FACE_VITALITY}；"
-           f"可选值：{'/'.join(_FACE_VITALITY_VARIANTS)}")
+    if not name:
+        return _PROMPT_VARIANT_CLAUSES[DEFAULT_PROMPT_VARIANT]
+    if name in _PROMPT_VARIANT_CLAUSES:
+        return _PROMPT_VARIANT_CLAUSES[name]
+    msg = (f"[expo] 未知合成版本 {name!r}，回落 {DEFAULT_PROMPT_VARIANT}；"
+           f"可选：{'/'.join(PROMPT_VARIANTS)}")
     logger.warning(msg)
     print(msg, flush=True)
-    return _FACE_VITALITY_VARIANTS[_DEFAULT_FACE_VITALITY]
+    return _PROMPT_VARIANT_CLAUSES[DEFAULT_PROMPT_VARIANT]
 
 # 色 + 魂 收尾
 _TRYON_STYLE_TAIL = (
@@ -1027,7 +1072,7 @@ def _color_clause(color: dict | None) -> str:
 def start_composites(
     session_id: int, wig_ids: list[int],
     hair_color: dict | None = None, scene: dict | None = None, db=None,
-    quality: str | None = None,
+    quality: str | None = None, prompt_variant: str | None = None,
 ) -> None:
     """tryon 模式：每款一条 result，发色/场景快照随 result 落库并注入 prompt。
 
@@ -1046,7 +1091,7 @@ def start_composites(
         rows.append(ExpoResult(
             session_id=session_id, wig_id=wig_id,
             hair_color_json=snap, scene_json=scene_snapshot,
-            quality=quality,
+            quality=quality, prompt_variant=prompt_variant,
             status="generating",
         ))
     _start_batch(session_id, rows)
@@ -1076,13 +1121,16 @@ def _resolve_combo_photos(wig_ids: list[int], color_id: int, db=None) -> dict[in
             db.close()
 
 
-def start_scene_composites(session_id: int, scenes: list[dict], quality: str | None = None) -> None:
+def start_scene_composites(
+    session_id: int, scenes: list[dict], quality: str | None = None,
+    prompt_variant: str | None = None,
+) -> None:
     """scene 模式：每个场景一条 result（wig_id 为空，场景快照落库）。"""
     rows = [
         ExpoResult(
             session_id=session_id, wig_id=None,
             scene_json={"key": scene["key"], "label": scene["label"]},
-            quality=quality,
+            quality=quality, prompt_variant=prompt_variant,
             status="generating",
         )
         for scene in scenes
@@ -1128,7 +1176,7 @@ def _start_batch(session_id: int, rows: list[ExpoResult]) -> None:
 
 def _build_prompt(
     session: ExpoSession, row: ExpoResult, wig: ExpoWig | None,
-    face_vitality: str = "",
+    variant_clause: str = "",
 ) -> tuple[str, list[Path], str | None]:
     """按 result 形态组装 (prompt, 图片, 输出尺寸)。
 
@@ -1136,8 +1184,8 @@ def _build_prompt(
     有发型=tryon 换发（竖版 6 寸），scene_json 是生成场景（弱网未选=原景保持原背景，
     否则置换到 TRYON_SCENES 中选定的职业/生活场景）。
 
-    face_vitality 收**已解析好的子句文本**而不是版本名：本函数保持纯函数、不碰 DB，
-    版本解析（含未知值回落）由调用方用 resolve_face_vitality 做完再传进来。
+    variant_clause 收**已解析好的子句文本**而不是版本名：本函数保持纯函数、不碰 DB，
+    版本解析（含空值/未知值回落）由调用方用 resolve_prompt_variant 做完再传进来。
     """
     if row.wig_id is None and row.scene_json:
         scene = next((s for s in SCENES if s["key"] == row.scene_json.get("key")), None)
@@ -1145,7 +1193,7 @@ def _build_prompt(
             _SCENE_TEMPLATE.format(scene=scene["prompt"] if scene else row.scene_json.get("label", ""))
             # banquet 旗袍属场景规定装（uniform），只注首饰；其余 4 景注入完整 look
             + _wardrobe_variation_clause(uniform=bool(scene and scene.get("uniform")))
-            + face_vitality
+            + variant_clause
             + _SCENE_TAIL
         )
         return prompt, [to_abs(session.photo_path)], None
@@ -1180,29 +1228,11 @@ def _build_prompt(
         )
         + color_clause
         + scene_clause
-        + face_vitality  # 两条场景路径都要：脸的用光与神采跟场景无关
+        + variant_clause  # 两条场景路径都要：脸的用光与皮肤处理跟场景无关
         + _TRYON_STYLE_TAIL
         + _PORTRAIT_SPEC_CLAUSE
     )
     return prompt, images, _SIZE_PORTRAIT
-
-
-def _face_vitality_for(db) -> str:
-    """读合成预设的 parameters 决定面部神采版本；任何读取失败都按默认 off 继续。"""
-    from app.ai.models import AiPreset
-
-    try:
-        preset = (
-            db.query(AiPreset)
-            .filter(AiPreset.preset_name == COMPOSITE_PRESET, AiPreset.deleted_at.is_(None))
-            .first()
-        )
-        return resolve_face_vitality(preset.parameters if preset else None)
-    except Exception as exc:  # noqa: BLE001
-        msg = f"[expo] 读取 {FACE_VITALITY_KEY} 配置失败，按默认 {_DEFAULT_FACE_VITALITY} 继续: {exc}"
-        logger.warning(msg)
-        print(msg, flush=True)
-        return _FACE_VITALITY_VARIANTS[_DEFAULT_FACE_VITALITY]
 
 
 def _run_composite(session_id: int, result_id: int) -> None:
@@ -1218,7 +1248,7 @@ def _run_composite(session_id: int, result_id: int) -> None:
         # 面部神采子句的版本由预设参数决定（后台可切，见 FACE_VITALITY_KEY 处注释）。
         # 取预设失败不能拖垮合成：读不到就按默认 off 走，只出声不抛
         prompt, images, size = _build_prompt(
-            session, row, wig, face_vitality=_face_vitality_for(db),
+            session, row, wig, variant_clause=resolve_prompt_variant(row.prompt_variant),
         )
         result = edit_image(
             db=db,

@@ -18,6 +18,21 @@
       </div>
     </div>
 
+    <!-- 出图风格：与换发路径同一套必选项（三版差别在皮肤怎么处理，用光一律打好） -->
+    <div class="variant-row">
+      <span class="variant-lb">出图风格</span>
+      <div class="variant-opts">
+        <button
+          v-for="v in flow.PROMPT_VARIANTS" :key="v.value"
+          class="variant-opt" :class="{ sel: flow.promptVariant.value === v.value }"
+          @click="flow.promptVariant.value = v.value"
+        >
+          <span class="vo-lb">{{ v.label }}</span>
+          <span class="vo-hint">{{ v.hint }}</span>
+        </button>
+      </div>
+    </div>
+
     <button
       class="xk-btn go"
       :disabled="!flow.selectedSceneKeys.value.length"
@@ -83,6 +98,27 @@ function selected(key) {
 .tg { font-size: 11px; letter-spacing: 0.12em; color: var(--xk-mut); }
 
 /* 同 MatchingScreen：第二道墨色阴影柔化按钮上沿被切断的滚动内容 */
+/* 出图风格：与 MatchingScreen 同一套（两屏都是「生成前的最后一个决策」，样式刻意一致，
+   客户在两条路径上看到的是同一个控件） */
+.variant-row {
+  flex: none; display: flex; align-items: center; justify-content: center;
+  gap: 12px; margin-top: 14px;
+}
+.variant-lb { font-size: 11px; letter-spacing: 0.2em; color: var(--xk-gold-dim); }
+.variant-opts { display: flex; gap: 8px; }
+.variant-opt {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 8px 16px; border-radius: 12px; cursor: pointer;
+  border: 1px solid var(--xk-gold-line); background: rgba(232, 196, 121, 0.03);
+}
+.variant-opt.sel {
+  border-color: var(--xk-gold);
+  background: rgba(232, 196, 121, 0.12);
+  box-shadow: inset 0 0 16px rgba(232, 196, 121, 0.14);
+}
+.vo-lb { font-size: 14px; color: var(--xk-paper); }
+.variant-opt.sel .vo-lb { color: var(--xk-gold-hi); }
+.vo-hint { font-size: 10px; letter-spacing: 0.06em; color: var(--xk-mut); }
 .go {
   flex: none; margin-top: 16px; margin-bottom: 1vh; min-width: 300px; height: 64px; font-size: 17px;
   box-shadow: 0 6px 26px rgba(232, 196, 121, 0.3), 0 -14px 22px 18px var(--xk-ink);
@@ -91,6 +127,10 @@ function selected(key) {
 
 /* 手机竖屏：min-width:300 在 390px 屏上只剩 43px 余量，撑满比留一线更稳也更好点 */
 @media (max-width: 560px) {
+  /* 三档横排 + 前缀标签在 390px 屏上会挤成两行错位：标签独占一行，选项行居中铺开 */
+  .variant-row { flex-direction: column; gap: 6px; margin-top: 10px; }
+  .variant-opt { padding: 7px 12px; }
+
   .scene { padding: 1.5vh 4vw 2vh; }
   .cards { width: 100%; }
   .go { min-width: 0; width: 100%; height: 56px; font-size: 16px; }

@@ -57,6 +57,14 @@ export function useTryOnFlow() {
   const guideShown = ref(false)      // 拍摄示范浮层一客只自动弹一次（register↔capture 往返不重弹）
   const tryonScenes = ref([])        // tryon 生成场景选项（职业/生活场景，滑动选择）
   const selectedTryonScene = ref(null) // 默认选中第一个；仅弱网加载失败时留 null=原景兜底
+  // 合成版本（2026-08-01）：必选项，默认真实版。三版差别在皮肤怎么处理，用光一律打好——
+  // 值域与后端 GenerateRequest.prompt_variant 的 pattern 同步维护（改一处必须改另一处）
+  const PROMPT_VARIANTS = [
+    { value: 'real', label: '真实', hint: '如实还原 · 不修皮肤' },
+    { value: 'soft', label: '柔光', hint: '光线更柔 · 保留质感' },
+    { value: 'beauty', label: '美颜', hint: '磨皮提亮 · 精修质感' },
+  ]
+  const promptVariant = ref(PROMPT_VARIANTS[0].value)
   // 出图档位选择器已于 2026-07-31 撤除：实测云雾中转站不透传 quality，high/medium/low
   // 三档耗时(165~180s)、体积与 output_tokens 均无差别，画质目视也无差别——它既是个假选择，
   // 又对外承诺了错误的时长（约1分钟 vs 实际约3分钟）。后端字段与入参保留，
@@ -123,6 +131,7 @@ export function useTryOnFlow() {
     selectedColorId.value = null
     selectedSceneKeys.value = []
     selectedTryonScene.value = null
+    promptVariant.value = PROMPT_VARIANTS[0].value // 必选项复位到默认，不带给下一位客户
     salesReturnStep.value = 'result'
     guideShown.value = false
     // 必须放在 step='attract' 之后：closeQr 内部调 touch()，touch() 见 attract 直接返回不
@@ -402,7 +411,7 @@ export function useTryOnFlow() {
     try {
       await generateResults(sessionId.value, {
         wigIds: [selectedWigId.value], hairColorId: selectedColorId.value,
-        sceneKey: selectedTryonScene.value,
+        sceneKey: selectedTryonScene.value, promptVariant: promptVariant.value,
       })
       startPolling()
     } catch (e) {
@@ -432,7 +441,7 @@ export function useTryOnFlow() {
     touch() // 同 generate：清残留 idle 定时器
     try {
       await generateResults(sessionId.value, {
-        sceneKeys: [...selectedSceneKeys.value],
+        sceneKeys: [...selectedSceneKeys.value], promptVariant: promptVariant.value,
       })
       startPolling()
     } catch (e) {
@@ -490,6 +499,7 @@ export function useTryOnFlow() {
     customerId, sessionId,
     hairColors, selectedColorId, scenes, selectedSceneKeys, guideShown,
     tryonScenes, selectedTryonScene, loadTryonScenes,
+    PROMPT_VARIANTS, promptVariant,
     start, submitRegister, submitPhoto, generate, react,
     loadScenes, toggleScene, generateScenes, reselectScenes,
     openSales, submitSales, resetAll, touch,

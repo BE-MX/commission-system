@@ -372,9 +372,9 @@ def test_scene_swap_framing_is_waist_up_with_both_bounds():
     assert "subject of this photograph" not in prompt
 
 
-def _vitality_prompts(variant="v1"):
+def _variant_prompts(variant="real"):
     """三条出图路径各取一份 prompt：换发的两条场景分支 + 场景大片。"""
-    clause = ai_pipeline.resolve_face_vitality({ai_pipeline.FACE_VITALITY_KEY: variant})
+    clause = ai_pipeline.resolve_prompt_variant(variant)
     wig = ExpoWig(model_no="LS-7", name="空气刘海", wig_description="airy fringe")
     swap = ExpoResult(session_id=1, wig_id=7,
                       scene_json={"key": "whitecollar", "label": "白领高管"})
@@ -383,85 +383,103 @@ def _vitality_prompts(variant="v1"):
                        scene_json={"key": "banquet", "label": "晚宴礼遇"})
     build = ai_pipeline._build_prompt
     return {
-        "场景置换": build(_session(), swap, wig, face_vitality=clause)[0],
-        "原景保持": build(_session(), keep, wig, face_vitality=clause)[0],
-        "场景大片": build(_session(mode="scene"), scene, None, face_vitality=clause)[0],
+        "场景置换": build(_session(), swap, wig, variant_clause=clause)[0],
+        "原景保持": build(_session(), keep, wig, variant_clause=clause)[0],
+        "场景大片": build(_session(mode="scene"), scene, None, variant_clause=clause)[0],
     }
 
 
-class TestFaceVitalitySwitch:
-    """版本开关（2026-08-01）：默认 off = 与本次改动之前行为完全一致。
+class TestPromptVariantSwitch:
+    """合成版本（2026-08-01）：客户在甄选页必选，三版差别**只在皮肤怎么处理**。
 
-    开关值来自 AI 预设 expo_wig_composite 的 parameters，后台可改、不需部署。
-    最要命的失败形态是「配置笔误让展位生不出图」，所以未知值必须回落而不是抛。
+    用光是三版共有的底座——「真实版」是真实的好照片，不是没打光的照片。
+    最要命的失败形态是「一个非法值让展位生不出图」，所以回落而不是抛。
     """
 
-    def test_default_is_off_so_deploying_changes_nothing(self):
-        """键缺失 → 空子句。上线本身零行为变化，必须主动切 v1 才启用。"""
-        assert ai_pipeline.resolve_face_vitality(None) == ""
-        assert ai_pipeline.resolve_face_vitality({}) == ""
-        assert ai_pipeline.resolve_face_vitality({"other": "x"}) == ""
+    def test_all_three_variants_light_the_face(self):
+        """用光底座三版共有：真实版若不打光，今早那条「脸上没精神」的反馈
+        对每个不改默认值的客户就原封不动地留着。"""
+        for name in ai_pipeline.PROMPT_VARIANTS:
+            clause = ai_pipeline.resolve_prompt_variant(name)
+            assert "never flat, dim or muddy" in clause, f"{name} 没打光"
+            assert "distinct catchlights" in clause, f"{name} 缺眼神光"
 
-    def test_v1_returns_the_clause(self):
-        clause = ai_pipeline.resolve_face_vitality({ai_pipeline.FACE_VITALITY_KEY: "v1"})
-        assert "never flat, dim or muddy" in clause
+    def test_skin_handling_is_what_actually_differs(self):
+        """三版不能是「换了措辞的同一件事」——上一个选择器就是因为假选择被撤的。
+        真实/柔光锁死皮肤纹理，美颜明确要求磨皮，这是可断言的实质差异。"""
+        real = ai_pipeline.resolve_prompt_variant("real")
+        soft = ai_pipeline.resolve_prompt_variant("soft")
+        beauty = ai_pipeline.resolve_prompt_variant("beauty")
 
-    @pytest.mark.parametrize("bad", ["v2", "V1", " on ", "", "1", None, 0])
-    def test_unknown_value_falls_back_to_off_without_raising(self, bad):
-        """展位现场生不出图的代价远大于少一段子句——笔误一律回落，绝不抛。"""
-        assert ai_pipeline.resolve_face_vitality({ai_pipeline.FACE_VITALITY_KEY: bad}) == ""
+        for keeps_texture in (real, soft):
+            assert "do not smooth, retouch, plump, lighten or rejuvenate" in keeps_texture
+            assert "soften fine lines" not in keeps_texture
+        assert "soften fine lines and wrinkles" in beauty
+        assert "do not smooth, retouch" not in beauty      # 美颜版必须真的放开
+        assert soft != real                                 # 柔光≠真实：另有柔光措辞
+        assert "softer, more diffused light" in soft
 
-    def test_off_really_removes_it_from_every_path(self):
-        for name, prompt in _vitality_prompts(variant="off").items():
-            assert "never flat, dim or muddy" not in prompt, f"{name} 关不掉"
-            assert "distinct catchlights" not in prompt, f"{name} 关不掉"
+    def test_beauty_variant_protects_the_hair(self):
+        """磨皮会连带把发丝磨成塑料感，而发丝正是要卖的东西——美颜版必须显式护发。"""
+        beauty = ai_pipeline.resolve_prompt_variant("beauty")
+        assert "facial skin ONLY" in beauty
+        assert "never soften, blur, smooth or plasticise the hair" in beauty
+        # 另两版不需要这句（它们本来就不修皮肤）
+        assert "plasticise the hair" not in ai_pipeline.resolve_prompt_variant("real")
 
-    def test_switch_key_is_not_forwarded_upstream(self):
-        """控制键绝不能混进发给上游的请求参数——白名单一旦放宽就会静默泄漏。
-        同 api_style 的既有约定（image_service 顶部注释）。"""
-        from app.ai.image_service import CHAT_IMAGE_PARAMETER_KEYS, IMAGE_PARAMETER_KEYS
+    @pytest.mark.parametrize("bad", ["", None, "REAL", "美颜", "v1", "off", "x"])
+    def test_blank_or_unknown_falls_back_to_default_without_raising(self, bad):
+        """空值是正常情况（085 迁移前的老行、老代码写的行），非法值是笔误——都回落，绝不抛。"""
+        assert ai_pipeline.resolve_prompt_variant(bad) ==             ai_pipeline.resolve_prompt_variant(ai_pipeline.DEFAULT_PROMPT_VARIANT)
 
-        assert ai_pipeline.FACE_VITALITY_KEY not in IMAGE_PARAMETER_KEYS
-        assert ai_pipeline.FACE_VITALITY_KEY not in CHAT_IMAGE_PARAMETER_KEYS
+    def test_default_is_the_first_option_shown_to_customers(self):
+        assert ai_pipeline.DEFAULT_PROMPT_VARIANT == ai_pipeline.PROMPT_VARIANTS[0] == "real"
+
+    def test_variant_reaches_every_output_path(self):
+        """三条出图路径都要吃到版本子句——漏一条就是「有的图修了有的没修」。"""
+        for name, prompt in _variant_prompts(variant="beauty").items():
+            assert "soften fine lines and wrinkles" in prompt, f"{name} 没吃到版本"
 
 
-class TestFaceVitalityClause:
-    """面部神采子句（2026-08-01）：补的是用光与眼神，不是美颜。
+class TestLightingBase:
+    """三版共有的用光底座（2026-08-01）：补的是用光与眼神。
 
-    这条最容易被后人"顺手优化"成美颜词（radiant/glowing/flawless/youthful），
-    那样就完全走反了亮哥的指令。正反两面都锚死。
+    真实/柔光两版最容易被后人"顺手优化"成美颜词，那样就跟美颜版没区别了。
+    正反两面都锚死。
     """
 
     def test_present_on_every_output_path(self):
         """脸的用光与场景无关，三条路径都得有——漏一条就是「有的图有神采有的没有」。"""
-        for name, prompt in _vitality_prompts().items():
+        for name, prompt in _variant_prompts().items():
             assert "never flat, dim or muddy" in prompt, f"{name} 缺面部用光指令"
             assert "distinct catchlights" in prompt, f"{name} 缺眼神光指令"
 
-    def test_keeps_the_anti_retouch_guards(self):
-        """补神采不等于放开磨皮：禁项必须与给项同时在场，缺一就会滑向美颜。"""
-        for name, prompt in _vitality_prompts().items():
+    def test_default_variant_keeps_the_anti_retouch_guards(self):
+        """默认版（真实）打光不等于放开磨皮：禁项必须与给项同时在场，缺一就会滑向美颜。"""
+        for name, prompt in _variant_prompts(variant="real").items():
             assert "do not smooth, retouch, plump, lighten or rejuvenate" in prompt, name
             assert "wrinkle, eye bag and age spot stays exactly as in the original" in prompt, name
             assert "do not slim the face or enlarge the eyes" in prompt, name
 
-    def test_avoids_beauty_filter_trigger_words(self):
-        """radiant/glowing/youthful/flawless 是美颜滤镜触发词，一写就翻车成磨皮脸。
-        这条是防后人「润色文案」时顺手加进来。
+    def test_only_the_beauty_variant_may_use_retouch_words(self):
+        """radiant/glowing/youthful 是美颜滤镜触发词：真实/柔光两版一旦沾上就翻车成磨皮脸。
+        美颜版**刻意**放开——那正是它要的效果，所以按版本分别断言，不能一刀切。
 
-        **只扫这条子句、不扫整段 prompt**：场景文案里的 "softly glowing presentation
+        **只扫版本子句、不扫整段 prompt**：场景文案里的 "softly glowing presentation
         screen" 讲的是屏幕发光，与皮肤无关，扫全段会把它误判成美颜词。
         """
-        banned = re.compile(r"\b(radiant|glowing|youthful|flawless|blemish-free|porcelain)\b",
+        banned = re.compile(r"(radiant|glowing|youthful|flawless|blemish-free|porcelain)",
                             re.I)
-        hit = banned.search(ai_pipeline._FACE_VITALITY_VARIANTS["v1"])
-        assert not hit, f"神采子句出现美颜触发词 {hit.group() if hit else ''}"
+        for name in ("real", "soft"):
+            hit = banned.search(ai_pipeline.resolve_prompt_variant(name))
+            assert not hit, f"{name} 版出现美颜触发词 {hit.group() if hit else ''}"
 
-    def test_says_nothing_about_age(self):
-        """子句里出现 mature/elderly 会把人往老里推，正好与诉求相反。"""
-        banned = re.compile(r"\b(elderly|mature|middle-aged|older woman)\b", re.I)
-        hit = banned.search(ai_pipeline._FACE_VITALITY_VARIANTS["v1"])
-        assert not hit, f"神采子句出现年龄描述 {hit.group() if hit else ''}"
+    def test_no_variant_mentions_age(self):
+        """任何一版出现 mature/elderly 都会把人往老里推，正好与诉求相反——三版都不许。"""
+        banned = re.compile(r"(elderly|mature|middle-aged|older woman)", re.I)
+        for name in ai_pipeline.PROMPT_VARIANTS:
+            hit = banned.search(ai_pipeline.resolve_prompt_variant(name))
+            assert not hit, f"{name} 版出现年龄描述 {hit.group() if hit else ''}"
 
 
 def test_keep_bg_path_has_no_framing_clause():
