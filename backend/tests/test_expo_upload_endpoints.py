@@ -1,6 +1,11 @@
 """展会扫码上传：会话创建的双照片来源 + 四个端点（2026-08-01）。"""
 
 import io
+import os
+import re
+import shutil
+import subprocess
+import tempfile
 from contextlib import contextmanager
 from datetime import datetime
 
@@ -14,7 +19,7 @@ from app.core.config import Settings, get_settings
 from app.core.database import get_db
 from app.expo import ai_pipeline, service, upload_service
 from app.expo.models import ExpoCustomer
-from app.expo.router import router, upload_page, upload_photo
+from app.expo.router import _upload_html, router, upload_page, upload_photo
 
 
 @pytest.fixture(autouse=True)
@@ -241,9 +246,14 @@ class TestUploadPage:
         assert "已过期" in resp.text
 
     def test_non_ascii_signature_renders_explanation_not_500(self):
-        """hmac.compare_digest 遇到非 ASCII 字符抛 TypeError 而非 ValueError；
-        Task 1 曾在这里炸出真实 500。confirm 该修复在端点层仍然生效
-        （不是只在 upload_service 单测里绿，路由层的 except ValueError 也接得住）。"""
+        """端到端确认：一条带非 ASCII 签名段的乱码 URL 在端点层是干净的说明页，
+        不是 500——这是 Task 1 曾经炸出的真实故障，路由层的 except ValueError 必须
+        接得住（不能只在 upload_service 单测里绿）。
+
+        老实交代机制：'é'*16 不满足 _SIGNATURE_RE 的 [0-9a-f]{16}，在形状校验这一步
+        就被拒了，从未真正走到会对非 ASCII 抛 TypeError 的 hmac.compare_digest——
+        凡是能通过 [0-9a-f]{16} 形状校验的字符串本身就只含 ASCII，两者在结构上
+        互斥，不存在"形状合法但非 ASCII"的签名段能真正触达 compare_digest。"""
         cid, exp, _ = upload_service.make_token(42).split("-")
         mangled = f"{cid}-{exp}-{'é' * 16}"
         with _client() as client:
@@ -252,17 +262,23 @@ class TestUploadPage:
         assert "无效" in resp.text
 
     def test_contract_violation_from_parse_token_is_not_swallowed(self, monkeypatch):
-        """upload_page 的 except 子句刻意只窄到 ValueError——parse_token 的契约保证
-        只抛 ValueError（见其文档：先做形状校验就是为了不让 TypeError 之类的意外
-        逃出来）。若把 except 换宽成裸 Exception，未来谁不小心破坏了这份契约
-        （比如 parse_token 哪天多出一条会抛 AttributeError 的分支），这里会把它
-        悄悄压成客户能看到的"链接无效"说明页——没有 logger、没有 print，宪法 6
-        对吞异常的最低要求（至少留痕）都保不住，问题会在生产里隐形。
-        这里钉住"非 ValueError 必须原样炸穿"，而不是被温柔地转成一张解释页。"""
-        def _boom(token):
-            raise RuntimeError("parse_token contract violated")
+        """upload_page 的 except 子句刻意只窄到 ValueError——canonical_token（及其
+        共用的 _parse_token_parts）的契约保证只抛 ValueError（见其文档：先做形状
+        校验就是为了不让 TypeError 之类的意外逃出来）。若把 except 换宽成裸
+        Exception，未来谁不小心破坏了这份契约（比如哪天多出一条会抛
+        AttributeError 的分支），这里会把它悄悄压成客户能看到的"链接无效"说明页
+        ——没有 logger、没有 print，宪法 6 对吞异常的最低要求（至少留痕）都保不住，
+        问题会在生产里隐形。这里钉住"非 ValueError 必须原样炸穿"，而不是被温柔地
+        转成一张解释页。
 
-        monkeypatch.setattr(upload_service, "parse_token", _boom)
+        patch 的是 _parse_token_parts（parse_token 与 canonical_token 共用的校验
+        核心），不是任一个具体的包装函数——router 调用哪个包装函数是实现细节，
+        这条测试锁的是"校验核心的契约"，不该因为路由内部换了个包装函数名就失效。
+        """
+        def _boom(token):
+            raise RuntimeError("token validation contract violated")
+
+        monkeypatch.setattr(upload_service, "_parse_token_parts", _boom)
         with _client() as client:
             with pytest.raises(RuntimeError):
                 client.get("/api/expo/upload/whatever")
@@ -299,9 +315,16 @@ class TestUploadPhoto:
         assert upload_service.latest_pending(43) is None
 
     def test_rejects_oversize_upload(self):
-        """端点层验证有界读（F2）：photo.file.read(MAX_UPLOAD_BYTES + 1) 只物化刚好
+        """端点层验证有界读（I1）：photo.file.read(MAX_UPLOAD_BYTES + 1) 只物化刚好
         够判定"超限"的字节数，而不是把整份超大 body 读进内存——这里确认改成有界读
-        之后，超限判定本身仍然正确（不是只省了内存、把该拒的漏放过去）。"""
+        之后，超限判定本身仍然正确（不是只省了内存、把该拒的漏放过去）。
+
+        注：这条测试本身对"是否真的有界读"是**vacuous** 的——它 post 的是
+        b"\\xff" * (N+1)，不是有效图片，PIL 探针无论读多少字节都会拒绝，
+        `read(N+1)`→`read()`、`read(N+1)`→`read(N)` 这两个变体都照样通过。
+        真正锁定"读了多少字节"的是下面的
+        test_handler_materializes_only_the_bounded_prefix；这条测试留着是因为
+        它仍然验证了一个真实、独立的行为——超大非法内容端到端确实被拒。"""
         token = upload_service.make_token(44)
         oversize = b"\xff" * (upload_service.MAX_UPLOAD_BYTES + 1)
         with _client() as client:
@@ -311,6 +334,31 @@ class TestUploadPhoto:
             )
         assert resp.status_code == 400
         assert upload_service.latest_pending(44) is None
+
+    def test_handler_materializes_only_the_bounded_prefix(self, monkeypatch):
+        """I1 的真正锁点：photo.file.read(MAX_UPLOAD_BYTES + 1) 只该物化
+        MAX_UPLOAD_BYTES + 1 字节，不多不少——多了就是白白多一次全量内存拷贝
+        （Starlette 早已把整个 body 落到 SpooledTemporaryFile，这一步省不掉那次
+        落盘，只省堆内存这一份），少了会让合法但接近上限的图片被错误截断。
+
+        用 spy 顶替 save_pending，直接测"传进来的 raw 有多长"，不依赖 PIL 探针
+        的副作用——这样 read(N+1)→read()、read(N+1)→read(N) 两个变体都会被
+        直接测出字节数不对，不再像 test_rejects_oversize_upload 那样靠"内容
+        不是图片"这个巧合过关。"""
+        seen = {}
+
+        def spy(customer_id, raw, filename):
+            seen["n"] = len(raw)
+            raise ValueError("stop")
+
+        monkeypatch.setattr(upload_service, "save_pending", spy)
+        token = upload_service.make_token(44)
+        with _client() as client:
+            client.post(
+                f"/api/expo/upload/{token}",
+                files={"photo": ("big.jpg", b"\xff" * (upload_service.MAX_UPLOAD_BYTES * 2), "image/jpeg")},
+            )
+        assert seen["n"] == upload_service.MAX_UPLOAD_BYTES + 1
 
 
 class TestUploadTicketFailClosed:
@@ -363,3 +411,60 @@ class TestCreateSessionPendingPhotoForm:
             )
         assert resp.status_code == 200
         assert resp.json()["data"]["session_id"]
+
+
+# ==================== <script> 语法防线（结构性，2026-08-01） ====================
+# ~140 行 CSS/JS 活在一个 f-string 里，没有任何 linter/formatter/类型检查会看它——
+# I3（token 非规范拼入 JS 字符串字面量导致整个 <script> 块语法错误）就是靠手动
+# extract + `node --check` 才找到的。把这道检查钉进测试，不再依赖人工事后抽查。
+
+def _extract_script(html_text: str) -> str:
+    m = re.search(r"<script>(.*)</script>", html_text, re.S)
+    assert m, "上传页里找不到 <script> 块"
+    return m.group(1)
+
+
+def _assert_valid_js(js_source: str) -> None:
+    """node 不在 PATH 时干净跳过——不把这条防线的可用性强加给没装 node 的环境。"""
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node 不在 PATH，跳过 JS 语法检查")
+    fd, path = tempfile.mkstemp(suffix=".js")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(js_source)
+        result = subprocess.run([node, "--check", path], capture_output=True, text=True)
+        assert result.returncode == 0, result.stderr
+    finally:
+        os.unlink(path)
+
+
+def test_upload_page_script_is_valid_javascript():
+    """基线：一个规范 token 渲染出的 <script> 必须是合法 JS。"""
+    token = upload_service.make_token(1)
+    _assert_valid_js(_extract_script(_upload_html(token, None)))
+
+
+def test_upload_page_rejects_non_canonical_token_before_it_reaches_the_script():
+    """I3 端到端回归：hmac.compare_digest 通不过、但 int() 通得过的"非规范但签名
+    有效"令牌——这里用一个前置裸换行的 customer_id 段（int('\\n42') == 42，
+    签名照样对得上，因为 _sign 是对解析后的数值签的）。
+
+    旧实现把客户端传来的原始 token 字符串原样嵌进 `fetch('...')` 的单引号 JS
+    字面量：`fetch('/api/expo/upload/\\n42-...')`——一个裸换行会提前截断整个字符
+    串字面量，砸掉整条 <script>（页面看起来正常，两个按钮却悄无声息地失效）。
+    upload_page 现在改用 canonical_token 重建规范 ASCII 形式再嵌入，这里通过
+    真实 HTTP GET + node --check 端到端确认修复生效，而不是只在 upload_service
+    单测里验证 canonical_token 这一个函数。"""
+    from urllib.parse import quote
+
+    token = upload_service.make_token(42)
+    cid, exp, sig = token.split("-")
+    noisy = f"\n{cid}-{exp}-{sig}"
+    with _client() as client:
+        # 真实浏览器/httpx 客户端都不会在 URL 里发送裸控制字符——%0A 才是实际
+        # 会经过网络到达服务端的字节，quote() 在这里只是重现"客户端已经做了合规
+        # 编码，问题出在服务端如何处理解码后的值"这个真实场景，不是绕过校验
+        resp = client.get(f"/api/expo/upload/{quote(noisy, safe='')}")
+    assert resp.status_code == 200
+    _assert_valid_js(_extract_script(resp.text))

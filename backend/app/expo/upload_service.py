@@ -11,6 +11,7 @@
 import hashlib
 import hmac
 import logging
+import os
 import re
 import time
 import uuid
@@ -24,6 +25,13 @@ logger = logging.getLogger("commission.expo")
 TICKET_TTL_SECONDS = 600          # 10 分钟：够客户翻相册，又限制二维码被拍走后的滥用窗口
 PENDING_DIR = ai_pipeline.UPLOAD_ROOT / "pending"
 STALE_AFTER_SECONDS = 2 * 3600    # 待取照片留存上界
+# 单个有效令牌在 10 分钟窗口内可反复上传（TTL 内可重放，见模块文档），而二维码
+# 贴在共享展位屏上——"有人拿着有效令牌"对每一个路过的人都成立，这是设计上的
+# 常态而非攻击。latest_pending 只读最新一张，留着更多纯属浪费磁盘；不裁剪的话，
+# 一个善意的客户端重试循环、或恶意脚本，都能在 10 分钟窗口内把云端展会实例
+# （方舟全量部署）的磁盘写满，殃及其余 22 个模块。只留最新 K 张把损失上限钉死在
+# K × MAX_UPLOAD_BYTES，与请求次数无关，不需要额外的限流基建（C1）。
+PENDING_KEEP_PER_CUSTOMER = 3
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 # 这个上限不是实际生效的天花板：生产 nginx（ark-ip-ssl.conf / ark-cloud.conf）
 # client_max_body_size 都是 5m，比这里小得多——超过 ~5MB 的请求在到达这段 Python
@@ -64,8 +72,10 @@ def make_token(customer_id: int, ttl_seconds: int = TICKET_TTL_SECONDS) -> str:
     return f"{customer_id}-{exp}-{_sign(customer_id, exp)}"
 
 
-def parse_token(token: str | None) -> int:
-    """校验令牌并返回 customer_id；非法或过期抛 ValueError（文案直接面向客户）。
+def _parse_token_parts(token: str | None) -> tuple[int, int, str]:
+    """校验令牌，返回规范化的 (customer_id, exp, 签名) 三元组；非法或过期抛
+    ValueError（文案直接面向客户）。parse_token / canonical_token 共用本函数，
+    校验逻辑只有一份。
 
     从右往左只切两刀（customer_id 允许负数，本身可能带 "-"）；签名段先做
     形状校验再进 hmac.compare_digest —— 后者只接受可比较的 ASCII 字节串，
@@ -86,7 +96,32 @@ def parse_token(token: str | None) -> int:
         raise ValueError("上传码已过期，请回到展位屏幕重新获取")
     if not hmac.compare_digest(parts[2], _sign(customer_id, exp)):
         raise ValueError(_INVALID_TOKEN_MSG)
-    return customer_id
+    return customer_id, exp, parts[2]
+
+
+def parse_token(token: str | None) -> int:
+    """校验令牌并返回 customer_id；非法或过期抛 ValueError。见 _parse_token_parts。"""
+    return _parse_token_parts(token)[0]
+
+
+def canonical_token(token: str) -> str:
+    """校验令牌并返回其规范 ASCII 形式；非法或过期抛 ValueError。
+
+    存在原因：上传页要把 token 拼进 <script> 里的 JS 字符串字面量。而
+    `int()` 对输入的宽容——接受前后空白（含裸换行）、"+" 前缀、下划线分组、
+    全角数字——意味着一个"签名校验通过"的合法令牌，原始字符串未必是能安全
+    塞进单引号 JS 字面量的规范 ASCII：比如客户号前缀一个裸换行，`int()` 照单
+    全收（数值不变，签名自然对得上），但原样嵌进 `fetch('.../upload/\n42-...')`
+    会提前截断整个 JS 字符串字面量，砸掉整个 <script> 块——页面看起来正常，
+    两个按钮却悄无声息地失效。
+
+    重建用的是 _parse_token_parts 解析出的 int 值（str(int) 恒定输出规范
+    ASCII 十进制），签名段本身已被 _SIGNATURE_RE 钉死成 16 位小写十六进制、
+    天然只含 ASCII——重建结果安全性来自结构本身，不依赖"网关不会转发出格式
+    古怪的 token"这种侥幸。
+    """
+    customer_id, exp, sig = _parse_token_parts(token)
+    return f"{customer_id}-{exp}-{sig}"
 
 
 def _pending_dir() -> Path:
@@ -104,6 +139,54 @@ def photo_filename(customer_id: int, suffix: str) -> str:
     悄悄松动安全假设，抽成单一函数让这份依赖可 grep。
     """
     return f"c{customer_id}_{uuid.uuid4().hex[:10]}{suffix}"
+
+
+def _write_pending_atomic(target: Path, raw: bytes) -> None:
+    """先写临时文件、再 os.replace 原子落位（同 ai_pipeline._save_atomic 的道理；
+    这里操作的是裸字节而非 PIL Image，不能直接复用那个函数，故单独实现）。
+
+    写盘中途失败（磁盘满——见 C1、AV 锁库）不这样做的话，会在**最终文件名**上
+    留下半截文件：那个文件名会被 latest_pending 的 glob 认作"这个客户最新的
+    待取照片"、被 resolve_pending 的三道校验全部放行，kiosk 顾问会看到一张
+    损坏图。失败向上抛 OSError，由调用方（save_pending）决定如何转译。
+
+    临时文件命名刻意不是"最终名 + .tmp 后缀"：latest_pending 的 glob 是
+    "c{cid}_*"、sweep_stale 的 glob 是 "c*"，若临时文件叫 "c42_xxx.jpg.tmp"
+    会同时命中这两个 glob——原子写失败后残留的半截 .tmp 文件会被误当正式
+    待取照片提供给 kiosk、也会被 sweep_stale 当普通照片计入清理判断。前缀
+    点号（.tmp_）让文件名第一个字符就不是 "c"，结构性地避开这两处 glob，
+    不依赖"没人凑巧扫描到它"这种侥幸。
+    """
+    tmp = target.with_name(f".tmp_{target.name}")
+    try:
+        tmp.write_bytes(raw)
+        os.replace(tmp, target)
+    finally:
+        if tmp.exists():
+            tmp.unlink(missing_ok=True)
+
+
+def _prune_pending(customer_id: int, keep: int = PENDING_KEEP_PER_CUSTOMER) -> None:
+    """只留该客户最新 keep 张待取照片，多余的直接删（C1）。
+
+    latest_pending 只读最新一张，留着旧的纯属浪费磁盘；不裁剪的话，免鉴权端点
+    配合展位公开二维码，一个善意的客户端重试循环或恶意脚本都能在 10 分钟令牌
+    窗口内无限占盘。裁剪后单个令牌的损失上限钉死在 keep 张 * MAX_UPLOAD_BYTES，
+    与请求次数无关。删除失败只记日志不抛——这是成功上传后的收尾清理，不该把
+    一次已经落盘成功的上传顶成失败响应。
+    """
+    files = sorted(
+        (p for p in PENDING_DIR.glob(f"c{customer_id}_*") if p.is_file()),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    for stale in files[keep:]:
+        try:
+            stale.unlink()
+        except OSError as exc:
+            msg = f"[expo] pending prune skipped {stale.name}: {exc}"
+            logger.warning(msg)
+            print(msg, flush=True)
 
 
 def save_pending(customer_id: int, raw: bytes, filename: str | None) -> str:
@@ -128,9 +211,16 @@ def save_pending(customer_id: int, raw: bytes, filename: str | None) -> str:
     if suffix not in (".jpg", ".jpeg", ".png", ".webp"):
         suffix = ".jpg"
     target = _pending_dir() / photo_filename(customer_id, suffix)
-    target.write_bytes(raw)
+    try:
+        _write_pending_atomic(target, raw)
+    except OSError as exc:
+        msg = f"[expo] pending photo write failed customer={customer_id}: {exc}"
+        logger.warning(msg)
+        print(msg, flush=True)
+        raise ValueError("照片保存失败，请重试") from None
     # 手机原片动辄 3~5MB，落盘即压：这张图要经隧道回源到展位屏做「佩戴前」对比
     ai_pipeline.downscale_inplace(target)
+    _prune_pending(customer_id)
     return target.name
 
 

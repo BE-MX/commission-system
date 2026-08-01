@@ -1,5 +1,6 @@
 """FastAPI router for the expo AI wig try-on module (/api/expo)."""
 
+import html
 import logging
 import shutil
 import uuid
@@ -68,7 +69,7 @@ def update_customer(
     return ok({"customer_id": customer.id})
 
 
-@router.post("/sessions", summary="建会话（照片来源：现场拍照 photo / 扫码上传 pending_photo 二选一）")
+@router.post("/sessions", summary="建会话（tryon=异步分析+匹配 / scene=直接就绪；照片来源：现场拍照 photo / 扫码上传 pending_photo 二选一）")
 def create_session(
     customer_id: int = Query(...),
     mode: str = Query("tryon", pattern="^(tryon|scene)$"),
@@ -294,19 +295,28 @@ def create_upload_ticket(
             response_class=HTMLResponse)
 def upload_page(token: str):
     try:
-        upload_service.parse_token(token)
+        # 用 canonical_token 而不是 parse_token：int() 对输入的宽容（前后空白/
+        # 全角数字/下划线分组等）意味着一个签名校验通过的合法 token，原始字符串
+        # 未必能安全塞进下面 <script> 里的单引号 JS 字面量（见 canonical_token
+        # 文档）。这里把重建出的规范 ASCII 形式传给 _upload_html，而不是原样
+        # 转发客户端传来的 token 字符串。
+        canonical = upload_service.canonical_token(token)
     except ValueError as exc:
         return HTMLResponse(_upload_html(None, str(exc)))
-    return HTMLResponse(_upload_html(token, None))
+    return HTMLResponse(_upload_html(canonical, None))
 
 
 @router.post("/upload/{token}", summary="手机上传照片（免鉴权，令牌即凭证）")
 def upload_photo(token: str, photo: UploadFile = File(...)):
     try:
         customer_id = upload_service.parse_token(token)
-        # 有界读：即便部署方nginx 没配 client_max_body_size（或配得比预期宽），
-        # 这里也只在内存里物化 MAX_UPLOAD_BYTES+1 字节就能判定"超限"，不依赖
-        # 外部反代兜底——免鉴权端点自己的防线不该假设别人已经挡住了
+        # 有界读：只省一次内存物化，不是接收侧的真实上限。Starlette 在进入这个
+        # 函数体之前就已经把整个 multipart body（含超大文件分片）落地到
+        # SpooledTemporaryFile（spool_max_size=1MB 后转存磁盘，本身无上限），
+        # 这一步改不了；read(N+1) 只是不再把已经落地的内容再完整拷贝一份到堆
+        # 上。真正兜底接收体积的是生产 nginx 的 client_max_body_size（5m，见
+        # upload_service.MAX_UPLOAD_BYTES 旁注释），局域网直连后端
+        # （192.168.101.193:8001）完全没有这一层防护。
         raw = photo.file.read(upload_service.MAX_UPLOAD_BYTES + 1)
         upload_service.save_pending(customer_id, raw, photo.filename)
     except ValueError as exc:
@@ -329,23 +339,32 @@ def get_pending_photo(
     }})
 
 
-def _upload_html(token: str | None, error: str | None) -> str:
+def _upload_html(canonical_token: str | None, error: str | None) -> str:
     """手机扫码上传页：黑金视觉语言与 share_page 一致（同一套客户拍照体验）。
 
     error 非空时渲染纯说明页（令牌非法/过期），绝不用裸 404 打发客户；
     本页不回显任何客户姓名——二维码由共享屏（kiosk）签发，屏上任何人都能扫，
     在这张陌生人可达的页面上显名是隐私泄露（产品明确决策）。
+
+    canonical_token 必须是 upload_service.canonical_token() 的输出（调用方
+    upload_page 已经这么做），不是客户端传来的原始 token 字符串——见该函数
+    文档，原始字符串可能带 int() 能容忍但 JS 单引号字面量容不下的内容（裸
+    换行等）。error 与 canonical_token 两处都过 html.escape：error 目前只是
+    模块内两条固定中文文案，但这层转义不依赖"以后没人会往 ValueError 里塞
+    动态内容"这种约定——某天有人写出 `f"上传码 {token} 已过期"` 这种看似无害
+    的改动，没有这层转义就是这张免鉴权公开页上的反射型 XSS。
     """
     if error:
+        safe_error = html.escape(error)
         return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>莱莎健康假发 · 上传链接已失效</title>
 <style>body{{margin:0;background:#0c0a08;color:#f3ead9;font-family:"PingFang SC",sans-serif;
 text-align:center;padding:64px 24px}}h1{{font-size:16px;letter-spacing:.3em;color:#e8c479;
 font-weight:400;margin-bottom:26px}}p{{color:#8d8371;font-size:14px;line-height:2}}</style>
-</head><body><h1>莱 莎 · 健 康 假 发</h1><p>{error}</p></body></html>"""
+</head><body><h1>莱 莎 · 健 康 假 发</h1><p>{safe_error}</p></body></html>"""
 
-    upload_path = f"/api/expo/upload/{token}"
+    upload_path = html.escape(f"/api/expo/upload/{canonical_token}")
     return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>莱莎健康假发 · 扫码上传照片</title>
@@ -354,16 +373,16 @@ body{{margin:0;background:#0c0a08;color:#f3ead9;font-family:"PingFang SC",sans-s
 padding:28px 20px 48px;box-sizing:border-box}}
 h1{{font-size:15px;letter-spacing:.3em;color:#e8c479;font-weight:400;text-align:center;margin:0 0 26px}}
 .lead{{text-align:center;font-size:14px;color:#f7e3b0;margin-bottom:22px}}
-.row{{display:flex;gap:12px;margin-bottom:24px}}
+.row{{display:flex;gap:12px;margin-bottom:16px}}
 .pick{{flex:1;position:relative;border:1px solid rgba(232,196,121,.4);border-radius:14px;
 padding:20px 8px;text-align:center;color:#f3ead9;font-size:14px;overflow:hidden}}
 .pick input{{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer}}
+#status{{text-align:center;font-size:13px;color:#e8c479;min-height:20px;margin-bottom:22px}}
 .tips{{background:rgba(232,196,121,.06);border:1px solid rgba(232,196,121,.2);border-radius:14px;
 padding:16px 18px;margin-bottom:22px}}
 .tips p{{margin:0 0 8px;color:#8d8371;font-size:12px}}
 .tips ul{{margin:0;padding-left:18px;color:#d9c9a0;font-size:12.5px;line-height:1.9}}
 .privacy{{color:#8d8371;font-size:12px;line-height:1.8;text-align:center;margin-bottom:20px}}
-#status{{text-align:center;font-size:13px;color:#e8c479;min-height:20px}}
 </style>
 </head><body>
 <h1>莱 莎 · 健 康 假 发</h1>
@@ -372,6 +391,7 @@ padding:16px 18px;margin-bottom:22px}}
 <label class="pick">从相册选择<input type="file" accept="image/*" id="fromAlbum"/></label>
 <label class="pick">现在拍一张<input type="file" accept="image/*" capture="user" id="fromCamera"/></label>
 </div>
+<div id="status"></div>
 <div class="tips">
 <p>拍摄小贴士</p>
 <ul>
@@ -381,9 +401,9 @@ padding:16px 18px;margin-bottom:22px}}
 </ul>
 </div>
 <div class="privacy">照片仅用于本次体验与效果回看，保留 90 天，可随时联系我们删除。</div>
-<div id="status"></div>
 <script>
 var MAX_EDGE = 1600;   // 与后端 ai_pipeline.UPLOAD_MAX_EDGE 对齐
+var busy = false;      // 并发提交守卫：处理/上传期间忽略新的选图，成败后才放开
 
 function uploadBlob(blob, filename) {{
   var status = document.getElementById('status');
@@ -392,14 +412,22 @@ function uploadBlob(blob, filename) {{
   fd.append('photo', blob, filename || 'photo.jpg');
   fetch('{upload_path}', {{ method: 'POST', body: fd }})
     .then(function (res) {{
-      if (!res.ok) throw new Error('upload failed');
-      return res.json();
+      return res.json().catch(function () {{ return null; }}).then(function (body) {{
+        if (!res.ok) {{
+          // 后端 HTTPException 的错误体是 {{"detail": "..."}}——过期码会给出
+          // "回展位重新获取"而不是笼统的"无效"，这是 parse_token 特意保留的
+          // 区分（先查过期、再查签名）；不读这个字段就等于把这份区分白白扔掉，
+          // 客户在 10 分钟窗口快到期时翻完相册回来提交，只会被无意义地告知"重试"。
+          throw new Error((body && body.detail) || '上传失败，请重试');
+        }}
+        status.textContent = '上传成功，请回到展位屏幕查看';
+      }});
+    }})
+    .catch(function (err) {{
+      status.textContent = (err && err.message) || '上传失败，请重试';
     }})
     .then(function () {{
-      status.textContent = '上传成功，请回到展位屏幕查看';
-    }})
-    .catch(function () {{
-      status.textContent = '上传失败，请重试';
+      busy = false;   // 不管成败都要放开，允许客户重新选图重试
     }});
 }}
 
@@ -416,6 +444,15 @@ function uploadBlob(blob, filename) {{
 // 一律回退成「原图直传」——宁可传得慢，也不能传一张可能转向错误的压缩图。
 function prepareAndUpload(file) {{
   if (!file) return;
+  if (busy) {{
+    document.getElementById('status').textContent = '仍在处理上一张，请稍候…';
+    return;
+  }}
+  busy = true;
+  // 12MP 原图的 createImageBitmap+canvas 处理耗时 1~3 秒，这期间页面若什么都
+  // 不显示，客户会以为没反应而再次点击——先给一句"处理中"垫上，比等 uploadBlob
+  // 里的"上传中"早得多。
+  document.getElementById('status').textContent = '处理中…';
   if (!window.createImageBitmap) {{
     uploadBlob(file, file.name);
     return;

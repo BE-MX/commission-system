@@ -53,9 +53,14 @@ class TestToken:
             upload_service.parse_token(f"{cid}-{exp}-0000000000000000")
 
     def test_non_ascii_signature_rejected_as_value_error(self):
-        """hmac.compare_digest 遇到非 ASCII 字符会抛 TypeError 而不是 ValueError；
-        这个端点完全免登录，一条乱码 URL 不该把 500 甩给顾客。签名段必须先过
-        形状校验（16 位十六进制）再进 compare_digest。"""
+        """这条测的是端到端结果（干净 ValueError，不是 500），但要老实交代它实际
+        走的是哪条防线：'é'*16 不满足 _SIGNATURE_RE 的 [0-9a-f]{16}，在形状校验
+        这一步就被拒了，从未真正走到 hmac.compare_digest。这不是巧合而是结构性
+        必然——凡是能通过 [0-9a-f]{16} 形状校验的字符串，本身就只含 ASCII 十六
+        进制字符，compare_digest 不可能在这条路径上收到非 ASCII 输入。换句话说，
+        形状校验一旦存在，就已经把"compare_digest 遇到非 ASCII 抛 TypeError"这类
+        输入结构性地挡在门外，不需要再单独证明——没有办法在保留形状校验的前提下，
+        构造一个"形状合法但非 ASCII"的签名段去真正触达 compare_digest。"""
         cid, exp, _ = upload_service.make_token(42).split("-")
         with pytest.raises(ValueError, match="无效"):
             upload_service.parse_token(f"{cid}-{exp}-{'é' * 16}")
@@ -88,6 +93,52 @@ class TestToken:
         monkeypatch.setattr(get_settings(), "EXPO_UPLOAD_SIGN_SECRET", "a-different-deployment-secret")
         with pytest.raises(ValueError, match="无效"):
             upload_service.parse_token(token)
+
+
+class TestCanonicalToken:
+    """I3：int() 对输入的宽容（前后空白含裸换行/"+"前缀/下划线分组/全角数字）
+    意味着签名校验通过的合法令牌，原始字符串未必是能安全塞进 JS 单引号字面量的
+    规范 ASCII。canonical_token 用解析出的 int 值重建，天生只含数字/连字符/
+    十六进制字符——这里逐一验证"permissive int() 接受、但字面量不规范"的输入，
+    canonical_token 都能重建回与 make_token 输出完全一致的规范形式。"""
+
+    def test_accepts_and_normalizes_leading_newline(self):
+        token = upload_service.make_token(42)
+        cid, exp, sig = token.split("-")
+        noisy = f"\n{cid}-{exp}-{sig}"
+        assert upload_service.parse_token(noisy) == 42  # int() 的宽容让它照样校验通过
+        assert upload_service.canonical_token(noisy) == token  # 重建回规范形式
+
+    def test_accepts_and_normalizes_trailing_whitespace(self):
+        token = upload_service.make_token(42)
+        cid, exp, sig = token.split("-")
+        noisy = f"{cid} \t-{exp}-{sig}"
+        assert upload_service.parse_token(noisy) == 42
+        assert upload_service.canonical_token(noisy) == token
+
+    def test_accepts_and_normalizes_fullwidth_digits(self):
+        token = upload_service.make_token(42)
+        cid, exp, sig = token.split("-")
+        fullwidth = cid.translate(str.maketrans("0123456789", "０１２３４５６７８９"))
+        noisy = f"{fullwidth}-{exp}-{sig}"
+        assert upload_service.parse_token(noisy) == 42
+        assert upload_service.canonical_token(noisy) == token
+
+    def test_accepts_and_normalizes_underscore_digit_grouping(self):
+        token = upload_service.make_token(1000)
+        cid, exp, sig = token.split("-")
+        noisy = f"1_000-{exp}-{sig}"
+        assert upload_service.parse_token(noisy) == 1000
+        assert upload_service.canonical_token(noisy) == token
+
+    def test_rejects_expired_token_same_as_parse_token(self):
+        token = upload_service.make_token(42, ttl_seconds=-1)
+        with pytest.raises(ValueError, match="已过期"):
+            upload_service.canonical_token(token)
+
+    def test_rejects_invalid_token_same_as_parse_token(self):
+        with pytest.raises(ValueError, match="无效"):
+            upload_service.canonical_token("not-a-real-token")
 
 
 class TestSecretIsDefault:
@@ -141,6 +192,60 @@ class TestPendingFiles:
         name = upload_service.save_pending(42, self._jpeg_bytes((4000, 3000)), "p.jpg")
         with Image.open(upload_service.PENDING_DIR / name) as im:
             assert max(im.size) <= ai_pipeline.UPLOAD_MAX_EDGE
+
+    def test_save_pending_prunes_to_newest_k(self):
+        """C1：一个有效令牌在 10 分钟窗口内可反复上传，二维码又贴在共享展位屏——
+        "有人拿着有效令牌"是每个路过的人都成立的设计常态，不是攻击。若不裁剪，
+        一个善意的客户端重试循环或恶意脚本都能在窗口内把云端展会实例（方舟全量
+        部署）的磁盘写满。latest_pending 只读最新一张，keep 之外的纯属浪费——
+        上传 keep+2 张后应只剩 keep 张，且最新一张必须还在。"""
+        import os
+
+        keep = upload_service.PENDING_KEEP_PER_CUSTOMER
+        base = time.time() - 1000
+        names = []
+        for i in range(keep + 2):
+            name = upload_service.save_pending(42, self._jpeg_bytes(), f"{i}.jpg")
+            names.append(name)
+            # 显式拉开 mtime：同一测试进程里连续调用可能落在同一时间片分辨率内，
+            # 靠系统真实写入时间区分"谁最新"不够可靠
+            stamp = base + i * 10
+            os.utime(upload_service.PENDING_DIR / name, (stamp, stamp))
+
+        remaining = {p.name for p in upload_service.PENDING_DIR.glob("c42_*")}
+        assert len(remaining) == keep
+        assert names[-1] in remaining  # 最新一张必须还在
+
+    def test_save_pending_prune_ignores_other_customers(self):
+        """裁剪按客户隔离：客户 A 传满 keep 张不该动客户 B 的待取照片。"""
+        keep = upload_service.PENDING_KEEP_PER_CUSTOMER
+        for i in range(keep + 2):
+            upload_service.save_pending(42, self._jpeg_bytes(), f"{i}.jpg")
+        other = upload_service.save_pending(99, self._jpeg_bytes(), "other.jpg")
+        assert (upload_service.PENDING_DIR / other).exists()
+
+    def test_save_pending_write_failure_is_clean_valueerror_and_leaves_no_partial_file(self, monkeypatch):
+        """I2：写盘中途失败（磁盘满——见 C1、AV 锁库）不能在最终文件名上留下半截
+        文件——那个文件名会被 latest_pending 认作"最新待取照片"、被 resolve_pending
+        三道校验全部放行，kiosk 顾问会看到一张损坏图。原子写（tmp + os.replace）
+        把这类失败收敛成客户可读的 ValueError，且不留任何同名残留（含临时文件）。"""
+        def _boom(src, dst):
+            raise OSError("simulated disk full during atomic replace")
+
+        monkeypatch.setattr(upload_service.os, "replace", _boom)
+        with pytest.raises(ValueError):
+            upload_service.save_pending(42, self._jpeg_bytes(), "p.jpg")
+        assert list(upload_service.PENDING_DIR.glob("c42_*")) == []
+        assert list(upload_service.PENDING_DIR.glob(".tmp_*")) == []  # finally 清掉了临时文件
+
+    def test_pending_tmp_file_not_picked_up_by_latest_pending(self):
+        """I2 相关的命名陷阱：临时文件若叫 "c42_xxx.jpg.tmp"（最终名加后缀），会同时
+        命中 latest_pending 的 "c{cid}_*" 与 sweep_stale 的 "c*" 两个 glob——孤儿 .tmp
+        文件可能被误当正式待取照片提供给 kiosk。当前命名（.tmp_ 前缀，第一个字符
+        就不是 "c"）结构性地避开这两处 glob，这里直接摆一个孤儿 .tmp 文件验证。"""
+        upload_service.PENDING_DIR.mkdir(parents=True, exist_ok=True)
+        (upload_service.PENDING_DIR / ".tmp_c42_deadbeef12.jpg").write_bytes(self._jpeg_bytes())
+        assert upload_service.latest_pending(42) is None
 
     def test_latest_pending_returns_newest_of_many(self):
         import os
