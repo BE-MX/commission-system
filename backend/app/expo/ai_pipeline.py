@@ -687,6 +687,63 @@ _FRAMING_CLAUSE = (
     "background, so she belongs in the scene rather than being a cut-out pasted onto a backdrop."
 )
 
+# 面部神采（2026-08-01 亮哥反馈「年龄较大的女性出图脸部不够有精神和光泽」，
+# 并明确「针对提示词补强，不要过于美颜」）：
+# **病根不是年龄，是这套 prompt 从没交代过脸该怎么打光**——原景保持与场景置换两条子句
+# 都只写了「头发的高光阴影跟随光源方向」，脸的用光一字未提；再叠上「面部与肤色与原图
+# 完全一致」和「禁止过度磨皮」两道锁，模型最省力的解就是把脸平铺直叙地渲出来，于是暗、
+# 平、没有立体感。胶原蛋白少的脸在平光下尤其显疲态，所以在年长客户身上先暴露。
+# 因此补的是**摄影用光与眼神**，不是美颜：
+#   给 = 暗部补光、颧骨眉弓的塑形光、眼神光、面部高点的镜面微光、唇颊血色
+#   禁 = 磨皮/去皱/丰盈/提亮肤色/瘦脸/放大眼睛（逐项写死，堵掉模型「变年轻=变好看」的捷径）
+# 三条刻意为之的措辞，改动前先读：
+# ①不写 radiant/glowing/youthful——这些是美颜滤镜触发词，一写就翻车成磨皮脸；
+# ②不指定主光位，只说「跟随现场光方向再塑形」——原景保持路径要求沿用客户原照片的光，
+#   硬派一盏新主光会让脸与背景光不咬合，反而更像贴图；
+# ③不提年龄：prompt 里出现 mature/elderly 会把人往老里推，而 age_range 是模型估的本就
+#   不可靠。这条对所有年龄都成立，故全量注入、不做条件分支。
+# 版本可后台切换（2026-08-01 亮哥指令「让我可以自己切换不同版本的提示词」）：
+# 选哪版由 AI 预设 expo_wig_composite 的 parameters 里的 face_vitality 键决定，在
+# 系统管理 → AI 管理页改一个词、下一次生成即生效，不重启不部署。
+# **该键不会被发给上游**：image_service._image_params 按 IMAGE_PARAMETER_KEYS 白名单
+# 过滤，同 api_style 那个既有先例（见 image_service 顶部注释）。
+# 版本写在代码里而不是存库：提示词是这个模块最容易改坏又最难发现改坏的东西，留在代码里
+# 才有 review、有测试、能 git blame 回溯；后台只决定「用哪版」，不决定「写什么」。
+# 默认 off = 与 2026-08-01 之前行为完全一致，需要主动切 v1 才启用——部署本身零行为变化。
+FACE_VITALITY_KEY = "face_vitality"
+_DEFAULT_FACE_VITALITY = "off"
+
+_FACE_VITALITY_VARIANTS = {
+    "off": "",
+    "v1": (
+    " Give her face the same attention a portrait photographer would: follow the existing "
+    "light direction of the scene, but shape it - lift the shadow side with gentle fill and "
+    "let a soft key catch the cheekbones and brow, so her face reads three-dimensional and "
+    "never flat, dim or muddy. Her eyes must look clear, awake and engaged, with distinct "
+    "catchlights. Keep the skin alive rather than smooth: a fine specular sheen on the "
+    "forehead, cheekbones, nose bridge and lips, and natural blood warmth in the cheeks and "
+    "lips. Every pore, fine line, wrinkle, eye bag and age spot stays exactly as in the "
+    "original photo - do not smooth, retouch, plump, lighten or rejuvenate the skin, do not "
+    "slim the face or enlarge the eyes. The liveliness must come from light, gaze and colour, "
+    "never from erasing her age."
+    ),
+}
+
+
+def resolve_face_vitality(parameters: dict | None) -> str:
+    """按预设参数选面部神采子句；未知版本名回落 off 并出声。
+
+    绝不因为一个配置笔误就抛异常——展位现场生不出图的代价远大于少一段子句。
+    """
+    name = str((parameters or {}).get(FACE_VITALITY_KEY, _DEFAULT_FACE_VITALITY)).strip()
+    if name in _FACE_VITALITY_VARIANTS:
+        return _FACE_VITALITY_VARIANTS[name]
+    msg = (f"[expo] 未知的 {FACE_VITALITY_KEY}={name!r}，回落 {_DEFAULT_FACE_VITALITY}；"
+           f"可选值：{'/'.join(_FACE_VITALITY_VARIANTS)}")
+    logger.warning(msg)
+    print(msg, flush=True)
+    return _FACE_VITALITY_VARIANTS[_DEFAULT_FACE_VITALITY]
+
 # 色 + 魂 收尾
 _TRYON_STYLE_TAIL = (
     " Photorealistic straight-out-of-camera quality: true skin texture with visible "
@@ -938,9 +995,11 @@ _SCENE_TEMPLATE = (
     "same as in the photo. Recreate it as a high-end magazine-quality portrait "
     "photograph set in {scene}. Naturally adapt the background, outfit and lighting to "
     "the scene while keeping the person clearly recognizable and the hair identical."
-    + _SUMMER_WARDROBE_CLAUSE +
-    " The result must look like a real photograph, not an illustration."
+    + _SUMMER_WARDROBE_CLAUSE
 )
+# 拆出尾句是为了让面部神采子句能插在原来的位置上：它现在按预设动态取值，不能再在
+# 模块加载期拼死（场景大片路径同样是给同一批客户拍脸，与换发路径共用同一个开关）
+_SCENE_TAIL = " The result must look like a real photograph, not an illustration."
 
 
 def resolve_scenes(keys: list[str] | None) -> list[dict]:
@@ -1069,12 +1128,16 @@ def _start_batch(session_id: int, rows: list[ExpoResult]) -> None:
 
 def _build_prompt(
     session: ExpoSession, row: ExpoResult, wig: ExpoWig | None,
+    face_vitality: str = "",
 ) -> tuple[str, list[Path], str | None]:
     """按 result 形态组装 (prompt, 图片, 输出尺寸)。
 
     分支按 wig_id 判定：无发型=scene 模式（佩戴实拍置换场景，尺寸沿用 preset 默认）；
     有发型=tryon 换发（竖版 6 寸），scene_json 是生成场景（弱网未选=原景保持原背景，
     否则置换到 TRYON_SCENES 中选定的职业/生活场景）。
+
+    face_vitality 收**已解析好的子句文本**而不是版本名：本函数保持纯函数、不碰 DB，
+    版本解析（含未知值回落）由调用方用 resolve_face_vitality 做完再传进来。
     """
     if row.wig_id is None and row.scene_json:
         scene = next((s for s in SCENES if s["key"] == row.scene_json.get("key")), None)
@@ -1082,6 +1145,8 @@ def _build_prompt(
             _SCENE_TEMPLATE.format(scene=scene["prompt"] if scene else row.scene_json.get("label", ""))
             # banquet 旗袍属场景规定装（uniform），只注首饰；其余 4 景注入完整 look
             + _wardrobe_variation_clause(uniform=bool(scene and scene.get("uniform")))
+            + face_vitality
+            + _SCENE_TAIL
         )
         return prompt, [to_abs(session.photo_path)], None
 
@@ -1115,10 +1180,29 @@ def _build_prompt(
         )
         + color_clause
         + scene_clause
+        + face_vitality  # 两条场景路径都要：脸的用光与神采跟场景无关
         + _TRYON_STYLE_TAIL
         + _PORTRAIT_SPEC_CLAUSE
     )
     return prompt, images, _SIZE_PORTRAIT
+
+
+def _face_vitality_for(db) -> str:
+    """读合成预设的 parameters 决定面部神采版本；任何读取失败都按默认 off 继续。"""
+    from app.ai.models import AiPreset
+
+    try:
+        preset = (
+            db.query(AiPreset)
+            .filter(AiPreset.preset_name == COMPOSITE_PRESET, AiPreset.deleted_at.is_(None))
+            .first()
+        )
+        return resolve_face_vitality(preset.parameters if preset else None)
+    except Exception as exc:  # noqa: BLE001
+        msg = f"[expo] 读取 {FACE_VITALITY_KEY} 配置失败，按默认 {_DEFAULT_FACE_VITALITY} 继续: {exc}"
+        logger.warning(msg)
+        print(msg, flush=True)
+        return _FACE_VITALITY_VARIANTS[_DEFAULT_FACE_VITALITY]
 
 
 def _run_composite(session_id: int, result_id: int) -> None:
@@ -1131,7 +1215,11 @@ def _run_composite(session_id: int, result_id: int) -> None:
         session = db.get(ExpoSession, session_id)
         wig = db.get(ExpoWig, row.wig_id) if row.wig_id else None
 
-        prompt, images, size = _build_prompt(session, row, wig)
+        # 面部神采子句的版本由预设参数决定（后台可切，见 FACE_VITALITY_KEY 处注释）。
+        # 取预设失败不能拖垮合成：读不到就按默认 off 走，只出声不抛
+        prompt, images, size = _build_prompt(
+            session, row, wig, face_vitality=_face_vitality_for(db),
+        )
         result = edit_image(
             db=db,
             preset_name=COMPOSITE_PRESET,

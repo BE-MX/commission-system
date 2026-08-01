@@ -141,7 +141,11 @@ def test_build_prompt_tryon_default_keeps_background():
     assert "FIRST image is the customer's own photo" in prompt  # 锚：参考图角色分工
     assert "background and framing exactly the same" in prompt   # 场：默认原景全锁定
     assert "85mm" not in prompt  # 浅景深只随场景置换路径（原景不能又锁背景又虚化）
-    assert "16:9" not in prompt and "three" not in prompt        # 三格已回退干净
+    # 三格已回退干净。判据从裸词 "three" 收敛为**布局语义**（2026-08-01）：裸词把
+    # "three-dimensional" 这类无关英文也算成三格残留，挡的是正常措辞而不是回归。
+    assert "16:9" not in prompt
+    assert not re.search(r"three[\s-]+(panels?|images?|variations?|views?)|triptych",
+                         prompt, re.I)
     assert len(images) == 1
 
 
@@ -366,6 +370,98 @@ def test_scene_swap_framing_is_waist_up_with_both_bounds():
     assert "one-seventh" not in prompt
     # 「主体/subject」是摆拍语义，会顶掉 07-09 定稿的抓拍感
     assert "subject of this photograph" not in prompt
+
+
+def _vitality_prompts(variant="v1"):
+    """三条出图路径各取一份 prompt：换发的两条场景分支 + 场景大片。"""
+    clause = ai_pipeline.resolve_face_vitality({ai_pipeline.FACE_VITALITY_KEY: variant})
+    wig = ExpoWig(model_no="LS-7", name="空气刘海", wig_description="airy fringe")
+    swap = ExpoResult(session_id=1, wig_id=7,
+                      scene_json={"key": "whitecollar", "label": "白领高管"})
+    keep = ExpoResult(session_id=1, wig_id=7)          # 无 scene_json → 原景保持
+    scene = ExpoResult(session_id=1, wig_id=None,
+                       scene_json={"key": "banquet", "label": "晚宴礼遇"})
+    build = ai_pipeline._build_prompt
+    return {
+        "场景置换": build(_session(), swap, wig, face_vitality=clause)[0],
+        "原景保持": build(_session(), keep, wig, face_vitality=clause)[0],
+        "场景大片": build(_session(mode="scene"), scene, None, face_vitality=clause)[0],
+    }
+
+
+class TestFaceVitalitySwitch:
+    """版本开关（2026-08-01）：默认 off = 与本次改动之前行为完全一致。
+
+    开关值来自 AI 预设 expo_wig_composite 的 parameters，后台可改、不需部署。
+    最要命的失败形态是「配置笔误让展位生不出图」，所以未知值必须回落而不是抛。
+    """
+
+    def test_default_is_off_so_deploying_changes_nothing(self):
+        """键缺失 → 空子句。上线本身零行为变化，必须主动切 v1 才启用。"""
+        assert ai_pipeline.resolve_face_vitality(None) == ""
+        assert ai_pipeline.resolve_face_vitality({}) == ""
+        assert ai_pipeline.resolve_face_vitality({"other": "x"}) == ""
+
+    def test_v1_returns_the_clause(self):
+        clause = ai_pipeline.resolve_face_vitality({ai_pipeline.FACE_VITALITY_KEY: "v1"})
+        assert "never flat, dim or muddy" in clause
+
+    @pytest.mark.parametrize("bad", ["v2", "V1", " on ", "", "1", None, 0])
+    def test_unknown_value_falls_back_to_off_without_raising(self, bad):
+        """展位现场生不出图的代价远大于少一段子句——笔误一律回落，绝不抛。"""
+        assert ai_pipeline.resolve_face_vitality({ai_pipeline.FACE_VITALITY_KEY: bad}) == ""
+
+    def test_off_really_removes_it_from_every_path(self):
+        for name, prompt in _vitality_prompts(variant="off").items():
+            assert "never flat, dim or muddy" not in prompt, f"{name} 关不掉"
+            assert "distinct catchlights" not in prompt, f"{name} 关不掉"
+
+    def test_switch_key_is_not_forwarded_upstream(self):
+        """控制键绝不能混进发给上游的请求参数——白名单一旦放宽就会静默泄漏。
+        同 api_style 的既有约定（image_service 顶部注释）。"""
+        from app.ai.image_service import CHAT_IMAGE_PARAMETER_KEYS, IMAGE_PARAMETER_KEYS
+
+        assert ai_pipeline.FACE_VITALITY_KEY not in IMAGE_PARAMETER_KEYS
+        assert ai_pipeline.FACE_VITALITY_KEY not in CHAT_IMAGE_PARAMETER_KEYS
+
+
+class TestFaceVitalityClause:
+    """面部神采子句（2026-08-01）：补的是用光与眼神，不是美颜。
+
+    这条最容易被后人"顺手优化"成美颜词（radiant/glowing/flawless/youthful），
+    那样就完全走反了亮哥的指令。正反两面都锚死。
+    """
+
+    def test_present_on_every_output_path(self):
+        """脸的用光与场景无关，三条路径都得有——漏一条就是「有的图有神采有的没有」。"""
+        for name, prompt in _vitality_prompts().items():
+            assert "never flat, dim or muddy" in prompt, f"{name} 缺面部用光指令"
+            assert "distinct catchlights" in prompt, f"{name} 缺眼神光指令"
+
+    def test_keeps_the_anti_retouch_guards(self):
+        """补神采不等于放开磨皮：禁项必须与给项同时在场，缺一就会滑向美颜。"""
+        for name, prompt in _vitality_prompts().items():
+            assert "do not smooth, retouch, plump, lighten or rejuvenate" in prompt, name
+            assert "wrinkle, eye bag and age spot stays exactly as in the original" in prompt, name
+            assert "do not slim the face or enlarge the eyes" in prompt, name
+
+    def test_avoids_beauty_filter_trigger_words(self):
+        """radiant/glowing/youthful/flawless 是美颜滤镜触发词，一写就翻车成磨皮脸。
+        这条是防后人「润色文案」时顺手加进来。
+
+        **只扫这条子句、不扫整段 prompt**：场景文案里的 "softly glowing presentation
+        screen" 讲的是屏幕发光，与皮肤无关，扫全段会把它误判成美颜词。
+        """
+        banned = re.compile(r"\b(radiant|glowing|youthful|flawless|blemish-free|porcelain)\b",
+                            re.I)
+        hit = banned.search(ai_pipeline._FACE_VITALITY_VARIANTS["v1"])
+        assert not hit, f"神采子句出现美颜触发词 {hit.group() if hit else ''}"
+
+    def test_says_nothing_about_age(self):
+        """子句里出现 mature/elderly 会把人往老里推，正好与诉求相反。"""
+        banned = re.compile(r"\b(elderly|mature|middle-aged|older woman)\b", re.I)
+        hit = banned.search(ai_pipeline._FACE_VITALITY_VARIANTS["v1"])
+        assert not hit, f"神采子句出现年龄描述 {hit.group() if hit else ''}"
 
 
 def test_keep_bg_path_has_no_framing_clause():
