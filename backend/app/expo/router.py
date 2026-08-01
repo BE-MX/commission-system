@@ -304,7 +304,11 @@ def upload_page(token: str):
 def upload_photo(token: str, photo: UploadFile = File(...)):
     try:
         customer_id = upload_service.parse_token(token)
-        upload_service.save_pending(customer_id, photo.file.read(), photo.filename)
+        # 有界读：即便部署方nginx 没配 client_max_body_size（或配得比预期宽），
+        # 这里也只在内存里物化 MAX_UPLOAD_BYTES+1 字节就能判定"超限"，不依赖
+        # 外部反代兜底——免鉴权端点自己的防线不该假设别人已经挡住了
+        raw = photo.file.read(upload_service.MAX_UPLOAD_BYTES + 1)
+        upload_service.save_pending(customer_id, raw, photo.filename)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     return ok({"uploaded": True})
@@ -379,12 +383,13 @@ padding:16px 18px;margin-bottom:22px}}
 <div class="privacy">照片仅用于本次体验与效果回看，保留 90 天，可随时联系我们删除。</div>
 <div id="status"></div>
 <script>
-function upload(file) {{
-  if (!file) return;
+var MAX_EDGE = 1600;   // 与后端 ai_pipeline.UPLOAD_MAX_EDGE 对齐
+
+function uploadBlob(blob, filename) {{
   var status = document.getElementById('status');
   status.textContent = '上传中…';
   var fd = new FormData();
-  fd.append('photo', file, file.name || 'photo.jpg');
+  fd.append('photo', blob, filename || 'photo.jpg');
   fetch('{upload_path}', {{ method: 'POST', body: fd }})
     .then(function (res) {{
       if (!res.ok) throw new Error('upload failed');
@@ -397,11 +402,54 @@ function upload(file) {{
       status.textContent = '上传失败，请重试';
     }});
 }}
+
+// 生产 nginx（ark-ip-ssl.conf）client_max_body_size 5m，手机原图常见 3~8MB——
+// 传原图会被 nginx 413 挡在 Python 之前，我们精心写的中文提示永远不会触发。
+// 这里在浏览器端先压到 1600px 长边，体积落到几百 KB，5m 门槛基本不会再撞到。
+//
+// 陷阱：手机相册照片自带 EXIF 方向标记，canvas 只画像素、不认 EXIF——若直接
+// drawImage 原图再重新编码，输出没有 EXIF 且像素没转正，人像会整张倒下/侧躺。
+// createImageBitmap(file, {{imageOrientation:'from-image'}}) 会先按 EXIF 转正
+// 再把像素交给我们画，这样重新编码的 JPEG 天生方向正确，不依赖下游再读 EXIF。
+//
+// 渐进增强：拿不到 createImageBitmap（老式机型/微信内置浏览器）或它中途抛错，
+// 一律回退成「原图直传」——宁可传得慢，也不能传一张可能转向错误的压缩图。
+function prepareAndUpload(file) {{
+  if (!file) return;
+  if (!window.createImageBitmap) {{
+    uploadBlob(file, file.name);
+    return;
+  }}
+  createImageBitmap(file, {{ imageOrientation: 'from-image' }}).then(function (bitmap) {{
+    try {{
+      var scale = Math.min(1, MAX_EDGE / Math.max(bitmap.width, bitmap.height));
+      var w = Math.round(bitmap.width * scale);
+      var h = Math.round(bitmap.height * scale);
+      var canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      var ctx = canvas.getContext('2d');
+      ctx.drawImage(bitmap, 0, 0, w, h);
+      canvas.toBlob(function (blob) {{
+        if (blob) {{
+          uploadBlob(blob, 'photo.jpg');
+        }} else {{
+          uploadBlob(file, file.name);   // toBlob 失败兜底：传原图，不传半成品
+        }}
+      }}, 'image/jpeg', 0.9);
+    }} catch (e) {{
+      uploadBlob(file, file.name);
+    }}
+  }}).catch(function () {{
+    uploadBlob(file, file.name);
+  }});
+}}
+
 function bind(id) {{
   document.getElementById(id).addEventListener('change', function (e) {{
     var file = e.target.files[0];
     e.target.value = '';
-    upload(file);
+    prepareAndUpload(file);
   }});
 }}
 bind('fromAlbum');

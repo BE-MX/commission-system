@@ -298,6 +298,20 @@ class TestUploadPhoto:
         assert resp.status_code == 400
         assert upload_service.latest_pending(43) is None
 
+    def test_rejects_oversize_upload(self):
+        """端点层验证有界读（F2）：photo.file.read(MAX_UPLOAD_BYTES + 1) 只物化刚好
+        够判定"超限"的字节数，而不是把整份超大 body 读进内存——这里确认改成有界读
+        之后，超限判定本身仍然正确（不是只省了内存、把该拒的漏放过去）。"""
+        token = upload_service.make_token(44)
+        oversize = b"\xff" * (upload_service.MAX_UPLOAD_BYTES + 1)
+        with _client() as client:
+            resp = client.post(
+                f"/api/expo/upload/{token}",
+                files={"photo": ("big.jpg", oversize, "image/jpeg")},
+            )
+        assert resp.status_code == 400
+        assert upload_service.latest_pending(44) is None
+
 
 class TestUploadTicketFailClosed:
     """密钥停在仓库默认值时，签发端点必须拒发（fail-closed），而不是带着没锁的

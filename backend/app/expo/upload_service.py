@@ -25,6 +25,12 @@ TICKET_TTL_SECONDS = 600          # 10 分钟：够客户翻相册，又限制�
 PENDING_DIR = ai_pipeline.UPLOAD_ROOT / "pending"
 STALE_AFTER_SECONDS = 2 * 3600    # 待取照片留存上界
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
+# 这个上限不是实际生效的天花板：生产 nginx（ark-ip-ssl.conf / ark-cloud.conf）
+# client_max_body_size 都是 5m，比这里小得多——超过 ~5MB 的请求在到达这段 Python
+# 之前就被 nginx 挡下、直接 413，本模块的报错文案根本没有机会触发。下次从这里
+# 查半天查不出问题时，先去看 nginx 配置，不要以为 15MB 是真的能传到这么大
+# （手机端已在 router.py 的 _upload_html 里落盘前先压到 1600px，正常情况下
+# 传上来的文件远小于这两个上限）。
 
 # 免登录端点统一话术：不区分「格式错」与「签名错」——对客户来说都只有一个可行动作
 # （回去重新扫码），暴露更细的原因没有意义，只会多一处需要翻译/维护的文案。
