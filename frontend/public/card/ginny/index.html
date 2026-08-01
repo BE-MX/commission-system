@@ -130,6 +130,10 @@
   .faq-item.open .faq-a { grid-template-rows: 1fr; }
   .faq-a-in { overflow: hidden; }
   .faq-a-in p { padding: 0 16px 14px; font-size: 14px; color: var(--muted); }
+  .faq-cat {
+    margin: 20px 0 2px; font-size: 11.5px; font-weight: 700; letter-spacing: 2px;
+    text-transform: uppercase; color: var(--muted);
+  }
   .faq-empty { margin-top: 12px; font-size: 14px; color: var(--muted); display: none; }
 
   footer { margin-top: 44px; text-align: center; }
@@ -200,26 +204,208 @@
     <div class="sec-label">Hair business FAQ</div>
     <input class="field faq-search" id="faqSearch" type="search" placeholder="Search FAQs…">
     <div id="faqList">
-      <!-- FAQ_SKELETON: replace with final bilingual content (data-sample entries) -->
-      <div class="faq-item" data-sample="1">
-        <button class="faq-q">How do I place an order with leShine?</button>
-        <div class="faq-a"><div class="faq-a-in"><p>Message your butler directly — by e-mail, or leave a note in “Ask me anything” above. You will get a personal reply with every step handled for you.</p></div></div>
+      <div class="faq-group">
+        <div class="faq-cat">Getting Started</div>
+        <div class="faq-item">
+          <button class="faq-q">How do I place an order or get a quotation?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>Message your butler directly — by e-mail or in “Ask me anything” above. Send your specifications (style, length, colour, quantity) and you will receive a tailored quotation with every step handled for you.</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">I met you at the expo — where are my photos?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>Open “Your private expo file” above and enter the e-mail or WhatsApp number you left at our booth.</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">Why choose leShine over other manufacturers?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>We may not be the best fit for every market — our strength is the full system behind the hair: stable sourcing, slow controlled colouring, ready stock, double inspection, OEM support and a team that stays involved after shipment. Let samples and repeat orders prove the consistency.</p></div></div>
+        </div>
       </div>
-      <div class="faq-item" data-sample="1">
-        <button class="faq-q">Can I get a quotation for a custom product?</button>
-        <div class="faq-a"><div class="faq-a-in"><p>Yes. Send your specifications (style, length, color, quantity) to your butler and you will receive a tailored quotation.</p></div></div>
+
+      <div class="faq-group">
+        <div class="faq-cat">Factory &amp; Credentials</div>
+        <div class="faq-item">
+          <button class="faq-q">Are you a manufacturer or a trading company?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>A manufacturer. Orders run on the controlled production line inside our own directly-operated factory. leShine has been established for 14+ years, built on about 30 years of family hair-manufacturing experience.</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">Where is your factory?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>Our factory is in Juancheng, Shandong — lower facility costs there let us invest more in raw hair, processing and quality control. Our sales &amp; shipping team is in Qingdao, a coastal logistics hub for fast export coordination.</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">Can I visit the factory?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>Yes, by appointment. We welcome factory visits and can show the full process: material selection, sorting, bleaching/colouring, product making, washing, finishing and final QC.</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">Can you provide business licenses and export documents?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>Yes. Business registration, factory documents and export documentation are available for verification before contracting.</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">Which countries do you export to?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>Mainly North America, Europe and Oceania. Recent leading repeat-purchase markets: United States (~56%), Australia, Canada, the United Kingdom, the Netherlands, Germany and Belgium — plus 15+ other repeat-order markets.</p></div></div>
+        </div>
       </div>
-      <div class="faq-item" data-sample="1">
-        <button class="faq-q">How can I see your product catalog?</button>
-        <div class="faq-a"><div class="faq-a-in"><p>Ask your butler for the latest catalog — it will be shared to your e-mail or WhatsApp directly.</p></div></div>
+
+      <div class="faq-group">
+        <div class="faq-cat">Hair Quality &amp; Sourcing</div>
+        <div class="faq-item">
+          <button class="faq-q">Where does your hair come from?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>Mainly Southwest China — untreated ponytail hair selected before industrial processing. Through long-term sourcing relationships, donors avoid perming, dyeing and bleaching before collection, giving us clean material for cuticle alignment and colour work.</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">Is it 100% Remy human hair?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>Yes — 100% human hair with cuticle direction aligned root-to-tip. Reversed or uncertain hair is removed: a 10&nbsp;kg finished order can need 12&nbsp;kg+ of input, and rejected material is never mixed back in.</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">Single donor or mixed donor?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>Standard products are mixed-donor, carefully sorted and controlled to one approved specification and master sample. We only describe hair as single-donor when it is separately collected and documented — never as a marketing claim.</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">Do you use acid processing?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>No strong acid baths. Colour is processed slowly at 25–30°C — about 3 days for dark shades and 7–10 days for blonde.</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">Do you use silicone coating?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>No heavy silicone for temporary softness. After colouring we apply a professional silicone-free nourishing treatment to restore moisture.</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">Raw / Virgin / Double Drawn options?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>Available by agreed grade and specification. Double Drawn fullness options share the same hair quality — the fuller option simply contains more full-length hairs through the ends.</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">How do you control fullness / short-hair percentage?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>By hair-length ratio: 30%, 40% or 55% of the hair at the full declared length (three standard options). As a direct factory we can customize the ratio to your preferred fullness, finish and target price.</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">Can I lab-test your hair?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>Yes — take our samples to any professional laboratory of your choice and run any tests you consider necessary.</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">Is the hair ethically sourced?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>Yes. A dedicated collection team with the owner personally involved; donors sell voluntarily and are paid fairly through stable, lawful suppliers. Documented, non-personal due-diligence evidence is available.</p></div></div>
+        </div>
       </div>
-      <div class="faq-item" data-sample="1">
-        <button class="faq-q">I met you at the expo — where are my photos?</button>
-        <div class="faq-a"><div class="faq-a-in"><p>Open “Your private expo file” above and enter the e-mail or WhatsApp number you left at our booth.</p></div></div>
+
+      <div class="faq-group">
+        <div class="faq-cat">Colours &amp; Product Development</div>
+        <div class="faq-item">
+          <button class="faq-q">Do you have ready stock?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>Yes — zero-MOQ ready stock in 30+ colours including rooted shades, plus over two tons of processed colour material. Stocked items normally dispatch within 48 hours of payment confirmation.</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">Can you develop custom colours?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>Yes — developed from your physical swatches and approved against a master sample kept as the production standard.</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">How do you keep colour consistent between batches?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>We retain the approved formula, master swatch and previous-batch reference, and check every batch under controlled lighting with a professional colorimeter. Natural hair varies, so variation is kept within an agreed tolerance — any batch outside it is adjusted or held.</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">Do you keep my colour formulas for repeat orders?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>Yes. The approved formula, swatch and order specification are retained as the repeat-order reference.</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">Can you make a custom colour ring with my branding?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>Yes — built from our full shade range, with your own colour names, logo and branding. Layout and sample are approved before production.</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">Can you create exclusive colours or products for my brand?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>Yes — subject to approved master swatches/prototypes and a written agreement defining the protected shade or design, territory, term and volume.</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">Can you manufacture to my own specification?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>Yes — from an agreed technical sheet covering material, construction, size, weight, colour, QC and packaging. Typical path: NDA → technical brief → prototype → salon wear-testing → master sample → pilot order.</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">How long does custom development take?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>Generally 4–6 weeks after the technical brief is confirmed, with milestones stated in the prototype quotation.</p></div></div>
+        </div>
       </div>
-      <div class="faq-item" data-sample="1">
-        <button class="faq-q">What if I have an after-sales problem?</button>
-        <div class="faq-a"><div class="faq-a-in"><p>Contact your butler with your order reference — every case is followed personally until it is solved.</p></div></div>
+
+      <div class="faq-group">
+        <div class="faq-cat">Branding &amp; Packaging</div>
+        <div class="faq-item">
+          <button class="faq-q">Do you offer private label?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>Yes — logo, labels, hang tags and product packaging, subject to artwork approval and MOQ. Luxury boxes, satin bags and care cards are available by design.</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">Can you print QR codes and barcodes?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>Yes. Approved QR destinations are printed after a scan test; we print your valid GS1/retail barcode data (we never invent or register codes for you).</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">Do you provide product photography and videos?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>Yes — our in-house photographer works as an extension of your team: product, detail and application content per launch. Larger lifestyle or model shoots are scoped and quoted separately.</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">Do you supply accessories?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>Yes — tape adhesive and remover, nano beads, micro rings, and a complete installer range. Final specifications, compliance documents and MOQs are approved before launch.</p></div></div>
+        </div>
+      </div>
+
+      <div class="faq-group">
+        <div class="faq-cat">Ordering &amp; Partnership</div>
+        <div class="faq-item">
+          <button class="faq-q">What is your MOQ?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>Zero MOQ on ready-stock trial orders. Custom colours, constructions and packaging carry product-specific MOQs, stated clearly in the written quotation.</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">Can I get samples?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>Yes — standard samples are normally ready in 3–5 days.</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">What are your lead times?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>Ready stock: normally dispatched within 48 hours after payment. Regular production: 2–3 weeks. Custom colours, special lengths or larger orders: usually 4–6 weeks or more.</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">What are your payment terms?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>The quotation and pro forma invoice state the sample fee, deposit percentage, balance trigger, currency and bank details. Production begins only after the specification and terms are approved in writing.</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">What is your quality-control process?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>Controls cover raw-hair selection, cuticle direction, slow colouring, weight, colour, length and hair-length ratio. Final inspection is completed twice — first by the factory, then by the sales team — before shipment.</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">Do you offer a warranty and after-sales support?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>Three months for confirmed production-related quality issues. Send your batch reference with photos/videos and installation details — a dedicated contact stays involved until the claim is fairly reviewed and resolved with a written outcome.</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">How fast do you respond?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>Within five minutes during working hours. Across time zones, your butler replies the moment they wake up.</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">Can you support my growth and scale with me?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>Yes — we help partners choose a focused opening range, develop colours and packaging, plan stock around best sellers and turn salon feedback into the next product decision. Production scales with your forecast, backed by ready stock and 2+ tons of colour material.</p></div></div>
+        </div>
+      </div>
+
+      <div class="faq-group">
+        <div class="faq-cat">Exclusivity &amp; Confidentiality</div>
+        <div class="faq-item">
+          <button class="faq-q">Will my designs and colour formulas stay confidential?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>Yes — under a mutual NDA defining the protected files, permitted users, term, and how samples and data are handled if the project ends.</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">Will my exclusive colours or products stay exclusive?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>Yes — for the items named in a signed exclusivity agreement, defined by approved master swatches or specifications with territory, term and volume commitments.</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">Can we sign a territorial exclusivity agreement?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>Not normally at the start of a relationship. It can be considered for authorised distributors/agents or a substantial annual purchase commitment — defined after the pilot stage with territory, term, targets and review milestones.</p></div></div>
+        </div>
+      </div>
+
+      <div class="faq-group">
+        <div class="faq-cat">Shipping</div>
+        <div class="faq-item">
+          <button class="faq-q">How do you ship?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>DHL or FedEx door-to-door for courier shipments. We currently work on DAP or FOB terms (DDP and CIF not at present) — the named port, price basis and risk-transfer point are confirmed in the quotation.</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">How long does shipping take?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>Usually 3–5 business days after dispatch to major markets (US, UK, EU, Australia), subject to customs and destination.</p></div></div>
+        </div>
+        <div class="faq-item">
+          <button class="faq-q">Can shipments be insured?</button>
+          <div class="faq-a"><div class="faq-a-in"><p>Yes, where requested and quoted. Policy scope, declared value and claims responsibility are confirmed before shipment.</p></div></div>
+        </div>
       </div>
     </div>
     <div class="faq-empty" id="faqEmpty">No matching question — ask Ginny directly above.</div>
@@ -337,6 +523,14 @@
       var hit = !kw || item.textContent.toLowerCase().indexOf(kw) >= 0;
       item.style.display = hit ? "" : "none";
       if (hit) any = true;
+    });
+    // 分类下无命中条目时连标签一起隐藏
+    document.querySelectorAll(".faq-group").forEach(function (group) {
+      var visible = Array.prototype.some.call(
+        group.querySelectorAll(".faq-item"),
+        function (item) { return item.style.display !== "none"; }
+      );
+      group.style.display = visible ? "" : "none";
     });
     document.getElementById("faqEmpty").style.display = any ? "none" : "block";
   });
