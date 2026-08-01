@@ -29,8 +29,10 @@ STALE_AFTER_SECONDS = 2 * 3600    # 待取照片留存上界
 # 贴在共享展位屏上——"有人拿着有效令牌"对每一个路过的人都成立，这是设计上的
 # 常态而非攻击。latest_pending 只读最新一张，留着更多纯属浪费磁盘；不裁剪的话，
 # 一个善意的客户端重试循环、或恶意脚本，都能在 10 分钟窗口内把云端展会实例
-# （方舟全量部署）的磁盘写满，殃及其余 22 个模块。只留最新 K 张把损失上限钉死在
-# K × MAX_UPLOAD_BYTES，与请求次数无关，不需要额外的限流基建（C1）。
+# （方舟全量部署）的磁盘写满，殃及其余 22 个模块。只留最新 K 张把**稳态**持有量
+# 钉死在 K × MAX_UPLOAD_BYTES，不需要额外的限流基建（C1）——注意这只是稳态
+# 上界，不是绝对峰值：N 个并发请求各自先落盘一个完整文件、再各自裁剪，瞬时
+# 峰值可以到 N × MAX_UPLOAD_BYTES，裁剪追不上并发写入的瞬时峰值（Minor 2）。
 PENDING_KEEP_PER_CUSTOMER = 3
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 # 这个上限不是实际生效的天花板：生产 nginx（ark-ip-ssl.conf / ark-cloud.conf）
@@ -166,18 +168,43 @@ def _write_pending_atomic(target: Path, raw: bytes) -> None:
             tmp.unlink(missing_ok=True)
 
 
+def _mtime(path: Path) -> float:
+    """带并发防护的 mtime 读取：文件在 stat() 那一刻被并发删掉（另一个线程的
+    _prune_pending / sweep_stale / create_session 收尾 unlink）会抛
+    FileNotFoundError——是 OSError 的子类，不是 ValueError。
+
+    这不是理论风险：多个线程同时给同一客户 save_pending 时，各自独立 glob 出
+    的候选文件列表会互相重叠，线程 A 正在 unlink 某个"多余"文件的同时，线程 B
+    排序时对同一个文件调 stat() 就会撞见它消失了。sweep_stale 自己的文档已经
+    为同样的理由把 glob() 也包进了 try/except（"目录列举途中被并发删除"），
+    但排序用的两个 key 函数（本函数取代之前的 lambda）当时漏了同一道防线——
+    在 2 秒轮询、发码必扫、建会话后必删的真实并发下，被删的文件不是边界情况，
+    是每一次请求都可能撞见的常态。实测：120 个线程并发上传同一客户，未加防护
+    前 88/120 次调用带着裸 FileNotFoundError 从 save_pending 逃逸。
+
+    返回 -1 让"消失的文件"在排序中稳定垫底——它已经不存在了，被当作"最新"
+    没有意义，也不该让这一次查询/清理因此变成 500。
+    """
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return -1
+
+
 def _prune_pending(customer_id: int, keep: int = PENDING_KEEP_PER_CUSTOMER) -> None:
     """只留该客户最新 keep 张待取照片，多余的直接删（C1）。
 
     latest_pending 只读最新一张，留着旧的纯属浪费磁盘；不裁剪的话，免鉴权端点
     配合展位公开二维码，一个善意的客户端重试循环或恶意脚本都能在 10 分钟令牌
-    窗口内无限占盘。裁剪后单个令牌的损失上限钉死在 keep 张 * MAX_UPLOAD_BYTES，
-    与请求次数无关。删除失败只记日志不抛——这是成功上传后的收尾清理，不该把
-    一次已经落盘成功的上传顶成失败响应。
+    窗口内无限占盘。裁剪后**稳态**下单个令牌的持有量钉死在 keep 张——注意这
+    只是稳态上界，不是绝对峰值：N 个并发请求各自先落盘一个完整文件、再各自
+    裁剪，峰值可以短暂到达 N × MAX_UPLOAD_BYTES，裁剪追不上并发写入的瞬时峰值
+    （C1 review Minor 2）。删除失败只记日志不抛——这是成功上传后的收尾清理，
+    不该把一次已经落盘成功的上传顶成失败响应。
     """
     files = sorted(
         (p for p in PENDING_DIR.glob(f"c{customer_id}_*") if p.is_file()),
-        key=lambda p: p.stat().st_mtime,
+        key=_mtime,
         reverse=True,
     )
     for stale in files[keep:]:
@@ -187,6 +214,31 @@ def _prune_pending(customer_id: int, keep: int = PENDING_KEEP_PER_CUSTOMER) -> N
             msg = f"[expo] pending prune skipped {stale.name}: {exc}"
             logger.warning(msg)
             print(msg, flush=True)
+
+
+def purge_pending(customer_id: int) -> None:
+    """删除该客户全部待取照片（隐私合规调用点，I3）。
+
+    待取目录（uploads/expo/pending/）是与 photos/、results/ 平级、且同样经
+    /uploads 公开挂载可读的第二个照片仓库。service.delete_customer 物理删除
+    客户全部数据时，原逻辑只走 customer.sessions 的 photo_path/image_path，
+    够不着这里——待取照片本靠 sweep_stale 兜底在 2 小时窗口内清理，不算无限期
+    泄露，但"客户已经要求删除"和"最多再等 2 小时才真的删干净"之间的落差，与
+    上传页上「可随时联系我们删除」这句承诺不符。就是 _prune_pending(keep=0)。
+    """
+    _prune_pending(customer_id, keep=0)
+
+
+# 60MP：手机拍照上传经浏览器 canvas 先压到 1600px 长边才会到这里（router.py
+# 的 _upload_html），正常路径的文件远小于这个数；触达这里的都是"浏览器端压缩
+# 失败/不支持，原图直传"的兜底路径。60MP comfortably clears 常见旗舰机 48MP
+# 主摄（约 8000×6000）留出余量，同时挡住"体积过关但像素炸弹"的攻击：一张
+# 9000×9000（81MP）PNG 只有 247KB（远低于生产 nginx 5m 上限），81MP 又在
+# Pillow 默认炸弹阈值（约 89.5MP，Image.MAX_IMAGE_PIXELS）之下，probe.verify()
+# 会放行，随后 downscale_inplace 因为"看起来没超过 1600px 判定阈值以外的检查"
+# 而完整解码——实测：接受，0.28 秒，每次请求约 243MB 像素缓冲区，且是免鉴权
+# 端点、跑在挂全部 23 个模块的机器上。
+MAX_UPLOAD_PIXELS = 60_000_000
 
 
 def save_pending(customer_id: int, raw: bytes, filename: str | None) -> str:
@@ -203,7 +255,17 @@ def save_pending(customer_id: int, raw: bytes, filename: str | None) -> str:
 
     try:
         with Image.open(io.BytesIO(raw)) as probe:
+            # 像素预算先于 verify()：verify() 只探测"这是不是一张合法图片"，
+            # 不管分辨率——一张体积很小但像素巨大的图（长宽都很大、压缩率高）
+            # 能在体积上钻进 MAX_UPLOAD_BYTES/nginx 5m 的空子，但解码后的内存
+            # 占用只看像素数，不看文件字节数（Minor 1）。
+            if probe.width * probe.height > MAX_UPLOAD_PIXELS:
+                raise ValueError(
+                    f"照片分辨率过高，请压缩后重试（上限约 {MAX_UPLOAD_PIXELS // 1_000_000}MP）"
+                )
             probe.verify()          # verify 后对象不可再用，仅作有效性探针
+    except ValueError:
+        raise
     except Exception:
         raise ValueError("上传的文件不是有效的图片") from None
 
@@ -225,13 +287,18 @@ def save_pending(customer_id: int, raw: bytes, filename: str | None) -> str:
 
 
 def latest_pending(customer_id: int) -> Path | None:
-    """该客户最新的待取照片；没有则 None。客户可能连传多张，取最后一张。"""
+    """该客户最新的待取照片；没有则 None。客户可能连传多张，取最后一张。
+
+    并发下 max() 拿到的这个文件本身也可能在函数返回后才被别的线程删掉——那是
+    调用方（get_pending_photo）自己再 stat() 一次时要处理的窗口，这里只保证
+    "排序取最新"这一步不会因为候选文件之一被并发删除就抛出去（见 _mtime）。
+    """
     if not PENDING_DIR.exists():
         return None
     files = [p for p in PENDING_DIR.glob(f"c{customer_id}_*") if p.is_file()]
     if not files:
         return None
-    return max(files, key=lambda p: p.stat().st_mtime)
+    return max(files, key=_mtime)
 
 
 def resolve_pending(customer_id: int, name: str) -> Path:
@@ -249,7 +316,15 @@ def resolve_pending(customer_id: int, name: str) -> Path:
     文件名被篡改/文件已被清走"这类良性场景有意义，绝不能指望它们防穿越。
     """
     root = PENDING_DIR.resolve()
-    candidate = (root / name).resolve()
+    try:
+        candidate = (root / name).resolve()
+    except ValueError:
+        # 空字节（\x00）等会让 Path.resolve() 直接抛 ValueError，报文是英文技术
+        # 细节（"stat: embedded null character in path"），不是面向客户的中文——
+        # 这里统一收敛成与其他"名字不合法"场景一致的提示（Minor 3）。这个入口
+        # 是已鉴权端点（POST /sessions 的 pending_photo 字段），不是免鉴权公开
+        # 页面，纯属顺手修，不是安全修复。
+        raise ValueError("待取照片名非法") from None
     if candidate.parent != root:
         raise ValueError("待取照片名非法")
     if not candidate.name.startswith(f"c{customer_id}_"):

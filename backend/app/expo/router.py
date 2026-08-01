@@ -340,10 +340,31 @@ def get_pending_photo(
     latest = upload_service.latest_pending(customer_id)
     if not latest:
         return ok({"pending": None})
+    try:
+        # 两处都读磁盘，都可能在 latest_pending 选出这个文件之后、这里构造响应
+        # 之前，被另一个线程的 sweep_stale / _prune_pending / create_session
+        # 收尾 unlink 抢先删掉——kiosk 轮询这个端点每 2 秒一次，命中这个窗口
+        # 不是理论风险（并发探针实测：4 秒并发上传/清理压力下命中上百次）。
+        # 两处报错形态还不一样：latest.stat() 对已消失文件抛 FileNotFoundError
+        # （OSError 子类）；ai_pipeline.to_rel() 内部 Path.resolve() 对一个
+        # 已经不存在的路径在 Windows 上走不同的规范化分支，会让 relative_to()
+        # 抛 ValueError（"不在 REPO_ROOT 子路径下"）——同一个竞态窗口的两种
+        # 不同报错，一起兜住，缺一个都会让轮询偶发变成 500。
+        photo_url = service._to_url(ai_pipeline.to_rel(latest))
+        uploaded_at = int(latest.stat().st_mtime)
+    except (OSError, ValueError) as exc:
+        # 对顾问来说，文件在这个窗口内消失就是"当前没有待取照片"，不该把这个
+        # 巧合变成 500（kiosk 的轮询失败计数会把它误判成"现场网络拥堵"）；
+        # 但仍要留痕（宪法 6）——这里打日志不只是合规，真出现异常频率过高
+        # 说明并发压力超出预期，运维需要看得到。
+        msg = f"[expo] pending photo vanished mid-poll customer={customer_id}: {exc}"
+        logger.warning(msg)
+        print(msg, flush=True)
+        return ok({"pending": None})
     return ok({"pending": {
         "name": latest.name,
-        "photo_url": service._to_url(ai_pipeline.to_rel(latest)),
-        "uploaded_at": int(latest.stat().st_mtime),
+        "photo_url": photo_url,
+        "uploaded_at": uploaded_at,
     }})
 
 

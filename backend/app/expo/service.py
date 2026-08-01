@@ -79,7 +79,7 @@ def update_customer(db: Session, customer_id: int, body: CustomerRegister) -> Ex
 
 
 def delete_customer(db: Session, customer_id: int) -> bool:
-    """隐私合规：物理删除客户照片、效果图与全部记录。"""
+    """隐私合规：物理删除客户照片、效果图、扫码上传待取照片与全部记录。"""
     customer = db.get(ExpoCustomer, customer_id)
     if not customer:
         return False
@@ -87,6 +87,11 @@ def delete_customer(db: Session, customer_id: int) -> bool:
         _remove_file(session.photo_path)
         for result in session.results:
             _remove_file(result.image_path)
+    # 扫码上传的待取照片（uploads/expo/pending/）是与 photos/、results/ 平级的
+    # 第二个照片仓库，本函数原逻辑只走 sessions 关联的 photo_path/image_path，
+    # 够不着这里；本靠 sweep_stale 兜底 2 小时清理，但客户主动要求删除时不该
+    # 让他们再多等这 2 小时（I3，上传页承诺「可随时联系我们删除」）
+    upload_service.purge_pending(customer_id)
     db.delete(customer)  # FK CASCADE 带走 sessions/results/feedback
     db.commit()
     return True

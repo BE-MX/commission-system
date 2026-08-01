@@ -3,6 +3,7 @@
 令牌不落库，customer_id 与过期时间明文随令牌传输，靠 HMAC 防篡改。
 """
 
+import io
 import time
 
 import pytest
@@ -186,6 +187,33 @@ class TestPendingFiles:
         with pytest.raises(ValueError, match="过大"):
             upload_service.save_pending(42, oversize, "big.jpg")
 
+    def test_save_pending_rejects_sub_threshold_decompression_bomb(self):
+        """Minor 1：体积过关但像素过量的图。一张 9000×9000 的纯色 PNG 只有几百
+        KB（远低于 nginx 5m 上限），81MP 又在 Pillow 默认炸弹阈值（约 89.5MP，
+        Image.MAX_IMAGE_PIXELS）之下——probe.verify() 会放行，随后
+        downscale_inplace 会完整解码成约 243MB 的像素缓冲区。这是免鉴权端点，
+        跑在挂全部 23 个模块的机器上，体积校验挡不住这类攻击，必须单独按像素数
+        设budget。"""
+        from PIL import Image as _Image
+
+        buf = io.BytesIO()
+        _Image.new("RGB", (9000, 9000), (10, 20, 30)).save(buf, "PNG")
+        bomb = buf.getvalue()
+        assert len(bomb) < upload_service.MAX_UPLOAD_BYTES  # 体积本身完全合规，纯色图压缩率极高
+        with pytest.raises(ValueError, match="分辨率过高"):
+            upload_service.save_pending(42, bomb, "bomb.png")
+
+    def test_save_pending_accepts_photo_at_typical_flagship_resolution(self):
+        """Minor 1 的另一半：像素预算不能矫枉过正——常见旗舰机 48MP 主摄
+        （约 8000×6000）必须能正常通过，不能被这道新增校验误伤。"""
+        from PIL import Image as _Image
+
+        buf = io.BytesIO()
+        _Image.new("RGB", (8000, 6000), (10, 20, 30)).save(buf, "JPEG", quality=80)
+        photo = buf.getvalue()
+        name = upload_service.save_pending(42, photo, "flagship.jpg")
+        assert (upload_service.PENDING_DIR / name).exists()
+
     def test_save_pending_downscales_large_image(self):
         from PIL import Image
 
@@ -268,6 +296,17 @@ class TestPendingFiles:
         真正戳穿"路径穿越守卫是否起作用"的是下面那条 sibling-directory 用例。"""
         with pytest.raises(ValueError, match="非法"):
             upload_service.resolve_pending(42, "../../etc/passwd")
+
+    def test_resolve_pending_rejects_embedded_null_byte_with_chinese_message(self):
+        """Minor 3：Windows 上 Path.resolve() 遇到空字节（\\x00）会直接抛
+        ValueError，报文是英文技术细节（"stat: embedded null character in
+        path"），是模块里唯一一处不面向客户的报错。这个入口是已鉴权端点
+        （POST /sessions 的 pending_photo 字段），不是免鉴权公开页面，纯属
+        顺手修——但既然改了就要确认报文变成了和其他"名字不合法"场景一致的
+        中文，而不是把 Python/OS 的原始异常文本直接甩给调用方。"""
+        with pytest.raises(ValueError, match="非法") as exc_info:
+            upload_service.resolve_pending(42, "c42_x\x00y.jpg")
+        assert "embedded null" not in str(exc_info.value)
 
     def test_resolve_pending_blocks_sibling_directory_traversal(self):
         """真实攻击面：展会永久试戴照片目录（app/expo/service.py 里的

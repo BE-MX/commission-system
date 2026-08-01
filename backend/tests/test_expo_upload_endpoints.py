@@ -481,3 +481,30 @@ def test_upload_page_rejects_non_canonical_token_before_it_reaches_the_script():
         resp = client.get(f"/api/expo/upload/{quote(noisy, safe='')}")
     assert resp.status_code == 200
     _assert_valid_js(_extract_script(resp.text))
+
+
+# ==================== delete_customer 必须够得着待取照片（I3） ====================
+
+def test_delete_customer_purges_pending_uploads(db):
+    """隐私合规：delete_customer 原逻辑只走 customer.sessions 关联的
+    photo_path/image_path，够不着扫码上传的待取照片（uploads/expo/pending/，
+    与 photos/、results/ 平级、同样经 /uploads 公开挂载可读的第二个照片仓库）。
+    待取照片本靠 sweep_stale 兜底 2 小时清理，但客户主动要求删除时不该让他们
+    再多等这 2 小时——上传页承诺「可随时联系我们删除」。"""
+    customer = _customer(db)
+    name = upload_service.save_pending(customer.id, _jpeg_bytes(), "p.jpg")
+    assert (upload_service.PENDING_DIR / name).exists()
+
+    assert service.delete_customer(db, customer.id) is True
+
+    assert not (upload_service.PENDING_DIR / name).exists()
+
+
+def test_delete_customer_pending_purge_is_customer_scoped(db):
+    """裁剪按客户隔离：删客户 A 不该动客户 B 的待取照片。"""
+    customer = _customer(db)
+    other_name = upload_service.save_pending(customer.id + 999, _jpeg_bytes(), "other.jpg")
+
+    service.delete_customer(db, customer.id)
+
+    assert (upload_service.PENDING_DIR / other_name).exists()
