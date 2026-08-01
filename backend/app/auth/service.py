@@ -347,6 +347,9 @@ def seed_role_permissions(db: Session):
         ("expo_script:read",      "expo",    "read",          "查看话术卡库"),
         ("expo_lead:read",        "expo",    "read",          "查看展会线索台"),
         ("expo_lead:write",       "expo",    "write",         "线索操作 / 销售反馈录入"),
+        # 名片管家（2026-08-01 业务员电子名片：leshine.work/card/<slug>/）
+        ("card:read",             "card",    "read",          "名片管家：查看业务员/客户档案与询盘"),
+        ("card:write",            "card",    "write",         "名片管家：维护档案 / 录纪要 / 处理询盘"),
         # 素材管理（2026-07-12 收藏/统计页拆独立码，asset:read 保留给素材库页+数据操作）
         ("asset:read",            "asset",   "read",          "查看素材库（含预览/下载/收藏操作）"),
         ("asset:write",           "asset",   "write",         "上传素材 / 编辑标签 / 版本迭代"),

@@ -33,7 +33,8 @@ AUTH_PATTERNS = re.compile(
 )
 # 无鉴权豁免的 router 文件（机器对机器/公开入口，均有刻意决策记录）
 AUTH_EXEMPT_FILES = ("mini/router.py", "auth/router.py", "api/short_link.py", "stock/public_router.py",
-                     "festival/public_router.py")  # 采购节大屏：LAN 免登录，可选 key 门禁（见该文件 docstring）
+                     "festival/public_router.py",  # 采购节大屏：LAN 免登录，可选 key 门禁（见该文件 docstring）
+                     "card/public_router.py")  # 名片二维码公开页：口令即凭证，防枚举统一文案（见该文件 docstring）
 # 无鉴权豁免的端点路径关键词
 AUTH_EXEMPT_ROUTES = ("share", "callback", "login", "health", "print/", "entry",
                       "upload/{token}")  # entry=PM门牌换token(限速+防枚举)；upload/{token}=展会扫码上传手机页，令牌即凭证
