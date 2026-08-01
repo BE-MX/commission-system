@@ -9,7 +9,7 @@ from pathlib import Path
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from app.expo import ai_pipeline
+from app.expo import ai_pipeline, upload_service
 from app.expo.models import (
     ExpoCustomer,
     ExpoFeedback,
@@ -133,7 +133,16 @@ def _remove_wig_color_files(db: Session, *, wig_id: int | None = None, color_id:
 def create_session(
     db: Session, customer_id: int, upload_file,
     operator_user_id: int | None, mode: str = "tryon",
+    pending_name: str | None = None,
 ) -> ExpoSession:
+    """建会话。照片来源二选一：现场拍照的 upload_file，或扫码上传的 pending_name。
+
+    刻意不为扫码上传新开一个建会话端点：会话创建带着同意校验与分析管线启动的副作用，
+    两条路会分叉，日后改一条漏一条。分支只在「照片从哪来」这一处，落盘之后完全共用。
+    """
+    if (upload_file is None) == (pending_name is None):
+        raise ValueError("照片来源须在现场拍照与扫码上传之间二选一")
+
     customer = db.get(ExpoCustomer, customer_id)
     if not customer:
         raise ValueError("客户不存在")
@@ -141,12 +150,19 @@ def create_session(
         raise ValueError("客户未同意拍照存储，无法创建会话")
 
     ai_pipeline.ensure_dirs()
-    suffix = Path(upload_file.filename or "photo.jpg").suffix.lower() or ".jpg"
-    photo_path = ai_pipeline.PHOTO_DIR / f"c{customer_id}_{uuid.uuid4().hex[:10]}{suffix}"
-    with open(photo_path, "wb") as f:
-        shutil.copyfileobj(upload_file.file, f)
+    if pending_name:
+        source = upload_service.resolve_pending(customer_id, pending_name)
+        photo_path = ai_pipeline.PHOTO_DIR / f"c{customer_id}_{uuid.uuid4().hex[:10]}{source.suffix}"
+        # 移动而非复制：同一张照片没有在磁盘上留两份的理由，且待取目录随之自然收敛
+        shutil.move(str(source), str(photo_path))
+    else:
+        suffix = Path(upload_file.filename or "photo.jpg").suffix.lower() or ".jpg"
+        photo_path = ai_pipeline.PHOTO_DIR / f"c{customer_id}_{uuid.uuid4().hex[:10]}{suffix}"
+        with open(photo_path, "wb") as f:
+            shutil.copyfileobj(upload_file.file, f)
     # kiosk 相机件已是 1080px（原样跳过）；顾问文件选择兜底传的手机原片在此压下来——
-    # photo_url 会作为"佩戴前"对比图经 frp 隧道回源展示
+    # photo_url 会作为"佩戴前"对比图经 frp 隧道回源展示。扫码上传的已在 save_pending
+    # 压过一次，downscale_inplace 幂等，重复调用只是空转
     ai_pipeline.downscale_inplace(photo_path)
 
     session = ExpoSession(
