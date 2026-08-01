@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>leShine expo poster A1 back</title>
+<style>
+  :root { --yellow: {{BRAND_YELLOW}}; --black: #101010; --ink: #171717; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  @page { size: 600mm 847mm; margin: 0; }
+  html, body { width: 600mm; }
+  body {
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .page { position: relative; width: 600mm; height: 847mm; background: var(--black); overflow: hidden; }
+
+  /* 上下两半产品图，中间品牌黄分隔条 —— 与正面同一套黑×黄语言 */
+  .half { position: relative; width: 600mm; height: 421mm; overflow: hidden; }
+  .half img.photo { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .shade {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 170mm;
+    background: linear-gradient(to bottom, rgba(16,16,16,0), rgba(16,16,16,0.86));
+  }
+  .cap { position: absolute; left: 26mm; bottom: 24mm; }
+  .cap .t {
+    font-size: 46mm; line-height: 1; font-weight: 800; letter-spacing: -0.4mm;
+    color: #ffffff; text-transform: uppercase;
+  }
+  .cap .u { margin-top: 7mm; width: 64mm; height: 2.6mm; background: var(--yellow); border-radius: 2mm; }
+
+  .badge {
+    position: absolute; top: 24mm; right: 30mm;
+    background: var(--yellow); color: var(--ink);
+    font-family: "Segoe Script", "Comic Sans MS", cursive;
+    font-size: 30mm; font-weight: 700; line-height: 1;
+    padding: 8mm 18mm 13mm; border-radius: 9mm;
+    transform: rotate(-7deg);
+  }
+  .half.second .badge { transform: rotate(6deg); }
+
+  .brand { position: absolute; top: 24mm; left: 26mm; width: 76mm; }
+
+  .divider {
+    height: 5mm; background: var(--yellow);
+  }
+</style>
+</head>
+<body>
+  <div class="page">
+    <div class="half">
+      <img class="photo" src="{{PHOTO_BUTTERFLY}}" alt="Butterfly weft">
+      <div class="shade"></div>
+      <img class="brand" src="{{LOGO_BLACK_URI}}" alt="leShine Hair">
+      <div class="badge">New!</div>
+      <div class="cap">
+        <div class="t">Butterfly Weft</div>
+        <div class="u"></div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="half second">
+      <img class="photo" src="{{PHOTO_TAPEIN}}" alt="Tape-in extensions">
+      <div class="shade"></div>
+      <div class="badge">HOT!</div>
+      <div class="cap">
+        <div class="t">Tape-In Extensions</div>
+        <div class="u"></div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

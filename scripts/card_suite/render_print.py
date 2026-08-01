@@ -68,19 +68,26 @@ def main():
     common = {
         "BRAND_YELLOW": brand["brand_yellow"],
         "LOGO_BLACK_URI": file_uri(os.path.join(OUT_ASSETS, "logo_black.png")),
+        "LOGO_WHITE_URI": file_uri(os.path.join(OUT_ASSETS, "logo_white.png")),
         "BOOTH": data.get("booth", ""),
     }
 
     for person in data["people"]:
-        wa_line = ""
+        wa_row = ""
         if person.get("whatsapp"):
-            wa_line = f'<div class="wa"><span class="lbl">WA</span>{person["whatsapp"]}</div>'
+            wa_qr_uri = file_uri(os.path.join(OUT_ASSETS, f"qr_wa_{person['slug']}.png"))
+            wa_row = (
+                '<div class="wa-row"><div class="wl">'
+                '<div class="wl1">WhatsApp</div>'
+                f'<div class="wl2">{person["whatsapp"]}</div>'
+                f'</div><div class="wa-qr"><img src="{wa_qr_uri}" alt="WA"></div></div>'
+            )
         html = fill(card_tpl, {
             **common,
             "NAME": person["name"],
             "TITLE": person["title"],
             "EMAIL": person["email"],
-            "WA_LINE": wa_line,
+            "WA_ROW": wa_row,
             "AVATAR_URI": file_uri(os.path.join(ASSETS, person["avatar"])),
             "QR_URI": file_uri(os.path.join(OUT_ASSETS, f"qr_{person['slug']}.png")),
         })
@@ -102,6 +109,21 @@ def main():
     with open(html_path, "w", encoding="utf-8") as f:
         f.write(html)
     pdf_path = os.path.join(OUT_PRINT, "poster_a1.pdf")
+    chrome_pdf(html_path, pdf_path)
+    print("PDF", pdf_path, os.path.getsize(pdf_path), "bytes")
+
+    # 海报背面（黑底双产品图：Butterfly Weft "New!" / Tape-In "HOT!"）
+    with open(os.path.join(ROOT, "poster_back_template.html"), encoding="utf-8") as f:
+        back_tpl = f.read()
+    html = fill(back_tpl, {
+        **common,
+        "PHOTO_BUTTERFLY": file_uri(os.path.join(ASSETS, "butterfly_weft.jpg")),
+        "PHOTO_TAPEIN": file_uri(os.path.join(ASSETS, "tape_in.jpg")),
+    })
+    html_path = os.path.join(OUT_HTML, "poster_a1_back.html")
+    with open(html_path, "w", encoding="utf-8") as f:
+        f.write(html)
+    pdf_path = os.path.join(OUT_PRINT, "poster_a1_back.pdf")
     chrome_pdf(html_path, pdf_path)
     print("PDF", pdf_path, os.path.getsize(pdf_path), "bytes")
 
