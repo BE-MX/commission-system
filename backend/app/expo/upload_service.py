@@ -29,7 +29,7 @@ MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 # 免登录端点统一话术：不区分「格式错」与「签名错」——对客户来说都只有一个可行动作
 # （回去重新扫码），暴露更细的原因没有意义，只会多一处需要翻译/维护的文案。
 _INVALID_TOKEN_MSG = "上传链接无效，请回到展位屏幕重新扫码"
-_SIGNATURE_RE = re.compile(r"^[0-9a-f]{16}$")
+_SIGNATURE_RE = re.compile(r"[0-9a-f]{16}")
 
 
 def _sign(customer_id: int, exp: int) -> str:
@@ -67,13 +67,15 @@ def parse_token(token: str | None) -> int:
     连鉴权都没有的公开端点上，这种未捕获的类型错误会变成 500。
     """
     parts = (token or "").rsplit("-", 2)
-    if len(parts) != 3 or not _SIGNATURE_RE.match(parts[2]):
+    if len(parts) != 3 or not _SIGNATURE_RE.fullmatch(parts[2]):
         raise ValueError(_INVALID_TOKEN_MSG)
     try:
         customer_id, exp = int(parts[0]), int(parts[1])
     except ValueError:
         raise ValueError(_INVALID_TOKEN_MSG) from None
-    # 过期先于签名校验：过期的码无需再暴露签名是否正确
+    # 过期先于签名校验：不是防泄密（exp 是攻击者自己拼的明文，顺序换了也不会
+    # 多泄露什么）——是体验取舍。一个确实过期的码，值得「回展位重新获取」这句
+    # 能对症下药的提示，不该被更笼统的「链接无效」盖掉。
     if exp < time.time():
         raise ValueError("上传码已过期，请回到展位屏幕重新获取")
     if not hmac.compare_digest(parts[2], _sign(customer_id, exp)):

@@ -7,8 +7,18 @@ import time
 
 import pytest
 
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.expo import upload_service
+
+_DEFAULT_SECRET = Settings.model_fields["EXPO_UPLOAD_SIGN_SECRET"].default
+
+
+@pytest.fixture(autouse=True)
+def _non_default_secret(monkeypatch):
+    """功能测试统一钉死成一个非默认密钥，不依赖 backend/.env 里配没配这个变量——
+    默认值本身的行为单独在 TestSecretIsDefault 里测，且显式 monkeypatch 回默认值
+    （同 tests/test_domestic_wxacode.py 的 _non_default_secret 套路）。"""
+    monkeypatch.setattr(get_settings(), "EXPO_UPLOAD_SIGN_SECRET", "unit-test-secret-not-default")
 
 
 class TestToken:
@@ -57,8 +67,9 @@ class TestToken:
 
     def test_expiry_checked_before_signature(self):
         """过期先于签名校验：即便签名也被篡改成合法形状但错误的值，过期令牌
-        仍必须报「已过期」而不是「无效」——否则说明校验顺序被换掉了，
-        过期令牌会先泄露"签名对不对"这条本不该暴露的信息。"""
+        仍必须报「已过期」而不是「无效」。这不是防泄密——exp 本就是攻击者自己
+        拼出来的明文，顺序换了也不会多泄露什么；纯粹是体验取舍：一个确实
+        过期的码，值得那句"回展位重新获取"的可操作提示，而不是笼统的「无效」。"""
         token = upload_service.make_token(42, ttl_seconds=-1)
         cid, exp, _ = token.split("-")
         tampered = f"{cid}-{exp}-{'0' * 16}"
@@ -82,7 +93,10 @@ class TestToken:
 class TestSecretIsDefault:
     """密钥兜底判定：免登录端点的整个授权模型压在这个密钥上，默认值等于没锁。"""
 
-    def test_true_on_repo_default_secret(self):
+    def test_true_on_repo_default_secret(self, monkeypatch):
+        """显式钉回默认值再断言——不能靠"没人配过这个变量"这种环境侥幸，
+        那条侥幸恰恰会在 C1 修复生效、真的配好 .env 的那台机器上碎。"""
+        monkeypatch.setattr(get_settings(), "EXPO_UPLOAD_SIGN_SECRET", _DEFAULT_SECRET)
         assert upload_service.secret_is_default() is True
 
     def test_false_once_overridden(self, monkeypatch):
