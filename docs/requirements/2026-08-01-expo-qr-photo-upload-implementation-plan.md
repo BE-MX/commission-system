@@ -597,6 +597,12 @@ class TestUploadPage:
                           files={"photo": ("p.jpg", _jpeg_bytes(), "image/jpeg")})
         assert res.status_code == 400
 
+    def test_mangled_url_does_not_500(self, client):
+        """免鉴权端点上非 ASCII 签名段必须走 400 而非 500（Task 1 审查 I2）：
+        微信改写链接、URL 被截断都会命中，客户看到的应是说明而不是内部错误。"""
+        res = client.get("/api/expo/upload/1-9999999999-é")
+        assert res.status_code == 200 and "无效" in res.text
+
     def test_upload_rejects_non_image(self, client, db):
         customer = _customer(db)
         token = upload_service.make_token(customer.id)
@@ -661,6 +667,11 @@ def create_upload_ticket(
     db: Session = Depends(get_db),
     _user=Depends(require_permission("expo:write")),
 ):
+    # 密钥停在仓库默认值 = 任何能读代码的人都能离线伪造令牌，往任意客户名下投图。
+    # 免登录端点的授权模型全压在这个密钥上，故此处 fail-closed 拒发，逼着部署时配 .env
+    #（照 app/domestic/router.py 对 qr_secret_is_default 的处理；Task 1 代码审查 C1）
+    if upload_service.secret_is_default():
+        raise HTTPException(503, "扫码上传未配置签名密钥，请联系管理员")
     if not db.get(ExpoCustomer, customer_id):
         raise HTTPException(404, "客户不存在")
     upload_service.sweep_stale()   # 机会式清理：云端展会实例无调度器，只能挂在这条路上
