@@ -11,6 +11,12 @@ from app.card.models import (  # noqa: F401 —— 注册进 Base.metadata 供 c
 )
 
 
+@pytest.fixture(autouse=True)
+def _mute_inquiry_push(monkeypatch):
+    """默认静音钉钉推送——开发机 .env 配有真实 webhook，不静音则每跑一次测试群里响一次。"""
+    monkeypatch.setattr(service, "_notify_inquiry", lambda *a: None)
+
+
 def _reset(db):
     """FK 安全顺序清场（commit 过的行不受 fixture 回滚保护，与 festival 先例一致）。"""
     db.query(CardInquiry).delete()
@@ -177,3 +183,27 @@ def test_inquiry_invalid_slug_is_none(db):
 def test_inquiry_blank_message_rejected(db):
     _seed(db)
     assert service.create_inquiry(db, "ginny", "a@b.com", "   ") is None
+
+
+def test_inquiry_triggers_dingtalk_notify(db, monkeypatch):
+    """落库后触发群推送，参数带业务员名/联系方式/命中标记。"""
+    _, _, customer = _seed(db)
+    calls = []
+    monkeypatch.setattr(service, "_notify_inquiry", lambda *a: calls.append(a))
+    service.create_inquiry(db, "ginny", "maria@buyer.com", "need quotation")
+    assert calls == [("Ginny", "maria@buyer.com", "need quotation", True)]
+
+
+def test_push_inquiry_failure_returns_false_no_raise(monkeypatch):
+    """推送链路失败（未配置/接口炸）安静返回 False，绝不炸询盘链路。
+
+    必须 mock 失败——开发机 .env 配有真实 webhook，直调会发真消息进群（实测踩过）。
+    """
+    import app.dingtalk.webhook as webhook
+    from app.card import push_service
+
+    def boom():
+        raise RuntimeError("no webhook configured")
+
+    monkeypatch.setattr(webhook, "get_webhook_sender", boom)
+    assert push_service.push_inquiry("Ginny", "a@b.com", "hi", False) is False

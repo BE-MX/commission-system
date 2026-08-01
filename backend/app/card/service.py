@@ -6,10 +6,12 @@
 
 import logging
 import re
+import threading
 from typing import Optional
 
 from sqlalchemy.orm import Session, selectinload
 
+from app.card import push_service
 from app.card.models import CardCustomer, CardEntry, CardInquiry, CardSalesperson
 
 logger = logging.getLogger("commission.card")
@@ -118,7 +120,17 @@ def create_inquiry(db: Session, slug: str, contact: str, message: str) -> Option
     db.add(inquiry)
     db.commit()
     db.refresh(inquiry)
+    _notify_inquiry(sp.name, inquiry.contact, inquiry.message, customer_id is not None)
     return inquiry
+
+
+def _notify_inquiry(salesperson_name: str, contact: str, message: str, matched: bool) -> None:
+    """落库后钉钉群提醒——daemon 线程 fire-and-forget，客户请求不等推送结果。"""
+    threading.Thread(
+        target=push_service.push_inquiry,
+        args=(salesperson_name, contact, message, matched),
+        daemon=True,
+    ).start()
 
 
 # ---------- 管理侧 ----------
