@@ -295,6 +295,48 @@ class TestStampLogo:
         assert any(px != (255, 0, 0) for px in corner)  # 纯红底上出现了水印像素
 
 
+class TestThumbImage:
+    """列表缩略图（2026-08-01）：甄选页把 1024×1536/2MB 的封面渲成 76px，
+    即使缓存完美命中，每次进屏仍要解码 150 万像素——表现就是「像在重新加载」。"""
+
+    def test_thumb_is_smaller_in_both_pixels_and_bytes(self, tmp_path):
+        p = _write_img(tmp_path / "wig_x.png", size=(1024, 1536), color=(120, 90, 70))
+        thumb = ai_pipeline.make_thumb_image(p)
+        assert thumb is not None and thumb.name == "wig_x_thumb.jpg"
+        with Image.open(thumb) as im:
+            assert max(im.size) == ai_pipeline.THUMB_MAX_EDGE
+        assert thumb.stat().st_size < p.stat().st_size
+
+    def test_small_source_is_not_upscaled(self, tmp_path):
+        """已经比阈值小的图只转码不放大——放大既没收益又糊。"""
+        p = _write_img(tmp_path / "wig_s.png", size=(120, 160), color="teal")
+        with Image.open(ai_pipeline.make_thumb_image(p)) as im:
+            assert im.size == (120, 160)
+
+    def test_thumb_url_falls_back_when_missing(self, tmp_path, monkeypatch):
+        """存量素材在批处理跑完之前没有缩略图——必须回退原图，不能让列表变空白。"""
+        monkeypatch.setattr(ai_pipeline, "REPO_ROOT", tmp_path)
+        rel = "uploads/expo/wigs/wig_none.png"
+        (tmp_path / "uploads/expo/wigs").mkdir(parents=True)
+        (tmp_path / rel).write_bytes(b"x")
+        assert ai_pipeline.thumb_url_for(rel) is None
+        assert ai_pipeline.thumb_url_for(None) is None
+
+    def test_thumb_url_points_at_the_derived_file(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(ai_pipeline, "REPO_ROOT", tmp_path)
+        d = tmp_path / "uploads/expo/wigs"
+        d.mkdir(parents=True)
+        src = _write_img(d / "wig_y.png", size=(800, 800), color="navy")
+        ai_pipeline.make_thumb_image(src)
+        assert ai_pipeline.thumb_url_for("uploads/expo/wigs/wig_y.png") ==             "/uploads/expo/wigs/wig_y_thumb.jpg"
+
+    def test_unreadable_source_returns_none_not_raise(self, tmp_path):
+        """上传路径上调用——生成失败绝不能把上传顶成 500。"""
+        bad = tmp_path / "broken.png"
+        bad.write_bytes(b"not-an-image")
+        assert ai_pipeline.make_thumb_image(bad) is None
+
+
 class TestSerializeDisplayUrl:
     def _session_with_result(self, db, image_rel):
         customer = service.register_customer(db, CustomerRegister(

@@ -274,6 +274,9 @@ def serialize_session(db: Session, session: ExpoSession, include_internal: bool 
             "name": wig.name,
             "series": wig.series,
             "cover_url": _to_url(wig.cover_path),
+            # 列表用缩略图（长边400 q82），没有则回退原图——存量素材在批处理
+            # 跑完之前没有缩略图，不能因此让列表变空白
+            "thumb_url": ai_pipeline.thumb_url_for(wig.cover_path) or _to_url(wig.cover_path),
             "score": entry.get("score"),
             "reason": entry.get("reason"),
             "must_recommend": wig.must_recommend,
@@ -359,6 +362,7 @@ def serialize_hair_color(row: ExpoHairColor) -> dict:
         "hex": row.hex_code,
         "swatch_path": row.swatch_path,
         "swatch_url": _to_url(row.swatch_path),
+        "thumb_url": ai_pipeline.thumb_url_for(row.swatch_path) or _to_url(row.swatch_path),
         "color_description": row.color_description,
         "priority": row.priority,
         "is_active": row.is_active,
@@ -469,6 +473,7 @@ def list_wig_color_options(db: Session, wig_id: int) -> list[dict]:
             "name": r.name,
             "hex": r.hex_code,
             "swatch_url": _to_url(r.swatch_path),
+            "thumb_url": ai_pipeline.thumb_url_for(r.swatch_path) or _to_url(r.swatch_path),
         }
         for r in rows
         if combos.get(r.id) and combos[r.id].angle_photos
@@ -858,6 +863,9 @@ def serialize_wig(wig: ExpoWig) -> dict:
         "product_id": wig.product_id,
         "cover_path": wig.cover_path,
         "cover_url": _to_url(wig.cover_path),
+            # 列表用缩略图（长边400 q82），没有则回退原图——存量素材在批处理
+            # 跑完之前没有缩略图，不能因此让列表变空白
+            "thumb_url": ai_pipeline.thumb_url_for(wig.cover_path) or _to_url(wig.cover_path),
         "angle_photos": wig.angle_photos or [],
         # angle_urls：加前导 / 的可访问 URL，供编辑页预览（angle_photos 存的是裸相对路径，
         # 直接当 src 会被浏览器按当前路由解析成 /expo/uploads/... → 404，与 cover_url 同理）
@@ -882,4 +890,7 @@ def serialize_wig_picker(wig: ExpoWig) -> dict:
         "name": wig.name,
         "series": wig.series,
         "cover_url": _to_url(wig.cover_path),
+            # 列表用缩略图（长边400 q82），没有则回退原图——存量素材在批处理
+            # 跑完之前没有缩略图，不能因此让列表变空白
+            "thumb_url": ai_pipeline.thumb_url_for(wig.cover_path) or _to_url(wig.cover_path),
     }

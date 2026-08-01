@@ -20,7 +20,7 @@
       <el-table :data="filteredWigs" v-loading="loading" border class="list-table" style="width: 100%">
         <el-table-column label="封面" min-width="70">
           <template #default="{ row }">
-            <el-image v-if="row.cover_url" :src="row.cover_url" :preview-src-list="[row.cover_url]" preview-teleported fit="cover" class="cover-thumb" />
+            <el-image v-if="row.cover_url" :src="row.thumb_url || row.cover_url" :preview-src-list="[row.cover_url]" preview-teleported fit="cover" class="cover-thumb" />
             <span v-else class="cover-empty">无</span>
           </template>
         </el-table-column>
@@ -178,7 +178,7 @@
           <div v-loading="colorMatrixLoading" class="cm-list">
             <div v-for="c in colorMatrix" :key="c.hair_color_id" class="cm-row" :class="{ dirty: c.dirty }">
               <div class="cm-color">
-                <img v-if="c.swatch_url" :src="c.swatch_url" class="cm-sw" alt="" />
+                <img v-if="c.swatch_url" :src="c.thumb_url || c.swatch_url" class="cm-sw" alt="" />
                 <i v-else class="cm-sw" :style="{ background: c.hex || '#ccc' }" />
                 <div class="cm-meta"><b>{{ c.name }}</b><small>{{ c.code }}</small></div>
                 <span v-if="c.dirty" class="cm-unsaved">未保存</span>

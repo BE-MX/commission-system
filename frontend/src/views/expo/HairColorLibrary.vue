@@ -20,7 +20,7 @@
       <el-table :data="filteredColors" v-loading="loading" border class="list-table" style="width: 100%">
         <el-table-column label="色板图" min-width="70">
           <template #default="{ row }">
-            <el-image v-if="row.swatch_url" :src="row.swatch_url" :preview-src-list="[row.swatch_url]" preview-teleported fit="cover" class="swatch-thumb" />
+            <el-image v-if="row.swatch_url" :src="row.thumb_url || row.swatch_url" :preview-src-list="[row.swatch_url]" preview-teleported fit="cover" class="swatch-thumb" />
             <span v-else class="swatch-empty">无</span>
           </template>
         </el-table-column>

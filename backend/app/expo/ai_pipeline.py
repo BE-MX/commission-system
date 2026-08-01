@@ -139,6 +139,14 @@ UPLOAD_MAX_EDGE = 1600          # 素材上传（发型参考图/色板/客户�
 DISPLAY_MAX_EDGE = 1080         # 结果图 kiosk 展示版最长边（展位屏 1080p，够用）
 _DISPLAY_JPEG_QUALITY = 85
 DISPLAY_SUFFIX = "_disp.jpg"    # 约定式命名：{原图 stem}_disp.jpg 同目录，不入库不迁移
+# 列表缩略图（2026-08-01）：甄选页把发型封面渲成 76×92，发型库弹层也只有一格大小，
+# 而库里封面是 1024×1536 的 PNG、单张约 2MB——**即使缓存完美命中一个请求不发**，平板
+# 仍要每次从磁盘读 2MB、解码 150 万像素，一屏 6 张就是 900 万像素，看起来跟「重新加载」
+# 一模一样。这些图恰好卡在 downscale_inplace 的 1600 阈值以下，从来没被压过。
+# 400 长边：76px 显示 + 平板 2~3 倍 DPR 仍有余量，再大纯属浪费解码。
+THUMB_MAX_EDGE = 400
+_THUMB_JPEG_QUALITY = 82
+THUMB_SUFFIX = "_thumb.jpg"     # 同 DISPLAY_SUFFIX 的约定式命名，不入库不迁移
 
 
 _PIL_FORMATS = {".jpg": "JPEG", ".jpeg": "JPEG", ".png": "PNG", ".webp": "WEBP"}
@@ -365,6 +373,46 @@ def make_display_image(src: Path) -> Path | None:
         logger.warning(msg)
         print(msg, flush=True)
         return None
+
+
+def make_thumb_image(src: Path) -> Path | None:
+    """素材原图 → 列表缩略图（{stem}_thumb.jpg，长边 400 q82）。
+
+    与 make_display_image 同一套约定（同目录、约定式后缀、不入库不迁移），只是更小：
+    前者服务展位屏的整屏展示，后者服务甄选页/发型库那种一屏多张的小图位。
+    失败返回 None，序列化侧回退原图 URL，绝不阻断上传。
+    """
+    try:
+        from PIL import Image
+
+        target = src.with_name(src.stem + THUMB_SUFFIX)
+        with Image.open(src) as im:
+            flat = _flatten_rgb(im)
+            if max(flat.size) > THUMB_MAX_EDGE:
+                flat.thumbnail((THUMB_MAX_EDGE, THUMB_MAX_EDGE), Image.LANCZOS)
+            _save_atomic(flat, target, "JPEG",
+                         quality=_THUMB_JPEG_QUALITY, optimize=True)
+        return target
+    except Exception as exc:  # noqa: BLE001
+        msg = f"[expo] thumb image skipped ({src.name}): {exc}"
+        logger.warning(msg)
+        print(msg, flush=True)
+        return None
+
+
+def thumb_url_for(rel_path: str | None) -> str | None:
+    """原图相对路径 → 缩略图 URL；缩略图不在（历史素材/生成失败）返回 None。
+
+    调用方一律写 `thumb_url or cover_url`：存量素材在批处理跑完之前没有缩略图，
+    不能因此让列表变空白。
+    """
+    if not rel_path:
+        return None
+    abs_src = to_abs(rel_path)
+    thumb = abs_src.with_name(abs_src.stem + THUMB_SUFFIX)
+    if not thumb.exists():
+        return None
+    return "/" + to_rel(thumb)
 
 
 def display_rel_for(rel: str | None) -> str | None:

@@ -24,7 +24,7 @@
           <span v-if="match.custom" class="badge badge-custom">自选</span>
           <span v-else-if="match.series === 'zhizhen'" class="badge">至臻系列</span>
           <div class="thumb">
-            <img v-if="match.cover_url" :src="match.cover_url" alt="" />
+            <img v-if="match.cover_url" :src="match.thumb_url || match.cover_url" alt="" />
             <span v-else class="thumb-ph">莱莎</span>
           </div>
           <div class="info">
@@ -60,7 +60,7 @@
               @click="pickFromLibrary(w)"
             >
               <span class="lib-thumb">
-                <img v-if="w.cover_url" :src="w.cover_url" alt="" />
+                <img v-if="w.cover_url" :src="w.thumb_url || w.cover_url" alt="" />
                 <span v-else class="lib-ph">莱莎</span>
               </span>
               <span v-if="w.series === 'zhizhen'" class="lib-tag">至臻</span>
@@ -84,7 +84,7 @@
             v-for="c in flow.hairColors.value" :key="c.id"
             class="chip" :class="{ on: flow.selectedColorId.value === c.id }"
             @click="pickColor(c.id)"
-          ><img v-if="c.swatch_url" class="sw" :src="c.swatch_url" alt="" />
+          ><img v-if="c.swatch_url" class="sw" :src="c.thumb_url || c.swatch_url" alt="" />
             <i v-else class="sw" :style="{ background: c.hex || 'var(--xk-ink-2)' }" />{{ c.name }}</button>
         </div>
       </div>

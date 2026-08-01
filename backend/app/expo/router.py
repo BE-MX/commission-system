@@ -676,6 +676,9 @@ def upload_wig_photo(
         shutil.copyfileobj(photo.file, f)
     # 手机原片 3~8MB，kiosk 匹配屏一次加载 6 张封面且经 frp 隧道回源——落盘即压
     ai_pipeline.downscale_inplace(target)
+    # 列表缩略图：甄选页/发型库只显示 76px 见方，原图 1024×1536 PNG 约 2MB，
+    # 每次进屏都要解码 150 万像素。失败不阻断上传，序列化侧回退原图
+    ai_pipeline.make_thumb_image(target)
     rel = ai_pipeline.to_rel(target)
     return ok({"path": rel, "url": f"/{rel}"}, code=201)
 
@@ -792,6 +795,9 @@ def upload_hair_color_swatch(
         shutil.copyfileobj(photo.file, f)
     # 先压后取色：k-means 主色在 1600px 内足够稳，还能省一次大图解码
     ai_pipeline.downscale_inplace(target)
+    # 列表缩略图：甄选页/发型库只显示 76px 见方，原图 1024×1536 PNG 约 2MB，
+    # 每次进屏都要解码 150 万像素。失败不阻断上传，序列化侧回退原图
+    ai_pipeline.make_thumb_image(target)
     rel = ai_pipeline.to_rel(target)
 
     # 系统承担复杂性：色板图主色自动提取，管理员免手填 hex；失败不阻断上传。
