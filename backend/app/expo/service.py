@@ -2,7 +2,6 @@
 
 import logging
 import shutil
-import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -150,14 +149,30 @@ def create_session(
         raise ValueError("客户未同意拍照存储，无法创建会话")
 
     ai_pipeline.ensure_dirs()
-    if pending_name:
-        source = upload_service.resolve_pending(customer_id, pending_name)
-        photo_path = ai_pipeline.PHOTO_DIR / f"c{customer_id}_{uuid.uuid4().hex[:10]}{source.suffix}"
-        # 移动而非复制：同一张照片没有在磁盘上留两份的理由，且待取目录随之自然收敛
-        shutil.move(str(source), str(photo_path))
+    pending_source: Path | None = None
+    if pending_name is not None:
+        pending_source = upload_service.resolve_pending(customer_id, pending_name)
+        photo_path = ai_pipeline.PHOTO_DIR / upload_service.photo_filename(customer_id, pending_source.suffix)
+        # 复制而非移动：commit 前只留一份，一旦提交失败（展位现场连的是公网 RDS，
+        # 隧道断线是真实故障率而非理论风险），待取文件已经没了、会话也没建成——
+        # 客户只能被打发回去重新扫码重传，这正是这个功能想去掉的摩擦。复制多一份
+        # 的代价很低：sweep_stale 本来就按 2 小时窗口清理 pending 目录，不靠这里的
+        # "移动"来收敛磁盘。真正划不来的是「一次网络抖动，照片就凭空消失」。
+        #
+        # resolve_pending 的 is_file() 探测和这里的复制之间仍有极小的 TOCTOU 窗口
+        # （文件被并发 sweep_stale 或二次确认抢先删除/占用），copy 落空归为 OSError，
+        # 而不是让它顶着 FileNotFoundError/PermissionError 逃逸到 router 的
+        # except ValueError 之外变成一个没有 expo 标记日志的 500。
+        try:
+            shutil.copy(str(pending_source), str(photo_path))
+        except OSError as exc:
+            msg = f"[expo] pending photo copy failed customer={customer_id} name={pending_name}: {exc}"
+            logger.warning(msg)
+            print(msg, flush=True)
+            raise ValueError("照片已失效，请重新扫码上传") from None
     else:
         suffix = Path(upload_file.filename or "photo.jpg").suffix.lower() or ".jpg"
-        photo_path = ai_pipeline.PHOTO_DIR / f"c{customer_id}_{uuid.uuid4().hex[:10]}{suffix}"
+        photo_path = ai_pipeline.PHOTO_DIR / upload_service.photo_filename(customer_id, suffix)
         with open(photo_path, "wb") as f:
             shutil.copyfileobj(upload_file.file, f)
     # kiosk 相机件已是 1080px（原样跳过）；顾问文件选择兜底传的手机原片在此压下来——
@@ -176,6 +191,15 @@ def create_session(
     db.add(session)
     db.commit()
     db.refresh(session)
+    if pending_source is not None:
+        # commit 已成功、会话已落库，待取原件才不再需要——删除失败无所谓
+        # （sweep_stale 兜底），但绝不能在这一步之前碰它
+        try:
+            pending_source.unlink(missing_ok=True)
+        except OSError as exc:
+            msg = f"[expo] pending photo cleanup skipped ({pending_source}): {exc}"
+            logger.warning(msg)
+            print(msg, flush=True)
     return session
 
 

@@ -89,6 +89,17 @@ def _pending_dir() -> Path:
     return PENDING_DIR
 
 
+def photo_filename(customer_id: int, suffix: str) -> str:
+    """待取目录（pending/）与正式目录（photos/）共用的落盘命名规则。
+
+    三处调用点（这里的 save_pending、app/expo/service.py 的 create_session 两个分支）
+    曾各写各的，导致同一条规则漂在三个地方——resolve_pending 的路径穿越防线明确
+    依赖这条规则在两个目录间保持字面一致（见该函数文档），三份拷贝里漏改一处就是
+    悄悄松动安全假设，抽成单一函数让这份依赖可 grep。
+    """
+    return f"c{customer_id}_{uuid.uuid4().hex[:10]}{suffix}"
+
+
 def save_pending(customer_id: int, raw: bytes, filename: str | None) -> str:
     """落一张待取照片，返回纯文件名。非图片 / 超限抛 ValueError。
 
@@ -110,7 +121,7 @@ def save_pending(customer_id: int, raw: bytes, filename: str | None) -> str:
     suffix = Path(filename or "photo.jpg").suffix.lower()
     if suffix not in (".jpg", ".jpeg", ".png", ".webp"):
         suffix = ".jpg"
-    target = _pending_dir() / f"c{customer_id}_{uuid.uuid4().hex[:10]}{suffix}"
+    target = _pending_dir() / photo_filename(customer_id, suffix)
     target.write_bytes(raw)
     # 手机原片动辄 3~5MB，落盘即压：这张图要经隧道回源到展位屏做「佩戴前」对比
     ai_pipeline.downscale_inplace(target)
@@ -134,8 +145,8 @@ def resolve_pending(customer_id: int, name: str) -> Path:
     请求没有理由在磁盘上留下副作用（目录不存在时会自然落到"不存在"分支）。
 
     三道校验里，**只有第一道（路径穿越）是真正的防线**。展会的永久试戴照片
-    （app/expo/service.py 里 c{customer_id}_{uuid4().hex[:10]}{suffix} 命名）
-    与待取照片用的是同一套命名规则，且落在 UPLOAD_ROOT 下的平级目录
+    （app/expo/service.py 的 create_session 落盘时）与待取照片走的是同一个
+    photo_filename() 命名函数（本模块），且落在 UPLOAD_ROOT 下的平级目录
     （photos/ 与 pending/）。这意味着 "../photos/c42_<真实uuid>.jpg" 这样的
     payload 能直接通过归属校验（前缀对得上）和存在性校验（文件真实存在）——
     挡住它的只有 candidate.parent != root。归属/存在性校验只对"pending 目录内
