@@ -28,9 +28,25 @@ export function getKioskStrategy(customerId) {
   return expoClient.get(`/kiosk/leads/${customerId}/strategy`, { ...KIOSK })
 }
 
-export function createSession(customerId, photoBlob, mode = 'tryon') {
+// ── 扫码上传照片（2026-08-01）──
+export function createUploadTicket(customerId) {
+  return expoClient.post(`/kiosk/upload-ticket?customer_id=${customerId}`, null, { ...KIOSK })
+}
+
+export function getPendingPhoto(customerId) {
+  return expoClient.get('/kiosk/pending-photo', {
+    params: { customer_id: customerId },
+    // 与会话轮询同口径的短超时：弱网下不让在途请求长期占坑
+    timeout: 10000,
+    ...KIOSK,
+  })
+}
+
+// photoBlob=现场拍照 / pendingName=扫码上传后待取的文件名，二选一随表单提交给后端
+export function createSession(customerId, photoBlob, mode = 'tryon', pendingName = null) {
   const form = new FormData()
-  form.append('photo', photoBlob, 'photo.jpg')
+  if (pendingName) form.append('pending_photo', pendingName)
+  else form.append('photo', photoBlob, 'photo.jpg')
   return expoClient.post(`/sessions?customer_id=${customerId}&mode=${mode}`, form, {
     headers: { 'Content-Type': 'multipart/form-data' },
     ...KIOSK,
