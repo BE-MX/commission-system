@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f0f10">
+<title>Janny · leShine Hair</title>
+<meta property="og:title" content="Janny — Your personal hair butler · leShine Hair">
+<meta property="og:description" content="Hair business FAQs, direct contact and your private expo file.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='42' fill='%23ffe252'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --yellow: #ffe252;
+    --bg: #0f0f10;
+    --card: #19191b;
+    --card-2: #202023;
+    --line: #2c2c30;
+    --text: #f2f2f2;
+    --muted: #a4a4aa;
+    --ink: #141414;
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.5;
+  }
+  .wrap { max-width: 480px; margin: 0 auto; padding: 0 20px 48px; }
+
+  /* entry stagger */
+  .rise { opacity: 0; transform: translateY(8px); animation: rise 420ms var(--ease-out) forwards; }
+  .rise.d1 { animation-delay: 40ms; } .rise.d2 { animation-delay: 90ms; }
+  .rise.d3 { animation-delay: 140ms; } .rise.d4 { animation-delay: 190ms; }
+  @keyframes rise { to { opacity: 1; transform: translateY(0); } }
+  @media (prefers-reduced-motion: reduce) {
+    .rise { animation-duration: 1ms; animation-delay: 0ms; }
+    * { transition-duration: 1ms !important; }
+  }
+
+  /* hero */
+  .hero { padding-top: 44px; text-align: center; }
+  .avatar {
+    width: 96px; height: 96px; border-radius: 50%;
+    border: 3px solid var(--yellow); background: #fff; object-fit: cover;
+  }
+  h1 { margin-top: 14px; font-size: 30px; font-weight: 750; letter-spacing: 0.2px; }
+  .role {
+    margin-top: 5px; font-size: 12px; font-weight: 600; letter-spacing: 2.6px;
+    text-transform: uppercase; color: var(--yellow);
+  }
+  .tagline { margin-top: 12px; font-size: 15px; color: var(--muted); }
+  .tagline b { color: var(--text); font-weight: 600; }
+
+  /* actions */
+  .actions { margin-top: 22px; display: flex; flex-direction: column; gap: 10px; }
+  .btn {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    min-height: 50px; border-radius: 14px; border: 0;
+    font-size: 16px; font-weight: 650; text-decoration: none; cursor: pointer;
+    transition: transform 160ms var(--ease-out), filter 160ms ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn-primary { background: var(--yellow); color: var(--ink); }
+  .btn-ghost { background: var(--card); color: var(--text); border: 1px solid var(--line); }
+
+  /* sections */
+  section { margin-top: 34px; }
+  .sec-label {
+    font-size: 12px; font-weight: 700; letter-spacing: 2.4px;
+    text-transform: uppercase; color: var(--yellow); margin-bottom: 12px;
+  }
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 16px; padding: 18px;
+  }
+  .card p.desc { font-size: 14px; color: var(--muted); }
+
+  .field {
+    margin-top: 12px; width: 100%; min-height: 48px; border-radius: 12px;
+    background: var(--card-2); border: 1px solid var(--line); color: var(--text);
+    font-size: 16px; padding: 12px 14px; outline: none;
+    transition: border-color 160ms ease;
+  }
+  .field:focus { border-color: var(--yellow); }
+  textarea.field { min-height: 96px; resize: vertical; font-family: inherit; }
+  .hint { margin-top: 10px; font-size: 13px; color: #e08585; display: none; }
+  .hint.ok { color: #86d3a2; }
+
+  /* unlock results */
+  .file { margin-top: 14px; display: none; }
+  .file .fname { font-size: 15px; font-weight: 650; }
+  .entry {
+    margin-top: 10px; background: var(--card-2); border: 1px solid var(--line);
+    border-radius: 12px; padding: 12px 14px;
+  }
+  .entry .et { font-size: 13px; font-weight: 650; color: var(--yellow); }
+  .entry .ec { margin-top: 4px; font-size: 14px; white-space: pre-wrap; }
+  .entry img { margin-top: 8px; max-width: 100%; border-radius: 10px; display: block; }
+  .entry .ed { margin-top: 6px; font-size: 11px; color: #7c7c82; }
+
+  /* FAQ */
+  .faq-search { margin-top: 0; }
+  .faq-item {
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    margin-top: 10px; overflow: hidden;
+  }
+  .faq-q {
+    width: 100%; text-align: left; background: none; border: 0; color: var(--text);
+    font-size: 15px; font-weight: 600; font-family: inherit;
+    padding: 14px 44px 14px 16px; position: relative; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .faq-q::after {
+    content: ""; position: absolute; right: 16px; top: 50%;
+    width: 8px; height: 8px; border-right: 2px solid var(--yellow); border-bottom: 2px solid var(--yellow);
+    transform: translateY(-70%) rotate(45deg);
+    transition: transform 220ms var(--ease-out);
+  }
+  .faq-item.open .faq-q::after { transform: translateY(-30%) rotate(225deg); }
+  .faq-a { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 240ms var(--ease-out); }
+  .faq-item.open .faq-a { grid-template-rows: 1fr; }
+  .faq-a-in { overflow: hidden; }
+  .faq-a-in p { padding: 0 16px 14px; font-size: 14px; color: var(--muted); }
+  .faq-empty { margin-top: 12px; font-size: 14px; color: var(--muted); display: none; }
+
+  footer { margin-top: 44px; text-align: center; }
+  footer img { height: 26px; opacity: 0.9; }
+  footer .fx { margin-top: 8px; font-size: 12px; letter-spacing: 1.6px; color: #6f6f75; }
+
+  .spin {
+    width: 16px; height: 16px; border-radius: 50%;
+    border: 2px solid rgba(0,0,0,0.25); border-top-color: var(--ink);
+    animation: spin 500ms linear infinite; display: none;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="hero rise">
+    <img class="avatar" src="avatar.png" alt="Janny">
+    <h1>Janny</h1>
+    <div class="role">Sales Manager · leShine Hair</div>
+    <p class="tagline">Your personal <b>hair-business butler</b>.<br>Any question about hair business — just ask me.</p>
+    <div class="actions">
+      <a class="btn btn-primary" href="mailto:janny@leshinehair.com">Email Janny</a>
+      
+    </div>
+  </header>
+
+  
+
+  <section class="rise d1">
+    <div class="sec-label">Your private expo file</div>
+    <div class="card">
+      <p class="desc">Met us at the expo? Enter your passcode — the <b>e-mail or WhatsApp number</b> you left with Janny — to open your private file &amp; photos.</p>
+      <input class="field" id="passcode" type="text" autocomplete="off"
+             placeholder="Your e-mail or WhatsApp number">
+      <button class="btn btn-primary" id="unlockBtn" style="margin-top:12px;width:100%">
+        <span class="spin" id="unlockSpin"></span><span>Open my file</span>
+      </button>
+      <div class="hint" id="unlockHint"></div>
+      <div class="file" id="fileBox">
+        <div class="fname" id="fileName"></div>
+        <div id="entries"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="rise d2">
+    <div class="sec-label">Ask me anything</div>
+    <div class="card" id="askCard">
+      <p class="desc">Leave your question or requirement — Janny will get back to you personally.</p>
+      <input class="field" id="contact" type="text" autocomplete="off"
+             placeholder="Your e-mail or WhatsApp number">
+      <textarea class="field" id="message" placeholder="Your question or requirement…"></textarea>
+      <button class="btn btn-primary" id="askBtn" style="margin-top:12px;width:100%">
+        <span class="spin" id="askSpin"></span><span>Send to Janny</span>
+      </button>
+      <div class="hint" id="askHint"></div>
+    </div>
+  </section>
+
+  <section class="rise d3">
+    <div class="sec-label">Hair business FAQ</div>
+    <input class="field faq-search" id="faqSearch" type="search" placeholder="Search FAQs…">
+    <div id="faqList">
+      <!-- FAQ_SKELETON: replace with final bilingual content (data-sample entries) -->
+      <div class="faq-item" data-sample="1">
+        <button class="faq-q">How do I place an order with leShine?</button>
+        <div class="faq-a"><div class="faq-a-in"><p>Message your butler directly — by e-mail, or leave a note in “Ask me anything” above. You will get a personal reply with every step handled for you.</p></div></div>
+      </div>
+      <div class="faq-item" data-sample="1">
+        <button class="faq-q">Can I get a quotation for a custom product?</button>
+        <div class="faq-a"><div class="faq-a-in"><p>Yes. Send your specifications (style, length, color, quantity) to your butler and you will receive a tailored quotation.</p></div></div>
+      </div>
+      <div class="faq-item" data-sample="1">
+        <button class="faq-q">How can I see your product catalog?</button>
+        <div class="faq-a"><div class="faq-a-in"><p>Ask your butler for the latest catalog — it will be shared to your e-mail or WhatsApp directly.</p></div></div>
+      </div>
+      <div class="faq-item" data-sample="1">
+        <button class="faq-q">I met you at the expo — where are my photos?</button>
+        <div class="faq-a"><div class="faq-a-in"><p>Open “Your private expo file” above and enter the e-mail or WhatsApp number you left at our booth.</p></div></div>
+      </div>
+      <div class="faq-item" data-sample="1">
+        <button class="faq-q">What if I have an after-sales problem?</button>
+        <div class="faq-a"><div class="faq-a-in"><p>Contact your butler with your order reference — every case is followed personally until it is solved.</p></div></div>
+      </div>
+    </div>
+    <div class="faq-empty" id="faqEmpty">No matching question — ask Janny directly above.</div>
+  </section>
+
+  <footer class="rise d4">
+    <img src="logo.png" alt="leShine Hair">
+    <div class="fx">leshine.work</div>
+  </footer>
+</div>
+
+<script>
+(function () {
+  var SLUG = "janny";
+  var API = "/api/card/" + SLUG;
+
+  function show(el, text, ok) {
+    el.textContent = text;
+    el.className = ok ? "hint ok" : "hint";
+    el.style.display = "block";
+  }
+  function busy(btn, spin, on) {
+    btn.disabled = on;
+    spin.style.display = on ? "inline-block" : "none";
+    btn.style.opacity = on ? 0.75 : 1;
+  }
+  function post(path, body) {
+    return fetch(API + path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    }).then(function (r) { return r.json(); });
+  }
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  /* unlock */
+  var unlockBtn = document.getElementById("unlockBtn");
+  unlockBtn.addEventListener("click", function () {
+    var code = document.getElementById("passcode").value.trim();
+    var hint = document.getElementById("unlockHint");
+    var box = document.getElementById("fileBox");
+    box.style.display = "none";
+    if (!code) { show(hint, "Please enter your e-mail or WhatsApp number."); return; }
+    busy(unlockBtn, document.getElementById("unlockSpin"), true);
+    post("/unlock", { passcode: code }).then(function (res) {
+      busy(unlockBtn, document.getElementById("unlockSpin"), false);
+      if (!res || res.code !== 200 || !res.data || !res.data.customer) {
+        show(hint, (res && res.message) || "No file found for this passcode yet. Please check with your butler.");
+        return;
+      }
+      hint.style.display = "none";
+      var d = res.data;
+      document.getElementById("fileName").textContent = "Hello, " + d.customer.name + " — your expo file:";
+      var html = "";
+      (d.entries || []).forEach(function (e) {
+        html += '<div class="entry">';
+        if (e.title) html += '<div class="et">' + esc(e.title) + "</div>";
+        if (e.content) html += '<div class="ec">' + esc(e.content) + "</div>";
+        if (e.attachment_url) html += '<img src="' + esc(e.attachment_url) + '" alt="" loading="lazy">';
+        if (e.created_at) html += '<div class="ed">' + esc(e.created_at) + "</div>";
+        html += "</div>";
+      });
+      if (!html) html = '<div class="entry"><div class="ec">Your file is being prepared — check back soon.</div></div>';
+      document.getElementById("entries").innerHTML = html;
+      box.style.display = "block";
+    }).catch(function () {
+      busy(unlockBtn, document.getElementById("unlockSpin"), false);
+      show(hint, "Network hiccup — please try again in a few seconds.");
+    });
+  });
+
+  /* inquiry */
+  var askBtn = document.getElementById("askBtn");
+  askBtn.addEventListener("click", function () {
+    var contact = document.getElementById("contact").value.trim();
+    var message = document.getElementById("message").value.trim();
+    var hint = document.getElementById("askHint");
+    if (!contact || !message) { show(hint, "Please fill in your contact and your question."); return; }
+    busy(askBtn, document.getElementById("askSpin"), true);
+    post("/inquiries", { contact: contact, message: message }).then(function (res) {
+      busy(askBtn, document.getElementById("askSpin"), false);
+      if (res && res.code === 200) {
+        show(hint, "Sent! Janny will get back to you soon.", true);
+        document.getElementById("message").value = "";
+      } else {
+        show(hint, (res && res.message) || "Could not send — please try again.");
+      }
+    }).catch(function () {
+      busy(askBtn, document.getElementById("askSpin"), false);
+      show(hint, "Network hiccup — please try again in a few seconds.");
+    });
+  });
+
+  /* FAQ accordion + search */
+  document.querySelectorAll(".faq-q").forEach(function (q) {
+    q.addEventListener("click", function () {
+      q.parentElement.classList.toggle("open");
+    });
+  });
+  document.getElementById("faqSearch").addEventListener("input", function (ev) {
+    var kw = ev.target.value.trim().toLowerCase();
+    var any = false;
+    document.querySelectorAll(".faq-item").forEach(function (item) {
+      var hit = !kw || item.textContent.toLowerCase().indexOf(kw) >= 0;
+      item.style.display = hit ? "" : "none";
+      if (hit) any = true;
+    });
+    document.getElementById("faqEmpty").style.display = any ? "none" : "block";
+  });
+})();
+</script>
+</body>
+</html>
