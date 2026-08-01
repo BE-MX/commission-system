@@ -710,6 +710,13 @@ grep "job completed" logs\service.log | tail -20
   留着会让人误以为该域名还在服务。**443 的 `default_server` 由 `ark-ip-ssl.conf` 显式持有，与本次摘除无关**；
   改前全量备份在 `~/nginx-backup-20260727/`。证书 `hair.leshine.cloud_bundle.crt` 2026-10-19 到期不再续。
 
+- **素材缓存（2026-08-01 加，`ark-ip-ssl.conf`）**：`/uploads/expo/` 配 `expires 30d` + `Cache-Control: public`，`/uploads/expo/results/` 单列一个 location **刻意不缓存**。
+  - **改之前的症状**：该 location 只有裸 `proxy_pass`，响应只带 `etag`/`last-modified` 而**没有任何 Cache-Control**——WebView 拿不到有效期，只能每次加载都发条件请求换一个 304。图片本体没重传，但一次完整往返跑不掉，发型库一屏 16 张缩略图就是 16 次往返。平板 APK 的 `cacheMode = LOAD_DEFAULT`（`MainActivity.kt:106`）是正确设置，**锅在服务端不在 APK**。
+  - **为什么敢长缓存**：发型/发色图文件名是 uuid，内容变即文件名变（内容寻址）；场景图是固定名，靠后端 `scene_image_url()` 拼的 `?v=<mtime>` 破缓存。
+  - **为什么排除 results/**：效果图一客一张、跨客户零复用，长缓存拿不到收益，却会把客户照片留在共享平板的 WebView 磁盘缓存里——收益为零、隐私成本非零。
+  - 改前备份在 `~/nginx-backup-20260801/`。注意响应里会出现**两行 `Cache-Control`**（`expires` 指令与 `add_header` 各发一行，按 RFC 等价于逗号拼接，浏览器正常处理）——这是本文件 `/assets/` 既有写法的同款行为，不是故障。
+  - ⚠️ 只改了 IP 入口这份配置。`ark-cloud.conf`（域名入口）的 `/uploads/` 仍无缓存；域名当前无流量，等 leshine.work 备案启用前需同步。
+
 - **展位平板专用 HTTPS 入口（2026-07-24 加）**：`https://154.8.205.162/expo/kiosk`。IP 申请不到 CA 证书，
   用 10 年自签证书 `/etc/nginx/ssl/expo-ip.{crt,key}`（CN=154.8.205.162，含 IP SAN，2036-07-21 到期），
   配在 `sites-available/ark-ip-ssl.conf` 的 `listen 443 ssl default_server` 块——只接管「无 SNI / IP 直连」，
