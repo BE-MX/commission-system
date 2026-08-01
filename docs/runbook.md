@@ -722,6 +722,21 @@ grep "job completed" logs\service.log | tail -20
     `sudo openssl x509 -in /etc/nginx/ssl/expo-ip.crt -noout -fingerprint -sha256`
   - **分享二维码仍走 http**：客户手机不认自签证书（微信内置浏览器直接白屏），`ResultScreen.vue`
     在 host 为裸 IP 且无显式端口时把分享链接降回 http；备案换正规证书后自动恢复 https
+- **扫码上传照片（2026-08-01）两个部署陷阱，缺一即功能静默失效**：
+  1. **`backend/.env` 必须配 `EXPO_UPLOAD_SIGN_SECRET`**（`.env.example` 已列出该项）。留空/留仓库默认字面量时，
+     `POST /kiosk/upload-ticket` 故意 fail-closed 返回 503，kiosk 显示「扫码上传未配置，请联系管理员或直接拍照」——
+     默认值是公开在仓库里的字面量，谁都能离线伪造任意客户的上传令牌，这是刻意的安全下限，不是 bug。同 `QR_SIGN_SECRET`
+     的既有处理方式。
+  2. **生产 nginx（`ark-ip-ssl.conf` / `ark-cloud.conf`）`client_max_body_size` 是 5m**，比代码里
+     `upload_service.MAX_UPLOAD_BYTES`（15MB）小得多——真正生效的天花板是 nginx 这道 5m，不是代码里那个 15MB。
+     手机页会在浏览器端先降采样（长边 1600、JPEG q0.9）再上传，正常手机照片压完落在 200~400KB，根本碰不到这道墙；
+     但一旦降采样被去掉、或在某些老微信 WebView 上命中了它的兜底路径（`createImageBitmap` 不可用/中途抛错时会直传
+     原图），3~8MB 的手机原图会在到达这段 Python 之前就被 nginx 挡下 413，我们精心写的中文错误文案根本没机会触发，
+     页面只会看到一个笼统的失败。**排障方向弄反会查半天：不要指望调高 `MAX_UPLOAD_BYTES` 能解决，要么调 nginx，
+     要么把降采样修回来。**
+  - 待取照片目录（`uploads/expo/pending/`）**没有挂调度器清理**——发码（`POST /kiosk/upload-ticket`）与确认
+    （`POST /sessions`）两条路径各机会式扫一次、删超过 2 小时的文件，这是本机 `SCHEDULER_ENABLED=false`
+    （防与办公室实例定时任务双跑）下刻意的设计，不是遗漏
 - 布局：代码 `/home/ubuntu/commission-system`（clone 自本机 bare 仓库 `/home/ubuntu/repo.git`）；前端 `/var/www/ark-dist`；日志 `logs/service.log`
 - 服务：`sudo systemctl status|restart ark-backend`（uvicorn 单 worker，127.0.0.1:8001，nginx 80 反代）
 - **部署更新（不走 GitHub）**：开发机 `git push cloud main`（remote `cloud` = ssh bare 仓库）→ `ssh ubuntu@154.8.205.162 "cd ~/commission-system && git pull && sudo systemctl restart ark-backend"`；前端变更时开发机 `npm run build` 后 `tar czf - dist | ssh ubuntu@154.8.205.162 "cd /tmp && tar xzf - && sudo rsync -a --delete dist/ /var/www/ark-dist/ && rm -rf dist"`

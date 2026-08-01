@@ -83,7 +83,7 @@ miniprogram/  services/whatsapp-connector/  deploy/  docs/  config/
 
 ## 完工 DoD（每次改动落地前自查）
 
-1. `python scripts/check_conventions.py` 无红项（查增量 diff：自建 axios / 新增裸 hex / 超 500 行 / 无权限端点 / 吞异常 / 迁移 ID 超长 / 共享层新增）
+1. `python scripts/check_conventions.py --base $(git merge-base main HEAD)` 无红项（查增量 diff：自建 axios / 新增裸 hex / 超 500 行 / 无权限端点 / 吞异常 / 迁移 ID 超长 / 共享层新增；`--base` 默认 `HEAD`=仅工作区未提交改动，commit 之后再跑会检查不到任何东西）
 2. 涉及后端：`pytest` 通过；管钱管货的计算/状态机必须有测试
 3. 涉及前端：`npm run build` 通过；UI 对照 DESIGN.md
 4. **报告实际跑出的验证证据**，不说"应该没问题"

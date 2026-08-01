@@ -573,6 +573,15 @@ frontend/src/
 - 历史结果图（本次改动前生成的）没有水印，未做回溯补盖。**若将来要补，两个坑**：①先加幂等标记再动手（已加，见上）；②`scripts/compress_expo_uploads.py:88` 是 `if disp.exists(): continue`，补完原图必须先删 `_disp.jpg` 再重生成，否则 kiosk 屏和线索台缩略图仍是无水印版
 - 已知局限：LOGO 是竖版全套锁标，缩到 153px 宽时「莱莎健康假发」六字约 14px 高、孔雀细羽线条并团。**建议设计部另出一枚角标专用简化横版锁标**（图形 + LESHINE，去细描线）
 
+**扫码上传照片入口（2026-08-01）**
+
+设计见 `docs/requirements/2026-08-01-expo-qr-photo-upload.md`；架构是签名 HMAC 令牌（`{customer_id}-{exp}-{sig}`，10 分钟有效，不落库）+ 待取照片目录，kiosk 轮询到达后进既有预览态。以下是审查/实现中浮出的非显而易见之处：
+
+- **`resolve_pending` 的路径穿越校验是唯一真正起效的防线**。`uploads/expo/pending/` 与 `uploads/expo/photos/` 是平级目录，且共用同一套 `c{customer_id}_{hex}{suffix}` 命名（`upload_service.photo_filename`）——这意味着 `../photos/c42_xxx.jpg` 这样的 payload 能同时通过归属校验（文件名前缀对得上）和存在性校验（文件真实存在）。挡住它的只有 `candidate.parent != root` 这一道。已有测试钉死这个场景，**不要以为归属/存在性校验就够而去"简化"路径穿越那道检查**。
+- **客户端的 EXIF 处理是承重结构，不是锦上添花**。手机上传页在 canvas 画图前先 `createImageBitmap(file, {imageOrientation: 'from-image'})`——canvas 重新编码会丢 EXIF，而后端 `downscale_inplace` 依赖 `ImageOps.exif_transpose` 转正；如果朴素地直接 canvas 降采样，每一张竖拍人像都会歪着躺进 kiosk。若 `createImageBitmap` 不可用或抛错，页面选择直传原图，而不是可能转向出错的重新编码图——宁可慢，不可错。
+- **一个有效令牌在 10 分钟窗口内可被重放**（设计上刻意不落库以避免「文件传没传上」出现两份真相）。损害面靠两道防线兜住：每个客户只留最新 3 张待取照片（`upload_service._prune_pending`），加上 kiosk 顾问在预览态确认「就用这张」才真正入库。
+- **60 秒 kiosk 无操作清场在二维码面板打开期间被挂起，且上界钉在令牌 10 分钟过期**。没有挂起，扫码→翻相册→上传这条路径必然超过 60 秒，功能一上线就是坏的；没有上界，客户扫完码就走会让 kiosk 永久卡在拍摄页——两者缺一都不成立。
+
 ## 素材中台标签体系 v2（asset，2026-07-22 切换并退役旧维度）
 
 方案全文 `docs/requirements/2026-07-22-asset-tag-taxonomy.md`。旧 5 维体系是文件夹路径逐层平移的产物（文件夹=单层浏览结构，标签=多维正交检索结构，平移必乱），重构为 11 维正交体系。
