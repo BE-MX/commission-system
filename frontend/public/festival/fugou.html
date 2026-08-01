@@ -4,12 +4,18 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>莱莎采购节 · 首返复购榜</title>
+<!-- 预取轮播下一屏资源，减轻 30s 硬跳转白闪 -->
+<link rel="prefetch" href="zhenying.html">
+<link rel="prefetch" href="assets/bg-camps.jpg">
+<link rel="prefetch" href="assets/chip.png">
 <style>
   /* 设计系统同前三屏；两块面板与前二高亮条/奖杯/皇冠已烘焙在 bg-repurchase.jpg，
      前二行内容对位叠加（冻结不滚动），第 3 名起为纵向滚动列表 */
   * { margin:0; padding:0; box-sizing:border-box; }
   html,body { width:100%; height:100%; background:#eef0f6; overflow:hidden;
     font-family:"Microsoft YaHei","PingFang SC","Segoe UI",sans-serif; }
+  body { animation:pageIn .28s ease-out; }
+  @keyframes pageIn { from { opacity:0; } }
   :root{
     --pri:#4f7cff; --vio:#8b5cf6; --ink:#1d2545; --sub:#5d6b8f;
     --ease-out:cubic-bezier(.23,1,.32,1); --ease-in-out:cubic-bezier(.77,0,.175,1);
@@ -153,6 +159,8 @@
   .top-row .nm { position:absolute; left:41%; font-size:20px; letter-spacing:.5px;
     max-width:33%; white-space:nowrap; overflow:hidden; }
   .top-row .vl { position:absolute; right:14%; font-size:26px; text-align:right; }
+  /* 0 值空态：高亮行改灰显「虚位以待」（压住 .gd 渐变字） */
+  .top-row .nm.empty { background:none; -webkit-text-fill-color:#93a0bd; color:#93a0bd; font-weight:700; }
 
   /* 第 3 名起：纵向滚动列表（前二不参与滚动） */
   .scroll { position:absolute; top:302px; bottom:26px; left:4%; right:4%; overflow:hidden;
@@ -195,6 +203,7 @@
 
   @media (prefers-reduced-motion: reduce) {
     .live::after, .ai-star, .grad-text, .live i, .fx i, .gd { animation:none; }
+    body { animation:none; }
     .scroll .inner.roll { animation:none; }
     .medal, .medal img { animation:none; }
   }
@@ -363,14 +372,28 @@
 
   function renderTop(row, item, fmt) {
     var img = row.querySelector(".avt .a");
+    var frame = row.querySelector(".avt .f");
+    var nm = row.querySelector(".nm");
+    var vl = row.querySelector(".vl");
+    if (!(item.value > 0)) {
+      /* 首日全员 0 值：不摆 0 分冠军，高亮行改虚位以待 */
+      img.style.visibility = "hidden";
+      frame.style.visibility = "hidden";
+      nm.classList.add("empty");
+      nm.textContent = "虚位以待";
+      vl.dataset.value = "0"; vl.textContent = "--";
+      return;
+    }
+    frame.style.visibility = "";
+    img.style.visibility = "";
+    nm.classList.remove("empty");
     var want = "assets/avatars/" + item.user_id + ".png";
     if (img.getAttribute("src") !== want) {
       img.setAttribute("src", want);
       img.onerror = function () { img.style.visibility = "hidden"; };
     }
-    var nm = row.querySelector(".nm");
     if (nm.textContent !== item.name) nm.textContent = item.name;
-    countTo(row.querySelector(".vl"), item.value, fmt);
+    countTo(vl, item.value, fmt);
   }
 
   function renderBoard(board, rows, fmt) {
@@ -378,6 +401,7 @@
     renderTop(board.tops[1], rows[1], fmt);
 
     var rest = rows.slice(2);
+    var allZero = rest.every(function (r) { return !(r.value > 0); });   /* 首日全 0：静展不滚动 */
     var key = JSON.stringify(rest.map(function (r) { return [r.user_id, r.value]; }));
     if (key === board.lastKey) return;   /* 数据没变不重建，滚动不打断 */
     board.lastKey = key;
@@ -392,7 +416,7 @@
     }).join("");
 
     var visible = Math.floor(board.scroll.clientHeight / 48);
-    if (rest.length > visible && !reduceMotion) {
+    if (rest.length > visible && !reduceMotion && !allZero) {
       board.inner.innerHTML = html + html;  /* 双份内容做无缝纵向循环 */
       board.inner.style.setProperty("--dur", (rest.length * 2.2) + "s");
       board.inner.classList.add("roll");

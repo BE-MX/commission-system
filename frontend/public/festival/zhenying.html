@@ -4,12 +4,17 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>莱莎采购节 · 阵营积分榜</title>
+<!-- 预取轮播下一屏资源，减轻 30s 硬跳转白闪 -->
+<link rel="prefetch" href="tuandui.html">
+<link rel="prefetch" href="assets/bg-teams.jpg">
 <style>
   /* 设计系统同 xinqian.html（Pixel × Glass × AI 赛事频道）；
      三块玻璃面板与标题已烘焙在 bg-camps.jpg 中，内容按面板坐标对位叠加 */
   * { margin:0; padding:0; box-sizing:border-box; }
   html,body { width:100%; height:100%; background:#eef0f4; overflow:hidden;
     font-family:"Microsoft YaHei","PingFang SC","Segoe UI",sans-serif; }
+  body { animation:pageIn .28s ease-out; }
+  @keyframes pageIn { from { opacity:0; } }
   :root{
     --pri:#4f7cff; --vio:#8b5cf6; --ink:#1d2545; --sub:#5d6b8f;
     --ease-out:cubic-bezier(.23,1,.32,1); --ease-in-out:cubic-bezier(.77,0,.175,1);
@@ -161,6 +166,7 @@
   @media (prefers-reduced-motion: reduce) {
     .chip.enter { animation-duration:1ms; }
     .live::after, .ai-star, .grad-text, .live i, .bar .fill::after, .chip .c-top3 { animation:none; }
+    body { animation:none; }
     .bar .fill { transition:none; }
   }
 </style>

@@ -4,12 +4,17 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>莱莎采购节 · 个人新签积分榜</title>
+<!-- 预取轮播下一屏资源，减轻 30s 硬跳转白闪 -->
+<link rel="prefetch" href="fugou.html">
+<link rel="prefetch" href="assets/bg-repurchase.jpg">
 <style>
   /* 设计系统源自《采购节大屏DEMO-像素版》（Pixel × Glass × AI 赛事频道），
      主体区按效果图改为 24 人卡片墙（真实素材 + 实时数据） */
   * { margin:0; padding:0; box-sizing:border-box; }
   html,body { width:100%; height:100%; background:#dfe1ee; overflow:hidden;
     font-family:"Microsoft YaHei","PingFang SC","Segoe UI",sans-serif; }
+  body { animation:pageIn .28s ease-out; }
+  @keyframes pageIn { from { opacity:0; } }
   :root{
     --pri:#4f7cff; --vio:#8b5cf6; --coral:#ff6b5c;
     --ink:#1d2545; --sub:#5d6b8f;
@@ -181,6 +186,7 @@
   @media (prefers-reduced-motion: reduce) {
     .pcard.enter { animation-duration:1ms; }
     .live::after, .ai-star, .grad-text, .live i, .fx i, .medal { animation:none; }
+    body { animation:none; }
   }
 </style>
 </head>

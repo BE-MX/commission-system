@@ -4,12 +4,16 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>莱莎采购节 · 团队积分榜</title>
+<!-- 预取轮播下一屏资源，减轻 30s 硬跳转白闪 -->
+<link rel="prefetch" href="zhaiyao.html">
 <style>
   /* 设计系统同前两屏；七块玻璃面板与 1/2/3 徽章已烘焙在 bg-teams.jpg，
      排名即位置：上排左→右 = 第 1~4 名，下排 = 第 5~7 名 */
   * { margin:0; padding:0; box-sizing:border-box; }
   html,body { width:100%; height:100%; background:#eef0f6; overflow:hidden;
     font-family:"Microsoft YaHei","PingFang SC","Segoe UI",sans-serif; }
+  body { animation:pageIn .28s ease-out; }
+  @keyframes pageIn { from { opacity:0; } }
   :root{
     --pri:#4f7cff; --vio:#8b5cf6; --ink:#1d2545; --sub:#5d6b8f;
     --ease-out:cubic-bezier(.23,1,.32,1); --ease-in-out:cubic-bezier(.77,0,.175,1);
@@ -107,6 +111,8 @@
   .s6 { left:819px; top:647px; height:320px; }
   .s7 { left:1242px; top:647px; height:320px; }
   .t-label { font-size:15px; color:#6f9fd8; letter-spacing:2px; }
+  /* 队名文字：印章风 logo 远距离不可读，补一行文字队名 */
+  .t-label .t-name { font-size:19px; font-weight:900; color:#2c2a4e; letter-spacing:1px; }
   /* 平均积分：1 位小数 + 渐变流动 + count-up（渐变色动态显示） */
   .t-avg { margin-top:2px; font-size:46px; font-weight:900; line-height:1.15; }
   .t-avg .v { background:linear-gradient(92deg,#3f6df1,#22b1d8,#7c5ce0,#3f6df1);
@@ -167,6 +173,7 @@
   @media (prefers-reduced-motion: reduce) {
     .live::after, .ai-star, .grad-text, .live i, .fx i,
     .shine::before, .t-avg .v { animation:none; }
+    body { animation:none; }
   }
 </style>
 </head>
@@ -309,7 +316,7 @@
     el.className = "slot s" + i;
     el.innerHTML =
       (i <= 3 ? '<div class="shine"></div>' : "") +
-      '<div class="t-label">平均积分</div>' +
+      '<div class="t-label"><span class="t-name">--</span> · 平均积分</div>' +
       '<div class="t-avg"><span class="v num" data-value="0">0.0</span><small>分</small></div>' +
       '<img class="t-logo" alt="" style="display:none">' +
       '<div class="t-table"><div class="t-head"><span>姓名</span><span>总积分</span></div>' +
@@ -323,6 +330,7 @@
     teams.forEach(function (team, i) {
       if (i >= slots.length) return;
       var el = slots[i];
+      el.querySelector(".t-name").textContent = team.name;
       countTo(el.querySelector(".t-avg .v"), team.avg, fmt1);
       var logo = el.querySelector(".t-logo");
       var key = LOGOS[team.name];
