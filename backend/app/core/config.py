@@ -101,6 +101,10 @@ class Settings(BaseSettings):
     ASSET_SIGN_SECRET: str = "leshine-asset-secret"
     ASSET_UPLOAD_STAGING: str = "D:\\upload_staging"
 
+    # ── 展会扫码上传（2026-08-01）────────────────────────────
+    # 手机上传页免鉴权，令牌即凭证。生产环境须在 backend/.env 覆盖为随机串
+    EXPO_UPLOAD_SIGN_SECRET: str = "leshine-expo-upload-secret"
+
     # ── 客户售后管理 ─────────────────────────────────────────
     AFTERSALES_STORAGE_ROOT: str = "D:\\WORKSOURCE\\aftersales"
     AFTERSALES_DETAIL_BASE_URL: str = "https://leshine.work/aftersales/cases"
