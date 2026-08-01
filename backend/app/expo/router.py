@@ -5,15 +5,15 @@ import shutil
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_any_permission, require_permission
 from app.core.database import get_db
 from app.core.response import ok, page_result
-from app.expo import ai_pipeline, script_service, service
-from app.expo.models import ExpoResult, ExpoScript, ExpoWig
+from app.expo import ai_pipeline, script_service, service, upload_service
+from app.expo.models import ExpoCustomer, ExpoResult, ExpoScript, ExpoWig
 from app.expo.schemas import (
     CustomerRegister,
     FeedbackCreate,
@@ -68,18 +68,26 @@ def update_customer(
     return ok({"customer_id": customer.id})
 
 
-@router.post("/sessions", summary="上传照片建会话（tryon=异步分析+匹配 / scene=直接就绪）")
+@router.post("/sessions", summary="建会话（照片来源：现场拍照 photo / 扫码上传 pending_photo 二选一）")
 def create_session(
     customer_id: int = Query(...),
     mode: str = Query("tryon", pattern="^(tryon|scene)$"),
-    photo: UploadFile = File(...),
+    photo: UploadFile | None = File(None),
+    pending_photo: str | None = Form(None),
     db: Session = Depends(get_db),
     current_user=Depends(require_permission("expo:write")),
 ):
+    # 空串归一为 None：multipart 表单里「字段在但值为空」很常见（前端条件 append 漏判、
+    # 客户端库补空字段），而 `"" is not None` 会骗过 service 的二选一守卫
+    pending_photo = (pending_photo or "").strip() or None
     try:
-        session = service.create_session(db, customer_id, photo, _user_id(current_user), mode=mode)
+        session = service.create_session(
+            db, customer_id, photo, _user_id(current_user),
+            mode=mode, pending_name=pending_photo,
+        )
     except ValueError as exc:
         raise HTTPException(400, str(exc))
+    upload_service.sweep_stale()   # 确认路径上的第二次机会式清理
     if mode == "tryon":
         ai_pipeline.start_analysis(session.id)
     return ok({"session_id": session.id}, code=201)
@@ -252,6 +260,154 @@ p{{color:#8d8371;font-size:13px;line-height:1.9}}.nm{{color:#f7e3b0;font-size:15
 </head><body><h1>莱 莎 · 健 康 假 发</h1>
 <img src="{image_url}" alt="试戴效果"/><div class="nm">{wig_name}</div>
 <p>戴上那一刻，状态就回来了<br/>久戴如新 · SGS 安全认证</p></body></html>""")
+
+
+# ---------------- 扫码上传照片（2026-08-01）----------------
+# 两个 upload 端点**刻意免鉴权**：客户手机没有也不应有展位账号，令牌即凭证
+#（HMAC 绑定 customer_id + 10 分钟过期，见 upload_service）。这是机器对机器
+# 白名单之外的第三类豁免，与 /share/{short_code} 同性质。
+
+
+@router.post("/kiosk/upload-ticket", summary="签发扫码上传令牌（kiosk 拍摄页）")
+def create_upload_ticket(
+    customer_id: int = Query(...),
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("expo:write")),
+):
+    # 密钥停在仓库默认值 = 任何能读代码的人都能离线伪造令牌，往任意客户名下投图。
+    # 免登录端点的授权模型全压在这个密钥上，故此处 fail-closed 拒发，逼着部署时配 .env
+    #（照 app/domestic/router.py 对 qr_secret_is_default 的处理；Task 1 代码审查 C1）
+    if upload_service.secret_is_default():
+        raise HTTPException(503, "扫码上传未配置签名密钥，请联系管理员")
+    if not db.get(ExpoCustomer, customer_id):
+        raise HTTPException(404, "客户不存在")
+    upload_service.sweep_stale()   # 机会式清理：云端展会实例无调度器，只能挂在这条路上
+    token = upload_service.make_token(customer_id)
+    return ok({
+        "token": token,
+        "path": f"/api/expo/upload/{token}",
+        "expires_in": upload_service.TICKET_TTL_SECONDS,
+    })
+
+
+@router.get("/upload/{token}", summary="手机上传页（免鉴权，令牌即凭证）",
+            response_class=HTMLResponse)
+def upload_page(token: str):
+    try:
+        upload_service.parse_token(token)
+    except ValueError as exc:
+        return HTMLResponse(_upload_html(None, str(exc)))
+    return HTMLResponse(_upload_html(token, None))
+
+
+@router.post("/upload/{token}", summary="手机上传照片（免鉴权，令牌即凭证）")
+def upload_photo(token: str, photo: UploadFile = File(...)):
+    try:
+        customer_id = upload_service.parse_token(token)
+        upload_service.save_pending(customer_id, photo.file.read(), photo.filename)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return ok({"uploaded": True})
+
+
+@router.get("/kiosk/pending-photo", summary="取该客户最新的扫码待取照片")
+def get_pending_photo(
+    customer_id: int = Query(...),
+    _user=Depends(require_permission("expo:write")),
+):
+    latest = upload_service.latest_pending(customer_id)
+    if not latest:
+        return ok({"pending": None})
+    return ok({"pending": {
+        "name": latest.name,
+        "photo_url": service._to_url(ai_pipeline.to_rel(latest)),
+        "uploaded_at": int(latest.stat().st_mtime),
+    }})
+
+
+def _upload_html(token: str | None, error: str | None) -> str:
+    """手机扫码上传页：黑金视觉语言与 share_page 一致（同一套客户拍照体验）。
+
+    error 非空时渲染纯说明页（令牌非法/过期），绝不用裸 404 打发客户；
+    本页不回显任何客户姓名——二维码由共享屏（kiosk）签发，屏上任何人都能扫，
+    在这张陌生人可达的页面上显名是隐私泄露（产品明确决策）。
+    """
+    if error:
+        return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>莱莎健康假发 · 上传链接已失效</title>
+<style>body{{margin:0;background:#0c0a08;color:#f3ead9;font-family:"PingFang SC",sans-serif;
+text-align:center;padding:64px 24px}}h1{{font-size:16px;letter-spacing:.3em;color:#e8c479;
+font-weight:400;margin-bottom:26px}}p{{color:#8d8371;font-size:14px;line-height:2}}</style>
+</head><body><h1>莱 莎 · 健 康 假 发</h1><p>{error}</p></body></html>"""
+
+    upload_path = f"/api/expo/upload/{token}"
+    return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>莱莎健康假发 · 扫码上传照片</title>
+<style>
+body{{margin:0;background:#0c0a08;color:#f3ead9;font-family:"PingFang SC",sans-serif;
+padding:28px 20px 48px;box-sizing:border-box}}
+h1{{font-size:15px;letter-spacing:.3em;color:#e8c479;font-weight:400;text-align:center;margin:0 0 26px}}
+.lead{{text-align:center;font-size:14px;color:#f7e3b0;margin-bottom:22px}}
+.row{{display:flex;gap:12px;margin-bottom:24px}}
+.pick{{flex:1;position:relative;border:1px solid rgba(232,196,121,.4);border-radius:14px;
+padding:20px 8px;text-align:center;color:#f3ead9;font-size:14px;overflow:hidden}}
+.pick input{{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer}}
+.tips{{background:rgba(232,196,121,.06);border:1px solid rgba(232,196,121,.2);border-radius:14px;
+padding:16px 18px;margin-bottom:22px}}
+.tips p{{margin:0 0 8px;color:#8d8371;font-size:12px}}
+.tips ul{{margin:0;padding-left:18px;color:#d9c9a0;font-size:12.5px;line-height:1.9}}
+.privacy{{color:#8d8371;font-size:12px;line-height:1.8;text-align:center;margin-bottom:20px}}
+#status{{text-align:center;font-size:13px;color:#e8c479;min-height:20px}}
+</style>
+</head><body>
+<h1>莱 莎 · 健 康 假 发</h1>
+<div class="lead">上传一张照片，回到展位屏幕即可查看试戴效果</div>
+<div class="row">
+<label class="pick">从相册选择<input type="file" accept="image/*" id="fromAlbum"/></label>
+<label class="pick">现在拍一张<input type="file" accept="image/*" capture="user" id="fromCamera"/></label>
+</div>
+<div class="tips">
+<p>拍摄小贴士</p>
+<ul>
+<li>略微俯拍（镜头稍高于视线，微微抬头，眼神更明亮）</li>
+<li>微侧面容（面部带一点角度，露出约四分之三面容）</li>
+<li>构图靠上（头部位于画面上三分之一，露出肩颈与上身）</li>
+</ul>
+</div>
+<div class="privacy">照片仅用于本次体验与效果回看，保留 90 天，可随时联系我们删除。</div>
+<div id="status"></div>
+<script>
+function upload(file) {{
+  if (!file) return;
+  var status = document.getElementById('status');
+  status.textContent = '上传中…';
+  var fd = new FormData();
+  fd.append('photo', file, file.name || 'photo.jpg');
+  fetch('{upload_path}', {{ method: 'POST', body: fd }})
+    .then(function (res) {{
+      if (!res.ok) throw new Error('upload failed');
+      return res.json();
+    }})
+    .then(function () {{
+      status.textContent = '上传成功，请回到展位屏幕查看';
+    }})
+    .catch(function () {{
+      status.textContent = '上传失败，请重试';
+    }});
+}}
+function bind(id) {{
+  document.getElementById(id).addEventListener('change', function (e) {{
+    var file = e.target.files[0];
+    e.target.value = '';
+    upload(file);
+  }});
+}}
+bind('fromAlbum');
+bind('fromCamera');
+</script>
+</body></html>"""
 
 
 # ---------------- kiosk 销售面板（展位设备 expo:write，2026-07-13） ----------------

@@ -1,13 +1,20 @@
-"""展会扫码上传：会话创建的双照片来源（2026-08-01）。"""
+"""展会扫码上传：会话创建的双照片来源 + 四个端点（2026-08-01）。"""
 
 import io
+from contextlib import contextmanager
+from datetime import datetime
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from PIL import Image
 
+from app.auth.utils import create_access_token
+from app.core.config import Settings, get_settings
+from app.core.database import get_db
 from app.expo import ai_pipeline, service, upload_service
 from app.expo.models import ExpoCustomer
-from datetime import datetime
+from app.expo.router import router, upload_page, upload_photo
 
 
 @pytest.fixture(autouse=True)
@@ -173,3 +180,172 @@ def test_create_session_still_blocks_without_consent(db):
     name = upload_service.save_pending(customer.id, _jpeg_bytes(), "p.jpg")
     with pytest.raises(ValueError, match="未同意"):
         service.create_session(db, customer.id, None, None, pending_name=name)
+
+
+# ==================== 端点层（HTTP） ====================
+
+@pytest.fixture(autouse=True)
+def _non_default_upload_secret(monkeypatch):
+    """功能测试统一钉死成非默认密钥，不依赖 backend/.env 里配没配这个变量——
+    默认值本身的行为单独在下面的 fail-closed 用例里测，且显式 monkeypatch 回默认值
+    （同 tests/test_expo_upload_ticket.py 的 _non_default_secret 套路）。"""
+    monkeypatch.setattr(get_settings(), "EXPO_UPLOAD_SIGN_SECRET", "unit-test-secret-not-default")
+
+
+@contextmanager
+def _client():
+    """两个 upload 端点免鉴权、不碰 DB——独立挂载，不带 app.expo.router 的其余端点
+    （那些需要 get_db/权限依赖），对齐 tests/test_dashboard_preference.py:123 的做法。"""
+    app = FastAPI()
+    app.add_api_route("/api/expo/upload/{token}", upload_page, methods=["GET"])
+    app.add_api_route("/api/expo/upload/{token}", upload_photo, methods=["POST"])
+    with TestClient(app) as c:
+        yield c
+
+
+@contextmanager
+def _full_client(db, permissions=("expo:write",)):
+    """挂载完整 expo router：测 create_upload_ticket / create_session 这类
+    既要鉴权又要碰 DB 的端点，需要真实 JWT + get_db 覆盖。"""
+    app = FastAPI()
+    app.include_router(router, prefix="/api/expo")
+
+    def override_db():
+        yield db
+
+    app.dependency_overrides[get_db] = override_db
+    token = create_access_token({
+        "sub": "1", "username": "u1", "roles": [], "permissions": list(permissions),
+    })
+    with TestClient(app, headers={"Authorization": f"Bearer {token}"}) as c:
+        yield c
+
+
+class TestUploadPage:
+    def test_renders_for_valid_token_without_leaking_customer_name(self, db):
+        """页面渲染成功、含 90 天留存文案；且不回显客户姓名——二维码由共享屏签发，
+        屏上任何人都能扫，在陌生人可达的页面上显名是隐私泄露（产品明确决策）。"""
+        customer = _customer(db)
+        token = upload_service.make_token(customer.id)
+        with _client() as client:
+            resp = client.get(f"/api/expo/upload/{token}")
+        assert resp.status_code == 200
+        assert "保留 90 天" in resp.text
+        assert customer.name not in resp.text
+
+    def test_expired_token_renders_explanation_not_bare_404(self):
+        token = upload_service.make_token(42, ttl_seconds=-1)
+        with _client() as client:
+            resp = client.get(f"/api/expo/upload/{token}")
+        assert resp.status_code == 200
+        assert "已过期" in resp.text
+
+    def test_non_ascii_signature_renders_explanation_not_500(self):
+        """hmac.compare_digest 遇到非 ASCII 字符抛 TypeError 而非 ValueError；
+        Task 1 曾在这里炸出真实 500。confirm 该修复在端点层仍然生效
+        （不是只在 upload_service 单测里绿，路由层的 except ValueError 也接得住）。"""
+        cid, exp, _ = upload_service.make_token(42).split("-")
+        mangled = f"{cid}-{exp}-{'é' * 16}"
+        with _client() as client:
+            resp = client.get(f"/api/expo/upload/{mangled}")
+        assert resp.status_code == 200
+        assert "无效" in resp.text
+
+    def test_contract_violation_from_parse_token_is_not_swallowed(self, monkeypatch):
+        """upload_page 的 except 子句刻意只窄到 ValueError——parse_token 的契约保证
+        只抛 ValueError（见其文档：先做形状校验就是为了不让 TypeError 之类的意外
+        逃出来）。若把 except 换宽成裸 Exception，未来谁不小心破坏了这份契约
+        （比如 parse_token 哪天多出一条会抛 AttributeError 的分支），这里会把它
+        悄悄压成客户能看到的"链接无效"说明页——没有 logger、没有 print，宪法 6
+        对吞异常的最低要求（至少留痕）都保不住，问题会在生产里隐形。
+        这里钉住"非 ValueError 必须原样炸穿"，而不是被温柔地转成一张解释页。"""
+        def _boom(token):
+            raise RuntimeError("parse_token contract violated")
+
+        monkeypatch.setattr(upload_service, "parse_token", _boom)
+        with _client() as client:
+            with pytest.raises(RuntimeError):
+                client.get("/api/expo/upload/whatever")
+
+
+class TestUploadPhoto:
+    def test_stores_pending_file(self):
+        token = upload_service.make_token(42)
+        with _client() as client:
+            resp = client.post(
+                f"/api/expo/upload/{token}",
+                files={"photo": ("p.jpg", _jpeg_bytes(), "image/jpeg")},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["data"]["uploaded"] is True
+        assert upload_service.latest_pending(42) is not None
+
+    def test_rejects_bad_token(self):
+        with _client() as client:
+            resp = client.post(
+                "/api/expo/upload/not-a-real-token",
+                files={"photo": ("p.jpg", _jpeg_bytes(), "image/jpeg")},
+            )
+        assert resp.status_code == 400
+
+    def test_rejects_non_image_and_leaves_no_pending_file(self):
+        token = upload_service.make_token(43)
+        with _client() as client:
+            resp = client.post(
+                f"/api/expo/upload/{token}",
+                files={"photo": ("x.jpg", b"definitely-not-an-image", "image/jpeg")},
+            )
+        assert resp.status_code == 400
+        assert upload_service.latest_pending(43) is None
+
+
+class TestUploadTicketFailClosed:
+    """密钥停在仓库默认值时，签发端点必须拒发（fail-closed），而不是带着没锁的
+    授权模型继续发码——见 upload_service.secret_is_default 的文档。"""
+
+    def test_default_secret_returns_503(self, db, monkeypatch):
+        customer = _customer(db)
+        monkeypatch.setattr(
+            get_settings(), "EXPO_UPLOAD_SIGN_SECRET",
+            Settings.model_fields["EXPO_UPLOAD_SIGN_SECRET"].default,
+        )
+        with _full_client(db) as client:
+            resp = client.post(f"/api/expo/kiosk/upload-ticket?customer_id={customer.id}")
+        assert resp.status_code == 503
+
+    def test_non_default_secret_issues_ticket(self, db):
+        """非默认密钥（本文件 autouse fixture 已钉死）下正常放行，避免上一条用例
+        单靠"改成默认值必 503"就误以为端点恒久 503。"""
+        customer = _customer(db)
+        with _full_client(db) as client:
+            resp = client.post(f"/api/expo/kiosk/upload-ticket?customer_id={customer.id}")
+        assert resp.status_code == 200
+        assert resp.json()["data"]["token"]
+
+
+class TestCreateSessionPendingPhotoForm:
+    """POST /sessions 的 pending_photo 表单字段：空串归一化守卫。"""
+
+    def test_blank_pending_photo_alone_is_clean_400(self, db):
+        customer = _customer(db)
+        with _full_client(db) as client:
+            resp = client.post(
+                f"/api/expo/sessions?customer_id={customer.id}&mode=scene",
+                data={"pending_photo": ""},
+            )
+        assert resp.status_code == 400
+
+    def test_blank_pending_photo_alongside_real_photo_still_succeeds(self, db):
+        """真正的回归场景：前端可能无论走不走扫码，都固定 append 一个空的
+        pending_photo 字段。若路由不把空串归一成 None，二选一守卫会把
+        "photo 有值 + pending_photo=''（非 None）"误判成"两边都给了"而拒绝
+        这次本该成功的现场拍照——这条测试直接卡住这条回归线。"""
+        customer = _customer(db)
+        with _full_client(db) as client:
+            resp = client.post(
+                f"/api/expo/sessions?customer_id={customer.id}&mode=scene",
+                data={"pending_photo": ""},
+                files={"photo": ("p.jpg", _jpeg_bytes(), "image/jpeg")},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["data"]["session_id"]
