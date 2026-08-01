@@ -463,7 +463,7 @@
 
 公开端点（`card/public_router.py`，无 JWT，AUTH_EXEMPT_FILES 已登记；消费方是客户手机浏览器）：
 - `POST /{slug}/unlock` — 口令解锁：body `{passcode}`（客户自己的邮箱或 WhatsApp 号，服务端归一化：邮箱小写 / 号码纯数字≥5位），返回该业务员名下命中客户的 `{customer:{name,expo_code}, entries:[{title,content,attachment_url,created_at}]}`；slug 不存在/口令无效/未命中一律 `code:404` 同一句英文文案（HTTP 状态恒 200，防枚举）。
-- `POST /{slug}/inquiries` — 客户询盘：body `{contact, message}`（≤128/≤2000），联系方式命中客户档案时回填 customer_id。
+- `POST /{slug}/inquiries` — 客户询盘：body `{contact, message}`（≤128/≤2000），联系方式命中客户档案时回填 customer_id；落库后 daemon 线程推钉钉群（`card/push_service.py`，尽力而为失败只记日志，测试里必须 mock `_notify_inquiry` 否则真发群消息）。
 
 管理端点（`card/router.py`，`card:read` 查 / `card:write` 写；**注册顺序：admin 字面量路由先于 `{slug}` 参数路由**，防吞噬）：
 - `GET|POST /admin/salespersons` — 档案列表 / slug 幂等 upsert（slug 印在名片上，禁改）。
