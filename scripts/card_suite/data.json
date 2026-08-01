@@ -1,0 +1,37 @@
+{
+  "base_url": "https://leshine.work/card/",
+  "people": [
+    {
+      "slug": "ginny",
+      "name": "Ginny",
+      "title": "Sales Manager",
+      "email": "ginny@leshinehair.com",
+      "whatsapp": null,
+      "avatar": "Ginny.png"
+    },
+    {
+      "slug": "janny",
+      "name": "Janny",
+      "title": "Sales Manager",
+      "email": "janny@leshinehair.com",
+      "whatsapp": null,
+      "avatar": "Janny.png"
+    },
+    {
+      "slug": "katy",
+      "name": "Katy",
+      "title": "Sales Manager",
+      "email": "katy@leshinehair.com",
+      "whatsapp": null,
+      "avatar": "Katy.png"
+    },
+    {
+      "slug": "sylvia",
+      "name": "Sylvia",
+      "title": "Sales Manager",
+      "email": "sylvia@leshinehair.com",
+      "whatsapp": null,
+      "avatar": "Sylvia.png"
+    }
+  ]
+}

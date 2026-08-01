@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>leShine expo poster A1</title>
+<style>
+  :root { --yellow: {{BRAND_YELLOW}}; --black: #101010; --ink: #171717; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  @page { size: 600mm 847mm; margin: 0; }
+  html, body { width: 600mm; }
+  body {
+    font-family: "Segoe UI", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .page { position: relative; width: 600mm; height: 847mm; background: var(--yellow); overflow: hidden; }
+
+  /* everything above the bottom band, evenly distributed — no dead zones */
+  .content {
+    position: absolute; top: 0; left: 0; right: 0; bottom: 138mm;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: space-evenly; padding: 26mm 0 10mm;
+  }
+
+  .logo { display: block; width: 205mm; }
+
+  .headline {
+    text-align: center;
+    font-size: 70mm; line-height: 1.02; font-weight: 800; letter-spacing: -0.8mm; color: var(--ink);
+  }
+  .headline .free { display: block; font-size: 88mm; }
+  .subwrap { text-align: center; }
+  .sub-cn { font-size: 25mm; font-weight: 700; color: var(--ink); letter-spacing: 1.2mm; }
+  .sub-en { margin-top: 7mm; font-size: 12.5mm; font-weight: 400; color: #3c3400; }
+
+  .gift {
+    width: 468mm; background: var(--black); border-radius: 10mm;
+    padding: 15mm 20mm 17mm; text-align: center;
+  }
+  .gift .chip {
+    display: inline-block; background: var(--yellow); color: var(--ink);
+    font-size: 10.5mm; font-weight: 800; letter-spacing: 2.2mm; text-transform: uppercase;
+    border-radius: 99mm; padding: 2.6mm 10mm 3mm;
+  }
+  .gift .en { margin-top: 7mm; font-size: 19mm; font-weight: 700; color: #ffffff; }
+  .gift .cn { margin-top: 4.5mm; font-size: 13.5mm; font-weight: 400; color: #d9d9d9; }
+
+  .how { width: 500mm; display: flex; gap: 12mm; }
+  .how .step {
+    flex: 1; border: 1.5mm solid var(--ink); border-radius: 9mm;
+    padding: 11mm 6mm 12mm; text-align: center;
+  }
+  .how .n { font-size: 9.5mm; font-weight: 800; letter-spacing: 1.6mm; color: #6b5c00; }
+  .how .en { margin-top: 3.5mm; font-size: 13mm; font-weight: 700; color: var(--ink); }
+  .how .cn { margin-top: 2.5mm; font-size: 9.5mm; color: #3c3400; }
+
+  .booth {
+    text-align: center;
+    font-size: 21mm; font-weight: 800; color: var(--ink); letter-spacing: 0.6mm;
+  }
+  .booth .no { display: inline-block; border-bottom: 1.6mm solid var(--ink); min-width: 96mm; }
+
+  .band {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 138mm; background: var(--black);
+    display: flex; align-items: center; justify-content: center; gap: 18mm;
+  }
+  .butlers { display: flex; gap: 10mm; }
+  .butlers img {
+    width: 54mm; height: 54mm; border-radius: 50%;
+    border: 1.8mm solid var(--yellow); background: #fff; object-fit: cover;
+  }
+  .band-text .t1 { font-size: 15.5mm; font-weight: 700; color: #ffffff; }
+  .band-text .t2 { margin-top: 5mm; font-size: 10mm; font-weight: 400; color: var(--yellow); }
+  .band-text .t3 { margin-top: 7mm; font-size: 8mm; letter-spacing: 1.6mm; color: #9a9a9a; }
+</style>
+</head>
+<body>
+  <div class="page">
+    <div class="content">
+      <img class="logo" src="{{LOGO_BLACK_URI}}" alt="leShine Hair">
+
+      <div class="headline"><span class="free">FREE</span>AI HAIR TRY-ON</div>
+
+      <div class="subwrap">
+        <div class="sub-cn">AI 试戴 · 限时免费体验</div>
+        <div class="sub-en">See yourself in a stunning new hairstyle — in 60 seconds.</div>
+      </div>
+
+      <div class="gift">
+        <div class="chip">Free gift</div>
+        <div class="en">AI portrait photo + photo frame</div>
+        <div class="cn">现场赠送 AI 写真照片与相框</div>
+      </div>
+
+      <div class="how">
+        <div class="step"><div class="n">STEP 1</div><div class="en">Snap a photo</div><div class="cn">拍张照片</div></div>
+        <div class="step"><div class="n">STEP 2</div><div class="en">Pick a hairstyle</div><div class="cn">挑个心动发型</div></div>
+        <div class="step"><div class="n">STEP 3</div><div class="en">Get your portrait</div><div class="cn">领取专属写真</div></div>
+      </div>
+
+      <div class="booth">VISIT OUR BOOTH&nbsp;&nbsp;·&nbsp;&nbsp;展位 <span class="no">&nbsp;</span></div>
+    </div>
+
+    <div class="band">
+      <div class="butlers">
+        <img src="{{AV1}}" alt=""><img src="{{AV2}}" alt=""><img src="{{AV3}}" alt=""><img src="{{AV4}}" alt="">
+      </div>
+      <div class="band-text">
+        <div class="t1">Meet your personal hair butlers</div>
+        <div class="t2">Get your butler's card at the gate · 凭名片到展位体验</div>
+        <div class="t3">leshine.work</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

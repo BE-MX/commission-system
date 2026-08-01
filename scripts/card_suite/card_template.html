@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>leShine card — {{NAME}}</title>
+<style>
+  :root {
+    --yellow: {{BRAND_YELLOW}};
+    --black: #101010;
+    --ink: #171717;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  @page { size: 94mm 58mm; margin: 0; }
+  html, body { width: 94mm; }
+  body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .page { position: relative; width: 94mm; height: 58mm; overflow: hidden; page-break-after: always; }
+  .page:last-child { page-break-after: auto; }
+
+  /* ---------- FRONT ---------- */
+  .front { background: var(--black); }
+  .edge { position: absolute; left: 0; top: 0; bottom: 0; width: 4.4mm; background: var(--yellow); }
+  .avatar {
+    position: absolute; left: 9.5mm; top: 7mm;
+    width: 15mm; height: 15mm; border-radius: 50%;
+    border: 0.5mm solid var(--yellow);
+    object-fit: cover; background: #fff;
+  }
+  .name {
+    position: absolute; left: 9.5mm; top: 25.2mm;
+    font-size: 6.6mm; font-weight: 650; letter-spacing: 0.15mm; color: #ffffff;
+  }
+  .title {
+    position: absolute; left: 9.7mm; top: 34.6mm;
+    font-size: 2.25mm; font-weight: 600; letter-spacing: 0.6mm;
+    text-transform: uppercase; color: var(--yellow);
+  }
+  .rule { position: absolute; left: 9.7mm; top: 39.4mm; width: 11mm; height: 0.32mm; background: rgba(255, 226, 82, 0.45); }
+  .email {
+    position: absolute; left: 9.7mm; top: 41.8mm;
+    font-size: 3.05mm; font-weight: 400; letter-spacing: 0.06mm; color: #ededed;
+  }
+  .wa {
+    position: absolute; left: 9.7mm; top: 46.4mm;
+    font-size: 3.05mm; font-weight: 400; color: #ededed;
+  }
+  .wa .lbl, .email .lbl { color: #9a9a9a; font-size: 2.1mm; letter-spacing: 0.35mm; margin-right: 1.1mm; }
+  .site {
+    position: absolute; left: 9.7mm; bottom: 5.5mm;
+    font-size: 2.15mm; letter-spacing: 0.42mm; color: #8f8f8f;
+  }
+  .qrpanel {
+    position: absolute; right: 7mm; top: 7mm;
+    width: 30mm; height: 30mm; background: #ffffff; border-radius: 2.2mm;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .qrpanel img { width: 26.6mm; height: 26.6mm; display: block; }
+  .qrcap {
+    position: absolute; right: 7mm; top: 39.6mm; width: 30mm; text-align: center;
+  }
+  .qrcap .l1 { font-size: 2.6mm; font-weight: 700; letter-spacing: 0.55mm; color: var(--yellow); text-transform: uppercase; }
+  .qrcap .l2 { margin-top: 1.1mm; font-size: 2.02mm; line-height: 1.4; color: #b8b8b8; }
+
+  /* ---------- BACK ---------- */
+  .back { background: var(--yellow); }
+  .back-inner {
+    position: absolute; inset: 0; padding: 6.4mm 12mm 5.4mm;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  .backlogo { width: 37mm; margin-top: 0; }
+  .howto {
+    margin-top: 2.9mm; font-size: 2.3mm; font-weight: 700; letter-spacing: 0.85mm;
+    text-transform: uppercase; color: var(--ink);
+  }
+  .steps { margin-top: 2.2mm; width: 71mm; display: flex; flex-direction: column; gap: 1.7mm; }
+  .step { display: flex; align-items: flex-start; gap: 2.2mm; }
+  .num {
+    flex: 0 0 auto; width: 4mm; height: 4mm; border-radius: 50%;
+    background: var(--ink); color: var(--yellow);
+    font-size: 2.3mm; font-weight: 700; line-height: 4mm; text-align: center;
+  }
+  .step p { font-size: 2.2mm; line-height: 1.36; color: #1c1c1c; padding-top: 0.35mm; }
+  .step b { font-weight: 650; }
+  .backsite {
+    margin-top: auto; text-align: center;
+    font-size: 2.4mm; font-weight: 700; letter-spacing: 0.5mm; color: var(--ink);
+  }
+</style>
+</head>
+<body>
+  <!-- FRONT -->
+  <div class="page front">
+    <div class="edge"></div>
+    <img class="avatar" src="{{AVATAR_URI}}" alt="">
+    <div class="name">{{NAME}}</div>
+    <div class="title">{{TITLE}}</div>
+    <div class="rule"></div>
+    <div class="email"><span class="lbl">MAIL</span>{{EMAIL}}</div>
+    {{WA_LINE}}
+    <div class="site">leshine.work</div>
+    <div class="qrpanel"><img src="{{QR_URI}}" alt="QR"></div>
+    <div class="qrcap">
+      <div class="l1">Scan me</div>
+      <div class="l2">Your personal<br>hair-business butler</div>
+    </div>
+  </div>
+
+  <!-- BACK -->
+  <div class="page back">
+    <div class="back-inner">
+      <img class="backlogo" src="{{LOGO_BLACK_URI}}" alt="leShine Hair">
+      <div class="howto">How to use this card</div>
+      <div class="steps">
+        <div class="step"><div class="num">1</div><p>Scan the QR code with your <b>phone camera, WhatsApp or WeChat</b> — no app needed.</p></div>
+        <div class="step"><div class="num">2</div><p>Browse hair FAQs and message <b>{{NAME}}</b> directly — anytime, anywhere.</p></div>
+        <div class="step"><div class="num">3</div><p>Enter your <b>passcode</b> (your e-mail or WhatsApp number) to open your private expo file &amp; photos.</p></div>
+      </div>
+      <div class="backsite">leshine.work</div>
+    </div>
+  </div>
+</body>
+</html>

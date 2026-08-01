@@ -71,3 +71,5 @@ backend/tmp/
 # 其他编码代理的本机配置（codex / superpowers）
 .codex/
 .superpowers/
+
+scripts/card_suite/out/
