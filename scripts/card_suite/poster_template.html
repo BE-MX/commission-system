@@ -9,68 +9,64 @@
   @page { size: 600mm 847mm; margin: 0; }
   html, body { width: 600mm; }
   body {
-    font-family: "Segoe UI", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
   .page { position: relative; width: 600mm; height: 847mm; background: var(--yellow); overflow: hidden; }
 
-  /* everything above the bottom band, evenly distributed — no dead zones */
+  /* 举牌场景：内容区均布，人群中一眼读完 —— 层级只有四级，无一处小字段落 */
   .content {
-    position: absolute; top: 0; left: 0; right: 0; bottom: 138mm;
+    position: absolute; top: 0; left: 0; right: 0; bottom: 196mm;
     display: flex; flex-direction: column; align-items: center;
-    justify-content: space-evenly; padding: 26mm 0 10mm;
+    justify-content: space-evenly; padding: 24mm 14mm 8mm;
   }
 
-  .logo { display: block; width: 205mm; }
+  .logo { display: block; width: 148mm; }
 
-  .headline {
-    text-align: center;
-    font-size: 70mm; line-height: 1.02; font-weight: 800; letter-spacing: -0.8mm; color: var(--ink);
+  .herowrap { text-align: center; }
+  .kicker {
+    font-size: 17mm; font-weight: 700; letter-spacing: 6mm; text-indent: 6mm;
+    text-transform: uppercase; color: var(--ink);
   }
-  .headline .free { display: block; font-size: 88mm; }
-  .subwrap { text-align: center; }
-  .sub-cn { font-size: 25mm; font-weight: 700; color: var(--ink); letter-spacing: 1.2mm; }
-  .sub-en { margin-top: 7mm; font-size: 12.5mm; font-weight: 400; color: #3c3400; }
+  .hero {
+    margin-top: 6mm;
+    font-size: 80mm; line-height: 0.98; font-weight: 800; letter-spacing: -1mm; color: var(--ink);
+    text-transform: uppercase; white-space: nowrap;
+  }
+  .badge {
+    display: inline-block; margin-top: 11mm; background: var(--black); color: var(--yellow);
+    font-size: 14.5mm; font-weight: 800; letter-spacing: 2.4mm; text-transform: uppercase;
+    border-radius: 99mm; padding: 5.5mm 15mm 6.5mm;
+  }
 
-  .gift {
-    width: 468mm; background: var(--black); border-radius: 10mm;
-    padding: 15mm 20mm 17mm; text-align: center;
+  .offer {
+    width: 500mm; background: var(--black); border-radius: 12mm;
+    padding: 17mm 20mm 19mm; text-align: center;
   }
-  .gift .chip {
-    display: inline-block; background: var(--yellow); color: var(--ink);
-    font-size: 10.5mm; font-weight: 800; letter-spacing: 2.2mm; text-transform: uppercase;
-    border-radius: 99mm; padding: 2.6mm 10mm 3mm;
-  }
-  .gift .en { margin-top: 7mm; font-size: 19mm; font-weight: 700; color: #ffffff; }
-  .gift .cn { margin-top: 4.5mm; font-size: 13.5mm; font-weight: 400; color: #d9d9d9; }
+  .offer .l1 { font-size: 25mm; font-weight: 800; letter-spacing: 0.8mm; color: #ffffff; text-transform: uppercase; }
+  .offer .l2 { margin-top: 6mm; font-size: 14.5mm; font-weight: 700; color: var(--yellow); }
+  .offer .l2 b { text-decoration: underline; text-underline-offset: 3mm; text-decoration-thickness: 1.6mm; }
 
-  .how { width: 500mm; display: flex; gap: 12mm; }
-  .how .step {
-    flex: 1; border: 1.5mm solid var(--ink); border-radius: 9mm;
-    padding: 11mm 6mm 12mm; text-align: center;
+  .bonus {
+    border: 1.6mm solid var(--ink); border-radius: 99mm;
+    padding: 5.5mm 16mm 6.5mm; text-align: center;
+    font-size: 10.5mm; font-weight: 700; letter-spacing: 0.8mm; color: var(--ink);
+    text-transform: uppercase;
   }
-  .how .n { font-size: 9.5mm; font-weight: 800; letter-spacing: 1.6mm; color: #6b5c00; }
-  .how .en { margin-top: 3.5mm; font-size: 13mm; font-weight: 700; color: var(--ink); }
-  .how .cn { margin-top: 2.5mm; font-size: 9.5mm; color: #3c3400; }
-
-  .booth {
-    text-align: center;
-    font-size: 21mm; font-weight: 800; color: var(--ink); letter-spacing: 0.6mm;
-  }
-  .booth .no { display: inline-block; border-bottom: 1.6mm solid var(--ink); min-width: 96mm; }
+  .bonus .free { background: var(--ink); color: var(--yellow); border-radius: 99mm; padding: 1.6mm 6mm 2mm; margin-right: 5mm; }
 
   .band {
-    position: absolute; left: 0; right: 0; bottom: 0; height: 138mm; background: var(--black);
-    display: flex; align-items: center; justify-content: center; gap: 18mm;
+    position: absolute; left: 0; right: 0; bottom: 0; height: 196mm; background: var(--black);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
   }
-  .butlers { display: flex; gap: 10mm; }
-  .butlers img {
-    width: 54mm; height: 54mm; border-radius: 50%;
-    border: 1.8mm solid var(--yellow); background: #fff; object-fit: cover;
+  .band .boothlbl {
+    font-size: 15mm; font-weight: 700; letter-spacing: 9mm; text-indent: 9mm;
+    text-transform: uppercase; color: #ffffff;
   }
-  .band-text .t1 { font-size: 15.5mm; font-weight: 700; color: #ffffff; }
-  .band-text .t2 { margin-top: 5mm; font-size: 10mm; font-weight: 400; color: var(--yellow); }
-  .band-text .t3 { margin-top: 7mm; font-size: 8mm; letter-spacing: 1.6mm; color: #9a9a9a; }
+  .band .boothno {
+    margin-top: 3mm; font-size: 118mm; line-height: 1; font-weight: 800;
+    letter-spacing: 1mm; color: var(--yellow); white-space: nowrap;
+  }
 </style>
 </head>
 <body>
@@ -78,37 +74,23 @@
     <div class="content">
       <img class="logo" src="{{LOGO_BLACK_URI}}" alt="leShine Hair">
 
-      <div class="headline"><span class="free">FREE</span>AI HAIR TRY-ON</div>
-
-      <div class="subwrap">
-        <div class="sub-cn">AI 试戴 · 限时免费体验</div>
-        <div class="sub-en">See yourself in a stunning new hairstyle — in 60 seconds.</div>
+      <div class="herowrap">
+        <div class="kicker">Hair Extensions</div>
+        <div class="hero">Genius Weft</div>
+        <div><span class="badge">The Patent-Source Factory</span></div>
       </div>
 
-      <div class="gift">
-        <div class="chip">Free gift</div>
-        <div class="en">AI portrait photo + photo frame</div>
-        <div class="cn">现场赠送 AI 写真照片与相框</div>
+      <div class="offer">
+        <div class="l1">All Colors &middot; In Stock</div>
+        <div class="l2">Show-special sample prices &mdash; <b>TODAY</b></div>
       </div>
 
-      <div class="how">
-        <div class="step"><div class="n">STEP 1</div><div class="en">Snap a photo</div><div class="cn">拍张照片</div></div>
-        <div class="step"><div class="n">STEP 2</div><div class="en">Pick a hairstyle</div><div class="cn">挑个心动发型</div></div>
-        <div class="step"><div class="n">STEP 3</div><div class="en">Get your portrait</div><div class="cn">领取专属写真</div></div>
-      </div>
-
-      <div class="booth">VISIT OUR BOOTH&nbsp;&nbsp;·&nbsp;&nbsp;展位 <span class="no">&nbsp;</span></div>
+      <div class="bonus"><span class="free">Free</span>AI Hair Try-On &middot; AI Portrait Photo &amp; Frame</div>
     </div>
 
     <div class="band">
-      <div class="butlers">
-        <img src="{{AV1}}" alt=""><img src="{{AV2}}" alt=""><img src="{{AV3}}" alt=""><img src="{{AV4}}" alt="">
-      </div>
-      <div class="band-text">
-        <div class="t1">Meet your personal hair butlers</div>
-        <div class="t2">Get your butler's card at the gate · 凭名片到展位体验</div>
-        <div class="t3">leshine.work</div>
-      </div>
+      <div class="boothlbl">Booth</div>
+      <div class="boothno">3#C01</div>
     </div>
   </div>
 </body>
