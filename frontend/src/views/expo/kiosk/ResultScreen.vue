@@ -115,6 +115,7 @@
 
 <script setup>
 import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { publicOrigin } from './publicUrl'
 
 const flow = inject('tryonFlow')
 
@@ -219,17 +220,10 @@ function updatePct(e) {
 
 // ── 分享二维码（qrcode 动态引入，失败静默降级为不显示） ──
 const qrEl = ref(null)
-// 二维码是给**客户手机**扫的，而展位平板自己走 https 只是为了拿 secure context 开相机——
-// IP 签不到 CA 证书，服务器挂的是自签证书，客户手机（尤其微信内置浏览器）根本不认，扫出来是白屏。
-// 所以 host 为裸 IP 时把分享链接降回 http；将来换成备案域名（正规证书）则保持 https。
-const IPV4_HOST = /^\d{1,3}(\.\d{1,3}){3}$/
+// http 降级规则（客户手机不认展位自签证书）见 publicUrl.js 顶部注释；扫码上传二维码共用同一 helper
 const shareUrl = computed(() => {
   if (!current.value?.short_code) return ''
-  // 只处理标准端口：带显式端口时无从推断对应的 http 端口，宁可原样不猜
-  const base = IPV4_HOST.test(location.hostname) && !location.port
-    ? `http://${location.hostname}`
-    : location.origin
-  return `${base}/api/expo/share/${current.value.short_code}`
+  return `${publicOrigin()}/api/expo/share/${current.value.short_code}`
 })
 watch([shareUrl, qrEl], async () => {
   if (!shareUrl.value) return
