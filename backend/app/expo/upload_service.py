@@ -11,6 +11,7 @@
 import hashlib
 import hmac
 import logging
+import re
 import time
 import uuid
 from pathlib import Path
@@ -25,11 +26,30 @@ PENDING_DIR = ai_pipeline.UPLOAD_ROOT / "pending"
 STALE_AFTER_SECONDS = 2 * 3600    # 待取照片留存上界
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 
+# 免登录端点统一话术：不区分「格式错」与「签名错」——对客户来说都只有一个可行动作
+# （回去重新扫码），暴露更细的原因没有意义，只会多一处需要翻译/维护的文案。
+_INVALID_TOKEN_MSG = "上传链接无效，请回到展位屏幕重新扫码"
+_SIGNATURE_RE = re.compile(r"^[0-9a-f]{16}$")
+
 
 def _sign(customer_id: int, exp: int) -> str:
     secret = get_settings().EXPO_UPLOAD_SIGN_SECRET
     msg = f"{customer_id}:{exp}"
     return hmac.new(secret.encode(), msg.encode(), hashlib.sha256).hexdigest()[:16]
+
+
+def secret_is_default() -> bool:
+    """密钥还是仓库里的默认字面量 = 任何能读代码的人都能离线伪造上传令牌。
+
+    上传页完全免登录，整个授权模型压在这个密钥上，默认值等于没锁。照 domestic
+    的 qr_secret_is_default 办（app/domestic/report_service.py）：由调用方在发码
+    端点上拒绝服务，逼着部署时配好 .env——而不是像 ASSET_SIGN_SECRET 那样
+    留一句注释，然后一直跑在默认值上。
+    """
+    from app.core.config import Settings
+
+    return get_settings().EXPO_UPLOAD_SIGN_SECRET == Settings.model_fields[
+        "EXPO_UPLOAD_SIGN_SECRET"].default
 
 
 def make_token(customer_id: int, ttl_seconds: int = TICKET_TTL_SECONDS) -> str:
@@ -38,18 +58,24 @@ def make_token(customer_id: int, ttl_seconds: int = TICKET_TTL_SECONDS) -> str:
     return f"{customer_id}-{exp}-{_sign(customer_id, exp)}"
 
 
-def parse_token(token: str) -> int:
-    """校验令牌并返回 customer_id；非法或过期抛 ValueError（文案直接面向客户）。"""
-    parts = (token or "").split("-")
-    if len(parts) != 3:
-        raise ValueError("上传码格式不正确")
+def parse_token(token: str | None) -> int:
+    """校验令牌并返回 customer_id；非法或过期抛 ValueError（文案直接面向客户）。
+
+    从右往左只切两刀（customer_id 允许负数，本身可能带 "-"）；签名段先做
+    形状校验再进 hmac.compare_digest —— 后者只接受可比较的 ASCII 字节串，
+    非法字符（如中文、emoji）传进去会抛 TypeError 而不是 ValueError，在一个
+    连鉴权都没有的公开端点上，这种未捕获的类型错误会变成 500。
+    """
+    parts = (token or "").rsplit("-", 2)
+    if len(parts) != 3 or not _SIGNATURE_RE.match(parts[2]):
+        raise ValueError(_INVALID_TOKEN_MSG)
     try:
         customer_id, exp = int(parts[0]), int(parts[1])
     except ValueError:
-        raise ValueError("上传码格式不正确") from None
+        raise ValueError(_INVALID_TOKEN_MSG) from None
     # 过期先于签名校验：过期的码无需再暴露签名是否正确
     if exp < time.time():
         raise ValueError("上传码已过期，请回到展位屏幕重新获取")
     if not hmac.compare_digest(parts[2], _sign(customer_id, exp)):
-        raise ValueError("上传码校验失败")
+        raise ValueError(_INVALID_TOKEN_MSG)
     return customer_id

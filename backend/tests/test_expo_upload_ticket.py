@@ -7,6 +7,7 @@ import time
 
 import pytest
 
+from app.core.config import get_settings
 from app.expo import upload_service
 
 
@@ -15,6 +16,12 @@ class TestToken:
         token = upload_service.make_token(42)
         assert upload_service.parse_token(token) == 42
 
+    def test_negative_customer_id_round_trips(self):
+        """customer_id 本身可能带负号，令牌里就有两个"-"歧义来源；
+        parse_token 必须从右只切两刀（rsplit(-, 2)）才能正确还原。"""
+        token = upload_service.make_token(-5)
+        assert upload_service.parse_token(token) == -5
+
     def test_expired_token_rejected(self):
         token = upload_service.make_token(42, ttl_seconds=-1)
         with pytest.raises(ValueError, match="已过期"):
@@ -22,31 +29,62 @@ class TestToken:
 
     def test_tampered_customer_id_rejected(self):
         _, exp, sig = upload_service.make_token(42).split("-")
-        with pytest.raises(ValueError, match="校验失败"):
+        with pytest.raises(ValueError, match="无效"):
             upload_service.parse_token(f"99-{exp}-{sig}")
 
     def test_tampered_expiry_rejected(self):
         cid, exp, sig = upload_service.make_token(42).split("-")
-        with pytest.raises(ValueError, match="校验失败"):
+        with pytest.raises(ValueError, match="无效"):
             upload_service.parse_token(f"{cid}-{int(exp) + 600}-{sig}")
 
     def test_tampered_signature_rejected(self):
         cid, exp, _ = upload_service.make_token(42).split("-")
-        with pytest.raises(ValueError, match="校验失败"):
+        with pytest.raises(ValueError, match="无效"):
             upload_service.parse_token(f"{cid}-{exp}-0000000000000000")
+
+    def test_non_ascii_signature_rejected_as_value_error(self):
+        """hmac.compare_digest 遇到非 ASCII 字符会抛 TypeError 而不是 ValueError；
+        这个端点完全免登录，一条乱码 URL 不该把 500 甩给顾客。签名段必须先过
+        形状校验（16 位十六进制）再进 compare_digest。"""
+        cid, exp, _ = upload_service.make_token(42).split("-")
+        with pytest.raises(ValueError, match="无效"):
+            upload_service.parse_token(f"{cid}-{exp}-{'é' * 16}")
 
     @pytest.mark.parametrize("bad", ["", "abc", "1-2", "1-2-3-4", "x-y-z"])
     def test_malformed_token_rejected(self, bad):
-        with pytest.raises(ValueError, match="格式不正确"):
+        with pytest.raises(ValueError, match="无效"):
             upload_service.parse_token(bad)
 
     def test_expiry_checked_before_signature(self):
-        """过期先于签名校验：过期令牌即使签名合法也不该泄露「签名对不对」的信息。"""
+        """过期先于签名校验：即便签名也被篡改成合法形状但错误的值，过期令牌
+        仍必须报「已过期」而不是「无效」——否则说明校验顺序被换掉了，
+        过期令牌会先泄露"签名对不对"这条本不该暴露的信息。"""
         token = upload_service.make_token(42, ttl_seconds=-1)
+        cid, exp, _ = token.split("-")
+        tampered = f"{cid}-{exp}-{'0' * 16}"
         with pytest.raises(ValueError, match="已过期"):
-            upload_service.parse_token(token)
+            upload_service.parse_token(tampered)
 
     def test_default_ttl_is_ten_minutes(self):
         before = int(time.time())
         _, exp, _ = upload_service.make_token(7).split("-")
-        assert 595 <= int(exp) - before <= 605
+        assert int(exp) - before in (600, 601)
+
+    def test_changing_secret_invalidates_existing_token(self, monkeypatch):
+        """签名必须真的用密钥算——把 _sign 换成不带密钥的哈希，全部前面的用例
+        照样全绿；只有换密钥后重新校验旧令牌才能戳穿这种"假签名"实现。"""
+        token = upload_service.make_token(42)
+        monkeypatch.setattr(get_settings(), "EXPO_UPLOAD_SIGN_SECRET", "a-different-deployment-secret")
+        with pytest.raises(ValueError, match="无效"):
+            upload_service.parse_token(token)
+
+
+class TestSecretIsDefault:
+    """密钥兜底判定：免登录端点的整个授权模型压在这个密钥上，默认值等于没锁。"""
+
+    def test_true_on_repo_default_secret(self):
+        assert upload_service.secret_is_default() is True
+
+    def test_false_once_overridden(self, monkeypatch):
+        monkeypatch.setattr(get_settings(), "EXPO_UPLOAD_SIGN_SECRET", "a-real-deployment-secret")
+        assert upload_service.secret_is_default() is False
