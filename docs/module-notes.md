@@ -615,6 +615,15 @@ frontend/src/
 - **归一后的纯数字是落库值**：`phone` 同时用于线索台关键词检索与 `mask_phone` 脱敏，库里混着带横杠和不带横杠的会让检索**静默漏命中**。
 - 真关卡在后端 schema（kiosk 页面可绕过，且同一 schema 服务建档与「返回上一步」修改两条路径）；前端那份只为让客户当场知道错在哪。
 
+**瘦脸客户出图变胖（2026-08-02，08-01 面部神采子句次日暴露）**
+
+亮哥反馈脸颊瘦的客户合成图两颊显著变胖。病灶全在 08-01 新增的用光/皮肤措辞：①「lift the shadow side with gentle fill」——生图模型没有打光只有重画，颧下凹陷被当暗部填掉，凹陷没了脸就圆（soft 版「heavy fill」最重）；②「do not slim the face」单向否定禁令，模型为保险往「不瘦」偏；③「blood warmth in the cheeks」的语料原型=饱满苹果肌。
+
+- 修法：填光带上限（保住暗部细节即可、结构性阴影不动）+ 对称几何锁（same face width/cheek contour/jawline as the first image, **neither slimmer nor fuller**）+ 血色只留唇。几何锁必须带「locks structure, not expression」豁免——场景文案明写 radiant smile，无豁免会僵脸或锁被无视。
+- A/B 实证（同图/同发型/同场景/同 look，每格 n=1）：旧版复现变胖，新版颊宽保真、08-01 的神采无回退、微笑场景表情自然。
+- 措辞设计依据唯一真相源=`_LIGHTING_BASE` 上方注释 ①~④；测试锚定：几何锁三版三路径全查、病灶词回潮探测扫整段 prompt、美颜版磨皮后复锁顺序断言。
+- 观察项：年长客户气色若因血色收窄回潮，用 "natural warmth in her complexion" 补，**不要**把 cheeks 加回来（无测试拦语义回潮，靠这行字）。
+
 ## 素材中台标签体系 v2（asset，2026-07-22 切换并退役旧维度）
 
 方案全文 `docs/requirements/2026-07-22-asset-tag-taxonomy.md`。旧 5 维体系是文件夹路径逐层平移的产物（文件夹=单层浏览结构，标签=多维正交检索结构，平移必乱），重构为 11 维正交体系。
