@@ -226,7 +226,8 @@
       <div v-permission="'card:write'" class="entry-form">
         <el-input v-model="entryForm.title" placeholder="标题（可选），如 Quotation / 展会合影" />
         <el-input v-model="entryForm.content" type="textarea" :rows="3" placeholder="沟通要点、报价说明……客户解锁后可见（英文面向客户）" />
-        <AppUpload v-model="entryFiles" :upload-fn="uploadAttachment" accept="image/*" :multiple="true" :limit="6" button-text="选择图片（客户照片/资料图）" />
+        <!-- max-size-mb 放宽到 30：原片先进来由 uploadFn 端上压缩（长边1600 JPEG），默认 10MB 闸门会把手机原片挡在压缩之前 -->
+        <AppUpload v-model="entryFiles" :upload-fn="uploadAttachment" accept="image/*" :max-size-mb="30" :multiple="true" :limit="6" button-text="选择图片（客户照片/资料图）" />
         <GlassButton variant="primary" :loading="entrySaving" style="width: 100%; margin-top: 10px" @click="saveEntry">录入纪要</GlassButton>
       </div>
     </DetailDrawer>

@@ -1,5 +1,6 @@
 /** 名片管家 API（/api/card/admin/*，card:read / card:write） */
 import { cardClient } from './clients'
+import { compressImage } from '@/utils/compressImage'
 
 // ---------- 业务员档案 ----------
 export function getSalespersons() {
@@ -40,11 +41,14 @@ export function deleteEntry(entryId) {
   return cardClient.delete(`/admin/entries/${entryId}`)
 }
 
-/** AppUpload 注入用：async (File, onProgress) => ({ path, url, name }) */
+/** AppUpload 注入用：async (File, onProgress) => ({ path, url, name })
+ * 先端上压缩再传（compressImage 注释里有为什么必须压）；跨境隧道慢，超时单独放宽。 */
 export async function uploadAttachment(file, onProgress) {
+  const prepared = await compressImage(file)
   const form = new FormData()
-  form.append('file', file)
+  form.append('file', prepared, prepared.name)
   const res = await cardClient.post('/admin/attachments', form, {
+    timeout: 180000,
     headers: { 'Content-Type': 'multipart/form-data' },
     onUploadProgress: e => {
       if (onProgress && e.total) onProgress(Math.round((e.loaded / e.total) * 100))
