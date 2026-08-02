@@ -536,12 +536,45 @@ class TestLightingBase:
             assert "never flat, dim or muddy" in prompt, f"{name} 缺面部用光指令"
             assert "distinct catchlights" in prompt, f"{name} 缺眼神光指令"
 
+    def test_face_geometry_lock_on_every_variant_and_path(self):
+        """对称几何锁（2026-08-01 补光上线次日瘦脸客户两颊变胖，2026-08-02 修）：
+        锁必须①对称（neither slimmer nor fuller）②正向锚回第一张图③带表情豁免——
+        场景置换放开表情且场景文案明写 smile，无豁免的 exact geometry 会僵脸或被无视。
+        三版三路径全查——锁在 _LIGHTING_BASE 里，谁把它挪进单个版本就会在这里挂掉。"""
+        for variant in ai_pipeline.PROMPT_VARIANTS:
+            for name, prompt in _variant_prompts(variant=variant).items():
+                assert "neither slimmer nor fuller" in prompt, f"{variant}/{name} 缺对称几何锁"
+                assert "same face width, cheek contour and jawline" in prompt, \
+                    f"{variant}/{name} 缺脸型几何锚定"
+                assert "locks her facial structure, not her expression" in prompt, \
+                    f"{variant}/{name} 几何锁缺表情豁免"
+        # 美颜版必须在磨皮指令**之后**再锁一次几何（含 eye size——磨皮语境下笑会眯眼）；
+        # 位置权重靠后，先锁后磨等于没锁，顺序也锚死
+        beauty = ai_pipeline.resolve_prompt_variant("beauty")
+        relock = "cheek contour, jawline and eye size"
+        assert relock in beauty, "美颜版缺磨皮后几何复锁"
+        assert beauty.index("smooth, luminous finish") < beauty.index(relock), \
+            "几何复锁必须排在磨皮指令之后"
+
+    def test_one_way_slimming_ban_stays_dead(self):
+        """旧措辞回归探测（2026-08-02 病灶三件套）：「do not slim the face」单向禁令、
+        「heavy fill / 无上限填光」、「warmth in the cheeks」苹果肌血色意象。
+        扫**整段 prompt**而非仅版本子句——加回场景子句或合成模板同样要挂。"""
+        for variant in ai_pipeline.PROMPT_VARIANTS:
+            for name, prompt in _variant_prompts(variant=variant).items():
+                where = f"{variant}/{name}"
+                assert "do not slim the face" not in prompt, f"{where} 单向禁令回潮"
+                assert "heavy fill" not in prompt, f"{where} 重填光措辞回潮"
+                assert "lift the shadow side with gentle fill" not in prompt, \
+                    f"{where} 无上限填光措辞回潮"
+                assert "warmth in the cheeks" not in prompt, f"{where} 苹果肌血色意象回潮"
+
     def test_default_variant_keeps_the_anti_retouch_guards(self):
         """默认版（真实）打光不等于放开磨皮：禁项必须与给项同时在场，缺一就会滑向美颜。"""
         for name, prompt in _variant_prompts(variant="real").items():
             assert "do not smooth, retouch, plump, lighten or rejuvenate" in prompt, name
             assert "wrinkle, eye bag and age spot stays exactly as in the original" in prompt, name
-            assert "do not slim the face or enlarge the eyes" in prompt, name
+            assert "light may model her features, never reshape them" in prompt, name
 
     def test_only_the_beauty_variant_may_use_retouch_words(self):
         """radiant/glowing/youthful 是美颜滤镜触发词：真实/柔光两版一旦沾上就翻车成磨皮脸。

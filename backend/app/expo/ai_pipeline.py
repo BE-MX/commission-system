@@ -742,14 +742,11 @@ _FRAMING_CLAUSE = (
 # 完全一致」和「禁止过度磨皮」两道锁，模型最省力的解就是把脸平铺直叙地渲出来，于是暗、
 # 平、没有立体感。胶原蛋白少的脸在平光下尤其显疲态，所以在年长客户身上先暴露。
 # 因此补的是**摄影用光与眼神**，不是美颜：
-#   给 = 暗部补光、颧骨眉弓的塑形光、眼神光、面部高点的镜面微光、唇颊血色
-#   禁 = 磨皮/去皱/丰盈/提亮肤色/瘦脸/放大眼睛（逐项写死，堵掉模型「变年轻=变好看」的捷径）
-# 三条刻意为之的措辞，改动前先读：
-# ①不写 radiant/glowing/youthful——这些是美颜滤镜触发词，一写就翻车成磨皮脸；
-# ②不指定主光位，只说「跟随现场光方向再塑形」——原景保持路径要求沿用客户原照片的光，
-#   硬派一盏新主光会让脸与背景光不咬合，反而更像贴图；
-# ③不提年龄：prompt 里出现 mature/elderly 会把人往老里推，而 age_range 是模型估的本就
-#   不可靠。这条对所有年龄都成立，故全量注入、不做条件分支。
+#   给 = 暗部补光（以保住细节为限，结构阴影不动）、颧骨眉弓的塑形光、眼神光、
+#        面部高点的镜面微光、唇部血色（2026-08-02 起血色只留唇、几何由对称锁保护，
+#        原「唇颊血色+逐项禁瘦脸」把瘦脸客户画胖，机制见 _LIGHTING_BASE ④）
+#   禁 = 磨皮/去皱/丰盈/提亮肤色（逐项写死，堵掉模型「变年轻=变好看」的捷径）
+# 措辞注意事项 ①~④ 见 _LIGHTING_BASE 上方注释（唯一真相源，此处不重复）。
 # 合成版本（2026-08-01 亮哥指令）：客户在甄选页必选一个，三版差别**只在皮肤怎么处理**，
 # 用光一律打好——「真实版」是真实的好照片，不是没打光的照片。若真实版不打光，今早那条
 # 反馈对每一个不改默认值的客户就原封不动地留着，而绝大多数客户不会去改默认值。
@@ -763,28 +760,45 @@ PROMPT_VARIANTS = ("real", "soft", "beauty")
 DEFAULT_PROMPT_VARIANT = "real"
 
 # 三版共用的用光底座：补的是**摄影用光与眼神**，不是美颜。
-# 三条刻意为之的措辞，改动前先读：
+# 四条刻意为之的措辞，改动前先读：
 # ①不写 radiant/glowing/youthful——这些是美颜滤镜触发词，一写就翻车成磨皮脸（真实/柔光两版
 #   尤其不能出现；美颜版另有专门措辞，见下）；
 # ②不指定主光位，只说「跟随现场光方向再塑形」——原景保持路径要求沿用客户原照片的光，
 #   硬派一盏新主光会让脸与背景光不咬合，反而更像贴图；
 # ③不提年龄：prompt 里出现 mature/elderly 会把人往老里推，而 age_range 是模型估的本就不可靠。
+# ④几何锁必须**对称且正向**（2026-08-02 亮哥反馈「瘦脸颊客户出图两颊显著变胖」）：
+#   上一版「lift the shadow side with gentle fill」把瘦脸的颧下凹陷当暗部填掉——生图模型
+#   不是真打光而是重画脸，凹陷一填脸颊就圆；且旧禁令「do not slim the face」是单向的，
+#   模型为保险只往「不瘦」偏，瘦脸客户首当其冲。修法=填光限定「保住暗部细节即可、
+#   结构性阴影不许动」+ 对称几何锁「neither slimmer nor fuller」锚回第一张图。
+#   锁里不点名 hollows 方向（瘦脸保凹陷/圆脸不许挖凹陷，条件措辞模型执行不稳，
+#   锚「与原图一致」两个方向都兜住）。锁必须带「structure, not expression」豁免：
+#   场景置换路径放开表情且多个场景文案明写 smile（微笑天然改变颊形），无豁免的
+#   exact geometry 排在其后会打架——要么僵脸要么锁被无视（对抗性审查 2026-08-02）。
 _LIGHTING_BASE = (
     " Give her face the same attention a portrait photographer would: follow the existing "
-    "light direction of the scene, but shape it - lift the shadow side with gentle fill and "
-    "let a soft key catch the cheekbones and brow, so her face reads three-dimensional and "
-    "never flat, dim or muddy. Her eyes must look clear, awake and engaged, with distinct "
+    "light direction of the scene, but shape it - lift the shadow side only enough to keep "
+    "its detail readable, preserving the natural shadows that define her bone structure, "
+    "and let a soft key catch the cheekbones and brow, so her face reads three-dimensional "
+    "and never flat, dim or muddy. Her face must keep the exact geometry of the first "
+    "image - the same face width, cheek contour and jawline, neither slimmer nor fuller; "
+    "this locks her facial structure, not her expression - light may model her features, "
+    "never reshape them. Her eyes must look clear, awake and engaged, with distinct "
     "catchlights."
 )
 
-# 皮肤纹理不可动的措辞（真实版）：逐项写死，堵掉模型「变年轻=变好看」的捷径
+# 皮肤纹理不可动的措辞（真实版）：逐项写死，堵掉模型「变年轻=变好看」的捷径。
+# 2026-08-02 摘掉两处（瘦脸变胖修复，机制见 _LIGHTING_BASE ④）：
+#   「blood warmth in the cheeks」→ 只留唇——「脸颊红润」在训练语料里的原型就是饱满苹果肌，
+#   等于把「饱满」意象押在 cheeks 上；气色由光和唇色承担。
+#   「do not slim the face or enlarge the eyes」→ 删——单向否定禁令，已被 _LIGHTING_BASE
+#   的对称几何锁（含 eye size 由 identity 锁兜底）取代，别再加回来。
 _SKIN_UNTOUCHED = (
     " Keep the skin alive rather than smooth: a fine specular sheen on the forehead, "
-    "cheekbones, nose bridge and lips, and natural blood warmth in the cheeks and lips. "
+    "cheekbones, nose bridge and lips, and natural blood warmth in the lips. "
     "Every pore, fine line, wrinkle, eye bag and age spot stays exactly as in the original "
-    "photo - do not smooth, retouch, plump, lighten or rejuvenate the skin, do not slim the "
-    "face or enlarge the eyes. The liveliness must come from light, gaze and colour, never "
-    "from erasing her age."
+    "photo - do not smooth, retouch, plump, lighten or rejuvenate the skin. The liveliness "
+    "must come from light, gaze and colour, never from erasing her age."
 )
 
 # 头发保护句：只出现在美颜版。磨皮会连带把发丝磨成塑料感，而发丝正是这个产品要卖的东西，
@@ -798,12 +812,15 @@ _HAIR_FIDELITY_GUARD = (
 _PROMPT_VARIANT_CLAUSES = {
     # 真实版：打光 + 皮肤一动不动
     "real": _LIGHTING_BASE + _SKIN_UNTOUCHED,
-    # 柔光版：更柔的光、暗部更亮，皮肤纹理仍然保留——观感更润，但不是磨皮
+    # 柔光版：更柔的光、更低的反差，皮肤纹理仍然保留——观感更润，但不是磨皮。
+    # 2026-08-02：原「shadow side lifted further…heavy fill」是全 prompt 里最重的填光措辞
+    # （heavy fill 在摄影语义里就是把面部立体凹陷抹平的布光），瘦脸变胖在本版最严重；
+    # 柔=光源大、影缘软，不等于把结构阴影填没，见 _LIGHTING_BASE ④
     "soft": (
         _LIGHTING_BASE
-        + " Use a softer, more diffused light overall - a large gentle source with the shadow "
-        "side lifted further, so contrast is low and the modelling is smooth rather than "
-        "sculpted, the way a beauty dish with heavy fill renders a face."
+        + " Use a softer, more diffused light overall - a large gentle source that lowers "
+        "contrast for a smooth, flattering render, while the shadows that define her face "
+        "shape stay present, only softer-edged."
         + _SKIN_UNTOUCHED
     ),
     # 美颜版：真磨皮提亮。这里刻意允许上面禁掉的那类词，因为这正是本版要的效果；
@@ -815,7 +832,12 @@ _PROMPT_VARIANT_CLAUSES = {
         "under-eye shadows and blemishes, and give the skin a smooth, luminous finish - while "
         "keeping her facial features, bone structure and identity unmistakably the same person, "
         "and keeping enough skin texture that she still reads as a photograph rather than an "
-        "illustration. Do not slim the face or enlarge the eyes."
+        # 图像模型位置权重偏向靠后（同 C1 审查）：几何复锁必须排在磨皮指令之后（顺序有
+        # 测试锚定）——用对称正向措辞+表情豁免，不用「Do not slim」单向禁令（2026-08-02，
+        # 见 _LIGHTING_BASE ④；eye size 入锁因为磨皮语境下笑会眯眼，锁结构不锁表情）
+        "illustration. Her face keeps the exact geometry of the first image - the same face "
+        "width, cheek contour, jawline and eye size, neither slimmer nor fuller; this locks "
+        "her facial structure, not her expression."
         + _HAIR_FIDELITY_GUARD
     ),
 }
