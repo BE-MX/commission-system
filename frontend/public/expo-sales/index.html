@@ -305,65 +305,65 @@
 "use strict";
 
 /* ================= 商品数据（来源：广州展会样品明细最终版.pdf） =================
-   pr = 每件单价($)；per = 每包件数；包价 = pr × per；n = 初始包数 */
+   pr = 每件单价($)；u = 计价单位；n = 库存件数（与单价同单位） */
 const ITEMS = [
-{id:1, p:"天才发帘",g:"B1",s:"20g/条",z:"18",c:"#1B",n:18,pr:28.17,per:3,cat:"发帘"},
-{id:2, p:"天才发帘",g:"B1",s:"20g/条",z:"18",c:"#5ATP9A/60",n:18,pr:30.55,per:3,cat:"发帘"},
-{id:3, p:"天才发帘",g:"B1",s:"20g/条",z:"18",c:"#9ATP9A/613",n:18,pr:30.55,per:3,cat:"发帘"},
-{id:4, p:"天才发帘",g:"B1",s:"20g/条",z:"18",c:"#1006",n:18,pr:28.17,per:3,cat:"发帘"},
-{id:5, p:"天才发帘",g:"B1",s:"20g/条",z:"18",c:"#2TP2/6",n:12,pr:30.55,per:3,cat:"发帘"},
-{id:6, p:"天才发帘",g:"B1",s:"20g/条",z:"18",c:"#62",n:6,pr:28.17,per:3,cat:"发帘"},
-{id:7, p:"天才发帘",g:"B1",s:"20g/条",z:"22",c:"#8TP8/18",n:18,pr:43.40,per:3,cat:"发帘"},
-{id:8, p:"天才发帘",g:"B1",s:"20g/条",z:"22",c:"#5ATP9A/60",n:18,pr:43.40,per:3,cat:"发帘"},
-{id:9, p:"天才发帘",g:"B1",s:"20g/条",z:"22",c:"#2",n:18,pr:41.02,per:3,cat:"发帘"},
-{id:10,p:"天才发帘",g:"B1",s:"20g/条",z:"22",c:"#2TP8/60",n:18,pr:43.40,per:3,cat:"发帘"},
-{id:11,p:"天才发帘",g:"B1",s:"20g/条",z:"22",c:"#2TP2/8A",n:12,pr:43.40,per:3,cat:"发帘"},
-{id:12,p:"天才发帘",g:"B1",s:"20g/条",z:"22",c:"#5ATP8A/24",n:12,pr:43.40,per:3,cat:"发帘"},
-{id:13,p:"天才发帘",g:"B3",s:"20g/条",z:"18",c:"#5ATP9A/60",n:12,pr:26.89,per:3,cat:"发帘"},
-{id:14,p:"天才发帘",g:"B3",s:"20g/条",z:"18",c:"#1006",n:12,pr:24.51,per:3,cat:"发帘"},
-{id:15,p:"天才发帘",g:"B3",s:"20g/条",z:"22",c:"#2",n:12,pr:38.07,per:3,cat:"发帘"},
-{id:16,p:"天才发帘",g:"B3",s:"20g/条",z:"22",c:"#60",n:12,pr:38.07,per:3,cat:"发帘"},
-{id:17,p:"天才发帘",g:"B3",s:"20g/条",z:"18",c:"#30",n:6,pr:24.51,per:3,cat:"发帘"},
-{id:18,p:"天才发帘",g:"50%幅度",s:"20g/条",z:"18",c:"#Cookies Cream",n:12,pr:35.69,per:3,cat:"发帘"},
-{id:19,p:"天才发帘",g:"50%幅度",s:"20g/条",z:"22",c:"#2TP8/60",n:12,pr:51.10,per:3,cat:"发帘"},
-{id:20,p:"天才发帘",g:"B1",s:"50g/条",z:"22",c:"#9ATP9A/613",n:12,pr:107.25,per:1,cat:"发帘"},
-{id:21,p:"天才发帘",g:"B1",s:"50g/条",z:"22",c:"#5ATP9A/60",n:12,pr:107.25,per:1,cat:"发帘"},
-{id:22,p:"中间打孔发帘",g:"B1",s:"60g/条",z:"20",c:"#8TP8/18",n:4,pr:115.53,per:1,cat:"发帘"},
-{id:23,p:"中间打孔发帘",g:"B1",s:"60g/条",z:"20",c:"#2TP8/60",n:4,pr:115.53,per:1,cat:"发帘"},
-{id:24,p:"中间打孔发帘",g:"B1",s:"60g/条",z:"20",c:"#5ATP9A/1001",n:4,pr:115.53,per:1,cat:"发帘"},
-{id:25,p:"中间打孔发帘",g:"B3",s:"60g/条",z:"18",c:"#1006 & #9ATP9A/613",n:6,pr:80.47,per:1,cat:"发帘"},
-{id:26,p:"中间打孔发帘",g:"B3",s:"60g/条",z:"18",c:"#4TP8/18&#2TP2/8",n:2,pr:80.47,per:1,cat:"发帘"},
-{id:27,p:"天才+打孔发帘",g:"B3",s:"50g/条",z:"18",c:"#2TP8/60",n:2,pr:67.98,per:1,cat:"发帘"},
-{id:28,p:"天才+打孔发帘",g:"B3",s:"50g/条",z:"18",c:"#1006",n:2,pr:62.32,per:1,cat:"发帘"},
-{id:29,p:"机织贴发",g:"B1",s:"2.5g/片",z:"22",c:"#2B",n:80,pr:6.22,per:20,cat:"贴发"},
-{id:30,p:"机织贴发",g:"B1",s:"2.5g/片",z:"22",c:"#5ATP5A/1006",n:80,pr:6.55,per:20,cat:"贴发"},
-{id:31,p:"普通贴发",g:"B1",s:"2.5g/片",z:"18",c:"#5ATP9A/60",n:40,pr:3.77,per:20,cat:"贴发"},
-{id:32,p:"普通贴发",g:"B1",s:"2.5g/片",z:"22",c:"#5ATP9A/60",n:40,pr:5.37,per:20,cat:"贴发"},
-{id:33,p:"普通贴发",g:"B1",s:"2.5g/片",z:"22",c:"#2TP8/60",n:80,pr:5.37,per:20,cat:"贴发"},
-{id:34,p:"普通贴发",g:"B1",s:"2.5g/片",z:"22",c:"#8TP8/18",n:80,pr:5.37,per:20,cat:"贴发"},
-{id:35,p:"平型接发",g:"B1",s:"1g/根",z:"22",c:"#9ATP9A/613",n:200,pr:2.07,per:50,cat:"接发"},
-{id:36,p:"平型接发",g:"B1",s:"1g/根",z:"22",c:"#8TP8/18",n:200,pr:2.07,per:50,cat:"接发"},
-{id:37,p:"平型接发",g:"B1",s:"1g/根",z:"18",c:"#1006",n:150,pr:1.31,per:50,cat:"接发"},
-{id:38,p:"平型接发",g:"B1",s:"1g/根",z:"18",c:"#1B",n:200,pr:1.31,per:50,cat:"接发"},
-{id:39,p:"平型接发",g:"B3",s:"1g/根",z:"18",c:"#4TP8/18",n:100,pr:1.24,per:50,cat:"接发"},
-{id:40,p:"平型接发",g:"B3",s:"1g/根",z:"22",c:"#Cookies Cream",n:100,pr:1.92,per:50,cat:"接发"},
-{id:41,p:"平型接发",g:"B3",s:"1g/根",z:"22",c:"#2TP8/60",n:100,pr:1.92,per:50,cat:"接发"},
-{id:42,p:"铁丝",g:"B1",s:"1g/根",z:"22",c:"#8TP8/18",n:200,pr:2.10,per:50,cat:"接发"},
-{id:43,p:"铁丝",g:"B1",s:"1g/根",z:"22",c:"#1B",n:100,pr:1.98,per:50,cat:"接发"},
-{id:44,p:"铁丝",g:"B3",s:"1g/根",z:"18",c:"#1006",n:100,pr:2.10,per:50,cat:"接发"},
-{id:45,p:"铁丝",g:"B3",s:"1g/根",z:"22",c:"#2TP8/60",n:200,pr:1.95,per:50,cat:"接发"},
-{id:46,p:"铁丝",g:"B3",s:"1g/根",z:"18",c:"#8TP8/18",n:200,pr:1.27,per:50,cat:"接发"},
-{id:47,p:"迷你平型",g:"B3",s:"0.8g/根",z:"22",c:"#5ATP5A/1006",n:200,pr:1.53,per:50,cat:"接发"},
-{id:48,p:"哑光棒棒",g:"B3",s:"1g/根",z:"18",c:"#5ATP5A/1006",n:100,pr:1.27,per:50,cat:"接发"},
-{id:49,p:"羽毛接发",g:"B3",s:"0.75g/根",z:"22",c:"#22",n:50,pr:1.44,per:50,cat:"接发"},
-{id:50,p:"羽毛接发",g:"B3",s:"1.5g/根",z:"22",c:"#14",n:50,pr:2.88,per:50,cat:"接发"},
-{id:51,p:"自然曲",g:"B1",s:"25g/条",z:"20",c:"#5ATP18B/62",n:8,pr:48.23,per:4,cat:"曲发"},
-{id:52,p:"Curly",g:"B1",s:"25g/条",z:"20",c:"#8T18",n:4,pr:47.98,per:4,cat:"曲发"},
-{id:53,p:"Curly",g:"B1",s:"25g/条",z:"20",c:"#5AT22",n:4,pr:47.98,per:4,cat:"曲发"},
-{id:54,p:"库存色色板",g:"",s:"",z:"",c:"",n:28,pr:75.00,per:1,cat:"配件"},
-{id:55,p:"接发工具包",g:"",s:"",z:"",c:"",n:2,pr:45.00,per:1,cat:"配件"},
-{id:56,p:"贴发替换胶",g:"",s:"",z:"",c:"",n:1,pr:7.50,per:1,cat:"配件"},
-{id:57,p:"接发环",g:"",s:"",z:"",c:"",n:1,pr:10.00,per:1,cat:"配件"},
+{id:1, p:"天才发帘",g:"B1",s:"20g/条",z:"18",c:"#1B",n:18,pr:28.17,u:"条"},
+{id:2, p:"天才发帘",g:"B1",s:"20g/条",z:"18",c:"#5ATP9A/60",n:18,pr:30.55,u:"条"},
+{id:3, p:"天才发帘",g:"B1",s:"20g/条",z:"18",c:"#9ATP9A/613",n:18,pr:30.55,u:"条"},
+{id:4, p:"天才发帘",g:"B1",s:"20g/条",z:"18",c:"#1006",n:18,pr:28.17,u:"条"},
+{id:5, p:"天才发帘",g:"B1",s:"20g/条",z:"18",c:"#2TP2/6",n:12,pr:30.55,u:"条"},
+{id:6, p:"天才发帘",g:"B1",s:"20g/条",z:"18",c:"#62",n:6,pr:28.17,u:"条"},
+{id:7, p:"天才发帘",g:"B1",s:"20g/条",z:"22",c:"#8TP8/18",n:18,pr:43.40,u:"条"},
+{id:8, p:"天才发帘",g:"B1",s:"20g/条",z:"22",c:"#5ATP9A/60",n:18,pr:43.40,u:"条"},
+{id:9, p:"天才发帘",g:"B1",s:"20g/条",z:"22",c:"#2",n:18,pr:41.02,u:"条"},
+{id:10,p:"天才发帘",g:"B1",s:"20g/条",z:"22",c:"#2TP8/60",n:18,pr:43.40,u:"条"},
+{id:11,p:"天才发帘",g:"B1",s:"20g/条",z:"22",c:"#2TP2/8A",n:12,pr:43.40,u:"条"},
+{id:12,p:"天才发帘",g:"B1",s:"20g/条",z:"22",c:"#5ATP8A/24",n:12,pr:43.40,u:"条"},
+{id:13,p:"天才发帘",g:"B3",s:"20g/条",z:"18",c:"#5ATP9A/60",n:12,pr:26.89,u:"条"},
+{id:14,p:"天才发帘",g:"B3",s:"20g/条",z:"18",c:"#1006",n:12,pr:24.51,u:"条"},
+{id:15,p:"天才发帘",g:"B3",s:"20g/条",z:"22",c:"#2",n:12,pr:38.07,u:"条"},
+{id:16,p:"天才发帘",g:"B3",s:"20g/条",z:"22",c:"#60",n:12,pr:38.07,u:"条"},
+{id:17,p:"天才发帘",g:"B3",s:"20g/条",z:"18",c:"#30",n:6,pr:24.51,u:"条"},
+{id:18,p:"天才发帘",g:"50%幅度",s:"20g/条",z:"18",c:"#Cookies Cream",n:12,pr:35.69,u:"条"},
+{id:19,p:"天才发帘",g:"50%幅度",s:"20g/条",z:"22",c:"#2TP8/60",n:12,pr:51.10,u:"条"},
+{id:20,p:"天才发帘",g:"B1",s:"50g/条",z:"22",c:"#9ATP9A/613",n:12,pr:107.25,u:"条"},
+{id:21,p:"天才发帘",g:"B1",s:"50g/条",z:"22",c:"#5ATP9A/60",n:12,pr:107.25,u:"条"},
+{id:22,p:"中间打孔发帘",g:"B1",s:"60g/条",z:"20",c:"#8TP8/18",n:4,pr:115.53,u:"条"},
+{id:23,p:"中间打孔发帘",g:"B1",s:"60g/条",z:"20",c:"#2TP8/60",n:4,pr:115.53,u:"条"},
+{id:24,p:"中间打孔发帘",g:"B1",s:"60g/条",z:"20",c:"#5ATP9A/1001",n:4,pr:115.53,u:"条"},
+{id:25,p:"中间打孔发帘",g:"B3",s:"60g/条",z:"18",c:"#1006 & #9ATP9A/613",n:6,pr:80.47,u:"条"},
+{id:26,p:"中间打孔发帘",g:"B3",s:"60g/条",z:"18",c:"#4TP8/18&#2TP2/8",n:2,pr:80.47,u:"条"},
+{id:27,p:"天才+打孔发帘",g:"B3",s:"50g/条",z:"18",c:"#2TP8/60",n:2,pr:67.98,u:"条"},
+{id:28,p:"天才+打孔发帘",g:"B3",s:"50g/条",z:"18",c:"#1006",n:2,pr:62.32,u:"条"},
+{id:29,p:"机织贴发",g:"B1",s:"2.5g/片",z:"22",c:"#2B",n:80,pr:6.22,u:"片"},
+{id:30,p:"机织贴发",g:"B1",s:"2.5g/片",z:"22",c:"#5ATP5A/1006",n:80,pr:6.55,u:"片"},
+{id:31,p:"普通贴发",g:"B1",s:"2.5g/片",z:"18",c:"#5ATP9A/60",n:40,pr:3.77,u:"片"},
+{id:32,p:"普通贴发",g:"B1",s:"2.5g/片",z:"22",c:"#5ATP9A/60",n:40,pr:5.37,u:"片"},
+{id:33,p:"普通贴发",g:"B1",s:"2.5g/片",z:"22",c:"#2TP8/60",n:80,pr:5.37,u:"片"},
+{id:34,p:"普通贴发",g:"B1",s:"2.5g/片",z:"22",c:"#8TP8/18",n:80,pr:5.37,u:"片"},
+{id:35,p:"平型接发",g:"B1",s:"1g/根",z:"22",c:"#9ATP9A/613",n:200,pr:2.07,u:"根"},
+{id:36,p:"平型接发",g:"B1",s:"1g/根",z:"22",c:"#8TP8/18",n:200,pr:2.07,u:"根"},
+{id:37,p:"平型接发",g:"B1",s:"1g/根",z:"18",c:"#1006",n:150,pr:1.31,u:"根"},
+{id:38,p:"平型接发",g:"B1",s:"1g/根",z:"18",c:"#1B",n:200,pr:1.31,u:"根"},
+{id:39,p:"平型接发",g:"B3",s:"1g/根",z:"18",c:"#4TP8/18",n:100,pr:1.24,u:"根"},
+{id:40,p:"平型接发",g:"B3",s:"1g/根",z:"22",c:"#Cookies Cream",n:100,pr:1.92,u:"根"},
+{id:41,p:"平型接发",g:"B3",s:"1g/根",z:"22",c:"#2TP8/60",n:100,pr:1.92,u:"根"},
+{id:42,p:"铁丝",g:"B1",s:"1g/根",z:"22",c:"#8TP8/18",n:200,pr:2.10,u:"根"},
+{id:43,p:"铁丝",g:"B1",s:"1g/根",z:"22",c:"#1B",n:100,pr:1.98,u:"根"},
+{id:44,p:"铁丝",g:"B3",s:"1g/根",z:"18",c:"#1006",n:100,pr:2.10,u:"根"},
+{id:45,p:"铁丝",g:"B3",s:"1g/根",z:"22",c:"#2TP8/60",n:200,pr:1.95,u:"根"},
+{id:46,p:"铁丝",g:"B3",s:"1g/根",z:"18",c:"#8TP8/18",n:200,pr:1.27,u:"根"},
+{id:47,p:"迷你平型",g:"B3",s:"0.8g/根",z:"22",c:"#5ATP5A/1006",n:200,pr:1.53,u:"根"},
+{id:48,p:"哑光棒棒",g:"B3",s:"1g/根",z:"18",c:"#5ATP5A/1006",n:100,pr:1.27,u:"根"},
+{id:49,p:"羽毛接发",g:"B3",s:"0.75g/根",z:"22",c:"#22",n:50,pr:1.44,u:"根"},
+{id:50,p:"羽毛接发",g:"B3",s:"1.5g/根",z:"22",c:"#14",n:50,pr:2.88,u:"根"},
+{id:51,p:"自然曲",g:"B1",s:"25g/条",z:"20",c:"#5ATP18B/62",n:8,pr:48.23,u:"条"},
+{id:52,p:"Curly",g:"B1",s:"25g/条",z:"20",c:"#8T18",n:4,pr:47.98,u:"条"},
+{id:53,p:"Curly",g:"B1",s:"25g/条",z:"20",c:"#5AT22",n:4,pr:47.98,u:"条"},
+{id:54,p:"库存色色板",g:"",s:"",z:"",c:"",n:28,pr:75.00,u:"个"},
+{id:55,p:"接发工具包",g:"",s:"",z:"",c:"",n:2,pr:45.00,u:"个"},
+{id:56,p:"贴发替换胶",g:"",s:"",z:"",c:"",n:1,pr:7.50,u:"个"},
+{id:57,p:"接发环",g:"",s:"",z:"",c:"",n:1,pr:10.00,u:"个"},
 ];
 /* 分类严格按照清单中的产品类型与命名 */
 const CATS = ["全部", ...new Set(ITEMS.map(it=>it.p))];
@@ -375,13 +375,13 @@ let state = { stock:{}, cart:{}, orders:[], seq:1 };
 function save(){
   try{ localStorage.setItem(LS_KEY, JSON.stringify(state)); }catch(e){}
 }
-const STOCK_VER = 2;  /* 库存数据版本：初始库存调整时 +1，各设备打开时自动重新播种 */
+const STOCK_VER = 3;  /* 库存数据版本：初始库存或计价单位调整时 +1，各设备打开时自动重新播种并清空购物车 */
 function load(){
   try{
     const raw = localStorage.getItem(LS_KEY);
     if(raw){ const s = JSON.parse(raw); if(s && s.stock) state = s; }
   }catch(e){}
-  if(state.stockVer !== STOCK_VER){ state.stock = {}; state.stockVer = STOCK_VER; }
+  if(state.stockVer !== STOCK_VER){ state.stock = {}; state.cart = {}; state.stockVer = STOCK_VER; }
   ITEMS.forEach(it=>{ if(typeof state.stock[it.id] !== "number") state.stock[it.id] = it.n; });
   if(!state.cart) state.cart = {};
   if(!state.orders) state.orders = [];
@@ -391,7 +391,7 @@ function load(){
 /* ================= 工具 ================= */
 const $ = s => document.querySelector(s);
 const byId = id => ITEMS.find(x=>x.id===id);
-const packCents = it => Math.round(it.pr*it.per*100);
+const unitCents = it => Math.round(it.pr*100);
 const money = cents => "$" + (cents/100).toFixed(2);
 const esc = s => String(s).replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
 function fmtTime(iso){
@@ -432,8 +432,8 @@ function visibleItems(){
 function stockTagHtml(it){
   const s = state.stock[it.id];
   if(s<=0) return `<div class="stock-tag out">已售罄</div>`;
-  if(s<=2) return `<div class="stock-tag low">仅剩 ${s} 包</div>`;
-  return `<div class="stock-tag">库存 ${s} 包</div>`;
+  if(s<=2) return `<div class="stock-tag low">仅剩 ${s} ${it.u}</div>`;
+  return `<div class="stock-tag">库存 ${s} ${it.u}</div>`;
 }
 function renderStock(){
   const list = visibleItems();
@@ -444,7 +444,7 @@ function renderStock(){
       <div class="info">
         <div class="name">${esc(it.p)}${it.g?` <span class="grade">${esc(it.g)}</span>`:""}</div>
         <div class="desc">${esc(itemDesc(it))||"&nbsp;"}</div>
-        <div class="price num">${money(packCents(it))}<small>/包</small><small>　${money(Math.round(it.pr*100))}/${esc(it.s?it.s.replace(/.*\//,""):"件")} × ${it.per}</small></div>
+        <div class="price num">${money(unitCents(it))}<small>/${esc(it.u)}</small></div>
         ${stockTagHtml(it)}
       </div>
     </div>`;
@@ -472,7 +472,7 @@ function renderOrder(){
       <div class="info">
         <div class="name">${esc(it.p)}${it.g?` <span class="grade">${esc(it.g)}</span>`:""}</div>
         <div class="desc">${esc(itemDesc(it))||"&nbsp;"}</div>
-        <div class="price num">${money(packCents(it))}<small>/包</small></div>
+        <div class="price num">${money(unitCents(it))}<small>/${esc(it.u)}</small></div>
         ${stockTagHtml(it)}
       </div>
       <div class="act">${act}</div>
@@ -481,23 +481,23 @@ function renderOrder(){
 }
 
 function cartInfo(){
-  let packs=0, cents=0, lines=0;
+  let qty=0, cents=0, lines=0;
   for(const id in state.cart){
     const q = state.cart[id]; if(!q) continue;
     const it = byId(+id); if(!it) continue;
-    packs += q; cents += packCents(it)*q; lines++;
+    qty += q; cents += unitCents(it)*q; lines++;
   }
-  return {packs, cents, lines};
+  return {qty, cents, lines};
 }
 function renderCartBar(){
-  const {packs, cents} = cartInfo();
+  const {qty, cents} = cartInfo();
   const onOrderTab = $("#tab-order").classList.contains("active");
-  $("#cartBar").classList.toggle("show", onOrderTab && packs>0);
-  $("#cartBarLbl").textContent = `已选 ${packs} 包`;
+  $("#cartBar").classList.toggle("show", onOrderTab && qty>0);
+  $("#cartBarLbl").textContent = `已选 ${qty} 件`;
   $("#cartBarAmt").textContent = money(cents);
   const badge = $("#cartBadge");
-  badge.style.display = packs>0 ? "flex" : "none";
-  badge.textContent = packs;
+  badge.style.display = qty>0 ? "flex" : "none";
+  badge.textContent = qty;
 }
 
 /* ================= 购物车面板 ================= */
@@ -506,7 +506,7 @@ function closeSheet(){ $("#overlay").classList.remove("show"); $("#sheet").class
 
 function renderCartSheet(){
   const entries = Object.keys(state.cart).map(id=>({it:byId(+id), q:state.cart[id]})).filter(e=>e.it && e.q>0);
-  const {packs, cents} = cartInfo();
+  const {qty, cents} = cartInfo();
   $("#sheetWrap").innerHTML = `
     <div class="head"><h2>确认订单</h2><button class="close" id="sheetClose">✕</button></div>
     <div class="body">
@@ -515,19 +515,19 @@ function renderCartSheet(){
         <div class="cline">
           <div class="ci">
             <div class="cn">${esc(e.it.p)}${e.it.g?` <span class="grade">${esc(e.it.g)}</span>`:""}</div>
-            <div class="cd">${esc(itemDesc(e.it))} · ${money(packCents(e.it))}/包</div>
+            <div class="cd">${esc(itemDesc(e.it))} · ${money(unitCents(e.it))}/${esc(e.it.u)}</div>
           </div>
           <div class="stepper">
             <button data-dec="${e.it.id}">−</button>
             <input class="q num" type="number" min="0" max="${state.stock[e.it.id]}" step="1" inputmode="numeric" data-qty="${e.it.id}" value="${e.q}">
             <button data-inc="${e.it.id}" ${e.q>=state.stock[e.it.id]?"disabled":""}>＋</button>
           </div>
-          <div class="ca num" data-amt="${e.it.id}">${money(packCents(e.it)*e.q)}</div>
+          <div class="ca num" data-amt="${e.it.id}">${money(unitCents(e.it)*e.q)}</div>
         </div>`).join("")}
       ${entries.length? "" : `<div class="empty">购物车是空的</div>`}
     </div>
     <div class="foot">
-      <div class="total-row"><span class="t" id="sheetPacks">共 ${packs} 包</span><span class="v num" id="sheetTotal">${money(cents)}</span></div>
+      <div class="total-row"><span class="t" id="sheetPacks">共 ${qty} 件</span><span class="v num" id="sheetTotal">${money(cents)}</span></div>
       <button class="btn-primary" id="btnSubmit" ${entries.length?"":"disabled"}>提交订单 · 扣减库存</button>
     </div>`;
   $("#sheetClose").onclick = closeSheet;
@@ -547,9 +547,9 @@ function submitOrder(){
   const lines = entries.map(e=>{
     state.stock[e.it.id] -= e.q;
     return { id:e.it.id, p:e.it.p, g:e.it.g, s:e.it.s, z:e.it.z, c:e.it.c,
-             per:e.it.per, qty:e.q, packCents:packCents(e.it) };
+             u:e.it.u, qty:e.q, unitCents:unitCents(e.it) };
   });
-  const total = lines.reduce((a,l)=>a+l.packCents*l.qty, 0);
+  const total = lines.reduce((a,l)=>a+l.unitCents*l.qty, 0);
   const no = "GZ" + String(state.seq).padStart(4,"0");
   state.seq++;
   state.orders.push({ no, time:new Date().toISOString(), cust, lines, total, status:"done" });
@@ -567,7 +567,7 @@ function renderSuccess(o){
         <h3>${esc(o.cust)}</h3>
         <div class="ono">订单号 ${o.no} · ${fmtTime(o.time)}</div>
         <div class="sum">
-          ${o.lines.map(l=>`<div class="r"><span>${esc(l.p)}${l.g?" "+esc(l.g):""} <span style="color:var(--muted)">× ${l.qty}包</span></span><span class="num">${money(l.packCents*l.qty)}</span></div>`).join("")}
+          ${o.lines.map(l=>`<div class="r"><span>${esc(l.p)}${l.g?" "+esc(l.g):""} <span style="color:var(--muted)">× ${l.qty}${l.u||"件"}</span></span><span class="num">${money((l.unitCents||l.packCents)*l.qty)}</span></div>`).join("")}
           <div class="r total"><span>合计</span><span class="num">${money(o.total)}</span></div>
         </div>
       </div>
@@ -589,12 +589,12 @@ function renderOrders(){
     return;
   }
   box.innerHTML = [...state.orders].reverse().map(o=>{
-    const packs = o.lines.reduce((a,l)=>a+l.qty,0);
+    const pieces = o.lines.reduce((a,l)=>a+l.qty,0);
     return `<div class="ocard" data-no="${o.no}">
       <div class="top" data-toggle="${o.no}">
         <div class="oi">
           <div class="ono">${o.no} · ${esc(o.cust)}</div>
-          <div class="om">${fmtTime(o.time)} · ${o.lines.length} 款 / ${packs} 包</div>
+          <div class="om">${fmtTime(o.time)} · ${o.lines.length} 款 / ${pieces} 件</div>
         </div>
         <div class="ot">
           <div class="a num">${money(o.total)}</div>
@@ -602,7 +602,7 @@ function renderOrders(){
         </div>
       </div>
       <div class="lines">
-        ${o.lines.map(l=>`<div class="lr"><span>${esc(l.p)}${l.g?" "+esc(l.g):""} · ${esc([l.s,l.z?l.z+'"':"",l.c].filter(Boolean).join(" · "))}</span><span class="lq num">× ${l.qty}包　${money(l.packCents*l.qty)}</span></div>`).join("")}
+        ${o.lines.map(l=>`<div class="lr"><span>${esc(l.p)}${l.g?" "+esc(l.g):""} · ${esc([l.s,l.z?l.z+'"':"",l.c].filter(Boolean).join(" · "))}</span><span class="lq num">× ${l.qty}${l.u||"件"}　${money((l.unitCents||l.packCents)*l.qty)}</span></div>`).join("")}
         ${o.status==="done"?`<button class="cancel" data-cancel="${o.no}">撤销订单（恢复库存）</button>`:""}
       </div>
     </div>`;
@@ -621,13 +621,14 @@ function cancelOrder(no){
 
 function exportCSV(){
   if(!state.orders.length){ toast("还没有订单可导出"); return; }
-  const head = ["订单号","时间","客户","状态","产品","等级","规格","尺寸(英寸)","颜色","每包件数","数量(包)","包价($)","行小计($)","订单总额($)"];
+  const head = ["订单号","时间","客户","状态","产品","等级","规格","尺寸(英寸)","颜色","单位","数量","单价($)","行小计($)","订单总额($)"];
   const rows = [head];
   state.orders.forEach(o=>{
     o.lines.forEach(l=>{
+      const uc = l.unitCents||l.packCents;
       rows.push([o.no, fmtTime(o.time), o.cust, o.status==="done"?"已成交":"已撤销",
-        l.p, l.g||"", l.s||"", l.z||"", l.c||"", l.per, l.qty,
-        (l.packCents/100).toFixed(2), (l.packCents*l.qty/100).toFixed(2), (o.total/100).toFixed(2)]);
+        l.p, l.g||"", l.s||"", l.z||"", l.c||"", l.u||"件", l.qty,
+        (uc/100).toFixed(2), (uc*l.qty/100).toFixed(2), (o.total/100).toFixed(2)]);
     });
   });
   const csv = "﻿" + rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\r\n");
@@ -660,7 +661,7 @@ function changeQty(id, delta){
   const next = cur + delta;
   if(delta>0){
     if(state.stock[id]<=0){ toast("该样品已售罄"); return; }
-    if(next > state.stock[id]){ toast(`最多 ${state.stock[id]} 包`); return; }
+    if(next > state.stock[id]){ toast(`最多 ${state.stock[id]} ${it.u}`); return; }
   }
   if(next<=0) delete state.cart[id]; else state.cart[id]=next;
   save(); renderStock(); renderOrder(); renderCartBar();
@@ -673,7 +674,7 @@ function setQty(id, val, inputEl){
   const stock = state.stock[id];
   let q = parseInt(val, 10);
   if(isNaN(q) || q < 0) q = state.cart[id]||0;
-  if(q > stock){ q = stock; toast(`最多 ${stock} 包`); }
+  if(q > stock){ q = stock; toast(`最多 ${stock} ${it.u}`); }
   if(q <= 0) delete state.cart[id]; else state.cart[id] = q;
   save(); renderStock(); renderOrder(); renderCartBar();
   if($("#sheet").classList.contains("show") && $("#btnSubmit")){
@@ -687,13 +688,13 @@ function setQty(id, val, inputEl){
   }
 }
 function refreshSheetAmounts(){
-  const {packs, cents} = cartInfo();
+  const {qty, cents} = cartInfo();
   const t = $("#sheetPacks"); if(!t) return;
-  t.textContent = `共 ${packs} 包`;
+  t.textContent = `共 ${qty} 件`;
   $("#sheetTotal").textContent = money(cents);
   document.querySelectorAll("#sheetWrap [data-amt]").forEach(el=>{
     const it = byId(+el.dataset.amt); if(!it) return;
-    el.textContent = money(packCents(it)*(state.cart[it.id]||0));
+    el.textContent = money(unitCents(it)*(state.cart[it.id]||0));
   });
   document.querySelectorAll("#sheetWrap [data-inc]").forEach(el=>{
     el.disabled = (state.cart[+el.dataset.inc]||0) >= state.stock[+el.dataset.inc];
