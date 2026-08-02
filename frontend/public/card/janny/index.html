@@ -180,51 +180,32 @@
 
   
 
-  <section class="rise d1" id="unlockSection">
-    <div class="sec-label">Unlock your butler service</div>
-    <div class="card">
-      <p class="desc">This page is exclusive to leShine customers. Enter your passcode — the <b>e-mail or WhatsApp number you left with Janny</b> — to open your private expo file &amp; photos and unlock the full hair-business FAQ below.</p>
-      <input class="field" id="passcode" type="text" autocomplete="off"
-             placeholder="Your e-mail or WhatsApp (incl. country code)">
-      <button class="btn btn-primary" id="unlockBtn" style="margin-top:12px;width:100%">
-        <span class="spin" id="unlockSpin"></span><span>Open my file</span>
-      </button>
-      <div class="hint" id="unlockHint"></div>
-      <div class="file" id="fileBox">
-        <div class="fname" id="fileName"></div>
-        <div id="entries"></div>
-      </div>
-    </div>
-  </section>
-
-  <section class="rise d2">
-    <div class="sec-label">Ask me anything</div>
-    <div class="card" id="askCard">
-      <p class="desc">Leave your question or requirement — Janny will get back to you personally.</p>
-      <input class="field" id="contact" type="text" autocomplete="off"
-             placeholder="Your e-mail or WhatsApp number">
-      <textarea class="field" id="message" placeholder="Your question or requirement…"></textarea>
-      <button class="btn btn-primary" id="askBtn" style="margin-top:12px;width:100%">
-        <span class="spin" id="askSpin"></span><span>Send to Janny</span>
-      </button>
-      <div class="hint" id="askHint"></div>
-    </div>
-  </section>
-
-  <section class="rise d3">
+  <section class="rise d1">
     <div class="sec-label">Hair business FAQ</div>
 
     <div class="card locked-card" id="faqLock">
       <svg viewBox="0 0 24 24" fill="none" stroke="#ffe252" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
         <rect x="4" y="10.5" width="16" height="9.5" rx="2.4"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>
       </svg>
-      <h3>FAQ is reserved for leShine customers</h3>
-      <p>40+ real answers on ordering, hair quality, customization, exclusivity &amp; shipping — unlocked with your passcode: <b>the e-mail or WhatsApp number you left with Janny</b>.</p>
-      <p>Haven&#39;t left your contact yet? Send it via <b>&ldquo;Ask me anything&rdquo;</b> above and Janny will activate your access.</p>
-      <button class="btn btn-primary" id="faqLockBtn">Enter my passcode</button>
+      <h3>Reserved for leShine customers</h3>
+      <p>40+ real answers on ordering, hair quality, customization, exclusivity &amp; shipping — plus your private expo file &amp; photos. Your passcode is <b>the e-mail or WhatsApp number you left with Janny</b>.</p>
+      <input class="field" id="passcode" type="text" autocomplete="off"
+             placeholder="Your e-mail or WhatsApp (incl. country code)">
+      <button class="btn btn-primary" id="unlockBtn" style="margin-top:12px;width:100%">
+        <span class="spin" id="unlockSpin"></span><span>Unlock FAQ &amp; my file</span>
+      </button>
+      <div class="hint" id="unlockHint"></div>
+      <p style="margin-top:14px">Haven&#39;t left your contact yet? Send it via <b>&ldquo;Ask me anything&rdquo;</b> below and Janny will activate your access.</p>
     </div>
 
     <div class="faq-gated">
+    <div class="card" style="margin-bottom:14px">
+      <div class="file" id="fileBox">
+        <div class="fname" id="fileName"></div>
+        <div id="entries"></div>
+      </div>
+      <p class="desc" id="fileEmptyNote">FAQ unlocked. Your expo file will appear here once Janny adds your records.</p>
+    </div>
     <input class="field faq-search" id="faqSearch" type="search" placeholder="Search FAQs…">
     <div id="faqList">
       <div class="faq-group">
@@ -431,9 +412,25 @@
         </div>
       </div>
     </div>
-    <div class="faq-empty" id="faqEmpty">No matching question — ask Janny directly above.</div>
-    </div><!-- /.faq-gated -->
+    <div class="faq-empty" id="faqEmpty">No matching question — ask Janny directly below.</div>
+    </div>
   </section>
+
+  <section class="rise d2">
+    <div class="sec-label">Ask me anything</div>
+    <div class="card" id="askCard">
+      <p class="desc">Leave your question or requirement — Janny will get back to you personally.</p>
+      <input class="field" id="contact" type="text" autocomplete="off"
+             placeholder="Your e-mail or WhatsApp number">
+      <textarea class="field" id="message" placeholder="Your question or requirement…"></textarea>
+      <button class="btn btn-primary" id="askBtn" style="margin-top:12px;width:100%">
+        <span class="spin" id="askSpin"></span><span>Send to Janny</span>
+      </button>
+      <div class="hint" id="askHint"></div>
+    </div>
+  </section>
+
+
 
   <footer class="rise d4">
     <img src="logo.png" alt="leShine Hair">
@@ -464,6 +461,7 @@
     if (!html) html = '<div class="entry"><div class="ec">Your file is being prepared — check back soon.</div></div>';
     document.getElementById("entries").innerHTML = html;
     document.getElementById("fileBox").style.display = "block";
+    document.getElementById("fileEmptyNote").style.display = "none";
   }
 
   function show(el, text, ok) {
@@ -536,9 +534,6 @@
     }).catch(function () { revealFaq(); });
   })();
 
-  /* FAQ 锁卡片按钮：滚到口令框并聚焦 */
-  document.getElementById("faqLockBtn").addEventListener("click", function () {
-    document.getElementById("unlockSection").scrollIntoView({ behavior: "smooth", block: "start" });
     setTimeout(function () { document.getElementById("passcode").focus(); }, 450);
   });
 
