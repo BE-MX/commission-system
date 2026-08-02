@@ -2,7 +2,7 @@
 
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # ---------- 公开端点 ----------
@@ -19,8 +19,17 @@ class InquiryCreate(BaseModel):
 # ---------- 管理端点 ----------
 
 class SalespersonUpsert(BaseModel):
-    # (?!admin$) ：slug=admin 会与 /admin/* 管理路由字面前缀纠缠（审查 P2-6）
-    slug: str = Field(..., min_length=2, max_length=32, pattern=r"^(?!admin$)[a-z0-9-]+$")
+    # 保留字校验用 validator 而非正则前瞻——pydantic-core 的 Rust 引擎不支持
+    # look-around，(?!admin$) 会在**建模时**炸掉整个应用（2026-08-02 生产 502 实案，
+    # 开发机 pydantic 版本更新有回退所以本地测不出来）
+    slug: str = Field(..., min_length=2, max_length=32, pattern=r"^[a-z0-9-]+$")
+
+    @field_validator("slug")
+    @classmethod
+    def slug_not_reserved(cls, value: str) -> str:
+        if value == "admin":  # 与 /admin/* 管理路由字面前缀纠缠（审查 P2-6）
+            raise ValueError("slug 'admin' 是保留字")
+        return value
     name: str = Field(..., min_length=1, max_length=64)
     title: str = Field("Sales Manager", max_length=64)
     email: str = Field(..., max_length=128)
