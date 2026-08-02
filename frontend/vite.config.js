@@ -7,17 +7,25 @@ export default defineConfig({
   plugins: [
     vue(),
     {
-      name: 'mobile-page-serve',
+      // public/<dir>/ 静态页（/m/、/caigoujie/ 等）的目录 URL：Vite dev 不解析
+      // 目录 index.html，会回退成 SPA 壳导致白屏。这里对齐生产 Nginx / 8001
+      // 的行为——无斜杠先 301 补斜杠，再直出该目录的 index.html
+      name: 'public-dir-index-serve',
       configureServer(server) {
         server.middlewares.use((req, res, next) => {
-          if (req.url === '/m' || req.url === '/m/') {
-            const htmlPath = path.resolve(__dirname, 'public/m/index.html')
-            const html = fs.readFileSync(htmlPath, 'utf-8')
-            res.setHeader('Content-Type', 'text/html; charset=utf-8')
-            res.end(html)
+          const [urlPath, query] = req.url.split('?')
+          if (urlPath === '/' || urlPath.includes('..')) return next()
+          const dirPath = urlPath.endsWith('/') ? urlPath : urlPath + '/'
+          const indexPath = path.resolve(__dirname, 'public', dirPath.slice(1), 'index.html')
+          if (!fs.existsSync(indexPath)) return next()
+          if (!urlPath.endsWith('/')) {
+            res.statusCode = 301
+            res.setHeader('Location', dirPath + (query ? '?' + query : ''))
+            res.end()
             return
           }
-          next()
+          res.setHeader('Content-Type', 'text/html; charset=utf-8')
+          res.end(fs.readFileSync(indexPath, 'utf-8'))
         })
       }
     }
