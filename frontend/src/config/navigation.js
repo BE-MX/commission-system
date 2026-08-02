@@ -160,6 +160,9 @@ export const MENU_GROUPS = {
  *   hideInMenu     : true 时仅作为路由存在 (详情/上传子页),不在侧边栏出现
  *   menu           : 在侧边栏中的呈现 (group/title/icon/order/permission/anyPermission)
  *                    menu.title 缺省回退到 entry.title; menu 内权限独立于路由级权限
+ *   external       : true 时不进 vue-router (router/index.js 会过滤),菜单渲染成
+ *                    新标签页打开的 <a> (静态页/外链)。仅支持放在分组内——
+ *                    顶级菜单折叠态没有 popup 兜底,文字会溢出 68px 侧栏
  */
 export const NAV_ENTRIES = [
   // ── 工作台 (顶级,不属任何分组) ──────────────────────────
@@ -381,6 +384,16 @@ export const NAV_ENTRIES = [
     menu: {
       group: 'expo', title: '名片管家', icon: Postcard, order: 35,
       anyPermission: ['card:read', 'card:write'],
+    },
+  },
+  {
+    // 采购节大屏 — frontend/public/caigoujie/ 静态页,免登录,自带全屏深色主题,
+    // 不适合嵌入 MainLayout 内容区,菜单里新标签页直开
+    path: '/caigoujie/',
+    external: true,
+    title: '采购节看板',
+    menu: {
+      group: 'expo', title: '采购节看板', icon: DataBoard, order: 40,
     },
   },
 

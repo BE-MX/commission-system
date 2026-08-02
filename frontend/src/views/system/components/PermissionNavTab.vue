@@ -24,7 +24,11 @@
       </div>
       <div class="path">{{ current.path }}<template v-if="current.name"> · {{ current.name }}</template></div>
       <div v-if="current.exempt" class="exempt-note">⚠ 此入口不在侧边导航中（豁免登记）：{{ current.note }}</div>
-      <div class="req">{{ current.required.length ? '可见需要（任一）：' : '无权限要求，所有登录用户可见' }}</div>
+      <div class="req">
+        <template v-if="current.required.length">可见需要（任一）：</template>
+        <template v-else-if="current.external">外链条目（新标签页打开），无独立权限——可见性跟随所在分组的权限门槛</template>
+        <template v-else>无权限要求，所有登录用户可见</template>
+      </div>
       <span
         v-for="code in current.required"
         :key="code"
@@ -121,6 +125,7 @@ function buildPage(entry) {
     required,
     satisfied: satisfied(required),
     exempt: false,
+    external: entry.external === true,
   }
 }
 

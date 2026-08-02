@@ -42,14 +42,24 @@
             <el-icon><component :is="group.icon" /></el-icon>
             <span>{{ group.title }}</span>
           </template>
-          <el-menu-item
-            v-for="item in group.items"
-            :key="item.path"
-            :index="item.path"
-          >
-            <el-icon><component :is="item.icon" /></el-icon>
-            <template #title>{{ item.title }}</template>
-          </el-menu-item>
+          <template v-for="item in group.items" :key="item.path">
+            <!-- external 条目：原生 <a> 新标签页直开，不走 el-menu 的 router/active 机制 -->
+            <a
+              v-if="item.external"
+              class="el-menu-item external-item"
+              :href="item.path"
+              target="_blank"
+              rel="noopener"
+            >
+              <el-icon><component :is="item.icon" /></el-icon>
+              <span>{{ item.title }}</span>
+              <el-icon class="ext-mark"><TopRight /></el-icon>
+            </a>
+            <el-menu-item v-else :index="item.path">
+              <el-icon><component :is="item.icon" /></el-icon>
+              <template #title>{{ item.title }}</template>
+            </el-menu-item>
+          </template>
         </el-sub-menu>
       </el-menu>
 
@@ -142,7 +152,7 @@ const visibleGroups = computed(() => {
         .filter(e => !e.hideInMenu && e.menu?.group === key && hasAccess(e.menu))
         .slice()
         .sort((a, b) => (a.menu.order ?? 999) - (b.menu.order ?? 999))
-        .map(e => ({ path: e.path, title: e.menu.title ?? e.title, icon: e.menu.icon }))
+        .map(e => ({ path: e.path, title: e.menu.title ?? e.title, icon: e.menu.icon, external: e.external === true }))
       return { key, ...group, items }
     })
     .filter(group => hasAccess(group) && group.items.length > 0)
@@ -322,6 +332,16 @@ function handleUserCommand(cmd) {
   font-size: 13px;
 }
 
+/* external 条目是 <a>：借用 .el-menu-item 类拿全套菜单项样式，这里只补 anchor 默认样式的差异 */
+:deep(a.external-item) {
+  text-decoration: none;
+}
+:deep(.ext-mark) {
+  font-size: 11px;
+  opacity: 0.45;
+  margin-left: 4px;
+}
+
 /* Sidebar bottom */
 .sidebar-bottom {
   padding: 16px;
@@ -475,5 +495,13 @@ function handleUserCommand(cmd) {
   color: #fff;
   background: linear-gradient(135deg, var(--color-gold), var(--color-primary));
   box-shadow: 0 4px 14px rgba(212, 148, 28, 0.35);
+}
+.el-menu--popup a.el-menu-item {
+  text-decoration: none;
+}
+.el-menu--popup .ext-mark {
+  font-size: 11px;
+  opacity: 0.45;
+  margin-left: 4px;
 }
 </style>

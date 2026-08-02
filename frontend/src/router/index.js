@@ -3,7 +3,8 @@ import { NAV_ENTRIES } from '@/config/navigation'
 
 // NAV_ENTRIES 中每条记录映射成 vue-router 的 children 路由
 // path 去掉前导 '/' 因为父路由是 '/'
-const layoutRoutes = NAV_ENTRIES.map(entry => ({
+// external 条目（静态页/外链）只进菜单不进路由
+const layoutRoutes = NAV_ENTRIES.filter(entry => !entry.external).map(entry => ({
   path: entry.path.replace(/^\//, ''),
   name: entry.name,
   component: entry.component,
