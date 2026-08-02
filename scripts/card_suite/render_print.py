@@ -73,21 +73,22 @@ def main():
     }
 
     for person in data["people"]:
-        wa_row = ""
+        wa_side = ""
         if person.get("whatsapp"):
             wa_qr_uri = file_uri(os.path.join(OUT_ASSETS, f"qr_wa_{person['slug']}.png"))
-            wa_row = (
-                '<div class="wa-row"><div class="wl">'
+            wa_side = (
+                f'<div class="wa-side"><img src="{wa_qr_uri}" alt="WA"><div>'
                 '<div class="wl1">WhatsApp</div>'
                 f'<div class="wl2">{person["whatsapp"]}</div>'
-                f'</div><div class="wa-qr"><img src="{wa_qr_uri}" alt="WA"></div></div>'
+                '<div class="wl3">Scan to chat</div>'
+                "</div></div>"
             )
         html = fill(card_tpl, {
             **common,
             "NAME": person["name"],
             "TITLE": person["title"],
             "EMAIL": person["email"],
-            "WA_ROW": wa_row,
+            "WA_SIDE": wa_side,
             "AVATAR_URI": file_uri(os.path.join(ASSETS, person["avatar"])),
             "QR_URI": file_uri(os.path.join(OUT_ASSETS, f"qr_{person['slug']}.png")),
         })

@@ -60,18 +60,15 @@
     position: absolute; right: 7mm; top: 38.6mm; width: 30mm; text-align: center;
     font-size: 2.05mm; font-weight: 700; letter-spacing: 0.4mm; color: var(--yellow); text-transform: uppercase;
   }
-  .wa-row {
-    position: absolute; right: 7mm; top: 42.6mm; width: 30mm;
-    display: flex; align-items: center; justify-content: flex-end; gap: 1.7mm;
+  /* WhatsApp 白码：透明底直贴黑卡，无底板，与头像并排 */
+  .wa-side {
+    position: absolute; left: 26mm; top: 7.8mm; width: 29.5mm;
+    display: flex; align-items: center; gap: 1.7mm;
   }
-  .wa-row .wl { text-align: right; }
-  .wa-row .wl1 { font-size: 1.95mm; font-weight: 700; letter-spacing: 0.3mm; color: var(--yellow); text-transform: uppercase; }
-  .wa-row .wl2 { margin-top: 0.7mm; font-size: 1.72mm; color: #cfcfcf; }
-  .wa-qr {
-    flex: 0 0 auto; width: 10.4mm; height: 10.4mm; background: #ffffff; border-radius: 1.4mm;
-    display: flex; align-items: center; justify-content: center;
-  }
-  .wa-qr img { width: 9.2mm; height: 9.2mm; display: block; }
+  .wa-side img { flex: 0 0 auto; width: 12.8mm; height: 12.8mm; display: block; }
+  .wa-side .wl1 { font-size: 1.95mm; font-weight: 700; letter-spacing: 0.3mm; color: var(--yellow); text-transform: uppercase; }
+  .wa-side .wl2 { margin-top: 0.8mm; font-size: 1.7mm; color: #cfcfcf; }
+  .wa-side .wl3 { margin-top: 0.8mm; font-size: 1.62mm; color: #8f8f8f; }
 
   /* ---------- BACK ---------- */
   .back { background: var(--yellow); }
@@ -119,7 +116,7 @@
     </div>
     <div class="qrpanel"><img src="{{QR_URI}}" alt="QR"></div>
     <div class="qrcap">My butler page</div>
-    {{WA_ROW}}
+    {{WA_SIDE}}
   </div>
 
   <!-- BACK -->
