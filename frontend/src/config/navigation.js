@@ -54,6 +54,8 @@ export const MENU_GROUPS = {
   expo: {
     title: '展会营销',
     icon: MagicStick,
+    // 改动此列表需同步 backend/app/festival/router.py 的 _MENU_GATE
+    // （采购节大屏换 key 端点与本分组可见门槛必须一致）
     anyPermission: [
       'expo:read', 'expo:write', 'expo:admin', 'expo_lead:read', 'expo_lead:write',
       'expo_hair_color:read', 'expo_scene:read', 'expo_script:read',
@@ -387,9 +389,10 @@ export const NAV_ENTRIES = [
     },
   },
   {
-    // 采购节大屏 — frontend/public/caigoujie/ 静态页,免登录,自带全屏深色主题,
-    // 不适合嵌入 MainLayout 内容区,菜单里新标签页直开
-    path: '/caigoujie/',
+    // 采购节大屏 — frontend/public/festival/ 静态页(真实取数),自带全屏深色主题,
+    // 不适合嵌入 MainLayout 内容区,菜单里新标签页直开。index.html 是登录态换 key
+    // 入口(取数端点 fail-closed 需 key),拿到后跳 zhaiyao.html 进五页轮播
+    path: '/festival/',
     external: true,
     title: '采购节看板',
     menu: {

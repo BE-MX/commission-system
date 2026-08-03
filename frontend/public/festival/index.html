@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>2026 采购节大屏</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:100%; height:100%; }
+  body {
+    background:#0a0e17; color:#e8ecf4;
+    font-family:"Microsoft YaHei","PingFang SC",sans-serif;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:18px; padding:24px; text-align:center;
+  }
+  h1 { font-size:24px; font-weight:600; letter-spacing:2px; }
+  .status { color:#7a8499; font-size:14px; line-height:1.8; max-width:520px; }
+  .status b { color:#e8ecf4; font-weight:600; }
+  .spinner {
+    width:28px; height:28px; border-radius:50%;
+    border:3px solid rgba(255,255,255,.12); border-top-color:#5ad1ff;
+    animation:spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  a.btn {
+    display:inline-block; margin-top:6px; padding:10px 28px; border-radius:10px;
+    text-decoration:none; color:#e8ecf4; font-size:14px;
+    border:1px solid rgba(255,255,255,.18); background:rgba(255,255,255,.06);
+    transition:background .2s, border-color .2s;
+  }
+  a.btn:hover { background:rgba(255,255,255,.14); border-color:rgba(255,255,255,.4); }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+  <h1>2026 采购节大屏</h1>
+  <div id="spinner" class="spinner"></div>
+  <p id="status" class="status">正在进入大屏…</p>
+  <a id="action" class="btn hidden" href="/">回方舟平台登录</a>
+
+<script>
+(function () {
+  var statusEl = document.getElementById("status");
+  var spinner = document.getElementById("spinner");
+  var action = document.getElementById("action");
+
+  function fail(html, showAction) {
+    spinner.classList.add("hidden");
+    statusEl.innerHTML = html;
+    if (showAction) action.classList.remove("hidden");
+  }
+
+  function enter(params) {
+    // zhaiyao.html 是五页轮播链条起点；query 会被各页透传给页间跳转与取数 API
+    location.replace("zhaiyao.html?" + params.toString());
+  }
+
+  var params = new URLSearchParams(location.search);
+  if (params.get("key")) { enter(params); return; }   // 电视书签等带 key 直访：原样透传
+
+  // 无 key：用方舟登录态换（同源 localStorage，与 /m/ 移动端同一机制）
+  var token = null;
+  try { token = localStorage.getItem("ark_access_token"); } catch (e) { /* 隐私模式等 */ }
+  if (!token) {
+    fail("此页面需要从<b>方舟平台</b>的「展会营销 → 采购节看板」菜单进入，<br>或使用带访问码的大屏专用链接。", true);
+    return;
+  }
+
+  fetch("/api/festival/screen-key", { headers: { Authorization: "Bearer " + token } })
+    .then(function (res) {
+      if (res.ok) return res.json();
+      if (res.status === 401) { fail("方舟登录已过期，请重新登录后再从菜单进入。", true); }
+      else if (res.status === 403) { fail("你的账号没有展会营销权限，无法进入大屏。<br>如需查看请联系管理员开通。", false); }
+      else if (res.status === 503) { fail("大屏访问 key 尚未配置（FESTIVAL_SCREEN_KEYS），请联系管理员。", false); }
+      else { fail("进入失败（HTTP " + res.status + "），请稍后重试或联系管理员。", false); }
+      return null;
+    })
+    .then(function (body) {
+      if (!body) return;
+      var key = body && body.data && body.data.key;
+      if (!key) { fail("服务返回异常（未拿到访问 key），请联系管理员。", false); return; }
+      params.set("key", key);
+      enter(params);
+    })
+    .catch(function () {
+      fail("网络异常，无法连接取数服务。正在等待网络恢复，请稍后刷新本页。", false);
+    });
+})();
+</script>
+</body>
+</html>
