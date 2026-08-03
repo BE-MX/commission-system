@@ -21,6 +21,8 @@ import {
   DataLine, Printer, Brush, Tickets, Goods, Postcard,
 } from '@element-plus/icons-vue'
 
+const FESTIVAL_PERMISSION = 'festival:read'
+
 /**
  * 菜单分组定义。key 与 NAV_ENTRIES[i].menu.group 对应。
  *
@@ -44,6 +46,7 @@ export const MENU_GROUPS = {
     anyPermission: [
       'invoice:read', 'invoice:write', 'invoice:sync',
       'invoice_price:read', 'invoice_okki:read', 'invoice_repair:read',
+      FESTIVAL_PERMISSION,
     ],
   },
   aftersales: {
@@ -54,8 +57,6 @@ export const MENU_GROUPS = {
   expo: {
     title: '展会营销',
     icon: MagicStick,
-    // 改动此列表需同步 backend/app/festival/router.py 的 _MENU_GATE
-    // （采购节大屏换 key 端点与本分组可见门槛必须一致）
     anyPermission: [
       'expo:read', 'expo:write', 'expo:admin', 'expo_lead:read', 'expo_lead:write',
       'expo_hair_color:read', 'expo_scene:read', 'expo_script:read',
@@ -396,7 +397,8 @@ export const NAV_ENTRIES = [
     external: true,
     title: '采购节看板',
     menu: {
-      group: 'expo', title: '采购节看板', icon: DataBoard, order: 40,
+      group: 'invoice', title: '采购节看板', icon: DataBoard, order: 40,
+      permission: FESTIVAL_PERMISSION,
     },
   },
 

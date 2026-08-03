@@ -327,6 +327,8 @@ def seed_role_permissions(db: Session):
         ("invoice_repair:read",   "invoice", "read",          "查看回款日期修复页"),
         # 发票录入「仅私海」勾选（2026-07-14）：控勾选框显隐，不控数据安全边界
         ("invoice_private_filter:read", "invoice", "read",    "客户私海筛选（录入页「仅私海」勾选）"),
+        # 采购节看板：与展会试戴权限完全独立，入口归属「订单管理」菜单。
+        ("festival:read",         "festival", "read",       "查看采购节看板"),
         # 客户售后管理（2026-07-12 售后分析拆独立码；2026-07-14 审核拆 aftersales:review，
         # 支持 仅录单 / 录单+审核 / 仅审核 三档，069 迁移已给存量 write 角色补授 review）
         ("aftersales:read",       "aftersales", "read",       "查看授权范围内售后单"),

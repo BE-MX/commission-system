@@ -182,7 +182,7 @@
   - 取数轨道：`Settings.FESTIVAL_DATA_SOURCE=okki|ark` 全局切换（okki=lsordertest 保底轨 / ark=方舟发票域仅 synced、金额扣手续费）；各端点支持 `?source=` 临时覆盖调试
   - 以上端点均有 55s 进程内缓存（"数据截至"即缓存时间）
 - `/api/festival` — 采购节大屏登录态入口（`festival/router.py`）
-  - `GET /screen-key` — 用 JWT 换大屏访问 key（返回 `FESTIVAL_SCREEN_KEYS` 第一个；未配置 → 503 fail-closed）。权限=展会营销分组任一（与 `navigation.js` `MENU_GROUPS.expo.anyPermission` 同步维护）；消费方是入口页 `/festival/index.html`（方舟菜单「采购节看板」→ 同源 localStorage token 换 key → 跳 `zhaiyao.html?key=`；电视书签带 key 直访不走此端点）
+  - `GET /screen-key` — 用 JWT 换大屏访问 key（返回 `FESTIVAL_SCREEN_KEYS` 第一个；未配置 → 503 fail-closed）。独立权限=`festival:read`（与展会权限无关）；消费方是入口页 `/festival/index.html`（方舟菜单「订单管理 → 采购节看板」→ 同源 localStorage token 换 key → 跳 `zhaiyao.html?key=`；电视书签带 key 直访不走此端点）
 - `/health` — 健康检查（含数据库连通性）
 - `POST /api/shortlink` — 生成短链（接收 `{"url": "..."}`,返回 `{"short_url": "https://leshine.work/s/xxxxxx"}`）
 - `/s/{code}` — 短链 302 跳转(双查找:先查 `ark_short_links` 命中即跳并 `click_count+1`;落空查 `shipment_tracking.short_code` 跳承运商官网;都未命中跳 `SHORT_LINK_BASE_URL` 兜底页)
