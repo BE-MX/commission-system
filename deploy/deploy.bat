@@ -18,8 +18,8 @@ set "CLOUD_DIST=/var/www/ark/dist"
 set "CLOUD_PM_DIST=/var/www/pm/dist"
 REM All ssh/scp go through these opts (2026-07-13): BatchMode turns any interactive
 REM prompt (host key / password) into an immediate error instead of a silent hang;
-REM ConnectTimeout/ServerAlive bound dead-network waits to ~70s max.
-set "SSH_OPTS=-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=4"
+REM ConnectionAttempts retries transient port-22 timeouts; the other options bound hangs.
+set "SSH_OPTS=-o BatchMode=yes -o ConnectTimeout=10 -o ConnectionAttempts=3 -o ServerAliveInterval=15 -o ServerAliveCountMax=4"
 
 echo.
 echo ==============================
@@ -267,7 +267,7 @@ echo      OK
 exit /b 0
 
 :scp_smart
-REM 利用 ssh+md5sum 比对，只传变化的文件
+REM 利用 git diff + 远端存在性检查，只传变化的文件
 set "SMART_FAIL=0"
 cd /d "%INSTALL_DIR%\frontend\dist"
 REM m/ is small (<1MB), always upload
@@ -293,6 +293,37 @@ if "!VENDOR_CHANGED!"=="1" (
 ) else (
     echo      vendor/ unchanged, skipped
 )
+REM 同步其余 public 顶层项（festival/card/expo-sales/6010/caigoujie/logo.webp 等）。
+REM 2026-08-03 根因：无 rsync 的生产机固定走本分支，但旧逻辑只传 m/vendor/assets/index，
+REM 新增的 festival/ 被静默漏传，/festival/ 因 nginx SPA fallback 错返主站首页。
+for /f "delims=" %%E in ('dir /b') do (
+    set "STATIC_ITEM_SKIP=0"
+    if /i "%%E"=="assets" set "STATIC_ITEM_SKIP=1"
+    if /i "%%E"=="index.html" set "STATIC_ITEM_SKIP=1"
+    if /i "%%E"=="m" set "STATIC_ITEM_SKIP=1"
+    if /i "%%E"=="vendor" set "STATIC_ITEM_SKIP=1"
+    if "!STATIC_ITEM_SKIP!"=="0" (
+        set "STATIC_ITEM_CHANGED=0"
+        if not defined FRONTEND_BASE set "STATIC_ITEM_CHANGED=1"
+        if defined FRONTEND_BASE (
+            git -C "%INSTALL_DIR%" diff --name-only %FRONTEND_BASE% HEAD -- "frontend/public/%%E" 2>nul | findstr /R "." >nul 2>&1
+            if not errorlevel 1 set "STATIC_ITEM_CHANGED=1"
+        )
+        git -C "%INSTALL_DIR%" diff --name-only -- "frontend/public/%%E" 2>nul | findstr /R "." >nul 2>&1
+        if not errorlevel 1 set "STATIC_ITEM_CHANGED=1"
+        if "!STATIC_ITEM_CHANGED!"=="0" (
+            ssh %SSH_OPTS% %CLOUD_SERVER% "test -e %CLOUD_DIST%/%%E" >nul 2>&1
+            if errorlevel 1 set "STATIC_ITEM_CHANGED=1"
+        )
+        if "!STATIC_ITEM_CHANGED!"=="1" (
+            echo      Uploading static item %%E...
+            scp %SSH_OPTS% -r "%%E" %CLOUD_SERVER%:%CLOUD_DIST%/
+            if errorlevel 1 set "SMART_FAIL=1"
+        ) else (
+            echo      Static item %%E unchanged, skipped
+        )
+    )
+)
 REM 2026-07-26: assets 整目录一次传完，取代原来的 md5 逐文件比对。
 REM 实测一次 build = 211 文件 / 5.2MB，其中 193 个 / 4.0MB 是新 hash——vite 每次 build
 REM 都换文件名，"只传变化的"只省 23% 流量，却要开 191 条 SSH 连接、跑 27 分钟，
@@ -304,9 +335,9 @@ if errorlevel 1 set "SMART_FAIL=1"
 scp %SSH_OPTS% index.html %CLOUD_SERVER%:%CLOUD_DIST%/index.html.new
 if errorlevel 1 set "SMART_FAIL=1"
 if "!SMART_FAIL!"=="0" (
-    REM assets 与 index.html 在同一条远端命令里一起翻，中间不存在"新页面配旧资源"的窗口。
-    REM 切换同时把历史 hash 文件清掉（旧 assets 整个变成 assets.old，下次部署才删，
-    REM 出事可以 ssh 上去 mv 回来）。
+    REM Flip assets and index.html together to avoid a mixed-version window.
+    REM Keep the previous assets as assets.old until the next deploy for rollback.
+    REM If needed, restore assets.old over SSH.
     echo      Switching cloud to the new build...
     ssh %SSH_OPTS% %CLOUD_SERVER% "cd %CLOUD_DIST% && rm -rf assets.old; mv assets assets.old 2>/dev/null; mv assets.new assets && mv index.html.new index.html"
     if errorlevel 1 (
