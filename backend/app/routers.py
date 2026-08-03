@@ -34,6 +34,7 @@ from app.pm.router import router as pm_router
 from app.dashboard.router import router as dashboard_router
 from app.domestic.router import router as domestic_router
 from app.festival.public_router import router as festival_public_router
+from app.festival.router import router as festival_router
 from app.card.router import router as card_admin_router
 from app.card.public_router import router as card_public_router
 
@@ -74,6 +75,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(dashboard_router, prefix="/api/dashboard", tags=["工作台配置"])
     app.include_router(domestic_router, prefix="/api/domestic", tags=["内贸订单"])
     app.include_router(festival_public_router, prefix="/api/public/festival", tags=["采购节大屏"])
+    app.include_router(festival_router, prefix="/api/festival", tags=["采购节大屏"])
     # card 管理路由（/admin/* 字面量路径）必须先于公开路由（/{slug}/*）注册，防路径参数吞噬
     app.include_router(card_admin_router, prefix="/api/card", tags=["名片管家"])
     app.include_router(card_public_router, prefix="/api/card", tags=["名片管家-公开"])
