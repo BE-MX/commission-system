@@ -8,7 +8,7 @@ from pathlib import Path
 # Windows 注册表缺 .webp 映射时 FileResponse 会猜成 text/plain，显式补齐
 mimetypes.add_type("image/webp", ".webp")
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -70,7 +70,7 @@ def mount_frontend(app: FastAPI) -> None:
     app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
 
     @app.get("/{full_path:path}")
-    async def serve_spa(full_path: str):
+    async def serve_spa(full_path: str, request: Request):
         """所有非 /api、/health、/assets 的请求 fallback 到 index.html (SPA 路由)"""
         if full_path.startswith("api/"):
             return JSONResponse(
@@ -85,12 +85,14 @@ def mount_frontend(app: FastAPI) -> None:
                 if file.is_file():
                     return FileResponse(file)
                 # 目录路径（如 /m/）优先返回目录下的 index.html；
-                # 无末尾斜杠必须先 307 补斜杠（同 nginx），否则页面内相对链接会解析到根路径
+                # 无末尾斜杠必须先 307 补斜杠（同 nginx），否则页面内相对链接会解析到根路径。
+                # query 必须随重定向保留——采购节大屏 key 在 query 里，丢了会死屏
                 if file.is_dir():
                     index_file = file / "index.html"
                     if index_file.is_file():
                         if full_path and not full_path.endswith("/"):
-                            return RedirectResponse(f"/{full_path}/")
+                            query = f"?{request.url.query}" if request.url.query else ""
+                            return RedirectResponse(f"/{full_path}/{query}")
                         return FileResponse(index_file)
         except (OSError, ValueError):
             pass  # 非法路径字符按未命中处理
