@@ -1,5 +1,6 @@
-"""采购节大屏取数 service 测试（管钱计算：积分系数 / 同客户去重 / 名册限定 / GMV 口径）"""
+"""采购节大屏取数 service 测试（管钱计算：资源积分 / 同客户去重 / 名册限定 / GMV 口径）"""
 
+import json
 from datetime import date
 
 from sqlalchemy import text
@@ -11,7 +12,20 @@ from app.auth.models import ArkUserExternalBinding  # noqa: F401
 from app.models.employee import EmployeeAttributeHistory
 
 DEPT = '[{"department_id": 24925, "rate": 100}]'
-MARK_NEW = '{"22595163468": "是", "691123983470": "定制品", "20528142733548": ""}'
+DEPT_JIASHU = '[{"name": "嘉树", "department_id": 309932, "rate": 100}]'
+
+
+def _new_mark(source: str) -> str:
+    return json.dumps({
+        "22595163468": "是",
+        "691123983470": "定制品",
+        "20528142733548": "",
+        service.RESOURCE_SOURCE_FIELD: source,
+    }, ensure_ascii=False)
+
+
+MARK_NEW = _new_mark("官网询盘 (OKKI Marketing)")
+MARK_NEW_DEVELOP = _new_mark("Ins开发")
 MARK_RE = '{"22595163468": "否", "691123983470": "定制品", "20528142733548": "是"}'
 
 
@@ -39,8 +53,8 @@ def _setup(db):
         ("O1", "C1", 1000, "U1", MARK_NEW, "2026-08-02", "公司", "13972831656", None),
         ("O2", "C1", 500, "U1", MARK_NEW, "2026-08-03", "公司", "13972831656", None),
         ("O3", "C2", 800, "U1", MARK_NEW, "2026-08-05", "公司", "13972831654", "已结清"),
-        # U2 开发：1 个新签客户
-        ("O4", "C3", 2000, "U2", MARK_NEW, "2026-08-10", "公司", "13972831656", None),
+        # U2 人员属性是开发，此单也确实来自 Ins 开发：1.5 分
+        ("O4", "C3", 2000, "U2", MARK_NEW_DEVELOP, "2026-08-10", "公司", "13972831656", None),
         # 名册外用户：不应出现在任何口径
         ("O5", "C4", 999, "UX", MARK_NEW, "2026-08-11", "公司", "13972831656", None),
         # trail 含"个人"：排除
@@ -59,11 +73,13 @@ def _setup(db):
              "ad": o[5], "tr": o[6], "st": o[7], "sn": o[8], "dp": DEPT})
 
 
-def test_new_sign_points_factor():
-    """A-15：积分跟人不跟单——distribute ×1、develop ×1.5、属性缺失按分配兜底"""
-    assert service.new_sign_points(4, "distribute") == 4
-    assert service.new_sign_points(4, "develop") == 6.0
-    assert service.new_sign_points(3, None) == 3
+def test_new_sign_source_points():
+    """新签积分跟资源来源：公司分配 1，社媒开发/转介绍 1.5。"""
+    for source in ("阿里询盘", "官网询盘 (OKKI Marketing)", "Ins分配", "展会"):
+        assert service.new_sign_source_points(_new_mark(source)) == 1
+    for source in ("Ins开发", "社交平台", "Facebook", "TikTok", "开发客户熟人介绍", "转介绍"):
+        assert service.new_sign_source_points(_new_mark(source)) == 1.5
+    assert service.new_sign_source_points(None) == 1
 
 
 def test_board_distinct_roster_and_sort(db):
@@ -76,12 +92,53 @@ def test_board_distinct_roster_and_sort(db):
     # A-4 同一客户只计一次：C1 拆两单计 1，加 C2 共 2；个人/状态不符排除
     assert by["U1"]["new_count"] == 2
     assert by["U1"]["new_points"] == 2
-    # develop ×1.5
+    # 人员属性不参与计分；U2 因此单来自 Ins 开发才计 1.5
     assert by["U2"]["new_count"] == 1
     assert by["U2"]["new_points"] == 1.5
     assert by["U3"]["new_count"] == 0
     # 排序：积分降序
     assert [i["user_id"] for i in board["items"]] == ["U1", "U2", "U3"]
+
+
+def test_board_uses_resource_source_not_person_attribute(db):
+    """分配类人员的社媒开发仍计 1.5，开发类人员的公司分配仍计 1。"""
+    _setup(db)
+    _insert_order(db, "O-SOCIAL", "C-SOCIAL", 400, "U1", "2026-08-15",
+                  custom_fields=MARK_NEW_DEVELOP)
+    _insert_order(db, "O-ALLOC", "C-ALLOC", 500, "U2", "2026-08-16",
+                  custom_fields=MARK_NEW)
+    board = service.get_new_sign_board(db, "2026-08-01", "2026-08-31")
+    by = {i["user_id"]: i for i in board["items"]}
+    assert by["U1"]["attribute"] == "distribute"
+    assert by["U1"]["new_points"] == 3.5  # C1/C2 各1 + 社媒开发 1.5
+    assert by["U2"]["attribute"] == "develop"
+    assert by["U2"]["new_points"] == 2.5  # Ins开发 1.5 + 官网分配 1
+
+
+def test_board_counts_jiashu_department_by_roster(db):
+    """参赛范围以 24 人名册为准，嘉树部门不得被硬编码部门表漏掉。"""
+    _setup(db)
+    _insert_order(db, "O-JIASHU", "C-JIASHU", 210.23, "U3", "2026-08-01",
+                  departments=DEPT_JIASHU)
+    board = service.get_new_sign_board(db, "2026-08-01", "2026-08-31")
+    by = {i["user_id"]: i for i in board["items"]}
+    assert by["U3"]["new_count"] == 1
+    assert by["U3"]["new_points"] == 1
+    assert by["U3"]["new_amount"] == 210.23
+
+
+def test_same_customer_counts_once_and_uses_development_source(db):
+    """同客户多单仍只计 1 个；若来源标签有变化，取最高的 1.5 分。"""
+    _setup(db)
+    _insert_order(db, "O-MIX-1", "C-MIX", 100, "U3", "2026-08-17",
+                  custom_fields=MARK_NEW)
+    _insert_order(db, "O-MIX-2", "C-MIX", 200, "U3", "2026-08-18",
+                  custom_fields=MARK_NEW_DEVELOP)
+    board = service.get_new_sign_board(db, "2026-08-01", "2026-08-31")
+    by = {i["user_id"]: i for i in board["items"]}
+    assert by["U3"]["new_count"] == 1
+    assert by["U3"]["new_points"] == 1.5
+    assert by["U3"]["new_amount"] == 300
 
 
 def test_gmv_total_order_amount_scope(db):
@@ -91,12 +148,13 @@ def test_gmv_total_order_amount_scope(db):
     assert gmv == 1000 + 500 + 800 + 2000 + 3000
 
 
-def _insert_order(db, oid, cid, amt, uid, ad):
+def _insert_order(db, oid, cid, amt, uid, ad, *, custom_fields=MARK_NEW, departments=DEPT):
     db.execute(text(
         "INSERT INTO lsordertest.okki_orders (order_id, company_id, amount_usd, user_id,"
         " custom_fields, account_date, trail, status, status_name, departments)"
         " VALUES (:oid, :cid, :amt, :uid, :cf, :ad, '公司', '13972831656', NULL, :dp)"),
-        {"oid": oid, "cid": cid, "amt": amt, "uid": uid, "cf": MARK_NEW, "ad": ad, "dp": DEPT})
+        {"oid": oid, "cid": cid, "amt": amt, "uid": uid, "cf": custom_fields,
+         "ad": ad, "dp": departments})
 
 
 def test_company_total_distinct_across_people(db):
@@ -327,6 +385,15 @@ def _setup_ark(db):
         # U2：池外客户 K9 复购（lsordertest 与方舟都无 2025+ 新成交）→ 金额不计
         inv("AK6", "K9", 102, D(2026, 9, 5), 8000, new_deal=0, xo="XO6"),
     ])
+    # 主轨资源积分必须按 xiaoman_order_id 精确关联：
+    # XO1=Ins开发 1.5，XO2=官网分配 1，XO4 暂无同步单则兜底 1。
+    _insert_order(db, "XO1", "K1", 1, "U1", "2026-07-31",
+                  custom_fields=MARK_NEW_DEVELOP)
+    _insert_order(db, "XO2", "K2", 1, "U1", "2026-07-31",
+                  custom_fields=MARK_NEW)
+    # 同客户历史社媒单不能污染当前 XO2 的官网分配来源。
+    _insert_order(db, "OLD-K2", "K2", 1, "U1", "2026-07-30",
+                  custom_fields=MARK_NEW_DEVELOP)
     db.flush()
 
 
@@ -336,6 +403,7 @@ def test_ark_track_new_sign_synced_only_and_fee(db):
     board = service.get_new_sign_board(db, "2026-08-01", "2026-08-31", source="ark")
     by = {i["user_id"]: i for i in board["items"]}
     assert by["U1"]["new_count"] == 3            # K1+K2+K4（库存单也计）；K3 未推单排除
+    assert by["U1"]["new_points"] == 3.5         # XO1 1.5 + XO2 1 + XO4 无来源兜底 1
     assert by["U1"]["new_amount"] == 8500.0      # 6100-100 + 2000 + 500
     assert by["U2"]["new_count"] == 0
     assert service.get_company_new_total(db, "2026-08-01", "2026-08-31", source="ark") == 3

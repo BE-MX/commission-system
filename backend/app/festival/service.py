@@ -3,7 +3,7 @@
 口径依据 docs/requirements/2026-07-24-procurement-festival-dashboard.md（v6）与
 docs/requirements/2026-07-29-procurement-festival-data-layer.md：
 - 新签 = 新成交"是" + 定制品，窗口内 COUNT(DISTINCT company_id)（A-4：同一客户只计一次）
-- 新签积分 = 新签数 × 人员属性系数（A-15：积分跟人不跟单，distribute=1 / develop=1.5）
+- 新签积分按客户资源来源计：公司分配资源=1，社媒开发/转介绍=1.5
 - okki_orders.score 列已弃用（D-3），不参与任何积分口径
 - 公司 GMV = 名册内订单总额，不限订单类型（A-13：订单总额 GMV）
 - 人员/阵营/个人目标唯一参数源 = lsordertest.user_rel_team
@@ -13,6 +13,7 @@ commission 库表不带前缀（生产默认 schema 即 commission_db）；聚�
 一律在 Python 层做（SQLite 无 FLOOR，且计算逻辑要可单测）。
 """
 
+import json
 import logging
 from datetime import datetime
 
@@ -65,11 +66,16 @@ FIRST_RETURN_MARK = '%"20528142733548": "是"%'
 CUSTOM_MARK = '%"691123983470": "定制品"%'
 NEW_ANY_MARK = '%"22595163468": "是"%'
 
-_DEPT_IDS = ("24925", "24926", "25198", "258938", "258940", "258941", "258942")
+RESOURCE_SOURCE_FIELD = "45285192666116"
+# 资源来源是多选字段；命中任一开发/转介绍标签即按 1.5 分。
+# 其余值（阿里询盘、官网、Ins分配、展会等）统一按公司分配资源 1 分。
+DEVELOPMENT_SOURCE_MARKS = (
+    "ins开发", "社媒开发", "社交平台", "facebook", "tiktok", "熟人介绍", "转介绍",
+)
 
 # 属性快照（附录 B，2026-07-29 查库核实、用户裁决"全程固定"——A-1 关闭结论）：
-# 计分一律以本快照为准；employee_attribute_history 仅作快照外人员的兜底。
-# 活动期内 DB 属性变更不得影响积分（这张历史表本就是会变的）。
+# 2026-08-04 起不参与新签积分，仅供个人目标/阵营门槛等规则展示与判定。
+# employee_attribute_history 仅作快照外人员的兜底。
 ATTR_SNAPSHOT_2026 = {
     # 开发类（×1.5）：刘行行 代晴玉 毕晓珍 张笑 李宝珠 周露露 尹德魁 夏新月
     "56506160": "develop", "55278725": "develop", "55278718": "develop",
@@ -87,27 +93,60 @@ ATTR_SNAPSHOT_2026 = {
 
 
 def _common_filter(a: str) -> str:
-    """公共过滤：排除私人订单 + 状态限定 + 销售部门范围（用户提供的保底 SQL 口径）。
+    """公共过滤：排除私人订单 + 状态限定。
 
-    department_id 匹配补右界（`,` 或 `}`），防未来出现 249250 这类前缀撞号 id。
+    参赛范围由 user_rel_team 24 人名册限定，不再用历史部门 ID 二次过滤，
+    避免嘉树等新部门或活动期调部门造成合法参赛人员漏算。
     """
-    parts = []
-    for d in _DEPT_IDS:
-        parts.append(f"{a}.departments LIKE '%\"department_id\": {d},%'")
-        parts.append(f"{a}.departments LIKE '%\"department_id\": {d}}}%'")
-    depts = " OR ".join(parts)
     return (
         f" AND {a}.trail NOT LIKE '%个人%'"
         f" AND ({a}.status = '13972831656'"
         f"      OR ({a}.status = '13972831654' AND {a}.status_name = '已结清'))"
-        f" AND ({depts})"
     )
 
 
-def new_sign_points(count: int, attribute: str | None) -> float:
-    """新签积分 = 新签数 × 属性系数（A-15）。属性缺失按分配类（×1）兜底。"""
-    factor = 1.5 if attribute == "develop" else 1.0
-    return count * factor
+def new_sign_source_points(custom_fields: str | None) -> float:
+    """单个新签客户的积分：社媒开发/转介绍 1.5，其余来源 1。"""
+    raw = custom_fields or ""
+    try:
+        source = str(json.loads(raw).get(RESOURCE_SOURCE_FIELD) or "")
+    except (AttributeError, TypeError, ValueError, json.JSONDecodeError):
+        # 历史同步数据偶有非法 JSON，仅在明确命中开发标签时计 1.5。
+        source = raw
+    normalized = source.casefold()
+    return 1.5 if any(mark in normalized for mark in DEVELOPMENT_SOURCE_MARKS) else 1.0
+
+
+def _aggregate_new_sign_rows(rows) -> dict[str, dict]:
+    """按人聚合新签：同客户只计 1 个，多条来源时取该客户最高分值。"""
+    stats: dict[str, dict] = {}
+    customer_points: dict[tuple[str, str], float] = {}
+    for row in rows:
+        user_id = str(row["user_id"])
+        customer_id = str(row["customer_id"])
+        stat = stats.setdefault(user_id, {"cnt": 0, "points": 0.0, "amt": 0.0})
+        stat["amt"] += float(row["amt"] or 0)
+        key = (user_id, customer_id)
+        points = float(row.get("source_points") or new_sign_source_points(row.get("custom_fields")))
+        customer_points[key] = max(customer_points.get(key, 0.0), points)
+    for (user_id, _customer_id), points in customer_points.items():
+        stats[user_id]["cnt"] += 1
+        stats[user_id]["points"] += points
+    return stats
+
+
+def _ark_invoice_source_points(db: Session, order_ids: list[str]) -> dict[str, float]:
+    """方舟主轨按发票精确关联的小满订单补齐资源积分。"""
+    if not order_ids:
+        return {}
+    stmt = text(
+        "SELECT order_id, custom_fields FROM lsordertest.okki_orders "
+        "WHERE order_id IN :ids"
+    ).bindparams(bindparam("ids", expanding=True))
+    return {
+        str(row["order_id"]): new_sign_source_points(row["custom_fields"])
+        for row in db.execute(stmt, {"ids": order_ids}).mappings()
+    }
 
 
 def get_new_sign_board(db: Session, date_from: str, date_to: str,
@@ -131,24 +170,33 @@ def get_new_sign_board(db: Session, date_from: str, date_to: str,
         # 不做 order_type 过滤：方舟"生产订单"与小满"定制品"不是一个概念（2026-07-30 用户裁决），
         # 主轨以发票业务标记为准、全量发票计入
         rows = db.execute(text(
-            "SELECT t.user_id, COUNT(DISTINCT i.customer_id) AS cnt,"
-            f"       COALESCE(SUM({_ARK_AMOUNT}), 0) AS amt"
+            "SELECT t.user_id, i.customer_id, i.xiaoman_order_id,"
+            f"       {_ARK_AMOUNT} AS amt"
             + _ARK_JOIN +
             "   AND i.okki_new_deal = 1"
             "   AND i.invoice_date >= :d1 AND i.invoice_date <= :d2"
-            " GROUP BY t.user_id"
         ), {"d1": date_from, "d2": date_to}).mappings().all()
+        source_points = _ark_invoice_source_points(
+            db, list({str(row["xiaoman_order_id"]) for row in rows if row["xiaoman_order_id"]})
+        )
+        rows = [
+            {
+                **dict(row),
+                "source_points": source_points.get(str(row["xiaoman_order_id"]), 1.0),
+            }
+            for row in rows
+        ]
     else:
         rows = db.execute(text(
-            "SELECT a2.user_id, COUNT(DISTINCT a2.company_id) AS cnt,"
-            "       COALESCE(SUM(a2.amount_usd), 0) AS amt "
+            "SELECT a2.user_id, a2.company_id AS customer_id,"
+            "       a2.amount_usd AS amt, a2.custom_fields "
             "FROM lsordertest.okki_orders a2 "
+            "JOIN lsordertest.user_rel_team t ON t.user_id = a2.user_id "
             "WHERE a2.custom_fields LIKE :mark "
             "  AND a2.account_date >= :d1 AND a2.account_date <= :d2"
-            + _common_filter("a2") +
-            " GROUP BY a2.user_id"
+            + _common_filter("a2")
         ), {"mark": NEW_SIGN_MARK, "d1": date_from, "d2": date_to}).mappings().all()
-    stats = {r["user_id"]: r for r in rows}
+    stats = _aggregate_new_sign_rows(rows)
 
     items = []
     for m in roster:
@@ -165,7 +213,7 @@ def get_new_sign_board(db: Session, date_from: str, date_to: str,
             "attribute": attribute or "distribute",
             "target": int(m["target"] or 0),
             "new_count": cnt,
-            "new_points": new_sign_points(cnt, attribute),
+            "new_points": round(float(stat["points"]), 1) if stat else 0.0,
             "new_amount": round(amount, 2),
             "reached": cnt >= int(m["target"] or 0) > 0,
         })
