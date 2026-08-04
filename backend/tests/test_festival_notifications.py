@@ -7,8 +7,15 @@ import pytest
 from PIL import Image
 from sqlalchemy.orm import sessionmaker
 
+from app.dingtalk.webhook import DingTalkWebhookError
 from app.festival import notification_service
 from app.festival.models import FestivalEvent, FestivalState
+
+
+def test_only_known_busy_response_is_delivery_uncertain():
+    assert DingTalkWebhookError(130101, "系统繁忙").delivery_uncertain is True
+    assert DingTalkWebhookError(40035, "系统繁忙").delivery_uncertain is False
+    assert DingTalkWebhookError(130101, "签名错误").delivery_uncertain is False
 
 
 def test_festival_sender_never_falls_back_to_global_alert_group(monkeypatch):
@@ -278,6 +285,64 @@ def test_event_delivery_lease_and_backoff(engine, monkeypatch):
         row.dingtalk_next_retry_at = datetime.now() - timedelta(seconds=1)
         db.commit()
     assert notification_service._claim_event_delivery(event_id) is True
+
+
+@pytest.mark.asyncio
+async def test_busy_response_marks_daily_report_sent_to_avoid_duplicate(engine, monkeypatch):
+    session_factory = sessionmaker(bind=engine, expire_on_commit=False)
+    monkeypatch.setattr(notification_service, "SessionLocal", session_factory)
+
+    class BusySender:
+        @staticmethod
+        async def send_markdown(*_args, **_kwargs):
+            raise DingTalkWebhookError(130101, "系统繁忙")
+
+    monkeypatch.setattr(notification_service, "_festival_sender", lambda: BusySender())
+    monkeypatch.setattr(notification_service, "_daily_snapshot", lambda _day: {})
+    monkeypatch.setattr(notification_service, "capture_board_screenshots", lambda _day: [{}, {}, {}, {}])
+    monkeypatch.setattr(notification_service, "build_daily_markdown", lambda *_args: "report")
+
+    result = await notification_service.send_daily_report_if_due(
+        force=True, now=datetime(2026, 8, 4, 12, 0),
+    )
+
+    assert result == {"sent": True, "screenshots": 4, "delivery_uncertain": True}
+    with session_factory() as db:
+        row = db.get(FestivalState, "delivery:daily:2026-08-04")
+        assert json.loads(row.value_json)["status"] == "sent"
+
+
+@pytest.mark.asyncio
+async def test_busy_response_marks_popup_event_sent_to_avoid_duplicate(engine, monkeypatch):
+    session_factory = sessionmaker(bind=engine, expire_on_commit=False)
+    monkeypatch.setattr(notification_service, "SessionLocal", session_factory)
+    with session_factory() as db:
+        row = FestivalEvent(
+            event_type="daily_combo", level="L3", subject_type="person",
+            subject_id="U1", subject_name="张三", detail="×2 连击",
+            dedup_key="combo:busy-response",
+        )
+        db.add(row)
+        db.commit()
+        event = notification_service._event_dict(row)
+
+    class BusySender:
+        @staticmethod
+        async def send_markdown(*_args, **_kwargs):
+            raise DingTalkWebhookError(130101, "系统繁忙")
+
+    monkeypatch.setattr(notification_service, "_detect_and_load_pending", lambda: [event])
+    monkeypatch.setattr(notification_service, "_festival_sender", lambda: BusySender())
+    monkeypatch.setattr(notification_service, "render_event_image", lambda _event: None)
+    monkeypatch.setattr(notification_service, "_public_url", lambda _path: "https://example.test/event.png")
+
+    result = await notification_service.monitor_festival_events()
+
+    assert result["sent"] == 1
+    with session_factory() as db:
+        saved = db.get(FestivalEvent, event["id"])
+        assert saved.dingtalk_sent_at is not None
+        assert saved.dingtalk_next_retry_at is None
 
 
 @pytest.mark.asyncio

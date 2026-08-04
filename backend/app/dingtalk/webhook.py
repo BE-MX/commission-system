@@ -11,6 +11,18 @@ from app.dingtalk.client import DingTalkClient
 logger = logging.getLogger("commission.dingtalk")
 
 
+class DingTalkWebhookError(RuntimeError):
+    """钉钉返回的业务错误；系统繁忙可能发生在服务端已经投递之后。"""
+
+    def __init__(self, errcode: int | str | None, errmsg: str | None):
+        self.errcode = errcode
+        self.errmsg = str(errmsg or "unknown")
+        self.delivery_uncertain = (
+            str(self.errcode) == "130101" and self.errmsg.strip() == "系统繁忙"
+        )
+        super().__init__(f"钉钉消息发送失败: {self.errmsg}")
+
+
 class WebhookSender:
     """通过群机器人 Webhook 发送消息"""
 
@@ -40,8 +52,9 @@ class WebhookSender:
             resp = await client.post(url, json=payload, timeout=10)
             result = resp.json()
             if result.get("errcode") != 0:
-                logger.error("钉钉消息发送失败: %s", result.get("errmsg"))
-                raise RuntimeError(f"钉钉消息发送失败: {result.get('errmsg')}")
+                logger.error("钉钉消息发送失败: code=%s message=%s",
+                             result.get("errcode"), result.get("errmsg"))
+                raise DingTalkWebhookError(result.get("errcode"), result.get("errmsg"))
             return result
 
     async def send_text(

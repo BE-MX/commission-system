@@ -66,7 +66,7 @@ class Settings(BaseSettings):
     FESTIVAL_DINGTALK_WEBHOOK_URL: str = ""
     FESTIVAL_DINGTALK_WEBHOOK_SECRET: str = ""
     # 定时截图从本机生产入口读取；端口/浏览器路径可按服务器实际安装覆盖。
-    FESTIVAL_SCREENSHOT_BASE_URL: str = "http://127.0.0.1:8002"
+    FESTIVAL_SCREENSHOT_BASE_URL: str = "http://127.0.0.1:8001"
     FESTIVAL_BROWSER_EXECUTABLE: str = ""
 
     # ── 设计预约模块 ──────────────────────────────────────

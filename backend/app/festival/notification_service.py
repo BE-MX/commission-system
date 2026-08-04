@@ -20,7 +20,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.core.config import get_settings
 from app.core.database import SessionLocal
-from app.dingtalk.webhook import WebhookSender
+from app.dingtalk.webhook import DingTalkWebhookError, WebhookSender
 from app.festival import service
 from app.festival.models import FestivalEvent, FestivalState
 
@@ -329,6 +329,14 @@ async def monitor_festival_events() -> dict:
             await anyio.to_thread.run_sync(_mark_event_delivery, event["id"], None)
             sent += 1
         except Exception as exc:
+            if isinstance(exc, DingTalkWebhookError) and exc.delivery_uncertain:
+                # 实测钉钉可能已把消息投递到群，却返回“系统繁忙”。此时自动重试会重复轰炸；
+                # 按已投递收口并留警告日志，其他明确失败仍走退避重试。
+                await anyio.to_thread.run_sync(_mark_event_delivery, event["id"], None)
+                logger.warning("采购节事件钉钉响应不确定，按已投递收口 event=%s code=%s",
+                               event["id"], exc.errcode)
+                sent += 1
+                continue
             error = str(exc)
             errors.append(f"event={event['id']} {error}")
             await anyio.to_thread.run_sync(_mark_event_delivery, event["id"], error)
@@ -496,6 +504,17 @@ async def send_daily_report_if_due(*, force: bool = False,
         await sender.send_markdown(f"采购节每日战报 · {target_date.isoformat()}", markdown)
         await anyio.to_thread.run_sync(_daily_finish, target_date, True)
         return {"sent": True, "screenshots": len(screenshots)}
+    except DingTalkWebhookError as exc:
+        if exc.delivery_uncertain:
+            await anyio.to_thread.run_sync(_daily_finish, target_date, True)
+            logger.warning("采购节日报钉钉响应不确定，按已投递收口 date=%s code=%s",
+                           target_date, exc.errcode)
+            return {
+                "sent": True, "screenshots": len(screenshots),
+                "delivery_uncertain": True,
+            }
+        await anyio.to_thread.run_sync(_daily_finish, target_date, False)
+        raise
     except Exception:
         await anyio.to_thread.run_sync(_daily_finish, target_date, False)
         raise
