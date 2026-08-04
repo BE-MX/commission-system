@@ -31,6 +31,16 @@ def _data_source(source: str | None = None) -> str:
     return s if s in ("okki", "ark") else "okki"
 
 
+# 活动期离职人员仍保留在业务库历史表中，但必须从所有采购节口径统一排除。
+# 不改 lsordertest（只读业务库），也不靠前端隐藏，避免公司总数/团队/阵营/事件仍计入。
+EXCLUDED_FESTIVAL_USER_IDS = frozenset({"57130433"})  # 隋晓茹，2026-08-04 确认离职
+
+
+def _active_roster_filter(alias: str = "t") -> str:
+    ids = ", ".join(f"'{user_id}'" for user_id in sorted(EXCLUDED_FESTIVAL_USER_IDS))
+    return f" AND {alias}.user_id NOT IN ({ids})" if ids else ""
+
+
 # ── 主轨（commission_db.ark_invoices）公共件 ─────────────────────
 # 统计范围（2026-07-30 决策②）：仅 sync_status='synced'（已推 OKKI 的发票）
 # 金额口径（决策①）：总金额扣手续费（surcharge_amount 附加费/Paypal Surcharge）
@@ -40,6 +50,7 @@ _ARK_JOIN = (
     " JOIN ark_user_external_bindings b ON b.ark_user_id = i.sales_user_id"
     "   AND b.provider = 'okki' AND b.binding_status = 'active' AND b.deleted_at IS NULL"
     " JOIN lsordertest.user_rel_team t ON t.user_id = b.external_account_id"
+    + _active_roster_filter("t") +
     " WHERE i.sync_status = 'synced'"
 )
 # 复购客户池（2025+ 新签）：老客历史看 lsordertest，方舟时代新客看自家发票，双通道 OR 自洽
@@ -81,10 +92,10 @@ ATTR_SNAPSHOT_2026 = {
     "56506160": "develop", "55278725": "develop", "55278718": "develop",
     "56646975": "develop", "55369626": "develop", "55951723": "develop",
     "56046345": "develop", "55278716": "develop",
-    # 分配类（×1）：隋晓茹 刘也 宋化通 张心茹 田雯 翟佳盟 张砚斐 潘康衡
+    # 分配类（×1）：刘也 宋化通 张心茹 田雯 翟佳盟 张砚斐 潘康衡
     #             胡宁宁 刘源 刘琳琳 罗馨瑜 宋皓月 高瑞杰 曲冉 凯丽
-    "57130433": "distribute", "57125949": "distribute", "55303520": "distribute",
-    "57180994": "distribute", "55531178": "distribute", "55411216": "distribute",
+    "57125949": "distribute", "55303520": "distribute", "57180994": "distribute",
+    "55531178": "distribute", "55411216": "distribute",
     "56158751": "distribute", "55296478": "distribute", "57010933": "distribute",
     "55497300": "distribute", "55278720": "distribute", "56843323": "distribute",
     "55298611": "distribute", "56786146": "distribute", "56653054": "distribute",
@@ -95,7 +106,7 @@ ATTR_SNAPSHOT_2026 = {
 def _common_filter(a: str) -> str:
     """公共过滤：排除私人订单 + 状态限定。
 
-    参赛范围由 user_rel_team 24 人名册限定，不再用历史部门 ID 二次过滤，
+    参赛范围由 user_rel_team 名册扣除离职排除表后限定，不再用历史部门 ID 二次过滤，
     避免嘉树等新部门或活动期调部门造成合法参赛人员漏算。
     """
     return (
@@ -151,11 +162,12 @@ def _ark_invoice_source_points(db: Session, order_ids: list[str]) -> dict[str, f
 
 def get_new_sign_board(db: Session, date_from: str, date_to: str,
                        source: str | None = None) -> dict:
-    """个人新签积分榜：24 人全员（无单也出 0 值卡），按积分降序、新签金额决胜（B-10）。"""
+    """个人新签积分榜：在职参赛人员全员展示，按积分降序、新签金额决胜（B-10）。"""
     roster = db.execute(text(
         "SELECT user_id, Name AS name, En_name AS en_name, Team AS team, Camp AS camp,"
         "       newclient_t AS target "
-        "FROM lsordertest.user_rel_team ORDER BY id"
+        "FROM lsordertest.user_rel_team t WHERE 1=1"
+        + _active_roster_filter("t") + " ORDER BY id"
     )).mappings().all()
 
     attrs = {
@@ -192,6 +204,7 @@ def get_new_sign_board(db: Session, date_from: str, date_to: str,
             "       a2.amount_usd AS amt, a2.custom_fields "
             "FROM lsordertest.okki_orders a2 "
             "JOIN lsordertest.user_rel_team t ON t.user_id = a2.user_id "
+            + _active_roster_filter("t") +
             "WHERE a2.custom_fields LIKE :mark "
             "  AND a2.account_date >= :d1 AND a2.account_date <= :d2"
             + _common_filter("a2")
@@ -235,7 +248,8 @@ def get_company_new_total(db: Session, date_from: str, date_to: str,
         ), {"d1": date_from, "d2": date_to}).scalar()
         return int(val or 0)
     roster_ids = [r[0] for r in db.execute(text(
-        "SELECT user_id FROM lsordertest.user_rel_team"
+        "SELECT t.user_id FROM lsordertest.user_rel_team t WHERE 1=1"
+        + _active_roster_filter("t")
     )).fetchall()]
     if not roster_ids:
         return 0
@@ -261,7 +275,8 @@ def get_gmv_total(db: Session, date_from: str, date_to: str,
         ), {"d1": date_from, "d2": date_to}).scalar()
         return round(float(val or 0), 2)
     roster_ids = [r[0] for r in db.execute(text(
-        "SELECT user_id FROM lsordertest.user_rel_team"
+        "SELECT t.user_id FROM lsordertest.user_rel_team t WHERE 1=1"
+        + _active_roster_filter("t")
     )).fetchall()]
     if not roster_ids:
         return 0.0
@@ -326,6 +341,7 @@ def get_repurchase_stats(db: Session, date_from: str, date_to: str,
         "SELECT a2.user_id, COUNT(DISTINCT a2.company_id) AS cnt "
         "FROM lsordertest.okki_orders a2 "
         "JOIN lsordertest.user_rel_team t ON t.user_id = a2.user_id "
+        + _active_roster_filter("t") +
         "WHERE a2.custom_fields LIKE :m1 AND a2.custom_fields LIKE :m2 "
         "  AND a2.account_date >= :d1 AND a2.account_date <= :d2"
         + _common_filter("a2") + " GROUP BY a2.user_id"
@@ -338,6 +354,7 @@ def get_repurchase_stats(db: Session, date_from: str, date_to: str,
         "SELECT a2.user_id, COALESCE(SUM(a2.amount_usd), 0) AS amt "
         "FROM lsordertest.okki_orders a2 "
         "JOIN lsordertest.user_rel_team t ON t.user_id = a2.user_id "
+        + _active_roster_filter("t") +
         "WHERE a2.custom_fields LIKE :mr "
         "  AND a2.account_date >= :d1 AND a2.account_date <= :d2"
         + _common_filter("a2") +
@@ -512,11 +529,12 @@ def build_ai_tip(db: Session, headline: dict) -> dict:
 def get_repurchase_payload(db: Session, date_from: str | None, date_to: str | None,
                            re_stats: dict | None = None, summary: dict | None = None,
                            source: str | None = None) -> dict:
-    """首返·复购双榜：全员 24 人（周露露参与个人奖）。
+    """首返·复购双榜：在职参赛人员全员展示（周露露参与个人奖）。
     首返榜：个数降序，个数相同看复购金额（§1.4）；复购金额榜：金额降序，同额比首返数。"""
     ns, gmv, custom = _windows(date_from, date_to)
     roster = db.execute(text(
-        "SELECT user_id, Name AS name FROM lsordertest.user_rel_team ORDER BY id"
+        "SELECT t.user_id, t.Name AS name FROM lsordertest.user_rel_team t WHERE 1=1"
+        + _active_roster_filter("t") + " ORDER BY id"
     )).mappings().all()
     stats = re_stats if re_stats is not None else get_repurchase_stats(db, gmv[0], gmv[1], source=source)
 
@@ -650,8 +668,8 @@ EXCLUDED_TEAMS = ("个人队",)  # 周露露个人参赛，不评团队奖（§1
 # (新签权重, 复购权重)；未列出者 = 两周年及以上档 50/50
 WEIGHT_SNAPSHOT_2026 = {
     "56786146": (0.6, 0.4), "56843323": (0.6, 0.4),                      # 1 周年：高瑞杰 罗馨瑜
-    "57010933": (0.7, 0.3), "57125949": (0.7, 0.3), "57130433": (0.7, 0.3),  # 0 周年：胡宁宁 刘也 隋晓茹
-    "57130855": (0.7, 0.3), "57180994": (0.7, 0.3),                      # 0 周年：凯丽 张心茹
+    "57010933": (0.7, 0.3), "57125949": (0.7, 0.3),                     # 0 周年：胡宁宁 刘也
+    "57130855": (0.7, 0.3), "57180994": (0.7, 0.3),                     # 0 周年：凯丽 张心茹
 }
 
 

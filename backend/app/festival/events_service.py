@@ -37,10 +37,18 @@ EVENT_META = {
     "camp_first":      {"level": "L3", "label": "成为阵营第一"},
 }
 
+# 2026-08-04 有效名册变化后，以下事件的“事实主体”会随全员口径一起变化。
+# 给新事实换幂等命名空间，同时让 feed 隐藏旧命名空间；这样既保留审计历史，
+# 又不会让旧 first_sign 唯一键挡住当前在职人员的正确首单事件。
+ROSTER_EVENT_VERSION = "roster-20260804"
+ROSTER_REBASED_EVENT_TYPES = frozenset({"first_sign", "team_top3", "camp_target"})
+
 
 def _cand(event_type, subject_type, subject_id, subject_name,
           dedup_key, amount=None, detail=None):
     meta = EVENT_META[event_type]
+    if event_type in ROSTER_REBASED_EVENT_TYPES:
+        dedup_key = f"{ROSTER_EVENT_VERSION}:{dedup_key}"
     return {
         "event_type": event_type,
         "level": meta["level"],
@@ -78,6 +86,7 @@ def _deal_candidates(db: Session, date_from: str, date_to: str,
         "SELECT a2.order_id, a2.amount_usd, t.Name AS name, t.user_id AS user_id "
         "FROM lsordertest.okki_orders a2 "
         "JOIN lsordertest.user_rel_team t ON t.user_id = a2.user_id "
+        + fsvc._active_roster_filter("t") +
         "WHERE a2.amount_usd >= :thr "
         "  AND a2.account_date >= :d1 AND a2.account_date <= :d2"
         + fsvc._common_filter("a2")
@@ -112,6 +121,7 @@ def _first_sign_candidate(db: Session, date_from: str, date_to: str,
         "SELECT t.Name AS name, t.user_id AS user_id, a2.amount_usd "
         "FROM lsordertest.okki_orders a2 "
         "JOIN lsordertest.user_rel_team t ON t.user_id = a2.user_id "
+        + fsvc._active_roster_filter("t") +
         "WHERE a2.custom_fields LIKE :mark "
         "  AND a2.account_date >= :d1 AND a2.account_date <= :d2"
         + fsvc._common_filter("a2") +
@@ -201,11 +211,20 @@ def persist_new(db: Session, candidates: list) -> int:
 
 
 def feed(db: Session, limit: int = 40, within_hours: int = 48) -> list:
-    """滚动流：最新在前，只出 48 小时内的播报（留档不删，只是屏上不再滚旧闻）。"""
+    """滚动流：只出当前有效名册口径下 48 小时内的播报，历史留档不删。"""
     cutoff = datetime.now() - timedelta(hours=within_hours)
-    rows = (db.query(FestivalEvent)
-            .filter(FestivalEvent.created_at >= cutoff)
-            .order_by(FestivalEvent.id.desc()).limit(limit).all())
+    query = db.query(FestivalEvent).filter(FestivalEvent.created_at >= cutoff)
+    excluded_ids = tuple(fsvc.EXCLUDED_FESTIVAL_USER_IDS)
+    if excluded_ids:
+        query = query.filter(
+            (FestivalEvent.subject_type != "person")
+            | FestivalEvent.subject_id.notin_(excluded_ids)
+        )
+    query = query.filter(
+        FestivalEvent.event_type.notin_(tuple(ROSTER_REBASED_EVENT_TYPES))
+        | FestivalEvent.dedup_key.like(f"{ROSTER_EVENT_VERSION}:%")
+    )
+    rows = query.order_by(FestivalEvent.id.desc()).limit(limit).all()
     return [{
         "id": r.id,
         "event_type": r.event_type,
