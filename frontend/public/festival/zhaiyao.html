@@ -697,10 +697,11 @@
     }
     var fresh = events.filter(function (e) { return e.id > seen; });
     if (fresh.length) {
-      /* 新事件从旧到新排队，最多连播 3 条（风暴限流） */
+      /* 新事件从旧到新排队；每轮最多 3 条，余下事件留到下轮，限流但绝不丢弹框。 */
       fresh.sort(function (a, b) { return a.id - b.id; });
-      fresh.slice(-3).forEach(function (e) { popupQueue.push(e); });
-      localStorage.setItem(seenKey, String(maxId));
+      var batch = fresh.slice(0, 3);
+      batch.forEach(function (e) { popupQueue.push(e); });
+      localStorage.setItem(seenKey, String(batch[batch.length - 1].id));
       playNext();
     }
   }

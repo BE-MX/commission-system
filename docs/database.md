@@ -178,9 +178,10 @@
 - `ark_domestic_item_progress`：**按数量累计，不是 0/1**。`(item_id, step_order)` UNIQUE，`completed_qty` 是本道累计完成数。全系统唯一口径：`可报数量(第N道) = completed_qty(第N-1道) − completed_qty(第N道)`，首道上游 = `order_qty`。刻意不存冗余的「待做数量」字段——推导值永远自洽。`step_order` 由 `init_item_progress` 按位置从 1 重排，不沿用路线表编号（跳号会让相邻序号不等于上下游）。
 - `ark_domestic_report_logs`：报工流水（外贸侧没有这张表，撤销即抹掉不可追溯）。撤销是 `revoked=1` 而非删行；`request_id` UNIQUE 是客户端幂等键（弱网重试不重复累加，NULL 不参与唯一性判定）。计件统计口径 = `revoked=0` 的 `report_qty` 求和。
 
-## 采购节大屏（迁移 084，2026-07-30）
+## 采购节大屏（迁移 084/087，2026-07-30、2026-08-04）
 
-- `ark_festival_events` — 大屏事件流（摘要屏滚动记录 + 弹窗触发源）：event_type/level(L3插播条|L4全屏弹窗)/subject_type(person|team|camp)/subject_id/subject_name/amount/detail，**dedup_key UNIQUE 幂等**——同一事实（某人首次进前三、某单大单等）只记一次，检测重跑/重启不重复；事件由 /api/public/festival/headline 请求顺带检测落库（真实活动窗口才写，预览只出内存候选）。人员/阵营/团队参数源是 lsordertest.user_rel_team（业务库，非本库表）。
+- `ark_festival_events` — 大屏事件流（摘要屏滚动记录 + 弹窗触发源）：event_type/level(L3插播条|L4全屏弹窗)/subject_type(person|team|camp|company)/subject_id/subject_name/amount/detail，**dedup_key UNIQUE 幂等**。迁移 087 增加钉钉投递时间、租约、下次重试、次数和最近错误；成功后才标记完成，失败按 1/2/4/8/16/30 分钟退避，15 分钟僵尸租约可接管；迁移时历史事件全部标记已发送，运行时首轮基线再屏蔽尚未落库的旧事实，避免上线补发旧弹框。
+- `ark_festival_states` — 排名、里程碑、当日连击与日报投递的持久状态。首轮观察只建立基线、不补发历史；后续用前后快照识别重复名次上升、149 目标每 10%、阵营 110% 起每 10% 超额和同日第 2 单起的连击。日报用 `delivery:daily:YYYY-MM-DD` 主键 claim 防止 17:30 cron 与分钟恢复任务重复发送。
 
 ## 名片管家（迁移 086，2026-08-01）
 
