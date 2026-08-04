@@ -5,7 +5,7 @@ from datetime import date
 
 from sqlalchemy import text
 
-from app.festival import service
+from app.festival import events_service, service
 from app.festival.models import FestivalEvent  # noqa: F401 —— 注册进 Base.metadata 供 conftest 建表
 from app.invoice.models import Invoice  # noqa: F401 —— 主轨测试建表（同上）
 from app.auth.models import ArkUserExternalBinding  # noqa: F401
@@ -155,6 +155,85 @@ def _insert_order(db, oid, cid, amt, uid, ad, *, custom_fields=MARK_NEW, departm
         " VALUES (:oid, :cid, :amt, :uid, :cf, :ad, '公司', '13972831656', NULL, :dp)"),
         {"oid": oid, "cid": cid, "amt": amt, "uid": uid, "cf": custom_fields,
          "ad": ad, "dp": departments})
+
+
+def _add_departed_member(db):
+    user_id = "57130433"
+    db.execute(text(
+        "INSERT INTO lsordertest.user_rel_team"
+        " (id, Name, user_id, En_name, Team, Camp, gmv_t, newclient_t) VALUES"
+        " (99,'隋晓茹',:uid,'Kara','星星之火','阵营一',0,6)"
+    ), {"uid": user_id})
+    _insert_order(db, "O-DEPARTED-NEW", "C-DEPARTED", 6000, user_id, "2026-08-01")
+    _insert_order(db, "O-DEPARTED-RE", "C-DEPARTED", 4000, user_id, "2026-09-01",
+                  custom_fields=MARK_RE)
+    db.flush()
+
+
+def test_departed_member_excluded_from_all_okki_dashboards(db):
+    """离职人员不仅不出卡，订单也不进公司/复购/阵营/团队/事件口径。"""
+    _setup(db)
+    _add_departed_member(db)
+
+    board = service.get_new_sign_board(db, "2026-08-01", "2026-08-31")
+    assert service.EXCLUDED_FESTIVAL_USER_IDS.isdisjoint(
+        {row["user_id"] for row in board["items"]}
+    )
+    assert service.get_company_new_total(db, "2026-08-01", "2026-08-31") == 3
+    assert service.get_gmv_total(db, "2026-08-01", "2026-09-30") == 7300
+    assert "57130433" not in service.get_repurchase_stats(
+        db, "2026-08-01", "2026-09-30"
+    )
+
+    repurchase = service.get_repurchase_payload(db, None, None)
+    assert "57130433" not in {row["user_id"] for row in repurchase["first_board"]}
+    camps = service.get_camps_payload(db, None, None)
+    assert "57130433" not in {
+        member["user_id"] for camp in camps["camps"] for member in camp["members"]
+    }
+    teams = service.get_teams_payload(db, None, None)
+    assert "57130433" not in {
+        member["user_id"] for team in teams["teams"] for member in team["members"]
+    }
+
+    deals = events_service._deal_candidates(db, "2026-08-01", "2026-09-30")
+    assert "57130433" not in {event["subject_id"] for event in deals}
+    first = events_service._first_sign_candidate(db, "2026-08-01", "2026-08-31")
+    assert first and first[0]["subject_id"] == "U1"
+
+
+def test_departed_member_historical_events_are_invalidated_and_first_sign_rebased(db):
+    """旧事件保留审计记录，但不再展示，也不能挡住当前名册的正确首单。"""
+    _setup(db)
+    _add_departed_member(db)
+    db.add_all([
+        FestivalEvent(
+            event_type="first_sign", level="L4", subject_type="person",
+            subject_id="57130433", subject_name="隋晓茹", dedup_key="first_sign"),
+        FestivalEvent(
+            event_type="team_top3", level="L3", subject_type="team",
+            subject_id="星星之火", subject_name="星星之火", dedup_key="ttop3:星星之火"),
+        FestivalEvent(
+            event_type="big_deal", level="L3", subject_type="person",
+            subject_id="U1", subject_name="甲", dedup_key="deal:kept"),
+    ])
+    db.flush()
+
+    before = events_service.feed(db)
+    assert [(event["event_type"], event["subject_id"]) for event in before] == [
+        ("big_deal", "U1")
+    ]
+
+    current = events_service._first_sign_candidate(db, "2026-08-01", "2026-08-31")
+    assert current[0]["subject_id"] == "U1"
+    assert current[0]["dedup_key"] == "roster-20260804:first_sign"
+    assert events_service.persist_new(db, current) == 1
+    after = events_service.feed(db)
+    assert any(
+        event["event_type"] == "first_sign" and event["subject_id"] == "U1"
+        for event in after
+    )
+    assert db.query(FestivalEvent).filter_by(dedup_key="first_sign").count() == 1
 
 
 def test_company_total_distinct_across_people(db):
@@ -410,6 +489,31 @@ def test_ark_track_new_sign_synced_only_and_fee(db):
     # GMV 全 order_type（含 K4 规格品与 9 月复购单），扣手续费、仅 synced
     gmv = service.get_gmv_total(db, "2026-08-01", "2026-09-30", source="ark")
     assert gmv == 8000 + 500 + 3200 + 8000
+
+
+def test_departed_member_excluded_from_ark_dashboards(db):
+    """方舟主轨通过绑定表进名册时，同样排除离职人员和其金额。"""
+    _setup_ark(db)
+    _add_departed_member(db)
+    db.add(ArkUserExternalBinding(
+        ark_user_id=103, provider="okki", external_account_id="57130433",
+        binding_status="active"))
+    db.add(Invoice(
+        invoice_no="AK-DEPARTED", order_type="production",
+        customer_id="K-DEPARTED", customer_name="K-DEPARTED",
+        sales_user_id=103, invoice_date=date(2026, 8, 3), currency="USD",
+        total_amount=10000, surcharge_amount=0, okki_new_deal=1,
+        sync_status="synced", xiaoman_order_id="XO-DEPARTED"))
+    db.flush()
+
+    board = service.get_new_sign_board(db, "2026-08-01", "2026-08-31", source="ark")
+    assert "57130433" not in {row["user_id"] for row in board["items"]}
+    assert service.get_company_new_total(
+        db, "2026-08-01", "2026-08-31", source="ark"
+    ) == 3
+    assert service.get_gmv_total(
+        db, "2026-08-01", "2026-09-30", source="ark"
+    ) == 19700
 
 
 def test_ark_track_repurchase_pool(db):

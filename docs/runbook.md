@@ -847,7 +847,7 @@ grep "job completed" logs\service.log | tail -20
 
 - **访问**：局域网免登录 `http://192.168.101.193:8001/festival/xinqian.html?key=<FESTIVAL_SCREEN_KEYS 中任一值>`；key 配在 `backend/.env` 的 `FESTIVAL_SCREEN_KEYS`（逗号分隔可发多屏、可单独吊销）。**不配 key 端点整体关闭**（fail-closed，公网反代场景防裸奔）。
 - **静态页生效方式**：源文件在 `frontend/public/festival/`（含 assets 头像/背景）；改动后需拷贝进 `frontend/dist/festival/` 即时生效（同 /caigoujie/ 先例），或走 npm run build。
-- **数据口径**：读 lsordertest（小满同步），参赛范围仅由 `lsordertest.user_rel_team`（24 人名册/阵营/个人目标）限定，不按部门 ID 二次过滤（嘉树在内）；新签积分按资源来源字段计，公司分配资源=1，社媒开发/转介绍=1.5。人员分配/开发属性快照仅继续用于个人目标门槛等非积分规则。
+- **数据口径**：读 lsordertest（小满同步），参赛范围由 `lsordertest.user_rel_team` 扣除 `EXCLUDED_FESTIVAL_USER_IDS` 后限定（当前 23 人；隋晓茹于 2026-08-04 离职排除），不按部门 ID 二次过滤（嘉树在内）；新签积分按资源来源字段计，公司分配资源=1，社媒开发/转介绍=1.5。人员分配/开发属性快照仅继续用于个人目标门槛等非积分规则。
 - **大屏断更表现**：顶栏"数据截至"超 5 分钟自动变红；页面每 60s 轮询一次。
 - **摘要屏 AI 提示**：需在「AI 接入」后台创建预设 `festival_screen_tip`（system prompt 可空，模型任选），否则右下角走规则兜底文案（标"·规则播报"）；AI 生成每 10 分钟一次。
 - **事件留档**：`ark_festival_events`（commission_db）永久留档弹窗/进榜记录，幂等键去重；清空重跑活动前需手动 TRUNCATE。
