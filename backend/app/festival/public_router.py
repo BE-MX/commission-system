@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.response import ok
-from app.festival import service
+from app.festival import events_service, service
 
 router = APIRouter()
 
@@ -113,15 +113,20 @@ def headline_board(
     date_from: str | None = Query(None, description="预览窗口起（预览时事件不落库）"),
     date_to: str | None = Query(None, description="预览窗口止"),
     source: str | None = Query(None, description="取数轨道调试覆盖 okki/ark"),
+    after_id: int | None = Query(None, ge=0, description="大屏已播放的最后事件 ID"),
     db: Session = Depends(get_db),
 ):
     _require_key(key)
     date_from = _norm_date(date_from, "date_from")
     date_to = _norm_date(date_to, "date_to")
     source = _norm_source(source)
-    return ok(_cached("headline", date_from, date_to,
-                      lambda: service.get_headline_payload(db, date_from, date_to, source=source),
-                      source=source))
+    data = _cached("headline", date_from, date_to,
+                   lambda: service.get_headline_payload(db, date_from, date_to, source=source),
+                   source=source)
+    if after_id is not None and source is None and not (date_from and date_to):
+        # 排名等重计算结果继续共用缓存；未读事件按每台大屏自己的游标单独取，不能缓存。
+        data = {**data, "popup_events": events_service.feed(db, after_id=after_id)}
+    return ok(data)
 
 
 _AI_TIP_TTL = 600.0  # AI 提示 10 分钟重算一次

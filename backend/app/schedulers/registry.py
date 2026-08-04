@@ -97,7 +97,6 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
     scheduler.add_job(
         send_daily_report_if_due,
         trigger="cron", hour=17, minute=30,
-        kwargs={"force": True},
         id=JOB_FESTIVAL_DAILY_REPORT, replace_existing=True,
         max_instances=1, coalesce=True, misfire_grace_time=3600,
     )

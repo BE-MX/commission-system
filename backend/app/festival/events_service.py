@@ -429,8 +429,13 @@ def persist_new(db: Session, candidates: list) -> int:
     return added
 
 
-def feed(db: Session, limit: int = 40, within_hours: int = 48) -> list:
-    """滚动流：只出当前有效名册口径下 48 小时内的播报，历史留档不删。"""
+def feed(db: Session, limit: int = 40, within_hours: int = 48,
+         after_id: int | None = None) -> list:
+    """滚动流或未读批次。
+
+    ``after_id`` 缺省时返回最新事件供底栏展示；传入游标时按正序返回最老的
+    未读批次，避免一次同步超过 ``limit`` 条时跳过较早事件。
+    """
     cutoff = datetime.now() - timedelta(hours=within_hours)
     query = db.query(FestivalEvent).filter(FestivalEvent.created_at >= cutoff)
     excluded_ids = tuple(fsvc.EXCLUDED_FESTIVAL_USER_IDS)
@@ -443,7 +448,11 @@ def feed(db: Session, limit: int = 40, within_hours: int = 48) -> list:
         FestivalEvent.event_type.notin_(tuple(ROSTER_REBASED_EVENT_TYPES))
         | FestivalEvent.dedup_key.like(f"{ROSTER_EVENT_VERSION}:%")
     )
-    rows = query.order_by(FestivalEvent.id.desc()).limit(limit).all()
+    if after_id is None:
+        rows = query.order_by(FestivalEvent.id.desc()).limit(limit).all()
+    else:
+        rows = (query.filter(FestivalEvent.id > after_id)
+                .order_by(FestivalEvent.id.asc()).limit(limit).all())
     return [{
         "id": r.id,
         "event_type": r.event_type,

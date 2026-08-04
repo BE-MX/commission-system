@@ -165,6 +165,7 @@ def _add_departed_member(db):
         " (99,'隋晓茹',:uid,'Kara','星星之火','阵营一',0,6)"
     ), {"uid": user_id})
     _insert_order(db, "O-DEPARTED-NEW", "C-DEPARTED", 6000, user_id, "2026-08-01")
+    _insert_order(db, "O-DEPARTED-SECOND", "C-DEPARTED-2", 5000, user_id, "2026-08-01")
     _insert_order(db, "O-DEPARTED-RE", "C-DEPARTED", 4000, user_id, "2026-09-01",
                   custom_fields=MARK_RE)
     db.flush()
@@ -184,6 +185,7 @@ def test_departed_member_excluded_from_all_okki_dashboards(db):
     assert "57130433" not in service.get_repurchase_stats(
         db, "2026-08-01", "2026-09-30"
     )
+    assert "57130433" not in service.get_daily_orders(db, date(2026, 8, 1), source="okki")
 
     repurchase = service.get_repurchase_payload(db, None, None)
     assert "57130433" not in {row["user_id"] for row in repurchase["first_board"]}
@@ -234,6 +236,23 @@ def test_departed_member_historical_events_are_invalidated_and_first_sign_rebase
         for event in after
     )
     assert db.query(FestivalEvent).filter_by(dedup_key="first_sign").count() == 1
+
+
+def test_event_feed_cursor_returns_oldest_unread_batch_without_gaps(db):
+    """超过展示上限时，弹框游标必须从最老未读继续，不能只截最新 40 条。"""
+    for idx in range(45):
+        db.add(FestivalEvent(
+            event_type="big_deal", level="L3", subject_type="person",
+            subject_id="U1", subject_name="甲", dedup_key=f"cursor:{idx}",
+        ))
+    db.commit()
+
+    latest = events_service.feed(db, limit=40)
+    unread = events_service.feed(db, limit=40, after_id=0)
+
+    assert [row["id"] for row in latest] == list(range(45, 5, -1))
+    assert [row["id"] for row in unread] == list(range(1, 41))
+    assert [row["id"] for row in events_service.feed(db, limit=40, after_id=3)][:3] == [4, 5, 6]
 
 
 def test_company_total_distinct_across_people(db):

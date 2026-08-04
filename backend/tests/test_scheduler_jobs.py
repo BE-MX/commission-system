@@ -64,7 +64,7 @@ class TestSchedulerRegistration:
             daily_fields = {field.name: str(field) for field in daily.trigger.fields}
             assert daily_fields["hour"] == "17"
             assert daily_fields["minute"] == "30"
-            assert daily.kwargs == {"force": True}
+            assert daily.kwargs == {}
         finally:
             shutdown_scheduler(scheduler)
 

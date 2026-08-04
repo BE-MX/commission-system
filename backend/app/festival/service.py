@@ -314,6 +314,7 @@ def get_daily_orders(db: Session, target_date: date, source: str | None = None) 
             "SELECT a2.order_id, a2.amount_usd AS amount, a2.user_id, t.Name AS name "
             "FROM lsordertest.okki_orders a2 "
             "JOIN lsordertest.user_rel_team t ON t.user_id = a2.user_id "
+            + _active_roster_filter("t") +
             "WHERE a2.account_date = :day"
             + _common_filter("a2") +
             " ORDER BY a2.order_id"

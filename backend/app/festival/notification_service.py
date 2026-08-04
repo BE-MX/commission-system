@@ -386,6 +386,57 @@ def _daily_finish(target_date: date, success: bool) -> None:
         db.commit()
 
 
+def _daily_target_date(now: datetime, allow_today: bool = False) -> date | None:
+    """返回最早待补发日报日期；首次启用只从最近一个已到点日期建基线。"""
+    latest_due = (now.date() if allow_today or now.time() >= dt_time(17, 30)
+                  else now.date() - timedelta(days=1))
+    activity_start = date.fromisoformat(service.ACTIVITY_GMV_WINDOW[0])
+    activity_end = date.fromisoformat(service.ACTIVITY_GMV_WINDOW[1])
+    if latest_due < activity_start:
+        return None
+    latest_due = min(latest_due, activity_end)
+    baseline_key = "delivery:daily:baseline"
+    with SessionLocal() as db:
+        baseline = db.get(FestivalState, baseline_key)
+        if baseline is None:
+            # 首次启用从“启用当天”开始。上午启动不能把昨天误当成待补发历史；
+            # 活动结束后首次启用也不补发已经收官的日报。
+            if now.date() > activity_end:
+                return None
+            first_enabled_date = max(now.date(), activity_start)
+            try:
+                baseline = FestivalState(
+                    state_key=baseline_key,
+                    value_json=json.dumps({"start_date": first_enabled_date.isoformat()}),
+                )
+                db.add(baseline)
+                db.commit()
+            except IntegrityError:
+                db.rollback()
+                baseline = db.get(FestivalState, baseline_key)
+        try:
+            baseline_value = json.loads(baseline.value_json) if baseline else {}
+            first_date = date.fromisoformat(baseline_value["start_date"])
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            # 损坏的基线不能触发历史倒灌，安全地从当前最近应发日期恢复。
+            first_date = latest_due
+
+        candidate = max(first_date, activity_start)
+        while candidate <= latest_due:
+            row = db.get(FestivalState, f"delivery:daily:{candidate.isoformat()}")
+            status = None
+            if row:
+                try:
+                    value = json.loads(row.value_json)
+                    status = value.get("status") if isinstance(value, dict) else None
+                except (TypeError, json.JSONDecodeError):
+                    pass
+            if status != "sent":
+                return candidate
+            candidate += timedelta(days=1)
+    return None
+
+
 def _daily_snapshot(target_date: date) -> dict:
     with SessionLocal() as db:
         headline = service.get_headline_payload(db, None, None)
@@ -430,12 +481,12 @@ def build_daily_markdown(snapshot: dict, screenshots: list[dict]) -> str:
 async def send_daily_report_if_due(*, force: bool = False,
                                    now: datetime | None = None) -> dict:
     now = now or datetime.now()
-    target_date = now.date()
-    if not force and now.time() < dt_time(17, 30):
-        return {"sent": False, "reason": "not_due"}
     sender = _festival_sender()
     if sender is None:
         return {"sent": False, "reason": "disabled"}
+    target_date = await anyio.to_thread.run_sync(_daily_target_date, now, force)
+    if target_date is None:
+        return {"sent": False, "reason": "not_due_or_complete"}
     if not await anyio.to_thread.run_sync(_daily_claim, target_date):
         return {"sent": False, "reason": "already_claimed"}
     try:
