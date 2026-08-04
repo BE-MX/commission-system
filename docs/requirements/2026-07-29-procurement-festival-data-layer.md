@@ -29,7 +29,7 @@
 |---|------|------|------|
 | 1 | **首返的邻接 LIKE 匹配不到任何行**：custom_fields 按 OKKI 字段序序列化为 `{新成交, 订单类型, 包邮, 首返, ...}`，"首返"与"订单类型"不相邻 | 拆成两个独立 LIKE | 邻接版 0 行 → 拆分版 15 行 |
 | 2 | COUNT(*) 违反 A-4"同一客户只计一次" | `COUNT(DISTINCT company_id)` | 潘康衡测试窗 13 单/11 客户 |
-| 3 | `SUM(a2.score)` 与 A-15"积分跟人不跟单"冲突：score 列跟单型（分配类的人有 20 单 score=1.5） | 按人属性 `CASE eah.attribute_type WHEN 'develop' THEN 1.5 ELSE 1 END × 新签数` | score×属性交叉验证表 |
+| 3 | `SUM(a2.score)` 不可作为活动积分真相源 | 2026-08-04 更正：按资源来源字段 `45285192666116` 判定；公司分配=1，社媒开发/转介绍=1.5，不再使用人员属性 | 资源来源交叉验证 |
 | 4 | 复购积分无取整、无 2025+ 客户池限制 | `FLOOR(SUM/1000)` + EXISTS(该客户存在 account_date≥2025-01-01 的新成交单) | EXISTS 使测试窗复购金额 $2,231,408 → $538,150 |
 | 5 | departments 过滤会带进非参赛人员（如 57171776） | JOIN `user_rel_team` 限定 24 人名册 | 修正后无名册外人员 |
 
@@ -39,21 +39,19 @@
 -- 公共过滤（三条共用）：
 --   AND a2.trail NOT LIKE '%个人%'
 --   AND (a2.status = '13972831656' OR (a2.status = '13972831654' AND a2.status_name = '已结清'))
---   AND (departments LIKE 7 个 department_id 之一)   -- 24925/24926/25198/258938/258940/258941/258942
+-- 参赛范围仅由 JOIN user_rel_team 名册限定；不再按 department_id 过滤（含嘉树）
 
 -- ① 新签（窗口 2026-08-01 ~ 08-31）
 SELECT t.user_id, t.Name, t.Camp,
-       COUNT(DISTINCT a2.company_id) AS 新签数,
-       COUNT(DISTINCT a2.company_id)
-         * CASE eah.attribute_type WHEN 'develop' THEN 1.5 ELSE 1 END AS 新签积分
+       a2.company_id,
+       a2.amount_usd,
+       a2.custom_fields  -- 服务层按客户去重，对资源来源计 1/1.5 分
 FROM lsordertest.okki_orders a2
 JOIN lsordertest.user_rel_team t ON t.user_id = a2.user_id
-LEFT JOIN commission_db.employee_attribute_history eah
-       ON eah.employee_id = a2.user_id AND eah.is_current = 1
 WHERE a2.custom_fields LIKE '%"22595163468": "是", "691123983470": "定制品"%'
   AND a2.account_date BETWEEN '2026-08-01' AND '2026-08-31'
   AND <公共过滤>
-GROUP BY t.user_id, t.Name, t.Camp, eah.attribute_type;
+;
 
 -- ② 首返（窗口 2026-08-01 ~ 09-30；注意必须拆分 LIKE）
 SELECT t.user_id, t.Name,
@@ -106,7 +104,7 @@ GROUP BY t.user_id, t.Name;
 |---|------|
 | D-1 | ~~4 人目标值~~：**GMV 目标不需要**（gmv_t 不用于本活动）；新签目标按阵营门槛 × 属性填充，已落表。 |
 | D-2 | ~~newclient_t 与门槛的关系~~：旧值作废，**全表重填为阵营门槛 × 属性**——个人新签目标与瓜分门槛就是同一套数（A-8 口径再次坐实）；大屏"达成个人新签目标"即按 newclient_t（=门槛）判定。 |
-| D-3 | ~~score 列~~：**弃用**，不再进任何积分口径；新签积分一律按人属性计算。 |
+| D-3 | ~~score 列~~：**弃用**，不再进任何积分口径；2026-08-04 起新签积分一律按客户资源来源计算。 |
 | D-4 | ~~分队名写法~~：正字 = **无名、稻乐偲、个人队**（表内"无名@"与文档"稻乐俪"均已订正）。 |
 
 ## 6. 主轨统计方案：基于 commission_db 发票域（2026-07-30 设计并当日实现）
@@ -131,6 +129,7 @@ GROUP BY t.user_id, t.Name;
 | 时间归属 | account_date | **invoice_date**（推单时它就是 account_date 的来源，天然同口径） |
 | 定制品过滤 | custom_fields 邻接 LIKE（保留） | **不过滤**（2026-07-30 裁决：方舟"生产订单/库存单"与小满"定制品"不是一个概念，主轨全量发票计入）——两轨口径差**保持现状**（同日二次裁决选项2）：推成"规格品"的发票主轨计、保底轨不计，对账时此类差异属**正常预期**，人工识别后忽略，只盯其余差异；"连续 3 天零差异"判据相应放宽为"连续 3 天无规格品之外的差异" |
 | 新签 | 新成交"是"+定制品，COUNT(DISTINCT company_id) | okki_new_deal=1，COUNT(DISTINCT customer_id)；NULL 兜底复刻推单逻辑（跨库查该客户无 okki 历史单） |
+| 新签积分 | 读 custom_fields 资源来源：公司分配=1，社媒开发/转介绍=1.5 | 通过 xiaoman_order_id 精确回查当前小满订单来源；不用客户历史来源替代当前单；同步延迟暂无来源时按公司分配 1 分兜底 |
 | 首返 | 首返"是"拆分 LIKE | okki_first_return=1 |
 | 复购金额 | 新成交"否"+定制品+客户池 EXISTS | okki_new_deal=0 + 客户池 = EXISTS(lsordertest 2025+新成交) **OR** EXISTS(ark_invoices okki_new_deal=1 且 invoice_date≥2025)——历史判定仍跨库（同 RDS 零成本），未来纯方舟时代自洽 |
 | 业务员归属 | okki_orders.user_id | sales_user_id → ark_user_external_bindings(provider=okki) → user_rel_team |
