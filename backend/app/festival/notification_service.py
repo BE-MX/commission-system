@@ -168,6 +168,16 @@ def _browser_executable() -> Path:
     raise RuntimeError("采购节截图未找到 Edge/Chrome，请配置 FESTIVAL_BROWSER_EXECUTABLE")
 
 
+def _screenshot_command(browser: Path, profile: str, output: Path, url: str) -> list[str]:
+    """构造稳定帧截图命令：禁用动效，避免异步取数后截到 count-up 中间值。"""
+    return [
+        str(browser), "--headless=new", "--disable-gpu", "--hide-scrollbars",
+        "--no-first-run", f"--user-data-dir={profile}", "--window-size=1920,1080",
+        "--force-prefers-reduced-motion", "--virtual-time-budget=6000",
+        f"--screenshot={output}", url,
+    ]
+
+
 def capture_board_screenshots(target_date: date) -> list[dict]:
     settings = get_settings()
     screen_key = (settings.FESTIVAL_SCREEN_KEYS or "").split(",")[0].strip()
@@ -210,11 +220,10 @@ def capture_board_screenshots(target_date: date) -> list[dict]:
             query = urlencode({"key": screen_key, "stay": "1"})
             url = f"{base_url}/festival/{page}?{query}"
             try:
-                proc = subprocess.run([
-                    str(browser), "--headless=new", "--disable-gpu", "--hide-scrollbars",
-                    "--no-first-run", f"--user-data-dir={profile}", "--window-size=1920,1080",
-                    "--virtual-time-budget=6000", f"--screenshot={output}", url,
-                ], capture_output=True, text=True, timeout=40)
+                proc = subprocess.run(
+                    _screenshot_command(browser, profile, output, url),
+                    capture_output=True, text=True, timeout=40,
+                )
             except (OSError, subprocess.TimeoutExpired):
                 # TimeoutExpired 会携带含 key 的完整命令，必须在进入任务日志前截断。
                 raise RuntimeError(f"{title}截图进程失败，请检查浏览器安装与服务状态") from None

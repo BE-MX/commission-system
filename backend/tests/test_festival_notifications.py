@@ -82,6 +82,18 @@ def test_browser_missing_fails_with_actionable_message(monkeypatch):
         raise AssertionError("缺少浏览器时必须明确失败")
 
 
+def test_screenshot_command_forces_stable_reduced_motion_frame(tmp_path):
+    command = notification_service._screenshot_command(
+        tmp_path / "edge.exe",
+        str(tmp_path / "profile"),
+        tmp_path / "board.png",
+        "http://screen.test/festival/xinqian.html?key=secret",
+    )
+
+    assert "--force-prefers-reduced-motion" in command
+    assert "--virtual-time-budget=6000" in command
+
+
 def test_screenshot_preflight_rejects_error_page_without_leaking_key(tmp_path, monkeypatch):
     settings = notification_service.get_settings()
     monkeypatch.setattr(settings, "FESTIVAL_SCREEN_KEYS", "secret-screen-key")
