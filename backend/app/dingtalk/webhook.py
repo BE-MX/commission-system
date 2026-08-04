@@ -14,16 +14,19 @@ logger = logging.getLogger("commission.dingtalk")
 class WebhookSender:
     """通过群机器人 Webhook 发送消息"""
 
-    def __init__(self):
+    def __init__(self, webhook_url: str | None = None, webhook_secret: str | None = None):
         self._settings = get_dingtalk_settings()
+        self._webhook_url = webhook_url
+        self._webhook_secret = webhook_secret
 
     def _build_url(self) -> str:
         """拼接签名参数后的 Webhook URL"""
-        url = self._settings.DINGTALK_WEBHOOK_URL
+        url = self._webhook_url or self._settings.DINGTALK_WEBHOOK_URL
         if not url:
             raise RuntimeError("DINGTALK_WEBHOOK_URL 未配置")
 
-        secret = self._settings.DINGTALK_WEBHOOK_SECRET
+        secret = (self._webhook_secret if self._webhook_url is not None
+                  else self._settings.DINGTALK_WEBHOOK_SECRET)
         if secret:
             ts = str(round(time.time() * 1000))
             sign = DingTalkClient.sign_webhook(ts, secret)

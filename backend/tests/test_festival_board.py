@@ -165,6 +165,7 @@ def _add_departed_member(db):
         " (99,'隋晓茹',:uid,'Kara','星星之火','阵营一',0,6)"
     ), {"uid": user_id})
     _insert_order(db, "O-DEPARTED-NEW", "C-DEPARTED", 6000, user_id, "2026-08-01")
+    _insert_order(db, "O-DEPARTED-SECOND", "C-DEPARTED-2", 5000, user_id, "2026-08-01")
     _insert_order(db, "O-DEPARTED-RE", "C-DEPARTED", 4000, user_id, "2026-09-01",
                   custom_fields=MARK_RE)
     db.flush()
@@ -184,6 +185,7 @@ def test_departed_member_excluded_from_all_okki_dashboards(db):
     assert "57130433" not in service.get_repurchase_stats(
         db, "2026-08-01", "2026-09-30"
     )
+    assert "57130433" not in service.get_daily_orders(db, date(2026, 8, 1), source="okki")
 
     repurchase = service.get_repurchase_payload(db, None, None)
     assert "57130433" not in {row["user_id"] for row in repurchase["first_board"]}
@@ -234,6 +236,23 @@ def test_departed_member_historical_events_are_invalidated_and_first_sign_rebase
         for event in after
     )
     assert db.query(FestivalEvent).filter_by(dedup_key="first_sign").count() == 1
+
+
+def test_event_feed_cursor_returns_oldest_unread_batch_without_gaps(db):
+    """超过展示上限时，弹框游标必须从最老未读继续，不能只截最新 40 条。"""
+    for idx in range(45):
+        db.add(FestivalEvent(
+            event_type="big_deal", level="L3", subject_type="person",
+            subject_id="U1", subject_name="甲", dedup_key=f"cursor:{idx}",
+        ))
+    db.commit()
+
+    latest = events_service.feed(db, limit=40)
+    unread = events_service.feed(db, limit=40, after_id=0)
+
+    assert [row["id"] for row in latest] == list(range(45, 5, -1))
+    assert [row["id"] for row in unread] == list(range(1, 41))
+    assert [row["id"] for row in events_service.feed(db, limit=40, after_id=3)][:3] == [4, 5, 6]
 
 
 def test_company_total_distinct_across_people(db):
@@ -408,22 +427,47 @@ def test_repurchase_boards_sorting(db):
 
 
 def test_headline_events_dedup_and_thresholds(db):
-    """B-11 阈值分级 + 幂等落库：同一事实重跑不重复"""
+    """首轮建基线后，B-11 阈值事件分级正确且同一事实重跑不重复。"""
     _setup(db)
+    service.get_headline_payload(db, None, None)
     _insert_order(db, "O51", "C51", 6000, "U1", "2026-08-20")    # 大单
     _insert_order(db, "O52", "C52", 35000, "U2", "2026-08-21")   # 超级大单
     payload1 = service.get_headline_payload(db, None, None)      # 真实窗口 → 落库
     types = {e["event_type"] for e in payload1["events"]}
-    assert {"first_sign", "big_deal", "super_deal"} <= types
+    assert {"big_deal", "super_deal"} <= types
+    assert "first_sign" not in types  # 基线前的旧首单不得在启用钉钉后补发
     # 阈值边界：$2000/$3000 的单不产生 deal 事件
     deal_amts = {e["amount"] for e in payload1["events"] if e["event_type"].endswith("deal")}
     assert deal_amts == {6000.0, 35000.0}
-    # 首单归属：account_date 最早（O1 8/2 U1）
-    fs = next(e for e in payload1["events"] if e["event_type"] == "first_sign")
-    assert fs["subject_id"] == "U1" and fs["level"] == "L4"
     # 幂等：重跑事件数不变
     payload2 = service.get_headline_payload(db, None, None)
     assert len(payload2["events"]) == len(payload1["events"])
+
+
+def test_first_sign_after_empty_baseline_is_emitted(db):
+    _setup(db)
+    db.execute(text("DELETE FROM lsordertest.okki_orders"))
+    service.get_headline_payload(db, None, None)
+
+    _insert_order(db, "FIRST", "CFIRST", 1000, "U1", "2026-08-02")
+    payload = service.get_headline_payload(db, None, None)
+    first = next(e for e in payload["events"] if e["event_type"] == "first_sign")
+
+    assert first["subject_id"] == "U1"
+    assert first["level"] == "L4"
+
+
+def test_explicit_source_override_is_read_only(db):
+    _setup(db)
+    service.get_headline_payload(db, None, None)
+    _insert_order(db, "DEBUG_BIG", "CDEBUG", 9000, "U1", "2026-08-22")
+
+    debug_payload = service.get_headline_payload(db, None, None, source="okki")
+    assert not any(e["dedup_key"] == "deal:DEBUG_BIG" for e in db.query(FestivalEvent).all())
+    assert not any(e["event_type"] == "big_deal" for e in debug_payload["events"])
+
+    service.get_headline_payload(db, None, None)
+    assert any(e.dedup_key == "deal:DEBUG_BIG" for e in db.query(FestivalEvent).all())
 
 
 def test_headline_preview_not_persisted(db):

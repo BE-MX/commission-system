@@ -15,7 +15,7 @@ commission 库表不带前缀（生产默认 schema 即 commission_db）；聚�
 
 import json
 import logging
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
@@ -290,6 +290,45 @@ def get_gmv_total(db: Session, date_from: str, date_to: str,
     return round(float(val or 0), 2)
 
 
+def get_daily_orders(db: Session, target_date: date, source: str | None = None) -> dict:
+    """返回名册内当天有效订单，供连击事件建立稳定订单序列。
+
+    方舟一笔 OKKI 订单可能拆成多张发票，主轨按 xiaoman_order_id（无值时 invoice_no）
+    聚合，避免把拆票误判成连击。
+    """
+    day = target_date.isoformat()
+    if not (ACTIVITY_GMV_WINDOW[0] <= day <= ACTIVITY_GMV_WINDOW[1]):
+        return {}
+    if _data_source(source) == "ark":
+        rows = db.execute(text(
+            "SELECT COALESCE(i.xiaoman_order_id, i.invoice_no) AS order_id,"
+            f"       SUM({_ARK_AMOUNT}) AS amount, t.user_id AS user_id, t.Name AS name,"
+            "       MIN(i.id) AS sort_key"
+            + _ARK_JOIN +
+            "   AND i.invoice_date = :day"
+            " GROUP BY COALESCE(i.xiaoman_order_id, i.invoice_no), t.user_id, t.Name"
+            " ORDER BY sort_key, order_id"
+        ), {"day": day}).mappings().all()
+    else:
+        rows = db.execute(text(
+            "SELECT a2.order_id, a2.amount_usd AS amount, a2.user_id, t.Name AS name "
+            "FROM lsordertest.okki_orders a2 "
+            "JOIN lsordertest.user_rel_team t ON t.user_id = a2.user_id "
+            + _active_roster_filter("t") +
+            "WHERE a2.account_date = :day"
+            + _common_filter("a2") +
+            " ORDER BY a2.order_id"
+        ), {"day": day}).mappings().all()
+    grouped: dict[str, list] = {}
+    for row in rows:
+        grouped.setdefault(str(row["user_id"]), []).append({
+            "order_id": str(row["order_id"]),
+            "amount": float(row["amount"] or 0),
+            "name": str(row["name"]),
+        })
+    return grouped
+
+
 def _windows(date_from: str | None, date_to: str | None):
     """自定义窗口（预览用）时新签/GMV 同窗；否则用活动固定窗口。"""
     custom = bool(date_from and date_to)
@@ -385,6 +424,10 @@ def get_headline_payload(db: Session, date_from: str | None, date_to: str | None
     from app.festival import events_service
 
     ns, gmv, custom = _windows(date_from, date_to)
+    persist_events = not custom and source is None
+    if persist_events:
+        # 必须在任何业务快照查询前拿锁；否则等待锁期间已建立的旧事务快照会覆盖新状态。
+        events_service.acquire_detector_lock(db)
     # 快照复用：board / 复购统计 / summary 各算一次，四个子 payload 共用（防冗余全表扫）
     items = get_new_sign_board(db, ns[0], ns[1], source=source)["items"]
     re_stats = get_repurchase_stats(db, gmv[0], gmv[1], source=source)
@@ -410,16 +453,36 @@ def get_headline_payload(db: Session, date_from: str | None, date_to: str | None
         for t in teams_payload["teams"][:3]
     ]
 
-    candidates = events_service.detect_candidates(
-        db, ns, gmv, items, camps_payload["camps"], teams_payload["teams"],
-        rep["first_board"], rep["amount_board"], source=source)
     if custom:
+        candidates = events_service.detect_candidates(
+            db, ns, gmv, items, camps_payload["camps"], teams_payload["teams"],
+            rep["first_board"], rep["amount_board"], source=source)
         # 预览窗口：内存候选倒序模拟事件流，不落库（无真实时间戳，占位显示）
         events = [{**c, "id": idx + 1, "created_at": "预览"}
                   for idx, c in enumerate(reversed(candidates))]
         events.reverse()
-    else:
+    elif persist_events:
+        state_scope = _data_source(None)
+        candidates = events_service.detect_candidates(
+            db, ns, gmv, items, camps_payload["camps"], teams_payload["teams"],
+            rep["first_board"], rep["amount_board"], source=None)
+        candidates = events_service.filter_stateless_baseline(db, candidates, state_scope)
+        candidates += events_service.detect_stateful_candidates(
+            db,
+            summary=summary,
+            items=items,
+            camps=camps_payload["camps"],
+            teams=teams_payload["teams"],
+            first_board=rep["first_board"],
+            amount_board=rep["amount_board"],
+            daily_orders=get_daily_orders(db, date.today(), source=None),
+            state_scope=state_scope,
+        )
         events_service.persist_new(db, candidates)
+        db.commit()  # 首次仅建立状态基线、无候选事件时也必须持久化
+        events = events_service.feed(db)
+    else:
+        # ?source= 调试只读，禁止污染正式轨的排名/里程碑/连击基线。
         events = events_service.feed(db)
 
     return {

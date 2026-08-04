@@ -500,7 +500,7 @@
   setInterval(tickClock, 1000);
   tickClock();
 
-  function apiQuery() {
+  function apiQuery(afterId) {
     var p = new URLSearchParams();
     if (qs.get("key")) p.set("key", qs.get("key"));
     if (isPreview) {
@@ -510,6 +510,7 @@
       if (qs.get("date_from")) p.set("date_from", qs.get("date_from"));
       if (qs.get("date_to")) p.set("date_to", qs.get("date_to"));
     }
+    if (afterId) p.set("after_id", String(afterId));
     var s = p.toString();
     return s ? "?" + s : "";
   }
@@ -697,16 +698,18 @@
     }
     var fresh = events.filter(function (e) { return e.id > seen; });
     if (fresh.length) {
-      /* 新事件从旧到新排队，最多连播 3 条（风暴限流） */
+      /* 新事件从旧到新排队；每轮最多 3 条，余下事件留到下轮，限流但绝不丢弹框。 */
       fresh.sort(function (a, b) { return a.id - b.id; });
-      fresh.slice(-3).forEach(function (e) { popupQueue.push(e); });
-      localStorage.setItem(seenKey, String(maxId));
+      var batch = fresh.slice(0, 3);
+      batch.forEach(function (e) { popupQueue.push(e); });
+      localStorage.setItem(seenKey, String(batch[batch.length - 1].id));
       playNext();
     }
   }
 
   function refresh() {
-    fetch("/api/public/festival/headline" + apiQuery())
+    var seen = parseInt(localStorage.getItem(seenKey) || "0", 10);
+    fetch("/api/public/festival/headline" + apiQuery(seen))
       .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
       .then(function (body) {
         var d = body.data || body;
@@ -724,7 +727,7 @@
         }
         renderLeft(d);
         renderFeed(d.events || []);
-        handlePopups(d.events || []);
+        handlePopups(d.popup_events || d.events || []);
         tickClock();
       })
       .catch(function () { tickClock(); });

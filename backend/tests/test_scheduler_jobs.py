@@ -57,7 +57,14 @@ class TestSchedulerRegistration:
                 "color_sales_aggregate",
                 "whatsapp_auto_sync",
                 "aftersales_notification_retry",
+                "festival_event_monitor",
+                "festival_daily_report",
             }
+            daily = scheduler.get_job("festival_daily_report")
+            daily_fields = {field.name: str(field) for field in daily.trigger.fields}
+            assert daily_fields["hour"] == "17"
+            assert daily_fields["minute"] == "30"
+            assert daily.kwargs == {}
         finally:
             shutdown_scheduler(scheduler)
 

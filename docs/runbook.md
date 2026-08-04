@@ -850,5 +850,8 @@ grep "job completed" logs\service.log | tail -20
 - **数据口径**：读 lsordertest（小满同步），参赛范围由 `lsordertest.user_rel_team` 扣除 `EXCLUDED_FESTIVAL_USER_IDS` 后限定（当前 23 人；隋晓茹于 2026-08-04 离职排除），不按部门 ID 二次过滤（嘉树在内）；新签积分按资源来源字段计，公司分配资源=1，社媒开发/转介绍=1.5。人员分配/开发属性快照仅继续用于个人目标门槛等非积分规则。
 - **大屏断更表现**：顶栏"数据截至"超 5 分钟自动变红；页面每 60s 轮询一次。
 - **摘要屏 AI 提示**：需在「AI 接入」后台创建预设 `festival_screen_tip`（system prompt 可空，模型任选），否则右下角走规则兜底文案（标"·规则播报"）；AI 生成每 10 分钟一次。
-- **事件留档**：`ark_festival_events`（commission_db）永久留档弹窗/进榜记录，幂等键去重；清空重跑活动前需手动 TRUNCATE。
+- **事件留档与状态**：`ark_festival_events` 永久留档弹窗并记录钉钉投递结果，`ark_festival_states` 保存排名/里程碑/连击基线；首次上线只建当前基线，不补发历史弹框。事件发送用 15 分钟租约防并发，失败按 1/2/4/8/16/30 分钟退避重试。`?source=` 对账调试只读不改正式基线，正式切轨后新轨首次只建基线。不要只清事件表重跑，测试环境需要同时清空两表。
+- **采购节钉钉群**：在 `backend/.env` 配置群机器人 `FESTIVAL_DINGTALK_WEBHOOK_URL` 和加签密钥 `FESTIVAL_DINGTALK_WEBHOOK_SECRET`，刻意不复用 `DINGTALK_WEBHOOK_*` 告警群。图片通过 `SHORT_LINK_BASE_URL/uploads/festival/dingtalk/` 回源，必须保证主域名可从钉钉访问；若群机器人启用了关键词安全校验，关键词应包含“采购节”。
+- **17:30 战报与四榜截图**：`FESTIVAL_SCREENSHOT_BASE_URL` 必须是运行后端的服务器可访问、且同时托管 `/festival/` 与 `/api/` 的入口（办公室生产默认 `http://127.0.0.1:8002`）；需安装 Edge 或 Chrome，自动发现失败时配置 `FESTIVAL_BROWSER_EXECUTABLE`。任务先预检四个页面及对应 API，403/500/无数据不会误当成功；截图失败会释放日报 claim，分钟恢复任务持续重试；硬崩溃遗留的 sending claim 15 分钟后自动接管。
+- **任务核对**：服务启动日志应含 `festival_event_monitor`（每分钟）与 `festival_daily_report`（17:30）。测试机器人时先使用独立测试群，不要把生产 Webhook 写入代码或提交 `.env`。
 - **大屏双轨切换**：`.env` 的 `FESTIVAL_DATA_SOURCE`（okki=小满同步保底轨 / ark=方舟发票主轨，主轨仅统计已推单发票、金额扣手续费、**不过滤订单类型**）。切轨前看 `GET /api/public/festival/reconcile?key=` 对账；注意保底轨过滤小满"定制品"而主轨全量计入，**推成"规格品"的发票产生的差异属正常预期**（2026-07-30 裁决保持现状），判据 = 连续 3 天无此类之外的差异再切；改配置需重启后端；建议自然日 0 点切。主轨前提=全员从方舟录单并推单。
