@@ -25,6 +25,8 @@ JOB_COLOR_SOCIAL_EXTRACT = "color_social_extract"
 JOB_COLOR_SALES_AGGREGATE = "color_sales_aggregate"
 JOB_WHATSAPP_AUTO_SYNC = "whatsapp_auto_sync"
 JOB_AFTERSALES_NOTIFICATION_RETRY = "aftersales_notification_retry"
+JOB_FESTIVAL_EVENT_MONITOR = "festival_event_monitor"
+JOB_FESTIVAL_DAILY_REPORT = "festival_daily_report"
 
 
 def _register_jobs(scheduler: AsyncIOScheduler) -> None:
@@ -39,6 +41,10 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
     from app.whatsapp.scheduler import sync_whatsapp_accounts_job
     from app.aftersales.notification_service import process_due_notifications
     from app.aftersales.ai_service import recover_stale_analyses
+    from app.festival.notification_service import (
+        monitor_festival_and_recover_daily,
+        send_daily_report_if_due,
+    )
 
     settings = get_settings()
 
@@ -81,6 +87,19 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
         trigger="interval", minutes=1,
         id=JOB_AFTERSALES_NOTIFICATION_RETRY, replace_existing=True,
         max_instances=1, coalesce=True,
+    )
+    scheduler.add_job(
+        monitor_festival_and_recover_daily,
+        trigger="interval", minutes=1,
+        id=JOB_FESTIVAL_EVENT_MONITOR, replace_existing=True,
+        max_instances=1, coalesce=True,
+    )
+    scheduler.add_job(
+        send_daily_report_if_due,
+        trigger="cron", hour=17, minute=30,
+        kwargs={"force": True},
+        id=JOB_FESTIVAL_DAILY_REPORT, replace_existing=True,
+        max_instances=1, coalesce=True, misfire_grace_time=3600,
     )
     scheduler.add_job(
         generate_industry_daily,
