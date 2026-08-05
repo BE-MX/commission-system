@@ -199,7 +199,7 @@
 - Create: `backend/app/design_image/file_service.py`
 - Create: `backend/tests/test_design_image_files.py`
 
-- [ ] **Step 1: Write failing validation and storage tests**
+- [x] **Step 1: Write failing validation and storage tests**
 
   Cover JPEG/PNG/WebP magic bytes, fake MIME, decompression bomb/over 60MP, over 20MB, EXIF orientation, metadata stripping, longest edge 2048, SHA-256, UUID relative paths, thumbnails and path traversal. Provider URL tests must cover HTTPS allowlist, every redirect hop, DNS resolving to private/loopback/link-local/metadata addresses, rebinding between validation/connect, missing content length and streamed body over limit.
 
@@ -207,7 +207,7 @@
 
   Expected: FAIL because file service is missing.
 
-- [ ] **Step 2: Implement private normalization and atomic storage**
+- [x] **Step 2: Implement private normalization and atomic storage**
 
   Public API:
 
@@ -221,7 +221,7 @@
 
   Write to a same-directory temporary file then `os.replace`; validate `Path.resolve().is_relative_to(root.resolve())`; never expose storage paths as public URLs. Remote download must not forward Provider Authorization.
 
-- [ ] **Step 3: Verify and commit**
+- [x] **Step 3: Verify and commit**
 
   Run: `cd backend; python -m pytest tests/test_design_image_files.py -q`
 
