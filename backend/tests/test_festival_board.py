@@ -1,7 +1,7 @@
 """采购节大屏取数 service 测试（管钱计算：资源积分 / 同客户去重 / 名册限定 / GMV 口径）"""
 
 import json
-from datetime import date
+from datetime import date, datetime
 
 from sqlalchemy import text
 
@@ -27,6 +27,13 @@ def _new_mark(source: str) -> str:
 MARK_NEW = _new_mark("官网询盘 (OKKI Marketing)")
 MARK_NEW_DEVELOP = _new_mark("Ins开发")
 MARK_RE = '{"22595163468": "否", "691123983470": "定制品", "20528142733548": "是"}'
+MARK_NEW_STANDARD = json.dumps({
+    "22595163468": "是",
+    "691123983470": "标准品",
+    "20528142733548": "",
+    service.RESOURCE_SOURCE_FIELD: "官网询盘 (OKKI Marketing)",
+}, ensure_ascii=False)
+MARK_RE_STANDARD = '{"22595163468": "否", "691123983470": "标准品", "20528142733548": "是"}'
 
 
 def _setup(db):
@@ -98,6 +105,34 @@ def test_board_distinct_roster_and_sort(db):
     assert by["U3"]["new_count"] == 0
     # 排序：积分降序
     assert [i["user_id"] for i in board["items"]] == ["U1", "U2", "U3"]
+
+
+def test_non_custom_new_sign_counts_in_personal_and_company_totals(db):
+    """新成交只看“是”，标准品同样计入个人榜和公司新签总数。"""
+    _setup(db)
+    _insert_order(db, "O-STANDARD-NEW", "C-STANDARD", 1200, "U3", "2026-08-14",
+                  custom_fields=MARK_NEW_STANDARD)
+
+    board = service.get_new_sign_board(db, "2026-08-01", "2026-08-31")
+    by = {item["user_id"]: item for item in board["items"]}
+
+    assert by["U3"]["new_count"] == 1
+    assert by["U3"]["new_points"] == 1
+    assert service.get_company_new_total(db, "2026-08-01", "2026-08-31") == 4
+
+
+def test_non_custom_first_return_and_repurchase_amount_are_counted(db):
+    """首返/复购只看业务标记与客户池，不再要求订单为定制品。"""
+    _setup(db)
+    _insert_order(db, "O-STANDARD-POOL", "C-STANDARD", 500, "U3", "2026-07-20",
+                  custom_fields=MARK_NEW_STANDARD)
+    _insert_order(db, "O-STANDARD-RE", "C-STANDARD", 2500, "U3", "2026-08-20",
+                  custom_fields=MARK_RE_STANDARD)
+
+    stats = service.get_repurchase_stats(db, "2026-08-01", "2026-09-30")
+
+    assert stats["U3"]["first_count"] == 1
+    assert stats["U3"]["re_amount"] == 2500
 
 
 def test_board_uses_resource_source_not_person_attribute(db):
@@ -457,6 +492,45 @@ def test_first_sign_after_empty_baseline_is_emitted(db):
 
     assert first["subject_id"] == "U1"
     assert first["level"] == "L4"
+
+
+def test_first_sign_candidate_includes_non_custom_orders(db):
+    """取消产品类型限制后，更早的标准品新签应成为全活动第一单。"""
+    _setup(db)
+    db.execute(text("DELETE FROM lsordertest.okki_orders"))
+    _insert_order(db, "CUSTOM-LATER", "C-CUSTOM", 1000, "U1", "2026-08-03")
+    _insert_order(db, "STANDARD-FIRST", "C-STANDARD", 1200, "U2", "2026-08-01",
+                  custom_fields=MARK_NEW_STANDARD)
+
+    candidate = events_service._first_sign_candidate(
+        db, "2026-08-01", "2026-08-31")[0]
+
+    assert candidate["subject_id"] == "U2"
+    assert candidate["amount"] == 1200
+
+
+def test_existing_first_sign_event_is_reconciled_without_creating_a_duplicate(db):
+    """口径变化导致首单得主变化时，校正原事件而不是新增/重发。"""
+    old = events_service._cand(
+        "first_sign", "person", "U1", "旧得主", "first_sign",
+        amount=1000, detail="全活动第一单 · 红包 ¥66")
+    corrected = events_service._cand(
+        "first_sign", "person", "U2", "新得主", "first_sign",
+        amount=1200, detail="全活动第一单 · 红包 ¥66")
+
+    assert events_service.persist_new(db, [old]) == 1
+    sent_at = datetime(2026, 8, 1, 9, 0)
+    db.query(FestivalEvent).filter_by(event_type="first_sign").one().dingtalk_sent_at = sent_at
+    db.commit()
+    assert events_service.persist_new(db, [corrected]) == 0
+    db.expire_all()
+
+    rows = db.query(FestivalEvent).filter_by(event_type="first_sign").all()
+    assert len(rows) == 1
+    assert rows[0].subject_id == "U2"
+    assert rows[0].subject_name == "新得主"
+    assert float(rows[0].amount) == 1200
+    assert rows[0].dingtalk_sent_at == sent_at
 
 
 def test_explicit_source_override_is_read_only(db):

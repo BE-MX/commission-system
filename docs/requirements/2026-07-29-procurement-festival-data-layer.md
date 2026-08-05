@@ -34,7 +34,7 @@
 | 4 | 复购积分无取整、无 2025+ 客户池限制 | `FLOOR(SUM/1000)` + EXISTS(该客户存在 account_date≥2025-01-01 的新成交单) | EXISTS 使测试窗复购金额 $2,231,408 → $538,150 |
 | 5 | departments 过滤会带进非参赛人员（如 57171776） | JOIN `user_rel_team` 并扣除离职排除表，当前限定 23 人有效名单 | 修正后无名册外/已离职人员 |
 
-新成交/复购的邻接 LIKE（`"22595163468": "是/否", "691123983470": "定制品"`）**保留**——两字段在序列化中确实相邻，且与 `config/order_match_rules.yaml` 既有模式一致，测试窗分别取得 24/23 行。
+> 2026-08-05 口径调整：新签、首返、复购均取消“定制品”限制。小满保底轨只判断各自业务字段，规格品、标准品等其他产品类型同样计入。
 
 ```sql
 -- 公共过滤（三条共用）：
@@ -49,19 +49,18 @@ SELECT t.user_id, t.Name, t.Camp,
        a2.custom_fields  -- 服务层按客户去重，对资源来源计 1/1.5 分
 FROM lsordertest.okki_orders a2
 JOIN lsordertest.user_rel_team t ON t.user_id = a2.user_id
-WHERE a2.custom_fields LIKE '%"22595163468": "是", "691123983470": "定制品"%'
+WHERE a2.custom_fields LIKE '%"22595163468": "是"%'
   AND a2.account_date BETWEEN '2026-08-01' AND '2026-08-31'
   AND <公共过滤>
 ;
 
--- ② 首返（窗口 2026-08-01 ~ 09-30；注意必须拆分 LIKE）
+-- ② 首返（窗口 2026-08-01 ~ 09-30）
 SELECT t.user_id, t.Name,
        COUNT(DISTINCT a2.company_id) AS 首返数,
        COUNT(DISTINCT a2.company_id) * 1.5 AS 首返积分
 FROM lsordertest.okki_orders a2
 JOIN lsordertest.user_rel_team t ON t.user_id = a2.user_id
 WHERE a2.custom_fields LIKE '%"20528142733548": "是"%'
-  AND a2.custom_fields LIKE '%"691123983470": "定制品"%'
   AND a2.account_date BETWEEN '2026-08-01' AND '2026-09-30'
   AND <公共过滤>
 GROUP BY t.user_id, t.Name;
@@ -72,7 +71,7 @@ SELECT t.user_id, t.Name,
        FLOOR(SUM(a2.amount_usd) / 1000) AS 复购积分
 FROM lsordertest.okki_orders a2
 JOIN lsordertest.user_rel_team t ON t.user_id = a2.user_id
-WHERE a2.custom_fields LIKE '%"22595163468": "否", "691123983470": "定制品"%'
+WHERE a2.custom_fields LIKE '%"22595163468": "否"%'
   AND a2.account_date BETWEEN '2026-08-01' AND '2026-09-30'
   AND <公共过滤>
   AND EXISTS (SELECT 1 FROM lsordertest.okki_orders o
@@ -84,7 +83,8 @@ GROUP BY t.user_id, t.Name;
 
 口径注：
 - 复购①+② 总积分 = ②首返积分 + ③复购积分（③的金额含首返单本身 = A-6 叠加；FLOOR 按**人汇总后**取整，对业务员最有利且与 $2500=2 分示例一致）。
-- ③ EXISTS 判定"2025+ 新签客户"只用新成交标记 + 日期，未附加定制品/状态/部门过滤（该单只是资格凭证不是计分单）——如需更严口径再收紧。
+- ③ EXISTS 判定“2025+ 新签客户”同样只用新成交标记 + 日期，不附加产品类型、状态或部门过滤。
+- 取消产品类型限制后若算出更早的首单，原 `first_sign` 事件就地校正得主与金额；不新增事件、不重复推送钉钉或弹窗。
 - 属性 LEFT JOIN 取不到时按分配类（×1）兜底；当前有效名单 23 人属性齐全，隋晓茹历史属性快照保留但排除。
 
 ## 4. 交付形态（2026-07-29 用户确定）
@@ -96,7 +96,7 @@ GROUP BY t.user_id, t.Name;
 ## 4.5 大屏显示口径备忘（2026-07-30）
 
 - **阵营积分榜成员芯片的"阵营第一"高亮 = 排除全司前三后的阵营内积分第一**（与 500 元奖评选口径一致，并列同标、名单置顶；2026-07-30 二次裁决，取代同日上午的"纯营内第一"口径）。为消歧义，**全司前三成员的芯片上叠加金色流光"全司前三"动效标识**——他们走的是前三奖，不参与阵营第一。
-- 三营"已完成"合计可能 ≠ 顶栏 149 进度：阵营 done = Σ成员个人新签数（个人口径，同客户跨人各计），顶栏 = 全司客户去重（公司口径，A-4）。两数各自合规，现场被问按此备询。
+- 三营“已完成”合计可能 ≠ 顶栏 143 进度：阵营 done = Σ成员个人新签数（个人口径，同客户跨人各计），顶栏 = 全司客户去重（公司口径，A-4）。两数各自合规，现场被问按此备询。
 - user_rel_team.Camp 为手工列：服务端 strip 归位 + 未知值计入 `unassigned` 上报（页面右上红色角标 + 日志），不静默丢人。
 
 ## 5. 待确认（2026-07-29 全部关闭）
@@ -128,11 +128,11 @@ GROUP BY t.user_id, t.Name;
 | 指标 | 保底轨（lsordertest.okki_orders） | 主轨（commission_db.ark_invoices） |
 |------|------|------|
 | 时间归属 | account_date | **invoice_date**（推单时它就是 account_date 的来源，天然同口径） |
-| 定制品过滤 | custom_fields 邻接 LIKE（保留） | **不过滤**（2026-07-30 裁决：方舟"生产订单/库存单"与小满"定制品"不是一个概念，主轨全量发票计入）——两轨口径差**保持现状**（同日二次裁决选项2）：推成"规格品"的发票主轨计、保底轨不计，对账时此类差异属**正常预期**，人工识别后忽略，只盯其余差异；"连续 3 天零差异"判据相应放宽为"连续 3 天无规格品之外的差异" |
-| 新签 | 新成交"是"+定制品，COUNT(DISTINCT company_id) | okki_new_deal=1，COUNT(DISTINCT customer_id)；NULL 兜底复刻推单逻辑（跨库查该客户无 okki 历史单） |
+| 产品类型过滤 | **不过滤**（2026-08-05 调整） | **不过滤**；两轨均只按业务标记判断 |
+| 新签 | 新成交“是”，COUNT(DISTINCT company_id) | okki_new_deal=1，COUNT(DISTINCT customer_id)；NULL 兜底复刻推单逻辑（跨库查该客户无 okki 历史单） |
 | 新签积分 | 读 custom_fields 资源来源：公司分配=1，社媒开发/转介绍=1.5 | 通过 xiaoman_order_id 精确回查当前小满订单来源；不用客户历史来源替代当前单；同步延迟暂无来源时按公司分配 1 分兜底 |
 | 首返 | 首返"是"拆分 LIKE | okki_first_return=1 |
-| 复购金额 | 新成交"否"+定制品+客户池 EXISTS | okki_new_deal=0 + 客户池 = EXISTS(lsordertest 2025+新成交) **OR** EXISTS(ark_invoices okki_new_deal=1 且 invoice_date≥2025)——历史判定仍跨库（同 RDS 零成本），未来纯方舟时代自洽 |
+| 复购金额 | 新成交“否”+客户池 EXISTS，不限产品类型 | okki_new_deal=0 + 客户池 = EXISTS(lsordertest 2025+新成交) **OR** EXISTS(ark_invoices okki_new_deal=1 且 invoice_date≥2025)——历史判定仍跨库（同 RDS 零成本），未来纯方舟时代自洽 |
 | 业务员归属 | okki_orders.user_id | sales_user_id → ark_user_external_bindings(provider=okki) → user_rel_team |
 | GMV | SUM(amount_usd) 全订单类型 | SUM(total_amount) 全 order_type——**决策点①：total_amount 含运费/包装费/手续费，product_amount 是行净额，用哪个** |
 | 大单事件 | amount_usd ≥5000，dedup deal:{order_id} | total_amount ≥5000，dedup 优先 deal:{xiaoman_order_id}（与保底轨天然同键，切轨不重报），未推单用 deal:ark:{invoice_no} |

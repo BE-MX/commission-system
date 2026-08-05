@@ -2,7 +2,7 @@
 
 口径依据 docs/requirements/2026-07-24-procurement-festival-dashboard.md（v6）与
 docs/requirements/2026-07-29-procurement-festival-data-layer.md：
-- 新签 = 新成交"是" + 定制品，窗口内 COUNT(DISTINCT company_id)（A-4：同一客户只计一次）
+- 新签 = 新成交"是"，不限产品类型，窗口内 COUNT(DISTINCT company_id)（A-4：同一客户只计一次）
 - 新签积分按客户资源来源计：公司分配资源=1，社媒开发/转介绍=1.5
 - okki_orders.score 列已弃用（D-3），不参与任何积分口径
 - 公司 GMV = 名册内订单总额，不限订单类型（A-13：订单总额 GMV）
@@ -69,13 +69,11 @@ ACTIVITY_GMV_WINDOW = ("2026-08-01", "2026-09-30")        # GMV / 复购窗口
 COMPANY_NEW_SIGN_TARGET = 143
 COMPANY_GMV_TARGET = 3_260_000  # 326 万美金
 
-# 新成交 + 定制品：两字段在 custom_fields 序列化中确实相邻（data-layer 文档 §3 实测），
-# 首返字段不相邻，必须拆成两个独立 LIKE（邻接匹配实测 0 行）。
-NEW_SIGN_MARK = '%"22595163468": "是", "691123983470": "定制品"%'
-RE_MARK = '%"22595163468": "否", "691123983470": "定制品"%'
+# 新成交、复购和首返仅使用各自业务字段，不再按产品类型过滤（2026-08-05 调整）。
+NEW_SIGN_MARK = '%"22595163468": "是"%'
+RE_MARK = '%"22595163468": "否"%'
 FIRST_RETURN_MARK = '%"20528142733548": "是"%'
-CUSTOM_MARK = '%"691123983470": "定制品"%'
-NEW_ANY_MARK = '%"22595163468": "是"%'
+NEW_ANY_MARK = NEW_SIGN_MARK
 
 RESOURCE_SOURCE_FIELD = "45285192666116"
 # 资源来源是多选字段；命中任一开发/转介绍标签即按 1.5 分。
@@ -179,8 +177,7 @@ def get_new_sign_board(db: Session, date_from: str, date_to: str,
     }
 
     if _data_source(source) == "ark":
-        # 不做 order_type 过滤：方舟"生产订单"与小满"定制品"不是一个概念（2026-07-30 用户裁决），
-        # 主轨以发票业务标记为准、全量发票计入
+        # 不做 order_type 过滤：主轨与保底轨均以新成交业务标记为准、全量订单计入。
         rows = db.execute(text(
             "SELECT t.user_id, i.customer_id, i.xiaoman_order_id,"
             f"       {_ARK_AMOUNT} AS amt"
@@ -381,10 +378,10 @@ def get_repurchase_stats(db: Session, date_from: str, date_to: str,
         "FROM lsordertest.okki_orders a2 "
         "JOIN lsordertest.user_rel_team t ON t.user_id = a2.user_id "
         + _active_roster_filter("t") +
-        "WHERE a2.custom_fields LIKE :m1 AND a2.custom_fields LIKE :m2 "
+        "WHERE a2.custom_fields LIKE :m1 "
         "  AND a2.account_date >= :d1 AND a2.account_date <= :d2"
         + _common_filter("a2") + " GROUP BY a2.user_id"
-    ), {"m1": FIRST_RETURN_MARK, "m2": CUSTOM_MARK,
+    ), {"m1": FIRST_RETURN_MARK,
         "d1": date_from, "d2": date_to}).mappings().all()
     for r in first_rows:
         stats.setdefault(r["user_id"], {"first_count": 0, "re_amount": 0.0})

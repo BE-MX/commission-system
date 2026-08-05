@@ -405,10 +405,31 @@ def persist_new(db: Session, candidates: list) -> int:
     if not candidates:
         return 0
     keys = [c["dedup_key"] for c in candidates]
-    existing = {r[0] for r in db.query(FestivalEvent.dedup_key)
-                .filter(FestivalEvent.dedup_key.in_(keys)).all()}
+    existing_rows = (db.query(FestivalEvent)
+                     .filter(FestivalEvent.dedup_key.in_(keys)).all())
+    existing = {row.dedup_key: row for row in existing_rows}
+    corrected = False
+    for candidate in candidates:
+        row = existing.get(candidate["dedup_key"])
+        if not row or candidate["event_type"] != "first_sign":
+            continue
+        current = (
+            row.level, row.subject_type, row.subject_id, row.subject_name,
+            float(row.amount) if row.amount is not None else None, row.detail,
+        )
+        desired = (
+            candidate["level"], candidate["subject_type"], candidate["subject_id"],
+            candidate["subject_name"], candidate["amount"], candidate["detail"],
+        )
+        if current == desired:
+            continue
+        (row.level, row.subject_type, row.subject_id, row.subject_name,
+         row.amount, row.detail) = desired
+        corrected = True
     fresh = [c for c in candidates if c["dedup_key"] not in existing]
     if not fresh:
+        if corrected:
+            db.commit()
         return 0
     added = 0
     for c in fresh:
