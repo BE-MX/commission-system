@@ -530,7 +530,7 @@ frontend/src/
 | 修改 | `frontend/src/api/clients.js` | client 登记 |
 | 修改 | `frontend/src/config/navigation.js` | 设计中心与页面入口 |
 | 新建 | `frontend/src/views/design/image-studio/*` | 页面、组件、composable、纯状态 |
-| 新建 | `frontend/tests/designImageState.test.mjs` | 轮询、状态、基准图、附件测试 |
+| 新建 | `frontend/tests/designImage{State,Concurrency,StudioRecovery}.test.mjs` | 状态、API、并发会话、恢复、轮询、基准图和附件测试 |
 | 修改 | `docs/api-reference.md` | 新端点 |
 | 修改 | `docs/database.md` | 新表 |
 | 修改 | `docs/architecture.md` | 新领域与任务流 |
@@ -816,6 +816,6 @@ V1 建议按 **9～14 个开发日 + 1 周灰度** 规划；V1.1 的搜索/归�
 - [ ] `docs/api-reference.md`、`docs/database.md`、`docs/architecture.md`、`docs/module-notes.md`、`docs/runbook.md` 已同步
 - [ ] `python scripts/check_conventions.py` 通过
 - [ ] `cd backend && pytest` 通过
-- [ ] `cd frontend && node --test tests/designImageState.test.mjs` 通过
+- [ ] `cd frontend && node --test tests/designImage*.test.mjs` 通过
 - [ ] `cd frontend && npm run build` 通过
 - [ ] 独立 agent 完成边界、并发、幂等、迁移与前后端契约审查
