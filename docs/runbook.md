@@ -921,7 +921,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 
 from sqlalchemy import text
-from app.core.database import SessionLocal
+from app.core.database import SessionLocal, engine
 from app.design_image import file_service
 from app.design_image.models import DesignImageAsset
 
@@ -938,17 +938,6 @@ if (ACTION == "purge" and
         "purge requires DESIGN_IMAGE_ORPHAN_WRITE_FREEZE=OFFLINE_CONFIRMED "
         "after every design-image writer is stopped"
     )
-if ACTION == "purge":
-    try:
-        DB_BARRIER_CONNECTION_ID = int(
-            os.environ.get("DESIGN_IMAGE_ORPHAN_DB_BARRIER_CONNECTION_ID", "")
-        )
-    except (TypeError, ValueError):
-        raise RuntimeError("purge requires a positive MySQL barrier connection ID") from None
-    if DB_BARRIER_CONNECTION_ID <= 0:
-        raise RuntimeError("purge requires a positive MySQL barrier connection ID")
-else:
-    DB_BARRIER_CONNECTION_ID = None
 QUARANTINE_NAME = ".orphan-quarantine"
 REPARSE = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
 
@@ -992,30 +981,109 @@ def referenced_paths() -> set[str]:
         result.add(str(rel.with_name(f"{rel.stem}_thumb{rel.suffix}")))
     return result
 
-def assert_db_write_barrier() -> None:
-    """Fail closed unless the named external MySQL session still holds READ lock."""
-    with SessionLocal() as db:
-        current_connection = db.execute(text("SELECT CONNECTION_ID()")).scalar_one()
-        if current_connection == DB_BARRIER_CONNECTION_ID:
-            raise RuntimeError("barrier must be held by a separate maintenance connection")
-        lock_count = db.execute(text("""
-            SELECT COUNT(*)
-            FROM performance_schema.metadata_locks AS ml
-            JOIN performance_schema.threads AS th
-              ON th.THREAD_ID = ml.OWNER_THREAD_ID
-            WHERE th.PROCESSLIST_ID = :connection_id
-              AND ml.OBJECT_SCHEMA = DATABASE()
-              AND ml.OBJECT_NAME = 'ark_design_image_assets'
-              AND ml.OBJECT_TYPE = 'TABLE'
-              AND ml.LOCK_STATUS = 'GRANTED'
-              AND ml.LOCK_TYPE = 'SHARED_READ_ONLY'
-        """), {"connection_id": DB_BARRIER_CONNECTION_ID}).scalar_one()
-        if lock_count != 1:
-            raise RuntimeError(
-                "MySQL READ barrier is absent/ambiguous; abort and re-freeze from reconciliation"
+class MysqlAssetReadBarrier:
+    """Own one dedicated physical MySQL session until purge journaling is complete."""
+
+    def __init__(self) -> None:
+        self.connection = None
+        self.cursor = None
+        self.connection_id = None
+        self.locked = False
+
+    def __enter__(self):
+        if engine.dialect.name != "mysql":
+            raise RuntimeError("purge write barrier requires a MySQL database")
+        self.connection = engine.raw_connection()
+        try:
+            self.cursor = self.connection.cursor()
+            self.cursor.execute("SET SESSION lock_wait_timeout = 10")
+            self.cursor.execute("LOCK TABLES ark_design_image_assets READ")
+            self.locked = True
+            self.cursor.execute("SELECT CONNECTION_ID()")
+            self.connection_id = int(self.cursor.fetchone()[0])
+            self.verify_lock()
+            return self
+        except BaseException as exc:
+            self._cleanup(exc)
+            raise
+
+    def verify_lock(self) -> None:
+        """Inspect metadata from a different pooled session, never from the lock session."""
+        with SessionLocal() as db:
+            verifier_connection_id = int(
+                db.execute(text("SELECT CONNECTION_ID()")).scalar_one()
             )
-        # Proves this separate maintenance connection can still SELECT while READ lock is held.
-        db.execute(text("SELECT COUNT(*) FROM ark_design_image_assets")).scalar_one()
+            if verifier_connection_id == self.connection_id:
+                raise RuntimeError("barrier verifier reused the lock-owning connection")
+            lock_count = db.execute(text("""
+                SELECT COUNT(*)
+                FROM performance_schema.metadata_locks AS ml
+                JOIN performance_schema.threads AS th
+                  ON th.THREAD_ID = ml.OWNER_THREAD_ID
+                WHERE th.PROCESSLIST_ID = :connection_id
+                  AND ml.OBJECT_SCHEMA = DATABASE()
+                  AND ml.OBJECT_NAME = 'ark_design_image_assets'
+                  AND ml.OBJECT_TYPE = 'TABLE'
+                  AND ml.LOCK_STATUS = 'GRANTED'
+                  AND ml.LOCK_TYPE = 'SHARED_READ_ONLY'
+            """), {"connection_id": self.connection_id}).scalar_one()
+            if lock_count != 1:
+                raise RuntimeError(
+                    "owned MySQL READ barrier is absent/ambiguous; keep services offline"
+                )
+            db.execute(text("SELECT COUNT(*) FROM ark_design_image_assets")).scalar_one()
+
+    def referenced_paths(self) -> set[str]:
+        """Read live references on the same session that owns LOCK TABLES."""
+        self.cursor.execute(
+            "SELECT storage_path FROM ark_design_image_assets WHERE deleted_at IS NULL"
+        )
+        result = set()
+        for (raw,) in self.cursor.fetchall():
+            rel = PurePosixPath(raw)
+            if rel.is_absolute() or ".." in rel.parts:
+                raise RuntimeError(f"invalid DB storage_path: {raw}")
+            result.add(rel.as_posix())
+            result.add(str(rel.with_name(f"{rel.stem}_thumb{rel.suffix}")))
+        return result
+
+    def _cleanup(self, cause=None) -> None:
+        cleanup_error = None
+        try:
+            if self.locked:
+                self.cursor.execute("UNLOCK TABLES")
+                self.locked = False
+                self.cursor.execute("SELECT 1")
+                self.cursor.fetchone()
+        except BaseException as exc:
+            cleanup_error = exc
+        try:
+            if self.cursor is not None:
+                self.cursor.close()
+        except BaseException as exc:
+            cleanup_error = cleanup_error or exc
+        if cleanup_error is not None and self.connection is not None:
+            try:
+                self.connection.invalidate(cleanup_error)
+            except BaseException:
+                pass
+        try:
+            if self.connection is not None:
+                self.connection.close()
+        except BaseException as exc:
+            cleanup_error = cleanup_error or exc
+            try:
+                self.connection.invalidate(exc)
+            except BaseException:
+                pass
+        if cleanup_error is not None:
+            raise RuntimeError(
+                "barrier cleanup uncertain; physical connection invalidated; keep services offline"
+            ) from cleanup_error
+
+    def __exit__(self, exc_type, exc, traceback):
+        self._cleanup(exc)
+        return False
 
 def digest(path: Path) -> str:
     value = hashlib.sha256()
@@ -1031,7 +1099,8 @@ def append_journal(path: Path, event: dict) -> None:
         handle.flush()
         os.fsync(handle.fileno())
 
-def create_journal(action: str, batch: str, planned: list[dict]) -> tuple[Path, str]:
+def create_journal(action: str, batch: str, planned: list[dict],
+                   barrier_connection_id: int | None = None) -> tuple[Path, str]:
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ") + f"-{os.getpid()}"
     journal_rel = (PurePosixPath(QUARANTINE_NAME) / "audit" /
                    f"{batch}.{action}.{run_id}.jsonl").as_posix()
@@ -1043,6 +1112,7 @@ def create_journal(action: str, batch: str, planned: list[dict]) -> tuple[Path, 
             "recorded_at": datetime.now(timezone.utc).isoformat(),
             "event": "plan", "action": action, "batch": batch,
             "min_age_hours": MIN_AGE_HOURS, "items": planned,
+            "barrier_connection_id": barrier_connection_id,
         }, ensure_ascii=False, sort_keys=True) + "\n")
         handle.flush()
         os.fsync(handle.fileno())
@@ -1270,6 +1340,98 @@ def reconcile_batch(batch: str, *, action: str | None = None) -> dict:
     return {"batch": batch, "manual_hold": any(item["manual_hold"] for item in results),
             "audit_errors": [], "results": results}
 
+def run_purge(batch: str, inventory: dict, barrier: MysqlAssetReadBarrier) -> None:
+    """Keep the owned READ lock through plan, unlink, reconciliation, and run journal."""
+    barrier.verify_lock()
+    _quarantine_record, authorized_items = authorized_quarantine_plan(batch)
+    previous_purge_reconciliation = reconcile_batch(batch, action="purge")
+    if previous_purge_reconciliation["manual_hold"]:
+        raise RuntimeError(f"previous purge reconciliation requires manual hold: {previous_purge_reconciliation}")
+    if not previous_purge_reconciliation["results"]:
+        quarantine_reconciliation = reconcile_batch(batch, action="quarantine")
+        if quarantine_reconciliation["manual_hold"]:
+            raise RuntimeError(f"quarantine reconciliation requires manual hold: {quarantine_reconciliation}")
+    elif batch not in inventory["batches"]:
+        print(json.dumps({"action": ACTION, "batch": batch,
+                          "result": "batch_already_absent_according_to_prior_purge_plans",
+                          "reconciliation": previous_purge_reconciliation},
+                         ensure_ascii=False, indent=2))
+        return
+    batch_rel = (PurePosixPath(QUARANTINE_NAME) / batch).as_posix()
+    batch_root = file_service.validate_storage_boundary(batch_rel)
+    deleted = []
+    discovered_dirs = []
+    discovered_files = [
+        path.relative_to(root).as_posix()
+        for path in walk_files(batch_root, directories=discovered_dirs)
+    ]
+    discovered_dir_paths = [path.relative_to(root).as_posix() for path in discovered_dirs]
+    validate_batch_tree(batch, authorized_items, discovered_files, discovered_dir_paths)
+    prior_deleted_sources = {
+        state["item"]["source"]
+        for result in previous_purge_reconciliation["results"]
+        for state in result["states"]
+        if state["state"] == "deleted_according_to_plan_intent"
+    }
+    prepared = []
+    for item in authorized_items:
+        state = reconcile_items("quarantine", [item])["states"][0]["state"]
+        if state == "moved":
+            prepared.append((
+                file_service.validate_storage_boundary(item["quarantine"]), item
+            ))
+        elif state == "not_moved":
+            continue
+        elif item["source"] in prior_deleted_sources and not os.path.lexists(
+            file_service.validate_storage_boundary(item["quarantine"])
+        ):
+            continue
+        else:
+            raise RuntimeError(f"authorized item cannot be safely classified; manual hold: {item}")
+    journal, journal_rel = create_journal(
+        "purge", batch, [record for _path, record in prepared], barrier.connection_id
+    )
+    for path, record in prepared:
+        barrier.verify_lock()
+        path = file_service.validate_storage_boundary(record["quarantine"])
+        if not os.path.lexists(path):
+            append_journal(journal, {"event": "skipped", "reason": "already_absent",
+                                     "item": record})
+            continue
+        reject_link(path)
+        if not path.is_file():
+            raise RuntimeError(f"refuse non-file quarantine item: {record['quarantine']}")
+        if path.stat(follow_symlinks=False).st_size != record["size"] or digest(path) != record["sha256"]:
+            raise RuntimeError(f"quarantine file changed after plan: {record['quarantine']}")
+        append_journal(journal, {"event": "intent", "operation": "unlink", "item": record})
+        final_references = barrier.referenced_paths()
+        if record["source"] in final_references:
+            append_journal(journal, {"event": "blocked", "reason": "now_referenced",
+                                     "item": record})
+            raise RuntimeError(f"DB now references quarantined path: {record['source']}")
+        path.unlink()
+        append_journal(journal, {"event": "syscall_returned", "operation": "unlink",
+                                 "durability_claimed": False, "item": record})
+        deleted.append(record)
+    barrier.verify_lock()
+    # Remove only empty directories inside this named batch; never recurse-delete root.
+    for directory in sorted(set(discovered_dirs), key=lambda item: len(item.parts), reverse=True):
+        reject_link(directory)
+        directory.rmdir()
+    batch_root.rmdir()
+    barrier.verify_lock()
+    reconciliation = reconcile_record({"journal": journal, "journal_rel": journal_rel,
+                                       "plan": read_plan(journal)})
+    barrier.verify_lock()
+    append_journal(journal, {"event": "run_returned", "durability_claimed": False,
+                             "barrier_connection_id": barrier.connection_id,
+                             "deleted_count": len(deleted)})
+    if reconciliation["manual_hold"]:
+        raise RuntimeError(f"post-purge reconciliation requires manual hold: {reconciliation}")
+    print(json.dumps({"action": ACTION, "batch": batch, "journal": journal_rel,
+                      "barrier_connection_id": barrier.connection_id,
+                      "reconciliation": reconciliation}, ensure_ascii=False, indent=2))
+
 root = file_service.validate_storage_boundary()
 cutoff = datetime.now(timezone.utc).timestamp() - timedelta(hours=MIN_AGE_HOURS).total_seconds()
 
@@ -1382,92 +1544,8 @@ elif ACTION in {"purge", "reconcile"}:
         raise SystemExit(0)
     if os.environ.get("DESIGN_IMAGE_ORPHAN_APPLY") != "PURGE":
         raise RuntimeError("set DESIGN_IMAGE_ORPHAN_APPLY=PURGE to delete quarantined files")
-    assert_db_write_barrier()
-    _quarantine_record, authorized_items = authorized_quarantine_plan(batch)
-    previous_purge_reconciliation = reconcile_batch(batch, action="purge")
-    if previous_purge_reconciliation["manual_hold"]:
-        raise RuntimeError(f"previous purge reconciliation requires manual hold: {previous_purge_reconciliation}")
-    if not previous_purge_reconciliation["results"]:
-        quarantine_reconciliation = reconcile_batch(batch, action="quarantine")
-        if quarantine_reconciliation["manual_hold"]:
-            raise RuntimeError(f"quarantine reconciliation requires manual hold: {quarantine_reconciliation}")
-    elif batch not in inventory["batches"]:
-        print(json.dumps({"action": ACTION, "batch": batch,
-                          "result": "batch_already_absent_according_to_prior_purge_plans",
-                          "reconciliation": previous_purge_reconciliation},
-                         ensure_ascii=False, indent=2))
-        raise SystemExit(0)
-    batch_rel = (PurePosixPath(QUARANTINE_NAME) / batch).as_posix()
-    batch_root = file_service.validate_storage_boundary(batch_rel)
-    deleted = []
-    discovered_dirs = []
-    discovered_files = [
-        path.relative_to(root).as_posix()
-        for path in walk_files(batch_root, directories=discovered_dirs)
-    ]
-    discovered_dir_paths = [path.relative_to(root).as_posix() for path in discovered_dirs]
-    validate_batch_tree(batch, authorized_items, discovered_files, discovered_dir_paths)
-    prior_deleted_sources = {
-        state["item"]["source"]
-        for result in previous_purge_reconciliation["results"]
-        for state in result["states"]
-        if state["state"] == "deleted_according_to_plan_intent"
-    }
-    prepared = []
-    for item in authorized_items:
-        state = reconcile_items("quarantine", [item])["states"][0]["state"]
-        if state == "moved":
-            prepared.append((
-                file_service.validate_storage_boundary(item["quarantine"]), item
-            ))
-        elif state == "not_moved":
-            continue
-        elif item["source"] in prior_deleted_sources and not os.path.lexists(
-            file_service.validate_storage_boundary(item["quarantine"])
-        ):
-            continue
-        else:
-            raise RuntimeError(f"authorized item cannot be safely classified; manual hold: {item}")
-    journal, journal_rel = create_journal(
-        "purge", batch, [record for _path, record in prepared]
-    )
-    for path, record in prepared:
-        assert_db_write_barrier()
-        if record["source"] in referenced_paths():
-            append_journal(journal, {"event": "blocked", "reason": "now_referenced",
-                                     "item": record})
-            raise RuntimeError(f"DB now references quarantined path: {record['source']}")
-        path = file_service.validate_storage_boundary(record["quarantine"])
-        if not os.path.lexists(path):
-            append_journal(journal, {"event": "skipped", "reason": "already_absent",
-                                     "item": record})
-            continue
-        reject_link(path)
-        if not path.is_file():
-            raise RuntimeError(f"refuse non-file quarantine item: {record['quarantine']}")
-        if path.stat(follow_symlinks=False).st_size != record["size"] or digest(path) != record["sha256"]:
-            raise RuntimeError(f"quarantine file changed after plan: {record['quarantine']}")
-        append_journal(journal, {"event": "intent", "operation": "unlink", "item": record})
-        path.unlink()
-        append_journal(journal, {"event": "syscall_returned", "operation": "unlink",
-                                 "durability_claimed": False, "item": record})
-        deleted.append(record)
-    assert_db_write_barrier()
-    # Remove only empty directories inside this named batch; never recurse-delete root.
-    for directory in sorted(set(discovered_dirs), key=lambda item: len(item.parts), reverse=True):
-        reject_link(directory)
-        directory.rmdir()
-    batch_root.rmdir()
-    assert_db_write_barrier()
-    reconciliation = reconcile_record({"journal": journal, "journal_rel": journal_rel,
-                                       "plan": read_plan(journal)})
-    assert_db_write_barrier()
-    append_journal(journal, {"event": "run_returned", "durability_claimed": False,
-                             "deleted_count": len(deleted)})
-    if reconciliation["manual_hold"]:
-        raise RuntimeError(f"post-purge reconciliation requires manual hold: {reconciliation}")
-    print(json.dumps({"action": ACTION, "batch": batch, "journal": journal_rel,
-                      "reconciliation": reconciliation}, ensure_ascii=False, indent=2))
+    with MysqlAssetReadBarrier() as barrier:
+        run_purge(batch, inventory, barrier)
 else:
     raise RuntimeError("action must be scan, quarantine, purge, or reconcile")
 '@ | python - scan | Tee-Object ..\design-image-orphan-scan.json
@@ -1553,47 +1631,34 @@ else:
    # 原样再执行一次上面的只读快照；四项必须无变化。
    ```
 
-5. 从此刻到 purge 完成审计前冻结所有手工 DB restore、Alembic migration、数据修复脚本和资产文件恢复。由具备 `LOCK TABLES` 与只读 performance_schema 权限的 DBA/维护账号，在**独立且始终可见的 MySQL 交互终端**持有表级写屏障。`LOCK TABLES ark_design_image_assets READ` 允许其他会话 SELECT，但阻塞 INSERT/UPDATE/DELETE；不要用 DML“测试锁”，否则只会制造等待会话。
+5. 从此刻到 purge 完成审计前冻结所有手工 DB restore、Alembic migration、数据修复脚本和资产文件恢复。执行 purge 的 DB 账号必须具备目标表 `LOCK TABLES`、`SELECT` 以及只读查询 `performance_schema.metadata_locks/threads` 的权限；缺少任何权限都必须 fail closed，不能改成只依赖人工停写声明。脚本自身会从 SQLAlchemy engine 独占一个物理 MySQL 连接，执行 `LOCK TABLES ark_design_image_assets READ`，记录 `CONNECTION_ID()`，并在另一个普通连接验证恰好存在一条 `GRANTED / SHARED_READ_ONLY` 锁。外部 MySQL 终端只可用于旁路观察，不能代替、持有或续接这个锁。
 
    ```sql
-   -- 终端 A：mysql --login-path=ark-maintenance --database=<COMMISSION_DB_NAME>
-   SET SESSION lock_wait_timeout = 10;
-   SELECT CONNECTION_ID() AS barrier_connection_id, USER(), DATABASE(), NOW();
-   LOCK TABLES ark_design_image_assets READ;
-   SELECT CONNECTION_ID() AS barrier_connection_id, COUNT(*) AS readable_rows
-   FROM ark_design_image_assets;
-   -- 保持这个 mysql 终端和连接打开；不要执行其他 LOCK TABLES、UNLOCK 或退出。
-   ```
-
-   把精确 `barrier_connection_id` 记录到当次审计。终端 B/唯一维护 shell 用另一连接确认 SELECT 未被阻塞，并核对 `performance_schema.metadata_locks` 中该连接对目标表持有 `GRANTED / SHARED_READ_ONLY`；再执行 `SHOW FULL PROCESSLIST`，确认 `commission_db` 没有 app、migration、restore 或其他人工写会话。若无 performance_schema 读取权限，不能降级跳过，应由 DBA补齐后重来。
-
-   ```sql
-   SELECT COUNT(*) FROM ark_design_image_assets; -- 必须立即返回，证明其他会话 SELECT 兼容
+   -- 可选旁路观察；barrier_connection_id 取自 purge plan/run journal。
    SELECT th.PROCESSLIST_ID, ml.OBJECT_SCHEMA, ml.OBJECT_NAME,
           ml.LOCK_TYPE, ml.LOCK_STATUS
    FROM performance_schema.metadata_locks AS ml
    JOIN performance_schema.threads AS th ON th.THREAD_ID = ml.OWNER_THREAD_ID
-   WHERE th.PROCESSLIST_ID = <barrier_connection_id>
+   WHERE th.PROCESSLIST_ID = <journal 中的 barrier_connection_id>
      AND ml.OBJECT_SCHEMA = DATABASE()
      AND ml.OBJECT_NAME = 'ark_design_image_assets';
    SHOW FULL PROCESSLIST;
    ```
 
-   只有唯一维护人、唯一维护 shell 和终端 A 的 barrier 连接可留在窗口内。连接 ID 消失、终端断线或锁查询不再精确返回一条 `SHARED_READ_ONLY/GRANTED` 时，MySQL 已自动释放锁：立即中止，不得换新连接后接着删；重新停写、获取新 connection ID，并从完整 reconcile/引用检查重来。
+   锁连接只查询已锁定的 `ark_design_image_assets`，不查询 performance_schema 或其他表；锁状态验证始终由另一个连接执行。锁连接不会交给 `SessionLocal`，也不会在仍持锁时归还连接池。正常退出会先显式 `UNLOCK TABLES`、执行存活探测，再关闭连接；异常路径同样显式解锁。若解锁、探测或关闭存在任何不确定性，脚本会使该物理连接失效而不是放回池，并以错误退出，服务必须保持离线。
 
-6. 在同一维护 shell 对精确 batch 执行最新 `reconcile`，再执行一次 `scan` 并确认 `quarantine_inventory.manual_hold=false`；随后才设置确认值和 barrier connection ID 并运行 purge：
+6. 在同一维护 shell 对精确 batch 执行最新 `reconcile`，再执行一次 `scan` 并确认 `quarantine_inventory.manual_hold=false`；随后只设置 purge 确认值并运行 purge，不再提供外部 barrier connection ID：
 
    ```powershell
    $env:DESIGN_IMAGE_ORPHAN_BATCH = "<精确 batch>"
    $env:DESIGN_IMAGE_ORPHAN_RECONCILE_ACTION = "quarantine"  # 部分 purge 恢复时改为 purge
    # 将嵌入工具最后一行改为：python - reconcile
    $env:DESIGN_IMAGE_ORPHAN_APPLY = "PURGE"
-   $env:DESIGN_IMAGE_ORPHAN_DB_BARRIER_CONNECTION_ID = "<终端 A 的精确 connection ID>"
    $env:DESIGN_IMAGE_ORPHAN_WRITE_FREEZE = "OFFLINE_CONFIRMED"
    # 将嵌入工具最后一行改为：python - purge
    ```
 
-脚本在创建 purge journal 前、每个 `unlink` 前和最终 reconcile 前后，都会用另一 DB 连接验证指定 connection ID 仍持有目标表的 `SHARED_READ_ONLY/GRANTED` 锁；同时每个 `unlink` 前继续执行 `referenced_paths()`。离线冻结和表锁都不能替代逐项引用复查。缺少确认变量/connection ID、值错误、锁消失、锁不唯一或验证连接就是锁连接时均 fail closed。
+脚本在读取旧计划和创建 purge journal 之前取得锁，并一直持有到目录处理、最终 reconcile 和 `run_returned` journal 全部完成。每个文件先完成路径边界、文件类型、大小、SHA-256、锁状态和 `intent` journal 的全部可能阻塞检查；随后在**持锁的同一连接**读取最新引用，只做必要的集合成员判断便立即 `unlink`。若路径恢复为引用，脚本只写 `blocked` 后中止，不删除文件。非 MySQL engine、锁缺失/不唯一、验证连接误用锁连接、权限不足或连接清理不确定均 fail closed。
 
 执行顺序：
 
@@ -1603,7 +1668,7 @@ else:
 4. 精确删除：保持 `$env:DESIGN_IMAGE_ORPHAN_BATCH`，设置 `$env:DESIGN_IMAGE_ORPHAN_APPLY="PURGE"`，将最后一行改成 `python - purge | Tee-Object ..\design-image-orphan-purge.json`。**唯一删除授权是该 batch 唯一 quarantine plan 的 items，不是目录扫描结果。**工具先验证 source/target 唯一、source 无穿越、target 精确等于 `.orphan-quarantine/<batch>/<source>`、size/sha256 合法；所有旧 purge plans 也必须是该授权集合的合法子集。目录遍历只检测额外文件/目录；任何未授权项、重复项、路径错配、越界 target 或内容不符都 manual hold。当前存在且匹配的授权 target 才能进入新 purge plan；缺失项必须由当前 quarantine reconcile 的 `not_moved` 或旧 purge reconcile 的 `deleted_according_to_plan_intent` 解释。之后在任何 `unlink` 前持久化完整计划，再逐项 fsync `intent/unlink syscall_returned`；journal 位于批次目录外，删除批次后仍保留。
 5. purge 后及任何恢复/重跑前，设置 `$env:DESIGN_IMAGE_ORPHAN_RECONCILE_ACTION="purge"` 再执行 `python - reconcile`。每次 purge 重跑还会在变更前自动核对全部旧 purge plans（包括已有 `syscall_returned` 的项），有冲突即停。清除该环境变量可同时查看 quarantine/purge 历史；历史 quarantine 项在已合法 purge 后会呈 source/target neither，按规则仍标 manual hold，不能把历史 syscall 日志误当磁盘事实。
 
-6. 审阅持久 journal、执行 purge reconcile，并再次 `scan`；只有 purge plan 全部为 `deleted_according_to_plan_intent`、无 conflict/manual hold、journal 无畸形/越权项时，才可解除 DB 写屏障。回到终端 A，先确认 `SELECT CONNECTION_ID()` 仍等于审计记录，再执行 `UNLOCK TABLES;` 并退出；如果连接早已断开，视为屏障失效，服务保持离线并重新审计。**完成 reconcile/journal 审计 → 明确 UNLOCK → 恢复服务，顺序不可交换。**随后执行 `Remove-Item Env:DESIGN_IMAGE_ORPHAN_WRITE_FREEZE,Env:DESIGN_IMAGE_ORPHAN_APPLY,Env:DESIGN_IMAGE_ORPHAN_DB_BARRIER_CONNECTION_ID -ErrorAction SilentlyContinue`，启动 Windows `CommissionSystem` 和确有部署的 Linux `ark-backend`，确认 `design_image_queue` 拓扑符合目标，再移除各入口 maintenance 规则；任一审计项未通过时保持服务离线。
+6. purge 正常退出表示脚本已在最终 reconcile 与 `run_returned` journal 完成后显式解锁并验证连接可用；退出报错、缺少 `run_returned`、清理不确定或连接失效都必须保持服务离线。随后审阅持久 journal、执行 purge reconcile，并再次 `scan`；只有 purge plan 全部为 `deleted_according_to_plan_intent`、无 conflict/manual hold、journal 无畸形/越权项时才可恢复服务。执行 `Remove-Item Env:DESIGN_IMAGE_ORPHAN_WRITE_FREEZE,Env:DESIGN_IMAGE_ORPHAN_APPLY -ErrorAction SilentlyContinue`，启动 Windows `CommissionSystem` 和确有部署的 Linux `ark-backend`，确认 `design_image_queue` 拓扑符合目标，再移除各入口 maintenance 规则；任一审计项未通过时保持服务离线。
 
 Journal 判读和重跑规则：`intent` 与 `syscall_returned` 都只是操作线索，任何时候都以 reconcile 的当前磁盘观察为准。quarantine 中断后不要修改旧批次，先精确 reconcile；重跑只会为根目录仍存在的 orphan 创建新批次。purge 中断后使用同一个 `DESIGN_IMAGE_ORPHAN_BATCH` 重跑，新 journal 只规划仍存在的文件，已经缺失的项由旧 plan + reconcile 解释，不会再次删除其他路径。
 
