@@ -323,3 +323,73 @@ test('design image API wrappers execute every route with data and request config
   })
   assert.deepEqual(calls[11].args[1], { params: usage, showLoading: false })
 })
+
+test('design image studio is registered once with a lazy read-protected route', () => {
+  const navigation = readFileSync(new URL('../src/config/navigation.js', import.meta.url), 'utf8')
+
+  assert.equal((navigation.match(/path:\s*['"]\/design\/image-studio['"]/g) || []).length, 1)
+  assert.match(navigation, /component:\s*\(\)\s*=>\s*import\(['"]@\/views\/design\/image-studio\/ImageStudio\.vue['"]\)/)
+  assert.match(navigation, /permission:\s*['"]design_image:read['"]/)
+  assert.match(navigation, /design:\s*\{[\s\S]*?title:\s*['"]设计中心['"]/)
+})
+
+test('design image studio files keep the phase-four layout and motion contract', () => {
+  const files = [
+    '../src/views/design/image-studio/ImageStudio.vue',
+    '../src/views/design/image-studio/composables/useImageStudio.js',
+    '../src/views/design/image-studio/composables/useJobPolling.js',
+    '../src/views/design/image-studio/composables/useAssetObjectUrls.js',
+    '../src/views/design/image-studio/components/ConversationSidebar.vue',
+    '../src/views/design/image-studio/components/MessageThread.vue',
+    '../src/views/design/image-studio/components/PromptComposer.vue',
+    '../src/views/design/image-studio/components/GenerationCard.vue',
+    '../src/views/design/image-studio/components/ImageLightbox.vue',
+  ]
+  const sources = files.map(file => ({ file, source: readFileSync(new URL(file, import.meta.url), 'utf8') }))
+
+  for (const { file, source } of sources) {
+    assert.doesNotMatch(source, /#[0-9a-f]{3,8}\b/i, `${file} contains a naked hex color`)
+    assert.doesNotMatch(source, /transition\s*:\s*all\b/i, `${file} uses transition: all`)
+    assert.doesNotMatch(source, /\bease-in\b/i, `${file} uses ease-in`)
+    assert.doesNotMatch(source, /\.glass-card\b/, `${file} introduces the forbidden glass-card class`)
+    assert.ok(source.split(/\r?\n/).length < 500, `${file} must remain below 500 lines`)
+  }
+
+  const joined = sources.map(item => item.source).join('\n')
+  assert.match(joined, /prefers-reduced-motion:\s*reduce/)
+  assert.match(joined, /@media\s*\(hover:\s*hover\)\s*and\s*\(pointer:\s*fine\)/)
+  assert.doesNotMatch(joined, /\bsetInterval\s*\(/)
+  assert.match(joined, /show-list="false"/)
+  assert.match(joined, /padding-bottom:\s*max\([^)]*env\(safe-area-inset-bottom\)/)
+  assert.match(joined, /scale\(0\.97\)/)
+  assert.match(joined, /cubic-bezier\(0\.23,\s*1,\s*0\.32,\s*1\)/)
+})
+
+test('polling and object URL composables expose snapshot guards and centralized cleanup', () => {
+  const polling = readFileSync(
+    new URL('../src/views/design/image-studio/composables/useJobPolling.js', import.meta.url),
+    'utf8',
+  )
+  const assets = readFileSync(
+    new URL('../src/views/design/image-studio/composables/useAssetObjectUrls.js', import.meta.url),
+    'utf8',
+  )
+
+  assert.match(polling, /setTimeout\s*\(/)
+  assert.match(polling, /pollBusy/)
+  assert.match(polling, /pollGeneration/)
+  assert.match(polling, /sessionIdSnapshot/)
+  assert.match(polling, /jobIdSnapshot/)
+  assert.match(polling, /stopPolling/)
+  assert.doesNotMatch(polling, /setInterval\s*\(/)
+  assert.match(assets, /batchToken/)
+  assert.match(assets, /revokeAll/)
+  assert.match(assets, /response\.data/)
+
+  const studio = readFileSync(
+    new URL('../src/views/design/image-studio/composables/useImageStudio.js', import.meta.url),
+    'utf8',
+  )
+  assert.match(studio, /advanceJob\(jobSnapshots\.get\(job\.id\),\s*job\)/)
+  assert.match(studio, /currentSession\.value\s*=\s*null[\s\S]*messages\.value\s*=\s*\[\][\s\S]*assets\.value\s*=\s*\[\][\s\S]*jobs\.value\s*=\s*\[\]/)
+})
