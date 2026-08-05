@@ -58,7 +58,7 @@ IMAGE_PARAMETER_KEYS = {
     "stream",
     "user",
 }
-GENERATION_PARAMETER_KEYS = IMAGE_PARAMETER_KEYS - {"input_fidelity"}
+GENERATION_PARAMETER_KEYS = IMAGE_PARAMETER_KEYS - {"input_fidelity", "stream", "partial_images"}
 # ── 生图有两种 API 契约，按模型家族分（2026-07-27）──
 # OpenAI 系（gpt-image-*/dall-e-*）走 /v1/images/edits：multipart 上传，size/quality 是请求参数。
 # Google 系（gemini-*-image 等）不认这个端点——中转站会以 500 + code=local:convert_request_failed

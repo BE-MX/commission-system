@@ -241,6 +241,22 @@ def test_status_error_message_redacts_sensitive_response_values(monkeypatch):
         assert secret not in message
 
 
+def test_safe_response_body_redacts_embedded_data_url_and_signed_url():
+    raw_b64 = "QUJD" * 200
+    response = _FakeResp(400, payload={
+        "message": (
+            f"keep-before ![image](data:image/png;base64,{raw_b64}) keep-after "
+            "https://user:pass@cdn.test/a.png?signature=secret#fragment"
+        ),
+    })
+    safe = image_service._safe_response_body(response, 2000)
+    assert raw_b64 not in safe
+    assert "signature=secret" not in safe
+    assert "user:pass" not in safe
+    assert "keep-before" in safe and "keep-after" in safe
+    assert "https://cdn.test/a.png" in safe
+
+
 # ── 生图专用代理（2026-07-31 北京展会实例 api.wlai.vip 被 SNI 阻断，借道隧道） ──
 
 class _FakeSettings:

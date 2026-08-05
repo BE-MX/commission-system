@@ -1,3 +1,6 @@
+import ast
+from pathlib import Path
+
 import pytest
 
 from app.ai import image_service
@@ -51,6 +54,7 @@ def test_generate_image_posts_whitelisted_json_and_records_metadata(db, monkeypa
         parameters={
             "output_format": "webp", "output_compression": 85,
             "size": "1024x1024", "quality": "medium", "input_fidelity": "high",
+            "stream": True, "partial_images": 2,
             "api_key": "must-not-pass", "provider": "must-not-pass",
             "model": "must-not-pass", "max_tokens": 4096,
         },
@@ -72,6 +76,10 @@ def test_generate_image_posts_whitelisted_json_and_records_metadata(db, monkeypa
                     "input_tokens_details": {"text_tokens": 3, "image_tokens": 0},
                     "output_tokens_details": {"image_tokens": 7},
                 },
+                "message": (
+                    f"keep-before ![image](data:image/png;base64,{raw_b64}) keep-after "
+                    "https://user:pass@cdn.test/a.png?sig=secret#fragment"
+                ),
                 "Authorization": "Bearer leaked", "api_key": "leaked-key", "token": "leaked-token",
             }
 
@@ -116,6 +124,9 @@ def test_generate_image_posts_whitelisted_json_and_records_metadata(db, monkeypa
     assert log.usage_detail == usage_detail
     for secret in (raw_b64, "Bearer leaked", "leaked-key", "leaked-token"):
         assert secret not in log.response_snapshot
+    assert "sig=secret" not in log.response_snapshot
+    assert "user:pass" not in log.response_snapshot
+    assert "keep-before" in log.response_snapshot and "keep-after" in log.response_snapshot
 
 
 @pytest.mark.parametrize(
@@ -152,6 +163,56 @@ def test_response_snapshot_recursively_redacts_long_bare_base64():
     assert raw_b64 not in snapshot
     assert snapshot.count(f"[omitted base64-like value, {len(raw_b64)} chars]") == 2
     assert "ordinary text" in snapshot
+
+
+def test_response_snapshot_redacts_embedded_data_urls_and_sanitizes_embedded_urls():
+    raw_b64 = "QUJD" * 200
+    snapshot = image_service.serialize_response_snapshot({
+        "message": (
+            f"before ![result](data:image/png;base64,{raw_b64}) after "
+            "download https://user:pass@cdn.test/private/a.png?sig=secret#preview end"
+        ),
+        "blocks": [{
+            "text": f"keep-left data:image/webp;base64,{raw_b64} keep-right",
+            "href": "https://apiKey:secret@cdn.test/b.png?token=leaked#frag",
+        }],
+    })
+    assert raw_b64 not in snapshot
+    for secret in ("sig=secret", "token=leaked", "user:pass", "apiKey:secret", "#preview", "#frag"):
+        assert secret not in snapshot
+    for text in ("before", "after", "download", "end", "keep-left", "keep-right"):
+        assert text in snapshot
+    assert "https://cdn.test/private/a.png" in snapshot
+    assert "https://cdn.test/b.png" in snapshot
+
+
+def test_response_snapshot_normalizes_sensitive_key_spellings():
+    snapshot = image_service.serialize_response_snapshot({
+        "apiKey": "api-secret",
+        "client_secret": "client-one",
+        "clientSecret": "client-two",
+        "password": "password-secret",
+        "nested": [{"access-token": "access-secret"}],
+    })
+    for secret in ("api-secret", "client-one", "client-two", "password-secret", "access-secret"):
+        assert secret not in snapshot
+    assert snapshot.count("[redacted]") == 5
+
+
+def test_business_modules_import_image_calls_from_service_facade():
+    app_root = Path(__file__).parents[1] / "app"
+    violations = []
+    for path in app_root.rglob("*.py"):
+        relative = path.relative_to(app_root)
+        if relative.parts[0] == "ai":
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        if any(
+            isinstance(node, ast.ImportFrom) and node.module == "app.ai.image_service"
+            for node in ast.walk(tree)
+        ):
+            violations.append(relative.as_posix())
+    assert violations == []
 
 
 def test_generate_image_parse_failure_keeps_transport_attempt_count(db, monkeypatch):
