@@ -214,7 +214,8 @@ def test_partial_purge_rerun_rejects_wrong_reappeared_source_before_new_plan_or_
         (b"wrong-a", None, True),
         (b"XXXXXXXXXX", None, True),
         (None, None, False),
-        (None, b"original-a", True),
+        (None, b"original-a", False),
+        (None, b"wrong-target", True),
         (b"original-a", b"original-a", True),
         (b"wrong-a", b"original-a", True),
     ],
@@ -237,6 +238,36 @@ def test_partial_purge_rerun_requires_fresh_unambiguous_source_target_observatio
         result = recovery.run_purge(BATCH, {"batches": [BATCH]}, _Barrier())
         assert result["status"] == "purged"
         assert not second_target.exists()
+
+
+def test_partial_purge_rerun_resumes_remaining_item_from_same_old_plan(
+    isolated_storage,
+):
+    first = _item("generated/a.png", b"original-a")
+    second = _item("generated/b.png", b"original-b")
+    recovery.create_journal("quarantine", BATCH, [first, second])
+    recovery.create_journal("purge", BATCH, [first, second], 411)
+    second_target = _write_storage(
+        isolated_storage, second["quarantine"], b"original-b",
+    )
+    audit = isolated_storage / ".orphan-quarantine" / "audit"
+
+    result = recovery.run_purge(BATCH, {"batches": [BATCH]}, _Barrier())
+
+    assert result["status"] == "purged"
+    assert not second_target.exists()
+    records, errors = recovery.plan_journals(batch=BATCH, action="purge")
+    assert errors == []
+    new_records = [record for record in records if record["journal_rel"] == result["journal"]]
+    assert len(new_records) == 1
+    assert new_records[0]["plan"]["items"] == [second]
+    assert new_records[0]["events"][-1]["event"] == "run_returned"
+    journals_after_first = sorted(audit.glob("*.jsonl"))
+
+    repeated = recovery.run_purge(BATCH, {"batches": []}, _Barrier())
+
+    assert repeated == {"status": "already_purged", "journal": result["journal"]}
+    assert sorted(audit.glob("*.jsonl")) == journals_after_first
 
 
 class _Dialect:

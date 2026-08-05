@@ -553,18 +553,36 @@ def run_purge(batch: str, inventory: dict, barrier) -> dict:
     directories = []
     files = [p.relative_to(root).as_posix() for p in walk_files(batch_root, directories=directories)]
     validate_batch_tree(batch, authorized, files, [p.relative_to(root).as_posix() for p in directories])
-    prior_deleted = {state["item"]["source"] for result in previous["results"]
-                     for state in result["states"]}
+    prior_states = {}
+    for result in previous["results"]:
+        for state in result["states"]:
+            source = state["item"]["source"]
+            existing = prior_states.get(source)
+            if existing is not None and existing["state"] != state["state"]:
+                raise RuntimeError(
+                    f"ambiguous prior purge observations; manual hold: {source}"
+                )
+            prior_states[source] = state
     prepared = []
     for item in authorized:
         observation = reconcile_items("quarantine", [item])["states"][0]
-        if item["source"] in prior_deleted:
-            if (not observation["source_observation"]["exists"] and
-                    not observation["quarantine_observation"]["exists"]):
+        prior = prior_states.get(item["source"])
+        if prior is not None:
+            source = observation["source_observation"]
+            target = observation["quarantine_observation"]
+            if source["exists"]:
+                raise RuntimeError(
+                    f"previously purged source reappeared; manual hold: {item}"
+                )
+            if prior["state"] == "deleted_according_to_plan_intent" and not target["exists"]:
                 continue
-            raise RuntimeError(
-                f"previously purged item reappeared; manual hold: {item}"
-            )
+            if (prior["state"] == "not_deleted" and target["exists"] and
+                    target["matches"]):
+                prepared.append((
+                    file_service.validate_storage_boundary(item["quarantine"]), item
+                ))
+                continue
+            raise RuntimeError(f"prior purge item is inconsistent; manual hold: {item}")
         if observation["state"] == "moved":
             prepared.append((file_service.validate_storage_boundary(item["quarantine"]), item))
         elif observation["state"] == "not_moved":
