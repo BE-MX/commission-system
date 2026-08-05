@@ -5,6 +5,7 @@ import hashlib
 import json
 import logging
 import time
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import Optional, TypedDict
 
@@ -42,6 +43,26 @@ class ImageTransportResult:
     json: dict
     attempts: int
     request_id: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ImageProviderCallConfig:
+    id: int
+    name: str
+    provider_type: str
+    api_base: str
+    api_key: str | None
+    api_type: str
+    extra_headers: dict | None
+    timeout_sec: int
+
+
+@dataclass(frozen=True, slots=True)
+class ImagePresetCallConfig:
+    id: int
+    preset_name: str
+    model: str
+    parameters: dict
 
 
 IMAGE_PARAMETER_KEYS = {
@@ -366,6 +387,27 @@ def _assert_config_version(preset, provider, expected: dict | None) -> None:
         raise ValueError("design image provider configuration changed after queueing")
 
 
+def _freeze_image_call_config(preset, provider):
+    return (
+        ImagePresetCallConfig(
+            id=preset.id,
+            preset_name=preset.preset_name,
+            model=preset.model,
+            parameters=deepcopy(preset.parameters or {}),
+        ),
+        ImageProviderCallConfig(
+            id=provider.id,
+            name=provider.name,
+            provider_type=provider.provider_type,
+            api_base=provider.api_base,
+            api_key=provider.api_key,
+            api_type=provider.api_type,
+            extra_headers=deepcopy(provider.extra_headers),
+            timeout_sec=provider.timeout_sec,
+        ),
+    )
+
+
 def _warn_log_commit_failure(log_id: int, exc: Exception) -> None:
     message = f"AI image call log {log_id} error-state commit failed: {exc}"
     logger.warning(message)
@@ -491,9 +533,9 @@ def _extract_image_content(result: dict, output_format: Optional[str] = None) ->
 
 
 def _extract_usage(result: dict) -> dict:
-    usage = result.get("usage") or {}
-    if not usage and isinstance(result.get("data"), list) and result["data"]:
-        usage = result["data"][0].get("usage") or {}
+    usage = _usage_payload(result)
+    if not usage:
+        return {}
     return {
         "prompt_tokens": usage.get("input_tokens") or usage.get("prompt_tokens"),
         "completion_tokens": usage.get("output_tokens") or usage.get("completion_tokens"),
@@ -502,10 +544,19 @@ def _extract_usage(result: dict) -> dict:
 
 
 def _extract_usage_detail(result: dict) -> dict:
-    usage = result.get("usage") or {}
-    if not usage and isinstance(result.get("data"), list) and result["data"]:
-        usage = result["data"][0].get("usage") or {}
-    return dict(usage)
+    return dict(_usage_payload(result))
+
+
+def _usage_payload(result: dict) -> dict:
+    if "usage" in result:
+        usage = result.get("usage")
+        return usage if isinstance(usage, dict) else {}
+    data = result.get("data")
+    if isinstance(data, list) and data and isinstance(data[0], dict):
+        nested = data[0].get("usage")
+        if isinstance(nested, dict):
+            return nested
+    return {}
 
 
 def _effective_timeout_sec(provider) -> int:
@@ -525,6 +576,7 @@ def generate_image(
     """Call an OpenAI-compatible image generation endpoint."""
     preset, provider = _get_enabled_direct_preset(db, preset_name)
     _assert_config_version(preset, provider, expected_config_version)
+    preset, provider = _freeze_image_call_config(preset, provider)
     log = AiCallLog(
         caller_module=caller_module,
         caller_user_id=caller_user_id,
@@ -609,6 +661,7 @@ def edit_image(
     """Call an OpenAI-compatible image edit endpoint and return an image URL/data URL."""
     preset, provider = _get_enabled_direct_preset(db, preset_name)
     _assert_config_version(preset, provider, expected_config_version)
+    preset, provider = _freeze_image_call_config(preset, provider)
     if not images:
         raise ValueError("图片编辑至少需要 1 张输入图片")
 

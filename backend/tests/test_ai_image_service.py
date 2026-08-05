@@ -335,6 +335,113 @@ def test_expected_config_fingerprint_allows_unchanged_call(db, monkeypatch):
     assert result["content"] == "data:image/png;base64,abc"
 
 
+@pytest.mark.parametrize("mode", ["generate", "edit"])
+def test_image_call_uses_validated_snapshot_after_pending_log_commit(
+    db, monkeypatch, mode
+):
+    preset = _create_image_preset(
+        db, preset_name="design_image_generation",
+        parameters={"output_format": "png"},
+    )
+    provider = db.get(AiProvider, preset.provider_id)
+    provider.api_base = "https://old.example.test"
+    provider.api_key = "old-encrypted-key"
+    provider.extra_headers = {"X-Route": "old"}
+    provider.timeout_sec = 301
+    preset.model = "old-image-model"
+    db.commit()
+    expected = {
+        "provider_id": provider.id,
+        "fingerprint": image_service.build_image_config_version(preset, provider),
+    }
+    captured = {}
+    real_commit = db.commit
+    commits = {"count": 0}
+
+    def racing_commit():
+        commits["count"] += 1
+        if commits["count"] == 1:
+            provider.api_base = "https://new.example.test"
+            provider.api_key = "new-encrypted-key"
+            provider.extra_headers = {"X-Route": "new"}
+            provider.timeout_sec = 601
+            preset.model = "new-image-model"
+            preset.parameters = {"output_format": "webp", "api_style": "chat"}
+        return real_commit()
+
+    def fake_build_headers(config, api_key):
+        captured["provider"] = {
+            "api_base": config.api_base,
+            "api_key": config.api_key,
+            "extra_headers": config.extra_headers,
+            "timeout_sec": config.timeout_sec,
+        }
+        captured["decrypted"] = api_key
+        return {}
+
+    def fake_send(build_request, timeout_sec, *args):
+        class Client:
+            def build_request(self, method, url, **kwargs):
+                captured.update(method=method, url=url, request_kwargs=kwargs)
+                return object()
+        build_request(Client())
+        captured["timeout_sec"] = timeout_sec
+        return image_service.ImageTransportResult(
+            {"data": [{"b64_json": "abc"}]}, 1, "request-id"
+        )
+
+    monkeypatch.setattr(db, "commit", racing_commit)
+    monkeypatch.setattr(
+        image_service, "decrypt_key",
+        lambda value: captured.setdefault("encrypted", value) or "decrypted-old",
+    )
+    monkeypatch.setattr(image_service, "build_headers", fake_build_headers)
+    monkeypatch.setattr(image_service, "_send_with_retry", fake_send)
+
+    kwargs = {
+        "db": db, "preset_name": preset.preset_name, "prompt": "draw",
+        "caller_module": "design_image", "expected_config_version": expected,
+    }
+    if mode == "edit":
+        result = image_service.edit_image(
+            **kwargs,
+            images=[{"filename": "a.png", "content": b"a", "content_type": "image/png"}],
+        )
+    else:
+        result = image_service.generate_image(**kwargs)
+
+    assert captured["provider"] == {
+        "api_base": "https://old.example.test",
+        "api_key": "old-encrypted-key",
+        "extra_headers": {"X-Route": "old"},
+        "timeout_sec": 301,
+    }
+    assert captured["encrypted"] == "old-encrypted-key"
+    assert captured["timeout_sec"] == 301
+    assert captured["url"].startswith("https://old.example.test/")
+    assert captured["request_kwargs"].get("json", captured["request_kwargs"].get("data"))[
+        "model"
+    ] == "old-image-model"
+    assert result["content"] == "data:image/png;base64,abc"
+    assert db.get(AiCallLog, result["log_id"]).model == "old-image-model"
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        {"usage": "bad"},
+        {"usage": []},
+        {"usage": 7},
+        {"usage": "bad", "data": [{"usage": {"total_tokens": 9}}]},
+        {"data": ["not-a-dict"]},
+        {"data": [{"usage": "bad"}]},
+    ],
+)
+def test_usage_extractors_treat_non_dict_payloads_as_empty(result):
+    assert image_service._extract_usage(result) == {}
+    assert image_service._extract_usage_detail(result) == {}
+
+
 def test_error_log_second_commit_failure_warns_logger_and_console(
     db, monkeypatch, caplog, capsys
 ):

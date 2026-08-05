@@ -745,6 +745,36 @@ def test_top_level_usage_rejects_non_bigint_values(value):
     }) == (None, None, None)
 
 
+@pytest.mark.parametrize("usage_detail", ["bad", [], 7])
+def test_non_dict_usage_detail_keeps_image_success_unknown_cost(
+    engine, db, monkeypatch, usage_detail
+):
+    rate_card = {"output_image_microusd_per_token": 31}
+    _, _, _, job = _seed_job(db, pricing_snapshot=rate_card)
+    preset = db.query(AiPreset).filter_by(preset_name="design_image_generation").one()
+    preset.parameters = {**(preset.parameters or {}), "rate_card": rate_card}
+    db.commit()
+    claim = worker.claim_next_job(db, "worker-a", 120)
+    monkeypatch.setattr(worker, "SessionLocal", sessionmaker(bind=engine, expire_on_commit=False))
+    result = _result("data:image/png;base64," + base64.b64encode(_png_bytes()).decode())
+    result["usage_detail"] = usage_detail
+    monkeypatch.setattr(worker.ai_service, "generate_image", lambda **kwargs: result)
+    monkeypatch.setattr(
+        worker.file_service, "save_private_image",
+        lambda image, **kwargs: StoredImage(
+            "1/output/non-dict.png", "1/output/non-dict-thumb.png", image.mime_type,
+            image.file_size, image.width, image.height, image.sha256,
+        ),
+    )
+
+    worker.execute_claimed_job(job.id, claim.lease_token)
+    db.expire_all()
+    row = db.get(DesignImageJob, job.id)
+    assert row.status == "succeeded"
+    assert row.billing_certainty == "unknown"
+    assert row.estimated_cost_microusd is None
+
+
 @pytest.mark.parametrize("failure_stage", ["decode", "normalize", "store"])
 def test_post_result_failures_preserve_log_and_attempt_audit(
     engine, db, monkeypatch, failure_stage

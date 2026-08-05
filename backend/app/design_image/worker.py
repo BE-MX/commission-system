@@ -304,7 +304,8 @@ def _decode_provider_content(content: str, allowed_hosts: frozenset[str]):
 
 
 def _usage_values(result: dict) -> tuple[int | None, int | None, int | None]:
-    usage = dict(result.get("usage_detail") or {})
+    raw_usage = result.get("usage_detail")
+    usage = dict(raw_usage) if isinstance(raw_usage, dict) else {}
     input_tokens = _safe_nonnegative_bigint(
         usage.get("input_tokens", usage.get("prompt_tokens"))
     )
@@ -398,9 +399,9 @@ def _finalize_success(
             db.add(asset)
             db.flush()
             input_tokens, output_tokens, total_tokens = _usage_values(result)
-            estimated_cost = _estimated_cost(
-                snapshot.pricing_snapshot, dict(result.get("usage_detail") or {})
-            )
+            raw_usage = result.get("usage_detail")
+            usage_detail = dict(raw_usage) if isinstance(raw_usage, dict) else {}
+            estimated_cost = _estimated_cost(snapshot.pricing_snapshot, usage_detail)
             job.status = "succeeded"
             job.output_asset_id = asset.id
             job.response_message_id = message.id
