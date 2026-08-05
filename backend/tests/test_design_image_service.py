@@ -1203,7 +1203,13 @@ def test_usage_derives_percentiles_tokens_errors_and_snapshot_cost_from_jobs_and
     assert usage["unknown_cost_jobs"] == 0
     assert usage["by_status"] == {"failed": 1, "succeeded": 3}
     assert usage["by_date"] == [
-        {"date": datetime.now(SHANGHAI).date().isoformat(), "task_count": 4}
+        {
+            "date": created_at.replace(tzinfo=timezone.utc)
+            .astimezone(SHANGHAI)
+            .date()
+            .isoformat(),
+            "task_count": 4,
+        }
     ]
 
     failed_only = service.get_usage(
