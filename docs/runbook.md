@@ -931,6 +931,12 @@ except (TypeError, ValueError):
     raise RuntimeError("DESIGN_IMAGE_ORPHAN_MIN_AGE_HOURS must be an integer >= 24") from None
 if MIN_AGE_HOURS < 24:
     raise RuntimeError("DESIGN_IMAGE_ORPHAN_MIN_AGE_HOURS must be >= 24")
+if (ACTION == "purge" and
+        os.environ.get("DESIGN_IMAGE_ORPHAN_WRITE_FREEZE") != "OFFLINE_CONFIRMED"):
+    raise RuntimeError(
+        "purge requires DESIGN_IMAGE_ORPHAN_WRITE_FREEZE=OFFLINE_CONFIRMED "
+        "after every design-image writer is stopped"
+    )
 QUARANTINE_NAME = ".orphan-quarantine"
 REPARSE = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
 
@@ -1425,6 +1431,73 @@ else:
 '@ | python - scan | Tee-Object ..\design-image-orphan-scan.json
 ```
 
+##### Purge 离线写冻结（强制前置）
+
+`purge` 不是在线清理任务。必须安排维护窗口，并从头到尾禁止任何进程或人工操作创建、恢复、迁移 `ark_design_image_assets` 引用。环境变量 `DESIGN_IMAGE_ORPHAN_WRITE_FREEZE=OFFLINE_CONFIRMED` 是当班人的离线声明，不是锁；只要还有一个 API、Scheduler、worker、临时脚本、DB restore 或 migration 能写相关表，该声明就无效，禁止设置。
+
+1. 列出所有可能承接 `/api/design-image` 的入口，包括办公室直连、云反代、展会/临时实例；在每个公网/反代入口先启用只针对 `/api/design-image` 的 maintenance 规则（返回 503），保留其他业务。清单必须写入当次审计记录，不能只测一个常用域名。
+2. 停止 **每一台** 能访问同一 DB 或 `DESIGN_IMAGE_STORAGE_ROOT` 的方舟后端；office-primary 的 Windows 服务名为 `CommissionSystem`，同时检查临时 uvicorn、复制目录和 Scheduler 实例。停止服务后，直连入口应连接失败，反代入口应稳定返回 503。
+
+   ```powershell
+   Stop-Service -Name CommissionSystem
+   Get-Service -Name CommissionSystem | Select-Object Name, Status
+   Get-CimInstance Win32_Process |
+     Where-Object { $_.CommandLine -match 'commission-system' -and $_.CommandLine -match 'uvicorn|app.main' } |
+     Select-Object ProcessId, Name, CommandLine
+   # 期望：CommissionSystem=Stopped，进程查询为空；其他主机逐台执行并留档。
+   ```
+
+3. 对入口清单逐一请求并记录时间、URL、结果；维护反代只能是 503，办公室直连可为 503 或 connection refused，任何 2xx/401/403 都说明应用仍可达，不能继续。
+
+   ```powershell
+   $DesignImageEntrypoints = @(
+     "https://<public-host>/api/design-image/config",
+     "http://<office-primary>:8001/api/design-image/config"
+   )
+   foreach ($url in $DesignImageEntrypoints) {
+     try {
+       $response = Invoke-WebRequest -Uri $url -Method Get -TimeoutSec 10
+       [pscustomobject]@{Url=$url; StatusCode=[int]$response.StatusCode; Detail='reachable'}
+     } catch {
+       $status = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { 'unreachable' }
+       [pscustomobject]@{Url=$url; StatusCode=$status; Detail=$_.Exception.Message}
+     }
+   }
+   ```
+
+4. 在唯一维护 shell 中记录 DB claim 快照两次，间隔至少 `2 × DESIGN_IMAGE_WORKER_INTERVAL_SECONDS`（默认 20 秒）；`claim_count` 总和、job 数和起止时间不得变化，这组 DB 快照就是 worker claim 的可核验记录。同期检查所有实例的 service log，确认窗口内没有新的 `[design-image]` 活动或异常。仅“进程列表为空”不替代 DB 与日志静默证明。
+
+   ```powershell
+   Push-Location backend
+   @'
+   from sqlalchemy import func
+   from app.core.database import SessionLocal
+   from app.design_image.models import DesignImageJob
+   with SessionLocal() as db:
+       print(db.query(
+           func.count(DesignImageJob.id).label("jobs"),
+           func.coalesce(func.sum(DesignImageJob.claim_count), 0).label("claims"),
+           func.max(DesignImageJob.started_at).label("last_started_at"),
+           func.max(DesignImageJob.finished_at).label("last_finished_at"),
+       ).one()._asdict())
+   '@ | python -
+   Start-Sleep -Seconds 20
+   # 原样再执行一次上面的只读快照；四项必须无变化。
+   ```
+
+5. 从此刻到 purge 完成审计前冻结所有手工 DB restore、Alembic migration、数据修复脚本和资产文件恢复。先在同一维护 shell 对精确 batch 执行最新 `reconcile`，再执行一次 `scan` 并确认 `quarantine_inventory.manual_hold=false`；随后才设置确认值并运行 purge：
+
+   ```powershell
+   $env:DESIGN_IMAGE_ORPHAN_BATCH = "<精确 batch>"
+   $env:DESIGN_IMAGE_ORPHAN_RECONCILE_ACTION = "quarantine"  # 部分 purge 恢复时改为 purge
+   # 将嵌入工具最后一行改为：python - reconcile
+   $env:DESIGN_IMAGE_ORPHAN_APPLY = "PURGE"
+   $env:DESIGN_IMAGE_ORPHAN_WRITE_FREEZE = "OFFLINE_CONFIRMED"
+   # 将嵌入工具最后一行改为：python - purge
+   ```
+
+脚本仍会在每个 `unlink` 前重新执行 `referenced_paths()`；离线冻结不能替代这道逐项 DB 复查。缺少确认变量、拼写不完全一致或值错误时，脚本在解析 action 后立即失败，不访问存储、不创建 journal、不执行 unlink。
+
 执行顺序：
 
 1. 先审阅 `design-image-orphan-scan.json`，逐项确认 DB 中没有相对路径、文件年龄超过门槛且不属于进行中的人工恢复。
@@ -1432,6 +1505,8 @@ else:
 3. 至少观察一个完整 stale/备份周期；再次查询资产、核对页面与 worker 日志。设置 `$env:DESIGN_IMAGE_ORPHAN_BATCH="<精确 batch>"` 与 `$env:DESIGN_IMAGE_ORPHAN_RECONCILE_ACTION="quarantine"`，把最后一行改成 `python - reconcile`。reconcile 会忽略 journal 曾记录的 syscall 返回状态，重新检查**全部 plan 项**的 source/隔离路径、大小和 SHA-256：source-only 且匹配=`not_moved`，target-only 且匹配=`moved`，both/neither/内容冲突=`conflict_manual_hold`。需要恢复时按 `source` 用 `Move-Item -LiteralPath` 精确移回，不能整目录覆盖。
 4. 精确删除：保持 `$env:DESIGN_IMAGE_ORPHAN_BATCH`，设置 `$env:DESIGN_IMAGE_ORPHAN_APPLY="PURGE"`，将最后一行改成 `python - purge | Tee-Object ..\design-image-orphan-purge.json`。**唯一删除授权是该 batch 唯一 quarantine plan 的 items，不是目录扫描结果。**工具先验证 source/target 唯一、source 无穿越、target 精确等于 `.orphan-quarantine/<batch>/<source>`、size/sha256 合法；所有旧 purge plans 也必须是该授权集合的合法子集。目录遍历只检测额外文件/目录；任何未授权项、重复项、路径错配、越界 target 或内容不符都 manual hold。当前存在且匹配的授权 target 才能进入新 purge plan；缺失项必须由当前 quarantine reconcile 的 `not_moved` 或旧 purge reconcile 的 `deleted_according_to_plan_intent` 解释。之后在任何 `unlink` 前持久化完整计划，再逐项 fsync `intent/unlink syscall_returned`；journal 位于批次目录外，删除批次后仍保留。
 5. purge 后及任何恢复/重跑前，设置 `$env:DESIGN_IMAGE_ORPHAN_RECONCILE_ACTION="purge"` 再执行 `python - reconcile`。每次 purge 重跑还会在变更前自动核对全部旧 purge plans（包括已有 `syscall_returned` 的项），有冲突即停。清除该环境变量可同时查看 quarantine/purge 历史；历史 quarantine 项在已合法 purge 后会呈 source/target neither，按规则仍标 manual hold，不能把历史 syscall 日志误当磁盘事实。
+
+6. 审阅持久 journal、执行 purge reconcile，并再次 `scan`；只有 purge plan 全部为 `deleted_according_to_plan_intent`、无 conflict/manual hold、journal 无畸形/越权项时，才可解除人工 DB 冻结。先执行 `Remove-Item Env:DESIGN_IMAGE_ORPHAN_WRITE_FREEZE,Env:DESIGN_IMAGE_ORPHAN_APPLY -ErrorAction SilentlyContinue`，再启动 `CommissionSystem` 并确认 `design_image_queue` 正常注册，最后移除各入口 maintenance 规则；任一审计项未通过时保持服务离线，不能用设置确认变量的方式绕过。
 
 Journal 判读和重跑规则：`intent` 与 `syscall_returned` 都只是操作线索，任何时候都以 reconcile 的当前磁盘观察为准。quarantine 中断后不要修改旧批次，先精确 reconcile；重跑只会为根目录仍存在的 orphan 创建新批次。purge 中断后使用同一个 `DESIGN_IMAGE_ORPHAN_BATCH` 重跑，新 journal 只规划仍存在的文件，已经缺失的项由旧 plan + reconcile 解释，不会再次删除其他路径。
 
