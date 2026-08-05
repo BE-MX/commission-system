@@ -1,4 +1,8 @@
-"""展会门店/展位配额主体的 CRUD 与人员绑定服务。"""
+"""展会门店/展位配额主体的 CRUD 与人员绑定服务。
+
+事务约定：本层写方法（create/update/bind/unbind）内部自行 db.commit()，
+调用方不要重复 commit，以免在组合业务中造成双提交。
+"""
 
 import logging
 from typing import List, Optional, Tuple
@@ -42,6 +46,11 @@ def get_store_by_id(db: Session, store_id: int) -> Optional[ExpoStore]:
     return db.get(ExpoStore, store_id)
 
 
+def _escape_like(value: str) -> str:
+    """转义 LIKE 通配符 % 与 _，避免关键字搜索被特殊字符影响。"""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def list_stores(
     db: Session,
     *,
@@ -54,8 +63,11 @@ def list_stores(
     q = db.query(ExpoStore)
 
     if keyword and keyword.strip():
-        like = f"%{keyword.strip()}%"
-        q = q.filter(ExpoStore.name.like(like) | ExpoStore.code.like(like))
+        like = f"%{_escape_like(keyword.strip())}%"
+        q = q.filter(
+            ExpoStore.name.like(like, escape="\\")
+            | ExpoStore.code.like(like, escape="\\")
+        )
 
     if status is not None:
         q = q.filter(ExpoStore.status == status)
@@ -138,7 +150,7 @@ def update_store(db: Session, store: ExpoStore, **kwargs) -> ExpoStore:
         msg = f"[expo] update_store conflict store={store.id}: {exc}"
         logger.warning(msg)
         print(msg, flush=True)
-        raise ValueError(f"门店编码 {store.code} 已存在") from None
+        raise ValueError(f"门店编码 {updates.get('code', '??')} 已存在") from None
 
     db.refresh(store)
     return store
@@ -207,6 +219,13 @@ def bind_user_to_store(
         raise UserAlreadyBound(f"用户 {user_id} 已与门店 {store_id} 绑定") from None
 
     db.refresh(binding)
+    # 默认 relationship lazy=noload，刷新并预加载用户信息供序列化使用
+    binding = (
+        db.query(ExpoStoreUser)
+        .filter(ExpoStoreUser.id == binding.id)
+        .options(selectinload(ExpoStoreUser.user))
+        .first()
+    )
     return binding
 
 

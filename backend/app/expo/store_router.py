@@ -6,12 +6,14 @@
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_any_permission, require_permission
 from app.core.database import get_db
 from app.core.response import ok, page_result
 from app.expo import quota_service, store_service
+from app.expo.common import user_id_from_current_user as _user_id
 from app.expo.schemas import (
     QuotaRechargeRequest,
     StoreCreateRequest,
@@ -22,12 +24,6 @@ from app.expo.schemas import (
 logger = logging.getLogger("commission.expo.store_router")
 
 router = APIRouter()
-
-
-def _user_id(current_user) -> int | None:
-    if isinstance(current_user, dict):
-        return current_user.get("id")
-    return getattr(current_user, "id", None)
 
 
 def _serialize_store(store) -> dict:
@@ -224,6 +220,8 @@ def recharge_store_quota(
     current_user=Depends(require_permission("expo_store:recharge")),
 ):
     operator_id = _user_id(current_user)
+    if operator_id is None:
+        raise HTTPException(500, "无法识别操作人")
     try:
         record = quota_service.recharge_quota(
             db,
@@ -237,6 +235,11 @@ def recharge_store_quota(
         raise HTTPException(404, str(exc))
     except ValueError as exc:
         raise HTTPException(400, str(exc))
+    except SQLAlchemyError as exc:
+        msg = f"[expo] recharge_store_quota 失败 store={store_id} operator={operator_id}: {exc}"
+        logger.warning(msg)
+        print(msg, flush=True)
+        raise HTTPException(500, "充值处理失败，请稍后重试")
     return ok(_serialize_quota_record(record), code=201)
 
 

@@ -37,7 +37,6 @@ def _client(db, permissions=PERMS_ADMIN):
     db.refresh(user)
     token = create_access_token({
         "sub": str(user.id),
-        "id": user.id,
         "username": user.username,
         "roles": [],
         "permissions": list(permissions),

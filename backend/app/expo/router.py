@@ -14,6 +14,7 @@ from app.auth.dependencies import require_any_permission, require_permission
 from app.core.database import get_db
 from app.core.response import ok, page_result
 from app.expo import ai_pipeline, script_service, service, upload_service
+from app.expo.common import user_id_from_current_user as _user_id
 from app.expo.models import ExpoCustomer, ExpoResult, ExpoScript, ExpoWig
 from app.expo.schemas import (
     CustomerRegister,
@@ -32,12 +33,6 @@ router = APIRouter()
 
 WIG_PHOTO_DIR = ai_pipeline.UPLOAD_ROOT / "wigs"
 SWATCH_DIR = ai_pipeline.UPLOAD_ROOT / "hair_colors"
-
-
-def _user_id(current_user) -> int | None:
-    if isinstance(current_user, dict):
-        return current_user.get("id")
-    return getattr(current_user, "id", None)
 
 
 # ---------------- 试戴主流程（展位设备，expo:write） ----------------
