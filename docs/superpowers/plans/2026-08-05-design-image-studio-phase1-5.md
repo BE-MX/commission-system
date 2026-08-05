@@ -239,7 +239,7 @@
 - Create: `backend/app/design_image/service.py`
 - Create: `backend/tests/test_design_image_service.py`
 
-- [ ] **Step 1: Write failing service tests**
+- [x] **Step 1: Write failing service tests**
 
   Cover owner-only session pagination/detail, draft upload attachment/deletion, base/reference ownership, size/quality whitelist, implicit session creation, prompt assembly, daily quota in Asia/Shanghai, one active job, retry creates a new job, and `UNIQUE(owner_user_id,idempotency_key)` race recovery.
 
@@ -256,17 +256,17 @@
 
   Expected: FAIL because service functions are missing.
 
-- [ ] **Step 2: Implement transactional turn creation**
+- [x] **Step 2: Implement transactional turn creation**
 
   One transaction performs: read existing idempotency row; lock `ark_users`; validate ownership and quota; create/resolve session; create user message; attach drafts in input order; create queued job. On unique-key race, rollback the whole transaction and re-read by owner + idempotency key.
 
   Cross-user resources raise the same not-found domain exception as absent resources. Do not add an implicit “latest image” fallback.
 
-- [ ] **Step 3: Implement config/detail/usage projections**
+- [x] **Step 3: Implement config/detail/usage projections**
 
   `/config` projection returns verified size/quality choices, max four attachments, effective daily quota and remaining quota. `/usage` derives counts, success rate, P50/P95 duration, tokens, error categories and estimated cost from jobs; it does not create a second aggregate truth table.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
   Run: `cd backend; python -m pytest tests/test_design_image_service.py -q`
 
