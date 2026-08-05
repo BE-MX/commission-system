@@ -142,7 +142,7 @@
 - Modify: `backend/tests/test_ai_image_service.py`
 - Modify: `backend/tests/test_ai_image_retry.py`
 
-- [ ] **Step 1: Write failing transport tests**
+- [x] **Step 1: Write failing transport tests**
 
   Add tests for `generate_image()` JSON requests, edit repeated multipart images preserving order, `b64_json`/URL/data-URL parsing, detailed usage, request IDs, and provider attempt count. Assert `design_image_generation` never sends `input_fidelity`, while an Expo preset retaining it is unchanged.
 
@@ -152,7 +152,7 @@
 
   Expected: FAIL on missing `generate_image`, usage detail and attempt count.
 
-- [ ] **Step 2: Refactor one shared transport result**
+- [x] **Step 2: Refactor one shared transport result**
 
   Introduce a typed result compatible with existing callers:
 
@@ -171,11 +171,11 @@
 
   Preserve the actual retry contract: 502/503 and eligible transport failures retry; 400/429/504/ReadTimeout do not. Correct stale test comments that claim 504 retries. The shared AI call must not leave a long-lived worker transaction open across HTTP; persist `running` before the call, then finalize in a new transaction/Session so `edit_image()` commit/rollback cannot undo the claim.
 
-- [ ] **Step 3: Implement `generate_image()` and facade exports**
+- [x] **Step 3: Implement `generate_image()` and facade exports**
 
   `generate_image()` sends `POST /images/generations` JSON through `build_image_url(provider.api_base, "generations")`. Request parameters are whitelisted; the caller cannot pass model/provider/key. Add `usage_detail` to AiCallLog and re-export both image functions from `app.ai.service`.
 
-- [ ] **Step 4: Verify compatibility**
+- [x] **Step 4: Verify compatibility**
 
   Run:
 
@@ -186,7 +186,7 @@
 
   Expected: all pass, proving the existing Expo edit chain is not changed.
 
-- [ ] **Step 5: Commit shared transport**
+- [x] **Step 5: Commit shared transport**
 
   ```powershell
   git add backend/app/ai backend/tests/test_ai_image_service.py backend/tests/test_ai_image_retry.py
