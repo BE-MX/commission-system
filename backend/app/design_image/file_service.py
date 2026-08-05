@@ -6,10 +6,14 @@ import hashlib
 import http.client
 import io
 import ipaddress
+import logging
 import os
 import re
 import socket
 import ssl
+import stat
+import threading
+import time
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
@@ -40,6 +44,8 @@ _METADATA_HOSTS = {
     "instance-data",
     "instance-data.ec2.internal",
 }
+_STORAGE_LOCK = threading.RLock()
+logger = logging.getLogger("commission")
 
 
 class ImageValidationError(ValueError):
@@ -180,28 +186,80 @@ def normalize_upload(content: bytes, declared_mime: str) -> NormalizedImage:
 
 
 def _storage_root() -> Path:
-    return Path(get_settings().DESIGN_IMAGE_STORAGE_ROOT).resolve()
+    configured = Path(get_settings().DESIGN_IMAGE_STORAGE_ROOT)
+    return Path(os.path.abspath(configured))
 
 
-def resolve_private_path(relative_path: str) -> Path:
-    """Resolve a non-empty relative path without allowing traversal or symlink escape."""
+def _is_reparse_point(path: Path) -> bool:
+    try:
+        if path.is_symlink() or (
+            hasattr(path, "is_junction") and path.is_junction()
+        ):
+            return True
+        attributes = getattr(path.lstat(), "st_file_attributes", 0)
+    except OSError as exc:
+        raise ImageStorageError("无法验证私有存储路径") from exc
+    return bool(attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0))
+
+
+def _reject_existing_reparse_points(path: Path) -> None:
+    current = Path(path.anchor)
+    if os.path.lexists(current) and _is_reparse_point(current):
+        raise ImageStorageError("私有存储路径包含 reparse point: root")
+    for part in path.parts[1:]:
+        current /= part
+        if os.path.lexists(current) and _is_reparse_point(current):
+            raise ImageStorageError(f"私有存储路径包含 reparse point: {current.name}")
+
+
+def _validate_storage_boundary_unlocked(relative_path: str | None = None) -> Path:
+    root = _storage_root()
+    _reject_existing_reparse_points(root)
+    if relative_path is None:
+        return root
     if not isinstance(relative_path, str) or not relative_path.strip():
         raise ImageStorageError("非法文件路径")
-    candidate_path = Path(relative_path)
-    if candidate_path.is_absolute() or candidate_path.drive:
+    candidate = Path(relative_path)
+    if candidate.is_absolute() or candidate.drive:
         raise ImageStorageError("非法文件路径")
-    root = _storage_root()
     try:
-        target = (root / candidate_path).resolve()
+        target = Path(os.path.abspath(root / candidate))
     except (OSError, ValueError):
         raise ImageStorageError("非法文件路径") from None
     if target == root or not target.is_relative_to(root):
         raise ImageStorageError("非法文件路径")
+    _reject_existing_reparse_points(target)
     return target
+
+
+def validate_storage_boundary(relative_path: str | None = None) -> Path:
+    """Validate the configured root and existing path components.
+
+    This process-local check assumes the root and its parents are writable only by the
+    service account. Deployment ACL validation remains an operational responsibility.
+    """
+    with _STORAGE_LOCK:
+        return _validate_storage_boundary_unlocked(relative_path)
+
+
+def resolve_private_path(relative_path: str) -> Path:
+    """Resolve a path inside the trusted, non-reparse private storage boundary."""
+    with _STORAGE_LOCK:
+        return _validate_storage_boundary_unlocked(relative_path)
+
+
+def _cleanup_best_effort(path: Path, context: str) -> None:
+    try:
+        path.unlink(missing_ok=True)
+    except Exception as exc:
+        message = f"[design-image] {context} cleanup failed {path.name}: {exc}"
+        logger.warning(message)
+        print(message, flush=True)
 
 
 def _write_atomic(target: Path, content: bytes) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
+    _reject_existing_reparse_points(target.parent)
     temporary = target.with_name(f".{uuid4().hex}.tmp")
     try:
         with temporary.open("xb") as handle:
@@ -210,7 +268,7 @@ def _write_atomic(target: Path, content: bytes) -> None:
             os.fsync(handle.fileno())
         os.replace(temporary, target)
     finally:
-        temporary.unlink(missing_ok=True)
+        _cleanup_best_effort(temporary, "temporary file")
 
 
 def _thumbnail_content(image: NormalizedImage, fmt: str) -> bytes:
@@ -236,20 +294,22 @@ def save_private_image(
     if fmt is None or _magic_format(image.content) != fmt:
         raise ImageStorageError("只能保存已归一化的图片")
 
-    image_id = uuid4().hex
-    suffix = _FORMAT_SUFFIX[fmt]
-    base = Path(str(owner_user_id)) / kind
-    relative = (base / f"{image_id}{suffix}").as_posix()
-    thumbnail_relative = (base / f"{image_id}_thumb{suffix}").as_posix()
-    target = resolve_private_path(relative)
-    thumbnail_target = resolve_private_path(thumbnail_relative)
+    with _STORAGE_LOCK:
+        image_id = uuid4().hex
+        suffix = _FORMAT_SUFFIX[fmt]
+        base = Path(str(owner_user_id)) / kind
+        relative = (base / f"{image_id}{suffix}").as_posix()
+        thumbnail_relative = (base / f"{image_id}_thumb{suffix}").as_posix()
+        target = _validate_storage_boundary_unlocked(relative)
+        thumbnail_target = _validate_storage_boundary_unlocked(thumbnail_relative)
 
-    _write_atomic(target, image.content)
-    try:
-        _write_atomic(thumbnail_target, _thumbnail_content(image, fmt))
-    except Exception:
-        target.unlink(missing_ok=True)
-        raise
+        _write_atomic(target, image.content)
+        try:
+            thumbnail = _thumbnail_content(image, fmt)
+            _write_atomic(thumbnail_target, thumbnail)
+        except Exception:
+            _cleanup_best_effort(target, "original rollback")
+            raise
 
     return StoredImage(
         relative_path=relative,
@@ -263,14 +323,10 @@ def save_private_image(
 
 
 def delete_private_file(relative_path: str) -> None:
-    target = resolve_private_path(relative_path)
-    # Re-resolve immediately before unlink so an already-changed symlink cannot escape.
-    root = _storage_root()
-    current = target.resolve()
-    if not current.is_relative_to(root):
-        raise ImageStorageError("非法文件路径")
-    if current.is_file() or current.is_symlink():
-        current.unlink()
+    with _STORAGE_LOCK:
+        target = _validate_storage_boundary_unlocked(relative_path)
+        if target.is_file():
+            target.unlink()
 
 
 def _normalize_host(host: str) -> str:
@@ -308,13 +364,15 @@ def _is_forbidden_address(address: ipaddress.IPv4Address | ipaddress.IPv6Address
 def _validated_url(url: str, allowed_hosts: set[str]):
     try:
         parsed = urlsplit(url)
-        port = parsed.port or 443
+        port = parsed.port if parsed.port is not None else 443
     except ValueError:
         raise ProviderDownloadError("provider URL is invalid") from None
     if parsed.scheme.lower() != "https" or not parsed.hostname:
         raise ProviderDownloadError("provider URL must use HTTPS")
     if parsed.username is not None or parsed.password is not None:
         raise ProviderDownloadError("provider URL must not contain credentials")
+    if port != 443:
+        raise ProviderDownloadError("provider URL must use port 443")
     host = _normalize_host(parsed.hostname)
     normalized_allowed = {_normalize_host(item) for item in allowed_hosts if item}
     if not normalized_allowed or host not in normalized_allowed:
@@ -350,6 +408,11 @@ class _ConnectionResponse:
     def read(self, amount: int = -1) -> bytes:
         return self._response.read(amount)
 
+    def set_timeout(self, timeout: float) -> None:
+        if self._connection.sock is None:
+            raise OSError("provider connection is closed")
+        self._connection.sock.settimeout(timeout)
+
     def close(self) -> None:
         try:
             self._response.close()
@@ -357,13 +420,13 @@ class _ConnectionResponse:
             self._connection.close()
 
 
-def _open_pinned_https(url: str, pinned_ip: str):
+def _open_pinned_https(url: str, pinned_ip: str, timeout: float):
     """Connect to the validated IP while retaining the URL hostname for Host and TLS SNI."""
     parsed = urlsplit(url)
     host = parsed.hostname or ""
     port = parsed.port or 443
     connection = _PinnedHTTPSConnection(
-        host, pinned_ip, port=port, timeout=DOWNLOAD_TIMEOUT_SECONDS
+        host, pinned_ip, port=port, timeout=timeout
     )
     target = parsed.path or "/"
     if parsed.query:
@@ -377,7 +440,12 @@ def _open_pinned_https(url: str, pinned_ip: str):
         )
         return _ConnectionResponse(connection.getresponse(), connection)
     except Exception:
-        connection.close()
+        try:
+            connection.close()
+        except Exception as cleanup_exc:
+            message = f"[design-image] provider connection cleanup failed: {cleanup_exc}"
+            logger.warning(message)
+            print(message, flush=True)
         raise
 
 
@@ -386,8 +454,25 @@ def _header_value(headers, name: str) -> str | None:
     return str(value) if value is not None else None
 
 
+def _remaining_download_time(deadline: float) -> float:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise ProviderDownloadError("provider image download deadline exceeded")
+    return remaining
+
+
+def _close_response_best_effort(response) -> None:
+    try:
+        response.close()
+    except Exception as exc:
+        message = f"[design-image] provider response cleanup failed: {exc}"
+        logger.warning(message)
+        print(message, flush=True)
+
+
 def download_provider_image(url: str, *, allowed_hosts: set[str]) -> bytes:
     """Download a bounded HTTPS body with per-hop SSRF checks and DNS pinning."""
+    deadline = time.monotonic() + DOWNLOAD_TIMEOUT_SECONDS
     current_url = url
     for redirect_count in range(MAX_REDIRECTS + 1):
         parsed, host, port = _validated_url(current_url, allowed_hosts)
@@ -401,7 +486,11 @@ def download_provider_image(url: str, *, allowed_hosts: set[str]) -> bytes:
 
         # The transport receives the already-validated literal IP and never resolves host again.
         try:
-            response = _open_pinned_https(current_url, str(parsed_addresses[0]))
+            response = _open_pinned_https(
+                current_url,
+                str(parsed_addresses[0]),
+                _remaining_download_time(deadline),
+            )
         except (OSError, ssl.SSLError, http.client.HTTPException):
             raise ProviderDownloadError("provider image download failed") from None
         try:
@@ -430,7 +519,19 @@ def download_provider_image(url: str, *, allowed_hosts: set[str]) -> bytes:
             chunks: list[bytes] = []
             total = 0
             while True:
-                chunk = response.read(min(DOWNLOAD_CHUNK_BYTES, MAX_IMAGE_BYTES - total + 1))
+                try:
+                    response.set_timeout(_remaining_download_time(deadline))
+                    chunk = response.read(
+                        min(DOWNLOAD_CHUNK_BYTES, MAX_IMAGE_BYTES - total + 1)
+                    )
+                except ProviderDownloadError:
+                    raise
+                except (TimeoutError, socket.timeout):
+                    raise ProviderDownloadError(
+                        "provider image download timed out"
+                    ) from None
+                except (OSError, http.client.HTTPException):
+                    raise ProviderDownloadError("provider image download failed") from None
                 if not chunk:
                     break
                 total += len(chunk)
@@ -441,5 +542,5 @@ def download_provider_image(url: str, *, allowed_hosts: set[str]) -> bytes:
                 raise ProviderDownloadError("provider image response is empty")
             return b"".join(chunks)
         finally:
-            response.close()
+            _close_response_best_effort(response)
     raise ProviderDownloadError("provider redirect limit exceeded")

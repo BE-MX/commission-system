@@ -4,8 +4,11 @@ import hashlib
 import io
 import ipaddress
 import os
+import shutil
+import ssl
 import struct
 import subprocess
+import threading
 import zlib
 from pathlib import Path
 
@@ -218,18 +221,186 @@ def test_resolve_and_delete_reject_symlink_escape(monkeypatch, tmp_path):
     assert (outside / "secret.txt").exists()
 
 
+def _make_directory_link(link: Path, target: Path) -> None:
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except OSError:
+        if os.name != "nt":
+            raise
+        subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(link), str(target)],
+            check=True,
+            capture_output=True,
+        )
+
+
+def test_storage_boundary_validation_rejects_reparse_root_and_existing_component(
+    monkeypatch, tmp_path
+):
+    from app.core.config import get_settings
+    from app.design_image import file_service
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    linked_root = tmp_path / "linked-root"
+    _make_directory_link(linked_root, outside)
+    monkeypatch.setattr(get_settings(), "DESIGN_IMAGE_STORAGE_ROOT", str(linked_root))
+    with pytest.raises(file_service.ImageStorageError, match="reparse"):
+        file_service.validate_storage_boundary()
+
+    real_root = tmp_path / "private"
+    real_root.mkdir()
+    _make_directory_link(real_root / "linked-child", outside)
+    monkeypatch.setattr(get_settings(), "DESIGN_IMAGE_STORAGE_ROOT", str(real_root))
+    with pytest.raises(file_service.ImageStorageError, match="reparse"):
+        file_service.validate_storage_boundary("linked-child/image.png")
+
+
+def test_storage_boundary_validation_checks_existing_anchor_and_parent(monkeypatch, tmp_path):
+    from app.core.config import get_settings
+    from app.design_image import file_service
+
+    root = tmp_path / "private"
+    root.mkdir()
+    checked: list[Path] = []
+    monkeypatch.setattr(get_settings(), "DESIGN_IMAGE_STORAGE_ROOT", str(root))
+    monkeypatch.setattr(
+        file_service,
+        "_is_reparse_point",
+        lambda path: checked.append(path) or False,
+    )
+    file_service.validate_storage_boundary()
+    assert Path(root.anchor) in checked
+    assert root.parent in checked
+    assert root in checked
+
+
+def test_storage_operations_hold_one_lock_across_validation_and_write(
+    monkeypatch, tmp_path
+):
+    from app.core.config import get_settings
+    from app.design_image import file_service
+
+    monkeypatch.setattr(get_settings(), "DESIGN_IMAGE_STORAGE_ROOT", str(tmp_path))
+    normalized = file_service.normalize_upload(_image_bytes("PNG"), "image/png")
+    victim = tmp_path / "42" / "upload" / "victim.png"
+    victim.parent.mkdir(parents=True)
+    victim.write_bytes(b"victim")
+    entered_write = threading.Event()
+    release_write = threading.Event()
+    delete_started = threading.Event()
+    delete_finished = threading.Event()
+    actual_write = file_service._write_atomic
+    calls = 0
+
+    def blocking_write(target, content):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            entered_write.set()
+            assert release_write.wait(2)
+        return actual_write(target, content)
+
+    monkeypatch.setattr(file_service, "_write_atomic", blocking_write)
+    writer = threading.Thread(
+        target=file_service.save_private_image,
+        args=(normalized,),
+        kwargs={"owner_user_id": 42, "kind": "upload"},
+    )
+
+    def delete_victim():
+        delete_started.set()
+        file_service.delete_private_file("42/upload/victim.png")
+        delete_finished.set()
+
+    deleter = threading.Thread(target=delete_victim)
+    writer.start()
+    assert entered_write.wait(2)
+    deleter.start()
+    assert delete_started.wait(2)
+    assert not delete_finished.wait(0.1)
+    release_write.set()
+    writer.join(2)
+    deleter.join(2)
+    assert delete_finished.is_set()
+    assert not victim.exists()
+
+
+def test_write_failure_is_not_masked_by_temporary_cleanup_failure(monkeypatch, tmp_path):
+    from app.core.config import get_settings
+    from app.design_image import file_service
+
+    monkeypatch.setattr(get_settings(), "DESIGN_IMAGE_STORAGE_ROOT", str(tmp_path))
+    normalized = file_service.normalize_upload(_image_bytes("PNG"), "image/png")
+
+    class FailingHandle:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def write(self, content):
+            raise OSError("write failed")
+
+    monkeypatch.setattr(Path, "open", lambda *args, **kwargs: FailingHandle())
+    monkeypatch.setattr(Path, "unlink", lambda *args, **kwargs: (_ for _ in ()).throw(OSError("cleanup failed")))
+    with pytest.raises(OSError, match="write failed"):
+        file_service.save_private_image(normalized, owner_user_id=42, kind="upload")
+
+
+def test_replace_failure_is_not_masked_by_temporary_cleanup_failure(monkeypatch, tmp_path):
+    from app.core.config import get_settings
+    from app.design_image import file_service
+
+    monkeypatch.setattr(get_settings(), "DESIGN_IMAGE_STORAGE_ROOT", str(tmp_path))
+    normalized = file_service.normalize_upload(_image_bytes("PNG"), "image/png")
+    monkeypatch.setattr(file_service.os, "replace", lambda *args: (_ for _ in ()).throw(OSError("replace failed")))
+    monkeypatch.setattr(Path, "unlink", lambda *args, **kwargs: (_ for _ in ()).throw(OSError("cleanup failed")))
+    with pytest.raises(OSError, match="replace failed"):
+        file_service.save_private_image(normalized, owner_user_id=42, kind="upload")
+
+
+def test_thumbnail_failure_is_not_masked_by_original_rollback_failure(monkeypatch, tmp_path):
+    from app.core.config import get_settings
+    from app.design_image import file_service
+
+    monkeypatch.setattr(get_settings(), "DESIGN_IMAGE_STORAGE_ROOT", str(tmp_path))
+    normalized = file_service.normalize_upload(_image_bytes("PNG"), "image/png")
+    monkeypatch.setattr(file_service, "_thumbnail_content", lambda *args: (_ for _ in ()).throw(OSError("thumbnail failed")))
+    monkeypatch.setattr(Path, "unlink", lambda *args, **kwargs: (_ for _ in ()).throw(OSError("rollback failed")))
+    with pytest.raises(OSError, match="thumbnail failed"):
+        file_service.save_private_image(normalized, owner_user_id=42, kind="upload")
+
+
+def test_successful_replace_ignores_stale_temp_cleanup_failure(monkeypatch, tmp_path):
+    from app.design_image import file_service
+
+    source = tmp_path / "source.tmp"
+    target = tmp_path / "target.png"
+    source.write_bytes(b"content")
+    monkeypatch.setattr(file_service.os, "replace", shutil.copyfile)
+    monkeypatch.setattr(Path, "unlink", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("cleanup failed")))
+    file_service._write_atomic(target, b"content")
+    assert target.read_bytes() == b"content"
+
+
 class _FakeResponse:
     def __init__(self, status: int, body: bytes = b"", headers: dict[str, str] | None = None):
         self.status = status
         self._body = io.BytesIO(body)
         self.headers = headers or {}
         self.closed = False
+        self.timeouts: list[float] = []
 
     def read(self, amount: int = -1) -> bytes:
         return self._body.read(amount)
 
     def close(self) -> None:
         self.closed = True
+
+    def set_timeout(self, timeout: float) -> None:
+        self.timeouts.append(timeout)
 
 
 def test_provider_download_requires_https_explicit_allowlist_and_no_credentials():
@@ -242,6 +413,41 @@ def test_provider_download_requires_https_explicit_allowlist_and_no_credentials(
     ):
         with pytest.raises(ProviderDownloadError):
             download_provider_image(url, allowed_hosts={"cdn.example.com"})
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://cdn.example.com:8443/image.png",
+        "https://cdn.example.com:80/image.png",
+        "https://cdn.example.com:0/image.png",
+    ],
+)
+def test_provider_download_rejects_non_443_port_before_dns(monkeypatch, url):
+    from app.design_image import file_service
+
+    monkeypatch.setattr(
+        file_service,
+        "_resolve_host_ips",
+        lambda *args: pytest.fail("non-443 URL must fail before DNS"),
+    )
+    with pytest.raises(file_service.ProviderDownloadError, match="443"):
+        file_service.download_provider_image(url, allowed_hosts={"cdn.example.com"})
+
+
+def test_provider_download_rejects_redirect_to_non_443_port(monkeypatch):
+    from app.design_image import file_service
+
+    first = _FakeResponse(
+        302, headers={"Location": "https://cdn.example.com:8443/final.png"}
+    )
+    monkeypatch.setattr(file_service, "_resolve_host_ips", lambda *args: ["93.184.216.34"])
+    monkeypatch.setattr(file_service, "_open_pinned_https", lambda *args: first)
+    with pytest.raises(file_service.ProviderDownloadError, match="443"):
+        file_service.download_provider_image(
+            "https://cdn.example.com/start", allowed_hosts={"cdn.example.com"}
+        )
+    assert first.closed
 
 
 @pytest.mark.parametrize(
@@ -285,7 +491,7 @@ def test_provider_download_validates_every_redirect_hop(monkeypatch):
         return ["93.184.216.34"]
 
     monkeypatch.setattr(file_service, "_resolve_host_ips", resolve)
-    monkeypatch.setattr(file_service, "_open_pinned_https", lambda url, ip: next(responses))
+    monkeypatch.setattr(file_service, "_open_pinned_https", lambda url, ip, timeout: next(responses))
 
     assert file_service.download_provider_image(
         "https://cdn.example.com/start", allowed_hosts={"cdn.example.com", "assets.example.com"}
@@ -298,7 +504,7 @@ def test_provider_download_rejects_redirect_to_unlisted_or_private_host(monkeypa
 
     first = _FakeResponse(302, headers={"Location": "https://internal.example/final"})
     monkeypatch.setattr(file_service, "_resolve_host_ips", lambda host, port: ["93.184.216.34"])
-    monkeypatch.setattr(file_service, "_open_pinned_https", lambda url, ip: first)
+    monkeypatch.setattr(file_service, "_open_pinned_https", lambda url, ip, timeout: first)
 
     with pytest.raises(file_service.ProviderDownloadError):
         file_service.download_provider_image(
@@ -318,7 +524,7 @@ def test_provider_download_binds_connection_to_the_validated_ip(monkeypatch):
         resolver_calls += 1
         return ["93.184.216.34"] if resolver_calls == 1 else ["127.0.0.1"]
 
-    def open_pinned(url, validated_ip):
+    def open_pinned(url, validated_ip, timeout):
         pinned.append(validated_ip)
         return _FakeResponse(200, b"safe")
 
@@ -338,8 +544,10 @@ def test_pinned_transport_connects_to_ip_but_keeps_hostname_for_tls(monkeypatch)
     calls: dict[str, object] = {}
 
     class FakeRawSocket:
+        closed = False
+
         def close(self):
-            pass
+            self.closed = True
 
     class FakeTlsSocket:
         def makefile(self, *args, **kwargs):
@@ -356,24 +564,122 @@ def test_pinned_transport_connects_to_ip_but_keeps_hostname_for_tls(monkeypatch)
             calls["server_hostname"] = server_hostname
             return FakeTlsSocket()
 
-    monkeypatch.setattr(
-        file_service.socket,
-        "create_connection",
-        lambda address, timeout=None: calls.setdefault("address", address) or FakeRawSocket(),
-    )
+    raw_socket = FakeRawSocket()
+
+    def create_connection(address, timeout=None):
+        calls["address"] = address
+        calls["connect_timeout"] = timeout
+        return raw_socket
+
+    context = FakeContext()
+    monkeypatch.setattr(file_service.socket, "create_connection", create_connection)
     # Avoid depending on real TLS while asserting the security-relevant connect target/SNI split.
-    monkeypatch.setattr(file_service.ssl, "create_default_context", lambda: FakeContext())
+    monkeypatch.setattr(
+        file_service.ssl,
+        "create_default_context",
+        lambda: calls.setdefault("default_context", True) and context,
+    )
 
     response = file_service._open_pinned_https(
-        "https://cdn.example.com:8443/image?q=1", "93.184.216.34"
+        "https://cdn.example.com/image?q=1", "93.184.216.34", 12.5
     )
     response.close()
 
-    assert calls["address"] == ("93.184.216.34", 8443)
+    assert calls["default_context"] is True
+    assert calls["address"] == ("93.184.216.34", 443)
+    assert calls["connect_timeout"] == 12.5
     assert calls["server_hostname"] == "cdn.example.com"
     request = calls["request"]
-    assert b"Host: cdn.example.com:8443" in request
+    assert b"Host: cdn.example.com" in request
     assert b"Authorization:" not in request
+
+
+def test_pinned_transport_closes_raw_socket_when_tls_wrap_fails(monkeypatch):
+    from app.design_image import file_service
+
+    class FakeRawSocket:
+        closed = False
+
+        def close(self):
+            self.closed = True
+
+    class FailingContext:
+        def wrap_socket(self, raw, *, server_hostname):
+            assert server_hostname == "cdn.example.com"
+            raise ssl.SSLError("TLS failed")
+
+    raw_socket = FakeRawSocket()
+    monkeypatch.setattr(file_service.socket, "create_connection", lambda *args, **kwargs: raw_socket)
+    monkeypatch.setattr(file_service.ssl, "create_default_context", FailingContext)
+    with pytest.raises(ssl.SSLError, match="TLS failed"):
+        file_service._open_pinned_https(
+            "https://cdn.example.com/image", "93.184.216.34", 10
+        )
+    assert raw_socket.closed
+
+
+def test_pinned_transport_closes_connection_when_request_fails(monkeypatch):
+    from app.design_image import file_service
+
+    class FakeConnection:
+        closed = False
+
+        def request(self, *args, **kwargs):
+            raise OSError("request failed")
+
+        def close(self):
+            self.closed = True
+            raise OSError("close failed")
+
+    connection = FakeConnection()
+    monkeypatch.setattr(file_service, "_PinnedHTTPSConnection", lambda *args, **kwargs: connection)
+    with pytest.raises(OSError, match="request failed"):
+        file_service._open_pinned_https(
+            "https://cdn.example.com/image", "93.184.216.34", 10
+        )
+    assert connection.closed
+
+
+def test_provider_download_enforces_total_deadline_across_slow_chunks(monkeypatch):
+    from app.design_image import file_service
+
+    ticks = iter([100.0, 100.0, 101.0, 131.0])
+    response = _FakeResponse(200, b"first chunk")
+    monkeypatch.setattr(file_service.time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(file_service, "_resolve_host_ips", lambda *args: ["93.184.216.34"])
+
+    def open_pinned(url, ip, timeout):
+        assert timeout == pytest.approx(30.0)
+        return response
+
+    monkeypatch.setattr(file_service, "_open_pinned_https", open_pinned)
+    with pytest.raises(file_service.ProviderDownloadError, match="deadline"):
+        file_service.download_provider_image(
+            "https://cdn.example.com/image", allowed_hosts={"cdn.example.com"}
+        )
+    assert response.timeouts == [pytest.approx(29.0)]
+    assert response.closed
+
+
+def test_provider_download_translates_read_timeout_and_closes(monkeypatch):
+    from app.design_image import file_service
+
+    class TimeoutResponse(_FakeResponse):
+        def read(self, amount=-1):
+            raise TimeoutError("slow read")
+
+        def close(self):
+            self.closed = True
+            raise RuntimeError("close failed")
+
+    response = TimeoutResponse(200)
+    monkeypatch.setattr(file_service, "_resolve_host_ips", lambda *args: ["93.184.216.34"])
+    monkeypatch.setattr(file_service, "_open_pinned_https", lambda *args: response)
+    with pytest.raises(file_service.ProviderDownloadError, match="timed out"):
+        file_service.download_provider_image(
+            "https://cdn.example.com/image", allowed_hosts={"cdn.example.com"}
+        )
+    assert response.closed
 
 
 def test_provider_download_limits_stream_without_content_length(monkeypatch):
@@ -381,7 +687,7 @@ def test_provider_download_limits_stream_without_content_length(monkeypatch):
 
     response = _FakeResponse(200, b"x" * (MAX_BYTES + 1))
     monkeypatch.setattr(file_service, "_resolve_host_ips", lambda host, port: ["93.184.216.34"])
-    monkeypatch.setattr(file_service, "_open_pinned_https", lambda url, ip: response)
+    monkeypatch.setattr(file_service, "_open_pinned_https", lambda url, ip, timeout: response)
 
     with pytest.raises(file_service.ProviderDownloadError, match="20"):
         file_service.download_provider_image(
@@ -395,7 +701,7 @@ def test_provider_download_rejects_large_content_length_before_read(monkeypatch)
 
     response = _FakeResponse(200, b"", {"Content-Length": str(MAX_BYTES + 1)})
     monkeypatch.setattr(file_service, "_resolve_host_ips", lambda host, port: ["93.184.216.34"])
-    monkeypatch.setattr(file_service, "_open_pinned_https", lambda url, ip: response)
+    monkeypatch.setattr(file_service, "_open_pinned_https", lambda url, ip, timeout: response)
 
     with pytest.raises(file_service.ProviderDownloadError, match="20"):
         file_service.download_provider_image(
@@ -411,7 +717,7 @@ def test_provider_download_caps_redirect_count(monkeypatch):
     monkeypatch.setattr(
         file_service,
         "_open_pinned_https",
-        lambda url, ip: _FakeResponse(302, headers={"Location": "/again"}),
+        lambda url, ip, timeout: _FakeResponse(302, headers={"Location": "/again"}),
     )
 
     with pytest.raises(file_service.ProviderDownloadError, match="redirect"):
