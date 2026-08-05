@@ -455,8 +455,17 @@ def test_lock_wait_rechecks_idempotency_and_returns_queued_winner_before_capacit
     winner = _job(
         db, owner.id, session.id, message.id, key="wait-winner", status="queued"
     )
+    reference = _asset(db, owner.id, session.id, status="attached")
+    db.add(
+        DesignImageJobAsset(
+            job_id=winner.id, asset_id=reference.id, role="reference", position=0
+        )
+    )
     db.commit()
     original_find = service._find_job_by_idempotency
+    original_result = service._result_for_job
+    original_rollback = db.rollback
+    events = []
 
     def snapshot_miss_then_current_read(
         current_db, owner_id, key, *, for_update=False
@@ -470,6 +479,18 @@ def test_lock_wait_rechecks_idempotency_and_returns_queued_winner_before_capacit
     monkeypatch.setattr(
         service, "_find_job_by_idempotency", snapshot_miss_then_current_read
     )
+    monkeypatch.setattr(
+        service,
+        "_result_for_job",
+        lambda *args, **kwargs: (
+            events.append("result"), original_result(*args, **kwargs)
+        )[1],
+    )
+    monkeypatch.setattr(
+        db,
+        "rollback",
+        lambda: (events.append("rollback"), original_rollback())[1],
+    )
 
     replay = service.create_turn(db, owner.id, _turn(request_id="wait-winner"))
 
@@ -477,6 +498,10 @@ def test_lock_wait_rechecks_idempotency_and_returns_queued_winner_before_capacit
     assert db.query(DesignImageJob).count() == 1
     assert db.query(DesignImageSession).count() == 1
     assert db.query(DesignImageMessage).count() == 1
+    assert [(link.asset_id, link.position) for link in replay.reference_links] == [
+        (reference.id, 0)
+    ]
+    assert events[:2] == ["rollback", "result"]
 
 
 def test_retry_lock_wait_rechecks_idempotency_before_active_limit(
@@ -495,8 +520,17 @@ def test_retry_lock_wait_rechecks_idempotency_before_active_limit(
         status="queued",
         retry_of_job_id=old.id,
     )
+    reference = _asset(db, owner.id, session.id, status="attached")
+    db.add(
+        DesignImageJobAsset(
+            job_id=winner.id, asset_id=reference.id, role="reference", position=0
+        )
+    )
     db.commit()
     original_find = service._find_job_by_idempotency
+    original_result = service._result_for_job
+    original_rollback = db.rollback
+    events = []
 
     def snapshot_miss_then_current_read(
         current_db, owner_id, key, *, for_update=False
@@ -510,6 +544,18 @@ def test_retry_lock_wait_rechecks_idempotency_before_active_limit(
     monkeypatch.setattr(
         service, "_find_job_by_idempotency", snapshot_miss_then_current_read
     )
+    monkeypatch.setattr(
+        service,
+        "_result_for_job",
+        lambda *args, **kwargs: (
+            events.append("result"), original_result(*args, **kwargs)
+        )[1],
+    )
+    monkeypatch.setattr(
+        db,
+        "rollback",
+        lambda: (events.append("rollback"), original_rollback())[1],
+    )
 
     replay = service.retry_job(
         db,
@@ -520,6 +566,10 @@ def test_retry_lock_wait_rechecks_idempotency_before_active_limit(
 
     assert replay.job.id == winner.id
     assert db.query(DesignImageJob).count() == 2
+    assert [(link.asset_id, link.position) for link in replay.reference_links] == [
+        (reference.id, 0)
+    ]
+    assert events[:2] == ["rollback", "result"]
 
 
 def test_unique_key_race_rolls_back_every_write_and_returns_winner(
@@ -550,6 +600,19 @@ def test_unique_key_race_rolls_back_every_write_and_returns_winner(
         )
 
     monkeypatch.setattr(service, "_find_job_by_idempotency", miss_then_find)
+    warnings = []
+    prints = []
+    monkeypatch.setattr(
+        service.logger,
+        "warning",
+        lambda message, *args, **_kwargs: warnings.append(
+            message % args if args else message
+        ),
+    )
+    monkeypatch.setattr(
+        "builtins.print",
+        lambda *args, **kwargs: prints.append((args, kwargs)),
+    )
 
     replay = service.create_turn(db, owner.id, _turn(request_id="race-key"))
 
@@ -557,6 +620,8 @@ def test_unique_key_race_rolls_back_every_write_and_returns_winner(
     assert db.query(DesignImageJob).count() == 1
     assert db.query(DesignImageSession).count() == 1
     assert db.query(DesignImageMessage).count() == 1
+    assert any("race recovered" in message for message in warnings)
+    assert any(kwargs.get("flush") is True for _, kwargs in prints)
 
 
 def test_retry_creates_new_job_with_new_idempotency_without_mutating_old(configured, db):
@@ -876,6 +941,57 @@ def test_draft_upload_compensates_any_failure_after_file_save(
 
     assert rollback_calls == 1
     assert deleted == [stored.relative_path, stored.thumbnail_relative_path]
+
+
+def test_cleanup_failure_is_visible_in_logger_and_service_log(monkeypatch):
+    warnings = []
+    prints = []
+    monkeypatch.setattr(
+        service.file_service,
+        "delete_private_file",
+        lambda _path: (_ for _ in ()).throw(OSError("locked")),
+    )
+    monkeypatch.setattr(
+        service.logger,
+        "warning",
+        lambda message, *args, **_kwargs: warnings.append(
+            message % args if args else message
+        ),
+    )
+    monkeypatch.setattr(
+        "builtins.print",
+        lambda *args, **kwargs: prints.append((args, kwargs)),
+    )
+
+    service._delete_files_best_effort(["1/upload/a.png"], "test cleanup")
+
+    assert any("cleanup failed" in message for message in warnings)
+    assert any(kwargs.get("flush") is True for _, kwargs in prints)
+
+
+def test_missing_winner_after_snapshot_refresh_raises_consistency_error(
+    configured, db, monkeypatch
+):
+    owner, _ = configured
+    warnings = []
+    prints = []
+    monkeypatch.setattr(
+        service.logger,
+        "warning",
+        lambda message, *args, **_kwargs: warnings.append(
+            message % args if args else message
+        ),
+    )
+    monkeypatch.setattr(
+        "builtins.print",
+        lambda *args, **kwargs: prints.append((args, kwargs)),
+    )
+
+    with pytest.raises(service.DesignImageConsistencyError):
+        service._reload_winner_result(db, owner.id, 999_999, context="turn")
+
+    assert any("winner missing" in message for message in warnings)
+    assert any(kwargs.get("flush") is True for _, kwargs in prints)
 
 
 def test_delete_draft_rejects_attached_or_referenced_and_deletes_file_after_commit(

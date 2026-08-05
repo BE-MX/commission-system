@@ -77,6 +77,10 @@ class DesignImageAssetConflictError(DesignImageError):
     pass
 
 
+class DesignImageConsistencyError(DesignImageError):
+    pass
+
+
 @dataclass(frozen=True)
 class SessionPage:
     items: list[DesignImageSession]
@@ -99,6 +103,11 @@ class ActiveJobResult:
 
 def _not_found() -> DesignImageNotFoundError:
     return DesignImageNotFoundError(NOT_FOUND_MESSAGE)
+
+
+def _warn_visible(message: str) -> None:
+    logger.warning(message)
+    print(f"[design-image] {message}", flush=True)
 
 
 def _utc_naive(value: datetime | None = None) -> datetime:
@@ -348,8 +357,8 @@ def _delete_files_best_effort(paths: list[str], context: str) -> None:
         try:
             file_service.delete_private_file(path)
         except Exception as exc:
-            message = f"[design-image] {context} cleanup failed {PurePosixPath(path).name}: {exc}"
-            logger.warning(message)
+            message = f"{context} cleanup failed {PurePosixPath(path).name}: {exc}"
+            _warn_visible(message)
 
 
 def _thumbnail_path(relative_path: str) -> str:
@@ -561,6 +570,27 @@ def _result_for_job(db: Session, job: DesignImageJob) -> TurnResult:
     return TurnResult(job=job, session=session, message=message, reference_links=links)
 
 
+def _reload_winner_result(
+    db: Session, owner_user_id: int, winner_id: int, *, context: str
+) -> TurnResult:
+    winner = db.execute(
+        _job_statement(owner_user_id, winner_id)
+    ).scalar_one_or_none()
+    if winner is None:
+        _warn_visible(f"{context} idempotency winner missing after snapshot refresh")
+        raise DesignImageConsistencyError("幂等任务结果暂不可见，请重试")
+    return _result_for_job(db, winner)
+
+
+def _rollback_and_reload_winner(
+    db: Session, owner_user_id: int, winner_id: int, *, context: str
+) -> TurnResult:
+    db.rollback()
+    return _reload_winner_result(
+        db, owner_user_id, winner_id, context=context
+    )
+
+
 def create_turn(
     db: Session,
     owner_user_id: int,
@@ -577,9 +607,9 @@ def create_turn(
             db, owner_user_id, payload.request_id, for_update=True
         )
         if winner is not None:
-            result = _result_for_job(db, winner)
-            db.rollback()
-            return result
+            return _rollback_and_reload_winner(
+                db, owner_user_id, winner.id, context="turn"
+            )
         _enforce_capacity(db, owner_user_id, now)
         session = (
             _owner_session(
@@ -660,10 +690,12 @@ def create_turn(
         db.rollback()
         winner = _find_job_by_idempotency(db, owner_user_id, payload.request_id)
         if winner is None:
-            logger.warning("design image turn integrity error without idempotent winner")
+            _warn_visible("design image turn integrity error without idempotent winner")
             raise
-        logger.warning("design image turn idempotency race recovered")
-        return _result_for_job(db, winner)
+        _warn_visible("design image turn idempotency race recovered")
+        return _reload_winner_result(
+            db, owner_user_id, winner.id, context="turn integrity recovery"
+        )
     except Exception:
         db.rollback()
         raise
@@ -695,9 +727,9 @@ def retry_job(
             db, owner_user_id, payload.request_id, for_update=True
         )
         if winner is not None:
-            result = _result_for_job(db, winner)
-            db.rollback()
-            return result
+            return _rollback_and_reload_winner(
+                db, owner_user_id, winner.id, context="retry"
+            )
         _enforce_capacity(db, owner_user_id, now)
         preset_name, model, pricing_snapshot = _preset_snapshot(db)
         links = db.execute(
@@ -743,10 +775,12 @@ def retry_job(
         db.rollback()
         winner = _find_job_by_idempotency(db, owner_user_id, payload.request_id)
         if winner is None:
-            logger.warning("design image retry integrity error without idempotent winner")
+            _warn_visible("design image retry integrity error without idempotent winner")
             raise
-        logger.warning("design image retry idempotency race recovered")
-        return _result_for_job(db, winner)
+        _warn_visible("design image retry idempotency race recovered")
+        return _reload_winner_result(
+            db, owner_user_id, winner.id, context="retry integrity recovery"
+        )
     except Exception:
         db.rollback()
         raise
