@@ -497,7 +497,7 @@ def _enforce_capacity(db: Session, owner_user_id: int, now: datetime | None) -> 
         raise DesignImageActiveJobError("已有生成任务正在进行，请等待完成")
 
 
-def _preset_snapshot(db: Session) -> tuple[str, str, dict | None]:
+def _preset_snapshot(db: Session) -> tuple[str, str, int, dict | None]:
     row = (
         db.query(AiPreset, AiProvider)
         .join(AiProvider, AiProvider.id == AiPreset.provider_id)
@@ -516,7 +516,7 @@ def _preset_snapshot(db: Session) -> tuple[str, str, dict | None]:
     rate_card = (row[0].parameters or {}).get("rate_card")
     if rate_card is not None and not isinstance(rate_card, dict):
         raise DesignImageConfigurationError("生图价格配置不可用，请联系管理员")
-    return row[0].preset_name, row[0].model, deepcopy(rate_card)
+    return row[0].preset_name, row[0].model, row[0].provider_id, deepcopy(rate_card)
 
 
 def _usable_asset(
@@ -646,7 +646,7 @@ def create_turn(
             )
             for asset_id in payload.reference_asset_ids
         ]
-        preset_name, model, pricing_snapshot = _preset_snapshot(db)
+        preset_name, model, provider_id, pricing_snapshot = _preset_snapshot(db)
         message = DesignImageMessage(
             session_id=session.id,
             role="user",
@@ -663,7 +663,10 @@ def create_turn(
             mode="edit" if base else "generate",
             status="queued",
             prompt_snapshot=_prompt_snapshot(payload.prompt, editing=base is not None),
-            parameters={"size": payload.size, "quality": payload.quality},
+            parameters={
+                "size": payload.size, "quality": payload.quality,
+                "provider_id": provider_id,
+            },
             preset_name=preset_name,
             model=model,
             idempotency_key=payload.request_id,
@@ -731,7 +734,7 @@ def retry_job(
                 db, owner_user_id, winner.id, context="retry"
             )
         _enforce_capacity(db, owner_user_id, now)
-        preset_name, model, pricing_snapshot = _preset_snapshot(db)
+        preset_name, model, provider_id, pricing_snapshot = _preset_snapshot(db)
         links = db.execute(
             select(DesignImageJobAsset)
             .where(DesignImageJobAsset.job_id == old.id)
@@ -751,7 +754,10 @@ def retry_job(
             mode=old.mode,
             status="queued",
             prompt_snapshot=old.prompt_snapshot,
-            parameters=dict(old.parameters or {}),
+            parameters={
+                **dict(old.parameters or {}),
+                "provider_id": provider_id,
+            },
             preset_name=preset_name,
             model=model,
             idempotency_key=payload.request_id,

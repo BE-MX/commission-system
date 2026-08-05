@@ -84,11 +84,30 @@ _IMAGE_RETRY_BACKOFF_SEC = 1.5   # 线性退避 1.5s / 3s
 # 连接/写入超时收紧到 15s（快速失败），只放长 read 给生图本身——否则 ConnectTimeout 也吃满 300s
 _IMAGE_CONNECT_TIMEOUT_SEC = 15.0
 _REQUEST_ID_HEADERS = ("x-request-id", "request-id", "openai-request-id")
+_MAX_IMAGE_RESPONSE_BYTES = ((20 * 1024 * 1024 + 2) // 3) * 4 + 1024 * 1024
 
 
 def _with_attempt_count(exc: Exception, attempts: int) -> Exception:
     setattr(exc, "provider_attempt_count", attempts)
     return exc
+
+
+def _with_log_id(exc: Exception, log_id: int) -> Exception:
+    setattr(exc, "log_id", log_id)
+    return exc
+
+
+def _reject_oversized_response(response) -> None:
+    raw_length = response.headers.get("content-length") or response.headers.get("Content-Length")
+    if raw_length is None:
+        return
+    try:
+        too_large = int(raw_length) > _MAX_IMAGE_RESPONSE_BYTES
+    except (TypeError, ValueError):
+        return
+    if too_large:
+        response.close()
+        raise ValueError("provider image response is too large")
 
 
 def _request_id(response) -> str | None:
@@ -195,7 +214,10 @@ def _send_with_retry(
 
     do_send(client) -> httpx.Response —— 由调用方决定 body 是 multipart 还是 JSON。"""
     timeout = httpx.Timeout(timeout_sec, connect=_IMAGE_CONNECT_TIMEOUT_SEC, write=30.0)
-    client_kwargs: dict = {"timeout": timeout}
+    client_kwargs: dict = {
+        "timeout": timeout,
+        "event_hooks": {"response": [_reject_oversized_response]},
+    }
     # 生图专用代理（AI_IMAGE_PROXY，默认空=不传参，维持 httpx 既有行为）。
     # 配置时显式传参、只作用于生图两条链路——不用进程级 HTTP(S)_PROXY 正是为了
     # 别把文本 chat（elbnt 直连正常）一起拽进代理。
@@ -469,6 +491,7 @@ def generate_image(
             "request_id": transport.request_id,
         }
     except Exception as exc:
+        _with_log_id(exc, log.id)
         if transport is not None and not hasattr(exc, "provider_attempt_count"):
             _with_attempt_count(exc, transport.attempts)
         db.rollback()
@@ -572,6 +595,7 @@ def edit_image(
             "request_id": transport.request_id,
         }
     except Exception as exc:
+        _with_log_id(exc, log.id)
         if transport is not None and not hasattr(exc, "provider_attempt_count"):
             _with_attempt_count(exc, transport.attempts)
         db.rollback()

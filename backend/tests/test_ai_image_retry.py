@@ -62,7 +62,7 @@ def _no_image_proxy(monkeypatch):
 
 def _patch_sequence(monkeypatch, seq):
     it = iter(seq)
-    monkeypatch.setattr(image_service.httpx, "Client", lambda timeout=None: _FakeClient(next(it)))
+    monkeypatch.setattr(image_service.httpx, "Client", lambda timeout=None, **kwargs: _FakeClient(next(it)))
 
 
 def _call():
@@ -85,7 +85,7 @@ def test_retries_503_then_succeeds(monkeypatch):
 
 def test_4xx_not_retried(monkeypatch):
     calls = {"n": 0}
-    def make(timeout=None):
+    def make(timeout=None, **kwargs):
         calls["n"] += 1
         return _FakeClient(_FakeResp(400))
     monkeypatch.setattr(image_service.httpx, "Client", make)
@@ -105,7 +105,7 @@ def test_all_502_raises_after_max_attempts(monkeypatch):
 def test_504_not_retried(monkeypatch):
     # 504=网关等上游超时(慢)，重试会顶穿看门狗预算 → 立即抛不重试
     calls = {"n": 0}
-    def make(timeout=None):
+    def make(timeout=None, **kwargs):
         calls["n"] += 1
         return _FakeClient(_FakeResp(504))
     monkeypatch.setattr(image_service.httpx, "Client", make)
@@ -117,7 +117,7 @@ def test_504_not_retried(monkeypatch):
 
 def test_429_not_retried_and_reports_attempt_count(monkeypatch):
     calls = {"n": 0}
-    def make(timeout=None):
+    def make(timeout=None, **kwargs):
         calls["n"] += 1
         return _FakeClient(_FakeResp(429))
     monkeypatch.setattr(image_service.httpx, "Client", make)
@@ -129,7 +129,7 @@ def test_429_not_retried_and_reports_attempt_count(monkeypatch):
 
 def test_read_timeout_not_retried(monkeypatch):
     calls = {"n": 0}
-    def make(timeout=None):
+    def make(timeout=None, **kwargs):
         calls["n"] += 1
         return _FakeClient(httpx.ReadTimeout("timeout"))
     monkeypatch.setattr(image_service.httpx, "Client", make)
@@ -169,7 +169,7 @@ def _patch_recording_sequence(monkeypatch, seq):
             posted.append(dict(k.get("data") or {}))
             return super().post(*a, **k)
 
-    monkeypatch.setattr(image_service.httpx, "Client", lambda timeout=None: _RecClient(next(it)))
+    monkeypatch.setattr(image_service.httpx, "Client", lambda timeout=None, **kwargs: _RecClient(next(it)))
     return posted
 
 
@@ -266,7 +266,7 @@ class _FakeSettings:
 
 def test_proxy_setting_passed_to_client(monkeypatch):
     seen = {}
-    def make(timeout=None, proxy=None):
+    def make(timeout=None, proxy=None, **kwargs):
         seen["proxy"] = proxy
         return _FakeClient(_FakeResp(200, {"ok": 1}))
     monkeypatch.setattr(image_service.httpx, "Client", make)
@@ -292,7 +292,7 @@ def test_proxy_protocol_error_translated(monkeypatch):
     class ProtocolError(Exception):
         pass
     monkeypatch.setattr(image_service.httpx, "Client",
-                        lambda timeout=None, proxy=None: _FakeClient(ProtocolError("Malformed reply")))
+                        lambda timeout=None, proxy=None, **kwargs: _FakeClient(ProtocolError("Malformed reply")))
     monkeypatch.setattr(image_service, "get_settings", lambda: _FakeSettings("socks5://127.0.0.1:1081"))
     with pytest.raises(RuntimeError, match="permitopen"):
         _call()

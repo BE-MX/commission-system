@@ -1,10 +1,12 @@
 import base64
 from datetime import datetime, timedelta, timezone
+from threading import Barrier, Lock, Thread
 from types import SimpleNamespace
 
 import httpx
 import pytest
 from PIL import Image
+from sqlalchemy import create_engine
 from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import sessionmaker
 
@@ -25,7 +27,7 @@ def _utcnow():
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-def _seed_job(db, *, mode="generate", created_at=None, parameters=None):
+def _seed_job(db, *, mode="generate", created_at=None, parameters=None, **job_values):
     preset = db.query(AiPreset).filter_by(
         preset_name="design_image_generation"
     ).one_or_none()
@@ -37,11 +39,12 @@ def _seed_job(db, *, mode="generate", created_at=None, parameters=None):
         )
         db.add(provider)
         db.flush()
-        db.add(AiPreset(
+        preset = AiPreset(
             preset_name="design_image_generation", provider_id=provider.id,
             model="gpt-image-2", parameters={"output_format": "png"},
             is_enabled=True,
-        ))
+        )
+        db.add(preset)
         db.flush()
     owner = ArkUser(
         username=f"worker-owner-{db.query(ArkUser).count()}",
@@ -66,11 +69,16 @@ def _seed_job(db, *, mode="generate", created_at=None, parameters=None):
         mode=mode,
         status="queued",
         prompt_snapshot="make it",
-        parameters=parameters or {"size": "1024x1024", "quality": "medium"},
+        parameters={
+            "size": "1024x1024", "quality": "medium",
+            "provider_id": preset.provider_id,
+            **(parameters or {}),
+        },
         preset_name="design_image_generation",
         model="gpt-image-2",
         idempotency_key=f"job-{owner.id}",
         created_at=created_at or _utcnow(),
+        **job_values,
     )
     db.add(job)
     db.commit()
@@ -204,6 +212,47 @@ def test_two_workers_can_call_provider_only_once_for_one_job(
     assert len(calls) == 1
 
 
+def test_two_independent_sessions_race_one_queued_job_once(tmp_path):
+    # SQLite ignores SKIP LOCKED, so this proves the conditional UPDATE guard under
+    # a real two-thread race. MySQL 8 lock behavior remains the Phase 5 gate.
+    race_engine = create_engine(
+        f"sqlite:///{tmp_path / 'claim-race.db'}",
+        connect_args={"check_same_thread": False, "timeout": 10},
+    )
+    DesignImageJob.__table__.create(race_engine)
+    factory = sessionmaker(bind=race_engine, expire_on_commit=False)
+    with factory() as seed:
+        seed.add(DesignImageJob(
+            owner_user_id=1, session_id=1, request_message_id=1,
+            mode="generate", status="queued", prompt_snapshot="draw",
+            parameters={}, preset_name="design_image_generation",
+            model="gpt-image-2", idempotency_key="race", created_at=_utcnow(),
+        ))
+        seed.commit()
+
+    barrier = Barrier(2)
+    lock = Lock()
+    claims = []
+    provider_calls = []
+    def compete(worker_id):
+        with factory() as race_db:
+            barrier.wait()
+            claim = worker.claim_next_job(race_db, worker_id, 120)
+        with lock:
+            claims.append(claim)
+            if claim is not None:
+                provider_calls.append(claim.job_id)
+
+    threads = [Thread(target=compete, args=(name,)) for name in ("a", "b")]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=15)
+        assert not thread.is_alive()
+    assert sum(claim is not None for claim in claims) == 1
+    assert len(provider_calls) == 1
+
+
 def test_provider_url_uses_explicit_allowlist_and_detects_real_mime(monkeypatch):
     calls = []
     monkeypatch.setattr(
@@ -217,6 +266,15 @@ def test_provider_url_uses_explicit_allowlist_and_detects_real_mime(monkeypatch)
     assert calls == [("https://cdn.example.test/result", {"cdn.example.test"})]
     with pytest.raises(ValueError, match="not configured"):
         worker._decode_provider_content("https://cdn.example.test/result", frozenset())
+
+
+def test_oversized_base64_is_rejected_before_decode(monkeypatch):
+    called = []
+    monkeypatch.setattr(worker.base64, "b64decode", lambda *args, **kwargs: called.append(1))
+    encoded = "A" * (((20 * 1024 * 1024 + 2) // 3) * 4 + 4)
+    with pytest.raises(ValueError, match="too large"):
+        worker._decode_provider_content(encoded, frozenset())
+    assert called == []
 
 
 def test_invalid_provider_payload_keeps_actual_attempt_count(
@@ -281,6 +339,157 @@ def test_edit_sends_base_then_references_by_position(
     worker.execute_claimed_job(job.id, claim.lease_token)
 
 
+def test_generate_with_references_uses_edit_and_preserves_reference_order(
+    engine, db, tmp_path, monkeypatch
+):
+    owner, session, _, job = _seed_job(db, mode="generate")
+    monkeypatch.setattr(worker.get_settings(), "DESIGN_IMAGE_STORAGE_ROOT", str(tmp_path))
+    for position in range(4):
+        payload = f"ref-{position}".encode()
+        path = tmp_path / str(owner.id) / "upload" / f"ref-{position}.png"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(payload)
+        asset = DesignImageAsset(
+            session_id=session.id, asset_type="upload",
+            storage_path=f"{owner.id}/upload/ref-{position}.png", mime_type="image/png",
+            file_size=len(payload), width=1, height=1, sha256=str(position).ljust(64, "0"),
+            status="attached", created_by=owner.id,
+        )
+        db.add(asset)
+        db.flush()
+        db.add(DesignImageJobAsset(
+            job_id=job.id, asset_id=asset.id, role="reference", position=position
+        ))
+    db.commit()
+    claim = worker.claim_next_job(db, "worker-a", 120)
+    monkeypatch.setattr(worker, "SessionLocal", sessionmaker(bind=engine, expire_on_commit=False))
+    calls = []
+    monkeypatch.setattr(worker.ai_service, "generate_image", lambda **kwargs: pytest.fail("generation must not run"))
+    monkeypatch.setattr(
+        worker.ai_service, "edit_image",
+        lambda **kwargs: calls.append([image["content"] for image in kwargs["images"]])
+        or _result("data:image/png;base64," + base64.b64encode(_png_bytes()).decode()),
+    )
+    monkeypatch.setattr(
+        worker.file_service, "save_private_image",
+        lambda image, **kwargs: StoredImage(
+            "1/output/refs.png", "1/output/refs_thumb.png", image.mime_type,
+            image.file_size, image.width, image.height, image.sha256,
+        ),
+    )
+    worker.execute_claimed_job(job.id, claim.lease_token)
+    assert calls == [[b"ref-0", b"ref-1", b"ref-2", b"ref-3"]]
+
+
+def test_expired_lease_stops_before_provider(engine, db, monkeypatch):
+    _, _, _, job = _seed_job(db)
+    claim = worker.claim_next_job(db, "worker-a", 120)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    monkeypatch.setattr(worker, "SessionLocal", factory)
+    with factory() as expire_db:
+        expire_db.get(DesignImageJob, job.id).lease_expires_at = _utcnow() - timedelta(seconds=1)
+        expire_db.commit()
+    calls = []
+    monkeypatch.setattr(worker.ai_service, "generate_image", lambda **kwargs: calls.append(1))
+    worker.execute_claimed_job(job.id, claim.lease_token)
+    assert calls == []
+
+
+def test_provider_success_after_lease_expiry_cleans_stored_without_publish(
+    engine, db, monkeypatch
+):
+    _, _, _, job = _seed_job(db)
+    claim = worker.claim_next_job(db, "worker-a", 120)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    monkeypatch.setattr(worker, "SessionLocal", factory)
+    def expire_then_succeed(**kwargs):
+        with factory() as expire_db:
+            expire_db.get(DesignImageJob, job.id).lease_expires_at = _utcnow() - timedelta(seconds=1)
+            expire_db.commit()
+        return _result("data:image/png;base64," + base64.b64encode(_png_bytes()).decode())
+    monkeypatch.setattr(worker.ai_service, "generate_image", expire_then_succeed)
+    monkeypatch.setattr(
+        worker.file_service, "save_private_image",
+        lambda image, **kwargs: StoredImage(
+            "1/output/expired.png", "1/output/expired_thumb.png", image.mime_type,
+            image.file_size, image.width, image.height, image.sha256,
+        ),
+    )
+    deleted = []
+    monkeypatch.setattr(worker.file_service, "delete_private_file", deleted.append)
+    worker.execute_claimed_job(job.id, claim.lease_token)
+    db.expire_all()
+    row = db.get(DesignImageJob, job.id)
+    assert row.status == "running" and row.output_asset_id is None
+    assert deleted == ["1/output/expired.png", "1/output/expired_thumb.png"]
+
+
+def test_provider_failure_after_lease_expiry_does_not_overwrite_job(
+    engine, db, monkeypatch
+):
+    _, _, _, job = _seed_job(db)
+    claim = worker.claim_next_job(db, "worker-a", 120)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    monkeypatch.setattr(worker, "SessionLocal", factory)
+    exc = RuntimeError("provider failed")
+    setattr(exc, "log_id", 42)
+    def expire_then_fail(**kwargs):
+        with factory() as expire_db:
+            expire_db.get(DesignImageJob, job.id).lease_expires_at = _utcnow() - timedelta(seconds=1)
+            expire_db.commit()
+        raise exc
+    monkeypatch.setattr(worker.ai_service, "generate_image", expire_then_fail)
+    worker.execute_claimed_job(job.id, claim.lease_token)
+    db.expire_all()
+    row = db.get(DesignImageJob, job.id)
+    assert row.status == "running" and row.error_code is None and row.ai_call_log_id is None
+
+
+@pytest.mark.parametrize("change", ["provider", "model", "rate_card"])
+def test_preset_change_after_queue_fails_before_provider(
+    engine, db, monkeypatch, change
+):
+    _, _, _, job = _seed_job(
+        db, pricing_snapshot={"output_image_microusd_per_token": 31}
+    )
+    preset = db.query(AiPreset).filter_by(preset_name="design_image_generation").one()
+    preset.parameters = {
+        **(preset.parameters or {}),
+        "rate_card": {"output_image_microusd_per_token": 31},
+    }
+    db.commit()
+    # Align the queued snapshot first, then mutate the live preset.
+    job.parameters["provider_id"] = preset.provider_id
+    job.model = preset.model
+    db.commit()
+    if change == "provider":
+        replacement = AiProvider(
+            name="Replacement provider", provider_type="direct",
+            api_base="https://replacement.test", api_type="openai",
+            is_enabled=True, timeout_sec=30,
+        )
+        db.add(replacement)
+        db.flush()
+        preset.provider_id = replacement.id
+    elif change == "model":
+        preset.model = "gpt-image-new"
+    else:
+        preset.parameters = {
+            **preset.parameters,
+            "rate_card": {"output_image_microusd_per_token": 99},
+        }
+    db.commit()
+    claim = worker.claim_next_job(db, "worker-a", 120)
+    monkeypatch.setattr(worker, "SessionLocal", sessionmaker(bind=engine, expire_on_commit=False))
+    calls = []
+    monkeypatch.setattr(worker.ai_service, "generate_image", lambda **kwargs: calls.append(1))
+    worker.execute_claimed_job(job.id, claim.lease_token)
+    db.expire_all()
+    row = db.get(DesignImageJob, job.id)
+    assert calls == []
+    assert row.status == "failed" and row.error_code == "configuration_error"
+
+
 def test_late_provider_response_cannot_publish_after_stale_recovery(
     engine, db, monkeypatch
 ):
@@ -341,6 +550,61 @@ def test_failures_have_stable_actionable_mapping(
     assert row.error_message and "重试" in row.error_message
     assert row.provider_attempt_count == 3
     assert row.billing_certainty == "unknown"
+
+
+def test_failure_persists_ai_call_log_id_while_lease_is_valid(
+    engine, db, monkeypatch
+):
+    _, _, _, job = _seed_job(db)
+    claim = worker.claim_next_job(db, "worker-a", 120)
+    monkeypatch.setattr(worker, "SessionLocal", sessionmaker(bind=engine, expire_on_commit=False))
+    exc = RuntimeError("provider failed")
+    setattr(exc, "provider_attempt_count", 2)
+    setattr(exc, "log_id", 77)
+    monkeypatch.setattr(worker.ai_service, "generate_image", lambda **kwargs: (_ for _ in ()).throw(exc))
+    worker.execute_claimed_job(job.id, claim.lease_token)
+    db.expire_all()
+    row = db.get(DesignImageJob, job.id)
+    assert row.status == "failed" and row.ai_call_log_id == 77
+
+
+@pytest.mark.parametrize(
+    ("rate_card", "usage_detail", "expected_cost", "certainty"),
+    [
+        (
+            {"output_image_microusd_per_token": 31},
+            {"output_tokens": 7, "output_tokens_details": {"image_tokens": 7}},
+            217,
+            "estimated",
+        ),
+        ({}, {"output_tokens_details": {"image_tokens": 7}}, None, "unknown"),
+        ({"output_image_microusd_per_token": 31}, {"output_tokens": 7}, None, "unknown"),
+    ],
+)
+def test_success_cost_requires_matching_detailed_usage_and_rate(
+    engine, db, monkeypatch, rate_card, usage_detail, expected_cost, certainty
+):
+    _, _, _, job = _seed_job(db, pricing_snapshot=rate_card)
+    preset = db.query(AiPreset).filter_by(preset_name="design_image_generation").one()
+    preset.parameters = {**(preset.parameters or {}), "rate_card": rate_card}
+    db.commit()
+    claim = worker.claim_next_job(db, "worker-a", 120)
+    monkeypatch.setattr(worker, "SessionLocal", sessionmaker(bind=engine, expire_on_commit=False))
+    result = _result("data:image/png;base64," + base64.b64encode(_png_bytes()).decode())
+    result["usage_detail"] = usage_detail
+    monkeypatch.setattr(worker.ai_service, "generate_image", lambda **kwargs: result)
+    monkeypatch.setattr(
+        worker.file_service, "save_private_image",
+        lambda image, **kwargs: StoredImage(
+            "1/output/cost.png", "1/output/cost_thumb.png", image.mime_type,
+            image.file_size, image.width, image.height, image.sha256,
+        ),
+    )
+    worker.execute_claimed_job(job.id, claim.lease_token)
+    db.expire_all()
+    row = db.get(DesignImageJob, job.id)
+    assert row.estimated_cost_microusd == expected_cost
+    assert row.billing_certainty == certainty
 
 
 @pytest.mark.parametrize(

@@ -84,7 +84,7 @@ def test_generate_image_posts_whitelisted_json_and_records_metadata(db, monkeypa
             }
 
     class FakeClient:
-        def __init__(self, timeout):
+        def __init__(self, timeout, **kwargs):
             captured["timeout"] = timeout
 
         def __enter__(self):
@@ -246,6 +246,8 @@ def test_generate_image_parse_failure_keeps_transport_attempt_count(db, monkeypa
         )
 
     assert caught.value.provider_attempt_count == 2
+    assert caught.value.log_id
+    assert db.get(AiCallLog, caught.value.log_id).status == "error"
 
 
 def test_edit_image_parse_failure_keeps_transport_attempt_count(db, monkeypatch):
@@ -265,6 +267,41 @@ def test_edit_image_parse_failure_keeps_transport_attempt_count(db, monkeypatch)
         )
 
     assert caught.value.provider_attempt_count == 3
+    assert caught.value.log_id
+    assert db.get(AiCallLog, caught.value.log_id).status == "error"
+
+
+def test_image_transport_rejects_oversized_content_length_before_json(monkeypatch):
+    json_calls = []
+
+    class FakeResponse:
+        headers = {"Content-Length": str(40 * 1024 * 1024)}
+        def close(self):
+            return None
+        def raise_for_status(self):
+            return None
+        def json(self):
+            json_calls.append(1)
+            return {}
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            self.hook = kwargs["event_hooks"]["response"][0]
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return None
+        def respond(self):
+            response = FakeResponse()
+            self.hook(response)
+            return response
+
+    monkeypatch.setattr(image_service.httpx, "Client", FakeClient)
+    with pytest.raises(ValueError, match="too large"):
+        image_service._send_with_retry(
+            lambda client: client.respond(), 300, "design_image", "generation"
+        )
+    assert json_calls == []
 
 
 def test_edit_image_posts_openai_compatible_image_edit_request(db, monkeypatch):
@@ -283,7 +320,7 @@ def test_edit_image_posts_openai_compatible_image_edit_request(db, monkeypatch):
             }
 
     class FakeClient:
-        def __init__(self, timeout):
+        def __init__(self, timeout, **kwargs):
             captured["timeout"] = timeout
 
         def __enter__(self):
@@ -355,7 +392,7 @@ def test_edit_image_keeps_provider_timeout_when_it_exceeds_image_minimum(db, mon
             return {"data": [{"b64_json": "abc"}]}
 
     class FakeClient:
-        def __init__(self, timeout):
+        def __init__(self, timeout, **kwargs):
             captured["timeout"] = timeout
 
         def __enter__(self):
@@ -385,7 +422,7 @@ def test_edit_image_timeout_error_mentions_effective_timeout(db, monkeypatch):
     _create_image_preset(db)
 
     class FakeClient:
-        def __init__(self, timeout):
+        def __init__(self, timeout, **kwargs):
             self.timeout = timeout
 
         def __enter__(self):
@@ -430,7 +467,7 @@ def test_edit_image_omits_large_base64_from_response_snapshot(db, monkeypatch):
             }
 
     class FakeClient:
-        def __init__(self, timeout):
+        def __init__(self, timeout, **kwargs):
             pass
 
         def __enter__(self):

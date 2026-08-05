@@ -278,7 +278,12 @@ def test_create_turn_attaches_ordered_references_and_uses_explicit_base(configur
     assert "当前基准图" in result.job.prompt_snapshot
     assert "把背景换成高端门店" in result.job.prompt_snapshot
     assert historical.content not in result.job.prompt_snapshot
-    assert result.job.parameters == {"size": "1024x1536", "quality": "medium"}
+    assert result.job.parameters == {
+        "size": "1024x1536", "quality": "medium",
+        "provider_id": db.query(AiPreset).filter_by(
+            preset_name="design_image_generation"
+        ).one().provider_id,
+    }
 
 
 @pytest.mark.parametrize("resource_kind", ["base", "reference"])
@@ -366,6 +371,9 @@ def test_create_turn_snapshots_configured_rate_card_without_hardcoded_prices(
     result = service.create_turn(db, owner.id, _turn(request_id="priced"))
 
     assert result.job.pricing_snapshot == preset.parameters["rate_card"]
+    assert result.job.parameters["provider_id"] == preset.provider_id
+    assert "api_key" not in result.job.parameters
+    assert "api_base" not in result.job.parameters
     assert result.job.estimated_cost_microusd is None
 
 
@@ -729,6 +737,7 @@ def test_retry_requires_current_preset_and_snapshots_current_rate_card(configure
         key="old-rate",
         status="failed",
         pricing_snapshot={"name": "old"},
+        parameters={"size": "1024x1024", "quality": "medium", "provider_id": -1},
     )
     preset = db.query(AiPreset).filter_by(preset_name="design_image_generation").one()
     preset.parameters = {"rate_card": {"name": "current"}}
@@ -738,6 +747,7 @@ def test_retry_requires_current_preset_and_snapshots_current_rate_card(configure
         db, owner.id, old.id, RetryJobRequest(request_id="current-rate")
     )
     assert retried.job.pricing_snapshot == {"name": "current"}
+    assert retried.job.parameters["provider_id"] == preset.provider_id
     assert old.pricing_snapshot == {"name": "old"}
 
     retried.job.status = "failed"
