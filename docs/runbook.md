@@ -925,7 +925,12 @@ from app.design_image import file_service
 from app.design_image.models import DesignImageAsset
 
 ACTION = sys.argv[1] if len(sys.argv) > 1 else "scan"
-MIN_AGE_HOURS = int(os.environ.get("DESIGN_IMAGE_ORPHAN_MIN_AGE_HOURS", "24"))
+try:
+    MIN_AGE_HOURS = int(os.environ.get("DESIGN_IMAGE_ORPHAN_MIN_AGE_HOURS", "24"))
+except (TypeError, ValueError):
+    raise RuntimeError("DESIGN_IMAGE_ORPHAN_MIN_AGE_HOURS must be an integer >= 24") from None
+if MIN_AGE_HOURS < 24:
+    raise RuntimeError("DESIGN_IMAGE_ORPHAN_MIN_AGE_HOURS must be >= 24")
 QUARANTINE_NAME = ".orphan-quarantine"
 REPARSE = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
 
@@ -934,7 +939,7 @@ def reject_link(path: Path) -> None:
     if path.is_symlink() or (getattr(info, "st_file_attributes", 0) & REPARSE):
         raise RuntimeError(f"refuse symlink/reparse point: {path}")
 
-def walk_files(base: Path, *, skip_quarantine: bool = False):
+def walk_files(base: Path, *, skip_quarantine: bool = False, directories: list[Path] | None = None):
     reject_link(base)
     stack = [base]
     while stack:
@@ -947,6 +952,8 @@ def walk_files(base: Path, *, skip_quarantine: bool = False):
                 if entry.is_dir(follow_symlinks=False):
                     if skip_quarantine and path.parent == base and path.name == QUARANTINE_NAME:
                         continue
+                    if directories is not None:
+                        directories.append(path)
                     stack.append(path)
                 elif entry.is_file(follow_symlinks=False):
                     yield path
@@ -974,6 +981,30 @@ def digest(path: Path) -> str:
             value.update(chunk)
     return value.hexdigest()
 
+def append_journal(path: Path, event: dict) -> None:
+    event = {"recorded_at": datetime.now(timezone.utc).isoformat(), **event}
+    with path.open("a", encoding="utf-8", newline="\n") as handle:
+        handle.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+
+def create_journal(action: str, batch: str, planned: list[dict]) -> tuple[Path, str]:
+    run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ") + f"-{os.getpid()}"
+    journal_rel = (PurePosixPath(QUARANTINE_NAME) / "audit" /
+                   f"{batch}.{action}.{run_id}.jsonl").as_posix()
+    journal = file_service.validate_storage_boundary(journal_rel)
+    journal.parent.mkdir(parents=True, exist_ok=True)
+    file_service.validate_storage_boundary(journal_rel)
+    with journal.open("x", encoding="utf-8", newline="\n") as handle:
+        handle.write(json.dumps({
+            "recorded_at": datetime.now(timezone.utc).isoformat(),
+            "event": "plan", "action": action, "batch": batch,
+            "min_age_hours": MIN_AGE_HOURS, "items": planned,
+        }, ensure_ascii=False, sort_keys=True) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    return journal, journal_rel
+
 root = file_service.validate_storage_boundary()
 cutoff = datetime.now(timezone.utc).timestamp() - timedelta(hours=MIN_AGE_HOURS).total_seconds()
 
@@ -991,8 +1022,8 @@ if ACTION in {"scan", "quarantine"}:
             raise RuntimeError("set DESIGN_IMAGE_ORPHAN_APPLY=QUARANTINE to move files")
         # Refresh immediately before mutation; the age gate protects active writes.
         refs = referenced_paths()
-        batch = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        moved = []
+        batch = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        prepared = []
         for rel, size, mtime in candidates:
             if rel in refs:
                 continue
@@ -1001,14 +1032,37 @@ if ACTION in {"scan", "quarantine"}:
                 continue
             target_rel = (PurePosixPath(QUARANTINE_NAME) / batch / rel).as_posix()
             target = file_service.validate_storage_boundary(target_rel)
+            record = {"source": rel, "quarantine": target_rel, "size": size,
+                      "mtime_utc": datetime.fromtimestamp(mtime, timezone.utc).isoformat(),
+                      "sha256": digest(source)}
+            prepared.append((source, target, record))
+        journal, journal_rel = create_journal(
+            "quarantine", batch, [record for _source, _target, record in prepared]
+        )
+        moved = []
+        for source, target, record in prepared:
+            if record["source"] in referenced_paths():
+                append_journal(journal, {"event": "skipped", "reason": "now_referenced",
+                                         "item": record})
+                continue
+            source = file_service.validate_storage_boundary(record["source"])
+            if not source.is_file() or source.stat(follow_symlinks=False).st_mtime > cutoff:
+                append_journal(journal, {"event": "skipped", "reason": "missing_or_too_new",
+                                         "item": record})
+                continue
             target.parent.mkdir(parents=True, exist_ok=True)
-            file_service.validate_storage_boundary(target_rel)
-            sha256 = digest(source)
+            file_service.validate_storage_boundary(record["quarantine"])
+            if target.exists():
+                raise RuntimeError(f"quarantine target already exists: {record['quarantine']}")
+            if source.stat(follow_symlinks=False).st_size != record["size"] or digest(source) != record["sha256"]:
+                raise RuntimeError(f"source changed after plan: {record['source']}")
+            append_journal(journal, {"event": "before", "operation": "replace", "item": record})
             os.replace(source, target)
-            moved.append({"source": rel, "quarantine": target_rel, "size": size,
-                          "mtime_utc": datetime.fromtimestamp(mtime, timezone.utc).isoformat(),
-                          "sha256": sha256})
-        print(json.dumps({"action": ACTION, "batch": batch, "moved": moved}, ensure_ascii=False, indent=2))
+            append_journal(journal, {"event": "after", "operation": "replace", "item": record})
+            moved.append(record)
+        append_journal(journal, {"event": "run_complete", "moved_count": len(moved)})
+        print(json.dumps({"action": ACTION, "batch": batch, "journal": journal_rel,
+                          "moved": moved}, ensure_ascii=False, indent=2))
     else:
         print(json.dumps({"action": ACTION, "min_age_hours": MIN_AGE_HOURS,
                           "referenced_count": len(refs),
@@ -1019,7 +1073,11 @@ if ACTION in {"scan", "quarantine"}:
 
 elif ACTION == "purge":
     batch = os.environ.get("DESIGN_IMAGE_ORPHAN_BATCH", "")
-    if not batch or "/" in batch or "\\" in batch or batch in {".", ".."}:
+    try:
+        valid_batch = datetime.strptime(batch, "%Y%m%dT%H%M%S%fZ").strftime("%Y%m%dT%H%M%S%fZ") == batch
+    except (TypeError, ValueError):
+        valid_batch = False
+    if not valid_batch:
         raise RuntimeError("set DESIGN_IMAGE_ORPHAN_BATCH to one exact quarantine batch")
     if os.environ.get("DESIGN_IMAGE_ORPHAN_APPLY") != "PURGE":
         raise RuntimeError("set DESIGN_IMAGE_ORPHAN_APPLY=PURGE to delete quarantined files")
@@ -1027,25 +1085,47 @@ elif ACTION == "purge":
     batch_root = file_service.validate_storage_boundary(batch_rel)
     refs = referenced_paths()
     deleted = []
-    parent_dirs = set()
+    discovered_dirs = []
     prepared = []
-    for path in list(walk_files(batch_root)):
+    for path in list(walk_files(batch_root, directories=discovered_dirs)):
         original_rel = path.relative_to(batch_root).as_posix()
         if original_rel in refs:
             raise RuntimeError(f"DB now references quarantined path: {original_rel}")
-        record = {"path": original_rel, "size": path.stat(follow_symlinks=False).st_size,
+        record = {"source": original_rel,
+                  "quarantine": path.relative_to(root).as_posix(),
+                  "size": path.stat(follow_symlinks=False).st_size,
                   "sha256": digest(path)}
         prepared.append((path, record))
+    journal, journal_rel = create_journal(
+        "purge", batch, [record for _path, record in prepared]
+    )
     for path, record in prepared:
+        if record["source"] in referenced_paths():
+            append_journal(journal, {"event": "blocked", "reason": "now_referenced",
+                                     "item": record})
+            raise RuntimeError(f"DB now references quarantined path: {record['source']}")
+        path = file_service.validate_storage_boundary(record["quarantine"])
+        if not os.path.lexists(path):
+            append_journal(journal, {"event": "skipped", "reason": "already_absent",
+                                     "item": record})
+            continue
+        reject_link(path)
+        if not path.is_file():
+            raise RuntimeError(f"refuse non-file quarantine item: {record['quarantine']}")
+        if path.stat(follow_symlinks=False).st_size != record["size"] or digest(path) != record["sha256"]:
+            raise RuntimeError(f"quarantine file changed after plan: {record['quarantine']}")
+        append_journal(journal, {"event": "before", "operation": "unlink", "item": record})
         path.unlink()
+        append_journal(journal, {"event": "after", "operation": "unlink", "item": record})
         deleted.append(record)
-        parent_dirs.update(parent for parent in path.parents if parent != batch_root and batch_root in parent.parents)
     # Remove only empty directories inside this named batch; never recurse-delete root.
-    for directory in sorted(parent_dirs, key=lambda item: len(item.parts), reverse=True):
+    for directory in sorted(set(discovered_dirs), key=lambda item: len(item.parts), reverse=True):
         reject_link(directory)
         directory.rmdir()
     batch_root.rmdir()
-    print(json.dumps({"action": ACTION, "batch": batch, "deleted": deleted}, ensure_ascii=False, indent=2))
+    append_journal(journal, {"event": "run_complete", "deleted_count": len(deleted)})
+    print(json.dumps({"action": ACTION, "batch": batch, "journal": journal_rel,
+                      "deleted": deleted}, ensure_ascii=False, indent=2))
 else:
     raise RuntimeError("action must be scan, quarantine, or purge")
 '@ | python - scan | Tee-Object ..\design-image-orphan-scan.json
@@ -1054,11 +1134,13 @@ else:
 执行顺序：
 
 1. 先审阅 `design-image-orphan-scan.json`，逐项确认 DB 中没有相对路径、文件年龄超过门槛且不属于进行中的人工恢复。
-2. 隔离：设置 `$env:DESIGN_IMAGE_ORPHAN_APPLY="QUARANTINE"`，将最后一行的 `scan` 改成 `quarantine`，输出到新的 audit JSON。记录返回的精确 `batch`、路径、大小和 SHA-256。
-3. 至少观察一个完整 stale/备份周期；再次查询资产、核对页面与 worker 日志，并确认隔离批次里的文件数、大小、SHA-256 与 audit JSON 一致。需要恢复时按 audit 的 `source` 用 `Move-Item -LiteralPath` 精确移回，不能整目录覆盖。
-4. 精确删除：设置 `$env:DESIGN_IMAGE_ORPHAN_BATCH="<上一步精确 batch>"` 与 `$env:DESIGN_IMAGE_ORPHAN_APPLY="PURGE"`，将最后一行改成 `python - purge | Tee-Object ..\design-image-orphan-purge.json`。purge 只逐文件 `unlink` 并移除已空的具名批次目录；任何 symlink/reparse/special file 或重新出现的 DB 引用都会中止。
+2. 隔离：设置 `$env:DESIGN_IMAGE_ORPHAN_APPLY="QUARANTINE"`，将最后一行的 `scan` 改成 `quarantine`。工具会在 `.orphan-quarantine/audit/` 先创建并 fsync JSONL plan，再对每个文件分别 fsync `before/after replace`；`Tee-Object` 只是摘要，不是审计真相源。记录返回的精确 `batch` 和 `journal`。
+3. 至少观察一个完整 stale/备份周期；再次查询资产、核对页面与 worker 日志，并用 journal 中的原路径、隔离路径、大小、SHA-256 核对批次。需要恢复时按 `source` 用 `Move-Item -LiteralPath` 精确移回，不能整目录覆盖。
+4. 精确删除：设置 `$env:DESIGN_IMAGE_ORPHAN_BATCH="<上一步精确 batch>"` 与 `$env:DESIGN_IMAGE_ORPHAN_APPLY="PURGE"`，将最后一行改成 `python - purge | Tee-Object ..\design-image-orphan-purge.json`。purge 在任何 `unlink` 前持久化完整计划，再逐项 fsync `before/after unlink`；journal 位于批次目录外，删除批次后仍保留。它只逐文件 `unlink` 并移除已空的具名批次目录；任何 symlink/reparse/special file 或重新出现的 DB 引用都会中止。
 
-不得把 24 小时门槛缩短到 Provider/租约/stale 可能仍在运行的窗口，不得扫描或删除 `DESIGN_IMAGE_STORAGE_ROOT` 之外的路径，不得使用 `Remove-Item -Recurse`、通配符或对存储根做递归删除。
+Journal 判读和重跑规则：`plan` 但无 `before` 表示未执行；有 `before` 无 `after` 时，对 quarantine 比较 source/隔离路径，对 purge 检查隔离路径是否仍存在并核对 size/SHA-256；`after` 表示该项完成。quarantine 中断后不要修改旧批次，重跑只会为根目录仍存在的 orphan 创建新批次；先按旧 journal 处理处于 `before` 的项。purge 中断后使用同一个 `DESIGN_IMAGE_ORPHAN_BATCH` 重跑，新 journal 只规划仍存在的文件，已经删除的项保留在旧 journal 中，不会再次删除其他路径。
+
+`DESIGN_IMAGE_ORPHAN_MIN_AGE_HOURS` 非整数或小于 24（含 0/负数）会在扫描前直接失败；不得绕过此门槛。不得扫描或删除 `DESIGN_IMAGE_STORAGE_ROOT` 之外的路径，不得使用 `Remove-Item -Recurse`、通配符或对存储根做递归删除。
 
 ### 回滚
 
