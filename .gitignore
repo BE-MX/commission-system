@@ -76,3 +76,6 @@ scripts/card_suite/out/
 
 # 展会销售服务运行时数据
 expo-sales/server/expo.db
+
+# Git worktrees
+.worktrees/
