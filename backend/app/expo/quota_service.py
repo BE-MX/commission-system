@@ -71,6 +71,7 @@ def recharge_quota(
         select(ExpoStore)
         .where(ExpoStore.id == store_id)
         .with_for_update()
+        .execution_options(populate_existing=True)
     )
     store = db.execute(stmt).scalar_one_or_none()
     if store is None:
@@ -107,7 +108,6 @@ def recharge_quota(
         print(msg, flush=True)
         raise
 
-    db.refresh(record)
     return record
 
 
@@ -136,6 +136,7 @@ def deduct_quota(
         select(ExpoStore)
         .where(ExpoStore.id == store_id)
         .with_for_update()
+        .execution_options(populate_existing=True)
     )
     store = db.execute(stmt).scalar_one_or_none()
     if store is None:
@@ -178,7 +179,6 @@ def deduct_quota(
         print(msg, flush=True)
         raise
 
-    db.refresh(record)
     return record
 
 

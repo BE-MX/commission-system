@@ -1,9 +1,11 @@
 """展会门店配额服务测试。"""
 
+import threading
 import uuid
 
 import pytest
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import sessionmaker
 
 from app.auth.models import ArkUser
 from app.expo.models import ExpoStore
@@ -234,3 +236,49 @@ class TestQuotaIntegrity:
         user = _make_user(db)
         with pytest.raises(StoreNotFound):
             recharge_quota(db, store_id=999999, amount=10, operator_user_id=user.id)
+
+
+class TestConcurrentDeduct:
+    def test_two_threads_cannot_over_deduct(self, db):
+        """余额 2 时两个线程各扣 2，最终 used_quota 不允许超过 2。
+
+        内存 SQLite + StaticPool 会让写实际串行，本测试重点是不超扣、无未预期异常；
+        生产 MySQL 下 with_for_update() + populate_existing=True 保证同一时刻只有一笔成功。
+        """
+        user = _make_user(db)
+        store = _make_store(db, total_quota=2, used_quota=0)
+        store_id = store.id
+        user_id = user.id
+        db.commit()
+
+        results = {"ok": 0, "errors": []}
+        lock = threading.Lock()
+        Session = sessionmaker(bind=db.get_bind())
+
+        def worker():
+            s = Session()
+            try:
+                deduct_quota(s, store_id=store_id, amount=2, operator_user_id=user_id)
+                s.commit()
+                with lock:
+                    results["ok"] += 1
+            except InsufficientQuota:
+                s.rollback()
+            except Exception as exc:
+                with lock:
+                    results["errors"].append(str(exc))
+                s.rollback()
+            finally:
+                s.close()
+
+        t1 = threading.Thread(target=worker)
+        t2 = threading.Thread(target=worker)
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+
+        db.expire_all()
+        store = db.get(ExpoStore, store_id)
+        assert store.used_quota <= 2, f"并发超扣: used_quota={store.used_quota}"
+        assert not results["errors"], f"未预期异常: {results['errors']}"
