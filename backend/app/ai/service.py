@@ -25,4 +25,8 @@ from app.ai.call_service import (  # noqa: F401
 from app.ai.log_service import (  # noqa: F401
     list_logs, get_log,
 )
-from app.ai.image_service import generate_image, edit_image  # noqa: F401
+from app.ai.image_service import (  # noqa: F401
+    build_image_config_version,
+    edit_image,
+    generate_image,
+)

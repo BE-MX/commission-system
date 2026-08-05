@@ -6,6 +6,7 @@ from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.dialects import mysql
 
 from app.ai.models import AiCallLog, AiPreset, AiProvider
+from app.ai import service as ai_service
 from app.auth.models import ArkUser
 from app.design_image import service
 from app.design_image.file_service import NormalizedImage, StoredImage
@@ -283,17 +284,15 @@ def test_create_turn_attaches_ordered_references_and_uses_explicit_base(configur
         "provider_id": db.query(AiPreset).filter_by(
             preset_name="design_image_generation"
         ).one().provider_id,
-        "config_version": {
-            "provider_id": db.query(AiPreset).filter_by(
-                preset_name="design_image_generation"
-            ).one().provider_id,
-            "provider_updated_at": db.query(AiProvider).one().updated_at.isoformat(
-                timespec="microseconds"
-            ),
-            "preset_updated_at": db.query(AiPreset).filter_by(
-                preset_name="design_image_generation"
-            ).one().updated_at.isoformat(timespec="microseconds"),
-        },
+            "config_version": {
+                "provider_id": db.query(AiProvider).one().id,
+                "fingerprint": ai_service.build_image_config_version(
+                    db.query(AiPreset).filter_by(
+                        preset_name="design_image_generation"
+                    ).one(),
+                    db.query(AiProvider).one(),
+                ),
+            },
     }
 
 

@@ -1,6 +1,7 @@
 """AI image generation/editing calls for OpenAI-compatible providers."""
 
 import base64
+import hashlib
 import json
 import logging
 import time
@@ -323,8 +324,35 @@ def _get_enabled_direct_preset(db: Session, preset_name: str) -> tuple[AiPreset,
     return preset, provider
 
 
-def _version_timestamp(value) -> str | None:
-    return value.isoformat(timespec="microseconds") if value is not None else None
+def build_image_config_version(preset, provider) -> str:
+    call_config = {
+        "provider": {
+            "id": provider.id,
+            "provider_type": provider.provider_type,
+            "api_base": provider.api_base,
+            "api_type": provider.api_type,
+            "api_key": provider.api_key,
+            "extra_headers": provider.extra_headers,
+            "timeout_sec": provider.timeout_sec,
+            "is_enabled": provider.is_enabled,
+        },
+        "preset": {
+            "id": preset.id,
+            "preset_name": preset.preset_name,
+            "provider_id": preset.provider_id,
+            "model": preset.model,
+            "parameters": preset.parameters,
+            "is_enabled": preset.is_enabled,
+        },
+    }
+    canonical = json.dumps(
+        call_config,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _assert_config_version(preset, provider, expected: dict | None) -> None:
@@ -332,8 +360,7 @@ def _assert_config_version(preset, provider, expected: dict | None) -> None:
         return
     current = {
         "provider_id": provider.id,
-        "provider_updated_at": _version_timestamp(provider.updated_at),
-        "preset_updated_at": _version_timestamp(preset.updated_at),
+        "fingerprint": build_image_config_version(preset, provider),
     }
     if current != expected:
         raise ValueError("design image provider configuration changed after queueing")

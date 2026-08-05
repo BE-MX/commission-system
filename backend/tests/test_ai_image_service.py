@@ -43,6 +43,7 @@ def _create_image_preset(db, *, preset_name="expo_wig_composite", parameters=Non
 def test_image_functions_are_exported_from_service_facade():
     assert ai_service.generate_image is image_service.generate_image
     assert ai_service.edit_image is image_service.edit_image
+    assert ai_service.build_image_config_version is image_service.build_image_config_version
     assert "from app.ai.service import" in ai_service.__doc__
     assert "directly import submodules" not in ai_service.__doc__
 
@@ -257,29 +258,24 @@ def test_generate_image_parse_failure_keeps_transport_attempt_count(db, monkeypa
     assert db.get(AiCallLog, caught.value.log_id).status == "error"
 
 
-def test_generate_image_rejects_changed_expected_config_before_http(db, monkeypatch):
+def test_image_config_fingerprint_is_stable_and_hides_key_material(db):
     preset = _create_image_preset(db, preset_name="design_image_generation")
     provider = db.get(AiProvider, preset.provider_id)
-    expected = {
-        "provider_id": provider.id,
-        "provider_updated_at": provider.updated_at.isoformat(timespec="microseconds"),
-        "preset_updated_at": preset.updated_at.isoformat(timespec="microseconds"),
-    }
-    expected["provider_updated_at"] = "2000-01-01T00:00:00.000000"
-    sent = []
-    monkeypatch.setattr(image_service, "_send_with_retry", lambda *args: sent.append(1))
+    provider.extra_headers = {"X-Secret-Route": "private-hop"}
+    first = image_service.build_image_config_version(preset, provider)
+    second = image_service.build_image_config_version(preset, provider)
 
-    with pytest.raises(ValueError, match="configuration changed"):
-        image_service.generate_image(
-            db=db, preset_name=preset.preset_name, prompt="draw",
-            caller_module="design_image", expected_config_version=expected,
-        )
-    assert sent == []
-    assert db.query(AiCallLog).count() == 0
+    assert first == second
+    assert len(first) == 64
+    assert provider.api_key not in str(first)
+    assert "private-hop" not in first
 
 
-@pytest.mark.parametrize("change", ["provider", "preset"])
-def test_expected_config_version_detects_same_id_configuration_update(
+@pytest.mark.parametrize(
+    "change",
+    ["api_base", "api_key", "extra_headers", "timeout", "model", "output_format"],
+)
+def test_expected_config_fingerprint_detects_changes_without_timestamp_change(
     db, monkeypatch, change
 ):
     preset = _create_image_preset(db, preset_name="design_image_generation")
@@ -287,13 +283,24 @@ def test_expected_config_version_detects_same_id_configuration_update(
     provider = db.get(AiProvider, preset.provider_id)
     expected = {
         "provider_id": provider.id,
-        "provider_updated_at": provider.updated_at.isoformat(timespec="microseconds"),
-        "preset_updated_at": preset.updated_at.isoformat(timespec="microseconds"),
+        "fingerprint": image_service.build_image_config_version(preset, provider),
     }
-    if change == "provider":
+    provider_updated_at = provider.updated_at
+    preset_updated_at = preset.updated_at
+    if change == "api_base":
+        provider.api_base = "https://changed.example.test"
+    elif change == "api_key":
+        provider.api_key = "different-encrypted-value"
+    elif change == "extra_headers":
+        provider.extra_headers = {"X-Route": "changed"}
+    elif change == "timeout":
         provider.timeout_sec += 1
+    elif change == "model":
+        preset.model = "gpt-image-changed"
     else:
         preset.parameters = {**(preset.parameters or {}), "output_format": "webp"}
+    provider.updated_at = provider_updated_at
+    preset.updated_at = preset_updated_at
     db.commit()
     sent = []
     monkeypatch.setattr(image_service, "_send_with_retry", lambda *args: sent.append(1))
@@ -304,6 +311,28 @@ def test_expected_config_version_detects_same_id_configuration_update(
             caller_module="design_image", expected_config_version=expected,
         )
     assert sent == []
+
+
+def test_expected_config_fingerprint_allows_unchanged_call(db, monkeypatch):
+    preset = _create_image_preset(db, preset_name="design_image_generation")
+    provider = db.get(AiProvider, preset.provider_id)
+    expected = {
+        "provider_id": provider.id,
+        "fingerprint": image_service.build_image_config_version(preset, provider),
+    }
+    monkeypatch.setattr(image_service, "decrypt_key", lambda value: "sk-test")
+    monkeypatch.setattr(
+        image_service, "_send_with_retry",
+        lambda *args, **kwargs: image_service.ImageTransportResult(
+            {"data": [{"b64_json": "abc"}]}, 1, "request-id"
+        ),
+    )
+
+    result = image_service.generate_image(
+        db=db, preset_name=preset.preset_name, prompt="draw",
+        caller_module="design_image", expected_config_version=expected,
+    )
+    assert result["content"] == "data:image/png;base64,abc"
 
 
 def test_error_log_second_commit_failure_warns_logger_and_console(

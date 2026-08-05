@@ -305,10 +305,24 @@ def _decode_provider_content(content: str, allowed_hosts: frozenset[str]):
 
 def _usage_values(result: dict) -> tuple[int | None, int | None, int | None]:
     usage = dict(result.get("usage_detail") or {})
-    input_tokens = usage.get("input_tokens", usage.get("prompt_tokens"))
-    output_tokens = usage.get("output_tokens", usage.get("completion_tokens"))
-    total_tokens = usage.get("total_tokens", result.get("tokens_used"))
+    input_tokens = _safe_nonnegative_bigint(
+        usage.get("input_tokens", usage.get("prompt_tokens"))
+    )
+    output_tokens = _safe_nonnegative_bigint(
+        usage.get("output_tokens", usage.get("completion_tokens"))
+    )
+    total_tokens = _safe_nonnegative_bigint(
+        usage.get("total_tokens", result.get("tokens_used"))
+    )
     return input_tokens, output_tokens, total_tokens
+
+
+def _safe_nonnegative_bigint(value) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    if value < 0 or value > 2**63 - 1:
+        return None
+    return value
 
 
 def _estimated_cost(pricing: dict | None, usage: dict) -> int | None:
@@ -440,22 +454,29 @@ def _finalize_failure(job_id: int, lease_token: str, exc: Exception) -> bool:
             job, now = _live_locked_job(db, job_id, lease_token)
             if job is None:
                 return False
-            log_id = getattr(exc, "log_id", None)
-            if log_id is not None:
+            candidate_log_id = getattr(exc, "log_id", None)
+            effective_log_id = None
+            if candidate_log_id is not None:
                 log = db.execute(
-                    select(AiCallLog).where(AiCallLog.id == log_id).with_for_update()
+                    select(AiCallLog)
+                    .where(AiCallLog.id == candidate_log_id)
+                    .with_for_update()
                 ).scalar_one_or_none()
                 if log is None:
-                    _warn_visible(f"job {job_id}: AI call log {log_id} is missing")
-                elif log.status == "pending":
-                    log.status = "error"
-                    log.error_code = code
-                    log.error_message = message
+                    _warn_visible(
+                        f"job {job_id}: AI call log {candidate_log_id} is missing"
+                    )
+                else:
+                    effective_log_id = candidate_log_id
+                    if log.status == "pending":
+                        log.status = "error"
+                        log.error_code = code
+                        log.error_message = message
             job.status = "failed"
             job.error_code = code
             job.error_message = message
             job.provider_attempt_count = attempts
-            job.ai_call_log_id = log_id
+            job.ai_call_log_id = effective_log_id
             job.billing_certainty = "unknown"
             job.finished_at = now
             job.lease_token = job.lease_expires_at = job.claimed_by = None
@@ -524,7 +545,8 @@ def _execute_claimed_job(job_id: int, lease_token: str) -> None:
             _warn_visible(f"orphan response ignored for job {job_id}: lease lost")
     except Exception as exc:
         _warn_visible(f"job {job_id} execution failed: {type(exc).__name__}: {exc}")
-        if result is not None and not hasattr(exc, "provider_attempt_count"):
+        if result is not None:
+            setattr(exc, "log_id", result.get("log_id"))
             setattr(exc, "provider_attempt_count", result.get("provider_attempt_count", 0))
         if stored is not None:
             _delete_stored(stored, f"failed finalize for job {job_id}")

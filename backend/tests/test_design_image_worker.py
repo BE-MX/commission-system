@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 from PIL import Image
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import sessionmaker
 
@@ -621,6 +621,8 @@ def test_failure_persists_ai_call_log_id_while_lease_is_valid(
     engine, db, monkeypatch, caplog, capsys
 ):
     _, _, _, job = _seed_job(db)
+    db.execute(text("PRAGMA foreign_keys=ON"))
+    db.commit()
     claim = worker.claim_next_job(db, "worker-a", 120)
     monkeypatch.setattr(worker, "SessionLocal", sessionmaker(bind=engine, expire_on_commit=False))
     exc = RuntimeError("provider failed")
@@ -630,7 +632,7 @@ def test_failure_persists_ai_call_log_id_while_lease_is_valid(
     worker.execute_claimed_job(job.id, claim.lease_token)
     db.expire_all()
     row = db.get(DesignImageJob, job.id)
-    assert row.status == "failed" and row.ai_call_log_id == 77
+    assert row.status == "failed" and row.ai_call_log_id is None
     assert "AI call log 77 is missing" in caplog.text
     assert "AI call log 77 is missing" in capsys.readouterr().out
 
@@ -696,6 +698,93 @@ def test_success_cost_requires_matching_detailed_usage_and_rate(
     row = db.get(DesignImageJob, job.id)
     assert row.estimated_cost_microusd == expected_cost
     assert row.billing_certainty == certainty
+
+
+def test_bad_top_level_usage_does_not_fail_paid_success(
+    engine, db, monkeypatch
+):
+    rate_card = {"output_image_microusd_per_token": 31}
+    _, _, _, job = _seed_job(db, pricing_snapshot=rate_card)
+    preset = db.query(AiPreset).filter_by(preset_name="design_image_generation").one()
+    preset.parameters = {**(preset.parameters or {}), "rate_card": rate_card}
+    db.commit()
+    claim = worker.claim_next_job(db, "worker-a", 120)
+    monkeypatch.setattr(worker, "SessionLocal", sessionmaker(bind=engine, expire_on_commit=False))
+    result = _result("data:image/png;base64," + base64.b64encode(_png_bytes()).decode())
+    result["tokens_used"] = "oops"
+    result["usage_detail"] = {
+        "input_tokens": "bad", "output_tokens": 7, "total_tokens": "oops",
+        "output_tokens_details": {"image_tokens": 7},
+    }
+    monkeypatch.setattr(worker.ai_service, "generate_image", lambda **kwargs: result)
+    monkeypatch.setattr(
+        worker.file_service, "save_private_image",
+        lambda image, **kwargs: StoredImage(
+            "1/output/usage.png", "1/output/usage_thumb.png", image.mime_type,
+            image.file_size, image.width, image.height, image.sha256,
+        ),
+    )
+
+    worker.execute_claimed_job(job.id, claim.lease_token)
+    db.expire_all()
+    row = db.get(DesignImageJob, job.id)
+    assert row.status == "succeeded"
+    assert (row.input_tokens, row.output_tokens, row.total_tokens) == (None, 7, None)
+    assert row.estimated_cost_microusd == 217
+    assert row.billing_certainty == "estimated"
+
+
+@pytest.mark.parametrize("value", [True, "7", -1, 7.5, 2**63])
+def test_top_level_usage_rejects_non_bigint_values(value):
+    assert worker._usage_values({
+        "usage_detail": {
+            "input_tokens": value,
+            "output_tokens": value,
+            "total_tokens": value,
+        }
+    }) == (None, None, None)
+
+
+@pytest.mark.parametrize("failure_stage", ["decode", "normalize", "store"])
+def test_post_result_failures_preserve_log_and_attempt_audit(
+    engine, db, monkeypatch, failure_stage
+):
+    _, _, _, job = _seed_job(db)
+    preset = db.query(AiPreset).filter_by(preset_name="design_image_generation").one()
+    log = AiCallLog(
+        caller_module="design_image", preset_id=preset.id,
+        preset_name=preset.preset_name, provider_type="direct",
+        model=preset.model, prompt_snapshot="draw", status="pending",
+    )
+    db.add(log)
+    db.commit()
+    claim = worker.claim_next_job(db, "worker-a", 120)
+    monkeypatch.setattr(worker, "SessionLocal", sessionmaker(bind=engine, expire_on_commit=False))
+    content = "invalid" if failure_stage == "decode" else (
+        "data:image/png;base64," + base64.b64encode(_png_bytes()).decode()
+    )
+    result = _result(content)
+    result["log_id"] = log.id
+    result["provider_attempt_count"] = 3
+    monkeypatch.setattr(worker.ai_service, "generate_image", lambda **kwargs: result)
+    if failure_stage == "normalize":
+        monkeypatch.setattr(
+            worker.file_service, "normalize_upload",
+            lambda *args, **kwargs: (_ for _ in ()).throw(ValueError("normalize failed")),
+        )
+    elif failure_stage == "store":
+        monkeypatch.setattr(
+            worker.file_service, "save_private_image",
+            lambda *args, **kwargs: (_ for _ in ()).throw(OSError("store failed")),
+        )
+
+    worker.execute_claimed_job(job.id, claim.lease_token)
+    db.expire_all()
+    row = db.get(DesignImageJob, job.id)
+    assert row.status == "failed"
+    assert row.ai_call_log_id == log.id
+    assert row.provider_attempt_count == 3
+    assert db.get(AiCallLog, log.id).status == "error"
 
 
 @pytest.mark.parametrize(

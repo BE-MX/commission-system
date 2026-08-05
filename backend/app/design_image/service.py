@@ -20,6 +20,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, noload
 
 from app.ai.models import AiCallLog, AiPreset, AiProvider
+from app.ai.service import build_image_config_version
 from app.auth.models import ArkUser
 from app.core.config import get_settings
 from app.design_image import file_service
@@ -497,10 +498,6 @@ def _enforce_capacity(db: Session, owner_user_id: int, now: datetime | None) -> 
         raise DesignImageActiveJobError("已有生成任务正在进行，请等待完成")
 
 
-def _version_timestamp(value: datetime | None) -> str | None:
-    return value.isoformat(timespec="microseconds") if value is not None else None
-
-
 def _preset_snapshot(db: Session) -> tuple[str, str, int, dict | None, dict]:
     row = (
         db.query(AiPreset, AiProvider)
@@ -522,8 +519,7 @@ def _preset_snapshot(db: Session) -> tuple[str, str, int, dict | None, dict]:
         raise DesignImageConfigurationError("生图价格配置不可用，请联系管理员")
     config_version = {
         "provider_id": row[1].id,
-        "provider_updated_at": _version_timestamp(row[1].updated_at),
-        "preset_updated_at": _version_timestamp(row[0].updated_at),
+        "fingerprint": build_image_config_version(row[0], row[1]),
     }
     return (
         row[0].preset_name, row[0].model, row[0].provider_id,
