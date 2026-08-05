@@ -331,19 +331,19 @@
 - Modify: `backend/app/routers.py`
 - Create: `backend/tests/test_design_image_api.py`
 
-- [ ] **Step 1: Write failing endpoint tests**
+- [x] **Step 1: Write failing endpoint tests**
 
-  Cover every spec §7 endpoint with 401/403/404/422 and success cases. Each route must expose `Depends(require_permission(...))`, use `get_db`, return `ok()` envelopes, and preserve HTTP 202 with envelope `code=200` for turn creation. Asset content tests must assert same 404 for absent and cross-owner IDs and safe `Content-Disposition` for downloads. JSON success endpoints use `ok()`; the binary `FileResponse` endpoint is the documented exception and must not be wrapped in JSON. Existing framework error envelopes remain unchanged to avoid expanding scope into a global exception-handler rewrite.
+  Cover every spec §7 endpoint with 401/403/404/422 and success cases. Each route must expose `Depends(require_permission(...))`, use `get_db`, return `ok()` envelopes, and preserve HTTP 202 with envelope `code=200` for turn creation. Asset content tests must assert same 404 for absent and cross-owner IDs and safe `Content-Disposition` for downloads. JSON success endpoints use `ok()`; the binary streaming endpoint is the documented exception and must not be wrapped in JSON. The service opens the authorized private file before the response is created so concurrent cleanup cannot turn a missing file into a 500. Existing framework error envelopes remain unchanged to avoid expanding scope into a global exception-handler rewrite.
 
   Run: `cd backend; python -m pytest tests/test_design_image_api.py -q`
 
   Expected: FAIL because the router is not registered.
 
-- [ ] **Step 2: Implement thin routes**
+- [x] **Step 2: Implement thin routes**
 
   Routes only parse schema/multipart inputs, call service/file service, translate domain errors and return responses. No Provider calls, business transitions, ownership query construction or direct `SessionLocal()` belong in `router.py`.
 
-- [ ] **Step 3: Register and verify API**
+- [x] **Step 3: Register and verify API**
 
   Run:
 
