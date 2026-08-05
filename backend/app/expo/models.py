@@ -250,7 +250,7 @@ class ExpoQuotaRecord(Base):
 
     id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
     store_id = Column(BigInteger, ForeignKey("ark_expo_stores.id", ondelete="CASCADE"), nullable=False, comment="关联门店/展位ID")
-    type = Column(String(16), nullable=False, comment="变动类型 recharge/consume/return")
+    type = Column(String(16), nullable=False, comment="变动类型 recharge/deduct")
     amount = Column(Integer, nullable=False, comment="变动数量（正数增加，负数扣减）")
     balance_before = Column(Integer, nullable=False, comment="变动前余额")
     balance_after = Column(Integer, nullable=False, comment="变动后余额")
