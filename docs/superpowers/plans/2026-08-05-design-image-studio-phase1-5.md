@@ -41,6 +41,7 @@
 - Modify: `backend/app/auth/service.py`
 - Modify: `backend/tests/conftest.py`
 - Create: `backend/tests/test_design_image_models.py`
+- Create: `backend/tests/test_design_image_permissions.py`
 
 - [ ] **Step 1: Re-check migration topology before writing**
 
@@ -92,6 +93,8 @@
 
   All ORM relationships must specify `lazy="noload"`. FKs for assets referenced by jobs use `RESTRICT`; owner/session ownership is enforced in services, not by trusting request IDs.
 
+  `owner_user_id/created_by` must exactly match production `ark_users.id` as `mysql.INTEGER(unsigned=True)` in the migration. `ai_call_log_id` matches the existing signed BIGINT. Explicitly import the new domain models from both `backend/app/models/__init__.py` and `backend/tests/conftest.py`, because Alembic and isolated SQLite tests otherwise do not reliably register them.
+
 - [ ] **Step 5: Add settings and permission seed**
 
   Add typed settings with safe defaults:
@@ -108,7 +111,7 @@
   DESIGN_IMAGE_MAX_PIXELS: int = 60_000_000
   ```
 
-  Seed `read/write/admin` with permitted action names and stable metadata; do not auto-assign them to broad existing roles.
+  Seed `read/write/admin` with permitted action names and stable metadata; test two seed runs for idempotence. `read` is the page permission and `write/admin` are action permissions. Preserve the repository's existing system-admin permission expansion, but do not auto-assign them to broad business roles.
 
 - [ ] **Step 6: Verify Phase 1 and apply the shared migration**
 
@@ -116,7 +119,7 @@
 
   ```powershell
   cd backend
-  python -m pytest tests/test_design_image_models.py tests/test_ai_preset_service.py -q
+  python -m pytest tests/test_design_image_models.py tests/test_design_image_permissions.py tests/test_ai_preset_service.py -q
   python -m alembic upgrade head
   python -m alembic heads
   ```
@@ -127,7 +130,7 @@
 
   ```powershell
   git branch --show-current
-  git add CLAUDE.md backend/alembic/versions backend/app/design_image backend/app/ai/models.py backend/app/models/__init__.py backend/app/core/config.py backend/app/auth/service.py backend/tests/conftest.py backend/tests/test_design_image_models.py
+  git add CLAUDE.md backend/alembic/versions backend/app/design_image backend/app/ai/models.py backend/app/models/__init__.py backend/app/core/config.py backend/app/auth/service.py backend/tests/conftest.py backend/tests/test_design_image_models.py backend/tests/test_design_image_permissions.py
   git commit -m "feat(ai): add design image domain schema"
   ```
 
@@ -137,6 +140,7 @@
 - Modify: `backend/app/ai/image_service.py`
 - Modify: `backend/app/ai/service.py`
 - Modify: `backend/tests/test_ai_image_service.py`
+- Modify: `backend/tests/test_ai_image_retry.py`
 
 - [ ] **Step 1: Write failing transport tests**
 
@@ -144,7 +148,7 @@
 
   Error matrix must cover 400, 429, 502, 503, 504 and `httpx.ReadTimeout`; only existing fast-failure policy may retry. Tests must assert response snapshots and logs contain neither raw base64 nor Authorization.
 
-  Run: `cd backend; python -m pytest tests/test_ai_image_service.py -q`
+  Run: `cd backend; python -m pytest tests/test_ai_image_service.py tests/test_ai_image_retry.py -q`
 
   Expected: FAIL on missing `generate_image`, usage detail and attempt count.
 
@@ -165,6 +169,8 @@
 
   `_send_with_retry()` must return `(response_json, attempts, request_id)` without logging bodies that may include base64. Generation and edit share provider lookup, timeout, headers, retries, usage extraction, AiCallLog state and sanitization.
 
+  Preserve the actual retry contract: 502/503 and eligible transport failures retry; 400/429/504/ReadTimeout do not. Correct stale test comments that claim 504 retries. The shared AI call must not leave a long-lived worker transaction open across HTTP; persist `running` before the call, then finalize in a new transaction/Session so `edit_image()` commit/rollback cannot undo the claim.
+
 - [ ] **Step 3: Implement `generate_image()` and facade exports**
 
   `generate_image()` sends `POST /images/generations` JSON through `build_image_url(provider.api_base, "generations")`. Request parameters are whitelisted; the caller cannot pass model/provider/key. Add `usage_detail` to AiCallLog and re-export both image functions from `app.ai.service`.
@@ -175,7 +181,7 @@
 
   ```powershell
   cd backend
-  python -m pytest tests/test_ai_image_service.py tests/test_expo_display_image.py tests/test_expo_color_scene.py -q
+  python -m pytest tests/test_ai_image_service.py tests/test_ai_image_retry.py tests/test_expo_display_image.py tests/test_expo_color_scene.py -q
   ```
 
   Expected: all pass, proving the existing Expo edit chain is not changed.
@@ -183,7 +189,7 @@
 - [ ] **Step 5: Commit shared transport**
 
   ```powershell
-  git add backend/app/ai backend/tests/test_ai_image_service.py
+  git add backend/app/ai backend/tests/test_ai_image_service.py backend/tests/test_ai_image_retry.py
   git commit -m "feat(ai): add shared image generation facade"
   ```
 
@@ -327,7 +333,7 @@
 
 - [ ] **Step 1: Write failing endpoint tests**
 
-  Cover every spec §7 endpoint with 401/403/404/422 and success cases. Each route must expose `Depends(require_permission(...))`, use `get_db`, return `ok()` envelopes, and preserve HTTP 202 with envelope `code=200` for turn creation. Asset content tests must assert same 404 for absent and cross-owner IDs and safe `Content-Disposition` for downloads.
+  Cover every spec §7 endpoint with 401/403/404/422 and success cases. Each route must expose `Depends(require_permission(...))`, use `get_db`, return `ok()` envelopes, and preserve HTTP 202 with envelope `code=200` for turn creation. Asset content tests must assert same 404 for absent and cross-owner IDs and safe `Content-Disposition` for downloads. JSON success endpoints use `ok()`; the binary `FileResponse` endpoint is the documented exception and must not be wrapped in JSON. Existing framework error envelopes remain unchanged to avoid expanding scope into a global exception-handler rewrite.
 
   Run: `cd backend; python -m pytest tests/test_design_image_api.py -q`
 
@@ -404,6 +410,8 @@
 - Modify: `frontend/src/config/navigation.js`
 - Create: `frontend/src/views/design/image-studio/ImageStudio.vue`
 - Create: `frontend/src/views/design/image-studio/composables/useImageStudio.js`
+- Create: `frontend/src/views/design/image-studio/composables/useJobPolling.js`
+- Create: `frontend/src/views/design/image-studio/composables/useAssetObjectUrls.js`
 - Create: `frontend/src/views/design/image-studio/components/ConversationSidebar.vue`
 - Create: `frontend/src/views/design/image-studio/components/MessageThread.vue`
 - Create: `frontend/src/views/design/image-studio/components/PromptComposer.vue`
@@ -420,7 +428,7 @@
 
 - [ ] **Step 2: Implement the thin page and composable**
 
-  `ImageStudio.vue` owns layout only. `useImageStudio.js` owns sessions, drafts, active-job registry, polling generation/busy guards, Object URL lifecycle, submit/retry/download and teardown. It resumes `/jobs/active` on mount and releases every URL/timer on conversation change and unmount.
+  `ImageStudio.vue` owns layout only. `useImageStudio.js` owns sessions, drafts, active-job registry and submit/retry/download. `useJobPolling.js` combines recursive `setTimeout` with busy + generation + session/job snapshot guards; `useAssetObjectUrls.js` owns batch tokens and centralized revoke. It resumes `/jobs/active` on mount and releases every URL/timer on conversation change and unmount.
 
 - [ ] **Step 3: Implement task-focused components**
 
@@ -459,7 +467,7 @@
 
 - [ ] **Step 6: Run motion review and commit**
 
-  Review every new transition against `review-animations`; findings use the required Before/After/Why table and must be fixed before approval.
+  Review every new or modified transition against `review-animations`; findings use the required Before/After/Why table and must be fixed before approval. Do not expand this feature review into unrelated historical motion debt in shared `GlassButton` or `MainLayout` unless this task edits those lines.
 
   Then:
 
