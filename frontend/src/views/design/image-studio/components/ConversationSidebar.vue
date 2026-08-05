@@ -4,7 +4,15 @@
   </aside>
   <Transition name="drawer">
     <div v-if="drawerOpen" class="drawer-shell" @click.self="emit('update:drawerOpen', false)">
-      <div class="drawer-panel" role="dialog" aria-modal="true" aria-label="选择会话">
+      <div
+        ref="drawerPanel"
+        class="drawer-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label="选择会话"
+        tabindex="-1"
+        @keydown="onDialogKeydown"
+      >
         <button type="button" class="drawer-close" aria-label="关闭会话列表" @click="emit('update:drawerOpen', false)">
           <el-icon><Close /></el-icon>
         </button>
@@ -15,9 +23,10 @@
 </template>
 
 <script setup>
-import { computed, defineComponent, h, resolveDirective, withDirectives } from 'vue'
+import { computed, defineComponent, h, nextTick, ref, resolveDirective, watch, withDirectives } from 'vue'
 import { ChatDotRound, Close, Plus } from '@element-plus/icons-vue'
 import GlassButton from '@/components/GlassButton.vue'
+import { focusDialog, restoreDialogFocus, trapDialogFocus } from '../state'
 
 const props = defineProps({
   sessions: { type: Array, default: () => [] },
@@ -28,6 +37,8 @@ const props = defineProps({
   loading: { type: Boolean, default: false },
 })
 const emit = defineEmits(['new', 'select', 'more', 'update:drawerOpen'])
+const drawerPanel = ref(null)
+let restoreTarget = null
 
 const contentProps = computed(() => ({
   sessions: props.sessions,
@@ -41,6 +52,27 @@ function select(sessionId) {
   emit('select', sessionId)
   emit('update:drawerOpen', false)
 }
+
+function onDialogKeydown(event) {
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    emit('update:drawerOpen', false)
+    return
+  }
+  trapDialogFocus(event, drawerPanel.value)
+}
+
+watch(() => props.drawerOpen, async (isOpen, wasOpen) => {
+  if (isOpen) {
+    restoreTarget = document.activeElement
+    await nextTick()
+    focusDialog(drawerPanel.value)
+  } else if (wasOpen) {
+    await nextTick()
+    restoreDialogFocus(restoreTarget)
+    restoreTarget = null
+  }
+})
 
 const SidebarContent = defineComponent({
   props: {

@@ -1,8 +1,18 @@
 <template>
   <Transition name="lightbox">
-    <div v-if="asset" class="lightbox" role="dialog" aria-modal="true" aria-label="查看生成原图" @click.self="emit('close')">
+    <div
+      v-if="asset"
+      ref="lightboxDialog"
+      class="lightbox"
+      role="dialog"
+      aria-modal="true"
+      aria-label="查看生成原图"
+      tabindex="-1"
+      @click.self="emit('close')"
+      @keydown="onDialogKeydown"
+    >
       <div class="lightbox-panel">
-        <button ref="closeButton" type="button" class="close-button" aria-label="关闭大图" @click="emit('close')">
+        <button type="button" class="close-button" aria-label="关闭大图" @click="emit('close')">
           <el-icon><Close /></el-icon>
         </button>
         <img v-if="url" :src="url" alt="生成结果原图" />
@@ -13,20 +23,33 @@
 </template>
 
 <script setup>
-import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { nextTick, ref, watch } from 'vue'
 import { Close, Loading } from '@element-plus/icons-vue'
+import { focusDialog, restoreDialogFocus, trapDialogFocus } from '../state'
 
 const props = defineProps({ asset: { type: Object, default: null }, url: { type: String, default: null } })
 const emit = defineEmits(['close'])
-const closeButton = ref(null)
+const lightboxDialog = ref(null)
+let restoreTarget = null
 
-function onKeydown(event) {
-  if (event.key === 'Escape' && props.asset) emit('close')
+function onDialogKeydown(event) {
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    emit('close')
+    return
+  }
+  trapDialogFocus(event, lightboxDialog.value)
 }
-window.addEventListener('keydown', onKeydown)
-onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
-watch(() => props.asset, async value => {
-  if (value) { await nextTick(); closeButton.value?.focus() }
+watch(() => props.asset, async (value, previous) => {
+  if (value && !previous) {
+    restoreTarget = document.activeElement
+    await nextTick()
+    focusDialog(lightboxDialog.value)
+  } else if (previous) {
+    await nextTick()
+    restoreDialogFocus(restoreTarget)
+    restoreTarget = null
+  }
 })
 </script>
 

@@ -41,6 +41,7 @@
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
 import { Picture } from '@element-plus/icons-vue'
+import { shouldAutoScroll } from '../state'
 import GenerationCard from './GenerationCard.vue'
 
 const props = defineProps({
@@ -64,9 +65,16 @@ function messageAssets(messageId) {
   return props.assets.filter(asset => asset.message_id === messageId && asset.asset_type === 'upload')
 }
 
-watch(() => [props.messages.length, props.jobs.map(job => job.status).join(',')], async () => {
+watch(() => [props.messages, props.jobs.map(job => job.status).join(',')], async (
+  [nextMessages],
+  [previousMessages = []] = [],
+) => {
+  const distanceFromBottom = pane.value
+    ? pane.value.scrollHeight - pane.value.scrollTop - pane.value.clientHeight
+    : Infinity
+  const autoScroll = shouldAutoScroll({ distanceFromBottom, previousMessages, nextMessages })
   await nextTick()
-  if (pane.value) pane.value.scrollTop = pane.value.scrollHeight
+  if (autoScroll && pane.value) pane.value.scrollTop = pane.value.scrollHeight
 })
 </script>
 

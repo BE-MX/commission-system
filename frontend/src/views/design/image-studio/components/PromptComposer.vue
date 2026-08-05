@@ -3,14 +3,14 @@
     <div v-if="baseAsset" class="base-chip">
       <img v-if="assetUrl(baseAsset.id)" :src="assetUrl(baseAsset.id)" alt="编辑基准图" />
       <span>基于这张图修改</span>
-      <button type="button" aria-label="清除基准图" @click="emit('clear-base')"><el-icon><Close /></el-icon></button>
+      <button type="button" :disabled="sending" aria-label="清除基准图" @click="emit('clear-base')"><el-icon><Close /></el-icon></button>
     </div>
 
     <div v-if="attachments.length" class="attachment-strip">
       <div v-for="item in attachments" :key="item.uploadId" class="attachment-item">
         <img v-if="item.asset && assetUrl(item.asset.id)" :src="assetUrl(item.asset.id)" :alt="item.name" />
         <span v-else class="attachment-loading">{{ item.status === 'uploading' ? '上传中' : '处理中' }}</span>
-        <button type="button" :disabled="item.status === 'uploading'" :aria-label="`移除 ${item.name}`" @click="emit('remove', item)">
+        <button type="button" :disabled="sending || item.status === 'uploading'" :aria-label="`移除 ${item.name}`" @click="emit('remove', item)">
           <el-icon><Close /></el-icon>
         </button>
       </div>

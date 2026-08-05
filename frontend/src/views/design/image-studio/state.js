@@ -5,6 +5,10 @@ const JOB_STATUS_RANK = {
   succeeded: 2,
   failed: 2,
 }
+const DIALOG_FOCUS_SELECTOR = [
+  'a[href]', 'button:not([disabled])', 'input:not([disabled])', 'select:not([disabled])',
+  'textarea:not([disabled])', '[tabindex]:not([tabindex="-1"])',
+].join(',')
 
 export function advanceJob(current, incoming) {
   if (!incoming) return current ?? null
@@ -55,6 +59,60 @@ export function createSessionSingleFlight() {
       return tracked
     },
   }
+}
+
+export function reconcileSubmittedDraft(current, snapshot) {
+  const sentUploadIds = new Set(snapshot.sentUploadIds)
+  return {
+    prompt: current.prompt === snapshot.sentPrompt ? '' : current.prompt,
+    attachments: current.attachments.filter(item => !sentUploadIds.has(item.uploadId)),
+    baseAsset: current.baseAsset?.id === snapshot.sentBaseId ? null : current.baseAsset,
+  }
+}
+
+export function focusDialog(container) {
+  const target = container?.querySelectorAll?.(DIALOG_FOCUS_SELECTOR)?.[0] ?? container
+  target?.focus?.()
+  return target ?? null
+}
+
+export function trapDialogFocus(event, container, activeElement = container?.ownerDocument?.activeElement) {
+  if (event.key !== 'Tab') return false
+  const focusable = [...(container?.querySelectorAll?.(DIALOG_FOCUS_SELECTOR) ?? [])]
+  if (!focusable.length) {
+    event.preventDefault()
+    container?.focus?.()
+    return true
+  }
+  const first = focusable[0]
+  const last = focusable.at(-1)
+  const activeIndex = focusable.indexOf(activeElement)
+  const target = activeIndex === -1
+    ? (event.shiftKey ? last : first)
+    : (event.shiftKey && activeElement === first
+        ? last
+        : (!event.shiftKey && activeElement === last ? first : null))
+  if (!target) return false
+  event.preventDefault()
+  target.focus()
+  return true
+}
+
+export function restoreDialogFocus(trigger) {
+  if (trigger?.isConnected === false) return
+  trigger?.focus?.()
+}
+
+export function shouldAutoScroll({
+  distanceFromBottom = Infinity,
+  previousMessages = [],
+  nextMessages = [],
+  threshold = 96,
+} = {}) {
+  if (distanceFromBottom <= threshold) return true
+  if (!previousMessages.length && nextMessages.length) return true
+  const previousIds = new Set(previousMessages.map(message => message.id))
+  return nextMessages.some(message => message.role === 'user' && !previousIds.has(message.id))
 }
 
 export function canStartSend({ sendInFlight, uploadInFlight, activeJob } = {}) {

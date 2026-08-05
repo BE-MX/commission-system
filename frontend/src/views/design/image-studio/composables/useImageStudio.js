@@ -6,7 +6,8 @@ import {
 import { msgError } from '@/utils/feedback'
 import {
   acceptConversationResponse, advanceJob, canStartSend, replaceActiveJob,
-  createSessionSingleFlight, nextConversationGeneration, restoreActiveJob, upsertAttachment,
+  createSessionSingleFlight, nextConversationGeneration, reconcileSubmittedDraft,
+  restoreActiveJob, upsertAttachment,
 } from '../state'
 import { useAssetObjectUrls } from './useAssetObjectUrls'
 import { useJobPolling } from './useJobPolling'
@@ -115,8 +116,8 @@ export function useImageStudio() {
       onUpdate: async incoming => {
         const merged = mergeJob(incoming)
         if (!ACTIVE_STATUSES.has(merged.status)) {
-          await loadConfig()
           if (currentSessionId.value === merged.session_id) await refreshCurrentSession(merged.session_id)
+          void loadConfig().catch(error => msgError(safeRequestMessage(error)))
         }
         return merged
       },
@@ -280,6 +281,7 @@ export function useImageStudio() {
   }
 
   async function removeAttachment(item) {
+    if (sendInFlight.value) return
     if (item.status === 'ready') {
       try {
         await deleteAsset(item.asset.id)
@@ -293,6 +295,10 @@ export function useImageStudio() {
 
   async function submit() {
     if (!canSend.value) return
+    const sentPrompt = prompt.value
+    const sentAttachments = draftAttachments.value.filter(item => item.status === 'ready')
+    const sentUploadIds = sentAttachments.map(item => item.uploadId)
+    const sentBaseId = baseAsset.value?.id ?? null
     sendInFlight.value = true
     let responseGeneration = null
     let sessionIdSnapshot = null
@@ -303,9 +309,9 @@ export function useImageStudio() {
       sessionIdSnapshot = session.id
       const body = {
         request_id: requestId('turn'),
-        prompt: prompt.value.trim(),
-        base_asset_id: baseAsset.value?.id ?? null,
-        reference_asset_ids: draftAttachments.value.filter(item => item.status === 'ready').map(item => item.asset.id),
+        prompt: sentPrompt.trim(),
+        base_asset_id: sentBaseId,
+        reference_asset_ids: sentAttachments.map(item => item.asset.id),
         size: size.value,
         quality: quality.value,
       }
@@ -315,9 +321,14 @@ export function useImageStudio() {
       mergeSession(result.session)
       if (responseGeneration === conversationGeneration && currentSessionId.value === sessionIdSnapshot) {
         messages.value = [...messages.value, result.message]
-        prompt.value = ''
-        draftAttachments.value = []
-        baseAsset.value = null
+        const draft = reconcileSubmittedDraft({
+          prompt: prompt.value,
+          attachments: draftAttachments.value,
+          baseAsset: baseAsset.value,
+        }, { sentPrompt, sentUploadIds, sentBaseId })
+        prompt.value = draft.prompt
+        draftAttachments.value = draft.attachments
+        baseAsset.value = draft.baseAsset
       }
       startActivePolling(result.job)
     } catch (error) {
@@ -345,7 +356,13 @@ export function useImageStudio() {
   }
 
   function chooseBaseAsset(asset) {
+    if (sendInFlight.value) return
     baseAsset.value = asset
+  }
+
+  function clearBaseAsset() {
+    if (sendInFlight.value) return
+    baseAsset.value = null
   }
 
   async function openLightbox(asset) {
@@ -407,7 +424,7 @@ export function useImageStudio() {
   })
 
   return {
-    activeJob, assets, assetUrl: assetUrls.get, baseAsset, canSend, chooseBaseAsset,
+    activeJob, assets, assetUrl: assetUrls.get, baseAsset, canSend, chooseBaseAsset, clearBaseAsset,
     closeLightbox, config, currentSession, currentSessionId, downloadAsset, draftAttachments,
     drawerOpen, initializing, jobs, lightboxAsset, lightboxUrl, loadMoreSessions: () => loadSessions({ append: true }),
     messages, newSessionInFlight, newConversation, nextCursor, openLightbox, prompt, quality, removeAttachment,

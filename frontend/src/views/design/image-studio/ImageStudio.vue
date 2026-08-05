@@ -55,7 +55,7 @@
         :can-send="studio.canSend.value"
         :sending="studio.sendInFlight.value"
         @remove="studio.removeAttachment"
-        @clear-base="studio.baseAsset.value = null"
+        @clear-base="studio.clearBaseAsset"
         @submit="studio.submit"
       />
     </main>
