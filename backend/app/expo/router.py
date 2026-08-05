@@ -884,3 +884,10 @@ def seed_scripts(
 ):
     created = script_service.seed_default_scripts(db)
     return ok({"created": created})
+
+
+# ---------------- 门店/展位配额管理（2026-08-05）----------------
+
+from app.expo.store_router import router as store_router
+
+router.include_router(store_router, prefix="/stores", tags=["展会门店配额"])
