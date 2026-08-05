@@ -76,6 +76,13 @@ def test_retries_502_then_succeeds(monkeypatch):
     assert result.attempts == 3
 
 
+def test_retries_503_then_succeeds(monkeypatch):
+    _patch_sequence(monkeypatch, [_FakeResp(503), _FakeResp(200, {"data": 1})])
+    result = _call()
+    assert result.json == {"data": 1}
+    assert result.attempts == 2
+
+
 def test_4xx_not_retried(monkeypatch):
     calls = {"n": 0}
     def make(timeout=None):
@@ -214,12 +221,15 @@ def test_status_error_message_includes_body(monkeypatch):
 
 
 def test_status_error_message_redacts_sensitive_response_values(monkeypatch):
+    raw_b64 = "QUJD" * 200
     body = {
         "error": {"message": "bad request", "param": ""},
         "Authorization": "Bearer leaked",
         "token": "secret-token",
         "b64_json": "raw-private-image",
         "url": "https://cdn.test/a.png?sig=secret",
+        "data": raw_b64,
+        "nested": [{"payload": raw_b64}],
     }
     _patch_sequence(monkeypatch, [_FakeResp(400, body=body)])
     with pytest.raises(httpx.HTTPStatusError) as caught:
@@ -227,7 +237,7 @@ def test_status_error_message_redacts_sensitive_response_values(monkeypatch):
     message = str(caught.value)
     assert "bad request" in message
     assert "https://cdn.test/a.png" in message
-    for secret in ("Bearer leaked", "secret-token", "raw-private-image", "sig=secret"):
+    for secret in ("Bearer leaked", "secret-token", "raw-private-image", "sig=secret", raw_b64):
         assert secret not in message
 
 

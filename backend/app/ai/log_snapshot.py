@@ -2,10 +2,20 @@
 
 import copy
 import json
+import re
 from urllib.parse import urlsplit, urlunsplit
 
 MAX_RESPONSE_SNAPSHOT_CHARS = 60000
 _SENSITIVE_KEYS = {"authorization", "api_key", "access_token", "token"}
+_BASE64_LIKE_RE = re.compile(r"[A-Za-z0-9+/]+={0,2}\Z")
+
+
+def _is_long_base64_like(value: str) -> bool:
+    return (
+        len(value) >= 256
+        and len(value) % 4 != 1
+        and _BASE64_LIKE_RE.fullmatch(value) is not None
+    )
 
 
 def _safe_url(value: str) -> str:
@@ -19,6 +29,12 @@ def _safe_url(value: str) -> str:
 
 
 def _redact_snapshot_value(value):
+    if isinstance(value, str):
+        if value.startswith("data:image/"):
+            return f"[omitted data image, {len(value)} chars]"
+        if _is_long_base64_like(value):
+            return f"[omitted base64-like value, {len(value)} chars]"
+        return value
     if isinstance(value, dict):
         redacted = {}
         for key, item in value.items():
@@ -27,8 +43,6 @@ def _redact_snapshot_value(value):
                 redacted[key] = "[redacted]"
             elif key == "b64_json" and isinstance(item, str):
                 redacted[key] = f"[omitted base64 image, {len(item)} chars]"
-            elif isinstance(item, str) and item.startswith("data:image/"):
-                redacted[key] = f"[omitted data image, {len(item)} chars]"
             elif isinstance(item, str) and item.lower().startswith(("http://", "https://")):
                 redacted[key] = _safe_url(item)
             else:

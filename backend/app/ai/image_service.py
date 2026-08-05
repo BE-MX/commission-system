@@ -431,6 +431,7 @@ def generate_image(
     db.refresh(log)
 
     start = time.time()
+    transport: ImageTransportResult | None = None
     try:
         api_key = decrypt_key(provider.api_key) if provider.api_key else None
         headers = build_headers(provider, api_key)
@@ -468,6 +469,8 @@ def generate_image(
             "request_id": transport.request_id,
         }
     except Exception as exc:
+        if transport is not None and not hasattr(exc, "provider_attempt_count"):
+            _with_attempt_count(exc, transport.attempts)
         db.rollback()
         try:
             log.status = "error"
@@ -510,6 +513,7 @@ def edit_image(
     db.refresh(log)
 
     start = time.time()
+    transport: ImageTransportResult | None = None
     try:
         api_key = decrypt_key(provider.api_key) if provider.api_key else None
         headers = build_headers(provider, api_key)
@@ -568,6 +572,8 @@ def edit_image(
             "request_id": transport.request_id,
         }
     except Exception as exc:
+        if transport is not None and not hasattr(exc, "provider_attempt_count"):
+            _with_attempt_count(exc, transport.attempts)
         db.rollback()
         try:
             log.status = "error"

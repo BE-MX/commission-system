@@ -143,6 +143,54 @@ def test_response_snapshot_strips_signed_url_query_and_sensitive_values():
         assert secret not in snapshot
 
 
+def test_response_snapshot_recursively_redacts_long_bare_base64():
+    raw_b64 = "QUJD" * 200
+    snapshot = image_service.serialize_response_snapshot({
+        "data": raw_b64,
+        "nested": ["ordinary text", {"payload": raw_b64}],
+    })
+    assert raw_b64 not in snapshot
+    assert snapshot.count(f"[omitted base64-like value, {len(raw_b64)} chars]") == 2
+    assert "ordinary text" in snapshot
+
+
+def test_generate_image_parse_failure_keeps_transport_attempt_count(db, monkeypatch):
+    _create_image_preset(db, preset_name="design_image_generation")
+    monkeypatch.setattr(image_service, "decrypt_key", lambda value: "sk-test")
+    monkeypatch.setattr(
+        image_service,
+        "_send_with_retry",
+        lambda *args, **kwargs: image_service.ImageTransportResult({}, 2, "req-empty"),
+    )
+
+    with pytest.raises(ValueError) as caught:
+        image_service.generate_image(
+            db=db, preset_name="design_image_generation", prompt="draw",
+            caller_module="design_image",
+        )
+
+    assert caught.value.provider_attempt_count == 2
+
+
+def test_edit_image_parse_failure_keeps_transport_attempt_count(db, monkeypatch):
+    _create_image_preset(db)
+    monkeypatch.setattr(image_service, "decrypt_key", lambda value: "sk-test")
+    monkeypatch.setattr(
+        image_service,
+        "_post_image_edits",
+        lambda *args, **kwargs: image_service.ImageTransportResult({}, 3, "req-empty"),
+    )
+
+    with pytest.raises(ValueError) as caught:
+        image_service.edit_image(
+            db=db, preset_name="expo_wig_composite", prompt="edit",
+            images=[{"filename": "a.png", "content": b"a", "content_type": "image/png"}],
+            caller_module="expo",
+        )
+
+    assert caught.value.provider_attempt_count == 3
+
+
 def test_edit_image_posts_openai_compatible_image_edit_request(db, monkeypatch):
     _create_image_preset(db)
 
