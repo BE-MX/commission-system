@@ -45,6 +45,21 @@ def test_render_event_image_contains_shareable_png(tmp_path, monkeypatch):
     with Image.open(output) as image:
         assert image.size == (1200, 675)
         assert image.format == "PNG"
+        assert image.getpixel((10, 10)) == (253, 217, 86)
+
+
+def test_board_screenshot_is_resized_and_compressed_to_jpeg(tmp_path):
+    source = tmp_path / "source.png"
+    output = tmp_path / "board.jpg"
+    image = Image.effect_noise((1920, 1080), 80).convert("RGB")
+    image.save(source, "PNG")
+
+    notification_service._compress_board_screenshot(source, output)
+
+    with Image.open(output) as compressed:
+        assert compressed.format == "JPEG"
+        assert compressed.size == (1600, 900)
+    assert output.stat().st_size < source.stat().st_size
 
 
 def test_daily_markdown_has_report_and_all_four_screenshots():

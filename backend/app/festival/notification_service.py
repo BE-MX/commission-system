@@ -34,6 +34,8 @@ _BOARD_PAGES = (
     ("团队人均积分榜", "tuandui.html", "teams", "teams"),
     ("阵营新签 PK 榜", "zhenying.html", "camps", "camps"),
 )
+_BRAND_YELLOW = "#FDD956"
+_BRAND_BLACK = "#080303"
 
 
 def _font(size: int, bold: bool = False):
@@ -97,22 +99,20 @@ def render_event_image(event: dict) -> Path:
     """把与大屏一致的事件内容渲染成 16:9 PNG，供钉钉内联显示。"""
     width, height = 1200, 675
     level = str(event.get("level") or "L3")
-    image = Image.new("RGB", (width, height), "#100B14")
+    image = Image.new("RGB", (width, height), _BRAND_YELLOW)
     draw = ImageDraw.Draw(image)
-    for y in range(height):
-        ratio = y / height
-        start = (34, 12, 25) if level == "L4" else (15, 20, 43)
-        end = (9, 8, 20)
-        color = tuple(round(start[i] * (1 - ratio) + end[i] * ratio) for i in range(3))
-        draw.line((0, y, width, y), fill=color)
+    # 品牌图的核心识别来自纯黄底 + 黑色字标；装饰保持克制，避免抢事件正文。
+    draw.ellipse((1120, -210, 1420, 90), outline=_BRAND_BLACK, width=22)
+    draw.arc((-130, 500, 250, 880), 205, 340, fill=_BRAND_BLACK, width=18)
+    draw.text((900, 54), "leShine Hair®", font=_font(28, bold=True), fill=_BRAND_BLACK)
 
-    accent = "#FFBE3B" if level == "L4" else "#47D7FF"
+    accent = _BRAND_BLACK
     draw.rounded_rectangle((44, 38, width - 44, height - 38), radius=34,
-                           fill="#171421", outline=accent, width=3)
-    draw.rounded_rectangle((78, 70, 350, 122), radius=26, fill=accent)
-    draw.ellipse((105, 91, 119, 105), fill="#171421")
+                           outline=accent, width=5)
+    draw.rounded_rectangle((78, 70, 390, 126), radius=28, fill=accent)
+    draw.ellipse((106, 92, 120, 106), fill=_BRAND_YELLOW)
     draw.text((132, 80), str(event.get("label") or "高光事件"),
-              font=_font(25, bold=True), fill="#171421")
+              font=_font(25, bold=True), fill=_BRAND_YELLOW)
 
     subject_name = str(event.get("subject_name") or "")
     avatar_path = (_REPO_ROOT / "frontend" / "public" / "festival" / "assets" /
@@ -124,15 +124,15 @@ def render_event_image(event: dict) -> Path:
         mask = Image.new("L", (150, 150), 0)
         ImageDraw.Draw(mask).ellipse((0, 0, 149, 149), fill=255)
         image.paste(avatar, (82, 176), mask)
-        draw.ellipse((78, 172, 236, 330), outline=accent, width=5)
+        draw.ellipse((78, 172, 236, 330), outline=accent, width=6)
         text_x = 278
 
     name_font = _font(68, bold=True)
-    draw.text((text_x, 176), subject_name, font=name_font, fill="#FFF8E8")
+    draw.text((text_x, 176), subject_name, font=name_font, fill=_BRAND_BLACK)
     detail = str(event.get("detail") or "")
     detail_font = _font(34)
     for idx, line in enumerate(_wrap(draw, detail, detail_font, width - text_x - 100)):
-        draw.text((text_x, 275 + idx * 52), line, font=detail_font, fill="#D8D2DD")
+        draw.text((text_x, 275 + idx * 52), line, font=detail_font, fill="#332600")
 
     amount = event.get("amount")
     if amount:
@@ -143,8 +143,9 @@ def render_event_image(event: dict) -> Path:
     else:
         created_text = str(created or datetime.now().strftime("%Y-%m-%d %H:%M"))
     draw.text((82, 565), f"2026 莱莎采购节  ·  {created_text}",
-              font=_font(24), fill="#938C9B")
-    draw.text((width - 215, 565), level, font=_font(28, bold=True), fill=accent)
+              font=_font(24), fill=_BRAND_BLACK)
+    draw.rounded_rectangle((1010, 548, 1112, 602), radius=27, fill=_BRAND_BLACK)
+    draw.text((1038, 558), level, font=_font(25, bold=True), fill=_BRAND_YELLOW)
 
     token = _event_token(str(event["dedup_key"]))
     output = _UPLOAD_ROOT / "events" / f"{token}.png"
@@ -176,6 +177,18 @@ def _screenshot_command(browser: Path, profile: str, output: Path, url: str) -> 
         "--force-prefers-reduced-motion", "--virtual-time-budget=6000",
         f"--screenshot={output}", url,
     ]
+
+
+def _compress_board_screenshot(source: Path, output: Path) -> None:
+    """把浏览器原始 1920×1080 PNG 转为适合钉钉查看的 1600×900 JPEG。"""
+    with Image.open(source) as screenshot:
+        screenshot = screenshot.convert("RGB")
+        if screenshot.width > 1600:
+            height = round(screenshot.height * 1600 / screenshot.width)
+            screenshot = screenshot.resize((1600, height), Image.Resampling.LANCZOS)
+        screenshot.save(
+            output, "JPEG", quality=82, optimize=True, progressive=True, subsampling=0,
+        )
 
 
 def capture_board_screenshots(target_date: date) -> list[dict]:
@@ -216,19 +229,26 @@ def capture_board_screenshots(target_date: date) -> list[dict]:
                 )
     with tempfile.TemporaryDirectory(prefix="ark-festival-browser-") as profile:
         for title, page, slug, _endpoint in _BOARD_PAGES:
-            output = output_dir / f"{slug}.png"
+            source = output_dir / f"{slug}-source.png"
+            output = output_dir / f"{slug}.jpg"
             query = urlencode({"key": screen_key, "stay": "1"})
             url = f"{base_url}/festival/{page}?{query}"
             try:
                 proc = subprocess.run(
-                    _screenshot_command(browser, profile, output, url),
+                    _screenshot_command(browser, profile, source, url),
                     capture_output=True, text=True, timeout=40,
                 )
             except (OSError, subprocess.TimeoutExpired):
                 # TimeoutExpired 会携带含 key 的完整命令，必须在进入任务日志前截断。
                 raise RuntimeError(f"{title}截图进程失败，请检查浏览器安装与服务状态") from None
-            if proc.returncode != 0 or not output.is_file() or output.stat().st_size < 10_000:
+            if proc.returncode != 0 or not source.is_file() or source.stat().st_size < 10_000:
                 raise RuntimeError(f"{title}截图失败（浏览器退出码 {proc.returncode}）")
+            try:
+                _compress_board_screenshot(source, output)
+            finally:
+                source.unlink(missing_ok=True)
+            if not output.is_file() or output.stat().st_size < 10_000:
+                raise RuntimeError(f"{title}截图压缩失败")
             result.append({"title": title, "path": output, "url": _public_url(output)})
     return result
 
