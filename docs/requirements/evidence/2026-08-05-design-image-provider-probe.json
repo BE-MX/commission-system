@@ -1,0 +1,262 @@
+{
+  "probe_version": 1,
+  "observed_at": "2026-08-05T14:41:00+08:00",
+  "redaction": "API keys and image base64 are omitted; signed URL query strings would be removed",
+  "quality_visual_review": "not performed; token and duration differences do not prove visual improvement",
+  "preset": {
+    "name": "design_image_generation",
+    "id": 19,
+    "model": "gpt-image-2",
+    "parameters": {
+      "output_format": "png"
+    },
+    "provider_id": 10,
+    "provider_name": "TeamRouter",
+    "api_base": "https://api.teamorouter.com"
+  },
+  "models": {
+    "http_status": 200,
+    "request_id": "2ba11561-1eac-480d-861f-17734424a430",
+    "duration_ms": 371,
+    "model_count": 31,
+    "gpt_image_2_metadata": {
+      "id": "gpt-image-2",
+      "object": "model",
+      "owned_by": "openai"
+    }
+  },
+  "generations": [
+    {
+      "request": {
+        "model": "gpt-image-2",
+        "output_format": "png",
+        "quality": "low",
+        "size": "1024x1024",
+        "input_fidelity_sent": false
+      },
+      "http_status": 200,
+      "request_id": "3b18e6ac-927f-403b-8689-2197607742a9",
+      "duration_ms": 30022,
+      "usage": {
+        "input_tokens": 35,
+        "input_tokens_details": {"image_tokens": 0, "text_tokens": 35},
+        "output_tokens": 196,
+        "output_tokens_details": {"image_tokens": 196, "text_tokens": 0},
+        "total_tokens": 231
+      },
+      "response": {
+        "output_format": "png",
+        "quality": "low",
+        "size": "1024x1024",
+        "data": [{"b64_json": "[omitted base64 image, 1275752 chars]"}]
+      },
+      "image": {
+        "bytes": 956814,
+        "sha256": "ff38da30ee17712e4aa2046de51058227f6ac694284947eff3694668814ba027",
+        "format": "PNG",
+        "width": 1024,
+        "height": 1024
+      }
+    },
+    {
+      "request": {
+        "model": "gpt-image-2",
+        "output_format": "png",
+        "quality": "medium",
+        "size": "1024x1024",
+        "input_fidelity_sent": false
+      },
+      "http_status": 200,
+      "request_id": "00fb771f-16f0-4390-bb3f-dc51bb7acc83",
+      "duration_ms": 44896,
+      "usage": {
+        "input_tokens": 35,
+        "input_tokens_details": {"image_tokens": 0, "text_tokens": 35},
+        "output_tokens": 1756,
+        "output_tokens_details": {"image_tokens": 1756, "text_tokens": 0},
+        "total_tokens": 1791
+      },
+      "response": {
+        "output_format": "png",
+        "quality": "medium",
+        "size": "1024x1024",
+        "data": [{"b64_json": "[omitted base64 image, 1268412 chars]"}]
+      },
+      "image": {
+        "bytes": 951309,
+        "sha256": "aacdf206526d7c140b3d815cfc81e5c7d84875058a184076a39fa3027e5eedaf",
+        "format": "PNG",
+        "width": 1024,
+        "height": 1024
+      }
+    },
+    {
+      "request": {
+        "model": "gpt-image-2",
+        "output_format": "png",
+        "quality": "high",
+        "size": "1024x1024",
+        "input_fidelity_sent": false
+      },
+      "http_status": 200,
+      "request_id": "0b168515-0ec9-4dd2-ac07-166f8b16d15b",
+      "duration_ms": 118835,
+      "usage": {
+        "input_tokens": 35,
+        "input_tokens_details": {"image_tokens": 0, "text_tokens": 35},
+        "output_tokens": 7024,
+        "output_tokens_details": {"image_tokens": 7024, "text_tokens": 0},
+        "total_tokens": 7059
+      },
+      "response": {
+        "output_format": "png",
+        "quality": "high",
+        "size": "1024x1024",
+        "data": [{"b64_json": "[omitted base64 image, 1165080 chars]"}]
+      },
+      "image": {
+        "bytes": 873808,
+        "sha256": "5808424c93cbae898cbb7add7454763e6aaf207025063be56706ac8471f10777",
+        "format": "PNG",
+        "width": 1024,
+        "height": 1024
+      }
+    },
+    {
+      "request": {
+        "model": "gpt-image-2",
+        "output_format": "png",
+        "quality": "low",
+        "size": "1024x1536",
+        "input_fidelity_sent": false
+      },
+      "http_status": 200,
+      "request_id": "d4620412-8cb6-4b52-b106-a5c11349188f",
+      "duration_ms": 25164,
+      "usage": {
+        "input_tokens": 35,
+        "input_tokens_details": {"image_tokens": 0, "text_tokens": 35},
+        "output_tokens": 158,
+        "output_tokens_details": {"image_tokens": 158, "text_tokens": 0},
+        "total_tokens": 193
+      },
+      "response": {
+        "output_format": "png",
+        "quality": "low",
+        "size": "1024x1536",
+        "data": [{"b64_json": "[omitted base64 image, 2075840 chars]"}]
+      },
+      "image": {
+        "bytes": 1556878,
+        "sha256": "2751e59e66fe7feb10919f6ec34e8b6b0d43b763cad536919b30bc8723a71216",
+        "format": "PNG",
+        "width": 1024,
+        "height": 1536
+      }
+    },
+    {
+      "request": {
+        "model": "gpt-image-2",
+        "output_format": "png",
+        "quality": "low",
+        "size": "1536x1024",
+        "input_fidelity_sent": false
+      },
+      "http_status": 200,
+      "request_id": "e7bd437a-05a7-4a45-97a0-0a4dbac9f9e6",
+      "duration_ms": 16433,
+      "usage": {
+        "input_tokens": 35,
+        "input_tokens_details": {"image_tokens": 0, "text_tokens": 35},
+        "output_tokens": 158,
+        "output_tokens_details": {"image_tokens": 158, "text_tokens": 0},
+        "total_tokens": 193
+      },
+      "response": {
+        "output_format": "png",
+        "quality": "low",
+        "size": "1536x1024",
+        "data": [{"b64_json": "[omitted base64 image, 1840112 chars]"}]
+      },
+      "image": {
+        "bytes": 1380084,
+        "sha256": "dcd47f1a433464fb54679807ad556cfcac27be68d53f391ce29296e1752e7f5e",
+        "format": "PNG",
+        "width": 1536,
+        "height": 1024
+      }
+    }
+  ],
+  "multi_image_edit": {
+    "request": {
+      "model": "gpt-image-2",
+      "output_format": "png",
+      "quality": "low",
+      "size": "1024x1024",
+      "image_count": 2,
+      "image_fields": ["image", "image"],
+      "input_fidelity_sent": false
+    },
+    "http_status": 200,
+    "request_id": "05776846-c01e-40d0-bb0d-d9b43334cab9",
+    "duration_ms": 21345,
+    "usage": {
+      "input_tokens": 2092,
+      "input_tokens_details": {"image_tokens": 2048, "text_tokens": 44},
+      "output_tokens": 196,
+      "output_tokens_details": {"image_tokens": 196, "text_tokens": 0},
+      "total_tokens": 2288
+    },
+    "response": {
+      "output_format": "png",
+      "quality": "low",
+      "size": "1024x1024",
+      "data": [{"b64_json": "[omitted base64 image, 336564 chars]"}]
+    },
+    "image": {
+      "bytes": 252423,
+      "sha256": "ad518a64efbd399e1ca92a914b7bf229289ad90fefcaa73c5de3179b729a6dbf",
+      "format": "PNG",
+      "width": 1024,
+      "height": 1024
+    }
+  },
+  "observed_errors": [
+    {
+      "probe": "invalid model",
+      "http_status": 400,
+      "request_id": "17b14c0d-da7e-4d79-ad4d-aa8c41f4d2e0",
+      "duration_ms": 373,
+      "error": {
+        "type": "model_not_available",
+        "code": 400,
+        "message": "Model is not available; model name removed from this evidence summary"
+      },
+      "trace_id": "9fb89060-4e0e-47d7-8570-ed7e34e4477f"
+    },
+    {
+      "probe": "brand logo edit",
+      "http_status": 400,
+      "request_id": "0cb175d6-aa3b-41ab-944f-e5d8c30097ae",
+      "duration_ms": 7240,
+      "error": {
+        "type": "image_generation_user_error",
+        "code": "moderation_blocked",
+        "message": "Request rejected by the safety system; support request ID retained"
+      },
+      "trace_id": "14d7bdad-7717-469c-b678-20519b76b39a"
+    }
+  ],
+  "not_observed": [
+    "429",
+    "502",
+    "503",
+    "504",
+    "ReadTimeout"
+  ],
+  "interrupted_attempts": {
+    "count": 2,
+    "reason": "terminal process limit interrupted local receipt before the final background run",
+    "billing_note": "upstream may have completed these requests; do not assume they were free"
+  }
+}
