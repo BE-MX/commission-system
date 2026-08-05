@@ -97,6 +97,17 @@ class Settings(BaseSettings):
     # ── AI 加密 ──────────────────────────────────────────
     ARK_AI_ENCRYPTION_KEY: str = ""  # production 模式下必须显式配置
 
+    # ── AI 生图工作台 ─────────────────────────────────────
+    DESIGN_IMAGE_STORAGE_ROOT: str = r"D:\WORKSOURCE\design-image"
+    DESIGN_IMAGE_DAILY_LIMIT: int = 20
+    DESIGN_IMAGE_WORKER_CONCURRENCY: int = 3
+    DESIGN_IMAGE_WORKER_INTERVAL_SECONDS: int = 10
+    DESIGN_IMAGE_LEASE_SECONDS: int = 420
+    DESIGN_IMAGE_STALE_SECONDS: int = 480
+    DESIGN_IMAGE_DRAFT_TTL_HOURS: int = 24
+    DESIGN_IMAGE_MAX_UPLOAD_MB: int = 20
+    DESIGN_IMAGE_MAX_PIXELS: int = 60_000_000
+
     # ── AI 生图代理（可选，仅 image_service 生图链路走；文本 chat 不受影响）──
     # 北京展会实例出口对 api.wlai.vip 存在 SNI 阻断（2026-07-31 实证），该实例配
     # socks5://127.0.0.1:1081 借 SSH 隧道从新加坡机出境；办公室生产留空=直连。

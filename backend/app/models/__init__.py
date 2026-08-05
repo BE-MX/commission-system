@@ -20,6 +20,13 @@ from app.aftersales.models import (
     AfterSalesSopVersion,
     AfterSalesNotificationLog,
 )
+from app.design_image.models import (
+    DesignImageSession,
+    DesignImageMessage,
+    DesignImageAsset,
+    DesignImageJob,
+    DesignImageJobAsset,
+)
 
 __all__ = [
     # 提成系统自有表
@@ -52,4 +59,10 @@ __all__ = [
     "AfterSalesEvent",
     "AfterSalesSopVersion",
     "AfterSalesNotificationLog",
+    # AI 生图工作台
+    "DesignImageSession",
+    "DesignImageMessage",
+    "DesignImageAsset",
+    "DesignImageJob",
+    "DesignImageJobAsset",
 ]
