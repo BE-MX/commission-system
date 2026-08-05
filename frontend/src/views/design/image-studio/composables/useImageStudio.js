@@ -6,7 +6,7 @@ import {
 import { msgError } from '@/utils/feedback'
 import {
   acceptConversationResponse, advanceJob, canStartSend, replaceActiveJob,
-  restoreActiveJob, upsertAttachment,
+  createSessionSingleFlight, nextConversationGeneration, restoreActiveJob, upsertAttachment,
 } from '../state'
 import { useAssetObjectUrls } from './useAssetObjectUrls'
 import { useJobPolling } from './useJobPolling'
@@ -53,8 +53,8 @@ export function useImageStudio() {
   const jobSnapshots = new Map()
   const assetUrls = useAssetObjectUrls()
   const polling = useJobPolling()
+  const sessionCreation = createSessionSingleFlight()
   let conversationGeneration = 0
-  let sessionCreationPromise = null
 
   const activeJob = computed(() => [...activeJobs.values()].find(job => ACTIVE_STATUSES.has(job.status)) ?? null)
   const canSend = computed(() => !newSessionInFlight.value && canStartSend({
@@ -116,7 +116,7 @@ export function useImageStudio() {
         const merged = mergeJob(incoming)
         if (!ACTIVE_STATUSES.has(merged.status)) {
           await loadConfig()
-          if (currentSessionId.value === merged.session_id) await selectSession(merged.session_id)
+          if (currentSessionId.value === merged.session_id) await refreshCurrentSession(merged.session_id)
         }
         return merged
       },
@@ -146,8 +146,8 @@ export function useImageStudio() {
     }
   }
 
-  async function selectSession(sessionId) {
-    conversationGeneration += 1
+  async function selectSession(sessionId, { internalRefresh = false } = {}) {
+    conversationGeneration = nextConversationGeneration(conversationGeneration, { internalRefresh })
     const responseGeneration = conversationGeneration
     polling.stopPolling()
     const token = assetUrls.beginBatch()
@@ -192,13 +192,18 @@ export function useImageStudio() {
     }
   }
 
+  async function refreshCurrentSession(sessionId) {
+    if (currentSessionId.value !== sessionId) return
+    return selectSession(sessionId, { internalRefresh: true })
+  }
+
   async function newConversation() {
-    if (newSessionInFlight.value) return sessionCreationPromise
+    if (sessionCreation.pending) return sessionCreation.pending
     newSessionInFlight.value = true
-    conversationGeneration += 1
+    conversationGeneration = nextConversationGeneration(conversationGeneration)
     const responseGeneration = conversationGeneration
     drawerOpen.value = false
-    const operation = (async () => {
+    return sessionCreation.run('explicit', async () => {
       try {
         const response = await createSession({ title: '新对话' })
         const session = response?.data
@@ -210,16 +215,24 @@ export function useImageStudio() {
         return null
       } finally {
         newSessionInFlight.value = false
-        sessionCreationPromise = null
       }
-    })()
-    sessionCreationPromise = operation
-    return operation
+    })
   }
 
   async function ensureSession() {
     if (currentSessionId.value) return currentSession.value
-    return sessionCreationPromise || newConversation()
+    return sessionCreation.run('implicit', async () => {
+      try {
+        const response = await createSession({ title: '新对话' })
+        const session = response?.data
+        mergeSession(session)
+        await selectSession(session.id)
+        return session
+      } catch (error) {
+        msgError(safeRequestMessage(error))
+        return null
+      }
+    })
   }
 
   async function uploadReference(file, onProgress) {
@@ -388,7 +401,7 @@ export function useImageStudio() {
 
   onMounted(initialize)
   onBeforeUnmount(() => {
-    conversationGeneration += 1
+    conversationGeneration = nextConversationGeneration(conversationGeneration)
     polling.stopPolling()
     assetUrls.cleanup()
   })

@@ -22,6 +22,41 @@ export function acceptConversationResponse(activeGeneration, responseGeneration)
   return activeGeneration === responseGeneration
 }
 
+export function nextConversationGeneration(currentGeneration, { internalRefresh = false } = {}) {
+  return internalRefresh ? currentGeneration : currentGeneration + 1
+}
+
+export function createSessionSingleFlight() {
+  let pending = null
+  let mode = null
+
+  return {
+    get pending() {
+      return pending
+    },
+    get mode() {
+      return mode
+    },
+    run(requestedMode, operation) {
+      if (pending) return pending
+      mode = requestedMode
+      let result
+      try {
+        result = operation()
+      } catch (error) {
+        result = Promise.reject(error)
+      }
+      const tracked = Promise.resolve(result).finally(() => {
+        if (pending !== tracked) return
+        pending = null
+        mode = null
+      })
+      pending = tracked
+      return tracked
+    },
+  }
+}
+
 export function canStartSend({ sendInFlight, uploadInFlight, activeJob } = {}) {
   return !sendInFlight && !uploadInFlight && !ACTIVE_JOB_STATUSES.has(activeJob?.status)
 }
