@@ -668,7 +668,7 @@ frontend/src/
 
 ### Phase 5：用量、运维、文档与上线
 
-截至 2026-08-06，五处代码契约文档、版本化 orphan 恢复工具与脱敏证据模板已同步，本地全量测试、构建和独立对抗审查已通过；[Phase 5 证据](evidence/2026-08-05-design-image-phase5-pilot.json) 中所有外部观察仍保持 `pending/null`。`office-primary` 仅为目标拓扑，不代表已部署或验证。
+截至 2026-08-06，五处代码契约文档、版本化 orphan 恢复工具与脱敏证据模板已同步，本地全量测试、构建和独立对抗审查已通过。只读生产预检已确认云 MySQL 包含 089 的五张表与 `usage_detail`，当前共享库 head 是依赖 089 的 `090_expo_store_quota`；但 090 尚未进入本分支，生图权限尚未 seed，office 环境关闭 Scheduler、未创建私有根，当前 8001 也没有生图路由。详见 [Phase 5 证据](evidence/2026-08-05-design-image-phase5-pilot.json)；这些结果证明“尚未部署”，不能当作试点验收通过。
 
 实施：
 

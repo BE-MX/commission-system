@@ -39,8 +39,32 @@
     "independent_quality_review": "approved",
     "live_mysql_migration_current_verified": false
   },
+  "live_mysql_schema": {
+    "status": "design_image_revision_verified_as_applied",
+    "observed_at": "2026-08-06T02:24:01+08:00",
+    "server_version": "8.0.30-cynos-3.1.19.002",
+    "isolation_level": "READ-COMMITTED",
+    "database_revision": "090_expo_store_quota",
+    "design_image_revision": "089_design_image_studio",
+    "database_revision_declares_design_image_as_parent": true,
+    "current_branch_can_resolve_database_revision": false,
+    "missing_branch_revision": "090_expo_store_quota",
+    "required_tables_present": [
+      "ark_design_image_sessions",
+      "ark_design_image_messages",
+      "ark_design_image_assets",
+      "ark_design_image_jobs",
+      "ark_design_image_job_assets"
+    ],
+    "usage_detail_present": true,
+    "all_design_image_tables_empty": true,
+    "preset_model": "gpt-image-2",
+    "preset_enabled": true,
+    "provider_enabled": true,
+    "provider_key_configured": true
+  },
   "pilot_role": {
-    "status": "pending",
+    "status": "blocked_permissions_not_seeded",
     "role_id": null,
     "role_name": null,
     "expected_permissions": [
@@ -54,20 +78,25 @@
       {"slot": "pilot_user_1", "user_id": null, "display_name": null, "role_assignment_verified_at": null},
       {"slot": "pilot_user_2", "user_id": null, "display_name": null, "role_assignment_verified_at": null},
       {"slot": "pilot_user_3_optional", "user_id": null, "display_name": null, "role_assignment_verified_at": null}
+    ],
+    "unassigned_candidates": [
+      {"user_id": 30, "display_name": "李加程", "existing_role": "design_staff"},
+      {"user_id": 31, "display_name": "李辉", "existing_role": "designer"},
+      {"user_id": 32, "display_name": "王槐竹", "existing_role": "designer"}
     ]
   },
   "effective_settings": {
-    "status": "pending",
-    "observed_at": null,
-    "daily_limit": null,
-    "worker_concurrency": null,
-    "worker_interval_seconds": null,
-    "lease_seconds": null,
-    "stale_seconds": null,
-    "draft_ttl_hours": null,
-    "max_upload_mb": null,
-    "max_pixels": null,
-    "stale_greater_than_lease_verified": null
+    "status": "observed_from_current_office_env_not_deployed",
+    "observed_at": "2026-08-06T02:24:01+08:00",
+    "daily_limit": 20,
+    "worker_concurrency": 3,
+    "worker_interval_seconds": 10,
+    "lease_seconds": 420,
+    "stale_seconds": 480,
+    "draft_ttl_hours": 24,
+    "max_upload_mb": 20,
+    "max_pixels": 60000000,
+    "stale_greater_than_lease_verified": true
   },
   "continuity_chain": {
     "status": "pending",
@@ -117,8 +146,8 @@
   "mysql_two_connection_concurrency": {
     "status": "pending",
     "database_engine": "mysql",
-    "server_version": null,
-    "isolation_level": null,
+    "server_version": "8.0.30-cynos-3.1.19.002",
+    "isolation_level": "READ-COMMITTED",
     "connection_a": null,
     "connection_b": null,
     "same_owner_row_lock_observed": null,
@@ -126,21 +155,24 @@
     "same_idempotency_key_returned_one_winner": null,
     "daily_limit_not_overshot": null,
     "verified_at": null,
-    "notes": null
+    "notes": "Read-only connectivity and schema checks passed. The required concurrency proof needs temporary committed pilot rows and cleanup, so it has not been run without production-write authorization."
   },
   "office_primary_topology": {
-    "status": "pending",
+    "status": "verified_not_deployed",
     "target_only_not_deployed_or_verified": true,
-    "host_identifier": null,
-    "api_design_image_enabled": null,
-    "scheduler_enabled": null,
-    "design_image_queue_registered": null,
-    "worker_enabled_only_here": null,
-    "storage_root": null,
-    "service_account_acl_verified": null,
+    "host_identifier": "current Windows office host",
+    "api_design_image_enabled": false,
+    "scheduler_enabled": false,
+    "design_image_queue_registered": false,
+    "worker_enabled_only_here": false,
+    "storage_root": "D:\\WORKSOURCE\\design-image",
+    "storage_root_exists": false,
+    "service_account_acl_verified": false,
+    "current_listener": "manual uvicorn --reload on 8001; design-image route count 0",
+    "windows_service_present": false,
     "non_target_instances_worker_disabled": null,
     "cross_entry_asset_read_verified": null,
-    "verified_at": null
+    "verified_at": "2026-08-06T02:24:01+08:00"
   },
   "alerts_and_recovery": {
     "status": "pending",
@@ -152,6 +184,8 @@
     "verified_at": null
   },
   "remaining_external_gates": [
+    "Integrate revision 090_expo_store_quota into the deployment branch so Alembic can resolve the shared database head.",
+    "Deploy the design-image branch and run the permission seed; the shared database currently has no design_image permissions.",
     "Assign a dedicated pilot role to two or three named design users.",
     "Run one real generation followed by three real edits through the business worker path.",
     "Reconcile jobs, AiCallLog, assets, files, usage, and billing certainty for all four calls.",
