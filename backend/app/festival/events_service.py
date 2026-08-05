@@ -27,6 +27,7 @@ SUPER_DEAL_USD = 30000
 # 事件类型登记表：level 决定大屏表现（L4 全屏弹窗 / L3 插播条）
 EVENT_META = {
     "first_sign":      {"level": "L4", "label": "首单新签"},
+    "new_sign_order":  {"level": "L4", "label": "新签喜报"},
     "super_deal":      {"level": "L4", "label": "超级大单"},
     "camp_target":     {"level": "L4", "label": "达成阵营目标"},
     "big_deal":        {"level": "L3", "label": "大单来袭"},
@@ -106,6 +107,49 @@ def _deal_candidates(db: Session, date_from: str, date_to: str,
         out.append(_cand(etype, "person", r["user_id"], r["name"],
                          f"deal:{r['order_id']}", amount=amt,
                          detail=f"${amt:,.0f}"))
+    return out
+
+
+def _new_sign_order_candidates(db: Session, date_from: str, date_to: str,
+                               source: str | None = None) -> list:
+    """每笔新签订单生成独立候选；订单号作为幂等键，不按客户去重。"""
+    out = []
+    if fsvc._data_source(source) == "ark":
+        rows = db.execute(text(
+            "SELECT i.xiaoman_order_id, i.invoice_no,"
+            f"       {fsvc._ARK_AMOUNT} AS amt, t.Name AS name, t.user_id AS user_id"
+            + fsvc._ARK_JOIN +
+            "   AND i.okki_new_deal = 1"
+            "   AND i.invoice_date >= :d1 AND i.invoice_date <= :d2"
+        ), {"d1": date_from, "d2": date_to}).mappings().all()
+        for row in rows:
+            order_ref = str(row["xiaoman_order_id"] or f"ark:{row['invoice_no']}")
+            amount = float(row["amt"] or 0)
+            out.append(_cand(
+                "new_sign_order", "person", row["user_id"], row["name"],
+                f"new_sign:{order_ref}", amount=amount,
+                detail=f"新签订单 · {order_ref}",
+            ))
+        return out
+
+    rows = db.execute(text(
+        "SELECT a2.order_id, a2.amount_usd, t.Name AS name, t.user_id AS user_id "
+        "FROM lsordertest.okki_orders a2 "
+        "JOIN lsordertest.user_rel_team t ON t.user_id = a2.user_id "
+        + fsvc._active_roster_filter("t") +
+        "WHERE a2.custom_fields LIKE :mark "
+        "  AND a2.account_date >= :d1 AND a2.account_date <= :d2"
+        + fsvc._common_filter("a2")
+    ), {"mark": fsvc.NEW_SIGN_MARK,
+        "d1": date_from, "d2": date_to}).mappings().all()
+    for row in rows:
+        order_ref = str(row["order_id"])
+        amount = float(row["amount_usd"] or 0)
+        out.append(_cand(
+            "new_sign_order", "person", row["user_id"], row["name"],
+            f"new_sign:{order_ref}", amount=amount,
+            detail=f"新签订单 · {order_ref}",
+        ))
     return out
 
 
@@ -222,6 +266,25 @@ def filter_stateless_baseline(db: Session, candidates: list, state_scope: str) -
         return []
     ignored = set(previous.get("dedup_keys", []))
     return [candidate for candidate in candidates if candidate["dedup_key"] not in ignored]
+
+
+def filter_new_sign_order_baseline(db: Session, candidates: list,
+                                   state_scope: str) -> list:
+    """首次启用只记住历史订单，此后仅放行新出现的新签订单。"""
+    key = f"baseline:{state_scope}:new_sign_orders"
+    previous = _read_state(db, key)
+    current_keys = [candidate["dedup_key"] for candidate in candidates]
+    if previous is None:
+        _write_state(db, key, {"dedup_keys": current_keys})
+        return []
+    seen = set(previous.get("dedup_keys", []))
+    fresh = [candidate for candidate in candidates
+             if candidate["dedup_key"] not in seen]
+    if fresh:
+        _write_state(db, key, {"dedup_keys": list(dict.fromkeys(
+            [*previous.get("dedup_keys", []), *current_keys]
+        ))})
+    return fresh
 
 
 def _ranking_candidates(db: Session, *, board: str, event_type: str,
@@ -448,6 +511,24 @@ def persist_new(db: Session, candidates: list) -> int:
             print(f"[festival] 事件 {c['dedup_key']} 撞唯一键，跳过（并发轮询）", flush=True)
     db.commit()
     return added
+
+
+def backfill_new_sign_orders(db: Session, order_ids: list[str],
+                             source: str | None = None) -> int:
+    """定向补建历史新签事件；只接受活动窗口内且符合当前口径的订单。"""
+    wanted = {str(order_id) for order_id in order_ids}
+    candidates = _new_sign_order_candidates(
+        db, fsvc.ACTIVITY_NEW_SIGN_WINDOW[0], fsvc.ACTIVITY_NEW_SIGN_WINDOW[1],
+        source=source,
+    )
+    selected = [candidate for candidate in candidates
+                if candidate["dedup_key"].removeprefix("new_sign:") in wanted]
+    found = {candidate["dedup_key"].removeprefix("new_sign:")
+             for candidate in selected}
+    missing = sorted(wanted - found)
+    if missing:
+        raise ValueError(f"以下订单不是有效新签或不在活动窗口：{', '.join(missing)}")
+    return persist_new(db, selected)
 
 
 def feed(db: Session, limit: int = 40, within_hours: int = 48,

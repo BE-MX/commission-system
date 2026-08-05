@@ -481,6 +481,50 @@ def test_headline_events_dedup_and_thresholds(db):
     assert len(payload2["events"]) == len(payload1["events"])
 
 
+def test_every_new_sign_order_creates_one_fullscreen_event_after_baseline(db):
+    """首次启用只建基线；此后每笔新签订单都生成一次 L4 弹框事件。"""
+    _setup(db)
+    service.get_headline_payload(db, None, None)
+
+    _insert_order(db, "NEW-SIGN-POPUP", "C-POPUP", 1288, "U3", "2026-08-20",
+                  custom_fields=MARK_NEW_STANDARD)
+    payload = service.get_headline_payload(db, None, None)
+    events = [e for e in payload["events"] if e["event_type"] == "new_sign_order"]
+
+    assert len(events) == 1
+    assert events[0]["subject_id"] == "U3"
+    assert events[0]["amount"] == 1288
+    assert events[0]["level"] == "L4"
+
+    service.get_headline_payload(db, None, None)
+    assert db.query(FestivalEvent).filter_by(
+        dedup_key="new_sign:NEW-SIGN-POPUP").count() == 1
+
+
+def test_new_sign_popup_baseline_does_not_backfill_existing_activity_orders(db):
+    """新逻辑上线时不能把活动期内已有新签一次性刷屏。"""
+    _setup(db)
+    candidates = events_service._new_sign_order_candidates(
+        db, "2026-08-01", "2026-08-31")
+
+    assert {c["dedup_key"] for c in candidates} == {
+        "new_sign:O1", "new_sign:O2", "new_sign:O3", "new_sign:O4",
+    }
+    assert events_service.filter_new_sign_order_baseline(
+        db, candidates, "okki") == []
+
+
+def test_selected_historical_new_sign_orders_can_be_backfilled_once(db):
+    """指定订单补推只补所选新签，重复运行不重复建事件。"""
+    _setup(db)
+
+    assert events_service.backfill_new_sign_orders(db, ["O1", "O4"]) == 2
+    assert events_service.backfill_new_sign_orders(db, ["O1", "O4"]) == 0
+    rows = db.query(FestivalEvent).filter_by(event_type="new_sign_order").all()
+
+    assert {row.dedup_key for row in rows} == {"new_sign:O1", "new_sign:O4"}
+
+
 def test_first_sign_after_empty_baseline_is_emitted(db):
     _setup(db)
     db.execute(text("DELETE FROM lsordertest.okki_orders"))
@@ -606,6 +650,11 @@ def test_ark_track_new_sign_synced_only_and_fee(db):
     assert by["U1"]["new_amount"] == 8500.0      # 6100-100 + 2000 + 500
     assert by["U2"]["new_count"] == 0
     assert service.get_company_new_total(db, "2026-08-01", "2026-08-31", source="ark") == 3
+    popup_candidates = events_service._new_sign_order_candidates(
+        db, "2026-08-01", "2026-08-31", source="ark")
+    assert {row["dedup_key"] for row in popup_candidates} == {
+        "new_sign:XO1", "new_sign:XO2", "new_sign:XO4",
+    }
     # GMV 全 order_type（含 K4 规格品与 9 月复购单），扣手续费、仅 synced
     gmv = service.get_gmv_total(db, "2026-08-01", "2026-09-30", source="ark")
     assert gmv == 8000 + 500 + 3200 + 8000

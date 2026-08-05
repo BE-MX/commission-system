@@ -454,6 +454,8 @@ def get_headline_payload(db: Session, date_from: str | None, date_to: str | None
         candidates = events_service.detect_candidates(
             db, ns, gmv, items, camps_payload["camps"], teams_payload["teams"],
             rep["first_board"], rep["amount_board"], source=source)
+        candidates += events_service._new_sign_order_candidates(
+            db, ns[0], ns[1], source=source)
         # 预览窗口：内存候选倒序模拟事件流，不落库（无真实时间戳，占位显示）
         events = [{**c, "id": idx + 1, "created_at": "预览"}
                   for idx, c in enumerate(reversed(candidates))]
@@ -464,6 +466,10 @@ def get_headline_payload(db: Session, date_from: str | None, date_to: str | None
             db, ns, gmv, items, camps_payload["camps"], teams_payload["teams"],
             rep["first_board"], rep["amount_board"], source=None)
         candidates = events_service.filter_stateless_baseline(db, candidates, state_scope)
+        new_sign_candidates = events_service._new_sign_order_candidates(
+            db, ns[0], ns[1], source=None)
+        candidates += events_service.filter_new_sign_order_baseline(
+            db, new_sign_candidates, state_scope)
         candidates += events_service.detect_stateful_candidates(
             db,
             summary=summary,
