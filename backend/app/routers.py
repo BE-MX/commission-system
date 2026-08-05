@@ -37,6 +37,7 @@ from app.festival.public_router import router as festival_public_router
 from app.festival.router import router as festival_router
 from app.card.router import router as card_admin_router
 from app.card.public_router import router as card_public_router
+from app.design_image.router import router as design_image_router
 
 
 def register_routers(app: FastAPI) -> None:
@@ -79,3 +80,4 @@ def register_routers(app: FastAPI) -> None:
     # card 管理路由（/admin/* 字面量路径）必须先于公开路由（/{slug}/*）注册，防路径参数吞噬
     app.include_router(card_admin_router, prefix="/api/card", tags=["名片管家"])
     app.include_router(card_public_router, prefix="/api/card", tags=["名片管家-公开"])
+    app.include_router(design_image_router, prefix="/api/design-image", tags=["AI 生图工作台"])

@@ -8,6 +8,12 @@ VERIFIED_QUALITIES = ("low", "medium", "high")
 MAX_REFERENCE_ASSETS = 4
 
 
+class SessionCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    title: str = Field(default="新对话", min_length=1, max_length=200)
+
+
 class TurnCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 

@@ -1110,6 +1110,8 @@ def test_config_reports_verified_choices_limit_and_remaining(configured, db, mon
         "default_size": "1024x1024",
         "default_quality": "medium",
         "max_reference_assets": 4,
+        "max_upload_bytes": 20 * 1024 * 1024,
+        "draft_ttl_hours": 24,
         "daily_limit": 3,
         "used_today": 1,
         "remaining_today": 2,
