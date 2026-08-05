@@ -304,7 +304,7 @@ backend/app/design_image/
 | `storage_path` | 相对私有根目录的路径 |
 | `mime_type/file_size/width/height/sha256` | 文件元数据 |
 | `source_asset_id` | 基于哪一张图生成，后台可追溯 |
-| `state/expires_at` | 上传图为 `draft/attached`；未发送草稿 24 小时后可清理 |
+| `status/expires_at` | 上传图状态为 `draft/attached`；未发送草稿 24 小时后可清理。列名遵守项目命名宪法，不使用禁用词 `state` |
 | `created_by/created_at/deleted_at` | 审计与软删除 |
 
 #### `ark_design_image_jobs`
