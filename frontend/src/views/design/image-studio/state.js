@@ -54,7 +54,7 @@ export function replaceActiveJob(state, job) {
   const jobs = existingIndex === -1
     ? [...state.jobs, nextJob]
     : state.jobs.map((item, index) => index === existingIndex ? nextJob : item)
-  let activeJobId = state.activeJobId
+  let activeJobId = existingIndex === -1 ? null : state.activeJobId
   if (ACTIVE_JOB_STATUSES.has(nextJob.status)) activeJobId = nextJob.id
   else if (activeJobId === nextJob.id) activeJobId = null
   return { ...state, activeJobId, jobs }

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
+import { fileURLToPath } from 'node:url'
+import { build } from 'vite'
 
 import {
   acceptConversationResponse,
@@ -13,6 +15,26 @@ import {
   selectBaseAsset,
   upsertAttachment,
 } from '../src/views/design/image-studio/state.js'
+
+const API_STUB_PREFIX = '__designImageApiTest_'
+let apiImportSequence = 0
+
+async function importDesignImageWithClient(client, suffix = '') {
+  const source = readFileSync(new URL('../src/api/designImage.js', import.meta.url), 'utf8')
+  const stubKey = `${API_STUB_PREFIX}${process.pid}_${++apiImportSequence}`
+  const injected = source.replace(
+    /import\s*\{\s*designImageClient\s*\}\s*from\s*['"]\.\/clients['"]/,
+    `const { designImageClient } = globalThis[${JSON.stringify(stubKey)}]`,
+  )
+  assert.notEqual(injected, source)
+  globalThis[stubKey] = { designImageClient: client }
+  try {
+    const encoded = Buffer.from(`${injected}\n${suffix}`).toString('base64')
+    return await import(`data:text/javascript;base64,${encoded}#${stubKey}`)
+  } finally {
+    delete globalThis[stubKey]
+  }
+}
 
 test('job status advances monotonically and terminal states cannot be overwritten', () => {
   const queued = { id: 7, status: 'queued', note: 'queued' }
@@ -102,6 +124,23 @@ test('same-job late queued responses cannot reactivate a terminal job', () => {
   }
 })
 
+test('a new job ID is active only while its status is active', () => {
+  for (const status of ['queued', 'running']) {
+    const next = replaceActiveJob(
+      { activeJobId: 41, jobs: [{ id: 41, status: 'failed' }] },
+      { id: 42, status },
+    )
+    assert.equal(next.activeJobId, 42)
+  }
+  for (const status of ['succeeded', 'failed']) {
+    const next = replaceActiveJob(
+      { activeJobId: 41, jobs: [{ id: 41, status: 'failed' }] },
+      { id: 42, status },
+    )
+    assert.equal(next.activeJobId, null)
+  }
+})
+
 test('object URL registry revokes one, all, replacements, and repeated cleanup safely', () => {
   let sequence = 0
   const revoked = []
@@ -185,8 +224,33 @@ test('design image API uses the registered shared client', () => {
   assert.doesNotMatch(apiSource, /axios\.create/)
 })
 
+test('design image API resolves its real named import in an in-memory Vite build', async () => {
+  const result = await build({
+    configFile: fileURLToPath(new URL('../vite.config.js', import.meta.url)),
+    logLevel: 'silent',
+    build: {
+      write: false,
+      minify: false,
+      rollupOptions: {
+        input: fileURLToPath(new URL('../src/api/designImage.js', import.meta.url)),
+      },
+    },
+  })
+  assert.ok(result)
+})
+
+test('design image API stub is removed even when module initialization fails', async () => {
+  await assert.rejects(
+    importDesignImageWithClient({}, "throw new Error('module initialization failed')"),
+    /module initialization failed/,
+  )
+  assert.equal(
+    Object.keys(globalThis).some(key => key.startsWith(API_STUB_PREFIX)),
+    false,
+  )
+})
+
 test('design image API wrappers execute every route with data and request config intact', async () => {
-  const source = readFileSync(new URL('../src/api/designImage.js', import.meta.url), 'utf8')
   const calls = []
   const client = Object.fromEntries(['get', 'post', 'delete'].map(method => [
     method,
@@ -196,15 +260,7 @@ test('design image API wrappers execute every route with data and request config
       return result
     },
   ]))
-  const injected = source.replace(
-    /import\s*\{\s*designImageClient\s*\}\s*from\s*['"]\.\/clients['"]/,
-    'const { designImageClient } = globalThis.__designImageTest',
-  )
-  assert.notEqual(injected, source)
-  globalThis.__designImageTest = { designImageClient: client }
-  const moduleUrl = `data:text/javascript;base64,${Buffer.from(injected).toString('base64')}#api-test`
-  const api = await import(moduleUrl)
-  delete globalThis.__designImageTest
+  const api = await importDesignImageWithClient(client)
 
   const session = { title: 'campaign' }
   const params = { limit: 20, cursor: 'next' }
