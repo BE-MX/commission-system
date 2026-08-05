@@ -71,7 +71,7 @@
     <el-container class="right-container">
       <el-header class="header">
         <div class="header-left">
-          <button class="collapse-toggle" @click="isCollapse = !isCollapse">
+          <button v-if="!isNarrow" class="collapse-toggle" @click="isCollapse = !isCollapse">
             <Fold v-if="!isCollapse" />
             <Expand v-else />
           </button>
@@ -117,7 +117,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { NAV_ENTRIES, MENU_GROUPS } from '@/config/navigation'
@@ -125,7 +125,22 @@ import { NAV_ENTRIES, MENU_GROUPS } from '@/config/navigation'
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
-const isCollapse = ref(false)
+const mobileQuery = globalThis.matchMedia?.('(max-width: 640px)')
+const isNarrow = ref(mobileQuery?.matches ?? false)
+const desktopCollapse = ref(false)
+const isCollapse = computed({
+  get: () => isNarrow.value || desktopCollapse.value,
+  set: value => {
+    if (!isNarrow.value) desktopCollapse.value = value
+  },
+})
+
+function onNarrowChange(event) {
+  isNarrow.value = event.matches
+}
+
+onMounted(() => mobileQuery?.addEventListener('change', onNarrowChange))
+onBeforeUnmount(() => mobileQuery?.removeEventListener('change', onNarrowChange))
 
 // 权限策略检查 — 支持 permission(单权限) 与 anyPermission(任一即可)
 function hasAccess(perms) {
@@ -365,6 +380,7 @@ function handleUserCommand(cmd) {
 /* ===== Header ===== */
 .right-container {
   background: var(--page-bg);
+  min-width: 0;
 }
 .header {
   display: flex;
@@ -432,6 +448,16 @@ function handleUserCommand(cmd) {
 }
 .page-wrapper {
   max-width: 1440px;
+}
+
+@media (max-width: 640px) {
+  .header { padding: 0 10px; }
+  .header-left { gap: 8px; min-width: 0; }
+  .header-badge { display: none; }
+  .main-content { padding: 12px 10px; }
+  .page-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .user-trigger { padding-inline: 6px; }
+  .user-trigger span, .user-trigger .arrow { display: none; }
 }
 
 /* ===== Transitions ===== */
