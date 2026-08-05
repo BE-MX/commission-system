@@ -42,6 +42,7 @@ export function useImageStudio() {
   const draftAttachments = ref([])
   const baseAsset = ref(null)
   const sendInFlight = ref(false)
+  const newSessionInFlight = ref(false)
   const uploadInFlight = ref(0)
   const initializing = ref(true)
   const sessionsLoading = ref(false)
@@ -56,7 +57,7 @@ export function useImageStudio() {
   let sessionCreationPromise = null
 
   const activeJob = computed(() => [...activeJobs.values()].find(job => ACTIVE_STATUSES.has(job.status)) ?? null)
-  const canSend = computed(() => canStartSend({
+  const canSend = computed(() => !newSessionInFlight.value && canStartSend({
     sendInFlight: sendInFlight.value,
     uploadInFlight: uploadInFlight.value > 0,
     activeJob: activeJob.value,
@@ -192,39 +193,40 @@ export function useImageStudio() {
   }
 
   async function newConversation() {
+    if (newSessionInFlight.value) return sessionCreationPromise
+    newSessionInFlight.value = true
     conversationGeneration += 1
     const responseGeneration = conversationGeneration
-    polling.stopPolling()
-    assetUrls.beginBatch()
-    currentSessionId.value = null
-    currentSession.value = null
-    messages.value = []
-    assets.value = []
-    jobs.value = []
-    draftAttachments.value = []
-    baseAsset.value = null
     drawerOpen.value = false
-    try {
-      const response = await createSession({ title: '新对话' })
-      const session = response?.data
-      mergeSession(session)
-      if (responseGeneration === conversationGeneration) await selectSession(session.id)
-      return session
-    } catch (error) {
-      msgError(safeRequestMessage(error))
-      return null
-    }
+    const operation = (async () => {
+      try {
+        const response = await createSession({ title: '新对话' })
+        const session = response?.data
+        mergeSession(session)
+        if (responseGeneration === conversationGeneration) await selectSession(session.id)
+        return session
+      } catch (error) {
+        msgError(safeRequestMessage(error))
+        return null
+      } finally {
+        newSessionInFlight.value = false
+        sessionCreationPromise = null
+      }
+    })()
+    sessionCreationPromise = operation
+    return operation
   }
 
   async function ensureSession() {
     if (currentSessionId.value) return currentSession.value
-    if (!sessionCreationPromise) {
-      sessionCreationPromise = newConversation().finally(() => { sessionCreationPromise = null })
-    }
-    return sessionCreationPromise
+    return sessionCreationPromise || newConversation()
   }
 
   async function uploadReference(file, onProgress) {
+    if (newSessionInFlight.value) {
+      msgError('正在创建新会话，请稍候再添加参考图')
+      throw new Error('new session guarded')
+    }
     if (sendInFlight.value || draftAttachments.value.length + uploadInFlight.value >= 4) {
       msgError('每轮最多添加 4 张参考图')
       throw new Error('upload guarded')
@@ -395,7 +397,7 @@ export function useImageStudio() {
     activeJob, assets, assetUrl: assetUrls.get, baseAsset, canSend, chooseBaseAsset,
     closeLightbox, config, currentSession, currentSessionId, downloadAsset, draftAttachments,
     drawerOpen, initializing, jobs, lightboxAsset, lightboxUrl, loadMoreSessions: () => loadSessions({ append: true }),
-    messages, newConversation, nextCursor, openLightbox, prompt, quality, removeAttachment,
+    messages, newSessionInFlight, newConversation, nextCursor, openLightbox, prompt, quality, removeAttachment,
     retry, selectSession, sendInFlight, sessions, sessionsLoading, size, submit,
     uploadInFlight, uploadReference,
   }
