@@ -1,6 +1,7 @@
 import pytest
 
 from app.ai import image_service
+from app.ai import service as ai_service
 from app.ai.models import AiCallLog, AiPreset, AiProvider
 
 
@@ -12,7 +13,7 @@ def _no_image_proxy(monkeypatch):
     monkeypatch.setattr(image_service, "get_settings", lambda: _S())
 
 
-def _create_image_preset(db):
+def _create_image_preset(db, *, preset_name="expo_wig_composite", parameters=None):
     provider = AiProvider(
         name="Image Provider",
         provider_type="direct",
@@ -25,15 +26,121 @@ def _create_image_preset(db):
     db.add(provider)
     db.flush()
     preset = AiPreset(
-        preset_name="expo_wig_composite",
+        preset_name=preset_name,
         provider_id=provider.id,
         model="gpt-image-2",
-        parameters={"max_tokens": 4096, "size": "1024x1024", "quality": "high"},
+        parameters=parameters or {"max_tokens": 4096, "size": "1024x1024", "quality": "high"},
         is_enabled=True,
     )
     db.add(preset)
     db.flush()
     return preset
+
+
+def test_image_functions_are_exported_from_service_facade():
+    assert ai_service.generate_image is image_service.generate_image
+    assert ai_service.edit_image is image_service.edit_image
+    assert "from app.ai.service import" in ai_service.__doc__
+    assert "directly import submodules" not in ai_service.__doc__
+
+
+def test_generate_image_posts_whitelisted_json_and_records_metadata(db, monkeypatch):
+    _create_image_preset(
+        db,
+        preset_name="design_image_generation",
+        parameters={
+            "output_format": "webp", "output_compression": 85,
+            "size": "1024x1024", "quality": "medium", "input_fidelity": "high",
+            "api_key": "must-not-pass", "provider": "must-not-pass",
+            "model": "must-not-pass", "max_tokens": 4096,
+        },
+    )
+    captured = {}
+    raw_b64 = "cHJpdmF0ZS1pbWFnZQ=="
+
+    class FakeResponse:
+        headers = {"request-id": "fallback", "x-request-id": "req-primary"}
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "data": [{"b64_json": raw_b64}],
+                "usage": {
+                    "input_tokens": 3, "output_tokens": 7, "total_tokens": 10,
+                    "input_tokens_details": {"text_tokens": 3, "image_tokens": 0},
+                    "output_tokens_details": {"image_tokens": 7},
+                },
+                "Authorization": "Bearer leaked", "api_key": "leaked-key", "token": "leaked-token",
+            }
+
+    class FakeClient:
+        def __init__(self, timeout):
+            captured["timeout"] = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return None
+
+        def post(self, url, headers, json):
+            captured.update(url=url, headers=headers, json=json)
+            return FakeResponse()
+
+    monkeypatch.setattr(image_service, "decrypt_key", lambda value: "sk-test")
+    monkeypatch.setattr(image_service.httpx, "Client", FakeClient)
+
+    result = image_service.generate_image(
+        db=db, preset_name="design_image_generation", prompt="draw a product",
+        caller_module="design_image", caller_user_id=9, size="1536x1024", quality="high",
+    )
+
+    assert captured["url"] == "https://example.test/v1/images/generations"
+    assert captured["json"] == {
+        "model": "gpt-image-2", "prompt": "draw a product", "output_format": "webp",
+        "output_compression": 85, "size": "1536x1024", "quality": "high",
+    }
+    usage_detail = {
+        "input_tokens": 3, "output_tokens": 7, "total_tokens": 10,
+        "input_tokens_details": {"text_tokens": 3, "image_tokens": 0},
+        "output_tokens_details": {"image_tokens": 7},
+    }
+    assert result == {
+        "content": f"data:image/webp;base64,{raw_b64}", "tokens_used": 10,
+        "usage_detail": usage_detail, "duration_ms": result["duration_ms"],
+        "log_id": result["log_id"], "provider_attempt_count": 1, "request_id": "req-primary",
+    }
+    log = db.get(AiCallLog, result["log_id"])
+    assert log.usage_detail == usage_detail
+    for secret in (raw_b64, "Bearer leaked", "leaked-key", "leaked-token"):
+        assert secret not in log.response_snapshot
+
+
+@pytest.mark.parametrize(
+    ("payload", "output_format", "expected"),
+    [
+        ({"data": [{"b64_json": "abc"}]}, "jpeg", "data:image/jpeg;base64,abc"),
+        ({"data": [{"url": "https://cdn.test/a.png?sig=secret"}]}, "png", "https://cdn.test/a.png?sig=secret"),
+        ({"data": "data:image/webp;base64,abc"}, "png", "data:image/webp;base64,abc"),
+        ({"b64_json": "abc"}, None, "data:image/png;base64,abc"),
+        ({"url": "https://cdn.test/a.png"}, None, "https://cdn.test/a.png"),
+    ],
+)
+def test_extract_image_content_supports_provider_shapes(payload, output_format, expected):
+    assert image_service._extract_image_content(payload, output_format) == expected
+
+
+def test_response_snapshot_strips_signed_url_query_and_sensitive_values():
+    snapshot = image_service.serialize_response_snapshot({
+        "url": "https://cdn.test/private/a.png?X-Amz-Signature=secret&token=also-secret",
+        "Authorization": "Bearer secret", "api_key": "secret-key",
+        "nested": {"access_token": "secret-token", "data": "data:image/png;base64,abc"},
+    })
+    assert "https://cdn.test/private/a.png" in snapshot
+    for secret in ("Signature", "Bearer secret", "secret-key", "secret-token", "data:image"):
+        assert secret not in snapshot
 
 
 def test_edit_image_posts_openai_compatible_image_edit_request(db, monkeypatch):
@@ -101,8 +208,11 @@ def test_edit_image_posts_openai_compatible_image_edit_request(db, monkeypatch):
     assert result == {
         "content": "data:image/png;base64,abc",
         "tokens_used": 10,
+        "usage_detail": {"input_tokens": 3, "output_tokens": 7, "total_tokens": 10},
         "duration_ms": result["duration_ms"],
         "log_id": result["log_id"],
+        "provider_attempt_count": 1,
+        "request_id": None,
     }
 
 

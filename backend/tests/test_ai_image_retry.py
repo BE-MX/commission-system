@@ -28,10 +28,11 @@ class _FakeClient:
 
 
 class _FakeResp:
-    def __init__(self, status, payload=None, body=None):
+    def __init__(self, status, payload=None, body=None, headers=None):
         self.status_code = status
         self._payload = payload or {"ok": True}
         self._body = body  # 4xx 响应体（dict → JSON），摘参重试/错误信息增强用
+        self.headers = headers or {}
 
     def raise_for_status(self):
         if self.status_code >= 400:
@@ -70,7 +71,9 @@ def _call():
 
 def test_retries_502_then_succeeds(monkeypatch):
     _patch_sequence(monkeypatch, [_FakeResp(502), _FakeResp(502), _FakeResp(200, {"data": 1})])
-    assert _call() == {"data": 1}  # 前两次 502，第三次成功
+    result = _call()
+    assert result.json == {"data": 1}
+    assert result.attempts == 3
 
 
 def test_4xx_not_retried(monkeypatch):
@@ -79,15 +82,17 @@ def test_4xx_not_retried(monkeypatch):
         calls["n"] += 1
         return _FakeClient(_FakeResp(400))
     monkeypatch.setattr(image_service.httpx, "Client", make)
-    with pytest.raises(httpx.HTTPStatusError):
+    with pytest.raises(httpx.HTTPStatusError) as caught:
         _call()
     assert calls["n"] == 1  # 4xx 立即抛，不重试
+    assert caught.value.provider_attempt_count == 1
 
 
 def test_all_502_raises_after_max_attempts(monkeypatch):
     _patch_sequence(monkeypatch, [_FakeResp(502), _FakeResp(502), _FakeResp(502)])
-    with pytest.raises(httpx.HTTPStatusError):
+    with pytest.raises(httpx.HTTPStatusError) as caught:
         _call()
+    assert caught.value.provider_attempt_count == 3
 
 
 def test_504_not_retried(monkeypatch):
@@ -97,9 +102,22 @@ def test_504_not_retried(monkeypatch):
         calls["n"] += 1
         return _FakeClient(_FakeResp(504))
     monkeypatch.setattr(image_service.httpx, "Client", make)
-    with pytest.raises(httpx.HTTPStatusError):
+    with pytest.raises(httpx.HTTPStatusError) as caught:
         _call()
     assert calls["n"] == 1
+    assert caught.value.provider_attempt_count == 1
+
+
+def test_429_not_retried_and_reports_attempt_count(monkeypatch):
+    calls = {"n": 0}
+    def make(timeout=None):
+        calls["n"] += 1
+        return _FakeClient(_FakeResp(429))
+    monkeypatch.setattr(image_service.httpx, "Client", make)
+    with pytest.raises(httpx.HTTPStatusError) as caught:
+        _call()
+    assert calls["n"] == 1
+    assert caught.value.provider_attempt_count == 1
 
 
 def test_read_timeout_not_retried(monkeypatch):
@@ -108,14 +126,24 @@ def test_read_timeout_not_retried(monkeypatch):
         calls["n"] += 1
         return _FakeClient(httpx.ReadTimeout("timeout"))
     monkeypatch.setattr(image_service.httpx, "Client", make)
-    with pytest.raises(TimeoutError):  # ReadTimeout → 转 TimeoutError，且不重试
+    with pytest.raises(TimeoutError) as caught:  # ReadTimeout → 转 TimeoutError，且不重试
         _call()
     assert calls["n"] == 1
+    assert caught.value.provider_attempt_count == 1
 
 
 def test_transport_error_retried_then_succeeds(monkeypatch):
     _patch_sequence(monkeypatch, [httpx.ConnectError("boom"), _FakeResp(200, {"ok": 1})])
-    assert _call() == {"ok": 1}  # 连接瞬断重试后成功
+    result = _call()
+    assert result.json == {"ok": 1}
+    assert result.attempts == 2
+
+
+def test_request_id_header_precedence(monkeypatch):
+    _patch_sequence(monkeypatch, [_FakeResp(200, {"ok": 1}, headers={
+        "openai-request-id": "openai", "request-id": "fallback", "x-request-id": "primary",
+    })])
+    assert _call().request_id == "primary"
 
 
 # ── 上游拒收参数的摘参兜底（2026-07-20 中转站突然不认 gpt-image-2 + input_fidelity） ──
@@ -143,7 +171,8 @@ def test_400_unsupported_param_stripped_and_retried(monkeypatch):
         monkeypatch, [_FakeResp(400, body=_PARAM_400), _FakeResp(200, {"data": 1})])
     data = {"model": "m", "prompt": "p", "quality": "high", "input_fidelity": "high"}
     result = image_service._post_image_edits("http://x/edits", {}, data, [], 300, "expo")
-    assert result == {"data": 1}
+    assert result.json == {"data": 1}
+    assert result.attempts == 2
     assert "input_fidelity" in posted[0] and "input_fidelity" not in posted[1]
     assert data["input_fidelity"] == "high"  # 调用方字典不被就地改坏
 
@@ -161,10 +190,11 @@ def test_400_same_param_only_stripped_once(monkeypatch):
     # 摘掉后上游仍报同一参数 → 不无限循环，第二次即抛
     posted = _patch_recording_sequence(
         monkeypatch, [_FakeResp(400, body=_PARAM_400), _FakeResp(400, body=_PARAM_400)])
-    with pytest.raises(httpx.HTTPStatusError):
+    with pytest.raises(httpx.HTTPStatusError) as caught:
         image_service._post_image_edits(
             "http://x/edits", {}, {"model": "m", "prompt": "p", "input_fidelity": "high"}, [], 300, "expo")
     assert len(posted) == 2
+    assert caught.value.provider_attempt_count == 2
 
 
 def test_400_model_prompt_never_stripped(monkeypatch):
@@ -183,6 +213,24 @@ def test_status_error_message_includes_body(monkeypatch):
         _call()
 
 
+def test_status_error_message_redacts_sensitive_response_values(monkeypatch):
+    body = {
+        "error": {"message": "bad request", "param": ""},
+        "Authorization": "Bearer leaked",
+        "token": "secret-token",
+        "b64_json": "raw-private-image",
+        "url": "https://cdn.test/a.png?sig=secret",
+    }
+    _patch_sequence(monkeypatch, [_FakeResp(400, body=body)])
+    with pytest.raises(httpx.HTTPStatusError) as caught:
+        _call()
+    message = str(caught.value)
+    assert "bad request" in message
+    assert "https://cdn.test/a.png" in message
+    for secret in ("Bearer leaked", "secret-token", "raw-private-image", "sig=secret"):
+        assert secret not in message
+
+
 # ── 生图专用代理（2026-07-31 北京展会实例 api.wlai.vip 被 SNI 阻断，借道隧道） ──
 
 class _FakeSettings:
@@ -197,7 +245,7 @@ def test_proxy_setting_passed_to_client(monkeypatch):
         return _FakeClient(_FakeResp(200, {"ok": 1}))
     monkeypatch.setattr(image_service.httpx, "Client", make)
     monkeypatch.setattr(image_service, "get_settings", lambda: _FakeSettings("socks5://127.0.0.1:1081"))
-    assert _call() == {"ok": 1}
+    assert _call().json == {"ok": 1}
     assert seen["proxy"] == "socks5://127.0.0.1:1081"
 
 
@@ -209,7 +257,7 @@ def test_no_proxy_kwarg_when_unset(monkeypatch):
         return _FakeClient(_FakeResp(200, {"ok": 1}))
     monkeypatch.setattr(image_service.httpx, "Client", make)
     monkeypatch.setattr(image_service, "get_settings", lambda: _FakeSettings(""))
-    assert _call() == {"ok": 1}
+    assert _call().json == {"ok": 1}
     assert "proxy" not in seen
 
 
