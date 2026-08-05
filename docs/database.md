@@ -191,3 +191,17 @@
 - `ark_card_customers` — 客户档案：`email_norm`/`whatsapp_norm`（各自建索引，即口令查询口径，至少一个非空由端点校验）、display_name（解锁问候语）、expo_code 届次、remark 内部备注（不对客户展示）、created_by（ark_users.id，无 FK 随 expo 先例）。同口令重复建档时 unlock 取最新一条（现场录重是常态）。
 - `ark_card_entries` — 沟通纪要：entry_type text/image、title/content、attachment_path（`uploads/card/` uuid 命名，公开静态可读）；客户凭口令可见，FK CASCADE 随客户删除。
 - `ark_card_inquiries` — 客户询盘：contact 原文 + message、customer_id 命中档案时回填（FK SET NULL）、status new/handled 驱动跟进。
+
+## 设计部 AI 生图工作台（迁移 089，2026-08-05）
+
+迁移 `089_design_image_studio` 在 `ark_ai_call_logs` 增加 nullable JSON `usage_detail`，并建立五张领域表。迁移采用存在性检查以收敛已有对象；`downgrade()` 刻意不删审计数据或表，回滚走权限/Preset 开关，结构清理由单独审计迁移完成。
+
+- `ark_design_image_sessions`：owner 会话；`owner_user_id → ark_users.id RESTRICT`。索引 `idx_di_session_owner_updated(owner_user_id, updated_at)`。
+- `ark_design_image_messages`：用户/助手消息；`session_id → sessions.id RESTRICT`。索引 `idx_di_message_session_created(session_id, created_at)`。
+- `ark_design_image_assets`：私有上传与输出元数据，保存相对路径、MIME、字节数、宽高、SHA-256、draft/attached 状态和软删除时间。`session_id → sessions`、`message_id → messages`、`source_asset_id → assets`、`created_by → ark_users` 均为 RESTRICT。索引 `idx_di_asset_session_created(session_id, created_at)`、`idx_di_asset_draft(status, expires_at)`。
+- `ark_design_image_jobs`：状态、输入/配置快照、租约、用量、计费确定性及错误。`owner_user_id → ark_users.id`、`session_id → ark_design_image_sessions.id`、`request_message_id/response_message_id → ark_design_image_messages.id`、`base_asset_id/output_asset_id → ark_design_image_assets.id`、`ai_call_log_id → ark_ai_call_logs.id`、`retry_of_job_id → ark_design_image_jobs.id` 均为 RESTRICT；`uq_di_job_owner_idem(owner_user_id, idempotency_key)` 保证用户范围幂等。索引 `idx_di_job_claim(status, lease_expires_at, created_at)`、`idx_di_job_owner_day(owner_user_id, created_at, status)`、`idx_di_job_session_created(session_id, created_at)`。
+- `ark_design_image_job_assets`：任务参考图顺序；`job_id → jobs.id CASCADE`、`asset_id → assets.id RESTRICT`，唯一约束 `uq_di_job_asset(job_id, asset_id)`，检查约束 `ck_di_job_asset_position(position >= 0)`，索引 `idx_di_job_asset_position(job_id, position)`。
+
+关联真相链为 `request_message → job → ai_call_log/output_asset/response_message`；输出资产的 `source_asset_id` 指回显式编辑基准，参考图顺序在 job_assets 中冻结。用量不另建汇总表：`/usage` 从 jobs LEFT JOIN `AiCallLog` 派生，job token 快照优先、日志 token 兜底。成本只有配置了调用时的 rate-card 快照且细分 usage 可计算时才为估算值，否则 `billing_certainty=unknown`。
+
+每日额度按 `Asia/Shanghai` 自然日统计该用户当天所有已接受 job；成功、失败和重试都计数。提交前锁 `ark_users` owner 行，再做额度、active job 和幂等检查；SQLite 自动化只能验证语义，MySQL 两连接下的 InnoDB 等待/当前读仍是 Phase 5 外部门禁。

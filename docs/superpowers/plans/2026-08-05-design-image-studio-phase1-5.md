@@ -495,9 +495,11 @@
 - Create: `docs/requirements/evidence/<date>-design-image-phase5-pilot.json`
 - Create or modify: the applicable auto-memory project note if the repository provides that mechanism
 
-- [ ] **Step 1: Document exact deployed contracts**
+- [x] **Step 1: Document exact code contracts and target deployment controls**
 
   Add all endpoints, tables/indexes/FKs, facade/worker flow, Provider capability/error observations, office-primary topology, storage permissions, environment settings, scheduler job IDs, quota semantics, log correlations, alert thresholds, rollback procedure and orphan-file recovery.
+
+  Completed locally on 2026-08-06. The office-primary topology is explicitly documented as a target that is not yet deployed or verified; all corresponding evidence fields remain pending/null.
 
 - [ ] **Step 2: Configure pilot without broad role assignment**
 

@@ -855,3 +855,58 @@ grep "job completed" logs\service.log | tail -20
 - **17:30 战报与四榜截图**：`FESTIVAL_SCREENSHOT_BASE_URL` 必须是运行后端的服务器可访问、且同时托管 `/festival/` 与 `/api/` 的入口（办公室生产后端实际监听 `http://127.0.0.1:8001`；`8002` 是云端 frps 反代端口，不能写成本机截图入口）；需安装 Edge 或 Chrome，自动发现失败时配置 `FESTIVAL_BROWSER_EXECUTABLE`。任务先预检四个页面及对应 API，403/500/无数据不会误当成功；截图失败会释放日报 claim，分钟恢复任务持续重试；硬崩溃遗留的 sending claim 15 分钟后自动接管。
 - **任务核对**：服务启动日志应含 `festival_event_monitor`（每分钟）与 `festival_daily_report`（17:30）。测试机器人时先使用独立测试群，不要把生产 Webhook 写入代码或提交 `.env`。
 - **大屏双轨切换**：`.env` 的 `FESTIVAL_DATA_SOURCE`（okki=小满同步保底轨 / ark=方舟发票主轨，主轨仅统计已推单发票、金额扣手续费、**不过滤订单类型**）。切轨前看 `GET /api/public/festival/reconcile?key=` 对账；注意保底轨过滤小满"定制品"而主轨全量计入，**推成"规格品"的发票产生的差异属正常预期**（2026-07-30 裁决保持现状），判据 = 连续 3 天无此类之外的差异再切；改配置需重启后端；建议自然日 0 点切。主轨前提=全员从方舟录单并推单。
+
+## 设计部 AI 生图工作台上线与恢复
+
+当前仅完成代码与文档；下述 `office-primary` 是**目标态，尚未部署、尚未验证**。上线前不得把本节描述当成生产事实。
+
+### 配置与拓扑门禁
+
+```env
+DESIGN_IMAGE_STORAGE_ROOT=D:\WORKSOURCE\design-image
+DESIGN_IMAGE_DAILY_LIMIT=20
+DESIGN_IMAGE_WORKER_CONCURRENCY=3
+DESIGN_IMAGE_WORKER_INTERVAL_SECONDS=10
+DESIGN_IMAGE_LEASE_SECONDS=420
+DESIGN_IMAGE_STALE_SECONDS=480
+DESIGN_IMAGE_DRAFT_TTL_HOURS=24
+DESIGN_IMAGE_MAX_UPLOAD_MB=20
+DESIGN_IMAGE_MAX_PIXELS=60000000
+AI_IMAGE_PROXY=
+```
+
+`DESIGN_IMAGE_STALE_SECONDS` 必须大于 lease。调度总开关是 `SCHEDULER_ENABLED`，时区 `SCHEDULER_TIMEZONE=Asia/Shanghai`，任务 ID 为 `design_image_queue`，`max_instances=1 / coalesce=true`。目标态只允许 office-primary 开启此 worker，并让同一实例访问同一私有根；展会/云实例不得同时消费。不要为关闭单个生图任务而直接关全局 Scheduler，因为会连带停掉其他定时任务。
+
+部署前用 Windows ACL 检查并收紧存储根及其父目录：服务账号需要读、写、建目录、替换和删除；普通用户、Web 静态服务和其他应用账号不得写入，也不得通过 junction/reparse point 进入该根。先以服务账号创建测试图并删除，再启动灰度。Preset 必须为启用的 direct Provider、名称 `design_image_generation`、model 精确为 `gpt-image-2`；不要在证据里记录密钥。
+
+### 上线与核验
+
+1. 备份数据库和私有根，执行 `cd backend; alembic upgrade head; alembic heads`，确认单 head 含 `089_design_image_studio`。
+2. 部署后端但先不分配权限；确认启动日志已注册 `design_image_queue`，目标实例可写私有根，非目标实例不运行 worker。
+3. 构建前端，创建专用试点角色，只授予 `design_image:read/write` 给 2～3 名具名设计用户；非必要不授予 admin。
+4. 通过业务页面/API 做 1 次 low 首次生成 + 3 次显式以上一结果为基准的 edit，把脱敏 ID、耗时、usage 写入 [Phase 5 证据模板](requirements/evidence/2026-08-05-design-image-phase5-pilot.json)。
+5. 对每轮核对 `job.ai_call_log_id`、job tokens、`AiCallLog.usage_detail`、output asset 元数据/SHA-256 和文件存在；第二账号访问他人资产应与随机不存在 ID 同为 404；验证刷新/切换恢复 active job 且 Object URL 被释放。
+6. 在真实 MySQL 用两个独立连接并发提交同一用户，验证 owner 行锁、单 active job、daily limit 和同 key 幂等赢家；SQLite 测试不能替代此项。
+
+验证命令：
+
+```powershell
+python scripts/check_conventions.py --base (git merge-base main HEAD)
+Push-Location backend; python -m pytest; alembic heads; Pop-Location
+Push-Location frontend; node --test tests/designImage*.test.mjs; npm run build; Pop-Location
+python scripts/git_sweep.py
+git diff --check
+```
+
+### 监控、告警与故障恢复
+
+APScheduler 已实现 job error/missed 的应用日志和钉钉告警；以下业务阈值是试点运行规则，**当前代码未自动采集/告警**：连续 5 分钟无 claim、最老 queued 超过 2 分钟、running 超过 stale 阈值、1 小时错误率超过 20%、磁盘低水位、Provider 401/403/余额不足或持续 429、jobs 与 AiCallLog/usage 数明显不一致。上线人需先接现有监控或人工巡检，不能写成“已自动告警”。
+
+- worker 中断：保留 job 和文件，恢复目标实例；过期 lease 会由下一轮标记 `worker_timeout`，用户手动 retry。不要把 unknown billing 改成 0。
+- 迟到响应/终结失败：worker 会精确删除本次已落盘原图和缩略图；日志出现 `orphan response` 或 `failed finalize` 后，按 job ID 查 DB，再仅删除没有资产行引用的具体相对路径。禁止递归删除存储根。
+- draft 清理：每轮只软删已过期且未被 job_assets/base 引用的 draft，提交后 best-effort 删除原图与缩略图；清理失败看 `[design-image] expired draft cleanup failed`，修复 ACL 后按记录路径补删。
+- 数据库成功但文件缺失：停止分配新权限，保留审计行，按备份恢复对应相对路径；不要伪造 succeeded 输出。
+
+### 回滚
+
+最快止损是撤回试点角色的 `design_image:write` 或禁用 `design_image_generation` Preset，前端入口随 read 权限隐藏。queued job 可经审计后标 failed；running 先停止新 claim、等待/使租约失效，迟到结果由 lease token 隔离。迁移不自动 downgrade，五张表与 `usage_detail` 保留；文件清理与数据库回滚分开，绝不递归删根目录。恢复前重新核对目标拓扑、ACL、Preset 和一条完整对账链。

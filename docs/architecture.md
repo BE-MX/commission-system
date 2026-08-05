@@ -349,3 +349,23 @@ ACCIO WORK 询盘推送
 - **项目根 CLAUDE.md**：AI 协作宪法（2026-07-03 瘦身为 ~110 行，只写改变行为的规则；清单类内容拆到 `docs/`）
 - **alembic/versions/**：数据库迁移历史（head `078_tag_taxonomy_v2`）
 - **backend/sql/**：DDL 脚本归档
+
+## 设计部 AI 生图工作台（089，2026-08-05）
+
+该领域以“可恢复任务”而不是 HTTP 长连接为核心：前端提交本轮意图后立即得到 queued job，DB 是状态真相源，APScheduler 仅周期唤醒 worker。共享 `app.ai.service` facade 根据 job 模式调用 `/images/generations` 或重复 multipart image edit，并统一 Provider 配置、重试、usage、request ID 和脱敏 `AiCallLog`；业务层不能传入模型、Provider 或密钥。
+
+```text
+Vue 工作台 → /api/design-image → sessions/messages/assets/jobs（短事务）
+                                   ↓ APScheduler: design_image_queue
+                          原子 claim + lease token
+                                   ↓ 释放事务
+                  AI facade → gpt-image-2 Provider（长 I/O）
+                                   ↓
+                 归一化/私有落盘 → 持 lease 条件终结 job
+```
+
+Worker 每轮先恢复 stale running、清理未引用过期 draft，再按 `DESIGN_IMAGE_WORKER_CONCURRENCY` claim。MySQL 使用 `FOR UPDATE SKIP LOCKED` 选最老 queued，并以 `status=queued` 条件更新；Provider I/O 不占数据库事务。租约每 `lease/3` 续期，终结时再次验证 running + lease token + 未过期。迟到 worker 失去租约后不得覆盖终态，已落盘响应立即按原图和缩略图精确删除；stale job 收口为 `worker_timeout / billing_certainty=unknown`。
+
+Phase 0 已验证当前 TeamRouter 的 `gpt-image-2` generation、两图 edit、三种尺寸和 low/medium/high 均可调用，成功响应是 `b64_json` PNG，usage 含文本/图像细分；实测耗时约 16～119 秒。无效模型与 moderation 阻断返回 400。未观察到 429、502、503、504 或 ReadTimeout，也未核验供应商价格和视觉盲评，因此不能据此承诺错误体、官方价格或质量档位的视觉收益。原始脱敏记录见 [Provider 探针](requirements/evidence/2026-08-05-design-image-provider-probe.json)。
+
+目标生产拓扑（**尚未部署、尚未验证**）：`office-primary` 单实例同时承接 `/api/design-image`、`design_image_queue` worker 与 `D:\WORKSOURCE\design-image` 私有根；云/展会实例不得启用该 worker。若将来多 API 实例，必须先切共享私有存储，否则数据库共享但本地文件不共享会随机 404。实际主机、调度开关、两账号跨入口读取仍须写入 [Phase 5 证据](requirements/evidence/2026-08-05-design-image-phase5-pilot.json)。

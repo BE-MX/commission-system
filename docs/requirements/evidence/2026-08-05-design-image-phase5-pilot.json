@@ -1,0 +1,145 @@
+{
+  "schema_version": 1,
+  "artifact_type": "design_image_phase5_pilot_evidence",
+  "status": "pending_external_validation",
+  "created_for": "phase5_pilot",
+  "sanitization": {
+    "contains_secrets": false,
+    "contains_base64": false,
+    "contains_personal_contacts": false,
+    "rules": [
+      "Record internal numeric IDs or sanitized request IDs only after the check is run.",
+      "Do not record provider keys, authorization headers, image bytes, base64, email, phone, or chat contacts.",
+      "Keep null for every observation that has not been directly verified."
+    ]
+  },
+  "code_contract": {
+    "status": "documented_locally",
+    "migration_revision": "089_design_image_studio",
+    "scheduler_job_id": "design_image_queue",
+    "preset_name": "design_image_generation",
+    "expected_model": "gpt-image-2",
+    "office_primary_deployed_or_verified": false
+  },
+  "pilot_role": {
+    "status": "pending",
+    "role_id": null,
+    "role_name": null,
+    "expected_permissions": [
+      "design_image:read",
+      "design_image:write"
+    ],
+    "admin_permission_granted": null,
+    "minimum_named_users_required": 2,
+    "maximum_named_users_allowed": 3,
+    "users": [
+      {"slot": "pilot_user_1", "user_id": null, "display_name": null, "role_assignment_verified_at": null},
+      {"slot": "pilot_user_2", "user_id": null, "display_name": null, "role_assignment_verified_at": null},
+      {"slot": "pilot_user_3_optional", "user_id": null, "display_name": null, "role_assignment_verified_at": null}
+    ]
+  },
+  "effective_settings": {
+    "status": "pending",
+    "observed_at": null,
+    "daily_limit": null,
+    "worker_concurrency": null,
+    "worker_interval_seconds": null,
+    "lease_seconds": null,
+    "stale_seconds": null,
+    "draft_ttl_hours": null,
+    "max_upload_mb": null,
+    "max_pixels": null,
+    "stale_greater_than_lease_verified": null
+  },
+  "continuity_chain": {
+    "status": "pending",
+    "required_pattern": "one_generation_then_three_edits_using_previous_output_as_explicit_base",
+    "quality": "low",
+    "session_id": null,
+    "calls": [
+      {"sequence": 1, "operation": "generation", "sanitized_request_id": null, "job_id": null, "ai_call_log_id": null, "base_asset_id": null, "output_asset_id": null, "duration_ms": null, "provider_attempt_count": null, "input_tokens": null, "output_tokens": null, "total_tokens": null, "status": "pending"},
+      {"sequence": 2, "operation": "edit", "sanitized_request_id": null, "job_id": null, "ai_call_log_id": null, "base_asset_id": null, "output_asset_id": null, "previous_output_used_as_base": null, "duration_ms": null, "provider_attempt_count": null, "input_tokens": null, "output_tokens": null, "total_tokens": null, "status": "pending"},
+      {"sequence": 3, "operation": "edit", "sanitized_request_id": null, "job_id": null, "ai_call_log_id": null, "base_asset_id": null, "output_asset_id": null, "previous_output_used_as_base": null, "duration_ms": null, "provider_attempt_count": null, "input_tokens": null, "output_tokens": null, "total_tokens": null, "status": "pending"},
+      {"sequence": 4, "operation": "edit", "sanitized_request_id": null, "job_id": null, "ai_call_log_id": null, "base_asset_id": null, "output_asset_id": null, "previous_output_used_as_base": null, "duration_ms": null, "provider_attempt_count": null, "input_tokens": null, "output_tokens": null, "total_tokens": null, "status": "pending"}
+    ]
+  },
+  "reconciliation": {
+    "status": "pending",
+    "all_four_jobs_terminal_and_expected": null,
+    "job_to_ai_call_log_fk_matches": null,
+    "job_tokens_match_log_usage": null,
+    "output_asset_rows_exist": null,
+    "output_files_exist": null,
+    "asset_dimensions_mime_size_and_sha256_match_files": null,
+    "usage_total_includes_four_accepted_jobs": null,
+    "unknown_billing_not_reported_as_zero": null,
+    "checked_at": null,
+    "notes": null
+  },
+  "authorization_parity": {
+    "status": "pending",
+    "owner_user_id": null,
+    "second_user_id": null,
+    "tested_asset_id": null,
+    "absent_asset_probe_id": null,
+    "second_user_http_status": null,
+    "absent_asset_http_status": null,
+    "same_response_shape_and_message": null,
+    "verified_at": null
+  },
+  "frontend_recovery": {
+    "status": "pending",
+    "refresh_restored_active_job": null,
+    "session_switch_discarded_late_response": null,
+    "failed_retry_replaced_active_job_id": null,
+    "object_urls_revoked_on_replace_switch_and_unmount": null,
+    "observation_method": null,
+    "verified_at": null
+  },
+  "mysql_two_connection_concurrency": {
+    "status": "pending",
+    "database_engine": "mysql",
+    "server_version": null,
+    "isolation_level": null,
+    "connection_a": null,
+    "connection_b": null,
+    "same_owner_row_lock_observed": null,
+    "one_active_job_enforced": null,
+    "same_idempotency_key_returned_one_winner": null,
+    "daily_limit_not_overshot": null,
+    "verified_at": null,
+    "notes": null
+  },
+  "office_primary_topology": {
+    "status": "pending",
+    "target_only_not_deployed_or_verified": true,
+    "host_identifier": null,
+    "api_design_image_enabled": null,
+    "scheduler_enabled": null,
+    "design_image_queue_registered": null,
+    "worker_enabled_only_here": null,
+    "storage_root": null,
+    "service_account_acl_verified": null,
+    "non_target_instances_worker_disabled": null,
+    "cross_entry_asset_read_verified": null,
+    "verified_at": null
+  },
+  "alerts_and_recovery": {
+    "status": "pending",
+    "scheduler_error_and_missed_alert_tested": null,
+    "business_threshold_monitoring_attached": null,
+    "stale_job_recovery_observed": null,
+    "orphan_file_recovery_observed": null,
+    "rollback_drill_observed": null,
+    "verified_at": null
+  },
+  "remaining_external_gates": [
+    "Assign a dedicated pilot role to two or three named design users.",
+    "Run one real generation followed by three real edits through the business worker path.",
+    "Reconcile jobs, AiCallLog, assets, files, usage, and billing certainty for all four calls.",
+    "Prove second-user 404 parity and frontend refresh/session/Object URL behavior.",
+    "Run a two-connection MySQL concurrency test.",
+    "Deploy and verify the office-primary API/worker/private-storage topology.",
+    "Run the full repository verification and independent adversarial review."
+  ]
+}

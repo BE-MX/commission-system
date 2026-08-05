@@ -2,7 +2,7 @@
 
 > 日期：2026-08-05
 >
-> 状态：Phase 0–4 已完成，Phase 5 待实施
+> 状态：Phase 0–4 已完成；Phase 5 仅完成代码契约文档与待填证据模板，试点角色、真实四轮链路、MySQL 并发、office-primary 部署和完整验收仍待实施
 >
 > 目标版本：V1
 > 目标模型：`gpt-image-2`
@@ -668,6 +668,8 @@ frontend/src/
 
 ### Phase 5：用量、运维、文档与上线
 
+截至 2026-08-06，五处代码契约文档与脱敏证据模板已同步；[Phase 5 证据](evidence/2026-08-05-design-image-phase5-pilot.json) 中所有外部观察保持 `pending/null`。`office-primary` 仅为目标拓扑，不代表已部署或验证。
+
 实施：
 
 - 用量 API；图形化管理员看板、会话归档/搜索/保留期进入 V1.1；
@@ -813,7 +815,7 @@ V1 建议按 **9～14 个开发日 + 1 周灰度** 规划；V1.1 的搜索/归�
 - [ ] 调用日志无 base64，usage/job/文件能关联
 - [ ] 页面刷新、会话切换、失败重试不丢状态
 - [ ] UI 对照 `DESIGN.md`，动效通过 motion 标准检查
-- [ ] `docs/api-reference.md`、`docs/database.md`、`docs/architecture.md`、`docs/module-notes.md`、`docs/runbook.md` 已同步
+- [x] `docs/api-reference.md`、`docs/database.md`、`docs/architecture.md`、`docs/module-notes.md`、`docs/runbook.md` 已同步
 - [ ] `python scripts/check_conventions.py` 通过
 - [ ] `cd backend && pytest` 通过
 - [ ] `cd frontend && node --test tests/designImage*.test.mjs` 通过

@@ -475,3 +475,26 @@
 - `POST /admin/attachments` — 纪要图片上传（jpg/png/webp ≤10MB，uuid 落 `uploads/card/`，公开可读）。
 - `GET /admin/inquiries`、`PUT /admin/inquiries/{id}` — 询盘列表 / 状态流转（new/handled）。
 - 前端：`views/card/CardButler.vue`（导航「展会营销 → 名片管家」）；印刷管线与静态页模板在 `scripts/card_suite/`（README 即 spec：docs/requirements/2026-08-01-sales-card-suite.md）。
+
+## 设计部 AI 生图工作台（`/api/design-image`，089 迁移，2026-08-05）
+
+所有 JSON 端点沿用统一 `{code, message, data}` 信封；图片内容端点返回鉴权后的二进制流。资源只按当前用户 owner 查询，跨账号访问与不存在资源均返回相同 404。权限独立于 AI 管理后台：`design_image:read` 负责读取，`design_image:write` 负责创建/上传/生成/重试，`design_image:admin` 只用于用量查询。
+
+| 方法 | 路径 | 权限 | 契约 |
+|---|---|---|---|
+| GET | `/config` | read | 尺寸、质量、附件/上传限制、草稿 TTL、当日额度；不暴露 Provider 或密钥 |
+| POST | `/sessions` | write | 创建会话，body `{title?}`，默认“新对话”，标题 1～200 字 |
+| GET | `/sessions` | read | `limit=20`（1～100）与不透明 `cursor` 的 owner 会话分页 |
+| GET | `/sessions/{session_id}` | read | 会话、消息、资产与该会话 active job |
+| POST | `/sessions/{session_id}/assets` | write | multipart 字段 `file`；JPEG/PNG/WebP，实际格式必须匹配 MIME |
+| DELETE | `/assets/{asset_id}` | write | 仅未被任务引用的 draft 可删 |
+| POST | `/sessions/{session_id}/turns` | write | 202；创建消息与 queued job；body 的 `session_id` 若存在必须与路径一致 |
+| GET | `/jobs/active` | read | 当前用户唯一 queued/running job，供刷新恢复；字面量路由先于 `/{job_id}` |
+| GET | `/jobs/{job_id}` | read | 查询单任务状态与输出资产 |
+| POST | `/jobs/{job_id}/retry` | write | 仅 failed 可重试；复制输入创建新 job，保留 `retry_of_job_id` |
+| GET | `/assets/{asset_id}/content` | read | `download=false`、`thumbnail=false`；鉴权预览/缩略图/下载 |
+| GET | `/usage` | admin | 可按 `owner_user_id`、`start_at`、`end_at`、`status` 过滤 |
+
+`turns` 请求：`prompt` 1～4000 字；`request_id` 1～64，仅字母、数字、下划线、连字符；`size` 仅 `1024x1024 / 1024x1536 / 1536x1024`；`quality` 仅 `low / medium / high`；`reference_asset_ids` 最多 4 个、正整数且不重复；`base_asset_id` 不得同时出现在参考图列表。无 `base_asset_id` 是 generation，有则是 edit；连续对话不会回传全部历史图，只发送显式基准图、本轮参考图和本轮要求。
+
+主要错误：校验 400/422、未认证 401、无权限 403、owner 隔离或不存在 404、已引用资产/已有 active job 409、上传超限 413、日额度 429、Preset/存储/一致性不可用 503。重试是新 accepted job，因此占用新的当日额度；失败调用可能已经触达 Provider，不能解释为“零成本”。
