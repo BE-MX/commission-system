@@ -408,6 +408,7 @@
 
 **Files:**
 - Modify: `frontend/src/config/navigation.js`
+- Modify: `frontend/src/views/layout/MainLayout.vue`
 - Create: `frontend/src/views/design/image-studio/ImageStudio.vue`
 - Create: `frontend/src/views/design/image-studio/composables/useImageStudio.js`
 - Create: `frontend/src/views/design/image-studio/composables/useJobPolling.js`
@@ -417,8 +418,12 @@
 - Create: `frontend/src/views/design/image-studio/components/PromptComposer.vue`
 - Create: `frontend/src/views/design/image-studio/components/GenerationCard.vue`
 - Create: `frontend/src/views/design/image-studio/components/ImageLightbox.vue`
+- Create: `frontend/tests/designImageInteraction.test.mjs`
+- Create: `frontend/tests/designImageStudioRecovery.test.mjs`
+- Create: `frontend/tests/designImageConcurrency.test.mjs`
+- Create: `frontend/tests/mainLayoutMobile.test.mjs`
 
-- [ ] **Step 1: Add a failing navigation/static contract test**
+- [x] **Step 1: Add a failing navigation/static contract test**
 
   Extend the Node test to assert `/design/image-studio`, `design_image:read`, lazy view import, no naked hex in new files, no `transition: all`, no `ease-in`, no `.glass-card`, no unguarded `setInterval`, and `prefers-reduced-motion` handling.
 
@@ -426,17 +431,17 @@
 
   Expected: FAIL because navigation/view files do not exist.
 
-- [ ] **Step 2: Implement the thin page and composable**
+- [x] **Step 2: Implement the thin page and composable**
 
   `ImageStudio.vue` owns layout only. `useImageStudio.js` owns sessions, drafts, active-job registry and submit/retry/download. `useJobPolling.js` combines recursive `setTimeout` with busy + generation + session/job snapshot guards; `useAssetObjectUrls.js` owns batch tokens and centralized revoke. It resumes `/jobs/active` on mount and releases every URL/timer on conversation change and unmount.
 
-- [ ] **Step 3: Implement task-focused components**
+- [x] **Step 3: Implement task-focused components**
 
   Required user-visible behavior: one-click new conversation, recent sessions, message thread, 1–4 uploaded references through `AppUpload show-list=false`, explicit “基于这张图修改” chip, size selector, quota, queued/running/succeeded/failed cards, actionable failure text, authenticated image/lightbox/download and AI text accuracy warning.
 
   Use `GlassButton`, `--dash-*`/global tokens and `.lg-*` material classes. No large-list backdrop filter or animated aurora. Main page and every component remain under 500 lines.
 
-- [ ] **Step 4: Implement restrained motion**
+- [x] **Step 4: Implement restrained motion**
 
   Only these motions are allowed:
 
@@ -453,7 +458,7 @@
 
   Do not animate high-frequency session/message changes. Hover movement must be gated by `(hover: hover) and (pointer: fine)`. Reduced motion keeps opacity/color but removes translation/scale movement.
 
-- [ ] **Step 5: Verify build and responsive behavior**
+- [x] **Step 5: Verify build and responsive behavior**
 
   Run:
 
@@ -465,7 +470,9 @@
 
   Manually verify 1366px, 1440px and narrow layout: conversation drawer has a visible trigger, closes on selection, only message pane scrolls, composer stays visible, keyboard-safe padding exists, and no dual scroll.
 
-- [ ] **Step 6: Run motion review and commit**
+  Verified at 1366×768, 1440×900, 768×900 and 390×844. The document does not overflow, only `.message-thread` scrolls, the composer remains visible, and drawer focus is restored after Escape. At 390px the existing Ark sidebar collapses to 68px, leaving 302px for the workbench.
+
+- [x] **Step 6: Run motion review and commit**
 
   Review every new or modified transition against `review-animations`; findings use the required Before/After/Why table and must be fixed before approval. Do not expand this feature review into unrelated historical motion debt in shared `GlassButton` or `MainLayout` unless this task edits those lines.
 
