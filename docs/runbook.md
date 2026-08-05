@@ -1005,10 +1005,152 @@ def create_journal(action: str, batch: str, planned: list[dict]) -> tuple[Path, 
         os.fsync(handle.fileno())
     return journal, journal_rel
 
+def valid_batch_name(batch: str) -> bool:
+    try:
+        return datetime.strptime(batch, "%Y%m%dT%H%M%S%fZ").strftime("%Y%m%dT%H%M%S%fZ") == batch
+    except (TypeError, ValueError):
+        return False
+
+def read_plan(journal: Path) -> dict:
+    reject_link(journal)
+    with journal.open("r", encoding="utf-8") as handle:
+        first = handle.readline()
+    try:
+        plan = json.loads(first)
+    except (TypeError, ValueError):
+        raise RuntimeError(f"invalid journal JSON: {journal.name}") from None
+    if plan.get("event") != "plan" or plan.get("action") not in {"quarantine", "purge"}:
+        raise RuntimeError(f"invalid journal plan: {journal.name}")
+    if not valid_batch_name(plan.get("batch", "")) or not isinstance(plan.get("items"), list):
+        raise RuntimeError(f"invalid journal batch/items: {journal.name}")
+    return plan
+
+def plan_journals(*, batch: str | None = None, action: str | None = None) -> tuple[list[dict], list[str]]:
+    audit_rel = (PurePosixPath(QUARANTINE_NAME) / "audit").as_posix()
+    audit_root = file_service.validate_storage_boundary(audit_rel)
+    if not audit_root.exists():
+        return [], []
+    records, errors = [], []
+    try:
+        paths = list(walk_files(audit_root))
+    except Exception as exc:
+        return [], [f"audit tree unreadable: {exc}"]
+    for journal in paths:
+        if journal.suffix.lower() != ".jsonl":
+            errors.append(f"unexpected audit file: {journal.name}")
+            continue
+        try:
+            plan = read_plan(journal)
+        except Exception as exc:
+            errors.append(str(exc))
+            continue
+        if batch is not None and plan["batch"] != batch:
+            continue
+        if action is not None and plan["action"] != action:
+            continue
+        records.append({"journal": journal, "journal_rel": journal.relative_to(root).as_posix(),
+                        "plan": plan})
+    return records, errors
+
+def file_observation(relative: str, expected: dict) -> dict:
+    path = file_service.validate_storage_boundary(relative)
+    if not os.path.lexists(path):
+        return {"path": relative, "exists": False, "matches": None}
+    reject_link(path)
+    if not path.is_file():
+        return {"path": relative, "exists": True, "matches": False,
+                "conflict": "not_regular_file"}
+    size = path.stat(follow_symlinks=False).st_size
+    sha256 = digest(path)
+    return {"path": relative, "exists": True,
+            "size": size, "sha256": sha256,
+            "matches": size == expected.get("size") and sha256 == expected.get("sha256")}
+
+def reconcile_items(action: str, items: list[dict]) -> dict:
+    states, manual_hold = [], False
+    for item in items:
+        if action == "quarantine":
+            source = file_observation(item["source"], item)
+            target = file_observation(item["quarantine"], item)
+            if source["exists"] and source["matches"] and not target["exists"]:
+                state = "not_moved"
+            elif not source["exists"] and target["exists"] and target["matches"]:
+                state = "moved"
+            else:
+                state, manual_hold = "conflict_manual_hold", True
+            states.append({"item": item, "state": state,
+                           "source_observation": source, "quarantine_observation": target})
+        else:
+            target = file_observation(item["quarantine"], item)
+            if not target["exists"]:
+                state = "deleted_according_to_plan_intent"
+            elif target["matches"]:
+                state = "not_deleted"
+            else:
+                state, manual_hold = "conflict_manual_hold", True
+            states.append({"item": item, "state": state,
+                           "quarantine_observation": target})
+    return {"action": action, "manual_hold": manual_hold, "states": states}
+
+def reconcile_record(record: dict) -> dict:
+    plan = record["plan"]
+    result = reconcile_items(plan["action"], plan["items"])
+    append_journal(record["journal"], {
+        "event": "reconcile_observation", "truth_source": "current_filesystem",
+        "manual_hold": result["manual_hold"], "states": result["states"],
+    })
+    return {"journal": record["journal_rel"], **result}
+
+def quarantine_inventory() -> dict:
+    qroot = file_service.validate_storage_boundary(QUARANTINE_NAME)
+    batches, invalid_entries = [], []
+    if qroot.exists():
+        reject_link(qroot)
+        with os.scandir(qroot) as entries:
+            for entry in entries:
+                path = Path(entry.path)
+                reject_link(path)
+                if path.name == "audit" and entry.is_dir(follow_symlinks=False):
+                    continue
+                if entry.is_dir(follow_symlinks=False) and valid_batch_name(path.name):
+                    batches.append(path.name)
+                else:
+                    invalid_entries.append(path.relative_to(root).as_posix())
+    plans, audit_errors = plan_journals(action="quarantine")
+    planned_batches = {record["plan"]["batch"] for record in plans}
+    unjournaled = sorted(set(batches) - planned_batches)
+    return {
+        "batches": sorted(batches),
+        "unjournaled_batches": unjournaled,
+        "journal_without_batch": sorted(planned_batches - set(batches)),
+        "invalid_entries": sorted(invalid_entries),
+        "audit_errors": audit_errors,
+        "manual_hold": bool(unjournaled or invalid_entries or audit_errors),
+    }
+
+def reconcile_batch(batch: str, *, action: str | None = None) -> dict:
+    if not valid_batch_name(batch):
+        raise RuntimeError("DESIGN_IMAGE_ORPHAN_BATCH is not an exact generated batch")
+    records, errors = plan_journals(batch=batch)
+    if errors:
+        return {"batch": batch, "manual_hold": True, "audit_errors": errors, "results": []}
+    quarantine_plans = [record for record in records if record["plan"]["action"] == "quarantine"]
+    if len(quarantine_plans) != 1:
+        return {"batch": batch, "manual_hold": True,
+                "audit_errors": [f"expected one quarantine plan, found {len(quarantine_plans)}"],
+                "results": []}
+    selected = records if action is None else [
+        record for record in records if record["plan"]["action"] == action
+    ]
+    results = [reconcile_record(record) for record in selected]
+    return {"batch": batch, "manual_hold": any(item["manual_hold"] for item in results),
+            "audit_errors": [], "results": results}
+
 root = file_service.validate_storage_boundary()
 cutoff = datetime.now(timezone.utc).timestamp() - timedelta(hours=MIN_AGE_HOURS).total_seconds()
 
 if ACTION in {"scan", "quarantine"}:
+    inventory = quarantine_inventory()
     refs = referenced_paths()
     candidates = []
     for path in walk_files(root, skip_quarantine=True):
@@ -1020,6 +1162,18 @@ if ACTION in {"scan", "quarantine"}:
     if ACTION == "quarantine":
         if os.environ.get("DESIGN_IMAGE_ORPHAN_APPLY") != "QUARANTINE":
             raise RuntimeError("set DESIGN_IMAGE_ORPHAN_APPLY=QUARANTINE to move files")
+        if inventory["manual_hold"]:
+            raise RuntimeError(f"quarantine inventory requires manual hold: {inventory}")
+        recovery_batches = sorted(set(
+            inventory["batches"] + inventory["journal_without_batch"]
+        ))
+        for existing_batch in recovery_batches:
+            prior_purge = reconcile_batch(existing_batch, action="purge")
+            recovery = prior_purge if prior_purge["results"] else reconcile_batch(
+                existing_batch, action="quarantine"
+            )
+            if recovery["manual_hold"]:
+                raise RuntimeError(f"existing quarantine batch conflicts: {recovery}")
         # Refresh immediately before mutation; the age gate protects active writes.
         refs = referenced_paths()
         batch = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
@@ -1039,6 +1193,13 @@ if ACTION in {"scan", "quarantine"}:
         journal, journal_rel = create_journal(
             "quarantine", batch, [record for _source, _target, record in prepared]
         )
+        batch_root = file_service.validate_storage_boundary(
+            (PurePosixPath(QUARANTINE_NAME) / batch).as_posix()
+        )
+        batch_root.mkdir(parents=True, exist_ok=False)
+        file_service.validate_storage_boundary(
+            (PurePosixPath(QUARANTINE_NAME) / batch).as_posix()
+        )
         moved = []
         for source, target, record in prepared:
             if record["source"] in referenced_paths():
@@ -1056,31 +1217,60 @@ if ACTION in {"scan", "quarantine"}:
                 raise RuntimeError(f"quarantine target already exists: {record['quarantine']}")
             if source.stat(follow_symlinks=False).st_size != record["size"] or digest(source) != record["sha256"]:
                 raise RuntimeError(f"source changed after plan: {record['source']}")
-            append_journal(journal, {"event": "before", "operation": "replace", "item": record})
+            append_journal(journal, {"event": "intent", "operation": "replace", "item": record})
             os.replace(source, target)
-            append_journal(journal, {"event": "after", "operation": "replace", "item": record})
+            append_journal(journal, {"event": "syscall_returned", "operation": "replace",
+                                     "durability_claimed": False, "item": record})
             moved.append(record)
-        append_journal(journal, {"event": "run_complete", "moved_count": len(moved)})
+        reconciliation = reconcile_record({"journal": journal, "journal_rel": journal_rel,
+                                           "plan": read_plan(journal)})
+        append_journal(journal, {"event": "run_returned", "durability_claimed": False,
+                                 "moved_count": len(moved)})
+        if reconciliation["manual_hold"]:
+            raise RuntimeError(f"post-quarantine reconciliation requires manual hold: {reconciliation}")
         print(json.dumps({"action": ACTION, "batch": batch, "journal": journal_rel,
-                          "moved": moved}, ensure_ascii=False, indent=2))
+                          "reconciliation": reconciliation}, ensure_ascii=False, indent=2))
     else:
         print(json.dumps({"action": ACTION, "min_age_hours": MIN_AGE_HOURS,
                           "referenced_count": len(refs),
                           "candidates": [{"path": r, "size": s,
                                           "mtime_utc": datetime.fromtimestamp(m, timezone.utc).isoformat()}
-                                         for r, s, m in candidates]},
+                                         for r, s, m in candidates],
+                          "quarantine_inventory": inventory},
                          ensure_ascii=False, indent=2))
 
-elif ACTION == "purge":
+elif ACTION in {"purge", "reconcile"}:
     batch = os.environ.get("DESIGN_IMAGE_ORPHAN_BATCH", "")
-    try:
-        valid_batch = datetime.strptime(batch, "%Y%m%dT%H%M%S%fZ").strftime("%Y%m%dT%H%M%S%fZ") == batch
-    except (TypeError, ValueError):
-        valid_batch = False
-    if not valid_batch:
+    if not valid_batch_name(batch):
         raise RuntimeError("set DESIGN_IMAGE_ORPHAN_BATCH to one exact quarantine batch")
+    inventory = quarantine_inventory()
+    if inventory["manual_hold"]:
+        raise RuntimeError(f"quarantine inventory requires manual hold: {inventory}")
+    if ACTION == "reconcile":
+        reconcile_action = os.environ.get("DESIGN_IMAGE_ORPHAN_RECONCILE_ACTION", "").strip()
+        if reconcile_action not in {"", "quarantine", "purge"}:
+            raise RuntimeError("DESIGN_IMAGE_ORPHAN_RECONCILE_ACTION must be quarantine or purge")
+        print(json.dumps({"action": ACTION, "inventory": inventory,
+                          "reconciliation": reconcile_batch(
+                              batch, action=reconcile_action or None
+                          )},
+                         ensure_ascii=False, indent=2))
+        raise SystemExit(0)
     if os.environ.get("DESIGN_IMAGE_ORPHAN_APPLY") != "PURGE":
         raise RuntimeError("set DESIGN_IMAGE_ORPHAN_APPLY=PURGE to delete quarantined files")
+    previous_purge_reconciliation = reconcile_batch(batch, action="purge")
+    if previous_purge_reconciliation["manual_hold"]:
+        raise RuntimeError(f"previous purge reconciliation requires manual hold: {previous_purge_reconciliation}")
+    if not previous_purge_reconciliation["results"]:
+        quarantine_reconciliation = reconcile_batch(batch, action="quarantine")
+        if quarantine_reconciliation["manual_hold"]:
+            raise RuntimeError(f"quarantine reconciliation requires manual hold: {quarantine_reconciliation}")
+    elif batch not in inventory["batches"]:
+        print(json.dumps({"action": ACTION, "batch": batch,
+                          "result": "batch_already_absent_according_to_prior_purge_plans",
+                          "reconciliation": previous_purge_reconciliation},
+                         ensure_ascii=False, indent=2))
+        raise SystemExit(0)
     batch_rel = (PurePosixPath(QUARANTINE_NAME) / batch).as_posix()
     batch_root = file_service.validate_storage_boundary(batch_rel)
     refs = referenced_paths()
@@ -1114,31 +1304,40 @@ elif ACTION == "purge":
             raise RuntimeError(f"refuse non-file quarantine item: {record['quarantine']}")
         if path.stat(follow_symlinks=False).st_size != record["size"] or digest(path) != record["sha256"]:
             raise RuntimeError(f"quarantine file changed after plan: {record['quarantine']}")
-        append_journal(journal, {"event": "before", "operation": "unlink", "item": record})
+        append_journal(journal, {"event": "intent", "operation": "unlink", "item": record})
         path.unlink()
-        append_journal(journal, {"event": "after", "operation": "unlink", "item": record})
+        append_journal(journal, {"event": "syscall_returned", "operation": "unlink",
+                                 "durability_claimed": False, "item": record})
         deleted.append(record)
     # Remove only empty directories inside this named batch; never recurse-delete root.
     for directory in sorted(set(discovered_dirs), key=lambda item: len(item.parts), reverse=True):
         reject_link(directory)
         directory.rmdir()
     batch_root.rmdir()
-    append_journal(journal, {"event": "run_complete", "deleted_count": len(deleted)})
+    reconciliation = reconcile_record({"journal": journal, "journal_rel": journal_rel,
+                                       "plan": read_plan(journal)})
+    append_journal(journal, {"event": "run_returned", "durability_claimed": False,
+                             "deleted_count": len(deleted)})
+    if reconciliation["manual_hold"]:
+        raise RuntimeError(f"post-purge reconciliation requires manual hold: {reconciliation}")
     print(json.dumps({"action": ACTION, "batch": batch, "journal": journal_rel,
-                      "deleted": deleted}, ensure_ascii=False, indent=2))
+                      "reconciliation": reconciliation}, ensure_ascii=False, indent=2))
 else:
-    raise RuntimeError("action must be scan, quarantine, or purge")
+    raise RuntimeError("action must be scan, quarantine, purge, or reconcile")
 '@ | python - scan | Tee-Object ..\design-image-orphan-scan.json
 ```
 
 执行顺序：
 
 1. 先审阅 `design-image-orphan-scan.json`，逐项确认 DB 中没有相对路径、文件年龄超过门槛且不属于进行中的人工恢复。
-2. 隔离：设置 `$env:DESIGN_IMAGE_ORPHAN_APPLY="QUARANTINE"`，将最后一行的 `scan` 改成 `quarantine`。工具会在 `.orphan-quarantine/audit/` 先创建并 fsync JSONL plan，再对每个文件分别 fsync `before/after replace`；`Tee-Object` 只是摘要，不是审计真相源。记录返回的精确 `batch` 和 `journal`。
-3. 至少观察一个完整 stale/备份周期；再次查询资产、核对页面与 worker 日志，并用 journal 中的原路径、隔离路径、大小、SHA-256 核对批次。需要恢复时按 `source` 用 `Move-Item -LiteralPath` 精确移回，不能整目录覆盖。
-4. 精确删除：设置 `$env:DESIGN_IMAGE_ORPHAN_BATCH="<上一步精确 batch>"` 与 `$env:DESIGN_IMAGE_ORPHAN_APPLY="PURGE"`，将最后一行改成 `python - purge | Tee-Object ..\design-image-orphan-purge.json`。purge 在任何 `unlink` 前持久化完整计划，再逐项 fsync `before/after unlink`；journal 位于批次目录外，删除批次后仍保留。它只逐文件 `unlink` 并移除已空的具名批次目录；任何 symlink/reparse/special file 或重新出现的 DB 引用都会中止。
+2. 隔离：设置 `$env:DESIGN_IMAGE_ORPHAN_APPLY="QUARANTINE"`，将最后一行的 `scan` 改成 `quarantine`。工具会在 `.orphan-quarantine/audit/` 先创建并 fsync JSONL plan，再对每个文件分别 fsync `intent/replace syscall_returned`；这只证明意图和系统调用已返回，**不证明 Windows 文件系统已持久化**。`Tee-Object` 只是摘要，不是审计真相源。记录返回的精确 `batch` 和 `journal`。
+3. 至少观察一个完整 stale/备份周期；再次查询资产、核对页面与 worker 日志。设置 `$env:DESIGN_IMAGE_ORPHAN_BATCH="<精确 batch>"` 与 `$env:DESIGN_IMAGE_ORPHAN_RECONCILE_ACTION="quarantine"`，把最后一行改成 `python - reconcile`。reconcile 会忽略 journal 曾记录的 syscall 返回状态，重新检查**全部 plan 项**的 source/隔离路径、大小和 SHA-256：source-only 且匹配=`not_moved`，target-only 且匹配=`moved`，both/neither/内容冲突=`conflict_manual_hold`。需要恢复时按 `source` 用 `Move-Item -LiteralPath` 精确移回，不能整目录覆盖。
+4. 精确删除：保持 `$env:DESIGN_IMAGE_ORPHAN_BATCH`，设置 `$env:DESIGN_IMAGE_ORPHAN_APPLY="PURGE"`，将最后一行改成 `python - purge | Tee-Object ..\design-image-orphan-purge.json`。purge 在任何 `unlink` 前持久化完整计划，再逐项 fsync `intent/unlink syscall_returned`；journal 位于批次目录外，删除批次后仍保留。系统调用返回后会立即按整个 purge plan 重读磁盘：隔离文件仍在且匹配=`not_deleted`，不存在=`deleted_according_to_plan_intent`，内容不符=`conflict_manual_hold`。它只逐文件 `unlink` 并移除已空的具名批次目录。
+5. purge 后及任何恢复/重跑前，设置 `$env:DESIGN_IMAGE_ORPHAN_RECONCILE_ACTION="purge"` 再执行 `python - reconcile`。每次 purge 重跑还会在变更前自动核对全部旧 purge plans（包括已有 `syscall_returned` 的项），有冲突即停。清除该环境变量可同时查看 quarantine/purge 历史；历史 quarantine 项在已合法 purge 后会呈 source/target neither，按规则仍标 manual hold，不能把历史 syscall 日志误当磁盘事实。
 
-Journal 判读和重跑规则：`plan` 但无 `before` 表示未执行；有 `before` 无 `after` 时，对 quarantine 比较 source/隔离路径，对 purge 检查隔离路径是否仍存在并核对 size/SHA-256；`after` 表示该项完成。quarantine 中断后不要修改旧批次，重跑只会为根目录仍存在的 orphan 创建新批次；先按旧 journal 处理处于 `before` 的项。purge 中断后使用同一个 `DESIGN_IMAGE_ORPHAN_BATCH` 重跑，新 journal 只规划仍存在的文件，已经删除的项保留在旧 journal 中，不会再次删除其他路径。
+Journal 判读和重跑规则：`intent` 与 `syscall_returned` 都只是操作线索，任何时候都以 reconcile 的当前磁盘观察为准。quarantine 中断后不要修改旧批次，先精确 reconcile；重跑只会为根目录仍存在的 orphan 创建新批次。purge 中断后使用同一个 `DESIGN_IMAGE_ORPHAN_BATCH` 重跑，新 journal 只规划仍存在的文件，已经缺失的项由旧 plan + reconcile 解释，不会再次删除其他路径。
+
+每次 `scan` 都会输出 `quarantine_inventory`。隔离根下存在时间戳批次但 `.orphan-quarantine/audit/` 找不到对应 quarantine plan 时，状态为 `unjournaled_batches/manual_hold`；未知目录、异常 audit 文件同样 manual hold。quarantine 与 purge 都会拒绝继续，必须保留现场并人工核验，禁止为“解锁”而补造或删除 journal。`journal_without_batch` 也会报告，用于发现 journal 已建但批次目录尚未创建的中断；按 exact batch 执行 reconcile 后处理。
 
 `DESIGN_IMAGE_ORPHAN_MIN_AGE_HOURS` 非整数或小于 24（含 0/负数）会在扫描前直接失败；不得绕过此门槛。不得扫描或删除 `DESIGN_IMAGE_STORAGE_ROOT` 之外的路径，不得使用 `Remove-Item -Recurse`、通配符或对存储根做递归删除。
 
