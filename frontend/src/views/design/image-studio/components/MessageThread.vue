@@ -5,6 +5,7 @@
       <el-icon><Picture /></el-icon>
       <h2>描述你想要的画面</h2>
       <p>可直接生图，也可以上传 1～4 张参考图。每轮只生成一张，成本更清楚。</p>
+      <p class="data-disclosure">提交的文字和参考图会发送至公司配置的第三方 AI 服务处理，请勿上传敏感资料。</p>
     </div>
     <template v-else v-for="message in visibleMessages" :key="message.id">
       <div class="message-row" :class="`is-${message.role}`">
@@ -76,6 +77,7 @@ watch(() => [props.messages.length, props.jobs.map(job => job.status).join(',')]
 .thread-empty :deep(.el-icon) { color: var(--color-primary); font-size: 42px; }
 .thread-empty h2 { margin: 14px 0 8px; color: var(--text-primary); font-family: var(--font-display); }
 .thread-empty p { margin: 0; line-height: 1.7; }
+.thread-empty .data-disclosure { margin-top: 14px; color: var(--color-warning-text); font-size: 12px; }
 .message-row { display: flex; max-width: 720px; gap: 12px; margin: 0 0 12px; }
 .message-row.is-user { margin-left: auto; flex-direction: row-reverse; }
 .message-role { display: grid; width: 28px; height: 28px; flex: 0 0 28px; place-items: center; border-radius: 50%; background: var(--color-primary-light); color: var(--color-primary); font-size: 12px; font-weight: 700; }

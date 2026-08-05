@@ -13,7 +13,7 @@
       <div>
         <strong>本轮未生成成功</strong>
         <p>{{ failureCopy }}</p>
-        <GlassButton v-permission="'design_image:write'" variant="outline" size="sm" @click="emit('retry', job)">
+        <GlassButton v-if="canRetry" v-permission="'design_image:write'" variant="outline" size="sm" @click="emit('retry', job)">
           手动重试
         </GlassButton>
       </div>
@@ -54,9 +54,14 @@ const props = defineProps({
 const emit = defineEmits(['retry', 'download', 'preview', 'edit'])
 
 const outputAsset = computed(() => props.assets.find(asset => asset.id === props.job.output_asset_id) ?? null)
+const isModerationFailure = computed(() => {
+  const code = String(props.job.error_code || '').toLowerCase()
+  return code.includes('moderation') || code.includes('content_policy') || code.includes('safety')
+})
+const canRetry = computed(() => !isModerationFailure.value)
 const failureCopy = computed(() => {
   const code = String(props.job.error_code || '').toLowerCase()
-  if (code.includes('moderation')) return '请调整提示词或参考图后重新发送。'
+  if (isModerationFailure.value) return '请调整提示词或参考图后重新发送。'
   if (code.includes('timeout')) return '模型本次响应超时，可以修改要求后重试。'
   if (code.includes('quota')) return '今日额度已用完，如为紧急任务请联系管理员。'
   if (code.includes('rate') || code.includes('429')) return '当前生成任务较多，请稍后手动重试。'

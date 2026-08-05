@@ -393,3 +393,65 @@ test('polling and object URL composables expose snapshot guards and centralized 
   assert.match(studio, /advanceJob\(jobSnapshots\.get\(job\.id\),\s*job\)/)
   assert.match(studio, /currentSession\.value\s*=\s*null[\s\S]*messages\.value\s*=\s*\[\][\s\S]*assets\.value\s*=\s*\[\][\s\S]*jobs\.value\s*=\s*\[\]/)
 })
+
+test('studio restores drafts and protects initialization from user navigation races', () => {
+  const source = readFileSync(
+    new URL('../src/views/design/image-studio/composables/useImageStudio.js', import.meta.url),
+    'utf8',
+  )
+
+  assert.match(
+    source,
+    /asset_type\s*===\s*['"]upload['"][\s\S]*status\s*===\s*['"]draft['"]|status\s*===\s*['"]draft['"][\s\S]*asset_type\s*===\s*['"]upload['"]/,
+  )
+  assert.match(source, /uploadId:\s*`draft-\$\{asset\.id\}`/)
+  assert.match(source, /acceptConversationResponse\(initializeGeneration,\s*conversationGeneration\)/)
+  assert.match(source, /loadSessions\([^)]*initializeGeneration/)
+  assert.match(source, /async function newConversation\(\)\s*\{\s*conversationGeneration \+= 1/)
+  assert.match(source, /mergeSession\(session\)/)
+  assert.doesNotMatch(source, /sessions\.value\s*=\s*append\s*\?\s*\[\.\.\.sessions\.value/)
+})
+
+test('active polling starts before non-blocking thumbnail hydration', () => {
+  const source = readFileSync(
+    new URL('../src/views/design/image-studio/composables/useImageStudio.js', import.meta.url),
+    'utf8',
+  )
+  const pollingIndex = source.indexOf('startActivePolling(tracked)')
+  const hydrationIndex = source.indexOf('void hydrateThumbnails(')
+
+  assert.ok(pollingIndex > -1)
+  assert.ok(hydrationIndex > pollingIndex)
+  assert.match(source, /void hydrateThumbnails\([\s\S]*?\)\.catch\(/)
+})
+
+test('upload limit, disclosure, lightbox failures, and moderation retry are explicit', () => {
+  const composer = readFileSync(
+    new URL('../src/views/design/image-studio/components/PromptComposer.vue', import.meta.url),
+    'utf8',
+  )
+  const page = readFileSync(new URL('../src/views/design/image-studio/ImageStudio.vue', import.meta.url), 'utf8')
+  const studio = readFileSync(
+    new URL('../src/views/design/image-studio/composables/useImageStudio.js', import.meta.url),
+    'utf8',
+  )
+  const thread = readFileSync(
+    new URL('../src/views/design/image-studio/components/MessageThread.vue', import.meta.url),
+    'utf8',
+  )
+  const card = readFileSync(
+    new URL('../src/views/design/image-studio/components/GenerationCard.vue', import.meta.url),
+    'utf8',
+  )
+
+  assert.match(composer, /maxUploadBytes/)
+  assert.match(composer, /:max-size-mb="maxUploadMb"/)
+  assert.doesNotMatch(composer, /:max-size-mb="20"/)
+  assert.match(page, /:max-upload-bytes="studio\.config\.value\.max_upload_bytes"/)
+  assert.match(studio, /async function openLightbox[\s\S]*try\s*\{[\s\S]*catch/)
+  assert.match(studio, /无法读取原图，请稍后重试/)
+  assert.match(thread, /第三方 AI 服务处理/)
+  assert.match(thread, /请勿上传敏感资料/)
+  assert.match(card, /canRetry/)
+  assert.match(card, /v-if="canRetry"/)
+})

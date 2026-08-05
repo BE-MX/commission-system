@@ -33,6 +33,7 @@
         :jobs="studio.jobs.value"
         :assets="studio.assets.value"
         :asset-url="studio.assetUrl"
+        :max-upload-bytes="studio.config.value.max_upload_bytes"
         :loading="studio.initializing.value"
         @retry="studio.retry"
         @download="studio.downloadAsset"

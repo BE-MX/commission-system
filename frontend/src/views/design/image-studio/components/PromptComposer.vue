@@ -32,7 +32,7 @@
           :model-value="uploadModel"
           :upload-fn="uploadFn"
           accept="image/jpeg,image/png,image/webp"
-          :max-size-mb="20"
+          :max-size-mb="maxUploadMb"
           :multiple="true"
           :limit="4"
           :show-list="false"
@@ -66,12 +66,12 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { Close, Paperclip } from '@element-plus/icons-vue'
 import AppUpload from '@/components/AppUpload.vue'
 import GlassButton from '@/components/GlassButton.vue'
 
-defineProps({
+const props = defineProps({
   prompt: { type: String, default: '' },
   attachments: { type: Array, default: () => [] },
   baseAsset: { type: Object, default: null },
@@ -81,12 +81,14 @@ defineProps({
   quality: { type: String, default: 'medium' },
   uploadFn: { type: Function, required: true },
   assetUrl: { type: Function, required: true },
+  maxUploadBytes: { type: Number, default: 20 * 1024 * 1024 },
   uploadDisabled: { type: Boolean, default: false },
   canSend: { type: Boolean, default: false },
   sending: { type: Boolean, default: false },
 })
 const emit = defineEmits(['update:prompt', 'update:size', 'update:quality', 'submit', 'remove', 'clear-base'])
 const uploadModel = ref([])
+const maxUploadMb = computed(() => Math.max(props.maxUploadBytes / (1024 * 1024), 0.01))
 
 const sizeLabels = { '1024x1024': '正方形', '1024x1536': '竖版', '1536x1024': '横版' }
 const qualityLabels = { low: '快速', medium: '标准', high: '精细' }

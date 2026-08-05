@@ -4,7 +4,10 @@ import {
   listSessions, retryJob, uploadAsset,
 } from '@/api/designImage'
 import { msgError } from '@/utils/feedback'
-import { advanceJob, canStartSend, replaceActiveJob, restoreActiveJob, upsertAttachment } from '../state'
+import {
+  acceptConversationResponse, advanceJob, canStartSend, replaceActiveJob,
+  restoreActiveJob, upsertAttachment,
+} from '../state'
 import { useAssetObjectUrls } from './useAssetObjectUrls'
 import { useJobPolling } from './useJobPolling'
 
@@ -67,6 +70,24 @@ export function useImageStudio() {
       : sessions.value.map(item => item.id === session.id ? { ...item, ...session } : item)
   }
 
+  function mergeSessionPage(items, append) {
+    const incomingIds = new Set(items.map(item => item.id))
+    const existingById = new Map(sessions.value.map(item => [item.id, item]))
+    const incoming = items.map(item => ({ ...existingById.get(item.id), ...item }))
+    if (append) {
+      const additions = incoming.filter(item => !existingById.has(item.id))
+      sessions.value = [
+        ...sessions.value.map(item => incomingIds.has(item.id)
+          ? incoming.find(candidate => candidate.id === item.id)
+          : item),
+        ...additions,
+      ]
+      return
+    }
+    const locallyCreated = sessions.value.filter(item => !incomingIds.has(item.id))
+    sessions.value = [...locallyCreated, ...incoming]
+  }
+
   function mergeJob(job) {
     const merged = advanceJob(jobSnapshots.get(job.id), job)
     jobSnapshots.set(merged.id, merged)
@@ -108,14 +129,15 @@ export function useImageStudio() {
     quality.value = quality.value || config.value.default_quality
   }
 
-  async function loadSessions({ append = false } = {}) {
+  async function loadSessions({ append = false, requestGeneration = conversationGeneration } = {}) {
     if (sessionsLoading.value) return
     sessionsLoading.value = true
     try {
       const response = await listSessions(append && nextCursor.value ? { cursor: nextCursor.value } : {})
       const page = response?.data ?? { items: [], next_cursor: null }
-      sessions.value = append ? [...sessions.value, ...(page.items || [])] : (page.items || [])
-      nextCursor.value = page.next_cursor ?? null
+      const requestIsCurrent = acceptConversationResponse(requestGeneration, conversationGeneration)
+      mergeSessionPage(page.items || [], append)
+      if (append || requestIsCurrent) nextCursor.value = page.next_cursor ?? null
     } catch (error) {
       msgError(safeRequestMessage(error))
     } finally {
@@ -152,18 +174,36 @@ export function useImageStudio() {
         else activeJobs.delete(merged.id)
         return merged
       })
+      draftAttachments.value = assets.value
+        .filter(asset => asset.asset_type === 'upload' && asset.status === 'draft')
+        .map(asset => ({
+          uploadId: `draft-${asset.id}`,
+          name: `参考图 ${asset.id}`,
+          status: 'ready',
+          asset,
+        }))
       mergeSession(detail.session)
-      await hydrateThumbnails(assets.value, token)
-      if (responseGeneration !== conversationGeneration || currentSessionId.value !== sessionId) return
       const tracked = activeJob.value
       if (tracked) startActivePolling(tracked)
+      void hydrateThumbnails(assets.value, token).catch(() => {})
     } catch (error) {
       if (responseGeneration === conversationGeneration) msgError(safeRequestMessage(error))
     }
   }
 
   async function newConversation() {
+    conversationGeneration += 1
     const responseGeneration = conversationGeneration
+    polling.stopPolling()
+    assetUrls.beginBatch()
+    currentSessionId.value = null
+    currentSession.value = null
+    messages.value = []
+    assets.value = []
+    jobs.value = []
+    draftAttachments.value = []
+    baseAsset.value = null
+    drawerOpen.value = false
     try {
       const response = await createSession({ title: '新对话' })
       const session = response?.data
@@ -295,8 +335,14 @@ export function useImageStudio() {
 
   async function openLightbox(asset) {
     lightboxAsset.value = asset
-    const url = await assetUrls.load(asset.id, { thumbnail: false })
-    if (lightboxAsset.value?.id === asset.id) lightboxUrl.value = url
+    lightboxUrl.value = null
+    try {
+      const url = await assetUrls.load(asset.id, { thumbnail: false })
+      if (lightboxAsset.value?.id === asset.id) lightboxUrl.value = url
+    } catch {
+      if (lightboxAsset.value?.id === asset.id) closeLightbox()
+      msgError('无法读取原图，请稍后重试')
+    }
   }
 
   function closeLightbox() {
@@ -318,15 +364,18 @@ export function useImageStudio() {
 
   async function initialize() {
     initializing.value = true
+    const initializeGeneration = conversationGeneration
     try {
-      await Promise.all([loadConfig(), loadSessions()])
+      await Promise.all([loadConfig(), loadSessions({ requestGeneration: initializeGeneration })])
       const activeResponse = await getActiveJob()
       const restored = restoreActiveJob(activeResponse?.data?.job)
       if (restored) {
         jobSnapshots.set(restored.id, restored)
         activeJobs.set(restored.id, restored)
+        startActivePolling(restored)
       }
-      const targetId = activeResponse?.data?.session?.id ?? sessions.value[0]?.id
+      if (!acceptConversationResponse(initializeGeneration, conversationGeneration)) return
+      const targetId = sessions.value[0]?.id
       if (targetId) await selectSession(targetId)
     } catch (error) {
       msgError(safeRequestMessage(error))
