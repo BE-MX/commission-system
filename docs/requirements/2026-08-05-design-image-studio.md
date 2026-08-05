@@ -363,6 +363,7 @@ queued ──claim──> running ──success──> succeeded
 - 输入归一化最长边建议 2048px，是否进一步压缩由能力探针和成本实测决定；
 - 生成结果落本地后再把任务改为 succeeded，避免数据库成功但文件不存在；
 - 存储路径使用 UUID 和相对路径，下载前调用 `resolve()` 检查仍位于私有根目录；
+- 私有根及其父目录只允许生图服务账号写入，禁止符号链接和 junction/reparse point；进程内文件写入和删除必须串行化。代码负责拒绝路径越界与 reparse point，部署巡检负责验证 ACL。拥有该服务账号或宿主机文件系统写权限的主体不属于 V1 应用层文件隔离威胁模型；
 - 预览/下载端点必须同时验证权限与 owner，跨用户统一返回 404，避免泄露资源是否存在。
 - V1 优先强制 Provider 返回 `b64_json`。如必须支持远程 URL：只允许 HTTPS 和 Provider 配置的显式下载域名；逐跳校验重定向及 DNS 结果，拒绝 loopback、RFC1918、link-local、metadata 和 IPv6 私网；流式限量下载，不转发 Authorization，并覆盖 DNS rebinding/302 跳内网测试。
 
