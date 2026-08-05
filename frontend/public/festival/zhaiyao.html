@@ -533,7 +533,9 @@
       esc(e.subject_name.slice(-1)) + '</span>';
   }
   function renderFeed(events) {
-    var key = JSON.stringify(events.map(function (e) { return e.id; }));
+    var key = JSON.stringify(events.map(function (e) {
+      return [e.id, e.subject_id, e.subject_name, e.detail, e.amount];
+    }));
     if (key === lastFeedKey) return;
     lastFeedKey = key;
     var html = events.map(function (e) {
