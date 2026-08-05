@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import io
 import ipaddress
 import os
 import shutil
+import socket
 import ssl
 import struct
 import subprocess
@@ -634,6 +636,8 @@ def test_pinned_transport_closes_connection_when_request_fails(monkeypatch):
             self.closed = True
             raise OSError("close failed")
 
+        abort = close
+
     connection = FakeConnection()
     monkeypatch.setattr(file_service, "_PinnedHTTPSConnection", lambda *args, **kwargs: connection)
     with pytest.raises(OSError, match="request failed"):
@@ -718,6 +722,8 @@ def test_provider_download_watchdog_interrupts_blocked_response_headers(monkeypa
             self.closed = True
             release.set()
 
+        abort = close
+
     connection = BlockingConnection()
     monkeypatch.setattr(file_service, "DOWNLOAD_TIMEOUT_SECONDS", 0.05)
     monkeypatch.setattr(file_service, "_resolve_host_ips", lambda *args: ["93.184.216.34"])
@@ -770,6 +776,8 @@ def test_provider_download_watchdog_interrupts_one_blocked_body_read(monkeypatch
             self.closed = True
             release.set()
 
+        abort = close
+
     connection = BlockingConnection()
     monkeypatch.setattr(file_service, "DOWNLOAD_TIMEOUT_SECONDS", 0.05)
     monkeypatch.setattr(file_service, "_resolve_host_ips", lambda *args: ["93.184.216.34"])
@@ -786,6 +794,132 @@ def test_provider_download_watchdog_interrupts_one_blocked_body_read(monkeypatch
     finally:
         release.set()
         fallback.cancel()
+
+
+def _fallback_close_socket(sock: socket.socket) -> threading.Timer:
+    def close_peer():
+        try:
+            sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        sock.close()
+
+    timer = threading.Timer(0.4, close_peer)
+    timer.daemon = True
+    timer.start()
+    return timer
+
+
+def test_hard_abort_is_idempotent_and_ignores_shutdown_error():
+    from app.design_image import file_service
+
+    class CountingSocket:
+        shutdowns = 0
+        closes = 0
+
+        def shutdown(self, how):
+            assert how == socket.SHUT_RDWR
+            self.shutdowns += 1
+            raise OSError("already disconnected")
+
+        def close(self):
+            self.closes += 1
+
+    connection = file_service._PinnedHTTPSConnection(
+        "cdn.example.com", "93.184.216.34", port=443, timeout=1
+    )
+    connection.sock = CountingSocket()
+    connection.abort()
+    connection.abort()
+    assert connection.sock.shutdowns == 1
+    assert connection.sock.closes == 1
+
+
+def test_hard_abort_interrupts_real_http_response_header_read():
+    from app.design_image import file_service
+
+    client, peer = socket.socketpair()
+    connection = file_service._PinnedHTTPSConnection(
+        "cdn.example.com", "93.184.216.34", port=443, timeout=1
+    )
+    connection.sock = client
+    response = http.client.HTTPResponse(client)
+    watchdog = file_service._DeadlineWatchdog(
+        time.monotonic() + 0.05, connection.abort
+    )
+    fallback = _fallback_close_socket(peer)
+    started = time.perf_counter()
+    try:
+        with pytest.raises((OSError, http.client.HTTPException)):
+            response.begin()
+        assert time.perf_counter() - started < 0.2
+    finally:
+        watchdog.cancel()
+        response.close()
+        fallback.cancel()
+        peer.close()
+        connection.abort()
+
+
+def test_hard_abort_interrupts_real_makefile_body_read():
+    from app.design_image import file_service
+
+    client, peer = socket.socketpair()
+    connection = file_service._PinnedHTTPSConnection(
+        "cdn.example.com", "93.184.216.34", port=443, timeout=1
+    )
+    connection.sock = client
+    reader = client.makefile("rb")
+    watchdog = file_service._DeadlineWatchdog(
+        time.monotonic() + 0.05, connection.abort
+    )
+    fallback = _fallback_close_socket(peer)
+    started = time.perf_counter()
+    try:
+        try:
+            assert reader.read(1) == b""
+        except OSError:
+            pass
+        assert time.perf_counter() - started < 0.2
+    finally:
+        watchdog.cancel()
+        reader.close()
+        fallback.cancel()
+        peer.close()
+        connection.abort()
+
+
+def test_dns_future_is_cancelled_when_deadline_expires_after_submit(monkeypatch):
+    from app.design_image import file_service
+
+    class PendingFuture:
+        cancelled = False
+
+        def result(self, timeout):
+            pytest.fail("expired deadline must prevent result wait")
+
+        def cancel(self):
+            self.cancelled = True
+
+    future = PendingFuture()
+
+    class Resolver:
+        def submit(self, *args, **kwargs):
+            return future
+
+    remaining = iter([1.0, file_service.ProviderDownloadError("deadline exceeded")])
+
+    def remaining_time(deadline):
+        value = next(remaining)
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+    monkeypatch.setattr(file_service, "_DNS_RESOLVER", Resolver())
+    monkeypatch.setattr(file_service, "_remaining_download_time", remaining_time)
+    with pytest.raises(file_service.ProviderDownloadError, match="deadline"):
+        file_service._resolve_host_ips("cdn.example.com", 443, 123.0)
+    assert future.cancelled
 
 
 def test_provider_download_translates_read_timeout_and_closes(monkeypatch):

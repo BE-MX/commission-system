@@ -374,6 +374,7 @@ def _normalize_host(host: str) -> str:
 def _resolve_host_ips(host: str, port: int, deadline: float | None = None) -> list[str]:
     deadline = deadline or (time.monotonic() + DOWNLOAD_TIMEOUT_SECONDS)
     remaining = _remaining_download_time(deadline)
+    future = None
     try:
         future = _DNS_RESOLVER.submit(
             socket.getaddrinfo,
@@ -384,6 +385,10 @@ def _resolve_host_ips(host: str, port: int, deadline: float | None = None) -> li
             timeout=remaining,
         )
         records = future.result(timeout=_remaining_download_time(deadline))
+    except ProviderDownloadError:
+        if future is not None:
+            future.cancel()
+        raise
     except FutureTimeoutError:
         future.cancel()
         raise ProviderDownloadError("provider DNS deadline exceeded") from None
@@ -434,16 +439,58 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
     def __init__(self, host: str, pinned_ip: str, *, port: int, timeout: int):
         super().__init__(host, port=port, timeout=timeout, context=ssl.create_default_context())
         self._pinned_ip = pinned_ip
+        self._abort_lock = threading.Lock()
+        self._aborted = False
+
+    @staticmethod
+    def _shutdown_and_close(sock) -> None:
+        try:
+            sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        try:
+            sock.close()
+        except OSError:
+            pass
+        # socket.close() defers the OS-handle close while makefile() readers exist.
+        # Detach and close that handle explicitly so a blocked HTTPResponse/file read wakes.
+        detach = getattr(sock, "detach", None)
+        if detach is not None:
+            try:
+                handle = detach()
+                if handle != -1:
+                    socket.close(handle)
+            except OSError:
+                pass
+
+    def abort(self) -> None:
+        """Idempotently hard-close the active socket to interrupt blocking file reads."""
+        with self._abort_lock:
+            if self._aborted:
+                return
+            self._aborted = True
+            sock = self.sock
+        if sock is not None:
+            self._shutdown_and_close(sock)
 
     def connect(self) -> None:
+        with self._abort_lock:
+            if self._aborted:
+                raise TimeoutError("provider connection deadline exceeded")
         raw_socket = socket.create_connection(
             (self._pinned_ip, self.port), timeout=self.timeout
         )
         try:
-            self.sock = self._context.wrap_socket(raw_socket, server_hostname=self.host)
+            wrapped = self._context.wrap_socket(raw_socket, server_hostname=self.host)
         except Exception:
             raw_socket.close()
             raise
+        with self._abort_lock:
+            if not self._aborted:
+                self.sock = wrapped
+                return
+        self._shutdown_and_close(wrapped)
+        raise TimeoutError("provider connection deadline exceeded")
 
 
 class _DeadlineWatchdog:
@@ -511,7 +558,7 @@ def _open_pinned_https(url: str, pinned_ip: str, deadline: float):
     connection = _PinnedHTTPSConnection(
         host, pinned_ip, port=port, timeout=_remaining_download_time(deadline)
     )
-    watchdog = _DeadlineWatchdog(deadline, connection.close)
+    watchdog = _DeadlineWatchdog(deadline, connection.abort)
     target = parsed.path or "/"
     if parsed.query:
         target = f"{target}?{parsed.query}"
