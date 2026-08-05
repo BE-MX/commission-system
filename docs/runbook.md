@@ -907,6 +907,159 @@ APScheduler 已实现 job error/missed 的应用日志和钉钉告警；以下�
 - draft 清理：每轮只软删已过期且未被 job_assets/base 引用的 draft，提交后 best-effort 删除原图与缩略图；清理失败看 `[design-image] expired draft cleanup failed`，修复 ACL 后按记录路径补删。
 - 数据库成功但文件缺失：停止分配新权限，保留审计行，按备份恢复对应相对路径；不要伪造 succeeded 输出。
 
+#### 崩溃窗口 orphan 文件审计、隔离与删除
+
+适用场景：worker 已完成原图/缩略图落盘，却在 DB finalize 前进程崩溃。`ark_design_image_assets` **没有** `thumbnail_path` 字段；引用集合必须取每条 `deleted_at IS NULL` 的 `storage_path`，再按代码规则把同目录同后缀的 `<stem>_thumb<suffix>` 加入集合。下面工具默认只扫描，且仅处理 mtime 已超过 24 小时的差集；先隔离到私有根内的具名批次，人工核验后才逐文件删除。它不跟随 symlink/junction/reparse point，也不调用递归删除。
+
+在 `backend` 目录执行（输出必须用 `Tee-Object` 留作审计）：
+
+```powershell
+$env:DESIGN_IMAGE_ORPHAN_MIN_AGE_HOURS = "24"
+@'
+import hashlib, json, os, stat, sys
+from datetime import datetime, timedelta, timezone
+from pathlib import Path, PurePosixPath
+
+from app.core.database import SessionLocal
+from app.design_image import file_service
+from app.design_image.models import DesignImageAsset
+
+ACTION = sys.argv[1] if len(sys.argv) > 1 else "scan"
+MIN_AGE_HOURS = int(os.environ.get("DESIGN_IMAGE_ORPHAN_MIN_AGE_HOURS", "24"))
+QUARANTINE_NAME = ".orphan-quarantine"
+REPARSE = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+
+def reject_link(path: Path) -> None:
+    info = path.lstat()
+    if path.is_symlink() or (getattr(info, "st_file_attributes", 0) & REPARSE):
+        raise RuntimeError(f"refuse symlink/reparse point: {path}")
+
+def walk_files(base: Path, *, skip_quarantine: bool = False):
+    reject_link(base)
+    stack = [base]
+    while stack:
+        current = stack.pop()
+        reject_link(current)
+        with os.scandir(current) as entries:
+            for entry in entries:
+                path = Path(entry.path)
+                reject_link(path)
+                if entry.is_dir(follow_symlinks=False):
+                    if skip_quarantine and path.parent == base and path.name == QUARANTINE_NAME:
+                        continue
+                    stack.append(path)
+                elif entry.is_file(follow_symlinks=False):
+                    yield path
+                else:
+                    raise RuntimeError(f"refuse special file: {path}")
+
+def referenced_paths() -> set[str]:
+    with SessionLocal() as db:
+        originals = db.query(DesignImageAsset.storage_path).filter(
+            DesignImageAsset.deleted_at.is_(None)
+        ).all()
+    result = set()
+    for (raw,) in originals:
+        rel = PurePosixPath(raw)
+        if rel.is_absolute() or ".." in rel.parts:
+            raise RuntimeError(f"invalid DB storage_path: {raw}")
+        result.add(rel.as_posix())
+        result.add(str(rel.with_name(f"{rel.stem}_thumb{rel.suffix}")))
+    return result
+
+def digest(path: Path) -> str:
+    value = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            value.update(chunk)
+    return value.hexdigest()
+
+root = file_service.validate_storage_boundary()
+cutoff = datetime.now(timezone.utc).timestamp() - timedelta(hours=MIN_AGE_HOURS).total_seconds()
+
+if ACTION in {"scan", "quarantine"}:
+    refs = referenced_paths()
+    candidates = []
+    for path in walk_files(root, skip_quarantine=True):
+        rel = path.relative_to(root).as_posix()
+        info = path.stat(follow_symlinks=False)
+        if rel not in refs and info.st_mtime <= cutoff:
+            candidates.append((rel, info.st_size, info.st_mtime))
+
+    if ACTION == "quarantine":
+        if os.environ.get("DESIGN_IMAGE_ORPHAN_APPLY") != "QUARANTINE":
+            raise RuntimeError("set DESIGN_IMAGE_ORPHAN_APPLY=QUARANTINE to move files")
+        # Refresh immediately before mutation; the age gate protects active writes.
+        refs = referenced_paths()
+        batch = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        moved = []
+        for rel, size, mtime in candidates:
+            if rel in refs:
+                continue
+            source = file_service.validate_storage_boundary(rel)
+            if not source.is_file() or source.stat(follow_symlinks=False).st_mtime > cutoff:
+                continue
+            target_rel = (PurePosixPath(QUARANTINE_NAME) / batch / rel).as_posix()
+            target = file_service.validate_storage_boundary(target_rel)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            file_service.validate_storage_boundary(target_rel)
+            sha256 = digest(source)
+            os.replace(source, target)
+            moved.append({"source": rel, "quarantine": target_rel, "size": size,
+                          "mtime_utc": datetime.fromtimestamp(mtime, timezone.utc).isoformat(),
+                          "sha256": sha256})
+        print(json.dumps({"action": ACTION, "batch": batch, "moved": moved}, ensure_ascii=False, indent=2))
+    else:
+        print(json.dumps({"action": ACTION, "min_age_hours": MIN_AGE_HOURS,
+                          "referenced_count": len(refs),
+                          "candidates": [{"path": r, "size": s,
+                                          "mtime_utc": datetime.fromtimestamp(m, timezone.utc).isoformat()}
+                                         for r, s, m in candidates]},
+                         ensure_ascii=False, indent=2))
+
+elif ACTION == "purge":
+    batch = os.environ.get("DESIGN_IMAGE_ORPHAN_BATCH", "")
+    if not batch or "/" in batch or "\\" in batch or batch in {".", ".."}:
+        raise RuntimeError("set DESIGN_IMAGE_ORPHAN_BATCH to one exact quarantine batch")
+    if os.environ.get("DESIGN_IMAGE_ORPHAN_APPLY") != "PURGE":
+        raise RuntimeError("set DESIGN_IMAGE_ORPHAN_APPLY=PURGE to delete quarantined files")
+    batch_rel = (PurePosixPath(QUARANTINE_NAME) / batch).as_posix()
+    batch_root = file_service.validate_storage_boundary(batch_rel)
+    refs = referenced_paths()
+    deleted = []
+    parent_dirs = set()
+    prepared = []
+    for path in list(walk_files(batch_root)):
+        original_rel = path.relative_to(batch_root).as_posix()
+        if original_rel in refs:
+            raise RuntimeError(f"DB now references quarantined path: {original_rel}")
+        record = {"path": original_rel, "size": path.stat(follow_symlinks=False).st_size,
+                  "sha256": digest(path)}
+        prepared.append((path, record))
+    for path, record in prepared:
+        path.unlink()
+        deleted.append(record)
+        parent_dirs.update(parent for parent in path.parents if parent != batch_root and batch_root in parent.parents)
+    # Remove only empty directories inside this named batch; never recurse-delete root.
+    for directory in sorted(parent_dirs, key=lambda item: len(item.parts), reverse=True):
+        reject_link(directory)
+        directory.rmdir()
+    batch_root.rmdir()
+    print(json.dumps({"action": ACTION, "batch": batch, "deleted": deleted}, ensure_ascii=False, indent=2))
+else:
+    raise RuntimeError("action must be scan, quarantine, or purge")
+'@ | python - scan | Tee-Object ..\design-image-orphan-scan.json
+```
+
+执行顺序：
+
+1. 先审阅 `design-image-orphan-scan.json`，逐项确认 DB 中没有相对路径、文件年龄超过门槛且不属于进行中的人工恢复。
+2. 隔离：设置 `$env:DESIGN_IMAGE_ORPHAN_APPLY="QUARANTINE"`，将最后一行的 `scan` 改成 `quarantine`，输出到新的 audit JSON。记录返回的精确 `batch`、路径、大小和 SHA-256。
+3. 至少观察一个完整 stale/备份周期；再次查询资产、核对页面与 worker 日志，并确认隔离批次里的文件数、大小、SHA-256 与 audit JSON 一致。需要恢复时按 audit 的 `source` 用 `Move-Item -LiteralPath` 精确移回，不能整目录覆盖。
+4. 精确删除：设置 `$env:DESIGN_IMAGE_ORPHAN_BATCH="<上一步精确 batch>"` 与 `$env:DESIGN_IMAGE_ORPHAN_APPLY="PURGE"`，将最后一行改成 `python - purge | Tee-Object ..\design-image-orphan-purge.json`。purge 只逐文件 `unlink` 并移除已空的具名批次目录；任何 symlink/reparse/special file 或重新出现的 DB 引用都会中止。
+
+不得把 24 小时门槛缩短到 Provider/租约/stale 可能仍在运行的窗口，不得扫描或删除 `DESIGN_IMAGE_STORAGE_ROOT` 之外的路径，不得使用 `Remove-Item -Recurse`、通配符或对存储根做递归删除。
+
 ### 回滚
 
 最快止损是撤回试点角色的 `design_image:write` 或禁用 `design_image_generation` Preset，前端入口随 read 权限隐藏。queued job 可经审计后标 failed；running 先停止新 claim、等待/使租约失效，迟到结果由 lease token 隔离。迁移不自动 downgrade，五张表与 `usage_detail` 保留；文件清理与数据库回滚分开，绝不递归删根目录。恢复前重新核对目标拓扑、ACL、Preset 和一条完整对账链。

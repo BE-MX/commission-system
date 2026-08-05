@@ -347,7 +347,7 @@ ACCIO WORK 询盘推送
 ## 参考资料
 
 - **项目根 CLAUDE.md**：AI 协作宪法（2026-07-03 瘦身为 ~110 行，只写改变行为的规则；清单类内容拆到 `docs/`）
-- **alembic/versions/**：数据库迁移历史（head `078_tag_taxonomy_v2`）
+- **alembic/versions/**：数据库迁移历史；`078_tag_taxonomy_v2` 是 2026-07-22 的历史 head，当前唯一 head 为 `089_design_image_studio`
 - **backend/sql/**：DDL 脚本归档
 
 ## 设计部 AI 生图工作台（089，2026-08-05）

@@ -485,7 +485,7 @@
 | GET | `/config` | read | 尺寸、质量、附件/上传限制、草稿 TTL、当日额度；不暴露 Provider 或密钥 |
 | POST | `/sessions` | write | 创建会话，body `{title?}`，默认“新对话”，标题 1～200 字 |
 | GET | `/sessions` | read | `limit=20`（1～100）与不透明 `cursor` 的 owner 会话分页 |
-| GET | `/sessions/{session_id}` | read | 会话、消息、资产与该会话 active job |
+| GET | `/sessions/{session_id}` | read | 会话、消息、未删除/未过期资产与该会话全部历史 jobs（按创建时间升序，不只 active） |
 | POST | `/sessions/{session_id}/assets` | write | multipart 字段 `file`；JPEG/PNG/WebP，实际格式必须匹配 MIME |
 | DELETE | `/assets/{asset_id}` | write | 仅未被任务引用的 draft 可删 |
 | POST | `/sessions/{session_id}/turns` | write | 202；创建消息与 queued job；body 的 `session_id` 若存在必须与路径一致 |
