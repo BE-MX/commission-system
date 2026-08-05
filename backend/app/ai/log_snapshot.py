@@ -14,7 +14,9 @@ _DATA_IMAGE_RE = re.compile(
     r"data:image/[A-Za-z0-9.+-]+;base64,[A-Za-z0-9_+/=-]+",
     re.IGNORECASE,
 )
-_HTTP_URL_RE = re.compile(r"https?://[^\s<>{}\[\]()\"']+", re.IGNORECASE)
+_HTTP_SCHEME_RE = re.compile(r"https?://", re.IGNORECASE)
+_URL_STOP_CHARS = frozenset("<>{}\"'`")
+_URL_TRAILING_PUNCTUATION = frozenset(".,;!?，。；！？")
 
 
 def _is_long_base64_like(value: str) -> bool:
@@ -51,7 +53,40 @@ def _redact_string(value: str) -> str:
         return f"[omitted data image, {len(match.group(0))} chars]"
 
     value = _DATA_IMAGE_RE.sub(omit_data_image, value)
-    return _HTTP_URL_RE.sub(lambda match: _safe_url(match.group(0)), value)
+    return _sanitize_embedded_urls(value)
+
+
+def _split_url_boundary(candidate: str) -> tuple[str, str]:
+    end = len(candidate)
+    while end and candidate[end - 1] in _URL_TRAILING_PUNCTUATION:
+        end -= 1
+    excess_closers = {
+        ")": candidate.count(")", 0, end) - candidate.count("(", 0, end),
+        "]": candidate.count("]", 0, end) - candidate.count("[", 0, end),
+    }
+    while end and excess_closers.get(candidate[end - 1], 0) > 0:
+        excess_closers[candidate[end - 1]] -= 1
+        end -= 1
+    return candidate[:end], candidate[end:]
+
+
+def _sanitize_embedded_urls(value: str) -> str:
+    parts: list[str] = []
+    cursor = 0
+    for match in _HTTP_SCHEME_RE.finditer(value):
+        start = match.start()
+        if start < cursor:
+            continue
+        end = match.end()
+        while end < len(value) and not value[end].isspace() and value[end] not in _URL_STOP_CHARS:
+            end += 1
+        candidate, suffix = _split_url_boundary(value[start:end])
+        parts.append(value[cursor:start])
+        parts.append(_safe_url(candidate))
+        parts.append(suffix)
+        cursor = end
+    parts.append(value[cursor:])
+    return "".join(parts)
 
 
 def _redact_snapshot_value(value):

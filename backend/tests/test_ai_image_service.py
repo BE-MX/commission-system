@@ -199,6 +199,21 @@ def test_response_snapshot_normalizes_sensitive_key_spellings():
     assert snapshot.count("[redacted]") == 5
 
 
+def test_response_snapshot_sanitizes_complex_embedded_url_boundaries():
+    snapshot = image_service.serialize_response_snapshot({
+        "text": (
+            "ipv6 https://user:pass@[2001:db8::1]:8443/a(b).png?sig=secret#preview, next; "
+            "markdown [download](https://cdn.test/x(a).png?token=leaked#frag). done; "
+            "sentence https://cdn.test/plain.png?key=secret; after"
+        ),
+    })
+    for secret in ("user:pass", "sig=secret", "token=leaked", "key=secret", "#preview", "#frag"):
+        assert secret not in snapshot
+    assert "https://[2001:db8::1]:8443/a(b).png, next" in snapshot
+    assert "[download](https://cdn.test/x(a).png). done" in snapshot
+    assert "https://cdn.test/plain.png; after" in snapshot
+
+
 def test_business_modules_import_image_calls_from_service_facade():
     app_root = Path(__file__).parents[1] / "app"
     violations = []
