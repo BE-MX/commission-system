@@ -98,7 +98,8 @@ def _with_log_id(exc: Exception, log_id: int) -> Exception:
 
 
 def _reject_oversized_response(response) -> None:
-    raw_length = response.headers.get("content-length") or response.headers.get("Content-Length")
+    headers = getattr(response, "headers", {}) or {}
+    raw_length = headers.get("content-length") or headers.get("Content-Length")
     if raw_length is None:
         return
     try:
@@ -108,6 +109,38 @@ def _reject_oversized_response(response) -> None:
     if too_large:
         response.close()
         raise ValueError("provider image response is too large")
+
+
+def _buffer_streamed_response(response: httpx.Response) -> httpx.Response:
+    if not hasattr(response, "iter_bytes"):
+        _reject_oversized_response(response)
+        return response
+    try:
+        _reject_oversized_response(response)
+        chunks: list[bytes] = []
+        total = 0
+        for chunk in response.iter_bytes():
+            total += len(chunk)
+            if total > _MAX_IMAGE_RESPONSE_BYTES:
+                raise ValueError("provider image response is too large")
+            chunks.append(chunk)
+        return httpx.Response(
+            response.status_code,
+            headers=response.headers,
+            content=b"".join(chunks),
+            request=response.request,
+            extensions=dict(response.extensions),
+        )
+    finally:
+        response.close()
+
+
+def _build_request(client, method: str, url: str, **kwargs):
+    return client.build_request(method, url, **kwargs)
+
+
+def _send_streamed(client, request):
+    return client.send(request, stream=True)
 
 
 def _request_id(response) -> str | None:
@@ -189,7 +222,10 @@ def _post_image_edits_once(
 ) -> ImageTransportResult:
     """POST 到 /images/edits（multipart）。"""
     return _send_with_retry(
-        lambda client: client.post(url, headers=headers, data=data, files=files),
+        lambda client: _build_request(
+            client,
+            "POST", url, headers=headers, data=data, files=files
+        ),
         timeout_sec, caller_module, "image edit",
     )
 
@@ -202,21 +238,20 @@ def _post_chat_image(
     没有 edits 那套摘参兜底：chat 入参白名单本就极窄（CHAT_IMAGE_PARAMETER_KEYS），
     不存在 size/quality 这类会被上游临时拒收的可选增强参数。"""
     return _send_with_retry(
-        lambda client: client.post(url, headers=headers, json=payload),
+        lambda client: _build_request(client, "POST", url, headers=headers, json=payload),
         timeout_sec, caller_module, "chat image",
     )
 
 
 def _send_with_retry(
-    do_send, timeout_sec: int, caller_module: str, label: str,
+    build_request, timeout_sec: int, caller_module: str, label: str,
 ) -> ImageTransportResult:
     """两条生图链路共用的发送+重试：对 502/503 与连接瞬断自动重试；504/ReadTimeout 不重试直接抛。
 
-    do_send(client) -> httpx.Response —— 由调用方决定 body 是 multipart 还是 JSON。"""
+    build_request(client) -> httpx.Request；每次重试都会重建可发送请求。"""
     timeout = httpx.Timeout(timeout_sec, connect=_IMAGE_CONNECT_TIMEOUT_SEC, write=30.0)
     client_kwargs: dict = {
         "timeout": timeout,
-        "event_hooks": {"response": [_reject_oversized_response]},
     }
     # 生图专用代理（AI_IMAGE_PROXY，默认空=不传参，维持 httpx 既有行为）。
     # 配置时显式传参、只作用于生图两条链路——不用进程级 HTTP(S)_PROXY 正是为了
@@ -228,7 +263,8 @@ def _send_with_retry(
     for attempt in range(1, _IMAGE_MAX_ATTEMPTS + 1):
         try:
             with httpx.Client(**client_kwargs) as client:
-                response = do_send(client)
+                request = build_request(client)
+                response = _buffer_streamed_response(_send_streamed(client, request))
             response.raise_for_status()
             return ImageTransportResult(response.json(), attempt, _request_id(response))
         except httpx.ReadTimeout as exc:
@@ -285,6 +321,28 @@ def _get_enabled_direct_preset(db: Session, preset_name: str) -> tuple[AiPreset,
     if (getattr(provider, "api_type", "openai") or "openai") != "openai":
         raise ValueError("图片编辑测试只支持 OpenAI-compatible Provider")
     return preset, provider
+
+
+def _version_timestamp(value) -> str | None:
+    return value.isoformat(timespec="microseconds") if value is not None else None
+
+
+def _assert_config_version(preset, provider, expected: dict | None) -> None:
+    if expected is None:
+        return
+    current = {
+        "provider_id": provider.id,
+        "provider_updated_at": _version_timestamp(provider.updated_at),
+        "preset_updated_at": _version_timestamp(preset.updated_at),
+    }
+    if current != expected:
+        raise ValueError("design image provider configuration changed after queueing")
+
+
+def _warn_log_commit_failure(log_id: int, exc: Exception) -> None:
+    message = f"AI image call log {log_id} error-state commit failed: {exc}"
+    logger.warning(message)
+    print(f"[ai-image] {message}", flush=True)
 
 
 def _image_prompt_snapshot(prompt: str, images: list[ImageInput]) -> str:
@@ -435,9 +493,11 @@ def generate_image(
     caller_user_id: Optional[int] = None,
     size: Optional[str] = None,
     quality: Optional[str] = None,
+    expected_config_version: Optional[dict] = None,
 ) -> ImageCallResult:
     """Call an OpenAI-compatible image generation endpoint."""
     preset, provider = _get_enabled_direct_preset(db, preset_name)
+    _assert_config_version(preset, provider, expected_config_version)
     log = AiCallLog(
         caller_module=caller_module,
         caller_user_id=caller_user_id,
@@ -459,8 +519,9 @@ def generate_image(
         headers = build_headers(provider, api_key)
         url = build_image_url(provider.api_base, "generations")
         transport = _send_with_retry(
-            lambda client: client.post(
-                url, headers=headers,
+            lambda client: _build_request(
+                client,
+                "POST", url, headers=headers,
                 json=_generation_params(preset, prompt, size, quality),
             ),
             _effective_timeout_sec(provider), caller_module, "image generation",
@@ -501,8 +562,9 @@ def generate_image(
             log.error_message = str(exc)[:500]
             log.duration_ms = int((time.time() - start) * 1000)
             db.commit()
-        except Exception:
+        except Exception as log_exc:
             db.rollback()
+            _warn_log_commit_failure(log.id, log_exc)
         raise
 
 
@@ -515,9 +577,11 @@ def edit_image(
     caller_user_id: Optional[int] = None,
     size: Optional[str] = None,
     quality: Optional[str] = None,
+    expected_config_version: Optional[dict] = None,
 ) -> ImageCallResult:
     """Call an OpenAI-compatible image edit endpoint and return an image URL/data URL."""
     preset, provider = _get_enabled_direct_preset(db, preset_name)
+    _assert_config_version(preset, provider, expected_config_version)
     if not images:
         raise ValueError("图片编辑至少需要 1 张输入图片")
 
@@ -605,6 +669,7 @@ def edit_image(
             log.error_message = str(exc)[:500]
             log.duration_ms = int((time.time() - start) * 1000)
             db.commit()
-        except Exception:
+        except Exception as log_exc:
             db.rollback()
+            _warn_log_commit_failure(log.id, log_exc)
         raise

@@ -10,7 +10,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import sessionmaker
 
-from app.ai.models import AiPreset, AiProvider
+from app.ai.models import AiCallLog, AiPreset, AiProvider
 from app.auth.models import ArkUser
 from app.design_image import worker
 from app.design_image.file_service import StoredImage
@@ -105,6 +105,58 @@ def _result(content):
         "provider_attempt_count": 2,
         "request_id": "provider-request",
     }
+
+
+def test_renew_lease_checks_time_after_lock_wait(monkeypatch):
+    before_lock = datetime(2026, 8, 5, 1, 0, 0)
+    after_lock = before_lock + timedelta(seconds=2)
+    clock = {"now": before_lock}
+    job = SimpleNamespace(lease_expires_at=before_lock + timedelta(seconds=1))
+
+    class _Result:
+        rowcount = 1
+
+        def scalar_one_or_none(self):
+            return job
+
+    class _Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def execute(self, statement):
+            clock["now"] = after_lock
+            return _Result()
+
+        def commit(self):
+            pass
+
+        def rollback(self):
+            pass
+
+    monkeypatch.setattr(worker, "SessionLocal", _Session)
+    monkeypatch.setattr(worker, "_utcnow", lambda: clock["now"])
+
+    assert worker._renew_lease(7, "token", 30) is False
+
+
+def test_estimated_cost_only_requires_configured_usage_classes():
+    pricing = {"output_image_microusd_per_token": 31}
+    usage = {
+        "input_tokens_details": {"text_tokens": 3},
+        "output_tokens_details": {"image_tokens": 7},
+    }
+    assert worker._estimated_cost(pricing, usage) == 217
+
+
+@pytest.mark.parametrize("value", [None, "bad", -1, 10**100])
+def test_estimated_cost_invalid_configured_usage_is_unknown(value):
+    assert worker._estimated_cost(
+        {"output_image_microusd_per_token": 31},
+        {"output_tokens_details": {"image_tokens": value}},
+    ) is None
 
 
 def test_claim_is_oldest_atomic_conditional_and_returns_detached_snapshot(db):
@@ -212,7 +264,7 @@ def test_two_workers_can_call_provider_only_once_for_one_job(
     assert len(calls) == 1
 
 
-def test_two_independent_sessions_race_one_queued_job_once(tmp_path):
+def test_two_independent_sessions_race_one_queued_job_once(tmp_path, monkeypatch):
     # SQLite ignores SKIP LOCKED, so this proves the conditional UPDATE guard under
     # a real two-thread race. MySQL 8 lock behavior remains the Phase 5 gate.
     race_engine = create_engine(
@@ -234,14 +286,25 @@ def test_two_independent_sessions_race_one_queued_job_once(tmp_path):
     lock = Lock()
     claims = []
     provider_calls = []
+    thread_errors = []
+
+    monkeypatch.setattr(
+        worker, "execute_claimed_job",
+        lambda job_id, lease_token: provider_calls.append((job_id, lease_token)),
+    )
+
     def compete(worker_id):
-        with factory() as race_db:
-            barrier.wait()
-            claim = worker.claim_next_job(race_db, worker_id, 120)
-        with lock:
-            claims.append(claim)
-            if claim is not None:
-                provider_calls.append(claim.job_id)
+        try:
+            with factory() as race_db:
+                barrier.wait()
+                claim = worker.claim_next_job(race_db, worker_id, 120)
+            with lock:
+                claims.append(claim)
+                if claim is not None:
+                    worker.execute_claimed_job(claim.job_id, claim.lease_token)
+        except Exception as exc:
+            with lock:
+                thread_errors.append(exc)
 
     threads = [Thread(target=compete, args=(name,)) for name in ("a", "b")]
     for thread in threads:
@@ -249,8 +312,10 @@ def test_two_independent_sessions_race_one_queued_job_once(tmp_path):
     for thread in threads:
         thread.join(timeout=15)
         assert not thread.is_alive()
+    assert thread_errors == []
     assert sum(claim is not None for claim in claims) == 1
-    assert len(provider_calls) == 1
+    winner = next(claim for claim in claims if claim is not None)
+    assert provider_calls == [(winner.job_id, winner.lease_token)]
 
 
 def test_provider_url_uses_explicit_allowlist_and_detects_real_mime(monkeypatch):
@@ -553,7 +618,7 @@ def test_failures_have_stable_actionable_mapping(
 
 
 def test_failure_persists_ai_call_log_id_while_lease_is_valid(
-    engine, db, monkeypatch
+    engine, db, monkeypatch, caplog, capsys
 ):
     _, _, _, job = _seed_job(db)
     claim = worker.claim_next_job(db, "worker-a", 120)
@@ -566,6 +631,32 @@ def test_failure_persists_ai_call_log_id_while_lease_is_valid(
     db.expire_all()
     row = db.get(DesignImageJob, job.id)
     assert row.status == "failed" and row.ai_call_log_id == 77
+    assert "AI call log 77 is missing" in caplog.text
+    assert "AI call log 77 is missing" in capsys.readouterr().out
+
+
+def test_failure_compensates_pending_ai_call_log_in_same_transaction(
+    engine, db, monkeypatch
+):
+    _, _, _, job = _seed_job(db)
+    preset = db.query(AiPreset).filter_by(preset_name="design_image_generation").one()
+    log = AiCallLog(
+        caller_module="design_image", preset_id=preset.id,
+        preset_name=preset.preset_name, provider_type="direct",
+        model=preset.model, prompt_snapshot="draw", status="pending",
+    )
+    db.add(log)
+    db.commit()
+    claim = worker.claim_next_job(db, "worker-a", 120)
+    monkeypatch.setattr(worker, "SessionLocal", sessionmaker(bind=engine, expire_on_commit=False))
+    exc = RuntimeError("provider failed")
+    setattr(exc, "log_id", log.id)
+
+    assert worker._finalize_failure(job.id, claim.lease_token, exc) is True
+    db.expire_all()
+    assert db.get(AiCallLog, log.id).status == "error"
+    assert db.get(AiCallLog, log.id).error_code == "unknown_error"
+    assert db.get(DesignImageJob, job.id).ai_call_log_id == log.id
 
 
 @pytest.mark.parametrize(

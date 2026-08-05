@@ -9,6 +9,54 @@ import pytest
 from app.ai import image_service
 
 
+class _CountingStream(httpx.SyncByteStream):
+    def __init__(self, chunks):
+        self.chunks = chunks
+        self.yielded = 0
+
+    def __iter__(self):
+        for chunk in self.chunks:
+            self.yielded += 1
+            yield chunk
+
+
+def test_response_cap_stops_reading_chunked_body_early(monkeypatch):
+    chunk = b"x" * (image_service._MAX_IMAGE_RESPONSE_BYTES // 2 + 1)
+    stream = _CountingStream([chunk, chunk, chunk])
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(200, stream=stream, request=request)
+    )
+    real_client = httpx.Client
+    monkeypatch.setattr(
+        image_service.httpx,
+        "Client",
+        lambda **kwargs: real_client(transport=transport, timeout=kwargs.get("timeout")),
+    )
+
+    with pytest.raises(ValueError, match="too large"):
+        image_service._post_chat_image("https://example.test/chat", {}, {}, 30, "test")
+    assert stream.yielded == 2
+
+
+def test_response_cap_accepts_legal_chunked_body_without_content_length(monkeypatch):
+    stream = _CountingStream([b'{"ok":', b"true}"])
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(200, stream=stream, request=request)
+    )
+    real_client = httpx.Client
+    monkeypatch.setattr(
+        image_service.httpx,
+        "Client",
+        lambda **kwargs: real_client(transport=transport, timeout=kwargs.get("timeout")),
+    )
+
+    result = image_service._post_chat_image(
+        "https://example.test/chat", {}, {}, 30, "test"
+    )
+    assert result.json == {"ok": True}
+    assert stream.yielded == 2
+
+
 class _FakeClient:
     """一次 with 块=一个 attempt：post 返回预置响应或抛预置异常。"""
 
@@ -25,6 +73,14 @@ class _FakeClient:
         if isinstance(self._item, Exception):
             raise self._item
         return self._item
+
+    def build_request(self, method, url, **kwargs):
+        return method, url, kwargs
+
+    def send(self, request, stream=False):
+        assert stream is True
+        method, url, kwargs = request
+        return self.post(url, **kwargs)
 
 
 class _FakeResp:

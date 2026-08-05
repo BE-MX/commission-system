@@ -24,7 +24,7 @@ import httpx
 from sqlalchemy import and_, exists, or_, select, update
 
 from app.ai import service as ai_service
-from app.ai.models import AiPreset, AiProvider
+from app.ai.models import AiCallLog, AiPreset, AiProvider
 from app.auth.models import ArkUser
 from app.core.config import get_settings
 from app.core.database import SessionLocal
@@ -70,11 +70,33 @@ class _JobSnapshot:
     input_paths: tuple[tuple[str, str], ...]
     download_hosts: frozenset[str]
     pricing_snapshot: dict | None
+    config_version: dict | None
 
 
 def _warn_visible(message: str) -> None:
     logger.warning(message)
     print(f"[design-image] {message}", flush=True)
+
+
+def _lock_running_job(db, job_id: int, lease_token: str):
+    return db.execute(
+        select(DesignImageJob)
+        .where(
+            DesignImageJob.id == job_id,
+            DesignImageJob.status == "running",
+            DesignImageJob.lease_token == lease_token,
+        )
+        .with_for_update()
+    ).scalar_one_or_none()
+
+
+def _live_locked_job(db, job_id: int, lease_token: str):
+    job = _lock_running_job(db, job_id, lease_token)
+    now = _utcnow()
+    if job is None or job.lease_expires_at is None or job.lease_expires_at <= now:
+        db.rollback()
+        return None, now
+    return job, now
 
 
 def _claim_candidate_statement():
@@ -134,20 +156,8 @@ def claim_next_job(
 def _load_snapshot(job_id: int, lease_token: str) -> _JobSnapshot | None:
     """Stage A: current-read immutable inputs, then release the transaction."""
     with SessionLocal() as db:
-        now = _utcnow()
-        job = db.execute(
-            select(DesignImageJob)
-            .where(
-                DesignImageJob.id == job_id,
-                DesignImageJob.status == "running",
-                DesignImageJob.lease_token == lease_token,
-                DesignImageJob.lease_expires_at.is_not(None),
-                DesignImageJob.lease_expires_at > now,
-            )
-            .with_for_update()
-        ).scalar_one_or_none()
+        job, _now = _live_locked_job(db, job_id, lease_token)
         if job is None:
-            db.commit()
             return None
 
         preset_row = db.execute(
@@ -214,6 +224,7 @@ def _load_snapshot(job_id: int, lease_token: str) -> _JobSnapshot | None:
             input_paths=tuple(paths),
             download_hosts=hosts,
             pricing_snapshot=dict(job.pricing_snapshot) if job.pricing_snapshot else None,
+            config_version=dict(job_parameters.get("config_version") or {}) or None,
         )
         db.commit()
         return snapshot
@@ -243,6 +254,8 @@ def _call_provider(snapshot: _JobSnapshot) -> dict:
         "size": snapshot.size,
         "quality": snapshot.quality,
     }
+    if snapshot.config_version is not None:
+        kwargs["expected_config_version"] = snapshot.config_version
     with SessionLocal() as db:
         if snapshot.input_paths:
             return ai_service.edit_image(
@@ -303,21 +316,30 @@ def _estimated_cost(pricing: dict | None, usage: dict) -> int | None:
         return None
     total = 0
     found = False
+    limit = 2**63 - 1
     for direction in ("input", "output"):
         details = usage.get(f"{direction}_tokens_details")
-        if not isinstance(details, dict):
-            continue
         for kind in ("text", "image"):
-            tokens = details.get(f"{kind}_tokens")
             rate = pricing.get(f"{direction}_{kind}_microusd_per_token")
-            if tokens is None:
-                continue
             if rate is None:
-                if tokens:
-                    return None
                 continue
-            total += int(tokens) * int(rate)
             found = True
+            tokens = details.get(f"{kind}_tokens") if isinstance(details, dict) else None
+            try:
+                if isinstance(tokens, bool) or isinstance(rate, bool):
+                    return None
+                tokens_int = int(tokens)
+                rate_int = int(rate)
+                if tokens_int != tokens or rate_int != rate:
+                    return None
+            except (TypeError, ValueError, OverflowError):
+                return None
+            if tokens_int < 0 or rate_int < 0 or tokens_int > limit or rate_int > limit:
+                return None
+            amount = tokens_int * rate_int
+            if amount > limit - total:
+                return None
+            total += amount
     return total if found else None
 
 
@@ -334,20 +356,8 @@ def _finalize_success(
 ) -> bool:
     with SessionLocal() as db:
         try:
-            now = _utcnow()
-            job = db.execute(
-                select(DesignImageJob)
-                .where(
-                    DesignImageJob.id == snapshot.job_id,
-                    DesignImageJob.status == "running",
-                    DesignImageJob.lease_token == lease_token,
-                    DesignImageJob.lease_expires_at.is_not(None),
-                    DesignImageJob.lease_expires_at > now,
-                )
-                .with_for_update()
-            ).scalar_one_or_none()
+            job, now = _live_locked_job(db, snapshot.job_id, lease_token)
             if job is None:
-                db.rollback()
                 return False
             message = DesignImageMessage(
                 session_id=snapshot.session_id,
@@ -377,37 +387,19 @@ def _finalize_success(
             estimated_cost = _estimated_cost(
                 snapshot.pricing_snapshot, dict(result.get("usage_detail") or {})
             )
-            changed = db.execute(
-                update(DesignImageJob)
-                .where(
-                    DesignImageJob.id == snapshot.job_id,
-                    DesignImageJob.status == "running",
-                    DesignImageJob.lease_token == lease_token,
-                    DesignImageJob.lease_expires_at.is_not(None),
-                    DesignImageJob.lease_expires_at > now,
-                )
-                .values(
-                    status="succeeded",
-                    output_asset_id=asset.id,
-                    response_message_id=message.id,
-                    ai_call_log_id=result.get("log_id"),
-                    provider_attempt_count=result.get("provider_attempt_count", 0),
-                    billing_certainty="estimated" if estimated_cost is not None else "unknown",
-                    input_tokens=input_tokens,
-                    output_tokens=output_tokens,
-                    total_tokens=total_tokens,
-                    estimated_cost_microusd=estimated_cost,
-                    finished_at=now,
-                    lease_token=None,
-                    lease_expires_at=None,
-                    claimed_by=None,
-                    error_code=None,
-                    error_message=None,
-                )
-            ).rowcount
-            if changed != 1:
-                db.rollback()
-                return False
+            job.status = "succeeded"
+            job.output_asset_id = asset.id
+            job.response_message_id = message.id
+            job.ai_call_log_id = result.get("log_id")
+            job.provider_attempt_count = result.get("provider_attempt_count", 0)
+            job.billing_certainty = "estimated" if estimated_cost is not None else "unknown"
+            job.input_tokens = input_tokens
+            job.output_tokens = output_tokens
+            job.total_tokens = total_tokens
+            job.estimated_cost_microusd = estimated_cost
+            job.finished_at = now
+            job.lease_token = job.lease_expires_at = job.claimed_by = None
+            job.error_code = job.error_message = None
             db.commit()
             return True
         except Exception:
@@ -445,31 +437,30 @@ def _finalize_failure(job_id: int, lease_token: str, exc: Exception) -> bool:
     attempts = max(0, int(getattr(exc, "provider_attempt_count", 0) or 0))
     with SessionLocal() as db:
         try:
-            now = _utcnow()
-            changed = db.execute(
-                update(DesignImageJob)
-                .where(
-                    DesignImageJob.id == job_id,
-                    DesignImageJob.status == "running",
-                    DesignImageJob.lease_token == lease_token,
-                    DesignImageJob.lease_expires_at.is_not(None),
-                    DesignImageJob.lease_expires_at > now,
-                )
-                .values(
-                    status="failed",
-                    error_code=code,
-                    error_message=message,
-                    provider_attempt_count=attempts,
-                    ai_call_log_id=getattr(exc, "log_id", None),
-                    billing_certainty="unknown",
-                    finished_at=now,
-                    lease_token=None,
-                    lease_expires_at=None,
-                    claimed_by=None,
-                )
-            ).rowcount
+            job, now = _live_locked_job(db, job_id, lease_token)
+            if job is None:
+                return False
+            log_id = getattr(exc, "log_id", None)
+            if log_id is not None:
+                log = db.execute(
+                    select(AiCallLog).where(AiCallLog.id == log_id).with_for_update()
+                ).scalar_one_or_none()
+                if log is None:
+                    _warn_visible(f"job {job_id}: AI call log {log_id} is missing")
+                elif log.status == "pending":
+                    log.status = "error"
+                    log.error_code = code
+                    log.error_message = message
+            job.status = "failed"
+            job.error_code = code
+            job.error_message = message
+            job.provider_attempt_count = attempts
+            job.ai_call_log_id = log_id
+            job.billing_certainty = "unknown"
+            job.finished_at = now
+            job.lease_token = job.lease_expires_at = job.claimed_by = None
             db.commit()
-            return changed == 1
+            return True
         except Exception:
             db.rollback()
             raise
@@ -477,22 +468,14 @@ def _finalize_failure(job_id: int, lease_token: str, exc: Exception) -> bool:
 
 def _renew_lease(job_id: int, lease_token: str, lease_seconds: int) -> bool:
     """Extend a live lease in its own short transaction."""
-    now = _utcnow()
     with SessionLocal() as db:
         try:
-            changed = db.execute(
-                update(DesignImageJob)
-                .where(
-                    DesignImageJob.id == job_id,
-                    DesignImageJob.status == "running",
-                    DesignImageJob.lease_token == lease_token,
-                    DesignImageJob.lease_expires_at.is_not(None),
-                    DesignImageJob.lease_expires_at > now,
-                )
-                .values(lease_expires_at=now + timedelta(seconds=lease_seconds))
-            ).rowcount
+            job, now = _live_locked_job(db, job_id, lease_token)
+            if job is None:
+                return False
+            job.lease_expires_at = now + timedelta(seconds=lease_seconds)
             db.commit()
-            return changed == 1
+            return True
         except Exception:
             db.rollback()
             raise

@@ -93,6 +93,13 @@ def test_generate_image_posts_whitelisted_json_and_records_metadata(db, monkeypa
         def __exit__(self, exc_type, exc, tb):
             return None
 
+        def build_request(self, method, url, **kwargs):
+            return url, kwargs
+
+        def send(self, request, stream=False):
+            assert stream is True
+            return self.post(request[0], **request[1])
+
         def post(self, url, headers, json):
             captured.update(url=url, headers=headers, json=json)
             return FakeResponse()
@@ -250,6 +257,83 @@ def test_generate_image_parse_failure_keeps_transport_attempt_count(db, monkeypa
     assert db.get(AiCallLog, caught.value.log_id).status == "error"
 
 
+def test_generate_image_rejects_changed_expected_config_before_http(db, monkeypatch):
+    preset = _create_image_preset(db, preset_name="design_image_generation")
+    provider = db.get(AiProvider, preset.provider_id)
+    expected = {
+        "provider_id": provider.id,
+        "provider_updated_at": provider.updated_at.isoformat(timespec="microseconds"),
+        "preset_updated_at": preset.updated_at.isoformat(timespec="microseconds"),
+    }
+    expected["provider_updated_at"] = "2000-01-01T00:00:00.000000"
+    sent = []
+    monkeypatch.setattr(image_service, "_send_with_retry", lambda *args: sent.append(1))
+
+    with pytest.raises(ValueError, match="configuration changed"):
+        image_service.generate_image(
+            db=db, preset_name=preset.preset_name, prompt="draw",
+            caller_module="design_image", expected_config_version=expected,
+        )
+    assert sent == []
+    assert db.query(AiCallLog).count() == 0
+
+
+@pytest.mark.parametrize("change", ["provider", "preset"])
+def test_expected_config_version_detects_same_id_configuration_update(
+    db, monkeypatch, change
+):
+    preset = _create_image_preset(db, preset_name="design_image_generation")
+    db.commit()
+    provider = db.get(AiProvider, preset.provider_id)
+    expected = {
+        "provider_id": provider.id,
+        "provider_updated_at": provider.updated_at.isoformat(timespec="microseconds"),
+        "preset_updated_at": preset.updated_at.isoformat(timespec="microseconds"),
+    }
+    if change == "provider":
+        provider.timeout_sec += 1
+    else:
+        preset.parameters = {**(preset.parameters or {}), "output_format": "webp"}
+    db.commit()
+    sent = []
+    monkeypatch.setattr(image_service, "_send_with_retry", lambda *args: sent.append(1))
+
+    with pytest.raises(ValueError, match="configuration changed"):
+        image_service.generate_image(
+            db=db, preset_name=preset.preset_name, prompt="draw",
+            caller_module="design_image", expected_config_version=expected,
+        )
+    assert sent == []
+
+
+def test_error_log_second_commit_failure_warns_logger_and_console(
+    db, monkeypatch, caplog, capsys
+):
+    _create_image_preset(db, preset_name="design_image_generation")
+    real_commit = db.commit
+    commits = {"count": 0}
+
+    def commit():
+        commits["count"] += 1
+        if commits["count"] == 2:
+            raise RuntimeError("audit database unavailable")
+        return real_commit()
+
+    monkeypatch.setattr(db, "commit", commit)
+    monkeypatch.setattr(
+        image_service, "_send_with_retry",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("provider failed")),
+    )
+    caplog.set_level("WARNING")
+    with pytest.raises(RuntimeError, match="provider failed"):
+        image_service.generate_image(
+            db=db, preset_name="design_image_generation", prompt="draw",
+            caller_module="design_image",
+        )
+    assert "error-state commit failed" in caplog.text
+    assert "error-state commit failed" in capsys.readouterr().out
+
+
 def test_edit_image_parse_failure_keeps_transport_attempt_count(db, monkeypatch):
     _create_image_preset(db)
     monkeypatch.setattr(image_service, "decrypt_key", lambda value: "sk-test")
@@ -286,20 +370,22 @@ def test_image_transport_rejects_oversized_content_length_before_json(monkeypatc
 
     class FakeClient:
         def __init__(self, **kwargs):
-            self.hook = kwargs["event_hooks"]["response"][0]
+            pass
         def __enter__(self):
             return self
         def __exit__(self, *args):
             return None
-        def respond(self):
-            response = FakeResponse()
-            self.hook(response)
-            return response
+        def build_request(self, *args, **kwargs):
+            return object()
+        def send(self, request, stream=False):
+            assert stream is True
+            return FakeResponse()
 
     monkeypatch.setattr(image_service.httpx, "Client", FakeClient)
     with pytest.raises(ValueError, match="too large"):
         image_service._send_with_retry(
-            lambda client: client.respond(), 300, "design_image", "generation"
+            lambda client: client.build_request("POST", "https://example.test"),
+            300, "design_image", "generation"
         )
     assert json_calls == []
 
@@ -328,6 +414,13 @@ def test_edit_image_posts_openai_compatible_image_edit_request(db, monkeypatch):
 
         def __exit__(self, exc_type, exc, tb):
             return None
+
+        def build_request(self, method, url, **kwargs):
+            return url, kwargs
+
+        def send(self, request, stream=False):
+            assert stream is True
+            return self.post(request[0], **request[1])
 
         def post(self, url, headers, data, files):
             captured.update(
@@ -401,6 +494,13 @@ def test_edit_image_keeps_provider_timeout_when_it_exceeds_image_minimum(db, mon
         def __exit__(self, exc_type, exc, tb):
             return None
 
+        def build_request(self, method, url, **kwargs):
+            return url, kwargs
+
+        def send(self, request, stream=False):
+            assert stream is True
+            return self.post(request[0], **request[1])
+
         def post(self, url, headers, data, files):
             return FakeResponse()
 
@@ -430,6 +530,13 @@ def test_edit_image_timeout_error_mentions_effective_timeout(db, monkeypatch):
 
         def __exit__(self, exc_type, exc, tb):
             return None
+
+        def build_request(self, method, url, **kwargs):
+            return url, kwargs
+
+        def send(self, request, stream=False):
+            assert stream is True
+            return self.post(request[0], **request[1])
 
         def post(self, url, headers, data, files):
             raise image_service.httpx.ReadTimeout("timed out")
@@ -475,6 +582,13 @@ def test_edit_image_omits_large_base64_from_response_snapshot(db, monkeypatch):
 
         def __exit__(self, exc_type, exc, tb):
             return None
+
+        def build_request(self, method, url, **kwargs):
+            return url, kwargs
+
+        def send(self, request, stream=False):
+            assert stream is True
+            return self.post(request[0], **request[1])
 
         def post(self, url, headers, data, files):
             return FakeResponse()

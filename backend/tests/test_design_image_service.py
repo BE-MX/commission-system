@@ -283,6 +283,17 @@ def test_create_turn_attaches_ordered_references_and_uses_explicit_base(configur
         "provider_id": db.query(AiPreset).filter_by(
             preset_name="design_image_generation"
         ).one().provider_id,
+        "config_version": {
+            "provider_id": db.query(AiPreset).filter_by(
+                preset_name="design_image_generation"
+            ).one().provider_id,
+            "provider_updated_at": db.query(AiProvider).one().updated_at.isoformat(
+                timespec="microseconds"
+            ),
+            "preset_updated_at": db.query(AiPreset).filter_by(
+                preset_name="design_image_generation"
+            ).one().updated_at.isoformat(timespec="microseconds"),
+        },
     }
 
 
