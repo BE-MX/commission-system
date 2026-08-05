@@ -1095,6 +1095,7 @@ def test_day_window_treats_naive_datetimes_as_utc_at_shanghai_midnight():
 def test_config_reports_verified_choices_limit_and_remaining(configured, db, monkeypatch):
     owner, _ = configured
     monkeypatch.setattr(service.get_settings(), "DESIGN_IMAGE_DAILY_LIMIT", 3)
+    monkeypatch.setattr(service.get_settings(), "DESIGN_IMAGE_MAX_UPLOAD_MB", 2)
     session = _session(db, owner.id)
     message = _message(db, session.id)
     _job(db, owner.id, session.id, message.id, key="used", status="failed")
@@ -1110,7 +1111,7 @@ def test_config_reports_verified_choices_limit_and_remaining(configured, db, mon
         "default_size": "1024x1024",
         "default_quality": "medium",
         "max_reference_assets": 4,
-        "max_upload_bytes": 20 * 1024 * 1024,
+        "max_upload_bytes": 2 * 1024 * 1024,
         "draft_ttl_hours": 24,
         "daily_limit": 3,
         "used_today": 1,

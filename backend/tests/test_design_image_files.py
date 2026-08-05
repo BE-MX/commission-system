@@ -97,6 +97,20 @@ def test_normalize_upload_rejects_files_over_twenty_mebibytes():
         normalize_upload(b"\x89PNG\r\n\x1a\n" + b"x" * MAX_BYTES, "image/png")
 
 
+def test_effective_upload_limit_is_shared_with_normalization(monkeypatch):
+    from app.design_image import file_service
+
+    monkeypatch.setattr(
+        file_service.get_settings(), "DESIGN_IMAGE_MAX_UPLOAD_MB", 2
+    )
+    assert file_service.effective_max_upload_bytes() == 2 * 1024 * 1024
+    with pytest.raises(file_service.ImageValidationError, match="2MiB"):
+        file_service.normalize_upload(
+            b"\x89PNG\r\n\x1a\n" + b"x" * (2 * 1024 * 1024),
+            "image/png",
+        )
+
+
 def test_normalize_upload_rejects_pixel_bomb_from_header_before_decode(monkeypatch):
     from app.design_image import file_service
 

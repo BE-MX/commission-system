@@ -12,7 +12,8 @@ import logging
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
+from typing import BinaryIO
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import and_, or_, select
@@ -104,7 +105,7 @@ class ActiveJobResult:
 
 @dataclass(frozen=True)
 class AssetContent:
-    path: Path
+    stream: BinaryIO
     mime_type: str
     suffix: str
 
@@ -337,22 +338,20 @@ def get_asset(db: Session, owner_user_id: int, asset_id: int) -> DesignImageAsse
     return row
 
 
-def resolve_asset_content(
+def open_asset_content(
     db: Session,
     owner_user_id: int,
     asset_id: int,
     *,
     thumbnail: bool = False,
 ) -> AssetContent:
-    """Resolve an owner-scoped private asset without exposing its storage path."""
+    """Authorize, validate, then atomically open a private asset for streaming."""
     asset = get_asset(db, owner_user_id, asset_id)
     relative_path = _thumbnail_path(asset.storage_path) if thumbnail else asset.storage_path
     try:
         path = file_service.resolve_private_path(relative_path)
     except file_service.ImageStorageError as exc:
         raise DesignImageConsistencyError("图片存储暂不可用，请稍后重试") from exc
-    if not path.is_file():
-        raise _not_found()
     suffix_by_mime = {
         "image/jpeg": ".jpg",
         "image/png": ".png",
@@ -361,7 +360,13 @@ def resolve_asset_content(
     suffix = suffix_by_mime.get(asset.mime_type)
     if suffix is None:
         raise DesignImageConsistencyError("图片格式记录异常，请联系管理员")
-    return AssetContent(path=path, mime_type=asset.mime_type, suffix=suffix)
+    try:
+        stream = path.open("rb")
+    except (FileNotFoundError, IsADirectoryError):
+        raise _not_found() from None
+    except OSError as exc:
+        raise DesignImageConsistencyError("图片存储暂不可用，请稍后重试") from exc
+    return AssetContent(stream=stream, mime_type=asset.mime_type, suffix=suffix)
 
 
 def get_job(db: Session, owner_user_id: int, job_id: int) -> DesignImageJob:
@@ -849,7 +854,7 @@ def get_config(
         "default_size": "1024x1024",
         "default_quality": "medium",
         "max_reference_assets": MAX_REFERENCE_ASSETS,
-        "max_upload_bytes": file_service.MAX_IMAGE_BYTES,
+        "max_upload_bytes": file_service.effective_max_upload_bytes(),
         "draft_ttl_hours": settings.DESIGN_IMAGE_DRAFT_TTL_HOURS,
         "daily_limit": limit,
         "used_today": used,

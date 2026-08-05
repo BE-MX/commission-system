@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Callable, TypeVar
+from typing import Callable, Literal, TypeVar
 
+from starlette.background import BackgroundTask
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_permission
@@ -17,7 +18,6 @@ from app.design_image.schemas import RetryJobRequest, SessionCreate, TurnCreate
 
 
 router = APIRouter()
-MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 UPLOAD_CHUNK_BYTES = 1024 * 1024
 T = TypeVar("T")
 
@@ -130,21 +130,30 @@ def _turn_result(result: service.TurnResult) -> dict:
 async def _read_bounded(upload: UploadFile) -> bytes:
     chunks: list[bytes] = []
     total = 0
+    byte_limit = file_service.effective_max_upload_bytes()
     try:
         while True:
-            chunk = await upload.read(min(UPLOAD_CHUNK_BYTES, MAX_UPLOAD_BYTES - total + 1))
+            chunk = await upload.read(min(UPLOAD_CHUNK_BYTES, byte_limit - total + 1))
             if not chunk:
                 break
             total += len(chunk)
-            if total > MAX_UPLOAD_BYTES:
+            if total > byte_limit:
                 raise HTTPException(
                     status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                    "图片不能超过 20MiB",
+                    f"图片不能超过 {byte_limit // file_service.MEBIBYTE}MiB",
                 )
             chunks.append(chunk)
         return b"".join(chunks)
     finally:
         await upload.close()
+
+
+def _stream_chunks(stream):
+    try:
+        while chunk := stream.read(UPLOAD_CHUNK_BYTES):
+            yield chunk
+    finally:
+        stream.close()
 
 
 @router.get("/config")
@@ -280,18 +289,22 @@ def get_asset_content(
     payload: dict = Depends(require_permission("design_image:read")),
 ):
     content = _call(
-        service.resolve_asset_content,
+        service.open_asset_content,
         db,
         _user_id(payload),
         asset_id,
         thumbnail=thumbnail,
     )
-    return FileResponse(
-        content.path,
+    disposition = "attachment" if download else "inline"
+    filename = f"design-image-{asset_id}{content.suffix}"
+    return StreamingResponse(
+        _stream_chunks(content.stream),
         media_type=content.mime_type,
-        filename=f"design-image-{asset_id}{content.suffix}",
-        content_disposition_type="attachment" if download else "inline",
-        headers={"Cache-Control": "private, no-store"},
+        headers={
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": f'{disposition}; filename="{filename}"',
+        },
+        background=BackgroundTask(content.stream.close),
     )
 
 
@@ -300,7 +313,9 @@ def get_usage(
     owner_user_id: int | None = Query(None, gt=0),
     start_at: datetime | None = Query(None),
     end_at: datetime | None = Query(None),
-    job_status: str | None = Query(None, alias="status"),
+    job_status: Literal["queued", "running", "succeeded", "failed"] | None = Query(
+        None, alias="status"
+    ),
     db: Session = Depends(get_db),
     _payload: dict = Depends(require_permission("design_image:admin")),
 ):

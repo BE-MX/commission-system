@@ -28,6 +28,7 @@ from app.core.config import get_settings
 
 
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
+MEBIBYTE = 1024 * 1024
 MAX_IMAGE_PIXELS = 60_000_000
 MAX_IMAGE_EDGE = 2048
 THUMBNAIL_EDGE = 320
@@ -119,6 +120,12 @@ class StoredImage:
     sha256: str
 
 
+def effective_max_upload_bytes() -> int:
+    """Return the upload ceiling shared by API, config, and normalization."""
+    configured_limit = get_settings().DESIGN_IMAGE_MAX_UPLOAD_MB * MEBIBYTE
+    return min(MAX_IMAGE_BYTES, configured_limit)
+
+
 def _magic_format(content: bytes) -> str | None:
     if content.startswith(b"\xff\xd8\xff"):
         return "JPEG"
@@ -169,10 +176,9 @@ def normalize_upload(content: bytes, declared_mime: str) -> NormalizedImage:
     """Validate real image bytes, orient, resize, and re-encode without metadata."""
     if not content:
         raise ImageValidationError("图片内容为空")
-    configured_limit = get_settings().DESIGN_IMAGE_MAX_UPLOAD_MB * 1024 * 1024
-    byte_limit = min(MAX_IMAGE_BYTES, configured_limit)
+    byte_limit = effective_max_upload_bytes()
     if len(content) > byte_limit:
-        raise ImageValidationError("图片不能超过 20MiB")
+        raise ImageValidationError(f"图片不能超过 {byte_limit // MEBIBYTE}MiB")
 
     mime = (declared_mime or "").split(";", 1)[0].strip().lower()
     fmt = _magic_format(content)

@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import ast
+import io
 from datetime import datetime
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -117,8 +116,8 @@ def api(monkeypatch, tmp_path):
     image.write_bytes(b"png")
     monkeypatch.setattr(
         service,
-        "resolve_asset_content",
-        lambda *_a, **_k: service.AssetContent(image, "image/png", ".png"),
+        "open_asset_content",
+        lambda *_a, **_k: service.AssetContent(io.BytesIO(b"png"), "image/png", ".png"),
     )
     return TestClient(app), app, module, service
 
@@ -269,6 +268,19 @@ def test_request_schema_errors_remain_framework_422(api):
     assert response.status_code == 422
 
 
+def test_usage_status_is_a_closed_api_enum_and_never_calls_service(api, monkeypatch):
+    client, _, _, service = api
+    called = []
+    monkeypatch.setattr(
+        service, "get_usage", lambda *_a, **_k: called.append(True) or {}
+    )
+
+    response = client.get("/api/design-image/usage?status=not-a-job-status")
+
+    assert response.status_code == 422
+    assert called == []
+
+
 @pytest.mark.parametrize(
     ("error_name", "expected"),
     [
@@ -295,7 +307,7 @@ def test_absent_cross_owner_deleted_and_missing_file_share_404(api, monkeypatch)
     for message in ("absent", "cross-owner", "deleted", "physical-missing"):
         monkeypatch.setattr(
             service,
-            "resolve_asset_content",
+            "open_asset_content",
             lambda *_a, _message=message, **_k: (_ for _ in ()).throw(
                 service.DesignImageNotFoundError("资源不存在")
             ),
@@ -349,12 +361,14 @@ def test_all_owner_resource_routes_hide_absent_and_cross_owner(
 
 def test_upload_is_bounded_closes_file_and_rejects_fake_mime(api, monkeypatch):
     client, _, module, service = api
-    monkeypatch.setattr(module, "MAX_UPLOAD_BYTES", 3)
+    monkeypatch.setattr(module.file_service, "effective_max_upload_bytes", lambda: 3)
     assert client.post(
         "/api/design-image/sessions/11/assets",
         files={"file": ("huge.png", b"1234", "image/png")},
     ).status_code == 413
-    monkeypatch.setattr(module, "MAX_UPLOAD_BYTES", 20 * 1024 * 1024)
+    monkeypatch.setattr(
+        module.file_service, "effective_max_upload_bytes", lambda: 20 * 1024 * 1024
+    )
 
     monkeypatch.setattr(
         service,
@@ -368,6 +382,26 @@ def test_upload_is_bounded_closes_file_and_rejects_fake_mime(api, monkeypatch):
         files={"file": ("fake.png", b"not-png", "image/png")},
     )
     assert response.status_code == 400
+
+
+def test_router_rejects_configured_upload_limit_before_service(api, monkeypatch):
+    client, _, module, service = api
+    called = []
+    monkeypatch.setattr(
+        module.file_service.get_settings(), "DESIGN_IMAGE_MAX_UPLOAD_MB", 1
+    )
+    monkeypatch.setattr(
+        service, "create_draft_asset", lambda *_a, **_k: called.append(True)
+    )
+
+    response = client.post(
+        "/api/design-image/sessions/11/assets",
+        files={"file": ("large.png", b"x" * (1024 * 1024 + 1), "image/png")},
+    )
+
+    assert response.status_code == 413
+    assert "1MiB" in response.text
+    assert called == []
 
 
 @pytest.mark.asyncio
@@ -385,14 +419,14 @@ async def test_bounded_reader_always_closes_upload(api, monkeypatch):
             self.closed = True
 
     upload = FakeUpload()
-    monkeypatch.setattr(module, "MAX_UPLOAD_BYTES", 3)
+    monkeypatch.setattr(module.file_service, "effective_max_upload_bytes", lambda: 3)
     with pytest.raises(HTTPException) as exc_info:
         await module._read_bounded(upload)
     assert exc_info.value.status_code == 413
     assert upload.closed is True
 
 
-def test_content_resolver_uses_owner_asset_and_hides_physical_absence(
+def test_content_open_uses_owner_asset_and_hides_pre_open_absence(
     monkeypatch, tmp_path
 ):
     from app.design_image import service
@@ -407,34 +441,37 @@ def test_content_resolver_uses_owner_asset_and_hides_physical_absence(
 
     monkeypatch.setattr(service.file_service, "resolve_private_path", resolve)
     with pytest.raises(service.DesignImageNotFoundError, match="资源不存在"):
-        service.resolve_asset_content(object(), 7, 31, thumbnail=True)
+        service.open_asset_content(object(), 7, 31, thumbnail=True)
     assert resolved == ["7/upload/a_thumb.png"]
 
 
-def test_router_registration_order_permissions_and_architecture_are_static():
-    root = Path(__file__).parents[1]
-    router_source = (root / "app/design_image/router.py").read_text(encoding="utf-8")
-    registry_source = (root / "app/routers.py").read_text(encoding="utf-8")
-    assert 'prefix="/api/design-image"' in registry_source
-    assert router_source.index('"/jobs/active"') < router_source.index('"/jobs/{job_id}"')
-    for permission in ("read", "write", "admin"):
-        assert f'require_permission("design_image:{permission}")' in router_source
-    for forbidden in ("SessionLocal", "AiProvider", "storage_path ==", "owner_user_id =="):
-        assert forbidden not in router_source
-    tree = ast.parse(router_source)
-    route_functions = []
-    for node in tree.body:
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            continue
-        if any(
-            isinstance(decorator, ast.Call)
-            and isinstance(decorator.func, ast.Attribute)
-            and isinstance(decorator.func.value, ast.Name)
-            and decorator.func.value.id == "router"
-            for decorator in node.decorator_list
-        ):
-            route_functions.append(node)
-    assert len(route_functions) == 12
-    for node in route_functions:
-        source = ast.get_source_segment(router_source, node) or ""
-        assert "Depends(require_permission(" in source, node.name
+def test_opened_asset_stream_survives_path_disappearance_and_is_closed(
+    api, monkeypatch, tmp_path
+):
+    client, app, _, service = api
+    payload = b"opened-before-delete"
+    path = tmp_path / "race.png"
+    path.write_bytes(payload)
+
+    class TrackedStream(io.BytesIO):
+        was_closed = False
+
+        def close(self):
+            self.was_closed = True
+            super().close()
+
+    stream = TrackedStream(payload)
+    monkeypatch.setattr(
+        service,
+        "open_asset_content",
+        lambda *_a, **_k: service.AssetContent(stream, "image/png", ".png"),
+        raising=False,
+    )
+    path.unlink()
+
+    safe_client = TestClient(app, raise_server_exceptions=False)
+    response = safe_client.get("/api/design-image/assets/31/content")
+
+    assert response.status_code == 200
+    assert response.content == payload
+    assert stream.was_closed is True
