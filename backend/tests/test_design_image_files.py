@@ -9,6 +9,7 @@ import ssl
 import struct
 import subprocess
 import threading
+import time
 import zlib
 from pathlib import Path
 
@@ -468,7 +469,7 @@ def test_provider_download_rejects_redirect_to_non_443_port(monkeypatch):
 def test_provider_download_rejects_non_global_dns_results(monkeypatch, address):
     from app.design_image import file_service
 
-    monkeypatch.setattr(file_service, "_resolve_host_ips", lambda host, port: [address])
+    monkeypatch.setattr(file_service, "_resolve_host_ips", lambda *args: [address])
     with pytest.raises(file_service.ProviderDownloadError, match="address"):
         file_service.download_provider_image(
             "https://cdn.example.com/image.png", allowed_hosts={"cdn.example.com"}
@@ -486,7 +487,7 @@ def test_provider_download_validates_every_redirect_hop(monkeypatch):
         ]
     )
 
-    def resolve(host, port):
+    def resolve(host, port, deadline):
         resolutions.append(host)
         return ["93.184.216.34"]
 
@@ -503,7 +504,7 @@ def test_provider_download_rejects_redirect_to_unlisted_or_private_host(monkeypa
     from app.design_image import file_service
 
     first = _FakeResponse(302, headers={"Location": "https://internal.example/final"})
-    monkeypatch.setattr(file_service, "_resolve_host_ips", lambda host, port: ["93.184.216.34"])
+    monkeypatch.setattr(file_service, "_resolve_host_ips", lambda *args: ["93.184.216.34"])
     monkeypatch.setattr(file_service, "_open_pinned_https", lambda url, ip, timeout: first)
 
     with pytest.raises(file_service.ProviderDownloadError):
@@ -519,7 +520,7 @@ def test_provider_download_binds_connection_to_the_validated_ip(monkeypatch):
     resolver_calls = 0
     pinned: list[str] = []
 
-    def rebinding_resolver(host, port):
+    def rebinding_resolver(host, port, deadline):
         nonlocal resolver_calls
         resolver_calls += 1
         return ["93.184.216.34"] if resolver_calls == 1 else ["127.0.0.1"]
@@ -581,13 +582,15 @@ def test_pinned_transport_connects_to_ip_but_keeps_hostname_for_tls(monkeypatch)
     )
 
     response = file_service._open_pinned_https(
-        "https://cdn.example.com/image?q=1", "93.184.216.34", 12.5
+        "https://cdn.example.com/image?q=1",
+        "93.184.216.34",
+        time.monotonic() + 12.5,
     )
     response.close()
 
     assert calls["default_context"] is True
     assert calls["address"] == ("93.184.216.34", 443)
-    assert calls["connect_timeout"] == 12.5
+    assert calls["connect_timeout"] == pytest.approx(12.5, abs=0.1)
     assert calls["server_hostname"] == "cdn.example.com"
     request = calls["request"]
     assert b"Host: cdn.example.com" in request
@@ -613,7 +616,7 @@ def test_pinned_transport_closes_raw_socket_when_tls_wrap_fails(monkeypatch):
     monkeypatch.setattr(file_service.ssl, "create_default_context", FailingContext)
     with pytest.raises(ssl.SSLError, match="TLS failed"):
         file_service._open_pinned_https(
-            "https://cdn.example.com/image", "93.184.216.34", 10
+            "https://cdn.example.com/image", "93.184.216.34", time.monotonic() + 10
         )
     assert raw_socket.closed
 
@@ -635,7 +638,7 @@ def test_pinned_transport_closes_connection_when_request_fails(monkeypatch):
     monkeypatch.setattr(file_service, "_PinnedHTTPSConnection", lambda *args, **kwargs: connection)
     with pytest.raises(OSError, match="request failed"):
         file_service._open_pinned_https(
-            "https://cdn.example.com/image", "93.184.216.34", 10
+            "https://cdn.example.com/image", "93.184.216.34", time.monotonic() + 10
         )
     assert connection.closed
 
@@ -643,13 +646,13 @@ def test_pinned_transport_closes_connection_when_request_fails(monkeypatch):
 def test_provider_download_enforces_total_deadline_across_slow_chunks(monkeypatch):
     from app.design_image import file_service
 
-    ticks = iter([100.0, 100.0, 101.0, 131.0])
+    ticks = iter([100.0, 101.0, 131.0])
     response = _FakeResponse(200, b"first chunk")
     monkeypatch.setattr(file_service.time, "monotonic", lambda: next(ticks))
     monkeypatch.setattr(file_service, "_resolve_host_ips", lambda *args: ["93.184.216.34"])
 
-    def open_pinned(url, ip, timeout):
-        assert timeout == pytest.approx(30.0)
+    def open_pinned(url, ip, deadline):
+        assert deadline == pytest.approx(130.0)
         return response
 
     monkeypatch.setattr(file_service, "_open_pinned_https", open_pinned)
@@ -659,6 +662,130 @@ def test_provider_download_enforces_total_deadline_across_slow_chunks(monkeypatc
         )
     assert response.timeouts == [pytest.approx(29.0)]
     assert response.closed
+
+
+def _fallback_release(event: threading.Event) -> threading.Timer:
+    timer = threading.Timer(0.4, event.set)
+    timer.daemon = True
+    timer.start()
+    return timer
+
+
+def test_provider_download_deadline_bounds_blocked_dns(monkeypatch):
+    from app.design_image import file_service
+
+    blocked = threading.Event()
+    release = threading.Event()
+
+    def blocked_getaddrinfo(*args, **kwargs):
+        blocked.set()
+        release.wait(1)
+        return [(2, 1, 6, "", ("93.184.216.34", 443))]
+
+    monkeypatch.setattr(file_service, "DOWNLOAD_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(file_service.socket, "getaddrinfo", blocked_getaddrinfo)
+    fallback = _fallback_release(release)
+    started = time.perf_counter()
+    try:
+        with pytest.raises(file_service.ProviderDownloadError, match="deadline"):
+            file_service.download_provider_image(
+                "https://cdn.example.com/image", allowed_hosts={"cdn.example.com"}
+            )
+        assert blocked.wait(0.1)
+        assert time.perf_counter() - started < 0.2
+    finally:
+        release.set()
+        fallback.cancel()
+
+
+def test_provider_download_watchdog_interrupts_blocked_response_headers(monkeypatch):
+    from app.design_image import file_service
+
+    release = threading.Event()
+
+    class BlockingConnection:
+        closed = False
+        sock = None
+
+        def request(self, *args, **kwargs):
+            pass
+
+        def getresponse(self):
+            release.wait(1)
+            raise OSError("headers interrupted")
+
+        def close(self):
+            self.closed = True
+            release.set()
+
+    connection = BlockingConnection()
+    monkeypatch.setattr(file_service, "DOWNLOAD_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(file_service, "_resolve_host_ips", lambda *args: ["93.184.216.34"])
+    monkeypatch.setattr(file_service, "_PinnedHTTPSConnection", lambda *args, **kwargs: connection)
+    fallback = _fallback_release(release)
+    started = time.perf_counter()
+    try:
+        with pytest.raises(file_service.ProviderDownloadError):
+            file_service.download_provider_image(
+                "https://cdn.example.com/image", allowed_hosts={"cdn.example.com"}
+            )
+        assert time.perf_counter() - started < 0.2
+        assert connection.closed
+    finally:
+        release.set()
+        fallback.cancel()
+
+
+def test_provider_download_watchdog_interrupts_one_blocked_body_read(monkeypatch):
+    from app.design_image import file_service
+
+    release = threading.Event()
+
+    class FakeSocket:
+        def settimeout(self, timeout):
+            pass
+
+    class BlockingResponse:
+        status = 200
+        headers = {}
+
+        def read(self, amount=-1):
+            release.wait(1)
+            raise OSError("body interrupted")
+
+        def close(self):
+            pass
+
+    class BlockingConnection:
+        closed = False
+        sock = FakeSocket()
+
+        def request(self, *args, **kwargs):
+            pass
+
+        def getresponse(self):
+            return BlockingResponse()
+
+        def close(self):
+            self.closed = True
+            release.set()
+
+    connection = BlockingConnection()
+    monkeypatch.setattr(file_service, "DOWNLOAD_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(file_service, "_resolve_host_ips", lambda *args: ["93.184.216.34"])
+    monkeypatch.setattr(file_service, "_PinnedHTTPSConnection", lambda *args, **kwargs: connection)
+    fallback = _fallback_release(release)
+    started = time.perf_counter()
+    try:
+        with pytest.raises(file_service.ProviderDownloadError):
+            file_service.download_provider_image(
+                "https://cdn.example.com/image", allowed_hosts={"cdn.example.com"}
+            )
+        assert time.perf_counter() - started < 0.2
+        assert connection.closed
+    finally:
+        release.set()
+        fallback.cancel()
 
 
 def test_provider_download_translates_read_timeout_and_closes(monkeypatch):
@@ -686,7 +813,7 @@ def test_provider_download_limits_stream_without_content_length(monkeypatch):
     from app.design_image import file_service
 
     response = _FakeResponse(200, b"x" * (MAX_BYTES + 1))
-    monkeypatch.setattr(file_service, "_resolve_host_ips", lambda host, port: ["93.184.216.34"])
+    monkeypatch.setattr(file_service, "_resolve_host_ips", lambda *args: ["93.184.216.34"])
     monkeypatch.setattr(file_service, "_open_pinned_https", lambda url, ip, timeout: response)
 
     with pytest.raises(file_service.ProviderDownloadError, match="20"):
@@ -700,7 +827,7 @@ def test_provider_download_rejects_large_content_length_before_read(monkeypatch)
     from app.design_image import file_service
 
     response = _FakeResponse(200, b"", {"Content-Length": str(MAX_BYTES + 1)})
-    monkeypatch.setattr(file_service, "_resolve_host_ips", lambda host, port: ["93.184.216.34"])
+    monkeypatch.setattr(file_service, "_resolve_host_ips", lambda *args: ["93.184.216.34"])
     monkeypatch.setattr(file_service, "_open_pinned_https", lambda url, ip, timeout: response)
 
     with pytest.raises(file_service.ProviderDownloadError, match="20"):
@@ -713,7 +840,7 @@ def test_provider_download_rejects_large_content_length_before_read(monkeypatch)
 def test_provider_download_caps_redirect_count(monkeypatch):
     from app.design_image import file_service
 
-    monkeypatch.setattr(file_service, "_resolve_host_ips", lambda host, port: ["93.184.216.34"])
+    monkeypatch.setattr(file_service, "_resolve_host_ips", lambda *args: ["93.184.216.34"])
     monkeypatch.setattr(
         file_service,
         "_open_pinned_https",

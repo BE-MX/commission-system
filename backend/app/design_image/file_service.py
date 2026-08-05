@@ -8,6 +8,7 @@ import io
 import ipaddress
 import logging
 import os
+import queue
 import re
 import socket
 import ssl
@@ -15,6 +16,7 @@ import stat
 import threading
 import time
 import warnings
+from concurrent.futures import Future, TimeoutError as FutureTimeoutError
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urljoin, urlsplit
@@ -46,6 +48,39 @@ _METADATA_HOSTS = {
 }
 _STORAGE_LOCK = threading.RLock()
 logger = logging.getLogger("commission")
+
+
+class _BoundedResolverExecutor:
+    def __init__(self, workers: int = 2, queued: int = 2):
+        self._queue: queue.Queue = queue.Queue(maxsize=queued)
+        for index in range(workers):
+            worker = threading.Thread(
+                target=self._run, name=f"design-image-dns-{index}", daemon=True
+            )
+            worker.start()
+
+    def submit(self, function, *args, timeout: float) -> Future:
+        future: Future = Future()
+        try:
+            self._queue.put((future, function, args), timeout=max(0, timeout))
+        except queue.Full:
+            raise ProviderDownloadError("provider DNS deadline exceeded") from None
+        return future
+
+    def _run(self) -> None:
+        while True:
+            future, function, args = self._queue.get()
+            try:
+                if future.set_running_or_notify_cancel():
+                    try:
+                        future.set_result(function(*args))
+                    except BaseException as exc:
+                        future.set_exception(exc)
+            finally:
+                self._queue.task_done()
+
+
+_DNS_RESOLVER = _BoundedResolverExecutor()
 
 
 class ImageValidationError(ValueError):
@@ -336,10 +371,23 @@ def _normalize_host(host: str) -> str:
         raise ProviderDownloadError("provider URL host is invalid") from None
 
 
-def _resolve_host_ips(host: str, port: int) -> list[str]:
+def _resolve_host_ips(host: str, port: int, deadline: float | None = None) -> list[str]:
+    deadline = deadline or (time.monotonic() + DOWNLOAD_TIMEOUT_SECONDS)
+    remaining = _remaining_download_time(deadline)
     try:
-        records = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
-    except socket.gaierror:
+        future = _DNS_RESOLVER.submit(
+            socket.getaddrinfo,
+            host,
+            port,
+            0,
+            socket.SOCK_STREAM,
+            timeout=remaining,
+        )
+        records = future.result(timeout=_remaining_download_time(deadline))
+    except FutureTimeoutError:
+        future.cancel()
+        raise ProviderDownloadError("provider DNS deadline exceeded") from None
+    except (socket.gaierror, OSError):
         raise ProviderDownloadError("provider host DNS resolution failed") from None
     addresses = list(dict.fromkeys(record[4][0] for record in records))
     if not addresses:
@@ -398,10 +446,44 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
             raise
 
 
+class _DeadlineWatchdog:
+    def __init__(self, deadline: float, close_callback):
+        self._lock = threading.Lock()
+        self._active = True
+        self._close_callback = close_callback
+        self._timer = threading.Timer(
+            max(0, deadline - time.monotonic()), self._expire
+        )
+        self._timer.daemon = True
+        self._timer.start()
+
+    def _expire(self) -> None:
+        with self._lock:
+            if not self._active:
+                return
+            self._active = False
+        try:
+            self._close_callback()
+        except Exception as exc:
+            logger.warning("design-image deadline close failed: %s", exc)
+            print(f"[design-image] deadline close failed: {exc}", flush=True)
+
+    def cancel(self) -> None:
+        with self._lock:
+            self._active = False
+        self._timer.cancel()
+
+
 class _ConnectionResponse:
-    def __init__(self, response: http.client.HTTPResponse, connection: _PinnedHTTPSConnection):
+    def __init__(
+        self,
+        response: http.client.HTTPResponse,
+        connection: _PinnedHTTPSConnection,
+        watchdog: _DeadlineWatchdog,
+    ):
         self._response = response
         self._connection = connection
+        self._watchdog = watchdog
         self.status = response.status
         self.headers = response.headers
 
@@ -414,20 +496,22 @@ class _ConnectionResponse:
         self._connection.sock.settimeout(timeout)
 
     def close(self) -> None:
+        self._watchdog.cancel()
         try:
             self._response.close()
         finally:
             self._connection.close()
 
 
-def _open_pinned_https(url: str, pinned_ip: str, timeout: float):
+def _open_pinned_https(url: str, pinned_ip: str, deadline: float):
     """Connect to the validated IP while retaining the URL hostname for Host and TLS SNI."""
     parsed = urlsplit(url)
     host = parsed.hostname or ""
     port = parsed.port or 443
     connection = _PinnedHTTPSConnection(
-        host, pinned_ip, port=port, timeout=timeout
+        host, pinned_ip, port=port, timeout=_remaining_download_time(deadline)
     )
+    watchdog = _DeadlineWatchdog(deadline, connection.close)
     target = parsed.path or "/"
     if parsed.query:
         target = f"{target}?{parsed.query}"
@@ -438,8 +522,9 @@ def _open_pinned_https(url: str, pinned_ip: str, timeout: float):
             target,
             headers={"Host": host_header, "Accept": "image/*", "User-Agent": "ArkImageFetcher/1"},
         )
-        return _ConnectionResponse(connection.getresponse(), connection)
+        return _ConnectionResponse(connection.getresponse(), connection, watchdog)
     except Exception:
+        watchdog.cancel()
         try:
             connection.close()
         except Exception as cleanup_exc:
@@ -476,7 +561,7 @@ def download_provider_image(url: str, *, allowed_hosts: set[str]) -> bytes:
     current_url = url
     for redirect_count in range(MAX_REDIRECTS + 1):
         parsed, host, port = _validated_url(current_url, allowed_hosts)
-        addresses = _resolve_host_ips(host, port)
+        addresses = _resolve_host_ips(host, port, deadline)
         try:
             parsed_addresses = [ipaddress.ip_address(address) for address in addresses]
         except ValueError:
@@ -489,7 +574,7 @@ def download_provider_image(url: str, *, allowed_hosts: set[str]) -> bytes:
             response = _open_pinned_https(
                 current_url,
                 str(parsed_addresses[0]),
-                _remaining_download_time(deadline),
+                deadline,
             )
         except (OSError, ssl.SSLError, http.client.HTTPException):
             raise ProviderDownloadError("provider image download failed") from None
