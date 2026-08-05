@@ -196,7 +196,7 @@ def list_okki_department_options(db: Session) -> list[dict]:
 
 
 # kind 派生规则（权限重设计方案）：data=数据范围，read/日报=页面可见，其余=操作级
-_DATA_KIND_CODES = {"tracking:read_all", "commission:self_read", "insight:internal_read", "invoice:read_all"}
+_DATA_KIND_CODES = {"tracking:read_all", "commission:self_read", "insight:internal_read", "invoice:read_all", "expo_lead:read_all"}
 _PAGE_KIND_EXTRA = {"tracking:daily_report"}
 
 
@@ -349,6 +349,9 @@ def seed_role_permissions(db: Session):
         ("expo_script:read",      "expo",    "read",          "查看话术卡库"),
         ("expo_lead:read",        "expo",    "read",          "查看展会线索台"),
         ("expo_lead:write",       "expo",    "write",         "线索操作 / 销售反馈录入"),
+        ("expo_store:admin",      "expo",    "admin",         "门店管理"),
+        ("expo_store:recharge",   "expo",    "recharge",      "门店额度充值"),
+        ("expo_lead:read_all",    "expo_lead", "read_all",    "查看所有门店线索"),
         # 名片管家（2026-08-01 业务员电子名片：leshine.work/card/<slug>/）
         ("card:read",             "card",    "read",          "名片管家：查看业务员/客户档案与询盘"),
         ("card:write",            "card",    "write",         "名片管家：维护档案 / 录纪要 / 处理询盘"),
