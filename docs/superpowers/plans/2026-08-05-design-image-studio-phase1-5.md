@@ -367,7 +367,7 @@
 - Create: `frontend/src/views/design/image-studio/state.js`
 - Create: `frontend/tests/designImageState.test.mjs`
 
-- [ ] **Step 1: Write failing pure-state tests**
+- [x] **Step 1: Write failing pure-state tests**
 
   Tests must cover monotonic status (`queued→running→succeeded/failed`, never backward), stale conversation generation guards, duplicate send/upload guards, concurrent attachment completion without loss, explicit base asset ID, restoring only active jobs, retry replacing active job ID while preserving history, and Object URL revocation registry.
 
@@ -375,7 +375,7 @@
 
   Expected: FAIL because state helpers are absent.
 
-- [ ] **Step 2: Implement pure transitions**
+- [x] **Step 2: Implement pure transitions**
 
   Export small functions such as:
 
@@ -389,11 +389,11 @@
 
   State helpers must not import Vue or axios, so Node tests execute without adding Vitest.
 
-- [ ] **Step 3: Add the registered API module**
+- [x] **Step 3: Add the registered API module**
 
   Register the existing shared client in `clients.js`; do not call `axios.create()`. `getAssetBlob(id, download)` uses `responseType:'blob'`, and all long-task methods opt out of global loading/toast behavior as supported by the current client contract.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
   Run: `cd frontend; node --test tests/designImageState.test.mjs`
 
