@@ -920,6 +920,7 @@ import hashlib, json, os, stat, sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 
+from sqlalchemy import text
 from app.core.database import SessionLocal
 from app.design_image import file_service
 from app.design_image.models import DesignImageAsset
@@ -937,6 +938,17 @@ if (ACTION == "purge" and
         "purge requires DESIGN_IMAGE_ORPHAN_WRITE_FREEZE=OFFLINE_CONFIRMED "
         "after every design-image writer is stopped"
     )
+if ACTION == "purge":
+    try:
+        DB_BARRIER_CONNECTION_ID = int(
+            os.environ.get("DESIGN_IMAGE_ORPHAN_DB_BARRIER_CONNECTION_ID", "")
+        )
+    except (TypeError, ValueError):
+        raise RuntimeError("purge requires a positive MySQL barrier connection ID") from None
+    if DB_BARRIER_CONNECTION_ID <= 0:
+        raise RuntimeError("purge requires a positive MySQL barrier connection ID")
+else:
+    DB_BARRIER_CONNECTION_ID = None
 QUARANTINE_NAME = ".orphan-quarantine"
 REPARSE = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
 
@@ -979,6 +991,31 @@ def referenced_paths() -> set[str]:
         result.add(rel.as_posix())
         result.add(str(rel.with_name(f"{rel.stem}_thumb{rel.suffix}")))
     return result
+
+def assert_db_write_barrier() -> None:
+    """Fail closed unless the named external MySQL session still holds READ lock."""
+    with SessionLocal() as db:
+        current_connection = db.execute(text("SELECT CONNECTION_ID()")).scalar_one()
+        if current_connection == DB_BARRIER_CONNECTION_ID:
+            raise RuntimeError("barrier must be held by a separate maintenance connection")
+        lock_count = db.execute(text("""
+            SELECT COUNT(*)
+            FROM performance_schema.metadata_locks AS ml
+            JOIN performance_schema.threads AS th
+              ON th.THREAD_ID = ml.OWNER_THREAD_ID
+            WHERE th.PROCESSLIST_ID = :connection_id
+              AND ml.OBJECT_SCHEMA = DATABASE()
+              AND ml.OBJECT_NAME = 'ark_design_image_assets'
+              AND ml.OBJECT_TYPE = 'TABLE'
+              AND ml.LOCK_STATUS = 'GRANTED'
+              AND ml.LOCK_TYPE = 'SHARED_READ_ONLY'
+        """), {"connection_id": DB_BARRIER_CONNECTION_ID}).scalar_one()
+        if lock_count != 1:
+            raise RuntimeError(
+                "MySQL READ barrier is absent/ambiguous; abort and re-freeze from reconciliation"
+            )
+        # Proves this separate maintenance connection can still SELECT while READ lock is held.
+        db.execute(text("SELECT COUNT(*) FROM ark_design_image_assets")).scalar_one()
 
 def digest(path: Path) -> str:
     value = hashlib.sha256()
@@ -1345,6 +1382,7 @@ elif ACTION in {"purge", "reconcile"}:
         raise SystemExit(0)
     if os.environ.get("DESIGN_IMAGE_ORPHAN_APPLY") != "PURGE":
         raise RuntimeError("set DESIGN_IMAGE_ORPHAN_APPLY=PURGE to delete quarantined files")
+    assert_db_write_barrier()
     _quarantine_record, authorized_items = authorized_quarantine_plan(batch)
     previous_purge_reconciliation = reconcile_batch(batch, action="purge")
     if previous_purge_reconciliation["manual_hold"]:
@@ -1394,6 +1432,7 @@ elif ACTION in {"purge", "reconcile"}:
         "purge", batch, [record for _path, record in prepared]
     )
     for path, record in prepared:
+        assert_db_write_barrier()
         if record["source"] in referenced_paths():
             append_journal(journal, {"event": "blocked", "reason": "now_referenced",
                                      "item": record})
@@ -1413,13 +1452,16 @@ elif ACTION in {"purge", "reconcile"}:
         append_journal(journal, {"event": "syscall_returned", "operation": "unlink",
                                  "durability_claimed": False, "item": record})
         deleted.append(record)
+    assert_db_write_barrier()
     # Remove only empty directories inside this named batch; never recurse-delete root.
     for directory in sorted(set(discovered_dirs), key=lambda item: len(item.parts), reverse=True):
         reject_link(directory)
         directory.rmdir()
     batch_root.rmdir()
+    assert_db_write_barrier()
     reconciliation = reconcile_record({"journal": journal, "journal_rel": journal_rel,
                                        "plan": read_plan(journal)})
+    assert_db_write_barrier()
     append_journal(journal, {"event": "run_returned", "durability_claimed": False,
                              "deleted_count": len(deleted)})
     if reconciliation["manual_hold"]:
@@ -1436,15 +1478,41 @@ else:
 `purge` 不是在线清理任务。必须安排维护窗口，并从头到尾禁止任何进程或人工操作创建、恢复、迁移 `ark_design_image_assets` 引用。环境变量 `DESIGN_IMAGE_ORPHAN_WRITE_FREEZE=OFFLINE_CONFIRMED` 是当班人的离线声明，不是锁；只要还有一个 API、Scheduler、worker、临时脚本、DB restore 或 migration 能写相关表，该声明就无效，禁止设置。
 
 1. 列出所有可能承接 `/api/design-image` 的入口，包括办公室直连、云反代、展会/临时实例；在每个公网/反代入口先启用只针对 `/api/design-image` 的 maintenance 规则（返回 503），保留其他业务。清单必须写入当次审计记录，不能只测一个常用域名。
-2. 停止 **每一台** 能访问同一 DB 或 `DESIGN_IMAGE_STORAGE_ROOT` 的方舟后端；office-primary 的 Windows 服务名为 `CommissionSystem`，同时检查临时 uvicorn、复制目录和 Scheduler 实例。停止服务后，直连入口应连接失败，反代入口应稳定返回 503。
+2. 停止 **每一台** 能访问同一 DB 或 `DESIGN_IMAGE_STORAGE_ROOT` 的方舟后端。先记录唯一维护人和 shell：`$MaintenanceOperator="$env:USERNAME@$(hostname)"; $MaintenanceShellPid=$PID`；其余人员和自动化在窗口内不得登录 DB 或启动程序。检查必须覆盖复制目录、临时 worktree 和手工启动进程，不能用仓库路径过滤。
+
+   office-primary 是 Windows NSSM 服务 `CommissionSystem`。查询所有 Python/uvicorn/app.main 候选（无论命令行路径），并对清单中的**每个后端监听端口**核对 OwningProcess；默认业务端口是本机 8001，云 frp 入口 8002 也要在对应云主机核对。发现任何未知 PID/端口就停止并查明，不能仅停止 NSSM 后继续。
 
    ```powershell
    Stop-Service -Name CommissionSystem
    Get-Service -Name CommissionSystem | Select-Object Name, Status
    Get-CimInstance Win32_Process |
-     Where-Object { $_.CommandLine -match 'commission-system' -and $_.CommandLine -match 'uvicorn|app.main' } |
+     Where-Object {
+       $_.Name -match '^(python|pythonw|uvicorn)(\.exe)?$' -or
+       $_.CommandLine -match 'uvicorn|app\.main(:app)?'
+     } |
      Select-Object ProcessId, Name, CommandLine
-   # 期望：CommissionSystem=Stopped，进程查询为空；其他主机逐台执行并留档。
+   $BackendPorts = @(8001)  # 按入口清单加入该主机所有实际后端端口
+   Get-NetTCPConnection -State Listen |
+     Where-Object { $_.LocalPort -in $BackendPorts } |
+     ForEach-Object {
+       $_ | Select-Object LocalAddress,LocalPort,OwningProcess
+       Get-Process -Id $_.OwningProcess | Select-Object Id,ProcessName,Path
+     }
+   # 期望：CommissionSystem=Stopped；候选进程逐一解释且无方舟 writer；后端端口无监听。
+   ```
+
+   北京云展会实例的真实 systemd 单元是仓库已记录的 `ark-backend`，必须同样停机；复制/临时目录不受 systemd 管理，所以继续用全局进程与监听查询兜底。
+
+   ```bash
+   sudo systemctl stop ark-backend
+   sudo systemctl status ark-backend --no-pager       # 期望 inactive (dead)
+   pgrep -af 'uvicorn|app\.main:app|python.*app\.main' || true
+   BACKEND_PORTS='8001|8002'                          # 按本机真实入口补齐
+   sudo ss -ltnp | grep -E ":(${BACKEND_PORTS})\\b" || true
+   # 对该主机的每个入口执行：
+   curl -sS -o /dev/null -w '%{http_code}\n' --connect-timeout 10 \
+     http://127.0.0.1:8001/api/design-image/config || true
+   # 期望：无 app 进程、无后端监听；入口为 503 或连接失败。
    ```
 
 3. 对入口清单逐一请求并记录时间、URL、结果；维护反代只能是 503，办公室直连可为 503 或 connection refused，任何 2xx/401/403 都说明应用仍可达，不能继续。
@@ -1485,18 +1553,47 @@ else:
    # 原样再执行一次上面的只读快照；四项必须无变化。
    ```
 
-5. 从此刻到 purge 完成审计前冻结所有手工 DB restore、Alembic migration、数据修复脚本和资产文件恢复。先在同一维护 shell 对精确 batch 执行最新 `reconcile`，再执行一次 `scan` 并确认 `quarantine_inventory.manual_hold=false`；随后才设置确认值并运行 purge：
+5. 从此刻到 purge 完成审计前冻结所有手工 DB restore、Alembic migration、数据修复脚本和资产文件恢复。由具备 `LOCK TABLES` 与只读 performance_schema 权限的 DBA/维护账号，在**独立且始终可见的 MySQL 交互终端**持有表级写屏障。`LOCK TABLES ark_design_image_assets READ` 允许其他会话 SELECT，但阻塞 INSERT/UPDATE/DELETE；不要用 DML“测试锁”，否则只会制造等待会话。
+
+   ```sql
+   -- 终端 A：mysql --login-path=ark-maintenance --database=<COMMISSION_DB_NAME>
+   SET SESSION lock_wait_timeout = 10;
+   SELECT CONNECTION_ID() AS barrier_connection_id, USER(), DATABASE(), NOW();
+   LOCK TABLES ark_design_image_assets READ;
+   SELECT CONNECTION_ID() AS barrier_connection_id, COUNT(*) AS readable_rows
+   FROM ark_design_image_assets;
+   -- 保持这个 mysql 终端和连接打开；不要执行其他 LOCK TABLES、UNLOCK 或退出。
+   ```
+
+   把精确 `barrier_connection_id` 记录到当次审计。终端 B/唯一维护 shell 用另一连接确认 SELECT 未被阻塞，并核对 `performance_schema.metadata_locks` 中该连接对目标表持有 `GRANTED / SHARED_READ_ONLY`；再执行 `SHOW FULL PROCESSLIST`，确认 `commission_db` 没有 app、migration、restore 或其他人工写会话。若无 performance_schema 读取权限，不能降级跳过，应由 DBA补齐后重来。
+
+   ```sql
+   SELECT COUNT(*) FROM ark_design_image_assets; -- 必须立即返回，证明其他会话 SELECT 兼容
+   SELECT th.PROCESSLIST_ID, ml.OBJECT_SCHEMA, ml.OBJECT_NAME,
+          ml.LOCK_TYPE, ml.LOCK_STATUS
+   FROM performance_schema.metadata_locks AS ml
+   JOIN performance_schema.threads AS th ON th.THREAD_ID = ml.OWNER_THREAD_ID
+   WHERE th.PROCESSLIST_ID = <barrier_connection_id>
+     AND ml.OBJECT_SCHEMA = DATABASE()
+     AND ml.OBJECT_NAME = 'ark_design_image_assets';
+   SHOW FULL PROCESSLIST;
+   ```
+
+   只有唯一维护人、唯一维护 shell 和终端 A 的 barrier 连接可留在窗口内。连接 ID 消失、终端断线或锁查询不再精确返回一条 `SHARED_READ_ONLY/GRANTED` 时，MySQL 已自动释放锁：立即中止，不得换新连接后接着删；重新停写、获取新 connection ID，并从完整 reconcile/引用检查重来。
+
+6. 在同一维护 shell 对精确 batch 执行最新 `reconcile`，再执行一次 `scan` 并确认 `quarantine_inventory.manual_hold=false`；随后才设置确认值和 barrier connection ID 并运行 purge：
 
    ```powershell
    $env:DESIGN_IMAGE_ORPHAN_BATCH = "<精确 batch>"
    $env:DESIGN_IMAGE_ORPHAN_RECONCILE_ACTION = "quarantine"  # 部分 purge 恢复时改为 purge
    # 将嵌入工具最后一行改为：python - reconcile
    $env:DESIGN_IMAGE_ORPHAN_APPLY = "PURGE"
+   $env:DESIGN_IMAGE_ORPHAN_DB_BARRIER_CONNECTION_ID = "<终端 A 的精确 connection ID>"
    $env:DESIGN_IMAGE_ORPHAN_WRITE_FREEZE = "OFFLINE_CONFIRMED"
    # 将嵌入工具最后一行改为：python - purge
    ```
 
-脚本仍会在每个 `unlink` 前重新执行 `referenced_paths()`；离线冻结不能替代这道逐项 DB 复查。缺少确认变量、拼写不完全一致或值错误时，脚本在解析 action 后立即失败，不访问存储、不创建 journal、不执行 unlink。
+脚本在创建 purge journal 前、每个 `unlink` 前和最终 reconcile 前后，都会用另一 DB 连接验证指定 connection ID 仍持有目标表的 `SHARED_READ_ONLY/GRANTED` 锁；同时每个 `unlink` 前继续执行 `referenced_paths()`。离线冻结和表锁都不能替代逐项引用复查。缺少确认变量/connection ID、值错误、锁消失、锁不唯一或验证连接就是锁连接时均 fail closed。
 
 执行顺序：
 
@@ -1506,7 +1603,7 @@ else:
 4. 精确删除：保持 `$env:DESIGN_IMAGE_ORPHAN_BATCH`，设置 `$env:DESIGN_IMAGE_ORPHAN_APPLY="PURGE"`，将最后一行改成 `python - purge | Tee-Object ..\design-image-orphan-purge.json`。**唯一删除授权是该 batch 唯一 quarantine plan 的 items，不是目录扫描结果。**工具先验证 source/target 唯一、source 无穿越、target 精确等于 `.orphan-quarantine/<batch>/<source>`、size/sha256 合法；所有旧 purge plans 也必须是该授权集合的合法子集。目录遍历只检测额外文件/目录；任何未授权项、重复项、路径错配、越界 target 或内容不符都 manual hold。当前存在且匹配的授权 target 才能进入新 purge plan；缺失项必须由当前 quarantine reconcile 的 `not_moved` 或旧 purge reconcile 的 `deleted_according_to_plan_intent` 解释。之后在任何 `unlink` 前持久化完整计划，再逐项 fsync `intent/unlink syscall_returned`；journal 位于批次目录外，删除批次后仍保留。
 5. purge 后及任何恢复/重跑前，设置 `$env:DESIGN_IMAGE_ORPHAN_RECONCILE_ACTION="purge"` 再执行 `python - reconcile`。每次 purge 重跑还会在变更前自动核对全部旧 purge plans（包括已有 `syscall_returned` 的项），有冲突即停。清除该环境变量可同时查看 quarantine/purge 历史；历史 quarantine 项在已合法 purge 后会呈 source/target neither，按规则仍标 manual hold，不能把历史 syscall 日志误当磁盘事实。
 
-6. 审阅持久 journal、执行 purge reconcile，并再次 `scan`；只有 purge plan 全部为 `deleted_according_to_plan_intent`、无 conflict/manual hold、journal 无畸形/越权项时，才可解除人工 DB 冻结。先执行 `Remove-Item Env:DESIGN_IMAGE_ORPHAN_WRITE_FREEZE,Env:DESIGN_IMAGE_ORPHAN_APPLY -ErrorAction SilentlyContinue`，再启动 `CommissionSystem` 并确认 `design_image_queue` 正常注册，最后移除各入口 maintenance 规则；任一审计项未通过时保持服务离线，不能用设置确认变量的方式绕过。
+6. 审阅持久 journal、执行 purge reconcile，并再次 `scan`；只有 purge plan 全部为 `deleted_according_to_plan_intent`、无 conflict/manual hold、journal 无畸形/越权项时，才可解除 DB 写屏障。回到终端 A，先确认 `SELECT CONNECTION_ID()` 仍等于审计记录，再执行 `UNLOCK TABLES;` 并退出；如果连接早已断开，视为屏障失效，服务保持离线并重新审计。**完成 reconcile/journal 审计 → 明确 UNLOCK → 恢复服务，顺序不可交换。**随后执行 `Remove-Item Env:DESIGN_IMAGE_ORPHAN_WRITE_FREEZE,Env:DESIGN_IMAGE_ORPHAN_APPLY,Env:DESIGN_IMAGE_ORPHAN_DB_BARRIER_CONNECTION_ID -ErrorAction SilentlyContinue`，启动 Windows `CommissionSystem` 和确有部署的 Linux `ark-backend`，确认 `design_image_queue` 拓扑符合目标，再移除各入口 maintenance 规则；任一审计项未通过时保持服务离线。
 
 Journal 判读和重跑规则：`intent` 与 `syscall_returned` 都只是操作线索，任何时候都以 reconcile 的当前磁盘观察为准。quarantine 中断后不要修改旧批次，先精确 reconcile；重跑只会为根目录仍存在的 orphan 创建新批次。purge 中断后使用同一个 `DESIGN_IMAGE_ORPHAN_BATCH` 重跑，新 journal 只规划仍存在的文件，已经缺失的项由旧 plan + reconcile 解释，不会再次删除其他路径。
 
