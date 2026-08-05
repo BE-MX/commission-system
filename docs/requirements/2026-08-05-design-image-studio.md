@@ -2,7 +2,7 @@
 
 > 日期：2026-08-05
 >
-> 状态：Phase 0 已完成，Phase 1 待实施
+> 状态：Phase 0–1 已完成，Phase 2 待实施
 >
 > 目标版本：V1
 > 目标模型：`gpt-image-2`
@@ -562,7 +562,7 @@ frontend/src/
 完成证据：[`2026-08-05-design-image-studio-phase0.md`](./2026-08-05-design-image-studio-phase0.md) 与
 [`evidence/2026-08-05-design-image-provider-probe.json`](./evidence/2026-08-05-design-image-provider-probe.json)。
 
-### Phase 1：迁移、模型、权限与配置
+### Phase 1：迁移、模型、权限与配置（已完成）
 
 实施：
 
@@ -585,6 +585,9 @@ frontend/src/
 - revision ID 不超过 32 字符；
 - 不把迁移交给未经审查的 autogenerate；
 - 不把业务模型放进冻结的共享 models 目录。
+
+完成证据：提交 `5ffce35` 与 `52cb243`；共享 MySQL 已升级至唯一 head
+`089_design_image_studio`，目标回归 32 项通过，规格与代码质量两轮独立审查均批准。
 
 ### Phase 2：共享图片调用与私有文件
 

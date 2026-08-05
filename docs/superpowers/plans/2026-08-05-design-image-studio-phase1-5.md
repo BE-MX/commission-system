@@ -43,7 +43,7 @@
 - Create: `backend/tests/test_design_image_models.py`
 - Create: `backend/tests/test_design_image_permissions.py`
 
-- [ ] **Step 1: Re-check migration topology before writing**
+- [x] **Step 1: Re-check migration topology before writing**
 
   Run:
 
@@ -54,7 +54,7 @@
 
   Expected: one head. If it is no longer `088_festival_first_sign`, stop and choose the next free numeric prefix/down revision from current evidence.
 
-- [ ] **Step 2: Write failing metadata, permission and settings tests**
+- [x] **Step 2: Write failing metadata, permission and settings tests**
 
   Tests must assert:
 
@@ -75,11 +75,11 @@
 
   Expected: FAIL because the domain and fields do not exist.
 
-- [ ] **Step 3: Update the rule before the practice**
+- [x] **Step 3: Update the rule before the practice**
 
   Change the AI rule in `CLAUDE.md` to state that text calls use `app.ai.service.chat`, while business image calls import `generate_image/edit_image` from the same facade. Do not permit business modules to build their own model HTTP clients.
 
-- [ ] **Step 4: Implement schema and ORM models**
+- [x] **Step 4: Implement schema and ORM models**
 
   Use revision `089_design_image_studio` (or the next free revision discovered in Step 1) and add nullable `ark_ai_call_logs.usage_detail` JSON plus the five tables from spec §6.2. Required database invariants:
 
@@ -95,7 +95,7 @@
 
   `owner_user_id/created_by` must exactly match production `ark_users.id` as `mysql.INTEGER(unsigned=True)` in the migration. `ai_call_log_id` matches the existing signed BIGINT. Explicitly import the new domain models from both `backend/app/models/__init__.py` and `backend/tests/conftest.py`, because Alembic and isolated SQLite tests otherwise do not reliably register them.
 
-- [ ] **Step 5: Add settings and permission seed**
+- [x] **Step 5: Add settings and permission seed**
 
   Add typed settings with safe defaults:
 
@@ -113,7 +113,7 @@
 
   Seed `read/write/admin` with permitted action names and stable metadata; test two seed runs for idempotence. `read` is the page permission and `write/admin` are action permissions. Preserve the repository's existing system-admin permission expansion, but do not auto-assign them to broad business roles.
 
-- [ ] **Step 6: Verify Phase 1 and apply the shared migration**
+- [x] **Step 6: Verify Phase 1 and apply the shared migration**
 
   Run:
 
@@ -126,7 +126,7 @@
 
   Expected: tests pass, upgrade succeeds, exactly one head. Inspect the live permission rows after `seed_role_permissions()` and record IDs only if useful; never record credentials.
 
-- [ ] **Step 7: Commit Phase 1**
+- [x] **Step 7: Commit Phase 1**
 
   ```powershell
   git branch --show-current
