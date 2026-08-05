@@ -1052,6 +1052,87 @@ def plan_journals(*, batch: str | None = None, action: str | None = None) -> tup
                         "plan": plan})
     return records, errors
 
+def validate_quarantine_items(batch: str, items: list[dict]) -> list[dict]:
+    sources, targets, validated = set(), set(), []
+    prefix = PurePosixPath(QUARANTINE_NAME) / batch
+    for item in items:
+        if not isinstance(item, dict):
+            raise RuntimeError("quarantine plan item must be an object; manual hold")
+        source = item.get("source")
+        target = item.get("quarantine")
+        size = item.get("size")
+        sha256 = item.get("sha256")
+        if not isinstance(source, str) or not source or "\\" in source or ":" in source:
+            raise RuntimeError("quarantine plan source is invalid; manual hold")
+        source_path = PurePosixPath(source)
+        if (source_path.is_absolute() or source_path.as_posix() != source or
+                not source_path.parts or
+                any(part in {"", ".", ".."} for part in source_path.parts) or
+                source_path.parts[0] == QUARANTINE_NAME):
+            raise RuntimeError(f"quarantine plan source traverses boundary: {source}; manual hold")
+        expected_target = (prefix / source_path).as_posix()
+        if target != expected_target:
+            raise RuntimeError(f"quarantine target mismatch for {source}; manual hold")
+        if source in sources or target in targets:
+            raise RuntimeError(f"duplicate quarantine plan path: {source}; manual hold")
+        if isinstance(size, bool) or not isinstance(size, int) or size < 0:
+            raise RuntimeError(f"invalid quarantine size for {source}; manual hold")
+        if not isinstance(sha256, str) or len(sha256) != 64:
+            raise RuntimeError(f"invalid quarantine sha256 for {source}; manual hold")
+        try:
+            int(sha256, 16)
+        except ValueError:
+            raise RuntimeError(f"invalid quarantine sha256 for {source}; manual hold") from None
+        sources.add(source)
+        targets.add(target)
+        validated.append(item)
+    return validated
+
+def validate_purge_plan_subset(items: list[dict], authorized: list[dict]) -> None:
+    by_target = {item["quarantine"]: item for item in authorized}
+    seen = set()
+    for item in items:
+        if not isinstance(item, dict) or item.get("quarantine") in seen:
+            raise RuntimeError("duplicate or malformed purge plan item; manual hold")
+        target = item.get("quarantine")
+        allowed = by_target.get(target)
+        if allowed is None or any(
+            item.get(field) != allowed.get(field)
+            for field in ("source", "quarantine", "size", "sha256")
+        ):
+            raise RuntimeError(f"purge plan exceeds quarantine authorization: {target}; manual hold")
+        seen.add(target)
+
+def validate_batch_tree(batch: str, authorized: list[dict], files: list[str], directories: list[str]) -> None:
+    expected_files = {item["quarantine"] for item in authorized}
+    prefix = PurePosixPath(QUARANTINE_NAME) / batch
+    expected_dirs = set()
+    for target in map(PurePosixPath, expected_files):
+        for index in range(len(prefix.parts) + 1, len(target.parts)):
+            expected_dirs.add(PurePosixPath(*target.parts[:index]).as_posix())
+    extra_files = sorted(set(files) - expected_files)
+    extra_dirs = sorted(set(directories) - expected_dirs)
+    if extra_files or extra_dirs:
+        raise RuntimeError(json.dumps({
+            "error": "batch tree contains unauthorized entries; manual hold",
+            "extra_files": extra_files, "extra_directories": extra_dirs,
+        }, ensure_ascii=False))
+
+def authorized_quarantine_plan(batch: str) -> tuple[dict, list[dict]]:
+    records, errors = plan_journals(batch=batch)
+    if errors:
+        raise RuntimeError(f"audit journal errors; manual hold: {errors}")
+    quarantine_records = [record for record in records if record["plan"]["action"] == "quarantine"]
+    if len(quarantine_records) != 1:
+        raise RuntimeError(
+            f"expected exactly one quarantine plan, found {len(quarantine_records)}; manual hold"
+        )
+    record = quarantine_records[0]
+    authorized = validate_quarantine_items(batch, record["plan"]["items"])
+    for purge_record in (item for item in records if item["plan"]["action"] == "purge"):
+        validate_purge_plan_subset(purge_record["plan"]["items"], authorized)
+    return record, authorized
+
 def file_observation(relative: str, expected: dict) -> dict:
     path = file_service.validate_storage_boundary(relative)
     if not os.path.lexists(path):
@@ -1258,6 +1339,7 @@ elif ACTION in {"purge", "reconcile"}:
         raise SystemExit(0)
     if os.environ.get("DESIGN_IMAGE_ORPHAN_APPLY") != "PURGE":
         raise RuntimeError("set DESIGN_IMAGE_ORPHAN_APPLY=PURGE to delete quarantined files")
+    _quarantine_record, authorized_items = authorized_quarantine_plan(batch)
     previous_purge_reconciliation = reconcile_batch(batch, action="purge")
     if previous_purge_reconciliation["manual_hold"]:
         raise RuntimeError(f"previous purge reconciliation requires manual hold: {previous_purge_reconciliation}")
@@ -1273,19 +1355,35 @@ elif ACTION in {"purge", "reconcile"}:
         raise SystemExit(0)
     batch_rel = (PurePosixPath(QUARANTINE_NAME) / batch).as_posix()
     batch_root = file_service.validate_storage_boundary(batch_rel)
-    refs = referenced_paths()
     deleted = []
     discovered_dirs = []
+    discovered_files = [
+        path.relative_to(root).as_posix()
+        for path in walk_files(batch_root, directories=discovered_dirs)
+    ]
+    discovered_dir_paths = [path.relative_to(root).as_posix() for path in discovered_dirs]
+    validate_batch_tree(batch, authorized_items, discovered_files, discovered_dir_paths)
+    prior_deleted_sources = {
+        state["item"]["source"]
+        for result in previous_purge_reconciliation["results"]
+        for state in result["states"]
+        if state["state"] == "deleted_according_to_plan_intent"
+    }
     prepared = []
-    for path in list(walk_files(batch_root, directories=discovered_dirs)):
-        original_rel = path.relative_to(batch_root).as_posix()
-        if original_rel in refs:
-            raise RuntimeError(f"DB now references quarantined path: {original_rel}")
-        record = {"source": original_rel,
-                  "quarantine": path.relative_to(root).as_posix(),
-                  "size": path.stat(follow_symlinks=False).st_size,
-                  "sha256": digest(path)}
-        prepared.append((path, record))
+    for item in authorized_items:
+        state = reconcile_items("quarantine", [item])["states"][0]["state"]
+        if state == "moved":
+            prepared.append((
+                file_service.validate_storage_boundary(item["quarantine"]), item
+            ))
+        elif state == "not_moved":
+            continue
+        elif item["source"] in prior_deleted_sources and not os.path.lexists(
+            file_service.validate_storage_boundary(item["quarantine"])
+        ):
+            continue
+        else:
+            raise RuntimeError(f"authorized item cannot be safely classified; manual hold: {item}")
     journal, journal_rel = create_journal(
         "purge", batch, [record for _path, record in prepared]
     )
@@ -1332,7 +1430,7 @@ else:
 1. 先审阅 `design-image-orphan-scan.json`，逐项确认 DB 中没有相对路径、文件年龄超过门槛且不属于进行中的人工恢复。
 2. 隔离：设置 `$env:DESIGN_IMAGE_ORPHAN_APPLY="QUARANTINE"`，将最后一行的 `scan` 改成 `quarantine`。工具会在 `.orphan-quarantine/audit/` 先创建并 fsync JSONL plan，再对每个文件分别 fsync `intent/replace syscall_returned`；这只证明意图和系统调用已返回，**不证明 Windows 文件系统已持久化**。`Tee-Object` 只是摘要，不是审计真相源。记录返回的精确 `batch` 和 `journal`。
 3. 至少观察一个完整 stale/备份周期；再次查询资产、核对页面与 worker 日志。设置 `$env:DESIGN_IMAGE_ORPHAN_BATCH="<精确 batch>"` 与 `$env:DESIGN_IMAGE_ORPHAN_RECONCILE_ACTION="quarantine"`，把最后一行改成 `python - reconcile`。reconcile 会忽略 journal 曾记录的 syscall 返回状态，重新检查**全部 plan 项**的 source/隔离路径、大小和 SHA-256：source-only 且匹配=`not_moved`，target-only 且匹配=`moved`，both/neither/内容冲突=`conflict_manual_hold`。需要恢复时按 `source` 用 `Move-Item -LiteralPath` 精确移回，不能整目录覆盖。
-4. 精确删除：保持 `$env:DESIGN_IMAGE_ORPHAN_BATCH`，设置 `$env:DESIGN_IMAGE_ORPHAN_APPLY="PURGE"`，将最后一行改成 `python - purge | Tee-Object ..\design-image-orphan-purge.json`。purge 在任何 `unlink` 前持久化完整计划，再逐项 fsync `intent/unlink syscall_returned`；journal 位于批次目录外，删除批次后仍保留。系统调用返回后会立即按整个 purge plan 重读磁盘：隔离文件仍在且匹配=`not_deleted`，不存在=`deleted_according_to_plan_intent`，内容不符=`conflict_manual_hold`。它只逐文件 `unlink` 并移除已空的具名批次目录。
+4. 精确删除：保持 `$env:DESIGN_IMAGE_ORPHAN_BATCH`，设置 `$env:DESIGN_IMAGE_ORPHAN_APPLY="PURGE"`，将最后一行改成 `python - purge | Tee-Object ..\design-image-orphan-purge.json`。**唯一删除授权是该 batch 唯一 quarantine plan 的 items，不是目录扫描结果。**工具先验证 source/target 唯一、source 无穿越、target 精确等于 `.orphan-quarantine/<batch>/<source>`、size/sha256 合法；所有旧 purge plans 也必须是该授权集合的合法子集。目录遍历只检测额外文件/目录；任何未授权项、重复项、路径错配、越界 target 或内容不符都 manual hold。当前存在且匹配的授权 target 才能进入新 purge plan；缺失项必须由当前 quarantine reconcile 的 `not_moved` 或旧 purge reconcile 的 `deleted_according_to_plan_intent` 解释。之后在任何 `unlink` 前持久化完整计划，再逐项 fsync `intent/unlink syscall_returned`；journal 位于批次目录外，删除批次后仍保留。
 5. purge 后及任何恢复/重跑前，设置 `$env:DESIGN_IMAGE_ORPHAN_RECONCILE_ACTION="purge"` 再执行 `python - reconcile`。每次 purge 重跑还会在变更前自动核对全部旧 purge plans（包括已有 `syscall_returned` 的项），有冲突即停。清除该环境变量可同时查看 quarantine/purge 历史；历史 quarantine 项在已合法 purge 后会呈 source/target neither，按规则仍标 manual hold，不能把历史 syscall 日志误当磁盘事实。
 
 Journal 判读和重跑规则：`intent` 与 `syscall_returned` 都只是操作线索，任何时候都以 reconcile 的当前磁盘观察为准。quarantine 中断后不要修改旧批次，先精确 reconcile；重跑只会为根目录仍存在的 orphan 创建新批次。purge 中断后使用同一个 `DESIGN_IMAGE_ORPHAN_BATCH` 重跑，新 journal 只规划仍存在的文件，已经缺失的项由旧 plan + reconcile 解释，不会再次删除其他路径。
