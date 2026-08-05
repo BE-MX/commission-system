@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import sys
 from typing import Optional
 
 from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_MISSED
@@ -27,6 +28,16 @@ JOB_WHATSAPP_AUTO_SYNC = "whatsapp_auto_sync"
 JOB_AFTERSALES_NOTIFICATION_RETRY = "aftersales_notification_retry"
 JOB_FESTIVAL_EVENT_MONITOR = "festival_event_monitor"
 JOB_FESTIVAL_DAILY_REPORT = "festival_daily_report"
+
+
+def _console_safe(value: object, encoding: str | None = None) -> str:
+    """把服务日志文本转换为当前控制台可编码形式，避免告警监听器二次失败。"""
+    target_encoding = encoding or getattr(sys.stdout, "encoding", None) or "utf-8"
+    text = str(value)
+    try:
+        return text.encode(target_encoding, errors="backslashreplace").decode(target_encoding)
+    except LookupError:
+        return text.encode("utf-8", errors="backslashreplace").decode("utf-8")
 
 
 def _register_jobs(scheduler: AsyncIOScheduler) -> None:
@@ -162,13 +173,13 @@ def _make_job_event_listener(loop: asyncio.AbstractEventLoop):
     def _on_job_event(event):
         if getattr(event, "exception", None):
             detail = getattr(event, "traceback", "") or ""
-            msg = f"⚠️ 定时任务失败: {event.job_id}\n{event.exception}"
+            msg = f"定时任务失败: {event.job_id}\n{event.exception}"
             logger.error("%s\n%s", msg, detail)
-            print(f"{msg}\n{detail}", flush=True)  # NSSM service.log 只认 print
+            print(_console_safe(f"{msg}\n{detail}"), flush=True)  # NSSM service.log 只认 print
         else:
-            msg = f"⚠️ 定时任务错过执行(missed): {event.job_id}"
+            msg = f"定时任务错过执行(missed): {event.job_id}"
             logger.error(msg)
-            print(msg, flush=True)
+            print(_console_safe(msg), flush=True)
         try:
             from app.dingtalk.webhook import get_webhook_sender
 

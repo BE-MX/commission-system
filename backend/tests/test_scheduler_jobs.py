@@ -18,6 +18,43 @@ import pytest
 from sqlalchemy.orm import sessionmaker
 
 
+def test_scheduler_failure_console_message_is_gbk_safe(monkeypatch, capsys):
+    from app.schedulers import registry
+
+    class Event:
+        job_id = "festival_daily_report"
+        exception = RuntimeError("screenshot failed")
+        traceback = "traceback detail"
+
+    class Sender:
+        async def send_markdown(self, *_args, **_kwargs):
+            return None
+
+    monkeypatch.setattr(
+        "app.dingtalk.webhook.get_webhook_sender", lambda: Sender())
+
+    def close_coroutine(coro, _loop):
+        coro.close()
+
+    monkeypatch.setattr(registry.asyncio, "run_coroutine_threadsafe", close_coroutine)
+    listener = registry._make_job_event_listener(object())
+    listener(Event())
+
+    output = capsys.readouterr().out
+    output.encode("gbk")
+    assert "定时任务失败" in output
+
+
+def test_console_safe_escapes_characters_missing_from_gbk():
+    from app.schedulers import registry
+
+    output = registry._console_safe("⚠️ 截图失败", encoding="gbk")
+
+    output.encode("gbk")
+    assert "截图失败" in output
+    assert "\\u26a0" in output
+
+
 # ── 共用 fixture ────────────────────────────────────
 
 @pytest.fixture

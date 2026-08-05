@@ -151,6 +151,70 @@ def test_screenshot_command_forces_stable_reduced_motion_frame(tmp_path):
     assert "--virtual-time-budget=6000" in command
 
 
+def test_screenshot_command_supports_windows_service_account(tmp_path):
+    command = notification_service._screenshot_command(
+        tmp_path / "edge.exe",
+        str(tmp_path / "service-profile"),
+        tmp_path / "board.png",
+        "http://127.0.0.1:8002/festival/xinqian.html?key=secret",
+    )
+
+    assert "--no-sandbox" not in command
+    assert "--disable-crash-reporter" in command
+    assert "--disable-extensions" in command
+
+
+def test_each_board_screenshot_uses_an_independent_browser_profile(tmp_path, monkeypatch):
+    settings = notification_service.get_settings()
+    monkeypatch.setattr(settings, "FESTIVAL_SCREEN_KEYS", "secret-screen-key")
+    monkeypatch.setattr(settings, "FESTIVAL_SCREENSHOT_BASE_URL", "http://screen.test")
+    monkeypatch.setattr(notification_service, "_UPLOAD_ROOT", tmp_path)
+    monkeypatch.setattr(notification_service, "_browser_executable", lambda: tmp_path / "edge.exe")
+    monkeypatch.setattr(notification_service, "_public_url", lambda path: f"https://files.test/{path.name}")
+
+    class Response:
+        status_code = 200
+        text = "/api/public/festival/"
+
+        @staticmethod
+        def json():
+            return {"data": {"as_of": "2026-08-05 17:30:00"}}
+
+    class Client:
+        def __init__(self, **_kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        @staticmethod
+        def get(*_args, **_kwargs):
+            return Response()
+
+    profiles = []
+
+    def run(command, **_kwargs):
+        profiles.append(next(part for part in command if part.startswith("--user-data-dir=")))
+        source = Path(next(part for part in command if part.startswith("--screenshot="))[13:])
+        source.write_bytes(b"x" * 10_001)
+        return type("Proc", (), {"returncode": 0})()
+
+    def compress(_source, output):
+        output.write_bytes(b"x" * 10_001)
+
+    monkeypatch.setattr(notification_service.httpx, "Client", Client)
+    monkeypatch.setattr(notification_service.subprocess, "run", run)
+    monkeypatch.setattr(notification_service, "_compress_board_screenshot", compress)
+
+    result = notification_service.capture_board_screenshots(date(2026, 8, 5))
+
+    assert len(result) == 4
+    assert len(set(profiles)) == 4
+
+
 def test_screenshot_preflight_rejects_error_page_without_leaking_key(tmp_path, monkeypatch):
     settings = notification_service.get_settings()
     monkeypatch.setattr(settings, "FESTIVAL_SCREEN_KEYS", "secret-screen-key")

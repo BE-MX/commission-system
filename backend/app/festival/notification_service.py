@@ -237,6 +237,7 @@ def _screenshot_command(browser: Path, profile: str, output: Path, url: str) -> 
     """构造稳定帧截图命令：禁用动效，避免异步取数后截到 count-up 中间值。"""
     return [
         str(browser), "--headless=new", "--disable-gpu", "--hide-scrollbars",
+        "--disable-crash-reporter", "--disable-extensions",
         "--no-first-run", f"--user-data-dir={profile}", "--window-size=1920,1080",
         "--force-prefers-reduced-motion", "--virtual-time-budget=6000",
         f"--screenshot={output}", url,
@@ -291,12 +292,12 @@ def capture_board_screenshots(target_date: date) -> list[dict]:
                     f"{title}截图预检失败（页面 {page_response.status_code} / "
                     f"数据 {api_response.status_code}），请检查截图入口与 FESTIVAL_SCREEN_KEYS"
                 )
-    with tempfile.TemporaryDirectory(prefix="ark-festival-browser-") as profile:
-        for title, page, slug, _endpoint in _BOARD_PAGES:
-            source = output_dir / f"{slug}-source.png"
-            output = output_dir / f"{slug}.jpg"
-            query = urlencode({"key": screen_key, "stay": "1", "popup": "0"})
-            url = f"{base_url}/festival/{page}?{query}"
+    for title, page, slug, _endpoint in _BOARD_PAGES:
+        source = output_dir / f"{slug}-source.png"
+        output = output_dir / f"{slug}.jpg"
+        query = urlencode({"key": screen_key, "stay": "1", "popup": "0"})
+        url = f"{base_url}/festival/{page}?{query}"
+        with tempfile.TemporaryDirectory(prefix=f"ark-festival-{slug}-") as profile:
             try:
                 proc = subprocess.run(
                     _screenshot_command(browser, profile, source, url),
@@ -307,13 +308,13 @@ def capture_board_screenshots(target_date: date) -> list[dict]:
                 raise RuntimeError(f"{title}截图进程失败，请检查浏览器安装与服务状态") from None
             if proc.returncode != 0 or not source.is_file() or source.stat().st_size < 10_000:
                 raise RuntimeError(f"{title}截图失败（浏览器退出码 {proc.returncode}）")
-            try:
-                _compress_board_screenshot(source, output)
-            finally:
-                source.unlink(missing_ok=True)
-            if not output.is_file() or output.stat().st_size < 10_000:
-                raise RuntimeError(f"{title}截图压缩失败")
-            result.append({"title": title, "path": output, "url": _public_url(output)})
+        try:
+            _compress_board_screenshot(source, output)
+        finally:
+            source.unlink(missing_ok=True)
+        if not output.is_file() or output.stat().st_size < 10_000:
+            raise RuntimeError(f"{title}截图压缩失败")
+        result.append({"title": title, "path": output, "url": _public_url(output)})
     return result
 
 
