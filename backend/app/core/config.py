@@ -1,15 +1,17 @@
 """环境变量配置（Pydantic Settings）"""
 
 from pathlib import Path
+from typing import Annotated
 from urllib.parse import quote_plus
 
-from pydantic import field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 
 
 _JWT_DEFAULT_PLACEHOLDER = "change-this-to-a-random-64-char-secret-in-production"
 _BACKEND_DIR = Path(__file__).resolve().parents[2]
+_PositiveInt = Annotated[int, Field(gt=0)]
 
 
 class Settings(BaseSettings):
@@ -99,14 +101,14 @@ class Settings(BaseSettings):
 
     # ── AI 生图工作台 ─────────────────────────────────────
     DESIGN_IMAGE_STORAGE_ROOT: str = r"D:\WORKSOURCE\design-image"
-    DESIGN_IMAGE_DAILY_LIMIT: int = 20
-    DESIGN_IMAGE_WORKER_CONCURRENCY: int = 3
-    DESIGN_IMAGE_WORKER_INTERVAL_SECONDS: int = 10
-    DESIGN_IMAGE_LEASE_SECONDS: int = 420
-    DESIGN_IMAGE_STALE_SECONDS: int = 480
-    DESIGN_IMAGE_DRAFT_TTL_HOURS: int = 24
-    DESIGN_IMAGE_MAX_UPLOAD_MB: int = 20
-    DESIGN_IMAGE_MAX_PIXELS: int = 60_000_000
+    DESIGN_IMAGE_DAILY_LIMIT: _PositiveInt = 20
+    DESIGN_IMAGE_WORKER_CONCURRENCY: _PositiveInt = 3
+    DESIGN_IMAGE_WORKER_INTERVAL_SECONDS: _PositiveInt = 10
+    DESIGN_IMAGE_LEASE_SECONDS: _PositiveInt = 420
+    DESIGN_IMAGE_STALE_SECONDS: _PositiveInt = 480
+    DESIGN_IMAGE_DRAFT_TTL_HOURS: _PositiveInt = 24
+    DESIGN_IMAGE_MAX_UPLOAD_MB: _PositiveInt = 20
+    DESIGN_IMAGE_MAX_PIXELS: _PositiveInt = 60_000_000
 
     # ── AI 生图代理（可选，仅 image_service 生图链路走；文本 chat 不受影响）──
     # 北京展会实例出口对 api.wlai.vip 存在 SNI 阻断（2026-07-31 实证），该实例配
@@ -206,6 +208,10 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _validate_production(self):
         """production 模式启动前校验关键安全配置"""
+        if self.DESIGN_IMAGE_STALE_SECONDS <= self.DESIGN_IMAGE_LEASE_SECONDS:
+            raise ValueError(
+                "DESIGN_IMAGE_STALE_SECONDS 必须大于 DESIGN_IMAGE_LEASE_SECONDS"
+            )
         if self.APP_ENV != "production":
             return self
         errors = []

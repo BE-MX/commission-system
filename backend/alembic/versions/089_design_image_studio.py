@@ -17,13 +17,6 @@ depends_on = None
 
 
 USER_ID = sa.Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql")
-TABLES = [
-    "ark_design_image_job_assets",
-    "ark_design_image_jobs",
-    "ark_design_image_assets",
-    "ark_design_image_messages",
-    "ark_design_image_sessions",
-]
 
 
 def _table_names() -> set[str]:
@@ -162,9 +155,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    existing = _table_names()
-    for table_name in TABLES:
-        if table_name in existing:
-            op.drop_table(table_name)
-    if _has_column("ark_ai_call_logs", "usage_detail"):
-        op.drop_column("ark_ai_call_logs", "usage_detail")
+    """保留业务审计数据，不自动删除 usage_detail 或五张领域表。
+
+    MySQL DDL 不可事务回滚，且 upgrade 可能收养已存在对象；版本回退时通过
+    撤销权限、停用图片 preset 禁用功能，数据清理由单独审计迁移执行。
+    """
+    pass

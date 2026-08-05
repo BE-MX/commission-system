@@ -1,7 +1,12 @@
 """Design Image Studio persistence contract tests."""
 
 from importlib import import_module, util
+from pathlib import Path
+import subprocess
+import sys
+import textwrap
 
+import pytest
 from sqlalchemy import BigInteger, CheckConstraint, UniqueConstraint
 from sqlalchemy.dialects import mysql
 
@@ -17,12 +22,64 @@ EXPECTED_TABLES = {
     "ark_design_image_jobs",
     "ark_design_image_job_assets",
 }
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _design_image_models():
     spec = util.find_spec("app.design_image.models")
     assert spec is not None, "app.design_image.models must define the new domain"
     return import_module("app.design_image.models")
+
+
+def _migration_module():
+    path = BACKEND_ROOT / "alembic" / "versions" / "089_design_image_studio.py"
+    spec = util.spec_from_file_location("migration_089_design_image_studio", path)
+    assert spec is not None and spec.loader is not None
+    module = util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_isolated_design_image_import_registers_all_fk_targets():
+    code = textwrap.dedent(
+        """
+        from app.core.database import Base
+        import app.design_image.models
+
+        assert "ark_users" in Base.metadata.tables
+        tuple(Base.metadata.sorted_tables)
+        """
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=BACKEND_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_design_image_migration_downgrade_never_deletes_audit_data(monkeypatch):
+    migration = _migration_module()
+    destructive_calls = []
+    monkeypatch.setattr(
+        migration.op,
+        "drop_table",
+        lambda name: destructive_calls.append(("drop_table", name)),
+    )
+    monkeypatch.setattr(
+        migration.op,
+        "drop_column",
+        lambda table, column: destructive_calls.append(("drop_column", table, column)),
+    )
+    monkeypatch.setattr(migration, "_table_names", lambda: set(EXPECTED_TABLES))
+    monkeypatch.setattr(migration, "_has_column", lambda *_args: True)
+
+    migration.downgrade()
+
+    assert destructive_calls == []
 
 
 def test_design_image_tables_and_usage_detail_are_registered():
@@ -143,3 +200,38 @@ def test_design_image_settings_have_safe_defaults():
     assert settings.DESIGN_IMAGE_DRAFT_TTL_HOURS == 24
     assert settings.DESIGN_IMAGE_MAX_UPLOAD_MB == 20
     assert settings.DESIGN_IMAGE_MAX_PIXELS == 60_000_000
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    [
+        "DESIGN_IMAGE_DAILY_LIMIT",
+        "DESIGN_IMAGE_WORKER_CONCURRENCY",
+        "DESIGN_IMAGE_WORKER_INTERVAL_SECONDS",
+        "DESIGN_IMAGE_LEASE_SECONDS",
+        "DESIGN_IMAGE_STALE_SECONDS",
+        "DESIGN_IMAGE_DRAFT_TTL_HOURS",
+        "DESIGN_IMAGE_MAX_UPLOAD_MB",
+        "DESIGN_IMAGE_MAX_PIXELS",
+    ],
+)
+@pytest.mark.parametrize("invalid_value", [0, -1])
+def test_design_image_numeric_settings_must_be_positive(field_name, invalid_value):
+    with pytest.raises(ValueError):
+        Settings(_env_file=None, **{field_name: invalid_value})
+
+
+@pytest.mark.parametrize(
+    ("lease_seconds", "stale_seconds"),
+    [(420, 420), (421, 420)],
+)
+def test_design_image_stale_threshold_must_exceed_lease(
+    lease_seconds,
+    stale_seconds,
+):
+    with pytest.raises(ValueError, match="STALE_SECONDS.*LEASE_SECONDS"):
+        Settings(
+            _env_file=None,
+            DESIGN_IMAGE_LEASE_SECONDS=lease_seconds,
+            DESIGN_IMAGE_STALE_SECONDS=stale_seconds,
+        )

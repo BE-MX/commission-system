@@ -19,6 +19,7 @@ from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import relationship
 
 from app.ai.models import AiCallLog  # noqa: F401 -- registers FK target for isolated metadata
+from app.auth.models import ArkUser  # noqa: F401 -- registers user FK target in isolation
 from app.core.database import Base
 
 
