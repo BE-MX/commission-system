@@ -91,6 +91,12 @@ class TurnResult:
     reference_links: list[DesignImageJobAsset]
 
 
+@dataclass(frozen=True)
+class ActiveJobResult:
+    job: DesignImageJob
+    session: DesignImageSession
+
+
 def _not_found() -> DesignImageNotFoundError:
     return DesignImageNotFoundError(NOT_FOUND_MESSAGE)
 
@@ -105,7 +111,7 @@ def _utc_naive(value: datetime | None = None) -> datetime:
 def _day_window(now: datetime | None = None) -> tuple[datetime, datetime]:
     instant = now or datetime.now(SHANGHAI)
     if instant.tzinfo is None:
-        instant = instant.replace(tzinfo=SHANGHAI)
+        instant = instant.replace(tzinfo=UTC)
     local = instant.astimezone(SHANGHAI)
     start_local = local.replace(hour=0, minute=0, second=0, microsecond=0)
     end_local = start_local + timedelta(days=1)
@@ -128,31 +134,63 @@ def _lock_active_owner(db: Session, owner_user_id: int) -> ArkUser:
     return owner
 
 
-def _find_job_by_idempotency(
-    db: Session, owner_user_id: int, idempotency_key: str
-) -> DesignImageJob | None:
-    return (
-        db.query(DesignImageJob)
-        .filter(
+def _idempotency_job_statement(
+    owner_user_id: int, idempotency_key: str, *, for_update: bool = False
+):
+    statement = select(DesignImageJob).where(
             DesignImageJob.owner_user_id == owner_user_id,
             DesignImageJob.idempotency_key == idempotency_key,
         )
-        .first()
+    return statement.with_for_update() if for_update else statement
+
+
+def _job_statement(owner_user_id: int, job_id: int, *, for_update: bool = False):
+    statement = select(DesignImageJob).where(
+        DesignImageJob.id == job_id,
+        DesignImageJob.owner_user_id == owner_user_id,
     )
+    return statement.with_for_update() if for_update else statement
+
+
+def _asset_statement(
+    owner_user_id: int, asset_id: int, *, for_update: bool = False
+):
+    statement = select(DesignImageAsset).where(
+        DesignImageAsset.id == asset_id,
+        DesignImageAsset.created_by == owner_user_id,
+    )
+    return statement.with_for_update() if for_update else statement
+
+
+def _find_job_by_idempotency(
+    db: Session,
+    owner_user_id: int,
+    idempotency_key: str,
+    *,
+    for_update: bool = False,
+) -> DesignImageJob | None:
+    return db.execute(
+        _idempotency_job_statement(
+            owner_user_id, idempotency_key, for_update=for_update
+        )
+    ).scalar_one_or_none()
 
 
 def _owner_session(
-    db: Session, owner_user_id: int, session_id: int
+    db: Session,
+    owner_user_id: int,
+    session_id: int,
+    *,
+    for_update: bool = False,
 ) -> DesignImageSession:
-    row = (
-        db.query(DesignImageSession)
-        .filter(
+    statement = select(DesignImageSession).where(
             DesignImageSession.id == session_id,
             DesignImageSession.owner_user_id == owner_user_id,
             DesignImageSession.status == "active",
         )
-        .first()
-    )
+    if for_update:
+        statement = statement.with_for_update()
+    row = db.execute(statement).scalar_one_or_none()
     if row is None:
         raise _not_found()
     return row
@@ -283,21 +321,14 @@ def get_asset(db: Session, owner_user_id: int, asset_id: int) -> DesignImageAsse
 
 
 def get_job(db: Session, owner_user_id: int, job_id: int) -> DesignImageJob:
-    row = (
-        db.query(DesignImageJob)
-        .filter(
-            DesignImageJob.id == job_id,
-            DesignImageJob.owner_user_id == owner_user_id,
-        )
-        .first()
-    )
+    row = db.execute(_job_statement(owner_user_id, job_id)).scalar_one_or_none()
     if row is None:
         raise _not_found()
     return row
 
 
-def get_active_job(db: Session, owner_user_id: int) -> DesignImageJob | None:
-    return (
+def get_active_job(db: Session, owner_user_id: int) -> ActiveJobResult | None:
+    job = (
         db.query(DesignImageJob)
         .filter(
             DesignImageJob.owner_user_id == owner_user_id,
@@ -306,6 +337,10 @@ def get_active_job(db: Session, owner_user_id: int) -> DesignImageJob | None:
         .order_by(DesignImageJob.created_at.desc(), DesignImageJob.id.desc())
         .first()
     )
+    if job is None:
+        return None
+    session = _owner_session(db, owner_user_id, job.session_id)
+    return ActiveJobResult(job=job, session=session)
 
 
 def _delete_files_best_effort(paths: list[str], context: str) -> None:
@@ -315,7 +350,6 @@ def _delete_files_best_effort(paths: list[str], context: str) -> None:
         except Exception as exc:
             message = f"[design-image] {context} cleanup failed {PurePosixPath(path).name}: {exc}"
             logger.warning(message)
-            print(message, flush=True)
 
 
 def _thumbnail_path(relative_path: str) -> str:
@@ -337,23 +371,23 @@ def create_draft_asset(
     stored = file_service.save_private_image(
         normalized, owner_user_id=owner_user_id, kind="upload"
     )
-    row = DesignImageAsset(
-        session_id=session_id,
-        asset_type="upload",
-        storage_path=stored.relative_path,
-        mime_type=stored.mime_type,
-        file_size=stored.file_size,
-        width=stored.width,
-        height=stored.height,
-        sha256=stored.sha256,
-        status="draft",
-        expires_at=_utc_naive(now) + timedelta(
-            hours=get_settings().DESIGN_IMAGE_DRAFT_TTL_HOURS
-        ),
-        created_by=owner_user_id,
-    )
-    db.add(row)
     try:
+        row = DesignImageAsset(
+            session_id=session_id,
+            asset_type="upload",
+            storage_path=stored.relative_path,
+            mime_type=stored.mime_type,
+            file_size=stored.file_size,
+            width=stored.width,
+            height=stored.height,
+            sha256=stored.sha256,
+            status="draft",
+            expires_at=_utc_naive(now) + timedelta(
+                hours=get_settings().DESIGN_IMAGE_DRAFT_TTL_HOURS
+            ),
+            created_by=owner_user_id,
+        )
+        db.add(row)
         db.commit()
     except Exception:
         db.rollback()
@@ -366,23 +400,28 @@ def create_draft_asset(
 
 
 def delete_draft_asset(db: Session, owner_user_id: int, asset_id: int) -> None:
-    asset = get_asset(db, owner_user_id, asset_id)
-    referenced = (
-        db.query(DesignImageJobAsset.id)
-        .filter(DesignImageJobAsset.asset_id == asset.id)
-        .first()
-        is not None
-    )
-    based_on = (
-        db.query(DesignImageJob.id)
-        .filter(DesignImageJob.base_asset_id == asset.id)
-        .first()
-        is not None
-    )
-    if asset.status != "draft" or referenced or based_on:
-        raise DesignImageAssetConflictError("图片已被任务引用，不能删除")
-    asset.deleted_at = _utc_naive()
     try:
+        _lock_active_owner(db, owner_user_id)
+        asset = db.execute(
+            _asset_statement(owner_user_id, asset_id, for_update=True).where(
+                DesignImageAsset.deleted_at.is_(None)
+            )
+        ).scalar_one_or_none()
+        if asset is None:
+            raise _not_found()
+        referenced = db.execute(
+            select(DesignImageJobAsset.id)
+            .where(DesignImageJobAsset.asset_id == asset.id)
+            .with_for_update()
+        ).first()
+        based_on = db.execute(
+            select(DesignImageJob.id)
+            .where(DesignImageJob.base_asset_id == asset.id)
+            .with_for_update()
+        ).first()
+        if asset.status != "draft" or referenced is not None or based_on is not None:
+            raise DesignImageAssetConflictError("图片已被任务引用，不能删除")
+        asset.deleted_at = _utc_naive()
         db.commit()
     except Exception:
         db.rollback()
@@ -481,22 +520,22 @@ def _usable_asset(
     now: datetime | None,
 ) -> DesignImageAsset:
     statuses = ("attached", "draft") if allow_draft else ("attached",)
-    query = db.query(DesignImageAsset).filter(
-        DesignImageAsset.id == asset_id,
-        DesignImageAsset.created_by == owner_user_id,
+    statement = _asset_statement(
+        owner_user_id, asset_id, for_update=True
+    ).where(
         DesignImageAsset.session_id == session_id,
         DesignImageAsset.deleted_at.is_(None),
         DesignImageAsset.status.in_(statuses),
     )
     if allow_draft:
-        query = query.filter(
+        statement = statement.where(
             or_(
                 DesignImageAsset.status == "attached",
                 DesignImageAsset.expires_at.is_(None),
                 DesignImageAsset.expires_at > _utc_naive(now),
             )
         )
-    row = query.first()
+    row = db.execute(statement).scalar_one_or_none()
     if row is None:
         raise _not_found()
     return row
@@ -534,20 +573,34 @@ def create_turn(
         return _result_for_job(db, existing)
     try:
         _lock_active_owner(db, owner_user_id)
+        winner = _find_job_by_idempotency(
+            db, owner_user_id, payload.request_id, for_update=True
+        )
+        if winner is not None:
+            result = _result_for_job(db, winner)
+            db.rollback()
+            return result
         _enforce_capacity(db, owner_user_id, now)
         session = (
-            _owner_session(db, owner_user_id, payload.session_id)
+            _owner_session(
+                db, owner_user_id, payload.session_id, for_update=True
+            )
             if payload.session_id is not None
             else None
         )
+        operation_time = _utc_naive(now)
         if session is None:
             session = DesignImageSession(
                 owner_user_id=owner_user_id,
                 title=payload.prompt[:200],
                 status="active",
+                created_at=operation_time,
+                updated_at=operation_time,
             )
             db.add(session)
             db.flush()
+        else:
+            session.updated_at = operation_time
         base = (
             _usable_asset(
                 db, owner_user_id, session.id, payload.base_asset_id,
@@ -585,7 +638,7 @@ def create_turn(
             model=model,
             idempotency_key=payload.request_id,
             pricing_snapshot=pricing_snapshot,
-            created_at=_utc_naive(now),
+            created_at=operation_time,
         )
         db.add(job)
         db.flush()
@@ -608,10 +661,8 @@ def create_turn(
         winner = _find_job_by_idempotency(db, owner_user_id, payload.request_id)
         if winner is None:
             logger.warning("design image turn integrity error without idempotent winner")
-            print("[design-image] turn integrity error without winner", flush=True)
             raise
         logger.warning("design image turn idempotency race recovered")
-        print("[design-image] turn idempotency race recovered", flush=True)
         return _result_for_job(db, winner)
     except Exception:
         db.rollback()
@@ -627,20 +678,39 @@ def retry_job(
     *,
     now: datetime | None = None,
 ) -> TurnResult:
+    old = get_job(db, owner_user_id, job_id)
     existing = _find_job_by_idempotency(db, owner_user_id, payload.request_id)
     if existing is not None:
         return _result_for_job(db, existing)
-    old = get_job(db, owner_user_id, job_id)
     try:
         _lock_active_owner(db, owner_user_id)
+        old = db.execute(
+            _job_statement(owner_user_id, job_id, for_update=True)
+        ).scalar_one_or_none()
+        if old is None:
+            raise _not_found()
+        if old.status != "failed":
+            raise DesignImageAssetConflictError("只有失败任务可以重试")
+        winner = _find_job_by_idempotency(
+            db, owner_user_id, payload.request_id, for_update=True
+        )
+        if winner is not None:
+            result = _result_for_job(db, winner)
+            db.rollback()
+            return result
         _enforce_capacity(db, owner_user_id, now)
         preset_name, model, pricing_snapshot = _preset_snapshot(db)
-        links = (
-            db.query(DesignImageJobAsset)
-            .filter_by(job_id=old.id)
+        links = db.execute(
+            select(DesignImageJobAsset)
+            .where(DesignImageJobAsset.job_id == old.id)
             .order_by(DesignImageJobAsset.position)
-            .all()
+            .with_for_update()
+        ).scalars().all()
+        session = _owner_session(
+            db, owner_user_id, old.session_id, for_update=True
         )
+        operation_time = _utc_naive(now)
+        session.updated_at = operation_time
         job = DesignImageJob(
             owner_user_id=owner_user_id,
             session_id=old.session_id,
@@ -655,7 +725,7 @@ def retry_job(
             idempotency_key=payload.request_id,
             retry_of_job_id=old.id,
             pricing_snapshot=pricing_snapshot,
-            created_at=_utc_naive(now),
+            created_at=operation_time,
         )
         db.add(job)
         db.flush()
@@ -674,10 +744,8 @@ def retry_job(
         winner = _find_job_by_idempotency(db, owner_user_id, payload.request_id)
         if winner is None:
             logger.warning("design image retry integrity error without idempotent winner")
-            print("[design-image] retry integrity error without winner", flush=True)
             raise
         logger.warning("design image retry idempotency race recovered")
-        print("[design-image] retry idempotency race recovered", flush=True)
         return _result_for_job(db, winner)
     except Exception:
         db.rollback()
@@ -736,7 +804,19 @@ def get_usage(
         query = query.filter(DesignImageJob.status == status)
     rows = query.all()
     succeeded = sum(job.status == "succeeded" for job, _ in rows)
-    durations = [log.duration_ms for _, log in rows if log and log.duration_ms is not None]
+    provider_durations = [
+        log.duration_ms for _, log in rows if log and log.duration_ms is not None
+    ]
+    end_to_end_durations = []
+    for job, _ in rows:
+        if job.finished_at is None:
+            continue
+        elapsed_ms = round(
+            (_utc_naive(job.finished_at) - _utc_naive(job.created_at)).total_seconds()
+            * 1000
+        )
+        if elapsed_ms >= 0:
+            end_to_end_durations.append(elapsed_ms)
     input_tokens = sum(
         job.input_tokens if job.input_tokens is not None else (log.tokens_prompt or 0 if log else 0)
         for job, log in rows
@@ -781,9 +861,13 @@ def get_usage(
         "task_count": count,
         "succeeded_count": succeeded,
         "success_rate": succeeded / count if count else None,
-        "duration_ms": {
-            "p50": _percentile(durations, 0.50),
-            "p95": _percentile(durations, 0.95),
+        "end_to_end_duration_ms": {
+            "p50": _percentile(end_to_end_durations, 0.50),
+            "p95": _percentile(end_to_end_durations, 0.95),
+        },
+        "provider_duration_ms": {
+            "p50": _percentile(provider_durations, 0.50),
+            "p95": _percentile(provider_durations, 0.95),
         },
         "tokens": {
             "input": input_tokens,

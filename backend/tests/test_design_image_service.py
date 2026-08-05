@@ -421,10 +421,15 @@ def test_capacity_queries_use_mysql_current_reads_after_owner_row_lock(configure
 
     statements = (
         service._owner_lock_statement(owner.id),
+        service._idempotency_job_statement(
+            owner.id, "request-key", for_update=True
+        ),
         service._accepted_jobs_statement(
             owner.id, datetime(2026, 8, 5, 12, 0, tzinfo=SHANGHAI), for_update=True
         ),
         service._active_job_statement(owner.id, for_update=True),
+        service._job_statement(owner.id, 123, for_update=True),
+        service._asset_statement(owner.id, 456, for_update=True),
     )
     sql = [
         str(statement.compile(
@@ -433,9 +438,88 @@ def test_capacity_queries_use_mysql_current_reads_after_owner_row_lock(configure
         for statement in statements
     ]
     assert "ARK_USERS" in sql[0]
-    assert "CREATED_AT" in sql[1]
-    assert "STATUS" in sql[2]
+    assert "IDEMPOTENCY_KEY" in sql[1]
+    assert "CREATED_AT" in sql[2]
+    assert "STATUS" in sql[3]
+    assert "ARK_DESIGN_IMAGE_JOBS" in sql[4]
+    assert "ARK_DESIGN_IMAGE_ASSETS" in sql[5]
     assert all("FOR UPDATE" in statement for statement in sql)
+
+
+def test_lock_wait_rechecks_idempotency_and_returns_queued_winner_before_capacity(
+    configured, db, monkeypatch
+):
+    owner, _ = configured
+    session = _session(db, owner.id, "winner")
+    message = _message(db, session.id, "winner")
+    winner = _job(
+        db, owner.id, session.id, message.id, key="wait-winner", status="queued"
+    )
+    db.commit()
+    original_find = service._find_job_by_idempotency
+
+    def snapshot_miss_then_current_read(
+        current_db, owner_id, key, *, for_update=False
+    ):
+        if not for_update:
+            return None
+        return original_find(
+            current_db, owner_id, key, for_update=for_update
+        )
+
+    monkeypatch.setattr(
+        service, "_find_job_by_idempotency", snapshot_miss_then_current_read
+    )
+
+    replay = service.create_turn(db, owner.id, _turn(request_id="wait-winner"))
+
+    assert replay.job.id == winner.id
+    assert db.query(DesignImageJob).count() == 1
+    assert db.query(DesignImageSession).count() == 1
+    assert db.query(DesignImageMessage).count() == 1
+
+
+def test_retry_lock_wait_rechecks_idempotency_before_active_limit(
+    configured, db, monkeypatch
+):
+    owner, _ = configured
+    session = _session(db, owner.id)
+    message = _message(db, session.id)
+    old = _job(db, owner.id, session.id, message.id, key="old-failed", status="failed")
+    winner = _job(
+        db,
+        owner.id,
+        session.id,
+        message.id,
+        key="retry-wait-winner",
+        status="queued",
+        retry_of_job_id=old.id,
+    )
+    db.commit()
+    original_find = service._find_job_by_idempotency
+
+    def snapshot_miss_then_current_read(
+        current_db, owner_id, key, *, for_update=False
+    ):
+        if not for_update:
+            return None
+        return original_find(
+            current_db, owner_id, key, for_update=for_update
+        )
+
+    monkeypatch.setattr(
+        service, "_find_job_by_idempotency", snapshot_miss_then_current_read
+    )
+
+    replay = service.retry_job(
+        db,
+        owner.id,
+        old.id,
+        RetryJobRequest(request_id="retry-wait-winner"),
+    )
+
+    assert replay.job.id == winner.id
+    assert db.query(DesignImageJob).count() == 2
 
 
 def test_unique_key_race_rolls_back_every_write_and_returns_winner(
@@ -456,12 +540,14 @@ def test_unique_key_race_rolls_back_every_write_and_returns_winner(
     original_find = service._find_job_by_idempotency
     calls = 0
 
-    def miss_then_find(session, owner_id, key):
+    def miss_then_find(session, owner_id, key, *, for_update=False):
         nonlocal calls
         calls += 1
-        if calls == 1:
+        if calls <= 2:
             return None
-        return original_find(session, owner_id, key)
+        return original_find(
+            session, owner_id, key, for_update=for_update
+        )
 
     monkeypatch.setattr(service, "_find_job_by_idempotency", miss_then_find)
 
@@ -498,6 +584,58 @@ def test_retry_creates_new_job_with_new_idempotency_without_mutating_old(configu
     assert [(x.asset_id, x.position) for x in result.reference_links] == [
         (reference.id, 0)
     ]
+
+
+def test_retry_validates_path_before_idempotency_replay(configured, db):
+    owner, other = configured
+    owner_session = _session(db, owner.id)
+    owner_message = _message(db, owner_session.id)
+    winner = _job(
+        db,
+        owner.id,
+        owner_session.id,
+        owner_message.id,
+        key="existing-retry-key",
+        status="failed",
+    )
+    foreign_session = _session(db, other.id)
+    foreign_message = _message(db, foreign_session.id)
+    foreign_job = _job(
+        db,
+        other.id,
+        foreign_session.id,
+        foreign_message.id,
+        key="foreign-old",
+        status="failed",
+    )
+    db.commit()
+
+    for invalid_job_id in (foreign_job.id, 999_999):
+        with pytest.raises(service.DesignImageNotFoundError):
+            service.retry_job(
+                db,
+                owner.id,
+                invalid_job_id,
+                RetryJobRequest(request_id=winner.idempotency_key),
+            )
+
+
+@pytest.mark.parametrize("status", ["succeeded", "queued", "running"])
+def test_retry_only_accepts_failed_jobs(configured, db, status):
+    owner, _ = configured
+    session = _session(db, owner.id)
+    message = _message(db, session.id)
+    old = _job(db, owner.id, session.id, message.id, key=f"old-{status}", status=status)
+    db.commit()
+
+    with pytest.raises(service.DesignImageAssetConflictError, match="失败"):
+        service.retry_job(
+            db,
+            owner.id,
+            old.id,
+            RetryJobRequest(request_id=f"retry-{status}"),
+        )
+    assert db.query(DesignImageJob).count() == 1
 
 
 def test_retry_obeys_same_one_active_job_limit(configured, db):
@@ -544,6 +682,69 @@ def test_retry_requires_current_preset_and_snapshots_current_rate_card(configure
         service.retry_job(
             db, owner.id, old.id, RetryJobRequest(request_id="disabled-preset")
         )
+
+
+def test_active_job_projection_includes_owner_scoped_session(configured, db):
+    owner, other = configured
+    session = _session(db, owner.id, "owner-active")
+    message = _message(db, session.id)
+    active = _job(db, owner.id, session.id, message.id, key="active-owner", status="queued")
+    foreign_session = _session(db, other.id, "foreign-active")
+    foreign_message = _message(db, foreign_session.id)
+    _job(db, other.id, foreign_session.id, foreign_message.id, key="active-foreign", status="running")
+    db.commit()
+
+    result = service.get_active_job(db, owner.id)
+
+    assert result.job.id == active.id
+    assert result.session.id == session.id
+    assert result.session.owner_user_id == owner.id
+
+
+def test_success_updates_session_activity_but_idempotent_replay_does_not(configured, db):
+    owner, _ = configured
+    session = _session(db, owner.id, "target")
+    session.updated_at = datetime(2026, 8, 1, 0, 0, 0)
+    other = _session(db, owner.id, "other")
+    other.updated_at = datetime(2026, 8, 2, 0, 0, 0)
+    db.commit()
+    turn_time = datetime(2026, 8, 5, 1, 0, tzinfo=timezone.utc)
+    payload = _turn(request_id="activity-turn", session_id=session.id)
+
+    created = service.create_turn(db, owner.id, payload, now=turn_time)
+    assert created.session.updated_at == datetime(2026, 8, 5, 1, 0, 0)
+    page = service.list_sessions(db, owner.id, limit=1)
+    assert [row.id for row in page.items] == [session.id]
+    assert page.next_cursor is not None
+
+    replay = service.create_turn(
+        db,
+        owner.id,
+        payload,
+        now=datetime(2026, 8, 6, 1, 0, tzinfo=timezone.utc),
+    )
+    assert replay.session.updated_at == datetime(2026, 8, 5, 1, 0, 0)
+    second_page = service.list_sessions(db, owner.id, limit=1, cursor=page.next_cursor)
+    assert [row.id for row in second_page.items] == [other.id]
+
+    created.job.status = "failed"
+    db.commit()
+    retry = service.retry_job(
+        db,
+        owner.id,
+        created.job.id,
+        RetryJobRequest(request_id="activity-retry"),
+        now=datetime(2026, 8, 7, 1, 0, tzinfo=timezone.utc),
+    )
+    assert retry.session.updated_at == datetime(2026, 8, 7, 1, 0, 0)
+    retry_replay = service.retry_job(
+        db,
+        owner.id,
+        created.job.id,
+        RetryJobRequest(request_id="activity-retry"),
+        now=datetime(2026, 8, 8, 1, 0, tzinfo=timezone.utc),
+    )
+    assert retry_replay.session.updated_at == datetime(2026, 8, 7, 1, 0, 0)
 
 
 def test_draft_upload_uses_file_service_and_db_failure_cleans_only_created_files(
@@ -624,6 +825,59 @@ def test_draft_upload_persists_normalized_metadata_and_expiration(
     assert asset.expires_at == datetime(2026, 8, 6, 4, 0, 0)
 
 
+@pytest.mark.parametrize("failure_point", ["settings", "constructor"])
+def test_draft_upload_compensates_any_failure_after_file_save(
+    configured, db, monkeypatch, failure_point
+):
+    owner, _ = configured
+    session = _session(db, owner.id)
+    db.commit()
+    stored = StoredImage(
+        relative_path=f"{owner.id}/upload/compensate.png",
+        thumbnail_relative_path=f"{owner.id}/upload/compensate_thumb.png",
+        mime_type="image/png",
+        file_size=10,
+        width=10,
+        height=10,
+        sha256="c" * 64,
+    )
+    monkeypatch.setattr(
+        service.file_service,
+        "normalize_upload",
+        lambda *_: SimpleNamespace(content=b"normalized"),
+    )
+    monkeypatch.setattr(
+        service.file_service, "save_private_image", lambda *_args, **_kwargs: stored
+    )
+    deleted = []
+    monkeypatch.setattr(service.file_service, "delete_private_file", deleted.append)
+    rollback_calls = 0
+    real_rollback = db.rollback
+
+    def rollback_spy():
+        nonlocal rollback_calls
+        rollback_calls += 1
+        return real_rollback()
+
+    monkeypatch.setattr(db, "rollback", rollback_spy)
+
+    def fail(message):
+        raise RuntimeError(message)
+
+    if failure_point == "settings":
+        monkeypatch.setattr(service, "get_settings", lambda: fail("settings failed"))
+    else:
+        monkeypatch.setattr(
+            service, "DesignImageAsset", lambda **_kwargs: fail("construct failed")
+        )
+
+    with pytest.raises(RuntimeError, match="failed"):
+        service.create_draft_asset(db, owner.id, session.id, b"raw", "image/png")
+
+    assert rollback_calls == 1
+    assert deleted == [stored.relative_path, stored.thumbnail_relative_path]
+
+
 def test_delete_draft_rejects_attached_or_referenced_and_deletes_file_after_commit(
     configured, db, monkeypatch
 ):
@@ -656,6 +910,52 @@ def test_delete_draft_rejects_attached_or_referenced_and_deletes_file_after_comm
     ]
 
 
+def test_delete_rechecks_references_after_owner_lock_before_soft_delete(
+    configured, db, monkeypatch
+):
+    owner, _ = configured
+    session = _session(db, owner.id)
+    draft = _asset(db, owner.id, session.id, storage_path=f"{owner.id}/upload/race.png")
+    message = _message(db, session.id)
+    job = _job(db, owner.id, session.id, message.id, key="race-ref", status="failed")
+    db.commit()
+    original_lock = service._lock_active_owner
+    deleted_files = []
+
+    def lock_then_interleave(current_db, owner_id):
+        locked = original_lock(current_db, owner_id)
+        current_db.add(
+            DesignImageJobAsset(
+                job_id=job.id, asset_id=draft.id, role="reference", position=0
+            )
+        )
+        current_db.flush()
+        return locked
+
+    monkeypatch.setattr(service, "_lock_active_owner", lock_then_interleave)
+    monkeypatch.setattr(
+        service.file_service, "delete_private_file", deleted_files.append
+    )
+
+    with pytest.raises(service.DesignImageAssetConflictError):
+        service.delete_draft_asset(db, owner.id, draft.id)
+
+    db.refresh(draft)
+    assert draft.deleted_at is None
+    assert deleted_files == []
+
+
+def test_day_window_treats_naive_datetimes_as_utc_at_shanghai_midnight():
+    naive_utc = datetime(2026, 8, 4, 16, 0, 0)
+    aware_utc = naive_utc.replace(tzinfo=timezone.utc)
+
+    assert service._day_window(naive_utc) == service._day_window(aware_utc)
+    assert service._day_window(naive_utc) == (
+        datetime(2026, 8, 4, 16, 0, 0),
+        datetime(2026, 8, 5, 16, 0, 0),
+    )
+
+
 def test_config_reports_verified_choices_limit_and_remaining(configured, db, monkeypatch):
     owner, _ = configured
     monkeypatch.setattr(service.get_settings(), "DESIGN_IMAGE_DAILY_LIMIT", 3)
@@ -685,7 +985,8 @@ def test_usage_empty_and_unknown_cost_are_not_reported_as_zero(configured, db):
     empty = service.get_usage(db, owner_user_id=owner.id)
     assert empty["task_count"] == 0
     assert empty["success_rate"] is None
-    assert empty["duration_ms"] == {"p50": None, "p95": None}
+    assert empty["end_to_end_duration_ms"] == {"p50": None, "p95": None}
+    assert empty["provider_duration_ms"] == {"p50": None, "p95": None}
     assert empty["estimated_cost_microusd"] is None
 
     session = _session(db, owner.id)
@@ -714,6 +1015,8 @@ def test_usage_derives_percentiles_tokens_errors_and_snapshot_cost_from_jobs_and
     session = _session(db, owner.id)
     message = _message(db, session.id)
     durations = [100, 200, 300, 400]
+    created_at = datetime(2026, 8, 5, 0, 0, 0)
+    end_to_end_durations = [1000, 2000, 3000, 4000]
     for index, duration in enumerate(durations):
         log = AiCallLog(
             caller_module="design_image",
@@ -744,6 +1047,8 @@ def test_usage_derives_percentiles_tokens_errors_and_snapshot_cost_from_jobs_and
             billing_certainty="certain",
             estimated_cost_microusd=100 + index,
             pricing_snapshot={"rate_card": "pilot-v1"},
+            created_at=created_at,
+            finished_at=created_at + timedelta(milliseconds=end_to_end_durations[index]),
         )
     db.commit()
 
@@ -751,7 +1056,8 @@ def test_usage_derives_percentiles_tokens_errors_and_snapshot_cost_from_jobs_and
 
     assert usage["task_count"] == 4
     assert usage["success_rate"] == 0.75
-    assert usage["duration_ms"] == {"p50": 250, "p95": 385}
+    assert usage["end_to_end_duration_ms"] == {"p50": 2500, "p95": 3850}
+    assert usage["provider_duration_ms"] == {"p50": 250, "p95": 385}
     assert usage["tokens"] == {"input": 40, "output": 80, "total": 120}
     assert usage["error_categories"] == {"moderation_blocked": 1}
     assert usage["estimated_cost_microusd"] == 406
@@ -767,3 +1073,26 @@ def test_usage_derives_percentiles_tokens_errors_and_snapshot_cost_from_jobs_and
     assert failed_only["task_count"] == 1
     with pytest.raises(service.DesignImageValidationError):
         service.get_usage(db, status="not-a-job-status")
+
+
+def test_usage_end_to_end_duration_includes_completed_job_without_ai_log(configured, db):
+    owner, _ = configured
+    session = _session(db, owner.id)
+    message = _message(db, session.id)
+    started = datetime(2026, 8, 5, 1, 0, 0)
+    _job(
+        db,
+        owner.id,
+        session.id,
+        message.id,
+        key="no-log-duration",
+        status="succeeded",
+        created_at=started,
+        finished_at=started + timedelta(seconds=5),
+    )
+    db.commit()
+
+    usage = service.get_usage(db, owner_user_id=owner.id)
+
+    assert usage["end_to_end_duration_ms"] == {"p50": 5000, "p95": 5000}
+    assert usage["provider_duration_ms"] == {"p50": None, "p95": None}
