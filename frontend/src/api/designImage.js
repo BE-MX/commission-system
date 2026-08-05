@@ -1,6 +1,7 @@
 import { designImageClient } from './clients'
 
 const SILENT_REQUEST = { showLoading: false, suppressToast: true }
+const JOB_POLL_REQUEST = { ...SILENT_REQUEST, timeout: 20000 }
 
 export function getConfig() {
   return designImageClient.get('/config', { showLoading: false })
@@ -41,11 +42,11 @@ export function createTurn(sessionId, data) {
 }
 
 export function getActiveJob() {
-  return designImageClient.get('/jobs/active', { ...SILENT_REQUEST })
+  return designImageClient.get('/jobs/active', { ...JOB_POLL_REQUEST })
 }
 
 export function getJob(jobId) {
-  return designImageClient.get(`/jobs/${jobId}`, { ...SILENT_REQUEST })
+  return designImageClient.get(`/jobs/${jobId}`, { ...JOB_POLL_REQUEST })
 }
 
 export function retryJob(jobId, data) {

@@ -89,6 +89,19 @@ test('retry replaces the active job ID while preserving prior job history', () =
   assert.deepEqual(current.jobs.map(job => job.id), [41])
 })
 
+test('same-job late queued responses cannot reactivate a terminal job', () => {
+  for (const status of ['succeeded', 'failed']) {
+    const current = {
+      activeJobId: null,
+      jobs: [{ id: 41, status }],
+    }
+    const next = replaceActiveJob(current, { id: 41, status: 'queued' })
+
+    assert.equal(next.activeJobId, null)
+    assert.equal(next.jobs[0].status, status)
+  }
+})
+
 test('object URL registry revokes one, all, replacements, and repeated cleanup safely', () => {
   let sequence = 0
   const revoked = []
@@ -116,6 +129,50 @@ test('object URL registry revokes one, all, replacements, and repeated cleanup s
   assert.deepEqual(revoked, ['blob:test-1', 'blob:test-3', 'blob:test-2'])
 })
 
+test('object URL creation failure preserves the existing registered URL', () => {
+  let shouldThrow = false
+  const revoked = []
+  const registry = createObjectUrlRegistry({
+    createObjectURL() {
+      if (shouldThrow) throw new Error('create failed')
+      return 'blob:existing'
+    },
+    revokeObjectURL(url) {
+      revoked.push(url)
+    },
+  })
+  registry.create(1, {})
+  shouldThrow = true
+
+  assert.throws(() => registry.create(1, {}), /create failed/)
+  assert.equal(registry.get(1), 'blob:existing')
+  assert.deepEqual(revoked, [])
+})
+
+test('object URL revoke failures do not retain entries or stop bulk cleanup', () => {
+  let sequence = 0
+  const attempts = []
+  const registry = createObjectUrlRegistry({
+    createObjectURL() {
+      sequence += 1
+      return `blob:${sequence}`
+    },
+    revokeObjectURL(url) {
+      attempts.push(url)
+      if (url === 'blob:1') throw new Error('revoke failed')
+    },
+  })
+  registry.create(1, {})
+  registry.create(2, {})
+
+  assert.doesNotThrow(() => registry.revokeAll())
+  assert.deepEqual(attempts, ['blob:1', 'blob:2'])
+  assert.equal(registry.get(1), null)
+  assert.equal(registry.get(2), null)
+  registry.revokeAll()
+  assert.deepEqual(attempts, ['blob:1', 'blob:2'])
+})
+
 test('design image API uses the registered shared client', () => {
   const clientsSource = readFileSync(new URL('../src/api/clients.js', import.meta.url), 'utf8')
   const apiSource = readFileSync(new URL('../src/api/designImage.js', import.meta.url), 'utf8')
@@ -128,32 +185,82 @@ test('design image API uses the registered shared client', () => {
   assert.doesNotMatch(apiSource, /axios\.create/)
 })
 
-test('design image API exposes every backend route', () => {
+test('design image API wrappers execute every route with data and request config intact', async () => {
   const source = readFileSync(new URL('../src/api/designImage.js', import.meta.url), 'utf8')
-  for (const expected of [
-    /\.get\(\s*['"]\/config['"]/,
-    /\.post\(\s*['"]\/sessions['"]/,
-    /\.get\(\s*['"]\/sessions['"]/,
-    /\.get\(\s*`\/sessions\/\$\{sessionId\}`/,
-    /\.post\(\s*`\/sessions\/\$\{sessionId\}\/assets`/,
-    /\.delete\(\s*`\/assets\/\$\{assetId\}`/,
-    /\.post\(\s*`\/sessions\/\$\{sessionId\}\/turns`/,
-    /\.get\(\s*['"]\/jobs\/active['"]/,
-    /\.get\(\s*`\/jobs\/\$\{jobId\}`/,
-    /\.post\(\s*`\/jobs\/\$\{jobId\}\/retry`/,
-    /\.get\(\s*`\/assets\/\$\{assetId\}\/content`/,
-    /\.get\(\s*['"]\/usage['"]/,
-  ]) {
-    assert.match(source, expected)
+  const calls = []
+  const client = Object.fromEntries(['get', 'post', 'delete'].map(method => [
+    method,
+    (...args) => {
+      const result = { call: calls.length }
+      calls.push({ method, args, result })
+      return result
+    },
+  ]))
+  const injected = source.replace(
+    /import\s*\{\s*designImageClient\s*\}\s*from\s*['"]\.\/clients['"]/,
+    'const { designImageClient } = globalThis.__designImageTest',
+  )
+  assert.notEqual(injected, source)
+  globalThis.__designImageTest = { designImageClient: client }
+  const moduleUrl = `data:text/javascript;base64,${Buffer.from(injected).toString('base64')}#api-test`
+  const api = await import(moduleUrl)
+  delete globalThis.__designImageTest
+
+  const session = { title: 'campaign' }
+  const params = { limit: 20, cursor: 'next' }
+  const turn = { prompt: 'new poster', request_id: 'request-1' }
+  const retry = { request_id: 'retry-1' }
+  const usage = { owner_user_id: 7, status: 'failed' }
+  const results = [
+    api.getConfig(),
+    api.createSession(session),
+    api.listSessions(params),
+    api.getSession(11),
+    api.uploadAsset(11, 'image-file'),
+    api.deleteAsset(31),
+    api.createTurn(11, turn),
+    api.getActiveJob(),
+    api.getJob(41),
+    api.retryJob(41, retry),
+    api.getAssetBlob(31, { thumbnail: true, download: true }),
+    api.getUsage(usage),
+  ]
+  assert.deepEqual(results, calls.map(call => call.result))
+  assert.deepEqual(calls.map(({ method, args }) => [method, args[0]]), [
+    ['get', '/config'],
+    ['post', '/sessions'],
+    ['get', '/sessions'],
+    ['get', '/sessions/11'],
+    ['post', '/sessions/11/assets'],
+    ['delete', '/assets/31'],
+    ['post', '/sessions/11/turns'],
+    ['get', '/jobs/active'],
+    ['get', '/jobs/41'],
+    ['post', '/jobs/41/retry'],
+    ['get', '/assets/31/content'],
+    ['get', '/usage'],
+  ])
+  assert.equal(calls[1].args[1], session)
+  assert.deepEqual(calls[2].args[1], { params, showLoading: false })
+  assert.equal(calls[4].args[1] instanceof FormData, true)
+  assert.equal(calls[4].args[1].get('file'), 'image-file')
+  assert.deepEqual(calls[4].args[2], { showLoading: false, suppressToast: true })
+  assert.equal(calls[6].args[1], turn)
+  assert.deepEqual(calls[6].args[2], { showLoading: false, suppressToast: true })
+  for (const callIndex of [7, 8]) {
+    assert.deepEqual(calls[callIndex].args[1], {
+      showLoading: false,
+      suppressToast: true,
+      timeout: 20000,
+    })
   }
-})
-
-test('long task API calls are silent and asset content is an authenticated blob', () => {
-  const source = readFileSync(new URL('../src/api/designImage.js', import.meta.url), 'utf8')
-
-  assert.match(source, /const SILENT_REQUEST = \{ showLoading: false, suppressToast: true \}/)
-  assert.match(source, /new FormData\(\)/)
-  assert.match(source, /form\.append\(['"]file['"], file\)/)
-  assert.match(source, /responseType:\s*['"]blob['"]/)
-  assert.match(source, /params:\s*\{\s*thumbnail,\s*download\s*\}/)
+  assert.equal(calls[9].args[1], retry)
+  assert.deepEqual(calls[9].args[2], { showLoading: false, suppressToast: true })
+  assert.deepEqual(calls[10].args[1], {
+    showLoading: false,
+    suppressToast: true,
+    params: { thumbnail: true, download: true },
+    responseType: 'blob',
+  })
+  assert.deepEqual(calls[11].args[1], { params: usage, showLoading: false })
 })

@@ -48,27 +48,42 @@ export function restoreActiveJob(job) {
 
 export function replaceActiveJob(state, job) {
   const existingIndex = state.jobs.findIndex(item => item.id === job.id)
+  const nextJob = existingIndex === -1
+    ? { ...job }
+    : advanceJob(state.jobs[existingIndex], job)
   const jobs = existingIndex === -1
-    ? [...state.jobs, { ...job }]
-    : state.jobs.map((item, index) => index === existingIndex ? { ...item, ...job } : item)
-  return { ...state, activeJobId: job.id, jobs }
+    ? [...state.jobs, nextJob]
+    : state.jobs.map((item, index) => index === existingIndex ? nextJob : item)
+  let activeJobId = state.activeJobId
+  if (ACTIVE_JOB_STATUSES.has(nextJob.status)) activeJobId = nextJob.id
+  else if (activeJobId === nextJob.id) activeJobId = null
+  return { ...state, activeJobId, jobs }
 }
 
 export function createObjectUrlRegistry(urlApi = URL) {
   const urls = new Map()
 
+  function release(url) {
+    try {
+      urlApi.revokeObjectURL(url)
+    } catch {
+      // The registry must still forget stale browser resources during cleanup.
+    }
+  }
+
   function revoke(key) {
     const url = urls.get(key)
     if (!url) return
-    urlApi.revokeObjectURL(url)
     urls.delete(key)
+    release(url)
   }
 
   return {
     create(key, blob) {
-      revoke(key)
       const url = urlApi.createObjectURL(blob)
+      const previous = urls.get(key)
       urls.set(key, url)
+      if (previous) release(previous)
       return url
     },
     get(key) {
