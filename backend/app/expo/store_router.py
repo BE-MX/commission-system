@@ -6,7 +6,7 @@
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_any_permission, require_permission
@@ -22,6 +22,19 @@ from app.expo.schemas import (
 )
 
 logger = logging.getLogger("commission.expo.store_router")
+
+
+def _commit_or_500(db: Session, context: str) -> None:
+    """统一提交；失败时回滚并返回 500，避免裸异常泄漏。"""
+    try:
+        db.commit()
+    except (IntegrityError, SQLAlchemyError) as exc:
+        db.rollback()
+        msg = f"[expo] {context} commit 失败: {exc}"
+        logger.warning(msg)
+        print(msg, flush=True)
+        raise HTTPException(500, "提交失败，请稍后重试") from None
+
 
 router = APIRouter()
 
@@ -101,6 +114,7 @@ def create_store(
             contact_phone=body.contact_phone,
             status=body.status,
         )
+        _commit_or_500(db, "create_store")
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     return ok(_serialize_store(store), code=201)
@@ -130,6 +144,7 @@ def update_store(
         raise HTTPException(404, "门店不存在")
     try:
         store = store_service.update_store(db, store, **body.model_dump(exclude_unset=True))
+        _commit_or_500(db, "update_store")
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     return ok(_serialize_store(store))
@@ -147,6 +162,7 @@ def toggle_store_status(
     new_status = 0 if store.status == 1 else 1
     try:
         store = store_service.update_store(db, store, status=new_status)
+        _commit_or_500(db, "toggle_store_status")
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     return ok(_serialize_store(store))
@@ -176,6 +192,7 @@ def bind_store_user(
         binding = store_service.bind_user_to_store(
             db, store_id, body.user_id, is_primary=body.is_primary
         )
+        _commit_or_500(db, "bind_store_user")
     except store_service.StoreNotFound as exc:
         raise HTTPException(404, str(exc))
     except store_service.UserAlreadyBound as exc:
@@ -195,7 +212,11 @@ def unbind_store_user(
     store = store_service.get_store_by_id(db, store_id)
     if store is None:
         raise HTTPException(404, "门店不存在")
-    store_service.unbind_user_from_store(db, store_id, user_id)
+    try:
+        store_service.unbind_user_from_store(db, store_id, user_id)
+        _commit_or_500(db, "unbind_store_user")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
     return ok()
 
 
@@ -230,23 +251,18 @@ def recharge_store_quota(
             operator_user_id=operator_id,
             remark=body.remark,
         )
-        db.commit()
+        _commit_or_500(db, "recharge_store_quota")
     except store_service.StoreNotFound as exc:
         raise HTTPException(404, str(exc))
     except ValueError as exc:
         raise HTTPException(400, str(exc))
-    except SQLAlchemyError as exc:
-        msg = f"[expo] recharge_store_quota 失败 store={store_id} operator={operator_id}: {exc}"
-        logger.warning(msg)
-        print(msg, flush=True)
-        raise HTTPException(500, "充值处理失败，请稍后重试")
     return ok(_serialize_quota_record(record), code=201)
 
 
 @router.get("/{store_id}/quota/records", summary="门店配额变动流水")
 def list_store_quota_records(
     store_id: int,
-    type_: str | None = Query(None, pattern="^(recharge|deduct)$"),
+    type_: str | None = Query(None, alias="type", pattern="^(recharge|deduct)$"),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),

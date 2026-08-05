@@ -14,6 +14,7 @@ from app.auth.models import ArkUser
 from app.auth.utils import create_access_token
 from app.core.database import get_db
 from app.expo.models import ExpoStore
+from app.expo.quota_service import deduct_quota
 from app.expo.router import router as expo_router
 
 
@@ -245,6 +246,34 @@ class TestStoreQuota:
         assert data["total"] == 2
         amounts = {r["amount"] for r in data["items"]}
         assert amounts == {20, 30}
+
+    def test_list_quota_records_filter_by_type(self, db):
+        store = ExpoStore(name="S", code="Q5", total_quota=100)
+        db.add(store)
+        user = ArkUser(username="u", password_hash="x", real_name="U")
+        db.add(user)
+        db.commit()
+        db.refresh(store)
+        db.refresh(user)
+
+        with _client(db, PERMS_BOTH) as (c, _):
+            c.post(f"/api/expo/stores/{store.id}/quota/recharge", json={"amount": 50})
+            c.post(f"/api/expo/stores/{store.id}/quota/recharge", json={"amount": 30})
+            # deduct 端点仅供内部生图调用，直接走服务写入一条扣减流水
+            deduct_quota(db, store_id=store.id, amount=10, operator_user_id=user.id)
+
+            resp = c.get(f"/api/expo/stores/{store.id}/quota/records?type=recharge")
+            assert resp.status_code == 200
+            data = resp.json()["data"]
+            assert data["total"] == 2
+            assert all(r["type"] == "recharge" for r in data["items"])
+
+            resp = c.get(f"/api/expo/stores/{store.id}/quota/records?type=deduct")
+            assert resp.status_code == 200
+            data = resp.json()["data"]
+            assert data["total"] == 1
+            assert data["items"][0]["type"] == "deduct"
+            assert data["items"][0]["amount"] == -10
 
 
 class TestStorePermissions:

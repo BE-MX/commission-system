@@ -1,7 +1,6 @@
 """展会门店/展位配额主体的 CRUD 与人员绑定服务。
 
-事务约定：本层写方法（create/update/bind/unbind）内部自行 db.commit()，
-调用方不要重复 commit，以免在组合业务中造成双提交。
+事务约定：本层写方法只执行 db.flush()，由调用方（router）统一 db.commit()。
 """
 
 import logging
@@ -110,7 +109,7 @@ def create_store(
     )
     db.add(store)
     try:
-        db.commit()
+        db.flush()
     except IntegrityError as exc:
         db.rollback()
         msg = f"[expo] create_store conflict code={clean_code}: {exc}"
@@ -144,7 +143,7 @@ def update_store(db: Session, store: ExpoStore, **kwargs) -> ExpoStore:
         setattr(store, key, value)
 
     try:
-        db.commit()
+        db.flush()
     except IntegrityError as exc:
         db.rollback()
         msg = f"[expo] update_store conflict store={store.id}: {exc}"
@@ -210,7 +209,7 @@ def bind_user_to_store(
     )
     db.add(binding)
     try:
-        db.commit()
+        db.flush()
     except IntegrityError as exc:
         db.rollback()
         msg = f"[expo] bind_user_to_store 并发冲突 store={store_id} user={user_id}: {exc}"
@@ -241,10 +240,10 @@ def unbind_user_from_store(db: Session, store_id: int, user_id: int) -> None:
 
     db.delete(binding)
     try:
-        db.commit()
+        db.flush()
     except IntegrityError as exc:
         db.rollback()
         msg = f"[expo] unbind_user_from_store 失败 store={store_id} user={user_id}: {exc}"
         logger.warning(msg)
         print(msg, flush=True)
-        raise
+        raise ValueError("解绑失败，请重试") from None
