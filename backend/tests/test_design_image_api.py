@@ -199,6 +199,24 @@ def test_user_identity_comes_only_from_authenticated_sub(api, monkeypatch):
     assert captured == [7]
 
 
+def test_user_id_without_sub_is_rejected_before_service_call(api, monkeypatch):
+    client, app, _, service = api
+    called = []
+    app.dependency_overrides[get_current_user] = lambda: {
+        "user_id": 7,
+        "roles": [],
+        "permissions": ["design_image:read"],
+    }
+    monkeypatch.setattr(
+        service, "get_config", lambda *_a, **_k: called.append(True) or {}
+    )
+
+    response = client.get("/api/design-image/config")
+
+    assert response.status_code == 401
+    assert called == []
+
+
 def test_super_admin_permission_bypass_never_bypasses_owner_scope(api, monkeypatch):
     client, app, _, service = api
     captured = []

@@ -23,7 +23,7 @@ T = TypeVar("T")
 
 
 def _user_id(payload: dict) -> int:
-    raw = payload.get("sub") or payload.get("user_id")
+    raw = payload.get("sub")
     try:
         value = int(raw)
     except (TypeError, ValueError):
