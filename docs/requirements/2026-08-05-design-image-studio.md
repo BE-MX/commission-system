@@ -681,7 +681,7 @@ frontend/src/
 - 调用日志、job、文件、usage 数字能互相对上；
 - `python scripts/check_conventions.py`；
 - `cd backend && pytest`；
-- `cd frontend && node --test tests/designImageState.test.mjs`；
+- `cd frontend && node --test tests/designImage*.test.mjs`；
 - `cd frontend && npm run build`；
 - `python scripts/git_sweep.py`。
 

@@ -371,7 +371,7 @@
 
   Tests must cover monotonic status (`queued→running→succeeded/failed`, never backward), stale conversation generation guards, duplicate send/upload guards, concurrent attachment completion without loss, explicit base asset ID, restoring only active jobs, retry replacing active job ID while preserving history, and Object URL revocation registry.
 
-  Run: `cd frontend; node --test tests/designImageState.test.mjs`
+  Run: `cd frontend; node --test tests/designImage*.test.mjs`
 
   Expected: FAIL because state helpers are absent.
 
@@ -395,7 +395,7 @@
 
 - [x] **Step 4: Verify and commit**
 
-  Run: `cd frontend; node --test tests/designImageState.test.mjs`
+  Run: `cd frontend; node --test tests/designImage*.test.mjs`
 
   Then:
 
@@ -422,7 +422,7 @@
 
   Extend the Node test to assert `/design/image-studio`, `design_image:read`, lazy view import, no naked hex in new files, no `transition: all`, no `ease-in`, no `.glass-card`, no unguarded `setInterval`, and `prefers-reduced-motion` handling.
 
-  Run: `cd frontend; node --test tests/designImageState.test.mjs`
+  Run: `cd frontend; node --test tests/designImage*.test.mjs`
 
   Expected: FAIL because navigation/view files do not exist.
 
@@ -459,7 +459,7 @@
 
   ```powershell
   cd frontend
-  node --test tests/designImageState.test.mjs
+  node --test tests/designImage*.test.mjs
   npm run build
   ```
 
@@ -509,7 +509,7 @@
   ```powershell
   python scripts/check_conventions.py --base (git merge-base main HEAD)
   cd backend; python -m pytest
-  cd ..\frontend; node --test tests/designImageState.test.mjs
+  cd ..\frontend; node --test tests/designImage*.test.mjs
   npm run build
   cd ..; python scripts/git_sweep.py
   ```
