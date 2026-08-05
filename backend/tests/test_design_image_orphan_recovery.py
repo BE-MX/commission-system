@@ -210,11 +210,11 @@ def test_partial_purge_rerun_rejects_wrong_reappeared_source_before_new_plan_or_
 @pytest.mark.parametrize(
     ("source_content", "target_content", "should_fail"),
     [
-        (b"original-a", None, False),
+        (b"original-a", None, True),
         (b"wrong-a", None, True),
         (b"XXXXXXXXXX", None, True),
         (None, None, False),
-        (None, b"original-a", False),
+        (None, b"original-a", True),
         (b"original-a", b"original-a", True),
         (b"wrong-a", b"original-a", True),
     ],
@@ -225,10 +225,13 @@ def test_partial_purge_rerun_requires_fresh_unambiguous_source_target_observatio
     _first, _second, second_target = _partial_purge_rerun(
         isolated_storage, source_content, target_content,
     )
+    audit = isolated_storage / ".orphan-quarantine" / "audit"
+    journals_before = sorted(audit.glob("*.jsonl"))
 
     if should_fail:
         with pytest.raises(RuntimeError, match="manual hold"):
             recovery.run_purge(BATCH, {"batches": [BATCH]}, _Barrier())
+        assert sorted(audit.glob("*.jsonl")) == journals_before
         assert second_target.exists()
     else:
         result = recovery.run_purge(BATCH, {"batches": [BATCH]}, _Barrier())

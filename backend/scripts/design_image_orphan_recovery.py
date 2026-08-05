@@ -554,18 +554,20 @@ def run_purge(batch: str, inventory: dict, barrier) -> dict:
     files = [p.relative_to(root).as_posix() for p in walk_files(batch_root, directories=directories)]
     validate_batch_tree(batch, authorized, files, [p.relative_to(root).as_posix() for p in directories])
     prior_deleted = {state["item"]["source"] for result in previous["results"]
-                     for state in result["states"]
-                     if state["state"] == "deleted_according_to_plan_intent"}
+                     for state in result["states"]}
     prepared = []
     for item in authorized:
         observation = reconcile_items("quarantine", [item])["states"][0]
+        if item["source"] in prior_deleted:
+            if (not observation["source_observation"]["exists"] and
+                    not observation["quarantine_observation"]["exists"]):
+                continue
+            raise RuntimeError(
+                f"previously purged item reappeared; manual hold: {item}"
+            )
         if observation["state"] == "moved":
             prepared.append((file_service.validate_storage_boundary(item["quarantine"]), item))
         elif observation["state"] == "not_moved":
-            continue
-        elif (item["source"] in prior_deleted and
-              not observation["source_observation"]["exists"] and
-              not observation["quarantine_observation"]["exists"]):
             continue
         else:
             raise RuntimeError(f"authorized item cannot be safely classified; manual hold: {item}")
