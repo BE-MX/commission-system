@@ -7,6 +7,7 @@
 <!-- 预取轮播下一屏资源，减轻 30s 硬跳转白闪 -->
 <link rel="prefetch" href="fugou.html">
 <link rel="prefetch" href="assets/bg-repurchase.jpg">
+<link rel="stylesheet" href="assets/festival-popup.css">
 <style>
   /* 设计系统源自《采购节大屏DEMO-像素版》（Pixel × Glass × AI 赛事频道），
      主体区按效果图改为在职参赛人员卡片墙（真实素材 + 实时数据） */
@@ -223,6 +224,7 @@
   </footer>
 </div>
 
+<script src="assets/festival-popup.js"></script>
 <script>
 (function () {
   "use strict";
@@ -250,7 +252,9 @@
 
   /* 轮播：每屏停留 30s 切下一屏（URL 加 &stay=1 可固定本屏） */
   if (qs.get("stay") !== "1") {
-    setTimeout(function () { location.href = "fugou.html" + location.search; }, 30000);
+    window.FestivalPopup
+      ? FestivalPopup.scheduleNavigation("fugou.html" + location.search, 30000)
+      : setTimeout(() => { location.href = "fugou.html" + location.search; }, 30000);
   }
 
   /* 时钟 + 数据新鲜度 */

@@ -295,7 +295,7 @@ def capture_board_screenshots(target_date: date) -> list[dict]:
         for title, page, slug, _endpoint in _BOARD_PAGES:
             source = output_dir / f"{slug}-source.png"
             output = output_dir / f"{slug}.jpg"
-            query = urlencode({"key": screen_key, "stay": "1"})
+            query = urlencode({"key": screen_key, "stay": "1", "popup": "0"})
             url = f"{base_url}/festival/{page}?{query}"
             try:
                 proc = subprocess.run(

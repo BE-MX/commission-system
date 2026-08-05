@@ -8,6 +8,7 @@
 <link rel="prefetch" href="zhenying.html">
 <link rel="prefetch" href="assets/bg-camps.jpg">
 <link rel="prefetch" href="assets/chip.png">
+<link rel="stylesheet" href="assets/festival-popup.css">
 <style>
   /* 设计系统同前三屏；两块面板与前二高亮条/奖杯/皇冠已烘焙在 bg-repurchase.jpg，
      前二行内容对位叠加（冻结不滚动），第 3 名起为纵向滚动列表 */
@@ -248,6 +249,7 @@
   </footer>
 </div>
 
+<script src="assets/festival-popup.js"></script>
 <script>
 (function () {
   "use strict";
@@ -274,7 +276,9 @@
 
   /* 轮播：每屏停留 30s 切下一屏（URL 加 &stay=1 可固定本屏） */
   if (qs.get("stay") !== "1") {
-    setTimeout(function () { location.href = "zhenying.html" + location.search; }, 30000);
+    window.FestivalPopup
+      ? FestivalPopup.scheduleNavigation("zhenying.html" + location.search, 30000)
+      : setTimeout(() => { location.href = "zhenying.html" + location.search; }, 30000);
   }
 
   var WEEK = ["周日","周一","周二","周三","周四","周五","周六"];

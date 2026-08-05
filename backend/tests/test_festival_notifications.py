@@ -2,6 +2,7 @@
 
 import json
 from datetime import date, datetime, timedelta
+from pathlib import Path
 
 import pytest
 from PIL import Image
@@ -142,7 +143,7 @@ def test_screenshot_command_forces_stable_reduced_motion_frame(tmp_path):
         tmp_path / "edge.exe",
         str(tmp_path / "profile"),
         tmp_path / "board.png",
-        "http://screen.test/festival/xinqian.html?key=secret",
+        "http://screen.test/festival/xinqian.html?key=secret&stay=1&popup=0",
     )
 
     assert "--force-prefers-reduced-motion" in command
@@ -218,6 +219,7 @@ def test_screenshot_timeout_does_not_leak_key(tmp_path, monkeypatch):
             return Response()
 
     def timeout(cmd, **_kwargs):
+        assert any("popup=0" in str(part) for part in cmd)
         raise notification_service.subprocess.TimeoutExpired(cmd, 40)
 
     monkeypatch.setattr(notification_service.httpx, "Client", Client)
@@ -227,6 +229,32 @@ def test_screenshot_timeout_does_not_leak_key(tmp_path, monkeypatch):
         notification_service.capture_board_screenshots(date(2026, 8, 4))
     assert "截图进程失败" in str(caught.value)
     assert "secret-screen-key" not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    "page",
+    ["zhaiyao.html", "xinqian.html", "fugou.html", "zhenying.html", "tuandui.html"],
+)
+def test_every_festival_board_uses_shared_popup_controller(page):
+    festival_root = Path(__file__).resolve().parents[2] / "frontend" / "public" / "festival"
+    html = (festival_root / page).read_text(encoding="utf-8")
+
+    assert 'href="assets/festival-popup.css"' in html
+    assert 'src="assets/festival-popup.js"' in html
+    assert "window.FestivalPopup" in html
+    assert "FestivalPopup.scheduleNavigation" in html
+
+
+def test_shared_popup_acknowledges_only_after_playback_and_can_be_disabled():
+    script = (Path(__file__).resolve().parents[2] / "frontend" / "public" / "festival" /
+              "assets" / "festival-popup.js").read_text(encoding="utf-8")
+
+    finish_body = script.split("function finish(event)", 1)[1].split("function showLower", 1)[0]
+    enqueue_body = script.split("function enqueue(events)", 1)[1].split("function previewExamples", 1)[0]
+    assert "acknowledge(event.id)" in finish_body
+    assert "acknowledge(" not in enqueue_body
+    assert 'qs.get("popup") === "0"' in script
+    assert "queuedIds" in enqueue_body
 
 
 def test_stale_daily_claim_can_be_recovered(engine, monkeypatch):
