@@ -558,10 +558,14 @@ def run_purge(batch: str, inventory: dict, barrier) -> dict:
                      if state["state"] == "deleted_according_to_plan_intent"}
     prepared = []
     for item in authorized:
-        state = reconcile_items("quarantine", [item])["states"][0]["state"]
-        if state == "moved":
+        observation = reconcile_items("quarantine", [item])["states"][0]
+        if observation["state"] == "moved":
             prepared.append((file_service.validate_storage_boundary(item["quarantine"]), item))
-        elif state == "not_moved" or item["source"] in prior_deleted:
+        elif observation["state"] == "not_moved":
+            continue
+        elif (item["source"] in prior_deleted and
+              not observation["source_observation"]["exists"] and
+              not observation["quarantine_observation"]["exists"]):
             continue
         else:
             raise RuntimeError(f"authorized item cannot be safely classified; manual hold: {item}")

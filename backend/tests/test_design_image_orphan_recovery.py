@@ -38,6 +38,28 @@ def _events(path):
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
 
 
+def _write_storage(root, relative, content):
+    path = root.joinpath(*PurePosixPath(relative).parts)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(content)
+    return path
+
+
+def _partial_purge_rerun(isolated_storage, source_content, target_content):
+    first = _item("generated/a.png", b"original-a")
+    second = _item("generated/b.png", b"original-b")
+    recovery.create_journal("quarantine", BATCH, [first, second])
+    recovery.create_journal("purge", BATCH, [first], 411)
+    if source_content is not None:
+        _write_storage(isolated_storage, first["source"], source_content)
+    if target_content is not None:
+        _write_storage(isolated_storage, first["quarantine"], target_content)
+    second_target = _write_storage(
+        isolated_storage, second["quarantine"], b"original-b",
+    )
+    return first, second, second_target
+
+
 class _Barrier:
     connection_id = 731
 
@@ -167,6 +189,51 @@ def test_quarantine_preflight_rejects_conflicting_existing_batch(monkeypatch):
 
     with pytest.raises(RuntimeError, match="existing quarantine batch conflicts"):
         recovery.assert_existing_batches_safe(inventory)
+
+
+def test_partial_purge_rerun_rejects_wrong_reappeared_source_before_new_plan_or_unlink(
+    isolated_storage,
+):
+    _first, _second, second_target = _partial_purge_rerun(
+        isolated_storage, b"wrong-a", None,
+    )
+    audit = isolated_storage / ".orphan-quarantine" / "audit"
+    journals_before = sorted(audit.glob("*.jsonl"))
+
+    with pytest.raises(RuntimeError, match="manual hold"):
+        recovery.run_purge(BATCH, {"batches": [BATCH]}, _Barrier())
+
+    assert sorted(audit.glob("*.jsonl")) == journals_before
+    assert second_target.read_bytes() == b"original-b"
+
+
+@pytest.mark.parametrize(
+    ("source_content", "target_content", "should_fail"),
+    [
+        (b"original-a", None, False),
+        (b"wrong-a", None, True),
+        (b"XXXXXXXXXX", None, True),
+        (None, None, False),
+        (None, b"original-a", False),
+        (b"original-a", b"original-a", True),
+        (b"wrong-a", b"original-a", True),
+    ],
+)
+def test_partial_purge_rerun_requires_fresh_unambiguous_source_target_observations(
+    isolated_storage, source_content, target_content, should_fail,
+):
+    _first, _second, second_target = _partial_purge_rerun(
+        isolated_storage, source_content, target_content,
+    )
+
+    if should_fail:
+        with pytest.raises(RuntimeError, match="manual hold"):
+            recovery.run_purge(BATCH, {"batches": [BATCH]}, _Barrier())
+        assert second_target.exists()
+    else:
+        result = recovery.run_purge(BATCH, {"batches": [BATCH]}, _Barrier())
+        assert result["status"] == "purged"
+        assert not second_target.exists()
 
 
 class _Dialect:
