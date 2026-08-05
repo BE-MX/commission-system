@@ -296,6 +296,9 @@ test('design image API wrappers execute every route with data and request config
     ['get', '/assets/31/content'],
     ['get', '/usage'],
   ])
+  for (const callIndex of [0, 3, 5]) {
+    assert.deepEqual(calls[callIndex].args[1], { showLoading: false })
+  }
   assert.equal(calls[1].args[1], session)
   assert.deepEqual(calls[2].args[1], { params, showLoading: false })
   assert.equal(calls[4].args[1] instanceof FormData, true)
