@@ -307,7 +307,7 @@ def _milestone_candidates(db: Session, summary: dict, camps: list,
             candidates.append(_cand(
                 "company_milestone", "company", "company", "莱莎采购节",
                 f"company_milestone:{step}",
-                detail=f"149 新签目标完成 {step}% · 当前 {total}/{target}",
+                detail=f"{target} 新签目标完成 {step}% · 当前 {total}/{target}",
             ))
         _write_state(db, company_state_key, {"max_step": max(old_step, current_step)})
 

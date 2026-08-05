@@ -183,7 +183,7 @@
       </div>
     </div>
     <div class="pills">
-      <div class="pill">8月新签 <b class="num" id="newTotal">--</b> <span class="den">/ <span id="newTarget">149</span></span></div>
+      <div class="pill">8月新签 <b class="num" id="newTotal">--</b> <span class="den">/ <span id="newTarget">143</span></span></div>
       <div class="pill">8+9月业绩 <b class="num" id="gmvTotal">--</b> <span class="den">/ <span id="gmvTarget">$3,260,000</span></span></div>
       <div class="pill"><span id="phaseLabel">--</span> <b class="num hot" id="phaseDays">--</b> 天</div>
     </div>
@@ -198,7 +198,7 @@
     <div class="camp-pct"><span class="num pct" data-value="0">0</span><small>%</small></div>
     <div class="bar"><div class="fill"></div></div>
     <div class="members"></div>
-    <div class="camp-foot">已完成 <b><span class="num done" data-value="0">0</span>/<span class="req">40</span></b><span class="dot">·</span>奖池 <b>¥<span class="num prize" data-value="0">0</span></b></div>
+    <div class="camp-foot">已完成 <b><span class="num done" data-value="0">0</span>/<span class="req">34</span></b><span class="dot">·</span>奖池 <b>¥<span class="num prize" data-value="0">0</span></b></div>
   </div>
   <div class="col c2" data-camp="阵营二">
     <div class="camp-name">阵营二</div>
@@ -407,7 +407,7 @@
 
     var s = data.summary || {};
     countTo(document.getElementById("newTotal"), s.new_total || 0);
-    document.getElementById("newTarget").textContent = s.new_target || 149;
+    document.getElementById("newTarget").textContent = s.new_target || 143;
     countTo(document.getElementById("gmvTotal"), s.gmv_total || 0, fmtGmv);
     document.getElementById("gmvTarget").textContent = fmtGmv(s.gmv_target || 3260000);
 

@@ -15,7 +15,7 @@ def _person(user_id: str, rank: int) -> dict:
     }
 
 
-def _payload(sign_order=("A", "B", "C", "D"), *, new_total=14, camp_done=43,
+def _payload(sign_order=("A", "B", "C", "D"), *, new_total=14, camp_done=37,
              daily_orders=None):
     items = [_person(uid, idx) for idx, uid in enumerate(sign_order, start=1)]
     first_board = [dict(row) for row in items]
@@ -26,7 +26,7 @@ def _payload(sign_order=("A", "B", "C", "D"), *, new_total=14, camp_done=43,
         for idx, name in enumerate(("队一", "队二", "队三", "队四"), start=1)
     ]
     camps = [{
-        "name": "阵营一", "done": camp_done, "req": 40,
+        "name": "阵营一", "done": camp_done, "req": 34,
         "members": [
             {**_person("A", 1), "is_top3": True, "is_first": False},
             {**_person("B", 2), "is_top3": False},
@@ -35,7 +35,7 @@ def _payload(sign_order=("A", "B", "C", "D"), *, new_total=14, camp_done=43,
         ],
     }]
     return {
-        "summary": {"new_total": new_total, "new_target": 149},
+        "summary": {"new_total": new_total, "new_target": 143},
         "items": items,
         "camps": camps,
         "teams": teams,
@@ -123,7 +123,7 @@ def test_company_milestone_camp_overage_and_combo_crossings(db):
 
     changed = _payload(
         new_total=15,
-        camp_done=44,
+        camp_done=38,
         daily_orders={"A": [
             {"order_id": "O1", "amount": 100},
             {"order_id": "O2", "amount": 200},
@@ -134,12 +134,34 @@ def test_company_milestone_camp_overage_and_combo_crossings(db):
 
     assert by_type["company_milestone"]["level"] == "L4"
     assert "10%" in by_type["company_milestone"]["detail"]
+    assert "143 新签目标" in by_type["company_milestone"]["detail"]
     assert by_type["camp_over_target"]["level"] == "L4"
     assert "110%" in by_type["camp_over_target"]["detail"]
+    assert "38/34" in by_type["camp_over_target"]["detail"]
     assert by_type["daily_combo"]["level"] == "L3"
     assert "×2" in by_type["daily_combo"]["detail"]
 
     assert _detect(db, **changed) == []
+
+
+def test_lower_targets_continue_from_existing_production_milestone_state(db):
+    """149/40 旧状态切到 143/34：只补发新跨档，不重复历史档位。"""
+    db.add(FestivalState(
+        state_key="milestone:okki:company_new",
+        value_json='{"max_step":10}',
+    ))
+    db.add(FestivalState(
+        state_key="milestone:okki:camp:阵营一",
+        value_json='{"max_step":90}',
+    ))
+    db.flush()
+
+    candidates = _detect(db, **_payload(new_total=29, camp_done=38))
+    milestones = {(c["event_type"], c["dedup_key"]) for c in candidates}
+
+    assert ("company_milestone", "company_milestone:20") in milestones
+    assert ("camp_over_target", "camp_over:阵营一:110") in milestones
+    assert not any(key.endswith(":10") or key.endswith(":90") for _, key in milestones)
 
 
 def test_combo_sequence_uses_observed_history_not_order_id_sort(db):

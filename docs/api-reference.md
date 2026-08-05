@@ -176,7 +176,7 @@
   - `GET /camps?key=&date_from=&date_to=` — 阵营新签 PK 榜（三营进度/实时奖池(超额加成)/达标数/成员芯片含"阵营第一"标记与 unassigned 脏值计数）；配套静态页 `/festival/zhenying.html?key=`
   - `GET /teams?key=` — 团队人均积分榜（周年加权，附录C快照；个人队排除）；静态页 `/festival/tuandui.html?key=`
   - `GET /repurchase?key=` — 首返·复购双榜（24 人全员）；静态页 `/festival/fugou.html?key=`
-  - `GET /headline?key=` — 摘要头条（左屏排名汇总 + 事件滚动流；真实窗口做事件检测并幂等落 `ark_festival_events`，预览窗口只出内存候选不落库）；静态页 `/festival/zhaiyao.html?key=`。事件含首单、大单/超级大单、个人/阵营达标、当日连击、公司 149 目标每 10%、阵营超额每 10%，以及新签前三/首返前二/复购前二/团队前三/阵营第一的名次上升或易主。
+  - `GET /headline?key=` — 摘要头条（左屏排名汇总 + 事件滚动流；真实窗口做事件检测并幂等落 `ark_festival_events`，预览窗口只出内存候选不落库）；静态页 `/festival/zhaiyao.html?key=`。事件含首单、大单/超级大单、个人/阵营达标、当日连击、公司 143 目标每 10%、阵营超额每 10%，以及新签前三/首返前二/复购前二/团队前三/阵营第一的名次上升或易主。
   - `GET /ai-tip?key=` — AI 赛事助手提示（走 AI 预设 `festival_screen_tip`，10 分钟缓存；预设缺失/失败时规则兜底文案）
   - `GET /reconcile?key=` — 双轨对账（okki vs ark 按人输出新签/首返/复购金额 diff，差异行置顶；并跑期运维用，连续 3 天 diff_count=0 即可切轨）
   - 取数轨道：`Settings.FESTIVAL_DATA_SOURCE=okki|ark` 全局切换（okki=lsordertest 保底轨 / ark=方舟发票域仅 synced、金额扣手续费）；各端点支持 `?source=` 临时覆盖调试

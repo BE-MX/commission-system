@@ -202,7 +202,7 @@
       </div>
     </div>
     <div class="ch-goals">
-      <div class="score-chip">8月新签 <b class="num gd" id="newTotal">--</b> / <span id="newTarget">149</span></div>
+      <div class="score-chip">8月新签 <b class="num gd" id="newTotal">--</b> / <span id="newTarget">143</span></div>
       <div class="score-chip">8+9月业绩 <b class="num gd" id="gmvTotal">--</b> / <span id="gmvTarget">$3,260,000</span></div>
       <div class="score-chip"><span id="phaseLabel">--</span> <b class="num hot" id="phaseDays">--</b> 天</div>
     </div>
@@ -415,7 +415,7 @@
 
     var s = data.summary || {};
     countTo(document.getElementById("newTotal"), s.new_total || 0);
-    document.getElementById("newTarget").textContent = s.new_target || 149;
+    document.getElementById("newTarget").textContent = s.new_target || 143;
     countTo(document.getElementById("gmvTotal"), s.gmv_total || 0, fmtGmv);
     document.getElementById("gmvTarget").textContent = fmtGmv(s.gmv_target || 3260000);
 

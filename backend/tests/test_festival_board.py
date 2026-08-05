@@ -291,7 +291,7 @@ def test_camp_prize_steps():
     assert service.camp_prize(2400, 60, 60) == 2400   # 100% 无超额
     assert service.camp_prize(2400, 65, 60) == 2400   # 108%：不足一档
     assert service.camp_prize(2400, 66, 60) == 2640   # 110%：+10%
-    assert service.camp_prize(800, 56, 40) == 1120    # 140%：+40%
+    assert service.camp_prize(800, 48, 34) == 1120    # 141%：向下取整 +40%
     assert service.camp_prize(1200, 100, 50) == 2400  # 200%：+100%（无封顶）
 
 
@@ -330,6 +330,8 @@ def test_camps_payload_leader_and_aggregation(db):
     assert not any(m["is_first"] for m in camps["阵营三"]["members"])
     # 聚合口径
     assert camps["阵营一"]["done"] == 2 and camps["阵营一"]["prize"] == 800
+    assert camps["阵营一"]["req"] == 34
+    assert payload["summary"]["new_target"] == 143
     assert c2["done"] == 2 and c2["reached_count"] == 0
     assert payload["unassigned"] == 0
     assert [c["name"] for c in payload["camps"]] == ["阵营一", "阵营二", "阵营三"]

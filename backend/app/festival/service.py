@@ -66,7 +66,7 @@ _ARK_POOL = (
 # 活动常量（规则文档 §1.1）
 ACTIVITY_NEW_SIGN_WINDOW = ("2026-08-01", "2026-08-31")   # 新签窗口（B-1：只统计 8 月）
 ACTIVITY_GMV_WINDOW = ("2026-08-01", "2026-09-30")        # GMV / 复购窗口
-COMPANY_NEW_SIGN_TARGET = 149
+COMPANY_NEW_SIGN_TARGET = 143
 COMPANY_GMV_TARGET = 3_260_000  # 326 万美金
 
 # 新成交 + 定制品：两字段在 custom_fields 序列化中确实相邻（data-layer 文档 §3 实测），
@@ -237,7 +237,7 @@ def get_new_sign_board(db: Session, date_from: str, date_to: str,
 
 def get_company_new_total(db: Session, date_from: str, date_to: str,
                           source: str | None = None) -> int:
-    """公司 149 进度：全局 COUNT(DISTINCT company_id)——A-4"同一客户只计一次"
+    """公司 143 进度：全局 COUNT(DISTINCT company_id)——A-4"同一客户只计一次"
     在公司口径同样成立（同一客户被两名业务员各报一单时，个人各计、公司只计一次）。"""
     if _data_source(source) == "ark":
         val = db.execute(text(
@@ -583,7 +583,7 @@ def build_ai_tip(db: Session, headline: dict) -> dict:
 
     pct = round(s["new_total"] / s["new_target"] * 100) if s["new_target"] else 0
     leader = headline["sign_top3"][0]["name"] if headline["sign_top3"] else None
-    tip = (f"149 个新签目标已完成 {pct}%，"
+    tip = (f"{s['new_target']} 个新签目标已完成 {pct}%，"
            + (f"{leader} 暂列新签榜首，" if leader else "")
            + "各阵营咬得很紧——每一单都可能改写榜单，冲！")
     return {"tip": tip, "source": "fallback"}
@@ -635,7 +635,7 @@ def get_screen_payload(db: Session, date_from: str | None, date_to: str | None,
 
 # ── 阵营 PK（§1.6，口径全部 2026-07-29 确认）──────────────────────
 CAMP_CONFIG = (
-    {"name": "阵营一", "req": 40, "prize": 800},
+    {"name": "阵营一", "req": 34, "prize": 800},
     {"name": "阵营二", "req": 50, "prize": 1200},
     {"name": "阵营三", "req": 60, "prize": 2400},
 )

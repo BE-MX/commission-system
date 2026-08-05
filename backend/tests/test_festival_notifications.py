@@ -34,7 +34,7 @@ def test_render_event_image_contains_shareable_png(tmp_path, monkeypatch):
         "subject_type": "company",
         "subject_id": "company",
         "subject_name": "莱莎采购节",
-        "detail": "149 新签目标完成 30% · 当前 45/149",
+        "detail": "143 新签目标完成 30% · 当前 45/143",
         "amount": None,
         "dedup_key": "company_milestone:30",
         "created_at": datetime(2026, 8, 4, 12, 30),
@@ -103,7 +103,7 @@ def test_daily_markdown_has_report_and_all_four_screenshots():
         "today_new": 3,
         "today_gmv": 12500,
         "summary": {
-            "new_total": 45, "new_target": 149,
+            "new_total": 45, "new_target": 143,
             "gmv_total": 780000, "gmv_target": 3260000,
         },
         "sign_top3": [{"name": "张三", "new_points": 8}],
@@ -120,6 +120,7 @@ def test_daily_markdown_has_report_and_all_four_screenshots():
 
     assert "今日新签：**3 个**" in markdown
     assert "今日 GMV：**$12,500**" in markdown
+    assert "公司新签：**45/143**" in markdown
     assert markdown.count("![") == 4
     for shot in screenshots:
         assert shot["url"] in markdown
