@@ -285,7 +285,7 @@
 - Create: `backend/tests/test_design_image_worker.py`
 - Modify: `backend/tests/test_scheduler_jobs.py`
 
-- [ ] **Step 1: Write failing worker concurrency tests**
+- [x] **Step 1: Write failing worker concurrency tests**
 
   Cover atomic conditional claim, unique lease token, claim count, provider attempt count, generate/edit image ordering, success only after durable output storage, actionable error mapping, and scheduled draft cleanup. Simulate two workers and prove only one calls the Provider.
 
@@ -295,7 +295,7 @@
 
   Expected: FAIL because the worker/jobs are absent.
 
-- [ ] **Step 2: Implement claim, execute and conditional finalize**
+- [x] **Step 2: Implement claim, execute and conditional finalize**
 
   Public entry points:
 
@@ -309,11 +309,11 @@
 
   The success/failure UPDATE must include both `status='running'` and the current `lease_token`. A losing/late worker may record an orphan warning but cannot publish files to an asset row; clean its temporary output only.
 
-- [ ] **Step 3: Register a bounded scheduler wake-up**
+- [x] **Step 3: Register a bounded scheduler wake-up**
 
   Add one interval job with `max_instances=1`, `coalesce=True`; inside it, open `SessionLocal()` and process at most configured concurrency per wake-up. The worker exists only on the Phase 0 frozen office primary instance where `SCHEDULER_ENABLED=true` and private storage is local.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
   Run: `cd backend; python -m pytest tests/test_design_image_worker.py tests/test_scheduler_jobs.py -q`
 
