@@ -21,6 +21,24 @@
     "expected_model": "gpt-image-2",
     "office_primary_deployed_or_verified": false
   },
+  "local_verification": {
+    "status": "passed",
+    "verified_at": "2026-08-06",
+    "backend_pytest": {"passed": 1465, "failed": 0},
+    "frontend_node_tests": {"passed": 117, "failed": 0},
+    "design_image_frontend_tests": {"passed": 32, "failed": 0},
+    "frontend_production_build": "passed",
+    "conventions": "passed",
+    "git_diff_check": "passed",
+    "secret_and_long_base64_scan": "passed",
+    "secret_scan_allowlist": [
+      "backend/tests/test_design_image_provider_probe.py:94 deliberate fake credential used by redaction test"
+    ],
+    "alembic_head": "089_design_image_studio",
+    "independent_spec_review": "passed",
+    "independent_quality_review": "approved",
+    "live_mysql_migration_current_verified": false
+  },
   "pilot_role": {
     "status": "pending",
     "role_id": null,
@@ -139,7 +157,6 @@
     "Reconcile jobs, AiCallLog, assets, files, usage, and billing certainty for all four calls.",
     "Prove second-user 404 parity and frontend refresh/session/Object URL behavior.",
     "Run a two-connection MySQL concurrency test.",
-    "Deploy and verify the office-primary API/worker/private-storage topology.",
-    "Run the full repository verification and independent adversarial review."
+    "Deploy and verify the office-primary API/worker/private-storage topology."
   ]
 }

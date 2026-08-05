@@ -513,7 +513,7 @@
 
   Prove for all four calls that job status, output file metadata, AiCallLog usage and job token snapshots agree. Verify a second user receives the same 404 for the asset content route as an absent asset. Verify refresh/session switch restores the active job and does not leak Object URLs.
 
-- [ ] **Step 5: Run complete verification**
+- [x] **Step 5: Run complete local verification**
 
   ```powershell
   python scripts/check_conventions.py --base (git merge-base main HEAD)
@@ -525,9 +525,13 @@
 
   Also run `git diff --check`, secret/base64 scans, `alembic heads`, and a requirement-by-requirement audit of spec §17. Evidence must cover the full scope rather than extrapolating from targeted tests.
 
-- [ ] **Step 6: Final adversarial review and Phase 5 commit**
+  Completed locally on 2026-08-06: backend 1465/1465, frontend 117/117, production build, conventions, diff check, secret/base64 scan and Alembic head `089_design_image_studio`. Live MySQL migration/current state remains an external deployment gate.
+
+- [x] **Step 6: Final adversarial review and Phase 5 commits**
 
   A fresh reviewer checks ownership, concurrent writes, idempotency, lease races, stale/late workers, migration correctness, frontend/backend contract, private file boundaries, billing uncertainty and motion accessibility. Fix every material finding and re-run the relevant full verification.
+
+  Completed locally on 2026-08-06 after sequential specification and quality reviews. The final orphan-recovery state machine received `PASS` and `APPROVE`; this does not satisfy the unchecked external pilot steps above.
 
   Then:
 
