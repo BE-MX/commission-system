@@ -46,6 +46,39 @@ def test_render_event_image_contains_shareable_png(tmp_path, monkeypatch):
         assert image.size == (1200, 675)
         assert image.format == "PNG"
         assert image.getpixel((10, 10)) == (253, 217, 86)
+        assert image.getpixel((690, 104)) == (8, 3, 3)
+        assert image.getpixel((510, 455)) == (8, 3, 3)
+        assert image.getpixel((1060, 575)) == (253, 217, 86)
+
+
+@pytest.mark.parametrize(
+    ("subject_type", "subject_id", "subject_name", "asset_path", "color"),
+    [
+        ("person", "U1", "张三", "avatars/U1.png", (220, 30, 30)),
+        ("team", "乘风", "乘风", "team-logos/chengfeng.png", (30, 60, 220)),
+    ],
+)
+def test_render_event_image_includes_person_or_team_image(
+        tmp_path, monkeypatch, subject_type, subject_id, subject_name, asset_path, color):
+    repo_root = tmp_path / "repo"
+    asset = repo_root / "frontend" / "public" / "festival" / "assets" / asset_path
+    asset.parent.mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", (180, 180), color).save(asset)
+    monkeypatch.setattr(notification_service, "_REPO_ROOT", repo_root)
+    monkeypatch.setattr(notification_service, "_UPLOAD_ROOT", tmp_path / "output")
+
+    output = notification_service.render_event_image({
+        "level": "L3",
+        "label": "名次上升",
+        "subject_type": subject_type,
+        "subject_id": subject_id,
+        "subject_name": subject_name,
+        "detail": "当前排名上升至第 1 名",
+        "dedup_key": f"render-subject:{subject_type}",
+    })
+
+    with Image.open(output) as image:
+        assert image.getpixel((157, 251)) == color
 
 
 def test_board_screenshot_is_resized_and_compressed_to_jpeg(tmp_path):

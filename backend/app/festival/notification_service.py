@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 import logging
+import math
 import subprocess
 import tempfile
 from datetime import date, datetime, time as dt_time, timedelta
@@ -36,6 +37,61 @@ _BOARD_PAGES = (
 )
 _BRAND_YELLOW = "#FDD956"
 _BRAND_BLACK = "#080303"
+_TEAM_LOGOS = {
+    "专治不服": "zhuanzhibufu",
+    "多财多亿": "duocaiduoyi",
+    "稻乐偲": "daolesi",
+    "星星之火": "xingxingzhihuo",
+    "行则将至": "xingzejiangzhi",
+    "乘风": "chengfeng",
+    "无名": "wuming",
+}
+
+
+def _draw_firework(draw: ImageDraw.ImageDraw, center: tuple[int, int], radius: int) -> None:
+    """绘制与黄黑主题一致的静态烟花线稿，避开正文区域。"""
+    cx, cy = center
+    for idx in range(12):
+        angle = math.radians(idx * 30 - 90)
+        inner = radius * 0.38
+        x1 = cx + math.cos(angle) * inner
+        y1 = cy + math.sin(angle) * inner
+        x2 = cx + math.cos(angle) * radius
+        y2 = cy + math.sin(angle) * radius
+        draw.line((x1, y1, x2, y2), fill=_BRAND_BLACK, width=4)
+        dot_x = cx + math.cos(angle) * (radius + 10)
+        dot_y = cy + math.sin(angle) * (radius + 10)
+        draw.ellipse((dot_x - 3, dot_y - 3, dot_x + 3, dot_y + 3), fill=_BRAND_BLACK)
+    draw.ellipse((cx - 5, cy - 5, cx + 5, cy + 5), fill=_BRAND_BLACK)
+
+
+def _draw_sparkle(draw: ImageDraw.ImageDraw, center: tuple[int, int], size: int) -> None:
+    """绘制四角星光，使用小面积实心黑保持缩略图下仍清晰。"""
+    cx, cy = center
+    inner = max(2, round(size * 0.22))
+    draw.polygon([
+        (cx, cy - size), (cx + inner, cy - inner),
+        (cx + size, cy), (cx + inner, cy + inner),
+        (cx, cy + size), (cx - inner, cy + inner),
+        (cx - size, cy), (cx - inner, cy - inner),
+    ], fill=_BRAND_BLACK)
+
+
+def _draw_flower(draw: ImageDraw.ImageDraw, center: tuple[int, int]) -> None:
+    """绘制简洁花朵与枝叶，填补右下角但不侵入正文。"""
+    cx, cy = center
+    for idx in range(8):
+        angle = math.radians(idx * 45)
+        px = cx + math.cos(angle) * 23
+        py = cy + math.sin(angle) * 23
+        draw.ellipse((px - 11, py - 15, px + 11, py + 15),
+                     fill=_BRAND_YELLOW, outline=_BRAND_BLACK, width=3)
+    draw.ellipse((cx - 10, cy - 10, cx + 10, cy + 10), fill=_BRAND_BLACK)
+    draw.line((cx, cy + 34, cx - 8, cy + 78), fill=_BRAND_BLACK, width=4)
+    draw.polygon([(cx - 5, cy + 54), (cx - 31, cy + 45), (cx - 13, cy + 67)],
+                 fill=_BRAND_BLACK)
+    draw.polygon([(cx - 8, cy + 68), (cx + 18, cy + 59), (cx - 4, cy + 79)],
+                 fill=_BRAND_BLACK)
 
 
 def _font(size: int, bold: bool = False):
@@ -98,12 +154,16 @@ def _public_url(path: Path) -> str:
 def render_event_image(event: dict) -> Path:
     """把与大屏一致的事件内容渲染成 16:9 PNG，供钉钉内联显示。"""
     width, height = 1200, 675
-    level = str(event.get("level") or "L3")
     image = Image.new("RGB", (width, height), _BRAND_YELLOW)
     draw = ImageDraw.Draw(image)
     # 品牌图的核心识别来自纯黄底 + 黑色字标；装饰保持克制，避免抢事件正文。
     draw.ellipse((1120, -210, 1420, 90), outline=_BRAND_BLACK, width=22)
-    draw.arc((-130, 500, 250, 880), 205, 340, fill=_BRAND_BLACK, width=18)
+    _draw_firework(draw, (690, 104), 42)
+    _draw_firework(draw, (920, 486), 30)
+    _draw_sparkle(draw, (510, 455), 14)
+    _draw_sparkle(draw, (810, 185), 10)
+    _draw_sparkle(draw, (1080, 365), 12)
+    _draw_flower(draw, (1060, 470))
     draw.text((900, 54), "leShine Hair®", font=_font(28, bold=True), fill=_BRAND_BLACK)
 
     accent = _BRAND_BLACK
@@ -115,15 +175,21 @@ def render_event_image(event: dict) -> Path:
               font=_font(25, bold=True), fill=_BRAND_YELLOW)
 
     subject_name = str(event.get("subject_name") or "")
-    avatar_path = (_REPO_ROOT / "frontend" / "public" / "festival" / "assets" /
-                   "avatars" / f"{event.get('subject_id')}.png")
+    assets_root = _REPO_ROOT / "frontend" / "public" / "festival" / "assets"
+    subject_image_path = None
+    if event.get("subject_type") == "person":
+        subject_image_path = assets_root / "avatars" / f"{event.get('subject_id')}.png"
+    elif event.get("subject_type") == "team":
+        logo_key = _TEAM_LOGOS.get(subject_name)
+        if logo_key:
+            subject_image_path = assets_root / "team-logos" / f"{logo_key}.png"
     text_x = 118
-    if event.get("subject_type") == "person" and avatar_path.is_file():
-        avatar = Image.open(avatar_path).convert("RGB")
-        avatar = ImageOps.fit(avatar, (150, 150))
+    if subject_image_path and subject_image_path.is_file():
+        subject_image = Image.open(subject_image_path).convert("RGB")
+        subject_image = ImageOps.fit(subject_image, (150, 150))
         mask = Image.new("L", (150, 150), 0)
         ImageDraw.Draw(mask).ellipse((0, 0, 149, 149), fill=255)
-        image.paste(avatar, (82, 176), mask)
+        image.paste(subject_image, (82, 176), mask)
         draw.ellipse((78, 172, 236, 330), outline=accent, width=6)
         text_x = 278
 
@@ -144,8 +210,6 @@ def render_event_image(event: dict) -> Path:
         created_text = str(created or datetime.now().strftime("%Y-%m-%d %H:%M"))
     draw.text((82, 565), f"2026 莱莎采购节  ·  {created_text}",
               font=_font(24), fill=_BRAND_BLACK)
-    draw.rounded_rectangle((1010, 548, 1112, 602), radius=27, fill=_BRAND_BLACK)
-    draw.text((1038, 558), level, font=_font(25, bold=True), fill=_BRAND_YELLOW)
 
     token = _event_token(str(event["dedup_key"]))
     output = _UPLOAD_ROOT / "events" / f"{token}.png"
