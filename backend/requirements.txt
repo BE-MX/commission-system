@@ -7,6 +7,7 @@ pydantic-settings==2.8.*
 python-dotenv==1.1.*
 pyyaml==6.0.*
 openpyxl==3.1.*
+xlrd==2.0.1          # 读旧版 .xls（HR 工资表/社保/公积金原件），openpyxl 不支持
 python-multipart==0.0.*
 httpx[socks]==0.28.*   # socks 扩展：展会云机生图走 SSH 隧道代理（AI_IMAGE_PROXY）
 pytest==8.*
