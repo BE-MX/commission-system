@@ -37,7 +37,7 @@
     "alembic_head": "089_design_image_studio",
     "independent_spec_review": "passed",
     "independent_quality_review": "approved",
-    "live_mysql_migration_current_verified": true
+    "live_mysql_design_image_revision_verified": true
   },
   "live_mysql_schema": {
     "status": "design_image_revision_verified_as_applied",
