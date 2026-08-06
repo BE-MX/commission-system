@@ -24,7 +24,7 @@
   "local_verification": {
     "status": "passed",
     "verified_at": "2026-08-06",
-    "backend_pytest": {"passed": 1466, "failed": 0},
+    "backend_pytest": {"passed": 1528, "failed": 0},
     "frontend_node_tests": {"passed": 117, "failed": 0},
     "design_image_frontend_tests": {"passed": 32, "failed": 0},
     "frontend_production_build": "passed",
@@ -165,7 +165,7 @@
   "office_primary_topology": {
     "status": "verified_not_deployed",
     "target_only_not_deployed_or_verified": true,
-    "host_identifier": "current Windows office host",
+    "host_identifier": "office-primary target 192.168.101.193",
     "api_design_image_enabled": false,
     "scheduler_enabled": false,
     "design_image_queue_registered": false,
@@ -173,8 +173,11 @@
     "storage_root": "D:\\WORKSOURCE\\design-image",
     "storage_root_exists": true,
     "service_account_acl_verified": false,
-    "current_listener": "manual uvicorn --reload on 8001; design-image route count 0",
+    "current_listener": "192.168.101.193:8001 reachable; OpenAPI design-image route count 0",
     "windows_service_present": false,
+    "deployment_management_access": "blocked_from_validation_host_192.168.100.40",
+    "management_ports_checked": [22, 445, 3389, 5985, 5986],
+    "management_ports_reachable": [],
     "non_target_instances_worker_disabled": null,
     "cross_entry_asset_read_verified": null,
     "verified_at": "2026-08-06T02:24:01+08:00"

@@ -139,11 +139,11 @@ test('studio uses submit snapshots, independent terminal refresh, focus traps, a
   const sidebar = read('../src/views/design/image-studio/components/ConversationSidebar.vue')
   const lightbox = read('../src/views/design/image-studio/components/ImageLightbox.vue')
   const thread = read('../src/views/design/image-studio/components/MessageThread.vue')
-  const polling = studio.match(/function startActivePolling[\s\S]*?(?=\n  async function loadConfig)/)?.[0] || ''
+  const polling = studio.match(/function startActivePolling[\s\S]*?(?=\r?\n  async function loadConfig)/)?.[0] || ''
   const drawer = openingTags(sidebar, 'div').find(tag => tag.includes('drawer-panel')) || ''
   const lightboxDialog = openingTags(lightbox, 'div').find(tag => tag.includes('role="dialog"')) || ''
 
-  assert.match(studio, /const sentPrompt = prompt\.value\n/)
+  assert.match(studio, /const sentPrompt = prompt\.value\r?\n/)
   assert.match(studio, /prompt: sentPrompt\.trim\(\)/)
   for (const snapshot of ['sentUploadIds', 'sentBaseId']) assert.match(studio, new RegExp(`const ${snapshot}`))
   assert.match(studio, /reconcileSubmittedDraft\(/)
