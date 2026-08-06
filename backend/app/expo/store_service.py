@@ -171,6 +171,17 @@ def get_active_store_by_user(db: Session, user_id: int) -> Optional[ExpoStore]:
     return su.store if su else None
 
 
+def list_store_ids_by_user(db: Session, user_id: int) -> List[int]:
+    """用户绑定的全部启用中门店 id（线索台数据范围过滤用；停用门店不参与）。"""
+    rows = (
+        db.query(ExpoStoreUser.store_id)
+        .join(ExpoStore, ExpoStoreUser.store_id == ExpoStore.id)
+        .filter(ExpoStoreUser.user_id == user_id, ExpoStore.status == 1)
+        .all()
+    )
+    return [r[0] for r in rows]
+
+
 def list_store_users(db: Session, store_id: int) -> List[ExpoStoreUser]:
     """列出某门店下所有绑定用户，并预加载用户信息。"""
     return (

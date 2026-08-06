@@ -62,11 +62,11 @@ SWATCH_DIR = ai_pipeline.UPLOAD_ROOT / "hair_colors"
 def register(
     body: CustomerRegister,
     db: Session = Depends(get_db),
-    _user=Depends(require_permission("expo:write")),
+    current_user=Depends(require_permission("expo:write")),
 ):
     if not body.consent:
         raise HTTPException(400, "需同意拍照存储方可体验")
-    customer = service.register_customer(db, body)
+    customer = service.register_customer(db, body, operator_user_id=_user_id(current_user))
     return ok({"customer_id": customer.id}, code=201)
 
 
@@ -618,6 +618,19 @@ def kiosk_lead_strategy(
 
 # ---------------- 线索台（PC，expo_lead:*，2026-07-12 从 expo:read 拆出） ----------------
 
+def _lead_store_scope(db: Session, current_user) -> list[int] | None:
+    """线索数据范围：None=不限（expo_lead:read_all / 超管）；否则为本账号绑定的
+    启用门店 id 列表（空列表=无门店绑定，查不到任何线索）。"""
+    roles = current_user.get("roles", [])
+    perms = current_user.get("permissions", [])
+    if "super_admin" in roles or "expo_lead:read_all" in perms:
+        return None
+    uid = _user_id(current_user)
+    if uid is None:
+        return []
+    return store_service.list_store_ids_by_user(db, uid)
+
+
 @router.get("/leads", summary="展会线索列表")
 def list_leads(
     page: int = Query(1, ge=1),
@@ -625,12 +638,17 @@ def list_leads(
     expo_code: str | None = Query(None),
     intent_level: str | None = Query(None, pattern="^[ABCD]$"),
     keyword: str | None = Query(None),
+    store_id: int | None = Query(None, description="指定门店过滤（仅 expo_lead:read_all 生效）"),
     db: Session = Depends(get_db),
-    _user=Depends(require_any_permission("expo_lead:read", "expo_lead:write")),
+    current_user=Depends(require_any_permission("expo_lead:read", "expo_lead:write")),
 ):
+    store_ids = _lead_store_scope(db, current_user)
+    if store_ids is None and store_id is not None:
+        store_ids = [store_id]
     items, total = service.list_leads(
         db, page=page, page_size=page_size,
         expo_code=expo_code, intent_level=intent_level, keyword=keyword,
+        store_ids=store_ids,
     )
     return ok(page_result(items, total, page, page_size))
 
@@ -639,10 +657,14 @@ def list_leads(
 def lead_detail(
     customer_id: int,
     db: Session = Depends(get_db),
-    _user=Depends(require_any_permission("expo_lead:read", "expo_lead:write")),
+    current_user=Depends(require_any_permission("expo_lead:read", "expo_lead:write")),
 ):
     detail = service.get_lead_detail(db, customer_id)
     if not detail:
+        raise HTTPException(404, "客户不存在")
+    # 与列表同一数据范围，防止直接按 id 跨店读取；越权一律 404，不暴露存在性
+    store_ids = _lead_store_scope(db, current_user)
+    if store_ids is not None and detail["customer"]["store_id"] not in store_ids:
         raise HTTPException(404, "客户不存在")
     return ok(detail)
 

@@ -8,7 +8,7 @@ from pathlib import Path
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from app.expo import ai_pipeline, upload_service
+from app.expo import ai_pipeline, store_service, upload_service
 from app.expo.models import (
     ExpoCustomer,
     ExpoFeedback,
@@ -39,7 +39,10 @@ STALE_GENERATING_SECS = 420
 
 # ---------------- 客户 ----------------
 
-def register_customer(db: Session, body: CustomerRegister) -> ExpoCustomer:
+def register_customer(db: Session, body: CustomerRegister, operator_user_id: int | None = None) -> ExpoCustomer:
+    # 门店归属：操作人绑定的启用门店即客户归属门店；未绑定（展会设备）保持 NULL，
+    # 历史/无门店数据不参与门店隔离过滤（设计决策：旧数据不追溯）
+    store = store_service.get_active_store_by_user(db, operator_user_id) if operator_user_id else None
     customer = ExpoCustomer(
         name=body.name.strip(),
         phone=body.phone.strip(),
@@ -48,6 +51,7 @@ def register_customer(db: Session, body: CustomerRegister) -> ExpoCustomer:
         style_pref=body.style_pref,
         consent_at=datetime.utcnow() if body.consent else None,
         expo_code=body.expo_code,
+        store_id=store.id if store else None,
     )
     db.add(customer)
     db.commit()
@@ -185,6 +189,7 @@ def create_session(
     # 压过一次，downscale_inplace 幂等，重复调用只是空转
     ai_pipeline.downscale_inplace(photo_path)
 
+    store = store_service.get_active_store_by_user(db, operator_user_id) if operator_user_id else None
     session = ExpoSession(
         customer_id=customer_id,
         mode=mode,
@@ -192,6 +197,7 @@ def create_session(
         # scene 模式不做面容分析，直接就绪等待选场景生成
         status="analyzed" if mode == "scene" else "pending",
         operator_user_id=operator_user_id,
+        store_id=store.id if store else None,
     )
     db.add(session)
     db.commit()
@@ -610,8 +616,14 @@ def list_leads(
     expo_code: str | None = None,
     intent_level: str | None = None,
     keyword: str | None = None,
+    store_ids: list[int] | None = None,
 ) -> tuple[list[dict], int]:
+    # store_ids：None=不限门店（read_all/超管/kiosk 共享屏）；[]=无门店绑定，直接空集
+    if store_ids is not None and not store_ids:
+        return [], 0
     q = db.query(ExpoCustomer)
+    if store_ids:
+        q = q.filter(ExpoCustomer.store_id.in_(store_ids))
     if expo_code:
         q = q.filter(ExpoCustomer.expo_code == expo_code)
     if keyword:
@@ -651,6 +663,7 @@ def list_leads(
             "primary_need": c.primary_need,
             "style_pref": c.style_pref,
             "expo_code": c.expo_code,
+            "store_id": c.store_id,
             "created_at": c.created_at.isoformat() if c.created_at else None,
             "session_count": session_counts.get(c.id, 0),
             "result_count": result_counts.get(c.id, 0),
@@ -690,6 +703,7 @@ def get_lead_detail(db: Session, customer_id: int) -> dict | None:
             "primary_need": customer.primary_need,
             "style_pref": customer.style_pref,
             "expo_code": customer.expo_code,
+            "store_id": customer.store_id,
         },
         "sessions": [serialize_session(db, s, include_internal=True) for s in sessions],
         "feedbacks": [
