@@ -1,6 +1,5 @@
 """展会门店配额服务测试。"""
 
-import threading
 import uuid
 
 import pytest
@@ -239,11 +238,15 @@ class TestQuotaIntegrity:
 
 
 class TestConcurrentDeduct:
-    def test_two_threads_cannot_over_deduct(self, db):
-        """余额 2 时两个线程各扣 2，最终 used_quota 不允许超过 2。
+    def test_two_sessions_cannot_over_deduct(self, db):
+        """余额 2 时两笔各扣 2：一笔成功、一笔 InsufficientQuota，used_quota 不超 2。
 
-        内存 SQLite + StaticPool 会让写实际串行，本测试重点是不超扣、无未预期异常；
-        生产 MySQL 下 with_for_update() + populate_existing=True 保证同一时刻只有一笔成功。
+        用两个独立 session 顺序执行，而非 threading：内存 SQLite + StaticPool 只有
+        一条连接，两个线程并发驱动同一条 sqlite3 连接会踩出 InterfaceError
+        （bad parameter or other API misuse）与幻影 StoreNotFound（本地 50 次
+        复现 14 次），这类失败与业务逻辑无关，只是连接被跨线程共享的计时伪影。
+        生产 MySQL 下不超扣由 with_for_update() + populate_existing=True 保证，
+        SQLite 无法演练行锁，这里固定验证的是幂等不变量：余额不足必拒、不超扣。
         """
         user = _make_user(db)
         store = _make_store(db, total_quota=2, used_quota=0)
@@ -251,34 +254,19 @@ class TestConcurrentDeduct:
         user_id = user.id
         db.commit()
 
-        results = {"ok": 0, "errors": []}
-        lock = threading.Lock()
         Session = sessionmaker(bind=db.get_bind())
 
-        def worker():
-            s = Session()
-            try:
-                deduct_quota(s, store_id=store_id, amount=2, operator_user_id=user_id)
-                s.commit()
-                with lock:
-                    results["ok"] += 1
-            except InsufficientQuota:
-                s.rollback()
-            except Exception as exc:
-                with lock:
-                    results["errors"].append(str(exc))
-                s.rollback()
-            finally:
-                s.close()
+        s1 = Session()
+        deduct_quota(s1, store_id=store_id, amount=2, operator_user_id=user_id)
+        s1.commit()
+        s1.close()
 
-        t1 = threading.Thread(target=worker)
-        t2 = threading.Thread(target=worker)
-        t1.start()
-        t2.start()
-        t1.join()
-        t2.join()
+        s2 = Session()
+        with pytest.raises(InsufficientQuota):
+            deduct_quota(s2, store_id=store_id, amount=2, operator_user_id=user_id)
+        s2.rollback()
+        s2.close()
 
         db.expire_all()
         store = db.get(ExpoStore, store_id)
-        assert store.used_quota <= 2, f"并发超扣: used_quota={store.used_quota}"
-        assert not results["errors"], f"未预期异常: {results['errors']}"
+        assert store.used_quota == 2, f"并发超扣: used_quota={store.used_quota}"
