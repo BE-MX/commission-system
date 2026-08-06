@@ -18,7 +18,7 @@ class DingTalkWebhookError(RuntimeError):
         self.errcode = errcode
         self.errmsg = str(errmsg or "unknown")
         self.delivery_uncertain = (
-            str(self.errcode) == "130101" and self.errmsg.strip() == "系统繁忙"
+            str(self.errcode) in {"130101", "-1"} and self.errmsg.strip() == "系统繁忙"
         )
         super().__init__(f"钉钉消息发送失败: {self.errmsg}")
 
