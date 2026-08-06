@@ -189,6 +189,61 @@ export function uploadHairColorSwatch(file) {
   })
 }
 
+// ── 门店与额度（2026-08-06） ──
+// 当前账号绑定门店的额度快照（kiosk 状态栏 / PC 线索台工具栏共用）：
+// 未绑定门店是正常态（bound=false），两侧都静默处理，不当错误弹 toast
+export function getMyStoreQuota({ kiosk = false } = {}) {
+  return expoClient.get('/stores/quota', kiosk
+    ? { ...KIOSK }
+    : { showLoading: false, suppressToast: true })
+}
+
+// 启用门店选项（线索台 expo_lead:read_all 筛选用，轻量 id/name/code）
+export function getStoreOptions() {
+  return expoClient.get('/stores/options', { showLoading: false })
+}
+
+// ── 门店管理（PC，expo_store:admin/recharge） ──
+export function getStores(params) {
+  return expoClient.get('/stores', { params })
+}
+
+export function createStore(data) {
+  return expoClient.post('/stores', data)
+}
+
+export function updateStore(id, data) {
+  return expoClient.put(`/stores/${id}`, data)
+}
+
+export function toggleStore(id) {
+  return expoClient.post(`/stores/${id}/toggle`)
+}
+
+export function getStoreUsers(id) {
+  return expoClient.get(`/stores/${id}/users`)
+}
+
+export function bindStoreUser(id, data) {
+  return expoClient.post(`/stores/${id}/users`, data)
+}
+
+export function unbindStoreUser(id, userId) {
+  return expoClient.delete(`/stores/${id}/users/${userId}`)
+}
+
+export function getStoreQuota(id) {
+  return expoClient.get(`/stores/${id}/quota`)
+}
+
+export function rechargeQuota(id, data) {
+  return expoClient.post(`/stores/${id}/quota/recharge`, data)
+}
+
+export function listQuotaRecords(id, params) {
+  return expoClient.get(`/stores/${id}/quota/records`, { params })
+}
+
 // ── 话术卡库（PC） ──
 export function getScripts(params) {
   return expoClient.get('/scripts', { params })
