@@ -404,6 +404,11 @@ def seed_role_permissions(db: Session):
         ("customer_radar:manage", "customer_radar", "manage", "管理所有客户档案/手动分配"),
         # MCP 网关(物流录单/查询的入口无关 MCP 服务)
         ("mcp:admin", "mcp", "admin", "发放/吊销 MCP 个人 access token"),
+        # 薪资计算。write 与 admin 按**爆炸半径**切：改一个人的档案是 write，
+        # 改职级表/规则参数会改全员发薪口径，必须 admin。
+        ("salary:read",  "salary", "read",  "查看员工档案/规则参数/工资批次"),
+        ("salary:write", "salary", "write", "维护员工档案与部门映射 / 导入考勤社保 / 试算与人工调整"),
+        ("salary:admin", "salary", "admin", "改职级表与规则参数 / 锁定解锁工资批次 / 查看解密银行卡"),
     ]
     # upsert：活跃权限 + 已下架权限统一处理，元数据每次启动刷新
     existing_map = {p.code: p for p in db.query(ArkPermission).all()}
