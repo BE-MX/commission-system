@@ -498,3 +498,32 @@
 `turns` 请求：`prompt` 1～4000 字；`request_id` 1～64，仅字母、数字、下划线、连字符；`size` 仅 `1024x1024 / 1024x1536 / 1536x1024`；`quality` 仅 `low / medium / high`；`reference_asset_ids` 最多 4 个、正整数且不重复；`base_asset_id` 不得同时出现在参考图列表。无 `base_asset_id` 是 generation，有则是 edit；连续对话不会回传全部历史图，只发送显式基准图、本轮参考图和本轮要求。
 
 主要错误：校验 400/422、未认证 401、无权限 403、owner 隔离或不存在 404、已引用资产/已有 active job 409、上传超限 413、日额度 429、Preset/存储/一致性不可用 503。重试是新 accepted job，因此占用新的当日额度；失败调用可能已经触达 Provider，不能解释为“零成本”。
+
+## 薪资计算（`/api/salary`，092 迁移，2026-08-06，M1 主数据）
+
+权限按**爆炸半径**分，不按「是不是主数据」分：`salary:read` 读 / `salary:write` 改单个员工档案（影响 1 人）/ `salary:admin` 改职级表与规则参数（改一行动全员发薪口径），另预留给锁定批次与明文解密。M1 只有主数据端点，计算与批次在 M3/M4。
+
+**身份证与银行卡永不出明文**：入参传明文（服务端归一化 → HMAC 哈希 → AES-256-GCM 加密），出参只有 `id_card_masked` / `bank_card_masked`。
+
+| 方法 | 路径 | 权限 | 契约 |
+|---|---|---|---|
+| GET | `/profiles` | read | 分页列表；`keyword`（姓名/工号/岗位）、`dept_detail`、`status`(active\|left)、`payroll_included`(0\|1)、`sort_field`/`sort_order` |
+| GET | `/profiles/{id}` | read | 档案详情 |
+| POST | `/profiles` | write | 建档；`emp_no` 去空格去前导零（3 与 003 归一），唯一键冲突返回 409 中文提示 |
+| PUT | `/profiles/{id}` | write | 编辑；PII 字段传 `null`/不传 = 不动，传空串 = 清除；工号不可改 |
+| GET | `/grades` | read | 职级薪级表，可按 `scheme` 过滤；`include_history=1` 才含历史/未来版本（默认只出当天生效版本，档案页下拉按 `grade_code` 做 key，混进多版本会重键） |
+| POST | `/grades` | **admin** | 按 `(scheme, grade_code, effective_from)` upsert；改口径请新建生效日版本 |
+| GET | `/params` | read | 规则参数，可按 `category` 过滤 |
+| PUT | `/params/{id}` | **admin** | 只改 `param_value` / `description`；key 与生效日不可改。值真变了才写 WARNING 日志（含旧值/新值/操作人），同值重提交不刷日志 |
+| GET | `/dept-mappings` | read | 明细部门 → 汇总大部门映射 |
+| POST | `/dept-mappings` | write | 按 `dept_detail` upsert |
+
+两个贯穿全模块的推导口径由后端下发，前端不重算（M3 计算引擎复用同一份 `salary/service.py`）：
+- `base_salary_effective` = `base_salary_override` > 职级表（`manage` 赛道取 `std_salary` 列，其余取 `base_salary` 列）；都没有返回 `null`——**M3 遇 null 必须报异常而非算 0**。
+- `dept_group` = 档案 `dept_group_override` > `dept_mapping` 映射表。覆盖列是必需的：跟单1部多数人归后综部，但业务总监归业务部，大部门不是纯部门属性。
+
+409 的 `detail` 是**固定中文文案**，不是数据库异常原文：`str(IntegrityError)` 会展开 `[parameters: (...)]`，里面就是身份证/银行卡的密文与 HMAC 摘要，回给前端或落进 NSSM 明文日志都等于泄 PII。日志里只记命中的约束名。
+
+档案改到发薪相关列（定薪/职级/保底/试用期薪资等 12 列）会写 `ark_salary_change_log`，`change_type` 区分 `raise`（调薪）与 `grade`（调级）——M3 月中加权对这两类的口径不同；改手机号一类不留痕。
+
+前端：`views/salary/SalaryProfiles.vue`（员工档案）、`SalaryRules.vue`（职级表/参数/部门映射三 tab），导航「薪资计算」组。
