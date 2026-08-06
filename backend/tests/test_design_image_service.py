@@ -759,7 +759,7 @@ def test_retry_only_accepts_failed_jobs(configured, db, status):
     assert db.query(DesignImageJob).count() == 1
 
 
-def test_retry_obeys_same_one_active_job_limit(configured, db):
+def test_retry_blocked_when_same_session_has_active_job(configured, db):
     owner, _ = configured
     session = _session(db, owner.id)
     message = _message(db, session.id)
@@ -771,6 +771,50 @@ def test_retry_obeys_same_one_active_job_limit(configured, db):
         service.retry_job(
             db, owner.id, failed.id, RetryJobRequest(request_id="retry-blocked")
         )
+
+
+def test_concurrent_turns_allowed_up_to_per_user_cap(configured, db):
+    """不同会话可同时各有一个进行中任务（默认上限 2），第三个被拦。"""
+    owner, _ = configured
+    sessions = [_session(db, owner.id, f"对话 {index}") for index in range(3)]
+    db.commit()
+
+    service.create_turn(db, owner.id, _turn(request_id="turn-1", session_id=sessions[0].id))
+    service.create_turn(db, owner.id, _turn(request_id="turn-2", session_id=sessions[1].id))
+    with pytest.raises(service.DesignImageActiveJobError, match="同时进行"):
+        service.create_turn(
+            db, owner.id, _turn(request_id="turn-3", session_id=sessions[2].id)
+        )
+
+
+def test_same_session_rejects_second_active_job(configured, db):
+    """同一会话仍只允许一个进行中任务，其他会话不受影响。"""
+    owner, _ = configured
+    first = _session(db, owner.id, "对话 1")
+    second = _session(db, owner.id, "对话 2")
+    db.commit()
+
+    service.create_turn(db, owner.id, _turn(request_id="turn-1", session_id=first.id))
+    with pytest.raises(service.DesignImageActiveJobError, match="当前对话"):
+        service.create_turn(db, owner.id, _turn(request_id="turn-1b", session_id=first.id))
+    other = service.create_turn(db, owner.id, _turn(request_id="turn-2", session_id=second.id))
+    assert other.job.session_id == second.id
+
+
+def test_retry_allowed_when_active_job_is_in_another_session(configured, db):
+    owner, _ = configured
+    failed_session = _session(db, owner.id, "对话 1")
+    failed_message = _message(db, failed_session.id)
+    active_session = _session(db, owner.id, "对话 2")
+    active_message = _message(db, active_session.id)
+    failed = _job(db, owner.id, failed_session.id, failed_message.id, key="failed", status="failed")
+    _job(db, owner.id, active_session.id, active_message.id, key="active", status="running")
+    db.commit()
+
+    result = service.retry_job(
+        db, owner.id, failed.id, RetryJobRequest(request_id="retry-ok")
+    )
+    assert result.job.retry_of_job_id == failed.id
 
 
 def test_retry_requires_current_preset_and_snapshots_current_rate_card(configured, db):
@@ -807,7 +851,7 @@ def test_retry_requires_current_preset_and_snapshots_current_rate_card(configure
         )
 
 
-def test_active_job_projection_includes_owner_scoped_session(configured, db):
+def test_list_active_jobs_is_owner_scoped_and_ordered(configured, db):
     owner, other = configured
     session = _session(db, owner.id, "owner-active")
     message = _message(db, session.id)
@@ -817,11 +861,10 @@ def test_active_job_projection_includes_owner_scoped_session(configured, db):
     _job(db, other.id, foreign_session.id, foreign_message.id, key="active-foreign", status="running")
     db.commit()
 
-    result = service.get_active_job(db, owner.id)
+    rows = service.list_active_jobs(db, owner.id)
 
-    assert result.job.id == active.id
-    assert result.session.id == session.id
-    assert result.session.owner_user_id == owner.id
+    assert [row.id for row in rows] == [active.id]
+    assert rows[0].session_id == session.id
 
 
 def test_success_updates_session_activity_but_idempotent_replay_does_not(configured, db):
@@ -1154,6 +1197,7 @@ def test_config_reports_verified_choices_limit_and_remaining(configured, db, mon
         "daily_limit": 3,
         "used_today": 1,
         "remaining_today": 2,
+        "max_active_per_user": 2,
     }
 
 

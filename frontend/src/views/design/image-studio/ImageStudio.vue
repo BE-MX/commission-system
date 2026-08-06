@@ -11,7 +11,7 @@
       v-model:drawer-open="studio.drawerOpen.value"
       :sessions="studio.sessions.value"
       :current-session-id="studio.currentSessionId.value"
-      :active-job="studio.activeJob.value"
+      :active-session-ids="studio.activeSessionIds.value"
       :has-more="Boolean(studio.nextCursor.value)"
       :loading="studio.sessionsLoading.value"
       @new="studio.newConversation"
@@ -74,8 +74,17 @@
         @remove="studio.removeAttachment"
         @clear-base="studio.clearBaseAsset"
         @submit="studio.submit"
+        @open-prompt-library="promptLibraryOpen = true"
+        @open-reference-library="referenceLibraryOpen = true"
       />
     </main>
+
+    <PromptLibraryDialog v-model:visible="promptLibraryOpen" @apply="applyPrompt" />
+    <ReferenceLibraryDialog
+      v-model:visible="referenceLibraryOpen"
+      :max-upload-mb="Math.max((studio.config.value.max_upload_bytes || 0) / (1024 * 1024), 0.01)"
+      @select="applyLibraryAsset"
+    />
 
     <ImageLightbox :asset="studio.lightboxAsset.value" :url="studio.lightboxUrl.value" @close="studio.closeLightbox" />
   </div>
@@ -85,19 +94,45 @@
 import { nextTick, ref } from 'vue'
 import { ChatDotRound, MagicStick } from '@element-plus/icons-vue'
 import GlassButton from '@/components/GlassButton.vue'
+import { cloneLibraryAsset } from '@/api/designImage'
+import { msgError } from '@/utils/feedback'
 import ConversationSidebar from './components/ConversationSidebar.vue'
 import ImageLightbox from './components/ImageLightbox.vue'
 import MessageThread from './components/MessageThread.vue'
 import PromptComposer from './components/PromptComposer.vue'
+import PromptLibraryDialog from './components/PromptLibraryDialog.vue'
+import ReferenceLibraryDialog from './components/ReferenceLibraryDialog.vue'
 import { useImageStudio } from './composables/useImageStudio'
 
 const studio = useImageStudio()
 const composerRef = ref(null)
+const promptLibraryOpen = ref(false)
+const referenceLibraryOpen = ref(false)
 
 async function applySuggestion(text) {
   studio.prompt.value = text
   await nextTick()
   composerRef.value?.focus()
+}
+
+/* 提示词库拼装结果：输入框为空则填入，非空则换行追加 */
+async function applyPrompt(text) {
+  const current = studio.prompt.value.trim()
+  studio.prompt.value = current ? `${current}\n${text}` : text
+  await nextTick()
+  composerRef.value?.focus()
+}
+
+/* 参考图库选图：确保有会话后克隆为会话草稿资产，设为基准图 */
+async function applyLibraryAsset(item) {
+  const session = await studio.ensureSession()
+  if (!session) return
+  try {
+    const response = await cloneLibraryAsset(item.id, session.id)
+    if (response?.data) await studio.selectLibraryBaseAsset(response.data)
+  } catch {
+    msgError('参考图设置失败，请稍后重试')
+  }
 }
 </script>
 

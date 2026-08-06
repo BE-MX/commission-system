@@ -102,12 +102,6 @@ class TurnResult:
 
 
 @dataclass(frozen=True)
-class ActiveJobResult:
-    job: DesignImageJob
-    session: DesignImageSession
-
-
-@dataclass(frozen=True)
 class AssetContent:
     stream: BinaryIO
     mime_type: str
@@ -396,20 +390,16 @@ def get_job(db: Session, owner_user_id: int, job_id: int) -> DesignImageJob:
     return row
 
 
-def get_active_job(db: Session, owner_user_id: int) -> ActiveJobResult | None:
-    job = (
+def list_active_jobs(db: Session, owner_user_id: int) -> list[DesignImageJob]:
+    return (
         db.query(DesignImageJob)
         .filter(
             DesignImageJob.owner_user_id == owner_user_id,
             DesignImageJob.status.in_(ACTIVE_STATUSES),
         )
         .order_by(DesignImageJob.created_at.desc(), DesignImageJob.id.desc())
-        .first()
+        .all()
     )
-    if job is None:
-        return None
-    session = _owner_session(db, owner_user_id, job.session_id)
-    return ActiveJobResult(job=job, session=session)
 
 
 def _delete_files_best_effort(paths: list[str], context: str) -> None:
@@ -523,6 +513,17 @@ def _active_job_statement(owner_user_id: int, *, for_update: bool = False):
             DesignImageJob.status.in_(ACTIVE_STATUSES),
         )
         .order_by(DesignImageJob.created_at.desc(), DesignImageJob.id.desc())
+    )
+    return statement.with_for_update() if for_update else statement
+
+
+def _session_active_job_statement(session_id: int, *, for_update: bool = False):
+    statement = (
+        select(DesignImageJob.id)
+        .where(
+            DesignImageJob.session_id == session_id,
+            DesignImageJob.status.in_(ACTIVE_STATUSES),
+        )
         .limit(1)
     )
     return statement.with_for_update() if for_update else statement
@@ -541,7 +542,9 @@ def _accepted_count(
     return len(rows)
 
 
-def _enforce_capacity(db: Session, owner_user_id: int, now: datetime | None) -> None:
+def _enforce_capacity(
+    db: Session, owner_user_id: int, now: datetime | None, session_id: int | None = None
+) -> None:
     # Both reads are locking/current reads. Under MySQL REPEATABLE READ, the
     # earlier idempotency lookup may have established an old consistent-read
     # snapshot; ordinary SELECTs here would miss a job committed while this
@@ -550,11 +553,19 @@ def _enforce_capacity(db: Session, owner_user_id: int, now: datetime | None) -> 
         db, owner_user_id, now, for_update=True
     ) >= get_settings().DESIGN_IMAGE_DAILY_LIMIT:
         raise DesignImageQuotaExceededError("今日额度已用完；如有紧急任务请联系管理员")
-    active = db.execute(
+    max_active = get_settings().DESIGN_IMAGE_MAX_ACTIVE_PER_USER
+    active_ids = db.execute(
         _active_job_statement(owner_user_id, for_update=True)
-    ).scalar_one_or_none()
-    if active is not None:
-        raise DesignImageActiveJobError("已有生成任务正在进行，请等待完成")
+    ).scalars().all()
+    if len(active_ids) >= max_active:
+        raise DesignImageActiveJobError(
+            f"当前已有 {max_active} 个任务同时进行，请等待任一完成后再发送"
+        )
+    # 会话级仍限单个进行中任务，保住会话内单活跃卡片的交互模型
+    if session_id is not None and db.execute(
+        _session_active_job_statement(session_id, for_update=True)
+    ).scalar_one_or_none() is not None:
+        raise DesignImageActiveJobError("当前对话已有任务进行中，请等待完成")
 
 
 def _preset_snapshot(db: Session) -> tuple[str, str, int, dict | None, dict]:
@@ -677,13 +688,15 @@ def create_turn(
             return _rollback_and_reload_winner(
                 db, owner_user_id, winner.id, context="turn"
             )
-        _enforce_capacity(db, owner_user_id, now)
         session = (
             _owner_session(
                 db, owner_user_id, payload.session_id, for_update=True
             )
             if payload.session_id is not None
             else None
+        )
+        _enforce_capacity(
+            db, owner_user_id, now, session_id=session.id if session is not None else None
         )
         operation_time = _utc_naive(now)
         if session is None:
@@ -804,7 +817,7 @@ def retry_job(
             return _rollback_and_reload_winner(
                 db, owner_user_id, winner.id, context="retry"
             )
-        _enforce_capacity(db, owner_user_id, now)
+        _enforce_capacity(db, owner_user_id, now, session_id=old.session_id)
         preset_name, model, provider_id, pricing_snapshot, config_version = _preset_snapshot(db)
         links = db.execute(
             select(DesignImageJobAsset)
@@ -882,6 +895,7 @@ def get_config(
         "daily_limit": limit,
         "used_today": used,
         "remaining_today": max(limit - used, 0),
+        "max_active_per_user": settings.DESIGN_IMAGE_MAX_ACTIVE_PER_USER,
     }
 
 

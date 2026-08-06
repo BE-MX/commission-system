@@ -4,6 +4,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     Column,
     DateTime,
@@ -203,3 +204,46 @@ class DesignImageJobAsset(Base):
 
     job = relationship("DesignImageJob", back_populates="asset_links", lazy="noload")
     asset = relationship("DesignImageAsset", back_populates="job_links", lazy="noload")
+
+
+class DesignImagePromptTemplate(Base):
+    __tablename__ = "ark_design_image_prompt_templates"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    category = Column(String(32), nullable=False, comment="模板分类")
+    name = Column(String(100), nullable=False, comment="模板名称")
+    content = Column(Text, nullable=False, comment="完整提示词模板，{key} 为参数占位")
+    options = Column(JSON, nullable=True, comment="参数槽定义 [{key, label, choices[]}]")
+    is_active = Column(Boolean, nullable=False, default=True, comment="是否启用")
+    sort = Column(Integer, nullable=False, default=0, comment="排序权重，小在前")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+
+    __table_args__ = (
+        Index("idx_di_prompt_tpl_category", "category", "is_active", "sort"),
+        {"comment": "AI 生图提示词模板"},
+    )
+
+
+class DesignImageLibraryAsset(Base):
+    __tablename__ = "ark_design_image_library_assets"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    scope = Column(String(16), nullable=False, default="private", comment="公库 public / 私库 private")
+    owner_user_id = Column(USER_ID, ForeignKey("ark_users.id", ondelete="RESTRICT"), nullable=False, comment="创建者（私库仅本人可见可用）")
+    title = Column(String(200), nullable=False, default="", comment="图片标题")
+    storage_path = Column(String(512), nullable=False, comment="私有根目录下相对路径")
+    mime_type = Column(String(64), nullable=False, comment="MIME 类型")
+    file_size = Column(BigInteger, nullable=False, comment="文件字节数")
+    width = Column(Integer, nullable=False, comment="图片宽度")
+    height = Column(Integer, nullable=False, comment="图片高度")
+    sha256 = Column(String(64), nullable=False, comment="文件 SHA-256")
+    created_by = Column(USER_ID, ForeignKey("ark_users.id", ondelete="RESTRICT"), nullable=False, comment="创建人")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    deleted_at = Column(DateTime, nullable=True, comment="软删除时间")
+
+    __table_args__ = (
+        Index("idx_di_library_scope_created", "scope", "deleted_at", "created_at"),
+        Index("idx_di_library_owner_scope", "owner_user_id", "scope"),
+        {"comment": "AI 生图参考图库"},
+    )

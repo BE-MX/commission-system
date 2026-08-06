@@ -102,6 +102,8 @@ class Settings(BaseSettings):
     # ── AI 生图工作台 ─────────────────────────────────────
     DESIGN_IMAGE_STORAGE_ROOT: str = r"D:\WORKSOURCE\design-image"
     DESIGN_IMAGE_DAILY_LIMIT: _PositiveInt = 20
+    # 同一用户允许同时在途的生成任务数（会话级仍限 1 个）；总量仍受日额度约束
+    DESIGN_IMAGE_MAX_ACTIVE_PER_USER: _PositiveInt = 2
     DESIGN_IMAGE_WORKER_CONCURRENCY: _PositiveInt = 3
     DESIGN_IMAGE_WORKER_INTERVAL_SECONDS: _PositiveInt = 10
     DESIGN_IMAGE_LEASE_SECONDS: _PositiveInt = 420

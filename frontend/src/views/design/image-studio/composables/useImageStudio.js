@@ -1,13 +1,13 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import {
-  createSession, createTurn, deleteAsset, getActiveJob, getConfig, getSession,
+  createSession, createTurn, deleteAsset, getActiveJobs, getConfig, getJob, getSession,
   listSessions, retryJob, uploadAsset,
 } from '@/api/designImage'
 import { msgError } from '@/utils/feedback'
 import {
   acceptConversationResponse, advanceJob, canStartSend, replaceActiveJob,
   createSessionSingleFlight, nextConversationGeneration, reconcileSubmittedDraft,
-  restoreActiveJob, upsertAttachment,
+  restoreActiveJobs, selectSessionActiveJob, upsertAttachment,
 } from '../state'
 import { useAssetObjectUrls } from './useAssetObjectUrls'
 import { useJobPolling } from './useJobPolling'
@@ -58,10 +58,14 @@ export function useImageStudio() {
   let conversationGeneration = 0
 
   const activeJob = computed(() => [...activeJobs.values()].find(job => ACTIVE_STATUSES.has(job.status)) ?? null)
+  const sessionActiveJob = computed(() => selectSessionActiveJob(activeJobs, currentSessionId.value))
+  const activeSessionIds = computed(() => [...activeJobs.values()]
+    .filter(job => ACTIVE_STATUSES.has(job.status))
+    .map(job => job.session_id))
   const canSend = computed(() => !newSessionInFlight.value && canStartSend({
     sendInFlight: sendInFlight.value,
     uploadInFlight: uploadInFlight.value > 0,
-    activeJob: activeJob.value,
+    activeJob: sessionActiveJob.value,
   }) && prompt.value.trim().length > 0 && config.value.remaining_today > 0)
 
   function mergeSession(session) {
@@ -109,17 +113,28 @@ export function useImageStudio() {
   }
 
   function startActivePolling(job) {
-    if (!job || !ACTIVE_STATUSES.has(job.status)) return
+    if (job && ACTIVE_STATUSES.has(job.status)) activeJobs.set(job.id, job)
+    if (![...activeJobs.values()].some(item => ACTIVE_STATUSES.has(item.status))) return
     polling.startPolling({
-      sessionId: job.session_id,
-      jobId: job.id,
-      onUpdate: async incoming => {
-        const merged = mergeJob(incoming)
-        if (!ACTIVE_STATUSES.has(merged.status)) {
-          if (currentSessionId.value === merged.session_id) await refreshCurrentSession(merged.session_id)
-          void loadConfig().catch(error => msgError(safeRequestMessage(error)))
+      onTick: async (incoming) => {
+        const seen = new Set(incoming.map(item => item.id))
+        for (const item of incoming) mergeJob(item)
+        // 从活跃列表消失的任务已进终态：逐个拉取终态驱动结果卡片、侧栏状态与额度刷新
+        const finished = [...activeJobs.keys()].filter(id => !seen.has(id))
+        for (const id of finished) {
+          let merged = null
+          try {
+            const response = await getJob(id)
+            if (response?.data) merged = mergeJob(response.data)
+          } catch {
+            activeJobs.delete(id)
+          }
+          if (merged && currentSessionId.value === merged.session_id) {
+            await refreshCurrentSession(merged.session_id)
+          }
         }
-        return merged
+        if (finished.length) void loadConfig().catch(error => msgError(safeRequestMessage(error)))
+        return activeJobs.size > 0
       },
     })
   }
@@ -150,7 +165,6 @@ export function useImageStudio() {
   async function selectSession(sessionId, { internalRefresh = false } = {}) {
     conversationGeneration = nextConversationGeneration(conversationGeneration, { internalRefresh })
     const responseGeneration = conversationGeneration
-    polling.stopPolling()
     const token = assetUrls.beginBatch()
     currentSessionId.value = sessionId
     currentSession.value = null
@@ -345,7 +359,7 @@ export function useImageStudio() {
   }
 
   async function retry(job) {
-    if (activeJob.value || sendInFlight.value) return
+    if (selectSessionActiveJob(activeJobs, job.session_id) || sendInFlight.value) return
     sendInFlight.value = true
     try {
       const response = await retryJob(job.id, { request_id: requestId('retry') })
@@ -362,6 +376,13 @@ export function useImageStudio() {
   function chooseBaseAsset(asset) {
     if (sendInFlight.value) return
     baseAsset.value = asset
+  }
+
+  /* 图库选图克隆进会话后设为基准图，并预取缩略图 */
+  async function selectLibraryBaseAsset(asset) {
+    if (sendInFlight.value || !asset) return
+    baseAsset.value = asset
+    await assetUrls.load(asset.id, { thumbnail: true }).catch(() => {})
   }
 
   function clearBaseAsset() {
@@ -403,13 +424,13 @@ export function useImageStudio() {
     const initializeGeneration = conversationGeneration
     try {
       await Promise.all([loadConfig(), loadSessions({ requestGeneration: initializeGeneration })])
-      const activeResponse = await getActiveJob()
-      const restored = restoreActiveJob(activeResponse?.data?.job)
-      if (restored) {
-        jobSnapshots.set(restored.id, restored)
-        activeJobs.set(restored.id, restored)
-        startActivePolling(restored)
+      const activeResponse = await getActiveJobs()
+      const restored = restoreActiveJobs(activeResponse?.data?.jobs)
+      for (const job of restored) {
+        jobSnapshots.set(job.id, job)
+        activeJobs.set(job.id, job)
       }
+      if (restored.length) startActivePolling(restored[0])
       if (!acceptConversationResponse(initializeGeneration, conversationGeneration)) return
       const targetId = sessions.value[0]?.id
       if (targetId) await selectSession(targetId)
@@ -428,11 +449,11 @@ export function useImageStudio() {
   })
 
   return {
-    activeJob, assets, assetUrl: assetUrls.get, baseAsset, canSend, chooseBaseAsset, clearBaseAsset,
+    activeJob, activeSessionIds, assets, assetUrl: assetUrls.get, baseAsset, canSend, chooseBaseAsset, clearBaseAsset,
     closeLightbox, config, currentSession, currentSessionId, downloadAsset, draftAttachments,
-    drawerOpen, initializing, jobs, lightboxAsset, lightboxUrl, loadMoreSessions: () => loadSessions({ append: true }),
+    drawerOpen, ensureSession, initializing, jobs, lightboxAsset, lightboxUrl, loadMoreSessions: () => loadSessions({ append: true }),
     messages, newSessionInFlight, newConversation, nextCursor, openLightbox, prompt, quality, removeAttachment,
-    retry, selectSession, sendInFlight, sessions, sessionsLoading, size, submit,
+    retry, selectLibraryBaseAsset, selectSession, sendInFlight, sessionActiveJob, sessions, sessionsLoading, size, submit,
     uploadInFlight, uploadReference,
   }
 }

@@ -31,7 +31,7 @@ import { focusDialog, restoreDialogFocus, trapDialogFocus } from '../state'
 const props = defineProps({
   sessions: { type: Array, default: () => [] },
   currentSessionId: { type: Number, default: null },
-  activeJob: { type: Object, default: null },
+  activeSessionIds: { type: Array, default: () => [] },
   drawerOpen: { type: Boolean, default: false },
   hasMore: { type: Boolean, default: false },
   loading: { type: Boolean, default: false },
@@ -43,7 +43,7 @@ let restoreTarget = null
 const contentProps = computed(() => ({
   sessions: props.sessions,
   currentSessionId: props.currentSessionId,
-  activeJob: props.activeJob,
+  activeSessionIds: props.activeSessionIds,
   hasMore: props.hasMore,
   loading: props.loading,
 }))
@@ -78,7 +78,7 @@ const SidebarContent = defineComponent({
   props: {
     sessions: { type: Array, default: () => [] },
     currentSessionId: { type: Number, default: null },
-    activeJob: { type: Object, default: null },
+    activeSessionIds: { type: Array, default: () => [] },
     hasMore: { type: Boolean, default: false },
     loading: { type: Boolean, default: false },
   },
@@ -100,7 +100,7 @@ const SidebarContent = defineComponent({
           onClick: () => innerEmit('select', session.id),
         }, [
           h('span', { class: 'session-title' }, session.title || '新对话'),
-          innerProps.activeJob?.session_id === session.id
+          innerProps.activeSessionIds?.includes(session.id)
             ? h('span', { class: 'session-status', title: '正在生成' })
             : null,
         ])))

@@ -37,6 +37,32 @@ ROUTES = [
     ),
     ("get", "/api/design-image/assets/31/content", {}),
     ("get", "/api/design-image/usage", {}),
+    ("get", "/api/design-image/prompt-templates", {}),
+    ("post", "/api/design-image/prompt-templates/seed", {}),
+    (
+        "post",
+        "/api/design-image/prompt-templates",
+        {"json": {"category": "scene", "name": "x", "content": "画一张{x}", "options": [{"key": "x", "label": "x", "choices": ["y"]}]}},
+    ),
+    (
+        "put",
+        "/api/design-image/prompt-templates/11",
+        {"json": {"category": "scene", "name": "x", "content": "画一张{x}", "options": [{"key": "x", "label": "x", "choices": ["y"]}]}},
+    ),
+    ("delete", "/api/design-image/prompt-templates/11", {}),
+    ("get", "/api/design-image/library-assets?scope=public", {}),
+    (
+        "post",
+        "/api/design-image/library-assets",
+        {"files": {"file": ("x.png", b"x", "image/png")}},
+    ),
+    ("delete", "/api/design-image/library-assets/31", {}),
+    ("get", "/api/design-image/library-assets/31/content", {}),
+    (
+        "post",
+        "/api/design-image/library-assets/31/clone",
+        {"json": {"session_id": 11}},
+    ),
 ]
 
 
@@ -103,6 +129,16 @@ def test_router_registration_order_permissions_and_architecture_are_static():
         ("post", "/jobs/{job_id}/retry"): "design_image:write",
         ("get", "/assets/{asset_id}/content"): "design_image:read",
         ("get", "/usage"): "design_image:admin",
+        ("get", "/prompt-templates"): "design_image:read",
+        ("post", "/prompt-templates/seed"): "design_image:admin",
+        ("post", "/prompt-templates"): "design_image:admin",
+        ("put", "/prompt-templates/{template_id}"): "design_image:admin",
+        ("delete", "/prompt-templates/{template_id}"): "design_image:admin",
+        ("get", "/library-assets"): "design_image:read",
+        ("post", "/library-assets"): "design_image:write",
+        ("delete", "/library-assets/{asset_id}"): "design_image:write",
+        ("get", "/library-assets/{asset_id}/content"): "design_image:read",
+        ("post", "/library-assets/{asset_id}/clone"): "design_image:write",
     }
 
 

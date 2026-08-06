@@ -41,7 +41,7 @@ export function createTurn(sessionId, data) {
   )
 }
 
-export function getActiveJob() {
+export function getActiveJobs() {
   return designImageClient.get('/jobs/active', { ...JOB_POLL_REQUEST })
 }
 
@@ -69,4 +69,45 @@ export function getAssetBlob(assetId, options = {}) {
 
 export function getUsage(params = {}) {
   return designImageClient.get('/usage', { params, showLoading: false })
+}
+
+export function listPromptTemplates() {
+  return designImageClient.get('/prompt-templates', { showLoading: false })
+}
+
+export function seedPromptTemplates() {
+  return designImageClient.post('/prompt-templates/seed', {}, { ...SILENT_REQUEST })
+}
+
+export function listLibraryAssets(scope = 'public') {
+  return designImageClient.get('/library-assets', { params: { scope }, showLoading: false })
+}
+
+export function uploadLibraryAsset(scope, title, file) {
+  const form = new FormData()
+  form.append('scope', scope)
+  form.append('title', title || '')
+  form.append('file', file)
+  return designImageClient.post('/library-assets', form, { ...SILENT_REQUEST })
+}
+
+export function deleteLibraryAsset(assetId) {
+  return designImageClient.delete(`/library-assets/${assetId}`, { showLoading: false })
+}
+
+export function cloneLibraryAsset(assetId, sessionId) {
+  return designImageClient.post(
+    `/library-assets/${assetId}/clone`,
+    { session_id: sessionId },
+    { ...SILENT_REQUEST },
+  )
+}
+
+export function getLibraryAssetBlob(assetId, options = {}) {
+  const { thumbnail = false } = options
+  return designImageClient.get(`/library-assets/${assetId}/content`, {
+    ...SILENT_REQUEST,
+    params: { thumbnail },
+    responseType: 'blob',
+  })
 }

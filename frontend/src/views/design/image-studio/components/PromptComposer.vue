@@ -31,6 +31,26 @@
       />
 
       <div class="composer-toolbar">
+        <GlassButton
+          v-permission="'design_image:write'"
+          variant="ghost"
+          size="sm"
+          title="从预置模板拼装提示词"
+          @click="emit('open-prompt-library')"
+        >
+          <template #left-icon><el-icon><Collection /></el-icon></template>
+          提示词
+        </GlassButton>
+        <GlassButton
+          v-permission="'design_image:write'"
+          variant="ghost"
+          size="sm"
+          title="从公库/私库选择基准参考图"
+          @click="emit('open-reference-library')"
+        >
+          <template #left-icon><el-icon><Picture /></el-icon></template>
+          图库
+        </GlassButton>
         <div v-permission="'design_image:write'" class="upload-action" :class="{ 'is-disabled': uploadDisabled }">
           <AppUpload
             :model-value="uploadModel"
@@ -79,7 +99,7 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { Close, Loading, Paperclip, Promotion } from '@element-plus/icons-vue'
+import { Close, Collection, Loading, Paperclip, Picture, Promotion } from '@element-plus/icons-vue'
 import AppUpload from '@/components/AppUpload.vue'
 import GlassButton from '@/components/GlassButton.vue'
 
@@ -98,7 +118,7 @@ const props = defineProps({
   canSend: { type: Boolean, default: false },
   sending: { type: Boolean, default: false },
 })
-const emit = defineEmits(['update:prompt', 'update:size', 'update:quality', 'submit', 'remove', 'clear-base'])
+const emit = defineEmits(['update:prompt', 'update:size', 'update:quality', 'submit', 'remove', 'clear-base', 'open-prompt-library', 'open-reference-library'])
 const uploadModel = ref([])
 const inputRef = ref(null)
 const maxUploadMb = computed(() => Math.max(props.maxUploadBytes / (1024 * 1024), 0.01))

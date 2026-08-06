@@ -107,8 +107,8 @@ def api(monkeypatch, tmp_path):
     monkeypatch.setattr(service, "get_job", lambda *_a, **_k: job)
     monkeypatch.setattr(
         service,
-        "get_active_job",
-        lambda *_a, **_k: service.ActiveJobResult(job=job, session=session),
+        "list_active_jobs",
+        lambda *_a, **_k: [job],
     )
     monkeypatch.setattr(service, "retry_job", lambda *_a, **_k: turn)
     monkeypatch.setattr(service, "get_usage", lambda *_a, **_k: {"task_count": 1})

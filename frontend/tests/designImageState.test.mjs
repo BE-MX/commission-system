@@ -9,10 +9,14 @@ import {
   advanceJob,
   canStartSend,
   canStartUpload,
+  composePrompt,
   createObjectUrlRegistry,
+  missingPromptParams,
   replaceActiveJob,
   restoreActiveJob,
+  restoreActiveJobs,
   selectBaseAsset,
+  selectSessionActiveJob,
   upsertAttachment,
 } from '../src/views/design/image-studio/state.js'
 
@@ -97,6 +101,43 @@ test('active job restoration ignores completed jobs', () => {
   assert.equal(restoreActiveJob({ id: 3, status: 'succeeded' }), null)
   assert.equal(restoreActiveJob({ id: 4, status: 'failed' }), null)
   assert.equal(restoreActiveJob(null), null)
+})
+
+test('concurrent sessions restore all active jobs and resolve per-session guards', () => {
+  const restored = restoreActiveJobs([
+    { id: 1, session_id: 11, status: 'queued' },
+    { id: 2, session_id: 22, status: 'running' },
+    { id: 3, session_id: 33, status: 'succeeded' },
+  ])
+  assert.deepEqual(restored.map(job => job.id), [1, 2])
+  assert.deepEqual(restoreActiveJobs(undefined), [])
+
+  const activeJobs = new Map(restored.map(job => [job.id, job]))
+  assert.equal(selectSessionActiveJob(activeJobs, 11)?.id, 1)
+  assert.equal(selectSessionActiveJob(activeJobs, 22)?.id, 2)
+  assert.equal(selectSessionActiveJob(activeJobs, 33), null)
+  assert.equal(selectSessionActiveJob(activeJobs, null), null)
+
+  // 发送闸只看当前会话的进行中任务：别的会话在生成不阻塞本会话
+  assert.equal(canStartSend({ activeJob: selectSessionActiveJob(activeJobs, 11) }), false)
+  assert.equal(canStartSend({ activeJob: selectSessionActiveJob(activeJobs, 33) }), true)
+})
+
+test('prompt library composes templates and reports missing params', () => {
+  const template = {
+    content: '在{scene}拍{style}风格，保留主体',
+    options: [
+      { key: 'scene', label: '场景', choices: ['沙龙', '街拍'] },
+      { key: 'style', label: '风格', choices: ['暖调', '冷调'] },
+    ],
+  }
+  assert.equal(composePrompt(template, { scene: '沙龙', style: '暖调' }), '在沙龙拍暖调风格，保留主体')
+  assert.equal(composePrompt(template, { scene: '街拍' }), '在街拍拍{style}风格，保留主体')
+  assert.equal(composePrompt(template), '在{scene}拍{style}风格，保留主体')
+  assert.deepEqual(missingPromptParams(template, { scene: '沙龙' }), ['style'])
+  assert.deepEqual(missingPromptParams(template, { scene: '沙龙', style: '暖调' }), [])
+  assert.deepEqual(missingPromptParams({ content: '无参数模板', options: [] }, {}), [])
+  assert.deepEqual(missingPromptParams(null), [])
 })
 
 test('retry replaces the active job ID while preserving prior job history', () => {
@@ -275,11 +316,18 @@ test('design image API wrappers execute every route with data and request config
     api.uploadAsset(11, 'image-file'),
     api.deleteAsset(31),
     api.createTurn(11, turn),
-    api.getActiveJob(),
+    api.getActiveJobs(),
     api.getJob(41),
     api.retryJob(41, retry),
     api.getAssetBlob(31, { thumbnail: true, download: true }),
     api.getUsage(usage),
+    api.listPromptTemplates(),
+    api.seedPromptTemplates(),
+    api.listLibraryAssets('private'),
+    api.uploadLibraryAsset('private', '我的图', 'image-file'),
+    api.deleteLibraryAsset(51),
+    api.cloneLibraryAsset(51, 11),
+    api.getLibraryAssetBlob(51, { thumbnail: true }),
   ]
   assert.deepEqual(results, calls.map(call => call.result))
   assert.deepEqual(calls.map(({ method, args }) => [method, args[0]]), [
@@ -295,6 +343,13 @@ test('design image API wrappers execute every route with data and request config
     ['post', '/jobs/41/retry'],
     ['get', '/assets/31/content'],
     ['get', '/usage'],
+    ['get', '/prompt-templates'],
+    ['post', '/prompt-templates/seed'],
+    ['get', '/library-assets'],
+    ['post', '/library-assets'],
+    ['delete', '/library-assets/51'],
+    ['post', '/library-assets/51/clone'],
+    ['get', '/library-assets/51/content'],
   ])
   for (const callIndex of [0, 3, 5]) {
     assert.deepEqual(calls[callIndex].args[1], { showLoading: false })
@@ -321,6 +376,20 @@ test('design image API wrappers execute every route with data and request config
     params: { thumbnail: true, download: true },
     responseType: 'blob',
   })
+  assert.deepEqual(calls[12].args[1], { showLoading: false })
+  assert.deepEqual(calls[13].args[2], { showLoading: false, suppressToast: true })
+  assert.deepEqual(calls[14].args[1], { params: { scope: 'private' }, showLoading: false })
+  assert.equal(calls[15].args[1] instanceof FormData, true)
+  assert.equal(calls[15].args[1].get('file'), 'image-file')
+  assert.equal(calls[15].args[1].get('scope'), 'private')
+  assert.deepEqual(calls[16].args[1], { showLoading: false })
+  assert.deepEqual(calls[17].args[1], { session_id: 11 })
+  assert.deepEqual(calls[18].args[1], {
+    showLoading: false,
+    suppressToast: true,
+    params: { thumbnail: true },
+    responseType: 'blob',
+  })
   assert.deepEqual(calls[11].args[1], { params: usage, showLoading: false })
 })
 
@@ -339,11 +408,14 @@ test('design image studio files keep the phase-four layout and motion contract',
     '../src/views/design/image-studio/composables/useImageStudio.js',
     '../src/views/design/image-studio/composables/useJobPolling.js',
     '../src/views/design/image-studio/composables/useAssetObjectUrls.js',
+    '../src/views/design/image-studio/composables/useLibraryObjectUrls.js',
     '../src/views/design/image-studio/components/ConversationSidebar.vue',
     '../src/views/design/image-studio/components/MessageThread.vue',
     '../src/views/design/image-studio/components/PromptComposer.vue',
     '../src/views/design/image-studio/components/GenerationCard.vue',
     '../src/views/design/image-studio/components/ImageLightbox.vue',
+    '../src/views/design/image-studio/components/PromptLibraryDialog.vue',
+    '../src/views/design/image-studio/components/ReferenceLibraryDialog.vue',
   ]
   const sources = files.map(file => ({ file, source: readFileSync(new URL(file, import.meta.url), 'utf8') }))
 
@@ -378,8 +450,8 @@ test('polling and object URL composables expose snapshot guards and centralized 
   assert.match(polling, /setTimeout\s*\(/)
   assert.match(polling, /pollBusy/)
   assert.match(polling, /pollGeneration/)
-  assert.match(polling, /sessionIdSnapshot/)
-  assert.match(polling, /jobIdSnapshot/)
+  assert.match(polling, /activeSnapshot/)
+  assert.match(polling, /onTick/)
   assert.match(polling, /stopPolling/)
   assert.doesNotMatch(polling, /setInterval\s*\(/)
   assert.match(assets, /batchToken/)

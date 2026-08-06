@@ -6,15 +6,21 @@ from datetime import datetime
 from typing import Callable, Literal, TypeVar
 
 from starlette.background import BackgroundTask
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_permission
 from app.core.database import get_db
 from app.core.response import ok
-from app.design_image import file_service, service
-from app.design_image.schemas import RetryJobRequest, SessionCreate, TurnCreate
+from app.design_image import file_service, library_service, service
+from app.design_image.schemas import (
+    LibraryAssetClone,
+    PromptTemplateUpsert,
+    RetryJobRequest,
+    SessionCreate,
+    TurnCreate,
+)
 
 
 router = APIRouter()
@@ -252,13 +258,12 @@ def create_turn(
 
 # Keep the literal route before /jobs/{job_id}; otherwise "active" is parsed as an ID.
 @router.get("/jobs/active")
-def get_active_job(
+def get_active_jobs(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_permission("design_image:read")),
 ):
-    result = _call(service.get_active_job, db, _user_id(payload))
-    data = None if result is None else {"job": _job(result.job), "session": _session(result.session)}
-    return ok(data)
+    rows = _call(service.list_active_jobs, db, _user_id(payload))
+    return ok({"jobs": [_job(row) for row in rows]})
 
 
 @router.get("/jobs/{job_id}")
@@ -329,3 +334,189 @@ def get_usage(
             status=job_status,
         )
     )
+
+
+# ── 提示词库 ─────────────────────────────────
+
+
+def _is_admin(payload: dict) -> bool:
+    return "super_admin" in payload.get("roles", []) or "design_image:admin" in payload.get(
+        "permissions", []
+    )
+
+
+def _prompt_template(row) -> dict:
+    return {
+        "id": row.id,
+        "category": row.category,
+        "name": row.name,
+        "content": row.content,
+        "options": row.options if isinstance(row.options, list) else [],
+        "is_active": bool(row.is_active),
+        "sort": row.sort,
+        "created_at": _iso(row.created_at),
+        "updated_at": _iso(row.updated_at),
+    }
+
+
+def _library_asset(row) -> dict:
+    content_url = f"/api/design-image/library-assets/{row.id}/content"
+    return {
+        "id": row.id,
+        "scope": row.scope,
+        "owner_user_id": row.owner_user_id,
+        "title": row.title,
+        "mime_type": row.mime_type,
+        "file_size": row.file_size,
+        "width": row.width,
+        "height": row.height,
+        "created_at": _iso(row.created_at),
+        "content_url": content_url,
+        "thumbnail_url": f"{content_url}?thumbnail=true",
+    }
+
+
+@router.get("/prompt-templates")
+def list_prompt_templates(
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_permission("design_image:read")),
+):
+    rows = _call(library_service.list_prompt_templates, db)
+    return ok({"items": [_prompt_template(row) for row in rows]})
+
+
+# Keep the literal route before /prompt-templates/{template_id}.
+@router.post("/prompt-templates/seed")
+def seed_prompt_templates(
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_permission("design_image:admin")),
+):
+    return ok(_call(library_service.seed_prompt_templates, db))
+
+
+@router.post("/prompt-templates")
+def create_prompt_template(
+    body: PromptTemplateUpsert,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_permission("design_image:admin")),
+):
+    return ok(_prompt_template(_call(library_service.create_prompt_template, db, body)))
+
+
+@router.put("/prompt-templates/{template_id}")
+def update_prompt_template(
+    template_id: int,
+    body: PromptTemplateUpsert,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_permission("design_image:admin")),
+):
+    return ok(
+        _prompt_template(
+            _call(library_service.update_prompt_template, db, template_id, body)
+        )
+    )
+
+
+@router.delete("/prompt-templates/{template_id}")
+def delete_prompt_template(
+    template_id: int,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_permission("design_image:admin")),
+):
+    _call(library_service.delete_prompt_template, db, template_id)
+    return ok({"id": template_id, "deleted": True})
+
+
+# ── 参考图库（公/私库） ─────────────────────────────────
+
+
+@router.get("/library-assets")
+def list_library_assets(
+    scope: Literal["public", "private"] = Query("public"),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_permission("design_image:read")),
+):
+    rows = _call(library_service.list_library_assets, db, _user_id(payload), scope)
+    return ok({"items": [_library_asset(row) for row in rows]})
+
+
+@router.post("/library-assets")
+async def upload_library_asset(
+    scope: Literal["public", "private"] = Form("private"),
+    title: str = Form(""),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_permission("design_image:write")),
+):
+    if scope == "public" and not _is_admin(payload):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "公库图片仅管理员可以上传")
+    content = await _read_bounded(file)
+    row = _call(
+        library_service.create_library_asset,
+        db,
+        _user_id(payload),
+        content,
+        file.content_type or "",
+        scope,
+        title,
+    )
+    return ok(_library_asset(row))
+
+
+@router.delete("/library-assets/{asset_id}")
+def delete_library_asset(
+    asset_id: int,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_permission("design_image:write")),
+):
+    _call(
+        library_service.delete_library_asset,
+        db,
+        _user_id(payload),
+        asset_id,
+        is_admin=_is_admin(payload),
+    )
+    return ok({"id": asset_id, "deleted": True})
+
+
+@router.get("/library-assets/{asset_id}/content")
+def get_library_asset_content(
+    asset_id: int,
+    thumbnail: bool = Query(False),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_permission("design_image:read")),
+):
+    content = _call(
+        library_service.open_library_asset_content,
+        db,
+        _user_id(payload),
+        asset_id,
+        thumbnail=thumbnail,
+    )
+    filename = f"design-image-library-{asset_id}{content.suffix}"
+    return StreamingResponse(
+        _stream_chunks(content.stream),
+        media_type=content.mime_type,
+        headers={
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": f'inline; filename="{filename}"',
+        },
+        background=BackgroundTask(content.stream.close),
+    )
+
+
+@router.post("/library-assets/{asset_id}/clone")
+def clone_library_asset(
+    asset_id: int,
+    body: LibraryAssetClone,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_permission("design_image:write")),
+):
+    asset = _call(
+        library_service.clone_library_asset_to_session,
+        db,
+        _user_id(payload),
+        asset_id,
+        body.session_id,
+    )
+    return ok(_asset(asset))

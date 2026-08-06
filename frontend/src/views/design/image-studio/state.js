@@ -135,8 +135,39 @@ export function selectBaseAsset(asset) {
   return asset?.id ?? null
 }
 
+/* 提示词库：模板 content 内的 {key} 占位用所选参数值替换（未选参数保留占位） */
+export function composePrompt(template, selections = {}) {
+  const content = template?.content ?? ''
+  const options = Array.isArray(template?.options) ? template.options : []
+  let result = content
+  for (const option of options) {
+    const value = selections?.[option?.key]
+    if (value) result = result.split(`{${option.key}}`).join(value)
+  }
+  return result
+}
+
+/* 提示词库：还缺哪些参数槽未选（空数组 = 可以填入） */
+export function missingPromptParams(template, selections = {}) {
+  const options = Array.isArray(template?.options) ? template.options : []
+  return options.filter(option => !selections?.[option?.key]).map(option => option.key)
+}
+
 export function restoreActiveJob(job) {
   return ACTIVE_JOB_STATUSES.has(job?.status) ? { ...job } : null
+}
+
+export function restoreActiveJobs(jobs) {
+  return (Array.isArray(jobs) ? jobs : []).map(job => restoreActiveJob(job)).filter(Boolean)
+}
+
+/* 多任务并发下，取指定会话的进行中任务（会话级仍限一个） */
+export function selectSessionActiveJob(activeJobs, sessionId) {
+  if (sessionId == null || !activeJobs) return null
+  for (const job of activeJobs.values()) {
+    if (job.session_id === sessionId && ACTIVE_JOB_STATUSES.has(job.status)) return job
+  }
+  return null
 }
 
 export function replaceActiveJob(state, job) {

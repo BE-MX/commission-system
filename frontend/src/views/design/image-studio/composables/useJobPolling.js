@@ -1,9 +1,9 @@
 import { onBeforeUnmount, ref } from 'vue'
-import { getJob } from '@/api/designImage'
+import { getActiveJobs } from '@/api/designImage'
 
-const ACTIVE_STATUSES = new Set(['queued', 'running'])
-
-export function useJobPolling({ pollJob = getJob, intervalMs = 2500 } = {}) {
+/* 集合式轮询：单循环拉取当前用户全部进行中任务（多对话并发），
+   由调用方在 onTick 里 merge、识别终态并决定是否继续。 */
+export function useJobPolling({ fetchActiveJobs = getActiveJobs, intervalMs = 2500 } = {}) {
   const pollBusy = ref(false)
   const pollGeneration = ref(0)
   let timer = null
@@ -22,9 +22,7 @@ export function useJobPolling({ pollJob = getJob, intervalMs = 2500 } = {}) {
   }
 
   function snapshotIsCurrent(snapshot) {
-    return snapshot.generation === pollGeneration.value
-      && snapshot.sessionIdSnapshot === activeSnapshot?.sessionIdSnapshot
-      && snapshot.jobIdSnapshot === activeSnapshot?.jobIdSnapshot
+    return snapshot.generation === pollGeneration.value && activeSnapshot === snapshot
   }
 
   function schedule(snapshot) {
@@ -36,12 +34,12 @@ export function useJobPolling({ pollJob = getJob, intervalMs = 2500 } = {}) {
     if (!snapshotIsCurrent(snapshot) || pollBusy.value) return
     pollBusy.value = true
     try {
-      const response = await pollJob(snapshot.jobIdSnapshot)
+      const response = await fetchActiveJobs()
       if (!snapshotIsCurrent(snapshot)) return
-      const job = response?.data ?? null
-      if (!job) return
-      const appliedJob = await snapshot.onUpdate(job, snapshot) ?? job
-      if (snapshotIsCurrent(snapshot) && ACTIVE_STATUSES.has(appliedJob.status)) schedule(snapshot)
+      const jobs = response?.data?.jobs ?? []
+      const keepPolling = await snapshot.onTick(jobs)
+      if (!snapshotIsCurrent(snapshot)) return
+      if (keepPolling !== false) schedule(snapshot)
       else stopPolling()
     } catch (error) {
       if (snapshotIsCurrent(snapshot)) {
@@ -53,13 +51,12 @@ export function useJobPolling({ pollJob = getJob, intervalMs = 2500 } = {}) {
     }
   }
 
-  function startPolling({ sessionId, jobId, onUpdate, onError }) {
-    stopPolling()
+  function startPolling({ onTick, onError }) {
+    // 已在轮询则复用：onTick 闭包共享响应式状态，新任务并入无需重启循环
+    if (activeSnapshot) return
     const snapshot = {
       generation: pollGeneration.value,
-      sessionIdSnapshot: sessionId,
-      jobIdSnapshot: jobId,
-      onUpdate,
+      onTick,
       onError,
     }
     activeSnapshot = snapshot

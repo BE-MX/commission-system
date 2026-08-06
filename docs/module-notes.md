@@ -783,6 +783,12 @@ frontend/src/
 
 **会话命名**：首轮 turn 自动用首条消息命名会话——仅当标题仍是默认名 `新对话` 且会话尚无消息（显式起过名的不覆盖）；压平换行/连续空白后截断 30 字。隐式建会话（不带 session_id 的 turn）同样走这个派生。前端在 submit 响应里同步 `currentSession.title`，页头与侧栏即时更新，无需刷新。
 
+**并发口径**：放开的是同时在途数，不是总量——每日额度规则不变；同一用户最多 `DESIGN_IMAGE_MAX_ACTIVE_PER_USER`（默认 2）个进行中任务，**同一会话仍只允许 1 个**（保住会话内单活跃卡片的交互模型）。create_turn 与 retry 共用 `_enforce_capacity`（先额度、再用户在途数、最后会话级检查）。`GET /jobs/active` 返回全部进行中任务列表；前端单循环轮询该列表，从列表消失的任务补拉一次终态驱动结果卡片与额度刷新。发送闸只看当前会话的进行中任务，别的会话在生成不阻塞新会话。
+
+**提示词库**：`ark_design_image_prompt_templates` 预置完整模板，`content` 内 `{key}` 为参数占位，`options` JSON 定义参数槽（key/label/choices）；前端选择类型→模板→参数取值后本地拼装（`composePrompt`），填入输入框可再编辑。读取要 `design_image:read`，管理与 `POST /prompt-templates/seed` 种子导入要 `design_image:admin`；种子按 name 幂等，不覆盖人工修改。
+
+**参考图库（公/私库）**：`ark_design_image_library_assets` 的 `scope` 决定可见性——`public` 公库全员可读可用（上传/删除仅 admin），`private` 私库仅创建者本人可见可用（业务员为自己的客户备的私图）；他人私库的读取/复制/删除与随机不存在 ID 同为 404，不泄露存在性。选用时 `POST /library-assets/{id}/clone` 把原图复制为会话内 draft `DesignImageAsset`，作为 `base_asset_id` 走现有生成链路，不另开通道。
+
 **额度与幂等**：`request_id` 在用户范围唯一。事务先查幂等、锁 active 用户行，再用 locking/current read 检查当天 accepted 数和 queued/running 数；已有同 key 返回原 job。每日 20 是默认 Settings，不是硬编码产品承诺；失败和 retry 新 job 均占额度，因为 Provider 是否计费不能从业务终态推断。
 
 **文件边界**：上传仅 JPEG/PNG/WebP，magic 与 MIME 必须一致；有效上限是硬上限 20 MiB 与配置值的较小者，像素上限同理不超过 60MP，最长边归一化到 2048，缩略图最长边 320；EXIF 方向归一化后清除元数据。文件按 `<owner>/<kind>/<uuid>.<ext>` 私有相对路径原子写入。代码阻止绝对路径、穿越、symlink/junction/reparse point，但仍依赖部署 ACL：存储根及父目录只能由服务账号写入。
