@@ -70,3 +70,83 @@ export function listDeptMappings() {
 export function upsertDeptMapping(data) {
   return salaryClient.post('/dept-mappings', data)
 }
+
+// --- 月度批次 ---
+
+// 状态与步骤条顺序。后端 period_service.STATUS_ORDER 是真相源，这里只是渲染顺序，
+// 文案一律用接口回的 status_label——两边各写一份中文，改一处就会对不上。
+export const PERIOD_STATUS_ORDER = [
+  'draft', 'attendance_synced', 'imported', 'calculated', 'reviewing', 'confirmed',
+]
+
+export function listPeriods(params) {
+  return salaryClient.get('/periods', { params })
+}
+
+export function getPeriod(id) {
+  return salaryClient.get(`/periods/${id}`)
+}
+
+export function listPeriodEvents(id) {
+  return salaryClient.get(`/periods/${id}/events`)
+}
+
+export function createPeriod(data) {
+  return salaryClient.post('/periods', data)
+}
+
+export function updatePeriodWorkday(id, data) {
+  return salaryClient.put(`/periods/${id}/workday`, data)
+}
+
+// 锁定走 /confirm 而非 /transition（权限也从 write 变 admin）——这条特例由接口的
+// next_steps[].endpoint 告知，调用方按它派发，不要在前端硬编码状态判断。
+export function transitionPeriod(id, data) {
+  return salaryClient.post(`/periods/${id}/transition`, data)
+}
+
+export function confirmPeriod(id, data) {
+  return salaryClient.post(`/periods/${id}/confirm`, data)
+}
+
+export function unlockPeriod(id, data) {
+  return salaryClient.post(`/periods/${id}/unlock`, data)
+}
+
+// --- 社保 / 公积金导入 ---
+
+export function importPeriodFile(id, kind, file) {
+  const fd = new FormData()
+  fd.append('file', file)
+  return salaryClient.post(`/periods/${id}/imports/${kind}`, fd)
+}
+
+export function listImportRows(id, kind, params) {
+  return salaryClient.get(`/periods/${id}/imports/${kind}`, { params })
+}
+
+// --- 考勤 ---
+
+// 66 人 × 2 片 = 132 次钉钉调用，实测跑一分钟出头。走 client 默认的 60s 会在
+// 服务端仍在写库时把请求掐掉，界面显示「超时」而数据其实同步成功了——
+// HR 于是重试，又是一分钟 + 一次限流额度。
+export function syncAttendance(id, data) {
+  return salaryClient.post(`/periods/${id}/attendance/sync`, data, { timeout: 300000 })
+}
+
+export function listAttendance(id, params) {
+  return salaryClient.get(`/periods/${id}/attendance`, { params })
+}
+
+// data 只放**真正要改的字段**：漏传 = 不动，传 null = 清空。
+// 把整行表单 spread 进来会让未编辑的 null 字段变成显式清空，
+// 刚录的病假会被抹掉（少扣缺勤 + 白发全勤奖）。
+export function upsertAttendance(id, employeeId, data) {
+  return salaryClient.put(`/periods/${id}/attendance/${employeeId}`, data)
+}
+
+// --- 异常面板 ---
+
+export function listAnomalies(id) {
+  return salaryClient.get(`/periods/${id}/anomalies`)
+}

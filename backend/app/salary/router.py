@@ -354,8 +354,13 @@ def list_period_events(
         {
             "id": e.id,
             "event_type": e.event_type,
+            # 中文标签在后端出，不让前端再写一份映射：新增事件类型时前端会静默
+            # 显示成 attendance_sync 这种 code，不报错也没人发现。
+            "event_label": period_service.EVENT_LABELS.get(e.event_type, e.event_type),
             "from_status": e.from_status,
+            "from_status_label": period_service.STATUS_LABELS.get(e.from_status or ""),
             "to_status": e.to_status,
+            "to_status_label": period_service.STATUS_LABELS.get(e.to_status or ""),
             "status_version": e.status_version,
             "reason": e.reason,
             "payload": e.payload,

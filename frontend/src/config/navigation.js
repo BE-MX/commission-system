@@ -1030,6 +1030,27 @@ export const NAV_ENTRIES = [
       anyPermission: ['salary:read', 'salary:write', 'salary:admin'],
     },
   },
+  {
+    path: '/salary/periods',
+    name: 'SalaryPeriods',
+    component: () => import('@/views/salary/SalaryPeriods.vue'),
+    title: '月度工资批次',
+    anyPermission: ['salary:read', 'salary:write', 'salary:admin'],
+    menu: {
+      group: 'salary', title: '月度批次', icon: Calendar, order: 5,
+      anyPermission: ['salary:read', 'salary:write', 'salary:admin'],
+    },
+  },
+  {
+    // 工作台不进菜单：它必须挂在某个具体批次上，菜单里放一个「工作台」入口
+    // 就得先替用户猜是哪个月，而猜错的代价是往错的月份里录考勤。
+    path: '/salary/periods/:id',
+    name: 'SalaryWorkbench',
+    component: () => import('@/views/salary/SalaryWorkbench.vue'),
+    title: '工资批次工作台',
+    anyPermission: ['salary:read', 'salary:write', 'salary:admin'],
+    hideInMenu: true,
+  },
 
   // ── 系统管理 ───────────────────────────────────────────
   {

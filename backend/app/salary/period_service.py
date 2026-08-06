@@ -60,6 +60,19 @@ _ALLOWED: dict[str, tuple[str, ...]] = {
     STATUS_CONFIRMED: (STATUS_REVIEWING,),  # 仅 unlock() 走这条
 }
 
+EVENT_LABELS = {
+    "create": "创建批次",
+    "transition": "状态推进",
+    "confirm": "锁定批次",
+    "unlock": "解锁批次",
+    "workday_update": "修改工作日数",
+    "freeze_params": "冻结规则参数",
+    "attendance_sync": "同步钉钉考勤",
+    "attendance_manual": "人工录入考勤",
+    "import_insurance": "导入社保",
+    "import_fund": "导入公积金",
+}
+
 STATUS_LABELS = {
     STATUS_DRAFT: "草稿",
     STATUS_ATTENDANCE: "考勤已同步",

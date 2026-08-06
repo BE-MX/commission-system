@@ -380,8 +380,11 @@ def collect(db: Session, period: SalaryPeriod) -> dict[str, Any]:
     items += check_profiles(db, profiles)
 
     by_kind: dict[str, int] = defaultdict(int)
+    kind_severity: dict[str, str] = {}
     for it in items:
         by_kind[it["kind"]] += 1
+        # 同一 kind 的严重度是固定的（每处 _item 调用都写死了），这里取到即用。
+        kind_severity.setdefault(it["kind"], it["severity"])
     blocking = [it for it in items if it["severity"] == BLOCKING]
 
     # blocking 排在前面：HR 从上往下处理，致命的必须先出现。
@@ -396,7 +399,10 @@ def collect(db: Session, period: SalaryPeriod) -> dict[str, Any]:
         "blocking_count": len(blocking),
         "info_count": len(items) - len(blocking),
         "by_kind": [
-            {"kind": k, "kind_label": KIND_LABELS.get(k, k), "count": v}
+            # severity 一并给出：前端的分类筛选角标要按它上色，
+            # 让前端照着 kind 名再猜一次「这类算不算致命」必然会猜错。
+            {"kind": k, "kind_label": KIND_LABELS.get(k, k), "count": v,
+             "severity": kind_severity.get(k, INFO)}
             for k, v in sorted(by_kind.items())
         ],
         "payroll_headcount": len(profiles),

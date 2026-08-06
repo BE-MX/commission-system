@@ -388,6 +388,19 @@ def list_rows(
         .all()
     )
 
+    # 合计也要按状态分开给。导入那一次的响应里有这两个数，但 HR 关掉弹窗、
+    # 隔天回来对账时就只有这个列表接口了——合计不在这里，等于对账做不了。
+    # 同样走 SQL 聚合而不是加返回列表：列表带 limit，超一页就会少算。
+    amount_col = getattr(model, "personal_total", None)
+    if amount_col is None:
+        amount_col = model.personal_amount
+    sums = dict(
+        db.query(model.match_status, func.sum(amount_col))
+        .filter(model.period_id == period_id)
+        .group_by(model.match_status)
+        .all()
+    )
+
     q = db.query(model).filter(model.period_id == period_id)
     if match_status:
         q = q.filter(model.match_status == match_status)
@@ -403,6 +416,11 @@ def list_rows(
             k: int(tally.get(k, 0))
             for k in (MATCH_MATCHED, MATCH_NOT_PAYROLL, MATCH_UNMATCHED, MATCH_DUPLICATE)
         },
+        # 两个合计分开给：matched 的是真会进工资表的钱，全量的用来跟 Excel 的
+        # 合计行对账。只给一个的话，「文件对得上但有 8 个人没匹配上档案」看不出来，
+        # 而没匹配上就等于这几个人的社保没扣。
+        "personal_total_matched": str(sums.get(MATCH_MATCHED) or 0),
+        "personal_total_all": str(sum(v for v in sums.values() if v is not None)),
         "total": sum(int(v) for v in tally.values()),
         "truncated": len(rows) >= limit,
     }
