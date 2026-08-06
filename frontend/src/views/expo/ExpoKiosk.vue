@@ -175,6 +175,7 @@ function brandClick() {
   --xk-gold-line: rgba(232, 196, 121, 0.28);
   --xk-paper: #f3ead9;
   --xk-mut: #8d8371;
+  --xk-warn: #e0906b;
 
   position: fixed;
   inset: 0;
@@ -214,7 +215,7 @@ function brandClick() {
 
 /* 门店剩余额度：顶栏常驻；0 张变红（同 xk-error 的暖红） */
 .xk-quota { white-space: nowrap; letter-spacing: 0.1em; color: var(--xk-gold); }
-.xk-quota.is-zero { color: #e0906b; }
+.xk-quota.is-zero { color: var(--xk-warn); }
 
 /* 零额度遮罩：只盖舞台区（top 让开 52px 顶栏，主页/销售面板入口仍可用），
    z 72 压过镜框 60 与错误条 70，低于主页确认 75 与灯箱 80 */
@@ -229,7 +230,7 @@ function brandClick() {
 .xk-quota-panel { text-align: center; padding: 30px 40px; }
 .xq-title {
   font-family: 'Noto Serif SC', serif; font-size: 22px;
-  letter-spacing: 0.14em; color: #e0906b;
+  letter-spacing: 0.14em; color: var(--xk-warn);
 }
 .xq-sub { margin-top: 12px; font-size: 13px; letter-spacing: 0.12em; color: var(--xk-mut); }
 
@@ -288,7 +289,7 @@ function brandClick() {
   transform: translateX(-50%);
   background: rgba(224, 144, 107, 0.15);
   border: 1px solid rgba(224, 144, 107, 0.5);
-  color: #e0906b;
+  color: var(--xk-warn);
   font-size: 13px;
   padding: 10px 22px;
   border-radius: 24px;
