@@ -14,12 +14,17 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import require_any_permission, require_permission
 from app.core.database import get_db
 from app.core.response import ok
-from app.salary import service
+from app.salary import period_service, service
 from app.salary.models import SalaryEmployeeProfile, SalaryRuleParam
 from app.salary.schemas import (
     GRADE_SCHEMES,
     DeptMappingUpsert,
     GradeUpsert,
+    PeriodConfirm,
+    PeriodCreate,
+    PeriodTransition,
+    PeriodUnlock,
+    PeriodWorkdayUpdate,
     ProfileCreate,
     ProfileUpdate,
     RuleParamUpdate,
@@ -293,3 +298,171 @@ def upsert_dept_mapping(
 ):
     row = service.upsert_dept_mapping(db, payload)
     return ok({"id": row.id})
+
+
+# ---------------------------------------------------------------------------
+# 月度批次（M2-a）
+# ---------------------------------------------------------------------------
+
+def _get_period_or_404(db: Session, period_id: int):
+    row = period_service.get_period(db, period_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="批次不存在")
+    return row
+
+
+@router.get("/periods", summary="工资批次列表")
+def list_periods(
+    status: str = Query(""),
+    limit: int = Query(60, ge=1, le=200),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_any_permission(*_READ_PERMS)),
+):
+    rows = period_service.list_periods(db, status=status, limit=limit)
+    return ok([period_service.serialize_period(r) for r in rows])
+
+
+@router.get("/periods/{period_id}", summary="批次详情")
+def get_period(
+    period_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_any_permission(*_READ_PERMS)),
+):
+    return ok(period_service.serialize_period(_get_period_or_404(db, period_id)))
+
+
+@router.get("/periods/{period_id}/events", summary="批次事件时间线")
+def list_period_events(
+    period_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_any_permission(*_READ_PERMS)),
+):
+    _get_period_or_404(db, period_id)
+    rows = period_service.list_events(db, period_id)
+    return ok([
+        {
+            "id": e.id,
+            "event_type": e.event_type,
+            "from_status": e.from_status,
+            "to_status": e.to_status,
+            "status_version": e.status_version,
+            "reason": e.reason,
+            "payload": e.payload,
+            "created_by": e.created_by,
+            "created_at": e.created_at.isoformat() if e.created_at else None,
+        }
+        for e in rows
+    ])
+
+
+@router.post("/periods", summary="新建工资批次")
+def create_period(
+    payload: PeriodCreate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_permission("salary:write")),
+):
+    try:
+        row = period_service.create_period(
+            db,
+            payload.year_month,
+            operator_id=_operator_id(current_user),
+            workday_count=payload.workday_count,
+            remark=payload.remark,
+        )
+    except period_service.SalaryPeriodError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except IntegrityError as exc:
+        # 并发下两个人同时建同月批次：唯一键兜底，翻成友好文案
+        db.rollback()
+        logger.warning("薪资批次创建撞唯一键 ym=%s", payload.year_month)
+        print(f"[salary.router] duplicate period {payload.year_month}: {type(exc).__name__}",
+              flush=True)
+        raise HTTPException(status_code=409, detail=f"{payload.year_month} 批次已存在")
+    return ok(period_service.serialize_period(row))
+
+
+@router.put("/periods/{period_id}/workday", summary="修改批次工作日数")
+def update_period_workday(
+    period_id: int,
+    payload: PeriodWorkdayUpdate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_permission("salary:write")),
+):
+    row = _get_period_or_404(db, period_id)
+    try:
+        row = period_service.update_workday_count(
+            db, row, payload.workday_count, operator_id=_operator_id(current_user)
+        )
+    except period_service.SalaryStaleVersion as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except period_service.SalaryPeriodError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ok(period_service.serialize_period(row))
+
+
+@router.post("/periods/{period_id}/transition", summary="批次状态跃迁")
+def transition_period(
+    period_id: int,
+    payload: PeriodTransition,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_permission("salary:write")),
+):
+    """跃迁到目标状态。锁定（confirmed）需 salary:admin，走独立端点。"""
+    row = _get_period_or_404(db, period_id)
+    if payload.target == period_service.STATUS_CONFIRMED:
+        raise HTTPException(status_code=400, detail="锁定批次请调用 /confirm 端点")
+    try:
+        row = period_service.transition(
+            db, row, payload.target,
+            expected_version=payload.expected_version,
+            operator_id=_operator_id(current_user),
+        )
+    except period_service.SalaryStaleVersion as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except period_service.SalaryPeriodError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ok(period_service.serialize_period(row))
+
+
+@router.post("/periods/{period_id}/confirm", summary="锁定批次")
+def confirm_period(
+    period_id: int,
+    payload: PeriodConfirm,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_permission("salary:admin")),
+):
+    """锁定后全表只读。爆炸半径大（工资已发即成定论），按 admin 分权。"""
+    row = _get_period_or_404(db, period_id)
+    try:
+        row = period_service.confirm(
+            db, row,
+            expected_version=payload.expected_version,
+            operator_id=_operator_id(current_user),
+        )
+    except period_service.SalaryStaleVersion as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except period_service.SalaryPeriodError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ok(period_service.serialize_period(row))
+
+
+@router.post("/periods/{period_id}/unlock", summary="解锁已锁定批次")
+def unlock_period(
+    period_id: int,
+    payload: PeriodUnlock,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_permission("salary:admin")),
+):
+    """决策 A4：解锁重出，前次导出打作废水印。reason 必填且留痕。"""
+    row = _get_period_or_404(db, period_id)
+    try:
+        row = period_service.unlock(
+            db, row, payload.reason,
+            expected_version=payload.expected_version,
+            operator_id=_operator_id(current_user),
+        )
+    except period_service.SalaryStaleVersion as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except period_service.SalaryPeriodError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ok(period_service.serialize_period(row))

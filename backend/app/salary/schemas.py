@@ -249,3 +249,45 @@ class DeptMappingUpsert(BaseModel):
 
 class DeptMappingOut(DeptMappingUpsert):
     id: int
+
+
+# ---------------------------------------------------------------------------
+# 月度批次（M2-a）
+# ---------------------------------------------------------------------------
+
+class PeriodCreate(BaseModel):
+    """建批次。workday_count 留空则用自动推算的初值（HR 可在批次页改）。"""
+    year_month: str = Field(..., pattern=r"^\d{4}-(0[1-9]|1[0-2])$",
+                            description="批次月份 YYYY-MM")
+    workday_count: Optional[int] = Field(None, ge=1, le=31)
+    remark: Optional[str] = Field(None, max_length=255)
+
+
+class PeriodWorkdayUpdate(BaseModel):
+    workday_count: int = Field(..., ge=1, le=31)
+
+
+class PeriodTransition(BaseModel):
+    """状态跃迁。expected_version 必填——不带版本就是放弃并发保护。
+
+    前端从列表/详情里拿到 status_version 原样带回；版本不符时后端返回 409，
+    提示「已被他人修改，请刷新」而不是静默覆盖。
+    """
+    target: str = Field(..., min_length=1, max_length=24)
+    expected_version: int = Field(..., ge=0)
+
+
+class PeriodConfirm(BaseModel):
+    """锁定批次。独立 schema 而不是复用 PeriodTransition。
+
+    复用的话 target 是必填字段，前端调 /confirm 得凭空塞一个值进去（不塞就 422），
+    而后端根本不读它——第一次对接必然踩坑然后困惑「这个值到底有没有用」。
+    目标状态由端点本身决定，不该再从 body 里传。
+    """
+    expected_version: int = Field(..., ge=0)
+
+
+class PeriodUnlock(BaseModel):
+    """管理员解锁（决策 A4）。reason 必填：前次导出要被标记作废，无理由无法审计。"""
+    reason: str = Field(..., min_length=1, max_length=255)
+    expected_version: int = Field(..., ge=0)

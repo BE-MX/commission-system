@@ -226,6 +226,12 @@ class SalaryPeriod(Base):
         comment="批次级乐观锁：状态跃迁前校验，防重算与锁定并发碰撞",
     )
     workday_count = Column(Integer, nullable=True, comment="当月应出勤工作日数")
+    # 自动推算只按周一~周五数，含法定节假日的月份必然偏大，标 needs_review 让批次页
+    # 提示 HR 覆盖。持久化而非只落事件 payload：前端拿不到的标记等于没有这套机制。
+    workday_source = Column(
+        String(16), nullable=True,
+        comment="工作日数来源 weekday_auto/needs_review/manual",
+    )
     natural_days = Column(Integer, nullable=True, comment="当月自然日数")
     param_snapshot = Column(JSON, nullable=True, comment="计算时冻结的 rule_param 全量快照")
     calculated_at = Column(DateTime, nullable=True, comment="最近一次重算时间")
@@ -448,3 +454,38 @@ class SalaryRecord(Base):
 
 
 
+
+
+class SalaryPeriodEvent(Base):
+    """批次事件留痕（094 迁移）。谁在什么时候把哪个批次从什么状态改成了什么状态。
+
+    **不复用 SalaryChangeLog**：那张是调薪/调级/转正台账，M3 引擎按
+    employee_id + effective_date 读它做月中加权，混入批次级事件会污染那条查询，
+    且它的 employee_id 是 NOT NULL——批次事件没有员工可填。
+
+    解锁原因落在这里，是决策 A4「前次导出打作废水印」的判定依据。
+    """
+
+    __tablename__ = "ark_salary_period_event"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
+    period_id = Column(
+        BigInteger, ForeignKey("ark_salary_period.id", ondelete="CASCADE"),
+        nullable=False, comment="批次 id",
+    )
+    event_type = Column(
+        String(32), nullable=False,
+        comment="create/transition/unlock/workday_update/import/attendance_sync",
+    )
+    from_status = Column(String(24), nullable=True, comment="跃迁前状态")
+    to_status = Column(String(24), nullable=True, comment="跃迁后状态")
+    status_version = Column(Integer, nullable=True, comment="跃迁后的乐观锁版本")
+    reason = Column(String(255), nullable=True, comment="原因（解锁必填）")
+    payload = Column(JSON, nullable=True, comment="事件附加数据")
+    created_by = Column(USER_ID, nullable=True, comment="操作人 ark_users.id")
+    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="发生时间")
+
+    __table_args__ = (
+        Index("idx_salary_period_event_pid", "period_id", "id"),
+        {"comment": "薪资-批次事件留痕"},
+    )
