@@ -9,7 +9,7 @@ from typing import List, Optional, Tuple
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.expo.models import ExpoQuotaRecord, ExpoStore
 from app.expo.store_service import StoreNotFound
@@ -207,6 +207,7 @@ def list_quota_records(
 
     rows = db.execute(
         stmt.order_by(ExpoQuotaRecord.created_at.desc(), ExpoQuotaRecord.id.desc())
+        .options(selectinload(ExpoQuotaRecord.operator))
         .offset(offset)
         .limit(limit)
     ).scalars().all()

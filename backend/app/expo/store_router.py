@@ -68,6 +68,7 @@ def _serialize_store_user(binding) -> dict:
 
 
 def _serialize_quota_record(record) -> dict:
+    operator = record.operator
     return {
         "id": record.id,
         "store_id": record.store_id,
@@ -78,6 +79,7 @@ def _serialize_quota_record(record) -> dict:
         "related_id": record.related_id,
         "related_type": record.related_type,
         "operator_user_id": record.operator_user_id,
+        "operator_name": (operator.real_name or operator.username) if operator else None,
         "remark": record.remark,
         "created_at": record.created_at,
     }
