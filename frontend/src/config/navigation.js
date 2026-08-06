@@ -120,9 +120,10 @@ export const MENU_GROUPS = {
     ],
   },
   design: {
-    title: '设计预约',
+    title: '设计中心',
     icon: Camera,
     anyPermission: [
+      'design_image:read',
       'design:read', 'design:write', 'design:audit', 'design:manage',
       'design_gantt:read', 'design_my:read', 'design_stats:read',
     ],
@@ -922,7 +923,18 @@ export const NAV_ENTRIES = [
     },
   },
 
-  // ── 设计预约 ───────────────────────────────────────────
+  // ── 设计中心 ───────────────────────────────────────────
+  {
+    path: '/design/image-studio',
+    name: 'DesignImageStudio',
+    component: () => import('@/views/design/image-studio/ImageStudio.vue'),
+    title: 'AI 生图工作台',
+    permission: 'design_image:read',
+    menu: {
+      group: 'design', title: 'AI 生图工作台', icon: Picture, order: 5,
+      permission: 'design_image:read',
+    },
+  },
   {
     path: '/design/gantt',
     name: 'DesignGantt',

@@ -28,6 +28,7 @@ JOB_WHATSAPP_AUTO_SYNC = "whatsapp_auto_sync"
 JOB_AFTERSALES_NOTIFICATION_RETRY = "aftersales_notification_retry"
 JOB_FESTIVAL_EVENT_MONITOR = "festival_event_monitor"
 JOB_FESTIVAL_DAILY_REPORT = "festival_daily_report"
+JOB_DESIGN_IMAGE_QUEUE = "design_image_queue"
 
 
 def _console_safe(value: object, encoding: str | None = None) -> str:
@@ -56,6 +57,7 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
         monitor_festival_and_recover_daily,
         send_daily_report_if_due,
     )
+    from app.design_image.worker import process_design_image_queue
 
     settings = get_settings()
 
@@ -110,6 +112,15 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
         trigger="cron", hour=17, minute=30,
         id=JOB_FESTIVAL_DAILY_REPORT, replace_existing=True,
         max_instances=1, coalesce=True, misfire_grace_time=3600,
+    )
+    scheduler.add_job(
+        process_design_image_queue,
+        trigger="interval",
+        seconds=settings.DESIGN_IMAGE_WORKER_INTERVAL_SECONDS,
+        id=JOB_DESIGN_IMAGE_QUEUE,
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
     )
     scheduler.add_job(
         generate_industry_daily,

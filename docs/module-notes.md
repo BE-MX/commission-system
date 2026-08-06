@@ -776,3 +776,15 @@ frontend/src/
 - `WX_MINI_ENV_VERSION`（默认 release）：正式版发布前设 trial（体验版码只有体验成员能扫开，**客户扫不开**）；release 时 check_path=True，页面未发布直接报 41030 拒绝出码，不发坏码。
 - 小程序 `app.js` onLaunch 对 track 冷启动路径豁免登录跳转（`wx.getLaunchOptionsSync().path`），否则客户被踢去登录页。
 - **上线前提**：发布包含 track 页的小程序**正式版** + 微信平台配好 IP 白名单，两者缺一功能不可用（主站会报 502 提示原因）。
+
+## 设计部 AI 生图工作台（design_image，2026-08-05）
+
+**上下文口径**：会话记录用于展示、恢复和追溯，不等于把完整历史重新喂给模型。每轮只发送显式 `base_asset_id`、最多 4 张本轮参考图和当前 prompt；生成结果用 `source_asset_id` 形成版本链。因此连续编辑的成本主要取决于本轮输入图片与输出质量，不会因聊天轮数自动线性累加全部历史图片。
+
+**额度与幂等**：`request_id` 在用户范围唯一。事务先查幂等、锁 active 用户行，再用 locking/current read 检查当天 accepted 数和 queued/running 数；已有同 key 返回原 job。每日 20 是默认 Settings，不是硬编码产品承诺；失败和 retry 新 job 均占额度，因为 Provider 是否计费不能从业务终态推断。
+
+**文件边界**：上传仅 JPEG/PNG/WebP，magic 与 MIME 必须一致；有效上限是硬上限 20 MiB 与配置值的较小者，像素上限同理不超过 60MP，最长边归一化到 2048，缩略图最长边 320；EXIF 方向归一化后清除元数据。文件按 `<owner>/<kind>/<uuid>.<ext>` 私有相对路径原子写入。代码阻止绝对路径、穿越、symlink/junction/reparse point，但仍依赖部署 ACL：存储根及父目录只能由服务账号写入。
+
+**Provider URL 防线**：输出优先解 base64；URL 仅允许当前 Provider 配置推导出的 HTTPS host，DNS 解析后拒绝私网、环回、link-local、保留/组播/metadata 地址，连接固定解析 IP，每次重定向重新校验，不转发 Authorization。下载 30 秒、20 MiB 上限，之后仍走同一图片归一化。
+
+**审计对账**：成功 job 必须同时有 assistant message、output asset 与 `ai_call_log_id`；job token 是落地快照，`AiCallLog.usage_detail` 保留 Provider 原始用量细分且响应快照去除 base64。失败若能识别日志 ID则关联日志；无法证明账单时统一 `billing_certainty=unknown`。`claim_count` 是 DB 领取次数，`provider_attempt_count` 是共享 facade 实际请求次数，不能混为一项。

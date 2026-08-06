@@ -284,6 +284,10 @@ def seed_role_permissions(db: Session):
         # AI 接入
         ("ai:admin",       "ai",     "admin",    "AI 接入管理"),
         ("ai:invoke",      "ai",     "invoke",   "AI 调用权限"),
+        # AI 生图工作台（仅 admin 自动扩权；业务角色由角色管理页显式分配）
+        ("design_image:read",  "design_image", "read",  "查看 AI 生图工作台"),
+        ("design_image:write", "design_image", "write", "创建会话、上传图片和提交生成任务"),
+        ("design_image:admin", "design_image", "admin", "管理 AI 生图任务与异常"),
         # 方舟洞见（2026-07-12 案例库/周会纪要拆独立子域；同日情报三页+AI 工具速递逐页拆分，
         # insight:read 保留给行业情报速览页，internal_read 保留给内部经营报告页）
         ("insight:read",          "insight", "read",          "查看行业情报速览"),
@@ -436,6 +440,7 @@ def seed_role_permissions(db: Session):
             ).first()
             if not link:
                 db.add(ArkRolePermission(role_id=role_id, permission_id=invoice_price_write_perm.id))
+        db.flush()
 
     # 给 admin 角色补齐所有非 legacy 权限（跳过已下架，避免复活死码授权）
     admin_role = db.query(ArkRole).filter(ArkRole.name == "admin").first()

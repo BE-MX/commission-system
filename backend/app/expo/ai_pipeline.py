@@ -1377,7 +1377,7 @@ def _build_prompt(
 
 
 def _run_composite(session_id: int, result_id: int) -> None:
-    from app.ai.image_service import edit_image
+    from app.ai.service import edit_image
 
     db = SessionLocal()
     started = time.monotonic()

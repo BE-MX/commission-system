@@ -6,7 +6,8 @@
   - app/services/tracking/...,  app/insight/service.py 等业务代码:
     `from app.ai.service import chat`
 
-新代码建议直接 import 子模块:
+业务代码统一从 facade 导入；只有 AI 模块内部实现直接 import 子模块:
+  - `from app.ai.service import chat, generate_image, edit_image`
   - provider_service / preset_service / call_service / log_service / keyring / http_client
 """
 
@@ -23,4 +24,9 @@ from app.ai.call_service import (  # noqa: F401
 )
 from app.ai.log_service import (  # noqa: F401
     list_logs, get_log,
+)
+from app.ai.image_service import (  # noqa: F401
+    build_image_config_version,
+    edit_image,
+    generate_image,
 )

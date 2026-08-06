@@ -855,3 +855,188 @@ grep "job completed" logs\service.log | tail -20
 - **17:30 战报与四榜截图**：`FESTIVAL_SCREENSHOT_BASE_URL` 必须是运行后端的服务器可访问、且同时托管 `/festival/` 与 `/api/` 的入口（办公室生产后端实际监听 `http://127.0.0.1:8001`；`8002` 是云端 frps 反代端口，不能写成本机截图入口）；需安装 Edge 或 Chrome，自动发现失败时配置 `FESTIVAL_BROWSER_EXECUTABLE`。任务先预检四个页面及对应 API，403/500/无数据不会误当成功；截图失败会释放日报 claim，分钟恢复任务持续重试；硬崩溃遗留的 sending claim 15 分钟后自动接管。
 - **任务核对**：服务启动日志应含 `festival_event_monitor`（每分钟）与 `festival_daily_report`（17:30）。测试机器人时先使用独立测试群，不要把生产 Webhook 写入代码或提交 `.env`。
 - **大屏双轨切换**：`.env` 的 `FESTIVAL_DATA_SOURCE`（okki=小满同步保底轨 / ark=方舟发票主轨，主轨仅统计已推单发票、金额扣手续费、**不过滤订单类型**）。切轨前看 `GET /api/public/festival/reconcile?key=` 对账；注意保底轨过滤小满"定制品"而主轨全量计入，**推成"规格品"的发票产生的差异属正常预期**（2026-07-30 裁决保持现状），判据 = 连续 3 天无此类之外的差异再切；改配置需重启后端；建议自然日 0 点切。主轨前提=全员从方舟录单并推单。
+
+## 设计部 AI 生图工作台上线与恢复
+
+当前仅完成代码与文档；下述 `office-primary` 是**目标态，尚未部署、尚未验证**。上线前不得把本节描述当成生产事实。
+
+### 配置与拓扑门禁
+
+```env
+DESIGN_IMAGE_STORAGE_ROOT=D:\WORKSOURCE\design-image
+DESIGN_IMAGE_DAILY_LIMIT=20
+DESIGN_IMAGE_WORKER_CONCURRENCY=3
+DESIGN_IMAGE_WORKER_INTERVAL_SECONDS=10
+DESIGN_IMAGE_LEASE_SECONDS=420
+DESIGN_IMAGE_STALE_SECONDS=480
+DESIGN_IMAGE_DRAFT_TTL_HOURS=24
+DESIGN_IMAGE_MAX_UPLOAD_MB=20
+DESIGN_IMAGE_MAX_PIXELS=60000000
+AI_IMAGE_PROXY=
+```
+
+`DESIGN_IMAGE_STALE_SECONDS` 必须大于 lease。调度总开关是 `SCHEDULER_ENABLED`，时区 `SCHEDULER_TIMEZONE=Asia/Shanghai`，任务 ID 为 `design_image_queue`，`max_instances=1 / coalesce=true`。目标态只允许 office-primary 开启此 worker，并让同一实例访问同一私有根；展会/云实例不得同时消费。不要为关闭单个生图任务而直接关全局 Scheduler，因为会连带停掉其他定时任务。
+
+部署前用 Windows ACL 检查并收紧存储根及其父目录：服务账号需要读、写、建目录、替换和删除；普通用户、Web 静态服务和其他应用账号不得写入，也不得通过 junction/reparse point 进入该根。先以服务账号创建测试图并删除，再启动灰度。Preset 必须为启用的 direct Provider、名称 `design_image_generation`、model 精确为 `gpt-image-2`；不要在证据里记录密钥。
+
+### 上线与核验
+
+1. 备份数据库和私有根，执行 `cd backend; alembic upgrade head; alembic heads`，确认单 head 含 `089_design_image_studio`。
+2. 部署后端但先不分配权限；确认启动日志已注册 `design_image_queue`，目标实例可写私有根，非目标实例不运行 worker。
+3. 构建前端，创建专用试点角色，只授予 `design_image:read/write` 给 2～3 名具名设计用户；非必要不授予 admin。
+4. 通过业务页面/API 做 1 次 low 首次生成 + 3 次显式以上一结果为基准的 edit，把脱敏 ID、耗时、usage 写入 [Phase 5 证据模板](requirements/evidence/2026-08-05-design-image-phase5-pilot.json)。
+5. 对每轮核对 `job.ai_call_log_id`、job tokens、`AiCallLog.usage_detail`、output asset 元数据/SHA-256 和文件存在；第二账号访问他人资产应与随机不存在 ID 同为 404；验证刷新/切换恢复 active job 且 Object URL 被释放。
+6. 在真实 MySQL 用两个独立连接并发提交同一用户，验证 owner 行锁、单 active job、daily limit 和同 key 幂等赢家；SQLite 测试不能替代此项。
+
+验证命令：
+
+```powershell
+python scripts/check_conventions.py --base (git merge-base main HEAD)
+Push-Location backend; python -m pytest; alembic heads; Pop-Location
+Push-Location frontend; node --test tests/designImage*.test.mjs; npm run build; Pop-Location
+python scripts/git_sweep.py
+git diff --check
+```
+
+### 监控、告警与故障恢复
+
+APScheduler 已实现 job error/missed 的应用日志和钉钉告警；以下业务阈值是试点运行规则，**当前代码未自动采集/告警**：仅当存在 queued job 时，连续 5 分钟无 claim 或最老 queued 超过 2 分钟；以及 running 超过 stale 阈值、1 小时错误率超过 20%、磁盘低水位、Provider 401/403/余额不足或持续 429、jobs 与 AiCallLog/usage 数明显不一致。没有 queued job 时不得触发“无 claim”告警。上线人需先接现有监控或人工巡检，不能写成“已自动告警”。
+
+- worker 中断：保留 job 和文件，恢复目标实例；过期 lease 会由下一轮标记 `worker_timeout`，用户手动 retry。不要把 unknown billing 改成 0。
+- 迟到响应/终结失败：worker 会精确删除本次已落盘原图和缩略图；日志出现 `orphan response` 或 `failed finalize` 后，按 job ID 查 DB，再仅删除没有资产行引用的具体相对路径。禁止递归删除存储根。
+- draft 清理：每轮只软删已过期且未被 job_assets/base 引用的 draft，提交后 best-effort 删除原图与缩略图；清理失败看 `[design-image] expired draft cleanup failed`，修复 ACL 后按记录路径补删。
+- 数据库成功但文件缺失：停止分配新权限，保留审计行，按备份恢复对应相对路径；不要伪造 succeeded 输出。
+
+#### 崩溃窗口 orphan 文件审计、隔离与删除
+
+适用场景：worker 已完成原图/缩略图落盘，却在 DB finalize 前进程崩溃。`ark_design_image_assets` **没有** `thumbnail_path` 字段；引用集合必须取每条 `deleted_at IS NULL` 的 `storage_path`，再按代码规则把同目录同后缀的 `<stem>_thumb<suffix>` 加入集合。下面工具默认只扫描，且仅处理 mtime 已超过 24 小时的差集；先隔离到私有根内的具名批次，人工核验后才逐文件删除。它不跟随 symlink/junction/reparse point，也不调用递归删除。
+
+在 `backend` 目录执行（输出必须用 `Tee-Object` 留作审计）：
+
+```powershell
+$env:DESIGN_IMAGE_ORPHAN_MIN_AGE_HOURS = "24"
+# 以下命令都从 backend 目录执行；JSON 输出用 Tee-Object 留存。
+python -m scripts.design_image_orphan_recovery scan --min-age-hours 24 | Tee-Object ..\design-image-orphan-scan.json
+
+$env:DESIGN_IMAGE_ORPHAN_APPLY = "QUARANTINE"
+python -m scripts.design_image_orphan_recovery quarantine --min-age-hours 24 | Tee-Object ..\design-image-orphan-quarantine.json
+
+python -m scripts.design_image_orphan_recovery reconcile --batch "<精确 batch>" --reconcile-action quarantine | Tee-Object ..\design-image-orphan-reconcile.json
+```
+
+工具源码固定在 `backend/scripts/design_image_orphan_recovery.py`，不得复制到临时 heredoc 后修改执行。四个子命令为 `scan`、`quarantine`、`reconcile`、`purge`；`reconcile/purge` 必须用 `--batch` 指定工具生成的精确批次，`reconcile` 再用 `--reconcile-action quarantine|purge` 限定观察对象。兼容的环境变量只用于最低文件年龄和破坏性操作双确认，不用于拼接路径或传递数据库锁连接。
+##### Purge 离线写冻结（强制前置）
+
+`purge` 不是在线清理任务。必须安排维护窗口，并从头到尾禁止任何进程或人工操作创建、恢复、迁移 `ark_design_image_assets` 引用。环境变量 `DESIGN_IMAGE_ORPHAN_WRITE_FREEZE=OFFLINE_CONFIRMED` 是当班人的离线声明，不是锁；只要还有一个 API、Scheduler、worker、临时脚本、DB restore 或 migration 能写相关表，该声明就无效，禁止设置。
+
+1. 列出所有可能承接 `/api/design-image` 的入口，包括办公室直连、云反代、展会/临时实例；在每个公网/反代入口先启用只针对 `/api/design-image` 的 maintenance 规则（返回 503），保留其他业务。清单必须写入当次审计记录，不能只测一个常用域名。
+2. 停止 **每一台** 能访问同一 DB 或 `DESIGN_IMAGE_STORAGE_ROOT` 的方舟后端。先记录唯一维护人和 shell：`$MaintenanceOperator="$env:USERNAME@$(hostname)"; $MaintenanceShellPid=$PID`；其余人员和自动化在窗口内不得登录 DB 或启动程序。检查必须覆盖复制目录、临时 worktree 和手工启动进程，不能用仓库路径过滤。
+
+   office-primary 是 Windows NSSM 服务 `CommissionSystem`。查询所有 Python/uvicorn/app.main 候选（无论命令行路径），并对清单中的**每个后端监听端口**核对 OwningProcess；默认业务端口是本机 8001，云 frp 入口 8002 也要在对应云主机核对。发现任何未知 PID/端口就停止并查明，不能仅停止 NSSM 后继续。
+
+   ```powershell
+   Stop-Service -Name CommissionSystem
+   Get-Service -Name CommissionSystem | Select-Object Name, Status
+   Get-CimInstance Win32_Process |
+     Where-Object {
+       $_.Name -match '^(python|pythonw|uvicorn)(\.exe)?$' -or
+       $_.CommandLine -match 'uvicorn|app\.main(:app)?'
+     } |
+     Select-Object ProcessId, Name, CommandLine
+   $BackendPorts = @(8001)  # 按入口清单加入该主机所有实际后端端口
+   Get-NetTCPConnection -State Listen |
+     Where-Object { $_.LocalPort -in $BackendPorts } |
+     ForEach-Object {
+       $_ | Select-Object LocalAddress,LocalPort,OwningProcess
+       Get-Process -Id $_.OwningProcess | Select-Object Id,ProcessName,Path
+     }
+   # 期望：CommissionSystem=Stopped；候选进程逐一解释且无方舟 writer；后端端口无监听。
+   ```
+
+   北京云展会实例的真实 systemd 单元是仓库已记录的 `ark-backend`，必须同样停机；复制/临时目录不受 systemd 管理，所以继续用全局进程与监听查询兜底。
+
+   ```bash
+   sudo systemctl stop ark-backend
+   sudo systemctl status ark-backend --no-pager       # 期望 inactive (dead)
+   pgrep -af 'uvicorn|app\.main:app|python.*app\.main' || true
+   BACKEND_PORTS='8001|8002'                          # 按本机真实入口补齐
+   sudo ss -ltnp | grep -E ":(${BACKEND_PORTS})\\b" || true
+   # 对该主机的每个入口执行：
+   curl -sS -o /dev/null -w '%{http_code}\n' --connect-timeout 10 \
+     http://127.0.0.1:8001/api/design-image/config || true
+   # 期望：无 app 进程、无后端监听；入口为 503 或连接失败。
+   ```
+
+3. 对入口清单逐一请求并记录时间、URL、结果；维护反代只能是 503，办公室直连可为 503 或 connection refused，任何 2xx/401/403 都说明应用仍可达，不能继续。
+
+   ```powershell
+   $DesignImageEntrypoints = @(
+     "https://<public-host>/api/design-image/config",
+     "http://<office-primary>:8001/api/design-image/config"
+   )
+   foreach ($url in $DesignImageEntrypoints) {
+     try {
+       $response = Invoke-WebRequest -Uri $url -Method Get -TimeoutSec 10
+       [pscustomobject]@{Url=$url; StatusCode=[int]$response.StatusCode; Detail='reachable'}
+     } catch {
+       $status = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { 'unreachable' }
+       [pscustomobject]@{Url=$url; StatusCode=$status; Detail=$_.Exception.Message}
+     }
+   }
+   ```
+
+4. 在唯一维护 shell 中记录 DB claim 快照两次，间隔至少 `2 × DESIGN_IMAGE_WORKER_INTERVAL_SECONDS`（默认 20 秒）；`claim_count` 总和、job 数和起止时间不得变化，这组 DB 快照就是 worker claim 的可核验记录。同期检查所有实例的 service log，确认窗口内没有新的 `[design-image]` 活动或异常。仅“进程列表为空”不替代 DB 与日志静默证明。
+
+   ```powershell
+   mysql --login-path=ark-maintenance --database=<COMMISSION_DB_NAME> --batch --execute "SELECT COUNT(*) AS jobs, COALESCE(SUM(claim_count),0) AS claims, MAX(started_at) AS last_started_at, MAX(finished_at) AS last_finished_at FROM ark_design_image_jobs;"
+   Start-Sleep -Seconds 20
+   mysql --login-path=ark-maintenance --database=<COMMISSION_DB_NAME> --batch --execute "SELECT COUNT(*) AS jobs, COALESCE(SUM(claim_count),0) AS claims, MAX(started_at) AS last_started_at, MAX(finished_at) AS last_finished_at FROM ark_design_image_jobs;"
+   # 两次输出的四项必须无变化。
+   ```
+
+5. 从此刻到 purge 完成审计前冻结所有手工 DB restore、Alembic migration、数据修复脚本和资产文件恢复。执行 purge 的 DB 账号必须具备目标表 `LOCK TABLES`、`SELECT` 以及只读查询 `performance_schema.metadata_locks/threads` 的权限；缺少任何权限都必须 fail closed，不能改成只依赖人工停写声明。脚本自身会从 SQLAlchemy engine 独占一个物理 MySQL 连接，执行 `LOCK TABLES ark_design_image_assets READ`，记录 `CONNECTION_ID()`，并在另一个普通连接验证恰好存在一条 `GRANTED / SHARED_READ_ONLY` 锁。外部 MySQL 终端只可用于旁路观察，不能代替、持有或续接这个锁。
+
+   ```sql
+   -- 可选旁路观察；barrier_connection_id 取自 purge plan/run journal。
+   SELECT th.PROCESSLIST_ID, ml.OBJECT_SCHEMA, ml.OBJECT_NAME,
+          ml.LOCK_TYPE, ml.LOCK_STATUS
+   FROM performance_schema.metadata_locks AS ml
+   JOIN performance_schema.threads AS th ON th.THREAD_ID = ml.OWNER_THREAD_ID
+   WHERE th.PROCESSLIST_ID = <journal 中的 barrier_connection_id>
+     AND ml.OBJECT_SCHEMA = DATABASE()
+     AND ml.OBJECT_NAME = 'ark_design_image_assets';
+   SHOW FULL PROCESSLIST;
+   ```
+
+   锁连接只查询已锁定的 `ark_design_image_assets`，不查询 performance_schema 或其他表；锁状态验证始终由另一个连接执行。锁连接不会交给 `SessionLocal`，也不会在仍持锁时归还连接池。正常退出会先显式 `UNLOCK TABLES`、执行存活探测，再关闭连接；异常路径同样显式解锁。若解锁、探测或关闭存在任何不确定性，脚本会使该物理连接失效而不是放回池，并以错误退出，服务必须保持离线。
+
+6. 在同一维护 shell 对精确 batch 执行最新 `reconcile`，再执行一次 `scan` 并确认 `quarantine_inventory.manual_hold=false`；随后只设置 purge 确认值并运行 purge，不再提供外部 barrier connection ID：
+
+   ```powershell
+   python -m scripts.design_image_orphan_recovery reconcile --batch "<精确 batch>" --reconcile-action quarantine | Tee-Object ..\design-image-orphan-reconcile.json
+   $env:DESIGN_IMAGE_ORPHAN_APPLY = "PURGE"
+   $env:DESIGN_IMAGE_ORPHAN_WRITE_FREEZE = "OFFLINE_CONFIRMED"
+   python -m scripts.design_image_orphan_recovery purge --batch "<精确 batch>" | Tee-Object ..\design-image-orphan-purge.json
+   ```
+
+脚本在读取旧计划和创建 purge journal 之前取得锁，并一直持有到目录处理、最终 reconcile 和 `run_returned` journal 全部完成。每个文件先完成路径边界、文件类型、大小、SHA-256、锁状态和 `intent` journal 的全部可能阻塞检查；随后在**持锁的同一连接**读取最新引用，只做必要的集合成员判断便立即 `unlink`。若路径恢复为引用，脚本只写 `blocked` 后中止，不删除文件。非 MySQL engine、锁缺失/不唯一、验证连接误用锁连接、权限不足或连接清理不确定均 fail closed。
+
+执行顺序：
+
+1. 先审阅 `design-image-orphan-scan.json`，逐项确认 DB 中没有相对路径、文件年龄超过门槛且不属于进行中的人工恢复。
+2. 隔离：设置 `$env:DESIGN_IMAGE_ORPHAN_APPLY="QUARANTINE"`，直接执行 `python -m scripts.design_image_orphan_recovery quarantine --min-age-hours 24`。工具会在 `.orphan-quarantine/audit/` 先创建并 fsync JSONL plan，再对每个文件分别 fsync `intent/replace syscall_returned`；这只证明意图和系统调用已返回，**不证明 Windows 文件系统已持久化**。`Tee-Object` 只是摘要，不是审计真相源。记录返回的精确 `batch` 和 `journal`。
+3. 至少观察一个完整 stale/备份周期；再次查询资产、核对页面与 worker 日志。执行 `python -m scripts.design_image_orphan_recovery reconcile --batch "<精确 batch>" --reconcile-action quarantine`。reconcile 会忽略 journal 曾记录的 syscall 返回状态，重新检查**全部 plan 项**的 source/隔离路径、大小和 SHA-256：source-only 且匹配=`not_moved`，target-only 且匹配=`moved`，both/neither/内容冲突=`conflict_manual_hold`。需要恢复时按 `source` 用 `Move-Item -LiteralPath` 精确移回，不能整目录覆盖。
+4. 精确删除：设置 `$env:DESIGN_IMAGE_ORPHAN_APPLY="PURGE"` 与 `$env:DESIGN_IMAGE_ORPHAN_WRITE_FREEZE="OFFLINE_CONFIRMED"`，直接执行 `python -m scripts.design_image_orphan_recovery purge --batch "<精确 batch>" | Tee-Object ..\design-image-orphan-purge.json`。**唯一删除授权是该 batch 唯一 quarantine plan 的 items，不是目录扫描结果。**工具先验证 source/target 唯一、source 无穿越、target 精确等于 `.orphan-quarantine/<batch>/<source>`、size/sha256 合法；所有旧 purge plans 也必须是该授权集合的合法子集。目录遍历只检测额外文件/目录；任何未授权项、重复项、路径错配、越界 target 或内容不符都 manual hold。当前存在且匹配的授权 target 才能进入新 purge plan；缺失项必须由当前 quarantine reconcile 的 `not_moved` 或旧 purge reconcile 的 `deleted_according_to_plan_intent` 解释。之后在任何 `unlink` 前持久化完整计划，再逐项 fsync `intent/unlink syscall_returned`；journal 位于批次目录外，删除批次后仍保留。
+5. purge 后及任何恢复/重跑前，执行 `python -m scripts.design_image_orphan_recovery reconcile --batch "<精确 batch>" --reconcile-action purge`。每次 purge 重跑还会在变更前自动核对全部旧 purge plans（包括已有 `syscall_returned` 的项），有冲突即停。若批次目录已被旧授权 purge 删除、但旧 journal 因崩溃缺少 `run_returned`，工具会在自身持有 DB 锁期间重新验证全部旧计划、当前文件系统与引用集合，另建明确的 recovery plan、`recovery_coverage` 和 `run_returned`，引用被覆盖的旧 journals；不会篡改或补写旧 journal。重复执行会识别已完成 recovery journal，不再制造第二份审计结论。
+
+6. purge 正常退出表示脚本已在最终 reconcile 与 `run_returned` journal 完成后显式解锁并验证连接可用；退出报错、缺少 `run_returned`、清理不确定或连接失效都必须保持服务离线。随后审阅持久 journal、执行 purge reconcile，并再次 `scan`；只有 purge plan 全部为 `deleted_according_to_plan_intent`、无 conflict/manual hold、journal 无畸形/越权项时才可恢复服务。执行 `Remove-Item Env:DESIGN_IMAGE_ORPHAN_WRITE_FREEZE,Env:DESIGN_IMAGE_ORPHAN_APPLY -ErrorAction SilentlyContinue`，启动 Windows `CommissionSystem` 和确有部署的 Linux `ark-backend`，确认 `design_image_queue` 拓扑符合目标，再移除各入口 maintenance 规则；任一审计项未通过时保持服务离线。
+
+Journal 判读和重跑规则：`intent` 与 `syscall_returned` 都只是操作线索，任何时候都以 reconcile 的当前磁盘观察为准。quarantine 中断后不要修改旧批次，先精确 reconcile；重跑只会为根目录仍存在的 orphan 创建新批次。purge 中断后用同一个精确 `--batch` 重跑；批次仍存在时，新 journal 只规划仍存在的文件，批次已消失时只能走上述显式 recovery plan，不会把旧 journal 伪装成正常返回。
+
+每次 `scan` 都会输出 `quarantine_inventory`。隔离根下存在时间戳批次但 `.orphan-quarantine/audit/` 找不到对应 quarantine plan 时，状态为 `unjournaled_batches/manual_hold`；未知目录、异常 audit 文件同样 manual hold。quarantine 与 purge 都会拒绝继续，必须保留现场并人工核验，禁止为“解锁”而补造或删除 journal。`journal_without_batch` 也会报告，用于发现 journal 已建但批次目录尚未创建的中断；按 exact batch 执行 reconcile 后处理。
+
+`DESIGN_IMAGE_ORPHAN_MIN_AGE_HOURS` 非整数或小于 24（含 0/负数）会在扫描前直接失败；不得绕过此门槛。不得扫描或删除 `DESIGN_IMAGE_STORAGE_ROOT` 之外的路径，不得使用 `Remove-Item -Recurse`、通配符或对存储根做递归删除。
+
+### 回滚
+
+最快止损是撤回试点角色的 `design_image:write` 或禁用 `design_image_generation` Preset；这两项只停止新的生成写入，不会隐藏只读页面。只有撤回 `design_image:read` 才会让前端菜单和入口隐藏。queued job 可经审计后标 failed；running 先停止新 claim、等待/使租约失效，迟到结果由 lease token 隔离。迁移不自动 downgrade，五张表与 `usage_detail` 保留；文件清理与数据库回滚分开，绝不递归删根目录。恢复前重新核对目标拓扑、ACL、Preset 和一条完整对账链。

@@ -117,6 +117,7 @@ class AiCallLog(Base):
     error_message = Column(Text, nullable=True, comment="错误详情")
     prompt_snapshot = Column(Text, nullable=True, comment="发送给模型的完整 messages JSON")
     response_snapshot = Column(Text, nullable=True, comment="模型返回的原始 response JSON")
+    usage_detail = Column(JSON, nullable=True, comment="Provider 返回的原始用量明细")
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
     updated_at = Column(
         DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow,

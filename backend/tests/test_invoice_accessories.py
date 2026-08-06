@@ -551,6 +551,32 @@ def test_permission_seed_registers_accessory_price_write_and_backfills_invoice_a
     ).one_or_none() is None
 
 
+def test_permission_seed_does_not_duplicate_new_price_permission_for_admin(db):
+    db.autoflush = False
+    admin = ArkRole(name="admin", label="Admin", is_system=True)
+    invoice_admin = ArkPermission(
+        code="invoice:admin",
+        module="invoice",
+        action="admin",
+        label="价格配置",
+        kind="action",
+        is_legacy=0,
+        sort=10,
+    )
+    db.add_all([admin, invoice_admin])
+    db.flush()
+    db.add(ArkRolePermission(role_id=admin.id, permission_id=invoice_admin.id))
+    db.commit()
+
+    auth_service.seed_role_permissions(db)
+
+    price_write = db.query(ArkPermission).filter_by(code="invoice_price:write").one()
+    assert db.query(ArkRolePermission).filter_by(
+        role_id=admin.id,
+        permission_id=price_write.id,
+    ).count() == 1
+
+
 # ── accessory standard pricing ───────────────────────────────
 
 REAL_PRODUCT_ID = 104881553777436
