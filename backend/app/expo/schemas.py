@@ -115,3 +115,32 @@ class ScriptUpsert(BaseModel):
     content: str
     evidence_points: list[str] | None = None
     is_active: int = Field(1, ge=0, le=1)
+
+
+# ---------------- 门店/展位配额管理（2026-08-05）----------------
+
+
+class StoreCreateRequest(BaseModel):
+    name: str = Field(..., max_length=128, description="门店/展位名称")
+    code: str = Field(..., max_length=64, description="门店/展位编码，全局唯一")
+    contact_name: str | None = Field(None, max_length=64, description="联系人")
+    contact_phone: str | None = Field(None, max_length=32, description="联系电话")
+    status: int = Field(1, ge=0, le=1, description="1=启用,0=停用")
+
+
+class StoreUpdateRequest(BaseModel):
+    name: str | None = Field(None, max_length=128, description="门店/展位名称")
+    code: str | None = Field(None, max_length=64, description="门店/展位编码，全局唯一")
+    contact_name: str | None = Field(None, max_length=64, description="联系人")
+    contact_phone: str | None = Field(None, max_length=32, description="联系电话")
+    status: int | None = Field(None, ge=0, le=1, description="1=启用,0=停用")
+
+
+class StoreUserBindRequest(BaseModel):
+    user_id: int = Field(..., description="系统用户 ark_users.id")
+    is_primary: bool = Field(False, description="是否主负责人")
+
+
+class QuotaRechargeRequest(BaseModel):
+    amount: int = Field(..., gt=0, description="充值数量，正整数")
+    remark: str | None = Field(None, max_length=255, description="备注")

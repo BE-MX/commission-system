@@ -19,8 +19,17 @@
       <el-col :span="4">
         <el-input v-model="filters.expo_code" placeholder="展会编码" clearable @keyup.enter="search" @clear="search" />
       </el-col>
-      <el-col :span="10">
+      <el-col :span="10" class="toolbar-right">
+        <el-select
+          v-if="canReadAll" v-model="filters.store_id" placeholder="全部门店" clearable
+          style="width: 160px" @change="search"
+        >
+          <el-option v-for="s in storeOptions" :key="s.id" :label="s.name" :value="s.id" />
+        </el-select>
         <GlassButton variant="primary" left-icon="Search" @click="search">查询</GlassButton>
+        <el-tag v-if="quota?.bound" class="quota-badge" :type="quotaTagType" effect="light">
+          剩余 {{ quota.remaining }} 张
+        </el-tag>
       </el-col>
     </el-row>
 
@@ -126,11 +135,13 @@
  * useListPage（分页/搜索/loading 编排）+ feedback.js（统一提示与危险确认）+ DetailDrawer（抽屉骨架）。
  * 新的服务端分页列表页照此结构写；标记语言/样式规范仍参照 system/DictManagement.vue。
  */
-import { onBeforeUnmount, ref, watch } from 'vue'
-import { getLeads, getLeadDetail, deleteCustomer } from '@/api/expo'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { getLeads, getLeadDetail, deleteCustomer, getStoreOptions } from '@/api/expo'
 import { useListPage } from '@/composables/useListPage'
+import { useAuthStore } from '@/stores/auth'
 import { msgSuccess, confirmDanger } from '@/utils/feedback'
 import DetailDrawer from '@/components/DetailDrawer.vue'
+import { useStoreQuota } from './composables/useStoreQuota'
 
 const NEED_LABELS = { volume: '发量丰盈', gray_cover: '白发遮盖', style_change: '造型变换' }
 const FACE_LABELS = { oval: '鹅蛋脸', round: '圆脸', square: '方脸', heart: '心形脸', long: '长脸', diamond: '菱形脸' }
@@ -138,19 +149,38 @@ const DEPTH_LABELS = { fair: '白皙', light: '偏白', medium: '自然', tan: '
 const TONE_LABELS = { cool: '冷调', warm: '暖调', neutral: '中性' }
 const LENGTH_LABELS = { short: '短发', bob: '波波头', shoulder: '及肩', long: '长发' }
 
+// 本店剩余额度徽标（未绑定门店的纯管理账号不显示）
+const { quota } = useStoreQuota()
+const quotaTagType = computed(() => {
+  const r = quota.value?.remaining ?? 0
+  return r === 0 ? 'danger' : r <= 10 ? 'warning' : 'success'
+})
+
+// 门店筛选：read_all 是数据范围权限（控查询口径不控按钮显隐），不走 v-permission 指令
+const auth = useAuthStore()
+const canReadAll = computed(() => auth.hasPermission('expo_lead:read_all'))
+const storeOptions = ref([])
+onMounted(async () => {
+  if (!canReadAll.value) return
+  try {
+    const res = await getStoreOptions()
+    storeOptions.value = res.data || []
+  } catch { /* 筛选项加载失败不阻断列表主流程 */ }
+})
+
 const {
   loading, list: leads, total, page, pageSize, searchForm: filters,
   fetchList: fetchLeads, handleSearch: search, handlePageChange, handleSizeChange,
 } = useListPage(
   async ({ page, page_size, ...form }) => {
     const params = { page, page_size }
-    for (const key of ['keyword', 'intent_level', 'expo_code']) {
+    for (const key of ['keyword', 'intent_level', 'expo_code', 'store_id']) {
       if (form[key]) params[key] = form[key]
     }
     const res = await getLeads(params)
     return res.data || {}
   },
-  { searchForm: { keyword: '', intent_level: '', expo_code: '' } },
+  { searchForm: { keyword: '', intent_level: '', expo_code: '', store_id: '' } },
 )
 
 const detailVisible = ref(false)
@@ -260,6 +290,8 @@ async function handleDelete(row) {
 .leads-panel :deep(.el-table__body tr:hover > td.el-table-fixed-column--right) { background-color: rgba(245, 236, 220, 0.98); }
 
 .toolbar { margin-bottom: 16px; }
+.toolbar-right { display: flex; align-items: center; gap: 10px; }
+.quota-badge { margin-left: auto; }
 .pager { margin-top: 16px; justify-content: flex-end; }
 .muted { color: var(--text-muted); font-size: 12px; }
 

@@ -8,6 +8,9 @@
         <div class="xk-brand" @click="brandClick">莱 莎 · 健 康 假 发</div>
       </div>
       <div class="xk-head-side">
+        <span v-if="quota?.bound" class="xk-quota" :class="{ 'is-zero': quota.remaining === 0 }">
+          剩余 {{ quota.remaining }} 张
+        </span>
         <span class="xk-step">{{ stepLabel }}</span>
         <Transition name="xnav">
           <button v-if="showNav" class="xk-nav" @click="requestHome">⌂ 主页</button>
@@ -25,6 +28,17 @@
       <ResultScreen v-else-if="flow.step.value === 'result'" />
       <SalesPanel v-else-if="flow.step.value === 'sales'" />
     </main>
+
+    <!-- 零额度阻断：遮住舞台区（顶栏导航保留，销售面板可查线索），
+         服务端在 /generate 仍有硬阻断，这里只是现场体验层的提示 -->
+    <Transition name="xnav">
+      <div v-if="quotaBlocked" class="xk-quota-overlay">
+        <div class="xk-quota-panel">
+          <div class="xq-title">额度已用完</div>
+          <div class="xq-sub">请联系门店管理员充值后再试</div>
+        </div>
+      </div>
+    </Transition>
 
     <div v-if="flow.errorText.value" class="xk-error">{{ flow.errorText.value }}</div>
 
@@ -60,6 +74,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 import { useTryOnFlow } from './composables/useTryOnFlow'
+import { useStoreQuota } from './composables/useStoreQuota'
 import AttractScreen from './kiosk/AttractScreen.vue'
 import RegisterScreen from './kiosk/RegisterScreen.vue'
 import CaptureScreen from './kiosk/CaptureScreen.vue'
@@ -71,6 +86,14 @@ import SalesPanel from './kiosk/SalesPanel.vue'
 
 const flow = useTryOnFlow()
 provide('tryonFlow', flow)
+
+// ── 门店额度（2026-08-06）──
+// 30s 轮询 + 进入生成相关屏前刷新：现场对余额变动（充值/消耗）有实时感知诉求。
+// 未绑定门店的老展会设备 quota.bound=false → 不显示、不阻断，行为与上线前一致。
+const { quota, fetchQuota } = useStoreQuota({ kiosk: true, pollMs: 30000 })
+// 销售面板是店员自查工具，零额度不遮——客户流程屏才需要阻断
+const quotaBlocked = computed(() =>
+  !!quota.value?.bound && quota.value.remaining === 0 && flow.step.value !== 'sales')
 
 // ── 刘海屏安全区（2026-07-27）──
 // APK 的 themes.xml 声明 windowLayoutInDisplayCutoutMode=shortEdges + 全屏沉浸，页面会被主动
@@ -125,8 +148,12 @@ function confirmHome() {
   homeConfirm.value = false
   flow.resetAll()
 }
-// 60s 空闲自动清场等其他路径回到 attract 时，收掉残留的确认弹层
-watch(flow.step, s => { if (s === 'attract') homeConfirm.value = false })
+// 60s 空闲自动清场等其他路径回到 attract 时，收掉残留的确认弹层；
+// 进入生成相关屏（甄选/场景/结果）时刷新一次额度，生成扣减后余额即刻反映
+watch(flow.step, s => {
+  if (s === 'attract') homeConfirm.value = false
+  if (['matching', 'scene', 'result'].includes(s)) fetchQuota()
+})
 
 // 点击品牌字进入销售面板（2026-07-13 亮哥指令：由长按 3 秒改为单击）。
 // 面板已是线索列表，无会话也可进（销售随时查话术）；不做明显按钮、不给
@@ -148,6 +175,7 @@ function brandClick() {
   --xk-gold-line: rgba(232, 196, 121, 0.28);
   --xk-paper: #f3ead9;
   --xk-mut: #8d8371;
+  --xk-warn: #e0906b;
 
   position: fixed;
   inset: 0;
@@ -184,6 +212,27 @@ function brandClick() {
 .xk-brand { cursor: default; white-space: nowrap; }
 .xk-head-side { display: flex; align-items: center; gap: 14px; min-width: 0; }
 .xk-step { white-space: nowrap; }
+
+/* 门店剩余额度：顶栏常驻；0 张变红（同 xk-error 的暖红） */
+.xk-quota { white-space: nowrap; letter-spacing: 0.1em; color: var(--xk-gold); }
+.xk-quota.is-zero { color: var(--xk-warn); }
+
+/* 零额度遮罩：只盖舞台区（top 让开 52px 顶栏，主页/销售面板入口仍可用），
+   z 72 压过镜框 60 与错误条 70，低于主页确认 75 与灯箱 80 */
+.xk-quota-overlay {
+  position: absolute;
+  top: 52px; right: 0; bottom: 0; left: 0;
+  z-index: 72;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(6, 5, 3, 0.82);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+.xk-quota-panel { text-align: center; padding: 30px 40px; }
+.xq-title {
+  font-family: 'Noto Serif SC', serif; font-size: 22px;
+  letter-spacing: 0.14em; color: var(--xk-warn);
+}
+.xq-sub { margin-top: 12px; font-size: 13px; letter-spacing: 0.12em; color: var(--xk-mut); }
 
 .xk-nav {
   flex: none; height: 34px; padding: 0 14px; border-radius: 18px; cursor: pointer;
@@ -240,7 +289,7 @@ function brandClick() {
   transform: translateX(-50%);
   background: rgba(224, 144, 107, 0.15);
   border: 1px solid rgba(224, 144, 107, 0.5);
-  color: #e0906b;
+  color: var(--xk-warn);
   font-size: 13px;
   padding: 10px 22px;
   border-radius: 24px;
@@ -369,6 +418,8 @@ function brandClick() {
 @media (max-width: 560px) {
   .xk-head { height: 46px; padding: 0 12px; }
   .xk-step { display: none; }
+  .xk-quota { letter-spacing: 0.04em; }
+  .xk-quota-overlay { top: 46px; }
   .xk-head-side { gap: 10px; }
   .xk-brand { min-width: 0; overflow: hidden; text-overflow: ellipsis; letter-spacing: 0.14em; }
   .xk-nav { height: 36px; padding: 0 12px; letter-spacing: 0.08em; }

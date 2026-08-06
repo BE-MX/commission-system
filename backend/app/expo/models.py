@@ -5,6 +5,7 @@ from datetime import datetime
 from sqlalchemy import (
     JSON,
     BigInteger,
+    Boolean,
     Column,
     DateTime,
     ForeignKey,
@@ -26,6 +27,7 @@ class ExpoCustomer(Base):
     __tablename__ = "ark_expo_customers"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
+    store_id = Column(BigInteger, ForeignKey("ark_expo_stores.id"), nullable=True, comment="关联门店/展位 ark_expo_stores.id")
     name = Column(String(64), nullable=False, comment="称呼，如 陈女士")
     phone = Column(String(32), nullable=False, comment="手机号，用于短信补发效果图链接")
     wechat_id = Column(String(64), nullable=True, comment="微信号（可选）")
@@ -36,6 +38,7 @@ class ExpoCustomer(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
 
     sessions = relationship("ExpoSession", back_populates="customer", cascade="all, delete-orphan")
+    store = relationship("ExpoStore", lazy="noload")
 
     __table_args__ = (
         Index("idx_ark_expo_customers_phone", "phone"),
@@ -143,6 +146,7 @@ class ExpoSession(Base):
 
     id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
     customer_id = Column(BigInteger, ForeignKey("ark_expo_customers.id", ondelete="CASCADE"), nullable=False, comment="关联展会客户ID")
+    store_id = Column(BigInteger, ForeignKey("ark_expo_stores.id"), nullable=True, comment="关联门店/展位 ark_expo_stores.id")
     mode = Column(String(16), nullable=False, default="tryon", comment="tryon=AI换发试戴 / scene=佩戴实拍场景效果图")
     photo_path = Column(String(512), nullable=False, comment="客户原始拍照路径")
     analysis_json = Column(JSON, nullable=True, comment="AI面容分析结果JSON；internal 内部字段（发量/头皮判断等）仅销售端可见，不进客户共享屏")
@@ -155,6 +159,7 @@ class ExpoSession(Base):
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
 
     customer = relationship("ExpoCustomer", back_populates="sessions")
+    store = relationship("ExpoStore", lazy="noload")
     results = relationship("ExpoResult", back_populates="session", cascade="all, delete-orphan")
 
     __table_args__ = (
@@ -194,6 +199,71 @@ class ExpoResult(Base):
         Index("idx_ark_expo_results_share", "short_code"),
         {"comment": "展会AI试戴-效果图表（一张效果图一条，short_code 供扫码带走）"},
     )
+
+
+class ExpoStore(Base):
+    """展会门店/展位配额主体。"""
+
+    __tablename__ = "ark_expo_stores"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
+    name = Column(String(128), nullable=False, comment="门店/展位名称")
+    code = Column(String(64), nullable=False, unique=True, comment="门店/展位编码")
+    status = Column(Integer, nullable=False, default=1, comment="1=启用,0=停用")
+    total_quota = Column(Integer, nullable=False, default=0, comment="总配额")
+    used_quota = Column(Integer, nullable=False, default=0, comment="已用配额")
+    contact_name = Column(String(64), nullable=True, comment="联系人")
+    contact_phone = Column(String(32), nullable=True, comment="联系电话")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+
+    users = relationship("ExpoStoreUser", back_populates="store", lazy="noload")
+    quota_records = relationship("ExpoQuotaRecord", back_populates="store", lazy="noload")
+
+    __table_args__ = ({"comment": "展会AI试戴-门店/展位配额表"},)
+
+
+class ExpoStoreUser(Base):
+    """门店/展位与系统用户的绑定关系。"""
+
+    __tablename__ = "ark_expo_store_users"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
+    store_id = Column(BigInteger, ForeignKey("ark_expo_stores.id", ondelete="CASCADE"), nullable=False, comment="关联门店/展位ID")
+    user_id = Column(Integer, ForeignKey("ark_users.id", ondelete="CASCADE"), nullable=False, comment="关联系统用户ID")
+    is_primary = Column(Boolean, nullable=False, default=False, comment="是否主负责人")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+
+    store = relationship("ExpoStore", back_populates="users", lazy="noload")
+    user = relationship("ArkUser", lazy="noload")
+
+    __table_args__ = (
+        UniqueConstraint("store_id", "user_id", name="uq_ark_expo_store_users_pair"),
+        {"comment": "展会AI试戴-门店用户绑定表"},
+    )
+
+
+class ExpoQuotaRecord(Base):
+    """门店/展位配额变动流水。"""
+
+    __tablename__ = "ark_expo_quota_records"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
+    store_id = Column(BigInteger, ForeignKey("ark_expo_stores.id", ondelete="CASCADE"), nullable=False, comment="关联门店/展位ID")
+    type = Column(String(16), nullable=False, comment="变动类型 recharge/deduct")
+    amount = Column(Integer, nullable=False, comment="变动数量（正数增加，负数扣减）")
+    balance_before = Column(Integer, nullable=False, comment="变动前余额")
+    balance_after = Column(Integer, nullable=False, comment="变动后余额")
+    related_id = Column(Integer, nullable=True, comment="关联业务ID")
+    related_type = Column(String(32), nullable=True, comment="关联业务类型")
+    operator_user_id = Column(Integer, ForeignKey("ark_users.id", ondelete="CASCADE"), nullable=False, comment="操作人 ark_users.id")
+    remark = Column(String(255), nullable=True, comment="备注")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+
+    store = relationship("ExpoStore", back_populates="quota_records", lazy="noload")
+    operator = relationship("ArkUser", lazy="noload")
+
+    __table_args__ = ({"comment": "展会AI试戴-配额变动流水表"},)
 
 
 class ExpoFeedback(Base):

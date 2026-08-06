@@ -49,6 +49,7 @@ ALLOWED_PERM_ACTIONS = {
     "daily_report", "audit", "invoke", "print",       # 登记特例
     "sync", "design", "import",
     "review",                                         # 售后审核（2026-07-14 aftersales:review 拆分）
+    "recharge",                                       # 门店额度充值（2026-08-05 expo_store:recharge）
     # legacy 回填行的历史动作（is_legacy=1，不再新增）
     "read_own", "settle", "export", "submit", "approve",
     "config", "logs", "backup", "assign_role",

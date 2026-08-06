@@ -8,13 +8,22 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import HTMLResponse
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_any_permission, require_permission
 from app.core.database import get_db
 from app.core.response import ok, page_result
-from app.expo import ai_pipeline, script_service, service, upload_service
+from app.expo import ai_pipeline, quota_service, script_service, service, store_service, upload_service
+from app.expo.ai_pipeline import (
+    build_composite_rows,
+    build_scene_rows,
+    launch_composite_threads,
+    prepare_composite_batch,
+)
+from app.expo.common import user_id_from_current_user as _user_id
 from app.expo.models import ExpoCustomer, ExpoResult, ExpoScript, ExpoWig
+from app.expo.quota_service import InsufficientQuota
 from app.expo.schemas import (
     CustomerRegister,
     FeedbackCreate,
@@ -30,14 +39,21 @@ logger = logging.getLogger("commission.expo")
 
 router = APIRouter()
 
+
+def _commit_or_500(db: Session, context: str) -> None:
+    """统一提交；失败时回滚并返回 500，避免裸异常泄漏。"""
+    try:
+        db.commit()
+    except (IntegrityError, SQLAlchemyError) as exc:
+        db.rollback()
+        msg = f"[expo] {context} commit 失败: {exc}"
+        logger.warning(msg)
+        print(msg, flush=True)
+        raise HTTPException(500, "提交失败，请稍后重试") from None
+
+
 WIG_PHOTO_DIR = ai_pipeline.UPLOAD_ROOT / "wigs"
 SWATCH_DIR = ai_pipeline.UPLOAD_ROOT / "hair_colors"
-
-
-def _user_id(current_user) -> int | None:
-    if isinstance(current_user, dict):
-        return current_user.get("id")
-    return getattr(current_user, "id", None)
 
 
 # ---------------- 试戴主流程（展位设备，expo:write） ----------------
@@ -46,11 +62,11 @@ def _user_id(current_user) -> int | None:
 def register(
     body: CustomerRegister,
     db: Session = Depends(get_db),
-    _user=Depends(require_permission("expo:write")),
+    current_user=Depends(require_permission("expo:write")),
 ):
     if not body.consent:
         raise HTTPException(400, "需同意拍照存储方可体验")
-    customer = service.register_customer(db, body)
+    customer = service.register_customer(db, body, operator_user_id=_user_id(current_user))
     return ok({"customer_id": customer.id}, code=201)
 
 
@@ -112,7 +128,7 @@ def generate(
     session_id: int,
     body: GenerateRequest,
     db: Session = Depends(get_db),
-    _user=Depends(require_permission("expo:write")),
+    current_user=Depends(require_permission("expo:write")),
 ):
     session = service.get_session(db, session_id)
     if not session:
@@ -120,42 +136,83 @@ def generate(
     if session.status == "generating":
         raise HTTPException(400, "效果图正在生成中，请稍候")
 
+    user_id = _user_id(current_user)
+    store = store_service.get_active_store_by_user(db, user_id)
+    if store is None:
+        raise HTTPException(400, "当前账号未绑定有效门店，无法生成图片")
+
+    if session.store_id is None:
+        session.store_id = store.id
+        db.flush()
+    elif session.store_id != store.id:
+        raise HTTPException(400, "当前会话已归属其他门店，无法使用当前门店额度")
+
     if session.mode == "scene":
         scenes = ai_pipeline.resolve_scenes(body.scene_keys)
         if not scenes:
             raise HTTPException(400, "场景选择无效")
-        ai_pipeline.start_scene_composites(
+        planned_count = len(scenes)
+        if store.total_quota - store.used_quota < planned_count:
+            raise HTTPException(400, "门店剩余额度不足，请联系运营充值")
+        rows = build_scene_rows(
             session_id, scenes, quality=body.quality, prompt_variant=body.prompt_variant,
         )
-        return ok({"scene_keys": [s["key"] for s in scenes],
-                   "prompt_variant": body.prompt_variant})
+    else:
+        if session.status == "pending":
+            raise HTTPException(400, "面容分析尚未完成")
+        hair_color = None
+        if body.hair_color_id:
+            try:
+                hair_color = service.snapshot_hair_color(db, body.hair_color_id)
+            except ValueError as exc:
+                raise HTTPException(400, str(exc))
+        tryon_scene = None
+        if body.scene_key:
+            tryon_scene = ai_pipeline.resolve_tryon_scene(body.scene_key)
+            if not tryon_scene:
+                raise HTTPException(400, "生成场景无效")
+        wig_ids = body.wig_ids or service.pick_batch_wig_ids(session, body.batch)
+        if not wig_ids:
+            raise HTTPException(400, "没有可生成的匹配发型（检查发型库与匹配标签）")
+        if body.wig_ids:
+            found = {w.id for w in db.query(ExpoWig).filter(ExpoWig.id.in_(wig_ids)).all()}
+            missing = [i for i in wig_ids if i not in found]
+            if missing:
+                raise HTTPException(400, f"发型不存在: {missing}")
+        planned_count = len(wig_ids)
+        if store.total_quota - store.used_quota < planned_count:
+            raise HTTPException(400, "门店剩余额度不足，请联系运营充值")
+        rows = build_composite_rows(
+            session_id, wig_ids, hair_color=hair_color, scene=tryon_scene, db=db,
+            quality=body.quality, prompt_variant=body.prompt_variant,
+        )
 
-    if session.status == "pending":
-        raise HTTPException(400, "面容分析尚未完成")
-    hair_color = None
-    if body.hair_color_id:
-        try:
-            hair_color = service.snapshot_hair_color(db, body.hair_color_id)
-        except ValueError as exc:
-            raise HTTPException(400, str(exc))
-    tryon_scene = None
-    if body.scene_key:
-        tryon_scene = ai_pipeline.resolve_tryon_scene(body.scene_key)
-        if not tryon_scene:
-            raise HTTPException(400, "生成场景无效")
-    wig_ids = body.wig_ids or service.pick_batch_wig_ids(session, body.batch)
-    if not wig_ids:
-        raise HTTPException(400, "没有可生成的匹配发型（检查发型库与匹配标签）")
-    if body.wig_ids:
-        found = {w.id for w in db.query(ExpoWig).filter(ExpoWig.id.in_(wig_ids)).all()}
-        missing = [i for i in wig_ids if i not in found]
-        if missing:
-            raise HTTPException(400, f"发型不存在: {missing}")
-    ai_pipeline.start_composites(
-        session_id, wig_ids, hair_color=hair_color, scene=tryon_scene, db=db,
-        quality=body.quality, prompt_variant=body.prompt_variant,
-    )
-    return ok({"wig_ids": wig_ids, "prompt_variant": body.prompt_variant})
+    result_ids, start_strategy = prepare_composite_batch(session_id, rows, db)
+    if not result_ids:
+        # 正常路径不会出现：row 为空时早被 planned_count 校验拦住；防御性兜底
+        raise HTTPException(500, "生成任务创建失败")
+
+    try:
+        quota_service.deduct_quota(
+            db,
+            store_id=store.id,
+            amount=len(result_ids),
+            operator_user_id=user_id,
+            related_id=session_id,
+            related_type="expo_session",
+            remark=None,
+        )
+    except InsufficientQuota as exc:
+        db.rollback()
+        raise HTTPException(400, "门店剩余额度不足，请联系运营充值") from exc
+
+    _commit_or_500(db, "generate")
+    launch_composite_threads(session_id, result_ids, start_strategy)
+
+    if session.mode == "scene":
+        return ok({"scene_keys": [r.scene_json["key"] for r in rows if r.scene_json],
+                   "prompt_variant": body.prompt_variant})
+    return ok({"wig_ids": [r.wig_id for r in rows], "prompt_variant": body.prompt_variant})
 
 
 @router.get("/hair-colors", summary="发色库列表（kiosk 默认只取启用项）")
@@ -561,6 +618,19 @@ def kiosk_lead_strategy(
 
 # ---------------- 线索台（PC，expo_lead:*，2026-07-12 从 expo:read 拆出） ----------------
 
+def _lead_store_scope(db: Session, current_user) -> list[int] | None:
+    """线索数据范围：None=不限（expo_lead:read_all / 超管）；否则为本账号绑定的
+    启用门店 id 列表（空列表=无门店绑定，查不到任何线索）。"""
+    roles = current_user.get("roles", [])
+    perms = current_user.get("permissions", [])
+    if "super_admin" in roles or "expo_lead:read_all" in perms:
+        return None
+    uid = _user_id(current_user)
+    if uid is None:
+        return []
+    return store_service.list_store_ids_by_user(db, uid)
+
+
 @router.get("/leads", summary="展会线索列表")
 def list_leads(
     page: int = Query(1, ge=1),
@@ -568,12 +638,17 @@ def list_leads(
     expo_code: str | None = Query(None),
     intent_level: str | None = Query(None, pattern="^[ABCD]$"),
     keyword: str | None = Query(None),
+    store_id: int | None = Query(None, description="指定门店过滤（仅 expo_lead:read_all 生效）"),
     db: Session = Depends(get_db),
-    _user=Depends(require_any_permission("expo_lead:read", "expo_lead:write")),
+    current_user=Depends(require_any_permission("expo_lead:read", "expo_lead:write")),
 ):
+    store_ids = _lead_store_scope(db, current_user)
+    if store_ids is None and store_id is not None:
+        store_ids = [store_id]
     items, total = service.list_leads(
         db, page=page, page_size=page_size,
         expo_code=expo_code, intent_level=intent_level, keyword=keyword,
+        store_ids=store_ids,
     )
     return ok(page_result(items, total, page, page_size))
 
@@ -582,10 +657,14 @@ def list_leads(
 def lead_detail(
     customer_id: int,
     db: Session = Depends(get_db),
-    _user=Depends(require_any_permission("expo_lead:read", "expo_lead:write")),
+    current_user=Depends(require_any_permission("expo_lead:read", "expo_lead:write")),
 ):
     detail = service.get_lead_detail(db, customer_id)
     if not detail:
+        raise HTTPException(404, "客户不存在")
+    # 与列表同一数据范围，防止直接按 id 跨店读取；越权一律 404，不暴露存在性
+    store_ids = _lead_store_scope(db, current_user)
+    if store_ids is not None and detail["customer"]["store_id"] not in store_ids:
         raise HTTPException(404, "客户不存在")
     return ok(detail)
 
@@ -884,3 +963,10 @@ def seed_scripts(
 ):
     created = script_service.seed_default_scripts(db)
     return ok({"created": created})
+
+
+# ---------------- 门店/展位配额管理（2026-08-05）----------------
+
+from app.expo.store_router import router as store_router
+
+router.include_router(store_router, prefix="/stores", tags=["展会门店配额"])

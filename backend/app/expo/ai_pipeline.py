@@ -23,6 +23,7 @@ from pathlib import Path
 
 import httpx
 
+from sqlalchemy.orm import Session
 from app.core.database import SessionLocal
 from app.expo import matching, script_service
 from app.expo.models import ExpoResult, ExpoSession, ExpoWig, ExpoWigColor
@@ -1160,16 +1161,14 @@ def _color_clause(color: dict | None) -> str:
     )
 
 
-def start_composites(
+def build_composite_rows(
     session_id: int, wig_ids: list[int],
     hair_color: dict | None = None, scene: dict | None = None, db=None,
     quality: str | None = None, prompt_variant: str | None = None,
-) -> None:
-    """tryon 模式：每款一条 result，发色/场景快照随 result 落库并注入 prompt。
+) -> list[ExpoResult]:
+    """tryon 模式：构造待写入的 ExpoResult 行（不操作 DB）。
 
-    发色选定时，按 wig 解析「该发型该发色」的组合三角度图组（ark_expo_wig_colors），
-    把路径写进各 result 的 hair_color_json.ref_photos——合成时直接拿这组图当参考、
-    连颜色一起照搬，不再文字上色（2026-07-15）。无组合图的 wig 走文字上色兜底。
+    发色选定时解析「该发型该发色」组合三角度图组，写进 hair_color_json.ref_photos。
     """
     scene_snapshot = {"key": scene["key"], "label": scene["label"]} if scene else None
     color_id = (hair_color or {}).get("hair_color_id")
@@ -1185,6 +1184,25 @@ def start_composites(
             quality=quality, prompt_variant=prompt_variant,
             status="generating",
         ))
+    return rows
+
+
+def start_composites(
+    session_id: int, wig_ids: list[int],
+    hair_color: dict | None = None, scene: dict | None = None, db=None,
+    quality: str | None = None, prompt_variant: str | None = None,
+) -> None:
+    """tryon 模式：每款一条 result，发色/场景快照随 result 落库并注入 prompt。
+
+    发色选定时，按 wig 解析「该发型该发色」的组合三角度图组（ark_expo_wig_colors），
+    把路径写进各 result 的 hair_color_json.ref_photos——合成时直接拿这组图当参考、
+    连颜色一起照搬，不再文字上色（2026-07-15）。无组合图的 wig 走文字上色兜底。
+    """
+    rows = build_composite_rows(
+        session_id, wig_ids,
+        hair_color=hair_color, scene=scene, db=db,
+        quality=quality, prompt_variant=prompt_variant,
+    )
     _start_batch(session_id, rows)
 
 
@@ -1212,12 +1230,12 @@ def _resolve_combo_photos(wig_ids: list[int], color_id: int, db=None) -> dict[in
             db.close()
 
 
-def start_scene_composites(
+def build_scene_rows(
     session_id: int, scenes: list[dict], quality: str | None = None,
     prompt_variant: str | None = None,
-) -> None:
-    """scene 模式：每个场景一条 result（wig_id 为空，场景快照落库）。"""
-    rows = [
+) -> list[ExpoResult]:
+    """scene 模式：构造待写入的 ExpoResult 行（不操作 DB）。"""
+    return [
         ExpoResult(
             session_id=session_id, wig_id=None,
             scene_json={"key": scene["key"], "label": scene["label"]},
@@ -1226,27 +1244,62 @@ def start_scene_composites(
         )
         for scene in scenes
     ]
+
+
+def start_scene_composites(
+    session_id: int, scenes: list[dict], quality: str | None = None,
+    prompt_variant: str | None = None,
+) -> None:
+    """scene 模式：每个场景一条 result（wig_id 为空，场景快照落库）。"""
+    rows = build_scene_rows(session_id, scenes, quality=quality, prompt_variant=prompt_variant)
     _start_batch(session_id, rows)
 
 
+def prepare_composite_batch(
+    session_id: int, rows: list[ExpoResult], db: Session,
+) -> tuple[list[int], bool]:
+    """在传入的 session 中：状态置 generating、插 result 行并 flush。
+
+    返回 (result_ids, start_strategy)。调用方负责 commit/rollback；失败时抛出异常，
+    由调用方决定如何回滚（router 侧会与配额扣减打包在同一事务内）。
+    """
+    session = db.get(ExpoSession, session_id)
+    if not session:
+        return [], False
+    session.status = "generating"
+    result_ids: list[int] = []
+    for row in rows:
+        db.add(row)
+        db.flush()
+        result_ids.append(row.id)
+    # 话术前置：合成等待的 1~5 分钟正是顾问的沟通窗口，话术在此刻并行生成，
+    # 顾问在试戴线索台（自己的手机/电脑）立即可见；scene 模式无面容分析不生成
+    start_strategy = session.mode != "scene" and not session.strategy_json
+    return result_ids, start_strategy
+
+
+def launch_composite_threads(
+    session_id: int, result_ids: list[int], start_strategy: bool,
+) -> None:
+    """启动话术与合成后台线程；必须与 prepare_composite_batch 成功后配对使用。"""
+    if result_ids and start_strategy:
+        _start_strategy_once(session_id)
+    for result_id in result_ids:
+        threading.Thread(target=_run_composite, args=(session_id, result_id), daemon=True).start()
+
+
 def _start_batch(session_id: int, rows: list[ExpoResult]) -> None:
-    """状态置位 + 插行合并为一个事务；失败回滚并把会话标 failed（不许无声吞）。"""
+    """状态置位 + 插行合并为一个事务；失败回滚并把会话标 failed（不许无声吞）。
+
+    这是独立入口的完整封装；router 侧使用 prepare_composite_batch + launch_composite_threads
+    以便把配额扣减与 result 创建打包在同一事务内。
+    """
     db = SessionLocal()
     result_ids: list[int] = []
     start_strategy = False
     try:
-        session = db.get(ExpoSession, session_id)
-        if not session:
-            return
-        session.status = "generating"
-        for row in rows:
-            db.add(row)
-            db.flush()
-            result_ids.append(row.id)
+        result_ids, start_strategy = prepare_composite_batch(session_id, rows, db)
         db.commit()
-        # 话术前置：合成等待的 1~5 分钟正是顾问的沟通窗口，话术在此刻并行生成，
-        # 顾问在试戴线索台（自己的手机/电脑）立即可见；scene 模式无面容分析不生成
-        start_strategy = session.mode != "scene" and not session.strategy_json
     except Exception as exc:
         db.rollback()
         _log_fail("composite-start", session_id, exc)
@@ -1259,10 +1312,7 @@ def _start_batch(session_id: int, rows: list[ExpoResult]) -> None:
     finally:
         db.close()
 
-    if result_ids and start_strategy:
-        _start_strategy_once(session_id)
-    for result_id in result_ids:
-        threading.Thread(target=_run_composite, args=(session_id, result_id), daemon=True).start()
+    launch_composite_threads(session_id, result_ids, start_strategy)
 
 
 def _build_prompt(
