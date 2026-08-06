@@ -499,9 +499,9 @@
 
 主要错误：校验 400/422、未认证 401、无权限 403、owner 隔离或不存在 404、已引用资产/已有 active job 409、上传超限 413、日额度 429、Preset/存储/一致性不可用 503。重试是新 accepted job，因此占用新的当日额度；失败调用可能已经触达 Provider，不能解释为“零成本”。
 
-## 薪资计算（`/api/salary`，092 迁移，2026-08-06，M1 主数据）
+## 薪资计算（`/api/salary`，092 迁移，2026-08-06，M1 主数据 + M2 批次/考勤/导入）
 
-权限按**爆炸半径**分，不按「是不是主数据」分：`salary:read` 读 / `salary:write` 改单个员工档案（影响 1 人）/ `salary:admin` 改职级表与规则参数（改一行动全员发薪口径），另预留给锁定批次与明文解密。M1 只有主数据端点，计算与批次在 M3/M4。
+权限按**爆炸半径**分，不按「是不是主数据」分：`salary:read` 读 / `salary:write` 改单个员工档案与批次数据（影响 1 人或 1 批）/ `salary:admin` 改职级表与规则参数、锁定/解锁批次（改一行动全员发薪口径）。计算与导出端点在 M3/M4。
 
 **身份证与银行卡永不出明文**：入参传明文（服务端归一化 → HMAC 哈希 → AES-256-GCM 加密），出参只有 `id_card_masked` / `bank_card_masked`。
 
@@ -552,3 +552,52 @@
 - **两个合计分开给**：`personal_total_matched` 是真正会进工资表的钱，`personal_total_all` 用来跟源表合计行对账。只看一个数，「文件对得上但工资表少扣了 8 个人」看不出来。
 
 同批次同类型重传 = 全量替换（`replaced` 报告删了几行），不需要先删除。导入是**整批一个事务**，收口在末尾那条带 `status != 'confirmed'` 谓词的 UPDATE 上：中途被人锁定则整批回滚，不会留下半批数据。`draft` 期允许导入但不推进状态（财务给表常早于考勤定版）；`reviewing` 期**拒绝**导入（400），要先退回「已计算」。
+
+### 考勤同步与人工录入（M2-d，无新迁移）
+
+| 方法 | 路径 | 权限 | 契约 |
+|---|---|---|---|
+| POST | `/periods/{id}/attendance/sync` | write | 从钉钉智能报表拉当月列值并落库。**取数在路由层做**（async HTTP），落库在 service 层（同步、不发网络请求）。名单 = 在职 + `payroll_included` + 已绑 `dingtalk_userid`；一个都没有直接 400 |
+| GET | `/periods/{id}/attendance` | read | 明细列表，`keyword`（姓名）/ `only_pending`（只看请假小时未录）/ `limit`(≤2000) |
+| PUT | `/periods/{id}/attendance/{employee_id}` | write | 人工录入/修正。**事假与病假小时的唯一入口**——钉钉给不了这两列 |
+
+**钉钉侧四条经验约束**（在真实租户上探出来的，不是文档里写的；细节见 `attendance_source.py` 模块 docstring）：
+
+1. `getcolumnval` 单次最多 **20 个 column id**，第 21 个起返回 `errcode=41`。本租户 38 列 → 必须分片，一个人 2 次调用。官方文档未记载。
+2. **五个请假列（年假/事假/病假/产假/产检）全部只有 `alias: "leave_"`、没有 `id` 键**，`getcolumnval` 从原理上就取不到。所以事假/病假只能人工录。
+3. `attendance/list` 回 60011、`getleavestatus` 回 88 —— 应用 `ding96njlc1de3wg9kmd` 缺 `qyapi_attendance_isv_query_result` / `qyapi_get_attendance_data` 两个权限点。**开通后可以把约束 2 绕过去**，在此之前别改口径。
+4. 钉钉的「应出勤天数」是工作日语义（3 月 = 22），**绝不可赋给 `due_days`**——满月员工按决策 B1 用 `full_month_days=31`。
+
+列映射一律按 `alias`，**不按 column id**：id 是租户级的（本租户从 340771676 起），换租户全错。
+
+三条前端必须照做的口径：
+
+- **`source_count` 与 `synced` 不等时必须红色阻断**，不能塞进 warnings 里。「钉钉回了 66 人、落库 65 人」和「一切正常」在界面上长得一样，而少的那个人当月考勤全空 → 缺勤扣款按 0 → 多发钱。`failures` 给前 50 条明细，`failures_truncated` 标记截断。
+- **`missing_leave_columns` 要显式展示**：同步成功不等于数据齐了，这个数组说明哪几列钉钉给不了、需要人工补。
+- **不传 ≠ 传 null。** PUT 用 `exclude_unset=True`：未传字段保持原值，显式传 `null` 才清空。HR 常常只改一格迟到——若按默认 `model_dump()` 走，未传的 `sick_leave_hours` 会以 `None` 落进 payload 把刚录的病假清掉，结果是少扣缺勤 + 白发 100 元全勤奖。空 body 回 400，不回「保存成功」。
+
+`personal_leave_hours` / `sick_leave_hours` 的 **NULL 与 0 语义不同**：NULL = 还没录，0 = 确认无请假。NULL 状态下 `full_attendance` 恒为 `false`，且该员工会进异常面板的 blocking 列表。
+
+状态码翻译：钉钉侧问题 → **502 + 原始文案**（限流、报表被改名，HR 自己能处理，包成 500 等于凭空造工单）；版本过期 → **409**（可自愈，刷新重试）；批次已锁定/参数错 → **400**。`SalaryStaleVersion` 是 `SalaryPeriodError` 的子类，except 顺序写反 409 会被 400 吞掉。已锁定批次在**发起钉钉调用之前**就拒掉——66 人 × 2 片 = 132 次调用要跑一分钟。
+
+### 异常面板（M2-e，无新迁移）
+
+| 方法 | 路径 | 权限 | 契约 |
+|---|---|---|---|
+| GET | `/periods/{id}/anomalies` | read | 聚合本批次全部待办异常。读接口给 read 权限——**看得见问题的人应该比能改的人多** |
+
+响应：`{items, total, blocking_count, info_count, by_kind[], payroll_headcount, ready_to_calculate}`。
+
+- **`ready_to_calculate` 由后端算，前端不要自己数 `blocking_count`**——两边各数一次迟早数出不一样的结果。
+- **`blocking` 与 `info` 分开计数**：blocking = 「这么算出来的钱是错的」，info = 「你可能想看一眼」。混在一起的话 8 条正常的白名单提示会把 1 条致命未匹配淹掉，而 HR 只看列表长度决定要不要继续。列表默认 blocking 排前、同严重度内按 kind 聚拢。
+- **每条都带 `action`**（下一步做什么）与 `employee_id` / `ref.row_id`（前端点击定位）。只报现象不给动作的条目不该存在。
+
+`kind` 字符串是**前端契约**（配图标与跳转目标），改名等于改接口。v1 的 12 类：`dingtalk_unbound` / `attendance_missing` / `attendance_pending_manual` / `attendance_abnormal` / `insurance_unmatched` / `insurance_missing` / `insurance_whitelist` / `fund_unmatched` / `fund_missing` / `import_duplicate` / `bank_card_duplicate` / `base_salary_missing`。
+
+三条容易踩反的判定：
+
+- **一行都没导入时不报「缺失」**：那是「还没导入」不是「导入了但少人」，报出来会让面板在流程第一步就红一片。
+- **`import_duplicate` 是 blocking 且带被排除金额**：`import_persist` 把同 `id_card_hash` 的第二行整行剔出计算，但补缴、跨主体参保都会让一个人合法地出现两行（3 月社保表就有「正常缴费/补缴」列）——被剔掉的钱没人扣，工资表上完全看不出来。这条在等 `import_persist.py` 侧的根因修复，面板先把它暴露出来。
+- **档案层不查身份证重复**：`ark_salary_employee_profile.id_card_hash` 有 UNIQUE 约束（`uk_salary_profile_id_card`），数据库已经拦死，再查一遍是永不触发的死代码——而死代码配上测试会让人误以为这条防线存在。真实风险在导入表，由 `import_duplicate` 覆盖。档案层只查银行卡（普通索引，可以撞）。
+
+保底触发、月中调薪加权、auto 被人工覆盖后 auto 已变这三类依赖 `ark_salary_record`，M3 算完才有数据，不在 v1 范围。
