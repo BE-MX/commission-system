@@ -30,3 +30,4 @@ export const dashboardClient = createApiClient({ baseURL: '/api/dashboard', time
 export const domesticClient = createApiClient({ baseURL: '/api/domestic', timeout: 60000 }) // 内贸订单（图片上传放宽超时）
 export const cardClient = createApiClient({ baseURL: '/api/card', timeout: 60000 }) // 名片管家（业务员电子名片）
 export const designImageClient = createApiClient({ baseURL: '/api/design-image', timeout: 300000 })
+export const salaryClient = createApiClient({ baseURL: '/api/salary', timeout: 60000 }) // 薪资计算（批量算薪/导出放宽超时）

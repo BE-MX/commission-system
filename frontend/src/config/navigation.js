@@ -18,7 +18,7 @@ import {
   Money, Refresh, List, Van, Upload, Box, Setting, Aim, Reading,
   MagicStick, Notebook, Calendar, Camera, EditPen, Stamp, TrendCharts,
   Lock, Lightning, Picture, Collection, CollectionTag, DataBoard,
-  DataLine, Printer, Brush, Tickets, Goods, Postcard, Shop,
+  DataLine, Printer, Brush, Tickets, Goods, Postcard, Shop, Wallet,
 } from '@element-plus/icons-vue'
 
 const FESTIVAL_PERMISSION = 'festival:read'
@@ -71,6 +71,11 @@ export const MENU_GROUPS = {
       'commission:read', 'commission:write', 'commission:self_read', 'commission_my:read',
       'payment:read', 'payment:write',
     ],
+  },
+  salary: {
+    title: '薪资计算',
+    icon: Wallet,
+    anyPermission: ['salary:read', 'salary:write', 'salary:admin'],
   },
   tracking: {
     title: '物流管理',
@@ -999,6 +1004,30 @@ export const NAV_ENTRIES = [
     menu: {
       group: 'design', title: '设计统计', icon: TrendCharts, order: 60,
       permission: 'design_stats:read',
+    },
+  },
+
+  // ── 薪资计算 ───────────────────────────────────────────
+  {
+    path: '/salary/profiles',
+    name: 'SalaryProfiles',
+    component: () => import('@/views/salary/SalaryProfiles.vue'),
+    title: '员工薪资档案',
+    anyPermission: ['salary:read', 'salary:write', 'salary:admin'],
+    menu: {
+      group: 'salary', title: '员工档案', icon: User, order: 10,
+      anyPermission: ['salary:read', 'salary:write', 'salary:admin'],
+    },
+  },
+  {
+    path: '/salary/rules',
+    name: 'SalaryRules',
+    component: () => import('@/views/salary/SalaryRules.vue'),
+    title: '薪资规则配置',
+    anyPermission: ['salary:read', 'salary:write', 'salary:admin'],
+    menu: {
+      group: 'salary', title: '规则配置', icon: Setting, order: 20,
+      anyPermission: ['salary:read', 'salary:write', 'salary:admin'],
     },
   },
 
