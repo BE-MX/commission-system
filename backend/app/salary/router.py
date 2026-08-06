@@ -539,25 +539,31 @@ async def sync_period_attendance(
     明说，由人工录入端点补。
     """
     row = _get_period_or_404(db, period_id)
-    # 先拦一道再打钉钉：66 人 × 2 片 = 132 次调用要跑一分钟，
+    # 先拦三道再打钉钉：66 人 × 2 片 = 132 次调用要跑一分钟，
     # 跑完再被 service 拒掉等于白等，还白吃一次限流额度。
+    # 这三道与 service 里的同名检查是重复的，重复是故意的——service 那份是
+    # 唯一的正确性保证（并发下只有它在事务里说话），这份纯为省时间。
     try:
-        period_service.assert_writable(row)
+        attendance_service.assert_syncable(row)
+    except attendance_service.AttendanceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except period_service.SalaryPeriodError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
     year, month = (int(x) for x in row.year_month.split("-"))
     # natural_days 建批次时已算好；为空时现算，不让一个缺字段挡住同步
     natural_days = row.natural_days or calendar.monthrange(year, month)[1]
-    userids = [
-        p.dingtalk_userid
-        for p in db.query(SalaryEmployeeProfile)
-        .filter(SalaryEmployeeProfile.payroll_included == 1)
-        .filter(SalaryEmployeeProfile.status == "active")
-        .filter(SalaryEmployeeProfile.dingtalk_userid.isnot(None))
-        .filter(SalaryEmployeeProfile.dingtalk_userid != "")
-        .all()
-    ]
+    profiles_by_uid, duplicate_userids = attendance_service.profiles_by_userid(db)
+    if duplicate_userids:
+        detail = "、".join(
+            f"{uid}（{'/'.join(names)}）" for uid, names in duplicate_userids.items()
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=f"以下钉钉 userid 被多份员工档案共用，同步会让其中一人考勤为空：{detail}。"
+                   "请先到员工档案里把绑定改对再同步。",
+        )
+    userids = sorted(profiles_by_uid)
     if not userids:
         raise HTTPException(
             status_code=400,
@@ -582,6 +588,8 @@ async def sync_period_attendance(
     except period_service.SalaryStaleVersion as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     except period_service.SalaryPeriodError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except attendance_service.AttendanceError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return ok({"summary": summary, "period": period_service.serialize_period(row)})
 

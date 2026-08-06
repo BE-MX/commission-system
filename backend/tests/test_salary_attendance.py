@@ -12,6 +12,7 @@
 from decimal import Decimal
 
 import pytest
+import sqlalchemy as sa
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -633,3 +634,275 @@ def test_column_chunking_respects_the_measured_limit():
 def test_month_range_format():
     assert asrc.month_range(2026, 3, 31) == (
         "2026-03-01 00:00:00", "2026-03-31 23:59:59")
+
+
+def test_dirty_values_are_reported_not_silently_zeroed():
+    """**脏值必须回报条数。** 危险的不是全列坏掉（聚合出 0，一眼看得出），
+    而是 31 天里坏 11 天：聚合出 20.0，看起来完全正常，只是少了 11 天。
+    """
+    days = ([{"date": "d", "value": "1.0"}] * 20
+            + [{"date": "d", "value": "N/A"}] * 11)
+    total, dirty = asrc.aggregate_column_detail(days)
+    assert total == Decimal("20.0")
+    assert dirty == 11, "11 天脏值被静默算成 0 且没有任何回报（红线 6）"
+
+
+def test_empty_string_is_not_dirty():
+    """钉钉对「那天没这一项」就是给 ""，这是正常语义，不该刷成告警把真问题淹掉。"""
+    total, dirty = asrc.aggregate_column_detail(
+        [{"date": "d", "value": ""}, {"date": "d", "value": None},
+         {"date": "d", "value": "1.5"}])
+    assert (total, dirty) == (Decimal("1.5"), 0)
+
+
+# ---------------------------------------------------------------------------
+# 对抗性审查 2026-08-07 的回归钉子
+#
+# 这一组每条都对应一个实测出来的多发钱路径。断言里写的是「钱会怎么错」，
+# 不是「函数返回什么」——后者改个实现就得重写，前者是口径本身。
+# ---------------------------------------------------------------------------
+
+def test_params_come_from_the_batch_month_not_today(db):
+    """**P0-1：参数按批次月取，不按 today。**
+
+    8 月跑 3 月批次时，`load_params(db)` 的默认 today 会取到 8 月生效的版本。
+    实测：param_snapshot 说 31、落库的 due_days 是 26，同一批次两个分母，
+    底薪 10000 缺勤 4 天差 248.14 元/人，66 人同向偏。
+    """
+    from datetime import date as _date
+    # 3 月生效版本：满月 31；4 月起改成 26。批次是 2026-03，就该拿 31。
+    db.add(SalaryRuleParam(param_key="full_month_days", param_value="31",
+                           effective_from=_date(2026, 1, 1),
+                           effective_to=_date(2026, 3, 31)))
+    db.add(SalaryRuleParam(param_key="full_month_days", param_value="26",
+                           effective_from=_date(2026, 4, 1)))
+    db.add(SalaryRuleParam(param_key="day_hours", param_value="7.83",
+                           effective_from=_date(2026, 1, 1)))
+    db.commit()
+
+    profile = make_profile(db, "谷振尧", emp_no="1", userid="U1")
+    period = make_period(db)
+    period.param_snapshot = None  # 还没冻结，走现查这条路
+    db.commit()
+
+    ats.sync_from_dingtalk(db, period, {"results": [
+        person("U1", late_count=0, early_leave_count=0,
+               miss_punch_on=0, miss_punch_off=0, absent_days=0),
+    ]})
+
+    row = db.query(SalaryAttendance).filter_by(employee_id=profile.id).one()
+    assert row.due_days == Decimal("31"), (
+        f"取到了 {row.due_days}，说明参数按今天而不是按批次月 2026-03 取的")
+
+
+def test_frozen_snapshot_wins_over_current_param_table(db):
+    """**P0-1 的另一半：快照优先。** 已冻结的批次要能原样复算，
+    哪怕 HR 事后把参数表改了——不然「当初发的那个数」永远复算不出来。
+    """
+    from datetime import date as _date
+    db.add(SalaryRuleParam(param_key="full_month_days", param_value="26",
+                           effective_from=_date(2020, 1, 1)))
+    db.commit()
+    profile = make_profile(db, "冻结", emp_no="9", userid="U9")
+    period = make_period(db)  # make_period 里已经冻了 full_month_days=31
+
+    ats.sync_from_dingtalk(db, period, {"results": [
+        person("U9", late_count=0, early_leave_count=0,
+               miss_punch_on=0, miss_punch_off=0, absent_days=0),
+    ]})
+    row = db.query(SalaryAttendance).filter_by(employee_id=profile.id).one()
+    assert row.due_days == Decimal("31"), "快照被当前参数表覆盖了，已发批次复算不出原值"
+
+
+def test_duplicate_dingtalk_userid_blocks_the_whole_sync(db):
+    """**P0-2：userid 撞号必须整批拒绝。**
+
+    两份档案共用一个 userid 时，钉钉只回一条、落库也只有一条，于是
+    source_count == synced、failed == 0、unbound 为空——**所有告警指标全绿**，
+    而被覆盖的那个人当月考勤是空的，M3 按全勤给他发钱。
+    唯一能救的时机是同步开始前，所以拒绝整批而不是「跳过重复的继续跑」。
+    """
+    # 096 之后数据库自己就会拒掉撞号，所以这里显式拆掉唯一索引来造出**存量**状态：
+    # 096 之前建的档案、或任何绕过 ORM 的写入路径都可能留下这种数据。
+    # service 层那道门不是数据库约束的重复，是它的补集。
+    db.execute(sa.text("DROP INDEX IF EXISTS uk_salary_profile_dingtalk"))
+    db.commit()
+    a = make_profile(db, "甲", emp_no="1", userid="U1")
+    b = make_profile(db, "乙", emp_no="2", userid="U1")
+    period = make_period(db)
+
+    with pytest.raises(ats.AttendanceError) as exc:
+        ats.sync_from_dingtalk(db, period, {"results": [
+            person("U1", late_count=5, early_leave_count=0,
+                   miss_punch_on=0, miss_punch_off=0, absent_days=3),
+        ]})
+    assert "甲" in str(exc.value) and "乙" in str(exc.value), "报错要点出是哪两个人撞的"
+    assert db.query(SalaryAttendance).filter_by(period_id=period.id).count() == 0, (
+        "撞号时不该落任何考勤行——落一半比不落更难发现")
+    assert {a.id, b.id}  # 两人都还在名单里，等 HR 去改绑定
+
+
+def test_calculated_period_rejects_resync(db):
+    """**P0-3：已计算的批次不许重新同步。**
+
+    状态机没有 calculated → attendance_synced 这条边，于是重同步时状态和版本号
+    都不动，界面继续显示「已计算」而底下的考勤被改了，导出的是过期数字。
+    """
+    make_profile(db, "李晓雨", emp_no="3", userid="U3")
+    period = make_period(db)
+    period.status = ps.STATUS_CALCULATED
+    db.commit()
+
+    with pytest.raises(ats.AttendanceError) as exc:
+        ats.sync_from_dingtalk(db, period, {"results": [
+            person("U3", late_count=5, early_leave_count=0,
+                   miss_punch_on=0, miss_punch_off=0, absent_days=3),
+        ]})
+    assert "已计算" in str(exc.value)
+    assert "退回" in str(exc.value), "报错要告诉 HR 下一步怎么做，不是只说不行"
+
+
+def test_reviewing_period_rejects_resync(db):
+    """复核中同理：数已经被人在看了，底下不能变。"""
+    make_profile(db, "复核", emp_no="4", userid="U4")
+    period = make_period(db)
+    period.status = ps.STATUS_REVIEWING
+    db.commit()
+    with pytest.raises(ats.AttendanceError):
+        ats.sync_from_dingtalk(db, period, {"results": [
+            person("U4", late_count=0, early_leave_count=0,
+                   miss_punch_on=0, miss_punch_off=0, absent_days=0),
+        ]})
+
+
+def test_missing_dingtalk_column_does_not_zero_manual_counts(db):
+    """**P1-4：钉钉少给一列，不能把人工补录的迟到/漏打卡清零。**
+
+    钉钉考勤权限没开通时，这四个字段的唯一来源就是人工录入。报表被改名会让
+    某列彻底取不到，`.get(k, 0)` 于是把 3 次迟到抹成 0，全勤判定从「不给」
+    翻成「给」，白发 100 元。
+    """
+    profile = make_profile(db, "缺列", emp_no="5", userid="U5")
+    period = make_period(db)
+    ats.manual_upsert(db, period, profile.id, {
+        "personal_leave_hours": Decimal("0"), "sick_leave_hours": Decimal("0"),
+        "late_count": 3, "miss_punch_count": 2,
+    })
+    assert db.query(SalaryAttendance).filter_by(employee_id=profile.id).one().full_attendance == 0
+
+    # 钉钉这次只回了旷工一列（迟到/漏打卡列被改名，取不到）
+    ats.sync_from_dingtalk(db, period, {"results": [person("U5", absent_days=0)]})
+
+    row = db.query(SalaryAttendance).filter_by(employee_id=profile.id).one()
+    assert row.late_count == 3, "钉钉没给这一列，人工录的 3 次迟到被清成 0 了"
+    assert row.miss_punch_count == 2, "同上，漏打卡被清零"
+    assert row.full_attendance == 0, "清零的后果就是这个：全勤从不给翻成给，白发 100 元"
+
+
+def test_missing_lists_people_without_attendance_rows(db):
+    """**P1-5：取数失败的人要有持久出口。**
+
+    failures 只活在那一次 HTTP 响应里，刷新就没了；而考勤列表只列「已有行」的人，
+    失败的人在列表里也查无此人。missing = 名单 LEFT JOIN 考勤，谁没落上行都在这。
+    """
+    ok_p = make_profile(db, "成功", emp_no="1", userid="U1")
+    bad_p = make_profile(db, "失败", emp_no="2", userid="U2")
+    period = make_period(db)
+
+    summary = ats.sync_from_dingtalk(db, period, {"results": [
+        person("U1", late_count=0, early_leave_count=0,
+               miss_punch_on=0, miss_punch_off=0, absent_days=0),
+        asrc.PersonAttendance(userid="U2", error="钉钉限流 850015"),
+    ]})
+
+    assert summary["payroll_headcount"] == 2, "分母该是发薪名单人数，不是钉钉回了几条"
+    ids = {m["employee_id"] for m in summary["missing"]}
+    assert bad_p.id in ids and ok_p.id not in ids
+    # 刷新之后（不带 summary）仍然查得到
+    assert bad_p.id in {m["employee_id"] for m in ats.list_missing(db, period.id)}
+
+
+def test_manual_entry_rejects_people_off_the_payroll(db):
+    """**P1-6：人工录入要有名单门。**
+
+    同步和 router 都按「在职 + payroll_included」筛人，只有人工录入是按 id 直取。
+    缺这道门，给只参保不发薪或已离职的人录考勤会建出考勤行并判出全勤，
+    M3 顺着行把工资和 100 元全勤奖一起发出去。
+    """
+    outsider = make_profile(db, "仅参保", emp_no="1", userid="U1", payroll_included=0)
+    left = make_profile(db, "已离职", emp_no="2", userid="U2")
+    left.status = "left"
+    db.commit()
+    period = make_period(db)
+
+    for p, word in ((outsider, "仅参保"), (left, "已离职")):
+        with pytest.raises(ats.AttendanceError) as exc:
+            ats.manual_upsert(db, period, p.id, {
+                "personal_leave_hours": Decimal("0"),
+                "sick_leave_hours": Decimal("0"),
+            })
+        assert word in str(exc.value)
+    assert db.query(SalaryAttendance).filter_by(period_id=period.id).count() == 0
+
+
+def test_fractional_counts_round_up_not_down(db):
+    """次数向上取整：`int()` 朝零截断会把 0.5 次漏打卡抹成 0，异常直接消失。"""
+    profile = make_profile(db, "半次", emp_no="6", userid="U6")
+    period = make_period(db)
+    ats.sync_from_dingtalk(db, period, {"results": [
+        person("U6", miss_punch_on=0.6, miss_punch_off=0.6, absent_days=0),
+    ]})
+    row = db.query(SalaryAttendance).filter_by(employee_id=profile.id).one()
+    assert row.miss_punch_count == 2, f"0.6+0.6=1.2 被截断成 {row.miss_punch_count} 了"
+
+
+# --- 口径参数化是真的在生效吗 ---
+
+def test_params_are_actually_read_not_hardcoded(db):
+    """**用非默认值测参数化。**
+
+    原来的 PARAMS 里 sick_max=8 / full_month_days=31 / sick_ratio=0.30 恰好等于
+    代码里的兜底默认值，于是「参数被读到了」和「参数被忽略、走了硬编码」两种情况
+    测出来一模一样——覆盖率是假的。这条全用非默认值。
+    """
+    tweaked = {"day_hours": "8", "full_month_days": "26",
+               "attendance_sick_hours_max": "4", "sick_pay_deduct_ratio": "0.50",
+               "annual_leave_breaks_attendance": "false"}
+    row = SalaryAttendance(
+        period_id=1, employee_id=1,
+        personal_leave_hours=Decimal("0"), sick_leave_hours=Decimal("5"),
+        late_count=0, early_leave_count=0, miss_punch_count=0,
+        absent_count=Decimal("0"),
+    )
+    # 病假 5h > 上限 4h → 不全勤（若走硬编码上限 8，5 会被判成全勤）
+    assert ats.judge_full_attendance(row, tweaked) is False
+    # 26 − 5/8×0.50 = 26 − 0.3125 = 25.6875 → 25.69。
+    # 特意避开 .xx5 的平局：那种数会把这条测试变成在测 ROUND_HALF_EVEN，
+    # 而这里要测的是「参数到底有没有被读进去」。
+    assert ats.compute_actual_days(row, Decimal("26"), tweaked) == Decimal("25.69")
+
+
+def test_personal_leave_breaks_full_attendance(db):
+    """事假破全勤。原测试集里**没有一条把事假设成非零**，这条判定其实没被覆盖。"""
+    row = SalaryAttendance(
+        period_id=1, employee_id=1,
+        personal_leave_hours=Decimal("4"), sick_leave_hours=Decimal("0"),
+        late_count=0, early_leave_count=0, miss_punch_count=0,
+        absent_count=Decimal("0"),
+    )
+    assert ats.judge_full_attendance(row, PARAMS) is False
+
+
+def test_absence_breaks_full_attendance_and_cuts_actual_days(db):
+    """旷工既破全勤，也要从实出天数里扣掉。
+
+    少扣的话：3 天 × 10000/31 = 967.74 元白发，而全勤奖还照给。
+    """
+    row = SalaryAttendance(
+        period_id=1, employee_id=1,
+        personal_leave_hours=Decimal("0"), sick_leave_hours=Decimal("0"),
+        late_count=0, early_leave_count=0, miss_punch_count=0,
+        absent_count=Decimal("3"),
+    )
+    assert ats.judge_full_attendance(row, PARAMS) is False
+    assert ats.compute_actual_days(row, Decimal("31"), PARAMS) == Decimal("28.00")

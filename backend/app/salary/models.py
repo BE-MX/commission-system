@@ -109,7 +109,10 @@ class SalaryEmployeeProfile(Base):
         Index("idx_salary_profile_bank_card", "bank_card_hash"),
         Index("idx_salary_profile_status", "status"),
         Index("idx_salary_profile_user", "user_id"),
-        Index("idx_salary_profile_dingtalk", "dingtalk_userid"),
+        # UNIQUE（096）：一个钉钉 userid 只能绑一个人。撞号会让考勤同步静默丢掉
+        # 其中一个人，而所有告警指标都显示正常（详见 096 迁移的说明）。
+        # UNIQUE 放过多个 NULL，所以没绑钉钉的人不受影响。
+        Index("uk_salary_profile_dingtalk", "dingtalk_userid", unique=True),
         Index("idx_salary_profile_name", "name"),
         {"comment": "薪资档案-员工主数据（PII 密文+哈希双列）"},
     )

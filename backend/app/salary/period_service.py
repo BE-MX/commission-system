@@ -504,6 +504,29 @@ def serialize_period(period: SalaryPeriod) -> dict[str, Any]:
     }
 
 
+def period_on_date(period: SalaryPeriod) -> date:
+    """该批次查参数表该用的日期 = 当月最后一天。
+
+    单独抽出来是因为「按批次月取参数」这条规则**不止 freeze_params 需要**：
+    考勤同步、人工录入同样要按当月版本算 due_days。M2-d 的对抗性审查（2026-08-07
+    第 1 条）实测过后果——3 月批次在 8 月同步，due_days 落 26（今天生效的版本），
+    而 param_snapshot 里写着 31，同一个批次两个分母，底薪 10000 缺勤 4 天差 248 元。
+    """
+    y, m = parse_year_month(period.year_month)
+    return date(y, m, natural_days_of(y, m))
+
+
+def resolve_params(db: Session, period: SalaryPeriod) -> dict[str, str]:
+    """取该批次该用的规则参数：优先已冻结的快照，否则按**当月最后一天**现查。
+
+    `service.load_params(db)` 的 `on_date` 默认 today，任何直接这么调的地方
+    都会在跨月使用时取错版本。模块内一律走这个函数，不要再自己调 load_params。
+    """
+    if period.param_snapshot:
+        return period.param_snapshot
+    return service.load_params(db, period_on_date(period))
+
+
 def freeze_params(db: Session, period: SalaryPeriod) -> dict[str, str]:
     """把当月生效参数冻进 param_snapshot。M3 重算前调用。
 
@@ -523,9 +546,7 @@ def freeze_params(db: Session, period: SalaryPeriod) -> dict[str, str]:
     且事件时间线上一片空白。所以走 guarded_write + 留痕。
     """
     assert_writable(period)
-    y, m = parse_year_month(period.year_month)
-    on_date = date(y, m, natural_days_of(y, m))
-    snapshot = service.load_params(db, on_date)
+    snapshot = service.load_params(db, period_on_date(period))
     if not snapshot:
         raise SalaryPeriodError(
             f"{period.year_month} 没有生效的规则参数版本（参数生效日晚于该月），"

@@ -94,32 +94,50 @@ class PersonAttendance:
     values: dict[str, Decimal] = field(default_factory=dict)
     raw: dict[str, Any] = field(default_factory=dict)
     error: Optional[str] = None
+    # {字段名: 无法解析的天数}。非空 = 这个人的该列聚合值偏小，见 `_to_decimal`。
+    dirty: dict[str, int] = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
         return self.error is None
 
 
-def _to_decimal(raw: Any) -> Decimal:
-    """钉钉的 value 是字符串，空值给 ""。脏值算 0 并不吞——调用方会看到 raw。"""
+def _to_decimal(raw: Any) -> tuple[Decimal, bool]:
+    """钉钉的 value 是字符串，空值给 ""。返回 (值, 是否脏值)。
+
+    **脏值必须回报，不能只是静默算 0**（红线 6）。危险的不是全列坏掉——那种情况
+    聚合出 0，一眼能看出不对；危险的是 31 天里坏了 11 天，聚合出 20.0 而真值是 31，
+    结果完全像个正常数字，只是少了 11 天。所以 `aggregate_column` 会把脏值条数
+    一路带到同步摘要里，让 HR 知道这一列信不信得过。
+
+    空串不算脏：钉钉对「那天没有该项记录」就是给 ""，这是正常语义。
+    """
     if raw is None or raw == "":
-        return Decimal("0")
+        return Decimal("0"), False
     try:
-        return Decimal(str(raw).strip())
+        return Decimal(str(raw).strip()), False
     except (InvalidOperation, ValueError):
-        return Decimal("0")
+        return Decimal("0"), True
 
 
 def aggregate_column(day_values: list[dict[str, Any]]) -> Decimal:
-    """把一列 31 天的逐日值聚合成月度值。
+    """把一列 31 天的逐日值聚合成月度值。脏值条数见 `aggregate_column_detail`。
 
     天数类（出勤天数 1.0/0.0）、次数类（迟到 0/1）、时长类都是求和语义。
     钉钉没有给月度汇总接口，这个加法就是月度值本身。
     """
+    return aggregate_column_detail(day_values)[0]
+
+
+def aggregate_column_detail(day_values: list[dict[str, Any]]) -> tuple[Decimal, int]:
+    """聚合并回报脏值条数，供 `fetch_person` 汇总成告警。"""
     total = Decimal("0")
+    dirty = 0
     for item in day_values or []:
-        total += _to_decimal(item.get("value"))
-    return total
+        value, bad = _to_decimal(item.get("value"))
+        total += value
+        dirty += 1 if bad else 0
+    return total, dirty
 
 
 def _chunk(items: list[str], size: int) -> list[list[str]]:
@@ -176,6 +194,7 @@ async def fetch_person(
 
     values: dict[str, Decimal] = {}
     raw: dict[str, Any] = {}
+    dirty: dict[str, int] = {}
 
     for chunk in _chunk(ids, MAX_COLUMNS_PER_CALL):
         try:
@@ -200,12 +219,19 @@ async def fetch_person(
             if not field_name:
                 continue
             day_values = group.get("column_vals") or []
-            values[field_name] = aggregate_column(day_values)
+            total, bad = aggregate_column_detail(day_values)
+            values[field_name] = total
             raw[field_name] = day_values
+            if bad:
+                dirty[field_name] = bad
+                logger.warning("钉钉考勤列有脏值 userid=%s 列=%s 坏 %s 天，聚合值 %s 偏小",
+                               userid, field_name, bad, total)
+                print(f"[salary.attendance_source] dirty userid={userid} "
+                      f"col={field_name} bad_days={bad}", flush=True)
 
     if not values:
         return PersonAttendance(userid=userid, error="钉钉返回空数据（该员工当月无考勤记录或 userid 无效）")
-    return PersonAttendance(userid=userid, values=values, raw=raw)
+    return PersonAttendance(userid=userid, values=values, raw=raw, dirty=dirty)
 
 
 async def probe_scopes(client=None) -> dict[str, bool]:

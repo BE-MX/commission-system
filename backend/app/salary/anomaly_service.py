@@ -54,6 +54,7 @@ INFO = "info"
 # 异常类型。前端按 kind 分组、配图标与跳转目标，所以这些字符串是**契约**，
 # 改名等于改接口——要改先改前端。
 KIND_DINGTALK_UNBOUND = "dingtalk_unbound"
+KIND_DINGTALK_DUPLICATE = "dingtalk_duplicate"
 KIND_ATTENDANCE_MISSING = "attendance_missing"
 KIND_ATTENDANCE_PENDING = "attendance_pending_manual"
 KIND_ATTENDANCE_ABNORMAL = "attendance_abnormal"
@@ -68,6 +69,7 @@ KIND_BASE_SALARY_MISSING = "base_salary_missing"
 
 KIND_LABELS = {
     KIND_DINGTALK_UNBOUND: "未绑定钉钉",
+    KIND_DINGTALK_DUPLICATE: "钉钉 userid 撞号",
     KIND_ATTENDANCE_MISSING: "考勤缺失",
     KIND_ATTENDANCE_PENDING: "请假小时未录",
     KIND_ATTENDANCE_ABNORMAL: "考勤异常明细",
@@ -117,14 +119,12 @@ def _payroll_profiles(db: Session) -> list[SalaryEmployeeProfile]:
 
     离职的人不在这里——他们的末月工资由 M3 按离职日期单独处理，
     如果混进来会让「考勤缺失」刷出一堆早就走了的人，把真待办淹掉。
+
+    实现委托给 `attendance_service.payroll_profiles`：同步按 A 取人、异常面板按 B
+    数分母，两份筛选条件迟早会漂，而漂的那次就是「某人没同步上但面板不报警」。
     """
-    return (
-        db.query(SalaryEmployeeProfile)
-        .filter(SalaryEmployeeProfile.payroll_included == 1)
-        .filter(SalaryEmployeeProfile.status == "active")
-        .order_by(SalaryEmployeeProfile.emp_no)
-        .all()
-    )
+    from app.salary import attendance_service
+    return attendance_service.payroll_profiles(db)
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +140,28 @@ def check_attendance(db: Session, period: SalaryPeriod,
         .filter(SalaryAttendance.period_id == period.id).all()
     }
     out: list[dict[str, Any]] = []
+
+    # userid 撞号：同步会整批拒绝（attendance_service 里说明了为什么必须拒），
+    # 但面板得在 HR 点同步之前就告诉他，而不是让他点完等一分钟再看报错。
+    by_uid: dict[str, list[SalaryEmployeeProfile]] = defaultdict(list)
+    for p in profiles:
+        uid = (p.dingtalk_userid or "").strip()
+        if uid:
+            by_uid[uid].append(p)
+    for uid, dupes in by_uid.items():
+        if len(dupes) < 2:
+            continue
+        names = "、".join(d.name for d in dupes)
+        for p in dupes:
+            out.append(_item(
+                KIND_DINGTALK_DUPLICATE, BLOCKING,
+                f"{p.name} 的钉钉 userid（{uid}）与 {names} 共用",
+                "同一个 userid 只能绑一个人，否则同步时其中一人考勤会是空的。"
+                "请到员工档案里改成各自真实的 userid",
+                employee_id=p.id, emp_no=p.emp_no, name=p.name,
+                ref={"dingtalk_userid": uid},
+            ))
+
     for p in profiles:
         row = rows.get(p.id)
         if not (p.dingtalk_userid or "").strip():

@@ -20,13 +20,23 @@
    单人取数失败标记 `sync_failed` 进异常清单，不阻塞其余 65 人（红线 6）；
    而整批的提交点仍是末尾的 `guarded_write`——中途有人锁定批次，整批回滚，
    不留半批考勤。与 M2-c 完全同构。
+
+4. **规则参数按批次月取，不按 today。**
+   走 `period_service.resolve_params`。8 月同步 3 月批次时，`load_params(db)` 的
+   默认 today 会取到今天生效的版本，`due_days` 与 param_snapshot 各说各话。
+   （对抗性审查 2026-08-07 第 1 条实测：31 vs 26，缺勤 4 天差 248 元/人）
+
+5. **同步不是无害的读操作，已计算/复核中的批次不许同步。**
+   同步会重写全表考勤，而这两个状态下的数已经被算过了。状态机不会因为再同步
+   一次而回退（`_ALLOWED` 里没这条边），于是界面仍显示「已计算」而底下的数变了，
+   导出的是过期结果。（第 3 条）
 """
 
 from __future__ import annotations
 
 import logging
 from datetime import datetime
-from decimal import Decimal
+from decimal import ROUND_CEILING, Decimal
 from typing import Any, Optional
 
 from sqlalchemy.orm import Session
@@ -140,15 +150,88 @@ def _existing_rows(db: Session, period_id: int) -> dict[int, SalaryAttendance]:
     return {r.employee_id: r for r in rows}
 
 
-def _apply_dingtalk(row: SalaryAttendance, values: dict[str, Decimal]) -> None:
-    """把钉钉值写进行对象。**只动钉钉能给的字段**，人工字段一律不碰（红线 1）。"""
-    row.late_count = int(values.get("late_count", 0))
-    row.early_leave_count = int(values.get("early_leave_count", 0))
-    # 漏打卡 = 上班缺卡 + 下班缺卡，钉钉分两列给
-    row.miss_punch_count = int(
-        values.get("miss_punch_on", 0) + values.get("miss_punch_off", 0)
+def payroll_profiles(db: Session) -> list[SalaryEmployeeProfile]:
+    """发薪名单（在职 + payroll_included）。同步、名单门、缺失清单共用同一口径。
+
+    这三处口径必须是同一份：router 按 A 取 userid、service 按 B 匹配、缺失清单按 C
+    数分母，任意两处不一致都会让「某人没同步上」在界面上看不出来。
+    """
+    return (
+        db.query(SalaryEmployeeProfile)
+        .filter(SalaryEmployeeProfile.payroll_included == 1)
+        .filter(SalaryEmployeeProfile.status == "active")
+        .order_by(SalaryEmployeeProfile.emp_no)
+        .all()
     )
-    row.absent_count = values.get("absent_days", Decimal("0"))
+
+
+def profiles_by_userid(
+    db: Session,
+) -> tuple[dict[str, SalaryEmployeeProfile], dict[str, list[str]]]:
+    """userid → 档案，外加撞号清单 {userid: [姓名...]}。
+
+    撞号必须显式返回而不是让 dict 悄悄覆盖：见 `sync_from_dingtalk` 里的说明。
+    """
+    by_uid: dict[str, SalaryEmployeeProfile] = {}
+    names: dict[str, list[str]] = {}
+    for p in payroll_profiles(db):
+        uid = (p.dingtalk_userid or "").strip()
+        if not uid:
+            continue
+        names.setdefault(uid, []).append(p.name)
+        by_uid.setdefault(uid, p)
+    return by_uid, {uid: n for uid, n in names.items() if len(n) > 1}
+
+
+def assert_syncable(period: SalaryPeriod) -> None:
+    """同步门：锁定不行，**已计算/复核中也不行**。
+
+    `assert_writable` 只挡 confirmed。但 calculated / reviewing 这两个状态下，
+    考勤已经被算进工资了，再同步一次会静默改掉底数：状态机没有「calculated →
+    attendance_synced」这条边，`_next_status` 因此返回 None，状态和版本号都不动，
+    界面继续显示「已计算」，导出的却是过期数字（实测约 1067 元/人）。
+    要重来就先退回 imported（状态机允许 calculated → imported），那一步是显式的、
+    有留痕的，HR 知道自己作废了上一次计算。（对抗性审查 2026-08-07 第 3 条）
+    """
+    period_service.assert_writable(period)
+    if period.status in (period_service.STATUS_CALCULATED, period_service.STATUS_REVIEWING):
+        label = period_service.STATUS_LABELS.get(period.status, period.status)
+        raise AttendanceError(
+            f"批次当前是「{label}」，重新同步考勤会让已算出的工资失效但状态不变。"
+            "请先把批次退回「社保已导入」再同步，退回会留痕并作废本次计算结果。"
+        )
+
+
+def _apply_dingtalk(row: SalaryAttendance, values: dict[str, Decimal]) -> None:
+    """把钉钉值写进行对象。**只动钉钉能给的字段**，人工字段一律不碰（红线 1）。
+
+    **只写 values 里真正出现的 key，缺列不写 0。** 钉钉报表被 HR 改名（`fetch_columns`
+    的注释里说过这是常规操作）会让某一列彻底取不到，而 `.get(k, 0)` 会把人工补录的
+    迟到/漏打卡清零——`manual_upsert` 明确允许人工改这四个字段，正是钉钉权限没开通时
+    的唯一来源。清零的直接后果是全勤判定从「不给」翻成「给」，白发 100 元。
+    （对抗性审查 2026-08-07 第 4 条实测：late 3→0, miss 2→0, full False→True）
+
+    漏打卡是上班缺卡 + 下班缺卡两列相加：只要有一列在就写，两列都不在才跳过。
+    """
+    if "late_count" in values:
+        row.late_count = _to_int(values["late_count"])
+    if "early_leave_count" in values:
+        row.early_leave_count = _to_int(values["early_leave_count"])
+    if "miss_punch_on" in values or "miss_punch_off" in values:
+        row.miss_punch_count = _to_int(
+            values.get("miss_punch_on", Decimal("0"))
+            + values.get("miss_punch_off", Decimal("0"))
+        )
+    if "absent_days" in values:
+        row.absent_count = values["absent_days"]
+
+
+def _to_int(v: Decimal) -> int:
+    """次数向上取整。`int()` 朝零截断，钉钉给出 0.5 这类小数时会变成 0——
+    异常直接消失，全勤判定从「不给」翻成「给」。次数是「有没有」的判定，
+    宁可多记一次让 HR 去核，也不能把异常抹平成零。
+    """
+    return int(Decimal(v).quantize(Decimal("1"), rounding=ROUND_CEILING))
 
 
 def sync_from_dingtalk(
@@ -168,7 +251,7 @@ def sync_from_dingtalk(
     **upsert 语义而非先删后插**：删了重建会把人工录的请假小时一并抹掉（红线 1），
     而且 id 变化会让前端刚打开的编辑框指向一条不存在的行。
     """
-    period_service.assert_writable(period)
+    assert_syncable(period)
     from_status = period.status
     from_version = period.status_version
     if expected_version is not None and expected_version != from_version:
@@ -178,21 +261,28 @@ def sync_from_dingtalk(
             "批次已被他人修改，本次同步未开始，请刷新后重试"
         )
 
-    params = period.param_snapshot or service.load_params(db)
+    params = period_service.resolve_params(db, period)
     due_days = resolve_due_days(period, params)
 
-    profiles = {
-        p.dingtalk_userid: p
-        for p in db.query(SalaryEmployeeProfile)
-        .filter(SalaryEmployeeProfile.payroll_included == 1)
-        .filter(SalaryEmployeeProfile.dingtalk_userid.isnot(None))
-        .filter(SalaryEmployeeProfile.dingtalk_userid != "")
-        .all()
-    }
+    profiles, duplicate_userids = profiles_by_userid(db)
+    if duplicate_userids:
+        # 一个 userid 挂两份档案时，dict 推导会让后来者覆盖前者：钉钉只回一条记录，
+        # 落库也只有一条，`source_count == synced`、`failed == 0`、unbound 为空——
+        # 所有告警指标全绿，而被覆盖的那个人当月考勤是空的，M3 会按全勤给他发钱。
+        # 唯一能救的时机是同步开始前，所以整批拒绝而不是「跳过重复的继续跑」。
+        # （对抗性审查 2026-08-07 第 2 条）
+        detail = "、".join(
+            f"{uid}（{'/'.join(names)}）" for uid, names in duplicate_userids.items()
+        )
+        raise AttendanceError(
+            f"以下钉钉 userid 被多份员工档案共用，同步会让其中一人考勤为空：{detail}。"
+            "请先到员工档案里把绑定改对再同步。"
+        )
     existing = _existing_rows(db, period.id)
 
     counts = {SYNC_OK: 0, SYNC_FAILED: 0}
     failures: list[dict[str, str]] = []
+    dirty_people: list[dict[str, Any]] = []
     now = datetime.now()
 
     for person in fetched.get("results") or []:
@@ -242,6 +332,11 @@ def sync_from_dingtalk(
                              "reason": f"落库失败：{type(exc).__name__}"})
             continue
         counts[SYNC_OK] += 1
+        if getattr(person, "dirty", None):
+            # 脏值不算失败：数落进去了，只是某几列偏小。但必须让人看见——
+            # 31 天里坏 11 天会聚合出一个「看起来很正常」的 20.0。
+            dirty_people.append({"employee_id": profile.id, "name": profile.name,
+                                 "columns": dict(person.dirty)})
 
     new_status = _next_status(period)
     values: dict[str, Any] = (
@@ -255,11 +350,13 @@ def sync_from_dingtalk(
     )
 
     unbound = list_unbound(db)
+    missing = list_missing(db, period.id)
     summary = {
-        # source_count / synced 必须同时给：只报 synced 的话，「钉钉回了 66 人、
-        # 落库 65 人」在界面上跟「一切正常」长得一模一样，而少的那个人当月
-        # 考勤全空 → 缺勤扣款按 0 算 → 多发钱。前端在两者不等时必须红色阻断，
-        # 不是塞进 warnings 数组里等人自己发现。（对抗性审查 2026-08-07 第 3 条）
+        # 分母是**发薪名单人数**，不是钉钉回了几条。钉钉那边少回一个人、档案撞号
+        # 让一个人被覆盖，这两种情况下 source_count 和 synced 都会相等——
+        # 拿它俩比对等于用出题人自己的答案批卷。真正的问题是「名单上有 66 人，
+        # 库里只有 65 条考勤」，所以 payroll_headcount 才是该盯的分母。
+        "payroll_headcount": len(payroll_profiles(db)),
         "source_count": len(fetched.get("results") or []),
         "synced": counts[SYNC_OK],
         "failed": counts[SYNC_FAILED],
@@ -267,6 +364,12 @@ def sync_from_dingtalk(
         "failures_truncated": len(failures) > 50,
         "unbound": unbound,
         "unbound_count": len(unbound),
+        # 取数失败的人只在这一次 HTTP 响应里出现过，刷新一下就没了；而他们在
+        # 考勤列表里同样查无此人（列表只列已有行的人）。missing 是**持久**出口：
+        # 名单 LEFT JOIN 考勤，任何没落上行的人都在这里，撞号被覆盖的那个也在。
+        "missing": missing,
+        "missing_count": len(missing),
+        "dirty_values": dirty_people[:50],
         "missing_leave_columns": fetched.get("missing_leave") or [],
         "status": period.status,
         "status_version": period.status_version,
@@ -330,8 +433,17 @@ def manual_upsert(
     ).first()
     if profile is None:
         raise AttendanceError(f"员工档案 {employee_id} 不存在")
+    # 名单门：同步和 router 都按「在职 + payroll_included」筛人，只有这里是按 id 直取。
+    # 缺了这道门，给一个只参保不发薪（或已离职）的人录考勤会建出考勤行、判出全勤，
+    # M3 顺着考勤行就把工资和 100 元全勤奖一起发了。（对抗性审查 2026-08-07 第 6 条）
+    if profile.payroll_included != 1 or profile.status != "active":
+        raise AttendanceError(
+            f"{profile.name} 不在本月发薪名单里（"
+            f"{'已离职' if profile.status != 'active' else '仅参保不发薪'}），"
+            "不能录考勤。确需发薪请先到员工档案里改状态。"
+        )
 
-    params = period.param_snapshot or service.load_params(db)
+    params = period_service.resolve_params(db, period)
     row = (
         db.query(SalaryAttendance)
         .filter(SalaryAttendance.period_id == period.id)
@@ -377,18 +489,29 @@ def manual_upsert(
 
 def list_unbound(db: Session) -> list[dict[str, Any]]:
     """发薪名单里没绑钉钉 userid 的人。这些人考勤永远是空的，必须逐个点名。"""
-    rows = (
-        db.query(SalaryEmployeeProfile)
-        .filter(SalaryEmployeeProfile.payroll_included == 1)
-        .filter(SalaryEmployeeProfile.status == "active")
-        .filter(
-            (SalaryEmployeeProfile.dingtalk_userid.is_(None))
-            | (SalaryEmployeeProfile.dingtalk_userid == "")
-        )
-        .order_by(SalaryEmployeeProfile.emp_no)
-        .all()
-    )
+    rows = [p for p in payroll_profiles(db) if not (p.dingtalk_userid or "").strip()]
     return [{"employee_id": r.id, "emp_no": r.emp_no, "name": r.name} for r in rows]
+
+
+def list_missing(db: Session, period_id: int) -> list[dict[str, Any]]:
+    """发薪名单里**该有考勤行却没有**的人（含绑了 userid 但取数失败的）。
+
+    与 `list_unbound` 分开：没绑 userid 是档案问题，取数失败是钉钉那边的事，
+    HR 的下一步动作不同（一个去补绑定，一个重试或改手工录入）。
+    但两者的后果一样——考勤行不存在，M3 拿不到缺勤天数，只能按全勤发。
+    """
+    have = {
+        r.employee_id
+        for r in db.query(SalaryAttendance.employee_id)
+        .filter(SalaryAttendance.period_id == period_id)
+        .all()
+    }
+    return [
+        {"employee_id": p.id, "emp_no": p.emp_no, "name": p.name,
+         "bound": bool((p.dingtalk_userid or "").strip())}
+        for p in payroll_profiles(db)
+        if p.id not in have
+    ]
 
 
 def serialize_row(row: SalaryAttendance, profile: Optional[SalaryEmployeeProfile]) -> dict[str, Any]:
