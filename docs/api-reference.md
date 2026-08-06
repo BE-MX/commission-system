@@ -527,3 +527,28 @@
 档案改到发薪相关列（定薪/职级/保底/试用期薪资等 12 列）会写 `ark_salary_change_log`，`change_type` 区分 `raise`（调薪）与 `grade`（调级）——M3 月中加权对这两类的口径不同；改手机号一类不留痕。
 
 前端：`views/salary/SalaryProfiles.vue`（员工档案）、`SalaryRules.vue`（职级表/参数/部门映射三 tab），导航「薪资计算」组。
+
+### 月度批次与导入（M2-a / M2-c，无新迁移，表在 092）
+
+批次是整个模块的并发边界——考勤同步、社保导入、重算、锁定改的是同一行。所有写操作带 `status_version` 乐观锁，冲突一律 **409 + 「请刷新后重试」**，前端不要自动重试（重试会用旧数覆盖新数）。
+
+| 方法 | 路径 | 权限 | 契约 |
+|---|---|---|---|
+| GET | `/periods` | read | 批次列表，可按 `status` 过滤，默认倒序 60 条 |
+| GET | `/periods/{id}` | read | 详情。`next_steps` 带上**该走哪个端点、要什么权限**——锁定走 `/confirm` 而非 `/transition`，前端别自己硬编码 |
+| GET | `/periods/{id}/events` | read | 事件时间线（创建/跃迁/导入/解锁/参数快照） |
+| POST | `/periods` | write | 建批次；同月唯一。`workday_count` 不传则自动推算，但**只按周一~五数，不含节假日与调休**，`workday_source=needs_review` 时前端必须显示「待复核」角标 |
+| PUT | `/periods/{id}/workday` | write | 人工覆盖工作日数，上限是当月自然日（2 月不是 31） |
+| POST | `/periods/{id}/transition` | write | 状态跃迁，白名单校验；目标为 `confirmed` 返回 400 让你改走 `/confirm` |
+| POST | `/periods/{id}/confirm` | **admin** | 锁定，之后全表只读 |
+| POST | `/periods/{id}/unlock` | **admin** | 解锁回复核中，`reason` 必填；`unlocked_at` 有值即前次导出作废（决策 A4） |
+| POST | `/periods/{id}/imports/{kind}` | write | 上传社保/公积金明细，`kind` = `insurance` \| `fund`，multipart `file`，≤10MB |
+| GET | `/periods/{id}/imports/{kind}` | read | 导入行列表，`match_status`/`keyword`/`limit`(≤2000) 过滤；`match_counts` 走独立 GROUP BY，**不受 limit 影响** |
+
+导入的三条口径，前端与 M3 都要照着来：
+
+- **`match_status` 四值**：`matched`（进减项）/ `not_payroll`（参保未发薪，落库但不计算）/ `unmatched`（无档案）/ `duplicate`（同一文件内身份证撞号）。**只有 `matched` 进工资表**，判据是档案的 `payroll_included`，不是源表部门文本。
+- **`duplicate` 不是 `unmatched`**：撞号的两行一起作废，且判定排在档案查找之前。两种文案把 HR 引向相反的动作——「未匹配」让他去建档（把誊抄错误固化进主数据），「撞号」让他去改源表。
+- **两个合计分开给**：`personal_total_matched` 是真正会进工资表的钱，`personal_total_all` 用来跟源表合计行对账。只看一个数，「文件对得上但工资表少扣了 8 个人」看不出来。
+
+同批次同类型重传 = 全量替换（`replaced` 报告删了几行），不需要先删除。导入是**整批一个事务**，收口在末尾那条带 `status != 'confirmed'` 谓词的 UPDATE 上：中途被人锁定则整批回滚，不会留下半批数据。`draft` 期允许导入但不推进状态（财务给表常早于考勤定版）；`reviewing` 期**拒绝**导入（400），要先退回「已计算」。
