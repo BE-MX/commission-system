@@ -1,5 +1,12 @@
 <template>
   <div class="image-studio">
+    <!-- 金色极光背景（纯装饰；与工作台/素材库同源 styles/liquid-glass.css） -->
+    <div class="studio-aurora lg-aurora" aria-hidden="true">
+      <div class="lg-aurora__blob lg-aurora__blob--gold" />
+      <div class="lg-aurora__blob lg-aurora__blob--amber" />
+      <div class="lg-aurora__blob lg-aurora__blob--peach" />
+    </div>
+
     <ConversationSidebar
       v-model:drawer-open="studio.drawerOpen.value"
       :sessions="studio.sessions.value"
@@ -18,12 +25,20 @@
           <template #left-icon><el-icon><ChatDotRound /></el-icon></template>
           会话
         </GlassButton>
-        <div>
-          <h1>{{ studio.currentSession.value?.title || 'AI 生图工作台' }}</h1>
-          <p>用自然语言生成，并从任意结果继续修改</p>
+        <div class="studio-title">
+          <span class="studio-title-icon" aria-hidden="true"><el-icon><MagicStick /></el-icon></span>
+          <div class="studio-title-copy">
+            <h1>{{ studio.currentSession.value?.title || 'AI 生图工作台' }}</h1>
+            <p>用自然语言生成，并从任意结果继续修改</p>
+          </div>
         </div>
-        <div class="quota" :class="{ 'is-empty': studio.config.value.remaining_today === 0 }">
-          <span>今日剩余</span>
+        <div
+          class="quota"
+          :class="{ 'is-empty': studio.config.value.remaining_today === 0 }"
+          title="每日生成额度，次日重置"
+        >
+          <span class="quota-dot" aria-hidden="true" />
+          <span class="quota-label">今日剩余</span>
           <strong>{{ studio.config.value.remaining_today ?? '—' }} / {{ studio.config.value.daily_limit ?? '—' }}</strong>
         </div>
       </header>
@@ -38,9 +53,11 @@
         @download="studio.downloadAsset"
         @preview="studio.openLightbox"
         @edit="studio.chooseBaseAsset"
+        @use-prompt="applySuggestion"
       />
 
       <PromptComposer
+        ref="composerRef"
         v-model:prompt="studio.prompt.value"
         v-model:size="studio.size.value"
         v-model:quality="studio.quality.value"
@@ -65,7 +82,8 @@
 </template>
 
 <script setup>
-import { ChatDotRound } from '@element-plus/icons-vue'
+import { nextTick, ref } from 'vue'
+import { ChatDotRound, MagicStick } from '@element-plus/icons-vue'
 import GlassButton from '@/components/GlassButton.vue'
 import ConversationSidebar from './components/ConversationSidebar.vue'
 import ImageLightbox from './components/ImageLightbox.vue'
@@ -74,26 +92,75 @@ import PromptComposer from './components/PromptComposer.vue'
 import { useImageStudio } from './composables/useImageStudio'
 
 const studio = useImageStudio()
+const composerRef = ref(null)
+
+async function applySuggestion(text) {
+  studio.prompt.value = text
+  await nextTick()
+  composerRef.value?.focus()
+}
 </script>
 
 <style scoped>
-.image-studio { display: flex; width: 100%; max-width: 1070px; height: calc(100vh - var(--header-height) - 48px); min-height: 560px; gap: 16px; margin: 0 auto; overflow: hidden; }
-.studio-main { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; overflow: hidden; border: 1px solid var(--dash-glass-border); background: var(--dash-glass-bg); box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight); }
-.studio-header { display: flex; min-height: 72px; flex: 0 0 auto; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--border-color); }
-.studio-header h1 { margin: 0; color: var(--text-primary); font-family: var(--font-display); font-size: 18px; }
+.image-studio {
+  display: flex; width: 100%; max-width: 1240px; height: calc(100vh - var(--header-height) - 48px);
+  min-height: 560px; gap: 18px; margin: 0 auto;
+  /* 极光层（.lg-aurora）定位上下文；overflow 交由两张玻璃卡自己裁，别在这里 hidden 把极光切掉 */
+  position: relative;
+}
+.studio-aurora { inset: -24px -28px; }
+
+/* 内容压到极光之上。必须点名内容块，不能用 > :not(.lg-aurora) 通配（会毁掉就地渲染的弹层定位） */
+.conversation-sidebar,
+.studio-main { position: relative; z-index: 1; }
+
+.studio-main {
+  display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; overflow: hidden;
+  border: 1px solid var(--dash-glass-border); background: var(--dash-glass-bg);
+  box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
+}
+
+.studio-header {
+  display: flex; min-height: 76px; flex: 0 0 auto; align-items: center; gap: 14px;
+  padding: 14px 22px; border-bottom: 1px solid var(--border-color);
+}
+.studio-title { display: flex; min-width: 0; align-items: center; gap: 12px; }
+.studio-title-icon {
+  display: grid; width: 40px; height: 40px; flex: 0 0 40px; place-items: center;
+  border-radius: 12px; background: linear-gradient(135deg, var(--color-gold) 0%, var(--color-primary) 100%);
+  box-shadow: 0 4px 12px rgba(146, 103, 24, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  color: var(--text-on-dark); font-size: 19px;
+}
+.studio-title-copy { min-width: 0; }
+.studio-header h1 {
+  margin: 0; overflow: hidden; color: var(--text-primary);
+  font-family: var(--font-display); font-size: 17px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap;
+}
 .studio-header p { margin: 3px 0 0; color: var(--text-muted); font-size: 12px; }
-.quota { margin-left: auto; padding: 7px 10px; border-radius: var(--radius-md, 8px); background: var(--color-success-bg); color: var(--color-success-text); text-align: right; }
-.quota span { display: block; font-size: 10px; }
-.quota strong { font-size: 13px; }
-.quota.is-empty { background: var(--color-warning-bg); color: var(--color-warning-text); }
+
+.quota {
+  display: inline-flex; margin-left: auto; flex: 0 0 auto; align-items: center; gap: 7px;
+  padding: 8px 14px; border: 1px solid rgba(255, 255, 255, 0.85); border-radius: 999px;
+  background: rgba(255, 255, 255, 0.68); box-shadow: 0 2px 10px rgba(146, 103, 24, 0.08);
+}
+.quota-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-success); box-shadow: 0 0 0 3px var(--color-success-bg); }
+.quota-label { color: var(--text-muted); font-size: 11px; }
+.quota strong { color: var(--text-primary); font-size: 13px; font-variant-numeric: tabular-nums; }
+.quota.is-empty .quota-dot { background: var(--el-warning); box-shadow: 0 0 0 3px var(--color-warning-bg); }
+.quota.is-empty strong { color: var(--color-warning-text); }
+
 .conversation-trigger { display: none; }
+
 @media (max-width: 900px) {
   .image-studio { height: calc(100dvh - var(--header-height) - 48px); min-height: 0; }
   .conversation-trigger { display: inline-flex; }
-  .studio-header { padding-inline: 12px; }
+  .studio-header { min-height: 64px; padding: 10px 14px; }
+  .studio-title-icon { width: 34px; height: 34px; flex-basis: 34px; font-size: 16px; }
   .studio-header p { display: none; }
 }
 @media (max-width: 640px) {
-  .studio-header h1 { max-width: 34vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .studio-header h1 { max-width: 30vw; }
+  .quota { padding: 6px 10px; }
+  .quota-label { display: none; }
 }
 </style>
