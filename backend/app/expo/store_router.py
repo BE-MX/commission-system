@@ -120,6 +120,36 @@ def create_store(
     return ok(_serialize_store(store), code=201)
 
 
+@router.get("/quota", summary="当前账号绑定门店的配额快照（kiosk/PC 工具栏）")
+def get_my_store_quota(
+    db: Session = Depends(get_db),
+    current_user=Depends(require_any_permission("expo:write", "expo_lead:read", "expo_lead:write")),
+):
+    """未绑定门店属正常态（后台纯管理账号、展会临时设备）：返回 bound=false，
+    前端据此隐藏额度展示，不作为错误弹 toast。"""
+    uid = _user_id(current_user)
+    store = store_service.get_active_store_by_user(db, uid) if uid else None
+    if store is None:
+        return ok({"bound": False})
+    return ok({
+        "bound": True,
+        "store_id": store.id,
+        "store_name": store.name,
+        "total_quota": store.total_quota,
+        "used_quota": store.used_quota,
+        "remaining": store.total_quota - store.used_quota,
+    })
+
+
+@router.get("/options", summary="启用门店选项（线索台 read_all 筛选用）")
+def list_store_options(
+    db: Session = Depends(get_db),
+    _user=Depends(require_any_permission("expo_lead:read_all", "expo_store:admin", "expo_store:recharge")),
+):
+    rows, _ = store_service.list_stores(db, status=1, limit=100, offset=0)
+    return ok([{"id": s.id, "name": s.name, "code": s.code} for s in rows])
+
+
 @router.get("/{store_id}", summary="门店详情")
 def get_store(
     store_id: int,

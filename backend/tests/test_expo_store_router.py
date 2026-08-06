@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from app.auth.models import ArkUser
 from app.auth.utils import create_access_token
 from app.core.database import get_db
+from app.expo import store_service
 from app.expo.models import ExpoStore
 from app.expo.quota_service import deduct_quota
 from app.expo.router import router as expo_router
@@ -289,4 +290,51 @@ class TestStorePermissions:
         db.refresh(store)
         with _client(db, PERMS_ADMIN) as (c, _):
             resp = c.post(f"/api/expo/stores/{store.id}/quota/recharge", json={"amount": 10})
+        assert resp.status_code == 403
+
+
+class TestMyStoreQuota:
+    def test_bound_user_gets_quota_snapshot(self, db):
+        store = ExpoStore(name="广州店", code="MQ1", total_quota=100, used_quota=30)
+        db.add(store)
+        db.commit()
+        db.refresh(store)
+        with _client(db, ("expo:write",)) as (c, user):
+            store_service.bind_user_to_store(db, store.id, user.id, is_primary=True)
+            db.commit()
+            resp = c.get("/api/expo/stores/quota")
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["bound"] is True
+        assert data["store_id"] == store.id
+        assert data["store_name"] == "广州店"
+        assert data["remaining"] == 70
+
+    def test_unbound_user_gets_bound_false(self, db):
+        with _client(db, ("expo_lead:read",)) as (c, _):
+            resp = c.get("/api/expo/stores/quota")
+        assert resp.status_code == 200
+        assert resp.json()["data"] == {"bound": False}
+
+    def test_quota_rejects_without_flow_permission(self, db):
+        with _client(db, ("expo_store:admin",)) as (c, _):
+            resp = c.get("/api/expo/stores/quota")
+        assert resp.status_code == 403
+
+
+class TestStoreOptions:
+    def test_options_returns_active_stores_only(self, db):
+        db.add(ExpoStore(name="启用店", code="OP1", status=1))
+        db.add(ExpoStore(name="停用店", code="OP2", status=0))
+        db.commit()
+        with _client(db, ("expo_lead:read_all",)) as (c, _):
+            resp = c.get("/api/expo/stores/options")
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert len(data) == 1
+        assert data[0]["code"] == "OP1"
+
+    def test_options_rejects_plain_lead_reader(self, db):
+        with _client(db, ("expo_lead:read",)) as (c, _):
+            resp = c.get("/api/expo/stores/options")
         assert resp.status_code == 403
