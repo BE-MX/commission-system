@@ -18,7 +18,7 @@ import {
   Money, Refresh, List, Van, Upload, Box, Setting, Aim, Reading,
   MagicStick, Notebook, Calendar, Camera, EditPen, Stamp, TrendCharts,
   Lock, Lightning, Picture, Collection, CollectionTag, DataBoard,
-  DataLine, Printer, Brush, Tickets, Goods, Postcard,
+  DataLine, Printer, Brush, Tickets, Goods, Postcard, Shop,
 } from '@element-plus/icons-vue'
 
 const FESTIVAL_PERMISSION = 'festival:read'
@@ -60,6 +60,7 @@ export const MENU_GROUPS = {
     anyPermission: [
       'expo:read', 'expo:write', 'expo:admin', 'expo_lead:read', 'expo_lead:write',
       'expo_hair_color:read', 'expo_scene:read', 'expo_script:read',
+      'expo_store:admin', 'expo_store:recharge',
       'card:read', 'card:write',
     ],
   },
@@ -376,6 +377,18 @@ export const NAV_ENTRIES = [
     menu: {
       group: 'expo', title: '展会线索台', icon: Aim, order: 30,
       anyPermission: ['expo_lead:read', 'expo_lead:write'],
+    },
+  },
+  {
+    // 门店管理：运营（admin）管门店与人员，财务（recharge）只进额度抽屉充值
+    path: '/expo/stores',
+    name: 'ExpoStoreManagement',
+    component: () => import('@/views/expo/StoreManagement.vue'),
+    title: '门店管理',
+    anyPermission: ['expo_store:admin', 'expo_store:recharge'],
+    menu: {
+      group: 'expo', title: '门店管理', icon: Shop, order: 40,
+      anyPermission: ['expo_store:admin', 'expo_store:recharge'],
     },
   },
   {
