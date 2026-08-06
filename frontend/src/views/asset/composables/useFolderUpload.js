@@ -65,6 +65,7 @@ export function useFolderUpload({ dimensions, canAutoCreate, onUploaded }) {
   const tagMapping = ref({})
   const autoCreateTags = ref({})
   const resolutions = reactive({})
+  const extraTagSelection = reactive({})
   const updateDuplicates = ref(true)
   const jobId = ref(null)
   const uploadProgress = ref(null)
@@ -134,6 +135,7 @@ export function useFolderUpload({ dimensions, canAutoCreate, onUploaded }) {
     fatalMessage.value = ''
     permission.value = { permission_group: 'all', allow_preview: 1, allow_download: 1 }
     Object.keys(resolutions).forEach(key => delete resolutions[key])
+    Object.keys(extraTagSelection).forEach(key => delete extraTagSelection[key])
   }
 
   function open() {
@@ -381,13 +383,22 @@ export function useFolderUpload({ dimensions, canAutoCreate, onUploaded }) {
     if (jobId.value) startPolling(jobId.value)
   }
 
+  const extraTagItems = computed(() => (
+    Object.entries(extraTagSelection)
+      .map(([dimId, ids]) => ({
+        dimension_id: Number(dimId),
+        tag_value_ids: (Array.isArray(ids) ? ids : [ids]).filter(Boolean),
+      }))
+      .filter(item => item.tag_value_ids.length)
+  ))
+
   async function confirmUpload() {
     step.value = 'executing'
     uploadProgress.value = null
     const common = {
       tagMapping: tagMapping.value,
       permission: permission.value,
-      extraTags: [],
+      extraTags: extraTagItems.value,
       updateDuplicates: updateDuplicates.value,
       includeFilenameTags: includeFilenameTags.value,
       autoCreateTags: autoCreateTags.value,
@@ -423,6 +434,7 @@ export function useFolderUpload({ dimensions, canAutoCreate, onUploaded }) {
     isDragging, validationResult, previewData, uploadReport, resolutions,
     updateDuplicates, jobId, fatalMessage, permission, selectedSize, rootNames,
     uploadProgress, pollError, resolutionRows, creatableDimensions,
+    extraTagSelection, extraTagItems,
     open, close, reset, onFolderInput,
     onDrop, startValidation, confirmResolutions, confirmUpload,
     retryPolling,

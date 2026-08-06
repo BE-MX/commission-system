@@ -691,9 +691,12 @@ def _build_file_tag_items(
             values.append(tv_id)
 
     for item in extra_tags:
-        if item.dimension_id in values_by_dimension:
-            continue
-        values_by_dimension[item.dimension_id] = list(dict.fromkeys(item.tag_value_ids))
+        values = values_by_dimension.setdefault(item.dimension_id, [])
+        for tv_id in item.tag_value_ids:
+            if item.dimension_id in single_select_dims and values:
+                break
+            if tv_id not in values:
+                values.append(tv_id)
 
     tag_items = [
         AssetTagItem(dimension_id=dimension_id, tag_value_ids=value_ids)

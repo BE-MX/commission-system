@@ -174,6 +174,26 @@
       <p v-if="(previewData?.files || []).length > 50" class="preview-more">
         还有 {{ previewData.files.length - 50 }} 个文件未展开
       </p>
+      <div class="extra-tags-section">
+        <div class="extra-tags-header">
+          <span class="extra-tags-title">批量赋标签</span>
+          <GlassButton variant="outline" size="sm" @click="openExtraTagPicker">选择标签</GlassButton>
+        </div>
+        <p class="option-hint">可选；所选标签将应用到本次上传的全部文件。</p>
+        <div v-if="extraTagChips.length" class="extra-tag-chips">
+          <el-tag
+            v-for="chip in extraTagChips"
+            :key="`${chip.dimensionId}-${chip.valueId}`"
+            size="small"
+            effect="plain"
+            closable
+            class="tag-chip"
+            @close="removeExtraTag(chip)"
+          >
+            {{ chip.dimensionLabel }}：{{ chip.valueLabel }}
+          </el-tag>
+        </div>
+      </div>
       <div class="duplicate-policy">
         <span>同名且标签一致的文件：</span>
         <el-radio-group v-model="updateDuplicates">
@@ -244,6 +264,56 @@
       </div>
     </div>
   </el-dialog>
+
+  <el-dialog
+    v-model="extraTagPickerVisible"
+    title="批量赋标签"
+    width="min(640px, 90vw)"
+    append-to-body
+    class="extra-tag-picker-dialog"
+  >
+    <p class="option-hint picker-hint">从标签库选择标签，确认后应用到本次上传的全部文件。</p>
+    <div class="extra-tag-picker">
+      <div v-for="dim in assignableDimensions" :key="dim.id" class="dimension-item">
+        <div class="dimension-label">
+          {{ dim.label }}
+          <el-text v-if="dim.is_single_select" type="info" size="small">（单选）</el-text>
+        </div>
+        <el-checkbox-group
+          v-if="!dim.is_single_select"
+          v-model="extraTagSelection[dim.id]"
+          size="small"
+        >
+          <el-checkbox-button
+            v-for="val in dim.values"
+            :key="val.id"
+            :label="val.id"
+            :disabled="!val.is_active"
+          >
+            {{ val.value }}
+          </el-checkbox-button>
+        </el-checkbox-group>
+        <el-radio-group
+          v-else
+          v-model="extraTagSelection[dim.id]"
+          size="small"
+        >
+          <el-radio-button
+            v-for="val in dim.values"
+            :key="val.id"
+            :label="val.id"
+            :disabled="!val.is_active"
+          >
+            {{ val.value }}
+          </el-radio-button>
+        </el-radio-group>
+      </div>
+    </div>
+    <template #footer>
+      <GlassButton variant="ghost" @click="clearExtraTags">清空</GlassButton>
+      <GlassButton variant="primary" @click="extraTagPickerVisible = false">确定</GlassButton>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup>
@@ -268,6 +338,7 @@ const {
   isDragging, validationResult, previewData, uploadReport, resolutions,
   updateDuplicates, jobId, fatalMessage, selectedSize, rootNames,
   uploadProgress, pollError, resolutionRows, creatableDimensions,
+  extraTagSelection,
   open, close, reset, onFolderInput,
   onDrop, startValidation, confirmResolutions, confirmUpload,
   retryPolling,
@@ -282,6 +353,53 @@ const uploadPercentage = computed(() => {
     uploadProgress.value.uploadedBytes / uploadProgress.value.totalBytes * 100,
   ))
 })
+
+// ── 批量赋标签 ──────────────────────────────────────────
+const extraTagPickerVisible = ref(false)
+const assignableDimensions = computed(() => (
+  (props.dimensions || []).filter(dim => dim.is_visible !== 0 && (dim.values || []).length)
+))
+const extraTagChips = computed(() => {
+  const chips = []
+  for (const dim of assignableDimensions.value) {
+    const selected = extraTagSelection[dim.id]
+    const ids = (Array.isArray(selected) ? selected : [selected]).filter(Boolean)
+    for (const id of ids) {
+      const val = dim.values.find(v => v.id === id)
+      chips.push({
+        dimensionId: dim.id,
+        valueId: id,
+        dimensionLabel: dim.label,
+        valueLabel: val?.value || id,
+      })
+    }
+  }
+  return chips
+})
+
+function openExtraTagPicker() {
+  for (const dim of assignableDimensions.value) {
+    if (extraTagSelection[dim.id] === undefined) {
+      extraTagSelection[dim.id] = dim.is_single_select ? null : []
+    }
+  }
+  extraTagPickerVisible.value = true
+}
+
+function removeExtraTag(chip) {
+  const selected = extraTagSelection[chip.dimensionId]
+  if (Array.isArray(selected)) {
+    extraTagSelection[chip.dimensionId] = selected.filter(id => id !== chip.valueId)
+  } else {
+    extraTagSelection[chip.dimensionId] = null
+  }
+}
+
+function clearExtraTags() {
+  for (const dim of assignableDimensions.value) {
+    extraTagSelection[dim.id] = dim.is_single_select ? null : []
+  }
+}
 
 function formatSize(bytes) {
   const units = ['B', 'KB', 'MB', 'GB']

@@ -250,6 +250,53 @@
   margin-top: 12px;
 }
 
+.extra-tags-section {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px dashed var(--border-color);
+  border-radius: 8px;
+}
+
+.extra-tags-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.extra-tags-title {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.extra-tags-section .option-hint {
+  margin-left: 0;
+}
+
+.extra-tag-chips {
+  margin-top: 8px;
+}
+
+.picker-hint {
+  margin: 0 0 12px;
+}
+
+.extra-tag-picker {
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.extra-tag-picker .dimension-item {
+  margin-bottom: 14px;
+}
+
+.extra-tag-picker .dimension-label {
+  margin-bottom: 6px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .report-stats {
   display: grid;
   grid-template-columns: repeat(5, 1fr);

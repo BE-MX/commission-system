@@ -232,6 +232,60 @@ def test_build_file_tags_keeps_multiple_values_for_multi_select_dimension(tmp_pa
     assert target == {(1, 10), (2, 20), (2, 21)}
 
 
+def test_build_file_tags_merges_extra_tags_with_path_tags(tmp_path):
+    from app.asset.folder_upload_service import _build_file_tag_items
+    from app.asset.schemas import AssetTagItem
+
+    root = tmp_path / "产品素材"
+    file_path = root / "白底图" / "场景图.jpg"
+    file_path.parent.mkdir(parents=True)
+    file_path.write_bytes(b"image")
+    mapping = {
+        "产品素材": {"dimension_id": 1, "tag_value_id": 10},
+        "白底图": {"dimension_id": 2, "tag_value_id": 20},
+    }
+    extra_tags = [
+        AssetTagItem(dimension_id=2, tag_value_ids=[21, 22]),
+        AssetTagItem(dimension_id=3, tag_value_ids=[30]),
+    ]
+
+    items, target = _build_file_tag_items(
+        str(file_path),
+        str(root),
+        mapping,
+        extra_tags,
+        single_select_dims={3},
+    )
+
+    by_dimension = {item.dimension_id: item.tag_value_ids for item in items}
+    assert by_dimension == {1: [10], 2: [20, 21, 22], 3: [30]}
+    assert target == {(1, 10), (2, 20), (2, 21), (2, 22), (3, 30)}
+
+
+def test_build_file_tags_extra_tags_respect_single_select(tmp_path):
+    from app.asset.folder_upload_service import _build_file_tag_items
+    from app.asset.schemas import AssetTagItem
+
+    root = tmp_path / "产品素材"
+    file_path = root / "白底图" / "场景图.jpg"
+    file_path.parent.mkdir(parents=True)
+    file_path.write_bytes(b"image")
+    mapping = {"白底图": {"dimension_id": 1, "tag_value_id": 10}}
+    extra_tags = [AssetTagItem(dimension_id=1, tag_value_ids=[11])]
+
+    items, target = _build_file_tag_items(
+        str(file_path),
+        str(root),
+        mapping,
+        extra_tags,
+        single_select_dims={1},
+    )
+
+    by_dimension = {item.dimension_id: item.tag_value_ids for item in items}
+    assert by_dimension == {1: [10]}
+    assert target == {(1, 10)}
+
+
 def test_folder_tag_validation_recommends_closest_keyword(db):
     from app.asset.folder_upload_service import validate_folder_tags
     from app.asset.models import TagDimension, TagValue
