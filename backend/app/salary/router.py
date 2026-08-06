@@ -16,6 +16,7 @@ from app.auth.dependencies import require_any_permission, require_permission
 from app.core.database import get_db
 from app.core.response import ok
 from app.salary import (
+    anomaly_service,
     attendance_service,
     attendance_source,
     import_persist,
@@ -633,6 +634,22 @@ def upsert_period_attendance(
         SalaryEmployeeProfile.id == employee_id
     ).first()
     return ok(attendance_service.serialize_row(record, profile))
+
+
+@router.get("/periods/{period_id}/anomalies", summary="异常面板")
+def list_period_anomalies(
+    period_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_any_permission(*_READ_PERMS)),
+):
+    """聚合本批次的全部待办异常。
+
+    读接口，read 权限即可——**看得见问题的人应该比能改的人多**。
+    响应里的 ready_to_calculate 由后端算，前端不要自己数 blocking_count，
+    两边各数一次迟早会数出不一样的结果。
+    """
+    row = _get_period_or_404(db, period_id)
+    return ok(anomaly_service.collect(db, row))
 
 
 @router.post("/periods/{period_id}/unlock", summary="解锁已锁定批次")
