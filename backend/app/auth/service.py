@@ -437,6 +437,7 @@ def seed_role_permissions(db: Session):
             ).first()
             if not link:
                 db.add(ArkRolePermission(role_id=role_id, permission_id=invoice_price_write_perm.id))
+        db.flush()
 
     # 给 admin 角色补齐所有非 legacy 权限（跳过已下架，避免复活死码授权）
     admin_role = db.query(ArkRole).filter(ArkRole.name == "admin").first()

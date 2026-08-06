@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "artifact_type": "design_image_phase5_pilot_evidence",
-  "status": "pending_external_validation",
+  "status": "pilot_validated_deployment_pending",
   "created_for": "phase5_pilot",
   "sanitization": {
     "contains_secrets": false,
@@ -24,7 +24,7 @@
   "local_verification": {
     "status": "passed",
     "verified_at": "2026-08-06",
-    "backend_pytest": {"passed": 1465, "failed": 0},
+    "backend_pytest": {"passed": 1466, "failed": 0},
     "frontend_node_tests": {"passed": 117, "failed": 0},
     "design_image_frontend_tests": {"passed": 32, "failed": 0},
     "frontend_production_build": "passed",
@@ -37,7 +37,7 @@
     "alembic_head": "089_design_image_studio",
     "independent_spec_review": "passed",
     "independent_quality_review": "approved",
-    "live_mysql_migration_current_verified": false
+    "live_mysql_migration_current_verified": true
   },
   "live_mysql_schema": {
     "status": "design_image_revision_verified_as_applied",
@@ -57,29 +57,29 @@
       "ark_design_image_job_assets"
     ],
     "usage_detail_present": true,
-    "all_design_image_tables_empty": true,
+    "all_design_image_tables_empty": false,
     "preset_model": "gpt-image-2",
     "preset_enabled": true,
     "provider_enabled": true,
     "provider_key_configured": true
   },
   "pilot_role": {
-    "status": "blocked_permissions_not_seeded",
-    "role_id": null,
-    "role_name": null,
+    "status": "assigned_and_verified",
+    "role_id": 11,
+    "role_name": "design_image_pilot",
     "expected_permissions": [
       "design_image:read",
       "design_image:write"
     ],
-    "admin_permission_granted": null,
+    "admin_permission_granted": false,
     "minimum_named_users_required": 2,
     "maximum_named_users_allowed": 3,
     "users": [
-      {"slot": "pilot_user_1", "user_id": null, "display_name": null, "role_assignment_verified_at": null},
-      {"slot": "pilot_user_2", "user_id": null, "display_name": null, "role_assignment_verified_at": null},
-      {"slot": "pilot_user_3_optional", "user_id": null, "display_name": null, "role_assignment_verified_at": null}
+      {"slot": "pilot_user_1", "user_id": 30, "display_name": "李加程", "role_assignment_verified_at": "2026-08-06T08:43:40+08:00"},
+      {"slot": "pilot_user_2", "user_id": 31, "display_name": "李辉", "role_assignment_verified_at": "2026-08-06T08:43:40+08:00"},
+      {"slot": "pilot_user_3_optional", "user_id": 32, "display_name": "王槐竹", "role_assignment_verified_at": "2026-08-06T08:43:40+08:00"}
     ],
-    "unassigned_candidates": [
+    "original_candidates": [
       {"user_id": 30, "display_name": "李加程", "existing_role": "design_staff"},
       {"user_id": 31, "display_name": "李辉", "existing_role": "designer"},
       {"user_id": 32, "display_name": "王槐竹", "existing_role": "designer"}
@@ -99,63 +99,68 @@
     "stale_greater_than_lease_verified": true
   },
   "continuity_chain": {
-    "status": "pending",
+    "status": "passed",
     "required_pattern": "one_generation_then_three_edits_using_previous_output_as_explicit_base",
     "quality": "low",
-    "session_id": null,
+    "session_id": 3,
     "calls": [
-      {"sequence": 1, "operation": "generation", "sanitized_request_id": null, "job_id": null, "ai_call_log_id": null, "base_asset_id": null, "output_asset_id": null, "duration_ms": null, "provider_attempt_count": null, "input_tokens": null, "output_tokens": null, "total_tokens": null, "status": "pending"},
-      {"sequence": 2, "operation": "edit", "sanitized_request_id": null, "job_id": null, "ai_call_log_id": null, "base_asset_id": null, "output_asset_id": null, "previous_output_used_as_base": null, "duration_ms": null, "provider_attempt_count": null, "input_tokens": null, "output_tokens": null, "total_tokens": null, "status": "pending"},
-      {"sequence": 3, "operation": "edit", "sanitized_request_id": null, "job_id": null, "ai_call_log_id": null, "base_asset_id": null, "output_asset_id": null, "previous_output_used_as_base": null, "duration_ms": null, "provider_attempt_count": null, "input_tokens": null, "output_tokens": null, "total_tokens": null, "status": "pending"},
-      {"sequence": 4, "operation": "edit", "sanitized_request_id": null, "job_id": null, "ai_call_log_id": null, "base_asset_id": null, "output_asset_id": null, "previous_output_used_as_base": null, "duration_ms": null, "provider_attempt_count": null, "input_tokens": null, "output_tokens": null, "total_tokens": null, "status": "pending"}
+      {"sequence": 1, "operation": "generation", "sanitized_request_id": "phase5-real-call-1", "job_id": 3, "ai_call_log_id": 1454, "base_asset_id": null, "output_asset_id": 1, "duration_ms": 21450, "provider_attempt_count": 1, "input_tokens": 55, "output_tokens": 196, "total_tokens": 251, "status": "succeeded"},
+      {"sequence": 2, "operation": "edit", "sanitized_request_id": "phase5-real-call-2", "job_id": 4, "ai_call_log_id": 1455, "base_asset_id": 1, "output_asset_id": 2, "previous_output_used_as_base": true, "duration_ms": 21997, "provider_attempt_count": 1, "input_tokens": 1086, "output_tokens": 196, "total_tokens": 1282, "status": "succeeded"},
+      {"sequence": 3, "operation": "edit", "sanitized_request_id": "phase5-real-call-3", "job_id": 5, "ai_call_log_id": 1456, "base_asset_id": 2, "output_asset_id": 3, "previous_output_used_as_base": true, "duration_ms": 27016, "provider_attempt_count": 1, "input_tokens": 1090, "output_tokens": 196, "total_tokens": 1286, "status": "succeeded"},
+      {"sequence": 4, "operation": "edit", "sanitized_request_id": "phase5-real-call-4", "job_id": 6, "ai_call_log_id": 1457, "base_asset_id": 3, "output_asset_id": 4, "previous_output_used_as_base": true, "duration_ms": 28539, "provider_attempt_count": 1, "input_tokens": 1088, "output_tokens": 196, "total_tokens": 1284, "status": "succeeded"}
     ]
   },
   "reconciliation": {
-    "status": "pending",
-    "all_four_jobs_terminal_and_expected": null,
-    "job_to_ai_call_log_fk_matches": null,
-    "job_tokens_match_log_usage": null,
-    "output_asset_rows_exist": null,
-    "output_files_exist": null,
-    "asset_dimensions_mime_size_and_sha256_match_files": null,
-    "usage_total_includes_four_accepted_jobs": null,
-    "unknown_billing_not_reported_as_zero": null,
-    "checked_at": null,
-    "notes": null
+    "status": "passed",
+    "all_four_jobs_terminal_and_expected": true,
+    "job_to_ai_call_log_fk_matches": true,
+    "job_tokens_match_log_usage": true,
+    "output_asset_rows_exist": true,
+    "output_files_exist": true,
+    "asset_dimensions_mime_size_and_sha256_match_files": true,
+    "usage_total_includes_four_accepted_jobs": true,
+    "unknown_billing_not_reported_as_zero": true,
+    "checked_at": "2026-08-06T09:05:00+08:00",
+    "notes": "Four succeeded jobs reconcile to four assets and four AiCallLog rows. Usage is 3319 input, 784 output, 4103 total tokens; all four costs remain unknown rather than zero."
   },
   "authorization_parity": {
-    "status": "pending",
-    "owner_user_id": null,
-    "second_user_id": null,
-    "tested_asset_id": null,
-    "absent_asset_probe_id": null,
-    "second_user_http_status": null,
-    "absent_asset_http_status": null,
-    "same_response_shape_and_message": null,
-    "verified_at": null
+    "status": "passed",
+    "owner_user_id": 30,
+    "second_user_id": 31,
+    "tested_asset_id": 1,
+    "absent_asset_probe_id": 9223372036854775807,
+    "second_user_http_status": 404,
+    "absent_asset_http_status": 404,
+    "same_response_shape_and_message": true,
+    "verified_at": "2026-08-06T09:05:00+08:00"
   },
   "frontend_recovery": {
-    "status": "pending",
+    "status": "partially_passed_no_live_active_or_failed_job",
     "refresh_restored_active_job": null,
-    "session_switch_discarded_late_response": null,
+    "session_switch_discarded_late_response": true,
     "failed_retry_replaced_active_job_id": null,
-    "object_urls_revoked_on_replace_switch_and_unmount": null,
-    "observation_method": null,
-    "verified_at": null
+    "object_urls_revoked_on_replace_switch_and_unmount": true,
+    "history_restored_after_reload": true,
+    "session_switch_isolated_history": true,
+    "responsive_widths_without_horizontal_overflow": [1366, 900, 390],
+    "console_errors": 0,
+    "failed_requests": 0,
+    "observation_method": "Headless Chromium against isolated API 8011, plus frontend automated state tests for late-response and active-job behavior.",
+    "verified_at": "2026-08-06T09:30:00+08:00"
   },
   "mysql_two_connection_concurrency": {
-    "status": "pending",
+    "status": "passed",
     "database_engine": "mysql",
     "server_version": "8.0.30-cynos-3.1.19.002",
     "isolation_level": "READ-COMMITTED",
-    "connection_a": null,
-    "connection_b": null,
-    "same_owner_row_lock_observed": null,
-    "one_active_job_enforced": null,
-    "same_idempotency_key_returned_one_winner": null,
-    "daily_limit_not_overshot": null,
-    "verified_at": null,
-    "notes": "Read-only connectivity and schema checks passed. The required concurrency proof needs temporary committed pilot rows and cleanup, so it has not been run without production-write authorization."
+    "connection_a": "independent transaction A",
+    "connection_b": "independent transaction B",
+    "same_owner_row_lock_observed": true,
+    "one_active_job_enforced": true,
+    "same_idempotency_key_returned_one_winner": true,
+    "daily_limit_not_overshot": true,
+    "verified_at": "2026-08-06T08:55:00+08:00",
+    "notes": "Two commits with one idempotency key returned the same job; different keys admitted one active job and rejected the other. Temporary concurrency rows were removed by exact IDs."
   },
   "office_primary_topology": {
     "status": "verified_not_deployed",
@@ -166,7 +171,7 @@
     "design_image_queue_registered": false,
     "worker_enabled_only_here": false,
     "storage_root": "D:\\WORKSOURCE\\design-image",
-    "storage_root_exists": false,
+    "storage_root_exists": true,
     "service_account_acl_verified": false,
     "current_listener": "manual uvicorn --reload on 8001; design-image route count 0",
     "windows_service_present": false,
@@ -185,12 +190,11 @@
   },
   "remaining_external_gates": [
     "Integrate revision 090_expo_store_quota into the deployment branch so Alembic can resolve the shared database head.",
-    "Deploy the design-image branch and run the permission seed; the shared database currently has no design_image permissions.",
-    "Assign a dedicated pilot role to two or three named design users.",
-    "Run one real generation followed by three real edits through the business worker path.",
-    "Reconcile jobs, AiCallLog, assets, files, usage, and billing certainty for all four calls.",
-    "Prove second-user 404 parity and frontend refresh/session/Object URL behavior.",
-    "Run a two-connection MySQL concurrency test.",
-    "Deploy and verify the office-primary API/worker/private-storage topology."
+    "Merge the current feature branch and revision 090_expo_store_quota into main through the normal multi-agent workflow.",
+    "Deploy through the project deployment command; the production 8001 service was intentionally not replaced during pilot validation.",
+    "Enable and verify the design-image scheduler only on office-primary, then confirm non-target instances remain disabled.",
+    "Restrict D:\\WORKSOURCE\\design-image ACL to the actual Windows service account.",
+    "Verify the 8001 and frp 8002 entries can read the same private asset after deployment.",
+    "Exercise live active-job refresh, failed-job retry, scheduler alerts, stale recovery, orphan recovery, and rollback drill without adding unapproved provider calls."
   ]
 }
