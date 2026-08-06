@@ -7,14 +7,15 @@
 import logging
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_any_permission, require_permission
 from app.core.database import get_db
 from app.core.response import ok
-from app.salary import period_service, service
+from app.salary import import_persist, period_service, service
+from app.salary.import_service import SalaryImportError
 from app.salary.models import SalaryEmployeeProfile, SalaryRuleParam
 from app.salary.schemas import (
     GRADE_SCHEMES,
@@ -444,6 +445,68 @@ def confirm_period(
     except period_service.SalaryPeriodError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return ok(period_service.serialize_period(row))
+
+
+# ---------------------------------------------------------------------------
+# 社保 / 公积金导入（M2-c）
+# ---------------------------------------------------------------------------
+
+# 上传体积上限。3 月社保表 66 人约 30KB，10MB 已经宽出两个数量级；
+# 设这个门是因为解析器会把整个工作簿读进内存，没有上限时一个几百 MB 的误传
+# 就能把后端进程撑爆——那是全站不可用，不只是这一个接口失败。
+_MAX_IMPORT_BYTES = 10 * 1024 * 1024
+
+
+@router.post("/periods/{period_id}/imports/{kind}", summary="导入社保/公积金明细")
+def import_period_file(
+    period_id: int,
+    kind: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_permission("salary:write")),
+):
+    """上传 .xls/.xlsx 明细，解析后按身份证哈希匹配档案并落库（同批次同类型覆盖重导）。"""
+    row = _get_period_or_404(db, period_id)
+    content = file.file.read(_MAX_IMPORT_BYTES + 1)
+    if len(content) > _MAX_IMPORT_BYTES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"文件超过 {_MAX_IMPORT_BYTES // 1024 // 1024}MB，请确认上传的是社保/公积金明细表",
+        )
+    try:
+        summary = import_persist.persist(
+            db, row, kind, content,
+            filename=file.filename,
+            operator_id=_operator_id(current_user),
+        )
+    except period_service.SalaryStaleVersion as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except SalaryImportError as exc:
+        # 解析失败是「换个文件重传」，不是系统故障：400 + 原文案，不要包装成 500
+        raise HTTPException(status_code=400, detail=str(exc))
+    except period_service.SalaryPeriodError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ok({"summary": summary, "period": period_service.serialize_period(row)})
+
+
+@router.get("/periods/{period_id}/imports/{kind}", summary="导入明细行列表")
+def list_period_import_rows(
+    period_id: int,
+    kind: str,
+    match_status: str = Query(""),
+    keyword: str = Query(""),
+    limit: int = Query(500, ge=1, le=2000),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_any_permission(*_READ_PERMS)),
+):
+    _get_period_or_404(db, period_id)
+    try:
+        data = import_persist.list_rows(
+            db, period_id, kind, match_status=match_status, keyword=keyword, limit=limit
+        )
+    except SalaryImportError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ok(data)
 
 
 @router.post("/periods/{period_id}/unlock", summary="解锁已锁定批次")
