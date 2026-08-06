@@ -97,6 +97,9 @@ def test_prompt_template_crud_and_soft_delete(db):
     library_service.delete_prompt_template(db, row.id)
     assert db.get(DesignImagePromptTemplate, row.id).is_active is False
     assert all(item.id != row.id for item in library_service.list_prompt_templates(db))
+    # 管理视角：include_inactive 能看到已停用模板并可据此恢复
+    inactive_ids = {item.id for item in library_service.list_prompt_templates(db, include_inactive=True)}
+    assert row.id in inactive_ids
     with pytest.raises(service.DesignImageNotFoundError):
         library_service.delete_prompt_template(db, 999_999)
 

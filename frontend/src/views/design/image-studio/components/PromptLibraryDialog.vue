@@ -62,6 +62,10 @@
     </div>
 
     <template #footer>
+      <GlassButton v-permission="'design_image:admin'" variant="outline" size="sm" @click="managerOpen = true">
+        <template #left-icon><el-icon><Setting /></el-icon></template>
+        管理模板
+      </GlassButton>
       <GlassButton v-permission="'design_image:admin'" variant="outline" size="sm" :loading="seeding" @click="seed">
         导入预置模板
       </GlassButton>
@@ -71,14 +75,17 @@
       </GlassButton>
     </template>
   </el-dialog>
+  <PromptTemplateManagerDialog v-model:visible="managerOpen" @changed="fetchTemplates" />
 </template>
 
 <script setup>
 import { computed, ref } from 'vue'
+import { Setting } from '@element-plus/icons-vue'
 import GlassButton from '@/components/GlassButton.vue'
 import { listPromptTemplates, seedPromptTemplates } from '@/api/designImage'
 import { msgError, msgSuccess } from '@/utils/feedback'
 import { composePrompt, missingPromptParams } from '../state'
+import PromptTemplateManagerDialog from './PromptTemplateManagerDialog.vue'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -96,6 +103,7 @@ const CATEGORY_LABELS = {
 const templates = ref([])
 const loading = ref(false)
 const seeding = ref(false)
+const managerOpen = ref(false)
 const category = ref('')
 const selected = ref(null)
 const selections = ref({})

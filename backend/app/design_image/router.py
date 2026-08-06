@@ -378,10 +378,13 @@ def _library_asset(row) -> dict:
 
 @router.get("/prompt-templates")
 def list_prompt_templates(
+    include_inactive: bool = Query(False),
     db: Session = Depends(get_db),
     payload: dict = Depends(require_permission("design_image:read")),
 ):
-    rows = _call(library_service.list_prompt_templates, db)
+    if include_inactive and not _is_admin(payload):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "查看已停用模板需要管理员权限")
+    rows = _call(library_service.list_prompt_templates, db, include_inactive=include_inactive)
     return ok({"items": [_prompt_template(row) for row in rows]})
 
 

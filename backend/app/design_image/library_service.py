@@ -128,13 +128,11 @@ def seed_prompt_templates(db: Session) -> dict:
     return {"created": created, "skipped": skipped, "total": len(_PROMPT_TEMPLATE_SEED)}
 
 
-def list_prompt_templates(db: Session) -> list[DesignImagePromptTemplate]:
-    return (
-        db.query(DesignImagePromptTemplate)
-        .filter(DesignImagePromptTemplate.is_active.is_(True))
-        .order_by(DesignImagePromptTemplate.sort, DesignImagePromptTemplate.id)
-        .all()
-    )
+def list_prompt_templates(db: Session, *, include_inactive: bool = False) -> list[DesignImagePromptTemplate]:
+    statement = db.query(DesignImagePromptTemplate)
+    if not include_inactive:
+        statement = statement.filter(DesignImagePromptTemplate.is_active.is_(True))
+    return statement.order_by(DesignImagePromptTemplate.sort, DesignImagePromptTemplate.id).all()
 
 
 def create_prompt_template(db: Session, payload: PromptTemplateUpsert) -> DesignImagePromptTemplate:

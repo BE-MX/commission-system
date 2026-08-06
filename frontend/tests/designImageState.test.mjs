@@ -293,7 +293,7 @@ test('design image API stub is removed even when module initialization fails', a
 
 test('design image API wrappers execute every route with data and request config intact', async () => {
   const calls = []
-  const client = Object.fromEntries(['get', 'post', 'delete'].map(method => [
+  const client = Object.fromEntries(['get', 'post', 'put', 'delete'].map(method => [
     method,
     (...args) => {
       const result = { call: calls.length }
@@ -321,13 +321,16 @@ test('design image API wrappers execute every route with data and request config
     api.retryJob(41, retry),
     api.getAssetBlob(31, { thumbnail: true, download: true }),
     api.getUsage(usage),
-    api.listPromptTemplates(),
+    api.listPromptTemplates({ includeInactive: true }),
     api.seedPromptTemplates(),
     api.listLibraryAssets('private'),
     api.uploadLibraryAsset('private', '我的图', 'image-file'),
     api.deleteLibraryAsset(51),
     api.cloneLibraryAsset(51, 11),
     api.getLibraryAssetBlob(51, { thumbnail: true }),
+    api.createPromptTemplate(turn),
+    api.updatePromptTemplate(61, turn),
+    api.deletePromptTemplate(61),
   ]
   assert.deepEqual(results, calls.map(call => call.result))
   assert.deepEqual(calls.map(({ method, args }) => [method, args[0]]), [
@@ -350,6 +353,9 @@ test('design image API wrappers execute every route with data and request config
     ['delete', '/library-assets/51'],
     ['post', '/library-assets/51/clone'],
     ['get', '/library-assets/51/content'],
+    ['post', '/prompt-templates'],
+    ['put', '/prompt-templates/61'],
+    ['delete', '/prompt-templates/61'],
   ])
   for (const callIndex of [0, 3, 5]) {
     assert.deepEqual(calls[callIndex].args[1], { showLoading: false })
@@ -376,7 +382,7 @@ test('design image API wrappers execute every route with data and request config
     params: { thumbnail: true, download: true },
     responseType: 'blob',
   })
-  assert.deepEqual(calls[12].args[1], { showLoading: false })
+  assert.deepEqual(calls[12].args[1], { params: { include_inactive: true }, showLoading: false })
   assert.deepEqual(calls[13].args[2], { showLoading: false, suppressToast: true })
   assert.deepEqual(calls[14].args[1], { params: { scope: 'private' }, showLoading: false })
   assert.equal(calls[15].args[1] instanceof FormData, true)
@@ -390,6 +396,11 @@ test('design image API wrappers execute every route with data and request config
     params: { thumbnail: true },
     responseType: 'blob',
   })
+  assert.equal(calls[19].args[1], turn)
+  assert.deepEqual(calls[19].args[2], { showLoading: false, suppressToast: true })
+  assert.equal(calls[20].args[1], turn)
+  assert.deepEqual(calls[20].args[2], { showLoading: false, suppressToast: true })
+  assert.deepEqual(calls[21].args[1], { showLoading: false })
   assert.deepEqual(calls[11].args[1], { params: usage, showLoading: false })
 })
 
@@ -415,6 +426,7 @@ test('design image studio files keep the phase-four layout and motion contract',
     '../src/views/design/image-studio/components/GenerationCard.vue',
     '../src/views/design/image-studio/components/ImageLightbox.vue',
     '../src/views/design/image-studio/components/PromptLibraryDialog.vue',
+    '../src/views/design/image-studio/components/PromptTemplateManagerDialog.vue',
     '../src/views/design/image-studio/components/ReferenceLibraryDialog.vue',
   ]
   const sources = files.map(file => ({ file, source: readFileSync(new URL(file, import.meta.url), 'utf8') }))

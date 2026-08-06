@@ -71,12 +71,28 @@ export function getUsage(params = {}) {
   return designImageClient.get('/usage', { params, showLoading: false })
 }
 
-export function listPromptTemplates() {
-  return designImageClient.get('/prompt-templates', { showLoading: false })
+export function listPromptTemplates(options = {}) {
+  const { includeInactive = false } = options
+  return designImageClient.get('/prompt-templates', {
+    params: { include_inactive: includeInactive },
+    showLoading: false,
+  })
 }
 
 export function seedPromptTemplates() {
   return designImageClient.post('/prompt-templates/seed', {}, { ...SILENT_REQUEST })
+}
+
+export function createPromptTemplate(data) {
+  return designImageClient.post('/prompt-templates', data, { ...SILENT_REQUEST })
+}
+
+export function updatePromptTemplate(templateId, data) {
+  return designImageClient.put(`/prompt-templates/${templateId}`, data, { ...SILENT_REQUEST })
+}
+
+export function deletePromptTemplate(templateId) {
+  return designImageClient.delete(`/prompt-templates/${templateId}`, { showLoading: false })
 }
 
 export function listLibraryAssets(scope = 'public') {

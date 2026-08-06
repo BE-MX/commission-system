@@ -475,3 +475,36 @@ def test_opened_asset_stream_survives_path_disappearance_and_is_closed(
     assert response.status_code == 200
     assert response.content == payload
     assert stream.was_closed is True
+
+
+def test_prompt_template_include_inactive_requires_admin(api, monkeypatch):
+    client, app, _, service = api
+    from app.design_image import library_service
+
+    captured = []
+    monkeypatch.setattr(
+        library_service,
+        "list_prompt_templates",
+        lambda _db, *, include_inactive=False: captured.append(include_inactive) or [],
+    )
+
+    # 只读用户带 include_inactive 被拒，且不进服务层
+    app.dependency_overrides[get_current_user] = lambda: {
+        "sub": "7", "roles": [], "permissions": ["design_image:read"],
+    }
+    response = client.get("/api/design-image/prompt-templates?include_inactive=true")
+    assert response.status_code == 403
+    assert captured == []
+
+    # 普通读取不受影响
+    response = client.get("/api/design-image/prompt-templates")
+    assert response.status_code == 200
+    assert captured == [False]
+
+    # admin 可以读取全量
+    app.dependency_overrides[get_current_user] = lambda: {
+        "sub": "7", "roles": [], "permissions": ["design_image:read", "design_image:admin"],
+    }
+    response = client.get("/api/design-image/prompt-templates?include_inactive=true")
+    assert response.status_code == 200
+    assert captured == [False, True]
