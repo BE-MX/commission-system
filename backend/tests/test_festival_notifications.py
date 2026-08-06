@@ -139,6 +139,21 @@ def test_browser_missing_fails_with_actionable_message(monkeypatch):
         raise AssertionError("缺少浏览器时必须明确失败")
 
 
+def test_browser_executable_uses_chrome_and_ignores_edge_configuration(monkeypatch):
+    settings = notification_service.get_settings()
+    monkeypatch.setattr(
+        settings, "FESTIVAL_BROWSER_EXECUTABLE",
+        "C:/Program Files/Microsoft/Edge/Application/msedge.exe",
+    )
+    existing = {"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"}
+    monkeypatch.setattr(
+        notification_service.Path, "is_file",
+        lambda path: str(path) in existing,
+    )
+
+    assert notification_service._browser_executable().name == "chrome.exe"
+
+
 def test_screenshot_command_forces_stable_reduced_motion_frame(tmp_path):
     command = notification_service._screenshot_command(
         tmp_path / "edge.exe",

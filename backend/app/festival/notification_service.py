@@ -220,17 +220,15 @@ def render_event_image(event: dict) -> Path:
 
 def _browser_executable() -> Path:
     configured = get_settings().FESTIVAL_BROWSER_EXECUTABLE.strip()
-    candidates = [Path(configured)] if configured else []
+    candidates = [Path(configured)] if configured and "edge" not in configured.lower() else []
     candidates.extend([
-        Path("C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"),
-        Path("C:/Program Files/Microsoft/Edge/Application/msedge.exe"),
         Path("C:/Program Files/Google/Chrome/Application/chrome.exe"),
         Path("C:/Program Files (x86)/Google/Chrome/Application/chrome.exe"),
     ])
     for path in candidates:
         if path.is_file():
             return path
-    raise RuntimeError("采购节截图未找到 Edge/Chrome，请配置 FESTIVAL_BROWSER_EXECUTABLE")
+    raise RuntimeError("采购节截图未找到 Google Chrome，请配置 FESTIVAL_BROWSER_EXECUTABLE")
 
 
 def _screenshot_command(browser: Path, profile: str, output: Path, url: str) -> list[str]:
