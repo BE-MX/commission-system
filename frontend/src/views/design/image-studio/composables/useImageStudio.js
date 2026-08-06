@@ -319,6 +319,10 @@ export function useImageStudio() {
       const result = response?.data
       mergeJob(result.job)
       mergeSession(result.session)
+      // 首轮发送后后端会用首条消息重命名会话，同步到页头标题
+      if (currentSessionId.value === result.session.id && currentSession.value) {
+        currentSession.value = { ...currentSession.value, title: result.session.title }
+      }
       if (responseGeneration === conversationGeneration && currentSessionId.value === sessionIdSnapshot) {
         messages.value = [...messages.value, result.message]
         const draft = reconcileSubmittedDraft({

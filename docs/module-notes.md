@@ -781,6 +781,8 @@ frontend/src/
 
 **上下文口径**：会话记录用于展示、恢复和追溯，不等于把完整历史重新喂给模型。每轮只发送显式 `base_asset_id`、最多 4 张本轮参考图和当前 prompt；生成结果用 `source_asset_id` 形成版本链。因此连续编辑的成本主要取决于本轮输入图片与输出质量，不会因聊天轮数自动线性累加全部历史图片。
 
+**会话命名**：首轮 turn 自动用首条消息命名会话——仅当标题仍是默认名 `新对话` 且会话尚无消息（显式起过名的不覆盖）；压平换行/连续空白后截断 30 字。隐式建会话（不带 session_id 的 turn）同样走这个派生。前端在 submit 响应里同步 `currentSession.title`，页头与侧栏即时更新，无需刷新。
+
 **额度与幂等**：`request_id` 在用户范围唯一。事务先查幂等、锁 active 用户行，再用 locking/current read 检查当天 accepted 数和 queued/running 数；已有同 key 返回原 job。每日 20 是默认 Settings，不是硬编码产品承诺；失败和 retry 新 job 均占额度，因为 Provider 是否计费不能从业务终态推断。
 
 **文件边界**：上传仅 JPEG/PNG/WebP，magic 与 MIME 必须一致；有效上限是硬上限 20 MiB 与配置值的较小者，像素上限同理不超过 60MP，最长边归一化到 2048，缩略图最长边 320；EXIF 方向归一化后清除元数据。文件按 `<owner>/<kind>/<uuid>.<ext>` 私有相对路径原子写入。代码阻止绝对路径、穿越、symlink/junction/reparse point，但仍依赖部署 ACL：存储根及父目录只能由服务账号写入。

@@ -242,6 +242,44 @@ def test_create_turn_is_idempotent_and_implicitly_creates_one_session(configured
     assert db.query(DesignImageMessage).count() == 1
 
 
+def test_create_turn_names_default_titled_session_from_first_message(configured, db):
+    owner, _ = configured
+    session = _session(db, owner.id, service.DEFAULT_SESSION_TITLE)
+    db.commit()
+
+    prompt = "  生成一张白底产品图\n柔和自然光   高级质感  超出长度限制的部分会被截断掉哦"
+    result = service.create_turn(db, owner.id, _turn(session_id=session.id, prompt=prompt))
+
+    collapsed = "生成一张白底产品图 柔和自然光 高级质感 超出长度限制的部分会被截断掉哦"
+    expected = collapsed[: service.SESSION_TITLE_MAX_LENGTH]
+    assert result.session.title == expected
+    assert len(result.session.title) == service.SESSION_TITLE_MAX_LENGTH
+
+    # 第二轮起不再改名
+    result.job.status = "succeeded"
+    db.flush()
+    second = service.create_turn(
+        db, owner.id, _turn(request_id="request-0002", session_id=session.id, prompt="换个新名字")
+    )
+    assert second.session.title == expected
+
+
+def test_create_turn_keeps_explicit_title_and_titles_implicit_session(configured, db):
+    owner, _ = configured
+    named = _session(db, owner.id, "618 大促海报")
+    db.commit()
+
+    result = service.create_turn(db, owner.id, _turn(session_id=named.id, prompt="第一轮内容"))
+    assert result.session.title == "618 大促海报"
+
+    result.job.status = "succeeded"
+    db.flush()
+    implicit = service.create_turn(
+        db, owner.id, _turn(request_id="request-0003", prompt="  隐式会话\n换行压平  ")
+    )
+    assert implicit.session.title == "隐式会话 换行压平"
+
+
 def test_create_turn_attaches_ordered_references_and_uses_explicit_base(configured, db):
     owner, _ = configured
     session = _session(db, owner.id)

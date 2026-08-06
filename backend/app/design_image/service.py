@@ -9,6 +9,7 @@ Provider calls intentionally live outside this module and its transactions.
 from __future__ import annotations
 
 import logging
+import re
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -49,6 +50,9 @@ EXPECTED_MODEL = "gpt-image-2"
 ACTIVE_STATUSES = ("queued", "running")
 JOB_STATUSES = ("queued", "running", "succeeded", "failed")
 NOT_FOUND_MESSAGE = "资源不存在"
+DEFAULT_SESSION_TITLE = "新对话"
+# 会话名取自首条消息，压平空白后截断，避免撑爆侧栏
+SESSION_TITLE_MAX_LENGTH = 30
 
 
 class DesignImageError(ValueError):
@@ -214,11 +218,27 @@ def _owner_session(
     return row
 
 
+def _session_title_from_prompt(prompt: str) -> str:
+    """首条消息内容作为会话名：压平换行/连续空白，截断，空串回退默认名。"""
+    collapsed = re.sub(r"\s+", " ", prompt or "").strip()
+    return collapsed[:SESSION_TITLE_MAX_LENGTH] or DEFAULT_SESSION_TITLE
+
+
+def _session_has_messages(db: Session, session_id: int) -> bool:
+    return (
+        db.query(DesignImageMessage.id)
+        .filter(DesignImageMessage.session_id == session_id)
+        .limit(1)
+        .first()
+        is not None
+    )
+
+
 def create_session(
-    db: Session, owner_user_id: int, title: str = "新对话"
+    db: Session, owner_user_id: int, title: str = DEFAULT_SESSION_TITLE
 ) -> DesignImageSession:
     _lock_active_owner(db, owner_user_id)
-    normalized = (title or "新对话").strip()[:200] or "新对话"
+    normalized = (title or DEFAULT_SESSION_TITLE).strip()[:200] or DEFAULT_SESSION_TITLE
     row = DesignImageSession(
         owner_user_id=owner_user_id, title=normalized, status="active"
     )
@@ -669,7 +689,7 @@ def create_turn(
         if session is None:
             session = DesignImageSession(
                 owner_user_id=owner_user_id,
-                title=payload.prompt[:200],
+                title=_session_title_from_prompt(payload.prompt),
                 status="active",
                 created_at=operation_time,
                 updated_at=operation_time,
@@ -678,6 +698,9 @@ def create_turn(
             db.flush()
         else:
             session.updated_at = operation_time
+            # 首轮消息自动命名：仅当仍是默认名（没显式起过名）且会话还没有任何消息
+            if session.title == DEFAULT_SESSION_TITLE and not _session_has_messages(db, session.id):
+                session.title = _session_title_from_prompt(payload.prompt)
         base = (
             _usable_asset(
                 db, owner_user_id, session.id, payload.base_asset_id,
