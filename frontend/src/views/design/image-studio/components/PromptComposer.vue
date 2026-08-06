@@ -25,9 +25,10 @@
         :autosize="{ minRows: 2, maxRows: 6 }"
         maxlength="4000"
         resize="none"
-        placeholder="描述你想生成或修改的画面…"
+        placeholder="描述你想生成或修改的画面…可直接粘贴截图作为参考图"
         @update:model-value="emit('update:prompt', $event)"
         @keydown="onKeydown"
+        @paste="onPaste"
       />
 
       <div class="composer-toolbar">
@@ -78,7 +79,7 @@
         </el-select>
 
         <span v-if="prompt.length > 3000" class="char-count">{{ prompt.length }}/4000</span>
-        <span class="key-hint" aria-hidden="true">Enter 发送 · Shift+Enter 换行</span>
+        <span class="key-hint" aria-hidden="true">Enter 发送 · Shift+Enter 换行 · 可粘贴图片</span>
 
         <GlassButton
           v-permission="'design_image:write'"
@@ -102,6 +103,7 @@ import { computed, onMounted, ref } from 'vue'
 import { Close, Collection, Loading, Paperclip, Picture, Promotion } from '@element-plus/icons-vue'
 import AppUpload from '@/components/AppUpload.vue'
 import GlassButton from '@/components/GlassButton.vue'
+import { useAuthStore } from '@/stores/auth'
 
 const props = defineProps({
   prompt: { type: String, default: '' },
@@ -121,6 +123,7 @@ const props = defineProps({
 const emit = defineEmits(['update:prompt', 'update:size', 'update:quality', 'submit', 'remove', 'clear-base', 'open-prompt-library', 'open-reference-library'])
 const uploadModel = ref([])
 const inputRef = ref(null)
+const auth = useAuthStore()
 const maxUploadMb = computed(() => Math.max(props.maxUploadBytes / (1024 * 1024), 0.01))
 
 const sizeLabels = { '1024x1024': '正方形', '1024x1536': '竖版', '1536x1024': '横版' }
@@ -133,6 +136,21 @@ function onKeydown(event) {
   if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return
   event.preventDefault()
   if (props.canSend && !props.sending) emit('submit')
+}
+
+/* 粘贴截图/图片直接作为参考图附件，与按钮上传走同一条受 guard 的通道 */
+function onPaste(event) {
+  const files = [...(event.clipboardData?.items ?? [])]
+    .filter(item => item.kind === 'file' && item.type?.startsWith('image/'))
+    .map(item => item.getAsFile())
+    .filter(Boolean)
+  if (!files.length) return
+  event.preventDefault()
+  if (!auth.hasPermission('design_image:write')) return
+  const remaining = Math.max(4 - props.attachments.length, 0)
+  // 满员时也调一次，让 uploadFn 的守卫给出「最多 4 张」提示
+  const queue = remaining > 0 ? files.slice(0, remaining) : files.slice(0, 1)
+  for (const file of queue) props.uploadFn(file).catch(() => {})
 }
 
 function focus() {

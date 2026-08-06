@@ -134,6 +134,17 @@ test('composer and studio disable destructive draft actions while sending', () =
   ]) assert.match(block, /if \(sendInFlight\.value\) return/)
 })
 
+test('composer accepts pasted images through the same guarded upload path', () => {
+  const composer = read('../src/views/design/image-studio/components/PromptComposer.vue')
+  assert.match(composer, /@paste="onPaste"/)
+  assert.match(composer, /clipboardData\?\.items/)
+  assert.match(composer, /item\.kind === 'file' && item\.type\?\.startsWith\('image\/'\)/)
+  assert.match(composer, /hasPermission\('design_image:write'\)/)
+  assert.match(composer, /uploadFn\(file\)\.catch/)
+  // 粘贴复用与按钮上传相同的受 guard 的 uploadFn，不另开上传通道
+  assert.doesNotMatch(composer, /uploadAsset\(/)
+})
+
 test('studio uses submit snapshots, independent terminal refresh, focus traps, and guarded scroll', () => {
   const studio = read('../src/views/design/image-studio/composables/useImageStudio.js')
   const sidebar = read('../src/views/design/image-studio/components/ConversationSidebar.vue')
