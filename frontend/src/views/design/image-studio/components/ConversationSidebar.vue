@@ -26,7 +26,7 @@
 import { computed, defineComponent, h, nextTick, ref, resolveDirective, watch, withDirectives } from 'vue'
 import { Close, Plus } from '@element-plus/icons-vue'
 import GlassButton from '@/components/GlassButton.vue'
-import { focusDialog, restoreDialogFocus, trapDialogFocus } from '../state'
+import { focusDialog, groupSessionsByDayHalf, restoreDialogFocus, trapDialogFocus } from '../state'
 
 const props = defineProps({
   sessions: { type: Array, default: () => [] },
@@ -90,19 +90,23 @@ const SidebarContent = defineComponent({
         variant: 'primary', fullWidth: true, radius: 'lg', leftIcon: Plus,
         onClick: () => innerEmit('new'),
       }, () => '新对话')
+      const renderSession = session => h('button', {
+        type: 'button',
+        class: ['session-item', { 'is-active': session.id === innerProps.currentSessionId }],
+        onClick: () => innerEmit('select', session.id),
+      }, [
+        h('span', { class: 'session-title' }, session.title || '新对话'),
+        innerProps.activeSessionIds?.includes(session.id)
+          ? h('span', { class: 'session-status', title: '正在生成' })
+          : null,
+      ])
+      const groups = groupSessionsByDayHalf(innerProps.sessions)
       return h('div', { class: 'sidebar-content' }, [
       withDirectives(newButton, [[permission, 'design_image:write']]),
-      h('div', { class: 'sidebar-label' }, '最近会话'),
       innerProps.sessions.length
-        ? h('div', { class: 'session-list' }, innerProps.sessions.map(session => h('button', {
-          type: 'button',
-          class: ['session-item', { 'is-active': session.id === innerProps.currentSessionId }],
-          onClick: () => innerEmit('select', session.id),
-        }, [
-          h('span', { class: 'session-title' }, session.title || '新对话'),
-          innerProps.activeSessionIds?.includes(session.id)
-            ? h('span', { class: 'session-status', title: '正在生成' })
-            : null,
+        ? h('div', { class: 'session-list' }, groups.map(group => h('div', { class: 'session-group', key: group.key }, [
+          h('div', { class: 'session-group-label' }, group.label),
+          ...group.items.map(renderSession),
         ])))
         : h('p', { class: 'empty-copy' }, '还没有会话，点击上方开始创作。'),
       innerProps.hasMore ? h('button', {
@@ -117,6 +121,10 @@ const SidebarContent = defineComponent({
 
 <style scoped>
 .conversation-sidebar {
+  /* 多根组件（aside + Transition）继承不到父级作用域样式，z-index 必须在组件自己这里声明，
+     否则极光层（z-index: 0 定位元素）会盖在 static 侧栏上方，把小字冲淡到看不见 */
+  position: relative;
+  z-index: 1;
   width: 240px;
   min-width: 228px;
   height: 100%;
@@ -128,11 +136,12 @@ const SidebarContent = defineComponent({
 .sidebar-content { display: flex; height: 100%; min-height: 0; flex-direction: column; padding: 16px 14px; }
 /* SidebarContent 是 h() 渲染的内联组件，子孙节点不携带本组件的 data-v 作用域属性
    （只有子树根节点继承），所以内容区样式必须走 :deep()，否则全部静默失效 */
-.sidebar-content :deep(.sidebar-label) {
-  margin: 20px 6px 8px; color: var(--text-muted); font-size: 11px; font-weight: 700;
-  letter-spacing: 0.08em; text-transform: uppercase;
+.sidebar-content :deep(.session-list) { min-height: 0; margin-top: 12px; overflow-y: auto; scrollbar-width: thin; }
+.sidebar-content :deep(.session-group-label) {
+  margin: 14px 6px 6px; color: var(--text-muted-blue); font-size: 11px; font-weight: 700;
+  letter-spacing: 0.06em;
 }
-.sidebar-content :deep(.session-list) { min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+.sidebar-content :deep(.session-group:first-child .session-group-label) { margin-top: 0; }
 .sidebar-content :deep(.session-item) {
   position: relative; display: grid; width: 100%; grid-template-columns: minmax(0, 1fr) auto;
   align-items: center; gap: 8px; margin-bottom: 2px; padding: 10px 12px;

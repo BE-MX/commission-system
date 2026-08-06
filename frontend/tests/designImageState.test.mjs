@@ -11,6 +11,7 @@ import {
   canStartUpload,
   composePrompt,
   createObjectUrlRegistry,
+  groupSessionsByDayHalf,
   missingPromptParams,
   replaceActiveJob,
   restoreActiveJob,
@@ -138,6 +139,28 @@ test('prompt library composes templates and reports missing params', () => {
   assert.deepEqual(missingPromptParams(template, { scene: '沙龙', style: '暖调' }), [])
   assert.deepEqual(missingPromptParams({ content: '无参数模板', options: [] }, {}), [])
   assert.deepEqual(missingPromptParams(null), [])
+})
+
+test('sidebar sessions group by local day half with most recent on top', () => {
+  // 用本地时间构造、走 UTC 往返，保证任何时区下结果一致
+  const stamp = (year, month, day, hour) => new Date(year, month - 1, day, hour).toISOString().slice(0, -1)
+  const groups = groupSessionsByDayHalf([
+    { id: 1, updated_at: stamp(2026, 8, 5, 9) },
+    { id: 2, updated_at: stamp(2026, 8, 6, 13) },
+    { id: 3, updated_at: stamp(2026, 8, 5, 15) },
+    { id: 4, updated_at: stamp(2026, 8, 6, 10) },
+    { id: 5, updated_at: null, created_at: null },
+  ])
+  assert.deepEqual(
+    groups.map(group => group.label),
+    ['2026-08-06 下午', '2026-08-06 上午', '2026-08-05 下午', '2026-08-05 上午', '更早'],
+  )
+  assert.deepEqual(groups.map(group => group.items.map(session => session.id)), [[2], [4], [3], [1], [5]])
+
+  // 无 updated_at 时回退 created_at；正午 12 点整归入下午
+  const fallback = groupSessionsByDayHalf([{ id: 9, created_at: stamp(2026, 8, 4, 12) }])
+  assert.equal(fallback[0].label, '2026-08-04 下午')
+  assert.deepEqual(groupSessionsByDayHalf(undefined), [])
 })
 
 test('retry replaces the active job ID while preserving prior job history', () => {

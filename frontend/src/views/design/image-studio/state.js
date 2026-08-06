@@ -153,6 +153,35 @@ export function missingPromptParams(template, selections = {}) {
   return options.filter(option => !selections?.[option?.key]).map(option => option.key)
 }
 
+/* 会话侧栏分组：按最近一次活动时间（updated_at）归入「日期 + 上午/下午」区块，
+   近期在上。后端返回 UTC 朴素时间，解析时补 Z 再取本地年月日/小时。 */
+export function groupSessionsByDayHalf(sessions) {
+  const groups = []
+  const indexByKey = new Map()
+  for (const session of sessions ?? []) {
+    const stamp = session?.updated_at || session?.created_at
+    const date = stamp ? new Date(`${stamp}Z`) : null
+    const valid = date && !Number.isNaN(date.getTime())
+    const pad = value => String(value).padStart(2, '0')
+    const key = valid
+      ? `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}-${date.getHours() < 12 ? 'am' : 'pm'}`
+      : 'unknown'
+    if (!indexByKey.has(key)) {
+      indexByKey.set(key, groups.length)
+      groups.push({
+        key,
+        label: valid
+          ? `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${date.getHours() < 12 ? '上午' : '下午'}`
+          : '更早',
+        sortKey: valid ? date.getTime() : 0,
+        items: [],
+      })
+    }
+    groups[indexByKey.get(key)].items.push(session)
+  }
+  return groups.sort((a, b) => b.sortKey - a.sortKey)
+}
+
 export function restoreActiveJob(job) {
   return ACTIVE_JOB_STATUSES.has(job?.status) ? { ...job } : null
 }

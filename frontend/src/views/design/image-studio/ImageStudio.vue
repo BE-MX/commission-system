@@ -145,8 +145,8 @@ async function applyLibraryAsset(item) {
 }
 .studio-aurora { inset: -24px -28px; }
 
-/* 内容压到极光之上。必须点名内容块，不能用 > :not(.lg-aurora) 通配（会毁掉就地渲染的弹层定位） */
-.conversation-sidebar,
+/* 内容压到极光之上。必须点名内容块，不能用 > :not(.lg-aurora) 通配（会毁掉就地渲染的弹层定位）；
+   侧栏是多根组件继承不到这里的 scoped 属性，它的 z-index 在自己的样式里声明 */
 .studio-main { position: relative; z-index: 1; }
 
 .studio-main {
