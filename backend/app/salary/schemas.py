@@ -291,3 +291,30 @@ class PeriodUnlock(BaseModel):
     """管理员解锁（决策 A4）。reason 必填：前次导出要被标记作废，无理由无法审计。"""
     reason: str = Field(..., min_length=1, max_length=255)
     expected_version: int = Field(..., ge=0)
+
+
+class AttendanceSync(BaseModel):
+    """从钉钉同步考勤。expected_version 必填，同 PeriodTransition 的理由。"""
+    expected_version: int = Field(..., ge=0)
+
+
+class AttendanceManualUpsert(BaseModel):
+    """人工录入/修正一个人的考勤。
+
+    **请假小时只有这一个入口**：钉钉的年假/事假/病假五列没有列 id，
+    `getcolumnval` 取不到（2026-08-07 实测），打卡明细与请假明细两个接口的
+    权限企业侧也未开通。所以事假/病假必须人填，而它们直接决定实出天数、
+    缺勤扣款和 100 元全勤奖。
+
+    全部字段可选：HR 常常只改一格。**不传 = 不动**，传 null 才是清空——
+    如果把「没传」当成「清零」，改一格迟到就会顺手把病假抹掉。
+    """
+    personal_leave_hours: Optional[Decimal] = Field(None, ge=0, le=744)
+    sick_leave_hours: Optional[Decimal] = Field(None, ge=0, le=744)
+    annual_leave_days: Optional[Decimal] = Field(None, ge=0, le=31)
+    annual_leave_remain: Optional[Decimal] = Field(None, ge=0, le=365)
+    late_count: Optional[int] = Field(None, ge=0, le=999)
+    early_leave_count: Optional[int] = Field(None, ge=0, le=999)
+    miss_punch_count: Optional[int] = Field(None, ge=0, le=999)
+    absent_count: Optional[Decimal] = Field(None, ge=0, le=31)
+    expected_version: int = Field(..., ge=0)

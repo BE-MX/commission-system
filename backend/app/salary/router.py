@@ -4,6 +4,7 @@
 统一信封 ok()。**响应里永不出现身份证/银行卡明文**，脱敏在 service.serialize_profile。
 """
 
+import calendar
 import logging
 from datetime import date
 
@@ -14,11 +15,19 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import require_any_permission, require_permission
 from app.core.database import get_db
 from app.core.response import ok
-from app.salary import import_persist, period_service, service
+from app.salary import (
+    attendance_service,
+    attendance_source,
+    import_persist,
+    period_service,
+    service,
+)
 from app.salary.import_service import SalaryImportError
 from app.salary.models import SalaryEmployeeProfile, SalaryRuleParam
 from app.salary.schemas import (
     GRADE_SCHEMES,
+    AttendanceManualUpsert,
+    AttendanceSync,
     DeptMappingUpsert,
     GradeUpsert,
     PeriodConfirm,
@@ -507,6 +516,123 @@ def list_period_import_rows(
     except SalaryImportError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return ok(data)
+
+
+# ---------------------------------------------------------------------------
+# 考勤（M2-d）
+# ---------------------------------------------------------------------------
+
+@router.post("/periods/{period_id}/attendance/sync", summary="从钉钉同步考勤")
+async def sync_period_attendance(
+    period_id: int,
+    payload: AttendanceSync,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_permission("salary:write")),
+):
+    """拉取钉钉考勤报表列值并落库。
+
+    **取数在这里做、落库在 service 做**：取数是 async HTTP，service 层保持同步且
+    不发网络请求——否则它的测试要么打真钉钉、要么 mock 一整套 httpx。
+
+    请假小时（事假/病假/年假）钉钉给不了，同步结果里会用 missing_leave_columns
+    明说，由人工录入端点补。
+    """
+    row = _get_period_or_404(db, period_id)
+    # 先拦一道再打钉钉：66 人 × 2 片 = 132 次调用要跑一分钟，
+    # 跑完再被 service 拒掉等于白等，还白吃一次限流额度。
+    try:
+        period_service.assert_writable(row)
+    except period_service.SalaryPeriodError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    year, month = (int(x) for x in row.year_month.split("-"))
+    # natural_days 建批次时已算好；为空时现算，不让一个缺字段挡住同步
+    natural_days = row.natural_days or calendar.monthrange(year, month)[1]
+    userids = [
+        p.dingtalk_userid
+        for p in db.query(SalaryEmployeeProfile)
+        .filter(SalaryEmployeeProfile.payroll_included == 1)
+        .filter(SalaryEmployeeProfile.status == "active")
+        .filter(SalaryEmployeeProfile.dingtalk_userid.isnot(None))
+        .filter(SalaryEmployeeProfile.dingtalk_userid != "")
+        .all()
+    ]
+    if not userids:
+        raise HTTPException(
+            status_code=400,
+            detail="发薪名单里没有任何人绑定了钉钉 userid，请先在员工档案里补齐绑定",
+        )
+
+    from_date, to_date = attendance_source.month_range(year, month, natural_days)
+    try:
+        results, missing_leave = await attendance_source.fetch_many(
+            userids, from_date, to_date
+        )
+    except attendance_source.AttendanceSourceError as exc:
+        # 取数失败是「钉钉那边的事」，不是我们 500：给原文案让 HR 能自己判断
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    try:
+        summary = attendance_service.sync_from_dingtalk(
+            db, row, {"results": results, "missing_leave": missing_leave},
+            expected_version=payload.expected_version,
+            operator_id=_operator_id(current_user),
+        )
+    except period_service.SalaryStaleVersion as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except period_service.SalaryPeriodError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ok({"summary": summary, "period": period_service.serialize_period(row)})
+
+
+@router.get("/periods/{period_id}/attendance", summary="批次考勤明细")
+def list_period_attendance(
+    period_id: int,
+    keyword: str = Query(""),
+    only_pending: bool = Query(False, description="只看请假小时还没录的人"),
+    limit: int = Query(500, ge=1, le=2000),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_any_permission(*_READ_PERMS)),
+):
+    _get_period_or_404(db, period_id)
+    return ok(attendance_service.list_rows(
+        db, period_id, keyword=keyword, only_pending=only_pending, limit=limit
+    ))
+
+
+@router.put("/periods/{period_id}/attendance/{employee_id}", summary="人工录入/修正考勤")
+def upsert_period_attendance(
+    period_id: int,
+    employee_id: int,
+    payload: AttendanceManualUpsert,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_permission("salary:write")),
+):
+    """事假/病假小时的唯一录入口（钉钉取不到，见 attendance_source 约束 2/3）。
+
+    未传的字段保持原值，不当作清零——HR 常常只改一格。
+    """
+    row = _get_period_or_404(db, period_id)
+    body = payload.model_dump(exclude_unset=True, exclude={"expected_version"})
+    if not body:
+        raise HTTPException(status_code=400, detail="没有需要修改的字段")
+    try:
+        record = attendance_service.manual_upsert(
+            db, row, employee_id, body,
+            expected_version=payload.expected_version,
+            operator_id=_operator_id(current_user),
+        )
+    except period_service.SalaryStaleVersion as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except attendance_service.AttendanceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except period_service.SalaryPeriodError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    profile = db.query(SalaryEmployeeProfile).filter(
+        SalaryEmployeeProfile.id == employee_id
+    ).first()
+    return ok(attendance_service.serialize_row(record, profile))
 
 
 @router.post("/periods/{period_id}/unlock", summary="解锁已锁定批次")
