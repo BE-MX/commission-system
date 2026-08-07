@@ -72,6 +72,8 @@ EVENT_LABELS = {
     "attendance_manual": "人工录入考勤",
     "import_insurance": "导入社保",
     "import_fund": "导入公积金",
+    "calculate": "计算工资",
+    "record_edit": "修改工资明细",
 }
 
 STATUS_LABELS = {

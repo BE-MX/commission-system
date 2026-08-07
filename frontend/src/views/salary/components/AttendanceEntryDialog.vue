@@ -49,6 +49,21 @@
         <el-input-number v-model="draft.absent_count" :min="0" :precision="2"
                          controls-position="right" style="width: 100%" />
       </el-form-item>
+
+      <el-divider content-position="left">
+        <span class="divider-text">特殊口径，平时别动</span>
+      </el-divider>
+
+      <!-- 应出钉值是这个对话框里唯一跟「请假小时」无关的字段：规则复原不了的
+           应出天数（月中入职 21.75 那种）只能靠人钉，引擎拿不到这个数 -->
+      <el-form-item label="应出天数钉值">
+        <el-input-number v-model="draft.due_days_manual" :min="0.01" :max="31" :precision="2"
+                         controls-position="right" style="width: 100%"
+                         placeholder="留空 = 按规则推导" />
+        <div class="field-hint">
+          规则复原不了才钉（如李晓雨 3 月 21.75 天）；平时留空，清空保存即恢复按规则推导。
+        </div>
+      </el-form-item>
     </el-form>
 
     <div class="hint">
@@ -75,5 +90,6 @@ const emit = defineEmits(['save', 'close'])
 
 <style scoped>
 .hint { font-size: 12px; color: var(--el-text-color-secondary); line-height: 1.7; }
+.field-hint { font-size: 12px; color: var(--el-text-color-placeholder); line-height: 1.5; margin-top: 4px; }
 .divider-text { font-size: 12px; color: var(--el-text-color-placeholder); }
 </style>

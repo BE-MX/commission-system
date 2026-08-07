@@ -113,6 +113,28 @@ export function unlockPeriod(id, data) {
   return salaryClient.post(`/periods/${id}/unlock`, data)
 }
 
+// --- 计算 / 工资明细（M3-f）---
+
+// 触发整批计算。并发护栏是批次的 status_version：409 = 批次被他人改过（刷新重试）；
+// 400 = 状态不对或还有 blocking 异常，detail 文案由拦截器原样弹给用户。
+export function calculatePeriod(id, data) {
+  return salaryClient.post(`/periods/${id}/calculate`, data)
+}
+
+// 金额可能是 null（批次还没算过）；社保/公积金/缺勤/减项小计是**负数**，
+// 与 HR 手头的工资表同构，展示层直接照显，不要取绝对值。
+export function listRecords(id, params) {
+  return salaryClient.get(`/periods/${id}/records`, { params })
+}
+
+// 人工改 5 个值列。body 只放真正要改的列：不传 = 不动，传 null = 清除人工覆盖
+// （final 回落引擎值）——和考勤录入同一条规矩，整行 spread 会把别的列抹掉。
+// 并发护栏是**行级**的 row_version（expected_row_version 必填），不是批次的
+// status_version：409 只说明这一行被他人改过，别去刷新整个批次。
+export function editRecordManual(id, employeeId, data) {
+  return salaryClient.put(`/periods/${id}/records/${employeeId}`, data)
+}
+
 // --- 社保 / 公积金导入 ---
 
 export function importPeriodFile(id, kind, file) {

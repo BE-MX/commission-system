@@ -499,9 +499,9 @@
 
 主要错误：校验 400/422、未认证 401、无权限 403、owner 隔离或不存在 404、已引用资产/已有 active job 409、上传超限 413、日额度 429、Preset/存储/一致性不可用 503。重试是新 accepted job，因此占用新的当日额度；失败调用可能已经触达 Provider，不能解释为“零成本”。
 
-## 薪资计算（`/api/salary`，092 迁移，2026-08-06，M1 主数据 + M2 批次/考勤/导入）
+## 薪资计算（`/api/salary`，092/097 迁移，2026-08-06，M1 主数据 + M2 批次/考勤/导入 + M3 计算引擎）
 
-权限按**爆炸半径**分，不按「是不是主数据」分：`salary:read` 读 / `salary:write` 改单个员工档案与批次数据（影响 1 人或 1 批）/ `salary:admin` 改职级表与规则参数、锁定/解锁批次（改一行动全员发薪口径）。计算与导出端点在 M3/M4。
+权限按**爆炸半径**分，不按「是不是主数据」分：`salary:read` 读 / `salary:write` 改单个员工档案与批次数据（影响 1 人或 1 批）/ `salary:admin` 改职级表与规则参数、锁定/解锁批次（改一行动全员发薪口径）。导出端点在 M4。
 
 **身份证与银行卡永不出明文**：入参传明文（服务端归一化 → HMAC 哈希 → AES-256-GCM 加密），出参只有 `id_card_masked` / `bank_card_masked`。
 
@@ -603,7 +603,13 @@
 
 - **`by_kind[]` 带 `severity`**：分类筛选角标按它上色，前端照 kind 名再猜一次「这类算不算致命」必然会猜错。
 
-`kind` 字符串是**前端契约**（配图标与跳转目标），改名等于改接口。13 类：`dingtalk_unbound` / `dingtalk_duplicate` / `attendance_missing` / `attendance_pending_manual` / `attendance_abnormal` / `insurance_unmatched` / `insurance_missing` / `insurance_whitelist` / `fund_unmatched` / `fund_missing` / `import_duplicate` / `bank_card_duplicate` / `base_salary_missing`。
+`kind` 字符串是**前端契约**（配图标与跳转目标），改名等于改接口。17 类 = 13 类前置 + 4 类记录级（M3 起）：`dingtalk_unbound` / `dingtalk_duplicate` / `attendance_missing` / `attendance_pending_manual` / `attendance_abnormal` / `insurance_unmatched` / `insurance_missing` / `insurance_whitelist` / `fund_unmatched` / `fund_missing` / `import_duplicate` / `bank_card_duplicate` / `base_salary_missing` ＋ `negative_net` / `guaranteed_topup` / `mid_month_weighted` / `manual_override_diff`。
+
+记录级四类的判定与 `ready_to_calculate` 的关系（M3）：
+
+- **`negative_net` 是 blocking 但不进计算门分母**：它是计算的产物——不算出来根本不知道它是负的，拿它拦计算就是死锁。它拦的是 `/confirm`（`calc_service.assert_confirmable`，负数行必须先在明细表处理：清零挂账/其他款冲抵）。
+- **`manual_override_diff` 只在 manual 与 auto 都不空且不等时才报**（A2 定义）。绩效在 P1 全靠手填（auto 恒 NULL），报了就是噪音。
+- 计算门走 `collect(include_records=False)`，面板展示走全量——同一份检查逻辑，两个视图。
 
 三条容易踩反的判定：
 
@@ -611,14 +617,38 @@
 - **`import_duplicate` 是 blocking 且带被排除金额**：`import_persist` 把同 `id_card_hash` 的第二行整行剔出计算，但补缴、跨主体参保都会让一个人合法地出现两行（3 月社保表就有「正常缴费/补缴」列）——被剔掉的钱没人扣，工资表上完全看不出来。这条在等 `import_persist.py` 侧的根因修复，面板先把它暴露出来。
 - **档案层不查身份证重复**：`ark_salary_employee_profile.id_card_hash` 有 UNIQUE 约束（`uk_salary_profile_id_card`），数据库已经拦死，再查一遍是永不触发的死代码——而死代码配上测试会让人误以为这条防线存在。真实风险在导入表，由 `import_duplicate` 覆盖。档案层只查银行卡（普通索引，可以撞）。
 
-保底触发、月中调薪加权、auto 被人工覆盖后 auto 已变这三类依赖 `ark_salary_record`，M3 算完才有数据，不在 v1 范围。
+保底触发、月中调薪加权、人工覆盖偏差三类记录级检查已在 M3 落地（见上）。
 
-### 前端页面（M2-f）
+### 计算引擎与工资明细（M3，097 迁移）
+
+| 方法 | 路径 | 权限 | 契约 |
+|---|---|---|---|
+| POST | `/periods/{id}/calculate` | write | 整批计算/重算。前置 blocking 未清 → 400；成功回 `{summary, period}`，`summary` 含 `total_net` / `negative_net[]` / `guaranteed_topup[]` / `mid_month_weighted[]` / `override_changed[]` / `stale_records[]`（不在发薪名单却还有记录行的人） |
+| GET | `/periods/{id}/records` | read | 整批明细（66 人不分页），带 `totals` 合计行。`snapshot_frozen=true` 后快照列优先于活档案 |
+| PUT | `/periods/{id}/records/{employee_id}` | write | 行内编辑 5 个手动列（`bonus`/`performance`/`other`/`subsidy`/`income_tax`）+ `modify_reason`，`expected_row_version` 必填，409 = 行被他人改过 |
+
+引擎口径（全部经 3 月真值逐人验证，`tests/test_salary_calc.py` 每个分支对应一个真人）：
+
+- **符号约定**：社保/公积金/缺勤/减项小计**存负数**，其他款带符号。实发 = `round(底薪 + 增项小计 + 减项小计 + 补贴)`，四舍五入到元（HALF_UP，不是 Python 默认的银行家舍入）。保底前实发按**分**舍入——按元会让补贴 auto 差几毛（刘也 1678.91 变 1679.00）。
+- **月中转正/调薪加权（B2）**：30 天固定基数 + **生效当日新旧各半**（生效日 d 的旧段 = d−0.5 天）。陈佳乐 3/14 转正：(3500×13.5+4000×16.5)/30 = 3775.00，与 3 月表分毫不差。只加权底薪；工龄/全勤/绩效目标按月末档案取。转正段的费率取**其后首个调薪记录的 old_value**（转正 4000→又调 4500 时中间段必须是 4000），没有才回落当前定薪。
+- **应出天数两阶段**：`due_days_manual` 钉值 > 月中入离职（晚于当月首个工作日）→ 工作日数 > 阶段一实出 <15 → 工作日数 > 满月 31（B1）。张甜甜 3/2（首个工作日）入职算满月，王槐竹 3/9 入职 → 22。缺勤天数恒取阶段一口径（`due_days − actual_days`），与终值基准解耦——王槐竹阶段一 31−5=26，终值 22，扣款按 22 算 5 天。缺勤天数 > 应出终值时按应出截断并打 `absence_clamped` 旗。
+- **保底补足**：`补贴 auto = max(0, 保底 − |缺勤| − 保底前实发)`，生效区间（`guaranteed_from/to` 与月份重叠）外返回 NULL 不补。徐瑞萍保底 2026-04 起，3 月不补——负例也锁死。
+- **特殊计薪（097 `special_calc`）**：不发全勤奖、工龄按 `seniority_override` 钉值或 0（姜妮妮 0、刘德明 1000，§9.5 的 HR 确认标记）。
+- **工龄**：`min(200 × 周年数, 2000)`，纪念日 ≤ 当月末即计入（刘也 2025-03-03 入职，3 月表当月即给 200）。
+- **李晓雨 21.75**：规则复原不了的应出天数走考勤行 `due_days_manual` 钉值（§8.3 第 10 条）。钉值不参与 `actual_days` 重算——缺勤天数必须保持在阶段一基准口径上。
+
+重算语义（A2）：引擎列与 auto 列重写，manual 原样保留；`manual ≠ auto` 且都非空 → `override_changed` 点名 + 面板 `manual_override_diff`。行内编辑用与引擎**同一套** `assemble_totals` 重算该行（补贴 auto 会按新生效值重判定），落库是一条带 `row_version` 谓词的原子 UPDATE——「读版本 → 算 → 写回」中间没有窗口。
+
+自动文案在计算时生成并落库（confirmed 后不再回查活档案）：`remark_summary` = `扣社保553.32元，公积金110元。`（正数、去尾零，消灭 §2.5 三人备注错位）；`leave_remark` = 试用期底薪约定（月初仍在试用期且有 `probation_note`，陈佳乐 3/14 转正 3 月仍显示约定）或 `本月年假X天，本年度剩余年假Y天`。
+
+### 前端页面（M2-f / M3）
 
 | 路径 | 页面 | 说明 |
 |---|---|---|
 | `/salary/periods` | 批次列表 | **只做导航**，不放任何动作按钮 |
-| `/salary/periods/:id` | 批次工作台 | 考勤 / 导入 / 异常 / 时间线 / 状态推进，`hideInMenu` |
+| `/salary/periods/:id` | 批次工作台 | 工资明细（23 列 + 行内编辑手动列）/ 考勤 / 导入 / 异常 / 时间线 / 状态推进，`hideInMenu` |
+
+明细表（M3，`components/SalaryRecordsGrid.vue` + `composables/useSalaryRecords.js`）：序号/工号/姓名左冻结，实发/个税/税后右冻结；5 个手动列行内编辑带行级 `row_version`，409 提示刷新；`manual ≠ auto` 的格子 warning 底色 + tooltip 双值；`negative_net` 行整行标红；计算按钮只在 imported/calculated/reviewing 出现，成功后弹 `override_changed` 与负数名单。
 
 版面顺序是口径的一部分：**异常清单在动作按钮之上**。反过来等于邀请 HR 在没看异常的情况下点「下一步」，而异常清单正是「该不该往下走」的唯一依据。同理批次列表不放动作按钮——列表页看不到异常。
 

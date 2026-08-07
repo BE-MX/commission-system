@@ -56,6 +56,9 @@ class ProfileBase(BaseModel):
     insurance_entity: Optional[str] = Field(None, max_length=64)
     payroll_included: int = 1
     fund_included: int = 1
+    # 特殊计薪（097/§9.5）：姜妮妮类人员不发全勤、工龄按钉值或 0
+    special_calc: int = 0
+    seniority_override: Optional[Decimal] = None
 
     bank_name: Optional[str] = Field(None, max_length=64)
     dingtalk_userid: Optional[str] = Field(None, max_length=64)
@@ -83,7 +86,7 @@ class ProfileBase(BaseModel):
             raise ValueError(f"grade_scheme 只能是 {sorted(GRADE_SCHEMES)}")
         return v
 
-    @field_validator("payroll_included", "fund_included")
+    @field_validator("payroll_included", "fund_included", "special_calc")
     @classmethod
     def _check_flag(cls, v: int) -> int:
         if v not in (0, 1):
@@ -141,6 +144,8 @@ class ProfileUpdate(BaseModel):
     insurance_entity: Optional[str] = Field(None, max_length=64)
     payroll_included: Optional[int] = None
     fund_included: Optional[int] = None
+    special_calc: Optional[int] = None
+    seniority_override: Optional[Decimal] = None
 
     bank_name: Optional[str] = Field(None, max_length=64)
     dingtalk_userid: Optional[str] = Field(None, max_length=64)
@@ -159,6 +164,13 @@ class ProfileUpdate(BaseModel):
     def _check_scheme(cls, v: Optional[str]) -> Optional[str]:
         if v and v not in GRADE_SCHEMES:
             raise ValueError(f"grade_scheme 只能是 {sorted(GRADE_SCHEMES)}")
+        return v
+
+    @field_validator("payroll_included", "fund_included", "special_calc")
+    @classmethod
+    def _check_flag(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v not in (0, 1):
+            raise ValueError("标记位只能是 0 或 1")
         return v
 
     @field_validator("dingtalk_userid")
@@ -208,6 +220,8 @@ class ProfileOut(BaseModel):
     insurance_entity: Optional[str] = None
     payroll_included: int = 1
     fund_included: int = 1
+    special_calc: int = 0
+    seniority_override: Optional[Decimal] = None
 
     dingtalk_userid: Optional[str] = None
     mobile: Optional[str] = None
@@ -326,6 +340,12 @@ class AttendanceSync(BaseModel):
     expected_version: int = Field(..., ge=0)
 
 
+class PeriodCalculate(BaseModel):
+    """计算/重算整批。复用 PeriodTransition 会多个用不到的 target 必填——
+    前端得凭空塞一个值，而后端根本不读（PeriodConfirm 已经踩过这个坑）。"""
+    expected_version: int = Field(..., ge=0)
+
+
 class AttendanceManualUpsert(BaseModel):
     """人工录入/修正一个人的考勤。
 
@@ -336,6 +356,10 @@ class AttendanceManualUpsert(BaseModel):
 
     全部字段可选：HR 常常只改一格。**不传 = 不动**，传 null 才是清空——
     如果把「没传」当成「清零」，改一格迟到就会顺手把病假抹掉。
+
+    due_days_manual 是应出天数手动钉值（李晓雨 3 月 21.75 那种规则复原不了的
+    口径）。它不参与 actual_days 的重算——缺勤天数 = due_days − actual_days
+    必须保持在阶段一 31 基准口径上，引擎拿钉值当分母、拿这个差当分子。
     """
     personal_leave_hours: Optional[Decimal] = Field(None, ge=0, le=744)
     sick_leave_hours: Optional[Decimal] = Field(None, ge=0, le=744)
@@ -345,4 +369,22 @@ class AttendanceManualUpsert(BaseModel):
     early_leave_count: Optional[int] = Field(None, ge=0, le=999)
     miss_punch_count: Optional[int] = Field(None, ge=0, le=999)
     absent_count: Optional[Decimal] = Field(None, ge=0, le=31)
+    due_days_manual: Optional[Decimal] = Field(None, gt=0, le=31)
     expected_version: int = Field(..., ge=0)
+
+
+class RecordManualEdit(BaseModel):
+    """复核期改手动列（M3）。三元组 manual / 个税，全部可选。
+
+    与考勤同一个语义：**不传 = 不动，传 null = 清除覆盖**（清掉 manual 后
+    final 回落 auto）。expected_row_version 是行级乐观锁，必填——复核是
+    多人协作，不带版本的编辑就是放弃冲突检测。
+    """
+    bonus: Optional[Decimal] = Field(None, ge=-999999, le=999999, multiple_of=Decimal("0.01"))
+    performance: Optional[Decimal] = Field(None, ge=-999999, le=999999, multiple_of=Decimal("0.01"))
+    other: Optional[Decimal] = Field(None, ge=-999999, le=999999, multiple_of=Decimal("0.01"),
+                                     description="其他款，带符号：正=加钱，负=扣钱")
+    subsidy: Optional[Decimal] = Field(None, ge=-999999, le=999999, multiple_of=Decimal("0.01"))
+    income_tax: Optional[Decimal] = Field(None, ge=0, le=999999, multiple_of=Decimal("0.01"))
+    modify_reason: Optional[str] = Field(None, max_length=255)
+    expected_row_version: int = Field(..., ge=0)

@@ -131,6 +131,8 @@ _PAY_AFFECTING_FIELDS = (
     "status",
     "leave_date",
     "regular_date",
+    "special_calc",
+    "seniority_override",
 )
 
 
@@ -230,6 +232,8 @@ def serialize_profile(
         "insurance_entity": profile.insurance_entity,
         "payroll_included": profile.payroll_included,
         "fund_included": profile.fund_included,
+        "special_calc": profile.special_calc,
+        "seniority_override": profile.seniority_override,
         "dingtalk_userid": profile.dingtalk_userid,
         "mobile": profile.mobile,
         "remark": profile.remark,

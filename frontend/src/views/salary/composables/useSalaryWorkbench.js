@@ -42,6 +42,13 @@ function isStale(err) {
   return err?.response?.status === 409
 }
 
+// 记录级四类异常 kind（M3 计算的产物，算完才存在），与后端 anomaly_service 双写。
+// 它们拦 confirm 不拦推进：为修负数退回重算那次推进要是一并数它们，
+// 每推一次都弹警告，狼来了。doStep 的前置口径与异常面板的跳转分流共用这份名单。
+export const RECORD_LEVEL_KINDS = [
+  'negative_net', 'guaranteed_topup', 'mid_month_weighted', 'manual_override_diff',
+]
+
 export function useSalaryWorkbench() {
   const route = useRoute()
   const periodId = Number(route.params.id)
@@ -52,7 +59,7 @@ export function useSalaryWorkbench() {
   const events = ref([])
   // 'attendance'，不是 'anomalies'——异常清单是独立 panel，不是 tab。
   // 给一个不存在的名字，el-tabs 会静默回落到第一个 pane，看起来没坏，
-  // 但 activeTab 与实际选中项从一开始就不一致，jumpToAttendance 之后再也回不到初始态。
+  // 但 activeTab 与实际选中项从一开始就不一致，jumpToAnomaly 之后再也回不到初始态。
   const activeTab = ref('attendance')
 
   const version = computed(() => period.value?.status_version ?? 0)
@@ -185,6 +192,9 @@ export function useSalaryWorkbench() {
   const editSaving = ref(false)
 
   const MANUAL_FIELDS = [
+    // due_days_manual：应出天数钉值（规则复原不了的口径，如月中入职 21.75 天）。
+    // 与其它字段同一条规矩：逐字段比对出变化才提交，显式 null = 清除钉值恢复推导
+    'due_days_manual',
     'personal_leave_hours', 'sick_leave_hours', 'annual_leave_days',
     'annual_leave_remain', 'late_count', 'early_leave_count',
     'miss_punch_count', 'absent_count',
@@ -264,10 +274,16 @@ export function useSalaryWorkbench() {
   const stepping = ref('')
 
   async function doStep(step) {
-    // 有 blocking 异常还要往下走，得让人明确知道自己在跳过什么
-    if ((anomalies.value?.blocking_count ?? 0) > 0) {
+    // 警告只数**前置类** blocking。记录级 blocking（负数实发）是计算的产物，
+    // 拦 confirm 不拦推进——为修负数退回重算那次推进也数它的话，每推一次弹一次。
+    // 后端没单独暴露前置数（ready_to_calculate 是它的布尔版），这里用 by_kind 现算
+    const preBlocking = (anomalies.value?.by_kind || [])
+      .filter(k => k.severity === 'blocking' && !RECORD_LEVEL_KINDS.includes(k.kind))
+      .reduce((sum, k) => sum + k.count, 0)
+    // 有前置 blocking 异常还要往下走，得让人明确知道自己在跳过什么
+    if (preBlocking > 0) {
       await ElMessageBox.confirm(
-        `还有 ${anomalies.value.blocking_count} 条必须处理的异常没解决。`
+        `还有 ${preBlocking} 条必须处理的异常没解决。`
         + '带着这些异常往下走，算出来的工资是错的（少扣的钱不会有人来投诉）。确定继续？',
         '异常未清',
         { type: 'warning', confirmButtonText: '仍然继续', cancelButtonText: '先去处理' },
@@ -314,11 +330,33 @@ export function useSalaryWorkbench() {
     }
   }
 
+  // --- 异常面板：分类筛选 + 操作入口分流 ---
+
+  const kindFilter = ref('')
+  const filteredAnomalies = computed(() => {
+    const items = anomalies.value?.items || []
+    return kindFilter.value ? items.filter(i => i.kind === kindFilter.value) : items
+  })
+
+  // 记录级四类是计算的产物，处理场所在明细表（action 文案写的也是
+  // 「在明细表处理」）；其余异常去考勤页直接开录入弹窗
+  function jumpToAnomaly(row) {
+    if (RECORD_LEVEL_KINDS.includes(row.kind)) {
+      // 切 tab 即触发加载：useSalaryRecords watch activeTab，切到 records 会拉明细
+      activeTab.value = 'records'
+      // TODO: 异常项已带 ref.record_id，可做明细行定位（滚动 + 高亮），本期不消费
+      return
+    }
+    activeTab.value = 'attendance'
+    const hit = attendance.value.items.find(i => i.employee_id === row.employee_id)
+    if (hit) openEditAttendance(hit)
+  }
+
   onMounted(refreshAll)
 
   return {
     periodId, loading, period, version, writable, activeTab, refreshAll,
-    anomalies, events,
+    anomalies, events, kindFilter, filteredAnomalies, jumpToAnomaly,
     workdayEditing, workdayDraft, openWorkdayEdit, saveWorkday,
     attendance, attendanceKeyword, attendanceOnlyPending, fetchAttendance,
     syncing, lastSync, doSync,

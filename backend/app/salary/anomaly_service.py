@@ -66,6 +66,12 @@ KIND_FUND_MISSING = "fund_missing"
 KIND_IMPORT_DUPLICATE = "import_duplicate"
 KIND_BANK_CARD_DUPLICATE = "bank_card_duplicate"
 KIND_BASE_SALARY_MISSING = "base_salary_missing"
+# 记录级（M3，计算后才查得出）。negative_net 拦的是 confirm 不是 calculate——
+# 必须先算出负数才知道它存在，所以它不该进 ready_to_calculate 的分母。
+KIND_NEGATIVE_NET = "negative_net"
+KIND_GUARANTEED_TOPUP = "guaranteed_topup"
+KIND_MID_MONTH_WEIGHTED = "mid_month_weighted"
+KIND_MANUAL_OVERRIDE = "manual_override_diff"
 
 KIND_LABELS = {
     KIND_DINGTALK_UNBOUND: "未绑定钉钉",
@@ -81,7 +87,19 @@ KIND_LABELS = {
     KIND_IMPORT_DUPLICATE: "导入表身份证重复",
     KIND_BANK_CARD_DUPLICATE: "银行卡重复",
     KIND_BASE_SALARY_MISSING: "无法确定底薪",
+    KIND_NEGATIVE_NET: "实发为负",
+    KIND_GUARANTEED_TOPUP: "保底补足已触发",
+    KIND_MID_MONTH_WEIGHTED: "月中调薪/转正加权",
+    KIND_MANUAL_OVERRIDE: "人工覆盖与引擎值不一致",
 }
+
+# 进计算之前就能查的 kind（ready_to_calculate 的分母）。记录级 kind 不在其中。
+_PRE_CALC_KINDS = frozenset({
+    KIND_DINGTALK_UNBOUND, KIND_DINGTALK_DUPLICATE, KIND_ATTENDANCE_MISSING,
+    KIND_ATTENDANCE_PENDING, KIND_INSURANCE_UNMATCHED, KIND_INSURANCE_MISSING,
+    KIND_FUND_UNMATCHED, KIND_FUND_MISSING, KIND_IMPORT_DUPLICATE,
+    KIND_BANK_CARD_DUPLICATE, KIND_BASE_SALARY_MISSING,
+})
 
 
 def _item(
@@ -376,15 +394,84 @@ def check_profiles(db: Session,
 
 
 # ---------------------------------------------------------------------------
+# 记录级检查（M3：依赖 salary_record，计算后才有数据）
+# ---------------------------------------------------------------------------
+
+def check_records(db: Session, period: SalaryPeriod) -> list[dict[str, Any]]:
+    """计算后才查得出的四类：负数实发 / 保底触发 / 月中加权 / 人工覆盖有偏差。
+
+    负数实发是 blocking——但它拦的是 **confirm**，不是 calculate（不算出来
+    根本不知道它是负的）。所以这里照常标 blocking 让面板置顶，`collect` 的
+    `ready_to_calculate` 分母里把它排除（见 _PRE_CALC_KINDS）。
+    """
+    from app.salary.models import SalaryRecord
+
+    rows = (
+        db.query(SalaryRecord, SalaryEmployeeProfile)
+        .outerjoin(SalaryEmployeeProfile,
+                   SalaryEmployeeProfile.id == SalaryRecord.employee_id)
+        .filter(SalaryRecord.period_id == period.id)
+        .order_by(SalaryRecord.seq_no)
+        .all()
+    )
+    out: list[dict[str, Any]] = []
+    for row, profile in rows:
+        emp = {"employee_id": row.employee_id,
+               "emp_no": profile.emp_no if profile else None,
+               "name": profile.name if profile else None}
+        flags = set(row.calc_flags or [])
+
+        if "negative_net" in flags:
+            out.append(_item(
+                KIND_NEGATIVE_NET, BLOCKING,
+                f"{emp['name']} 实发为负（{row.net_salary}），不能锁定发放",
+                "在明细表处理：清零挂账下月，或用其他款冲抵；处理后重新计算",
+                **emp, ref={"record_id": row.id, "net_salary": str(row.net_salary)},
+            ))
+        if "guaranteed_topup" in flags:
+            out.append(_item(
+                KIND_GUARANTEED_TOPUP, INFO,
+                f"{emp['name']} 触发保底补足，补贴 {row.subsidy_auto} 元",
+                "核对保底金额与缺勤扣款无误即可忽略",
+                **emp, ref={"record_id": row.id},
+            ))
+        if "mid_month_weighted" in flags:
+            out.append(_item(
+                KIND_MID_MONTH_WEIGHTED, INFO,
+                f"{emp['name']} 月中调薪/转正，底薪按 30 天基数加权为 {row.base_salary}",
+                "核对调薪/转正生效日；口径不对先到调薪记录修正再重算",
+                **emp, ref={"record_id": row.id},
+            ))
+        # A2：manual 盖着且与 auto 不一致。重算后 auto 变了 manual 还在，差异
+        # 就在这里——复核者决定是放弃覆盖还是确认 manual 才是对的。
+        for col, label in (("bonus", "奖励"), ("performance", "绩效"),
+                           ("other", "其他款"), ("subsidy", "补贴")):
+            manual = getattr(row, f"{col}_manual")
+            auto = getattr(row, f"{col}_auto")
+            if manual is not None and auto is not None and manual != auto:
+                out.append(_item(
+                    KIND_MANUAL_OVERRIDE, INFO,
+                    f"{emp['name']} 的{label}人工值 {manual} 与引擎值 {auto} 不一致",
+                    "确认人工值正确可忽略；以引擎为准则在明细行清除该列的人工覆盖",
+                    **emp, ref={"record_id": row.id, "field": col,
+                                "manual": str(manual), "auto": str(auto)},
+                ))
+    return out
+
+
+# ---------------------------------------------------------------------------
 # 聚合
 # ---------------------------------------------------------------------------
 
-def collect(db: Session, period: SalaryPeriod) -> dict[str, Any]:
+def collect(db: Session, period: SalaryPeriod, *, include_records: bool = True) -> dict[str, Any]:
     """跑全部检查，聚合成一屏待办。
 
     返回结构里 `blocking_count` 是核心：它就是「能不能进计算」的答案。
     前端拿它决定「下一步」按钮的可用性——把判断留给前端自己数，
     迟早会数出跟后端不一样的结果。
+
+    `include_records=False` 给计算门用：记录级异常（负数实发）是计算的**产物**，
+    拿它当计算的前置条件就是死锁——不算出来永远不知道它是负的。
     """
     profiles = _payroll_profiles(db)
     items: list[dict[str, Any]] = []
@@ -392,6 +479,8 @@ def collect(db: Session, period: SalaryPeriod) -> dict[str, Any]:
     items += check_insurance(db, period, profiles)
     items += check_fund(db, period, profiles)
     items += check_profiles(db, profiles)
+    if include_records:
+        items += check_records(db, period)
 
     by_kind: dict[str, int] = defaultdict(int)
     kind_severity: dict[str, str] = {}
@@ -400,6 +489,9 @@ def collect(db: Session, period: SalaryPeriod) -> dict[str, Any]:
         # 同一 kind 的严重度是固定的（每处 _item 调用都写死了），这里取到即用。
         kind_severity.setdefault(it["kind"], it["severity"])
     blocking = [it for it in items if it["severity"] == BLOCKING]
+    # 「可以进计算了吗」只看前置异常：记录级 blocking（负数实发）是计算的产物，
+    # 拦的是 confirm。混进分母的话，算出一个负数就永远不能再重算——死锁。
+    pre_blocking = [it for it in blocking if it["kind"] in _PRE_CALC_KINDS]
 
     # blocking 排在前面：HR 从上往下处理，致命的必须先出现。
     # 同严重度内按 kind 聚在一起，一类一类处理比在人名之间跳来跳去快。
@@ -421,5 +513,5 @@ def collect(db: Session, period: SalaryPeriod) -> dict[str, Any]:
         ],
         "payroll_headcount": len(profiles),
         # 「可以进计算了吗」由后端回答，不让前端自己数
-        "ready_to_calculate": len(blocking) == 0,
+        "ready_to_calculate": len(pre_blocking) == 0,
     }

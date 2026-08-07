@@ -19,6 +19,7 @@ from app.salary import (
     anomaly_service,
     attendance_service,
     attendance_source,
+    calc_service,
     import_persist,
     period_service,
     service,
@@ -31,6 +32,7 @@ from app.salary.schemas import (
     AttendanceSync,
     DeptMappingUpsert,
     GradeUpsert,
+    PeriodCalculate,
     PeriodConfirm,
     PeriodCreate,
     PeriodTransition,
@@ -38,6 +40,7 @@ from app.salary.schemas import (
     PeriodWorkdayUpdate,
     ProfileCreate,
     ProfileUpdate,
+    RecordManualEdit,
     RuleParamUpdate,
 )
 
@@ -451,14 +454,21 @@ def confirm_period(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_permission("salary:admin")),
 ):
-    """锁定后全表只读。爆炸半径大（工资已发即成定论），按 admin 分权。"""
+    """锁定后全表只读。爆炸半径大（工资已发即成定论），按 admin 分权。
+
+    锁定前过负数实发门（§6）：有 final 实发 < 0 的行必须先在明细表处理，
+    宁可拦住不发，也不能让银行盘出现负金额。
+    """
     row = _get_period_or_404(db, period_id)
     try:
+        calc_service.assert_confirmable(db, row)
         row = period_service.confirm(
             db, row,
             expected_version=payload.expected_version,
             operator_id=_operator_id(current_user),
         )
+    except calc_service.CalcError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except period_service.SalaryStaleVersion as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     except period_service.SalaryPeriodError as exc:
@@ -667,6 +677,86 @@ def list_period_anomalies(
     """
     row = _get_period_or_404(db, period_id)
     return ok(anomaly_service.collect(db, row))
+
+
+# ---------------------------------------------------------------------------
+# 计算引擎与工资明细（M3）
+# ---------------------------------------------------------------------------
+
+@router.post("/periods/{period_id}/calculate", summary="计算/重算整批工资")
+def calculate_period(
+    period_id: int,
+    payload: PeriodCalculate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_permission("salary:write")),
+):
+    """整批计算。前置异常面板的 blocking 清完才给算（ready_to_calculate 门）。
+
+    重算是幂等的：引擎列与 auto 列重写，manual 列原样保留（A2），
+    「auto 变了但 manual 盖着」的行在 summary.override_changed 里点名。
+    """
+    row = _get_period_or_404(db, period_id)
+    try:
+        summary = calc_service.calculate_period(
+            db, row,
+            expected_version=payload.expected_version,
+            operator_id=_operator_id(current_user),
+        )
+    except period_service.SalaryStaleVersion as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except calc_service.CalcError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except period_service.SalaryPeriodError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ok({"summary": summary, "period": period_service.serialize_period(row)})
+
+
+@router.get("/periods/{period_id}/records", summary="工资明细行（23 列）")
+def list_period_records(
+    period_id: int,
+    keyword: str = Query(""),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_any_permission(*_READ_PERMS)),
+):
+    """整批明细，不分页（66 人一屏看完）。confirmed 后快照列优先于活档案。"""
+    row = _get_period_or_404(db, period_id)
+    return ok(calc_service.list_records(db, row.id, keyword=keyword))
+
+
+@router.put("/periods/{period_id}/records/{employee_id}", summary="行内编辑手动列")
+def edit_period_record(
+    period_id: int,
+    employee_id: int,
+    payload: RecordManualEdit,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_permission("salary:write")),
+):
+    """复核期改奖励/绩效/其他款/补贴/个税。行级乐观锁：版本不符返回 409。
+
+    传 null = 清除人工覆盖（final 回落引擎值）；不传 = 不动该列。
+    改完用引擎同一套公式重算该行小计/实发，补贴 auto 会按新生效值重判定。
+    """
+    row = _get_period_or_404(db, period_id)
+    updates = payload.model_dump(
+        exclude_unset=True, exclude={"expected_row_version", "modify_reason"})
+    if not updates:
+        raise HTTPException(status_code=400, detail="没有需要修改的字段")
+    try:
+        record = calc_service.edit_record_manual(
+            db, row, employee_id, updates,
+            expected_row_version=payload.expected_row_version,
+            reason=payload.modify_reason,
+            operator_id=_operator_id(current_user),
+        )
+    except period_service.SalaryStaleVersion as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except calc_service.CalcError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except period_service.SalaryPeriodError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    profile = db.query(SalaryEmployeeProfile).filter(
+        SalaryEmployeeProfile.id == employee_id).first()
+    return ok(calc_service.serialize_record(record, profile))
 
 
 @router.post("/periods/{period_id}/unlock", summary="解锁已锁定批次")

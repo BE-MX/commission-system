@@ -30,6 +30,7 @@ from app.salary.models import (
     SalaryInsuranceImport,
     SalaryPeriod,
     SalaryPeriodEvent,
+    SalaryRecord,
     SalaryRuleParam,
 )
 from app.salary.seed import seed_rule_params
@@ -39,6 +40,8 @@ _TABLES = [
     SalaryGradeTable.__table__, SalaryDeptMapping.__table__,
     SalaryEmployeeProfile.__table__, SalaryAttendance.__table__,
     SalaryInsuranceImport.__table__, SalaryFundImport.__table__,
+    # M3 起异常面板含记录级检查（负数实发/保底触发/人工覆盖偏差），查 salary_record
+    SalaryRecord.__table__,
 ]
 
 
@@ -626,3 +629,87 @@ def test_endpoint_is_readable_by_any_read_permission(db, period):
         f"/api/salary/periods/{period.id}/anomalies").status_code == 403
     assert client(["salary:read"]).get(
         "/api/salary/periods/99999/anomalies").status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# 记录级检查（M3：依赖 salary_record，计算后才有数据）
+# ---------------------------------------------------------------------------
+
+def mk_record(db, period, profile, **kw):
+    """造一条已计算的工资行。默认干净：无旗标、无手动覆盖。"""
+    defaults = dict(
+        seq_no=1, due_days=Decimal("31"), actual_days=Decimal("31"),
+        base_salary=Decimal("5000"), seniority_pay=Decimal("0"),
+        attendance_bonus=Decimal("100"), social_insurance=Decimal("-800"),
+        housing_fund=Decimal("-200"), absence_deduction=Decimal("0"),
+        add_subtotal=Decimal("100"), deduct_subtotal=Decimal("-1000"),
+        net_salary=Decimal("4100"), calc_flags=[],
+    )
+    defaults.update(kw)
+    row = SalaryRecord(period_id=period.id, employee_id=profile.id, **defaults)
+    db.add(row)
+    db.commit()
+    return row
+
+
+def test_negative_net_is_blocking_but_never_blocks_recalc(db, period):
+    """负数实发拦的是 confirm，不是 calculate——不算出来根本不知道它是负的。
+
+    如果把 negative_net 算进 ready_to_calculate 的分母，算出负数的那一刻批次
+    就永远不能再重算：死锁。所以它是 blocking（面板置顶）但不进计算门。
+    """
+    p = mk_profile(db)
+    mk_attendance(db, period, p)
+    mk_insurance(db, period, p)
+    mk_fund(db, period, p)
+    mk_record(db, period, p, net_salary=Decimal("-500"), calc_flags=["negative_net"])
+    r = ans.collect(db, period)
+    neg = [it for it in r["items"] if it["kind"] == ans.KIND_NEGATIVE_NET]
+    assert len(neg) == 1 and neg[0]["severity"] == ans.BLOCKING
+    assert neg[0]["ref"]["record_id"], "负数行必须能定位到记录"
+    assert r["blocking_count"] == 1
+    assert r["ready_to_calculate"] is True, "负数是计算的产物，不能反过来拦计算"
+
+
+def test_record_flags_surface_as_info(db, period):
+    """保底触发与月中加权是 info：让人看见，但不拦任何动作。"""
+    p = mk_profile(db)
+    mk_attendance(db, period, p)
+    mk_insurance(db, period, p)
+    mk_fund(db, period, p)
+    mk_record(db, period, p, subsidy_auto=Decimal("699"),
+              calc_flags=["guaranteed_topup", "mid_month_weighted"])
+    r = ans.collect(db, period)
+    by_kind = {g["kind"]: g for g in r["by_kind"]}
+    assert by_kind[ans.KIND_GUARANTEED_TOPUP]["severity"] == ans.INFO
+    assert by_kind[ans.KIND_MID_MONTH_WEIGHTED]["severity"] == ans.INFO
+    assert r["blocking_count"] == 0
+
+
+def test_manual_override_diff_only_when_auto_and_manual_disagree(db, period):
+    """A2：manual 盖着且 ≠ auto 才报。auto 是 None（引擎没产出）不报——
+    P1 的绩效全靠手填，全报一遍等于面板噪音。"""
+    p = mk_profile(db)
+    mk_attendance(db, period, p)
+    mk_insurance(db, period, p)
+    mk_fund(db, period, p)
+    mk_record(db, period, p,
+              subsidy_auto=Decimal("1678.91"), subsidy_manual=Decimal("1679"),
+              performance_manual=Decimal("2000"))  # auto None：不报
+    r = ans.collect(db, period)
+    diffs = [it for it in r["items"] if it["kind"] == ans.KIND_MANUAL_OVERRIDE]
+    assert len(diffs) == 1
+    assert diffs[0]["ref"]["field"] == "subsidy"
+    assert diffs[0]["severity"] == ans.INFO
+
+
+def test_calc_gate_view_excludes_record_items(db, period):
+    """计算门看的是 include_records=False 的视图：一条记录级异常都不该出现。"""
+    p = mk_profile(db)
+    mk_attendance(db, period, p)
+    mk_insurance(db, period, p)
+    mk_fund(db, period, p)
+    mk_record(db, period, p, net_salary=Decimal("-500"), calc_flags=["negative_net"])
+    r = ans.collect(db, period, include_records=False)
+    assert r["total"] == 0
+    assert r["ready_to_calculate"] is True

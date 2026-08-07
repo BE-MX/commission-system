@@ -102,17 +102,39 @@
           <el-table-column prop="action" label="怎么处理" min-width="280" show-overflow-tooltip />
           <el-table-column label="操作" width="100" fixed="right">
             <template #default="{ row }">
+              <!-- 记录级异常的处理场所在明细表（action 文案也这么写），其余去考勤页 -->
               <el-button v-if="row.employee_id" link type="primary"
-                         @click="jumpToAttendance(row)">去考勤页</el-button>
+                         @click="jumpToAnomaly(row)">
+                {{ RECORD_LEVEL_KINDS.includes(row.kind) ? '去明细表' : '去考勤页' }}
+              </el-button>
             </template>
           </el-table-column>
         </el-table>
       </template>
     </div>
 
-    <!-- 考勤 / 导入 / 时间线 -->
+    <!-- 考勤 / 导入 / 时间线 / 工资明细 -->
     <div class="salary-panel section">
       <el-tabs v-model="activeTab">
+        <!-- 明细放最前：算完薪之后 HR 的活儿都在这张表上 -->
+        <el-tab-pane label="工资明细" name="records">
+          <div class="tab-toolbar">
+            <el-input v-model="recordsKeyword" placeholder="按姓名/工号搜索" clearable
+                      style="width: 200px" @change="fetchRecords()" />
+            <span v-if="records.truncated" class="section-hint">
+              结果过多只显示了前一部分，请用搜索缩小范围
+            </span>
+            <span class="grow" />
+            <GlassButton v-if="canCalculate" v-permission="'salary:write'" variant="primary"
+                         left-icon="Cpu" :loading="calculating" @click="doCalculate">
+              计算工资
+            </GlassButton>
+          </div>
+          <SalaryRecordsGrid :records="records" :loading="recordsLoading"
+                             :status="period?.status || ''" :editable="recordsEditable"
+                             :save-manual="saveManual" />
+        </el-tab-pane>
+
         <el-tab-pane label="考勤" name="attendance">
           <div class="tab-toolbar">
             <el-input v-model="attendanceKeyword" placeholder="按姓名搜索" clearable
@@ -142,8 +164,15 @@
           <el-table :data="attendance.items" border class="list-table" max-height="460">
             <el-table-column prop="emp_no" label="工号" width="80" />
             <el-table-column prop="name" label="姓名" width="90" />
-            <el-table-column label="应出" width="70" align="right">
-              <template #default="{ row }">{{ money(row.due_days) }}</template>
+            <el-table-column label="应出" width="80" align="right">
+              <template #default="{ row }">
+                <!-- 钉值优先于规则推导（后端引擎同样优先取它），星号 + tooltip 标明 -->
+                <el-tooltip v-if="row.due_days_manual !== null && row.due_days_manual !== undefined"
+                            content="手动钉值，引擎优先采用" placement="top">
+                  <span>{{ money(row.due_days_manual) }}*</span>
+                </el-tooltip>
+                <template v-else>{{ money(row.due_days) }}</template>
+              </template>
             </el-table-column>
             <el-table-column label="实出" width="80" align="right">
               <template #default="{ row }">
@@ -333,11 +362,12 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
 import AppUpload from '@/components/AppUpload.vue'
 import { money } from '@/api/salary'
 import AttendanceEntryDialog from './components/AttendanceEntryDialog.vue'
-import { useSalaryWorkbench } from './composables/useSalaryWorkbench'
+import SalaryRecordsGrid from './components/SalaryRecordsGrid.vue'
+import { RECORD_LEVEL_KINDS, useSalaryWorkbench } from './composables/useSalaryWorkbench'
+import { useSalaryRecords } from './composables/useSalaryRecords'
 
 const STATUS_TAG = {
   draft: 'info',
@@ -361,8 +391,8 @@ function hours(v) {
 }
 
 const {
-  loading, period, writable, activeTab,
-  anomalies, events,
+  periodId, loading, period, writable, activeTab, refreshAll,
+  anomalies, events, kindFilter, filteredAnomalies, jumpToAnomaly,
   workdayEditing, workdayDraft, openWorkdayEdit, saveWorkday,
   attendance, attendanceKeyword, attendanceOnlyPending, fetchAttendance,
   syncing, lastSync, doSync,
@@ -372,11 +402,13 @@ const {
   unlockVisible, unlockReason, unlocking, doUnlock,
 } = useSalaryWorkbench()
 
-const kindFilter = ref('')
-const filteredAnomalies = computed(() => {
-  const items = anomalies.value?.items || []
-  return kindFilter.value ? items.filter(i => i.kind === kindFilter.value) : items
-})
+// 工资明细（M3-f）：计算按钮 + 22 列明细表。逻辑全在 composable / 表格组件里，
+// 这里只做装配，本文件行数有 500 的硬上限
+const {
+  records, recordsKeyword, recordsLoading, fetchRecords,
+  canCalculate, calculating, doCalculate,
+  recordsEditable, saveManual,
+} = useSalaryRecords({ periodId, period, activeTab, refreshAll })
 
 // AppUpload 会把 uploadFn 的返回值展开进 modelValue，而导入没有落盘产物、
 // 整个响应体展开进去毫无意义。这里吞掉返回值——show-list=false，那份列表不渲染，
@@ -384,12 +416,6 @@ const filteredAnomalies = computed(() => {
 async function runImport(kind, file) {
   await doImport(kind, file)
   return {}
-}
-
-function jumpToAttendance(row) {
-  activeTab.value = 'attendance'
-  const hit = attendance.value.items.find(i => i.employee_id === row.employee_id)
-  if (hit) openEditAttendance(hit)
 }
 </script>
 

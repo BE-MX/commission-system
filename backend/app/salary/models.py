@@ -91,6 +91,14 @@ class SalaryEmployeeProfile(Base):
     insurance_entity = Column(String(64), nullable=True, comment="参保主体（丽丝发/鄄城分公司）")
     payroll_included = Column(SmallInteger, nullable=False, default=1, comment="1=发薪,0=仅参保（白名单）")
     fund_included = Column(SmallInteger, nullable=False, default=1, comment="1=缴公积金")
+    # 特殊计薪（097）：姜妮妮/刘德明这类部门「-」人员 3 月表 31/31 出勤但全勤奖为 0、
+    # 工龄与规则值对不上（§9.5）。HR 在档案确认标记后引擎跳过全勤/工龄规则；
+    # seniority_override 是工龄的手动钉值（刘德明 1000），NULL 按规则。
+    special_calc = Column(
+        SmallInteger, nullable=False, default=0,
+        comment="1=特殊计薪：不发全勤奖、工龄按 seniority_override 或 0（§9.5）",
+    )
+    seniority_override = Column(MONEY, nullable=True, comment="工龄工资手动钉值；NULL=按规则计算")
 
     dingtalk_userid = Column(String(64), nullable=True, comment="钉钉 userid（考勤取数键）")
     mobile = Column(String(32), nullable=True, comment="手机号")
@@ -269,7 +277,10 @@ class SalaryAttendance(Base):
         BigInteger, ForeignKey("ark_salary_employee_profile.id", ondelete="CASCADE"),
         nullable=False, comment="员工档案 id",
     )
-    due_days = Column(Numeric(6, 2), nullable=True, comment="应出勤天数")
+    due_days = Column(Numeric(6, 2), nullable=True, comment="应出勤天数（规则阶段一基准，同步每轮重写）")
+    # 应出天数手动钉值（097）：李晓雨 3 月 21.75 无法从规则复原（§8.3 第 10 条）。
+    # 独立成列而非复用 due_days——同步每轮重写 due_days，钉值混在里面会被冲掉。
+    due_days_manual = Column(Numeric(6, 2), nullable=True, comment="应出天数手动钉值；NULL=按规则推导")
     actual_days = Column(Numeric(6, 2), nullable=True, comment="实出勤天数（<15 触发基准切换）")
     personal_leave_hours = Column(HOURS, nullable=True, comment="事假小时")
     sick_leave_hours = Column(HOURS, nullable=True, comment="病假小时")
@@ -439,6 +450,9 @@ class SalaryRecord(Base):
     # ── 自动文案与审计 ───────────────────────────────────
     remark_summary = Column(String(255), nullable=True, comment="汇总表备注（自动生成）")
     leave_remark = Column(String(255), nullable=True, comment="请假时间文案（自动生成）")
+    # 引擎判定留痕（097）：["negative_net","guaranteed_topup","mid_month_weighted",...]
+    # 异常面板的记录级检查直接读它，不必每次重算一遍推导过程。
+    calc_flags = Column(JSON, nullable=True, comment="引擎判定标记（异常面板记录级检查的数据源）")
     row_version = Column(Integer, nullable=False, default=0, comment="行级乐观锁（复核期并发编辑）")
     calculated_at = Column(DateTime, nullable=True, comment="最近计算时间")
     modified_by = Column(USER_ID, nullable=True, comment="最近人工修改人 ark_users.id")

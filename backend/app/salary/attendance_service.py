@@ -35,7 +35,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import date, datetime
 from decimal import ROUND_CEILING, Decimal
 from typing import Any, Optional
 
@@ -163,6 +163,30 @@ def payroll_profiles(db: Session) -> list[SalaryEmployeeProfile]:
         .order_by(SalaryEmployeeProfile.emp_no)
         .all()
     )
+
+
+def payroll_scope(db: Session, period: SalaryPeriod) -> list[SalaryEmployeeProfile]:
+    """计算口径的发薪名单 = 在职发薪 ∪ 本月内离职的发薪员工。
+
+    月中离职者的末月工资要照发（应出按工作日基准，`resolve_final_due_days` 的
+    leave_date 分支），但他们已被标 left，不在 `payroll_profiles` 里——计算与
+    锁定门若只看在职名单，这人会整人蒸发：无记录、无告警、无合计（漏发方向，
+    三轮审查 P1-4/P1-6）。离职日不在本月的仍排除（那是历史批次的事）。
+    """
+    active = payroll_profiles(db)
+    y, m = period_service.parse_year_month(period.year_month)
+    month_start = date(y, m, 1)
+    month_end = date(y, m, period_service.natural_days_of(y, m))
+    leavers = (
+        db.query(SalaryEmployeeProfile)
+        .filter(SalaryEmployeeProfile.payroll_included == 1)
+        .filter(SalaryEmployeeProfile.status == "left")
+        .filter(SalaryEmployeeProfile.leave_date.isnot(None))
+        .filter(SalaryEmployeeProfile.leave_date >= month_start)
+        .filter(SalaryEmployeeProfile.leave_date <= month_end)
+        .all()
+    )
+    return active + [l for l in leavers if l.id not in {p.id for p in active}]
 
 
 def profiles_by_userid(
@@ -446,7 +470,13 @@ def manual_upsert(
     # 名单门：同步和 router 都按「在职 + payroll_included」筛人，只有这里是按 id 直取。
     # 缺了这道门，给一个只参保不发薪（或已离职）的人录考勤会建出考勤行、判出全勤，
     # M3 顺着考勤行就把工资和 100 元全勤奖一起发了。（对抗性审查 2026-08-07 第 6 条）
-    if profile.payroll_included != 1 or profile.status != "active":
+    # 例外：本月内离职的人要录末月考勤（末月工资照发，payroll_scope 口径）。
+    is_month_leaver = (
+        profile.status == "left"
+        and profile.leave_date is not None
+        and period.year_month == profile.leave_date.strftime("%Y-%m")
+    )
+    if profile.payroll_included != 1 or (profile.status != "active" and not is_month_leaver):
         raise AttendanceError(
             f"{profile.name} 不在本月发薪名单里（"
             f"{'已离职' if profile.status != 'active' else '仅参保不发薪'}），"
@@ -471,6 +501,10 @@ def manual_upsert(
     for fname in ("late_count", "early_leave_count", "miss_punch_count", "absent_count"):
         if fname in payload and payload[fname] is not None:
             setattr(row, fname, payload[fname])
+    # 应出天数钉值（李晓雨 21.75）：只存钉值，actual_days 仍按阶段一基准算——
+    # 缺勤天数 = due_days − actual_days 必须保持在同一基准上，引擎拿钉值当分母。
+    if "due_days_manual" in payload:
+        row.due_days_manual = payload["due_days_manual"]
 
     if row.due_days is None:
         row.due_days = resolve_due_days(period, params)
@@ -532,6 +566,7 @@ def serialize_row(row: SalaryAttendance, profile: Optional[SalaryEmployeeProfile
         "emp_no": profile.emp_no if profile else None,
         "name": profile.name if profile else None,
         "due_days": row.due_days,
+        "due_days_manual": row.due_days_manual,
         "actual_days": row.actual_days,
         "personal_leave_hours": row.personal_leave_hours,
         "sick_leave_hours": row.sick_leave_hours,
