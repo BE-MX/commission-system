@@ -46,6 +46,15 @@ def _delete_stored_files(
             print(message, flush=True)
 
 
+def _product_for_update_statement(product_id: int):
+    return (
+        select(CustomerImageProduct)
+        .where(CustomerImageProduct.id == product_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+
+
 def _replace_with_normalized(
     db: Session,
     product: CustomerImageProduct,
@@ -59,6 +68,9 @@ def _replace_with_normalized(
         raise ValueError("product asset position must be nonnegative")
     stored = save_private_image(normalized, owner_user_id=product.id, kind="customer-product")
     try:
+        locked_product = db.scalar(_product_for_update_statement(product.id))
+        if locked_product is None:
+            raise FileNotFoundError("product not found")
         current = db.scalars(
             select(CustomerImageProductAsset).where(
                 CustomerImageProductAsset.product_id == product.id,
@@ -82,7 +94,7 @@ def _replace_with_normalized(
             sha256=stored.sha256,
         )
         db.add(asset)
-        product.config_version += 1
+        locked_product.config_version += 1
         db.commit()
     except Exception:
         db.rollback()
@@ -154,9 +166,14 @@ def open_product_asset_content(
 
 
 def open_generation_reference_content(
-    db: Session, generation_id: int, asset_id: int
+    db: Session, invite_id: int, generation_id: int, asset_id: int
 ) -> io.BytesIO:
-    generation = db.get(CustomerImageGeneration, generation_id)
+    generation = db.scalar(
+        select(CustomerImageGeneration).where(
+            CustomerImageGeneration.id == generation_id,
+            CustomerImageGeneration.invite_id == invite_id,
+        )
+    )
     if generation is None or asset_id not in generation.reference_asset_ids:
         raise FileNotFoundError("product asset not found") from None
     asset = db.scalar(

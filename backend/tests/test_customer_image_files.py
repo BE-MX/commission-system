@@ -4,6 +4,8 @@ import io
 
 import pytest
 from PIL import Image
+from sqlalchemy.dialects import mysql
+from sqlalchemy.orm import sessionmaker
 
 from app.customer_image import file_service
 from app.customer_image.models import (
@@ -63,6 +65,46 @@ def test_upload_replacement_retires_old_row_without_deleting_old_file(db, tmp_pa
         file_service.open_product_asset_content(db, product.id, first.id)
     assert second.retired_at is None
     assert product.config_version == 3
+
+
+def test_product_lock_statement_uses_mysql_for_update():
+    statement = file_service._product_for_update_statement(7)
+
+    compiled = str(statement.compile(dialect=mysql.dialect()))
+    assert "FOR UPDATE" in compiled
+    assert "ark_customer_image_products.id = %s" in compiled
+
+
+def test_stale_sessions_replace_one_slot_without_lost_version(db, tmp_path, monkeypatch):
+    monkeypatch.setattr("app.design_image.file_service._storage_root", lambda: tmp_path)
+    product = _product(db)
+    Session = sessionmaker(bind=db.get_bind())
+    first_db = Session()
+    second_db = Session()
+    try:
+        first_product = first_db.get(CustomerImageProduct, product.id)
+        second_product = second_db.get(CustomerImageProduct, product.id)
+        assert first_product.config_version == second_product.config_version == 1
+
+        file_service.replace_product_asset_from_upload(
+            first_db, first_product, "cover", 0, _png_bytes("red"), "image/png"
+        )
+        file_service.replace_product_asset_from_upload(
+            second_db, second_product, "cover", 0, _png_bytes("blue"), "image/png"
+        )
+    finally:
+        first_db.close()
+        second_db.close()
+        db.expire_all()
+
+    assert db.get(CustomerImageProduct, product.id).config_version == 3
+    current = db.query(CustomerImageProductAsset).filter(
+        CustomerImageProductAsset.product_id == product.id,
+        CustomerImageProductAsset.role == "cover",
+        CustomerImageProductAsset.position == 0,
+        CustomerImageProductAsset.retired_at.is_(None),
+    ).all()
+    assert len(current) == 1
 
 
 def test_library_copy_survives_source_deletion(db, tmp_path, monkeypatch):
@@ -163,10 +205,17 @@ def test_frozen_generation_reads_only_its_listed_retired_reference(db, tmp_path,
     db.commit()
 
     assert file_service.open_generation_reference_content(
-        db, generation.id, listed.id
+        db, invite.id, generation.id, listed.id
     ).read()
     with pytest.raises(FileNotFoundError):
-        file_service.open_generation_reference_content(db, generation.id, unlisted.id)
+        file_service.open_generation_reference_content(
+            db, invite.id, generation.id, unlisted.id
+        )
+    other_invite = _invite(db, "bbbbbb")
+    with pytest.raises(FileNotFoundError):
+        file_service.open_generation_reference_content(
+            db, other_invite.id, generation.id, listed.id
+        )
 
 
 def test_frozen_generation_rejects_listed_asset_from_another_product(db, tmp_path, monkeypatch):
@@ -195,7 +244,7 @@ def test_frozen_generation_rejects_listed_asset_from_another_product(db, tmp_pat
 
     with pytest.raises(FileNotFoundError):
         file_service.open_generation_reference_content(
-            db, generation.id, cross_product_asset.id
+            db, invite.id, generation.id, cross_product_asset.id
         )
 
 
