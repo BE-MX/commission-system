@@ -97,7 +97,7 @@ def upgrade() -> None:
         sa.Column("customer_name_snapshot", sa.String(200), nullable=False),
         sa.Column("created_by", USER_ID, sa.ForeignKey("ark_users.id", ondelete="RESTRICT"), nullable=False),
         sa.Column("okki_salesperson_id_snapshot", sa.String(64), nullable=False),
-        sa.Column("token_hash", sa.String(64), nullable=False, unique=True),
+        sa.Column("token_hash", sa.CHAR(64), nullable=False, unique=True),
         sa.Column("token_suffix", sa.String(6), nullable=False),
         sa.Column("starts_at", sa.DateTime(), nullable=False),
         sa.Column("expires_at", sa.DateTime(), nullable=False),

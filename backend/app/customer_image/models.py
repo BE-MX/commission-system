@@ -5,6 +5,7 @@ from datetime import datetime
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CHAR,
     CheckConstraint,
     Column,
     DateTime,
@@ -133,7 +134,7 @@ class CustomerImageInvite(Base):
     customer_name_snapshot = Column(String(200), nullable=False)
     created_by = Column(USER_ID, ForeignKey("ark_users.id", ondelete="RESTRICT"), nullable=False)
     okki_salesperson_id_snapshot = Column(String(64), nullable=False)
-    token_hash = Column(String(64), nullable=False, unique=True)
+    token_hash = Column(CHAR(64), nullable=False, unique=True)
     token_suffix = Column(String(6), nullable=False)
     starts_at = Column(DateTime, nullable=False)
     expires_at = Column(DateTime, nullable=False)

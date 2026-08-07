@@ -4,7 +4,7 @@ from importlib import import_module, util
 from pathlib import Path
 
 import pytest
-from sqlalchemy import CheckConstraint, JSON, UniqueConstraint
+from sqlalchemy import CHAR, CheckConstraint, JSON, UniqueConstraint
 from sqlalchemy.dialects import mysql
 
 from app.core.config import Settings
@@ -104,6 +104,33 @@ def test_invitation_never_persists_plaintext_token():
     assert "token_hash" in columns
     assert "token_suffix" in columns
     assert "token" not in columns
+
+
+def test_invitation_token_hash_uses_fixed_width_sha256_storage(monkeypatch):
+    models = _models()
+    token_hash_type = models.CustomerImageInvite.__table__.c.token_hash.type
+    migration = _migration_module()
+    migration_token_hash_types = []
+
+    def capture_table(name, *items, **_kwargs):
+        if name == "ark_customer_image_invites":
+            migration_token_hash_types.extend(
+                item.type
+                for item in items
+                if getattr(item, "name", None) == "token_hash"
+            )
+
+    monkeypatch.setattr(migration.op, "create_table", capture_table)
+    monkeypatch.setattr(migration.op, "create_index", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(migration.op, "add_column", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(migration.op, "create_foreign_key", lambda *_args, **_kwargs: None)
+    migration.upgrade()
+
+    assert isinstance(token_hash_type, CHAR)
+    assert token_hash_type.length == 64
+    assert len(migration_token_hash_types) == 1
+    assert isinstance(migration_token_hash_types[0], CHAR)
+    assert migration_token_hash_types[0].length == 64
 
 
 def test_customer_image_constraints_freeze_generation_and_scope_idempotency():
