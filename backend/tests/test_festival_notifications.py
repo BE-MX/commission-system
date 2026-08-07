@@ -15,6 +15,7 @@ from app.festival.models import FestivalEvent, FestivalState
 
 def test_only_known_busy_response_is_delivery_uncertain():
     assert DingTalkWebhookError(130101, "系统繁忙").delivery_uncertain is True
+    assert DingTalkWebhookError(-1, "系统繁忙").delivery_uncertain is True
     assert DingTalkWebhookError(40035, "系统繁忙").delivery_uncertain is False
     assert DingTalkWebhookError(130101, "签名错误").delivery_uncertain is False
 

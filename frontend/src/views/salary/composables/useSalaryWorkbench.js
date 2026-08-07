@@ -50,7 +50,10 @@ export function useSalaryWorkbench() {
   const period = ref(null)
   const anomalies = ref(null)
   const events = ref([])
-  const activeTab = ref('anomalies')
+  // 'attendance'，不是 'anomalies'——异常清单是独立 panel，不是 tab。
+  // 给一个不存在的名字，el-tabs 会静默回落到第一个 pane，看起来没坏，
+  // 但 activeTab 与实际选中项从一开始就不一致，jumpToAttendance 之后再也回不到初始态。
+  const activeTab = ref('attendance')
 
   const version = computed(() => period.value?.status_version ?? 0)
   const writable = computed(() => !!period.value?.writable)

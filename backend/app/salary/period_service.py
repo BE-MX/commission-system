@@ -28,6 +28,7 @@ import calendar
 import logging
 import re
 from datetime import date, datetime
+from collections.abc import Sequence
 from typing import Any, Optional
 
 from sqlalchemy import update
@@ -534,10 +535,24 @@ def resolve_params(db: Session, period: SalaryPeriod) -> dict[str, str]:
 
     `service.load_params(db)` 的 `on_date` 默认 today，任何直接这么调的地方
     都会在跨月使用时取错版本。模块内一律走这个函数，不要再自己调 load_params。
+
+    **查不到任何生效版本就抛错，不回落硬编码默认值。** `freeze_params` 在同样的
+    输入下抛错防「影子参数」，这里若静默返回 `{}`，`param_decimal(params,
+    "full_month_days", Decimal("31"))` 就拿代码里的 31 顶上，`summary` 里一个
+    告警都没有——那道防线就只在 M3 有效。真库当前 14 个参数的 effective_from
+    全是 2026-04-01，任何 3 月批次（设计文档的基准月）都命中这条路：due_days
+    落 31 而参数表写着 26，底薪 10000 缺勤 4 天单人差 248.14 元，66 人同向偏。
+    （第二轮对抗性审查 2026-08-07 P0-2）
     """
     if period.param_snapshot:
         return period.param_snapshot
-    return service.load_params(db, period_on_date(period))
+    params = service.load_params(db, period_on_date(period))
+    if not params:
+        raise SalaryPeriodError(
+            f"{period.year_month} 没有生效的规则参数版本（参数生效日晚于该月），"
+            "请到规则配置页把参数生效日调整到该月 1 日或更早后重试"
+        )
+    return params
 
 
 def freeze_params(db: Session, period: SalaryPeriod) -> dict[str, str]:
@@ -582,6 +597,23 @@ def list_events(db: Session, period_id: int, *, limit: int = 200) -> list[Salary
         .limit(limit)
         .all()
     )
+
+
+def operator_names(db: Session, events: Sequence[SalaryPeriodEvent]) -> dict[int, str]:
+    """`created_by` → 真实姓名。一次查完，不在序列化循环里逐条查。
+
+    时间线一页最多 200 条，逐条查就是 200 条 SQL；而操作人只有那么几个，
+    去重后通常 1~3 个 id。查不到的 id **不进结果**（离职清理、测试数据），
+    调用方 fallback 到显示 id，不要在这里造一个「未知用户」占位——
+    那会让「谁改的」这个问题看上去有答案，实际没有。
+    """
+    ids = {e.created_by for e in events if e.created_by}
+    if not ids:
+        return {}
+    from app.auth.models import ArkUser
+
+    rows = db.query(ArkUser.id, ArkUser.real_name).filter(ArkUser.id.in_(ids)).all()
+    return {uid: name for uid, name in rows if name}
 
 
 def log_event(

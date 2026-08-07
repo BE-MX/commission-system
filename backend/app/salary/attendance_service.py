@@ -183,23 +183,31 @@ def profiles_by_userid(
     return by_uid, {uid: n for uid, n in names.items() if len(n) > 1}
 
 
-def assert_syncable(period: SalaryPeriod) -> None:
-    """同步门：锁定不行，**已计算/复核中也不行**。
+def assert_attendance_writable(period: SalaryPeriod, action: str) -> None:
+    """考勤写门：锁定不行，**已计算/复核中也不行**。
 
     `assert_writable` 只挡 confirmed。但 calculated / reviewing 这两个状态下，
-    考勤已经被算进工资了，再同步一次会静默改掉底数：状态机没有「calculated →
+    考勤已经被算进工资了，再改一次会静默改掉底数：状态机没有「calculated →
     attendance_synced」这条边，`_next_status` 因此返回 None，状态和版本号都不动，
     界面继续显示「已计算」，导出的却是过期数字（实测约 1067 元/人）。
     要重来就先退回 imported（状态机允许 calculated → imported），那一步是显式的、
     有留痕的，HR 知道自己作废了上一次计算。（对抗性审查 2026-08-07 第 3 条）
+
+    **同步和人工录入必须共用这道门**：两个入口改的是同一批数字，只堵一个等于没堵。
+    最初只加在同步上，人工录入照样能在「已计算」状态下把病假从 0 改成 16 小时，
+    工资表却不重算——同一个 bug 换了个门进来。
     """
     period_service.assert_writable(period)
     if period.status in (period_service.STATUS_CALCULATED, period_service.STATUS_REVIEWING):
         label = period_service.STATUS_LABELS.get(period.status, period.status)
         raise AttendanceError(
-            f"批次当前是「{label}」，重新同步考勤会让已算出的工资失效但状态不变。"
-            "请先把批次退回「社保已导入」再同步，退回会留痕并作废本次计算结果。"
+            f"批次当前是「{label}」，{action}会让已算出的工资失效但状态不变。"
+            "请先把批次退回「社保已导入」再改，退回会留痕并作废本次计算结果。"
         )
+
+
+def assert_syncable(period: SalaryPeriod) -> None:
+    assert_attendance_writable(period, "重新同步考勤")
 
 
 def _apply_dingtalk(row: SalaryAttendance, values: dict[str, Decimal]) -> None:
@@ -421,7 +429,9 @@ def manual_upsert(
     改完立刻重算 actual_days 与 full_attendance——让 HR 填完病假还要去点一次
     「重新判定全勤」是把系统的活推给用户。
     """
-    period_service.assert_writable(period)
+    # 与同步同一道门，不是 assert_writable。人工录入改的是同一批数字，
+    # 只堵同步等于没堵：已计算状态下把病假从 0 改成 16 小时，工资表不会重算。
+    assert_attendance_writable(period, "改考勤")
     from_version = period.status_version
     if expected_version is not None and expected_version != from_version:
         raise period_service.SalaryStaleVersion(

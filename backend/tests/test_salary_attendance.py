@@ -775,6 +775,31 @@ def test_reviewing_period_rejects_resync(db):
         ]})
 
 
+@pytest.mark.parametrize("status", [ps.STATUS_CALCULATED, ps.STATUS_REVIEWING])
+def test_manual_entry_rejects_already_calculated_period(db, status):
+    """**同一个 bug 的第二个门：人工录入也不许改已计算批次的考勤。**
+
+    最初只把门加在同步上。但请假小时的唯一入口是人工录入，HR 在「已计算」状态下
+    把病假从 0 改成 16 小时，考勤行当场变了、全勤翻转，而工资表不会重算，
+    状态和版本号都不动——界面继续显示「已计算」，导出的是过期数字。
+    堵一个入口等于没堵，两个入口必须共用 `assert_attendance_writable`。
+    """
+    profile = make_profile(db, "已算", emp_no="9", userid="U9")
+    period = make_period(db)
+    ats.manual_upsert(db, period, profile.id, {
+        "personal_leave_hours": Decimal("0"), "sick_leave_hours": Decimal("0"),
+    })
+    period.status = status
+    db.commit()
+
+    with pytest.raises(ats.AttendanceError) as exc:
+        ats.manual_upsert(db, period, profile.id, {"sick_leave_hours": Decimal("16")})
+    assert "退回" in str(exc.value), "报错要告诉 HR 下一步怎么做"
+
+    row = db.query(SalaryAttendance).filter_by(employee_id=profile.id).one()
+    assert row.sick_leave_hours == Decimal("0"), "拦住了却已经写进去，等于没拦"
+
+
 def test_missing_dingtalk_column_does_not_zero_manual_counts(db):
     """**P1-4：钉钉少给一列，不能把人工补录的迟到/漏打卡清零。**
 

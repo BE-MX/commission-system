@@ -229,4 +229,8 @@
 
 **迁移 093（2026-08-06）**：`bank_card_hash` 由 UNIQUE 降级为普通索引，见上。
 
+**迁移 094 / 095（2026-08-07）**：`ark_salary_period_event` 批次事件时间线；`ark_salary_period.workday_source` 工作日数来源标记（`weekday_auto` / `needs_review` / `manual`）。自动推算只按周一~五数、不含法定节假日与调休，标记落在批次行上前端才拿得到——只写进事件 payload 等于发不出去，而 2 月批次的 20 天是所有月中入离职人员缺勤扣款的分母。
+
+**迁移 096（2026-08-07）**：`dingtalk_userid` 的普通索引升为 UNIQUE（`uk_salary_profile_dingtalk`）。两份档案共用一个 userid 时考勤同步会静默丢掉其中一个人：钉钉按 userid 只回一条，字典推导让后来者覆盖前者，而 `source_count == synced`、`failed == 0`、`unbound` 为空——**所有告警指标全绿**，被覆盖的人在失败清单、未绑定清单、考勤列表里都不出现，M3 只能按全勤给他发钱。UNIQUE 允许多个 NULL，所以没绑钉钉的人不受影响；空串不同（彼此相等），所以升级脚本先把空串归一成 NULL，否则约束建不上而 MySQL DDL 不可回滚。service 层另有一道同名检查，管的是 096 之前的存量数据和绕过 ORM 的写入路径。
+
 PII 密钥 `ARK_SALARY_ENCRYPTION_KEY` / `ARK_SALARY_HASH_KEY` 在 `backend/.env`，**未配置时 `pii.py` 直接抛 `SalaryKeyNotConfigured`，不回落占位密钥**。开发机与生产共用同一套 RDS，两边必须配完全相同的值——值不同则同一张身份证算出不同 HMAC，唯一约束形同虚设、M2 社保导入按哈希匹配会全空。

@@ -18,6 +18,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.auth.models import ArkUser
 from app.core.database import Base
 from app.salary import period_service as ps
 from app.salary.models import (
@@ -48,6 +49,8 @@ def engine_and_session():
             SalaryRuleParam.__table__,
             SalaryGradeTable.__table__,
             SalaryDeptMapping.__table__,
+            # 事件时间线要把 created_by 换成真实姓名，得有用户表可 JOIN
+            ArkUser.__table__,
         ],
     )
     try:
@@ -231,6 +234,28 @@ def test_freeze_params_works_once_effective_date_covers_month(db):
     _seed_params_from(db, dt.date(2026, 3, 1))
     p = ps.create_period(db, "2026-03")
     assert ps.freeze_params(db, p)["full_month_days"] == "31"
+
+
+def test_resolve_params_raises_instead_of_falling_back_to_hardcoded(db):
+    """**`resolve_params` 必须和 `freeze_params` 对「参数缺失」同一个态度。**
+
+    这里静默返回 `{}` 的话，`param_decimal(params, "full_month_days", Decimal("31"))`
+    就拿代码里的 31 顶上，同步 summary 里一个告警都没有——「影子参数」那道防线
+    就只在 M3 有效，考勤同步照旧用硬编码分母算 due_days。
+    真库 14 个参数的 effective_from 全是 2026-04-01，3 月批次（验收基准月）必然命中。
+    """
+    seed_rule_params(db)  # 默认生效日 2026-04-01，3 月取不到
+    p = ps.create_period(db, "2026-03")
+    with pytest.raises(ps.SalaryPeriodError, match="没有生效的规则参数版本"):
+        ps.resolve_params(db, p)
+
+
+def test_resolve_params_prefers_snapshot_even_when_table_is_empty(db):
+    """已冻结的批次不受参数表影响——快照就是它的真相，参数表被清空也照旧。"""
+    p = ps.create_period(db, "2026-03")
+    p.param_snapshot = {"full_month_days": "31"}
+    db.commit()
+    assert ps.resolve_params(db, p)["full_month_days"] == "31"
 
 
 # ---------------------------------------------------------------------------
@@ -547,6 +572,32 @@ def test_events_form_a_timeline(db):
     assert unlock_ev.to_status == ps.STATUS_REVIEWING
     assert unlock_ev.reason == "重算"
     assert unlock_ev.created_by == 3
+
+
+def test_operator_names_resolve_in_one_batch(db):
+    """时间线要显示「谁改的」，而 created_by 只是个 id。
+
+    一并锁住「查不到的 id 不进结果」：前端靠 key 缺失来 fallback 显示 id，
+    这里若返回「未知用户」之类的占位，界面看上去有答案实际没有。
+    """
+    db.add(ArkUser(id=77, username="liang", password_hash="x", real_name="亮哥"))
+    db.flush()
+
+    p = _to_reviewing(db)
+    p = ps.confirm(db, p, expected_version=p.status_version, operator_id=77)
+    p = ps.unlock(db, p, "重算", expected_version=p.status_version, operator_id=999)
+
+    events = ps.list_events(db, p.id)
+    names = ps.operator_names(db, events)
+    assert names[77] == "亮哥"
+    assert 999 not in names
+
+
+def test_operator_names_handles_empty_timeline(db):
+    """没有操作人的事件（脚本/调度写的）不该触发一条 IN () 空查询。"""
+    p = ps.create_period(db, "2026-03")
+    events = ps.list_events(db, p.id)
+    assert ps.operator_names(db, events) == {}
 
 
 def test_event_log_failure_does_not_break_transition(db, monkeypatch):

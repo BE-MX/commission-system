@@ -90,6 +90,22 @@ class ProfileBase(BaseModel):
             raise ValueError("标记位只能是 0 或 1")
         return v
 
+    @field_validator("dingtalk_userid")
+    @classmethod
+    def _norm_dingtalk(cls, v: Optional[str]) -> Optional[str]:
+        """空串归一成 NULL。**这是 096 唯一索引能不能用的前提。**
+
+        UNIQUE 放过任意多个 NULL，但把多个 `''` 当成重复。表单不填时 Pydantic
+        收到的是 `''` 而不是 `None`，而 `create_profile` 是 `model_dump()` 直接
+        setattr——于是「第二个不打卡的员工」建不出来，HR 吃一个 500。
+        66 人里必然有多个不打卡的人（`list_unbound` 的整个存在前提就是这批人）。
+        写在这里而不是 service 里：Create 和 Update 共用这个基类，不会漏一边。
+        （第二轮对抗性审查 2026-08-07 P0-1，096 引入的新问题）
+        """
+        if v is None:
+            return None
+        return v.strip() or None
+
 
 class ProfileCreate(ProfileBase):
     """新建档案。PII 传明文，服务端加密+哈希后入库，明文不落任何列。"""
@@ -144,6 +160,18 @@ class ProfileUpdate(BaseModel):
         if v and v not in GRADE_SCHEMES:
             raise ValueError(f"grade_scheme 只能是 {sorted(GRADE_SCHEMES)}")
         return v
+
+    @field_validator("dingtalk_userid")
+    @classmethod
+    def _norm_dingtalk(cls, v: Optional[str]) -> Optional[str]:
+        """空串归一成 NULL——见 `ProfileBase._norm_dingtalk`。
+
+        这个类**不继承 ProfileBase**，所以校验器必须再写一遍（别删）。
+        编辑路径的踩法更常见：HR 把甲的钉钉 userid 清空存成 `''`，再清空乙的就吃 500。
+        """
+        if v is None:
+            return None
+        return v.strip() or None
 
 
 class ProfileOut(BaseModel):

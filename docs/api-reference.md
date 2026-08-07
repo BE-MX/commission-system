@@ -549,7 +549,7 @@
 
 - **`match_status` 四值**：`matched`（进减项）/ `not_payroll`（参保未发薪，落库但不计算）/ `unmatched`（无档案）/ `duplicate`（同一文件内身份证撞号）。**只有 `matched` 进工资表**，判据是档案的 `payroll_included`，不是源表部门文本。
 - **`duplicate` 不是 `unmatched`**：撞号的两行一起作废，且判定排在档案查找之前。两种文案把 HR 引向相反的动作——「未匹配」让他去建档（把誊抄错误固化进主数据），「撞号」让他去改源表。
-- **两个合计分开给**：`personal_total_matched` 是真正会进工资表的钱，`personal_total_all` 用来跟源表合计行对账。只看一个数，「文件对得上但工资表少扣了 8 个人」看不出来。
+- **两个合计分开给**：`personal_total_matched` 是真正会进工资表的钱，`personal_total_all` 用来跟源表合计行对账。只看一个数，「文件对得上但工资表少扣了 8 个人」看不出来。**GET 列表接口也回这两个数**（2026-08-07 补）：HR 关掉导入弹窗、隔天回来对账时只有列表接口了，合计不在那里等于对账做不了。两处都走 SQL 聚合而非累加返回列表——列表带 `limit`，超一页就会少算。
 
 同批次同类型重传 = 全量替换（`replaced` 报告删了几行），不需要先删除。导入是**整批一个事务**，收口在末尾那条带 `status != 'confirmed'` 谓词的 UPDATE 上：中途被人锁定则整批回滚，不会留下半批数据。`draft` 期允许导入但不推进状态（财务给表常早于考勤定版）；`reviewing` 期**拒绝**导入（400），要先退回「已计算」。
 
@@ -570,11 +570,20 @@
 
 列映射一律按 `alias`，**不按 column id**：id 是租户级的（本租户从 340771676 起），换租户全错。
 
-三条前端必须照做的口径：
+四条前端必须照做的口径：
 
-- **`source_count` 与 `synced` 不等时必须红色阻断**，不能塞进 warnings 里。「钉钉回了 66 人、落库 65 人」和「一切正常」在界面上长得一样，而少的那个人当月考勤全空 → 缺勤扣款按 0 → 多发钱。`failures` 给前 50 条明细，`failures_truncated` 标记截断。
+- **成功判据是 `missing_count == 0`，不是 `source_count == synced`。**（2026-08-07 对抗性审查改正）后者拿钉钉自己回的条数当分母：两份档案共用一个 `dingtalk_userid` 时钉钉只回一条、落库也只有一条，两个数**恰好相等**，`failed=0`、`unbound=[]`，界面全绿，而被覆盖的那个人当月考勤是空的。`missing` = 发薪名单 LEFT JOIN 考勤，谁没落上行都在里面，且**刷新后仍然查得到**（`failures` 只活在那一次响应里）。分母用 `payroll_headcount`。
 - **`missing_leave_columns` 要显式展示**：同步成功不等于数据齐了，这个数组说明哪几列钉钉给不了、需要人工补。
+- **`dirty_values` 非空时要提示**：钉钉某列有无法解析的值，该列月度合计会偏小。危险的不是整列坏掉（聚合出 0，一眼看得出），而是 31 天坏 11 天 → 聚合出 20.0，看起来完全正常。
 - **不传 ≠ 传 null。** PUT 用 `exclude_unset=True`：未传字段保持原值，显式传 `null` 才清空。HR 常常只改一格迟到——若按默认 `model_dump()` 走，未传的 `sick_leave_hours` 会以 `None` 落进 payload 把刚录的病假清掉，结果是少扣缺勤 + 白发 100 元全勤奖。空 body 回 400，不回「保存成功」。
+
+**同步的三道门**（2026-08-07 对抗性审查后加，每条都实测过后果）：
+
+1. **规则参数按批次月取，不按 `today`**。走 `period_service.resolve_params`（优先 `param_snapshot`，否则按当月最后一天查参数表）。8 月同步 3 月批次时，`service.load_params(db)` 的默认 today 会取到今天生效的版本：实测 `due_days` 落 26 而快照说 31，同一批次两个分母，底薪 10000 缺勤 4 天差 **248.14 元/人**，66 人同向偏。
+2. **`dingtalk_userid` 撞号整批拒绝**（400）。不是「跳过重复的继续跑」——唯一能救的时机是同步开始前。异常面板另有 `dingtalk_duplicate` 提前报，096 迁移加了唯一索引（UNIQUE 放过多个 NULL，没绑钉钉的人不受影响）。
+3. **`calculated` / `reviewing` 拒绝重新同步**（400）。状态机没有 `calculated → attendance_synced` 这条边，于是重同步时状态和版本号都不动，界面继续显示「已计算」而底下的考勤被改了，导出的是过期数字（实测约 1067 元/人）。要重来先退回「社保已导入」——那一步显式、有留痕。
+
+**钉钉缺列时不写 0，只写 `values` 里真正存在的 key。** HR 改报表列名是常规操作，`.get(k, 0)` 会把人工补录的迟到/漏打卡清零（实测 `late 3→0, miss 2→0, full False→True`），而这四个字段在钉钉考勤权限未开通时的唯一来源正是人工录入。次数类向上取整而非 `int()` 截断：0.6+0.6 应是 2 次而不是 1 次，异常不能被抹平成零头。
 
 `personal_leave_hours` / `sick_leave_hours` 的 **NULL 与 0 语义不同**：NULL = 还没录，0 = 确认无请假。NULL 状态下 `full_attendance` 恒为 `false`，且该员工会进异常面板的 blocking 列表。
 
@@ -592,7 +601,9 @@
 - **`blocking` 与 `info` 分开计数**：blocking = 「这么算出来的钱是错的」，info = 「你可能想看一眼」。混在一起的话 8 条正常的白名单提示会把 1 条致命未匹配淹掉，而 HR 只看列表长度决定要不要继续。列表默认 blocking 排前、同严重度内按 kind 聚拢。
 - **每条都带 `action`**（下一步做什么）与 `employee_id` / `ref.row_id`（前端点击定位）。只报现象不给动作的条目不该存在。
 
-`kind` 字符串是**前端契约**（配图标与跳转目标），改名等于改接口。v1 的 12 类：`dingtalk_unbound` / `attendance_missing` / `attendance_pending_manual` / `attendance_abnormal` / `insurance_unmatched` / `insurance_missing` / `insurance_whitelist` / `fund_unmatched` / `fund_missing` / `import_duplicate` / `bank_card_duplicate` / `base_salary_missing`。
+- **`by_kind[]` 带 `severity`**：分类筛选角标按它上色，前端照 kind 名再猜一次「这类算不算致命」必然会猜错。
+
+`kind` 字符串是**前端契约**（配图标与跳转目标），改名等于改接口。13 类：`dingtalk_unbound` / `dingtalk_duplicate` / `attendance_missing` / `attendance_pending_manual` / `attendance_abnormal` / `insurance_unmatched` / `insurance_missing` / `insurance_whitelist` / `fund_unmatched` / `fund_missing` / `import_duplicate` / `bank_card_duplicate` / `base_salary_missing`。
 
 三条容易踩反的判定：
 
@@ -601,3 +612,16 @@
 - **档案层不查身份证重复**：`ark_salary_employee_profile.id_card_hash` 有 UNIQUE 约束（`uk_salary_profile_id_card`），数据库已经拦死，再查一遍是永不触发的死代码——而死代码配上测试会让人误以为这条防线存在。真实风险在导入表，由 `import_duplicate` 覆盖。档案层只查银行卡（普通索引，可以撞）。
 
 保底触发、月中调薪加权、auto 被人工覆盖后 auto 已变这三类依赖 `ark_salary_record`，M3 算完才有数据，不在 v1 范围。
+
+### 前端页面（M2-f）
+
+| 路径 | 页面 | 说明 |
+|---|---|---|
+| `/salary/periods` | 批次列表 | **只做导航**，不放任何动作按钮 |
+| `/salary/periods/:id` | 批次工作台 | 考勤 / 导入 / 异常 / 时间线 / 状态推进，`hideInMenu` |
+
+版面顺序是口径的一部分：**异常清单在动作按钮之上**。反过来等于邀请 HR 在没看异常的情况下点「下一步」，而异常清单正是「该不该往下走」的唯一依据。同理批次列表不放动作按钮——列表页看不到异常。
+
+三处前端**刻意不复制**后端逻辑：`ready_to_calculate` 用后端的，不自己数 `blocking_count`；下一步按钮打哪个端点由 `next_steps[].endpoint` 决定（锁定走 `/confirm` 且权限是 `admin`，是特例），不在前端写状态判断；中文状态/事件文案一律用接口回的 `*_label`，两边各写一份必然漂。
+
+`/attendance/sync` 前端超时设 300 秒（client 默认 60 秒）：132 次钉钉调用实测跑一分钟出头，60 秒会在服务端仍在写库时掐断请求，界面显示「超时」而数据其实同步成功了，HR 于是重试，又是一分钟加一次限流额度。

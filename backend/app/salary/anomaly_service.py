@@ -148,22 +148,36 @@ def check_attendance(db: Session, period: SalaryPeriod,
         uid = (p.dingtalk_userid or "").strip()
         if uid:
             by_uid[uid].append(p)
+    dup_ids: set[int] = set()
     for uid, dupes in by_uid.items():
         if len(dupes) < 2:
             continue
-        names = "、".join(d.name for d in dupes)
-        for p in dupes:
-            out.append(_item(
-                KIND_DINGTALK_DUPLICATE, BLOCKING,
-                f"{p.name} 的钉钉 userid（{uid}）与 {names} 共用",
-                "同一个 userid 只能绑一个人，否则同步时其中一人考勤会是空的。"
-                "请到员工档案里改成各自真实的 userid",
-                employee_id=p.id, emp_no=p.emp_no, name=p.name,
-                ref={"dingtalk_userid": uid},
-            ))
+        dup_ids.update(d.id for d in dupes)
+        # **一组撞号出一条，不是一人一条。** 撞号是「这两个人共用一个号」这一件事，
+        # 报两遍会让 10 组撞号刷出 20 条 blocking，把真正待办（比如那一个未绑定的人）
+        # 按字母序压到清单末尾。当事人自己不进「与…共用」，否则读起来像自己跟自己撞。
+        # 写法照 KIND_BANK_CARD_DUPLICATE：employee_id 给第一个，其余进 ref.peers。
+        head, *peers = dupes
+        names = "、".join(d.name for d in peers)
+        out.append(_item(
+            KIND_DINGTALK_DUPLICATE, BLOCKING,
+            f"{head.name} 与 {names} 共用同一个钉钉 userid（{uid}）",
+            "同一个 userid 只能绑一个人，否则同步时其中一人考勤会是空的。"
+            "请到员工档案里改成各自真实的 userid",
+            employee_id=head.id, emp_no=head.emp_no, name=head.name,
+            ref={
+                "dingtalk_userid": uid,
+                "peers": [{"employee_id": d.id, "emp_no": d.emp_no, "name": d.name}
+                          for d in peers],
+            },
+        ))
 
     for p in profiles:
         row = rows.get(p.id)
+        # 撞号的人必然还没考勤行（同步被整批拒了），再各报一条「考勤缺失」是
+        # 同一件事说两遍——先把撞号改对，考勤缺失自然消失。
+        if p.id in dup_ids and row is None:
+            continue
         if not (p.dingtalk_userid or "").strip():
             out.append(_item(
                 KIND_DINGTALK_UNBOUND, BLOCKING,

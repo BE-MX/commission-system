@@ -407,3 +407,42 @@ def test_emp_no_normalization_kills_3_vs_003():
     a = ProfileCreate(emp_no="003", name="甲")
     b = ProfileCreate(emp_no=" 3 ", name="乙")
     assert a.emp_no == b.emp_no == "3"
+
+
+@pytest.mark.parametrize("blank", ["", "   "])
+def test_blank_dingtalk_userid_becomes_null_not_empty_string(blank):
+    """**096 唯一索引能不能用，全看这个归一。**
+
+    UNIQUE 放过任意多个 NULL，但把多个 `''` 当成重复。不归一的话「第二个不打卡
+    的员工」建不出来，HR 吃一个 500——而 66 人里必然有多个不打卡的人。
+    Create 和 Update 两条路径都要测：Update 更常踩（HR 清空甲再清空乙）。
+    """
+    from app.salary.schemas import ProfileCreate, ProfileUpdate
+
+    assert ProfileCreate(emp_no="1", name="甲", dingtalk_userid=blank).dingtalk_userid is None
+    assert ProfileUpdate(dingtalk_userid=blank).dingtalk_userid is None
+
+
+def test_real_dingtalk_userid_is_kept_but_trimmed():
+    """归一只砍空白，不能顺手把真 userid 也弄没了。"""
+    from app.salary.schemas import ProfileCreate, ProfileUpdate
+
+    assert ProfileCreate(emp_no="1", name="甲", dingtalk_userid=" U01 ").dingtalk_userid == "U01"
+    assert ProfileUpdate(dingtalk_userid=" U01 ").dingtalk_userid == "U01"
+
+
+def test_two_profiles_without_dingtalk_can_coexist(db):
+    """归一的真实后果：两个不绑钉钉的档案必须能同时存在（096 之后）。
+
+    `exclude_unset` 那套在这里没用——service 是 `model_dump()` 直接 setattr，
+    schema 归一是唯一的门。
+    """
+    from app.salary.schemas import ProfileCreate
+
+    service.create_profile(db, ProfileCreate(emp_no="1", name="甲", dingtalk_userid=""))
+    service.create_profile(db, ProfileCreate(emp_no="2", name="乙", dingtalk_userid=""))
+    db.commit()
+
+    rows = db.query(SalaryEmployeeProfile).all()
+    assert len(rows) == 2
+    assert all(r.dingtalk_userid is None for r in rows), "存成空串，第二个人就建不出来了"

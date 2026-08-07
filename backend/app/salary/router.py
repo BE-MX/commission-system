@@ -350,6 +350,7 @@ def list_period_events(
 ):
     _get_period_or_404(db, period_id)
     rows = period_service.list_events(db, period_id)
+    names = period_service.operator_names(db, rows)
     return ok([
         {
             "id": e.id,
@@ -365,6 +366,9 @@ def list_period_events(
             "reason": e.reason,
             "payload": e.payload,
             "created_by": e.created_by,
+            # 名字查不到时退回 id 字符串，而不是留空：时间线的用途就是
+            # 「谁在什么时候把这批数据改了」，留空等于这条留痕白写了。
+            "operator_name": names.get(e.created_by) or (str(e.created_by) if e.created_by else None),
             "created_at": e.created_at.isoformat() if e.created_at else None,
         }
         for e in rows

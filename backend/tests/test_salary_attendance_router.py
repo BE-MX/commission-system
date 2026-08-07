@@ -64,6 +64,11 @@ def db():
     Base.metadata.create_all(engine, tables=_TABLES)
     session = sessionmaker(bind=engine, autoflush=False)()
     seed_rule_params(session)
+    # **flush 不能省。** session 是 autoflush=False，seed 出来的 14 行还在 identity
+    # map 里没进库，紧跟的 bulk UPDATE 是直发 SQL——打在空表上，一行都没改到，
+    # 生效日仍是 2026-04-01。于是 2026-03 的批次取不到任何参数版本，
+    # 以前靠 param_decimal 回落硬编码默认值蒙对，测试全绿而分母是代码里写死的 31。
+    session.flush()
     session.query(SalaryRuleParam).update(
         {SalaryRuleParam.effective_from: dt.date(2026, 1, 1)}
     )

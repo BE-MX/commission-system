@@ -13,6 +13,7 @@ import datetime as dt
 from decimal import Decimal
 
 import pytest
+import sqlalchemy as sa
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -48,6 +49,11 @@ def db():
     Base.metadata.create_all(engine, tables=_TABLES)
     session = sessionmaker(bind=engine, autoflush=False)()
     seed_rule_params(session)
+    # **flush 不能省。** session 是 autoflush=False，seed 出来的 14 行还在 identity
+    # map 里没进库，紧跟的 bulk UPDATE 是直发 SQL——打在空表上，一行都没改到，
+    # 生效日仍是 2026-04-01。于是 2026-03 的批次取不到任何参数版本，
+    # 以前靠 param_decimal 回落硬编码默认值蒙对，测试全绿而分母是代码里写死的 31。
+    session.flush()
     session.query(SalaryRuleParam).update(
         {SalaryRuleParam.effective_from: dt.date(2026, 1, 1)})
     session.commit()
@@ -127,6 +133,17 @@ def kinds(result, severity=None):
             if severity is None or it["severity"] == severity]
 
 
+def allow_duplicate_userid(db):
+    """拆掉 096 的唯一索引，造出**存量**撞号档案。
+
+    096 之后数据库自己就会拒掉撞号，但面板这道检查是给存量数据用的：
+    096 之前建的档案、或任何绕过 ORM 的写入路径都可能留下这种数据。
+    与 test_salary_attendance.py 里同名的做法一致。
+    """
+    db.execute(sa.text("DROP INDEX IF EXISTS uk_salary_profile_dingtalk"))
+    db.commit()
+
+
 # ---------------------------------------------------------------------------
 # 干净批次不该报噪音
 # ---------------------------------------------------------------------------
@@ -176,6 +193,49 @@ def test_unbound_dingtalk_is_blocking(db, period):
     r = ans.collect(db, period)
     assert ans.KIND_DINGTALK_UNBOUND in kinds(r, ans.BLOCKING)
     assert r["ready_to_calculate"] is False
+
+
+def test_duplicate_userid_reports_one_item_per_group_not_per_person(db, period):
+    """**一组撞号出一条，不是一人一条。**
+
+    一人一条的话 10 组撞号刷出 20 条 blocking，而 `items.sort` 按 kind 字母序，
+    `attendance_missing` / `dingtalk_duplicate` 全排在 `dingtalk_unbound` 前面——
+    真正待办（那个未绑定的人）被压到清单末尾，确认弹窗还会说「还有 62 条」，
+    而实际只有十几件事要做。面板一旦看起来像噪音，HR 就会整体忽略它。
+    """
+    allow_duplicate_userid(db)
+    a = mk_profile(db, emp_no="A01", name="甲")
+    b = mk_profile(db, emp_no="A02", name="乙", dingtalk_userid="UA01")
+    r = ans.collect(db, period)
+
+    dupes = [it for it in r["items"] if it["kind"] == ans.KIND_DINGTALK_DUPLICATE]
+    assert len(dupes) == 1, f"一组撞号刷了 {len(dupes)} 条"
+    assert dupes[0]["severity"] == ans.BLOCKING
+    assert dupes[0]["employee_id"] == a.id
+    assert [x["employee_id"] for x in dupes[0]["ref"]["peers"]] == [b.id]
+    assert "乙" in dupes[0]["message"]
+    assert dupes[0]["message"].count("甲") == 1, "当事人自己进了「与…共用」，像自己跟自己撞"
+    assert r["ready_to_calculate"] is False
+
+
+def test_duplicate_userid_does_not_also_report_attendance_missing(db, period):
+    """撞号的人不再各报一条「考勤缺失」——一个根因刷 4 条待办是面板失效的开始。"""
+    allow_duplicate_userid(db)
+    mk_profile(db, emp_no="A01", name="甲")
+    mk_profile(db, emp_no="A02", name="乙", dingtalk_userid="UA01")
+    r = ans.collect(db, period)
+    assert ans.KIND_ATTENDANCE_MISSING not in kinds(r)
+    assert r["blocking_count"] == 1, f"一组撞号刷了 {r['blocking_count']} 条 blocking"
+
+
+def test_duplicate_userid_still_reports_attendance_when_row_exists(db, period):
+    """撞号但已有考勤行的人，其他检查照跑——撞号不是「跳过这个人」的通行证。"""
+    allow_duplicate_userid(db)
+    a = mk_profile(db, emp_no="A01", name="甲")
+    mk_profile(db, emp_no="A02", name="乙", dingtalk_userid="UA01")
+    mk_attendance(db, period, a, sick_leave_hours=None)
+    r = ans.collect(db, period)
+    assert ans.KIND_ATTENDANCE_PENDING in kinds(r), "请假小时没录仍要报，不能被撞号掩盖"
 
 
 def test_unbound_does_not_also_report_attendance_missing(db, period):
@@ -467,6 +527,49 @@ def test_by_kind_summary_matches_items(db, period):
     actual = Counter(i["kind"] for i in r["items"])
     assert {g["kind"]: g["count"] for g in r["by_kind"]} == dict(actual)
     assert sum(g["count"] for g in r["by_kind"]) == r["total"]
+
+
+def test_by_kind_carries_severity_for_the_ui_badges(db, period):
+    """**`by_kind[].severity` 是前端角标上色的唯一依据。**
+
+    恒为 info 的话所有角标变灰，致命异常看起来像提示，HR 会跳过它们直接点计算
+    （被 ready_to_calculate 挡住，但他不知道该修哪几条）。让前端照 kind 名
+    再猜一次「这类算不算致命」必然会猜错——新增 kind 时前端不会同步。
+    """
+    p = mk_profile(db)
+    mk_attendance(db, period, p, late_count=2, sick_leave_hours=None)
+    r = ans.collect(db, period)
+
+    sev = {g["kind"]: g["severity"] for g in r["by_kind"]}
+    assert sev[ans.KIND_ATTENDANCE_PENDING] == ans.BLOCKING
+    assert sev[ans.KIND_ATTENDANCE_ABNORMAL] == ans.INFO
+    # 分组的严重度必须和明细一致，不能各算一套
+    for g in r["by_kind"]:
+        actual = {i["severity"] for i in r["items"] if i["kind"] == g["kind"]}
+        assert actual == {g["severity"]}, f"{g['kind']} 分组与明细的严重度不一致"
+
+
+def test_ready_to_calculate_is_false_whenever_blocking_exists(db, period):
+    """`ready_to_calculate` 恒为 True 只会被一个权限测试**偶然**碰到，专门钉一条。
+
+    这是「能不能进计算」的唯一答案：恒 True 的话缺考勤、未匹配社保的批次
+    照样能往下走，M3 拿着空考勤按全勤发钱。
+    """
+    p = mk_profile(db)
+    mk_attendance(db, period, p, sick_leave_hours=None)   # 请假小时没录 = blocking
+    r = ans.collect(db, period)
+    assert r["blocking_count"] >= 1
+    assert r["ready_to_calculate"] is False
+
+    # 补录后当场放行——判据是真在数 blocking，不是写死的
+    row = db.query(SalaryAttendance).filter_by(employee_id=p.id).one()
+    row.sick_leave_hours = Decimal("0")
+    db.commit()
+    mk_insurance(db, period, p)
+    mk_fund(db, period, p)
+    r2 = ans.collect(db, period)
+    assert r2["blocking_count"] == 0
+    assert r2["ready_to_calculate"] is True
 
 
 def test_every_item_is_actionable(db, period):
