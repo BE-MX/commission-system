@@ -6,7 +6,13 @@ import pytest
 from PIL import Image
 
 from app.customer_image import file_service
-from app.customer_image.models import CustomerImageProduct, CustomerImageProductAsset
+from app.customer_image.models import (
+    CustomerImageAsset,
+    CustomerImageGeneration,
+    CustomerImageInvite,
+    CustomerImageProduct,
+    CustomerImageProductAsset,
+)
 from app.design_image.models import DesignImageLibraryAsset
 
 
@@ -25,6 +31,23 @@ def _product(db):
     return row
 
 
+def _invite(db, suffix="aaaaaa"):
+    row = CustomerImageInvite(
+        customer_id=f"customer-{suffix}",
+        customer_name_snapshot="Customer",
+        created_by=1,
+        okki_salesperson_id_snapshot="1007",
+        token_hash=suffix[0] * 64,
+        token_suffix=suffix,
+        starts_at=file_service.utcnow(),
+        expires_at=file_service.utcnow().replace(year=2099),
+        quota_total=2,
+    )
+    db.add(row)
+    db.commit()
+    return row
+
+
 def test_upload_replacement_retires_old_row_without_deleting_old_file(db, tmp_path, monkeypatch):
     monkeypatch.setattr("app.design_image.file_service._storage_root", lambda: tmp_path)
     product = _product(db)
@@ -37,10 +60,7 @@ def test_upload_replacement_retires_old_row_without_deleting_old_file(db, tmp_pa
     assert first.retired_at is not None
     assert old_path.read_bytes()
     with pytest.raises(FileNotFoundError):
-        file_service.open_product_asset(db, product.id, first.id)
-    assert file_service.open_product_asset(
-        db, product.id, first.id, allow_retired=True
-    ).read()
+        file_service.open_product_asset_content(db, product.id, first.id)
     assert second.retired_at is None
     assert product.config_version == 3
 
@@ -63,7 +83,7 @@ def test_library_copy_survives_source_deletion(db, tmp_path, monkeypatch):
     library.deleted_at = file_service.utcnow()
     db.commit()
 
-    assert file_service.open_product_asset(db, product.id, asset.id).read() == normalized.content
+    assert file_service.open_product_asset_content(db, product.id, asset.id).read() == normalized.content
 
 
 def test_database_failure_cleans_new_product_files(db, tmp_path, monkeypatch):
@@ -106,12 +126,80 @@ def test_product_asset_open_rejects_retired_and_cross_product_rows(db, tmp_path,
     )
 
     with pytest.raises(FileNotFoundError):
-        file_service.open_product_asset(db, second_product.id, asset.id)
+        file_service.open_product_asset_content(db, second_product.id, asset.id)
 
     asset.retired_at = file_service.utcnow()
     db.commit()
     with pytest.raises(FileNotFoundError):
-        file_service.open_product_asset(db, first_product.id, asset.id)
+        file_service.open_product_asset_content(db, first_product.id, asset.id)
+
+
+def test_frozen_generation_reads_only_its_listed_retired_reference(db, tmp_path, monkeypatch):
+    monkeypatch.setattr("app.design_image.file_service._storage_root", lambda: tmp_path)
+    product = _product(db)
+    invite = _invite(db)
+    listed = file_service.replace_product_asset_from_upload(
+        db, product, "reference", 0, _png_bytes("red"), "image/png"
+    )
+    unlisted = file_service.replace_product_asset_from_upload(
+        db, product, "reference", 1, _png_bytes("green"), "image/png"
+    )
+    listed.retired_at = file_service.utcnow()
+    unlisted.retired_at = file_service.utcnow()
+    logo = CustomerImageAsset(
+        invite_id=invite.id, asset_type="logo", storage_path="unused.png",
+        mime_type="image/png", file_size=1, width=1, height=1, sha256="f" * 64,
+    )
+    db.add(logo)
+    db.flush()
+    generation = CustomerImageGeneration(
+        invite_id=invite.id, product_id=product.id, logo_asset_id=logo.id,
+        request_id="request-1", product_name_snapshot=product.name,
+        config_version_snapshot=product.config_version, option_snapshot={},
+        prompt_snapshot="prompt", reference_asset_ids=[listed.id],
+        preset_name="customer_image_generation",
+    )
+    db.add(generation)
+    db.commit()
+
+    assert file_service.open_generation_reference_content(
+        db, generation.id, listed.id
+    ).read()
+    with pytest.raises(FileNotFoundError):
+        file_service.open_generation_reference_content(db, generation.id, unlisted.id)
+
+
+def test_invite_assets_use_private_kinds_and_enforce_invite_scope(db, tmp_path, monkeypatch):
+    monkeypatch.setattr("app.design_image.file_service._storage_root", lambda: tmp_path)
+    invite = _invite(db)
+    other_invite = _invite(db, "bbbbbb")
+    normalized = file_service.normalize_upload(_png_bytes(), "image/png")
+
+    asset = file_service.save_invite_image(db, invite.id, normalized, "logo")
+
+    assert asset.storage_path.startswith(f"{invite.id}/customer-logo/")
+    assert file_service.open_invite_asset_content(db, invite.id, asset.id).read()
+    assert file_service.open_invite_asset_content(
+        db, invite.id, asset.id, thumbnail=True
+    ).read()
+    with pytest.raises(FileNotFoundError):
+        file_service.open_invite_asset_content(db, other_invite.id, asset.id)
+    asset.deleted_at = file_service.utcnow()
+    db.commit()
+    with pytest.raises(FileNotFoundError):
+        file_service.open_invite_asset_content(db, invite.id, asset.id)
+
+
+def test_invite_asset_database_failure_cleans_files(db, tmp_path, monkeypatch):
+    monkeypatch.setattr("app.design_image.file_service._storage_root", lambda: tmp_path)
+    invite = _invite(db)
+    normalized = file_service.normalize_upload(_png_bytes(), "image/png")
+    monkeypatch.setattr(db, "commit", lambda: (_ for _ in ()).throw(RuntimeError("db failed")))
+
+    with pytest.raises(RuntimeError, match="db failed"):
+        file_service.save_invite_image(db, invite.id, normalized, "generated")
+
+    assert list(tmp_path.rglob("*.png")) == []
 
 
 def test_storage_wrapper_rejects_path_traversal(tmp_path, monkeypatch):

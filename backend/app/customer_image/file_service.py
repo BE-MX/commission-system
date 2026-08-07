@@ -9,9 +9,16 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.customer_image.models import CustomerImageProduct, CustomerImageProductAsset
+from app.customer_image.models import (
+    CustomerImageAsset,
+    CustomerImageGeneration,
+    CustomerImageInvite,
+    CustomerImageProduct,
+    CustomerImageProductAsset,
+)
 from app.design_image import file_service as shared_files
 from app.design_image.models import DesignImageLibraryAsset
+from app.design_image.service import _thumbnail_path
 
 
 ImageStorageError = shared_files.ImageStorageError
@@ -27,12 +34,14 @@ def utcnow() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
-def _delete_stored_files(relative_path: str, thumbnail_relative_path: str) -> None:
+def _delete_stored_files(
+    relative_path: str, thumbnail_relative_path: str, context: str
+) -> None:
     for path in (relative_path, thumbnail_relative_path):
         try:
             delete_private_file(path)
         except Exception as exc:
-            message = f"[customer-image] product asset rollback cleanup failed: {exc}"
+            message = f"[customer-image] {context} rollback cleanup failed: {exc}"
             logger.warning(message)
             print(message, flush=True)
 
@@ -77,7 +86,9 @@ def _replace_with_normalized(
         db.commit()
     except Exception:
         db.rollback()
-        _delete_stored_files(stored.relative_path, stored.thumbnail_relative_path)
+        _delete_stored_files(
+            stored.relative_path, stored.thumbnail_relative_path, "product asset"
+        )
         raise
     db.refresh(asset)
     return asset
@@ -118,23 +129,97 @@ def replace_product_asset_from_library(
     return _replace_with_normalized(db, product, role, position, normalized)
 
 
-def open_product_asset(
+def _open_relative_content(relative_path: str, not_found_message: str) -> io.BytesIO:
+    try:
+        return io.BytesIO(resolve_private_path(relative_path).read_bytes())
+    except (OSError, ImageStorageError):
+        raise FileNotFoundError(not_found_message) from None
+
+
+def open_product_asset_content(
     db: Session,
     product_id: int,
     asset_id: int,
-    *,
-    allow_retired: bool = False,
 ) -> io.BytesIO:
-    statement = select(CustomerImageProductAsset).where(
+    asset = db.scalar(
+        select(CustomerImageProductAsset).where(
             CustomerImageProductAsset.id == asset_id,
             CustomerImageProductAsset.product_id == product_id,
+            CustomerImageProductAsset.retired_at.is_(None),
         )
-    if not allow_retired:
-        statement = statement.where(CustomerImageProductAsset.retired_at.is_(None))
-    asset = db.scalar(statement)
+    )
     if asset is None:
         raise FileNotFoundError("product asset not found")
-    try:
-        return io.BytesIO(resolve_private_path(asset.storage_path).read_bytes())
-    except (OSError, ImageStorageError):
+    return _open_relative_content(asset.storage_path, "product asset not found")
+
+
+def open_generation_reference_content(
+    db: Session, generation_id: int, asset_id: int
+) -> io.BytesIO:
+    generation = db.get(CustomerImageGeneration, generation_id)
+    if generation is None or asset_id not in generation.reference_asset_ids:
         raise FileNotFoundError("product asset not found") from None
+    asset = db.scalar(
+        select(CustomerImageProductAsset).where(
+            CustomerImageProductAsset.id == asset_id,
+            CustomerImageProductAsset.product_id == generation.product_id,
+        )
+    )
+    if asset is None:
+        raise FileNotFoundError("product asset not found")
+    return _open_relative_content(asset.storage_path, "product asset not found")
+
+
+def save_invite_image(
+    db: Session,
+    invite_id: int,
+    normalized: NormalizedImage,
+    asset_type: str,
+) -> CustomerImageAsset:
+    if asset_type not in {"logo", "generated"}:
+        raise ValueError("invite asset type must be logo or generated")
+    if db.get(CustomerImageInvite, invite_id) is None:
+        raise FileNotFoundError("invite not found")
+    kind = "customer-logo" if asset_type == "logo" else "customer-output"
+    stored = save_private_image(normalized, owner_user_id=invite_id, kind=kind)
+    try:
+        asset = CustomerImageAsset(
+            invite_id=invite_id,
+            asset_type=asset_type,
+            storage_path=stored.relative_path,
+            mime_type=stored.mime_type,
+            file_size=stored.file_size,
+            width=stored.width,
+            height=stored.height,
+            sha256=stored.sha256,
+        )
+        db.add(asset)
+        db.commit()
+    except Exception:
+        db.rollback()
+        _delete_stored_files(
+            stored.relative_path, stored.thumbnail_relative_path, "invite asset"
+        )
+        raise
+    db.refresh(asset)
+    return asset
+
+
+def open_invite_asset_content(
+    db: Session,
+    invite_id: int,
+    asset_id: int,
+    *,
+    thumbnail: bool = False,
+) -> io.BytesIO:
+    asset = db.scalar(
+        select(CustomerImageAsset).where(
+            CustomerImageAsset.id == asset_id,
+            CustomerImageAsset.invite_id == invite_id,
+            CustomerImageAsset.deleted_at.is_(None),
+        )
+    )
+    if asset is None:
+        raise FileNotFoundError("invite asset not found")
+    relative_path = _thumbnail_path(asset.storage_path) if thumbnail else asset.storage_path
+    return _open_relative_content(relative_path, "invite asset not found")
