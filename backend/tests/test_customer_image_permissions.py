@@ -33,6 +33,8 @@ EXPECTED = {
     ("post", "/products/{product_id}/assets/upload"): "customer_image:admin",
     ("post", "/products/{product_id}/assets/library"): "customer_image:admin",
     ("get", "/products/{product_id}/assets/{asset_id}/content"): "customer_image:admin",
+    ("get", "/library-assets"): "customer_image:admin",
+    ("get", "/library-assets/{asset_id}/content"): "customer_image:admin",
     ("get", "/invites"): "customer_image:read",
     ("post", "/invites"): "customer_image:write",
     ("post", "/invites/{invite_id}/revoke"): "customer_image:write",
@@ -66,6 +68,8 @@ def test_router_has_exact_permission_dependency_per_endpoint():
         ("post", "/products/1/assets/upload", {"data": {"role": "cover", "position": "0"}, "files": {"file": ("x.png", b"x", "image/png")}}),
         ("post", "/products/1/assets/library", {"json": {"source_asset_id": 1, "role": "cover", "position": 0}}),
         ("get", "/products/1/assets/1/content", {}),
+        ("get", "/library-assets", {}),
+        ("get", "/library-assets/1/content", {}),
     ("post", "/invites", {"json": {}}), ("post", "/invites/1/revoke", {}),
     ("get", "/generations", {}),
 ])

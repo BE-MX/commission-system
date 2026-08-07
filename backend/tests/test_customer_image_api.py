@@ -75,6 +75,7 @@ def _row(**overrides):
 def api(monkeypatch):
     from app.customer_image import router as module
     from app.customer_image import service
+    from app.design_image import library_service
 
     app = FastAPI()
     app.include_router(module.router, prefix="/api/customer-image")
@@ -92,6 +93,8 @@ def api(monkeypatch):
     invite = _row(id=2)
     generation = _row(id=3, invite_id=2)
     asset = _row(id=4, product_id=1)
+    public_library = _row(id=9, scope="public", owner_user_id=8, title="Public")
+    private_library = _row(id=10, scope="private", owner_user_id=7, title="Mine")
     monkeypatch.setattr(service, "list_products", lambda *_a, **_k: [product])
     monkeypatch.setattr(service, "list_product_options", lambda *_a, **_k: [_row(id=11)])
     monkeypatch.setattr(service, "create_product", lambda *_a, **_k: product)
@@ -102,6 +105,11 @@ def api(monkeypatch):
     monkeypatch.setattr(service, "list_current_product_assets", lambda *_a, **_k: [asset])
     monkeypatch.setattr(service, "get_current_product_asset", lambda *_a, **_k: asset)
     monkeypatch.setattr(service, "get_product", lambda *_a, **_k: product)
+    monkeypatch.setattr(
+        library_service,
+        "list_library_assets",
+        lambda _db, _owner, scope: [public_library] if scope == "public" else [private_library],
+    )
     monkeypatch.setattr(service, "list_available_customers", lambda *_a, **_k: [{"id": "C1"}])
     monkeypatch.setattr(service, "create_invite", lambda *_a, **_k: (invite, "plain-token"))
     monkeypatch.setattr(service, "list_invites", lambda *_a, **_k: [invite])
@@ -130,6 +138,7 @@ PRODUCT = {
         ("post", "/api/customer-image/products/1/publish", {}),
         ("post", "/api/customer-image/products/1/unpublish", {}),
         ("get", "/api/customer-image/products/1/assets", {}),
+        ("get", "/api/customer-image/library-assets", {}),
         ("get", "/api/customer-image/invites", {}),
         ("post", "/api/customer-image/invites", {"json": {"customer_id": "C1", "product_ids": [1], "expires_at": "2099-01-01T00:00:00Z", "quota_total": 5}}),
         ("post", "/api/customer-image/invites/2/revoke", {}),
@@ -206,6 +215,49 @@ def test_product_asset_json_endpoints_never_return_storage_path(api, monkeypatch
         assert response.status_code == 200, response.text
         assert set(response.json()) == {"code", "message", "data"}
         assert "storage_path" not in response.text
+
+
+def test_customer_image_admin_without_design_image_read_can_browse_library(api):
+    client, app, _service = api
+    app.dependency_overrides[get_current_user] = lambda: {
+        "sub": "7",
+        "roles": [],
+        "permissions": ["customer_image:admin"],
+    }
+
+    response = client.get("/api/customer-image/library-assets")
+
+    assert response.status_code == 200
+    items = response.json()["data"]["items"]
+    assert [(item["id"], item["scope"]) for item in items] == [(10, "private"), (9, "public")]
+    assert "storage_path" not in response.text
+
+
+def test_customer_image_library_thumbnail_is_private_binary(api, monkeypatch):
+    client, app, _service = api
+    from app.design_image import library_service, service as design_service
+    import io
+
+    app.dependency_overrides[get_current_user] = lambda: {
+        "sub": "7", "roles": [], "permissions": ["customer_image:admin"]
+    }
+    captured = []
+    stream = io.BytesIO(b"thumb")
+    monkeypatch.setattr(
+        library_service,
+        "open_library_asset_content",
+        lambda _db, owner, asset_id, thumbnail: captured.append((owner, asset_id, thumbnail))
+        or design_service.AssetContent(stream, "image/png", ".png"),
+    )
+
+    response = client.get("/api/customer-image/library-assets/10/content?thumbnail=true")
+
+    assert response.status_code == 200
+    assert response.content == b"thumb"
+    assert response.headers["content-type"] == "image/png"
+    assert response.headers["cache-control"] == "private, no-store"
+    assert captured == [(7, 10, True)]
+    assert stream.closed is True
 
 
 def test_product_asset_content_is_private_binary(api, monkeypatch):

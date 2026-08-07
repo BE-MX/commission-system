@@ -128,6 +128,48 @@ def test_library_copy_survives_source_deletion(db, tmp_path, monkeypatch):
     assert file_service.open_product_asset_content(db, product.id, asset.id).read() == normalized.content
 
 
+def test_other_users_private_library_is_not_listed_and_cannot_be_copied(
+    db, tmp_path, monkeypatch
+):
+    from app.design_image import library_service
+
+    monkeypatch.setattr("app.design_image.file_service._storage_root", lambda: tmp_path)
+    product = _product(db)
+    normalized = file_service.normalize_upload(_png_bytes(), "image/png")
+    stored = file_service.save_private_image(normalized, owner_user_id=8, kind="library")
+    other_private = DesignImageLibraryAsset(
+        scope="private", owner_user_id=8, created_by=8, title="Other private",
+        storage_path=stored.relative_path, mime_type=stored.mime_type, file_size=stored.file_size,
+        width=stored.width, height=stored.height, sha256=stored.sha256,
+    )
+    db.add(other_private)
+    db.commit()
+
+    assert library_service.list_library_assets(db, 7, "private") == []
+    with pytest.raises(FileNotFoundError, match="library asset not found"):
+        file_service.replace_product_asset_from_library(
+            db, product, "cover", 0, other_private.id, admin_id=7
+        )
+
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from app.auth.dependencies import get_current_user
+    from app.core.database import get_db
+    from app.customer_image.router import router
+
+    app = FastAPI()
+    app.include_router(router, prefix="/api/customer-image")
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_current_user] = lambda: {
+        "sub": "7", "roles": [], "permissions": ["customer_image:admin"]
+    }
+    response = TestClient(app).post(
+        f"/api/customer-image/products/{product.id}/assets/library",
+        json={"source_asset_id": other_private.id, "role": "cover", "position": 0},
+    )
+    assert response.status_code == 404
+
+
 def test_database_failure_cleans_new_product_files(db, tmp_path, monkeypatch):
     monkeypatch.setattr("app.design_image.file_service._storage_root", lambda: tmp_path)
     product = _product(db)

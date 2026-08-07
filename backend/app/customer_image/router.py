@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
+from starlette.background import BackgroundTask
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_permission
@@ -14,6 +15,8 @@ from app.customer_image.schemas import (
     CustomerImageProductAssetCopy,
     CustomerImageProductUpsert,
 )
+from app.design_image import library_service
+from app.design_image import service as design_image_service
 
 
 router = APIRouter()
@@ -44,6 +47,10 @@ def _call(function, *args, **kwargs):
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
     except FileNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    except design_image_service.DesignImageNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    except design_image_service.DesignImageConsistencyError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
     except ValueError as exc:
         code = status.HTTP_404_NOT_FOUND if "not found" in str(exc) else status.HTTP_400_BAD_REQUEST
         raise HTTPException(code, str(exc)) from exc
@@ -106,6 +113,22 @@ def _product_asset(row) -> dict:
         "width": row.width,
         "height": row.height,
         "content_url": content_url,
+    }
+
+
+def _library_asset(row) -> dict:
+    content_url = f"/api/customer-image/library-assets/{row.id}/content"
+    return {
+        "id": row.id,
+        "scope": row.scope,
+        "title": row.title,
+        "mime_type": row.mime_type,
+        "file_size": row.file_size,
+        "width": row.width,
+        "height": row.height,
+        "created_at": _iso(row.created_at),
+        "content_url": content_url,
+        "thumbnail_url": f"{content_url}?thumbnail=true",
     }
 
 
@@ -299,6 +322,42 @@ def get_product_asset_content(
         stream,
         media_type=asset.mime_type,
         headers={"Cache-Control": "private, no-store"},
+    )
+
+
+@router.get("/library-assets")
+def list_library_assets(
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_permission("customer_image:admin")),
+):
+    owner_id = _user_id(payload)
+    rows = [
+        *_call(library_service.list_library_assets, db, owner_id, "public"),
+        *_call(library_service.list_library_assets, db, owner_id, "private"),
+    ]
+    rows.sort(key=lambda row: (row.created_at, row.id), reverse=True)
+    return ok({"items": [_library_asset(row) for row in rows]})
+
+
+@router.get("/library-assets/{asset_id}/content")
+def get_library_asset_content(
+    asset_id: int,
+    thumbnail: bool = Query(False),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_permission("customer_image:admin")),
+):
+    content = _call(
+        library_service.open_library_asset_content,
+        db,
+        _user_id(payload),
+        asset_id,
+        thumbnail=thumbnail,
+    )
+    return StreamingResponse(
+        content.stream,
+        media_type=content.mime_type,
+        headers={"Cache-Control": "private, no-store"},
+        background=BackgroundTask(content.stream.close),
     )
 
 

@@ -516,6 +516,8 @@
 | POST | `/products/{product_id}/assets/upload` | admin | multipart `file`、`role=cover\|reference`、`position>=0`；同槽位替换会退役旧资产并递增产品配置版本。 |
 | POST | `/products/{product_id}/assets/library` | admin | body `{source_asset_id, role, position}`；从有权访问的生图工作台图库复制后替换槽位，源图后续删除不影响产品。 |
 | GET | `/products/{product_id}/assets/{asset_id}/content` | admin | 读取当前产品资产的私有二进制内容；跨产品、已退役或不存在统一 404。 |
+| GET | `/library-assets` | admin | 合并返回生图工作台公共图库与当前 Ark 用户本人私有图库候选；只要求 `customer_image:admin`，不要求 `design_image:read`，且不返回 `storage_path`。 |
+| GET | `/library-assets/{asset_id}/content` | admin | 受控读取可见候选，`thumbnail=true` 返回缩略图；他人 private 与不存在统一 404，响应使用真实 MIME 和 `private, no-store`。 |
 | GET | `/invites` | read | 管理员看全部，普通用户只看自己创建的邀请；仅返回 `token_suffix`，永不返回 `token_hash` 或明文 token。 |
 | POST | `/invites` | write | body `{customer_id, product_ids, expires_at, quota_total}`；客户必须在调用者范围内，产品必须已发布。响应仅本次包含 `invite_url`。 |
 | POST | `/invites/{invite_id}/revoke` | write | 幂等撤销；普通用户跨 owner 操作返回 404。 |
