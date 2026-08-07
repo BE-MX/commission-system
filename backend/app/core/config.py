@@ -118,6 +118,15 @@ class Settings(BaseSettings):
     DESIGN_IMAGE_MAX_UPLOAD_MB: _PositiveInt = 20
     DESIGN_IMAGE_MAX_PIXELS: _PositiveInt = 60_000_000
 
+    # Customer image portal reuses the design-image storage and upload limits.
+    CUSTOMER_IMAGE_PRESET_NAME: str = "design_image_generation"
+    CUSTOMER_IMAGE_WORKER_CONCURRENCY: _PositiveInt = 2
+    CUSTOMER_IMAGE_LEASE_SECONDS: _PositiveInt = 420
+    CUSTOMER_IMAGE_STALE_SECONDS: _PositiveInt = 480
+    CUSTOMER_IMAGE_RETENTION_DAYS: _PositiveInt = 30
+    CUSTOMER_IMAGE_PUBLIC_RATE_PER_MINUTE: _PositiveInt = 30
+    CUSTOMER_IMAGE_MAX_REQUIREMENT_CHARS: _PositiveInt = 500
+
     # ── AI 生图代理（可选，仅 image_service 生图链路走；文本 chat 不受影响）──
     # 北京展会实例出口对 api.wlai.vip 存在 SNI 阻断（2026-07-31 实证），该实例配
     # socks5://127.0.0.1:1081 借 SSH 隧道从新加坡机出境；办公室生产留空=直连。
@@ -219,6 +228,11 @@ class Settings(BaseSettings):
         if self.DESIGN_IMAGE_STALE_SECONDS <= self.DESIGN_IMAGE_LEASE_SECONDS:
             raise ValueError(
                 "DESIGN_IMAGE_STALE_SECONDS 必须大于 DESIGN_IMAGE_LEASE_SECONDS"
+            )
+        if self.CUSTOMER_IMAGE_STALE_SECONDS <= self.CUSTOMER_IMAGE_LEASE_SECONDS:
+            raise ValueError(
+                "CUSTOMER_IMAGE_STALE_SECONDS must be greater than "
+                "CUSTOMER_IMAGE_LEASE_SECONDS"
             )
         if self.APP_ENV != "production":
             return self

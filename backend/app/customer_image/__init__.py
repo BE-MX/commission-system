@@ -1,0 +1,1 @@
+"""Customer image portal domain."""
