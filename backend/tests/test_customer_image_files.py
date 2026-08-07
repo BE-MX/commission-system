@@ -169,6 +169,36 @@ def test_frozen_generation_reads_only_its_listed_retired_reference(db, tmp_path,
         file_service.open_generation_reference_content(db, generation.id, unlisted.id)
 
 
+def test_frozen_generation_rejects_listed_asset_from_another_product(db, tmp_path, monkeypatch):
+    monkeypatch.setattr("app.design_image.file_service._storage_root", lambda: tmp_path)
+    product = _product(db)
+    other_product = _product(db)
+    invite = _invite(db)
+    cross_product_asset = file_service.replace_product_asset_from_upload(
+        db, other_product, "reference", 0, _png_bytes(), "image/png"
+    )
+    logo = CustomerImageAsset(
+        invite_id=invite.id, asset_type="logo", storage_path="unused.png",
+        mime_type="image/png", file_size=1, width=1, height=1, sha256="f" * 64,
+    )
+    db.add(logo)
+    db.flush()
+    generation = CustomerImageGeneration(
+        invite_id=invite.id, product_id=product.id, logo_asset_id=logo.id,
+        request_id="request-cross-product", product_name_snapshot=product.name,
+        config_version_snapshot=product.config_version, option_snapshot={},
+        prompt_snapshot="prompt", reference_asset_ids=[cross_product_asset.id],
+        preset_name="customer_image_generation",
+    )
+    db.add(generation)
+    db.commit()
+
+    with pytest.raises(FileNotFoundError):
+        file_service.open_generation_reference_content(
+            db, generation.id, cross_product_asset.id
+        )
+
+
 def test_invite_assets_use_private_kinds_and_enforce_invite_scope(db, tmp_path, monkeypatch):
     monkeypatch.setattr("app.design_image.file_service._storage_root", lambda: tmp_path)
     invite = _invite(db)
@@ -200,6 +230,19 @@ def test_invite_asset_database_failure_cleans_files(db, tmp_path, monkeypatch):
         file_service.save_invite_image(db, invite.id, normalized, "generated")
 
     assert list(tmp_path.rglob("*.png")) == []
+
+
+def test_generated_invite_asset_uses_output_partition_and_is_readable(db, tmp_path, monkeypatch):
+    monkeypatch.setattr("app.design_image.file_service._storage_root", lambda: tmp_path)
+    invite = _invite(db)
+    normalized = file_service.normalize_upload(_png_bytes("blue"), "image/png")
+
+    asset = file_service.save_invite_image(db, invite.id, normalized, "generated")
+
+    assert asset.storage_path.startswith(f"{invite.id}/customer-output/")
+    assert file_service.open_invite_asset_content(
+        db, invite.id, asset.id
+    ).read() == normalized.content
 
 
 def test_storage_wrapper_rejects_path_traversal(tmp_path, monkeypatch):
