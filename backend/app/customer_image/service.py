@@ -10,6 +10,7 @@ from app.auth.models import ArkUserExternalBinding
 from app.models.business import CustomerInfo
 from app.models.customer import CustomerCommissionSnapshot
 from app.customer_image.models import (
+    CustomerImageAsset,
     CustomerImageGeneration,
     CustomerImageInvite,
     CustomerImageInviteProduct,
@@ -486,3 +487,52 @@ def list_generations(
         ).offset((page - 1) * page_size).limit(page_size)
     ).all())
     return rows, total
+
+
+def list_public_products(db: Session, invite_id: int) -> list[CustomerImageProduct]:
+    return list(db.scalars(
+        select(CustomerImageProduct)
+        .join(CustomerImageInviteProduct, CustomerImageInviteProduct.product_id == CustomerImageProduct.id)
+        .where(
+            CustomerImageInviteProduct.invite_id == invite_id,
+            CustomerImageProduct.is_published.is_(True),
+        )
+        .options(
+            selectinload(CustomerImageProduct.assets.and_(CustomerImageProductAsset.retired_at.is_(None))),
+            selectinload(CustomerImageProduct.options).selectinload(
+                CustomerImageProductOption.values.and_(CustomerImageOptionValue.is_active.is_(True))
+            ),
+        )
+        .order_by(CustomerImageProduct.sort, CustomerImageProduct.id)
+    ).all())
+
+
+def get_public_product_asset(
+    db: Session, invite_id: int, product_id: int, asset_id: int
+) -> CustomerImageProductAsset:
+    asset = db.scalar(
+        select(CustomerImageProductAsset)
+        .join(CustomerImageProduct, CustomerImageProduct.id == CustomerImageProductAsset.product_id)
+        .join(CustomerImageInviteProduct, CustomerImageInviteProduct.product_id == CustomerImageProduct.id)
+        .where(
+            CustomerImageInviteProduct.invite_id == invite_id,
+            CustomerImageProduct.id == product_id,
+            CustomerImageProduct.is_published.is_(True),
+            CustomerImageProductAsset.id == asset_id,
+            CustomerImageProductAsset.retired_at.is_(None),
+        )
+    )
+    if asset is None:
+        raise CustomerImageNotFoundError("product asset not found")
+    return asset
+
+
+def get_public_invite_asset(db: Session, invite_id: int, asset_id: int) -> CustomerImageAsset:
+    asset = db.scalar(select(CustomerImageAsset).where(
+        CustomerImageAsset.id == asset_id,
+        CustomerImageAsset.invite_id == invite_id,
+        CustomerImageAsset.deleted_at.is_(None),
+    ))
+    if asset is None:
+        raise CustomerImageNotFoundError("invite asset not found")
+    return asset

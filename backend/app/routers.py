@@ -40,6 +40,7 @@ from app.card.public_router import router as card_public_router
 from app.design_image.router import router as design_image_router
 from app.salary.router import router as salary_router
 from app.customer_image.router import router as customer_image_router
+from app.customer_image.public_router import router as customer_image_public_router
 
 
 def register_routers(app: FastAPI) -> None:
@@ -84,4 +85,5 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(card_admin_router, prefix="/api/card", tags=["名片管家"])
     app.include_router(card_public_router, prefix="/api/card", tags=["名片管家-公开"])
     app.include_router(design_image_router, prefix="/api/design-image", tags=["AI 生图工作台"])
+    app.include_router(customer_image_public_router, prefix="/api/customer-image/public", tags=["客户生图门户-公开"])
     app.include_router(customer_image_router, prefix="/api/customer-image", tags=["客户生图门户"])

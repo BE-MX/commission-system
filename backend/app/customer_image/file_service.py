@@ -222,6 +222,41 @@ def save_invite_image(
     return asset
 
 
+def replace_current_logo(
+    db: Session, invite_id: int, normalized: NormalizedImage
+) -> CustomerImageAsset:
+    stored = save_private_image(normalized, owner_user_id=invite_id, kind="customer-logo")
+    try:
+        invite = db.scalar(
+            select(CustomerImageInvite)
+            .where(CustomerImageInvite.id == invite_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if invite is None:
+            raise FileNotFoundError("invite not found")
+        asset = CustomerImageAsset(
+            invite_id=invite_id,
+            asset_type="logo",
+            storage_path=stored.relative_path,
+            mime_type=stored.mime_type,
+            file_size=stored.file_size,
+            width=stored.width,
+            height=stored.height,
+            sha256=stored.sha256,
+        )
+        db.add(asset)
+        db.flush()
+        invite.current_logo_asset_id = asset.id
+        db.commit()
+    except Exception:
+        db.rollback()
+        _delete_stored_files(stored.relative_path, stored.thumbnail_relative_path, "current logo")
+        raise
+    db.refresh(asset)
+    return asset
+
+
 def open_invite_asset_content(
     db: Session,
     invite_id: int,

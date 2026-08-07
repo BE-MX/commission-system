@@ -112,3 +112,47 @@ class CustomerImageGenerationCreate(BaseModel):
     request_id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
     selections: dict[str, str | bool]
     requirement: str = Field(default="", max_length=500)
+
+
+class CustomerImagePublicAsset(BaseModel):
+    id: int
+    role: str | None = None
+    position: int | None = None
+    mime_type: str
+    file_size: int
+    width: int
+    height: int
+
+
+class CustomerImagePublicOptionValue(BaseModel):
+    value: str
+    label: str
+    color_hex: str | None = None
+    pantone_code: str | None = None
+
+
+class CustomerImagePublicOption(BaseModel):
+    key: str
+    label: str
+    control_type: str
+    required: bool
+    default_value: str | None = None
+    values: list[CustomerImagePublicOptionValue]
+
+
+class CustomerImagePublicProduct(BaseModel):
+    id: int
+    name: str
+    category: str
+    description: str | None = None
+    options: list[CustomerImagePublicOption]
+    assets: list[CustomerImagePublicAsset]
+
+
+class CustomerImagePublicContext(BaseModel):
+    brand_name: str
+    customer_display_name: str
+    expires_at: datetime
+    quota: dict[str, int]
+    current_logo: CustomerImagePublicAsset | None
+    visible_product_count: int
