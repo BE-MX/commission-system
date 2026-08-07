@@ -28,6 +28,11 @@ EXPECTED = {
     ("put", "/products/{product_id}"): "customer_image:admin",
     ("delete", "/products/{product_id}"): "customer_image:admin",
     ("post", "/products/{product_id}/publish"): "customer_image:admin",
+    ("post", "/products/{product_id}/unpublish"): "customer_image:admin",
+    ("get", "/products/{product_id}/assets"): "customer_image:admin",
+    ("post", "/products/{product_id}/assets/upload"): "customer_image:admin",
+    ("post", "/products/{product_id}/assets/library"): "customer_image:admin",
+    ("get", "/products/{product_id}/assets/{asset_id}/content"): "customer_image:admin",
     ("get", "/invites"): "customer_image:read",
     ("post", "/invites"): "customer_image:write",
     ("post", "/invites/{invite_id}/revoke"): "customer_image:write",
@@ -56,6 +61,11 @@ def test_router_has_exact_permission_dependency_per_endpoint():
         ("post", "/products", {"json": {}}), ("put", "/products/1", {"json": {}}),
         ("delete", "/products/1", {}),
         ("post", "/products/1/publish", {}), ("get", "/invites", {}),
+        ("post", "/products/1/unpublish", {}),
+        ("get", "/products/1/assets", {}),
+        ("post", "/products/1/assets/upload", {"data": {"role": "cover", "position": "0"}, "files": {"file": ("x.png", b"x", "image/png")}}),
+        ("post", "/products/1/assets/library", {"json": {"source_asset_id": 1, "role": "cover", "position": 0}}),
+        ("get", "/products/1/assets/1/content", {}),
     ("post", "/invites", {"json": {}}), ("post", "/invites/1/revoke", {}),
     ("get", "/generations", {}),
 ])
@@ -150,3 +160,19 @@ def test_admin_invite_snapshots_customers_current_okki_owner_without_own_binding
     )
 
     assert invite.okki_salesperson_id_snapshot == "2008"
+
+
+def test_unpublish_hides_product_state_and_asset_list_excludes_retired(db):
+    from app.customer_image.service import list_current_product_assets, unpublish_product
+    from app.customer_image.models import CustomerImageProductAsset
+
+    product = CustomerImageProduct(name="P", category="wig", fixed_prompt="x", output_prompt="y", created_by=1, is_published=True)
+    db.add(product)
+    db.flush()
+    current = CustomerImageProductAsset(product_id=product.id, role="cover", position=0, storage_path="current.png", mime_type="image/png", file_size=1, width=1, height=1, sha256="a" * 64)
+    retired = CustomerImageProductAsset(product_id=product.id, role="cover", position=1, storage_path="retired.png", mime_type="image/png", file_size=1, width=1, height=1, sha256="b" * 64, retired_at=datetime.now(UTC).replace(tzinfo=None))
+    db.add_all([current, retired])
+    db.commit()
+
+    assert unpublish_product(db, product.id).is_published is False
+    assert [row.id for row in list_current_product_assets(db, product.id)] == [current.id]

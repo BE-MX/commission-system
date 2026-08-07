@@ -506,11 +506,16 @@
 | 方法 | 路径 | 权限 | 契约 |
 |---|---|---|---|
 | GET | `/customers?search=` | write | 管理员搜索全部 OKKI 客户；普通业务员仅搜索当前归属客户。普通用户缺少有效数字型 OKKI 绑定时返回 409 和可执行的绑定提示。 |
-| GET | `/products` | read | 产品、发布状态和选项列表；只有 admin/super_admin 响应包含内部 `fixed_prompt` / `output_prompt`。 |
+| GET | `/products` | read | 产品、发布状态和选项列表；普通 read 不返回任何 hidden prompt，包括 `fixed_prompt`、`output_prompt` 与 option/value `prompt_fragment`，只有 admin/super_admin 可见。 |
 | POST | `/products` | admin | 创建产品模板；body 为名称、分类、描述、固定/输出 prompt、排序与完整 options。 |
 | PUT | `/products/{product_id}` | admin | 完整替换产品元数据与 options，并递增配置版本。 |
 | DELETE | `/products/{product_id}` | admin | 删除未被邀请/生成记录引用的产品；数据库引用约束仍是最终保护。 |
 | POST | `/products/{product_id}/publish` | admin | 发布前必须同时存在当前 cover 与 reference 资产。 |
+| POST | `/products/{product_id}/unpublish` | admin | 取消发布；状态提交后立即从后续公开产品查询中隐藏。 |
+| GET | `/products/{product_id}/assets` | admin | 当前 cover/reference 槽位及图片元数据；不返回私有 `storage_path`。 |
+| POST | `/products/{product_id}/assets/upload` | admin | multipart `file`、`role=cover\|reference`、`position>=0`；同槽位替换会退役旧资产并递增产品配置版本。 |
+| POST | `/products/{product_id}/assets/library` | admin | body `{source_asset_id, role, position}`；从有权访问的生图工作台图库复制后替换槽位，源图后续删除不影响产品。 |
+| GET | `/products/{product_id}/assets/{asset_id}/content` | admin | 读取当前产品资产的私有二进制内容；跨产品、已退役或不存在统一 404。 |
 | GET | `/invites` | read | 管理员看全部，普通用户只看自己创建的邀请；仅返回 `token_suffix`，永不返回 `token_hash` 或明文 token。 |
 | POST | `/invites` | write | body `{customer_id, product_ids, expires_at, quota_total}`；客户必须在调用者范围内，产品必须已发布。响应仅本次包含 `invite_url`。 |
 | POST | `/invites/{invite_id}/revoke` | write | 幂等撤销；普通用户跨 owner 操作返回 404。 |

@@ -86,6 +86,46 @@ def list_products(db: Session) -> list[CustomerImageProduct]:
     ).all())
 
 
+def get_product(db: Session, product_id: int) -> CustomerImageProduct:
+    product = db.get(CustomerImageProduct, product_id)
+    if product is None:
+        raise CustomerImageNotFoundError("product not found")
+    return product
+
+
+def list_current_product_assets(
+    db: Session, product_id: int
+) -> list[CustomerImageProductAsset]:
+    get_product(db, product_id)
+    return list(db.scalars(
+        select(CustomerImageProductAsset)
+        .where(
+            CustomerImageProductAsset.product_id == product_id,
+            CustomerImageProductAsset.retired_at.is_(None),
+        )
+        .order_by(
+            CustomerImageProductAsset.role,
+            CustomerImageProductAsset.position,
+            CustomerImageProductAsset.id,
+        )
+    ).all())
+
+
+def get_current_product_asset(
+    db: Session, product_id: int, asset_id: int
+) -> CustomerImageProductAsset:
+    asset = db.scalar(
+        select(CustomerImageProductAsset).where(
+            CustomerImageProductAsset.id == asset_id,
+            CustomerImageProductAsset.product_id == product_id,
+            CustomerImageProductAsset.retired_at.is_(None),
+        )
+    )
+    if asset is None:
+        raise CustomerImageNotFoundError("product asset not found")
+    return asset
+
+
 def delete_product(db: Session, product_id: int) -> None:
     product = db.get(CustomerImageProduct, product_id)
     if product is None:
@@ -168,6 +208,15 @@ def publish_product(db: Session, product_id: int) -> CustomerImageProduct:
     product.is_published = True
     db.commit()
     db.refresh(product)
+    return product
+
+
+def unpublish_product(db: Session, product_id: int) -> CustomerImageProduct:
+    product = get_product(db, product_id)
+    if product.is_published:
+        product.is_published = False
+        db.commit()
+        db.refresh(product)
     return product
 
 

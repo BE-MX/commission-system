@@ -50,6 +50,22 @@ def _row(**overrides):
         "finished_at": None,
         "prompt_snapshot": "never-return-prompt",
         "pricing_snapshot": {"never": "return"},
+        "role": "cover",
+        "position": 0,
+        "mime_type": "image/png",
+        "file_size": 123,
+        "width": 12,
+        "height": 8,
+        "retired_at": None,
+        "values": [SimpleNamespace(
+            id=12, value="18", label="18 inch", prompt_fragment="hidden value prompt",
+            color_hex=None, pantone_code=None, sort=0, is_active=True,
+        )],
+        "key": "length",
+        "label": "Length",
+        "control_type": "single_choice",
+        "required": True,
+        "default_value": "18",
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -75,12 +91,17 @@ def api(monkeypatch):
     product = _row()
     invite = _row(id=2)
     generation = _row(id=3, invite_id=2)
+    asset = _row(id=4, product_id=1)
     monkeypatch.setattr(service, "list_products", lambda *_a, **_k: [product])
-    monkeypatch.setattr(service, "list_product_options", lambda *_a, **_k: [])
+    monkeypatch.setattr(service, "list_product_options", lambda *_a, **_k: [_row(id=11)])
     monkeypatch.setattr(service, "create_product", lambda *_a, **_k: product)
     monkeypatch.setattr(service, "update_product", lambda *_a, **_k: product)
     monkeypatch.setattr(service, "delete_product", lambda *_a, **_k: None)
     monkeypatch.setattr(service, "publish_product", lambda *_a, **_k: product)
+    monkeypatch.setattr(service, "unpublish_product", lambda *_a, **_k: _row(is_published=False))
+    monkeypatch.setattr(service, "list_current_product_assets", lambda *_a, **_k: [asset])
+    monkeypatch.setattr(service, "get_current_product_asset", lambda *_a, **_k: asset)
+    monkeypatch.setattr(service, "get_product", lambda *_a, **_k: product)
     monkeypatch.setattr(service, "list_available_customers", lambda *_a, **_k: [{"id": "C1"}])
     monkeypatch.setattr(service, "create_invite", lambda *_a, **_k: (invite, "plain-token"))
     monkeypatch.setattr(service, "list_invites", lambda *_a, **_k: [invite])
@@ -107,6 +128,8 @@ PRODUCT = {
         ("put", "/api/customer-image/products/1", {"json": PRODUCT}),
         ("delete", "/api/customer-image/products/1", {}),
         ("post", "/api/customer-image/products/1/publish", {}),
+        ("post", "/api/customer-image/products/1/unpublish", {}),
+        ("get", "/api/customer-image/products/1/assets", {}),
         ("get", "/api/customer-image/invites", {}),
         ("post", "/api/customer-image/invites", {"json": {"customer_id": "C1", "product_ids": [1], "expires_at": "2099-01-01T00:00:00Z", "quota_total": 5}}),
         ("post", "/api/customer-image/invites/2/revoke", {}),
@@ -158,6 +181,74 @@ def test_non_admin_product_reader_does_not_receive_internal_prompts(api):
     product = response.json()["data"][0]
     assert "fixed_prompt" not in product
     assert "output_prompt" not in product
+    assert "prompt_fragment" not in str(product)
+
+
+def test_product_asset_json_endpoints_never_return_storage_path(api, monkeypatch):
+    client, _app, service = api
+    from app.customer_image import file_service
+
+    asset = _row(id=4, storage_path="private/secret.png")
+    monkeypatch.setattr(file_service, "replace_product_asset_from_upload", lambda *_a, **_k: asset)
+    monkeypatch.setattr(file_service, "replace_product_asset_from_library", lambda *_a, **_k: asset)
+
+    listed = client.get("/api/customer-image/products/1/assets")
+    uploaded = client.post(
+        "/api/customer-image/products/1/assets/upload",
+        data={"role": "cover", "position": "0"},
+        files={"file": ("cover.png", b"png", "image/png")},
+    )
+    copied = client.post(
+        "/api/customer-image/products/1/assets/library",
+        json={"source_asset_id": 9, "role": "reference", "position": 0},
+    )
+    for response in (listed, uploaded, copied):
+        assert response.status_code == 200, response.text
+        assert set(response.json()) == {"code", "message", "data"}
+        assert "storage_path" not in response.text
+
+
+def test_product_asset_content_is_private_binary(api, monkeypatch):
+    client, _app, _service = api
+    from app.customer_image import file_service
+    import io
+
+    monkeypatch.setattr(file_service, "open_product_asset_content", lambda *_a, **_k: io.BytesIO(b"png"))
+    response = client.get("/api/customer-image/products/1/assets/4/content")
+    assert response.status_code == 200
+    assert response.content == b"png"
+    assert response.headers["content-type"] == "image/png"
+    assert response.headers["cache-control"] == "private, no-store"
+
+
+def test_missing_library_or_product_asset_maps_to_404(api, monkeypatch):
+    client, _app, _service = api
+    from app.customer_image import file_service
+
+    monkeypatch.setattr(
+        file_service,
+        "replace_product_asset_from_library",
+        lambda *_a, **_k: (_ for _ in ()).throw(FileNotFoundError("library asset not found")),
+    )
+    copied = client.post(
+        "/api/customer-image/products/1/assets/library",
+        json={"source_asset_id": 999, "role": "cover", "position": 0},
+    )
+    monkeypatch.setattr(
+        file_service,
+        "open_product_asset_content",
+        lambda *_a, **_k: (_ for _ in ()).throw(FileNotFoundError("product asset not found")),
+    )
+    content = client.get("/api/customer-image/products/1/assets/999/content")
+    assert copied.status_code == 404
+    assert content.status_code == 404
+
+
+def test_admin_product_response_keeps_all_prompt_fragments(api):
+    product = api[0].get("/api/customer-image/products").json()["data"][0]
+    assert product["fixed_prompt"] == "private fixed prompt"
+    assert product["output_prompt"] == "private output prompt"
+    assert product["options"][0]["values"][0]["prompt_fragment"] == "hidden value prompt"
 
 
 def test_scope_conflict_maps_to_409(api, monkeypatch):

@@ -1,14 +1,19 @@
 """Thin RBAC API for customer image products and invitations."""
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_permission
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.response import ok
-from app.customer_image import service
-from app.customer_image.schemas import CustomerImageInviteCreate, CustomerImageProductUpsert
+from app.customer_image import file_service, service
+from app.customer_image.schemas import (
+    CustomerImageInviteCreate,
+    CustomerImageProductAssetCopy,
+    CustomerImageProductUpsert,
+)
 
 
 router = APIRouter()
@@ -37,6 +42,8 @@ def _call(function, *args, **kwargs):
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
     except service.CustomerScopeConflictError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
     except ValueError as exc:
         code = status.HTTP_404_NOT_FOUND if "not found" in str(exc) else status.HTTP_400_BAD_REQUEST
         raise HTTPException(code, str(exc)) from exc
@@ -46,7 +53,7 @@ def _iso(value):
     return value.isoformat() if value is not None else None
 
 
-def _option(row) -> dict:
+def _option(row, *, include_prompts: bool) -> dict:
     return {
         "id": row.id,
         "key": row.key,
@@ -60,12 +67,11 @@ def _option(row) -> dict:
                 "id": value.id,
                 "value": value.value,
                 "label": value.label,
-                "prompt_fragment": value.prompt_fragment,
                 "color_hex": value.color_hex,
                 "pantone_code": value.pantone_code,
                 "sort": value.sort,
                 "is_active": value.is_active,
-            }
+            } | ({"prompt_fragment": value.prompt_fragment} if include_prompts else {})
             for value in row.values
         ],
     }
@@ -81,11 +87,44 @@ def _product(db: Session, row, *, include_prompts: bool = True) -> dict:
         "config_version": row.config_version,
         "is_published": row.is_published,
         "sort": row.sort,
-        "options": [_option(option) for option in options],
+        "options": [_option(option, include_prompts=include_prompts) for option in options],
     }
     if include_prompts:
         result.update(fixed_prompt=row.fixed_prompt, output_prompt=row.output_prompt)
     return result
+
+
+def _product_asset(row) -> dict:
+    content_url = f"/api/customer-image/products/{row.product_id}/assets/{row.id}/content"
+    return {
+        "id": row.id,
+        "product_id": row.product_id,
+        "role": row.role,
+        "position": row.position,
+        "mime_type": row.mime_type,
+        "file_size": row.file_size,
+        "width": row.width,
+        "height": row.height,
+        "content_url": content_url,
+    }
+
+
+async def _read_bounded(upload: UploadFile) -> bytes:
+    byte_limit = file_service.shared_files.effective_max_upload_bytes()
+    chunks: list[bytes] = []
+    total = 0
+    try:
+        while True:
+            chunk = await upload.read(min(1024 * 1024, byte_limit - total + 1))
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > byte_limit:
+                raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "image too large")
+            chunks.append(chunk)
+        return b"".join(chunks)
+    finally:
+        await upload.close()
 
 
 def _invite(row, *, include_suffix: bool = True) -> dict:
@@ -181,6 +220,86 @@ def publish_product(
     _payload: dict = Depends(require_permission("customer_image:admin")),
 ):
     return ok(_product(db, _call(service.publish_product, db, product_id)))
+
+
+@router.post("/products/{product_id}/unpublish")
+def unpublish_product(
+    product_id: int,
+    db: Session = Depends(get_db),
+    _payload: dict = Depends(require_permission("customer_image:admin")),
+):
+    return ok(_product(db, _call(service.unpublish_product, db, product_id)))
+
+
+@router.get("/products/{product_id}/assets")
+def list_product_assets(
+    product_id: int,
+    db: Session = Depends(get_db),
+    _payload: dict = Depends(require_permission("customer_image:admin")),
+):
+    rows = _call(service.list_current_product_assets, db, product_id)
+    return ok([_product_asset(row) for row in rows])
+
+
+@router.post("/products/{product_id}/assets/upload")
+async def upload_product_asset(
+    product_id: int,
+    role: str = Form(...),
+    position: int = Form(..., ge=0),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _payload: dict = Depends(require_permission("customer_image:admin")),
+):
+    if role not in {"cover", "reference"}:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "invalid asset role")
+    product = _call(service.get_product, db, product_id)
+    content = await _read_bounded(file)
+    row = _call(
+        file_service.replace_product_asset_from_upload,
+        db,
+        product,
+        role,
+        position,
+        content,
+        file.content_type or "application/octet-stream",
+    )
+    return ok(_product_asset(row))
+
+
+@router.post("/products/{product_id}/assets/library")
+def copy_product_asset_from_library(
+    product_id: int,
+    body: CustomerImageProductAssetCopy,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_permission("customer_image:admin")),
+):
+    product = _call(service.get_product, db, product_id)
+    row = _call(
+        file_service.replace_product_asset_from_library,
+        db,
+        product,
+        body.role,
+        body.position,
+        body.source_asset_id,
+        admin_id=_user_id(payload),
+    )
+    return ok(_product_asset(row))
+
+
+@router.get("/products/{product_id}/assets/{asset_id}/content")
+def get_product_asset_content(
+    product_id: int,
+    asset_id: int,
+    db: Session = Depends(get_db),
+    _payload: dict = Depends(require_permission("customer_image:admin")),
+):
+    asset = _call(service.get_current_product_asset, db, product_id, asset_id)
+    stream = _call(file_service.open_product_asset_content, db, product_id, asset_id)
+    return StreamingResponse(
+        stream,
+        media_type=asset.mime_type,
+        headers={"Cache-Control": "private, no-store"},
+    )
 
 
 @router.get("/invites")

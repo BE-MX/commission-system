@@ -1,6 +1,7 @@
 """Validated request schemas for the customer image portal."""
 
 from datetime import UTC, datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -94,6 +95,14 @@ class CustomerImageInviteCreate(BaseModel):
         if value <= now:
             raise ValueError("失效时间必须晚于当前时间")
         return value
+
+
+class CustomerImageProductAssetCopy(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_asset_id: int = Field(gt=0)
+    role: Literal["cover", "reference"]
+    position: int = Field(ge=0)
 
 
 class CustomerImageGenerationCreate(BaseModel):
