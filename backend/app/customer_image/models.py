@@ -70,11 +70,12 @@ class CustomerImageProductAsset(Base):
     sha256 = Column(String(64), nullable=False)
     position = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    retired_at = Column(DateTime, nullable=True, comment="退役时间，历史生成仍可引用")
 
     __table_args__ = (
-        UniqueConstraint("product_id", "role", "position", name="uq_ci_product_asset_role_position"),
         CheckConstraint("role IN ('cover', 'reference')", name="ck_ci_product_asset_role"),
         CheckConstraint("position >= 0", name="ck_ci_product_asset_position"),
+        Index("idx_ci_product_asset_current", "product_id", "retired_at", "role", "position"),
     )
 
     product = relationship("CustomerImageProduct", back_populates="assets", lazy="noload")

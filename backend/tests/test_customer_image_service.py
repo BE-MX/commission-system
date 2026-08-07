@@ -8,12 +8,23 @@ from sqlalchemy import text
 
 from app.auth.models import ArkPermission, ArkRole, ArkUserExternalBinding
 from app.auth.service import seed_role_permissions
-from app.customer_image.schemas import CustomerImageInviteCreate
+from app.customer_image.models import (
+    CustomerImageOptionValue,
+    CustomerImageProduct,
+    CustomerImageProductAsset,
+    CustomerImageProductOption,
+)
+from app.customer_image.schemas import CustomerImageInviteCreate, CustomerImageProductUpsert
 from app.customer_image.service import (
     OKKI_BINDING_REQUIRED_MESSAGE,
     CustomerScopeConflictError,
     list_available_customers,
     validate_public_requirement,
+    create_product,
+    list_product_options,
+    publish_product,
+    replace_product_options,
+    update_product,
 )
 from app.models.customer import CustomerCommissionSnapshot
 
@@ -199,3 +210,107 @@ def test_customer_image_permission_seed_is_idempotent_with_stable_metadata(db):
         ("customer_image:write", "customer_image", "write", "action"),
         ("customer_image:admin", "customer_image", "admin", "action"),
     }
+
+
+def _product_payload(**overrides):
+    payload = {
+        "name": "Lace Wig",
+        "category": "wig",
+        "description": "Product template",
+        "fixed_prompt": "Keep the logo exact",
+        "output_prompt": "Create a catalog image",
+        "sort": 10,
+        "options": [
+            {
+                "key": "length",
+                "label": "Length",
+                "control_type": "single_choice",
+                "required": True,
+                "default_value": "18",
+                "values": [
+                    {"value": "18", "label": "18 inch", "prompt_fragment": "18 inch hair"},
+                    {"value": "20", "label": "20 inch", "prompt_fragment": "20 inch hair", "is_active": False},
+                ],
+            },
+            {
+                "key": "color",
+                "label": "Color",
+                "control_type": "color",
+                "default_value": "natural",
+                "values": [
+                    {
+                        "value": "natural",
+                        "label": "Natural black",
+                        "prompt_fragment": "natural black hair",
+                        "color_hex": "#1A1A1A",
+                    }
+                ],
+            },
+            {
+                "key": "add_logo",
+                "label": "Add logo",
+                "control_type": "boolean",
+                "default_value": "true",
+                "values": [
+                    {"value": "true", "label": "Yes", "prompt_fragment": "show the logo"},
+                    {"value": "false", "label": "No", "prompt_fragment": "omit the logo"},
+                ],
+            },
+        ],
+    }
+    payload.update(overrides)
+    return CustomerImageProductUpsert(**payload)
+
+
+def test_create_product_persists_supported_options_and_filters_inactive_values(db):
+    product = create_product(db, admin_id=1, payload=_product_payload())
+
+    assert product.config_version == 1
+    options = list_product_options(db, product.id)
+    assert [value.value for value in options[0].values] == ["18"]
+
+
+@pytest.mark.parametrize(
+    "patch",
+    [
+        {"options": [{"key": "x", "label": "X", "control_type": "text", "values": []}]},
+        {"options": [{"key": "dup", "label": "A", "control_type": "single_choice", "values": [{"value": "a", "label": "A", "prompt_fragment": "a"}]}, {"key": "dup", "label": "B", "control_type": "single_choice", "values": [{"value": "b", "label": "B", "prompt_fragment": "b"}]}]},
+        {"options": [{"key": "x", "label": "X", "control_type": "single_choice", "default_value": "missing", "values": [{"value": "a", "label": "A", "prompt_fragment": "a"}]}]},
+        {"options": [{"key": "x", "label": "X", "control_type": "color", "values": [{"value": "a", "label": "A", "prompt_fragment": "a", "color_hex": "red"}]}]},
+        {"options": [{"key": "x", "label": "X", "control_type": "single_choice", "values": [{"value": "a", "label": "A", "prompt_fragment": " "}]}]},
+        {"options": [{"key": "x", "label": "X", "control_type": "boolean", "values": [{"value": "yes", "label": "Yes", "prompt_fragment": "yes"}]}]},
+    ],
+)
+def test_product_schema_rejects_invalid_option_contracts(patch):
+    with pytest.raises(ValidationError):
+        _product_payload(**patch)
+
+
+def test_publish_requires_current_cover_and_reference(db):
+    product = create_product(db, admin_id=1, payload=_product_payload())
+    with pytest.raises(ValueError, match="cover.*reference"):
+        publish_product(db, product.id)
+
+    db.add_all([
+        CustomerImageProductAsset(product_id=product.id, role="cover", storage_path="1/customer-product/c.jpg", mime_type="image/jpeg", file_size=1, width=1, height=1, sha256="a" * 64),
+        CustomerImageProductAsset(product_id=product.id, role="reference", storage_path="1/customer-product/r.jpg", mime_type="image/jpeg", file_size=1, width=1, height=1, sha256="b" * 64),
+    ])
+    db.commit()
+
+    published = publish_product(db, product.id)
+    assert published.is_published is True
+
+
+def test_product_prompt_and_option_update_increments_config_version_once(db):
+    product = create_product(db, admin_id=1, payload=_product_payload())
+
+    updated = update_product(
+        db,
+        product.id,
+        _product_payload(fixed_prompt="Keep logo and packaging exact", options=[]),
+    )
+
+    assert updated.fixed_prompt == "Keep logo and packaging exact"
+    assert updated.config_version == 2
+    assert db.query(CustomerImageProductOption).filter_by(product_id=product.id).count() == 0
+    assert db.query(CustomerImageOptionValue).count() == 0

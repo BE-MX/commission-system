@@ -1,11 +1,18 @@
 """Internal services for customer-scoped portal access."""
 
 from sqlalchemy import or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.auth.models import ArkUserExternalBinding
 from app.models.business import CustomerInfo
 from app.models.customer import CustomerCommissionSnapshot
+from app.customer_image.models import (
+    CustomerImageOptionValue,
+    CustomerImageProduct,
+    CustomerImageProductAsset,
+    CustomerImageProductOption,
+)
+from app.customer_image.schemas import CustomerImageProductOptionUpsert, CustomerImageProductUpsert
 
 
 OKKI_BINDING_REQUIRED_MESSAGE = "请先在系统管理 -> 外部账号绑定中绑定 OKKI 账号"
@@ -13,6 +20,120 @@ OKKI_BINDING_REQUIRED_MESSAGE = "请先在系统管理 -> 外部账号绑定中�
 
 class CustomerScopeConflictError(Exception):
     status_code = 409
+
+
+def _product_or_error(db: Session, product_id: int) -> CustomerImageProduct:
+    product = db.get(CustomerImageProduct, product_id)
+    if product is None:
+        raise ValueError("product not found")
+    return product
+
+
+def _add_options(
+    db: Session,
+    product_id: int,
+    options: list[CustomerImageProductOptionUpsert],
+) -> None:
+    for option_payload in options:
+        values = option_payload.values
+        option_data = option_payload.model_dump(exclude={"values"})
+        option = CustomerImageProductOption(product_id=product_id, **option_data)
+        db.add(option)
+        db.flush()
+        db.add_all(
+            CustomerImageOptionValue(option_id=option.id, **value.model_dump())
+            for value in values
+        )
+
+
+def create_product(
+    db: Session, *, admin_id: int, payload: CustomerImageProductUpsert
+) -> CustomerImageProduct:
+    product_data = payload.model_dump(exclude={"options"})
+    product = CustomerImageProduct(created_by=admin_id, **product_data)
+    try:
+        db.add(product)
+        db.flush()
+        _add_options(db, product.id, payload.options)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    db.refresh(product)
+    return product
+
+
+def replace_product_options(
+    db: Session,
+    product_id: int,
+    options: list[CustomerImageProductOptionUpsert],
+    *,
+    increment_version: bool = True,
+) -> list[CustomerImageProductOption]:
+    product = _product_or_error(db, product_id)
+    try:
+        current = db.scalars(
+            select(CustomerImageProductOption).where(
+                CustomerImageProductOption.product_id == product_id
+            )
+        ).all()
+        for option in current:
+            db.query(CustomerImageOptionValue).filter(
+                CustomerImageOptionValue.option_id == option.id
+            ).delete(synchronize_session=False)
+            db.delete(option)
+        db.flush()
+        _add_options(db, product_id, options)
+        if increment_version:
+            product.config_version += 1
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return list_product_options(db, product_id)
+
+
+def list_product_options(
+    db: Session, product_id: int
+) -> list[CustomerImageProductOption]:
+    options = db.scalars(
+        select(CustomerImageProductOption)
+        .where(CustomerImageProductOption.product_id == product_id)
+        .options(selectinload(
+            CustomerImageProductOption.values.and_(
+                CustomerImageOptionValue.is_active.is_(True)
+            )
+        ))
+        .order_by(CustomerImageProductOption.sort, CustomerImageProductOption.id)
+    ).all()
+    return options
+
+
+def update_product(
+    db: Session, product_id: int, payload: CustomerImageProductUpsert
+) -> CustomerImageProduct:
+    product = _product_or_error(db, product_id)
+    for field, value in payload.model_dump(exclude={"options"}).items():
+        setattr(product, field, value)
+    replace_product_options(db, product_id, payload.options)
+    db.refresh(product)
+    return product
+
+
+def publish_product(db: Session, product_id: int) -> CustomerImageProduct:
+    product = _product_or_error(db, product_id)
+    roles = set(db.scalars(
+        select(CustomerImageProductAsset.role).where(
+            CustomerImageProductAsset.product_id == product_id,
+            CustomerImageProductAsset.retired_at.is_(None),
+        )
+    ).all())
+    if not {"cover", "reference"}.issubset(roles):
+        raise ValueError("published products require a cover and reference asset")
+    product.is_published = True
+    db.commit()
+    db.refresh(product)
+    return product
 
 
 def validate_public_requirement(requirement: str, settings) -> str:

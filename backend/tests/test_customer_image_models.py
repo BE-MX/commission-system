@@ -63,6 +63,7 @@ def test_customer_image_tables_and_required_columns_are_registered():
         "ark_customer_image_product_assets": {
             "id", "product_id", "role", "storage_path", "mime_type",
             "file_size", "width", "height", "sha256", "position", "created_at",
+            "retired_at",
         },
         "ark_customer_image_product_options": {
             "id", "product_id", "key", "label", "control_type", "required",
@@ -152,7 +153,8 @@ def test_customer_image_constraints_freeze_generation_and_scope_idempotency():
             if isinstance(constraint, UniqueConstraint)
         }
 
-    assert "uq_ci_product_asset_role_position" in unique_names(product_assets)
+    assert "uq_ci_product_asset_role_position" not in unique_names(product_assets)
+    assert product_assets.c.retired_at.nullable is True
     assert "uq_ci_product_option_key" in unique_names(product_options)
     assert "uq_ci_option_value" in unique_names(option_values)
     assert "uq_ci_invite_product" in unique_names(invite_products)
@@ -255,7 +257,7 @@ def test_sqlite_flush_autogenerates_customer_image_ids_without_explicit_values()
         assert all(row.id is not None for row in (product, invite, logo, generation))
 
 
-def test_product_asset_unique_constraint_is_the_only_tuple_index():
+def test_product_asset_has_retirement_lookup_index_in_model_and_migration():
     _models()
     product_assets = Base.metadata.tables["ark_customer_image_product_assets"]
     migration = _migration_module()
@@ -275,8 +277,8 @@ def test_product_asset_unique_constraint_is_the_only_tuple_index():
     finally:
         monkeypatch.undo()
 
-    assert "idx_ci_product_asset_product" not in {index.name for index in product_assets.indexes}
-    assert "idx_ci_product_asset_product" not in migration_indexes
+    assert "idx_ci_product_asset_current" in {index.name for index in product_assets.indexes}
+    assert "idx_ci_product_asset_current" in migration_indexes
 
 
 def test_invite_quota_and_current_logo_constraints_are_explicit():

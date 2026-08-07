@@ -51,9 +51,14 @@ def upgrade() -> None:
         sa.Column("sha256", sa.String(64), nullable=False),
         sa.Column("position", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
-        sa.UniqueConstraint("product_id", "role", "position", name="uq_ci_product_asset_role_position"),
+        sa.Column("retired_at", sa.DateTime(), nullable=True, comment="退役时间，历史生成仍可引用"),
         sa.CheckConstraint("role IN ('cover', 'reference')", name="ck_ci_product_asset_role"),
         sa.CheckConstraint("position >= 0", name="ck_ci_product_asset_position"),
+    )
+    op.create_index(
+        "idx_ci_product_asset_current",
+        "ark_customer_image_product_assets",
+        ["product_id", "retired_at", "role", "position"],
     )
     op.create_table(
         "ark_customer_image_product_options",
