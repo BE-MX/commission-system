@@ -296,7 +296,7 @@ def test_framework_422_and_public_404_include_security_headers(public_api):
     missing_file = client.post("/api/customer-image/public/logo", headers=_auth(token))
     missing_route = client.get("/api/customer-image/public/not-a-route", headers=_auth(token))
 
-    assert missing_file.status_code == 422
+    assert missing_file.status_code == 400
     assert missing_route.status_code == 404
     _assert_security_headers(missing_file)
     _assert_security_headers(missing_route)
@@ -372,9 +372,84 @@ def test_oversized_logo_returns_413_before_decode_or_storage(public_api, monkeyp
     )
 
     assert response.status_code == 413
+    assert response.json()["detail"] == "Logo image cannot exceed 4 bytes."
     _assert_security_headers(response)
     assert decode_called is False
     assert list(tmp_path.rglob("*")) == []
+
+
+@pytest.mark.parametrize("token", [None, "invalid"])
+def test_unavailable_invite_does_not_parse_multipart(public_api, monkeypatch, token):
+    from starlette.requests import Request
+
+    client, _db, _tmp = public_api
+    form_calls = 0
+    original_form = Request.form
+
+    def track_form(self, **kwargs):
+        nonlocal form_calls
+        form_calls += 1
+        return original_form(self, **kwargs)
+
+    monkeypatch.setattr(Request, "form", track_form)
+    response = client.post(
+        "/api/customer-image/public/logo",
+        headers=_auth(token) if token else {},
+        files={"file": ("large.bin", b"x" * 4096, "application/octet-stream")},
+    )
+
+    assert response.status_code == 401
+    assert form_calls == 0
+
+
+def test_rate_limit_rejects_before_second_multipart_parse(public_api, monkeypatch):
+    from app.customer_image import public_router
+    from starlette.requests import Request
+
+    client, db, _tmp = public_api
+    _invite_row, token = _invite(db)
+    monkeypatch.setattr(public_router.logo_rate_limiter, "limit", 1)
+    form_calls = 0
+    original_form = Request.form
+
+    def track_form(self, **kwargs):
+        nonlocal form_calls
+        form_calls += 1
+        return original_form(self, **kwargs)
+
+    monkeypatch.setattr(Request, "form", track_form)
+    headers = {**_auth(token), "X-Real-IP": "198.51.100.7"}
+    first = client.post(
+        "/api/customer-image/public/logo",
+        headers=headers,
+        files={"file": ("one.png", _png(), "image/png")},
+    )
+    second = client.post(
+        "/api/customer-image/public/logo",
+        headers=headers,
+        files={"file": ("two.png", b"x" * 4096, "application/octet-stream")},
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 429
+    assert form_calls == 1
+
+
+@pytest.mark.parametrize(
+    "request_kwargs",
+    [
+        {"content": b"not multipart", "headers": {"Content-Type": "multipart/form-data; boundary=broken"}},
+        {"files": [("file", ("one.png", _png(), "image/png")), ("file", ("two.png", _png(), "image/png"))]},
+        {"files": {"other": ("one.png", _png(), "image/png")}},
+    ],
+)
+def test_valid_invite_rejects_malformed_or_non_unique_file_form(public_api, request_kwargs):
+    client, db, _tmp = public_api
+    _invite_row, token = _invite(db)
+    headers = {**request_kwargs.pop("headers", {}), **_auth(token)}
+    response = client.post("/api/customer-image/public/logo", headers=headers, **request_kwargs)
+    assert response.status_code == 400
+    _assert_security_headers(response)
 
 
 def test_logo_commit_failure_removes_new_files_and_keeps_pointer(public_api, monkeypatch):

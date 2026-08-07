@@ -204,6 +204,23 @@ server {
 }
 ```
 
+#### 客户生图 LOGO 上传上线硬门禁
+
+当前 server 级 `client_max_body_size 5m` 会在请求到达 FastAPI 前阻断 5-20 MiB 的合法 LOGO；应用自身上限是 `min(DESIGN_IMAGE_MAX_UPLOAD_MB, 20 MiB)`。客户生图门户上线前，必须在通用 API 正则 location 之前增加精确 location，只放宽 LOGO 写端点并保留其余 API/public 路径的 5m 上限：
+
+```nginx
+location = /api/customer-image/public/logo {
+    client_max_body_size 21m;  # 20 MiB 图片 + multipart overhead
+    proxy_pass http://127.0.0.1:8002;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+若产品明确把应用上限降至 20 MiB 以下，只按该上限加 multipart 余量，不扩大到 21m。修改前将备份放到 `~/nginx-backup-<日期>/`（不要留在 `conf.d`），然后执行 `nginx -t`、reload，并完成三项生产实测：大于 5 MiB 且不超过应用上限的 LOGO 上传成功；超过应用上限的 LOGO 返回 413；其他 `/api/customer-image/public/*` 和普通 `/api/*` 仍受 5m 限制。未完成这三项，不得签发生产邀请。
+
 重启 Nginx：
 ```bash
 nginx -t

@@ -9,9 +9,12 @@ from collections import OrderedDict, deque
 from datetime import UTC, datetime
 from typing import BinaryIO
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.background import BackgroundTask
+from starlette.datastructures import UploadFile
+from starlette.formparsers import MultiPartException
+from python_multipart.exceptions import FormParserError
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -33,7 +36,6 @@ router = APIRouter()
 logger = logging.getLogger("commission")
 AUTH_ERROR = "This invitation is unavailable. Please request a new link from your sales contact."
 RATE_ERROR = "Too many logo uploads. Please wait one minute and try again."
-UPLOAD_TOO_LARGE_ERROR = "Logo image cannot exceed 20 MiB."
 PUBLIC_PREFIX = "/api/customer-image/public"
 SECURITY_HEADERS = {
     "Cache-Control": "private, no-store",
@@ -100,6 +102,12 @@ def read_upload_content(stream: BinaryIO, byte_limit: int) -> bytes:
     if len(content) > byte_limit:
         raise UploadTooLargeError
     return content
+
+
+def _upload_too_large_message(byte_limit: int) -> str:
+    if byte_limit % (1024 * 1024) == 0:
+        return f"Logo image cannot exceed {byte_limit // (1024 * 1024)} MiB."
+    return f"Logo image cannot exceed {byte_limit} bytes."
 
 
 class BoundedSlidingWindowLimiter:
@@ -210,26 +218,31 @@ def products(db: Session = Depends(get_db), invite: CustomerImageInvite = Depend
 
 
 @router.post("/logo")
-def upload_logo(
+async def upload_logo(
     request: Request,
-    file: UploadFile = File(...),
     db: Session = Depends(get_db),
     invite: CustomerImageInvite = Depends(require_invite),
 ):
     if not logo_rate_limiter.allow(f"{invite.id}:{client_ip(request)}"):
         raise HTTPException(status_code=429, detail=RATE_ERROR, headers=SECURITY_HEADERS)
+    byte_limit = file_service.effective_max_upload_bytes()
     try:
-        content = read_upload_content(file.file, file_service.effective_max_upload_bytes())
-        normalized = file_service.normalize_upload(content, file.content_type or "")
-        asset = file_service.replace_current_logo(db, invite.id, normalized)
+        async with request.form(max_files=1, max_fields=1, max_part_size=byte_limit + 1) as form:
+            values = form.getlist("file")
+            if list(form.keys()) != ["file"] or len(values) != 1 or not isinstance(values[0], UploadFile):
+                raise HTTPException(status_code=400, detail="Exactly one logo file is required")
+            file = values[0]
+            content = read_upload_content(file.file, byte_limit)
+            normalized = file_service.normalize_upload(content, file.content_type or "")
+            asset = file_service.replace_current_logo(db, invite.id, normalized)
     except UploadTooLargeError:
-        raise HTTPException(status_code=413, detail=UPLOAD_TOO_LARGE_ERROR) from None
+        raise HTTPException(status_code=413, detail=_upload_too_large_message(byte_limit)) from None
+    except (MultiPartException, FormParserError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid logo upload") from exc
     except file_service.shared_files.ImageValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc), headers=SECURITY_HEADERS) from exc
     except (file_service.shared_files.ImageStorageError, OSError) as exc:
         raise HTTPException(status_code=503, detail="Image storage unavailable", headers=SECURITY_HEADERS) from exc
-    finally:
-        file.file.close()
     return ok(_asset_data(asset))
 
 

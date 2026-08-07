@@ -926,7 +926,13 @@ Update:
 - `docs/architecture.md`: customer domain and shared runtime boundary.
 - `docs/runbook.md`: preset requirement, storage ACL, scheduler, cleanup, invite revocation, and smoke test.
 
-Document Nginx requirement: do not log plaintext `/create/{token}`. The implementation owner must update the live `leshine.work` config to use a token-redacted location/log format before issuing production links; `nginx -t` is mandatory. Do not commit secrets or live tokens.
+Document Nginx requirements before issuing production links:
+
+- Do not log plaintext `/create/{token}`. Update the live `leshine.work` config to use a token-redacted location/log format.
+- The current server-level `/api` `client_max_body_size 5m` blocks valid 5-20 MiB LOGO uploads before the application can validate them. Add an exact-match `location = /api/customer-image/public/logo` with `client_max_body_size 21m` (20 MiB application maximum plus multipart overhead) and the same proxy/trusted-IP headers as the existing API location. Keep the existing 5m ceiling for every other public/API route. If the product limit is deliberately reduced below 20 MiB, set this exact location only high enough for that decided limit plus multipart overhead.
+- Back up the live config outside `conf.d`, run `nginx -t`, reload, then live-test a LOGO larger than 5 MiB succeeds and a LOGO larger than the 20 MiB application limit is rejected with 413. These checks are a production launch gate, not optional smoke tests.
+
+Do not commit secrets or live tokens.
 
 - [ ] **Step 4: Run complete automated verification**
 
@@ -981,7 +987,7 @@ Run the project deployment command from the main worktree only after merge appro
 deploy\deploy.bat
 ```
 
-Before issuing any production invite, apply the documented Nginx access-log redaction, run `nginx -t`, reload Nginx, and verify a synthetic invite request produces no plaintext token in access logs. Then repeat the one-product live chain on `https://leshine.work/create/<token>` and confirm the real generated asset downloads.
+Before issuing any production invite, apply the documented Nginx access-log redaction and exact LOGO upload location, run `nginx -t`, reload Nginx, and verify: a synthetic invite request produces no plaintext token in access logs; a LOGO larger than 5 MiB reaches the application and succeeds; a LOGO larger than 20 MiB is rejected with 413; all other public/API routes retain the 5m ceiling. Then repeat the one-product live chain on `https://leshine.work/create/<token>` and confirm the real generated asset downloads.
 
 Do not push `main` unless explicitly instructed. Feature-branch push follows repository backup policy.
 
