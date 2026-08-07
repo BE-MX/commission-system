@@ -1,5 +1,7 @@
 """Internal services for customer-scoped portal access."""
 
+from datetime import datetime
+
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
@@ -7,12 +9,20 @@ from app.auth.models import ArkUserExternalBinding
 from app.models.business import CustomerInfo
 from app.models.customer import CustomerCommissionSnapshot
 from app.customer_image.models import (
+    CustomerImageGeneration,
+    CustomerImageInvite,
+    CustomerImageInviteProduct,
     CustomerImageOptionValue,
     CustomerImageProduct,
     CustomerImageProductAsset,
     CustomerImageProductOption,
 )
-from app.customer_image.schemas import CustomerImageProductOptionUpsert, CustomerImageProductUpsert
+from app.customer_image.schemas import (
+    CustomerImageInviteCreate,
+    CustomerImageProductOptionUpsert,
+    CustomerImageProductUpsert,
+)
+from app.customer_image.token_service import issue_invite_token
 
 
 OKKI_BINDING_REQUIRED_MESSAGE = "请先在系统管理 -> 外部账号绑定中绑定 OKKI 账号"
@@ -20,6 +30,10 @@ OKKI_BINDING_REQUIRED_MESSAGE = "请先在系统管理 -> 外部账号绑定中�
 
 class CustomerScopeConflictError(Exception):
     status_code = 409
+
+
+class CustomerImageNotFoundError(Exception):
+    """Raised when a resource is absent or outside the caller's scope."""
 
 
 def _product_or_error(db: Session, product_id: int) -> CustomerImageProduct:
@@ -61,6 +75,27 @@ def create_product(
         raise
     db.refresh(product)
     return product
+
+
+def list_products(db: Session) -> list[CustomerImageProduct]:
+    return list(db.scalars(
+        select(CustomerImageProduct).order_by(
+            CustomerImageProduct.sort,
+            CustomerImageProduct.id,
+        )
+    ).all())
+
+
+def delete_product(db: Session, product_id: int) -> None:
+    product = db.get(CustomerImageProduct, product_id)
+    if product is None:
+        raise CustomerImageNotFoundError("product not found")
+    try:
+        db.delete(product)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
 
 def replace_product_options(
@@ -203,3 +238,124 @@ def list_available_customers(
         }
         for row in db.execute(statement).all()
     ]
+
+
+def _customer_for_invite(
+    db: Session,
+    customer_id: str,
+    ark_user_id: int,
+    is_admin: bool,
+) -> tuple[str, str]:
+    available = list_available_customers(db, ark_user_id, is_admin, customer_id)
+    customer = next((row for row in available if row["id"] == customer_id), None)
+    if customer is None:
+        raise CustomerImageNotFoundError("customer not found")
+    if is_admin:
+        salesperson_id = db.scalar(
+            select(CustomerCommissionSnapshot.salesperson_id)
+            .where(
+                CustomerCommissionSnapshot.customer_id == customer_id,
+                CustomerCommissionSnapshot.is_current.is_(True),
+            )
+            .order_by(CustomerCommissionSnapshot.id.desc())
+        )
+        if not salesperson_id:
+            raise CustomerImageNotFoundError("customer owner not found")
+    else:
+        salesperson_id = _okki_account_id(db, ark_user_id)
+    return customer["name"], salesperson_id
+
+
+def create_invite(
+    db: Session,
+    *,
+    creator_id: int,
+    is_admin: bool,
+    payload: CustomerImageInviteCreate,
+) -> tuple[CustomerImageInvite, str]:
+    customer_name, salesperson_id = _customer_for_invite(
+        db, payload.customer_id, creator_id, is_admin
+    )
+    products = list(db.scalars(
+        select(CustomerImageProduct).where(
+            CustomerImageProduct.id.in_(payload.product_ids),
+            CustomerImageProduct.is_published.is_(True),
+        )
+    ).all())
+    if {row.id for row in products} != set(payload.product_ids):
+        raise CustomerImageNotFoundError("published product not found")
+
+    invite = CustomerImageInvite(
+        customer_id=payload.customer_id,
+        customer_name_snapshot=customer_name,
+        created_by=creator_id,
+        okki_salesperson_id_snapshot=salesperson_id,
+        token_hash="",
+        token_suffix="",
+        starts_at=datetime.utcnow(),
+        expires_at=payload.expires_at,
+        quota_total=payload.quota_total,
+    )
+    try:
+        plaintext, invite = issue_invite_token(db, invite)
+        db.add_all(
+            CustomerImageInviteProduct(invite_id=invite.id, product_id=product_id)
+            for product_id in payload.product_ids
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    db.refresh(invite)
+    return invite, plaintext
+
+
+def list_invites(
+    db: Session,
+    creator_id: int,
+    is_admin: bool,
+) -> list[CustomerImageInvite]:
+    statement = select(CustomerImageInvite)
+    if not is_admin:
+        statement = statement.where(CustomerImageInvite.created_by == creator_id)
+    return list(db.scalars(
+        statement.order_by(CustomerImageInvite.created_at.desc(), CustomerImageInvite.id.desc())
+    ).all())
+
+
+def revoke_invite(
+    db: Session,
+    invite_id: int,
+    creator_id: int,
+    is_admin: bool,
+) -> CustomerImageInvite:
+    statement = select(CustomerImageInvite).where(CustomerImageInvite.id == invite_id)
+    if not is_admin:
+        statement = statement.where(CustomerImageInvite.created_by == creator_id)
+    invite = db.scalar(statement)
+    if invite is None:
+        raise CustomerImageNotFoundError("invite not found")
+    if invite.revoked_at is None:
+        invite.revoked_at = datetime.utcnow()
+        db.commit()
+        db.refresh(invite)
+    return invite
+
+
+def list_generations(
+    db: Session,
+    creator_id: int,
+    is_admin: bool,
+) -> list[CustomerImageGeneration]:
+    statement = select(CustomerImageGeneration).join(
+        CustomerImageInvite,
+        CustomerImageInvite.id == CustomerImageGeneration.invite_id,
+    )
+    if not is_admin:
+        statement = statement.where(CustomerImageInvite.created_by == creator_id)
+    return list(db.scalars(
+        statement.order_by(
+            CustomerImageGeneration.created_at.desc(),
+            CustomerImageGeneration.id.desc(),
+        )
+    ).all())

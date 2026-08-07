@@ -499,6 +499,27 @@
 
 主要错误：校验 400/422、未认证 401、无权限 403、owner 隔离或不存在 404、已引用资产/已有 active job 409、上传超限 413、日额度 429、Preset/存储/一致性不可用 503。重试是新 accepted job，因此占用新的当日额度；失败调用可能已经触达 Provider，不能解释为“零成本”。
 
+## 客户生图门户内部管理（`/api/customer-image`，098 迁移，2026-08-07）
+
+所有端点使用方舟 JWT，并返回 `{code, message, data}`。`customer_image:read` 可读产品、邀请和生成记录；`customer_image:write` 可搜索客户、创建和撤销邀请；`customer_image:admin` 管理产品，同时视为邀请与生成记录的全局管理员。非管理员的邀请、生成记录和撤销操作始终按 `created_by` 限定；跨业务员访问与资源不存在统一返回 404。
+
+| 方法 | 路径 | 权限 | 契约 |
+|---|---|---|---|
+| GET | `/customers?search=` | write | 管理员搜索全部 OKKI 客户；普通业务员仅搜索当前归属客户。普通用户缺少有效数字型 OKKI 绑定时返回 409 和可执行的绑定提示。 |
+| GET | `/products` | read | 产品、发布状态和选项列表；只有 admin/super_admin 响应包含内部 `fixed_prompt` / `output_prompt`。 |
+| POST | `/products` | admin | 创建产品模板；body 为名称、分类、描述、固定/输出 prompt、排序与完整 options。 |
+| PUT | `/products/{product_id}` | admin | 完整替换产品元数据与 options，并递增配置版本。 |
+| DELETE | `/products/{product_id}` | admin | 删除未被邀请/生成记录引用的产品；数据库引用约束仍是最终保护。 |
+| POST | `/products/{product_id}/publish` | admin | 发布前必须同时存在当前 cover 与 reference 资产。 |
+| GET | `/invites` | read | 管理员看全部，普通用户只看自己创建的邀请；仅返回 `token_suffix`，永不返回 `token_hash` 或明文 token。 |
+| POST | `/invites` | write | body `{customer_id, product_ids, expires_at, quota_total}`；客户必须在调用者范围内，产品必须已发布。响应仅本次包含 `invite_url`。 |
+| POST | `/invites/{invite_id}/revoke` | write | 幂等撤销；普通用户跨 owner 操作返回 404。 |
+| GET | `/generations` | read | 管理员看全部，普通用户只看自己邀请产生的记录；不返回 prompt、provider 或 pricing 快照。 |
+
+邀请创建响应中的 `invite_url` 形如 `https://leshine.work/create/<plaintext>`。明文 token 只在创建成功的这一次响应中出现，服务端只保存 SHA-256 digest 与末 6 位 suffix；关闭结果对话框后无法重新读取，只能重新创建邀请。
+
+主要错误：请求结构 422、未认证 401、无权限 403、客户/产品不存在或跨 owner 404、缺少 OKKI 绑定 409、产品发布前置条件或业务校验 400。
+
 ## 薪资计算（`/api/salary`，092/097 迁移，2026-08-06，M1 主数据 + M2 批次/考勤/导入 + M3 计算引擎）
 
 权限按**爆炸半径**分，不按「是不是主数据」分：`salary:read` 读 / `salary:write` 改单个员工档案与批次数据（影响 1 人或 1 批）/ `salary:admin` 改职级表与规则参数、锁定/解锁批次（改一行动全员发薪口径）。导出端点在 M4。
