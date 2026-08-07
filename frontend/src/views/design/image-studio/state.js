@@ -153,6 +153,12 @@ export function missingPromptParams(template, selections = {}) {
   return options.filter(option => !selections?.[option?.key]).map(option => option.key)
 }
 
+/* 颜色类参数槽：key 或显示名含 color/色 时，提供潘通色卡选色入口 */
+export function isColorParam(option) {
+  if (!option) return false
+  return /color/i.test(option.key ?? '') || /color|色/i.test(option.label ?? '')
+}
+
 /* 会话侧栏分组：按最近一次活动时间（updated_at）归入「日期 + 上午/下午」区块，
    近期在上。后端返回 UTC 朴素时间，解析时补 Z 再取本地年月日/小时。 */
 export function groupSessionsByDayHalf(sessions) {

@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.color.models import PantoneReference
 from app.design_image import file_service
 from app.design_image.models import (
     DesignImageAsset,
@@ -332,6 +333,21 @@ def clone_library_asset_to_session(
     return asset
 
 
+# ── 潘通色卡 ─────────────────────────────────
+
+def list_pantone_colors(db: Session) -> list[dict]:
+    """提示词颜色参数的色卡库数据源：复用色彩模块的 Pantone 参考库。"""
+    rows = (
+        db.query(PantoneReference)
+        .order_by(PantoneReference.pantone_code)
+        .all()
+    )
+    return [
+        {"code": row.pantone_code, "name": row.pantone_name, "hex": row.hex_code}
+        for row in rows
+    ]
+
+
 __all__ = [
     "LIBRARY_SCOPES",
     "clone_library_asset_to_session",
@@ -340,6 +356,7 @@ __all__ = [
     "delete_library_asset",
     "delete_prompt_template",
     "list_library_assets",
+    "list_pantone_colors",
     "list_prompt_templates",
     "open_library_asset_content",
     "seed_prompt_templates",

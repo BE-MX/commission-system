@@ -12,6 +12,7 @@ import {
   composePrompt,
   createObjectUrlRegistry,
   groupSessionsByDayHalf,
+  isColorParam,
   missingPromptParams,
   replaceActiveJob,
   restoreActiveJob,
@@ -139,6 +140,14 @@ test('prompt library composes templates and reports missing params', () => {
   assert.deepEqual(missingPromptParams(template, { scene: '沙龙', style: '暖调' }), [])
   assert.deepEqual(missingPromptParams({ content: '无参数模板', options: [] }, {}), [])
   assert.deepEqual(missingPromptParams(null), [])
+})
+
+test('color params are detected by key or label for the pantone swatch entry', () => {
+  assert.equal(isColorParam({ key: 'palette_color', label: '主色' }), true)
+  assert.equal(isColorParam({ key: 'palette', label: '色调' }), true)
+  assert.equal(isColorParam({ key: 'background', label: '背景色' }), true)
+  assert.equal(isColorParam({ key: 'scene', label: '场景' }), false)
+  assert.equal(isColorParam(null), false)
 })
 
 test('sidebar sessions group by local day half with most recent on top', () => {
@@ -354,6 +363,7 @@ test('design image API wrappers execute every route with data and request config
     api.createPromptTemplate(turn),
     api.updatePromptTemplate(61, turn),
     api.deletePromptTemplate(61),
+    api.listPantoneColors(),
   ]
   assert.deepEqual(results, calls.map(call => call.result))
   assert.deepEqual(calls.map(({ method, args }) => [method, args[0]]), [
@@ -379,6 +389,7 @@ test('design image API wrappers execute every route with data and request config
     ['post', '/prompt-templates'],
     ['put', '/prompt-templates/61'],
     ['delete', '/prompt-templates/61'],
+    ['get', '/pantone-colors'],
   ])
   for (const callIndex of [0, 3, 5]) {
     assert.deepEqual(calls[callIndex].args[1], { showLoading: false })
@@ -424,6 +435,7 @@ test('design image API wrappers execute every route with data and request config
   assert.equal(calls[20].args[1], turn)
   assert.deepEqual(calls[20].args[2], { showLoading: false, suppressToast: true })
   assert.deepEqual(calls[21].args[1], { showLoading: false })
+  assert.deepEqual(calls[22].args[1], { showLoading: false })
   assert.deepEqual(calls[11].args[1], { params: usage, showLoading: false })
 })
 

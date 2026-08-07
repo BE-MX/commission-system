@@ -63,6 +63,7 @@ ROUTES = [
         "/api/design-image/library-assets/31/clone",
         {"json": {"session_id": 11}},
     ),
+    ("get", "/api/design-image/pantone-colors", {}),
 ]
 
 
@@ -139,6 +140,7 @@ def test_router_registration_order_permissions_and_architecture_are_static():
         ("delete", "/library-assets/{asset_id}"): "design_image:write",
         ("get", "/library-assets/{asset_id}/content"): "design_image:read",
         ("post", "/library-assets/{asset_id}/clone"): "design_image:write",
+        ("get", "/pantone-colors"): "design_image:read",
     }
 
 

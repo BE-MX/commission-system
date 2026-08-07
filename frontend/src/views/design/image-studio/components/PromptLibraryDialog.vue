@@ -48,8 +48,52 @@
                 type="button"
                 class="choice-chip"
                 :class="{ 'is-active': selections[option.key] === choice }"
-                @click="selections = { ...selections, [option.key]: choice }"
+                @click="chooseParam(option.key, choice)"
               >{{ choice }}</button>
+              <button
+                v-if="isColorParam(option)"
+                type="button"
+                class="choice-chip swatch-entry"
+                :class="{ 'is-active': pantoneOpen === option.key }"
+                title="打开潘通色卡库"
+                @click="togglePantone(option.key)"
+              >
+                <el-icon><Brush /></el-icon>潘通色卡
+              </button>
+              <button
+                v-if="pantonePicks[option.key]"
+                type="button"
+                class="choice-chip swatch-pick"
+                :title="`${pantonePicks[option.key].code} ${pantonePicks[option.key].name || ''}`"
+                @click="togglePantone(option.key)"
+              >
+                <span class="swatch-dot" :style="{ background: pantonePicks[option.key].hex }" />
+                {{ pantonePicks[option.key].hex }}
+              </button>
+            </div>
+            <div v-if="isColorParam(option) && pantoneOpen === option.key" class="pantone-panel">
+              <el-input
+                v-model="pantoneQuery"
+                size="small"
+                placeholder="搜索色号 / 名称 / HEX"
+                clearable
+              />
+              <div class="pantone-grid">
+                <button
+                  v-for="color in visiblePantone"
+                  :key="color.code"
+                  type="button"
+                  class="pantone-swatch"
+                  :class="{ 'is-active': pantonePicks[option.key]?.code === color.code }"
+                  :title="`${color.code} ${color.name || ''}`"
+                  @click="pickPantone(option.key, color)"
+                >
+                  <span class="pantone-color" :style="{ background: color.hex }" />
+                  <span class="pantone-code">{{ color.code }}</span>
+                  <span class="pantone-hex">{{ color.hex }}</span>
+                </button>
+              </div>
+              <p class="pantone-meta">{{ pantoneQuery ? `匹配 ${pantoneTotal} 条` : `共 ${pantoneTotal} 条` }}<template v-if="pantoneCapped">，仅显示前 {{ visiblePantone.length }} 条，输入关键词缩小范围</template></p>
             </div>
           </div>
           <div class="tpl-preview">
@@ -80,11 +124,11 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { Setting } from '@element-plus/icons-vue'
+import { Brush, Setting } from '@element-plus/icons-vue'
 import GlassButton from '@/components/GlassButton.vue'
-import { listPromptTemplates, seedPromptTemplates } from '@/api/designImage'
+import { listPantoneColors, listPromptTemplates, seedPromptTemplates } from '@/api/designImage'
 import { msgError, msgSuccess } from '@/utils/feedback'
-import { composePrompt, missingPromptParams } from '../state'
+import { composePrompt, isColorParam, missingPromptParams } from '../state'
 import PromptTemplateManagerDialog from './PromptTemplateManagerDialog.vue'
 
 const props = defineProps({
@@ -108,6 +152,59 @@ const category = ref('')
 const selected = ref(null)
 const selections = ref({})
 
+/* 潘通色卡：模块级缓存一次拉全量，面板内前端过滤（2310 条，上限渲染防爆） */
+const pantoneColors = ref([])
+const pantoneLoaded = ref(false)
+const pantonePicks = ref({})
+const pantoneOpen = ref(null)
+const pantoneQuery = ref('')
+const PANTONE_RENDER_CAP = 240
+
+const filteredPantone = computed(() => {
+  const query = pantoneQuery.value.trim().toLowerCase()
+  if (!query) return pantoneColors.value
+  return pantoneColors.value.filter(color => (
+    color.code.toLowerCase().includes(query)
+    || (color.name ?? '').toLowerCase().includes(query)
+    || color.hex.toLowerCase().includes(query)
+  ))
+})
+const visiblePantone = computed(() => filteredPantone.value.slice(0, PANTONE_RENDER_CAP))
+const pantoneTotal = computed(() => filteredPantone.value.length)
+const pantoneCapped = computed(() => filteredPantone.value.length > PANTONE_RENDER_CAP)
+
+async function ensurePantone() {
+  if (pantoneLoaded.value) return
+  try {
+    const response = await listPantoneColors()
+    pantoneColors.value = response?.data?.items ?? []
+    pantoneLoaded.value = true
+  } catch {
+    msgError('潘通色库读取失败，请稍后重试')
+  }
+}
+
+function chooseParam(key, choice) {
+  selections.value = { ...selections.value, [key]: choice }
+  const rest = { ...pantonePicks.value }
+  delete rest[key]
+  pantonePicks.value = rest
+}
+
+function togglePantone(key) {
+  pantoneOpen.value = pantoneOpen.value === key ? null : key
+  if (pantoneOpen.value) {
+    pantoneQuery.value = ''
+    void ensurePantone()
+  }
+}
+
+function pickPantone(key, color) {
+  pantonePicks.value = { ...pantonePicks.value, [key]: color }
+  selections.value = { ...selections.value, [key]: color.hex }
+  pantoneOpen.value = null
+}
+
 const categories = computed(() => {
   const seen = new Map()
   for (const tpl of templates.value) {
@@ -126,6 +223,9 @@ const missing = computed(() => missingPromptParams(selected.value, selections.va
 function select(tpl) {
   selected.value = tpl
   selections.value = {}
+  pantonePicks.value = {}
+  pantoneOpen.value = null
+  pantoneQuery.value = ''
 }
 
 async function fetchTemplates() {
@@ -216,15 +316,39 @@ function apply() {
 .tpl-preview > p.is-incomplete { color: var(--text-muted); }
 .preview-warning { margin: 6px 0 0; color: var(--color-warning-text); font-size: 11px; }
 
+/* 潘通色卡 */
+.swatch-entry { display: inline-flex; align-items: center; gap: 4px; }
+.swatch-pick { display: inline-flex; align-items: center; gap: 6px; border-color: var(--color-primary); background: var(--color-primary-light); font-variant-numeric: tabular-nums; }
+.swatch-dot { width: 14px; height: 14px; border: 1px solid rgba(26, 24, 22, 0.16); border-radius: 50%; }
+.pantone-panel {
+  margin-top: 8px; padding: 10px; border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg, 12px); background: var(--card-bg);
+}
+.pantone-grid {
+  display: grid; max-height: 260px; margin-top: 8px; overflow-y: auto;
+  grid-template-columns: repeat(auto-fill, minmax(86px, 1fr)); gap: 6px;
+}
+.pantone-swatch {
+  overflow: hidden; padding: 0 0 5px; border: 1px solid var(--border-color); border-radius: 8px;
+  background: var(--toolbar-bg); cursor: pointer; text-align: center;
+  transition: border-color 160ms cubic-bezier(0.23, 1, 0.32, 1), box-shadow 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.pantone-color { display: block; height: 34px; }
+.pantone-code { display: block; margin-top: 4px; overflow: hidden; padding: 0 4px; color: var(--text-secondary); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.pantone-hex { display: block; color: var(--text-muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+.pantone-swatch.is-active { border-color: var(--color-primary); box-shadow: 0 0 0 3px var(--color-primary-glow); }
+.pantone-meta { margin: 6px 0 0; color: var(--text-muted); font-size: 11px; }
+
 @media (hover: hover) and (pointer: fine) {
   .category-chip:hover, .choice-chip:hover { border-color: var(--color-primary); color: var(--color-gold-muted); }
   .tpl-item:hover { border-color: var(--border-hover); box-shadow: var(--card-shadow-hover); }
+  .pantone-swatch:hover { border-color: var(--color-primary); }
 }
 @media (max-width: 640px) {
   .tpl-main { grid-template-columns: minmax(0, 1fr); }
   .tpl-list { max-height: 220px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .category-chip, .choice-chip, .tpl-item { transition: none; }
+  .category-chip, .choice-chip, .tpl-item, .pantone-swatch { transition: none; }
 }
 </style>

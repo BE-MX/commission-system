@@ -7,6 +7,7 @@ from PIL import Image
 from pydantic import ValidationError as PydanticValidationError
 
 from app.auth.models import ArkUser
+from app.color.models import PantoneReference  # noqa: F401 -- 向 Base.metadata 注册表结构，SQLite 才能建表
 from app.core.config import get_settings
 from app.design_image import library_service, service
 from app.design_image.models import (
@@ -208,3 +209,20 @@ def test_library_rejects_non_image_upload(db, storage, users):
         )
     assert db.query(DesignImageLibraryAsset).count() == 0
     assert db.query(DesignImageAsset).count() == 0
+
+
+def test_pantone_colors_listing_sorted_by_code(db):
+    db.add(PantoneReference(
+        pantone_code="19-4004 TCX", pantone_name="black", hex_code="#2B272B",
+        rgb_r=43, rgb_g=39, rgb_b=43,
+    ))
+    db.add(PantoneReference(
+        pantone_code="11-0103 TCX", pantone_name="egret", hex_code="#F3ECE0",
+        rgb_r=243, rgb_g=236, rgb_b=224,
+    ))
+    db.commit()
+
+    rows = library_service.list_pantone_colors(db)
+
+    assert [row["code"] for row in rows] == ["11-0103 TCX", "19-4004 TCX"]
+    assert rows[0] == {"code": "11-0103 TCX", "name": "egret", "hex": "#F3ECE0"}

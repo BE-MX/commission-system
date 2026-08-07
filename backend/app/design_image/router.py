@@ -523,3 +523,14 @@ def clone_library_asset(
         body.session_id,
     )
     return ok(_asset(asset))
+
+
+# ── 潘通色卡 ─────────────────────────────────
+
+
+@router.get("/pantone-colors")
+def list_pantone_colors(
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_permission("design_image:read")),
+):
+    return ok({"items": _call(library_service.list_pantone_colors, db)})

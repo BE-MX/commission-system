@@ -95,6 +95,10 @@ export function deletePromptTemplate(templateId) {
   return designImageClient.delete(`/prompt-templates/${templateId}`, { showLoading: false })
 }
 
+export function listPantoneColors() {
+  return designImageClient.get('/pantone-colors', { showLoading: false })
+}
+
 export function listLibraryAssets(scope = 'public') {
   return designImageClient.get('/library-assets', { params: { scope }, showLoading: false })
 }
