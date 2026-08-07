@@ -120,6 +120,16 @@ def test_decode_image_payload_url_requires_allowlisted_host(monkeypatch):
         )
 
 
+def test_decode_image_payload_rejects_oversized_url_download():
+    with pytest.raises(ValueError, match="too large"):
+        runtime.decode_image_payload(
+            "https://cdn.example.test/image",
+            frozenset({"cdn.example.test"}),
+            download_image=lambda url, hosts: PNG
+            + b"x" * runtime.MAX_DECODED_IMAGE_BYTES,
+        )
+
+
 def test_usage_and_cost_are_parsed_with_overflow_protection(monkeypatch):
     monkeypatch.setattr(
         runtime.ai_service,

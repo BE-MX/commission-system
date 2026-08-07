@@ -120,6 +120,8 @@ def decode_image_payload(
         if download_image is None:
             raise ValueError("provider image downloader is not configured")
         payload = download_image(content, allowed_hosts)
+        if len(payload) > MAX_DECODED_IMAGE_BYTES:
+            raise ValueError("provider image is too large")
         declared_mime = _mime_from_magic(payload) or ""
         if not declared_mime:
             raise ValueError("provider URL did not return a supported image")
