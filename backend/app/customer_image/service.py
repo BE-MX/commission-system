@@ -23,20 +23,23 @@ def validate_public_requirement(requirement: str, settings) -> str:
     return value
 
 
-def _primary_okki_account_id(db: Session, ark_user_id: int) -> str:
-    external_id = db.scalar(
+def _okki_account_id(db: Session, ark_user_id: int) -> str:
+    external_ids = db.scalars(
         select(ArkUserExternalBinding.external_account_id).where(
             ArkUserExternalBinding.ark_user_id == ark_user_id,
             ArkUserExternalBinding.provider == "okki",
             ArkUserExternalBinding.binding_status == "active",
-            ArkUserExternalBinding.is_primary.is_(True),
             ArkUserExternalBinding.deleted_at.is_(None),
+        ).order_by(
+            ArkUserExternalBinding.is_primary.desc(),
+            ArkUserExternalBinding.id,
         )
-    )
-    external_id = external_id.strip() if external_id else ""
-    if not external_id.isdigit():
-        raise CustomerScopeConflictError(OKKI_BINDING_REQUIRED_MESSAGE)
-    return external_id
+    ).all()
+    for external_id in external_ids:
+        normalized = external_id.strip() if external_id else ""
+        if normalized.isdigit():
+            return normalized
+    raise CustomerScopeConflictError(OKKI_BINDING_REQUIRED_MESSAGE)
 
 
 def list_available_customers(
@@ -52,7 +55,7 @@ def list_available_customers(
         CustomerInfo.origin_name,
     )
     if not is_admin:
-        okki_user_id = _primary_okki_account_id(db, ark_user_id)
+        okki_user_id = _okki_account_id(db, ark_user_id)
         statement = statement.join(
             CustomerCommissionSnapshot,
             CustomerCommissionSnapshot.customer_id == CustomerInfo.company_id,

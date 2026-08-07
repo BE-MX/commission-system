@@ -86,9 +86,9 @@ def test_admin_searches_all_customers_without_okki_binding(db):
 
 @pytest.mark.parametrize(
     ("external_id", "binding_status", "is_primary"),
-    [(None, None, None), ("not-numeric", "active", True), ("1007", "inactive", True), ("1007", "active", False)],
+    [(None, None, None), ("not-numeric", "active", True), ("1007", "inactive", True)],
 )
-def test_non_admin_without_active_primary_numeric_okki_binding_gets_actionable_conflict(
+def test_non_admin_without_active_numeric_okki_binding_gets_actionable_conflict(
     db, external_id, binding_status, is_primary
 ):
     if external_id is not None:
@@ -100,6 +100,37 @@ def test_non_admin_without_active_primary_numeric_okki_binding_gets_actionable_c
 
     assert exc_info.value.status_code == 409
     assert str(exc_info.value) == OKKI_BINDING_REQUIRED_MESSAGE
+
+
+def test_non_admin_uses_active_non_primary_binding_when_no_primary_exists(db):
+    _seed_customer(db, "c1", "Owned Customer")
+    _bind_okki(db, 7, "1007", is_primary=False)
+    _snapshot(db, "c1", "1007")
+    db.flush()
+
+    assert [row["id"] for row in list_available_customers(db, 7, False, "")] == ["c1"]
+
+
+def test_non_admin_skips_invalid_primary_and_uses_first_numeric_binding(db):
+    _seed_customer(db, "c1", "Fallback Customer")
+    _bind_okki(db, 7, "not-numeric", is_primary=True)
+    _bind_okki(db, 7, "1007", is_primary=False)
+    _snapshot(db, "c1", "1007")
+    db.flush()
+
+    assert [row["id"] for row in list_available_customers(db, 7, False, "")] == ["c1"]
+
+
+def test_non_admin_prefers_numeric_primary_over_other_numeric_binding(db):
+    _seed_customer(db, "primary", "Primary Customer")
+    _seed_customer(db, "secondary", "Secondary Customer")
+    _bind_okki(db, 7, "1008", is_primary=False)
+    _bind_okki(db, 7, "1007", is_primary=True)
+    _snapshot(db, "primary", "1007")
+    _snapshot(db, "secondary", "1008")
+    db.flush()
+
+    assert [row["id"] for row in list_available_customers(db, 7, False, "")] == ["primary"]
 
 
 def test_invite_create_schema_enforces_products_future_expiry_and_quota():
