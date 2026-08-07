@@ -564,9 +564,11 @@
 **钉钉侧四条经验约束**（在真实租户上探出来的，不是文档里写的；细节见 `attendance_source.py` 模块 docstring）：
 
 1. `getcolumnval` 单次最多 **20 个 column id**，第 21 个起返回 `errcode=41`。本租户 38 列 → 必须分片，一个人 2 次调用。官方文档未记载。
-2. **五个请假列（年假/事假/病假/产假/产检）全部只有 `alias: "leave_"`、没有 `id` 键**，`getcolumnval` 从原理上就取不到。所以事假/病假只能人工录。
-3. `attendance/list` 回 60011、`getleavestatus` 回 88 —— 应用 `ding96njlc1de3wg9kmd` 缺 `qyapi_attendance_isv_query_result` / `qyapi_get_attendance_data` 两个权限点。**开通后可以把约束 2 绕过去**，在此之前别改口径。
+2. **五个请假列（年假/事假/病假/产假/产检）全部只有 `alias: "leave_"`、没有 `id` 键**，`getcolumnval` 从原理上就取不到。→ 请假改走 `getleavestatus` 明细路（见下）。
+3. **2026-08-07 权限已开通**：`attendance/list`（打卡明细）与 `getleavestatus`（请假明细）实测可用。请假四列同步自动填充：跨月记录按时间重叠比例折算、`percent_day` 按 `day_hours=7.83` 折小时、类型名只精确匹配事假/病假/年假（HR 自建类型进 `leave_unknown_types` 不扣款）。假期类型/年假额度还需 `qyapi_holiday_readonly`，未开则请假管线整体降级为人工录入（`leave_degraded` 写明原因）。
 4. 钉钉的「应出勤天数」是工作日语义（3 月 = 22），**绝不可赋给 `due_days`**——满月员工按决策 B1 用 `full_month_days=31`。
+
+**请假四列的归属（098 `leave_source`）**：`NULL`=从没写过（同步可填）/ `dingtalk`=同步在管（重同步刷新）/ `manual`=人工改过（同步永远让路——红线 1 从「整列禁写」精确化为「按归属让路」）。「本月无请假记录」会显式填 0 并判全勤，与「还没录」的 NULL 严格区分。
 
 列映射一律按 `alias`，**不按 column id**：id 是租户级的（本租户从 340771676 起），换租户全错。
 

@@ -152,9 +152,24 @@
             </GlassButton>
           </div>
 
-          <!-- 钉钉给不了这五列（那几列没有 column id），所以事假/病假只能人工录。
-               这不是暂时状态，是接口的硬约束，得在界面上说明白 -->
-          <el-alert v-if="lastSync?.missing_leave_columns?.length" type="warning"
+          <!-- 请假数据的两种来源状态：自动拉取生效时请假小时已落库，
+               这里只剩「人工让路」和「降级原因」需要明说 -->
+          <el-alert v-if="lastSync?.leave_degraded" type="warning" :closable="false"
+                    class="tab-alert">
+            请假自动拉取未生效：{{ lastSync.leave_degraded }}。请假小时在下表人工录入——
+            留空会被当成「还没录」，那一行的实出天数和全勤都算不出来。
+          </el-alert>
+          <el-alert v-else-if="lastSync?.leave_filled !== undefined" type="success"
+                    :closable="false" class="tab-alert">
+            请假已自动拉取 {{ lastSync.leave_filled }} 人<template v-if="lastSync.leave_kept_manual">
+              （{{ lastSync.leave_kept_manual }} 人人工改过，保留人工值）</template>。
+            <template v-if="lastSync.leave_unknown_types?.length">
+              有未识别的请假类型 {{ lastSync.leave_unknown_types.join('、') }}——
+              不会计入任何扣款，请核对后人工录入。
+            </template>
+          </el-alert>
+          <!-- 兼容旧响应（没有请假管线字段时）才回退到这段说明 -->
+          <el-alert v-else-if="lastSync?.missing_leave_columns?.length" type="warning"
                     :closable="false" class="tab-alert">
             钉钉接口取不到这几列：{{ lastSync.missing_leave_columns.join('、') }}。
             事假与病假小时只能在下表里人工录入——留空会被当成「还没录」，
@@ -182,11 +197,23 @@
                 </el-tooltip>
               </template>
             </el-table-column>
-            <el-table-column label="事假(h)" width="86" align="right">
-              <template #default="{ row }">{{ hours(row.personal_leave_hours) }}</template>
+            <el-table-column label="事假(h)" width="96" align="right">
+              <template #default="{ row }">
+                {{ hours(row.personal_leave_hours) }}
+                <el-tooltip v-if="row.leave_source === 'manual'"
+                            content="人工修正值，同步不再覆盖">
+                  <span class="manual-tag">手工</span>
+                </el-tooltip>
+              </template>
             </el-table-column>
-            <el-table-column label="病假(h)" width="86" align="right">
-              <template #default="{ row }">{{ hours(row.sick_leave_hours) }}</template>
+            <el-table-column label="病假(h)" width="96" align="right">
+              <template #default="{ row }">
+                {{ hours(row.sick_leave_hours) }}
+                <el-tooltip v-if="row.leave_source === 'manual'"
+                            content="人工修正值，同步不再覆盖">
+                  <span class="manual-tag">手工</span>
+                </el-tooltip>
+              </template>
             </el-table-column>
             <el-table-column label="年假" width="70" align="right">
               <template #default="{ row }">{{ money(row.annual_leave_days) }}</template>
@@ -476,6 +503,7 @@ async function runImport(kind, file) {
 
 .muted { color: var(--el-text-color-placeholder); font-size: 13px; }
 .warn { color: var(--el-color-warning); }
+.manual-tag { color: var(--el-color-warning); font-size: 11px; margin-left: 2px; }
 .hint { font-size: 12px; color: var(--el-text-color-secondary); line-height: 1.7; }
 .empty-hint { padding: 24px 12px; color: var(--el-text-color-secondary); line-height: 1.8; }
 .empty-hint.small { padding: 12px 0; }

@@ -235,4 +235,6 @@
 
 PII 密钥 `ARK_SALARY_ENCRYPTION_KEY` / `ARK_SALARY_HASH_KEY` 在 `backend/.env`，**未配置时 `pii.py` 直接抛 `SalaryKeyNotConfigured`，不回落占位密钥**。开发机与生产共用同一套 RDS，两边必须配完全相同的值——值不同则同一张身份证算出不同 HMAC，唯一约束形同虚设、M2 社保导入按哈希匹配会全空。
 
+**迁移 098（2026-08-07，请假自动拉取）**：`ark_salary_attendance.leave_source`——请假四列（事假/病假小时、年假天/余额）的归属标记：`NULL`=从没写过（同步可填）/ `dingtalk`=同步在管（重同步刷新）/ `manual`=人工改过（同步永远让路）。钉钉权限 `qyapi_get_attendance_data` 开通后请假走 `getleavestatus` 明细接口自动填充，这列就是「人工值不被同步覆盖」红线在自动拉取时代的精确化。
+
 **迁移 097（2026-08-07，M3 计算引擎前置）**：四个新列，全部可空/带默认、纯新增。`ark_salary_employee_profile.special_calc`（特殊计薪：不发全勤、工龄按钉值或 0——姜妮妮/刘德明类，§9.5 的 HR 确认标记）与 `seniority_override`（工龄手动钉值，刘德明 3 月工龄 1000 规则复原不了）；`ark_salary_attendance.due_days_manual`（应出天数手动钉值，李晓雨 21.75；独立成列是因为同步每轮重写 `due_days`，钉值混在里面会被冲掉）；`ark_salary_record.calc_flags`（引擎判定标记 JSON：negative_net / guaranteed_topup / mid_month_weighted / absence_clamped 等，异常面板的记录级检查直接读它，不必每次重算推导过程）。

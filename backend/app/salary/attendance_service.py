@@ -312,7 +312,12 @@ def sync_from_dingtalk(
         )
     existing = _existing_rows(db, period.id)
 
+    leave_map: dict[str, dict[str, Any]] = fetched.get("leave") or {}
+    leave_meta: dict[str, Any] = fetched.get("leave_meta") or {}
+
     counts = {SYNC_OK: 0, SYNC_FAILED: 0}
+    leave_filled = 0
+    leave_kept_manual = 0
     failures: list[dict[str, str]] = []
     dirty_people: list[dict[str, Any]] = []
     now = datetime.now()
@@ -336,6 +341,15 @@ def sync_from_dingtalk(
                     db.add(row)
                     existing[profile.id] = row
                 _apply_dingtalk(row, person.values)
+                # 请假自动拉取：只写「归同步管」的行，人工改过的让路（红线 1 精确化）。
+                # 必须在 compute_actual_days 之前落，否则实出天数用的还是旧请假值。
+                leave = leave_map.get(person.userid)
+                if leave is not None:
+                    if _leave_writable(row):
+                        _apply_leave(row, leave)
+                        leave_filled += 1
+                    else:
+                        leave_kept_manual += 1
                 row.due_days = due_days
                 row.actual_days = compute_actual_days(row, due_days, params)
                 row.full_attendance = 1 if judge_full_attendance(row, params) else 0
@@ -345,8 +359,10 @@ def sync_from_dingtalk(
                     "actual_days_raw": str(person.values.get("actual_days_raw", "")),
                     "values": {k: str(v) for k, v in person.values.items()},
                 }
+                # sync_source 的语义跟着请假归属走：请假四列是人工改的才算 mixed，
+                # 请假也是同步拉来的整行就是纯 dingtalk。
                 row.sync_source = (
-                    SOURCE_MIXED if _has_manual(row) else SOURCE_DINGTALK
+                    SOURCE_MIXED if row.leave_source == SOURCE_MANUAL else SOURCE_DINGTALK
                 )
                 row.synced_at = now
         except Exception as exc:  # noqa: BLE001
@@ -403,6 +419,13 @@ def sync_from_dingtalk(
         "missing_count": len(missing),
         "dirty_values": dirty_people[:50],
         "missing_leave_columns": fetched.get("missing_leave") or [],
+        # 请假自动拉取的结果：filled 人数字段已落库；kept_manual 是人工改过被让路的；
+        # degraded 非空说明权限没开全（qyapi_holiday_readonly），前端要明说
+        "leave_filled": leave_filled,
+        "leave_kept_manual": leave_kept_manual,
+        "leave_degraded": leave_meta.get("degraded"),
+        "leave_unknown_types": leave_meta.get("unknown_types") or [],
+        "leave_failed_userids": leave_meta.get("failed_userids") or [],
         "status": period.status,
         "status_version": period.status_version,
     }
@@ -419,6 +442,30 @@ def sync_from_dingtalk(
 
 def _has_manual(row: SalaryAttendance) -> bool:
     return any(getattr(row, f, None) is not None for f in MANUAL_FIELDS)
+
+
+def _leave_writable(row: SalaryAttendance) -> bool:
+    """请假四列现在归谁管。同步只写两种行：
+
+    - `leave_source == 'dingtalk'`：同步自己管的，重同步刷新；
+    - `leave_source` 为 NULL 且四列全空：从没写过的行（存量人工行四列非空，
+      会被这条挡在外面——红线 1 的精确化：人工值永远不被同步覆盖）。
+    """
+    if row.leave_source == SOURCE_DINGTALK:
+        return True
+    if row.leave_source is None and not _has_manual(row):
+        return True
+    return False
+
+
+def _apply_leave(row: SalaryAttendance, leave: dict[str, Any]) -> None:
+    """把拆分好的请假数据写进行对象（年假余额拉不到时保持原值）。"""
+    row.personal_leave_hours = leave["personal_hours"]
+    row.sick_leave_hours = leave["sick_hours"]
+    row.annual_leave_days = leave["annual_days"]
+    if leave.get("annual_remain") is not None:
+        row.annual_leave_remain = leave["annual_remain"]
+    row.leave_source = SOURCE_DINGTALK
 
 
 def _next_status(period: SalaryPeriod) -> Optional[str]:
@@ -497,6 +544,9 @@ def manual_upsert(
     for fname in MANUAL_FIELDS:
         if fname in payload:
             setattr(row, fname, payload[fname])
+    # 人工动过请假四列中的任何一列，这行请假数据就归人工管，同步永远让路
+    if any(fname in payload for fname in MANUAL_FIELDS):
+        row.leave_source = SOURCE_MANUAL
     # 迟到/漏打卡等钉钉字段也允许手工改（权限未开通时这是唯一来源）
     for fname in ("late_count", "early_leave_count", "miss_punch_count", "absent_count"):
         if fname in payload and payload[fname] is not None:
@@ -578,6 +628,7 @@ def serialize_row(row: SalaryAttendance, profile: Optional[SalaryEmployeeProfile
         "absent_count": row.absent_count,
         "full_attendance": bool(row.full_attendance),
         "sync_source": row.sync_source,
+        "leave_source": row.leave_source,
         "synced_at": row.synced_at,
         # 请假小时没录时，actual_days 是 None、全勤判 0——界面必须解释为什么，
         # 否则 HR 只会看到「全员非全勤」而不知道是缺输入

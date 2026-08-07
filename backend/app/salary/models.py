@@ -281,6 +281,9 @@ class SalaryAttendance(Base):
     # 应出天数手动钉值（097）：李晓雨 3 月 21.75 无法从规则复原（§8.3 第 10 条）。
     # 独立成列而非复用 due_days——同步每轮重写 due_days，钉值混在里面会被冲掉。
     due_days_manual = Column(Numeric(6, 2), nullable=True, comment="应出天数手动钉值；NULL=按规则推导")
+    # 请假四列的归属（098）：同步自动拉取只写「NULL=未写过」或「dingtalk=同步在管」的行，
+    # 人工改过的（manual）同步永远让路——红线 1 的精确化。
+    leave_source = Column(String(16), nullable=True, comment="请假四列归属：NULL/dingtalk/manual")
     actual_days = Column(Numeric(6, 2), nullable=True, comment="实出勤天数（<15 触发基准切换）")
     personal_leave_hours = Column(HOURS, nullable=True, comment="事假小时")
     sick_leave_hours = Column(HOURS, nullable=True, comment="病假小时")

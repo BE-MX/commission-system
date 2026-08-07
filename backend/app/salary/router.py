@@ -6,7 +6,8 @@
 
 import calendar
 import logging
-from datetime import date
+from datetime import date, datetime
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy.exc import IntegrityError
@@ -598,9 +599,55 @@ async def sync_period_attendance(
         # 取数失败是「钉钉那边的事」，不是我们 500：给原文案让 HR 能自己判断
         raise HTTPException(status_code=502, detail=str(exc))
 
+    # 请假自动拉取（2026-08-07 权限开通后接入）。类型映射拿不到
+    # （qyapi_holiday_readonly 未开）就整段降级，主同步照常；降级原因必须写进
+    # summary——不说的话 HR 会以为请假在自动拉，实际还是全手工。
+    from_ms = int(datetime.strptime(from_date, "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
+    to_ms = int(datetime.strptime(to_date, "%Y-%m-%d %H:%M:%S").timestamp() * 1000) + 999
+    leave_map: dict[str, dict] = {}
+    leave_meta: dict = {"degraded": None, "unknown_types": [], "failed_userids": []}
+    type_map = await attendance_source.fetch_leave_types()
+    if not type_map:
+        leave_meta["degraded"] = (
+            "假期类型接口权限未开通（qyapi_holiday_readonly），请假仍为人工录入"
+        )
+    else:
+        params = period_service.resolve_params(db, row)
+        day_hours = service.param_decimal(params, "day_hours", Decimal("7.83"))
+        records, failed_uids = await attendance_source.fetch_leave_records(
+            userids, from_ms, to_ms)
+        leave_meta["failed_userids"] = failed_uids
+        for uid, recs in records.items():
+            leave_map[uid] = attendance_source.split_leave(
+                recs, type_map, from_ms, to_ms, day_hours)
+        unknown_names = sorted({
+            u["leave_name"] for v in leave_map.values() for u in v["unknown"]
+        })
+        leave_meta["unknown_types"] = unknown_names
+        # 年假余额：拉不到不阻塞（quota 形状权限开通前没法实测，见 source 注释）
+        annual_code = next(
+            (c for c, m in type_map.items()
+             if m["name"] == attendance_source.LEAVE_TYPE_ANNUAL),
+            None,
+        )
+        if annual_code:
+            import asyncio
+
+            sem = asyncio.Semaphore(4)  # 与 fetch_many 同理由：快了会撞限流
+
+            async def _quota(uid: str):
+                async with sem:
+                    return uid, await attendance_source.fetch_annual_quota(
+                        uid, annual_code)
+
+            for uid, remain in await asyncio.gather(*(_quota(u) for u in userids)):
+                if remain is not None and uid in leave_map:
+                    leave_map[uid]["annual_remain"] = remain
+
     try:
         summary = attendance_service.sync_from_dingtalk(
-            db, row, {"results": results, "missing_leave": missing_leave},
+            db, row, {"results": results, "missing_leave": missing_leave,
+                      "leave": leave_map, "leave_meta": leave_meta},
             expected_version=payload.expected_version,
             operator_id=_operator_id(current_user),
         )
