@@ -713,3 +713,24 @@ def test_calc_gate_view_excludes_record_items(db, period):
     r = ans.collect(db, period, include_records=False)
     assert r["total"] == 0
     assert r["ready_to_calculate"] is True
+
+
+def test_unbound_with_complete_manual_attendance_is_info_not_blocking(db, period):
+    """不打卡人员（姜妮妮类）绑不了钉钉：手工录齐考勤后，数据缺口已补，
+    再按 blocking 报会永远卡住计算门——2026-08-07 实测 8 人全卡在这。"""
+    p = mk_profile(db, dingtalk_userid=None)
+    mk_attendance(db, period, p)  # 请假小时已录 0
+    mk_insurance(db, period, p)
+    mk_fund(db, period, p)
+    r = ans.collect(db, period)
+    unbound = [it for it in r["items"] if it["kind"] == ans.KIND_DINGTALK_UNBOUND]
+    assert len(unbound) == 1
+    assert unbound[0]["severity"] == ans.INFO
+    assert r["ready_to_calculate"] is True
+
+    # 没录考勤的未绑定人仍是 blocking——降级只认「手工录齐」这一种
+    p2 = mk_profile(db, emp_no="B02", name="未录人", dingtalk_userid=None)
+    r2 = ans.collect(db, period)
+    assert ans.KIND_ATTENDANCE_PENDING not in [it["kind"] for it in r2["items"]
+                                               if it["employee_id"] == p2.id]
+    assert r2["ready_to_calculate"] is False
