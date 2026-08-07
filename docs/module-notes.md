@@ -787,7 +787,7 @@ frontend/src/
 
 **提示词库**：`ark_design_image_prompt_templates` 预置完整模板，`content` 内 `{key}` 为参数占位，`options` JSON 定义参数槽（key/label/choices）；前端选择类型→模板→参数取值后本地拼装（`composePrompt`），填入输入框可再编辑。读取要 `design_image:read`，管理与 `POST /prompt-templates/seed` 种子导入要 `design_image:admin`；种子按 name 幂等，不覆盖人工修改。管理界面在提示词库对话框内（admin 可见「管理模板」按钮）：新增/编辑（含参数槽编辑器，前端校验与后端 schema 同口径：占位必须有参数槽、key 唯一小写、取值非空）、停用/启用；`GET /prompt-templates?include_inactive=true` 仅 admin，用于查看和恢复已停用模板。
 
-**参考图库（公/私库）**：`ark_design_image_library_assets` 的 `scope` 决定可见性——`public` 公库全员可读可用（上传/删除仅 admin），`private` 私库仅创建者本人可见可用（业务员为自己的客户备的私图）；他人私库的读取/复制/删除与随机不存在 ID 同为 404，不泄露存在性。选用时 `POST /library-assets/{id}/clone` 把原图复制为会话内 draft `DesignImageAsset`，作为 `base_asset_id` 走现有生成链路，不另开通道。
+**参考图库（公/私库）**：`ark_design_image_library_assets` 的 `scope` 决定可见性——`public` 公库全员可读可用（上传/删除仅 admin），`private` 私库仅创建者本人可见可用（业务员为自己的客户备的私图）；他人私库的读取/复制/删除与随机不存在 ID 同为 404，不泄露存在性。选用时 `POST /library-assets/{id}/clone` 把原图复制为会话内 draft `DesignImageAsset`，作为 `base_asset_id` 走现有生成链路，不另开通道。**基准图允许 draft**：克隆产物即 draft，`create_turn` 对 base 用 `allow_draft=True` 校验并在本轮使用后转正为 attached（message_id 关联本轮消息、清 expires_at），语义与草稿参考图一致；过期草稿基准图仍按 404 拒绝。
 
 **额度与幂等**：`request_id` 在用户范围唯一。事务先查幂等、锁 active 用户行，再用 locking/current read 检查当天 accepted 数和 queued/running 数；已有同 key 返回原 job。每日 20 是默认 Settings，不是硬编码产品承诺；失败和 retry 新 job 均占额度，因为 Provider 是否计费不能从业务终态推断。
 

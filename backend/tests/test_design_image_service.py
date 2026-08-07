@@ -401,6 +401,43 @@ def test_create_turn_never_falls_back_to_latest_generated_asset(configured, db):
     assert result.job.base_asset_id is None
 
 
+def test_create_turn_accepts_draft_base_and_promotes_it(configured, db):
+    """图库克隆进会话的图是 draft，可直接作为基准图，随本轮使用转正。"""
+    owner, _ = configured
+    session = _session(db, owner.id)
+    draft_base = _asset(db, owner.id, session.id)
+    db.commit()
+
+    result = service.create_turn(
+        db,
+        owner.id,
+        _turn(request_id="draft-base", session_id=session.id, base_asset_id=draft_base.id),
+    )
+
+    assert result.job.mode == "edit"
+    assert result.job.base_asset_id == draft_base.id
+    assert draft_base.status == "attached"
+    assert draft_base.message_id == result.message.id
+    assert draft_base.expires_at is None
+
+
+def test_create_turn_rejects_expired_draft_base(configured, db):
+    owner, _ = configured
+    session = _session(db, owner.id)
+    expired = _asset(db, owner.id, session.id)
+    expired.expires_at = datetime(2026, 8, 4, 0, 0, 0)
+    db.commit()
+
+    with pytest.raises(service.DesignImageNotFoundError):
+        service.create_turn(
+            db,
+            owner.id,
+            _turn(request_id="expired-base", session_id=session.id, base_asset_id=expired.id),
+            now=datetime(2026, 8, 5, 12, 0, tzinfo=SHANGHAI),
+        )
+    assert db.query(DesignImageJob).count() == 0
+
+
 def test_create_turn_snapshots_configured_rate_card_without_hardcoded_prices(
     configured, db
 ):

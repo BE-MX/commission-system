@@ -717,7 +717,8 @@ def create_turn(
         base = (
             _usable_asset(
                 db, owner_user_id, session.id, payload.base_asset_id,
-                allow_draft=False, now=now,
+                # 允许草稿基准图：图库克隆进会话的图就是 draft，使用后即刻转正（见下方提升逻辑）
+                allow_draft=True, now=now,
             )
             if payload.base_asset_id is not None
             else None
@@ -772,6 +773,11 @@ def create_turn(
                 asset.status = "attached"
                 asset.message_id = message.id
                 asset.expires_at = None
+        # 草稿基准图（图库克隆）随本轮使用转正，语义与草稿参考图一致
+        if base is not None and base.status == "draft":
+            base.status = "attached"
+            base.message_id = message.id
+            base.expires_at = None
         db.commit()
     except IntegrityError:
         db.rollback()
