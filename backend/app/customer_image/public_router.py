@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import threading
 import time
+import logging
 from collections import OrderedDict, deque
 from datetime import UTC, datetime
+from typing import BinaryIO
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.background import BackgroundTask
 from sqlalchemy.orm import Session
 
@@ -28,13 +30,76 @@ from app.pm.auth import client_ip
 
 
 router = APIRouter()
+logger = logging.getLogger("commission")
 AUTH_ERROR = "This invitation is unavailable. Please request a new link from your sales contact."
 RATE_ERROR = "Too many logo uploads. Please wait one minute and try again."
+UPLOAD_TOO_LARGE_ERROR = "Logo image cannot exceed 20 MiB."
+PUBLIC_PREFIX = "/api/customer-image/public"
 SECURITY_HEADERS = {
     "Cache-Control": "private, no-store",
     "Referrer-Policy": "no-referrer",
     "X-Content-Type-Options": "nosniff",
 }
+
+
+def _is_public_path(path: str) -> bool:
+    return path == PUBLIC_PREFIX or path.startswith(f"{PUBLIC_PREFIX}/")
+
+
+class PublicSecurityHeadersMiddleware:
+    """Apply security headers to every public portal response, including framework errors."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or not _is_public_path(scope.get("path", "")):
+            await self.app(scope, receive, send)
+            return
+
+        response_started = False
+
+        async def send_with_headers(message):
+            nonlocal response_started
+            if message["type"] == "http.response.start":
+                response_started = True
+                security_names = {name.lower().encode("latin-1") for name in SECURITY_HEADERS}
+                headers = [
+                    (name, value)
+                    for name, value in message.get("headers", [])
+                    if name.lower() not in security_names
+                ]
+                for name, value in SECURITY_HEADERS.items():
+                    encoded_name = name.lower().encode("latin-1")
+                    headers.append((encoded_name, value.encode("latin-1")))
+                message = {**message, "headers": headers}
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_with_headers)
+        except Exception as exc:
+            if response_started:
+                raise
+            message = f"[customer-image] unhandled public API error: {exc}"
+            logger.warning(message)
+            print(message, flush=True)
+            response = JSONResponse(
+                status_code=500,
+                content={"detail": "Internal server error"},
+                headers=SECURITY_HEADERS,
+            )
+            await response(scope, receive, send)
+
+
+class UploadTooLargeError(Exception):
+    """Raised before decoding when a logo exceeds the configured byte ceiling."""
+
+
+def read_upload_content(stream: BinaryIO, byte_limit: int) -> bytes:
+    content = stream.read(byte_limit + 1)
+    if len(content) > byte_limit:
+        raise UploadTooLargeError
+    return content
 
 
 class BoundedSlidingWindowLimiter:
@@ -154,8 +219,11 @@ def upload_logo(
     if not logo_rate_limiter.allow(f"{invite.id}:{client_ip(request)}"):
         raise HTTPException(status_code=429, detail=RATE_ERROR, headers=SECURITY_HEADERS)
     try:
-        normalized = file_service.normalize_upload(file.file.read(), file.content_type or "")
+        content = read_upload_content(file.file, file_service.effective_max_upload_bytes())
+        normalized = file_service.normalize_upload(content, file.content_type or "")
         asset = file_service.replace_current_logo(db, invite.id, normalized)
+    except UploadTooLargeError:
+        raise HTTPException(status_code=413, detail=UPLOAD_TOO_LARGE_ERROR) from None
     except file_service.shared_files.ImageValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc), headers=SECURITY_HEADERS) from exc
     except (file_service.shared_files.ImageStorageError, OSError) as exc:

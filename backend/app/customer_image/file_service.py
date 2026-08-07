@@ -23,6 +23,7 @@ from app.design_image.service import _thumbnail_path
 
 ImageStorageError = shared_files.ImageStorageError
 normalize_upload = shared_files.normalize_upload
+effective_max_upload_bytes = shared_files.effective_max_upload_bytes
 resolve_private_path = shared_files.resolve_private_path
 save_private_image = shared_files.save_private_image
 delete_private_file = shared_files.delete_private_file

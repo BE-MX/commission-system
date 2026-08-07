@@ -88,9 +88,16 @@ def public_api(db, tmp_path, monkeypatch):
     monkeypatch.setattr("app.design_image.file_service._storage_root", lambda: tmp_path)
     public_router.logo_rate_limiter.clear()
     app = FastAPI()
+    app.add_middleware(public_router.PublicSecurityHeadersMiddleware)
     app.include_router(public_router.router, prefix="/api/customer-image/public")
     app.dependency_overrides[get_db] = lambda: db
     return TestClient(app), db, tmp_path
+
+
+def _assert_security_headers(response):
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.headers["referrer-policy"] == "no-referrer"
+    assert response.headers["x-content-type-options"] == "nosniff"
 
 
 def _auth(token: str) -> dict[str, str]:
@@ -105,6 +112,7 @@ def test_auth_rejects_missing_or_malformed_credentials_identically(public_api, h
     assert response.json() == {
         "detail": "This invitation is unavailable. Please request a new link from your sales contact."
     }
+    _assert_security_headers(response)
 
 
 @pytest.mark.parametrize("state", ["invalid", "future", "expired", "revoked"])
@@ -271,6 +279,7 @@ def test_logo_write_rate_limit_keys_by_invite_and_trusted_real_ip(public_api, mo
         "/api/customer-image/public/logo", headers=headers, files={"file": ("two.png", _png(), "image/png")}
     )
     assert limited.status_code == 429
+    _assert_security_headers(limited)
     assert limited.json()["detail"] == "Too many logo uploads. Please wait one minute and try again."
     assert client.post(
         "/api/customer-image/public/logo",
@@ -278,6 +287,94 @@ def test_logo_write_rate_limit_keys_by_invite_and_trusted_real_ip(public_api, mo
         files={"file": ("three.png", _png(), "image/png")},
     ).status_code == 200
     assert str(invite.token_hash) not in limited.text
+
+
+def test_framework_422_and_public_404_include_security_headers(public_api):
+    client, db, _tmp = public_api
+    _invite_row, token = _invite(db)
+
+    missing_file = client.post("/api/customer-image/public/logo", headers=_auth(token))
+    missing_route = client.get("/api/customer-image/public/not-a-route", headers=_auth(token))
+
+    assert missing_file.status_code == 422
+    assert missing_route.status_code == 404
+    _assert_security_headers(missing_file)
+    _assert_security_headers(missing_route)
+
+
+def test_unhandled_public_500_includes_security_headers(db, monkeypatch):
+    from app.customer_image import public_router, service
+
+    invite, token = _invite(db)
+    app = FastAPI()
+    app.add_middleware(public_router.PublicSecurityHeadersMiddleware)
+    app.include_router(public_router.router, prefix="/api/customer-image/public")
+    app.dependency_overrides[get_db] = lambda: db
+    monkeypatch.setattr(service, "list_public_products", lambda *_args: (_ for _ in ()).throw(RuntimeError("boom")))
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.get("/api/customer-image/public/context", headers=_auth(token))
+
+    assert response.status_code == 500
+    _assert_security_headers(response)
+
+
+def test_public_header_middleware_does_not_change_non_public_responses():
+    from app.customer_image import public_router
+
+    app = FastAPI()
+    app.add_middleware(public_router.PublicSecurityHeadersMiddleware)
+
+    @app.get("/api/health")
+    def health():
+        return {"ok": True}
+
+    response = TestClient(app).get("/api/health")
+    assert response.status_code == 200
+    assert "cache-control" not in response.headers
+    assert "referrer-policy" not in response.headers
+    assert "x-content-type-options" not in response.headers
+
+
+def test_logo_upload_reads_at_most_limit_plus_one_byte():
+    from app.customer_image.public_router import read_upload_content
+
+    class TrackingBytesIO(BytesIO):
+        requested_size = None
+
+        def read(self, size=-1):
+            self.requested_size = size
+            return super().read(size)
+
+    stream = TrackingBytesIO(b"1234")
+    assert read_upload_content(stream, 4) == b"1234"
+    assert stream.requested_size == 5
+
+
+def test_oversized_logo_returns_413_before_decode_or_storage(public_api, monkeypatch):
+    from app.customer_image import file_service, public_router
+
+    client, db, tmp_path = public_api
+    _invite_row, token = _invite(db)
+    monkeypatch.setattr(file_service, "effective_max_upload_bytes", lambda: 4)
+    decode_called = False
+
+    def unexpected_decode(*_args):
+        nonlocal decode_called
+        decode_called = True
+        raise AssertionError("oversized upload reached decoder")
+
+    monkeypatch.setattr(file_service, "normalize_upload", unexpected_decode)
+    response = client.post(
+        "/api/customer-image/public/logo",
+        headers=_auth(token),
+        files={"file": ("logo.png", b"12345", "image/png")},
+    )
+
+    assert response.status_code == 413
+    _assert_security_headers(response)
+    assert decode_called is False
+    assert list(tmp_path.rglob("*")) == []
 
 
 def test_logo_commit_failure_removes_new_files_and_keeps_pointer(public_api, monkeypatch):
@@ -289,12 +386,13 @@ def test_logo_commit_failure_removes_new_files_and_keeps_pointer(public_api, mon
         raise RuntimeError("database unavailable")
 
     monkeypatch.setattr(db, "commit", fail_commit)
-    with pytest.raises(RuntimeError, match="database unavailable"):
-        client.post(
-            "/api/customer-image/public/logo",
-            headers=_auth(token),
-            files={"file": ("logo.png", _png(), "image/png")},
-        )
+    response = client.post(
+        "/api/customer-image/public/logo",
+        headers=_auth(token),
+        files={"file": ("logo.png", _png(), "image/png")},
+    )
+    assert response.status_code == 500
+    _assert_security_headers(response)
     monkeypatch.setattr(db, "commit", original_commit)
     db.expire_all()
     assert db.get(CustomerImageInvite, invite.id).current_logo_asset_id is None

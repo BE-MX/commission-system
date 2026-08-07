@@ -40,11 +40,15 @@ from app.card.public_router import router as card_public_router
 from app.design_image.router import router as design_image_router
 from app.salary.router import router as salary_router
 from app.customer_image.router import router as customer_image_router
-from app.customer_image.public_router import router as customer_image_public_router
+from app.customer_image.public_router import (
+    PublicSecurityHeadersMiddleware,
+    router as customer_image_public_router,
+)
 
 
 def register_routers(app: FastAPI) -> None:
     """注册所有业务路由到 FastAPI app"""
+    app.add_middleware(PublicSecurityHeadersMiddleware)
     app.include_router(auth_router, prefix="/api/auth", tags=["认证"])
     app.include_router(admin_router, prefix="/api/auth", tags=["用户角色管理"])
     app.include_router(employee_router, prefix="/api/v1/employee", tags=["员工属性"])
