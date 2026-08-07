@@ -335,7 +335,11 @@ def test_provider_url_uses_explicit_allowlist_and_detects_real_mime(monkeypatch)
 
 def test_oversized_base64_is_rejected_before_decode(monkeypatch):
     called = []
-    monkeypatch.setattr(worker.base64, "b64decode", lambda *args, **kwargs: called.append(1))
+    monkeypatch.setattr(
+        worker.image_runtime.base64,
+        "b64decode",
+        lambda *args, **kwargs: called.append(1),
+    )
     encoded = "A" * (((20 * 1024 * 1024 + 2) // 3) * 4 + 4)
     with pytest.raises(ValueError, match="too large"):
         worker._decode_provider_content(encoded, frozenset())

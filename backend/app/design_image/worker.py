@@ -7,8 +7,6 @@ while every terminal write still proves ownership with the lease token.
 
 from __future__ import annotations
 
-import base64
-import binascii
 import logging
 import os
 import socket
@@ -20,10 +18,10 @@ from pathlib import PurePosixPath
 from threading import Event, Thread
 from uuid import uuid4
 
-import httpx
 from sqlalchemy import and_, exists, or_, select, update
 
 from app.ai import service as ai_service
+from app.ai import image_job_runtime as image_runtime
 from app.ai.models import AiCallLog, AiPreset, AiProvider
 from app.auth.models import ArkUser
 from app.core.config import get_settings
@@ -38,7 +36,6 @@ from app.design_image.models import (
 
 
 logger = logging.getLogger("commission")
-MAX_DECODED_IMAGE_BYTES = 20 * 1024 * 1024
 
 
 class WorkerConfigurationError(ValueError):
@@ -230,132 +227,63 @@ def _load_snapshot(job_id: int, lease_token: str) -> _JobSnapshot | None:
         return snapshot
 
 
-def _image_inputs(snapshot: _JobSnapshot) -> list[dict]:
+def _image_inputs(snapshot: _JobSnapshot) -> tuple[image_runtime.ImageInput, ...]:
     images = []
     for index, (relative_path, mime_type) in enumerate(snapshot.input_paths):
         path = file_service.resolve_private_path(relative_path)
         images.append(
-            {
-                "filename": f"image-{index}{path.suffix.lower()}",
-                "content": path.read_bytes(),
-                "content_type": mime_type,
-            }
-        )
-    return images
-
-
-def _call_provider(snapshot: _JobSnapshot) -> dict:
-    """Stage B: facade owns its independent Session commit/rollback lifecycle."""
-    kwargs = {
-        "preset_name": snapshot.preset_name,
-        "prompt": snapshot.prompt,
-        "caller_module": "design_image",
-        "caller_user_id": snapshot.owner_user_id,
-        "size": snapshot.size,
-        "quality": snapshot.quality,
-    }
-    if snapshot.config_version is not None:
-        kwargs["expected_config_version"] = snapshot.config_version
-    with SessionLocal() as db:
-        if snapshot.input_paths:
-            return ai_service.edit_image(
-                db=db, images=_image_inputs(snapshot), **kwargs
+            image_runtime.ImageInput(
+                filename=f"image-{index}{path.suffix.lower()}",
+                content=path.read_bytes(),
+                content_type=mime_type,
             )
-        if snapshot.mode == "generate":
-            return ai_service.generate_image(db=db, **kwargs)
-        raise ValueError("unsupported design image mode")
+        )
+    return tuple(images)
+
+
+def _download_provider_image(url: str, allowed_hosts: frozenset[str]) -> bytes:
+    return file_service.download_provider_image(url, allowed_hosts=set(allowed_hosts))
+
+
+def _call_provider(snapshot: _JobSnapshot) -> image_runtime.ImageJobResult:
+    """Stage B: facade owns its independent Session commit/rollback lifecycle."""
+    request = image_runtime.ImageJobRequest(
+        preset_name=snapshot.preset_name,
+        prompt=snapshot.prompt,
+        caller_module="design_image",
+        caller_user_id=snapshot.owner_user_id,
+        size=snapshot.size,
+        quality=snapshot.quality,
+        input_images=_image_inputs(snapshot),
+        expected_config_version=snapshot.config_version,
+        download_hosts=snapshot.download_hosts,
+        pricing_snapshot=snapshot.pricing_snapshot,
+    )
+    with SessionLocal() as db:
+        if not snapshot.input_paths and snapshot.mode != "generate":
+            raise ValueError("unsupported design image mode")
+        return image_runtime.call_image_provider(
+            db, request, download_image=_download_provider_image
+        )
 
 
 def _decode_provider_content(content: str, allowed_hosts: frozenset[str]):
-    if not isinstance(content, str) or not content.strip():
-        raise ValueError("provider returned no image")
-    content = content.strip()
-    if content.startswith("https://"):
-        if not allowed_hosts:
-            raise ValueError("provider download host is not configured")
-        payload = file_service.download_provider_image(
-            content, allowed_hosts=set(allowed_hosts)
-        )
-        if payload.startswith(b"\x89PNG\r\n\x1a\n"):
-            declared_mime = "image/png"
-        elif payload.startswith(b"\xff\xd8\xff"):
-            declared_mime = "image/jpeg"
-        elif payload.startswith(b"RIFF") and payload[8:12] == b"WEBP":
-            declared_mime = "image/webp"
-        else:
-            raise ValueError("provider URL did not return a supported image")
-    else:
-        declared_mime = "image/png"
-        encoded = content
-        if content.startswith("data:"):
-            header, separator, encoded = content.partition(",")
-            if not separator or ";base64" not in header.lower():
-                raise ValueError("provider image data URL is invalid")
-            declared_mime = header[5:].split(";", 1)[0].lower()
-            if declared_mime not in {"image/jpeg", "image/png", "image/webp"}:
-                raise ValueError("provider image type is unsupported")
-        if len(encoded) > ((MAX_DECODED_IMAGE_BYTES + 2) // 3) * 4:
-            raise ValueError("provider image is too large")
-        try:
-            payload = base64.b64decode(encoded, validate=True)
-        except (binascii.Error, ValueError):
-            raise ValueError("provider image base64 is invalid") from None
-    return file_service.normalize_upload(payload, declared_mime)
+    image = image_runtime.decode_image_payload(
+        content, allowed_hosts, download_image=_download_provider_image
+    )
+    return file_service.normalize_upload(image.content, image.declared_mime)
 
 
 def _usage_values(result: dict) -> tuple[int | None, int | None, int | None]:
-    raw_usage = result.get("usage_detail")
-    usage = dict(raw_usage) if isinstance(raw_usage, dict) else {}
-    input_tokens = _safe_nonnegative_bigint(
-        usage.get("input_tokens", usage.get("prompt_tokens"))
-    )
-    output_tokens = _safe_nonnegative_bigint(
-        usage.get("output_tokens", usage.get("completion_tokens"))
-    )
-    total_tokens = _safe_nonnegative_bigint(
-        usage.get("total_tokens", result.get("tokens_used"))
-    )
-    return input_tokens, output_tokens, total_tokens
+    return image_runtime.usage_values(result)
 
 
 def _safe_nonnegative_bigint(value) -> int | None:
-    if isinstance(value, bool) or not isinstance(value, int):
-        return None
-    if value < 0 or value > 2**63 - 1:
-        return None
-    return value
+    return image_runtime._safe_nonnegative_bigint(value)
 
 
 def _estimated_cost(pricing: dict | None, usage: dict) -> int | None:
-    if not pricing:
-        return None
-    total = 0
-    found = False
-    limit = 2**63 - 1
-    for direction in ("input", "output"):
-        details = usage.get(f"{direction}_tokens_details")
-        for kind in ("text", "image"):
-            rate = pricing.get(f"{direction}_{kind}_microusd_per_token")
-            if rate is None:
-                continue
-            found = True
-            tokens = details.get(f"{kind}_tokens") if isinstance(details, dict) else None
-            try:
-                if isinstance(tokens, bool) or isinstance(rate, bool):
-                    return None
-                tokens_int = int(tokens)
-                rate_int = int(rate)
-                if tokens_int != tokens or rate_int != rate:
-                    return None
-            except (TypeError, ValueError, OverflowError):
-                return None
-            if tokens_int < 0 or rate_int < 0 or tokens_int > limit or rate_int > limit:
-                return None
-            amount = tokens_int * rate_int
-            if amount > limit - total:
-                return None
-            total += amount
-    return total if found else None
+    return image_runtime.estimated_cost_microusd(pricing, usage)
 
 
 def _delete_stored(stored, context: str) -> None:
@@ -367,7 +295,10 @@ def _delete_stored(stored, context: str) -> None:
 
 
 def _finalize_success(
-    snapshot: _JobSnapshot, lease_token: str, result: dict, stored
+    snapshot: _JobSnapshot,
+    lease_token: str,
+    result: image_runtime.ImageJobResult,
+    stored,
 ) -> bool:
     with SessionLocal() as db:
         try:
@@ -398,20 +329,16 @@ def _finalize_success(
             )
             db.add(asset)
             db.flush()
-            input_tokens, output_tokens, total_tokens = _usage_values(result)
-            raw_usage = result.get("usage_detail")
-            usage_detail = dict(raw_usage) if isinstance(raw_usage, dict) else {}
-            estimated_cost = _estimated_cost(snapshot.pricing_snapshot, usage_detail)
             job.status = "succeeded"
             job.output_asset_id = asset.id
             job.response_message_id = message.id
-            job.ai_call_log_id = result.get("log_id")
-            job.provider_attempt_count = result.get("provider_attempt_count", 0)
-            job.billing_certainty = "estimated" if estimated_cost is not None else "unknown"
-            job.input_tokens = input_tokens
-            job.output_tokens = output_tokens
-            job.total_tokens = total_tokens
-            job.estimated_cost_microusd = estimated_cost
+            job.ai_call_log_id = result.log_id
+            job.provider_attempt_count = result.provider_attempt_count
+            job.billing_certainty = result.billing_certainty
+            job.input_tokens = result.input_tokens
+            job.output_tokens = result.output_tokens
+            job.total_tokens = result.total_tokens
+            job.estimated_cost_microusd = result.estimated_cost_microusd
             job.finished_at = now
             job.lease_token = job.lease_expires_at = job.claimed_by = None
             job.error_code = job.error_message = None
@@ -423,28 +350,10 @@ def _finalize_success(
 
 
 def _map_error(exc: Exception) -> tuple[str, str]:
-    detail = str(exc).lower()
-    if isinstance(exc, httpx.HTTPStatusError):
-        status = exc.response.status_code
-        if status == 429:
-            return "rate_limited", "服务请求过多，请稍后手动重试"
-        if status in {502, 503}:
-            return "provider_unavailable", "图片服务暂不可用，请稍后重试"
-        if status == 504:
-            return "provider_timeout", "图片服务响应超时，请稍后重试"
-        if status in {400, 422} and any(
-            word in detail for word in ("moderation", "safety", "content_policy")
-        ):
-            return "moderation_blocked", "内容未通过安全检查，请修改描述后重试"
-        if status in {400, 422}:
-            return "validation_error", "图片参数无效，请调整后重试"
-    if isinstance(exc, (httpx.TimeoutException, TimeoutError)):
-        return "provider_timeout", "图片服务响应超时，请稍后重试"
-    if isinstance(exc, (ValueError, file_service.ImageValidationError)):
-        if isinstance(exc, WorkerConfigurationError):
-            return "configuration_error", "图片服务配置已变化，请手动重试"
-        return "validation_error", "图片或参数无效，请调整后重试"
-    return "unknown_error", "生成失败，请稍后重试；若持续失败请联系管理员"
+    if isinstance(exc, WorkerConfigurationError):
+        return "configuration_error", "图片服务配置已变化，请手动重试"
+    failure = image_runtime.classify_image_error(exc)
+    return failure.code, failure.customer_message
 
 
 def _finalize_failure(job_id: int, lease_token: str, exc: Exception) -> bool:
@@ -535,8 +444,8 @@ def _execute_claimed_job(job_id: int, lease_token: str) -> None:
             _warn_visible(f"job {job_id} lease was lost before execution")
             return
         result = _call_provider(snapshot)
-        normalized = _decode_provider_content(
-            result.get("content", ""), snapshot.download_hosts
+        normalized = file_service.normalize_upload(
+            result.image.content, result.image.declared_mime
         )
         stored = file_service.save_private_image(
             normalized, owner_user_id=snapshot.owner_user_id, kind="output"
@@ -547,8 +456,8 @@ def _execute_claimed_job(job_id: int, lease_token: str) -> None:
     except Exception as exc:
         _warn_visible(f"job {job_id} execution failed: {type(exc).__name__}: {exc}")
         if result is not None:
-            setattr(exc, "log_id", result.get("log_id"))
-            setattr(exc, "provider_attempt_count", result.get("provider_attempt_count", 0))
+            setattr(exc, "log_id", result.log_id)
+            setattr(exc, "provider_attempt_count", result.provider_attempt_count)
         if stored is not None:
             _delete_stored(stored, f"failed finalize for job {job_id}")
         try:
