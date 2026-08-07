@@ -288,6 +288,10 @@ def seed_role_permissions(db: Session):
         ("design_image:read",  "design_image", "read",  "查看 AI 生图工作台"),
         ("design_image:write", "design_image", "write", "创建会话、上传图片和提交生成任务"),
         ("design_image:admin", "design_image", "admin", "管理 AI 生图任务与异常"),
+        # 客户效果图门户（管理员自动扩权；业务角色由角色管理页显式分配）
+        ("customer_image:read", "customer_image", "read", "查看客户效果图门户管理"),
+        ("customer_image:write", "customer_image", "write", "创建和撤销客户效果图邀请"),
+        ("customer_image:admin", "customer_image", "admin", "管理客户效果图产品模板"),
         # 方舟洞见（2026-07-12 案例库/周会纪要拆独立子域；同日情报三页+AI 工具速递逐页拆分，
         # insight:read 保留给行业情报速览页，internal_read 保留给内部经营报告页）
         ("insight:read",          "insight", "read",          "查看行业情报速览"),
