@@ -26,12 +26,13 @@ from app.core.database import Base
 
 
 USER_ID = Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql")
+CUSTOMER_IMAGE_ID = BigInteger().with_variant(Integer, "sqlite")
 
 
 class CustomerImageProduct(Base):
     __tablename__ = "ark_customer_image_products"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(CUSTOMER_IMAGE_ID, primary_key=True, autoincrement=True)
     name = Column(String(200), nullable=False)
     category = Column(String(100), nullable=False)
     description = Column(Text, nullable=True)
@@ -58,8 +59,8 @@ class CustomerImageProduct(Base):
 class CustomerImageProductAsset(Base):
     __tablename__ = "ark_customer_image_product_assets"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    product_id = Column(BigInteger, ForeignKey("ark_customer_image_products.id", ondelete="CASCADE"), nullable=False)
+    id = Column(CUSTOMER_IMAGE_ID, primary_key=True, autoincrement=True)
+    product_id = Column(CUSTOMER_IMAGE_ID, ForeignKey("ark_customer_image_products.id", ondelete="CASCADE"), nullable=False)
     role = Column(String(16), nullable=False)
     storage_path = Column(String(512), nullable=False)
     mime_type = Column(String(64), nullable=False)
@@ -74,7 +75,6 @@ class CustomerImageProductAsset(Base):
         UniqueConstraint("product_id", "role", "position", name="uq_ci_product_asset_role_position"),
         CheckConstraint("role IN ('cover', 'reference')", name="ck_ci_product_asset_role"),
         CheckConstraint("position >= 0", name="ck_ci_product_asset_position"),
-        Index("idx_ci_product_asset_product", "product_id", "role", "position"),
     )
 
     product = relationship("CustomerImageProduct", back_populates="assets", lazy="noload")
@@ -83,8 +83,8 @@ class CustomerImageProductAsset(Base):
 class CustomerImageProductOption(Base):
     __tablename__ = "ark_customer_image_product_options"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    product_id = Column(BigInteger, ForeignKey("ark_customer_image_products.id", ondelete="CASCADE"), nullable=False)
+    id = Column(CUSTOMER_IMAGE_ID, primary_key=True, autoincrement=True)
+    product_id = Column(CUSTOMER_IMAGE_ID, ForeignKey("ark_customer_image_products.id", ondelete="CASCADE"), nullable=False)
     key = Column(String(64), nullable=False)
     label = Column(String(100), nullable=False)
     control_type = Column(String(16), nullable=False)
@@ -106,8 +106,8 @@ class CustomerImageProductOption(Base):
 class CustomerImageOptionValue(Base):
     __tablename__ = "ark_customer_image_option_values"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    option_id = Column(BigInteger, ForeignKey("ark_customer_image_product_options.id", ondelete="CASCADE"), nullable=False)
+    id = Column(CUSTOMER_IMAGE_ID, primary_key=True, autoincrement=True)
+    option_id = Column(CUSTOMER_IMAGE_ID, ForeignKey("ark_customer_image_product_options.id", ondelete="CASCADE"), nullable=False)
     value = Column(String(200), nullable=False)
     label = Column(String(100), nullable=False)
     prompt_fragment = Column(Text, nullable=False)
@@ -129,7 +129,7 @@ class CustomerImageOptionValue(Base):
 class CustomerImageInvite(Base):
     __tablename__ = "ark_customer_image_invites"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(CUSTOMER_IMAGE_ID, primary_key=True, autoincrement=True)
     customer_id = Column(String(64), nullable=False)
     customer_name_snapshot = Column(String(200), nullable=False)
     created_by = Column(USER_ID, ForeignKey("ark_users.id", ondelete="RESTRICT"), nullable=False)
@@ -141,7 +141,7 @@ class CustomerImageInvite(Base):
     quota_total = Column(Integer, nullable=False)
     quota_used = Column(Integer, nullable=False, default=0)
     current_logo_asset_id = Column(
-        BigInteger,
+        CUSTOMER_IMAGE_ID,
         ForeignKey(
             "ark_customer_image_assets.id",
             name="fk_ci_invite_current_logo_asset",
@@ -177,9 +177,9 @@ class CustomerImageInvite(Base):
 class CustomerImageInviteProduct(Base):
     __tablename__ = "ark_customer_image_invite_products"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    invite_id = Column(BigInteger, ForeignKey("ark_customer_image_invites.id", ondelete="CASCADE"), nullable=False)
-    product_id = Column(BigInteger, ForeignKey("ark_customer_image_products.id", ondelete="RESTRICT"), nullable=False)
+    id = Column(CUSTOMER_IMAGE_ID, primary_key=True, autoincrement=True)
+    invite_id = Column(CUSTOMER_IMAGE_ID, ForeignKey("ark_customer_image_invites.id", ondelete="CASCADE"), nullable=False)
+    product_id = Column(CUSTOMER_IMAGE_ID, ForeignKey("ark_customer_image_products.id", ondelete="RESTRICT"), nullable=False)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
@@ -194,8 +194,8 @@ class CustomerImageInviteProduct(Base):
 class CustomerImageAsset(Base):
     __tablename__ = "ark_customer_image_assets"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    invite_id = Column(BigInteger, ForeignKey("ark_customer_image_invites.id", ondelete="RESTRICT"), nullable=False)
+    id = Column(CUSTOMER_IMAGE_ID, primary_key=True, autoincrement=True)
+    invite_id = Column(CUSTOMER_IMAGE_ID, ForeignKey("ark_customer_image_invites.id", ondelete="RESTRICT"), nullable=False)
     asset_type = Column(String(16), nullable=False)
     storage_path = Column(String(512), nullable=False)
     mime_type = Column(String(64), nullable=False)
@@ -235,11 +235,11 @@ class CustomerImageAsset(Base):
 class CustomerImageGeneration(Base):
     __tablename__ = "ark_customer_image_generations"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    invite_id = Column(BigInteger, ForeignKey("ark_customer_image_invites.id", ondelete="RESTRICT"), nullable=False)
-    product_id = Column(BigInteger, ForeignKey("ark_customer_image_products.id", ondelete="RESTRICT"), nullable=False)
-    logo_asset_id = Column(BigInteger, ForeignKey("ark_customer_image_assets.id", ondelete="RESTRICT"), nullable=False)
-    output_asset_id = Column(BigInteger, ForeignKey("ark_customer_image_assets.id", ondelete="RESTRICT"), nullable=True)
+    id = Column(CUSTOMER_IMAGE_ID, primary_key=True, autoincrement=True)
+    invite_id = Column(CUSTOMER_IMAGE_ID, ForeignKey("ark_customer_image_invites.id", ondelete="RESTRICT"), nullable=False)
+    product_id = Column(CUSTOMER_IMAGE_ID, ForeignKey("ark_customer_image_products.id", ondelete="RESTRICT"), nullable=False)
+    logo_asset_id = Column(CUSTOMER_IMAGE_ID, ForeignKey("ark_customer_image_assets.id", ondelete="RESTRICT"), nullable=False)
+    output_asset_id = Column(CUSTOMER_IMAGE_ID, ForeignKey("ark_customer_image_assets.id", ondelete="RESTRICT"), nullable=True)
     request_id = Column(String(64), nullable=False)
     product_name_snapshot = Column(String(200), nullable=False)
     config_version_snapshot = Column(Integer, nullable=False)

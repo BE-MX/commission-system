@@ -55,8 +55,6 @@ def upgrade() -> None:
         sa.CheckConstraint("role IN ('cover', 'reference')", name="ck_ci_product_asset_role"),
         sa.CheckConstraint("position >= 0", name="ck_ci_product_asset_position"),
     )
-    op.create_index("idx_ci_product_asset_product", "ark_customer_image_product_assets", ["product_id", "role", "position"])
-
     op.create_table(
         "ark_customer_image_product_options",
         sa.Column("id", sa.BigInteger(), autoincrement=True, primary_key=True),

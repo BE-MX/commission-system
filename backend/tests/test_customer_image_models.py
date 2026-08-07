@@ -1,12 +1,16 @@
 """Customer image portal persistence contract tests."""
 
 from importlib import import_module, util
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from sqlalchemy import CHAR, CheckConstraint, JSON, UniqueConstraint
+from sqlalchemy import CHAR, BigInteger, CheckConstraint, Integer, JSON, UniqueConstraint, create_engine
 from sqlalchemy.dialects import mysql
+from sqlalchemy.dialects import sqlite
+from sqlalchemy.orm import Session
 
+from app.auth.models import ArkUser
 from app.core.config import Settings
 from app.core.database import Base
 
@@ -155,6 +159,124 @@ def test_customer_image_constraints_freeze_generation_and_scope_idempotency():
     assert "uq_ci_generation_invite_request" in unique_names(generations)
     assert isinstance(generations.c.reference_asset_ids.type, JSON)
     assert generations.c.reference_asset_ids.nullable is False
+
+
+def test_customer_image_domain_ids_share_sqlite_autoincrement_type():
+    models = _models()
+    customer_tables = [Base.metadata.tables[name] for name in EXPECTED_TABLES]
+    sqlite_type = models.CUSTOMER_IMAGE_ID.dialect_impl(sqlite.dialect())
+    mysql_type = models.CUSTOMER_IMAGE_ID.dialect_impl(mysql.dialect())
+
+    assert type(sqlite_type) is Integer
+    assert isinstance(mysql_type, BigInteger)
+    for table in customer_tables:
+        assert table.c.id.type is models.CUSTOMER_IMAGE_ID
+        for fk in table.foreign_keys:
+            if fk.target_fullname.split(".", 1)[0] in EXPECTED_TABLES:
+                assert fk.parent.type is models.CUSTOMER_IMAGE_ID
+
+
+def test_sqlite_flush_autogenerates_customer_image_ids_without_explicit_values():
+    models = _models()
+    engine = create_engine("sqlite:///:memory:")
+    tables = [ArkUser.__table__, *(Base.metadata.tables[name] for name in EXPECTED_TABLES)]
+    Base.metadata.create_all(engine, tables=tables)
+
+    with Session(engine) as session:
+        now = datetime.now(UTC)
+        user = ArkUser(
+            username="ci-owner",
+            password_hash="x",
+            real_name="CI Owner",
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(user)
+        session.flush()
+
+        product = models.CustomerImageProduct(
+            name="Wig",
+            category="wig",
+            fixed_prompt="keep logo exact",
+            output_prompt="catalog image",
+            created_by=user.id,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(product)
+        session.flush()
+
+        invite = models.CustomerImageInvite(
+            customer_id="customer-1",
+            customer_name_snapshot="Customer One",
+            created_by=user.id,
+            okki_salesperson_id_snapshot="1007",
+            token_hash="a" * 64,
+            token_suffix="aaaaaa",
+            starts_at=now,
+            expires_at=now + timedelta(days=1),
+            quota_total=2,
+            created_at=now,
+        )
+        session.add(invite)
+        session.flush()
+
+        logo = models.CustomerImageAsset(
+            invite_id=invite.id,
+            asset_type="logo",
+            storage_path="invite/logo.png",
+            mime_type="image/png",
+            file_size=8,
+            width=1,
+            height=1,
+            sha256="b" * 64,
+            created_at=now,
+        )
+        session.add(logo)
+        session.flush()
+        invite.current_logo_asset_id = logo.id
+
+        generation = models.CustomerImageGeneration(
+            invite_id=invite.id,
+            product_id=product.id,
+            logo_asset_id=logo.id,
+            request_id="request-1",
+            product_name_snapshot=product.name,
+            config_version_snapshot=product.config_version,
+            option_snapshot={},
+            prompt_snapshot="prompt",
+            reference_asset_ids=[],
+            preset_name="design_image_generation",
+            created_at=now,
+        )
+        session.add(generation)
+        session.flush()
+
+        assert all(row.id is not None for row in (product, invite, logo, generation))
+
+
+def test_product_asset_unique_constraint_is_the_only_tuple_index():
+    _models()
+    product_assets = Base.metadata.tables["ark_customer_image_product_assets"]
+    migration = _migration_module()
+    migration_indexes = []
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(migration.op, "create_table", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        migration.op,
+        "create_index",
+        lambda name, *_args, **_kwargs: migration_indexes.append(name),
+    )
+    monkeypatch.setattr(migration.op, "add_column", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(migration.op, "create_foreign_key", lambda *_args, **_kwargs: None)
+    try:
+        migration.upgrade()
+    finally:
+        monkeypatch.undo()
+
+    assert "idx_ci_product_asset_product" not in {index.name for index in product_assets.indexes}
+    assert "idx_ci_product_asset_product" not in migration_indexes
 
 
 def test_invite_quota_and_current_logo_constraints_are_explicit():
