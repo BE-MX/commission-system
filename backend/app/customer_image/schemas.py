@@ -1,8 +1,10 @@
 """Validated request schemas for the customer image portal."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.customer_image.datetime_utils import as_utc_naive
 
 
 class CustomerImageInviteCreate(BaseModel):
@@ -25,7 +27,8 @@ class CustomerImageInviteCreate(BaseModel):
     @field_validator("expires_at")
     @classmethod
     def validate_future_expiry(cls, value: datetime) -> datetime:
-        now = datetime.now(value.tzinfo) if value.tzinfo else datetime.now()
+        value = as_utc_naive(value)
+        now = datetime.now(UTC).replace(tzinfo=None)
         if value <= now:
             raise ValueError("失效时间必须晚于当前时间")
         return value

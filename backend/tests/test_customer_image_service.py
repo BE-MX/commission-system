@@ -1,6 +1,6 @@
 """Customer image invitation schemas and customer-scope tests."""
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 from pydantic import ValidationError
@@ -134,7 +134,7 @@ def test_non_admin_prefers_numeric_primary_over_other_numeric_binding(db):
 
 
 def test_invite_create_schema_enforces_products_future_expiry_and_quota():
-    now = datetime.now()
+    now = datetime.now(UTC).replace(tzinfo=None)
     valid = dict(customer_id=" CUST001 ", product_ids=[2, 1], expires_at=now + timedelta(days=1), quota_total=2)
     parsed = CustomerImageInviteCreate(**valid)
     assert parsed.customer_id == "CUST001"
@@ -149,6 +149,24 @@ def test_invite_create_schema_enforces_products_future_expiry_and_quota():
     for payload in invalid_payloads:
         with pytest.raises(ValidationError):
             CustomerImageInviteCreate(**payload)
+
+
+def test_invite_create_normalizes_iso_z_expiry_to_utc_naive():
+    parsed = CustomerImageInviteCreate(
+        customer_id="CUST001",
+        product_ids=[1],
+        expires_at="2099-01-01T08:00:00Z",
+        quota_total=1,
+    )
+
+    assert parsed.expires_at == datetime(2099, 1, 1, 8, 0)
+    assert parsed.expires_at.tzinfo is None
+
+    offset = parsed.model_copy(update={
+        "expires_at": datetime(2099, 1, 1, 16, 0, tzinfo=timezone(timedelta(hours=8)))
+    })
+    reparsed = CustomerImageInviteCreate.model_validate(offset.model_dump())
+    assert reparsed.expires_at == datetime(2099, 1, 1, 8, 0)
 
 
 def test_public_requirement_has_hard_ceiling_of_500_characters():
