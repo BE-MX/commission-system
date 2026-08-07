@@ -205,3 +205,34 @@
 关联真相链为 `request_message → job → ai_call_log/output_asset/response_message`；输出资产的 `source_asset_id` 指回显式编辑基准，参考图顺序在 job_assets 中冻结。用量不另建汇总表：`/usage` 从 jobs LEFT JOIN `AiCallLog` 派生，job token 快照优先、日志 token 兜底。成本只有配置了调用时的 rate-card 快照且细分 usage 可计算时才为估算值，否则 `billing_certainty=unknown`。
 
 每日额度按 `Asia/Shanghai` 自然日统计该用户当天所有已接受 job；成功、失败和重试都计数。提交前锁 `ark_users` owner 行，再做额度、active job 和幂等检查；SQLite 自动化只能验证语义，MySQL 两连接下的 InnoDB 等待/当前读仍是 Phase 5 外部门禁。
+
+## 薪资计算（迁移 092，2026-08-06）
+
+一次建 10 张表。所有引用 `ark_users.id` 的列（`user_id` / `created_by` / `confirmed_by` / `modified_by`）都是 `INT UNSIGNED`——目标列是 unsigned，模型侧靠 `USER_ID = Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql")` 对齐，SQLite 测试库回落普通 Integer。金额统一 `DECIMAL(12,2)`、工时 `DECIMAL(8,2)`（`day_hours=7.83` 要两位）、天数 `DECIMAL(6,2)`。
+
+**PII 双列**：身份证与银行卡各存 `_cipher`（AES-256-GCM，随机 IV）+ `_hash`（HMAC-SHA256）。唯一约束与社保/公积金导入的匹配 JOIN 都建在哈希列上——随机 IV 的密文既不能做唯一索引也无法跨表比对，这是双列存在的唯一理由。
+
+主数据（M1 已用）：
+- `ark_salary_employee_profile` — 员工档案。`emp_no` UNIQUE（服务端去空格去前导零，3 与 003 归一）、`id_card_hash` UNIQUE、`bank_card_hash` **只建普通索引 `idx_salary_profile_bank_card`**（迁移 093 从 UNIQUE 降级：夫妻/亲属共用一张卡代发是真实存在的，UNIQUE 会让第二个人永远建不了档案）、`user_id → ark_users.id SET NULL`。`dept_group_override` 与 `base_salary_override` 是两个「按人覆盖」列，优先级高于映射表与职级表。`payroll_included` / `fund_included` 控是否进工资表与公积金。
+- `ark_salary_dept_mapping` — 明细部门 → 汇总大部门，`dept_detail` UNIQUE。
+- `ark_salary_grade_table` — 职级薪级表，版本化：`uk_salary_grade_ver(scheme, grade_code, effective_from)`。`manage` 赛道取 `std_salary`，其余取 `base_salary`。
+- `ark_salary_rule_param` — 规则参数 KV，版本化 `uk_salary_param_ver(param_key, effective_from)`，值一律按字符串存、由 `value_type` 决定解析。注意 `full_month_days=31`（日工资折算分母）与 `mid_month_weight_base=30`（月中入离职权重基数）是两个不同参数，不是笔误。
+- `ark_salary_change_logs` — 调薪/调级/转正台账，`employee_id → profile CASCADE`。
+
+批次与计算（M2~M4 落地，表已建）：
+- `ark_salary_period` — 月度批次，`year_month` UNIQUE，`status_version` 是批次级乐观锁，`param_snapshot` 在锁定时冻结规则参数。
+- `ark_salary_attendance` — 考勤汇总，`uk_salary_attendance_pe(period_id, employee_id)`，`raw_payload` 留钉钉原始返回便于对账。
+- `ark_salary_insurance_import` / `ark_salary_fund_import` — 社保、公积金导入行。`employee_id` 可空 + `SET NULL`：匹配不上的行也要留在库里让 HR 看到，不能静默丢弃；`match_status` 与 `idx_*_hash(period_id, id_card_hash)` 支撑二次匹配。
+- `ark_salary_record` — 工资明细行，`uk_salary_record_pe(period_id, employee_id)` + `row_version` 行级乐观锁。三类列口径不同：单字段引擎列（底薪/工龄/全勤/社保/公积金/缺勤，减项存负数与 HR 源表一致）、`*_auto` / `*_manual` / `*_final` 三元组（奖励/绩效/其他/补贴，人工覆盖不抹掉引擎值以便追溯）、纯手动列（个税、税后实发）。`snap_*` 是批次锁定时冻结的档案快照——工资条必须能复现发放当时的部门/职务/银行卡，档案后续变更不得回溯改写历史。
+
+`downgrade()` 按 `_TABLES` 的反建表序 drop。**教训**：在已 apply 的迁移里改表名会让它自己的 downgrade 失效（库里是旧名，drop 报 1051 并卡在半途），改名后必须先手工把库回滚干净再重跑。
+
+**迁移 093（2026-08-06）**：`bank_card_hash` 由 UNIQUE 降级为普通索引，见上。
+
+**迁移 094 / 095（2026-08-07）**：`ark_salary_period_event` 批次事件时间线；`ark_salary_period.workday_source` 工作日数来源标记（`weekday_auto` / `needs_review` / `manual`）。自动推算只按周一~五数、不含法定节假日与调休，标记落在批次行上前端才拿得到——只写进事件 payload 等于发不出去，而 2 月批次的 20 天是所有月中入离职人员缺勤扣款的分母。
+
+**迁移 096（2026-08-07）**：`dingtalk_userid` 的普通索引升为 UNIQUE（`uk_salary_profile_dingtalk`）。两份档案共用一个 userid 时考勤同步会静默丢掉其中一个人：钉钉按 userid 只回一条，字典推导让后来者覆盖前者，而 `source_count == synced`、`failed == 0`、`unbound` 为空——**所有告警指标全绿**，被覆盖的人在失败清单、未绑定清单、考勤列表里都不出现，M3 只能按全勤给他发钱。UNIQUE 允许多个 NULL，所以没绑钉钉的人不受影响；空串不同（彼此相等），所以升级脚本先把空串归一成 NULL，否则约束建不上而 MySQL DDL 不可回滚。service 层另有一道同名检查，管的是 096 之前的存量数据和绕过 ORM 的写入路径。
+
+PII 密钥 `ARK_SALARY_ENCRYPTION_KEY` / `ARK_SALARY_HASH_KEY` 在 `backend/.env`，**未配置时 `pii.py` 直接抛 `SalaryKeyNotConfigured`，不回落占位密钥**。开发机与生产共用同一套 RDS，两边必须配完全相同的值——值不同则同一张身份证算出不同 HMAC，唯一约束形同虚设、M2 社保导入按哈希匹配会全空。
+
+**迁移 097（2026-08-07，M3 计算引擎前置）**：四个新列，全部可空/带默认、纯新增。`ark_salary_employee_profile.special_calc`（特殊计薪：不发全勤、工龄按钉值或 0——姜妮妮/刘德明类，§9.5 的 HR 确认标记）与 `seniority_override`（工龄手动钉值，刘德明 3 月工龄 1000 规则复原不了）；`ark_salary_attendance.due_days_manual`（应出天数手动钉值，李晓雨 21.75；独立成列是因为同步每轮重写 `due_days`，钉值混在里面会被冲掉）；`ark_salary_record.calc_flags`（引擎判定标记 JSON：negative_net / guaranteed_topup / mid_month_weighted / absence_clamped 等，异常面板的记录级检查直接读它，不必每次重算推导过程）。

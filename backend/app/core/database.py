@@ -13,6 +13,13 @@ engine = create_engine(
     pool_size=10,
     max_overflow=20,
     echo=False,
+    # SQLAlchemy 的 IntegrityError/DataError 文案里**默认带完整的 INSERT 参数元组**，
+    # 而项目里到处是 `except ... logger.warning(..., exc)` + `print(flush=True)`（红线 6）。
+    # 薪资模块一条 INSERT 就带着身份证密文和 HMAC 哈希，一旦某行触发 MySQL 1406
+    # （部门名超 VARCHAR(64)）这些值就明文躺进 NSSM 的 service.log。
+    # 身份证号空间小、哈希密钥全库共用，哈希落进明文日志同样算泄漏。
+    # echo=False 挡不住异常文案，只有这个开关能。（2026-08-07 对抗性审查实测）
+    hide_parameters=True,
 )
 
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)

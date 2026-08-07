@@ -18,7 +18,7 @@ import {
   Money, Refresh, List, Van, Upload, Box, Setting, Aim, Reading,
   MagicStick, Notebook, Calendar, Camera, EditPen, Stamp, TrendCharts,
   Lock, Lightning, Picture, Collection, CollectionTag, DataBoard,
-  DataLine, Printer, Brush, Tickets, Goods, Postcard, Shop,
+  DataLine, Printer, Brush, Tickets, Goods, Postcard, Shop, Wallet,
 } from '@element-plus/icons-vue'
 
 const FESTIVAL_PERMISSION = 'festival:read'
@@ -71,6 +71,11 @@ export const MENU_GROUPS = {
       'commission:read', 'commission:write', 'commission:self_read', 'commission_my:read',
       'payment:read', 'payment:write',
     ],
+  },
+  salary: {
+    title: '薪资计算',
+    icon: Wallet,
+    anyPermission: ['salary:read', 'salary:write', 'salary:admin'],
   },
   tracking: {
     title: '物流管理',
@@ -1000,6 +1005,51 @@ export const NAV_ENTRIES = [
       group: 'design', title: '设计统计', icon: TrendCharts, order: 60,
       permission: 'design_stats:read',
     },
+  },
+
+  // ── 薪资计算 ───────────────────────────────────────────
+  {
+    path: '/salary/profiles',
+    name: 'SalaryProfiles',
+    component: () => import('@/views/salary/SalaryProfiles.vue'),
+    title: '员工薪资档案',
+    anyPermission: ['salary:read', 'salary:write', 'salary:admin'],
+    menu: {
+      group: 'salary', title: '员工档案', icon: User, order: 10,
+      anyPermission: ['salary:read', 'salary:write', 'salary:admin'],
+    },
+  },
+  {
+    path: '/salary/rules',
+    name: 'SalaryRules',
+    component: () => import('@/views/salary/SalaryRules.vue'),
+    title: '薪资规则配置',
+    anyPermission: ['salary:read', 'salary:write', 'salary:admin'],
+    menu: {
+      group: 'salary', title: '规则配置', icon: Setting, order: 20,
+      anyPermission: ['salary:read', 'salary:write', 'salary:admin'],
+    },
+  },
+  {
+    path: '/salary/periods',
+    name: 'SalaryPeriods',
+    component: () => import('@/views/salary/SalaryPeriods.vue'),
+    title: '月度工资批次',
+    anyPermission: ['salary:read', 'salary:write', 'salary:admin'],
+    menu: {
+      group: 'salary', title: '月度批次', icon: Calendar, order: 5,
+      anyPermission: ['salary:read', 'salary:write', 'salary:admin'],
+    },
+  },
+  {
+    // 工作台不进菜单：它必须挂在某个具体批次上，菜单里放一个「工作台」入口
+    // 就得先替用户猜是哪个月，而猜错的代价是往错的月份里录考勤。
+    path: '/salary/periods/:id',
+    name: 'SalaryWorkbench',
+    component: () => import('@/views/salary/SalaryWorkbench.vue'),
+    title: '工资批次工作台',
+    anyPermission: ['salary:read', 'salary:write', 'salary:admin'],
+    hideInMenu: true,
   },
 
   // ── 系统管理 ───────────────────────────────────────────

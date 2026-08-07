@@ -99,6 +99,12 @@ class Settings(BaseSettings):
     # ── AI 加密 ──────────────────────────────────────────
     ARK_AI_ENCRYPTION_KEY: str = ""  # production 模式下必须显式配置
 
+    # ── 薪资 PII 加密 ─────────────────────────────────────
+    # 身份证/银行卡：AES-256-GCM 存储密文 + HMAC-SHA256 存哈希（哈希列才能做唯一约束与导入匹配）。
+    # 与 AI key 用不同密钥：泄露面隔离，且轮换节奏不同（AI key 可随时换，薪资密钥换了要重算全表哈希）。
+    ARK_SALARY_ENCRYPTION_KEY: str = ""  # base64(32 bytes)，production 必填
+    ARK_SALARY_HASH_KEY: str = ""  # HMAC 密钥，production 必填
+
     # ── AI 生图工作台 ─────────────────────────────────────
     DESIGN_IMAGE_STORAGE_ROOT: str = r"D:\WORKSOURCE\design-image"
     DESIGN_IMAGE_DAILY_LIMIT: _PositiveInt = 20
@@ -225,6 +231,10 @@ class Settings(BaseSettings):
             errors.append("CORS_ALLOW_ORIGINS 必须显式配置生产域名,不能含 localhost")
         if not self.ARK_AI_ENCRYPTION_KEY:
             errors.append("ARK_AI_ENCRYPTION_KEY 必须显式配置")
+        if not self.ARK_SALARY_ENCRYPTION_KEY:
+            errors.append("ARK_SALARY_ENCRYPTION_KEY 必须显式配置（薪资身份证/银行卡加密）")
+        if not self.ARK_SALARY_HASH_KEY:
+            errors.append("ARK_SALARY_HASH_KEY 必须显式配置（薪资 PII 哈希匹配）")
         if errors:
             details = "\n  - ".join(errors)
             raise ValueError(
