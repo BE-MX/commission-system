@@ -5,6 +5,7 @@ import io
 import pytest
 from PIL import Image
 from sqlalchemy.dialects import mysql
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
 from app.customer_image import file_service
@@ -340,3 +341,106 @@ def test_storage_wrapper_rejects_path_traversal(tmp_path, monkeypatch):
     monkeypatch.setattr("app.design_image.file_service._storage_root", lambda: tmp_path)
     with pytest.raises(file_service.ImageStorageError):
         file_service.resolve_private_path("../outside.png")
+
+
+@pytest.mark.parametrize(
+    "error",
+    [OSError("disk unavailable"), file_service.ImageStorageError("storage unavailable")],
+)
+def test_content_open_preserves_storage_failures_for_503(monkeypatch, error):
+    monkeypatch.setattr(
+        file_service,
+        "resolve_private_path",
+        lambda _path: (_ for _ in ()).throw(error),
+    )
+
+    with pytest.raises(type(error), match="unavailable"):
+        file_service._open_relative_content("asset.png", "asset not found")
+
+
+def test_library_copy_preserves_directory_error_for_503(db, monkeypatch):
+    product = _product(db)
+    source = DesignImageLibraryAsset(
+        scope="public", owner_user_id=1, created_by=1, title="source",
+        storage_path="directory", mime_type="image/png", file_size=1,
+        width=1, height=1, sha256="a" * 64,
+    )
+    db.add(source)
+    db.commit()
+    monkeypatch.setattr(
+        file_service,
+        "resolve_private_path",
+        lambda _path: (_ for _ in ()).throw(IsADirectoryError("source is a directory")),
+    )
+
+    with pytest.raises(IsADirectoryError, match="directory"):
+        file_service.replace_product_asset_from_library(
+            db, product, "cover", 0, source.id, admin_id=1
+        )
+
+
+def test_delete_product_rejects_invite_reference_and_keeps_files(db, tmp_path, monkeypatch):
+    from app.customer_image.service import CustomerImageConflictError, delete_product
+    from app.customer_image.models import CustomerImageInviteProduct
+
+    monkeypatch.setattr("app.design_image.file_service._storage_root", lambda: tmp_path)
+    product = _product(db)
+    asset = file_service.replace_product_asset_from_upload(db, product, "cover", 0, _png_bytes(), "image/png")
+    invite = _invite(db)
+    db.add(CustomerImageInviteProduct(invite_id=invite.id, product_id=product.id))
+    db.commit()
+
+    with pytest.raises(CustomerImageConflictError):
+        delete_product(db, product.id)
+
+    assert db.get(CustomerImageProduct, product.id) is not None
+    assert file_service.resolve_private_path(asset.storage_path).is_file()
+
+
+def test_delete_product_maps_reference_race_and_keeps_files(db, tmp_path, monkeypatch):
+    from app.customer_image.service import CustomerImageConflictError, delete_product
+
+    monkeypatch.setattr("app.design_image.file_service._storage_root", lambda: tmp_path)
+    product = _product(db)
+    asset = file_service.replace_product_asset_from_upload(
+        db, product, "cover", 0, _png_bytes(), "image/png"
+    )
+    image_path = file_service.resolve_private_path(asset.storage_path)
+    real_rollback = db.rollback
+    rolled_back = False
+
+    def fail_commit():
+        raise IntegrityError("DELETE product", {}, Exception("foreign key race"))
+
+    def track_rollback():
+        nonlocal rolled_back
+        rolled_back = True
+        real_rollback()
+
+    monkeypatch.setattr(db, "commit", fail_commit)
+    monkeypatch.setattr(db, "rollback", track_rollback)
+
+    with pytest.raises(CustomerImageConflictError, match="in use"):
+        delete_product(db, product.id)
+
+    assert rolled_back is True
+    assert db.get(CustomerImageProduct, product.id) is not None
+    assert image_path.is_file()
+
+
+def test_delete_unreferenced_product_cleans_files_only_after_commit(db, tmp_path, monkeypatch):
+    from app.customer_image.service import delete_product
+    from app.design_image.service import _thumbnail_path
+
+    monkeypatch.setattr("app.design_image.file_service._storage_root", lambda: tmp_path)
+    product = _product(db)
+    asset = file_service.replace_product_asset_from_upload(db, product, "cover", 0, _png_bytes(), "image/png")
+    image_path = file_service.resolve_private_path(asset.storage_path)
+    thumb_path = file_service.resolve_private_path(_thumbnail_path(asset.storage_path))
+    assert image_path.is_file() and thumb_path.is_file()
+
+    delete_product(db, product.id)
+
+    assert db.get(CustomerImageProduct, product.id) is None
+    assert not image_path.exists()
+    assert not thumb_path.exists()

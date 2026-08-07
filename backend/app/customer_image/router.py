@@ -5,10 +5,10 @@ from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import require_permission
+from app.auth.dependencies import require_any_permission, require_permission
 from app.core.config import get_settings
 from app.core.database import get_db
-from app.core.response import ok
+from app.core.response import ok, page_result
 from app.customer_image import file_service, service
 from app.customer_image.schemas import (
     CustomerImageInviteCreate,
@@ -45,12 +45,20 @@ def _call(function, *args, **kwargs):
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
     except service.CustomerScopeConflictError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    except service.CustomerImageConflictError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
     except FileNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
     except design_image_service.DesignImageNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
     except design_image_service.DesignImageConsistencyError as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+    except file_service.shared_files.ImageValidationError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    except file_service.shared_files.ImageStorageError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "image storage unavailable") from exc
     except ValueError as exc:
         code = status.HTTP_404_NOT_FOUND if "not found" in str(exc) else status.HTTP_400_BAD_REQUEST
         raise HTTPException(code, str(exc)) from exc
@@ -84,8 +92,7 @@ def _option(row, *, include_prompts: bool) -> dict:
     }
 
 
-def _product(db: Session, row, *, include_prompts: bool = True) -> dict:
-    options = service.list_product_options(db, row.id)
+def _product(row, *, include_prompts: bool = True) -> dict:
     result = {
         "id": row.id,
         "name": row.name,
@@ -94,7 +101,7 @@ def _product(db: Session, row, *, include_prompts: bool = True) -> dict:
         "config_version": row.config_version,
         "is_published": row.is_published,
         "sort": row.sort,
-        "options": [_option(option, include_prompts=include_prompts) for option in options],
+        "options": [_option(option, include_prompts=include_prompts) for option in row.options],
     }
     if include_prompts:
         result.update(fixed_prompt=row.fixed_prompt, output_prompt=row.output_prompt)
@@ -193,6 +200,8 @@ def list_customers(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_permission("customer_image:write")),
 ):
+    if not search.strip():
+        return ok([])
     rows = _call(service.list_available_customers, db, _user_id(payload), _is_admin(payload), search)
     return ok(rows)
 
@@ -200,10 +209,11 @@ def list_customers(
 @router.get("/products")
 def list_products(
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_permission("customer_image:read")),
+    payload: dict = Depends(require_any_permission("customer_image:read", "customer_image:admin")),
 ):
     is_admin = _is_admin(payload)
-    return ok([_product(db, row, include_prompts=is_admin) for row in service.list_products(db)])
+    rows = service.list_products(db, include_inactive=is_admin)
+    return ok([_product(row, include_prompts=is_admin) for row in rows])
 
 
 @router.post("/products")
@@ -213,7 +223,8 @@ def create_product(
     payload: dict = Depends(require_permission("customer_image:admin")),
 ):
     row = _call(service.create_product, db, admin_id=_user_id(payload), payload=body)
-    return ok(_product(db, row))
+    row = service.get_product(db, row.id, include_inactive=True)
+    return ok(_product(row))
 
 
 @router.put("/products/{product_id}")
@@ -223,7 +234,8 @@ def update_product(
     db: Session = Depends(get_db),
     _payload: dict = Depends(require_permission("customer_image:admin")),
 ):
-    return ok(_product(db, _call(service.update_product, db, product_id, body)))
+    _call(service.update_product, db, product_id, body)
+    return ok(_product(service.get_product(db, product_id, include_inactive=True)))
 
 
 @router.delete("/products/{product_id}")
@@ -242,7 +254,8 @@ def publish_product(
     db: Session = Depends(get_db),
     _payload: dict = Depends(require_permission("customer_image:admin")),
 ):
-    return ok(_product(db, _call(service.publish_product, db, product_id)))
+    _call(service.publish_product, db, product_id)
+    return ok(_product(service.get_product(db, product_id, include_inactive=True)))
 
 
 @router.post("/products/{product_id}/unpublish")
@@ -251,7 +264,8 @@ def unpublish_product(
     db: Session = Depends(get_db),
     _payload: dict = Depends(require_permission("customer_image:admin")),
 ):
-    return ok(_product(db, _call(service.unpublish_product, db, product_id)))
+    _call(service.unpublish_product, db, product_id)
+    return ok(_product(service.get_product(db, product_id, include_inactive=True)))
 
 
 @router.get("/products/{product_id}/assets")
@@ -363,11 +377,15 @@ def get_library_asset_content(
 
 @router.get("/invites")
 def list_invites(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_permission("customer_image:read")),
+    payload: dict = Depends(require_any_permission("customer_image:read", "customer_image:admin")),
 ):
-    rows = service.list_invites(db, _user_id(payload), _is_admin(payload))
-    return ok([_invite(row) for row in rows])
+    rows, total = service.list_invites(
+        db, _user_id(payload), _is_admin(payload), page, page_size
+    )
+    return ok(page_result([_invite(row) for row in rows], total, page, page_size))
 
 
 @router.post("/invites")
@@ -402,8 +420,12 @@ def revoke_invite(
 
 @router.get("/generations")
 def list_generations(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_permission("customer_image:read")),
+    payload: dict = Depends(require_any_permission("customer_image:read", "customer_image:admin")),
 ):
-    rows = service.list_generations(db, _user_id(payload), _is_admin(payload))
-    return ok([_generation(row) for row in rows])
+    rows, total = service.list_generations(
+        db, _user_id(payload), _is_admin(payload), page, page_size
+    )
+    return ok(page_result([_generation(row) for row in rows], total, page, page_size))

@@ -41,7 +41,7 @@ def _delete_stored_files(
         try:
             delete_private_file(path)
         except Exception as exc:
-            message = f"[customer-image] {context} rollback cleanup failed: {exc}"
+            message = f"[customer-image] {context} cleanup failed: {exc}"
             logger.warning(message)
             print(message, flush=True)
 
@@ -135,7 +135,7 @@ def replace_product_asset_from_library(
         raise FileNotFoundError("library asset not found")
     try:
         content = resolve_private_path(source.storage_path).read_bytes()
-    except (OSError, ImageStorageError):
+    except FileNotFoundError:
         raise FileNotFoundError("library asset not found") from None
     normalized = normalize_upload(content, source.mime_type)
     return _replace_with_normalized(db, product, role, position, normalized)
@@ -144,7 +144,7 @@ def replace_product_asset_from_library(
 def _open_relative_content(relative_path: str, not_found_message: str) -> io.BytesIO:
     try:
         return io.BytesIO(resolve_private_path(relative_path).read_bytes())
-    except (OSError, ImageStorageError):
+    except FileNotFoundError:
         raise FileNotFoundError(not_found_message) from None
 
 

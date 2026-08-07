@@ -22,23 +22,23 @@ from sqlalchemy import text
 
 
 EXPECTED = {
-    ("get", "/customers"): "customer_image:write",
-    ("get", "/products"): "customer_image:read",
-    ("post", "/products"): "customer_image:admin",
-    ("put", "/products/{product_id}"): "customer_image:admin",
-    ("delete", "/products/{product_id}"): "customer_image:admin",
-    ("post", "/products/{product_id}/publish"): "customer_image:admin",
-    ("post", "/products/{product_id}/unpublish"): "customer_image:admin",
-    ("get", "/products/{product_id}/assets"): "customer_image:admin",
-    ("post", "/products/{product_id}/assets/upload"): "customer_image:admin",
-    ("post", "/products/{product_id}/assets/library"): "customer_image:admin",
-    ("get", "/products/{product_id}/assets/{asset_id}/content"): "customer_image:admin",
-    ("get", "/library-assets"): "customer_image:admin",
-    ("get", "/library-assets/{asset_id}/content"): "customer_image:admin",
-    ("get", "/invites"): "customer_image:read",
-    ("post", "/invites"): "customer_image:write",
-    ("post", "/invites/{invite_id}/revoke"): "customer_image:write",
-    ("get", "/generations"): "customer_image:read",
+    ("get", "/customers"): ("require_permission", ("customer_image:write",)),
+    ("get", "/products"): ("require_any_permission", ("customer_image:read", "customer_image:admin")),
+    ("post", "/products"): ("require_permission", ("customer_image:admin",)),
+    ("put", "/products/{product_id}"): ("require_permission", ("customer_image:admin",)),
+    ("delete", "/products/{product_id}"): ("require_permission", ("customer_image:admin",)),
+    ("post", "/products/{product_id}/publish"): ("require_permission", ("customer_image:admin",)),
+    ("post", "/products/{product_id}/unpublish"): ("require_permission", ("customer_image:admin",)),
+    ("get", "/products/{product_id}/assets"): ("require_permission", ("customer_image:admin",)),
+    ("post", "/products/{product_id}/assets/upload"): ("require_permission", ("customer_image:admin",)),
+    ("post", "/products/{product_id}/assets/library"): ("require_permission", ("customer_image:admin",)),
+    ("get", "/products/{product_id}/assets/{asset_id}/content"): ("require_permission", ("customer_image:admin",)),
+    ("get", "/library-assets"): ("require_permission", ("customer_image:admin",)),
+    ("get", "/library-assets/{asset_id}/content"): ("require_permission", ("customer_image:admin",)),
+    ("get", "/invites"): ("require_any_permission", ("customer_image:read", "customer_image:admin")),
+    ("post", "/invites"): ("require_permission", ("customer_image:write",)),
+    ("post", "/invites/{invite_id}/revoke"): ("require_permission", ("customer_image:write",)),
+    ("get", "/generations"): ("require_any_permission", ("customer_image:read", "customer_image:admin")),
 }
 
 
@@ -52,9 +52,17 @@ def test_router_has_exact_permission_dependency_per_endpoint():
         route = next((item for item in node.decorator_list if isinstance(item, ast.Call) and isinstance(item.func, ast.Attribute) and isinstance(item.func.value, ast.Name) and item.func.value.id == "router"), None)
         if route is None:
             continue
-        calls = [item for item in ast.walk(node) if isinstance(item, ast.Call) and isinstance(item.func, ast.Name) and item.func.id == "require_permission"]
+        calls = [
+            item for item in ast.walk(node)
+            if isinstance(item, ast.Call)
+            and isinstance(item.func, ast.Name)
+            and item.func.id in {"require_permission", "require_any_permission"}
+        ]
         assert len(calls) == 1, node.name
-        actual[(route.func.attr, route.args[0].value)] = calls[0].args[0].value
+        actual[(route.func.attr, route.args[0].value)] = (
+            calls[0].func.id,
+            tuple(argument.value for argument in calls[0].args),
+        )
     assert actual == EXPECTED
 
 
@@ -107,9 +115,24 @@ def test_non_admin_invite_and_generation_lists_are_created_by_scoped(db):
         CustomerImageGeneration(invite_id=other.id, product_id=product.id, logo_asset_id=1, request_id="other", product_name_snapshot="P", config_version_snapshot=1, option_snapshot={}, prompt_snapshot="x", reference_asset_ids=[], preset_name="p"),
     ])
     db.commit()
-    assert [row.id for row in list_invites(db, 7, False)] == [own.id]
-    assert [row.request_id for row in list_generations(db, 7, False)] == ["own"]
-    assert {row.id for row in list_invites(db, 99, True)} == {own.id, other.id}
+    assert [row.id for row in list_invites(db, 7, False, 1, 20)[0]] == [own.id]
+    assert [row.request_id for row in list_generations(db, 7, False, 1, 20)[0]] == ["own"]
+    assert {row.id for row in list_invites(db, 99, True, 1, 20)[0]} == {own.id, other.id}
+
+
+def test_invite_and_generation_pagination_never_returns_over_page_size(db):
+    from app.customer_image.service import list_generations, list_invites
+    product = CustomerImageProduct(name="P", category="wig", fixed_prompt="x", output_prompt="y", created_by=1)
+    db.add(product)
+    db.flush()
+    for index in range(5):
+        invite = _invite(db, owner=7, suffix=f"a{index:05d}")
+        db.add(CustomerImageGeneration(invite_id=invite.id, product_id=product.id, logo_asset_id=1, request_id=f"r{index}", product_name_snapshot="P", config_version_snapshot=1, option_snapshot={}, prompt_snapshot="x", reference_asset_ids=[], preset_name="p"))
+    db.commit()
+    invites, invite_total = list_invites(db, 7, False, 1, 2)
+    generations, generation_total = list_generations(db, 7, False, 2, 2)
+    assert len(invites) == len(generations) == 2
+    assert invite_total == generation_total == 5
 
 
 def test_non_admin_cross_owner_revoke_is_404(db):

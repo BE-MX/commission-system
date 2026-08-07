@@ -90,13 +90,13 @@ def api(monkeypatch):
         ],
     }
     product = _row()
+    product.options = [_row(id=11)]
     invite = _row(id=2)
     generation = _row(id=3, invite_id=2)
     asset = _row(id=4, product_id=1)
     public_library = _row(id=9, scope="public", owner_user_id=8, title="Public")
     private_library = _row(id=10, scope="private", owner_user_id=7, title="Mine")
     monkeypatch.setattr(service, "list_products", lambda *_a, **_k: [product])
-    monkeypatch.setattr(service, "list_product_options", lambda *_a, **_k: [_row(id=11)])
     monkeypatch.setattr(service, "create_product", lambda *_a, **_k: product)
     monkeypatch.setattr(service, "update_product", lambda *_a, **_k: product)
     monkeypatch.setattr(service, "delete_product", lambda *_a, **_k: None)
@@ -112,9 +112,9 @@ def api(monkeypatch):
     )
     monkeypatch.setattr(service, "list_available_customers", lambda *_a, **_k: [{"id": "C1"}])
     monkeypatch.setattr(service, "create_invite", lambda *_a, **_k: (invite, "plain-token"))
-    monkeypatch.setattr(service, "list_invites", lambda *_a, **_k: [invite])
+    monkeypatch.setattr(service, "list_invites", lambda *_a, **_k: ([invite], 1))
     monkeypatch.setattr(service, "revoke_invite", lambda *_a, **_k: invite)
-    monkeypatch.setattr(service, "list_generations", lambda *_a, **_k: [generation])
+    monkeypatch.setattr(service, "list_generations", lambda *_a, **_k: ([generation], 1))
     return TestClient(app), app, service
 
 
@@ -162,14 +162,14 @@ def test_create_invite_returns_plaintext_url_once_and_never_token_hash(api):
     assert "token_hash" not in str(created)
     assert "token_suffix" not in str(created)
 
-    listed = client.get("/api/customer-image/invites").json()["data"]
+    listed = client.get("/api/customer-image/invites").json()["data"]["items"]
     assert listed[0]["token_suffix"] == "abc123"
     assert "token_hash" not in str(listed)
     assert "plain-token" not in str(listed)
 
 
 def test_generation_list_does_not_expose_prompts_or_pricing(api):
-    body = api[0].get("/api/customer-image/generations").json()["data"]
+    body = api[0].get("/api/customer-image/generations").json()["data"]["items"]
     rendered = str(body)
     assert "prompt_snapshot" not in rendered
     assert "pricing_snapshot" not in rendered
@@ -303,6 +303,27 @@ def test_admin_product_response_keeps_all_prompt_fragments(api):
     assert product["options"][0]["values"][0]["prompt_fragment"] == "hidden value prompt"
 
 
+def test_list_pagination_has_hard_caps_and_page_envelope(api):
+    client, *_ = api
+    for path in ("invites", "generations"):
+        body = client.get(f"/api/customer-image/{path}?page=2&page_size=100").json()["data"]
+        assert set(body) == {"items", "total", "page", "page_size"}
+        assert body["page"] == 2
+        assert body["page_size"] == 100
+        assert client.get(f"/api/customer-image/{path}?page_size=101").status_code == 422
+    assert client.get("/api/customer-image/customers").json()["data"] == []
+
+
+@pytest.mark.parametrize("path", ["products", "invites", "generations"])
+def test_admin_permission_alone_can_read_management_lists(api, path):
+    client, app, _service = api
+    app.dependency_overrides[get_current_user] = lambda: {
+        "sub": "7", "roles": [], "permissions": ["customer_image:admin"]
+    }
+
+    assert client.get(f"/api/customer-image/{path}").status_code == 200
+
+
 def test_scope_conflict_maps_to_409(api, monkeypatch):
     client, _, service = api
     monkeypatch.setattr(
@@ -310,6 +331,29 @@ def test_scope_conflict_maps_to_409(api, monkeypatch):
         "list_available_customers",
         lambda *_a, **_k: (_ for _ in ()).throw(service.CustomerScopeConflictError("bind OKKI")),
     )
-    response = client.get("/api/customer-image/customers")
+    response = client.get("/api/customer-image/customers?search=Acme")
     assert response.status_code == 409
     assert "bind OKKI" in response.text
+
+
+def test_image_errors_map_to_precise_statuses(api, monkeypatch):
+    client, _app, _service = api
+    from app.customer_image import file_service
+
+    cases = [
+        (file_service.shared_files.ImageValidationError("bad image"), 400),
+        (file_service.shared_files.ImageStorageError("storage failed"), 503),
+        (OSError("disk failed"), 503),
+    ]
+    for error, expected in cases:
+        monkeypatch.setattr(
+            file_service,
+            "replace_product_asset_from_upload",
+            lambda *_a, _error=error, **_k: (_ for _ in ()).throw(_error),
+        )
+        response = client.post(
+            "/api/customer-image/products/1/assets/upload",
+            data={"role": "cover", "position": "0"},
+            files={"file": ("cover.png", b"png", "image/png")},
+        )
+        assert response.status_code == expected

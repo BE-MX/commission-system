@@ -51,7 +51,12 @@ class CustomerImageProduct(Base):
     )
 
     assets = relationship("CustomerImageProductAsset", back_populates="product", lazy="noload")
-    options = relationship("CustomerImageProductOption", back_populates="product", lazy="noload")
+    options = relationship(
+        "CustomerImageProductOption",
+        back_populates="product",
+        lazy="noload",
+        order_by="(CustomerImageProductOption.sort, CustomerImageProductOption.id)",
+    )
     invite_links = relationship("CustomerImageInviteProduct", back_populates="product", lazy="noload")
     generations = relationship("CustomerImageGeneration", back_populates="product", lazy="noload")
 
@@ -101,7 +106,12 @@ class CustomerImageProductOption(Base):
     )
 
     product = relationship("CustomerImageProduct", back_populates="options", lazy="noload")
-    values = relationship("CustomerImageOptionValue", back_populates="option", lazy="noload")
+    values = relationship(
+        "CustomerImageOptionValue",
+        back_populates="option",
+        lazy="noload",
+        order_by="(CustomerImageOptionValue.sort, CustomerImageOptionValue.id)",
+    )
 
 
 class CustomerImageOptionValue(Base):

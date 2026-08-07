@@ -70,7 +70,7 @@ def test_salesperson_only_lists_current_owned_customers(db):
     _snapshot(db, "c3", "1007", current=False)
     db.flush()
 
-    assert list_available_customers(db, 7, False, "") == [
+    assert list_available_customers(db, 7, False, "Owned") == [
         {"id": "c1", "name": "Owned Customer", "country": "US", "origin": "OKKI"}
     ]
 
@@ -82,7 +82,7 @@ def test_salesperson_customer_list_deduplicates_inconsistent_current_snapshots(d
     _snapshot(db, "c1", "1007", current=True)
     db.flush()
 
-    assert [row["id"] for row in list_available_customers(db, 7, False, "")] == ["c1"]
+    assert [row["id"] for row in list_available_customers(db, 7, False, "Owned")] == ["c1"]
 
 
 def test_admin_searches_all_customers_without_okki_binding(db):
@@ -93,6 +93,20 @@ def test_admin_searches_all_customers_without_okki_binding(db):
     rows = list_available_customers(db, 99, True, "beta")
 
     assert [row["id"] for row in rows] == ["c2"]
+
+
+def test_invite_customer_lookup_is_exact_and_not_limited_by_autocomplete(db):
+    from app.customer_image.service import _customer_for_invite
+
+    for index in range(21):
+        customer_id = f"CUST-{index:02d}"
+        _seed_customer(db, customer_id, f"A Customer {index:02d}")
+        _snapshot(db, customer_id, "1007")
+    _seed_customer(db, "CUST", "Z Target Customer")
+    _snapshot(db, "CUST", "1007")
+    db.flush()
+
+    assert _customer_for_invite(db, "CUST", 99, True) == ("Z Target Customer", "1007")
 
 
 @pytest.mark.parametrize(
@@ -107,7 +121,7 @@ def test_non_admin_without_active_numeric_okki_binding_gets_actionable_conflict(
         db.flush()
 
     with pytest.raises(CustomerScopeConflictError) as exc_info:
-        list_available_customers(db, 7, False, "")
+        list_available_customers(db, 7, False, "Customer")
 
     assert exc_info.value.status_code == 409
     assert str(exc_info.value) == OKKI_BINDING_REQUIRED_MESSAGE
@@ -119,7 +133,7 @@ def test_non_admin_uses_active_non_primary_binding_when_no_primary_exists(db):
     _snapshot(db, "c1", "1007")
     db.flush()
 
-    assert [row["id"] for row in list_available_customers(db, 7, False, "")] == ["c1"]
+    assert [row["id"] for row in list_available_customers(db, 7, False, "Owned")] == ["c1"]
 
 
 def test_non_admin_skips_invalid_primary_and_uses_first_numeric_binding(db):
@@ -129,7 +143,7 @@ def test_non_admin_skips_invalid_primary_and_uses_first_numeric_binding(db):
     _snapshot(db, "c1", "1007")
     db.flush()
 
-    assert [row["id"] for row in list_available_customers(db, 7, False, "")] == ["c1"]
+    assert [row["id"] for row in list_available_customers(db, 7, False, "Fallback")] == ["c1"]
 
 
 def test_non_admin_prefers_numeric_primary_over_other_numeric_binding(db):
@@ -141,7 +155,7 @@ def test_non_admin_prefers_numeric_primary_over_other_numeric_binding(db):
     _snapshot(db, "secondary", "1008")
     db.flush()
 
-    assert [row["id"] for row in list_available_customers(db, 7, False, "")] == ["primary"]
+    assert [row["id"] for row in list_available_customers(db, 7, False, "Primary")] == ["primary"]
 
 
 def test_invite_create_schema_enforces_products_future_expiry_and_quota():
@@ -314,3 +328,58 @@ def test_product_prompt_and_option_update_increments_config_version_once(db):
     assert updated.config_version == 2
     assert db.query(CustomerImageProductOption).filter_by(product_id=product.id).count() == 0
     assert db.query(CustomerImageOptionValue).count() == 0
+
+
+def test_product_list_eager_loads_inactive_values_for_admin_only(db):
+    from app.customer_image.service import list_products
+
+    product = create_product(db, admin_id=1, payload=_product_payload())
+    admin_product = list_products(db, include_inactive=True)[0]
+    assert [value.value for value in admin_product.options[0].values] == ["18", "20"]
+
+    reader_product = list_products(db, include_inactive=False)[0]
+    assert [value.value for value in reader_product.options[0].values] == ["18"]
+    assert admin_product.id == reader_product.id == product.id
+
+
+def test_admin_read_update_round_trip_preserves_inactive_values(db):
+    from app.customer_image.service import list_products
+
+    product = create_product(db, admin_id=1, payload=_product_payload())
+    loaded = list_products(db, include_inactive=True)[0]
+    payload = CustomerImageProductUpsert(
+        name=loaded.name,
+        category=loaded.category,
+        description=loaded.description,
+        fixed_prompt=loaded.fixed_prompt,
+        output_prompt=loaded.output_prompt,
+        sort=loaded.sort,
+        options=[
+            {
+                "key": option.key,
+                "label": option.label,
+                "control_type": option.control_type,
+                "required": option.required,
+                "default_value": option.default_value,
+                "sort": option.sort,
+                "values": [
+                    {
+                        "value": value.value,
+                        "label": value.label,
+                        "prompt_fragment": value.prompt_fragment,
+                        "color_hex": value.color_hex,
+                        "pantone_code": value.pantone_code,
+                        "sort": value.sort,
+                        "is_active": value.is_active,
+                    }
+                    for value in option.values
+                ],
+            }
+            for option in loaded.options
+        ],
+    )
+
+    update_product(db, product.id, payload)
+
+    values = db.query(CustomerImageOptionValue).order_by(CustomerImageOptionValue.id).all()
+    assert [(value.value, value.is_active) for value in values[:2]] == [("18", True), ("20", False)]
