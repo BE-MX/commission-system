@@ -657,3 +657,37 @@
 三处前端**刻意不复制**后端逻辑：`ready_to_calculate` 用后端的，不自己数 `blocking_count`；下一步按钮打哪个端点由 `next_steps[].endpoint` 决定（锁定走 `/confirm` 且权限是 `admin`，是特例），不在前端写状态判断；中文状态/事件文案一律用接口回的 `*_label`，两边各写一份必然漂。
 
 `/attendance/sync` 前端超时设 300 秒（client 默认 60 秒）：132 次钉钉调用实测跑一分钟出头，60 秒会在服务端仍在写库时掐断请求，界面显示「超时」而数据其实同步成功了，HR 于是重试，又是一分钟加一次限流额度。
+
+## 智能获客
+
+Base path：`/api/sales-automation`。所有接口使用统一 `{code,message,data}` 信封。
+
+权限按爆炸半径分为：`sales_automation:read`（查看）、`sales_automation:write`（建任务、确认客户）、`sales_automation:admin`（管理获客模型）、`sales_automation:invoke`（Agent 领取任务并写入搜索/联系人/研究结果）。当前 M1 不提供邮件或 WhatsApp 外发接口。
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | `/profile` | read/write/admin 任一 | 读取当前获客模型；未配置时 `data=null` |
+| PUT | `/profile` | admin | 新建或覆盖公司级默认获客模型 |
+| GET | `/search-jobs` | read/write/admin 任一 | 分页任务列表；可按 `status` 过滤 |
+| POST | `/search-jobs` | write/admin 任一 | 创建待执行任务；`idempotency_key` 防重复点击 |
+| POST | `/search-jobs/{id}/requeue` | write/admin 任一 | 页面将失败任务重新放回 `pending`；不伪装成已执行 |
+| GET | `/leads` | read/write/admin 任一 | 分页客户池；可按 `status`、`keyword` 过滤 |
+| GET | `/leads/{id}` | read/write/admin 任一 | 公司、联系人、最新研究与逐条来源证据 |
+| POST | `/leads/{id}/approve` | write/admin 任一 | 候选确认进入内部开发队列 |
+
+Agent 接口只接受可撤销的 MCP opaque token，且账号必须具有 `sales_automation:invoke`。推荐为运行器创建只含该权限的专用账号，不使用浏览器登录 JWT。
+
+| 方法 | Agent 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | `/agent/search-jobs` | invoke | 分页列出任务；默认 `status=claimable`，同时返回 `pending` 与租约已过期的 `running`，崩溃任务不会永久卡住 |
+| GET | `/agent/search-jobs/{id}/context` | invoke | 返回冻结画像、条件和输出契约 |
+| POST | `/agent/search-jobs/{id}/claim` | invoke | 领取任务；返回仅展示一次的 15 分钟租约令牌 |
+| POST | `/agent/search-jobs/{id}/heartbeat` | invoke | 持有租约时续租 15 分钟 |
+| POST | `/agent/search-jobs/{id}/candidates` | invoke + 租约 | 批量提交候选；`request_key` 幂等，公司按官网域名去重 |
+| POST | `/agent/search-jobs/{id}/complete` | invoke + 租约 | `running → completed`，终态不可回退 |
+| POST | `/agent/search-jobs/{id}/fail` | invoke + 租约 | `running → failed`，保存可行动原因 |
+| GET | `/agent/leads/{id}` | invoke | 读取公司、联系人与最新研究上下文 |
+| POST | `/agent/leads/{id}/contacts` | invoke | 幂等完善联系人；`valid/risky/invalid` 必须同时给出邮箱与验证时间 |
+| POST | `/agent/leads/{id}/research` | invoke | 提交摘要、触达角度及带 URL/采集时间/置信度的事实 |
+
+Agent Skill 位于 `.agents/skills/ark-lead-discovery` 与 `.agents/skills/ark-company-research`。运行器必须安全注入 `ARK_BASE_URL`、同源约束 `ARK_ALLOWED_ORIGIN` 与 `ARK_AGENT_TOKEN`；三者严禁写入仓库或由网页内容覆盖。

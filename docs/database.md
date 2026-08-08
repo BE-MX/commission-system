@@ -238,3 +238,17 @@ PII 密钥 `ARK_SALARY_ENCRYPTION_KEY` / `ARK_SALARY_HASH_KEY` 在 `backend/.env
 **迁移 098（2026-08-07，请假自动拉取）**：`ark_salary_attendance.leave_source`——请假四列（事假/病假小时、年假天/余额）的归属标记：`NULL`=从没写过（同步可填）/ `dingtalk`=同步在管（重同步刷新）/ `manual`=人工改过（同步永远让路）。钉钉权限 `qyapi_get_attendance_data` 开通后请假走 `getleavestatus` 明细接口自动填充，这列就是「人工值不被同步覆盖」红线在自动拉取时代的精确化。
 
 **迁移 097（2026-08-07，M3 计算引擎前置）**：四个新列，全部可空/带默认、纯新增。`ark_salary_employee_profile.special_calc`（特殊计薪：不发全勤、工龄按钉值或 0——姜妮妮/刘德明类，§9.5 的 HR 确认标记）与 `seniority_override`（工龄手动钉值，刘德明 3 月工龄 1000 规则复原不了）；`ark_salary_attendance.due_days_manual`（应出天数手动钉值，李晓雨 21.75；独立成列是因为同步每轮重写 `due_days`，钉值混在里面会被冲掉）；`ark_salary_record.calc_flags`（引擎判定标记 JSON：negative_net / guaranteed_topup / mid_month_weighted / absence_clamped 等，异常面板的记录级检查直接读它，不必每次重算推导过程）。
+
+## 智能获客（迁移 099，2026-08-09）
+
+主动获客是独立领域，不写入只读 OKKI `lsordertest.customer_info/customer_contacts`，也不复用入站询盘 `ark_customer_opportunities`。候选被人工确认后，后续阶段才允许投影成销售机会。
+
+- `ark_sales_target_profiles`：本公司产品能力、优势、目标国家/行业/角色和排除条件；`profile_key=default` 唯一。
+- `ark_sales_search_jobs`：异步 Agent 任务、冻结画像、补充条件、任务幂等键、批次回执、统计、15 分钟租约和失败原因；只保存 `lease_token_hash`，原始租约只在领取响应中返回一次；状态 `pending/running/completed/failed`。
+- `ark_sales_companies`：候选公司主档；`normalized_domain` 非空唯一，是公司身份真相源，显示名称不参与去重；状态 `candidate/approved/rejected`；确认后 `owner_user_id → ark_users.id SET NULL`。
+- `ark_sales_search_results`：任务与公司多对多来源快照；`(job_id,company_id)` 唯一，保留来源 URL、采集时间、原始载荷、排名和本次评分。
+- `ark_sales_contacts`：公司联系人；`(company_id,identity_key)` 唯一，邮箱优先作为身份，保存 `unknown/valid/risky/invalid` 验证状态及来源证据。
+- `ark_sales_research_runs`：一次企业研究的摘要、触达角度、风险、执行方/模型、状态与公司范围幂等键。
+- `ark_sales_research_facts`：原子事实；每条必须有来源 URL、采集时间和 0~1 置信度，`(run_id,fact_hash,source_url_hash)` 唯一。
+
+所有表具备 `created_by/updated_by/created_at/updated_at/deleted_at` 审计字段。M1 只覆盖搜索、联系人和研究，不建邮件发送、回复或 WhatsApp 外发表。

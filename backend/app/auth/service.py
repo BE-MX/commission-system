@@ -402,6 +402,11 @@ def seed_role_permissions(db: Session):
         ("customer_radar:read",   "customer_radar", "read",   "查看客户经营雷达"),
         ("customer_radar:write",  "customer_radar", "write",  "完成/延后/反馈行动"),
         ("customer_radar:manage", "customer_radar", "manage", "管理所有客户档案/手动分配"),
+        # 智能获客：外部候选发现、联系人完善与企业研究
+        ("sales_automation:read",  "sales_automation", "read",  "查看智能获客"),
+        ("sales_automation:write", "sales_automation", "write", "创建搜索任务并确认候选客户"),
+        ("sales_automation:admin", "sales_automation", "admin", "管理获客模型与Agent接入"),
+        ("sales_automation:invoke", "sales_automation", "invoke", "Agent领取任务并提交搜索与研究结果"),
         # MCP 网关(物流录单/查询的入口无关 MCP 服务)
         ("mcp:admin", "mcp", "admin", "发放/吊销 MCP 个人 access token"),
         # 薪资计算。write 与 admin 按**爆炸半径**切：改一个人的档案是 write，

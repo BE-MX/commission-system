@@ -27,6 +27,15 @@ from app.design_image.models import (
     DesignImageJob,
     DesignImageJobAsset,
 )
+from app.sales_automation.models import (
+    AcquisitionProfile,
+    SearchJob,
+    LeadCompany,
+    SearchResult,
+    LeadContact,
+    ResearchRun,
+    ResearchFact,
+)
 
 __all__ = [
     # 提成系统自有表
@@ -65,4 +74,12 @@ __all__ = [
     "DesignImageAsset",
     "DesignImageJob",
     "DesignImageJobAsset",
+    # 智能获客
+    "AcquisitionProfile",
+    "SearchJob",
+    "LeadCompany",
+    "SearchResult",
+    "LeadContact",
+    "ResearchRun",
+    "ResearchFact",
 ]

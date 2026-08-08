@@ -40,6 +40,11 @@ export const MENU_GROUPS = {
     icon: OfficeBuilding,
     anyPermission: ['customer:read', 'customer:write'],
   },
+  salesAutomation: {
+    title: '智能获客',
+    icon: Aim,
+    anyPermission: ['sales_automation:read', 'sales_automation:write', 'sales_automation:admin'],
+  },
   invoice: {
     title: '订单管理',
     icon: Document,
@@ -218,6 +223,41 @@ export const NAV_ENTRIES = [
     menu: {
       group: 'customer', title: '客户归属', icon: Document, order: 10,
       anyPermission: ['customer:read', 'customer:write'],
+    },
+  },
+
+  // ── 智能获客 ───────────────────────────────────────────
+  {
+    path: '/sales-automation/profile',
+    name: 'AcquisitionProfile',
+    component: () => import('@/views/sales_automation/AcquisitionProfile.vue'),
+    title: '获客模型',
+    anyPermission: ['sales_automation:read', 'sales_automation:write', 'sales_automation:admin'],
+    menu: {
+      group: 'salesAutomation', title: '获客模型', icon: Aim, order: 10,
+      anyPermission: ['sales_automation:read', 'sales_automation:write', 'sales_automation:admin'],
+    },
+  },
+  {
+    path: '/sales-automation/jobs',
+    name: 'SalesSearchJobs',
+    component: () => import('@/views/sales_automation/SearchJobs.vue'),
+    title: '搜索任务',
+    anyPermission: ['sales_automation:read', 'sales_automation:write', 'sales_automation:admin'],
+    menu: {
+      group: 'salesAutomation', title: '搜索任务', icon: Lightning, order: 20,
+      anyPermission: ['sales_automation:read', 'sales_automation:write', 'sales_automation:admin'],
+    },
+  },
+  {
+    path: '/sales-automation/leads',
+    name: 'SalesLeadPool',
+    component: () => import('@/views/sales_automation/LeadPool.vue'),
+    title: '客户池',
+    anyPermission: ['sales_automation:read', 'sales_automation:write', 'sales_automation:admin'],
+    menu: {
+      group: 'salesAutomation', title: '客户池', icon: OfficeBuilding, order: 30,
+      anyPermission: ['sales_automation:read', 'sales_automation:write', 'sales_automation:admin'],
     },
   },
 

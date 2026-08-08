@@ -1,0 +1,4 @@
+interface:
+  display_name: "方舟企业背调"
+  short_description: "Enrich Ark leads with contacts and sourced facts"
+  default_prompt: "Use $ark-company-research to enrich an Ark lead with verified contacts and sourced company research."

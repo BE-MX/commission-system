@@ -31,3 +31,4 @@ export const domesticClient = createApiClient({ baseURL: '/api/domestic', timeou
 export const cardClient = createApiClient({ baseURL: '/api/card', timeout: 60000 }) // 名片管家（业务员电子名片）
 export const designImageClient = createApiClient({ baseURL: '/api/design-image', timeout: 300000 })
 export const salaryClient = createApiClient({ baseURL: '/api/salary', timeout: 60000 }) // 薪资计算（批量算薪/导出放宽超时）
+export const salesAutomationClient = createApiClient({ baseURL: '/api/sales-automation', timeout: 30000 }) // 搜索由Agent异步执行，HTTP只提交任务与结果
