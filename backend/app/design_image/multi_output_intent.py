@@ -41,10 +41,14 @@ _COUNT_PATTERNS = (
     re.compile(_COUNT_TOKEN + r"\s*(?:张|幅)\s*(?:效果图|图片|图像|图)?"),
     re.compile(
         _COUNT_TOKEN
-        + r"\s*(?:个|套|组)?\s*(?:不同(?:的)?|标准)?\s*"
+        + r"\s*(?:个|种|套|组)?\s*(?:不同(?:的)?|标准)?\s*"
         + r"(?:角度|视角|方向|版本|方案|变体|效果图|图片|图像|张图|张图片)"
     ),
     re.compile(_COUNT_TOKEN + r"\s*款(?:设计|方案|效果图|图片|图)?"),
+)
+_CONVENTIONAL_VIEW_PATTERN = re.compile(r"(?P<count>[三四])视图")
+_REFERENCE_ASSET_SUFFIX = re.compile(
+    r"^[^图，。；;]{0,6}(?:参考图|素材图|原图|底图)"
 )
 _ANGLE_PATTERN = re.compile(
     r"左侧(?:面)?(?:\s*\d{1,3}\s*(?:°|度))?|"
@@ -75,12 +79,14 @@ def _find_requested_count(prompt: str) -> int | None:
     matches: list[tuple[int, int]] = []
     for pattern in _COUNT_PATTERNS:
         for match in pattern.finditer(prompt):
-            following = prompt[match.end() : match.end() + 4]
-            if following.startswith(("参考", "素材", "原图", "底图")):
+            following = prompt[match.end() : match.end() + 12]
+            if _REFERENCE_ASSET_SUFFIX.match(following):
                 continue
             count = _parse_count(match.group("count"))
             if count >= 2:
                 matches.append((match.start(), count))
+    for match in _CONVENTIONAL_VIEW_PATTERN.finditer(prompt):
+        matches.append((match.start(), _parse_count(match.group("count"))))
     if not matches:
         return None
     return min(matches)[1]
@@ -117,7 +123,13 @@ def _resolved_labels(
 ) -> tuple[str, ...]:
     if len(named_labels) == count:
         return named_labels
-    if "角度" in prompt or "视角" in prompt or "方向" in prompt or named_labels:
+    if (
+        "角度" in prompt
+        or "视角" in prompt
+        or "方向" in prompt
+        or "视图" in prompt
+        or named_labels
+    ):
         return STANDARD_ANGLES.get(count, ())
     return tuple(f"独立变体 {index}/{count}" for index in range(1, count + 1))
 
@@ -134,7 +146,7 @@ def classify_multi_output_intent(prompt: str) -> MultiOutputIntent:
         return MultiOutputIntent(mode="single")
 
     labels = _resolved_labels(prompt, count, named_labels)
-    if requested_count is not None and named_count is not None and requested_count != named_count:
+    if requested_count is not None and named_labels and requested_count != len(named_labels):
         return MultiOutputIntent(mode="clarify", count=count, labels=labels)
     if _COMPOSITE_PATTERN.search(prompt):
         mode: OutputMode = "composite"

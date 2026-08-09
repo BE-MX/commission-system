@@ -27,6 +27,11 @@ from app.design_image.multi_output_intent import (
         ("生成三张独立图片", "separate", 3, ("独立变体 1/3", "独立变体 2/3", "独立变体 3/3")),
         ("将四个视角排版展示", "composite", 4, STANDARD_ANGLES[4]),
         ("分别生成3张：正面、左侧30°、右侧60度", "separate", 3, ("正面", "左侧 30°", "右侧 60°")),
+        ("生成三视图", "composite", 3, STANDARD_ANGLES[3]),
+        ("生成四视图", "composite", 4, STANDARD_ANGLES[4]),
+        ("分别生成3张：正面", "clarify", 3, STANDARD_ANGLES[3]),
+        ("生成3种角度", "clarify", 3, STANDARD_ANGLES[3]),
+        ("生成三种角度", "clarify", 3, STANDARD_ANGLES[3]),
     ],
 )
 def test_classify_multi_output_intent(prompt, mode, count, labels):
@@ -46,6 +51,9 @@ def test_classify_multi_output_intent(prompt, mode, count, labels):
         "只生成一张产品图",
         "使用3张参考图生成产品主图",
         "上传2张素材图后生成海报",
+        "使用3张高清参考图生成产品主图",
+        "上传2张产品参考图后生成海报",
+        "用2张原始素材图生成一张海报",
     ],
 )
 def test_non_output_numbers_remain_single(prompt):
