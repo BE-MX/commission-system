@@ -73,7 +73,7 @@
 - 服务端确认成功后，卡片显示已选择模式并锁定按钮。
 - 刷新页面后确认卡片及已选择状态仍可恢复。
 - 同一次确认不能改选；用户需要改变模式时重新发送一条消息。
-- 如果确认前已有其他任务开始运行，确认仍可落队列，但遵守用户与 worker 并发上限。
+- 多图批次或确认 action 只在该用户没有 queued/running 任务时接受；同一批 2–4 张在一个事务内整体入队，再由 worker 按每用户运行并发上限逐步执行。普通单图继续遵守现有“每 session 单活跃 + 每用户最大活跃数”规则，不把并发能力降成 1。
 - 只做 160–200ms 的 opacity/transform 淡入；无装饰性逐项动画；`prefers-reduced-motion` 下取消位移。
 
 ## 4. 意图识别
@@ -96,13 +96,17 @@ class MultiOutputIntent:
 
 ### 5.1 消息交互数据
 
-为 `ark_design_image_messages` 增加可空 JSON 列 `interaction_json`，只保存结构化 UI 交互，不把 JSON 嵌进 `content`：
+为 `ark_design_image_messages` 增加：
+
+- 可空字符串 `client_request_id`：只写在 user message，用于没有 job 的 clarification turn 及多 job turn 幂等；同一 session 内唯一。
+- 可空 JSON `interaction_json`：只保存结构化 UI 交互，不把 JSON 嵌进 `content`。
 
 ```json
 {
   "type": "output_mode_confirmation",
   "status": "pending",
   "source_message_id": 101,
+  "request_id": "turn-client-uuid",
   "count": 3,
   "labels": ["正面", "左侧 45°", "右侧 45°"],
   "request": {
@@ -115,7 +119,9 @@ class MultiOutputIntent:
 }
 ```
 
-`request` 是确认后重建原 turn 所需的最小输入快照。引用的 draft assets 继续属于当前 session，并在确认成功创建 jobs 时与普通 turn 一样转正；确认失败不得转正。解析与序列化只允许已定义字段；不得把提示词快照、Provider 参数或内部错误放入交互 JSON。
+`request` 是确认后重建原 turn 所需的最小输入快照。创建 clarification 时即在同一事务内把引用资产写成 `message_id=user_message.id, status=draft`，保留原 `expires_at`，但不创建 job、不扣额度。`delete_draft_asset` 必须拒绝删除 `message_id` 非空的 draft；到期清理仍删除这种被放弃或长期未确认的附件。确认 action 成功创建全部 jobs 后才把资产置为 `attached` 并清空 `expires_at`。这样刷新后附件不会重新回流到 composer，也不能被草稿删除接口误删，同时废弃确认不会永久占用存储。解析与序列化只允许已定义字段；不得把提示词快照、Provider 参数或内部错误放入交互 JSON。
+
+所有 turn 在创建消息前先按 `(session_id, client_request_id)` 查找已有 user message：已有 clarification 返回原确认消息，已有 jobs 返回该消息下全部 jobs。这样明确多图和歧义确认都不依赖“碰巧找到第一个 job”实现幂等。
 
 ### 5.2 创建 turn
 
@@ -162,24 +168,28 @@ POST /api/design-image/sessions/{session_id}/messages/{message_id}/actions
 - 多个 jobs 继续属于同一个 session 和同一条 `request_message_id`。
 - 不新增 job group 表；消息本身就是本轮结果分组，现有前端已经能按消息聚合多张 GenerationCard。
 - 每个 job 冻结独立 prompt snapshot。角度任务在原提示后追加明确角度，并要求人物身份、服装、发型、背景与参考图一致。
-- 多个 jobs 先全部进入 queued，由现有 worker 并发领取；不在 HTTP 请求中串行调用 Provider。
-- 调整“同 session 仅允许一个 active job”的约束，使同一原子批次可创建最多 4 个 queued jobs；新的用户 turn 在该批次未结束前仍禁止提交。
+- 拼版 job 的 prompt snapshot 也必须写入确认卡展示的全部标准角度，并明确要求在同一画布中排版；不能只把原始“生成 N 个角度”原样发送给 Provider。
+- 多个 jobs 先全部进入 queued；`DESIGN_IMAGE_MAX_ACTIVE_PER_USER` 解释为每用户 running 上限，不再把同一批 queued 数量当成拒绝条件。
+- 多图 HTTP 服务在 owner 锁下确认该用户没有任何 queued/running job，随后原子创建最多 4 个 queued jobs；普通单图维持现有活跃数规则。新的 turn 或确认在多图批次未结束前禁止提交。
+- “多图批次仍活跃”由服务端查询判定：只要存在 queued/running job，且其 `request_message_id` 关联的根 jobs（`retry_of_job_id IS NULL`）总数大于 1，就阻止该用户在任何 session 创建普通 turn；即使 4 个根 jobs 已有 3 个终态、只剩 1 个 active，也必须等最后一个终态后才解除。普通单图失败后的 retry 与原 job 共用消息，但只有 1 个根 job，不得被误判成多图批次。
+- 所有并发路径采用唯一锁序 `owner → job`。worker 先非锁定选择有 queued job 的候选 owner，再以 `FOR UPDATE SKIP LOCKED` 锁 owner，重新统计 running 数量，最后锁并领取该 owner 最早的 queued job；达到上限则跳过该用户。多个 worker 及 worker/HTTP 并发不得超限或死锁。
 - 每个 job 独立成功、失败和重试；某张失败不回滚其他结果。
 - 现有每日额度按每个独立 job 消耗；拼版只消耗一次。创建批次前必须原子校验整批额度足够，不能只创建部分任务。
 
 ## 7. 前端状态
 
 - `MessageThread` 渲染 `interaction_json.type=output_mode_confirmation` 的确认卡片。
-- `useImageStudio` 处理 `mode=clarification|jobs`，把返回的多个 jobs 合并进现有 Map 并复用轮询。
+- `useImageStudio` 统一处理 create/resolve/retry 的 `mode=clarification|jobs` 响应，把 `jobs` 合并进现有 Map 并复用轮询；单任务 retry 也返回 `jobs:[retriedJob]`，不保留旧 `job` 字段。
 - 确认提交期间只锁当前卡片，不锁侧栏、历史查看和下载。
 - 当前 session 存在 pending/running 批次时，composer 继续保持禁用；确认卡片按钮仍可用于尚未创建任务的 pending clarification。
 - API 失败时按钮恢复，并给出可行动提示；409 刷新 session，以服务端最终状态为准。
 
 ## 8. 错误与边界
 
-- 数量超过 4：`一次最多生成 4 张，请拆成多轮请求。`
-- 整批额度不足：不创建任何 job，提示剩余额度。
-- 附件在确认前失效或被删除：不创建 job，提示重新上传后发送新请求。
+- 数量超过 4：稳定错误码 `multi_output_limit`，安全消息 `一次最多生成 4 张，请拆成多轮请求。`，元数据含 `max_outputs=4`。
+- 整批额度不足：稳定错误码 `daily_limit_exceeded`，不创建任何 job，安全元数据含 `remaining`。
+- 附件在确认前失效或被删除：稳定错误码 `attachment_unavailable`，不创建 job，提示重新上传后发送新请求。
+- 前端只透传上述白名单业务错误的安全消息和元数据；其他 400/422/429 继续使用通用文案，避免泄露内部异常。
 - 重复确认：同 request ID 幂等返回；不同 request ID 改选返回 409。
 - 解析器只决定输出形式，不重写用户业务要求。
 - `n` 参数仍不用于多图；每张图片保持一个 Provider 请求和一个结果资产。
@@ -192,6 +202,9 @@ POST /api/design-image/sessions/{session_id}/messages/{message_id}/actions
 - 歧义 turn 不创建 job、不消耗额度、不调用 Provider。
 - 确认事务、并发双击、幂等重试、改选冲突。
 - 同一消息创建 2/3/4 个 jobs，角度 prompt 与额度正确。
+- 64 字符 request ID 与不同 session 复用同一 request ID 时，派生 job key 仍为固定 64 字符且不冲突。
+- 多 worker 并发领取不会突破每用户 running 上限。
+- clarification draft 覆盖绑定后禁止手删、到期清理、成功确认转正和废弃确认不泄漏四条生命周期。
 - 整批额度不足时零创建。
 - 多 job 独立完成、失败和重试，不互相覆盖 assistant message 或资产。
 
@@ -200,7 +213,7 @@ POST /api/design-image/sessions/{session_id}/messages/{message_id}/actions
 - 确认卡片文案、标准角度、成本提示和按钮锁定。
 - 刷新恢复 pending/resolved 状态。
 - clarification 不启动 job polling；确认后多个 jobs 都进入轮询。
-- 409 刷新、失败恢复、reduced motion。
+- retry 的统一 `jobs` 响应、白名单业务错误、409 刷新、失败恢复、reduced motion。
 
 真实浏览器必须验证：
 
