@@ -200,7 +200,7 @@ cd backend
 .\.venv\Scripts\python.exe -m pytest tests/test_design_image_models.py tests/test_design_image_interactions_api.py -q
 ```
 
-Expected: one head, exact 098→101 MySQL DDL renders without inspection errors, and all focused tests pass.
+Expected: one head at `103_di_message_interact`, exact `102_customer_image_portal`→`103_di_message_interact` MySQL DDL renders without inspection errors, and all focused tests pass.
 
 Create `scripts/test_di_migration_mysql.ps1` as an executable isolation gate. It must:
 

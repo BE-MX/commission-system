@@ -476,7 +476,7 @@
 - `GET /admin/inquiries`、`PUT /admin/inquiries/{id}` — 询盘列表 / 状态流转（new/handled）。
 - 前端：`views/card/CardButler.vue`（导航「展会营销 → 名片管家」）；印刷管线与静态页模板在 `scripts/card_suite/`（README 即 spec：docs/requirements/2026-08-01-sales-card-suite.md）。
 
-## 设计部 AI 生图工作台（`/api/design-image`，089/101 迁移，2026-08-05）
+## 设计部 AI 生图工作台（`/api/design-image`，089/103 迁移，2026-08-05）
 
 所有 JSON 端点沿用统一 `{code, message, data}` 信封；图片内容端点返回鉴权后的二进制流。资源只按当前用户 owner 查询，跨账号访问与不存在资源均返回相同 404。权限独立于 AI 管理后台：`design_image:read` 负责读取，`design_image:write` 负责创建/上传/生成/重试，`design_image:admin` 只用于用量查询。
 
@@ -504,7 +504,7 @@
 
 主要错误：校验 400/422、未认证 401、无权限 403、owner 隔离或不存在 404、已引用资产/已有 active job 409、上传超限 413、日额度 429、Preset/存储/一致性不可用 503。确认时附件过期返回 `attachment_unavailable`，文案固定为“附件已失效，请重新上传后发送新请求。”，不得引导用户重试旧确认。重试是新 accepted job，因此占用新的当日额度；失败调用可能已经触达 Provider，不能解释为“零成本”。
 
-## 客户生图门户内部管理（`/api/customer-image`，098 迁移，2026-08-07）
+## 客户生图门户内部管理（`/api/customer-image`，102 迁移，2026-08-07）
 
 所有端点使用方舟 JWT，并返回 `{code, message, data}`。`customer_image:read` 可读已发布产品、邀请和生成记录；`customer_image:write` 可读已发布产品与自己的邀请，并可搜索客户、创建和撤销邀请；`customer_image:admin` 管理产品，同时可读取全部产品、邀请与生成记录，不依赖额外授予 `customer_image:read`。非管理员的邀请、生成记录和撤销操作始终按 `created_by` 限定；跨业务员访问与资源不存在统一返回 404。普通 read/write 响应只含安全产品字段，永不返回 prompt。
 

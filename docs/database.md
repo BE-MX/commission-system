@@ -192,7 +192,7 @@
 - `ark_card_entries` — 沟通纪要：entry_type text/image、title/content、attachment_path（`uploads/card/` uuid 命名，公开静态可读）；客户凭口令可见，FK CASCADE 随客户删除。
 - `ark_card_inquiries` — 客户询盘：contact 原文 + message、customer_id 命中档案时回填（FK SET NULL）、status new/handled 驱动跟进。
 
-## 设计部 AI 生图工作台（迁移 089/101，2026-08-05）
+## 设计部 AI 生图工作台（迁移 089/103，2026-08-05）
 
 迁移 `089_design_image_studio` 在 `ark_ai_call_logs` 增加 nullable JSON `usage_detail`，并建立五张领域表。迁移采用存在性检查以收敛已有对象；`downgrade()` 刻意不删审计数据或表，回滚走权限/Preset 开关，结构清理由单独审计迁移完成。
 

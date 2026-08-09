@@ -973,7 +973,9 @@ AI_IMAGE_PROXY=
 5. 对每轮核对 `job.ai_call_log_id`、job tokens、`AiCallLog.usage_detail`、output asset 元数据/SHA-256 和文件存在；第二账号访问他人资产应与随机不存在 ID 同为 404；验证刷新/切换恢复 active job 且 Object URL 被释放。
 6. 在真实 MySQL 用独立连接并发提交和领取，验证统一 `owner → job` 锁序、整批 daily limit、同 key 幂等赢家、同用户 running 上限，以及另一个未饱和用户不会被饿死；SQLite 测试不能替代此项。
 
-2026-08-09 本地收尾证据：唯一 head 与 098→101 离线 SQL 已通过；本机没有 `docker` 命令，隔离 MySQL 脚本明确退出 `Docker is required to run the isolated MySQL migration gate.`。因此真实 MySQL 迁移与并发锁验证仍是 Task 12/部署环境硬门禁，不得据本地结果标记为已通过。
+2026-08-09 旧分支历史证据：当时唯一 head 与 098→101 离线 SQL 曾通过；该编号链已在整合最新 main 后废弃，不能作为当前迁移或上线门禁证据。
+
+2026-08-10 当前整合证据：`alembic heads` 唯一为 `104_ci_generation_snapshots`，`alembic upgrade 101_knowledge_poc:104_ci_generation_snapshots --sql` 已成功生成当前 MySQL 离线 DDL。本机仍没有 `docker` 命令，因此隔离 MySQL 实跑和真实并发锁验证尚未通过，仍是部署环境硬门禁；不得用 offline SQL 或 SQLite 结果替代。
 
 同日真实 Chrome 前端验收使用隔离 Vite 与本地 mock API，不连接真实数据库、Provider 或付费接口：桌面端歧义请求只出现确认卡；选择拼版后为 1 个 job 卡且确认状态已落定；重置后对“分别生成”快速双击仍只得到 3 个 job 卡，刷新后 3 个卡和 resolved 状态均恢复；390×844 视口 `clientWidth=scrollWidth=390`，两个操作按钮实际高度均为 62px，控制台无 error。截图保存在未提交的 `tmp/design-image-multi-output-qa/desktop-confirmation.png` 与 `mobile-390-pending.png`。该证据只覆盖真实浏览器中的前端交互与响应式布局；真实鉴权、数据库持久化、MySQL 锁竞争和 Provider 调用仍必须在 Task 12/部署环境完成。
 
