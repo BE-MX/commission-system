@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from datetime import datetime
+import logging
 from typing import Callable, Literal, TypeVar
 
 from starlette.background import BackgroundTask
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_permission
@@ -16,6 +18,7 @@ from app.core.response import ok
 from app.design_image import file_service, library_service, service
 from app.design_image.schemas import (
     LibraryAssetClone,
+    OutputModeConfirmationInteraction,
     PromptTemplateUpsert,
     RetryJobRequest,
     SessionCreate,
@@ -24,6 +27,7 @@ from app.design_image.schemas import (
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 UPLOAD_CHUNK_BYTES = 1024 * 1024
 T = TypeVar("T")
 
@@ -70,13 +74,37 @@ def _session(row) -> dict:
     }
 
 
-def _message(row) -> dict:
+def _serialize_interaction(value, *, message_id: int) -> dict | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict) or value.get("type") != "output_mode_confirmation":
+        logger.warning(
+            "invalid stored design image interaction omitted message_id=%s",
+            message_id,
+        )
+        return None
+    try:
+        interaction = OutputModeConfirmationInteraction.model_validate(value)
+    except ValidationError:
+        logger.warning(
+            "invalid stored design image interaction omitted message_id=%s",
+            message_id,
+        )
+        return None
+    return interaction.model_dump(mode="json")
+
+
+def serialize_message(row) -> dict:
     return {
         "id": row.id,
         "session_id": row.session_id,
         "role": row.role,
         "content": row.content,
         "status": row.status,
+        "interaction": _serialize_interaction(
+            getattr(row, "interaction_json", None),
+            message_id=row.id,
+        ),
         "created_at": _iso(row.created_at),
     }
 
@@ -127,7 +155,7 @@ def _job(row) -> dict:
 def _turn_result(result: service.TurnResult) -> dict:
     return {
         "session": _session(result.session),
-        "message": _message(result.message),
+        "message": serialize_message(result.message),
         "job": _job(result.job),
         "reference_asset_ids": [link.asset_id for link in result.reference_links],
     }
@@ -202,7 +230,7 @@ def get_session(
     return ok(
         {
             "session": _session(detail["session"]),
-            "messages": [_message(row) for row in detail["messages"]],
+            "messages": [serialize_message(row) for row in detail["messages"]],
             "assets": [_asset(row) for row in detail["assets"]],
             "jobs": [_job(row) for row in detail["jobs"]],
         }

@@ -55,9 +55,16 @@ class DesignImageMessage(Base):
     role = Column(String(16), nullable=False, comment="消息角色")
     content = Column(Text, nullable=False, comment="消息正文")
     status = Column(String(16), nullable=False, default="normal", comment="消息状态")
+    client_request_id = Column(String(64), nullable=True, comment="客户端请求幂等键")
+    interaction_json = Column(JSON, nullable=True, comment="结构化消息交互")
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
 
     __table_args__ = (
+        UniqueConstraint(
+            "session_id",
+            "client_request_id",
+            name="uq_di_message_session_client_request",
+        ),
         Index("idx_di_message_session_created", "session_id", "created_at"),
         {"comment": "AI 生图会话消息"},
     )

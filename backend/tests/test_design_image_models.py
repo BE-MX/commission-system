@@ -98,6 +98,7 @@ def test_design_image_tables_expose_the_required_columns():
         },
         "ark_design_image_messages": {
             "id", "session_id", "role", "content", "status", "created_at",
+            "client_request_id", "interaction_json",
         },
         "ark_design_image_assets": {
             "id", "session_id", "message_id", "asset_type", "storage_path",
@@ -128,6 +129,7 @@ def test_design_image_constraints_indexes_and_fk_types_match_production():
     _design_image_models()
     jobs = Base.metadata.tables["ark_design_image_jobs"]
     job_assets = Base.metadata.tables["ark_design_image_job_assets"]
+    messages = Base.metadata.tables["ark_design_image_messages"]
 
     job_unique_names = {
         item.name for item in jobs.constraints if isinstance(item, UniqueConstraint)
@@ -139,6 +141,20 @@ def test_design_image_constraints_indexes_and_fk_types_match_production():
         item.name for item in job_assets.constraints if isinstance(item, CheckConstraint)
     }
     assert "uq_di_job_owner_idem" in job_unique_names
+    message_unique_names = {
+        item.name for item in messages.constraints if isinstance(item, UniqueConstraint)
+    }
+    assert "uq_di_message_session_client_request" in message_unique_names
+    message_unique = next(
+        item
+        for item in messages.constraints
+        if item.name == "uq_di_message_session_client_request"
+    )
+    assert tuple(column.name for column in message_unique.columns) == (
+        "session_id", "client_request_id",
+    )
+    assert messages.c.client_request_id.nullable is True
+    assert messages.c.interaction_json.nullable is True
     assert "uq_di_job_asset" in job_asset_unique_names
     assert "ck_di_job_asset_position" in job_asset_checks
 

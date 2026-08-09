@@ -488,7 +488,8 @@
 | GET | `/sessions/{session_id}` | read | 会话、消息、未删除/未过期资产与该会话全部历史 jobs（按创建时间升序，不只 active） |
 | POST | `/sessions/{session_id}/assets` | write | multipart 字段 `file`；JPEG/PNG/WebP，实际格式必须匹配 MIME |
 | DELETE | `/assets/{asset_id}` | write | 仅未被任务引用的 draft 可删 |
-| POST | `/sessions/{session_id}/turns` | write | 202；创建消息与 queued job；body 的 `session_id` 若存在必须与路径一致 |
+| POST | `/sessions/{session_id}/turns` | write | 202；body 的 `session_id` 若存在必须与路径一致；响应统一含 `mode=jobs|clarification` 与 `jobs` 数组，歧义多输出只创建确认消息并返回空数组 |
+| POST | `/sessions/{session_id}/messages/{message_id}/actions` | write | 选择待确认消息的输出方式；body `{action:"choose_output_mode", mode:"composite"|"separate", request_id}`，额外字段拒绝，`request_id` 1～64 且仅字母、数字、下划线、连字符 |
 | GET | `/jobs/active` | read | 当前用户唯一 queued/running job，供刷新恢复；字面量路由先于 `/{job_id}` |
 | GET | `/jobs/{job_id}` | read | 查询单任务状态与输出资产 |
 | POST | `/jobs/{job_id}/retry` | write | 仅 failed 可重试；复制输入创建新 job，保留 `retry_of_job_id` |
@@ -496,6 +497,8 @@
 | GET | `/usage` | admin | 可按 `owner_user_id`、`start_at`、`end_at`、`status` 过滤 |
 
 `turns` 请求：`prompt` 1～4000 字；`request_id` 1～64，仅字母、数字、下划线、连字符；`size` 仅 `1024x1024 / 1024x1536 / 1536x1024`；`quality` 仅 `low / medium / high`；`reference_asset_ids` 最多 4 个、正整数且不重复；`base_asset_id` 不得同时出现在参考图列表。无 `base_asset_id` 是 generation，有则是 edit；连续对话不会回传全部历史图，只发送显式基准图、本轮参考图和本轮要求。
+
+消息响应新增 nullable `interaction`。当前公开类型仅 `output_mode_confirmation`，字段白名单为 `type/status/source_message_id/request_id/count/labels/request/selected_mode/resolved_at`；其中 `request` 只含 `base_asset_id/reference_asset_ids/size/quality`。未知或损坏的存储 JSON 返回 `interaction: null` 并记录服务端警告，绝不透传原始 JSON。
 
 主要错误：校验 400/422、未认证 401、无权限 403、owner 隔离或不存在 404、已引用资产/已有 active job 409、上传超限 413、日额度 429、Preset/存储/一致性不可用 503。重试是新 accepted job，因此占用新的当日额度；失败调用可能已经触达 Provider，不能解释为“零成本”。
 

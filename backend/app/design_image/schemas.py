@@ -1,4 +1,7 @@
-"""Validated inputs for Design Image Studio domain services."""
+"""Validated inputs and public interaction shapes for Design Image Studio."""
+
+from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -61,6 +64,71 @@ class RetryJobRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     request_id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+
+
+class MessageActionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    request_id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    action: Literal["choose_output_mode"]
+    mode: Literal["composite", "separate"]
+
+
+class InteractionRequestSnapshot(BaseModel):
+    """Safe request fields that may be returned to the browser."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    base_asset_id: int | None = Field(default=None, gt=0)
+    reference_asset_ids: list[int] = Field(default_factory=list, max_length=MAX_REFERENCE_ASSETS)
+    size: Literal["1024x1024", "1024x1536", "1536x1024"]
+    quality: Literal["low", "medium", "high"]
+
+    @field_validator("reference_asset_ids")
+    @classmethod
+    def validate_reference_asset_ids(cls, value: list[int]) -> list[int]:
+        if any(asset_id <= 0 for asset_id in value):
+            raise ValueError("参考图 ID 无效")
+        if len(value) != len(set(value)):
+            raise ValueError("参考图不能重复")
+        return value
+
+
+class OutputModeConfirmationInteraction(BaseModel):
+    """Whitelisted public form of a persisted output-mode confirmation."""
+
+    model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
+
+    type: Literal["output_mode_confirmation"]
+    status: Literal["pending", "resolved"]
+    source_message_id: int = Field(gt=0)
+    request_id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    count: int = Field(ge=2, le=4)
+    labels: list[str] = Field(min_length=2, max_length=4)
+    request: InteractionRequestSnapshot
+    selected_mode: Literal["composite", "separate"] | None = None
+    resolved_at: datetime | None = None
+
+    @field_validator("labels")
+    @classmethod
+    def validate_labels(cls, value: list[str]) -> list[str]:
+        if any(not label or len(label) > 64 for label in value):
+            raise ValueError("输出标签无效")
+        return value
+
+    @model_validator(mode="after")
+    def validate_consistent_state(self):
+        if len(self.labels) != self.count:
+            raise ValueError("输出标签数量与输出数不一致")
+        if self.status == "pending" and (
+            self.selected_mode is not None or self.resolved_at is not None
+        ):
+            raise ValueError("待确认交互不能包含已选模式")
+        if self.status == "resolved" and (
+            self.selected_mode is None or self.resolved_at is None
+        ):
+            raise ValueError("已确认交互缺少模式或时间")
+        return self
 
 
 class PromptTemplateOption(BaseModel):
