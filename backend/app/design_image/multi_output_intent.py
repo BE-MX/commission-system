@@ -53,6 +53,8 @@ _REFERENCE_ASSET_SUFFIX = re.compile(
 _REFERENCE_ASSET_PREFIX = re.compile(
     r"(?:(?:参考|素材|原|底)图(?:共|有|是)?|参考)\s*$"
 )
+_INPUT_ASSET_VERB_PREFIX = re.compile(r"(?:使用|上传|采用|用)\s*$")
+_INPUT_IMAGE_CONTEXT = re.compile(r"(?:张|幅)[^图，。；;]{0,8}(?:图片|图)")
 _OUTPUT_VERB_SUFFIX = re.compile(r"(?:生成|输出|制作|出图)\s*$")
 _ANGLE_PATTERN = re.compile(
     r"左侧(?:面)?(?:\s*\d{1,3}\s*(?:°|度))?|"
@@ -73,6 +75,7 @@ _SEPARATE_PATTERN = re.compile(
 _GENERATED_IMAGE_COUNT_PATTERN = re.compile(
     r"(?:生成|输出|制作|出图)\s*" + _COUNT_TOKEN + r"\s*张"
 )
+_NEGATED_SIGNAL_PREFIX = re.compile(r"(?:不要|别|无需|禁止)[^，。；;]{0,8}$")
 
 
 def _parse_count(token: str) -> int:
@@ -91,6 +94,10 @@ def _find_requested_count(prompt: str) -> int | None:
             is_reference_count = _REFERENCE_ASSET_SUFFIX.match(
                 following
             ) or _REFERENCE_ASSET_PREFIX.search(preceding)
+            is_input_asset_count = _INPUT_ASSET_VERB_PREFIX.search(
+                preceding
+            ) and _INPUT_IMAGE_CONTEXT.search(match.group(0) + following)
+            is_reference_count = is_reference_count or is_input_asset_count
             if is_reference_count and not is_output_count:
                 continue
             count = _parse_count(match.group("count"))
@@ -145,11 +152,19 @@ def _resolved_labels(
     return tuple(f"独立变体 {index}/{count}" for index in range(1, count + 1))
 
 
+def _has_positive_signal(pattern: re.Pattern[str], prompt: str) -> bool:
+    for match in pattern.finditer(prompt):
+        clause_prefix = prompt[max(0, match.start() - 12) : match.start()]
+        if not _NEGATED_SIGNAL_PREFIX.search(clause_prefix):
+            return True
+    return False
+
+
 def classify_multi_output_intent(prompt: str) -> MultiOutputIntent:
     requested_count = _find_requested_count(prompt)
     named_labels = _extract_angle_labels(prompt)
-    is_composite = bool(_COMPOSITE_PATTERN.search(prompt))
-    is_separate = bool(_SEPARATE_PATTERN.search(prompt))
+    is_composite = _has_positive_signal(_COMPOSITE_PATTERN, prompt)
+    is_separate = _has_positive_signal(_SEPARATE_PATTERN, prompt)
     named_count = (
         len(named_labels)
         if len(named_labels) >= 2 and (is_composite or is_separate)
@@ -165,7 +180,9 @@ def classify_multi_output_intent(prompt: str) -> MultiOutputIntent:
     labels = _resolved_labels(prompt, count, named_labels)
     if requested_count is not None and named_labels and requested_count != len(named_labels):
         return MultiOutputIntent(mode="clarify", count=count, labels=labels)
-    if is_composite:
+    if is_composite and is_separate:
+        mode: OutputMode = "clarify"
+    elif is_composite:
         mode: OutputMode = "composite"
     elif is_separate or _GENERATED_IMAGE_COUNT_PATTERN.search(prompt):
         mode = "separate"
