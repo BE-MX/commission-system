@@ -30,9 +30,20 @@ def upgrade() -> None:
         sa.Column(
             "parameters_snapshot",
             sa.JSON(),
-            nullable=False,
+            nullable=True,
             comment="任务执行参数快照",
         ),
+    )
+    op.execute(sa.text(
+        "UPDATE ark_customer_image_generations "
+        "SET parameters_snapshot = JSON_OBJECT() "
+        "WHERE parameters_snapshot IS NULL"
+    ))
+    op.alter_column(
+        "ark_customer_image_generations",
+        "parameters_snapshot",
+        existing_type=sa.JSON(),
+        nullable=False,
     )
 
 

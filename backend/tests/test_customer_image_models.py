@@ -178,24 +178,48 @@ def test_customer_image_constraints_freeze_generation_and_scope_idempotency():
 
 def test_customer_image_generation_snapshot_migration_follows_current_head(monkeypatch):
     migration = _snapshot_migration_module()
-    added = []
+    operations = []
 
     monkeypatch.setattr(
         migration.op,
         "add_column",
-        lambda table, column: added.append((table, column)),
+        lambda table, column: operations.append(("add", table, column)),
+    )
+    monkeypatch.setattr(
+        migration.op,
+        "execute",
+        lambda statement: operations.append(("execute", str(statement))),
+    )
+    monkeypatch.setattr(
+        migration.op,
+        "alter_column",
+        lambda table, column, **kwargs: operations.append(
+            ("alter", table, column, kwargs)
+        ),
     )
     migration.upgrade()
 
     assert migration.revision == "102_ci_generation_snapshots"
     assert migration.down_revision == "101_di_message_interact"
-    assert [(table, column.name) for table, column in added] == [
+    added = [operation for operation in operations if operation[0] == "add"]
+    assert [(table, column.name) for _, table, column in added] == [
         ("ark_customer_image_generations", "requirement_snapshot"),
         ("ark_customer_image_generations", "parameters_snapshot"),
     ]
-    assert added[0][1].nullable is True
-    assert isinstance(added[1][1].type, JSON)
-    assert added[1][1].nullable is False
+    assert added[0][2].nullable is True
+    assert isinstance(added[1][2].type, JSON)
+    assert added[1][2].nullable is True
+    assert [operation[0] for operation in operations] == [
+        "add", "add", "execute", "alter"
+    ]
+    assert "SET parameters_snapshot = JSON_OBJECT()" in operations[2][1]
+    assert "WHERE parameters_snapshot IS NULL" in operations[2][1]
+    _, table, column, options = operations[3]
+    assert (table, column) == (
+        "ark_customer_image_generations", "parameters_snapshot"
+    )
+    assert isinstance(options["existing_type"], JSON)
+    assert options["nullable"] is False
 
 
 def test_customer_image_domain_ids_share_sqlite_autoincrement_type():
