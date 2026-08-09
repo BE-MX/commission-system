@@ -1,22 +1,9 @@
-import { h } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
 import { NAV_ENTRIES } from '@/config/navigation'
-import { getInviteToken } from '@/views/customer-image/inviteSession'
 import {
   bypassCustomerImageRoute,
   captureCustomerImageRouteToken,
 } from './customerImageRoute'
-
-// Task 10 replaces this bootstrap shell with the full customer portal.
-const CustomerImageRouteShell = {
-  name: 'CustomerImageRouteShell',
-  setup() {
-    const message = getInviteToken()
-      ? '正在加载产品效果图工作台…'
-      : '此访问链接已失效，请向业务员重新获取链接。'
-    return () => h('main', { role: 'status', 'aria-live': 'polite' }, message)
-  },
-}
 
 // NAV_ENTRIES 中每条记录映射成 vue-router 的 children 路由
 // path 去掉前导 '/' 因为父路由是 '/'
@@ -56,7 +43,7 @@ const routes = [
   {
     path: '/create/:token?',
     name: 'CustomerImagePortal',
-    component: CustomerImageRouteShell,
+    component: () => import('@/views/customer-image/CustomerImagePortal.vue'),
     meta: { title: '莱莎产品效果图', public: true, customerImage: true },
     beforeEnter(to) {
       return captureCustomerImageRouteToken(to.params.token)

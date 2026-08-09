@@ -22,11 +22,10 @@ test('customer portal route is public top-level and registered before MainLayout
   assert.match(routeBlock, /captureCustomerImageRouteToken/)
 })
 
-test('temporary route shell has only bootstrap and actionable missing-link duties', () => {
-  assert.match(source, /CustomerImageRouteShell/)
-  assert.match(source, /此访问链接已失效，请向业务员重新获取链接。/)
-  assert.match(source, /正在加载产品效果图工作台…/)
-  assert.match(source, /Task 10 replaces this bootstrap shell/)
+test('customer route loads the full portal without retaining the bootstrap shell', () => {
+  assert.match(source, /CustomerImagePortal\.vue/)
+  assert.doesNotMatch(source, /CustomerImageRouteShell/)
+  assert.doesNotMatch(source, /Task 10 replaces this bootstrap shell/)
 })
 
 test('public portal bypasses Ark auth and mobile login redirection', () => {
