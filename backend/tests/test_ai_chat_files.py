@@ -68,6 +68,16 @@ def _xlsx_bytes() -> bytes:
     return output.getvalue()
 
 
+def _sparse_xlsx_bytes(*, row: int, column: int) -> bytes:
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.cell(row=row, column=column, value="far away")
+    output = io.BytesIO()
+    workbook.save(output)
+    workbook.close()
+    return output.getvalue()
+
+
 def _pptx_bytes() -> bytes:
     from pptx import Presentation
     from pptx.util import Inches
@@ -169,6 +179,39 @@ def test_xlsx_uses_cached_formulas_and_visible_nonempty_worksheets_only():
     assert "LS-01 | 4 | 4" in result.extracted_text
     assert "内部底价" not in result.extracted_text
     assert "不得泄露" not in result.extracted_text
+
+
+@pytest.mark.parametrize(("row", "column"), [(20_001, 1), (1, 257)])
+def test_xlsx_rejects_real_sparse_worksheets_before_scanning(row, column):
+    content = _sparse_xlsx_bytes(row=row, column=column)
+    assert len(content) < 4 * 1024 * 1024
+
+    with pytest.raises(_service().FileValidationError, match="工作表范围"):
+        _service().normalize_and_store(
+            "sparse.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            content,
+        )
+
+
+@pytest.mark.parametrize(("row_limit", "cell_limit"), [(1, 100), (100, 1)])
+def test_xlsx_limits_rows_and_cells_scanned_during_iteration(monkeypatch, row_limit, cell_limit):
+    workbook = Workbook()
+    workbook.active.append(["a", "b"])
+    workbook.active.append(["c", "d"])
+    output = io.BytesIO()
+    workbook.save(output)
+    workbook.close()
+    service = _service()
+    monkeypatch.setattr(service, "MAX_XLSX_SCANNED_ROWS", row_limit, raising=False)
+    monkeypatch.setattr(service, "MAX_XLSX_SCANNED_CELLS", cell_limit, raising=False)
+
+    with pytest.raises(service.FileValidationError, match="扫描"):
+        service.normalize_and_store(
+            "dense.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            output.getvalue(),
+        )
 
 
 def test_pptx_extracts_slide_text_and_table_text():
@@ -338,4 +381,20 @@ def test_configured_storage_root_must_be_absolute_for_current_platform(monkeypat
     monkeypatch.setattr(get_settings(), "AI_CHAT_STORAGE_ROOT", configured)
 
     with pytest.raises(_service().FileStorageError, match="绝对路径"):
+        _service().resolve_private_path("documents/file.txt")
+
+
+def test_configured_storage_root_cannot_be_filesystem_root(monkeypatch, tmp_path):
+    monkeypatch.setattr(get_settings(), "AI_CHAT_STORAGE_ROOT", tmp_path.anchor)
+
+    with pytest.raises(_service().FileStorageError, match="根目录"):
+        _service().resolve_private_path("documents/file.txt")
+
+
+def test_existing_storage_root_must_be_a_real_directory(monkeypatch, tmp_path):
+    regular_file = tmp_path / "not-a-directory"
+    regular_file.write_text("occupied", encoding="utf-8")
+    monkeypatch.setattr(get_settings(), "AI_CHAT_STORAGE_ROOT", str(regular_file))
+
+    with pytest.raises(_service().FileStorageError, match="目录"):
         _service().resolve_private_path("documents/file.txt")

@@ -24,6 +24,10 @@ from app.core.config import get_settings
 
 MAX_IMAGE_PIXELS = 60_000_000
 MAX_OOXML_UNCOMPRESSED_BYTES = 64 * 1024 * 1024
+MAX_XLSX_ROWS = 20_000
+MAX_XLSX_COLUMNS = 256
+MAX_XLSX_SCANNED_ROWS = 20_000
+MAX_XLSX_SCANNED_CELLS = 200_000
 TRUNCATION_MARKER = "[内容已按系统上限截断]"
 _STORAGE_LOCK = threading.RLock()
 logger = logging.getLogger("commission")
@@ -160,12 +164,23 @@ def _extract_docx(content: bytes):
 
 def _extract_xlsx(content: bytes):
     workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+    scanned_rows = 0
+    scanned_cells = 0
     try:
         for worksheet in workbook.worksheets:
             if worksheet.sheet_state != "visible":
                 continue
+            if worksheet.max_row > MAX_XLSX_ROWS or worksheet.max_column > MAX_XLSX_COLUMNS:
+                raise FileValidationError("Excel 工作表范围过大，请缩小有效区域后重试")
             yield f"[工作表: {worksheet.title}]"
             for row in worksheet.iter_rows(values_only=True):
+                scanned_rows += 1
+                scanned_cells += len(row)
+                if (
+                    scanned_rows > MAX_XLSX_SCANNED_ROWS
+                    or scanned_cells > MAX_XLSX_SCANNED_CELLS
+                ):
+                    raise FileValidationError("Excel 工作簿扫描范围过大，请拆分后重试")
                 values = [str(value).strip() for value in row if value not in (None, "")]
                 if values:
                     yield " | ".join(values)
@@ -321,7 +336,17 @@ def _storage_root() -> Path:
     root = Path(configured)
     if not configured or not root.is_absolute():
         raise FileStorageError("私有存储根目录必须是当前系统的绝对路径")
-    return Path(os.path.abspath(root))
+    root = Path(os.path.abspath(root))
+    if root == Path(root.anchor):
+        raise FileStorageError("私有存储根目录不能是磁盘根目录")
+    # Deployment boundary: this root and its parents must be writable only by the
+    # service account. This module validates paths; it does not create or manage ACLs.
+    if os.path.lexists(root):
+        if _is_reparse_point(root):
+            raise FileStorageError("私有存储根目录不能是 reparse point")
+        if not root.is_dir():
+            raise FileStorageError("已存在的私有存储根必须是目录")
+    return root
 
 
 def _is_reparse_point(path: Path) -> bool:
