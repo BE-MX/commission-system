@@ -801,7 +801,7 @@ frontend/src/
 
 **客户与归属**：门户不复制客户主数据。客户搜索只读 OKKI `customer_info`，普通业务员通过 active `ArkUserExternalBinding(provider="okki")` 映射到 OKKI user ID，再按当前 `customer_commission_snapshot` 归属过滤；管理员可搜索全量。邀请一旦创建就冻结客户展示信息，后续 OKKI 改名不会改写历史。
 
-**产品与素材**：产品只支持 `single_choice`、`color`、`boolean` 三种预设选项。cover 是单槽；reference 是 2 张以上可追加、替换、退役和排序的稳定列表。图库只作为复制来源，产品目录始终读取 `customer-product` 私有副本。替换不覆盖旧行，generation 冻结具体 cover/reference/LOGO ID，因此换模板不会改变历史任务输入。
+**产品与素材**：产品只支持 `single_choice`、`color`、`boolean` 三种预设选项。cover 是单槽；reference 支持多张，可追加、替换、退役和排序，发布前至少需要一张当前 reference。图库只作为复制来源，产品目录始终读取 `customer-product` 私有副本。替换不覆盖旧行，generation 冻结具体 cover/reference/LOGO ID，因此换模板不会改变历史任务输入。
 
 **提示词边界**：最终调用文本按「产品 fixed prompt → 选项/值 prompt fragment → 客户补充要求 → output prompt」确定性组装。客户只看到 label、默认值和自己的安全选择，不看到任何 fragment 或最终 prompt。补充要求与安全选项、最终 prompt、Provider 参数分别冻结；公开 generation 响应不回显补充要求或内部快照。
 

@@ -103,6 +103,38 @@ def test_cleanup_waits_exactly_thirty_days_and_commits_before_exact_file_deletes
     ]
 
 
+def test_cleanup_preserves_active_invite_assets(db, monkeypatch):
+    from app.customer_image import worker
+
+    invite = _invite(db, expires_at=NOW + timedelta(days=1), suffix="555555")
+    asset = _asset(db, invite)
+    db.commit()
+    deleted_paths = []
+    monkeypatch.setattr(worker.file_service, "delete_private_file", deleted_paths.append)
+
+    assert worker.cleanup_expired_invite_assets(db, NOW, retention_days=30) == 0
+    assert db.get(CustomerImageAsset, asset.id).deleted_at is None
+    assert deleted_paths == []
+
+
+def test_cleanup_rechecks_extended_invite_before_soft_delete(db, monkeypatch):
+    from app.customer_image import worker
+
+    invite = _invite(db, expires_at=NOW - timedelta(days=31), suffix="666666")
+    asset = _asset(db, invite)
+    db.commit()
+
+    # The invitation was once eligible, but an operator extended it before cleanup ran.
+    invite.expires_at = NOW - timedelta(days=29)
+    db.commit()
+    deleted_paths = []
+    monkeypatch.setattr(worker.file_service, "delete_private_file", deleted_paths.append)
+
+    assert worker.cleanup_expired_invite_assets(db, NOW, retention_days=30) == 0
+    assert db.get(CustomerImageAsset, asset.id).deleted_at is None
+    assert deleted_paths == []
+
+
 @pytest.mark.parametrize("status", ["queued", "running"])
 def test_cleanup_preserves_every_asset_for_invite_with_unfinished_generation(db, monkeypatch, status):
     from app.customer_image import worker

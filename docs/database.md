@@ -210,7 +210,18 @@
 
 迁移 `098_customer_image_portal` 建立八张领域表：产品、产品素材、产品选项、选项值、邀请、邀请产品关联、邀请素材和生成记录。产品素材是稳定副本，不引用可变图库文件；cover 是单槽，reference 是按 `position` 排序的多槽。替换、下移或删除只把旧行标为 retired，历史 generation 继续通过冻结的素材 ID 读取当时版本，不物理覆盖旧文件。
 
-邀请只存定长 SHA-256 token hash 与末 6 位 suffix，`ark_customer_image_invites` 冻结客户外部 ID/显示名、创建人、有效期和正数额度。非管理员查询必须以 `created_by` 为数据边界。额度使用数由 generation 行派生；提交在邀请锁内检查 `(invite_id, request_id)` 幂等键、当前配置和剩余额度，再一次性创建 generation，避免重复请求重复扣减。
+| 实际表名 | 归属与核心字段 | FK 删除策略、唯一与检查约束 |
+|---|---|---|
+| `ark_customer_image_products` | `created_by` 是模板管理员；`config_version/is_published/sort` 驱动发布目录 | `created_by → ark_users.id RESTRICT`；检查 `config_version > 0` |
+| `ark_customer_image_product_assets` | 产品稳定 cover/reference 副本；`role/position/retired_at` 表示当前或历史槽位 | `product_id → products CASCADE`；检查 role 仅 cover/reference、`position >= 0`；当前多 reference 的连续唯一位置由产品行锁内 service 维护 |
+| `ark_customer_image_product_options` | 产品内的 `key/label/control_type/required/default_value/sort` | `product_id → products CASCADE`；唯一 `(product_id, key)` |
+| `ark_customer_image_option_values` | 选项值及隐藏 `prompt_fragment`、颜色/Pantone、启停和顺序 | `option_id → product_options CASCADE`；唯一 `(option_id, value)` |
+| `ark_customer_image_invites` | `created_by` 是业务 owner；冻结客户/OKKI owner；只存 `token_hash/token_suffix`；额度为 `quota_total/quota_used` | `created_by → ark_users.id RESTRICT`、`current_logo_asset_id → assets RESTRICT`；`token_hash` 唯一；检查总额度为正、已用非负且不超过总额、结束晚于开始 |
+| `ark_customer_image_invite_products` | 邀请获准产品集合 | `invite_id → invites CASCADE`、`product_id → products RESTRICT`；唯一 `(invite_id, product_id)` |
+| `ark_customer_image_assets` | 邀请归属的 LOGO/生成结果，`deleted_at` 是保留清理边界 | `invite_id → invites RESTRICT`；检查 asset type 仅 logo/generated；当前 LOGO 由 invites 的反向 RESTRICT FK 保护 |
+| `ark_customer_image_generations` | owner 继承 `invite.created_by`；冻结产品、素材、选项、提示词、参数与计价；`quota_refunded_at` 保证最多退款一次 | invite/product/logo/output/AI call log 均为 `RESTRICT`；唯一 `(invite_id, request_id)`；检查 `claim_count/provider_attempt_count >= 0` |
+
+邀请只存定长 SHA-256 token hash 与末 6 位 suffix，`ark_customer_image_invites` 冻结客户外部 ID/显示名、创建人、有效期和正数额度。非管理员查询必须以 `created_by` 为数据边界。额度以邀请行的 `quota_total/quota_used` 为原子账本，并由 generation 与 `quota_refunded_at` 留下审计依据；提交在邀请锁内检查 `(invite_id, request_id)` 幂等键、当前配置和剩余额度，再一次性增加已用额度并创建 generation，避免重复请求重复扣减。
 
 `ark_customer_image_generations` 冻结产品/LOGO/reference、公开选项、隐藏提示词、计价与执行参数。迁移 `102_ci_generation_snapshots` 增加 nullable `requirement_snapshot` 与非空 JSON `parameters_snapshot`：补充要求单独冻结去除首尾空白后的原文；参数快照只供 worker 使用，保存尺寸、质量、Provider/config version、下载白名单等非公开参数。098 已建立的 `provider_attempt_count` 仅统计真实 Provider 请求次数，不能与数据库领取次数混用。`option_snapshot` 只保存按产品定义顺序排列的客户安全选择项，`pricing_snapshot` 只保存调用时 rate card，`prompt_snapshot` 保存最终隐藏提示词。公开 API 不返回补充要求、提示词、Provider/config、rate card、token/hash 或磁盘路径。
 
