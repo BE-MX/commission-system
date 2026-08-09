@@ -50,6 +50,7 @@ _CONVENTIONAL_VIEW_PATTERN = re.compile(r"(?P<count>[三四])视图")
 _REFERENCE_ASSET_SUFFIX = re.compile(
     r"^[^图，。；;]{0,6}(?:参考图|素材图|原图|底图)"
 )
+_REFERENCE_ASSET_PREFIX = re.compile(r"(?:参考|使用|上传|采用|用)\s*$")
 _ANGLE_PATTERN = re.compile(
     r"左侧(?:面)?(?:\s*\d{1,3}\s*(?:°|度))?|"
     r"右侧(?:面)?(?:\s*\d{1,3}\s*(?:°|度))?|"
@@ -66,7 +67,9 @@ _SEPARATE_PATTERN = re.compile(
     r"独立(?:生成|制作|输出)|各(?:生成|制作|输出)|"
     r"每(?:个|一)(?:角度|视角).{0,6}(?:一张|一幅)|独立图片|单独出图"
 )
-_MULTIPLE_IMAGE_COUNT_PATTERN = re.compile(_COUNT_TOKEN + r"\s*张")
+_GENERATED_IMAGE_COUNT_PATTERN = re.compile(
+    r"(?:生成|输出|制作|出)\s*" + _COUNT_TOKEN + r"\s*张"
+)
 
 
 def _parse_count(token: str) -> int:
@@ -80,7 +83,10 @@ def _find_requested_count(prompt: str) -> int | None:
     for pattern in _COUNT_PATTERNS:
         for match in pattern.finditer(prompt):
             following = prompt[match.end() : match.end() + 12]
-            if _REFERENCE_ASSET_SUFFIX.match(following):
+            preceding = prompt[max(0, match.start() - 8) : match.start()]
+            if _REFERENCE_ASSET_SUFFIX.match(following) or _REFERENCE_ASSET_PREFIX.search(
+                preceding
+            ):
                 continue
             count = _parse_count(match.group("count"))
             if count >= 2:
@@ -150,7 +156,7 @@ def classify_multi_output_intent(prompt: str) -> MultiOutputIntent:
         return MultiOutputIntent(mode="clarify", count=count, labels=labels)
     if _COMPOSITE_PATTERN.search(prompt):
         mode: OutputMode = "composite"
-    elif _SEPARATE_PATTERN.search(prompt) or _MULTIPLE_IMAGE_COUNT_PATTERN.search(prompt):
+    elif _SEPARATE_PATTERN.search(prompt) or _GENERATED_IMAGE_COUNT_PATTERN.search(prompt):
         mode = "separate"
     else:
         mode = "clarify"

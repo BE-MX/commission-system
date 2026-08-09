@@ -32,6 +32,9 @@ from app.design_image.multi_output_intent import (
         ("分别生成3张：正面", "clarify", 3, STANDARD_ANGLES[3]),
         ("生成3种角度", "clarify", 3, STANDARD_ANGLES[3]),
         ("生成三种角度", "clarify", 3, STANDARD_ANGLES[3]),
+        ("用2张高清产品参考图生成3个角度的人像", "clarify", 3, STANDARD_ANGLES[3]),
+        ("使用2张参考图，请生成3个角度", "clarify", 3, STANDARD_ANGLES[3]),
+        ("参考2张图生成3个角度", "clarify", 3, STANDARD_ANGLES[3]),
     ],
 )
 def test_classify_multi_output_intent(prompt, mode, count, labels):
