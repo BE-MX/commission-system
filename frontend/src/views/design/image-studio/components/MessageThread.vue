@@ -36,6 +36,12 @@
           </div>
         </div>
       </div>
+      <OutputModeConfirmation
+        v-if="message.interaction?.type === 'output_mode_confirmation'"
+        :interaction="message.interaction"
+        :submitting="isConfirmationSubmitting(message.id)"
+        @choose="mode => emit('choose-output-mode', { message, mode })"
+      />
       <GenerationCard
         v-for="job in messageJobs(message.id)"
         :key="job.id"
@@ -56,6 +62,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { MagicStick, User } from '@element-plus/icons-vue'
 import { shouldAutoScroll } from '../state'
 import GenerationCard from './GenerationCard.vue'
+import OutputModeConfirmation from './OutputModeConfirmation.vue'
 
 const props = defineProps({
   messages: { type: Array, default: () => [] },
@@ -63,8 +70,9 @@ const props = defineProps({
   assets: { type: Array, default: () => [] },
   assetUrl: { type: Function, required: true },
   loading: { type: Boolean, default: false },
+  isConfirmationSubmitting: { type: Function, default: () => false },
 })
-const emit = defineEmits(['retry', 'download', 'preview', 'edit', 'use-prompt'])
+const emit = defineEmits(['retry', 'download', 'preview', 'edit', 'use-prompt', 'choose-output-mode'])
 const pane = ref(null)
 
 const suggestions = [

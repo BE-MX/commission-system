@@ -1,13 +1,13 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import {
   createSession, createTurn, deleteAsset, getActiveJobs, getConfig, getJob, getSession,
-  listSessions, retryJob, uploadAsset,
+  listSessions, resolveMessageAction, retryJob, uploadAsset,
 } from '@/api/designImage'
 import { msgError } from '@/utils/feedback'
 import {
   acceptConversationResponse, advanceJob, canStartSend, replaceActiveJob,
-  createSessionSingleFlight, nextConversationGeneration, reconcileSubmittedDraft,
-  restoreActiveJobs, selectSessionActiveJob, upsertAttachment,
+  createSessionSingleFlight, nextConversationGeneration, reconcileSubmittedDraft, reconcileTurnResult,
+  recoverComposerDrafts, restoreActiveJobs, safeBusinessErrorMessage, selectSessionActiveJob, upsertAttachment,
 } from '../state'
 import { useAssetObjectUrls } from './useAssetObjectUrls'
 import { useJobPolling } from './useJobPolling'
@@ -20,6 +20,8 @@ function requestId(prefix) {
 }
 
 function safeRequestMessage(error) {
+  const businessMessage = safeBusinessErrorMessage(error)
+  if (businessMessage) return businessMessage
   const status = error?.response?.status
   if (status === 429) return '今日额度已用完或当前任务较多，请稍后再试'
   if (status === 409) return '已有任务正在生成，请等待完成后再发送'
@@ -51,6 +53,7 @@ export function useImageStudio() {
   const lightboxAsset = ref(null)
   const lightboxUrl = ref(null)
   const activeJobs = reactive(new Map())
+  const confirmationRequests = reactive(new Set())
   const jobSnapshots = new Map()
   const assetUrls = useAssetObjectUrls()
   const polling = useJobPolling()
@@ -104,6 +107,24 @@ export function useImageStudio() {
       jobs.value = next.jobs
     }
     return merged
+  }
+
+  function mergeMessage(message) {
+    if (!message || message.session_id !== currentSessionId.value) return
+    const index = messages.value.findIndex(item => item.id === message.id)
+    messages.value = index === -1
+      ? [...messages.value, message]
+      : messages.value.map(item => item.id === message.id ? { ...item, ...message } : item)
+  }
+
+  function reconcileMutationResult(result = {}) {
+    const reconciled = reconcileTurnResult(result)
+    mergeSession(result.session)
+    mergeMessage(result.message)
+    mergeMessage(reconciled.clarification)
+    for (const job of reconciled.jobs) mergeJob(job)
+    for (const job of reconciled.jobs) startActivePolling(job)
+    return reconciled
   }
 
   async function hydrateThumbnails(rows, token) {
@@ -190,14 +211,7 @@ export function useImageStudio() {
         else activeJobs.delete(merged.id)
         return merged
       })
-      draftAttachments.value = assets.value
-        .filter(asset => asset.asset_type === 'upload' && asset.status === 'draft')
-        .map(asset => ({
-          uploadId: `draft-${asset.id}`,
-          name: `参考图 ${asset.id}`,
-          status: 'ready',
-          asset,
-        }))
+      draftAttachments.value = recoverComposerDrafts(assets.value)
       mergeSession(detail.session)
       const tracked = activeJob.value
       if (tracked) startActivePolling(tracked)
@@ -331,14 +345,12 @@ export function useImageStudio() {
       }
       const response = await createTurn(session.id, body)
       const result = response?.data
-      mergeJob(result.job)
-      mergeSession(result.session)
+      reconcileMutationResult(result)
       // 首轮发送后后端会用首条消息重命名会话，同步到页头标题
       if (currentSessionId.value === result.session.id && currentSession.value) {
         currentSession.value = { ...currentSession.value, title: result.session.title }
       }
       if (responseGeneration === conversationGeneration && currentSessionId.value === sessionIdSnapshot) {
-        messages.value = [...messages.value, result.message]
         const draft = reconcileSubmittedDraft({
           prompt: prompt.value,
           attachments: draftAttachments.value,
@@ -348,7 +360,6 @@ export function useImageStudio() {
         draftAttachments.value = draft.attachments
         baseAsset.value = draft.baseAsset
       }
-      startActivePolling(result.job)
     } catch (error) {
       if (responseGeneration === null || (
         responseGeneration === conversationGeneration && currentSessionId.value === sessionIdSnapshot
@@ -364,12 +375,36 @@ export function useImageStudio() {
     try {
       const response = await retryJob(job.id, { request_id: requestId('retry') })
       const result = response?.data
-      mergeJob(result.job)
-      startActivePolling(result.job)
+      reconcileMutationResult(result)
     } catch (error) {
       msgError(safeRequestMessage(error))
     } finally {
       sendInFlight.value = false
+    }
+  }
+
+  function isConfirmationSubmitting(messageId) {
+    return confirmationRequests.has(messageId)
+  }
+
+  async function chooseOutputMode({ message, mode }) {
+    const sessionId = message?.session_id
+    const messageId = message?.id
+    if (!sessionId || !messageId || confirmationRequests.has(messageId)) return
+    confirmationRequests.add(messageId)
+    try {
+      const response = await resolveMessageAction(sessionId, messageId, {
+        request_id: requestId('action'),
+        action: 'choose_output_mode',
+        mode,
+      })
+      reconcileMutationResult(response?.data)
+      void loadConfig().catch(error => msgError(safeRequestMessage(error)))
+    } catch (error) {
+      if (error?.response?.status === 409) await refreshCurrentSession(sessionId)
+      msgError(safeRequestMessage(error))
+    } finally {
+      confirmationRequests.delete(messageId)
     }
   }
 
@@ -449,10 +484,11 @@ export function useImageStudio() {
   })
 
   return {
-    activeJob, activeSessionIds, assets, assetUrl: assetUrls.get, baseAsset, canSend, chooseBaseAsset, clearBaseAsset,
+    activeJob, activeSessionIds, assets, assetUrl: assetUrls.get, baseAsset, canSend, chooseBaseAsset, chooseOutputMode,
+    clearBaseAsset,
     closeLightbox, config, currentSession, currentSessionId, downloadAsset, draftAttachments,
     drawerOpen, ensureSession, initializing, jobs, lightboxAsset, lightboxUrl, loadMoreSessions: () => loadSessions({ append: true }),
-    messages, newSessionInFlight, newConversation, nextCursor, openLightbox, prompt, quality, removeAttachment,
+    isConfirmationSubmitting, messages, newSessionInFlight, newConversation, nextCursor, openLightbox, prompt, quality, removeAttachment,
     retry, selectLibraryBaseAsset, selectSession, sendInFlight, sessionActiveJob, sessions, sessionsLoading, size, submit,
     uploadInFlight, uploadReference,
   }

@@ -49,11 +49,13 @@
         :assets="studio.assets.value"
         :asset-url="studio.assetUrl"
         :loading="studio.initializing.value"
+        :is-confirmation-submitting="studio.isConfirmationSubmitting"
         @retry="studio.retry"
         @download="studio.downloadAsset"
         @preview="studio.openLightbox"
         @edit="studio.chooseBaseAsset"
         @use-prompt="applySuggestion"
+        @choose-output-mode="studio.chooseOutputMode"
       />
 
       <PromptComposer

@@ -339,6 +339,7 @@ test('design image API wrappers execute every route with data and request config
   const params = { limit: 20, cursor: 'next' }
   const turn = { prompt: 'new poster', request_id: 'request-1' }
   const retry = { request_id: 'retry-1' }
+  const action = { request_id: 'action-1', action: 'choose_output_mode', mode: 'separate' }
   const usage = { owner_user_id: 7, status: 'failed' }
   const results = [
     api.getConfig(),
@@ -348,6 +349,7 @@ test('design image API wrappers execute every route with data and request config
     api.uploadAsset(11, 'image-file'),
     api.deleteAsset(31),
     api.createTurn(11, turn),
+    api.resolveMessageAction(11, 71, action),
     api.getActiveJobs(),
     api.getJob(41),
     api.retryJob(41, retry),
@@ -374,6 +376,7 @@ test('design image API wrappers execute every route with data and request config
     ['post', '/sessions/11/assets'],
     ['delete', '/assets/31'],
     ['post', '/sessions/11/turns'],
+    ['post', '/sessions/11/messages/71/actions'],
     ['get', '/jobs/active'],
     ['get', '/jobs/41'],
     ['post', '/jobs/41/retry'],
@@ -401,42 +404,44 @@ test('design image API wrappers execute every route with data and request config
   assert.deepEqual(calls[4].args[2], { showLoading: false, suppressToast: true })
   assert.equal(calls[6].args[1], turn)
   assert.deepEqual(calls[6].args[2], { showLoading: false, suppressToast: true })
-  for (const callIndex of [7, 8]) {
+  assert.equal(calls[7].args[1], action)
+  assert.deepEqual(calls[7].args[2], { showLoading: false, suppressToast: true })
+  for (const callIndex of [8, 9]) {
     assert.deepEqual(calls[callIndex].args[1], {
       showLoading: false,
       suppressToast: true,
       timeout: 20000,
     })
   }
-  assert.equal(calls[9].args[1], retry)
-  assert.deepEqual(calls[9].args[2], { showLoading: false, suppressToast: true })
-  assert.deepEqual(calls[10].args[1], {
+  assert.equal(calls[10].args[1], retry)
+  assert.deepEqual(calls[10].args[2], { showLoading: false, suppressToast: true })
+  assert.deepEqual(calls[11].args[1], {
     showLoading: false,
     suppressToast: true,
     params: { thumbnail: true, download: true },
     responseType: 'blob',
   })
-  assert.deepEqual(calls[12].args[1], { params: { include_inactive: true }, showLoading: false })
-  assert.deepEqual(calls[13].args[2], { showLoading: false, suppressToast: true })
-  assert.deepEqual(calls[14].args[1], { params: { scope: 'private' }, showLoading: false })
-  assert.equal(calls[15].args[1] instanceof FormData, true)
-  assert.equal(calls[15].args[1].get('file'), 'image-file')
-  assert.equal(calls[15].args[1].get('scope'), 'private')
-  assert.deepEqual(calls[16].args[1], { showLoading: false })
-  assert.deepEqual(calls[17].args[1], { session_id: 11 })
-  assert.deepEqual(calls[18].args[1], {
+  assert.deepEqual(calls[13].args[1], { params: { include_inactive: true }, showLoading: false })
+  assert.deepEqual(calls[14].args[2], { showLoading: false, suppressToast: true })
+  assert.deepEqual(calls[15].args[1], { params: { scope: 'private' }, showLoading: false })
+  assert.equal(calls[16].args[1] instanceof FormData, true)
+  assert.equal(calls[16].args[1].get('file'), 'image-file')
+  assert.equal(calls[16].args[1].get('scope'), 'private')
+  assert.deepEqual(calls[17].args[1], { showLoading: false })
+  assert.deepEqual(calls[18].args[1], { session_id: 11 })
+  assert.deepEqual(calls[19].args[1], {
     showLoading: false,
     suppressToast: true,
     params: { thumbnail: true },
     responseType: 'blob',
   })
-  assert.equal(calls[19].args[1], turn)
-  assert.deepEqual(calls[19].args[2], { showLoading: false, suppressToast: true })
   assert.equal(calls[20].args[1], turn)
   assert.deepEqual(calls[20].args[2], { showLoading: false, suppressToast: true })
-  assert.deepEqual(calls[21].args[1], { showLoading: false })
+  assert.equal(calls[21].args[1], turn)
+  assert.deepEqual(calls[21].args[2], { showLoading: false, suppressToast: true })
   assert.deepEqual(calls[22].args[1], { showLoading: false })
-  assert.deepEqual(calls[11].args[1], { params: usage, showLoading: false })
+  assert.deepEqual(calls[23].args[1], { showLoading: false })
+  assert.deepEqual(calls[12].args[1], { params: usage, showLoading: false })
 })
 
 test('design image studio is registered once with a lazy read-protected route', () => {

@@ -1,4 +1,9 @@
 const ACTIVE_JOB_STATUSES = new Set(['queued', 'running'])
+const SAFE_BUSINESS_ERROR_CODES = new Set([
+  'multi_output_limit',
+  'daily_limit_exceeded',
+  'attachment_unavailable',
+])
 const JOB_STATUS_RANK = {
   queued: 0,
   running: 1,
@@ -68,6 +73,48 @@ export function reconcileSubmittedDraft(current, snapshot) {
     attachments: current.attachments.filter(item => !sentUploadIds.has(item.uploadId)),
     baseAsset: current.baseAsset?.id === snapshot.sentBaseId ? null : current.baseAsset,
   }
+}
+
+export function reconcileTurnResult(result = {}) {
+  const jobs = Array.isArray(result.jobs) ? result.jobs : []
+  return {
+    jobs,
+    clarification: result.clarification ?? null,
+    pollJobIds: jobs.map(job => job.id),
+  }
+}
+
+export function recoverComposerDrafts(assets = []) {
+  return assets
+    .filter(asset => (
+      asset.asset_type === 'upload'
+      && asset.status === 'draft'
+      && asset.message_id == null
+    ))
+    .map(asset => ({
+      uploadId: `draft-${asset.id}`,
+      name: `参考图 ${asset.id}`,
+      status: 'ready',
+      asset,
+    }))
+}
+
+export function safeBusinessErrorMessage(error) {
+  const detail = error?.response?.data?.detail
+  if (!detail || typeof detail !== 'object' || !SAFE_BUSINESS_ERROR_CODES.has(detail.code)) return null
+  if (typeof detail.message !== 'string' || !detail.message.trim()) return null
+  const safeMeta = detail.meta && typeof detail.meta === 'object' ? detail.meta : {}
+  if (detail.code === 'daily_limit_exceeded' && Number.isInteger(safeMeta.remaining)) {
+    return `${detail.message}（今日剩余 ${Math.max(safeMeta.remaining, 0)} 次）`
+  }
+  if (
+    detail.code === 'multi_output_limit'
+    && Number.isInteger(safeMeta.max_outputs)
+    && !detail.message.includes(String(safeMeta.max_outputs))
+  ) {
+    return `${detail.message}（最多 ${Math.max(safeMeta.max_outputs, 0)} 张）`
+  }
+  return detail.message
 }
 
 export function focusDialog(container) {

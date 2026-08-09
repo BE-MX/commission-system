@@ -25,11 +25,11 @@ function getOpeningTag(source, componentName) {
 
 test('studio restores drafts and protects initialization from user navigation races', () => {
   const source = read('../src/views/design/image-studio/composables/useImageStudio.js')
-  assert.match(
-    source,
-    /asset_type\s*===\s*['"]upload['"][\s\S]*status\s*===\s*['"]draft['"]|status\s*===\s*['"]draft['"][\s\S]*asset_type\s*===\s*['"]upload['"]/,
-  )
-  assert.match(source, /uploadId:\s*`draft-\$\{asset\.id\}`/)
+  const state = read('../src/views/design/image-studio/state.js')
+  assert.match(source, /recoverComposerDrafts\(assets\.value\)/)
+  assert.match(state, /asset_type\s*===\s*['"]upload['"][\s\S]*status\s*===\s*['"]draft['"]/)
+  assert.match(state, /asset\.message_id\s*==\s*null/)
+  assert.match(state, /uploadId:\s*`draft-\$\{asset\.id\}`/)
   assert.match(source, /acceptConversationResponse\(initializeGeneration,\s*conversationGeneration\)/)
   assert.match(source, /loadSessions\([^)]*initializeGeneration/)
   assert.match(source, /async function newConversation\(\)[\s\S]*?nextConversationGeneration\(conversationGeneration\)/)

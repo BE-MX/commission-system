@@ -41,6 +41,14 @@ export function createTurn(sessionId, data) {
   )
 }
 
+export function resolveMessageAction(sessionId, messageId, data) {
+  return designImageClient.post(
+    `/sessions/${sessionId}/messages/${messageId}/actions`,
+    data,
+    { ...SILENT_REQUEST },
+  )
+}
+
 export function getActiveJobs() {
   return designImageClient.get('/jobs/active', { ...JOB_POLL_REQUEST })
 }
