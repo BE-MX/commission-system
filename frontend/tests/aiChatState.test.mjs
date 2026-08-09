@@ -121,7 +121,15 @@ test('isolates terminal detail refresh failures from the completed stream result
   const composable = readSource('../src/views/design/ai-chat/composables/useAiChat.js')
 
   assert.match(composable, /async function refreshAfterStream\(/)
-  assert.match(composable, /await refreshAfterStream\(sessionId, expectedWorkspace\)/)
+  assert.match(composable, /await refreshAfterStream\(sessionId, generation, expectedWorkspace\)/)
+})
+
+test('reloads non-abort failures only while the stream and session are current', () => {
+  const composable = readSource('../src/views/design/ai-chat/composables/useAiChat.js')
+
+  assert.match(composable, /async function reloadFailedSession\(sessionId, generation, expectedWorkspace\)/)
+  assert.match(composable, /generation !== streamGeneration[\s\S]*expectedWorkspace !== workspaceGeneration[\s\S]*currentSessionId\.value !== sessionId/)
+  assert.match(composable, /error\.value = \{ message,[^}]*\}[\s\S]*await reloadFailedSession\(sessionId, generation, expectedWorkspace\)/)
 })
 
 test('parses split frames, CRLF, comments, and multiple data lines', () => {
@@ -206,6 +214,11 @@ test('applies meta, delta, heartbeat, done, and error only to the active generat
   assert.equal(state.streamSummary.total_tokens, 12)
 
   state = reduceChatState(state, { type: 'start-stream' })
+  state = reduceChatState(state, event(state.streamGeneration, 'meta', {
+    session_id: 7,
+    assistant_message_id: 32,
+    status: 'streaming',
+  }))
   state = reduceChatState(state, event(state.streamGeneration, 'error', {
     code: 'rate_limited',
     message: '当前请求较多，请稍后重试',
@@ -215,21 +228,62 @@ test('applies meta, delta, heartbeat, done, and error only to the active generat
   assert.match(state.error.message, /请稍后/)
 })
 
+test('keeps a turn pending until meta materializes real message ids once', () => {
+  let state = reduceChatState(createInitialState({ activeSessionId: 7 }), {
+    type: 'start-stream',
+    pending: {
+      userMessage: { role: 'user', content: '客户需要自然发际线' },
+      assistantMessage: { role: 'assistant', content: '', status: 'streaming' },
+    },
+  })
+  const generation = state.streamGeneration
+
+  assert.equal(state.streaming, true)
+  assert.deepEqual(state.messages, [])
+  assert.equal(state.pendingTurn.userMessage.content, '客户需要自然发际线')
+
+  state = reduceChatState(state, event(generation, 'meta', {
+    session_id: 7,
+    user_message_id: 30,
+    assistant_message_id: 31,
+    status: 'streaming',
+  }))
+  assert.deepEqual(state.messages.map(message => message.id), [30, 31])
+  assert.equal(state.pendingTurn, null)
+
+  state = reduceChatState(state, event(generation, 'meta', {
+    session_id: 7,
+    user_message_id: 30,
+    assistant_message_id: 31,
+    status: 'streaming',
+  }))
+  assert.deepEqual(state.messages.map(message => message.id), [30, 31])
+})
+
 test('stop invalidates the active stream and retry appends a new answer', () => {
   const initial = createInitialState({
     messages: [{ id: 8, role: 'assistant', content: '旧回答', status: 'failed' }],
   })
-  const streaming = reduceChatState(initial, { type: 'start-stream' })
+  let streaming = reduceChatState(initial, { type: 'start-stream' })
+  streaming = reduceChatState(streaming, event(streaming.streamGeneration, 'meta', {
+    assistant_message_id: 9,
+    status: 'streaming',
+  }))
   const stopped = reduceChatState(streaming, { type: 'stop-stream' })
   assert.equal(stopped.streaming, false)
   assert.equal(stopped.messages.at(-1).status, 'stopped')
   assert.equal(stopped.streamGeneration, streaming.streamGeneration + 1)
 
-  const retried = reduceChatState(stopped, {
+  let retried = reduceChatState(stopped, {
     type: 'start-retry',
     messageId: 8,
     message: { id: 'retry-pending', role: 'assistant', content: '', status: 'streaming' },
   })
+  assert.equal(retried.messages.length, 2)
+  retried = reduceChatState(retried, event(retried.streamGeneration, 'meta', {
+    assistant_message_id: 10,
+    status: 'streaming',
+  }))
   assert.equal(retried.messages.length, 3)
   assert.equal(retried.messages[0].content, '旧回答')
   assert.equal(retried.messages.at(-1).retry_of_message_id, 8)

@@ -30,6 +30,7 @@ const DEFAULT_STATE = Object.freeze({
   streaming: false,
   streamGeneration: 0,
   streamMessageId: null,
+  pendingTurn: null,
   error: null,
   lastHeartbeat: null,
   streamSummary: null,
@@ -61,6 +62,7 @@ export function createInitialState(overrides = {}) {
 
 function updateStreamMessage(state, update) {
   const targetId = state.streamMessageId
+  if (targetId == null) return state.messages
   let found = false
   const messages = state.messages.map(message => {
     if (message.id !== targetId) return message
@@ -78,6 +80,33 @@ function updateStreamMessage(state, update) {
   return messages
 }
 
+function materializePendingMessages(state, data) {
+  const messages = [...state.messages]
+  const pending = state.pendingTurn || {}
+  if (data.user_message_id && pending.userMessage
+      && !messages.some(message => message.id === data.user_message_id)) {
+    messages.push({
+      ...pending.userMessage,
+      id: data.user_message_id,
+      session_id: data.session_id ?? pending.userMessage.session_id,
+    })
+  }
+  if (data.assistant_message_id) {
+    const index = messages.findIndex(message => message.id === data.assistant_message_id)
+    if (index === -1) {
+      messages.push({
+        ...(pending.assistantMessage || { role: 'assistant', content: '' }),
+        id: data.assistant_message_id,
+        session_id: data.session_id,
+        status: data.status || 'streaming',
+      })
+    } else {
+      messages[index] = { ...messages[index], status: data.status || messages[index].status }
+    }
+  }
+  return messages
+}
+
 function applyStreamEvent(state, action) {
   if (action.generation !== state.streamGeneration) return state
 
@@ -87,15 +116,13 @@ function applyStreamEvent(state, action) {
     return { ...state, lastHeartbeat: data }
   }
   if (frame.event === 'meta') {
-    const previousId = state.streamMessageId
-    const nextId = data.assistant_message_id ?? previousId
-    const messages = updateStreamMessage(state, message => ({
-      ...message,
-      id: nextId ?? message.id,
-      session_id: data.session_id ?? message.session_id,
-      status: data.status || 'streaming',
-    }))
-    return { ...state, messages, streamMessageId: nextId }
+    const nextId = data.assistant_message_id ?? state.streamMessageId
+    return {
+      ...state,
+      messages: materializePendingMessages(state, data),
+      streamMessageId: nextId,
+      pendingTurn: null,
+    }
   }
   if (frame.event === 'delta') {
     const text = typeof data.text === 'string' ? data.text : ''
@@ -119,6 +146,7 @@ function applyStreamEvent(state, action) {
       })),
       streamSummary: data,
       error: null,
+      pendingTurn: null,
     }
   }
   if (frame.event === 'error') {
@@ -135,6 +163,7 @@ function applyStreamEvent(state, action) {
         error_message: error.message,
       })),
       error,
+      pendingTurn: null,
     }
   }
   return state
@@ -162,18 +191,15 @@ export function reduceChatState(state, action) {
       }
     case 'start-stream': {
       const generation = state.streamGeneration + 1
-      const message = action.message || {
-        id: `stream-${generation}`,
-        role: 'assistant',
-        content: '',
-        status: 'streaming',
-      }
       return {
         ...state,
-        messages: [...state.messages, message],
         streaming: true,
         streamGeneration: generation,
-        streamMessageId: message.id,
+        streamMessageId: null,
+        pendingTurn: action.pending || {
+          userMessage: null,
+          assistantMessage: action.message || { role: 'assistant', content: '', status: 'streaming' },
+        },
         error: null,
         lastHeartbeat: null,
         streamSummary: null,
@@ -192,10 +218,13 @@ export function reduceChatState(state, action) {
       }
       return {
         ...state,
-        messages: [...state.messages, message],
         streaming: true,
         streamGeneration: generation,
-        streamMessageId: message.id,
+        streamMessageId: null,
+        pendingTurn: {
+          userMessage: null,
+          assistantMessage: message,
+        },
         error: null,
         lastHeartbeat: null,
         streamSummary: null,
@@ -211,6 +240,7 @@ export function reduceChatState(state, action) {
         messages: state.streaming
           ? updateStreamMessage(state, message => ({ ...message, status: 'stopped' }))
           : state.messages,
+        pendingTurn: null,
       }
     case 'switch-session':
       return createInitialState({

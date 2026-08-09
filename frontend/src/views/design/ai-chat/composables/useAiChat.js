@@ -83,11 +83,12 @@ export function useAiChat() {
     sessions.value = response.items || []
   }
 
-  async function loadDetail(sessionId, expectedWorkspace = workspaceGeneration) {
+  async function loadDetail(sessionId, expectedWorkspace = workspaceGeneration, expectedStream = null) {
     sessionLoading.value = true
     try {
       const detail = dataOf(await getSession(sessionId)) || {}
-      if (expectedWorkspace !== workspaceGeneration || currentSessionId.value !== sessionId) return
+      if (expectedWorkspace !== workspaceGeneration || currentSessionId.value !== sessionId
+          || (expectedStream != null && expectedStream !== streamGeneration)) return
       const attachments = detail.attachments || []
       messages.value = attachFiles(detail.messages || [], attachments)
       draftAttachments.value = attachments.filter(item => item.message_id == null)
@@ -98,7 +99,9 @@ export function useAiChat() {
         else sessions.value.splice(index, 1, session)
       }
     } finally {
-      if (expectedWorkspace === workspaceGeneration) sessionLoading.value = false
+      if (expectedWorkspace === workspaceGeneration && currentSessionId.value === sessionId) {
+        sessionLoading.value = false
+      }
     }
   }
 
@@ -152,15 +155,25 @@ export function useAiChat() {
     }
   }
 
-  function applyMeta(data, localUserId, localAssistantId) {
-    messages.value = messages.value.map(message => {
-      if (message.id === localUserId && data.user_message_id) return { ...message, id: data.user_message_id }
-      if (message.id === localAssistantId && data.assistant_message_id) {
-        streamAssistantId = data.assistant_message_id
-        return { ...message, id: data.assistant_message_id, status: data.status || 'streaming' }
-      }
-      return message
-    })
+  function applyMeta(data, pendingTurn) {
+    if (data.user_message_id && pendingTurn.userMessage
+        && !messages.value.some(message => message.id === data.user_message_id)) {
+      messages.value.push({
+        ...pendingTurn.userMessage,
+        id: data.user_message_id,
+        session_id: data.session_id,
+      })
+    }
+    if (!data.assistant_message_id) return
+    streamAssistantId = data.assistant_message_id
+    if (!messages.value.some(message => message.id === data.assistant_message_id)) {
+      messages.value.push({
+        ...pendingTurn.assistantMessage,
+        id: data.assistant_message_id,
+        session_id: data.session_id,
+        status: data.status || 'streaming',
+      })
+    }
   }
 
   function updateAssistant(messageId, changes) {
@@ -169,16 +182,17 @@ export function useAiChat() {
     ))
   }
 
-  function handleFrame(frame, generation, localUserId, localAssistantId) {
+  function handleFrame(frame, generation, pendingTurn) {
     if (generation !== streamGeneration) return
     const data = frame.data || {}
     if (frame.event === 'heartbeat') return
     if (frame.event === 'meta') {
-      applyMeta(data, localUserId, localAssistantId)
+      applyMeta(data, pendingTurn)
       return
     }
-    const targetId = streamAssistantId || localAssistantId
+    const targetId = streamAssistantId
     if (frame.event === 'delta') {
+      if (targetId == null) return
       const current = messages.value.find(message => message.id === targetId)
       updateAssistant(targetId, { content: `${current?.content || ''}${data.text || ''}` })
     } else if (frame.event === 'done') {
@@ -192,13 +206,24 @@ export function useAiChat() {
     }
   }
 
-  async function refreshAfterStream(sessionId, expectedWorkspace) {
+  async function refreshAfterStream(sessionId, generation, expectedWorkspace) {
     try {
-      await Promise.all([loadDetail(sessionId, expectedWorkspace), loadSessions()])
+      await Promise.all([loadDetail(sessionId, expectedWorkspace, generation), loadSessions()])
     } catch {
       if (!error.value) {
         error.value = { message: '回答已结束，但会话刷新失败，请手动刷新。' }
       }
+    }
+  }
+
+  async function reloadFailedSession(sessionId, generation, expectedWorkspace) {
+    if (generation !== streamGeneration
+        || expectedWorkspace !== workspaceGeneration
+        || currentSessionId.value !== sessionId) return
+    try {
+      await loadDetail(sessionId, expectedWorkspace, generation)
+    } catch {
+      // Keep the actionable stream error; the explicit refresh action remains available.
     }
   }
 
@@ -212,27 +237,25 @@ export function useAiChat() {
 
     const generation = ++streamGeneration
     const expectedWorkspace = workspaceGeneration
-    const localUserId = retryMessageId ? null : nextLocalId('user')
-    const localAssistantId = nextLocalId(retryMessageId ? 'retry' : 'assistant')
-    if (!retryMessageId) {
-      messages.value.push({
-        id: localUserId,
+    const pendingTurn = {
+      userMessage: retryMessageId ? null : {
         role: 'user',
         content,
         status: 'completed',
         attachments: outgoing,
-      })
+      },
+      assistantMessage: {
+        role: 'assistant',
+        content: '',
+        status: 'streaming',
+        retry_of_message_id: retryMessageId,
+      },
+    }
+    if (!retryMessageId) {
       prompt.value = ''
       draftAttachments.value = []
     }
-    messages.value.push({
-      id: localAssistantId,
-      role: 'assistant',
-      content: '',
-      status: 'streaming',
-      retry_of_message_id: retryMessageId,
-    })
-    streamAssistantId = localAssistantId
+    streamAssistantId = null
     streaming.value = true
     error.value = null
     abortController = new AbortController()
@@ -240,7 +263,7 @@ export function useAiChat() {
     try {
       const options = {
         signal: abortController.signal,
-        onEvent: frame => handleFrame(frame, generation, localUserId, localAssistantId),
+        onEvent: frame => handleFrame(frame, generation, pendingTurn),
       }
       if (retryMessageId) {
         await streamRetry(retryMessageId, { request_id: requestId() }, options)
@@ -253,16 +276,18 @@ export function useAiChat() {
       }
       if (generation !== streamGeneration || expectedWorkspace !== workspaceGeneration) return
       streaming.value = false
-      await refreshAfterStream(sessionId, expectedWorkspace)
+      await refreshAfterStream(sessionId, generation, expectedWorkspace)
     } catch (streamError) {
-      if (streamError?.name === 'AbortError' || generation !== streamGeneration) return
+      if (streamError?.name === 'AbortError' || generation !== streamGeneration
+          || expectedWorkspace !== workspaceGeneration
+          || currentSessionId.value !== sessionId) return
       const message = errorMessage(streamError)
-      updateAssistant(streamAssistantId || localAssistantId, {
-        status: 'failed',
-        error_message: message,
-      })
+      if (streamAssistantId != null) {
+        updateAssistant(streamAssistantId, { status: 'failed', error_message: message })
+      }
       error.value = { message, conflict: streamError?.status === 409 || streamError?.response?.status === 409 }
       streaming.value = false
+      await reloadFailedSession(sessionId, generation, expectedWorkspace)
     } finally {
       if (generation === streamGeneration) {
         abortController = null
@@ -288,8 +313,10 @@ export function useAiChat() {
   async function stop() {
     if (!streaming.value) return
     const sessionId = currentSessionId.value
+    const expectedWorkspace = workspaceGeneration
     const targetId = streamAssistantId
     streamGeneration += 1
+    const stoppedGeneration = streamGeneration
     abortController?.abort()
     abortController = null
     streaming.value = false
@@ -297,7 +324,9 @@ export function useAiChat() {
     streamAssistantId = null
     if (sessionId) {
       await new Promise(resolve => setTimeout(resolve, 150))
-      if (currentSessionId.value === sessionId) await loadDetail(sessionId)
+      if (currentSessionId.value === sessionId) {
+        await loadDetail(sessionId, expectedWorkspace, stoppedGeneration)
+      }
     }
   }
 
