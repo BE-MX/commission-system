@@ -3,6 +3,7 @@ import CustomerLogoUpload from './components/CustomerLogoUpload.vue'
 import GenerationHistory from './components/GenerationHistory.vue'
 import GenerationPreview from './components/GenerationPreview.vue'
 import ProductOptionGroup from './components/ProductOptionGroup.vue'
+import { MOBILE_FLOW_TEMPLATE } from './layout.js'
 
 defineProps({
   product: { type: Object, required: true },
@@ -43,19 +44,23 @@ defineEmits(['back', 'download', 'generate', 'select-generation', 'update-requir
       </div>
     </header>
 
-    <div class="editor-grid">
+    <div class="editor-grid" :style="{ '--customer-mobile-flow': MOBILE_FLOW_TEMPLATE }">
       <aside class="settings-panel" data-mobile-step="1">
-        <CustomerLogoUpload :logo-url="logoUrl" :uploading="uploadingLogo" @upload="$emit('upload-logo', $event)" />
+        <div class="flow-logo">
+          <CustomerLogoUpload :logo-url="logoUrl" :uploading="uploadingLogo" @upload="$emit('upload-logo', $event)" />
+        </div>
         <div class="divider" />
-        <GenerationHistory
-          :generations="generations"
-          :generation-urls="generationUrls"
-          :selected-id="previewGeneration?.id"
-          @select="$emit('select-generation', $event)"
-        />
+        <div class="flow-history">
+          <GenerationHistory
+            :generations="generations"
+            :generation-urls="generationUrls"
+            :selected-id="previewGeneration?.id"
+            @select="$emit('select-generation', $event)"
+          />
+        </div>
       </aside>
 
-      <section class="preview-column" data-mobile-step="2">
+      <section class="preview-column flow-preview" data-mobile-step="2">
         <GenerationPreview
           :product="product"
           :cover-url="coverUrl"
@@ -67,7 +72,7 @@ defineEmits(['back', 'download', 'generate', 'select-generation', 'update-requir
       </section>
 
       <aside class="action-panel" data-mobile-step="3">
-        <section class="options-section" aria-labelledby="options-title">
+        <section class="options-section flow-options" aria-labelledby="options-title">
           <div class="section-heading">
             <span>2</span>
             <div>
@@ -84,7 +89,7 @@ defineEmits(['back', 'download', 'generate', 'select-generation', 'update-requir
           />
         </section>
         <div class="divider" />
-        <section class="requirement-section">
+        <section class="requirement-section flow-requirement">
           <div class="section-heading">
             <span>3</span>
             <div>
@@ -104,7 +109,7 @@ defineEmits(['back', 'download', 'generate', 'select-generation', 'update-requir
           <small class="count">{{ requirement.length }} / 500</small>
         </section>
 
-        <div class="mobile-action-spacer" aria-hidden="true" />
+        <div class="flow-spacer mobile-action-spacer" aria-hidden="true" />
         <div class="generate-block" aria-live="polite">
           <p v-if="error" class="feedback error" role="alert">{{ error }}</p>
           <p v-else-if="notice" class="feedback notice" role="status">{{ notice }}</p>
@@ -171,12 +176,17 @@ textarea:focus { border-color: var(--cip-accent); box-shadow: 0 0 0 3px var(--ci
   .title h1 { font-size: 15px; }
   .quota span, .quota small { display: none; }
   .quota strong { font-size: 18px; }
-  .editor-grid { display: flex; min-height: 0; flex-direction: column; gap: 10px; padding: 10px; }
-  [data-mobile-step="1"] { order: 1; }
-  [data-mobile-step="2"] { order: 2; }
-  [data-mobile-step="3"] { order: 3; }
-  .settings-panel, .preview-column, .action-panel { width: auto; max-height: none; overflow: visible; border-radius: 14px; }
-  .action-panel { padding-bottom: 18px; }
+  .editor-grid { display: grid; min-height: 0; grid-template-areas: var(--customer-mobile-flow); grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 10px; }
+  .settings-panel, .action-panel { display: contents; }
+  .settings-panel > .divider, .action-panel > .divider { display: none; }
+  .flow-logo { grid-area: logo; }
+  .flow-options { grid-area: options; }
+  .flow-requirement { grid-area: requirement; }
+  .flow-preview { grid-area: preview; }
+  .flow-history { grid-area: history; }
+  .flow-spacer { grid-area: spacer; }
+  .flow-logo, .flow-options, .flow-requirement, .flow-history { min-width: 0; padding: 18px; border: 1px solid var(--cip-border); border-radius: 14px; background: var(--cip-surface); }
+  .preview-column { width: auto; max-height: none; overflow: visible; border-radius: 14px; }
   .mobile-action-spacer { display: block; height: calc(148px + env(safe-area-inset-bottom)); }
   .generate-block { position: fixed; z-index: 4; right: 10px; bottom: 0; left: 10px; padding: 10px 10px calc(10px + env(safe-area-inset-bottom)); border: 1px solid var(--cip-border); border-bottom: 0; border-radius: 12px 12px 0 0; background: var(--cip-surface); box-shadow: 0 -8px 26px var(--cip-shadow); }
 }

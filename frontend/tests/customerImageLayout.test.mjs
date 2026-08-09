@@ -53,7 +53,7 @@ test('editor owns desktop three tracks and mobile ordered flow with a safe-area 
 
 test('desktop columns keep logo and history left, preview center, and controls right', () => {
   const left = files.editor.match(/<aside class="settings-panel"[\s\S]*?<\/aside>/)?.[0] || ''
-  const center = files.editor.match(/<section class="preview-column"[\s\S]*?<\/section>/)?.[0] || ''
+  const center = files.editor.match(/<section class="[^"]*preview-column[^"]*"[\s\S]*?<\/section>/)?.[0] || ''
   const right = files.editor.match(/<aside class="action-panel"[\s\S]*?<\/aside>/)?.[0] || ''
   assert.match(left, /CustomerLogoUpload/)
   assert.match(left, /GenerationHistory/)
