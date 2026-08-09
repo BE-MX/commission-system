@@ -1,0 +1,4 @@
+interface:
+  display_name: "方舟客户搜索"
+  short_description: "Find and submit sourced target companies to Ark"
+  default_prompt: "Use $ark-lead-discovery to execute an Ark sales search job and submit verified company candidates."

@@ -197,12 +197,28 @@ def check_attendance(db: Session, period: SalaryPeriod,
         if p.id in dup_ids and row is None:
             continue
         if not (p.dingtalk_userid or "").strip():
-            out.append(_item(
-                KIND_DINGTALK_UNBOUND, BLOCKING,
-                f"{p.name} 未绑定钉钉 userid，考勤永远拉不到",
-                "在员工档案里补钉钉 userid 后重新同步；确实不打卡的人请手工录入考勤",
-                employee_id=p.id, emp_no=p.emp_no, name=p.name,
-            ))
+            # 手工录入已齐（请假小时都录了）的未绑定人降为提示：数据缺口已被
+            # 人工补上，考勤同步本来就覆盖不到他（姜妮妮/刘德明这类不打卡人员）。
+            # 还按 blocking 报的话，这批人永远卡住计算门——2026-08-07 实测。
+            manual_done = (
+                row is not None
+                and row.personal_leave_hours is not None
+                and row.sick_leave_hours is not None
+            )
+            if manual_done:
+                out.append(_item(
+                    KIND_DINGTALK_UNBOUND, INFO,
+                    f"{p.name} 未绑定钉钉 userid，本月考勤为手工录入",
+                    "数据已齐，可继续；长期建议补手机号后回填绑定（不打卡人员可忽略）",
+                    employee_id=p.id, emp_no=p.emp_no, name=p.name,
+                ))
+            else:
+                out.append(_item(
+                    KIND_DINGTALK_UNBOUND, BLOCKING,
+                    f"{p.name} 未绑定钉钉 userid，考勤永远拉不到",
+                    "在员工档案里补钉钉 userid 后重新同步；确实不打卡的人请手工录入考勤",
+                    employee_id=p.id, emp_no=p.emp_no, name=p.name,
+                ))
             # 没绑定就必然没考勤行，再报一条「考勤缺失」是同一件事说两遍
             continue
         if row is None:

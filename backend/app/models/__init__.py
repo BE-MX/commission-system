@@ -27,6 +27,24 @@ from app.design_image.models import (
     DesignImageJob,
     DesignImageJobAsset,
 )
+from app.ai_chat.models import AiChatSession, AiChatMessage, AiChatAttachment
+from app.sales_automation.models import (
+    AcquisitionProfile,
+    SearchJob,
+    LeadCompany,
+    SearchResult,
+    LeadContact,
+    ResearchRun,
+    ResearchFact,
+)
+from app.knowledge.models import (
+    KnowledgeLibrary,
+    KnowledgeLibraryMember,
+    KnowledgeDocument,
+    KnowledgeRevision,
+    KnowledgeApprovalRequest,
+    KnowledgeAuditLog,
+)
 
 __all__ = [
     # 提成系统自有表
@@ -65,4 +83,23 @@ __all__ = [
     "DesignImageAsset",
     "DesignImageJob",
     "DesignImageJobAsset",
+    # AI 方案对话
+    "AiChatSession",
+    "AiChatMessage",
+    "AiChatAttachment",
+    # 智能获客
+    "AcquisitionProfile",
+    "SearchJob",
+    "LeadCompany",
+    "SearchResult",
+    "LeadContact",
+    "ResearchRun",
+    "ResearchFact",
+    # Knowledge base
+    "KnowledgeLibrary",
+    "KnowledgeLibraryMember",
+    "KnowledgeDocument",
+    "KnowledgeRevision",
+    "KnowledgeApprovalRequest",
+    "KnowledgeAuditLog",
 ]

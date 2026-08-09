@@ -8,6 +8,7 @@ python-dotenv==1.1.*
 pyyaml==6.0.*
 openpyxl==3.1.*
 xlrd==2.0.1          # 读旧版 .xls（HR 工资表/社保/公积金原件），openpyxl 不支持
+pypinyin==0.55.0     # 档案初始化脚本按姓名拼音生成平台用户名（scripts/salary/bootstrap）
 python-multipart==0.0.*
 httpx[socks]==0.28.*   # socks 扩展：展会云机生图走 SSH 隧道代理（AI_IMAGE_PROXY）
 pytest==8.*
@@ -30,6 +31,7 @@ qrcode[pil]>=7.4
 cryptography>=42.0
 # 报表 Word 导出
 python-docx>=1.1
+python-pptx>=1.0
 pypdf>=5.0
 # MCP 网关(物流录单/查询对外 MCP 服务)
 # 注意:mcp/sse-starlette 取新 patch 会把 starlette 下限抬到 >=0.47，与 fastapi 0.115 的

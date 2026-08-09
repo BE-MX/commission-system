@@ -38,12 +38,16 @@ from app.festival.router import router as festival_router
 from app.card.router import router as card_admin_router
 from app.card.public_router import router as card_public_router
 from app.design_image.router import router as design_image_router
+from app.ai_chat.router import router as ai_chat_router
 from app.salary.router import router as salary_router
 from app.customer_image.router import router as customer_image_router
 from app.customer_image.public_router import (
     PublicSecurityHeadersMiddleware,
     router as customer_image_public_router,
 )
+from app.sales_automation.router import router as sales_automation_router
+from app.sales_automation.agent_router import router as sales_automation_agent_router
+from app.knowledge.router import router as knowledge_router
 
 
 def register_routers(app: FastAPI) -> None:
@@ -91,3 +95,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(design_image_router, prefix="/api/design-image", tags=["AI 生图工作台"])
     app.include_router(customer_image_public_router, prefix="/api/customer-image/public", tags=["客户生图门户-公开"])
     app.include_router(customer_image_router, prefix="/api/customer-image", tags=["客户生图门户"])
+    app.include_router(ai_chat_router, prefix="/api/ai-chat", tags=["AI 方案对话"])
+    app.include_router(sales_automation_router, prefix="/api/sales-automation", tags=["智能获客"])
+    app.include_router(sales_automation_agent_router, prefix="/api/sales-automation", tags=["智能获客-Agent"])
+    app.include_router(knowledge_router, prefix="/api/knowledge", tags=["知识库"])

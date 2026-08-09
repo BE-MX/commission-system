@@ -30,6 +30,7 @@ AUTH_PATTERNS = re.compile(
     r"require_permission|require_any_permission|get_current_user"
     r"|get_current_mini_user|_require_\w+|_verify_\w+"
     r"|require_pm_member"  # PM 协作站自定义鉴权（验签+回查白名单），登记即逐端点强制
+    r"|require_sales_agent"  # 智能获客 Agent：可撤销 opaque token + invoke 权限
 )
 # 无鉴权豁免的 router 文件（机器对机器/公开入口，均有刻意决策记录）
 AUTH_EXEMPT_FILES = ("mini/router.py", "auth/router.py", "api/short_link.py", "stock/public_router.py",

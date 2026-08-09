@@ -292,6 +292,10 @@ def seed_role_permissions(db: Session):
         ("customer_image:read", "customer_image", "read", "查看客户效果图门户管理"),
         ("customer_image:write", "customer_image", "write", "创建和撤销客户效果图邀请"),
         ("customer_image:admin", "customer_image", "admin", "管理客户效果图产品模板"),
+        # AI 方案对话（仅 admin 自动扩权；业务角色由角色管理页显式分配）
+        ("ai_chat:read",  "ai_chat", "read",  "查看 AI 方案对话"),
+        ("ai_chat:write", "ai_chat", "write", "创建会话、上传附件和发送消息"),
+        ("ai_chat:admin", "ai_chat", "admin", "管理 AI 方案对话配置与异常"),
         # 方舟洞见（2026-07-12 案例库/周会纪要拆独立子域；同日情报三页+AI 工具速递逐页拆分，
         # insight:read 保留给行业情报速览页，internal_read 保留给内部经营报告页）
         ("insight:read",          "insight", "read",          "查看行业情报速览"),
@@ -406,6 +410,16 @@ def seed_role_permissions(db: Session):
         ("customer_radar:read",   "customer_radar", "read",   "查看客户经营雷达"),
         ("customer_radar:write",  "customer_radar", "write",  "完成/延后/反馈行动"),
         ("customer_radar:manage", "customer_radar", "manage", "管理所有客户档案/手动分配"),
+        # 智能获客：外部候选发现、联系人完善与企业研究
+        ("sales_automation:read",  "sales_automation", "read",  "查看智能获客"),
+        ("sales_automation:write", "sales_automation", "write", "创建搜索任务并确认候选客户"),
+        ("sales_automation:admin", "sales_automation", "admin", "管理获客模型与Agent接入"),
+        ("sales_automation:invoke", "sales_automation", "invoke", "Agent领取任务并提交搜索与研究结果"),
+        # 企业知识库：平台权限与知识库成员 ACL 双重校验
+        ("knowledge:read",   "knowledge", "read",   "查看已授权知识库"),
+        ("knowledge:write",  "knowledge", "write",  "编辑知识文档并提交审批"),
+        ("knowledge:review", "knowledge", "review", "审批知识文档"),
+        ("knowledge:admin",  "knowledge", "admin",  "创建知识库并管理成员权限"),
         # MCP 网关(物流录单/查询的入口无关 MCP 服务)
         ("mcp:admin", "mcp", "admin", "发放/吊销 MCP 个人 access token"),
         # 薪资计算。write 与 admin 按**爆炸半径**切：改一个人的档案是 write，

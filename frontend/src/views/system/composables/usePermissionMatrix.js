@@ -25,6 +25,7 @@ export const PREFIX_LABELS = {
   payment: '回款管理',
   customer_opportunity: '客户机会台',
   customer_radar: '客户经营雷达',
+  sales_automation: '智能获客',
   invoice: '订单发票',
   invoice_price: '价格与产品配置',
   invoice_okki: 'OKKI 推单设置',
@@ -119,7 +120,7 @@ export const PAGE_PARENTS = {
 
 /** 矩阵行分组（视觉分组条，按导航语义排序） */
 const ROW_GROUPS = [
-  { label: '经营 · 提成与客户', prefixes: ['commission', 'commission_my', 'payment', 'customer', 'customer_opportunity', 'customer_radar', 'employee', 'supervisor'] },
+  { label: '经营 · 提成与客户', prefixes: ['commission', 'commission_my', 'payment', 'customer', 'sales_automation', 'customer_opportunity', 'customer_radar', 'employee', 'supervisor'] },
   { label: '单据 · 订单与物流', prefixes: [
     'invoice', 'invoice_price', 'invoice_okki', 'invoice_repair', 'invoice_private_filter', 'festival',
     'aftersales', 'aftersales_analytics', 'tracking',

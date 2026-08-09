@@ -285,11 +285,34 @@ async def sync_user_dingtalk(
 
     user.dingtalk_id = dingtalk_id
     user.updated_at = datetime.utcnow()
+    _propagate_dingtalk_to_salary_profile(db, user)
     db.commit()
 
     return ResponseModel(
         message="钉钉绑定成功",
         data={"dingtalk_id": dingtalk_id},
+    )
+
+
+def _propagate_dingtalk_to_salary_profile(db: Session, user: ArkUser) -> None:
+    """平台账号绑上钉钉后，把 dingtalk_userid 同步给关联的薪资档案。
+
+    钉钉绑定在两条链路各存一份：`ark_users.dingtalk_id`（用户管理维护）与
+    `ark_salary_employee_profile.dingtalk_userid`（薪资考勤同步的取数键）。
+    只写用户这边的话，薪资批次页会继续报「未绑定钉钉」——2026-08-07 实测缺口。
+    只填档案的空缺：档案里已绑的不动（可能是有意的按人修正）。
+    """
+    if not user.dingtalk_id:
+        return
+    from app.salary.models import SalaryEmployeeProfile
+    (
+        db.query(SalaryEmployeeProfile)
+        .filter(SalaryEmployeeProfile.user_id == user.id)
+        .filter(
+            (SalaryEmployeeProfile.dingtalk_userid.is_(None))
+            | (SalaryEmployeeProfile.dingtalk_userid == "")
+        )
+        .update({SalaryEmployeeProfile.dingtalk_userid: user.dingtalk_id})
     )
 
 
@@ -323,6 +346,7 @@ async def sync_all_users_dingtalk(
         if dingtalk_id:
             user.dingtalk_id = dingtalk_id
             user.updated_at = datetime.utcnow()
+            _propagate_dingtalk_to_salary_profile(db, user)
             success_count += 1
         else:
             fail_list.append({"user_id": user.id, "real_name": user.real_name, "phone": user.phone})

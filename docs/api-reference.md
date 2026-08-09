@@ -558,6 +558,26 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 主要错误：邀请不可用统一 401、multipart/图片校验及超过动态补充要求上限 400、资源不存在或越权 404、生成前置条件或额度 409、LOGO 超过当前应用字节上限时 413（文案按实际配置动态展示）、LOGO 或 generation 写入过频 429、图片存储或生图预设不可用 503。公开 API 永不按内部 owner/业务员 scope 判断；其唯一数据边界是当前 active invitation。
 
+## 客户 AI 方案对话（`/api/ai-chat`，100 迁移，2026-08-09）
+
+共 8 个 URL pattern、9 个 HTTP 操作（`/sessions` 同时提供 GET/POST）。资源按当前用户 owner 隔离；跨账号与不存在资源统一返回 404。`ai_chat:read` 用于配置、会话和附件内容读取，`ai_chat:write` 用于建会话、上传/删除草稿附件、发送和重试；`ai_chat:admin` 已登记但不绕过 owner，也没有 MVP 管理端点。
+
+| 方法 | 路径 | 权限 | 契约 |
+|---|---|---|---|
+| GET | `/config` | read | 返回严格配置状态；不暴露 Provider、API 地址或密钥 |
+| POST | `/sessions` | write | 创建 owner 会话，body `{title?}` |
+| GET | `/sessions` | read | `limit=30`（1～100）与不透明 `cursor` 的 owner 会话分页 |
+| GET | `/sessions/{session_id}` | read | 返回会话、完整展示历史和该会话附件 |
+| POST | `/sessions/{session_id}/attachments` | write | multipart 字段 `file`；上传一个私有附件 |
+| DELETE | `/attachments/{attachment_id}` | write | 仅本人尚未发送的 draft 附件可删 |
+| GET | `/attachments/{attachment_id}/content` | read | owner 鉴权后的二进制预览/下载，不使用 `ok()` 信封 |
+| POST | `/sessions/{session_id}/turns/stream` | write | SSE；body `{request_id, content, attachment_ids}`，文字与附件至少一项非空 |
+| POST | `/messages/{assistant_id}/retry/stream` | write | SSE；body `{request_id}`，仅本人 stopped/failed 助手消息可重试 |
+
+除附件二进制和 SSE 外，成功响应统一使用 `{code, message, data}` 的 `ok()` 信封。SSE 不套信封，事件顺序为 `meta` → 初始 `heartbeat` → 若干 `delta` → `done` 或 `error`：`meta` 给出会话、用户消息和助手消息 ID；`delta` 是文本增量；`done` 给出最终状态及可用的 token/耗时摘要；`error` 只给可行动错误，不透传供应商原始异常。当前只在 `meta` 后发送一次初始 `heartbeat`，不发送定时心跳；这是同步 AI facade 与断连后可靠保存 `stopped`/关闭上游之间的取舍，网关空闲超时不能依赖周期心跳规避。
+
+发送幂等键在同一会话内生效：同一 `request_id` 与同一正文/附件集合重复提交时复用既有用户/助手消息并返回已保存终态，不再次调用模型；同一键改了正文、附件或用于其他重试时，在建立 SSE 响应前返回 HTTP 409。停止只表示关闭当前连接、保存已收到的部分内容并将消息标记为 `stopped`，不承诺供应商侧停止计费。
+
 ## 薪资计算（`/api/salary`，092/097 迁移，2026-08-06，M1 主数据 + M2 批次/考勤/导入 + M3 计算引擎）
 
 权限按**爆炸半径**分，不按「是不是主数据」分：`salary:read` 读 / `salary:write` 改单个员工档案与批次数据（影响 1 人或 1 批）/ `salary:admin` 改职级表与规则参数、锁定/解锁批次（改一行动全员发薪口径）。导出端点在 M4。
@@ -623,9 +643,11 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 **钉钉侧四条经验约束**（在真实租户上探出来的，不是文档里写的；细节见 `attendance_source.py` 模块 docstring）：
 
 1. `getcolumnval` 单次最多 **20 个 column id**，第 21 个起返回 `errcode=41`。本租户 38 列 → 必须分片，一个人 2 次调用。官方文档未记载。
-2. **五个请假列（年假/事假/病假/产假/产检）全部只有 `alias: "leave_"`、没有 `id` 键**，`getcolumnval` 从原理上就取不到。所以事假/病假只能人工录。
-3. `attendance/list` 回 60011、`getleavestatus` 回 88 —— 应用 `ding96njlc1de3wg9kmd` 缺 `qyapi_attendance_isv_query_result` / `qyapi_get_attendance_data` 两个权限点。**开通后可以把约束 2 绕过去**，在此之前别改口径。
+2. **五个请假列（年假/事假/病假/产假/产检）全部只有 `alias: "leave_"`、没有 `id` 键**，`getcolumnval` 从原理上就取不到。→ 请假改走 `getleavestatus` 明细路（见下）。
+3. **2026-08-07 权限已开通**：`attendance/list`（打卡明细）与 `getleavestatus`（请假明细）实测可用。请假四列同步自动填充：跨月记录按时间重叠比例折算、`percent_day` 按 `day_hours=7.83` 折小时、类型名只精确匹配事假/病假/年假（HR 自建类型进 `leave_unknown_types` 不扣款）。假期类型/年假额度还需 `qyapi_holiday_readonly`，未开则请假管线整体降级为人工录入（`leave_degraded` 写明原因）。
 4. 钉钉的「应出勤天数」是工作日语义（3 月 = 22），**绝不可赋给 `due_days`**——满月员工按决策 B1 用 `full_month_days=31`。
+
+**请假四列的归属（098 `leave_source`）**：`NULL`=从没写过（同步可填）/ `dingtalk`=同步在管（重同步刷新）/ `manual`=人工改过（同步永远让路——红线 1 从「整列禁写」精确化为「按归属让路」）。「本月无请假记录」会显式填 0 并判全勤，与「还没录」的 NULL 严格区分。
 
 列映射一律按 `alias`，**不按 column id**：id 是租户级的（本租户从 340771676 起），换租户全错。
 
@@ -714,3 +736,57 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 三处前端**刻意不复制**后端逻辑：`ready_to_calculate` 用后端的，不自己数 `blocking_count`；下一步按钮打哪个端点由 `next_steps[].endpoint` 决定（锁定走 `/confirm` 且权限是 `admin`，是特例），不在前端写状态判断；中文状态/事件文案一律用接口回的 `*_label`，两边各写一份必然漂。
 
 `/attendance/sync` 前端超时设 300 秒（client 默认 60 秒）：132 次钉钉调用实测跑一分钟出头，60 秒会在服务端仍在写库时掐断请求，界面显示「超时」而数据其实同步成功了，HR 于是重试，又是一分钟加一次限流额度。
+
+## 智能获客
+
+Base path：`/api/sales-automation`。所有接口使用统一 `{code,message,data}` 信封。
+
+权限按爆炸半径分为：`sales_automation:read`（查看）、`sales_automation:write`（建任务、确认客户）、`sales_automation:admin`（管理获客模型）、`sales_automation:invoke`（Agent 领取任务并写入搜索/联系人/研究结果）。当前 M1 不提供邮件或 WhatsApp 外发接口。
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | `/profile` | read/write/admin 任一 | 读取当前获客模型；未配置时 `data=null` |
+| PUT | `/profile` | admin | 新建或覆盖公司级默认获客模型 |
+| GET | `/search-jobs` | read/write/admin 任一 | 分页任务列表；可按 `status` 过滤 |
+| POST | `/search-jobs` | write/admin 任一 | 创建待执行任务；`idempotency_key` 防重复点击 |
+| POST | `/search-jobs/{id}/requeue` | write/admin 任一 | 页面将失败任务重新放回 `pending`；不伪装成已执行 |
+| GET | `/leads` | read/write/admin 任一 | 分页客户池；可按 `status`、`keyword` 过滤 |
+| GET | `/leads/{id}` | read/write/admin 任一 | 公司、联系人、最新研究与逐条来源证据 |
+| POST | `/leads/{id}/approve` | write/admin 任一 | 候选确认进入内部开发队列 |
+
+Agent 接口只接受可撤销的 MCP opaque token，且账号必须具有 `sales_automation:invoke`。推荐为运行器创建只含该权限的专用账号，不使用浏览器登录 JWT。
+
+| 方法 | Agent 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | `/agent/search-jobs` | invoke | 分页列出任务；默认 `status=claimable`，同时返回 `pending` 与租约已过期的 `running`，崩溃任务不会永久卡住 |
+| GET | `/agent/search-jobs/{id}/context` | invoke | 返回冻结画像、条件和输出契约 |
+| POST | `/agent/search-jobs/{id}/claim` | invoke | 领取任务；返回仅展示一次的 15 分钟租约令牌 |
+| POST | `/agent/search-jobs/{id}/heartbeat` | invoke | 持有租约时续租 15 分钟 |
+| POST | `/agent/search-jobs/{id}/candidates` | invoke + 租约 | 批量提交候选；`request_key` 幂等，公司按官网域名去重 |
+| POST | `/agent/search-jobs/{id}/complete` | invoke + 租约 | `running → completed`，终态不可回退 |
+| POST | `/agent/search-jobs/{id}/fail` | invoke + 租约 | `running → failed`，保存可行动原因 |
+| GET | `/agent/leads/{id}` | invoke | 读取公司、联系人与最新研究上下文 |
+| POST | `/agent/leads/{id}/contacts` | invoke | 幂等完善联系人；`valid/risky/invalid` 必须同时给出邮箱与验证时间 |
+| POST | `/agent/leads/{id}/research` | invoke | 提交摘要、触达角度及带 URL/采集时间/置信度的事实 |
+
+Agent Skill 位于 `.agents/skills/ark-lead-discovery` 与 `.agents/skills/ark-company-research`。运行器必须安全注入 `ARK_BASE_URL`、同源约束 `ARK_ALLOWED_ORIGIN` 与 `ARK_AGENT_TOKEN`；三者严禁写入仓库或由网页内容覆盖。
+# 企业知识库（2026-08-09）
+
+所有 HTTP 接口使用 `/api/knowledge` 前缀和 `{code,message,data}` 响应封套。平台权限只是入口，服务层还会实时校验知识库成员 ACL；无资源权限统一返回 404。
+
+| Method | Path | Platform permission | Purpose |
+| --- | --- | --- | --- |
+| GET | `/libraries` | 任一 `knowledge:*` | 当前账号可见知识库 |
+| POST | `/libraries` | `knowledge:admin` | 创建知识库并将创建者设为 admin |
+| GET | `/libraries/{id}` | 任一 `knowledge:*` | 知识库详情 |
+| GET/PUT | `/libraries/{id}/members` | `knowledge:admin` | 读取或整体替换成员 ACL |
+| GET | `/libraries/{id}/tree` | 任一 `knowledge:*` | 目录树；只读者看不到未发布文档 |
+| POST | `/libraries/{id}/documents` | `knowledge:write/admin` | 创建目录或文档 |
+| GET/PUT | `/documents/{id}` | 读 / 写权限 | 读取当前可见修订或保存新草稿修订 |
+| POST | `/documents/{id}/submit` | `knowledge:write/admin` | 冻结当前草稿并提交审批 |
+| GET | `/approvals` | `knowledge:review/admin` | 当前可审核的待办 |
+| POST | `/approvals/{id}/approve` | `knowledge:review/admin` | 发布审批绑定的冻结修订 |
+| POST | `/approvals/{id}/reject` | `knowledge:review/admin` | 带原因驳回 |
+| GET | `/search?q=...&limit=20` | 任一 `knowledge:*` | 只搜索获授权的已发布修订 |
+
+MCP `/mcp` 新增 `search_knowledge` 与 `get_knowledge_document`。二者使用个人 MCP Token 解析方舟用户，并复用同一服务层 ACL；返回纯文本，不返回草稿、待审修订、附件或下载 URL。

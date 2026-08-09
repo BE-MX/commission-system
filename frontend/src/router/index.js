@@ -16,6 +16,7 @@ const layoutRoutes = NAV_ENTRIES.filter(entry => !entry.external).map(entry => (
     title: entry.title,
     permission: entry.permission,
     anyPermission: entry.anyPermission,
+    activeMenu: entry.activeMenu,
   },
 }))
 

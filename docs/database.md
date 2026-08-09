@@ -227,6 +227,14 @@
 
 worker 通过 queued/running、lease 与 claim 字段实现可恢复领取。失败只在明确属于可退款分类且尚未 `refunded_at` 时原子退款一次；不能证明未计费的 Provider 失败不退款。`ark_customer_image_assets.deleted_at` 是邀请 LOGO/输出的软删除边界；邀请过期满保留期且不存在 queued/running generation 时才进入清理，数据库先提交软删除，再按记录的精确原图/缩略图路径 best-effort 删除，文件失败由下一次任务重试。
 
+## 客户 AI 方案对话（迁移 100，2026-08-09）
+
+- `ark_ai_chat_sessions`：owner 会话；`owner_user_id → ark_users.id RESTRICT`，索引 `idx_ai_chat_session_owner_updated(owner_user_id, updated_at)` 支撑最近会话分页。
+- `ark_ai_chat_messages`：用户/助手 Markdown 消息，状态为 `completed/streaming/stopped/failed`。`session_id → ark_ai_chat_sessions.id RESTRICT`，`ai_call_log_id → ark_ai_call_logs.id RESTRICT`；`uq_ai_chat_message_session_request(session_id, request_id)` 保证会话内发送幂等，`uq_ai_chat_message_session_id(session_id, id)` 是复合外键目标。助手消息用 `reply_to_message_id` 指向触发它的用户消息；重试助手消息用 `retry_of_message_id` 指向原 stopped/failed 助手消息。两条自引用均通过 `(session_id, message_id)` 复合 FK 限定在同一会话，禁止跨会话串链。
+- `ark_ai_chat_attachments`：私有附件元数据与抽取正文；`session_id → ark_ai_chat_sessions.id RESTRICT`、`created_by → ark_users.id RESTRICT`。发送前 `message_id=NULL/status=draft`，发送事务绑定用户消息后为 `attached`，状态值域为 `draft/attached/failed`；`fk_ai_chat_attachment_message_session(session_id, message_id)` 强制附件只能绑定同一会话内的消息。
+
+owner 真相在 session；消息访问必须经 session 的 `owner_user_id`，附件访问同时校验 session owner 与 `created_by`，跨 owner 与不存在统一 404。数据库 FK/复合 FK 保证引用边界，service 在绑定附件的同一事务中再校验 owner、session 与 draft 状态。
+
 ## 薪资计算（迁移 092，2026-08-06）
 
 一次建 10 张表。所有引用 `ark_users.id` 的列（`user_id` / `created_by` / `confirmed_by` / `modified_by`）都是 `INT UNSIGNED`——目标列是 unsigned，模型侧靠 `USER_ID = Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql")` 对齐，SQLite 测试库回落普通 Integer。金额统一 `DECIMAL(12,2)`、工时 `DECIMAL(8,2)`（`day_hours=7.83` 要两位）、天数 `DECIMAL(6,2)`。
@@ -256,4 +264,30 @@ worker 通过 queued/running、lease 与 claim 字段实现可恢复领取。失
 
 PII 密钥 `ARK_SALARY_ENCRYPTION_KEY` / `ARK_SALARY_HASH_KEY` 在 `backend/.env`，**未配置时 `pii.py` 直接抛 `SalaryKeyNotConfigured`，不回落占位密钥**。开发机与生产共用同一套 RDS，两边必须配完全相同的值——值不同则同一张身份证算出不同 HMAC，唯一约束形同虚设、M2 社保导入按哈希匹配会全空。
 
+**迁移 098（2026-08-07，请假自动拉取）**：`ark_salary_attendance.leave_source`——请假四列（事假/病假小时、年假天/余额）的归属标记：`NULL`=从没写过（同步可填）/ `dingtalk`=同步在管（重同步刷新）/ `manual`=人工改过（同步永远让路）。钉钉权限 `qyapi_get_attendance_data` 开通后请假走 `getleavestatus` 明细接口自动填充，这列就是「人工值不被同步覆盖」红线在自动拉取时代的精确化。
+
 **迁移 097（2026-08-07，M3 计算引擎前置）**：四个新列，全部可空/带默认、纯新增。`ark_salary_employee_profile.special_calc`（特殊计薪：不发全勤、工龄按钉值或 0——姜妮妮/刘德明类，§9.5 的 HR 确认标记）与 `seniority_override`（工龄手动钉值，刘德明 3 月工龄 1000 规则复原不了）；`ark_salary_attendance.due_days_manual`（应出天数手动钉值，李晓雨 21.75；独立成列是因为同步每轮重写 `due_days`，钉值混在里面会被冲掉）；`ark_salary_record.calc_flags`（引擎判定标记 JSON：negative_net / guaranteed_topup / mid_month_weighted / absence_clamped 等，异常面板的记录级检查直接读它，不必每次重算推导过程）。
+
+## 智能获客（迁移 099，2026-08-09）
+
+主动获客是独立领域，不写入只读 OKKI `lsordertest.customer_info/customer_contacts`，也不复用入站询盘 `ark_customer_opportunities`。候选被人工确认后，后续阶段才允许投影成销售机会。
+
+- `ark_sales_target_profiles`：本公司产品能力、优势、目标国家/行业/角色和排除条件；`profile_key=default` 唯一。
+- `ark_sales_search_jobs`：异步 Agent 任务、冻结画像、补充条件、任务幂等键、批次回执、统计、15 分钟租约和失败原因；只保存 `lease_token_hash`，原始租约只在领取响应中返回一次；状态 `pending/running/completed/failed`。
+- `ark_sales_companies`：候选公司主档；`normalized_domain` 非空唯一，是公司身份真相源，显示名称不参与去重；状态 `candidate/approved/rejected`；确认后 `owner_user_id → ark_users.id SET NULL`。
+- `ark_sales_search_results`：任务与公司多对多来源快照；`(job_id,company_id)` 唯一，保留来源 URL、采集时间、原始载荷、排名和本次评分。
+- `ark_sales_contacts`：公司联系人；`(company_id,identity_key)` 唯一，邮箱优先作为身份，保存 `unknown/valid/risky/invalid` 验证状态及来源证据。
+- `ark_sales_research_runs`：一次企业研究的摘要、触达角度、风险、执行方/模型、状态与公司范围幂等键。
+- `ark_sales_research_facts`：原子事实；每条必须有来源 URL、采集时间和 0~1 置信度，`(run_id,fact_hash,source_url_hash)` 唯一。
+
+所有表具备 `created_by/updated_by/created_at/updated_at/deleted_at` 审计字段。M1 只覆盖搜索、联系人和研究，不建邮件发送、回复或 WhatsApp 外发表。
+## 企业知识库（迁移 101，2026-08-09）
+
+- `ark_knowledge_libraries`：知识库主表，软删除。
+- `ark_knowledge_library_members`：资源 ACL，`(library_id,user_id)` 唯一，角色为 viewer/editor/reviewer/admin。
+- `ark_knowledge_documents`：目录和文档树；`draft_revision_id`、`published_revision_id` 与 `pending_approval_id` 分开保存，避免草稿覆盖线上内容。
+- `ark_knowledge_revisions`：不可变 Tiptap JSON 和派生纯文本，`(document_id,version_no)` 唯一。
+- `ark_knowledge_approval_requests`：审批绑定不可变 revision；`(document_id,pending_slot)` 唯一，pending 时 slot=1，终态置 NULL，数据库层阻止并发双待审。
+- `ark_knowledge_audit_logs`：成员、编辑、审批和 MCP 读取的追加式安全审计。
+
+正文事实源是受服务端节点白名单校验的 ProseMirror/Tiptap JSON；`content_text` 仅用于检索和 Agent 纯文本输出。发布操作只能把 `published_revision_id` 指向 approval 中冻结的 `revision_id`。

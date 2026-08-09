@@ -444,12 +444,15 @@ test('design image API wrappers execute every route with data and request config
   assert.deepEqual(calls[12].args[1], { params: usage, showLoading: false })
 })
 
-test('design image studio is registered once with a lazy read-protected route', () => {
+test('design image studio is registered once with a lazy AI-workspace route', () => {
   const navigation = readFileSync(new URL('../src/config/navigation.js', import.meta.url), 'utf8')
 
   assert.equal((navigation.match(/path:\s*['"]\/design\/image-studio['"]/g) || []).length, 1)
   assert.match(navigation, /component:\s*\(\)\s*=>\s*import\(['"]@\/views\/design\/image-studio\/ImageStudio\.vue['"]\)/)
-  assert.match(navigation, /permission:\s*['"]design_image:read['"]/)
+  assert.match(
+    navigation,
+    /anyPermission:\s*\[\s*['"]design_image:read['"]\s*,\s*['"]ai_chat:read['"]\s*\]/,
+  )
   assert.match(navigation, /design:\s*\{[\s\S]*?title:\s*['"]设计中心['"]/)
 })
 

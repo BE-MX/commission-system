@@ -40,6 +40,11 @@ export const MENU_GROUPS = {
     icon: OfficeBuilding,
     anyPermission: ['customer:read', 'customer:write'],
   },
+  salesAutomation: {
+    title: '智能获客',
+    icon: Aim,
+    anyPermission: ['sales_automation:read', 'sales_automation:write', 'sales_automation:admin'],
+  },
   invoice: {
     title: '订单管理',
     icon: Document,
@@ -124,12 +129,18 @@ export const MENU_GROUPS = {
       'training:read', 'training:write', 'training:admin',
     ],
   },
+  knowledge: {
+    title: '企业知识库',
+    icon: Reading,
+    anyPermission: ['knowledge:read', 'knowledge:write', 'knowledge:review', 'knowledge:admin'],
+  },
   design: {
     title: '设计中心',
     icon: Camera,
     anyPermission: [
       'design_image:read',
       'customer_image:read', 'customer_image:write', 'customer_image:admin',
+      'ai_chat:read',
       'design:read', 'design:write', 'design:audit', 'design:manage',
       'design_gantt:read', 'design_my:read', 'design_stats:read',
     ],
@@ -185,6 +196,18 @@ export const NAV_ENTRIES = [
     menu: { icon: DataAnalysis, order: 0 },
   },
 
+  {
+    path: '/knowledge',
+    name: 'KnowledgeWorkbench',
+    component: () => import('@/views/knowledge/KnowledgeWorkbench.vue'),
+    title: '企业知识库',
+    anyPermission: ['knowledge:read', 'knowledge:write', 'knowledge:review', 'knowledge:admin'],
+    menu: {
+      group: 'knowledge', title: '知识工作台', icon: Reading, order: 10,
+      anyPermission: ['knowledge:read', 'knowledge:write', 'knowledge:review', 'knowledge:admin'],
+    },
+  },
+
   // ── 人员管理 ───────────────────────────────────────────
   {
     path: '/employee/attribute',
@@ -219,6 +242,41 @@ export const NAV_ENTRIES = [
     menu: {
       group: 'customer', title: '客户归属', icon: Document, order: 10,
       anyPermission: ['customer:read', 'customer:write'],
+    },
+  },
+
+  // ── 智能获客 ───────────────────────────────────────────
+  {
+    path: '/sales-automation/profile',
+    name: 'AcquisitionProfile',
+    component: () => import('@/views/sales_automation/AcquisitionProfile.vue'),
+    title: '获客模型',
+    anyPermission: ['sales_automation:read', 'sales_automation:write', 'sales_automation:admin'],
+    menu: {
+      group: 'salesAutomation', title: '获客模型', icon: Aim, order: 10,
+      anyPermission: ['sales_automation:read', 'sales_automation:write', 'sales_automation:admin'],
+    },
+  },
+  {
+    path: '/sales-automation/jobs',
+    name: 'SalesSearchJobs',
+    component: () => import('@/views/sales_automation/SearchJobs.vue'),
+    title: '搜索任务',
+    anyPermission: ['sales_automation:read', 'sales_automation:write', 'sales_automation:admin'],
+    menu: {
+      group: 'salesAutomation', title: '搜索任务', icon: Lightning, order: 20,
+      anyPermission: ['sales_automation:read', 'sales_automation:write', 'sales_automation:admin'],
+    },
+  },
+  {
+    path: '/sales-automation/leads',
+    name: 'SalesLeadPool',
+    component: () => import('@/views/sales_automation/LeadPool.vue'),
+    title: '客户池',
+    anyPermission: ['sales_automation:read', 'sales_automation:write', 'sales_automation:admin'],
+    menu: {
+      group: 'salesAutomation', title: '客户池', icon: OfficeBuilding, order: 30,
+      anyPermission: ['sales_automation:read', 'sales_automation:write', 'sales_automation:admin'],
     },
   },
 
@@ -934,11 +992,11 @@ export const NAV_ENTRIES = [
     path: '/design/image-studio',
     name: 'DesignImageStudio',
     component: () => import('@/views/design/image-studio/ImageStudio.vue'),
-    title: 'AI 生图工作台',
-    permission: 'design_image:read',
+    title: 'AI 工作台',
+    anyPermission: ['design_image:read', 'ai_chat:read'],
     menu: {
-      group: 'design', title: 'AI 生图工作台', icon: Picture, order: 5,
-      permission: 'design_image:read',
+      group: 'design', title: 'AI 工作台', icon: Picture, order: 5,
+      anyPermission: ['design_image:read', 'ai_chat:read'],
     },
   },
   {
@@ -951,6 +1009,15 @@ export const NAV_ENTRIES = [
       group: 'design', title: '客户产品效果图', icon: MagicStick, order: 7,
       anyPermission: ['customer_image:read', 'customer_image:write', 'customer_image:admin'],
     },
+  },
+  {
+    path: '/design/ai-chat',
+    name: 'DesignAiChat',
+    component: () => import('@/views/design/ai-chat/AiChat.vue'),
+    title: 'AI 工作台',
+    permission: 'ai_chat:read',
+    activeMenu: '/design/image-studio',
+    hideInMenu: true,
   },
   {
     path: '/design/gantt',
