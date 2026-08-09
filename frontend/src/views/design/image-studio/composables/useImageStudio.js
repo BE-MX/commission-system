@@ -13,12 +13,10 @@ import { useAssetObjectUrls } from './useAssetObjectUrls'
 import { useJobPolling } from './useJobPolling'
 
 const ACTIVE_STATUSES = new Set(['queued', 'running'])
-
 function requestId(prefix) {
   const uuid = globalThis.crypto?.randomUUID?.()
   return `${prefix}-${uuid || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`
 }
-
 function safeRequestMessage(error) {
   const businessMessage = safeBusinessErrorMessage(error)
   if (businessMessage) return businessMessage
@@ -30,6 +28,11 @@ function safeRequestMessage(error) {
   return '操作未完成，请检查网络后重试'
 }
 
+export async function refreshConflictSession(error, sessionId, refreshSession) {
+  if (error?.response?.status !== 409) return false
+  await refreshSession(sessionId)
+  return true
+}
 export function useImageStudio() {
   const sessions = ref([])
   const nextCursor = ref(null)
@@ -377,6 +380,7 @@ export function useImageStudio() {
       const result = response?.data
       reconcileMutationResult(result)
     } catch (error) {
+      await refreshConflictSession(error, job.session_id, refreshCurrentSession)
       msgError(safeRequestMessage(error))
     } finally {
       sendInFlight.value = false
@@ -386,7 +390,6 @@ export function useImageStudio() {
   function isConfirmationSubmitting(messageId) {
     return confirmationRequests.has(messageId)
   }
-
   async function chooseOutputMode({ message, mode }) {
     const sessionId = message?.session_id
     const messageId = message?.id

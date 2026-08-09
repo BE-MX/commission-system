@@ -8,6 +8,15 @@ import {
   safeBusinessErrorMessage,
 } from '../src/views/design/image-studio/state.js'
 
+async function importStudioPureHelpers() {
+  const source = readFileSync(new URL(
+    '../src/views/design/image-studio/composables/useImageStudio.js', import.meta.url,
+  ), 'utf8')
+  const withoutImports = source.replace(/^import[\s\S]*?from\s+['"][^'"]+['"]\s*$/gm, '')
+  const encoded = Buffer.from(withoutImports).toString('base64')
+  return import(`data:text/javascript;base64,${encoded}`)
+}
+
 test('turn clarification starts no polling and keeps action available', () => {
   const clarification = { id: 8, interaction: { status: 'pending' } }
   const state = reconcileTurnResult({ jobs: [], clarification })
@@ -113,10 +122,22 @@ test('studio composable reconciles create, resolve, and retry through jobs array
   assert.match(source, /resolveMessageAction/)
   assert.match(source, /reconcileTurnResult/)
   assert.doesNotMatch(source, /result\.job\b/)
-  assert.match(source, /error\?\.response\?\.status\s*===\s*409[\s\S]*?refreshCurrentSession/)
+  const retryHandler = source.match(/async function retry[\s\S]*?(?=\n  function isConfirmationSubmitting)/)?.[0] || ''
+  assert.match(retryHandler, /refreshConflictSession\(error,\s*job\.session_id,\s*refreshCurrentSession\)/)
   assert.match(source, /confirmationRequests\s*=\s*reactive\(new Set\(\)\)/)
   assert.match(source, /confirmationRequests\.has\(messageId\)/)
   const actionHandler = source.match(/async function chooseOutputMode[\s\S]*?(?=\n  function chooseBaseAsset)/)?.[0] || ''
   assert.match(actionHandler, /resolveMessageAction/)
   assert.doesNotMatch(actionHandler, /sendInFlight\.value\s*=/)
+})
+
+test('retry conflict refresh helper reloads only HTTP 409 sessions', async () => {
+  const { refreshConflictSession } = await importStudioPureHelpers()
+  const refreshed = []
+  const reload = async sessionId => refreshed.push(sessionId)
+
+  assert.equal(await refreshConflictSession({ response: { status: 409 } }, 71, reload), true)
+  assert.equal(await refreshConflictSession({ response: { status: 422 } }, 72, reload), false)
+  assert.equal(await refreshConflictSession(new Error('network'), 73, reload), false)
+  assert.deepEqual(refreshed, [71])
 })
