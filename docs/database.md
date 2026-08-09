@@ -206,6 +206,14 @@
 
 每日额度按 `Asia/Shanghai` 自然日统计该用户当天所有已接受 job；成功、失败和重试都计数。提交前锁 `ark_users` owner 行，再做额度、active job 和幂等检查；SQLite 自动化只能验证语义，MySQL 两连接下的 InnoDB 等待/当前读仍是 Phase 5 外部门禁。
 
+## 客户 AI 方案对话（迁移 100，2026-08-09）
+
+- `ark_ai_chat_sessions`：owner 会话；`owner_user_id → ark_users.id RESTRICT`，索引 `idx_ai_chat_session_owner_updated(owner_user_id, updated_at)` 支撑最近会话分页。
+- `ark_ai_chat_messages`：用户/助手 Markdown 消息，状态为 `completed/streaming/stopped/failed`。`session_id → ark_ai_chat_sessions.id RESTRICT`，`ai_call_log_id → ark_ai_call_logs.id RESTRICT`；`uq_ai_chat_message_session_request(session_id, request_id)` 保证会话内发送幂等，`uq_ai_chat_message_session_id(session_id, id)` 是复合外键目标。助手消息用 `reply_to_message_id` 指向触发它的用户消息；重试助手消息用 `retry_of_message_id` 指向原 stopped/failed 助手消息。两条自引用均通过 `(session_id, message_id)` 复合 FK 限定在同一会话，禁止跨会话串链。
+- `ark_ai_chat_attachments`：私有附件元数据与抽取正文；`session_id → ark_ai_chat_sessions.id RESTRICT`、`created_by → ark_users.id RESTRICT`。发送前 `message_id=NULL/status=draft`，发送事务绑定用户消息后为 `attached`，状态值域为 `draft/attached/failed`；`fk_ai_chat_attachment_message_session(session_id, message_id)` 强制附件只能绑定同一会话内的消息。
+
+owner 真相在 session；消息访问必须经 session 的 `owner_user_id`，附件访问同时校验 session owner 与 `created_by`，跨 owner 与不存在统一 404。数据库 FK/复合 FK 保证引用边界，service 在绑定附件的同一事务中再校验 owner、session 与 draft 状态。
+
 ## 薪资计算（迁移 092，2026-08-06）
 
 一次建 10 张表。所有引用 `ark_users.id` 的列（`user_id` / `created_by` / `confirmed_by` / `modified_by`）都是 `INT UNSIGNED`——目标列是 unsigned，模型侧靠 `USER_ID = Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql")` 对齐，SQLite 测试库回落普通 Integer。金额统一 `DECIMAL(12,2)`、工时 `DECIMAL(8,2)`（`day_hours=7.83` 要两位）、天数 `DECIMAL(6,2)`。
@@ -252,7 +260,7 @@ PII 密钥 `ARK_SALARY_ENCRYPTION_KEY` / `ARK_SALARY_HASH_KEY` 在 `backend/.env
 - `ark_sales_research_facts`：原子事实；每条必须有来源 URL、采集时间和 0~1 置信度，`(run_id,fact_hash,source_url_hash)` 唯一。
 
 所有表具备 `created_by/updated_by/created_at/updated_at/deleted_at` 审计字段。M1 只覆盖搜索、联系人和研究，不建邮件发送、回复或 WhatsApp 外发表。
-## 企业知识库（迁移 100，2026-08-09）
+## 企业知识库（迁移 101，2026-08-09）
 
 - `ark_knowledge_libraries`：知识库主表，软删除。
 - `ark_knowledge_library_members`：资源 ACL，`(library_id,user_id)` 唯一，角色为 viewer/editor/reviewer/admin。

@@ -281,3 +281,7 @@ def get_task_result(db: Session, task_id: str) -> dict:
         "completed_at": log.updated_at if log.status in ("success", "error", "timeout") else None,
         "error_message": log.error_message,
     }
+
+
+# Streaming lives in a separate module; keep the historical public import path.
+from app.ai.stream_service import chat_stream, parse_provider_stream  # noqa: E402,F401

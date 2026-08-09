@@ -19,7 +19,7 @@
 - `backend/app/knowledge/service.py`: libraries, members, tree, revisions, approvals, search, and audit transactions.
 - `backend/app/knowledge/router.py`: authorized HTTP endpoints and `ok()` envelopes.
 - `backend/app/mcp/knowledge_tools.py`: MCP adapters reusing knowledge services.
-- `backend/alembic/versions/100_knowledge_poc.py`: additive schema migration.
+- `backend/alembic/versions/101_knowledge_poc.py`: additive schema migration.
 - `backend/tests/test_knowledge_content.py`: content validation unit tests.
 - `backend/tests/test_knowledge_service.py`: ACL and approval state-machine tests.
 - `backend/tests/test_knowledge_api.py`: route wiring and authorization tests.
@@ -46,7 +46,7 @@
 - [ ] Write failing model metadata assertions in `backend/tests/test_knowledge_service.py` for the six exact table names, unique membership, unique document version, and pending-approval guard.
 - [ ] Run the target test and verify it fails because models are absent.
 - [ ] Create `models.py` and `schemas.py`; use BigInteger IDs, Beijing-naive timestamps matching existing domains, soft delete only on library/document, JSON body on revision, and immutable revision rows.
-- [ ] Create `backend/alembic/versions/100_knowledge_poc.py` with additive upgrade and exact reverse-order downgrade.
+- [ ] Create `backend/alembic/versions/101_knowledge_poc.py` with additive upgrade and exact reverse-order downgrade.
 - [ ] Import knowledge models from the established model-loading location so Alembic and application metadata discover them.
 - [ ] Re-run metadata tests and run `alembic heads`; verify one head.
 

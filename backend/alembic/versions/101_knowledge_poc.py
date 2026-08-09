@@ -1,7 +1,7 @@
 """Native knowledge base POC.
 
-Revision ID: 100_knowledge_poc
-Revises: 099_sales_automation
+Revision ID: 101_knowledge_poc
+Revises: 100_ai_chat_mvp
 Create Date: 2026-08-09
 """
 
@@ -9,8 +9,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "100_knowledge_poc"
-down_revision = "099_sales_automation"
+revision = "101_knowledge_poc"
+down_revision = "100_ai_chat_mvp"
 branch_labels = None
 depends_on = None
 

@@ -499,6 +499,26 @@
 
 主要错误：校验 400/422、未认证 401、无权限 403、owner 隔离或不存在 404、已引用资产/已有 active job 409、上传超限 413、日额度 429、Preset/存储/一致性不可用 503。重试是新 accepted job，因此占用新的当日额度；失败调用可能已经触达 Provider，不能解释为“零成本”。
 
+## 客户 AI 方案对话（`/api/ai-chat`，100 迁移，2026-08-09）
+
+共 8 个 URL pattern、9 个 HTTP 操作（`/sessions` 同时提供 GET/POST）。资源按当前用户 owner 隔离；跨账号与不存在资源统一返回 404。`ai_chat:read` 用于配置、会话和附件内容读取，`ai_chat:write` 用于建会话、上传/删除草稿附件、发送和重试；`ai_chat:admin` 已登记但不绕过 owner，也没有 MVP 管理端点。
+
+| 方法 | 路径 | 权限 | 契约 |
+|---|---|---|---|
+| GET | `/config` | read | 返回严格配置状态；不暴露 Provider、API 地址或密钥 |
+| POST | `/sessions` | write | 创建 owner 会话，body `{title?}` |
+| GET | `/sessions` | read | `limit=30`（1～100）与不透明 `cursor` 的 owner 会话分页 |
+| GET | `/sessions/{session_id}` | read | 返回会话、完整展示历史和该会话附件 |
+| POST | `/sessions/{session_id}/attachments` | write | multipart 字段 `file`；上传一个私有附件 |
+| DELETE | `/attachments/{attachment_id}` | write | 仅本人尚未发送的 draft 附件可删 |
+| GET | `/attachments/{attachment_id}/content` | read | owner 鉴权后的二进制预览/下载，不使用 `ok()` 信封 |
+| POST | `/sessions/{session_id}/turns/stream` | write | SSE；body `{request_id, content, attachment_ids}`，文字与附件至少一项非空 |
+| POST | `/messages/{assistant_id}/retry/stream` | write | SSE；body `{request_id}`，仅本人 stopped/failed 助手消息可重试 |
+
+除附件二进制和 SSE 外，成功响应统一使用 `{code, message, data}` 的 `ok()` 信封。SSE 不套信封，事件顺序为 `meta` → 初始 `heartbeat` → 若干 `delta` → `done` 或 `error`：`meta` 给出会话、用户消息和助手消息 ID；`delta` 是文本增量；`done` 给出最终状态及可用的 token/耗时摘要；`error` 只给可行动错误，不透传供应商原始异常。当前只在 `meta` 后发送一次初始 `heartbeat`，不发送定时心跳；这是同步 AI facade 与断连后可靠保存 `stopped`/关闭上游之间的取舍，网关空闲超时不能依赖周期心跳规避。
+
+发送幂等键在同一会话内生效：同一 `request_id` 与同一正文/附件集合重复提交时复用既有用户/助手消息并返回已保存终态，不再次调用模型；同一键改了正文、附件或用于其他重试时，在建立 SSE 响应前返回 HTTP 409。停止只表示关闭当前连接、保存已收到的部分内容并将消息标记为 `stopped`，不承诺供应商侧停止计费。
+
 ## 薪资计算（`/api/salary`，092/097 迁移，2026-08-06，M1 主数据 + M2 批次/考勤/导入 + M3 计算引擎）
 
 权限按**爆炸半径**分，不按「是不是主数据」分：`salary:read` 读 / `salary:write` 改单个员工档案与批次数据（影响 1 人或 1 批）/ `salary:admin` 改职级表与规则参数、锁定/解锁批次（改一行动全员发薪口径）。导出端点在 M4。

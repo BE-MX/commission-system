@@ -7,7 +7,7 @@ from sqlalchemy import create_engine, inspect
 
 
 def _migration_module():
-    path = Path(__file__).parents[1] / "alembic" / "versions" / "100_knowledge_poc.py"
+    path = Path(__file__).parents[1] / "alembic" / "versions" / "101_knowledge_poc.py"
     spec = importlib.util.spec_from_file_location("knowledge_migration_100", path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader

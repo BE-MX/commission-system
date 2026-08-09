@@ -288,6 +288,10 @@ def seed_role_permissions(db: Session):
         ("design_image:read",  "design_image", "read",  "查看 AI 生图工作台"),
         ("design_image:write", "design_image", "write", "创建会话、上传图片和提交生成任务"),
         ("design_image:admin", "design_image", "admin", "管理 AI 生图任务与异常"),
+        # AI 方案对话（仅 admin 自动扩权；业务角色由角色管理页显式分配）
+        ("ai_chat:read",  "ai_chat", "read",  "查看 AI 方案对话"),
+        ("ai_chat:write", "ai_chat", "write", "创建会话、上传附件和发送消息"),
+        ("ai_chat:admin", "ai_chat", "admin", "管理 AI 方案对话配置与异常"),
         # 方舟洞见（2026-07-12 案例库/周会纪要拆独立子域；同日情报三页+AI 工具速递逐页拆分，
         # insight:read 保留给行业情报速览页，internal_read 保留给内部经营报告页）
         ("insight:read",          "insight", "read",          "查看行业情报速览"),

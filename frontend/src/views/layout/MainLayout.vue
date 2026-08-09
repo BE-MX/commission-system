@@ -17,7 +17,7 @@
       <div class="menu-label" v-show="!isCollapse">NAVIGATION</div>
 
       <el-menu
-        :default-active="route.path"
+        :default-active="route.meta.activeMenu || route.path"
         router
         :collapse="isCollapse"
         class="side-menu"
