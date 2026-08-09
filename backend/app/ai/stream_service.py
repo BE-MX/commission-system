@@ -120,6 +120,10 @@ def parse_provider_stream(api_type: str, lines: Iterable[str]) -> Iterator[dict]
                 usage = data.get("usage") or {}
                 input_tokens = usage.get("input_tokens", input_tokens)
                 output_tokens = usage.get("output_tokens", output_tokens)
+                delta = data.get("delta") or {}
+                if delta.get("stop_reason") == "refusal":
+                    yield _stream_error("provider_error")
+                    return
             elif event_type == "message_stop":
                 yield {"type": "done", **_normalized_usage(input_tokens, output_tokens)}
                 return

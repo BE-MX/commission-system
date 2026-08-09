@@ -61,6 +61,26 @@ def test_parse_anthropic_stream_collects_text_usage_and_ignores_comments():
     ]
 
 
+def test_parse_anthropic_refusal_is_not_reported_as_success():
+    lines = [
+        _sse({
+            "type": "message_start",
+            "message": {"model": "claude-test", "usage": {"input_tokens": 5}},
+        }),
+        _sse({
+            "type": "message_delta",
+            "delta": {"stop_reason": "refusal", "stop_details": {"category": "policy"}},
+            "usage": {"output_tokens": 0},
+        }),
+        _sse({"type": "message_stop"}),
+    ]
+
+    assert list(parse_provider_stream("anthropic", lines)) == [
+        {"type": "meta", "model": "claude-test"},
+        {"type": "error", "code": "provider_error", "message": "上游模型返回错误"},
+    ]
+
+
 def test_parse_openai_stream_collects_delta_usage_and_done():
     lines = [
         _sse({"model": "gpt-test", "choices": [{"delta": {"role": "assistant"}}]}),
