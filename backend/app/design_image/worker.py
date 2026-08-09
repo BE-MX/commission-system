@@ -18,7 +18,7 @@ from pathlib import PurePosixPath
 from threading import Event, Thread
 from uuid import uuid4
 
-from sqlalchemy import and_, exists, or_, select, update
+from sqlalchemy import and_, exists, func, or_, select, update
 from sqlalchemy.orm import noload
 
 from app.ai import service as ai_service
@@ -37,6 +37,8 @@ from app.design_image.models import (
 
 
 logger = logging.getLogger("commission")
+CLAIM_OWNER_CANDIDATE_LIMIT = 16
+CLAIM_OWNER_RESELECT_LIMIT = 3
 
 
 class WorkerConfigurationError(ValueError):
@@ -97,21 +99,30 @@ def _live_locked_job(db, job_id: int, lease_token: str):
     return job, now
 
 
-def _claim_candidate_statement():
-    return (
-        select(DesignImageJob.id)
-        .where(DesignImageJob.status == "queued")
-        .order_by(DesignImageJob.created_at, DesignImageJob.id)
-        .limit(1)
-        .with_for_update(skip_locked=True)
+def _claim_candidate_owner_statement(max_running: int, *, offset: int = 0):
+    running_by_owner = (
+        select(
+            DesignImageJob.owner_user_id.label("owner_user_id"),
+            func.count(DesignImageJob.id).label("running_count"),
+        )
+        .where(DesignImageJob.status == "running")
+        .group_by(DesignImageJob.owner_user_id)
+        .subquery()
     )
-
-
-def _claim_candidate_owner_statement():
     return (
         select(DesignImageJob.owner_user_id)
-        .where(DesignImageJob.status == "queued")
-        .order_by(DesignImageJob.created_at, DesignImageJob.id)
+        .outerjoin(
+            running_by_owner,
+            running_by_owner.c.owner_user_id == DesignImageJob.owner_user_id,
+        )
+        .where(
+            DesignImageJob.status == "queued",
+            func.coalesce(running_by_owner.c.running_count, 0) < max_running,
+        )
+        .group_by(DesignImageJob.owner_user_id)
+        .order_by(func.min(DesignImageJob.created_at), func.min(DesignImageJob.id))
+        .limit(CLAIM_OWNER_CANDIDATE_LIMIT)
+        .offset(offset)
     )
 
 
@@ -165,9 +176,7 @@ def _claim_update_statement(
     )
 
 
-def claim_next_job(
-    db, worker_id: str, lease_seconds: int, *, _collision_retries: int = 2
-) -> ClaimedJob | None:
+def claim_next_job(db, worker_id: str, lease_seconds: int) -> ClaimedJob | None:
     """Atomically claim the oldest queued row and return a detached snapshot."""
     if not worker_id or lease_seconds <= 0:
         raise ValueError("worker_id and lease_seconds must be valid")
@@ -175,49 +184,50 @@ def claim_next_job(
     expires = now + timedelta(seconds=lease_seconds)
     token = uuid4().hex
     try:
-        candidate_owner_ids = db.execute(
-            _claim_candidate_owner_statement()
-        ).scalars().all()
-        job_id = None
-        seen_owner_ids: set[int] = set()
         max_running = get_settings().DESIGN_IMAGE_MAX_ACTIVE_PER_USER
-        for owner_user_id in candidate_owner_ids:
-            if owner_user_id in seen_owner_ids:
-                continue
-            seen_owner_ids.add(owner_user_id)
-            owner = db.execute(
-                _claim_owner_statement(owner_user_id)
-            ).scalar_one_or_none()
-            if owner is None:
-                continue
-            running_ids = db.execute(
-                _running_owner_jobs_statement(owner_user_id)
-            ).scalars().all()
-            if len(running_ids) >= max_running:
-                continue
-            job_id = db.execute(
-                _claim_owner_job_statement(owner_user_id)
-            ).scalar_one_or_none()
-            if job_id is not None:
-                break
-        if job_id is None:
-            db.commit()
-            return None
-        changed = db.execute(
-            _claim_update_statement(job_id, token, worker_id, expires)
-        ).rowcount
-        if changed != 1:
-            db.rollback()
-            if _collision_retries > 0:
-                return claim_next_job(
-                    db,
-                    worker_id,
-                    lease_seconds,
-                    _collision_retries=_collision_retries - 1,
+        candidate_offset = 0
+        for _attempt in range(CLAIM_OWNER_RESELECT_LIMIT):
+            candidate_owner_ids = db.execute(
+                _claim_candidate_owner_statement(
+                    max_running, offset=candidate_offset
                 )
-            return None
-        db.commit()
-        return ClaimedJob(job_id, token, worker_id, expires)
+            ).scalars().all()
+            if not candidate_owner_ids:
+                db.commit()
+                return None
+            for owner_user_id in candidate_owner_ids:
+                owner = db.execute(
+                    _claim_owner_statement(owner_user_id)
+                ).scalar_one_or_none()
+                if owner is None:
+                    continue
+                running_ids = db.execute(
+                    _running_owner_jobs_statement(owner_user_id)
+                ).scalars().all()
+                if len(running_ids) >= max_running:
+                    db.rollback()
+                    candidate_offset = 0
+                    break
+                job_id = db.execute(
+                    _claim_owner_job_statement(owner_user_id)
+                ).scalar_one_or_none()
+                if job_id is None:
+                    db.rollback()
+                    candidate_offset = 0
+                    break
+                changed = db.execute(
+                    _claim_update_statement(job_id, token, worker_id, expires)
+                ).rowcount
+                if changed == 1:
+                    db.commit()
+                    return ClaimedJob(job_id, token, worker_id, expires)
+                db.rollback()
+                candidate_offset = 0
+                break
+            else:
+                db.rollback()
+                candidate_offset += len(candidate_owner_ids)
+        return None
     except Exception:
         db.rollback()
         raise

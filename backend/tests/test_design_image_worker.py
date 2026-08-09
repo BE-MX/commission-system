@@ -213,7 +213,7 @@ def test_claim_is_oldest_atomic_conditional_and_returns_detached_snapshot(db):
 
 def test_claim_sql_uses_skip_locked_and_status_guard():
     select_sql = str(
-        worker._claim_candidate_statement().compile(dialect=mysql.dialect())
+        worker._claim_owner_job_statement(1).compile(dialect=mysql.dialect())
     ).upper()
     update_sql = str(
         worker._claim_update_statement(1, "token", "worker", _utcnow()).compile(
@@ -223,6 +223,162 @@ def test_claim_sql_uses_skip_locked_and_status_guard():
     assert "FOR UPDATE SKIP LOCKED" in select_sql
     assert "STATUS = %S" in update_sql
     assert "ARK_DESIGN_IMAGE_JOBS.STATUS = %S" in update_sql
+
+
+def test_candidate_owner_query_is_aggregated_capacity_filtered_and_bounded():
+    sql = str(
+        worker._claim_candidate_owner_statement(2).compile(
+            dialect=mysql.dialect()
+        )
+    ).upper()
+
+    assert "GROUP BY ARK_DESIGN_IMAGE_JOBS.OWNER_USER_ID" in sql
+    assert "COUNT(" in sql
+    assert "LIMIT %S" in sql
+    assert "ORDER BY MIN(" in sql
+
+
+def test_candidate_owner_query_returns_one_row_per_owner_despite_large_queue(
+    db, monkeypatch
+):
+    owner, session, message, _ = _seed_job(db)
+    for index in range(75):
+        _seed_additional_job(
+            db,
+            owner,
+            session,
+            message,
+            key=f"bounded-owner-{index}",
+            created_at=_utcnow() + timedelta(milliseconds=index + 1),
+        )
+    _seed_job(db, created_at=_utcnow() + timedelta(minutes=1))
+    monkeypatch.setattr(
+        worker,
+        "get_settings",
+        lambda: SimpleNamespace(DESIGN_IMAGE_MAX_ACTIVE_PER_USER=2),
+    )
+
+    owner_ids = db.execute(
+        worker._claim_candidate_owner_statement(2)
+    ).scalars().all()
+
+    assert len(owner_ids) == 2
+    assert len(set(owner_ids)) == 2
+    assert len(owner_ids) <= worker.CLAIM_OWNER_CANDIDATE_LIMIT
+
+
+def test_race_saturated_owner_rolls_back_before_bounded_reselection(monkeypatch):
+    events = []
+
+    class Result:
+        def __init__(self, *, values=None, scalar=None, rowcount=None):
+            self.values = values
+            self.scalar = scalar
+            self.rowcount = rowcount
+
+        def scalars(self):
+            return self
+
+        def all(self):
+            return self.values
+
+        def scalar_one_or_none(self):
+            return self.scalar
+
+    results = iter(
+        [
+            Result(values=[1, 2]),
+            Result(scalar=SimpleNamespace(id=1)),
+            Result(values=[11, 12]),
+            Result(values=[2]),
+            Result(scalar=SimpleNamespace(id=2)),
+            Result(values=[]),
+            Result(scalar=7),
+            Result(rowcount=1),
+        ]
+    )
+
+    class FakeSession:
+        def execute(self, _statement):
+            events.append("execute")
+            return next(results)
+
+        def rollback(self):
+            events.append("rollback")
+
+        def commit(self):
+            events.append("commit")
+
+    monkeypatch.setattr(
+        worker,
+        "get_settings",
+        lambda: SimpleNamespace(DESIGN_IMAGE_MAX_ACTIVE_PER_USER=2),
+    )
+
+    claim = worker.claim_next_job(FakeSession(), "bounded-reselect", 120)
+
+    assert claim.job_id == 7
+    assert events[3] == "rollback"
+    assert events[-1] == "commit"
+
+
+def test_locked_candidate_page_advances_so_later_owner_is_not_starved(monkeypatch):
+    candidate_offsets = []
+    call_index = 0
+
+    class Result:
+        def __init__(self, *, values=None, scalar=None, rowcount=None):
+            self.values = values
+            self.scalar = scalar
+            self.rowcount = rowcount
+
+        def scalars(self):
+            return self
+
+        def all(self):
+            return self.values
+
+        def scalar_one_or_none(self):
+            return self.scalar
+
+    class FakeSession:
+        def execute(self, statement):
+            nonlocal call_index
+            call_index += 1
+            if call_index == 1:
+                offset = getattr(statement, "_offset_clause", None)
+                candidate_offsets.append(0 if offset is None else offset.value)
+                return Result(values=list(range(1, 17)))
+            if 2 <= call_index <= 17:
+                return Result(scalar=None)
+            if call_index == 18:
+                offset = getattr(statement, "_offset_clause", None)
+                candidate_offsets.append(0 if offset is None else offset.value)
+                return Result(values=[17])
+            if call_index == 19:
+                return Result(scalar=SimpleNamespace(id=17))
+            if call_index == 20:
+                return Result(values=[])
+            if call_index == 21:
+                return Result(scalar=99)
+            return Result(rowcount=1)
+
+        def rollback(self):
+            pass
+
+        def commit(self):
+            pass
+
+    monkeypatch.setattr(
+        worker,
+        "get_settings",
+        lambda: SimpleNamespace(DESIGN_IMAGE_MAX_ACTIVE_PER_USER=2),
+    )
+
+    claim = worker.claim_next_job(FakeSession(), "later-owner", 120)
+
+    assert claim.job_id == 99
+    assert candidate_offsets == [0, worker.CLAIM_OWNER_CANDIDATE_LIMIT]
 
 
 def test_claim_skips_owner_at_running_cap_and_serves_next_owner(db, monkeypatch):

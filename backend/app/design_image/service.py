@@ -18,6 +18,7 @@ from pathlib import PurePosixPath
 from typing import BinaryIO, Literal
 from zoneinfo import ZoneInfo
 
+from pydantic import ValidationError
 from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, noload
@@ -781,15 +782,27 @@ def _result_for_message(db: Session, message: DesignImageMessage) -> TurnResult:
         .order_by(DesignImageMessage.id.desc())
         .all()
     )
-    matching = next(
-        (
-            row
-            for row in clarification
-            if isinstance(row.interaction_json, dict)
-            and row.interaction_json.get("source_message_id") == message.id
-        ),
-        None,
-    )
+    matching = None
+    for row in clarification:
+        raw = row.interaction_json
+        if not isinstance(raw, dict) or raw.get("source_message_id") != message.id:
+            continue
+        try:
+            OutputModeConfirmationInteraction.model_validate(raw)
+        except ValidationError:
+            logger.warning(
+                "invalid stored design image confirmation message_id=%s",
+                row.id,
+            )
+            raise DesignImageConsistencyError(
+                "确认状态异常，请刷新页面后重新发送请求。"
+            ) from None
+        matching = row
+        break
+    if not jobs and matching is None:
+        raise DesignImageConsistencyError(
+            "确认状态异常，请刷新页面后重新发送请求。"
+        )
     return TurnResult(
         mode="jobs" if jobs else "clarification",
         session=session,

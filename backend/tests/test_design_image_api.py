@@ -422,6 +422,27 @@ def test_safe_business_errors_expose_only_stable_code_message_and_meta(
     }
 
 
+def test_malformed_confirmation_replay_returns_safe_503_guidance(api, monkeypatch):
+    client, _, _, service = api
+    monkeypatch.setattr(
+        service,
+        "create_turn",
+        lambda *_a, **_k: (_ for _ in ()).throw(
+            service.DesignImageConsistencyError(
+                "确认状态异常，请刷新页面后重新发送请求。"
+            )
+        ),
+    )
+
+    response = client.post(
+        "/api/design-image/sessions/11/turns",
+        json={"request_id": "dirty-confirmation", "prompt": "生成图片"},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "确认状态异常，请刷新页面后重新发送请求。"
+
+
 def test_absent_cross_owner_deleted_and_missing_file_share_404(api, monkeypatch):
     client, _, _, service = api
     for message in ("absent", "cross-owner", "deleted", "physical-missing"):

@@ -488,16 +488,19 @@
 | GET | `/sessions/{session_id}` | read | 会话、消息、未删除/未过期资产与该会话全部历史 jobs（按创建时间升序，不只 active） |
 | POST | `/sessions/{session_id}/assets` | write | multipart 字段 `file`；JPEG/PNG/WebP，实际格式必须匹配 MIME |
 | DELETE | `/assets/{asset_id}` | write | 仅未被任务引用的 draft 可删 |
-| POST | `/sessions/{session_id}/turns` | write | 202；创建消息与 queued job；body 的 `session_id` 若存在必须与路径一致 |
-| GET | `/jobs/active` | read | 当前用户唯一 queued/running job，供刷新恢复；字面量路由先于 `/{job_id}` |
+| POST | `/sessions/{session_id}/turns` | write | 202；可能返回待确认 clarification、1 个组合图 job 或 2～4 个独立 queued jobs；body 的 `session_id` 若存在必须与路径一致 |
+| POST | `/sessions/{session_id}/messages/{message_id}/actions` | write | 幂等确认输出方式；body `{request_id, action:"choose_output_mode", mode:"composite"|"separate"}` |
+| GET | `/jobs/active` | read | 当前用户全部 queued/running jobs，批量任务可同时存在多个；字面量路由先于 `/{job_id}` |
 | GET | `/jobs/{job_id}` | read | 查询单任务状态与输出资产 |
-| POST | `/jobs/{job_id}/retry` | write | 仅 failed 可重试；复制输入创建新 job，保留 `retry_of_job_id` |
+| POST | `/jobs/{job_id}/retry` | write | 仅 failed 可重试；复制输入创建新 job，保留 `retry_of_job_id`；只重试被指定的单个 job |
 | GET | `/assets/{asset_id}/content` | read | `download=false`、`thumbnail=false`；鉴权预览/缩略图/下载 |
 | GET | `/usage` | admin | 可按 `owner_user_id`、`start_at`、`end_at`、`status` 过滤 |
 
 `turns` 请求：`prompt` 1～4000 字；`request_id` 1～64，仅字母、数字、下划线、连字符；`size` 仅 `1024x1024 / 1024x1536 / 1536x1024`；`quality` 仅 `low / medium / high`；`reference_asset_ids` 最多 4 个、正整数且不重复；`base_asset_id` 不得同时出现在参考图列表。无 `base_asset_id` 是 generation，有则是 edit；连续对话不会回传全部历史图，只发送显式基准图、本轮参考图和本轮要求。
 
-消息响应新增 nullable `interaction`。当前公开类型仅 `output_mode_confirmation`，字段白名单为 `type/status/source_message_id/request_id/count/labels/request/selected_mode/resolved_at`；其中 `request` 只含 `base_asset_id/reference_asset_ids/size/quality`。未知或损坏的存储 JSON 返回 `interaction: null` 并记录服务端警告，绝不透传原始 JSON。
+创建、确认和重试三类 mutation 统一返回 `data.mode / data.jobs[] / data.clarification`，不再返回单数 `job` 字段。`mode=clarification` 时不创建 job、不扣生成额度；确认 `composite` 后创建 1 个同画布 job，确认 `separate` 后按标准角度创建 2～4 个独立 job，每张图独立执行和计费。明确写出“同一张图/拼图”或“分别生成/每个角度一张”时直接执行；仅包含 2～4 张/角度但输出方式不明确时才要求确认；一次最多 4 张。
+同一批独立图片共享原始 user message，但每个 job 有独立状态、响应消息、输出资产和重试链。任一批量 root job 仍为 queued/running 时，新的批量请求和待确认请求都会被阻止；全部终态后恢复。`DESIGN_IMAGE_MAX_ACTIVE_PER_USER` 是 worker 的每用户 running 上限，不代表 `/jobs/active` 只返回一个任务。
+消息响应新增 nullable `interaction`。当前公开类型仅 `output_mode_confirmation`，字段白名单为 `type/status/source_message_id/request_id/count/labels/request/selected_mode/resolved_at`；其中 `request` 只含 `base_asset_id/reference_asset_ids/size/quality`。未知或损坏的存储 JSON 返回 `interaction: null` 并记录服务端警告，绝不透传原始 JSON；若幂等回放指向无 root job 且无有效 confirmation 的脏状态，mutation 返回 503 和安全的重新发送指引。
 
 主要错误：校验 400/422、未认证 401、无权限 403、owner 隔离或不存在 404、已引用资产/已有 active job 409、上传超限 413、日额度 429、Preset/存储/一致性不可用 503。重试是新 accepted job，因此占用新的当日额度；失败调用可能已经触达 Provider，不能解释为“零成本”。
 

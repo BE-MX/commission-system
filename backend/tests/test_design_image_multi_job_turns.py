@@ -542,3 +542,56 @@ def test_turn_replay_returns_only_root_jobs_after_single_job_retry(configured_ow
 
     assert [job.id for job in replay.jobs] == [created.jobs[0].id]
     assert retry.jobs[0].id not in [job.id for job in replay.jobs]
+
+
+def test_turn_replay_rejects_malformed_confirmation_instead_of_returning_it(
+    configured_owner, db
+):
+    owner, session = configured_owner
+    source = DesignImageMessage(
+        session_id=session.id,
+        role="user",
+        content="请生成3个角度的人像图",
+        status="normal",
+        client_request_id="dirty-confirmation",
+    )
+    db.add(source)
+    db.flush()
+    db.add(
+        DesignImageMessage(
+            session_id=session.id,
+            role="assistant",
+            content="请选择生成方式",
+            status="normal",
+            interaction_json={
+                "type": "output_mode_confirmation",
+                "status": "pending",
+                "source_message_id": source.id,
+                "request_id": "dirty-confirmation",
+                "count": 3,
+                "labels": ["正面"],
+                "request": {
+                    "base_asset_id": None,
+                    "reference_asset_ids": [],
+                    "size": "1024x1024",
+                    "quality": "medium",
+                },
+                "selected_mode": None,
+                "resolved_at": None,
+            },
+        )
+    )
+    db.commit()
+
+    with pytest.raises(service.DesignImageConsistencyError) as exc:
+        service.create_turn(
+            db,
+            owner.id,
+            _turn(
+                session.id,
+                "dirty-confirmation",
+                "请生成3个角度的人像图",
+            ),
+        )
+
+    assert str(exc.value) == "确认状态异常，请刷新页面后重新发送请求。"
