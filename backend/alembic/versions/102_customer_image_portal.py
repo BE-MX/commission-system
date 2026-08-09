@@ -1,7 +1,7 @@
 """Add customer image portal persistence schema.
 
-Revision ID: 098_customer_image_portal
-Revises: 097_salary_calc_flags
+Revision ID: 102_customer_image_portal
+Revises: 101_knowledge_poc
 Create Date: 2026-08-07
 """
 
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import mysql
 
 
-revision = "098_customer_image_portal"
-down_revision = "097_salary_calc_flags"
+revision = "102_customer_image_portal"
+down_revision = "101_knowledge_poc"
 branch_labels = None
 depends_on = None
 

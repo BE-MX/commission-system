@@ -277,7 +277,7 @@ location = /api/customer-image/public/logo {
 
 | 项目 | 必须证据 | 未满足时的处理 |
 |---|---|---|
-| 1. 数据库迁移 | `alembic heads` 唯一为 `102_ci_generation_snapshots`；98→102 offline SQL 可生成；隔离 MySQL 实跑通过 | 禁止部署数据库变更 |
+| 1. 数据库迁移 | `alembic heads` 唯一为 `104_ci_generation_snapshots`；`101_knowledge_poc`→104 offline SQL 可生成；隔离 MySQL 实跑通过 | 禁止部署数据库变更 |
 | 2. 后端分层 | models/schemas/service/router/worker/cleanup 测试全绿，路由只做协议转换 | 回到领域 service 修复，不在路由堆业务逻辑 |
 | 3. 注册与权限 | router 已注册；read/write/admin 真实数据库权限矩阵通过 | 禁止给业务员发入口 |
 | 4. 前端 API client | 内部 client 集中注册；Invite client 无 Bearer、401 不跳登录 | 禁止公开邀请 |
@@ -966,7 +966,7 @@ AI_IMAGE_PROXY=
 
 ### 上线与核验
 
-1. 备份数据库和私有根。先执行 `cd backend; alembic heads`，唯一结果必须为 `102_ci_generation_snapshots (head)`；再用 `alembic upgrade 098_customer_image_portal:102_ci_generation_snapshots --sql` 审阅离线 DDL，最后执行 `alembic upgrade head`。在有 Docker 的隔离环境运行 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test_di_migration_mysql.ps1`，且必须通过后才能部署；SQLite 或离线 SQL 不能替代真实 MySQL 门禁。
+1. 备份数据库和私有根。先执行 `cd backend; alembic heads`，唯一结果必须为 `104_ci_generation_snapshots (head)`；再用 `alembic upgrade 101_knowledge_poc:104_ci_generation_snapshots --sql` 审阅离线 DDL，最后执行 `alembic upgrade head`。在有 Docker 的隔离环境运行 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test_di_migration_mysql.ps1`，且必须通过后才能部署；SQLite 或离线 SQL 不能替代真实 MySQL 门禁。
 2. 部署后端但先不分配权限；确认启动日志已注册 `design_image_queue`，目标实例可写私有根，非目标实例不运行 worker。
 3. 构建前端，创建专用试点角色，只授予 `design_image:read/write` 给 2～3 名具名设计用户；非必要不授予 admin。
 4. 通过业务页面/API 做 1 次 low 首次生成 + 3 次显式以上一结果为基准的 edit，并验证 6 个多输出场景：含数字但方式不明确时只出现确认卡且不轮询；同画布生成 1 个 job；分别生成 2～4 个 jobs；超过 4 张返回固定上限提示；有活跃批次时其他会话的新 turn/确认均 409；失败的单 job 重试不会重跑同批成功项。把脱敏 ID、耗时、usage 写入 [Phase 5 证据模板](requirements/evidence/2026-08-05-design-image-phase5-pilot.json)。

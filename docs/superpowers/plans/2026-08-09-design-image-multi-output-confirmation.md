@@ -18,7 +18,7 @@
 - `backend/app/design_image/service.py`: atomic turn classification, clarification persistence, batch capacity, resolution and idempotency.
 - `backend/app/design_image/worker.py`: enforce the per-user running cap while multiple workers claim queued batch jobs.
 - `backend/app/design_image/router.py`: thin serialization and action endpoint.
-- `backend/alembic/versions/101_di_message_interact.py`: message interaction JSON migration with revision ID `101_di_message_interact`; `099` and `100` were already occupied on active branches when Task 2 started, so the migration must be re-chained after rebase if those branches land first.
+- `backend/alembic/versions/103_di_message_interact.py`: message interaction JSON migration with revision ID `103_di_message_interact`, re-chained after the customer portal migration landed at 102.
 - `scripts/test_di_migration_mysql.ps1`: create, verify and always remove an isolated MySQL 8 container for the exact migration.
 - `frontend/src/api/designImage.js`: resolve-action API method.
 - `frontend/src/views/design/image-studio/components/OutputModeConfirmation.vue`: accessible inline confirmation card.
@@ -108,7 +108,7 @@ git commit -m "feat(design-image): classify multi-output requests"
 ### Task 2: Persist Structured Clarification Messages
 
 **Files:**
-- Create: `backend/alembic/versions/101_di_message_interact.py`
+- Create: `backend/alembic/versions/103_di_message_interact.py`
 - Create: `scripts/test_di_migration_mysql.ps1`
 - Modify: `backend/app/design_image/models.py`
 - Modify: `backend/app/design_image/schemas.py`
@@ -196,7 +196,7 @@ Serializer must expose `interaction_json` as `interaction` after validating its 
 ```powershell
 cd backend
 .\.venv\Scripts\python.exe -m alembic heads
-.\.venv\Scripts\python.exe -m alembic upgrade 098_customer_image_portal:101_di_message_interact --sql
+.\.venv\Scripts\python.exe -m alembic upgrade 102_customer_image_portal:103_di_message_interact --sql
 .\.venv\Scripts\python.exe -m pytest tests/test_design_image_models.py tests/test_design_image_interactions_api.py -q
 ```
 
@@ -206,7 +206,7 @@ Create `scripts/test_di_migration_mysql.ps1` as an executable isolation gate. It
 
 1. start `mysql:8.4` with a unique container name, a Docker-assigned localhost port, database `commission_migration_test`, and temporary non-production credentials;
 2. poll `mysqladmin ping` until healthy with a bounded timeout;
-3. set only the child Alembic process's `COMMISSION_DB_HOST/PORT/USER/PASSWORD/NAME`, upgrade the empty schema to `098_customer_image_portal`, then upgrade exactly to `101_di_message_interact`;
+3. set only the child Alembic process's `COMMISSION_DB_HOST/PORT/USER/PASSWORD/NAME`, upgrade the empty schema to `102_customer_image_portal`, then upgrade exactly to `103_di_message_interact`;
 4. query `information_schema.columns` and `information_schema.table_constraints` and fail unless both columns and `uq_di_message_session_client_request` exist;
 5. remove the verified unique container in a `finally` block on success or failure.
 
@@ -223,7 +223,7 @@ The script must refuse an explicitly supplied production host and never read dep
 Document the new message field, turn response modes and action endpoint. Then:
 
 ```powershell
-git add backend/alembic/versions/101_di_message_interact.py backend/app/design_image/models.py backend/app/design_image/schemas.py backend/app/design_image/router.py backend/tests/test_design_image_models.py backend/tests/test_design_image_interactions_api.py scripts/test_di_migration_mysql.ps1 docs/database.md docs/api-reference.md docs/superpowers/plans/2026-08-09-design-image-multi-output-confirmation.md
+git add backend/alembic/versions/103_di_message_interact.py backend/app/design_image/models.py backend/app/design_image/schemas.py backend/app/design_image/router.py backend/tests/test_design_image_models.py backend/tests/test_design_image_interactions_api.py scripts/test_di_migration_mysql.ps1 docs/database.md docs/api-reference.md docs/superpowers/plans/2026-08-09-design-image-multi-output-confirmation.md
 git commit -m "feat(design-image): persist clarification interactions"
 ```
 
@@ -481,7 +481,7 @@ git commit -m "feat(design-image): confirm multi-output mode"
 ```powershell
 cd backend
 .\.venv\Scripts\python.exe -m alembic heads
-.\.venv\Scripts\python.exe -m alembic upgrade 098_customer_image_portal:101_di_message_interact --sql
+.\.venv\Scripts\python.exe -m alembic upgrade 102_customer_image_portal:103_di_message_interact --sql
 ..\scripts\test_di_migration_mysql.ps1
 .\.venv\Scripts\python.exe -m pytest tests/test_ai_image_job_runtime.py tests/test_ai_image_retry.py tests/test_ai_image_service.py tests/test_design_image_api.py tests/test_design_image_api_permissions.py tests/test_design_image_files.py tests/test_design_image_interactions_api.py tests/test_design_image_library.py tests/test_design_image_models.py tests/test_design_image_multi_job_turns.py tests/test_design_image_multi_output_intent.py tests/test_design_image_orphan_recovery.py tests/test_design_image_permissions.py tests/test_design_image_provider_probe.py tests/test_design_image_service.py tests/test_design_image_worker.py -q
 cd ..

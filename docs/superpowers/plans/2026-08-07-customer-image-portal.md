@@ -44,7 +44,7 @@
 - Create `backend/app/customer_image/router.py`: RBAC internal API.
 - Create `backend/app/customer_image/public_router.py`: invitation-authenticated customer API.
 - Create `backend/app/customer_image/worker.py`: lease customer generations, call shared runtime, finalize or fail/refund.
-- Create `backend/alembic/versions/098_customer_image_portal.py`: eight domain tables and indexes.
+- Create `backend/alembic/versions/102_customer_image_portal.py`: eight domain tables and indexes.
 - Modify `backend/app/core/config.py`: preset, concurrency, lease, rate limit and retention settings.
 - Modify `backend/app/auth/service.py`: `customer_image:read/write/admin` permission metadata.
 - Modify `backend/app/routers.py`: register internal and public routers in literal-before-parameter order.
@@ -198,7 +198,7 @@ git commit -m "refactor(ai): extract shared image job runtime"
 **Files:**
 - Create: `backend/app/customer_image/__init__.py`
 - Create: `backend/app/customer_image/models.py`
-- Create: `backend/alembic/versions/098_customer_image_portal.py`
+- Create: `backend/alembic/versions/102_customer_image_portal.py`
 - Modify: `backend/app/core/config.py`
 - Test: `backend/tests/test_customer_image_models.py`
 
@@ -212,7 +212,7 @@ cd backend
 alembic heads
 ```
 
-Expected: exactly one head at `097_salary_calc_flags`. Create `098_customer_image_portal.py` with `revision = "098_customer_image_portal"` and `down_revision = "097_salary_calc_flags"`, then immediately `git add` it. If another branch has already claimed `098`, stop, rebase the latest `main`, update this plan and the filename explicitly, then continue; never create a second `098` or a second Alembic head.
+Expected after integration: exactly one head at `101_knowledge_poc`. Create `102_customer_image_portal.py` with `revision = "102_customer_image_portal"` and `down_revision = "101_knowledge_poc"`, then immediately `git add` it; never create a second `102` or a second Alembic head.
 
 - [ ] **Step 2: Write failing model and settings tests**
 

@@ -98,8 +98,9 @@ try {
     }
     $port = [int]$Matches[1]
 
-    Invoke-AlembicUpgrade -Revision "098_customer_image_portal" -Port $port
-    Invoke-AlembicUpgrade -Revision "101_di_message_interact" -Port $port
+    Invoke-AlembicUpgrade -Revision "102_customer_image_portal" -Port $port
+    Invoke-AlembicUpgrade -Revision "103_di_message_interact" -Port $port
+    Invoke-AlembicUpgrade -Revision "104_ci_generation_snapshots" -Port $port
 
     $columnQuery = @"
 SELECT column_name
@@ -135,7 +136,7 @@ WHERE table_schema = '$database'
         throw "Expected session/request unique constraint was not created."
     }
 
-    Write-Host "PASS: isolated MySQL migration 098 -> 101 verified."
+    Write-Host "PASS: isolated MySQL migration 101_knowledge_poc -> 104 verified."
 }
 finally {
     if ($containerCreated) {

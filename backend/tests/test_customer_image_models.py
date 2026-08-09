@@ -35,8 +35,8 @@ def _models():
 
 
 def _migration_module():
-    path = BACKEND_ROOT / "alembic" / "versions" / "098_customer_image_portal.py"
-    spec = util.spec_from_file_location("migration_098_customer_image_portal", path)
+    path = BACKEND_ROOT / "alembic" / "versions" / "102_customer_image_portal.py"
+    spec = util.spec_from_file_location("migration_102_customer_image_portal", path)
     assert spec is not None and spec.loader is not None
     module = util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -44,19 +44,19 @@ def _migration_module():
 
 
 def _snapshot_migration_module():
-    path = BACKEND_ROOT / "alembic" / "versions" / "102_ci_generation_snapshots.py"
-    spec = util.spec_from_file_location("migration_102_ci_generation_snapshots", path)
+    path = BACKEND_ROOT / "alembic" / "versions" / "104_ci_generation_snapshots.py"
+    spec = util.spec_from_file_location("migration_104_ci_generation_snapshots", path)
     assert spec is not None and spec.loader is not None
     module = util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-def test_customer_image_migration_is_linear_from_revision_097():
+def test_customer_image_migration_is_linear_from_main_revision_101():
     migration = _migration_module()
 
-    assert migration.revision == "098_customer_image_portal"
-    assert migration.down_revision == "097_salary_calc_flags"
+    assert migration.revision == "102_customer_image_portal"
+    assert migration.down_revision == "101_knowledge_poc"
 
 
 def test_customer_image_tables_and_required_columns_are_registered():
@@ -199,8 +199,8 @@ def test_customer_image_generation_snapshot_migration_follows_current_head(monke
     )
     migration.upgrade()
 
-    assert migration.revision == "102_ci_generation_snapshots"
-    assert migration.down_revision == "101_di_message_interact"
+    assert migration.revision == "104_ci_generation_snapshots"
+    assert migration.down_revision == "103_di_message_interact"
     added = [operation for operation in operations if operation[0] == "add"]
     assert [(table, column.name) for _, table, column in added] == [
         ("ark_customer_image_generations", "requirement_snapshot"),

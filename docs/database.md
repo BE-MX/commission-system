@@ -197,7 +197,7 @@
 迁移 `089_design_image_studio` 在 `ark_ai_call_logs` 增加 nullable JSON `usage_detail`，并建立五张领域表。迁移采用存在性检查以收敛已有对象；`downgrade()` 刻意不删审计数据或表，回滚走权限/Preset 开关，结构清理由单独审计迁移完成。
 
 - `ark_design_image_sessions`：owner 会话；`owner_user_id → ark_users.id RESTRICT`。索引 `idx_di_session_owner_updated(owner_user_id, updated_at)`。
-- `ark_design_image_messages`：用户/助手消息；`session_id → sessions.id RESTRICT`。迁移 `101_di_message_interact` 增加 nullable `client_request_id VARCHAR(64)` 与 `interaction_json JSON`；`uq_di_message_session_client_request(session_id, client_request_id)` 让无 job 的确认轮次也能按会话幂等。`interaction_json` 只保存输出方式确认所需的结构化状态和最小请求快照：`output_mode_confirmation` 必须含 `pending|resolved` 状态、`count`、`item_kind=angle|variant` 与最小附件请求；HTTP 序列化使用字段白名单，不返回提示词快照、Provider 参数或内部错误。索引 `idx_di_message_session_created(session_id, created_at)`。
+- `ark_design_image_messages`：用户/助手消息；`session_id → sessions.id RESTRICT`。迁移 `103_di_message_interact` 增加 nullable `client_request_id VARCHAR(64)` 与 `interaction_json JSON`；`uq_di_message_session_client_request(session_id, client_request_id)` 让无 job 的确认轮次也能按会话幂等。`interaction_json` 只保存输出方式确认所需的结构化状态和最小请求快照：`output_mode_confirmation` 必须含 `pending|resolved` 状态、`count`、`item_kind=angle|variant` 与最小附件请求；HTTP 序列化使用字段白名单，不返回提示词快照、Provider 参数或内部错误。索引 `idx_di_message_session_created(session_id, created_at)`。
 - `ark_design_image_assets`：私有上传与输出元数据，保存相对路径、MIME、字节数、宽高、SHA-256、draft/attached 状态和软删除时间。`session_id → sessions`、`message_id → messages`、`source_asset_id → assets`、`created_by → ark_users` 均为 RESTRICT。索引 `idx_di_asset_session_created(session_id, created_at)`、`idx_di_asset_draft(status, expires_at)`。
 - `ark_design_image_jobs`：状态、输入/配置快照、租约、用量、计费确定性及错误。`owner_user_id → ark_users.id`、`session_id → ark_design_image_sessions.id`、`request_message_id/response_message_id → ark_design_image_messages.id`、`base_asset_id/output_asset_id → ark_design_image_assets.id`、`ai_call_log_id → ark_ai_call_logs.id`、`retry_of_job_id → ark_design_image_jobs.id` 均为 RESTRICT；`uq_di_job_owner_idem(owner_user_id, idempotency_key)` 保证用户范围幂等。索引 `idx_di_job_claim(status, lease_expires_at, created_at)`、`idx_di_job_owner_day(owner_user_id, created_at, status)`、`idx_di_job_session_created(session_id, created_at)`。
 - `ark_design_image_job_assets`：任务参考图顺序；`job_id → jobs.id CASCADE`、`asset_id → assets.id RESTRICT`，唯一约束 `uq_di_job_asset(job_id, asset_id)`，检查约束 `ck_di_job_asset_position(position >= 0)`，索引 `idx_di_job_asset_position(job_id, position)`。
@@ -206,9 +206,9 @@
 
 每日额度按 `Asia/Shanghai` 自然日统计该用户当天所有已接受 job；clarification 不建 job、不计额度，组合图计 1 次，N 张独立图计 N 次，成功、失败和重试都计数。提交和 worker claim 都遵循 `ark_users owner → ark_design_image_jobs` 的统一锁序；提交在 owner 锁内一次性检查整批额度与幂等，worker 在每用户 running 上限内领取。SQLite 自动化只能验证语义，MySQL 两连接下的 InnoDB 等待、当前读和 `FOR UPDATE SKIP LOCKED` 仍是上线外部门禁。
 
-## 客户产品效果图门户（迁移 098/102，2026-08-07）
+## 客户产品效果图门户（迁移 102/104，2026-08-07）
 
-迁移 `098_customer_image_portal` 建立八张领域表：产品、产品素材、产品选项、选项值、邀请、邀请产品关联、邀请素材和生成记录。产品素材是稳定副本，不引用可变图库文件；cover 是单槽，reference 是按 `position` 排序的多槽。替换、下移或删除只把旧行标为 retired，历史 generation 继续通过冻结的素材 ID 读取当时版本，不物理覆盖旧文件。
+迁移 `102_customer_image_portal` 建立八张领域表：产品、产品素材、产品选项、选项值、邀请、邀请产品关联、邀请素材和生成记录。产品素材是稳定副本，不引用可变图库文件；cover 是单槽，reference 是按 `position` 排序的多槽。替换、下移或删除只把旧行标为 retired，历史 generation 继续通过冻结的素材 ID 读取当时版本，不物理覆盖旧文件。
 
 | 实际表名 | 归属与核心字段 | FK 删除策略、唯一与检查约束 |
 |---|---|---|
@@ -223,7 +223,7 @@
 
 邀请只存定长 SHA-256 token hash 与末 6 位 suffix，`ark_customer_image_invites` 冻结客户外部 ID/显示名、创建人、有效期和正数额度。非管理员查询必须以 `created_by` 为数据边界。额度以邀请行的 `quota_total/quota_used` 为原子账本，并由 generation 与 `quota_refunded_at` 留下审计依据；提交在邀请锁内检查 `(invite_id, request_id)` 幂等键、当前配置和剩余额度，再一次性增加已用额度并创建 generation，避免重复请求重复扣减。
 
-`ark_customer_image_generations` 冻结产品/LOGO/reference、公开选项、隐藏提示词、计价与执行参数。迁移 `102_ci_generation_snapshots` 增加 nullable `requirement_snapshot` 与非空 JSON `parameters_snapshot`：补充要求单独冻结去除首尾空白后的原文；参数快照只供 worker 使用，保存尺寸、质量、Provider/config version、下载白名单等非公开参数。098 已建立的 `provider_attempt_count` 仅统计真实 Provider 请求次数，不能与数据库领取次数混用。`option_snapshot` 只保存按产品定义顺序排列的客户安全选择项，`pricing_snapshot` 只保存调用时 rate card，`prompt_snapshot` 保存最终隐藏提示词。公开 API 不返回补充要求、提示词、Provider/config、rate card、token/hash 或磁盘路径。
+`ark_customer_image_generations` 冻结产品/LOGO/reference、公开选项、隐藏提示词、计价与执行参数。迁移 `104_ci_generation_snapshots` 增加 nullable `requirement_snapshot` 与非空 JSON `parameters_snapshot`：补充要求单独冻结去除首尾空白后的原文；参数快照只供 worker 使用，保存尺寸、质量、Provider/config version、下载白名单等非公开参数。102 已建立的 `provider_attempt_count` 仅统计真实 Provider 请求次数，不能与数据库领取次数混用。`option_snapshot` 只保存按产品定义顺序排列的客户安全选择项，`pricing_snapshot` 只保存调用时 rate card，`prompt_snapshot` 保存最终隐藏提示词。公开 API 不返回补充要求、提示词、Provider/config、rate card、token/hash 或磁盘路径。
 
 worker 通过 queued/running、lease 与 claim 字段实现可恢复领取。失败只在明确属于可退款分类且尚未 `refunded_at` 时原子退款一次；不能证明未计费的 Provider 失败不退款。`ark_customer_image_assets.deleted_at` 是邀请 LOGO/输出的软删除边界；邀请过期满保留期且不存在 queued/running generation 时才进入清理，数据库先提交软删除，再按记录的精确原图/缩略图路径 best-effort 删除，文件失败由下一次任务重试。
 

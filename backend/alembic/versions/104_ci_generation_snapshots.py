@@ -1,7 +1,7 @@
 """Add immutable customer generation request snapshots.
 
-Revision ID: 102_ci_generation_snapshots
-Revises: 101_di_message_interact
+Revision ID: 104_ci_generation_snapshots
+Revises: 103_di_message_interact
 Create Date: 2026-08-09
 """
 
@@ -9,8 +9,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "102_ci_generation_snapshots"
-down_revision = "101_di_message_interact"
+revision = "104_ci_generation_snapshots"
+down_revision = "103_di_message_interact"
 branch_labels = None
 depends_on = None
 

@@ -1,7 +1,7 @@
 """Add structured interactions to design image messages.
 
-Revision ID: 101_di_message_interact
-Revises: 098_customer_image_portal
+Revision ID: 103_di_message_interact
+Revises: 102_customer_image_portal
 Create Date: 2026-08-09
 """
 
@@ -9,8 +9,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "101_di_message_interact"
-down_revision = "098_customer_image_portal"
+revision = "103_di_message_interact"
+down_revision = "102_customer_image_portal"
 branch_labels = None
 depends_on = None
 
