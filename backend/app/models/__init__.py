@@ -27,6 +27,7 @@ from app.design_image.models import (
     DesignImageJob,
     DesignImageJobAsset,
 )
+from app.ai_chat.models import AiChatSession, AiChatMessage, AiChatAttachment
 from app.sales_automation.models import (
     AcquisitionProfile,
     SearchJob,
@@ -74,6 +75,10 @@ __all__ = [
     "DesignImageAsset",
     "DesignImageJob",
     "DesignImageJobAsset",
+    # AI 方案对话
+    "AiChatSession",
+    "AiChatMessage",
+    "AiChatAttachment",
     # 智能获客
     "AcquisitionProfile",
     "SearchJob",

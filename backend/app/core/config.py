@@ -118,6 +118,13 @@ class Settings(BaseSettings):
     DESIGN_IMAGE_MAX_UPLOAD_MB: _PositiveInt = 20
     DESIGN_IMAGE_MAX_PIXELS: _PositiveInt = 60_000_000
 
+    # ── AI 方案对话 ───────────────────────────────────────
+    AI_CHAT_STORAGE_ROOT: str = r"D:\WORKSOURCE\ai-chat"
+    AI_CHAT_MAX_UPLOAD_BYTES: _PositiveInt = 4 * 1024 * 1024
+    AI_CHAT_MAX_ATTACHMENTS: _PositiveInt = 5
+    AI_CHAT_MAX_ATTACHMENT_CHARS: _PositiveInt = 60_000
+    AI_CHAT_MAX_TURN_ATTACHMENT_CHARS: _PositiveInt = 120_000
+
     # ── AI 生图代理（可选，仅 image_service 生图链路走；文本 chat 不受影响）──
     # 北京展会实例出口对 api.wlai.vip 存在 SNI 阻断（2026-07-31 实证），该实例配
     # socks5://127.0.0.1:1081 借 SSH 隧道从新加坡机出境；办公室生产留空=直连。
