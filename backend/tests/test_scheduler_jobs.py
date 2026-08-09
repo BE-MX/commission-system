@@ -97,11 +97,16 @@ class TestSchedulerRegistration:
                 "festival_event_monitor",
                 "festival_daily_report",
                 "design_image_queue",
+                "customer_image_queue",
             }
             design_image = scheduler.get_job("design_image_queue")
             assert design_image.max_instances == 1
             assert design_image.coalesce is True
             assert str(design_image.trigger).startswith("interval[")
+            customer_image = scheduler.get_job("customer_image_queue")
+            assert customer_image.max_instances == 1
+            assert customer_image.coalesce is True
+            assert str(customer_image.trigger).startswith("interval[")
             daily = scheduler.get_job("festival_daily_report")
             daily_fields = {field.name: str(field) for field in daily.trigger.fields}
             assert daily_fields["hour"] == "17"

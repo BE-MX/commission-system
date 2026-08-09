@@ -29,6 +29,7 @@ JOB_AFTERSALES_NOTIFICATION_RETRY = "aftersales_notification_retry"
 JOB_FESTIVAL_EVENT_MONITOR = "festival_event_monitor"
 JOB_FESTIVAL_DAILY_REPORT = "festival_daily_report"
 JOB_DESIGN_IMAGE_QUEUE = "design_image_queue"
+JOB_CUSTOMER_IMAGE_QUEUE = "customer_image_queue"
 
 
 def _console_safe(value: object, encoding: str | None = None) -> str:
@@ -58,6 +59,7 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
         send_daily_report_if_due,
     )
     from app.design_image.worker import process_design_image_queue
+    from app.customer_image.worker import process_customer_image_queue
 
     settings = get_settings()
 
@@ -118,6 +120,15 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
         trigger="interval",
         seconds=settings.DESIGN_IMAGE_WORKER_INTERVAL_SECONDS,
         id=JOB_DESIGN_IMAGE_QUEUE,
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        process_customer_image_queue,
+        trigger="interval",
+        seconds=settings.DESIGN_IMAGE_WORKER_INTERVAL_SECONDS,
+        id=JOB_CUSTOMER_IMAGE_QUEUE,
         replace_existing=True,
         max_instances=1,
         coalesce=True,
