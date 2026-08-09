@@ -32,7 +32,7 @@ defineEmits(['back', 'download', 'generate', 'select-generation', 'update-requir
 <template>
   <main class="editor-shell">
     <header class="editor-header">
-      <button v-if="canGoBack" type="button" class="back" @click="$emit('back')">← 选择其他产品</button>
+      <button v-if="canGoBack" type="button" class="back" :disabled="submitting" @click="$emit('back')">← 选择其他产品</button>
       <div class="title">
         <small>{{ product.category }}</small>
         <h1>{{ product.name }}</h1>
@@ -47,7 +47,7 @@ defineEmits(['back', 'download', 'generate', 'select-generation', 'update-requir
     <div class="editor-grid" :style="{ '--customer-mobile-flow': MOBILE_FLOW_TEMPLATE }">
       <aside class="settings-panel" data-mobile-step="1">
         <div class="flow-logo">
-          <CustomerLogoUpload :logo-url="logoUrl" :uploading="uploadingLogo" @upload="$emit('upload-logo', $event)" />
+          <CustomerLogoUpload :logo-url="logoUrl" :uploading="uploadingLogo" :disabled="submitting" @upload="$emit('upload-logo', $event)" />
         </div>
         <div class="divider" />
         <div class="flow-history">
@@ -85,6 +85,7 @@ defineEmits(['back', 'download', 'generate', 'select-generation', 'update-requir
             :key="option.key"
             :option="option"
             :model-value="selections[option.key]"
+            :disabled="submitting"
             @update:model-value="$emit('update-selection', option.key, $event)"
           />
         </section>
@@ -101,19 +102,22 @@ defineEmits(['back', 'download', 'generate', 'select-generation', 'update-requir
             id="customer-requirement"
             aria-labelledby="requirement-label"
             :value="requirement"
+            :disabled="submitting"
             maxlength="500"
             rows="4"
             placeholder="例如：LOGO 稍微缩小，整体更简洁"
             @input="$emit('update-requirement', $event.target.value)"
           />
           <small class="count">{{ requirement.length }} / 500</small>
+          <div class="generate-feedback" aria-live="polite">
+            <p v-if="error" class="feedback error" role="alert">{{ error }}</p>
+            <p v-else-if="notice" class="feedback notice" role="status">{{ notice }}</p>
+            <p v-if="generateHint" class="hint">{{ generateHint }}</p>
+          </div>
         </section>
 
         <div class="flow-spacer mobile-action-spacer" aria-hidden="true" />
-        <div class="generate-block" aria-live="polite">
-          <p v-if="error" class="feedback error" role="alert">{{ error }}</p>
-          <p v-else-if="notice" class="feedback notice" role="status">{{ notice }}</p>
-          <p v-if="generateHint" class="hint">{{ generateHint }}</p>
+        <div class="generate-block">
           <button
             type="button"
             class="generate"
@@ -154,9 +158,11 @@ h1 { margin: 3px 0 0; overflow: hidden; color: var(--cip-ink); font-size: 19px; 
 .section-heading h2 { margin: 2px 0 0; color: var(--cip-ink); font-size: 15px; }
 .section-heading p { margin: 4px 0 0; color: var(--cip-muted); font-size: 12px; }
 textarea { box-sizing: border-box; width: 100%; min-height: 104px; resize: vertical; padding: 11px 12px; border: 1px solid var(--cip-border); border-radius: 10px; outline: none; color: var(--cip-ink); background: var(--cip-surface-subtle); font: inherit; font-size: 13px; line-height: 1.55; }
+textarea:disabled { cursor: not-allowed; opacity: .62; }
 textarea:focus { border-color: var(--cip-accent); box-shadow: 0 0 0 3px var(--cip-focus); }
 .count { justify-self: end; margin-top: -12px; color: var(--cip-muted); font-size: 10px; }
 .generate-block { display: grid; gap: 9px; }
+.generate-feedback { display: grid; gap: 8px; }
 .mobile-action-spacer { display: none; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .generate { min-height: 48px; cursor: pointer; border: 0; border-radius: 11px; color: var(--cip-on-accent); background: var(--cip-accent); font-size: 14px; font-weight: 750; transition: transform 180ms cubic-bezier(0.23, 1, 0.32, 1), opacity 180ms ease; }
@@ -170,7 +176,7 @@ textarea:focus { border-color: var(--cip-accent); box-shadow: 0 0 0 3px var(--ci
 @media (hover: hover) and (pointer: fine) { .generate:not(:disabled):hover { background: var(--cip-accent-hover); } .back:hover { color: var(--cip-ink); } }
 @media (max-width: 1080px) and (min-width: 761px) { .editor-header, .editor-grid { grid-template-columns: 240px minmax(0, 1fr) 280px; } }
 @media (max-width: 760px) {
-  .editor-shell { width: 100%; min-height: 100dvh; padding: 0; }
+  .editor-shell { --customer-mobile-cta-height: 112px; width: 100%; min-height: 100dvh; padding: 0; }
   .editor-header { position: sticky; z-index: 3; top: 0; display: grid; min-height: 62px; grid-template-columns: auto minmax(0, 1fr) auto; gap: 5px; padding: 0 10px; border-bottom: 1px solid var(--cip-border); background: var(--cip-surface); }
   .title small { display: none; }
   .title h1 { font-size: 15px; }
@@ -187,8 +193,9 @@ textarea:focus { border-color: var(--cip-accent); box-shadow: 0 0 0 3px var(--ci
   .flow-spacer { grid-area: spacer; }
   .flow-logo, .flow-options, .flow-requirement, .flow-history { min-width: 0; padding: 18px; border: 1px solid var(--cip-border); border-radius: 14px; background: var(--cip-surface); }
   .preview-column { width: auto; max-height: none; overflow: visible; border-radius: 14px; }
-  .mobile-action-spacer { display: block; height: calc(148px + env(safe-area-inset-bottom)); }
-  .generate-block { position: fixed; z-index: 4; right: 10px; bottom: 0; left: 10px; padding: 10px 10px calc(10px + env(safe-area-inset-bottom)); border: 1px solid var(--cip-border); border-bottom: 0; border-radius: 12px 12px 0 0; background: var(--cip-surface); box-shadow: 0 -8px 26px var(--cip-shadow); }
+  .mobile-action-spacer { display: block; height: calc(var(--customer-mobile-cta-height) + env(safe-area-inset-bottom)); }
+  textarea { scroll-margin-bottom: calc(var(--customer-mobile-cta-height) + env(safe-area-inset-bottom)); scroll-padding-bottom: calc(var(--customer-mobile-cta-height) + env(safe-area-inset-bottom)); }
+  .generate-block { position: fixed; z-index: 4; right: 10px; bottom: 0; left: 10px; box-sizing: border-box; min-height: calc(var(--customer-mobile-cta-height) + env(safe-area-inset-bottom)); align-content: center; padding: 10px 10px calc(10px + env(safe-area-inset-bottom)); border: 1px solid var(--cip-border); border-bottom: 0; border-radius: 12px 12px 0 0; background: var(--cip-surface); box-shadow: 0 -8px 26px var(--cip-shadow); }
 }
 @media (prefers-reduced-motion: reduce) { .generate { transition: none; } .generate:active:not(:disabled) { transform: none; } }
 </style>

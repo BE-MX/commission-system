@@ -1,5 +1,6 @@
 <script setup>
 import * as publicApi from '@/api/customerImagePublic'
+import { clearInviteToken } from './inviteSession.js'
 import CustomerProductCatalog from './CustomerProductCatalog.vue'
 import CustomerProductEditor from './CustomerProductEditor.vue'
 import { useCustomerImagePortal } from './composables/useCustomerImagePortal'
@@ -23,6 +24,7 @@ const {
   updateSelection,
 } = useCustomerImagePortal({
   api: publicApi,
+  clearInvite: clearInviteToken,
   scrollResultIntoView() {
     requestAnimationFrame(() => {
       document.getElementById('customer-generation-result')?.scrollIntoView({

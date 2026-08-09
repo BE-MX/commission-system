@@ -2,6 +2,7 @@
 defineProps({
   option: { type: Object, required: true },
   modelValue: { type: [String, Boolean, Number], default: undefined },
+  disabled: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['update:modelValue'])
@@ -21,6 +22,7 @@ const emit = defineEmits(['update:modelValue'])
       inline-prompt
       active-text="是"
       inactive-text="否"
+      :disabled="disabled"
       @update:model-value="emit('update:modelValue', $event)"
     />
 
@@ -36,6 +38,7 @@ const emit = defineEmits(['update:modelValue'])
         class="choice"
         :class="{ selected: modelValue === value.value }"
         :aria-pressed="modelValue === value.value"
+        :disabled="disabled"
         @click="emit('update:modelValue', value.value)"
       >
         <span

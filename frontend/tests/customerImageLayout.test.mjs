@@ -76,6 +76,15 @@ test('customer controls cover logo color boolean requirement quota history previ
   assert.match(files.preview, /下载/)
 })
 
+test('submission lock reaches every mutable editor control', () => {
+  assert.match(files.editor, /:disabled="submitting"[^>]*@click="\$emit\('back'\)/)
+  assert.match(files.editor, /CustomerLogoUpload[\s\S]*:disabled="submitting"/)
+  assert.match(files.editor, /ProductOptionGroup[\s\S]*:disabled="submitting"/)
+  assert.match(files.editor, /id="customer-requirement"[\s\S]*:disabled="submitting"/)
+  assert.match(files.editor, /generate-feedback/)
+  assert.match(files.editor, /scroll-padding-bottom|scroll-margin-bottom/)
+})
+
 test('portal data flow uses registered wrappers polling idempotency and blob cleanup', () => {
   assert.match(files.composable, /Promise\.all/)
   assert.match(files.composable, /createGeneration/)

@@ -2,6 +2,7 @@
 defineProps({
   logoUrl: { type: String, default: '' },
   uploading: { type: Boolean, default: false },
+  disabled: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['upload'])
@@ -28,8 +29,8 @@ function chooseFile(event) {
       <span v-else aria-hidden="true">LOGO</span>
     </div>
 
-    <label class="upload-action" :class="{ disabled: uploading }">
-      <input type="file" accept="image/*" :disabled="uploading" @change="chooseFile">
+    <label class="upload-action" :class="{ disabled: uploading || disabled }">
+      <input type="file" accept="image/*" :disabled="uploading || disabled" @change="chooseFile">
       {{ uploading ? '正在上传…' : logoUrl ? '更换 LOGO' : '选择 LOGO 图片' }}
     </label>
     <p v-if="!logoUrl" class="required-copy">请先上传品牌 LOGO</p>
