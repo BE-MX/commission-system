@@ -308,7 +308,10 @@ def test_sync_only_requests_payroll_included_actives(db):
         seen["range"] = (from_date, to_date)
         return [], []
 
-    with patch.object(attendance_source, "fetch_many", side_effect=fake):
+    with (
+        patch.object(attendance_source, "fetch_many", side_effect=fake),
+        patch.object(attendance_source, "fetch_leave_types", return_value={}),
+    ):
         r = _client(db).post(f"/api/salary/periods/{period.id}/attendance/sync",
                              json={"expected_version": period.status_version})
     assert r.status_code == 200, r.text
@@ -325,8 +328,10 @@ def test_sync_response_carries_failure_counts(db):
     """
     _profile(db)
     period = _period(db)
-    with patch.object(attendance_source, "fetch_many",
-                      side_effect=_ok_fetch([])):
+    with (
+        patch.object(attendance_source, "fetch_many", side_effect=_ok_fetch([])),
+        patch.object(attendance_source, "fetch_leave_types", return_value={}),
+    ):
         r = _client(db).post(f"/api/salary/periods/{period.id}/attendance/sync",
                              json={"expected_version": period.status_version})
     assert r.status_code == 200, r.text
@@ -345,7 +350,10 @@ def _ok_fetch(results, missing=("年假", "事假", "病假")):
 def test_sync_stale_version_returns_409(db):
     _profile(db)
     period = _period(db)
-    with patch.object(attendance_source, "fetch_many", side_effect=_ok_fetch([])):
+    with (
+        patch.object(attendance_source, "fetch_many", side_effect=_ok_fetch([])),
+        patch.object(attendance_source, "fetch_leave_types", return_value={}),
+    ):
         r = _client(db).post(f"/api/salary/periods/{period.id}/attendance/sync",
                              json={"expected_version": period.status_version + 3})
     assert r.status_code == 409, r.text
