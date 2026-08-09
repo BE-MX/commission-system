@@ -898,12 +898,16 @@ AI_IMAGE_PROXY=
 
 ### 上线与核验
 
-1. 备份数据库和私有根，执行 `cd backend; alembic upgrade head; alembic heads`，确认单 head 含 `089_design_image_studio`。
+1. 备份数据库和私有根。先执行 `cd backend; alembic heads`，唯一结果必须为 `101_di_message_interact (head)`；再用 `alembic upgrade 098_customer_image_portal:101_di_message_interact --sql` 审阅离线 DDL，最后执行 `alembic upgrade head`。在有 Docker 的隔离环境运行 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test_di_migration_mysql.ps1`，且必须通过后才能部署；SQLite 或离线 SQL 不能替代真实 MySQL 门禁。
 2. 部署后端但先不分配权限；确认启动日志已注册 `design_image_queue`，目标实例可写私有根，非目标实例不运行 worker。
 3. 构建前端，创建专用试点角色，只授予 `design_image:read/write` 给 2～3 名具名设计用户；非必要不授予 admin。
-4. 通过业务页面/API 做 1 次 low 首次生成 + 3 次显式以上一结果为基准的 edit，把脱敏 ID、耗时、usage 写入 [Phase 5 证据模板](requirements/evidence/2026-08-05-design-image-phase5-pilot.json)。
+4. 通过业务页面/API 做 1 次 low 首次生成 + 3 次显式以上一结果为基准的 edit，并验证 6 个多输出场景：含数字但方式不明确时只出现确认卡且不轮询；同画布生成 1 个 job；分别生成 2～4 个 jobs；超过 4 张返回固定上限提示；有活跃批次时其他会话的新 turn/确认均 409；失败的单 job 重试不会重跑同批成功项。把脱敏 ID、耗时、usage 写入 [Phase 5 证据模板](requirements/evidence/2026-08-05-design-image-phase5-pilot.json)。
 5. 对每轮核对 `job.ai_call_log_id`、job tokens、`AiCallLog.usage_detail`、output asset 元数据/SHA-256 和文件存在；第二账号访问他人资产应与随机不存在 ID 同为 404；验证刷新/切换恢复 active job 且 Object URL 被释放。
-6. 在真实 MySQL 用两个独立连接并发提交同一用户，验证 owner 行锁、单 active job、daily limit 和同 key 幂等赢家；SQLite 测试不能替代此项。
+6. 在真实 MySQL 用独立连接并发提交和领取，验证统一 `owner → job` 锁序、整批 daily limit、同 key 幂等赢家、同用户 running 上限，以及另一个未饱和用户不会被饿死；SQLite 测试不能替代此项。
+
+2026-08-09 本地收尾证据：唯一 head 与 098→101 离线 SQL 已通过；本机没有 `docker` 命令，隔离 MySQL 脚本明确退出 `Docker is required to run the isolated MySQL migration gate.`。因此真实 MySQL 迁移与并发锁验证仍是 Task 12/部署环境硬门禁，不得据本地结果标记为已通过。
+
+同日真实 Chrome 前端验收使用隔离 Vite 与本地 mock API，不连接真实数据库、Provider 或付费接口：桌面端歧义请求只出现确认卡；选择拼版后为 1 个 job 卡且确认状态已落定；重置后对“分别生成”快速双击仍只得到 3 个 job 卡，刷新后 3 个卡和 resolved 状态均恢复；390×844 视口 `clientWidth=scrollWidth=390`，两个操作按钮实际高度均为 62px，控制台无 error。截图保存在未提交的 `tmp/design-image-multi-output-qa/desktop-confirmation.png` 与 `mobile-390-pending.png`。该证据只覆盖真实浏览器中的前端交互与响应式布局；真实鉴权、数据库持久化、MySQL 锁竞争和 Provider 调用仍必须在 Task 12/部署环境完成。
 
 验证命令：
 
@@ -920,9 +924,34 @@ git diff --check
 APScheduler 已实现 job error/missed 的应用日志和钉钉告警；以下业务阈值是试点运行规则，**当前代码未自动采集/告警**：仅当存在 queued job 时，连续 5 分钟无 claim 或最老 queued 超过 2 分钟；以及 running 超过 stale 阈值、1 小时错误率超过 20%、磁盘低水位、Provider 401/403/余额不足或持续 429、jobs 与 AiCallLog/usage 数明显不一致。没有 queued job 时不得触发“无 claim”告警。上线人需先接现有监控或人工巡检，不能写成“已自动告警”。
 
 - worker 中断：保留 job 和文件，恢复目标实例；过期 lease 会由下一轮标记 `worker_timeout`，用户手动 retry。不要把 unknown billing 改成 0。
+- clarification 卡住：clarification 没有 job，worker 不会处理。先查 `ark_design_image_messages.interaction_json` 中 `type=output_mode_confirmation / status=pending` 的旧记录，再核对 source message、附件是否仍有效和 actions API 日志；附件已失效时让用户重新上传并发送新请求，不要改 JSON、补造 job 或重试旧确认。
+- 批量卡住：按 `request_message_id` 聚合 jobs，分别核对 queued 的最老创建时间、running lease、`claim_count` 和 worker 日志。任一 root job 仍 queued/running 都会阻止该用户所有新 turn/确认；先恢复唯一 worker，让 stale recovery 按既定状态机处理，禁止手工改为 succeeded、批量退款或另建替代 job。全部终态后，仅对失败的单 job 使用 retry。
+- 配额与计费核对：组合图是 1 个 job、1 次额度；分别生成 N 张是 N 个 jobs、N 次额度，每个 job 独立 usage/计费。clarification 不扣额度，retry 是新的 accepted job 并再次计数。
 - 迟到响应/终结失败：worker 会精确删除本次已落盘原图和缩略图；日志出现 `orphan response` 或 `failed finalize` 后，按 job ID 查 DB，再仅删除没有资产行引用的具体相对路径。禁止递归删除存储根。
 - draft 清理：每轮只软删已过期且未被 job_assets/base 引用的 draft，提交后 best-effort 删除原图与缩略图；清理失败看 `[design-image] expired draft cleanup failed`，修复 ACL 后按记录路径补删。
 - 数据库成功但文件缺失：停止分配新权限，保留审计行，按备份恢复对应相对路径；不要伪造 succeeded 输出。
+
+只读巡检 SQL（阈值按当班规则调整；不得把查询结果直接用于批量更新）：
+
+```sql
+SELECT id, session_id, created_at,
+       JSON_UNQUOTE(JSON_EXTRACT(interaction_json, '$.status')) AS interaction_status
+FROM ark_design_image_messages
+WHERE JSON_UNQUOTE(JSON_EXTRACT(interaction_json, '$.type')) = 'output_mode_confirmation'
+  AND JSON_UNQUOTE(JSON_EXTRACT(interaction_json, '$.status')) = 'pending'
+  AND created_at < UTC_TIMESTAMP() - INTERVAL 10 MINUTE
+ORDER BY created_at;
+
+SELECT owner_user_id, session_id, request_message_id,
+       SUM(status = 'queued') AS queued_count,
+       SUM(status = 'running') AS running_count,
+       MIN(created_at) AS oldest_created_at,
+       MIN(lease_expires_at) AS earliest_lease_expires_at
+FROM ark_design_image_jobs
+WHERE status IN ('queued', 'running')
+GROUP BY owner_user_id, session_id, request_message_id
+ORDER BY oldest_created_at;
+```
 
 #### 崩溃窗口 orphan 文件审计、隔离与删除
 

@@ -476,7 +476,7 @@
 - `GET /admin/inquiries`、`PUT /admin/inquiries/{id}` — 询盘列表 / 状态流转（new/handled）。
 - 前端：`views/card/CardButler.vue`（导航「展会营销 → 名片管家」）；印刷管线与静态页模板在 `scripts/card_suite/`（README 即 spec：docs/requirements/2026-08-01-sales-card-suite.md）。
 
-## 设计部 AI 生图工作台（`/api/design-image`，089 迁移，2026-08-05）
+## 设计部 AI 生图工作台（`/api/design-image`，089/101 迁移，2026-08-05）
 
 所有 JSON 端点沿用统一 `{code, message, data}` 信封；图片内容端点返回鉴权后的二进制流。资源只按当前用户 owner 查询，跨账号访问与不存在资源均返回相同 404。权限独立于 AI 管理后台：`design_image:read` 负责读取，`design_image:write` 负责创建/上传/生成/重试，`design_image:admin` 只用于用量查询。
 
@@ -498,11 +498,11 @@
 
 `turns` 请求：`prompt` 1～4000 字；`request_id` 1～64，仅字母、数字、下划线、连字符；`size` 仅 `1024x1024 / 1024x1536 / 1536x1024`；`quality` 仅 `low / medium / high`；`reference_asset_ids` 最多 4 个、正整数且不重复；`base_asset_id` 不得同时出现在参考图列表。无 `base_asset_id` 是 generation，有则是 edit；连续对话不会回传全部历史图，只发送显式基准图、本轮参考图和本轮要求。
 
-创建、确认和重试三类 mutation 统一返回 `data.mode / data.jobs[] / data.clarification`，不再返回单数 `job` 字段。`mode=clarification` 时不创建 job、不扣生成额度；确认 `composite` 后创建 1 个同画布 job，确认 `separate` 后按标准角度或版本创建 2～4 个独立 job，每张图独立执行和计费。明确写出“同一张图/拼图”或“分别生成/每个角度一张”时直接执行；仅包含 2～4 张/角度但输出方式不明确时才要求确认；一次最多 4 张。
+创建、确认和重试三类 mutation 统一返回 `data.mode / data.jobs[] / data.clarification`，不再返回单数 `job` 字段。`mode=clarification` 时不创建 job、不扣生成额度；确认 `composite` 后创建 1 个同画布 job，只占 1 次生成额度并按 1 个 job 计费；确认 `separate` 后按标准角度或版本创建 2～4 个独立 job，N 张图占 N 次生成额度并分别计费。判定是确定性的：明确写出“同一张图/同一张画布/拼图/三视图/四视图/排版展示”时直接走 `composite`；明确写出“分别生成/每个角度一张/独立图片/单独出图”时直接走 `separate`；只出现 2～4 张、角度或版本数量而未说明输出方式时返回 clarification。一次最多 4 张；超过上限返回 `multi_output_limit`，文案固定为“一次最多生成 4 张，请拆成多轮请求。”且 `meta.max_outputs=4`。
 同一批独立图片共享原始 user message，但每个 job 有独立状态、响应消息、输出资产和重试链。任一批量 root job 仍为 queued/running 时，该用户的所有新 turn（包括其他会话的普通单图请求）和所有确认 action 均被阻止；全部终态后恢复。`DESIGN_IMAGE_MAX_ACTIVE_PER_USER` 是 worker 的每用户 running 上限，不代表 `/jobs/active` 只返回一个任务。
 消息响应新增 nullable `interaction`。当前公开类型仅 `output_mode_confirmation`，字段白名单为 `type/status/source_message_id/request_id/count/item_kind/labels/request/selected_mode/resolved_at`；其中必填 `item_kind=angle|variant` 决定前端使用角度或版本文案，`request` 只含 `base_asset_id/reference_asset_ids/size/quality`。未知或损坏的存储 JSON 返回 `interaction: null` 并记录服务端警告，绝不透传原始 JSON；若幂等回放指向无 root job 且无有效 confirmation 的脏状态，mutation 返回 503 和安全的重新发送指引。
 
-主要错误：校验 400/422、未认证 401、无权限 403、owner 隔离或不存在 404、已引用资产/已有 active job 409、上传超限 413、日额度 429、Preset/存储/一致性不可用 503。重试是新 accepted job，因此占用新的当日额度；失败调用可能已经触达 Provider，不能解释为“零成本”。
+主要错误：校验 400/422、未认证 401、无权限 403、owner 隔离或不存在 404、已引用资产/已有 active job 409、上传超限 413、日额度 429、Preset/存储/一致性不可用 503。确认时附件过期返回 `attachment_unavailable`，文案固定为“附件已失效，请重新上传后发送新请求。”，不得引导用户重试旧确认。重试是新 accepted job，因此占用新的当日额度；失败调用可能已经触达 Provider，不能解释为“零成本”。
 
 ## 客户生图门户内部管理（`/api/customer-image`，098 迁移，2026-08-07）
 
