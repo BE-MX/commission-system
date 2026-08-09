@@ -27,6 +27,16 @@ from app.design_image.models import (
     DesignImageJob,
     DesignImageJobAsset,
 )
+from app.customer_image.models import (
+    CustomerImageProduct,
+    CustomerImageProductAsset,
+    CustomerImageProductOption,
+    CustomerImageOptionValue,
+    CustomerImageInvite,
+    CustomerImageInviteProduct,
+    CustomerImageAsset,
+    CustomerImageGeneration,
+)
 from app.ai_chat.models import AiChatSession, AiChatMessage, AiChatAttachment
 from app.sales_automation.models import (
     AcquisitionProfile,
@@ -83,6 +93,15 @@ __all__ = [
     "DesignImageAsset",
     "DesignImageJob",
     "DesignImageJobAsset",
+    # 客户产品效果图门户
+    "CustomerImageProduct",
+    "CustomerImageProductAsset",
+    "CustomerImageProductOption",
+    "CustomerImageOptionValue",
+    "CustomerImageInvite",
+    "CustomerImageInviteProduct",
+    "CustomerImageAsset",
+    "CustomerImageGeneration",
     # AI 方案对话
     "AiChatSession",
     "AiChatMessage",

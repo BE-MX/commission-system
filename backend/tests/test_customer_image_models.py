@@ -3,6 +3,8 @@
 from importlib import import_module, util
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 from sqlalchemy import CHAR, BigInteger, CheckConstraint, Integer, JSON, UniqueConstraint, create_engine
@@ -110,6 +112,34 @@ def test_customer_image_tables_and_required_columns_are_registered():
     }
     for table_name, columns in expected_columns.items():
         assert columns <= set(Base.metadata.tables[table_name].c.keys())
+
+
+def test_app_models_aggregator_registers_customer_image_tables_in_fresh_process():
+    script = """
+import app.models
+from app.core.database import Base
+
+expected = {
+    'ark_customer_image_products',
+    'ark_customer_image_product_assets',
+    'ark_customer_image_product_options',
+    'ark_customer_image_option_values',
+    'ark_customer_image_invites',
+    'ark_customer_image_invite_products',
+    'ark_customer_image_assets',
+    'ark_customer_image_generations',
+}
+missing = sorted(expected - set(Base.metadata.tables))
+raise SystemExit('missing=' + ','.join(missing) if missing else 0)
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=BACKEND_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_invitation_never_persists_plaintext_token():
