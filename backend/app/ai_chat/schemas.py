@@ -57,6 +57,16 @@ class TurnStreamRequest(BaseModel):
         return self
 
 
+class RetryStreamRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: str = Field(
+        min_length=8,
+        max_length=64,
+        pattern=r"^[A-Za-z0-9_-]+$",
+    )
+
+
 class SessionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True, extra="forbid")
 
