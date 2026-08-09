@@ -281,3 +281,33 @@ export function createSseParser() {
     },
   }
 }
+
+export async function consumeSseStream(body, { onEvent } = {}) {
+  const parser = createSseParser()
+  const decoder = new TextDecoder('utf-8')
+  const reader = body.getReader()
+  let terminal = false
+
+  const dispatch = async frames => {
+    for (const frame of frames) {
+      if (frame.event === 'done' || frame.event === 'error') terminal = true
+      if (onEvent) await onEvent(frame)
+    }
+  }
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      await dispatch(parser.push(decoder.decode(value, { stream: true })))
+    }
+    await dispatch(parser.push(decoder.decode()))
+    await dispatch(parser.flush())
+  } finally {
+    reader.releaseLock()
+  }
+
+  if (!terminal) {
+    throw new Error('模型连接意外中断，请重试')
+  }
+}

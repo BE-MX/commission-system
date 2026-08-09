@@ -10,12 +10,30 @@ import {
   reduceChatState,
   requestId,
 } from '../src/views/design/ai-chat/state.js'
+import * as chatState from '../src/views/design/ai-chat/state.js'
 
 const event = (generation, name, data) => ({
   type: 'stream-event',
   generation,
   event: { event: name, data },
 })
+
+function bodyFromChunks(chunks, readError = null) {
+  const encoded = chunks.map(chunk => new TextEncoder().encode(chunk))
+  let index = 0
+  return {
+    getReader() {
+      return {
+        async read() {
+          if (index < encoded.length) return { done: false, value: encoded[index++] }
+          if (readError) throw readError
+          return { done: true, value: undefined }
+        },
+        releaseLock() {},
+      }
+    },
+  }
+}
 
 test('provides four fixed starters that only fill the composer', () => {
   assert.deepEqual(STARTERS.map(item => item.title), [
@@ -51,6 +69,41 @@ test('does not report a half frame and safely converts malformed JSON to error',
     event: 'error',
     data: { code: 'invalid_sse_data', message: '模型返回了无法解析的消息' },
   }])
+})
+
+test('accepts done and error terminal events emitted by parser flush', async () => {
+  for (const terminal of ['done', 'error']) {
+    const received = []
+    const data = terminal === 'done'
+      ? { status: 'completed' }
+      : { code: 'upstream_unavailable', message: '请重试' }
+    await chatState.consumeSseStream(bodyFromChunks([
+      'event: heartbeat\ndata: {"status":"streaming"}\n\n',
+      `event: ${terminal}\ndata: ${JSON.stringify(data)}`,
+    ]), { onEvent: frame => received.push(frame) })
+    assert.equal(received.at(-1).event, terminal)
+  }
+})
+
+test('rejects an unexpected EOF after dispatching partial frames', async () => {
+  const received = []
+  await assert.rejects(
+    chatState.consumeSseStream(bodyFromChunks([
+      'event: meta\ndata: {"assistant_message_id":31}\n\n',
+      'event: delta\ndata: {"text":"部分回答"}\n\n',
+    ]), { onEvent: frame => received.push(frame) }),
+    /连接意外中断，请重试/,
+  )
+  assert.deepEqual(received.map(frame => frame.event), ['meta', 'delta'])
+})
+
+test('preserves AbortError instead of converting it to incomplete stream failure', async () => {
+  const abortError = new Error('user stopped')
+  abortError.name = 'AbortError'
+  await assert.rejects(
+    chatState.consumeSseStream(bodyFromChunks([], abortError)),
+    error => error === abortError,
+  )
 })
 
 test('applies meta, delta, heartbeat, done, and error only to the active generation', () => {
@@ -142,6 +195,7 @@ test('request ids satisfy the backend idempotency format', () => {
 test('API source uses the shared client, complete routes, and native fetch streaming contract', () => {
   const clients = readFileSync(new URL('../src/api/clients.js', import.meta.url), 'utf8')
   const api = readFileSync(new URL('../src/api/aiChat.js', import.meta.url), 'utf8')
+  const state = readFileSync(new URL('../src/views/design/ai-chat/state.js', import.meta.url), 'utf8')
 
   assert.match(clients, /aiChatClient\s*=\s*createApiClient\(\{\s*baseURL:\s*['"]\/api\/ai-chat['"],\s*timeout:\s*120000\s*\}\)/)
   assert.match(api, /aiChatClient\.(?:get|post|delete)/)
@@ -161,8 +215,9 @@ test('API source uses the shared client, complete routes, and native fetch strea
   assert.match(api, /responseType:\s*['"]blob['"]/)
   assert.match(api, /export async function streamTurn/)
   assert.match(api, /export async function streamRetry/)
-  assert.match(api, /TextDecoder\([^)]*\)/)
-  assert.match(api, /stream:\s*true/)
+  assert.match(api, /consumeSseStream\(response\.body,\s*\{ onEvent \}\)/)
+  assert.match(state, /TextDecoder\([^)]*\)/)
+  assert.match(state, /stream:\s*true/)
   assert.match(api, /Accept:\s*['"]text\/event-stream['"]/)
   assert.match(api, /['"]Content-Type['"]:\s*['"]application\/json['"]/)
   assert.match(api, /contentType\.toLowerCase\(\)\.includes\(['"]text\/event-stream['"]\)/)

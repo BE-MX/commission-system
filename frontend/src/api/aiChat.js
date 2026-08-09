@@ -1,6 +1,6 @@
 import { aiChatClient } from './clients'
 import { getAccessToken, clearAuthState } from '@/stores/auth'
-import { createSseParser } from '@/views/design/ai-chat/state'
+import { consumeSseStream } from '@/views/design/ai-chat/state'
 
 const API_BASE = '/api/ai-chat'
 
@@ -76,26 +76,7 @@ async function streamRequest(path, body, { signal, onEvent } = {}) {
     throw new Error('浏览器无法读取流式响应')
   }
 
-  const parser = createSseParser()
-  const decoder = new TextDecoder('utf-8')
-  const reader = response.body.getReader()
-  const dispatch = async frames => {
-    for (const frame of frames) {
-      if (onEvent) await onEvent(frame)
-    }
-  }
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      await dispatch(parser.push(decoder.decode(value, { stream: true })))
-    }
-    await dispatch(parser.push(decoder.decode()))
-    await dispatch(parser.flush())
-  } finally {
-    reader.releaseLock()
-  }
+  return consumeSseStream(response.body, { onEvent })
 }
 
 export async function streamTurn(sessionId, body, options) {
