@@ -16,19 +16,29 @@ const loading = useLoading()
  *   - blob response: 直接返回完整 response (调用方可拿 headers + blob)
  *   - 业务码: response.data.code !== 200/201 时弹错误
  *
- * @param {{ baseURL: string, timeout?: number }} options
+ * @param {{ baseURL: string, timeout?: number, getAuthorization?: Function,
+ *   redirectOnUnauthorized?: boolean }} options
  * @returns {import('axios').AxiosInstance}
  */
-export function createApiClient({ baseURL, timeout = 60000 } = {}) {
+export function createApiClient({
+  baseURL,
+  timeout = 60000,
+  getAuthorization = null,
+  redirectOnUnauthorized = true,
+} = {}) {
   const service = axios.create({ baseURL, timeout })
 
   service.interceptors.request.use(config => {
     if (config.showLoading !== false) {
       loading.show(config.loadingText || '')
     }
-    const token = getAccessToken()
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`
+    if (getAuthorization) {
+      const authorization = getAuthorization()
+      if (authorization) config.headers.Authorization = authorization
+      else delete config.headers.Authorization
+    } else {
+      const token = getAccessToken()
+      if (token) config.headers.Authorization = `Bearer ${token}`
     }
     return config
   })
@@ -59,7 +69,8 @@ export function createApiClient({ baseURL, timeout = 60000 } = {}) {
         return Promise.reject(error)
       }
       const detail = error.response?.data?.detail
-      if (error.response?.status === 401 || (error.response?.status === 403 && detail === 'Not authenticated')) {
+      if (redirectOnUnauthorized && (error.response?.status === 401
+          || (error.response?.status === 403 && detail === 'Not authenticated'))) {
         clearAuthState()
         window.location.href = '/login'
         return Promise.reject(error)

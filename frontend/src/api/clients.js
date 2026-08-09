@@ -8,6 +8,7 @@
  * (401 不能跳转、需要 withCredentials),独立维护在 @/api/auth.js。
  */
 import { createApiClient } from './request'
+import { getInviteAuthorization } from '@/views/customer-image/inviteSession'
 
 export const v1Client = createApiClient({ baseURL: '/api/v1' })
 export const designClient = createApiClient({ baseURL: '/api/design' })
@@ -30,4 +31,14 @@ export const dashboardClient = createApiClient({ baseURL: '/api/dashboard', time
 export const domesticClient = createApiClient({ baseURL: '/api/domestic', timeout: 60000 }) // 内贸订单（图片上传放宽超时）
 export const cardClient = createApiClient({ baseURL: '/api/card', timeout: 60000 }) // 名片管家（业务员电子名片）
 export const designImageClient = createApiClient({ baseURL: '/api/design-image', timeout: 300000 })
+export const customerImageClient = createApiClient({
+  baseURL: '/api/customer-image',
+  timeout: 120000,
+})
+export const customerImagePublicClient = createApiClient({
+  baseURL: '/api/customer-image/public',
+  timeout: 120000,
+  getAuthorization: getInviteAuthorization,
+  redirectOnUnauthorized: false,
+})
 export const salaryClient = createApiClient({ baseURL: '/api/salary', timeout: 60000 }) // 薪资计算（批量算薪/导出放宽超时）

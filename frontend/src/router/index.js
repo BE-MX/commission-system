@@ -1,5 +1,18 @@
+import { h } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
 import { NAV_ENTRIES } from '@/config/navigation'
+import { captureInviteToken, getInviteToken } from '@/views/customer-image/inviteSession'
+
+// Task 10 replaces this bootstrap shell with the full customer portal.
+const CustomerImageRouteShell = {
+  name: 'CustomerImageRouteShell',
+  setup() {
+    const message = getInviteToken()
+      ? '正在加载产品效果图工作台…'
+      : '此访问链接已失效，请向业务员重新获取链接。'
+    return () => h('main', { role: 'status', 'aria-live': 'polite' }, message)
+  },
+}
 
 // NAV_ENTRIES 中每条记录映射成 vue-router 的 children 路由
 // path 去掉前导 '/' 因为父路由是 '/'
@@ -37,6 +50,17 @@ const routes = [
     meta: { title: 'Stock Availability', public: true },
   },
   {
+    path: '/create/:token?',
+    name: 'CustomerImagePortal',
+    component: CustomerImageRouteShell,
+    meta: { title: '莱莎产品效果图', public: true, customerImage: true },
+    beforeEnter(to) {
+      if (!to.params.token) return true
+      captureInviteToken(String(to.params.token))
+      return { name: 'CustomerImagePortal', replace: true }
+    },
+  },
+  {
     path: '/',
     component: () => import('@/views/layout/MainLayout.vue'),
     redirect: '/dashboard',
@@ -53,6 +77,12 @@ const router = createRouter({
 router.beforeEach(async (to, from, next) => {
   const isMobileUA = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
   const desktopMode = sessionStorage.getItem('ark_desktop_mode') === '1'
+
+  // 邀请页不依赖 Ark 登录，也不进入移动端素材站分流。
+  if (to.meta.customerImage) {
+    document.title = `${to.meta.title} - 莱莎方舟`
+    return next()
+  }
 
   // 移动端访问登录页：直接走移动端独立登录页
   // 例外：目标是展会 kiosk（展位 iPad 用主站登录，不进移动端素材页）
