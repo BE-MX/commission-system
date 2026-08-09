@@ -506,24 +506,29 @@
 
 ## 客户生图门户内部管理（`/api/customer-image`，098 迁移，2026-08-07）
 
-所有端点使用方舟 JWT，并返回 `{code, message, data}`。`customer_image:read` 可读产品、邀请和生成记录；`customer_image:write` 可搜索客户、创建和撤销邀请；`customer_image:admin` 管理产品，同时可读取全部产品、邀请与生成记录，不依赖额外授予 `customer_image:read`。非管理员的邀请、生成记录和撤销操作始终按 `created_by` 限定；跨业务员访问与资源不存在统一返回 404。
+所有端点使用方舟 JWT，并返回 `{code, message, data}`。`customer_image:read` 可读已发布产品、邀请和生成记录；`customer_image:write` 可读已发布产品与自己的邀请，并可搜索客户、创建和撤销邀请；`customer_image:admin` 管理产品，同时可读取全部产品、邀请与生成记录，不依赖额外授予 `customer_image:read`。非管理员的邀请、生成记录和撤销操作始终按 `created_by` 限定；跨业务员访问与资源不存在统一返回 404。普通 read/write 响应只含安全产品字段，永不返回 prompt。
 
 | 方法 | 路径 | 权限 | 契约 |
 |---|---|---|---|
 | GET | `/customers?search=` | write | 搜索词去除首尾空白后为空直接返回空列表；最多返回 20 条。管理员搜索全部 OKKI 客户；普通业务员仅搜索当前归属客户。普通用户缺少有效数字型 OKKI 绑定时返回 409 和可执行的绑定提示。 |
-| GET | `/products` | read | 产品、发布状态和选项列表；选项及选项值按 `sort,id` 稳定排序。普通 read 不返回任何 hidden prompt，且过滤停用选项值；admin/super_admin 可见全部选项值及 `fixed_prompt`、`output_prompt`、option/value `prompt_fragment`。 |
+| GET | `/products` | read/write/admin | 普通 read/write 只返回已发布产品、当前 cover descriptor 和启用选项值，且不返回任何 hidden prompt；admin/super_admin 可见草稿、全部选项值及 `fixed_prompt`、`output_prompt`、option/value `prompt_fragment`。选项及值按 `sort,id` 稳定排序。 |
+| GET | `/products/{product_id}/cover` | read/write/admin | 只读当前 cover 二进制；普通 read/write 请求草稿产品统一 404，admin 可读草稿。响应关闭文件流且使用 `private, no-store`，不开放 reference、retired 或 `storage_path`。 |
 | POST | `/products` | admin | 创建产品模板；body 为名称、分类、描述、固定/输出 prompt、排序与完整 options。 |
 | PUT | `/products/{product_id}` | admin | 完整替换产品元数据与 options，并递增配置版本。 |
 | DELETE | `/products/{product_id}` | admin | 删除未被邀请/生成记录引用的产品；有引用或并发产生引用返回 409。数据库提交成功后才尽力清理产品资产文件。 |
 | POST | `/products/{product_id}/publish` | admin | 发布前必须同时存在当前 cover 与 reference 资产。 |
 | POST | `/products/{product_id}/unpublish` | admin | 取消发布；状态提交后立即从后续公开产品查询中隐藏。 |
 | GET | `/products/{product_id}/assets` | admin | 当前 cover/reference 槽位及图片元数据；不返回私有 `storage_path`。 |
-| POST | `/products/{product_id}/assets/upload` | admin | multipart `file`、`role=cover\|reference`、`position>=0`；同槽位替换会退役旧资产并递增产品配置版本。 |
-| POST | `/products/{product_id}/assets/library` | admin | body `{source_asset_id, role, position}`；从有权访问的生图工作台图库复制后替换槽位，源图后续删除不影响产品。 |
+| POST | `/products/{product_id}/assets/upload` | admin | multipart `file`、`role=cover\|reference`、`position>=0`；精确槽位替换会退役旧资产并递增产品配置版本。cover 固定为 position 0。 |
+| POST | `/products/{product_id}/assets/library` | admin | body `{source_asset_id, role, position}`；从有权访问的生图工作台图库复制后精确替换槽位，源图后续删除不影响产品。 |
+| POST | `/products/{product_id}/references/upload` | admin | multipart `file`；在产品行锁内用 reference 末位置的 locking read 计算新位置并追加，不退休并发新增。 |
+| POST | `/products/{product_id}/references/library` | admin | body `{source_asset_id}`；与上传追加相同，但从可见图库复制稳定副本。 |
+| DELETE | `/products/{product_id}/references/{asset_id}` | admin | 退役指定当前 reference，保留历史冻结行和文件，并把剩余 reference 收敛为连续稳定位置。 |
+| PUT | `/products/{product_id}/references/order` | admin | body `{asset_ids:[...]}` 必须恰好包含全部当前 reference；使用无碰撞的两阶段位置更新完成排序。 |
 | GET | `/products/{product_id}/assets/{asset_id}/content` | admin | 读取当前产品资产的私有二进制内容；跨产品、已退役或不存在统一 404。 |
 | GET | `/library-assets` | admin | 合并返回生图工作台公共图库与当前 Ark 用户本人私有图库候选；只要求 `customer_image:admin`，不要求 `design_image:read`，且不返回 `storage_path`。 |
 | GET | `/library-assets/{asset_id}/content` | admin | 受控读取可见候选，`thumbnail=true` 返回缩略图；他人 private 与不存在统一 404，响应使用真实 MIME 和 `private, no-store`。 |
-| GET | `/invites?page=1&page_size=20` | read | 分页信封 `{items,total,page,page_size}`，`page_size` 最大 100；管理员看全部，普通用户只看自己创建的邀请；仅返回 `token_suffix`，永不返回 `token_hash` 或明文 token。 |
+| GET | `/invites?page=1&page_size=20` | read/write/admin | 分页信封 `{items,total,page,page_size}`，`page_size` 最大 100；管理员看全部，普通用户只看自己创建的邀请；仅返回 `token_suffix`，永不返回 `token_hash` 或明文 token。 |
 | POST | `/invites` | write | body `{customer_id, product_ids, expires_at, quota_total}`；客户必须在调用者范围内，产品必须已发布。响应仅本次包含 `invite_url`。 |
 | POST | `/invites/{invite_id}/revoke` | write | 幂等撤销；普通用户跨 owner 操作返回 404。 |
 | GET | `/generations?page=1&page_size=20` | read | 分页信封 `{items,total,page,page_size}`，`page_size` 最大 100；管理员看全部，普通用户只看自己邀请产生的记录；不返回 prompt、provider 或 pricing 快照。 |

@@ -1,7 +1,7 @@
 # 莱莎方舟平台 架构说明
 
 > **版本**：v1.0  
-> **最后更新**：2026-07-27  
+> **最后更新**：2026-08-10
 > **目标读者**：技术接手人、新后端开发
 
 ## 系统概览
@@ -75,6 +75,7 @@
 - `app/dingtalk/` — 钉钉集成
 - `app/whatsapp/` — WhatsApp 同步（router/models/schemas/service + connector_client + scheduler）
 - `app/ai/` — AI 接入（service.py facade + provider / preset / call / log_service + keyring / http_client）
+- `app/customer_image/` — 客户产品效果图门户（内部 RBAC 管理 + 邀请令牌公开 API + 产品稳定素材/多 reference + 幂等额度提交 + lease worker + 30 天邀请素材清理）；只复用 `app/ai/image_job_runtime.py` 的 Provider 执行、图片下载和用量/错误分类，不依赖内部 `design_image` 会话模型
 - `app/insight/` — 方舟洞见（service.py facade + sources / reports / item / collector / intelligence / customer_opportunity / customer_radar / customer_profile）
 - `app/stock/` — 备货管理（service.py facade + constants / sku_query / overview / safety / daily_report_service / production_cart_service / production_order_service）
 - `app/tracking/` — 物流跟踪（router + shipment / upload / ocr / polling / staging / daily_report / push_service + carriers/ + status.py）
@@ -106,6 +107,8 @@ frontend/src/
 ```
 
 **API client 规则**：所有 API 模块从 `clients.js` 取，禁止新建 axios 实例（`auth.js` 是唯一例外）。
+
+**客户生图双入口**：内部管理页仍使用方舟 JWT 和 `customer_image:read/write/admin`；外部 `/create/{invite-token}` 在首次导航后立即把 token 捕获到当前标签页 `sessionStorage` 并把地址替换为 `/create`。公开 client 只注入 `Authorization: Invite ...`，不会携带方舟 Bearer，也不会在 401 时跳转内部登录。产品、LOGO、结果和任务历史都以邀请为唯一数据边界；公开响应不得出现 hidden prompt、Provider/config、计价、token hash 或存储路径。
 
 **frontend-pm/**：PM 协作站独立前端应用（自研设计系统，无 Element Plus，与主站互不引用）；构建与 SCP 同步已入 `deploy.bat`。双入口（2026-07-21 起）：外网 pm.leshine.work（云 Nginx 静态直出 `dist/` + frp 反代 API），内网 `http://192.168.101.193:8001/pm/`（本机后端托管 `dist-lan/`，base=/pm/ 构建，大文件上传绕开隧道；`bootstrap/static_files.py::_mount_pm_lan_entry`）。
 

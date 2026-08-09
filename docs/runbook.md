@@ -264,6 +264,31 @@ location = /api/customer-image/public/logo {
 
 若产品明确把应用上限降至 20 MiB 以下，只按该上限加 multipart 余量，不扩大到 21m。修改前将备份放到 `~/nginx-backup-<日期>/`（不要留在 `conf.d`），然后执行 `nginx -t`、reload，并完成三项生产实测：大于 5 MiB 且不超过应用上限的 LOGO 上传成功；超过应用上限的 LOGO 返回 413；其他 `/api/customer-image/public/*` 和普通 `/api/*` 仍受 5m 限制。未完成这三项，不得签发生产邀请。
 
+#### 客户生图 worker、保留与故障恢复
+
+- 生产必须存在并启用 AI Preset `CUSTOMER_IMAGE_PRESET_NAME=design_image_generation`，且私有存储根及其父目录 ACL 只允许服务账号写入。客户产品、LOGO 和输出不经 `/uploads` 公共静态目录直出。
+- `customer_image_queue` 按固定任务 ID 领取 generation；lease 超时任务会回到可领取状态。排障时同时看 generation 的 `status/lease_expires_at/claim_count/provider_attempt_count/refunded_at` 与关联 AI call log，不能仅凭“页面还在生成”手工补额度。
+- `customer_image_cleanup` 每天 03:30 运行。默认保留期由 `CUSTOMER_IMAGE_RETENTION_DAYS=30` 控制：邀请过期满 30 天且不存在 queued/running generation 才软删除邀请素材。数据库提交先于文件删除；日志里的文件删除 WARNING 会在次日重试，不要手工删数据库行，否则失去精确重试清单。
+- 撤销邀请立即使全部公开 API 返回统一 401，但不立刻删除运行中任务、LOGO 或历史结果；保留期仍按邀请 `expires_at` 计算。确需提前清除必须走单独审计操作，本任务不提供绕过保留期的命令。
+
+上线 smoke：先创建短期、额度 1、单产品的合成邀请；在新隐私窗口走产品→LOGO→参数→生成，确认刷新后仍可恢复结果。重复发送同一 `request_id` 必须返回同一 generation 且额度只减一次；撤销后 context、轮询和素材下载都必须统一 401。日志与截图只能记录 token suffix，严禁粘贴真实明文邀请到工单或聊天。
+
+#### 客户生图九项上线核对表
+
+| 项目 | 必须证据 | 未满足时的处理 |
+|---|---|---|
+| 1. 数据库迁移 | `alembic heads` 唯一为 `102_ci_generation_snapshots`；98→102 offline SQL 可生成；隔离 MySQL 实跑通过 | 禁止部署数据库变更 |
+| 2. 后端分层 | models/schemas/service/router/worker/cleanup 测试全绿，路由只做协议转换 | 回到领域 service 修复，不在路由堆业务逻辑 |
+| 3. 注册与权限 | router 已注册；read/write/admin 真实数据库权限矩阵通过 | 禁止给业务员发入口 |
+| 4. 前端 API client | 内部 client 集中注册；Invite client 无 Bearer、401 不跳登录 | 禁止公开邀请 |
+| 5. 导航与路由 | 内部入口按 anyPermission 显示；`/create` 不进导航；token 捕获后 replace | 禁止签发邀请 |
+| 6. 标准 UI | 桌面三栏、手机分步/fixed CTA、安全区、44px 操作与 reduced-motion 实测 | 修复并重新做桌面/手机真实浏览器验证 |
+| 7. 核心状态测试 | 幂等额度、409 刷新、lease/recovery、一次退款、asset URL 生命周期、清理边界通过 | 禁止上线 worker |
+| 8. 文档 | database/module-notes/api-reference/architecture/runbook 与当前契约一致 | 先更新文档再部署 |
+| 9. 工程门禁 | customer/design runtime、全前端、build、conventions、git_sweep 真实通过 | 记录失败并阻断上线，不能用旧结果代替 |
+
+以上九项通过仍不等于生产完成。还必须完成独立规格/质量审查、真实桌面与手机浏览器验证、Nginx request URI + HTTP Referer 双脱敏、`/create` 响应头、LOGO 5 MiB/20 MiB 边界、`nginx -t`，以及隔离 MySQL 迁移门禁。Docker/MySQL 不可用时必须明确记为未验证，不能用 SQLite 或 offline SQL 冒充。
+
 重启 Nginx：
 ```bash
 nginx -t
@@ -941,7 +966,7 @@ AI_IMAGE_PROXY=
 
 ### 上线与核验
 
-1. 备份数据库和私有根。先执行 `cd backend; alembic heads`，唯一结果必须为 `101_di_message_interact (head)`；再用 `alembic upgrade 098_customer_image_portal:101_di_message_interact --sql` 审阅离线 DDL，最后执行 `alembic upgrade head`。在有 Docker 的隔离环境运行 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test_di_migration_mysql.ps1`，且必须通过后才能部署；SQLite 或离线 SQL 不能替代真实 MySQL 门禁。
+1. 备份数据库和私有根。先执行 `cd backend; alembic heads`，唯一结果必须为 `102_ci_generation_snapshots (head)`；再用 `alembic upgrade 098_customer_image_portal:102_ci_generation_snapshots --sql` 审阅离线 DDL，最后执行 `alembic upgrade head`。在有 Docker 的隔离环境运行 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test_di_migration_mysql.ps1`，且必须通过后才能部署；SQLite 或离线 SQL 不能替代真实 MySQL 门禁。
 2. 部署后端但先不分配权限；确认启动日志已注册 `design_image_queue`，目标实例可写私有根，非目标实例不运行 worker。
 3. 构建前端，创建专用试点角色，只授予 `design_image:read/write` 给 2～3 名具名设计用户；非必要不授予 admin。
 4. 通过业务页面/API 做 1 次 low 首次生成 + 3 次显式以上一结果为基准的 edit，并验证 6 个多输出场景：含数字但方式不明确时只出现确认卡且不轮询；同画布生成 1 个 job；分别生成 2～4 个 jobs；超过 4 张返回固定上限提示；有活跃批次时其他会话的新 turn/确认均 409；失败的单 job 重试不会重跑同批成功项。把脱敏 ID、耗时、usage 写入 [Phase 5 证据模板](requirements/evidence/2026-08-05-design-image-phase5-pilot.json)。

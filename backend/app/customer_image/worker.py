@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from threading import Event, Thread
 from uuid import uuid4
 
-from sqlalchemy import and_, or_, select, update
+from sqlalchemy import and_, exists, or_, select, update
 
 from app.ai import image_job_runtime as image_runtime
 from app.ai.image_service import build_image_config_version
@@ -584,6 +584,57 @@ def recover_stale_jobs(db, stale_before: datetime) -> int:
     except Exception:
         db.rollback()
         raise
+
+
+def cleanup_expired_invite_assets(
+    db, now: datetime, *, retention_days: int
+) -> int:
+    """Soft-delete expired invite assets, commit, then retry exact file removal."""
+    cutoff = now - timedelta(days=retention_days)
+    unfinished_generation = exists().where(
+        CustomerImageGeneration.invite_id == CustomerImageInvite.id,
+        CustomerImageGeneration.status.in_(("queued", "running")),
+    )
+    assets = list(db.scalars(
+        select(CustomerImageAsset)
+        .join(CustomerImageInvite, CustomerImageInvite.id == CustomerImageAsset.invite_id)
+        .where(
+            CustomerImageInvite.expires_at <= cutoff,
+            ~unfinished_generation,
+        )
+        .order_by(CustomerImageAsset.invite_id, CustomerImageAsset.id)
+    ).all())
+    newly_deleted = 0
+    try:
+        for asset in assets:
+            if asset.deleted_at is None:
+                asset.deleted_at = now
+                newly_deleted += 1
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    for asset in assets:
+        for path in (
+            asset.storage_path,
+            file_service._thumbnail_path(asset.storage_path),
+        ):
+            try:
+                file_service.delete_private_file(path)
+            except Exception as exc:
+                _warn_visible(f"expired invite asset cleanup failed for {path}: {exc}")
+    return newly_deleted
+
+
+def process_customer_image_cleanup() -> int:
+    settings = get_settings()
+    with SessionLocal() as db:
+        return cleanup_expired_invite_assets(
+            db,
+            _utcnow(),
+            retention_days=settings.CUSTOMER_IMAGE_RETENTION_DAYS,
+        )
 
 
 def process_customer_image_queue() -> None:

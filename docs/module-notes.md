@@ -796,3 +796,15 @@ frontend/src/
 **Provider URL 防线**：输出优先解 base64；URL 仅允许当前 Provider 配置推导出的 HTTPS host，DNS 解析后拒绝私网、环回、link-local、保留/组播/metadata 地址，连接固定解析 IP，每次重定向重新校验，不转发 Authorization。下载 30 秒、20 MiB 上限，之后仍走同一图片归一化。
 
 **审计对账**：成功 job 必须同时有 assistant message、output asset 与 `ai_call_log_id`；job token 是落地快照，`AiCallLog.usage_detail` 保留 Provider 原始用量细分且响应快照去除 base64。失败若能识别日志 ID则关联日志；无法证明账单时统一 `billing_certainty=unknown`。`claim_count` 是 DB 领取次数，`provider_attempt_count` 是共享 facade 实际请求次数，不能混为一项。
+
+## 客户产品效果图门户（customer_image，2026-08-10）
+
+**客户与归属**：门户不复制客户主数据。客户搜索只读 OKKI `customer_info`，普通业务员通过 active `ArkUserExternalBinding(provider="okki")` 映射到 OKKI user ID，再按当前 `customer_commission_snapshot` 归属过滤；管理员可搜索全量。邀请一旦创建就冻结客户展示信息，后续 OKKI 改名不会改写历史。
+
+**产品与素材**：产品只支持 `single_choice`、`color`、`boolean` 三种预设选项。cover 是单槽；reference 是 2 张以上可追加、替换、退役和排序的稳定列表。图库只作为复制来源，产品目录始终读取 `customer-product` 私有副本。替换不覆盖旧行，generation 冻结具体 cover/reference/LOGO ID，因此换模板不会改变历史任务输入。
+
+**提示词边界**：最终调用文本按「产品 fixed prompt → 选项/值 prompt fragment → 客户补充要求 → output prompt」确定性组装。客户只看到 label、默认值和自己的安全选择，不看到任何 fragment 或最终 prompt。补充要求与安全选项、最终 prompt、Provider 参数分别冻结；公开 generation 响应不回显补充要求或内部快照。
+
+**提交、worker 与退款**：邀请行锁内先按 `(invite_id, request_id)` 幂等回放，再验证发布状态、`config_version`、必填选项、当前 LOGO 和剩余额度；首次成功才消耗一次额度。worker 用 lease/heartbeat 恢复 queued/running 任务，真实 Provider 调用统一经过 `ai.image_job_runtime`，并写 AI 调用日志、usage、成本和输出资产。只对运行时明确分类为可退款且尚未退款的失败执行一次原子退款；超时后无法确认账单的 Provider 错误不退款，避免额度与真实成本失配。
+
+**邀请素材保留**：`CUSTOMER_IMAGE_RETENTION_DAYS` 默认 30。每天 03:30 的 stable APScheduler job 只处理已经过期满保留期且没有 queued/running generation 的邀请；先提交 LOGO/输出资产 `deleted_at`，再按精确原图与缩略图路径 best-effort 删除。文件删除失败保留软删除行供下一次任务重试，数据库提交失败则绝不碰文件。

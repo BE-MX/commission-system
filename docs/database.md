@@ -208,7 +208,13 @@
 
 ## 客户产品效果图门户（迁移 098/102，2026-08-07）
 
-`ark_customer_image_generations` 以邀请范围的 `(invite_id, request_id)` 唯一约束保证客户提交幂等。迁移 `102_ci_generation_snapshots` 增加 nullable `requirement_snapshot` 与非空 JSON `parameters_snapshot`：前者单独冻结去除首尾空白后的客户补充要求；后者只冻结 worker 执行需要的尺寸、质量、Provider/config version、下载白名单等非公开调用参数。`option_snapshot` 只保存按产品定义顺序排列的客户安全选择项，`pricing_snapshot` 只保存调用时 rate card，`prompt_snapshot` 保存最终隐藏提示词。公开 API 不返回提示词、Provider/config、rate card 或磁盘路径。
+迁移 `098_customer_image_portal` 建立八张领域表：产品、产品素材、产品选项、选项值、邀请、邀请产品关联、邀请素材和生成记录。产品素材是稳定副本，不引用可变图库文件；cover 是单槽，reference 是按 `position` 排序的多槽。替换、下移或删除只把旧行标为 retired，历史 generation 继续通过冻结的素材 ID 读取当时版本，不物理覆盖旧文件。
+
+邀请只存定长 SHA-256 token hash 与末 6 位 suffix，`ark_customer_image_invites` 冻结客户外部 ID/显示名、创建人、有效期和正数额度。非管理员查询必须以 `created_by` 为数据边界。额度使用数由 generation 行派生；提交在邀请锁内检查 `(invite_id, request_id)` 幂等键、当前配置和剩余额度，再一次性创建 generation，避免重复请求重复扣减。
+
+`ark_customer_image_generations` 冻结产品/LOGO/reference、公开选项、隐藏提示词、计价与执行参数。迁移 `102_ci_generation_snapshots` 增加 nullable `requirement_snapshot` 与非空 JSON `parameters_snapshot`：补充要求单独冻结去除首尾空白后的原文；参数快照只供 worker 使用，保存尺寸、质量、Provider/config version、下载白名单等非公开参数。098 已建立的 `provider_attempt_count` 仅统计真实 Provider 请求次数，不能与数据库领取次数混用。`option_snapshot` 只保存按产品定义顺序排列的客户安全选择项，`pricing_snapshot` 只保存调用时 rate card，`prompt_snapshot` 保存最终隐藏提示词。公开 API 不返回补充要求、提示词、Provider/config、rate card、token/hash 或磁盘路径。
+
+worker 通过 queued/running、lease 与 claim 字段实现可恢复领取。失败只在明确属于可退款分类且尚未 `refunded_at` 时原子退款一次；不能证明未计费的 Provider 失败不退款。`ark_customer_image_assets.deleted_at` 是邀请 LOGO/输出的软删除边界；邀请过期满保留期且不存在 queued/running generation 时才进入清理，数据库先提交软删除，再按记录的精确原图/缩略图路径 best-effort 删除，文件失败由下一次任务重试。
 
 ## 薪资计算（迁移 092，2026-08-06）
 

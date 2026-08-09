@@ -30,6 +30,7 @@ JOB_FESTIVAL_EVENT_MONITOR = "festival_event_monitor"
 JOB_FESTIVAL_DAILY_REPORT = "festival_daily_report"
 JOB_DESIGN_IMAGE_QUEUE = "design_image_queue"
 JOB_CUSTOMER_IMAGE_QUEUE = "customer_image_queue"
+JOB_CUSTOMER_IMAGE_CLEANUP = "customer_image_cleanup"
 
 
 def _console_safe(value: object, encoding: str | None = None) -> str:
@@ -59,7 +60,10 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
         send_daily_report_if_due,
     )
     from app.design_image.worker import process_design_image_queue
-    from app.customer_image.worker import process_customer_image_queue
+    from app.customer_image.worker import (
+        process_customer_image_cleanup,
+        process_customer_image_queue,
+    )
 
     settings = get_settings()
 
@@ -132,6 +136,17 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
         replace_existing=True,
         max_instances=1,
         coalesce=True,
+    )
+    scheduler.add_job(
+        process_customer_image_cleanup,
+        trigger="cron",
+        hour=3,
+        minute=30,
+        id=JOB_CUSTOMER_IMAGE_CLEANUP,
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=3600,
     )
     scheduler.add_job(
         generate_industry_daily,
