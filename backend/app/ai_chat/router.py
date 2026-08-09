@@ -97,6 +97,19 @@ def _actionable_upstream_error(event: dict) -> tuple[str, str]:
     return "upstream_unavailable", "模型服务暂时不可用，已保留本次内容，请点击重试"
 
 
+def _close_upstream_best_effort(upstream):
+    if upstream is None:
+        return
+    close = getattr(upstream, "close", None)
+    if close is None:
+        return
+    try:
+        close()
+    except Exception as exc:
+        logger.warning("AI chat upstream close failed: %s", type(exc).__name__)
+        print(f"[ai-chat] upstream close failed: {type(exc).__name__}", flush=True)
+
+
 def stream_assistant_events(
     db: Session,
     owner_user_id: int,
@@ -233,13 +246,19 @@ def _stream_assistant_events(
         )
         yield sse_event("error", {"code": "stream_incomplete", "message": message})
     except GeneratorExit:
-        if upstream is not None:
-            close = getattr(upstream, "close", None)
-            if close is not None:
-                close()
-        service.stop_turn(
-            db, owner_user_id, assistant["id"], "".join(partial), log_id
-        )
+        try:
+            service.stop_turn(
+                db, owner_user_id, assistant["id"], "".join(partial), log_id
+            )
+        except Exception as stop_exc:
+            logger.error(
+                "AI chat stopped-state save failed: %s", type(stop_exc).__name__
+            )
+            print(
+                f"[ai-chat] stopped-state save failed: {type(stop_exc).__name__}",
+                flush=True,
+            )
+        _close_upstream_best_effort(upstream)
         raise
     except Exception as exc:
         logger.warning("AI chat stream orchestration failed: %s", type(exc).__name__)
@@ -263,11 +282,10 @@ def _stream_assistant_events(
             message = "回答保存失败，请刷新会话后重试"
         yield sse_event("error", {"code": "upstream_unavailable", "message": message})
     finally:
-        if upstream is not None:
-            close = getattr(upstream, "close", None)
-            if close is not None:
-                close()
-        db.close()
+        try:
+            _close_upstream_best_effort(upstream)
+        finally:
+            db.close()
 
 
 @router.get("/config")

@@ -209,9 +209,13 @@ def delete_draft_attachment(db: Session, owner_user_id: int, attachment_id: int)
     if row.status != "draft" or row.message_id is not None:
         _not_found()
     storage_path = row.storage_path
-    db.delete(row)
-    db.commit()
     file_service.delete_private_file(storage_path)
+    try:
+        db.delete(row)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
 
 def _paired_assistant(db: Session, user: AiChatMessage) -> AiChatMessage:
@@ -247,6 +251,28 @@ def _existing_turn(
     return TurnPair(user, _paired_assistant(db, user), True)
 
 
+def _validate_existing_turn_request(
+    db: Session, turn: TurnPair, request: TurnStreamRequest
+):
+    attachment_ids = {
+        row_id
+        for (row_id,) in (
+            db.query(AiChatAttachment.id)
+            .filter(
+                AiChatAttachment.session_id == turn.user_message.session_id,
+                AiChatAttachment.message_id == turn.user_message.id,
+                AiChatAttachment.status == "attached",
+            )
+            .all()
+        )
+    }
+    if (
+        turn.user_message.content != request.content.strip()
+        or attachment_ids != set(request.attachment_ids)
+    ):
+        raise RequestConflictError("请求标识已用于不同内容，请更换请求标识")
+
+
 def _auto_title(content: str) -> str:
     compact = " ".join(content.split())
     return compact[:60] or "附件分析"
@@ -261,6 +287,7 @@ def begin_turn(
     session = get_session(db, session_id, owner_user_id)
     existing = _existing_turn(db, session_id, request.request_id)
     if existing:
+        _validate_existing_turn_request(db, existing, request)
         return existing
     try:
         attachments = []
@@ -328,6 +355,7 @@ def begin_turn(
         db.rollback()
         existing = _existing_turn(db, session_id, request.request_id)
         if existing:
+            _validate_existing_turn_request(db, existing, request)
             return existing
         raise
     except Exception:
@@ -351,14 +379,14 @@ def begin_retry(
         db.query(AiChatMessage)
         .filter(
             AiChatMessage.session_id == original.session_id,
-            AiChatMessage.role == "assistant",
             AiChatMessage.request_id == request.request_id,
-            AiChatMessage.retry_of_message_id == original.id,
         )
         .first()
     )
     if existing:
-        return RetryTurn(existing, True)
+        if existing.role == "assistant" and existing.retry_of_message_id == original.id:
+            return RetryTurn(existing, True)
+        raise RequestConflictError("请求标识已用于其他重试，请更换请求标识")
     row = AiChatMessage(
         session_id=original.session_id,
         role="assistant",
@@ -380,28 +408,19 @@ def begin_retry(
             .filter(
                 AiChatMessage.session_id == original.session_id,
                 AiChatMessage.request_id == request.request_id,
-                AiChatMessage.retry_of_message_id == original.id,
             )
             .first()
         )
-        if existing:
+        if (
+            existing
+            and existing.role == "assistant"
+            and existing.retry_of_message_id == original.id
+        ):
             return RetryTurn(existing, True)
         raise RequestConflictError("请求标识已被使用，请重新发送") from None
 
 
-def build_context(
-    db: Session,
-    owner_user_id: int,
-    session_id: int,
-    *,
-    exclude_assistant_id: int | None = None,
-) -> list[dict]:
-    return context_service.build_context(
-        db,
-        owner_user_id,
-        session_id,
-        exclude_assistant_id=exclude_assistant_id,
-    )
+build_context = context_service.build_context
 
 
 def _set_terminal(
@@ -466,5 +485,4 @@ def stop_turn(db, owner_user_id, assistant_id, content, ai_call_log_id=None):
     )
 
 
-def get_config(db: Session) -> dict:
-    return context_service.get_config(db)
+get_config = context_service.get_config

@@ -179,6 +179,48 @@ def test_overlapping_same_request_has_one_winner(file_database, monkeypatch):
     verify_db.close()
 
 
+def test_overlapping_same_id_with_different_content_conflicts(
+    file_database, monkeypatch
+):
+    SessionLocal = sessionmaker(bind=file_database)
+    seed_db = SessionLocal()
+    owner_id, session_id = _seed_owner_and_session(seed_db, "conflict-owner")
+    seed_db.close()
+    rendezvous = Barrier(2)
+    guard = Lock()
+    pending_waiters = 0
+    original_existing_turn = service._existing_turn
+
+    def synchronized_existing_turn(db, target_session_id, request_id):
+        nonlocal pending_waiters
+        existing = original_existing_turn(db, target_session_id, request_id)
+        should_wait = False
+        if existing is None:
+            with guard:
+                if pending_waiters < 2:
+                    pending_waiters += 1
+                    should_wait = True
+        if should_wait:
+            rendezvous.wait(timeout=3)
+        return existing
+
+    monkeypatch.setattr(service, "_existing_turn", synchronized_existing_turn)
+    requests = [
+        TurnStreamRequest(request_id="parallel_conflict", content=content)
+        for content in ("first", "second")
+    ]
+    results, errors = _run_threads(
+        SessionLocal, requests, owner_id, session_id
+    )
+
+    assert len(results) == 1
+    assert len(errors) == 1
+    assert isinstance(errors[0], service.RequestConflictError)
+    verify_db = SessionLocal()
+    assert verify_db.query(AiChatMessage).filter_by(session_id=session_id).count() == 2
+    verify_db.close()
+
+
 def test_overlapping_turns_have_one_draft_winner(file_database):
     SessionLocal = sessionmaker(bind=file_database)
     seed_db = SessionLocal()
