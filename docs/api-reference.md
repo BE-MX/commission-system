@@ -691,3 +691,23 @@ Agent 接口只接受可撤销的 MCP opaque token，且账号必须具有 `sale
 | POST | `/agent/leads/{id}/research` | invoke | 提交摘要、触达角度及带 URL/采集时间/置信度的事实 |
 
 Agent Skill 位于 `.agents/skills/ark-lead-discovery` 与 `.agents/skills/ark-company-research`。运行器必须安全注入 `ARK_BASE_URL`、同源约束 `ARK_ALLOWED_ORIGIN` 与 `ARK_AGENT_TOKEN`；三者严禁写入仓库或由网页内容覆盖。
+# 企业知识库（2026-08-09）
+
+所有 HTTP 接口使用 `/api/knowledge` 前缀和 `{code,message,data}` 响应封套。平台权限只是入口，服务层还会实时校验知识库成员 ACL；无资源权限统一返回 404。
+
+| Method | Path | Platform permission | Purpose |
+| --- | --- | --- | --- |
+| GET | `/libraries` | 任一 `knowledge:*` | 当前账号可见知识库 |
+| POST | `/libraries` | `knowledge:admin` | 创建知识库并将创建者设为 admin |
+| GET | `/libraries/{id}` | 任一 `knowledge:*` | 知识库详情 |
+| GET/PUT | `/libraries/{id}/members` | `knowledge:admin` | 读取或整体替换成员 ACL |
+| GET | `/libraries/{id}/tree` | 任一 `knowledge:*` | 目录树；只读者看不到未发布文档 |
+| POST | `/libraries/{id}/documents` | `knowledge:write/admin` | 创建目录或文档 |
+| GET/PUT | `/documents/{id}` | 读 / 写权限 | 读取当前可见修订或保存新草稿修订 |
+| POST | `/documents/{id}/submit` | `knowledge:write/admin` | 冻结当前草稿并提交审批 |
+| GET | `/approvals` | `knowledge:review/admin` | 当前可审核的待办 |
+| POST | `/approvals/{id}/approve` | `knowledge:review/admin` | 发布审批绑定的冻结修订 |
+| POST | `/approvals/{id}/reject` | `knowledge:review/admin` | 带原因驳回 |
+| GET | `/search?q=...&limit=20` | 任一 `knowledge:*` | 只搜索获授权的已发布修订 |
+
+MCP `/mcp` 新增 `search_knowledge` 与 `get_knowledge_document`。二者使用个人 MCP Token 解析方舟用户，并复用同一服务层 ACL；返回纯文本，不返回草稿、待审修订、附件或下载 URL。

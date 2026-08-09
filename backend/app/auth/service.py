@@ -407,6 +407,11 @@ def seed_role_permissions(db: Session):
         ("sales_automation:write", "sales_automation", "write", "创建搜索任务并确认候选客户"),
         ("sales_automation:admin", "sales_automation", "admin", "管理获客模型与Agent接入"),
         ("sales_automation:invoke", "sales_automation", "invoke", "Agent领取任务并提交搜索与研究结果"),
+        # 企业知识库：平台权限与知识库成员 ACL 双重校验
+        ("knowledge:read",   "knowledge", "read",   "查看已授权知识库"),
+        ("knowledge:write",  "knowledge", "write",  "编辑知识文档并提交审批"),
+        ("knowledge:review", "knowledge", "review", "审批知识文档"),
+        ("knowledge:admin",  "knowledge", "admin",  "创建知识库并管理成员权限"),
         # MCP 网关(物流录单/查询的入口无关 MCP 服务)
         ("mcp:admin", "mcp", "admin", "发放/吊销 MCP 个人 access token"),
         # 薪资计算。write 与 admin 按**爆炸半径**切：改一个人的档案是 write，

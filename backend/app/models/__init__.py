@@ -36,6 +36,14 @@ from app.sales_automation.models import (
     ResearchRun,
     ResearchFact,
 )
+from app.knowledge.models import (
+    KnowledgeLibrary,
+    KnowledgeLibraryMember,
+    KnowledgeDocument,
+    KnowledgeRevision,
+    KnowledgeApprovalRequest,
+    KnowledgeAuditLog,
+)
 
 __all__ = [
     # 提成系统自有表
@@ -82,4 +90,11 @@ __all__ = [
     "LeadContact",
     "ResearchRun",
     "ResearchFact",
+    # Knowledge base
+    "KnowledgeLibrary",
+    "KnowledgeLibraryMember",
+    "KnowledgeDocument",
+    "KnowledgeRevision",
+    "KnowledgeApprovalRequest",
+    "KnowledgeAuditLog",
 ]

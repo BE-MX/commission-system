@@ -41,6 +41,7 @@ from app.design_image.router import router as design_image_router
 from app.salary.router import router as salary_router
 from app.sales_automation.router import router as sales_automation_router
 from app.sales_automation.agent_router import router as sales_automation_agent_router
+from app.knowledge.router import router as knowledge_router
 
 
 def register_routers(app: FastAPI) -> None:
@@ -87,3 +88,4 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(design_image_router, prefix="/api/design-image", tags=["AI 生图工作台"])
     app.include_router(sales_automation_router, prefix="/api/sales-automation", tags=["智能获客"])
     app.include_router(sales_automation_agent_router, prefix="/api/sales-automation", tags=["智能获客-Agent"])
+    app.include_router(knowledge_router, prefix="/api/knowledge", tags=["知识库"])

@@ -129,6 +129,11 @@ export const MENU_GROUPS = {
       'training:read', 'training:write', 'training:admin',
     ],
   },
+  knowledge: {
+    title: '企业知识库',
+    icon: Reading,
+    anyPermission: ['knowledge:read', 'knowledge:write', 'knowledge:review', 'knowledge:admin'],
+  },
   design: {
     title: '设计中心',
     icon: Camera,
@@ -187,6 +192,18 @@ export const NAV_ENTRIES = [
     component: () => import('@/views/dashboard/Dashboard.vue'),
     title: '工作台',
     menu: { icon: DataAnalysis, order: 0 },
+  },
+
+  {
+    path: '/knowledge',
+    name: 'KnowledgeWorkbench',
+    component: () => import('@/views/knowledge/KnowledgeWorkbench.vue'),
+    title: '企业知识库',
+    anyPermission: ['knowledge:read', 'knowledge:write', 'knowledge:review', 'knowledge:admin'],
+    menu: {
+      group: 'knowledge', title: '知识工作台', icon: Reading, order: 10,
+      anyPermission: ['knowledge:read', 'knowledge:write', 'knowledge:review', 'knowledge:admin'],
+    },
   },
 
   // ── 人员管理 ───────────────────────────────────────────
