@@ -8,9 +8,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from PIL import Image
 
+from app.ai.models import AiPreset, AiProvider
 from app.core.database import get_db
 from app.customer_image.models import (
     CustomerImageAsset,
+    CustomerImageGeneration,
     CustomerImageInvite,
     CustomerImageInviteProduct,
     CustomerImageOptionValue,
@@ -79,6 +81,57 @@ def _product(db, *, published=True, name="Catalog Wig"):
     ))
     db.commit()
     return product
+
+
+def _ready_generation_context(db):
+    invite, token = _invite(db)
+    product = _product(db)
+    db.add(CustomerImageInviteProduct(invite_id=invite.id, product_id=product.id))
+    logo = CustomerImageAsset(
+        invite_id=invite.id,
+        asset_type="logo",
+        storage_path="customer-logo/hidden-logo.png",
+        mime_type="image/png",
+        file_size=10,
+        width=32,
+        height=24,
+        sha256="d" * 64,
+    )
+    reference = CustomerImageProductAsset(
+        product_id=product.id,
+        role="reference",
+        storage_path="customer-product/hidden-reference.png",
+        mime_type="image/png",
+        file_size=10,
+        width=32,
+        height=24,
+        sha256="e" * 64,
+    )
+    provider = AiProvider(
+        name="Customer portal provider",
+        provider_type="direct",
+        api_base="https://images.example.test/v1",
+        api_key="encrypted-provider-secret",
+        api_type="openai",
+        is_enabled=True,
+    )
+    db.add_all([logo, reference, provider])
+    db.flush()
+    invite.current_logo_asset_id = logo.id
+    db.add(AiPreset(
+        preset_name="design_image_generation",
+        provider_id=provider.id,
+        model="gpt-image-2",
+        parameters={
+            "size": "1536x1024",
+            "quality": "high",
+            "download_hosts": ["cdn.example.test"],
+            "rate_card": {"output_image_per_million": "40"},
+        },
+        is_enabled=True,
+    ))
+    db.commit()
+    return invite, token, product
 
 
 @pytest.fixture
@@ -163,10 +216,187 @@ def test_context_and_catalog_only_expose_invite_bound_published_data(public_api)
         "visible_product_count": 1,
     }
     assert [row["id"] for row in catalog.json()["data"]] == [visible.id]
+    assert catalog.json()["data"][0]["config_version"] == visible.config_version
     rendered = catalog.text
     for secret in ("hidden fixed prompt", "hidden output prompt", "hidden value prompt", "storage_path", "token_hash"):
         assert secret not in rendered
     assert unbound.id not in [row["id"] for row in catalog.json()["data"]]
+
+
+def test_generation_submit_returns_202_and_replay_is_safe(public_api):
+    client, db, _tmp = public_api
+    invite, token, product = _ready_generation_context(db)
+    payload = {
+        "product_id": product.id,
+        "config_version": product.config_version,
+        "request_id": "browser-request-1",
+        "selections": {"length": "18"},
+        "requirement": "  Put it on a clean studio background.  ",
+    }
+
+    first = client.post(
+        "/api/customer-image/public/generations", headers=_auth(token), json=payload
+    )
+    replay = client.post(
+        "/api/customer-image/public/generations", headers=_auth(token), json=payload
+    )
+
+    assert first.status_code == replay.status_code == 202
+    assert first.json() == replay.json()
+    assert first.json()["data"] == {
+        "id": first.json()["data"]["id"],
+        "product_id": product.id,
+        "product_name": "Catalog Wig",
+        "status": "queued",
+        "selections": [
+            {"key": "length", "label": "Length", "value": "18", "value_label": "18 inch"}
+        ],
+        "result_url": None,
+        "error_message": None,
+        "created_at": first.json()["data"]["created_at"],
+        "started_at": None,
+        "finished_at": None,
+    }
+    db.expire_all()
+    assert db.get(CustomerImageInvite, invite.id).quota_used == 3
+    assert db.query(CustomerImageGeneration).count() == 1
+    for hidden in (
+        "clean studio background",
+        "hidden fixed prompt",
+        "hidden output prompt",
+        "hidden value prompt",
+        "hidden-logo.png",
+        "hidden-reference.png",
+        "provider_id",
+        "pricing_snapshot",
+        "encrypted-provider-secret",
+    ):
+        assert hidden not in first.text
+
+
+def test_generation_list_and_detail_are_newest_first_invite_scoped_and_safe(public_api):
+    client, db, _tmp = public_api
+    invite, token, product = _ready_generation_context(db)
+    payload = {
+        "product_id": product.id,
+        "config_version": product.config_version,
+        "selections": {"length": "18"},
+    }
+    first = client.post(
+        "/api/customer-image/public/generations",
+        headers=_auth(token),
+        json={**payload, "request_id": "history-1", "requirement": "private one"},
+    ).json()["data"]
+    second = client.post(
+        "/api/customer-image/public/generations",
+        headers=_auth(token),
+        json={**payload, "request_id": "history-2", "requirement": "private two"},
+    ).json()["data"]
+    output = CustomerImageAsset(
+        invite_id=invite.id,
+        asset_type="generated",
+        storage_path="customer-output/secret-result.png",
+        mime_type="image/png",
+        file_size=10,
+        width=32,
+        height=24,
+        sha256="f" * 64,
+    )
+    db.add(output)
+    db.flush()
+    first_row = db.get(CustomerImageGeneration, first["id"])
+    first_row.status = "succeeded"
+    first_row.output_asset_id = output.id
+    first_row.error_message = "raw provider detail must never appear"
+    db.commit()
+
+    history = client.get(
+        "/api/customer-image/public/generations", headers=_auth(token)
+    )
+    detail = client.get(
+        f"/api/customer-image/public/generations/{first['id']}", headers=_auth(token)
+    )
+    other_invite, other_token = _invite(db, customer="Other")
+    assert other_invite.id != invite.id
+    wrong_owner = client.get(
+        f"/api/customer-image/public/generations/{first['id']}", headers=_auth(other_token)
+    )
+
+    assert history.status_code == detail.status_code == 200
+    assert [row["id"] for row in history.json()["data"]] == [second["id"], first["id"]]
+    assert detail.json()["data"]["result_url"] == (
+        f"/api/customer-image/public/assets/{output.id}/content"
+    )
+    assert detail.json()["data"]["error_message"] is None
+    assert wrong_owner.status_code == 404
+    rendered = history.text + detail.text
+    for hidden in (
+        "private one",
+        "private two",
+        "raw provider detail",
+        "secret-result.png",
+        "prompt_snapshot",
+        "parameters_snapshot",
+        "pricing_snapshot",
+    ):
+        assert hidden not in rendered
+
+
+def test_generation_submission_returns_only_stable_actionable_errors(public_api):
+    client, db, _tmp = public_api
+    invite, token, product = _ready_generation_context(db)
+    payload = {
+        "product_id": product.id,
+        "config_version": product.config_version + 1,
+        "request_id": "stale-product",
+        "selections": {"length": "18"},
+    }
+
+    stale = client.post(
+        "/api/customer-image/public/generations", headers=_auth(token), json=payload
+    )
+    invite.current_logo_asset_id = None
+    db.commit()
+    no_logo = client.post(
+        "/api/customer-image/public/generations",
+        headers=_auth(token),
+        json={**payload, "config_version": product.config_version, "request_id": "no-logo"},
+    )
+    db.refresh(invite)
+    logo = db.query(CustomerImageAsset).filter(
+            CustomerImageAsset.invite_id == invite.id,
+            CustomerImageAsset.asset_type == "logo",
+        ).one()
+    invite.current_logo_asset_id = logo.id
+    invite.quota_used = invite.quota_total
+    db.commit()
+    exhausted = client.post(
+        "/api/customer-image/public/generations",
+        headers=_auth(token),
+        json={**payload, "config_version": product.config_version, "request_id": "no-quota"},
+    )
+
+    assert (stale.status_code, stale.json()["detail"]) == (
+        409,
+        "Product settings changed. Please choose again.",
+    )
+    assert (no_logo.status_code, no_logo.json()["detail"]) == (
+        409,
+        "Upload a logo before generating.",
+    )
+    assert (exhausted.status_code, exhausted.json()["detail"]) == (
+        409,
+        "Generation quota is exhausted.",
+    )
+    rendered = stale.text + no_logo.text + exhausted.text
+    for hidden in (
+        "prompt",
+        "provider",
+        "storage_path",
+        "token_hash",
+        "encrypted-provider-secret",
+    ):
+        assert hidden not in rendered
 
 
 def test_unpublishing_product_hides_it_immediately(public_api):

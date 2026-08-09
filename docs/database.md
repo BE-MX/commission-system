@@ -206,6 +206,10 @@
 
 每日额度按 `Asia/Shanghai` 自然日统计该用户当天所有已接受 job；clarification 不建 job、不计额度，组合图计 1 次，N 张独立图计 N 次，成功、失败和重试都计数。提交和 worker claim 都遵循 `ark_users owner → ark_design_image_jobs` 的统一锁序；提交在 owner 锁内一次性检查整批额度与幂等，worker 在每用户 running 上限内领取。SQLite 自动化只能验证语义，MySQL 两连接下的 InnoDB 等待、当前读和 `FOR UPDATE SKIP LOCKED` 仍是上线外部门禁。
 
+## 客户产品效果图门户（迁移 098/102，2026-08-07）
+
+`ark_customer_image_generations` 以邀请范围的 `(invite_id, request_id)` 唯一约束保证客户提交幂等。迁移 `102_ci_generation_snapshots` 增加 nullable `requirement_snapshot` 与非空 JSON `parameters_snapshot`：前者单独冻结去除首尾空白后的客户补充要求；后者只冻结 worker 执行需要的尺寸、质量、Provider/config version、下载白名单等非公开调用参数。`option_snapshot` 只保存按产品定义顺序排列的客户安全选择项，`pricing_snapshot` 只保存调用时 rate card，`prompt_snapshot` 保存最终隐藏提示词。公开 API 不返回提示词、Provider/config、rate card 或磁盘路径。
+
 ## 薪资计算（迁移 092，2026-08-06）
 
 一次建 10 张表。所有引用 `ark_users.id` 的列（`user_id` / `created_by` / `confirmed_by` / `modified_by`）都是 `INT UNSIGNED`——目标列是 unsigned，模型侧靠 `USER_ID = Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql")` 对齐，SQLite 测试库回落普通 Integer。金额统一 `DECIMAL(12,2)`、工时 `DECIMAL(8,2)`（`day_hours=7.83` 要两位）、天数 `DECIMAL(6,2)`。

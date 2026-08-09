@@ -255,6 +255,8 @@ class CustomerImageGeneration(Base):
     product_name_snapshot = Column(String(200), nullable=False)
     config_version_snapshot = Column(Integer, nullable=False)
     option_snapshot = Column(JSON, nullable=False)
+    requirement_snapshot = Column(Text, nullable=True, comment="客户补充要求快照")
+    parameters_snapshot = Column(JSON, nullable=False, default=dict, comment="任务执行参数快照")
     prompt_snapshot = Column(Text, nullable=False)
     reference_asset_ids = Column(JSON, nullable=False)
     status = Column(String(16), nullable=False, default="queued")

@@ -43,6 +43,15 @@ def _migration_module():
     return module
 
 
+def _snapshot_migration_module():
+    path = BACKEND_ROOT / "alembic" / "versions" / "102_ci_generation_snapshots.py"
+    spec = util.spec_from_file_location("migration_102_ci_generation_snapshots", path)
+    assert spec is not None and spec.loader is not None
+    module = util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_customer_image_migration_is_linear_from_revision_097():
     migration = _migration_module()
 
@@ -89,7 +98,8 @@ def test_customer_image_tables_and_required_columns_are_registered():
         "ark_customer_image_generations": {
             "id", "invite_id", "product_id", "logo_asset_id", "output_asset_id",
             "request_id", "product_name_snapshot", "config_version_snapshot",
-            "option_snapshot", "prompt_snapshot", "reference_asset_ids", "status",
+            "option_snapshot", "requirement_snapshot", "parameters_snapshot",
+            "prompt_snapshot", "reference_asset_ids", "status",
             "claimed_by", "lease_token", "lease_expires_at", "claim_count",
             "provider_attempt_count", "preset_name", "model", "ai_call_log_id",
             "error_code", "error_message", "billing_certainty", "input_tokens",
@@ -161,6 +171,31 @@ def test_customer_image_constraints_freeze_generation_and_scope_idempotency():
     assert "uq_ci_generation_invite_request" in unique_names(generations)
     assert isinstance(generations.c.reference_asset_ids.type, JSON)
     assert generations.c.reference_asset_ids.nullable is False
+    assert generations.c.requirement_snapshot.nullable is True
+    assert isinstance(generations.c.parameters_snapshot.type, JSON)
+    assert generations.c.parameters_snapshot.nullable is False
+
+
+def test_customer_image_generation_snapshot_migration_follows_current_head(monkeypatch):
+    migration = _snapshot_migration_module()
+    added = []
+
+    monkeypatch.setattr(
+        migration.op,
+        "add_column",
+        lambda table, column: added.append((table, column)),
+    )
+    migration.upgrade()
+
+    assert migration.revision == "102_ci_generation_snapshots"
+    assert migration.down_revision == "101_di_message_interact"
+    assert [(table, column.name) for table, column in added] == [
+        ("ark_customer_image_generations", "requirement_snapshot"),
+        ("ark_customer_image_generations", "parameters_snapshot"),
+    ]
+    assert added[0][1].nullable is True
+    assert isinstance(added[1][1].type, JSON)
+    assert added[1][1].nullable is False
 
 
 def test_customer_image_domain_ids_share_sqlite_autoincrement_type():

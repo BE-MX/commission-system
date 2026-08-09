@@ -541,12 +541,17 @@
 | GET | `/context` | 品牌名、客户展示名、过期时间、额度 total/used/remaining、当前 LOGO 元数据、当前可见产品数。 |
 | GET | `/products` | 仅返回当前邀请绑定且仍已发布的产品、可见标签/default、启用选项值及当前 cover/reference 元数据；不返回任何 prompt、token/hash 或存储路径。取消发布后下一次请求立即隐藏。 |
 | POST | `/logo` | 严格仅接受一个 multipart `file` 字段；沿用共享图片验证与正规化（真实 MIME、尺寸/像素），应用字节上限取 `DESIGN_IMAGE_MAX_UPLOAD_MB` 配置与 20 MiB 的较小值。保存新的 `customer-logo` 资产并原子切换 current pointer，旧 LOGO 保留供历史任务读取。邀请认证与写限流均先于 multipart 解析。 |
+| POST | `/generations` | JSON 必须包含当前产品 `config_version`、客户请求 ID、选项和可选补充要求。邀请行锁内先按 `(invite_id, request_id)` 幂等回放，再冻结当前产品、LOGO、reference、预设参数和提示词，并原子消耗一次额度；成功和幂等回放均返回 `202`。 |
+| GET | `/generations` | 返回当前邀请的生成记录，按 `created_at,id` 从新到旧；仅含产品快照名、客户安全选项标签、状态、公开结果 URL、安全错误文案和时间。 |
+| GET | `/generations/{generation_id}` | 返回同一公开结构；generation 不属于当前邀请时统一 `404`。 |
 | GET | `/products/{product_id}/assets/{asset_id}/content` | 仅允许当前邀请绑定、仍发布产品的当前 cover/reference；跨邀请、跨产品、已退役统一 404。 |
 | GET | `/assets/{asset_id}/content` | 仅允许当前邀请自己的未删除 LOGO/历史输出；跨邀请统一 404。 |
 
 LOGO 写接口按 `invite id + trusted real IP` 做 60 秒滑动窗口限流，默认每组合 10 次；`X-Real-IP` 由云 Nginx 覆盖写入，缺失时取 XFF 末位，再回落连接地址。超限返回 `429` 与“等待一分钟再试”，不回显 token。当前实现是最多 10,000 个 key 的单进程有界内存 limiter；现有单 worker 部署可用，若未来启用多 worker/多实例，必须迁移到 Redis 等共享 store 才能保证全局额度。
 
-主要错误：邀请不可用统一 401、multipart/图片校验 400、资源不存在或越权 404、LOGO 超过当前应用字节上限时 413（文案按实际配置动态展示）、LOGO 写入过频 429、图片存储不可用 503。公开 API 永不按内部 owner/业务员 scope 判断；其唯一数据边界是当前 active invitation。
+生成提交的产品版本、选择或当前发布配置已变化时返回可行动的 `409` 并要求重新选择；未上传 LOGO 和额度耗尽也返回各自固定 `409` 文案。生成公开响应绝不返回补充要求、最终 prompt、执行参数、provider/config、pricing、token/hash 或存储路径；数据库中的原始 Provider 错误也不直接回显。
+
+主要错误：邀请不可用统一 401、multipart/图片校验 400、资源不存在或越权 404、生成前置条件或额度 409、LOGO 超过当前应用字节上限时 413（文案按实际配置动态展示）、LOGO 写入过频 429、图片存储或生图预设不可用 503。公开 API 永不按内部 owner/业务员 scope 判断；其唯一数据边界是当前 active invitation。
 
 ## 薪资计算（`/api/salary`，092/097 迁移，2026-08-06，M1 主数据 + M2 批次/考勤/导入 + M3 计算引擎）
 

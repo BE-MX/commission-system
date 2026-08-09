@@ -197,9 +197,13 @@ def test_invite_create_normalizes_iso_z_expiry_to_utc_naive():
 def test_public_requirement_has_hard_ceiling_of_500_characters():
     from app.customer_image.schemas import CustomerImageGenerationCreate
 
-    CustomerImageGenerationCreate(product_id=1, request_id="r1", selections={}, requirement="x" * 500)
+    CustomerImageGenerationCreate(
+        product_id=1, config_version=1, request_id="r1", selections={}, requirement="x" * 500
+    )
     with pytest.raises(ValidationError):
-        CustomerImageGenerationCreate(product_id=1, request_id="r1", selections={}, requirement="x" * 501)
+        CustomerImageGenerationCreate(
+            product_id=1, config_version=1, request_id="r1", selections={}, requirement="x" * 501
+        )
 
 
 def test_public_requirement_also_respects_runtime_setting():

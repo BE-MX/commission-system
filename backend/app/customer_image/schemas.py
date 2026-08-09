@@ -109,6 +109,7 @@ class CustomerImageGenerationCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     product_id: int = Field(gt=0)
+    config_version: int = Field(gt=0)
     request_id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
     selections: dict[str, str | bool]
     requirement: str = Field(default="", max_length=500)
@@ -142,6 +143,7 @@ class CustomerImagePublicOption(BaseModel):
 
 class CustomerImagePublicProduct(BaseModel):
     id: int
+    config_version: int
     name: str
     category: str
     description: str | None = None
@@ -156,3 +158,25 @@ class CustomerImagePublicContext(BaseModel):
     quota: dict[str, int]
     current_logo: CustomerImagePublicAsset | None
     visible_product_count: int
+
+
+class CustomerImagePublicSelection(BaseModel):
+    key: str
+    label: str
+    value: str
+    value_label: str
+    color_hex: str | None = None
+    pantone_code: str | None = None
+
+
+class CustomerImagePublicGeneration(BaseModel):
+    id: int
+    product_id: int
+    product_name: str
+    status: str
+    selections: list[CustomerImagePublicSelection]
+    result_url: str | None = None
+    error_message: str | None = None
+    created_at: datetime
+    started_at: datetime | None = None
+    finished_at: datetime | None = None

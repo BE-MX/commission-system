@@ -22,11 +22,17 @@ from app.core.response import ok
 from app.customer_image import file_service, service
 from app.customer_image.models import CustomerImageInvite
 from app.customer_image.schemas import (
+    CustomerImageGenerationCreate,
     CustomerImagePublicAsset,
     CustomerImagePublicContext,
+    CustomerImagePublicGeneration,
     CustomerImagePublicOption,
     CustomerImagePublicOptionValue,
     CustomerImagePublicProduct,
+)
+from app.customer_image.prompt_service import (
+    CustomerImageProductChangedError,
+    CustomerImagePromptError,
 )
 from app.customer_image.token_service import InviteUnavailableError, resolve_active_invite
 from app.pm.auth import client_ip
@@ -171,6 +177,7 @@ def _asset_data(asset, *, product=False) -> dict:
 def _product_data(product) -> dict:
     return CustomerImagePublicProduct(
         id=product.id,
+        config_version=product.config_version,
         name=product.name,
         category=product.category,
         description=product.description,
@@ -194,6 +201,32 @@ def _product_data(product) -> dict:
     ).model_dump()
 
 
+def _generation_data(generation) -> dict:
+    data = CustomerImagePublicGeneration(
+        id=generation.id,
+        product_id=generation.product_id,
+        product_name=generation.product_name_snapshot,
+        status=generation.status,
+        selections=generation.option_snapshot,
+        result_url=(
+            f"{PUBLIC_PREFIX}/assets/{generation.output_asset_id}/content"
+            if generation.output_asset_id is not None else None
+        ),
+        error_message=(
+            "Generation failed. Please try again."
+            if generation.status == "failed" else None
+        ),
+        created_at=generation.created_at,
+        started_at=generation.started_at,
+        finished_at=generation.finished_at,
+    ).model_dump(mode="json")
+    data["selections"] = [
+        {key: value for key, value in selection.items() if value is not None}
+        for selection in data["selections"]
+    ]
+    return data
+
+
 @router.get("/context")
 def context(db: Session = Depends(get_db), invite: CustomerImageInvite = Depends(require_invite)):
     products = service.list_public_products(db, invite.id)
@@ -215,6 +248,83 @@ def context(db: Session = Depends(get_db), invite: CustomerImageInvite = Depends
 @router.get("/products")
 def products(db: Session = Depends(get_db), invite: CustomerImageInvite = Depends(require_invite)):
     return ok([_product_data(product) for product in service.list_public_products(db, invite.id)])
+
+
+@router.post("/generations", status_code=202)
+def submit_generation(
+    payload: CustomerImageGenerationCreate,
+    db: Session = Depends(get_db),
+    invite: CustomerImageInvite = Depends(require_invite),
+):
+    try:
+        generation = service.create_generation(db, invite.id, payload)
+    except service.CustomerImageQuotaError:
+        raise HTTPException(
+            status_code=409,
+            detail="Generation quota is exhausted.",
+            headers=SECURITY_HEADERS,
+        ) from None
+    except service.CustomerImageLogoRequiredError:
+        raise HTTPException(
+            status_code=409,
+            detail="Upload a logo before generating.",
+            headers=SECURITY_HEADERS,
+        ) from None
+    except CustomerImageProductChangedError:
+        raise HTTPException(
+            status_code=409,
+            detail="Product settings changed. Please choose again.",
+            headers=SECURITY_HEADERS,
+        ) from None
+    except CustomerImagePromptError:
+        raise HTTPException(
+            status_code=409,
+            detail="Product settings changed. Please choose again.",
+            headers=SECURITY_HEADERS,
+        ) from None
+    except service.CustomerImageNotFoundError:
+        raise HTTPException(
+            status_code=404, detail="Product not found.", headers=SECURITY_HEADERS
+        ) from None
+    except service.CustomerImageConflictError:
+        raise HTTPException(
+            status_code=409,
+            detail="Product is unavailable. Refresh and try again.",
+            headers=SECURITY_HEADERS,
+        ) from None
+    except service.CustomerImageConfigurationError:
+        raise HTTPException(
+            status_code=503,
+            detail="Image generation is temporarily unavailable. Please try again later.",
+            headers=SECURITY_HEADERS,
+        ) from None
+    return ok(_generation_data(generation))
+
+
+@router.get("/generations")
+def generations(
+    db: Session = Depends(get_db),
+    invite: CustomerImageInvite = Depends(require_invite),
+):
+    return ok([
+        _generation_data(row)
+        for row in service.list_public_generations(db, invite.id)
+    ])
+
+
+@router.get("/generations/{generation_id}")
+def generation_detail(
+    generation_id: int,
+    db: Session = Depends(get_db),
+    invite: CustomerImageInvite = Depends(require_invite),
+):
+    try:
+        generation = service.get_public_generation(db, invite.id, generation_id)
+    except service.CustomerImageNotFoundError:
+        raise HTTPException(
+            status_code=404, detail="Generation not found.", headers=SECURITY_HEADERS
+        ) from None
+    return ok(_generation_data(generation))
 
 
 @router.post("/logo")

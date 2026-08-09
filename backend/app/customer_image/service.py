@@ -1,14 +1,20 @@
 """Internal services for customer-scoped portal access."""
 
+from copy import deepcopy
 from datetime import datetime
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
+from app.ai.image_service import build_image_config_version
+from app.ai.models import AiPreset, AiProvider
 from app.auth.models import ArkUserExternalBinding
+from app.core.config import get_settings
+from app.customer_image.datetime_utils import as_utc_naive
 from app.models.business import CustomerInfo
 from app.models.customer import CustomerCommissionSnapshot
+from app.customer_image.prompt_service import validate_and_build_prompt
 from app.customer_image.models import (
     CustomerImageAsset,
     CustomerImageGeneration,
@@ -21,6 +27,7 @@ from app.customer_image.models import (
 )
 from app.customer_image.schemas import (
     CustomerImageInviteCreate,
+    CustomerImageGenerationCreate,
     CustomerImageProductOptionUpsert,
     CustomerImageProductUpsert,
 )
@@ -40,6 +47,18 @@ class CustomerImageNotFoundError(Exception):
 
 class CustomerImageConflictError(Exception):
     """Raised when a referenced resource cannot be changed or deleted."""
+
+
+class CustomerImageQuotaError(CustomerImageConflictError):
+    """Raised when an invitation has no generation quota remaining."""
+
+
+class CustomerImageLogoRequiredError(CustomerImageConflictError):
+    """Raised when generation is submitted before a current logo exists."""
+
+
+class CustomerImageConfigurationError(Exception):
+    """Raised when the frozen image preset cannot be created safely."""
 
 
 def _product_or_error(db: Session, product_id: int) -> CustomerImageProduct:
@@ -489,6 +508,192 @@ def list_generations(
     return rows, total
 
 
+def _locked_invite_statement(invite_id: int):
+    return (
+        select(CustomerImageInvite)
+        .where(CustomerImageInvite.id == invite_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+
+
+def _quota_increment_statement(invite_id: int):
+    return (
+        update(CustomerImageInvite)
+        .where(
+            CustomerImageInvite.id == invite_id,
+            CustomerImageInvite.quota_used < CustomerImageInvite.quota_total,
+        )
+        .values(quota_used=CustomerImageInvite.quota_used + 1)
+    )
+
+
+def _generation_preset_snapshot(db: Session) -> tuple[str, str, dict, dict | None]:
+    settings = get_settings()
+    row = db.execute(
+        select(AiPreset, AiProvider)
+        .join(AiProvider, AiProvider.id == AiPreset.provider_id)
+        .where(
+            AiPreset.preset_name == settings.CUSTOMER_IMAGE_PRESET_NAME,
+            AiPreset.deleted_at.is_(None),
+            AiPreset.is_enabled.is_(True),
+            AiProvider.deleted_at.is_(None),
+            AiProvider.is_enabled.is_(True),
+            AiProvider.provider_type == "direct",
+        )
+    ).first()
+    if row is None or row[0].model != "gpt-image-2":
+        raise CustomerImageConfigurationError("customer image preset is unavailable")
+    preset, provider = row
+    configured = preset.parameters or {}
+    if not isinstance(configured, dict):
+        raise CustomerImageConfigurationError("customer image preset parameters are invalid")
+    rate_card = configured.get("rate_card")
+    if rate_card is not None and not isinstance(rate_card, dict):
+        raise CustomerImageConfigurationError("customer image rate card is invalid")
+    configured_hosts = configured.get("download_hosts", [])
+    if not isinstance(configured_hosts, list):
+        raise CustomerImageConfigurationError("customer image download hosts are invalid")
+    parameters = {
+        "size": configured.get("size"),
+        "quality": configured.get("quality"),
+        "provider_id": provider.id,
+        "config_version": {
+            "provider_id": provider.id,
+            "fingerprint": build_image_config_version(preset, provider),
+        },
+        "download_hosts": sorted({
+            str(host).strip().lower()
+            for host in configured_hosts
+            if str(host).strip()
+        }),
+    }
+    return preset.preset_name, preset.model, parameters, deepcopy(rate_card)
+
+
+def _active_invite(invite: CustomerImageInvite, now: datetime) -> bool:
+    return (
+        invite.revoked_at is None
+        and as_utc_naive(invite.starts_at) <= now < as_utc_naive(invite.expires_at)
+    )
+
+
+def _existing_generation(
+    db: Session, invite_id: int, request_id: str
+) -> CustomerImageGeneration | None:
+    return db.scalar(select(CustomerImageGeneration).where(
+        CustomerImageGeneration.invite_id == invite_id,
+        CustomerImageGeneration.request_id == request_id,
+    ))
+
+
+def create_generation(
+    db: Session,
+    invite_id: int,
+    payload: CustomerImageGenerationCreate,
+) -> CustomerImageGeneration:
+    now = datetime.utcnow()
+    settings = get_settings()
+    try:
+        invite = db.scalar(_locked_invite_statement(invite_id))
+        if invite is None or not _active_invite(invite, now):
+            raise CustomerImageNotFoundError("invite not found")
+        product = db.scalar(
+            select(CustomerImageProduct)
+            .join(
+                CustomerImageInviteProduct,
+                CustomerImageInviteProduct.product_id == CustomerImageProduct.id,
+            )
+            .where(
+                CustomerImageInviteProduct.invite_id == invite.id,
+                CustomerImageProduct.id == payload.product_id,
+                CustomerImageProduct.is_published.is_(True),
+            )
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if product is None:
+            raise CustomerImageNotFoundError("published product not found")
+
+        existing = _existing_generation(db, invite.id, payload.request_id)
+        if existing is not None:
+            db.commit()
+            return existing
+
+        logo = db.scalar(select(CustomerImageAsset).where(
+            CustomerImageAsset.id == invite.current_logo_asset_id,
+            CustomerImageAsset.invite_id == invite.id,
+            CustomerImageAsset.asset_type == "logo",
+            CustomerImageAsset.deleted_at.is_(None),
+        )) if invite.current_logo_asset_id is not None else None
+        if logo is None:
+            raise CustomerImageLogoRequiredError("current logo is required")
+
+        assembly = validate_and_build_prompt(
+            db,
+            product_id=product.id,
+            expected_config_version=payload.config_version,
+            selections=payload.selections,
+            requirement=payload.requirement,
+            max_requirement_chars=settings.CUSTOMER_IMAGE_MAX_REQUIREMENT_CHARS,
+        )
+        references = list(db.scalars(
+            select(CustomerImageProductAsset)
+            .where(
+                CustomerImageProductAsset.product_id == product.id,
+                CustomerImageProductAsset.role == "reference",
+                CustomerImageProductAsset.retired_at.is_(None),
+            )
+            .order_by(
+                CustomerImageProductAsset.position,
+                CustomerImageProductAsset.id,
+            )
+        ).all())
+        if not references:
+            raise CustomerImageConflictError("published product references are unavailable")
+        preset_name, model, parameters, pricing_snapshot = _generation_preset_snapshot(db)
+        reference_ids = [asset.id for asset in references]
+        parameters["input_asset_ids"] = [logo.id, *reference_ids]
+        generation = CustomerImageGeneration(
+            invite_id=invite.id,
+            product_id=product.id,
+            logo_asset_id=logo.id,
+            request_id=payload.request_id,
+            product_name_snapshot=product.name,
+            config_version_snapshot=product.config_version,
+            option_snapshot=assembly.option_snapshot,
+            requirement_snapshot=assembly.requirement or None,
+            parameters_snapshot=parameters,
+            prompt_snapshot=assembly.prompt,
+            reference_asset_ids=reference_ids,
+            status="queued",
+            preset_name=preset_name,
+            model=model,
+            pricing_snapshot=pricing_snapshot,
+            created_at=now,
+        )
+        try:
+            with db.begin_nested():
+                consumed = db.execute(_quota_increment_statement(invite.id))
+                if consumed.rowcount != 1:
+                    raise CustomerImageQuotaError("generation quota exhausted")
+                db.add(generation)
+                db.flush()
+        except IntegrityError:
+            db.expire_all()
+            winner = _existing_generation(db, invite.id, payload.request_id)
+            if winner is None:
+                raise
+            db.commit()
+            return winner
+        db.commit()
+        db.refresh(generation)
+        return generation
+    except Exception:
+        db.rollback()
+        raise
+
+
 def list_public_products(db: Session, invite_id: int) -> list[CustomerImageProduct]:
     return list(db.scalars(
         select(CustomerImageProduct)
@@ -505,6 +710,31 @@ def list_public_products(db: Session, invite_id: int) -> list[CustomerImageProdu
         )
         .order_by(CustomerImageProduct.sort, CustomerImageProduct.id)
     ).all())
+
+
+def list_public_generations(
+    db: Session, invite_id: int
+) -> list[CustomerImageGeneration]:
+    return list(db.scalars(
+        select(CustomerImageGeneration)
+        .where(CustomerImageGeneration.invite_id == invite_id)
+        .order_by(
+            CustomerImageGeneration.created_at.desc(),
+            CustomerImageGeneration.id.desc(),
+        )
+    ).all())
+
+
+def get_public_generation(
+    db: Session, invite_id: int, generation_id: int
+) -> CustomerImageGeneration:
+    generation = db.scalar(select(CustomerImageGeneration).where(
+        CustomerImageGeneration.id == generation_id,
+        CustomerImageGeneration.invite_id == invite_id,
+    ))
+    if generation is None:
+        raise CustomerImageNotFoundError("generation not found")
+    return generation
 
 
 def get_public_product_asset(
