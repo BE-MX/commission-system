@@ -22,7 +22,7 @@ $suffix = [Guid]::NewGuid().ToString("N").Substring(0, 12)
 $container = "di-migration-$suffix"
 $database = "commission_migration_test"
 $password = "Tmp${suffix}Aa9"
-$containerStarted = $false
+$containerCreated = $false
 
 function Invoke-AlembicUpgrade {
     param(
@@ -48,9 +48,11 @@ function Invoke-AlembicUpgrade {
     $process = [System.Diagnostics.Process]::new()
     $process.StartInfo = $startInfo
     [void]$process.Start()
-    $stdout = $process.StandardOutput.ReadToEnd()
-    $stderr = $process.StandardError.ReadToEnd()
+    $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+    $stderrTask = $process.StandardError.ReadToEndAsync()
     $process.WaitForExit()
+    $stdout = $stdoutTask.Result
+    $stderr = $stderrTask.Result
     if ($process.ExitCode -ne 0) {
         throw "Alembic upgrade to $Revision failed.`n$stdout`n$stderr"
     }
@@ -59,15 +61,23 @@ function Invoke-AlembicUpgrade {
 }
 
 try {
-    $containerId = & docker run --detach --name $container `
+    $containerId = & docker create --name $container `
         --env "MYSQL_ROOT_PASSWORD=$password" `
         --env "MYSQL_DATABASE=$database" `
         --publish "127.0.0.1::3306" `
         mysql:8.4
-    if ($LASTEXITCODE -ne 0 -or -not $containerId) {
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to create isolated MySQL container."
+    }
+    $containerCreated = $true
+    if (-not $containerId) {
+        throw "Docker created the container but did not return its id."
+    }
+
+    & docker start $container | Out-Null
+    if ($LASTEXITCODE -ne 0) {
         throw "Failed to start isolated MySQL container."
     }
-    $containerStarted = $true
 
     $healthy = $false
     for ($attempt = 0; $attempt -lt 45; $attempt++) {
@@ -128,7 +138,7 @@ WHERE table_schema = '$database'
     Write-Host "PASS: isolated MySQL migration 098 -> 101 verified."
 }
 finally {
-    if ($containerStarted) {
+    if ($containerCreated) {
         & docker rm --force $container | Out-Null
     }
 }

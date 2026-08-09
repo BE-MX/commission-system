@@ -488,8 +488,7 @@
 | GET | `/sessions/{session_id}` | read | 会话、消息、未删除/未过期资产与该会话全部历史 jobs（按创建时间升序，不只 active） |
 | POST | `/sessions/{session_id}/assets` | write | multipart 字段 `file`；JPEG/PNG/WebP，实际格式必须匹配 MIME |
 | DELETE | `/assets/{asset_id}` | write | 仅未被任务引用的 draft 可删 |
-| POST | `/sessions/{session_id}/turns` | write | 202；body 的 `session_id` 若存在必须与路径一致；响应统一含 `mode=jobs|clarification` 与 `jobs` 数组，歧义多输出只创建确认消息并返回空数组 |
-| POST | `/sessions/{session_id}/messages/{message_id}/actions` | write | 选择待确认消息的输出方式；body `{action:"choose_output_mode", mode:"composite"|"separate", request_id}`，额外字段拒绝，`request_id` 1～64 且仅字母、数字、下划线、连字符 |
+| POST | `/sessions/{session_id}/turns` | write | 202；创建消息与 queued job；body 的 `session_id` 若存在必须与路径一致 |
 | GET | `/jobs/active` | read | 当前用户唯一 queued/running job，供刷新恢复；字面量路由先于 `/{job_id}` |
 | GET | `/jobs/{job_id}` | read | 查询单任务状态与输出资产 |
 | POST | `/jobs/{job_id}/retry` | write | 仅 failed 可重试；复制输入创建新 job，保留 `retry_of_job_id` |
