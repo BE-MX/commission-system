@@ -199,6 +199,37 @@ def test_stale_sessions_replace_one_slot_without_lost_version(db, tmp_path, monk
     assert len(current) == 1
 
 
+def test_stale_sessions_append_two_references_without_retiring_either(db, tmp_path, monkeypatch):
+    monkeypatch.setattr("app.design_image.file_service._storage_root", lambda: tmp_path)
+    product = _product(db)
+    Session = sessionmaker(bind=db.get_bind())
+    first_db = Session()
+    second_db = Session()
+    try:
+        first_product = first_db.get(CustomerImageProduct, product.id)
+        second_product = second_db.get(CustomerImageProduct, product.id)
+        first = file_service.append_product_reference_from_upload(
+            first_db, first_product, _png_bytes("red"), "image/png"
+        )
+        second = file_service.append_product_reference_from_upload(
+            second_db, second_product, _png_bytes("blue"), "image/png"
+        )
+    finally:
+        first_db.close()
+        second_db.close()
+        db.expire_all()
+
+    current = db.query(CustomerImageProductAsset).filter(
+        CustomerImageProductAsset.product_id == product.id,
+        CustomerImageProductAsset.role == "reference",
+        CustomerImageProductAsset.retired_at.is_(None),
+    ).order_by(CustomerImageProductAsset.position).all()
+    assert [row.id for row in current] == [first.id, second.id]
+    assert [row.position for row in current] == [0, 1]
+    assert len({row.position for row in current}) == 2
+    assert db.get(CustomerImageProduct, product.id).config_version == 3
+
+
 def test_library_copy_survives_source_deletion(db, tmp_path, monkeypatch):
     monkeypatch.setattr("app.design_image.file_service._storage_root", lambda: tmp_path)
     product = _product(db)

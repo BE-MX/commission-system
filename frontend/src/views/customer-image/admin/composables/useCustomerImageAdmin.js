@@ -90,13 +90,6 @@ export function validateProductForPublish(draft, assets) {
   return ''
 }
 
-export function nextReferencePosition(assets) {
-  const positions = (assets || [])
-    .filter(asset => asset.role === 'reference')
-    .map(asset => Number(asset.position) || 0)
-  return positions.length ? Math.max(...positions) + 1 : 0
-}
-
 export function moveReferenceIds(references, index, offset) {
   const ids = references.map(asset => asset.id)
   const target = index + offset
@@ -183,6 +176,56 @@ export function createProductCoverController({ fetchCover, urlApi = URL } = {}) 
   return { urls, sync, dispose }
 }
 
+export function createAssetBlobController({ fetchBlob, urlApi = URL } = {}) {
+  const urls = ref({})
+  let epoch = 0
+  let activeController = null
+  let disposed = false
+
+  function releaseAll() {
+    for (const url of Object.values(urls.value)) urlApi.revokeObjectURL(url)
+    urls.value = {}
+  }
+
+  function invalidate() {
+    epoch += 1
+    activeController?.abort()
+    activeController = null
+    releaseAll()
+  }
+
+  async function load(items) {
+    if (disposed) return urls.value
+    invalidate()
+    const requestEpoch = epoch
+    const controller = new AbortController()
+    activeController = controller
+    try {
+      const blobs = await Promise.all((items || []).map(async item => {
+        const response = await fetchBlob(item, { signal: controller.signal })
+        return [item.id, response.data]
+      }))
+      if (disposed || epoch !== requestEpoch || controller.signal.aborted) return urls.value
+      const next = {}
+      for (const [id, blob] of blobs) next[id] = urlApi.createObjectURL(blob)
+      urls.value = next
+      return urls.value
+    } catch (error) {
+      if (disposed || epoch !== requestEpoch || controller.signal.aborted) return urls.value
+      throw error
+    } finally {
+      if (activeController === controller) activeController = null
+    }
+  }
+
+  function dispose() {
+    disposed = true
+    invalidate()
+  }
+
+  return { urls, load, invalidate, dispose }
+}
+
 function cloneProduct(product) {
   return product ? JSON.parse(JSON.stringify(product)) : createEmptyProductDraft()
 }
@@ -232,27 +275,34 @@ export function createCustomerImageAdminState({
   const generationTotal = ref(0)
   const oneTimeInviteUrl = ref('')
   const productCovers = createProductCoverController({ fetchCover: api.getProductCoverBlob })
+  const requestVersions = { customers: 0, products: 0, invites: 0, generations: 0 }
 
   async function loadProducts() {
+    const version = ++requestVersions.products
     const response = await api.listProducts()
+    if (version !== requestVersions.products) return products.value
     products.value = response.data || []
     await productCovers.sync(products.value)
     return products.value
   }
 
   async function searchScopedCustomers(search) {
+    const version = ++requestVersions.customers
     const term = String(search || '').trim()
     if (!term) {
       customers.value = []
       return []
     }
     const response = await api.searchCustomers({ search: term })
+    if (version !== requestVersions.customers) return customers.value
     customers.value = response.data || []
     return customers.value
   }
 
   async function loadInvites(page = invitePage.value, pageSize = invitePageSize.value, requestConfig = {}) {
+    const version = ++requestVersions.invites
     const response = await api.listInvites({ page, page_size: pageSize }, requestConfig)
+    if (version !== requestVersions.invites) return invites.value
     const data = response.data || {}
     invites.value = data.items || []
     invitePage.value = data.page || page
@@ -262,7 +312,9 @@ export function createCustomerImageAdminState({
   }
 
   async function loadGenerations(page = generationPage.value, pageSize = generationPageSize.value) {
+    const version = ++requestVersions.generations
     const response = await api.listGenerations({ page, page_size: pageSize })
+    if (version !== requestVersions.generations) return generations.value
     const data = response.data || {}
     generations.value = data.items || []
     generationPage.value = data.page || page
@@ -290,8 +342,12 @@ export function createCustomerImageAdminState({
 
   async function copyOneTimeInviteUrl() {
     if (!oneTimeInviteUrl.value || !clipboard?.writeText) return false
-    await clipboard.writeText(oneTimeInviteUrl.value)
-    return true
+    try {
+      await clipboard.writeText(oneTimeInviteUrl.value)
+      return true
+    } catch {
+      return false
+    }
   }
 
   function clearOneTimeInviteUrl() {

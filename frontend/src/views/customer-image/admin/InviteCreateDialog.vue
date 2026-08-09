@@ -126,7 +126,11 @@ async function submit() {
 }
 
 async function copyLink() {
-  if (await props.state.copyOneTimeInviteUrl()) ElMessage.success('链接已复制')
+  if (await props.state.copyOneTimeInviteUrl()) {
+    ElMessage.success('链接已复制')
+  } else {
+    ElMessage.warning('自动复制失败，请手动选择上方链接复制')
+  }
 }
 
 function clearOneTimeInviteUrl() { props.state.clearOneTimeInviteUrl() }

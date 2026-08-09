@@ -105,6 +105,12 @@ class CustomerImageProductAssetCopy(BaseModel):
     position: int = Field(ge=0)
 
 
+class CustomerImageProductReferenceCopy(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_asset_id: int = Field(gt=0)
+
+
 class CustomerImageReferenceOrder(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

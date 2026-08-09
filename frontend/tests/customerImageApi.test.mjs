@@ -11,6 +11,8 @@ const ASSET_METHODS = [
   'listProductAssets',
   'uploadProductAsset',
   'copyProductAssetFromLibrary',
+  'appendProductReference',
+  'appendProductReferenceFromLibrary',
   'retireProductReference',
   'reorderProductReferences',
   'getProductAssetBlob',
@@ -69,6 +71,8 @@ test('internal asset wrappers execute backend paths payloads and request configs
   api.copyProductAssetFromLibrary(12, {
     role: 'reference', position: 2, source_asset_id: 91,
   })
+  api.appendProductReference(12, file)
+  api.appendProductReferenceFromLibrary(12, 91)
   api.retireProductReference(12, 34)
   api.reorderProductReferences(12, [36, 34, 35])
   api.getProductAssetBlob(12, 34)
@@ -80,6 +84,8 @@ test('internal asset wrappers execute backend paths payloads and request configs
     ['get', '/products/12/assets'],
     ['post', '/products/12/assets/upload'],
     ['post', '/products/12/assets/library'],
+    ['post', '/products/12/references/upload'],
+    ['post', '/products/12/references/library'],
     ['delete', '/products/12/references/34'],
     ['put', '/products/12/references/order'],
     ['get', '/products/12/assets/34/content'],
@@ -95,9 +101,11 @@ test('internal asset wrappers execute backend paths payloads and request configs
   assert.deepEqual(calls[2].data, {
     role: 'reference', position: 2, source_asset_id: 91,
   })
-  assert.deepEqual(calls[4].data, { asset_ids: [36, 34, 35] })
-  assert.equal(calls[5].config.responseType, 'blob')
-  assert.equal(calls[6].config.responseType, 'blob')
+  assert.deepEqual([...calls[3].data.entries()], [['file', file]])
+  assert.deepEqual(calls[4].data, { source_asset_id: 91 })
+  assert.deepEqual(calls[6].data, { asset_ids: [36, 34, 35] })
+  assert.equal(calls[7].config.responseType, 'blob')
   assert.equal(calls[8].config.responseType, 'blob')
-  assert.deepEqual(calls[8].config.params, { thumbnail: true })
+  assert.equal(calls[10].config.responseType, 'blob')
+  assert.deepEqual(calls[10].config.params, { thumbnail: true })
 })

@@ -13,6 +13,7 @@ from app.customer_image import file_service, service
 from app.customer_image.schemas import (
     CustomerImageInviteCreate,
     CustomerImageProductAssetCopy,
+    CustomerImageProductReferenceCopy,
     CustomerImageReferenceOrder,
     CustomerImageProductUpsert,
 )
@@ -376,6 +377,43 @@ def copy_product_asset_from_library(
         product,
         body.role,
         body.position,
+        body.source_asset_id,
+        admin_id=_user_id(payload),
+    )
+    return ok(_product_asset(row))
+
+
+@router.post("/products/{product_id}/references/upload")
+async def append_product_reference(
+    product_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _payload: dict = Depends(require_permission("customer_image:admin")),
+):
+    product = _call(service.get_product, db, product_id, include_inactive=True)
+    content = await _read_bounded(file)
+    row = _call(
+        file_service.append_product_reference_from_upload,
+        db,
+        product,
+        content,
+        file.content_type or "application/octet-stream",
+    )
+    return ok(_product_asset(row))
+
+
+@router.post("/products/{product_id}/references/library")
+def append_product_reference_from_library(
+    product_id: int,
+    body: CustomerImageProductReferenceCopy,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_permission("customer_image:admin")),
+):
+    product = _call(service.get_product, db, product_id, include_inactive=True)
+    row = _call(
+        file_service.append_product_reference_from_library,
+        db,
+        product,
         body.source_asset_id,
         admin_id=_user_id(payload),
     )

@@ -56,6 +56,24 @@ export function copyProductAssetFromLibrary(productId, data) {
   )
 }
 
+export function appendProductReference(productId, file) {
+  const form = new FormData()
+  form.append('file', file)
+  return customerImageClient.post(
+    `/products/${productId}/references/upload`,
+    form,
+    { ...SILENT_REQUEST },
+  )
+}
+
+export function appendProductReferenceFromLibrary(productId, sourceAssetId) {
+  return customerImageClient.post(
+    `/products/${productId}/references/library`,
+    { source_asset_id: sourceAssetId },
+    { ...SILENT_REQUEST },
+  )
+}
+
 export function retireProductReference(productId, assetId) {
   return customerImageClient.delete(
     `/products/${productId}/references/${assetId}`,
@@ -71,10 +89,10 @@ export function reorderProductReferences(productId, assetIds) {
   )
 }
 
-export function getProductAssetBlob(productId, assetId) {
+export function getProductAssetBlob(productId, assetId, requestConfig = {}) {
   return customerImageClient.get(
     `/products/${productId}/assets/${assetId}/content`,
-    { ...SILENT_REQUEST, responseType: 'blob' },
+    { ...SILENT_REQUEST, ...requestConfig, responseType: 'blob' },
   )
 }
 
@@ -89,10 +107,11 @@ export function listLibraryAssets() {
   return customerImageClient.get('/library-assets', { showLoading: false })
 }
 
-export function getLibraryAssetBlob(assetId, { thumbnail = false } = {}) {
+export function getLibraryAssetBlob(assetId, { thumbnail = false, ...requestConfig } = {}) {
   return customerImageClient.get(`/library-assets/${assetId}/content`, {
     ...SILENT_REQUEST,
     params: { thumbnail },
+    ...requestConfig,
     responseType: 'blob',
   })
 }

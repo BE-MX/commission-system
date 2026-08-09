@@ -4,16 +4,106 @@ import test from 'node:test'
 
 import {
   createCustomerImageAdminState,
+  createAssetBlobController,
   createProductCoverController,
   createEmptyProductDraft,
   customerImageAdminCapabilities,
   validateInviteDraft,
   validateProductForPublish,
   moveReferenceIds,
-  nextReferencePosition,
 } from '../src/views/customer-image/admin/composables/useCustomerImageAdmin.js'
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8')
+
+function deferred() {
+  let resolve
+  let reject
+  const promise = new Promise((res, rej) => { resolve = res; reject = rej })
+  return { promise, resolve, reject }
+}
+
+test('asset blob epochs ignore inverse late loads and disposal without creating URLs', async () => {
+  const requests = new Map()
+  const created = []
+  const revoked = []
+  const controller = createAssetBlobController({
+    fetchBlob: item => {
+      const request = deferred()
+      requests.set(item.id, request)
+      return request.promise
+    },
+    urlApi: {
+      createObjectURL: blob => { const url = `blob:${blob}`; created.push(url); return url },
+      revokeObjectURL: url => revoked.push(url),
+    },
+  })
+
+  const oldLoad = controller.load([{ id: 1 }])
+  const newLoad = controller.load([{ id: 2 }])
+  requests.get(2).resolve({ data: 'new' })
+  await newLoad
+  requests.get(1).resolve({ data: 'old' })
+  await oldLoad
+  assert.deepEqual(created, ['blob:new'])
+  assert.deepEqual(controller.urls.value, { 2: 'blob:new' })
+
+  const disposedLoad = controller.load([{ id: 3 }])
+  controller.dispose()
+  requests.get(3).resolve({ data: 'disposed' })
+  await disposedLoad
+  assert.deepEqual(created, ['blob:new'])
+  assert.deepEqual(revoked, ['blob:new'])
+})
+
+test('admin list request versions keep only the latest result per independent resource', async () => {
+  const pending = {
+    customers: [deferred(), deferred()], products: [deferred(), deferred()],
+    invites: [deferred(), deferred()], generations: [deferred(), deferred()],
+  }
+  const shifts = Object.fromEntries(Object.entries(pending).map(([key, values]) => [key, [...values]]))
+  const state = createCustomerImageAdminState({
+    api: {
+      searchCustomers: () => shifts.customers.shift().promise,
+      listProducts: () => shifts.products.shift().promise,
+      listInvites: () => shifts.invites.shift().promise,
+      listGenerations: () => shifts.generations.shift().promise,
+      getProductCoverBlob: async () => ({ data: 'cover' }),
+    },
+  })
+  const calls = [
+    state.searchScopedCustomers('old'), state.searchScopedCustomers('new'),
+    state.loadProducts(), state.loadProducts(),
+    state.loadInvites(1, 20), state.loadInvites(2, 10),
+    state.loadGenerations(1, 20), state.loadGenerations(3, 5),
+  ]
+  pending.customers[1].resolve({ data: [{ id: 'new' }] })
+  pending.products[1].resolve({ data: [{ id: 2, name: 'new', cover: null }] })
+  pending.invites[1].resolve({ data: { items: [{ id: 2 }], page: 2, page_size: 10, total: 1 } })
+  pending.generations[1].resolve({ data: { items: [{ id: 3 }], page: 3, page_size: 5, total: 1 } })
+  pending.customers[0].resolve({ data: [{ id: 'old' }] })
+  pending.products[0].resolve({ data: [{ id: 1, name: 'old', cover: null }] })
+  pending.invites[0].resolve({ data: { items: [{ id: 1 }], page: 1, page_size: 20, total: 1 } })
+  pending.generations[0].resolve({ data: { items: [{ id: 1 }], page: 1, page_size: 20, total: 1 } })
+  await Promise.all(calls)
+
+  assert.deepEqual(state.customers.value, [{ id: 'new' }])
+  assert.equal(state.products.value[0].name, 'new')
+  assert.equal(state.invites.value[0].id, 2)
+  assert.equal(state.invitePage.value, 2)
+  assert.equal(state.generations.value[0].id, 3)
+  assert.equal(state.generationPage.value, 3)
+})
+
+test('copy failure or unavailable clipboard keeps the one-time URL for manual copying', async () => {
+  for (const clipboard of [undefined, { writeText: async () => { throw new Error('denied') } }]) {
+    const state = createCustomerImageAdminState({ clipboard, api: { getProductCoverBlob: async () => ({}) } })
+    state.oneTimeInviteUrl.value = 'https://example.test/create/keep'
+    assert.equal(await state.copyOneTimeInviteUrl(), false)
+    assert.equal(state.oneTimeInviteUrl.value, 'https://example.test/create/keep')
+  }
+  const invite = read('../src/views/customer-image/admin/InviteCreateDialog.vue')
+  assert.match(invite, /自动复制失败，请手动选择上方链接复制/)
+})
 
 test('invite validation requires one scoped customer explicit future expiry positive quota and a product', () => {
   const now = new Date('2026-08-09T08:00:00.000Z')
@@ -29,13 +119,12 @@ test('invite validation requires one scoped customer explicit future expiry posi
   assert.match(validateInviteDraft({ ...valid, product_ids: [] }, now), /产品/)
 })
 
-test('reference controls append after the last stable position and reorder two or more assets', () => {
+test('reference controls reorder two or more assets without client-side append positions', () => {
   const references = [
     { id: 11, role: 'reference', position: 0 },
     { id: 12, role: 'reference', position: 1 },
     { id: 13, role: 'reference', position: 2 },
   ]
-  assert.equal(nextReferencePosition(references), 3)
   assert.deepEqual(moveReferenceIds(references, 1, -1), [12, 11, 13])
   assert.deepEqual(moveReferenceIds(references, 0, -1), [11, 12, 13])
   assert.deepEqual(moveReferenceIds(references, 2, 1), [11, 12, 13])

@@ -74,7 +74,7 @@ def _row(**overrides):
 @pytest.fixture
 def api(monkeypatch):
     from app.customer_image import router as module
-    from app.customer_image import service
+    from app.customer_image import file_service, service
     from app.design_image import library_service
 
     app = FastAPI()
@@ -109,6 +109,8 @@ def api(monkeypatch):
     monkeypatch.setattr(service, "retire_product_reference", lambda *_a, **_k: None)
     monkeypatch.setattr(service, "reorder_product_references", lambda *_a, **_k: [asset])
     monkeypatch.setattr(service, "get_product", lambda *_a, **_k: product)
+    monkeypatch.setattr(file_service, "append_product_reference_from_upload", lambda *_a, **_k: asset)
+    monkeypatch.setattr(file_service, "append_product_reference_from_library", lambda *_a, **_k: asset)
     monkeypatch.setattr(
         library_service,
         "list_library_assets",
@@ -142,6 +144,8 @@ PRODUCT = {
         ("post", "/api/customer-image/products/1/publish", {}),
         ("post", "/api/customer-image/products/1/unpublish", {}),
         ("get", "/api/customer-image/products/1/assets", {}),
+        ("post", "/api/customer-image/products/1/references/upload", {"files": {"file": ("reference.png", b"png", "image/png")}}),
+        ("post", "/api/customer-image/products/1/references/library", {"json": {"source_asset_id": 9}}),
         ("delete", "/api/customer-image/products/1/references/4", {}),
         ("put", "/api/customer-image/products/1/references/order", {"json": {"asset_ids": [4]}}),
         ("get", "/api/customer-image/library-assets", {}),
@@ -277,7 +281,15 @@ def test_product_asset_json_endpoints_never_return_storage_path(api, monkeypatch
         "/api/customer-image/products/1/assets/library",
         json={"source_asset_id": 9, "role": "reference", "position": 0},
     )
-    for response in (listed, uploaded, copied):
+    appended = client.post(
+        "/api/customer-image/products/1/references/upload",
+        files={"file": ("reference.png", b"png", "image/png")},
+    )
+    appended_from_library = client.post(
+        "/api/customer-image/products/1/references/library",
+        json={"source_asset_id": 9},
+    )
+    for response in (listed, uploaded, copied, appended, appended_from_library):
         assert response.status_code == 200, response.text
         assert set(response.json()) == {"code", "message", "data"}
         assert "storage_path" not in response.text

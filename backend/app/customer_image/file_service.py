@@ -6,7 +6,7 @@ import io
 import logging
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.customer_image.models import (
@@ -131,6 +131,13 @@ def replace_product_asset_from_library(
     *,
     admin_id: int,
 ) -> CustomerImageProductAsset:
+    normalized = _normalized_library_asset(db, library_asset_id, admin_id=admin_id)
+    return _replace_with_normalized(db, product, role, position, normalized)
+
+
+def _normalized_library_asset(
+    db: Session, library_asset_id: int, *, admin_id: int
+) -> NormalizedImage:
     source = db.get(DesignImageLibraryAsset, library_asset_id)
     if source is None or source.deleted_at is not None:
         raise FileNotFoundError("library asset not found")
@@ -140,8 +147,73 @@ def replace_product_asset_from_library(
         content = resolve_private_path(source.storage_path).read_bytes()
     except FileNotFoundError:
         raise FileNotFoundError("library asset not found") from None
-    normalized = normalize_upload(content, source.mime_type)
-    return _replace_with_normalized(db, product, role, position, normalized)
+    return normalize_upload(content, source.mime_type)
+
+
+def _append_reference_with_normalized(
+    db: Session,
+    product: CustomerImageProduct,
+    normalized: NormalizedImage,
+) -> CustomerImageProductAsset:
+    stored = save_private_image(normalized, owner_user_id=product.id, kind="customer-product")
+    try:
+        locked_product = db.scalar(_product_for_update_statement(product.id))
+        if locked_product is None:
+            raise FileNotFoundError("product not found")
+        last_position = db.scalar(
+            select(func.max(CustomerImageProductAsset.position)).where(
+                CustomerImageProductAsset.product_id == product.id,
+                CustomerImageProductAsset.role == "reference",
+                CustomerImageProductAsset.retired_at.is_(None),
+            )
+        )
+        asset = CustomerImageProductAsset(
+            product_id=product.id,
+            role="reference",
+            position=(last_position + 1) if last_position is not None else 0,
+            storage_path=stored.relative_path,
+            mime_type=stored.mime_type,
+            file_size=stored.file_size,
+            width=stored.width,
+            height=stored.height,
+            sha256=stored.sha256,
+        )
+        db.add(asset)
+        locked_product.config_version += 1
+        db.commit()
+    except Exception:
+        db.rollback()
+        _delete_stored_files(
+            stored.relative_path, stored.thumbnail_relative_path, "product reference"
+        )
+        raise
+    db.refresh(asset)
+    return asset
+
+
+def append_product_reference_from_upload(
+    db: Session,
+    product: CustomerImageProduct,
+    content: bytes,
+    declared_mime: str,
+) -> CustomerImageProductAsset:
+    return _append_reference_with_normalized(
+        db, product, normalize_upload(content, declared_mime)
+    )
+
+
+def append_product_reference_from_library(
+    db: Session,
+    product: CustomerImageProduct,
+    library_asset_id: int,
+    *,
+    admin_id: int,
+) -> CustomerImageProductAsset:
+    return _append_reference_with_normalized(
+        db,
+        product,
+        _normalized_library_asset(db, library_asset_id, admin_id=admin_id),
+    )
 
 
 def _open_relative_content(relative_path: str, not_found_message: str) -> io.BytesIO:

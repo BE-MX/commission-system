@@ -53,9 +53,9 @@
           <div class="asset-actions">
             <label class="file-action" :class="{ disabled: !draft.id }">
               添加本地图
-              <input type="file" accept="image/jpeg,image/png,image/webp" :disabled="!draft.id" @change="uploadAsset('reference', $event, nextReferencePosition(assets))">
+              <input type="file" accept="image/jpeg,image/png,image/webp" :disabled="!draft.id" @change="appendReference($event)">
             </label>
-            <GlassButton variant="outline" :disabled="!draft.id" @click="openLibrary('reference', nextReferencePosition(assets))">从图库添加</GlassButton>
+            <GlassButton variant="outline" :disabled="!draft.id" @click="openLibrary('reference', null, true)">从图库添加</GlassButton>
           </div>
         </div>
         <div v-if="referenceAssets.length" class="reference-grid">
@@ -151,15 +151,15 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import * as api from '@/api/customerImage'
 import {
   createEmptyOption,
   createEmptyOptionValue,
   createEmptyProductDraft,
+  createAssetBlobController,
   moveReferenceIds,
-  nextReferencePosition,
   validateProductDraft,
 } from './composables/useCustomerImageAdmin'
 
@@ -172,14 +172,24 @@ const emit = defineEmits(['update:modelValue', 'saved'])
 const CONTROL_LABELS = { single_choice: '单选', color: '颜色', boolean: '是否' }
 const draft = ref(createEmptyProductDraft())
 const assets = ref([])
-const urls = reactive({})
-const libraryUrls = reactive({})
 const libraryAssets = ref([])
 const libraryVisible = ref(false)
 const libraryLoading = ref(false)
 const targetRole = ref('cover')
 const targetPosition = ref(0)
+const targetAppend = ref(false)
 const saving = ref(false)
+let assetEpoch = 0
+let libraryEpoch = 0
+
+const assetBlobs = createAssetBlobController({
+  fetchBlob: (asset, config) => api.getProductAssetBlob(asset.productId, asset.id, config),
+})
+const libraryBlobs = createAssetBlobController({
+  fetchBlob: (asset, config) => api.getLibraryAssetBlob(asset.id, { thumbnail: true, ...config }),
+})
+const urls = assetBlobs.urls
+const libraryUrls = libraryBlobs.urls
 
 const coverAsset = computed(() => assets.value.find(asset => asset.role === 'cover'))
 const referenceAssets = computed(() => assets.value
@@ -187,22 +197,15 @@ const referenceAssets = computed(() => assets.value
   .sort((left, right) => left.position - right.position || left.id - right.id))
 const activeValues = option => option.values.filter(value => value.is_active !== false)
 
-function releaseUrls(collection) {
-  for (const key of Object.keys(collection)) {
-    URL.revokeObjectURL(collection[key])
-    delete collection[key]
-  }
-}
-
 async function loadAssets() {
-  releaseUrls(urls)
+  const epoch = ++assetEpoch
+  assetBlobs.invalidate()
   if (!draft.value.id) { assets.value = []; return }
-  const response = await api.listProductAssets(draft.value.id)
+  const productId = draft.value.id
+  const response = await api.listProductAssets(productId)
+  if (epoch !== assetEpoch) return
   assets.value = response.data || []
-  await Promise.all(assets.value.map(async asset => {
-    const blob = await api.getProductAssetBlob(draft.value.id, asset.id)
-    urls[asset.id] = URL.createObjectURL(blob.data)
-  }))
+  await assetBlobs.load(assets.value.map(asset => ({ ...asset, productId })))
 }
 
 async function resetDraft() {
@@ -245,29 +248,47 @@ async function uploadAsset(role, event, position) {
   } catch { /* shared interceptor provides request feedback */ }
 }
 
-async function openLibrary(role, position) {
+async function appendReference(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file || !draft.value.id) return
+  try {
+    await api.appendProductReference(draft.value.id, file)
+    await loadAssets()
+    await props.adminState.loadProducts()
+    ElMessage.success('参考图已添加')
+  } catch { /* shared interceptor provides request feedback */ }
+}
+
+async function openLibrary(role, position, append = false) {
   targetRole.value = role
   targetPosition.value = position
+  targetAppend.value = append
   libraryVisible.value = true
   libraryLoading.value = true
-  releaseUrls(libraryUrls)
+  const epoch = ++libraryEpoch
+  libraryBlobs.invalidate()
   try {
     const response = await api.listLibraryAssets()
+    if (epoch !== libraryEpoch) return
     libraryAssets.value = response.data?.items || []
-    await Promise.all(libraryAssets.value.map(async asset => {
-      const blob = await api.getLibraryAssetBlob(asset.id, { thumbnail: true })
-      libraryUrls[asset.id] = URL.createObjectURL(blob.data)
-    }))
-  } finally { libraryLoading.value = false }
+    await libraryBlobs.load(libraryAssets.value)
+  } finally {
+    if (epoch === libraryEpoch) libraryLoading.value = false
+  }
 }
 
 async function copyFromLibrary(asset) {
   try {
-    await api.copyProductAssetFromLibrary(draft.value.id, {
-      source_asset_id: asset.id, role: targetRole.value, position: targetPosition.value,
-    })
+    if (targetAppend.value) {
+      await api.appendProductReferenceFromLibrary(draft.value.id, asset.id)
+    } else {
+      await api.copyProductAssetFromLibrary(draft.value.id, {
+        source_asset_id: asset.id, role: targetRole.value, position: targetPosition.value,
+      })
+    }
     libraryVisible.value = false
-    releaseUrls(libraryUrls)
+    closeLibrary()
     await loadAssets()
     await props.adminState.loadProducts()
     ElMessage.success('已复制到产品模板')
@@ -299,18 +320,25 @@ async function removeReference(asset) {
 }
 
 function closeLibrary() {
-  releaseUrls(libraryUrls)
+  libraryEpoch += 1
+  libraryBlobs.invalidate()
   libraryAssets.value = []
 }
 
 function handleClosed() {
-  releaseUrls(urls)
-  releaseUrls(libraryUrls)
+  assetEpoch += 1
+  assetBlobs.invalidate()
+  closeLibrary()
   libraryAssets.value = []
   emit('update:modelValue', false)
 }
 
-onBeforeUnmount(() => { releaseUrls(urls); releaseUrls(libraryUrls) })
+onBeforeUnmount(() => {
+  assetEpoch += 1
+  libraryEpoch += 1
+  assetBlobs.dispose()
+  libraryBlobs.dispose()
+})
 </script>
 
 <style scoped>
