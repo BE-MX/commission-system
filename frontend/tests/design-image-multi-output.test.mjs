@@ -83,6 +83,18 @@ test('inline confirmation card keeps accessibility and motion contracts', () => 
   assert.match(source, /已选择：/)
   assert.match(source, /v-else class="mode-options"/)
   assert.match(source, /:disabled="submitting"/)
+  assert.match(source, /interaction\.item_kind\s*===\s*['"]angle['"]/)
+  assert.match(source, /标准角度：/)
+  assert.match(source, /版本：/)
+  assert.match(source, /同图对比版/)
+})
+
+test('empty state explains the default and multi-output confirmation', () => {
+  const source = readFileSync(new URL(
+    '../src/views/design/image-studio/components/MessageThread.vue', import.meta.url,
+  ), 'utf8')
+  assert.match(source, /默认生成一张；需要多张时会先确认输出方式和消耗次数。/)
+  assert.doesNotMatch(source, /每轮只生成一张/)
 })
 
 test('message thread renders confirmation inline and emits a mode choice', () => {

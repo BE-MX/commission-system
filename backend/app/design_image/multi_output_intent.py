@@ -8,6 +8,7 @@ from typing import Literal
 
 
 OutputMode = Literal["single", "composite", "separate", "clarify", "reject"]
+ItemKind = Literal["angle", "variant"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -15,6 +16,7 @@ class MultiOutputIntent:
     mode: OutputMode
     count: int = 1
     labels: tuple[str, ...] = ()
+    item_kind: ItemKind | None = None
 
 
 STANDARD_ANGLES = {
@@ -75,6 +77,10 @@ _SEPARATE_PATTERN = re.compile(
 _GENERATED_IMAGE_COUNT_PATTERN = re.compile(
     r"(?:生成|输出|制作|出图)\s*" + _COUNT_TOKEN + r"\s*张"
 )
+_GENERATED_VARIANT_COUNT_PATTERN = re.compile(
+    r"(?:生成|输出|制作|出图)\s*" + _COUNT_TOKEN + r"\s*(?:款|版)"
+)
+_ANGLE_ITEM_PATTERN = re.compile(r"角度|视角|方向|视图")
 _NEGATED_SIGNAL_PREFIX = re.compile(r"(?:不要|别|无需|禁止)[^，。；;]{0,8}$")
 _PER_IMAGE_SIGNAL_PREFIX = re.compile(r"(?:每|各|每个角度|每个视角)\s*$")
 
@@ -105,6 +111,8 @@ def _find_requested_count(prompt: str) -> int | None:
             if count >= 2:
                 matches.append((match.start(), count))
     for match in _CONVENTIONAL_VIEW_PATTERN.finditer(prompt):
+        matches.append((match.start(), _parse_count(match.group("count"))))
+    for match in _GENERATED_VARIANT_COUNT_PATTERN.finditer(prompt):
         matches.append((match.start(), _parse_count(match.group("count"))))
     if not matches:
         return None
@@ -183,15 +191,20 @@ def classify_multi_output_intent(prompt: str) -> MultiOutputIntent:
         else None
     )
     count = requested_count or named_count or 1
+    item_kind: ItemKind = (
+        "angle" if named_labels or _ANGLE_ITEM_PATTERN.search(prompt) else "variant"
+    )
 
     if count > 4:
-        return MultiOutputIntent(mode="reject", count=count)
+        return MultiOutputIntent(mode="reject", count=count, item_kind=item_kind)
     if count < 2:
         return MultiOutputIntent(mode="single")
 
     labels = _resolved_labels(prompt, count, named_labels)
     if requested_count is not None and named_labels and requested_count != len(named_labels):
-        return MultiOutputIntent(mode="clarify", count=count, labels=labels)
+        return MultiOutputIntent(
+            mode="clarify", count=count, labels=labels, item_kind=item_kind
+        )
     if is_composite and is_separate:
         mode: OutputMode = "clarify"
     elif is_composite:
@@ -200,7 +213,9 @@ def classify_multi_output_intent(prompt: str) -> MultiOutputIntent:
         mode = "separate"
     else:
         mode = "clarify"
-    return MultiOutputIntent(mode=mode, count=count, labels=labels)
+    return MultiOutputIntent(
+        mode=mode, count=count, labels=labels, item_kind=item_kind
+    )
 
 
 def build_output_prompt(prompt: str, label: str) -> str:

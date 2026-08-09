@@ -107,6 +107,26 @@ def test_standard_angle_labels_are_stable(count, expected):
     assert STANDARD_ANGLES[count] == expected
 
 
+@pytest.mark.parametrize(
+    ("prompt", "expected"),
+    [
+        ("请生成3个角度的人像图", "angle"),
+        ("生成3个不同角度", "angle"),
+        ("生成三个视角", "angle"),
+        ("生成两个方向的人像", "angle"),
+        ("正面和背面各生成一张", "angle"),
+        ("生成三个方案", "variant"),
+        ("生成3个不同方案", "variant"),
+        ("生成两个不同版本", "variant"),
+        ("生成3个不同版本", "variant"),
+        ("生成四款海报", "variant"),
+        ("生成3张人像图", "variant"),
+    ],
+)
+def test_multi_output_item_kind_matches_user_semantics(prompt, expected):
+    assert classify_multi_output_intent(prompt).item_kind == expected
+
+
 def test_build_output_prompt_preserves_source_and_locks_one_output_label():
     source = "生成一组棚拍人像，保持人物身份"
 

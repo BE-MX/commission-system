@@ -1027,6 +1027,7 @@ def create_turn(
                     "source_message_id": message.id,
                     "request_id": payload.request_id,
                     "count": intent.count,
+                    "item_kind": intent.item_kind,
                     "labels": list(intent.labels),
                     "request": {
                         "base_asset_id": payload.base_asset_id,
@@ -1180,6 +1181,7 @@ def resolve_message_action(
             mode=payload.mode,
             count=interaction.count,
             labels=tuple(interaction.labels),
+            item_kind=interaction.item_kind,
         )
         jobs = _create_jobs_for_intent(
             db,

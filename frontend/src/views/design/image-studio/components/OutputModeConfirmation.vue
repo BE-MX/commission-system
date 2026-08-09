@@ -1,7 +1,8 @@
 <template>
   <section class="output-mode-confirmation" aria-label="选择生成方式">
     <p class="confirmation-title">请选择生成方式</p>
-    <p class="confirmation-labels">标准角度：{{ labelsText }}</p>
+    <p v-if="isAngle" class="confirmation-labels">标准角度：{{ labelsText }}</p>
+    <p v-else class="confirmation-labels">版本：{{ labelsText }}</p>
 
     <p v-if="resolved" class="resolved-state" role="status">
       已选择：{{ selectedLabel }}
@@ -13,8 +14,8 @@
         :disabled="submitting"
         @click="emit('choose', 'composite')"
       >
-        <strong>一张{{ interaction.count }}视图拼版</strong>
-        <span>{{ interaction.count }} 个角度放在同一张图中 · 消耗 1 次</span>
+        <strong>{{ compositeLabel }}</strong>
+        <span>{{ compositeDescription }} · 消耗 1 次</span>
       </button>
       <button
         type="button"
@@ -22,8 +23,8 @@
         :disabled="submitting"
         @click="emit('choose', 'separate')"
       >
-        <strong>分别生成 {{ interaction.count }} 张</strong>
-        <span>每个角度独立生成 · 消耗 {{ interaction.count }} 次</span>
+        <strong>{{ separateLabel }}</strong>
+        <span>{{ separateDescription }} · 消耗 {{ interaction.count }} 次</span>
       </button>
     </div>
     <p v-if="submitting" class="submitting-state" role="status">正在确认，请稍候…</p>
@@ -40,11 +41,28 @@ const props = defineProps({
 const emit = defineEmits(['choose'])
 
 const resolved = computed(() => props.interaction.status === 'resolved')
+const isAngle = computed(() => props.interaction.item_kind === 'angle')
 const labelsText = computed(() => (props.interaction.labels || []).join('、'))
+const compositeLabel = computed(() => (
+  isAngle.value ? `一张${props.interaction.count}视图拼版` : '同图对比版'
+))
+const compositeDescription = computed(() => (
+  isAngle.value
+    ? `${props.interaction.count} 个角度放在同一张图中`
+    : `${props.interaction.count} 个版本放在同一张图中`
+))
+const separateLabel = computed(() => (
+  isAngle.value
+    ? `分别生成 ${props.interaction.count} 张`
+    : `分别生成 ${props.interaction.count} 个版本`
+))
+const separateDescription = computed(() => (
+  isAngle.value ? '每个角度独立生成' : '每个版本独立生成'
+))
 const selectedLabel = computed(() => (
   props.interaction.selected_mode === 'separate'
-    ? `分别生成 ${props.interaction.count} 张`
-    : `一张${props.interaction.count}视图拼版`
+    ? separateLabel.value
+    : compositeLabel.value
 ))
 </script>
 

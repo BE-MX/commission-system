@@ -35,6 +35,7 @@ def test_message_serializes_only_public_output_mode_confirmation_fields():
         "source_message_id": 6,
         "request_id": "turn-client-uuid",
         "count": 3,
+        "item_kind": "angle",
         "labels": ["正面", "左侧 45°", "右侧 45°"],
         "request": {
             "base_asset_id": None,
@@ -58,6 +59,7 @@ def test_message_serializes_only_public_output_mode_confirmation_fields():
         "source_message_id": 6,
         "request_id": "turn-client-uuid",
         "count": 3,
+        "item_kind": "angle",
         "labels": ["正面", "左侧 45°", "右侧 45°"],
         "request": {
             "base_asset_id": None,
@@ -136,3 +138,21 @@ def test_message_action_request_is_strict_and_bounded():
             action="choose_output_mode",
             mode="other",
         )
+
+
+def test_output_mode_confirmation_requires_item_kind():
+    with pytest.raises(ValidationError):
+        schemas.OutputModeConfirmationInteraction.model_validate({
+            "type": "output_mode_confirmation",
+            "status": "pending",
+            "source_message_id": 6,
+            "request_id": "turn-client-uuid",
+            "count": 2,
+            "labels": ["独立变体 1/2", "独立变体 2/2"],
+            "request": {
+                "base_asset_id": None,
+                "reference_asset_ids": [],
+                "size": "1024x1024",
+                "quality": "medium",
+            },
+        })

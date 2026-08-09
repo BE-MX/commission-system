@@ -100,8 +100,21 @@ def test_ambiguous_turn_persists_clarification_without_jobs(configured_owner, db
     assert result.mode == "clarification"
     assert result.jobs == ()
     assert result.clarification.interaction_json["count"] == 3
+    assert result.clarification.interaction_json["item_kind"] == "angle"
     assert db.query(DesignImageJob).count() == 0
     assert db.query(DesignImageMessage).count() == 2
+
+
+def test_variant_clarification_persists_required_item_kind(configured_owner, db):
+    owner, session = configured_owner
+
+    result = service.create_turn(
+        db,
+        owner.id,
+        _turn(session.id, "variant-kind", "请生成三个方案"),
+    )
+
+    assert result.clarification.interaction_json["item_kind"] == "variant"
 
 
 def test_explicit_separate_turn_creates_three_fixed_width_jobs(configured_owner, db):

@@ -4,7 +4,7 @@
     <div v-else-if="!messages.length && !jobs.length" class="thread-empty">
       <span class="empty-icon" aria-hidden="true"><el-icon><MagicStick /></el-icon></span>
       <h2>描述你想要的画面</h2>
-      <p>可直接生图，也可以上传 1～4 张参考图。每轮只生成一张，成本更清楚。</p>
+      <p>可直接生图，也可以上传 1～4 张参考图。默认生成一张；需要多张时会先确认输出方式和消耗次数。</p>
       <div class="empty-suggestions">
         <button
           v-for="item in suggestions"

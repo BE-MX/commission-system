@@ -104,6 +104,7 @@ class OutputModeConfirmationInteraction(BaseModel):
     source_message_id: int = Field(gt=0)
     request_id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
     count: int = Field(ge=2, le=4)
+    item_kind: Literal["angle", "variant"]
     labels: list[str] = Field(min_length=2, max_length=4)
     request: InteractionRequestSnapshot
     selected_mode: Literal["composite", "separate"] | None = None

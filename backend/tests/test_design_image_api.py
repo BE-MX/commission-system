@@ -115,6 +115,7 @@ def api(monkeypatch, tmp_path):
             "source_message_id": 21,
             "request_id": "r-1",
             "count": 2,
+            "item_kind": "angle",
             "labels": ["正面", "侧面 45°"],
             "request": {
                 "base_asset_id": None,

@@ -88,6 +88,7 @@ class MultiOutputIntent:
     mode: Literal["single", "composite", "separate", "clarify", "reject"]
     count: int
     labels: tuple[str, ...]
+    item_kind: Literal["angle", "variant"] | None
 ```
 
 确定性解析便于测试、解释和审计。无法可靠识别时保持现有单图行为，不能因为出现任意数字就拦截请求，例如“1024×1024”“年龄 3 岁”“参考图 2”。
@@ -108,6 +109,7 @@ class MultiOutputIntent:
   "source_message_id": 101,
   "request_id": "turn-client-uuid",
   "count": 3,
+  "item_kind": "angle",
   "labels": ["正面", "左侧 45°", "右侧 45°"],
   "request": {
     "base_asset_id": 12,
@@ -120,6 +122,8 @@ class MultiOutputIntent:
 ```
 
 `request` 是确认后重建原 turn 所需的最小输入快照。创建 clarification 时即在同一事务内把引用资产写成 `message_id=user_message.id, status=draft`，保留原 `expires_at`，但不创建 job、不扣额度。`delete_draft_asset` 必须拒绝删除 `message_id` 非空的 draft；到期清理仍删除这种被放弃或长期未确认的附件。确认 action 成功创建全部 jobs 后才把资产置为 `attached` 并清空 `expires_at`。这样刷新后附件不会重新回流到 composer，也不能被草稿删除接口误删，同时废弃确认不会永久占用存储。解析与序列化只允许已定义字段；不得把提示词快照、Provider 参数或内部错误放入交互 JSON。
+
+`item_kind` 是确认卡片的必填语义，不由前端根据 `labels` 猜测。请求包含角度、视角、方向、视图或明确命名角度时为 `angle`；方案、版本、变体、款等非角度多输出为 `variant`。角度卡显示“标准角度/视图”，版本卡显示“版本/同图对比版”，不得混用文案。
 
 所有 turn 在创建消息前先按 `(session_id, client_request_id)` 查找已有 user message：已有 clarification 返回原确认消息，已有 jobs 返回该消息下全部 jobs。这样明确多图和歧义确认都不依赖“碰巧找到第一个 job”实现幂等。
 
