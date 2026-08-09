@@ -33,6 +33,7 @@ from app.customer_image.schemas import (
 from app.customer_image.prompt_service import (
     CustomerImageProductChangedError,
     CustomerImagePromptError,
+    CustomerImageRequirementTooLongError,
 )
 from app.customer_image.token_service import InviteUnavailableError, resolve_active_invite
 from app.pm.auth import client_ip
@@ -42,6 +43,7 @@ router = APIRouter()
 logger = logging.getLogger("commission")
 AUTH_ERROR = "This invitation is unavailable. Please request a new link from your sales contact."
 RATE_ERROR = "Too many logo uploads. Please wait one minute and try again."
+GENERATION_RATE_ERROR = "Too many generation requests. Please wait one minute and try again."
 PUBLIC_PREFIX = "/api/customer-image/public"
 SECURITY_HEADERS = {
     "Cache-Control": "private, no-store",
@@ -147,6 +149,7 @@ class BoundedSlidingWindowLimiter:
 
 
 logo_rate_limiter = BoundedSlidingWindowLimiter()
+generation_rate_limiter = BoundedSlidingWindowLimiter()
 
 
 def require_invite(
@@ -252,10 +255,17 @@ def products(db: Session = Depends(get_db), invite: CustomerImageInvite = Depend
 
 @router.post("/generations", status_code=202)
 def submit_generation(
+    request: Request,
     payload: CustomerImageGenerationCreate,
     db: Session = Depends(get_db),
     invite: CustomerImageInvite = Depends(require_invite),
 ):
+    if not generation_rate_limiter.allow(f"{invite.id}:{client_ip(request)}"):
+        raise HTTPException(
+            status_code=429,
+            detail=GENERATION_RATE_ERROR,
+            headers=SECURITY_HEADERS,
+        )
     try:
         generation = service.create_generation(db, invite.id, payload)
     except service.CustomerImageQuotaError:
@@ -268,6 +278,12 @@ def submit_generation(
         raise HTTPException(
             status_code=409,
             detail="Upload a logo before generating.",
+            headers=SECURITY_HEADERS,
+        ) from None
+    except CustomerImageRequirementTooLongError:
+        raise HTTPException(
+            status_code=400,
+            detail="Additional requirement is too long.",
             headers=SECURITY_HEADERS,
         ) from None
     except CustomerImageProductChangedError:

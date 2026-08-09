@@ -2,6 +2,7 @@
 
 from datetime import datetime, timedelta
 from io import BytesIO
+from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
@@ -140,6 +141,7 @@ def public_api(db, tmp_path, monkeypatch):
 
     monkeypatch.setattr("app.design_image.file_service._storage_root", lambda: tmp_path)
     public_router.logo_rate_limiter.clear()
+    public_router.generation_rate_limiter.clear()
     app = FastAPI()
     app.add_middleware(public_router.PublicSecurityHeadersMiddleware)
     app.include_router(public_router.router, prefix="/api/customer-image/public")
@@ -397,6 +399,106 @@ def test_generation_submission_returns_only_stable_actionable_errors(public_api)
         "encrypted-provider-secret",
     ):
         assert hidden not in rendered
+
+
+def test_generation_rate_limit_precedes_quota_and_isolates_invite_and_ip(
+    public_api, monkeypatch
+):
+    from app.customer_image import public_router
+
+    client, db, _tmp = public_api
+    invite, token, product = _ready_generation_context(db)
+    other_invite, other_token = _invite(db, customer="Other")
+    other_logo = CustomerImageAsset(
+        invite_id=other_invite.id,
+        asset_type="logo",
+        storage_path="customer-logo/other.png",
+        mime_type="image/png",
+        file_size=10,
+        width=32,
+        height=24,
+        sha256="9" * 64,
+    )
+    db.add(other_logo)
+    db.flush()
+    other_invite.current_logo_asset_id = other_logo.id
+    db.add(CustomerImageInviteProduct(invite_id=other_invite.id, product_id=product.id))
+    db.commit()
+    monkeypatch.setattr(public_router.generation_rate_limiter, "limit", 1)
+    payload = {
+        "product_id": product.id,
+        "config_version": product.config_version,
+        "selections": {"length": "18"},
+    }
+    first_ip = {**_auth(token), "X-Real-IP": "203.0.113.20"}
+
+    accepted = client.post(
+        "/api/customer-image/public/generations",
+        headers=first_ip,
+        json={**payload, "request_id": "limited-1"},
+    )
+    limited = client.post(
+        "/api/customer-image/public/generations",
+        headers=first_ip,
+        json={**payload, "request_id": "limited-2"},
+    )
+    other_ip = client.post(
+        "/api/customer-image/public/generations",
+        headers={**_auth(token), "X-Real-IP": "203.0.113.21"},
+        json={**payload, "request_id": "limited-3"},
+    )
+    other_invite_response = client.post(
+        "/api/customer-image/public/generations",
+        headers={**_auth(other_token), "X-Real-IP": "203.0.113.20"},
+        json={**payload, "request_id": "limited-4"},
+    )
+
+    assert accepted.status_code == other_ip.status_code == other_invite_response.status_code == 202
+    assert limited.status_code == 429
+    assert limited.json()["detail"] == (
+        "Too many generation requests. Please wait one minute and try again."
+    )
+    _assert_security_headers(limited)
+    db.expire_all()
+    assert db.get(CustomerImageInvite, invite.id).quota_used == 4
+    assert db.get(CustomerImageInvite, other_invite.id).quota_used == 3
+    assert db.query(CustomerImageGeneration).count() == 3
+
+
+def test_dynamic_requirement_limit_returns_stable_400_without_quota_use(
+    public_api, monkeypatch
+):
+    from app.customer_image import service
+
+    client, db, _tmp = public_api
+    invite, token, product = _ready_generation_context(db)
+    monkeypatch.setattr(
+        service,
+        "get_settings",
+        lambda: SimpleNamespace(
+            CUSTOMER_IMAGE_PRESET_NAME="design_image_generation",
+            CUSTOMER_IMAGE_MAX_REQUIREMENT_CHARS=5,
+        ),
+    )
+
+    response = client.post(
+        "/api/customer-image/public/generations",
+        headers=_auth(token),
+        json={
+            "product_id": product.id,
+            "config_version": product.config_version,
+            "request_id": "requirement-too-long",
+            "selections": {"length": "18"},
+            "requirement": "123456",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Additional requirement is too long."
+    _assert_security_headers(response)
+    db.expire_all()
+    assert db.get(CustomerImageInvite, invite.id).quota_used == 2
+    assert db.query(CustomerImageGeneration).count() == 0
 
 
 def test_unpublishing_product_hides_it_immediately(public_api):

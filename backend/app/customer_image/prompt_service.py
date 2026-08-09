@@ -20,6 +20,10 @@ class CustomerImageProductChangedError(CustomerImagePromptError):
     """Raised when the customer is submitting an obsolete product form."""
 
 
+class CustomerImageRequirementTooLongError(CustomerImagePromptError):
+    """Raised when the configured requirement ceiling is exceeded."""
+
+
 @dataclass(frozen=True, slots=True)
 class PromptAssembly:
     prompt: str
@@ -73,7 +77,7 @@ def validate_and_build_prompt(
 
     requirement = requirement.strip()
     if len(requirement) > max_requirement_chars:
-        raise CustomerImagePromptError(
+        raise CustomerImageRequirementTooLongError(
             f"customer requirement cannot exceed {max_requirement_chars} characters"
         )
 

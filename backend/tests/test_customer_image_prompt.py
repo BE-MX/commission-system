@@ -173,3 +173,21 @@ def test_prompt_rejects_stale_product_version(db):
             requirement="",
             max_requirement_chars=500,
         )
+
+
+def test_prompt_uses_distinct_error_for_dynamic_requirement_limit(db):
+    from app.customer_image.prompt_service import (
+        CustomerImageRequirementTooLongError,
+        validate_and_build_prompt,
+    )
+
+    product = _configured_product(db)
+    with pytest.raises(CustomerImageRequirementTooLongError):
+        validate_and_build_prompt(
+            db,
+            product_id=product.id,
+            expected_config_version=7,
+            selections={"style": "classic", "color": "navy"},
+            requirement="123456",
+            max_requirement_chars=5,
+        )
