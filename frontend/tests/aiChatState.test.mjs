@@ -312,7 +312,7 @@ test('clears an unchanged composer only after current meta acknowledgement', () 
   assert.deepEqual(state.draftAttachments, [])
 })
 
-test('stale meta and current meta never clear newer composer input', () => {
+test('current meta removes sent attachments but preserves newer composer input', () => {
   let state = reduceChatState(createInitialState({
     activeSessionId: 7,
     prompt: 'original draft',
@@ -327,6 +327,10 @@ test('stale meta and current meta never clear newer composer input', () => {
   })
   const generation = state.streamGeneration
   state = reduceChatState(state, { type: 'set-prompt', prompt: 'new input' })
+  state = reduceChatState(state, {
+    type: 'add-draft-attachment',
+    attachment: { id: 44 },
+  })
 
   const stale = reduceChatState(state, event(generation - 1, 'meta', {
     session_id: 7,
@@ -334,6 +338,7 @@ test('stale meta and current meta never clear newer composer input', () => {
     assistant_message_id: 51,
   }))
   assert.strictEqual(stale, state)
+  assert.deepEqual(stale.draftAttachments.map(item => item.id), [43, 44])
 
   state = reduceChatState(state, event(generation, 'meta', {
     session_id: 7,
@@ -341,7 +346,7 @@ test('stale meta and current meta never clear newer composer input', () => {
     assistant_message_id: 51,
   }))
   assert.equal(state.prompt, 'new input')
-  assert.deepEqual(state.draftAttachments.map(item => item.id), [43])
+  assert.deepEqual(state.draftAttachments.map(item => item.id), [44])
 })
 
 test('stream reconciliation reloads messages without replacing live composer drafts', () => {

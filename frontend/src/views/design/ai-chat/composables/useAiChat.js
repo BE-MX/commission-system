@@ -189,14 +189,9 @@ export function useAiChat() {
     const snapshot = pendingTurn.composerSnapshot
     if (!snapshot || pendingTurn.acknowledged) return
     pendingTurn.acknowledged = true
-    const currentIds = draftAttachments.value.map(item => item.id)
-    const composerUnchanged = prompt.value === snapshot.prompt
-      && currentIds.length === snapshot.attachmentIds.length
-      && currentIds.every((id, index) => id === snapshot.attachmentIds[index])
-    if (composerUnchanged) {
-      prompt.value = ''
-      draftAttachments.value = []
-    }
+    if (prompt.value === snapshot.prompt) prompt.value = ''
+    const acknowledgedIds = new Set(snapshot.attachmentIds)
+    draftAttachments.value = draftAttachments.value.filter(item => !acknowledgedIds.has(item.id))
   }
 
   function updateAssistant(messageId, changes) {

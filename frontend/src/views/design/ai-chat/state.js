@@ -119,13 +119,10 @@ function acknowledgedComposer(state, data) {
       pendingTurn: acknowledged ? null : pending,
     }
   }
-  const currentIds = state.draftAttachments.map(item => item.id)
-  const composerUnchanged = state.prompt === snapshot.prompt
-    && currentIds.length === snapshot.attachmentIds.length
-    && currentIds.every((id, index) => id === snapshot.attachmentIds[index])
+  const acknowledgedIds = new Set(snapshot.attachmentIds)
   return {
-    prompt: composerUnchanged ? '' : state.prompt,
-    draftAttachments: composerUnchanged ? [] : state.draftAttachments,
+    prompt: state.prompt === snapshot.prompt ? '' : state.prompt,
+    draftAttachments: state.draftAttachments.filter(item => !acknowledgedIds.has(item.id)),
     pendingTurn: null,
   }
 }
