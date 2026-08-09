@@ -107,6 +107,29 @@ function materializePendingMessages(state, data) {
   return messages
 }
 
+function acknowledgedComposer(state, data) {
+  const pending = state.pendingTurn
+  const acknowledged = Boolean(data.assistant_message_id)
+    && (!pending?.userMessage || Boolean(data.user_message_id))
+  const snapshot = pending?.composerSnapshot
+  if (!acknowledged || !snapshot) {
+    return {
+      prompt: state.prompt,
+      draftAttachments: state.draftAttachments,
+      pendingTurn: acknowledged ? null : pending,
+    }
+  }
+  const currentIds = state.draftAttachments.map(item => item.id)
+  const composerUnchanged = state.prompt === snapshot.prompt
+    && currentIds.length === snapshot.attachmentIds.length
+    && currentIds.every((id, index) => id === snapshot.attachmentIds[index])
+  return {
+    prompt: composerUnchanged ? '' : state.prompt,
+    draftAttachments: composerUnchanged ? [] : state.draftAttachments,
+    pendingTurn: null,
+  }
+}
+
 function applyStreamEvent(state, action) {
   if (action.generation !== state.streamGeneration) return state
 
@@ -117,11 +140,12 @@ function applyStreamEvent(state, action) {
   }
   if (frame.event === 'meta') {
     const nextId = data.assistant_message_id ?? state.streamMessageId
+    const composer = acknowledgedComposer(state, data)
     return {
       ...state,
       messages: materializePendingMessages(state, data),
       streamMessageId: nextId,
-      pendingTurn: null,
+      ...composer,
     }
   }
   if (frame.event === 'delta') {

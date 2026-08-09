@@ -260,6 +260,97 @@ test('keeps a turn pending until meta materializes real message ids once', () =>
   assert.deepEqual(state.messages.map(message => message.id), [30, 31])
 })
 
+test('preserves composer drafts when a stream fails before meta', () => {
+  const attachment = { id: 41, original_name: 'brief.pdf' }
+  let state = reduceChatState(createInitialState({
+    activeSessionId: 7,
+    prompt: 'keep this draft',
+    draftAttachments: [attachment],
+  }), {
+    type: 'start-stream',
+    pending: {
+      userMessage: { role: 'user', content: 'keep this draft' },
+      assistantMessage: { role: 'assistant', content: '', status: 'streaming' },
+      composerSnapshot: { prompt: 'keep this draft', attachmentIds: [41] },
+    },
+  })
+
+  state = reduceChatState(state, event(state.streamGeneration, 'error', {
+    code: 'network_error',
+    message: 'retry',
+  }))
+  assert.equal(state.prompt, 'keep this draft')
+  assert.deepEqual(state.draftAttachments, [attachment])
+
+  const composable = readSource('../src/views/design/ai-chat/composables/useAiChat.js')
+  assert.doesNotMatch(composable, /if \(!retryMessageId\) \{\s*prompt\.value = ''\s*draftAttachments\.value = \[\]/)
+})
+
+test('clears an unchanged composer only after current meta acknowledgement', () => {
+  let state = reduceChatState(createInitialState({
+    activeSessionId: 7,
+    prompt: 'send this draft',
+    draftAttachments: [{ id: 42 }],
+  }), {
+    type: 'start-stream',
+    pending: {
+      userMessage: { role: 'user', content: 'send this draft' },
+      assistantMessage: { role: 'assistant', content: '', status: 'streaming' },
+      composerSnapshot: { prompt: 'send this draft', attachmentIds: [42] },
+    },
+  })
+
+  assert.equal(state.prompt, 'send this draft')
+  assert.deepEqual(state.draftAttachments.map(item => item.id), [42])
+  state = reduceChatState(state, event(state.streamGeneration, 'meta', {
+    session_id: 7,
+    user_message_id: 40,
+    assistant_message_id: 41,
+    status: 'streaming',
+  }))
+  assert.equal(state.prompt, '')
+  assert.deepEqual(state.draftAttachments, [])
+})
+
+test('stale meta and current meta never clear newer composer input', () => {
+  let state = reduceChatState(createInitialState({
+    activeSessionId: 7,
+    prompt: 'original draft',
+    draftAttachments: [{ id: 43 }],
+  }), {
+    type: 'start-stream',
+    pending: {
+      userMessage: { role: 'user', content: 'original draft' },
+      assistantMessage: { role: 'assistant', content: '', status: 'streaming' },
+      composerSnapshot: { prompt: 'original draft', attachmentIds: [43] },
+    },
+  })
+  const generation = state.streamGeneration
+  state = reduceChatState(state, { type: 'set-prompt', prompt: 'new input' })
+
+  const stale = reduceChatState(state, event(generation - 1, 'meta', {
+    session_id: 7,
+    user_message_id: 50,
+    assistant_message_id: 51,
+  }))
+  assert.strictEqual(stale, state)
+
+  state = reduceChatState(state, event(generation, 'meta', {
+    session_id: 7,
+    user_message_id: 50,
+    assistant_message_id: 51,
+  }))
+  assert.equal(state.prompt, 'new input')
+  assert.deepEqual(state.draftAttachments.map(item => item.id), [43])
+})
+
+test('stream reconciliation reloads messages without replacing live composer drafts', () => {
+  const composable = readSource('../src/views/design/ai-chat/composables/useAiChat.js')
+
+  assert.match(composable, /loadDetail\(sessionId, expectedWorkspace, generation, true\)/)
+  assert.match(composable, /loadDetail\(sessionId, expectedWorkspace, stoppedGeneration, true\)/)
+})
+
 test('stop invalidates the active stream and retry appends a new answer', () => {
   const initial = createInitialState({
     messages: [{ id: 8, role: 'assistant', content: '旧回答', status: 'failed' }],
