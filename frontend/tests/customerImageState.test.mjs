@@ -194,3 +194,33 @@ test('deferred logo and result responses never create object URLs after disposal
   assert.deepEqual({ ...controller.generationUrls }, {})
   assert.deepEqual({ ...controller.coverUrls }, {})
 })
+
+test('logo assets download once per id and revoke only on replacement or removal', async () => {
+  const createController = required(assets, 'createCustomerImageAssetController')
+  const fetched = []
+  const revoked = []
+  let sequence = 0
+  const controller = createController({
+    fetchProductAsset: () => assert.fail(),
+    fetchInviteAsset: async id => { fetched.push(id); return { data: { id } } },
+    urlApi: {
+      createObjectURL: () => `blob:${++sequence}`,
+      revokeObjectURL: url => revoked.push(url),
+    },
+  })
+
+  assert.equal(await controller.loadLogo({ id: 21 }), 'blob:1')
+  assert.equal(await controller.loadLogo({ id: 21 }), 'blob:1')
+  assert.deepEqual(fetched, [21])
+  assert.deepEqual(revoked, [])
+
+  assert.equal(await controller.loadLogo({ id: 22 }), 'blob:2')
+  assert.deepEqual(fetched, [21, 22])
+  assert.deepEqual(revoked, ['blob:1'])
+
+  assert.equal(await controller.loadLogo(null), '')
+  assert.deepEqual(fetched, [21, 22])
+  assert.deepEqual(revoked, ['blob:1', 'blob:2'])
+  assert.equal(await controller.loadLogo(null), '')
+  assert.deepEqual(revoked, ['blob:1', 'blob:2'])
+})

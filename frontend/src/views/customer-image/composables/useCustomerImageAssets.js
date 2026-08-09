@@ -63,6 +63,9 @@ export function createCustomerImageAssetController({
   const logoUrl = ref('')
   let generation = 0
   let disposed = false
+  let logoAssetId = null
+  let pendingLogoAssetId = null
+  let pendingLogoRequest = null
   const requestVersions = new Map()
 
   function beginRequest(key) {
@@ -95,16 +98,45 @@ export function createCustomerImageAssetController({
   }
 
   async function loadLogo(asset) {
-    const token = beginRequest('logo')
     if (!asset?.id) {
+      beginRequest('logo')
+      logoAssetId = null
+      pendingLogoAssetId = null
+      pendingLogoRequest = null
       registry.remove('logo')
       logoUrl.value = ''
       return ''
     }
-    const response = await fetchInviteAsset(asset.id)
-    const url = await replaceFromResponse('logo', response, token)
-    if (url) logoUrl.value = url
-    return logoUrl.value
+    if (asset.id === logoAssetId && registry.get('logo')) {
+      if (pendingLogoAssetId && pendingLogoAssetId !== asset.id) {
+        beginRequest('logo')
+        pendingLogoAssetId = null
+        pendingLogoRequest = null
+      }
+      return logoUrl.value
+    }
+    if (asset.id === pendingLogoAssetId && pendingLogoRequest) return pendingLogoRequest
+
+    const token = beginRequest('logo')
+    const request = (async () => {
+      const response = await fetchInviteAsset(asset.id)
+      const url = await replaceFromResponse('logo', response, token)
+      if (url) {
+        logoAssetId = asset.id
+        logoUrl.value = url
+      }
+      return logoUrl.value
+    })()
+    pendingLogoAssetId = asset.id
+    pendingLogoRequest = request
+    try {
+      return await request
+    } finally {
+      if (pendingLogoRequest === request) {
+        pendingLogoAssetId = null
+        pendingLogoRequest = null
+      }
+    }
   }
 
   async function loadGeneration(generationItem) {
@@ -128,6 +160,9 @@ export function createCustomerImageAssetController({
   function clear() {
     generation += 1
     requestVersions.clear()
+    logoAssetId = null
+    pendingLogoAssetId = null
+    pendingLogoRequest = null
     registry.clear()
     logoUrl.value = ''
     for (const key of Object.keys(coverUrls)) delete coverUrls[key]
