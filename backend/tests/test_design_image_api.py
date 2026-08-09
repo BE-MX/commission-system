@@ -372,7 +372,7 @@ def test_domain_errors_have_explicit_http_mapping(api, monkeypatch, error_name, 
     [
         (
             lambda service: service.DesignImageValidationError(
-                "一次最多生成 4 张图片",
+                "一次最多生成 4 张，请拆成多轮请求。",
                 code="multi_output_limit",
                 public_meta={"max_outputs": 4},
             ),
@@ -390,7 +390,7 @@ def test_domain_errors_have_explicit_http_mapping(api, monkeypatch, error_name, 
         ),
         (
             lambda service: service.DesignImageValidationError(
-                "附件已过期或不可用，请重新上传",
+                "附件已失效，请重新上传后发送新请求。",
                 code="attachment_unavailable",
             ),
             400,

@@ -171,6 +171,7 @@ def test_more_than_four_rejects_without_messages_or_jobs(configured_owner, db):
         )
 
     assert exc.value.code == "multi_output_limit"
+    assert str(exc.value) == "一次最多生成 4 张，请拆成多轮请求。"
     assert exc.value.public_meta == {"max_outputs": 4}
     assert db.query(DesignImageMessage).count() == 0
     assert db.query(DesignImageJob).count() == 0
@@ -340,6 +341,7 @@ def test_expired_bound_attachment_aborts_resolution_atomically(configured_owner,
         )
 
     assert exc.value.code == "attachment_unavailable"
+    assert str(exc.value) == "附件已失效，请重新上传后发送新请求。"
     assert db.query(DesignImageJob).count() == 0
 
 
@@ -401,6 +403,59 @@ def test_partial_batch_blocks_new_turn_until_every_root_job_is_terminal(
         _turn(next_session.id, "allowed-after-batch", "生成一张产品图"),
     )
     assert len(result.jobs) == 1
+
+
+def test_partial_batch_blocks_ambiguous_turn_without_new_rows_then_allows_it(
+    configured_owner, db
+):
+    owner, batch_session = configured_owner
+    clarification_session = DesignImageSession(
+        owner_user_id=owner.id, title="clarification", status="active"
+    )
+    db.add(clarification_session)
+    db.commit()
+    batch = service.create_turn(
+        db,
+        owner.id,
+        _turn(
+            batch_session.id,
+            "batch-before-clarify",
+            "分别生成4张：正面、左侧45度、右侧45度、背面",
+        ),
+    )
+    for job in batch.jobs[:3]:
+        job.status = "succeeded"
+    batch.jobs[3].status = "running"
+    db.commit()
+    messages_before = db.query(DesignImageMessage).count()
+    jobs_before = db.query(DesignImageJob).count()
+
+    with pytest.raises(service.DesignImageActiveJobError):
+        service.create_turn(
+            db,
+            owner.id,
+            _turn(
+                clarification_session.id,
+                "clarify-while-batch-active",
+                "请生成3个角度的人像图",
+            ),
+        )
+
+    assert db.query(DesignImageMessage).count() == messages_before
+    assert db.query(DesignImageJob).count() == jobs_before
+    batch.jobs[3].status = "succeeded"
+    db.commit()
+    result = service.create_turn(
+        db,
+        owner.id,
+        _turn(
+            clarification_session.id,
+            "clarify-after-batch",
+            "请生成3个角度的人像图",
+        ),
+    )
+    assert result.mode == "clarification"
+    assert result.jobs == ()
 
 
 def test_active_retry_of_single_root_does_not_look_like_batch(configured_owner, db):

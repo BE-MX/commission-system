@@ -166,7 +166,7 @@ def _claim_update_statement(
 
 
 def claim_next_job(
-    db, worker_id: str, lease_seconds: int
+    db, worker_id: str, lease_seconds: int, *, _collision_retries: int = 2
 ) -> ClaimedJob | None:
     """Atomically claim the oldest queued row and return a detached snapshot."""
     if not worker_id or lease_seconds <= 0:
@@ -208,6 +208,13 @@ def claim_next_job(
         ).rowcount
         if changed != 1:
             db.rollback()
+            if _collision_retries > 0:
+                return claim_next_job(
+                    db,
+                    worker_id,
+                    lease_seconds,
+                    _collision_retries=_collision_retries - 1,
+                )
             return None
         db.commit()
         return ClaimedJob(job_id, token, worker_id, expires)

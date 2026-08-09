@@ -684,6 +684,17 @@ def _enforce_capacity(
         raise DesignImageActiveJobError("当前对话已有任务进行中，请等待完成")
 
 
+def _enforce_clarification_guard(
+    db: Session, owner_user_id: int, session_id: int
+) -> None:
+    if _has_active_multi_job_batch(db, owner_user_id):
+        raise DesignImageActiveJobError("当前批量任务尚未全部完成，请稍后再发送")
+    if db.execute(
+        _session_active_job_statement(session_id, for_update=True)
+    ).scalar_one_or_none() is not None:
+        raise DesignImageActiveJobError("当前对话已有任务进行中，请等待完成")
+
+
 def _preset_snapshot(db: Session) -> tuple[str, str, int, dict | None, dict]:
     row = (
         db.query(AiPreset, AiProvider)
@@ -959,10 +970,12 @@ def create_turn(
         intent = classify_multi_output_intent(payload.prompt)
         if intent.mode == "reject":
             raise DesignImageValidationError(
-                "一次最多生成 4 张图片",
+                "一次最多生成 4 张，请拆成多轮请求。",
                 code="multi_output_limit",
                 public_meta={"max_outputs": 4},
             )
+        if intent.mode == "clarify":
+            _enforce_clarification_guard(db, owner_user_id, session.id)
         base = (
             _usable_asset(
                 db, owner_user_id, session.id, payload.base_asset_id,
@@ -1138,7 +1151,7 @@ def resolve_message_action(
             ]
         except DesignImageNotFoundError as exc:
             raise DesignImageValidationError(
-                "附件已过期或不可用，请重新上传",
+                "附件已失效，请重新上传后发送新请求。",
                 code="attachment_unavailable",
             ) from exc
         required = interaction.count if payload.mode == "separate" else 1

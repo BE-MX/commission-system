@@ -292,6 +292,123 @@ def test_claim_never_exceeds_running_cap_for_same_owner(db, monkeypatch):
     assert third.status == "queued"
 
 
+def test_two_workers_concurrently_fill_exact_cap_then_serve_other_owner(
+    tmp_path, monkeypatch
+):
+    race_engine = create_engine(
+        f"sqlite:///{tmp_path / 'owner-cap-race.db'}",
+        connect_args={"check_same_thread": False, "timeout": 10},
+    )
+    for table in (
+        ArkUser.__table__,
+        AiProvider.__table__,
+        AiPreset.__table__,
+        DesignImageSession.__table__,
+        DesignImageMessage.__table__,
+        DesignImageJob.__table__,
+    ):
+        table.create(race_engine)
+    factory = sessionmaker(bind=race_engine, expire_on_commit=False)
+    with factory() as seed:
+        provider = AiProvider(
+            name="Concurrent cap provider",
+            provider_type="direct",
+            api_base="https://example.test",
+            api_type="openai",
+            is_enabled=True,
+            timeout_sec=30,
+        )
+        owners = [
+            ArkUser(
+                username=f"cap-owner-{index}",
+                password_hash="test",
+                real_name=f"Cap Owner {index}",
+                is_active=True,
+            )
+            for index in range(2)
+        ]
+        seed.add_all([provider, *owners])
+        seed.flush()
+        seed.add(
+            AiPreset(
+                preset_name=service.PRESET_NAME,
+                provider_id=provider.id,
+                model=service.EXPECTED_MODEL,
+                parameters={"output_format": "png"},
+                is_enabled=True,
+            )
+        )
+        owner_jobs = []
+        for owner_index, owner in enumerate(owners):
+            session = DesignImageSession(
+                owner_user_id=owner.id, title=f"owner {owner_index}", status="active"
+            )
+            seed.add(session)
+            seed.flush()
+            message = DesignImageMessage(
+                session_id=session.id, role="user", content="batch", status="normal"
+            )
+            seed.add(message)
+            seed.flush()
+            job_count = 3 if owner_index == 0 else 1
+            for job_index in range(job_count):
+                job = DesignImageJob(
+                    owner_user_id=owner.id,
+                    session_id=session.id,
+                    request_message_id=message.id,
+                    mode="generate",
+                    status="queued",
+                    prompt_snapshot="batch",
+                    parameters={"size": "1024x1024", "quality": "medium"},
+                    preset_name=service.PRESET_NAME,
+                    model=service.EXPECTED_MODEL,
+                    idempotency_key=f"cap-{owner_index}-{job_index}",
+                    created_at=_utcnow() + timedelta(seconds=owner_index),
+                )
+                seed.add(job)
+                owner_jobs.append(job)
+        seed.commit()
+        first_owner_id = owners[0].id
+        other_owner_job_id = owner_jobs[-1].id
+
+    monkeypatch.setattr(
+        worker,
+        "get_settings",
+        lambda: SimpleNamespace(DESIGN_IMAGE_MAX_ACTIVE_PER_USER=2),
+    )
+    barrier = Barrier(2)
+    claims = []
+    errors = []
+    lock = Lock()
+
+    def claim(worker_id):
+        try:
+            with factory() as race_db:
+                barrier.wait()
+                result = worker.claim_next_job(race_db, worker_id, 120)
+            with lock:
+                claims.append(result)
+        except Exception as exc:
+            with lock:
+                errors.append(exc)
+
+    threads = [Thread(target=claim, args=(name,)) for name in ("cap-a", "cap-b")]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=15)
+        assert not thread.is_alive()
+
+    assert errors == []
+    assert len([claim for claim in claims if claim is not None]) == 2
+    with factory() as verify:
+        assert verify.query(DesignImageJob).filter_by(
+            owner_user_id=first_owner_id, status="running"
+        ).count() == 2
+        other_claim = worker.claim_next_job(verify, "cap-other", 120)
+        assert other_claim.job_id == other_owner_job_id
+
+
 def test_claim_sql_locks_owner_before_owner_job():
     owner_sql = str(
         worker._claim_owner_statement(7).compile(dialect=mysql.dialect())
