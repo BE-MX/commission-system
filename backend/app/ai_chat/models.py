@@ -4,17 +4,20 @@ from datetime import datetime
 
 from sqlalchemy import (
     BigInteger,
+    CheckConstraint,
     Column,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
+    and_,
 )
 from sqlalchemy.dialects import mysql
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import foreign, relationship, remote
 
 from app.ai.models import AiCallLog  # noqa: F401 -- registers isolated FK target
 from app.auth.models import ArkUser  # noqa: F401 -- registers isolated FK target
@@ -22,6 +25,15 @@ from app.core.database import Base
 
 
 USER_ID = Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql")
+MESSAGE_ROLES = ("user", "assistant")
+MESSAGE_STATUSES = ("completed", "streaming", "stopped", "failed")
+ATTACHMENT_TYPES = ("image", "document")
+ATTACHMENT_STATUSES = ("draft", "attached", "failed")
+
+
+def _in_constraint(column_name: str, values: tuple[str, ...]) -> str:
+    allowed = ", ".join(f"'{value}'" for value in values)
+    return f"{column_name} IN ({allowed})"
 
 
 class AiChatSession(Base):
@@ -75,7 +87,6 @@ class AiChatMessage(Base):
     error_message = Column(Text, nullable=True, comment="可行动失败信息")
     retry_of_message_id = Column(
         BigInteger,
-        ForeignKey("ark_ai_chat_messages.id", ondelete="RESTRICT"),
         nullable=True,
         comment="被重试的消息",
     )
@@ -100,22 +111,55 @@ class AiChatMessage(Base):
             "request_id",
             name="uq_ai_chat_message_session_request",
         ),
+        UniqueConstraint(
+            "session_id",
+            "id",
+            name="uq_ai_chat_message_session_id",
+        ),
+        ForeignKeyConstraint(
+            ["session_id", "retry_of_message_id"],
+            ["ark_ai_chat_messages.session_id", "ark_ai_chat_messages.id"],
+            name="fk_ai_chat_message_retry_session",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            _in_constraint("role", MESSAGE_ROLES),
+            name="ck_ai_chat_message_role",
+        ),
+        CheckConstraint(
+            _in_constraint("status", MESSAGE_STATUSES),
+            name="ck_ai_chat_message_status",
+        ),
         Index("idx_ai_chat_message_session_created", "session_id", "created_at"),
         {"comment": "AI 方案对话消息"},
     )
 
     session = relationship("AiChatSession", back_populates="messages", lazy="noload")
     attachments = relationship(
-        "AiChatAttachment", back_populates="message", lazy="noload"
+        "AiChatAttachment",
+        primaryjoin=lambda: and_(
+            AiChatMessage.session_id == AiChatAttachment.session_id,
+            AiChatMessage.id == foreign(AiChatAttachment.message_id),
+        ),
+        back_populates="message",
+        lazy="noload",
     )
     retry_of_message = relationship(
         "AiChatMessage",
-        remote_side=[id],
+        primaryjoin=lambda: and_(
+            AiChatMessage.session_id == remote(AiChatMessage.session_id),
+            foreign(AiChatMessage.retry_of_message_id) == remote(AiChatMessage.id),
+        ),
+        foreign_keys=[retry_of_message_id],
+        remote_side=[session_id, id],
         back_populates="retry_messages",
         lazy="noload",
     )
     retry_messages = relationship(
-        "AiChatMessage", back_populates="retry_of_message", lazy="noload"
+        "AiChatMessage",
+        back_populates="retry_of_message",
+        lazy="noload",
+        overlaps="messages,session",
     )
     ai_call_log = relationship("AiCallLog", lazy="noload")
 
@@ -132,7 +176,6 @@ class AiChatAttachment(Base):
     )
     message_id = Column(
         BigInteger,
-        ForeignKey("ark_ai_chat_messages.id", ondelete="RESTRICT"),
         nullable=True,
         comment="发送后绑定的用户消息",
     )
@@ -154,6 +197,20 @@ class AiChatAttachment(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
 
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["session_id", "message_id"],
+            ["ark_ai_chat_messages.session_id", "ark_ai_chat_messages.id"],
+            name="fk_ai_chat_attachment_message_session",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            _in_constraint("attachment_type", ATTACHMENT_TYPES),
+            name="ck_ai_chat_attachment_type",
+        ),
+        CheckConstraint(
+            _in_constraint("status", ATTACHMENT_STATUSES),
+            name="ck_ai_chat_attachment_status",
+        ),
         Index(
             "idx_ai_chat_attachment_session_created", "session_id", "created_at"
         ),
@@ -165,6 +222,12 @@ class AiChatAttachment(Base):
         "AiChatSession", back_populates="attachments", lazy="noload"
     )
     message = relationship(
-        "AiChatMessage", back_populates="attachments", lazy="noload"
+        "AiChatMessage",
+        primaryjoin=lambda: and_(
+            AiChatMessage.session_id == AiChatAttachment.session_id,
+            AiChatMessage.id == foreign(AiChatAttachment.message_id),
+        ),
+        back_populates="attachments",
+        lazy="noload",
     )
     creator = relationship("ArkUser", lazy="noload")

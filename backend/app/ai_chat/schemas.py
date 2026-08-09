@@ -1,8 +1,24 @@
 """Validated request and public response schemas for Customer AI Chat."""
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from app.ai_chat.models import (
+    ATTACHMENT_STATUSES,
+    ATTACHMENT_TYPES,
+    MESSAGE_ROLES,
+    MESSAGE_STATUSES,
+)
+from app.core.config import get_settings
+
+
+MessageRole = Literal[*MESSAGE_ROLES]
+MessageStatus = Literal[*MESSAGE_STATUSES]
+AttachmentType = Literal[*ATTACHMENT_TYPES]
+AttachmentStatus = Literal[*ATTACHMENT_STATUSES]
+MAX_ATTACHMENTS = get_settings().AI_CHAT_MAX_ATTACHMENTS
 
 
 class SessionCreate(BaseModel):
@@ -20,7 +36,10 @@ class TurnStreamRequest(BaseModel):
         pattern=r"^[A-Za-z0-9_-]+$",
     )
     content: str = Field(default="", max_length=12_000)
-    attachment_ids: list[int] = Field(default_factory=list, max_length=5)
+    attachment_ids: list[int] = Field(
+        default_factory=list,
+        max_length=MAX_ATTACHMENTS,
+    )
 
     @field_validator("attachment_ids")
     @classmethod
@@ -53,13 +72,12 @@ class MessageResponse(BaseModel):
 
     id: int
     session_id: int
-    role: str
+    role: MessageRole
     request_id: str | None
     content: str
-    status: str
+    status: MessageStatus
     error_message: str | None = None
     retry_of_message_id: int | None = None
-    ai_call_log_id: int | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -73,7 +91,7 @@ class AttachmentResponse(BaseModel):
     original_name: str
     mime_type: str
     file_size: int
-    attachment_type: str
-    status: str
+    attachment_type: AttachmentType
+    status: AttachmentStatus
     created_by: int
     created_at: datetime

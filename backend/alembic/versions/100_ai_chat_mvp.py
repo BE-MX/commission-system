@@ -85,7 +85,6 @@ def upgrade() -> None:
         sa.Column(
             "retry_of_message_id",
             sa.BigInteger(),
-            sa.ForeignKey("ark_ai_chat_messages.id", ondelete="RESTRICT"),
             nullable=True,
             comment="被重试的消息",
         ),
@@ -116,6 +115,25 @@ def upgrade() -> None:
             "request_id",
             name="uq_ai_chat_message_session_request",
         ),
+        sa.UniqueConstraint(
+            "session_id",
+            "id",
+            name="uq_ai_chat_message_session_id",
+        ),
+        sa.ForeignKeyConstraint(
+            ["session_id", "retry_of_message_id"],
+            ["ark_ai_chat_messages.session_id", "ark_ai_chat_messages.id"],
+            name="fk_ai_chat_message_retry_session",
+            ondelete="RESTRICT",
+        ),
+        sa.CheckConstraint(
+            "role IN ('user', 'assistant')",
+            name="ck_ai_chat_message_role",
+        ),
+        sa.CheckConstraint(
+            "status IN ('completed', 'streaming', 'stopped', 'failed')",
+            name="ck_ai_chat_message_status",
+        ),
         comment="AI 方案对话消息",
     )
     op.create_index(
@@ -137,7 +155,6 @@ def upgrade() -> None:
         sa.Column(
             "message_id",
             sa.BigInteger(),
-            sa.ForeignKey("ark_ai_chat_messages.id", ondelete="RESTRICT"),
             nullable=True,
             comment="发送后绑定的用户消息",
         ),
@@ -179,6 +196,20 @@ def upgrade() -> None:
             comment="创建时间",
         ),
         sa.PrimaryKeyConstraint("id"),
+        sa.ForeignKeyConstraint(
+            ["session_id", "message_id"],
+            ["ark_ai_chat_messages.session_id", "ark_ai_chat_messages.id"],
+            name="fk_ai_chat_attachment_message_session",
+            ondelete="RESTRICT",
+        ),
+        sa.CheckConstraint(
+            "attachment_type IN ('image', 'document')",
+            name="ck_ai_chat_attachment_type",
+        ),
+        sa.CheckConstraint(
+            "status IN ('draft', 'attached', 'failed')",
+            name="ck_ai_chat_attachment_status",
+        ),
         comment="AI 方案对话私有附件",
     )
     op.create_index(
