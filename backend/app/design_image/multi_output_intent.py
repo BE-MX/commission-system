@@ -50,7 +50,9 @@ _CONVENTIONAL_VIEW_PATTERN = re.compile(r"(?P<count>[三四])视图")
 _REFERENCE_ASSET_SUFFIX = re.compile(
     r"^[^图，。；;]{0,6}(?:参考图|素材图|原图|底图)"
 )
-_REFERENCE_ASSET_PREFIX = re.compile(r"(?:参考|使用|上传|采用|用)\s*$")
+_REFERENCE_ASSET_PREFIX = re.compile(
+    r"(?:(?:参考|素材|原|底)图(?:共|有|是)?|参考|使用|上传|采用|用)\s*$"
+)
 _ANGLE_PATTERN = re.compile(
     r"左侧(?:面)?(?:\s*\d{1,3}\s*(?:°|度))?|"
     r"右侧(?:面)?(?:\s*\d{1,3}\s*(?:°|度))?|"
