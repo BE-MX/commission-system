@@ -143,6 +143,9 @@ def _stream_assistant_events(
             "reused": reused,
         },
     )
+    # MVP emits one initial heartbeat only. Periodic heartbeats require an async
+    # bridge around the shared synchronous facade plus an independently scoped DB
+    # session; adding a timer thread here would make disconnect cleanup unreliable.
     yield sse_event("heartbeat", {"status": assistant["status"]})
     if reused:
         yield from _saved_events(

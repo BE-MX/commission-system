@@ -302,9 +302,23 @@ def begin_turn(
         )
         db.add(assistant)
         db.flush()
-        for attachment in attachments:
-            attachment.message_id = user.id
-            attachment.status = "attached"
+        if attachments:
+            claimed = (
+                db.query(AiChatAttachment)
+                .filter(
+                    AiChatAttachment.id.in_(request.attachment_ids),
+                    AiChatAttachment.session_id == session_id,
+                    AiChatAttachment.created_by == owner_user_id,
+                    AiChatAttachment.status == "draft",
+                    AiChatAttachment.message_id.is_(None),
+                )
+                .update(
+                    {"message_id": user.id, "status": "attached"},
+                    synchronize_session=False,
+                )
+            )
+            if claimed != len(request.attachment_ids):
+                _not_found()
         if session.title == "新对话":
             session.title = _auto_title(user.content)
         session.updated_at = now
