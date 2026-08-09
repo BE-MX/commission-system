@@ -35,6 +35,10 @@ class WorkerConfigurationError(ValueError):
     """Raised when a frozen job cannot be executed without configuration drift."""
 
 
+class FrozenInputReadError(ValueError):
+    """Raised before provider I/O when a frozen input cannot be read."""
+
+
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
@@ -253,10 +257,17 @@ def _load_snapshot(job_id: int, lease_token: str) -> _JobSnapshot | None:
 def _image_inputs(snapshot: _JobSnapshot) -> tuple[image_runtime.ImageInput, ...]:
     images = []
     for index, (relative_path, mime_type) in enumerate(snapshot.input_paths):
-        path = file_service.resolve_private_path(relative_path)
+        try:
+            path = file_service.resolve_private_path(relative_path)
+            content = path.read_bytes()
+        except OSError as exc:
+            failure = FrozenInputReadError("frozen input image is unavailable")
+            setattr(failure, "billing_certainty", "not_billed")
+            setattr(failure, "provider_attempt_count", 0)
+            raise failure from exc
         images.append(image_runtime.ImageInput(
             filename=f"image-{index}{path.suffix.lower()}",
-            content=path.read_bytes(),
+            content=content,
             content_type=mime_type,
         ))
     return tuple(images)
@@ -455,6 +466,38 @@ def _delete_stored(stored, context: str) -> None:
             _warn_visible(f"{context}: failed to delete {path}: {exc}")
 
 
+def _reconcile_success(job_id: int, stored) -> str:
+    """Resolve an uncertain finalize acknowledgement without risking live output."""
+    try:
+        with SessionLocal() as db:
+            row = db.execute(
+                select(
+                    CustomerImageGeneration.status,
+                    CustomerImageGeneration.output_asset_id,
+                    CustomerImageAsset.storage_path,
+                )
+                .outerjoin(
+                    CustomerImageAsset,
+                    CustomerImageAsset.id
+                    == CustomerImageGeneration.output_asset_id,
+                )
+                .where(CustomerImageGeneration.id == job_id)
+            ).one_or_none()
+    except Exception as exc:
+        _warn_visible(
+            f"job {job_id} success reconciliation failed: {type(exc).__name__}"
+        )
+        return "unknown"
+    if (
+        row is not None
+        and row.status == "succeeded"
+        and row.output_asset_id is not None
+        and row.storage_path == stored.relative_path
+    ):
+        return "committed"
+    return "not_committed"
+
+
 def _execute_claimed_job(job_id: int, lease_token: str) -> None:
     result = None
     stored = None
@@ -481,6 +524,17 @@ def _execute_claimed_job(job_id: int, lease_token: str) -> None:
             setattr(exc, "log_id", result.log_id)
             setattr(exc, "provider_attempt_count", result.provider_attempt_count)
         if stored is not None:
+            reconciliation = _reconcile_success(job_id, stored)
+            if reconciliation == "committed":
+                _warn_visible(
+                    f"job {job_id} success confirmed after acknowledgement error"
+                )
+                return
+            if reconciliation == "unknown":
+                _warn_visible(
+                    f"job {job_id} output retained because database state is unknown"
+                )
+                return
             _delete_stored(stored, f"failed finalize for job {job_id}")
         failure = image_runtime.classify_image_error(exc)
         try:

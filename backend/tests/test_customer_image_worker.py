@@ -785,3 +785,187 @@ def test_process_queue_claims_only_configured_bounded_batch(db, monkeypatch):
     assert db.get(CustomerImageGeneration, first.id).status == "running"
     assert db.get(CustomerImageGeneration, second.id).status == "running"
     assert db.get(CustomerImageGeneration, third.id).status == "queued"
+
+
+@pytest.mark.parametrize("read_error", [FileNotFoundError, OSError])
+def test_frozen_input_read_failure_is_not_billed_and_refunded_once(
+    db, monkeypatch, read_error
+):
+    from app.customer_image import worker
+
+    generation, invite, *_ = _queued_generation(
+        db, status="running", lease_token=f"lease-input-{read_error.__name__}"
+    )
+    monkeypatch.setattr(
+        worker,
+        "SessionLocal",
+        sessionmaker(bind=db.get_bind(), expire_on_commit=False),
+    )
+    monkeypatch.setattr(
+        worker.file_service,
+        "resolve_private_path",
+        lambda _path: (_ for _ in ()).throw(read_error("frozen input missing")),
+    )
+    provider_called = False
+
+    def unexpected_provider(*_args, **_kwargs):
+        nonlocal provider_called
+        provider_called = True
+        raise AssertionError("input read failure reached shared runtime")
+
+    monkeypatch.setattr(worker.image_runtime, "call_image_provider", unexpected_provider)
+
+    worker._execute_claimed_job(
+        generation.id, f"lease-input-{read_error.__name__}"
+    )
+
+    db.expire_all()
+    failed = db.get(CustomerImageGeneration, generation.id)
+    first_refund = failed.quota_refunded_at
+    assert provider_called is False
+    assert failed.status == "failed"
+    assert failed.billing_certainty == "not_billed"
+    assert failed.provider_attempt_count == 0
+    assert first_refund is not None
+    assert db.get(CustomerImageInvite, invite.id).quota_used == 0
+    assert worker.finalize_failure(
+        generation.id,
+        f"lease-input-{read_error.__name__}",
+        ImageJobFailure(
+            code="validation_error",
+            customer_message="图片或参数无效，请调整后重试",
+            provider_attempt_count=0,
+            log_id=None,
+            refund_eligible=True,
+        ),
+    ) is False
+    db.expire_all()
+    assert db.get(CustomerImageGeneration, generation.id).quota_refunded_at == first_refund
+
+
+def test_commit_ack_error_reconciles_committed_success_and_keeps_output(
+    db, monkeypatch
+):
+    from app.customer_image import worker
+
+    generation, invite, *_ = _queued_generation(
+        db, status="running", lease_token="lease-commit-ack"
+    )
+    monkeypatch.setattr(
+        worker,
+        "SessionLocal",
+        sessionmaker(bind=db.get_bind(), expire_on_commit=False),
+    )
+    monkeypatch.setattr(worker, "_call_provider", lambda _snapshot: _provider_result())
+    monkeypatch.setattr(
+        worker.file_service, "normalize_upload", lambda *_args: SimpleNamespace()
+    )
+    stored = _stored_output()
+    monkeypatch.setattr(
+        worker.file_service, "save_private_image", lambda *_args, **_kwargs: stored
+    )
+    real_finalize = worker._finalize_success
+
+    def commit_then_raise(*args):
+        assert real_finalize(*args) is True
+        raise OSError("commit ACK lost")
+
+    monkeypatch.setattr(worker, "_finalize_success", commit_then_raise)
+    deleted = []
+    monkeypatch.setattr(worker.file_service, "delete_private_file", deleted.append)
+
+    worker._execute_claimed_job(generation.id, "lease-commit-ack")
+
+    db.expire_all()
+    finished = db.get(CustomerImageGeneration, generation.id)
+    assert finished.status == "succeeded"
+    assert db.get(CustomerImageAsset, finished.output_asset_id).storage_path == stored.relative_path
+    assert db.get(CustomerImageInvite, invite.id).quota_used == 1
+    assert deleted == []
+
+
+def test_unknown_success_reconciliation_keeps_file_for_audit(db, monkeypatch):
+    from app.customer_image import worker
+
+    generation, *_ = _queued_generation(
+        db, status="running", lease_token="lease-reconcile-unknown"
+    )
+    monkeypatch.setattr(
+        worker,
+        "SessionLocal",
+        sessionmaker(bind=db.get_bind(), expire_on_commit=False),
+    )
+    monkeypatch.setattr(worker, "_call_provider", lambda _snapshot: _provider_result())
+    monkeypatch.setattr(
+        worker.file_service, "normalize_upload", lambda *_args: SimpleNamespace()
+    )
+    stored = _stored_output()
+    monkeypatch.setattr(
+        worker.file_service, "save_private_image", lambda *_args, **_kwargs: stored
+    )
+    monkeypatch.setattr(
+        worker,
+        "_finalize_success",
+        lambda *_args: (_ for _ in ()).throw(OSError("database ACK unavailable")),
+    )
+    monkeypatch.setattr(
+        worker, "_reconcile_success", lambda *_args: "unknown", raising=False
+    )
+    deleted = []
+    monkeypatch.setattr(worker.file_service, "delete_private_file", deleted.append)
+
+    worker._execute_claimed_job(generation.id, "lease-reconcile-unknown")
+
+    db.expire_all()
+    assert db.get(CustomerImageGeneration, generation.id).status == "running"
+    assert deleted == []
+
+
+def test_confirmed_uncommitted_success_deletes_output_without_refund(db, monkeypatch):
+    from app.customer_image import worker
+
+    generation, invite, *_ = _queued_generation(
+        db, status="running", lease_token="lease-reconcile-uncommitted"
+    )
+    monkeypatch.setattr(
+        worker,
+        "SessionLocal",
+        sessionmaker(bind=db.get_bind(), expire_on_commit=False),
+    )
+    monkeypatch.setattr(worker, "_call_provider", lambda _snapshot: _provider_result())
+    monkeypatch.setattr(
+        worker.file_service, "normalize_upload", lambda *_args: SimpleNamespace()
+    )
+    stored = _stored_output()
+    monkeypatch.setattr(
+        worker.file_service, "save_private_image", lambda *_args, **_kwargs: stored
+    )
+    monkeypatch.setattr(
+        worker,
+        "_finalize_success",
+        lambda *_args: (_ for _ in ()).throw(OSError("commit did not run")),
+    )
+    deleted = []
+    monkeypatch.setattr(worker.file_service, "delete_private_file", deleted.append)
+
+    worker._execute_claimed_job(generation.id, "lease-reconcile-uncommitted")
+
+    db.expire_all()
+    failed = db.get(CustomerImageGeneration, generation.id)
+    assert failed.status == "failed"
+    assert failed.provider_attempt_count == 1
+    assert failed.quota_refunded_at is None
+    assert db.get(CustomerImageInvite, invite.id).quota_used == 1
+    assert deleted == [stored.relative_path, stored.thumbnail_relative_path]
+
+
+def test_unreadable_database_makes_success_reconciliation_unknown(monkeypatch):
+    from app.customer_image import worker
+
+    monkeypatch.setattr(
+        worker,
+        "SessionLocal",
+        lambda: (_ for _ in ()).throw(OSError("database unavailable")),
+    )
+
+    assert worker._reconcile_success(123, _stored_output()) == "unknown"
