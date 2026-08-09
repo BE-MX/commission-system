@@ -227,6 +227,7 @@ def test_images_are_magic_validated_normalized_and_metadata_free(fmt, suffix, de
         ("fake.png", "image/png", _image_bytes("JPEG")),
         ("fake.jpg", "image/png", _image_bytes("JPEG")),
         ("legacy.doc", "application/msword", b"legacy"),
+        ("notes.markdown", "text/markdown", b"unsupported alias"),
         ("bad.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", b"PK bad"),
         ("wrong.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", _xlsx_bytes()),
     ],
@@ -256,8 +257,8 @@ def test_extraction_truncates_at_configured_limit_with_exact_marker(monkeypatch)
     result = _service().normalize_and_store("long.txt", "text/plain", ("内容" * 30).encode())
 
     assert result.truncated is True
-    assert result.extracted_text.endswith(marker)
-    assert len(result.extracted_text) <= 20 + len(marker)
+    assert result.extracted_text.endswith(f"\n{marker}")
+    assert len(result.extracted_text) <= 20 + 1 + len(marker)
 
 
 def test_truncated_extraction_closes_resource_backed_iterator(monkeypatch):

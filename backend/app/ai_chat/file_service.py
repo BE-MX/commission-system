@@ -40,7 +40,7 @@ _DOCUMENT_MIMES = {
     ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 }
-_TEXT_SUFFIXES = {".txt", ".md", ".markdown"}
+_TEXT_SUFFIXES = {".txt", ".md"}
 _TEXT_MIMES = {"text/plain", "text/markdown", "application/octet-stream"}
 _OOXML_PREFIX = {".docx": "word/", ".xlsx": "xl/", ".pptx": "ppt/"}
 
@@ -111,7 +111,7 @@ def _bounded_text(parts, limit: int) -> tuple[str, bool]:
             close()
     text = "\n".join(kept)
     if truncated:
-        text += TRUNCATION_MARKER
+        text += f"\n{TRUNCATION_MARKER}"
     return text, truncated
 
 
@@ -216,7 +216,7 @@ def _prepare_document(suffix: str, declared_mime: str | None, content: bytes) ->
         if mime and mime not in _TEXT_MIMES:
             raise FileValidationError("文件 MIME 类型与扩展名不匹配")
         parts = [_decode_text(content)]
-        actual_mime = "text/markdown" if suffix in {".md", ".markdown"} else "text/plain"
+        actual_mime = "text/markdown" if suffix == ".md" else "text/plain"
     else:
         expected_mime = _DOCUMENT_MIMES[suffix]
         if mime and mime != expected_mime:
