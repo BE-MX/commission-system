@@ -46,6 +46,21 @@ test('editor owns desktop three tracks and mobile ordered flow with a safe-area 
   assert.match(files.editor, /env\(safe-area-inset-bottom/)
   assert.match(files.editor, /data-mobile-step|mobile-step/)
   assert.match(files.editor, /position:\s*sticky/)
+  assert.match(files.editor, /position:\s*fixed/)
+  assert.match(files.editor, /100dvh/)
+  assert.match(files.editor, /mobile-action-spacer/)
+})
+
+test('desktop columns keep logo and history left, preview center, and controls right', () => {
+  const left = files.editor.match(/<aside class="settings-panel"[\s\S]*?<\/aside>/)?.[0] || ''
+  const center = files.editor.match(/<section class="preview-column"[\s\S]*?<\/section>/)?.[0] || ''
+  const right = files.editor.match(/<aside class="action-panel"[\s\S]*?<\/aside>/)?.[0] || ''
+  assert.match(left, /CustomerLogoUpload/)
+  assert.match(left, /GenerationHistory/)
+  assert.match(center, /GenerationPreview/)
+  assert.match(right, /ProductOptionGroup/)
+  assert.match(right, /customer-requirement/)
+  assert.match(right, /generate-block/)
 })
 
 test('customer controls cover logo color boolean requirement quota history preview and download', () => {
@@ -55,6 +70,7 @@ test('customer controls cover logo color boolean requirement quota history previ
   assert.match(files.options, /color_hex/)
   assert.match(files.options, /el-switch/)
   assert.match(files.editor, /maxlength="500"|:maxlength="500"/)
+  assert.match(files.editor, /aria-labelledby="requirement-label"/)
   assert.match(files.editor, /剩余额度/)
   assert.match(files.history, /generation/i)
   assert.match(files.preview, /下载/)
@@ -66,7 +82,7 @@ test('portal data flow uses registered wrappers polling idempotency and blob cle
   assert.match(files.composable, /requestId/)
   assert.match(files.composable, /hasActiveGenerations/)
   assert.match(files.composable, /setTimeout/)
-  assert.match(files.composable, /assets\.clear\(|clearAssets\(|revoke/)
+  assert.match(files.composable, /assets\.(?:clear|dispose)\(|clearAssets\(|revoke/)
   assert.doesNotMatch(files.composable, /axios\.create|from ['"]axios['"]/)
 })
 
@@ -87,6 +103,7 @@ test('motion is bounded accessible and every customer action has a 44px target',
   const combined = Object.values(files).join('\n')
   assert.match(combined, /min-height:\s*44px/)
   assert.match(combined, /prefers-reduced-motion:\s*reduce/)
+  assert.match(combined, /result-arrive[\s\S]*180ms/)
   assert.match(combined, /cubic-bezier\(0\.23,\s*1,\s*0\.32,\s*1\)/)
   assert.doesNotMatch(combined, /transition:\s*all/)
   assert.doesNotMatch(combined, /\bease-in\b/)

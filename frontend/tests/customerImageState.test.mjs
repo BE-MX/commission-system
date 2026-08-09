@@ -161,3 +161,36 @@ test('result asset IDs are parsed only from the public asset URL contract', () =
   assert.equal(assetIdFromResultUrl('/uploads/private/customer-logo.png'), null)
   assert.equal(assetIdFromResultUrl('https://evil.example/assets/81/content'), null)
 })
+
+test('deferred logo and result responses never create object URLs after disposal', async () => {
+  const createController = required(assets, 'createCustomerImageAssetController')
+  const pending = []
+  const created = []
+  const controller = createController({
+    fetchProductAsset: (productId, id) => new Promise(resolve => pending.push({ id, productId, resolve })),
+    fetchInviteAsset: id => new Promise(resolve => pending.push({ id, resolve })),
+    urlApi: {
+      createObjectURL(blob) { created.push(blob); return `blob:${created.length}` },
+      revokeObjectURL() {},
+    },
+  })
+
+  const logoLoad = controller.loadLogo({ id: 21 })
+  const resultLoad = controller.loadGeneration({
+    id: 8,
+    status: 'succeeded',
+    result_url: '/api/customer-image/public/assets/81/content',
+  })
+  const coverLoad = controller.loadProductCovers([{
+    id: 9,
+    assets: [{ id: 44, role: 'cover' }],
+  }])
+  controller.dispose()
+  for (const request of pending) request.resolve({ data: { id: request.id } })
+  await Promise.all([logoLoad, resultLoad, coverLoad])
+
+  assert.deepEqual(created, [])
+  assert.equal(controller.logoUrl.value, '')
+  assert.deepEqual({ ...controller.generationUrls }, {})
+  assert.deepEqual({ ...controller.coverUrls }, {})
+})

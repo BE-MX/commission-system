@@ -1,4 +1,5 @@
 <script setup>
+import * as publicApi from '@/api/customerImagePublic'
 import CustomerProductCatalog from './CustomerProductCatalog.vue'
 import CustomerProductEditor from './CustomerProductEditor.vue'
 import { useCustomerImagePortal } from './composables/useCustomerImagePortal'
@@ -20,7 +21,17 @@ const {
   submitGeneration,
   updateRequirement,
   updateSelection,
-} = useCustomerImagePortal()
+} = useCustomerImagePortal({
+  api: publicApi,
+  scrollResultIntoView() {
+    requestAnimationFrame(() => {
+      document.getElementById('customer-generation-result')?.scrollIntoView({
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+        block: 'start',
+      })
+    })
+  },
+})
 </script>
 
 <template>
@@ -79,6 +90,7 @@ const {
       :submitting="state.submitting"
       :error="state.error"
       :notice="state.notice"
+      :result-announcement="state.resultAnnouncement"
       @back="backToCatalog"
       @download="downloadGeneration"
       @generate="submitGeneration"

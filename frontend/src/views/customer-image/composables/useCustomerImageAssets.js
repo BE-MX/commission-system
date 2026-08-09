@@ -42,6 +42,17 @@ export function useCustomerImageAssets({
   fetchProductAsset,
   fetchInviteAsset,
   urlApi = URL,
+  lifecycle = { onBeforeUnmount },
+} = {}) {
+  const controller = createCustomerImageAssetController({ fetchProductAsset, fetchInviteAsset, urlApi })
+  lifecycle.onBeforeUnmount(controller.dispose)
+  return controller
+}
+
+export function createCustomerImageAssetController({
+  fetchProductAsset,
+  fetchInviteAsset,
+  urlApi = URL,
 } = {}) {
   const registry = createObjectUrlRegistry({
     createObjectURL: blob => urlApi.createObjectURL(blob),
@@ -51,30 +62,48 @@ export function useCustomerImageAssets({
   const generationUrls = reactive({})
   const logoUrl = ref('')
   let generation = 0
+  let disposed = false
+  const requestVersions = new Map()
 
-  async function replaceFromResponse(key, response) {
+  function beginRequest(key) {
+    const version = (requestVersions.get(key) || 0) + 1
+    requestVersions.set(key, version)
+    return { generation, key, version }
+  }
+
+  function requestIsCurrent(token) {
+    return !disposed
+      && token.generation === generation
+      && requestVersions.get(token.key) === token.version
+  }
+
+  async function replaceFromResponse(key, response, token) {
+    if (!requestIsCurrent(token)) return null
     return registry.replace(key, response.data)
   }
 
   async function loadProductCovers(products) {
-    const token = ++generation
     await Promise.all((products || []).map(async product => {
       const cover = product.assets?.find(asset => asset.role === 'cover')
       if (!cover) return
+      const key = `product:${product.id}`
+      const token = beginRequest(key)
       const response = await fetchProductAsset(product.id, cover.id)
-      if (token !== generation) return
-      coverUrls[product.id] = await replaceFromResponse(`product:${product.id}`, response)
+      const url = await replaceFromResponse(key, response, token)
+      if (url) coverUrls[product.id] = url
     }))
   }
 
   async function loadLogo(asset) {
+    const token = beginRequest('logo')
     if (!asset?.id) {
       registry.remove('logo')
       logoUrl.value = ''
       return ''
     }
     const response = await fetchInviteAsset(asset.id)
-    logoUrl.value = await replaceFromResponse('logo', response)
+    const url = await replaceFromResponse('logo', response, token)
+    if (url) logoUrl.value = url
     return logoUrl.value
   }
 
@@ -83,8 +112,10 @@ export function useCustomerImageAssets({
     if (!assetId) return null
     const key = `generation:${generationItem.id}`
     if (registry.get(key)) return registry.get(key)
+    const token = beginRequest(key)
     const response = await fetchInviteAsset(assetId)
-    generationUrls[generationItem.id] = await replaceFromResponse(key, response)
+    const url = await replaceFromResponse(key, response, token)
+    if (url) generationUrls[generationItem.id] = url
     return generationUrls[generationItem.id]
   }
 
@@ -96,13 +127,18 @@ export function useCustomerImageAssets({
 
   function clear() {
     generation += 1
+    requestVersions.clear()
     registry.clear()
     logoUrl.value = ''
     for (const key of Object.keys(coverUrls)) delete coverUrls[key]
     for (const key of Object.keys(generationUrls)) delete generationUrls[key]
   }
 
-  onBeforeUnmount(clear)
+  function dispose() {
+    disposed = true
+    clear()
+  }
+
   return {
     coverUrls,
     generationUrls,
@@ -112,5 +148,6 @@ export function useCustomerImageAssets({
     loadLogo,
     loadProductCovers,
     clear,
+    dispose,
   }
 }

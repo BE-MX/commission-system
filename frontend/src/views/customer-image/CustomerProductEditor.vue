@@ -22,6 +22,7 @@ defineProps({
   submitting: { type: Boolean, default: false },
   error: { type: String, default: '' },
   notice: { type: String, default: '' },
+  resultAnnouncement: { type: String, default: '' },
 })
 
 defineEmits(['back', 'download', 'generate', 'select-generation', 'update-requirement', 'update-selection', 'upload-logo'])
@@ -46,6 +47,26 @@ defineEmits(['back', 'download', 'generate', 'select-generation', 'update-requir
       <aside class="settings-panel" data-mobile-step="1">
         <CustomerLogoUpload :logo-url="logoUrl" :uploading="uploadingLogo" @upload="$emit('upload-logo', $event)" />
         <div class="divider" />
+        <GenerationHistory
+          :generations="generations"
+          :generation-urls="generationUrls"
+          :selected-id="previewGeneration?.id"
+          @select="$emit('select-generation', $event)"
+        />
+      </aside>
+
+      <section class="preview-column" data-mobile-step="2">
+        <GenerationPreview
+          :product="product"
+          :cover-url="coverUrl"
+          :generation="previewGeneration"
+          :result-url="generationUrls[previewGeneration?.id] || ''"
+          :message="generationMessage"
+          @download="$emit('download', $event)"
+        />
+      </section>
+
+      <aside class="action-panel" data-mobile-step="3">
         <section class="options-section" aria-labelledby="options-title">
           <div class="section-heading">
             <span>2</span>
@@ -62,29 +83,18 @@ defineEmits(['back', 'download', 'generate', 'select-generation', 'update-requir
             @update:model-value="$emit('update-selection', option.key, $event)"
           />
         </section>
-      </aside>
-
-      <section class="preview-column" data-mobile-step="2">
-        <GenerationPreview
-          :product="product"
-          :cover-url="coverUrl"
-          :generation="previewGeneration"
-          :result-url="generationUrls[previewGeneration?.id] || ''"
-          :message="generationMessage"
-          @download="$emit('download', $event)"
-        />
-      </section>
-
-      <aside class="action-panel" data-mobile-step="3">
+        <div class="divider" />
         <section class="requirement-section">
           <div class="section-heading">
             <span>3</span>
             <div>
-              <h2>补充要求</h2>
+              <h2 id="requirement-label">补充要求</h2>
               <p>可选，最多 500 字</p>
             </div>
           </div>
           <textarea
+            id="customer-requirement"
+            aria-labelledby="requirement-label"
             :value="requirement"
             maxlength="500"
             rows="4"
@@ -94,7 +104,8 @@ defineEmits(['back', 'download', 'generate', 'select-generation', 'update-requir
           <small class="count">{{ requirement.length }} / 500</small>
         </section>
 
-        <div class="generate-block">
+        <div class="mobile-action-spacer" aria-hidden="true" />
+        <div class="generate-block" aria-live="polite">
           <p v-if="error" class="feedback error" role="alert">{{ error }}</p>
           <p v-else-if="notice" class="feedback notice" role="status">{{ notice }}</p>
           <p v-if="generateHint" class="hint">{{ generateHint }}</p>
@@ -109,13 +120,7 @@ defineEmits(['back', 'download', 'generate', 'select-generation', 'update-requir
           <p class="quota-copy">本次生成将使用 1 次额度，剩余 {{ quota.remaining }} 次</p>
         </div>
 
-        <div class="divider" />
-        <GenerationHistory
-          :generations="generations"
-          :generation-urls="generationUrls"
-          :selected-id="previewGeneration?.id"
-          @select="$emit('select-generation', $event)"
-        />
+        <span class="sr-only" aria-live="polite">{{ resultAnnouncement }}</span>
       </aside>
     </div>
   </main>
@@ -147,6 +152,8 @@ textarea { box-sizing: border-box; width: 100%; min-height: 104px; resize: verti
 textarea:focus { border-color: var(--cip-accent); box-shadow: 0 0 0 3px var(--cip-focus); }
 .count { justify-self: end; margin-top: -12px; color: var(--cip-muted); font-size: 10px; }
 .generate-block { display: grid; gap: 9px; }
+.mobile-action-spacer { display: none; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .generate { min-height: 48px; cursor: pointer; border: 0; border-radius: 11px; color: var(--cip-on-accent); background: var(--cip-accent); font-size: 14px; font-weight: 750; transition: transform 180ms cubic-bezier(0.23, 1, 0.32, 1), opacity 180ms ease; }
 .generate:active:not(:disabled) { transform: scale(.98); }
 .generate:disabled { cursor: not-allowed; opacity: .45; }
@@ -158,19 +165,20 @@ textarea:focus { border-color: var(--cip-accent); box-shadow: 0 0 0 3px var(--ci
 @media (hover: hover) and (pointer: fine) { .generate:not(:disabled):hover { background: var(--cip-accent-hover); } .back:hover { color: var(--cip-ink); } }
 @media (max-width: 1080px) and (min-width: 761px) { .editor-header, .editor-grid { grid-template-columns: 240px minmax(0, 1fr) 280px; } }
 @media (max-width: 760px) {
-  .editor-shell { width: 100%; padding: 0 0 calc(104px + env(safe-area-inset-bottom)); }
+  .editor-shell { width: 100%; min-height: 100dvh; padding: 0; }
   .editor-header { position: sticky; z-index: 3; top: 0; display: grid; min-height: 62px; grid-template-columns: auto minmax(0, 1fr) auto; gap: 5px; padding: 0 10px; border-bottom: 1px solid var(--cip-border); background: var(--cip-surface); }
   .title small { display: none; }
   .title h1 { font-size: 15px; }
   .quota span, .quota small { display: none; }
   .quota strong { font-size: 18px; }
   .editor-grid { display: flex; min-height: 0; flex-direction: column; gap: 10px; padding: 10px; }
-  [data-mobile-step="1"] { order: 2; }
-  [data-mobile-step="2"] { order: 1; }
+  [data-mobile-step="1"] { order: 1; }
+  [data-mobile-step="2"] { order: 2; }
   [data-mobile-step="3"] { order: 3; }
   .settings-panel, .preview-column, .action-panel { width: auto; max-height: none; overflow: visible; border-radius: 14px; }
   .action-panel { padding-bottom: 18px; }
-  .generate-block { position: sticky; z-index: 2; bottom: calc(8px + env(safe-area-inset-bottom)); padding: 10px; border: 1px solid var(--cip-border); border-radius: 12px; background: var(--cip-surface); box-shadow: 0 8px 26px var(--cip-shadow); }
+  .mobile-action-spacer { display: block; height: calc(148px + env(safe-area-inset-bottom)); }
+  .generate-block { position: fixed; z-index: 4; right: 10px; bottom: 0; left: 10px; padding: 10px 10px calc(10px + env(safe-area-inset-bottom)); border: 1px solid var(--cip-border); border-bottom: 0; border-radius: 12px 12px 0 0; background: var(--cip-surface); box-shadow: 0 -8px 26px var(--cip-shadow); }
 }
 @media (prefers-reduced-motion: reduce) { .generate { transition: none; } .generate:active:not(:disabled) { transform: none; } }
 </style>

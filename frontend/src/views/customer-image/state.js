@@ -18,6 +18,7 @@ export function emptyPortalState() {
     requestId: null,
     error: '',
     notice: '',
+    resultAnnouncement: '',
   }
 }
 

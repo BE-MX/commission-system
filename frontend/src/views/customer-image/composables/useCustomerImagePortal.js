@@ -1,14 +1,5 @@
 import { computed, onBeforeUnmount, onMounted, reactive } from 'vue'
 import {
-  createGeneration,
-  getAssetBlob,
-  getContext,
-  getProductAssetBlob,
-  listGenerations,
-  listProducts,
-  uploadLogo,
-} from '@/api/customerImagePublic'
-import {
   applyBootstrap,
   applySubmitFailure,
   canGenerate,
@@ -20,17 +11,35 @@ import {
   mergeGeneration,
   requiredOptionsComplete,
   selectProductState,
-} from '../state'
-import { useCustomerImageAssets } from './useCustomerImageAssets'
+} from '../state.js'
+import { useCustomerImageAssets } from './useCustomerImageAssets.js'
 
 const POLL_DELAY_MS = 2500
 const INVALID_LINK = '此链接已失效，请联系您的业务经理重新获取。'
 
-export function useCustomerImagePortal() {
+export function useCustomerImagePortal({
+  api,
+  lifecycle = { onMounted, onBeforeUnmount },
+  urlApi = URL,
+  schedule = setTimeout,
+  cancelSchedule = clearTimeout,
+  scrollResultIntoView = () => {},
+} = {}) {
+  const {
+    createGeneration,
+    getAssetBlob,
+    getContext,
+    getProductAssetBlob,
+    listGenerations,
+    listProducts,
+    uploadLogo,
+  } = api
   const state = reactive(emptyPortalState())
   const assets = useCustomerImageAssets({
     fetchProductAsset: getProductAssetBlob,
     fetchInviteAsset: getAssetBlob,
+    urlApi,
+    lifecycle,
   })
   let pollTimer = null
   let disposed = false
@@ -90,10 +99,21 @@ export function useCustomerImagePortal() {
   }
 
   async function pollGenerations() {
+    const activeIds = new Set(state.generations
+      .filter(item => ['queued', 'running'].includes(item.status))
+      .map(item => item.id))
     try {
       const response = await listGenerations()
       state.generations = response.data
       await assets.loadGenerationResults(state.generations)
+      const completed = state.generations.find(
+        item => activeIds.has(item.id) && item.status === 'succeeded',
+      )
+      if (completed) {
+        state.previewGenerationId = completed.id
+        state.resultAnnouncement = `${completed.product_name || '产品'}效果图已生成`
+        scrollResultIntoView(completed.id)
+      }
       if (!state.previewGenerationId) {
         state.previewGenerationId = state.generations[0]?.id ?? null
       }
@@ -105,7 +125,7 @@ export function useCustomerImagePortal() {
 
   function schedulePolling() {
     if (disposed || pollTimer || !hasActiveGenerations(state.generations)) return
-    pollTimer = setTimeout(async () => {
+    pollTimer = schedule(async () => {
       pollTimer = null
       await pollGenerations()
       schedulePolling()
@@ -181,6 +201,15 @@ export function useCustomerImagePortal() {
     } catch (error) {
       if (error.response?.status === 401) {
         handlePublicError(error)
+      } else if (isSettingsConflict(error)) {
+        try {
+          await refreshSettings(product.id)
+        } catch (refreshError) {
+          Object.assign(state, applySubmitFailure(
+            state,
+            customerSafeError(refreshError, '产品设置更新失败，请检查网络后重试'),
+          ))
+        }
       } else {
         Object.assign(state, applySubmitFailure(
           state,
@@ -220,15 +249,37 @@ export function useCustomerImagePortal() {
   }
 
   function stopPolling() {
-    if (pollTimer) clearTimeout(pollTimer)
+    if (pollTimer) cancelSchedule(pollTimer)
     pollTimer = null
   }
 
-  onMounted(bootstrap)
-  onBeforeUnmount(() => {
+  async function refreshSettings(productId) {
+    const [contextResponse, productsResponse, generationsResponse] = await Promise.all([
+      getContext(),
+      listProducts(),
+      listGenerations(),
+    ])
+    Object.assign(state, applyBootstrap(state, {
+      context: contextResponse.data,
+      products: productsResponse.data,
+      generations: generationsResponse.data,
+    }))
+    const refreshedProduct = state.products.find(item => item.id === productId)
+    if (refreshedProduct) Object.assign(state, selectProductState(state, refreshedProduct))
+    state.requestId = null
+    state.notice = '产品设置已更新，请确认最新参数后再次生成'
+    await Promise.all([
+      assets.loadProductCovers(state.products),
+      assets.loadLogo(state.logo),
+      assets.loadGenerationResults(state.generations),
+    ])
+  }
+
+  lifecycle.onMounted(bootstrap)
+  lifecycle.onBeforeUnmount(() => {
     disposed = true
     stopPolling()
-    assets.clear()
+    assets.dispose()
   })
 
   return {
@@ -243,12 +294,18 @@ export function useCustomerImagePortal() {
     bootstrap,
     chooseProduct,
     downloadGeneration,
+    pollGenerations,
     replaceLogo,
     selectGeneration,
     submitGeneration,
     updateRequirement,
     updateSelection,
   }
+}
+
+export function isSettingsConflict(error) {
+  return error?.response?.status === 409
+    && /settings changed|Product settings/i.test(String(error.response?.data?.detail || ''))
 }
 
 function customerSafeError(error, fallback) {

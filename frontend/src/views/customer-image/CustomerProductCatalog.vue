@@ -86,7 +86,7 @@ h1 { max-width: 720px; margin: 8px 0 10px; color: var(--cip-ink); font-size: cla
 .product-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
 .product-card { overflow: hidden; border: 1px solid var(--cip-border); border-radius: 18px; background: var(--cip-surface); box-shadow: 0 8px 28px var(--cip-shadow); }
 .product-image { display: grid; aspect-ratio: 4 / 3; place-items: center; overflow: hidden; color: var(--cip-muted); background: var(--cip-canvas); }
-.product-image img { width: 100%; height: 100%; object-fit: cover; transition: transform 280ms cubic-bezier(0.23, 1, 0.32, 1); }
+.product-image img { width: 100%; height: 100%; object-fit: cover; transition: transform 180ms cubic-bezier(0.23, 1, 0.32, 1); }
 .product-copy { display: grid; gap: 8px; padding: 18px; }
 .product-copy small { color: var(--cip-accent-strong); font-size: 11px; }
 .product-copy h2 { margin: 0; color: var(--cip-ink); font-size: 18px; }

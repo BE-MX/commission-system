@@ -11,7 +11,7 @@ defineEmits(['download'])
 </script>
 
 <template>
-  <section class="preview-panel" aria-labelledby="preview-title">
+  <section id="customer-generation-result" class="preview-panel" aria-labelledby="preview-title">
     <div class="preview-heading">
       <div>
         <span>实时预览</span>
@@ -28,10 +28,10 @@ defineEmits(['download'])
     </div>
 
     <div class="preview-stage">
-      <img v-if="resultUrl" :src="resultUrl" :alt="`${product?.name || '产品'}生成效果图`">
+      <img v-if="resultUrl" :src="resultUrl" :alt="`${product?.name || '产品'}生成效果图`" class="generated-result">
       <img v-else-if="coverUrl" :src="coverUrl" :alt="`${product?.name || '产品'}参考图`" class="reference">
       <div v-else class="placeholder">选择产品后查看参考图</div>
-      <div v-if="generation && generation.status !== 'succeeded'" class="status-overlay">
+      <div v-if="generation && generation.status !== 'succeeded'" class="status-overlay" aria-live="polite">
         <span class="status-dot" :data-status="generation.status" />
         <strong>{{ generation.status === 'failed' ? '本次未完成' : generation.status === 'running' ? '正在生成' : '等待生成' }}</strong>
         <p>{{ message }}</p>
@@ -53,6 +53,7 @@ h2 { margin: 3px 0 0; color: var(--cip-ink); font-size: 16px; }
 .preview-stage { position: relative; display: grid; min-height: 420px; place-items: center; overflow: hidden; border: 1px solid var(--cip-border); border-radius: 18px; background: var(--cip-canvas); }
 .preview-stage img { width: 100%; height: 100%; max-height: 66vh; object-fit: contain; }
 .preview-stage img.reference { opacity: .86; }
+.generated-result { animation: result-arrive 180ms cubic-bezier(0.23, 1, 0.32, 1); }
 .placeholder { color: var(--cip-muted); font-size: 13px; }
 .status-overlay { position: absolute; inset: auto 18px 18px; padding: 14px; border: 1px solid var(--cip-border); border-radius: 12px; background: var(--cip-surface); box-shadow: 0 8px 24px var(--cip-shadow); }
 .status-overlay strong { color: var(--cip-ink); font-size: 13px; }
@@ -60,6 +61,7 @@ h2 { margin: 3px 0 0; color: var(--cip-ink); font-size: 16px; }
 .status-dot { display: inline-block; width: 8px; height: 8px; margin-right: 7px; border-radius: 50%; background: var(--cip-accent); }
 .status-dot[data-status="failed"] { background: var(--cip-danger); }
 @media (hover: hover) and (pointer: fine) { .download:hover { background: var(--cip-accent-soft-hover); } }
+@keyframes result-arrive { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 @media (max-width: 760px) { .preview-stage { min-height: 310px; } }
-@media (prefers-reduced-motion: reduce) { .download { transition: none; } .download:active { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .download { transition: none; } .download:active { transform: none; } .generated-result { animation: none; } }
 </style>
