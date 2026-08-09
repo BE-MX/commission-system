@@ -2,9 +2,12 @@
 
 from datetime import datetime
 from importlib import util
+from io import StringIO
 from pathlib import Path
 
 import pytest
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
 from pydantic import ValidationError
 from sqlalchemy import BigInteger, UniqueConstraint
 from sqlalchemy.dialects import mysql
@@ -32,6 +35,18 @@ def _migration_module():
     module = util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _render_mysql_upgrade_ddl() -> str:
+    migration = _migration_module()
+    output = StringIO()
+    context = MigrationContext.configure(
+        dialect_name="mysql",
+        opts={"as_sql": True, "output_buffer": output},
+    )
+    migration.op = Operations(context)
+    migration.upgrade()
+    return output.getvalue()
 
 
 def test_ai_chat_tables_and_indexes_match_the_domain_contract():
@@ -260,6 +275,18 @@ def test_ai_chat_migration_has_one_forward_revision_and_complete_reverse_downgra
         ("drop_table", "ark_ai_chat_messages"),
         ("drop_table", "ark_ai_chat_sessions"),
     ]
+
+
+def test_message_content_text_has_no_invalid_mysql_default():
+    ddl = _render_mysql_upgrade_ddl()
+    message_table_ddl = ddl.split("CREATE TABLE ark_ai_chat_messages", 1)[1].split(
+        ";", 1
+    )[0]
+    content_line = next(
+        line for line in message_table_ddl.splitlines() if "content TEXT" in line
+    )
+
+    assert "DEFAULT" not in content_line.upper()
 
 
 def test_ai_chat_permissions_are_seeded_idempotently_with_stable_metadata(db):

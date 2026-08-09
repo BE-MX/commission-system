@@ -72,7 +72,6 @@ def upgrade() -> None:
             "content",
             sa.Text(),
             nullable=False,
-            server_default="",
             comment="Markdown 消息正文",
         ),
         sa.Column(
