@@ -65,6 +65,10 @@ def test_classify_multi_output_intent(prompt, mode, count, labels):
         "用2张原始素材图生成一张海报",
         "正面印Logo，背面印说明，生成一张包装盒效果图",
         "保留衣服正面和背面的图案",
+        "分别在正面和背面添加logo，生成一张包装效果图",
+        "突出3张参考图中的产品特点",
+        "选出3张参考图里最好的元素",
+        "取出3张素材图的背景色",
     ],
 )
 def test_non_output_numbers_remain_single(prompt):

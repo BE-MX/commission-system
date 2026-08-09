@@ -53,7 +53,7 @@ _REFERENCE_ASSET_SUFFIX = re.compile(
 _REFERENCE_ASSET_PREFIX = re.compile(
     r"(?:(?:参考|素材|原|底)图(?:共|有|是)?|参考)\s*$"
 )
-_OUTPUT_VERB_SUFFIX = re.compile(r"(?:生成|输出|制作|出)\s*$")
+_OUTPUT_VERB_SUFFIX = re.compile(r"(?:生成|输出|制作|出图)\s*$")
 _ANGLE_PATTERN = re.compile(
     r"左侧(?:面)?(?:\s*\d{1,3}\s*(?:°|度))?|"
     r"右侧(?:面)?(?:\s*\d{1,3}\s*(?:°|度))?|"
@@ -66,12 +66,12 @@ _COMPOSITE_PATTERN = re.compile(
     r"九宫格|排版展示"
 )
 _SEPARATE_PATTERN = re.compile(
-    r"分别(?:生成|制作|输出)?|分开(?:生成|制作|输出)?|"
+    r"分别(?:生成|制作|输出|出图)|分开(?:生成|制作|输出|出图)|"
     r"独立(?:生成|制作|输出)|各(?:生成|制作|输出)|"
     r"每(?:个|一)(?:角度|视角).{0,6}(?:一张|一幅)|独立图片|单独出图"
 )
 _GENERATED_IMAGE_COUNT_PATTERN = re.compile(
-    r"(?:生成|输出|制作|出)\s*" + _COUNT_TOKEN + r"\s*张"
+    r"(?:生成|输出|制作|出图)\s*" + _COUNT_TOKEN + r"\s*张"
 )
 
 
