@@ -160,6 +160,7 @@ def _finalize_log(
     error_code: Optional[str] = None,
     error_message: Optional[str] = None,
     termination: Optional[str] = None,
+    api_key: Optional[str] = None,
 ) -> None:
     usage_detail = dict(usage)
     if termination:
@@ -172,7 +173,10 @@ def _finalize_log(
     log.error_code = error_code
     log.error_message = error_message
     log.usage_detail = usage_detail
-    log.response_snapshot = serialize_response_snapshot({"content": text, "usage": usage_detail})
+    safe_text = text.replace(api_key, "[REDACTED]") if api_key else text
+    log.response_snapshot = serialize_response_snapshot(
+        {"content": safe_text, "usage": usage_detail}
+    )
     try:
         db.commit()
     except Exception as exc:
@@ -180,6 +184,61 @@ def _finalize_log(
         logger.warning("Failed to finalize AI stream log: %s", type(exc).__name__)
         print(f"[AI] failed to finalize stream log: {type(exc).__name__}", flush=True)
         raise
+
+
+def _safe_role(role) -> str:
+    return role if role in {"system", "user", "assistant", "tool"} else "unknown"
+
+
+def _content_summary(content) -> dict:
+    if isinstance(content, str):
+        return {"content_type": "text", "content_length": len(content)}
+    if isinstance(content, list):
+        block_types = []
+        block_lengths = []
+        for block in content:
+            if not isinstance(block, dict):
+                block_types.append("unknown")
+                block_lengths.append(len(str(block)))
+                continue
+            block_type = block.get("type")
+            if block_type not in {"text", "image_url", "image"}:
+                block_type = "unknown"
+            block_types.append(block_type)
+            if block_type == "text":
+                value = block.get("text")
+            elif block_type == "image_url":
+                image_url = block.get("image_url")
+                value = image_url.get("url") if isinstance(image_url, dict) else image_url
+            else:
+                value = block
+            block_lengths.append(len(value) if isinstance(value, str) else len(str(value)))
+        return {
+            "content_type": "blocks",
+            "content_length": len(content),
+            "block_types": block_types,
+            "block_lengths": block_lengths,
+        }
+    if content is None:
+        return {"content_type": "empty", "content_length": 0}
+    return {"content_type": "unknown", "content_length": len(str(content))}
+
+
+def _prompt_snapshot(full_messages: list) -> str:
+    messages = []
+    roles = []
+    for message in full_messages:
+        role = _safe_role(message.get("role")) if isinstance(message, dict) else "unknown"
+        content = message.get("content") if isinstance(message, dict) else None
+        roles.append(role)
+        messages.append({"role": role, **_content_summary(content)})
+    summary = {
+        "message_count": len(full_messages),
+        "roles": roles,
+        "has_image": _has_image_message(full_messages),
+        "messages": messages,
+    }
+    return json.dumps(summary, ensure_ascii=False)
 
 
 def _create_pending_log(
@@ -190,13 +249,6 @@ def _create_pending_log(
     caller_module: str,
     caller_user_id: Optional[int],
 ) -> AiCallLog:
-    snapshot = json.dumps(full_messages, ensure_ascii=False)
-    if len(snapshot) > 60000:
-        snapshot = (
-            snapshot[:2000]
-            + f"\n... [truncated {len(snapshot)} chars, likely contains base64 image] ...\n"
-            + snapshot[-500:]
-        )
     log = AiCallLog(
         caller_module=caller_module,
         caller_user_id=caller_user_id,
@@ -204,7 +256,7 @@ def _create_pending_log(
         preset_name=preset.preset_name,
         provider_type=provider.provider_type,
         model=preset.model,
-        prompt_snapshot=snapshot,
+        prompt_snapshot=_prompt_snapshot(full_messages),
         status="pending",
     )
     db.add(log)
@@ -255,6 +307,7 @@ def chat_stream(
     text_parts: list[str] = []
     text_length = 0
     terminal_event = None
+    api_key = None
 
     try:
         api_type = getattr(provider, "api_type", "openai") or "openai"
@@ -309,6 +362,7 @@ def chat_stream(
             error_code="consumer_stopped",
             error_message="调用方已停止接收流式响应",
             termination="stopped",
+            api_key=api_key,
         )
         raise
     except Exception as exc:
@@ -330,13 +384,14 @@ def chat_stream(
             "".join(text_parts),
             error_code=code,
             error_message=message,
+            api_key=api_key,
         )
         yield {"type": "error", "code": code, "message": message}
         return
 
     text = "".join(text_parts)
     if terminal_event and terminal_event["type"] == "done":
-        _finalize_log(db, log, start, "success", usage, text)
+        _finalize_log(db, log, start, "success", usage, text, api_key=api_key)
     else:
         terminal_event = terminal_event or _stream_error("stream_incomplete")
         _finalize_log(
@@ -348,5 +403,6 @@ def chat_stream(
             text,
             error_code=terminal_event["code"],
             error_message=terminal_event["message"],
+            api_key=api_key,
         )
     yield terminal_event
