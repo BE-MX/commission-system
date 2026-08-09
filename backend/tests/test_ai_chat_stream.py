@@ -309,6 +309,48 @@ def test_openai_stream_uses_provider_url_and_timeout(db, monkeypatch):
 
     assert str(requests[0].url) == "https://provider.example/v1/chat/completions"
     assert created[0].timeout.connect == 17
+    assert json.loads(requests[0].content)["stream_options"] == {"include_usage": True}
+
+
+def test_openai_stream_options_allow_explicit_preset_override(db, monkeypatch):
+    preset, _ = _configured_preset(db, "openai")
+    preset.parameters = {
+        **preset.parameters,
+        "stream_options": {"include_usage": False},
+    }
+    db.commit()
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, stream=_ChunkStream([b"data: [DONE]\n\n"]))
+
+    _install_transport(monkeypatch, handler)
+
+    list(chat_stream(db, preset.preset_name, [{"role": "user", "content": "hi"}], "ai_chat"))
+
+    assert json.loads(requests[0].content)["stream_options"] == {"include_usage": False}
+
+
+def test_openai_reasoning_delta_becomes_text_and_is_snapshotted(db, monkeypatch):
+    preset, _ = _configured_preset(db, "openai")
+    payload = (
+        _sse({"choices": [{"delta": {"content": "", "reasoning_content": "推理答案"}}]})
+        + "\n\n"
+        + _sse({"choices": [{"delta": {"reasoning": "补充"}}]})
+        + "\n\ndata: [DONE]\n\n"
+    ).encode()
+
+    def handler(_request):
+        return httpx.Response(200, stream=_ChunkStream([payload]))
+
+    _install_transport(monkeypatch, handler)
+
+    events = list(chat_stream(db, preset.preset_name, [{"role": "user", "content": "hi"}], "ai_chat"))
+
+    assert [event["text"] for event in events if event["type"] == "delta"] == ["推理答案", "补充"]
+    log = db.query(AiCallLog).filter_by(preset_name=preset.preset_name).one()
+    assert "推理答案补充" in log.response_snapshot
 
 
 def test_anthropic_stream_uses_key_and_stream_body_and_redacts_response(db, monkeypatch):
@@ -380,3 +422,40 @@ def test_prompt_snapshot_is_structural_and_contains_no_message_content(db, monke
 def test_service_facade_exports_streaming_api():
     assert service.chat_stream is chat_stream
     assert service.parse_provider_stream is parse_provider_stream
+
+
+def test_final_log_commit_retries_once_and_still_emits_done(db, monkeypatch):
+    preset, _ = _configured_preset(db, "openai")
+    payload = (
+        _sse({"choices": [{"delta": {"content": "complete"}}]})
+        + "\n\ndata: [DONE]\n\n"
+    ).encode()
+
+    def handler(_request):
+        return httpx.Response(200, stream=_ChunkStream([payload]))
+
+    _install_transport(monkeypatch, handler)
+    stream = chat_stream(db, preset.preset_name, [{"role": "user", "content": "hi"}], "ai_chat")
+    meta = next(stream)
+    assert next(stream) == {"type": "delta", "text": "complete"}
+
+    real_commit = db.commit
+    attempts = 0
+
+    def fail_once():
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("transient database failure")
+        real_commit()
+
+    monkeypatch.setattr(db, "commit", fail_once)
+
+    assert next(stream)["type"] == "done"
+    with pytest.raises(StopIteration):
+        next(stream)
+
+    log = db.query(AiCallLog).filter_by(id=meta["log_id"]).one()
+    assert attempts == 2
+    assert log.status == "success"
+    assert "complete" in log.response_snapshot

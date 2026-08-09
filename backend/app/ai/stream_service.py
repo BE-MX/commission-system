@@ -136,6 +136,8 @@ def parse_provider_stream(api_type: str, lines: Iterable[str]) -> Iterator[dict]
             if choices and isinstance(choices[0], dict):
                 delta = choices[0].get("delta") or {}
                 text = delta.get("content")
+                if not text:
+                    text = delta.get("reasoning_content") or delta.get("reasoning")
                 if isinstance(text, str) and text:
                     yield {"type": "delta", "text": text}
 
@@ -165,25 +167,47 @@ def _finalize_log(
     usage_detail = dict(usage)
     if termination:
         usage_detail["termination"] = termination
-    log.status = status
-    log.tokens_prompt = usage.get("input_tokens")
-    log.tokens_completion = usage.get("output_tokens")
-    log.tokens_used = usage.get("total_tokens")
-    log.duration_ms = int((time.time() - start) * 1000)
-    log.error_code = error_code
-    log.error_message = error_message
-    log.usage_detail = usage_detail
     safe_text = text.replace(api_key, "[REDACTED]") if api_key else text
-    log.response_snapshot = serialize_response_snapshot(
-        {"content": safe_text, "usage": usage_detail}
-    )
+    final_values = {
+        "status": status,
+        "tokens_prompt": usage.get("input_tokens"),
+        "tokens_completion": usage.get("output_tokens"),
+        "tokens_used": usage.get("total_tokens"),
+        "duration_ms": int((time.time() - start) * 1000),
+        "error_code": error_code,
+        "error_message": error_message,
+        "usage_detail": usage_detail,
+        "response_snapshot": serialize_response_snapshot(
+            {"content": safe_text, "usage": usage_detail}
+        ),
+    }
+
+    def apply_values(target: AiCallLog) -> None:
+        for field, value in final_values.items():
+            setattr(target, field, value)
+
+    log_id = log.id
+    apply_values(log)
     try:
         db.commit()
     except Exception as exc:
         db.rollback()
-        logger.warning("Failed to finalize AI stream log: %s", type(exc).__name__)
-        print(f"[AI] failed to finalize stream log: {type(exc).__name__}", flush=True)
-        raise
+        logger.warning("AI stream log commit failed, retrying once: %s", type(exc).__name__)
+        print(f"[AI] stream log commit failed, retrying: {type(exc).__name__}", flush=True)
+        try:
+            retry_log = db.query(AiCallLog).filter(AiCallLog.id == log_id).first()
+            if retry_log is None:
+                raise RuntimeError("AI stream log row disappeared before retry")
+            apply_values(retry_log)
+            db.commit()
+        except Exception as retry_exc:
+            db.rollback()
+            logger.warning("Failed to finalize AI stream log after retry: %s", type(retry_exc).__name__)
+            print(
+                f"[AI] failed to finalize stream log after retry: {type(retry_exc).__name__}",
+                flush=True,
+            )
+            raise
 
 
 def _safe_role(role) -> str:
@@ -322,6 +346,7 @@ def chat_stream(
             params = {"model": preset.model, "messages": full_messages}
             if preset.parameters:
                 params.update(preset.parameters)
+            params.setdefault("stream_options", {"include_usage": True})
         params["stream"] = True
 
         api_key = decrypt_key(provider.api_key) if provider.api_key else None
