@@ -12,6 +12,21 @@ import {
 } from '../src/views/design/ai-chat/state.js'
 import * as chatState from '../src/views/design/ai-chat/state.js'
 
+function readSource(relativePath) {
+  try {
+    return readFileSync(new URL(relativePath, import.meta.url), 'utf8')
+  } catch {
+    return ''
+  }
+}
+
+function routeEntry(source, path) {
+  const start = source.indexOf(`path: '${path}'`)
+  if (start === -1) return ''
+  const next = source.indexOf("\n  {", start + 1)
+  return source.slice(start, next === -1 ? source.length : next)
+}
+
 const event = (generation, name, data) => ({
   type: 'stream-event',
   generation,
@@ -37,10 +52,10 @@ function bodyFromChunks(chunks, readError = null) {
 
 test('provides four fixed starters that only fill the composer', () => {
   assert.deepEqual(STARTERS.map(item => item.title), [
-    '客户需求梳理',
+    '客户需求分析',
     '产品方案',
-    '营销文案',
-    '数据分析',
+    '营销推广方案',
+    '邮件与沟通话术',
   ])
 
   const next = reduceChatState(createInitialState(), {
@@ -50,6 +65,63 @@ test('provides four fixed starters that only fill the composer', () => {
   assert.match(next.prompt, /客户需求/)
   assert.equal(next.streaming, false)
   assert.deepEqual(next.messages, [])
+})
+
+test('exposes one AI workspace menu with permission-safe image and chat routes', () => {
+  const navigation = readSource('../src/config/navigation.js')
+  const visibleMenus = navigation.match(/menu:\s*\{[^}]*title:\s*['"]AI 工作台['"][^}]*\}/gs) || []
+  const imageRoute = routeEntry(navigation, '/design/image-studio')
+  const chatRoute = routeEntry(navigation, '/design/ai-chat')
+
+  assert.equal(visibleMenus.length, 1)
+  assert.match(imageRoute, /anyPermission:\s*\[\s*['"]design_image:read['"]\s*,\s*['"]ai_chat:read['"]\s*\]/)
+  assert.doesNotMatch(imageRoute, /\n\s*permission:\s*['"]design_image:read['"]/)
+  assert.match(chatRoute, /name:\s*['"]DesignAiChat['"]/)
+  assert.match(chatRoute, /permission:\s*['"]ai_chat:read['"]/)
+  assert.match(chatRoute, /hideInMenu:\s*true/)
+  assert.doesNotMatch(chatRoute, /\n\s*menu:\s*\{/)
+})
+
+test('shares route-backed workspace tabs across both AI pages', () => {
+  const tabs = readSource('../src/views/design/ai-workspace/AiWorkspaceTabs.vue')
+  const imagePage = readSource('../src/views/design/image-studio/ImageStudio.vue')
+  const chatPage = readSource('../src/views/design/ai-chat/AiChat.vue')
+
+  assert.match(tabs, /role="tablist"/)
+  assert.equal((tabs.match(/role="tab"/g) || []).length, 2)
+  assert.match(tabs, /aria-selected/)
+  assert.match(tabs, /DesignImageStudio/)
+  assert.match(tabs, /DesignAiChat/)
+  assert.match(imagePage, /<AiWorkspaceTabs\s*\/>/)
+  assert.match(chatPage, /<AiWorkspaceTabs\s*\/>/)
+})
+
+test('keeps the visible AI workspace menu active on the hidden chat route', () => {
+  const navigation = readSource('../src/config/navigation.js')
+  const router = readSource('../src/router/index.js')
+  const layout = readSource('../src/views/layout/MainLayout.vue')
+  const chatRoute = routeEntry(navigation, '/design/ai-chat')
+
+  assert.match(chatRoute, /activeMenu:\s*['"]\/design\/image-studio['"]/)
+  assert.match(router, /activeMenu:\s*entry\.activeMenu/)
+  assert.match(layout, /:default-active="route\.meta\.activeMenu \|\| route\.path"/)
+})
+
+test('starter cards fill without sending and Markdown is sanitized before injection', () => {
+  const starters = readSource('../src/views/design/ai-chat/components/StarterCards.vue')
+  const thread = readSource('../src/views/design/ai-chat/components/ChatThread.vue')
+
+  assert.match(starters, /emit\(['"]select['"]/)
+  assert.doesNotMatch(starters, /emit\(['"](?:send|submit)['"]/)
+  assert.match(thread, /DOMPurify\.sanitize\(marked\.parse\(raw\)\)/)
+  assert.match(thread, /navigator\.clipboard\.writeText\(message\.content/)
+})
+
+test('isolates terminal detail refresh failures from the completed stream result', () => {
+  const composable = readSource('../src/views/design/ai-chat/composables/useAiChat.js')
+
+  assert.match(composable, /async function refreshAfterStream\(/)
+  assert.match(composable, /await refreshAfterStream\(sessionId, expectedWorkspace\)/)
 })
 
 test('parses split frames, CRLF, comments, and multiple data lines', () => {

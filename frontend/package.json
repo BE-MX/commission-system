@@ -17,8 +17,10 @@
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.0",
     "axios": "^1.7.0",
+    "dompurify": "^3.4.13",
     "echarts": "^6.1.0",
     "element-plus": "^2.8.0",
+    "marked": "^16.4.2",
     "pinia": "^3.0.4",
     "qrcode": "^1.5.4",
     "vue": "^3.4.0",

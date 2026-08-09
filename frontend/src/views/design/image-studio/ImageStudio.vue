@@ -1,5 +1,5 @@
 <template>
-  <div class="image-studio">
+  <div class="image-workspace-page">
     <!-- 金色极光背景（纯装饰；与工作台/素材库同源 styles/liquid-glass.css） -->
     <div class="studio-aurora lg-aurora" aria-hidden="true">
       <div class="lg-aurora__blob lg-aurora__blob--gold" />
@@ -7,17 +7,20 @@
       <div class="lg-aurora__blob lg-aurora__blob--peach" />
     </div>
 
-    <ConversationSidebar
-      v-model:drawer-open="studio.drawerOpen.value"
-      :sessions="studio.sessions.value"
-      :current-session-id="studio.currentSessionId.value"
-      :active-session-ids="studio.activeSessionIds.value"
-      :has-more="Boolean(studio.nextCursor.value)"
-      :loading="studio.sessionsLoading.value"
-      @new="studio.newConversation"
-      @select="studio.selectSession"
-      @more="studio.loadMoreSessions"
-    />
+    <AiWorkspaceTabs />
+
+    <div v-if="studio" class="image-studio">
+      <ConversationSidebar
+        v-model:drawer-open="studio.drawerOpen.value"
+        :sessions="studio.sessions.value"
+        :current-session-id="studio.currentSessionId.value"
+        :active-session-ids="studio.activeSessionIds.value"
+        :has-more="Boolean(studio.nextCursor.value)"
+        :loading="studio.sessionsLoading.value"
+        @new="studio.newConversation"
+        @select="studio.selectSession"
+        @more="studio.loadMoreSessions"
+      />
 
     <main class="studio-main lg-card is-static">
       <header class="studio-header">
@@ -86,16 +89,20 @@
       @select="applyLibraryAsset"
     />
 
-    <ImageLightbox :asset="studio.lightboxAsset.value" :url="studio.lightboxUrl.value" @close="studio.closeLightbox" />
+      <ImageLightbox :asset="studio.lightboxAsset.value" :url="studio.lightboxUrl.value" @close="studio.closeLightbox" />
+    </div>
   </div>
 </template>
 
 <script setup>
 import { nextTick, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ChatDotRound, MagicStick } from '@element-plus/icons-vue'
 import GlassButton from '@/components/GlassButton.vue'
 import { cloneLibraryAsset } from '@/api/designImage'
+import { useAuthStore } from '@/stores/auth'
 import { msgError } from '@/utils/feedback'
+import AiWorkspaceTabs from '../ai-workspace/AiWorkspaceTabs.vue'
 import ConversationSidebar from './components/ConversationSidebar.vue'
 import ImageLightbox from './components/ImageLightbox.vue'
 import MessageThread from './components/MessageThread.vue'
@@ -104,7 +111,11 @@ import PromptLibraryDialog from './components/PromptLibraryDialog.vue'
 import ReferenceLibraryDialog from './components/ReferenceLibraryDialog.vue'
 import { useImageStudio } from './composables/useImageStudio'
 
-const studio = useImageStudio()
+const auth = useAuthStore()
+const router = useRouter()
+const canUseImage = auth.hasPermission('design_image:read')
+if (!canUseImage) router.replace({ name: 'DesignAiChat' })
+const studio = canUseImage ? useImageStudio() : null
 const composerRef = ref(null)
 const promptLibraryOpen = ref(false)
 const referenceLibraryOpen = ref(false)
@@ -137,11 +148,14 @@ async function applyLibraryAsset(item) {
 </script>
 
 <style scoped>
+.image-workspace-page {
+  position: relative; display: flex; width: 100%; max-width: 1240px;
+  height: calc(100dvh - var(--header-height) - 48px); min-height: 560px;
+  flex-direction: column; gap: 10px; margin: 0 auto; overflow: hidden;
+}
 .image-studio {
-  display: flex; width: 100%; max-width: 1240px; height: calc(100vh - var(--header-height) - 48px);
-  min-height: 560px; gap: 18px; margin: 0 auto;
-  /* 极光层（.lg-aurora）定位上下文；overflow 交由两张玻璃卡自己裁，别在这里 hidden 把极光切掉 */
-  position: relative;
+  position: relative; z-index: 1; display: flex; width: 100%; min-height: 0;
+  flex: 1; gap: 18px;
 }
 .studio-aurora { inset: -24px -28px; }
 
@@ -187,13 +201,14 @@ async function applyLibraryAsset(item) {
 .conversation-trigger { display: none; }
 
 @media (max-width: 900px) {
-  .image-studio { height: calc(100dvh - var(--header-height) - 48px); min-height: 0; }
+  .image-workspace-page { min-height: 0; }
   .conversation-trigger { display: inline-flex; }
   .studio-header { min-height: 64px; padding: 10px 14px; }
   .studio-title-icon { width: 34px; height: 34px; flex-basis: 34px; font-size: 16px; }
   .studio-header p { display: none; }
 }
 @media (max-width: 640px) {
+  .image-workspace-page { height: calc(100dvh - var(--header-height) - 24px); gap: 8px; }
   .studio-header h1 { max-width: 30vw; }
   .quota { padding: 6px 10px; }
   .quota-label { display: none; }

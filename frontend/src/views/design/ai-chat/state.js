@@ -1,23 +1,23 @@
 export const STARTERS = Object.freeze([
   Object.freeze({
     id: 'customer-needs',
-    title: '客户需求梳理',
-    prompt: '请帮我梳理客户需求，识别已知信息、待确认问题和下一步行动。',
+    title: '客户需求分析',
+    prompt: '请分析以下客户需求，按已知信息、关键目标、待确认问题、风险和下一步行动整理，并指出优先级。',
   }),
   Object.freeze({
     id: 'product-solution',
     title: '产品方案',
-    prompt: '请根据客户需求制定产品方案，说明产品组合、选型理由和需要确认的风险。',
+    prompt: '请根据以下客户需求制定产品方案，说明产品组合、选型理由、交付建议、风险和需要客户确认的事项。',
   }),
   Object.freeze({
     id: 'marketing-copy',
-    title: '营销文案',
-    prompt: '请把以下信息整理成面向客户的营销文案，突出价值、证据和明确的下一步。',
+    title: '营销推广方案',
+    prompt: '请基于以下产品与客户信息制定营销推广方案，包含目标受众、核心卖点、渠道内容、执行节奏和效果衡量。',
   }),
   Object.freeze({
-    id: 'data-analysis',
-    title: '数据分析',
-    prompt: '请分析我提供的数据，先说明口径和异常，再给出关键结论与可执行建议。',
+    id: 'customer-communication',
+    title: '邮件与沟通话术',
+    prompt: '请根据以下背景起草专业、自然的客户邮件与沟通话术，给出主题、正文、跟进问题和下一步行动。',
   }),
 ])
 
