@@ -105,6 +105,19 @@ class CustomerImageProductAssetCopy(BaseModel):
     position: int = Field(ge=0)
 
 
+class CustomerImageReferenceOrder(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    asset_ids: list[int] = Field(min_length=1)
+
+    @field_validator("asset_ids")
+    @classmethod
+    def validate_unique_asset_ids(cls, value: list[int]) -> list[int]:
+        if any(asset_id <= 0 for asset_id in value) or len(value) != len(set(value)):
+            raise ValueError("reference asset IDs must be positive and unique")
+        return value
+
+
 class CustomerImageGenerationCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 

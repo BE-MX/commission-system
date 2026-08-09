@@ -13,6 +13,7 @@ from app.customer_image import file_service, service
 from app.customer_image.schemas import (
     CustomerImageInviteCreate,
     CustomerImageProductAssetCopy,
+    CustomerImageReferenceOrder,
     CustomerImageProductUpsert,
 )
 from app.design_image import library_service
@@ -245,16 +246,22 @@ def list_products(
 def get_product_cover_content(
     product_id: int,
     db: Session = Depends(get_db),
-    _payload: dict = Depends(require_any_permission(
+    payload: dict = Depends(require_any_permission(
         "customer_image:read", "customer_image:write", "customer_image:admin"
     )),
 ):
-    cover = _call(service.get_current_product_cover, db, product_id)
+    cover = _call(
+        service.get_current_product_cover,
+        db,
+        product_id,
+        include_inactive=_is_admin(payload),
+    )
     stream = _call(file_service.open_product_asset_content, db, product_id, cover.id)
     return StreamingResponse(
         stream,
         media_type=cover.mime_type,
         headers={"Cache-Control": "private, no-store"},
+        background=BackgroundTask(stream.close),
     )
 
 
@@ -337,7 +344,9 @@ async def upload_product_asset(
 ):
     if role not in {"cover", "reference"}:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "invalid asset role")
-    product = _call(service.get_product, db, product_id)
+    if role == "cover" and position != 0:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "cover position must be zero")
+    product = _call(service.get_product, db, product_id, include_inactive=True)
     content = await _read_bounded(file)
     row = _call(
         file_service.replace_product_asset_from_upload,
@@ -358,7 +367,9 @@ def copy_product_asset_from_library(
     db: Session = Depends(get_db),
     payload: dict = Depends(require_permission("customer_image:admin")),
 ):
-    product = _call(service.get_product, db, product_id)
+    if body.role == "cover" and body.position != 0:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "cover position must be zero")
+    product = _call(service.get_product, db, product_id, include_inactive=True)
     row = _call(
         file_service.replace_product_asset_from_library,
         db,
@@ -369,6 +380,28 @@ def copy_product_asset_from_library(
         admin_id=_user_id(payload),
     )
     return ok(_product_asset(row))
+
+
+@router.delete("/products/{product_id}/references/{asset_id}")
+def retire_product_reference(
+    product_id: int,
+    asset_id: int,
+    db: Session = Depends(get_db),
+    _payload: dict = Depends(require_permission("customer_image:admin")),
+):
+    _call(service.retire_product_reference, db, product_id, asset_id)
+    return ok()
+
+
+@router.put("/products/{product_id}/references/order")
+def reorder_product_references(
+    product_id: int,
+    body: CustomerImageReferenceOrder,
+    db: Session = Depends(get_db),
+    _payload: dict = Depends(require_permission("customer_image:admin")),
+):
+    rows = _call(service.reorder_product_references, db, product_id, body.asset_ids)
+    return ok([_product_asset(row) for row in rows])
 
 
 @router.get("/products/{product_id}/assets/{asset_id}/content")
@@ -384,6 +417,7 @@ def get_product_asset_content(
         stream,
         media_type=asset.mime_type,
         headers={"Cache-Control": "private, no-store"},
+        background=BackgroundTask(stream.close),
     )
 
 

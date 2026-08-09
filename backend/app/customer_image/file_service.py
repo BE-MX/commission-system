@@ -67,6 +67,8 @@ def _replace_with_normalized(
         raise ValueError("product asset role must be cover or reference")
     if position < 0:
         raise ValueError("product asset position must be nonnegative")
+    if role == "cover" and position != 0:
+        raise ValueError("product cover position must be zero")
     stored = save_private_image(normalized, owner_user_id=product.id, kind="customer-product")
     try:
         locked_product = db.scalar(_product_for_update_statement(product.id))

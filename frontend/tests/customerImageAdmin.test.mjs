@@ -9,6 +9,8 @@ import {
   customerImageAdminCapabilities,
   validateInviteDraft,
   validateProductForPublish,
+  moveReferenceIds,
+  nextReferencePosition,
 } from '../src/views/customer-image/admin/composables/useCustomerImageAdmin.js'
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8')
@@ -25,6 +27,18 @@ test('invite validation requires one scoped customer explicit future expiry posi
   assert.match(validateInviteDraft({ ...valid, expires_at: now.toISOString() }, now), /未来/)
   assert.match(validateInviteDraft({ ...valid, quota_total: 0 }, now), /额度/)
   assert.match(validateInviteDraft({ ...valid, product_ids: [] }, now), /产品/)
+})
+
+test('reference controls append after the last stable position and reorder two or more assets', () => {
+  const references = [
+    { id: 11, role: 'reference', position: 0 },
+    { id: 12, role: 'reference', position: 1 },
+    { id: 13, role: 'reference', position: 2 },
+  ]
+  assert.equal(nextReferencePosition(references), 3)
+  assert.deepEqual(moveReferenceIds(references, 1, -1), [12, 11, 13])
+  assert.deepEqual(moveReferenceIds(references, 0, -1), [11, 12, 13])
+  assert.deepEqual(moveReferenceIds(references, 2, 1), [11, 12, 13])
 })
 
 test('created plaintext invite link is copyable once and closing removes it from state', async () => {
@@ -208,4 +222,8 @@ test('internal route and Design Center navigation use any-permission while publi
   assert.match(invite, /clearOneTimeInviteUrl/)
   assert.match(invite, /productCoverUrls\[product\.id\]/)
   assert.match(invite, /el-checkbox-group/)
+  assert.match(editor, /retireProductReference/)
+  assert.match(editor, /reorderProductReferences/)
+  assert.match(editor, /:aria-label="`上移选项值/)
+  assert.match(editor, /:aria-label="`下移选项值/)
 })

@@ -8,7 +8,7 @@ from sqlalchemy.dialects import mysql
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
-from app.customer_image import file_service
+from app.customer_image import file_service, service
 from app.customer_image.models import (
     CustomerImageAsset,
     CustomerImageGeneration,
@@ -66,6 +66,97 @@ def test_upload_replacement_retires_old_row_without_deleting_old_file(db, tmp_pa
         file_service.open_product_asset_content(db, product.id, first.id)
     assert second.retired_at is None
     assert product.config_version == 3
+
+
+def test_cover_is_a_single_zero_position_slot(db):
+    product = _product(db)
+    with pytest.raises(ValueError, match="position must be zero"):
+        file_service.replace_product_asset_from_upload(
+            db, product, "cover", 1, _png_bytes(), "image/png"
+        )
+
+
+def test_reference_retire_and_reorder_keep_history_and_stable_positions(db):
+    from app.customer_image.service import retire_product_reference, reorder_product_references
+
+    product = CustomerImageProduct(
+        name="References", category="box", fixed_prompt="x", output_prompt="y", created_by=1,
+    )
+    db.add(product)
+    db.flush()
+    references = [
+        CustomerImageProductAsset(
+            product_id=product.id, role="reference", position=index,
+            storage_path=f"reference-{index}.png", mime_type="image/png", file_size=1,
+            width=1, height=1, sha256=str(index + 1) * 64,
+        )
+        for index in range(3)
+    ]
+    cover = CustomerImageProductAsset(
+        product_id=product.id, role="cover", position=0, storage_path="cover.png",
+        mime_type="image/png", file_size=1, width=1, height=1, sha256="f" * 64,
+    )
+    db.add_all([*references, cover])
+    db.commit()
+
+    reordered = reorder_product_references(
+        db, product.id, [references[2].id, references[0].id, references[1].id]
+    )
+    assert [(row.id, row.position) for row in reordered] == [
+        (references[2].id, 0), (references[0].id, 1), (references[1].id, 2),
+    ]
+    version_after_reorder = db.get(CustomerImageProduct, product.id).config_version
+
+    retire_product_reference(db, product.id, references[0].id)
+    current = service.list_current_product_assets(db, product.id)
+    current_references = [row for row in current if row.role == "reference"]
+    assert [(row.id, row.position) for row in current_references] == [
+        (references[2].id, 0), (references[1].id, 1),
+    ]
+    assert db.get(CustomerImageProductAsset, references[0].id).retired_at is not None
+    assert db.get(CustomerImageProductAsset, references[0].id).storage_path == "reference-0.png"
+    assert db.get(CustomerImageProduct, product.id).config_version == version_after_reorder + 1
+
+
+def test_reference_reorder_rejects_missing_duplicate_cover_and_cross_product_ids(db):
+    from app.customer_image.service import CustomerImageConflictError, reorder_product_references
+
+    first = CustomerImageProduct(name="First", category="box", fixed_prompt="x", output_prompt="y", created_by=1)
+    second = CustomerImageProduct(name="Second", category="box", fixed_prompt="x", output_prompt="y", created_by=1)
+    db.add_all([first, second])
+    db.flush()
+    own = CustomerImageProductAsset(product_id=first.id, role="reference", position=0, storage_path="own.png", mime_type="image/png", file_size=1, width=1, height=1, sha256="a" * 64)
+    cover = CustomerImageProductAsset(product_id=first.id, role="cover", position=0, storage_path="cover.png", mime_type="image/png", file_size=1, width=1, height=1, sha256="b" * 64)
+    other = CustomerImageProductAsset(product_id=second.id, role="reference", position=0, storage_path="other.png", mime_type="image/png", file_size=1, width=1, height=1, sha256="c" * 64)
+    db.add_all([own, cover, other])
+    db.commit()
+
+    for invalid in ([], [own.id, own.id], [cover.id], [other.id]):
+        with pytest.raises(CustomerImageConflictError):
+            reorder_product_references(db, first.id, invalid)
+
+
+def test_published_product_keeps_at_least_one_current_reference(db):
+    from app.customer_image.service import CustomerImageConflictError, retire_product_reference
+
+    product = CustomerImageProduct(
+        name="Published", category="box", fixed_prompt="x", output_prompt="y",
+        created_by=1, is_published=True,
+    )
+    db.add(product)
+    db.flush()
+    reference = CustomerImageProductAsset(
+        product_id=product.id, role="reference", position=0,
+        storage_path="reference.png", mime_type="image/png", file_size=1,
+        width=1, height=1, sha256="a" * 64,
+    )
+    db.add(reference)
+    db.commit()
+
+    with pytest.raises(CustomerImageConflictError):
+        retire_product_reference(db, product.id, reference.id)
+    db.refresh(reference)
+    assert reference.retired_at is None
 
 
 def test_product_lock_statement_uses_mysql_for_update():

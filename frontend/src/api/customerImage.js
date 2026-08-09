@@ -56,6 +56,21 @@ export function copyProductAssetFromLibrary(productId, data) {
   )
 }
 
+export function retireProductReference(productId, assetId) {
+  return customerImageClient.delete(
+    `/products/${productId}/references/${assetId}`,
+    { ...SILENT_REQUEST },
+  )
+}
+
+export function reorderProductReferences(productId, assetIds) {
+  return customerImageClient.put(
+    `/products/${productId}/references/order`,
+    { asset_ids: assetIds },
+    { ...SILENT_REQUEST },
+  )
+}
+
 export function getProductAssetBlob(productId, assetId) {
   return customerImageClient.get(
     `/products/${productId}/assets/${assetId}/content`,

@@ -106,6 +106,8 @@ def api(monkeypatch):
     monkeypatch.setattr(service, "unpublish_product", lambda *_a, **_k: _row(is_published=False))
     monkeypatch.setattr(service, "list_current_product_assets", lambda *_a, **_k: [asset])
     monkeypatch.setattr(service, "get_current_product_asset", lambda *_a, **_k: asset)
+    monkeypatch.setattr(service, "retire_product_reference", lambda *_a, **_k: None)
+    monkeypatch.setattr(service, "reorder_product_references", lambda *_a, **_k: [asset])
     monkeypatch.setattr(service, "get_product", lambda *_a, **_k: product)
     monkeypatch.setattr(
         library_service,
@@ -140,6 +142,8 @@ PRODUCT = {
         ("post", "/api/customer-image/products/1/publish", {}),
         ("post", "/api/customer-image/products/1/unpublish", {}),
         ("get", "/api/customer-image/products/1/assets", {}),
+        ("delete", "/api/customer-image/products/1/references/4", {}),
+        ("put", "/api/customer-image/products/1/references/order", {"json": {"asset_ids": [4]}}),
         ("get", "/api/customer-image/library-assets", {}),
         ("get", "/api/customer-image/invites", {}),
         ("post", "/api/customer-image/invites", {"json": {"customer_id": "C1", "product_ids": [1], "expires_at": "2099-01-01T00:00:00Z", "quota_total": 5}}),
@@ -237,11 +241,12 @@ def test_safe_cover_endpoint_returns_only_current_cover_binary(api, monkeypatch)
     }
     cover = _row(id=4, product_id=1, role="cover", retired_at=None)
     captured = []
-    monkeypatch.setattr(service, "get_current_product_cover", lambda _db, product_id: cover)
+    stream = io.BytesIO(b"safe-cover")
+    monkeypatch.setattr(service, "get_current_product_cover", lambda _db, product_id, **_kwargs: cover)
     monkeypatch.setattr(
         file_service,
         "open_product_asset_content",
-        lambda _db, product_id, asset_id: captured.append((product_id, asset_id)) or io.BytesIO(b"safe-cover"),
+        lambda _db, product_id, asset_id: captured.append((product_id, asset_id)) or stream,
     )
 
     response = client.get("/api/customer-image/products/1/cover")
@@ -250,6 +255,8 @@ def test_safe_cover_endpoint_returns_only_current_cover_binary(api, monkeypatch)
     assert response.content == b"safe-cover"
     assert response.headers["cache-control"] == "private, no-store"
     assert captured == [(1, 4)]
+    assert response.is_success
+    assert stream.closed is True
 
 
 def test_product_asset_json_endpoints_never_return_storage_path(api, monkeypatch):
@@ -324,12 +331,14 @@ def test_product_asset_content_is_private_binary(api, monkeypatch):
     from app.customer_image import file_service
     import io
 
-    monkeypatch.setattr(file_service, "open_product_asset_content", lambda *_a, **_k: io.BytesIO(b"png"))
+    stream = io.BytesIO(b"png")
+    monkeypatch.setattr(file_service, "open_product_asset_content", lambda *_a, **_k: stream)
     response = client.get("/api/customer-image/products/1/assets/4/content")
     assert response.status_code == 200
     assert response.content == b"png"
     assert response.headers["content-type"] == "image/png"
     assert response.headers["cache-control"] == "private, no-store"
+    assert stream.closed is True
 
 
 def test_missing_library_or_product_asset_maps_to_404(api, monkeypatch):

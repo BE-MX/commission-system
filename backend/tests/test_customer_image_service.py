@@ -338,6 +338,8 @@ def test_product_list_eager_loads_inactive_values_for_admin_only(db):
     from app.customer_image.service import list_products
 
     product = create_product(db, admin_id=1, payload=_product_payload())
+    product.is_published = True
+    db.commit()
     admin_product = list_products(db, include_inactive=True)[0]
     assert [value.value for value in admin_product.options[0].values] == ["18", "20"]
 

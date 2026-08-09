@@ -90,6 +90,21 @@ export function validateProductForPublish(draft, assets) {
   return ''
 }
 
+export function nextReferencePosition(assets) {
+  const positions = (assets || [])
+    .filter(asset => asset.role === 'reference')
+    .map(asset => Number(asset.position) || 0)
+  return positions.length ? Math.max(...positions) + 1 : 0
+}
+
+export function moveReferenceIds(references, index, offset) {
+  const ids = references.map(asset => asset.id)
+  const target = index + offset
+  if (target < 0 || target >= ids.length) return ids
+  ;[ids[index], ids[target]] = [ids[target], ids[index]]
+  return ids
+}
+
 export function createProductCoverController({ fetchCover, urlApi = URL } = {}) {
   const urls = ref({})
   const entries = new Map()

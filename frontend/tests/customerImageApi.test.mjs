@@ -11,6 +11,8 @@ const ASSET_METHODS = [
   'listProductAssets',
   'uploadProductAsset',
   'copyProductAssetFromLibrary',
+  'retireProductReference',
+  'reorderProductReferences',
   'getProductAssetBlob',
   'getProductCoverBlob',
   'listLibraryAssets',
@@ -50,6 +52,14 @@ test('internal asset wrappers execute backend paths payloads and request configs
       calls.push({ method: 'post', path, data, config })
       return calls.length
     },
+    delete(path, config) {
+      calls.push({ method: 'delete', path, config })
+      return calls.length
+    },
+    put(path, data, config) {
+      calls.push({ method: 'put', path, data, config })
+      return calls.length
+    },
   }
   const api = loadAssetMethods(client)
   const file = new File(['cover'], 'cover.png', { type: 'image/png' })
@@ -59,6 +69,8 @@ test('internal asset wrappers execute backend paths payloads and request configs
   api.copyProductAssetFromLibrary(12, {
     role: 'reference', position: 2, source_asset_id: 91,
   })
+  api.retireProductReference(12, 34)
+  api.reorderProductReferences(12, [36, 34, 35])
   api.getProductAssetBlob(12, 34)
   api.getProductCoverBlob(12)
   api.listLibraryAssets()
@@ -68,6 +80,8 @@ test('internal asset wrappers execute backend paths payloads and request configs
     ['get', '/products/12/assets'],
     ['post', '/products/12/assets/upload'],
     ['post', '/products/12/assets/library'],
+    ['delete', '/products/12/references/34'],
+    ['put', '/products/12/references/order'],
     ['get', '/products/12/assets/34/content'],
     ['get', '/products/12/cover'],
     ['get', '/library-assets'],
@@ -81,8 +95,9 @@ test('internal asset wrappers execute backend paths payloads and request configs
   assert.deepEqual(calls[2].data, {
     role: 'reference', position: 2, source_asset_id: 91,
   })
-  assert.equal(calls[3].config.responseType, 'blob')
-  assert.equal(calls[4].config.responseType, 'blob')
+  assert.deepEqual(calls[4].data, { asset_ids: [36, 34, 35] })
+  assert.equal(calls[5].config.responseType, 'blob')
   assert.equal(calls[6].config.responseType, 'blob')
-  assert.deepEqual(calls[6].config.params, { thumbnail: true })
+  assert.equal(calls[8].config.responseType, 'blob')
+  assert.deepEqual(calls[8].config.params, { thumbnail: true })
 })

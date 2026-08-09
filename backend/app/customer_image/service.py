@@ -1,7 +1,7 @@
 """Internal services for customer-scoped portal access."""
 
 from copy import deepcopy
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
@@ -112,8 +112,11 @@ def _product_load_options(include_inactive: bool):
 def list_products(
     db: Session, *, include_inactive: bool
 ) -> list[CustomerImageProduct]:
+    statement = select(CustomerImageProduct)
+    if not include_inactive:
+        statement = statement.where(CustomerImageProduct.is_published.is_(True))
     return list(db.scalars(
-        select(CustomerImageProduct)
+        statement
         .options(_product_load_options(include_inactive))
         .execution_options(populate_existing=True)
         .order_by(
@@ -126,9 +129,11 @@ def list_products(
 def get_product(
     db: Session, product_id: int, *, include_inactive: bool = False
 ) -> CustomerImageProduct:
+    statement = select(CustomerImageProduct).where(CustomerImageProduct.id == product_id)
+    if not include_inactive:
+        statement = statement.where(CustomerImageProduct.is_published.is_(True))
     product = db.scalar(
-        select(CustomerImageProduct)
-        .where(CustomerImageProduct.id == product_id)
+        statement
         .options(_product_load_options(include_inactive))
         .execution_options(populate_existing=True)
     )
@@ -140,7 +145,7 @@ def get_product(
 def list_current_product_assets(
     db: Session, product_id: int
 ) -> list[CustomerImageProductAsset]:
-    get_product(db, product_id)
+    get_product(db, product_id, include_inactive=True)
     return list(db.scalars(
         select(CustomerImageProductAsset)
         .where(
@@ -737,8 +742,9 @@ def list_current_product_covers(
 
 
 def get_current_product_cover(
-    db: Session, product_id: int
+    db: Session, product_id: int, *, include_inactive: bool = False
 ) -> CustomerImageProductAsset:
+    get_product(db, product_id, include_inactive=include_inactive)
     cover = db.scalar(
         select(CustomerImageProductAsset)
         .where(
@@ -752,6 +758,79 @@ def get_current_product_cover(
     if cover is None:
         raise CustomerImageNotFoundError("product cover not found")
     return cover
+
+
+def _lock_product_for_asset_change(db: Session, product_id: int) -> CustomerImageProduct:
+    product = db.scalar(
+        select(CustomerImageProduct)
+        .where(CustomerImageProduct.id == product_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if product is None:
+        raise CustomerImageNotFoundError("product not found")
+    return product
+
+
+def _current_references_for_update(
+    db: Session, product_id: int
+) -> list[CustomerImageProductAsset]:
+    return list(db.scalars(
+        select(CustomerImageProductAsset)
+        .where(
+            CustomerImageProductAsset.product_id == product_id,
+            CustomerImageProductAsset.role == "reference",
+            CustomerImageProductAsset.retired_at.is_(None),
+        )
+        .order_by(CustomerImageProductAsset.position, CustomerImageProductAsset.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).all())
+
+
+def _set_reference_positions(
+    db: Session, references: list[CustomerImageProductAsset]
+) -> None:
+    # Two phases also remain safe if a production schema adds a unique current-position index.
+    offset = max((row.position for row in references), default=0) + len(references) + 1
+    for index, row in enumerate(references):
+        row.position = offset + index
+    db.flush()
+    for index, row in enumerate(references):
+        row.position = index
+
+
+def reorder_product_references(
+    db: Session, product_id: int, asset_ids: list[int]
+) -> list[CustomerImageProductAsset]:
+    product = _lock_product_for_asset_change(db, product_id)
+    current = _current_references_for_update(db, product_id)
+    current_by_id = {row.id: row for row in current}
+    if len(asset_ids) != len(current) or set(asset_ids) != set(current_by_id):
+        db.rollback()
+        raise CustomerImageConflictError("reference order must include every current reference")
+    ordered = [current_by_id[asset_id] for asset_id in asset_ids]
+    _set_reference_positions(db, ordered)
+    product.config_version += 1
+    db.commit()
+    return _current_references_for_update(db, product_id)
+
+
+def retire_product_reference(db: Session, product_id: int, asset_id: int) -> None:
+    product = _lock_product_for_asset_change(db, product_id)
+    current = _current_references_for_update(db, product_id)
+    target = next((row for row in current if row.id == asset_id), None)
+    if target is None:
+        db.rollback()
+        raise CustomerImageNotFoundError("product reference not found")
+    if product.is_published and len(current) == 1:
+        db.rollback()
+        raise CustomerImageConflictError("published product requires a reference")
+    target.retired_at = datetime.now(UTC).replace(tzinfo=None)
+    remaining = [row for row in current if row.id != asset_id]
+    _set_reference_positions(db, remaining)
+    product.config_version += 1
+    db.commit()
 
 
 def list_public_generations(

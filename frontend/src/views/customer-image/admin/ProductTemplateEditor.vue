@@ -33,21 +33,50 @@
           <span v-if="!draft.id" class="save-hint">请先保存模板，再上传素材</span>
         </div>
         <div class="asset-grid">
-          <article v-for="role in ASSET_ROLES" :key="role.value" class="asset-card">
+          <article class="asset-card">
             <div class="asset-preview">
-              <img v-if="assetUrl(role.value)" :src="assetUrl(role.value)" :alt="role.label">
-              <span v-else>{{ role.label }}待上传</span>
+              <img v-if="coverAsset && urls[coverAsset.id]" :src="urls[coverAsset.id]" alt="产品封面">
+              <span v-else>产品封面待上传</span>
             </div>
-            <strong>{{ role.label }}</strong>
+            <strong>产品封面</strong>
             <div class="asset-actions">
               <label class="file-action" :class="{ disabled: !draft.id }">
-                本地上传
-                <input type="file" accept="image/jpeg,image/png,image/webp" :disabled="!draft.id" @change="uploadAsset(role.value, $event)">
+                {{ coverAsset ? '替换封面' : '上传封面' }}
+                <input type="file" accept="image/jpeg,image/png,image/webp" :disabled="!draft.id" @change="uploadAsset('cover', $event, 0)">
               </label>
-              <GlassButton variant="outline" :disabled="!draft.id" @click="openLibrary(role.value)">从图库选择</GlassButton>
+              <GlassButton variant="outline" :disabled="!draft.id" @click="openLibrary('cover', 0)">从图库选择</GlassButton>
             </div>
           </article>
         </div>
+        <div class="reference-heading">
+          <div><strong>生成参考图</strong><p>可添加多张，顺序会作为生成参考顺序。</p></div>
+          <div class="asset-actions">
+            <label class="file-action" :class="{ disabled: !draft.id }">
+              添加本地图
+              <input type="file" accept="image/jpeg,image/png,image/webp" :disabled="!draft.id" @change="uploadAsset('reference', $event, nextReferencePosition(assets))">
+            </label>
+            <GlassButton variant="outline" :disabled="!draft.id" @click="openLibrary('reference', nextReferencePosition(assets))">从图库添加</GlassButton>
+          </div>
+        </div>
+        <div v-if="referenceAssets.length" class="reference-grid">
+          <article v-for="(asset, index) in referenceAssets" :key="asset.id" class="asset-card">
+            <div class="asset-preview">
+              <img v-if="urls[asset.id]" :src="urls[asset.id]" :alt="`参考图 ${index + 1}`">
+            </div>
+            <strong>参考图 {{ index + 1 }}</strong>
+            <div class="asset-actions">
+              <label class="file-action">
+                本地替换
+                <input type="file" accept="image/jpeg,image/png,image/webp" @change="uploadAsset('reference', $event, asset.position)">
+              </label>
+              <GlassButton variant="outline" @click="openLibrary('reference', asset.position)">图库替换</GlassButton>
+              <GlassButton variant="link" :disabled="index === 0" :aria-label="`上移参考图 ${index + 1}`" @click="moveReference(index, -1)">上移</GlassButton>
+              <GlassButton variant="link" :disabled="index === referenceAssets.length - 1" :aria-label="`下移参考图 ${index + 1}`" @click="moveReference(index, 1)">下移</GlassButton>
+              <GlassButton variant="link" link-tone="danger" :aria-label="`删除参考图 ${index + 1}`" @click="removeReference(asset)">删除</GlassButton>
+            </div>
+          </article>
+        </div>
+        <div v-else class="empty-options">尚未添加生成参考图。</div>
       </section>
 
       <section class="form-section">
@@ -94,8 +123,8 @@
               <el-input v-model="value.prompt_fragment" placeholder="内部提示词片段" />
               <el-input v-if="option.control_type === 'color'" v-model="value.pantone_code" placeholder="Pantone（选填）" />
               <el-switch v-model="value.is_active" inline-prompt active-text="启" inactive-text="停" />
-              <GlassButton variant="link" :disabled="valueIndex === 0" @click="move(option.values, valueIndex, -1)">↑</GlassButton>
-              <GlassButton variant="link" :disabled="valueIndex === option.values.length - 1" @click="move(option.values, valueIndex, 1)">↓</GlassButton>
+              <GlassButton variant="link" :disabled="valueIndex === 0" :aria-label="`上移选项值 ${valueIndex + 1}`" @click="move(option.values, valueIndex, -1)">↑</GlassButton>
+              <GlassButton variant="link" :disabled="valueIndex === option.values.length - 1" :aria-label="`下移选项值 ${valueIndex + 1}`" @click="move(option.values, valueIndex, 1)">↓</GlassButton>
               <GlassButton v-if="option.control_type !== 'boolean'" variant="link" link-tone="danger" @click="option.values.splice(valueIndex, 1)">删</GlassButton>
             </div>
           </div>
@@ -122,13 +151,15 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { computed, onBeforeUnmount, reactive, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import * as api from '@/api/customerImage'
 import {
   createEmptyOption,
   createEmptyOptionValue,
   createEmptyProductDraft,
+  moveReferenceIds,
+  nextReferencePosition,
   validateProductDraft,
 } from './composables/useCustomerImageAdmin'
 
@@ -138,7 +169,6 @@ const props = defineProps({
   adminState: { type: Object, required: true },
 })
 const emit = defineEmits(['update:modelValue', 'saved'])
-const ASSET_ROLES = [{ value: 'cover', label: '产品封面' }, { value: 'reference', label: '生成参考图' }]
 const CONTROL_LABELS = { single_choice: '单选', color: '颜色', boolean: '是否' }
 const draft = ref(createEmptyProductDraft())
 const assets = ref([])
@@ -148,9 +178,13 @@ const libraryAssets = ref([])
 const libraryVisible = ref(false)
 const libraryLoading = ref(false)
 const targetRole = ref('cover')
+const targetPosition = ref(0)
 const saving = ref(false)
 
-const assetUrl = role => urls[assets.value.find(asset => asset.role === role)?.id] || ''
+const coverAsset = computed(() => assets.value.find(asset => asset.role === 'cover'))
+const referenceAssets = computed(() => assets.value
+  .filter(asset => asset.role === 'reference')
+  .sort((left, right) => left.position - right.position || left.id - right.id))
 const activeValues = option => option.values.filter(value => value.is_active !== false)
 
 function releaseUrls(collection) {
@@ -199,20 +233,21 @@ async function save() {
   } finally { saving.value = false }
 }
 
-async function uploadAsset(role, event) {
+async function uploadAsset(role, event, position) {
   const file = event.target.files?.[0]
   event.target.value = ''
   if (!file || !draft.value.id) return
   try {
-    await api.uploadProductAsset(draft.value.id, role, 0, file)
+    await api.uploadProductAsset(draft.value.id, role, position, file)
     await loadAssets()
     await props.adminState.loadProducts()
     ElMessage.success('素材已替换')
   } catch { /* shared interceptor provides request feedback */ }
 }
 
-async function openLibrary(role) {
+async function openLibrary(role, position) {
   targetRole.value = role
+  targetPosition.value = position
   libraryVisible.value = true
   libraryLoading.value = true
   releaseUrls(libraryUrls)
@@ -229,7 +264,7 @@ async function openLibrary(role) {
 async function copyFromLibrary(asset) {
   try {
     await api.copyProductAssetFromLibrary(draft.value.id, {
-      source_asset_id: asset.id, role: targetRole.value, position: 0,
+      source_asset_id: asset.id, role: targetRole.value, position: targetPosition.value,
     })
     libraryVisible.value = false
     releaseUrls(libraryUrls)
@@ -237,6 +272,30 @@ async function copyFromLibrary(asset) {
     await props.adminState.loadProducts()
     ElMessage.success('已复制到产品模板')
   } catch { /* shared interceptor provides request feedback */ }
+}
+
+async function moveReference(index, offset) {
+  const assetIds = moveReferenceIds(referenceAssets.value, index, offset)
+  if (assetIds[index] === referenceAssets.value[index]?.id) return
+  try {
+    await api.reorderProductReferences(draft.value.id, assetIds)
+    await loadAssets()
+    await props.adminState.loadProducts()
+  } catch { /* shared interceptor provides request feedback */ }
+}
+
+async function removeReference(asset) {
+  try {
+    await ElMessageBox.confirm('删除后历史生成仍保留该参考图，是否继续？', '删除参考图', {
+      confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning',
+    })
+    await api.retireProductReference(draft.value.id, asset.id)
+    await loadAssets()
+    await props.adminState.loadProducts()
+    ElMessage.success('参考图已删除')
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close' && !error?.response) throw error
+  }
 }
 
 function closeLibrary() {
@@ -265,6 +324,8 @@ onBeforeUnmount(() => { releaseUrls(urls); releaseUrls(libraryUrls) })
 label { display: grid; gap: 7px; color: var(--el-text-color-regular); font-size: 13px; font-weight: 600; }
 .wide { grid-column: 1 / -1; }
 .asset-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.reference-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.reference-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; }
 .asset-card { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--el-border-color-lighter); border-radius: 12px; }
 .asset-preview { display: grid; place-items: center; min-height: 150px; overflow: hidden; border-radius: 9px; background: var(--el-fill-color-light); color: var(--el-text-color-secondary); }
 .asset-preview img { width: 100%; height: 180px; object-fit: contain; }

@@ -15,6 +15,7 @@ from app.customer_image.models import (
     CustomerImageInvite,
     CustomerImageInviteProduct,
     CustomerImageProduct,
+    CustomerImageProductAsset,
 )
 from app.customer_image.schemas import CustomerImageInviteCreate
 from app.auth.models import ArkUserExternalBinding
@@ -33,6 +34,8 @@ EXPECTED = {
     ("get", "/products/{product_id}/assets"): ("require_permission", ("customer_image:admin",)),
     ("post", "/products/{product_id}/assets/upload"): ("require_permission", ("customer_image:admin",)),
     ("post", "/products/{product_id}/assets/library"): ("require_permission", ("customer_image:admin",)),
+    ("delete", "/products/{product_id}/references/{asset_id}"): ("require_permission", ("customer_image:admin",)),
+    ("put", "/products/{product_id}/references/order"): ("require_permission", ("customer_image:admin",)),
     ("get", "/products/{product_id}/assets/{asset_id}/content"): ("require_permission", ("customer_image:admin",)),
     ("get", "/library-assets"): ("require_permission", ("customer_image:admin",)),
     ("get", "/library-assets/{asset_id}/content"): ("require_permission", ("customer_image:admin",)),
@@ -76,6 +79,8 @@ def test_router_has_exact_permission_dependency_per_endpoint():
         ("get", "/products/1/assets", {}),
         ("post", "/products/1/assets/upload", {"data": {"role": "cover", "position": "0"}, "files": {"file": ("x.png", b"x", "image/png")}}),
         ("post", "/products/1/assets/library", {"json": {"source_asset_id": 1, "role": "cover", "position": 0}}),
+        ("delete", "/products/1/references/1", {}),
+        ("put", "/products/1/references/order", {"json": {"asset_ids": [1]}}),
         ("get", "/products/1/assets/1/content", {}),
         ("get", "/library-assets", {}),
         ("get", "/library-assets/1/content", {}),
@@ -214,7 +219,7 @@ def test_safe_cover_queries_exclude_reference_retired_and_non_primary_assets(db)
         list_current_product_covers,
     )
 
-    first = CustomerImageProduct(name="First", category="box", fixed_prompt="x", output_prompt="y", created_by=1)
+    first = CustomerImageProduct(name="First", category="box", fixed_prompt="x", output_prompt="y", created_by=1, is_published=True)
     second = CustomerImageProduct(name="Second", category="box", fixed_prompt="x", output_prompt="y", created_by=1)
     db.add_all([first, second])
     db.flush()
@@ -229,3 +234,53 @@ def test_safe_cover_queries_exclude_reference_retired_and_non_primary_assets(db)
     assert get_current_product_cover(db, first.id).id == primary.id
     with pytest.raises(CustomerImageNotFoundError):
         get_current_product_cover(db, second.id)
+
+
+def test_real_db_non_admin_cannot_list_or_open_draft_product(db, monkeypatch):
+    from app.customer_image import file_service
+    from app.customer_image.router import router
+    import io
+
+    published = CustomerImageProduct(
+        name="Published", category="box", fixed_prompt="x", output_prompt="y",
+        created_by=1, is_published=True,
+    )
+    draft = CustomerImageProduct(
+        name="Draft", category="box", fixed_prompt="x", output_prompt="y",
+        created_by=1, is_published=False,
+    )
+    db.add_all([published, draft])
+    db.flush()
+    db.add_all([
+        CustomerImageProductAsset(
+            product_id=published.id, role="cover", position=0,
+            storage_path="published.png", mime_type="image/png", file_size=1,
+            width=1, height=1, sha256="a" * 64,
+        ),
+        CustomerImageProductAsset(
+            product_id=draft.id, role="cover", position=0,
+            storage_path="draft.png", mime_type="image/png", file_size=1,
+            width=1, height=1, sha256="b" * 64,
+        ),
+    ])
+    db.commit()
+    monkeypatch.setattr(file_service, "open_product_asset_content", lambda *_a, **_k: io.BytesIO(b"cover"))
+
+    app = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_current_user] = lambda: {
+        "sub": "7", "roles": [], "permissions": ["customer_image:write"],
+    }
+    client = TestClient(app)
+
+    listed = client.get("/products").json()["data"]
+    assert [row["name"] for row in listed] == ["Published"]
+    assert client.get(f"/products/{published.id}/cover").status_code == 200
+    assert client.get(f"/products/{draft.id}/cover").status_code == 404
+
+    app.dependency_overrides[get_current_user] = lambda: {
+        "sub": "1", "roles": [], "permissions": ["customer_image:admin"],
+    }
+    assert {row["name"] for row in client.get("/products").json()["data"]} == {"Published", "Draft"}
+    assert client.get(f"/products/{draft.id}/cover").status_code == 200
