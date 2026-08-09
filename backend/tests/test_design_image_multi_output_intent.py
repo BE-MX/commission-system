@@ -38,6 +38,9 @@ from app.design_image.multi_output_intent import (
         ("参考图共2张，生成3个角度", "clarify", 3, STANDARD_ANGLES[3]),
         ("参考图有2张，生成3个角度", "clarify", 3, STANDARD_ANGLES[3]),
         ("参考图是2张，生成3个角度", "clarify", 3, STANDARD_ANGLES[3]),
+        ("用3个角度展示这个人像", "clarify", 3, STANDARD_ANGLES[3]),
+        ("采用3种方案生成海报", "clarify", 3, ("独立变体 1/3", "独立变体 2/3", "独立变体 3/3")),
+        ("生成3张参考图", "separate", 3, ("独立变体 1/3", "独立变体 2/3", "独立变体 3/3")),
     ],
 )
 def test_classify_multi_output_intent(prompt, mode, count, labels):
@@ -60,6 +63,8 @@ def test_classify_multi_output_intent(prompt, mode, count, labels):
         "使用3张高清参考图生成产品主图",
         "上传2张产品参考图后生成海报",
         "用2张原始素材图生成一张海报",
+        "正面印Logo，背面印说明，生成一张包装盒效果图",
+        "保留衣服正面和背面的图案",
     ],
 )
 def test_non_output_numbers_remain_single(prompt):

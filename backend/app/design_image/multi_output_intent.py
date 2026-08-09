@@ -51,8 +51,9 @@ _REFERENCE_ASSET_SUFFIX = re.compile(
     r"^[^图，。；;]{0,6}(?:参考图|素材图|原图|底图)"
 )
 _REFERENCE_ASSET_PREFIX = re.compile(
-    r"(?:(?:参考|素材|原|底)图(?:共|有|是)?|参考|使用|上传|采用|用)\s*$"
+    r"(?:(?:参考|素材|原|底)图(?:共|有|是)?|参考)\s*$"
 )
+_OUTPUT_VERB_SUFFIX = re.compile(r"(?:生成|输出|制作|出)\s*$")
 _ANGLE_PATTERN = re.compile(
     r"左侧(?:面)?(?:\s*\d{1,3}\s*(?:°|度))?|"
     r"右侧(?:面)?(?:\s*\d{1,3}\s*(?:°|度))?|"
@@ -86,9 +87,11 @@ def _find_requested_count(prompt: str) -> int | None:
         for match in pattern.finditer(prompt):
             following = prompt[match.end() : match.end() + 12]
             preceding = prompt[max(0, match.start() - 8) : match.start()]
-            if _REFERENCE_ASSET_SUFFIX.match(following) or _REFERENCE_ASSET_PREFIX.search(
-                preceding
-            ):
+            is_output_count = _OUTPUT_VERB_SUFFIX.search(preceding)
+            is_reference_count = _REFERENCE_ASSET_SUFFIX.match(
+                following
+            ) or _REFERENCE_ASSET_PREFIX.search(preceding)
+            if is_reference_count and not is_output_count:
                 continue
             count = _parse_count(match.group("count"))
             if count >= 2:
@@ -145,7 +148,13 @@ def _resolved_labels(
 def classify_multi_output_intent(prompt: str) -> MultiOutputIntent:
     requested_count = _find_requested_count(prompt)
     named_labels = _extract_angle_labels(prompt)
-    named_count = len(named_labels) if len(named_labels) >= 2 else None
+    is_composite = bool(_COMPOSITE_PATTERN.search(prompt))
+    is_separate = bool(_SEPARATE_PATTERN.search(prompt))
+    named_count = (
+        len(named_labels)
+        if len(named_labels) >= 2 and (is_composite or is_separate)
+        else None
+    )
     count = requested_count or named_count or 1
 
     if count > 4:
@@ -156,9 +165,9 @@ def classify_multi_output_intent(prompt: str) -> MultiOutputIntent:
     labels = _resolved_labels(prompt, count, named_labels)
     if requested_count is not None and named_labels and requested_count != len(named_labels):
         return MultiOutputIntent(mode="clarify", count=count, labels=labels)
-    if _COMPOSITE_PATTERN.search(prompt):
+    if is_composite:
         mode: OutputMode = "composite"
-    elif _SEPARATE_PATTERN.search(prompt) or _GENERATED_IMAGE_COUNT_PATTERN.search(prompt):
+    elif is_separate or _GENERATED_IMAGE_COUNT_PATTERN.search(prompt):
         mode = "separate"
     else:
         mode = "clarify"
