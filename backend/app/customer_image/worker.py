@@ -15,7 +15,7 @@ from uuid import uuid4
 from sqlalchemy import and_, exists, or_, select, update
 
 from app.ai import image_job_runtime as image_runtime
-from app.ai.image_service import build_image_config_version
+from app.ai.service import build_image_config_version
 from app.ai.models import AiCallLog, AiPreset, AiProvider
 from app.core.config import get_settings
 from app.core.database import SessionLocal

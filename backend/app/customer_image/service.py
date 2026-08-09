@@ -7,7 +7,7 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from app.ai.image_service import build_image_config_version
+from app.ai.service import build_image_config_version
 from app.ai.models import AiPreset, AiProvider
 from app.auth.models import ArkUserExternalBinding
 from app.core.config import get_settings
