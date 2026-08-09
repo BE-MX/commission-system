@@ -143,6 +143,7 @@ def _stream_assistant_events(
             "reused": reused,
         },
     )
+    yield sse_event("heartbeat", {"status": assistant["status"]})
     if reused:
         yield from _saved_events(
             assistant["status"], assistant["content"], assistant["error_message"]

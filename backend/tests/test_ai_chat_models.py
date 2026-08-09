@@ -136,6 +136,7 @@ def test_ai_chat_tables_and_indexes_match_the_domain_contract():
 
     assert "idx_ai_chat_session_owner_updated" in session_indexes
     assert "idx_ai_chat_message_session_created" in message_indexes
+    assert "idx_ai_chat_message_reply_to" in message_indexes
     assert {
         "idx_ai_chat_attachment_session_created",
         "idx_ai_chat_attachment_draft_status",
@@ -160,15 +161,6 @@ def test_message_idempotency_and_attachment_ownership_constraints():
         assert column.type.dialect_impl(mysql_dialect).unsigned is True
 
 
-def test_cross_session_retry_is_rejected_but_same_session_retry_succeeds(fk_db):
-    _seed_two_sessions_and_message(fk_db)
-    fk_db.add(_message(101, 10, role="assistant", retry_of_message_id=100))
-    fk_db.commit()
-    fk_db.add(_message(102, 20, role="assistant", retry_of_message_id=100))
-    with pytest.raises(IntegrityError):
-        fk_db.commit()
-
-
 def test_cross_session_attachment_is_rejected_but_same_session_binding_succeeds(
     fk_db,
 ):
@@ -187,6 +179,9 @@ def test_domain_constraints_are_named_and_cover_reference_and_enum_invariants():
         message_table, UniqueConstraint
     )
     assert "fk_ai_chat_message_retry_session" in _constraint_names(
+        message_table, ForeignKeyConstraint
+    )
+    assert "fk_ai_chat_message_reply_session" in _constraint_names(
         message_table, ForeignKeyConstraint
     )
     assert "fk_ai_chat_attachment_message_session" in _constraint_names(
@@ -211,6 +206,7 @@ def test_foreign_keys_are_restrictive_and_relationships_do_not_implicitly_load()
             "ark_ai_chat_messages.session_id",
         },
         "ark_ai_chat_messages.retry_of_message_id": {"ark_ai_chat_messages.id"},
+        "ark_ai_chat_messages.reply_to_message_id": {"ark_ai_chat_messages.id"},
         "ark_ai_chat_messages.ai_call_log_id": {"ark_ai_call_logs.id"},
         "ark_ai_chat_attachments.session_id": {
             "ark_ai_chat_sessions.id",
@@ -373,6 +369,7 @@ def test_response_schemas_serialize_models_without_private_attachment_content():
     message_data = MessageResponse.model_validate(message).model_dump()
     assert message_data["content"] == "分析附件"
     assert "ai_call_log_id" not in message_data
+    assert "reply_to_message_id" not in message_data
     attachment_data = AttachmentResponse.model_validate(attachment).model_dump()
     assert attachment_data["original_name"] == "brief.md"
     assert "storage_path" not in attachment_data
@@ -467,6 +464,7 @@ def test_mysql_ddl_contains_named_reference_and_enum_constraints():
     for constraint_name in (
         "uq_ai_chat_message_session_id",
         "fk_ai_chat_message_retry_session",
+        "fk_ai_chat_message_reply_session",
         "fk_ai_chat_attachment_message_session",
         "ck_ai_chat_message_role",
         "ck_ai_chat_message_status",

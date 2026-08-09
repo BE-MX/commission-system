@@ -165,6 +165,9 @@ def test_stream_emits_meta_delta_done_without_ok_envelope(
     assert response.headers["cache-control"] == "no-cache"
     assert response.headers["x-accel-buffering"] == "no"
     assert "event: meta" in response.text
+    assert "event: heartbeat" in response.text
+    assert response.text.index("event: meta") < response.text.index("event: heartbeat")
+    assert response.text.index("event: heartbeat") < response.text.index("event: delta")
     assert '"session_id":' in response.text
     assert "event: delta\ndata: {\"text\":\"你好\"}" in response.text
     assert "event: done" in response.text
@@ -268,6 +271,7 @@ def test_closing_sse_generator_closes_upstream_and_saves_stopped_partial(db, mon
     )
     next(events)
     next(events)
+    next(events)
     events.close()
 
     saved = db.get(AiChatMessage, turn.assistant_message.id)
@@ -287,13 +291,16 @@ def test_retry_endpoint_appends_assistant_without_copying_user(engine, db, monke
         content="question",
         status="completed",
     )
+    db.add(user)
+    db.flush()
     failed = AiChatMessage(
         session_id=conversation.id,
         role="assistant",
+        reply_to_message_id=user.id,
         content="partial",
         status="failed",
     )
-    db.add_all([user, failed])
+    db.add(failed)
     db.commit()
     monkeypatch.setattr(
         router,
@@ -322,9 +329,19 @@ def test_duplicate_retry_while_streaming_does_not_call_model(engine, db, monkeyp
     owner = _seed_user(db, "router-retry-idempotent")
     conversation = service.create_session(db, owner.id)
     _configured(db)
+    user = AiChatMessage(
+        session_id=conversation.id,
+        role="user",
+        request_id="retry_inflight_user",
+        content="question",
+        status="completed",
+    )
+    db.add(user)
+    db.flush()
     original = AiChatMessage(
         session_id=conversation.id,
         role="assistant",
+        reply_to_message_id=user.id,
         content="partial",
         status="failed",
     )
@@ -349,3 +366,113 @@ def test_duplicate_retry_while_streaming_does_not_call_model(engine, db, monkeyp
     assert response.status_code == 200
     assert calls == 0
     assert "request_in_progress" in response.text
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "kwargs", "required_permission"),
+    [
+        ("get", "/api/ai-chat/config", {}, "ai_chat:read"),
+        ("post", "/api/ai-chat/sessions", {"json": {}}, "ai_chat:write"),
+        ("get", "/api/ai-chat/sessions", {}, "ai_chat:read"),
+        ("get", "/api/ai-chat/sessions/999", {}, "ai_chat:read"),
+        (
+            "post",
+            "/api/ai-chat/sessions/999/attachments",
+            {"files": {"file": ("brief.txt", b"x", "text/plain")}},
+            "ai_chat:write",
+        ),
+        ("delete", "/api/ai-chat/attachments/999", {}, "ai_chat:write"),
+        ("get", "/api/ai-chat/attachments/999/content", {}, "ai_chat:read"),
+        (
+            "post",
+            "/api/ai-chat/sessions/999/turns/stream",
+            {"json": {"request_id": "matrix_turn_1", "content": "x"}},
+            "ai_chat:write",
+        ),
+        (
+            "post",
+            "/api/ai-chat/messages/999/retry/stream",
+            {"json": {"request_id": "matrix_retry_1"}},
+            "ai_chat:write",
+        ),
+    ],
+)
+def test_all_endpoint_operations_enforce_their_permission(
+    engine, db, method, path, kwargs, required_permission
+):
+    owner = _seed_user(db, f"matrix-{method}-{len(path)}")
+    wrong_permission = (
+        "ai_chat:write" if required_permission == "ai_chat:read" else "ai_chat:read"
+    )
+    client = TestClient(_app(engine, _claims(owner.id, wrong_permission)))
+    assert client.request(method, path, **kwargs).status_code == 403
+
+
+def test_non_stream_json_endpoints_use_ok_envelope(engine, db, monkeypatch):
+    owner = _seed_user(db, "router-envelope")
+    monkeypatch.setattr(file_service, "normalize_and_store", lambda *_args: _stored())
+    monkeypatch.setattr(file_service, "delete_private_file", lambda _path: None)
+    client = TestClient(
+        _app(engine, _claims(owner.id, "ai_chat:read", "ai_chat:write"))
+    )
+    created = client.post("/api/ai-chat/sessions", json={})
+    session_id = created.json()["data"]["id"]
+    responses = [
+        created,
+        client.get("/api/ai-chat/sessions"),
+        client.get(f"/api/ai-chat/sessions/{session_id}"),
+    ]
+    uploaded = client.post(
+        f"/api/ai-chat/sessions/{session_id}/attachments",
+        files={"file": ("brief.txt", b"hello", "text/plain")},
+    )
+    responses.append(uploaded)
+    responses.append(
+        client.delete(f"/api/ai-chat/attachments/{uploaded.json()['data']['id']}")
+    )
+    assert all(response.status_code == 200 for response in responses)
+    assert all(response.json()["code"] == 200 for response in responses)
+    assert all("data" in response.json() for response in responses)
+
+
+@pytest.mark.parametrize(
+    ("method", "resource", "permission"),
+    [
+        ("get", "content", "ai_chat:read"),
+        ("delete", "attachment", "ai_chat:write"),
+        ("post", "retry", "ai_chat:write"),
+    ],
+)
+def test_cross_owner_content_delete_and_retry_are_hidden(
+    engine, db, method, resource, permission, monkeypatch
+):
+    owner = _seed_user(db, f"owner-hide-{resource}")
+    stranger = _seed_user(db, f"stranger-hide-{resource}")
+    conversation = service.create_session(db, owner.id)
+    attachment = service.create_attachment(db, owner.id, conversation.id, _stored())
+    user = AiChatMessage(
+        session_id=conversation.id,
+        role="user",
+        request_id=f"hide_user_{resource}",
+        content="question",
+        status="completed",
+    )
+    db.add(user)
+    db.flush()
+    assistant = AiChatMessage(
+        session_id=conversation.id,
+        role="assistant",
+        reply_to_message_id=user.id,
+        content="failed",
+        status="failed",
+    )
+    db.add(assistant)
+    db.commit()
+    paths = {
+        "content": f"/api/ai-chat/attachments/{attachment.id}/content",
+        "attachment": f"/api/ai-chat/attachments/{attachment.id}",
+        "retry": f"/api/ai-chat/messages/{assistant.id}/retry/stream",
+    }
+    kwargs = {"json": {"request_id": "cross_owner_retry"}} if resource == "retry" else {}
+    client = TestClient(_app(engine, _claims(stranger.id, permission)))
+    assert client.request(method, paths[resource], **kwargs).status_code == 404

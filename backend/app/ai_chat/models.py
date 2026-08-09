@@ -85,6 +85,11 @@ class AiChatMessage(Base):
         String(16), nullable=False, default="completed", comment="消息状态"
     )
     error_message = Column(Text, nullable=True, comment="可行动失败信息")
+    reply_to_message_id = Column(
+        BigInteger,
+        nullable=True,
+        comment="触发此助手消息的用户消息",
+    )
     retry_of_message_id = Column(
         BigInteger,
         nullable=True,
@@ -117,6 +122,12 @@ class AiChatMessage(Base):
             name="uq_ai_chat_message_session_id",
         ),
         ForeignKeyConstraint(
+            ["session_id", "reply_to_message_id"],
+            ["ark_ai_chat_messages.session_id", "ark_ai_chat_messages.id"],
+            name="fk_ai_chat_message_reply_session",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
             ["session_id", "retry_of_message_id"],
             ["ark_ai_chat_messages.session_id", "ark_ai_chat_messages.id"],
             name="fk_ai_chat_message_retry_session",
@@ -131,6 +142,7 @@ class AiChatMessage(Base):
             name="ck_ai_chat_message_status",
         ),
         Index("idx_ai_chat_message_session_created", "session_id", "created_at"),
+        Index("idx_ai_chat_message_reply_to", "session_id", "reply_to_message_id"),
         {"comment": "AI 方案对话消息"},
     )
 
@@ -152,12 +164,17 @@ class AiChatMessage(Base):
         ),
         foreign_keys=[retry_of_message_id],
         remote_side=[session_id, id],
-        back_populates="retry_messages",
         lazy="noload",
+        overlaps="messages,session",
     )
-    retry_messages = relationship(
+    reply_to_message = relationship(
         "AiChatMessage",
-        back_populates="retry_of_message",
+        primaryjoin=lambda: and_(
+            AiChatMessage.session_id == remote(AiChatMessage.session_id),
+            foreign(AiChatMessage.reply_to_message_id) == remote(AiChatMessage.id),
+        ),
+        foreign_keys=[reply_to_message_id],
+        remote_side=[session_id, id],
         lazy="noload",
         overlaps="messages,session",
     )

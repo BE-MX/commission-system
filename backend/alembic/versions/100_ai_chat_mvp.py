@@ -83,6 +83,12 @@ def upgrade() -> None:
         ),
         sa.Column("error_message", sa.Text(), nullable=True, comment="可行动失败信息"),
         sa.Column(
+            "reply_to_message_id",
+            sa.BigInteger(),
+            nullable=True,
+            comment="触发此助手消息的用户消息",
+        ),
+        sa.Column(
             "retry_of_message_id",
             sa.BigInteger(),
             nullable=True,
@@ -121,6 +127,12 @@ def upgrade() -> None:
             name="uq_ai_chat_message_session_id",
         ),
         sa.ForeignKeyConstraint(
+            ["session_id", "reply_to_message_id"],
+            ["ark_ai_chat_messages.session_id", "ark_ai_chat_messages.id"],
+            name="fk_ai_chat_message_reply_session",
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
             ["session_id", "retry_of_message_id"],
             ["ark_ai_chat_messages.session_id", "ark_ai_chat_messages.id"],
             name="fk_ai_chat_message_retry_session",
@@ -135,6 +147,11 @@ def upgrade() -> None:
             name="ck_ai_chat_message_status",
         ),
         comment="AI 方案对话消息",
+    )
+    op.create_index(
+        "idx_ai_chat_message_reply_to",
+        "ark_ai_chat_messages",
+        ["session_id", "reply_to_message_id"],
     )
     op.create_index(
         "idx_ai_chat_message_session_created",
@@ -234,6 +251,9 @@ def downgrade() -> None:
         table_name="ark_ai_chat_attachments",
     )
     op.drop_table("ark_ai_chat_attachments")
+    op.drop_index(
+        "idx_ai_chat_message_reply_to", table_name="ark_ai_chat_messages"
+    )
     op.drop_index(
         "idx_ai_chat_message_session_created", table_name="ark_ai_chat_messages"
     )

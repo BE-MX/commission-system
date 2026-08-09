@@ -215,19 +215,14 @@ def delete_draft_attachment(db: Session, owner_user_id: int, attachment_id: int)
 
 
 def _paired_assistant(db: Session, user: AiChatMessage) -> AiChatMessage:
-    # The current schema has no explicit turn-pair column. begin_turn inserts both
-    # rows in one transaction, so the first ordinary assistant after that user is
-    # the deliberately narrow pairing boundary.
     row = (
         db.query(AiChatMessage)
         .filter(
             AiChatMessage.session_id == user.session_id,
             AiChatMessage.role == "assistant",
+            AiChatMessage.reply_to_message_id == user.id,
             AiChatMessage.retry_of_message_id.is_(None),
-            AiChatMessage.id > user.id,
-            AiChatMessage.created_at >= user.created_at,
         )
-        .order_by(AiChatMessage.id)
         .first()
     )
     if row is None:
@@ -299,6 +294,7 @@ def begin_turn(
         assistant = AiChatMessage(
             session_id=session_id,
             role="assistant",
+            reply_to_message_id=user.id,
             content="",
             status="streaming",
             created_at=now,
@@ -334,6 +330,9 @@ def begin_retry(
     original = get_message(db, assistant_id, owner_user_id)
     if original.role != "assistant" or original.status not in {"stopped", "failed"}:
         _not_found()
+    user = get_message(db, original.reply_to_message_id, owner_user_id)
+    if user.role != "user" or user.session_id != original.session_id:
+        _not_found()
     existing = (
         db.query(AiChatMessage)
         .filter(
@@ -352,6 +351,7 @@ def begin_retry(
         request_id=request.request_id,
         content="",
         status="streaming",
+        reply_to_message_id=user.id,
         retry_of_message_id=original.id,
     )
     try:
