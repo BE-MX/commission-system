@@ -44,6 +44,7 @@ from app.design_image.multi_output_intent import (
         ("不要拼图，分别生成3张", "separate", 3, ("独立变体 1/3", "独立变体 2/3", "独立变体 3/3")),
         ("不要放在一张图里，生成3个角度", "clarify", 3, STANDARD_ANGLES[3]),
         ("别做三视图，每个角度一张", "separate", 3, STANDARD_ANGLES[3]),
+        ("3个角度，每一张图独立生成", "separate", 3, STANDARD_ANGLES[3]),
     ],
 )
 def test_classify_multi_output_intent(prompt, mode, count, labels):

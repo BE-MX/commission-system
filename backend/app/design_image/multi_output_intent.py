@@ -76,6 +76,7 @@ _GENERATED_IMAGE_COUNT_PATTERN = re.compile(
     r"(?:生成|输出|制作|出图)\s*" + _COUNT_TOKEN + r"\s*张"
 )
 _NEGATED_SIGNAL_PREFIX = re.compile(r"(?:不要|别|无需|禁止)[^，。；;]{0,8}$")
+_PER_IMAGE_SIGNAL_PREFIX = re.compile(r"(?:每|各|每个角度|每个视角)\s*$")
 
 
 def _parse_count(token: str) -> int:
@@ -152,10 +153,17 @@ def _resolved_labels(
     return tuple(f"独立变体 {index}/{count}" for index in range(1, count + 1))
 
 
-def _has_positive_signal(pattern: re.Pattern[str], prompt: str) -> bool:
+def _has_positive_signal(
+    pattern: re.Pattern[str],
+    prompt: str,
+    *,
+    exclude_per_image: bool = False,
+) -> bool:
     for match in pattern.finditer(prompt):
         clause_prefix = prompt[max(0, match.start() - 12) : match.start()]
         if not _NEGATED_SIGNAL_PREFIX.search(clause_prefix):
+            if exclude_per_image and _PER_IMAGE_SIGNAL_PREFIX.search(clause_prefix):
+                continue
             return True
     return False
 
@@ -163,7 +171,11 @@ def _has_positive_signal(pattern: re.Pattern[str], prompt: str) -> bool:
 def classify_multi_output_intent(prompt: str) -> MultiOutputIntent:
     requested_count = _find_requested_count(prompt)
     named_labels = _extract_angle_labels(prompt)
-    is_composite = _has_positive_signal(_COMPOSITE_PATTERN, prompt)
+    is_composite = _has_positive_signal(
+        _COMPOSITE_PATTERN,
+        prompt,
+        exclude_per_image=True,
+    )
     is_separate = _has_positive_signal(_SEPARATE_PATTERN, prompt)
     named_count = (
         len(named_labels)
