@@ -1,7 +1,11 @@
 import { h } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
 import { NAV_ENTRIES } from '@/config/navigation'
-import { captureInviteToken, getInviteToken } from '@/views/customer-image/inviteSession'
+import { getInviteToken } from '@/views/customer-image/inviteSession'
+import {
+  bypassCustomerImageRoute,
+  captureCustomerImageRouteToken,
+} from './customerImageRoute'
 
 // Task 10 replaces this bootstrap shell with the full customer portal.
 const CustomerImageRouteShell = {
@@ -55,9 +59,7 @@ const routes = [
     component: CustomerImageRouteShell,
     meta: { title: '莱莎产品效果图', public: true, customerImage: true },
     beforeEnter(to) {
-      if (!to.params.token) return true
-      captureInviteToken(String(to.params.token))
-      return { name: 'CustomerImagePortal', replace: true }
+      return captureCustomerImageRouteToken(to.params.token)
     },
   },
   {
@@ -75,14 +77,10 @@ const router = createRouter({
 
 // ── 路由守卫 ──────────────────────────────────────────
 router.beforeEach(async (to, from, next) => {
+  if (bypassCustomerImageRoute(to, next, title => { document.title = title })) return
+
   const isMobileUA = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
   const desktopMode = sessionStorage.getItem('ark_desktop_mode') === '1'
-
-  // 邀请页不依赖 Ark 登录，也不进入移动端素材站分流。
-  if (to.meta.customerImage) {
-    document.title = `${to.meta.title} - 莱莎方舟`
-    return next()
-  }
 
   // 移动端访问登录页：直接走移动端独立登录页
   // 例外：目标是展会 kiosk（展位 iPad 用主站登录，不进移动端素材页）

@@ -34,8 +34,17 @@ export function createApiClient({
     }
     if (getAuthorization) {
       const authorization = getAuthorization()
-      if (authorization) config.headers.Authorization = authorization
-      else delete config.headers.Authorization
+      if (typeof config.headers?.set === 'function'
+          && typeof config.headers?.delete === 'function') {
+        if (authorization) config.headers.set('Authorization', authorization)
+        else config.headers.delete('Authorization')
+      } else if (authorization) {
+        delete config.headers.authorization
+        config.headers.Authorization = authorization
+      } else {
+        delete config.headers.Authorization
+        delete config.headers.authorization
+      }
     } else {
       const token = getAccessToken()
       if (token) config.headers.Authorization = `Bearer ${token}`

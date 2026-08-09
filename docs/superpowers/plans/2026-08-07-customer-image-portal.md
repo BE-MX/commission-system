@@ -928,7 +928,8 @@ Update:
 
 Document Nginx requirements before issuing production links:
 
-- Do not log plaintext `/create/{token}`. Update the live `leshine.work` config to use a token-redacted location/log format.
+- Do not log plaintext `/create/{token}`. Update the live `leshine.work` config to use a server-wide safe log format that replaces both the request URI and HTTP Referer fields and does not record raw `$request`; a `/create`-only access log does not protect Referer values on later asset requests.
+- Add a dedicated `location ~ ^/create(?:/[^/]+)?/?$` before the SPA fallback. Its HTML response must always send `Referrer-Policy: no-referrer` and `Cache-Control: private, no-store`, without changing cache headers for `/assets/*` or other static resources.
 - The current server-level `/api` `client_max_body_size 5m` blocks valid 5-20 MiB LOGO uploads before the application can validate them. Add an exact-match `location = /api/customer-image/public/logo` with `client_max_body_size 21m` (20 MiB application maximum plus multipart overhead) and the same proxy/trusted-IP headers as the existing API location. Keep the existing 5m ceiling for every other public/API route. If the product limit is deliberately reduced below 20 MiB, set this exact location only high enough for that decided limit plus multipart overhead.
 - Back up the live config outside `conf.d`, run `nginx -t`, reload, then live-test a LOGO larger than 5 MiB succeeds and a LOGO larger than the 20 MiB application limit is rejected with 413. These checks are a production launch gate, not optional smoke tests.
 
@@ -976,6 +977,7 @@ Start the project with its own commands. Create one admin product, one one-produ
 6. Revocation invalidates the next request.
 7. No overlap, double scroll, clipped labels, or safe-area obstruction.
 8. Reduced-motion mode removes nonessential transforms.
+9. With a one-time synthetic secret, browser Network evidence shows that only the initial HTML navigation contains it; every later URL path, query string, and Referer omits it.
 
 Capture screenshots and inspect console/network errors. Verify the URL is `/create` after token capture and no request after the first HTML navigation includes the token in path or query.
 
@@ -987,7 +989,7 @@ Run the project deployment command from the main worktree only after merge appro
 deploy\deploy.bat
 ```
 
-Before issuing any production invite, apply the documented Nginx access-log redaction and exact LOGO upload location, run `nginx -t`, reload Nginx, and verify: a synthetic invite request produces no plaintext token in access logs; a LOGO larger than 5 MiB reaches the application and succeeds; a LOGO larger than 20 MiB is rejected with 413; all other public/API routes retain the 5m ceiling. Then repeat the one-product live chain on `https://leshine.work/create/<token>` and confirm the real generated asset downloads.
+Before issuing any production invite, apply the documented Nginx access-log redaction, `/create` HTML response headers, and exact LOGO upload location, run `nginx -t`, reload Nginx, and verify with one synthetic secret: neither the logged request URI nor logged HTTP Referer contains it; both response headers are present; and no browser request after the initial navigation contains it in path, query, or Referer. Also verify a LOGO larger than 5 MiB reaches the application and succeeds; a LOGO larger than 20 MiB is rejected with 413; all other public/API routes retain the 5m ceiling. Then repeat the one-product live chain on `https://leshine.work/create/<token>` and confirm the real generated asset downloads.
 
 Do not push `main` unless explicitly instructed. Feature-branch push follows repository backup policy.
 
@@ -1011,4 +1013,4 @@ Implementation is complete only when all conditions are true:
 - Revocation and expiration close access immediately; retention cleanup waits 30 days.
 - Existing internal AI image studio tests remain green after runtime extraction.
 - Migration has one head, conventions pass, frontend builds, and adversarial review has no open P0/P1.
-- Production Nginx logs are proven to redact invitation path tokens before customer rollout.
+- Production Nginx logs are proven to redact invitation tokens in both request URI and HTTP Referer, `/create` HTML sends no-referrer/private-no-store, and post-navigation browser requests contain no token before customer rollout.

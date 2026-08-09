@@ -204,6 +204,49 @@ server {
 }
 ```
 
+#### 客户生图邀请令牌与 HTML 响应上线硬门禁
+
+`/create/{token}` 的第一次 HTML 请求发生在 Vue 路由清理地址之前。生产配置必须同时保护响应和两类访问日志字段；只在前端调用 `history.replaceState` 不足以防泄露。
+
+在 Nginx `http {}` 作用域定义脱敏变量和专用日志格式。专用格式不得继续记录原始 `$request`、`$request_uri` 或 `$http_referer`：
+
+```nginx
+map $request_uri $ark_safe_request_uri {
+    default $request_uri;
+    ~^/create(?:[/?].*)?$ "/create/[REDACTED]";
+}
+
+map $http_referer $ark_safe_http_referer {
+    default $http_referer;
+    ~^(?<ark_ref_origin>https?://[^/]+)/create(?:[/?].*)?$ "$ark_ref_origin/create/[REDACTED]";
+}
+
+log_format ark_safe '$remote_addr - $remote_user [$time_local] '
+                    '"$request_method $ark_safe_request_uri $server_protocol" $status $body_bytes_sent '
+                    '"$ark_safe_http_referer" "$http_user_agent"';
+```
+
+在 `leshine.work` 的 `server {}` 中把 `access_log` 切到 `ark_safe`，使后续静态资源请求携带的 Referer 也经过脱敏；不能只给 `/create` location 使用安全格式。随后在通用 SPA location 之前增加精确客户入口：
+
+```nginx
+access_log /var/log/nginx/access.log ark_safe;
+
+location ~ ^/create(?:/[^/]+)?/?$ {
+    root /var/www/ark/dist;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header Cache-Control "private, no-store" always;
+    try_files /index.html =404;
+}
+```
+
+上线探针必须使用一次性合成标记（不得使用真实邀请令牌），完成以下验证后才能签发生产邀请：
+
+1. `curl -I https://leshine.work/create/<synthetic-secret>` 同时返回 `Referrer-Policy: no-referrer` 与 `Cache-Control: private, no-store`。
+2. 分别把该标记放入请求路径和 `Referer: https://leshine.work/create/<synthetic-secret>` 发起请求；在所有启用的 Nginx access log 中搜索该标记必须为零命中，同时能看到 `/create/[REDACTED]`，证明 request URI 与 HTTP Referer 两个字段都实际脱敏。
+3. 用真实浏览器打开合成入口后检查地址栏、Network 导出和服务器日志：除首次 HTML 导航外，任何请求的 URL path、query string、`Referer` 都不得包含合成标记；地址栏必须已规范化为 `/create`。
+
+配置改动前将备份放到 `~/nginx-backup-<日期>/`（不要留在 `conf.d`），执行 `nginx -t` 成功后才可 reload。仅检查浏览器地址栏、仅检查 request URI 或仅检查响应头，都不能通过此门禁。
+
 #### 客户生图 LOGO 上传上线硬门禁
 
 当前 server 级 `client_max_body_size 5m` 会在请求到达 FastAPI 前阻断 5-20 MiB 的合法 LOGO；应用自身上限是 `min(DESIGN_IMAGE_MAX_UPLOAD_MB, 20 MiB)`。客户生图门户上线前，必须在通用 API 正则 location 之前增加精确 location，只放宽 LOGO 写端点并保留其余 API/public 路径的 5m 上限：

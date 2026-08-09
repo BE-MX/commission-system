@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
+import { AxiosHeaders } from 'axios'
 
 import {
   INVITE_KEY,
@@ -61,6 +62,30 @@ function loadCreateApiClient({ accessToken = 'ark-token' } = {}) {
   return { factory, handlers, cleared: () => cleared }
 }
 
+function loadCustomerImagePublicApi() {
+  const source = read('../src/api/customerImagePublic.js')
+    .replace(/^import .*$/m, '')
+    .replaceAll('export function', 'function')
+  const calls = []
+  const client = {
+    get(...args) { calls.push(['get', ...args]); return args },
+    post(...args) { calls.push(['post', ...args]); return args },
+  }
+  class InspectableFormData {
+    values = []
+    append(...args) { this.values.push(args) }
+  }
+  const api = new Function(
+    'customerImagePublicClient',
+    'FormData',
+    `${source}; return {
+      getContext, listProducts, uploadLogo, getProductAssetBlob, getAssetBlob,
+      createGeneration, listGenerations, getGeneration,
+    }`,
+  )(client, InspectableFormData)
+  return { api, calls }
+}
+
 test('captureInviteToken stores a valid token and removes it from the visible URL', () => {
   const storage = new MemoryStorage()
   const calls = []
@@ -112,6 +137,20 @@ test('public client injects only Invite auth and never redirects a public 401', 
   assert.match(clients, /customerImagePublicClient\s*=\s*createApiClient\(\{[\s\S]*?getAuthorization:\s*getInviteAuthorization[\s\S]*?redirectOnUnauthorized:\s*false/)
 })
 
+test('referrer policy is parsed before any page resource can receive an invite URL', () => {
+  const html = read('../index.html')
+  const policy = html.indexOf('<meta name="referrer" content="no-referrer"')
+  const firstResource = Math.min(
+    ...['<link', '<script'].map(tag => {
+      const index = html.indexOf(tag)
+      return index < 0 ? Number.POSITIVE_INFINITY : index
+    }),
+  )
+
+  assert.ok(policy >= 0, 'missing no-referrer policy in the initial HTML')
+  assert.ok(policy < firstResource, 'referrer policy must precede every link and script')
+})
+
 test('invite interceptor ignores Ark JWT and a public 401 leaves Ark login untouched', async () => {
   const originalWindow = globalThis.window
   globalThis.window = { location: { href: '/create' } }
@@ -137,19 +176,81 @@ test('invite interceptor ignores Ark JWT and a public 401 leaves Ark login untou
   }
 })
 
-test('public API covers context catalog logo assets and generation lifecycle silently', () => {
-  const source = read('../src/api/customerImagePublic.js')
+test('invite interceptor replaces or removes case-insensitive Axios authorization headers', () => {
+  const withInvite = loadCreateApiClient()
+  withInvite.factory({
+    baseURL: '/api/customer-image/public',
+    getAuthorization: () => 'Invite invite-token',
+    redirectOnUnauthorized: false,
+  })
+  const replacedHeaders = new AxiosHeaders({ authorization: 'Bearer leaked-ark-token' })
+  withInvite.handlers.request({ headers: replacedHeaders, showLoading: false })
+  assert.deepEqual({ ...replacedHeaders.toJSON() }, { authorization: 'Invite invite-token' })
 
-  for (const endpoint of [
-    "'/context'",
-    "'/products'",
-    "'/logo'",
-    "'/generations'",
-    '`/generations/${generationId}`',
-    '`/products/${productId}/assets/${assetId}/content`',
-    '`/assets/${assetId}/content`',
-  ]) assert.ok(source.includes(endpoint), `missing ${endpoint}`)
-  assert.match(source, /responseType:\s*['"]blob['"]/)
-  assert.match(source, /showLoading:\s*false/)
-  assert.match(source, /suppressToast:\s*true/)
+  const withoutInvite = loadCreateApiClient()
+  withoutInvite.factory({
+    baseURL: '/api/customer-image/public',
+    getAuthorization: () => null,
+    redirectOnUnauthorized: false,
+  })
+  const clearedHeaders = new AxiosHeaders({ authorization: 'Bearer leaked-ark-token' })
+  withoutInvite.handlers.request({ headers: clearedHeaders, showLoading: false })
+  assert.equal(clearedHeaders.has('Authorization'), false)
+})
+
+test('default client injects Ark Bearer auth and redirects a 401 after clearing login', async () => {
+  const originalWindow = globalThis.window
+  globalThis.window = { location: { href: '/dashboard' } }
+  try {
+    const harness = loadCreateApiClient()
+    harness.factory({ baseURL: '/api/v1' })
+    const headers = new AxiosHeaders()
+    harness.handlers.request({ headers, showLoading: false })
+    assert.equal(headers.get('Authorization'), 'Bearer ark-token')
+
+    const error = {
+      config: { showLoading: false },
+      response: { status: 401, data: { detail: 'expired' } },
+    }
+    await assert.rejects(harness.handlers.responseFailure(error), value => value === error)
+    assert.equal(harness.cleared(), 1)
+    assert.equal(globalThis.window.location.href, '/login')
+  } finally {
+    globalThis.window = originalWindow
+  }
+})
+
+test('public API wrappers execute the exact silent method path body and blob contracts', () => {
+  const { api, calls } = loadCustomerImagePublicApi()
+  const logo = { name: 'logo.png' }
+  const generation = { product_id: 7 }
+
+  api.getContext()
+  api.listProducts()
+  api.uploadLogo(logo)
+  api.getProductAssetBlob(7, 9)
+  api.getAssetBlob(11)
+  api.createGeneration(generation)
+  api.listGenerations()
+  api.getGeneration(13)
+
+  assert.deepEqual(calls.map(([method, path]) => [method, path]), [
+    ['get', '/context'],
+    ['get', '/products'],
+    ['post', '/logo'],
+    ['get', '/products/7/assets/9/content'],
+    ['get', '/assets/11/content'],
+    ['post', '/generations'],
+    ['get', '/generations'],
+    ['get', '/generations/13'],
+  ])
+  assert.deepEqual(calls[2][2].values, [['file', logo]])
+  assert.equal(calls[5][2], generation)
+  for (const call of calls) {
+    const config = call.at(-1)
+    assert.equal(config.showLoading, false)
+    assert.equal(config.suppressToast, true)
+  }
+  assert.equal(calls[3][2].responseType, 'blob')
+  assert.equal(calls[4][2].responseType, 'blob')
 })
