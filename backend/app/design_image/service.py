@@ -10,11 +10,12 @@ from __future__ import annotations
 
 import logging
 import re
+from hashlib import sha256
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import PurePosixPath
-from typing import BinaryIO
+from typing import BinaryIO, Literal
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import and_, or_, select
@@ -26,6 +27,12 @@ from app.ai.service import build_image_config_version
 from app.auth.models import ArkUser
 from app.core.config import get_settings
 from app.design_image import file_service
+from app.design_image.multi_output_intent import (
+    MultiOutputIntent,
+    build_composite_prompt,
+    build_output_prompt,
+    classify_multi_output_intent,
+)
 from app.design_image.models import (
     DesignImageAsset,
     DesignImageJob,
@@ -38,6 +45,8 @@ from app.design_image.schemas import (
     VERIFIED_QUALITIES,
     VERIFIED_SIZES,
     RetryJobRequest,
+    MessageActionRequest,
+    OutputModeConfirmationInteraction,
     TurnCreate,
 )
 
@@ -64,7 +73,14 @@ class DesignImageNotFoundError(DesignImageError):
 
 
 class DesignImageValidationError(DesignImageError):
-    pass
+    code = "validation_error"
+    public_meta: dict | None = None
+
+    def __init__(self, message: str, *, code: str | None = None, public_meta: dict | None = None):
+        super().__init__(message)
+        if code is not None:
+            self.code = code
+        self.public_meta = public_meta
 
 
 class DesignImageConfigurationError(DesignImageError):
@@ -72,7 +88,11 @@ class DesignImageConfigurationError(DesignImageError):
 
 
 class DesignImageQuotaExceededError(DesignImageError):
-    pass
+    code = "daily_limit_exceeded"
+
+    def __init__(self, message: str, *, remaining: int = 0):
+        super().__init__(message)
+        self.public_meta = {"remaining": max(remaining, 0)}
 
 
 class DesignImageActiveJobError(DesignImageError):
@@ -95,10 +115,11 @@ class SessionPage:
 
 @dataclass(frozen=True)
 class TurnResult:
-    job: DesignImageJob
+    mode: Literal["jobs", "clarification"]
     session: DesignImageSession
     message: DesignImageMessage
-    reference_links: list[DesignImageJobAsset]
+    jobs: tuple[DesignImageJob, ...]
+    clarification: DesignImageMessage | None = None
 
 
 @dataclass(frozen=True)
@@ -478,7 +499,12 @@ def delete_draft_asset(db: Session, owner_user_id: int, asset_id: int) -> None:
             .where(DesignImageJob.base_asset_id == asset.id)
             .with_for_update()
         ).first()
-        if asset.status != "draft" or referenced is not None or based_on is not None:
+        if (
+            asset.status != "draft"
+            or asset.message_id is not None
+            or referenced is not None
+            or based_on is not None
+        ):
             raise DesignImageAssetConflictError("图片已被任务引用，不能删除")
         asset.deleted_at = _utc_naive()
         db.commit()
@@ -529,6 +555,58 @@ def _session_active_job_statement(session_id: int, *, for_update: bool = False):
     return statement.with_for_update() if for_update else statement
 
 
+def _message_request_statement(
+    owner_user_id: int,
+    session_id: int | None,
+    request_id: str,
+    *,
+    for_update: bool = False,
+):
+    statement = (
+        select(DesignImageMessage)
+        .join(DesignImageSession, DesignImageSession.id == DesignImageMessage.session_id)
+        .where(
+            DesignImageSession.owner_user_id == owner_user_id,
+            DesignImageMessage.client_request_id == request_id,
+        )
+    )
+    if session_id is not None:
+        statement = statement.where(DesignImageMessage.session_id == session_id)
+    else:
+        statement = statement.order_by(DesignImageMessage.id.desc()).limit(1)
+    return statement.with_for_update() if for_update else statement
+
+
+def _find_request_message(
+    db: Session,
+    owner_user_id: int,
+    session_id: int | None,
+    request_id: str,
+    *,
+    for_update: bool = False,
+) -> DesignImageMessage | None:
+    return db.execute(
+        _message_request_statement(
+            owner_user_id,
+            session_id,
+            request_id,
+            for_update=for_update,
+        )
+    ).scalar_one_or_none()
+
+
+def _message_action_statement(session_id: int, message_id: int):
+    return (
+        select(DesignImageMessage)
+        .where(
+            DesignImageMessage.id == message_id,
+            DesignImageMessage.session_id == session_id,
+            DesignImageMessage.role == "assistant",
+        )
+        .with_for_update()
+    )
+
+
 def _accepted_count(
     db: Session,
     owner_user_id: int,
@@ -542,22 +620,60 @@ def _accepted_count(
     return len(rows)
 
 
+def _has_active_multi_job_batch(db: Session, owner_user_id: int) -> bool:
+    active_message_ids = db.execute(
+        select(DesignImageJob.request_message_id)
+        .where(
+            DesignImageJob.owner_user_id == owner_user_id,
+            DesignImageJob.status.in_(ACTIVE_STATUSES),
+        )
+        .with_for_update()
+    ).scalars().all()
+    for message_id in set(active_message_ids):
+        root_ids = db.execute(
+            select(DesignImageJob.id)
+            .where(
+                DesignImageJob.owner_user_id == owner_user_id,
+                DesignImageJob.request_message_id == message_id,
+                DesignImageJob.retry_of_job_id.is_(None),
+            )
+            .with_for_update()
+        ).scalars().all()
+        if len(root_ids) > 1:
+            return True
+    return False
+
+
 def _enforce_capacity(
-    db: Session, owner_user_id: int, now: datetime | None, session_id: int | None = None
+    db: Session,
+    owner_user_id: int,
+    now: datetime | None,
+    session_id: int | None = None,
+    *,
+    required: int = 1,
+    require_owner_idle: bool = False,
 ) -> None:
     # Both reads are locking/current reads. Under MySQL REPEATABLE READ, the
     # earlier idempotency lookup may have established an old consistent-read
     # snapshot; ordinary SELECTs here would miss a job committed while this
     # transaction waited for the owner row lock.
-    if _accepted_count(
-        db, owner_user_id, now, for_update=True
-    ) >= get_settings().DESIGN_IMAGE_DAILY_LIMIT:
-        raise DesignImageQuotaExceededError("今日额度已用完；如有紧急任务请联系管理员")
+    used = _accepted_count(db, owner_user_id, now, for_update=True)
+    daily_limit = get_settings().DESIGN_IMAGE_DAILY_LIMIT
+    remaining = max(daily_limit - used, 0)
+    if required > remaining:
+        raise DesignImageQuotaExceededError(
+            "今日生成额度不足，请减少张数或联系管理员",
+            remaining=remaining,
+        )
     max_active = get_settings().DESIGN_IMAGE_MAX_ACTIVE_PER_USER
     active_ids = db.execute(
         _active_job_statement(owner_user_id, for_update=True)
     ).scalars().all()
-    if len(active_ids) >= max_active:
+    if require_owner_idle and active_ids:
+        raise DesignImageActiveJobError("当前已有任务进行中，请等待完成后再确认")
+    if not require_owner_idle and _has_active_multi_job_batch(db, owner_user_id):
+        raise DesignImageActiveJobError("当前批量任务尚未全部完成，请稍后再发送")
+    if not require_owner_idle and len(active_ids) >= max_active:
         raise DesignImageActiveJobError(
             f"当前已有 {max_active} 个任务同时进行，请等待任一完成后再发送"
         )
@@ -636,16 +752,128 @@ def _prompt_snapshot(prompt: str, *, editing: bool) -> str:
     return "\n".join(lines)
 
 
-def _result_for_job(db: Session, job: DesignImageJob) -> TurnResult:
-    session = db.query(DesignImageSession).filter_by(id=job.session_id).one()
-    message = db.query(DesignImageMessage).filter_by(id=job.request_message_id).one()
-    links = (
-        db.query(DesignImageJobAsset)
-        .filter_by(job_id=job.id)
-        .order_by(DesignImageJobAsset.position)
+def _result_for_message(db: Session, message: DesignImageMessage) -> TurnResult:
+    session = db.query(DesignImageSession).filter_by(id=message.session_id).one()
+    jobs = tuple(
+        db.query(DesignImageJob)
+        .filter_by(request_message_id=message.id, retry_of_job_id=None)
+        .order_by(DesignImageJob.id)
         .all()
     )
-    return TurnResult(job=job, session=session, message=message, reference_links=links)
+    clarification = (
+        db.query(DesignImageMessage)
+        .filter(
+            DesignImageMessage.session_id == message.session_id,
+            DesignImageMessage.role == "assistant",
+            DesignImageMessage.interaction_json.is_not(None),
+        )
+        .order_by(DesignImageMessage.id.desc())
+        .all()
+    )
+    matching = next(
+        (
+            row
+            for row in clarification
+            if isinstance(row.interaction_json, dict)
+            and row.interaction_json.get("source_message_id") == message.id
+        ),
+        None,
+    )
+    return TurnResult(
+        mode="jobs" if jobs else "clarification",
+        session=session,
+        message=message,
+        jobs=jobs,
+        clarification=matching,
+    )
+
+
+def _result_for_job(db: Session, job: DesignImageJob) -> TurnResult:
+    message = db.query(DesignImageMessage).filter_by(id=job.request_message_id).one()
+    result = _result_for_message(db, message)
+    return TurnResult(
+        mode="jobs",
+        session=result.session,
+        message=result.message,
+        jobs=(job,),
+    )
+
+
+def _job_key(session_id: int, request_id: str, position: int) -> str:
+    return sha256(f"{session_id}:{request_id}:{position}".encode("utf-8")).hexdigest()
+
+
+def _attach_assets_to_message(
+    message: DesignImageMessage,
+    base: DesignImageAsset | None,
+    references: list[DesignImageAsset],
+    *,
+    promote: bool,
+) -> None:
+    for asset in ([base] if base is not None else []) + references:
+        if asset.status == "draft":
+            asset.message_id = message.id
+            if promote:
+                asset.status = "attached"
+                asset.expires_at = None
+
+
+def _create_jobs_for_intent(
+    db: Session,
+    owner_user_id: int,
+    session: DesignImageSession,
+    message: DesignImageMessage,
+    payload: TurnCreate,
+    intent: MultiOutputIntent,
+    base: DesignImageAsset | None,
+    references: list[DesignImageAsset],
+    *,
+    operation_time: datetime,
+) -> tuple[DesignImageJob, ...]:
+    preset_name, model, provider_id, pricing_snapshot, config_version = _preset_snapshot(db)
+    labels: tuple[str | None, ...] = intent.labels if intent.mode == "separate" else (None,)
+    rows: list[DesignImageJob] = []
+    for position, label in enumerate(labels, start=1):
+        if label is not None:
+            effective_prompt = build_output_prompt(payload.prompt, label)
+        elif intent.mode == "composite":
+            effective_prompt = build_composite_prompt(payload.prompt, intent.labels)
+        else:
+            effective_prompt = payload.prompt
+        job = DesignImageJob(
+            owner_user_id=owner_user_id,
+            session_id=session.id,
+            request_message_id=message.id,
+            base_asset_id=base.id if base else None,
+            mode="edit" if base else "generate",
+            status="queued",
+            prompt_snapshot=_prompt_snapshot(effective_prompt, editing=base is not None),
+            parameters={
+                "size": payload.size,
+                "quality": payload.quality,
+                "provider_id": provider_id,
+                "config_version": config_version,
+            },
+            preset_name=preset_name,
+            model=model,
+            idempotency_key=_job_key(session.id, payload.request_id, position),
+            pricing_snapshot=pricing_snapshot,
+            created_at=operation_time,
+        )
+        db.add(job)
+        db.flush()
+        for reference_position, asset in enumerate(references):
+            db.add(
+                DesignImageJobAsset(
+                    job_id=job.id,
+                    asset_id=asset.id,
+                    role="reference",
+                    position=reference_position,
+                )
+            )
+        rows.append(job)
+    _attach_assets_to_message(message, base, references, promote=True)
+    return tuple(rows)
 
 
 def _reload_winner_result(
@@ -676,27 +904,30 @@ def create_turn(
     *,
     now: datetime | None = None,
 ) -> TurnResult:
-    existing = _find_job_by_idempotency(db, owner_user_id, payload.request_id)
-    if existing is not None:
-        return _result_for_job(db, existing)
+    existing_message = _find_request_message(
+        db, owner_user_id, payload.session_id, payload.request_id
+    )
+    if existing_message is not None:
+        return _result_for_message(db, existing_message)
     try:
         _lock_active_owner(db, owner_user_id)
-        winner = _find_job_by_idempotency(
-            db, owner_user_id, payload.request_id, for_update=True
-        )
-        if winner is not None:
-            return _rollback_and_reload_winner(
-                db, owner_user_id, winner.id, context="turn"
+        if payload.session_id is None:
+            winner_message = _find_request_message(
+                db,
+                owner_user_id,
+                None,
+                payload.request_id,
+                for_update=True,
             )
+            if winner_message is not None:
+                db.rollback()
+                return _result_for_message(db, winner_message)
         session = (
             _owner_session(
                 db, owner_user_id, payload.session_id, for_update=True
             )
             if payload.session_id is not None
             else None
-        )
-        _enforce_capacity(
-            db, owner_user_id, now, session_id=session.id if session is not None else None
         )
         operation_time = _utc_naive(now)
         if session is None:
@@ -714,6 +945,24 @@ def create_turn(
             # 首轮消息自动命名：仅当仍是默认名（没显式起过名）且会话还没有任何消息
             if session.title == DEFAULT_SESSION_TITLE and not _session_has_messages(db, session.id):
                 session.title = _session_title_from_prompt(payload.prompt)
+        if payload.session_id is not None:
+            winner_message = _find_request_message(
+                db,
+                owner_user_id,
+                session.id,
+                payload.request_id,
+                for_update=True,
+            )
+            if winner_message is not None:
+                db.rollback()
+                return _result_for_message(db, winner_message)
+        intent = classify_multi_output_intent(payload.prompt)
+        if intent.mode == "reject":
+            raise DesignImageValidationError(
+                "一次最多生成 4 张图片",
+                code="multi_output_limit",
+                public_meta={"max_outputs": 4},
+            )
         base = (
             _usable_asset(
                 db, owner_user_id, session.id, payload.base_asset_id,
@@ -730,69 +979,227 @@ def create_turn(
             )
             for asset_id in payload.reference_asset_ids
         ]
-        preset_name, model, provider_id, pricing_snapshot, config_version = _preset_snapshot(db)
         message = DesignImageMessage(
             session_id=session.id,
             role="user",
             content=payload.prompt,
             status="normal",
+            client_request_id=payload.request_id,
         )
         db.add(message)
         db.flush()
-        job = DesignImageJob(
-            owner_user_id=owner_user_id,
-            session_id=session.id,
-            request_message_id=message.id,
-            base_asset_id=base.id if base else None,
-            mode="edit" if base else "generate",
-            status="queued",
-            prompt_snapshot=_prompt_snapshot(payload.prompt, editing=base is not None),
-            parameters={
-                "size": payload.size, "quality": payload.quality,
-                "provider_id": provider_id,
-                "config_version": config_version,
-            },
-            preset_name=preset_name,
-            model=model,
-            idempotency_key=payload.request_id,
-            pricing_snapshot=pricing_snapshot,
-            created_at=operation_time,
-        )
-        db.add(job)
-        db.flush()
-        for position, asset in enumerate(references):
-            db.add(
-                DesignImageJobAsset(
-                    job_id=job.id,
-                    asset_id=asset.id,
-                    role="reference",
-                    position=position,
-                )
+        if intent.mode == "clarify":
+            _attach_assets_to_message(message, base, references, promote=False)
+            clarification = DesignImageMessage(
+                session_id=session.id,
+                role="assistant",
+                content="请选择生成方式",
+                status="normal",
+                interaction_json={
+                    "type": "output_mode_confirmation",
+                    "status": "pending",
+                    "source_message_id": message.id,
+                    "request_id": payload.request_id,
+                    "count": intent.count,
+                    "labels": list(intent.labels),
+                    "request": {
+                        "base_asset_id": payload.base_asset_id,
+                        "reference_asset_ids": list(payload.reference_asset_ids),
+                        "size": payload.size,
+                        "quality": payload.quality,
+                    },
+                    "selected_mode": None,
+                    "resolved_at": None,
+                },
+                created_at=operation_time,
             )
-            if asset.status == "draft":
-                asset.status = "attached"
-                asset.message_id = message.id
-                asset.expires_at = None
-        # 草稿基准图（图库克隆）随本轮使用转正，语义与草稿参考图一致
-        if base is not None and base.status == "draft":
-            base.status = "attached"
-            base.message_id = message.id
-            base.expires_at = None
+            db.add(clarification)
+            db.commit()
+            return _result_for_message(db, message)
+        required = intent.count if intent.mode == "separate" else 1
+        _enforce_capacity(
+            db,
+            owner_user_id,
+            now,
+            session_id=session.id,
+            required=required,
+            require_owner_idle=intent.mode == "separate",
+        )
+        jobs = _create_jobs_for_intent(
+            db,
+            owner_user_id,
+            session,
+            message,
+            payload,
+            intent,
+            base,
+            references,
+            operation_time=operation_time,
+        )
         db.commit()
     except IntegrityError:
         db.rollback()
-        winner = _find_job_by_idempotency(db, owner_user_id, payload.request_id)
-        if winner is None:
+        winner_message = _find_request_message(
+            db, owner_user_id, payload.session_id, payload.request_id
+        )
+        if winner_message is None:
             _warn_visible("design image turn integrity error without idempotent winner")
             raise
         _warn_visible("design image turn idempotency race recovered")
-        return _reload_winner_result(
-            db, owner_user_id, winner.id, context="turn integrity recovery"
-        )
+        return _result_for_message(db, winner_message)
     except Exception:
         db.rollback()
         raise
-    return _result_for_job(db, job)
+    return TurnResult(
+        mode="jobs",
+        session=session,
+        message=message,
+        jobs=jobs,
+    )
+
+
+def resolve_message_action(
+    db: Session,
+    owner_user_id: int,
+    session_id: int,
+    message_id: int,
+    payload: MessageActionRequest,
+    *,
+    now: datetime | None = None,
+) -> TurnResult:
+    try:
+        _lock_active_owner(db, owner_user_id)
+        session = _owner_session(db, owner_user_id, session_id, for_update=True)
+        clarification = db.execute(
+            _message_action_statement(session.id, message_id)
+        ).scalar_one_or_none()
+        if clarification is None:
+            raise _not_found()
+        try:
+            interaction = OutputModeConfirmationInteraction.model_validate(
+                clarification.interaction_json
+            )
+        except Exception as exc:
+            raise DesignImageAssetConflictError("该确认请求已失效，请重新发送") from exc
+        source = db.execute(
+            select(DesignImageMessage)
+            .where(
+                DesignImageMessage.id == interaction.source_message_id,
+                DesignImageMessage.session_id == session.id,
+                DesignImageMessage.role == "user",
+            )
+            .with_for_update()
+        ).scalar_one_or_none()
+        if source is None:
+            raise _not_found()
+        stored = dict(clarification.interaction_json or {})
+        if interaction.status == "resolved":
+            if (
+                stored.get("resolved_request_id") == payload.request_id
+                and interaction.selected_mode == payload.mode
+            ):
+                db.rollback()
+                return _result_for_message(db, source)
+            raise DesignImageAssetConflictError("该生成方式已经确认")
+
+        request = interaction.request
+        turn_payload = TurnCreate(
+            request_id=interaction.request_id,
+            prompt=source.content,
+            session_id=session.id,
+            base_asset_id=request.base_asset_id,
+            reference_asset_ids=list(request.reference_asset_ids),
+            size=request.size,
+            quality=request.quality,
+        )
+        try:
+            base = (
+                _usable_asset(
+                    db,
+                    owner_user_id,
+                    session.id,
+                    request.base_asset_id,
+                    allow_draft=True,
+                    now=now,
+                )
+                if request.base_asset_id is not None
+                else None
+            )
+            references = [
+                _usable_asset(
+                    db,
+                    owner_user_id,
+                    session.id,
+                    asset_id,
+                    allow_draft=True,
+                    now=now,
+                )
+                for asset_id in request.reference_asset_ids
+            ]
+        except DesignImageNotFoundError as exc:
+            raise DesignImageValidationError(
+                "附件已过期或不可用，请重新上传",
+                code="attachment_unavailable",
+            ) from exc
+        required = interaction.count if payload.mode == "separate" else 1
+        _enforce_capacity(
+            db,
+            owner_user_id,
+            now,
+            session_id=session.id,
+            required=required,
+            require_owner_idle=True,
+        )
+        intent = MultiOutputIntent(
+            mode=payload.mode,
+            count=interaction.count,
+            labels=tuple(interaction.labels),
+        )
+        jobs = _create_jobs_for_intent(
+            db,
+            owner_user_id,
+            session,
+            source,
+            turn_payload,
+            intent,
+            base,
+            references,
+            operation_time=_utc_naive(now),
+        )
+        stored.update(
+            {
+                "status": "resolved",
+                "selected_mode": payload.mode,
+                "resolved_request_id": payload.request_id,
+                "resolved_at": _utc_naive(now).isoformat(),
+            }
+        )
+        clarification.interaction_json = stored
+        session.updated_at = _utc_naive(now)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        current = db.get(DesignImageMessage, message_id)
+        if current is None or not isinstance(current.interaction_json, dict):
+            raise
+        if current.interaction_json.get("resolved_request_id") != payload.request_id:
+            raise DesignImageAssetConflictError("该生成方式已经确认")
+        source = db.get(
+            DesignImageMessage, current.interaction_json.get("source_message_id")
+        )
+        if source is None:
+            raise DesignImageConsistencyError("确认结果暂不可见，请重试")
+        return _result_for_message(db, source)
+    except Exception:
+        db.rollback()
+        raise
+    return TurnResult(
+        mode="jobs",
+        session=session,
+        message=source,
+        jobs=jobs,
+        clarification=clarification,
+    )
 
 
 def retry_job(

@@ -25,6 +25,7 @@ def _row(**values):
         "title": "新对话",
         "role": "user",
         "content": "做一张门店海报",
+        "interaction_json": None,
         "asset_type": "upload",
         "mime_type": "image/png",
         "file_size": 123,
@@ -102,7 +103,35 @@ def api(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(service, "create_draft_asset", lambda *_a, **_k: asset)
     monkeypatch.setattr(service, "delete_draft_asset", lambda *_a, **_k: None)
-    turn = service.TurnResult(job=job, session=session, message=message, reference_links=[])
+    clarification = _row(
+        id=22,
+        session_id=11,
+        role="assistant",
+        content="请选择生成方式",
+        status="normal",
+        interaction_json={
+            "type": "output_mode_confirmation",
+            "status": "pending",
+            "source_message_id": 21,
+            "request_id": "r-1",
+            "count": 2,
+            "labels": ["正面", "侧面 45°"],
+            "request": {
+                "base_asset_id": None,
+                "reference_asset_ids": [],
+                "size": "1024x1024",
+                "quality": "medium",
+            },
+            "selected_mode": None,
+            "resolved_at": None,
+        },
+    )
+    turn = service.TurnResult(
+        mode="jobs",
+        session=session,
+        message=message,
+        jobs=(job,),
+    )
     monkeypatch.setattr(service, "create_turn", lambda *_a, **_k: turn)
     monkeypatch.setattr(service, "get_job", lambda *_a, **_k: job)
     monkeypatch.setattr(
@@ -111,6 +140,7 @@ def api(monkeypatch, tmp_path):
         lambda *_a, **_k: [job],
     )
     monkeypatch.setattr(service, "retry_job", lambda *_a, **_k: turn)
+    monkeypatch.setattr(service, "resolve_message_action", lambda *_a, **_k: turn)
     monkeypatch.setattr(service, "get_usage", lambda *_a, **_k: {"task_count": 1})
     image = tmp_path / "image.png"
     image.write_bytes(b"png")
@@ -150,6 +180,18 @@ def api(monkeypatch, tmp_path):
             {"json": {"request_id": "retry-1"}},
             200,
         ),
+        (
+            "post",
+            "/api/design-image/sessions/11/messages/22/actions",
+            {
+                "json": {
+                    "request_id": "action-1",
+                    "action": "choose_output_mode",
+                    "mode": "separate",
+                }
+            },
+            200,
+        ),
         ("get", "/api/design-image/usage?owner_user_id=7&status=queued", {}, 200),
     ],
 )
@@ -172,6 +214,25 @@ def test_every_json_endpoint_returns_ok_envelope_without_sensitive_fields(
         "internal anchor",
     ):
         assert secret not in rendered
+
+
+def test_turn_and_retry_use_unified_jobs_array_without_single_job_field(api):
+    client, *_ = api
+    for method, path, payload in (
+        ("post", "/api/design-image/sessions/11/turns", {"request_id": "r-1", "prompt": "生成图片"}),
+        ("post", "/api/design-image/jobs/41/retry", {"request_id": "retry-1"}),
+        (
+            "post",
+            "/api/design-image/sessions/11/messages/22/actions",
+            {"request_id": "action-1", "action": "choose_output_mode", "mode": "separate"},
+        ),
+    ):
+        response = getattr(client, method)(path, json=payload)
+        assert response.status_code in (200, 202), response.text
+        data = response.json()["data"]
+        assert data["mode"] == "jobs"
+        assert [job["id"] for job in data["jobs"]] == [41]
+        assert "job" not in data
 
 
 def test_binary_content_is_authenticated_private_and_uses_server_filename(api):
@@ -299,7 +360,66 @@ def test_domain_errors_have_explicit_http_mapping(api, monkeypatch, error_name, 
     monkeypatch.setattr(service, "get_config", lambda *_a, **_k: (_ for _ in ()).throw(error))
     response = client.get("/api/design-image/config")
     assert response.status_code == expected
-    assert "same-message" in response.text
+    if error_name == "DesignImageValidationError":
+        assert "same-message" not in response.text
+        assert "请求参数不正确" in response.text
+    else:
+        assert "same-message" in response.text
+
+
+@pytest.mark.parametrize(
+    ("error", "status_code", "code", "meta"),
+    [
+        (
+            lambda service: service.DesignImageValidationError(
+                "一次最多生成 4 张图片",
+                code="multi_output_limit",
+                public_meta={"max_outputs": 4},
+            ),
+            400,
+            "multi_output_limit",
+            {"max_outputs": 4},
+        ),
+        (
+            lambda service: service.DesignImageQuotaExceededError(
+                "今日生成额度不足", remaining=2
+            ),
+            429,
+            "daily_limit_exceeded",
+            {"remaining": 2},
+        ),
+        (
+            lambda service: service.DesignImageValidationError(
+                "附件已过期或不可用，请重新上传",
+                code="attachment_unavailable",
+            ),
+            400,
+            "attachment_unavailable",
+            None,
+        ),
+    ],
+)
+def test_safe_business_errors_expose_only_stable_code_message_and_meta(
+    api, monkeypatch, error, status_code, code, meta
+):
+    client, _, _, service = api
+    monkeypatch.setattr(
+        service,
+        "create_turn",
+        lambda *_a, **_k: (_ for _ in ()).throw(error(service)),
+    )
+
+    response = client.post(
+        "/api/design-image/sessions/11/turns",
+        json={"request_id": "business-error", "prompt": "生成图片"},
+    )
+
+    assert response.status_code == status_code
+    assert response.json()["detail"] == {
+        "code": code,
+        "message": str(error(service)),
+        "meta": meta,
+    }
 
 
 def test_absent_cross_owner_deleted_and_missing_file_share_404(api, monkeypatch):

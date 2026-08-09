@@ -18,6 +18,7 @@ from app.core.response import ok
 from app.design_image import file_service, library_service, service
 from app.design_image.schemas import (
     LibraryAssetClone,
+    MessageActionRequest,
     OutputModeConfirmationInteraction,
     PromptTemplateUpsert,
     RetryJobRequest,
@@ -51,10 +52,31 @@ def _call(function: Callable[..., T], *args, **kwargs) -> T:
     except (service.DesignImageAssetConflictError, service.DesignImageActiveJobError) as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
     except service.DesignImageQuotaExceededError as exc:
-        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, str(exc)) from exc
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            {
+                "code": exc.code,
+                "message": str(exc),
+                "meta": exc.public_meta,
+            },
+        ) from exc
     except (service.DesignImageConfigurationError, service.DesignImageConsistencyError) as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
-    except (service.DesignImageValidationError, file_service.ImageValidationError) as exc:
+    except service.DesignImageValidationError as exc:
+        if exc.code in {
+            "multi_output_limit",
+            "attachment_unavailable",
+        }:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                {
+                    "code": exc.code,
+                    "message": str(exc),
+                    "meta": exc.public_meta,
+                },
+            ) from exc
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "请求参数不正确") from exc
+    except file_service.ImageValidationError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
     except file_service.ImageStorageError as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
@@ -154,10 +176,15 @@ def _job(row) -> dict:
 
 def _turn_result(result: service.TurnResult) -> dict:
     return {
+        "mode": result.mode,
         "session": _session(result.session),
         "message": serialize_message(result.message),
-        "job": _job(result.job),
-        "reference_asset_ids": [link.asset_id for link in result.reference_links],
+        "jobs": [_job(job) for job in result.jobs],
+        "clarification": (
+            serialize_message(result.clarification)
+            if result.clarification is not None
+            else None
+        ),
     }
 
 
@@ -280,6 +307,25 @@ def create_turn(
         db,
         _user_id(payload),
         body.model_copy(update={"session_id": session_id}),
+    )
+    return ok(_turn_result(result))
+
+
+@router.post("/sessions/{session_id}/messages/{message_id}/actions")
+def resolve_message_action(
+    session_id: int,
+    message_id: int,
+    body: MessageActionRequest,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_permission("design_image:write")),
+):
+    result = _call(
+        service.resolve_message_action,
+        db,
+        _user_id(payload),
+        session_id,
+        message_id,
+        body,
     )
     return ok(_turn_result(result))
 

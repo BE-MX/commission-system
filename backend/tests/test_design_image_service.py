@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.dialects import mysql
+from sqlalchemy.exc import IntegrityError
 
 from app.ai.models import AiCallLog, AiPreset, AiProvider
 from app.ai import service as ai_service
@@ -236,7 +237,7 @@ def test_create_turn_is_idempotent_and_implicitly_creates_one_session(configured
     first = service.create_turn(db, owner.id, payload)
     second = service.create_turn(db, owner.id, payload)
 
-    assert second.job.id == first.job.id
+    assert second.jobs[0].id == first.jobs[0].id
     assert db.query(DesignImageJob).count() == 1
     assert db.query(DesignImageSession).filter_by(owner_user_id=owner.id).count() == 1
     assert db.query(DesignImageMessage).count() == 1
@@ -256,7 +257,7 @@ def test_create_turn_names_default_titled_session_from_first_message(configured,
     assert len(result.session.title) == service.SESSION_TITLE_MAX_LENGTH
 
     # 第二轮起不再改名
-    result.job.status = "succeeded"
+    result.jobs[0].status = "succeeded"
     db.flush()
     second = service.create_turn(
         db, owner.id, _turn(request_id="request-0002", session_id=session.id, prompt="换个新名字")
@@ -272,7 +273,7 @@ def test_create_turn_keeps_explicit_title_and_titles_implicit_session(configured
     result = service.create_turn(db, owner.id, _turn(session_id=named.id, prompt="第一轮内容"))
     assert result.session.title == "618 大促海报"
 
-    result.job.status = "succeeded"
+    result.jobs[0].status = "succeeded"
     db.flush()
     implicit = service.create_turn(
         db, owner.id, _turn(request_id="request-0003", prompt="  隐式会话\n换行压平  ")
@@ -302,22 +303,22 @@ def test_create_turn_attaches_ordered_references_and_uses_explicit_base(configur
 
     links = (
         db.query(DesignImageJobAsset)
-        .filter_by(job_id=result.job.id)
+        .filter_by(job_id=result.jobs[0].id)
         .order_by(DesignImageJobAsset.position)
         .all()
     )
-    assert result.job.mode == "edit"
-    assert result.job.base_asset_id == base.id
+    assert result.jobs[0].mode == "edit"
+    assert result.jobs[0].base_asset_id == base.id
     assert [(link.asset_id, link.position) for link in links] == [
         (second_ref.id, 0),
         (first_ref.id, 1),
     ]
     assert second_ref.status == first_ref.status == "attached"
     assert second_ref.message_id == first_ref.message_id == result.message.id
-    assert "当前基准图" in result.job.prompt_snapshot
-    assert "把背景换成高端门店" in result.job.prompt_snapshot
-    assert historical.content not in result.job.prompt_snapshot
-    assert result.job.parameters == {
+    assert "当前基准图" in result.jobs[0].prompt_snapshot
+    assert "把背景换成高端门店" in result.jobs[0].prompt_snapshot
+    assert historical.content not in result.jobs[0].prompt_snapshot
+    assert result.jobs[0].parameters == {
         "size": "1024x1536", "quality": "medium",
         "provider_id": db.query(AiPreset).filter_by(
             preset_name="design_image_generation"
@@ -397,8 +398,8 @@ def test_create_turn_never_falls_back_to_latest_generated_asset(configured, db):
         db, owner.id, _turn(request_id="no-latest", session_id=session.id)
     )
 
-    assert result.job.mode == "generate"
-    assert result.job.base_asset_id is None
+    assert result.jobs[0].mode == "generate"
+    assert result.jobs[0].base_asset_id is None
 
 
 def test_create_turn_accepts_draft_base_and_promotes_it(configured, db):
@@ -414,8 +415,8 @@ def test_create_turn_accepts_draft_base_and_promotes_it(configured, db):
         _turn(request_id="draft-base", session_id=session.id, base_asset_id=draft_base.id),
     )
 
-    assert result.job.mode == "edit"
-    assert result.job.base_asset_id == draft_base.id
+    assert result.jobs[0].mode == "edit"
+    assert result.jobs[0].base_asset_id == draft_base.id
     assert draft_base.status == "attached"
     assert draft_base.message_id == result.message.id
     assert draft_base.expires_at is None
@@ -455,11 +456,11 @@ def test_create_turn_snapshots_configured_rate_card_without_hardcoded_prices(
 
     result = service.create_turn(db, owner.id, _turn(request_id="priced"))
 
-    assert result.job.pricing_snapshot == preset.parameters["rate_card"]
-    assert result.job.parameters["provider_id"] == preset.provider_id
-    assert "api_key" not in result.job.parameters
-    assert "api_base" not in result.job.parameters
-    assert result.job.estimated_cost_microusd is None
+    assert result.jobs[0].pricing_snapshot == preset.parameters["rate_card"]
+    assert result.jobs[0].parameters["provider_id"] == preset.provider_id
+    assert "api_key" not in result.jobs[0].parameters
+    assert "api_base" not in result.jobs[0].parameters
+    assert result.jobs[0].estimated_cost_microusd is None
 
 
 def test_quota_uses_asia_shanghai_natural_day_and_counts_failed_accepted_jobs(
@@ -545,6 +546,7 @@ def test_lock_wait_rechecks_idempotency_and_returns_queued_winner_before_capacit
     owner, _ = configured
     session = _session(db, owner.id, "winner")
     message = _message(db, session.id, "winner")
+    message.client_request_id = "wait-winner"
     winner = _job(
         db, owner.id, session.id, message.id, key="wait-winner", status="queued"
     )
@@ -555,26 +557,26 @@ def test_lock_wait_rechecks_idempotency_and_returns_queued_winner_before_capacit
         )
     )
     db.commit()
-    original_find = service._find_job_by_idempotency
-    original_result = service._result_for_job
+    original_find = service._find_request_message
+    original_result = service._result_for_message
     original_rollback = db.rollback
     events = []
 
     def snapshot_miss_then_current_read(
-        current_db, owner_id, key, *, for_update=False
+        current_db, owner_id, session_id, key, *, for_update=False
     ):
         if not for_update:
             return None
         return original_find(
-            current_db, owner_id, key, for_update=for_update
+            current_db, owner_id, session_id, key, for_update=for_update
         )
 
     monkeypatch.setattr(
-        service, "_find_job_by_idempotency", snapshot_miss_then_current_read
+        service, "_find_request_message", snapshot_miss_then_current_read
     )
     monkeypatch.setattr(
         service,
-        "_result_for_job",
+        "_result_for_message",
         lambda *args, **kwargs: (
             events.append("result"), original_result(*args, **kwargs)
         )[1],
@@ -587,11 +589,14 @@ def test_lock_wait_rechecks_idempotency_and_returns_queued_winner_before_capacit
 
     replay = service.create_turn(db, owner.id, _turn(request_id="wait-winner"))
 
-    assert replay.job.id == winner.id
+    assert replay.jobs[0].id == winner.id
     assert db.query(DesignImageJob).count() == 1
     assert db.query(DesignImageSession).count() == 1
     assert db.query(DesignImageMessage).count() == 1
-    assert [(link.asset_id, link.position) for link in replay.reference_links] == [
+    assert [
+        (link.asset_id, link.position)
+        for link in db.query(DesignImageJobAsset).filter_by(job_id=replay.jobs[0].id)
+    ] == [
         (reference.id, 0)
     ]
     assert events[:2] == ["rollback", "result"]
@@ -657,9 +662,12 @@ def test_retry_lock_wait_rechecks_idempotency_before_active_limit(
         RetryJobRequest(request_id="retry-wait-winner"),
     )
 
-    assert replay.job.id == winner.id
+    assert replay.jobs[0].id == winner.id
     assert db.query(DesignImageJob).count() == 2
-    assert [(link.asset_id, link.position) for link in replay.reference_links] == [
+    assert [
+        (link.asset_id, link.position)
+        for link in db.query(DesignImageJobAsset).filter_by(job_id=replay.jobs[0].id)
+    ] == [
         (reference.id, 0)
     ]
     assert events[:2] == ["rollback", "result"]
@@ -671,6 +679,7 @@ def test_unique_key_race_rolls_back_every_write_and_returns_winner(
     owner, _ = configured
     existing_session = _session(db, owner.id, "winner")
     existing_message = _message(db, existing_session.id, "winner")
+    existing_message.client_request_id = "race-key"
     winner = _job(
         db,
         owner.id,
@@ -680,19 +689,24 @@ def test_unique_key_race_rolls_back_every_write_and_returns_winner(
         status="succeeded",
     )
     db.commit()
-    original_find = service._find_job_by_idempotency
+    original_find = service._find_request_message
     calls = 0
 
-    def miss_then_find(session, owner_id, key, *, for_update=False):
+    def miss_then_find(session, owner_id, session_id, key, *, for_update=False):
         nonlocal calls
         calls += 1
         if calls <= 2:
             return None
         return original_find(
-            session, owner_id, key, for_update=for_update
+            session, owner_id, session_id, key, for_update=for_update
         )
 
-    monkeypatch.setattr(service, "_find_job_by_idempotency", miss_then_find)
+    monkeypatch.setattr(service, "_find_request_message", miss_then_find)
+    monkeypatch.setattr(
+        db,
+        "commit",
+        lambda: (_ for _ in ()).throw(IntegrityError("insert", {}, Exception("race"))),
+    )
     warnings = []
     prints = []
     monkeypatch.setattr(
@@ -709,7 +723,7 @@ def test_unique_key_race_rolls_back_every_write_and_returns_winner(
 
     replay = service.create_turn(db, owner.id, _turn(request_id="race-key"))
 
-    assert replay.job.id == winner.id
+    assert replay.jobs[0].id == winner.id
     assert db.query(DesignImageJob).count() == 1
     assert db.query(DesignImageSession).count() == 1
     assert db.query(DesignImageMessage).count() == 1
@@ -733,13 +747,16 @@ def test_retry_creates_new_job_with_new_idempotency_without_mutating_old(configu
         db, owner.id, old.id, RetryJobRequest(request_id="retry-new")
     )
 
-    assert result.job.id != old.id
-    assert replay.job.id == result.job.id
-    assert result.job.retry_of_job_id == old.id
-    assert result.job.status == "queued"
+    assert result.jobs[0].id != old.id
+    assert replay.jobs[0].id == result.jobs[0].id
+    assert result.jobs[0].retry_of_job_id == old.id
+    assert result.jobs[0].status == "queued"
     assert old.status == "failed"
     assert db.query(DesignImageJob).count() == 2
-    assert [(x.asset_id, x.position) for x in result.reference_links] == [
+    assert [
+        (x.asset_id, x.position)
+        for x in db.query(DesignImageJobAsset).filter_by(job_id=result.jobs[0].id)
+    ] == [
         (reference.id, 0)
     ]
 
@@ -835,7 +852,7 @@ def test_same_session_rejects_second_active_job(configured, db):
     with pytest.raises(service.DesignImageActiveJobError, match="当前对话"):
         service.create_turn(db, owner.id, _turn(request_id="turn-1b", session_id=first.id))
     other = service.create_turn(db, owner.id, _turn(request_id="turn-2", session_id=second.id))
-    assert other.job.session_id == second.id
+    assert other.jobs[0].session_id == second.id
 
 
 def test_retry_allowed_when_active_job_is_in_another_session(configured, db):
@@ -851,7 +868,7 @@ def test_retry_allowed_when_active_job_is_in_another_session(configured, db):
     result = service.retry_job(
         db, owner.id, failed.id, RetryJobRequest(request_id="retry-ok")
     )
-    assert result.job.retry_of_job_id == failed.id
+    assert result.jobs[0].retry_of_job_id == failed.id
 
 
 def test_retry_requires_current_preset_and_snapshots_current_rate_card(configured, db):
@@ -875,11 +892,11 @@ def test_retry_requires_current_preset_and_snapshots_current_rate_card(configure
     retried = service.retry_job(
         db, owner.id, old.id, RetryJobRequest(request_id="current-rate")
     )
-    assert retried.job.pricing_snapshot == {"name": "current"}
-    assert retried.job.parameters["provider_id"] == preset.provider_id
+    assert retried.jobs[0].pricing_snapshot == {"name": "current"}
+    assert retried.jobs[0].parameters["provider_id"] == preset.provider_id
     assert old.pricing_snapshot == {"name": "old"}
 
-    retried.job.status = "failed"
+    retried.jobs[0].status = "failed"
     preset.is_enabled = False
     db.commit()
     with pytest.raises(service.DesignImageConfigurationError):
@@ -930,12 +947,12 @@ def test_success_updates_session_activity_but_idempotent_replay_does_not(configu
     second_page = service.list_sessions(db, owner.id, limit=1, cursor=page.next_cursor)
     assert [row.id for row in second_page.items] == [other.id]
 
-    created.job.status = "failed"
+    created.jobs[0].status = "failed"
     db.commit()
     retry = service.retry_job(
         db,
         owner.id,
-        created.job.id,
+            created.jobs[0].id,
         RetryJobRequest(request_id="activity-retry"),
         now=datetime(2026, 8, 7, 1, 0, tzinfo=timezone.utc),
     )
@@ -943,7 +960,7 @@ def test_success_updates_session_activity_but_idempotent_replay_does_not(configu
     retry_replay = service.retry_job(
         db,
         owner.id,
-        created.job.id,
+            created.jobs[0].id,
         RetryJobRequest(request_id="activity-retry"),
         now=datetime(2026, 8, 8, 1, 0, tzinfo=timezone.utc),
     )

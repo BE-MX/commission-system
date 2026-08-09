@@ -125,6 +125,10 @@ def test_router_registration_order_permissions_and_architecture_are_static():
         ("post", "/sessions/{session_id}/assets"): "design_image:write",
         ("delete", "/assets/{asset_id}"): "design_image:write",
         ("post", "/sessions/{session_id}/turns"): "design_image:write",
+        (
+            "post",
+            "/sessions/{session_id}/messages/{message_id}/actions",
+        ): "design_image:write",
         ("get", "/jobs/active"): "design_image:read",
         ("get", "/jobs/{job_id}"): "design_image:read",
         ("post", "/jobs/{job_id}/retry"): "design_image:write",

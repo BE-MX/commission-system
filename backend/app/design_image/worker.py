@@ -19,6 +19,7 @@ from threading import Event, Thread
 from uuid import uuid4
 
 from sqlalchemy import and_, exists, or_, select, update
+from sqlalchemy.orm import noload
 
 from app.ai import service as ai_service
 from app.ai import image_job_runtime as image_runtime
@@ -106,6 +107,47 @@ def _claim_candidate_statement():
     )
 
 
+def _claim_candidate_owner_statement():
+    return (
+        select(DesignImageJob.owner_user_id)
+        .where(DesignImageJob.status == "queued")
+        .order_by(DesignImageJob.created_at, DesignImageJob.id)
+    )
+
+
+def _claim_owner_statement(owner_user_id: int):
+    return (
+        select(ArkUser)
+        .options(noload(ArkUser.roles))
+        .where(ArkUser.id == owner_user_id)
+        .with_for_update(skip_locked=True)
+    )
+
+
+def _running_owner_jobs_statement(owner_user_id: int):
+    return (
+        select(DesignImageJob.id)
+        .where(
+            DesignImageJob.owner_user_id == owner_user_id,
+            DesignImageJob.status == "running",
+        )
+        .with_for_update()
+    )
+
+
+def _claim_owner_job_statement(owner_user_id: int):
+    return (
+        select(DesignImageJob.id)
+        .where(
+            DesignImageJob.owner_user_id == owner_user_id,
+            DesignImageJob.status == "queued",
+        )
+        .order_by(DesignImageJob.created_at, DesignImageJob.id)
+        .limit(1)
+        .with_for_update(skip_locked=True)
+    )
+
+
 def _claim_update_statement(
     job_id: int, lease_token: str, worker_id: str, lease_expires_at: datetime
 ):
@@ -133,7 +175,31 @@ def claim_next_job(
     expires = now + timedelta(seconds=lease_seconds)
     token = uuid4().hex
     try:
-        job_id = db.execute(_claim_candidate_statement()).scalar_one_or_none()
+        candidate_owner_ids = db.execute(
+            _claim_candidate_owner_statement()
+        ).scalars().all()
+        job_id = None
+        seen_owner_ids: set[int] = set()
+        max_running = get_settings().DESIGN_IMAGE_MAX_ACTIVE_PER_USER
+        for owner_user_id in candidate_owner_ids:
+            if owner_user_id in seen_owner_ids:
+                continue
+            seen_owner_ids.add(owner_user_id)
+            owner = db.execute(
+                _claim_owner_statement(owner_user_id)
+            ).scalar_one_or_none()
+            if owner is None:
+                continue
+            running_ids = db.execute(
+                _running_owner_jobs_statement(owner_user_id)
+            ).scalars().all()
+            if len(running_ids) >= max_running:
+                continue
+            job_id = db.execute(
+                _claim_owner_job_statement(owner_user_id)
+            ).scalar_one_or_none()
+            if job_id is not None:
+                break
         if job_id is None:
             db.commit()
             return None

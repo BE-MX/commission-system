@@ -12,7 +12,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.ai.models import AiCallLog, AiPreset, AiProvider
 from app.auth.models import ArkUser
-from app.design_image import worker
+from app.design_image import service, worker
 from app.design_image.file_service import StoredImage
 from app.design_image.models import (
     DesignImageAsset,
@@ -21,6 +21,7 @@ from app.design_image.models import (
     DesignImageMessage,
     DesignImageSession,
 )
+from app.design_image.schemas import RetryJobRequest, TurnCreate
 
 
 def _utcnow():
@@ -83,6 +84,41 @@ def _seed_job(db, *, mode="generate", created_at=None, parameters=None, **job_va
     db.add(job)
     db.commit()
     return owner, session, message, job
+
+
+def _seed_additional_job(
+    db,
+    owner,
+    session,
+    message,
+    *,
+    key,
+    status="queued",
+    created_at=None,
+):
+    preset = db.query(AiPreset).filter_by(
+        preset_name="design_image_generation"
+    ).one()
+    job = DesignImageJob(
+        owner_user_id=owner.id,
+        session_id=session.id,
+        request_message_id=message.id,
+        mode="generate",
+        status=status,
+        prompt_snapshot="make it",
+        parameters={
+            "size": "1024x1024",
+            "quality": "medium",
+            "provider_id": preset.provider_id,
+        },
+        preset_name="design_image_generation",
+        model="gpt-image-2",
+        idempotency_key=key,
+        created_at=created_at or _utcnow(),
+    )
+    db.add(job)
+    db.commit()
+    return job
 
 
 def _png_bytes(color="red"):
@@ -189,6 +225,304 @@ def test_claim_sql_uses_skip_locked_and_status_guard():
     assert "ARK_DESIGN_IMAGE_JOBS.STATUS = %S" in update_sql
 
 
+def test_claim_skips_owner_at_running_cap_and_serves_next_owner(db, monkeypatch):
+    first_owner, first_session, first_message, oldest = _seed_job(
+        db, created_at=_utcnow() - timedelta(minutes=5)
+    )
+    oldest.status = "queued"
+    _seed_additional_job(
+        db,
+        first_owner,
+        first_session,
+        first_message,
+        key="first-running-1",
+        status="running",
+    )
+    _seed_additional_job(
+        db,
+        first_owner,
+        first_session,
+        first_message,
+        key="first-running-2",
+        status="running",
+    )
+    second_owner, _, _, eligible = _seed_job(
+        db, created_at=_utcnow() - timedelta(minutes=1)
+    )
+    monkeypatch.setattr(
+        worker,
+        "get_settings",
+        lambda: SimpleNamespace(DESIGN_IMAGE_MAX_ACTIVE_PER_USER=2),
+    )
+
+    claim = worker.claim_next_job(db, "worker-cap", 120)
+
+    assert claim.job_id == eligible.id
+    db.refresh(oldest)
+    assert oldest.status == "queued"
+    assert second_owner.id != first_owner.id
+
+
+def test_claim_never_exceeds_running_cap_for_same_owner(db, monkeypatch):
+    owner, session, message, first = _seed_job(db)
+    second = _seed_additional_job(
+        db, owner, session, message, key="same-owner-second"
+    )
+    third = _seed_additional_job(
+        db, owner, session, message, key="same-owner-third"
+    )
+    monkeypatch.setattr(
+        worker,
+        "get_settings",
+        lambda: SimpleNamespace(DESIGN_IMAGE_MAX_ACTIVE_PER_USER=2),
+    )
+
+    claims = [
+        worker.claim_next_job(db, "worker-a", 120),
+        worker.claim_next_job(db, "worker-b", 120),
+        worker.claim_next_job(db, "worker-c", 120),
+    ]
+
+    assert {claim.job_id for claim in claims if claim is not None} == {
+        first.id,
+        second.id,
+    }
+    assert claims[2] is None
+    db.refresh(third)
+    assert third.status == "queued"
+
+
+def test_claim_sql_locks_owner_before_owner_job():
+    owner_sql = str(
+        worker._claim_owner_statement(7).compile(dialect=mysql.dialect())
+    ).upper()
+    job_sql = str(
+        worker._claim_owner_job_statement(7).compile(dialect=mysql.dialect())
+    ).upper()
+
+    assert "ARK_USERS.ID = %S" in owner_sql
+    assert "FOR UPDATE SKIP LOCKED" in owner_sql
+    assert "ARK_DESIGN_IMAGE_JOBS.OWNER_USER_ID = %S" in job_sql
+    assert "FOR UPDATE SKIP LOCKED" in job_sql
+
+
+def test_worker_and_http_paths_share_owner_first_lock_order():
+    worker_owner_sql = str(
+        worker._claim_owner_statement(7).compile(dialect=mysql.dialect())
+    ).upper()
+    http_owner_sql = str(
+        service._owner_lock_statement(7).compile(dialect=mysql.dialect())
+    ).upper()
+
+    assert "ARK_USERS" in worker_owner_sql
+    assert "ARK_USERS" in http_owner_sql
+    assert "FOR UPDATE" in worker_owner_sql
+    assert "FOR UPDATE" in http_owner_sql
+
+
+def test_worker_and_http_concurrent_paths_finish_without_deadlock_or_excess(
+    tmp_path, monkeypatch
+):
+    race_engine = create_engine(
+        f"sqlite:///{tmp_path / 'worker-http-race.db'}",
+        connect_args={"check_same_thread": False, "timeout": 10},
+    )
+    for table in (
+        ArkUser.__table__,
+        AiProvider.__table__,
+        AiPreset.__table__,
+        DesignImageSession.__table__,
+        DesignImageMessage.__table__,
+        DesignImageJob.__table__,
+    ):
+        table.create(race_engine)
+    factory = sessionmaker(bind=race_engine, expire_on_commit=False)
+    with factory() as seed:
+        provider = AiProvider(
+            name="Race provider",
+            provider_type="direct",
+            api_base="https://example.test",
+            api_type="openai",
+            is_enabled=True,
+            timeout_sec=30,
+        )
+        owner = ArkUser(
+            username="worker-http-owner",
+            password_hash="test",
+            real_name="Worker HTTP Owner",
+            is_active=True,
+        )
+        seed.add_all([provider, owner])
+        seed.flush()
+        seed.add(
+            AiPreset(
+                preset_name=service.PRESET_NAME,
+                provider_id=provider.id,
+                model=service.EXPECTED_MODEL,
+                parameters={"output_format": "png"},
+                is_enabled=True,
+            )
+        )
+        session = DesignImageSession(
+            owner_user_id=owner.id, title="race", status="active"
+        )
+        seed.add(session)
+        seed.flush()
+        message = DesignImageMessage(
+            session_id=session.id, role="user", content="queued", status="normal"
+        )
+        seed.add(message)
+        seed.flush()
+        seed.add(
+            DesignImageJob(
+                owner_user_id=owner.id,
+                session_id=session.id,
+                request_message_id=message.id,
+                mode="generate",
+                status="queued",
+                prompt_snapshot="queued",
+                parameters={"size": "1024x1024", "quality": "medium"},
+                preset_name=service.PRESET_NAME,
+                model=service.EXPECTED_MODEL,
+                idempotency_key="worker-http-existing",
+                created_at=_utcnow(),
+            )
+        )
+        seed.commit()
+        owner_id = owner.id
+        session_id = session.id
+
+    settings = SimpleNamespace(
+        DESIGN_IMAGE_MAX_ACTIVE_PER_USER=2,
+        DESIGN_IMAGE_DAILY_LIMIT=100,
+    )
+    monkeypatch.setattr(worker, "get_settings", lambda: settings)
+    monkeypatch.setattr(service, "get_settings", lambda: settings)
+    barrier = Barrier(2)
+    outcomes = []
+    errors = []
+    lock = Lock()
+
+    def claim():
+        try:
+            with factory() as race_db:
+                barrier.wait()
+                outcome = worker.claim_next_job(race_db, "race-worker", 120)
+            with lock:
+                outcomes.append(outcome)
+        except Exception as exc:
+            with lock:
+                errors.append(exc)
+
+    def submit():
+        try:
+            with factory() as race_db:
+                barrier.wait()
+                service.create_turn(
+                    race_db,
+                    owner_id,
+                    TurnCreate(
+                        session_id=session_id,
+                        request_id="worker-http-new",
+                        prompt="分别生成2张人像图",
+                    ),
+                )
+        except service.DesignImageActiveJobError:
+            with lock:
+                outcomes.append("blocked")
+        except Exception as exc:
+            with lock:
+                errors.append(exc)
+
+    threads = [Thread(target=claim), Thread(target=submit)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=15)
+        assert not thread.is_alive()
+
+    assert errors == []
+    assert "blocked" in outcomes
+    assert sum(isinstance(outcome, worker.ClaimedJob) for outcome in outcomes) == 1
+    with factory() as verify:
+        active_count = verify.query(DesignImageJob).filter(
+            DesignImageJob.owner_user_id == owner_id,
+            DesignImageJob.status.in_(("queued", "running")),
+        ).count()
+        assert active_count <= settings.DESIGN_IMAGE_MAX_ACTIVE_PER_USER
+
+
+def test_same_request_message_jobs_finish_independently_and_retry_only_failure(
+    engine, db, monkeypatch
+):
+    owner, session, message, first = _seed_job(db)
+    second = _seed_additional_job(
+        db, owner, session, message, key="batch-outcome-2"
+    )
+    third = _seed_additional_job(
+        db, owner, session, message, key="batch-outcome-3"
+    )
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    monkeypatch.setattr(worker, "SessionLocal", factory)
+    calls = {"provider": 0, "stored": 0}
+
+    def fake_generate(**_kwargs):
+        calls["provider"] += 1
+        if calls["provider"] == 3:
+            raise httpx.TimeoutException("provider timeout")
+        return _result(
+            "data:image/png;base64," + base64.b64encode(_png_bytes()).decode()
+        )
+
+    def fake_save(image, **_kwargs):
+        calls["stored"] += 1
+        suffix = calls["stored"]
+        return StoredImage(
+            relative_path=f"1/output/result-{suffix}.png",
+            thumbnail_relative_path=f"1/output/result-{suffix}_thumb.png",
+            mime_type=image.mime_type,
+            file_size=image.file_size,
+            width=image.width,
+            height=image.height,
+            sha256=image.sha256,
+        )
+
+    monkeypatch.setattr(worker.ai_service, "generate_image", fake_generate)
+    monkeypatch.setattr(worker.file_service, "save_private_image", fake_save)
+
+    for worker_id in ("batch-a", "batch-b", "batch-c"):
+        claim = worker.claim_next_job(db, worker_id, 120)
+        assert claim is not None
+        worker.execute_claimed_job(claim.job_id, claim.lease_token)
+
+    db.expire_all()
+    roots = [db.get(DesignImageJob, job.id) for job in (first, second, third)]
+    succeeded = [job for job in roots if job.status == "succeeded"]
+    failed = [job for job in roots if job.status == "failed"]
+    assert len(succeeded) == 2
+    assert len(failed) == 1
+    assert len({job.response_message_id for job in succeeded}) == 2
+    assert len({job.output_asset_id for job in succeeded}) == 2
+    assert failed[0].response_message_id is None
+    assert failed[0].output_asset_id is None
+
+    retry = service.retry_job(
+        db,
+        owner.id,
+        failed[0].id,
+        RetryJobRequest(request_id="retry-batch-failure"),
+    )
+    retry_claim = worker.claim_next_job(db, "batch-retry", 120)
+    worker.execute_claimed_job(retry_claim.job_id, retry_claim.lease_token)
+
+    db.expire_all()
+    retried = db.get(DesignImageJob, retry.jobs[0].id)
+    assert retried.status == "succeeded"
+    assert retried.retry_of_job_id == failed[0].id
+    assert db.get(DesignImageJob, failed[0].id).status == "failed"
+    assert retried.request_message_id == message.id
+
+
 def test_generate_uses_new_session_and_publishes_only_after_storage(
     engine, db, monkeypatch
 ):
@@ -271,9 +605,19 @@ def test_two_independent_sessions_race_one_queued_job_once(tmp_path, monkeypatch
         f"sqlite:///{tmp_path / 'claim-race.db'}",
         connect_args={"check_same_thread": False, "timeout": 10},
     )
+    ArkUser.__table__.create(race_engine)
     DesignImageJob.__table__.create(race_engine)
     factory = sessionmaker(bind=race_engine, expire_on_commit=False)
     with factory() as seed:
+        seed.add(
+            ArkUser(
+                id=1,
+                username="race-owner",
+                password_hash="test",
+                real_name="Race Owner",
+                is_active=True,
+            )
+        )
         seed.add(DesignImageJob(
             owner_user_id=1, session_id=1, request_message_id=1,
             mode="generate", status="queued", prompt_snapshot="draw",
