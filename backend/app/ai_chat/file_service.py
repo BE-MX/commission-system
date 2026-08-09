@@ -24,9 +24,7 @@ from app.core.config import get_settings
 
 MAX_IMAGE_PIXELS = 60_000_000
 MAX_OOXML_UNCOMPRESSED_BYTES = 64 * 1024 * 1024
-MAX_XLSX_ROWS = 20_000
-MAX_XLSX_COLUMNS = 256
-MAX_XLSX_SCANNED_ROWS = 20_000
+MAX_XLSX_SCANNED_ROWS = 50_000
 MAX_XLSX_SCANNED_CELLS = 200_000
 TRUNCATION_MARKER = "[内容已按系统上限截断]"
 _STORAGE_LOCK = threading.RLock()
@@ -170,8 +168,6 @@ def _extract_xlsx(content: bytes):
         for worksheet in workbook.worksheets:
             if worksheet.sheet_state != "visible":
                 continue
-            if worksheet.max_row > MAX_XLSX_ROWS or worksheet.max_column > MAX_XLSX_COLUMNS:
-                raise FileValidationError("Excel 工作表范围过大，请缩小有效区域后重试")
             yield f"[工作表: {worksheet.title}]"
             for row in worksheet.iter_rows(values_only=True):
                 scanned_rows += 1

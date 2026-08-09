@@ -78,6 +78,17 @@ def _sparse_xlsx_bytes(*, row: int, column: int) -> bytes:
     return output.getvalue()
 
 
+def _grid_xlsx_bytes(*, rows: int, columns: int) -> bytes:
+    workbook = Workbook()
+    worksheet = workbook.active
+    for row in range(rows):
+        worksheet.append([f"r{row}"] * columns)
+    output = io.BytesIO()
+    workbook.save(output)
+    workbook.close()
+    return output.getvalue()
+
+
 def _pptx_bytes() -> bytes:
     from pptx import Presentation
     from pptx.util import Inches
@@ -181,12 +192,27 @@ def test_xlsx_uses_cached_formulas_and_visible_nonempty_worksheets_only():
     assert "不得泄露" not in result.extracted_text
 
 
-@pytest.mark.parametrize(("row", "column"), [(20_001, 1), (1, 257)])
-def test_xlsx_rejects_real_sparse_worksheets_before_scanning(row, column):
+@pytest.mark.parametrize(("rows", "columns"), [(20_001, 1), (1, 257)])
+def test_xlsx_accepts_reasonable_workbooks_beyond_old_dimension_limits(rows, columns):
+    content = _grid_xlsx_bytes(rows=rows, columns=columns)
+    assert len(content) < 4 * 1024 * 1024
+
+    result = _service().normalize_and_store(
+        "reasonable.xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        content,
+    )
+
+    assert "r0" in result.extracted_text
+    assert result.truncated is (rows == 20_001)
+
+
+@pytest.mark.parametrize(("row", "column"), [(1_000_000, 1), (13, 16_384)])
+def test_xlsx_rejects_sparse_workbooks_by_actual_scan_cost(row, column):
     content = _sparse_xlsx_bytes(row=row, column=column)
     assert len(content) < 4 * 1024 * 1024
 
-    with pytest.raises(_service().FileValidationError, match="工作表范围"):
+    with pytest.raises(_service().FileValidationError, match="扫描"):
         _service().normalize_and_store(
             "sparse.xlsx",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
