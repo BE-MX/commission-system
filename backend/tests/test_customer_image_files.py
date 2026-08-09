@@ -167,6 +167,18 @@ def test_product_lock_statement_uses_mysql_for_update():
     assert "ark_customer_image_products.id = %s" in compiled
 
 
+def test_last_reference_position_statement_is_a_mysql_locking_read():
+    statement = file_service._last_reference_position_for_update_statement(7)
+
+    compiled = str(statement.compile(dialect=mysql.dialect()))
+    assert "ark_customer_image_product_assets.position" in compiled
+    assert "ark_customer_image_product_assets.product_id = %s" in compiled
+    assert "ark_customer_image_product_assets.`role` = %s" in compiled
+    assert "ark_customer_image_product_assets.retired_at IS NULL" in compiled
+    assert "ORDER BY ark_customer_image_product_assets.position DESC" in compiled
+    assert "LIMIT %s FOR UPDATE" in compiled
+
+
 def test_stale_sessions_replace_one_slot_without_lost_version(db, tmp_path, monkeypatch):
     monkeypatch.setattr("app.design_image.file_service._storage_root", lambda: tmp_path)
     product = _product(db)

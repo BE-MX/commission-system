@@ -6,7 +6,7 @@ import io
 import logging
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.customer_image.models import (
@@ -161,11 +161,7 @@ def _append_reference_with_normalized(
         if locked_product is None:
             raise FileNotFoundError("product not found")
         last_position = db.scalar(
-            select(func.max(CustomerImageProductAsset.position)).where(
-                CustomerImageProductAsset.product_id == product.id,
-                CustomerImageProductAsset.role == "reference",
-                CustomerImageProductAsset.retired_at.is_(None),
-            )
+            _last_reference_position_for_update_statement(product.id)
         )
         asset = CustomerImageProductAsset(
             product_id=product.id,
@@ -199,6 +195,23 @@ def append_product_reference_from_upload(
 ) -> CustomerImageProductAsset:
     return _append_reference_with_normalized(
         db, product, normalize_upload(content, declared_mime)
+    )
+
+
+def _last_reference_position_for_update_statement(product_id: int):
+    return (
+        select(CustomerImageProductAsset.position)
+        .where(
+            CustomerImageProductAsset.product_id == product_id,
+            CustomerImageProductAsset.role == "reference",
+            CustomerImageProductAsset.retired_at.is_(None),
+        )
+        .order_by(
+            CustomerImageProductAsset.position.desc(),
+            CustomerImageProductAsset.id.desc(),
+        )
+        .limit(1)
+        .with_for_update()
     )
 
 
