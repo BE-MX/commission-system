@@ -23,7 +23,8 @@ from sqlalchemy import text
 
 EXPECTED = {
     ("get", "/customers"): ("require_permission", ("customer_image:write",)),
-    ("get", "/products"): ("require_any_permission", ("customer_image:read", "customer_image:admin")),
+    ("get", "/products"): ("require_any_permission", ("customer_image:read", "customer_image:write", "customer_image:admin")),
+    ("get", "/products/{product_id}/cover"): ("require_any_permission", ("customer_image:read", "customer_image:write", "customer_image:admin")),
     ("post", "/products"): ("require_permission", ("customer_image:admin",)),
     ("put", "/products/{product_id}"): ("require_permission", ("customer_image:admin",)),
     ("delete", "/products/{product_id}"): ("require_permission", ("customer_image:admin",)),
@@ -35,7 +36,7 @@ EXPECTED = {
     ("get", "/products/{product_id}/assets/{asset_id}/content"): ("require_permission", ("customer_image:admin",)),
     ("get", "/library-assets"): ("require_permission", ("customer_image:admin",)),
     ("get", "/library-assets/{asset_id}/content"): ("require_permission", ("customer_image:admin",)),
-    ("get", "/invites"): ("require_any_permission", ("customer_image:read", "customer_image:admin")),
+    ("get", "/invites"): ("require_any_permission", ("customer_image:read", "customer_image:write", "customer_image:admin")),
     ("post", "/invites"): ("require_permission", ("customer_image:write",)),
     ("post", "/invites/{invite_id}/revoke"): ("require_permission", ("customer_image:write",)),
     ("get", "/generations"): ("require_any_permission", ("customer_image:read", "customer_image:admin")),
@@ -67,7 +68,7 @@ def test_router_has_exact_permission_dependency_per_endpoint():
 
 
 @pytest.mark.parametrize("method,path,kwargs", [
-        ("get", "/customers", {}), ("get", "/products", {}),
+        ("get", "/customers", {}), ("get", "/products", {}), ("get", "/products/1/cover", {}),
         ("post", "/products", {"json": {}}), ("put", "/products/1", {"json": {}}),
         ("delete", "/products/1", {}),
         ("post", "/products/1/publish", {}), ("get", "/invites", {}),
@@ -203,3 +204,28 @@ def test_unpublish_hides_product_state_and_asset_list_excludes_retired(db):
 
     assert unpublish_product(db, product.id).is_published is False
     assert [row.id for row in list_current_product_assets(db, product.id)] == [current.id]
+
+
+def test_safe_cover_queries_exclude_reference_retired_and_non_primary_assets(db):
+    from app.customer_image.models import CustomerImageProductAsset
+    from app.customer_image.service import (
+        CustomerImageNotFoundError,
+        get_current_product_cover,
+        list_current_product_covers,
+    )
+
+    first = CustomerImageProduct(name="First", category="box", fixed_prompt="x", output_prompt="y", created_by=1)
+    second = CustomerImageProduct(name="Second", category="box", fixed_prompt="x", output_prompt="y", created_by=1)
+    db.add_all([first, second])
+    db.flush()
+    primary = CustomerImageProductAsset(product_id=first.id, role="cover", position=0, storage_path="primary.png", mime_type="image/png", file_size=1, width=1, height=1, sha256="a" * 64)
+    extra = CustomerImageProductAsset(product_id=first.id, role="cover", position=1, storage_path="extra.png", mime_type="image/png", file_size=1, width=1, height=1, sha256="b" * 64)
+    reference = CustomerImageProductAsset(product_id=first.id, role="reference", position=0, storage_path="reference.png", mime_type="image/png", file_size=1, width=1, height=1, sha256="c" * 64)
+    retired = CustomerImageProductAsset(product_id=second.id, role="cover", position=0, storage_path="retired.png", mime_type="image/png", file_size=1, width=1, height=1, sha256="d" * 64, retired_at=datetime.now(UTC).replace(tzinfo=None))
+    db.add_all([primary, extra, reference, retired])
+    db.commit()
+
+    assert list_current_product_covers(db, [first.id, second.id]) == {first.id: primary}
+    assert get_current_product_cover(db, first.id).id == primary.id
+    with pytest.raises(CustomerImageNotFoundError):
+        get_current_product_cover(db, second.id)

@@ -129,6 +129,7 @@ export const MENU_GROUPS = {
     icon: Camera,
     anyPermission: [
       'design_image:read',
+      'customer_image:read', 'customer_image:write', 'customer_image:admin',
       'design:read', 'design:write', 'design:audit', 'design:manage',
       'design_gantt:read', 'design_my:read', 'design_stats:read',
     ],
@@ -938,6 +939,17 @@ export const NAV_ENTRIES = [
     menu: {
       group: 'design', title: 'AI 生图工作台', icon: Picture, order: 5,
       permission: 'design_image:read',
+    },
+  },
+  {
+    path: '/design/customer-image',
+    name: 'CustomerImageAdmin',
+    component: () => import('@/views/customer-image/admin/CustomerImageAdmin.vue'),
+    title: '客户产品效果图',
+    anyPermission: ['customer_image:read', 'customer_image:write', 'customer_image:admin'],
+    menu: {
+      group: 'design', title: '客户产品效果图', icon: MagicStick, order: 7,
+      anyPermission: ['customer_image:read', 'customer_image:write', 'customer_image:admin'],
     },
   },
   {

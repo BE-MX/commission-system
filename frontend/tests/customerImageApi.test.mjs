@@ -12,6 +12,7 @@ const ASSET_METHODS = [
   'uploadProductAsset',
   'copyProductAssetFromLibrary',
   'getProductAssetBlob',
+  'getProductCoverBlob',
   'listLibraryAssets',
   'getLibraryAssetBlob',
 ]
@@ -35,7 +36,7 @@ test('internal asset API source uses only the registered client and blob respons
   for (const method of ASSET_METHODS) {
     assert.match(source, new RegExp(`export function ${method}\\(`))
   }
-  assert.equal((source.match(/responseType:\s*['"]blob['"]/g) || []).length, 2)
+  assert.equal((source.match(/responseType:\s*['"]blob['"]/g) || []).length, 3)
 })
 
 test('internal asset wrappers execute backend paths payloads and request configs', () => {
@@ -59,6 +60,7 @@ test('internal asset wrappers execute backend paths payloads and request configs
     role: 'reference', position: 2, source_asset_id: 91,
   })
   api.getProductAssetBlob(12, 34)
+  api.getProductCoverBlob(12)
   api.listLibraryAssets()
   api.getLibraryAssetBlob(91, { thumbnail: true })
 
@@ -67,6 +69,7 @@ test('internal asset wrappers execute backend paths payloads and request configs
     ['post', '/products/12/assets/upload'],
     ['post', '/products/12/assets/library'],
     ['get', '/products/12/assets/34/content'],
+    ['get', '/products/12/cover'],
     ['get', '/library-assets'],
     ['get', '/library-assets/91/content'],
   ])
@@ -79,6 +82,7 @@ test('internal asset wrappers execute backend paths payloads and request configs
     role: 'reference', position: 2, source_asset_id: 91,
   })
   assert.equal(calls[3].config.responseType, 'blob')
-  assert.equal(calls[5].config.responseType, 'blob')
-  assert.deepEqual(calls[5].config.params, { thumbnail: true })
+  assert.equal(calls[4].config.responseType, 'blob')
+  assert.equal(calls[6].config.responseType, 'blob')
+  assert.deepEqual(calls[6].config.params, { thumbnail: true })
 })

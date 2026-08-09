@@ -712,6 +712,48 @@ def list_public_products(db: Session, invite_id: int) -> list[CustomerImageProdu
     ).all())
 
 
+def list_current_product_covers(
+    db: Session, product_ids: list[int]
+) -> dict[int, CustomerImageProductAsset]:
+    if not product_ids:
+        return {}
+    rows = db.scalars(
+        select(CustomerImageProductAsset)
+        .where(
+            CustomerImageProductAsset.product_id.in_(set(product_ids)),
+            CustomerImageProductAsset.role == "cover",
+            CustomerImageProductAsset.retired_at.is_(None),
+        )
+        .order_by(
+            CustomerImageProductAsset.product_id,
+            CustomerImageProductAsset.position,
+            CustomerImageProductAsset.id,
+        )
+    ).all()
+    covers: dict[int, CustomerImageProductAsset] = {}
+    for row in rows:
+        covers.setdefault(row.product_id, row)
+    return covers
+
+
+def get_current_product_cover(
+    db: Session, product_id: int
+) -> CustomerImageProductAsset:
+    cover = db.scalar(
+        select(CustomerImageProductAsset)
+        .where(
+            CustomerImageProductAsset.product_id == product_id,
+            CustomerImageProductAsset.role == "cover",
+            CustomerImageProductAsset.retired_at.is_(None),
+        )
+        .order_by(CustomerImageProductAsset.position, CustomerImageProductAsset.id)
+        .limit(1)
+    )
+    if cover is None:
+        raise CustomerImageNotFoundError("product cover not found")
+    return cover
+
+
 def list_public_generations(
     db: Session, invite_id: int
 ) -> list[CustomerImageGeneration]:

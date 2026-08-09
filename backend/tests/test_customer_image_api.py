@@ -97,6 +97,8 @@ def api(monkeypatch):
     public_library = _row(id=9, scope="public", owner_user_id=8, title="Public")
     private_library = _row(id=10, scope="private", owner_user_id=7, title="Mine")
     monkeypatch.setattr(service, "list_products", lambda *_a, **_k: [product])
+    monkeypatch.setattr(service, "list_current_product_covers", lambda *_a, **_k: {1: asset})
+    monkeypatch.setattr(service, "get_current_product_cover", lambda *_a, **_k: asset)
     monkeypatch.setattr(service, "create_product", lambda *_a, **_k: product)
     monkeypatch.setattr(service, "update_product", lambda *_a, **_k: product)
     monkeypatch.setattr(service, "delete_product", lambda *_a, **_k: None)
@@ -191,6 +193,63 @@ def test_non_admin_product_reader_does_not_receive_internal_prompts(api):
     assert "fixed_prompt" not in product
     assert "output_prompt" not in product
     assert "prompt_fragment" not in str(product)
+    assert product["cover"] == {
+        "id": 4,
+        "mime_type": "image/png",
+        "file_size": 123,
+        "width": 12,
+        "height": 8,
+        "content_url": "/api/customer-image/products/1/cover",
+    }
+
+
+def test_write_only_salesperson_can_read_safe_products_and_owned_invites(api):
+    client, app, _service = api
+    app.dependency_overrides[get_current_user] = lambda: {
+        "sub": "7", "roles": [], "permissions": ["customer_image:write"],
+    }
+
+    products = client.get("/api/customer-image/products")
+    invites = client.get("/api/customer-image/invites")
+    customers = client.get("/api/customer-image/customers?search=Acme")
+    created = client.post(
+        "/api/customer-image/invites",
+        json={"customer_id": "C1", "product_ids": [1], "expires_at": "2099-01-01T00:00:00Z", "quota_total": 2},
+    )
+    revoked = client.post("/api/customer-image/invites/2/revoke")
+
+    assert products.status_code == invites.status_code == customers.status_code == 200
+    assert created.status_code == revoked.status_code == 200
+    rendered = products.text
+    assert "private fixed prompt" not in rendered
+    assert "private output prompt" not in rendered
+    assert "hidden value prompt" not in rendered
+    assert "storage_path" not in rendered
+
+
+def test_safe_cover_endpoint_returns_only_current_cover_binary(api, monkeypatch):
+    client, app, service = api
+    from app.customer_image import file_service
+    import io
+
+    app.dependency_overrides[get_current_user] = lambda: {
+        "sub": "7", "roles": [], "permissions": ["customer_image:write"],
+    }
+    cover = _row(id=4, product_id=1, role="cover", retired_at=None)
+    captured = []
+    monkeypatch.setattr(service, "get_current_product_cover", lambda _db, product_id: cover)
+    monkeypatch.setattr(
+        file_service,
+        "open_product_asset_content",
+        lambda _db, product_id, asset_id: captured.append((product_id, asset_id)) or io.BytesIO(b"safe-cover"),
+    )
+
+    response = client.get("/api/customer-image/products/1/cover")
+
+    assert response.status_code == 200
+    assert response.content == b"safe-cover"
+    assert response.headers["cache-control"] == "private, no-store"
+    assert captured == [(1, 4)]
 
 
 def test_product_asset_json_endpoints_never_return_storage_path(api, monkeypatch):

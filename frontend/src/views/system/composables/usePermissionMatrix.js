@@ -62,6 +62,7 @@ export const PREFIX_LABELS = {
   design_my: '我的预约',
   design_stats: '设计统计',
   design_image: 'AI 生图工作台',
+  customer_image: '客户产品效果图',
   domestic: '内贸订单',
   user: '用户管理',
   role: '角色权限',
@@ -131,7 +132,7 @@ const ROW_GROUPS = [
     'training',
     'asset', 'asset_favorites', 'asset_stats',
     'color', 'color_blend', 'color_trend',
-    'design', 'design_gantt', 'design_my', 'design_stats',
+    'design', 'design_gantt', 'design_my', 'design_stats', 'customer_image',
   ] },
   { label: '系统', prefixes: ['user', 'role', 'dict', 'ai', 'report', 'governance', 'governance_graph', 'governance_log', 'external_binding', 'whatsapp', 'dingtalk', 'mcp'] },
 ]

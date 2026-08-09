@@ -92,7 +92,20 @@ def _option(row, *, include_prompts: bool) -> dict:
     }
 
 
-def _product(row, *, include_prompts: bool = True) -> dict:
+def _cover_descriptor(row) -> dict | None:
+    if row is None:
+        return None
+    return {
+        "id": row.id,
+        "mime_type": row.mime_type,
+        "file_size": row.file_size,
+        "width": row.width,
+        "height": row.height,
+        "content_url": f"/api/customer-image/products/{row.product_id}/cover",
+    }
+
+
+def _product(row, *, include_prompts: bool = True, cover=None) -> dict:
     result = {
         "id": row.id,
         "name": row.name,
@@ -101,11 +114,17 @@ def _product(row, *, include_prompts: bool = True) -> dict:
         "config_version": row.config_version,
         "is_published": row.is_published,
         "sort": row.sort,
+        "cover": _cover_descriptor(cover),
         "options": [_option(option, include_prompts=include_prompts) for option in row.options],
     }
     if include_prompts:
         result.update(fixed_prompt=row.fixed_prompt, output_prompt=row.output_prompt)
     return result
+
+
+def _product_with_cover(db: Session, row, *, include_prompts: bool = True) -> dict:
+    cover = service.list_current_product_covers(db, [row.id]).get(row.id)
+    return _product(row, include_prompts=include_prompts, cover=cover)
 
 
 def _product_asset(row) -> dict:
@@ -209,11 +228,34 @@ def list_customers(
 @router.get("/products")
 def list_products(
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_any_permission("customer_image:read", "customer_image:admin")),
+    payload: dict = Depends(require_any_permission(
+        "customer_image:read", "customer_image:write", "customer_image:admin"
+    )),
 ):
     is_admin = _is_admin(payload)
     rows = service.list_products(db, include_inactive=is_admin)
-    return ok([_product(row, include_prompts=is_admin) for row in rows])
+    covers = service.list_current_product_covers(db, [row.id for row in rows])
+    return ok([
+        _product(row, include_prompts=is_admin, cover=covers.get(row.id))
+        for row in rows
+    ])
+
+
+@router.get("/products/{product_id}/cover")
+def get_product_cover_content(
+    product_id: int,
+    db: Session = Depends(get_db),
+    _payload: dict = Depends(require_any_permission(
+        "customer_image:read", "customer_image:write", "customer_image:admin"
+    )),
+):
+    cover = _call(service.get_current_product_cover, db, product_id)
+    stream = _call(file_service.open_product_asset_content, db, product_id, cover.id)
+    return StreamingResponse(
+        stream,
+        media_type=cover.mime_type,
+        headers={"Cache-Control": "private, no-store"},
+    )
 
 
 @router.post("/products")
@@ -224,7 +266,7 @@ def create_product(
 ):
     row = _call(service.create_product, db, admin_id=_user_id(payload), payload=body)
     row = service.get_product(db, row.id, include_inactive=True)
-    return ok(_product(row))
+    return ok(_product_with_cover(db, row))
 
 
 @router.put("/products/{product_id}")
@@ -235,7 +277,9 @@ def update_product(
     _payload: dict = Depends(require_permission("customer_image:admin")),
 ):
     _call(service.update_product, db, product_id, body)
-    return ok(_product(service.get_product(db, product_id, include_inactive=True)))
+    return ok(_product_with_cover(
+        db, service.get_product(db, product_id, include_inactive=True)
+    ))
 
 
 @router.delete("/products/{product_id}")
@@ -255,7 +299,9 @@ def publish_product(
     _payload: dict = Depends(require_permission("customer_image:admin")),
 ):
     _call(service.publish_product, db, product_id)
-    return ok(_product(service.get_product(db, product_id, include_inactive=True)))
+    return ok(_product_with_cover(
+        db, service.get_product(db, product_id, include_inactive=True)
+    ))
 
 
 @router.post("/products/{product_id}/unpublish")
@@ -265,7 +311,9 @@ def unpublish_product(
     _payload: dict = Depends(require_permission("customer_image:admin")),
 ):
     _call(service.unpublish_product, db, product_id)
-    return ok(_product(service.get_product(db, product_id, include_inactive=True)))
+    return ok(_product_with_cover(
+        db, service.get_product(db, product_id, include_inactive=True)
+    ))
 
 
 @router.get("/products/{product_id}/assets")
@@ -380,7 +428,9 @@ def list_invites(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
-    payload: dict = Depends(require_any_permission("customer_image:read", "customer_image:admin")),
+    payload: dict = Depends(require_any_permission(
+        "customer_image:read", "customer_image:write", "customer_image:admin"
+    )),
 ):
     rows, total = service.list_invites(
         db, _user_id(payload), _is_admin(payload), page, page_size

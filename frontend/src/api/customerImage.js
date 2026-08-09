@@ -63,6 +63,13 @@ export function getProductAssetBlob(productId, assetId) {
   )
 }
 
+export function getProductCoverBlob(productId) {
+  return customerImageClient.get(`/products/${productId}/cover`, {
+    ...SILENT_REQUEST,
+    responseType: 'blob',
+  })
+}
+
 export function listLibraryAssets() {
   return customerImageClient.get('/library-assets', { showLoading: false })
 }
@@ -75,8 +82,8 @@ export function getLibraryAssetBlob(assetId, { thumbnail = false } = {}) {
   })
 }
 
-export function listInvites(params = {}) {
-  return customerImageClient.get('/invites', { params, showLoading: false })
+export function listInvites(params = {}, requestConfig = {}) {
+  return customerImageClient.get('/invites', { params, showLoading: false, ...requestConfig })
 }
 
 export function createInvite(data) {
