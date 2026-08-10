@@ -80,7 +80,7 @@ def _draft(db, owner_id: int, session_id: int, *, suffix: str) -> DesignImageAss
         height=10,
         sha256=sha256(suffix.encode()).hexdigest(),
         status="draft",
-        expires_at=datetime(2026, 8, 10),
+        expires_at=datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=1),
         created_by=owner_id,
     )
     db.add(row)
