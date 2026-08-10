@@ -76,3 +76,18 @@ test('programmatic hydration and internal refresh never trigger the discard guar
   assert.match(saveBody, /reloadDocument\(document\.value\.id\)/)
   assert.doesNotMatch(saveBody, /selectDocument\(/)
 })
+
+test('delete controls are role-gated and do not trigger selection clicks', () => {
+  const sidebar = read('../src/views/knowledge/components/KnowledgeSidebar.vue')
+  const editor = read('../src/views/knowledge/components/KnowledgeEditor.vue')
+  const workbench = read('../src/views/knowledge/KnowledgeWorkbench.vue')
+  assert.match(sidebar, /canDeleteLibrary/)
+  assert.match(sidebar, /@click\.stop="\$emit\('delete-library', library\)"/)
+  assert.match(sidebar, /@click\.stop="\$emit\('delete-node', data\)"/)
+  assert.match(editor, /actions\.canDelete/)
+  assert.match(editor, /\$emit\('delete', document\)/)
+  assert.match(workbench, /@delete-library="deleteLibrary"/)
+  assert.match(workbench, /@delete-node="deleteNode"/)
+  assert.match(workbench, /knowledgeClient\.delete\(`\/libraries\/\$\{library\.id\}`\)/)
+  assert.match(workbench, /knowledgeClient\.delete\(`\/documents\/\$\{node\.id\}`\)/)
+})

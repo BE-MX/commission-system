@@ -20,10 +20,14 @@
         :tree="nestedTree"
         :can-write="capabilities.write"
         :can-create-library="canCreateLibrary"
+        :can-delete-library="canCreateLibrary"
+        :can-delete-node="capabilities.deleteNode"
         @select-library="selectLibrary"
         @select-document="selectDocument"
         @create-library="libraryDialog = true"
         @create-node="openNodeDialog"
+        @delete-library="deleteLibrary"
+        @delete-node="deleteNode"
       />
       <KnowledgeEditor
         :document="document"
@@ -31,6 +35,7 @@
         :saving="saving"
         @save="saveDocument"
         @submit="submitDocument"
+        @delete="deleteNode"
         @dirty-change="dirty = $event"
       />
     </div>
@@ -199,6 +204,58 @@ async function createNode() {
   await loadTree()
   if (created.node_type === 'document') await selectDocument(created.id)
   msgSuccess('创建')
+}
+
+function nodeContains(rootId, targetId) {
+  let current = tree.value.find(item => item.id === targetId)
+  while (current) {
+    if (current.id === rootId) return true
+    current = tree.value.find(item => item.id === current.parent_id)
+  }
+  return false
+}
+
+function deletedCountLabel(result) {
+  const total = result.folder_count + result.document_count
+  return total > 1 ? `已删除 ${total} 个目录或文档` : '已删除'
+}
+
+async function deleteLibrary(library) {
+  try {
+    await ElMessageBox.confirm(
+      `删除知识库“${library.name}”后，其中全部目录、文档和待审批内容都将移除。`,
+      '删除知识库',
+      { confirmButtonText: '删除知识库', cancelButtonText: '取消', type: 'warning' },
+    )
+  } catch { return }
+  const result = unwrap(await knowledgeClient.delete(`/libraries/${library.id}`))
+  if (selectedLibraryId.value === library.id) {
+    dirty.value = false
+    document.value = null
+    selectedLibraryId.value = null
+  }
+  await loadLibraries()
+  msgSuccess(deletedCountLabel(result))
+}
+
+async function deleteNode(node) {
+  const typeLabel = node.node_type === 'folder' ? '目录' : '文档'
+  const cascade = node.node_type === 'folder' ? '，其全部子目录、文档和待审批内容也将移除' : ''
+  try {
+    await ElMessageBox.confirm(
+      `删除${typeLabel}“${node.title}”${cascade}。`,
+      `删除${typeLabel}`,
+      { confirmButtonText: `删除${typeLabel}`, cancelButtonText: '取消', type: 'warning' },
+    )
+  } catch { return }
+  const removesOpenDocument = Boolean(document.value && nodeContains(node.id, document.value.id))
+  const result = unwrap(await knowledgeClient.delete(`/documents/${node.id}`))
+  if (removesOpenDocument) {
+    dirty.value = false
+    document.value = null
+  }
+  await loadTree()
+  msgSuccess(deletedCountLabel(result))
 }
 
 async function saveDocument(payload) {

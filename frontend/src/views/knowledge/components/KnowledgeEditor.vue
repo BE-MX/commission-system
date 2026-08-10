@@ -12,6 +12,7 @@
         </div>
       </div>
       <div class="header-actions">
+        <GlassButton v-if="actions.canDelete" class="delete-action" variant="ghost" left-icon="Delete" @click="$emit('delete', document)">删除</GlassButton>
         <GlassButton v-if="actions.canSave" variant="ghost" :loading="saving" :disabled="!dirty || saving" @click="save">保存草稿</GlassButton>
         <GlassButton v-if="actions.canSubmit" variant="primary" :disabled="dirty" @click="$emit('submit')">提交审批</GlassButton>
       </div>
@@ -72,7 +73,7 @@ import EditorToolbar from './EditorToolbar.vue'
 import { EDITOR_COMMANDS, extractOutline, filterEditorCommands, saveStatusLabel } from './editorConfig.js'
 
 const props = defineProps({ document: { type: Object, default: null }, role: { type: String, default: 'viewer' }, saving: Boolean })
-const emit = defineEmits(['save', 'submit', 'dirty-change'])
+const emit = defineEmits(['save', 'submit', 'dirty-change', 'delete'])
 const canvas = ref(null)
 const title = ref('')
 const dirty = ref(false)
@@ -267,6 +268,7 @@ onBeforeUnmount(() => editor.value?.destroy())
 .document-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 8px; color: var(--text-muted-blue); font-size: 12px; }
 .save-status.error { color: var(--color-danger); }
 .header-actions { display: flex; flex-shrink: 0; gap: 8px; }
+.delete-action { color: var(--color-danger); }
 .editor-body { display: grid; min-width: 0; min-height: 0; flex: 1; grid-template-columns: minmax(0, 1fr) 190px; }
 .canvas-wrap { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
 .document-canvas { height: 100%; overflow: auto; padding: 36px max(32px, calc((100% - 780px) / 2)); scroll-padding-top: 24px; }
