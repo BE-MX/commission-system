@@ -241,7 +241,10 @@ function navigateOutline(item) {
 watch(() => props.document, value => {
   title.value = value?.title || ''
   editor.value?.setEditable(Boolean(value && actions.value.canSave))
-  editor.value?.commands.setContent(value?.content_json || { type: 'doc', content: [{ type: 'paragraph' }] }, false)
+  editor.value?.commands.setContent(
+    value?.content_json || { type: 'doc', content: [{ type: 'paragraph' }] },
+    { emitUpdate: false },
+  )
   dirty.value = false
   savedAt.value = null
   saveError.value = ''

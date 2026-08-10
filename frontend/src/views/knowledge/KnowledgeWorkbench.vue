@@ -165,9 +165,14 @@ async function selectLibrary(id) {
   await loadTree()
 }
 
-async function selectDocument(id) {
-  if (!(await allowDiscard())) return
+async function reloadDocument(id) {
   document.value = unwrap(await knowledgeClient.get(`/documents/${id}`))
+}
+
+async function selectDocument(id) {
+  if (document.value?.id === id) return
+  if (!(await allowDiscard())) return
+  await reloadDocument(id)
 }
 
 async function createLibrary() {
@@ -200,7 +205,7 @@ async function saveDocument(payload) {
   saving.value = true
   try {
     await knowledgeClient.put(`/documents/${document.value.id}`, { title: payload.title, content: payload.content })
-    await Promise.all([loadTree(), selectDocument(document.value.id)])
+    await Promise.all([loadTree(), reloadDocument(document.value.id)])
     await nextTick()
     payload.done()
     msgSuccess('保存')
@@ -212,7 +217,7 @@ async function saveDocument(payload) {
 
 async function submitDocument() {
   await knowledgeClient.post(`/documents/${document.value.id}/submit`)
-  await Promise.all([loadTree(), selectDocument(document.value.id)])
+  await Promise.all([loadTree(), reloadDocument(document.value.id)])
   msgSuccess('提交审批')
 }
 
@@ -245,7 +250,7 @@ async function approve(item) {
   approvals.value = approvals.value.filter(row => row.id !== item.id)
   reviewDialog.value = false
   await loadTree()
-  if (document.value?.id === item.document_id) await selectDocument(item.document_id)
+  if (document.value?.id === item.document_id) await reloadDocument(item.document_id)
   msgSuccess('发布')
 }
 

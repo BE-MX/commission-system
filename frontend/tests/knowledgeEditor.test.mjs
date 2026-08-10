@@ -62,6 +62,17 @@ test('editor shell exposes accessible P0 interaction surfaces', () => {
   assert.match(editor, /event\.key\.toLocaleLowerCase\(\) === 'k'/)
   assert.match(editor, /window\.innerWidth - 310/)
   assert.match(editor, /prefers-reduced-motion: reduce/)
-  assert.ok(workbench.indexOf('await Promise.all([loadTree(), selectDocument(document.value.id)])') < workbench.indexOf('payload.done()'))
+  assert.ok(workbench.indexOf('await Promise.all([loadTree(), reloadDocument(document.value.id)])') < workbench.indexOf('payload.done()'))
   assert.match(workbench, /await nextTick\(\)\s+payload\.done\(\)/)
+})
+
+test('programmatic hydration and internal refresh never trigger the discard guard', () => {
+  const editor = read('../src/views/knowledge/components/KnowledgeEditor.vue')
+  const workbench = read('../src/views/knowledge/KnowledgeWorkbench.vue')
+  assert.match(editor, /commands\.setContent\([\s\S]*?\{ emitUpdate: false \},?\s*\)/)
+  assert.match(workbench, /async function reloadDocument\(id\)[\s\S]*?knowledgeClient\.get\(`\/documents\/\$\{id\}`\)/)
+  assert.match(workbench, /async function selectDocument\(id\)\s*\{\s*if \(document\.value\?\.id === id\) return\s*if \(!\(await allowDiscard\(\)\)\) return\s*await reloadDocument\(id\)/)
+  const saveBody = workbench.slice(workbench.indexOf('async function saveDocument'), workbench.indexOf('async function submitDocument'))
+  assert.match(saveBody, /reloadDocument\(document\.value\.id\)/)
+  assert.doesNotMatch(saveBody, /selectDocument\(/)
 })
