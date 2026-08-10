@@ -50,6 +50,11 @@ def get_library(library_id: int, db: Session = Depends(get_db), user: dict = Dep
     return ok(_call(service.get_library, db, user, library_id))
 
 
+@router.delete("/libraries/{library_id}")
+def delete_library(library_id: int, db: Session = Depends(get_db), user: dict = Depends(require_permission("knowledge:admin"))):
+    return ok(_call(service.delete_library, db, user, library_id))
+
+
 @router.put("/libraries/{library_id}/members")
 def replace_members(library_id: int, payload: MembersReplace, db: Session = Depends(get_db), user: dict = Depends(require_permission("knowledge:admin"))):
     return ok(_call(service.replace_members, db, user, library_id, [item.model_dump() for item in payload.members]))
@@ -85,6 +90,11 @@ def get_document(document_id: int, db: Session = Depends(get_db), user: dict = D
 def save_document(document_id: int, payload: DocumentSave, db: Session = Depends(get_db), user: dict = Depends(require_any_permission(*WRITE))):
     row = _call(service.save_document, db, user, document_id, title=payload.title, content=payload.content)
     return ok({"id": row.id, "document_id": row.document_id, "version_no": row.version_no})
+
+
+@router.delete("/documents/{document_id}")
+def delete_document(document_id: int, db: Session = Depends(get_db), user: dict = Depends(require_any_permission(*WRITE))):
+    return ok(_call(service.delete_node, db, user, document_id))
 
 
 @router.post("/documents/{document_id}/submit")

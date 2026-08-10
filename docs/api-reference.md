@@ -779,14 +779,18 @@ Agent Skill 位于 `.agents/skills/ark-lead-discovery` 与 `.agents/skills/ark-c
 | GET | `/libraries` | 任一 `knowledge:*` | 当前账号可见知识库 |
 | POST | `/libraries` | `knowledge:admin` | 创建知识库并将创建者设为 admin |
 | GET | `/libraries/{id}` | 任一 `knowledge:*` | 知识库详情 |
+| DELETE | `/libraries/{id}` | `knowledge:admin` + 库 admin | 软删除知识库及全部节点，并取消关联待审批 |
 | GET/PUT | `/libraries/{id}/members` | `knowledge:admin` | 读取或整体替换成员 ACL |
 | GET | `/libraries/{id}/tree` | 任一 `knowledge:*` | 目录树；只读者看不到未发布文档 |
 | POST | `/libraries/{id}/documents` | `knowledge:write/admin` | 创建目录或文档 |
 | GET/PUT | `/documents/{id}` | 读 / 写权限 | 读取当前可见修订或保存新草稿修订 |
+| DELETE | `/documents/{id}` | `knowledge:write/admin` + 库 editor/admin | 软删除文档；目录会递归软删除子树并取消关联待审批 |
 | POST | `/documents/{id}/submit` | `knowledge:write/admin` | 冻结当前草稿并提交审批 |
 | GET | `/approvals` | `knowledge:review/admin` | 当前可审核的待办 |
 | POST | `/approvals/{id}/approve` | `knowledge:review/admin` | 发布审批绑定的冻结修订 |
 | POST | `/approvals/{id}/reject` | `knowledge:review/admin` | 带原因驳回 |
 | GET | `/search?q=...&limit=20` | 任一 `knowledge:*` | 只搜索获授权的已发布修订 |
+
+两个 DELETE 接口的 `data` 均返回 `id`、`folder_count`、`document_count` 和 `cancelled_approval_count`。删除是原子软删除；删除后内容立即从知识库列表、目录树、直接读取、搜索、MCP 查询和审批队列中消失。
 
 MCP `/mcp` 新增 `search_knowledge` 与 `get_knowledge_document`。二者使用个人 MCP Token 解析方舟用户，并复用同一服务层 ACL；返回纯文本，不返回草稿、待审修订、附件或下载 URL。

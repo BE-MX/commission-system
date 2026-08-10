@@ -84,3 +84,48 @@ def test_unauthorized_library_is_404_not_metadata_leak():
         client.close()
         db.close()
         engine.dispose()
+
+
+def test_delete_folder_endpoint_returns_counts_and_hides_descendants():
+    client, db, identity, engine = _setup()
+    try:
+        library_id = client.post("/api/knowledge/libraries", json={"name": "Operations"}).json()["data"]["id"]
+        folder_id = client.post(f"/api/knowledge/libraries/{library_id}/documents", json={
+            "title": "Archive", "node_type": "folder",
+        }).json()["data"]["id"]
+        document_id = client.post(f"/api/knowledge/libraries/{library_id}/documents", json={
+            "title": "Checklist",
+            "parent_id": folder_id,
+            "content": {"type": "doc", "content": [{"type": "paragraph"}]},
+        }).json()["data"]["id"]
+
+        deleted = client.delete(f"/api/knowledge/documents/{folder_id}")
+
+        assert deleted.status_code == 200, deleted.text
+        assert deleted.json()["data"] == {
+            "id": folder_id,
+            "folder_count": 1,
+            "document_count": 1,
+            "cancelled_approval_count": 0,
+        }
+        assert client.get(f"/api/knowledge/documents/{document_id}").status_code == 404
+    finally:
+        client.close()
+        db.close()
+        engine.dispose()
+
+
+def test_delete_library_endpoint_hides_library():
+    client, db, identity, engine = _setup()
+    try:
+        library_id = client.post("/api/knowledge/libraries", json={"name": "Retired"}).json()["data"]["id"]
+
+        deleted = client.delete(f"/api/knowledge/libraries/{library_id}")
+
+        assert deleted.status_code == 200, deleted.text
+        assert deleted.json()["data"]["id"] == library_id
+        assert client.get(f"/api/knowledge/libraries/{library_id}").status_code == 404
+    finally:
+        client.close()
+        db.close()
+        engine.dispose()
