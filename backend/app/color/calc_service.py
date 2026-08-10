@@ -58,6 +58,19 @@ def lab_to_rgb(lab: np.ndarray) -> np.ndarray:
     return np.clip(rgb, 0.0, 1.0)
 
 
+def lab_d50_to_rgb(lab: np.ndarray) -> np.ndarray:
+    """Convert D50-referenced CIE Lab values to normalized sRGB."""
+    d50 = colour.CCS_ILLUMINANTS["CIE 1931 2 Degree Standard Observer"]["D50"]
+    xyz = colour.Lab_to_XYZ(lab, illuminant=d50)
+    rgb = colour.XYZ_to_sRGB(
+        xyz,
+        illuminant=d50,
+        chromatic_adaptation_transform="Bradford",
+        apply_cctf_encoding=True,
+    )
+    return np.clip(rgb, 0.0, 1.0)
+
+
 def rgb_to_hsl(rgb: np.ndarray) -> tuple:
     """归一化 RGB (0-1) → HSL (色相0-360, 饱和度0-100, 亮度0-100)"""
     h, l, s = colorsys.rgb_to_hls(rgb[0], rgb[1], rgb[2])
@@ -134,7 +147,7 @@ def find_nearest_pantone(target_hex: str, db: Session) -> Optional[dict]:
     """遍历 Pantone 库，找 ΔE2000 最小值"""
     target_lab = rgb_to_lab(hex_to_rgb(target_hex))
 
-    refs = db.query(PantoneReference).all()
+    refs = db.query(PantoneReference).filter(PantoneReference.collection == "tcx").all()
     if not refs:
         return None
 

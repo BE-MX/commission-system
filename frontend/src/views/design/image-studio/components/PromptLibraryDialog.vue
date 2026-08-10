@@ -152,7 +152,7 @@ const category = ref('')
 const selected = ref(null)
 const selections = ref({})
 
-/* 潘通色卡：模块级缓存一次拉全量，面板内前端过滤（2310 条，上限渲染防爆） */
+/* 潘通色卡：模块级缓存一次拉全量，面板内前端过滤（Solid Coated V5 3219 条，上限渲染防爆） */
 const pantoneColors = ref([])
 const pantoneLoaded = ref(false)
 const pantonePicks = ref({})

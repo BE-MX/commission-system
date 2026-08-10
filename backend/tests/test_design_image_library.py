@@ -217,12 +217,16 @@ def test_pantone_colors_listing_sorted_by_code(db):
         rgb_r=43, rgb_g=39, rgb_b=43,
     ))
     db.add(PantoneReference(
-        pantone_code="11-0103 TCX", pantone_name="egret", hex_code="#F3ECE0",
-        rgb_r=243, rgb_g=236, rgb_b=224,
+        pantone_code="101 C", pantone_name=None, hex_code="#F7EA48",
+        rgb_r=247, rgb_g=234, rgb_b=72, collection="coated",
+    ))
+    db.add(PantoneReference(
+        pantone_code="100 C", pantone_name=None, hex_code="#F6EB61",
+        rgb_r=246, rgb_g=235, rgb_b=97, collection="coated",
     ))
     db.commit()
 
     rows = library_service.list_pantone_colors(db)
 
-    assert [row["code"] for row in rows] == ["11-0103 TCX", "19-4004 TCX"]
-    assert rows[0] == {"code": "11-0103 TCX", "name": "egret", "hex": "#F3ECE0"}
+    assert [row["code"] for row in rows] == ["100 C", "101 C"]
+    assert rows[0] == {"code": "100 C", "name": None, "hex": "#F6EB61"}

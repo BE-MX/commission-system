@@ -339,6 +339,7 @@ def list_pantone_colors(db: Session) -> list[dict]:
     """提示词颜色参数的色卡库数据源：复用色彩模块的 Pantone 参考库。"""
     rows = (
         db.query(PantoneReference)
+        .filter(PantoneReference.collection == "coated")
         .order_by(PantoneReference.pantone_code)
         .all()
     )

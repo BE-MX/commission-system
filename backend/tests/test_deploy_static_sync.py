@@ -36,3 +36,10 @@ def test_cloud_ssh_retries_connection_establishment() -> None:
     script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
 
     assert "-o ConnectionAttempts=3" in script
+
+
+def test_deploy_loads_versioned_pantone_solid_coated_data() -> None:
+    """Deploying the filtered endpoint must not leave its color collection empty."""
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+
+    assert r".\.venv\Scripts\python.exe scripts\import_pantone.py" in script

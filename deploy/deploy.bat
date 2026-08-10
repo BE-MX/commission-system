@@ -149,6 +149,11 @@ if errorlevel 1 (
     echo [ERROR] PM seed failed
     goto :error
 )
+.\.venv\Scripts\python.exe scripts\import_pantone.py
+if errorlevel 1 (
+    echo [ERROR] Pantone Solid Coated import failed
+    goto :error
+)
 REM Migration validation
 for /f "delims=" %%V in ('.\.venv\Scripts\python.exe -m alembic current 2^>nul') do set "CURRENT_REVISION=%%V"
 echo      Current revision: %CURRENT_REVISION%

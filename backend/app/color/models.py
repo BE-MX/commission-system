@@ -208,7 +208,7 @@ class PantoneReference(Base):
     __tablename__ = "ark_pantone_reference"
 
     id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
-    pantone_code = Column(String(20), nullable=False, unique=True, comment="Pantone TCX编码，如 19-4004 TCX")
+    pantone_code = Column(String(20), nullable=False, unique=True, comment="Pantone编码，如 100 C 或 19-4004 TCX")
     pantone_name = Column(String(100), nullable=True, comment="Pantone英文名称")
     hex_code = Column(String(7), nullable=False, comment="HEX色值")
     rgb_r = Column(SmallInteger, nullable=False, comment="RGB R 0-255")

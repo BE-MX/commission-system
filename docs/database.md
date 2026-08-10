@@ -97,7 +97,7 @@
   - `ark_competitor_color_watch` — 竞品色号监控（brand, color_code, extracted_hex, social_mentions_30d, popularity_score）
   - `ark_color_trend_data` — 色彩趋势时序（color_family, data_source, period_date, raw_value, normalized_score）
   - `ark_color_swatch_image` — 色板图生成记录（palette_id/blend_id, prompt, model_used, image_path, delta_e, pass_check, status）
-  - `ark_pantone_reference` — Pantone TCX 参考色库（2310 条，pantone_code, hex_code, rgb, lab）
+  - `ark_pantone_reference` — Pantone 参考色库（AI 生图提示词使用 Solid Coated V5 3219 条；另保留其他 collection；pantone_code, hex_code, rgb, lab, collection）
 - **WhatsApp 同步（7 张表，035 迁移）**：
   - `ark_whatsapp_accounts` — 已绑定 WhatsApp 账号（account_uid UNIQUE, ark_user_id FK, phone_number, status binding/active/revoked, connector_status）
   - `ark_whatsapp_bind_sessions` — 扫码绑定会话（bind_session_uid UNIQUE, ark_user_id FK, status pending/scanning/bound/expired/failed, qr_code_url）
