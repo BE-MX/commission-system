@@ -105,3 +105,8 @@ test('delete controls are role-gated and do not trigger selection clicks', () =>
   assert.match(workbench, /knowledgeClient\.delete\(`\/libraries\/\$\{library\.id\}`\)/)
   assert.match(workbench, /knowledgeClient\.delete\(`\/documents\/\$\{node\.id\}`\)/)
 })
+
+test('knowledge sidebar scrolls when libraries and directory nodes exceed its height', () => {
+  const sidebar = read('../src/views/knowledge/components/KnowledgeSidebar.vue')
+  assert.match(sidebar, /\.knowledge-sidebar\s*\{[^}]*overflow-y:\s*auto;/s)
+})

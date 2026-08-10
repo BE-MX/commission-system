@@ -79,7 +79,7 @@ const roleLabel = role => labels[role] || role
 </script>
 
 <style scoped>
-.knowledge-sidebar { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--border-color); background: var(--surface-card, #fff); }
+.knowledge-sidebar { display: flex; min-height: 0; overflow-y: auto; flex-direction: column; border-right: 1px solid var(--border-color); background: var(--surface-card, #fff); }
 .sidebar-header { display: flex; align-items: center; justify-content: space-between; padding: 20px; border-bottom: 1px solid var(--border-color); }
 .sidebar-header h2 { margin: 4px 0 0; color: var(--text-primary); font-size: 18px; }
 .eyebrow { color: var(--color-primary); font-size: 12px; font-weight: 700; letter-spacing: .08em; }
