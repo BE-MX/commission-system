@@ -26,7 +26,7 @@ _CONTAINER_TYPES = {
     "taskItem",
 }
 _LEAF_TYPES = {"text", "hardBreak", "horizontalRule"}
-_ALLOWED_MARKS = {"bold", "italic", "strike", "code", "link"}
+_ALLOWED_MARKS = {"bold", "italic", "strike", "code", "link", "confirmation"}
 _BLOCK_BREAKS = {
     "paragraph",
     "heading",

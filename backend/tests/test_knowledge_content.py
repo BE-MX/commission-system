@@ -16,6 +16,23 @@ def test_validate_content_accepts_supported_document_and_extracts_text():
     assert extract_text(content) == "标题\n第一段\n第二行"
 
 
+def test_validate_content_accepts_confirmation_mark_without_changing_search_text():
+    content = {
+        "type": "doc",
+        "content": [{
+            "type": "paragraph",
+            "content": [{
+                "type": "text",
+                "text": "需要业务负责人确认",
+                "marks": [{"type": "confirmation"}],
+            }],
+        }],
+    }
+
+    assert validate_content(content) == content
+    assert extract_text(content) == "需要业务负责人确认"
+
+
 @pytest.mark.parametrize(
     "content",
     [
