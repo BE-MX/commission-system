@@ -8,6 +8,7 @@ import {
   createProductCoverController,
   createEmptyProductDraft,
   customerImageAdminCapabilities,
+  inviteSubmissionErrorMessage,
   validateInviteDraft,
   validateProductForPublish,
   moveReferenceIds,
@@ -117,6 +118,50 @@ test('invite validation requires one scoped customer explicit future expiry posi
   assert.match(validateInviteDraft({ ...valid, expires_at: now.toISOString() }, now), /未来/)
   assert.match(validateInviteDraft({ ...valid, quota_total: 0 }, now), /额度/)
   assert.match(validateInviteDraft({ ...valid, product_ids: [] }, now), /产品/)
+})
+
+test('invite submission errors are actionable and hide internal HTTP details', () => {
+  const httpError = (status, detail) => ({ response: { status, data: { detail } } })
+  assert.equal(
+    inviteSubmissionErrorMessage(httpError(404, 'customer not found')),
+    '所选客户已失效，请重新搜索并选择客户',
+  )
+  assert.equal(
+    inviteSubmissionErrorMessage(httpError(404, 'customer owner not found')),
+    '该客户缺少当前负责人，请联系管理员补全客户归属后重试',
+  )
+  assert.equal(
+    inviteSubmissionErrorMessage(httpError(404, 'published product not found')),
+    '所选产品已下架或不可用，请刷新页面后重新选择产品',
+  )
+  assert.equal(
+    inviteSubmissionErrorMessage(httpError(404, 'Not Found')),
+    '系统接口未加载，请刷新页面；若仍失败，请联系管理员重启后端服务',
+  )
+  assert.equal(
+    inviteSubmissionErrorMessage(httpError(404, 'database row missing: secret-path')),
+    '客户或产品已失效，请刷新页面后重新选择',
+  )
+  assert.equal(
+    inviteSubmissionErrorMessage(httpError(409, 'duplicate token_hash: secret-token')),
+    '客户或产品状态已变化，请刷新页面后重试',
+  )
+  assert.equal(
+    inviteSubmissionErrorMessage(httpError(503, 'provider password=secret')),
+    '服务暂时不可用，请稍后重试',
+  )
+  assert.equal(
+    inviteSubmissionErrorMessage(httpError(500, 'Traceback: C:\\private\\app.py')),
+    '邀请链接生成失败，请稍后重试；若仍失败，请联系管理员',
+  )
+  assert.equal(
+    inviteSubmissionErrorMessage(new Error('Network Error')),
+    '网络连接失败，请检查网络后重试',
+  )
+
+  const dialog = read('../src/views/customer-image/admin/InviteCreateDialog.vue')
+  assert.match(dialog, /ElMessage\.warning\(inviteSubmissionErrorMessage\(error\)\)/)
+  assert.doesNotMatch(dialog, /if \(!error\?\.response\)/)
 })
 
 test('reference controls reorder two or more assets without client-side append positions', () => {

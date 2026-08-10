@@ -56,6 +56,23 @@ export function validateInviteDraft(draft, now = new Date()) {
   return ''
 }
 
+export function inviteSubmissionErrorMessage(error) {
+  const status = error?.response?.status
+  const detail = error?.response?.data?.detail
+  const knownDetails = {
+    'customer not found': '所选客户已失效，请重新搜索并选择客户',
+    'customer owner not found': '该客户缺少当前负责人，请联系管理员补全客户归属后重试',
+    'published product not found': '所选产品已下架或不可用，请刷新页面后重新选择产品',
+    'Not Found': '系统接口未加载，请刷新页面；若仍失败，请联系管理员重启后端服务',
+  }
+  if (typeof detail === 'string' && knownDetails[detail]) return knownDetails[detail]
+  if (status === 404) return '客户或产品已失效，请刷新页面后重新选择'
+  if (status === 409) return '客户或产品状态已变化，请刷新页面后重试'
+  if (status === 503) return '服务暂时不可用，请稍后重试'
+  if (!error?.response) return '网络连接失败，请检查网络后重试'
+  return '邀请链接生成失败，请稍后重试；若仍失败，请联系管理员'
+}
+
 export function validateProductDraft(draft) {
   if (!String(draft?.name || '').trim()) return '请填写产品名称'
   if (!String(draft?.category || '').trim()) return '请填写产品分类'

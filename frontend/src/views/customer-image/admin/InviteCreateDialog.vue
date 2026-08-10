@@ -87,7 +87,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { validateInviteDraft } from './composables/useCustomerImageAdmin'
+import { inviteSubmissionErrorMessage, validateInviteDraft } from './composables/useCustomerImageAdmin'
 
 const props = defineProps({ state: { type: Object, required: true } })
 const { customers, oneTimeInviteUrl, productCoverUrls, products } = props.state
@@ -121,7 +121,7 @@ async function submit() {
     await props.state.submitInvite(draft.value)
     visible.value = false
   } catch (error) {
-    if (!error?.response) ElMessage.warning(error.message)
+    ElMessage.warning(inviteSubmissionErrorMessage(error))
   } finally { submitting.value = false }
 }
 
