@@ -88,7 +88,7 @@ class KnowledgeApprovalRequest(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
     document_id = Column(BigInteger, ForeignKey("ark_knowledge_documents.id", ondelete="CASCADE"), nullable=False, comment="文档ID")
     revision_id = Column(BigInteger, ForeignKey("ark_knowledge_revisions.id", ondelete="RESTRICT"), nullable=False, comment="冻结待审修订ID")
-    status = Column(String(16), nullable=False, default="pending", comment="pending/approved/rejected")
+    status = Column(String(16), nullable=False, default="pending", comment="pending/approved/rejected/cancelled")
     pending_slot = Column(Integer, nullable=True, default=1, comment="待审唯一槽位，终态为NULL")
     submitted_by = Column(Integer, nullable=False, comment="提交人用户ID")
     reviewed_by = Column(Integer, nullable=True, comment="审核人用户ID")

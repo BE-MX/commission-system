@@ -287,7 +287,7 @@ PII 密钥 `ARK_SALARY_ENCRYPTION_KEY` / `ARK_SALARY_HASH_KEY` 在 `backend/.env
 - `ark_knowledge_library_members`：资源 ACL，`(library_id,user_id)` 唯一，角色为 viewer/editor/reviewer/admin。
 - `ark_knowledge_documents`：目录和文档树；`draft_revision_id`、`published_revision_id` 与 `pending_approval_id` 分开保存，避免草稿覆盖线上内容。
 - `ark_knowledge_revisions`：不可变 Tiptap JSON 和派生纯文本，`(document_id,version_no)` 唯一。
-- `ark_knowledge_approval_requests`：审批绑定不可变 revision；`(document_id,pending_slot)` 唯一，pending 时 slot=1，终态置 NULL，数据库层阻止并发双待审。
+- `ark_knowledge_approval_requests`：审批绑定不可变 revision；`(document_id,pending_slot)` 唯一，pending 时 slot=1，approved/rejected/cancelled 终态置 NULL，数据库层阻止并发双待审。知识库或节点软删除时关联待审批进入 cancelled。
 - `ark_knowledge_audit_logs`：成员、编辑、审批和 MCP 读取的追加式安全审计。
 
 正文事实源是受服务端节点白名单校验的 ProseMirror/Tiptap JSON；`content_text` 仅用于检索和 Agent 纯文本输出。发布操作只能把 `published_revision_id` 指向 approval 中冻结的 `revision_id`。
