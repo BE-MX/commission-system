@@ -75,6 +75,11 @@ test('programmatic hydration and internal refresh never trigger the discard guar
   const saveBody = workbench.slice(workbench.indexOf('async function saveDocument'), workbench.indexOf('async function submitDocument'))
   assert.match(saveBody, /reloadDocument\(document\.value\.id\)/)
   assert.doesNotMatch(saveBody, /selectDocument\(/)
+  assert.match(workbench, /async function selectLibrary\(id\)\s*\{\s*if \(selectedLibraryId\.value === id\) return true\s*if \(!\(await allowDiscard\(\)\)\) return false/)
+  const searchBody = workbench.slice(workbench.indexOf('async function openSearchResult'), workbench.indexOf('async function allowDiscard'))
+  assert.match(searchBody, /if \(library && !\(await selectLibrary\(library\.id\)\)\) return/)
+  const approveBody = workbench.slice(workbench.indexOf('async function approve'), workbench.indexOf('async function reject'))
+  assert.match(approveBody, /document\.value\?\.id === item\.document_id && !dirty\.value/)
 })
 
 test('delete controls are role-gated and do not trigger selection clicks', () => {

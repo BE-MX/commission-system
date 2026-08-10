@@ -164,10 +164,12 @@ async function loadTree() {
 }
 
 async function selectLibrary(id) {
-  if (!(await allowDiscard())) return
+  if (selectedLibraryId.value === id) return true
+  if (!(await allowDiscard())) return false
   selectedLibraryId.value = id
   document.value = null
   await loadTree()
+  return true
 }
 
 async function reloadDocument(id) {
@@ -307,7 +309,7 @@ async function approve(item) {
   approvals.value = approvals.value.filter(row => row.id !== item.id)
   reviewDialog.value = false
   await loadTree()
-  if (document.value?.id === item.document_id) await reloadDocument(item.document_id)
+  if (document.value?.id === item.document_id && !dirty.value) await reloadDocument(item.document_id)
   msgSuccess('发布')
 }
 
@@ -328,7 +330,7 @@ async function runSearch() {
 
 async function openSearchResult(item) {
   const library = libraries.value.find(row => row.id === item.library_id)
-  if (library) await selectLibrary(library.id)
+  if (library && !(await selectLibrary(library.id))) return
   await selectDocument(item.document_id)
   searchDialog.value = false
 }
