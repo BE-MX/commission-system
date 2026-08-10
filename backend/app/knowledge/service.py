@@ -152,6 +152,90 @@ def list_members(db, identity: dict, library_id: int) -> list[dict]:
     return [{"user_id": row.user_id, "role": row.role} for row in rows]
 
 
+def _delete_summary(target_id: int, nodes: list[KnowledgeDocument], cancelled_count: int) -> dict:
+    return {
+        "id": target_id,
+        "folder_count": sum(node.node_type == "folder" for node in nodes),
+        "document_count": sum(node.node_type == "document" for node in nodes),
+        "cancelled_approval_count": cancelled_count,
+    }
+
+
+def _cancel_pending_approvals(db, identity: dict, nodes: list[KnowledgeDocument], now) -> int:
+    document_ids = [node.id for node in nodes if node.node_type == "document"]
+    if not document_ids:
+        return 0
+    approvals = db.query(KnowledgeApprovalRequest).filter(
+        KnowledgeApprovalRequest.document_id.in_(document_ids),
+        KnowledgeApprovalRequest.status == "pending",
+    ).all()
+    actor_id = access.user_id(identity)
+    for approval in approvals:
+        approval.status = "cancelled"
+        approval.pending_slot = None
+        approval.reviewed_by = actor_id
+        approval.reviewed_at = now
+        approval.remark = "content deleted"
+    for node in nodes:
+        if node.id in document_ids:
+            node.pending_approval_id = None
+    return len(approvals)
+
+
+def _soft_delete_nodes(db, identity: dict, target_id: int, nodes: list[KnowledgeDocument], action: str) -> dict:
+    now = bj_now()
+    cancelled_count = _cancel_pending_approvals(db, identity, nodes, now)
+    for node in nodes:
+        node.deleted_at = now
+    summary = _delete_summary(target_id, nodes, cancelled_count)
+    library_id = nodes[0].library_id
+    _audit(db, identity, library_id, action, nodes[0].node_type, target_id, detail={
+        key: value for key, value in summary.items() if key != "id"
+    })
+    return summary
+
+
+def delete_node(db, identity: dict, document_id: int) -> dict:
+    _require_platform(identity, "knowledge:write")
+    target = _document(db, identity, document_id, "write")
+    library_nodes = db.query(KnowledgeDocument).filter(
+        KnowledgeDocument.library_id == target.library_id,
+        KnowledgeDocument.deleted_at.is_(None),
+    ).all()
+    target_ids = {target.id}
+    if target.node_type == "folder":
+        while True:
+            children = {node.id for node in library_nodes if node.parent_id in target_ids}
+            new_ids = children - target_ids
+            if not new_ids:
+                break
+            target_ids.update(new_ids)
+    nodes = [target, *(node for node in library_nodes if node.id in target_ids and node.id != target.id)]
+    summary = _soft_delete_nodes(db, identity, target.id, nodes, f"delete_{target.node_type}")
+    db.commit()
+    return summary
+
+
+def delete_library(db, identity: dict, library_id: int) -> dict:
+    _require_platform(identity, "knowledge:admin")
+    library = _library(db, identity, library_id, "admin")
+    nodes = db.query(KnowledgeDocument).filter(
+        KnowledgeDocument.library_id == library.id,
+        KnowledgeDocument.deleted_at.is_(None),
+    ).all()
+    now = bj_now()
+    cancelled_count = _cancel_pending_approvals(db, identity, nodes, now)
+    for node in nodes:
+        node.deleted_at = now
+    library.deleted_at = now
+    summary = _delete_summary(library.id, nodes, cancelled_count)
+    _audit(db, identity, library.id, "delete_library", "library", library.id, detail={
+        key: value for key, value in summary.items() if key != "id"
+    })
+    db.commit()
+    return summary
+
+
 def _create_revision(db, identity: dict, document: KnowledgeDocument, title: str, content: dict) -> KnowledgeRevision:
     try:
         validate_content(content)

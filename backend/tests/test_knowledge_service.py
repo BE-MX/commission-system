@@ -178,3 +178,87 @@ def test_folder_parent_must_be_same_library_folder(db):
 
     with pytest.raises(service.ValidationError):
         service.create_folder(db, admin, first.id, title="Invalid", parent_id=foreign_folder.id)
+
+
+def test_delete_folder_soft_deletes_subtree_and_cancels_pending_approval(db):
+    admin = identity(1, ["knowledge:admin", "knowledge:write", "knowledge:read"])
+    editor = identity(2, ["knowledge:write", "knowledge:read"])
+    library = service.create_library(db, admin, name="Operations")
+    service.replace_members(db, admin, library.id, [{"user_id": 2, "role": "editor"}])
+    root = service.create_folder(db, editor, library.id, title="Root")
+    child = service.create_folder(db, editor, library.id, title="Child", parent_id=root.id)
+    document = service.create_document(
+        db, editor, library.id, title="Checklist", content=doc_json("pending"), parent_id=child.id
+    )
+    approval = service.submit_document(db, editor, document.id)
+
+    result = service.delete_node(db, editor, root.id)
+
+    assert result == {
+        "id": root.id,
+        "folder_count": 2,
+        "document_count": 1,
+        "cancelled_approval_count": 1,
+    }
+    for node in (root, child, document):
+        db.refresh(node)
+        assert node.deleted_at is not None
+    db.refresh(approval)
+    assert approval.status == "cancelled"
+    assert approval.pending_slot is None
+    assert approval.reviewed_by == 2
+    assert approval.remark == "content deleted"
+    assert document.pending_approval_id is None
+    audit = db.query(KnowledgeAuditLog).filter(KnowledgeAuditLog.action == "delete_folder").one()
+    assert audit.object_id == root.id
+    assert audit.detail == {
+        "folder_count": 2,
+        "document_count": 1,
+        "cancelled_approval_count": 1,
+    }
+
+
+def test_delete_node_requires_platform_write_and_library_write_role(db):
+    admin = identity(1, ["knowledge:admin", "knowledge:write", "knowledge:read"])
+    platform_editor = identity(2, ["knowledge:write", "knowledge:read"])
+    no_platform_write = identity(3, ["knowledge:read"])
+    library = service.create_library(db, admin, name="Policies")
+    service.replace_members(db, admin, library.id, [
+        {"user_id": 2, "role": "viewer"},
+        {"user_id": 3, "role": "editor"},
+    ])
+    document = service.create_document(db, admin, library.id, title="Policy", content=doc_json("body"))
+
+    with pytest.raises(service.NotFoundError):
+        service.delete_node(db, platform_editor, document.id)
+    with pytest.raises(service.ForbiddenError):
+        service.delete_node(db, no_platform_write, document.id)
+
+
+def test_delete_library_requires_library_admin_and_hides_all_content(db):
+    admin = identity(1, ["knowledge:admin", "knowledge:write", "knowledge:read"])
+    non_member_admin = identity(2, ["knowledge:admin"])
+    library = service.create_library(db, admin, name="Retired")
+    folder = service.create_folder(db, admin, library.id, title="Archive")
+    document = service.create_document(
+        db, admin, library.id, title="Legacy", content=doc_json("old"), parent_id=folder.id
+    )
+
+    with pytest.raises(service.NotFoundError):
+        service.delete_library(db, non_member_admin, library.id)
+
+    result = service.delete_library(db, admin, library.id)
+
+    assert result == {
+        "id": library.id,
+        "folder_count": 1,
+        "document_count": 1,
+        "cancelled_approval_count": 0,
+    }
+    db.refresh(library)
+    db.refresh(document)
+    assert library.deleted_at is not None
+    assert document.deleted_at is not None
+    assert service.list_libraries(db, admin) == []
+    with pytest.raises(service.NotFoundError):
+        service.get_document(db, admin, document.id)
