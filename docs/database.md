@@ -291,3 +291,5 @@ PII 密钥 `ARK_SALARY_ENCRYPTION_KEY` / `ARK_SALARY_HASH_KEY` 在 `backend/.env
 - `ark_knowledge_audit_logs`：成员、编辑、审批和 MCP 读取的追加式安全审计。
 
 正文事实源是受服务端节点白名单校验的 ProseMirror/Tiptap JSON；`content_text` 仅用于检索和 Agent 纯文本输出。发布操作只能把 `published_revision_id` 指向 approval 中冻结的 `revision_id`。
+
+同一知识库内的新建、保存、提交、审批和软删除共用 `ark_knowledge_libraries` 行锁串行化；获取锁后重新校验文档与审批状态，避免删除期间产生活跃孤儿节点或残留待审批。

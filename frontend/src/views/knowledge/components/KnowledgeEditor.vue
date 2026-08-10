@@ -77,6 +77,7 @@ const emit = defineEmits(['save', 'submit', 'dirty-change', 'delete'])
 const canvas = ref(null)
 const title = ref('')
 const dirty = ref(false)
+const changeVersion = ref(0)
 const savedAt = ref(null)
 const saveError = ref('')
 const editorVersion = ref(0)
@@ -119,6 +120,7 @@ function refreshDerivedState(instance = editor.value) {
 }
 
 function markDirty() {
+  changeVersion.value += 1
   saveError.value = ''
   if (!dirty.value) {
     dirty.value = true
@@ -138,7 +140,13 @@ function failSave() {
 }
 
 function save() {
-  emit('save', { title: title.value, content: editor.value.getJSON(), done: resetDirty, fail: failSave })
+  const savedVersion = changeVersion.value
+  emit('save', {
+    title: title.value,
+    content: editor.value.getJSON(),
+    done: () => { if (savedVersion === changeVersion.value) resetDirty() },
+    fail: () => { if (savedVersion === changeVersion.value) failSave() },
+  })
 }
 
 async function editLink() {
@@ -240,6 +248,7 @@ function navigateOutline(item) {
 }
 
 watch(() => props.document, value => {
+  changeVersion.value += 1
   title.value = value?.title || ''
   editor.value?.setEditable(Boolean(value && actions.value.canSave))
   editor.value?.commands.setContent(

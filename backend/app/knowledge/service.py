@@ -43,25 +43,35 @@ def _require_platform(identity: dict, permission: str) -> None:
         raise ForbiddenError(f"missing permission: {permission}")
 
 
-def _library(db, identity: dict, library_id: int, capability: str = "read") -> KnowledgeLibrary:
-    row = db.query(KnowledgeLibrary).filter(
+def _library(db, identity: dict, library_id: int, capability: str = "read", *, for_update: bool = False) -> KnowledgeLibrary:
+    query = db.query(KnowledgeLibrary).filter(
         KnowledgeLibrary.id == library_id,
         KnowledgeLibrary.deleted_at.is_(None),
         KnowledgeLibrary.status == "active",
-    ).first()
+    )
+    if for_update:
+        query = query.with_for_update()
+    row = query.first()
     if not row or not access.can(db, identity, library_id, capability):
         raise NotFoundError("knowledge library not found")
     return row
 
 
-def _document(db, identity: dict, document_id: int, capability: str = "read") -> KnowledgeDocument:
+def _document(db, identity: dict, document_id: int, capability: str = "read", *, lock_library: bool = False) -> KnowledgeDocument:
     row = db.query(KnowledgeDocument).filter(
         KnowledgeDocument.id == document_id,
         KnowledgeDocument.deleted_at.is_(None),
     ).first()
     if not row:
         raise NotFoundError("knowledge document not found")
-    _library(db, identity, row.library_id, capability)
+    _library(db, identity, row.library_id, capability, for_update=lock_library)
+    if lock_library:
+        row = db.query(KnowledgeDocument).populate_existing().filter(
+            KnowledgeDocument.id == document_id,
+            KnowledgeDocument.deleted_at.is_(None),
+        ).with_for_update().first()
+        if not row:
+            raise NotFoundError("knowledge document not found")
     return row
 
 
@@ -197,7 +207,7 @@ def _soft_delete_nodes(db, identity: dict, target_id: int, nodes: list[Knowledge
 
 def delete_node(db, identity: dict, document_id: int) -> dict:
     _require_platform(identity, "knowledge:write")
-    target = _document(db, identity, document_id, "write")
+    target = _document(db, identity, document_id, "write", lock_library=True)
     library_nodes = db.query(KnowledgeDocument).filter(
         KnowledgeDocument.library_id == target.library_id,
         KnowledgeDocument.deleted_at.is_(None),
@@ -218,7 +228,7 @@ def delete_node(db, identity: dict, document_id: int) -> dict:
 
 def delete_library(db, identity: dict, library_id: int) -> dict:
     _require_platform(identity, "knowledge:admin")
-    library = _library(db, identity, library_id, "admin")
+    library = _library(db, identity, library_id, "admin", for_update=True)
     nodes = db.query(KnowledgeDocument).filter(
         KnowledgeDocument.library_id == library.id,
         KnowledgeDocument.deleted_at.is_(None),
@@ -262,7 +272,7 @@ def _create_revision(db, identity: dict, document: KnowledgeDocument, title: str
 
 def create_document(db, identity: dict, library_id: int, *, title: str, content: dict, parent_id: int | None = None) -> KnowledgeDocument:
     _require_platform(identity, "knowledge:write")
-    _library(db, identity, library_id, "write")
+    _library(db, identity, library_id, "write", for_update=True)
     if parent_id:
         parent = _document(db, identity, parent_id, "write")
         if parent.library_id != library_id or parent.node_type != "folder":
@@ -281,7 +291,7 @@ def create_document(db, identity: dict, library_id: int, *, title: str, content:
 
 def create_folder(db, identity: dict, library_id: int, *, title: str, parent_id: int | None = None) -> KnowledgeDocument:
     _require_platform(identity, "knowledge:write")
-    _library(db, identity, library_id, "write")
+    _library(db, identity, library_id, "write", for_update=True)
     if parent_id:
         parent = _document(db, identity, parent_id, "write")
         if parent.library_id != library_id or parent.node_type != "folder":
@@ -299,7 +309,7 @@ def create_folder(db, identity: dict, library_id: int, *, title: str, parent_id:
 
 def save_document(db, identity: dict, document_id: int, *, title: str, content: dict) -> KnowledgeRevision:
     _require_platform(identity, "knowledge:write")
-    document = _document(db, identity, document_id, "write")
+    document = _document(db, identity, document_id, "write", lock_library=True)
     if document.node_type != "document":
         raise ValidationError("folders have no content")
     revision = _create_revision(db, identity, document, title, content)
@@ -311,7 +321,7 @@ def save_document(db, identity: dict, document_id: int, *, title: str, content: 
 
 def submit_document(db, identity: dict, document_id: int) -> KnowledgeApprovalRequest:
     _require_platform(identity, "knowledge:write")
-    document = _document(db, identity, document_id, "write")
+    document = _document(db, identity, document_id, "write", lock_library=True)
     if not document.draft_revision_id:
         raise ConflictError("document has no draft")
     if document.pending_approval_id:
@@ -335,17 +345,23 @@ def submit_document(db, identity: dict, document_id: int) -> KnowledgeApprovalRe
     return approval
 
 
-def _approval(db, identity: dict, approval_id: int) -> tuple[KnowledgeApprovalRequest, KnowledgeDocument]:
+def _approval(db, identity: dict, approval_id: int, *, lock: bool = False) -> tuple[KnowledgeApprovalRequest, KnowledgeDocument]:
     approval = db.query(KnowledgeApprovalRequest).filter(KnowledgeApprovalRequest.id == approval_id).first()
     if not approval:
         raise NotFoundError("approval not found")
-    document = _document(db, identity, approval.document_id, "review")
+    document = _document(db, identity, approval.document_id, "review", lock_library=lock)
+    if lock:
+        approval = db.query(KnowledgeApprovalRequest).populate_existing().filter(
+            KnowledgeApprovalRequest.id == approval_id
+        ).with_for_update().first()
+        if not approval:
+            raise NotFoundError("approval not found")
     return approval, document
 
 
 def approve_request(db, identity: dict, approval_id: int, *, remark: str | None = None) -> KnowledgeApprovalRequest:
     _require_platform(identity, "knowledge:review")
-    approval, document = _approval(db, identity, approval_id)
+    approval, document = _approval(db, identity, approval_id, lock=True)
     if approval.status != "pending" or document.pending_approval_id != approval.id:
         raise ConflictError("approval is not pending")
     approval.status = "approved"
@@ -366,7 +382,7 @@ def reject_request(db, identity: dict, approval_id: int, *, remark: str) -> Know
     _require_platform(identity, "knowledge:review")
     if not remark.strip():
         raise ValidationError("rejection reason is required")
-    approval, document = _approval(db, identity, approval_id)
+    approval, document = _approval(db, identity, approval_id, lock=True)
     if approval.status != "pending" or document.pending_approval_id != approval.id:
         raise ConflictError("approval is not pending")
     approval.status = "rejected"

@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -262,3 +264,16 @@ def test_delete_library_requires_library_admin_and_hides_all_content(db):
     assert service.list_libraries(db, admin) == []
     with pytest.raises(service.NotFoundError):
         service.get_document(db, admin, document.id)
+
+
+def test_mutations_request_library_row_lock():
+    source = Path(service.__file__).read_text(encoding="utf-8")
+
+    assert "def _library(db, identity: dict, library_id: int, capability: str = \"read\", *, for_update: bool = False)" in source
+    assert "if for_update:\n        query = query.with_for_update()" in source
+    assert source.count("for_update=True") >= 3
+    assert source.count("lock_library=True") >= 3
+    assert "def _document(db, identity: dict, document_id: int, capability: str = \"read\", *, lock_library: bool = False)" in source
+    assert "def _approval(db, identity: dict, approval_id: int, *, lock: bool = False)" in source
+    assert source.count("_approval(db, identity, approval_id, lock=True)") == 2
+    assert ").with_for_update().first()" in source

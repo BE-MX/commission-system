@@ -261,12 +261,14 @@ async function deleteNode(node) {
 }
 
 async function saveDocument(payload) {
+  const targetId = document.value.id
   saving.value = true
   try {
-    await knowledgeClient.put(`/documents/${document.value.id}`, { title: payload.title, content: payload.content })
-    await Promise.all([loadTree(), reloadDocument(document.value.id)])
+    const result = unwrap(await knowledgeClient.put(`/documents/${targetId}`, { title: payload.title, content: payload.content }))
+    await loadTree()
     await nextTick()
     payload.done()
+    if (document.value?.id === targetId) document.value.version_no = result.version_no
     msgSuccess('保存')
   } catch (error) {
     payload.fail?.()
@@ -275,8 +277,10 @@ async function saveDocument(payload) {
 }
 
 async function submitDocument() {
-  await knowledgeClient.post(`/documents/${document.value.id}/submit`)
-  await Promise.all([loadTree(), reloadDocument(document.value.id)])
+  const targetId = document.value.id
+  await knowledgeClient.post(`/documents/${targetId}/submit`)
+  await loadTree()
+  if (document.value?.id === targetId && !dirty.value) await reloadDocument(targetId)
   msgSuccess('提交审批')
 }
 
