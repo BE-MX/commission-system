@@ -22,7 +22,7 @@ def test_bundled_solid_coated_source_rejects_checksum_drift(tmp_path, monkeypatc
 
 def test_bundled_solid_coated_source_accepts_windows_line_endings(tmp_path, monkeypatch):
     windows_copy = tmp_path / "pantone.csv"
-    source = import_pantone.PANTONE_SOLID_COATED_CSV.read_bytes()
+    source = import_pantone.PANTONE_SOLID_COATED_CSV.read_bytes().replace(b"\r\n", b"\n")
     windows_copy.write_bytes(source.replace(b"\n", b"\r\n"))
     monkeypatch.setattr(import_pantone, "PANTONE_SOLID_COATED_CSV", windows_copy)
 
