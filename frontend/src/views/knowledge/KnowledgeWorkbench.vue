@@ -98,7 +98,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { knowledgeClient } from '@/api/clients'
@@ -200,9 +200,13 @@ async function saveDocument(payload) {
   saving.value = true
   try {
     await knowledgeClient.put(`/documents/${document.value.id}`, { title: payload.title, content: payload.content })
-    payload.done()
     await Promise.all([loadTree(), selectDocument(document.value.id)])
+    await nextTick()
+    payload.done()
     msgSuccess('保存')
+  } catch (error) {
+    payload.fail?.()
+    throw error
   } finally { saving.value = false }
 }
 
