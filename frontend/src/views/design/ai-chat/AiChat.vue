@@ -116,6 +116,11 @@ async function startConversation() {
   min-height: 0;
   flex: 1;
   gap: 18px;
+  animation: workspace-in 280ms var(--ease-out-strong);
+}
+
+@keyframes workspace-in {
+  from { opacity: 0; transform: translateY(8px); }
 }
 
 .chat-main {
@@ -189,6 +194,10 @@ async function startConversation() {
   color: var(--text-secondary);
   cursor: pointer;
   font-size: 12px;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    color 180ms ease;
 }
 
 .notice-banner,
@@ -202,6 +211,11 @@ async function startConversation() {
   padding: 7px 18px;
   border-bottom: 1px solid var(--border-color);
   font-size: 12px;
+  animation: banner-in 260ms var(--ease-out-strong);
+}
+
+@keyframes banner-in {
+  from { opacity: 0; transform: translateY(-6px); }
 }
 .notice-banner { background: var(--color-warning-bg); color: var(--color-warning-text); }
 .error-banner { background: var(--color-danger-bg); color: var(--color-danger-text); }
@@ -238,5 +252,11 @@ async function startConversation() {
   .privacy-label { padding: 5px 7px; }
   .notice-banner,
   .error-banner { padding: 7px 12px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-workspace,
+  .notice-banner,
+  .error-banner { animation: none; }
 }
 </style>

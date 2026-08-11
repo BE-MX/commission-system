@@ -1,5 +1,5 @@
 <template>
-  <section ref="scrollPane" class="chat-thread" aria-live="polite">
+  <section ref="scrollPane" class="chat-thread" aria-live="polite" @scroll.passive="handleScroll">
     <div v-if="loading" class="thread-loading">
       <el-skeleton :rows="5" />
     </div>
@@ -12,7 +12,7 @@
       <StarterCards v-if="canWrite" @select="emit('starter', $event)" />
     </div>
 
-    <div v-else class="message-list">
+    <TransitionGroup v-else tag="div" name="msg" class="message-list">
       <article
         v-for="message in messages"
         :key="message.id"
@@ -21,13 +21,21 @@
       >
         <div class="message-meta">
           <span>{{ message.role === 'user' ? '你' : '方案助手' }}</span>
-          <span v-if="message.status === 'streaming'" class="message-status">生成中</span>
+          <span v-if="message.status === 'streaming'" class="message-status">
+            生成中
+            <span class="typing-dots" aria-hidden="true"><i /><i /><i /></span>
+          </span>
           <span v-else-if="message.status === 'stopped'" class="message-status">已停止</span>
           <span v-else-if="message.status === 'failed'" class="message-status is-error">生成失败</span>
         </div>
 
         <div v-if="message.role === 'assistant'" class="assistant-message">
-          <div v-if="message.content" class="markdown-body" v-html="renderMarkdown(message.content)" />
+          <div
+            v-if="message.content"
+            class="markdown-body"
+            :class="{ 'is-streaming': message.status === 'streaming' }"
+            v-html="renderMarkdown(message.content)"
+          />
           <p v-else-if="message.status === 'streaming'" class="stream-placeholder">正在组织方案…</p>
           <p v-if="message.error_message" class="message-error">{{ message.error_message }}</p>
         </div>
@@ -55,13 +63,20 @@
           </button>
         </div>
       </article>
-    </div>
+    </TransitionGroup>
+
+    <Transition name="fab">
+      <button v-if="showScrollDown" type="button" class="scroll-latest" @click="scrollToLatest">
+        <el-icon aria-hidden="true"><ArrowDown /></el-icon>
+        回到最新
+      </button>
+    </Transition>
   </section>
 </template>
 
 <script setup>
 import { nextTick, ref, watch } from 'vue'
-import { CopyDocument, Paperclip, RefreshRight } from '@element-plus/icons-vue'
+import { ArrowDown, CopyDocument, Paperclip, RefreshRight } from '@element-plus/icons-vue'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
 import StarterCards from './StarterCards.vue'
@@ -90,11 +105,44 @@ async function copyMessage(message) {
   }
 }
 
+// 自动滚底：只在用户停留在底部附近时才跟随流式输出；
+// 用户上翻阅读时松开，由「回到最新」按钮召回
+const stickToBottom = ref(true)
+const showScrollDown = ref(false)
+
+function distanceFromBottom() {
+  const pane = scrollPane.value
+  return pane ? pane.scrollHeight - pane.scrollTop - pane.clientHeight : 0
+}
+
+function handleScroll() {
+  const distance = distanceFromBottom()
+  stickToBottom.value = distance < 90
+  showScrollDown.value = distance > 260
+}
+
+function scrollToLatest() {
+  stickToBottom.value = true
+  scrollPane.value?.scrollTo({
+    top: scrollPane.value.scrollHeight,
+    behavior: 'auto',
+  })
+}
+
+let prevSignature = ''
 watch(
   () => props.messages.map(message => `${message.id}:${message.status}:${message.content?.length || 0}`).join('|'),
   async () => {
+    // 首尾 id 或数量变化 = 新消息/切换会话 → 钉回底部；仅内容长度变化 = 流式追加 → 跟随当前钉住状态
+    const last = props.messages[props.messages.length - 1]
+    const signature = `${props.messages[0]?.id}:${last?.id}:${props.messages.length}`
+    if (signature !== prevSignature) stickToBottom.value = true
+    prevSignature = signature
     await nextTick()
-    if (scrollPane.value) scrollPane.value.scrollTop = scrollPane.value.scrollHeight
+    if (scrollPane.value && stickToBottom.value) {
+      scrollPane.value.scrollTop = scrollPane.value.scrollHeight
+    }
+    showScrollDown.value = distanceFromBottom() > 260
   },
 )
 </script>
@@ -113,7 +161,15 @@ watch(
 .thread-welcome,
 .message-list { width: min(100%, 820px); margin: 0 auto; }
 
-.thread-welcome { padding-top: clamp(26px, 8vh, 88px); }
+.thread-welcome {
+  padding-top: clamp(26px, 8vh, 88px);
+  animation: welcome-in 260ms var(--ease-out-strong) backwards;
+}
+
+@keyframes welcome-in {
+  from { opacity: 0; transform: translateY(14px); }
+}
+
 .welcome-kicker {
   color: var(--color-primary);
   font-family: var(--font-display);
@@ -138,6 +194,14 @@ watch(
   line-height: 1.7;
 }
 
+/* 新消息入场（TransitionGroup，仅新增/换会话时触发） */
+.msg-enter-active {
+  transition:
+    opacity 260ms var(--ease-out-strong),
+    transform 260ms var(--ease-out-strong);
+}
+.msg-enter-from { opacity: 0; transform: translateY(10px); }
+
 .message-row { margin-bottom: 26px; }
 .message-row.is-user { display: flex; flex-direction: column; align-items: flex-end; }
 .message-meta {
@@ -151,9 +215,26 @@ watch(
   font-weight: 700;
 }
 
-.message-status { color: var(--color-warning-text); font-weight: 600; }
+.message-status { display: inline-flex; align-items: center; color: var(--color-warning-text); font-weight: 600; }
 .message-status.is-error,
 .message-error { color: var(--color-danger-text); }
+
+/* 「生成中」三点跳动 */
+.typing-dots { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; }
+.typing-dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: dot-bounce 1.2s ease-in-out infinite;
+}
+.typing-dots i:nth-child(2) { animation-delay: 150ms; }
+.typing-dots i:nth-child(3) { animation-delay: 300ms; }
+
+@keyframes dot-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.45; }
+  30% { transform: translateY(-3px); opacity: 1; }
+}
 
 .assistant-message {
   color: var(--text-primary);
@@ -174,7 +255,31 @@ watch(
   white-space: pre-wrap;
 }
 
-.stream-placeholder { margin: 0; color: var(--text-muted); }
+/* 流式输出末尾的闪烁光标 */
+.markdown-body.is-streaming :deep(> :last-child)::after {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 14px;
+  margin-left: 3px;
+  border-radius: 2px;
+  background: var(--color-primary);
+  vertical-align: -2px;
+  animation: caret-blink 0.9s ease-in-out infinite;
+}
+
+@keyframes caret-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.stream-placeholder { margin: 0; color: var(--text-muted); animation: placeholder-breathe 1.6s ease-in-out infinite; }
+
+@keyframes placeholder-breathe {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
 .message-error { margin: 10px 0 0; font-size: 12px; }
 .message-attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .attachment-label {
@@ -193,7 +298,12 @@ watch(
   white-space: nowrap;
 }
 
-.message-actions { display: flex; gap: 4px; margin-top: 8px; }
+.message-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+  transition: opacity 180ms ease;
+}
 .message-row.is-user .message-actions { justify-content: flex-end; }
 .message-actions button {
   display: inline-flex;
@@ -207,9 +317,46 @@ watch(
   color: var(--text-muted-blue);
   cursor: pointer;
   font-size: 12px;
+  transition: background-color 180ms ease, color 180ms ease;
 }
 
 .message-actions button:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+
+/* 上翻时出现的「回到最新」浮钮（sticky 于滚动容器底部） */
+.scroll-latest {
+  position: sticky;
+  bottom: 14px;
+  z-index: 2;
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  gap: 5px;
+  margin: 8px 4px 0 auto;
+  padding: 7px 14px;
+  border: 1px solid var(--dash-glass-border);
+  border-radius: 999px;
+  background: var(--dash-glass-bg-strong);
+  box-shadow: var(--dash-glass-highlight), var(--dash-glass-shadow);
+  color: var(--color-primary);
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 600;
+  transition:
+    transform 200ms var(--ease-out-strong),
+    box-shadow 200ms var(--ease-out-strong);
+}
+
+.scroll-latest:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+
+.fab-enter-active,
+.fab-leave-active {
+  transition:
+    opacity 200ms var(--ease-out-strong),
+    transform 200ms var(--ease-out-strong);
+}
+.fab-enter-from,
+.fab-leave-to { opacity: 0; transform: translateY(8px) scale(0.94); }
 
 .markdown-body :deep(*) { max-width: 100%; }
 .markdown-body :deep(p) { margin: 0 0 0.85em; }
@@ -232,12 +379,31 @@ watch(
 .markdown-body :deep(a) { color: var(--color-primary); }
 
 @media (hover: hover) and (pointer: fine) {
+  /* 桌面端操作按钮平时收起，悬停/聚焦时浮现 */
+  .message-actions { opacity: 0; }
+  .message-row:hover .message-actions,
+  .message-row:focus-within .message-actions { opacity: 1; }
   .message-actions button:hover { background: var(--color-primary-light); color: var(--color-primary); }
+  .scroll-latest:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--dash-glass-highlight), var(--dash-glass-shadow-hover);
+  }
 }
 
 @media (max-width: 640px) {
   .chat-thread { padding: 20px 14px 16px; }
   .thread-welcome { padding-top: 18px; }
   .user-message { max-width: 92%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thread-welcome,
+  .typing-dots i,
+  .stream-placeholder { animation: none; }
+  .markdown-body.is-streaming :deep(> :last-child)::after { animation: none; opacity: 0.6; }
+  .msg-enter-active,
+  .fab-enter-active,
+  .fab-leave-active { transition: none; }
+  .scroll-latest:hover { transform: none; }
 }
 </style>

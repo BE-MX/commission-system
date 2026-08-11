@@ -74,6 +74,11 @@ function open(name) {
   font-family: var(--font-display);
   font-size: 13px;
   font-weight: 600;
+  transition:
+    background-color 180ms ease,
+    box-shadow 180ms ease,
+    color 180ms ease,
+    transform 140ms var(--ease-out-strong);
 }
 
 .workspace-tab.is-active {
@@ -87,10 +92,17 @@ function open(name) {
   outline-offset: 2px;
 }
 
+.workspace-tab:active { transform: scale(0.96); }
+
 @media (hover: hover) and (pointer: fine) {
   .workspace-tab:not(.is-active):hover {
     color: var(--text-primary);
     box-shadow: var(--card-shadow);
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace-tab { transition: none; }
+  .workspace-tab:active { transform: none; }
 }
 </style>

@@ -105,6 +105,9 @@ const SidebarContent = defineComponent({
   color: var(--text-on-dark);
   font-size: 13px;
   font-weight: 700;
+  transition:
+    transform 180ms var(--ease-out-strong),
+    box-shadow 180ms var(--ease-out-strong);
 }
 
 .sidebar-content :deep(.new-chat-button:disabled) { cursor: not-allowed; opacity: 0.5; }
@@ -134,6 +137,10 @@ const SidebarContent = defineComponent({
   color: var(--text-secondary);
   font-size: 13px;
   text-align: left;
+  transition:
+    background-color 180ms ease,
+    box-shadow 180ms ease,
+    color 180ms ease;
 }
 
 .sidebar-content :deep(.session-item.is-active) {
@@ -157,8 +164,10 @@ const SidebarContent = defineComponent({
   outline-offset: 2px;
 }
 
+.sidebar-content :deep(.new-chat-button:not(:disabled):active) { transform: scale(0.98); }
+
 @media (hover: hover) and (pointer: fine) {
-  .sidebar-content :deep(.new-chat-button:not(:disabled):hover) { box-shadow: var(--dash-glass-shadow-hover); }
+  .sidebar-content :deep(.new-chat-button:not(:disabled):hover) { box-shadow: var(--dash-glass-shadow-hover); transform: translateY(-1px); }
   .sidebar-content :deep(.session-item:not(.is-active):hover) { background: var(--dash-glass-bg-strong); color: var(--text-primary); }
 }
 
@@ -172,5 +181,7 @@ const SidebarContent = defineComponent({
 
 @media (prefers-reduced-motion: reduce) {
   :deep(.chat-session-drawer) { --el-transition-duration: 1ms; }
+  .sidebar-content :deep(.new-chat-button:not(:disabled):hover),
+  .sidebar-content :deep(.new-chat-button:not(:disabled):active) { transform: none; }
 }
 </style>

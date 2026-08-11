@@ -166,6 +166,14 @@ defineExpose({ focus })
   border-radius: 18px;
   background: var(--dash-glass-bg-strong);
   box-shadow: var(--dash-glass-highlight), var(--dash-glass-shadow);
+  transition:
+    border-color 200ms var(--ease-out-strong),
+    box-shadow 200ms var(--ease-out-strong);
+}
+
+.composer-surface:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: var(--dash-glass-highlight), var(--dash-glass-shadow-hover);
 }
 
 .composer-surface :deep(.el-textarea__inner) {
@@ -195,6 +203,14 @@ defineExpose({ focus })
   font-family: var(--font-display);
   font-size: 12px;
   font-weight: 700;
+  transition:
+    transform 160ms var(--ease-out-strong),
+    box-shadow 200ms var(--ease-out-strong),
+    border-color 200ms ease,
+    background-color 200ms ease,
+    color 200ms ease,
+    opacity 200ms ease,
+    filter 200ms ease;
 }
 
 .attach-button {
@@ -232,11 +248,32 @@ defineExpose({ focus })
 .stop-button:focus-visible,
 .attachment-chip button:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 
+.attach-button:active,
+.stop-button:active { transform: scale(0.96); }
+.send-button:not(:disabled):active { transform: scale(0.94); }
+
+.attachment-chip { animation: chip-in 220ms var(--ease-out-strong) backwards; }
+.attachment-chip button { transition: background-color 180ms ease, color 180ms ease; }
+
+@keyframes chip-in {
+  from { opacity: 0; transform: scale(0.92); }
+}
+
 @media (hover: hover) and (pointer: fine) {
   .attach-button:hover,
-  .stop-button:hover { border-color: var(--border-hover); box-shadow: var(--card-shadow); color: var(--text-primary); }
-  .send-button:not(:disabled):hover { box-shadow: var(--dash-glass-shadow-hover); }
+  .stop-button:hover { border-color: var(--border-hover); box-shadow: var(--card-shadow); color: var(--text-primary); transform: translateY(-1px); }
+  .send-button:not(:disabled):hover { box-shadow: var(--dash-glass-shadow-hover); transform: translateY(-1px); }
   .attachment-chip button:not(:disabled):hover { background: var(--color-danger-bg); color: var(--color-danger-text); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .attachment-chip { animation: none; }
+  .attach-button:active,
+  .stop-button:active,
+  .send-button:not(:disabled):active,
+  .attach-button:hover,
+  .stop-button:hover,
+  .send-button:not(:disabled):hover { transform: none; }
 }
 
 @media (max-width: 640px) {

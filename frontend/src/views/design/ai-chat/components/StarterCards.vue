@@ -51,6 +51,11 @@ const descriptions = {
   color: var(--text-primary);
   cursor: pointer;
   text-align: left;
+  animation: card-in 260ms var(--ease-out-strong) backwards;
+  transition:
+    transform 200ms var(--ease-out-strong),
+    box-shadow 200ms var(--ease-out-strong),
+    border-color 200ms var(--ease-out-strong);
 }
 
 .starter-card strong {
@@ -81,11 +86,28 @@ const descriptions = {
   outline-offset: 2px;
 }
 
+.starter-card:nth-child(2) { animation-delay: 60ms; }
+.starter-card:nth-child(3) { animation-delay: 120ms; }
+.starter-card:nth-child(4) { animation-delay: 180ms; }
+
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(12px); }
+}
+
+.starter-card:active { transform: scale(0.98); }
+
 @media (hover: hover) and (pointer: fine) {
   .starter-card:hover {
     border-color: var(--border-hover);
     box-shadow: var(--dash-glass-highlight), var(--dash-glass-shadow-hover);
+    transform: translateY(-3px);
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .starter-card { animation: none; }
+  .starter-card:hover,
+  .starter-card:active { transform: none; }
 }
 
 @media (max-width: 640px) {
