@@ -33,6 +33,32 @@ def test_validate_content_accepts_confirmation_mark_without_changing_search_text
     assert extract_text(content) == "需要业务负责人确认"
 
 
+def test_validate_content_accepts_tiptap_table_cell_alignment_attributes():
+    content = {
+        "type": "doc",
+        "content": [{
+            "type": "table",
+            "content": [{
+                "type": "tableRow",
+                "content": [
+                    {
+                        "type": "tableHeader",
+                        "attrs": {"colspan": 1, "rowspan": 1, "colwidth": None, "align": None},
+                        "content": [{"type": "paragraph"}],
+                    },
+                    {
+                        "type": "tableCell",
+                        "attrs": {"colspan": 1, "rowspan": 1, "colwidth": None, "align": "center"},
+                        "content": [{"type": "paragraph"}],
+                    },
+                ],
+            }],
+        }],
+    }
+
+    assert validate_content(content) == content
+
+
 @pytest.mark.parametrize(
     "content",
     [
@@ -41,6 +67,7 @@ def test_validate_content_accepts_confirmation_mark_without_changing_search_text
         {"type": "doc", "content": [{"type": "script", "text": "alert(1)"}]},
         {"type": "doc", "content": [{"type": "iframe", "attrs": {"src": "https://evil.test"}}]},
         {"type": "doc", "content": [{"type": "heading", "attrs": {"level": 9}}]},
+        {"type": "doc", "content": [{"type": "tableCell", "attrs": {"align": "justify"}}]},
         {"type": "doc", "content": [{"type": "text", "text": 3}]},
     ],
 )

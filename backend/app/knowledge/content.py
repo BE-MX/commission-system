@@ -77,7 +77,9 @@ def _validate_node(node: Any, *, root: bool = False) -> None:
         if attrs.get("level") not in range(1, 7):
             raise ContentValidationError("invalid heading level")
     elif node_type in {"tableCell", "tableHeader"}:
-        allowed_attrs = {"colspan", "rowspan", "colwidth"}
+        allowed_attrs = {"colspan", "rowspan", "colwidth", "align"}
+        if attrs.get("align") not in {None, "left", "center", "right"}:
+            raise ContentValidationError("invalid table cell alignment")
     elif node_type == "taskItem":
         allowed_attrs = {"checked"}
         if "checked" in attrs and not isinstance(attrs["checked"], bool):
