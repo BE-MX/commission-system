@@ -71,6 +71,7 @@ import EditorOutline from './EditorOutline.vue'
 import EditorSlashMenu from './EditorSlashMenu.vue'
 import EditorToolbar from './EditorToolbar.vue'
 import { ConfirmationMark } from './ConfirmationMark.js'
+import { TextColorMark } from './TextColorMark.js'
 import { EDITOR_COMMANDS, extractOutline, filterEditorCommands, saveStatusLabel } from './editorConfig.js'
 
 const props = defineProps({ document: { type: Object, default: null }, role: { type: String, default: 'viewer' }, saving: Boolean })
@@ -106,6 +107,7 @@ const editor = useEditor({
     StarterKit.configure({ link: false, underline: false }),
     Link.configure({ openOnClick: false, protocols: ['http', 'https', 'mailto'] }),
     ConfirmationMark,
+    TextColorMark,
     TaskList, TaskItem.configure({ nested: true }),
     Table.configure({ resizable: true }), TableRow, TableHeader, TableCell,
   ],
@@ -307,6 +309,10 @@ onBeforeUnmount(() => editor.value?.destroy())
 .document-canvas :deep(.tiptap pre) { overflow: auto; padding: 10px 12px; border-radius: 9px; color: var(--surface-card); background: var(--sidebar-bg-to); font-family: Consolas, monospace; line-height: 1.5; }
 .document-canvas :deep(.tiptap code:not(pre code)) { padding: 2px 5px; border-radius: 4px; color: var(--color-primary); background: var(--color-primary-light); }
 .document-canvas :deep([data-confirmation='true']) { color: var(--color-danger); font-weight: 700; }
+.document-canvas :deep(.knowledge-text-color--gold) { color: var(--color-primary); }
+.document-canvas :deep(.knowledge-text-color--danger) { color: var(--color-danger-text); }
+.document-canvas :deep(.knowledge-text-color--success) { color: var(--color-success-text); }
+.document-canvas :deep(.knowledge-text-color--info) { color: var(--color-info-text); }
 .document-canvas :deep(.tiptap table) { width: 100%; margin: 1em 0; table-layout: fixed; border-collapse: collapse; }
 .document-canvas :deep(.tiptap td), .document-canvas :deep(.tiptap th) { position: relative; min-width: 72px; padding: 6px; border: 1px solid var(--border-color); vertical-align: top; }
 .document-canvas :deep(.tiptap th) { background: var(--surface-subtle, #fafbfe); font-weight: 700; }

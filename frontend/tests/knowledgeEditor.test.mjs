@@ -8,10 +8,87 @@ import {
   filterEditorCommands,
   saveStatusLabel,
 } from '../src/views/knowledge/components/editorConfig.js'
+import {
+  TEXT_COLOR_OPTIONS,
+  TextColorMark,
+  applyTextColor,
+  normalizeTextColorTone,
+} from '../src/views/knowledge/components/TextColorMark.js'
 
 function read(relativePath) {
   return readFileSync(new URL(relativePath, import.meta.url), 'utf8')
 }
+
+test('semantic text colors expose one controlled palette and normalize unknown values', () => {
+  assert.deepEqual(TEXT_COLOR_OPTIONS.map(item => item.tone), [null, 'gold', 'danger', 'success', 'info'])
+  assert.deepEqual(TEXT_COLOR_OPTIONS.map(item => item.label), ['默认', '重点', '风险', '完成', '说明'])
+  assert.equal(normalizeTextColorTone('gold'), 'gold')
+  assert.equal(normalizeTextColorTone('#ff0000'), null)
+  assert.equal(Object.isFrozen(TEXT_COLOR_OPTIONS), true)
+  assert.equal(TEXT_COLOR_OPTIONS.every(Object.isFrozen), true)
+
+  const parseRules = TextColorMark.config.parseHTML()
+  assert.deepEqual(parseRules.map(rule => rule.tag), ['span[data-text-color]'])
+  assert.deepEqual(parseRules[0].getAttrs({ getAttribute: () => 'success' }), { tone: 'success' })
+  assert.equal(parseRules[0].getAttrs({ getAttribute: () => '#ff0000' }), false)
+  assert.deepEqual(
+    TextColorMark.config.renderHTML({ HTMLAttributes: { tone: 'danger' } }),
+    ['span', { 'data-text-color': 'danger', class: 'knowledge-text-color knowledge-text-color--danger' }, 0],
+  )
+})
+
+test('semantic text color commands set registered tones and clear the default tone', () => {
+  function fakeEditor() {
+    const calls = []
+    const chain = {
+      focus() { calls.push(['focus']); return chain },
+      setMark(type, attrs) { calls.push(['setMark', type, attrs]); return chain },
+      unsetMark(type) { calls.push(['unsetMark', type]); return chain },
+      run() { calls.push(['run']); return true },
+    }
+    return { editor: { chain: () => chain }, calls }
+  }
+
+  const colored = fakeEditor()
+  assert.equal(applyTextColor(colored.editor, 'gold'), true)
+  assert.deepEqual(colored.calls, [['focus'], ['setMark', 'textColor', { tone: 'gold' }], ['run']])
+
+  const cleared = fakeEditor()
+  assert.equal(applyTextColor(cleared.editor, null), true)
+  assert.deepEqual(cleared.calls, [['focus'], ['unsetMark', 'textColor'], ['run']])
+})
+
+test('text color picker is accessible, closes safely, and is wired into the toolbar', () => {
+  const picker = read('../src/views/knowledge/components/TextColorPicker.vue')
+  const toolbar = read('../src/views/knowledge/components/EditorToolbar.vue')
+
+  assert.match(picker, /aria-haspopup="menu"/)
+  assert.match(picker, /:aria-expanded="open"/)
+  assert.match(picker, /role="menu"/)
+  assert.match(picker, /role="menuitemradio"/)
+  assert.match(picker, /:aria-checked="currentTone === option\.tone"/)
+  assert.match(picker, /@click\.stop="toggle"/)
+  assert.match(picker, /@click\.stop="select\(option\.tone\)"/)
+  assert.match(picker, /document\.addEventListener\('pointerdown', handleOutside\)/)
+  assert.match(picker, /document\.addEventListener\('keydown', handleKeydown\)/)
+  assert.match(picker, /document\.removeEventListener\('pointerdown', handleOutside\)/)
+  assert.match(picker, /document\.removeEventListener\('keydown', handleKeydown\)/)
+  assert.match(picker, /transition:[^;}]*transform 120ms cubic-bezier\(\.23,1,\.32,1\)/)
+  assert.match(picker, /prefers-reduced-motion:\s*reduce/)
+  assert.match(toolbar, /import TextColorPicker from ['"]\.\/TextColorPicker\.vue['"]/)
+  assert.match(toolbar, /<TextColorPicker :editor="editor" :version="version"\s*\/?>/)
+})
+
+test('knowledge editor registers and renders every semantic text color with design tokens', () => {
+  const editor = read('../src/views/knowledge/components/KnowledgeEditor.vue')
+
+  assert.match(editor, /import \{ TextColorMark \} from ['"]\.\/TextColorMark\.js['"]/)
+  assert.match(editor, /extensions:\s*\[[\s\S]*?TextColorMark,[\s\S]*?\]/)
+  assert.match(editor, /\.knowledge-text-color--gold[^}]*color:\s*var\(--color-primary\)/)
+  assert.match(editor, /\.knowledge-text-color--danger[^}]*color:\s*var\(--color-danger-text\)/)
+  assert.match(editor, /\.knowledge-text-color--success[^}]*color:\s*var\(--color-success-text\)/)
+  assert.match(editor, /\.knowledge-text-color--info[^}]*color:\s*var\(--color-info-text\)/)
+})
 
 test('slash commands cover supported P0 blocks and filter by Chinese or English terms', () => {
   const ids = EDITOR_COMMANDS.map(item => item.id)

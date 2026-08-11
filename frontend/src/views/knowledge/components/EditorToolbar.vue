@@ -16,6 +16,7 @@
       <button :class="{ active: editor.isActive('strike') }" title="删除线 Ctrl+Shift+S" @mousedown.prevent="run('strike')"><s>S</s></button>
       <button :class="{ active: editor.isActive('code') }" title="行内代码 Ctrl+E" @mousedown.prevent="run('code')">&lt;/&gt;</button>
       <button :class="{ active: editor.isActive('link') }" title="插入或编辑链接 Ctrl+K" @mousedown.prevent="$emit('edit-link')">🔗</button>
+      <TextColorPicker :editor="editor" :version="version" />
     </div>
     <div class="tool-group">
       <button :class="{ active: editor.isActive('bulletList') }" title="无序列表" @mousedown.prevent="run('bullet-list')">•</button>
@@ -44,6 +45,7 @@
 
 <script setup>
 import { computed } from 'vue'
+import TextColorPicker from './TextColorPicker.vue'
 
 const props = defineProps({ editor: { type: Object, required: true }, version: { type: Number, default: 0 } })
 defineEmits(['edit-link'])
