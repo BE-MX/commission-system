@@ -19,12 +19,23 @@ REVIEW = ("knowledge:review", "knowledge:admin")
 def _call(fn, *args, **kwargs):
     try:
         return fn(*args, **kwargs)
+    except service.InvalidMembersError as exc:
+        raise HTTPException(exc.status_code, {
+            "message": str(exc),
+            "invalid_user_ids": exc.invalid_user_ids,
+        }) from exc
     except service.KnowledgeError as exc:
         raise HTTPException(exc.status_code, str(exc)) from exc
 
 
 def _library(row):
-    return {"id": row.id, "name": row.name, "description": row.description, "status": row.status}
+    return {
+        "id": row.id,
+        "name": row.name,
+        "description": row.description,
+        "category": row.category,
+        "status": row.status,
+    }
 
 
 def _document(row):
@@ -42,7 +53,14 @@ def list_libraries(db: Session = Depends(get_db), user: dict = Depends(require_a
 
 @router.post("/libraries")
 def create_library(payload: LibraryCreate, db: Session = Depends(get_db), user: dict = Depends(require_permission("knowledge:admin"))):
-    return ok(_library(_call(service.create_library, db, user, name=payload.name, description=payload.description)))
+    return ok(_library(_call(
+        service.create_library,
+        db,
+        user,
+        name=payload.name,
+        category=payload.category,
+        description=payload.description,
+    )))
 
 
 @router.get("/libraries/{library_id}")
@@ -63,6 +81,17 @@ def replace_members(library_id: int, payload: MembersReplace, db: Session = Depe
 @router.get("/libraries/{library_id}/members")
 def list_members(library_id: int, db: Session = Depends(get_db), user: dict = Depends(require_permission("knowledge:admin"))):
     return ok(_call(service.list_members, db, user, library_id))
+
+
+@router.get("/libraries/{library_id}/member-candidates")
+def search_member_candidates(
+    library_id: int,
+    q: str = Query(default="", max_length=50),
+    limit: int = Query(default=20, ge=1, le=20),
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("knowledge:admin")),
+):
+    return ok(_call(service.search_member_candidates, db, user, library_id, q, limit=limit))
 
 
 @router.get("/libraries/{library_id}/tree")

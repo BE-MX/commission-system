@@ -1,141 +1,292 @@
 <template>
-  <aside class="knowledge-sidebar">
-    <header class="sidebar-header">
-      <div>
+  <aside class="knowledge-sidebar" :class="{ collapsed }">
+    <div v-if="!collapsed" class="search-box">
+      <el-input
+        ref="searchInput"
+        :model-value="searchQuery"
+        clearable
+        placeholder="搜索已发布知识"
+        aria-label="搜索已发布知识"
+        @update:model-value="$emit('update:search-query', $event)"
+        @keyup.enter="$emit('search')"
+      >
+        <template #prefix><el-icon><Search /></el-icon></template>
+      </el-input>
+      <button class="search-submit" type="button" aria-label="搜索已发布知识" @click="$emit('search')">
+        <el-icon><Search /></el-icon>
+      </button>
+    </div>
+
+    <header v-if="!collapsed" class="sidebar-header">
+      <div class="sidebar-title">
         <span class="eyebrow">知识空间</span>
         <h2>企业知识库</h2>
       </div>
-      <GlassButton v-if="canCreateLibrary" variant="ghost" left-icon="Plus" @click="$emit('create-library')">新建</GlassButton>
+      <div class="sidebar-actions">
+        <button v-if="canCreateLibrary" class="sidebar-action" type="button" @click="$emit('create-library')">
+          <el-icon><Plus /></el-icon><span>新建知识库</span>
+        </button>
+        <button v-if="canReview" class="sidebar-action" type="button" @click="$emit('open-approvals')">
+          <el-icon><Stamp /></el-icon><span>审批队列</span>
+        </button>
+      </div>
     </header>
 
-    <div v-if="libraries.length" class="library-list" aria-label="知识库列表">
-      <div
-        v-for="(library, index) in libraries"
-        :key="library.id"
-        class="library-entry"
-        :style="{ '--stagger': Math.min(index, 6) }"
-      >
-        <div class="library-row" :class="{ active: library.id === selectedLibraryId }">
-          <button class="library-item" type="button" @click="$emit('select-library', library.id)">
-            <span>{{ library.name }}</span>
-            <el-tag size="small" effect="plain">{{ roleLabel(library.role) }}</el-tag>
+    <div v-else class="collapsed-actions" aria-label="知识库快捷操作">
+      <el-tooltip content="搜索已发布知识" placement="right">
+        <button class="compact-action" type="button" aria-label="搜索已发布知识" @click="expandForSearch">
+          <el-icon><Search /></el-icon>
+        </button>
+      </el-tooltip>
+      <el-tooltip v-if="canCreateLibrary" content="新建知识库" placement="right">
+        <button class="compact-action" type="button" aria-label="新建知识库" @click="$emit('create-library')">
+          <el-icon><Plus /></el-icon>
+        </button>
+      </el-tooltip>
+      <el-tooltip v-if="canReview" content="审批队列" placement="right">
+        <button class="compact-action" type="button" aria-label="审批队列" @click="$emit('open-approvals')">
+          <el-icon><Stamp /></el-icon>
+        </button>
+      </el-tooltip>
+    </div>
+
+    <div class="sidebar-body" :class="{ 'has-tree': selectedLibraryId && !collapsed }">
+      <div v-if="libraries.length && !collapsed" class="library-list" aria-label="知识库列表">
+        <div
+          v-for="library in libraries"
+          :key="library.id"
+          class="library-row"
+          :class="{ active: library.id === selectedLibraryId }"
+        >
+          <button
+            class="library-item"
+            type="button"
+            :aria-pressed="library.id === selectedLibraryId"
+            @click="$emit('select-library', library.id)"
+          >
+            <el-tooltip :content="categoryMeta(library).label" placement="top">
+              <span
+                class="category-icon"
+                :class="categoryMeta(library).tone"
+                role="img"
+                :aria-label="categoryMeta(library).label"
+              ><el-icon><Collection /></el-icon></span>
+            </el-tooltip>
+            <OverflowTooltip :text="library.name" :focusable="false" />
           </button>
-          <el-tooltip v-if="canDeleteLibrary && library.role === 'admin'" content="删除知识库">
+          <el-tooltip v-if="canManageMembers && library.role === 'admin'" content="成员权限" placement="top">
+            <button
+              class="row-action member-action"
+              type="button"
+              :aria-label="`管理知识库 ${library.name} 的成员权限`"
+              @click.stop="$emit('open-members', library)"
+            ><el-icon><User /></el-icon></button>
+          </el-tooltip>
+          <el-tag class="role-tag" size="small" effect="plain">{{ roleLabel(library.role) }}</el-tag>
+          <el-tooltip v-if="canDeleteLibrary && library.role === 'admin'" content="删除知识库" placement="top">
             <button class="row-delete" type="button" :aria-label="`删除知识库 ${library.name}`" @click.stop="$emit('delete-library', library)">
               <el-icon><Delete /></el-icon>
             </button>
           </el-tooltip>
         </div>
+      </div>
+      <el-empty v-else-if="!libraries.length && !collapsed" description="还没有可访问的知识库" :image-size="72" />
 
-        <div v-if="library.id === selectedLibraryId" class="tree-section">
-          <div class="tree-heading">
-            <span>目录</span>
-            <div v-if="canWrite" class="tree-actions">
-              <el-tooltip content="新建目录"><button type="button" @click="$emit('create-node', 'folder')"><el-icon><FolderAdd /></el-icon></button></el-tooltip>
-              <el-tooltip content="新建文档"><button type="button" @click="$emit('create-node', 'document')"><el-icon><DocumentAdd /></el-icon></button></el-tooltip>
-            </div>
-          </div>
-          <el-tree
-            :data="tree"
-            node-key="id"
-            default-expand-all
-            highlight-current
-            :expand-on-click-node="false"
-            @node-click="node => node.node_type === 'document' && $emit('select-document', node.id)"
+      <div v-if="libraries.length && collapsed" class="collapsed-libraries" aria-label="知识库列表">
+        <el-tooltip
+          v-for="library in libraries"
+          :key="library.id"
+          :content="`${categoryMeta(library).label} · ${library.name}`"
+          placement="right"
+        >
+          <button
+            class="compact-action library-compact"
+            :class="{ active: library.id === selectedLibraryId }"
+            type="button"
+            :aria-label="`${categoryMeta(library).label}知识库 ${library.name}`"
+            :aria-pressed="library.id === selectedLibraryId"
+            @click="$emit('select-library', library.id)"
           >
-            <template #default="{ data }">
-              <span class="tree-node">
-                <el-icon><Folder v-if="data.node_type === 'folder'" /><Document v-else /></el-icon>
-                <span>{{ data.title }}</span>
-                <span v-if="data.node_type === 'document'" class="status-dot" :class="data.status" :title="statusLabel(data.status)" />
-                <el-tooltip v-if="canDeleteNode" :content="data.node_type === 'folder' ? '删除目录' : '删除文档'">
-                  <button class="row-delete" type="button" :aria-label="`删除${data.node_type === 'folder' ? '目录' : '文档'} ${data.title}`" @click.stop="$emit('delete-node', data)">
-                    <el-icon><Delete /></el-icon>
-                  </button>
-                </el-tooltip>
-              </span>
-            </template>
-          </el-tree>
+            <span class="category-icon" :class="categoryMeta(library).tone" aria-hidden="true">
+              <el-icon><Collection /></el-icon>
+            </span>
+          </button>
+        </el-tooltip>
+      </div>
+
+      <div v-if="selectedLibraryId && !collapsed" class="tree-section">
+        <div class="tree-heading">
+          <span>目录</span>
+          <div v-if="canWrite" class="tree-actions">
+            <el-tooltip content="新建目录">
+              <button class="create-node create-folder" type="button" aria-label="新建目录" @click="$emit('create-node', 'folder')">
+                <el-icon><FolderAdd /></el-icon>
+              </button>
+            </el-tooltip>
+            <el-tooltip content="新建文档">
+              <button class="create-node create-document" type="button" aria-label="新建文档" @click="$emit('create-node', 'document')">
+                <el-icon><DocumentAdd /></el-icon>
+              </button>
+            </el-tooltip>
+          </div>
         </div>
+        <el-tree
+          :data="tree"
+          node-key="id"
+          default-expand-all
+          highlight-current
+          :expand-on-click-node="false"
+          @node-click="node => node.node_type === 'document' && $emit('select-document', node.id)"
+        >
+          <template #default="{ data }">
+            <span class="tree-node">
+              <el-icon><Folder v-if="data.node_type === 'folder'" /><Document v-else /></el-icon>
+              <OverflowTooltip :text="data.title" :focusable="false" />
+              <span v-if="data.node_type === 'document'" class="status-dot" :class="data.status" :title="statusLabel(data.status)" />
+              <el-tooltip v-if="canDeleteNode" :content="data.node_type === 'folder' ? '删除目录' : '删除文档'">
+                <button class="row-delete" type="button" :aria-label="`删除${data.node_type === 'folder' ? '目录' : '文档'} ${data.title}`" @click.stop="$emit('delete-node', data)">
+                  <el-icon><Delete /></el-icon>
+                </button>
+              </el-tooltip>
+            </span>
+          </template>
+        </el-tree>
       </div>
     </div>
-    <el-empty v-else description="还没有可访问的知识库" :image-size="72" />
+
+    <div class="collapse-footer">
+      <el-tooltip :content="collapsed ? '展开侧栏' : '收起侧栏'" :placement="collapsed ? 'right' : 'top'">
+        <button
+          class="collapse-toggle"
+          type="button"
+          :aria-label="collapsed ? '展开知识库侧栏' : '收起知识库侧栏'"
+          :aria-expanded="!collapsed"
+          @click="$emit('toggle-collapse')"
+        >
+          <el-icon><Expand v-if="collapsed" /><Fold v-else /></el-icon>
+          <span v-if="!collapsed">收起侧栏</span>
+        </button>
+      </el-tooltip>
+    </div>
   </aside>
 </template>
 
 <script setup>
-defineProps({
+import { nextTick, ref, watch } from 'vue'
+import { LIBRARY_CATEGORIES } from '../knowledgeUi.js'
+import OverflowTooltip from './OverflowTooltip.vue'
+
+const props = defineProps({
   libraries: { type: Array, default: () => [] },
   selectedLibraryId: { type: Number, default: null },
   tree: { type: Array, default: () => [] },
+  searchQuery: { type: String, default: '' },
+  collapsed: Boolean,
   canWrite: Boolean,
   canCreateLibrary: Boolean,
+  canReview: Boolean,
+  canManageMembers: Boolean,
   canDeleteLibrary: Boolean,
   canDeleteNode: Boolean,
 })
 
-defineEmits(['select-library', 'select-document', 'create-library', 'create-node', 'delete-library', 'delete-node'])
+const emit = defineEmits([
+  'update:search-query',
+  'search',
+  'toggle-collapse',
+  'select-library',
+  'select-document',
+  'create-library',
+  'create-node',
+  'open-approvals',
+  'open-members',
+  'delete-library',
+  'delete-node',
+])
 
+const searchInput = ref(null)
+const focusSearchAfterExpand = ref(false)
 const labels = { viewer: '只读', editor: '编辑', reviewer: '审核', admin: '管理' }
 const roleLabel = role => labels[role] || role
-
+const categoryMeta = library => LIBRARY_CATEGORIES[library.category]
 const statusLabels = { draft: '草稿', pending: '审批中', published: '已发布' }
 const statusLabel = status => statusLabels[status] || status
+
+function expandForSearch() {
+  if (!props.collapsed) return nextTick(() => searchInput.value?.focus())
+  focusSearchAfterExpand.value = true
+  emit('toggle-collapse')
+}
+
+watch(() => props.collapsed, collapsed => {
+  if (collapsed || !focusSearchAfterExpand.value) return
+  focusSearchAfterExpand.value = false
+  nextTick(() => searchInput.value?.focus())
+})
 </script>
 
 <style scoped>
-.knowledge-sidebar { display: flex; min-height: 0; overflow-y: auto; flex-direction: column; border-right: 1px solid var(--border-color); background: var(--surface-card, #fff); scrollbar-gutter: stable; }
-.sidebar-header { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; padding: 14px 14px 12px; border-bottom: 1px solid var(--border-color); }
-.sidebar-header h2 { margin: 2px 0 0; color: var(--text-primary); font-size: 16px; line-height: 1.3; }
-.eyebrow { color: var(--color-primary); font-size: 10.5px; font-weight: 700; letter-spacing: .08em; }
-
-/* ── 知识库列表：行级过渡 + 激活指示条 + 交错入场 ── */
-.library-list { display: grid; align-content: start; gap: 2px; padding: 8px; }
-.library-entry { min-width: 0; animation: row-in .24s var(--ease-out-strong, ease-out) both; animation-delay: calc(var(--stagger, 0) * 40ms); }
-.library-row { position: relative; display: flex; min-height: 34px; align-items: center; gap: 2px; border: 1px solid transparent; border-radius: var(--radius-md, 8px); transition: border-color .18s ease, background-color .18s ease, box-shadow .18s ease; }
-.library-row::before { position: absolute; top: 20%; bottom: 20%; left: 0; width: 3px; border-radius: 2px; background: var(--color-primary); content: ''; transform: scaleY(0); transition: transform .18s var(--ease-out-strong, ease-out); }
-.library-row.active { border-color: var(--color-primary); background: var(--color-primary-light); box-shadow: 0 0 0 3px var(--color-primary-glow); }
-.library-row.active::before { transform: scaleY(1); }
-.library-item { display: flex; min-width: 0; flex: 1; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 9px; border: 0; border-radius: inherit; color: var(--text-secondary); background: transparent; cursor: pointer; font-size: 13px; line-height: 1.35; text-align: left; transition: color .18s ease, background-color .18s ease; }
-.library-item > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.library-list :deep(.el-tag) { height: 20px; padding-inline: 6px; font-size: 10.5px; }
+.knowledge-sidebar { display: flex; min-width: 0; min-height: 0; flex-direction: column; overflow: hidden; border-right: 1px solid var(--border-color); background: var(--surface-card, var(--card-bg)); }
+.knowledge-sidebar.collapsed { align-items: center; }
+.search-box { display: grid; grid-template-columns: minmax(0, 1fr) 36px; gap: 8px; padding: 12px; border-bottom: 1px solid var(--border-color); }
+.search-submit, .sidebar-action, .compact-action, .row-action, .row-delete, .create-node, .collapse-toggle, .library-item { border: 0; cursor: pointer; }
+.search-submit, .sidebar-action, .collapsed-actions .compact-action, .row-action, .row-delete, .create-node { transition: transform 120ms cubic-bezier(.23, 1, .32, 1), color 120ms ease, background-color 120ms ease, opacity 120ms ease; }
+.library-item, .library-compact, .collapse-toggle { transition: color 120ms ease, background-color 120ms ease, opacity 120ms ease; }
+.search-submit, .compact-action, .row-action, .row-delete, .create-node { display: grid; place-items: center; }
+.search-submit { width: 36px; height: 32px; border-radius: 8px; color: var(--card-bg); background: var(--color-primary); }
+.sidebar-header { display: grid; gap: 12px; padding: 14px 12px 12px; border-bottom: 1px solid var(--border-color); }
+.sidebar-title { min-width: 0; }
+.sidebar-header h2 { margin: 3px 0 0; color: var(--text-primary); font-size: 17px; }
+.eyebrow { color: var(--color-primary); font-size: 11px; font-weight: 700; letter-spacing: .08em; }
+.sidebar-actions { display: flex; gap: 6px; }
+.sidebar-action { display: inline-flex; min-width: 0; height: 32px; flex: 1; align-items: center; justify-content: center; gap: 5px; padding: 0 8px; border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-secondary); background: var(--surface-card, var(--card-bg)); font-size: 12px; white-space: nowrap; }
+.sidebar-body { display: flex; width: 100%; flex: 1; min-height: 0; flex-direction: column; overflow: hidden; }
+.collapsed-actions, .collapsed-libraries { display: grid; justify-items: center; gap: 6px; width: 100%; padding: 10px 0; }
+.collapsed-actions { border-bottom: 1px solid var(--border-color); }
+.collapsed-libraries { min-height: 0; flex: 1; align-content: start; overflow-y: auto; }
+.compact-action { width: 38px; height: 38px; border-radius: 9px; color: var(--text-secondary); background: transparent; }
+.library-list { display: grid; min-height: 0; flex: 1; align-content: start; gap: 6px; padding: 12px; overflow-y: auto; }
+.sidebar-body.has-tree .library-list { max-height: 38%; flex: 0 1 auto; }
+.library-row { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: center; gap: 3px; border: 1px solid transparent; border-radius: var(--radius-md, 8px); }
+.library-row.active { border-color: var(--color-primary); background: var(--color-primary-light); }
+.library-item { display: grid; min-width: 0; grid-template-columns: 30px minmax(0, 1fr); align-items: center; gap: 7px; padding: 7px 5px 7px 7px; border-radius: inherit; color: var(--text-secondary); background: transparent; text-align: left; }
 .library-row.active .library-item { color: var(--text-primary); }
-
-/* ── 目录树 ── */
-.tree-section { min-width: 0; margin: 2px 0 6px 13px; padding: 2px 0 4px 10px; border-left: 1px solid var(--border-color); }
-.tree-heading { display: flex; min-height: 28px; align-items: center; justify-content: space-between; padding: 2px 5px 2px 7px; color: var(--text-muted-blue); font-size: 11px; font-weight: 700; letter-spacing: .06em; }
-.tree-actions { display: flex; gap: 2px; }
-.tree-actions button { display: grid; width: 24px; height: 24px; place-items: center; border: 0; border-radius: 6px; color: var(--text-secondary); background: transparent; cursor: pointer; transition: color .15s ease, background-color .15s ease, transform .15s var(--ease-out-strong, ease-out); }
-.tree-actions button:active { transform: scale(.9); }
-.tree-actions button:focus-visible, .library-item:focus-visible, .row-delete:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
-.tree-node { display: flex; width: 100%; min-width: 0; align-items: center; gap: 6px; font-size: 12.5px; }
-.tree-node > span:nth-child(2) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tree-node .el-icon { transition: color .15s ease; }
-.tree-section :deep(.el-tree) { background: transparent; }
-.tree-section :deep(.el-tree-node__content) { height: 30px; border-radius: 7px; transition: background-color .15s ease; }
-.tree-section :deep(.el-tree-node__expand-icon) { padding: 4px; }
-.tree-section :deep(.el-tree-node:focus > .el-tree-node__content) { background: var(--color-primary-light); }
-
-.row-delete { display: grid; width: 26px; height: 26px; flex: 0 0 auto; place-items: center; border: 0; border-radius: 6px; color: var(--color-danger); background: transparent; cursor: pointer; transition: opacity .16s ease, transform .16s var(--ease-out-strong, ease-out), background-color .15s ease; }
-
-/* ── 状态点：审批中带呼吸光环 ── */
-.status-dot { position: relative; width: 6px; height: 6px; margin-left: auto; border-radius: 50%; background: var(--text-muted); }
+.category-icon { display: grid; width: 28px; height: 28px; flex: 0 0 auto; place-items: center; border-radius: 7px; }
+.category-icon.company { color: var(--color-primary); background: var(--color-primary-light); }
+.category-icon.department { color: var(--color-info-text); background: var(--color-info-bg); }
+.category-icon.personal { color: var(--color-success-text); background: var(--color-success-bg); }
+.library-compact.active { box-shadow: inset 0 0 0 1px var(--color-primary); background: var(--color-primary-light); }
+.role-tag { flex: 0 0 auto; }
+.row-action, .row-delete, .create-node { width: 28px; height: 28px; flex: 0 0 auto; border-radius: 6px; background: transparent; }
+.member-action { color: var(--color-primary); }
+.row-delete { color: var(--color-danger); }
+.tree-section { display: flex; flex: 1; min-height: 0; flex-direction: column; overflow: hidden; padding: 8px 12px 10px; }
+.tree-heading { display: flex; align-items: center; justify-content: space-between; padding: 10px 8px; color: var(--text-muted-blue); font-size: 12px; font-weight: 700; letter-spacing: .06em; }
+.tree-actions { display: flex; gap: 4px; }
+.create-folder { color: var(--card-bg); background: var(--color-info-text); }
+.create-document { color: var(--card-bg); background: var(--color-primary); }
+.create-folder :deep(svg), .create-document :deep(svg) { fill: currentColor; }
+.tree-section :deep(.el-tree) { flex: 1; min-height: 0; overflow-y: auto; }
+.tree-node { display: grid; width: 100%; min-width: 0; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 7px; }
+.status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); }
 .status-dot.pending { background: var(--color-primary); }
-.status-dot.pending::after { position: absolute; inset: -3px; border: 1px solid var(--color-primary); border-radius: 50%; animation: dot-pulse 1.8s ease-out infinite; content: ''; }
-.status-dot.published { background: var(--color-success); box-shadow: 0 0 0 2px var(--color-success-bg); }
-
-@keyframes row-in { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: translateX(0); } }
-@keyframes dot-pulse { 0% { opacity: .9; transform: scale(.6); } 70% { opacity: 0; transform: scale(1.4); } 100% { opacity: 0; transform: scale(1.4); } }
-
+.status-dot.published { background: var(--color-success); }
+.collapse-footer { width: 100%; flex: 0 0 auto; padding: 8px; border-top: 1px solid var(--border-color); }
+.collapse-toggle { display: flex; width: 100%; height: 34px; align-items: center; justify-content: center; gap: 7px; border-radius: 8px; color: var(--text-secondary); background: transparent; font-size: 12px; }
+.search-submit:focus-visible, .sidebar-action:focus-visible, .compact-action:focus-visible, .row-action:focus-visible, .row-delete:focus-visible, .create-node:focus-visible, .collapse-toggle:focus-visible, .library-item:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 @media (hover: hover) and (pointer: fine) {
-  .row-delete { opacity: 0; transform: translateX(4px); }
-  .library-row:hover .row-delete, .tree-node:hover .row-delete, .row-delete:focus-visible { opacity: 1; transform: translateX(0); }
-  .library-item:hover, .tree-actions button:hover { background: var(--color-primary-light); }
+  .search-submit:active:not(:focus-visible), .sidebar-action:active:not(:focus-visible), .collapsed-actions .compact-action:active:not(:focus-visible), .row-action:active:not(:focus-visible), .row-delete:active:not(:focus-visible), .create-node:active:not(:focus-visible) { transform: scale(.97); }
+  .row-delete { opacity: 0; }
+  .library-row:hover .row-delete, .tree-node:hover .row-delete, .row-delete:focus-visible { opacity: 1; }
+  .sidebar-action:hover, .compact-action:hover, .library-item:hover, .collapse-toggle:hover { color: var(--text-primary); background: var(--color-primary-light); }
+  .member-action:hover { background: var(--color-primary-light); }
   .row-delete:hover { background: var(--color-danger-bg); }
+  .create-folder:hover { color: var(--card-bg); background: var(--color-info-text); opacity: .88; }
+  .create-document:hover { color: var(--card-bg); background: var(--color-primary-hover); }
+  .search-submit:hover { background: var(--color-primary-hover); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .library-entry { animation: none; }
-  .library-row, .library-row::before, .library-item, .tree-actions button, .row-delete { transition: none; }
-  .status-dot.pending::after { animation: none; opacity: 0; }
+  .search-submit, .sidebar-action, .compact-action, .row-action, .row-delete, .create-node, .collapse-toggle, .library-item { transition-property: color, background-color, opacity; }
+  .search-submit:active:not(:focus-visible), .sidebar-action:active:not(:focus-visible), .collapsed-actions .compact-action:active:not(:focus-visible), .row-action:active:not(:focus-visible), .row-delete:active:not(:focus-visible), .create-node:active:not(:focus-visible) { transform: none; }
 }
 </style>

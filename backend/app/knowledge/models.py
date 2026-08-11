@@ -17,6 +17,7 @@ class KnowledgeLibrary(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
     name = Column(String(128), nullable=False, comment="知识库名称")
     description = Column(String(512), nullable=True, comment="用途说明")
+    category = Column(String(16), nullable=False, comment="company/department/personal")
     status = Column(String(16), nullable=False, default="active", comment="active/archived")
     created_by = Column(Integer, nullable=False, comment="创建人用户ID")
     created_at = Column(DateTime, nullable=False, default=bj_now, comment="创建时间")

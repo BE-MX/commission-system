@@ -283,7 +283,7 @@ PII 密钥 `ARK_SALARY_ENCRYPTION_KEY` / `ARK_SALARY_HASH_KEY` 在 `backend/.env
 所有表具备 `created_by/updated_by/created_at/updated_at/deleted_at` 审计字段。M1 只覆盖搜索、联系人和研究，不建邮件发送、回复或 WhatsApp 外发表。
 ## 企业知识库（迁移 101，2026-08-09）
 
-- `ark_knowledge_libraries`：知识库主表，软删除。
+- `ark_knowledge_libraries`：知识库主表，软删除；迁移 105 增加 `category VARCHAR(16) NOT NULL`，值为 company/department/personal，存量行回填 company 后再收紧为非空。
 - `ark_knowledge_library_members`：资源 ACL，`(library_id,user_id)` 唯一，角色为 viewer/editor/reviewer/admin。
 - `ark_knowledge_documents`：目录和文档树；`draft_revision_id`、`published_revision_id` 与 `pending_approval_id` 分开保存，避免草稿覆盖线上内容。
 - `ark_knowledge_revisions`：不可变 Tiptap JSON 和派生纯文本，`(document_id,version_no)` 唯一。

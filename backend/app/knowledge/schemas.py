@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class LibraryCreate(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
     name: str = Field(min_length=1, max_length=128)
+    category: Literal["company", "department", "personal"]
     description: str | None = Field(default=None, max_length=512)
 
 

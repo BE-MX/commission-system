@@ -776,11 +776,12 @@ Agent Skill 位于 `.agents/skills/ark-lead-discovery` 与 `.agents/skills/ark-c
 
 | Method | Path | Platform permission | Purpose |
 | --- | --- | --- | --- |
-| GET | `/libraries` | 任一 `knowledge:*` | 当前账号可见知识库 |
-| POST | `/libraries` | `knowledge:admin` | 创建知识库并将创建者设为 admin |
-| GET | `/libraries/{id}` | 任一 `knowledge:*` | 知识库详情 |
+| GET | `/libraries` | 任一 `knowledge:*` | 当前账号可见知识库；每项返回 `category` |
+| POST | `/libraries` | `knowledge:admin` | 创建知识库并将创建者设为 admin；请求必填 `category=company|department|personal` |
+| GET | `/libraries/{id}` | 任一 `knowledge:*` | 知识库详情；返回 `category` |
 | DELETE | `/libraries/{id}` | `knowledge:admin` + 库 admin | 软删除知识库及全部节点，并取消关联待审批 |
-| GET/PUT | `/libraries/{id}/members` | `knowledge:admin` | 读取或整体替换成员 ACL |
+| GET/PUT | `/libraries/{id}/members` | `knowledge:admin` + 库 admin | 读取或整体替换成员 ACL；读取项含 `user_id`、`username`、`real_name`、`role`；保存遇到停用、删除或不存在账号时，422 `detail.invalid_user_ids` 返回需移除的账号 ID |
+| GET | `/libraries/{id}/member-candidates?q=&limit=20` | `knowledge:admin` + 库 admin | 按方舟用户名或姓名搜索启用账号；`q` 最长 50 字符，`limit` 范围 1~20，仅返回 `user_id`、`username`、`real_name` |
 | GET | `/libraries/{id}/tree` | 任一 `knowledge:*` | 目录树；只读者看不到未发布文档 |
 | POST | `/libraries/{id}/documents` | `knowledge:write/admin` | 创建目录或文档 |
 | GET/PUT | `/documents/{id}` | 读 / 写权限 | 读取当前可见修订或保存新草稿修订 |

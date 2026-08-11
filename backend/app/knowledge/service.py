@@ -5,6 +5,7 @@ from __future__ import annotations
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 
+from app.auth.models import ArkUser
 from app.knowledge import access
 from app.knowledge.content import ContentValidationError, extract_text, validate_content
 from app.knowledge.models import (
@@ -26,6 +27,12 @@ class ValidationError(KnowledgeError):
     status_code = 422
 
 
+class InvalidMembersError(ValidationError):
+    def __init__(self, invalid_user_ids: list[int]):
+        super().__init__("knowledge member user is inactive or missing")
+        self.invalid_user_ids = sorted(invalid_user_ids)
+
+
 class ForbiddenError(KnowledgeError):
     status_code = 403
 
@@ -36,6 +43,9 @@ class NotFoundError(KnowledgeError):
 
 class ConflictError(KnowledgeError):
     status_code = 409
+
+
+LIBRARY_CATEGORIES = frozenset({"company", "department", "personal"})
 
 
 def _require_platform(identity: dict, permission: str) -> None:
@@ -94,12 +104,21 @@ def _clean_title(title: str) -> str:
     return value
 
 
-def create_library(db, identity: dict, *, name: str, description: str | None = None) -> KnowledgeLibrary:
+def create_library(
+    db, identity: dict, *, name: str, category: str, description: str | None = None
+) -> KnowledgeLibrary:
     _require_platform(identity, "knowledge:admin")
+    if category not in LIBRARY_CATEGORIES:
+        raise ValidationError("invalid knowledge library category")
     clean_name = name.strip()
     if not clean_name:
         raise ValidationError("library name is required")
-    row = KnowledgeLibrary(name=clean_name, description=description, created_by=access.user_id(identity))
+    row = KnowledgeLibrary(
+        name=clean_name,
+        description=description,
+        category=category,
+        created_by=access.user_id(identity),
+    )
     db.add(row)
     db.flush()
     db.add(KnowledgeLibraryMember(
@@ -122,18 +141,50 @@ def list_libraries(db, identity: dict) -> list[dict]:
         rows = query.join(KnowledgeLibraryMember).filter(
             KnowledgeLibraryMember.user_id == access.user_id(identity)
         ).with_entities(KnowledgeLibrary, KnowledgeLibraryMember.role).order_by(KnowledgeLibrary.name).all()
-    return [{"id": library.id, "name": library.name, "description": library.description, "role": role} for library, role in rows]
+    return [
+        {
+            "id": library.id,
+            "name": library.name,
+            "description": library.description,
+            "category": library.category,
+            "role": role,
+        }
+        for library, role in rows
+    ]
 
 
 def get_library(db, identity: dict, library_id: int) -> dict:
     _require_platform(identity, "knowledge:read")
     row = _library(db, identity, library_id)
-    return {"id": row.id, "name": row.name, "description": row.description, "role": access.member_role(db, identity, row.id)}
+    return {
+        "id": row.id,
+        "name": row.name,
+        "description": row.description,
+        "category": row.category,
+        "role": access.member_role(db, identity, row.id),
+    }
+
+
+def _active_user_ids(db, user_ids: list[int]) -> set[int]:
+    if not user_ids:
+        return set()
+    rows = db.query(ArkUser.id).filter(
+        ArkUser.id.in_(user_ids),
+        ArkUser.is_active.is_(True),
+        ArkUser.deleted_at.is_(None),
+    ).all()
+    return {row[0] for row in rows}
 
 
 def replace_members(db, identity: dict, library_id: int, members: list[dict]) -> list[dict]:
     _require_platform(identity, "knowledge:admin")
     _library(db, identity, library_id, "admin")
+    user_ids = [int(item["user_id"]) for item in members]
+    if len(user_ids) != len(set(user_ids)):
+        raise ValidationError("duplicate knowledge member user")
+    invalid_user_ids = sorted(set(user_ids) - _active_user_ids(db, user_ids))
+    if invalid_user_ids:
+        raise InvalidMembersError(invalid_user_ids)
     normalized: dict[int, str] = {}
     for item in members:
         role = item["role"]
@@ -156,10 +207,47 @@ def replace_members(db, identity: dict, library_id: int, members: list[dict]) ->
 def list_members(db, identity: dict, library_id: int) -> list[dict]:
     _require_platform(identity, "knowledge:admin")
     _library(db, identity, library_id, "admin")
-    rows = db.query(KnowledgeLibraryMember).filter(
-        KnowledgeLibraryMember.library_id == library_id
-    ).order_by(KnowledgeLibraryMember.user_id).all()
-    return [{"user_id": row.user_id, "role": row.role} for row in rows]
+    rows = db.query(
+        KnowledgeLibraryMember.user_id,
+        ArkUser.username,
+        ArkUser.real_name,
+        KnowledgeLibraryMember.role,
+    ).join(
+        ArkUser, ArkUser.id == KnowledgeLibraryMember.user_id
+    ).filter(
+        KnowledgeLibraryMember.library_id == library_id,
+        ArkUser.deleted_at.is_(None),
+    ).order_by(ArkUser.username).all()
+    return [
+        {
+            "user_id": row.user_id,
+            "username": row.username,
+            "real_name": row.real_name,
+            "role": row.role,
+        }
+        for row in rows
+    ]
+
+
+def search_member_candidates(
+    db, identity: dict, library_id: int, query: str, limit: int = 20
+) -> list[dict]:
+    _require_platform(identity, "knowledge:admin")
+    _library(db, identity, library_id, "admin")
+    rows = db.query(ArkUser.id, ArkUser.username, ArkUser.real_name).filter(
+        ArkUser.is_active.is_(True),
+        ArkUser.deleted_at.is_(None),
+    )
+    clean_query = query.strip()
+    if clean_query:
+        pattern = f"%{clean_query}%"
+        rows = rows.filter(or_(ArkUser.username.like(pattern), ArkUser.real_name.like(pattern)))
+    safe_limit = max(1, min(limit, 20))
+    rows = rows.order_by(ArkUser.username).limit(safe_limit).all()
+    return [
+        {"user_id": row.id, "username": row.username, "real_name": row.real_name}
+        for row in rows
+    ]
 
 
 def _delete_summary(target_id: int, nodes: list[KnowledgeDocument], cancelled_count: int) -> dict:

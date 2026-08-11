@@ -815,11 +815,15 @@ frontend/src/
 
 代码边界：后端 `app/knowledge/`（`router.py` / `models.py` / `schemas.py` / `service.py` + `access.py` ACL + `content.py` Tiptap JSON 白名单），前端 `views/knowledge/`（`KnowledgeWorkbench.vue` 薄壳 + `knowledgeState.js` + `components/`），MCP 适配器 `app/mcp/knowledge_tools.py`。HTTP 与 MCP 不各自实现权限，而是共同调用 knowledge service。
 
+**平衡型侧栏**：展开宽度 310px，收起后保留 54px 快捷栏；折叠状态保存在本地，宽度直接切换，不做宽度动画。“搜索已发布知识”位于侧栏最顶部，“新建知识库”与“审批队列”相邻，成员权限入口跟随对应知识库行。知识库图标按分类使用公司级金色、部门级蓝色、个人级绿色；新建目录为蓝色文件夹图标，新建文档为金色文档图标。知识库、目录和文档名称只在实际截断时才显示完整名称浮层。
+
+**成员配置**：成员弹框标题显示当前知识库名称，按方舟用户名或姓名搜索启用账号，选择账号后配置 viewer/editor/reviewer/admin；页面不再要求人工输入用户 ID。保存时若账号已停用、删除或不存在，弹框保留当前草稿并在对应成员行提示移除后重试。
+
 部署顺序：
 
 1. 确认 `COMMISSION_DB_URL` 指向预期环境，执行 `alembic upgrade head` 创建六张 `ark_knowledge_*` 表。
 2. 启动后端，让既有 `seed_role_permissions` upsert 四个 `knowledge:*` 权限；在角色权限页为业务角色分配入口能力。
-3. 构建并部署 `frontend/dist`。有 `knowledge:admin` 的账号先创建知识库，再以方舟用户 ID 配置成员角色。
+3. 构建并部署 `frontend/dist`。有 `knowledge:admin` 且是目标库 admin 的账号，通过方舟用户名搜索并配置成员角色。
 4. 需要 Agent 接入时，在现有 MCP Token 页面给对应用户签发个人 Token；Agent 通过 `/mcp` 使用 `search_knowledge` 和 `get_knowledge_document`。
 
 本期不提供附件、批量导出或下载接口。“只使用不能下载”只代表产品不提供下载能力；任何已经展示给用户或模型的内容都不能从信息论上保证不可复制。生产风控应结合最小 ACL、发布审批、响应限量、审计告警和敏感知识拆分。

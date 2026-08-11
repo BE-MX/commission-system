@@ -1,31 +1,27 @@
 <template>
   <div class="knowledge-page">
-    <header class="page-bar">
-      <div class="search-box">
-        <el-input v-model="searchQuery" clearable placeholder="搜索已发布知识" @keyup.enter="runSearch">
-          <template #prefix><el-icon><Search /></el-icon></template>
-        </el-input>
-        <GlassButton variant="primary" :loading="searching" @click="runSearch">搜索</GlassButton>
-      </div>
-      <div class="page-actions">
-        <GlassButton v-if="capabilities.review" variant="ghost" left-icon="Stamp" @click="openApprovals">审批队列</GlassButton>
-        <GlassButton v-if="capabilities.admin && selectedLibrary" variant="ghost" left-icon="User" @click="openMembers">成员权限</GlassButton>
-      </div>
-    </header>
-
-    <div class="workspace">
+    <div class="workspace" :class="{ collapsed: sidebarCollapsed }">
       <KnowledgeSidebar
         :libraries="libraries"
         :selected-library-id="selectedLibraryId"
         :tree="nestedTree"
+        :search-query="searchQuery"
+        :collapsed="sidebarCollapsed"
         :can-write="capabilities.write"
         :can-create-library="canCreateLibrary"
+        :can-review="canReviewApprovals"
+        :can-manage-members="canCreateLibrary"
         :can-delete-library="canCreateLibrary"
         :can-delete-node="capabilities.deleteNode"
+        @update:search-query="searchQuery = $event"
+        @search="runSearch"
+        @toggle-collapse="toggleSidebar"
         @select-library="selectLibrary"
         @select-document="selectDocument"
         @create-library="libraryDialog = true"
         @create-node="openNodeDialog"
+        @open-approvals="openApprovals"
+        @open-members="openMembers"
         @delete-library="deleteLibrary"
         @delete-node="deleteNode"
       />
@@ -43,6 +39,13 @@
     <el-dialog v-model="libraryDialog" title="新建知识库" width="480px">
       <el-form label-position="top">
         <el-form-item label="知识库名称" required><el-input v-model="libraryForm.name" maxlength="128" /></el-form-item>
+        <el-form-item label="知识库分类" required>
+          <el-radio-group v-model="libraryForm.category" class="category-options">
+            <el-radio-button v-for="(category, key) in LIBRARY_CATEGORIES" :key="key" :value="key">
+              {{ category.label }}
+            </el-radio-button>
+          </el-radio-group>
+        </el-form-item>
         <el-form-item label="用途说明"><el-input v-model="libraryForm.description" type="textarea" :rows="3" maxlength="512" /></el-form-item>
       </el-form>
       <template #footer>
@@ -61,28 +64,71 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="memberDialog" title="成员权限" width="620px">
-      <el-alert title="POC 使用方舟用户 ID 绑定账号；后续接入组织通讯录后改为姓名搜索。" type="info" show-icon :closable="false" />
+    <el-dialog
+      v-model="memberDialog"
+      :title="`成员权限 · ${memberLibrary?.name || ''}`"
+      width="min(620px, calc(100vw - 32px))"
+      :close-on-click-modal="!memberSaving"
+      :close-on-press-escape="!memberSaving"
+      :show-close="!memberSaving"
+      @closed="resetMemberDialog"
+    >
+      <div class="member-add">
+        <el-select
+          :key="memberLibrary?.id || 'closed'"
+          v-model="candidateUserId"
+          aria-label="搜索并选择方舟成员"
+          filterable
+          remote
+          clearable
+          reserve-keyword
+          :remote-method="searchMemberCandidates"
+          :loading="memberSearchLoading"
+          :disabled="memberSaving"
+          placeholder="输入方舟用户名或姓名搜索"
+        >
+          <el-option
+            v-for="candidate in memberCandidates"
+            :key="candidate.user_id"
+            :value="candidate.user_id"
+            :label="candidate.real_name ? `${candidate.username} · ${candidate.real_name}` : candidate.username"
+          >
+            <span class="candidate-username">{{ candidate.username }}</span>
+            <span v-if="candidate.real_name" class="candidate-real-name">{{ candidate.real_name }}</span>
+          </el-option>
+        </el-select>
+        <GlassButton variant="ghost" :disabled="!candidateUserId || memberSaving" @click="addSelectedMember">添加成员</GlassButton>
+      </div>
       <div class="member-table">
-        <div v-for="(member, index) in members" :key="index" class="member-row">
-          <el-input-number v-model="member.user_id" :min="1" controls-position="right" />
-          <el-select v-model="member.role">
+        <el-empty v-if="!members.length" description="暂无已配置成员" :image-size="72" />
+        <div
+          v-for="(member, index) in members"
+          :key="member.user_id"
+          class="member-row"
+          :class="{ 'member-row-invalid': invalidMemberIds.includes(member.user_id) }"
+        >
+          <div class="member-identity">
+            <span class="member-username">{{ member.username }}</span>
+            <span class="member-real-name">{{ member.real_name || '未设置姓名' }}</span>
+            <span v-if="invalidMemberIds.includes(member.user_id)" class="member-invalid">账号已停用或删除，请移除后重试</span>
+          </div>
+          <el-select v-model="member.role" :aria-label="`设置 ${member.username} 的权限`" :disabled="memberSaving || isProtectedActor(member) || invalidMemberIds.includes(member.user_id)">
             <el-option label="只读" value="viewer" /><el-option label="编辑" value="editor" />
             <el-option label="审核" value="reviewer" /><el-option label="管理" value="admin" />
           </el-select>
-          <GlassButton variant="link" link-tone="danger" @click="members.splice(index, 1)">移除</GlassButton>
+          <span v-if="isProtectedActor(member)" class="actor-lock">当前账号，管理员权限不可移除</span>
+          <GlassButton v-else variant="link" link-tone="danger" :disabled="memberSaving" @click="removeMember(index)">移除</GlassButton>
         </div>
       </div>
-      <GlassButton variant="ghost" left-icon="Plus" @click="members.push({ user_id: null, role: 'viewer' })">添加成员</GlassButton>
       <template #footer>
-        <GlassButton variant="ghost" @click="memberDialog = false">取消</GlassButton>
-        <GlassButton variant="primary" @click="saveMembers">保存权限</GlassButton>
+        <GlassButton variant="ghost" :disabled="memberSaving" @click="memberDialog = false">取消</GlassButton>
+        <GlassButton variant="primary" :loading="memberSaving" @click="saveMembers">保存权限</GlassButton>
       </template>
     </el-dialog>
 
     <el-dialog v-model="searchDialog" title="搜索结果" width="680px">
       <el-empty v-if="!searchResults.length" description="没有找到已发布内容" />
-      <button v-for="(item, index) in searchResults" :key="item.document_id" class="search-result" type="button" :style="{ '--stagger': Math.min(index, 8) }" @click="openSearchResult(item)">
+      <button v-for="item in searchResults" :key="item.document_id" class="search-result" type="button" @click="openSearchResult(item)">
         <strong>{{ item.title }}</strong><span>{{ item.summary }}</span>
       </button>
     </el-dialog>
@@ -110,6 +156,7 @@ import { knowledgeClient } from '@/api/clients'
 import { useAuthStore } from '@/stores/auth'
 import { msgError, msgSuccess } from '@/utils/feedback'
 import { capabilitiesFor } from './knowledgeState.js'
+import { LIBRARY_CATEGORIES, isDuplicateMember, readSidebarCollapsed, writeSidebarCollapsed } from './knowledgeUi.js'
 import KnowledgeSidebar from './components/KnowledgeSidebar.vue'
 import KnowledgeEditor from './components/KnowledgeEditor.vue'
 import ApprovalQueue from './components/ApprovalQueue.vue'
@@ -130,15 +177,26 @@ const reviewDialog = ref(false)
 const reviewDetail = ref(null)
 const approvals = ref([])
 const members = ref([])
+const memberLibrary = ref(null)
+const memberCandidates = ref([])
+const candidateUserId = ref(null)
+const memberSearchLoading = ref(false)
+const memberSaving = ref(false)
+const invalidMemberIds = ref([])
+const memberLoadRequest = ref(0)
+const memberSearchRequest = ref(0)
 const searchQuery = ref('')
 const searchResults = ref([])
 const searching = ref(false)
-const libraryForm = reactive({ name: '', description: '' })
+const sidebarCollapsed = ref(readSidebarCollapsed())
+const libraryForm = reactive({ name: '', description: '', category: 'company' })
 const nodeForm = reactive({ title: '', node_type: 'document' })
 
 const selectedLibrary = computed(() => libraries.value.find(item => item.id === selectedLibraryId.value))
 const capabilities = computed(() => capabilitiesFor(selectedLibrary.value?.role))
 const canCreateLibrary = computed(() => auth.hasPermission('knowledge:admin'))
+const canReviewApprovals = computed(() => auth.hasPermission('knowledge:review') || auth.hasPermission('knowledge:admin'))
+const isSuperAdmin = computed(() => auth.roles.includes('super_admin'))
 const nestedTree = computed(() => {
   const map = new Map(tree.value.map(item => [item.id, { ...item, children: [] }]))
   const roots = []
@@ -151,6 +209,11 @@ const nestedTree = computed(() => {
 })
 
 function unwrap(response) { return response.data }
+
+function toggleSidebar() {
+  sidebarCollapsed.value = !sidebarCollapsed.value
+  writeSidebarCollapsed(sidebarCollapsed.value)
+}
 
 async function loadLibraries() {
   libraries.value = unwrap(await knowledgeClient.get('/libraries'))
@@ -185,9 +248,9 @@ async function selectDocument(id) {
 
 async function createLibrary() {
   if (!libraryForm.name.trim()) return msgError('请填写知识库名称')
-  const created = unwrap(await knowledgeClient.post('/libraries', libraryForm))
+  const created = unwrap(await knowledgeClient.post('/libraries', { ...libraryForm }))
   libraryDialog.value = false
-  Object.assign(libraryForm, { name: '', description: '' })
+  Object.assign(libraryForm, { name: '', description: '', category: 'company' })
   await loadLibraries()
   await selectLibrary(created.id)
   msgSuccess('创建')
@@ -285,17 +348,112 @@ async function submitDocument() {
   msgSuccess('提交审批')
 }
 
-async function openMembers() {
-  members.value = unwrap(await knowledgeClient.get(`/libraries/${selectedLibraryId.value}/members`))
-  memberDialog.value = true
+function isProtectedActor(member) {
+  return !isSuperAdmin.value
+    && member.role === 'admin'
+    && Number(member.user_id) === Number(auth.user?.id)
+}
+
+async function openMembers(library) {
+  const requestId = ++memberLoadRequest.value
+  try {
+    const loadedMembers = unwrap(await knowledgeClient.get(`/libraries/${library.id}/members`, { suppressToast: true }))
+    if (requestId !== memberLoadRequest.value) return
+    members.value = loadedMembers
+    invalidMemberIds.value = []
+    memberLibrary.value = library
+    memberCandidates.value = []
+    candidateUserId.value = null
+    memberDialog.value = true
+  } catch {
+    if (requestId === memberLoadRequest.value) msgError('成员加载失败，请重新点击成员权限')
+  }
+}
+
+async function searchMemberCandidates(query) {
+  const trimmed = query.trim()
+  const targetLibraryId = memberLibrary.value?.id
+  const requestId = ++memberSearchRequest.value
+  if (!trimmed || !targetLibraryId) {
+    memberCandidates.value = []
+    memberSearchLoading.value = false
+    return
+  }
+  memberSearchLoading.value = true
+  try {
+    const results = unwrap(await knowledgeClient.get(
+      `/libraries/${targetLibraryId}/member-candidates`,
+      { params: { q: trimmed, limit: 20 }, showLoading: false, suppressToast: true },
+    ))
+    if (requestId !== memberSearchRequest.value || memberLibrary.value?.id !== targetLibraryId) return
+    memberCandidates.value = results
+  } catch {
+    if (requestId === memberSearchRequest.value && memberLibrary.value?.id === targetLibraryId) {
+      memberCandidates.value = []
+      msgError('成员搜索失败，请重试')
+    }
+  } finally {
+    if (requestId === memberSearchRequest.value) memberSearchLoading.value = false
+  }
+}
+
+function addSelectedMember() {
+  if (memberSaving.value) return
+  const candidate = memberCandidates.value.find(item => item.user_id === candidateUserId.value)
+  if (!candidate) return
+  if (isDuplicateMember(members.value, candidate.user_id)) {
+    return msgError('该成员已在权限列表中')
+  }
+  members.value.push({
+    user_id: candidate.user_id,
+    username: candidate.username,
+    real_name: candidate.real_name,
+    role: 'viewer',
+  })
+  candidateUserId.value = null
+}
+
+function removeMember(index) {
+  if (memberSaving.value) return
+  const [removed] = members.value.splice(index, 1)
+  invalidMemberIds.value = invalidMemberIds.value.filter(userId => userId !== removed.user_id)
 }
 
 async function saveMembers() {
-  if (members.value.some(item => !item.user_id)) return msgError('请填写成员用户 ID')
-  await knowledgeClient.put(`/libraries/${selectedLibraryId.value}/members`, { members: members.value })
-  memberDialog.value = false
-  await loadLibraries()
-  msgSuccess('保存权限')
+  if (memberSaving.value) return
+  if (!memberLibrary.value) return msgError('请重新选择知识库')
+  const payload = {
+    members: members.value.map(member => ({ user_id: member.user_id, role: member.role })),
+  }
+  invalidMemberIds.value = []
+  memberSaving.value = true
+  try {
+    await knowledgeClient.put(`/libraries/${memberLibrary.value.id}/members`, payload, { suppressToast: true })
+    await loadLibraries()
+    memberDialog.value = false
+    msgSuccess('保存权限')
+  } catch (error) {
+    const invalidUserIds = error.response?.data?.detail?.invalid_user_ids
+    if (Array.isArray(invalidUserIds) && invalidUserIds.length) {
+      invalidMemberIds.value = invalidUserIds
+      msgError('部分成员账号已失效，请移除后重试')
+    } else {
+      msgError('成员权限保存失败，请重试')
+    }
+  } finally {
+    memberSaving.value = false
+  }
+}
+
+function resetMemberDialog() {
+  memberLoadRequest.value += 1
+  memberSearchRequest.value += 1
+  memberLibrary.value = null
+  members.value = []
+  memberCandidates.value = []
+  candidateUserId.value = null
+  memberSearchLoading.value = false
+  invalidMemberIds.value = []
 }
 
 async function openApprovals() {
@@ -335,7 +493,9 @@ async function runSearch() {
   try {
     searchResults.value = unwrap(await knowledgeClient.get('/search', { params: { q: query, limit: 20 } }))
     searchDialog.value = true
-  } finally { searching.value = false }
+  } finally {
+    searching.value = false
+  }
 }
 
 async function openSearchResult(item) {
@@ -366,26 +526,31 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
 </script>
 
 <style scoped>
-.knowledge-page { display: flex; height: calc(100vh - var(--topbar-height, 64px)); min-height: 0; flex-direction: column; background: var(--page-bg, #f5f6fa); }
-.page-bar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 14px; border-bottom: 1px solid var(--border-color); background: rgba(255, 255, 255, .92); backdrop-filter: blur(14px); }
-.search-box { display: flex; width: min(520px, 55vw); gap: 8px; }
-.search-box :deep(.el-input__wrapper) { transition: box-shadow .2s var(--ease-out-strong, ease-out); }
-.search-box :deep(.el-input__wrapper.is-focus) { box-shadow: 0 0 0 1px var(--color-primary) inset, 0 0 0 4px var(--color-primary-glow); }
-.page-actions { display: flex; gap: 8px; }
-.workspace { display: grid; min-height: 0; flex: 1; grid-template-columns: 280px minmax(0, 1fr); margin: 10px; overflow: hidden; border: 1px solid var(--border-color); border-radius: var(--radius-lg, 12px); background: var(--surface-card, #fff); box-shadow: var(--shadow-card, 0 8px 30px rgba(30, 36, 50, .06)); animation: workspace-in .26s var(--ease-out-strong, ease-out) both; }
-.member-table { display: grid; gap: 8px; margin: 16px 0; }
-.member-row { display: grid; grid-template-columns: 180px 1fr auto; gap: 10px; }
-.search-result { position: relative; display: grid; width: 100%; gap: 6px; padding: 14px 4px; border: 0; border-bottom: 1px solid var(--border-color); color: var(--text-primary); background: transparent; cursor: pointer; text-align: left; animation: result-in .2s var(--ease-out-strong, ease-out) both; animation-delay: calc(var(--stagger, 0) * 35ms); transition: background-color .16s ease; }
-.search-result::after { position: absolute; top: 50%; right: 8px; color: var(--color-primary); content: '→'; opacity: 0; transform: translate(-6px, -50%); transition: opacity .18s ease, transform .2s var(--ease-out-strong, ease-out); }
-.search-result strong { transition: color .16s ease; }
+.knowledge-page { display: flex; height: calc(100vh - var(--topbar-height, 64px)); min-height: 620px; flex-direction: column; background: var(--page-bg, #f5f6fa); }
+.workspace { display: grid; min-height: 0; flex: 1; grid-template-columns: 310px minmax(0, 1fr); margin: 14px; overflow: hidden; border: 1px solid var(--border-color); border-radius: var(--radius-xl, 16px); background: var(--surface-card, #fff); box-shadow: var(--shadow-card, 0 8px 30px rgba(30, 36, 50, .06)); }
+.workspace.collapsed { grid-template-columns: 54px minmax(0, 1fr); }
+.category-options { width: 100%; }
+.category-options :deep(.el-radio-button) { flex: 1; }
+.category-options :deep(.el-radio-button__inner) { width: 100%; }
+.member-add { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
+.candidate-username { color: var(--text-primary); }
+.candidate-real-name { margin-left: 8px; color: var(--text-secondary); font-size: 12px; }
+.member-table { display: grid; max-height: 360px; gap: 8px; margin: 16px 0; overflow-y: auto; }
+.member-row { display: grid; grid-template-columns: minmax(0, 1fr) 150px auto; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: var(--radius-md, 10px); }
+.member-row-invalid { border-color: var(--color-danger); background: var(--color-danger-bg); }
+.member-identity { display: grid; min-width: 0; gap: 3px; }
+.member-username { overflow: hidden; color: var(--text-primary); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.member-real-name { overflow: hidden; color: var(--text-secondary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.member-invalid { color: var(--color-danger); font-size: 12px; line-height: 1.4; }
+.actor-lock { max-width: 150px; color: var(--text-secondary); font-size: 12px; line-height: 1.4; }
+.search-result { display: grid; width: 100%; gap: 6px; padding: 14px 4px; border: 0; border-bottom: 1px solid var(--border-color); color: var(--text-primary); background: transparent; cursor: pointer; text-align: left; }
 .search-result span { color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
 .search-result:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
 .review-detail { display: grid; gap: 12px; }
 .review-meta { color: var(--text-muted-blue); font-size: 13px; }
 .review-detail pre { max-height: 55vh; margin: 0; overflow: auto; padding: 22px; border: 1px solid var(--border-color); border-radius: var(--radius-lg, 12px); color: var(--text-primary); background: var(--surface-subtle, #fafafa); font: inherit; line-height: 1.8; white-space: pre-wrap; }
-@keyframes workspace-in { from { opacity: 0; transform: translateY(12px) scale(.995); } to { opacity: 1; transform: translateY(0) scale(1); } }
-@keyframes result-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-@media (hover: hover) and (pointer: fine) { .search-result:hover { background: var(--color-primary-light); } .search-result:hover strong { color: var(--color-primary); } .search-result:hover::after { opacity: 1; transform: translate(0, -50%); } }
-@media (max-width: 900px) { .knowledge-page { height: auto; min-height: calc(100vh - 64px); } .page-bar { align-items: stretch; flex-direction: column; } .search-box { width: 100%; } .workspace { min-height: 760px; grid-template-columns: 220px minmax(0, 1fr); margin: 8px; } }
-@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } .workspace, .search-result { animation: none; } .search-box :deep(.el-input__wrapper), .search-result, .search-result::after, .search-result strong { transition: none; } }
+@media (hover: hover) and (pointer: fine) { .search-result:hover { background: var(--color-primary-light); } }
+@media (max-width: 900px) { .knowledge-page { height: auto; min-height: calc(100vh - 64px); } .workspace { min-height: 760px; grid-template-columns: minmax(250px, 42vw) minmax(0, 1fr); margin: 8px; } .workspace.collapsed { grid-template-columns: 54px minmax(0, 1fr); } }
+@media (max-width: 640px) { .member-add { grid-template-columns: minmax(0, 1fr); } .member-row { grid-template-columns: minmax(0, 1fr); } .actor-lock { max-width: none; } }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
 </style>
