@@ -110,3 +110,15 @@ test('knowledge sidebar scrolls when libraries and directory nodes exceed its he
   const sidebar = read('../src/views/knowledge/components/KnowledgeSidebar.vue')
   assert.match(sidebar, /\.knowledge-sidebar\s*\{[^}]*overflow-y:\s*auto;/s)
 })
+
+test('selected library expands its directory tree inline with compact editor density', () => {
+  const sidebar = read('../src/views/knowledge/components/KnowledgeSidebar.vue')
+  const editor = read('../src/views/knowledge/components/KnowledgeEditor.vue')
+  const toolbar = read('../src/views/knowledge/components/EditorToolbar.vue')
+  const workbench = read('../src/views/knowledge/KnowledgeWorkbench.vue')
+  assert.match(sidebar, /v-if="library\.id === selectedLibraryId" class="tree-section"/)
+  assert.doesNotMatch(sidebar, /v-if="selectedLibraryId" class="tree-section"/)
+  assert.match(workbench, /grid-template-columns:\s*280px minmax\(0,\s*1fr\)/)
+  assert.match(editor, /font-size:\s*15px;\s*line-height:\s*1\.7/)
+  assert.match(toolbar, /height:\s*30px/)
+})

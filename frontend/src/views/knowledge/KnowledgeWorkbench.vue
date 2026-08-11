@@ -366,13 +366,13 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
 </script>
 
 <style scoped>
-.knowledge-page { display: flex; height: calc(100vh - var(--topbar-height, 64px)); min-height: 620px; flex-direction: column; background: var(--page-bg, #f5f6fa); }
-.page-bar { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 14px 20px; border-bottom: 1px solid var(--border-color); background: rgba(255, 255, 255, .92); backdrop-filter: blur(14px); }
+.knowledge-page { display: flex; height: calc(100vh - var(--topbar-height, 64px)); min-height: 0; flex-direction: column; background: var(--page-bg, #f5f6fa); }
+.page-bar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 14px; border-bottom: 1px solid var(--border-color); background: rgba(255, 255, 255, .92); backdrop-filter: blur(14px); }
 .search-box { display: flex; width: min(520px, 55vw); gap: 8px; }
 .search-box :deep(.el-input__wrapper) { transition: box-shadow .2s var(--ease-out-strong, ease-out); }
 .search-box :deep(.el-input__wrapper.is-focus) { box-shadow: 0 0 0 1px var(--color-primary) inset, 0 0 0 4px var(--color-primary-glow); }
 .page-actions { display: flex; gap: 8px; }
-.workspace { display: grid; min-height: 0; flex: 1; grid-template-columns: 300px minmax(0, 1fr); margin: 14px; overflow: hidden; border: 1px solid var(--border-color); border-radius: var(--radius-xl, 16px); background: var(--surface-card, #fff); box-shadow: var(--shadow-card, 0 8px 30px rgba(30, 36, 50, .06)); animation: workspace-in .26s var(--ease-out-strong, ease-out) both; }
+.workspace { display: grid; min-height: 0; flex: 1; grid-template-columns: 280px minmax(0, 1fr); margin: 10px; overflow: hidden; border: 1px solid var(--border-color); border-radius: var(--radius-lg, 12px); background: var(--surface-card, #fff); box-shadow: var(--shadow-card, 0 8px 30px rgba(30, 36, 50, .06)); animation: workspace-in .26s var(--ease-out-strong, ease-out) both; }
 .member-table { display: grid; gap: 8px; margin: 16px 0; }
 .member-row { display: grid; grid-template-columns: 180px 1fr auto; gap: 10px; }
 .search-result { position: relative; display: grid; width: 100%; gap: 6px; padding: 14px 4px; border: 0; border-bottom: 1px solid var(--border-color); color: var(--text-primary); background: transparent; cursor: pointer; text-align: left; animation: result-in .2s var(--ease-out-strong, ease-out) both; animation-delay: calc(var(--stagger, 0) * 35ms); transition: background-color .16s ease; }
@@ -386,6 +386,6 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
 @keyframes workspace-in { from { opacity: 0; transform: translateY(12px) scale(.995); } to { opacity: 1; transform: translateY(0) scale(1); } }
 @keyframes result-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 @media (hover: hover) and (pointer: fine) { .search-result:hover { background: var(--color-primary-light); } .search-result:hover strong { color: var(--color-primary); } .search-result:hover::after { opacity: 1; transform: translate(0, -50%); } }
-@media (max-width: 900px) { .knowledge-page { height: auto; min-height: calc(100vh - 64px); } .page-bar { align-items: stretch; flex-direction: column; } .search-box { width: 100%; } .workspace { min-height: 760px; grid-template-columns: 240px minmax(0, 1fr); margin: 8px; } }
+@media (max-width: 900px) { .knowledge-page { height: auto; min-height: calc(100vh - 64px); } .page-bar { align-items: stretch; flex-direction: column; } .search-box { width: 100%; } .workspace { min-height: 760px; grid-template-columns: 220px minmax(0, 1fr); margin: 8px; } }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } .workspace, .search-result { animation: none; } .search-box :deep(.el-input__wrapper), .search-result, .search-result::after, .search-result strong { transition: none; } }
 </style>

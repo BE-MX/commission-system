@@ -82,19 +82,19 @@ function table(command) {
 </script>
 
 <style scoped>
-.editor-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 20px; border-bottom: 1px solid var(--border-color); background: var(--surface-subtle); }
-.tool-group { display: flex; align-items: center; gap: 2px; padding-right: 6px; border-right: 1px solid var(--border-color); }
+.editor-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 5px 14px; border-bottom: 1px solid var(--border-color); background: var(--surface-subtle); }
+.tool-group { display: flex; align-items: center; gap: 2px; padding-right: 4px; border-right: 1px solid var(--border-color); }
 .tool-group:last-of-type { border-right: 0; }
-button, select { height: 32px; border: 1px solid transparent; border-radius: 7px; color: var(--text-secondary); background: transparent; font: inherit; }
-button { min-width: 32px; padding: 0 7px; cursor: pointer; transition: transform 120ms cubic-bezier(.23,1,.32,1), color 120ms ease, background-color 120ms ease; }
+button, select { height: 30px; border: 1px solid transparent; border-radius: 6px; color: var(--text-secondary); background: transparent; font: inherit; font-size: 13px; }
+button { min-width: 30px; padding: 0 6px; cursor: pointer; transition: transform 120ms cubic-bezier(.23,1,.32,1), color 120ms ease, background-color 120ms ease; }
 button:active:not(:disabled) { transform: scale(.97); }
 button.active { color: var(--color-primary); background: var(--color-primary-light); }
 button.danger { color: var(--color-danger); }
 button:disabled { opacity: .35; cursor: not-allowed; }
 button:focus-visible, select:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
-select { max-width: 112px; padding: 0 26px 0 9px; border-color: var(--border-color); cursor: pointer; }
+select { max-width: 104px; padding: 0 24px 0 8px; border-color: var(--border-color); cursor: pointer; }
 .table-tools button { width: auto; font-size: 12px; }
-.shortcut-hint { margin-left: auto; color: var(--text-muted-blue); font-size: 12px; white-space: nowrap; }
+.shortcut-hint { margin-left: auto; color: var(--text-muted-blue); font-size: 11px; white-space: nowrap; }
 @media (hover: hover) and (pointer: fine) { button:hover:not(:disabled), select:hover { color: var(--color-primary); background: var(--color-primary-light); } }
 @media (prefers-reduced-motion: reduce) { button { transition: color 120ms ease, background-color 120ms ease; } button:active:not(:disabled) { transform: none; } }
 </style>
