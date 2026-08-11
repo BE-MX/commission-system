@@ -832,6 +832,8 @@ frontend/src/
 
 Tiptap 3.29 栈，纯函数与命令目录抽到 `components/editorConfig.js`（slash 命令过滤、大纲抽取、保存态标签均有 `frontend/tests/knowledgeEditor.test.mjs` 覆盖，跑 `node --test`）。工具栏 / slash 菜单 / 大纲拆成 `EditorToolbar.vue` / `EditorSlashMenu.vue` / `EditorOutline.vue`，`KnowledgeEditor.vue` 只做协调。**持久化的 JSON 必须仍能通过后端 `content.py` 白名单**——前端加节点类型（如 task list）时要同步确认白名单，否则保存静默被拒。
 
+**字体颜色（2026-08-11）**：工具栏只提供默认、重点、风险、完成、说明五个选项；文档 JSON 只保存 `textColor.attrs.tone = gold|danger|success|info`，默认色不保存 mark。渲染时由设计令牌决定实际颜色，外部 HTML 的任意 `style="color"` 不解析、不保留，后端 `content.py` 同步拒绝未知 tone、缺失 tone 和多余属性。该能力不改变表结构，无需迁移。
+
 脏态口径：切换文档 / 关闭页面前拦截未保存草稿；保存态标签四态 draft/dirty/saving/error 对应状态点颜色。
 
 ### 删除与并发（2026-08-10）
