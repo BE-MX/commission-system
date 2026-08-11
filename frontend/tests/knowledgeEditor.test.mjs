@@ -206,3 +206,12 @@ test('balanced sidebar keeps the selected tree and compact editor density', () =
   assert.match(editor, /font-size:\s*15px;\s*line-height:\s*1\.7/)
   assert.match(toolbar, /height:\s*30px/)
 })
+
+test('editor scroll viewport includes its padding inside the available height', () => {
+  const editor = read('../src/views/knowledge/components/KnowledgeEditor.vue')
+
+  assert.match(
+    editor,
+    /\.document-canvas\s*\{[^}]*box-sizing:\s*border-box;[^}]*height:\s*100%;[^}]*overflow:\s*auto;/s,
+  )
+})

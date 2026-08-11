@@ -297,7 +297,7 @@ onBeforeUnmount(() => editor.value?.destroy())
 .delete-action { color: var(--color-danger); }
 .editor-body { display: grid; min-width: 0; min-height: 0; flex: 1; grid-template-columns: minmax(0, 1fr) 170px; }
 .canvas-wrap { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
-.document-canvas { height: 100%; overflow: auto; padding: 24px max(24px, calc((100% - 840px) / 2)); scroll-padding-top: 18px; }
+.document-canvas { box-sizing: border-box; height: 100%; overflow: auto; padding: 24px max(24px, calc((100% - 840px) / 2)); scroll-padding-top: 18px; }
 .document-canvas :deep(.tiptap) { min-height: 420px; color: var(--text-primary); font-size: 15px; line-height: 1.7; outline: none; }
 .document-canvas.is-empty :deep(.tiptap p:first-child)::before { float: left; height: 0; color: var(--text-muted-blue); content: '输入 / 插入标题、列表、表格等内容'; pointer-events: none; }
 .document-canvas :deep(.tiptap h1) { margin: 1.25em 0 .45em; font-size: 26px; line-height: 1.3; }
