@@ -26,7 +26,8 @@ _CONTAINER_TYPES = {
     "taskItem",
 }
 _LEAF_TYPES = {"text", "hardBreak", "horizontalRule"}
-_ALLOWED_MARKS = {"bold", "italic", "strike", "code", "link", "confirmation"}
+_ALLOWED_MARKS = {"bold", "italic", "strike", "code", "link", "confirmation", "textColor"}
+_TEXT_COLOR_TONES = {"gold", "danger", "success", "info"}
 _BLOCK_BREAKS = {
     "paragraph",
     "heading",
@@ -55,6 +56,9 @@ def _validate_marks(marks: Any) -> None:
                 raise ContentValidationError("invalid link")
             if set(attrs) - {"href", "target", "rel", "class"}:
                 raise ContentValidationError("unsupported link attribute")
+        elif mark["type"] == "textColor":
+            if set(attrs) != {"tone"} or attrs.get("tone") not in _TEXT_COLOR_TONES:
+                raise ContentValidationError("invalid text color")
         elif attrs:
             raise ContentValidationError("unsupported mark attributes")
 

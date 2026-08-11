@@ -59,6 +59,24 @@ def test_validate_content_accepts_tiptap_table_cell_alignment_attributes():
     assert validate_content(content) == content
 
 
+@pytest.mark.parametrize("tone", ["gold", "danger", "success", "info"])
+def test_validate_content_accepts_semantic_text_colors_without_changing_search_text(tone):
+    content = {
+        "type": "doc",
+        "content": [{
+            "type": "paragraph",
+            "content": [{
+                "type": "text",
+                "text": "受控颜色",
+                "marks": [{"type": "textColor", "attrs": {"tone": tone}}],
+            }],
+        }],
+    }
+
+    assert validate_content(content) == content
+    assert extract_text(content) == "受控颜色"
+
+
 @pytest.mark.parametrize(
     "content",
     [
@@ -68,6 +86,9 @@ def test_validate_content_accepts_tiptap_table_cell_alignment_attributes():
         {"type": "doc", "content": [{"type": "iframe", "attrs": {"src": "https://evil.test"}}]},
         {"type": "doc", "content": [{"type": "heading", "attrs": {"level": 9}}]},
         {"type": "doc", "content": [{"type": "tableCell", "attrs": {"align": "justify"}}]},
+        {"type": "doc", "content": [{"type": "text", "text": "x", "marks": [{"type": "textColor", "attrs": {}}]}]},
+        {"type": "doc", "content": [{"type": "text", "text": "x", "marks": [{"type": "textColor", "attrs": {"tone": "purple"}}]}]},
+        {"type": "doc", "content": [{"type": "text", "text": "x", "marks": [{"type": "textColor", "attrs": {"tone": "gold", "style": "color:red"}}]}]},
         {"type": "doc", "content": [{"type": "text", "text": 3}]},
     ],
 )
