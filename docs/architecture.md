@@ -89,7 +89,7 @@
 - `app/mini/` — 微信小程序端（router/service/auth/schemas — 扫码报工/历史/总览/撤销/登录绑定）
 - `app/training/` — 培训速递（router/models/schemas/service + push_service 钉钉推送；参训人自助发布 + AI 提炼草稿（文字/图片/PDF 多模态）+ 发布必填分区校验，075 迁移，2026-07-18 合入）
 - `app/pm/` — PM 项目资料协作站（**独立 HMAC 门牌鉴权，不接平台 RBAC**；材料/版本/版本评论/任务/动态审计 + AI 差异管线，076 迁移；前端为 `frontend-pm/` 独立应用，2026-07-18 合入，版本评论 2026-07-19）
-- `app/mcp/` — MCP 网关（FastMCP streamable HTTP，`mount("/mcp")`；`tools.py` 物流 3 工具 + `asset_tools.py` 素材 2 工具；**个人 opaque token 鉴权**，解析出与登录 JWT 完全一致的 claims 从而零改动复用下游 service 的 data_scope；051 迁移，素材工具 2026-07-22 加。接入说明 `docs/mcp-tracking-integration.md`）
+- `app/mcp/` — MCP 网关（FastMCP streamable HTTP，`mount("/mcp")`；物流 3 工具 + 素材 2 工具 + 已发布知识 2 工具 + 产品/标准价格 2 工具；**个人 opaque token 鉴权**，解析出与登录 JWT 一致的 claims，继续执行领域 service 的权限与数据范围；产品和价格工具只允许精确查询、不提供批量导出。接入说明 `docs/mcp-tracking-integration.md`）
 
 ## 前端结构
 

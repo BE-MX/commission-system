@@ -387,12 +387,16 @@
   - `GET /tokens` — 列出 token（不含明文，含 user/label/is_active/last_used_at）
   - `DELETE /tokens/{token_id}` — 吊销 token（软停用 is_active=False）
 - `/api/pm` — PM 项目资料协作站（`pm/router.py`，独立站点 pm.leshine.work 的后端；**不接平台 RBAC**：`POST /entry` 白名单换 HMAC token，其余端点走 `require_pm_member` 验签+每请求回查白名单；详见文末「PM 项目资料协作站」节）
-- `/mcp` — **MCP streamable-http 端点**（非 REST，`backend/app/mcp/server.py`，mount 子 ASGI 应用；stateless JSON）。物流录单/查询的入口无关 MCP 服务，业务员用个人 token（`Authorization: Bearer <token>`）以自己的 agent 接入。三个工具：
+- `/mcp` — **MCP streamable-http 端点**（非 REST，`backend/app/mcp/server.py`，mount 子 ASGI 应用；stateless JSON）。业务员用个人 token（`Authorization: Bearer <token>`）以自己的 agent 接入。九个工具：
   - `record_shipment(waybill_no, carrier[DHL/FEDEX], recipient_name, recipient_country, ship_date)` — 录单+启动跟踪+立即回状态（需 `tracking:write`；复用 `upload_service.create_waybill_with_tracking`；归属落调用者）
   - `track_shipment(waybill_no, refresh=false)` — 查状态与轨迹（需 `tracking:read`；**先 `apply_data_scope` 归属校验**，非本人且无 `read_all` 视为未跟踪，不泄露他人 PII；复用 `shipment_service.get_shipment_detail`，refresh 时先 `polling_service.refresh_single`）
   - `list_my_shipments(status?, keyword?, limit?)` — 列本人名下运单（需 `tracking:read`；复用 `shipment_service.list_shipments`，`apply_data_scope` 按 dingtalk_user_id 归属过滤）
   - `list_asset_taxonomy()` — 素材库标签词表发现（需 `asset:read`；返回可见维度/值/英文别名/用法说明；`app/mcp/asset_tools.py`）
   - `search_assets(content_category?, content_type?, product_type?, color_code?, color_family?, texture?, shoot_style?, process_step?, theme?, year?, media_trait?, file_type?, orientation?, keyword?, limit?)` — 素材检索（需 `asset:read`；参数自由字符串，运行时按 value/name_en/aliases 三路解析，产品族值自动展开子级；解析失败回相近候选；**结果侧过滤 AssetPermission**（all/specific 含本人可见，design_dept/sales 仅 admin），返回 24h 签名下载 URL）
+  - `search_knowledge(query, limit?)` — 检索当前账号有库级权限的已发布知识，草稿和待审版本不返回（需 `knowledge:read` + 对应知识库成员权限）
+  - `get_knowledge_document(document_id)` — 读取单篇有权访问的已发布文档纯文本，不返回附件、编辑器 JSON 或原文件下载地址
+  - `find_product(model, color, size, unit)` — 按四个精确维度匹配结构化产品目录（需 `invoice_price:read`；不提供整目录导出）
+  - `get_standard_price(product_display, length, unit, color)` — 查询一个标准价格矩阵格（需 `invoice_price:read`；只返回标准参考价，不接受 `customer_id`，不返回客户价或调价规则；正式报价仍需人工确认）
 - `https://leshine.work/mcp/social-customer/` — **独立云端社媒客户查询 MCP**（Streamable HTTP、stateless JSON、Bearer token、systemd `social-customer-mcp`、不经过 frp）。唯一工具 `social_customer_search(params)`：`email`/`social_account`/`contact_phone` 三选一精确查询，返回公司、客户简称、联系人、双方邮箱、电话、社交平台/账号、负责人；负责人为空固定返回“未进入私海”；limit 默认 20、最大 50。完整说明见 `docs/social-customer-mcp.md`。
 
 ## 客户售后管理（`/api/aftersales`）

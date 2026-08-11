@@ -230,6 +230,8 @@ async def test_tools_schema_excludes_ctx():
         "record_shipment", "track_shipment", "list_my_shipments",
         "list_asset_taxonomy", "search_assets",
         "search_knowledge", "get_knowledge_document",
+        "get_standard_price",
+        "find_product",
     }
     for t in tools:
         schema = t.inputSchema or {}
@@ -287,6 +289,8 @@ async def test_http_end_to_end_tools_and_auth():
                 "record_shipment", "track_shipment", "list_my_shipments",
                 "list_asset_taxonomy", "search_assets",
                 "search_knowledge", "get_knowledge_document",
+                "get_standard_price",
+                "find_product",
             }
 
             rc = await c.post("/mcp/", json={

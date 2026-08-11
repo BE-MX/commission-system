@@ -17,6 +17,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from app.mcp.tools import register_tools
 from app.mcp.asset_tools import register_asset_tools
 from app.mcp.knowledge_tools import register_knowledge_tools
+from app.mcp.price_tools import register_price_tools
 
 logger = logging.getLogger("commission.mcp.server")
 
@@ -36,6 +37,7 @@ mcp = FastMCP(
 register_tools(mcp)
 register_asset_tools(mcp)
 register_knowledge_tools(mcp)
+register_price_tools(mcp)
 
 # 构建 ASGI 子应用（同时初始化 session_manager）
 _mcp_asgi_app = mcp.streamable_http_app()
@@ -46,7 +48,8 @@ def mount_mcp(app: FastAPI) -> None:
     app.mount("/mcp", _mcp_asgi_app)
     logger.info(
         "MCP server mounted at /mcp (tools: record_shipment/track_shipment/list_my_shipments"
-        "/list_asset_taxonomy/search_assets/search_knowledge/get_knowledge_document)"
+        "/list_asset_taxonomy/search_assets/search_knowledge/get_knowledge_document"
+        "/get_standard_price/find_product)"
     )
 
 
