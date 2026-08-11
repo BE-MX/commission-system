@@ -258,7 +258,7 @@ function navigateOutline(item) {
 watch(() => props.document, value => {
   changeVersion.value += 1
   title.value = value?.title || ''
-  editor.value?.setEditable(Boolean(value && actions.value.canSave))
+  editor.value?.setEditable(Boolean(value && actions.value.canSave), false)
   editor.value?.commands.setContent(
     value?.content_json || { type: 'doc', content: [{ type: 'paragraph' }] },
     { emitUpdate: false },
@@ -271,7 +271,7 @@ watch(() => props.document, value => {
   refreshDerivedState()
 }, { immediate: true })
 
-watch(actions, value => editor.value?.setEditable(Boolean(props.document && value.canSave)))
+watch(actions, value => editor.value?.setEditable(Boolean(props.document && value.canSave), false))
 onBeforeUnmount(() => editor.value?.destroy())
 </script>
 

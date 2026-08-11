@@ -70,6 +70,8 @@ test('programmatic hydration and internal refresh never trigger the discard guar
   const editor = read('../src/views/knowledge/components/KnowledgeEditor.vue')
   const workbench = read('../src/views/knowledge/KnowledgeWorkbench.vue')
   assert.match(editor, /commands\.setContent\([\s\S]*?\{ emitUpdate: false \},?\s*\)/)
+  assert.match(editor, /setEditable\(Boolean\(value && actions\.value\.canSave\), false\)/)
+  assert.match(editor, /setEditable\(Boolean\(props\.document && value\.canSave\), false\)/)
   assert.match(workbench, /async function reloadDocument\(id\)[\s\S]*?knowledgeClient\.get\(`\/documents\/\$\{id\}`\)/)
   assert.match(workbench, /async function selectDocument\(id\)\s*\{\s*if \(document\.value\?\.id === id\) return\s*if \(!\(await allowDiscard\(\)\)\) return\s*await reloadDocument\(id\)/)
   const saveBody = workbench.slice(workbench.indexOf('async function saveDocument'), workbench.indexOf('async function submitDocument'))
