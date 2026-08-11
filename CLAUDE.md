@@ -1,6 +1,6 @@
 # LeShine Ark Platform - 莱莎方舟平台
 
-企业内部综合中台（FastAPI + Vue3 单体，~30 日活）。23 个业务模块：提成、订单发票（含配件双类型）、展会 AI 试戴、物流跟踪、运单上传(OCR)、设计预约、认证 RBAC、AI 接入、方舟洞见（含客户机会台/经营雷达）、素材中台、发色数字化、备货、生产订单、生产报工、**内贸订单（按数量拆批报工，与外贸生产订单/报工平行的一套）**、报表中心(Stimulsoft)、微信小程序、数据概念治理、WhatsApp 同步、钉钉集成、短链、培训速递、PM 资料协作站（独立鉴权）。
+企业内部综合中台（FastAPI + Vue3 单体，~30 日活）。32 个业务模块：提成、订单发票（含配件双类型）、客户售后、展会 AI 试戴、物流跟踪、运单上传(OCR)、设计预约、认证 RBAC、AI 接入、方舟洞见（含客户机会台/经营雷达）、素材中台、发色数字化、备货、生产订单、生产报工、**内贸订单（按数量拆批报工，与外贸生产订单/报工平行的一套）**、薪资计算、报表中心(Stimulsoft)、微信小程序、数据概念治理、WhatsApp 同步、钉钉集成、短链、培训速递、PM 资料协作站（独立鉴权）、采购节大屏、名片管家、AI 生图工作台、客户生图门户（公开层+邀请制）、AI 方案对话、智能获客、企业知识库（ACL+发布审批，HTTP 与 MCP 共用 service）。
 
 **本文件是宪法：只写改变行为的规则。参考资料在指针区按需查阅，不要凭记忆写 API/表结构。**
 
@@ -111,4 +111,4 @@ miniprogram/  services/whatsapp-connector/  deploy/  docs/  config/
 | 架构评估与治理路线图 | `docs/2026-07-03-architecture-assessment.md` |
 | 设计系统（颜色/字体/间距/组件） | `DESIGN.md` |
 | 历史教训 | `.wolf/cerebrum.md` |
-| 需求与原型 | `docs/requirements/`（现役约定）；另有 5 份 2026-07 的设计/计划在 `docs/superpowers/{specs,plans}/`（skill 默认路径遗留，未合并，找不到时记得也翻这里） |
+| 需求与原型 | `docs/requirements/`（现役约定）；另有 10 份 plans + 10 份 specs（2026-07~08）在 `docs/superpowers/{specs,plans}/`（skill 默认路径遗留，未合并，找不到时记得也翻这里） |

@@ -809,9 +809,11 @@ frontend/src/
 
 **邀请素材保留**：`CUSTOMER_IMAGE_RETENTION_DAYS` 默认 30。每天 03:30 的 stable APScheduler job 只处理已经过期满保留期且没有 queued/running generation 的邀请；先提交 LOGO/输出资产 `deleted_at`，再按精确原图与缩略图路径 best-effort 删除。文件删除失败保留软删除行供下一次任务重试，数据库提交失败则绝不碰文件。
 
-## 企业知识库 POC（2026-08-09）
+## 企业知识库（2026-08-09 POC，2026-08-10 编辑器 P0 + 删除）
 
-代码边界：后端 `app/knowledge/`，前端 `views/knowledge/`，MCP 适配器 `app/mcp/knowledge_tools.py`。HTTP 与 MCP 不各自实现权限，而是共同调用 knowledge service。
+**发布状态**：本地 main 已提交，**尚未 push origin、尚未部署生产**（2026-08-10 实测线上 `/api/knowledge/libraries` 404）。
+
+代码边界：后端 `app/knowledge/`（`router.py` / `models.py` / `schemas.py` / `service.py` + `access.py` ACL + `content.py` Tiptap JSON 白名单），前端 `views/knowledge/`（`KnowledgeWorkbench.vue` 薄壳 + `knowledgeState.js` + `components/`），MCP 适配器 `app/mcp/knowledge_tools.py`。HTTP 与 MCP 不各自实现权限，而是共同调用 knowledge service。
 
 部署顺序：
 
@@ -821,6 +823,18 @@ frontend/src/
 4. 需要 Agent 接入时，在现有 MCP Token 页面给对应用户签发个人 Token；Agent 通过 `/mcp` 使用 `search_knowledge` 和 `get_knowledge_document`。
 
 本期不提供附件、批量导出或下载接口。“只使用不能下载”只代表产品不提供下载能力；任何已经展示给用户或模型的内容都不能从信息论上保证不可复制。生产风控应结合最小 ACL、发布审批、响应限量、审计告警和敏感知识拆分。
+
+### 编辑器 P0（2026-08-10）
+
+Tiptap 3.29 栈，纯函数与命令目录抽到 `components/editorConfig.js`（slash 命令过滤、大纲抽取、保存态标签均有 `frontend/tests/knowledgeEditor.test.mjs` 覆盖，跑 `node --test`）。工具栏 / slash 菜单 / 大纲拆成 `EditorToolbar.vue` / `EditorSlashMenu.vue` / `EditorOutline.vue`，`KnowledgeEditor.vue` 只做协调。**持久化的 JSON 必须仍能通过后端 `content.py` 白名单**——前端加节点类型（如 task list）时要同步确认白名单，否则保存静默被拒。
+
+脏态口径：切换文档 / 关闭页面前拦截未保存草稿；保存态标签四态 draft/dirty/saving/error 对应状态点颜色。
+
+### 删除与并发（2026-08-10）
+
+软删除：`DELETE /libraries/{id}` 与 `DELETE /documents/{id}`，目录递归软删子树，同时把关联待审批置 `cancelled`。返回 `data` 含 `id`、`folder_count`、`document_count`、`cancelled_approval_count`。删除后内容立即从库列表、目录树、直接读取、搜索、MCP 查询和审批队列消失。
+
+**并发口径**：同一知识库内的新建、保存、提交、审批和软删除共用 `ark_knowledge_libraries` 行锁串行化；**获取锁后必须重新校验文档与审批状态**，否则删除期间会产生活跃孤儿节点或残留待审批。`ark_knowledge_approval_requests` 的 `(document_id, pending_slot)` 唯一约束在数据库层阻止并发双待审（pending 时 slot=1，终态置 NULL）。
 
 ## 客户 AI 方案对话（ai_chat，2026-08-09）
 
