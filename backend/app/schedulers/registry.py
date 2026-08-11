@@ -111,7 +111,7 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
         monitor_festival_and_recover_daily,
         trigger="interval", minutes=1,
         id=JOB_FESTIVAL_EVENT_MONITOR, replace_existing=True,
-        max_instances=1, coalesce=True,
+        max_instances=1, coalesce=True, misfire_grace_time=60,
     )
     scheduler.add_job(
         send_daily_report_if_due,

@@ -119,6 +119,8 @@ class TestSchedulerRegistration:
             assert daily_fields["hour"] == "17"
             assert daily_fields["minute"] == "30"
             assert daily.kwargs == {}
+            festival_monitor = scheduler.get_job("festival_event_monitor")
+            assert festival_monitor.misfire_grace_time == 60
         finally:
             shutdown_scheduler(scheduler)
 
