@@ -5,7 +5,7 @@
         <el-input v-model="searchQuery" clearable placeholder="搜索已发布知识" @keyup.enter="runSearch">
           <template #prefix><el-icon><Search /></el-icon></template>
         </el-input>
-        <GlassButton variant="primary" @click="runSearch">搜索</GlassButton>
+        <GlassButton variant="primary" :loading="searching" @click="runSearch">搜索</GlassButton>
       </div>
       <div class="page-actions">
         <GlassButton v-if="capabilities.review" variant="ghost" left-icon="Stamp" @click="openApprovals">审批队列</GlassButton>
@@ -82,7 +82,7 @@
 
     <el-dialog v-model="searchDialog" title="搜索结果" width="680px">
       <el-empty v-if="!searchResults.length" description="没有找到已发布内容" />
-      <button v-for="item in searchResults" :key="item.document_id" class="search-result" type="button" @click="openSearchResult(item)">
+      <button v-for="(item, index) in searchResults" :key="item.document_id" class="search-result" type="button" :style="{ '--stagger': Math.min(index, 8) }" @click="openSearchResult(item)">
         <strong>{{ item.title }}</strong><span>{{ item.summary }}</span>
       </button>
     </el-dialog>
@@ -132,6 +132,7 @@ const approvals = ref([])
 const members = ref([])
 const searchQuery = ref('')
 const searchResults = ref([])
+const searching = ref(false)
 const libraryForm = reactive({ name: '', description: '' })
 const nodeForm = reactive({ title: '', node_type: 'document' })
 
@@ -327,9 +328,14 @@ async function reject(item) {
 }
 
 async function runSearch() {
-  if (!searchQuery.value.trim()) return msgError('请输入搜索关键词')
-  searchResults.value = unwrap(await knowledgeClient.get('/search', { params: { q: searchQuery.value, limit: 20 } }))
-  searchDialog.value = true
+  if (searching.value) return
+  const query = searchQuery.value.trim()
+  if (!query) return msgError('请输入搜索关键词')
+  searching.value = true
+  try {
+    searchResults.value = unwrap(await knowledgeClient.get('/search', { params: { q: query, limit: 20 } }))
+    searchDialog.value = true
+  } finally { searching.value = false }
 }
 
 async function openSearchResult(item) {
@@ -363,17 +369,23 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
 .knowledge-page { display: flex; height: calc(100vh - var(--topbar-height, 64px)); min-height: 620px; flex-direction: column; background: var(--page-bg, #f5f6fa); }
 .page-bar { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 14px 20px; border-bottom: 1px solid var(--border-color); background: rgba(255, 255, 255, .92); backdrop-filter: blur(14px); }
 .search-box { display: flex; width: min(520px, 55vw); gap: 8px; }
+.search-box :deep(.el-input__wrapper) { transition: box-shadow .2s var(--ease-out-strong, ease-out); }
+.search-box :deep(.el-input__wrapper.is-focus) { box-shadow: 0 0 0 1px var(--color-primary) inset, 0 0 0 4px var(--color-primary-glow); }
 .page-actions { display: flex; gap: 8px; }
-.workspace { display: grid; min-height: 0; flex: 1; grid-template-columns: 300px minmax(0, 1fr); margin: 14px; overflow: hidden; border: 1px solid var(--border-color); border-radius: var(--radius-xl, 16px); background: var(--surface-card, #fff); box-shadow: var(--shadow-card, 0 8px 30px rgba(30, 36, 50, .06)); }
+.workspace { display: grid; min-height: 0; flex: 1; grid-template-columns: 300px minmax(0, 1fr); margin: 14px; overflow: hidden; border: 1px solid var(--border-color); border-radius: var(--radius-xl, 16px); background: var(--surface-card, #fff); box-shadow: var(--shadow-card, 0 8px 30px rgba(30, 36, 50, .06)); animation: workspace-in .26s var(--ease-out-strong, ease-out) both; }
 .member-table { display: grid; gap: 8px; margin: 16px 0; }
 .member-row { display: grid; grid-template-columns: 180px 1fr auto; gap: 10px; }
-.search-result { display: grid; width: 100%; gap: 6px; padding: 14px 4px; border: 0; border-bottom: 1px solid var(--border-color); color: var(--text-primary); background: transparent; cursor: pointer; text-align: left; }
+.search-result { position: relative; display: grid; width: 100%; gap: 6px; padding: 14px 4px; border: 0; border-bottom: 1px solid var(--border-color); color: var(--text-primary); background: transparent; cursor: pointer; text-align: left; animation: result-in .2s var(--ease-out-strong, ease-out) both; animation-delay: calc(var(--stagger, 0) * 35ms); transition: background-color .16s ease; }
+.search-result::after { position: absolute; top: 50%; right: 8px; color: var(--color-primary); content: '→'; opacity: 0; transform: translate(-6px, -50%); transition: opacity .18s ease, transform .2s var(--ease-out-strong, ease-out); }
+.search-result strong { transition: color .16s ease; }
 .search-result span { color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
 .search-result:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
 .review-detail { display: grid; gap: 12px; }
 .review-meta { color: var(--text-muted-blue); font-size: 13px; }
 .review-detail pre { max-height: 55vh; margin: 0; overflow: auto; padding: 22px; border: 1px solid var(--border-color); border-radius: var(--radius-lg, 12px); color: var(--text-primary); background: var(--surface-subtle, #fafafa); font: inherit; line-height: 1.8; white-space: pre-wrap; }
-@media (hover: hover) and (pointer: fine) { .search-result:hover { background: var(--color-primary-light); } }
+@keyframes workspace-in { from { opacity: 0; transform: translateY(12px) scale(.995); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes result-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@media (hover: hover) and (pointer: fine) { .search-result:hover { background: var(--color-primary-light); } .search-result:hover strong { color: var(--color-primary); } .search-result:hover::after { opacity: 1; transform: translate(0, -50%); } }
 @media (max-width: 900px) { .knowledge-page { height: auto; min-height: calc(100vh - 64px); } .page-bar { align-items: stretch; flex-direction: column; } .search-box { width: 100%; } .workspace { min-height: 760px; grid-template-columns: 240px minmax(0, 1fr); margin: 8px; } }
-@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } .workspace, .search-result { animation: none; } .search-box :deep(.el-input__wrapper), .search-result, .search-result::after, .search-result strong { transition: none; } }
 </style>

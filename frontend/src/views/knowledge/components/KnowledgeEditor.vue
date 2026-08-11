@@ -7,7 +7,7 @@
         <div class="document-meta">
           <el-tag effect="plain" :type="statusType">{{ statusLabel }}</el-tag>
           <span>版本 v{{ document.version_no || 1 }}</span>
-          <span class="save-status" :class="{ error: saveError }">{{ saveLabel }}</span>
+          <span class="save-status" :class="{ error: saveError }"><i class="save-dot" :class="saveTone" />{{ saveLabel }}</span>
           <span v-if="document.pending_approval_id">审批中仍可编辑，新内容不会改变待审版本</span>
         </div>
       </div>
@@ -92,6 +92,12 @@ const actions = computed(() => documentActions({ role: props.role, status: props
 const statusLabel = computed(() => ({ draft: '草稿', pending: '待审批', published: '已发布' }[props.document?.status] || props.document?.status))
 const statusType = computed(() => ({ draft: 'info', pending: 'warning', published: 'success' }[props.document?.status] || 'info'))
 const saveLabel = computed(() => saveStatusLabel({ dirty: dirty.value, saving: props.saving, error: saveError.value, savedAt: savedAt.value }))
+const saveTone = computed(() => {
+  if (saveError.value) return 'error'
+  if (props.saving) return 'saving'
+  if (dirty.value) return 'dirty'
+  return 'saved'
+})
 const filteredCommands = computed(() => filterEditorCommands(EDITOR_COMMANDS, slashQuery.value))
 
 const editor = useEditor({
@@ -274,10 +280,17 @@ onBeforeUnmount(() => editor.value?.destroy())
 .editor-header { display: flex; flex-shrink: 0; align-items: flex-start; justify-content: space-between; gap: 24px; padding: 18px 24px 14px; border-bottom: 1px solid var(--border-color); }
 .title-block { min-width: 0; flex: 1; }
 .title-block h1 { margin: 0; color: var(--text-primary); font-size: 26px; }
-.title-input :deep(.el-input__wrapper) { padding: 0; box-shadow: none !important; }
+.title-input :deep(.el-input__wrapper) { padding: 0; box-shadow: 0 1px 0 0 transparent !important; transition: box-shadow .25s var(--ease-out-strong, ease-out); }
+.title-input :deep(.el-input__wrapper.is-focus) { box-shadow: 0 2px 0 0 var(--color-primary) !important; }
 .title-input :deep(.el-input__inner) { height: 38px; color: var(--text-primary); font-size: 26px; font-weight: 700; }
 .document-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 8px; color: var(--text-muted-blue); font-size: 12px; }
+.save-status { display: inline-flex; align-items: center; gap: 6px; transition: color .2s ease; }
 .save-status.error { color: var(--color-danger); }
+.save-dot { width: 6px; height: 6px; flex: 0 0 auto; border-radius: 50%; background: var(--text-muted); transition: background-color .25s ease; }
+.save-dot.dirty { background: var(--color-gold-muted); }
+.save-dot.saving { background: var(--color-primary); animation: dot-blink 1s ease-in-out infinite; }
+.save-dot.saved { background: var(--color-success); }
+.save-dot.error { background: var(--color-danger); }
 .header-actions { display: flex; flex-shrink: 0; gap: 8px; }
 .delete-action { color: var(--color-danger); }
 .editor-body { display: grid; min-width: 0; min-height: 0; flex: 1; grid-template-columns: minmax(0, 1fr) 190px; }
@@ -302,10 +315,16 @@ onBeforeUnmount(() => editor.value?.destroy())
 .document-canvas :deep(ul[data-type='taskList'] li) { display: flex; gap: 8px; align-items: flex-start; }
 .document-canvas :deep(ul[data-type='taskList'] label) { padding-top: 2px; }
 .bubble-toolbar { display: flex; gap: 2px; padding: 5px; border: 1px solid var(--border-color); border-radius: 9px; background: var(--surface-card, #fff); box-shadow: 0 10px 28px rgba(26, 26, 46, .15); }
-.bubble-toolbar button { min-width: 30px; height: 30px; padding: 0 7px; border: 0; border-radius: 6px; color: var(--text-secondary); background: transparent; cursor: pointer; }
+.bubble-toolbar button { min-width: 30px; height: 30px; padding: 0 7px; border: 0; border-radius: 6px; color: var(--text-secondary); background: transparent; cursor: pointer; transition: color .12s ease, background-color .12s ease, transform .12s var(--ease-out-strong, ease-out); }
+.bubble-toolbar button:active { transform: scale(.92); }
 .bubble-toolbar button.active { color: var(--color-primary); background: var(--color-primary-light); }
 .empty-editor { display: grid; flex: 1; place-items: center; background: var(--surface-card, #fff); }
+@keyframes dot-blink { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
 @media (hover: hover) and (pointer: fine) { .bubble-toolbar button:hover { color: var(--color-primary); background: var(--color-primary-light); } }
 @media (max-width: 1100px) { .editor-body { grid-template-columns: minmax(0, 1fr); } .editor-body :deep(.editor-outline) { display: none; } }
 @media (max-width: 900px) { .editor-header { flex-direction: column; padding: 16px 18px; } .document-canvas { padding: 24px 20px; } }
+@media (prefers-reduced-motion: reduce) {
+  .save-dot.saving { animation: none; }
+  .title-input :deep(.el-input__wrapper), .save-status, .save-dot, .bubble-toolbar button { transition: none; }
+}
 </style>
