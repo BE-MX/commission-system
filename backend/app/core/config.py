@@ -207,6 +207,17 @@ class Settings(BaseSettings):
     WHATSAPP_AUTO_SYNC_BATCH_SIZE: int = 100
     WHATSAPP_SYNC_MESSAGES_PER_CHAT: int = 100
 
+    # ── 运行与自动化中心（健康检查仅允许由部署环境配置，不接受网页输入）────
+    OPERATIONS_PROBE_TIMEOUT_SECONDS: float = 3.0
+    OPERATIONS_CACHE_TTL_SECONDS: float = 20.0
+    OPERATIONS_ALLOWED_HEALTH_HOSTS: str = "leshine.work,127.0.0.1,localhost"
+    OPERATIONS_SOCIAL_MCP_HEALTH_URL: str = "https://leshine.work/mcp/social-customer/health"
+    OPERATIONS_SHOPIFY_HEALTH_URL: str = ""
+    OPERATIONS_OPENCLAW_HEALTH_URL: str = ""
+    # JSON 数组：[{"id","name","category","environment","owner","management","health_url"}]
+    # 只放无敏感参数的健康地址；展示时会自动去掉 query/userinfo。
+    OPERATIONS_EXTERNAL_SERVICES_JSON: str = ""
+
     # ── 微信小程序 ────────────────────────────────────────
     WX_MINI_APPID: str = ""  # 微信小程序 AppID
     WX_MINI_SECRET: str = ""  # 微信小程序 AppSecret

@@ -427,6 +427,9 @@ def seed_role_permissions(db: Session):
         ("knowledge:admin",  "knowledge", "admin",  "创建知识库并管理成员权限"),
         # MCP 网关(物流录单/查询的入口无关 MCP 服务)
         ("mcp:admin", "mcp", "admin", "发放/吊销 MCP 个人 access token"),
+        # 运行与自动化中心：读取状态与控制任务严格分离；不提供任意远程命令执行。
+        ("operations:read", "operations", "read", "查看运行服务与定时任务状态"),
+        ("operations:admin", "operations", "admin", "立即执行、暂停或恢复本实例定时任务"),
         # 薪资计算。write 与 admin 按**爆炸半径**切：改一个人的档案是 write，
         # 改职级表/规则参数会改全员发薪口径，必须 admin。
         ("salary:read",  "salary", "read",  "查看员工档案/规则参数/工资批次"),
