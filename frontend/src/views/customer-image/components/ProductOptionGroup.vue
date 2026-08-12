@@ -57,14 +57,16 @@ const emit = defineEmits(['update:modelValue'])
 
 <style scoped>
 .option-group { display: grid; gap: 10px; margin: 0; padding: 0; border: 0; }
-legend { margin-bottom: 10px; color: var(--cip-ink); font-size: 14px; font-weight: 650; }
+legend { margin-bottom: 10px; color: var(--cip-ink); font-size: 13px; font-weight: 650; }
 .required { margin-left: 6px; color: var(--cip-danger); font-size: 11px; font-weight: 500; }
+.option-group :deep(.el-switch) { --el-switch-on-color: var(--cip-highlight); --el-switch-off-color: var(--cip-sand); --el-switch-border-color: transparent; }
 .choice-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.choice { display: flex; min-height: 44px; align-items: center; gap: 9px; padding: 8px 10px; cursor: pointer; border: 1px solid var(--cip-border); border-radius: 10px; color: var(--cip-ink); background: var(--cip-surface); text-align: left; transition: transform 180ms cubic-bezier(0.23, 1, 0.32, 1); }
-.choice.selected { border-color: var(--cip-accent); background: var(--cip-accent-soft); }
+.choice { display: flex; min-height: 44px; align-items: center; gap: 9px; padding: 8px 11px; cursor: pointer; border: 1px solid var(--cip-border); border-radius: 11px; color: var(--cip-ink); background: var(--cip-surface-subtle); text-align: left; transition: transform 180ms cubic-bezier(0.23, 1, 0.32, 1); }
+.choice.selected { border-color: var(--cip-highlight); background: var(--cip-accent-soft); box-shadow: inset 0 0 0 1px var(--cip-highlight); }
 .choice:active { transform: scale(.98); }
+.choice:disabled { cursor: not-allowed; opacity: .55; }
 .choice small { display: block; margin-top: 2px; color: var(--cip-muted); font-size: 10px; }
 .swatch { width: 22px; height: 22px; flex: 0 0 22px; border: 1px solid var(--cip-border); border-radius: 50%; box-shadow: inset 0 0 0 2px var(--cip-surface); }
-@media (hover: hover) and (pointer: fine) { .choice:hover { border-color: var(--cip-accent); } }
+@media (hover: hover) and (pointer: fine) { .choice:not(:disabled):hover { border-color: var(--cip-highlight); } }
 @media (prefers-reduced-motion: reduce) { .choice { transition: none; } .choice:active { transform: none; } }
 </style>

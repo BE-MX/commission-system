@@ -9,13 +9,14 @@ const editor = readFileSync(
   'utf8',
 )
 
-test('mobile flow is product header then logo parameters requirement result and history', () => {
-  assert.deepEqual(mobileFlowAreas(), ['logo', 'options', 'requirement', 'preview', 'history', 'spacer'])
-  assert.equal(MOBILE_FLOW_TEMPLATE, '"logo" "options" "requirement" "preview" "history" "spacer"')
+test('mobile flow is product rail then logo parameters requirement result and history', () => {
+  assert.deepEqual(mobileFlowAreas(), ['products', 'logo', 'options', 'requirement', 'preview', 'history', 'spacer'])
+  assert.equal(MOBILE_FLOW_TEMPLATE, '"products" "logo" "options" "requirement" "preview" "history" "spacer"')
 })
 
 test('one responsive DOM tree maps each customer section to its executable grid area', () => {
   const expected = {
+    products: '选择产品',
     logo: 'CustomerLogoUpload',
     options: 'ProductOptionGroup',
     requirement: 'customer-requirement',
