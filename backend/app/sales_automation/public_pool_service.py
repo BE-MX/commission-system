@@ -191,7 +191,7 @@ class BusinessPoolGateway:
                 GROUP_CONCAT(DISTINCT CASE WHEN NULLIF(TRIM(ccs.value), '') IS NOT NULL THEN CONCAT(COALESCE(ccs.platform, 'social'), ':', ccs.value) END ORDER BY ccs.id SEPARATOR ' | ') AS social_summary
             FROM `{self.schema}`.customer_contacts cc
             LEFT JOIN `{self.schema}`.customer_contact_socials ccs
-              ON ccs.customer_id = BINARY cc.customer_id
+              ON BINARY ccs.customer_id = BINARY cc.customer_id
             GROUP BY cc.company_id
         ),
         order_rollup AS (
@@ -231,8 +231,8 @@ class BusinessPoolGateway:
                    CASE WHEN JSON_LENGTH(COALESCE(ci.owner_user_ids, JSON_ARRAY())) = 0 THEN 1 ELSE 0 END AS is_public,
                    {self._feature_sql}
             FROM `{self.schema}`.customer_info ci
-            LEFT JOIN contact_rollup cr ON cr.company_id = ci.company_id
-            LEFT JOIN order_rollup o ON o.company_id = ci.company_id
+            LEFT JOIN contact_rollup cr ON BINARY cr.company_id = BINARY ci.company_id
+            LEFT JOIN order_rollup o ON BINARY o.company_id = BINARY ci.company_id
         )
         SELECT
             COUNT(*) AS total_customers,
@@ -281,8 +281,8 @@ class BusinessPoolGateway:
             SELECT ci.company_id, ci.company_name, ci.country_name, ci.email AS customer_email,
                    {self._feature_sql}
             FROM `{self.schema}`.customer_info ci
-            LEFT JOIN contact_rollup cr ON cr.company_id = ci.company_id
-            LEFT JOIN order_rollup o ON o.company_id = ci.company_id
+            LEFT JOIN contact_rollup cr ON BINARY cr.company_id = BINARY ci.company_id
+            LEFT JOIN order_rollup o ON BINARY o.company_id = BINARY ci.company_id
             WHERE JSON_LENGTH(COALESCE(ci.owner_user_ids, JSON_ARRAY())) = 0
         )
         SELECT f.*
@@ -293,7 +293,7 @@ class BusinessPoolGateway:
               FROM ark_sales_research_subjects s
               JOIN ark_sales_public_pool_tasks t ON t.subject_id = s.id
               WHERE s.source_system = 'okki'
-                AND s.source_customer_id = CAST(f.company_id AS CHAR)
+                AND BINARY s.source_customer_id = BINARY CAST(f.company_id AS CHAR)
                 AND t.created_at >= :cooldown_cutoff
                 AND t.status IN ('pending', 'running', 'completed')
           )

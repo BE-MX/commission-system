@@ -169,7 +169,32 @@ def test_business_pool_cross_table_id_joins_ignore_column_collation():
     gateway.website_column = None
 
     contact_sql = gateway._contact_cte
-    assert "ccs.customer_id = BINARY cc.customer_id" in contact_sql
+    assert "BINARY ccs.customer_id = BINARY cc.customer_id" in contact_sql
+
+    class RecordingSession:
+        def __init__(self):
+            self.statement = ""
+
+        def execute(self, statement, _params=None):
+            self.statement = str(statement)
+
+            class Result:
+                @staticmethod
+                def mappings():
+                    return Result()
+
+                @staticmethod
+                def all():
+                    return []
+
+            return Result()
+
+    session = RecordingSession()
+    gateway.db = session
+    gateway.fetch_tier_candidates("T1", limit=1, seed="test")
+    assert "BINARY cr.company_id = BINARY ci.company_id" in session.statement
+    assert "BINARY o.company_id = BINARY ci.company_id" in session.statement
+    assert "BINARY s.source_customer_id = BINARY CAST(f.company_id AS CHAR)" in session.statement
 
 
 def test_score_is_backend_computed_and_separates_evidence_confidence():
