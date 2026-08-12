@@ -112,6 +112,7 @@ class AccessoryPricePayload(BaseModel):
 class _InvoiceHeaderPayload(BaseModel):
     # 发票号开放编辑：None/空串 = 新建时按规则生成、编辑时保持原号
     invoice_no: Optional[str] = Field(None, max_length=64)
+    sales_user_id: Optional[int] = Field(None, gt=0)
     customer_id: str = Field(..., max_length=64)
     customer_name: str = Field(..., max_length=256)
     order_type: str = Field(default="stock", pattern="^(stock|production)$")

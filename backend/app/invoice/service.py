@@ -4,12 +4,13 @@ import json
 from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
 
-from sqlalchemy import func, select, text
+from fastapi import HTTPException
+from sqlalchemy import and_, exists, func, or_, select, text
 from sqlalchemy.orm import Session, selectinload
 
 from app.auth.models import ArkUser
-from app.invoice import accessory_price_service, price_service, product_service
-from app.invoice.models import Invoice, InvoiceItem
+from app.invoice import accessory_price_service, delegation_service, price_service, product_service
+from app.invoice.models import Invoice, InvoiceDelegateGrant, InvoiceItem
 from app.invoice.schemas import InvoiceCreate, InvoiceUpdate
 
 _HEADER_FIELDS = (
@@ -32,9 +33,22 @@ def list_invoices(
     status: str | None = None,
     order_type: str | None = None,
     created_by: int | None = None,
+    viewer_user_id: int | None = None,
 ) -> tuple[list[dict], int]:
     query = db.query(Invoice)
-    if created_by is not None:
+    if viewer_user_id is not None:
+        active_grant = exists().where(
+            InvoiceDelegateGrant.delegate_user_id == viewer_user_id,
+            InvoiceDelegateGrant.sales_user_id == Invoice.sales_user_id,
+            ArkUser.id == InvoiceDelegateGrant.sales_user_id,
+            ArkUser.deleted_at.is_(None),
+            ArkUser.is_active.is_(True),
+        )
+        query = query.filter(or_(
+            Invoice.sales_user_id == viewer_user_id,
+            and_(Invoice.created_by == viewer_user_id, active_grant),
+        ))
+    elif created_by is not None:
         # 数据范围口径（invoice:read_all 缺失时只看自己创建的），
         # created_by 为 NULL 的历史发票只对全量范围可见
         query = query.filter(Invoice.created_by == created_by)
@@ -206,6 +220,16 @@ def get_invoice(db: Session, invoice_id: int, *, for_update: bool = False) -> In
 
 
 def create_invoice(db: Session, body: InvoiceCreate, user_id: int | None = None) -> Invoice:
+    sales_user_id = body.sales_user_id or user_id
+    # HTTP 新流程显式提交 sales_user_id，必须校验本人/代办授权。未显式提交仅保留给
+    # 既有内部调用与测试；路由仍由登录依赖保证真实请求存在 user_id。
+    sales_user = None
+    if body.sales_user_id is not None:
+        if user_id is None:
+            raise HTTPException(403, "无法确认用户身份，禁止创建发票")
+        sales_user = delegation_service.ensure_can_delegate(db, user_id, body.sales_user_id)
+    elif user_id is not None:
+        sales_user = db.get(ArkUser, user_id)
     invoice_no = (body.invoice_no or "").strip()
     if invoice_no:
         if invoice_no_exists(db, invoice_no):
@@ -216,19 +240,17 @@ def create_invoice(db: Session, body: InvoiceCreate, user_id: int | None = None)
         invoice_no=invoice_no,
         order_type=body.order_type,
         currency=body.currency or "USD",
-        sales_user_id=user_id,
+        sales_user_id=sales_user_id,
         created_by=user_id,
         updated_by=user_id,
     )
     for field in _HEADER_FIELDS:
         setattr(invoice, field, getattr(body, field))
-    # 业务员信息兜底：前端未带出时按当前登录用户补齐（编辑单不动，尊重人工修改）
-    if user_id and not (invoice.sales_user_name and invoice.sales_phone and invoice.sales_email):
-        creator = db.get(ArkUser, user_id)
-        if creator:
-            invoice.sales_user_name = invoice.sales_user_name or creator.username
-            invoice.sales_phone = invoice.sales_phone or creator.phone
-            invoice.sales_email = invoice.sales_email or creator.email
+    # 业务归属只认 sales_user_id；请求中的文本快照不可改变真实归属。
+    if sales_user is not None:
+        invoice.sales_user_name = sales_user.username
+        invoice.sales_phone = sales_user.phone
+        invoice.sales_email = sales_user.email
     # OKKI 业务标记空值兜底（null=自动判定）
     for field, value in resolve_okki_flags(db, invoice).items():
         setattr(invoice, field, value)
@@ -241,6 +263,8 @@ def create_invoice(db: Session, body: InvoiceCreate, user_id: int | None = None)
 
 
 def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: int | None = None) -> Invoice:
+    if body.sales_user_id is not None and body.sales_user_id != invoice.sales_user_id:
+        raise ValueError("订单归属业务员不可修改，请重新创建订单")
     # 发票号开放编辑：空值=不改；改动需全库唯一（排除自身）
     new_no = (body.invoice_no or "").strip()
     if new_no and new_no != invoice.invoice_no:
@@ -249,6 +273,11 @@ def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: 
         invoice.invoice_no = new_no
     for field in _HEADER_FIELDS:
         setattr(invoice, field, getattr(body, field))
+    sales_user = db.get(ArkUser, invoice.sales_user_id) if invoice.sales_user_id else None
+    if sales_user:
+        invoice.sales_user_name = sales_user.username
+        invoice.sales_phone = sales_user.phone
+        invoice.sales_email = sales_user.email
     invoice.currency = body.currency or "USD"
     invoice.updated_by = user_id
     if invoice.sync_status == "synced":
@@ -328,6 +357,7 @@ def serialize_detail(invoice: Invoice) -> dict:
         "contact_name": invoice.contact_name,
         "contact_phone": invoice.contact_phone,
         "contact_email": invoice.contact_email,
+        "sales_user_id": invoice.sales_user_id,
         "delivery_address": invoice.delivery_address,
         "sales_user_name": invoice.sales_user_name,
         "sales_phone": invoice.sales_phone,

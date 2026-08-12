@@ -86,6 +86,23 @@ class Invoice(Base):
     )
 
 
+class InvoiceDelegateGrant(Base):
+    """一个用户获准替一个业务员创建订单。"""
+
+    __tablename__ = "ark_invoice_delegate_grants"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    delegate_user_id = Column(Integer, ForeignKey("ark_users.id", ondelete="CASCADE"), nullable=False, index=True, comment="代创建人 ark_users.id")
+    sales_user_id = Column(Integer, ForeignKey("ark_users.id", ondelete="CASCADE"), nullable=False, index=True, comment="订单归属业务员 ark_users.id")
+    created_by = Column(Integer, ForeignKey("ark_users.id", ondelete="SET NULL"), nullable=True, comment="授权操作人 ark_users.id")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("delegate_user_id", "sales_user_id", name="uq_invoice_delegate_grant"),
+        {"comment": "订单发票代创建授权"},
+    )
+
+
 class InvoiceItem(Base):
     """Invoice product line."""
 

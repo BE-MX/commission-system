@@ -12,10 +12,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_any_permission, require_permission
+from app.auth.models import ArkUser
 from app.core.database import get_db
 from app.core.response import ok
 from app.invoice import (
     accessory_price_service,
+    delegation_service,
     export_service,
     import_service,
     okki_client,
@@ -59,26 +61,83 @@ def _can_read_all(current_user) -> bool:
     )
 
 
-def _ensure_invoice_visible(invoice, current_user) -> None:
+def _ensure_invoice_visible(db: Session, invoice, current_user) -> None:
     """数据范围守卫：不可见的发票按不存在处理（防拿 ID 探测，tracking 同口径）。
 
     created_by 为 NULL 的历史发票只有 read_all/super_admin 可见。
     """
     if _can_read_all(current_user):
         return
-    if invoice.created_by != _user_id(current_user) or invoice.created_by is None:
+    user_id = _user_id(current_user)
+    if user_id is None or not delegation_service.can_access_invoice(db, user_id, invoice):
         raise HTTPException(404, "发票不存在")
 
 
 # ── customers / products ─────────────────────────────────────
 
-def _resolve_private_owner(db: Session, current_user) -> tuple[int | None, bool]:
+class DelegateGrantPayload(BaseModel):
+    sales_user_ids: list[int] = Field(default_factory=list, max_length=200)
+
+
+@router.get("/delegations/assignees", summary="Salespeople available for invoice creation")
+def list_delegate_assignees(
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("invoice:write")),
+):
+    user_id = _user_id(current_user)
+    if user_id is None:
+        raise HTTPException(403, "无法确认用户身份")
+    return ok({"items": delegation_service.list_assignees(db, user_id)})
+
+
+@router.get("/delegations/users/{delegate_user_id}", summary="Get invoice delegation grants")
+def get_delegate_grants(
+    delegate_user_id: int,
+    db: Session = Depends(get_db),
+    _current_user=Depends(require_permission("user:read")),
+):
+    return ok({
+        "sales_user_ids": sorted(delegation_service.granted_sales_user_ids(db, delegate_user_id)),
+        "candidates": delegation_service.list_grant_candidates(db, delegate_user_id),
+    })
+
+
+@router.put("/delegations/users/{delegate_user_id}", summary="Replace invoice delegation grants")
+def put_delegate_grants(
+    delegate_user_id: int,
+    body: DelegateGrantPayload,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("user:write")),
+):
+    if db.get(ArkUser, delegate_user_id) is None:
+        raise HTTPException(404, "代创建用户不存在")
+    try:
+        delegation_service.replace_grants(
+            db, delegate_user_id, body.sales_user_ids, operator_id=_user_id(current_user),
+        )
+        db.commit()
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(400, str(exc)) from exc
+    return ok(message="代创建授权已保存")
+
+def _resolve_private_owner(
+    db: Session, current_user, sales_user_id: int | None = None,
+) -> tuple[int | None, bool]:
     """私海筛选的 owner：当前登录用户绑定的 OKKI 账号。
 
     返回 (okki_user_id, okki_bound)：未绑定时无从判定私海，调用方返回空列表 +
     okki_bound=False，前端据此提示去「系统管理 → 外部账号绑定」。
     """
-    okki_user_id = xiaoman_service.resolve_okki_user_id(db, _user_id(current_user))
+    actor_id = _user_id(current_user)
+    owner_user_id = sales_user_id or actor_id
+    if actor_id is None or owner_user_id is None:
+        raise HTTPException(403, "无法确认用户身份")
+    try:
+        delegation_service.ensure_can_delegate(db, actor_id, owner_user_id)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    okki_user_id = xiaoman_service.resolve_okki_user_id(db, owner_user_id)
     return okki_user_id, okki_user_id is not None
 
 
@@ -86,6 +145,7 @@ def _resolve_private_owner(db: Session, current_user) -> tuple[int | None, bool]
 def search_customers(
     keyword: str | None = Query(None),
     private_only: bool = Query(False, description="仅显示私海客户（owner 含当前用户绑定的 OKKI 账号）"),
+    sales_user_id: int | None = Query(None, gt=0),
     limit: int = Query(20, ge=1, le=50),
     db: Session = Depends(get_db),
     current_user=Depends(_PRICE_PAGE_READ),
@@ -93,7 +153,7 @@ def search_customers(
     owner_okki_id = None
     payload: dict = {}
     if private_only:
-        owner_okki_id, bound = _resolve_private_owner(db, current_user)
+        owner_okki_id, bound = _resolve_private_owner(db, current_user, sales_user_id)
         if not bound:
             return ok({"items": [], "okki_bound": False})
         # okki_bound 只随私海请求返回：非私海请求不知道绑定状态，回 True 会把
@@ -110,6 +170,7 @@ def search_customer_contacts(
     keyword: str | None = Query(None),
     company_id: str | None = Query(None, max_length=64),
     private_only: bool = Query(False),
+    sales_user_id: int | None = Query(None, gt=0),
     limit: int = Query(20, ge=1, le=50),
     db: Session = Depends(get_db),
     # 联系人含邮箱/电话 PII，口径对齐 contact-defaults：录入场景专用
@@ -118,7 +179,7 @@ def search_customer_contacts(
     owner_okki_id = None
     payload: dict = {}
     if private_only:
-        owner_okki_id, bound = _resolve_private_owner(db, current_user)
+        owner_okki_id, bound = _resolve_private_owner(db, current_user, sales_user_id)
         if not bound:
             return ok({"items": [], "okki_bound": False})
         payload["okki_bound"] = True  # 同 search：非私海请求不返回该字段
@@ -581,14 +642,16 @@ def list_invoices(
 ):
     if _can_read_all(current_user):
         created_by = None  # 全量范围，不过滤
+        viewer_user_id = None
     else:
-        created_by = _user_id(current_user)
-        if created_by is None:
+        viewer_user_id = _user_id(current_user)
+        if viewer_user_id is None:
             # fail-closed：身份解析不出时宁可拒绝，不能落到"不过滤=全量"
             raise HTTPException(403, "无法确认用户身份，禁止访问发票列表")
     items, total = service.list_invoices(
         db, page=page, page_size=page_size, keyword=keyword, status=status, order_type=order_type,
-        created_by=created_by,
+        created_by=created_by if _can_read_all(current_user) else None,
+        viewer_user_id=None if _can_read_all(current_user) else viewer_user_id,
     )
     return ok({"total": total, "page": page, "page_size": page_size, "items": items})
 
@@ -656,7 +719,7 @@ def get_invoice(
     invoice = service.get_invoice(db, invoice_id)
     if not invoice:
         raise HTTPException(404, "发票不存在")
-    _ensure_invoice_visible(invoice, current_user)
+    _ensure_invoice_visible(db, invoice, current_user)
     return ok(service.serialize_detail(invoice))
 
 
@@ -670,7 +733,7 @@ def update_invoice(
     invoice = service.get_invoice(db, invoice_id)
     if not invoice:
         raise HTTPException(404, "发票不存在")
-    _ensure_invoice_visible(invoice, current_user)
+    _ensure_invoice_visible(db, invoice, current_user)
     invoice = _write_invoice_or_400(
         db, lambda: service.update_invoice(db, invoice, body, user_id=_user_id(current_user)),
     )
@@ -687,7 +750,7 @@ def delete_invoice(
     invoice = service.get_invoice(db, invoice_id)
     if not invoice:
         raise HTTPException(404, "发票不存在")
-    _ensure_invoice_visible(invoice, current_user)
+    _ensure_invoice_visible(db, invoice, current_user)
     try:
         service.delete_invoice(db, invoice)
     except ValueError as exc:
@@ -706,7 +769,7 @@ def validate_invoice(
     invoice = service.get_invoice(db, invoice_id)
     if not invoice:
         raise HTTPException(404, "发票不存在")
-    _ensure_invoice_visible(invoice, current_user)
+    _ensure_invoice_visible(db, invoice, current_user)
     issues = service.mark_ready_if_valid(invoice)
     db.commit()
     return ok({"ok": not issues, "issues": issues})
@@ -721,7 +784,7 @@ def sync_invoice(
     invoice = service.get_invoice(db, invoice_id, for_update=True)
     if not invoice:
         raise HTTPException(404, "发票不存在")
-    _ensure_invoice_visible(invoice, current_user)
+    _ensure_invoice_visible(db, invoice, current_user)
     result = xiaoman_service.sync_invoice(db, invoice, operator_id=_user_id(current_user))
     db.commit()
     return ok(result)
@@ -736,7 +799,7 @@ def get_sync_logs(
     invoice = service.get_invoice(db, invoice_id)
     if not invoice:
         raise HTTPException(404, "发票不存在")
-    _ensure_invoice_visible(invoice, current_user)
+    _ensure_invoice_visible(db, invoice, current_user)
     return ok({"items": xiaoman_service.list_sync_logs(db, invoice_id)})
 
 
@@ -749,7 +812,7 @@ def export_excel(
     invoice = service.get_invoice(db, invoice_id)
     if not invoice:
         raise HTTPException(404, "发票不存在")
-    _ensure_invoice_visible(invoice, current_user)
+    _ensure_invoice_visible(db, invoice, current_user)
     stream = export_service.build_invoice_workbook(invoice)
     filename = quote(f"{invoice.invoice_no}.xlsx")
     return StreamingResponse(
@@ -768,7 +831,7 @@ def export_print_html(
     invoice = service.get_invoice(db, invoice_id)
     if not invoice:
         raise HTTPException(404, "发票不存在")
-    _ensure_invoice_visible(invoice, current_user)
+    _ensure_invoice_visible(db, invoice, current_user)
     return HTMLResponse(export_service.build_print_html(invoice))
 
 
@@ -781,7 +844,7 @@ def export_pdf(
     invoice = service.get_invoice(db, invoice_id)
     if not invoice:
         raise HTTPException(404, "发票不存在")
-    _ensure_invoice_visible(invoice, current_user)
+    _ensure_invoice_visible(db, invoice, current_user)
     stream = export_service.build_invoice_pdf(invoice)
     filename = quote(f"{invoice.invoice_no}.pdf")
     return StreamingResponse(

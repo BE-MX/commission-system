@@ -13,7 +13,7 @@ from app.auth.models import ArkUser, ArkUserExternalBinding
 from app.auth.utils import create_access_token
 from app.core.database import get_db
 from app.invoice import product_service, service
-from app.invoice.models import Invoice
+from app.invoice.models import Invoice, InvoiceDelegateGrant
 from app.invoice.schemas import InvoiceCreate, InvoiceItemPayload, InvoiceUpdate
 
 OKKI_UID = 55411216
@@ -161,6 +161,8 @@ def test_search_endpoint_private_only_with_binding(db, seed_customers, bound_use
 
 def test_search_endpoint_private_only_without_binding(db, seed_customers):
     # sub=6 没有 OKKI 绑定：私海无从判定 → 空列表 + okki_bound=False
+    db.add(ArkUser(id=6, username="unbound", password_hash="x", real_name="Unbound"))
+    db.flush()
     with _client(db, sub="6", permissions=["invoice:read", "invoice:write"]) as client:
         data = client.get(
             "/api/invoice/customers/search", params={"private_only": True},
@@ -169,6 +171,29 @@ def test_search_endpoint_private_only_without_binding(db, seed_customers):
         # 不勾私海仍可全量搜
         data = client.get("/api/invoice/customers/search").json()["data"]
         assert len(data["items"]) >= 3
+
+
+def test_delegate_private_search_uses_selected_salesperson_binding(db, seed_customers, bound_user):
+    assistant = ArkUser(id=6, username="assistant", password_hash="x", real_name="Assistant")
+    unauthorized = ArkUser(id=7, username="other", password_hash="x", real_name="Other")
+    db.add_all([assistant, unauthorized])
+    db.add(InvoiceDelegateGrant(delegate_user_id=assistant.id, sales_user_id=bound_user.id, created_by=1))
+    db.flush()
+
+    with _client(db, sub="6", permissions=["invoice:read", "invoice:write"]) as client:
+        response = client.get(
+            "/api/invoice/customers/search",
+            params={"private_only": True, "sales_user_id": bound_user.id},
+        )
+        assert response.status_code == 200
+        data = response.json()["data"]
+        assert [customer["company_id"] for customer in data["items"]] == ["9001"]
+
+        forbidden = client.get(
+            "/api/invoice/customers/search",
+            params={"private_only": True, "sales_user_id": unauthorized.id},
+        )
+        assert forbidden.status_code == 403
 
 
 # ── 发票号生成规则（2026-07-14 版）─────────────────────────

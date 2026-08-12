@@ -477,12 +477,12 @@ def test_create_invoice_salesperson_fallback(db):
     assert invoice.sales_phone == "13800000000"
     assert invoice.sales_email == "zhang@leshine.com"
 
-    # 前端带了值 → 尊重传入，只补空位
+    # 前端伪造文本也不能改变真实业务员快照
     invoice2 = service.create_invoice(db, _header_payload(
         sales_user_name="李四",
     ), user_id=user.id)
     db.flush()
-    assert invoice2.sales_user_name == "李四"
+    assert invoice2.sales_user_name == "zhang"
     assert invoice2.sales_phone == "13800000000"
 
 

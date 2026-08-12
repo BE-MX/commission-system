@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from app.auth.utils import create_access_token
+from app.auth.models import ArkUser
 from app.core.database import get_db
 from app.invoice import service
 from app.invoice.models import Invoice  # noqa: F401 - register metadata
@@ -19,6 +20,13 @@ from app.invoice.schemas import InvoiceCreate, InvoiceItemPayload
 
 @pytest.fixture(autouse=True)
 def seed_invoice_product_pair(db):
+    for user_id in (5, 6, 7):
+        if db.get(ArkUser, user_id) is None:
+            db.add(ArkUser(
+                id=user_id, username=f"user{user_id}", real_name=f"User {user_id}",
+                password_hash="x", is_active=True,
+            ))
+    db.flush()
     db.execute(text("""
         CREATE TABLE IF NOT EXISTS lsordertest.okki_products (
             product_id INTEGER PRIMARY KEY, product_no TEXT, name TEXT, model TEXT,
@@ -115,18 +123,19 @@ def test_ensure_invoice_visible_scope(db):
     stranger = {"sub": "6", "permissions": ["invoice:read"], "roles": []}
     reader_all = {"sub": "6", "permissions": ["invoice:read", "invoice:read_all"], "roles": []}
 
-    _ensure_invoice_visible(mine, owner)       # 自己创建 → 可见
-    _ensure_invoice_visible(mine, reader_all)  # read_all → 可见
+    _ensure_invoice_visible(db, mine, owner)       # 自己创建 → 可见
+    _ensure_invoice_visible(db, mine, reader_all)  # read_all → 可见
     with pytest.raises(HTTPException) as exc:  # 他人 → 按不存在处理
-        _ensure_invoice_visible(mine, stranger)
+        _ensure_invoice_visible(db, mine, stranger)
     assert exc.value.status_code == 404
 
-    # created_by 为 NULL 的历史发票：只有全量范围可见
+    # created_by 为 NULL 的历史发票：归属业务员仍可见，其他人不可见
     mine.created_by = None
     db.flush()
-    _ensure_invoice_visible(mine, reader_all)
+    _ensure_invoice_visible(db, mine, reader_all)
+    _ensure_invoice_visible(db, mine, owner)
     with pytest.raises(HTTPException):
-        _ensure_invoice_visible(mine, owner)
+        _ensure_invoice_visible(db, mine, stranger)
 
 
 # ── 列表口径 ─────────────────────────────────────────────
@@ -135,7 +144,11 @@ def test_ensure_invoice_visible_scope(db):
 def test_list_invoices_created_by_filter(db):
     service.create_invoice(db, _create_payload(), user_id=5)
     service.create_invoice(db, _create_payload(), user_id=6)
-    legacy = service.create_invoice(db, _create_payload(), user_id=None)  # 历史 NULL 票
+    legacy = Invoice(
+        invoice_no="LEGACY-NULL", customer_id="legacy", customer_name="Legacy",
+        sales_user_id=None, created_by=None, invoice_date=date(2026, 7, 13), currency="USD",
+    )
+    db.add(legacy)  # 模拟历史 NULL 票；新请求已不允许匿名创建
     db.flush()
     assert legacy.created_by is None
 
