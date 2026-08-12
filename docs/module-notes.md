@@ -133,7 +133,7 @@ nssm start CommissionSystem    # 正常启动
 
 **用户绑定**：用户管理页"同步钉钉"按钮通过手机号调 API 获取钉钉 userId，存入 `ark_users.dingtalk_id`。
 
-**定时任务**：`backend/app/schedulers/registry.py` 在 `start_scheduler()` 中创建 `AsyncIOScheduler`；当前完整 18 项目录以 `docs/architecture.md` 为准。下列是本节相关的早期任务清单（main.py 仅调用 `start_scheduler()`/`shutdown_scheduler()`，任务定义集中在 registry）：
+**定时任务**：`backend/app/schedulers/registry.py` 在 `start_scheduler()` 中创建 `AsyncIOScheduler`；当前完整 20 项目录以 `app/operations/models.py` 为准。下列是本节相关的早期任务清单（main.py 仅调用 `start_scheduler()`/`shutdown_scheduler()`，任务定义集中在 registry）：
   - `design_shoot_reminder` — 拍摄提醒，cron 每天 08:30（`check_today_shoot_reminders()`）
   - `shipping_daily_report` — 物流日报，cron 每天 08:30（`generate_daily_reports()`）
   - `staging_scan` — 暂存表扫描，interval 每 2 分钟（`scan_staging()`，Accio Work 推送的运单自动迁入 tracking 并触发轮询）
@@ -146,7 +146,7 @@ nssm start CommissionSystem    # 正常启动
   - `color_sales_aggregate` — 销售色彩聚合，cron 每周一 06:00（okki_orders 按颜色字段聚合 → 写入 trend_data）
   - `whatsapp_auto_sync` — WhatsApp 增量同步，interval 每 5 分钟（`sync_whatsapp_accounts_job()`，遍历 active 账号拉取会话+消息增量，受 `WHATSAPP_AUTO_SYNC_ENABLED` 开关控制）
 
-**运行与自动化中心（2026-08-12）**：`/system/operations` 显示全部 18 个稳定 job ID、注册状态、下次执行、内存运行事件和服务健康。`operations:read/admin` 分离；管理员动作只限本实例白名单任务。“立即执行”直接向原 executor 提交一次运行，不改变 recurring trigger；暂停按实例写入 `ark_scheduler_job_policies` 并在重启后重放；控制审计写入 `ark_operation_audits`。外部健康探测只使用部署环境的固定 URL + hostname allowlist，响应只显示 origin。
+**运行与自动化中心（2026-08-12）**：`/system/operations` 显示全部 20 个稳定 job ID、注册状态、下次执行、持久运行结果、服务健康和云端实例心跳。`operations:read/admin` 分离；控制权限不自动补授给 admin，须显式授权，动作只限本实例白名单任务。“立即执行”在线程安全的 scheduler loop 上向原 executor 提交一次运行，不改变 recurring trigger；暂停按实例写入 `ark_scheduler_job_policies` 并在重启后重放；控制审计写入 `ark_operation_audits`。`ark_job_runs` 默认保留 90 天并在重启时对账遗留 running；`ark_runtime_instances/heartbeats` 以服务+实例 claim 汇总 Shopify、OpenClaw、MCP 等独立实例，按部署策略失联降级、告警和自动退役。外部健康探测只使用部署环境的固定 URL + hostname allowlist，响应只显示 origin；页面不保存 root/SSH 凭证，也不提供任意远程命令。
 
 **微信小程序环境变量**（服务器 `.env` 必配，否则小程序登录/报工失败）：
 - `WX_MINI_APPID` — 微信小程序 AppID（`wx4dea4f10fe1bda19`）

@@ -274,12 +274,16 @@ PII 密钥 `ARK_SALARY_ENCRYPTION_KEY` / `ARK_SALARY_HASH_KEY` 在 `backend/.env
 
 - `ark_order_intelligence_brief_jobs`：持久化后台简报任务，`owner_user_id → ark_users.id CASCADE`，状态为 `queued/running/succeeded/failed`。`active_key` 在活动期固定为 `user:{ark_user_id}` 并建唯一约束，终态置 NULL，从数据库层阻止同一用户双击、多标签页和并发提交重复调用 AI。任务冻结提交时的日期、focus 与数据范围快照，并保存简报内容、来源、证据及失败原因。`idx_oi_brief_owner_created` 支撑用户历史，`idx_oi_brief_status_updated` 支撑状态与超时扫描。
 
-## 运行与自动化治理（迁移 110，2026-08-12）
+## 运行与自动化治理（迁移 110 / 111，2026-08-12）
 
 - `ark_operation_audits`：运行中心任务控制的追加式审计，保存操作人、来源 IP、实例 hostname、job/action、requested→accepted/rejected/failed 结果与安全摘要。控制前必须先写 requested；审计库不可用则拒绝动作。
 - `ark_scheduler_job_policies`：按 `(instance_id, job_id)` 保存暂停策略。scheduler 启动注册任务后重新应用 paused 行，避免应用重启把人工暂停静默恢复；多实例之间不互相污染。
 
-任务每次开始/完成事件仍只保存在进程内存；跨实例 7/30 天执行历史需后续独立 `ark_job_runs`，不能拿控制审计替代。
+迁移 111 增加跨进程观测事实：
+
+- `ark_job_runs`：按实例、任务与计划时间的 SHA-256 唯一键幂等保存 running/success/failed/missed/skipped；异常只保存类型摘要，不落原始消息与 traceback。默认保留 90 天，调度实例重启时会把本机遗留 running 标成失败，避免永久“执行中”。
+- `ark_runtime_instances`：按 `(service_id, instance_id)` 保存实例最新状态、版本、启动/活动/心跳时间与能力依赖。心跳凭证绑定服务和实例；超过失联阈值降级，长期失联自动退役，恢复上报可重新激活。
+- `ark_runtime_heartbeats`：采样保存实例心跳历史，默认保留 7 天，避免高频上报无限增长。
 
 ## 智能获客（迁移 099，2026-08-09）
 

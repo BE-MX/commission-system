@@ -94,6 +94,31 @@ OPERATIONS_SOCIAL_MCP_HEALTH_URL=https://leshine.work/mcp/social-customer/health
 OPERATIONS_SHOPIFY_HEALTH_URL=
 OPERATIONS_OPENCLAW_HEALTH_URL=
 OPERATIONS_EXTERNAL_SERVICES_JSON=[]
+OPERATIONS_HEARTBEAT_TOKEN_HASHES_JSON={}
+OPERATIONS_HEARTBEAT_INTERVAL_SECONDS=60
+OPERATIONS_HEARTBEAT_MISSED_THRESHOLD=3
+OPERATIONS_HEARTBEAT_MAX_INSTANCES_PER_SERVICE=20
+OPERATIONS_HEARTBEAT_RATE_LIMIT_PER_MINUTE=12
+OPERATIONS_HEARTBEAT_INSTANCE_RETIRE_HOURS=24
+OPERATIONS_HEARTBEAT_RETENTION_DAYS=7
+OPERATIONS_JOB_RUN_RETENTION_DAYS=90
+OPERATIONS_ALERT_TIMEOUT_SECONDS=10
+```
+
+后端心跳 claim 示例（值为 SHA-256，不是明文 token）：
+
+```json
+{
+  "shopify-sync": {
+    "leshine-shopify-01": {
+      "token_hashes": ["<sha256>"],
+      "service_name": "Shopify 定时同步",
+      "environment": "leshine.work 云端",
+      "capabilities": ["orders-sync", "customers-sync"],
+      "dependencies": ["shopify-api", "ark-api"]
+    }
+  }
+}
 ```
 
 `deploy.bat` 会在数据库迁移和服务重启前执行发票 PDF 字体预检。若失败，按错误提示修正
@@ -103,7 +128,7 @@ OPERATIONS_EXTERNAL_SERVICES_JSON=[]
 
 页面入口为 `/system/operations`。先给日常查看角色分配 `operations:read`；`operations:admin` 只分配给受信任运维管理员，它允许立即执行、暂停、恢复当前进程内的白名单 APScheduler 任务。
 
-部署前确认 `alembic heads` 唯一为 `110_operations_governance`；备份数据库后执行 `alembic upgrade head`，再重启应用。未完成 110 迁移时控制接口会因为审计不可用而拒绝操作，不会无记录执行。
+部署前确认 `alembic heads` 唯一为 `111_runtime_observability`；备份数据库后执行 `alembic upgrade head`，再重启应用。未完成 110 迁移时控制接口会因为审计不可用而拒绝操作；未完成 111 时运行历史和云实例心跳不可用。
 
 上线时逐项检查：
 
@@ -111,10 +136,34 @@ OPERATIONS_EXTERNAL_SERVICES_JSON=[]
 2. Shopify 与 OpenClaw 先实现无副作用健康接口或 heartbeat sidecar，再分别填写健康地址；未接入时页面会明确显示“未纳管”，不能据此判断进程已停止；
 3. WhatsApp 健康探测沿用 Connector API Key，但页面响应只展示去除 userinfo/query 的地址，不显示请求头；
 4. `OPERATIONS_EXTERNAL_SERVICES_JSON` 只用于部署方维护的固定服务清单（最多 20 项），禁止放密钥、带 token 的 query/path 或用户可控 URL；每个健康域名必须同时加入 `OPERATIONS_ALLOWED_HEALTH_HOSTS`，自定义请求头只允许 `Authorization` / `X-API-Key`；
-5. 首次上线只验证无副作用任务的暂停/恢复。立即执行可能触发消息、推单、同步或 AI 费用，必须确认任务幂等性和业务窗口；
-6. 页面不提供 SSH、shell、部署、数据库迁移、密钥编辑或环境变量修改；这些操作继续按本手册执行。
+5. 为每个 `service_id + instance_id`（如 `shopify-sync + leshine-shopify-01`）分别生成至少 32 字符随机 token；后端配置只保存该实例 claim 下的 SHA-256，明文仅放云服务的 `0600` 环境文件；claim 中固定中文名称、环境、能力和依赖，禁止复用 Ark 用户/MCP/root/SSH 凭证；
+6. 云端常驻进程使用 `deploy/systemd/ark-runtime-heartbeat@.service`，现有 cron 在成功或失败后调用 `scripts/runtime_heartbeat.py` 一次；60 秒为一个周期，连续 3 个周期失联后运行中心降级并仅告警一次；单服务默认最多登记 20 个实例，确有弹性扩容需求时再调整 `OPERATIONS_HEARTBEAT_MAX_INSTANCES_PER_SERVICE`；
+7. 上线 migration `111_runtime_observability.py` 后，确认“跨服务器运行实例”和“最近运行记录”都有数据，运行历史默认保留 90 天、心跳明细保留 7 天。
 
-第一阶段运行事件仅保存在应用进程内存，重启后清空；任务控制审计和暂停策略已经分别持久化到 `ark_operation_audits`、`ark_scheduler_job_policies`。若要做跨实例统一执行历史、失败率与远程固定服务重启，继续落地 `ark_runtime_heartbeats`、`ark_job_runs`，并让云端 agent 使用非 root、固定服务 allowlist；不得让主应用持有云服务器 root 密钥。
+### 云端运行实例心跳示例
+
+`/etc/ark-runtime/shopify-sync.env` 只对 `ark-heartbeat` 用户可读：
+
+```bash
+ARK_OPERATIONS_BASE_URL=https://leshine.work
+ARK_HEARTBEAT_TOKEN=<随机明文，仅保存在本机>
+ARK_RUNTIME_SERVICE_ID=shopify-sync
+ARK_RUNTIME_INSTANCE_ID=leshine-shopify-01
+ARK_RUNTIME_SERVICE_NAME=Shopify 定时同步
+ARK_RUNTIME_ENVIRONMENT=leshine.work 云端
+ARK_RUNTIME_VERSION=2026.08.12
+# cron 单次调用必须固定配置；systemd --watch 会自动采用 reporter 进程启动时间
+ARK_RUNTIME_STARTED_AT=2026-08-13T00:00:00+08:00
+ARK_RUNTIME_CAPABILITIES=orders-sync,customers-sync
+ARK_RUNTIME_DEPENDENCIES=shopify-api,ark-api
+```
+
+启用：`systemctl enable --now ark-runtime-heartbeat@shopify-sync.service`。OKKI/MCP 使用相同模板，
+只需更换服务 ID、实例 ID 与独立 token，并在后端 claim 中登记能力和依赖。上报 payload 中的展示元数据不作为信任来源；页面只显示非敏感状态，不提供任意远程命令。
+8. 首次上线只验证无副作用任务的暂停/恢复。立即执行可能触发消息、推单、同步或 AI 费用，必须确认任务幂等性和业务窗口；
+9. 页面不提供 SSH、shell、部署、数据库迁移、密钥编辑或环境变量修改；这些操作继续按本手册执行。
+
+任务执行结果、控制审计和暂停策略分别持久化到 `ark_job_runs`、`ark_operation_audits`、`ark_scheduler_job_policies`；云端最新态与追溯心跳写入 `ark_runtime_instances`、`ark_runtime_heartbeats`。若以后增加远程固定服务重启，仍须使用非 root、固定服务 allowlist、冷却时间和全量审计；不得让主应用持有云服务器 root 密钥。
 
 ## 首次部署
 

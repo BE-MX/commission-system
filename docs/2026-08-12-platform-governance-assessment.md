@@ -3,7 +3,7 @@
 > 评估日期：2026-08-12
 >
 > 评估范围：主站前后端、RBAC、APScheduler、独立 MCP/Connector/Agent、云端同步任务与 UI 设计一致性
-> 本轮已落地：运行与自动化中心、权限矩阵中文归组、全局表格/按钮设计基线修复
+> 本轮已落地：运行与自动化中心、权限矩阵中文归组、全局表格/按钮设计基线、P1 列表规范门禁、任务运行历史与云实例主动心跳
 
 ## 一、结论摘要
 
@@ -13,8 +13,8 @@
 
 1. **必须建设可视化运行中心，且已完成第一阶段开发。** 第一阶段以可观测和安全边界为主：集中展示当前实例、定时任务、MCP、OKKI、Shopify、OpenClaw、WhatsApp 等运行单元；只允许管理员控制当前进程内的白名单 APScheduler 任务，不提供任意 SSH/shell/环境变量编辑能力。
 2. **权限中英文混杂属于结构性问题，已修复当前缺口。** 原因不是数据库中文 label 缺失，而是权限矩阵另维护一份前缀中文名和分组，近期开出的 6 个领域未同步，导致进入“其他”分组并显示英文兜底。本轮补齐中文归属、中文动作名和分组回归测试。
-3. **UI 设计系统存在“文档规范明确、历史页面未收敛”的债务。** 全局表头曾被强制成 12px 大写字距，按钮曾使用 8px 圆角和 `transition: all`，直接违背 `DESIGN.md`；本轮已修复全局基线。剩余页面级债务数量大，必须按访问频率和业务风险分批治理，不能一次性机械替换。
-4. **云端服务尚未形成统一事实源。** 新加坡和北京服务器由 systemd/Nginx 管理，办公室主实例由 NSSM/APScheduler 管理，OpenClaw 为 stdio MCP，Shopify 同步运行定义不在当前仓库。本轮 SSH 只读清点因密钥/主机信任不可用未完成，说明当前运维能力依赖单机状态，必须改为服务主动健康上报和集中实例登记。
+3. **UI 设计系统的列表规范已形成可执行门禁。** 106 张 Element Plus 表格已统一 `list-table + border`、移除 stripe/居中内容/固定内容列/小号按钮；业务视图层 `transition: all` 已清零。裸色值和超长页面按文件生成只能下降的基线，独立主题保留可审计例外。
+4. **云端服务已具备统一事实源协议。** `ark_runtime_instances/heartbeats` 接收 Shopify、OpenClaw、MCP 等实例级机器凭证心跳；OpenClaw 侧车和通用 systemd/cron 上报器已实现。生产实例需在部署时分别下发 token 才会出现在页面，主应用不持有 root/SSH 权限。
 5. **系统整体可继续迭代，但发布前必须完成运行中心部署配置、权限 seed 刷新与云端健康接入。** 第一阶段控制面已经具备代码基础；第二阶段重点不是继续增加“重启按钮”，而是建立统一心跳、执行记录、告警和责任人制度。
 
 ## 二、功能与运行面清单
@@ -42,7 +42,7 @@
 
 ### 2.2 后端领域与后台任务
 
-后端 `app/` 有 40 个一级目录。APScheduler 注册目录定义了 18 个稳定任务 ID，覆盖：
+后端 `app/` 有 40 个一级目录。APScheduler 注册目录定义了 20 个稳定任务 ID，覆盖原 18 项业务任务以及：
 
 - 设计拍摄提醒；
 - 物流日报、暂存扫描、在途轮询；
@@ -54,6 +54,8 @@
 - 社媒发色采集、发色销量聚合；
 - WhatsApp 自动同步（可选）；
 - 智能获客公海日批次（可选）。
+- 云端实例心跳巡检；
+- 运行历史保留期清理。
 
 现有优点：固定 job id、主实例开关、时区、失败/错过钉钉告警、`max_instances/coalesce` 等基础设施已经具备。原缺口：没有页面状态、没有上次执行结果快照、没有责任归属、可选任务未注册时不可见、运维只能查服务日志。
 
@@ -62,12 +64,12 @@
 | 运行单元 | 当前管理方式 | 本轮状态 | 目标纳管方式 |
 |---|---|---|---|
 | 方舟主应用 / MCP 网关 | Windows NSSM + FastAPI | 平台管理 | 运行中心直接读取 |
-| APScheduler 18 项 | 主应用内存 | 已接入第一阶段 | 实时状态 + 有界控制 + 执行历史 |
+| APScheduler 20 项 | 主应用 + 数据库 | 已集中纳管 | 实时状态 + 有界控制 + 90 天执行历史 |
 | WhatsApp Connector | 独立 Node 进程 | 可配置健康探测 | `/health` + 账号同步指标 |
 | 社媒客户 MCP | 新加坡 systemd | 公网 `/health` 实测 200 | 健康、版本、依赖更新时间 |
 | OKKI | 外部 SaaS | 当前只能判断配置完整性 | 增加无副作用 API 探测与最近同步记录 |
 | Shopify 同步 | leshine.work 云端任务 | 当前仓库无运行定义，标记未纳管 | 迁入仓库或加 heartbeat sidecar |
-| OpenClaw 销售 Agent | stdio MCP/外部执行器 | 标记未纳管 | Agent 注册、心跳、当前版本、最近任务 |
+| OpenClaw 销售 Agent | stdio MCP/外部执行器 | 心跳代码与部署接入已完成 | Agent 注册、心跳、当前版本、最近任务 |
 | 北京展会实例 | systemd，scheduler 关闭 | 应显示应用副本 | 实例心跳，明确禁止调度双跑 |
 | 新加坡 Nginx/frps/静态站 | systemd/Nginx | 本轮只读 SSH 不可用 | node agent/HTTP heartbeat，不依赖开发机 SSH |
 
@@ -112,25 +114,25 @@
 
 ### P1 / 一个月内治理
 
-#### P1-1 历史列表页未完成统一
+#### P1-1 历史列表页统一 — 已完成
 
-静态扫描发现：72 个含表格的视图、814 处固定 `width`、62 处 `align="center"`、2 个 stripe 表格、64 个 `size="small"` 按钮。此扫描会包含少量合理例外或多行组件，不能机械全部替换，但与 List Page Spec 的偏差规模明确。
+修正早期会误把 `min-width` 计为固定宽度的扫描口径后，识别出业务视图及共享组件中的 106 张表。现已统一全部表格的 class/border，固定内容列改为 min-width，移除居中、stripe 与小号按钮；门禁范围覆盖两个前端的完整 `src`，不再只扫描 views。
 
-建议按以下顺序治理：订单发票/售后/物流/生产/薪资（高风险高频）→ 系统管理/洞见 → 低频配置页。每批必须做真实数据溢出、固定列重影、分页、空态和窄屏回归。
+`scripts/audit_frontend_ui.py` 已接入 `check_conventions.py`，任何回退都会阻断门禁；`normalize_list_tables.py` 作为幂等修复工具保留。桌面/窄屏仍需在每个业务迭代中用真实数据回归溢出、固定列重影、分页和空态。
 
-#### P1-2 设计 token 增量治理未覆盖历史存量
+#### P1-2 设计 token 增量治理 — 门禁完成、存量冻结
 
-视图层扫描到约 957 处裸 hex，29 个 `.vue` 文件超过 500 行，24 处 `transition: all`。部分属于展会 kiosk、登录页等独立主题的有意例外，但主站普通页面仍有明显存量。
+两个前端完整 Vue 源码现有 1027 处裸 hex、7 处共享组件 `transition: all` 与 5589 行超长文件债务，均按文件写入 `scripts/ui_debt_baseline.json`，只能下降、不能新增；业务视图层错误的 `transition: all` 已从 19 处清零。订单经营、发票、售后、薪资等高风险模块无新增裸色值；展会 kiosk、登录/成功动效等独立主题保留现状并受基线约束。
 
-建议增强 `check_conventions.py`：新代码继续零容忍；为旧文件生成 baseline allowlist，并按模块逐步清零，避免一次性大改造成视觉回归。
+后续按模块把裸色值映射到 `tokens.css` 并拆分超长页面，每次降低 baseline；不得通过提高 baseline 绕过门禁。
 
-#### P1-3 任务执行结果历史只在内存
+#### P1-3 任务执行结果持久历史 — 已完成
 
-第一阶段控制审计与暂停策略已落库，但 scheduler 的开始/完成结果重启后仍会丢失，无法做 7/30 天成功率和耗时趋势。建议新增统一 `ark_job_runs` 表，记录 job_id、instance_id、planned/start/finish、status、duration、error_digest、triggered_by；任务 listener 写入，页面支持最近 30 次和失败筛选。
+新增 `ark_job_runs`，按 instance/job/planned_at 的哈希键幂等写入开始、成功、失败、错过和并发跳过；异常仅保存类型摘要，不保存异常消息/traceback。页面显示最近 30 次并可筛选失败状态，默认保留 90 天。
 
-#### P1-4 云端服务缺主动心跳
+#### P1-4 云端服务主动心跳 — 已完成代码与部署模板
 
-Shopify/OpenClaw 当前没有可验证健康接口。建议所有独立运行单元实现同一最小契约：
+所有独立运行单元使用同一最小契约：
 
 ```json
 {
@@ -141,11 +143,11 @@ Shopify/OpenClaw 当前没有可验证健康接口。建议所有独立运行单
   "started_at": "...",
   "last_activity_at": "...",
   "capabilities": ["sales_search"],
-  "dependencies": [{"name": "ark-api", "status": "healthy"}]
+  "dependencies": ["ark-api"]
 }
 ```
 
-Agent/任务每 60 秒以机器凭证向方舟注册或由固定 URL 被探测；连续 3 个周期无心跳转 degraded 并告警。页面不能直接持有云服务器 root 权限。
+已落地绑定 `service_id + instance_id` claim 的 Bearer token SHA-256 白名单、实例级限流与数量上限、每 60 秒上报、连续 3 个周期降级、24 小时自动退役、单次钉钉告警和 7 天心跳保留期，以及 OpenClaw 原生上报和通用 Python/systemd 模板。服务名、环境、能力与依赖以服务端 claim 为准，客户端不能伪造；页面不能直接持有云服务器 root 权限。
 
 ### P2 / 随迭代治理
 
@@ -164,13 +166,13 @@ Agent/任务每 60 秒以机器凭证向方舟注册或由固定 URL 被探测�
 4. **审计层**：谁在何时对哪个运行单元执行什么动作、结果如何，必须持久化。
 5. **告警层**：健康状态变化触发钉钉，页面只作为查看与处置入口，不能依赖人一直盯屏。
 
-### 4.2 第二阶段建议
+### 4.2 第二阶段完成项与后续建议
 
-- 新增 `ark_runtime_instances`、`ark_runtime_heartbeats`、`ark_job_runs`；`ark_operation_audits` 与 `ark_scheduler_job_policies` 已在第一阶段完成；
-- OpenClaw bootstrap 生成稳定 instance id，进程启动/停止/每分钟上报；
-- Shopify/OKKI 同步统一包一层 job runner，记录 start/finish/checkpoint/affected_count；
-- 云端 systemd 服务部署只读 node agent，允许 `status` 与固定服务的 `restart`，服务名写死配置并使用非 root sudo allowlist；
-- 页面增加实例筛选、最近失败、耗时趋势、告警确认和 runbook 深链；
+- 已新增 `ark_runtime_instances`、`ark_runtime_heartbeats`、`ark_job_runs`；`ark_operation_audits` 与 `ark_scheduler_job_policies` 已在第一阶段完成；
+- 已完成 OpenClaw 稳定 instance id、进程启动后与每分钟上报；停止状态由连续心跳缺失判定；
+- 已提供 Shopify/OKKI/MCP 通用心跳 sidecar；后续把同步任务统一包成 job runner，补充 checkpoint/affected_count；
+- 已提供最小权限 systemd 心跳单元；是否增加固定服务 `status/restart` 代理须经后续安全评审，当前页面不开放远程控制；
+- 已完成实例清单、最近失败和运行耗时；告警确认、趋势图和 runbook 深链列入后续迭代；
 - 远程重启必须 `operations:admin` + 二次确认 + 审计 + 冷却时间，数据库迁移、部署、环境变量修改继续走 deploy/runbook，不进入页面。
 
 ## 五、已完成变更与验证
@@ -178,10 +180,12 @@ Agent/任务每 60 秒以机器凭证向方舟注册或由固定 URL 被探测�
 ### 已完成
 
 - 运行与自动化中心后端领域、API、权限、导航与前端页面；
-- 18 个任务中文目录、责任归属、注册/未注册状态、运行事件快照、持久控制审计与暂停策略；
+- 20 个任务中文目录、责任归属、注册/未注册状态、90 天运行历史、持久控制审计与暂停策略；
 - 社媒 MCP、WhatsApp、OKKI、Shopify、OpenClaw 等服务清单；
 - 权限矩阵近期模块中文化、业务归组与动作中文化；
 - 全局表格/按钮设计基线修复；
+- 106 张表格统一与 UI 存量债务只能下降门禁；
+- OpenClaw 与通用云 cron/systemd 主动心跳；
 - 后端与前端回归测试。
 
 ### 验证证据
@@ -195,19 +199,15 @@ Agent/任务每 60 秒以机器凭证向方舟注册或由固定 URL 被探测�
 - 前端全量 Node 测试：279/279 通过；
 - 前端 production build：通过（保留既有 vendor chunk 体积告警）；
 - 增量约定检查：通过；
-- 后端针对性测试：33/33 通过；
-- 后端全量测试：2507 passed、2 skipped、7 failed。7 项均为当前 macOS 对仓库既有 Windows 专用前提的环境差异：Windows 盘符逃逸判断 1 项、采购节浏览器路径 1 项、Windows 中文字体缺失 5 项；本轮 operations 用例无失败。部署到 Windows 前仍须按 runbook 做字体预检，不能把这 7 项记为产品回归通过。
+- 后端针对性测试：50/50 通过（operations、调度注册、心跳脚本与权限）；OpenClaw 13/13 通过；
+- 后端全量测试：2522 passed、2 skipped、7 failed。7 项均为当前 macOS 对仓库既有 Windows 专用前提的环境差异：Windows 盘符逃逸判断 1 项、采购节浏览器/字体 4 项、发票 Windows 字体/PDF 2 项；本轮 operations 与调度注册用例无失败。部署到 Windows 前仍须按 runbook 做字体预检，不能把这 7 项记为产品回归通过。
 
 ## 六、上线操作
 
-1. 合并代码，确认 `alembic heads` 唯一为 `110_operations_governance`，备份后执行 `alembic upgrade head`，再按标准部署流程重启后端，使权限 upsert seed 生效；
+1. 合并代码，确认 `alembic heads` 唯一为 `111_runtime_observability`，备份后执行 `alembic upgrade head`，再按标准部署流程重启后端，使权限 upsert seed 生效；
 2. 在角色权限页分配 `operations:read`，只向受信任运维管理员分配 `operations:admin`；
 3. 办公室主实例保持 `SCHEDULER_ENABLED=true`，北京/其他副本保持 false；
-4. 配置无敏感 query 的健康地址：
-   - `OPERATIONS_SOCIAL_MCP_HEALTH_URL`；
-   - `OPERATIONS_SHOPIFY_HEALTH_URL`（待 Shopify 任务提供）；
-   - `OPERATIONS_OPENCLAW_HEALTH_URL`（待 OpenClaw 提供 heartbeat/sidecar）；
-   - 其他服务使用 `OPERATIONS_EXTERNAL_SERVICES_JSON`；
+4. 配置健康地址，并为 Shopify、OpenClaw、MCP 等每个实例分别生成心跳 token；后端按 `service_id + instance_id` claim 写入 `OPERATIONS_HEARTBEAT_TOKEN_HASHES_JSON` 的 SHA-256 与固定展示元数据，明文按 runbook 下发到云实例；
 5. 上线后验证运行中心中主实例显示“调度主实例”、副本显示“应用副本”，任务注册数与启动日志一致；
 6. 使用无副作用测试任务验证一次暂停/恢复；“立即执行”需选择可安全重复的幂等任务，不在首次上线时触发发消息、推单或 AI 付费任务。
 

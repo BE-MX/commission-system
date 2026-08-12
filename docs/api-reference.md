@@ -9,6 +9,11 @@
 
 ### 运行与自动化中心（`/api/operations`，2026-08-12）
 
+- `GET /overview`：服务、调度器与跨服务器运行实例汇总（`operations:read` 或 `operations:admin`）。
+- `GET /job-runs?status=&job_id=&limit=30`：最近任务运行结果，支持失败筛选，最多 100 条。
+- `POST /jobs/{job_id}/{run|pause|resume}`：白名单任务控制，需 `operations:admin`，全量审计。
+- `POST /heartbeats`：云端机器心跳；按 `service_id + instance_id` claim 校验独立 Bearer token 的 SHA-256 白名单，不接受用户 JWT；展示元数据取服务端 claim，并有实例上限与应用层限流。
+
 | 方法 | 路径 | 权限 | 说明 |
 |---|---|---|---|
 | GET | `/overview` | `operations:read` 或 `operations:admin` | 当前实例、APScheduler 任务、外部服务健康与纳管状态；响应只展示健康地址 origin |
