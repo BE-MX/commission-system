@@ -12,7 +12,7 @@ from app.auth.models import ArkUser
 from app.invoice import accessory_price_service, delegation_service, price_service, product_service
 from app.invoice.models import Invoice, InvoiceDelegateGrant, InvoiceItem
 from app.invoice.schemas import InvoiceCreate, InvoiceUpdate
-from app.invoice.time_utils import to_beijing_time
+from app.invoice.time_utils import beijing_now, to_beijing_time
 
 _HEADER_FIELDS = (
     "customer_id", "customer_name", "contact_name", "contact_phone", "contact_email",
@@ -413,7 +413,7 @@ def suggest_invoice_no(db: Session, user_id: int | None, order_type: str) -> str
     同序会撞全库唯一约束——默认号只是建议值，生成后逐一顺延到不冲突为止。
     NN 用两位零填充，超 99 自然进三位。
     """
-    now = datetime.now()
+    now = beijing_now()
     month = f"{now.month:02d}"
     if order_type == "production":
         prefix = f"SC-{month}"
@@ -424,8 +424,8 @@ def suggest_invoice_no(db: Session, user_id: int | None, order_type: str) -> str
             return _next_invoice_no(db)  # 定位不到用户名（理论不可达）退回旧 INV 规则
         prefix = f"{username}-KC-{month}"
     escaped = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    # created_at 存的是 utcnow（models 默认值）：「本月」按本地自然月起点换算到 UTC 存储系比较
-    month_start = datetime(now.year, now.month, 1) - (datetime.now() - datetime.utcnow())
+    # created_at 自 108 起直接存北京时间，本月边界按北京时间自然月比较。
+    month_start = datetime(now.year, now.month, 1)
     existing = db.execute(
         select(Invoice.invoice_no)
         .where(Invoice.invoice_no.like(f"{escaped}%", escape="\\"))

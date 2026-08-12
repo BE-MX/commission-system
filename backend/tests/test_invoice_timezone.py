@@ -6,7 +6,7 @@ from app.invoice import service
 from app.invoice.models import Invoice
 
 
-def test_invoice_list_created_at_converts_naive_utc_to_beijing_time():
+def test_invoice_list_created_at_treats_database_value_as_beijing_time():
     invoice = Invoice(
         id=1,
         invoice_no="TZ-1",
@@ -17,7 +17,7 @@ def test_invoice_list_created_at_converts_naive_utc_to_beijing_time():
         currency="USD",
         status="draft",
         sync_status="not_synced",
-        created_at=datetime(2026, 8, 12, 3, 15),
+        created_at=datetime(2026, 8, 12, 11, 15),
     )
 
     value = service._invoice_list_row(invoice, 0)["created_at"]
@@ -26,7 +26,7 @@ def test_invoice_list_created_at_converts_naive_utc_to_beijing_time():
     assert value.utcoffset() == timedelta(hours=8)
 
 
-def test_invoice_detail_times_are_all_beijing_time():
+def test_invoice_detail_times_keep_database_beijing_clock_time():
     invoice = Invoice(
         id=2,
         invoice_no="TZ-2",
@@ -37,9 +37,9 @@ def test_invoice_detail_times_are_all_beijing_time():
         currency="USD",
         status="draft",
         sync_status="not_synced",
-        created_at=datetime(2026, 8, 12, 0, 0),
-        updated_at=datetime(2026, 8, 12, 1, 0),
-        synced_at=datetime(2026, 8, 12, 2, 0),
+        created_at=datetime(2026, 8, 12, 8, 0),
+        updated_at=datetime(2026, 8, 12, 9, 0),
+        synced_at=datetime(2026, 8, 12, 10, 0),
         items=[],
     )
 

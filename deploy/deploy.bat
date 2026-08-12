@@ -16,6 +16,7 @@ set "NSSM_EXE=%USERPROFILE%\AppData\Local\Microsoft\WinGet\Links\nssm.exe"
 set "CLOUD_SERVER=root@119.28.107.92"
 set "CLOUD_DIST=/var/www/ark/dist"
 set "CLOUD_PM_DIST=/var/www/pm/dist"
+set "BACKEND_RESTARTED_AFTER_MIGRATION=0"
 REM All ssh/scp go through these opts (2026-07-13): BatchMode turns any interactive
 REM prompt (host key / password) into an immediate error instead of a silent hang;
 REM ConnectionAttempts retries transient port-22 timeouts; the other options bound hangs.
@@ -138,11 +139,27 @@ REM ---------- [4/7] Database migration ----------
 echo [4/7] Database migration...
 cd /d "%INSTALL_DIR%\backend"
 .\.venv\Scripts\python.exe scripts\show_db_config.py
-.\.venv\Scripts\python.exe -m alembic upgrade head
+echo      Stopping Ark backend to prevent writes during migration...
+"%NSSM_EXE%" stop "%SERVICE_NAME%"
 if errorlevel 1 (
-    echo [ERROR] alembic migration failed
+    echo [ERROR] Failed to stop %SERVICE_NAME%; migration was not started
     goto :error
 )
+.\.venv\Scripts\python.exe -m alembic upgrade head
+if errorlevel 1 (
+    echo [ERROR] alembic migration failed; %SERVICE_NAME% remains stopped to protect data
+    goto :error
+)
+REM Migration validation
+for /f "delims=" %%V in ('.\.venv\Scripts\python.exe -m alembic current 2^>nul') do set "CURRENT_REVISION=%%V"
+echo      Current revision: %CURRENT_REVISION%
+if "%CURRENT_REVISION%"=="" (
+    echo [ERROR] Failed to read current migration revision; %SERVICE_NAME% remains stopped to protect data
+    goto :error
+)
+call :restart_nssm_service "%SERVICE_NAME%" "Ark backend"
+if errorlevel 1 goto :error
+set "BACKEND_RESTARTED_AFTER_MIGRATION=1"
 REM PM 协作站预置数据（幂等：已存在自动跳过，--reset 需手动执行）
 .\.venv\Scripts\python.exe scripts\seed_pm.py
 if errorlevel 1 (
@@ -152,13 +169,6 @@ if errorlevel 1 (
 .\.venv\Scripts\python.exe scripts\import_pantone.py
 if errorlevel 1 (
     echo [ERROR] Pantone Solid Coated import failed
-    goto :error
-)
-REM Migration validation
-for /f "delims=" %%V in ('.\.venv\Scripts\python.exe -m alembic current 2^>nul') do set "CURRENT_REVISION=%%V"
-echo      Current revision: %CURRENT_REVISION%
-if "%CURRENT_REVISION%"=="" (
-    echo [ERROR] Failed to read current migration revision
     goto :error
 )
 echo      OK
@@ -446,8 +456,12 @@ echo.
 :restart_service
 REM ---------- [7/7] Restart services ----------
 echo [7/7] Restart services...
-call :restart_nssm_service "%SERVICE_NAME%" "Ark backend"
-if errorlevel 1 goto :error
+if "%BACKEND_RESTARTED_AFTER_MIGRATION%"=="1" (
+    echo      Ark backend already restarted after migration
+) else (
+    call :restart_nssm_service "%SERVICE_NAME%" "Ark backend"
+    if errorlevel 1 goto :error
+)
 call :restart_nssm_service "WhatsAppConnector" "WhatsApp connector"
 if errorlevel 1 goto :error
 echo      OK

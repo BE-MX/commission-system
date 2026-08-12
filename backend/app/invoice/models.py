@@ -20,6 +20,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.dialects import mysql
 
 from app.core.database import Base
+from app.invoice.time_utils import beijing_now
 
 
 USER_ID = Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql")
@@ -72,8 +73,8 @@ class Invoice(Base):
     synced_at = Column(DateTime, nullable=True, comment="最近成功推单时间")
     created_by = Column(Integer, nullable=True, comment="创建人 user_id")
     updated_by = Column(Integer, nullable=True, comment="最后修改人 user_id")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="最后修改时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间（北京时间）")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="最后修改时间（北京时间）")
 
     items = relationship(
         "InvoiceItem",
@@ -99,7 +100,7 @@ class InvoiceDelegateGrant(Base):
     delegate_user_id = Column(USER_ID, ForeignKey("ark_users.id", ondelete="CASCADE"), nullable=False, index=True, comment="代创建人 ark_users.id")
     sales_user_id = Column(USER_ID, ForeignKey("ark_users.id", ondelete="CASCADE"), nullable=False, index=True, comment="订单归属业务员 ark_users.id")
     created_by = Column(USER_ID, ForeignKey("ark_users.id", ondelete="SET NULL"), nullable=True, comment="授权操作人 ark_users.id")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=beijing_now)
 
     __table_args__ = (
         UniqueConstraint("delegate_user_id", "sales_user_id", name="uq_invoice_delegate_grant"),
@@ -135,8 +136,8 @@ class InvoiceItem(Base):
     total_price = Column(Numeric(14, 2), nullable=False, default=0, comment="行小计=成交单价×数量+行级折扣（发票币种）")
     price_source = Column(String(32), nullable=False, default="manual", comment="customer_rule/manual/missing_std")
     xiaoman_unique_id = Column(String(64), nullable=True, comment="OKKI 明细行唯一ID")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="最后修改时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间（北京时间）")
+    updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="最后修改时间（北京时间）")
 
     invoice = relationship("Invoice", back_populates="items")
 
@@ -254,7 +255,7 @@ class InvoiceSyncLog(Base):
     response_body = Column(Text, nullable=True, comment="OKKI 响应原文")
     error_message = Column(Text, nullable=True, comment="失败错误信息")
     operator_id = Column(Integer, nullable=True, comment="操作人 user_id")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间（北京时间）")
 
     __table_args__ = (
         Index("idx_ark_invoice_sync_logs_inv", "invoice_id"),

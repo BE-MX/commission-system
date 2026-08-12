@@ -43,3 +43,29 @@ def test_deploy_loads_versioned_pantone_solid_coated_data() -> None:
     script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
 
     assert r".\.venv\Scripts\python.exe scripts\import_pantone.py" in script
+
+
+def test_deploy_stops_backend_before_database_migration() -> None:
+    """Old application code must not write while a data migration is running."""
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    migration = script.split("REM ---------- [4/7] Database migration ----------", 1)[1]
+
+    stop_index = migration.index('"%NSSM_EXE%" stop "%SERVICE_NAME%"')
+    upgrade_index = migration.index(r".\.venv\Scripts\python.exe -m alembic upgrade head")
+
+    assert stop_index < upgrade_index
+    assert "migration was not started" in migration[stop_index:upgrade_index]
+
+
+def test_deploy_restarts_backend_only_after_migration_validation() -> None:
+    """The new writer starts only after Alembic reports a current revision."""
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+    migration = script.split("REM ---------- [4/7] Database migration ----------", 1)[1]
+
+    validation_index = migration.index('if "%CURRENT_REVISION%"==""')
+    restart_index = migration.index(
+        'call :restart_nssm_service "%SERVICE_NAME%" "Ark backend"'
+    )
+
+    assert validation_index < restart_index
+    assert 'set "BACKEND_RESTARTED_AFTER_MIGRATION=1"' in migration[restart_index:]

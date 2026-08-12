@@ -378,10 +378,10 @@ done
 1. `git pull` 拉取最新代码
 2. `pip install -r requirements.txt` 更新后端依赖
 3. `npm install` 更新 Connector 依赖
-4. `alembic upgrade head` 数据库迁移
+4. 停止 `CommissionSystem`，执行 `alembic upgrade head` 并校验版本；迁移失败时保持停服，禁止旧代码继续写入
 5. `npm run build` 构建前端
 6. `scp dist/* → root@119.28.107.92:/var/www/ark/dist/` 同步静态文件到云端
-7. `nssm restart CommissionSystem` + `nssm restart WhatsAppConnector` 重启双服务
+7. 确认迁移后已用新代码重启的 `CommissionSystem`，并重启 `WhatsAppConnector`
 
 ## 开发机 git 巡检（多智能体协作）
 

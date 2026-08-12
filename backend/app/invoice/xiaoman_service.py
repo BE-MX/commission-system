@@ -33,7 +33,7 @@ from app.core.config import get_settings
 from app.invoice import accessory_price_service, okki_client, product_service
 from app.invoice.models import CustomProduct, Invoice, InvoiceSyncLog, XiaomanSettings
 from app.invoice.service import resolve_okki_flags, validate_invoice
-from app.invoice.time_utils import to_beijing_time
+from app.invoice.time_utils import beijing_now, to_beijing_time
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +114,7 @@ def sync_invoice(db: Session, invoice: Invoice, operator_id: int | None = None) 
     invoice.sync_status = "synced"
     invoice.status = "synced"
     invoice.sync_error = None
-    invoice.synced_at = datetime.utcnow()
+    invoice.synced_at = beijing_now()
     if removed_snapshot:
         # 条件清空：只清本次推送时的快照值，避免覆盖推送期间并发编辑新写入的删行
         db.execute(
