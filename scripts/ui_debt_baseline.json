@@ -1,0 +1,447 @@
+{
+  "frontend/src/App.vue": {
+    "hex_colors": 8,
+    "lines_over_500": 81,
+    "transition_all": 1
+  },
+  "frontend/src/components/GlassButton.vue": {
+    "hex_colors": 13,
+    "lines_over_500": 0,
+    "transition_all": 1
+  },
+  "frontend/src/components/GlobalLoading.vue": {
+    "hex_colors": 3,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/components/StimulsoftDesigner.vue": {
+    "hex_colors": 1,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/components/StimulsoftViewer.vue": {
+    "hex_colors": 1,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/components/WelcomeModal.vue": {
+    "hex_colors": 14,
+    "lines_over_500": 225,
+    "transition_all": 5
+  },
+  "frontend/src/components/WorldMapCanvas.vue": {
+    "hex_colors": 11,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/components/design/GanttChart.vue": {
+    "hex_colors": 4,
+    "lines_over_500": 343,
+    "transition_all": 0
+  },
+  "frontend/src/components/design/RequestDetailDrawer.vue": {
+    "hex_colors": 1,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/components/production/OrderDetailBarChart.vue": {
+    "hex_colors": 3,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/components/production/ProcessBarChart.vue": {
+    "hex_colors": 7,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/components/production/StatusDonutChart.vue": {
+    "hex_colors": 4,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/components/production/UrgentBarChart.vue": {
+    "hex_colors": 2,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/asset/AssetFavorites.vue": {
+    "hex_colors": 10,
+    "lines_over_500": 155,
+    "transition_all": 0
+  },
+  "frontend/src/views/asset/AssetLibrary.vue": {
+    "hex_colors": 17,
+    "lines_over_500": 758,
+    "transition_all": 0
+  },
+  "frontend/src/views/asset/AssetStats.vue": {
+    "hex_colors": 5,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/asset/TagDimensionManage.vue": {
+    "hex_colors": 9,
+    "lines_over_500": 185,
+    "transition_all": 0
+  },
+  "frontend/src/views/auth/LoginPage.vue": {
+    "hex_colors": 17,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/card/CardButler.vue": {
+    "hex_colors": 4,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/color/PaletteView.vue": {
+    "hex_colors": 3,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/color/SwatchGenerator.vue": {
+    "hex_colors": 2,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/commission/CommissionBatch.vue": {
+    "hex_colors": 1,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/commission/CommissionDetail.vue": {
+    "hex_colors": 3,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/commission/SalesCommission.vue": {
+    "hex_colors": 23,
+    "lines_over_500": 108,
+    "transition_all": 0
+  },
+  "frontend/src/views/commission/SalesCommissionDetail.vue": {
+    "hex_colors": 28,
+    "lines_over_500": 258,
+    "transition_all": 0
+  },
+  "frontend/src/views/customer-image/CustomerImagePortal.vue": {
+    "hex_colors": 5,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/customer-image/admin/CustomerImageAdmin.vue": {
+    "hex_colors": 1,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/customer/CustomerSnapshot.vue": {
+    "hex_colors": 1,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/design/AuditQueue.vue": {
+    "hex_colors": 1,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/design/DesignManage.vue": {
+    "hex_colors": 2,
+    "lines_over_500": 262,
+    "transition_all": 0
+  },
+  "frontend/src/views/design/GanttView.vue": {
+    "hex_colors": 1,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/design/MyRequests.vue": {
+    "hex_colors": 1,
+    "lines_over_500": 60,
+    "transition_all": 0
+  },
+  "frontend/src/views/design/SubmitRequest.vue": {
+    "hex_colors": 5,
+    "lines_over_500": 68,
+    "transition_all": 0
+  },
+  "frontend/src/views/expo/ExpoKiosk.vue": {
+    "hex_colors": 8,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/expo/ExpoLeads.vue": {
+    "hex_colors": 2,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/expo/ScriptLibrary.vue": {
+    "hex_colors": 3,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/expo/StoreManagement.vue": {
+    "hex_colors": 1,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/expo/StoreQuotaDrawer.vue": {
+    "hex_colors": 3,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/expo/WigLibrary.vue": {
+    "hex_colors": 3,
+    "lines_over_500": 35,
+    "transition_all": 0
+  },
+  "frontend/src/views/expo/kiosk/AnalyzingScreen.vue": {
+    "hex_colors": 2,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/expo/kiosk/CaptureScreen.vue": {
+    "hex_colors": 2,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/expo/kiosk/MatchingScreen.vue": {
+    "hex_colors": 1,
+    "lines_over_500": 110,
+    "transition_all": 0
+  },
+  "frontend/src/views/expo/kiosk/RegisterScreen.vue": {
+    "hex_colors": 1,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/expo/kiosk/ResultScreen.vue": {
+    "hex_colors": 5,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/expo/kiosk/SalesPanel.vue": {
+    "hex_colors": 6,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/governance/ConceptEditor.vue": {
+    "hex_colors": 9,
+    "lines_over_500": 231,
+    "transition_all": 0
+  },
+  "frontend/src/views/governance/ConceptGraph.vue": {
+    "hex_colors": 14,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/insight/AIToolsView.vue": {
+    "hex_colors": 13,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/insight/CaseForm.vue": {
+    "hex_colors": 2,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/insight/CaseLibraryView.vue": {
+    "hex_colors": 66,
+    "lines_over_500": 246,
+    "transition_all": 0
+  },
+  "frontend/src/views/insight/CustomerOpportunityView.vue": {
+    "hex_colors": 25,
+    "lines_over_500": 82,
+    "transition_all": 0
+  },
+  "frontend/src/views/insight/CustomerRadarView.vue": {
+    "hex_colors": 41,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/insight/DraftField.vue": {
+    "hex_colors": 9,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/insight/IndustryDailyView.vue": {
+    "hex_colors": 35,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/insight/IntelligenceLibrary.vue": {
+    "hex_colors": 2,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/insight/IntelligenceOverview.vue": {
+    "hex_colors": 6,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/insight/InternalReportsView.vue": {
+    "hex_colors": 28,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/insight/MeetingMinutesView.vue": {
+    "hex_colors": 51,
+    "lines_over_500": 184,
+    "transition_all": 0
+  },
+  "frontend/src/views/insight/SourcesAdminView.vue": {
+    "hex_colors": 12,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/knowledge/KnowledgeWorkbench.vue": {
+    "hex_colors": 2,
+    "lines_over_500": 56,
+    "transition_all": 0
+  },
+  "frontend/src/views/knowledge/components/KnowledgeEditor.vue": {
+    "hex_colors": 1,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/layout/MainLayout.vue": {
+    "hex_colors": 2,
+    "lines_over_500": 33,
+    "transition_all": 0
+  },
+  "frontend/src/views/production/PrintCard.vue": {
+    "hex_colors": 5,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/production/ProcessRouteManage.vue": {
+    "hex_colors": 8,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/production/ProductManage.vue": {
+    "hex_colors": 4,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/production/ProductionDashboard.vue": {
+    "hex_colors": 0,
+    "lines_over_500": 95,
+    "transition_all": 0
+  },
+  "frontend/src/views/report/ReportCenter.vue": {
+    "hex_colors": 2,
+    "lines_over_500": 49,
+    "transition_all": 0
+  },
+  "frontend/src/views/report/ReportView.vue": {
+    "hex_colors": 1,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/salary/SalaryWorkbench.vue": {
+    "hex_colors": 0,
+    "lines_over_500": 18,
+    "transition_all": 0
+  },
+  "frontend/src/views/stock/DailyReport.vue": {
+    "hex_colors": 25,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/stock/ProductionOrderManage.vue": {
+    "hex_colors": 29,
+    "lines_over_500": 392,
+    "transition_all": 0
+  },
+  "frontend/src/views/stock/ProductionOrderPrint.vue": {
+    "hex_colors": 10,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/stock/PublicInventory.vue": {
+    "hex_colors": 37,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/stock/SafetyConfig.vue": {
+    "hex_colors": 45,
+    "lines_over_500": 491,
+    "transition_all": 0
+  },
+  "frontend/src/views/stock/StockOverview.vue": {
+    "hex_colors": 44,
+    "lines_over_500": 53,
+    "transition_all": 0
+  },
+  "frontend/src/views/system/AIManager.vue": {
+    "hex_colors": 14,
+    "lines_over_500": 288,
+    "transition_all": 0
+  },
+  "frontend/src/views/system/ExternalBindings.vue": {
+    "hex_colors": 1,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/system/RoleManagement.vue": {
+    "hex_colors": 18,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/system/UserManagement.vue": {
+    "hex_colors": 3,
+    "lines_over_500": 66,
+    "transition_all": 0
+  },
+  "frontend/src/views/system/WhatsAppConnector.vue": {
+    "hex_colors": 0,
+    "lines_over_500": 121,
+    "transition_all": 0
+  },
+  "frontend/src/views/system/components/PermissionMatrixTab.vue": {
+    "hex_colors": 22,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/system/components/PermissionNavTab.vue": {
+    "hex_colors": 19,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/system/components/UserPermissionDrawer.vue": {
+    "hex_colors": 6,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/tracking/ShippingDailyReport.vue": {
+    "hex_colors": 70,
+    "lines_over_500": 232,
+    "transition_all": 0
+  },
+  "frontend/src/views/tracking/TrackingDetail.vue": {
+    "hex_colors": 3,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/tracking/TrackingList.vue": {
+    "hex_colors": 28,
+    "lines_over_500": 154,
+    "transition_all": 0
+  },
+  "frontend/src/views/tracking/WaybillUpload.vue": {
+    "hex_colors": 5,
+    "lines_over_500": 0,
+    "transition_all": 0
+  },
+  "frontend/src/views/tracking/components/WaybillSuccessDialog.vue": {
+    "hex_colors": 62,
+    "lines_over_500": 127,
+    "transition_all": 0
+  },
+  "frontend/src/views/training/TrainingDetail.vue": {
+    "hex_colors": 0,
+    "lines_over_500": 23,
+    "transition_all": 0
+  }
+}

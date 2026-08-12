@@ -51,7 +51,7 @@
           </template>
         </el-table-column>
         <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip />
-        <el-table-column label="操作" width="110" fixed="right">
+        <el-table-column label="操作" min-width="110" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openPeriod(row)">进入工作台</el-button>
           </template>

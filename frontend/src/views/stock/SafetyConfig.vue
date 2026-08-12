@@ -61,7 +61,7 @@
         <span>AI 生成结果预览（{{ aiPreviewCount }} 条），来源：<el-tag size="small" type="warning">{{ aiSourceLabel }}</el-tag></span>
         <span class="banner-hint">点击下方「保存所有」确认写入</span>
       </div>
-      <el-button size="small" @click="clearAiPreview">清除预览</el-button>
+      <el-button @click="clearAiPreview">清除预览</el-button>
     </div>
 
     <!-- 数据表 -->
@@ -99,8 +99,8 @@
           <GlassButton variant="secondary" size="sm" @click="resetFilters">重置</GlassButton>
         </div>
       </div>
-      <el-table :data="tableData" style="width:100%" :header-cell-style="headerStyle" v-loading="loading" @sort-change="handleSortChange">
-        <el-table-column type="index" label="#" width="50" align="center" />
+      <el-table :data="tableData" style="width:100%" :header-cell-style="headerStyle" v-loading="loading" @sort-change="handleSortChange" border class="list-table">
+        <el-table-column type="index" label="#" min-width="50" />
         <el-table-column label="型号" prop="model" min-width="100" show-overflow-tooltip sortable="custom" />
         <el-table-column label="类型" min-width="90" show-overflow-tooltip>
           <template #default="{ row }">{{ parseProductName(row.product_name).type }}</template>
@@ -114,26 +114,26 @@
         <el-table-column label="克重" min-width="80" show-overflow-tooltip>
           <template #default="{ row }">{{ parseProductName(row.product_name).weight }}</template>
         </el-table-column>
-        <el-table-column label="近30日销量" prop="sales_30d" width="95" align="center" sortable="custom">
+        <el-table-column label="近30日销量" prop="sales_30d" min-width="95" sortable="custom">
           <template #default="{ row }">
             <span class="sales-value">{{ row.sales_30d || 0 }}</span><span class="sales-unit">件</span>
           </template>
         </el-table-column>
-        <el-table-column label="当前可用库存" prop="enable_count" width="105" align="center" sortable="custom">
+        <el-table-column label="当前可用库存" prop="enable_count" min-width="105" sortable="custom">
           <template #default="{ row }">
             <span :class="['stock-value', row.enable_count < (row.safety_stock||0) ? 'stock-low' : '']">
               {{ Math.round(row.enable_count || 0) }}
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="生产在途" width="85" align="center">
+        <el-table-column label="生产在途" min-width="85">
           <template #default="{ row }">
             <span :class="['in-transit-value', row.production_in_transit > 0 ? 'in-transit-active' : '']">
               {{ row.production_in_transit || 0 }}
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="备货状态" width="90" align="center">
+        <el-table-column label="备货状态" min-width="90">
           <template #default="{ row }">
             <span
               v-if="row.stock_status"
@@ -146,7 +146,7 @@
             <span v-else class="text-muted">—</span>
           </template>
         </el-table-column>
-        <el-table-column label="安全库存阈值" prop="safety_stock" width="140" align="center" sortable="custom">
+        <el-table-column label="安全库存阈值" prop="safety_stock" min-width="140" sortable="custom">
           <template #default="{ row }">
             <div class="editable-cell">
               <el-input-number v-model="row.safety_stock" :min="0" :max="10000" :step="1" controls-position="right" style="width:100px" @change="markDirty(row)" />
@@ -156,23 +156,23 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="日均销量" width="90" align="center">
+        <el-table-column label="日均销量" min-width="90">
           <template #default="{ row }">
             <span class="avg-daily">{{ (row.avg_daily_sales_30d||0).toFixed(1) }}</span><span class="sales-unit">/天</span>
           </template>
         </el-table-column>
-        <el-table-column label="建议备货量" width="90" align="center">
+        <el-table-column label="建议备货量" min-width="90">
           <template #default="{ row }">
             <span :class="row.suggested_qty > 0 ? 'value-danger' : 'text-muted'">
               {{ row.suggested_qty > 0 ? row.suggested_qty : '—' }}
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="160" align="center" fixed="right">
+        <el-table-column label="操作" min-width="160" fixed="right">
           <template #default="{ row }">
             <div class="action-btns">
-              <el-button size="small" type="warning" plain @click="aiGenerateSingle(row)" :loading="row.aiLoading" v-if="authStore.hasPermission('stock:write')">AI</el-button>
-              <el-button size="small" type="primary" plain @click="openProductionDialog(row)" v-if="authStore.hasPermission('production:write')">
+              <el-button type="warning" plain @click="aiGenerateSingle(row)" :loading="row.aiLoading" v-if="authStore.hasPermission('stock:write')">AI</el-button>
+              <el-button type="primary" plain @click="openProductionDialog(row)" v-if="authStore.hasPermission('production:write')">
                 <el-icon><Plus /></el-icon> 生产下单
               </el-button>
             </div>
@@ -275,15 +275,15 @@
       <div class="cart-drawer">
         <el-empty v-if="cartItems.length === 0" description="购物车为空" />
         <template v-else>
-          <el-table :data="cartItems" @selection-change="toggleCartSelection" style="width:100%">
-            <el-table-column type="selection" width="50" align="center" />
+          <el-table :data="cartItems" @selection-change="toggleCartSelection" style="width:100%" border class="list-table">
+            <el-table-column type="selection" min-width="50" />
             <el-table-column label="产品名称" min-width="140" show-overflow-tooltip>
               <template #default="{ row }">
                 <div class="cart-product-name">{{ row.product_name }}</div>
                 <div class="cart-product-model">{{ row.model }}</div>
               </template>
             </el-table-column>
-            <el-table-column label="下单数量" width="110" align="center">
+            <el-table-column label="下单数量" min-width="110">
               <template #default="{ row }">
                 <el-input-number v-model="row.order_qty" :min="1" :max="999999" :step="1" controls-position="right" size="small" style="width:90px" @change="handleCartQtyChange(row)" />
               </template>
@@ -293,9 +293,9 @@
                 <el-input v-model="row.remark" size="small" placeholder="备注" @blur="handleCartRemarkChange(row)" />
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="60" align="center">
+            <el-table-column label="操作" min-width="60">
               <template #default="{ row }">
-                <el-button type="danger" link size="small" @click="removeCartItem(row.id)">
+                <el-button type="danger" link @click="removeCartItem(row.id)">
                   <el-icon><Delete /></el-icon>
                 </el-button>
               </template>
@@ -306,8 +306,8 @@
               已选 {{ selectedCartIds.length }} 项，共 {{ selectedTotalQty }} 件
             </div>
             <div class="cart-actions">
-              <el-button size="small" @click="batchDeleteCart">批量删除</el-button>
-              <el-button type="primary" size="small" @click="openGenerateOrderDialog" :disabled="selectedCartIds.length === 0">
+              <el-button @click="batchDeleteCart">批量删除</el-button>
+              <el-button type="primary" @click="openGenerateOrderDialog" :disabled="selectedCartIds.length === 0">
                 生成生产订单
               </el-button>
             </div>
@@ -355,24 +355,24 @@
             {{ currentStockStatusRow.stock_status }}
           </el-tag>
         </div>
-        <el-table :data="currentStockStatusRow.stock_items || []" size="small" style="width:100%" v-if="(currentStockStatusRow.stock_items || []).length > 0">
-          <el-table-column label="操作" width="70" align="center">
+        <el-table v-if="(currentStockStatusRow.stock_items || []).length > 0" :data="currentStockStatusRow.stock_items || []" size="small" style="width:100%" border class="list-table">
+          <el-table-column label="操作" min-width="70">
             <template #default="{ row }">
-              <el-button size="small" link type="success" @click="openProgressDialog(row)">进度</el-button>
+              <el-button link type="success" @click="openProgressDialog(row)">进度</el-button>
             </template>
           </el-table-column>
           <el-table-column label="生产单号" prop="order_no" min-width="120" />
           <el-table-column label="批次号" prop="batch_no" min-width="100" />
-          <el-table-column label="下单量" width="80" align="center" prop="order_qty" />
-          <el-table-column label="已入库" width="80" align="center" prop="received_qty" />
-          <el-table-column label="在途" width="70" align="center" prop="in_transit_qty" />
-          <el-table-column label="加急" width="70" align="center">
+          <el-table-column label="下单量" min-width="80" prop="order_qty" />
+          <el-table-column label="已入库" min-width="80" prop="received_qty" />
+          <el-table-column label="在途" min-width="70" prop="in_transit_qty" />
+          <el-table-column label="加急" min-width="70">
             <template #default="{ row }">
               <el-tag v-if="row.is_urgent" type="danger" size="small">加急</el-tag>
               <span v-else class="text-muted">—</span>
             </template>
           </el-table-column>
-          <el-table-column label="预计交期" width="110" align="center">
+          <el-table-column label="预计交期" min-width="110">
             <template #default="{ row }">{{ row.expected_delivery_date || '—' }}</template>
           </el-table-column>
         </el-table>

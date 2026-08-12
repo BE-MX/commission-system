@@ -42,17 +42,17 @@
             <el-icon><Trophy /></el-icon>
             热门素材 Top 10
           </div>
-          <el-table :data="stats.top_assets" size="small" class="stats-table">
-            <el-table-column type="index" width="40" />
+          <el-table :data="stats.top_assets" size="small" class="stats-table list-table" border>
+            <el-table-column type="index" min-width="40" />
             <el-table-column label="文件名" prop="file_name" show-overflow-tooltip sortable />
-            <el-table-column label="类型" width="70">
+            <el-table-column label="类型" min-width="70">
               <template #default="{ row }">
                 <el-tag size="small" :type="fileTypeTag(row.file_type)">
                   {{ fileTypeLabel(row.file_type) }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="下载量" width="80" prop="download_count" sortable />
+            <el-table-column label="下载量" min-width="80" prop="download_count" sortable />
           </el-table>
         </div>
 

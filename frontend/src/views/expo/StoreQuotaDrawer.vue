@@ -34,24 +34,24 @@
     </div>
 
     <div class="block-title">变动记录</div>
-    <el-table :data="records" v-loading="recordsLoading" size="small" border style="width: 100%">
+    <el-table :data="records" v-loading="recordsLoading" size="small" border style="width: 100%" class="list-table">
       <el-table-column prop="created_at" label="时间" min-width="150" show-overflow-tooltip />
-      <el-table-column label="类型" width="76" align="center">
+      <el-table-column label="类型" min-width="76">
         <template #default="{ row }">
           <el-tag size="small" :type="row.type === 'recharge' ? 'success' : 'warning'">
             {{ row.type === 'recharge' ? '充值' : '消耗' }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="张数" width="80" align="right">
+      <el-table-column label="张数" min-width="80" align="right">
         <template #default="{ row }">
           <span :class="row.amount > 0 ? 'amt-plus' : 'amt-minus'">{{ row.amount > 0 ? '+' : '' }}{{ row.amount }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="变动前 → 后" width="110" align="center">
+      <el-table-column label="变动前 → 后" min-width="110">
         <template #default="{ row }">{{ row.balance_before }} → {{ row.balance_after }}</template>
       </el-table-column>
-      <el-table-column label="操作人" width="90" show-overflow-tooltip>
+      <el-table-column label="操作人" min-width="90" show-overflow-tooltip>
         <template #default="{ row }">{{ row.operator_name || `#${row.operator_user_id}` }}</template>
       </el-table-column>
       <el-table-column label="备注" min-width="110" show-overflow-tooltip>

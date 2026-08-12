@@ -279,7 +279,7 @@ onMounted(refreshAll)
   border-radius: 6px;
   cursor: pointer;
   text-align: left;
-  transition: all 0.15s;
+  transition: color 0.15s, background-color 0.15s;
   color: var(--text-tertiary, #8b95a5);
 }
 

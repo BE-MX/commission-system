@@ -297,7 +297,7 @@ onMounted(loadAll)
   display: flex;
   flex-direction: column;
   gap: 8px;
-  transition: all 0.2s;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .tool-card:hover {
@@ -344,7 +344,7 @@ onMounted(loadAll)
   padding: 4px;
   border-radius: 6px;
   color: #d0d5dd;
-  transition: all 0.15s;
+  transition: color 0.15s, background-color 0.15s;
 }
 
 .star-btn:hover { background: #f5f2ee; }

@@ -318,7 +318,7 @@ onMounted(refreshAll)
   cursor: pointer;
   font-size: 12px;
   color: var(--text-tertiary, #8b95a5);
-  transition: all 0.15s;
+  transition: color 0.15s, background-color 0.15s;
   text-align: left;
 }
 

@@ -26,15 +26,15 @@
     </div>
 
     <section class="table-card blend-panel">
-      <el-table v-loading="loading" :data="blendList" style="width: 100%;" @sort-change="orderSort.onSortChange">
-      <el-table-column label="综合色" width="80">
+      <el-table v-loading="loading" :data="blendList" style="width: 100%;" @sort-change="orderSort.onSortChange" border class="list-table">
+      <el-table-column label="综合色" min-width="80">
         <template #default="{ row }">
           <div class="blend-preview" :style="{ backgroundColor: row.computed_hex }"></div>
         </template>
       </el-table-column>
-      <el-table-column prop="blend_code" label="编码" width="120" sortable="custom" />
+      <el-table-column prop="blend_code" label="编码" min-width="120" sortable="custom" />
       <el-table-column prop="display_name" label="名称" sortable="custom" />
-      <el-table-column prop="blend_type" label="类型" width="120" sortable="custom">
+      <el-table-column prop="blend_type" label="类型" min-width="120" sortable="custom">
         <template #default="{ row }">
           <el-tag size="small">{{ blendTypeLabel(row.blend_type) }}</el-tag>
         </template>
@@ -53,16 +53,16 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column prop="source" label="来源" width="120">
+      <el-table-column prop="source" label="来源" min-width="120">
         <template #default="{ row }">
           {{ sourceLabel(row.source) }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="180" fixed="right">
+      <el-table-column label="操作" min-width="180" fixed="right">
         <template #default="{ row }">
-          <el-button size="small" @click="openDetail(row)">详情</el-button>
-          <el-button v-if="canWrite" size="small" type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-button v-if="canAdmin" size="small" type="danger" @click="confirmDelete(row)">删除</el-button>
+          <el-button @click="openDetail(row)">详情</el-button>
+          <el-button v-if="canWrite" type="primary" @click="openEdit(row)">编辑</el-button>
+          <el-button v-if="canAdmin" type="danger" @click="confirmDelete(row)">删除</el-button>
         </template>
       </el-table-column>
       </el-table>
@@ -137,7 +137,7 @@
               <el-option label="均匀" value="even" />
             </el-select>
             <el-input-number v-model="comp.weight" :min="0" :max="1" :step="0.05" :precision="2" style="width: 120px;" />
-            <el-button type="danger" size="small" circle @click="removeComponent(idx)">
+            <el-button type="danger" circle @click="removeComponent(idx)">
               <el-icon><Delete /></el-icon>
             </el-button>
           </div>
@@ -173,18 +173,18 @@
         </div>
         <div class="components-detail">
           <p class="section-title">成分明细</p>
-          <el-table :data="detailData.components" size="small">
-            <el-table-column label="色块" width="60">
+          <el-table :data="detailData.components" size="small" border class="list-table">
+            <el-table-column label="色块" min-width="60">
               <template #default="{ row }">
                 <div class="mini-color" :style="{ backgroundColor: row.palette?.hex_code }"></div>
               </template>
             </el-table-column>
-            <el-table-column prop="palette.industry_code" label="色号" width="80" />
+            <el-table-column prop="palette.industry_code" label="色号" min-width="80" />
             <el-table-column prop="palette.display_name" label="名称" />
-            <el-table-column prop="position" label="位置" width="80">
+            <el-table-column prop="position" label="位置" min-width="80">
               <template #default="{ row }">{{ positionLabel(row.position) }}</template>
             </el-table-column>
-            <el-table-column prop="weight" label="权重" width="80">
+            <el-table-column prop="weight" label="权重" min-width="80">
               <template #default="{ row }">{{ Math.round((row.weight || 0) * 100) }}%</template>
             </el-table-column>
           </el-table>

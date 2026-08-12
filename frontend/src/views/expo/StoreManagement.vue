@@ -27,17 +27,17 @@
       <el-table :data="stores" v-loading="loading" border class="list-table" style="width: 100%">
         <el-table-column prop="name" label="门店名称" min-width="140" show-overflow-tooltip />
         <el-table-column prop="code" label="编码" min-width="100" show-overflow-tooltip />
-        <el-table-column label="状态" width="80" align="center">
+        <el-table-column label="状态" min-width="80">
           <template #default="{ row }">
             <el-tag size="small" :type="row.status === 1 ? 'success' : 'info'">{{ row.status === 1 ? '启用' : '停用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="剩余额度" width="110" align="right">
+        <el-table-column label="剩余额度" min-width="110" align="right">
           <template #default="{ row }">
             <span :class="{ 'quota-zero': row.remaining === 0 }">{{ row.remaining }} 张</span>
           </template>
         </el-table-column>
-        <el-table-column label="已用 / 累计" width="110" align="right">
+        <el-table-column label="已用 / 累计" min-width="110" align="right">
           <template #default="{ row }">{{ row.used_quota }} / {{ row.total_quota }}</template>
         </el-table-column>
         <el-table-column label="联系人" min-width="110" show-overflow-tooltip>
@@ -105,16 +105,16 @@
           <GlassButton variant="primary" :loading="binding" :disabled="!bindForm.user_id" @click="handleBind">绑定</GlassButton>
         </el-form-item>
       </el-form>
-      <el-table :data="storeUsers" v-loading="usersLoading" size="small" border style="width: 100%">
+      <el-table :data="storeUsers" v-loading="usersLoading" size="small" border style="width: 100%" class="list-table">
         <el-table-column prop="username" label="账号" min-width="100" show-overflow-tooltip />
         <el-table-column prop="real_name" label="姓名" min-width="100" show-overflow-tooltip />
-        <el-table-column label="角色" width="80" align="center">
+        <el-table-column label="角色" min-width="80">
           <template #default="{ row }">
             <el-tag v-if="row.is_primary" size="small" type="warning">店长</el-tag>
             <span v-else class="muted">导购</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="80" align="center">
+        <el-table-column label="操作" min-width="80">
           <template #default="{ row }">
             <GlassButton variant="link" link-tone="danger" left-icon="Close" @click="handleUnbind(row)">解绑</GlassButton>
           </template>

@@ -67,9 +67,9 @@
 
     <!-- 列表 -->
     <el-card class="list-card" shadow="never" v-loading="loading">
-      <el-table :data="items" @selection-change="handleSelectionChange" @sort-change="libSort.onSortChange">
-        <el-table-column type="selection" width="40" />
-        <el-table-column label="可信度" width="90" prop="credibility_label" sortable="custom">
+      <el-table :data="items" @selection-change="handleSelectionChange" @sort-change="libSort.onSortChange" border class="list-table">
+        <el-table-column type="selection" min-width="40" />
+        <el-table-column label="可信度" min-width="90" prop="credibility_label" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="credibilityType(row.credibility_label)" size="small">
               {{ credibilityLabel(row.credibility_label) }}
@@ -89,17 +89,17 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="类型" width="100">
+        <el-table-column label="类型" min-width="100">
           <template #default="{ row }">
             <el-tag size="small">{{ row.item_type || '-' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="80" prop="status" sortable="custom">
+        <el-table-column label="状态" min-width="80" prop="status" sortable="custom">
           <template #default="{ row }">
             <el-tag :type="statusType(row.status)" size="small">{{ row.status }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="120" fixed="right">
+        <el-table-column label="操作" min-width="120" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="toggleFeature(row)">
               {{ row.is_featured ? '取消精选' : '精选' }}
@@ -123,8 +123,8 @@
     <!-- 批量操作栏 -->
     <div class="batch-bar" v-if="selectedItems.length > 0">
       <span>已选 {{ selectedItems.length }} 项</span>
-      <el-button size="small" @click="batchFeature(true)">标记精选</el-button>
-      <el-button size="small" @click="batchArchive">归档</el-button>
+      <el-button @click="batchFeature(true)">标记精选</el-button>
+      <el-button @click="batchArchive">归档</el-button>
     </div>
 
     <!-- 上传 MD 弹窗 -->

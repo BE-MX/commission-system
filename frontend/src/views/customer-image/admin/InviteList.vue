@@ -8,28 +8,28 @@
       <InviteCreateDialog v-if="canWrite" :state="state" />
     </div>
 
-    <el-table v-loading="loading" :data="invites" empty-text="暂无邀请记录">
+    <el-table v-loading="loading" :data="invites" empty-text="暂无邀请记录" border class="list-table">
       <el-table-column prop="customer_name" label="客户" min-width="180" show-overflow-tooltip>
         <template #default="{ row }">
           <strong>{{ row.customer_name }}</strong>
           <small>{{ row.customer_id }}</small>
         </template>
       </el-table-column>
-      <el-table-column label="链接核对码" width="110">
+      <el-table-column label="链接核对码" min-width="110">
         <template #default="{ row }">••••••{{ row.token_suffix }}</template>
       </el-table-column>
-      <el-table-column label="额度" width="100">
+      <el-table-column label="额度" min-width="100">
         <template #default="{ row }">{{ row.quota_used }} / {{ row.quota_total }}</template>
       </el-table-column>
       <el-table-column label="失效时间" min-width="170">
         <template #default="{ row }">{{ formatDate(row.expires_at) }}</template>
       </el-table-column>
-      <el-table-column label="状态" width="100">
+      <el-table-column label="状态" min-width="100">
         <template #default="{ row }">
           <el-tag :type="statusOf(row).type" effect="plain">{{ statusOf(row).label }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column v-if="canWrite" label="操作" width="100" fixed="right">
+      <el-table-column v-if="canWrite" label="操作" min-width="100" fixed="right">
         <template #default="{ row }">
           <GlassButton
             v-if="!row.revoked_at"

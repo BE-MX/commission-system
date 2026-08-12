@@ -96,17 +96,17 @@
     <!-- 历史记录 -->
     <div class="history-section">
       <h3>历史生成记录</h3>
-      <el-table :data="historyList" size="small" @sort-change="orderSort.onSortChange">
-        <el-table-column prop="id" label="ID" width="60" />
-        <el-table-column label="色号" width="100">
+      <el-table :data="historyList" size="small" @sort-change="orderSort.onSortChange" border class="list-table">
+        <el-table-column prop="id" label="ID" min-width="60" />
+        <el-table-column label="色号" min-width="100">
           <template #default="{ row }">
             <span v-if="row.palette_id">#{{ row.palette_id }}</span>
             <span v-else-if="row.blend_id">混#{{ row.blend_id }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="target_hex" label="目标色" width="100" />
-        <el-table-column prop="model_used" label="模型" width="120" />
-        <el-table-column label="ΔE" width="100">
+        <el-table-column prop="target_hex" label="目标色" min-width="100" />
+        <el-table-column prop="model_used" label="模型" min-width="120" />
+        <el-table-column label="ΔE" min-width="100">
           <template #default="{ row }">
             <el-tag v-if="row.delta_e !== null" :type="row.pass_check ? 'success' : 'warning'" size="small">
               {{ row.delta_e }}
@@ -114,7 +114,7 @@
             <span v-else>-</span>
           </template>
         </el-table-column>
-        <el-table-column prop="status" label="状态" width="100">
+        <el-table-column prop="status" label="状态" min-width="100">
           <template #default="{ row }">
             <el-tag :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
           </template>

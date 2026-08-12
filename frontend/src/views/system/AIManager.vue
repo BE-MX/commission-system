@@ -44,7 +44,7 @@
         </div>
 
         <el-table :data="filteredProviders" border class="list-table" v-loading="providerLoading">
-          <el-table-column prop="id" label="ID" width="60" />
+          <el-table-column prop="id" label="ID" min-width="60" />
           <el-table-column label="名称" min-width="160">
             <template #default="{ row }">
               <div class="cell-with-icon">
@@ -55,14 +55,14 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="类型" width="110">
+          <el-table-column label="类型" min-width="110">
             <template #default="{ row }">
               <el-tag :type="row.provider_type === 'direct' ? 'primary' : 'success'" size="small" effect="plain">
                 {{ row.provider_type === 'direct' ? '直连' : 'ACCIO' }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="协议" width="100">
+          <el-table-column label="协议" min-width="100">
             <template #default="{ row }">
               <el-tag v-if="row.provider_type === 'direct'" :type="row.api_type === 'anthropic' ? 'warning' : 'info'" size="small" effect="plain">
                 {{ row.api_type === 'anthropic' ? 'Anthropic' : 'OpenAI' }}
@@ -75,28 +75,28 @@
               <div class="mono-text">{{ row.api_base }}</div>
               <div class="key-row">
                 <span class="mono-text key-mask">{{ showKeyMap[row.id] ? row.api_key : (row.api_key ? '****' : '-') }}</span>
-                <el-button v-if="row.api_key" link size="small" @click="toggleKey(row.id)">
+                <el-button v-if="row.api_key" link @click="toggleKey(row.id)">
                   <el-icon><component :is="showKeyMap[row.id] ? 'Hide' : 'View'" /></el-icon>
                 </el-button>
               </div>
             </template>
           </el-table-column>
-          <el-table-column prop="timeout_sec" label="超时" width="70" align="center" />
+          <el-table-column prop="timeout_sec" label="超时" min-width="70" />
           <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip />
-          <el-table-column label="状态" width="80" align="center">
+          <el-table-column label="状态" min-width="80">
             <template #default="{ row }">
               <el-switch v-model="row.is_enabled" @change="toggleProvider(row)" />
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="200" fixed="right">
+          <el-table-column label="操作" min-width="200" fixed="right">
             <template #default="{ row }">
-              <el-button link type="primary" size="small" :loading="testingId === row.id" @click="handleTestProvider(row)">
+              <el-button link type="primary" :loading="testingId === row.id" @click="handleTestProvider(row)">
                 <el-icon><Lightning /></el-icon> 测试
               </el-button>
-              <el-button link type="primary" size="small" @click="openProviderDialog(row)">
+              <el-button link type="primary" @click="openProviderDialog(row)">
                 <el-icon><Edit /></el-icon> 编辑
               </el-button>
-              <el-button link type="danger" size="small" @click="handleDeleteProvider(row)">
+              <el-button link type="danger" @click="handleDeleteProvider(row)">
                 <el-icon><Delete /></el-icon> 删除
               </el-button>
             </template>
@@ -117,7 +117,7 @@
         </div>
 
         <el-table :data="filteredPresets" border class="list-table" v-loading="presetLoading">
-          <el-table-column prop="id" label="ID" width="60" />
+          <el-table-column prop="id" label="ID" min-width="60" />
           <el-table-column label="预设名称" min-width="180">
             <template #default="{ row }">
               <div>
@@ -139,25 +139,25 @@
               <span class="mono-text">{{ row.model || '-' }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="状态" width="80" align="center">
+          <el-table-column label="状态" min-width="80">
             <template #default="{ row }">
               <el-tag :type="row.is_enabled ? 'success' : 'info'" size="small" effect="plain">
                 {{ row.is_enabled ? '启用' : '禁用' }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="240" fixed="right">
+          <el-table-column label="操作" min-width="240" fixed="right">
             <template #default="{ row }">
-              <el-button link type="primary" size="small" @click="openTestPreset(row)">
+              <el-button link type="primary" @click="openTestPreset(row)">
                 <el-icon><VideoPlay /></el-icon> 测试
               </el-button>
-              <el-button link type="primary" size="small" @click="openPresetDialog(row)">
+              <el-button link type="primary" @click="openPresetDialog(row)">
                 <el-icon><Edit /></el-icon> 编辑
               </el-button>
-              <el-button link type="primary" size="small" @click="handleCopyPreset(row)">
+              <el-button link type="primary" @click="handleCopyPreset(row)">
                 <el-icon><DocumentCopy /></el-icon> 复制
               </el-button>
-              <el-button link type="danger" size="small" @click="handleDeletePreset(row)">
+              <el-button link type="danger" @click="handleDeletePreset(row)">
                 <el-icon><Delete /></el-icon> 删除
               </el-button>
             </template>
@@ -215,7 +215,7 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column prop="id" label="ID" width="70" />
+          <el-table-column prop="id" label="ID" min-width="70" />
           <el-table-column label="模块 / Preset" min-width="160">
             <template #default="{ row }">
               <div>
@@ -224,7 +224,7 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="类型" width="80">
+          <el-table-column label="类型" min-width="80">
             <template #default="{ row }">
               <el-tag :type="row.provider_type === 'direct' ? 'primary' : 'success'" size="small" effect="plain">
                 {{ row.provider_type === 'direct' ? '直连' : 'ACCIO' }}
@@ -234,24 +234,24 @@
           <el-table-column prop="model" label="模型" min-width="120" sortable="custom">
             <template #default="{ row }"><span class="mono-text">{{ row.model || '-' }}</span></template>
           </el-table-column>
-          <el-table-column prop="tokens_used" label="Token" width="80" align="right">
+          <el-table-column prop="tokens_used" label="Token" min-width="80" align="right">
             <template #default="{ row }">
               <span class="mono-text">{{ row.tokens_used != null ? row.tokens_used.toLocaleString() : '-' }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="duration_ms" label="耗时" width="90" align="right">
+          <el-table-column prop="duration_ms" label="耗时" min-width="90" align="right">
             <template #default="{ row }">
               <span class="mono-text">{{ row.duration_ms != null ? formatDuration(row.duration_ms) : '-' }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="状态" width="80" align="center">
+          <el-table-column label="状态" min-width="80">
             <template #default="{ row }">
               <el-tag :type="statusTagType(row.status)" size="small" effect="plain">
                 {{ statusLabel(row.status) }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="created_at" label="时间" width="150" sortable="custom" />
+          <el-table-column prop="created_at" label="时间" min-width="150" sortable="custom" />
         </el-table>
 
         <el-pagination v-model:current-page="logPage" v-model:page-size="logPageSize" :page-sizes="[20, 50, 100]" :total="logTotal" layout="total, sizes, prev, pager, next" class="pagination" @change="fetchLogs" />

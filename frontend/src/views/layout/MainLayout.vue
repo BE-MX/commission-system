@@ -314,7 +314,7 @@ function handleUserCommand(cmd) {
   font-family: var(--font-display);
   font-size: 13px;
   font-weight: 500;
-  transition: all 0.2s ease;
+  transition: color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
   position: relative;
 }
 :deep(.el-menu-item:hover),
@@ -409,7 +409,7 @@ function handleUserCommand(cmd) {
   justify-content: center;
   cursor: pointer;
   color: var(--text-secondary);
-  transition: all 0.2s ease;
+  transition: color 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
   font-size: 16px;
 }
 .collapse-toggle:hover {

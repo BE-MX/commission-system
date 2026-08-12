@@ -32,7 +32,7 @@
     <!-- 表格 -->
     <div class="table-card">
       <el-table :data="items" v-loading="loading" border class="list-table" @selection-change="onSelectionChange">
-        <el-table-column type="selection" width="40" />
+        <el-table-column type="selection" min-width="40" />
         <el-table-column prop="product_no" label="产品编号" min-width="140" max-width="210" show-overflow-tooltip />
         <el-table-column prop="name" label="产品名称" min-width="200" max-width="300" show-overflow-tooltip />
         <el-table-column prop="model" label="型号" min-width="100" max-width="150" show-overflow-tooltip />

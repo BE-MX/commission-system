@@ -43,7 +43,7 @@
             </div>
           </div>
           <div class="log-actions">
-            <el-button v-if="isAdmin" type="primary" link size="small" @click="handleRollback(log)">
+            <el-button v-if="isAdmin" type="primary" link @click="handleRollback(log)">
               回滚到此版本
             </el-button>
           </div>

@@ -88,7 +88,7 @@
           </el-button>
         </div>
         <el-table :data="filteredAnomalies" border class="list-table" max-height="380">
-          <el-table-column label="严重度" width="90">
+          <el-table-column label="严重度" min-width="90">
             <template #default="{ row }">
               <el-tag size="small" effect="dark"
                       :type="row.severity === 'blocking' ? 'danger' : 'info'">
@@ -96,11 +96,11 @@
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="kind_label" label="类型" width="140" />
+          <el-table-column prop="kind_label" label="类型" min-width="140" />
           <el-table-column prop="message" label="问题" min-width="260" show-overflow-tooltip />
           <!-- 每条异常都带 action：只报告问题不给下一步，等于把活推回给用户 -->
           <el-table-column prop="action" label="怎么处理" min-width="280" show-overflow-tooltip />
-          <el-table-column label="操作" width="100" fixed="right">
+          <el-table-column label="操作" min-width="100" fixed="right">
             <template #default="{ row }">
               <!-- 记录级异常的处理场所在明细表（action 文案也这么写），其余去考勤页 -->
               <el-button v-if="row.employee_id" link type="primary"
@@ -177,9 +177,9 @@
           </el-alert>
 
           <el-table :data="attendance.items" border class="list-table" max-height="460">
-            <el-table-column prop="emp_no" label="工号" width="80" />
-            <el-table-column prop="name" label="姓名" width="90" />
-            <el-table-column label="应出" width="80" align="right">
+            <el-table-column prop="emp_no" label="工号" min-width="80" />
+            <el-table-column prop="name" label="姓名" min-width="90" />
+            <el-table-column label="应出" min-width="80" align="right">
               <template #default="{ row }">
                 <!-- 钉值优先于规则推导（后端引擎同样优先取它），星号 + tooltip 标明 -->
                 <el-tooltip v-if="row.due_days_manual !== null && row.due_days_manual !== undefined"
@@ -189,7 +189,7 @@
                 <template v-else>{{ money(row.due_days) }}</template>
               </template>
             </el-table-column>
-            <el-table-column label="实出" width="80" align="right">
+            <el-table-column label="实出" min-width="80" align="right">
               <template #default="{ row }">
                 <span v-if="row.actual_days !== null">{{ money(row.actual_days) }}</span>
                 <el-tooltip v-else content="请假小时没录，算不出实出天数">
@@ -197,7 +197,7 @@
                 </el-tooltip>
               </template>
             </el-table-column>
-            <el-table-column label="事假(h)" width="96" align="right">
+            <el-table-column label="事假(h)" min-width="96" align="right">
               <template #default="{ row }">
                 {{ hours(row.personal_leave_hours) }}
                 <el-tooltip v-if="row.leave_source === 'manual'"
@@ -206,7 +206,7 @@
                 </el-tooltip>
               </template>
             </el-table-column>
-            <el-table-column label="病假(h)" width="96" align="right">
+            <el-table-column label="病假(h)" min-width="96" align="right">
               <template #default="{ row }">
                 {{ hours(row.sick_leave_hours) }}
                 <el-tooltip v-if="row.leave_source === 'manual'"
@@ -215,23 +215,23 @@
                 </el-tooltip>
               </template>
             </el-table-column>
-            <el-table-column label="年假" width="70" align="right">
+            <el-table-column label="年假" min-width="70" align="right">
               <template #default="{ row }">{{ money(row.annual_leave_days) }}</template>
             </el-table-column>
-            <el-table-column label="迟到" prop="late_count" width="60" align="right" />
-            <el-table-column label="早退" prop="early_leave_count" width="60" align="right" />
-            <el-table-column label="漏卡" prop="miss_punch_count" width="60" align="right" />
-            <el-table-column label="旷工" width="70" align="right">
+            <el-table-column label="迟到" prop="late_count" min-width="60" align="right" />
+            <el-table-column label="早退" prop="early_leave_count" min-width="60" align="right" />
+            <el-table-column label="漏卡" prop="miss_punch_count" min-width="60" align="right" />
+            <el-table-column label="旷工" min-width="70" align="right">
               <template #default="{ row }">{{ money(row.absent_count) }}</template>
             </el-table-column>
-            <el-table-column label="全勤" width="70">
+            <el-table-column label="全勤" min-width="70">
               <template #default="{ row }">
                 <el-tag size="small" :type="row.full_attendance ? 'success' : 'info'" effect="plain">
                   {{ row.full_attendance ? '是' : '否' }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="80" fixed="right">
+            <el-table-column label="操作" min-width="80" fixed="right">
               <template #default="{ row }">
                 <el-button v-if="writable" v-permission="'salary:write'" link type="primary"
                            @click="openEditAttendance(row)">录入</el-button>

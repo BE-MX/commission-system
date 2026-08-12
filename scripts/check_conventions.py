@@ -31,6 +31,7 @@ AUTH_PATTERNS = re.compile(
     r"|get_current_mini_user|_require_\w+|_verify_\w+"
     r"|require_pm_member"  # PM 协作站自定义鉴权（验签+回查白名单），登记即逐端点强制
     r"|require_sales_agent"  # 智能获客 Agent：可撤销 opaque token + invoke 权限
+    r"|verify_runtime_heartbeat_token"  # 云实例：service+instance claim 机器 token SHA-256 白名单
 )
 # 无鉴权豁免的 router 文件（机器对机器/公开入口，均有刻意决策记录）
 AUTH_EXEMPT_FILES = ("mini/router.py", "auth/router.py", "api/short_link.py", "stock/public_router.py",
@@ -219,6 +220,20 @@ def main() -> int:
     ap.add_argument("--base", default="HEAD", help="diff 基准（默认 HEAD=工作区改动）")
     ap.add_argument("--strict", action="store_true", help="有红项时 exit 1")
     args = ap.parse_args()
+
+    ui_audit = subprocess.run(
+        [
+            sys.executable,
+            str(REPO / "scripts/audit_frontend_ui.py"),
+            "--baseline-ref",
+            args.base,
+        ],
+        cwd=REPO,
+        text=True,
+    )
+    if ui_audit.returncode:
+        print("check_conventions: UI 债务门禁失败")
+        return 1
 
     findings = check(args.base)
     reds = [f for f in findings if f[0] == RED]

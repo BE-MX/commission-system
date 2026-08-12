@@ -176,7 +176,7 @@
         </div>
         <el-divider />
         <div class="detail-subtitle">产品明细</div>
-        <el-table :data="currentOrder.items || []">
+        <el-table :data="currentOrder.items || []" border class="list-table">
           <el-table-column label="操作" min-width="140" max-width="210">
             <template #default="{ row }">
               <GlassButton variant="link" left-icon="List" @click="toggleItemProgress(row)">进度</GlassButton>

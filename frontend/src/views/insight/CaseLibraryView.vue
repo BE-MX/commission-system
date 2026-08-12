@@ -67,8 +67,8 @@
               </button>
               <!-- 编辑/删除 -->
               <template v-if="canEdit(c)">
-                <el-button link type="primary" size="small" :icon="Edit" @click.stop="openEdit(c)">编辑</el-button>
-                <el-button link type="danger" size="small" :icon="Delete" @click.stop="handleDelete(c)">删除</el-button>
+                <el-button link type="primary" :icon="Edit" @click.stop="openEdit(c)">编辑</el-button>
+                <el-button link type="danger" :icon="Delete" @click.stop="handleDelete(c)">删除</el-button>
               </template>
             </div>
           </div>
@@ -93,8 +93,8 @@
           <h4 class="card-title">{{ c.title }}</h4>
           <p class="card-customer">客户: {{ c.customer_name || '—' }} · 分享人: {{ c.share_person || '匿名' }}</p>
           <div v-if="canEdit(c)" class="list-actions" @click.stop>
-            <el-button link type="primary" size="small" :icon="Edit" @click="openEdit(c)">编辑</el-button>
-            <el-button link type="danger" size="small" :icon="Delete" @click="handleDelete(c)">删除</el-button>
+            <el-button link type="primary" :icon="Edit" @click="openEdit(c)">编辑</el-button>
+            <el-button link type="danger" :icon="Delete" @click="handleDelete(c)">删除</el-button>
           </div>
         </div>
       </div>
@@ -518,7 +518,7 @@ const {
   color: var(--text-tertiary, #8b95a5);
   padding: 2px 6px;
   border-radius: 6px;
-  transition: all 0.15s;
+  transition: color 0.15s, background-color 0.15s;
 }
 
 .like-btn:hover { background: #fafbfe; }

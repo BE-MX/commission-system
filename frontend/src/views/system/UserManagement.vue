@@ -126,7 +126,7 @@
           <el-form-item label="微信ID">
             <div style="display: flex; gap: 8px; width: 100%;">
               <el-input v-model="wxIdForm.wx_id" placeholder="微信原始ID（如 oXXXX...）" style="flex:1" />
-              <el-button v-permission="'user:write'" type="primary" size="small" :loading="savingWxId" @click="saveWxId">保存</el-button>
+              <el-button v-permission="'user:write'" type="primary" :loading="savingWxId" @click="saveWxId">保存</el-button>
             </div>
             <div class="form-tip">用于工人扫码报工时身份匹配，由管理员通过测试扫码获取</div>
           </el-form-item>
@@ -137,7 +137,7 @@
               </el-checkbox-group>
               <div v-if="allProcesses.length === 0" style="color: #909399; font-size: 12px;">暂无工序，请先在工序管理页创建</div>
               <div style="margin-top: 8px;">
-                <el-button v-permission="'user:write'" type="primary" size="small" :loading="savingBindings" @click="saveBindings">保存绑定</el-button>
+                <el-button v-permission="'user:write'" type="primary" :loading="savingBindings" @click="saveBindings">保存绑定</el-button>
                 <span style="margin-left: 8px; color: #909399; font-size: 12px;">已绑定 {{ bindingForm.process_ids.length }} 个工序</span>
               </div>
             </div>

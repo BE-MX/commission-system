@@ -195,7 +195,7 @@
               <el-icon><List /></el-icon>
               运单明细
             </h4>
-            <el-table :data="reportShipments" size="small" class="shipment-table" border>
+            <el-table :data="reportShipments" size="small" class="shipment-table list-table" border>
               <el-table-column prop="waybill_no" label="运单号" min-width="130" show-overflow-tooltip sortable>
                 <template #default="{ row }">
                   <strong>{{ row.waybill_no }}</strong>
@@ -353,7 +353,7 @@ const {
   justify-content: center;
   color: #8b95a5;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s;
 }
 .nav-btn:hover {
   background: #f0f2f7;
@@ -398,7 +398,7 @@ const {
   justify-content: center;
   font-size: 13px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, box-shadow 0.2s;
   position: relative;
   border: 1px solid transparent;
 }

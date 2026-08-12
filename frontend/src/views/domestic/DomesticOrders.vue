@@ -108,8 +108,8 @@
             </div>
           </div>
 
-          <el-table v-if="item.steps.length" :data="item.steps" size="small" border class="step-table">
-            <el-table-column prop="step_order" label="#" width="46" />
+          <el-table v-if="item.steps.length" :data="item.steps" size="small" border class="step-table list-table">
+            <el-table-column prop="step_order" label="#" min-width="46" />
             <el-table-column prop="process_name" label="工序" min-width="100" />
             <el-table-column label="已完成" min-width="90">
               <template #default="{ row }">{{ row.completed_qty }} / {{ row.order_qty }}</template>
@@ -120,7 +120,7 @@
               </template>
             </el-table-column>
             <el-table-column prop="last_reported_at" label="最后报工" min-width="150" show-overflow-tooltip />
-            <el-table-column label="操作" width="100">
+            <el-table-column label="操作" min-width="100">
               <template #default="{ row }">
                 <GlassButton
                   v-if="row.reportable_qty > 0 && item.status === 0" v-permission="'domestic:write'"
@@ -190,7 +190,7 @@
     </el-dialog>
 
     <el-dialog v-model="logDialog.visible" title="报工流水" width="680px">
-      <el-table :data="logDialog.logs" v-loading="logDialog.loading" size="small" border style="width: 100%">
+      <el-table :data="logDialog.logs" v-loading="logDialog.loading" size="small" border style="width: 100%" class="list-table">
         <el-table-column prop="process_name" label="工序" min-width="100" />
         <el-table-column prop="report_qty" label="数量" min-width="70" />
         <el-table-column prop="reported_by_name" label="报工人" min-width="90" />
@@ -201,7 +201,7 @@
             <el-tag v-else size="small" type="success" effect="plain">有效</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="90">
+        <el-table-column label="操作" min-width="90">
           <template #default="{ row }">
             <GlassButton
               v-if="!row.revoked" v-permission="'domestic:write'"

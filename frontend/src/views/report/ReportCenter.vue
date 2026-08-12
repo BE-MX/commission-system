@@ -81,9 +81,9 @@
     <!-- Stimulsoft Designer 全屏模式 -->
     <div v-if="designerMode" class="designer-page">
       <div class="designer-toolbar">
-        <el-button @click="closeDesigner" size="small">← 返回列表</el-button>
+        <el-button @click="closeDesigner">← 返回列表</el-button>
         <span class="toolbar-info">正在编辑：{{ designerTemplateName }}（v{{ designerTemplateVersion }}）</span>
-        <el-button type="success" size="small" :loading="savingDesigner" @click="handleDesignerSave">保存</el-button>
+        <el-button type="success" :loading="savingDesigner" @click="handleDesignerSave">保存</el-button>
       </div>
       <div ref="designerContainer" class="designer-container"></div>
     </div>
@@ -135,7 +135,7 @@
           style="width: 300px; margin-right: 12px;"
           clearable
         />
-        <el-button type="primary" size="small" @click="refreshPreview">预览</el-button>
+        <el-button type="primary" @click="refreshPreview">预览</el-button>
       </div>
       <StimulsoftViewer
         v-if="previewVisible && previewReady"

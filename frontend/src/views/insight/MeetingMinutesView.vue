@@ -408,7 +408,7 @@ onMounted(refreshList)
   margin-bottom: 4px;
   border-radius: 8px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: color 0.15s, background-color 0.15s;
 }
 
 .timeline-item:hover { background: #fafbfe; }

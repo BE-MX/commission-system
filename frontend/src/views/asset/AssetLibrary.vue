@@ -11,7 +11,7 @@
     <aside class="filter-sidebar" :class="{ collapsed: sidebarCollapsed }">
       <div class="sidebar-header">
         <span class="sidebar-title">筛选</span>
-        <el-button type="text" size="small" @click="resetFilters">重置</el-button>
+        <el-button type="text" @click="resetFilters">重置</el-button>
       </div>
 
       <!-- 标签关键字筛选 -->
@@ -203,12 +203,12 @@
           </div>
           <div class="card-actions" @click.stop>
             <el-tooltip content="下载">
-              <el-button circle size="small" @click="handleDownload(asset)">
+              <el-button circle @click="handleDownload(asset)">
                 <el-icon><Download /></el-icon>
               </el-button>
             </el-tooltip>
             <el-tooltip content="收藏">
-              <el-button circle size="small" @click="handleFavorite(asset)">
+              <el-button circle @click="handleFavorite(asset)">
                 <el-icon><Star /></el-icon>
               </el-button>
             </el-tooltip>
@@ -217,8 +217,8 @@
       </div>
 
       <!-- 列表视图 -->
-      <el-table v-else :data="assets" class="asset-list-table" style="width: 100%" @row-click="openPreview" @sort-change="orderSort.onSortChange">
-        <el-table-column label="缩略图" width="80">
+      <el-table v-else :data="assets" class="asset-list-table list-table" style="width: 100%" @row-click="openPreview" @sort-change="orderSort.onSortChange" border>
+        <el-table-column label="缩略图" min-width="80">
           <template #default="{ row }">
             <img v-if="row.file_type === 'image' || (row.file_type === 'video' && row.thumbnail_path)" :src="getThumbUrl(row.thumbnail_path || row.storage_path)" class="table-thumb" />
             <el-icon v-else-if="row.file_type === 'video'" size="24"><VideoPlay /></el-icon>
@@ -226,12 +226,12 @@
           </template>
         </el-table-column>
         <el-table-column label="文件名" prop="file_name" min-width="200" show-overflow-tooltip sortable="custom" />
-        <el-table-column label="类型" width="80">
+        <el-table-column label="类型" min-width="80">
           <template #default="{ row }">
             <el-tag size="small" :type="fileTypeTag(row.file_type)">{{ fileTypeLabel(row.file_type) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="大小" width="100">
+        <el-table-column label="大小" min-width="100">
           <template #default="{ row }">{{ formatSize(row.file_size) }}</template>
         </el-table-column>
         <el-table-column label="标签" min-width="200">
@@ -244,15 +244,15 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="上传时间" prop="created_at" width="160" sortable="custom">
+        <el-table-column label="上传时间" prop="created_at" min-width="160" sortable="custom">
           <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="140" fixed="right">
+        <el-table-column label="操作" min-width="140" fixed="right">
           <template #default="{ row }">
-            <el-button size="small" @click.stop="handleDownload(row)">
+            <el-button @click.stop="handleDownload(row)">
               <el-icon><Download /></el-icon>
             </el-button>
-            <el-button size="small" @click.stop="handleFavorite(row)">
+            <el-button @click.stop="handleFavorite(row)">
               <el-icon><Star /></el-icon>
             </el-button>
           </template>
@@ -847,7 +847,7 @@ onMounted(async () => {
   cursor: pointer;
   font-size: 12px;
   line-height: 1.4;
-  transition: all 0.15s;
+  transition: color 0.15s, background-color 0.15s, border-color 0.15s;
   user-select: none;
 }
 

@@ -100,9 +100,9 @@
 
     <!-- 数据表 -->
     <div class="card">
-      <el-table :data="tableData" style="width:100%" :header-cell-style="headerStyle" v-loading="loading" stripe
-        :row-class-name="rowClassName" @sort-change="handleSortChange">
-        <el-table-column type="index" label="#" width="50" align="center" />
+      <el-table :data="tableData" style="width:100%" :header-cell-style="headerStyle" v-loading="loading"
+        :row-class-name="rowClassName" @sort-change="handleSortChange" border class="list-table">
+        <el-table-column type="index" label="#" min-width="50" />
         <el-table-column label="型号" prop="model" min-width="120" sortable="custom" show-overflow-tooltip />
         <el-table-column label="类型" min-width="100" show-overflow-tooltip>
           <template #default="{ row }">{{ parseProductName(row.product_name).type }}</template>
@@ -116,40 +116,40 @@
         <el-table-column label="克重" min-width="90" show-overflow-tooltip>
           <template #default="{ row }">{{ parseProductName(row.product_name).weight }}</template>
         </el-table-column>
-        <el-table-column label="30天销量" prop="sales_30d" width="100" align="center" sortable="custom">
+        <el-table-column label="30天销量" prop="sales_30d" min-width="100" sortable="custom">
           <template #default="{ row }"><span class="value-gold">{{ row.sales_30d }}</span></template>
         </el-table-column>
-        <el-table-column label="90天销量" prop="sales_90d" width="100" align="center" sortable="custom">
+        <el-table-column label="90天销量" prop="sales_90d" min-width="100" sortable="custom">
           <template #default="{ row }"><span style="color:#888">{{ row.sales_90d }}</span></template>
         </el-table-column>
-        <el-table-column label="日均销量" prop="avg_daily_sales_30d" width="100" align="center" sortable="custom">
+        <el-table-column label="日均销量" prop="avg_daily_sales_30d" min-width="100" sortable="custom">
           <template #default="{ row }">
             <span class="avg-badge">{{ row.avg_daily_sales_30d?.toFixed(1) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="可用库存(小满)" prop="enable_count" width="120" align="center" sortable="custom">
+        <el-table-column label="可用库存(小满)" prop="enable_count" min-width="120" sortable="custom">
           <template #default="{ row }">
             <span>{{ Math.round(row.enable_count || 0) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="实时库存(小满)" prop="real_count" width="120" align="center" sortable="custom">
+        <el-table-column label="实时库存(小满)" prop="real_count" min-width="120" sortable="custom">
           <template #default="{ row }">
             <span>{{ Math.round(row.real_count || 0) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="可用库存" prop="effective_enable_count" width="100" align="center" sortable="custom">
+        <el-table-column label="可用库存" prop="effective_enable_count" min-width="100" sortable="custom">
           <template #default="{ row }">
             <span :class="getStockClass(row)">{{ Math.round(row.effective_enable_count ?? row.enable_count) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="生产在途" prop="production_in_transit" width="90" align="center" sortable="custom">
+        <el-table-column label="生产在途" prop="production_in_transit" min-width="90" sortable="custom">
           <template #default="{ row }">
             <span :class="['in-transit-value', row.production_in_transit > 0 ? 'in-transit-active' : '']">
               {{ row.production_in_transit || 0 }}
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="备货状态" width="90" align="center">
+        <el-table-column label="备货状态" min-width="90">
           <template #default="{ row }">
             <span
               v-if="row.stock_status"
@@ -162,18 +162,18 @@
             <span v-else class="text-muted">—</span>
           </template>
         </el-table-column>
-        <el-table-column label="安全库存" prop="safety_stock" width="100" align="center" sortable="custom">
+        <el-table-column label="安全库存" prop="safety_stock" min-width="100" sortable="custom">
           <template #default="{ row }">
             <span v-if="row.safety_stock" style="font-weight:500;color:#666">{{ row.safety_stock }}</span>
             <el-tag v-else size="small" type="info">未设置</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="建议备货量" width="100" align="center">
+        <el-table-column label="建议备货量" min-width="100">
           <template #default="{ row }">
             <span :class="row.suggested_qty > 0 ? 'value-danger' : 'text-muted'">{{ row.suggested_qty > 0 ? row.suggested_qty : '—' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="100" align="center" fixed="right">
+        <el-table-column label="状态" min-width="100" fixed="right">
           <template #default="{ row }">
             <el-tag :type="statusTagType(row.status)" size="small" effect="dark" class="status-tag">
               <el-icon :size="12" style="margin-right:2px"><component :is="statusIcon(row.status)" /></el-icon>
@@ -181,7 +181,7 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="来源" width="80" align="center">
+        <el-table-column label="来源" min-width="80">
           <template #default="{ row }">
             <el-tag v-if="row.safety_stock_source" size="small" :type="sourceTagType(row.safety_stock_source)">{{ sourceLabel(row.safety_stock_source) }}</el-tag>
             <span v-else class="text-muted">—</span>
@@ -203,24 +203,24 @@
             {{ currentStockStatusRow.stock_status }}
           </el-tag>
         </div>
-        <el-table :data="currentStockStatusRow.stock_items || []" size="small" style="width:100%" v-if="(currentStockStatusRow.stock_items || []).length > 0">
-          <el-table-column label="操作" width="70" align="center">
+        <el-table v-if="(currentStockStatusRow.stock_items || []).length > 0" :data="currentStockStatusRow.stock_items || []" size="small" style="width:100%" border class="list-table">
+          <el-table-column label="操作" min-width="70">
             <template #default="{ row }">
-              <el-button size="small" link type="success" @click="openProgressDialog(row)">进度</el-button>
+              <el-button link type="success" @click="openProgressDialog(row)">进度</el-button>
             </template>
           </el-table-column>
           <el-table-column label="生产单号" prop="order_no" min-width="120" />
           <el-table-column label="批次号" prop="batch_no" min-width="100" />
-          <el-table-column label="下单量" width="80" align="center" prop="order_qty" />
-          <el-table-column label="已入库" width="80" align="center" prop="received_qty" />
-          <el-table-column label="在途" width="70" align="center" prop="in_transit_qty" />
-          <el-table-column label="加急" width="70" align="center">
+          <el-table-column label="下单量" min-width="80" prop="order_qty" />
+          <el-table-column label="已入库" min-width="80" prop="received_qty" />
+          <el-table-column label="在途" min-width="70" prop="in_transit_qty" />
+          <el-table-column label="加急" min-width="70">
             <template #default="{ row }">
               <el-tag v-if="row.is_urgent" type="danger" size="small">加急</el-tag>
               <span v-else class="text-muted">—</span>
             </template>
           </el-table-column>
-          <el-table-column label="预计交期" width="110" align="center">
+          <el-table-column label="预计交期" min-width="110">
             <template #default="{ row }">{{ row.expected_delivery_date || '—' }}</template>
           </el-table-column>
         </el-table>

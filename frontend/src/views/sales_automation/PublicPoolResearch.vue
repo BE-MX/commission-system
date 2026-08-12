@@ -41,13 +41,13 @@
         <el-table-column label="客户" min-width="210">
           <template #default="{ row }"><div class="company-cell"><strong>{{ row.subject.display_name }}</strong><span>{{ row.subject.country || '地区未知' }} · OKKI {{ row.subject.source_customer_id }}</span></div></template>
         </el-table-column>
-        <el-table-column label="档位" width="105"><template #default="{ row }"><el-tag :type="tierMeta(row.tier).type">{{ tierMeta(row.tier).label }}</el-tag></template></el-table-column>
+        <el-table-column label="档位" min-width="105"><template #default="{ row }"><el-tag :type="tierMeta(row.tier).type">{{ tierMeta(row.tier).label }}</el-tag></template></el-table-column>
         <el-table-column label="订单 / 完整度" min-width="145"><template #default="{ row }">{{ row.subject.order_count }} 单 / {{ row.subject.completeness_score }}%</template></el-table-column>
-        <el-table-column label="背调进度" width="105"><template #default="{ row }"><el-tag :type="statusMeta(row.status).type" effect="plain">{{ statusMeta(row.status).label }}</el-tag></template></el-table-column>
-        <el-table-column label="成交等级" width="110"><template #default="{ row }"><span v-if="row.assessment" class="grade" :data-grade="row.assessment.grade">{{ row.assessment.grade }}</span><span v-else>-</span></template></el-table-column>
-        <el-table-column label="证据置信度" width="115"><template #default="{ row }">{{ confidenceLabel(row.assessment?.evidence_confidence) }}</template></el-table-column>
-        <el-table-column label="团队分配" width="125"><template #default="{ row }"><el-tag :type="allocationMeta(row).type" effect="plain">{{ allocationMeta(row).label }}</el-tag></template></el-table-column>
-        <el-table-column label="操作" width="230" fixed="right">
+        <el-table-column label="背调进度" min-width="105"><template #default="{ row }"><el-tag :type="statusMeta(row.status).type" effect="plain">{{ statusMeta(row.status).label }}</el-tag></template></el-table-column>
+        <el-table-column label="成交等级" min-width="110"><template #default="{ row }"><span v-if="row.assessment" class="grade" :data-grade="row.assessment.grade">{{ row.assessment.grade }}</span><span v-else>-</span></template></el-table-column>
+        <el-table-column label="证据置信度" min-width="115"><template #default="{ row }">{{ confidenceLabel(row.assessment?.evidence_confidence) }}</template></el-table-column>
+        <el-table-column label="团队分配" min-width="125"><template #default="{ row }"><el-tag :type="allocationMeta(row).type" effect="plain">{{ allocationMeta(row).label }}</el-tag></template></el-table-column>
+        <el-table-column label="操作" min-width="230" fixed="right">
           <template #default="{ row }">
             <GlassButton variant="link" left-icon="View" @click="openDetail(row)">详情</GlassButton>
             <template v-if="row.status === 'completed' && row.review_status === 'pending'">

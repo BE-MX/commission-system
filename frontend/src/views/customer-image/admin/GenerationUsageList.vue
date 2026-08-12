@@ -8,21 +8,21 @@
       <GlassButton variant="outline" left-icon="Refresh" :loading="loading" @click="load()">刷新</GlassButton>
     </div>
 
-    <el-table v-loading="loading" :data="generations" empty-text="暂无生成记录">
-      <el-table-column prop="id" label="任务" width="90">
+    <el-table v-loading="loading" :data="generations" empty-text="暂无生成记录" border class="list-table">
+      <el-table-column prop="id" label="任务" min-width="90">
         <template #default="{ row }">#{{ row.id }}</template>
       </el-table-column>
       <el-table-column prop="product_name" label="产品" min-width="170" show-overflow-tooltip />
-      <el-table-column prop="invite_id" label="邀请" width="90">
+      <el-table-column prop="invite_id" label="邀请" min-width="90">
         <template #default="{ row }">#{{ row.invite_id }}</template>
       </el-table-column>
-      <el-table-column label="状态" width="110">
+      <el-table-column label="状态" min-width="110">
         <template #default="{ row }"><el-tag :type="statusType[row.status] || 'info'" effect="plain">{{ statusLabel[row.status] || row.status }}</el-tag></template>
       </el-table-column>
       <el-table-column label="Token" min-width="150">
         <template #default="{ row }">{{ formatNumber(row.total_tokens) }} <small>（入 {{ formatNumber(row.input_tokens) }} / 出 {{ formatNumber(row.output_tokens) }}）</small></template>
       </el-table-column>
-      <el-table-column label="预估成本" width="120">
+      <el-table-column label="预估成本" min-width="120">
         <template #default="{ row }">{{ formatCost(row.estimated_cost_microusd) }}</template>
       </el-table-column>
       <el-table-column label="创建时间" min-width="170">

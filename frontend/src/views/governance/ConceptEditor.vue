@@ -241,15 +241,15 @@
         <!-- 7. 关联（Phase 2 完整实现，Phase 1 只读展示） -->
         <section id="sec-relationships" class="form-section lg-card is-static">
           <h3>🔗 关联关系</h3>
-          <el-table :data="relationships" stripe style="width: 100%">
-            <el-table-column prop="relation_type" label="关系类型" width="150">
+          <el-table :data="relationships" style="width: 100%" border class="list-table">
+            <el-table-column prop="relation_type" label="关系类型" min-width="150">
               <template #default="{ row }">
                 <el-tag size="small" :color="relTypeColor(row.relation_type)" effect="dark" style="border: none">
                   {{ row.relation_type }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="方向" width="80">
+            <el-table-column label="方向" min-width="80">
               <template #default="{ row }">
                 {{ row.direction === 'forward' ? '→' : '←' }}
               </template>
@@ -263,7 +263,7 @@
             <el-table-column prop="description" label="备注" min-width="200" show-overflow-tooltip />
           </el-table>
           <div v-if="canEdit" style="margin-top: 12px">
-            <el-button :icon="Plus" size="small" @click="addRelDrawerVisible = true">添加关联</el-button>
+            <el-button :icon="Plus" @click="addRelDrawerVisible = true">添加关联</el-button>
           </div>
         </section>
 
@@ -686,7 +686,7 @@ onMounted(() => {
   cursor: pointer;
   font-size: 14px;
   color: var(--el-text-color-regular);
-  transition: all 0.2s;
+  transition: color 0.2s, background-color 0.2s;
 }
 
 .section-nav-item:hover {

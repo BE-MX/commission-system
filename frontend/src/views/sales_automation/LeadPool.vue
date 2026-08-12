@@ -45,7 +45,7 @@
         <el-table-column label="更新时间" min-width="155">
           <template #default="{ row }">{{ formatTime(row.updated_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="150" fixed="right">
+        <el-table-column label="操作" min-width="150" fixed="right">
           <template #default="{ row }">
             <GlassButton variant="link" left-icon="View" @click="openDetail(row)">详情</GlassButton>
             <GlassButton
@@ -95,14 +95,14 @@
           </el-tab-pane>
 
           <el-tab-pane :label="`联系人 (${detail.contacts?.length || 0})`" name="contacts">
-            <el-table v-if="detail.contacts?.length" :data="detail.contacts" border>
+            <el-table v-if="detail.contacts?.length" :data="detail.contacts" border class="list-table">
               <el-table-column prop="name" label="姓名" min-width="110" />
               <el-table-column prop="role" label="职位" min-width="140" show-overflow-tooltip />
               <el-table-column prop="email" label="邮箱" min-width="190" show-overflow-tooltip />
-              <el-table-column label="验证" width="90">
+              <el-table-column label="验证" min-width="90">
                 <template #default="{ row }"><el-tag :type="emailStatus(row.email_status).type" effect="plain">{{ emailStatus(row.email_status).label }}</el-tag></template>
               </el-table-column>
-              <el-table-column label="证据" width="70">
+              <el-table-column label="证据" min-width="70">
                 <template #default="{ row }"><a :href="row.source_url" target="_blank" rel="noopener noreferrer">来源</a></template>
               </el-table-column>
             </el-table>

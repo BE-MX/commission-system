@@ -115,19 +115,19 @@
     <!-- 定时设置弹窗 (简化版) -->
     <el-dialog v-model="showScheduleDialog" title="定时生成规则" width="700px">
       <div class="schedule-header">
-        <el-button type="primary" size="small" @click="showAddRule = true">+ 新建规则</el-button>
+        <el-button type="primary" @click="showAddRule = true">+ 新建规则</el-button>
       </div>
-      <el-table :data="scheduleRules" size="small">
+      <el-table :data="scheduleRules" size="small" border class="list-table">
         <el-table-column prop="rule_name" label="规则名" />
         <el-table-column prop="cron_expression" label="Cron" />
-        <el-table-column label="状态" width="80">
+        <el-table-column label="状态" min-width="80">
           <template #default="{ row }">
             <el-tag :type="row.is_active ? 'success' : 'info'" size="small">{{ row.is_active ? '启用' : '停用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="120">
+        <el-table-column label="操作" min-width="120">
           <template #default="{ row }">
-            <el-button link size="small" @click="toggleRule(row.id)">{{ row.is_active ? '停用' : '启用' }}</el-button>
+            <el-button link @click="toggleRule(row.id)">{{ row.is_active ? '停用' : '启用' }}</el-button>
           </template>
         </el-table-column>
       </el-table>

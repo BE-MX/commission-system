@@ -252,7 +252,7 @@ onMounted(() => {
   border-radius: 50%;
   overflow: hidden;
   border: 2px solid var(--border-color);
-  transition: all 0.25s ease;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
 }
 .avatar-preview:hover {
   border-color: var(--color-primary);
@@ -275,7 +275,7 @@ onMounted(() => {
   justify-content: center;
   gap: 4px;
   color: var(--text-muted);
-  transition: all 0.25s ease;
+  transition: color 0.25s ease, border-color 0.25s ease;
 }
 .avatar-placeholder:hover {
   border-color: var(--color-primary);

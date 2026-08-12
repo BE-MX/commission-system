@@ -80,7 +80,7 @@
             <el-tag v-if="aiConfidence > 0" size="small" type="info">
               置信度 {{ Math.round(aiConfidence * 100) }}%
             </el-tag>
-            <el-button link type="primary" size="small" @click="acceptAllAiTags">
+            <el-button link type="primary" @click="acceptAllAiTags">
               一键接受
             </el-button>
           </div>

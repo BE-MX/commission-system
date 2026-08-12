@@ -28,9 +28,9 @@
                              :placeholder="col.flat ? '留空=清除人工值' : `引擎 ${money(row[col.prop]?.auto)}`"
                              @keyup.enter="commitEdit(row, col)"
                              @keyup.esc="cancelEdit" />
-            <el-button link type="primary" size="small" :loading="savingCell"
+            <el-button link type="primary" :loading="savingCell"
                        @click="commitEdit(row, col)"><el-icon><Check /></el-icon></el-button>
-            <el-button link size="small" @click="cancelEdit"><el-icon><Close /></el-icon></el-button>
+            <el-button link @click="cancelEdit"><el-icon><Close /></el-icon></el-button>
           </div>
           <el-tooltip v-else :disabled="!isOverridden(row, col.prop)"
                       :content="overrideTip(row, col.prop)" placement="top">

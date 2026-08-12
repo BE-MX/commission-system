@@ -42,20 +42,19 @@
             <el-tag v-if="dim.is_managed" size="small" type="warning" effect="plain">系统托管</el-tag>
           </div>
           <div class="dim-actions">
-            <el-button link type="primary" size="small" @click="toggleDimVisible(dim)">
+            <el-button link type="primary" @click="toggleDimVisible(dim)">
               {{ dim.is_visible ? '停用' : '启用' }}
             </el-button>
-            <el-button link type="primary" size="small" @click="openEditDim(dim)">
+            <el-button link type="primary" @click="openEditDim(dim)">
               <el-icon><Edit /></el-icon>编辑
             </el-button>
-            <el-button v-if="!dim.is_managed" link type="primary" size="small" @click="openCreateValue(dim)">
+            <el-button v-if="!dim.is_managed" link type="primary" @click="openCreateValue(dim)">
               <el-icon><Plus /></el-icon>添加值
             </el-button>
             <el-button
               v-if="!dim.is_system"
               link
               type="danger"
-              size="small"
               @click="handleDeleteDim(dim)"
             >
               <el-icon><Delete /></el-icon>删除
@@ -102,10 +101,10 @@
             <span v-if="val.name_en" class="value-name-en">{{ val.name_en }}</span>
             <span v-if="!val.is_active" class="value-inactive">(已禁用)</span>
             <div v-if="!dim.is_managed" class="value-actions">
-              <el-button link type="primary" size="small" @click="openEditValue(dim, val)">
+              <el-button link type="primary" @click="openEditValue(dim, val)">
                 编辑
               </el-button>
-              <el-button link type="danger" size="small" @click="handleDeleteValue(val)">
+              <el-button link type="danger" @click="handleDeleteValue(val)">
                 删除
               </el-button>
             </div>

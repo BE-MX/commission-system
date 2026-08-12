@@ -90,7 +90,7 @@
             </div>
             <div class="card-actions" @click.stop>
               <el-tooltip content="取消收藏">
-                <el-button circle size="small" type="danger" plain @click="handleRemove(item)">
+                <el-button circle type="danger" plain @click="handleRemove(item)">
                   <el-icon><Delete /></el-icon>
                 </el-button>
               </el-tooltip>

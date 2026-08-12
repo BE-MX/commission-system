@@ -123,7 +123,7 @@
               <div v-for="(signal, i) in (selectedProfile.profile_signals_json || []).slice(0, 5)" :key="i" class="cr-signal-item">
                 <el-icon color="#258060"><SuccessFilled /></el-icon>
                 <span>{{ signal }}</span>
-                <el-button link size="small" @click="openSources('opportunity')">原文</el-button>
+                <el-button link @click="openSources('opportunity')">原文</el-button>
               </div>
             </div>
           </div>
@@ -140,7 +140,7 @@
             <div class="cr-message-box">
               <div class="cr-message-head">
                 <span>{{ selectedAction.suggested_next_action || '跟进消息' }}</span>
-                <el-button size="small" @click="copyText(selectedAction.suggested_message)">复制</el-button>
+                <el-button @click="copyText(selectedAction.suggested_message)">复制</el-button>
               </div>
               <el-input type="textarea" v-model="selectedAction.suggested_message" :autosize="{ minRows: 3, maxRows: 6 }" />
             </div>
@@ -283,7 +283,7 @@ import { ElMessage } from 'element-plus'
 }
 .cr-panel-title { min-height: 42px; padding: 0 13px; border-bottom: 1px solid #e0e6ef; display: flex; align-items: center; justify-content: space-between; font-weight: 800; font-size: 14px; }
 .cr-thread-list { padding: 8px; overflow: auto; display: flex; flex-direction: column; gap: 5px; flex: 1; }
-.cr-thread-card { width: 100%; min-height: 56px; border-radius: 8px; border: 1px solid transparent; background: #fff; padding: 8px; text-align: left; cursor: pointer; color: #344155; transition: all .15s; }
+.cr-thread-card { width: 100%; min-height: 56px; border-radius: 8px; border: 1px solid transparent; background: var(--card-bg); padding: 8px; text-align: left; cursor: pointer; color: var(--text-secondary); transition: color .15s, background-color .15s, border-color .15s; }
 .cr-thread-card:hover { background: #fffdf8; }
 .cr-thread-card.active { background: #fff7e8; border-color: #f0d8a7; color: #87570b; }
 .cr-thread-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-weight: 800; }
@@ -296,7 +296,7 @@ import { ElMessage } from 'element-plus'
 .cr-toolbar { min-height: 44px; display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid #e0e6ef; }
 .cr-toolbar-meta { margin-left: auto; color: #788395; font-size: 12px; }
 .cr-action-list { overflow: auto; flex: 1; min-height: 0; }
-.cr-action-row { min-height: 90px; border-bottom: 1px solid #e0e6ef; display: grid; grid-template-columns: 1fr 140px; gap: 12px; padding: 12px; cursor: pointer; transition: all .15s; }
+.cr-action-row { min-height: 90px; border-bottom: 1px solid var(--border-color); display: grid; grid-template-columns: 1fr 140px; gap: 12px; padding: 12px; cursor: pointer; transition: background-color .15s, box-shadow .15s, opacity .15s; }
 .cr-action-row:hover { background: #fffdf8; }
 .cr-action-row.active { background: #fffaf0; box-shadow: inset 3px 0 0 #c98716; }
 .cr-action-row.done { opacity: .5; }

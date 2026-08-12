@@ -14,8 +14,8 @@
       >新建产品</GlassButton>
     </div>
 
-    <el-table v-loading="loading" :data="products" empty-text="暂无可查看的产品模板">
-      <el-table-column label="封面" width="86">
+    <el-table v-loading="loading" :data="products" empty-text="暂无可查看的产品模板" border class="list-table">
+      <el-table-column label="封面" min-width="86">
         <template #default="{ row }">
           <img v-if="productCoverUrls[row.id]" :src="productCoverUrls[row.id]" :alt="row.name" class="product-cover">
           <span v-else class="cover-empty">暂无</span>
@@ -23,13 +23,13 @@
       </el-table-column>
       <el-table-column prop="name" label="产品" min-width="180" show-overflow-tooltip />
       <el-table-column prop="category" label="分类" min-width="120" show-overflow-tooltip />
-      <el-table-column label="参数" width="84">
+      <el-table-column label="参数" min-width="84">
         <template #default="{ row }">{{ row.options?.length || 0 }} 项</template>
       </el-table-column>
-      <el-table-column label="配置版本" width="100">
+      <el-table-column label="配置版本" min-width="100">
         <template #default="{ row }">v{{ row.config_version }}</template>
       </el-table-column>
-      <el-table-column label="状态" width="100">
+      <el-table-column label="状态" min-width="100">
         <template #default="{ row }">
           <el-tag :type="row.is_published ? 'success' : 'info'" effect="plain">
             {{ row.is_published ? '已发布' : '草稿' }}

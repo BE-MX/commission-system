@@ -17,30 +17,30 @@
     </div>
 
     <div class="sources-panel">
-      <el-table :data="sources" v-loading="loading" border class="source-table" style="width: 100%">
-      <el-table-column prop="id" label="ID" width="60" sortable />
-      <el-table-column prop="sort_order" label="排序" width="80" sortable />
+      <el-table :data="sources" v-loading="loading" border class="source-table list-table" style="width: 100%">
+      <el-table-column prop="id" label="ID" min-width="60" sortable />
+      <el-table-column prop="sort_order" label="排序" min-width="80" sortable />
       <el-table-column prop="name" label="名称" min-width="160" show-overflow-tooltip sortable />
-      <el-table-column prop="source_type" label="类型" width="140" sortable>
+      <el-table-column prop="source_type" label="类型" min-width="140" sortable>
         <template #default="{ row }">
           <el-tag size="small" effect="light">{{ TYPE_LABELS[row.source_type] || row.source_type }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column prop="url" label="URL" min-width="240" show-overflow-tooltip />
-      <el-table-column label="管线" width="80">
+      <el-table-column label="管线" min-width="80">
         <template #default="{ row }">
           <el-tag size="small" :type="row.pipeline === 'external' ? 'info' : 'success'">{{ row.pipeline === 'external' ? '外部' : '内部' }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="抓取间隔" width="100">
+      <el-table-column label="抓取间隔" min-width="100">
         <template #default="{ row }">{{ row.fetch_interval_hours }}h</template>
       </el-table-column>
-      <el-table-column prop="is_active" label="状态" width="80" sortable>
+      <el-table-column prop="is_active" label="状态" min-width="80" sortable>
         <template #default="{ row }">
           <el-tag :type="row.is_active ? 'success' : 'danger'" size="small" effect="plain">{{ row.is_active ? '启用' : '禁用' }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="健康度" width="120">
+      <el-table-column label="健康度" min-width="120">
         <template #default="{ row }">
           <span v-if="row.consecutive_failures === 0" class="health ok">正常</span>
           <span v-else class="health bad">连续失败 {{ row.consecutive_failures }} 次</span>
@@ -54,7 +54,7 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="240" fixed="right">
+      <el-table-column label="操作" min-width="240" fixed="right">
         <template #default="{ row }">
           <GlassButton variant="link" left-icon="Connection" @click="testOne(row)">测试连通</GlassButton>
           <GlassButton variant="link" left-icon="Edit" @click="openEdit(row)">编辑</GlassButton>

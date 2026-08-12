@@ -373,8 +373,8 @@
                 <el-tag type="danger" size="small">{{ importResult.failed }}</el-tag>
               </el-descriptions-item>
             </el-descriptions>
-            <el-table v-if="importResult.errors?.length" :data="importResult.errors" border size="small" max-height="300">
-              <el-table-column prop="row" label="行号" width="80" />
+            <el-table v-if="importResult.errors?.length" :data="importResult.errors" border size="small" max-height="300" class="list-table">
+              <el-table-column prop="row" label="行号" min-width="80" />
               <el-table-column prop="reason" label="失败原因" />
             </el-table>
           </div>

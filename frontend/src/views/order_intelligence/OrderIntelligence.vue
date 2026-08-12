@@ -135,7 +135,7 @@
         <div v-else-if="activeTab === 'countries'" v-loading="detailLoading" class="oi-table-wrap">
           <div class="oi-section-note"><b>国家机会评分</b><span>{{ countries.score_definition }}</span></div>
           <el-table :data="countries.items" border class="list-table">
-            <el-table-column type="expand" width="48">
+            <el-table-column type="expand" min-width="48">
               <template #default="{ row }">
                 <div class="oi-row-evidence">
                   <section><h4>订单金额层级 · 较上期份额变化</h4><div><span v-for="bucket in row.amount_distribution" :key="bucket.label"><b>{{ bucket.label }}</b>{{ bucket.share }}% <em :class="changeClass(bucket.share_change_pp)">{{ ppChangeText(bucket.share_change_pp) }}</em></span></div></section>

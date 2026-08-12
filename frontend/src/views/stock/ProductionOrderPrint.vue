@@ -39,7 +39,7 @@
       row-key="id"
       :expand-row-keys="expandedRows"
       @expand-change="handleExpand"
-      class="order-table"
+      class="order-table list-table"
     >
       <el-table-column type="expand">
         <template #default="{ row }">
@@ -76,7 +76,6 @@
                   <span class="print-time" v-else>&nbsp;</span>
                   <el-button
                     type="primary"
-                    size="small"
                     :icon="Printer"
                     @click="handlePrintCategory(row, cat)"
                   >打印</el-button>
@@ -94,13 +93,13 @@
         </template>
       </el-table-column>
       <el-table-column label="批次号" prop="batch_no" min-width="150" />
-      <el-table-column label="状态" prop="status_label" width="80" align="center">
+      <el-table-column label="状态" prop="status_label" min-width="80">
         <template #default="{ row }">
           <el-tag :type="statusType(row.status)" size="small" effect="light">{{ row.status_label }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="明细数" prop="item_count" width="80" align="center" />
-      <el-table-column label="总数量" prop="total_order_qty" width="90" align="center">
+      <el-table-column label="明细数" prop="item_count" min-width="80" />
+      <el-table-column label="总数量" prop="total_order_qty" min-width="90">
         <template #default="{ row }">
           <span class="qty-text">{{ row.total_order_qty }}</span>
         </template>
@@ -116,11 +115,10 @@
           <el-tag v-else type="warning" size="small" effect="light">未打印</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="130" align="center" fixed="right">
+      <el-table-column label="操作" min-width="130" fixed="right">
         <template #default="{ row }">
           <el-button
             type="primary"
-            size="small"
             :icon="Printer"
             @click="handlePrintOrder(row)"
           >打印整单</el-button>

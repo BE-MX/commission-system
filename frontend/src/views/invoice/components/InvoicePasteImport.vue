@@ -69,8 +69,8 @@
           highlight-current-row
           class="list-table preview-table"
         >
-          <el-table-column prop="source_row" label="Excel 行" width="78" fixed />
-          <el-table-column label="状态" width="88" fixed>
+          <el-table-column prop="source_row" label="Excel 行" min-width="78" fixed />
+          <el-table-column label="状态" min-width="88" fixed>
             <template #default="{ row }">
               <el-tag :type="statusType(row.status)" effect="plain">{{ statusText(row.status) }}</el-tag>
             </template>
@@ -78,25 +78,25 @@
           <el-table-column label="Product" min-width="220" show-overflow-tooltip>
             <template #default="{ row }">{{ row.normalized.product }}</template>
           </el-table-column>
-          <el-table-column label="Length" width="82">
+          <el-table-column label="Length" min-width="82">
             <template #default="{ row }">{{ row.normalized.length }}</template>
           </el-table-column>
-          <el-table-column label="Color" width="86">
+          <el-table-column label="Color" min-width="86">
             <template #default="{ row }">{{ row.normalized.color }}</template>
           </el-table-column>
-          <el-table-column label="Weight" width="88">
+          <el-table-column label="Weight" min-width="88">
             <template #default="{ row }">{{ row.normalized.weight }}</template>
           </el-table-column>
-          <el-table-column label="数量" width="70" align="right">
+          <el-table-column label="数量" min-width="70" align="right">
             <template #default="{ row }">{{ row.normalized.quantity }}</template>
           </el-table-column>
-          <el-table-column label="Excel 成交价" width="118" align="right">
+          <el-table-column label="Excel 成交价" min-width="118" align="right">
             <template #default="{ row }">{{ displayUnitPrice(row.normalized.unit_price) }}</template>
           </el-table-column>
-          <el-table-column label="客户价" width="102" align="right">
+          <el-table-column label="客户价" min-width="102" align="right">
             <template #default="{ row }">{{ nullableMoney(row.customer_price) }}</template>
           </el-table-column>
-          <el-table-column label="差额" width="100" align="right">
+          <el-table-column label="差额" min-width="100" align="right">
             <template #default="{ row }">{{ nullableMoney(row.price_difference) }}</template>
           </el-table-column>
           <el-table-column label="匹配结果 / 处理" min-width="290" fixed="right">

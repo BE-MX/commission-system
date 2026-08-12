@@ -293,7 +293,7 @@ async function onDeleteVersion() {
   border: 1px solid var(--hairline-strong);
   background: var(--paper-raised);
   border-radius: 999px;
-  transition: all var(--dur-fast) var(--ease-out);
+  transition: color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
 }
 .flow-step:active { transform: scale(0.96); }
 @media (hover: hover) and (pointer: fine) {

@@ -46,8 +46,7 @@
       <div class="co-segments">
         <el-button
           v-for="g in gradeOptions" :key="g.value"
-          :type="filters.priority_level === g.value ? 'warning' : 'default'"
-          size="small" @click="filters.priority_level = g.value; applyFilters()"
+          :type="filters.priority_level === g.value ? 'warning' : 'default'" @click="filters.priority_level = g.value; applyFilters()"
         >{{ g.label }}</el-button>
       </div>
       <el-input
@@ -196,27 +195,26 @@
               <div class="message-box">
                 <div class="message-head">
                   <span>首回复（英文）</span>
-                  <el-button size="small" @click="copyText(selectedOpp.opening_message_en)">复制</el-button>
+                  <el-button @click="copyText(selectedOpp.opening_message_en)">复制</el-button>
                 </div>
                 <div class="message-body">{{ selectedOpp.opening_message_en }}</div>
               </div>
               <div class="message-box" v-if="selectedOpp.follow_up_message_en">
                 <div class="message-head">
                   <span>二次追问（英文）</span>
-                  <el-button size="small" @click="copyText(selectedOpp.follow_up_message_en)">复制</el-button>
+                  <el-button @click="copyText(selectedOpp.follow_up_message_en)">复制</el-button>
                 </div>
                 <div class="message-body">{{ selectedOpp.follow_up_message_en }}</div>
               </div>
               <div class="feedback-row">
-                <el-button size="small" @click="submitFeedback('useful', '有帮助')"><el-icon><Top /></el-icon> 有帮助</el-button>
-                <el-button size="small" @click="feedbackReasonVisible = !feedbackReasonVisible"><el-icon><Bottom /></el-icon> 不准确</el-button>
+                <el-button @click="submitFeedback('useful', '有帮助')"><el-icon><Top /></el-icon> 有帮助</el-button>
+                <el-button @click="feedbackReasonVisible = !feedbackReasonVisible"><el-icon><Bottom /></el-icon> 不准确</el-button>
               </div>
               <div class="feedback-reasons" v-if="feedbackReasonVisible">
                 <div class="feedback-reasons-title">哪里不准确？</div>
                 <div class="feedback-reasons-options">
                   <el-button
-                    v-for="reason in feedbackReasons" :key="reason"
-                    size="small" @click="handleFeedbackReason(reason)"
+                    v-for="reason in feedbackReasons" :key="reason" @click="handleFeedbackReason(reason)"
                   >{{ reason }}</el-button>
                 </div>
               </div>
@@ -262,13 +260,13 @@
               <GlassButton variant="warning" full-width @click="changeStatusAndNext('contacted')">✓ 标记已联系，处理下一条</GlassButton>
             </div>
             <div class="detail-actions-secondary">
-              <el-button size="small" @click="changeStatus('replied')">有回复</el-button>
-              <el-button size="small" @click="changeStatus('quoted')">已报价</el-button>
-              <el-button size="small" @click="changeStatus('won')">已成交</el-button>
+              <el-button @click="changeStatus('replied')">有回复</el-button>
+              <el-button @click="changeStatus('quoted')">已报价</el-button>
+              <el-button @click="changeStatus('won')">已成交</el-button>
             </div>
             <div class="detail-actions-edge">
-              <el-button size="small" @click="changeStatus('dismissed')"><el-icon><Close /></el-icon>忽略此机会</el-button>
-              <el-button size="small" @click="changeStatus('lost')"><el-icon><User /></el-icon>已流失</el-button>
+              <el-button @click="changeStatus('dismissed')"><el-icon><Close /></el-icon>忽略此机会</el-button>
+              <el-button @click="changeStatus('lost')"><el-icon><User /></el-icon>已流失</el-button>
             </div>
           </div>
         </template>

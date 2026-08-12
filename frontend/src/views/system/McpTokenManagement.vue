@@ -39,7 +39,7 @@
         </div>
       </div>
 
-      <el-table v-if="filteredRows.length || loading" v-loading="loading" :data="filteredRows" class="token-table">
+      <el-table v-if="filteredRows.length || loading" v-loading="loading" :data="filteredRows" class="token-table list-table" border>
         <el-table-column label="Agent 用途" min-width="170">
           <template #default="{ row }"><strong class="purpose">{{ row.label }}</strong></template>
         </el-table-column>
@@ -60,7 +60,7 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="100">
+        <el-table-column label="状态" min-width="100">
           <template #default="{ row }">
             <span :class="['status', row.is_active ? 'is-active' : 'is-revoked']">
               <i />{{ row.is_active ? '有效' : '已吊销' }}
@@ -73,7 +73,7 @@
         <el-table-column label="创建时间" min-width="160">
           <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="190" fixed="right">
+        <el-table-column label="操作" min-width="190" fixed="right">
           <template #default="{ row }">
             <template v-if="row.is_active">
               <GlassButton variant="link" left-icon="Refresh" @click="rotateToken(row)">重新发放</GlassButton>

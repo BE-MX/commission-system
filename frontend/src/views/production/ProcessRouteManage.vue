@@ -27,8 +27,8 @@
               <span>· {{ r.product_count }} 个产品</span>
             </div>
             <div class="route-item-actions">
-              <el-button v-permission="'production:admin'" link size="small" @click.stop="openRouteForm(r)">编辑</el-button>
-              <el-button v-permission="'production:admin'" link size="small" type="danger" @click.stop="deleteRoute(r)">删除</el-button>
+              <el-button v-permission="'production:admin'" link @click.stop="openRouteForm(r)">编辑</el-button>
+              <el-button v-permission="'production:admin'" link type="danger" @click.stop="deleteRoute(r)">删除</el-button>
             </div>
           </div>
           <el-empty v-if="!routeLoading && routes.length === 0" description="暂无路线" />
@@ -52,7 +52,7 @@
                   <span class="drag-handle">≡</span>
                   <span class="step-order">{{ index + 1 }}</span>
                   <span class="step-name">{{ element.process_name }}</span>
-                  <el-button v-permission="'production:admin'" link type="danger" size="small" @click="removeStep(index)">×</el-button>
+                  <el-button v-permission="'production:admin'" link type="danger" @click="removeStep(index)">×</el-button>
                 </div>
               </template>
             </draggable>

@@ -31,7 +31,6 @@
                 <img :src="previewUrl" class="preview-image" alt="运单预览" />
                 <div class="preview-actions">
                   <el-button
-                    size="small"
                     type="danger"
                     plain
                     @click.stop="clearImage"
@@ -299,7 +298,7 @@ const {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s;
+  transition: background-color 0.2s, opacity 0.2s;
 }
 
 .waybill-uploader.is-disabled :deep(.el-upload-dragger) {

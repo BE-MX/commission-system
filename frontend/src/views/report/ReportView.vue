@@ -1,7 +1,7 @@
 <template>
   <div class="report-view-page">
     <div class="view-toolbar">
-      <el-button @click="goBack" :icon="Back" size="small">返回</el-button>
+      <el-button @click="goBack" :icon="Back">返回</el-button>
       <span class="toolbar-title">{{ reportName }}</span>
     </div>
     <StimulsoftViewer

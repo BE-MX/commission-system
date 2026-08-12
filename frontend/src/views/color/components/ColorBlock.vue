@@ -53,7 +53,7 @@ const previewStyle = computed(() => {
   overflow: hidden;
   background: var(--el-bg-color);
   border: 1px solid var(--el-border-color-lighter);
-  transition: all 0.2s ease;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
   cursor: default;
 }
 .color-block.is-clickable {
