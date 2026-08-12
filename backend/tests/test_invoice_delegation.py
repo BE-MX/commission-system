@@ -1,11 +1,14 @@
 """订单代创建授权：执行人与业务归属必须分离。"""
 
 from datetime import date
+import importlib.util
+from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy.dialects import mysql
 
 from app.auth.models import ArkUser, ArkUserExternalBinding
 from app.invoice import delegation_service, service
@@ -13,6 +16,14 @@ from app.invoice.models import Invoice, InvoiceDelegateGrant
 from app.invoice.schemas import InvoiceCreate
 from app.auth.utils import create_access_token
 from app.core.database import get_db
+
+
+def _load_migration():
+    path = Path(__file__).parents[1] / "alembic/versions/107_invoice_delegate_grants.py"
+    spec = importlib.util.spec_from_file_location("migration_107_invoice_delegate_grants", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _user(db, user_id: int, name: str, *, active: bool = True) -> ArkUser:
@@ -43,6 +54,16 @@ def _client(db, *, sub: int, permissions: list[str]):
         "sub": str(sub), "username": f"user{sub}", "roles": [], "permissions": permissions,
     })
     return TestClient(app, headers={"Authorization": f"Bearer {token}"})
+
+
+def test_delegate_user_foreign_keys_match_mysql_unsigned_user_id():
+    migration = _load_migration()
+
+    assert migration.USER_ID.compile(dialect=mysql.dialect()) == "INTEGER UNSIGNED"
+    for column_name in ("delegate_user_id", "sales_user_id", "created_by"):
+        column = InvoiceDelegateGrant.__table__.c[column_name]
+        assert column.type.compile(dialect=mysql.dialect()) == "INTEGER UNSIGNED"
+        assert next(iter(column.foreign_keys)).target_fullname == "ark_users.id"
 
 
 def test_assignees_include_self_and_only_active_grants(db):

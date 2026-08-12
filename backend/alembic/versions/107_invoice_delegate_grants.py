@@ -7,6 +7,7 @@ Create Date: 2026-08-12
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import mysql
 
 
 revision = "107_invoice_delegate_grants"
@@ -14,14 +15,18 @@ down_revision = "106_public_pool_research"
 branch_labels = None
 depends_on = None
 
+# ark_users.id 在 MySQL 中是 INT UNSIGNED；外键列必须连 unsigned 属性也完全一致，
+# 否则 MySQL 会以 3780 拒绝 CREATE TABLE。SQLite 测试仍使用普通 Integer。
+USER_ID = sa.Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql")
+
 
 def upgrade() -> None:
     op.create_table(
         "ark_invoice_delegate_grants",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("delegate_user_id", sa.Integer(), nullable=False, comment="代创建人 ark_users.id"),
-        sa.Column("sales_user_id", sa.Integer(), nullable=False, comment="订单归属业务员 ark_users.id"),
-        sa.Column("created_by", sa.Integer(), nullable=True, comment="授权操作人 ark_users.id"),
+        sa.Column("delegate_user_id", USER_ID, nullable=False, comment="代创建人 ark_users.id"),
+        sa.Column("sales_user_id", USER_ID, nullable=False, comment="订单归属业务员 ark_users.id"),
+        sa.Column("created_by", USER_ID, nullable=True, comment="授权操作人 ark_users.id"),
         sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
         sa.ForeignKeyConstraint(["delegate_user_id"], ["ark_users.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["sales_user_id"], ["ark_users.id"], ondelete="CASCADE"),

@@ -17,8 +17,12 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
+from sqlalchemy.dialects import mysql
 
 from app.core.database import Base
+
+
+USER_ID = Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql")
 
 
 class Invoice(Base):
@@ -92,9 +96,9 @@ class InvoiceDelegateGrant(Base):
     __tablename__ = "ark_invoice_delegate_grants"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    delegate_user_id = Column(Integer, ForeignKey("ark_users.id", ondelete="CASCADE"), nullable=False, index=True, comment="代创建人 ark_users.id")
-    sales_user_id = Column(Integer, ForeignKey("ark_users.id", ondelete="CASCADE"), nullable=False, index=True, comment="订单归属业务员 ark_users.id")
-    created_by = Column(Integer, ForeignKey("ark_users.id", ondelete="SET NULL"), nullable=True, comment="授权操作人 ark_users.id")
+    delegate_user_id = Column(USER_ID, ForeignKey("ark_users.id", ondelete="CASCADE"), nullable=False, index=True, comment="代创建人 ark_users.id")
+    sales_user_id = Column(USER_ID, ForeignKey("ark_users.id", ondelete="CASCADE"), nullable=False, index=True, comment="订单归属业务员 ark_users.id")
+    created_by = Column(USER_ID, ForeignKey("ark_users.id", ondelete="SET NULL"), nullable=True, comment="授权操作人 ark_users.id")
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
