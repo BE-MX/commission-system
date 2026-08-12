@@ -60,6 +60,13 @@ from app.knowledge.models import (
     KnowledgeAuditLog,
 )
 from app.order_intelligence.models import OrderIntelligenceBriefJob
+from app.operations.db_models import (
+    JobRun,
+    OperationAudit,
+    RuntimeHeartbeat,
+    RuntimeInstance,
+    SchedulerJobPolicy,
+)
 
 __all__ = [
     # 提成系统自有表
@@ -132,4 +139,10 @@ __all__ = [
     "KnowledgeAuditLog",
     # 订单经营 AI 简报
     "OrderIntelligenceBriefJob",
+    # 运行与自动化中心
+    "JobRun",
+    "OperationAudit",
+    "RuntimeHeartbeat",
+    "RuntimeInstance",
+    "SchedulerJobPolicy",
 ]

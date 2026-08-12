@@ -99,6 +99,8 @@ class TestSchedulerRegistration:
                 "design_image_queue",
                 "customer_image_queue",
                 "customer_image_cleanup",
+                "runtime_heartbeat_monitor",
+                "operations_history_cleanup",
             }
             design_image = scheduler.get_job("design_image_queue")
             assert design_image.max_instances == 1

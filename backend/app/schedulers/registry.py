@@ -5,6 +5,7 @@ import logging
 import socket
 import sys
 import threading
+from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -26,7 +27,11 @@ logger = logging.getLogger("commission")
 
 _active_scheduler: Optional[AsyncIOScheduler] = None
 _job_runtime: dict[str, dict] = {}
+_job_active_run_keys: dict[str, set[str]] = {}
+_job_completed_before_submission: dict[str, set[str]] = {}
 _job_runtime_lock = threading.Lock()
+_job_event_persist_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="job-run-writer")
+_job_event_persist_slots = threading.BoundedSemaphore(100)
 
 # 任务 ID 常量,避免散落字符串
 JOB_DESIGN_SHOOT_REMINDER = "design_shoot_reminder"
@@ -47,6 +52,8 @@ JOB_DESIGN_IMAGE_QUEUE = "design_image_queue"
 JOB_CUSTOMER_IMAGE_QUEUE = "customer_image_queue"
 JOB_CUSTOMER_IMAGE_CLEANUP = "customer_image_cleanup"
 JOB_SALES_PUBLIC_POOL_DAILY = "sales_public_pool_daily"
+JOB_RUNTIME_HEARTBEAT_MONITOR = "runtime_heartbeat_monitor"
+JOB_OPERATIONS_HISTORY_CLEANUP = "operations_history_cleanup"
 
 
 def _console_safe(value: object, encoding: str | None = None) -> str:
@@ -81,6 +88,7 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
         process_customer_image_queue,
     )
     from app.sales_automation.scheduler import generate_public_pool_daily_batch
+    from app.operations.observability import clear_old_job_runs, monitor_runtime_heartbeats
 
     settings = get_settings()
 
@@ -227,6 +235,27 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
             coalesce=True,
             misfire_grace_time=3600,
         )
+    scheduler.add_job(
+        monitor_runtime_heartbeats,
+        trigger="interval",
+        seconds=settings.OPERATIONS_HEARTBEAT_INTERVAL_SECONDS,
+        id=JOB_RUNTIME_HEARTBEAT_MONITOR,
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=60,
+    )
+    scheduler.add_job(
+        clear_old_job_runs,
+        trigger="cron",
+        hour=3,
+        minute=45,
+        id=JOB_OPERATIONS_HISTORY_CLEANUP,
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=3600,
+    )
 
 
 def _make_job_event_listener(loop: asyncio.AbstractEventLoop):
@@ -258,24 +287,64 @@ def _make_job_event_listener(loop: asyncio.AbstractEventLoop):
     return _on_job_event
 
 
+def _persist_job_event_background(event) -> None:
+    try:
+        from app.operations.observability import record_job_event
+
+        record_job_event(event, triggered_by=getattr(event, "triggered_by", None))
+    except Exception as exc:
+        job_id = getattr(event, "job_id", "unknown")
+        logger.error("job run listener failed job=%s (%s)", job_id, type(exc).__name__)
+        print(f"job run listener failed job={job_id} ({type(exc).__name__})", flush=True)
+    finally:
+        _job_event_persist_slots.release()
+
+
+def _queue_job_event_persistence(event) -> None:
+    if not _job_event_persist_slots.acquire(blocking=False):
+        logger.error("job run persistence queue full job=%s", getattr(event, "job_id", "unknown"))
+        print(f"job run persistence queue full job={getattr(event, 'job_id', 'unknown')}", flush=True)
+        return
+    _job_event_persist_executor.submit(_persist_job_event_background, event)
+
+
 def _record_job_event(event) -> None:
-    """Record non-sensitive in-memory runtime facts for the operations center."""
+    """Record in-memory facts immediately and persist via a bounded writer queue."""
     job_id = getattr(event, "job_id", None)
     if not job_id:
         return
+    _queue_job_event_persistence(event)
 
     now = datetime.now(timezone.utc).isoformat()
     with _job_runtime_lock:
         state = _job_runtime.setdefault(job_id, {"running_instances": 0})
         if event.code == EVENT_JOB_SUBMITTED:
-            submitted_count = max(1, len(getattr(event, "scheduled_run_times", []) or []))
+            run_times = list(getattr(event, "scheduled_run_times", []) or [now])
+            active_keys = _job_active_run_keys.setdefault(job_id, set())
+            completed_early = _job_completed_before_submission.setdefault(job_id, set())
+            for run_time in run_times:
+                run_key = str(run_time)
+                if run_key in completed_early:
+                    completed_early.discard(run_key)
+                else:
+                    active_keys.add(run_key)
             state["last_started_at"] = now
-            state["last_status"] = "running"
-            state["running_instances"] = int(state.get("running_instances") or 0) + submitted_count
+            if active_keys:
+                state["last_status"] = "running"
+            state["running_instances"] = len(active_keys)
             return
 
         if event.code in (EVENT_JOB_EXECUTED, EVENT_JOB_ERROR):
-            state["running_instances"] = max(0, int(state.get("running_instances") or 0) - 1)
+            run_key = str(getattr(event, "scheduled_run_time", now))
+            active_keys = _job_active_run_keys.setdefault(job_id, set())
+            if run_key in active_keys:
+                active_keys.discard(run_key)
+            else:
+                completed_early = _job_completed_before_submission.setdefault(job_id, set())
+                completed_early.add(run_key)
+                if len(completed_early) > 100:
+                    completed_early.pop()
+            state["running_instances"] = len(active_keys)
             state["last_finished_at"] = now
             state["last_status"] = "failed" if event.code == EVENT_JOB_ERROR else "success"
             exception = getattr(event, "exception", None)
@@ -286,7 +355,13 @@ def _record_job_event(event) -> None:
 
         if event.code == EVENT_JOB_MISSED:
             # Executor emits one MISSED event for each scheduled run time submitted.
-            state["running_instances"] = max(0, int(state.get("running_instances") or 0) - 1)
+            run_key = str(getattr(event, "scheduled_run_time", now))
+            active_keys = _job_active_run_keys.setdefault(job_id, set())
+            if run_key in active_keys:
+                active_keys.discard(run_key)
+            elif active_keys:
+                active_keys.pop()
+            state["running_instances"] = len(active_keys)
             state["last_finished_at"] = now
             state["last_status"] = "missed"
             state["last_error"] = "任务错过计划执行时间"
@@ -309,24 +384,55 @@ def get_job_runtime_snapshot() -> dict[str, dict]:
         return {job_id: dict(state) for job_id, state in _job_runtime.items()}
 
 
-def submit_job_now(scheduler: AsyncIOScheduler, job_id: str) -> None:
-    """Submit one execution without changing the recurring trigger's next fire time."""
-    job = scheduler.get_job(job_id)
-    if job is None:
-        raise ValueError("任务不存在")
-    run_time = datetime.now(scheduler.timezone)
-    jobstore_alias = getattr(job, "_jobstore_alias", "default")
-    executor = scheduler._lookup_executor(job.executor)
+def submit_job_now(scheduler: AsyncIOScheduler, job_id: str, triggered_by: str = "operator") -> None:
+    """Submit once on the scheduler event-loop thread without changing its trigger."""
+    result: Future[None] = Future()
+
+    def _submit() -> None:
+        if result.cancelled():
+            return
+        try:
+            job = scheduler.get_job(job_id)
+            if job is None:
+                raise ValueError("任务不存在")
+            run_time = datetime.now(scheduler.timezone)
+            jobstore_alias = getattr(job, "_jobstore_alias", "default")
+            executor = scheduler._lookup_executor(job.executor)
+            try:
+                executor.submit_job(job, [run_time])
+            except MaxInstancesReachedError as exc:
+                skipped_event = JobSubmissionEvent(
+                    EVENT_JOB_MAX_INSTANCES, job.id, jobstore_alias, [run_time],
+                )
+                skipped_event.triggered_by = triggered_by[:80]
+                scheduler._dispatch_event(skipped_event)
+                raise ValueError("任务已达到最大并发数，本次没有提交执行") from exc
+            submitted_event = JobSubmissionEvent(
+                EVENT_JOB_SUBMITTED, job.id, jobstore_alias, [run_time],
+            )
+            submitted_event.triggered_by = triggered_by[:80]
+            scheduler._dispatch_event(submitted_event)
+            if not result.cancelled():
+                result.set_result(None)
+        except Exception as exc:
+            if not result.cancelled():
+                result.set_exception(exc)
+
+    event_loop = getattr(scheduler, "_eventloop", None)
     try:
-        executor.submit_job(job, [run_time])
-    except MaxInstancesReachedError as exc:
-        scheduler._dispatch_event(JobSubmissionEvent(
-            EVENT_JOB_MAX_INSTANCES, job.id, jobstore_alias, [run_time],
-        ))
-        raise ValueError("任务已达到最大并发数，本次没有提交执行") from exc
-    scheduler._dispatch_event(JobSubmissionEvent(
-        EVENT_JOB_SUBMITTED, job.id, jobstore_alias, [run_time],
-    ))
+        running_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        running_loop = None
+    if event_loop and event_loop.is_running() and running_loop is not event_loop:
+        event_loop.call_soon_threadsafe(_submit)
+        try:
+            result.result(timeout=5)
+        except TimeoutError as exc:
+            result.cancel()
+            raise ValueError("任务提交超时，请检查调度器状态") from exc
+    else:
+        _submit()
+        result.result()
 
 
 def _apply_persisted_job_policies(scheduler: AsyncIOScheduler) -> None:
@@ -357,11 +463,19 @@ def start_scheduler() -> Optional[AsyncIOScheduler]:
         logger.info("APScheduler disabled (SCHEDULER_ENABLED=false)")
         return None
 
-    global _active_scheduler, _job_runtime
+    global _active_scheduler, _job_runtime, _job_active_run_keys, _job_completed_before_submission
     with _job_runtime_lock:
         _job_runtime = {}
+        _job_active_run_keys = {}
+        _job_completed_before_submission = {}
     scheduler = AsyncIOScheduler(timezone=settings.SCHEDULER_TIMEZONE)
     _register_jobs(scheduler)
+    try:
+        from app.operations.observability import recover_stale_job_runs
+
+        recover_stale_job_runs()
+    except Exception as exc:
+        logger.error("stale job run recovery unavailable (%s)", type(exc).__name__)
     _apply_persisted_job_policies(scheduler)
     scheduler.add_listener(
         _make_job_event_listener(asyncio.get_event_loop()),

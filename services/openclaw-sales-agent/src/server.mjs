@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 
 import { ArkClient, LeaseStore } from "./ark-client.mjs";
 import { loadConfig } from "./config.mjs";
+import { RuntimeHeartbeatReporter } from "./runtime-heartbeat.mjs";
 
 const timestamp = z.string().min(10).max(64).describe("ISO 8601 capture timestamp with timezone");
 const publicUrl = z.string().url().max(1024);
@@ -92,7 +93,12 @@ function safe(handler) {
   };
 }
 
-export function createServer(client, leases = new LeaseStore(), publicPoolLeases = new LeaseStore()) {
+export function createServer(
+  client,
+  leases = new LeaseStore(),
+  publicPoolLeases = new LeaseStore(),
+  runtimeReporter = null,
+) {
   const server = new McpServer(
     { name: "ark-sales", version: "0.1.0" },
     {
@@ -103,6 +109,10 @@ export function createServer(client, leases = new LeaseStore(), publicPoolLeases
       ].join(" "),
     },
   );
+  const safeTracked = (handler) => safe(async (args) => {
+    runtimeReporter?.markActivity();
+    return handler(args);
+  });
 
   server.registerTool("ark_list_search_jobs", {
     description: "List claimable or status-filtered Ark sales search jobs.",
@@ -112,19 +122,19 @@ export function createServer(client, leases = new LeaseStore(), publicPoolLeases
       page_size: z.number().int().min(1).max(100).default(20),
     }),
     annotations: { readOnlyHint: true, idempotentHint: true },
-  }, safe(({ status, page, page_size: pageSize }) => client.listSearchJobs(status, page, pageSize)));
+  }, safeTracked(({ status, page, page_size: pageSize }) => client.listSearchJobs(status, page, pageSize)));
 
   server.registerTool("ark_get_search_job_context", {
     description: "Read the frozen Ark target profile, criteria, counts, and output contract for one search job.",
     inputSchema: z.object({ job_id: z.number().int().min(1) }),
     annotations: { readOnlyHint: true, idempotentHint: true },
-  }, safe(({ job_id: jobId }) => client.getSearchJobContext(jobId)));
+  }, safeTracked(({ job_id: jobId }) => client.getSearchJobContext(jobId)));
 
   server.registerTool("ark_claim_search_job", {
     description: "Claim one pending/expired Ark search job. The lease secret remains inside this MCP process.",
     inputSchema: z.object({ job_id: z.number().int().min(1) }),
     annotations: { readOnlyHint: false, idempotentHint: false },
-  }, safe(async ({ job_id: jobId }) => {
+  }, safeTracked(async ({ job_id: jobId }) => {
     const data = await client.claimSearchJob(jobId);
     leases.remember(jobId, data.lease_token, data.lease_expires_at);
     return {
@@ -138,7 +148,7 @@ export function createServer(client, leases = new LeaseStore(), publicPoolLeases
     description: "Renew the in-process lease for a claimed Ark search job.",
     inputSchema: z.object({ job_id: z.number().int().min(1) }),
     annotations: { readOnlyHint: false, idempotentHint: true },
-  }, safe(({ job_id: jobId }) => client.heartbeatSearchJob(jobId, leases.require(jobId).token)));
+  }, safeTracked(({ job_id: jobId }) => client.heartbeatSearchJob(jobId, leases.require(jobId).token)));
 
   server.registerTool("ark_submit_candidates", {
     description: "Submit up to 20 sourced companies to a claimed Ark job with an idempotent request key.",
@@ -148,7 +158,7 @@ export function createServer(client, leases = new LeaseStore(), publicPoolLeases
       candidates: z.array(candidate).min(1).max(20),
     }),
     annotations: { readOnlyHint: false, idempotentHint: true },
-  }, safe(({ job_id: jobId, request_key: requestKey, candidates }) => (
+  }, safeTracked(({ job_id: jobId, request_key: requestKey, candidates }) => (
     client.submitCandidates(jobId, leases.require(jobId).token, requestKey, candidates)
   )));
 
@@ -156,7 +166,7 @@ export function createServer(client, leases = new LeaseStore(), publicPoolLeases
     description: "Complete a claimed Ark job after all accepted candidate batches are acknowledged.",
     inputSchema: z.object({ job_id: z.number().int().min(1) }),
     annotations: { readOnlyHint: false, idempotentHint: false },
-  }, safe(async ({ job_id: jobId }) => {
+  }, safeTracked(async ({ job_id: jobId }) => {
     const data = await client.completeSearchJob(jobId, leases.require(jobId).token);
     leases.forget(jobId);
     return data;
@@ -169,7 +179,7 @@ export function createServer(client, leases = new LeaseStore(), publicPoolLeases
       error_message: z.string().min(1).max(2000),
     }),
     annotations: { readOnlyHint: false, idempotentHint: false },
-  }, safe(async ({ job_id: jobId, error_message: errorMessage }) => {
+  }, safeTracked(async ({ job_id: jobId, error_message: errorMessage }) => {
     const data = await client.failSearchJob(jobId, leases.require(jobId).token, errorMessage);
     leases.forget(jobId);
     return data;
@@ -179,7 +189,7 @@ export function createServer(client, leases = new LeaseStore(), publicPoolLeases
     description: "Read one Ark lead, its contacts, and latest evidence-backed research.",
     inputSchema: z.object({ company_id: z.number().int().min(1) }),
     annotations: { readOnlyHint: true, idempotentHint: true },
-  }, safe(({ company_id: companyId }) => client.getLead(companyId)));
+  }, safeTracked(({ company_id: companyId }) => client.getLead(companyId)));
 
   server.registerTool("ark_save_contacts", {
     description: "Upsert public, sourced business contacts for one Ark lead.",
@@ -188,7 +198,7 @@ export function createServer(client, leases = new LeaseStore(), publicPoolLeases
       contacts: z.array(contact).min(1).max(50),
     }),
     annotations: { readOnlyHint: false, idempotentHint: true },
-  }, safe(({ company_id: companyId, contacts }) => client.saveContacts(companyId, contacts)));
+  }, safeTracked(({ company_id: companyId, contacts }) => client.saveContacts(companyId, contacts)));
 
   server.registerTool("ark_save_research", {
     description: "Save an evidence-backed company summary, outreach angles, risks, and atomic sourced facts.",
@@ -203,7 +213,7 @@ export function createServer(client, leases = new LeaseStore(), publicPoolLeases
       idempotency_key: z.string().max(64).optional(),
     }),
     annotations: { readOnlyHint: false, idempotentHint: true },
-  }, safe(({ company_id: companyId, ...research }) => client.saveResearch(companyId, research)));
+  }, safeTracked(({ company_id: companyId, ...research }) => client.saveResearch(companyId, research)));
 
   server.registerTool("ark_list_public_pool_tasks", {
     description: "List claimable Ark public-pool research tasks from T1/T2/T3 daily batches.",
@@ -212,19 +222,19 @@ export function createServer(client, leases = new LeaseStore(), publicPoolLeases
       page_size: z.number().int().min(1).max(100).default(20),
     }),
     annotations: { readOnlyHint: true, idempotentHint: true },
-  }, safe(({ page, page_size: pageSize }) => client.listPublicPoolTasks(page, pageSize)));
+  }, safeTracked(({ page, page_size: pageSize }) => client.listPublicPoolTasks(page, pageSize)));
 
   server.registerTool("ark_get_public_pool_task_context", {
     description: "Read trusted OKKI seed data, tier-specific research rules, and the scoring contract.",
     inputSchema: z.object({ task_id: z.number().int().min(1) }),
     annotations: { readOnlyHint: true, idempotentHint: true },
-  }, safe(({ task_id: taskId }) => client.getPublicPoolTaskContext(taskId)));
+  }, safeTracked(({ task_id: taskId }) => client.getPublicPoolTaskContext(taskId)));
 
   server.registerTool("ark_claim_public_pool_task", {
     description: "Claim a public-pool research task while retaining the lease token inside this sidecar.",
     inputSchema: z.object({ task_id: z.number().int().min(1) }),
     annotations: { readOnlyHint: false, idempotentHint: false },
-  }, safe(async ({ task_id: taskId }) => {
+  }, safeTracked(async ({ task_id: taskId }) => {
     const data = await client.claimPublicPoolTask(taskId);
     publicPoolLeases.remember(taskId, data.lease_token, data.lease_expires_at);
     return { task_id: data.task_id, lease_expires_at: data.lease_expires_at, lease_held: true };
@@ -234,7 +244,7 @@ export function createServer(client, leases = new LeaseStore(), publicPoolLeases
     description: "Renew the in-process lease for a claimed public-pool research task.",
     inputSchema: z.object({ task_id: z.number().int().min(1) }),
     annotations: { readOnlyHint: false, idempotentHint: true },
-  }, safe(({ task_id: taskId }) => (
+  }, safeTracked(({ task_id: taskId }) => (
     client.heartbeatPublicPoolTask(taskId, publicPoolLeases.require(taskId).token)
   )));
 
@@ -242,7 +252,7 @@ export function createServer(client, leases = new LeaseStore(), publicPoolLeases
     description: "Submit sourced research, score factors, sales strategy, and an unsent opening draft for human review.",
     inputSchema: publicPoolResearch,
     annotations: { readOnlyHint: false, idempotentHint: true },
-  }, safe(async ({ task_id: taskId, ...research }) => {
+  }, safeTracked(async ({ task_id: taskId, ...research }) => {
     const data = await client.completePublicPoolTask(taskId, publicPoolLeases.require(taskId).token, research);
     publicPoolLeases.forget(taskId);
     return data;
@@ -255,7 +265,7 @@ export function createServer(client, leases = new LeaseStore(), publicPoolLeases
       error_message: z.string().min(1).max(2000),
     }),
     annotations: { readOnlyHint: false, idempotentHint: false },
-  }, safe(async ({ task_id: taskId, error_message: errorMessage }) => {
+  }, safeTracked(async ({ task_id: taskId, error_message: errorMessage }) => {
     const data = await client.failPublicPoolTask(
       taskId, publicPoolLeases.require(taskId).token, errorMessage,
     );
@@ -267,8 +277,11 @@ export function createServer(client, leases = new LeaseStore(), publicPoolLeases
 }
 
 async function main() {
-  const client = new ArkClient(loadConfig());
-  const server = createServer(client);
+  const config = loadConfig();
+  const client = new ArkClient(config);
+  const runtimeReporter = new RuntimeHeartbeatReporter(config);
+  const server = createServer(client, new LeaseStore(), new LeaseStore(), runtimeReporter);
+  runtimeReporter.start();
   await server.connect(new StdioServerTransport());
 }
 

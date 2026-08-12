@@ -36,6 +36,7 @@ Bootstrap 会固定安装 OpenClaw 官方 `@openclaw/parallel-plugin`、创建�
 - 配置：`~/.openclaw-ark-sales/openclaw.json`
 - Gateway/模型环境文件：`~/.openclaw-ark-sales/.env` (`0600`)
 - Ark token：`~/.openclaw-ark-sales/secrets/ark-agent-token` (`0600`，不注入 Agent 进程)
+- 运行心跳 token：`~/.openclaw-ark-sales/secrets/runtime-heartbeat-token`（可选、`0600`，仅上报实例状态）
 - 工作区与 Skills：`~/.openclaw-ark-sales/workspace/`
 - Gateway：`127.0.0.1:18791`，token 鉴权，仅本机可访问
 
@@ -84,6 +85,14 @@ $HOME/.openclaw/bin/openclaw --profile ark-sales skills check
 ```
 
 若 LaunchAgent 被手工停止，可用 `gateway start` 恢复；修改模型或插件后用 `gateway restart` 重载。
+
+## 接入运行与自动化中心
+
+为 `openclaw-sales-agent + ARK_AGENT_ID` 生成实例独立的随机心跳 token，把 SHA-256 及固定展示元数据写入方舟后端
+`OPERATIONS_HEARTBEAT_TOKEN_HASHES_JSON` 对应实例 claim，明文仅保存到上述 `0600` 文件。随后在 profile
+`.env` 设置 `ARK_HEARTBEAT_ENABLED=true` 并重跑 `node scripts/bootstrap.mjs`。MCP 侧车会每
+60 秒上报版本、能力、依赖和最近工具活动；连续 3 个周期未上报时方舟将实例标记为异常并告警。
+该 token 只能调用心跳端点，不能领取任务、操作调度器或取得 root/SSH 权限。
 
 本地真实闭环的过程、数据库结果及 Codex 原生 shell 对抗性发现见 [`E2E_VERIFICATION.md`](E2E_VERIFICATION.md)。
 

@@ -217,6 +217,16 @@ class Settings(BaseSettings):
     # JSON 数组：[{"id","name","category","environment","owner","management","health_url"}]
     # 只放无敏感参数的健康地址；展示时会自动去掉 query/userinfo。
     OPERATIONS_EXTERNAL_SERVICES_JSON: str = ""
+    # {"shopify-sync":{"instance-01":{"token_hashes":"<sha256>","service_name":"..."}}}
+    OPERATIONS_HEARTBEAT_TOKEN_HASHES_JSON: str = ""
+    OPERATIONS_HEARTBEAT_INTERVAL_SECONDS: int = 60
+    OPERATIONS_HEARTBEAT_MISSED_THRESHOLD: int = 3
+    OPERATIONS_HEARTBEAT_MAX_INSTANCES_PER_SERVICE: int = 20
+    OPERATIONS_HEARTBEAT_RATE_LIMIT_PER_MINUTE: int = 12
+    OPERATIONS_HEARTBEAT_INSTANCE_RETIRE_HOURS: int = 24
+    OPERATIONS_HEARTBEAT_RETENTION_DAYS: int = 7
+    OPERATIONS_JOB_RUN_RETENTION_DAYS: int = 90
+    OPERATIONS_ALERT_TIMEOUT_SECONDS: float = 10.0
 
     # ── 微信小程序 ────────────────────────────────────────
     WX_MINI_APPID: str = ""  # 微信小程序 AppID

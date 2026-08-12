@@ -29,4 +29,6 @@ JOB_METADATA = {
     "customer_image_queue": JobMetadata("客户生图队列", "客户生图", "设计中心"),
     "customer_image_cleanup": JobMetadata("客户生图清理", "客户生图", "设计中心"),
     "sales_public_pool_daily": JobMetadata("公海背调日批次", "智能获客", "销售运营"),
+    "runtime_heartbeat_monitor": JobMetadata("云端实例心跳巡检", "平台运维", "平台研发"),
+    "operations_history_cleanup": JobMetadata("运行历史保留期清理", "平台运维", "平台研发"),
 }

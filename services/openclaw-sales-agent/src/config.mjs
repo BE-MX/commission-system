@@ -41,6 +41,7 @@ export function loadConfig(env = process.env) {
   const agentId = required(env, "ARK_AGENT_ID");
   const baseUrl = parseOrigin(rawBaseUrl, "ARK_BASE_URL");
   const allowedOrigin = parseOrigin(rawAllowedOrigin, "ARK_ALLOWED_ORIGIN");
+  const heartbeatToken = loadOptionalToken(env, "ARK_HEARTBEAT_TOKEN_FILE");
 
   if (baseUrl.origin !== allowedOrigin.origin) {
     throw new ArkConfigurationError("ARK_BASE_URL 与 ARK_ALLOWED_ORIGIN 必须同源");
@@ -61,29 +62,44 @@ export function loadConfig(env = process.env) {
     token,
     agentId,
     timeoutMs: Number.parseInt(env.ARK_API_TIMEOUT_MS || "30000", 10),
+    heartbeatToken,
   });
 }
 
 function loadToken(env) {
-  const tokenPath = resolve(required(env, "ARK_AGENT_TOKEN_FILE"));
+  return loadPrivateFile(env, "ARK_AGENT_TOKEN_FILE", TOKEN_MIN_LENGTH);
+}
+
+function loadOptionalToken(env, key) {
+  if (!String(env[key] || "").trim()) return null;
+  return loadPrivateFile(env, key, 24);
+}
+
+function loadPrivateFile(env, key, minLength) {
+  const tokenPath = resolve(required(env, key));
   let stat;
   try {
     stat = lstatSync(tokenPath);
   } catch {
-    throw new ArkConfigurationError("ARK_AGENT_TOKEN_FILE 不存在或不可读");
+    throw new ArkConfigurationError(`${key} 不存在或不可读`);
   }
   if (!stat.isFile() || stat.isSymbolicLink()) {
-    throw new ArkConfigurationError("ARK_AGENT_TOKEN_FILE 必须是普通文件，不允许符号链接");
+    throw new ArkConfigurationError(`${key} 必须是普通文件，不允许符号链接`);
   }
   if (typeof process.getuid === "function" && stat.uid !== process.getuid()) {
-    throw new ArkConfigurationError("ARK_AGENT_TOKEN_FILE 必须属于当前用户");
+    throw new ArkConfigurationError(`${key} 必须属于当前用户`);
   }
   if ((stat.mode & 0o777) !== 0o600) {
-    throw new ArkConfigurationError("ARK_AGENT_TOKEN_FILE 权限必须为 0600");
+    throw new ArkConfigurationError(`${key} 权限必须为 0600`);
   }
+  let value;
   try {
-    return readFileSync(tokenPath, "utf8").trim();
+    value = readFileSync(tokenPath, "utf8").trim();
   } catch {
-    throw new ArkConfigurationError("ARK_AGENT_TOKEN_FILE 不可读");
+    throw new ArkConfigurationError(`${key} 不可读`);
   }
+  if (value.length < minLength) {
+    throw new ArkConfigurationError(`${key} 内容长度不能小于 ${minLength}`);
+  }
+  return value;
 }

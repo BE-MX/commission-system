@@ -7,6 +7,7 @@ import logging
 import platform
 import socket
 import time
+import threading
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
@@ -15,20 +16,25 @@ import httpx
 from app.core.config import get_settings
 from app.operations.models import JOB_METADATA
 from app.operations.schemas import (
+    JobRunView,
     JobActionResult,
     OperationsOverview,
     RuntimeServiceView,
+    RuntimeInstanceView,
     SchedulerJobView,
     SchedulerView,
 )
 from app.core.database import SessionLocal
 from app.operations.db_models import OperationAudit, SchedulerJobPolicy
+from app.operations.observability import list_job_runs, list_runtime_instances
 from app.schedulers.registry import get_active_scheduler, get_job_runtime_snapshot, submit_job_now
 
 logger = logging.getLogger("commission")
 _overview_cache: tuple[float, OperationsOverview] | None = None
 _overview_task: asyncio.Task | None = None
 _VALID_ACTIONS = {"run", "pause", "resume"}
+_job_control_locks = {job_id: threading.Lock() for job_id in JOB_METADATA}
+_invalid_job_control_lock = threading.Lock()
 
 
 def _now_iso() -> str:
@@ -289,6 +295,50 @@ async def _build_overview() -> OperationsOverview:
         services.extend(await asyncio.gather(*(
             _probe_service(item, settings.OPERATIONS_PROBE_TIMEOUT_SECONDS) for item in probe_items
         )))
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    runtime_instances = []
+    try:
+        for item in list_runtime_instances():
+            heartbeat_age = max(0, int((now - item.last_heartbeat_at).total_seconds()))
+            stale_after = max(15, int(settings.OPERATIONS_HEARTBEAT_INTERVAL_SECONDS)) * max(
+                1, int(settings.OPERATIONS_HEARTBEAT_MISSED_THRESHOLD),
+            )
+            effective_status = "degraded" if heartbeat_age >= stale_after else item.status
+            runtime_instances.append(RuntimeInstanceView(
+                service_id=item.service_id,
+                instance_id=item.instance_id,
+                service_name=item.service_name,
+                environment=item.environment,
+                version=item.version,
+                status=effective_status,
+                started_at=item.started_at.replace(tzinfo=timezone.utc).isoformat(),
+                last_activity_at=(
+                    item.last_activity_at.replace(tzinfo=timezone.utc).isoformat()
+                    if item.last_activity_at else None
+                ),
+                last_heartbeat_at=item.last_heartbeat_at.replace(tzinfo=timezone.utc).isoformat(),
+                heartbeat_age_seconds=heartbeat_age,
+                consecutive_misses=item.consecutive_misses,
+                capabilities=list(item.capabilities or []),
+                dependencies=list(item.dependencies or []),
+            ))
+    except Exception as exc:
+        logger.warning("runtime instance inventory unavailable (%s)", type(exc).__name__)
+        print(f"runtime instance inventory unavailable ({type(exc).__name__})", flush=True)
+    instances_by_service: dict[str, list[RuntimeInstanceView]] = {}
+    for instance in runtime_instances:
+        instances_by_service.setdefault(instance.service_id, []).append(instance)
+    for index, service in enumerate(services):
+        active_instances = instances_by_service.get(service.id, [])
+        if not active_instances:
+            continue
+        status = "degraded" if any(item.status == "degraded" for item in active_instances) else "healthy"
+        services[index] = service.model_copy(update={
+            "management": "observed" if service.management == "unmanaged" else service.management,
+            "status": status,
+            "detail": f"{len(active_instances)} 个实例通过主动心跳纳管",
+            "checked_at": max(item.last_heartbeat_at for item in active_instances),
+        })
     services.sort(key=lambda item: (item.category, item.name))
     scheduler = _scheduler_view()
     summary = {
@@ -296,6 +346,8 @@ async def _build_overview() -> OperationsOverview:
         "attention_services": sum(item.status != "healthy" for item in services),
         "registered_jobs": scheduler.registered_job_count,
         "failed_jobs": sum(item.last_status in {"failed", "missed", "skipped"} for item in scheduler.jobs),
+        "healthy_instances": sum(item.status == "healthy" for item in runtime_instances),
+        "degraded_instances": sum(item.status == "degraded" for item in runtime_instances),
     }
     return OperationsOverview(
         instance={
@@ -306,6 +358,7 @@ async def _build_overview() -> OperationsOverview:
         },
         scheduler=scheduler,
         services=services,
+        runtime_instances=runtime_instances,
         summary=summary,
         generated_at=_now_iso(),
     )
@@ -390,7 +443,7 @@ def _restore_paused_policy(job_id: str, actor_user_id: int | None) -> None:
         print(f"operations pause policy rollback failed ({type(exc).__name__})", flush=True)
 
 
-def control_job(
+def _control_job_locked(
     job_id: str,
     action: str,
     actor_name: str,
@@ -416,7 +469,7 @@ def control_job(
         if action == "run":
             if getattr(job, "next_run_time", None) is None:
                 raise ValueError("任务已暂停，请先恢复后再立即执行")
-            submit_job_now(scheduler, job_id)
+            submit_job_now(scheduler, job_id, actor_name)
             message = "已提交一次性立即执行，原计划不变"
         elif action == "pause":
             _set_paused_policy(job_id, True, actor_user_id)
@@ -446,3 +499,49 @@ def control_job(
     logger.warning("operations job control actor=%s action=%s job_id=%s", actor_name, action, job_id)
     print(f"operations job control actor={actor_name} action={action} job_id={job_id}", flush=True)
     return JobActionResult(job_id=job_id, action=action, message=message)
+
+
+def control_job(
+    job_id: str,
+    action: str,
+    actor_name: str,
+    *,
+    actor_user_id: int | None = None,
+    source_ip: str | None = None,
+) -> JobActionResult:
+    """Serialize policy + scheduler mutations for each local job."""
+    lock = _job_control_locks.get(job_id, _invalid_job_control_lock)
+    with lock:
+        return _control_job_locked(
+            job_id,
+            action,
+            actor_name,
+            actor_user_id=actor_user_id,
+            source_ip=source_ip,
+        )
+
+
+def get_job_runs(job_id: str | None, status: str | None, limit: int) -> list[JobRunView]:
+    if job_id and job_id not in JOB_METADATA:
+        raise ValueError("任务不存在")
+    if status and status not in {"running", "success", "failed", "missed", "skipped"}:
+        raise ValueError("运行状态筛选值无效")
+    rows = list_job_runs(job_id=job_id, status=status, limit=max(1, min(limit, 100)))
+    result = []
+    for row in rows:
+        metadata = JOB_METADATA.get(row.job_id)
+        result.append(JobRunView(
+            id=row.id,
+            job_id=row.job_id,
+            job_name=metadata.name if metadata else row.job_id,
+            domain=metadata.domain if metadata else "未归类",
+            instance_id=row.instance_id,
+            planned_at=row.planned_at.replace(tzinfo=timezone.utc).isoformat(),
+            started_at=row.started_at.replace(tzinfo=timezone.utc).isoformat() if row.started_at else None,
+            finished_at=row.finished_at.replace(tzinfo=timezone.utc).isoformat() if row.finished_at else None,
+            status=row.status,
+            duration_ms=row.duration_ms,
+            error_digest=row.error_digest,
+            triggered_by=row.triggered_by,
+        ))
+    return result

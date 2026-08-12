@@ -16,6 +16,7 @@ const stateDir = join(home, `.openclaw-${profile}`);
 const workspace = join(stateDir, "workspace");
 const secretsDir = join(stateDir, "secrets");
 const arkTokenFile = join(secretsDir, "ark-agent-token");
+const heartbeatTokenFile = join(secretsDir, "runtime-heartbeat-token");
 const openclaw = process.env.OPENCLAW_BIN || join(home, ".openclaw/bin/openclaw");
 const node = process.env.OPENCLAW_NODE || join(home, ".openclaw/tools/node/bin/node");
 const parallelPlugin = process.env.OPENCLAW_PARALLEL_PLUGIN
@@ -53,6 +54,8 @@ async function ensureEnvFile() {
     "ARK_ALLOWED_ORIGIN=https://leshine.work",
     "ARK_AGENT_ID=openclaw-sales-01",
     "ARK_API_TIMEOUT_MS=30000",
+    "# Set true after creating secrets/runtime-heartbeat-token (0600) and registering its SHA-256 in Ark.",
+    "ARK_HEARTBEAT_ENABLED=false",
     "",
     "# Required by the hardened built-in OpenClaw runtime (current default provider):",
     "# DEEPSEEK_API_KEY=",
@@ -138,6 +141,9 @@ async function loadArkRuntimeSettings() {
     ARK_AGENT_ID: agentId,
     ARK_AGENT_TOKEN_FILE: arkTokenFile,
     ARK_API_TIMEOUT_MS: String(timeoutMs),
+    ...(values.ARK_HEARTBEAT_ENABLED === "true"
+      ? { ARK_HEARTBEAT_TOKEN_FILE: heartbeatTokenFile }
+      : {}),
   };
 }
 
@@ -186,6 +192,8 @@ async function main() {
       "ARK_BASE_URL",
       "ARK_ALLOWED_ORIGIN",
       "ARK_AGENT_ID",
+      "ARK_HEARTBEAT_TOKEN",
+      "ARK_HEARTBEAT_TOKEN_FILE",
     ],
   });
   setConfig("tools.profile", "minimal");
@@ -230,6 +238,7 @@ async function main() {
   run(openclaw, ["--profile", profile, "gateway", "install", "--force", "--json"]);
   process.stdout.write(`\nOpenClaw profile '${profile}' prepared at ${stateDir}.\n`);
   process.stdout.write(`Add the Ark token to ${arkTokenFile} (mode 0600).\n`);
+  process.stdout.write(`Optional runtime heartbeat token file: ${heartbeatTokenFile} (mode 0600).\n`);
   process.stdout.write(`Add DEEPSEEK_API_KEY to ${envFile} for the hardened OpenClaw runtime.\n`);
 }
 

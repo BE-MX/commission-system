@@ -1,0 +1,29 @@
+[Unit]
+Description=LeShine Ark runtime heartbeat (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ark-heartbeat
+Group=ark-heartbeat
+EnvironmentFile=/etc/ark-runtime/%i.env
+ExecStart=/opt/commission-system/.venv/bin/python /opt/commission-system/scripts/runtime_heartbeat.py --watch --interval 60
+Restart=on-failure
+RestartSec=10
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

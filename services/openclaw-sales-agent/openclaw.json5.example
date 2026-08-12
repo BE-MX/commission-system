@@ -77,6 +77,8 @@
           ARK_AGENT_ID: "openclaw-sales-01",
           ARK_AGENT_TOKEN_FILE: "~/.openclaw-ark-sales/secrets/ark-agent-token",
           ARK_API_TIMEOUT_MS: "30000",
+          // Optional after the corresponding SHA-256 is registered in Ark backend:
+          // ARK_HEARTBEAT_TOKEN_FILE: "~/.openclaw-ark-sales/secrets/runtime-heartbeat-token",
         },
         toolFilter: { include: ["ark_*"] },
       },

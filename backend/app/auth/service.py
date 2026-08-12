@@ -473,10 +473,14 @@ def seed_role_permissions(db: Session):
                 db.add(ArkRolePermission(role_id=role_id, permission_id=invoice_price_write_perm.id))
         db.flush()
 
-    # 给 admin 角色补齐所有非 legacy 权限（跳过已下架，避免复活死码授权）
+    # 高爆炸半径权限只能人工授予；启动 seed 不得静默扩大既有 admin 的生产控制权。
+    manual_grant_codes = {"operations:admin"}
+    # 给 admin 角色补齐一般非 legacy 权限（跳过已下架和显式授权项）。
     admin_role = db.query(ArkRole).filter(ArkRole.name == "admin").first()
     if admin_role:
         for code, _, _, _ in seeds:
+            if code in manual_grant_codes:
+                continue
             perm = db.query(ArkPermission).filter(ArkPermission.code == code).first()
             if perm:
                 link = db.query(ArkRolePermission).filter(

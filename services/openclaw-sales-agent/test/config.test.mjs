@@ -78,3 +78,15 @@ test("loadConfig never accepts a token directly from the process environment", (
     /ARK_AGENT_TOKEN_FILE/,
   );
 });
+
+test("loadConfig accepts an optional private heartbeat token file", async (t) => {
+  const env = await privateTokenEnv(t);
+  const directory = await mkdtemp(join(tmpdir(), "ark-heartbeat-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const heartbeatFile = join(directory, "heartbeat-token");
+  await writeFile(heartbeatFile, "h".repeat(32), { mode: 0o600 });
+  await chmod(heartbeatFile, 0o600);
+
+  const config = loadConfig({ ...env, ARK_HEARTBEAT_TOKEN_FILE: heartbeatFile });
+  assert.equal(config.heartbeatToken, "h".repeat(32));
+});
