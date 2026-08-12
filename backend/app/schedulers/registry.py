@@ -31,6 +31,7 @@ JOB_FESTIVAL_DAILY_REPORT = "festival_daily_report"
 JOB_DESIGN_IMAGE_QUEUE = "design_image_queue"
 JOB_CUSTOMER_IMAGE_QUEUE = "customer_image_queue"
 JOB_CUSTOMER_IMAGE_CLEANUP = "customer_image_cleanup"
+JOB_SALES_PUBLIC_POOL_DAILY = "sales_public_pool_daily"
 
 
 def _console_safe(value: object, encoding: str | None = None) -> str:
@@ -64,6 +65,7 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
         process_customer_image_cleanup,
         process_customer_image_queue,
     )
+    from app.sales_automation.scheduler import generate_public_pool_daily_batch
 
     settings = get_settings()
 
@@ -197,6 +199,18 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
             id=JOB_WHATSAPP_AUTO_SYNC, replace_existing=True,
             max_instances=1,
             coalesce=True,
+        )
+    if settings.SALES_PUBLIC_POOL_AUTO_BATCH_ENABLED:
+        scheduler.add_job(
+            generate_public_pool_daily_batch,
+            trigger="cron",
+            hour=settings.SALES_PUBLIC_POOL_BATCH_HOUR,
+            minute=settings.SALES_PUBLIC_POOL_BATCH_MINUTE,
+            id=JOB_SALES_PUBLIC_POOL_DAILY,
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=3600,
         )
 
 

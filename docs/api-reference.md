@@ -761,6 +761,14 @@ Base path：`/api/sales-automation`。所有接口使用统一 `{code,message,da
 | GET | `/leads` | read/write/admin 任一 | 分页客户池；可按 `status`、`keyword` 过滤 |
 | GET | `/leads/{id}` | read/write/admin 任一 | 公司、联系人、最新研究与逐条来源证据 |
 | POST | `/leads/{id}/approve` | write/admin 任一 | 候选确认进入内部开发队列 |
+| GET | `/public-pool/audit` | read/write/admin 任一 | 读取最近完成批次的公海分档审计；无缓存时执行只读实时审计 |
+| POST | `/public-pool/audit/refresh` | admin | 强制从 `lsordertest` 重新计算 T1/T2/T3/冷藏区数量 |
+| GET | `/public-pool/batches` | read/write/admin 任一 | 公海每日批次列表与抽样统计 |
+| POST | `/public-pool/batches` | write/admin 任一 | 幂等生成指定日期批次，默认 T1/T2/T3 各 20 条 |
+| GET | `/public-pool/tasks` | read/write/admin 任一 | 按档位、Agent 状态、审核状态和关键词分页查询 |
+| GET | `/public-pool/tasks/{id}` | read/write/admin 任一 | OKKI 来源快照、公开联系人、原子事实与成交研判 |
+| POST | `/public-pool/tasks/{id}/approve` | write/admin 任一 | 人工确认后投影到客户机会/经营雷达；T1 为老客再激活，其余为公海开发 |
+| POST | `/public-pool/tasks/{id}/reject` | write/admin 任一 | 带原因拒绝，不生成开发机会 |
 
 Agent 接口只接受可撤销的 MCP opaque token，且账号必须具有 `sales_automation:invoke`。推荐为运行器创建只含该权限的专用账号，不使用浏览器登录 JWT。
 
@@ -776,8 +784,17 @@ Agent 接口只接受可撤销的 MCP opaque token，且账号必须具有 `sale
 | GET | `/agent/leads/{id}` | invoke | 读取公司、联系人与最新研究上下文 |
 | POST | `/agent/leads/{id}/contacts` | invoke | 幂等完善联系人；`valid/risky/invalid` 必须同时给出邮箱与验证时间 |
 | POST | `/agent/leads/{id}/research` | invoke | 提交摘要、触达角度及带 URL/采集时间/置信度的事实 |
+| GET | `/agent/public-pool/tasks` | invoke | 列出 `pending` 或租约过期的公海背调任务 |
+| GET | `/agent/public-pool/tasks/{id}/context` | invoke | 返回可信 OKKI 种子、分档研究重点和评分维度上限 |
+| POST | `/agent/public-pool/tasks/{id}/claim` | invoke | 领取 15 分钟租约 |
+| POST | `/agent/public-pool/tasks/{id}/heartbeat` | invoke + 租约 | 长任务续租 |
+| POST | `/agent/public-pool/tasks/{id}/complete` | invoke + 租约 | 回传主体判断、联系人、原子事实、评分输入、策略和未发送开场草稿；等级由后端重算 |
+| POST | `/agent/public-pool/tasks/{id}/fail` | invoke + 租约 | 记录可行动的运行失败原因 |
 
-Agent Skill 位于 `.agents/skills/ark-lead-discovery` 与 `.agents/skills/ark-company-research`。运行器必须安全注入 `ARK_BASE_URL`、同源约束 `ARK_ALLOWED_ORIGIN` 与 `ARK_AGENT_TOKEN`；三者严禁写入仓库或由网页内容覆盖。
+Agent Skill 位于 `.agents/skills/ark-lead-discovery`、`.agents/skills/ark-company-research` 与 `.agents/skills/ark-public-pool-research`。运行器必须安全注入 `ARK_BASE_URL`、同源约束 `ARK_ALLOWED_ORIGIN` 与 `ARK_AGENT_TOKEN`；三者严禁写入仓库或由网页内容覆盖。公海 Skill 只生成供人工审核的策略和开场草稿，不发送邮件或 WhatsApp。
+
+本地 OpenClaw 运行器、最小权限 MCP 侧车、免密公开检索源、macOS LaunchAgent 初始化与凭证交付步骤见 [`services/openclaw-sales-agent/README.md`](../services/openclaw-sales-agent/README.md)。该侧车把 Ark token 限制在独立 `0600` 文件中，并把任务租约留在进程内存，不暴露给模型。
+
 # 企业知识库（2026-08-09）
 
 所有 HTTP 接口使用 `/api/knowledge` 前缀和 `{code,message,data}` 响应封套。平台权限只是入口，服务层还会实时校验知识库成员 ACL；无资源权限统一返回 404。
