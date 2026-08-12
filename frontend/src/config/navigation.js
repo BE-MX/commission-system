@@ -17,7 +17,7 @@ import {
   DataAnalysis, User, UserFilled, Connection, OfficeBuilding, Document,
   Money, Refresh, List, Van, Upload, Box, Setting, Aim, Reading,
   MagicStick, Notebook, Calendar, Camera, EditPen, Stamp, TrendCharts,
-  Lock, Lightning, Picture, Collection, CollectionTag, DataBoard,
+  Lock, Lightning, Picture, Collection, CollectionTag, DataBoard, Key,
   DataLine, Printer, Brush, Tickets, Goods, Postcard, Shop, Wallet,
 } from '@element-plus/icons-vue'
 
@@ -158,6 +158,7 @@ export const MENU_GROUPS = {
     // 会让只有这些权限的用户看不到整个分组）
     anyPermission: [
       'user:read', 'role:read', 'dict:read', 'ai:admin',
+      'mcp:admin',
       'external_binding:read', 'external_binding:write',
       'whatsapp:read', 'whatsapp:write',
     ],
@@ -1197,6 +1198,17 @@ export const NAV_ENTRIES = [
     menu: {
       group: 'system', title: 'AI 接入管理', icon: Lightning, order: 40,
       permission: 'ai:admin',
+    },
+  },
+  {
+    path: '/system/mcp-tokens',
+    name: 'McpTokenManagement',
+    component: () => import('@/views/system/McpTokenManagement.vue'),
+    title: 'Agent 接入凭证',
+    permission: 'mcp:admin',
+    menu: {
+      group: 'system', title: 'Agent 接入凭证', icon: Key, order: 45,
+      permission: 'mcp:admin',
     },
   },
   {
