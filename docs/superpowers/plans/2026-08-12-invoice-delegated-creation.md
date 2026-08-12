@@ -13,7 +13,7 @@
 ### Task 1: Persistence and delegation service
 
 **Files:**
-- Create: `backend/alembic/versions/106_invoice_delegate_grants.py`
+- Create: `backend/alembic/versions/107_invoice_delegate_grants.py`
 - Modify: `backend/app/invoice/models.py`
 - Create: `backend/app/invoice/delegation_service.py`
 - Test: `backend/tests/test_invoice_delegation.py`
@@ -83,4 +83,3 @@
 - [ ] Inspect the migration against all branches and run Alembic upgrade in the test/dev-compatible environment.
 - [ ] Perform adversarial review for boundary conditions, privilege escalation, revoked grants, front/back contract drift, OKKI attribution, and every invoice visibility call site; fix every confirmed issue and rerun affected gates.
 - [ ] Commit documentation and final fixes.
-

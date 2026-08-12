@@ -1,7 +1,7 @@
 """Add invoice delegated-creation grants.
 
-Revision ID: 106_invoice_delegate_grants
-Revises: 105_knowledge_category
+Revision ID: 107_invoice_delegate_grants
+Revises: 106_public_pool_research
 Create Date: 2026-08-12
 """
 
@@ -9,8 +9,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "106_invoice_delegate_grants"
-down_revision = "105_knowledge_category"
+revision = "107_invoice_delegate_grants"
+down_revision = "106_public_pool_research"
 branch_labels = None
 depends_on = None
 
