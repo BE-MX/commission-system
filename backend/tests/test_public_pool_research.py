@@ -163,6 +163,15 @@ def test_failed_batch_can_be_retried_with_same_idempotency_key(db):
     assert retried.result_counts["total"] == 3
 
 
+def test_business_pool_cross_table_id_joins_ignore_column_collation():
+    gateway = object.__new__(public_pool_service.BusinessPoolGateway)
+    gateway.schema = "lsordertest"
+    gateway.website_column = None
+
+    contact_sql = gateway._contact_cte
+    assert "ccs.customer_id = BINARY cc.customer_id" in contact_sql
+
+
 def test_score_is_backend_computed_and_separates_evidence_confidence():
     factors = {"industry_fit": 25, "pain_switch_trigger": 20, "intent_reactivation": 20,
                "buying_capacity": 15, "reachability": 10, "timing": 10, "risk_penalty": 0}

@@ -190,7 +190,8 @@ class BusinessPoolGateway:
                 MAX(CASE WHEN LOWER(COALESCE(ccs.platform, '')) NOT LIKE '%whatsapp%' AND NULLIF(TRIM(ccs.value), '') IS NOT NULL THEN 1 ELSE 0 END) AS has_business_social,
                 GROUP_CONCAT(DISTINCT CASE WHEN NULLIF(TRIM(ccs.value), '') IS NOT NULL THEN CONCAT(COALESCE(ccs.platform, 'social'), ':', ccs.value) END ORDER BY ccs.id SEPARATOR ' | ') AS social_summary
             FROM `{self.schema}`.customer_contacts cc
-            LEFT JOIN `{self.schema}`.customer_contact_socials ccs ON ccs.customer_id = cc.customer_id
+            LEFT JOIN `{self.schema}`.customer_contact_socials ccs
+              ON ccs.customer_id = BINARY cc.customer_id
             GROUP BY cc.company_id
         ),
         order_rollup AS (
