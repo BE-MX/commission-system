@@ -1,7 +1,7 @@
 """Public-pool research batches, subjects, evidence and deal assessment.
 
-Revision ID: 105_public_pool_research
-Revises: 101_knowledge_poc
+Revision ID: 106_public_pool_research
+Revises: 105_knowledge_category
 """
 
 from alembic import op
@@ -9,8 +9,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import mysql
 
 
-revision = "105_public_pool_research"
-down_revision = "101_knowledge_poc"
+revision = "106_public_pool_research"
+down_revision = "105_knowledge_category"
 branch_labels = None
 depends_on = None
 

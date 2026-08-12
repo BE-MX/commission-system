@@ -174,14 +174,14 @@ def test_score_is_backend_computed_and_separates_evidence_confidence():
     assert public_pool_service.compute_deal_scores(factors, "unverifiable", 0)["grade"] == "D"
 
 
-def test_migration_105_contract():
-    path = Path(__file__).parents[1] / "alembic/versions/105_public_pool_research.py"
-    spec = importlib.util.spec_from_file_location("migration_105_public_pool", path)
+def test_migration_106_contract():
+    path = Path(__file__).parents[1] / "alembic/versions/106_public_pool_research.py"
+    spec = importlib.util.spec_from_file_location("migration_106_public_pool", path)
     migration = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(migration)
-    assert migration.revision == "105_public_pool_research"
-    assert migration.down_revision == "101_knowledge_poc"
+    assert migration.revision == "106_public_pool_research"
+    assert migration.down_revision == "105_knowledge_category"
     source = path.read_text(encoding="utf-8")
     for table in (
         "ark_sales_research_subjects", "ark_sales_public_pool_batches",
