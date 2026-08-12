@@ -33,6 +33,7 @@ from app.core.config import get_settings
 from app.invoice import accessory_price_service, okki_client, product_service
 from app.invoice.models import CustomProduct, Invoice, InvoiceSyncLog, XiaomanSettings
 from app.invoice.service import resolve_okki_flags, validate_invoice
+from app.invoice.time_utils import to_beijing_time
 
 logger = logging.getLogger(__name__)
 
@@ -581,7 +582,7 @@ def list_sync_logs(db: Session, invoice_id: int, limit: int = 50) -> list[dict]:
             "success": bool(row.success),
             "error_message": row.error_message,
             "response_body": row.response_body,
-            "created_at": row.created_at,
+            "created_at": to_beijing_time(row.created_at),
         }
         for row in rows
     ]

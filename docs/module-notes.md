@@ -716,6 +716,10 @@ frontend/src/
 - 管理入口：系统管理 → 用户管理 → 编辑用户 → “可代创建订单的业务员”；关系表 `ark_invoice_delegate_grants`，本人天然可为自己建单，不写自授权。
 - B 新建时先选 A/C/D，私海查询以所选业务员 OKKI 绑定过滤；切换归属会清空客户、联系人和价格上下文。业务员姓名/电话/邮箱只读且由后端按 `sales_user_id` 生成，禁止文本假归属。
 - 保存为 `created_by=B`、`sales_user_id=A/C/D`；OKKI `create_user`、handler、users 和 departments 沿用 sales_user_id 映射，B只进入本地创建/同步操作审计。
+
+### 订单时间口径（2026-08-12）
+- `ark_invoices` 与同步日志仍以 UTC 写入数据库，保证排序和历史数据口径不变；订单列表、详情和同步日志 API 输出时统一转换为带 `+08:00` 的北京时间。
+- 前端使用固定 `Asia/Shanghai` 时区格式化，不依赖访问电脑的本地时区，统一显示 `YYYY-MM-DD HH:mm`。
 - **存量 4 张发票 created_by=NULL**（历史 `_user_id` bug 所致），系统内无归属编辑入口，只有全量范围可见；需人工 SQL 定归属或按测试数据清理
 - **`_user_id` bug 修复后的语义**：本人创建时 `sales_user_id`=本人；代创建时必须显式选择已授权业务员。两种路径都由后端按结构化用户 ID 固化归属，避免文本字段导致业绩静默错人。
 

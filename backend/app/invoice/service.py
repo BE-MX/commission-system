@@ -12,6 +12,7 @@ from app.auth.models import ArkUser
 from app.invoice import accessory_price_service, delegation_service, price_service, product_service
 from app.invoice.models import Invoice, InvoiceDelegateGrant, InvoiceItem
 from app.invoice.schemas import InvoiceCreate, InvoiceUpdate
+from app.invoice.time_utils import to_beijing_time
 
 _HEADER_FIELDS = (
     "customer_id", "customer_name", "contact_name", "contact_phone", "contact_email",
@@ -383,8 +384,8 @@ def serialize_detail(invoice: Invoice) -> dict:
         "xiaoman_order_id": invoice.xiaoman_order_id,
         "xiaoman_order_no": invoice.xiaoman_order_no,
         "sync_error": invoice.sync_error,
-        "synced_at": invoice.synced_at,
-        "updated_at": invoice.updated_at,
+        "synced_at": to_beijing_time(invoice.synced_at),
+        "updated_at": to_beijing_time(invoice.updated_at),
         "items": [_serialize_item(item) for item in invoice.items],
     }
 
@@ -683,7 +684,7 @@ def _invoice_list_row(invoice: Invoice, item_count: int, creator_name: str | Non
         "sync_status": invoice.sync_status,
         "total_amount": invoice.total_amount,
         "item_count": int(item_count or 0),
-        "created_at": invoice.created_at,
+        "created_at": to_beijing_time(invoice.created_at),
     }
 
 

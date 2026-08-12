@@ -9,6 +9,7 @@ import {
   listInvoices,
 } from '@/api/invoice'
 import { validateThenSync } from './invoiceSyncFlow'
+import { formatInvoiceDateTime } from './invoiceDateTime'
 
 export function useInvoiceManagePage() {
   const loading = ref(false)
@@ -92,7 +93,7 @@ export function useInvoiceManagePage() {
 
   function bindIssueHandler(handler) { showIssues = handler }
   const actionText = action => ({ create: '首次推送', update: '编辑推送', retry: '重试' })[action] || action
-  const formatDateTime = value => value ? String(value).replace('T', ' ').slice(0, 16) : '-'
+  const formatDateTime = formatInvoiceDateTime
   const money = value => Number(value || 0).toFixed(2)
   const money4 = value => Number(value || 0).toFixed(4)
   const statusText = status => ({ draft: '草稿', ready: '可同步', synced: '已同步', sync_failed: '同步失败' })[status] || status
