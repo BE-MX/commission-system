@@ -22,6 +22,7 @@ import {
 } from '@element-plus/icons-vue'
 
 const FESTIVAL_PERMISSION = 'festival:read'
+const FESTIVAL_ORDER_PERMISSION = 'festival_order:read'
 
 /**
  * 菜单分组定义。key 与 NAV_ENTRIES[i].menu.group 对应。
@@ -51,7 +52,7 @@ export const MENU_GROUPS = {
     anyPermission: [
       'invoice:read', 'invoice:write', 'invoice:sync',
       'invoice_price:read', 'invoice_okki:read', 'invoice_repair:read',
-      FESTIVAL_PERMISSION,
+      FESTIVAL_PERMISSION, FESTIVAL_ORDER_PERMISSION,
     ],
   },
   aftersales: {
@@ -323,6 +324,17 @@ export const NAV_ENTRIES = [
     menu: {
       group: 'invoice', title: '回款日期修复', icon: Document, order: 30,
       permission: 'invoice_repair:read',
+    },
+  },
+  {
+    path: '/invoice/festival-orders',
+    name: 'FestivalOrderDetail',
+    component: () => import('@/views/invoice/FestivalOrderDetail.vue'),
+    title: '采购节数据明细',
+    permission: FESTIVAL_ORDER_PERMISSION,
+    menu: {
+      group: 'invoice', title: '采购节数据明细', icon: List, order: 35,
+      permission: FESTIVAL_ORDER_PERMISSION,
     },
   },
 
