@@ -20,3 +20,12 @@ export const getCustomerActions = params => unwrap(
 export const generateOrderAiBrief = data => unwrap(
   orderIntelligenceClient.post('/ai-brief', data, { showLoading: false }),
 )
+export const getActiveOrderAiBrief = () => unwrap(
+  orderIntelligenceClient.get('/ai-brief/active', { showLoading: false }),
+)
+export const getLatestOrderAiBrief = () => unwrap(
+  orderIntelligenceClient.get('/ai-brief/latest', { showLoading: false }),
+)
+export const getOrderAiBriefStatus = jobId => unwrap(
+  orderIntelligenceClient.get(`/ai-brief/${jobId}`, { showLoading: false }),
+)

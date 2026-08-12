@@ -1,8 +1,11 @@
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import {
   generateOrderAiBrief,
+  getActiveOrderAiBrief,
   getCountryAnalysis,
   getCustomerActions,
+  getLatestOrderAiBrief,
+  getOrderAiBriefStatus,
   getOrderIntelligenceFilters,
   getOrderOverview,
   getPeopleAnalysis,
@@ -35,8 +38,9 @@ export function useOrderIntelligence() {
   const people = ref({ items: [], total: 0 })
   const customers = ref({ items: [], total: 0, page: 1, page_size: 20 })
   const customerFilters = reactive({ risk_status: '', country: '' })
-  const aiBrief = ref({ visible: false, content: '', source: '' })
+  const aiBrief = ref({ visible: false, job_id: null, status: 'idle', content: '', source: '', error_message: '' })
   let requestVersion = 0
+  let aiPollTimer = null
 
   const scopedUsers = computed(() => filters.team
     ? options.users.filter(user => user.team === filters.team)
@@ -118,35 +122,76 @@ export function useOrderIntelligence() {
     if (activeTab.value === 'customers') await changeTab()
   }
 
-  async function generateBrief(focus = 'executive') {
-    aiLoading.value = true
-    aiBrief.value.visible = true
-    aiBrief.value.content = ''
+  function applyBriefJob(job, showDrawer = true) {
+    if (!job) return
+    aiBrief.value = { ...aiBrief.value, ...job, visible: showDrawer || aiBrief.value.visible }
+    aiLoading.value = ['queued', 'running'].includes(job.status)
+  }
+
+  function scheduleBriefPoll() {
+    if (aiPollTimer || !aiLoading.value || !aiBrief.value.job_id) return
+    aiPollTimer = setTimeout(async () => {
+      aiPollTimer = null
+      try {
+        const job = await getOrderAiBriefStatus(aiBrief.value.job_id)
+        applyBriefJob(job, false)
+      } catch (cause) {
+        aiBrief.value.error_message = cause?.response?.data?.detail || cause?.message || '查询简报状态失败'
+      }
+      if (aiLoading.value) scheduleBriefPoll()
+    }, 3000)
+  }
+
+  async function restoreActiveBrief() {
     try {
-      const result = await generateOrderAiBrief({ ...baseParams(), focus })
-      aiBrief.value.content = result.content || ''
-      aiBrief.value.source = result.source || ''
+      const active = await getActiveOrderAiBrief()
+      const job = active || await getLatestOrderAiBrief()
+      if (!job) return
+      applyBriefJob(job, Boolean(active))
+      scheduleBriefPoll()
     } catch (cause) {
-      aiBrief.value.content = cause?.response?.data?.detail || cause?.message || 'AI 简报生成失败'
-      aiBrief.value.source = 'error'
-    } finally {
+      // 页面主数据不应因简报恢复失败而无法使用，等用户主动重试。
+      console.warn('restore active order brief failed', cause?.message || cause)
+    }
+  }
+
+  async function generateBrief(focus = 'executive') {
+    if (aiLoading.value) return
+    aiLoading.value = true
+    aiBrief.value = { visible: true, job_id: null, status: 'queued', content: '', source: '', error_message: '' }
+    try {
+      const job = await generateOrderAiBrief({ ...baseParams(), focus })
+      applyBriefJob(job)
+      scheduleBriefPoll()
+    } catch (cause) {
+      aiBrief.value.status = 'failed'
+      aiBrief.value.error_message = cause?.response?.data?.detail || cause?.message || 'AI 简报任务提交失败'
       aiLoading.value = false
     }
   }
 
+  function handleBriefAction() {
+    if (aiBrief.value.status === 'succeeded' && aiBrief.value.content) {
+      aiBrief.value.visible = true
+      return
+    }
+    generateBrief()
+  }
+
   onMounted(async () => {
     try {
-      await loadFilters()
+      await Promise.all([loadFilters(), restoreActiveBrief()])
       await loadPage()
     } catch (cause) {
       error.value = cause?.response?.data?.detail || cause?.message || '页面初始化失败'
     }
   })
+  onBeforeUnmount(() => { if (aiPollTimer) clearTimeout(aiPollTimer) })
 
   return {
     activeTab, aiBrief, aiLoading, changeCustomerPage, changePeopleDimension,
     changeTab, changeTeam, countries, customerFilters, customers, detailLoading,
-    error, filters, generateBrief, loadPage, loading, options, overview,
+    error, filters, generateBrief, handleBriefAction, loadPage, loading, options, overview,
     people, peopleDimension, scopedUsers,
   }
 }

@@ -12,8 +12,8 @@
         <h2>订单经营决策台</h2>
         <p>从订单事实识别市场机会、团队能力与客户下一步行动，所有建议均附证据与口径。</p>
       </div>
-      <GlassButton variant="primary" :loading="aiLoading" @click="generateBrief()">
-        <el-icon><MagicStick /></el-icon> 生成 AI 经营简报
+      <GlassButton variant="primary" :loading="aiLoading" :disabled="aiLoading" @click="handleBriefAction()">
+        <el-icon><MagicStick /></el-icon> {{ briefButtonText }}
       </GlassButton>
     </header>
 
@@ -212,10 +212,11 @@
     </template>
 
     <el-drawer v-model="aiBrief.visible" title="AI 经营简报" size="min(680px, 92vw)">
-      <div v-loading="aiLoading" class="oi-ai-brief">
-        <el-alert v-if="aiBrief.source" :type="aiBrief.source === 'ai' ? 'success' : 'warning'" :title="aiBrief.source === 'ai' ? '已基于实时证据生成' : 'AI 不可用，当前为规则简报'" :closable="false" show-icon />
-        <pre>{{ aiBrief.content || '正在生成经营简报…' }}</pre>
+      <div class="oi-ai-brief">
+        <el-alert :type="briefAlert.type" :title="briefAlert.title" :closable="false" show-icon />
+        <pre>{{ briefDisplayContent }}</pre>
       </div>
+      <template #footer><GlassButton v-if="['succeeded', 'failed'].includes(aiBrief.status)" variant="secondary" @click="generateBrief()">重新生成</GlassButton></template>
     </el-drawer>
   </div>
 </template>
@@ -230,11 +231,29 @@ import { useOrderIntelligence } from './composables/useOrderIntelligence'
 const {
   activeTab, aiBrief, aiLoading, changeCustomerPage, changePeopleDimension,
   changeTab, changeTeam, countries, customerFilters, customers, detailLoading,
-  error, filters, generateBrief, loadPage, loading, options, overview,
+  error, filters, generateBrief, handleBriefAction, loadPage, loading, options, overview,
   people, peopleDimension, scopedUsers,
 } = useOrderIntelligence()
 
 const trendMode = ref('amount')
+const briefButtonText = computed(() => {
+  if (aiLoading.value) return '简报后台生成中'
+  if (aiBrief.value.status === 'succeeded' && aiBrief.value.content) return '查看 AI 经营简报'
+  return '生成 AI 经营简报'
+})
+const briefAlert = computed(() => {
+  if (['queued', 'running'].includes(aiBrief.value.status)) return { type: 'info', title: '已转入后台生成，可以关闭弹窗；完成前不能重复提交' }
+  if (aiBrief.value.status === 'failed') return { type: 'error', title: aiBrief.value.error_message || '简报生成失败，可重新提交' }
+  if (aiBrief.value.source === 'ai') return { type: 'success', title: '已基于实时证据生成' }
+  if (aiBrief.value.source === 'rules') return { type: 'warning', title: 'AI 不可用，当前为规则简报' }
+  return { type: 'info', title: '等待生成简报' }
+})
+const briefDisplayContent = computed(() => {
+  if (aiBrief.value.content) return aiBrief.value.content
+  if (aiBrief.value.status === 'queued') return '任务已提交，正在等待后台执行…'
+  if (aiBrief.value.status === 'running') return '正在汇总国家、人员与客户行动证据，完成后将自动显示…'
+  return aiBrief.value.error_message || '暂无简报内容'
+})
 const riskTotal = computed(() => overview.value ? Object.values(overview.value.customer_risk).reduce((sum, value) => sum + Number(value || 0), 0) : 0)
 const number = value => Number(value || 0).toLocaleString('zh-CN')
 const money = value => Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
