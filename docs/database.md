@@ -270,6 +270,10 @@ PII 密钥 `ARK_SALARY_ENCRYPTION_KEY` / `ARK_SALARY_HASH_KEY` 在 `backend/.env
 
 **迁移 097（2026-08-07，M3 计算引擎前置）**：四个新列，全部可空/带默认、纯新增。`ark_salary_employee_profile.special_calc`（特殊计薪：不发全勤、工龄按钉值或 0——姜妮妮/刘德明类，§9.5 的 HR 确认标记）与 `seniority_override`（工龄手动钉值，刘德明 3 月工龄 1000 规则复原不了）；`ark_salary_attendance.due_days_manual`（应出天数手动钉值，李晓雨 21.75；独立成列是因为同步每轮重写 `due_days`，钉值混在里面会被冲掉）；`ark_salary_record.calc_flags`（引擎判定标记 JSON：negative_net / guaranteed_topup / mid_month_weighted / absence_clamped 等，异常面板的记录级检查直接读它，不必每次重算推导过程）。
 
+## 订单经营 AI 简报（迁移 109，2026-08-12）
+
+- `ark_order_intelligence_brief_jobs`：持久化后台简报任务，`owner_user_id → ark_users.id CASCADE`，状态为 `queued/running/succeeded/failed`。`active_key` 在活动期固定为 `user:{ark_user_id}` 并建唯一约束，终态置 NULL，从数据库层阻止同一用户双击、多标签页和并发提交重复调用 AI。任务冻结提交时的日期、focus 与数据范围快照，并保存简报内容、来源、证据及失败原因。`idx_oi_brief_owner_created` 支撑用户历史，`idx_oi_brief_status_updated` 支撑状态与超时扫描。
+
 ## 智能获客（迁移 099，2026-08-09）
 
 主动获客是独立领域，不写入只读 OKKI `lsordertest.customer_info/customer_contacts`，也不复用入站询盘 `ark_customer_opportunities`。候选被人工确认后，后续阶段才允许投影成销售机会。

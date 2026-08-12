@@ -824,6 +824,8 @@ frontend/src/
 
 统计口径、真实数据覆盖、来源归一、国家机会评分、能力标签、客户周期、预测边界和后续广告漏斗方案统一见 `docs/requirements/2026-08-12-order-intelligence-platform.md`。特别注意：经营 GMV 用订单 `amount_usd`，产品趋势用明细 `quantity/amount`，禁止混算；没有广告消耗/询盘漏斗前只叫“投流方向建议”，不生成 ROAS/CAC。
 
+AI 经营简报为数据库持久化后台任务，页面轮询 `queued/running/succeeded/failed` 状态。`active_key=user:{ark_user_id}` 的 nullable 唯一键是防重真相源，终态置 NULL 后才可再生成；不能只靠前端 loading 锁。
+
 **产品与素材**：产品只支持 `single_choice`、`color`、`boolean` 三种预设选项。cover 是单槽；reference 支持多张，可追加、替换、退役和排序，发布前至少需要一张当前 reference。图库只作为复制来源，产品目录始终读取 `customer-product` 私有副本。替换不覆盖旧行，generation 冻结具体 cover/reference/LOGO ID，因此换模板不会改变历史任务输入。
 
 **提示词边界**：最终调用文本按「产品 fixed prompt → 选项/值 prompt fragment → 客户补充要求 → output prompt」确定性组装。客户只看到 label、默认值和自己的安全选择，不看到任何 fragment 或最终 prompt。补充要求与安全选项、最终 prompt、Provider 参数分别冻结；公开 generation 响应不回显补充要求或内部快照。

@@ -3,13 +3,13 @@
 from datetime import date
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_permission
 from app.core.database import get_db
 from app.core.response import ok
-from app.order_intelligence import service
+from app.order_intelligence import brief_job_service, service
 from app.order_intelligence.schemas import AiBriefRequest
 
 router = APIRouter()
@@ -18,6 +18,16 @@ READ_PERMISSION = "order_intelligence:read"
 
 def _scope(db: Session, user: dict, user_id: str | None, team: str | None):
     return service.resolve_scope(db, user, user_id, team)
+
+
+def _user_id(user: dict) -> int:
+    try:
+        value = int(user.get("sub"))
+    except (TypeError, ValueError):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token格式错误") from None
+    if value <= 0:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token格式错误")
+    return value
 
 
 @router.get("/filters")
@@ -88,17 +98,55 @@ def customers(
     ))
 
 
-@router.post("/ai-brief")
-def ai_brief(
-    body: AiBriefRequest,
+@router.get("/ai-brief/active")
+def active_ai_brief(
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user=Depends(require_permission(READ_PERMISSION)),
 ):
-    scope = _scope(db, user, body.user_id, body.team)
+    row = brief_job_service.get_active_job(db, _user_id(user))
+    if row is not None and row.status == "queued":
+        background_tasks.add_task(brief_job_service.run_job_in_background, row.id)
+    return ok(brief_job_service.serialize_job(row) if row else None)
+
+
+@router.get("/ai-brief/latest")
+def latest_ai_brief(
+    db: Session = Depends(get_db),
+    user=Depends(require_permission(READ_PERMISSION)),
+):
+    row = brief_job_service.get_latest_job(db, _user_id(user))
+    return ok(brief_job_service.serialize_job(row) if row else None)
+
+
+@router.get("/ai-brief/{job_id}")
+def ai_brief_status(
+    job_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(require_permission(READ_PERMISSION)),
+):
     try:
-        caller_id = int(user.get("sub"))
-    except (TypeError, ValueError):
-        caller_id = None
-    return ok(service.build_ai_brief(
-        db, scope, body.date_from, body.date_to, body.focus, caller_id,
-    ))
+        row = brief_job_service.get_job(db, _user_id(user), job_id)
+    except brief_job_service.BriefJobNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    return ok(brief_job_service.serialize_job(row))
+
+
+@router.post("/ai-brief", status_code=status.HTTP_202_ACCEPTED)
+def ai_brief(
+    body: AiBriefRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("order_intelligence:read")),
+):
+    scope = _scope(db, user, body.user_id, body.team)
+    row, should_start = brief_job_service.prepare_job(
+        db, _user_id(user), scope, body.date_from, body.date_to, body.focus,
+    )
+    if should_start or row.status == "queued":
+        background_tasks.add_task(brief_job_service.run_job_in_background, row.id)
+    data = brief_job_service.serialize_job(row)
+    data.update({"enqueued": should_start, "already_running": not should_start})
+    # HTTP 202 表示任务已受理；统一响应信封仍使用业务成功码 200，
+    # 以兼容前端公共拦截器的业务码约定。
+    return ok(data)
