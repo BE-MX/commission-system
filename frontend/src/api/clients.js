@@ -46,3 +46,4 @@ export const salaryClient = createApiClient({ baseURL: '/api/salary', timeout: 6
 export const salesAutomationClient = createApiClient({ baseURL: '/api/sales-automation', timeout: 30000 }) // 搜索由Agent异步执行，HTTP只提交任务与结果
 export const knowledgeClient = createApiClient({ baseURL: '/api/knowledge', timeout: 30000 })
 export const festivalClient = createApiClient({ baseURL: '/api/festival', timeout: 30000 })
+export const orderIntelligenceClient = createApiClient({ baseURL: '/api/order-intelligence', timeout: 120000 })

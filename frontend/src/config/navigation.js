@@ -23,6 +23,7 @@ import {
 
 const FESTIVAL_PERMISSION = 'festival:read'
 const FESTIVAL_ORDER_PERMISSION = 'festival_order:read'
+const ORDER_INTELLIGENCE_PERMISSION = 'order_intelligence:read'
 
 /**
  * 菜单分组定义。key 与 NAV_ENTRIES[i].menu.group 对应。
@@ -53,6 +54,7 @@ export const MENU_GROUPS = {
       'invoice:read', 'invoice:write', 'invoice:sync',
       'invoice_price:read', 'invoice_okki:read', 'invoice_repair:read',
       FESTIVAL_PERMISSION, FESTIVAL_ORDER_PERMISSION,
+      ORDER_INTELLIGENCE_PERMISSION,
     ],
   },
   aftersales: {
@@ -346,6 +348,17 @@ export const NAV_ENTRIES = [
     menu: {
       group: 'invoice', title: '采购节数据明细', icon: List, order: 35,
       permission: FESTIVAL_ORDER_PERMISSION,
+    },
+  },
+  {
+    path: '/invoice/order-intelligence',
+    name: 'OrderIntelligence',
+    component: () => import('@/views/order_intelligence/OrderIntelligence.vue'),
+    title: '订单经营决策台',
+    permission: ORDER_INTELLIGENCE_PERMISSION,
+    menu: {
+      group: 'invoice', title: '订单经营决策台', icon: TrendCharts, order: 32,
+      permission: ORDER_INTELLIGENCE_PERMISSION,
     },
   },
 
