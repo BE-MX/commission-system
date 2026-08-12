@@ -270,13 +270,24 @@ export const NAV_ENTRIES = [
     },
   },
   {
+    path: '/sales-automation/public-pool',
+    name: 'SalesPublicPoolResearch',
+    component: () => import('@/views/sales_automation/PublicPoolResearch.vue'),
+    title: '公海背调',
+    anyPermission: ['sales_automation:read', 'sales_automation:write', 'sales_automation:admin'],
+    menu: {
+      group: 'salesAutomation', title: '公海背调', icon: DataBoard, order: 30,
+      anyPermission: ['sales_automation:read', 'sales_automation:write', 'sales_automation:admin'],
+    },
+  },
+  {
     path: '/sales-automation/leads',
     name: 'SalesLeadPool',
     component: () => import('@/views/sales_automation/LeadPool.vue'),
     title: '客户池',
     anyPermission: ['sales_automation:read', 'sales_automation:write', 'sales_automation:admin'],
     menu: {
-      group: 'salesAutomation', title: '客户池', icon: OfficeBuilding, order: 30,
+      group: 'salesAutomation', title: '客户池', icon: OfficeBuilding, order: 40,
       anyPermission: ['sales_automation:read', 'sales_automation:write', 'sales_automation:admin'],
     },
   },

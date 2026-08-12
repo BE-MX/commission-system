@@ -1,6 +1,6 @@
 """智能获客 HTTP 输入模型。"""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -99,3 +99,43 @@ class ResearchUpsert(BaseModel):
     provider: str = Field("agent", max_length=64)
     model: str | None = Field(None, max_length=128)
     idempotency_key: str | None = Field(None, max_length=64)
+
+
+class PublicPoolBatchCreate(BaseModel):
+    batch_date: date | None = None
+    quota_per_tier: int = Field(20, ge=1, le=100)
+    policy_version: str = Field("v1", min_length=1, max_length=32)
+
+
+class DealScoreComponents(BaseModel):
+    industry_fit: float = Field(0, ge=0, le=25)
+    pain_switch_trigger: float = Field(0, ge=0, le=20)
+    intent_reactivation: float = Field(0, ge=0, le=20)
+    buying_capacity: float = Field(0, ge=0, le=15)
+    reachability: float = Field(0, ge=0, le=10)
+    timing: float = Field(0, ge=0, le=10)
+    risk_penalty: float = Field(0, ge=0, le=30)
+    reasons: dict[str, str] = Field(default_factory=dict)
+
+
+class PublicPoolResearchSubmit(AgentLease):
+    summary: str = Field(..., min_length=1, max_length=10000)
+    identity_decision: Literal["confirmed", "candidate", "unverifiable", "rejected"]
+    facts: list[ResearchFactInput] = Field(default_factory=list, max_length=100)
+    contacts: list[ContactInput] = Field(default_factory=list, max_length=100)
+    outreach_angles: list[str] = Field(default_factory=list, max_length=30)
+    risks: list[str] = Field(default_factory=list, max_length=30)
+    score_components: DealScoreComponents
+    supplier_status: Literal["unknown", "stable", "looking", "switching"] = "unknown"
+    pain_points: list[str] = Field(default_factory=list, max_length=20)
+    product_fit: list[str] = Field(default_factory=list, max_length=20)
+    recommended_strategy: str = Field(..., min_length=1, max_length=10000)
+    outreach_type: Literal["reactivation", "new_development", "intent_probe"]
+    opening_message_en: str | None = Field(None, max_length=10000)
+    provider: str = Field("openclaw_public_pool_research", max_length=64)
+    model: str | None = Field(None, max_length=128)
+    idempotency_key: str | None = Field(None, max_length=64)
+
+
+class PublicPoolTaskReject(BaseModel):
+    reason: str = Field(..., min_length=1, max_length=1000)

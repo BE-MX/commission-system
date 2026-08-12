@@ -157,7 +157,10 @@ def ingest_opportunity_event(
                 "lost": "lost",
                 "dismissed": "dismissed",
             }
-            event_type = status_to_event.get(opportunity.status, "updated")
+            if opportunity.opportunity_type in {"public_pool", "customer_reactivation"} and opportunity.status == "pending":
+                event_type = "reactivation" if opportunity.opportunity_type == "customer_reactivation" else "public_pool"
+            else:
+                event_type = status_to_event.get(opportunity.status, "updated")
 
         # 获取或创建画像
         owner_uid = opportunity.owner_user_id
@@ -182,6 +185,8 @@ def ingest_opportunity_event(
             "lost": -20,
             "dismissed": -30,
             "updated": 5,
+            "reactivation": 15,
+            "public_pool": 5,
         }
 
         # 构建事件标题
@@ -193,6 +198,8 @@ def ingest_opportunity_event(
             "lost": f"已流失: {opportunity.customer_name}",
             "dismissed": f"已忽略: {opportunity.customer_name}",
             "updated": f"信息更新: {opportunity.customer_name}",
+            "reactivation": f"老客唤醒: {opportunity.customer_name}",
+            "public_pool": f"公海开发: {opportunity.customer_name}",
         }
 
         # 检查是否已有同 opportunity + 同 event_type 的事件（防重复）
@@ -219,7 +226,7 @@ def ingest_opportunity_event(
 
         evt = CustomerProfileEvent(
             profile_id=profile.id,
-            event_source="accio_inquiry",
+            event_source="okki_public_pool" if opportunity.source == "okki" else "accio_inquiry",
             event_type=event_type,
             source_ref_type="opportunity",
             source_ref_id=str(opportunity.id),

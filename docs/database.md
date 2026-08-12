@@ -281,6 +281,19 @@ PII 密钥 `ARK_SALARY_ENCRYPTION_KEY` / `ARK_SALARY_HASH_KEY` 在 `backend/.env
 - `ark_sales_research_facts`：原子事实；每条必须有来源 URL、采集时间和 0~1 置信度，`(run_id,fact_hash,source_url_hash)` 唯一。
 
 所有表具备 `created_by/updated_by/created_at/updated_at/deleted_at` 审计字段。M1 只覆盖搜索、联系人和研究，不建邮件发送、回复或 WhatsApp 外发表。
+
+### 公海背调与成交研判（迁移 105，2026-08-11）
+
+迁移 105 只在方舟库建表；`lsordertest` 仍由 `BusinessPoolGateway` 用只读 SQL 查询，不建立跨库外键，也不回写 OKKI。
+
+- `ark_sales_research_subjects`：统一研究主体。OKKI 客户用 `external_key=okki:{company_id}` 和 `(source_system,source_customer_id)` 双重唯一约束；允许在尚无官网域名时进入背调。保存初筛档位、信息完整度、历史订单汇总和只读来源快照哈希。
+- `ark_sales_public_pool_batches`：每日抽样批次。`idempotency_key=日期+策略版本+每档配额`，保存生成时公海审计快照、T1/T2/T3 配额和实际选取数。
+- `ark_sales_public_pool_tasks`：逐客户背调任务。状态 `pending/running/completed/failed/skipped`，具备 15 分钟租约；人工审核状态与 Agent 执行状态分列，确认后可关联 `ark_customer_opportunities`。
+- `ark_sales_deal_assessments`：后端重算的 A/B/C/D 成交研判。业务质量分、成交分、证据置信度和优先分分开保存；评分维度、供应商状态、痛点、匹配、风险、策略及未发送开场草稿均保留版本与证据快照。
+- `ark_sales_contacts` / `ark_sales_research_runs`：新增 nullable `subject_id`，并将原 `company_id` 改为 nullable，使无官网的 OKKI 主体也能复用有来源联系人与原子事实模型。两种主体至少命中一种由服务层保证。
+
+T1 = 当前公海且有历史订单；T2 = 无历史订单但有企业邮箱、独立站或非 WhatsApp 业务社媒；T3 = 不满足 T2、但有私人邮箱、电话或 WhatsApp；其余进入冷藏区。每日默认每档选 20 条，其中 16 条按确定性质量排序、最多 4 条固定种子探索，180 天内已进入有效任务的客户不重复抽取。
+
 ## 企业知识库（迁移 101，2026-08-09）
 
 - `ark_knowledge_libraries`：知识库主表，软删除；迁移 105 增加 `category VARCHAR(16) NOT NULL`，值为 company/department/personal，存量行回填 company 后再收紧为非空。

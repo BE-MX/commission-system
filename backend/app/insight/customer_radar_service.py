@@ -157,6 +157,14 @@ def compute_thread_group(
     old_quoted_won = [o for o in quoted_won if o.updated_at and thirty_days_ago >= o.updated_at >= ninety_days_ago]
 
     # 规则链（优先级从高到低）
+    # 0. 公海研究投影必须保留其业务线程，不能被 pending 误判成新询盘。
+    if pending_opps:
+        latest_pending = max(pending_opps, key=lambda item: item.created_at or datetime.min)
+        if latest_pending.opportunity_type == "customer_reactivation":
+            return "reactivation"
+        if latest_pending.opportunity_type == "public_pool":
+            return "public_pool"
+
     # 1. 有近期 pending/contacted 机会 → 新询盘
     if recent_pending:
         return "new_inquiry"

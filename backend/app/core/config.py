@@ -46,6 +46,13 @@ class Settings(BaseSettings):
     SCHEDULER_ENABLED: bool = True
     SCHEDULER_TIMEZONE: str = "Asia/Shanghai"
 
+    # ── 智能获客公海背调批次 ─────────────────────────────
+    # 默认关闭，完成 105 迁移并确认业务库只读账号可查询后再开启。
+    SALES_PUBLIC_POOL_AUTO_BATCH_ENABLED: bool = False
+    SALES_PUBLIC_POOL_BATCH_HOUR: int = 7
+    SALES_PUBLIC_POOL_BATCH_MINUTE: int = 30
+    SALES_PUBLIC_POOL_QUOTA_PER_TIER: _PositiveInt = 20
+
     # ── 短链接 ───────────────────────────────────────────
     SHORT_LINK_BASE_URL: str = "https://leshine.work"
 
