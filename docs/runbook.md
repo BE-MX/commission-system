@@ -85,10 +85,36 @@ XPOZ_TARGET_ACCOUNTS=<逗号分隔账号，色彩趋势采集用>
 
 # 调度器
 SCHEDULER_ENABLED=true
+
+# 运行与自动化中心（外部地址只能由部署配置提供，URL/query 禁止携带 token）
+OPERATIONS_PROBE_TIMEOUT_SECONDS=3
+OPERATIONS_CACHE_TTL_SECONDS=20
+OPERATIONS_ALLOWED_HEALTH_HOSTS=leshine.work,127.0.0.1,localhost
+OPERATIONS_SOCIAL_MCP_HEALTH_URL=https://leshine.work/mcp/social-customer/health
+OPERATIONS_SHOPIFY_HEALTH_URL=
+OPERATIONS_OPENCLAW_HEALTH_URL=
+OPERATIONS_EXTERNAL_SERVICES_JSON=[]
 ```
 
 `deploy.bat` 会在数据库迁移和服务重启前执行发票 PDF 字体预检。若失败，按错误提示修正
 `PDF_CJK_FONT_PATH` 后重新部署；不要等到用户导出发票时再处理。
+
+### 运行与自动化中心上线检查
+
+页面入口为 `/system/operations`。先给日常查看角色分配 `operations:read`；`operations:admin` 只分配给受信任运维管理员，它允许立即执行、暂停、恢复当前进程内的白名单 APScheduler 任务。
+
+部署前确认 `alembic heads` 唯一为 `110_operations_governance`；备份数据库后执行 `alembic upgrade head`，再重启应用。未完成 110 迁移时控制接口会因为审计不可用而拒绝操作，不会无记录执行。
+
+上线时逐项检查：
+
+1. 办公室调度主实例保持 `SCHEDULER_ENABLED=true`，北京及其他应用副本必须为 `false`；
+2. Shopify 与 OpenClaw 先实现无副作用健康接口或 heartbeat sidecar，再分别填写健康地址；未接入时页面会明确显示“未纳管”，不能据此判断进程已停止；
+3. WhatsApp 健康探测沿用 Connector API Key，但页面响应只展示去除 userinfo/query 的地址，不显示请求头；
+4. `OPERATIONS_EXTERNAL_SERVICES_JSON` 只用于部署方维护的固定服务清单（最多 20 项），禁止放密钥、带 token 的 query/path 或用户可控 URL；每个健康域名必须同时加入 `OPERATIONS_ALLOWED_HEALTH_HOSTS`，自定义请求头只允许 `Authorization` / `X-API-Key`；
+5. 首次上线只验证无副作用任务的暂停/恢复。立即执行可能触发消息、推单、同步或 AI 费用，必须确认任务幂等性和业务窗口；
+6. 页面不提供 SSH、shell、部署、数据库迁移、密钥编辑或环境变量修改；这些操作继续按本手册执行。
+
+第一阶段运行事件仅保存在应用进程内存，重启后清空；任务控制审计和暂停策略已经分别持久化到 `ark_operation_audits`、`ark_scheduler_job_policies`。若要做跨实例统一执行历史、失败率与远程固定服务重启，继续落地 `ark_runtime_heartbeats`、`ark_job_runs`，并让云端 agent 使用非 root、固定服务 allowlist；不得让主应用持有云服务器 root 密钥。
 
 ## 首次部署
 

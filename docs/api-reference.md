@@ -7,6 +7,17 @@
 
 业务 API 统一前缀 `/api/v1/`（提成相关共享层），认证与领域模块直接挂在 `/api/`：
 
+### 运行与自动化中心（`/api/operations`，2026-08-12）
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | `/overview` | `operations:read` 或 `operations:admin` | 当前实例、APScheduler 任务、外部服务健康与纳管状态；响应只展示健康地址 origin |
+| POST | `/jobs/{job_id}/run` | `operations:admin` | 将当前进程内、白名单中的已启用任务提交为立即执行 |
+| POST | `/jobs/{job_id}/pause` | `operations:admin` | 暂停当前进程内的白名单任务 |
+| POST | `/jobs/{job_id}/resume` | `operations:admin` | 恢复当前进程内的白名单任务 |
+
+运行中心不提供任意 URL、shell、SSH、环境变量或密钥操作。远程服务健康地址只能由部署环境配置并命中主机 allowlist；任务控制持久写入 `ark_operation_audits`，暂停策略写入 `ark_scheduler_job_policies`。立即执行直接向现有执行器提交一次运行，不改变原任务下一次计划。
+
 **共享层（/api/v1/*）**
 - `/api/v1/employee` — 员工属性
 - `/api/v1/supervisor` — 主管关系
