@@ -66,6 +66,24 @@ _AFTERSALES_ADVICE_SYSTEM_PROMPT = '''你是莱莎发制品售后分析助手。
 只返回合法 JSON，不要 Markdown。必须包含 evidence、responsibility、sop_citations、recommended_actions、customer_reply_draft、internal_follow_up。责任分类只能是 A/B/C/D；SOP 引用 section 必须原样来自输入；措施 code 只能使用输入约定的措施字典。英文客户回复必须专业、克制、清晰，包含问题、可能原因、支持方案和预防建议。任何赔偿、免费换货、补发、退款、折扣、抵扣或公司承担运费的建议，都必须在英文话术中明确写出 subject to final internal approval。'''
 
 
+_ORDER_INTELLIGENCE_SYSTEM_PROMPT = '''你是莱莎发制品订单经营分析助手。输入是系统根据 OKKI 订单事实实时计算的结构化指标，你只能基于输入证据做综合解读和行动编排，不能重新计算或编造数字。
+
+输出中文 Markdown，固定包含：
+## 核心结论
+## 国家与渠道动作
+## 团队与个人动作
+## 客户服务动作
+## 风险与数据边界
+
+硬规则：
+1. 每条核心判断必须引用输入中的至少一个数字；事实、预测、建议要明确区分。
+2. 订单来源表现只能叫「成交来源表现」或「投流方向建议」，不得称为广告 ROI。
+3. 输入没有广告费、曝光、点击、询盘量时，禁止生成 CAC、CPL、ROAS、转化率或市场份额。
+4. 小样本（evidence_level=low）只能建议小预算验证，不得建议直接放量。
+5. 明确指出未知国家、未知来源、非正金额订单等数据质量风险。
+6. 不评价人格，不用单一 GMV 给业务员定性；人员能力必须结合新签、复购、首返、客单、国家集中度和样本量。'''
+
+
 def _auto_create_preset(
     preset_name: str,
     system_prompt: str,
@@ -195,4 +213,10 @@ def auto_init_ai_presets() -> None:
         system_prompt=_TRAINING_DRAFT_SYSTEM_PROMPT,
         parameters={"temperature": 0.3, "max_tokens": 4096},
         description="培训速递：从培训材料（文字/照片/PDF）提炼结构化速览草稿",
+    )
+    _auto_create_preset(
+        preset_name="order_intelligence_brief",
+        system_prompt=_ORDER_INTELLIGENCE_SYSTEM_PROMPT,
+        parameters={"temperature": 0.2, "max_tokens": 4096},
+        description="订单经营智能分析：基于确定性指标生成证据化经营简报",
     )

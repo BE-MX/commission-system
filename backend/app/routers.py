@@ -48,6 +48,7 @@ from app.customer_image.public_router import (
 from app.sales_automation.router import router as sales_automation_router
 from app.sales_automation.agent_router import router as sales_automation_agent_router
 from app.knowledge.router import router as knowledge_router
+from app.order_intelligence.router import router as order_intelligence_router
 
 
 def register_routers(app: FastAPI) -> None:
@@ -99,3 +100,8 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(sales_automation_router, prefix="/api/sales-automation", tags=["智能获客"])
     app.include_router(sales_automation_agent_router, prefix="/api/sales-automation", tags=["智能获客-Agent"])
     app.include_router(knowledge_router, prefix="/api/knowledge", tags=["知识库"])
+    app.include_router(
+        order_intelligence_router,
+        prefix="/api/order-intelligence",
+        tags=["订单经营智能分析"],
+    )
