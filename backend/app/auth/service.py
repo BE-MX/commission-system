@@ -196,7 +196,7 @@ def list_okki_department_options(db: Session) -> list[dict]:
 
 
 # kind 派生规则（权限重设计方案）：data=数据范围，read/日报=页面可见，其余=操作级
-_DATA_KIND_CODES = {"tracking:read_all", "commission:self_read", "insight:internal_read", "invoice:read_all", "expo_lead:read_all"}
+_DATA_KIND_CODES = {"tracking:read_all", "commission:self_read", "insight:internal_read", "invoice:read_all", "expo_lead:read_all", "festival_order:read_all"}
 _PAGE_KIND_EXTRA = {"tracking:daily_report"}
 
 
@@ -341,6 +341,8 @@ def seed_role_permissions(db: Session):
         ("invoice_private_filter:read", "invoice", "read",    "客户私海筛选（录入页「仅私海」勾选）"),
         # 采购节看板：与展会试戴权限完全独立，入口归属「订单管理」菜单。
         ("festival:read",         "festival", "read",       "查看采购节看板"),
+        ("festival_order:read",     "festival_order", "read",     "查看采购节数据明细"),
+        ("festival_order:read_all", "festival_order", "read_all", "查看全部采购节订单（数据范围）"),
         # 客户售后管理（2026-07-12 售后分析拆独立码；2026-07-14 审核拆 aftersales:review，
         # 支持 仅录单 / 录单+审核 / 仅审核 三档，069 迁移已给存量 write 角色补授 review）
         ("aftersales:read",       "aftersales", "read",       "查看授权范围内售后单"),
