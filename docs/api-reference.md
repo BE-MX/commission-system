@@ -743,6 +743,21 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 `/attendance/sync` 前端超时设 300 秒（client 默认 60 秒）：132 次钉钉调用实测跑一分钟出头，60 秒会在服务端仍在写库时掐断请求，界面显示「超时」而数据其实同步成功了，HR 于是重试，又是一分钟加一次限流额度。
 
+## 订单经营智能分析（`/api/order-intelligence`，2026-08-12）
+
+全部端点要求 `order_intelligence:read`；默认数据范围是当前账号绑定的 OKKI 业务员，`order_intelligence:read_all` 才能查看全公司并使用 `team/user_id` 筛选。读取 `lsordertest` 的订单、客户、订单明细、产品与人员投影，不回写业务库。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/filters?team=&user_id=` | 返回可用团队、业务员、国家、标准来源枚举及数据范围 |
+| GET | `/overview?date_from=&date_to=&team=&user_id=` | 经营摘要、环比、月趋势、来源结构、金额分布、产品偏好、客户风险、可解释预测和数据质量 |
+| GET | `/countries?date_from=&date_to=&team=&user_id=` | 国家新签/复购/GMV/周期/流失、产品偏好、机会评分与投流方向建议 |
+| GET | `/people?dimension=team\|user&date_from=&date_to=&team=&user_id=` | 团队或个人的相对能力画像、变化、优势国家与证据等级 |
+| GET | `/customers?as_of=&risk_status=&country=&page=&page_size=&team=&user_id=` | 基于最近最多 5 个订单间隔中位数的临近/超期/高流失客户行动清单 |
+| POST | `/ai-brief` | AI 基于同一确定性指标生成经营简报；preset=`order_intelligence_brief`，失败降级为规则简报 |
+
+有效订单沿用采购节口径：排除 `trail` 含“个人”的订单，保留 `status=13972831656` 或 `status=13972831654 且 status_name=已结清`。新签/复购/首返分别读取 OKKI 自定义字段 `22595163468=是`、`22595163468=否`、`20528142733548=是`。经营 GMV 使用订单 `amount_usd`；产品趋势使用明细 `quantity/amount`，两者不混算。来源从 `45285192666116` 归一为阿里询盘/阿里生态/社媒自主开发/社媒分配/转介绍/官网/其他/未知；订单数据没有广告消耗与询盘漏斗，因此只给“投流方向”，不生成 ROAS/CAC。
+
 ## 智能获客
 
 Base path：`/api/sales-automation`。所有接口使用统一 `{code,message,data}` 信封。
