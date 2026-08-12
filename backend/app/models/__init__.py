@@ -59,6 +59,7 @@ from app.knowledge.models import (
     KnowledgeApprovalRequest,
     KnowledgeAuditLog,
 )
+from app.order_intelligence.models import OrderIntelligenceBriefJob
 
 __all__ = [
     # 提成系统自有表
@@ -129,4 +130,6 @@ __all__ = [
     "KnowledgeRevision",
     "KnowledgeApprovalRequest",
     "KnowledgeAuditLog",
+    # 订单经营 AI 简报
+    "OrderIntelligenceBriefJob",
 ]
