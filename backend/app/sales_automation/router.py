@@ -201,7 +201,12 @@ def _assessment(row: DealAssessment | None):
     }
 
 
-def _pool_task(row: PublicPoolTask, subject: ResearchSubject, assessment: DealAssessment | None = None):
+def _pool_task(
+    row: PublicPoolTask,
+    subject: ResearchSubject,
+    assessment: DealAssessment | None = None,
+    opportunity=None,
+):
     return {
         "id": row.id,
         "batch_id": row.batch_id,
@@ -218,6 +223,7 @@ def _pool_task(row: PublicPoolTask, subject: ResearchSubject, assessment: DealAs
         "reviewed_by": row.reviewed_by,
         "reviewed_at": _iso(row.reviewed_at),
         "opportunity_id": row.opportunity_id,
+        "owner_user_id": opportunity.owner_user_id if opportunity is not None else None,
         "created_at": _iso(row.created_at),
         "subject": _subject(subject),
         "assessment": _assessment(assessment),
@@ -376,15 +382,16 @@ def list_public_pool_tasks(
     task_status: str | None = Query(None, alias="status"),
     tier: str | None = Query(None),
     review_status: str | None = Query(None),
+    allocation_status: str | None = Query(None, pattern="^(claimable|claimed)$"),
     keyword: str | None = Query(None, max_length=100),
     db: Session = Depends(get_db),
     _user=Depends(require_any_permission(*READ_PERMISSIONS)),
 ):
     rows, total = public_pool_service.list_tasks(
-        db, page, page_size, task_status, tier, review_status, keyword,
+        db, page, page_size, task_status, tier, review_status, allocation_status, keyword,
     )
     return ok(page_result(
-        [_pool_task(task, subject, assessment) for task, subject, assessment in rows],
+        [_pool_task(task, subject, assessment, opportunity) for task, subject, assessment, opportunity in rows],
         total, page, page_size,
     ))
 
@@ -396,7 +403,7 @@ def get_public_pool_task(
     _user=Depends(require_any_permission(*READ_PERMISSIONS)),
 ):
     detail = _call(public_pool_service.get_task_detail, db, task_id)
-    data = _pool_task(detail["task"], detail["subject"], detail["assessment"])
+    data = _pool_task(detail["task"], detail["subject"], detail["assessment"], detail["opportunity"])
     data["contacts"] = [_contact(row) for row in detail["contacts"]]
     run = detail["research_run"]
     data["research"] = None if run is None else {
@@ -423,9 +430,19 @@ def get_public_pool_task(
 def approve_public_pool_task(
     task_id: int,
     db: Session = Depends(get_db),
+    user=Depends(require_permission("sales_automation:admin")),
+):
+    task = _call(public_pool_service.approve_task, db, task_id, _user_id(user))
+    return ok({"task_id": task.id, "review_status": task.review_status, "reviewed_by": task.reviewed_by})
+
+
+@router.post("/public-pool/tasks/{task_id}/claim")
+def claim_public_pool_task(
+    task_id: int,
+    db: Session = Depends(get_db),
     user=Depends(require_any_permission(*WRITE_PERMISSIONS)),
 ):
-    opportunity = _call(public_pool_service.approve_task, db, task_id, _user_id(user))
+    opportunity = _call(public_pool_service.claim_approved_task, db, task_id, _user_id(user))
     return ok({"task_id": task_id, "opportunity_id": opportunity.id, "owner_user_id": opportunity.owner_user_id})
 
 
@@ -434,7 +451,7 @@ def reject_public_pool_task(
     task_id: int,
     payload: PublicPoolTaskReject,
     db: Session = Depends(get_db),
-    user=Depends(require_any_permission(*WRITE_PERMISSIONS)),
+    user=Depends(require_permission("sales_automation:admin")),
 ):
     task = _call(public_pool_service.reject_task, db, task_id, _user_id(user), payload.reason)
     subject = db.query(ResearchSubject).filter(ResearchSubject.id == task.subject_id).first()

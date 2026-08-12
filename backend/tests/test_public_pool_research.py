@@ -106,6 +106,16 @@ def _human_client(db):
     return TestClient(app)
 
 
+def _admin_client(db):
+    app = FastAPI()
+    app.include_router(router.router, prefix="/api/sales-automation")
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_current_user] = lambda: {
+        "sub": "9", "roles": [], "permissions": ["sales_automation:admin"],
+    }
+    return TestClient(app)
+
+
 def _research_payload(lease_token: str) -> dict:
     return {
         "agent_id": "pool-agent", "lease_token": lease_token,
@@ -328,17 +338,26 @@ def test_agent_lease_completion_and_conflicting_retry(db):
     assert db.query(models.DealAssessment).count() == 1
 
 
-def test_human_approval_projects_t1_to_reactivation_radar(db):
+def test_human_approval_then_claim_projects_t1_to_reactivation_radar(db):
     _generate(db, quota=1)
     task = db.query(models.PublicPoolTask).filter(models.PublicPoolTask.tier == "T1").one()
     _row, lease = public_pool_service.claim_task(db, task.id, 17, "pool-agent")
     public_pool_service.complete_task_research(db, task.id, _research_payload(lease), actor_id=17)
     human = _human_client(db)
+    admin = _admin_client(db)
     detail = human.get(f"/api/sales-automation/public-pool/tasks/{task.id}")
     assert detail.status_code == 200
     assert detail.json()["data"]["research"]["facts"][0]["source_url"].startswith("https://")
-    approved = human.post(f"/api/sales-automation/public-pool/tasks/{task.id}/approve")
+    assert human.post(f"/api/sales-automation/public-pool/tasks/{task.id}/approve").status_code == 403
+    approved = admin.post(f"/api/sales-automation/public-pool/tasks/{task.id}/approve")
     assert approved.status_code == 200, approved.text
+    assert db.query(insight_models.CustomerOpportunity).count() == 0
+    approved_task = db.query(models.PublicPoolTask).filter_by(id=task.id).one()
+    assert approved_task.review_status == "approved"
+    assert approved_task.opportunity_id is None
+
+    claimed = human.post(f"/api/sales-automation/public-pool/tasks/{task.id}/claim")
+    assert claimed.status_code == 200, claimed.text
     opportunity = db.query(insight_models.CustomerOpportunity).one()
     assert opportunity.opportunity_type == "customer_reactivation"
     subject = db.query(models.ResearchSubject).filter_by(id=task.subject_id).one()
@@ -347,3 +366,96 @@ def test_human_approval_projects_t1_to_reactivation_radar(db):
     assert event.event_source == "okki_public_pool"
     assert event.event_type == "reactivation"
     assert db.query(models.PublicPoolTask).filter_by(id=task.id).one().review_status == "approved"
+
+
+def test_public_pool_claim_is_idempotent_for_owner_and_rejects_other_salesperson(db):
+    _generate(db, quota=1)
+    task = db.query(models.PublicPoolTask).filter(models.PublicPoolTask.tier == "T2").one()
+    _row, lease = public_pool_service.claim_task(db, task.id, 17, "pool-agent")
+    public_pool_service.complete_task_research(db, task.id, _research_payload(lease), actor_id=17)
+    public_pool_service.approve_task(db, task.id, actor_id=7)
+
+    first = public_pool_service.claim_approved_task(db, task.id, actor_id=7)
+    same = public_pool_service.claim_approved_task(db, task.id, actor_id=7)
+    assert same.id == first.id
+    with pytest.raises(public_pool_service.ConflictError, match="其他业务员"):
+        public_pool_service.claim_approved_task(db, task.id, actor_id=8)
+    assert db.query(insight_models.CustomerOpportunity).count() == 1
+
+    claimable, claimable_total = public_pool_service.list_tasks(
+        db, 1, 20, allocation_status="claimable",
+    )
+    claimed, claimed_total = public_pool_service.list_tasks(
+        db, 1, 20, allocation_status="claimed",
+    )
+    assert claimable_total == 0
+    assert claimable == []
+    assert claimed_total == 1
+    assert claimed[0][0].id == task.id
+
+
+def test_historical_lost_opportunity_cannot_be_stolen_or_reset(db):
+    _generate(db, quota=1)
+    task = db.query(models.PublicPoolTask).filter(models.PublicPoolTask.tier == "T2").one()
+    _row, lease = public_pool_service.claim_task(db, task.id, 17, "pool-agent")
+    public_pool_service.complete_task_research(db, task.id, _research_payload(lease), actor_id=17)
+    public_pool_service.approve_task(db, task.id, actor_id=9)
+    opportunity = public_pool_service.claim_approved_task(db, task.id, actor_id=7)
+    opportunity.status = "lost"
+    db.commit()
+
+    second_batch = models.PublicPoolBatch(
+        batch_date=date(2026, 8, 12),
+        policy_version="v2",
+        status="completed",
+        quota_per_tier=1,
+        quotas={"T1": 1, "T2": 1, "T3": 1},
+        audit_snapshot={},
+        result_counts={},
+        idempotency_key="later-batch",
+        created_by=9,
+        updated_by=9,
+    )
+    db.add(second_batch)
+    db.flush()
+    second_task = models.PublicPoolTask(
+        batch_id=second_batch.id,
+        subject_id=task.subject_id,
+        tier="T2",
+        selection_rank=99,
+        selection_reason=["later batch equivalent"],
+        status="completed",
+        review_status="approved",
+        created_by=9,
+        updated_by=9,
+    )
+    db.add(second_task)
+    db.flush()
+    db.add(models.DealAssessment(
+        task_id=second_task.id,
+        subject_id=task.subject_id,
+        grade="B",
+        deal_likelihood="medium",
+        evidence_confidence="medium",
+        identity_decision="confirmed",
+        business_quality_score=70,
+        deal_score=65,
+        priority_score=60,
+        score_factors={},
+        pain_points=[],
+        product_fit=[],
+        recommended_strategy="Keep historical ownership",
+        outreach_type="new_development",
+        risks=[],
+        evidence_snapshot={},
+        completed_at=date(2026, 8, 12),
+        created_by=9,
+        updated_by=9,
+    ))
+    db.commit()
+
+    with pytest.raises(public_pool_service.ConflictError, match="其他业务员"):
+        public_pool_service.claim_approved_task(db, second_task.id, actor_id=8)
+    same_owner = public_pool_service.claim_approved_task(db, second_task.id, actor_id=7)
+    assert same_owner.id == opportunity.id
+    assert same_owner.status == "lost"

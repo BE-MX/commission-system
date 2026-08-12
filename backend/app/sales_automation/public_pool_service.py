@@ -578,11 +578,14 @@ def list_tasks(
     status: str | None = None,
     tier: str | None = None,
     review_status: str | None = None,
+    allocation_status: str | None = None,
     keyword: str | None = None,
-) -> tuple[list[tuple[PublicPoolTask, ResearchSubject, DealAssessment | None]], int]:
-    query = db.query(PublicPoolTask, ResearchSubject, DealAssessment).join(
+) -> tuple[list[tuple[PublicPoolTask, ResearchSubject, DealAssessment | None, CustomerOpportunity | None]], int]:
+    query = db.query(PublicPoolTask, ResearchSubject, DealAssessment, CustomerOpportunity).join(
         ResearchSubject, ResearchSubject.id == PublicPoolTask.subject_id,
-    ).outerjoin(DealAssessment, DealAssessment.task_id == PublicPoolTask.id).filter(
+    ).outerjoin(DealAssessment, DealAssessment.task_id == PublicPoolTask.id).outerjoin(
+        CustomerOpportunity, CustomerOpportunity.id == PublicPoolTask.opportunity_id,
+    ).filter(
         PublicPoolTask.deleted_at.is_(None), ResearchSubject.deleted_at.is_(None),
     )
     if status:
@@ -591,6 +594,13 @@ def list_tasks(
         query = query.filter(PublicPoolTask.tier == tier)
     if review_status:
         query = query.filter(PublicPoolTask.review_status == review_status)
+    if allocation_status == "claimable":
+        query = query.filter(
+            PublicPoolTask.review_status == "approved",
+            PublicPoolTask.opportunity_id.is_(None),
+        )
+    elif allocation_status == "claimed":
+        query = query.filter(PublicPoolTask.opportunity_id.is_not(None))
     if keyword:
         query = query.filter(or_(
             ResearchSubject.display_name.ilike(f"%{keyword.strip()}%"),
@@ -862,10 +872,16 @@ def complete_task_research(
 
 def get_task_detail(db: Session, task_id: int) -> dict:
     task = get_task(db, task_id)
-    subject = db.query(ResearchSubject).filter(ResearchSubject.id == task.subject_id).first()
+    # 同一客户可能跨批次产生多个 task；锁共享 subject，跨 task 抢领也串行化。
+    subject = db.query(ResearchSubject).filter(
+        ResearchSubject.id == task.subject_id,
+    ).with_for_update().first()
     if subject is None:
         raise NotFoundError("研究主体不存在")
     assessment = db.query(DealAssessment).filter(DealAssessment.task_id == task.id).first()
+    opportunity = None if task.opportunity_id is None else db.query(CustomerOpportunity).filter(
+        CustomerOpportunity.id == task.opportunity_id,
+    ).first()
     contacts = db.query(LeadContact).filter(
         LeadContact.subject_id == subject.id, LeadContact.deleted_at.is_(None),
     ).order_by(LeadContact.created_at.asc()).all()
@@ -879,6 +895,7 @@ def get_task_detail(db: Session, task_id: int) -> dict:
         "task": task,
         "subject": subject,
         "assessment": assessment,
+        "opportunity": opportunity,
         "contacts": contacts,
         "research_run": run,
         "facts": facts,
@@ -897,13 +914,41 @@ def _opportunity_due_at(grade: str) -> datetime | None:
     return None
 
 
-def approve_task(db: Session, task_id: int, actor_id: int) -> CustomerOpportunity:
+def approve_task(db: Session, task_id: int, actor_id: int) -> PublicPoolTask:
     task = get_task(db, task_id, for_update=True)
     if task.status != "completed":
-        raise ConflictError("只有研究完成的客户可以进入开发队列")
+        raise ConflictError("只有研究完成的客户可以审核")
     if task.review_status == "rejected":
         raise ConflictError("已拒绝任务不能直接确认")
+    if task.review_status == "approved":
+        return task
     subject = db.query(ResearchSubject).filter(ResearchSubject.id == task.subject_id).first()
+    assessment = db.query(DealAssessment).filter(DealAssessment.task_id == task.id).first()
+    if subject is None or assessment is None:
+        raise ConflictError("任务缺少研究主体或成交研判")
+    task.review_status = "approved"
+    task.reviewed_by = actor_id
+    task.reviewed_at = _now()
+    task.updated_by = actor_id
+    db.commit()
+    db.refresh(task)
+    return task
+
+
+def claim_approved_task(db: Session, task_id: int, actor_id: int) -> CustomerOpportunity:
+    """业务员抢领已审核客户；task 行锁保证只有一人成功。"""
+    task = get_task(db, task_id, for_update=True)
+    if task.status != "completed" or task.review_status != "approved":
+        raise ConflictError("只有审核通过的客户可以领取")
+    if task.opportunity_id is not None:
+        claimed = db.query(CustomerOpportunity).filter(CustomerOpportunity.id == task.opportunity_id).first()
+        if claimed is not None and claimed.owner_user_id == actor_id:
+            return claimed
+        raise ConflictError("该公海客户已被其他业务员领取")
+    # 同一客户可能跨批次产生多个 task；锁共享 subject，跨 task 抢领也串行化。
+    subject = db.query(ResearchSubject).filter(
+        ResearchSubject.id == task.subject_id,
+    ).with_for_update().first()
     assessment = db.query(DealAssessment).filter(DealAssessment.task_id == task.id).first()
     if subject is None or assessment is None:
         raise ConflictError("任务缺少研究主体或成交研判")
@@ -911,8 +956,14 @@ def approve_task(db: Session, task_id: int, actor_id: int) -> CustomerOpportunit
     opportunity = db.query(CustomerOpportunity).filter(
         CustomerOpportunity.source_key == source_key,
     ).with_for_update().first()
-    if opportunity and opportunity.owner_user_id not in (None, actor_id) and opportunity.status not in {"lost", "dismissed"}:
-        raise ConflictError("该公海客户已被其他业务员领取")
+    if opportunity is not None and opportunity.owner_user_id is not None:
+        if opportunity.owner_user_id != actor_id:
+            raise ConflictError("该公海客户已被其他业务员领取")
+        # 同一业务员重复遇到该客户时沿用历史机会，不重置已流失/已忽略等状态。
+        task.opportunity_id = opportunity.id
+        task.updated_by = actor_id
+        db.commit()
+        return opportunity
     confidence_score = {"high": 90, "medium": 65, "low": 35}[assessment.evidence_confidence]
     opportunity_type = "customer_reactivation" if task.tier == "T1" else "public_pool"
     background = {
@@ -967,9 +1018,6 @@ def approve_task(db: Session, task_id: int, actor_id: int) -> CustomerOpportunit
     opportunity.opening_message_en = assessment.opening_message_en
     opportunity.evidence_json = assessment.evidence_snapshot or {}
     opportunity.due_at = _opportunity_due_at(assessment.grade)
-    task.review_status = "approved"
-    task.reviewed_by = actor_id
-    task.reviewed_at = _now()
     task.updated_by = actor_id
     db.flush()
     task.opportunity_id = opportunity.id

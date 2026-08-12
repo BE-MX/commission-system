@@ -785,10 +785,11 @@ Base path：`/api/sales-automation`。所有接口使用统一 `{code,message,da
 | POST | `/public-pool/audit/refresh` | admin | 强制从 `lsordertest` 重新计算 T1/T2/T3/冷藏区数量 |
 | GET | `/public-pool/batches` | read/write/admin 任一 | 公海每日批次列表与抽样统计 |
 | POST | `/public-pool/batches` | write/admin 任一 | 202 登记后台生成批次，默认 T1/T2/T3 各 20 条；T1 仅纳入最近 60 天无下单的历史客户；同一幂等批次 pending/running/completed 时不重复执行，failed 才允许重试 |
-| GET | `/public-pool/tasks` | read/write/admin 任一 | 按档位、Agent 状态、审核状态和关键词分页查询 |
+| GET | `/public-pool/tasks` | read/write/admin 任一 | 按档位、Agent 状态、审核状态、分配状态（claimable/claimed）和关键词分页查询 |
 | GET | `/public-pool/tasks/{id}` | read/write/admin 任一 | OKKI 来源快照、公开联系人、原子事实与成交研判 |
-| POST | `/public-pool/tasks/{id}/approve` | write/admin 任一 | 人工确认后投影到客户机会/经营雷达；T1 为老客再激活，其余为公海开发 |
-| POST | `/public-pool/tasks/{id}/reject` | write/admin 任一 | 带原因拒绝，不生成开发机会 |
+| POST | `/public-pool/tasks/{id}/approve` | admin | 管理员审核通过，进入团队待领取公海，不自动归属审核人 |
+| POST | `/public-pool/tasks/{id}/claim` | write/admin 任一 | 抢领审核通过的客户；行锁保证仅一名业务员成功，领取后投影到本人客户机会/经营雷达 |
+| POST | `/public-pool/tasks/{id}/reject` | admin | 管理员带原因拒绝，不生成开发机会 |
 
 Agent 接口只接受可撤销的 MCP opaque token，且账号必须具有 `sales_automation:invoke`。推荐为运行器创建只含该权限的专用账号，不使用浏览器登录 JWT。
 

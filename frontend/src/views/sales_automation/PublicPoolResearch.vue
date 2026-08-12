@@ -29,6 +29,9 @@
       <el-select v-model="filters.review_status" clearable placeholder="全部审核" style="width: 130px" @change="search">
         <el-option label="待审核" value="pending" /><el-option label="已确认" value="approved" /><el-option label="已拒绝" value="rejected" />
       </el-select>
+      <el-select v-model="filters.allocation_status" clearable placeholder="全部分配" style="width: 130px" @change="search">
+        <el-option label="待领取" value="claimable" /><el-option label="已领取" value="claimed" />
+      </el-select>
       <GlassButton variant="primary" left-icon="Search" @click="search">查询</GlassButton>
       <GlassButton variant="secondary" left-icon="Refresh" :loading="loading" @click="fetchTasks">刷新</GlassButton>
     </div>
@@ -43,14 +46,15 @@
         <el-table-column label="背调进度" width="105"><template #default="{ row }"><el-tag :type="statusMeta(row.status).type" effect="plain">{{ statusMeta(row.status).label }}</el-tag></template></el-table-column>
         <el-table-column label="成交等级" width="110"><template #default="{ row }"><span v-if="row.assessment" class="grade" :data-grade="row.assessment.grade">{{ row.assessment.grade }}</span><span v-else>-</span></template></el-table-column>
         <el-table-column label="证据置信度" width="115"><template #default="{ row }">{{ confidenceLabel(row.assessment?.evidence_confidence) }}</template></el-table-column>
-        <el-table-column label="人工审核" width="105"><template #default="{ row }"><el-tag :type="reviewMeta(row.review_status).type" effect="plain">{{ reviewMeta(row.review_status).label }}</el-tag></template></el-table-column>
-        <el-table-column label="操作" width="190" fixed="right">
+        <el-table-column label="团队分配" width="125"><template #default="{ row }"><el-tag :type="allocationMeta(row).type" effect="plain">{{ allocationMeta(row).label }}</el-tag></template></el-table-column>
+        <el-table-column label="操作" width="230" fixed="right">
           <template #default="{ row }">
             <GlassButton variant="link" left-icon="View" @click="openDetail(row)">详情</GlassButton>
             <template v-if="row.status === 'completed' && row.review_status === 'pending'">
-              <GlassButton v-any-permission="['sales_automation:write', 'sales_automation:admin']" variant="link" link-tone="success" left-icon="Check" @click="approve(row)">进入开发</GlassButton>
-              <GlassButton v-any-permission="['sales_automation:write', 'sales_automation:admin']" variant="link" link-tone="danger" left-icon="Close" @click="reject(row)">拒绝</GlassButton>
+              <GlassButton v-permission="'sales_automation:admin'" variant="link" link-tone="success" left-icon="Check" @click="approve(row)">审核通过</GlassButton>
+              <GlassButton v-permission="'sales_automation:admin'" variant="link" link-tone="danger" left-icon="Close" @click="reject(row)">拒绝</GlassButton>
             </template>
+            <GlassButton v-else-if="row.status === 'completed' && row.review_status === 'approved' && !row.opportunity_id" v-any-permission="['sales_automation:write', 'sales_automation:admin']" variant="link" link-tone="success" left-icon="UserFilled" @click="claim(row)">领取客户</GlassButton>
           </template>
         </el-table-column>
       </el-table>
@@ -95,7 +99,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import DetailDrawer from '@/components/DetailDrawer.vue'
 import GlassButton from '@/components/GlassButton.vue'
-import { approvePublicPoolTask, createPublicPoolBatch, getPublicPoolAudit, getPublicPoolBatches, getPublicPoolTask, getPublicPoolTasks, refreshPublicPoolAudit, rejectPublicPoolTask } from '@/api/salesAutomation'
+import { approvePublicPoolTask, claimPublicPoolTask, createPublicPoolBatch, getPublicPoolAudit, getPublicPoolBatches, getPublicPoolTask, getPublicPoolTasks, refreshPublicPoolAudit, rejectPublicPoolTask } from '@/api/salesAutomation'
 import { useListPage } from '@/composables/useListPage'
 import { msgSuccess } from '@/utils/feedback'
 
@@ -108,7 +112,7 @@ const metrics = computed(() => [
 ])
 const tierMeta = v => ({ T1: { label: 'T1 再激活', type: 'danger' }, T2: { label: 'T2 优质', type: 'success' }, T3: { label: 'T3 探索', type: 'info' } }[v] || { label: v || '-', type: 'info' })
 const statusMeta = v => ({ pending: { label: '待领取', type: 'info' }, running: { label: '背调中', type: 'warning' }, completed: { label: '已完成', type: 'success' }, failed: { label: '失败', type: 'danger' } }[v] || { label: v || '-', type: 'info' })
-const reviewMeta = v => ({ pending: { label: '待审核', type: 'warning' }, approved: { label: '已确认', type: 'success' }, rejected: { label: '已拒绝', type: 'info' } }[v] || { label: v || '-', type: 'info' })
+const allocationMeta = row => row.review_status === 'pending' ? { label: '待审核', type: 'warning' } : row.review_status === 'rejected' ? { label: '已拒绝', type: 'info' } : row.opportunity_id ? { label: `已领取 · #${row.owner_user_id || '-'}`, type: 'success' } : { label: '待领取', type: 'primary' }
 const confidenceLabel = v => ({ high: '高', medium: '中', low: '低' }[v] || '-')
 const likelihoodLabel = v => ({ high: '较高', medium: '中等', low: '较低' }[v] || '-')
 const identityLabel = v => ({ confirmed: '已确认', candidate: '候选匹配', unverifiable: '无法验证', rejected: '主体不符' }[v] || '-')
@@ -117,7 +121,7 @@ const number = v => Number(v || 0).toLocaleString('zh-CN'); const formatTime = v
 
 const { loading, list: tasks, total, page, pageSize, searchForm: filters, fetchList: fetchTasks, handleSearch: search, handlePageChange, handleSizeChange } = useListPage(async params => {
   const clean = Object.fromEntries(Object.entries(params).filter(([, value]) => value !== '')); const res = await getPublicPoolTasks(clean); return res.data || {}
-}, { searchForm: { keyword: '', tier: '', status: '', review_status: '' } })
+}, { searchForm: { keyword: '', tier: '', status: '', review_status: '', allocation_status: '' } })
 const detailVisible = ref(false); const detailLoading = ref(false); const detail = ref(null); const activeTab = ref('seed')
 async function loadAudit() { auditLoading.value = true; try { audit.value = (await getPublicPoolAudit()).data || {} } finally { auditLoading.value = false } }
 async function refreshAudit() { auditLoading.value = true; try { audit.value = (await refreshPublicPoolAudit()).data || {}; msgSuccess('公海审计') } finally { auditLoading.value = false } }
@@ -140,7 +144,8 @@ async function generateBatch() {
   } finally { batchLoading.value = false }
 }
 async function openDetail(row) { detailVisible.value = true; detailLoading.value = true; activeTab.value = 'seed'; try { detail.value = (await getPublicPoolTask(row.id)).data } finally { detailLoading.value = false } }
-async function approve(row) { await approvePublicPoolTask(row.id); msgSuccess('进入开发队列'); await fetchTasks(); if (detail.value?.id === row.id) detail.value = (await getPublicPoolTask(row.id)).data }
+async function approve(row) { await approvePublicPoolTask(row.id); msgSuccess('审核通过，已进入团队待领取公海'); await fetchTasks(); if (detail.value?.id === row.id) detail.value = (await getPublicPoolTask(row.id)).data }
+async function claim(row) { await claimPublicPoolTask(row.id); msgSuccess('领取成功，客户已进入我的机会'); await fetchTasks(); if (detail.value?.id === row.id) detail.value = (await getPublicPoolTask(row.id)).data }
 async function reject(row) { try { const { value } = await ElMessageBox.prompt('请填写拒绝原因，便于后续调整筛选和背调策略。', '拒绝公海客户', { inputType: 'textarea', inputValidator: v => Boolean(v?.trim()) || '拒绝原因不能为空' }); await rejectPublicPoolTask(row.id, value.trim()); msgSuccess('拒绝'); await fetchTasks() } catch (error) { if (error !== 'cancel' && error !== 'close') throw error } }
 onMounted(async () => { await syncBatchState(); if (!activeBatch.value) await loadAudit() })
 onBeforeUnmount(() => { if (batchPollTimer) clearTimeout(batchPollTimer) })
