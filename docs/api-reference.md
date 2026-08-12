@@ -184,6 +184,8 @@
   - 后台 `festival_event_monitor` 每分钟独立检测事件并把弹框卡片 PNG 发到采购节钉钉群；`festival_daily_report` 每天 17:30 把战报与新签、首返复购、团队、阵营四张实时榜单截图合并成一条群消息。消息成功才落发送状态，失败由下一分钟重试。
 - `/api/festival` — 采购节大屏登录态入口（`festival/router.py`）
   - `GET /screen-key` — 用 JWT 换大屏访问 key（返回 `FESTIVAL_SCREEN_KEYS` 第一个；未配置 → 503 fail-closed）。独立权限=`festival:read`（与展会权限无关）；消费方是入口页 `/festival/index.html`（方舟菜单「订单管理 → 采购节看板」→ 同源 localStorage token 换 key → 跳 `zhaiyao.html?key=`；电视书签带 key 直访不走此端点）
+  - `GET /orders/summary?user_id=` — 采购节订单明细页顶部统计（`festival_order:read`）；普通业务员强制按当前账号有效 OKKI 绑定查本人，`festival_order:read_all`/super_admin 默认全公司且可按有效参赛业务员下钻。返回去重新签客户进度及积分、去重首返客户数、复购金额和可选业务员。
+  - `GET /orders?type=new_sign|first_return|repurchase&page=&page_size=&keyword=&user_id=` — 采购节订单分页明细（`festival_order:read`）；返回订单号、记账日期、USD 金额、客户、业务员、团队、阵营，新签额外返回积分及同客户已计分提示。数据范围同汇总接口。
 - `/health` — 健康检查（含数据库连通性）
 - `POST /api/shortlink` — 生成短链（接收 `{"url": "..."}`,返回 `{"short_url": "https://leshine.work/s/xxxxxx"}`）
 - `/s/{code}` — 短链 302 跳转(双查找:先查 `ark_short_links` 命中即跳并 `click_count+1`;落空查 `shipment_tracking.short_code` 跳承运商官网;都未命中跳 `SHORT_LINK_BASE_URL` 兜底页)
