@@ -18,7 +18,7 @@ import {
   Money, Refresh, List, Van, Upload, Box, Setting, Aim, Reading,
   MagicStick, Notebook, Calendar, Camera, EditPen, Stamp, TrendCharts,
   Lock, Lightning, Picture, Collection, CollectionTag, DataBoard, Key,
-  DataLine, Printer, Brush, Tickets, Goods, Postcard, Shop, Wallet,
+  DataLine, Printer, Brush, Tickets, Goods, Postcard, Shop, Wallet, Monitor,
 } from '@element-plus/icons-vue'
 
 const FESTIVAL_PERMISSION = 'festival:read'
@@ -161,6 +161,7 @@ export const MENU_GROUPS = {
     anyPermission: [
       'user:read', 'role:read', 'dict:read', 'ai:admin',
       'mcp:admin',
+      'operations:read', 'operations:admin',
       'external_binding:read', 'external_binding:write',
       'whatsapp:read', 'whatsapp:write',
     ],
@@ -1211,6 +1212,17 @@ export const NAV_ENTRIES = [
     menu: {
       group: 'system', title: 'AI 接入管理', icon: Lightning, order: 40,
       permission: 'ai:admin',
+    },
+  },
+  {
+    path: '/system/operations',
+    name: 'OperationsCenter',
+    component: () => import('@/views/system/OperationsCenter.vue'),
+    title: '运行与自动化中心',
+    anyPermission: ['operations:read', 'operations:admin'],
+    menu: {
+      group: 'system', title: '运行与自动化中心', icon: Monitor, order: 42,
+      anyPermission: ['operations:read', 'operations:admin'],
     },
   },
   {

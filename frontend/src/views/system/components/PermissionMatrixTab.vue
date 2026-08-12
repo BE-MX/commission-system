@@ -87,7 +87,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { MATRIX_COLUMNS, KIND_LABELS, PAGE_PARENTS } from '../composables/usePermissionMatrix'
+import { ACTION_LABELS, MATRIX_COLUMNS, KIND_LABELS, PAGE_PARENTS } from '../composables/usePermissionMatrix'
 
 const props = defineProps({
   matrix: { type: Object, required: true },
@@ -155,7 +155,8 @@ function groupTotal(group) {
 }
 
 function actionOf(perm) {
-  return perm.code.split(':')[1] || perm.action
+  const action = perm.code.split(':')[1] || perm.action
+  return ACTION_LABELS[action] || perm.label || '业务动作'
 }
 
 function kindLabel(perm) {

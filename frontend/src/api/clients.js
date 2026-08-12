@@ -48,3 +48,4 @@ export const knowledgeClient = createApiClient({ baseURL: '/api/knowledge', time
 export const mcpClient = createApiClient({ baseURL: '/api/mcp', timeout: 30000 })
 export const festivalClient = createApiClient({ baseURL: '/api/festival', timeout: 30000 })
 export const orderIntelligenceClient = createApiClient({ baseURL: '/api/order-intelligence', timeout: 120000 })
+export const operationsClient = createApiClient({ baseURL: '/api/operations', timeout: 15000 })

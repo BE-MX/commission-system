@@ -81,15 +81,15 @@ html, body, #app {
   color: var(--text-secondary);
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: 12px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  font-size: 13px;
+  letter-spacing: normal;
+  text-transform: none;
   border-bottom: 1px solid var(--border-color) !important;
 }
 .el-table td.el-table__cell {
   color: var(--text-primary);
-  font-size: 12px;
-  border-bottom-color: #f0f2f7 !important;
+  font-size: 13px;
+  border-bottom-color: var(--page-bg) !important;
   transition: background 0.2s ease;
 }
 .el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell {
@@ -126,10 +126,11 @@ html, body, #app {
 
 /* Buttons — base */
 .el-button {
-  border-radius: 8px;
+  border-radius: 12px;
   font-family: var(--font-display);
   font-weight: 600;
-  transition: all 0.2s ease;
+  transition: background-color 200ms ease, border-color 200ms ease,
+    color 200ms ease, box-shadow 200ms ease, transform 200ms ease, opacity 200ms ease;
   height: 36px;
   padding: 0 16px;
 }
@@ -149,15 +150,23 @@ html, body, #app {
 
 /* Default buttons — secondary style */
 .el-button--default {
-  background: #fff;
+  background: var(--card-bg);
   border-color: var(--border-color);
-  color: #4a5568;
+  color: var(--text-secondary);
 }
 .el-button--default:hover,
 .el-button--default:focus {
   background: var(--toolbar-bg);
   border-color: rgba(212, 175, 110, 0.3);
-  color: #4a5568;
+  color: var(--text-secondary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .el-button,
+  .el-card,
+  .el-table td.el-table__cell {
+    transition: none;
+  }
 }
 
 /* Solid buttons — brand palette */

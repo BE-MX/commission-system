@@ -26,12 +26,14 @@ export const PREFIX_LABELS = {
   customer_opportunity: '客户机会台',
   customer_radar: '客户经营雷达',
   sales_automation: '智能获客',
+  order_intelligence: '订单经营决策台',
   invoice: '订单发票',
   invoice_price: '价格与产品配置',
   invoice_okki: 'OKKI 推单设置',
   invoice_repair: '回款日期修复',
   invoice_private_filter: '私海客户筛选',
   festival: '采购节看板',
+  festival_order: '采购节数据明细',
   tracking: '物流跟踪',
   stock: '备货一览',
   stock_daily: '安全库存日报',
@@ -63,6 +65,7 @@ export const PREFIX_LABELS = {
   design_my: '我的预约',
   design_stats: '设计统计',
   design_image: 'AI 生图工作台',
+  ai_chat: 'AI 方案对话',
   customer_image: '客户产品效果图',
   domestic: '内贸订单',
   user: '用户管理',
@@ -78,6 +81,9 @@ export const PREFIX_LABELS = {
   whatsapp: 'WhatsApp 同步',
   dingtalk: '钉钉集成',
   mcp: 'MCP 网关',
+  operations: '运行与自动化中心',
+  knowledge: '企业知识库',
+  salary: '薪资计算',
   aftersales: '售后单据',
   aftersales_analytics: '售后分析',
 }
@@ -122,20 +128,21 @@ export const PAGE_PARENTS = {
 const ROW_GROUPS = [
   { label: '经营 · 提成与客户', prefixes: ['commission', 'commission_my', 'payment', 'customer', 'sales_automation', 'customer_opportunity', 'customer_radar', 'employee', 'supervisor'] },
   { label: '单据 · 订单与物流', prefixes: [
-    'invoice', 'invoice_price', 'invoice_okki', 'invoice_repair', 'invoice_private_filter', 'festival',
+    'invoice', 'invoice_price', 'invoice_okki', 'invoice_repair', 'invoice_private_filter', 'festival', 'festival_order', 'order_intelligence', 'domestic',
     'aftersales', 'aftersales_analytics', 'tracking',
     'stock', 'stock_daily',
     'production', 'production_product', 'production_dashboard', 'production_route',
   ] },
   { label: '营销 · 展会与洞见', prefixes: [
-    'expo', 'expo_hair_color', 'expo_scene', 'expo_script', 'expo_lead',
+    'expo', 'expo_hair_color', 'expo_scene', 'expo_script', 'expo_lead', 'expo_store', 'card',
     'insight', 'insight_library', 'insight_daily', 'insight_ai_tools', 'insight_case', 'insight_minutes',
     'training',
     'asset', 'asset_favorites', 'asset_stats',
     'color', 'color_blend', 'color_trend',
-    'design', 'design_gantt', 'design_my', 'design_stats', 'customer_image',
+    'design', 'design_gantt', 'design_my', 'design_stats', 'design_image', 'ai_chat', 'customer_image',
   ] },
-  { label: '系统', prefixes: ['user', 'role', 'dict', 'ai', 'report', 'governance', 'governance_graph', 'governance_log', 'external_binding', 'whatsapp', 'dingtalk', 'mcp'] },
+  { label: '协作 · 知识与薪资', prefixes: ['knowledge', 'salary'] },
+  { label: '系统 · 接入与运维', prefixes: ['user', 'role', 'dict', 'ai', 'report', 'governance', 'governance_graph', 'governance_log', 'external_binding', 'whatsapp', 'dingtalk', 'mcp', 'operations'] },
 ]
 
 export const MATRIX_COLUMNS = [
@@ -146,6 +153,12 @@ export const MATRIX_COLUMNS = [
 ]
 
 export const KIND_LABELS = { data: '数据范围', page: '页面', action: '动作' }
+
+export const ACTION_LABELS = {
+  read: '查看', write: '编辑', delete: '删除', admin: '管理', manage: '管理',
+  read_all: '查看全部', self_read: '仅本人', sync: '同步', review: '审批',
+  audit: '审核', print: '打印', recharge: '充值', invoke: 'Agent 调用',
+}
 
 /** action → 标准列；kind=data 或非标准 action → null (进特殊列) */
 function columnOf(perm) {
