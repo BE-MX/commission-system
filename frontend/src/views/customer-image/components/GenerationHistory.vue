@@ -48,20 +48,20 @@ function dateLabel(value) {
 </template>
 
 <style scoped>
-.generation-history { display: grid; gap: 12px; }
+.generation-history { display: grid; gap: 12px; align-content: start; }
 .history-heading { display: flex; min-height: 44px; align-items: center; justify-content: space-between; }
-h2 { margin: 0; color: var(--cip-ink); font-size: 15px; }
-.history-heading > span { color: var(--cip-muted); font-size: 12px; }
-.empty { margin: 0; color: var(--cip-muted); font-size: 12px; line-height: 1.6; }
+h2 { margin: 0; color: var(--cip-ink); font-family: var(--cip-font-display); font-size: 16px; font-weight: 500; }
+.history-heading > span { color: var(--cip-faint); font-size: 11px; }
+.empty { margin: 0; color: var(--cip-muted); font-size: 12px; line-height: 1.65; }
 .history-list { display: grid; gap: 7px; }
-.generation-row { display: grid; min-height: 60px; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 9px; width: 100%; padding: 7px; cursor: pointer; border: 1px solid transparent; border-radius: 10px; color: var(--cip-ink); background: transparent; text-align: left; transition: transform 180ms cubic-bezier(0.23, 1, 0.32, 1); }
+.generation-row { display: grid; min-height: 60px; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; padding: 7px; cursor: pointer; border: 1px solid transparent; border-radius: 12px; color: var(--cip-ink); background: transparent; text-align: left; transition: transform 180ms cubic-bezier(0.23, 1, 0.32, 1); }
 .generation-row.selected { border-color: var(--cip-border-strong); background: var(--cip-surface-subtle); }
 .generation-row:active { transform: scale(.98); }
-.thumb { display: grid; width: 44px; height: 44px; place-items: center; overflow: hidden; border-radius: 8px; background: var(--cip-surface-subtle); }
+.thumb { display: grid; width: 44px; height: 44px; place-items: center; overflow: hidden; border-radius: 9px; background: var(--cip-accent-soft); }
 .thumb img { width: 100%; height: 100%; object-fit: cover; }
-.status-mark { width: 9px; height: 9px; border-radius: 50%; background: var(--cip-muted); }
-.status-mark[data-status="running"], .status-mark[data-status="queued"] { background: var(--cip-accent); }
-.status-mark[data-status="succeeded"] { background: var(--cip-success); }
+.status-mark { width: 8px; height: 8px; border-radius: 50%; background: var(--cip-faint); }
+.status-mark[data-status="running"], .status-mark[data-status="queued"] { background: var(--cip-highlight); }
+.status-mark[data-status="succeeded"] { background: var(--cip-sand); }
 .status-mark[data-status="failed"] { background: var(--cip-danger); }
 .generation-copy { min-width: 0; }
 .generation-copy strong, .generation-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

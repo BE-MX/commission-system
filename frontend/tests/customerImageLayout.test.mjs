@@ -41,23 +41,25 @@ test('catalog is a bounded search and category flow with real image cards and on
 
 test('editor owns desktop three tracks and mobile ordered flow with a safe-area action', () => {
   assert.ok(files.editor)
-  assert.match(files.editor, /260px\s+minmax\(0,\s*1fr\)\s+320px/)
+  assert.match(files.editor, /272px\s+minmax\(0,\s*1fr\)\s+352px/)
   assert.match(files.editor, /@media\s*\(max-width:\s*760px\)/)
   assert.match(files.editor, /env\(safe-area-inset-bottom/)
   assert.match(files.editor, /data-mobile-step|mobile-step/)
-  assert.match(files.editor, /position:\s*sticky/)
+  assert.match(files.portal, /position:\s*sticky/)
   assert.match(files.editor, /position:\s*fixed/)
   assert.match(files.editor, /100dvh/)
   assert.match(files.editor, /mobile-action-spacer/)
 })
 
-test('desktop columns keep logo and history left, preview center, and controls right', () => {
-  const left = files.editor.match(/<aside class="settings-panel"[\s\S]*?<\/aside>/)?.[0] || ''
+test('desktop workbench keeps products and history left, preview center, and controls right', () => {
+  const left = files.editor.match(/<aside class="product-rail"[\s\S]*?<\/aside>/)?.[0] || ''
   const center = files.editor.match(/<section class="[^"]*preview-column[^"]*"[\s\S]*?<\/section>/)?.[0] || ''
-  const right = files.editor.match(/<aside class="action-panel"[\s\S]*?<\/aside>/)?.[0] || ''
-  assert.match(left, /CustomerLogoUpload/)
+  const right = files.editor.match(/<aside class="control-panel"[\s\S]*?<\/aside>/)?.[0] || ''
+  assert.match(left, /选择产品/)
+  assert.match(left, /product-card/)
   assert.match(left, /GenerationHistory/)
   assert.match(center, /GenerationPreview/)
+  assert.match(right, /CustomerLogoUpload/)
   assert.match(right, /ProductOptionGroup/)
   assert.match(right, /customer-requirement/)
   assert.match(right, /generate-block/)
