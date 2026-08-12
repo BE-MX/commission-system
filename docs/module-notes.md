@@ -709,9 +709,15 @@ frontend/src/
 - 推单前自动跑 `reconcile_custom_products` 对账回填（失败不阻断，custom 行走通用产品兜底）；每次推送落 `ark_invoice_sync_logs`（请求摘要无凭证，可直接查 OKKI 响应原文）
 
 ### 数据范围权限（2026-07-13，invoice:read_all）
-- 默认只见/只能操作 `created_by` = 自己的发票（列表过滤 + 9 个单票端点 404 守卫，不可见按不存在处理）；`invoice:read_all`（kind=data，067 迁移，仅授 admin 角色）或 super_admin 放开全部。**码名叫 read_all 但语义是全量数据范围**——持码者配合 write/sync 也能改/推他人发票
+- 2026-08-12 代创建后，`sales_user_id` 是客户私海、业务可见性和 OKKI 业绩归属，`created_by` 只记录实际录入人。普通用户始终可访问归属自己的订单；代办人只可访问自己创建且授权仍有效的代办订单，不能借授权查看归属人的其他订单；授权撤销后立即失去代办访问。
+- `invoice:read_all`（kind=data，067 迁移，仅授 admin 角色）或 super_admin 放开全部。**码名叫 read_all 但语义是全量数据范围**——持码者配合 write/sync 也能改/推他人发票。
+
+### 订单代创建（2026-08-12）
+- 管理入口：系统管理 → 用户管理 → 编辑用户 → “可代创建订单的业务员”；关系表 `ark_invoice_delegate_grants`，本人天然可为自己建单，不写自授权。
+- B 新建时先选 A/C/D，私海查询以所选业务员 OKKI 绑定过滤；切换归属会清空客户、联系人和价格上下文。业务员姓名/电话/邮箱只读且由后端按 `sales_user_id` 生成，禁止文本假归属。
+- 保存为 `created_by=B`、`sales_user_id=A/C/D`；OKKI `create_user`、handler、users 和 departments 沿用 sales_user_id 映射，B只进入本地创建/同步操作审计。
 - **存量 4 张发票 created_by=NULL**（历史 `_user_id` bug 所致），系统内无归属编辑入口，只有全量范围可见；需人工 SQL 定归属或按测试数据清理
-- **`_user_id` bug 修复的连带语义**：新发票 `sales_user_id`=创建人 → OKKI 推单业绩归属自动落创建人绑定账号。**若存在代开票场景（财务/助理替业务员开票）业绩会静默归错人**，且 sales_user_id 无编辑入口——出现代开票需求时先补归属编辑能力
+- **`_user_id` bug 修复后的语义**：本人创建时 `sales_user_id`=本人；代创建时必须显式选择已授权业务员。两种路径都由后端按结构化用户 ID 固化归属，避免文本字段导致业绩静默错人。
 
 ### 已踩过的坑
 - **页面不要自己 catch 弹错**：axios 拦截器已统一弹出 FastAPI 的 detail，页面 save() 再 catch `err.response.data.message`（undefined）会追加一条英文噪音 toast——OkkiSyncSettings 首版实case
