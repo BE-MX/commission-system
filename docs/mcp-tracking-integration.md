@@ -17,7 +17,7 @@ POST /api/mcp/tokens
 
 ## 二、配置 MCP server
 
-- **Endpoint**：`https://<平台域名>/mcp`
+- **Endpoint**：`https://leshine.work/mcp/`
 - **传输**：Streamable HTTP
 - **鉴权**：HTTP 头 `Authorization: Bearer <你的token>`
 
@@ -26,13 +26,22 @@ POST /api/mcp/tokens
 {
   "mcpServers": {
     "leshine-ark": {
-      "url": "https://<平台域名>/mcp",
+      "url": "https://leshine.work/mcp/",
       "headers": { "Authorization": "Bearer <你的token>" }
     }
   }
 }
 ```
 > 具体配置字段以你所用 agent 的 MCP 接入文档为准，关键是 URL + Authorization 头两项。
+
+管理员首次开放公网入口时，在项目根目录执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy/nginx/install-ark-main-mcp.ps1
+```
+
+脚本会备份线上 Nginx 主站配置、安装仓库受管的 `/mcp/` 反代片段、执行
+`nginx -t`，校验失败时自动恢复备份，成功后无中断 reload 并探测公网 MCP 初始化响应。
 
 ## 三、九个工具
 
