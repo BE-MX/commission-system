@@ -6,6 +6,7 @@ import {
   getCustomerContactDefaults,
   getCustomerRule,
   getInvoice,
+  getInvoiceAssignees,
   searchInvoiceCustomerContacts,
   searchInvoiceCustomers,
   suggestInvoiceNo,
@@ -33,6 +34,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
   const drawerVisible = ref(false)
   const customerLoading = ref(false)
   const customerOptions = ref([])
+  const salesUserOptions = ref([])
   const selectedCustomer = ref(null)
   const customerRule = ref(null)
   // 联系人维度筛选（与公司筛选联动：选公司收敛联系人，选联系人反向定位公司）
@@ -218,6 +220,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
       const res = await searchInvoiceCustomers({
         keyword,
         private_only: privateOnlyCompany.value,
+        sales_user_id: form.sales_user_id,
       })
       if (seq !== customerSearchSeq) return
       customerOptions.value = res.items || []
@@ -238,6 +241,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
         // 已选公司则收敛到该客户名下（联动）；未选则全局按联系人名搜
         company_id: form.customer_id || undefined,
         private_only: privateOnlyContact.value,
+        sales_user_id: form.sales_user_id,
       })
       if (seq !== contactSearchSeq) return
       contactOptions.value = res.items || []
@@ -353,13 +357,10 @@ export function useInvoiceEditor({ onSaved } = {}) {
   async function openCreate(orderType = 'stock') {
     resetForm()
     form.order_type = orderType
-    // 业务员信息默认当前登录用户（可改）；后端 create 对空字段还有一层兜底
+    await loadSalesUsers()
     const me = useAuthStore().user
-    if (me) {
-      form.sales_user_name = me.username || ''
-      form.sales_phone = me.phone || ''
-      form.sales_email = me.email || ''
-    }
+    form.sales_user_id = me?.id || salesUserOptions.value[0]?.id || null
+    applySalesUserSnapshot()
     addLine()
     drawerVisible.value = true
     searchCustomers('')
@@ -371,10 +372,44 @@ export function useInvoiceEditor({ onSaved } = {}) {
   async function openEdit(id) {
     const data = await getInvoice(id)
     resetForm(data)
+    await loadSalesUsers()
     drawerVisible.value = true
     searchCustomers('')
     searchContacts('')
     if (form.order_type === 'production') loadEntryOptions()
+  }
+
+  async function loadSalesUsers() {
+    const res = await getInvoiceAssignees()
+    salesUserOptions.value = res.items || []
+  }
+
+  function applySalesUserSnapshot() {
+    const selected = salesUserOptions.value.find(user => user.id === form.sales_user_id)
+    if (!selected) return
+    form.sales_user_name = selected.username || ''
+    form.sales_phone = selected.phone || ''
+    form.sales_email = selected.email || ''
+  }
+
+  async function onSalesUserChange() {
+    applySalesUserSnapshot()
+    selectedCustomer.value = null
+    selectedContact.value = null
+    form.customer_id = ''
+    form.customer_name = ''
+    form.contact_name = ''
+    form.contact_phone = ''
+    form.contact_email = ''
+    form.delivery_address = ''
+    customerRule.value = null
+    accessories.invalidateCustomerContext()
+    await Promise.all([
+      searchCustomers(''),
+      searchContacts(''),
+      ...accessories.hairItems.value.map(line => refreshLinePrice(line)),
+      accessories.refreshAccessoryPrices(),
+    ])
   }
 
   // ── 发票号 ──────────────────────────────────────────
@@ -453,6 +488,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     drawerVisible,
     customerLoading,
     customerOptions,
+    salesUserOptions,
     selectedCustomer,
     customerRule,
     contactLoading,
@@ -482,6 +518,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     searchCustomers,
     searchContacts,
     onCustomerChange,
+    onSalesUserChange,
     onCurrencyChange,
     onContactChange,
     onInvoiceNoInput,

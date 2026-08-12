@@ -5,6 +5,20 @@ const request = createApiClient({ baseURL: '/api/invoice' })
 // 后端统一 {code,message,data} 信封，拦截器返回整个信封，这里取业务数据
 const unwrap = promise => promise.then(res => (res && res.data !== undefined ? res.data : res))
 
+export function getInvoiceAssignees() {
+  return unwrap(request.get('/delegations/assignees', { showLoading: false }))
+}
+
+export function getInvoiceDelegateGrants(userId) {
+  return unwrap(request.get(`/delegations/users/${userId}`, { showLoading: false }))
+}
+
+export function updateInvoiceDelegateGrants(userId, salesUserIds) {
+  return unwrap(request.put(`/delegations/users/${userId}`, {
+    sales_user_ids: salesUserIds,
+  }, { loadingText: '正在保存代创建授权...' }))
+}
+
 export function searchInvoiceCustomers(params) {
   return unwrap(request.get('/customers/search', { params, showLoading: false }))
 }

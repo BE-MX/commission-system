@@ -101,6 +101,24 @@
             <el-option v-for="r in roleOptions" :key="r.id" :label="r.label" :value="r.id" />
           </el-select>
         </el-form-item>
+        <el-form-item v-if="isEdit" label="可代创建订单" label-width="120px">
+          <el-select
+            v-model="form.invoice_delegate_sales_user_ids"
+            multiple
+            filterable
+            collapse-tags
+            placeholder="选择该用户可代办的业务员"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="user in delegateCandidates"
+              :key="user.id"
+              :label="`${user.real_name}（${user.username}）${user.okki_bound ? '' : ' · 未绑定OKKI'}${user.okki_department_configured ? '' : ' · 未配置部门'}`"
+              :value="user.id"
+            />
+          </el-select>
+          <div class="form-tip">仅授权代录入；客户私海、订单归属和 OKKI 业绩仍属于所选业务员</div>
+        </el-form-item>
 
         <!-- 微信ID（仅编辑模式） -->
         <template v-if="isEdit">
@@ -163,6 +181,7 @@ import {
   getUserList, createUser, updateUser, deleteUser,
   resetUserPassword, toggleUserActive, getRoleList,
   syncUserDingtalk, syncAllUsersDingtalk, getOkkiDepartmentOptions,
+  getInvoiceDelegateGrants, updateInvoiceDelegateGrants,
 } from '@/api/userManagement'
 import { getActiveProcesses, getUserProcessBindings, updateUserProcessBindings, updateUserWxId } from '@/api/production'
 import { useTableMaxHeight } from '@/composables/useTableMaxHeight'
@@ -219,12 +238,15 @@ async function fetchDeptOptions() {
 const dialogVisible = ref(false)
 const isEdit = ref(false)
 const editUserId = ref(null)
-const form = ref({ username: '', password: '', real_name: '', email: '', phone: '', okki_department_id: null, role_ids: [] })
+const form = ref({ username: '', password: '', real_name: '', email: '', phone: '', okki_department_id: null, role_ids: [], invoice_delegate_sales_user_ids: [] })
+const delegateCandidates = ref([])
+let delegateLoadSeq = 0
 
 function openCreateDialog() {
+  delegateLoadSeq += 1
   isEdit.value = false
   editUserId.value = null
-  form.value = { username: '', password: '', real_name: '', email: '', phone: '', okki_department_id: null, role_ids: [] }
+  form.value = { username: '', password: '', real_name: '', email: '', phone: '', okki_department_id: null, role_ids: [], invoice_delegate_sales_user_ids: [] }
   fetchRoles()
   fetchDeptOptions()
   dialogVisible.value = true
@@ -243,12 +265,28 @@ function openEditDialog(row) {
     okki_department_id: row.okki_department_id ?? null,
     okki_department_name: row.okki_department_name || '',
     role_ids: row.role_ids || [],
+    invoice_delegate_sales_user_ids: [],
   }
   fetchRoles()
   fetchDeptOptions()
+  loadInvoiceDelegateGrants(row.id)
   loadProcessBindings(row.id)
   loadAllProcesses()
   dialogVisible.value = true
+}
+
+async function loadInvoiceDelegateGrants(userId) {
+  const loadSeq = ++delegateLoadSeq
+  try {
+    const data = await getInvoiceDelegateGrants(userId)
+    if (loadSeq !== delegateLoadSeq || editUserId.value !== userId) return
+    form.value.invoice_delegate_sales_user_ids = data.sales_user_ids || []
+    delegateCandidates.value = data.candidates || []
+  } catch {
+    if (loadSeq !== delegateLoadSeq || editUserId.value !== userId) return
+    form.value.invoice_delegate_sales_user_ids = []
+    delegateCandidates.value = []
+  }
 }
 
 async function submitForm() {
@@ -283,6 +321,7 @@ async function submitForm() {
         okki_department_name: deptName,
         role_ids: form.value.role_ids,
       })
+      await updateInvoiceDelegateGrants(editUserId.value, form.value.invoice_delegate_sales_user_ids)
       ElMessage.success('更新成功')
     } else {
       await createUser({

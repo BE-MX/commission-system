@@ -2,7 +2,7 @@ import { normalizeDiscount } from './invoiceSettlement.js'
 
 export function emptyInvoiceForm() {
   return {
-    id: null, invoice_no: '', order_type: 'stock', customer_id: '', customer_name: '',
+    id: null, invoice_no: '', order_type: 'stock', sales_user_id: null, customer_id: '', customer_name: '',
     contact_name: '', contact_phone: '', contact_email: '', delivery_address: '',
     sales_user_name: '', sales_phone: '', sales_email: '',
     invoice_date: new Date().toISOString().slice(0, 10), currency: 'USD', express_channel: '',
@@ -45,7 +45,7 @@ export function normalizeHairRow(line = {}) {
 
 export function buildInvoicePayload(form, hairDiscount) {
   return {
-    invoice_no: (form.invoice_no || '').trim() || null,
+    invoice_no: (form.invoice_no || '').trim() || null, sales_user_id: form.sales_user_id,
     order_type: form.order_type, customer_id: form.customer_id, customer_name: form.customer_name,
     contact_name: form.contact_name || null, contact_phone: form.contact_phone || null,
     contact_email: form.contact_email || null, delivery_address: form.delivery_address || null,

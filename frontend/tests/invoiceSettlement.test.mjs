@@ -189,7 +189,8 @@ test('product discount precedes TotalPrice and packaging quantity precedes its f
   assert.doesNotMatch(footer, /Hair Price|Line Discount|Packaging|Shipping Fee|Handling Fee/)
 })
 
-test('new invoices take the salesperson name from the login username', () => {
-  assert.match(invoiceEditor, /form\.sales_user_name = me\.username \|\| ''/)
+test('new invoices take the salesperson snapshot from the selected assignee', () => {
+  assert.match(invoiceEditor, /form\.sales_user_name = selected\.username \|\| ''/)
+  assert.match(invoiceEditor, /form\.sales_user_id = me\?\.id \|\| salesUserOptions\.value\[0\]\?\.id/)
   assert.doesNotMatch(invoiceEditor, /form\.sales_user_name = me\.real_name/)
 })

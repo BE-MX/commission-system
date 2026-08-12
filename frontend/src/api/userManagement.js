@@ -2,6 +2,10 @@
  * 用户/角色/权限/个人资料 API
  */
 import { authRequest } from './auth'
+import {
+  getInvoiceDelegateGrants as getInvoiceDelegateGrantsFromInvoice,
+  updateInvoiceDelegateGrants as updateInvoiceDelegateGrantsFromInvoice,
+} from './invoice'
 
 // ── 用户管理 ──────────────────────────────────────────
 
@@ -39,6 +43,14 @@ export function syncAllUsersDingtalk() {
 
 export function getOkkiDepartmentOptions() {
   return authRequest.get('/users/okki-department-options', { showLoading: false }).then(r => r.data)
+}
+
+export function getInvoiceDelegateGrants(userId) {
+  return getInvoiceDelegateGrantsFromInvoice(userId)
+}
+
+export function updateInvoiceDelegateGrants(userId, salesUserIds) {
+  return updateInvoiceDelegateGrantsFromInvoice(userId, salesUserIds)
 }
 
 // ── 角色管理 ──────────────────────────────────────────

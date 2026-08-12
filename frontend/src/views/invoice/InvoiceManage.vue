@@ -162,6 +162,23 @@
           <section class="head-section">
             <div class="col-title">客户信息</div>
             <div class="head-grid">
+              <el-form-item label="订单归属业务员" required class="span-3">
+                <el-select
+                  v-model="form.sales_user_id"
+                  filterable
+                  :disabled="Boolean(form.id)"
+                  placeholder="选择客户及业绩归属业务员"
+                  style="width: 100%"
+                  @change="onSalesUserChange"
+                >
+                  <el-option
+                    v-for="user in salesUserOptions"
+                    :key="user.id"
+                    :label="`${user.real_name}（${user.username}）${user.okki_bound ? '' : ' · 未绑定OKKI'}${user.okki_department_configured ? '' : ' · 未配置部门'}`"
+                    :value="user.id"
+                  />
+                </el-select>
+              </el-form-item>
               <el-form-item label="客户" required class="span-3">
                 <div class="customer-filter-row">
                   <el-select
@@ -238,13 +255,13 @@
             <div class="col-title">业务员信息</div>
             <div class="head-grid">
               <el-form-item label="业务员" class="span-2">
-                <el-input v-model="form.sales_user_name" maxlength="50" placeholder="From" />
+                <el-input v-model="form.sales_user_name" maxlength="50" placeholder="From" readonly />
               </el-form-item>
               <el-form-item label="业务电话" class="span-2">
-                <el-input v-model="form.sales_phone" maxlength="50" />
+                <el-input v-model="form.sales_phone" maxlength="50" readonly />
               </el-form-item>
               <el-form-item label="业务邮箱" class="span-2">
-                <el-input v-model="form.sales_email" maxlength="100" />
+                <el-input v-model="form.sales_email" maxlength="100" readonly />
               </el-form-item>
             </div>
           </section>
@@ -414,13 +431,13 @@ const {
   validateAndSync,
 } = page
 const {
-  drawerVisible, customerLoading, customerOptions, selectedCustomer, customerRule,
+  drawerVisible, customerLoading, customerOptions, salesUserOptions, selectedCustomer, customerRule,
   contactLoading, contactOptions, selectedContact, privateOnlyCompany, privateOnlyContact,
   canTogglePrivate, okkiBound, invoiceNoTaken, entryOptions, form, hairItems, accessoryItems,
   accessoryOptions, accessoryLoading, formHairPrice, formLineDiscountTotal, formAccessoryAmount,
   formAccessoryDiscount, formBaseAmount, formTotal, lastOrderDate, settlementError, isProduction,
   searchCustomers, searchContacts,
-  onCustomerChange, onCurrencyChange, onContactChange, onInvoiceNoInput, onInvoiceNoBlur, openCreate, openEdit,
+  onCustomerChange, onSalesUserChange, onCurrencyChange, onContactChange, onInvoiceNoInput, onInvoiceNoBlur, openCreate, openEdit,
   addLine, addAccessory, selectAccessory, removeAccessory, searchAccessoryOptions,
   updateAccessoryTotal, removeLine, loadLineOptions, onLineFilterChange, onCustomFieldChange,
   onPriceInput, onLineDiscountChange, updateLineTotal, appendImportedLines, saveDraft,
