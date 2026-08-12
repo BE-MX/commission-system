@@ -163,6 +163,56 @@ def test_failed_batch_can_be_retried_with_same_idempotency_key(db):
     assert retried.result_counts["total"] == 3
 
 
+def test_prepared_batch_is_pending_and_duplicate_does_not_enqueue(db):
+    payload = {"batch_date": date(2026, 8, 11), "quota_per_tier": 2, "policy_version": "v1"}
+    first, first_should_start = public_pool_service.prepare_batch(db, payload, actor_id=7)
+    duplicate, duplicate_should_start = public_pool_service.prepare_batch(db, payload, actor_id=8)
+
+    assert first.status == "pending"
+    assert duplicate.id == first.id
+    assert first_should_start is True
+    assert duplicate_should_start is False
+
+
+def test_execute_batch_claims_pending_once(db):
+    payload = {"batch_date": date(2026, 8, 11), "quota_per_tier": 1, "policy_version": "v1"}
+    batch, _ = public_pool_service.prepare_batch(db, payload, actor_id=7)
+    completed = public_pool_service.execute_batch(db, batch.id, gateway=FakeGateway())
+    second = public_pool_service.execute_batch(db, batch.id, gateway=FakeGateway())
+
+    assert completed.status == "completed"
+    assert second.id == completed.id
+    assert db.query(models.PublicPoolTask).count() == 3
+
+
+def test_synchronous_runner_recovers_prepared_pending_batch(db):
+    payload = {"batch_date": date(2026, 8, 11), "quota_per_tier": 1, "policy_version": "v1"}
+    prepared, _ = public_pool_service.prepare_batch(db, payload, actor_id=7)
+
+    recovered = public_pool_service.generate_batch(db, payload, actor_id=None, gateway=FakeGateway())
+
+    assert recovered.id == prepared.id
+    assert recovered.status == "completed"
+    assert db.query(models.PublicPoolTask).count() == 3
+
+
+def test_http_batch_creation_returns_202_and_enqueues_once(db, monkeypatch):
+    queued = []
+    monkeypatch.setattr(public_pool_service, "run_batch_in_background", lambda batch_id: queued.append(batch_id))
+    client = _human_client(db)
+    payload = {"batch_date": "2026-08-11", "quota_per_tier": 2, "policy_version": "v1"}
+
+    first = client.post("/api/sales-automation/public-pool/batches", json=payload)
+    duplicate = client.post("/api/sales-automation/public-pool/batches", json=payload)
+
+    assert first.status_code == 202
+    assert first.json()["data"]["status"] == "pending"
+    assert first.json()["data"]["enqueued"] is True
+    assert duplicate.status_code == 202
+    assert duplicate.json()["data"]["enqueued"] is False
+    assert queued == [first.json()["data"]["id"]]
+
+
 def test_business_pool_cross_table_id_joins_ignore_column_collation():
     gateway = object.__new__(public_pool_service.BusinessPoolGateway)
     gateway.schema = "lsordertest"

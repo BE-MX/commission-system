@@ -7,7 +7,8 @@
       </div>
       <div class="heading-actions">
         <GlassButton v-permission="'sales_automation:admin'" variant="secondary" left-icon="Refresh" :loading="auditLoading" @click="refreshAudit">重新审计</GlassButton>
-        <GlassButton v-any-permission="['sales_automation:write', 'sales_automation:admin']" variant="primary" left-icon="Plus" :loading="batchLoading" @click="generateBatch">生成今日批次</GlassButton>
+        <span v-if="activeBatch" class="batch-state">批次 #{{ activeBatch.id }} 后台生成中</span>
+        <GlassButton v-any-permission="['sales_automation:write', 'sales_automation:admin']" variant="primary" left-icon="Plus" :loading="batchLoading" :disabled="Boolean(activeBatch)" @click="generateBatch">{{ activeBatch ? '批次生成中' : '生成今日批次' }}</GlassButton>
       </div>
     </header>
 
@@ -90,15 +91,16 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import DetailDrawer from '@/components/DetailDrawer.vue'
 import GlassButton from '@/components/GlassButton.vue'
-import { approvePublicPoolTask, createPublicPoolBatch, getPublicPoolAudit, getPublicPoolTask, getPublicPoolTasks, refreshPublicPoolAudit, rejectPublicPoolTask } from '@/api/salesAutomation'
+import { approvePublicPoolTask, createPublicPoolBatch, getPublicPoolAudit, getPublicPoolBatches, getPublicPoolTask, getPublicPoolTasks, refreshPublicPoolAudit, rejectPublicPoolTask } from '@/api/salesAutomation'
 import { useListPage } from '@/composables/useListPage'
 import { msgSuccess } from '@/utils/feedback'
 
 const audit = ref({}); const auditLoading = ref(false); const batchLoading = ref(false)
+const activeBatch = ref(null); let batchPollTimer = null
 const metrics = computed(() => [
   { key: 'public_customers', label: '公海客户', note: 'owner_user_ids 为空' }, { key: 'tier_t1', label: 'T1 历史订单', note: '优先二次激活' },
   { key: 'tier_t2', label: 'T2 身份完善', note: '企业邮箱 / 官网 / 社媒' }, { key: 'tier_t3', label: 'T3 低信息量', note: '私人邮箱 / 电话 / WhatsApp' },
@@ -119,14 +121,32 @@ const { loading, list: tasks, total, page, pageSize, searchForm: filters, fetchL
 const detailVisible = ref(false); const detailLoading = ref(false); const detail = ref(null); const activeTab = ref('seed')
 async function loadAudit() { auditLoading.value = true; try { audit.value = (await getPublicPoolAudit()).data || {} } finally { auditLoading.value = false } }
 async function refreshAudit() { auditLoading.value = true; try { audit.value = (await refreshPublicPoolAudit()).data || {}; msgSuccess('公海审计') } finally { auditLoading.value = false } }
-async function generateBatch() { batchLoading.value = true; try { await createPublicPoolBatch({ quota_per_tier: 20, policy_version: 'v1' }); msgSuccess('今日批次生成'); await Promise.all([loadAudit(), fetchTasks()]) } finally { batchLoading.value = false } }
+function scheduleBatchPoll() { if (batchPollTimer || !activeBatch.value) return; batchPollTimer = setTimeout(async () => { batchPollTimer = null; await syncBatchState() }, 3000) }
+async function syncBatchState() {
+  const batches = (await getPublicPoolBatches({ page: 1, page_size: 1 })).data?.items || []
+  const latest = batches[0]
+  const wasActive = Boolean(activeBatch.value)
+  activeBatch.value = latest && ['pending', 'running'].includes(latest.status) ? latest : null
+  if (activeBatch.value) scheduleBatchPoll()
+  else if (wasActive && latest?.status === 'completed') { msgSuccess('今日批次生成完成'); await Promise.all([loadAudit(), fetchTasks()]) }
+}
+async function generateBatch() {
+  if (activeBatch.value) return
+  batchLoading.value = true
+  try {
+    const row = (await createPublicPoolBatch({ quota_per_tier: 20, policy_version: 'v1' })).data
+    if (['pending', 'running'].includes(row.status)) { activeBatch.value = row; msgSuccess(row.enqueued ? '批次已进入后台生成' : '该批次正在生成，请勿重复提交'); scheduleBatchPoll() }
+    else msgSuccess('今日批次已生成')
+  } finally { batchLoading.value = false }
+}
 async function openDetail(row) { detailVisible.value = true; detailLoading.value = true; activeTab.value = 'seed'; try { detail.value = (await getPublicPoolTask(row.id)).data } finally { detailLoading.value = false } }
 async function approve(row) { await approvePublicPoolTask(row.id); msgSuccess('进入开发队列'); await fetchTasks(); if (detail.value?.id === row.id) detail.value = (await getPublicPoolTask(row.id)).data }
 async function reject(row) { try { const { value } = await ElMessageBox.prompt('请填写拒绝原因，便于后续调整筛选和背调策略。', '拒绝公海客户', { inputType: 'textarea', inputValidator: v => Boolean(v?.trim()) || '拒绝原因不能为空' }); await rejectPublicPoolTask(row.id, value.trim()); msgSuccess('拒绝'); await fetchTasks() } catch (error) { if (error !== 'cancel' && error !== 'close') throw error } }
-onMounted(loadAudit)
+onMounted(async () => { await syncBatchState(); if (!activeBatch.value) await loadAudit() })
+onBeforeUnmount(() => { if (batchPollTimer) clearTimeout(batchPollTimer) })
 </script>
 
 <style scoped>
 @import './salesAutomation.css';
-.heading-actions,.tag-list { display: flex; flex-wrap: wrap; gap: 8px; }.metric-grid { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 12px; margin-bottom: 18px; }.metric-card { display: grid; gap: 4px; padding: 14px 16px; }.metric-card span,.metric-card small,.company-cell span,.detail-summary p,.score-stack span { color: var(--text-muted); font-size: 12px; }.metric-card strong { color: var(--text-primary); font: 700 24px/1.2 var(--font-display); }.keyword-filter { width: 230px; }.company-cell { display: grid; gap: 4px; }.company-cell strong { color: var(--text-primary); }.grade { color: var(--color-primary); font-size: 20px; font-weight: 800; }.detail-summary { display: flex; justify-content: space-between; gap: 16px; padding: 14px; margin-bottom: 12px; border: 1px solid var(--border-color); border-radius: var(--card-radius); background: var(--toolbar-bg); }.detail-summary h2 { margin: 8px 0 4px; color: var(--text-primary); font-size: 18px; }.detail-summary p { margin: 0; }.score-stack { display: grid; align-content: center; text-align: center; min-width: 80px; }.score-stack strong { color: var(--color-primary); font-size: 30px; }.summary-text,.draft-text { color: var(--text-secondary); line-height: 1.7; white-space: pre-wrap; }.draft-text { padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--toolbar-bg); }h3 { margin: 20px 0 8px; color: var(--text-primary); font-size: 14px; }a { color: var(--color-primary); text-decoration: none; }a:hover { text-decoration: underline; }@media(max-width:1100px){.metric-grid{grid-template-columns:repeat(3,1fr)}}@media(max-width:720px){.heading-actions{width:100%}.metric-grid{grid-template-columns:repeat(2,1fr)}.keyword-filter{width:100%}}
+.heading-actions,.tag-list { display: flex; flex-wrap: wrap; gap: 8px; }.batch-state { align-self: center; color: var(--text-muted); font-size: 12px; }.metric-grid { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 12px; margin-bottom: 18px; }.metric-card { display: grid; gap: 4px; padding: 14px 16px; }.metric-card span,.metric-card small,.company-cell span,.detail-summary p,.score-stack span { color: var(--text-muted); font-size: 12px; }.metric-card strong { color: var(--text-primary); font: 700 24px/1.2 var(--font-display); }.keyword-filter { width: 230px; }.company-cell { display: grid; gap: 4px; }.company-cell strong { color: var(--text-primary); }.grade { color: var(--color-primary); font-size: 20px; font-weight: 800; }.detail-summary { display: flex; justify-content: space-between; gap: 16px; padding: 14px; margin-bottom: 12px; border: 1px solid var(--border-color); border-radius: var(--card-radius); background: var(--toolbar-bg); }.detail-summary h2 { margin: 8px 0 4px; color: var(--text-primary); font-size: 18px; }.detail-summary p { margin: 0; }.score-stack { display: grid; align-content: center; text-align: center; min-width: 80px; }.score-stack strong { color: var(--color-primary); font-size: 30px; }.summary-text,.draft-text { color: var(--text-secondary); line-height: 1.7; white-space: pre-wrap; }.draft-text { padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--toolbar-bg); }h3 { margin: 20px 0 8px; color: var(--text-primary); font-size: 14px; }a { color: var(--color-primary); text-decoration: none; }a:hover { text-decoration: underline; }@media(max-width:1100px){.metric-grid{grid-template-columns:repeat(3,1fr)}}@media(max-width:720px){.heading-actions{width:100%}.metric-grid{grid-template-columns:repeat(2,1fr)}.keyword-filter{width:100%}}
 </style>

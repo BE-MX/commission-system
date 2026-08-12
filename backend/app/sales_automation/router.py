@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_any_permission, require_permission
@@ -356,14 +356,17 @@ def list_public_pool_batches(
     return ok(page_result([_batch(row) for row in rows], total, page, page_size))
 
 
-@router.post("/public-pool/batches", status_code=status.HTTP_201_CREATED)
+@router.post("/public-pool/batches", status_code=status.HTTP_202_ACCEPTED)
 def create_public_pool_batch(
     payload: PublicPoolBatchCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user=Depends(require_any_permission(*WRITE_PERMISSIONS)),
 ):
-    row = _call(public_pool_service.generate_batch, db, payload, _user_id(user))
-    return ok(_batch(row), code=201)
+    row, should_start = _call(public_pool_service.prepare_batch, db, payload, _user_id(user))
+    if should_start:
+        background_tasks.add_task(public_pool_service.run_batch_in_background, row.id)
+    return ok({**_batch(row), "enqueued": should_start}, code=202)
 
 
 @router.get("/public-pool/tasks")

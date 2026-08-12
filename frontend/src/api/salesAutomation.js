@@ -14,6 +14,7 @@ export const approveLead = id => salesAutomationClient.post(`/leads/${id}/approv
 export const getPublicPoolAudit = () => salesAutomationClient.get('/public-pool/audit')
 export const refreshPublicPoolAudit = () => salesAutomationClient.post('/public-pool/audit/refresh')
 export const createPublicPoolBatch = payload => salesAutomationClient.post('/public-pool/batches', payload)
+export const getPublicPoolBatches = params => salesAutomationClient.get('/public-pool/batches', { params })
 export const getPublicPoolTasks = params => salesAutomationClient.get('/public-pool/tasks', { params })
 export const getPublicPoolTask = id => salesAutomationClient.get(`/public-pool/tasks/${id}`)
 export const approvePublicPoolTask = id => salesAutomationClient.post(`/public-pool/tasks/${id}/approve`)

@@ -12,10 +12,11 @@ from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import and_, func, inspect, or_, text
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.core.database import SessionLocal
 from app.insight.models import CustomerOpportunity
 from app.insight.customer_profile_service import ingest_opportunity_event
 from app.sales_automation.identity import normalize_source_url
@@ -407,53 +408,77 @@ def _upsert_subject(db: Session, candidate: dict, actor_id: int | None) -> Resea
     return subject
 
 
-def generate_batch(
+def prepare_batch(
     db: Session,
     payload: Any,
     actor_id: int | None,
-    gateway: BusinessPoolGateway | None = None,
-) -> PublicPoolBatch:
+) -> tuple[PublicPoolBatch, bool]:
+    """幂等登记批次；未完成批次存在时绝不重复排队。"""
     data = _data(payload)
     batch_date = data.get("batch_date") or date.today()
     quota = int(data.get("quota_per_tier") or 20)
     policy_version = str(data.get("policy_version") or "v1")
     idempotency_key = f"public-pool-{batch_date.isoformat()}-{policy_version}-{quota}"
-    existing = db.query(PublicPoolBatch).filter(PublicPoolBatch.idempotency_key == idempotency_key).first()
-    now = _now()
-    running_is_fresh = (
-        existing is not None and existing.status == "running"
-        and existing.started_at is not None and existing.started_at > now - timedelta(minutes=30)
-    )
-    if existing is not None and (existing.status == "completed" or running_is_fresh):
-        return existing
+    existing = db.query(PublicPoolBatch).filter(
+        PublicPoolBatch.idempotency_key == idempotency_key,
+    ).with_for_update().first()
+    if existing is not None and existing.status in {"pending", "running", "completed"}:
+        return existing, False
     if existing is not None:
-        # 生成明细在同一事务中；失败或进程中断超过 30 分钟后可安全重建同一幂等批次。
+        # 失败批次允许人工重试；生成明细在同一事务中，可安全重建同一幂等批次。
         db.query(PublicPoolTask).filter(PublicPoolTask.batch_id == existing.id).delete(synchronize_session=False)
         batch = existing
-        batch.status = "running"
+        batch.status = "pending"
         batch.audit_snapshot = {}
         batch.result_counts = {}
         batch.error_message = None
-        batch.started_at = now
+        batch.started_at = None
         batch.finished_at = None
         batch.updated_by = actor_id
     else:
         batch = PublicPoolBatch(
             batch_date=batch_date,
             policy_version=policy_version,
-            status="running",
+            status="pending",
             quota_per_tier=quota,
             quotas={tier: quota for tier in TIERS},
             audit_snapshot={},
             result_counts={},
             idempotency_key=idempotency_key,
-            started_at=now,
             created_by=actor_id,
             updated_by=actor_id,
         )
         db.add(batch)
+    try:
+        db.commit()
+    except IntegrityError:
+        # 两次并发首次提交由唯一幂等键裁决；后到请求返回已登记批次且不再排队。
+        db.rollback()
+        raced = db.query(PublicPoolBatch).filter(PublicPoolBatch.idempotency_key == idempotency_key).first()
+        if raced is None:
+            raise
+        return raced, False
+    db.refresh(batch)
+    return batch, True
+
+
+def execute_batch(
+    db: Session,
+    batch_id: int,
+    gateway: BusinessPoolGateway | None = None,
+) -> PublicPoolBatch:
+    """领取并执行已登记批次；只有 pending 能进入执行态。"""
+    batch = db.query(PublicPoolBatch).filter(PublicPoolBatch.id == batch_id).with_for_update().first()
+    if batch is None:
+        raise NotFoundError("公海批次不存在")
+    if batch.status != "pending":
+        return batch
+    batch.status = "running"
+    batch.started_at = _now()
     db.commit()
     db.refresh(batch)
+    quota = batch.quota_per_tier
+    actor_id = batch.updated_by
     source = gateway or BusinessPoolGateway(db)
     try:
         batch.audit_snapshot = source.audit()
@@ -462,14 +487,14 @@ def generate_batch(
             candidates = source.fetch_tier_candidates(
                 tier,
                 limit=max(quota * 4, quota),
-                seed=f"{batch_date.isoformat()}:{tier}:{policy_version}",
+                seed=f"{batch.batch_date.isoformat()}:{tier}:{batch.policy_version}",
             )
             top_count = min(len(candidates), max(0, quota - min(4, quota)))
             selected = candidates[:top_count]
             remaining = candidates[top_count:]
             exploration_count = min(quota - len(selected), len(remaining))
             if exploration_count:
-                rng = random.Random(f"{batch_date.isoformat()}:{tier}:{policy_version}")
+                rng = random.Random(f"{batch.batch_date.isoformat()}:{tier}:{batch.policy_version}")
                 selected.extend(rng.sample(remaining, exploration_count))
             for rank, candidate in enumerate(selected[:quota], start=1):
                 subject = _upsert_subject(db, candidate, actor_id)
@@ -500,6 +525,27 @@ def generate_batch(
         logger.warning("public pool batch generation failed: %s", type(exc).__name__)
         print(f"public pool batch generation failed: {type(exc).__name__}", flush=True)
         raise
+
+
+def generate_batch(
+    db: Session,
+    payload: Any,
+    actor_id: int | None,
+    gateway: BusinessPoolGateway | None = None,
+) -> PublicPoolBatch:
+    """同步入口，供 scheduler 和测试使用，并接管尚未领取的 pending 批次。"""
+    batch, _should_start = prepare_batch(db, payload, actor_id)
+    return execute_batch(db, batch.id, gateway) if batch.status == "pending" else batch
+
+
+def run_batch_in_background(batch_id: int) -> None:
+    """FastAPI 后台任务入口，必须使用独立 Session。"""
+    with SessionLocal() as db:
+        try:
+            execute_batch(db, batch_id)
+        except Exception as exc:
+            logger.exception("public pool background batch failed: id=%s", batch_id)
+            print(f"public pool background batch failed: id={batch_id} {type(exc).__name__}", flush=True)
 
 
 def list_batches(db: Session, page: int, page_size: int) -> tuple[list[PublicPoolBatch], int]:
