@@ -1,0 +1,85 @@
+// Generated runtime config lives at ~/.openclaw-ark-sales/openclaw.json.
+// Paths below are examples; scripts/bootstrap.mjs writes absolute local paths.
+{
+  gateway: {
+    mode: "local",
+    port: 18791,
+    bind: "loopback",
+    auth: {
+      mode: "token",
+      token: { source: "env", provider: "default", id: "OPENCLAW_GATEWAY_TOKEN" },
+    },
+    terminal: { enabled: false },
+    controlUi: { enabled: true },
+  },
+  agents: {
+    defaults: {
+      workspace: "~/.openclaw-ark-sales/workspace",
+      model: { primary: "deepseek/deepseek-v4-flash" },
+      models: {
+        "deepseek/deepseek-v4-flash": { agentRuntime: { id: "openclaw" } },
+      },
+      skills: ["ark-lead-discovery", "ark-company-research", "ark-public-pool-research"],
+    },
+  },
+  tools: {
+    profile: "minimal",
+    alsoAllow: ["web_search", "web_fetch", "ark-sales__*"],
+    deny: ["exec", "process", "group:fs", "browser", "group:messaging", "group:sessions", "cron"],
+    web: {
+      search: {
+        enabled: true,
+        provider: "parallel-free",
+        maxResults: 8,
+        timeoutSeconds: 30,
+        cacheTtlMinutes: 15,
+      },
+      fetch: { enabled: true },
+    },
+  },
+  browser: { enabled: false },
+  plugins: {
+    entries: {
+      codex: {
+        enabled: true,
+        config: {
+          appServer: {
+            mode: "guardian",
+            approvalPolicy: "on-request",
+            approvalsReviewer: "auto_review",
+            sandbox: "workspace-write",
+            clearEnv: [
+              "OPENCLAW_GATEWAY_TOKEN",
+              "DEEPSEEK_API_KEY",
+              "OPENAI_API_KEY",
+              "ARK_AGENT_TOKEN",
+              "ARK_AGENT_TOKEN_FILE",
+              "ARK_BASE_URL",
+              "ARK_ALLOWED_ORIGIN",
+              "ARK_AGENT_ID",
+            ],
+          },
+        },
+      },
+      parallel: { enabled: true },
+      duckduckgo: { enabled: true },
+    },
+  },
+  mcp: {
+    servers: {
+      "ark-sales": {
+        command: "~/.openclaw/tools/node/bin/node",
+        args: ["/ABSOLUTE/PATH/services/openclaw-sales-agent/src/server.mjs"],
+        cwd: "/ABSOLUTE/PATH/services/openclaw-sales-agent",
+        env: {
+          ARK_BASE_URL: "https://leshine.work",
+          ARK_ALLOWED_ORIGIN: "https://leshine.work",
+          ARK_AGENT_ID: "openclaw-sales-01",
+          ARK_AGENT_TOKEN_FILE: "~/.openclaw-ark-sales/secrets/ark-agent-token",
+          ARK_API_TIMEOUT_MS: "30000",
+        },
+        toolFilter: { include: ["ark_*"] },
+      },
+    },
+  },
+}
