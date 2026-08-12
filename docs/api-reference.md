@@ -756,9 +756,14 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 | GET | `/countries?date_from=&date_to=&team=&user_id=` | 国家新签/复购/GMV/周期/流失、产品偏好、机会评分与投流方向建议 |
 | GET | `/people?dimension=team\|user&date_from=&date_to=&team=&user_id=` | 团队或个人的相对能力画像、变化、优势国家与证据等级 |
 | GET | `/customers?as_of=&risk_status=&country=&page=&page_size=&team=&user_id=` | 基于最近最多 5 个订单间隔中位数的临近/超期/高流失客户行动清单 |
-| POST | `/ai-brief` | AI 基于同一确定性指标生成经营简报；preset=`order_intelligence_brief`，失败降级为规则简报 |
+| POST | `/ai-brief` | 202 提交后台简报任务；同一用户有 queued/running 任务时返回原任务，不重复生成 |
+| GET | `/ai-brief/active` | 恢复当前用户的进行中简报；queued 任务会自动重新调度 |
+| GET | `/ai-brief/latest` | 返回当前用户最近一次简报，刷新页面后可恢复已完成结果 |
+| GET | `/ai-brief/{job_id}` | 查询本人简报任务状态与结果，供前端轮询 |
 
 有效订单沿用采购节口径：排除 `trail` 含“个人”的订单，保留 `status=13972831656` 或 `status=13972831654 且 status_name=已结清`。新签/复购/首返分别读取 OKKI 自定义字段 `22595163468=是`、`22595163468=否`、`20528142733548=是`。经营 GMV 使用订单 `amount_usd`；产品趋势使用明细 `quantity/amount`，两者不混算。来源从 `45285192666116` 归一为阿里询盘/阿里生态/社媒自主开发/社媒分配/转介绍/官网/其他/未知；订单数据没有广告消耗与询盘漏斗，因此只给“投流方向”，不生成 ROAS/CAC。
+
+简报任务持久化到 `ark_order_intelligence_brief_jobs`，活动唯一键防止双击、多标签页或并发请求重复调用 AI；进行中任务超过 30 分钟会转失败并释放锁。AI 调用仍统一经由 `app.ai.service`，preset=`order_intelligence_brief`，AI 不可用时保留规则简报降级。
 
 ## 智能获客
 
