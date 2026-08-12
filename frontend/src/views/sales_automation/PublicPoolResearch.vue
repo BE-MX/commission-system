@@ -102,7 +102,7 @@ import { msgSuccess } from '@/utils/feedback'
 const audit = ref({}); const auditLoading = ref(false); const batchLoading = ref(false)
 const activeBatch = ref(null); let batchPollTimer = null
 const metrics = computed(() => [
-  { key: 'public_customers', label: '公海客户', note: 'owner_user_ids 为空' }, { key: 'tier_t1', label: 'T1 历史订单', note: '优先二次激活' },
+  { key: 'public_customers', label: '公海客户', note: 'owner_user_ids 为空' }, { key: 'tier_t1', label: 'T1 历史订单', note: '最近 60 天无下单' },
   { key: 'tier_t2', label: 'T2 身份完善', note: '企业邮箱 / 官网 / 社媒' }, { key: 'tier_t3', label: 'T3 低信息量', note: '私人邮箱 / 电话 / WhatsApp' },
   { key: 'cold_storage', label: '冷藏区', note: '暂无可用身份锚点' },
 ])
@@ -134,7 +134,7 @@ async function generateBatch() {
   if (activeBatch.value) return
   batchLoading.value = true
   try {
-    const row = (await createPublicPoolBatch({ quota_per_tier: 20, policy_version: 'v1' })).data
+    const row = (await createPublicPoolBatch({ quota_per_tier: 20, policy_version: 'v2' })).data
     if (['pending', 'running'].includes(row.status)) { activeBatch.value = row; msgSuccess(row.enqueued ? '批次已进入后台生成' : '该批次正在生成，请勿重复提交'); scheduleBatchPoll() }
     else msgSuccess('今日批次已生成')
   } finally { batchLoading.value = false }

@@ -37,6 +37,7 @@ logger = logging.getLogger("commission.sales_public_pool")
 TIERS = ("T1", "T2", "T3")
 LEASE_MINUTES = 15
 DEFAULT_COOLDOWN_DAYS = 180
+REACTIVATION_INACTIVE_DAYS = 60
 FREE_EMAIL_DOMAINS = {
     "gmail.com", "googlemail.com", "hotmail.com", "outlook.com", "live.com",
     "yahoo.com", "ymail.com", "icloud.com", "me.com", "aol.com", "qq.com",
@@ -239,7 +240,9 @@ class BusinessPoolGateway:
             COUNT(*) AS total_customers,
             SUM(CASE WHEN is_public = 0 THEN 1 ELSE 0 END) AS private_customers,
             SUM(CASE WHEN is_public = 1 THEN 1 ELSE 0 END) AS public_customers,
-            SUM(CASE WHEN is_public = 1 AND order_count > 0 THEN 1 ELSE 0 END) AS tier_t1,
+            SUM(CASE WHEN is_public = 1 AND order_count > 0
+                      AND last_order_at <= DATE_SUB(CURDATE(), INTERVAL {REACTIVATION_INACTIVE_DAYS} DAY)
+                     THEN 1 ELSE 0 END) AS tier_t1,
             SUM(CASE WHEN is_public = 1 AND order_count = 0 AND (has_corporate_email = 1 OR has_website = 1 OR has_business_social = 1) THEN 1 ELSE 0 END) AS tier_t2,
             SUM(CASE WHEN is_public = 1 AND order_count = 0 AND has_corporate_email = 0 AND has_website = 0 AND has_business_social = 0
                      AND (primary_email IS NOT NULL OR primary_phone IS NOT NULL OR has_whatsapp = 1) THEN 1 ELSE 0 END) AS tier_t3,
@@ -254,7 +257,8 @@ class BusinessPoolGateway:
             "business_schema": self.schema,
             "website_column": self.website_column,
             "public_predicate": "JSON_LENGTH(COALESCE(owner_user_ids, JSON_ARRAY())) = 0",
-            "tier_policy_version": "v1",
+            "tier_policy_version": "v2",
+            "reactivation_inactive_days": REACTIVATION_INACTIVE_DAYS,
         })
         return data
 
@@ -268,7 +272,7 @@ class BusinessPoolGateway:
         if tier not in TIERS:
             raise SalesAutomationError("tier 必须是 T1/T2/T3")
         tier_filter = {
-            "T1": "f.order_count > 0",
+            "T1": f"f.order_count > 0 AND f.last_order_at <= DATE_SUB(CURDATE(), INTERVAL {REACTIVATION_INACTIVE_DAYS} DAY)",
             "T2": "f.order_count = 0 AND (f.has_corporate_email = 1 OR f.has_website = 1 OR f.has_business_social = 1)",
             "T3": "f.order_count = 0 AND f.has_corporate_email = 0 AND f.has_website = 0 AND f.has_business_social = 0 AND (f.primary_email IS NOT NULL OR f.primary_phone IS NOT NULL OR f.has_whatsapp = 1)",
         }[tier]
@@ -320,7 +324,7 @@ class BusinessPoolGateway:
             + 5 * int(bool(row.get("country_name")))
         ))
         reasons = {
-            "T1": ["当前公海且存在历史订单记录"],
+            "T1": [f"当前公海且存在历史订单记录，最近 {REACTIVATION_INACTIVE_DAYS} 天无下单"],
             "T2": ["当前公海、无历史订单且具备企业身份锚点"],
             "T3": ["当前公海、无历史订单且仅有低信息量联系方式"],
         }[tier]

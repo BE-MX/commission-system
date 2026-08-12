@@ -779,7 +779,7 @@ Base path：`/api/sales-automation`。所有接口使用统一 `{code,message,da
 | GET | `/public-pool/audit` | read/write/admin 任一 | 读取最近完成批次的公海分档审计；无缓存时执行只读实时审计 |
 | POST | `/public-pool/audit/refresh` | admin | 强制从 `lsordertest` 重新计算 T1/T2/T3/冷藏区数量 |
 | GET | `/public-pool/batches` | read/write/admin 任一 | 公海每日批次列表与抽样统计 |
-| POST | `/public-pool/batches` | write/admin 任一 | 202 登记后台生成批次，默认 T1/T2/T3 各 20 条；同一幂等批次 pending/running/completed 时不重复执行，failed 才允许重试 |
+| POST | `/public-pool/batches` | write/admin 任一 | 202 登记后台生成批次，默认 T1/T2/T3 各 20 条；T1 仅纳入最近 60 天无下单的历史客户；同一幂等批次 pending/running/completed 时不重复执行，failed 才允许重试 |
 | GET | `/public-pool/tasks` | read/write/admin 任一 | 按档位、Agent 状态、审核状态和关键词分页查询 |
 | GET | `/public-pool/tasks/{id}` | read/write/admin 任一 | OKKI 来源快照、公开联系人、原子事实与成交研判 |
 | POST | `/public-pool/tasks/{id}/approve` | write/admin 任一 | 人工确认后投影到客户机会/经营雷达；T1 为老客再激活，其余为公海开发 |

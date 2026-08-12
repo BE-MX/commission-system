@@ -247,6 +247,38 @@ def test_business_pool_cross_table_id_joins_ignore_column_collation():
     assert "BINARY s.source_customer_id = BINARY CAST(f.company_id AS CHAR)" in session.statement
 
 
+def test_t1_excludes_customers_with_orders_in_last_60_days():
+    gateway = object.__new__(public_pool_service.BusinessPoolGateway)
+    gateway.schema = "lsordertest"
+    gateway.website_column = None
+
+    class RecordingSession:
+        def __init__(self):
+            self.statement = ""
+
+        def execute(self, statement, _params=None):
+            self.statement = str(statement)
+
+            class Result:
+                @staticmethod
+                def mappings():
+                    return Result()
+
+                @staticmethod
+                def all():
+                    return []
+
+            return Result()
+
+    session = RecordingSession()
+    gateway.db = session
+    gateway.fetch_tier_candidates("T1", limit=20, seed="test")
+
+    assert "f.last_order_at <= DATE_SUB(CURDATE(), INTERVAL 60 DAY)" in session.statement
+    reasons = gateway._candidate({"company_id": "1", "order_count": 1}, "T1")["selection_reason"]
+    assert any("最近 60 天无下单" in reason for reason in reasons)
+
+
 def test_score_is_backend_computed_and_separates_evidence_confidence():
     factors = {"industry_fit": 25, "pain_switch_trigger": 20, "intent_reactivation": 20,
                "buying_capacity": 15, "reachability": 10, "timing": 10, "risk_penalty": 0}

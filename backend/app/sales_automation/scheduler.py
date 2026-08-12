@@ -21,7 +21,7 @@ def generate_public_pool_daily_batch() -> None:
                 {
                     "batch_date": date.today(),
                     "quota_per_tier": settings.SALES_PUBLIC_POOL_QUOTA_PER_TIER,
-                    "policy_version": "v1",
+                    "policy_version": "v2",
                 },
                 actor_id=None,
             )

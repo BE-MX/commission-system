@@ -104,7 +104,7 @@ class ResearchUpsert(BaseModel):
 class PublicPoolBatchCreate(BaseModel):
     batch_date: date | None = None
     quota_per_tier: int = Field(20, ge=1, le=100)
-    policy_version: str = Field("v1", min_length=1, max_length=32)
+    policy_version: str = Field("v2", min_length=1, max_length=32)
 
 
 class DealScoreComponents(BaseModel):
