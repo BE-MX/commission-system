@@ -826,6 +826,8 @@ frontend/src/
 
 统计口径、真实数据覆盖、来源归一、国家机会评分、能力标签、客户周期、预测边界和后续广告漏斗方案统一见 `docs/requirements/2026-08-12-order-intelligence-platform.md`。特别注意：经营 GMV 用订单 `amount_usd`，产品趋势用明细 `quantity/amount`，禁止混算；没有广告消耗/询盘漏斗前只叫“投流方向建议”，不生成 ROAS/CAC。
 
+顶部国家（大洲-国家）、型号、颜色、来源都是全页面统一筛选。型号/颜色先通过订单明细命中订单，再用订单重算总览/国家/人员；客户行动只筛选客户集合，周期仍读取入选客户完整订单史。月度客户趋势固定为新签/首返客户去重数量，复购单独展示订单数和订单金额，避免把复购客户数与订单频次混为一谈。
+
 AI 经营简报为数据库持久化后台任务，页面轮询 `queued/running/succeeded/failed` 状态。`active_key=user:{ark_user_id}` 的 nullable 唯一键是防重真相源，终态置 NULL 后才可再生成；不能只靠前端 loading 锁。
 
 **产品与素材**：产品只支持 `single_choice`、`color`、`boolean` 三种预设选项。cover 是单槽；reference 支持多张，可追加、替换、退役和排序，发布前至少需要一张当前 reference。图库只作为复制来源，产品目录始终读取 `customer-product` 私有副本。替换不覆盖旧行，generation 冻结具体 cover/reference/LOGO ID，因此换模板不会改变历史任务输入。
