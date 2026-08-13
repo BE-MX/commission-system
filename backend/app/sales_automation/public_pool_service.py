@@ -1209,11 +1209,21 @@ def claim_approved_task(db: Session, task_id: int, actor_id: int) -> CustomerOpp
     task.opportunity_id = opportunity.id
     db.commit()
     db.refresh(opportunity)
-    ingest_opportunity_event(
+    event = ingest_opportunity_event(
         db,
         opportunity,
         event_type="reactivation" if task.tier == "T1" else "public_pool",
     )
+    if event is None:
+        logger.warning(
+            "public pool opportunity claimed but radar sync failed: task=%s opp=%s",
+            task.id,
+            opportunity.id,
+        )
+        print(
+            f"public pool opportunity claimed but radar sync failed: task={task.id} opp={opportunity.id}",
+            flush=True,
+        )
     return opportunity
 
 

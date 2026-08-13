@@ -20,6 +20,11 @@ from app.insight.models import (
 )
 
 logger = logging.getLogger("insight.profile")
+PROFILE_JUDGEMENT_MAX_LENGTH = 500
+
+
+def _truncate_text(value: object, max_length: int) -> str:
+    return str(value or "")[:max_length]
 
 
 # ── 画像 CRUD ───────────────────────────────────────────
@@ -145,6 +150,7 @@ def ingest_opportunity_event(
 
     在 customer_opportunity_service 的 import/status_change/feedback/assign 后调用。
     """
+    opportunity_id = opportunity.id
     try:
         # 确定事件类型
         if not event_type:
@@ -211,7 +217,9 @@ def ingest_opportunity_event(
 
         if existing:
             # 更新已有事件而非重复插入
-            existing.event_title = title_map.get(event_type, opportunity.title or "")
+            existing.event_title = _truncate_text(
+                title_map.get(event_type, opportunity.title or ""), 255,
+            )
             existing.occurred_at = now
             existing.event_payload = {
                 "status": opportunity.status,
@@ -231,7 +239,7 @@ def ingest_opportunity_event(
             source_ref_type="opportunity",
             source_ref_id=str(opportunity.id),
             opportunity_id=opportunity.id,
-            event_title=title_map.get(event_type, opportunity.title or ""),
+            event_title=_truncate_text(title_map.get(event_type, opportunity.title or ""), 255),
             event_summary=opportunity.summary or opportunity.title or "",
             event_payload={
                 "status": opportunity.status,
@@ -288,7 +296,10 @@ def ingest_opportunity_event(
                 parts.append(opportunity.recommended_strategy)
             if opportunity.summary:
                 parts.append(opportunity.summary)
-            profile.profile_judgement = "；".join(parts) if parts else ""
+            profile.profile_judgement = _truncate_text(
+                "；".join(str(part) for part in parts if part) if parts else "",
+                PROFILE_JUDGEMENT_MAX_LENGTH,
+            )
 
         db.commit()
         db.refresh(profile)
@@ -297,8 +308,13 @@ def ingest_opportunity_event(
         logger.info("Ingested event profile=%s type=%s opp=%s", profile.id, event_type, opportunity.id)
         return evt
 
-    except Exception:
-        logger.exception("Failed to ingest opportunity event opp=%s", opportunity.id)
+    except Exception as exc:
+        db.rollback()
+        logger.exception("Failed to ingest opportunity event opp=%s", opportunity_id)
+        print(
+            f"Failed to ingest opportunity event opp={opportunity_id}: {type(exc).__name__}",
+            flush=True,
+        )
         return None
 
 

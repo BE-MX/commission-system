@@ -651,6 +651,45 @@ def test_public_pool_claim_is_idempotent_for_owner_and_rejects_other_salesperson
     assert claimed[0][0].id == task.id
 
 
+def test_public_pool_claim_truncates_long_radar_judgement(db):
+    _generate(db, quota=1)
+    task = db.query(models.PublicPoolTask).filter(models.PublicPoolTask.tier == "T2").one()
+    _row, lease = public_pool_service.claim_task(db, task.id, 17, "pool-agent")
+    public_pool_service.submit_industry_gate(db, task.id, _gate_payload(lease), actor_id=17)
+    payload = _research_payload(lease)
+    payload["summary"] = "S" * 700
+    payload["recommended_strategy"] = "R" * 700
+    public_pool_service.complete_task_research(db, task.id, payload, actor_id=17)
+    public_pool_service.approve_task(db, task.id, actor_id=9)
+
+    opportunity = public_pool_service.claim_approved_task(db, task.id, actor_id=7)
+
+    profile = db.query(insight_models.CustomerProfile).filter_by(
+        customer_external_id=opportunity.customer_external_id,
+    ).one()
+    event = db.query(insight_models.CustomerProfileEvent).filter_by(
+        opportunity_id=opportunity.id,
+        event_type="public_pool",
+    ).one()
+    assert len(profile.profile_judgement) == 500
+    assert event.event_source == "okki_public_pool"
+
+
+def test_public_pool_claim_returns_success_when_radar_sync_fails(db, monkeypatch):
+    _generate(db, quota=1)
+    task = db.query(models.PublicPoolTask).filter(models.PublicPoolTask.tier == "T2").one()
+    _row, lease = public_pool_service.claim_task(db, task.id, 17, "pool-agent")
+    public_pool_service.submit_industry_gate(db, task.id, _gate_payload(lease), actor_id=17)
+    public_pool_service.complete_task_research(db, task.id, _research_payload(lease), actor_id=17)
+    public_pool_service.approve_task(db, task.id, actor_id=9)
+    monkeypatch.setattr(public_pool_service, "ingest_opportunity_event", lambda *_args, **_kwargs: None)
+
+    opportunity = public_pool_service.claim_approved_task(db, task.id, actor_id=7)
+
+    assert opportunity.owner_user_id == 7
+    assert db.query(models.PublicPoolTask).filter_by(id=task.id).one().opportunity_id == opportunity.id
+
+
 def test_historical_lost_opportunity_cannot_be_stolen_or_reset(db):
     _generate(db, quota=1)
     task = db.query(models.PublicPoolTask).filter(models.PublicPoolTask.tier == "T2").one()
