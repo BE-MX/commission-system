@@ -54,6 +54,48 @@ def test_classify_source_prioritizes_owned_social_and_referral():
     assert service.classify_source("") == "unknown"
 
 
+@pytest.mark.parametrize("source_raw", [None, "", False, 0, [], {}])
+def test_decorate_order_falls_back_to_customer_origin_for_empty_extracted_source(source_raw):
+    row = service._decorate_order({
+        "source_raw": source_raw,
+        "origin_name": "阿里询盘",
+        "new_deal": None,
+        "first_return": None,
+        "country_name": "",
+        "amount_usd": None,
+        "company_id": None,
+        "user_id": None,
+    })
+
+    assert row["source_raw"] == "阿里询盘"
+    assert row["source_category"] == "alibaba_inquiry"
+    assert row["new_deal"] == ""
+    assert row["first_return"] == ""
+    assert row["country"] == "未知"
+    assert row["amount_usd"] == 0
+
+
+def test_decorate_order_preserves_extracted_business_flags_and_source():
+    row = service._decorate_order({
+        "source_raw": "Ins开发",
+        "origin_name": "阿里询盘",
+        "new_deal": "是",
+        "first_return": "否",
+        "country_name": "美国",
+        "amount_usd": "12.50",
+        "company_id": 123,
+        "user_id": 456,
+    })
+
+    assert row["source_category"] == "social_owned"
+    assert row["new_deal"] == "是"
+    assert row["first_return"] == "否"
+    assert row["country"] == "美国"
+    assert row["amount_usd"] == 12.5
+    assert row["company_id"] == "123"
+    assert row["user_id"] == "456"
+
+
 def test_aggregate_deduplicates_customer_counts_and_keeps_order_amount():
     rows = [
         order("1", "A", date(2026, 1, 1), 100, "是"),
@@ -177,6 +219,40 @@ def test_order_loader_sources_customer_nature_from_trail_status_name():
 
     assert result == []
     assert "ci.trail_status_name customer_nature" in captured["sql"]
+    select_list = captured["sql"].split("FROM `lsordertest`.okki_orders o", 1)[0]
+    assert "               o.custom_fields," not in select_list
+    assert "new_deal" in select_list
+    assert "first_return" in select_list
+    assert "source_raw" in select_list
+    assert "NULLIF(NULLIF(JSON_UNQUOTE" in select_list
+
+
+def test_product_loader_extracts_only_required_order_json_fields():
+    captured = {}
+
+    class EmptyResult:
+        def mappings(self):
+            return []
+
+    class FakeDb:
+        def execute(self, statement, params):
+            captured["sql"] = str(statement)
+            return EmptyResult()
+
+    result = service._load_product_rows(
+        FakeDb(),
+        service.AnalysisScope("all", None, None, True),
+        date(2026, 1, 1),
+        date(2026, 1, 31),
+    )
+
+    assert result == []
+    select_list = captured["sql"].split("FROM `lsordertest`.okki_orders o", 1)[0]
+    assert "               o.custom_fields," not in select_list
+    assert "JSON_UNQUOTE(JSON_EXTRACT(o.custom_fields" in captured["sql"]
+    assert "new_deal" in captured["sql"]
+    assert "source_raw" in captured["sql"]
+    assert "NULLIF(NULLIF(JSON_UNQUOTE" in select_list
 
 
 def test_profile_dimensions_split_country_source_nature_and_first_new_model():
@@ -379,6 +455,33 @@ def test_profile_analysis_cache_separates_scope_and_filters(monkeypatch):
     # 3 个独立冷计算；带筛选的一次还会追加加载命中客户集。
     assert calls["orders"] == 4
     service._clear_profile_cache()
+
+
+def test_filter_options_cache_reuses_result_and_separates_scope(monkeypatch):
+    service._clear_filter_cache()
+    calls = {"orders": 0, "products": 0}
+
+    def load_orders(*_args, **_kwargs):
+        calls["orders"] += 1
+        return []
+
+    def load_products(*_args, **_kwargs):
+        calls["products"] += 1
+        return []
+
+    monkeypatch.setattr(service, "_load_orders", load_orders)
+    monkeypatch.setattr(service, "_load_product_rows", load_products)
+    scope_u1 = service.AnalysisScope("self", "U1", None, False)
+    scope_u2 = service.AnalysisScope("self", "U2", None, False)
+
+    first = service.get_filter_options(None, scope_u1, date(2026, 1, 1), date(2026, 1, 31))
+    first["countries"].append("污染值")
+    second = service.get_filter_options(None, scope_u1, date(2026, 1, 1), date(2026, 1, 31))
+    service.get_filter_options(None, scope_u2, date(2026, 1, 1), date(2026, 1, 31))
+
+    assert calls == {"orders": 2, "products": 0}
+    assert "污染值" not in second["countries"]
+    service._clear_filter_cache()
 
 
 def test_forecast_requires_three_months_and_caps_growth():

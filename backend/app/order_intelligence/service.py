@@ -55,6 +55,10 @@ _PROFILE_CACHE_TTL_SECONDS = 300
 _PROFILE_CACHE_MAX_ENTRIES = 8
 _PROFILE_CACHE: OrderedDict[tuple, tuple[float, dict]] = OrderedDict()
 _PROFILE_CACHE_LOCK = RLock()
+_FILTER_CACHE_TTL_SECONDS = 300
+_FILTER_CACHE_MAX_ENTRIES = 16
+_FILTER_CACHE: OrderedDict[tuple, tuple[float, dict]] = OrderedDict()
+_FILTER_CACHE_LOCK = RLock()
 
 VALID_ORDER_SQL = """
     ({a}.status = '13972831656'
@@ -69,18 +73,6 @@ class AnalysisScope:
     user_id: str | None
     team: str | None
     can_read_all: bool
-
-
-def _json_object(raw) -> dict:
-    if isinstance(raw, dict):
-        return raw
-    if not raw:
-        return {}
-    try:
-        value = json.loads(raw)
-        return value if isinstance(value, dict) else {}
-    except (TypeError, ValueError, json.JSONDecodeError):
-        return {}
 
 
 def classify_source(raw: str | None) -> str:
@@ -104,10 +96,9 @@ def classify_source(raw: str | None) -> str:
 
 
 def _decorate_order(row: dict) -> dict:
-    custom = _json_object(row.get("custom_fields"))
-    source_raw = str(custom.get(RESOURCE_SOURCE_FIELD) or row.get("origin_name") or "")
-    row["new_deal"] = str(custom.get(NEW_DEAL_FIELD) or "").strip()
-    row["first_return"] = str(custom.get(FIRST_RETURN_FIELD) or "").strip()
+    source_raw = str(row.get("source_raw") or row.get("origin_name") or "")
+    row["new_deal"] = str(row.get("new_deal") or "").strip()
+    row["first_return"] = str(row.get("first_return") or "").strip()
     row["source_raw"] = source_raw
     row["source_category"] = classify_source(source_raw)
     row["country"] = (row.get("country_name") or "").strip()
@@ -199,9 +190,22 @@ def _load_orders(
         date_clause += " AND o.account_date <= :date_to"
         params["date_to"] = date_to
     filter_clause = order_sql(filters, params, schema)
+    new_deal_expression = (
+        f"JSON_UNQUOTE(JSON_EXTRACT(o.custom_fields, '$.\\\"{NEW_DEAL_FIELD}\\\"'))"
+    )
+    first_return_expression = (
+        f"JSON_UNQUOTE(JSON_EXTRACT(o.custom_fields, '$.\\\"{FIRST_RETURN_FIELD}\\\"'))"
+    )
+    source_expression = (
+        f"COALESCE(NULLIF(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(o.custom_fields, "
+        f"'$.\\\"{RESOURCE_SOURCE_FIELD}\\\"')), ''), 'null'), ci.origin_name, '')"
+    )
     sql = f"""
         SELECT o.order_id, o.order_no, o.account_date, o.amount_usd, o.company_id,
-               o.user_id, o.custom_fields, ci.company_name, ci.country_name,
+               o.user_id, {new_deal_expression} new_deal,
+               {first_return_expression} first_return,
+               {source_expression} source_raw,
+               ci.company_name, ci.country_name,
                ci.origin_name, ci.trail_status_name customer_nature,
                COALESCE(rt.Name, ub.full_name, o.user_id) user_name,
                COALESCE(rt.Team, '') team, COALESCE(rt.Camp, '') camp
@@ -233,6 +237,13 @@ def _load_product_rows(
     params.update({"date_from": date_from, "date_to": date_to})
     order_filter_clause = order_sql(filters, params, schema)
     product_filter_clause = product_sql(filters, params)
+    new_deal_expression = (
+        f"JSON_UNQUOTE(JSON_EXTRACT(o.custom_fields, '$.\\\"{NEW_DEAL_FIELD}\\\"'))"
+    )
+    source_expression = (
+        f"COALESCE(NULLIF(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(o.custom_fields, "
+        f"'$.\\\"{RESOURCE_SOURCE_FIELD}\\\"')), ''), 'null'), ci.origin_name, '')"
+    )
     sql = f"""
         SELECT o.order_id, o.company_id, o.user_id, o.account_date,
                COALESCE(NULLIF(ci.country_name, ''), '未知') country,
@@ -240,10 +251,11 @@ def _load_product_rows(
                {model_expression('oi', 'p')} model,
                {model_expression('oi', 'p', False)} filter_model,
                {color_expression('oi', 'p')} color,
-               p.size, oi.quantity, oi.amount,
-               o.custom_fields, ci.origin_name
-        FROM `{schema}`.okki_order_items oi
-        JOIN `{schema}`.okki_orders o ON o.order_id = oi.order_id
+               p.size, oi.quantity,
+               {new_deal_expression} new_deal,
+               {source_expression} source_raw
+        FROM `{schema}`.okki_orders o
+        JOIN `{schema}`.okki_order_items oi ON oi.order_id = o.order_id
         LEFT JOIN `{schema}`.customer_info ci ON ci.company_id = o.company_id
         LEFT JOIN `{schema}`.user_rel_team rt ON rt.user_id = o.user_id
         LEFT JOIN `{schema}`.okki_products p ON p.product_id = oi.product_id
@@ -259,13 +271,10 @@ def _load_product_rows(
         row["color"] = (row.get("color") or (parts[-2] if len(parts) >= 3 else "") or "未知").strip()
         row["size"] = (row.get("size") or (parts[1] if len(parts) >= 2 else "") or "未知").strip()
         row["quantity"] = int(row.get("quantity") or 0)
-        row["amount"] = float(row.get("amount") or 0)
         row["company_id"] = str(row.get("company_id") or "")
         row["user_id"] = str(row.get("user_id") or "")
-        custom = _json_object(row.get("custom_fields"))
-        source_raw = str(custom.get(RESOURCE_SOURCE_FIELD) or row.get("origin_name") or "")
-        row["new_deal"] = str(custom.get(NEW_DEAL_FIELD) or "").strip()
-        row["source_category"] = classify_source(source_raw)
+        row["new_deal"] = str(row.get("new_deal") or "").strip()
+        row["source_category"] = classify_source(str(row.get("source_raw") or ""))
         if row["country"] in {"", "0"}:
             row["country"] = "未知"
         if not filters.sources or row["source_category"] in filters.sources:
@@ -554,6 +563,23 @@ def get_filter_options(
     date_from: date | None = None,
     date_to: date | None = None,
 ) -> dict:
+    cache_key = (
+        scope.mode,
+        scope.user_id,
+        scope.team,
+        scope.can_read_all,
+        date_from.isoformat() if date_from else None,
+        date_to.isoformat() if date_to else None,
+    )
+    now = monotonic()
+    with _FILTER_CACHE_LOCK:
+        cached = _FILTER_CACHE.get(cache_key)
+        if cached and cached[0] > now:
+            _FILTER_CACHE.move_to_end(cache_key)
+            return deepcopy(cached[1])
+        if cached:
+            _FILTER_CACHE.pop(cache_key, None)
+
     history = _load_orders(db, scope, date_from, date_to)
     if history:
         products = _load_product_rows(
@@ -573,7 +599,7 @@ def get_filter_options(
                 "team": row["team"],
             }
     countries = sorted({r["country"] for r in history})
-    return {
+    result = {
         "can_read_all": scope.can_read_all,
         "scope": scope.mode,
         "teams": sorted({r["team"] for r in history if r["team"]}),
@@ -588,6 +614,18 @@ def get_filter_options(
         "colors": sorted({r["color"] for r in products}),
         "source_categories": [{"code": code, "label": label} for code, label in SOURCE_LABELS.items()],
     }
+    with _FILTER_CACHE_LOCK:
+        _FILTER_CACHE[cache_key] = (monotonic() + _FILTER_CACHE_TTL_SECONDS, deepcopy(result))
+        _FILTER_CACHE.move_to_end(cache_key)
+        while len(_FILTER_CACHE) > _FILTER_CACHE_MAX_ENTRIES:
+            _FILTER_CACHE.popitem(last=False)
+    return result
+
+
+def _clear_filter_cache() -> None:
+    """清空进程内筛选项缓存，供测试和订单同步链路显式失效使用。"""
+    with _FILTER_CACHE_LOCK:
+        _FILTER_CACHE.clear()
 
 
 def get_customer_profile_analysis(
