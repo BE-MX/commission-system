@@ -100,6 +100,19 @@ def test_non_dynamic_issue_does_not_require_video():
     assert "问题视频" not in result.missing_items
 
 
+def test_wrong_return_requires_received_product_and_label_evidence():
+    result = evaluate_evidence(
+        issue_type="错发退回",
+        batch_no=None,
+        care_note="订单为二十英寸自然色，实际收到十八英寸二号色，产品未拆封。",
+        evidence=[{"evidence_type": "overview_image"}],
+    )
+
+    assert result.is_sufficient is False
+    assert result.missing_items == ["包装/批次标签"]
+    assert result.score == 70
+
+
 @pytest.mark.parametrize(
     ("current", "actor", "decision", "compensation", "expected"),
     [

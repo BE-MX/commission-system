@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.aftersales.models import AfterSalesAiRun, AfterSalesCase, AfterSalesEvent, AfterSalesSopVersion
 from app.aftersales.schemas import AfterSalesAiResult
+from app.aftersales.sop_service import ISSUE_TITLES
 from app.ai.service import chat
 
 
@@ -63,7 +64,12 @@ def _relevant_sop(sop: AfterSalesSopVersion, issue_type: str) -> dict:
     sections = content.get("sections") or []
     relevant = [section for section in sections if section.get("title") in mapped_titles]
     if not relevant:
-        relevant = sections
+        keywords = ISSUE_TITLES.get(issue_type, ())
+        relevant = [
+            section
+            for section in sections
+            if any(keyword in (section.get("title") or "") for keyword in keywords)
+        ]
     return {"sections": relevant, "tables": content.get("tables") or []}
 
 

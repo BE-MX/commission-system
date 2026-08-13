@@ -19,6 +19,7 @@ VALUE_ACTIONS = {
 }
 
 DYNAMIC_VIDEO_ISSUES = {"断发", "脱发", "发干打结", "产品做工"}
+WRONG_RETURN_ISSUE = "错发退回"
 ACTION_CODES = {
     "explanation", "care_guidance", "return_inspection", "paid_rework", "free_rework",
     "replacement", "resend", "cash_refund", "discount", "order_credit",
@@ -155,14 +156,21 @@ def evaluate_evidence(
 ) -> EvidenceEvaluation:
     """依据问题类型计算证据完整度，返回可解释的缺失项。"""
     present = {item.get("evidence_type") for item in evidence}
-    requirements = [
-        ("问题全景图", "overview_image" in present, 25),
-        ("问题近景图", "closeup_image" in present, 25),
-        ("安装/护理/存储说明", len((care_note or "").strip()) >= 20, 25),
-    ]
+    if issue_type == WRONG_RETURN_ISSUE:
+        requirements = [
+            ("实收产品与包装全景图", "overview_image" in present, 40),
+            ("包装/批次标签", "batch_label" in present, 30),
+            ("实收产品及退回状态说明", len((care_note or "").strip()) >= 20, 30),
+        ]
+    else:
+        requirements = [
+            ("问题全景图", "overview_image" in present, 25),
+            ("问题近景图", "closeup_image" in present, 25),
+            ("安装/护理/存储说明", len((care_note or "").strip()) >= 20, 25),
+        ]
     if issue_type in DYNAMIC_VIDEO_ISSUES:
         requirements.append(("问题视频", "video" in present, 15))
-    if (batch_no or "").strip() and (batch_no or "").strip() != "未知":
+    if issue_type != WRONG_RETURN_ISSUE and (batch_no or "").strip() and (batch_no or "").strip() != "未知":
         requirements.append(("包装/批次标签", "batch_label" in present, 10))
 
     missing_items = [label for label, satisfied, _ in requirements if not satisfied]

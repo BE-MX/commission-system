@@ -163,7 +163,8 @@ def test_options_expose_complete_issue_and_action_dictionaries(db):
         response = client.get("/api/aftersales/options")
 
     data = response.json()["data"]
-    assert len(data["issue_types"]) == 11
+    assert len(data["issue_types"]) == 12
+    assert any(item["code"] == "错发退回" for item in data["issue_types"])
     assert any(item["code"] == "replacement" and item["has_compensation"] for item in data["actions"])
 
 

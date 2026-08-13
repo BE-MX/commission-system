@@ -4,7 +4,7 @@ from decimal import Decimal
 
 import pytest
 
-from app.aftersales.ai_service import AiAnalysisError, recover_stale_analyses, run_analysis
+from app.aftersales.ai_service import AiAnalysisError, _relevant_sop, recover_stale_analyses, run_analysis
 from app.aftersales.models import AfterSalesAiRun, AfterSalesCase, AfterSalesEvent, AfterSalesSopVersion
 from app.auth.models import ArkUser
 
@@ -258,3 +258,15 @@ def test_compensation_reply_requires_approval_caveat(db):
 
     with pytest.raises(AiAnalysisError, match="校验失败"):
         run_analysis(db, case.id, user.id, chat_fn=fake_chat)
+
+
+def test_wrong_return_uses_general_workflow_when_saved_mapping_is_missing(db):
+    user = _user(db)
+    sop = _sop(db, user)
+    sop.structured_content_json["sections"].append(
+        {"title": "二、统一售后处理流程", "level": 1, "paragraphs": ["核对订单与实收产品。"]}
+    )
+
+    relevant = _relevant_sop(sop, "错发退回")
+
+    assert [section["title"] for section in relevant["sections"]] == ["二、统一售后处理流程"]

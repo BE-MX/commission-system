@@ -19,6 +19,7 @@ ISSUE_TYPES = (
     "贴发胶",
     "克重不够",
     "产品做工",
+    "错发退回",
 )
 
 
@@ -54,6 +55,7 @@ class CaseCreate(BaseModel):
         "贴发胶",
         "克重不够",
         "产品做工",
+        "错发退回",
     ]
     secondary_issue_types: list[str] = Field(default_factory=list, max_length=10)
     problem_description: str = Field(min_length=20, max_length=4000)

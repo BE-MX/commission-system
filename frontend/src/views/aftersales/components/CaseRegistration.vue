@@ -62,7 +62,7 @@
       </el-form-item>
       <el-form-item label="出现时间" required><el-select v-model="form.occurred_stage"><el-option v-for="item in stages" :key="item" :label="item" :value="item" /></el-select></el-form-item>
       <el-form-item label="问题描述" required class="span-2"><el-input v-model="form.problem_description" type="textarea" :rows="4" maxlength="4000" show-word-limit placeholder="至少 20 字，说明出现时间、范围和影响" /></el-form-item>
-      <el-form-item label="安装 / 护理 / 存储说明" required class="span-2"><el-input v-model="form.care_storage_note" type="textarea" :rows="3" maxlength="4000" show-word-limit placeholder="至少 20 字" /></el-form-item>
+      <el-form-item :label="careNoteLabel" required class="span-2"><el-input v-model="form.care_storage_note" type="textarea" :rows="3" maxlength="4000" show-word-limit :placeholder="careNotePlaceholder" /></el-form-item>
     </el-form>
   </section>
 </template>
@@ -81,6 +81,8 @@ const props = defineProps({
 defineEmits(['search-customer', 'customer-change', 'search-order', 'order-change', 'search-product', 'product-change', 'product-mode-change'])
 const stages = ['刚收到', '安装后', '使用几天', '1–3 个月', '超过 3 个月', '其他']
 const workmanshipOptions = computed(() => props.options.issue_types?.find(item => item.code === '产品做工')?.secondary || [])
+const careNoteLabel = computed(() => props.form.primary_issue_type === '错发退回' ? '实收产品及退回状态说明' : '安装 / 护理 / 存储说明')
+const careNotePlaceholder = computed(() => props.form.primary_issue_type === '错发退回' ? '至少 20 字，说明订单产品、实收产品及包装状态' : '至少 20 字')
 </script>
 
 <style scoped>

@@ -183,7 +183,11 @@ export function useAfterSalesWorkspace() {
     const missing = required.find(([, value]) => !value)
     if (missing) return `请填写${missing[0]}`
     if ((form.problem_description || '').trim().length < 20) return '问题描述至少填写 20 字'
-    if ((form.care_storage_note || '').trim().length < 20) return '安装 / 护理 / 存储说明至少填写 20 字'
+    if ((form.care_storage_note || '').trim().length < 20) {
+      return form.primary_issue_type === '错发退回'
+        ? '实收产品及退回状态说明至少填写 20 字'
+        : '安装 / 护理 / 存储说明至少填写 20 字'
+    }
     if (Number(form.quantity) <= 0 || Number(form.weight_value) <= 0 || Number(form.affected_goods_value) <= 0) return '数量、克重和问题货值必须大于 0'
     if (form.feedback_date < form.purchase_date) return '反馈日期不得早于购买日期'
     return ''
