@@ -13,7 +13,7 @@ let chart
 let observer
 const ariaLabel = computed(() => ({
   amount: '月度订单金额趋势',
-  customers: '月度新签与复购客户趋势',
+  customers: '月度新签与首返客户趋势',
   orders: '月度下单频次趋势',
 }[props.mode] || '月度经营趋势'))
 
@@ -50,7 +50,7 @@ function render() {
       areaStyle: { color: token('--color-info-soft', 'transparent') },
     }] : [
       { name: '新签客户', type: 'bar', data: props.rows.map(row => row.new_sign_customers), itemStyle: { color: info, borderRadius: [5, 5, 0, 0] } },
-      { name: '复购客户', type: 'bar', data: props.rows.map(row => row.repeat_customers), itemStyle: { color: success, borderRadius: [5, 5, 0, 0] } },
+      { name: '首返客户', type: 'bar', data: props.rows.map(row => row.first_return_customers), itemStyle: { color: success, borderRadius: [5, 5, 0, 0] } },
     ]),
   }, true)
 }

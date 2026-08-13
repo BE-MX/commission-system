@@ -21,28 +21,7 @@
       <template #default><el-button link type="danger" @click="loadPage">重新加载</el-button></template>
     </el-alert>
 
-    <section class="oi-toolbar lg-card is-static">
-      <div class="oi-filter">
-        <span>分析周期</span>
-        <el-date-picker v-model="filters.dateRange" type="daterange" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" />
-      </div>
-      <template v-if="options.can_read_all">
-        <div class="oi-filter">
-          <span>团队</span>
-          <el-select v-model="filters.team" clearable placeholder="全部团队" @change="changeTeam">
-            <el-option v-for="team in options.teams" :key="team" :label="team" :value="team" />
-          </el-select>
-        </div>
-        <div class="oi-filter">
-          <span>业务员</span>
-          <el-select v-model="filters.user_id" clearable filterable placeholder="全部人员">
-            <el-option v-for="user in scopedUsers" :key="user.user_id" :label="`${user.user_name} · ${user.team || '未分组'}`" :value="user.user_id" />
-          </el-select>
-        </div>
-      </template>
-      <GlassButton variant="secondary" @click="loadPage"><el-icon><Refresh /></el-icon> 更新分析</GlassButton>
-      <small>有效订单口径 · 截至 {{ filters.dateRange?.[1] }}</small>
-    </section>
+    <OrderFilters :filters="filters" :options="options" :scoped-users="scopedUsers" @team-change="changeTeam" @apply="loadPage" />
 
     <template v-if="overview">
       <section class="oi-metrics" aria-label="经营摘要">
@@ -84,10 +63,14 @@
         <div v-if="activeTab === 'overview'" class="oi-overview-grid">
           <article class="oi-panel oi-panel--wide">
             <div class="oi-panel-title">
-              <div><h3>月度经营趋势</h3><p>GMV、新签/复购与下单频次分开观察</p></div>
-              <el-radio-group v-model="trendMode" size="small"><el-radio-button label="amount">GMV</el-radio-button><el-radio-button label="customers">新签/复购</el-radio-button><el-radio-button label="orders">下单频次</el-radio-button></el-radio-group>
+              <div><h3>月度经营趋势</h3><p>GMV、新签/首返客户与有效订单数分开观察</p></div>
+              <el-radio-group v-model="trendMode" size="small"><el-radio-button label="amount">GMV</el-radio-button><el-radio-button label="customers">新签/首返</el-radio-button><el-radio-button label="orders">下单频次</el-radio-button></el-radio-group>
             </div>
             <OrderTrendChart :rows="overview.monthly_trend" :mode="trendMode" />
+          </article>
+          <article class="oi-panel oi-panel--wide">
+            <div class="oi-panel-title"><div><h3>月度复购订单趋势</h3><p>复购订单数按订单计数，复购金额使用订单 amount_usd</p></div></div>
+            <RepeatPurchaseTrendChart :rows="overview.monthly_trend" />
           </article>
           <article class="oi-panel">
             <div class="oi-panel-title"><div><h3>成交来源结构</h3><p>不是广告 ROI，仅反映成交订单归因</p></div></div>
@@ -223,13 +206,15 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { DataAnalysis, MagicStick, Refresh } from '@element-plus/icons-vue'
+import { DataAnalysis, MagicStick } from '@element-plus/icons-vue'
 import GlassButton from '@/components/GlassButton.vue'
+import OrderFilters from './components/OrderFilters.vue'
 import OrderTrendChart from './components/OrderTrendChart.vue'
+import RepeatPurchaseTrendChart from './components/RepeatPurchaseTrendChart.vue'
 import { useOrderIntelligence } from './composables/useOrderIntelligence'
 
 const {
-  activeTab, aiBrief, aiLoading, changeCustomerPage, changePeopleDimension,
+  activeTab, aiBrief, aiLoading, briefMatchesFilters, changeCustomerPage, changePeopleDimension,
   changeTab, changeTeam, countries, customerFilters, customers, detailLoading,
   error, filters, generateBrief, handleBriefAction, loadPage, loading, options, overview,
   people, peopleDimension, scopedUsers,
@@ -238,7 +223,7 @@ const {
 const trendMode = ref('amount')
 const briefButtonText = computed(() => {
   if (aiLoading.value) return '简报后台生成中'
-  if (aiBrief.value.status === 'succeeded' && aiBrief.value.content) return '查看 AI 经营简报'
+  if (aiBrief.value.status === 'succeeded' && aiBrief.value.content && briefMatchesFilters.value) return '查看 AI 经营简报'
   return '生成 AI 经营简报'
 })
 const briefAlert = computed(() => {
