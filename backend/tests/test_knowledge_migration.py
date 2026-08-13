@@ -24,6 +24,15 @@ def _category_migration_module():
     return module
 
 
+def _editor_ai_migration_module():
+    path = Path(__file__).parents[1] / "alembic" / "versions" / "112_knowledge_editor_ai.py"
+    spec = importlib.util.spec_from_file_location("knowledge_migration_112", path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_knowledge_migration_upgrades_and_downgrades_clean_database():
     engine = create_engine("sqlite://")
     migration = _migration_module()
@@ -77,4 +86,31 @@ def test_knowledge_category_migration_backfills_existing_libraries_and_downgrade
             for column in inspect(connection).get_columns("ark_knowledge_libraries")
         }
         assert "category" not in column_names
+    engine.dispose()
+
+
+def test_knowledge_editor_ai_migration_upgrades_and_downgrades():
+    engine = create_engine("sqlite://")
+    migration = _editor_ai_migration_module()
+    expected = {
+        "ark_knowledge_assets",
+        "ark_knowledge_revision_assets",
+        "ark_knowledge_ai_profiles",
+        "ark_knowledge_ai_profile_logs",
+        "ark_knowledge_ai_profile_sources",
+        "ark_knowledge_ai_profile_targets",
+        "ark_knowledge_ai_jobs",
+        "ark_knowledge_ai_job_sources",
+    }
+    with engine.begin() as connection:
+        migration.op = Operations(MigrationContext.configure(connection))
+        migration.upgrade()
+        assert expected.issubset(set(inspect(connection).get_table_names()))
+        job_columns = {
+            column["name"]
+            for column in inspect(connection).get_columns("ark_knowledge_ai_jobs")
+        }
+        assert {"config_snapshot", "lease_token", "applied_revision_id"}.issubset(job_columns)
+        migration.downgrade()
+        assert expected.isdisjoint(set(inspect(connection).get_table_names()))
     engine.dispose()

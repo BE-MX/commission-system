@@ -832,7 +832,7 @@ Agent Skill 位于 `.agents/skills/ark-lead-discovery`、`.agents/skills/ark-com
 
 本地 OpenClaw 运行器、最小权限 MCP 侧车、免密公开检索源、macOS LaunchAgent 初始化与凭证交付步骤见 [`services/openclaw-sales-agent/README.md`](../services/openclaw-sales-agent/README.md)。该侧车把 Ark token 限制在独立 `0600` 文件中，并把任务租约留在进程内存，不暴露给模型。
 
-# 企业知识库（2026-08-09）
+# 企业知识库（2026-08-09，2026-08-13 图片与 AI 优化）
 
 所有 HTTP 接口使用 `/api/knowledge` 前缀和 `{code,message,data}` 响应封套。平台权限只是入口，服务层还会实时校验知识库成员 ACL；无资源权限统一返回 404。
 
@@ -846,14 +846,39 @@ Agent Skill 位于 `.agents/skills/ark-lead-discovery`、`.agents/skills/ark-com
 | GET | `/libraries/{id}/member-candidates?q=&limit=20` | `knowledge:admin` + 库 admin | 按方舟用户名或姓名搜索启用账号；`q` 最长 50 字符，`limit` 范围 1~20，仅返回 `user_id`、`username`、`real_name` |
 | GET | `/libraries/{id}/tree` | 任一 `knowledge:*` | 目录树；只读者看不到未发布文档 |
 | POST | `/libraries/{id}/documents` | `knowledge:write/admin` | 创建目录或文档 |
+| POST | `/libraries/{id}/assets` | `knowledge:write/admin` + 库 editor/admin | 上传 JPEG/PNG/WebP 私有图片；单图默认 10MiB，响应返回 `assetId` 与规范化后的尺寸 |
+| GET | `/assets/{id}/content` | 任一 `knowledge:*` + 修订可见性 | 鉴权读取图片 Blob；临时图仅上传者、草稿图仅编辑者、待审图仅审核者、已发布图只对库成员可见 |
+| DELETE | `/assets/{id}` | `knowledge:write/admin` + 上传者 | 删除尚未被修订引用的临时图片；已附着图片返回 409 |
 | GET/PUT | `/documents/{id}` | 读 / 写权限 | 读取当前可见修订或保存新草稿修订 |
 | DELETE | `/documents/{id}` | `knowledge:write/admin` + 库 editor/admin | 软删除文档；目录会递归软删除子树并取消关联待审批 |
 | POST | `/documents/{id}/submit` | `knowledge:write/admin` | 冻结当前草稿并提交审批 |
 | GET | `/approvals` | `knowledge:review/admin` | 当前可审核的待办 |
-| POST | `/approvals/{id}/approve` | `knowledge:review/admin` | 发布审批绑定的冻结修订 |
+| GET | `/approvals/{id}` | `knowledge:review/admin` | 读取冻结修订和 AI 来源；审核者必须仍能读取全部来源库 |
+| POST | `/approvals/{id}/approve` | `knowledge:review/admin` | 发布审批绑定的冻结修订；跨库 AI 来源需传 `confirm_cross_library_sources=true` |
 | POST | `/approvals/{id}/reject` | `knowledge:review/admin` | 带原因驳回 |
 | GET | `/search?q=...&limit=20` | 任一 `knowledge:*` | 只搜索获授权的已发布修订 |
 
 两个 DELETE 接口的 `data` 均返回 `id`、`folder_count`、`document_count` 和 `cancelled_approval_count`。删除是原子软删除；删除后内容立即从知识库列表、目录树、直接读取、搜索、MCP 查询和审批队列中消失。
 
 MCP `/mcp` 新增 `search_knowledge` 与 `get_knowledge_document`。二者使用个人 MCP Token 解析方舟用户，并复用同一服务层 ACL；返回纯文本，不返回草稿、待审修订、附件或下载 URL。
+
+## 知识库 AI 优化
+
+平台权限分为 `knowledge_ai:write`（执行优化）和 `knowledge_ai:admin`（管理配置）。执行任务还必须同时具备目标知识库的 `knowledge:write` 与 editor/admin 资源角色；AI 权限不会扩展知识库 ACL。
+
+| Method | Path | Permission | Purpose |
+| --- | --- | --- | --- |
+| GET/POST | `/ai-profiles` | `knowledge_ai:write` / `knowledge_ai:admin` | 执行者只获得适用方案的非敏感摘要；管理员创建完整配置 |
+| GET | `/ai-profiles/preset-candidates` | `knowledge_ai:admin` | 列出启用的 direct 文本 Preset |
+| GET | `/ai-profiles/library-candidates` | `knowledge_ai:admin` | 列出可配置的活动知识库 |
+| PUT/DELETE | `/ai-profiles/{id}` | `knowledge_ai:admin` | 更新并递增 `config_version`，或软删除配置 |
+| GET | `/ai-profiles/{id}/logs` | `knowledge_ai:admin` | 最近 100 条配置变更审计 |
+| POST | `/ai-profiles/{id}/test` | `knowledge_ai:admin` | 不发送知识来源的模型连通测试 |
+| POST | `/ai-profiles/{id}/retrieval-preview` | `knowledge_ai:admin` + 目标库 read | 预览当前账号实际可读的已发布来源 |
+| POST | `/documents/{id}/ai-jobs` | `knowledge_ai:write` + 文档 write | 创建 `format` 或 `enhance` 异步任务；须提供当前 `base_revision_id` 与 8~64 位幂等键 |
+| GET | `/documents/{id}/ai-jobs` | 同上 | 最近 30 条仍满足实时来源 ACL 的任务 |
+| GET | `/ai-jobs/{id}` | 任务 owner 或 AI admin + 文档/source ACL | 查询状态、结果、核心观点、引用及应用建议 |
+| POST | `/ai-jobs/{id}/cancel` | 同上 | 取消 queued/running 任务 |
+| POST | `/ai-jobs/{id}/apply` | 同上 | 将 completed 结果应用为新草稿；基准草稿已变化时返回 409，重复应用幂等回放 |
+
+`format` 的服务端门禁要求标题、全部文本字符流、代码块、表格、图片和链接完全不变；`enhance` 只使用创建任务时冻结的已发布来源，引用须携带来源中逐字存在的 `source_quote`。两种模式的结果均只形成草稿，仍须走原审批发布流程。

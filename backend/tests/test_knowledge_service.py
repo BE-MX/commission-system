@@ -7,14 +7,23 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.auth.models import ArkUser
+from app.ai.models import AiCallLog, AiPreset, AiProvider
 from app.core.database import Base
 from app.knowledge.models import (
     KnowledgeApprovalRequest,
+    KnowledgeAsset,
     KnowledgeAuditLog,
     KnowledgeDocument,
     KnowledgeLibrary,
     KnowledgeLibraryMember,
     KnowledgeRevision,
+    KnowledgeRevisionAsset,
+    KnowledgeAiJob,
+    KnowledgeAiJobSource,
+    KnowledgeAiProfile,
+    KnowledgeAiProfileLog,
+    KnowledgeAiProfileSource,
+    KnowledgeAiProfileTarget,
 )
 from app.knowledge import service
 
@@ -25,6 +34,17 @@ TABLES = [
     KnowledgeLibraryMember.__table__,
     KnowledgeDocument.__table__,
     KnowledgeRevision.__table__,
+    KnowledgeAsset.__table__,
+    KnowledgeRevisionAsset.__table__,
+    AiProvider.__table__,
+    AiPreset.__table__,
+    AiCallLog.__table__,
+    KnowledgeAiProfile.__table__,
+    KnowledgeAiProfileLog.__table__,
+    KnowledgeAiProfileSource.__table__,
+    KnowledgeAiProfileTarget.__table__,
+    KnowledgeAiJob.__table__,
+    KnowledgeAiJobSource.__table__,
     KnowledgeApprovalRequest.__table__,
     KnowledgeAuditLog.__table__,
 ]
@@ -64,7 +84,7 @@ def doc_json(text):
 
 
 def test_model_contract_has_required_tables_and_unique_keys():
-    assert {table.name for table in TABLES} == {
+    assert {
         "ark_users",
         "ark_knowledge_libraries",
         "ark_knowledge_library_members",
@@ -72,7 +92,7 @@ def test_model_contract_has_required_tables_and_unique_keys():
         "ark_knowledge_revisions",
         "ark_knowledge_approval_requests",
         "ark_knowledge_audit_logs",
-    }
+    }.issubset({table.name for table in TABLES})
     member_uniques = {tuple(c.name for c in item.columns) for item in KnowledgeLibraryMember.__table__.constraints if hasattr(item, "columns")}
     revision_uniques = {tuple(c.name for c in item.columns) for item in KnowledgeRevision.__table__.constraints if hasattr(item, "columns")}
     assert ("library_id", "user_id") in member_uniques

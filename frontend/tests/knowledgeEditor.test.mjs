@@ -14,6 +14,7 @@ import {
   applyTextColor,
   normalizeTextColorTone,
 } from '../src/views/knowledge/components/TextColorMark.js'
+import { contentForKnowledgeSave, pendingImageCount } from '../src/views/knowledge/components/knowledgeImageState.js'
 
 function read(relativePath) {
   return readFileSync(new URL(relativePath, import.meta.url), 'utf8')
@@ -56,6 +57,75 @@ test('semantic text color commands set registered tones and clear the default to
   const cleared = fakeEditor()
   assert.equal(applyTextColor(cleared.editor, null), true)
   assert.deepEqual(cleared.calls, [['focus'], ['unsetMark', 'textColor'], ['run']])
+})
+
+test('knowledge image save content keeps only canonical image attributes', () => {
+  const content = {
+    type: 'doc',
+    content: [{
+      type: 'knowledgeImage',
+      attrs: {
+        assetId: 12,
+        alt: '流程图',
+        caption: '标准流程',
+        uploadId: null,
+        uploadStatus: null,
+        uploadProgress: 100,
+        uploadError: '',
+      },
+    }],
+  }
+  assert.equal(pendingImageCount(content), 0)
+  assert.deepEqual(contentForKnowledgeSave(content), {
+    type: 'doc',
+    content: [{
+      type: 'knowledgeImage',
+      attrs: { assetId: 12, alt: '流程图', caption: '标准流程' },
+    }],
+  })
+  assert.equal(pendingImageCount({
+    type: 'doc',
+    content: [{ type: 'knowledgeImage', attrs: { assetId: null } }],
+  }), 1)
+})
+
+test('knowledge editor supports upload paste drop and blocks pending image saves', () => {
+  const editor = read('../src/views/knowledge/components/KnowledgeEditor.vue')
+  const toolbar = read('../src/views/knowledge/components/EditorToolbar.vue')
+  const imageView = read('../src/views/knowledge/components/KnowledgeImageView.vue')
+
+  assert.match(toolbar, /@mousedown\.prevent="\$emit\('insert-image'\)"/)
+  assert.match(editor, /accept="image\/jpeg,image\/png,image\/webp"/)
+  assert.match(editor, /@paste\.capture="onPaste"/)
+  assert.match(editor, /@drop\.prevent="onDrop"/)
+  assert.match(editor, /clipboardData\?\.items/)
+  assert.match(editor, /pendingUploads\.value.*请等待图片上传完成/s)
+  assert.match(editor, /deleteTemporaryKnowledgeImage\(asset\.data\.id\)/)
+  assert.match(imageView, /getKnowledgeImageBlob\(expected\)/)
+  assert.match(imageView, /URL\.revokeObjectURL/)
+})
+
+test('AI optimization UI is governed, asynchronous, and reviewer-confirmed', () => {
+  const editor = read('../src/views/knowledge/components/KnowledgeEditor.vue')
+  const drawer = read('../src/views/knowledge/components/AiOptimizationDrawer.vue')
+  const settings = read('../src/views/knowledge/KnowledgeAiSettings.vue')
+  const workbench = read('../src/views/knowledge/KnowledgeWorkbench.vue')
+  const approvalDialog = read('../src/views/knowledge/components/KnowledgeApprovalDialog.vue')
+
+  assert.match(editor, /auth\.hasPermission\('knowledge_ai:write'\)/)
+  assert.match(drawer, /mode === 'format'/)
+  assert.match(drawer, /createDocumentAiJob/)
+  assert.match(drawer, /getDocumentAiJob/)
+  assert.match(drawer, /listDocumentAiJobs/)
+  assert.match(drawer, /applyDocumentAiJob/)
+  assert.match(drawer, /KnowledgeDocumentPreview :content="document\.content_json"/)
+  assert.match(drawer, /KnowledgeDocumentPreview :content="job\.result\.content_json"/)
+  assert.match(settings, /format_prompt/)
+  assert.match(settings, /enhance_prompt/)
+  assert.match(settings, /source_library_ids/)
+  assert.match(settings, /target_library_ids/)
+  assert.match(workbench, /confirm_cross_library_sources: crossLibraryConfirmed/)
+  assert.match(approvalDialog, /requires_cross_library_confirmation/)
 })
 
 test('text color picker is accessible, closes safely, and is wired into the toolbar', () => {
@@ -139,7 +209,7 @@ test('editor shell exposes accessible P0 interaction surfaces', () => {
   assert.match(editor, /event\.key\.toLocaleLowerCase\(\) === 'k'/)
   assert.match(editor, /window\.innerWidth - 310/)
   assert.match(editor, /prefers-reduced-motion: reduce/)
-  assert.ok(workbench.indexOf('await Promise.all([loadTree(), reloadDocument(document.value.id)])') < workbench.indexOf('payload.done()'))
+  assert.ok(workbench.indexOf('await loadTree()') < workbench.indexOf('payload.done()'))
   assert.match(workbench, /await nextTick\(\)\s+payload\.done\(\)/)
 })
 

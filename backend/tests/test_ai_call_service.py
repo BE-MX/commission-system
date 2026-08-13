@@ -6,6 +6,7 @@ from app.ai.call_service import (
     MIN_MULTIMODAL_CHAT_TIMEOUT_SEC,
     _effective_chat_timeout,
     _has_image_message,
+    _snapshot_messages,
 )
 
 
@@ -49,3 +50,18 @@ def test_timeout_handles_none_provider_timeout():
     prov = SimpleNamespace(timeout_sec=None)
     assert _effective_chat_timeout(prov, has_image=True) == MIN_MULTIMODAL_CHAT_TIMEOUT_SEC
     assert _effective_chat_timeout(prov, has_image=False) == 0
+
+
+def test_metadata_snapshot_never_persists_knowledge_plaintext():
+    secret = "内部定价与客户名单"
+    snapshot = _snapshot_messages([{"role": "user", "content": secret}], "metadata")
+
+    assert secret not in snapshot
+    assert '"snapshot_mode": "metadata"' in snapshot
+    assert "content_sha256" in snapshot
+
+
+def test_full_snapshot_remains_backward_compatible():
+    assert "旧调用正文" in _snapshot_messages(
+        [{"role": "user", "content": "旧调用正文"}], "full"
+    )

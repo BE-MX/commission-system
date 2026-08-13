@@ -1,6 +1,13 @@
 import pytest
 
-from app.knowledge.content import ContentValidationError, extract_text, validate_content
+from app.knowledge.content import (
+    ContentValidationError,
+    extract_asset_ids,
+    extract_text,
+    extract_text_stream,
+    protected_structure_signature,
+    validate_content,
+)
 
 
 def test_validate_content_accepts_supported_document_and_extracts_text():
@@ -14,6 +21,38 @@ def test_validate_content_accepts_supported_document_and_extracts_text():
 
     assert validate_content(content) == content
     assert extract_text(content) == "标题\n第一段\n第二行"
+
+
+def test_knowledge_images_are_canonical_searchable_and_protected():
+    content = {
+        "type": "doc",
+        "content": [
+            {"type": "knowledgeImage", "attrs": {
+                "assetId": 8, "alt": "仓库照片", "caption": "正确佩戴示例",
+            }},
+            {"type": "paragraph", "content": [{"type": "text", "text": "正文"}]},
+            {"type": "knowledgeImage", "attrs": {
+                "assetId": 8, "alt": "重复引用", "caption": "",
+            }},
+        ],
+    }
+
+    assert validate_content(content) == content
+    assert extract_asset_ids(content) == [8]
+    assert extract_text(content) == "正确佩戴示例\n正文\n重复引用"
+    assert extract_text_stream(content) == "正文"
+    assert protected_structure_signature(content)[0]["node"]["attrs"]["assetId"] == 8
+
+
+@pytest.mark.parametrize("attrs", [
+    {"assetId": 0, "alt": "", "caption": ""},
+    {"assetId": True, "alt": "", "caption": ""},
+    {"assetId": 1, "src": "https://evil.test/a.png", "alt": "", "caption": ""},
+    {"assetId": 1, "alt": "x" * 501, "caption": ""},
+])
+def test_knowledge_image_rejects_invalid_or_remote_attributes(attrs):
+    with pytest.raises(ContentValidationError):
+        validate_content({"type": "doc", "content": [{"type": "knowledgeImage", "attrs": attrs}]})
 
 
 def test_validate_content_accepts_confirmation_mark_without_changing_search_text():

@@ -311,7 +311,7 @@ PII 密钥 `ARK_SALARY_ENCRYPTION_KEY` / `ARK_SALARY_HASH_KEY` 在 `backend/.env
 
 T1 = 当前公海且有历史订单；T2 = 无历史订单但有企业邮箱、独立站或非 WhatsApp 业务社媒；T3 = 不满足 T2、但有私人邮箱、电话或 WhatsApp；其余进入冷藏区。每日默认每档选 20 条，其中 16 条按确定性质量排序、最多 4 条固定种子探索，180 天内已进入有效任务的客户不重复抽取。
 
-## 企业知识库（迁移 101，2026-08-09）
+## 企业知识库（迁移 101/105/112，2026-08-09 至 2026-08-13）
 
 - `ark_knowledge_libraries`：知识库主表，软删除；迁移 105 增加 `category VARCHAR(16) NOT NULL`，值为 company/department/personal，存量行回填 company 后再收紧为非空。
 - `ark_knowledge_library_members`：资源 ACL，`(library_id,user_id)` 唯一，角色为 viewer/editor/reviewer/admin。
@@ -319,7 +319,18 @@ T1 = 当前公海且有历史订单；T2 = 无历史订单但有企业邮箱、�
 - `ark_knowledge_revisions`：不可变 Tiptap JSON 和派生纯文本，`(document_id,version_no)` 唯一。
 - `ark_knowledge_approval_requests`：审批绑定不可变 revision；`(document_id,pending_slot)` 唯一，pending 时 slot=1，approved/rejected/cancelled 终态置 NULL，数据库层阻止并发双待审。知识库或节点软删除时关联待审批进入 cancelled。
 - `ark_knowledge_audit_logs`：成员、编辑、审批和 MCP 读取的追加式安全审计。
+- `ark_knowledge_assets`：私有图片元数据和相对存储路径；状态为 temporary/attached，临时图带过期时间。
+- `ark_knowledge_revision_assets`：修订与图片的不可变有序引用，`(revision_id,asset_id)` 唯一；图片不能跨库附着。
+- `ark_knowledge_ai_profiles`：AI Preset、两类业务提示词、安全与配额配置；每次更新递增 `config_version`。
+- `ark_knowledge_ai_profile_sources` / `ark_knowledge_ai_profile_targets`：配置允许读取的来源库及适用目标库；两表均按 `(profile_id,library_id)` 唯一。
+- `ark_knowledge_ai_profile_logs`：配置 create/update/delete 追加式审计，不保存知识正文。
+- `ark_knowledge_ai_jobs`：冻结基准修订、配置/Preset 指纹、状态、租约、校验结果及应用修订；`(owner_user_id,idempotency_key)` 唯一。
+- `ark_knowledge_ai_job_sources`：任务创建时冻结的已发布来源修订、顺序和评分；引用只能落在这些 revision 上。
 
 正文事实源是受服务端节点白名单校验的 ProseMirror/Tiptap JSON；`content_text` 仅用于检索和 Agent 纯文本输出。发布操作只能把 `published_revision_id` 指向 approval 中冻结的 `revision_id`。
 
 同一知识库内的新建、保存、提交、审批和软删除共用 `ark_knowledge_libraries` 行锁串行化；获取锁后重新校验文档与审批状态，避免删除期间产生活跃孤儿节点或残留待审批。
+
+图片文件不进入数据库，存放在 `KNOWLEDGE_STORAGE_ROOT/{library_id}/...` 私有目录，数据库只保存相对路径。修订事务会锁定并校验图片所有权后写 `ark_knowledge_revision_assets`；24 小时仍为 temporary 且无引用的图片由每日清理任务软删后移除文件。
+
+AI Worker 用 `status + lease_token + lease_expires_at` 领取任务，模型网络调用期间不持有业务行锁。租约按 Provider timeout 延长，过期任务最多领取 3 次；达到上限转 failed，避免无限重放。应用结果时重新锁定知识库/文档/任务并核对 `base_revision_id`，因此不会覆盖任务创建后的编辑。

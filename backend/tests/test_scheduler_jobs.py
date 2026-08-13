@@ -99,6 +99,8 @@ class TestSchedulerRegistration:
                 "design_image_queue",
                 "customer_image_queue",
                 "customer_image_cleanup",
+                "knowledge_ai_queue",
+                "knowledge_image_cleanup",
                 "runtime_heartbeat_monitor",
                 "operations_history_cleanup",
             }

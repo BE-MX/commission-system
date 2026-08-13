@@ -836,7 +836,7 @@ AI 经营简报为数据库持久化后台任务，页面轮询 `queued/running/
 
 **邀请素材保留**：`CUSTOMER_IMAGE_RETENTION_DAYS` 默认 30。每天 03:30 的 stable APScheduler job 只处理已经过期满保留期且没有 queued/running generation 的邀请；先提交 LOGO/输出资产 `deleted_at`，再按精确原图与缩略图路径 best-effort 删除。文件删除失败保留软删除行供下一次任务重试，数据库提交失败则绝不碰文件。
 
-## 企业知识库（2026-08-09 POC，2026-08-10 编辑器 P0 + 删除）
+## 企业知识库（2026-08-09 POC，2026-08-13 图片 + AI 优化）
 
 **发布状态**：本地 main 已提交，**尚未 push origin、尚未部署生产**（2026-08-10 实测线上 `/api/knowledge/libraries` 404）。
 
@@ -868,6 +868,23 @@ Tiptap 3.29 栈，纯函数与命令目录抽到 `components/editorConfig.js`（
 软删除：`DELETE /libraries/{id}` 与 `DELETE /documents/{id}`，目录递归软删子树，同时把关联待审批置 `cancelled`。返回 `data` 含 `id`、`folder_count`、`document_count`、`cancelled_approval_count`。删除后内容立即从库列表、目录树、直接读取、搜索、MCP 查询和审批队列消失。
 
 **并发口径**：同一知识库内的新建、保存、提交、审批和软删除共用 `ark_knowledge_libraries` 行锁串行化；**获取锁后必须重新校验文档与审批状态**，否则删除期间会产生活跃孤儿节点或残留待审批。`ark_knowledge_approval_requests` 的 `(document_id, pending_slot)` 唯一约束在数据库层阻止并发双待审（pending 时 slot=1，终态置 NULL）。
+
+### 私有图片与粘贴插入（2026-08-13，迁移 112）
+
+编辑器工具栏、文件拖放及剪贴板 `files/items` 都进入同一上传链路。前端先插入带进度的临时 `knowledgeImage`，成功后只持久化 `assetId/alt/caption`；有上传中或失败节点时禁止保存。服务端仅接受 JPEG/PNG/WebP，验证真实格式、像素数与大小后用 Pillow 重新编码（移除 EXIF/文本元数据并缩放最长边），原子写入 `KNOWLEDGE_STORAGE_ROOT`。不得把该目录挂到 Nginx `/uploads`。
+
+图片读取永远走 `/api/knowledge/assets/{id}/content`：临时图仅上传者，已附着草稿图仅编辑者，待审修订图对 reviewer，已发布修订图对库内 reader。无权统一 404。修订保存会冻结图片引用；每日 03:45 清除超过 `KNOWLEDGE_IMAGE_DRAFT_TTL_HOURS` 且从未附着的临时图。MCP 仍不返回文件，只把 caption/alt 写入派生纯文本。
+
+### AI 优化（2026-08-13，迁移 112）
+
+`knowledge_ai:write` 允许在有 write ACL 的文档上执行，`knowledge_ai:admin` 管理 AI 优化方案。配置页支持 direct 文本 Preset、智能排版/知识增强提示词、来源库、目标库、跨库开关、引用要求、检索/上下文/文档上限、日限额与并发限额，并记录单调 `config_version` 和审计日志。业务提示词只作补充，固定安全指令与输出门禁不能覆盖。
+
+- **智能排版**：只允许重新组织段落、1~6 级标题、列表与序号。后端逐字比较标题/文本字符流，并比较代码块、表格、图片、链接完整结构；不一致直接失败。
+- **知识增强**：来源是配置范围与执行者实时可读库的交集，且只取发布修订；任务创建时冻结来源。模型须逐块覆盖原始观点，引用包含冻结 revision、优化稿 claim 和来源逐字 `source_quote`，文末由服务端追加知识库/Skill/Agent/工作流四类建议。
+- **异步与审批**：先保存草稿后以 `base_revision_id + idempotency_key` 创建任务。Scheduler 每 10 秒处理一项，租约按 Provider timeout 延长、最多领取 3 次；应用时基准冲突返回 409，成功仅生成新草稿。跨库来源在审批页显式列出，审核者须仍有所有来源库 read ACL 并勾选确认才能发布。
+- **日志隐私**：知识 AI 调用使用 `snapshot_mode=metadata`，通用 `ark_ai_call_logs` 只留消息长度/哈希、模型、token、耗时和状态；正文、来源和完整结果只留在受 ACL 控制的知识表。
+
+部署顺序：先备份并执行 `alembic upgrade head`（head 应为 `112_knowledge_editor_ai`），再创建/启用一个 direct 文本 AI Preset；启动后端以 upsert `knowledge_ai:write/admin` 权限，给角色分配权限；确保 `KNOWLEDGE_STORAGE_ROOT` 可写且不公开；最后构建前端。部署后用配置页做连接测试/检索预览，并验证图片上传、粘贴、审批预览和两种 AI 模式。
 
 ## 客户 AI 方案对话（ai_chat，2026-08-09）
 

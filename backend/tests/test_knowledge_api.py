@@ -3,18 +3,30 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
+from types import SimpleNamespace
+import io
+from PIL import Image
 
 from app.auth.dependencies import get_current_user
 from app.auth.models import ArkUser
+from app.ai.models import AiCallLog, AiPreset, AiProvider
 from app.core.database import Base, get_db
 from app.knowledge import router
 from app.knowledge.models import (
     KnowledgeApprovalRequest,
+    KnowledgeAsset,
     KnowledgeAuditLog,
     KnowledgeDocument,
     KnowledgeLibrary,
     KnowledgeLibraryMember,
     KnowledgeRevision,
+    KnowledgeRevisionAsset,
+    KnowledgeAiJob,
+    KnowledgeAiJobSource,
+    KnowledgeAiProfile,
+    KnowledgeAiProfileLog,
+    KnowledgeAiProfileSource,
+    KnowledgeAiProfileTarget,
 )
 
 
@@ -22,13 +34,21 @@ def test_permission_seed_contains_all_knowledge_capabilities():
     from pathlib import Path
 
     source = (Path(__file__).parents[1] / "app/auth/service.py").read_text(encoding="utf-8")
-    for code in ("knowledge:read", "knowledge:write", "knowledge:review", "knowledge:admin"):
+    for code in (
+        "knowledge:read", "knowledge:write", "knowledge:review", "knowledge:admin",
+        "knowledge_ai:write", "knowledge_ai:admin",
+    ):
         assert f'("{code}"' in source
 
 
 TABLES = [
     ArkUser.__table__, KnowledgeLibrary.__table__, KnowledgeLibraryMember.__table__, KnowledgeDocument.__table__,
     KnowledgeRevision.__table__, KnowledgeApprovalRequest.__table__, KnowledgeAuditLog.__table__,
+    KnowledgeAsset.__table__, KnowledgeRevisionAsset.__table__,
+    AiProvider.__table__, AiPreset.__table__, AiCallLog.__table__,
+    KnowledgeAiProfile.__table__, KnowledgeAiProfileLog.__table__,
+    KnowledgeAiProfileSource.__table__, KnowledgeAiProfileTarget.__table__,
+    KnowledgeAiJob.__table__, KnowledgeAiJobSource.__table__,
 ]
 
 
@@ -233,6 +253,53 @@ def test_replace_members_returns_invalid_user_ids_for_row_level_correction():
             "message": "knowledge member user is inactive or missing",
             "invalid_user_ids": [9],
         }
+    finally:
+        client.close()
+        db.close()
+        engine.dispose()
+
+
+def test_ai_profile_static_routes_are_not_captured_by_dynamic_profile_id(monkeypatch):
+    client, db, identity, engine = _setup()
+    identity["permissions"] = ["knowledge_ai:admin"]
+    monkeypatch.setattr(router.ai_profile_service, "list_preset_candidates", lambda *_: [])
+    monkeypatch.setattr(router.ai_profile_service, "list_library_candidates", lambda *_: [])
+    try:
+        assert client.get("/api/knowledge/ai-profiles/preset-candidates").status_code == 200
+        assert client.get("/api/knowledge/ai-profiles/library-candidates").status_code == 200
+    finally:
+        client.close()
+        db.close()
+        engine.dispose()
+
+
+def test_image_upload_and_authenticated_blob_response(tmp_path, monkeypatch):
+    client, db, identity, engine = _setup()
+    settings = SimpleNamespace(
+        KNOWLEDGE_IMAGE_MAX_UPLOAD_MB=2,
+        KNOWLEDGE_IMAGE_DRAFT_TTL_HOURS=24,
+        KNOWLEDGE_STORAGE_ROOT=str(tmp_path / "knowledge-private"),
+    )
+    monkeypatch.setattr(router.image_service, "get_settings", lambda: settings)
+    image = io.BytesIO()
+    Image.new("RGB", (10, 8), "blue").save(image, "PNG")
+    try:
+        library_id = client.post("/api/knowledge/libraries", json={
+            "name": "图片库", "category": "company",
+        }).json()["data"]["id"]
+        uploaded = client.post(
+            f"/api/knowledge/libraries/{library_id}/assets",
+            files={"file": ("sample.png", image.getvalue(), "image/png")},
+        )
+        assert uploaded.status_code == 200, uploaded.text
+        asset_id = uploaded.json()["data"]["id"]
+
+        blob = client.get(f"/api/knowledge/assets/{asset_id}/content")
+        assert blob.status_code == 200
+        assert blob.headers["content-type"] == "image/png"
+        assert blob.headers["cache-control"] == "private, no-store"
+        with Image.open(io.BytesIO(blob.content)) as normalized:
+            assert normalized.size == (10, 8)
     finally:
         client.close()
         db.close()
