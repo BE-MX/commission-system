@@ -14,7 +14,7 @@ const loading = useLoading()
  *   - 401: 清除认证状态并跳转 /login
  *   - 404 + config.suppressNotFound: 静默 reject (调用方自处理)
  *   - blob response: 直接返回完整 response (调用方可拿 headers + blob)
- *   - 业务码: response.data.code !== 200/201 时弹错误
+ *   - 业务码: response.data.code 非 2xx 时弹错误
  *
  * @param {{ baseURL: string, timeout?: number, getAuthorization?: Function,
  *   redirectOnUnauthorized?: boolean }} options
@@ -63,7 +63,7 @@ export function createApiClient({
       const res = response.data
       // 业务码校验: text response (string) 跳过, JSON 才进入此分支
       if (res && typeof res === 'object' && res.code !== undefined
-          && res.code !== 200 && res.code !== 201) {
+          && (typeof res.code !== 'number' || res.code < 200 || res.code >= 300)) {
         ElMessage.error(res.message || '请求失败')
         return Promise.reject(new Error(res.message || '请求失败'))
       }
