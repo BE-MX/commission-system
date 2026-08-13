@@ -12,15 +12,25 @@
         </div>
       </div>
       <div class="header-actions">
+        <GlassButton v-if="actions.canSave && canUseAi" variant="secondary" left-icon="MagicStick" @click="aiDrawer = true">AI 优化</GlassButton>
         <GlassButton v-if="actions.canDelete" class="delete-action" variant="ghost" left-icon="Delete" @click="$emit('delete', document)">删除</GlassButton>
-        <GlassButton v-if="actions.canSave" variant="ghost" :loading="saving" :disabled="!dirty || saving" @click="save">保存草稿</GlassButton>
-        <GlassButton v-if="actions.canSubmit" variant="primary" :disabled="dirty" @click="$emit('submit')">提交审批</GlassButton>
+        <GlassButton v-if="actions.canSave" variant="ghost" :loading="saving" :disabled="!dirty || saving || pendingUploads" @click="save">保存草稿</GlassButton>
+        <GlassButton v-if="actions.canSubmit" variant="primary" :disabled="dirty" @click="requestSubmit">提交审批</GlassButton>
       </div>
     </header>
 
-    <EditorToolbar v-if="editor && actions.canSave" :editor="editor" :version="editorVersion" @edit-link="editLink" />
+    <EditorToolbar v-if="editor && actions.canSave" :editor="editor" :version="editorVersion" @edit-link="editLink" @insert-image="selectImage" />
+    <input ref="imageInput" class="sr-only" type="file" accept="image/jpeg,image/png,image/webp" @change="onImageSelected" />
     <div class="editor-body">
-      <div ref="canvas" class="canvas-wrap" @keydown.capture="onEditorKeydown">
+      <div
+        ref="canvas"
+        class="canvas-wrap"
+        @keydown.capture="onEditorKeydown"
+        @paste.capture="onPaste"
+        @dragover.prevent
+        @drop.prevent="onDrop"
+        @knowledge-image-retry="selectImage"
+      >
         <BubbleMenu
           v-if="editor && actions.canSave"
           :editor="editor"
@@ -47,6 +57,12 @@
       </div>
       <EditorOutline :items="outline" @navigate="navigateOutline" />
     </div>
+    <AiOptimizationDrawer
+      v-model="aiDrawer"
+      :document="document"
+      :dirty="dirty"
+      @applied="$emit('ai-applied', $event)"
+    />
   </section>
 
   <section v-else class="empty-editor">
@@ -72,11 +88,19 @@ import EditorSlashMenu from './EditorSlashMenu.vue'
 import EditorToolbar from './EditorToolbar.vue'
 import { ConfirmationMark } from './ConfirmationMark.js'
 import { TextColorMark } from './TextColorMark.js'
+import { KnowledgeImage } from './KnowledgeImage.js'
+import { contentForKnowledgeSave, pendingImageCount } from './knowledgeImageState.js'
+import { deleteTemporaryKnowledgeImage, uploadKnowledgeImage } from '@/api/knowledge'
+import { msgError } from '@/utils/feedback'
+import { useAuthStore } from '@/stores/auth'
+import AiOptimizationDrawer from './AiOptimizationDrawer.vue'
 import { EDITOR_COMMANDS, extractOutline, filterEditorCommands, saveStatusLabel } from './editorConfig.js'
-
 const props = defineProps({ document: { type: Object, default: null }, role: { type: String, default: 'viewer' }, saving: Boolean })
-const emit = defineEmits(['save', 'submit', 'dirty-change', 'delete'])
+const emit = defineEmits(['save', 'submit', 'dirty-change', 'delete', 'ai-applied'])
+const auth = useAuthStore()
 const canvas = ref(null)
+const imageInput = ref(null)
+const aiDrawer = ref(false)
 const title = ref('')
 const dirty = ref(false)
 const changeVersion = ref(0)
@@ -100,7 +124,8 @@ const saveTone = computed(() => {
   return 'saved'
 })
 const filteredCommands = computed(() => filterEditorCommands(EDITOR_COMMANDS, slashQuery.value))
-
+const pendingUploads = computed(() => pendingImageCount(editor.value?.getJSON() || {}))
+const canUseAi = computed(() => auth.hasPermission('knowledge_ai:write') || auth.hasPermission('knowledge_ai:admin'))
 const editor = useEditor({
   editable: false,
   extensions: [
@@ -108,6 +133,7 @@ const editor = useEditor({
     Link.configure({ openOnClick: false, protocols: ['http', 'https', 'mailto'] }),
     ConfirmationMark,
     TextColorMark,
+    KnowledgeImage,
     TaskList, TaskItem.configure({ nested: true }),
     Table.configure({ resizable: true }), TableRow, TableHeader, TableCell,
   ],
@@ -150,13 +176,149 @@ function failSave() {
 }
 
 function save() {
+  if (pendingUploads.value) return msgError('请等待图片上传完成，或移除失败的图片')
   const savedVersion = changeVersion.value
   emit('save', {
     title: title.value,
-    content: editor.value.getJSON(),
+    content: contentForKnowledgeSave(editor.value.getJSON()),
     done: () => { if (savedVersion === changeVersion.value) resetDirty() },
     fail: () => { if (savedVersion === changeVersion.value) failSave() },
   })
+}
+
+function missingImageAltCount() {
+  let count = 0
+  editor.value?.state.doc.descendants(node => {
+    if (node.type.name === 'knowledgeImage' && !String(node.attrs.alt || '').trim()) count += 1
+  })
+  return count
+}
+
+async function requestSubmit() {
+  const missing = missingImageAltCount()
+  if (missing) {
+    try {
+      await ElMessageBox.confirm(
+        `当前有 ${missing} 张图片未填写替代文本，这会影响检索和无障碍阅读。仍要提交吗？`,
+        '图片说明提醒',
+        { confirmButtonText: '仍然提交', cancelButtonText: '返回补充', type: 'warning' },
+      )
+    } catch { return }
+  }
+  emit('submit')
+}
+
+function selectImage() {
+  imageInput.value?.click()
+}
+
+function onImageSelected(event) {
+  const files = [...(event.target.files || [])]
+  event.target.value = ''
+  if (files.length) insertImageFiles(files)
+}
+
+function supportedImageFiles(files) {
+  const allowed = new Set(['image/jpeg', 'image/png', 'image/webp'])
+  return files.filter(file => file instanceof File && allowed.has(file.type))
+}
+
+function onPaste(event) {
+  if (!actions.value.canSave) return
+  const directFiles = [...(event.clipboardData?.files || [])]
+  const itemFiles = [...(event.clipboardData?.items || [])]
+    .filter(item => item.kind === 'file')
+    .map(item => item.getAsFile())
+    .filter(Boolean)
+  const images = supportedImageFiles(directFiles.length ? directFiles : itemFiles)
+  if (!images.length) return
+  event.preventDefault()
+  insertImageFiles(images)
+}
+
+function onDrop(event) {
+  if (!actions.value.canSave) return
+  const images = supportedImageFiles([...(event.dataTransfer?.files || [])])
+  if (!images.length) return
+  const coords = editor.value.view.posAtCoords({ left: event.clientX, top: event.clientY })
+  if (coords) editor.value.commands.setTextSelection(coords.pos)
+  insertImageFiles(images)
+}
+
+function findUploadPosition(uploadId) {
+  let result = null
+  editor.value?.state.doc.descendants((node, pos) => {
+    if (node.type.name === 'knowledgeImage' && node.attrs.uploadId === uploadId) {
+      result = pos
+      return false
+    }
+    return result === null
+  })
+  return result
+}
+
+async function insertImageFiles(files) {
+  for (const file of files) {
+    const uploadId = crypto.randomUUID()
+    editor.value.chain().focus().insertContent({
+      type: 'knowledgeImage',
+      attrs: {
+        assetId: null,
+        alt: '',
+        caption: '',
+        uploadId,
+        uploadStatus: 'uploading',
+        uploadProgress: 0,
+        uploadError: '',
+      },
+    }).run()
+    try {
+      const asset = await uploadKnowledgeImage(
+        props.document.library_id,
+        file,
+        progress => {
+          const pos = findUploadPosition(uploadId)
+          if (pos === null) return
+          editor.value.commands.command(({ tr }) => {
+            tr.setNodeMarkup(pos, undefined, {
+              ...tr.doc.nodeAt(pos).attrs,
+              uploadProgress: progress,
+            })
+            return true
+          })
+        },
+      )
+      const pos = findUploadPosition(uploadId)
+      if (pos === null) {
+        await deleteTemporaryKnowledgeImage(asset.data.id).catch(() => {})
+        continue
+      }
+      editor.value.commands.command(({ tr }) => {
+        tr.setNodeMarkup(pos, undefined, {
+          assetId: asset.data.id,
+          alt: '',
+          caption: '',
+          uploadId: null,
+          uploadStatus: null,
+          uploadProgress: 100,
+          uploadError: '',
+        })
+        return true
+      })
+    } catch (error) {
+      const pos = findUploadPosition(uploadId)
+      if (pos !== null) {
+        editor.value.commands.command(({ tr }) => {
+          tr.setNodeMarkup(pos, undefined, {
+            ...tr.doc.nodeAt(pos).attrs,
+            uploadStatus: 'error',
+            uploadError: error?.response?.data?.detail || '上传失败，请移除后重试',
+          })
+          return true
+        })
+      }
+    }
+  }
 }
 
 async function editLink() {
@@ -249,6 +411,7 @@ function executeSlashCommand(id) {
   else if (id === 'horizontal-rule') chain.setHorizontalRule().run()
   else if (id === 'table') chain.insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
   closeSlashMenu()
+  aiDrawer.value = false
 }
 
 function navigateOutline(item) {
@@ -279,6 +442,7 @@ onBeforeUnmount(() => editor.value?.destroy())
 
 <style scoped>
 .editor-shell { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; background: var(--surface-card, #fff); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
 .editor-header { display: flex; flex-shrink: 0; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 12px 18px 10px; border-bottom: 1px solid var(--border-color); }
 .title-block { min-width: 0; flex: 1; }
 .title-block h1 { margin: 0; color: var(--text-primary); font-size: 22px; }

@@ -32,6 +32,7 @@
         @save="saveDocument"
         @submit="submitDocument"
         @delete="deleteNode"
+        @ai-applied="handleAiApplied"
         @dirty-change="dirty = $event"
       />
     </div>
@@ -64,67 +65,22 @@
       </template>
     </el-dialog>
 
-    <el-dialog
+    <KnowledgeMemberDialog
       v-model="memberDialog"
-      :title="`成员权限 · ${memberLibrary?.name || ''}`"
-      width="min(620px, calc(100vw - 32px))"
-      :close-on-click-modal="!memberSaving"
-      :close-on-press-escape="!memberSaving"
-      :show-close="!memberSaving"
+      v-model:candidate-user-id="candidateUserId"
+      :library="memberLibrary"
+      :members="members"
+      :candidates="memberCandidates"
+      :invalid-user-ids="invalidMemberIds"
+      :protected-user-id="protectedActorUserId"
+      :search-loading="memberSearchLoading"
+      :saving="memberSaving"
       @closed="resetMemberDialog"
-    >
-      <div class="member-add">
-        <el-select
-          :key="memberLibrary?.id || 'closed'"
-          v-model="candidateUserId"
-          aria-label="搜索并选择方舟成员"
-          filterable
-          remote
-          clearable
-          reserve-keyword
-          :remote-method="searchMemberCandidates"
-          :loading="memberSearchLoading"
-          :disabled="memberSaving"
-          placeholder="输入方舟用户名或姓名搜索"
-        >
-          <el-option
-            v-for="candidate in memberCandidates"
-            :key="candidate.user_id"
-            :value="candidate.user_id"
-            :label="candidate.real_name ? `${candidate.username} · ${candidate.real_name}` : candidate.username"
-          >
-            <span class="candidate-username">{{ candidate.username }}</span>
-            <span v-if="candidate.real_name" class="candidate-real-name">{{ candidate.real_name }}</span>
-          </el-option>
-        </el-select>
-        <GlassButton variant="ghost" :disabled="!candidateUserId || memberSaving" @click="addSelectedMember">添加成员</GlassButton>
-      </div>
-      <div class="member-table">
-        <el-empty v-if="!members.length" description="暂无已配置成员" :image-size="72" />
-        <div
-          v-for="(member, index) in members"
-          :key="member.user_id"
-          class="member-row"
-          :class="{ 'member-row-invalid': invalidMemberIds.includes(member.user_id) }"
-        >
-          <div class="member-identity">
-            <span class="member-username">{{ member.username }}</span>
-            <span class="member-real-name">{{ member.real_name || '未设置姓名' }}</span>
-            <span v-if="invalidMemberIds.includes(member.user_id)" class="member-invalid">账号已停用或删除，请移除后重试</span>
-          </div>
-          <el-select v-model="member.role" :aria-label="`设置 ${member.username} 的权限`" :disabled="memberSaving || isProtectedActor(member) || invalidMemberIds.includes(member.user_id)">
-            <el-option label="只读" value="viewer" /><el-option label="编辑" value="editor" />
-            <el-option label="审核" value="reviewer" /><el-option label="管理" value="admin" />
-          </el-select>
-          <span v-if="isProtectedActor(member)" class="actor-lock">当前账号，管理员权限不可移除</span>
-          <GlassButton v-else variant="link" link-tone="danger" :disabled="memberSaving" @click="removeMember(index)">移除</GlassButton>
-        </div>
-      </div>
-      <template #footer>
-        <GlassButton variant="ghost" :disabled="memberSaving" @click="memberDialog = false">取消</GlassButton>
-        <GlassButton variant="primary" :loading="memberSaving" @click="saveMembers">保存权限</GlassButton>
-      </template>
-    </el-dialog>
+      @search="searchMemberCandidates"
+      @add="addSelectedMember"
+      @remove="removeMember"
+      @save="saveMembers"
+    />
 
     <el-dialog v-model="searchDialog" title="搜索结果" width="680px">
       <el-empty v-if="!searchResults.length" description="没有找到已发布内容" />
@@ -133,16 +89,12 @@
       </button>
     </el-dialog>
 
-    <el-dialog v-model="reviewDialog" :title="reviewDetail?.title || '审批文档'" width="760px">
-      <div v-if="reviewDetail" class="review-detail">
-        <div class="review-meta">冻结修订 v{{ reviewDetail.version_no }} · 提交人 ID {{ reviewDetail.submitted_by }}</div>
-        <pre>{{ reviewDetail.content_text }}</pre>
-      </div>
-      <template #footer>
-        <GlassButton variant="ghost" @click="reject(reviewDetail)">驳回</GlassButton>
-        <GlassButton variant="primary" @click="approve(reviewDetail)">批准并发布此版本</GlassButton>
-      </template>
-    </el-dialog>
+    <KnowledgeApprovalDialog
+      v-model="reviewDialog"
+      :detail="reviewDetail"
+      @approve="approve(reviewDetail, $event)"
+      @reject="reject(reviewDetail)"
+    />
 
     <ApprovalQueue v-model="approvalDrawer" :items="approvals" @inspect="inspectApproval" />
   </div>
@@ -159,6 +111,8 @@ import { capabilitiesFor } from './knowledgeState.js'
 import { LIBRARY_CATEGORIES, isDuplicateMember, readSidebarCollapsed, writeSidebarCollapsed } from './knowledgeUi.js'
 import KnowledgeSidebar from './components/KnowledgeSidebar.vue'
 import KnowledgeEditor from './components/KnowledgeEditor.vue'
+import KnowledgeApprovalDialog from './components/KnowledgeApprovalDialog.vue'
+import KnowledgeMemberDialog from './components/KnowledgeMemberDialog.vue'
 import ApprovalQueue from './components/ApprovalQueue.vue'
 
 const auth = useAuthStore()
@@ -191,12 +145,12 @@ const searching = ref(false)
 const sidebarCollapsed = ref(readSidebarCollapsed())
 const libraryForm = reactive({ name: '', description: '', category: 'company' })
 const nodeForm = reactive({ title: '', node_type: 'document' })
-
 const selectedLibrary = computed(() => libraries.value.find(item => item.id === selectedLibraryId.value))
 const capabilities = computed(() => capabilitiesFor(selectedLibrary.value?.role))
 const canCreateLibrary = computed(() => auth.hasPermission('knowledge:admin'))
 const canReviewApprovals = computed(() => auth.hasPermission('knowledge:review') || auth.hasPermission('knowledge:admin'))
 const isSuperAdmin = computed(() => auth.roles.includes('super_admin'))
+const protectedActorUserId = computed(() => isSuperAdmin.value ? null : Number(auth.user?.id))
 const nestedTree = computed(() => {
   const map = new Map(tree.value.map(item => [item.id, { ...item, children: [] }]))
   const roots = []
@@ -207,14 +161,11 @@ const nestedTree = computed(() => {
   }
   return roots
 })
-
 function unwrap(response) { return response.data }
-
 function toggleSidebar() {
   sidebarCollapsed.value = !sidebarCollapsed.value
   writeSidebarCollapsed(sidebarCollapsed.value)
 }
-
 async function loadLibraries() {
   libraries.value = unwrap(await knowledgeClient.get('/libraries'))
   if (!libraries.value.some(item => item.id === selectedLibraryId.value)) {
@@ -332,7 +283,12 @@ async function saveDocument(payload) {
     await loadTree()
     await nextTick()
     payload.done()
-    if (document.value?.id === targetId) document.value.version_no = result.version_no
+    if (document.value?.id === targetId) {
+      document.value.title = payload.title
+      document.value.content_json = payload.content
+      document.value.version_no = result.version_no
+      document.value.revision_id = result.id
+    }
     msgSuccess('保存')
   } catch (error) {
     payload.fail?.()
@@ -348,10 +304,10 @@ async function submitDocument() {
   msgSuccess('提交审批')
 }
 
-function isProtectedActor(member) {
-  return !isSuperAdmin.value
-    && member.role === 'admin'
-    && Number(member.user_id) === Number(auth.user?.id)
+async function handleAiApplied() {
+  if (!document.value?.id) return
+  dirty.value = false
+  await Promise.all([loadTree(), reloadDocument(document.value.id)])
 }
 
 async function openMembers(library) {
@@ -467,8 +423,11 @@ async function inspectApproval(item) {
   reviewDialog.value = true
 }
 
-async function approve(item) {
-  await knowledgeClient.post(`/approvals/${item.id}/approve`, { remark: '批准发布' })
+async function approve(item, crossLibraryConfirmed) {
+  await knowledgeClient.post(`/approvals/${item.id}/approve`, {
+    remark: '批准发布',
+    confirm_cross_library_sources: crossLibraryConfirmed,
+  })
   approvals.value = approvals.value.filter(row => row.id !== item.id)
   reviewDialog.value = false
   await loadTree()
@@ -526,31 +485,16 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
 </script>
 
 <style scoped>
-.knowledge-page { display: flex; height: calc(100vh - var(--topbar-height, 64px)); min-height: 620px; flex-direction: column; background: var(--page-bg, #f5f6fa); }
+.knowledge-page { display: flex; height: calc(100vh - var(--topbar-height, 64px)); min-height: 620px; flex-direction: column; background: var(--page-bg); }
 .workspace { display: grid; min-height: 0; flex: 1; grid-template-columns: 310px minmax(0, 1fr); margin: 14px; overflow: hidden; border: 1px solid var(--border-color); border-radius: var(--radius-xl, 16px); background: var(--surface-card, #fff); box-shadow: var(--shadow-card, 0 8px 30px rgba(30, 36, 50, .06)); }
 .workspace.collapsed { grid-template-columns: 54px minmax(0, 1fr); }
 .category-options { width: 100%; }
 .category-options :deep(.el-radio-button) { flex: 1; }
 .category-options :deep(.el-radio-button__inner) { width: 100%; }
-.member-add { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
-.candidate-username { color: var(--text-primary); }
-.candidate-real-name { margin-left: 8px; color: var(--text-secondary); font-size: 12px; }
-.member-table { display: grid; max-height: 360px; gap: 8px; margin: 16px 0; overflow-y: auto; }
-.member-row { display: grid; grid-template-columns: minmax(0, 1fr) 150px auto; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: var(--radius-md, 10px); }
-.member-row-invalid { border-color: var(--color-danger); background: var(--color-danger-bg); }
-.member-identity { display: grid; min-width: 0; gap: 3px; }
-.member-username { overflow: hidden; color: var(--text-primary); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.member-real-name { overflow: hidden; color: var(--text-secondary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.member-invalid { color: var(--color-danger); font-size: 12px; line-height: 1.4; }
-.actor-lock { max-width: 150px; color: var(--text-secondary); font-size: 12px; line-height: 1.4; }
 .search-result { display: grid; width: 100%; gap: 6px; padding: 14px 4px; border: 0; border-bottom: 1px solid var(--border-color); color: var(--text-primary); background: transparent; cursor: pointer; text-align: left; }
 .search-result span { color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
 .search-result:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
-.review-detail { display: grid; gap: 12px; }
-.review-meta { color: var(--text-muted-blue); font-size: 13px; }
-.review-detail pre { max-height: 55vh; margin: 0; overflow: auto; padding: 22px; border: 1px solid var(--border-color); border-radius: var(--radius-lg, 12px); color: var(--text-primary); background: var(--surface-subtle, #fafafa); font: inherit; line-height: 1.8; white-space: pre-wrap; }
 @media (hover: hover) and (pointer: fine) { .search-result:hover { background: var(--color-primary-light); } }
 @media (max-width: 900px) { .knowledge-page { height: auto; min-height: calc(100vh - 64px); } .workspace { min-height: 760px; grid-template-columns: minmax(250px, 42vw) minmax(0, 1fr); margin: 8px; } .workspace.collapsed { grid-template-columns: 54px minmax(0, 1fr); } }
-@media (max-width: 640px) { .member-add { grid-template-columns: minmax(0, 1fr); } .member-row { grid-template-columns: minmax(0, 1fr); } .actor-lock { max-width: none; } }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
 </style>

@@ -83,6 +83,7 @@ export const PREFIX_LABELS = {
   mcp: 'MCP 网关',
   operations: '运行与自动化中心',
   knowledge: '企业知识库',
+  knowledge_ai: '知识库 AI 优化',
   salary: '薪资计算',
   aftersales: '售后单据',
   aftersales_analytics: '售后分析',
@@ -141,7 +142,7 @@ const ROW_GROUPS = [
     'color', 'color_blend', 'color_trend',
     'design', 'design_gantt', 'design_my', 'design_stats', 'design_image', 'ai_chat', 'customer_image',
   ] },
-  { label: '协作 · 知识与薪资', prefixes: ['knowledge', 'salary'] },
+  { label: '协作 · 知识与薪资', prefixes: ['knowledge', 'knowledge_ai', 'salary'] },
   { label: '系统 · 接入与运维', prefixes: ['user', 'role', 'dict', 'ai', 'report', 'governance', 'governance_graph', 'governance_log', 'external_binding', 'whatsapp', 'dingtalk', 'mcp', 'operations'] },
 ]
 

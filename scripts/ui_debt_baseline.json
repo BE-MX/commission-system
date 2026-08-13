@@ -294,11 +294,6 @@
     "lines_over_500": 0,
     "transition_all": 0
   },
-  "frontend/src/views/knowledge/KnowledgeWorkbench.vue": {
-    "hex_colors": 2,
-    "lines_over_500": 56,
-    "transition_all": 0
-  },
   "frontend/src/views/knowledge/components/KnowledgeEditor.vue": {
     "hex_colors": 1,
     "lines_over_500": 0,

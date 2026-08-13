@@ -135,7 +135,7 @@ export const MENU_GROUPS = {
   knowledge: {
     title: '企业知识库',
     icon: Reading,
-    anyPermission: ['knowledge:read', 'knowledge:write', 'knowledge:review', 'knowledge:admin'],
+    anyPermission: ['knowledge:read', 'knowledge:write', 'knowledge:review', 'knowledge:admin', 'knowledge_ai:write', 'knowledge_ai:admin'],
   },
   design: {
     title: '设计中心',
@@ -210,6 +210,17 @@ export const NAV_ENTRIES = [
     menu: {
       group: 'knowledge', title: '知识工作台', icon: Reading, order: 10,
       anyPermission: ['knowledge:read', 'knowledge:write', 'knowledge:review', 'knowledge:admin'],
+    },
+  },
+  {
+    path: '/knowledge/ai-settings',
+    name: 'KnowledgeAiSettings',
+    component: () => import('@/views/knowledge/KnowledgeAiSettings.vue'),
+    title: 'AI 优化配置',
+    permission: 'knowledge_ai:admin',
+    menu: {
+      group: 'knowledge', title: 'AI 优化配置', icon: MagicStick, order: 20,
+      permission: 'knowledge_ai:admin',
     },
   },
 
