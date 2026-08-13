@@ -10,6 +10,7 @@ from app.auth.dependencies import require_permission
 from app.core.database import get_db
 from app.core.response import ok
 from app.order_intelligence import brief_job_service, service
+from app.order_intelligence.filtering import AnalysisFilters
 from app.order_intelligence.schemas import AiBriefRequest
 
 router = APIRouter()
@@ -30,14 +31,29 @@ def _user_id(user: dict) -> int:
     return value
 
 
+def _analysis_filters(
+    countries: list[str] | None = Query(None),
+    models: list[str] | None = Query(None),
+    colors: list[str] | None = Query(None),
+    sources: list[str] | None = Query(None),
+) -> AnalysisFilters:
+    try:
+        return AnalysisFilters.build(countries, models, colors, sources)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+
+
 @router.get("/filters")
 def filters(
+    date_from: date | None = None,
+    date_to: date | None = None,
     user_id: str | None = Query(None, max_length=64),
     team: str | None = Query(None, max_length=100),
     db: Session = Depends(get_db),
     user=Depends(require_permission(READ_PERMISSION)),
 ):
-    return ok(service.get_filter_options(db, _scope(db, user, user_id, team)))
+    start, end = service.normalize_window(date_from, date_to)
+    return ok(service.get_filter_options(db, _scope(db, user, user_id, team), start, end))
 
 
 @router.get("/overview")
@@ -46,11 +62,14 @@ def overview(
     date_to: date | None = None,
     user_id: str | None = Query(None, max_length=64),
     team: str | None = Query(None, max_length=100),
+    analysis_filters: AnalysisFilters = Depends(_analysis_filters),
     db: Session = Depends(get_db),
     user=Depends(require_permission(READ_PERMISSION)),
 ):
     start, end = service.normalize_window(date_from, date_to)
-    return ok(service.get_overview(db, _scope(db, user, user_id, team), start, end))
+    return ok(service.get_overview(
+        db, _scope(db, user, user_id, team), start, end, analysis_filters,
+    ))
 
 
 @router.get("/countries")
@@ -59,11 +78,14 @@ def countries(
     date_to: date | None = None,
     user_id: str | None = Query(None, max_length=64),
     team: str | None = Query(None, max_length=100),
+    analysis_filters: AnalysisFilters = Depends(_analysis_filters),
     db: Session = Depends(get_db),
     user=Depends(require_permission(READ_PERMISSION)),
 ):
     start, end = service.normalize_window(date_from, date_to)
-    return ok(service.get_country_analysis(db, _scope(db, user, user_id, team), start, end))
+    return ok(service.get_country_analysis(
+        db, _scope(db, user, user_id, team), start, end, analysis_filters,
+    ))
 
 
 @router.get("/people")
@@ -73,15 +95,19 @@ def people(
     date_to: date | None = None,
     user_id: str | None = Query(None, max_length=64),
     team: str | None = Query(None, max_length=100),
+    analysis_filters: AnalysisFilters = Depends(_analysis_filters),
     db: Session = Depends(get_db),
     user=Depends(require_permission(READ_PERMISSION)),
 ):
     start, end = service.normalize_window(date_from, date_to)
-    return ok(service.get_people_analysis(db, _scope(db, user, user_id, team), start, end, dimension))
+    return ok(service.get_people_analysis(
+        db, _scope(db, user, user_id, team), start, end, dimension, analysis_filters,
+    ))
 
 
 @router.get("/customers")
 def customers(
+    date_from: date | None = None,
     as_of: date | None = None,
     risk_status: Literal["upcoming", "overdue", "churn_risk"] | None = None,
     country: str | None = Query(None, max_length=100),
@@ -89,12 +115,14 @@ def customers(
     page_size: int = Query(20, ge=1, le=100),
     user_id: str | None = Query(None, max_length=64),
     team: str | None = Query(None, max_length=100),
+    analysis_filters: AnalysisFilters = Depends(_analysis_filters),
     db: Session = Depends(get_db),
     user=Depends(require_permission(READ_PERMISSION)),
 ):
+    start, end = service.normalize_window(date_from, as_of)
     return ok(service.get_customer_actions(
-        db, _scope(db, user, user_id, team), as_of or date.today(),
-        page, page_size, risk_status, country,
+        db, _scope(db, user, user_id, team), end,
+        page, page_size, risk_status, country, analysis_filters, start,
     ))
 
 
@@ -140,8 +168,14 @@ def ai_brief(
     user: dict = Depends(require_permission("order_intelligence:read")),
 ):
     scope = _scope(db, user, body.user_id, body.team)
+    try:
+        analysis_filters = AnalysisFilters.build(
+            body.countries, body.models, body.colors, body.sources,
+        )
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
     row, should_start = brief_job_service.prepare_job(
-        db, _user_id(user), scope, body.date_from, body.date_to, body.focus,
+        db, _user_id(user), scope, body.date_from, body.date_to, body.focus, analysis_filters,
     )
     if should_start or row.status == "queued":
         background_tasks.add_task(brief_job_service.run_job_in_background, row.id)

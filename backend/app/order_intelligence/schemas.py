@@ -12,6 +12,10 @@ class AiBriefRequest(BaseModel):
     focus: Literal["executive", "marketing", "people", "customer"] = "executive"
     team: str | None = Field(None, max_length=100)
     user_id: str | None = Field(None, max_length=64)
+    countries: list[str] = Field(default_factory=list, max_length=100)
+    models: list[str] = Field(default_factory=list, max_length=100)
+    colors: list[str] = Field(default_factory=list, max_length=100)
+    sources: list[str] = Field(default_factory=list, max_length=100)
 
     @model_validator(mode="after")
     def validate_window(self):

@@ -40,6 +40,15 @@ def _scope_snapshot(scope: analysis_service.AnalysisScope) -> dict:
     }
 
 
+def _filters_from_snapshot(snapshot: dict) -> analysis_service.AnalysisFilters:
+    return analysis_service.AnalysisFilters.build(
+        snapshot.get("countries"),
+        snapshot.get("models"),
+        snapshot.get("colors"),
+        snapshot.get("sources"),
+    )
+
+
 def _scope_from_snapshot(snapshot: dict) -> analysis_service.AnalysisScope:
     return analysis_service.AnalysisScope(
         mode=snapshot.get("mode") or "self",
@@ -101,11 +110,14 @@ def prepare_job(
     date_from,
     date_to,
     focus: str,
+    analysis_filters: analysis_service.AnalysisFilters | None = None,
 ) -> tuple[OrderIntelligenceBriefJob, bool]:
     """原子创建用户级活动任务；并发提交命中唯一键时返回已有任务。"""
     active = get_active_job(db, owner_user_id)
     if active is not None:
         return active, False
+    snapshot = _scope_snapshot(scope)
+    snapshot.update((analysis_filters or analysis_service.AnalysisFilters()).to_dict())
     row = OrderIntelligenceBriefJob(
         owner_user_id=owner_user_id,
         status="queued",
@@ -113,7 +125,7 @@ def prepare_job(
         date_from=date_from,
         date_to=date_to,
         focus=focus,
-        scope_snapshot=_scope_snapshot(scope),
+        scope_snapshot=snapshot,
     )
     db.add(row)
     try:
@@ -130,12 +142,21 @@ def prepare_job(
 
 
 def serialize_job(row: OrderIntelligenceBriefJob) -> dict:
+    snapshot = row.scope_snapshot or {}
     return {
         "job_id": row.id,
         "status": row.status,
         "date_from": row.date_from.isoformat(),
         "date_to": row.date_to.isoformat(),
         "focus": row.focus,
+        "request_context": {
+            "team": snapshot.get("team") or "",
+            "user_id": snapshot.get("user_id") or "",
+            "countries": snapshot.get("countries") or [],
+            "models": snapshot.get("models") or [],
+            "colors": snapshot.get("colors") or [],
+            "sources": snapshot.get("sources") or [],
+        },
         "content": row.content or "",
         "source": row.source or "",
         "evidence": row.evidence,
@@ -165,6 +186,7 @@ def execute_job(db: Session, job_id: int) -> None:
             date_to=row.date_to,
             focus=row.focus,
             caller_user_id=row.owner_user_id,
+            analysis_filters=_filters_from_snapshot(row.scope_snapshot or {}),
         )
         db.expire_all()
         current = db.query(OrderIntelligenceBriefJob).filter(
