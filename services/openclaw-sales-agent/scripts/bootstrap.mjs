@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { randomBytes } from "node:crypto";
-import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, copyFile, lstat, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,6 +17,7 @@ const workspace = join(stateDir, "workspace");
 const secretsDir = join(stateDir, "secrets");
 const arkTokenFile = join(secretsDir, "ark-agent-token");
 const heartbeatTokenFile = join(secretsDir, "runtime-heartbeat-token");
+const deepseekTokenFile = join(secretsDir, "deepseek-api-key");
 const openclaw = process.env.OPENCLAW_BIN || join(home, ".openclaw/bin/openclaw");
 const node = process.env.OPENCLAW_NODE || join(home, ".openclaw/tools/node/bin/node");
 const parallelPlugin = process.env.OPENCLAW_PARALLEL_PLUGIN
@@ -57,8 +58,7 @@ async function ensureEnvFile() {
     "# Set true after creating secrets/runtime-heartbeat-token (0600) and registering its SHA-256 in Ark.",
     "ARK_HEARTBEAT_ENABLED=false",
     "",
-    "# Required by the hardened built-in OpenClaw runtime (current default provider):",
-    "# DEEPSEEK_API_KEY=",
+    "# Model keys belong in private files under secrets/; see README.",
     "# Optional alternative providers:",
     "# OPENAI_API_KEY=",
     "# ANTHROPIC_API_KEY=",
@@ -72,6 +72,41 @@ async function ensureEnvFile() {
     "",
   ].join("\n");
   await writeFile(envFile, template, { encoding: "utf8", mode: 0o600, flag: "wx" });
+}
+
+async function migrateDeepseekKeyToSecretFile() {
+  const contents = await readFile(envFile, "utf8");
+  let key = null;
+  const retained = [];
+  for (const line of contents.split(/\r?\n/u)) {
+    if (line.startsWith("DEEPSEEK_API_KEY=") && line.slice("DEEPSEEK_API_KEY=".length).trim()) {
+      key = line.slice("DEEPSEEK_API_KEY=".length).trim();
+      continue;
+    }
+    retained.push(line);
+  }
+  if (key) {
+    await writeFile(deepseekTokenFile, `${key.replace(/^['"]|['"]$/gu, "")}\n`, {
+      encoding: "utf8", mode: 0o600,
+    });
+    await writeFile(envFile, `${retained.join("\n").replace(/\n+$/u, "")}\n`, {
+      encoding: "utf8", mode: 0o600,
+    });
+  }
+  let metadata;
+  try {
+    metadata = await lstat(deepseekTokenFile);
+  } catch {
+    throw new Error(`DeepSeek key is missing; store it as the only line in ${deepseekTokenFile} before bootstrap`);
+  }
+  if (!metadata.isFile() || metadata.isSymbolicLink()
+    || (typeof process.getuid === "function" && metadata.uid !== process.getuid())) {
+    throw new Error(`${deepseekTokenFile} must be a current-user regular file, not a symlink`);
+  }
+  if (!(await readFile(deepseekTokenFile, "utf8")).trim()) {
+    throw new Error(`${deepseekTokenFile} must contain one non-empty key`);
+  }
+  await chmod(deepseekTokenFile, 0o600);
 }
 
 async function installWorkspaceTemplates() {
@@ -154,6 +189,7 @@ function setConfig(path, value) {
 
 async function main() {
   await ensureEnvFile();
+  await migrateDeepseekKeyToSecretFile();
   await installWorkspaceTemplates();
   const arkRuntimeSettings = await loadArkRuntimeSettings();
 
@@ -176,9 +212,41 @@ async function main() {
   setConfig("agents.defaults.models", {
     "deepseek/deepseek-v4-pro": { agentRuntime: { id: "openclaw" } },
   });
+  setConfig("secrets.providers.deepseek_key_file", {
+    source: "file", path: deepseekTokenFile, mode: "singleValue",
+  });
+  setConfig("models.providers.deepseek.apiKey", {
+    source: "file", provider: "deepseek_key_file", id: "value",
+  });
   setConfig("agents.defaults.skills", [
     "ark-lead-discovery", "ark-company-research", "ark-public-pool-research",
   ]);
+  // Keep the research Agent on the narrow default policy. The dedicated email
+  // Agent is added later by configure-email-agent.mjs, which re-opens only its
+  // queue executable through a per-agent allowlist.
+  const existingAgents = (() => {
+    try {
+      return JSON.parse(run(openclaw, [
+        "--profile", profile, "config", "get", "agents.list", "--json",
+      ], { capture: true }));
+    } catch {
+      return [];
+    }
+  })();
+  if (!existingAgents.some((agent) => agent.id === "email-outreach")) {
+    const mainIndex = existingAgents.findIndex((agent) => agent.id === "main");
+    if (mainIndex >= 0) {
+      existingAgents[mainIndex] = {
+        ...existingAgents[mainIndex],
+        tools: {
+          profile: "minimal",
+          alsoAllow: ["web_search", "web_fetch", "ark-sales__*"],
+          deny: ["exec", "process", "group:fs", "browser", "group:messaging", "group:sessions", "cron"],
+        },
+      };
+      setConfig("agents.list", existingAgents);
+    }
+  }
   setConfig("plugins.entries.codex.config.appServer", {
     mode: "guardian",
     approvalPolicy: "on-request",
@@ -198,10 +266,8 @@ async function main() {
     ],
   });
   setConfig("tools.profile", "minimal");
-  setConfig("tools.alsoAllow", ["web_search", "web_fetch", "ark-sales__*"]);
-  setConfig("tools.deny", [
-    "exec", "process", "group:fs", "browser", "group:messaging", "group:sessions", "cron",
-  ]);
+  setConfig("tools.alsoAllow", ["web_search", "web_fetch"]);
+  setConfig("tools.deny", ["process", "group:fs", "browser", "group:messaging", "group:sessions", "cron"]);
   setConfig("plugins.entries.parallel.enabled", true);
   // Keep DuckDuckGo installed as a manual fallback, but Parallel Free is the
   // tested default on networks where DuckDuckGo HTML is unavailable.
@@ -240,7 +306,7 @@ async function main() {
   process.stdout.write(`\nOpenClaw profile '${profile}' prepared at ${stateDir}.\n`);
   process.stdout.write(`Add the Ark token to ${arkTokenFile} (mode 0600).\n`);
   process.stdout.write(`Optional runtime heartbeat token file: ${heartbeatTokenFile} (mode 0600).\n`);
-  process.stdout.write(`Add DEEPSEEK_API_KEY to ${envFile} for the hardened OpenClaw runtime.\n`);
+  process.stdout.write(`Add the DeepSeek API key as the only line in ${deepseekTokenFile} (mode 0600).\n`);
 }
 
 main().catch((error) => {

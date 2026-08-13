@@ -15,6 +15,8 @@ OpenClaw Agent
        └─ HTTPS + Bearer → https://leshine.work/api/sales-automation/agent/*
 ```
 
+独立的 `email-outreach` Agent 在同一 profile 内使用单独工作区。它只能读取一个已背调 lead、生成按收件人国家/语言习惯本地化的开发信，并把人工确认后的邮件排入收件人当地工作日上班后的首个窗口；它不能重新搜索网页、修改方舟研究、读取收件箱或直接执行 Agent Mail CLI。
+
 MCP 侧车只暴露任务、候选公司、联系人、企业研究、公海背调与 ACL 约束的已发布知识库读取工具。`ARK_AGENT_TOKEN` 保存在独立 `0600` 文件中，只由 MCP 子进程读取；任务租约只存在 MCP 进程内存中，不返回给模型。默认模型固定为 `deepseek/deepseek-v4-pro`，并显式使用内置 `openclaw` runtime，使工具策略可以真正禁用 shell、文件、浏览器控制、消息发送和会话派生。Codex App Server 配置另保留 guardian + `workspace-write` 与凭证环境清理，作为有人日后主动切回 Codex runtime 时的纵深防护；令牌文件始终位于 Agent 工作区之外。
 
 ## 本地初始化
@@ -27,18 +29,52 @@ MCP 侧车只暴露任务、候选公司、联系人、企业研究、公海背�
 cd services/openclaw-sales-agent
 PATH="$HOME/.openclaw/tools/node/bin:$PATH" npm ci
 node scripts/bootstrap.mjs
+node scripts/configure-email-agent.mjs
 node scripts/verify.mjs
+node scripts/verify-email-agent.mjs
 ```
 
 Bootstrap 会固定安装 OpenClaw 官方 `@openclaw/parallel-plugin`、创建隔离 profile `ark-sales`，并安装/更新 macOS LaunchAgent：
 
 - 状态：`~/.openclaw-ark-sales/`
 - 配置：`~/.openclaw-ark-sales/openclaw.json`
-- Gateway/模型环境文件：`~/.openclaw-ark-sales/.env` (`0600`)
+- Gateway 环境文件：`~/.openclaw-ark-sales/.env` (`0600`)
+- DeepSeek key：`~/.openclaw-ark-sales/secrets/deepseek-api-key` (`0600`，由 file SecretRef 读取)
 - Ark token：`~/.openclaw-ark-sales/secrets/ark-agent-token` (`0600`，不注入 Agent 进程)
 - 运行心跳 token：`~/.openclaw-ark-sales/secrets/runtime-heartbeat-token`（可选、`0600`，仅上报实例状态）
 - 工作区与 Skills：`~/.openclaw-ark-sales/workspace/`
+- 邮件 Agent 工作区：`~/.openclaw-ark-sales/workspace-email-outreach/`
+- 待发队列：`~/.openclaw-ark-sales/outreach-queue/`（目录 `0700`，记录 `0600`）
 - Gateway：`127.0.0.1:18791`，token 鉴权，仅本机可访问
+
+### 邮件 Agent 与定时发送
+
+先按 [Agent Mail CLI 官方接入文档](https://agent.qq.com/doc/cli-setup.md) 完成 CLI、Skill 和 OAuth，并确认 `AGENTLY_WORKSPACE=ark-sales agently-cli +me` 可用，再运行 `configure-email-agent.mjs`。脚本会：
+
+- 创建独立 `email-outreach` Agent，只加载 `ark-email-outreach` 与 `agently-mail`；
+- 把主研究 Agent 的 shell 权限设为拒绝；邮件 Agent 只能执行 `outreach-queue` 的 `schedule/preview/list` 和固定只读 Skill reader，不能直接调用 `confirm`、dispatcher 或 `agently-cli`；
+- 安装每 60 秒检查一次的 macOS LaunchAgent dispatcher；只有 dispatcher 能对已经人工确认、内容哈希一致且到达本地发送窗口的邮件调用 Agent Mail；
+- 根据 ISO 国家、细分地区、IANA 时区和 BCP 47 语言做确定性校验；周末来自 Unicode/CLDR 的国家工作周数据，多时区国家必须有州/省，多语种国家不能只凭国家猜语言；
+- 默认使用当地 `09:05`（上班时间可按有来源的公司营业时间调整），跳过当地周末及公共/银行假日；错过窗口超过 30 分钟时顺延到下一个合格工作日。
+- dispatcher 在发送前把任务标记为 `sending`；只要 Agent Mail 子进程已经启动却没有明确成功，任务就转为 `ambiguous` 且绝不自动重发，需人工核对已发送箱，避免重复开发信。只有 CLI 根本未启动（如二进制不存在或无执行权限）才记为明确失败。
+
+Agent Mail CLI 没有原生定时发送参数，因此此队列把两阶段确认改为：草稿阶段先用只读 `schedule` 确定本地/UTC 窗口；要求发送时再用 `preview` 完整展示收件人、主题、正文、语言依据和时间。用户下一轮明确确认后，Agent 只能发起不在其 allowlist 内的 `confirm`，由 OpenClaw 人工 exec 审批界面一次性放行；命令还会重新读取 Ark，核对 approved 公司、同一联系人、`valid` 邮箱、研究 revision 和绑定的语言证据 URL。确认只授权该内容哈希和排程，不是立即发送，也不能被 Agent 自行确认或持久授权。
+
+草稿冒烟测试（不会排队或发信）：
+
+```bash
+$HOME/.openclaw/bin/openclaw --profile ark-sales agent --agent email-outreach \
+  --message 'Use $ark-email-outreach for company_id 123. Draft only; do not preview or queue.' --json
+```
+
+运行状态与待发列表：
+
+```bash
+launchctl print "gui/$(id -u)/com.leshine.ark-sales.outreach-dispatch"
+$HOME/.openclaw-ark-sales/bin/outreach-queue list
+```
+
+当前实现只在 macOS 安装本地 dispatcher；Linux/Windows 部署需分别增加 systemd/Task Scheduler 单元后再启用真实排程。公共假日日历是发送时机保护，不替代当地劳动或营销合规审查；特殊调休、公司休息日或不确定的办公时间必须人工补充。
 
 `bootstrap.mjs` 会从 profile 私有 `.env` 读取 `ARK_BASE_URL`、`ARK_ALLOWED_ORIGIN`、`ARK_AGENT_ID` 与超时值，再把校验后的固定值写入 MCP 定义；网页和 Agent 提示无法覆盖这些值。若 API 尚未部署到默认的 `https://leshine.work`，先在该 `.env` 中把前两项同时改为实际的 Ark API origin，再重跑 bootstrap。
 
@@ -68,8 +104,8 @@ install -m 600 /dev/null "$HOME/.openclaw-ark-sales/secrets/ark-agent-token"
 默认模型标识为 `deepseek/deepseek-v4-pro`，并明确固定到内置 `openclaw` runtime。生产运行使用 DeepSeek API key：
 
 ```bash
-# 用安全编辑器在 ~/.openclaw-ark-sales/.env 中取消注释并填写：
-# DEEPSEEK_API_KEY=...
+# 用安全编辑器把 key 作为唯一一行写入：
+# ~/.openclaw-ark-sales/secrets/deepseek-api-key
 $HOME/.openclaw/bin/openclaw --profile ark-sales gateway restart
 ```
 
