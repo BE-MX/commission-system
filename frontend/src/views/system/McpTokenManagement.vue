@@ -166,7 +166,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { CircleCheck, Collection, Key, Search, WarningFilled } from '@element-plus/icons-vue'
 import GlassButton from '@/components/GlassButton.vue'
 import { issueMcpToken, listMcpTokens, revokeMcpToken, rotateMcpToken, searchMcpTokenCandidates } from '@/api/mcpTokens'
-import { MCP_ENDPOINT, buildAgentConfig, filterTokens, formatDateTime, isKnowledgeReady } from './mcpTokenManagement'
+import { MCP_ENDPOINT, buildAgentConfig, copyToClipboard, filterTokens, formatDateTime, isKnowledgeReady } from './mcpTokenManagement'
 
 const loading = ref(false)
 const rows = ref([])
@@ -269,10 +269,9 @@ function clearIssuedSecret() {
 }
 
 async function copyText(value, successMessage) {
-  try {
-    await navigator.clipboard.writeText(value)
+  if (await copyToClipboard(value)) {
     ElMessage.success(successMessage)
-  } catch {
+  } else {
     ElMessage.error('自动复制失败，请手动选择复制')
   }
 }

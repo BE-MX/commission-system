@@ -5,6 +5,7 @@ import test from 'node:test'
 import {
   MCP_ENDPOINT,
   buildAgentConfig,
+  copyToClipboard,
   filterTokens,
   isKnowledgeReady,
 } from '../src/views/system/mcpTokenManagement.js'
@@ -39,6 +40,74 @@ test('agent config uses the fixed production MCP endpoint and bearer token', () 
       },
     },
   })
+})
+
+
+test('credential copy prefers the Clipboard API', async () => {
+  const writes = []
+  const copied = await copyToClipboard('token-value', {
+    clipboard: { writeText: async (value) => writes.push(value) },
+    documentRef: null,
+  })
+
+  assert.equal(copied, true)
+  assert.deepEqual(writes, ['token-value'])
+})
+
+
+test('credential copy falls back when the Clipboard API is rejected', async () => {
+  const textarea = {
+    style: {},
+    setAttribute() {},
+    focus() {},
+    select() {},
+    setSelectionRange() {},
+    removeCalled: false,
+    remove() { this.removeCalled = true },
+  }
+  const documentRef = {
+    body: { appendChild() {} },
+    createElement: () => textarea,
+    execCommand: (command) => command === 'copy',
+  }
+
+  const copied = await copyToClipboard('full-agent-config', {
+    clipboard: { writeText: async () => { throw new Error('permission denied') } },
+    documentRef,
+  })
+
+  assert.equal(copied, true)
+  assert.equal(textarea.value, 'full-agent-config')
+  assert.equal(textarea.removeCalled, true)
+})
+
+
+test('credential copy falls back when the Clipboard API is unavailable', async () => {
+  const textarea = {
+    style: {},
+    setAttribute() {},
+    focus() {},
+    select() {},
+    setSelectionRange() {},
+    remove() {},
+  }
+  const documentRef = {
+    body: { appendChild() {} },
+    createElement: () => textarea,
+    execCommand: () => true,
+  }
+
+  assert.equal(await copyToClipboard('token-value', { clipboard: null, documentRef }), true)
+})
+
+
+test('credential copy reports failure when neither copy mechanism is available', async () => {
+  const copied = await copyToClipboard('token-value', {
+    clipboard: undefined,
+    documentRef: undefined,
+  })
+
+  assert.equal(copied, false)
 })
 
 
