@@ -326,11 +326,16 @@ def delete_library(db, identity: dict, library_id: int) -> dict:
     for node in nodes:
         node.deleted_at = now
     library.deleted_at = now
+    from app.knowledge import asset_service
+
+    asset_paths = asset_service.retire_library_assets(db, library.id)
     summary = _delete_summary(library.id, nodes, cancelled_count)
     _audit(db, identity, library.id, "delete_library", "library", library.id, detail={
         key: value for key, value in summary.items() if key != "id"
     })
     db.commit()
+    for storage_path in asset_paths:
+        asset_service.image_service.remove_quietly(storage_path)
     return summary
 
 
@@ -353,6 +358,9 @@ def _create_revision(db, identity: dict, document: KnowledgeDocument, title: str
     )
     db.add(revision)
     db.flush()
+    from app.knowledge.asset_service import attach_revision_assets
+
+    attach_revision_assets(db, identity, document, revision, content)
     document.title = revision.title
     document.draft_revision_id = revision.id
     return revision
@@ -447,11 +455,32 @@ def _approval(db, identity: dict, approval_id: int, *, lock: bool = False) -> tu
     return approval, document
 
 
-def approve_request(db, identity: dict, approval_id: int, *, remark: str | None = None) -> KnowledgeApprovalRequest:
+def approve_request(
+    db,
+    identity: dict,
+    approval_id: int,
+    *,
+    remark: str | None = None,
+    confirm_cross_library_sources: bool = False,
+) -> KnowledgeApprovalRequest:
     _require_platform(identity, "knowledge:review")
     approval, document = _approval(db, identity, approval_id, lock=True)
     if approval.status != "pending" or document.pending_approval_id != approval.id:
         raise ConflictError("approval is not pending")
+    from app.knowledge.models import KnowledgeAiJob, KnowledgeAiJobSource
+
+    applied_job = db.query(KnowledgeAiJob).filter(
+        KnowledgeAiJob.applied_revision_id == approval.revision_id
+    ).first()
+    if applied_job:
+        source_library_ids = {row[0] for row in db.query(
+            KnowledgeAiJobSource.library_id
+        ).filter(KnowledgeAiJobSource.job_id == applied_job.id).all()}
+        cross_library_ids = source_library_ids - {document.library_id}
+        if cross_library_ids and not confirm_cross_library_sources:
+            raise ConflictError("cross-library AI sources require explicit reviewer confirmation")
+        if any(not access.can(db, identity, library_id, "read") for library_id in source_library_ids):
+            raise ForbiddenError("reviewer cannot read every AI source library")
     approval.status = "approved"
     approval.pending_slot = None
     approval.reviewed_by = access.user_id(identity)
@@ -524,6 +553,7 @@ def get_document(db, identity: dict, document_id: int) -> dict:
         "title": revision.title if revision else document.title,
         "status": document.status,
         "content_json": revision.content_json if revision else None,
+        "revision_id": revision.id if revision else None,
         "version_no": revision.version_no if revision else None,
         "can_edit": can_edit,
         "pending_approval_id": document.pending_approval_id,
@@ -574,6 +604,28 @@ def get_approval_detail(db, identity: dict, approval_id: int) -> dict:
     ).first()
     if not revision:
         raise NotFoundError("approval revision not found")
+    from app.knowledge.models import KnowledgeAiJob, KnowledgeAiJobSource
+
+    applied_job = db.query(KnowledgeAiJob).filter(
+        KnowledgeAiJob.applied_revision_id == revision.id
+    ).first()
+    ai_sources: list[dict] = []
+    if applied_job:
+        source_rows = db.query(KnowledgeAiJobSource, KnowledgeLibrary).join(
+            KnowledgeLibrary,
+            KnowledgeLibrary.id == KnowledgeAiJobSource.library_id,
+        ).filter(KnowledgeAiJobSource.job_id == applied_job.id).order_by(
+            KnowledgeAiJobSource.position
+        ).all()
+        if any(not access.can(db, identity, source.library_id, "read") for source, _ in source_rows):
+            raise ForbiddenError("reviewer cannot read every AI source library")
+        ai_sources = [{
+            "library_id": source.library_id,
+            "library_name": library.name,
+            "document_id": source.document_id,
+            "revision_id": source.revision_id,
+            "title": source.title_snapshot,
+        } for source, library in source_rows]
     return {
         "id": approval.id,
         "document_id": document.id,
@@ -584,6 +636,10 @@ def get_approval_detail(db, identity: dict, approval_id: int) -> dict:
         "version_no": revision.version_no,
         "submitted_by": approval.submitted_by,
         "status": approval.status,
+        "ai_sources": ai_sources,
+        "requires_cross_library_confirmation": any(
+            item["library_id"] != document.library_id for item in ai_sources
+        ),
     }
 
 

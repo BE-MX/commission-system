@@ -425,6 +425,8 @@ def seed_role_permissions(db: Session):
         ("knowledge:write",  "knowledge", "write",  "编辑知识文档并提交审批"),
         ("knowledge:review", "knowledge", "review", "审批知识文档"),
         ("knowledge:admin",  "knowledge", "admin",  "创建知识库并管理成员权限"),
+        ("knowledge_ai:write", "knowledge_ai", "write", "使用知识库 AI 优化"),
+        ("knowledge_ai:admin", "knowledge_ai", "admin", "管理知识库 AI 优化配置"),
         # MCP 网关(物流录单/查询的入口无关 MCP 服务)
         ("mcp:admin", "mcp", "admin", "发放/吊销 MCP 个人 access token"),
         # 运行与自动化中心：读取状态与控制任务严格分离；不提供任意远程命令执行。

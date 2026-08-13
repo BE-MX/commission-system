@@ -141,6 +141,14 @@ class Settings(BaseSettings):
     AI_CHAT_MAX_ATTACHMENT_CHARS: _PositiveInt = 60_000
     AI_CHAT_MAX_TURN_ATTACHMENT_CHARS: _PositiveInt = 120_000
 
+    # ── 企业知识库图片与 AI 优化 ───────────────────────────
+    # 默认锚定 backend/data 私有目录；生产可覆盖为独立绝对路径。
+    KNOWLEDGE_STORAGE_ROOT: str = str(_BACKEND_DIR / "data" / "knowledge")
+    KNOWLEDGE_IMAGE_MAX_UPLOAD_MB: _PositiveInt = 10
+    KNOWLEDGE_IMAGE_DRAFT_TTL_HOURS: _PositiveInt = 24
+    KNOWLEDGE_AI_WORKER_INTERVAL_SECONDS: _PositiveInt = 10
+    KNOWLEDGE_AI_LEASE_SECONDS: _PositiveInt = 180
+
     # ── AI 生图代理（可选，仅 image_service 生图链路走；文本 chat 不受影响）──
     # 北京展会实例出口对 api.wlai.vip 存在 SNI 阻断（2026-07-31 实证），该实例配
     # socks5://127.0.0.1:1081 借 SSH 隧道从新加坡机出境；办公室生产留空=直连。

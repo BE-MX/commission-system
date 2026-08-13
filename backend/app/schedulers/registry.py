@@ -54,6 +54,8 @@ JOB_CUSTOMER_IMAGE_CLEANUP = "customer_image_cleanup"
 JOB_SALES_PUBLIC_POOL_DAILY = "sales_public_pool_daily"
 JOB_RUNTIME_HEARTBEAT_MONITOR = "runtime_heartbeat_monitor"
 JOB_OPERATIONS_HISTORY_CLEANUP = "operations_history_cleanup"
+JOB_KNOWLEDGE_AI_QUEUE = "knowledge_ai_queue"
+JOB_KNOWLEDGE_IMAGE_CLEANUP = "knowledge_image_cleanup"
 
 
 def _console_safe(value: object, encoding: str | None = None) -> str:
@@ -89,6 +91,8 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
     )
     from app.sales_automation.scheduler import generate_public_pool_daily_batch
     from app.operations.observability import clear_old_job_runs, monitor_runtime_heartbeats
+    from app.knowledge.ai_worker import process_queue as process_knowledge_ai_queue
+    from app.knowledge.asset_service import cleanup_expired_images
 
     settings = get_settings()
 
@@ -105,6 +109,10 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
             recover_stale_analyses(db)
             db.commit()
             await process_due_notifications(db)
+
+    def _knowledge_image_cleanup_job():
+        with SessionLocal() as db:
+            cleanup_expired_images(db)
 
     scheduler.add_job(
         check_today_shoot_reminders,
@@ -152,6 +160,26 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
         replace_existing=True,
         max_instances=1,
         coalesce=True,
+    )
+    scheduler.add_job(
+        process_knowledge_ai_queue,
+        trigger="interval",
+        seconds=settings.KNOWLEDGE_AI_WORKER_INTERVAL_SECONDS,
+        id=JOB_KNOWLEDGE_AI_QUEUE,
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        _knowledge_image_cleanup_job,
+        trigger="cron",
+        hour=3,
+        minute=45,
+        id=JOB_KNOWLEDGE_IMAGE_CLEANUP,
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=3600,
     )
     scheduler.add_job(
         process_customer_image_queue,

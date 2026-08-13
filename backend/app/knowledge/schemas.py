@@ -40,3 +40,4 @@ class DocumentSave(BaseModel):
 class ReviewInput(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
     remark: str | None = Field(default=None, max_length=512)
+    confirm_cross_library_sources: bool = False

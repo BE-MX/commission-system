@@ -1,6 +1,7 @@
 """AI 调用 — chat (同步) / delegate (异步占位) / get_task_result"""
 
 import json
+import hashlib
 import logging
 import time
 import urllib.request
@@ -43,12 +44,32 @@ def _effective_chat_timeout(provider, has_image: bool) -> int:
     return base
 
 
+def _snapshot_messages(messages: list, snapshot_mode: str) -> str:
+    if snapshot_mode not in {"full", "metadata"}:
+        raise ValueError("snapshot_mode must be full or metadata")
+    if snapshot_mode == "full":
+        return json.dumps(messages, ensure_ascii=False)
+    message_metadata = []
+    for message in messages:
+        serialized = json.dumps(message.get("content"), ensure_ascii=False, sort_keys=True)
+        message_metadata.append({
+            "role": message.get("role"),
+            "content_length": len(serialized),
+            "content_sha256": hashlib.sha256(serialized.encode("utf-8")).hexdigest(),
+        })
+    return json.dumps({
+        "snapshot_mode": "metadata",
+        "messages": message_metadata,
+    }, ensure_ascii=False)
+
+
 def chat(
     db: Session,
     preset_name: str,
     messages: list,
     caller_module: str,
     caller_user_id: Optional[int] = None,
+    snapshot_mode: str = "full",
 ) -> dict:
     """同步调用直连大模型。"""
     preset = (
@@ -76,7 +97,7 @@ def chat(
     full_messages.extend(messages)
 
     # 写入 pending 日志(截断过长的 prompt_snapshot,避免超出 TEXT 列限制)
-    snapshot_str = json.dumps(full_messages, ensure_ascii=False)
+    snapshot_str = _snapshot_messages(full_messages, snapshot_mode)
     if len(snapshot_str) > 60000:
         # 多模态请求含 base64 图片会很大,只记录前后部分
         snapshot_str = (
@@ -181,7 +202,15 @@ def chat(
         log.tokens_completion = usage.get("completion_tokens")
         log.tokens_used = usage.get("total_tokens")
         log.duration_ms = duration_ms
-        log.response_snapshot = serialize_response_snapshot(result)
+        if snapshot_mode == "metadata":
+            response_serialized = json.dumps(result, ensure_ascii=False, sort_keys=True)
+            log.response_snapshot = json.dumps({
+                "snapshot_mode": "metadata",
+                "response_length": len(response_serialized),
+                "response_sha256": hashlib.sha256(response_serialized.encode("utf-8")).hexdigest(),
+            }, ensure_ascii=False)
+        else:
+            log.response_snapshot = serialize_response_snapshot(result)
         db.commit()
 
         return {

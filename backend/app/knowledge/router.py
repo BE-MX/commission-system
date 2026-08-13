@@ -1,19 +1,25 @@
 """Authorized HTTP endpoints for the native knowledge base."""
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_any_permission, require_permission
 from app.core.database import get_db
 from app.core.response import ok
-from app.knowledge import service
+from app.knowledge import asset_service, service
+from app.knowledge import image_service
 from app.knowledge.schemas import DocumentCreate, DocumentSave, LibraryCreate, MembersReplace, ReviewInput
+from app.knowledge.ai_schemas import AiJobCreate, AiProfileInput, AiProfileTestInput
+from app.knowledge import ai_job_service, ai_profile_service
 
 
 router = APIRouter()
+UPLOAD_CHUNK_BYTES = 1024 * 1024
 READ = ("knowledge:read", "knowledge:write", "knowledge:review", "knowledge:admin")
 WRITE = ("knowledge:write", "knowledge:admin")
 REVIEW = ("knowledge:review", "knowledge:admin")
+AI_WRITE = ("knowledge_ai:write", "knowledge_ai:admin")
 
 
 def _call(fn, *args, **kwargs):
@@ -44,6 +50,27 @@ def _document(row):
 
 def _approval(row):
     return {"id": row.id, "document_id": row.document_id, "revision_id": row.revision_id, "status": row.status, "remark": row.remark}
+
+
+async def _read_image(upload: UploadFile) -> bytes:
+    chunks: list[bytes] = []
+    total = 0
+    limit = image_service.max_upload_bytes()
+    try:
+        while True:
+            chunk = await upload.read(min(UPLOAD_CHUNK_BYTES, limit - total + 1))
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > limit:
+                raise HTTPException(
+                    status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    f"图片不能超过 {limit // image_service.MEBIBYTE}MiB",
+                )
+            chunks.append(chunk)
+        return b"".join(chunks)
+    finally:
+        await upload.close()
 
 
 @router.get("/libraries")
@@ -110,6 +137,66 @@ def create_document(library_id: int, payload: DocumentCreate, db: Session = Depe
     return ok(_document(row))
 
 
+@router.post("/libraries/{library_id}/assets")
+async def upload_image(
+    library_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_any_permission(*WRITE)),
+):
+    content = await _read_image(file)
+    try:
+        row = _call(
+            asset_service.create_image_asset,
+            db,
+            user,
+            library_id,
+            original_name=file.filename or "image",
+            mime_type=file.content_type or "application/octet-stream",
+            content=content,
+        )
+    except (image_service.ImageValidationError, image_service.ImageStorageError) as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    return ok({
+        "id": row.id,
+        "mime_type": row.mime_type,
+        "file_size": row.file_size,
+        "width": row.width,
+        "height": row.height,
+        "alt": "",
+        "caption": "",
+    })
+
+
+@router.get("/assets/{asset_id}/content")
+def read_image(
+    asset_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_any_permission(*READ)),
+):
+    row = _call(asset_service.get_image_asset, db, user, asset_id)
+    path = image_service.resolve_private_path(row.storage_path)
+    if not path.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "knowledge image not found")
+    return FileResponse(
+        path,
+        media_type=row.mime_type,
+        headers={
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.delete("/assets/{asset_id}")
+def delete_image(
+    asset_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_any_permission(*WRITE)),
+):
+    return ok(_call(asset_service.delete_temporary_image, db, user, asset_id))
+
+
 @router.get("/documents/{document_id}")
 def get_document(document_id: int, db: Session = Depends(get_db), user: dict = Depends(require_any_permission(*READ))):
     return ok(_call(service.get_document, db, user, document_id))
@@ -143,7 +230,14 @@ def get_approval(approval_id: int, db: Session = Depends(get_db), user: dict = D
 
 @router.post("/approvals/{approval_id}/approve")
 def approve(approval_id: int, payload: ReviewInput, db: Session = Depends(get_db), user: dict = Depends(require_any_permission(*REVIEW))):
-    return ok(_approval(_call(service.approve_request, db, user, approval_id, remark=payload.remark)))
+    return ok(_approval(_call(
+        service.approve_request,
+        db,
+        user,
+        approval_id,
+        remark=payload.remark,
+        confirm_cross_library_sources=payload.confirm_cross_library_sources,
+    )))
 
 
 @router.post("/approvals/{approval_id}/reject")
@@ -154,3 +248,157 @@ def reject(approval_id: int, payload: ReviewInput, db: Session = Depends(get_db)
 @router.get("/search")
 def search(q: str = Query(min_length=1, max_length=128), limit: int = Query(default=20, ge=1, le=20), db: Session = Depends(get_db), user: dict = Depends(require_any_permission(*READ))):
     return ok(_call(service.search_published, db, user, q, limit=limit))
+
+
+@router.get("/ai-profiles")
+def list_ai_profiles(
+    target_library_id: int | None = Query(default=None, gt=0),
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_any_permission(*AI_WRITE)),
+):
+    return ok(_call(
+        ai_profile_service.list_profiles,
+        db,
+        user,
+        target_library_id=target_library_id,
+    ))
+
+
+@router.get("/ai-profiles/preset-candidates")
+def ai_preset_candidates(
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("knowledge_ai:admin")),
+):
+    return ok(_call(ai_profile_service.list_preset_candidates, db, user))
+
+
+@router.get("/ai-profiles/library-candidates")
+def ai_library_candidates(
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("knowledge_ai:admin")),
+):
+    return ok(_call(ai_profile_service.list_library_candidates, db, user))
+
+
+@router.post("/ai-profiles")
+def create_ai_profile(
+    payload: AiProfileInput,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("knowledge_ai:admin")),
+):
+    return ok(_call(ai_profile_service.create_profile, db, user, payload.model_dump()))
+
+
+@router.put("/ai-profiles/{profile_id}")
+def update_ai_profile(
+    profile_id: int,
+    payload: AiProfileInput,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("knowledge_ai:admin")),
+):
+    return ok(_call(ai_profile_service.update_profile, db, user, profile_id, payload.model_dump()))
+
+
+@router.delete("/ai-profiles/{profile_id}")
+def delete_ai_profile(
+    profile_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("knowledge_ai:admin")),
+):
+    return ok(_call(ai_profile_service.delete_profile, db, user, profile_id))
+
+
+@router.get("/ai-profiles/{profile_id}/logs")
+def ai_profile_logs(
+    profile_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("knowledge_ai:admin")),
+):
+    return ok(_call(ai_profile_service.list_profile_logs, db, user, profile_id))
+
+
+@router.post("/ai-profiles/{profile_id}/retrieval-preview")
+def ai_retrieval_preview(
+    profile_id: int,
+    payload: AiProfileTestInput,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("knowledge_ai:admin")),
+):
+    return ok(_call(
+        ai_job_service.preview_retrieval,
+        db,
+        user,
+        profile_id,
+        payload.target_library_id,
+        payload.sample_text,
+    ))
+
+
+@router.post("/ai-profiles/{profile_id}/test")
+def ai_profile_test(
+    profile_id: int,
+    payload: AiProfileTestInput,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_permission("knowledge_ai:admin")),
+):
+    return ok(_call(
+        ai_profile_service.test_profile_connection,
+        db,
+        user,
+        profile_id,
+        payload.target_library_id,
+        payload.sample_text,
+    ))
+
+
+@router.post("/documents/{document_id}/ai-jobs")
+def create_ai_job(
+    document_id: int,
+    payload: AiJobCreate,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_any_permission(*AI_WRITE)),
+):
+    row = _call(
+        ai_job_service.create_job,
+        db,
+        user,
+        document_id,
+        **payload.model_dump(),
+    )
+    return ok(ai_job_service.serialize_job(db, row))
+
+
+@router.get("/documents/{document_id}/ai-jobs")
+def list_ai_jobs(
+    document_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_any_permission(*AI_WRITE)),
+):
+    return ok(_call(ai_job_service.list_document_jobs, db, user, document_id))
+
+
+@router.get("/ai-jobs/{job_id}")
+def get_ai_job(
+    job_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_any_permission(*AI_WRITE)),
+):
+    return ok(_call(ai_job_service.get_job, db, user, job_id))
+
+
+@router.post("/ai-jobs/{job_id}/cancel")
+def cancel_ai_job(
+    job_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_any_permission(*AI_WRITE)),
+):
+    return ok(_call(ai_job_service.cancel_job, db, user, job_id))
+
+
+@router.post("/ai-jobs/{job_id}/apply")
+def apply_ai_job(
+    job_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_any_permission(*AI_WRITE)),
+):
+    return ok(_call(ai_job_service.apply_job, db, user, job_id))
