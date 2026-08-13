@@ -29,6 +29,7 @@
 - `customer_contacts` — 客户联系人（company_id→customer_info，name/email/tel/is_main；发票录入「按联系人搜客户」数据源，2026-07-14 起）
 - `customer_contact_socials` — 联系人社交账号（customer_id→customer_contacts.customer_id，platform/value；社媒客户 MCP 查询源）
 - 社媒客户 MCP 查询索引（2026-07-22，业务库手工在线 DDL，不进 Alembic）：`customer_info.idx_social_mcp_customer_email(email(191))`、`customer_contacts.idx_social_mcp_contact_phone(tel)`、`customer_contact_socials.idx_social_mcp_social_value(value(191))`
+- 订单智能分析索引（2026-08-13，业务库幂等在线 DDL，不进 Alembic）：`okki_orders.idx_order_intel_user_account_date(user_id, account_date)`，加速个人范围和由团队成员反查订单的日期区间查询；执行 `cd backend && python -m scripts.ensure_order_intelligence_indexes`
 
 **主要业务表（commission_db）**：
 - `sys_dict` — 系统字典（type, code, label, sort, is_active）；`(type, code)` 唯一索引
