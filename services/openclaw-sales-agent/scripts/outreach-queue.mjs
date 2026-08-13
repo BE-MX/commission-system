@@ -34,6 +34,27 @@ function print(data) {
   process.stdout.write(`${JSON.stringify({ ok: true, data }, null, 2)}\n`);
 }
 
+export function previewInputFromFlags(flags) {
+  return {
+    to: flags["--to"],
+    subject: flags["--subject"],
+    body: flags["--body"],
+    country: flags["--country"],
+    state: flags["--state"],
+    timezone: flags["--timezone"],
+    language: flags["--language"],
+    languageSource: flags["--language-source"],
+    languageBasis: flags["--language-basis"],
+    companyId: flags["--company-id"],
+    contactId: flags["--contact-id"],
+    researchId: flags["--research-id"],
+    leadUpdatedAt: flags["--lead-updated-at"],
+    emailStatus: flags["--email-status"],
+    languageEvidenceUrl: flags["--language-evidence-url"],
+    officeStart: flags["--office-start"] || "09:00",
+  };
+}
+
 async function loadArkClient() {
   const profile = process.env.OPENCLAW_PROFILE || "ark-sales";
   const stateDir = resolve(homedir(), `.openclaw-${profile}`);
@@ -122,18 +143,7 @@ export async function main(argv = process.argv.slice(2)) {
   }
   if (command === "preview") {
     const flags = parseFlags(rest);
-    print(await previewOutreach({
-      to: flags["--to"],
-      subject: flags["--subject"],
-      body: flags["--body"],
-      country: flags["--country"],
-      state: flags["--state"],
-      timezone: flags["--timezone"],
-      language: flags["--language"],
-      languageSource: flags["--language-source"],
-      languageBasis: flags["--language-basis"],
-      officeStart: flags["--office-start"] || "09:00",
-    }));
+    print(await previewOutreach(previewInputFromFlags(flags)));
     return;
   }
   if (command === "confirm") {

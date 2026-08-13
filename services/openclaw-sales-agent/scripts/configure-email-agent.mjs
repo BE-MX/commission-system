@@ -161,7 +161,7 @@ function configureAgents() {
       profile: "minimal",
       alsoAllow: ["exec", "ark-sales__ark_get_lead"],
       deny: ["process", "group:fs", "browser", "group:messaging", "group:sessions", "cron", "web_search", "web_fetch"],
-      exec: { host: "gateway", security: "allowlist", ask: "on-miss", strictInlineEval: true },
+      exec: { host: "gateway", security: "allowlist", ask: "off", strictInlineEval: true },
     },
   });
   setConfig("agents.list", [...byId.values()]);
@@ -208,7 +208,7 @@ function configureApprovals() {
       },
       [emailAgentId]: {
         security: "allowlist",
-        ask: "on-miss",
+        ask: "off",
         askFallback: "deny",
         autoAllowSkills: false,
         allowlist: [

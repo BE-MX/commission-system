@@ -41,4 +41,4 @@ Do not:
 4. Offer only approved options and state relevant conditions plainly.
 5. Keep the tone collaborative and preserve the customer's ability to decline.
 6. Show the exact reply and commitments to the user.
-7. Use `outreach-queue preview` for the exact reviewed reply, then request the separately human-approved `confirm`; never let the Agent invoke `agently-cli` or the dispatcher directly.
+7. Use `outreach-queue preview` for the exact reviewed reply, then give the trusted operator the exact `confirm` command to run outside the Agent; never let the Agent invoke `confirm`, `agently-cli`, or the dispatcher directly.

@@ -21,7 +21,10 @@ function run(command, args, options = {}) {
     env: { ...process.env, ...(options.env || {}), PATH: `${nodeDir}:${process.env.PATH || ""}` },
     stdio: options.capture ? "pipe" : "inherit",
   });
-  if (result.status !== 0) throw new Error(`${command} ${args.join(" ")} failed: ${(result.stderr || result.stdout).trim()}`);
+  if (result.status !== 0) {
+    const detail = String(result.stderr || result.stdout || result.error?.message || "no diagnostic output").trim();
+    throw new Error(`${command} ${args.join(" ")} failed: ${detail}`);
+  }
   return result.stdout || "";
 }
 
@@ -52,14 +55,15 @@ async function main() {
   assert(emailAgent.tools?.alsoAllow?.includes("ark-sales__ark_get_lead"), "email agent lacks read-only Ark lead access");
   assert(emailAgent.tools?.deny?.includes("web_search"), "email agent must not conduct fresh web research");
   assert(emailAgent.tools?.deny?.includes("process"), "email agent must not manage background shell sessions");
+  assert(emailAgent.tools?.exec?.ask === "off", "email agent must hard-deny commands outside its allowlist");
 
   for (const path of [queueBin, dispatchBin, skillReaderBin]) await assertPrivateExecutable(path);
   const approvals = json(openclaw, [...args, "approvals", "get", "--json"]).file;
   assert(approvals.agents.main.security === "deny", "main exec approval policy must be deny");
   const emailPolicy = approvals.agents["email-outreach"];
   assert(emailPolicy.security === "allowlist", "email exec approval policy must be allowlist");
-  assert(emailPolicy.ask === "on-miss" && emailPolicy.askFallback === "deny",
-    "email confirm must require a reachable human approval surface");
+  assert(emailPolicy.ask === "off" && emailPolicy.askFallback === "deny",
+    "email commands outside the allowlist must be hard-denied, not approval-prompted");
   const queueApproval = emailPolicy.allowlist.find((item) => item.pattern === queueBin);
   const skillReaderApproval = emailPolicy.allowlist.find((item) => item.pattern === skillReaderBin);
   assert(emailPolicy.allowlist.length === 2 && queueApproval,

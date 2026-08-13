@@ -58,7 +58,7 @@ Bootstrap 会固定安装 OpenClaw 官方 `@openclaw/parallel-plugin`、创建�
 - 默认使用当地 `09:05`（上班时间可按有来源的公司营业时间调整），跳过当地周末及公共/银行假日；错过窗口超过 30 分钟时顺延到下一个合格工作日。
 - dispatcher 在发送前把任务标记为 `sending`；只要 Agent Mail 子进程已经启动却没有明确成功，任务就转为 `ambiguous` 且绝不自动重发，需人工核对已发送箱，避免重复开发信。只有 CLI 根本未启动（如二进制不存在或无执行权限）才记为明确失败。
 
-Agent Mail CLI 没有原生定时发送参数，因此此队列把两阶段确认改为：草稿阶段先用只读 `schedule` 确定本地/UTC 窗口；要求发送时再用 `preview` 完整展示收件人、主题、正文、语言依据和时间。用户下一轮明确确认后，Agent 只能发起不在其 allowlist 内的 `confirm`，由 OpenClaw 人工 exec 审批界面一次性放行；命令还会重新读取 Ark，核对 approved 公司、同一联系人、`valid` 邮箱、研究 revision 和绑定的语言证据 URL。确认只授权该内容哈希和排程，不是立即发送，也不能被 Agent 自行确认或持久授权。
+Agent Mail CLI 没有原生定时发送参数，因此此队列把两阶段确认改为：草稿阶段先用只读 `schedule` 确定本地/UTC 窗口；要求发送时再用 `preview` 完整展示收件人、主题、正文、语言依据和时间。用户下一轮明确确认后，Agent 只展示本机 operator 命令 `$HOME/.openclaw-ark-sales/bin/outreach-queue confirm --token oqt_...`，由用户或其他可信操作者在 Agent 之外运行；Agent 内对 `confirm` 是硬拒绝，不会弹出可永久放行的 exec 审批。命令会重新读取 Ark，核对 approved 公司、同一联系人、`valid` 邮箱、研究 revision 和绑定的语言证据 URL。确认只授权该内容哈希和排程，不是立即发送。
 
 草稿冒烟测试（不会排队或发信）：
 

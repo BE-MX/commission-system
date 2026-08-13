@@ -18,4 +18,4 @@
 {{OUTREACH_QUEUE_BIN}} list
 ```
 
-`schedule` 只计算时间，不写入队列。`preview` 返回供人工审核的完整摘要和短期令牌。展示后必须停止本轮。`confirm` 故意不在本 Agent 权限内；用户下一轮明确批准后，由 OpenClaw 的人工 exec 审批界面运行原令牌，队列还会重新读取 Ark 并核对公司、联系人、邮箱有效状态、研究版本和语言证据。单独的 dispatcher 也不提供给本 Agent。
+`schedule` 只计算时间，不写入队列。`preview` 返回供人工审核的完整摘要和短期令牌。展示后必须停止本轮。`confirm` 在本 Agent 内硬拒绝且不会弹出可持久授权的 exec 审批；用户下一轮明确批准后，只展示 `{{OUTREACH_QUEUE_BIN}} confirm --token <原令牌>`，由用户或其他可信本机操作者在 Agent 之外运行。命令会重新读取 Ark 并核对公司、联系人、邮箱有效状态、研究版本和语言证据。单独的 dispatcher 也不提供给本 Agent。
