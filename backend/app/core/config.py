@@ -175,6 +175,14 @@ class Settings(BaseSettings):
     # ── 内贸订单（明细图文要求的参考图）────────────────────
     DOMESTIC_STORAGE_ROOT: str = "D:\\WORKSOURCE\\domestic"
 
+    # ── 客户拍摄素材门户 ──────────────────────────────────
+    CUSTOMER_MEDIA_STORAGE_ROOT: str = "D:\\WORKSOURCE\\customer-media"
+    CUSTOMER_MEDIA_PORTAL_ORIGIN: str = "https://media.leshine.cloud"
+    CUSTOMER_MEDIA_MAX_FILE_MB: _PositiveInt = 500
+    CUSTOMER_MEDIA_MAX_BATCH_GB: _PositiveInt = 20
+    CUSTOMER_MEDIA_SESSION_DAYS: _PositiveInt = 30
+    CUSTOMER_MEDIA_COOKIE_NAME: str = "leshine_media_session"
+
     # ── 色彩趋势 ─────────────────────────────────────────
     XPOZ_TARGET_ACCOUNTS: str = ""  # 逗号分隔的目标账号
 

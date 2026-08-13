@@ -3,6 +3,7 @@
 from datetime import date, datetime
 
 from sqlalchemy.orm import Session
+from sqlalchemy import select
 
 from app.design.models import (
     DesignScheduleRequest,
@@ -18,6 +19,7 @@ from app.design.schemas import (
     DesignRequestAction,
 )
 from app.design.audit_log import write_audit_log as _write_audit_log
+from app.models.business import CustomerInfo
 
 logger = __import__("logging").getLogger("design")
 
@@ -30,6 +32,11 @@ def create_request(
     operator_role: str,
 ) -> dict:
     """创建设计预约申请"""
+    customer_name = db.scalar(select(CustomerInfo.company_name).where(
+        CustomerInfo.company_id == data.customer_id,
+    ))
+    if not customer_name:
+        raise ValueError("所选客户不存在")
     # 冲突检测
     conflict = check_conflict(
         db, data.expect_start_date, data.expect_end_date,
@@ -45,7 +52,8 @@ def create_request(
 
     req = DesignScheduleRequest(
         request_no=request_no,
-        customer_name=data.customer_name,
+        customer_id=data.customer_id,
+        customer_name=customer_name,
         customer_level=data.customer_level,
         salesperson_id=data.salesperson_id,
         salesperson_name=data.salesperson_name,
