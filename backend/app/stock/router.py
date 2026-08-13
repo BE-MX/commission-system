@@ -56,7 +56,10 @@ def get_overview(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     status: Optional[str] = Query(None, description="shortage,warning,sufficient,unset 逗号分隔"),
-    sort: str = Query("sales_30d", pattern="^(sales_30d|sales_90d|enable_count|color)$"),
+    sort: str = Query(
+        "sales_30d",
+        pattern="^(model|color|sales_30d|sales_90d|avg_daily_sales_30d|enable_count|real_count|effective_enable_count|production_in_transit|safety_stock)$",
+    ),
     order: str = Query("desc", pattern="^(desc|asc)$"),
     keyword: Optional[str] = Query(None, max_length=200),
     model: Optional[str] = Query(None, max_length=500, description="逗号分隔，支持多选"),
