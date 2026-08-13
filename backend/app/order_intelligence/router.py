@@ -62,9 +62,9 @@ def overview(
     date_to: date | None = None,
     user_id: str | None = Query(None, max_length=64),
     team: str | None = Query(None, max_length=100),
+    user=Depends(require_permission(READ_PERMISSION)),
     analysis_filters: AnalysisFilters = Depends(_analysis_filters),
     db: Session = Depends(get_db),
-    user=Depends(require_permission(READ_PERMISSION)),
 ):
     start, end = service.normalize_window(date_from, date_to)
     return ok(service.get_overview(
@@ -105,11 +105,27 @@ def people(
     ))
 
 
+@router.get("/customer-profiles")
+def customer_profiles(
+    date_from: date | None = None,
+    date_to: date | None = None,
+    user=Depends(require_permission(READ_PERMISSION)),
+    user_id: str | None = Query(None, max_length=64),
+    team: str | None = Query(None, max_length=100),
+    analysis_filters: AnalysisFilters = Depends(_analysis_filters),
+    db: Session = Depends(get_db),
+):
+    start, end = service.normalize_window(date_from, date_to)
+    return ok(service.get_customer_profile_analysis(
+        db, _scope(db, user, user_id, team), start, end, analysis_filters,
+    ))
+
+
 @router.get("/customers")
 def customers(
     date_from: date | None = None,
     as_of: date | None = None,
-    risk_status: Literal["upcoming", "overdue", "churn_risk"] | None = None,
+    risk_status: Literal["due", "abnormal", "insufficient_data"] | None = None,
     country: str | None = Query(None, max_length=100),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
