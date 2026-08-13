@@ -181,9 +181,10 @@
               >开始执行</GlassButton>
               <GlassButton
                 v-if="row.status === 'in_progress'"
-                variant="link" link-tone="success" left-icon="CircleCheck"
-                @click="handleTaskAction(row, 'complete')"
-              >标记完成</GlassButton>
+                v-any-permission="['customer_media:write', 'customer_media:admin']"
+                variant="link" link-tone="success" left-icon="Upload"
+                @click="$router.push(`/design/media/tasks/${row.id}`)"
+              >上传素材</GlassButton>
               <GlassButton
                 v-if="['scheduled', 'in_progress'].includes(row.status)"
                 variant="link" link-tone="danger" left-icon="CircleClose"
@@ -539,7 +540,6 @@ import DesignCalendarConfig from '@/components/design/DesignCalendarConfig.vue'
 import DesignCapacityConfig from '@/components/design/DesignCapacityConfig.vue'
 import DatePeriodPicker from '@/components/design/DatePeriodPicker.vue'
 import RequestDetailDrawer from '@/components/design/RequestDetailDrawer.vue'
-
 import { useDesignManage } from './composables/useDesignManage'
 
 const {

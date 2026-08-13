@@ -21,6 +21,7 @@ class OperatorMixin(BaseModel):
 
 
 class DesignRequestCreate(OperatorMixin):
+    customer_id: str
     customer_name: str
     customer_level: Optional[str] = None
     salesperson_id: int
@@ -111,6 +112,7 @@ class DesignRequestListItem(BaseModel):
     id: int
     request_no: str
     customer_name: str
+    customer_id: Optional[str] = None
     customer_level: Optional[str] = None
     salesperson_id: int
     salesperson_name: str
@@ -138,6 +140,7 @@ class DesignTaskListItem(BaseModel):
 
     id: int
     request_id: int
+    customer_id: Optional[str] = None
     task_no: str
     designer_id: int
     task_name: Optional[str] = None

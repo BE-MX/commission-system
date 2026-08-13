@@ -30,6 +30,7 @@ class DesignScheduleRequest(Base):
     id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
     request_no = Column(String(32), nullable=False, unique=True, comment="申请单号")
     customer_name = Column(String(128), nullable=False, comment="客户名称")
+    customer_id = Column(String(64), nullable=True, comment="customer_info.company_id")
     customer_level = Column(String(64), nullable=True, comment="客户等级(字典code)")
     salesperson_id = Column(Integer, nullable=False, comment="业务员ID")
     salesperson_name = Column(String(64), nullable=False, comment="业务员姓名")
@@ -71,6 +72,7 @@ class DesignScheduleRequest(Base):
     __table_args__ = (
         Index("uk_request_no", "request_no", unique=True),
         Index("idx_salesperson_id", "salesperson_id"),
+        Index("idx_design_request_customer", "customer_id"),
         Index("idx_status", "status"),
         Index("idx_expect_date", "expect_start_date", "expect_end_date"),
         Index("idx_created_at", "created_at"),
@@ -87,6 +89,7 @@ class DesignScheduleTask(Base):
     designer_id = Column(Integer, nullable=False, comment="设计师ID")
     task_name = Column(String(256), nullable=True, comment="任务名称")
     customer_name = Column(String(128), nullable=True, comment="客户名称")
+    customer_id = Column(String(64), nullable=True, comment="customer_info.company_id")
     salesperson_name = Column(String(64), nullable=True, comment="业务员姓名")
     shoot_type = Column(
         String(255), nullable=True,
@@ -119,6 +122,7 @@ class DesignScheduleTask(Base):
     __table_args__ = (
         Index("uk_task_no", "task_no", unique=True),
         Index("idx_request_id", "request_id"),
+        Index("idx_design_task_customer", "customer_id"),
         Index("idx_designer_id", "designer_id"),
         Index("idx_plan_date", "plan_start_date", "plan_end_date"),
         Index("idx_status", "status"),

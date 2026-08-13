@@ -50,11 +50,17 @@ from app.sales_automation.agent_router import router as sales_automation_agent_r
 from app.knowledge.router import router as knowledge_router
 from app.order_intelligence.router import router as order_intelligence_router
 from app.operations.router import router as operations_router
+from app.customer_media.router import router as customer_media_router
+from app.customer_media.public_router import (
+    PortalSecurityHeadersMiddleware,
+    router as customer_media_public_router,
+)
 
 
 def register_routers(app: FastAPI) -> None:
     """注册所有业务路由到 FastAPI app"""
     app.add_middleware(PublicSecurityHeadersMiddleware)
+    app.add_middleware(PortalSecurityHeadersMiddleware)
     app.include_router(auth_router, prefix="/api/auth", tags=["认证"])
     app.include_router(admin_router, prefix="/api/auth", tags=["用户角色管理"])
     app.include_router(employee_router, prefix="/api/v1/employee", tags=["员工属性"])
@@ -107,3 +113,5 @@ def register_routers(app: FastAPI) -> None:
         tags=["订单经营智能分析"],
     )
     app.include_router(operations_router, prefix="/api/operations", tags=["运行与自动化中心"])
+    app.include_router(customer_media_public_router, prefix="/api/customer-media/portal", tags=["客户拍摄素材门户-公开"])
+    app.include_router(customer_media_router, prefix="/api/customer-media", tags=["客户拍摄素材交付"])

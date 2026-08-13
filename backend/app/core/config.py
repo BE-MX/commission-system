@@ -175,6 +175,16 @@ class Settings(BaseSettings):
     # ── 内贸订单（明细图文要求的参考图）────────────────────
     DOMESTIC_STORAGE_ROOT: str = "D:\\WORKSOURCE\\domestic"
 
+    # ── 客户拍摄素材门户 ──────────────────────────────────
+    CUSTOMER_MEDIA_STORAGE_ROOT: str = "D:\\WORKSOURCE\\customer-media"
+    CUSTOMER_MEDIA_PORTAL_ORIGIN: str = "https://media.leshine.cloud"
+    CUSTOMER_MEDIA_MAX_FILE_MB: _PositiveInt = 500
+    CUSTOMER_MEDIA_MAX_BATCH_GB: _PositiveInt = 20
+    CUSTOMER_MEDIA_SESSION_DAYS: _PositiveInt = 30
+    CUSTOMER_MEDIA_COOKIE_NAME: str = "leshine_media_session"
+    # 内部预览链接 HMAC 密钥；留空时回退 JWT_SECRET_KEY，生产建议单独配置随机串。
+    CUSTOMER_MEDIA_SIGN_SECRET: str = ""
+
     # ── 色彩趋势 ─────────────────────────────────────────
     XPOZ_TARGET_ACCOUNTS: str = ""  # 逗号分隔的目标账号
 

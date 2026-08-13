@@ -161,7 +161,7 @@
   },
   "frontend/src/views/design/SubmitRequest.vue": {
     "hex_colors": 5,
-    "lines_over_500": 68,
+    "lines_over_500": 64,
     "transition_all": 0
   },
   "frontend/src/views/expo/ExpoKiosk.vue": {

@@ -67,6 +67,14 @@ from app.operations.db_models import (
     RuntimeInstance,
     SchedulerJobPolicy,
 )
+from app.customer_media.models import (
+    CustomerMediaBatch,
+    CustomerMediaAsset,
+    CustomerMediaReview,
+    CustomerPortalAccount,
+    CustomerPortalSession,
+    CustomerMediaDownload,
+)
 
 __all__ = [
     # 提成系统自有表
@@ -145,4 +153,10 @@ __all__ = [
     "RuntimeHeartbeat",
     "RuntimeInstance",
     "SchedulerJobPolicy",
+    "CustomerMediaBatch",
+    "CustomerMediaAsset",
+    "CustomerMediaReview",
+    "CustomerPortalAccount",
+    "CustomerPortalSession",
+    "CustomerMediaDownload",
 ]
