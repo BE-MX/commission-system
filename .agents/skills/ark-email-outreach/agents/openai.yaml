@@ -1,0 +1,4 @@
+interface:
+  display_name: "方舟多语种邮件外联"
+  short_description: "Draft and schedule localized Ark outreach emails"
+  default_prompt: "Use $ark-email-outreach to turn this completed Ark lead research into a localized, evidence-backed outreach draft and prepare the next recipient-local workday window; do not queue it without my explicit confirmation."
