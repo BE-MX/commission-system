@@ -38,10 +38,10 @@ function captureJson(command, args) {
 const modelPolicies = captureJson(openclaw, [
   "--profile", profile, "config", "get", "agents.defaults.models",
 ]);
-if (modelPolicies?.["deepseek/deepseek-v4-flash"]?.agentRuntime?.id !== "openclaw") {
-  throw new Error("deepseek/deepseek-v4-flash must be pinned to the built-in openclaw runtime");
+if (modelPolicies?.["deepseek/deepseek-v4-pro"]?.agentRuntime?.id !== "openclaw") {
+  throw new Error("deepseek/deepseek-v4-pro must be pinned to the built-in openclaw runtime");
 }
-process.stdout.write("Runtime policy OK: deepseek/deepseek-v4-flash -> openclaw (no Codex native shell).\n");
+process.stdout.write("Runtime policy OK: deepseek/deepseek-v4-pro -> openclaw (no Codex native shell).\n");
 
 const tokenFile = join(home, `.openclaw-${profile}`, "secrets", "ark-agent-token");
 try {

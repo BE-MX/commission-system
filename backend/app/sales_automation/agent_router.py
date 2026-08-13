@@ -1,10 +1,11 @@
 """智能获客 Agent 专用接口：可撤销 token + 短时任务租约。"""
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.response import ok, page_result
+from app.knowledge import service as knowledge_service
 from app.sales_automation import enrichment_service, public_pool_service, service
 from app.sales_automation.dependencies import require_sales_agent
 from app.sales_automation.models import LeadContact, ResearchSubject
@@ -26,11 +27,32 @@ from app.sales_automation.schemas import (
     CandidateBatch,
     ContactBatch,
     PublicPoolResearchSubmit,
+    PublicPoolIndustryGateSubmit,
     ResearchUpsert,
 )
 
 
 router = APIRouter()
+
+
+def _knowledge_call(fn, *args, **kwargs):
+    try:
+        return fn(*args, **kwargs)
+    except knowledge_service.KnowledgeError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+
+
+def _validate_knowledge_references(db: Session, agent: dict, references) -> None:
+    for reference in references:
+        row = _knowledge_call(
+            knowledge_service.get_published_document,
+            db,
+            agent,
+            reference.document_id,
+            audit_action="sales_agent_research_reference",
+        )
+        if row["revision_id"] != reference.revision_id or row["version_no"] != reference.version_no:
+            raise HTTPException(409, "企业知识库引用版本已变化，请重新读取后提交")
 
 
 def _public_pool_context(db: Session, task_id: int) -> dict:
@@ -44,6 +66,13 @@ def _public_pool_context(db: Session, task_id: int) -> dict:
         "trusted_seed": subject.source_snapshot or {},
         "research_rules": {
             "identity_boundary": "先用公司名、企业域名、官网、国家和历史订单确认主体；主体不明时标记 unverifiable，禁止拼接同名公司的资料",
+            "knowledge_baseline": "先检索当前账号可访问的已发布企业知识，确认目标行业、产品、优势、排除项与成交经验；知识库仅用于内部匹配判断，不是客户公开事实",
+            "industry_gate": {
+                "order": "先低成本核验实体、主营业务与目标行业相关性，再决定是否深挖",
+                "irrelevant": "有可靠证据确认行业无关时立即停止，不再获取联系人/社会关系、不做供应商与深度风险评估、不生成触达草稿",
+                "uncertain": "证据不足不等于行业无关；保留 uncertain，并沿社媒与弱线索轨做有限核验",
+            },
+            "social_first": "无独立站或官网贫乏时，将 Instagram、Facebook、TikTok、LinkedIn、Pinterest、YouTube、Google Business/预约页作为重点；核验账号互链、地点、业务内容和近期活跃度",
             "tier_focus": {
                 "T1": "优先核实历史合作、当前经营状态和可触发二次激活的变化",
                 "T2": "围绕官网、企业邮箱或业务社媒核实产品匹配、采购角色和切换供应商诱因",
@@ -54,6 +83,8 @@ def _public_pool_context(db: Session, task_id: int) -> dict:
         },
         "output_contract": {
             "identity_decisions": ["confirmed", "candidate", "unverifiable", "rejected"],
+            "industry_relevance": ["core", "adjacent", "uncertain", "irrelevant"],
+            "research_depth": ["gate_only", "focused", "deep"],
             "score_components": {
                 "industry_fit": 25,
                 "pain_switch_trigger": 20,
@@ -82,6 +113,47 @@ def list_agent_public_pool_tasks(
     } if subject_ids else {}
     items = [_pool_task(row, subjects[row.subject_id], None) for row in rows if row.subject_id in subjects]
     return ok(page_result(items, total, page, page_size))
+
+
+@router.get("/agent/knowledge/search")
+def search_agent_knowledge(
+    q: str = Query(..., min_length=1, max_length=128),
+    limit: int = Query(10, ge=1, le=20),
+    db: Session = Depends(get_db),
+    agent=Depends(require_sales_agent),
+):
+    """Agent只读检索有ACL权限的已发布企业知识；草稿与待审版本不会返回。"""
+    return ok(_knowledge_call(
+        knowledge_service.search_published,
+        db,
+        agent,
+        q,
+        limit=limit,
+        audit_action="sales_agent_research_search",
+    ))
+
+
+@router.get("/agent/knowledge/documents/{document_id}")
+def get_agent_knowledge_document(
+    document_id: int,
+    db: Session = Depends(get_db),
+    agent=Depends(require_sales_agent),
+):
+    """Agent只读获取单篇有ACL权限的已发布知识正文。"""
+    row = _knowledge_call(
+        knowledge_service.get_published_document,
+        db,
+        agent,
+        document_id,
+        audit_action="sales_agent_research_read",
+    )
+    return ok({
+        "document_id": row["document_id"],
+        "revision_id": row["revision_id"],
+        "title": row["title"],
+        "content": row["content_text"],
+        "version_no": row["version_no"],
+    })
 
 
 @router.get("/agent/public-pool/tasks/{task_id}/context")
@@ -120,6 +192,26 @@ def heartbeat_agent_public_pool_task(
     return ok({"lease_expires_at": _iso(row.lease_expires_at)})
 
 
+@router.post("/agent/public-pool/tasks/{task_id}/industry-gate")
+def submit_agent_public_pool_industry_gate(
+    task_id: int,
+    payload: PublicPoolIndustryGateSubmit,
+    db: Session = Depends(get_db),
+    agent=Depends(require_sales_agent),
+):
+    """Two-stage stop-loss: only a passed gate authorizes the costly research phase."""
+    _validate_knowledge_references(db, agent, payload.knowledge_references)
+    task, can_deepen = _call(
+        public_pool_service.submit_industry_gate, db, task_id, payload, _user_id(agent),
+    )
+    return ok({
+        "task_id": task.id,
+        "gate_status": task.gate_status,
+        "deep_research_authorized": can_deepen,
+        "status": task.status,
+    })
+
+
 @router.post("/agent/public-pool/tasks/{task_id}/complete")
 def complete_agent_public_pool_task(
     task_id: int,
@@ -127,6 +219,14 @@ def complete_agent_public_pool_task(
     db: Session = Depends(get_db),
     agent=Depends(require_sales_agent),
 ):
+    retried = _call(
+        public_pool_service.get_idempotent_completed_research,
+        db, task_id, payload, _user_id(agent),
+    )
+    if retried is not None:
+        task, assessment = retried
+        return ok({"task_id": task.id, "status": task.status, "assessment": _assessment(assessment)})
+    _validate_knowledge_references(db, agent, payload.knowledge_references)
     task, assessment = _call(public_pool_service.complete_task_research, db, task_id, payload, _user_id(agent))
     return ok({"task_id": task.id, "status": task.status, "assessment": _assessment(assessment)})
 

@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import require_any_permission, require_permission
 from app.core.database import get_db
 from app.core.response import ok, page_result
+from app.knowledge import access as knowledge_access
+from app.knowledge.models import KnowledgeDocument
 from app.sales_automation import enrichment_service, public_pool_service, service
 from app.sales_automation.models import DealAssessment, LeadContact, PublicPoolTask, ResearchRun, ResearchSubject
 from app.sales_automation.schemas import (
@@ -173,7 +175,7 @@ def _subject(row: ResearchSubject):
     }
 
 
-def _assessment(row: DealAssessment | None):
+def _assessment(row: DealAssessment | None, *, include_knowledge_references: bool = False):
     if row is None:
         return None
     return {
@@ -189,6 +191,13 @@ def _assessment(row: DealAssessment | None):
         "supplier_status": row.supplier_status,
         "pain_points": row.pain_points or [],
         "product_fit": row.product_fit or [],
+        "industry_relevance": row.industry_relevance,
+        "industry_relevance_reason": row.industry_relevance_reason,
+        "research_depth": row.research_depth,
+        "stop_reason": row.stop_reason,
+        "social_profiles": row.social_profiles or [],
+        "knowledge_references": (row.knowledge_references or []) if include_knowledge_references else [],
+        "commercial_profile": row.commercial_profile or {},
         "recommended_strategy": row.recommended_strategy,
         "outreach_type": row.outreach_type,
         "opening_message_en": row.opening_message_en,
@@ -215,6 +224,7 @@ def _pool_task(
         "selection_reason": row.selection_reason or [],
         "status": row.status,
         "review_status": row.review_status,
+        "gate_status": row.gate_status,
         "attempt_count": row.attempt_count,
         "research_summary": row.research_summary,
         "error_message": row.error_message,
@@ -228,6 +238,23 @@ def _pool_task(
         "subject": _subject(subject),
         "assessment": _assessment(assessment),
     }
+
+
+def _authorized_knowledge_references(db: Session, user: dict, assessment: DealAssessment | None) -> list[dict]:
+    """Never expose internal knowledge metadata through the broader sales read permission."""
+    if assessment is None or not knowledge_access.has_platform(user, "knowledge:read"):
+        return []
+    result = []
+    for item in assessment.knowledge_references or []:
+        document = db.query(KnowledgeDocument).filter(KnowledgeDocument.id == item.get("document_id")).first()
+        if document is None or not knowledge_access.can(db, user, document.library_id, "read"):
+            continue
+        result.append({
+            "document_id": item.get("document_id"),
+            "revision_id": item.get("revision_id"),
+            "version_no": item.get("version_no"),
+        })
+    return result
 
 
 @router.get("/profile")
@@ -400,10 +427,14 @@ def list_public_pool_tasks(
 def get_public_pool_task(
     task_id: int,
     db: Session = Depends(get_db),
-    _user=Depends(require_any_permission(*READ_PERMISSIONS)),
+    user=Depends(require_any_permission(*READ_PERMISSIONS)),
 ):
     detail = _call(public_pool_service.get_task_detail, db, task_id)
     data = _pool_task(detail["task"], detail["subject"], detail["assessment"], detail["opportunity"])
+    if data["assessment"] is not None:
+        data["assessment"]["knowledge_references"] = _authorized_knowledge_references(
+            db, user, detail["assessment"],
+        )
     data["contacts"] = [_contact(row) for row in detail["contacts"]]
     run = detail["research_run"]
     data["research"] = None if run is None else {
