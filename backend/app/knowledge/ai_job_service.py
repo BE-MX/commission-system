@@ -285,7 +285,7 @@ def create_job(
             title=revision.title,
             content_text=revision.content_text,
         )
-        if profile.require_citations and not sources:
+        if not sources:
             raise service.ValidationError("no authorized published knowledge sources were found")
     job = KnowledgeAiJob(
         document_id=document.id,
@@ -325,6 +325,7 @@ def create_job(
 
 
 def _job(db, identity: dict, job_id: int, *, for_update: bool = False) -> tuple[KnowledgeAiJob, KnowledgeDocument]:
+    service._require_platform(identity, "knowledge:write")
     query = db.query(KnowledgeAiJob).filter(KnowledgeAiJob.id == job_id)
     if for_update:
         query = query.with_for_update()
@@ -334,10 +335,7 @@ def _job(db, identity: dict, job_id: int, *, for_update: bool = False) -> tuple[
     document = service._document(db, identity, row.document_id, "write", lock_library=for_update)
     if row.owner_user_id != access.user_id(identity) and not has_ai_permission(identity, "knowledge_ai:admin"):
         raise service.NotFoundError("knowledge AI job not found")
-    source_library_ids = {item[0] for item in db.query(
-        KnowledgeAiJobSource.library_id
-    ).filter(KnowledgeAiJobSource.job_id == row.id).all()}
-    if any(not _source_library_is_readable(db, identity, library_id) for library_id in source_library_ids):
+    if not _job_sources_are_readable(db, identity, row.id):
         raise service.ForbiddenError("knowledge source access was revoked")
     return row, document
 
@@ -384,16 +382,14 @@ def get_job(db, identity: dict, job_id: int) -> dict:
 
 def list_document_jobs(db, identity: dict, document_id: int) -> list[dict]:
     require_ai(identity)
+    service._require_platform(identity, "knowledge:write")
     service._document(db, identity, document_id, "write")
     query = db.query(KnowledgeAiJob).filter(KnowledgeAiJob.document_id == document_id)
     if not has_ai_permission(identity, "knowledge_ai:admin"):
         query = query.filter(KnowledgeAiJob.owner_user_id == access.user_id(identity))
     result = []
     for row in query.order_by(KnowledgeAiJob.created_at.desc()).limit(30).all():
-        source_library_ids = {item[0] for item in db.query(
-            KnowledgeAiJobSource.library_id
-        ).filter(KnowledgeAiJobSource.job_id == row.id).all()}
-        if all(_source_library_is_readable(db, identity, library_id) for library_id in source_library_ids):
+        if _job_sources_are_readable(db, identity, row.id):
             result.append(serialize_job(db, row))
     return result
 
@@ -405,6 +401,28 @@ def _source_library_is_readable(db, identity: dict, library_id: int) -> bool:
         KnowledgeLibrary.deleted_at.is_(None),
     ).first()
     return bool(active and access.can(db, identity, library_id, "read"))
+
+
+def _job_sources_are_readable(db, identity: dict, job_id: int) -> bool:
+    sources = db.query(KnowledgeAiJobSource).filter(
+        KnowledgeAiJobSource.job_id == job_id
+    ).all()
+    for source in sources:
+        if not _source_library_is_readable(db, identity, source.library_id):
+            return False
+        document_revision = db.query(KnowledgeDocument.id).join(
+            KnowledgeRevision,
+            KnowledgeRevision.document_id == KnowledgeDocument.id,
+        ).filter(
+            KnowledgeDocument.id == source.document_id,
+            KnowledgeDocument.library_id == source.library_id,
+            KnowledgeDocument.deleted_at.is_(None),
+            KnowledgeDocument.published_revision_id.is_not(None),
+            KnowledgeRevision.id == source.revision_id,
+        ).first()
+        if not document_revision:
+            return False
+    return True
 
 
 def cancel_job(db, identity: dict, job_id: int) -> dict:

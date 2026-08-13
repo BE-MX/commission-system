@@ -239,6 +239,10 @@ class KnowledgeAiJob(Base):
     result_json = Column(JSON, nullable=True)
     comparison_json = Column(JSON, nullable=True)
     ai_call_log_id = Column(BigInteger, ForeignKey("ark_ai_call_logs.id", ondelete="RESTRICT"), nullable=True)
+    verification_ai_call_log_id = Column(
+        BigInteger, ForeignKey("ark_ai_call_logs.id", ondelete="RESTRICT"),
+        nullable=True, comment="独立语义审计 AI 调用日志",
+    )
     applied_revision_id = Column(BigInteger, ForeignKey("ark_knowledge_revisions.id", ondelete="RESTRICT"), nullable=True)
     claimed_by = Column(String(128), nullable=True)
     lease_token = Column(String(64), nullable=True)
@@ -267,8 +271,8 @@ class KnowledgeAiJobSource(Base):
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     job_id = Column(BigInteger, ForeignKey("ark_knowledge_ai_jobs.id", ondelete="CASCADE"), nullable=False)
-    library_id = Column(BigInteger, nullable=False)
-    document_id = Column(BigInteger, nullable=False)
+    library_id = Column(BigInteger, ForeignKey("ark_knowledge_libraries.id", ondelete="RESTRICT"), nullable=False)
+    document_id = Column(BigInteger, ForeignKey("ark_knowledge_documents.id", ondelete="RESTRICT"), nullable=False)
     revision_id = Column(BigInteger, ForeignKey("ark_knowledge_revisions.id", ondelete="RESTRICT"), nullable=False)
     title_snapshot = Column(String(256), nullable=False)
     score = Column(Integer, nullable=False, default=0)

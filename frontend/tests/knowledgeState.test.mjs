@@ -15,5 +15,6 @@ test('library roles expose only their intended capabilities', () => {
 test('document actions reflect workflow state without hiding draft editing', () => {
   assert.deepEqual(documentActions({ role: 'editor', status: 'draft', pendingApprovalId: null }), { canSave: true, canSubmit: true, canDelete: true })
   assert.deepEqual(documentActions({ role: 'editor', status: 'pending', pendingApprovalId: 9 }), { canSave: true, canSubmit: false, canDelete: true })
+  assert.deepEqual(documentActions({ role: 'editor', pendingApprovalId: null, canEdit: false }), { canSave: false, canSubmit: false, canDelete: false })
   assert.deepEqual(documentActions({ role: 'viewer', status: 'published', pendingApprovalId: null }), { canSave: false, canSubmit: false, canDelete: false })
 })

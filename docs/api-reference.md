@@ -864,6 +864,8 @@ MCP `/mcp` 新增 `search_knowledge` 与 `get_knowledge_document`。二者使用
 
 ## 知识库 AI 优化
 
+知识增强生成后必须通过第二次独立语义审计：逐块确认原观点仍被蕴含、无矛盾，并在启用引用要求时确认每条新增事实均映射到已冻结来源。审计不通过或不确定时任务直接失败，不返回可应用草稿。
+
 平台权限分为 `knowledge_ai:write`（执行优化）和 `knowledge_ai:admin`（管理配置）。执行任务还必须同时具备目标知识库的 `knowledge:write` 与 editor/admin 资源角色；AI 权限不会扩展知识库 ACL。
 
 | Method | Path | Permission | Purpose |

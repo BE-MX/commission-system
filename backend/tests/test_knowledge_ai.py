@@ -271,10 +271,10 @@ def test_prompt_validation_enforces_format_invariance_and_grounded_enhancement()
     )
     result = {
         "title": "优化题",
-        "content_json": doc_json("观点一得到保留", "观点二得到保留，并补充安全要求"),
+        "content_json": doc_json("观点一", "观点二", "补充安全要求"),
         "core_points": [
-            {"point": "一", "preserved": True, "original_quote": "观点一", "optimized_quote": "观点一"},
-            {"point": "二", "preserved": True, "original_quote": "观点二", "optimized_quote": "观点二"},
+            {"block_id": ai_prompt_service._authored_blocks(base)[0]["block_id"], "point": "一", "preserved": True, "original_quote": "观点一", "optimized_quote": "观点一"},
+            {"block_id": ai_prompt_service._authored_blocks(base)[1]["block_id"], "point": "二", "preserved": True, "original_quote": "观点二", "optimized_quote": "观点二"},
         ],
         "citations": [{
             "source_revision_id": 11, "claim": "安全要求",
@@ -303,6 +303,90 @@ def test_prompt_validation_enforces_format_invariance_and_grounded_enhancement()
         ai_prompt_service.validate_result(
             enhance_job, base, bad_citation, {11: "必须佩戴安全帽"}
         )
+
+    reversed_point = {**result, "content_json": doc_json(
+        "观点一得到保留是错误的，应当否定观点一", "观点二得到保留"
+    )}
+    reversed_point["core_points"] = [
+        {**result["core_points"][0], "optimized_quote": "观点一得到保留是错误的，应当否定观点一"},
+        result["core_points"][1],
+    ]
+    with pytest.raises(service.ValidationError, match="optimized core point"):
+        ai_prompt_service.validate_result(enhance_job, base, reversed_point, {})
+
+
+def test_semantic_verification_fails_closed_for_contradictions_and_uncited_facts():
+    base = KnowledgeRevision(
+        id=7, document_id=1, version_no=1, title="安全",
+        content_json=doc_json("必须佩戴安全帽"), content_text="必须佩戴安全帽", created_by=1,
+    )
+    job = KnowledgeAiJob(mode="enhance", config_snapshot={"require_citations": True})
+    result = {
+        "title": "安全", "content_json": doc_json("必须佩戴安全帽", "每日检查"),
+        "core_points": [{
+            "block_id": ai_prompt_service._authored_blocks(base)[0]["block_id"],
+            "point": "安全帽要求", "preserved": True,
+            "original_quote": "必须佩戴安全帽", "optimized_quote": "必须佩戴安全帽",
+        }],
+        "citations": [{"source_revision_id": 11, "claim": "每日检查", "source_quote": "每日检查"}],
+    }
+    block_id = ai_prompt_service._authored_blocks(base)[0]["block_id"]
+    valid = {
+        "verdict": "pass",
+        "core_verdicts": [{"block_id": block_id, "verdict": "entailed", "reason": "保留"}],
+        "citation_verdicts": [{"citation_index": 0, "verdict": "supported", "reason": "来源支持"}],
+        "unmapped_new_facts": [], "contradictions": [],
+    }
+    ai_prompt_service.validate_verification(job, base, result, valid)
+
+    contradicted = {**valid, "verdict": "fail", "contradictions": ["否定安全帽要求"]}
+    with pytest.raises(service.ValidationError, match="contradiction"):
+        ai_prompt_service.validate_verification(job, base, result, contradicted)
+
+    uncited = {**valid, "verdict": "fail", "unmapped_new_facts": ["现场禁止佩戴"]}
+    with pytest.raises(service.ValidationError, match="uncited new fact"):
+        ai_prompt_service.validate_verification(job, base, result, uncited)
+
+    messages = ai_prompt_service.build_verification_messages(
+        job, base, result["content_json"], result["citations"]
+    )
+    assert "semantic_integrity_and_grounding_verification" in messages[0]["content"]
+    final_with_advice = {**result, "application_advice": {
+        "knowledge": ["现场禁止佩戴安全帽"], "skill": [], "agent": [], "workflow": [],
+    }}
+    ai_prompt_service.validate_result(
+        job,
+        base,
+        final_with_advice,
+        {11: "每日检查"},
+    )
+    verification_payload = ai_prompt_service.build_verification_messages(
+        job, base, final_with_advice["content_json"], final_with_advice["citations"]
+    )[0]["content"]
+    assert "现场禁止佩戴安全帽" in verification_payload
+
+
+def test_revoked_platform_write_permission_blocks_existing_ai_jobs(db):
+    admin, editor, _reviewer, source, target = seed_libraries(db)
+    profile = ai_profile_service.create_profile(
+        db, admin, profile_data([source.id], [target.id], require_citations=False)
+    )
+    document = service.create_document(
+        db, editor, target.id, title="权限", content=doc_json("原文")
+    )
+    job = ai_job_service.create_job(
+        db, editor, document.id, mode="format", profile_id=profile["id"],
+        base_revision_id=document.draft_revision_id, idempotency_key="revoked_write_001",
+    )
+    revoked = identity(2, ["knowledge:read", "knowledge_ai:write"])
+    for operation in (
+        lambda: ai_job_service.get_job(db, revoked, job.id),
+        lambda: ai_job_service.list_document_jobs(db, revoked, document.id),
+        lambda: ai_job_service.cancel_job(db, revoked, job.id),
+        lambda: ai_job_service.apply_job(db, revoked, job.id),
+    ):
+        with pytest.raises(service.ForbiddenError, match="knowledge:write"):
+            operation()
 
 
 def test_cross_library_ai_revision_requires_reviewer_confirmation(db):
@@ -342,6 +426,68 @@ def test_cross_library_ai_revision_requires_reviewer_confirmation(db):
     service.approve_request(
         db, reviewer, approval.id, confirm_cross_library_sources=True
     )
+
+
+def test_job_and_approval_hide_results_after_source_document_is_deleted(db):
+    admin, editor, reviewer, source, target = seed_libraries(db)
+    profile = ai_profile_service.create_profile(
+        db, admin, profile_data([source.id], [target.id])
+    )
+    source_doc = service.create_document(
+        db, admin, source.id, title="来源", content=doc_json("目标原文来源证据")
+    )
+    service.approve_request(db, admin, service.submit_document(db, admin, source_doc.id).id)
+    target_doc = service.create_document(
+        db, editor, target.id, title="目标", content=doc_json("目标原文")
+    )
+    job = ai_job_service.create_job(
+        db, editor, target_doc.id, mode="enhance", profile_id=profile["id"],
+        base_revision_id=target_doc.draft_revision_id,
+        idempotency_key="deleted_source_001",
+    )
+    job.status = "completed"
+    job.result_json = {"title": "目标", "content_json": doc_json("目标原文来源证据")}
+    db.commit()
+    applied = ai_job_service.apply_job(db, editor, job.id)
+    approval = service.submit_document(db, editor, target_doc.id)
+    assert applied["revision_id"] == approval.revision_id
+
+    service.delete_node(db, admin, source_doc.id)
+    with pytest.raises(service.ForbiddenError, match="source access"):
+        ai_job_service.get_job(db, editor, job.id)
+    with pytest.raises(service.ForbiddenError, match="source"):
+        service.get_approval_detail(db, reviewer, approval.id)
+
+
+def test_approval_rejects_soft_deleted_source_library(db):
+    admin, editor, reviewer, source, target = seed_libraries(db)
+    profile = ai_profile_service.create_profile(
+        db, admin, profile_data([source.id], [target.id])
+    )
+    source_doc = service.create_document(
+        db, admin, source.id, title="来源", content=doc_json("目标原文来源证据")
+    )
+    service.approve_request(db, admin, service.submit_document(db, admin, source_doc.id).id)
+    target_doc = service.create_document(
+        db, editor, target.id, title="目标", content=doc_json("目标原文")
+    )
+    job = ai_job_service.create_job(
+        db, editor, target_doc.id, mode="enhance", profile_id=profile["id"],
+        base_revision_id=target_doc.draft_revision_id, idempotency_key="deleted_library_001",
+    )
+    job.status = "completed"
+    job.result_json = {"title": "目标", "content_json": doc_json("目标原文来源证据")}
+    db.commit()
+    ai_job_service.apply_job(db, editor, job.id)
+    approval = service.submit_document(db, editor, target_doc.id)
+    service.delete_library(db, admin, source.id)
+
+    with pytest.raises(service.ForbiddenError, match="source"):
+        service.get_approval_detail(db, reviewer, approval.id)
+    with pytest.raises(service.ForbiddenError, match="source"):
+        service.approve_request(
+            db, reviewer, approval.id, confirm_cross_library_sources=True
+        )
 
 
 def test_long_provider_timeout_extends_worker_lease(monkeypatch):

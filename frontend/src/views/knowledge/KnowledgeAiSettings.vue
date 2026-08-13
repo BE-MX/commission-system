@@ -57,7 +57,7 @@
         <el-form-item label="知识增强业务提示词">
           <el-input v-model="form.enhance_prompt" type="textarea" :rows="5" maxlength="10000" show-word-limit />
         </el-form-item>
-        <el-form-item label="允许读取的来源知识库">
+        <el-form-item label="允许读取的来源知识库" required>
           <el-select v-model="form.source_library_ids" multiple filterable collapse-tags collapse-tags-tooltip>
             <el-option v-for="item in libraries" :key="item.id" :value="item.id" :label="item.name" />
           </el-select>
@@ -167,7 +167,7 @@ function openCreate() { Object.assign(form, emptyForm()); dialog.value = true }
 function openEdit(row) { Object.assign(form, emptyForm(), JSON.parse(JSON.stringify(row))); dialog.value = true }
 
 async function save() {
-  if (!form.name.trim() || !form.preset_id || !form.target_library_ids.length) return msgError('请填写名称、Preset 和目标知识库')
+  if (!form.name.trim() || !form.preset_id || !form.source_library_ids.length || !form.target_library_ids.length) return msgError('请填写名称、Preset、来源知识库和目标知识库')
   saving.value = true
   try {
     const payload = { ...form }

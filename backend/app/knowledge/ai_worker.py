@@ -84,6 +84,7 @@ def execute_claimed_job(job_id: int, lease_token: str) -> None:
         try:
             identity = ai_job_service.identity_for_user(db, job.owner_user_id)
             ai_job_service.require_ai(identity)
+            service._require_platform(identity, "knowledge:write")
             document = service._document(db, identity, job.document_id, "write")
             profile = ai_job_service.profile_for_target(db, job.profile_id, document.library_id)
             if profile.config_version != job.config_snapshot.get("config_version"):
@@ -101,6 +102,8 @@ def execute_claimed_job(job_id: int, lease_token: str) -> None:
             ))
             if any(source.library_id not in allowed_ids for source, _ in source_rows):
                 raise service.ForbiddenError("knowledge source access was revoked")
+            if not ai_job_service._job_sources_are_readable(db, identity, job.id):
+                raise service.ForbiddenError("knowledge source document was deleted or revoked")
             preset = db.query(AiPreset).filter(
                 AiPreset.id == job.config_snapshot.get("preset_id"),
                 AiPreset.deleted_at.is_(None),
@@ -140,12 +143,40 @@ def execute_claimed_job(job_id: int, lease_token: str) -> None:
                 caller_user_id=job.owner_user_id, snapshot_mode="metadata",
             )
             result = ai_prompt_service.parse_result(response["content"])
+            job.ai_call_log_id = response["log_id"]
+            db.commit()
+            if not db.query(KnowledgeAiJob.id).populate_existing().filter(
+                KnowledgeAiJob.id == job.id,
+                KnowledgeAiJob.status == "running",
+                KnowledgeAiJob.lease_token == lease_token,
+            ).first():
+                return
             comparison = ai_prompt_service.validate_result(
                 job,
                 base,
                 result,
                 {source.revision_id: revision.content_text for source, revision in source_rows},
             )
+            verification_response = None
+            if job.mode == "enhance":
+                job.lease_expires_at = bj_now() + timedelta(
+                    seconds=lease_seconds_for_provider(provider)
+                )
+                db.commit()
+                verification_response = chat(
+                    db, preset_name=preset.preset_name,
+                    messages=ai_prompt_service.build_verification_messages(
+                        job, base, result["content_json"], result.get("citations", [])
+                    ),
+                    caller_module="knowledge_ai_semantic_verification",
+                    caller_user_id=job.owner_user_id, snapshot_mode="metadata",
+                )
+                job.verification_ai_call_log_id = verification_response["log_id"]
+                db.commit()
+                verification = ai_prompt_service.parse_verification(
+                    verification_response["content"]
+                )
+                ai_prompt_service.validate_verification(job, base, result, verification)
             current = db.query(KnowledgeAiJob).filter(
                 KnowledgeAiJob.id == job.id, KnowledgeAiJob.status == "running",
                 KnowledgeAiJob.lease_token == lease_token,
@@ -156,7 +187,12 @@ def execute_claimed_job(job_id: int, lease_token: str) -> None:
             current.result_json = result
             current.comparison_json = comparison
             current.ai_call_log_id = response["log_id"]
-            current.total_tokens = response.get("tokens_used")
+            if verification_response:
+                current.verification_ai_call_log_id = verification_response["log_id"]
+            current.total_tokens = sum(filter(None, [
+                response.get("tokens_used"),
+                verification_response.get("tokens_used") if verification_response else None,
+            ])) or None
             current.finished_at = bj_now()
             current.claimed_by = current.lease_token = None
             current.lease_expires_at = None

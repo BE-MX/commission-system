@@ -473,13 +473,25 @@ def approve_request(
         KnowledgeAiJob.applied_revision_id == approval.revision_id
     ).first()
     if applied_job:
+        from app.knowledge import ai_job_service
+
+        if not ai_job_service._job_sources_are_readable(db, identity, applied_job.id):
+            raise ForbiddenError("reviewer cannot read every AI source document")
         source_library_ids = {row[0] for row in db.query(
             KnowledgeAiJobSource.library_id
         ).filter(KnowledgeAiJobSource.job_id == applied_job.id).all()}
         cross_library_ids = source_library_ids - {document.library_id}
         if cross_library_ids and not confirm_cross_library_sources:
             raise ConflictError("cross-library AI sources require explicit reviewer confirmation")
-        if any(not access.can(db, identity, library_id, "read") for library_id in source_library_ids):
+        readable_library_ids = {row[0] for row in db.query(KnowledgeLibrary.id).filter(
+            KnowledgeLibrary.id.in_(source_library_ids or [-1]),
+            KnowledgeLibrary.status == "active",
+            KnowledgeLibrary.deleted_at.is_(None),
+        ).all()}
+        if readable_library_ids != source_library_ids or any(
+            not access.can(db, identity, library_id, "read")
+            for library_id in source_library_ids
+        ):
             raise ForbiddenError("reviewer cannot read every AI source library")
     approval.status = "approved"
     approval.pending_slot = None
@@ -611,13 +623,25 @@ def get_approval_detail(db, identity: dict, approval_id: int) -> dict:
     ).first()
     ai_sources: list[dict] = []
     if applied_job:
-        source_rows = db.query(KnowledgeAiJobSource, KnowledgeLibrary).join(
+        source_rows = db.query(
+            KnowledgeAiJobSource, KnowledgeLibrary, KnowledgeDocument
+        ).join(
             KnowledgeLibrary,
             KnowledgeLibrary.id == KnowledgeAiJobSource.library_id,
+        ).join(
+            KnowledgeDocument,
+            KnowledgeDocument.id == KnowledgeAiJobSource.document_id,
         ).filter(KnowledgeAiJobSource.job_id == applied_job.id).order_by(
             KnowledgeAiJobSource.position
         ).all()
-        if any(not access.can(db, identity, source.library_id, "read") for source, _ in source_rows):
+        if any(
+            library.deleted_at is not None
+            or library.status != "active"
+            or source_document.deleted_at is not None
+            or source_document.published_revision_id is None
+            or not access.can(db, identity, source.library_id, "read")
+            for source, library, source_document in source_rows
+        ):
             raise ForbiddenError("reviewer cannot read every AI source library")
         ai_sources = [{
             "library_id": source.library_id,
@@ -625,7 +649,7 @@ def get_approval_detail(db, identity: dict, approval_id: int) -> dict:
             "document_id": source.document_id,
             "revision_id": source.revision_id,
             "title": source.title_snapshot,
-        } for source, library in source_rows]
+        } for source, library, _source_document in source_rows]
     return {
         "id": approval.id,
         "document_id": document.id,

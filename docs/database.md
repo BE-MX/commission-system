@@ -324,7 +324,7 @@ T1 = 当前公海且有历史订单；T2 = 无历史订单但有企业邮箱、�
 - `ark_knowledge_ai_profiles`：AI Preset、两类业务提示词、安全与配额配置；每次更新递增 `config_version`。
 - `ark_knowledge_ai_profile_sources` / `ark_knowledge_ai_profile_targets`：配置允许读取的来源库及适用目标库；两表均按 `(profile_id,library_id)` 唯一。
 - `ark_knowledge_ai_profile_logs`：配置 create/update/delete 追加式审计，不保存知识正文。
-- `ark_knowledge_ai_jobs`：冻结基准修订、配置/Preset 指纹、状态、租约、校验结果及应用修订；`(owner_user_id,idempotency_key)` 唯一。
+- `ark_knowledge_ai_jobs`：冻结基准修订、配置/Preset 指纹、状态、租约、确定性校验与独立语义审计结果及应用修订；`ai_call_log_id` 和 `verification_ai_call_log_id` 分别关联生成与语义审计调用日志，`(owner_user_id,idempotency_key)` 唯一。
 - `ark_knowledge_ai_job_sources`：任务创建时冻结的已发布来源修订、顺序和评分；引用只能落在这些 revision 上。
 
 正文事实源是受服务端节点白名单校验的 ProseMirror/Tiptap JSON；`content_text` 仅用于检索和 Agent 纯文本输出。发布操作只能把 `published_revision_id` 指向 approval 中冻结的 `revision_id`。

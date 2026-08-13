@@ -3,7 +3,7 @@
 </template>
 
 <script setup>
-import { watch } from 'vue'
+import { onBeforeUnmount, watch } from 'vue'
 import { EditorContent, useEditor } from '@tiptap/vue-3'
 import StarterKit from '@tiptap/starter-kit'
 import Link from '@tiptap/extension-link'
@@ -37,6 +37,7 @@ const editor = useEditor({
 })
 
 watch(() => props.content, content => editor.value?.commands.setContent(content), { deep: true })
+onBeforeUnmount(() => editor.value?.destroy())
 </script>
 
 <style scoped>

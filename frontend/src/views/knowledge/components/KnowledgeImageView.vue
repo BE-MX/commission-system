@@ -68,7 +68,12 @@ async function load() {
   try {
     const response = await getKnowledgeImageBlob(expected)
     if (props.node.attrs.assetId !== expected) return
-    objectUrl.value = URL.createObjectURL(response.data)
+    const nextUrl = URL.createObjectURL(response.data)
+    if (props.node.attrs.assetId !== expected) {
+      URL.revokeObjectURL(nextUrl)
+      return
+    }
+    objectUrl.value = nextUrl
   } catch {
     loadError.value = true
   }

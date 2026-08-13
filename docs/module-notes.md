@@ -880,11 +880,11 @@ Tiptap 3.29 栈，纯函数与命令目录抽到 `components/editorConfig.js`（
 `knowledge_ai:write` 允许在有 write ACL 的文档上执行，`knowledge_ai:admin` 管理 AI 优化方案。配置页支持 direct 文本 Preset、智能排版/知识增强提示词、来源库、目标库、跨库开关、引用要求、检索/上下文/文档上限、日限额与并发限额，并记录单调 `config_version` 和审计日志。业务提示词只作补充，固定安全指令与输出门禁不能覆盖。
 
 - **智能排版**：只允许重新组织段落、1~6 级标题、列表与序号。后端逐字比较标题/文本字符流，并比较代码块、表格、图片、链接完整结构；不一致直接失败。
-- **知识增强**：来源是配置范围与执行者实时可读库的交集，且只取发布修订；任务创建时冻结来源。模型须逐块覆盖原始观点，引用包含冻结 revision、优化稿 claim 和来源逐字 `source_quote`，文末由服务端追加知识库/Skill/Agent/工作流四类建议。
+- **知识增强**：来源是配置范围与执行者实时可读库的交集，且只取发布修订；任务创建时冻结来源。生成稿必须以稳定 `block_id` 逐块、逐字保留原始观点；每条新增事实必须原子化绑定冻结 revision、优化稿 claim 和来源逐字 `source_quote`。生成后另起一次独立语义审计调用，逐块判定蕴含/矛盾并检查所有新增事实的引用覆盖，任何遗漏、不确定或矛盾都失败关闭；文末由服务端追加知识库/Skill/Agent/工作流四类建议。
 - **异步与审批**：先保存草稿后以 `base_revision_id + idempotency_key` 创建任务。Scheduler 每 10 秒处理一项，租约按 Provider timeout 延长、最多领取 3 次；应用时基准冲突返回 409，成功仅生成新草稿。跨库来源在审批页显式列出，审核者须仍有所有来源库 read ACL 并勾选确认才能发布。
 - **日志隐私**：知识 AI 调用使用 `snapshot_mode=metadata`，通用 `ark_ai_call_logs` 只留消息长度/哈希、模型、token、耗时和状态；正文、来源和完整结果只留在受 ACL 控制的知识表。
 
-部署顺序：先备份并执行 `alembic upgrade head`（head 应为 `112_knowledge_editor_ai`），再创建/启用一个 direct 文本 AI Preset；启动后端以 upsert `knowledge_ai:write/admin` 权限，给角色分配权限；确保 `KNOWLEDGE_STORAGE_ROOT` 可写且不公开；最后构建前端。部署后用配置页做连接测试/检索预览，并验证图片上传、粘贴、审批预览和两种 AI 模式。
+部署顺序：先备份并执行 `alembic upgrade head`（head 应为 `112_knowledge_editor_ai`），再创建/启用一个 direct 文本 AI Preset；启动后端以 upsert `knowledge_ai:write/admin` 权限，给角色分配权限；确保 `KNOWLEDGE_STORAGE_ROOT` 可写且不公开；将 `deploy/nginx/ark-knowledge-image-location.conf` 放在通用 `/api` location 前，执行 `nginx -t` 后 reload；最后构建前端。部署后用配置页做连接测试/检索预览，并验证 5–10 MiB 图片上传、粘贴、审批预览和两种 AI 模式。
 
 ## 客户 AI 方案对话（ai_chat，2026-08-09）
 

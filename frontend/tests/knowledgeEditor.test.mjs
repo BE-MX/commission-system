@@ -209,8 +209,11 @@ test('editor shell exposes accessible P0 interaction surfaces', () => {
   assert.match(editor, /event\.key\.toLocaleLowerCase\(\) === 'k'/)
   assert.match(editor, /window\.innerWidth - 310/)
   assert.match(editor, /prefers-reduced-motion: reduce/)
+  assert.match(editor, /editorVersion\.value; return pendingImageCount/)
+  assert.match(editor, /canEdit: props\.document\?\.can_edit !== false/)
+  assert.match(workbench, /canWriteLibrary.*knowledge:write.*knowledge:admin/)
   assert.ok(workbench.indexOf('await loadTree()') < workbench.indexOf('payload.done()'))
-  assert.match(workbench, /await nextTick\(\)\s+payload\.done\(\)/)
+  assert.match(workbench, /await nextTick\(\)[\s\S]*?document\.value\.revision_id = result\.id[\s\S]*?payload\.done\(\)/)
 })
 
 test('programmatic hydration and internal refresh never trigger the discard guard', () => {

@@ -110,7 +110,10 @@ def test_knowledge_editor_ai_migration_upgrades_and_downgrades():
             column["name"]
             for column in inspect(connection).get_columns("ark_knowledge_ai_jobs")
         }
-        assert {"config_snapshot", "lease_token", "applied_revision_id"}.issubset(job_columns)
+        assert {
+            "config_snapshot", "lease_token", "applied_revision_id",
+            "verification_ai_call_log_id",
+        }.issubset(job_columns)
         migration.downgrade()
         assert expected.isdisjoint(set(inspect(connection).get_table_names()))
     engine.dispose()

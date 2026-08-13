@@ -11,11 +11,12 @@ export function capabilitiesFor(role) {
   return { ...(ROLE_CAPABILITIES[role] || EMPTY) }
 }
 
-export function documentActions({ role, pendingApprovalId }) {
+export function documentActions({ role, pendingApprovalId, canEdit = true }) {
   const capabilities = capabilitiesFor(role)
+  const canWrite = capabilities.write && canEdit
   return {
-    canSave: capabilities.write,
-    canSubmit: capabilities.write && !pendingApprovalId,
-    canDelete: capabilities.deleteNode,
+    canSave: canWrite,
+    canSubmit: canWrite && !pendingApprovalId,
+    canDelete: capabilities.deleteNode && canEdit,
   }
 }

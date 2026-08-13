@@ -100,6 +100,10 @@ def test_image_normalization_removes_metadata_and_enforces_private_root(tmp_path
         assert "Comment" not in normalized.info
     with pytest.raises(image_service.ImageStorageError):
         image_service.resolve_private_path("../../outside.png")
+    with pytest.raises(image_service.ImageStorageError):
+        image_service.resolve_private_path("C:/outside.png")
+    with pytest.raises(image_service.ImageStorageError):
+        image_service.resolve_private_path("")
     with pytest.raises(image_service.ImageValidationError, match="真实格式"):
         image_service._normalized_bytes(source.getvalue(), "image/jpeg")
 

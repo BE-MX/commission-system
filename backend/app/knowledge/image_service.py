@@ -6,6 +6,7 @@ import hashlib
 import io
 import logging
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
@@ -54,6 +55,12 @@ def storage_root() -> Path:
 
 
 def resolve_private_path(relative_path: str) -> Path:
+    if (
+        not relative_path
+        or Path(relative_path).is_absolute()
+        or re.match(r"^[A-Za-z]:[\\/]", relative_path)
+    ):
+        raise ImageStorageError("非法知识库图片路径")
     root = storage_root().resolve()
     path = (root / relative_path).resolve()
     try:

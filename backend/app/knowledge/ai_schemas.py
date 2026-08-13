@@ -13,7 +13,7 @@ class AiProfileInput(BaseModel):
     preset_id: int = Field(gt=0)
     format_prompt: str | None = Field(default=None, max_length=10000)
     enhance_prompt: str | None = Field(default=None, max_length=10000)
-    source_library_ids: list[int] = Field(default_factory=list, max_length=100)
+    source_library_ids: list[int] = Field(min_length=1, max_length=100)
     target_library_ids: list[int] = Field(min_length=1, max_length=100)
     retrieval_limit: int = Field(default=5, ge=1, le=20)
     context_char_limit: int = Field(default=30000, ge=1000, le=100000)

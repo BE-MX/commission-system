@@ -269,6 +269,17 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
+    # 企业知识库图片允许 10 MiB；精确端点额外预留 multipart 开销。
+    # 受管片段：deploy/nginx/ark-knowledge-image-location.conf
+    location ~ ^/api/knowledge/libraries/[0-9]+/assets$ {
+        client_max_body_size 11m;
+        proxy_pass http://127.0.0.1:8002;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
     location ~ ^/(api|uploads|s|health) {
         proxy_pass http://127.0.0.1:8002;  # frp 穿透端口（2026-07-10 与云端 /etc/nginx/conf.d/leshine.conf 实况核对，旧文档误写 8888）
         proxy_set_header Host $host;

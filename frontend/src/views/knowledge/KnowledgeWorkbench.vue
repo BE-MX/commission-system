@@ -7,12 +7,12 @@
         :tree="nestedTree"
         :search-query="searchQuery"
         :collapsed="sidebarCollapsed"
-        :can-write="capabilities.write"
+        :can-write="canWriteLibrary"
         :can-create-library="canCreateLibrary"
         :can-review="canReviewApprovals"
         :can-manage-members="canCreateLibrary"
         :can-delete-library="canCreateLibrary"
-        :can-delete-node="capabilities.deleteNode"
+        :can-delete-node="canWriteLibrary && capabilities.deleteNode"
         @update:search-query="searchQuery = $event"
         @search="runSearch"
         @toggle-collapse="toggleSidebar"
@@ -147,6 +147,7 @@ const libraryForm = reactive({ name: '', description: '', category: 'company' })
 const nodeForm = reactive({ title: '', node_type: 'document' })
 const selectedLibrary = computed(() => libraries.value.find(item => item.id === selectedLibraryId.value))
 const capabilities = computed(() => capabilitiesFor(selectedLibrary.value?.role))
+const canWriteLibrary = computed(() => capabilities.value.write && auth.hasAnyPermission(['knowledge:write', 'knowledge:admin']))
 const canCreateLibrary = computed(() => auth.hasPermission('knowledge:admin'))
 const canReviewApprovals = computed(() => auth.hasPermission('knowledge:review') || auth.hasPermission('knowledge:admin'))
 const isSuperAdmin = computed(() => auth.roles.includes('super_admin'))
@@ -173,16 +174,16 @@ async function loadLibraries() {
   }
   if (selectedLibraryId.value) await loadTree()
 }
-
 async function loadTree() {
   tree.value = unwrap(await knowledgeClient.get(`/libraries/${selectedLibraryId.value}/tree`))
 }
-
 async function selectLibrary(id) {
   if (selectedLibraryId.value === id) return true
   if (!(await allowDiscard())) return false
   selectedLibraryId.value = id
   document.value = null
+  searchQuery.value = ''
+  searchResults.value = []
   await loadTree()
   return true
 }
@@ -282,13 +283,13 @@ async function saveDocument(payload) {
     const result = unwrap(await knowledgeClient.put(`/documents/${targetId}`, { title: payload.title, content: payload.content }))
     await loadTree()
     await nextTick()
-    payload.done()
     if (document.value?.id === targetId) {
       document.value.title = payload.title
       document.value.content_json = payload.content
       document.value.version_no = result.version_no
       document.value.revision_id = result.id
     }
+    payload.done()
     msgSuccess('保存')
   } catch (error) {
     payload.fail?.()
@@ -483,7 +484,6 @@ onBeforeRouteLeave(() => allowDiscard())
 onMounted(() => { window.addEventListener('beforeunload', beforeUnload); loadLibraries() })
 onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
 </script>
-
 <style scoped>
 .knowledge-page { display: flex; height: calc(100vh - var(--topbar-height, 64px)); min-height: 620px; flex-direction: column; background: var(--page-bg); }
 .workspace { display: grid; min-height: 0; flex: 1; grid-template-columns: 310px minmax(0, 1fr); margin: 14px; overflow: hidden; border: 1px solid var(--border-color); border-radius: var(--radius-xl, 16px); background: var(--surface-card, #fff); box-shadow: var(--shadow-card, 0 8px 30px rgba(30, 36, 50, .06)); }

@@ -113,7 +113,7 @@ const slashQuery = ref('')
 const slashIndex = ref(0)
 const slashRange = ref(null)
 const slashPosition = ref({ left: 0, top: 0 })
-const actions = computed(() => documentActions({ role: props.role, status: props.document?.status, pendingApprovalId: props.document?.pending_approval_id }))
+const actions = computed(() => documentActions({ role: props.role, pendingApprovalId: props.document?.pending_approval_id, canEdit: props.document?.can_edit !== false }))
 const statusLabel = computed(() => ({ draft: '草稿', pending: '待审批', published: '已发布' }[props.document?.status] || props.document?.status))
 const statusType = computed(() => ({ draft: 'info', pending: 'warning', published: 'success' }[props.document?.status] || 'info'))
 const saveLabel = computed(() => saveStatusLabel({ dirty: dirty.value, saving: props.saving, error: saveError.value, savedAt: savedAt.value }))
@@ -124,7 +124,7 @@ const saveTone = computed(() => {
   return 'saved'
 })
 const filteredCommands = computed(() => filterEditorCommands(EDITOR_COMMANDS, slashQuery.value))
-const pendingUploads = computed(() => pendingImageCount(editor.value?.getJSON() || {}))
+const pendingUploads = computed(() => { editorVersion.value; return pendingImageCount(editor.value?.getJSON() || {}) })
 const canUseAi = computed(() => auth.hasPermission('knowledge_ai:write') || auth.hasPermission('knowledge_ai:admin'))
 const editor = useEditor({
   editable: false,
