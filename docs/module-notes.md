@@ -830,7 +830,7 @@ frontend/src/
 
 客户画像固定为最近国家 × 首张新签订单来源 × `customer_info.trail_status_name` × 首张新签 B1/B3 组合；客户性质只取 `trail_status_name`，“无”/空值统一为未知。画像级首返周期只使用首张新签后续的显式首返标记，同日计 0 天；平均复购周期先计算每位客户的连续有效下单日期间隔均值，再对同画像客户等权平均；达到平均周期提醒，严格超过 2 倍异常，无间隔样本不做强预警。历史复购型号输出真实产品型号，B1/B3 仅用于新签画像分类。16/18/20/22/24 幅度读取 `okki_products.size`，画像内产品/型号/颜色/幅度分布均按明细 quantity，禁止用明细 amount 冒充订单 GMV。画像结果按权限、统计期和筛选条件做 5 分钟短缓存，避免页签切换重复扫全历史。
 
-性能口径：订单与商品明细查询不得回传整个 `okki_orders.custom_fields` JSON；只在 SQL 中提取新签、首返与来源必需值。筛选项结果与画像一样按权限和日期做 5 分钟短缓存。`okki_order_items(order_id,item_index)` 已覆盖订单关联；`okki_orders(user_id,account_date)` 加速个人/团队范围。全公司全历史需返回大部分有效行，没有证据时不额外添加低选择性索引。
+性能口径：订单与商品明细查询不得回传整个 `okki_orders.custom_fields` JSON；只在 SQL 中提取新签、首返与来源必需值。筛选项结果与画像一样按权限和日期做 5 分钟短缓存；OKKI 是外部投影且没有变更通知，筛选选项因此允许最多 5 分钟的最终一致性，统计请求本身仍实时查库。`okki_order_items(order_id,item_index)` 已覆盖订单关联；`okki_orders(user_id,account_date)` 加速个人/团队范围。全公司全历史需返回大部分有效行，没有证据时不额外添加低选择性索引。
 
 AI 经营简报为数据库持久化后台任务，页面轮询 `queued/running/succeeded/failed` 状态。`active_key=user:{ark_user_id}` 的 nullable 唯一键是防重真相源，终态置 NULL 后才可再生成；不能只靠前端 loading 锁。
 

@@ -44,10 +44,16 @@ def apply_indexes(db_engine: Engine = engine) -> list[str]:
                 )
             return [f"SKIP {schema}.okki_orders.{INDEX_NAME} already exists"]
 
-        if INDEX_COLUMNS in by_name.values():
-            existing_name = next(name for name, columns in by_name.items() if columns == INDEX_COLUMNS)
+        covering_name = next(
+            (
+                name for name, columns in by_name.items()
+                if columns[:len(INDEX_COLUMNS)] == INDEX_COLUMNS
+            ),
+            None,
+        )
+        if covering_name:
             return [
-                f"SKIP {schema}.okki_orders.{existing_name} already covers "
+                f"SKIP {schema}.okki_orders.{covering_name} already covers "
                 f"{','.join(INDEX_COLUMNS)}"
             ]
 

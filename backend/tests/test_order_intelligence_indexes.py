@@ -65,6 +65,27 @@ def test_apply_indexes_skips_matching_existing_index(monkeypatch):
     assert fake_engine.connection.statements == []
 
 
+def test_apply_indexes_skips_wider_index_with_required_left_prefix(monkeypatch):
+    fake_engine = FakeEngine()
+    monkeypatch.setattr(
+        indexes,
+        "inspect",
+        lambda _connection: FakeInspector([
+            {
+                "name": "idx_existing_wider",
+                "column_names": ["user_id", "account_date", "status"],
+            }
+        ]),
+    )
+
+    actions = indexes.apply_indexes(fake_engine)
+
+    assert actions == [
+        "SKIP lsordertest.okki_orders.idx_existing_wider already covers user_id,account_date"
+    ]
+    assert fake_engine.connection.statements == []
+
+
 def test_apply_indexes_rejects_name_collision_with_different_columns(monkeypatch):
     fake_engine = FakeEngine()
     monkeypatch.setattr(

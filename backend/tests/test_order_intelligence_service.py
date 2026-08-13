@@ -54,6 +54,48 @@ def test_classify_source_prioritizes_owned_social_and_referral():
     assert service.classify_source("") == "unknown"
 
 
+@pytest.mark.parametrize("source_raw", [None, "", False, 0, [], {}])
+def test_decorate_order_falls_back_to_customer_origin_for_empty_extracted_source(source_raw):
+    row = service._decorate_order({
+        "source_raw": source_raw,
+        "origin_name": "阿里询盘",
+        "new_deal": None,
+        "first_return": None,
+        "country_name": "",
+        "amount_usd": None,
+        "company_id": None,
+        "user_id": None,
+    })
+
+    assert row["source_raw"] == "阿里询盘"
+    assert row["source_category"] == "alibaba_inquiry"
+    assert row["new_deal"] == ""
+    assert row["first_return"] == ""
+    assert row["country"] == "未知"
+    assert row["amount_usd"] == 0
+
+
+def test_decorate_order_preserves_extracted_business_flags_and_source():
+    row = service._decorate_order({
+        "source_raw": "Ins开发",
+        "origin_name": "阿里询盘",
+        "new_deal": "是",
+        "first_return": "否",
+        "country_name": "美国",
+        "amount_usd": "12.50",
+        "company_id": 123,
+        "user_id": 456,
+    })
+
+    assert row["source_category"] == "social_owned"
+    assert row["new_deal"] == "是"
+    assert row["first_return"] == "否"
+    assert row["country"] == "美国"
+    assert row["amount_usd"] == 12.5
+    assert row["company_id"] == "123"
+    assert row["user_id"] == "456"
+
+
 def test_aggregate_deduplicates_customer_counts_and_keeps_order_amount():
     rows = [
         order("1", "A", date(2026, 1, 1), 100, "是"),
