@@ -822,14 +822,17 @@ Agent 接口只接受可撤销的 MCP opaque token，且账号必须具有 `sale
 | GET | `/agent/leads/{id}` | invoke | 读取公司、联系人与最新研究上下文 |
 | POST | `/agent/leads/{id}/contacts` | invoke | 幂等完善联系人；`valid/risky/invalid` 必须同时给出邮箱与验证时间 |
 | POST | `/agent/leads/{id}/research` | invoke | 提交摘要、触达角度及带 URL/采集时间/置信度的事实 |
+| GET | `/agent/knowledge/search?q=&limit=` | invoke + knowledge:read + 库 ACL | 检索当前 Agent 账号可见的已发布企业知识；写 MCP 读取审计，草稿/待审版本不返回 |
+| GET | `/agent/knowledge/documents/{id}` | invoke + knowledge:read + 库 ACL | 读取搜索命中的已发布知识正文与版本号；无库 ACL 统一 404 |
 | GET | `/agent/public-pool/tasks` | invoke | 列出 `pending` 或租约过期的公海背调任务 |
 | GET | `/agent/public-pool/tasks/{id}/context` | invoke | 返回可信 OKKI 种子、分档研究重点和评分维度上限 |
 | POST | `/agent/public-pool/tasks/{id}/claim` | invoke | 领取 15 分钟租约 |
 | POST | `/agent/public-pool/tasks/{id}/heartbeat` | invoke + 租约 | 长任务续租 |
-| POST | `/agent/public-pool/tasks/{id}/complete` | invoke + 租约 | 回传主体判断、联系人、原子事实、评分输入、策略和未发送开场草稿；等级由后端重算 |
+| POST | `/agent/public-pool/tasks/{id}/industry-gate` | invoke + 租约 | 两阶段止损的低成本行业门控；无关客户直接完成，只有响应授权后才能继续深入背调 |
+| POST | `/agent/public-pool/tasks/{id}/complete` | invoke + 租约 + 已通过门控 | 回传调研深度、社媒活跃、客户分类、不可变知识版本引用、原子事实、评分输入和未发送草稿；等级由后端重算 |
 | POST | `/agent/public-pool/tasks/{id}/fail` | invoke + 租约 | 记录可行动的运行失败原因 |
 
-Agent Skill 位于 `.agents/skills/ark-lead-discovery`、`.agents/skills/ark-company-research` 与 `.agents/skills/ark-public-pool-research`。运行器必须安全注入 `ARK_BASE_URL`、同源约束 `ARK_ALLOWED_ORIGIN` 与 `ARK_AGENT_TOKEN`；三者严禁写入仓库或由网页内容覆盖。公海 Skill 只生成供人工审核的策略和开场草稿，不发送邮件或 WhatsApp。
+Agent Skill 位于 `.agents/skills/ark-lead-discovery`、`.agents/skills/ark-company-research` 与 `.agents/skills/ark-public-pool-research`。运行器必须安全注入 `ARK_BASE_URL`、同源约束 `ARK_ALLOWED_ORIGIN` 与 `ARK_AGENT_TOKEN`；三者严禁写入仓库或由网页内容覆盖。公海 Skill 先用已发布企业知识建立产品/行业基准，再做低成本行业门控；无官网客户优先核验 Instagram/Facebook/TikTok/预约页等经营证据。知识库内容只作为内部匹配依据，不冒充客户公开事实；Skill 只生成供人工审核的策略和草稿，不发送邮件或 WhatsApp。
 
 本地 OpenClaw 运行器、最小权限 MCP 侧车、免密公开检索源、macOS LaunchAgent 初始化与凭证交付步骤见 [`services/openclaw-sales-agent/README.md`](../services/openclaw-sales-agent/README.md)。该侧车把 Ark token 限制在独立 `0600` 文件中，并把任务租约留在进程内存，不暴露给模型。
 

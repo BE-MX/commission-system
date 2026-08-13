@@ -106,7 +106,12 @@ def email_domain_type(value: Any) -> str:
     return "free" if domain in FREE_EMAIL_DOMAINS else "corporate"
 
 
-def compute_deal_scores(components: dict, identity_decision: str, unique_source_count: int) -> dict:
+def compute_deal_scores(
+    components: dict,
+    identity_decision: str,
+    unique_source_count: int,
+    qualification_coverage: float | None = None,
+) -> dict:
     positive = sum(float(components.get(key) or 0) for key in (
         "industry_fit", "pain_switch_trigger", "intent_reactivation",
         "buying_capacity", "reachability", "timing",
@@ -139,6 +144,12 @@ def compute_deal_scores(components: dict, identity_decision: str, unique_source_
         grade, likelihood = "C", "medium"
     else:
         grade, likelihood = "D", "low"
+    # High model scores cannot outrun evidence coverage. A requires both two
+    # independent public sources and at least 60% of weighted qualification dimensions.
+    if grade == "A" and (evidence_confidence != "high" or (qualification_coverage is not None and qualification_coverage < 60)):
+        grade, likelihood = "B", "medium"
+    if grade in {"A", "B"} and qualification_coverage is not None and qualification_coverage < 35:
+        grade, likelihood = "C", "medium"
     return {
         "grade": grade,
         "deal_likelihood": likelihood,
@@ -147,6 +158,155 @@ def compute_deal_scores(components: dict, identity_decision: str, unique_source_
         "deal_score": round(deal_score, 2),
         "priority_score": priority_score,
     }
+
+
+def _enforce_industry_gate(data: dict, components: dict) -> tuple[dict, dict]:
+    """Keep an irrelevant lead from receiving invented commercial value downstream."""
+    if data.get("industry_relevance") != "irrelevant":
+        return data, components
+    gated = dict(data)
+    gated["contacts"] = []
+    gated["outreach_angles"] = []
+    gated["risks"] = []
+    gated["pain_points"] = []
+    gated["product_fit"] = []
+    gated["social_profiles"] = []
+    gated["supplier_status"] = "unknown"
+    gated["opening_message_en"] = None
+    gated["outreach_type"] = "no_outreach"
+    gated["research_depth"] = "gate_only"
+    profile = dict(gated.get("commercial_profile") or {})
+    profile.pop("qualification_dimensions", None)
+    profile["positive_signals"] = []
+    profile["negative_signals"] = []
+    profile["next_validation_questions"] = []
+    gated["commercial_profile"] = profile
+    zeroed = dict(components)
+    for key in (
+        "industry_fit", "pain_switch_trigger", "intent_reactivation",
+        "buying_capacity", "reachability", "timing",
+    ):
+        zeroed[key] = 0
+    return gated, zeroed
+
+
+def _normalized_research_submission(payload: Any) -> tuple[dict, dict, str]:
+    data = _data(payload)
+    components = _data(data.get("score_components") or {})
+    data, components = _enforce_industry_gate(data, components)
+    data["score_components"] = components
+    submission = _json_safe({
+        key: value for key, value in data.items()
+        if key not in {"agent_id", "lease_token", "idempotency_key"}
+    })
+    return data, components, _snapshot_hash(submission)
+
+
+def get_idempotent_completed_research(
+    db: Session,
+    task_id: int,
+    payload: Any,
+    actor_id: int,
+) -> tuple[PublicPoolTask, DealAssessment] | None:
+    """Allow an identical retry after response loss, lease expiry, or a knowledge revision change."""
+    raw = _data(payload)
+    data, _components, submission_hash = _normalized_research_submission(payload)
+    task = get_task(db, task_id)
+    if task.status != "completed":
+        return None
+    existing = db.query(DealAssessment).filter(DealAssessment.task_id == task.id).first()
+    if existing is None:
+        raise ConflictError("已完成任务缺少成交研判")
+    if task.claimed_by != _claim_owner(actor_id, raw.get("agent_id")):
+        raise ConflictError("已完成任务不属于当前Agent")
+    if (existing.evidence_snapshot or {}).get("submission_hash") != submission_hash:
+        raise ConflictError("已完成任务不能用不同内容覆盖")
+    return task, existing
+
+
+def submit_industry_gate(
+    db: Session,
+    task_id: int,
+    payload: Any,
+    actor_id: int,
+) -> tuple[PublicPoolTask, bool]:
+    """Persist the low-cost gate and decide whether expensive research may continue."""
+    data = _data(payload)
+    task = _leased_task(db, task_id, actor_id, data.get("agent_id"), data.get("lease_token"))
+    if task.status != "running":
+        raise ConflictError("只有执行中的任务可以提交行业门控")
+    snapshot = _json_safe({key: value for key, value in data.items() if key != "lease_token"})
+    snapshot_hash = _snapshot_hash(snapshot)
+    existing = task.gate_snapshot or {}
+    if task.gate_status in {"passed", "stopped"}:
+        if existing.get("submission_hash") != snapshot_hash:
+            raise ConflictError("行业门控已提交，不能用不同内容覆盖")
+        return task, task.gate_status == "passed"
+    can_deepen = (
+        data.get("industry_relevance") != "irrelevant"
+        and data.get("identity_decision") != "rejected"
+    )
+    task.gate_status = "passed" if can_deepen else "stopped"
+    task.gate_snapshot = {**snapshot, "submission_hash": snapshot_hash, "deep_research_authorized": can_deepen}
+    task.research_summary = data.get("summary")
+    task.updated_by = actor_id
+    if not can_deepen:
+        gated = {
+            **data,
+            "facts": data.get("facts") or [],
+            "contacts": [],
+            "outreach_angles": [],
+            "risks": [],
+            "score_components": {"risk_penalty": 0, "reasons": {"industry_fit": data.get("industry_relevance_reason") or "行业门控停止"}},
+            "supplier_status": "unknown",
+            "pain_points": [],
+            "product_fit": [],
+            "research_depth": "gate_only",
+            "social_profiles": [],
+            "commercial_profile": {"customer_type": "other"},
+            "recommended_strategy": "停止销售开发；如后续出现相反证据，再由人工重新评估。",
+            "outreach_type": "no_outreach",
+            "opening_message_en": None,
+            "idempotency_key": f"public-pool-gate-{task.id}",
+        }
+        complete_task_research(db, task.id, gated, actor_id, allow_stopped_gate=True)
+        db.refresh(task)
+        return task, False
+    db.commit()
+    db.refresh(task)
+    return task, True
+
+
+QUALIFICATION_WEIGHTS = {
+    "authenticity_maturity": 0.12,
+    "purchase_potential": 0.18,
+    "demand_readiness": 0.12,
+    "industry_professionalism": 0.10,
+    "product_market_fit": 0.10,
+    "growth_brand_potential": 0.10,
+    "decision_authority": 0.08,
+    "transaction_compliance": 0.08,
+    "engagement_momentum": 0.07,
+    "strategic_value": 0.05,
+}
+
+
+def _qualification_summary(commercial_profile: dict) -> dict:
+    profile = dict(commercial_profile or {})
+    dimensions = profile.get("qualification_dimensions") or {}
+    weighted_points = 0.0
+    covered_weight = 0.0
+    for key, weight in QUALIFICATION_WEIGHTS.items():
+        score = (dimensions.get(key) or {}).get("score")
+        if score is None:
+            continue
+        weighted_points += weight * float(score) / 5
+        covered_weight += weight
+    profile["qualification_score"] = (
+        round(weighted_points / covered_weight * 100, 2) if covered_weight else None
+    )
+    profile["qualification_coverage"] = round(covered_weight * 100, 2)
+    return profile
 
 
 class BusinessPoolGateway:
@@ -809,16 +969,18 @@ def complete_task_research(
     task_id: int,
     payload: Any,
     actor_id: int,
+    *,
+    allow_stopped_gate: bool = False,
 ) -> tuple[PublicPoolTask, DealAssessment]:
-    data = _data(payload)
+    retried = get_idempotent_completed_research(db, task_id, payload, actor_id)
+    if retried is not None:
+        return retried
+    data, components, submission_hash = _normalized_research_submission(payload)
     task = _leased_task(db, task_id, actor_id, data.get("agent_id"), data.get("lease_token"))
-    submission = _json_safe({key: value for key, value in data.items() if key != "lease_token"})
-    submission_hash = _snapshot_hash(submission)
-    existing = db.query(DealAssessment).filter(DealAssessment.task_id == task.id).first()
-    if task.status == "completed" and existing:
-        if (existing.evidence_snapshot or {}).get("submission_hash") != submission_hash:
-            raise ConflictError("已完成任务不能用不同内容覆盖")
-        return task, existing
+    if task.gate_status != "passed" and not (allow_stopped_gate and task.gate_status == "stopped"):
+        raise ConflictError("请先提交行业门控；只有通过后才能执行深入背调")
+    if data.get("industry_relevance") == "irrelevant" and not allow_stopped_gate:
+        raise ConflictError("行业无关必须在低成本门控阶段停止，不能通过深入背调接口提交")
     if task.status != "running":
         raise ConflictError("只有执行中的任务可以提交研究结果")
     subject = db.query(ResearchSubject).filter(ResearchSubject.id == task.subject_id).with_for_update().first()
@@ -828,8 +990,13 @@ def complete_task_research(
     research_data = {**data, "task_id": task.id}
     run, facts = _create_subject_research(db, subject, research_data, actor_id)
     unique_sources = len({fact.source_url_hash for fact in facts})
-    components = _data(data.get("score_components") or {})
-    scores = compute_deal_scores(components, data["identity_decision"], unique_sources)
+    commercial_profile = _qualification_summary(data.get("commercial_profile") or {})
+    scores = compute_deal_scores(
+        components,
+        data["identity_decision"],
+        unique_sources,
+        commercial_profile.get("qualification_coverage"),
+    )
     evidence_snapshot = {
         "submission_hash": submission_hash,
         "research_run_id": run.id,
@@ -846,6 +1013,13 @@ def complete_task_research(
         supplier_status=data.get("supplier_status") or "unknown",
         pain_points=data.get("pain_points") or [],
         product_fit=data.get("product_fit") or [],
+        industry_relevance=data.get("industry_relevance") or "uncertain",
+        industry_relevance_reason=data.get("industry_relevance_reason") or "",
+        research_depth=data.get("research_depth") or "focused",
+        stop_reason=data.get("stop_reason"),
+        social_profiles=_json_safe(data.get("social_profiles") or []),
+        knowledge_references=_json_safe(data.get("knowledge_references") or []),
+        commercial_profile=_json_safe(commercial_profile),
         recommended_strategy=data.get("recommended_strategy") or "",
         outreach_type=data.get("outreach_type") or ("reactivation" if task.tier == "T1" else "new_development"),
         opening_message_en=data.get("opening_message_en"),
@@ -853,7 +1027,7 @@ def complete_task_research(
         evidence_snapshot=evidence_snapshot,
         provider=data.get("provider") or "agent",
         model=data.get("model"),
-        assessment_version="v1",
+        assessment_version="v2",
         completed_at=_now(),
         created_by=actor_id,
         updated_by=actor_id,
@@ -926,6 +1100,12 @@ def approve_task(db: Session, task_id: int, actor_id: int) -> PublicPoolTask:
     assessment = db.query(DealAssessment).filter(DealAssessment.task_id == task.id).first()
     if subject is None or assessment is None:
         raise ConflictError("任务缺少研究主体或成交研判")
+    if (
+        assessment.identity_decision == "rejected"
+        or assessment.industry_relevance == "irrelevant"
+        or assessment.outreach_type == "no_outreach"
+    ):
+        raise ConflictError("主体不符、行业无关或不建议触达的客户不能审核进入团队公海")
     task.review_status = "approved"
     task.reviewed_by = actor_id
     task.reviewed_at = _now()
@@ -952,6 +1132,12 @@ def claim_approved_task(db: Session, task_id: int, actor_id: int) -> CustomerOpp
     assessment = db.query(DealAssessment).filter(DealAssessment.task_id == task.id).first()
     if subject is None or assessment is None:
         raise ConflictError("任务缺少研究主体或成交研判")
+    if (
+        assessment.identity_decision == "rejected"
+        or assessment.industry_relevance == "irrelevant"
+        or assessment.outreach_type == "no_outreach"
+    ):
+        raise ConflictError("主体不符、行业无关或不建议触达的客户不能领取")
     source_key = f"okki-public:{subject.source_customer_id}"
     opportunity = db.query(CustomerOpportunity).filter(
         CustomerOpportunity.source_key == source_key,
@@ -1023,11 +1209,21 @@ def claim_approved_task(db: Session, task_id: int, actor_id: int) -> CustomerOpp
     task.opportunity_id = opportunity.id
     db.commit()
     db.refresh(opportunity)
-    ingest_opportunity_event(
+    event = ingest_opportunity_event(
         db,
         opportunity,
         event_type="reactivation" if task.tier == "T1" else "public_pool",
     )
+    if event is None:
+        logger.warning(
+            "public pool opportunity claimed but radar sync failed: task=%s opp=%s",
+            task.id,
+            opportunity.id,
+        )
+        print(
+            f"public pool opportunity claimed but radar sync failed: task={task.id} opp={opportunity.id}",
+            flush=True,
+        )
     return opportunity
 
 

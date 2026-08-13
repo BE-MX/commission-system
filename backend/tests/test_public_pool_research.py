@@ -1,7 +1,7 @@
 """OKKI 公海分档、Agent 背调、确定性研判和机会投影契约。"""
 
 import importlib.util
-from datetime import date
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -40,6 +40,21 @@ def db():
     finally:
         session.close()
         engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def published_knowledge_reference(monkeypatch):
+    monkeypatch.setattr(
+        agent_router.knowledge_service,
+        "get_published_document",
+        lambda _db, _identity, document_id, *, audit_action=None: {
+            "document_id": document_id,
+            "revision_id": 38,
+            "title": "Target buyers",
+            "content_text": "Published test content",
+            "version_no": 3,
+        },
+    )
 
 
 def _candidate(tier: str, index: int) -> dict:
@@ -91,7 +106,7 @@ def _agent_client(db):
     app.include_router(agent_router.router, prefix="/api/sales-automation")
     app.dependency_overrides[get_db] = lambda: db
     app.dependency_overrides[require_sales_agent] = lambda: {
-        "sub": "17", "roles": [], "permissions": ["sales_automation:invoke"],
+        "sub": "17", "roles": [], "permissions": ["sales_automation:invoke", "knowledge:read"],
     }
     return TestClient(app)
 
@@ -129,11 +144,83 @@ def _research_payload(lease_token: str) -> dict:
         ],
         "contacts": [{"name": "Purchasing Team", "role": "Buyer", "source_url": "https://customer.example/contact", "captured_at": "2026-08-11T10:02:00Z", "confidence": 0.8}],
         "outreach_angles": ["Catalog fit"], "risks": ["Supplier status is not public"],
-        "score_components": {"industry_fit": 24, "pain_switch_trigger": 12, "intent_reactivation": 18, "buying_capacity": 12, "reachability": 9, "timing": 7, "risk_penalty": 4, "reasons": {"industry_fit": "Official product catalog"}},
+        "score_components": {"industry_fit": 24, "pain_switch_trigger": 12, "intent_reactivation": 18, "buying_capacity": 12, "reachability": 9, "timing": 7, "risk_penalty": 4, "reasons": {"industry_fit": "Official product catalog", "pain_switch_trigger": "Assortment gap is visible", "intent_reactivation": "Historical order seed", "buying_capacity": "Wholesale catalog", "reachability": "Sourced contact page", "timing": "Recent active catalog", "risk_penalty": "Supplier status unknown"}},
         "supplier_status": "unknown", "pain_points": [], "product_fit": ["Human-hair assortment"],
+        "industry_relevance": "core", "industry_relevance_reason": "Official catalog shows human-hair products.",
+        "research_depth": "deep",
+        "social_profiles": [{
+            "platform": "instagram", "profile_url": "https://instagram.com/customer",
+            "account_name": "Customer", "activity_level": "active",
+            "latest_activity_at": "2026-08-10T10:00:00Z", "business_signals": ["hair product posts"],
+            "captured_at": "2026-08-11T10:03:00Z", "confidence": 0.85,
+        }],
+        "knowledge_references": [{
+            "document_id": 8, "revision_id": 38, "version_no": 3,
+        }],
+        "commercial_profile": {
+            "customer_type": "wholesaler", "professional_level": "experienced",
+            "purchase_stage": "supplier_addition", "volume_band": "stable_medium", "scale_stage": "small_team",
+            "educator_influence": "unknown", "usage_scenarios": ["distribution"],
+            "product_directions": ["extension_focused"], "exclusion_status": "not_excluded",
+            "development_difficulty": 2, "positive_signals": ["active catalog"],
+            "negative_signals": [], "unknowns": ["current supplier"],
+            "next_validation_questions": ["Are you adding a second supplier?"],
+            "qualification_dimensions": {
+                "authenticity_maturity": {"score": 5, "reason": "Official site and social profile agree."},
+                "purchase_potential": {"score": 3, "reason": "Wholesale catalog, but no verified monthly volume."},
+                "demand_readiness": {"score": None, "reason": "No current inquiry details are public."},
+                "industry_professionalism": {"score": 4, "reason": "Professional product taxonomy is visible."},
+                "product_market_fit": {"score": 5, "reason": "Target extension assortment is explicit."},
+                "growth_brand_potential": {"score": 3, "reason": "Active catalog without verified expansion."},
+                "decision_authority": {"score": None, "reason": "No verified decision maker."},
+                "transaction_compliance": {"score": None, "reason": "No public transaction evidence."},
+                "engagement_momentum": {"score": None, "reason": "No current interaction history in the seed."},
+                "strategic_value": {"score": 3, "reason": "Potential wholesale channel; reach is unverified."},
+            },
+        },
         "recommended_strategy": "Ask whether the current assortment needs a small-MOQ custom color extension.",
         "outreach_type": "reactivation", "opening_message_en": "Draft only — noticed your matching assortment.",
         "idempotency_key": "public-pool-test-1",
+    }
+
+
+def _irrelevant_payload(lease_token: str) -> dict:
+    return {
+        "agent_id": "pool-agent", "lease_token": lease_token,
+        "summary": "Official page identifies the entity as an unrelated accounting firm.",
+        "identity_decision": "confirmed",
+        "facts": [{
+            "fact_type": "industry_gate", "claim": "The business offers accounting services only.",
+            "source_url": "https://customer.example/services", "captured_at": "2026-08-11T10:00:00Z",
+            "confidence": 0.95,
+        }],
+        "contacts": [], "outreach_angles": [], "risks": [],
+        "score_components": {"risk_penalty": 0, "reasons": {"industry_fit": "Unrelated industry"}},
+        "supplier_status": "unknown", "pain_points": [], "product_fit": [],
+        "industry_relevance": "irrelevant",
+        "industry_relevance_reason": "Opened official services page proves an unrelated industry.",
+        "research_depth": "gate_only", "stop_reason": "Industry gate failed; deep research stopped.",
+        "social_profiles": [], "knowledge_references": [],
+        "commercial_profile": {"customer_type": "other", "development_difficulty": 5},
+        "recommended_strategy": "Do not allocate sales effort unless new contradictory evidence appears.",
+        "outreach_type": "no_outreach", "idempotency_key": "public-pool-irrelevant-1",
+    }
+
+
+def _gate_payload(lease_token: str, *, relevance: str = "core", identity: str = "confirmed") -> dict:
+    return {
+        "agent_id": "pool-agent", "lease_token": lease_token,
+        "summary": "The official catalog establishes the customer identity and target industry.",
+        "identity_decision": identity,
+        "facts": [{
+            "fact_type": "industry_gate", "claim": "The catalog lists target-category products.",
+            "source_url": "https://customer.example/catalog", "captured_at": "2026-08-11T10:00:00Z",
+            "confidence": 0.9,
+        }],
+        "industry_relevance": relevance,
+        "industry_relevance_reason": "Official catalog matches the target industry.",
+        "stop_reason": "Industry gate failed; deep research stopped." if relevance == "irrelevant" else None,
+        "knowledge_references": [{"document_id": 8, "revision_id": 38, "version_no": 3}],
     }
 
 
@@ -297,6 +384,14 @@ def test_score_is_backend_computed_and_separates_evidence_confidence():
     assert confirmed == {"grade": "A", "deal_likelihood": "high", "evidence_confidence": "high", "business_quality_score": 100.0, "deal_score": 100.0, "priority_score": 100.0}
     assert candidate["priority_score"] < confirmed["priority_score"]
     assert candidate["evidence_confidence"] == "medium"
+
+
+def test_grade_is_capped_when_qualification_evidence_coverage_is_low():
+    factors = {"industry_fit": 25, "pain_switch_trigger": 20, "intent_reactivation": 20,
+               "buying_capacity": 15, "reachability": 10, "timing": 10, "risk_penalty": 0}
+    assert public_pool_service.compute_deal_scores(factors, "confirmed", 2, 60)["grade"] == "A"
+    assert public_pool_service.compute_deal_scores(factors, "confirmed", 2, 40)["grade"] == "B"
+    assert public_pool_service.compute_deal_scores(factors, "confirmed", 2, 20)["grade"] == "C"
     assert public_pool_service.compute_deal_scores(factors, "unverifiable", 0)["grade"] == "D"
 
 
@@ -316,6 +411,22 @@ def test_migration_106_contract():
         assert table in source
 
 
+def test_migration_113_adds_gated_research_outputs():
+    path = Path(__file__).parents[1] / "alembic/versions/113_public_pool_research_v2.py"
+    spec = importlib.util.spec_from_file_location("migration_113_public_pool", path)
+    migration = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(migration)
+    assert migration.revision == "113_public_pool_research_v2"
+    assert migration.down_revision == "112_knowledge_editor_ai"
+    source = path.read_text(encoding="utf-8")
+    for column in (
+        "industry_relevance", "research_depth", "stop_reason", "social_profiles",
+        "knowledge_references", "commercial_profile",
+    ):
+        assert column in source
+
+
 def test_agent_lease_completion_and_conflicting_retry(db):
     _generate(db, quota=1)
     task = db.query(models.PublicPoolTask).filter(models.PublicPoolTask.tier == "T1").one()
@@ -326,22 +437,167 @@ def test_agent_lease_completion_and_conflicting_retry(db):
     with pytest.raises(ValueError, match="其他Agent"):
         public_pool_service.claim_task(db, task.id, 18, "intruder")
     payload = _research_payload(lease)
+    gated = client.post(
+        f"/api/sales-automation/agent/public-pool/tasks/{task.id}/industry-gate",
+        json=_gate_payload(lease),
+    )
+    assert gated.status_code == 200, gated.text
+    assert gated.json()["data"]["deep_research_authorized"] is True
     completed = client.post(f"/api/sales-automation/agent/public-pool/tasks/{task.id}/complete", json=payload)
     assert completed.status_code == 200, completed.text
     assert completed.json()["data"]["assessment"]["grade"] == "A"
     same = client.post(f"/api/sales-automation/agent/public-pool/tasks/{task.id}/complete", json=payload)
-    assert same.status_code == 200
+    assert same.status_code == 200, same.text
+    task.lease_expires_at = datetime.utcnow() - timedelta(minutes=1)
+    db.commit()
+    expired_retry = client.post(f"/api/sales-automation/agent/public-pool/tasks/{task.id}/complete", json=payload)
+    assert expired_retry.status_code == 200
+    original_reference_reader = agent_router.knowledge_service.get_published_document
+    agent_router.knowledge_service.get_published_document = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        AssertionError("idempotent retry must not re-read mutable knowledge")
+    )
+    try:
+        assert client.post(f"/api/sales-automation/agent/public-pool/tasks/{task.id}/complete", json=payload).status_code == 200
+    finally:
+        agent_router.knowledge_service.get_published_document = original_reference_reader
     changed = {**payload, "summary": "Different result"}
     assert client.post(f"/api/sales-automation/agent/public-pool/tasks/{task.id}/complete", json=changed).status_code == 409
     assert db.query(models.ResearchRun).count() == 1
     assert db.query(models.ResearchFact).count() == 2
     assert db.query(models.DealAssessment).count() == 1
+    assessment = db.query(models.DealAssessment).one()
+    assert assessment.industry_relevance == "core"
+    assert assessment.research_depth == "deep"
+    assert assessment.social_profiles[0]["platform"] == "instagram"
+    assert assessment.knowledge_references[0]["version_no"] == 3
+    assert assessment.commercial_profile["customer_type"] == "wholesaler"
+    assert assessment.commercial_profile["qualification_score"] == 76.62
+    assert assessment.commercial_profile["qualification_coverage"] == 65.0
+
+
+def test_irrelevant_industry_gate_stops_deep_research_and_forces_zero_grade(db):
+    _generate(db, quota=1)
+    task = db.query(models.PublicPoolTask).filter(models.PublicPoolTask.tier == "T2").one()
+    _row, lease = public_pool_service.claim_task(db, task.id, 17, "pool-agent")
+    client = _agent_client(db)
+    gate = _gate_payload(lease, relevance="irrelevant")
+    gate["summary"] = "Official page identifies the entity as an unrelated accounting firm."
+    gate["facts"][0] = {
+        "fact_type": "industry_gate", "claim": "The business offers accounting services only.",
+        "source_url": "https://customer.example/services", "captured_at": "2026-08-11T10:00:00Z",
+        "confidence": 0.95,
+    }
+    gate["industry_relevance_reason"] = "Opened official services page proves an unrelated industry."
+    completed = client.post(
+        f"/api/sales-automation/agent/public-pool/tasks/{task.id}/industry-gate",
+        json=gate,
+    )
+    assert completed.status_code == 200, completed.text
+    assert completed.json()["data"]["deep_research_authorized"] is False
+    assert completed.json()["data"]["status"] == "completed"
+    assessment = db.query(models.DealAssessment).filter_by(task_id=task.id).one()
+    assert assessment.industry_relevance == "irrelevant"
+    assert assessment.research_depth == "gate_only"
+    assert assessment.outreach_type == "no_outreach"
+    assert assessment.opening_message_en is None
+    assert assessment.social_profiles == []
+    assert assessment.risks == []
+    assert db.query(models.LeadContact).count() == 0
+    with pytest.raises(public_pool_service.ConflictError, match="不能审核"):
+        public_pool_service.approve_task(db, task.id, actor_id=9)
+
+
+def test_irrelevant_industry_gate_rejects_contacts_or_positive_scores():
+    payload = _irrelevant_payload("x" * 32)
+    payload["contacts"] = [{
+        "name": "Owner", "source_url": "https://example.com/team",
+        "captured_at": "2026-08-11T10:00:00Z",
+    }]
+    payload["score_components"]["industry_fit"] = 10
+    from app.sales_automation.schemas import PublicPoolResearchSubmit
+    with pytest.raises(ValueError, match="行业无关客户"):
+        PublicPoolResearchSubmit.model_validate(payload)
+
+
+def test_full_research_requires_passed_industry_gate(db):
+    _generate(db, quota=1)
+    task = db.query(models.PublicPoolTask).filter(models.PublicPoolTask.tier == "T2").one()
+    _row, lease = public_pool_service.claim_task(db, task.id, 17, "pool-agent")
+    response = _agent_client(db).post(
+        f"/api/sales-automation/agent/public-pool/tasks/{task.id}/complete",
+        json=_research_payload(lease),
+    )
+    assert response.status_code == 409
+    assert "先提交行业门控" in response.text
+
+
+def test_excluded_product_route_must_use_irrelevant_gate():
+    from app.sales_automation.schemas import PublicPoolResearchSubmit
+    payload = _research_payload("x" * 32)
+    payload["commercial_profile"]["exclusion_status"] = "excluded"
+    with pytest.raises(ValueError, match="已排除客户"):
+        PublicPoolResearchSubmit.model_validate(payload)
+
+
+def test_agent_knowledge_routes_reuse_published_acl_service(db, monkeypatch):
+    calls = []
+
+    def fake_search(_db, identity, query, *, limit, audit_action):
+        calls.append(("search", identity["sub"], query, limit, audit_action))
+        return [{"document_id": 8, "revision_id": 38, "title": "Target buyers", "version_no": 3}]
+
+    def fake_get(_db, identity, document_id, *, audit_action):
+        calls.append(("read", identity["sub"], document_id, audit_action))
+        return {
+            "document_id": document_id, "revision_id": 38, "title": "Target buyers",
+            "content_text": "Published content", "version_no": 3,
+        }
+
+    monkeypatch.setattr(agent_router.knowledge_service, "search_published", fake_search)
+    monkeypatch.setattr(agent_router.knowledge_service, "get_published_document", fake_get)
+    client = _agent_client(db)
+
+    searched = client.get("/api/sales-automation/agent/knowledge/search", params={"q": "hair buyer", "limit": 5})
+    document = client.get("/api/sales-automation/agent/knowledge/documents/8")
+
+    assert searched.status_code == 200
+    assert searched.json()["data"][0]["version_no"] == 3
+    assert document.status_code == 200
+    assert document.json()["data"]["content"] == "Published content"
+    assert calls == [
+        ("search", "17", "hair buyer", 5, "sales_agent_research_search"),
+        ("read", "17", 8, "sales_agent_research_read"),
+    ]
+
+
+def test_agent_completion_rejects_stale_or_invented_knowledge_reference(db, monkeypatch):
+    _generate(db, quota=1)
+    task = db.query(models.PublicPoolTask).filter(models.PublicPoolTask.tier == "T2").one()
+    client = _agent_client(db)
+    claim = client.post(
+        f"/api/sales-automation/agent/public-pool/tasks/{task.id}/claim",
+        json={"agent_id": "pool-agent"},
+    )
+    payload = _research_payload(claim.json()["data"]["lease_token"])
+    monkeypatch.setattr(agent_router.knowledge_service, "get_published_document", lambda *_args, **_kwargs: {
+        "document_id": 8, "revision_id": 39, "title": "Target buyers", "version_no": 4,
+    })
+
+    completed = client.post(
+        f"/api/sales-automation/agent/public-pool/tasks/{task.id}/complete",
+        json=payload,
+    )
+
+    assert completed.status_code == 409
+    assert db.query(models.DealAssessment).count() == 0
+    assert db.query(models.PublicPoolTask).filter_by(id=task.id).one().status == "running"
 
 
 def test_human_approval_then_claim_projects_t1_to_reactivation_radar(db):
     _generate(db, quota=1)
     task = db.query(models.PublicPoolTask).filter(models.PublicPoolTask.tier == "T1").one()
     _row, lease = public_pool_service.claim_task(db, task.id, 17, "pool-agent")
+    public_pool_service.submit_industry_gate(db, task.id, _gate_payload(lease), actor_id=17)
     public_pool_service.complete_task_research(db, task.id, _research_payload(lease), actor_id=17)
     human = _human_client(db)
     admin = _admin_client(db)
@@ -372,6 +628,7 @@ def test_public_pool_claim_is_idempotent_for_owner_and_rejects_other_salesperson
     _generate(db, quota=1)
     task = db.query(models.PublicPoolTask).filter(models.PublicPoolTask.tier == "T2").one()
     _row, lease = public_pool_service.claim_task(db, task.id, 17, "pool-agent")
+    public_pool_service.submit_industry_gate(db, task.id, _gate_payload(lease), actor_id=17)
     public_pool_service.complete_task_research(db, task.id, _research_payload(lease), actor_id=17)
     public_pool_service.approve_task(db, task.id, actor_id=7)
 
@@ -394,10 +651,50 @@ def test_public_pool_claim_is_idempotent_for_owner_and_rejects_other_salesperson
     assert claimed[0][0].id == task.id
 
 
+def test_public_pool_claim_truncates_long_radar_judgement(db):
+    _generate(db, quota=1)
+    task = db.query(models.PublicPoolTask).filter(models.PublicPoolTask.tier == "T2").one()
+    _row, lease = public_pool_service.claim_task(db, task.id, 17, "pool-agent")
+    public_pool_service.submit_industry_gate(db, task.id, _gate_payload(lease), actor_id=17)
+    payload = _research_payload(lease)
+    payload["summary"] = "S" * 700
+    payload["recommended_strategy"] = "R" * 700
+    public_pool_service.complete_task_research(db, task.id, payload, actor_id=17)
+    public_pool_service.approve_task(db, task.id, actor_id=9)
+
+    opportunity = public_pool_service.claim_approved_task(db, task.id, actor_id=7)
+
+    profile = db.query(insight_models.CustomerProfile).filter_by(
+        customer_external_id=opportunity.customer_external_id,
+    ).one()
+    event = db.query(insight_models.CustomerProfileEvent).filter_by(
+        opportunity_id=opportunity.id,
+        event_type="public_pool",
+    ).one()
+    assert len(profile.profile_judgement) == 500
+    assert event.event_source == "okki_public_pool"
+
+
+def test_public_pool_claim_returns_success_when_radar_sync_fails(db, monkeypatch):
+    _generate(db, quota=1)
+    task = db.query(models.PublicPoolTask).filter(models.PublicPoolTask.tier == "T2").one()
+    _row, lease = public_pool_service.claim_task(db, task.id, 17, "pool-agent")
+    public_pool_service.submit_industry_gate(db, task.id, _gate_payload(lease), actor_id=17)
+    public_pool_service.complete_task_research(db, task.id, _research_payload(lease), actor_id=17)
+    public_pool_service.approve_task(db, task.id, actor_id=9)
+    monkeypatch.setattr(public_pool_service, "ingest_opportunity_event", lambda *_args, **_kwargs: None)
+
+    opportunity = public_pool_service.claim_approved_task(db, task.id, actor_id=7)
+
+    assert opportunity.owner_user_id == 7
+    assert db.query(models.PublicPoolTask).filter_by(id=task.id).one().opportunity_id == opportunity.id
+
+
 def test_historical_lost_opportunity_cannot_be_stolen_or_reset(db):
     _generate(db, quota=1)
     task = db.query(models.PublicPoolTask).filter(models.PublicPoolTask.tier == "T2").one()
     _row, lease = public_pool_service.claim_task(db, task.id, 17, "pool-agent")
+    public_pool_service.submit_industry_gate(db, task.id, _gate_payload(lease), actor_id=17)
     public_pool_service.complete_task_research(db, task.id, _research_payload(lease), actor_id=17)
     public_pool_service.approve_task(db, task.id, actor_id=9)
     opportunity = public_pool_service.claim_approved_task(db, task.id, actor_id=7)

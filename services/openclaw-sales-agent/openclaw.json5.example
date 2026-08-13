@@ -15,9 +15,9 @@
   agents: {
     defaults: {
       workspace: "~/.openclaw-ark-sales/workspace",
-      model: { primary: "deepseek/deepseek-v4-flash" },
+      model: { primary: "deepseek/deepseek-v4-pro" },
       models: {
-        "deepseek/deepseek-v4-flash": { agentRuntime: { id: "openclaw" } },
+        "deepseek/deepseek-v4-pro": { agentRuntime: { id: "openclaw" } },
       },
       skills: ["ark-lead-discovery", "ark-company-research", "ark-public-pool-research"],
     },

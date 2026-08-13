@@ -27,6 +27,8 @@ test("MCP exposes only the Ark workflow and never returns the lease token", asyn
     completeSearchJob: async () => ({ status: "completed" }),
     failSearchJob: async () => ({ status: "failed" }),
     getLead: async (companyId) => ({ company: { id: companyId } }),
+    searchKnowledge: async () => ([{ document_id: 7, title: "Target buyers", version_no: 2 }]),
+    getKnowledgeDocument: async (documentId) => ({ document_id: documentId, title: "Target buyers", version_no: 2, content: "Salons" }),
     saveContacts: async () => ({ created: 1 }),
     saveResearch: async () => ({ saved: true }),
     listPublicPoolTasks: async () => ({ items: [] }),
@@ -37,6 +39,10 @@ test("MCP exposes only the Ark workflow and never returns the lease token", asyn
       lease_expires_at: "2026-08-11T12:00:00Z",
     }),
     heartbeatPublicPoolTask: async () => ({ renewed: true }),
+    submitPublicPoolIndustryGate: async (_taskId, receivedLease) => {
+      submittedPoolLease = receivedLease;
+      return { gate_status: "passed", deep_research_authorized: true };
+    },
     completePublicPoolTask: async (_taskId, receivedLease) => {
       submittedPoolLease = receivedLease;
       return { status: "completed", assessment: { grade: "B" } };
@@ -63,6 +69,7 @@ test("MCP exposes only the Ark workflow and never returns the lease token", asyn
       "ark_complete_search_job",
       "ark_fail_public_pool_task",
       "ark_fail_search_job",
+      "ark_get_knowledge_document",
       "ark_get_lead",
       "ark_get_public_pool_task_context",
       "ark_get_search_job_context",
@@ -72,7 +79,9 @@ test("MCP exposes only the Ark workflow and never returns the lease token", asyn
       "ark_list_search_jobs",
       "ark_save_contacts",
       "ark_save_research",
+      "ark_search_knowledge",
       "ark_submit_candidates",
+      "ark_submit_public_pool_industry_gate",
     ],
   );
 
@@ -100,6 +109,24 @@ test("MCP exposes only the Ark workflow and never returns the lease token", asyn
   });
   assert.equal(poolClaim.structuredContent.lease_held, true);
   assert.doesNotMatch(JSON.stringify(poolClaim), new RegExp(poolLeaseToken));
+  const gate = await client.callTool({
+    name: "ark_submit_public_pool_industry_gate",
+    arguments: {
+      task_id: 7,
+      summary: "Official catalog matches the target industry.",
+      identity_decision: "confirmed",
+      facts: [{
+        claim: "The catalog lists target products.",
+        source_url: "https://example-industrial.test/catalog",
+        captured_at: "2026-08-11T10:00:00+08:00",
+        confidence: 0.9,
+      }],
+      industry_relevance: "core",
+      industry_relevance_reason: "Official catalog match.",
+      knowledge_references: [{ document_id: 7, revision_id: 21, version_no: 2 }],
+    },
+  });
+  assert.equal(gate.structuredContent.deep_research_authorized, true);
   await client.callTool({
     name: "ark_complete_public_pool_task",
     arguments: {
@@ -114,6 +141,8 @@ test("MCP exposes only the Ark workflow and never returns the lease token", asyn
         confidence: 0.9,
       }],
       score_components: { industry_fit: 20, reasons: { industry_fit: "Official catalog" } },
+      industry_relevance: "core",
+      industry_relevance_reason: "The official catalog matches the target category.",
       recommended_strategy: "Lead with the matched catalog segment.",
       outreach_type: "new_development",
     },

@@ -188,6 +188,18 @@ export class ArkClient {
     });
   }
 
+  searchKnowledge(query, limit = 10) {
+    const cleanQuery = String(query || "").trim();
+    if (!cleanQuery) throw new ArkApiError("知识库检索词不能为空");
+    const boundedLimit = Math.min(Math.max(Number(limit) || 10, 1), 20);
+    const params = new URLSearchParams({ q: cleanQuery, limit: String(boundedLimit) });
+    return this.request(`/api/sales-automation/agent/knowledge/search?${params}`);
+  }
+
+  getKnowledgeDocument(documentId) {
+    return this.request(`/api/sales-automation/agent/knowledge/documents/${integerId(documentId, "document_id")}`);
+  }
+
   async listPublicPoolTasks(page = 1, pageSize = 20) {
     const requestedPage = integerId(page, "page");
     const requestedPageSize = integerId(pageSize, "page_size");
@@ -236,6 +248,13 @@ export class ArkClient {
 
   heartbeatPublicPoolTask(taskId, leaseToken) {
     return this.#publicPoolLeaseRequest(taskId, "heartbeat", leaseToken);
+  }
+
+  submitPublicPoolIndustryGate(taskId, leaseToken, gate) {
+    return this.request(`/api/sales-automation/agent/public-pool/tasks/${integerId(taskId, "task_id")}/industry-gate`, {
+      method: "POST",
+      body: { ...gate, agent_id: this.#agentId, lease_token: leaseToken },
+    });
   }
 
   completePublicPoolTask(taskId, leaseToken, research) {

@@ -62,6 +62,27 @@ test("ArkClient errors do not include the bearer token", async () => {
   });
 });
 
+test("ArkClient exposes published knowledge search and document reads through the agent API", async () => {
+  const paths = [];
+  await withServer((request, response) => {
+    paths.push(request.url);
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify({
+      code: 200,
+      message: "ok",
+      data: request.url.includes("/search")
+        ? [{ document_id: 7, title: "Target buyers", version_no: 2 }]
+        : { document_id: 7, title: "Target buyers", version_no: 2, content: "Salons and distributors" },
+    }));
+  }, async (baseUrl) => {
+    const api = client(baseUrl);
+    assert.equal((await api.searchKnowledge("hair buyers", 5))[0].document_id, 7);
+    assert.equal((await api.getKnowledgeDocument(7)).version_no, 2);
+  });
+  assert.equal(paths[0], "/api/sales-automation/agent/knowledge/search?q=hair+buyers&limit=5");
+  assert.equal(paths[1], "/api/sales-automation/agent/knowledge/documents/7");
+});
+
 test("LeaseStore retains lease secrets in memory and requires an explicit claim", () => {
   const leases = new LeaseStore();
   assert.throws(() => leases.require(9), /claim|租约/);
@@ -131,4 +152,25 @@ test("public-pool claim guard blocks recent T1 before sending a claim", async ()
     await assert.rejects(() => client(baseUrl).claimPublicPoolTask(9), /最近60天/);
   });
   assert.deepEqual(methods, ["GET"]);
+});
+
+test("ArkClient submits the staged public-pool industry gate with the in-memory lease", async () => {
+  let received = null;
+  await withServer(async (request, response) => {
+    received = { url: request.url, body: JSON.parse(await new Promise((resolve) => {
+      let value = "";
+      request.on("data", (chunk) => { value += chunk; });
+      request.on("end", () => resolve(value));
+    })) };
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify({ code: 200, message: "ok", data: { deep_research_authorized: true } }));
+  }, async (baseUrl) => {
+    await client(baseUrl).submitPublicPoolIndustryGate(7, "l".repeat(32), {
+      summary: "Matched", identity_decision: "confirmed", facts: [],
+      industry_relevance: "core", industry_relevance_reason: "Catalog match",
+    });
+  });
+  assert.equal(received.url, "/api/sales-automation/agent/public-pool/tasks/7/industry-gate");
+  assert.equal(received.body.agent_id, "test-agent");
+  assert.equal(received.body.lease_token, "l".repeat(32));
 });

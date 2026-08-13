@@ -846,6 +846,8 @@ AI 经营简报为数据库持久化后台任务，页面轮询 `queued/running/
 
 代码边界：后端 `app/knowledge/`（`router.py` / `models.py` / `schemas.py` / `service.py` + `access.py` ACL + `content.py` Tiptap JSON 白名单），前端 `views/knowledge/`（`KnowledgeWorkbench.vue` 薄壳 + `knowledgeState.js` + `components/`），MCP 适配器 `app/mcp/knowledge_tools.py`。HTTP 与 MCP 不各自实现权限，而是共同调用 knowledge service。
 
+**公海背调接入（2026-08-13）**：OpenClaw 的 `ark-sales` 侧车通过 `/api/sales-automation/agent/knowledge/*` 复用同一 `knowledge.service` 检索/读取已发布文档，仍同时校验 MCP token 的 `knowledge:read` 和库成员 ACL，并记录独立的 sales-agent 读取审计。背调结果只保存文档 ID/标题/版本/用途；企业知识是内部产品匹配基准，不能写入公开事实证据。背调先做行业门控，明确行业无关即停止联系人、社会关系、供应商和深度风险调研；无官网客户改走 Instagram/Facebook/TikTok/预约页等社媒优先路径。
+
 **平衡型侧栏**：展开宽度 310px，收起后保留 54px 快捷栏；折叠状态保存在本地，宽度直接切换，不做宽度动画。“搜索已发布知识”位于侧栏最顶部，“新建知识库”与“审批队列”相邻，成员权限入口跟随对应知识库行。知识库图标按分类使用公司级金色、部门级蓝色、个人级绿色；新建目录为蓝色文件夹图标，新建文档为金色文档图标。知识库、目录和文档名称只在实际截断时才显示完整名称浮层。
 
 **成员配置**：成员弹框标题显示当前知识库名称，按方舟用户名或姓名搜索启用账号，选择账号后配置 viewer/editor/reviewer/admin；页面不再要求人工输入用户 ID。保存时若账号已停用、删除或不存在，弹框保留当前草稿并在对应成员行提示移除后重试。

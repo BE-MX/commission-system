@@ -540,6 +540,7 @@ def get_published_document(db, identity: dict, document_id: int, *, audit_action
         db.commit()
     return {
         "document_id": document.id,
+        "revision_id": revision.id,
         "library_id": document.library_id,
         "title": revision.title,
         "content_json": revision.content_json,
@@ -675,8 +676,12 @@ def search_published(db, identity: dict, query: str, *, limit: int = 20, audit_a
     limit = max(1, min(int(limit), 20))
     rows_query = db.query(KnowledgeDocument, KnowledgeRevision).join(
         KnowledgeRevision, KnowledgeRevision.id == KnowledgeDocument.published_revision_id
+    ).join(
+        KnowledgeLibrary, KnowledgeLibrary.id == KnowledgeDocument.library_id
     ).filter(
         KnowledgeDocument.deleted_at.is_(None),
+        KnowledgeLibrary.deleted_at.is_(None),
+        KnowledgeLibrary.status == "active",
         or_(KnowledgeRevision.title.contains(clean_query), KnowledgeRevision.content_text.contains(clean_query)),
     )
     if not access.is_super_admin(identity):
@@ -688,6 +693,7 @@ def search_published(db, identity: dict, query: str, *, limit: int = 20, audit_a
     results = [
         {
             "document_id": document.id,
+            "revision_id": revision.id,
             "library_id": document.library_id,
             "title": revision.title,
             "summary": revision.content_text[:240],
