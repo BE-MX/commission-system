@@ -43,7 +43,7 @@
         <article class="oi-metric oi-metric--risk lg-card is-static">
           <span>需行动客户</span>
           <strong>{{ number(riskTotal) }}</strong>
-          <p>临近 {{ overview.customer_risk.upcoming }} · 超期 {{ overview.customer_risk.overdue }} · 高风险 {{ overview.customer_risk.churn_risk }}</p>
+          <p>到期 {{ overview.customer_risk.due }} · 异常 {{ overview.customer_risk.abnormal }} · 样本不足 {{ overview.customer_risk.insufficient_data }}</p>
         </article>
         <article class="oi-metric oi-metric--forecast lg-card is-static">
           <span>未来 30 天 GMV 预测</span>
@@ -57,6 +57,7 @@
           <el-tab-pane label="经营总览" name="overview" />
           <el-tab-pane label="国家机会" name="countries" />
           <el-tab-pane label="团队与个人" name="people" />
+          <el-tab-pane label="客户画像" name="profiles" />
           <el-tab-pane label="客户行动清单" name="customers" />
         </el-tabs>
 
@@ -170,10 +171,48 @@
           </el-table>
         </div>
 
+        <div v-else-if="activeTab === 'profiles'" v-loading="detailLoading" class="oi-table-wrap">
+          <div class="oi-section-note"><b>客户画像分析</b><span>{{ profiles.definitions?.profile }}</span></div>
+          <div class="oi-profile-summary">
+            <div><span>本期客户</span><b>{{ number(profiles.summary?.active_customer_count) }}</b></div>
+            <div><span>画像组合</span><b>{{ number(profiles.summary?.profile_count) }}</b></div>
+            <div><span>客户性质覆盖</span><b>{{ profiles.summary?.customer_nature_coverage || 0 }}%</b></div>
+            <div><span>B1/B3 新签覆盖</span><b>{{ profiles.summary?.new_sign_b1_b3_coverage || 0 }}%</b></div>
+            <div><span>复购周期覆盖</span><b>{{ profiles.summary?.repeat_cycle_coverage || 0 }}%</b></div>
+          </div>
+          <el-table :data="profiles.items" border class="list-table">
+            <el-table-column type="expand" min-width="48">
+              <template #default="{ row }">
+                <div class="oi-profile-evidence">
+                  <section><h4>统计期畅销产品</h4><div><span v-for="item in row.period_best_sellers" :key="item.name"><b>{{ item.name }}</b>{{ number(item.quantity) }} · {{ item.share }}%</span></div></section>
+                  <section><h4>统计期型号</h4><div><span v-for="item in row.period_models" :key="item.name"><b>{{ item.name }}</b>{{ number(item.quantity) }} · {{ item.share }}%</span></div></section>
+                  <section><h4>统计期颜色</h4><div><span v-for="item in row.period_colors" :key="item.name"><b>{{ item.name }}</b>{{ number(item.quantity) }} · {{ item.share }}%</span></div></section>
+                  <section><h4>统计期幅度</h4><div><span v-for="item in row.period_amplitudes" :key="item.name"><b>{{ item.name }}寸</b>{{ number(item.quantity) }} · {{ item.share }}%</span></div></section>
+                  <section><h4>历史复购型号</h4><div><span v-for="item in row.repeat_models" :key="item.name"><b>{{ item.name }}</b>{{ number(item.quantity) }} · {{ item.share }}%</span></div></section>
+                  <section><h4>历史复购幅度</h4><div><span v-for="item in row.repeat_amplitudes" :key="item.name"><b>{{ item.name }}寸</b>{{ number(item.quantity) }} · {{ item.share }}%</span></div></section>
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column label="国家" prop="country" min-width="92" fixed />
+            <el-table-column label="来源渠道" prop="source_label" min-width="116" />
+            <el-table-column label="客户性质" prop="customer_nature" min-width="94" />
+            <el-table-column label="新签型号" prop="new_sign_model_family" min-width="92" />
+            <el-table-column label="本期客户" prop="active_customer_count" min-width="88" />
+            <el-table-column label="同画像客户" prop="peer_customer_count" min-width="100" />
+            <el-table-column label="首返周期" min-width="106"><template #default="{ row }">{{ row.avg_first_return_cycle_days != null ? `${row.avg_first_return_cycle_days} 天` : '样本不足' }}</template></el-table-column>
+            <el-table-column label="首返样本" prop="first_return_sample_count" min-width="88" />
+            <el-table-column label="平均复购周期" min-width="122"><template #default="{ row }">{{ row.avg_repeat_cycle_days ? `${row.avg_repeat_cycle_days} 天` : '样本不足' }}</template></el-table-column>
+            <el-table-column label="复购间隔样本" prop="repeat_interval_count" min-width="110" />
+            <el-table-column label="本期订单" prop="period_orders" min-width="88" />
+            <el-table-column label="本期金额" min-width="120"><template #default="{ row }">${{ money(row.period_amount_usd) }}</template></el-table-column>
+            <el-table-column label="证据等级" min-width="90"><template #default="{ row }">{{ evidenceLabel(row.evidence_level) }}</template></el-table-column>
+          </el-table>
+        </div>
+
         <div v-else v-loading="detailLoading" class="oi-table-wrap">
           <div class="oi-section-note oi-customer-filters">
             <div><b>客户行动清单</b><span>{{ customers.risk_definition }}</span></div>
-            <el-select v-model="customerFilters.risk_status" clearable placeholder="全部风险" @change="changeCustomerPage"><el-option label="临近周期" value="upcoming" /><el-option label="已经超期" value="overdue" /><el-option label="高流失风险" value="churn_risk" /></el-select>
+            <el-select v-model="customerFilters.risk_status" clearable placeholder="全部风险" @change="changeCustomerPage"><el-option label="到期提醒" value="due" /><el-option label="周期异常" value="abnormal" /><el-option label="样本不足" value="insufficient_data" /></el-select>
             <el-select v-model="customerFilters.country" clearable filterable placeholder="全部国家" @change="changeCustomerPage"><el-option v-for="country in options.countries" :key="country" :label="country" :value="country" /></el-select>
           </div>
           <el-table :data="customers.items" border class="list-table">
@@ -181,9 +220,11 @@
             <el-table-column label="国家" prop="country" min-width="94" />
             <el-table-column label="负责人" prop="user_name" min-width="96" />
             <el-table-column label="风险" min-width="108"><template #default="{ row }"><el-tag effect="plain" :type="riskType(row.risk_status)">{{ riskLabel(row.risk_status) }}</el-tag></template></el-table-column>
-            <el-table-column label="典型周期" min-width="126"><template #default="{ row }">{{ row.typical_cycle_days }} 天 · {{ cycleSourceLabel(row.cycle_source) }}</template></el-table-column>
+            <el-table-column label="所属画像" prop="profile_label" min-width="280" show-overflow-tooltip />
+            <el-table-column label="画像平均周期" min-width="132"><template #default="{ row }">{{ row.typical_cycle_days ? `${row.typical_cycle_days} 天` : '样本不足' }} · {{ cycleSourceLabel(row.cycle_source) }}</template></el-table-column>
             <el-table-column label="上次下单" prop="last_order_date" min-width="108" />
-            <el-table-column label="预计下单" prop="expected_order_date" min-width="108" />
+            <el-table-column label="提醒日期" prop="expected_order_date" min-width="108" />
+            <el-table-column label="异常日期" prop="abnormal_date" min-width="108" />
             <el-table-column label="超期" min-width="80"><template #default="{ row }">{{ row.overdue_days ? `${row.overdue_days} 天` : '—' }}</template></el-table-column>
             <el-table-column label="历史金额" min-width="118"><template #default="{ row }">${{ money(row.lifetime_amount_usd) }}</template></el-table-column>
             <el-table-column label="偏好" min-width="190"><template #default="{ row }">{{ preferenceText(row) }}</template></el-table-column>
@@ -217,7 +258,7 @@ const {
   activeTab, aiBrief, aiLoading, briefMatchesFilters, changeCustomerPage, changePeopleDimension,
   changeTab, changeTeam, countries, customerFilters, customers, detailLoading,
   error, filters, generateBrief, handleBriefAction, loadPage, loading, options, overview,
-  people, peopleDimension, scopedUsers,
+  people, peopleDimension, profiles, scopedUsers,
 } = useOrderIntelligence()
 
 const trendMode = ref('amount')
@@ -239,7 +280,9 @@ const briefDisplayContent = computed(() => {
   if (aiBrief.value.status === 'running') return '正在汇总国家、人员与客户行动证据，完成后将自动显示…'
   return aiBrief.value.error_message || '暂无简报内容'
 })
-const riskTotal = computed(() => overview.value ? Object.values(overview.value.customer_risk).reduce((sum, value) => sum + Number(value || 0), 0) : 0)
+const riskTotal = computed(() => overview.value
+  ? Number(overview.value.customer_risk.due || 0) + Number(overview.value.customer_risk.abnormal || 0)
+  : 0)
 const number = value => Number(value || 0).toLocaleString('zh-CN')
 const money = value => Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
 const compactMoney = value => Number(value || 0).toLocaleString('en-US', { notation: 'compact', maximumFractionDigits: 1 })
@@ -248,13 +291,18 @@ const changeClass = value => value > 0 ? 'is-up' : (value < 0 ? 'is-down' : '')
 const confidenceLabel = value => ({ high: '高置信', medium: '中等置信', low: '低置信' }[value] || '待评估')
 const evidenceLabel = value => ({ high: '高证据', medium: '中证据', low: '小样本' }[value] || '待评估')
 const scoreType = value => value >= 70 ? 'success' : (value >= 45 ? 'warning' : 'info')
-const riskType = value => ({ churn_risk: 'danger', overdue: 'warning', upcoming: 'info' }[value] || 'info')
-const riskLabel = value => ({ churn_risk: '高流失风险', overdue: '已经超期', upcoming: '临近周期' }[value] || value)
-const cycleSourceLabel = value => ({ customer_history: '客户自身', country_peer: '同国家估算', global_peer: '全局估算' }[value] || '估算')
+const riskType = value => ({ abnormal: 'danger', due: 'warning', insufficient_data: 'info' }[value] || 'info')
+const riskLabel = value => ({ abnormal: '周期异常', due: '到期提醒', insufficient_data: '样本不足' }[value] || value)
+const cycleSourceLabel = value => ({ profile_peer: '同画像均值', insufficient_data: '无复购样本' }[value] || '估算')
 const ppChangeText = value => value == null ? '无上期' : `${value > 0 ? '+' : ''}${value}pp`
 const growthText = value => value == null ? '新增' : `${value > 0 ? '+' : ''}${value}%`
 const productQuantityText = item => `${number(item.quantity)} · ${growthText(item.quantity_growth)}`
-const preferenceText = row => [...(row.top_models || []), ...(row.top_colors || [])].slice(0, 4).map(item => `${item.name} ${growthText(item.quantity_growth)}`).join(' / ') || '暂无稳定偏好'
+const preferenceText = row => [...(row.top_models || []), ...(row.top_colors || [])].slice(0, 4).map(item => {
+  const metric = Object.prototype.hasOwnProperty.call(item, 'previous_quantity')
+    ? growthText(item.quantity_growth)
+    : `${number(item.quantity)} 件`
+  return `${item.name} ${metric}`
+}).join(' / ') || '暂无稳定偏好'
 </script>
 
 <style scoped src="./order-intelligence.css"></style>

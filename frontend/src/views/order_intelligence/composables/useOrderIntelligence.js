@@ -4,6 +4,7 @@ import {
   getActiveOrderAiBrief,
   getCountryAnalysis,
   getCustomerActions,
+  getCustomerProfileAnalysis,
   getLatestOrderAiBrief,
   getOrderAiBriefStatus,
   getOrderIntelligenceFilters,
@@ -53,6 +54,7 @@ export function useOrderIntelligence() {
   const overview = ref(null)
   const countries = ref({ items: [], total: 0 })
   const people = ref({ items: [], total: 0 })
+  const profiles = ref({ items: [], total: 0, summary: {}, definitions: {} })
   const customers = ref({ items: [], total: 0, page: 1, page_size: 20 })
   const customerFilters = reactive({ risk_status: '', country: '' })
   const aiBrief = ref({ visible: false, job_id: null, status: 'idle', content: '', source: '', error_message: '' })
@@ -126,6 +128,8 @@ export function useOrderIntelligence() {
         countries.value = await getCountryAnalysis(baseParams())
       } else if (activeTab.value === 'people') {
         people.value = await getPeopleAnalysis({ ...baseParams(), dimension: peopleDimension.value })
+      } else if (activeTab.value === 'profiles') {
+        profiles.value = await getCustomerProfileAnalysis(baseParams())
       } else if (activeTab.value === 'customers') {
         customers.value = await getCustomerActions({
           ...baseParams(),
@@ -251,6 +255,6 @@ export function useOrderIntelligence() {
     activeTab, aiBrief, aiLoading, briefMatchesFilters, changeCustomerPage, changePeopleDimension,
     changeTab, changeTeam, countries, customerFilters, customers, detailLoading,
     error, filters, generateBrief, handleBriefAction, loadPage, loading, options, overview,
-    people, peopleDimension, scopedUsers,
+    people, peopleDimension, profiles, scopedUsers,
   }
 }

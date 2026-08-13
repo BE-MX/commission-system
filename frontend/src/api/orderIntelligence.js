@@ -15,6 +15,9 @@ export const getCountryAnalysis = params => unwrap(
 export const getPeopleAnalysis = params => unwrap(
   orderIntelligenceClient.get('/people', queryConfig(params)),
 )
+export const getCustomerProfileAnalysis = params => unwrap(
+  orderIntelligenceClient.get('/customer-profiles', queryConfig(params)),
+)
 export const getCustomerActions = params => unwrap(
   orderIntelligenceClient.get('/customers', queryConfig(params)),
 )

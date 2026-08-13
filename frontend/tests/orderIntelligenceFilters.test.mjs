@@ -40,3 +40,14 @@ test('AI brief generation includes the active multidimensional filters', () => {
   }
   assert.match(composable, /generateOrderAiBrief\(\{ \.\.\.baseParams\(\), focus \}\)/)
 })
+
+test('customer profiles expose segment dimensions, product distributions, and profile alerts', () => {
+  const page = read('../src/views/order_intelligence/OrderIntelligence.vue')
+  const composable = read('../src/views/order_intelligence/composables/useOrderIntelligence.js')
+  for (const label of ['客户画像', '客户性质', '新签型号', '首返周期', '平均复购周期', '统计期畅销产品', '统计期颜色', '统计期幅度']) {
+    assert.match(page, new RegExp(label))
+  }
+  assert.match(page, /到期提醒/)
+  assert.match(page, /周期异常/)
+  assert.match(composable, /getCustomerProfileAnalysis/)
+})
