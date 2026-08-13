@@ -1,4 +1,5 @@
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
+const PUBLIC_POOL_REACTIVATION_INACTIVE_DAYS = 60;
 
 export class ArkApiError extends Error {
   constructor(message, status = null) {
@@ -14,6 +15,29 @@ function integerId(value, field) {
     throw new ArkApiError(`${field} 必须是正整数`);
   }
   return parsed;
+}
+
+function publicPoolItems(data) {
+  return Array.isArray(data?.items) ? data.items : [];
+}
+
+function parseDateOnly(value) {
+  const match = String(value || "").trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  const timestamp = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function localDateOnly(now) {
+  return Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
+export function isRecentPublicPoolReactivationTask(task, now = new Date()) {
+  if (task?.tier !== "T1") return false;
+  const lastOrderAt = parseDateOnly(task?.subject?.last_order_at);
+  if (lastOrderAt === null) return false;
+  const cutoff = localDateOnly(now) - PUBLIC_POOL_REACTIVATION_INACTIVE_DAYS * 24 * 60 * 60 * 1000;
+  return lastOrderAt >= cutoff;
 }
 
 export class ArkClient {
@@ -164,17 +188,47 @@ export class ArkClient {
     });
   }
 
-  listPublicPoolTasks(page = 1, pageSize = 20) {
-    const query = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
-    return this.request(`/api/sales-automation/agent/public-pool/tasks?${query}`);
+  async listPublicPoolTasks(page = 1, pageSize = 20) {
+    const requestedPage = integerId(page, "page");
+    const requestedPageSize = integerId(pageSize, "page_size");
+    if (requestedPageSize > 100) throw new ArkApiError("page_size 不能超过100");
+
+    // Old production batches can still contain T1 customers who ordered within
+    // the 60-day reactivation exclusion window. Fetch the current claimable
+    // queue before paginating locally so those stale rows never reach the model.
+    const eligible = [];
+    let upstreamPage = 1;
+    let upstreamTotal = null;
+    do {
+      const query = new URLSearchParams({ page: String(upstreamPage), page_size: "100" });
+      const data = await this.request(`/api/sales-automation/agent/public-pool/tasks?${query}`);
+      const items = publicPoolItems(data);
+      if (upstreamTotal === null) upstreamTotal = Number(data?.total ?? items.length);
+      eligible.push(...items.filter((task) => !isRecentPublicPoolReactivationTask(task)));
+      upstreamPage += 1;
+      if (!items.length) break;
+    } while ((upstreamPage - 1) * 100 < upstreamTotal);
+
+    const offset = (requestedPage - 1) * requestedPageSize;
+    return {
+      items: eligible.slice(offset, offset + requestedPageSize),
+      total: eligible.length,
+      page: requestedPage,
+      page_size: requestedPageSize,
+    };
   }
 
   getPublicPoolTaskContext(taskId) {
     return this.request(`/api/sales-automation/agent/public-pool/tasks/${integerId(taskId, "task_id")}/context`);
   }
 
-  claimPublicPoolTask(taskId) {
-    return this.request(`/api/sales-automation/agent/public-pool/tasks/${integerId(taskId, "task_id")}/claim`, {
+  async claimPublicPoolTask(taskId) {
+    const id = integerId(taskId, "task_id");
+    const context = await this.getPublicPoolTaskContext(id);
+    if (isRecentPublicPoolReactivationTask(context?.task)) {
+      throw new ArkApiError("该T1客户最近60天内存在订单，禁止加入再激活任务");
+    }
+    return this.request(`/api/sales-automation/agent/public-pool/tasks/${id}/claim`, {
       method: "POST",
       body: { agent_id: this.#agentId },
     });
