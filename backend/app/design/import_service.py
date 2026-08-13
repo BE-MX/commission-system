@@ -2,6 +2,7 @@
 
 from datetime import date, datetime
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.design.models import (
@@ -11,6 +12,7 @@ from app.design.conflict_engine import check_conflict
 from app.design.utils import generate_request_no
 from app.system.service import get_label_map as _get_dict_map
 from app.design.audit_log import write_audit_log as _write_audit_log
+from app.models.business import CustomerInfo
 
 logger = __import__("logging").getLogger("design")
 
@@ -33,7 +35,8 @@ def batch_import_requests(
     if not rows:
         return {"code": 400, "message": "Excel 文件为空", "data": None}
 
-    # Expected header: 客户名称, 业务员姓名, 拍摄类型, 期望开始日期, 期望结束日期, 优先级, 备注
+    # 首期仍兼容原表头“客户名称”，但必须能在 customer_info 中唯一精确匹配，
+    # 防止批量导入绕过新预约必须绑定 customer_id 的约束。
     header = [str(c).strip() if c else "" for c in rows[0]]
 
     shoot_type_map = _get_dict_map(db, "shoot_type")
@@ -53,6 +56,15 @@ def batch_import_requests(
                 raise ValueError("客户名称为空")
 
             customer_name = str(row[0]).strip()
+            customers = list(db.execute(select(
+                CustomerInfo.company_id, CustomerInfo.company_name,
+            ).where(CustomerInfo.company_name == customer_name).limit(2)).all())
+            if not customers:
+                raise ValueError("客户名称未在 customer_info 中找到")
+            if len(customers) > 1:
+                raise ValueError("客户名称存在重复，请改用提交预约页面选择客户")
+            customer_id, canonical_name = customers[0]
+            customer_name = canonical_name
             salesperson_name = str(row[1]).strip() if row[1] else ""
             shoot_type_raw = str(row[2]).strip() if row[2] else ""
             parts = [p.strip() for p in shoot_type_raw.replace("、", ",").split(",") if p.strip()]
@@ -91,6 +103,7 @@ def batch_import_requests(
             request_no = generate_request_no(db)
             req = DesignScheduleRequest(
                 request_no=request_no,
+                customer_id=customer_id,
                 customer_name=customer_name,
                 salesperson_id=operator_id,
                 salesperson_name=salesperson_name or operator_name,

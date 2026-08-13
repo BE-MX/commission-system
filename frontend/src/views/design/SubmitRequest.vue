@@ -23,8 +23,8 @@
       >
         <el-row :gutter="24">
           <el-col :span="12">
-            <el-form-item label="客户名称" prop="customer_name">
-              <el-input v-model="form.customer_name" placeholder="请输入客户名称" />
+            <el-form-item label="客户" prop="customer_id">
+              <CustomerInfoPicker v-model="form.customer_id" @select="form.customer_name = $event?.name || ''" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -204,8 +204,8 @@ import { useAuthStore } from '@/stores/auth'
 import { submitRequest, checkConflict, getUnavailableDates, uploadAttachment, getDesigners } from '@/api/design'
 import { getDictItems } from '@/api/system'
 import ConflictAlert from '@/components/design/ConflictAlert.vue'
+import CustomerInfoPicker from '@/components/design/CustomerInfoPicker.vue'
 import DatePeriodPicker from '@/components/design/DatePeriodPicker.vue'
-
 const router = useRouter()
 const authStore = useAuthStore()
 const formRef = ref()
@@ -217,8 +217,8 @@ const shootTypeOptions = ref([])
 const customerLevelOptions = ref([])
 const propsOptions = ref([])
 const designerOptions = ref([])
-
 const form = reactive({
+  customer_id: '',
   customer_name: '',
   customer_level: '',
   salesperson_name: authStore.user?.real_name || authStore.user?.username || '',
@@ -235,7 +235,7 @@ const form = reactive({
 })
 
 const rules = {
-  customer_name: [{ required: true, message: '请输入客户名称', trigger: 'blur' }],
+  customer_id: [{ required: true, message: '请选择客户', trigger: 'change' }],
   salesperson_name: [{ required: true, message: '请输入业务员姓名', trigger: 'blur' }],
   shoot_type: [
     { required: true, message: '请选择拍摄类型', trigger: 'change' },
@@ -274,7 +274,6 @@ const conflictResult = ref(null)
 const dateSpanWarning = ref('')
 // Key: "YYYY-MM-DD" (full day disabled) or "YYYY-MM-DD_am" / "YYYY-MM-DD_pm" (half-day)
 const unavailableDateSet = ref(new Set())
-
 /**
  * 计算两个日期之间的可用天数（排除不可用日期）
  */
@@ -422,10 +421,10 @@ async function handleSubmit() {
   submitting.value = true
   try {
     const payload = {
+      customer_id: form.customer_id,
       customer_name: form.customer_name,
       customer_level: form.customer_level || undefined,
       salesperson_name: form.salesperson_name,
-      salesperson_id: authStore.user?.id || 1,
       shoot_type: form.shoot_type.join(','),
       shoot_type_remark: form.shoot_type.includes('other') ? form.shoot_type_remark : '',
       props_requirement: form.shoot_type.includes('INS') ? form.props_requirement.join(',') : '',
@@ -436,9 +435,6 @@ async function handleSubmit() {
       priority: form.priority,
       remark: form.remark,
       preferred_designer_id: form.preferred_designer_id || undefined,
-      operator_id: authStore.user?.id || 1,
-      operator_name: form.salesperson_name || '业务员',
-      operator_role: 'salesperson',
     }
     const res = await submitRequest(payload)
     const requestId = res.data?.id

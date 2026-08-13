@@ -181,6 +181,7 @@ def action_request(
             designer_id=data.designer_id,
             task_name=f"{req.customer_name} - {req.shoot_type}",
             customer_name=req.customer_name,
+            customer_id=req.customer_id,
             salesperson_name=req.salesperson_name,
             shoot_type=req.shoot_type,
             priority=req.priority,
@@ -231,6 +232,8 @@ def action_request(
                 t.updated_at = datetime.now()
 
     elif data.action == "complete":
+        if req.customer_id:
+            raise ValueError("新预约请在素材工作台上传文件并点击“完成并送审”")
         req.actual_end_date = date.today()
         req.actual_end_period = "pm"
         for t in req.tasks:

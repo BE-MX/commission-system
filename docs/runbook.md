@@ -1255,3 +1255,39 @@ Journal 判读和重跑规则：`intent` 与 `syscall_returned` 都只是操作�
 ### 回滚
 
 最快止损是撤回试点角色的 `design_image:write` 或禁用 `design_image_generation` Preset；这两项只停止新的生成写入，不会隐藏只读页面。只有撤回 `design_image:read` 才会让前端菜单和入口隐藏。queued job 可经审计后标 failed；running 先停止新 claim、等待/使租约失效，迟到结果由 lease token 隔离。迁移不自动 downgrade，五张表与 `usage_detail` 保留；文件清理与数据库回滚分开，绝不递归删根目录。恢复前重新核对目标拓扑、ACL、Preset 和一条完整对账链。
+
+## 客户拍摄素材门户上线与恢复
+
+目标入口固定为 `https://media.leshine.cloud`。方舟仍是业务主系统，媒体域上的后端连接同一业务数据库，只由 Nginx 暴露 `/api/customer-media/`；静态门户发布到 `/srv/ark-customer-media`，原件位于私有目录 `/data/customer-media`，不得通过 Nginx `root/alias` 直接暴露。首期仅支持上传、审核、发布、查看和下载，不提供图片编辑。
+
+### 上线门禁
+
+1. DNS `media.leshine.cloud` 指向目标服务器，80/443 可达且 ICP/HTTPS 阻断已解除；证书签发后先用 `curl -I https://media.leshine.cloud/` 验证。当前已知现状（2026-08-13）：`leshine.cloud` 解析到 `154.8.205.162`，HTTP 会跳 HTTPS，但 HTTPS 连接被重置，因此在修复前不得宣称门户已上线。
+2. 备份数据库。确认 `alembic heads` 只有一个 head，审阅 `114_customer_media_portal` 的 MySQL 离线 SQL，再执行 `alembic upgrade head`。迁移只允许在一个实例执行。
+3. 云端 `.env` 至少配置：
+
+   ```env
+   APP_ENV=production
+   COOKIE_SECURE=true
+   SCHEDULER_ENABLED=false
+   CORS_ALLOW_ORIGINS=https://leshine.work
+   CUSTOMER_MEDIA_STORAGE_ROOT=/data/customer-media
+   CUSTOMER_MEDIA_PORTAL_ORIGIN=https://media.leshine.cloud
+   CUSTOMER_MEDIA_SIGN_SECRET=<独立随机长串>
+   CUSTOMER_MEDIA_MAX_FILE_MB=500
+   CUSTOMER_MEDIA_MAX_BATCH_GB=20
+   CUSTOMER_MEDIA_SESSION_DAYS=30
+   CUSTOMER_MEDIA_COOKIE_NAME=leshine_media_session
+   ```
+
+   方舟前端构建时配置 `VITE_CUSTOMER_MEDIA_API_BASE=https://media.leshine.cloud/api/customer-media`，让大文件直接到云端，不经办公室主站转发。云端必须连接与方舟一致的数据库；不得启动第二套 Scheduler。首期门户登录限速是进程内滑动窗口，因此云端后端固定单 worker；扩容多 worker 前先迁移到 Redis 等共享限速器。
+4. 创建私有存储根并只授予方舟服务账号读写权限；以服务账号完成“写入临时文件 → fsync → 原子替换 → 删除”测试。确认磁盘容量、备份和低水位告警后再开放上传。
+5. 将 `frontend/public/customer-media/` 中内容发布到 `/srv/ark-customer-media/`，安装并启用 [Nginx 模板](../deploy/nginx/customer-media.leshine.cloud.conf)，执行 `nginx -t` 后 reload。启动云端后端后，浏览器从方舟完成一次图片、视频上传，从发起人账号批准发布，再用客户账号验证只能看到本 `customer_id` 已发布批次并可下载。
+6. 权限最小化：设计师角色授予 `customer_media:write`，预约发起人授予 `customer_media:read`，仅管理员授予 `customer_media:admin`。门户账号一客户仅一条，登录邮箱全局唯一；改邮箱、改密码、停用账号都会使旧会话失效。
+
+### 运维与回滚
+
+- 下架单批素材使用方舟管理员“下架”，不删数据库记录或原件。误发布先下架，再查 `ark_customer_media_reviews` 审计链。
+- 文件上传失败会删除临时/新原件；数据库提交成功后物理删除失败形成孤儿文件，需按 `object_key` 与数据库差集逐文件审计，禁止递归删除存储根。
+- 应用回滚时保留 114 迁移和六张业务表；先撤回三个权限并在 Nginx 对上传接口返回 503。静态站可继续只读，若数据库版本不兼容则整个门户进入维护页。
+- 迁移 COS 时保持数据库 `storage_provider/object_key` 契约：复制并校验 SHA-256，按批切换 provider，验证下载后再逐对象清理本地文件；不能直接改 Nginx 路径代替迁移。

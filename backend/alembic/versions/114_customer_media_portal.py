@@ -93,7 +93,7 @@ def upgrade() -> None:
         sa.Column("batch_id", sa.BigInteger(), nullable=False),
         sa.Column("revision", sa.Integer(), nullable=False),
         sa.Column("action", sa.String(length=24), nullable=False),
-        sa.Column("comment", sa.Text(), nullable=True),
+        sa.Column("remark", sa.Text(), nullable=True, comment="审核或操作说明"),
         sa.Column("actor_user_id", sa.Integer(), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
         sa.ForeignKeyConstraint(["batch_id"], ["ark_customer_media_batches.id"], ondelete="CASCADE"),

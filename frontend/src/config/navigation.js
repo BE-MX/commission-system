@@ -146,6 +146,7 @@ export const MENU_GROUPS = {
       'ai_chat:read',
       'design:read', 'design:write', 'design:audit', 'design:manage',
       'design_gantt:read', 'design_my:read', 'design_stats:read',
+      'customer_media:read', 'customer_media:write', 'customer_media:admin',
     ],
   },
   report: {
@@ -1100,6 +1101,37 @@ export const NAV_ENTRIES = [
       group: 'design', title: '我的预约', icon: Document, order: 30,
       permission: 'design_my:read',
     },
+  },
+  {
+    path: '/design/media/review',
+    name: 'CustomerMediaReview',
+    component: () => import('@/views/design/CustomerMediaReview.vue'),
+    title: '拍摄素材审核',
+    anyPermission: ['customer_media:read', 'customer_media:admin'],
+    menu: {
+      group: 'design', title: '拍摄素材审核', icon: Stamp, order: 35,
+      anyPermission: ['customer_media:read', 'customer_media:admin'],
+    },
+  },
+  {
+    path: '/design/media/accounts',
+    name: 'CustomerMediaAccounts',
+    component: () => import('@/views/design/CustomerMediaAccounts.vue'),
+    title: '客户素材门户账号',
+    permission: 'customer_media:admin',
+    menu: {
+      group: 'design', title: '客户素材门户账号', icon: Lock, order: 37,
+      permission: 'customer_media:admin',
+    },
+  },
+  {
+    path: '/design/media/tasks/:taskId',
+    name: 'CustomerMediaWorkspace',
+    component: () => import('@/views/design/CustomerMediaWorkspace.vue'),
+    title: '客户拍摄素材',
+    anyPermission: ['customer_media:write', 'customer_media:admin'],
+    activeMenu: '/design/manage',
+    hideInMenu: true,
   },
   {
     path: '/design/audit',

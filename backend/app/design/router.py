@@ -38,6 +38,7 @@ from app.design.notifications import (
     _notify_reschedule_designer_changed,
     _notify_reschedule_date_changed,
 )
+from app.customer_media import service as customer_media_service
 
 
 logger = logging.getLogger("design")
@@ -65,6 +66,16 @@ def create_request(
     _user: dict = Depends(require_permission('design:write')),
 ):
     """提交设计预约申请"""
+    user_id, user_name, _ = customer_media_service.user_identity(db, _user)
+    customer = customer_media_service.validate_customer_access(db, _user, data.customer_id)
+    data = data.model_copy(update={
+        "customer_name": customer["name"],
+        "salesperson_id": user_id,
+        "salesperson_name": user_name,
+        "operator_id": user_id,
+        "operator_name": user_name,
+        "operator_role": "salesperson",
+    })
     result = service.create_request(
         db, data, data.operator_id, data.operator_name, data.operator_role
     )
@@ -189,6 +200,7 @@ def list_requests(
                     "id": r.id,
                     "request_no": r.request_no,
                     "customer_name": r.customer_name,
+                    "customer_id": r.customer_id,
                     "customer_level": r.customer_level,
                     "salesperson_id": r.salesperson_id,
                     "salesperson_name": r.salesperson_name,
@@ -235,6 +247,7 @@ def get_request(
             "id": req.id,
             "request_no": req.request_no,
             "customer_name": req.customer_name,
+            "customer_id": req.customer_id,
             "customer_level": req.customer_level,
             "salesperson_id": req.salesperson_id,
             "salesperson_name": req.salesperson_name,
@@ -284,6 +297,12 @@ def audit_request(
     _user: dict = Depends(require_permission('design:audit')),
 ):
     """主管审批申请单"""
+    user_id, user_name, _ = customer_media_service.user_identity(db, _user)
+    data = data.model_copy(update={
+        "operator_id": user_id,
+        "operator_name": user_name,
+        "operator_role": "supervisor",
+    })
     result = service.audit_request(db, request_id, data, data.operator_id, data.operator_name)
 
     # 审批完成后通知申请人
@@ -306,6 +325,12 @@ def action_request(
     _user: dict = Depends(require_permission('design:manage')),
 ):
     """执行申请单动作（confirm/start/complete/cancel）"""
+    user_id, user_name, _ = customer_media_service.user_identity(db, _user)
+    data = data.model_copy(update={
+        "operator_id": user_id,
+        "operator_name": user_name,
+        "operator_role": "design_staff",
+    })
     result = service.action_request(
         db, request_id, data, data.operator_id, data.operator_name, data.operator_role
     )
@@ -512,6 +537,7 @@ def list_tasks(
                     "designer_id": t.designer_id,
                     "task_name": t.task_name,
                     "customer_name": t.customer_name,
+                    "customer_id": t.customer_id,
                     "salesperson_name": t.salesperson_name,
                     "shoot_type": t.shoot_type,
                     "priority": t.priority,
@@ -876,6 +902,8 @@ async def import_requests(
 ):
     """批量导入预约申请"""
     contents = await file.read()
+    operator_id, operator_name, _ = customer_media_service.user_identity(db, _user)
+    operator_role = "design_staff"
     return service.batch_import_requests(
         db, contents, operator_id, operator_name, operator_role
     )

@@ -31,6 +31,8 @@ from app.domestic import models as _domestic_models  # noqa: F401
 from app.design_image import models as _design_image_models  # noqa: F401
 from app.ai_chat import models as _ai_chat_models  # noqa: F401
 from app.sales_automation import models as _sales_automation_models  # noqa: F401
+from app.insight import models as _insight_models  # noqa: F401
+from app.customer_media import models as _customer_media_models  # noqa: F401
 
 
 # SQLite 不支持 BIGINT 自增，编译时替换为 INTEGER

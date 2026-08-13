@@ -270,6 +270,9 @@ def seed_role_permissions(db: Session):
         ("design_gantt:read", "design", "read",  "查看排期甘特图"),
         ("design_my:read",    "design", "read",  "查看我的预约"),
         ("design_stats:read", "design", "read",  "查看设计统计"),
+        ("customer_media:read", "customer_media", "read", "查看和审核客户拍摄素材"),
+        ("customer_media:write", "customer_media", "write", "上传并提交客户拍摄素材"),
+        ("customer_media:admin", "customer_media", "admin", "管理客户素材门户账号和发布"),
         # 账号体系（2026-07-03 起 user/role 统一挂 module=user，随 upsert 修复 DB 漂移）
         ("user:read",      "user", "read",     "查看用户/角色"),
         ("user:write",     "user", "write",    "创建/编辑用户"),
