@@ -304,11 +304,6 @@
     "lines_over_500": 0,
     "transition_all": 0
   },
-  "frontend/src/views/layout/MainLayout.vue": {
-    "hex_colors": 2,
-    "lines_over_500": 33,
-    "transition_all": 0
-  },
   "frontend/src/views/production/PrintCard.vue": {
     "hex_colors": 5,
     "lines_over_500": 0,
