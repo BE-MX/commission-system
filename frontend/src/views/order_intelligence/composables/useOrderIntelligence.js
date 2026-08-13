@@ -4,6 +4,7 @@ import {
   getActiveOrderAiBrief,
   getCountryAnalysis,
   getCustomerActions,
+  getCustomerProfileAnalysis,
   getLatestOrderAiBrief,
   getOrderAiBriefStatus,
   getOrderIntelligenceFilters,
@@ -31,11 +32,29 @@ export function useOrderIntelligence() {
   const detailLoading = ref(false)
   const aiLoading = ref(false)
   const error = ref('')
-  const filters = reactive({ dateRange: [oneYearAgo(), today()], team: '', user_id: '' })
-  const options = reactive({ can_read_all: false, teams: [], users: [], countries: [] })
+  const filters = reactive({
+    dateRange: [oneYearAgo(), today()],
+    team: '',
+    user_id: '',
+    countryPaths: [],
+    models: [],
+    colors: [],
+    sources: [],
+  })
+  const options = reactive({
+    can_read_all: false,
+    teams: [],
+    users: [],
+    countries: [],
+    country_tree: [],
+    models: [],
+    colors: [],
+    source_categories: [],
+  })
   const overview = ref(null)
   const countries = ref({ items: [], total: 0 })
   const people = ref({ items: [], total: 0 })
+  const profiles = ref({ items: [], total: 0, summary: {}, definitions: {} })
   const customers = ref({ items: [], total: 0, page: 1, page_size: 20 })
   const customerFilters = reactive({ risk_status: '', country: '' })
   const aiBrief = ref({ visible: false, job_id: null, status: 'idle', content: '', source: '', error_message: '' })
@@ -45,17 +64,57 @@ export function useOrderIntelligence() {
   const scopedUsers = computed(() => filters.team
     ? options.users.filter(user => user.team === filters.team)
     : options.users)
+  const selectedCountries = computed(() => [...new Set(
+    filters.countryPaths.map(path => path[path.length - 1]).filter(Boolean),
+  )])
+  const currentBriefContext = computed(() => ({
+    date_from: filters.dateRange?.[0] || '',
+    date_to: filters.dateRange?.[1] || '',
+    team: filters.team || '',
+    user_id: filters.user_id || '',
+    countries: [...selectedCountries.value].sort(),
+    models: [...filters.models].sort(),
+    colors: [...filters.colors].sort(),
+    sources: [...filters.sources].sort(),
+  }))
+  const briefMatchesFilters = computed(() => {
+    const context = aiBrief.value.request_context || {}
+    const briefContext = {
+      date_from: aiBrief.value.date_from || '',
+      date_to: aiBrief.value.date_to || '',
+      team: context.team || '',
+      user_id: context.user_id || '',
+      countries: [...(context.countries || [])].sort(),
+      models: [...(context.models || [])].sort(),
+      colors: [...(context.colors || [])].sort(),
+      sources: [...(context.sources || [])].sort(),
+    }
+    return JSON.stringify(briefContext) === JSON.stringify(currentBriefContext.value)
+  })
   const baseParams = () => ({
     date_from: filters.dateRange?.[0],
     date_to: filters.dateRange?.[1],
     team: filters.team || undefined,
     user_id: filters.user_id || undefined,
+    countries: selectedCountries.value,
+    models: filters.models,
+    colors: filters.colors,
+    sources: filters.sources,
   })
-  const scopeParams = () => ({ team: filters.team || undefined, user_id: filters.user_id || undefined })
+  const scopeParams = () => ({
+    date_from: filters.dateRange?.[0],
+    date_to: filters.dateRange?.[1],
+  })
 
   async function loadFilters() {
     const data = await getOrderIntelligenceFilters(scopeParams())
     Object.assign(options, data)
+    const availableCountries = new Set(options.countries)
+    const availableModels = new Set(options.models)
+    const availableColors = new Set(options.colors)
+    filters.countryPaths = filters.countryPaths.filter(path => availableCountries.has(path[path.length - 1]))
+    filters.models = filters.models.filter(model => availableModels.has(model))
+    filters.colors = filters.colors.filter(color => availableColors.has(color))
   }
 
   async function loadOverview() {
@@ -69,9 +128,12 @@ export function useOrderIntelligence() {
         countries.value = await getCountryAnalysis(baseParams())
       } else if (activeTab.value === 'people') {
         people.value = await getPeopleAnalysis({ ...baseParams(), dimension: peopleDimension.value })
+      } else if (activeTab.value === 'profiles') {
+        profiles.value = await getCustomerProfileAnalysis(baseParams())
       } else if (activeTab.value === 'customers') {
         customers.value = await getCustomerActions({
-          ...scopeParams(),
+          ...baseParams(),
+          date_from: filters.dateRange?.[0],
           as_of: filters.dateRange?.[1],
           risk_status: customerFilters.risk_status || undefined,
           country: customerFilters.country || undefined,
@@ -89,6 +151,7 @@ export function useOrderIntelligence() {
     loading.value = true
     error.value = ''
     try {
+      await loadFilters()
       await Promise.all([loadOverview(), loadActiveDetail()])
       if (version !== requestVersion) return
     } catch (cause) {
@@ -171,7 +234,7 @@ export function useOrderIntelligence() {
   }
 
   function handleBriefAction() {
-    if (aiBrief.value.status === 'succeeded' && aiBrief.value.content) {
+    if (aiBrief.value.status === 'succeeded' && aiBrief.value.content && briefMatchesFilters.value) {
       aiBrief.value.visible = true
       return
     }
@@ -180,7 +243,7 @@ export function useOrderIntelligence() {
 
   onMounted(async () => {
     try {
-      await Promise.all([loadFilters(), restoreActiveBrief()])
+      await restoreActiveBrief()
       await loadPage()
     } catch (cause) {
       error.value = cause?.response?.data?.detail || cause?.message || '页面初始化失败'
@@ -189,9 +252,9 @@ export function useOrderIntelligence() {
   onBeforeUnmount(() => { if (aiPollTimer) clearTimeout(aiPollTimer) })
 
   return {
-    activeTab, aiBrief, aiLoading, changeCustomerPage, changePeopleDimension,
+    activeTab, aiBrief, aiLoading, briefMatchesFilters, changeCustomerPage, changePeopleDimension,
     changeTab, changeTeam, countries, customerFilters, customers, detailLoading,
     error, filters, generateBrief, handleBriefAction, loadPage, loading, options, overview,
-    people, peopleDimension, scopedUsers,
+    people, peopleDimension, profiles, scopedUsers,
   }
 }

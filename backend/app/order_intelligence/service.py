@@ -9,10 +9,13 @@ from __future__ import annotations
 import json
 import logging
 import math
-from collections import Counter, defaultdict
+from collections import Counter, OrderedDict, defaultdict
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import date, timedelta
 from statistics import median
+from threading import RLock
+from time import monotonic
 from typing import Iterable, Literal
 
 from fastapi import HTTPException
@@ -21,6 +24,15 @@ from sqlalchemy.orm import Session
 
 from app.auth.models import ArkUserExternalBinding
 from app.core.config import get_settings
+from app.order_intelligence.filtering import (
+    AnalysisFilters,
+    color_expression,
+    group_countries,
+    model_expression,
+    order_sql,
+    product_sql,
+)
+from app.order_intelligence.profile_analysis import analyze_customer_profiles
 
 logger = logging.getLogger("order_intelligence")
 
@@ -38,6 +50,11 @@ SOURCE_LABELS = {
     "other": "其他",
     "unknown": "未知",
 }
+
+_PROFILE_CACHE_TTL_SECONDS = 300
+_PROFILE_CACHE_MAX_ENTRIES = 8
+_PROFILE_CACHE: OrderedDict[tuple, tuple[float, dict]] = OrderedDict()
+_PROFILE_CACHE_LOCK = RLock()
 
 VALID_ORDER_SQL = """
     ({a}.status = '13972831656'
@@ -169,8 +186,10 @@ def _load_orders(
     scope: AnalysisScope,
     date_from: date | None = None,
     date_to: date | None = None,
+    filters: AnalysisFilters | None = None,
 ) -> list[dict]:
     schema = get_settings().BUSINESS_DB_NAME
+    filters = filters or AnalysisFilters()
     scope_clause, params = _scope_sql(scope)
     date_clause = ""
     if date_from is not None:
@@ -179,20 +198,26 @@ def _load_orders(
     if date_to is not None:
         date_clause += " AND o.account_date <= :date_to"
         params["date_to"] = date_to
+    filter_clause = order_sql(filters, params, schema)
     sql = f"""
         SELECT o.order_id, o.order_no, o.account_date, o.amount_usd, o.company_id,
                o.user_id, o.custom_fields, ci.company_name, ci.country_name,
-               ci.origin_name, COALESCE(rt.Name, ub.full_name, o.user_id) user_name,
+               ci.origin_name, ci.trail_status_name customer_nature,
+               COALESCE(rt.Name, ub.full_name, o.user_id) user_name,
                COALESCE(rt.Team, '') team, COALESCE(rt.Camp, '') camp
         FROM `{schema}`.okki_orders o
         LEFT JOIN `{schema}`.customer_info ci ON ci.company_id = o.company_id
         LEFT JOIN `{schema}`.user_rel_team rt ON rt.user_id = o.user_id
         LEFT JOIN `{schema}`.user_basic ub ON ub.user_id = o.user_id
         WHERE {VALID_ORDER_SQL.format(a='o')}
-          {date_clause} {scope_clause}
+          {date_clause} {scope_clause} {filter_clause}
         ORDER BY o.account_date, o.order_id
     """
-    return [_decorate_order(dict(row)) for row in db.execute(text(sql), params).mappings()]
+    rows = [_decorate_order(dict(row)) for row in db.execute(text(sql), params).mappings()]
+    if filters.sources:
+        allowed_sources = set(filters.sources)
+        rows = [row for row in rows if row["source_category"] in allowed_sources]
+    return rows
 
 
 def _load_product_rows(
@@ -200,16 +225,23 @@ def _load_product_rows(
     scope: AnalysisScope,
     date_from: date,
     date_to: date,
+    filters: AnalysisFilters | None = None,
 ) -> list[dict]:
     schema = get_settings().BUSINESS_DB_NAME
+    filters = filters or AnalysisFilters()
     scope_clause, params = _scope_sql(scope)
     params.update({"date_from": date_from, "date_to": date_to})
+    order_filter_clause = order_sql(filters, params, schema)
+    product_filter_clause = product_sql(filters, params)
     sql = f"""
-        SELECT o.company_id, o.user_id, o.account_date,
+        SELECT o.order_id, o.company_id, o.user_id, o.account_date,
                COALESCE(NULLIF(ci.country_name, ''), '未知') country,
                oi.product_name, oi.product_model,
-               COALESCE(NULLIF(p.model, ''), NULLIF(oi.product_model, '')) model,
-               p.color, p.size, oi.quantity, oi.amount
+               {model_expression('oi', 'p')} model,
+               {model_expression('oi', 'p', False)} filter_model,
+               {color_expression('oi', 'p')} color,
+               p.size, oi.quantity, oi.amount,
+               o.custom_fields, ci.origin_name
         FROM `{schema}`.okki_order_items oi
         JOIN `{schema}`.okki_orders o ON o.order_id = oi.order_id
         LEFT JOIN `{schema}`.customer_info ci ON ci.company_id = o.company_id
@@ -217,7 +249,7 @@ def _load_product_rows(
         LEFT JOIN `{schema}`.okki_products p ON p.product_id = oi.product_id
         WHERE {VALID_ORDER_SQL.format(a='o')}
           AND o.account_date >= :date_from AND o.account_date <= :date_to
-          {scope_clause}
+          {scope_clause} {order_filter_clause} {product_filter_clause}
     """
     rows = []
     for source in db.execute(text(sql), params).mappings():
@@ -230,9 +262,14 @@ def _load_product_rows(
         row["amount"] = float(row.get("amount") or 0)
         row["company_id"] = str(row.get("company_id") or "")
         row["user_id"] = str(row.get("user_id") or "")
+        custom = _json_object(row.get("custom_fields"))
+        source_raw = str(custom.get(RESOURCE_SOURCE_FIELD) or row.get("origin_name") or "")
+        row["new_deal"] = str(custom.get(NEW_DEAL_FIELD) or "").strip()
+        row["source_category"] = classify_source(source_raw)
         if row["country"] in {"", "0"}:
             row["country"] = "未知"
-        rows.append(row)
+        if not filters.sources or row["source_category"] in filters.sources:
+            rows.append(row)
     return rows
 
 
@@ -257,6 +294,7 @@ def _aggregate(orders: Iterable[dict]) -> dict:
         "customers": len(customers),
         "new_sign_customers": len(new_customers),
         "repeat_customers": len(repeat_customers),
+        "repeat_orders": len(repeat_rows),
         "first_return_customers": len(first_return_customers),
         "repeat_customer_rate": round(len(repeat_customers) / len(customers) * 100, 1) if customers else 0,
         "amount_usd": round(sum(r["amount_usd"] for r in rows), 2),
@@ -271,10 +309,24 @@ def _month_key(value: date) -> str:
     return value.strftime("%Y-%m")
 
 
-def _monthly_trend(orders: Iterable[dict]) -> list[dict]:
+def _monthly_trend(
+    orders: Iterable[dict],
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> list[dict]:
     grouped: dict[str, list[dict]] = defaultdict(list)
     for row in orders:
         grouped[_month_key(row["account_date"])].append(row)
+    if date_from is not None and date_to is not None:
+        month = date_from.replace(day=1)
+        last_month = date_to.replace(day=1)
+        while month <= last_month:
+            grouped.setdefault(_month_key(month), [])
+            month = (
+                month.replace(year=month.year + 1, month=1)
+                if month.month == 12
+                else month.replace(month=month.month + 1)
+            )
     return [{"month": month, **_aggregate(rows)} for month, rows in sorted(grouped.items())]
 
 
@@ -370,80 +422,87 @@ def _top_attributes(
     return result
 
 
-def _customer_cycles(history: Iterable[dict], as_of: date) -> dict[str, dict]:
-    grouped: dict[str, list[dict]] = defaultdict(list)
-    for row in history:
-        if row["company_id"] and row["account_date"] <= as_of:
-            grouped[row["company_id"]].append(row)
-    prepared: dict[str, tuple[list[dict], list[date], list[int]]] = {}
-    country_cycles: dict[str, list[int]] = defaultdict(list)
-    all_personal_cycles: list[int] = []
-    for company_id, rows in grouped.items():
-        rows.sort(key=lambda item: (item["account_date"], str(item["order_id"])))
-        dates = sorted({r["account_date"] for r in rows})
-        intervals = [(right - left).days for left, right in zip(dates, dates[1:]) if right > left]
-        prepared[company_id] = (rows, dates, intervals)
-        if intervals:
-            typical = max(7, int(round(float(median(intervals[-5:])))))
-            country_cycles[rows[-1]["country"]].append(typical)
-            all_personal_cycles.append(typical)
-
-    global_peer_cycle = (
-        max(7, int(round(float(median(all_personal_cycles)))))
-        if all_personal_cycles else 90
+def _profile_analysis(
+    db: Session,
+    scope: AnalysisScope,
+    date_from: date,
+    date_to: date,
+    analysis_filters: AnalysisFilters,
+    period_orders: list[dict] | None = None,
+    period_products: list[dict] | None = None,
+    alert_company_ids: set[str] | None = None,
+    include_cycles: bool = True,
+) -> dict:
+    """画像历史限定到截至期末，统计期筛选只决定本期入选客户和商品分布。"""
+    cache_key = (
+        scope.mode,
+        scope.user_id,
+        scope.team,
+        scope.can_read_all,
+        date_from.isoformat(),
+        date_to.isoformat(),
+        tuple(analysis_filters.countries),
+        tuple(analysis_filters.models),
+        tuple(analysis_filters.colors),
+        tuple(analysis_filters.sources),
+        tuple(sorted(alert_company_ids)) if alert_company_ids is not None else None,
+        include_cycles,
     )
-    country_peer_cycles = {
-        country: max(7, int(round(float(median(values)))))
-        for country, values in country_cycles.items()
-    }
+    now = monotonic()
+    with _PROFILE_CACHE_LOCK:
+        cached = _PROFILE_CACHE.get(cache_key)
+        if cached and cached[0] > now:
+            _PROFILE_CACHE.move_to_end(cache_key)
+            return deepcopy(cached[1])
+        if cached:
+            _PROFILE_CACHE.pop(cache_key, None)
 
-    result = {}
-    for company_id, (rows, dates, intervals) in prepared.items():
-        if not dates:
-            continue
-        if intervals:
-            typical = max(7, int(round(float(median(intervals[-5:])))))
-            cycle_source = "customer_history"
-            cycle_evidence = "high" if len(intervals) >= 2 else "medium"
-        elif rows[-1]["country"] in country_peer_cycles:
-            typical = country_peer_cycles[rows[-1]["country"]]
-            cycle_source = "country_peer"
-            cycle_evidence = "low"
-        else:
-            typical = global_peer_cycle
-            cycle_source = "global_peer"
-            cycle_evidence = "low"
-        last_date = dates[-1]
-        expected_date = last_date + timedelta(days=typical)
-        days_to_expected = (expected_date - as_of).days
-        overdue_days = max(0, -days_to_expected)
-        if overdue_days >= max(60, typical):
-            risk = "churn_risk"
-        elif overdue_days > 0:
-            risk = "overdue"
-        elif days_to_expected <= 30:
-            risk = "upcoming"
-        else:
-            risk = "healthy"
-        result[company_id] = {
-            "company_id": company_id,
-            "company_name": rows[-1].get("company_name") or "",
-            "country": rows[-1]["country"],
-            "user_id": rows[-1]["user_id"],
-            "user_name": rows[-1].get("user_name") or "",
-            "team": rows[-1].get("team") or "",
-            "order_count": len(rows),
-            "lifetime_amount_usd": round(sum(r["amount_usd"] for r in rows), 2),
-            "typical_cycle_days": typical,
-            "cycle_source": cycle_source,
-            "cycle_evidence": cycle_evidence,
-            "last_order_date": last_date,
-            "expected_order_date": expected_date,
-            "days_to_expected": days_to_expected,
-            "overdue_days": overdue_days,
-            "risk_status": risk,
+    history_orders = _load_orders(db, scope, None, date_to)
+    history_products = _load_product_rows(
+        db,
+        scope,
+        min((row["account_date"] for row in history_orders), default=date_to),
+        date_to,
+    )
+    if include_cycles and alert_company_ids is None:
+        alert_orders = (
+            history_orders
+            if analysis_filters.is_empty()
+            else _load_orders(db, scope, None, date_to, analysis_filters)
+        )
+        alert_company_ids = {
+            row["company_id"] for row in alert_orders if row.get("company_id")
         }
+    result = analyze_customer_profiles(
+        history_orders,
+        history_products,
+        (
+            period_orders
+            if period_orders is not None
+            else _load_orders(db, scope, date_from, date_to, analysis_filters)
+        ),
+        (
+            period_products
+            if period_products is not None
+            else _load_product_rows(db, scope, date_from, date_to, analysis_filters)
+        ),
+        date_to,
+        SOURCE_LABELS,
+        alert_company_ids,
+        include_cycles,
+    )
+    with _PROFILE_CACHE_LOCK:
+        _PROFILE_CACHE[cache_key] = (monotonic() + _PROFILE_CACHE_TTL_SECONDS, deepcopy(result))
+        _PROFILE_CACHE.move_to_end(cache_key)
+        while len(_PROFILE_CACHE) > _PROFILE_CACHE_MAX_ENTRIES:
+            _PROFILE_CACHE.popitem(last=False)
     return result
+
+
+def _clear_profile_cache() -> None:
+    """清空进程内画像缓存，供测试和订单同步链路显式失效使用。"""
+    with _PROFILE_CACHE_LOCK:
+        _PROFILE_CACHE.clear()
 
 
 def _forecast_next_month(rows: list[dict]) -> tuple[float | None, str]:
@@ -489,8 +548,22 @@ def _marketing_advice(row: dict) -> dict:
     return {"channel": channel, "title": title, "action": action}
 
 
-def get_filter_options(db: Session, scope: AnalysisScope) -> dict:
-    history = _load_orders(db, scope)
+def get_filter_options(
+    db: Session,
+    scope: AnalysisScope,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> dict:
+    history = _load_orders(db, scope, date_from, date_to)
+    if history:
+        products = _load_product_rows(
+            db,
+            scope,
+            min(row["account_date"] for row in history),
+            max(row["account_date"] for row in history),
+        )
+    else:
+        products = []
     users_by_id = {}
     for row in history:
         if row["user_id"]:
@@ -499,6 +572,7 @@ def get_filter_options(db: Session, scope: AnalysisScope) -> dict:
                 "user_name": row["user_name"],
                 "team": row["team"],
             }
+    countries = sorted({r["country"] for r in history})
     return {
         "can_read_all": scope.can_read_all,
         "scope": scope.mode,
@@ -507,28 +581,66 @@ def get_filter_options(db: Session, scope: AnalysisScope) -> dict:
             users_by_id.values(),
             key=lambda item: (item["team"], item["user_name"]),
         ),
-        "countries": sorted({r["country"] for r in history if r["country"] != "未知"}),
+        "countries": countries,
+        "country_tree": group_countries(countries),
+        # 筛选值只使用明确的产品型号字段，避免把 product_name 片段误作型号。
+        "models": sorted({r["filter_model"] for r in products}),
+        "colors": sorted({r["color"] for r in products}),
         "source_categories": [{"code": code, "label": label} for code, label in SOURCE_LABELS.items()],
     }
 
 
-def get_overview(db: Session, scope: AnalysisScope, date_from: date, date_to: date) -> dict:
-    orders = _load_orders(db, scope, date_from, date_to)
+def get_customer_profile_analysis(
+    db: Session,
+    scope: AnalysisScope,
+    date_from: date,
+    date_to: date,
+    analysis_filters: AnalysisFilters | None = None,
+) -> dict:
+    result = _profile_analysis(
+        db,
+        scope,
+        date_from,
+        date_to,
+        analysis_filters or AnalysisFilters(),
+        # 与总览/国家/人员分析共用同一缓存键，对外仍不返回客户明细。
+        include_cycles=True,
+    )
+    result.pop("customer_cycles", None)
+    return result
+
+
+def get_overview(
+    db: Session,
+    scope: AnalysisScope,
+    date_from: date,
+    date_to: date,
+    analysis_filters: AnalysisFilters | None = None,
+    profile_result: dict | None = None,
+) -> dict:
+    analysis_filters = analysis_filters or AnalysisFilters()
+    orders = _load_orders(db, scope, date_from, date_to, analysis_filters)
     days = (date_to - date_from).days + 1
     previous_to = date_from - timedelta(days=1)
     previous_from = previous_to - timedelta(days=days - 1)
-    previous = _load_orders(db, scope, previous_from, previous_to)
+    previous = _load_orders(db, scope, previous_from, previous_to, analysis_filters)
     current_stats = _aggregate(orders)
     previous_stats = _aggregate(previous)
-    products = _load_product_rows(db, scope, date_from, date_to)
-    previous_products = _load_product_rows(db, scope, previous_from, previous_to)
-    history = _load_orders(db, scope, None, date_to)
-    cycles = _customer_cycles(history, date_to)
-    actionable = [item for item in cycles.values() if item["risk_status"] != "healthy"]
+    products = _load_product_rows(db, scope, date_from, date_to, analysis_filters)
+    previous_products = _load_product_rows(db, scope, previous_from, previous_to, analysis_filters)
+    profile_analysis = profile_result or _profile_analysis(
+        db, scope, date_from, date_to, analysis_filters, orders, products, None,
+    )
+    cycles = profile_analysis["customer_cycles"]
+    actionable = [
+        item for item in cycles.values()
+        if item["risk_status"] in {"due", "abnormal"}
+    ]
     forecast, forecast_method = _forecast_next_month(orders)
     current_stats["changes"] = {
         "amount_usd": _percent_change(current_stats["amount_usd"], previous_stats["amount_usd"]),
         "new_sign_customers": _percent_change(current_stats["new_sign_customers"], previous_stats["new_sign_customers"]),
+        "first_return_customers": _percent_change(current_stats["first_return_customers"], previous_stats["first_return_customers"]),
         "repeat_amount_usd": _percent_change(current_stats["repeat_amount_usd"], previous_stats["repeat_amount_usd"]),
         "repeat_customer_rate": _percent_change(current_stats["repeat_customer_rate"], previous_stats["repeat_customer_rate"]),
     }
@@ -539,17 +651,20 @@ def get_overview(db: Session, scope: AnalysisScope, date_from: date, date_to: da
     return {
         "window": {"date_from": date_from, "date_to": date_to, "previous_from": previous_from, "previous_to": previous_to},
         "scope": {"mode": scope.mode, "can_read_all": scope.can_read_all, "user_id": scope.user_id, "team": scope.team},
+        "filters": analysis_filters.to_dict(),
         "metrics": current_stats,
         "forecast": {"next_30d_amount_usd": forecast, "method": forecast_method, "confidence": "medium" if len(_monthly_trend(orders)) >= 6 else "low"},
-        "monthly_trend": _monthly_trend(orders),
+        "monthly_trend": _monthly_trend(orders, date_from, date_to),
         "source_mix": _source_mix(orders, previous),
         "amount_distribution": _amount_distribution_with_change(orders, previous),
         "top_models": _top_attributes(products, "model", 8, previous_products),
         "top_colors": _top_attributes(products, "color", 8, previous_products),
         "customer_risk": {
-            "upcoming": sum(item["risk_status"] == "upcoming" for item in actionable),
-            "overdue": sum(item["risk_status"] == "overdue" for item in actionable),
-            "churn_risk": sum(item["risk_status"] == "churn_risk" for item in actionable),
+            "due": sum(item["risk_status"] == "due" for item in actionable),
+            "abnormal": sum(item["risk_status"] == "abnormal" for item in actionable),
+            "insufficient_data": sum(
+                item["risk_status"] == "insufficient_data" for item in cycles.values()
+            ),
         },
         "data_quality": {
             "country_coverage": round(country_known / len(orders) * 100, 1) if orders else 0,
@@ -560,24 +675,35 @@ def get_overview(db: Session, scope: AnalysisScope, date_from: date, date_to: da
         },
         "definitions": {
             "new_sign": f"OKKI 订单自定义字段 {NEW_DEAL_FIELD}=是，按客户去重",
-            "repeat": f"OKKI 订单自定义字段 {NEW_DEAL_FIELD}=否",
+            "repeat": f"OKKI 订单自定义字段 {NEW_DEAL_FIELD}=否；复购订单数按订单计数，复购金额按 amount_usd 求和",
             "first_return": f"OKKI 订单自定义字段 {FIRST_RETURN_FIELD}=是，按客户去重",
             "gmv": "有效订单 amount_usd；产品趋势使用明细 quantity，不与订单 GMV 混算",
             "forecast": "最近 3 个自然月加权均值叠加截断趋势（-30%~+50%），少于 3 个月不预测",
+            **profile_analysis["definitions"],
         },
     }
 
 
-def get_country_analysis(db: Session, scope: AnalysisScope, date_from: date, date_to: date) -> dict:
-    orders = _load_orders(db, scope, date_from, date_to)
+def get_country_analysis(
+    db: Session,
+    scope: AnalysisScope,
+    date_from: date,
+    date_to: date,
+    analysis_filters: AnalysisFilters | None = None,
+    profile_result: dict | None = None,
+) -> dict:
+    analysis_filters = analysis_filters or AnalysisFilters()
+    orders = _load_orders(db, scope, date_from, date_to, analysis_filters)
     days = (date_to - date_from).days + 1
-    previous = _load_orders(db, scope, date_from - timedelta(days=days), date_from - timedelta(days=1))
-    history = _load_orders(db, scope, None, date_to)
-    products = _load_product_rows(db, scope, date_from, date_to)
+    previous = _load_orders(db, scope, date_from - timedelta(days=days), date_from - timedelta(days=1), analysis_filters)
+    products = _load_product_rows(db, scope, date_from, date_to, analysis_filters)
     previous_products = _load_product_rows(
-        db, scope, date_from - timedelta(days=days), date_from - timedelta(days=1),
+        db, scope, date_from - timedelta(days=days), date_from - timedelta(days=1), analysis_filters,
     )
-    cycles = _customer_cycles(history, date_to)
+    profile_analysis = profile_result or _profile_analysis(
+        db, scope, date_from, date_to, analysis_filters, orders, products,
+    )
+    cycles = profile_analysis["customer_cycles"]
     by_country: dict[str, list[dict]] = defaultdict(list)
     previous_by_country: dict[str, list[dict]] = defaultdict(list)
     products_by_country: dict[str, list[dict]] = defaultdict(list)
@@ -598,7 +724,10 @@ def get_country_analysis(db: Session, scope: AnalysisScope, date_from: date, dat
         previous_orders = previous_by_country[country]
         source_mix = _source_mix(country_orders, previous_orders)
         country_cycles = [item for item in cycles.values() if item["country"] == country]
-        intervals = [item["typical_cycle_days"] for item in country_cycles]
+        intervals = [
+            item["typical_cycle_days"] for item in country_cycles
+            if item["typical_cycle_days"] is not None
+        ]
         forecast, method = _forecast_next_month(country_orders)
         item = {
             "country": country,
@@ -607,7 +736,7 @@ def get_country_analysis(db: Session, scope: AnalysisScope, date_from: date, dat
             "order_frequency_growth": _percent_change(stat["orders"], prev["orders"]),
             "new_sign_growth": _percent_change(stat["new_sign_customers"], prev["new_sign_customers"]),
             "median_cycle_days": int(round(float(median(intervals)))) if intervals else None,
-            "at_risk_customers": sum(c["risk_status"] in {"overdue", "churn_risk"} for c in country_cycles),
+            "at_risk_customers": sum(c["risk_status"] in {"due", "abnormal"} for c in country_cycles),
             "next_30d_amount_forecast": forecast,
             "forecast_method": method,
             "top_source_code": source_mix[0]["code"] if source_mix else "unknown",
@@ -658,16 +787,27 @@ def _capability_labels(row: dict, medians: dict) -> list[str]:
     return labels[:3] or ["样本积累中"]
 
 
-def get_people_analysis(db: Session, scope: AnalysisScope, date_from: date, date_to: date, dimension: str) -> dict:
-    orders = _load_orders(db, scope, date_from, date_to)
+def get_people_analysis(
+    db: Session,
+    scope: AnalysisScope,
+    date_from: date,
+    date_to: date,
+    dimension: str,
+    analysis_filters: AnalysisFilters | None = None,
+    profile_result: dict | None = None,
+) -> dict:
+    analysis_filters = analysis_filters or AnalysisFilters()
+    orders = _load_orders(db, scope, date_from, date_to, analysis_filters)
     days = (date_to - date_from).days + 1
-    previous = _load_orders(db, scope, date_from - timedelta(days=days), date_from - timedelta(days=1))
-    history = _load_orders(db, scope, None, date_to)
-    products = _load_product_rows(db, scope, date_from, date_to)
+    previous = _load_orders(db, scope, date_from - timedelta(days=days), date_from - timedelta(days=1), analysis_filters)
+    products = _load_product_rows(db, scope, date_from, date_to, analysis_filters)
     previous_products = _load_product_rows(
-        db, scope, date_from - timedelta(days=days), date_from - timedelta(days=1),
+        db, scope, date_from - timedelta(days=days), date_from - timedelta(days=1), analysis_filters,
     )
-    cycles = _customer_cycles(history, date_to)
+    profile_analysis = profile_result or _profile_analysis(
+        db, scope, date_from, date_to, analysis_filters, orders, products,
+    )
+    cycles = profile_analysis["customer_cycles"]
     key = "team" if dimension == "team" else "user_id"
     grouped: dict[str, list[dict]] = defaultdict(list)
     prev_grouped: dict[str, list[dict]] = defaultdict(list)
@@ -707,7 +847,10 @@ def get_people_analysis(db: Session, scope: AnalysisScope, date_from: date, date
         top_country, top_count = countries.most_common(1)[0] if countries else ("未知", 0)
         new_amounts = [r["amount_usd"] for r in group_orders if r["new_deal"] == "是" and r["amount_usd"] > 0]
         group_cycles = cycle_grouped[group_id]
-        cycle_days = [item["typical_cycle_days"] for item in group_cycles]
+        cycle_days = [
+            item["typical_cycle_days"] for item in group_cycles
+            if item["typical_cycle_days"] is not None
+        ]
         row = {
             "id": group_id,
             "name": group_orders[-1]["team"] if dimension == "team" else group_orders[-1]["user_name"],
@@ -724,7 +867,7 @@ def get_people_analysis(db: Session, scope: AnalysisScope, date_from: date, date
             "source_mix": _source_mix(group_orders, prev_grouped[group_id]),
             "amount_distribution": _amount_distribution_with_change(group_orders, prev_grouped[group_id]),
             "median_cycle_days": int(round(float(median(cycle_days)))) if cycle_days else None,
-            "at_risk_customers": sum(item["risk_status"] in {"overdue", "churn_risk"} for item in group_cycles),
+            "at_risk_customers": sum(item["risk_status"] in {"due", "abnormal"} for item in group_cycles),
             "top_models": _top_attributes(
                 product_grouped[group_id], "model", 2, previous_product_grouped[group_id],
             ),
@@ -763,38 +906,60 @@ def get_customer_actions(
     page_size: int,
     risk_status: str | None = None,
     country: str | None = None,
+    analysis_filters: AnalysisFilters | None = None,
+    date_from: date | None = None,
 ) -> dict:
-    history = _load_orders(db, scope, None, as_of)
-    cycles = _customer_cycles(history, as_of)
-    products = _load_product_rows(db, scope, min((r["account_date"] for r in history), default=as_of), as_of)
-    product_by_customer: dict[str, list[dict]] = defaultdict(list)
-    for row in products:
-        product_by_customer[row["company_id"]].append(row)
+    analysis_filters = analysis_filters or AnalysisFilters()
+    window_start = date_from or (as_of - timedelta(days=364))
+    matching_orders = _load_orders(db, scope, window_start, as_of, analysis_filters)
+    matching_products = _load_product_rows(
+        db, scope, window_start, as_of, analysis_filters,
+    )
+    profile_analysis = _profile_analysis(
+        db,
+        scope,
+        window_start,
+        as_of,
+        analysis_filters,
+        matching_orders,
+        matching_products,
+    )
+    cycles = profile_analysis["customer_cycles"]
+    matching_company_ids = set(cycles)
     items = []
     for customer in cycles.values():
+        if customer["company_id"] not in matching_company_ids:
+            continue
         if risk_status and customer["risk_status"] != risk_status:
             continue
         if country and customer["country"] != country:
             continue
-        if not risk_status and customer["risk_status"] == "healthy":
+        if not risk_status and customer["risk_status"] not in {"due", "abnormal"}:
             continue
-        top_models = _top_attributes(product_by_customer[customer["company_id"]], "model", 2)
-        top_colors = _top_attributes(product_by_customer[customer["company_id"]], "color", 2)
-        if customer["risk_status"] == "upcoming":
-            action = "提前确认库存与下一批需求，给出常购款备货提醒"
-        elif customer["risk_status"] == "overdue":
-            action = "本周进行周期回访，核实库存、销量与下单阻碍"
+        top_models = customer["top_models"]
+        top_colors = customer["top_colors"]
+        if customer["risk_status"] == "due":
+            action = "已达到所属画像平均返单周期，本周确认库存、销量与下一批需求"
+        elif customer["risk_status"] == "abnormal":
+            action = "已超过所属画像平均返单周期 2 倍，立即核实流失原因并制定激活方案"
         else:
-            action = "列入老客激活清单，用历史偏好新品/补货方案重新触达"
+            action = "同画像复购样本不足，先补充客户性质与新签型号信息"
         customer.update({
             "last_order_date": customer["last_order_date"].isoformat(),
-            "expected_order_date": customer["expected_order_date"].isoformat(),
+            "expected_order_date": (
+                customer["expected_order_date"].isoformat()
+                if customer["expected_order_date"] else None
+            ),
+            "abnormal_date": (
+                customer["abnormal_date"].isoformat()
+                if customer["abnormal_date"] else None
+            ),
             "top_models": top_models,
             "top_colors": top_colors,
             "recommended_action": action,
         })
         items.append(customer)
-    priority = {"churn_risk": 0, "overdue": 1, "upcoming": 2, "healthy": 3}
+    priority = {"abnormal": 0, "due": 1, "insufficient_data": 2, "healthy": 3}
     items.sort(key=lambda item: (priority[item["risk_status"]], -item["lifetime_amount_usd"]))
     total = len(items)
     start = (page - 1) * page_size
@@ -803,7 +968,8 @@ def get_customer_actions(
         "total": total,
         "page": page,
         "page_size": page_size,
-        "risk_definition": "客户自身周期优先；单次购买客户使用同国家/全局复购周期低证据估算。超期达到 max(60天, 1个典型周期) 标记高流失风险。",
+        "analysis_window": {"date_from": window_start.isoformat(), "date_to": as_of.isoformat()},
+        "risk_definition": "使用客户所属画像的平均复购周期：达到平均周期即提醒，严格超过平均周期 2 倍标记异常；无复购间隔样本时不做强预警。",
     }
 
 
@@ -814,10 +980,20 @@ def build_ai_brief(
     date_to: date,
     focus: str,
     caller_user_id: int | None,
+    analysis_filters: AnalysisFilters | None = None,
 ) -> dict:
-    overview = get_overview(db, scope, date_from, date_to)
-    countries = get_country_analysis(db, scope, date_from, date_to)["items"][:8]
-    people = get_people_analysis(db, scope, date_from, date_to, "user")["items"][:8]
+    analysis_filters = analysis_filters or AnalysisFilters()
+    profile_result = _profile_analysis(db, scope, date_from, date_to, analysis_filters)
+    overview = get_overview(
+        db, scope, date_from, date_to, analysis_filters, profile_result,
+    )
+    countries = get_country_analysis(
+        db, scope, date_from, date_to, analysis_filters, profile_result,
+    )["items"][:8]
+    people = get_people_analysis(
+        db, scope, date_from, date_to, "user", analysis_filters, profile_result,
+    )["items"][:8]
+    profiles = profile_result["items"][:8]
     payload = {
         "focus": focus,
         "window": overview["window"],
@@ -827,6 +1003,7 @@ def build_ai_brief(
         "source_mix": overview["source_mix"],
         "top_countries": countries,
         "top_people": people,
+        "top_customer_profiles": profiles,
         "definitions": overview["definitions"],
     }
     try:
