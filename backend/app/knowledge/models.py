@@ -2,8 +2,9 @@
 
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, Column, DateTime, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
 
+from app.ai.models import AiCallLog, AiPreset  # noqa: F401 -- register FK targets
 from app.core.database import Base
 
 
@@ -117,3 +118,163 @@ class KnowledgeAuditLog(Base):
     created_at = Column(DateTime, nullable=False, default=bj_now, comment="发生时间")
 
     __table_args__ = (Index("idx_knowledge_audit_library_time", "library_id", "created_at"),)
+
+
+class KnowledgeAsset(Base):
+    __tablename__ = "ark_knowledge_assets"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    library_id = Column(BigInteger, ForeignKey("ark_knowledge_libraries.id", ondelete="CASCADE"), nullable=False)
+    storage_path = Column(String(512), nullable=False)
+    original_name = Column(String(255), nullable=False)
+    mime_type = Column(String(64), nullable=False)
+    file_size = Column(BigInteger, nullable=False)
+    width = Column(Integer, nullable=False)
+    height = Column(Integer, nullable=False)
+    sha256 = Column(String(64), nullable=False)
+    status = Column(String(16), nullable=False, default="temporary", comment="temporary/attached")
+    created_by = Column(Integer, nullable=False)
+    expires_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=bj_now)
+    deleted_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index("idx_kn_asset_library_created", "library_id", "created_at"),
+        Index("idx_kn_asset_expiry", "status", "expires_at"),
+    )
+
+
+class KnowledgeRevisionAsset(Base):
+    __tablename__ = "ark_knowledge_revision_assets"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    revision_id = Column(BigInteger, ForeignKey("ark_knowledge_revisions.id", ondelete="CASCADE"), nullable=False)
+    asset_id = Column(BigInteger, ForeignKey("ark_knowledge_assets.id", ondelete="RESTRICT"), nullable=False)
+    position = Column(Integer, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("revision_id", "asset_id", name="uq_kn_rev_asset"),
+        Index("idx_kn_rev_asset_asset", "asset_id", "revision_id"),
+    )
+
+
+class KnowledgeAiProfile(Base):
+    __tablename__ = "ark_knowledge_ai_profiles"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    name = Column(String(128), nullable=False)
+    description = Column(String(512), nullable=True)
+    preset_id = Column(Integer, ForeignKey("ark_ai_presets.id", ondelete="RESTRICT"), nullable=False)
+    format_prompt = Column(Text, nullable=True)
+    enhance_prompt = Column(Text, nullable=True)
+    retrieval_limit = Column(Integer, nullable=False, default=5)
+    context_char_limit = Column(Integer, nullable=False, default=30000)
+    allow_cross_library = Column(Boolean, nullable=False, default=False)
+    require_citations = Column(Boolean, nullable=False, default=True)
+    max_document_chars = Column(Integer, nullable=False, default=30000)
+    daily_limit = Column(Integer, nullable=False, default=20)
+    max_concurrent_per_user = Column(Integer, nullable=False, default=2)
+    config_version = Column(Integer, nullable=False, default=1)
+    is_enabled = Column(Boolean, nullable=False, default=True)
+    created_by = Column(Integer, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=bj_now)
+    updated_at = Column(DateTime, nullable=False, default=bj_now, onupdate=bj_now)
+    deleted_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (Index("idx_kn_ai_profile_enabled", "is_enabled", "deleted_at"),)
+
+
+class KnowledgeAiProfileSource(Base):
+    __tablename__ = "ark_knowledge_ai_profile_sources"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    profile_id = Column(BigInteger, ForeignKey("ark_knowledge_ai_profiles.id", ondelete="CASCADE"), nullable=False)
+    library_id = Column(BigInteger, ForeignKey("ark_knowledge_libraries.id", ondelete="CASCADE"), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("profile_id", "library_id", name="uq_kn_ai_src"),
+        Index("idx_kn_ai_src_library", "library_id", "profile_id"),
+    )
+
+
+class KnowledgeAiProfileLog(Base):
+    __tablename__ = "ark_knowledge_ai_profile_logs"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    profile_id = Column(BigInteger, ForeignKey("ark_knowledge_ai_profiles.id", ondelete="CASCADE"), nullable=False)
+    actor_user_id = Column(Integer, nullable=False)
+    action = Column(String(16), nullable=False)
+    config_version = Column(Integer, nullable=False)
+    detail = Column(JSON, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=bj_now)
+
+    __table_args__ = (Index("idx_kn_ai_profile_log", "profile_id", "created_at"),)
+
+
+class KnowledgeAiProfileTarget(Base):
+    __tablename__ = "ark_knowledge_ai_profile_targets"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    profile_id = Column(BigInteger, ForeignKey("ark_knowledge_ai_profiles.id", ondelete="CASCADE"), nullable=False)
+    library_id = Column(BigInteger, ForeignKey("ark_knowledge_libraries.id", ondelete="CASCADE"), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("profile_id", "library_id", name="uq_kn_ai_tgt"),
+        Index("idx_kn_ai_tgt_library", "library_id", "profile_id"),
+    )
+
+
+class KnowledgeAiJob(Base):
+    __tablename__ = "ark_knowledge_ai_jobs"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    document_id = Column(BigInteger, ForeignKey("ark_knowledge_documents.id", ondelete="CASCADE"), nullable=False)
+    base_revision_id = Column(BigInteger, ForeignKey("ark_knowledge_revisions.id", ondelete="RESTRICT"), nullable=False)
+    owner_user_id = Column(Integer, nullable=False)
+    profile_id = Column(BigInteger, ForeignKey("ark_knowledge_ai_profiles.id", ondelete="RESTRICT"), nullable=False)
+    mode = Column(String(16), nullable=False, comment="format/enhance")
+    status = Column(String(16), nullable=False, default="queued")
+    idempotency_key = Column(String(64), nullable=False)
+    config_snapshot = Column(JSON, nullable=False)
+    result_json = Column(JSON, nullable=True)
+    comparison_json = Column(JSON, nullable=True)
+    ai_call_log_id = Column(BigInteger, ForeignKey("ark_ai_call_logs.id", ondelete="RESTRICT"), nullable=True)
+    applied_revision_id = Column(BigInteger, ForeignKey("ark_knowledge_revisions.id", ondelete="RESTRICT"), nullable=True)
+    claimed_by = Column(String(128), nullable=True)
+    lease_token = Column(String(64), nullable=True)
+    lease_expires_at = Column(DateTime, nullable=True)
+    claim_count = Column(Integer, nullable=False, default=0)
+    error_code = Column(String(64), nullable=True)
+    error_message = Column(Text, nullable=True)
+    input_tokens = Column(Integer, nullable=True)
+    output_tokens = Column(Integer, nullable=True)
+    total_tokens = Column(Integer, nullable=True)
+    started_at = Column(DateTime, nullable=True)
+    finished_at = Column(DateTime, nullable=True)
+    applied_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=bj_now)
+
+    __table_args__ = (
+        UniqueConstraint("owner_user_id", "idempotency_key", name="uq_kn_ai_job_owner_idem"),
+        Index("idx_kn_ai_job_claim", "status", "lease_expires_at", "created_at"),
+        Index("idx_kn_ai_job_doc_created", "document_id", "created_at"),
+        Index("idx_kn_ai_job_owner_created", "owner_user_id", "created_at", "status"),
+    )
+
+
+class KnowledgeAiJobSource(Base):
+    __tablename__ = "ark_knowledge_ai_job_sources"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    job_id = Column(BigInteger, ForeignKey("ark_knowledge_ai_jobs.id", ondelete="CASCADE"), nullable=False)
+    library_id = Column(BigInteger, nullable=False)
+    document_id = Column(BigInteger, nullable=False)
+    revision_id = Column(BigInteger, ForeignKey("ark_knowledge_revisions.id", ondelete="RESTRICT"), nullable=False)
+    title_snapshot = Column(String(256), nullable=False)
+    score = Column(Integer, nullable=False, default=0)
+    position = Column(Integer, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("job_id", "revision_id", name="uq_kn_ai_job_source"),
+        Index("idx_kn_ai_job_source_pos", "job_id", "position"),
+    )
