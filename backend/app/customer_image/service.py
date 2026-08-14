@@ -364,7 +364,10 @@ def list_available_customers(
 
     return [
         {
-            "id": row.company_id,
+            # customer_info.company_id 在不同 OKKI 库实例中可能由驱动返回
+            # int 或 str；对外统一成字符串，避免大整数 ID 穿过 JSON/JS 后
+            # 发生类型漂移或精度损失。
+            "id": str(row.company_id),
             "name": row.company_name,
             "country": row.country_name,
             "origin": row.origin_name,

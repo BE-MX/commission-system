@@ -16,7 +16,7 @@
         v-for="item in options"
         :key="item.id"
         :label="`${item.name} · ${item.country || '未知国家'} · ID ${item.id}`"
-        :value="item.id"
+        :value="normalizeCustomerId(item.id)"
       />
     </el-select>
     <div class="field-hint">客户来自 OKKI customer_info，提交后按客户ID归档素材</div>
@@ -26,6 +26,7 @@
 <script setup>
 import { ref } from 'vue'
 import { searchMediaCustomers } from '@/api/customerMedia'
+import { normalizeCustomerId } from '@/views/design/appointmentContract'
 
 const customerId = defineModel({ type: String, default: '' })
 const emit = defineEmits(['select'])
@@ -44,6 +45,7 @@ function search(keyword) {
 }
 
 function select(id) {
-  emit('select', options.value.find(item => item.id === id) || null)
+  const normalizedId = normalizeCustomerId(id)
+  emit('select', options.value.find(item => normalizeCustomerId(item.id) === normalizedId) || null)
 }
 </script>
