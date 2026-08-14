@@ -172,7 +172,7 @@
         </div>
 
         <div v-else-if="activeTab === 'profiles'" v-loading="detailLoading" class="oi-table-wrap">
-          <div class="oi-section-note"><b>客户画像分析</b><span>{{ profiles.definitions?.profile }}</span></div>
+          <div class="oi-section-note"><b>客户画像分析</b><span>{{ profiles.definitions?.profile }}；{{ profiles.definitions?.repeat_cycle }}</span></div>
           <div class="oi-profile-summary">
             <div><span>本期客户</span><b>{{ number(profiles.summary?.active_customer_count) }}</b></div>
             <div><span>画像组合</span><b>{{ number(profiles.summary?.profile_count) }}</b></div>
@@ -197,11 +197,12 @@
             <el-table-column label="来源渠道" prop="source_label" min-width="116" />
             <el-table-column label="客户性质" prop="customer_nature" min-width="94" />
             <el-table-column label="新签型号" prop="new_sign_model_family" min-width="92" />
+            <el-table-column label="型号归类说明" prop="new_sign_model_reason_summary" min-width="220" show-overflow-tooltip />
             <el-table-column label="本期客户" prop="active_customer_count" min-width="88" />
             <el-table-column label="同画像客户" prop="peer_customer_count" min-width="100" />
             <el-table-column label="首返周期" min-width="106"><template #default="{ row }">{{ row.avg_first_return_cycle_days != null ? `${row.avg_first_return_cycle_days} 天` : '样本不足' }}</template></el-table-column>
             <el-table-column label="首返样本" prop="first_return_sample_count" min-width="88" />
-            <el-table-column label="平均复购周期" min-width="122"><template #default="{ row }">{{ row.avg_repeat_cycle_days ? `${row.avg_repeat_cycle_days} 天` : '样本不足' }}</template></el-table-column>
+            <el-table-column label="典型复购周期" min-width="122"><template #default="{ row }">{{ row.typical_repeat_cycle_days ? `${row.typical_repeat_cycle_days} 天` : '样本不足' }}</template></el-table-column>
             <el-table-column label="复购间隔样本" prop="repeat_interval_count" min-width="110" />
             <el-table-column label="本期订单" prop="period_orders" min-width="88" />
             <el-table-column label="本期金额" min-width="120"><template #default="{ row }">${{ money(row.period_amount_usd) }}</template></el-table-column>
@@ -221,7 +222,7 @@
             <el-table-column label="负责人" prop="user_name" min-width="96" />
             <el-table-column label="风险" min-width="108"><template #default="{ row }"><el-tag effect="plain" :type="riskType(row.risk_status)">{{ riskLabel(row.risk_status) }}</el-tag></template></el-table-column>
             <el-table-column label="所属画像" prop="profile_label" min-width="280" show-overflow-tooltip />
-            <el-table-column label="画像平均周期" min-width="132"><template #default="{ row }">{{ row.typical_cycle_days ? `${row.typical_cycle_days} 天` : '样本不足' }} · {{ cycleSourceLabel(row.cycle_source) }}</template></el-table-column>
+            <el-table-column label="典型周期" min-width="158"><template #default="{ row }">{{ row.typical_cycle_days ? `${row.typical_cycle_days} 天` : '样本不足' }} · {{ cycleSourceLabel(row.cycle_source) }}</template></el-table-column>
             <el-table-column label="上次下单" prop="last_order_date" min-width="108" />
             <el-table-column label="提醒日期" prop="expected_order_date" min-width="108" />
             <el-table-column label="异常日期" prop="abnormal_date" min-width="108" />
@@ -293,7 +294,7 @@ const evidenceLabel = value => ({ high: '高证据', medium: '中证据', low: '
 const scoreType = value => value >= 70 ? 'success' : (value >= 45 ? 'warning' : 'info')
 const riskType = value => ({ abnormal: 'danger', due: 'warning', insufficient_data: 'info' }[value] || 'info')
 const riskLabel = value => ({ abnormal: '周期异常', due: '到期提醒', insufficient_data: '样本不足' }[value] || value)
-const cycleSourceLabel = value => ({ profile_peer: '同画像均值', insufficient_data: '无复购样本' }[value] || '估算')
+const cycleSourceLabel = value => ({ profile_robust: '同画像中位数', customer_robust: '客户历史中位数', insufficient_data: '样本不足' }[value] || '估算')
 const ppChangeText = value => value == null ? '无上期' : `${value > 0 ? '+' : ''}${value}pp`
 const growthText = value => value == null ? '新增' : `${value > 0 ? '+' : ''}${value}%`
 const productQuantityText = item => `${number(item.quantity)} · ${growthText(item.quantity_growth)}`
