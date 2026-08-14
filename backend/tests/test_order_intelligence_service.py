@@ -114,8 +114,20 @@ def test_aggregate_deduplicates_customer_counts_and_keeps_order_amount():
     assert result["repeat_customers"] == 1
     assert result["repeat_orders"] == 1
     assert result["first_return_customers"] == 1
+    assert result["repurchase_rate"] == 50.0
+    assert result["repeat_customer_rate"] == 50.0
     assert result["amount_usd"] == 290
     assert result["non_positive_orders"] == 1
+
+
+def test_repurchase_rate_is_zero_when_period_has_no_new_sign_customer():
+    rows = [order("1", "A", date(2026, 2, 1), 100, "否", "是")]
+
+    result = service._aggregate(rows)
+
+    assert result["first_return_customers"] == 1
+    assert result["new_sign_customers"] == 0
+    assert result["repurchase_rate"] == 0
 
 
 def test_monthly_trend_counts_first_return_customers_and_repeat_orders():
@@ -383,7 +395,9 @@ def test_customer_profiles_compute_cycles_distributions_and_profile_alerts():
     }
     assert profile["new_sign_model_family"] == "B1"
     assert profile["customer_nature"] == "沙龙"
-    assert profile["avg_first_return_cycle_days"] == 40
+    assert profile["typical_first_return_cycle_days"] == 30
+    assert profile["avg_first_return_cycle_days"] == 30
+    assert profile["first_return_cycle_method"] == "median"
     assert profile["typical_repeat_cycle_days"] == 30
     assert profile["avg_repeat_cycle_days"] == 30
     assert profile["repeat_cycle_method"] == "median_of_customer_medians"
@@ -422,6 +436,31 @@ def test_profile_alert_marks_strictly_more_than_twice_typical_cycle_as_abnormal(
     assert at_boundary["abnormal_date"] == date(2026, 6, 1)
     assert past_boundary["risk_status"] == "abnormal"
     assert past_boundary["abnormal_date"] == date(2026, 6, 1)
+
+
+def test_first_return_cycle_uses_profile_median_to_resist_long_outlier():
+    orders = [
+        order("1", "A", date(2026, 1, 1), 100, "是"),
+        order("2", "A", date(2026, 1, 31), 100, "否", "是"),
+        order("3", "B", date(2026, 1, 1), 100, "是"),
+        order("4", "B", date(2026, 2, 2), 100, "否", "是"),
+        order("5", "C", date(2026, 1, 1), 100, "是"),
+        order("6", "C", date(2026, 12, 31), 100, "否", "是"),
+    ]
+    products = [
+        product("1", "A", "B1天才发帘", new_deal="是"),
+        product("3", "B", "B1天才发帘", new_deal="是"),
+        product("5", "C", "B1天才发帘", new_deal="是"),
+    ]
+
+    profile = analyze_customer_profiles(
+        orders, products, orders, products, date(2026, 12, 31), service.SOURCE_LABELS,
+    )["items"][0]
+
+    assert profile["first_return_sample_count"] == 3
+    assert profile["typical_first_return_cycle_days"] == 32
+    assert profile["avg_first_return_cycle_days"] == 32
+    assert profile["first_return_cycle_method"] == "median"
 
 
 def test_repeat_cycle_uses_median_to_resist_one_long_customer_outlier():
@@ -530,7 +569,7 @@ def test_sparse_profile_requires_three_personal_intervals_before_fallback_alert(
     assert robust["typical_cycle_days"] == 30
 
 
-def test_profile_uses_only_first_new_order_model_and_allows_same_day_first_return():
+def test_profile_uses_only_first_new_order_model_and_requires_first_return_sample():
     orders = [
         order("9", "A", date(2026, 1, 1), 100, "是"),
         order("10", "A", date(2026, 1, 1), 120, "是", "是"),
@@ -545,7 +584,33 @@ def test_profile_uses_only_first_new_order_model_and_allows_same_day_first_retur
     )
 
     assert result["items"][0]["new_sign_model_family"] == "B1"
-    assert result["items"][0]["avg_first_return_cycle_days"] == 0
+    assert result["items"][0]["typical_first_return_cycle_days"] is None
+    assert result["items"][0]["first_return_cycle_method"] == "insufficient_profile_sample"
+    assert result["items"][0]["first_return_sample_count"] == 1
+
+
+def test_first_return_cycle_allows_zero_days_with_enough_profile_samples():
+    orders = [
+        order("1", "A", date(2026, 1, 1), 100, "是"),
+        order("2", "A", date(2026, 1, 1), 100, "否", "是"),
+        order("3", "B", date(2026, 1, 1), 100, "是"),
+        order("4", "B", date(2026, 1, 1), 100, "否", "是"),
+        order("5", "C", date(2026, 1, 1), 100, "是"),
+        order("6", "C", date(2026, 1, 1), 100, "否", "是"),
+    ]
+    products = [
+        product("1", "A", "B1天才发帘", new_deal="是"),
+        product("3", "B", "B1天才发帘", new_deal="是"),
+        product("5", "C", "B1天才发帘", new_deal="是"),
+    ]
+
+    profile = analyze_customer_profiles(
+        orders, products, orders, products, date(2026, 1, 1), service.SOURCE_LABELS,
+    )["items"][0]
+
+    assert profile["first_return_sample_count"] == 3
+    assert profile["typical_first_return_cycle_days"] == 0
+    assert profile["first_return_cycle_method"] == "median"
 
 
 def test_profile_alert_can_include_historical_customer_outside_period():
