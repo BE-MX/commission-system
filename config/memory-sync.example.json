@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "user_id": "leshine-ark-owner-v1",
+  "source_device": "CHANGE_ME",
+  "db_path": "~/.claude-mem/claude-mem.db",
+  "state_path": "~/.local/state/claude-mem-mem0/cursor.json",
+  "lock_path": "~/.local/state/claude-mem-mem0/sync.lock",
+  "api_base_url": "https://api.mem0.ai",
+  "api_key_env": "MEM0_API_KEY",
+  "api_key_keychain_service": "leshine-mem0-api-key",
+  "api_key_keychain_account": "CHANGE_ME",
+  "retry_attempts": 4,
+  "event_poll_attempts": 20,
+  "project_aliases": {
+    "莱莎方舟相关项目": "commission-system",
+    "commission-system": "commission-system",
+    "commission-system-*": "commission-system"
+  }
+}
