@@ -771,8 +771,8 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 | GET | `/overview?date_from=&date_to=&team=&user_id=&countries=&models=&colors=&sources=` | 经营摘要、月趋势、来源、金额分布、产品趋势、客户风险、预测与数据质量；多选参数使用重复 query key |
 | GET | `/countries?date_from=&date_to=&team=&user_id=&countries=&models=&colors=&sources=` | 国家新签/复购/GMV/周期/流失、产品偏好、机会评分与投流方向建议 |
 | GET | `/people?dimension=team\|user&date_from=&date_to=&team=&user_id=&countries=&models=&colors=&sources=` | 团队或个人的相对能力画像、变化、优势国家与证据等级 |
-| GET | `/customer-profiles?date_from=&date_to=&team=&user_id=&countries=&models=&colors=&sources=` | 按国家、来源、客户性质、新签 B1/B3 画像输出首返/平均复购周期、复购型号/幅度及统计期畅销产品/颜色/幅度 |
-| GET | `/customers?date_from=&as_of=&risk_status=due\|abnormal\|insufficient_data&country=&page=&page_size=&team=&user_id=&countries=&models=&colors=&sources=` | 分析期内命中客户的行动清单；达到画像平均复购周期即提醒，严格超过 2 倍标记异常 |
+| GET | `/customer-profiles?date_from=&date_to=&team=&user_id=&countries=&models=&colors=&sources=` | 按国家、来源、客户性质、新签 B1/B3 画像输出型号归类原因、首返/稳健典型复购周期、复购型号/幅度及统计期畅销产品/颜色/幅度 |
+| GET | `/customers?date_from=&as_of=&risk_status=due\|abnormal\|insufficient_data&country=&page=&page_size=&team=&user_id=&countries=&models=&colors=&sources=` | 分析期内命中客户的行动清单；达到稳健典型复购周期即提醒，严格超过 2 倍标记异常；画像小样本时仅在客户自身至少有 3 个间隔时使用个人中位数 |
 | POST | `/ai-brief` | 202 提交后台简报任务；同一用户有 queued/running 任务时返回原任务，不重复生成 |
 | GET | `/ai-brief/active` | 恢复当前用户的进行中简报；queued 任务会自动重新调度 |
 | GET | `/ai-brief/latest` | 返回当前用户最近一次简报，刷新页面后可恢复已完成结果 |
