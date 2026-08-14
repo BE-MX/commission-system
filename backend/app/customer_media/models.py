@@ -6,9 +6,17 @@ from sqlalchemy import (
     BigInteger, Boolean, Column, DateTime, ForeignKey, Index, Integer, String,
     Text, UniqueConstraint,
 )
+from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
+
+
+USER_ID = Integer().with_variant(mysql.INTEGER(unsigned=True), "mysql")
+OBJECT_KEY = String(768).with_variant(
+    mysql.VARCHAR(length=768, charset="ascii", collation="ascii_bin"),
+    "mysql",
+)
 
 
 class CustomerMediaBatch(Base):
@@ -19,14 +27,14 @@ class CustomerMediaBatch(Base):
     request_id = Column(Integer, ForeignKey("design_schedule_request.id"), nullable=False, comment="预约申请ID")
     customer_id = Column(String(64), nullable=False, comment="customer_info.company_id")
     customer_name_snapshot = Column(String(256), nullable=False, comment="客户名称快照")
-    applicant_user_id = Column(Integer, ForeignKey("ark_users.id"), nullable=False, comment="预约发起人方舟用户ID")
-    designer_user_id = Column(Integer, ForeignKey("ark_users.id"), nullable=True, comment="上传设计师方舟用户ID")
+    applicant_user_id = Column(USER_ID, ForeignKey("ark_users.id"), nullable=False, comment="预约发起人方舟用户ID")
+    designer_user_id = Column(USER_ID, ForeignKey("ark_users.id"), nullable=True, comment="上传设计师方舟用户ID")
     status = Column(String(24), nullable=False, default="draft", comment="批次状态")
     revision = Column(Integer, nullable=False, default=1, comment="送审修订号")
     lock_version = Column(Integer, nullable=False, default=1, comment="乐观锁版本")
     review_comment = Column(Text, nullable=True, comment="最近审核意见")
     submitted_at = Column(DateTime, nullable=True, comment="送审时间")
-    reviewed_by = Column(Integer, ForeignKey("ark_users.id"), nullable=True, comment="最近审核人ID")
+    reviewed_by = Column(USER_ID, ForeignKey("ark_users.id"), nullable=True, comment="最近审核人ID")
     reviewed_at = Column(DateTime, nullable=True, comment="最近审核时间")
     published_at = Column(DateTime, nullable=True, comment="发布时间")
     unpublished_at = Column(DateTime, nullable=True, comment="下架时间")
@@ -55,13 +63,13 @@ class CustomerMediaAsset(Base):
     file_size = Column(BigInteger, nullable=False, comment="文件字节数")
     sha256 = Column(String(64), nullable=False, comment="原件 SHA-256")
     storage_provider = Column(String(16), nullable=False, default="local", comment="存储适配器 local/cos")
-    object_key = Column(String(768), nullable=False, comment="私有存储对象键")
+    object_key = Column(OBJECT_KEY, nullable=False, comment="私有存储对象键")
     thumbnail_key = Column(String(768), nullable=True, comment="缩略图对象键（预留）")
     width = Column(Integer, nullable=True, comment="图片宽度")
     height = Column(Integer, nullable=True, comment="图片高度")
     duration_seconds = Column(Integer, nullable=True, comment="视频时长秒数")
     sort_order = Column(Integer, nullable=False, default=0, comment="批次内排序")
-    uploaded_by = Column(Integer, ForeignKey("ark_users.id"), nullable=False, comment="上传人方舟用户ID")
+    uploaded_by = Column(USER_ID, ForeignKey("ark_users.id"), nullable=False, comment="上传人方舟用户ID")
     created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
     deleted_at = Column(DateTime, nullable=True, comment="软删除时间")
 
@@ -81,7 +89,7 @@ class CustomerMediaReview(Base):
     revision = Column(Integer, nullable=False, comment="送审修订号")
     action = Column(String(24), nullable=False, comment="审计动作")
     remark = Column(Text, nullable=True, comment="审核或操作说明")
-    actor_user_id = Column(Integer, ForeignKey("ark_users.id"), nullable=False, comment="操作人方舟用户ID")
+    actor_user_id = Column(USER_ID, ForeignKey("ark_users.id"), nullable=False, comment="操作人方舟用户ID")
     created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
 
     __table_args__ = (
@@ -102,8 +110,8 @@ class CustomerPortalAccount(Base):
     session_version = Column(Integer, nullable=False, default=1, comment="会话失效版本")
     last_login_at = Column(DateTime, nullable=True, comment="最近登录时间")
     last_login_ip = Column(String(45), nullable=True, comment="最近登录IP")
-    created_by = Column(Integer, ForeignKey("ark_users.id"), nullable=False, comment="创建人方舟用户ID")
-    updated_by = Column(Integer, ForeignKey("ark_users.id"), nullable=False, comment="更新人方舟用户ID")
+    created_by = Column(USER_ID, ForeignKey("ark_users.id"), nullable=False, comment="创建人方舟用户ID")
+    updated_by = Column(USER_ID, ForeignKey("ark_users.id"), nullable=False, comment="更新人方舟用户ID")
     created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
     updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now, comment="更新时间")
 
