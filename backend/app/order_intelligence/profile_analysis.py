@@ -6,11 +6,12 @@ import hashlib
 import re
 from collections import Counter, defaultdict
 from datetime import date, timedelta
-from statistics import mean, median
+from statistics import median
 from typing import Iterable
 
 
 AMPLITUDES = ("16", "18", "20", "22", "24")
+MIN_PROFILE_FIRST_RETURN_CUSTOMERS = 3
 MIN_PROFILE_REPEAT_CUSTOMERS = 3
 MIN_PROFILE_REPEAT_INTERVALS = 5
 MIN_CUSTOMER_REPEAT_INTERVALS = 3
@@ -162,11 +163,14 @@ def _evidence(interval_count: int, customer_count: int) -> str:
     return "low"
 
 
-def _robust_cycle(values: Iterable[float | int]) -> int | None:
+def _robust_cycle(
+    values: Iterable[float | int],
+    minimum_days: int = 1,
+) -> int | None:
     samples = list(values)
     if not samples:
         return None
-    return max(1, int(round(float(median(samples)))))
+    return max(minimum_days, int(round(float(median(samples)))))
 
 
 def _resolve_customer_cycle(stats: dict, benchmark: dict) -> tuple[int | None, str, str]:
@@ -293,6 +297,11 @@ def analyze_customer_profiles(
             )
             else None
         )
+        typical_first_return_cycle = (
+            _robust_cycle(first_returns, minimum_days=0)
+            if len(first_returns) >= MIN_PROFILE_FIRST_RETURN_CUSTOMERS
+            else None
+        )
         profile_benchmarks[key] = {
             # avg_repeat_cycle_days 保留兼容旧前端/API，语义已改为稳健典型周期。
             "avg_repeat_cycle_days": typical_cycle,
@@ -303,7 +312,13 @@ def analyze_customer_profiles(
             ),
             "repeat_interval_count": len(intervals),
             "repeat_customer_count": interval_customers,
-            "avg_first_return_cycle_days": int(round(mean(first_returns))) if first_returns else None,
+            # avg_first_return_cycle_days 保留兼容旧前端/API，语义已改为稳健典型周期。
+            "avg_first_return_cycle_days": typical_first_return_cycle,
+            "typical_first_return_cycle_days": typical_first_return_cycle,
+            "first_return_cycle_method": (
+                "median" if typical_first_return_cycle is not None
+                else "insufficient_profile_sample"
+            ),
             "first_return_sample_count": len(first_returns),
             "evidence_level": _evidence(len(intervals), interval_customers),
         }
@@ -468,7 +483,7 @@ def analyze_customer_profiles(
 def _definitions() -> dict[str, str]:
     return {
         "profile": "最近国家 + 首张新签订单来源 + customer_info.trail_status_name + 新签订单 B1/B3 型号组合",
-        "first_return_cycle": "首张新签订单至后续首张明确标记“首返=是”订单的天数，同日计 0 天，按画像取算术平均",
+        "first_return_cycle": "首张新签订单至后续首张明确标记“首返=是”订单的天数，同日计 0 天；同画像至少 3 位首返客户后取中位数，降低异常长周期影响",
         "repeat_cycle": "先取每位客户连续有效下单间隔的中位数，再取同画像客户中位数；画像至少需 3 位复购客户且累计 5 个间隔",
         "alert": "达到稳健典型周期即提醒，严格超过 2 倍标记异常；画像样本不足时，仅对拥有至少 3 个历史间隔的客户使用其个人中位数，否则不强预警",
         "period_distribution": "畅销产品、型号、颜色及 16/18/20/22/24 幅度按统计期订单明细 quantity 汇总",

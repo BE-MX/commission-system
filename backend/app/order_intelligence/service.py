@@ -305,6 +305,10 @@ def _aggregate(orders: Iterable[dict]) -> dict:
         "repeat_customers": len(repeat_customers),
         "repeat_orders": len(repeat_rows),
         "first_return_customers": len(first_return_customers),
+        "repurchase_rate": (
+            round(len(first_return_customers) / len(new_customers) * 100, 1)
+            if new_customers else 0
+        ),
         "repeat_customer_rate": round(len(repeat_customers) / len(customers) * 100, 1) if customers else 0,
         "amount_usd": round(sum(r["amount_usd"] for r in rows), 2),
         "repeat_amount_usd": round(sum(r["amount_usd"] for r in repeat_rows), 2),
@@ -679,6 +683,7 @@ def get_overview(
         "amount_usd": _percent_change(current_stats["amount_usd"], previous_stats["amount_usd"]),
         "new_sign_customers": _percent_change(current_stats["new_sign_customers"], previous_stats["new_sign_customers"]),
         "first_return_customers": _percent_change(current_stats["first_return_customers"], previous_stats["first_return_customers"]),
+        "repurchase_rate": _percent_change(current_stats["repurchase_rate"], previous_stats["repurchase_rate"]),
         "repeat_amount_usd": _percent_change(current_stats["repeat_amount_usd"], previous_stats["repeat_amount_usd"]),
         "repeat_customer_rate": _percent_change(current_stats["repeat_customer_rate"], previous_stats["repeat_customer_rate"]),
     }
@@ -715,6 +720,7 @@ def get_overview(
             "new_sign": f"OKKI 订单自定义字段 {NEW_DEAL_FIELD}=是，按客户去重",
             "repeat": f"OKKI 订单自定义字段 {NEW_DEAL_FIELD}=否；复购订单数按订单计数，复购金额按 amount_usd 求和",
             "first_return": f"OKKI 订单自定义字段 {FIRST_RETURN_FIELD}=是，按客户去重",
+            "repurchase_rate": "统计期首返客户数 ÷ 统计期新签客户数 × 100%；按客户去重，分母为 0 时记 0%",
             "gmv": "有效订单 amount_usd；产品趋势使用明细 quantity，不与订单 GMV 混算",
             "forecast": "最近 3 个自然月加权均值叠加截断趋势（-30%~+50%），少于 3 个月不预测",
             **profile_analysis["definitions"],
