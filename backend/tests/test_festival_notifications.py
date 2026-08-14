@@ -53,6 +53,59 @@ def test_render_event_image_contains_shareable_png(tmp_path, monkeypatch):
         assert image.getpixel((1060, 575)) == (253, 217, 86)
 
 
+def test_render_event_image_aurora_theme_for_highlight_events(tmp_path, monkeypatch):
+    monkeypatch.setattr(notification_service, "_UPLOAD_ROOT", tmp_path)
+    event = {
+        "event_type": "super_deal",
+        "level": "L4",
+        "label": "超级大单",
+        "subject_type": "person",
+        "subject_id": "U9",
+        "subject_name": "李四",
+        "detail": "超级大单 · SO-2026-001",
+        "amount": 35000,
+        "dedup_key": "super_deal:SO-2026-001",
+        "created_at": datetime(2026, 8, 4, 12, 30),
+    }
+
+    output = notification_service.render_event_image(event)
+
+    assert output.is_file()
+    with Image.open(output) as image:
+        assert image.size == (1200, 675)
+        corner = image.getpixel((10, 10))
+        assert corner != (253, 217, 86)  # 不再是品牌黄底
+        assert min(corner) > 180 and corner[0] > corner[2]  # 奶油暖色极光基调
+        # 烟花区域存在大量高饱和彩色像素
+        region = image.crop((630, 40, 760, 175))
+        vivid = [p for p in region.getdata() if max(p) - min(p) > 60]
+        assert len(vivid) > 50
+
+
+@pytest.mark.parametrize(
+    ("event_type", "label"),
+    [
+        ("first_sign", "首单新签"),
+        ("new_sign_order", "新签喜报"),
+        ("big_deal", "大单来袭"),
+        ("super_deal", "超级大单"),
+        ("rank_up_sign", "新签名次上升"),
+        ("rank_up_first", "首返名次上升"),
+        ("rank_up_re", "复购名次上升"),
+        ("rank_up_team", "团队名次上升"),
+    ],
+)
+def test_aurora_theme_covers_new_sign_big_deal_and_rank_up(event_type, label):
+    assert notification_service._is_aurora_event({"event_type": event_type, "label": label})
+    # 旧数据缺 event_type 时按 label 兜底
+    assert notification_service._is_aurora_event({"label": label})
+
+
+def test_aurora_theme_excludes_other_events():
+    assert not notification_service._is_aurora_event({"event_type": "daily_combo", "label": "当日连击"})
+    assert not notification_service._is_aurora_event({"label": "公司目标里程碑"})
+
+
 @pytest.mark.parametrize(
     ("subject_type", "subject_id", "subject_name", "asset_path", "color"),
     [

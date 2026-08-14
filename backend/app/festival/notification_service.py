@@ -7,6 +7,7 @@ import hmac
 import json
 import logging
 import math
+import random
 import subprocess
 import tempfile
 from datetime import date, datetime, time as dt_time, timedelta
@@ -15,7 +16,7 @@ from urllib.parse import urlencode
 
 import anyio
 import httpx
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 
@@ -46,6 +47,19 @@ _TEAM_LOGOS = {
     "乘风": "chengfeng",
     "无名": "wuming",
 }
+# 新签/大单来袭/超级大单/名次上升四类高光事件：奶油底黄色系极光 + 彩色烟花。
+_AURORA_EVENT_TYPES = {
+    "first_sign", "new_sign_order", "big_deal", "super_deal",
+    "rank_up_sign", "rank_up_first", "rank_up_re", "rank_up_team",
+}
+_AURORA_LABELS = {"首单新签", "新签喜报", "大单来袭", "超级大单"}
+_AURORA_BASE_TOP = (255, 251, 245)
+_AURORA_BASE_BOTTOM = (253, 242, 222)
+_AURORA_BANDS = ((255, 240, 200), (255, 228, 150), (255, 219, 118), (255, 236, 180))
+_FIREWORK_PALETTE = (
+    (255, 122, 89), (236, 72, 153), (245, 158, 11),
+    (139, 92, 246), (56, 189, 248), (16, 185, 129),
+)
 
 
 def _draw_firework(draw: ImageDraw.ImageDraw, center: tuple[int, int], radius: int) -> None:
@@ -65,8 +79,9 @@ def _draw_firework(draw: ImageDraw.ImageDraw, center: tuple[int, int], radius: i
     draw.ellipse((cx - 5, cy - 5, cx + 5, cy + 5), fill=_BRAND_BLACK)
 
 
-def _draw_sparkle(draw: ImageDraw.ImageDraw, center: tuple[int, int], size: int) -> None:
-    """绘制四角星光，使用小面积实心黑保持缩略图下仍清晰。"""
+def _draw_sparkle(draw: ImageDraw.ImageDraw, center: tuple[int, int], size: int,
+                  fill: str | tuple[int, int, int] = _BRAND_BLACK) -> None:
+    """绘制四角星光，使用小面积实心色保持缩略图下仍清晰。"""
     cx, cy = center
     inner = max(2, round(size * 0.22))
     draw.polygon([
@@ -74,7 +89,7 @@ def _draw_sparkle(draw: ImageDraw.ImageDraw, center: tuple[int, int], size: int)
         (cx + size, cy), (cx + inner, cy + inner),
         (cx, cy + size), (cx - inner, cy + inner),
         (cx - size, cy), (cx - inner, cy - inner),
-    ], fill=_BRAND_BLACK)
+    ], fill=fill)
 
 
 def _draw_flower(draw: ImageDraw.ImageDraw, center: tuple[int, int]) -> None:
@@ -92,6 +107,60 @@ def _draw_flower(draw: ImageDraw.ImageDraw, center: tuple[int, int]) -> None:
                  fill=_BRAND_BLACK)
     draw.polygon([(cx - 8, cy + 68), (cx + 18, cy + 59), (cx - 4, cy + 79)],
                  fill=_BRAND_BLACK)
+
+
+def _is_aurora_event(event: dict) -> bool:
+    """新签/大单来袭/超级大单/名次上升类事件使用极光主题。"""
+    if event.get("event_type") in _AURORA_EVENT_TYPES:
+        return True
+    label = str(event.get("label") or "")
+    return label in _AURORA_LABELS or "名次上升" in label
+
+
+def _aurora_background(width: int, height: int) -> Image.Image:
+    """奶油底上铺浅金/暖黄极光色块并整体柔化，四类高光事件共用同色系。"""
+    base = Image.new("RGB", (width, height))
+    base_draw = ImageDraw.Draw(base)
+    for y in range(height):
+        ratio = y / (height - 1)
+        color = tuple(round(top + (bottom - top) * ratio)
+                      for top, bottom in zip(_AURORA_BASE_TOP, _AURORA_BASE_BOTTOM))
+        base_draw.line((0, y, width, y), fill=color)
+    base_draw.ellipse((-260, 60, 520, 640), fill=_AURORA_BANDS[0])
+    base_draw.ellipse((620, -220, 1520, 260), fill=_AURORA_BANDS[1])
+    base_draw.ellipse((840, 220, 1580, 780), fill=_AURORA_BANDS[2])
+    base_draw.ellipse((240, 300, 920, 980), fill=_AURORA_BANDS[3])
+    return base.filter(ImageFilter.GaussianBlur(130))
+
+
+def _draw_colorful_firework(layer: Image.Image, center: tuple[int, int],
+                            radius: int, seed: int = 0) -> None:
+    """在透明图层上画一朵烟花：单朵限 1-2 个主色，火花细长、外端衰减微垂，
+    末端带亮点，中心留白色高温核——模拟真实礼花弹而非卡通星芒。"""
+    rng = random.Random(seed)
+    cx, cy = center
+    base = _FIREWORK_PALETTE[seed % len(_FIREWORK_PALETTE)]
+    accent = (255, 214, 120)  # 金色伴星——真实礼花多为单主色 + 金/银伴星
+    draw = ImageDraw.Draw(layer)
+    for _ in range(max(28, int(radius * 1.7))):
+        angle = rng.uniform(0.0, math.tau)
+        reach = radius * rng.uniform(0.45, 1.0)
+        r, g, b = base if rng.random() < 0.72 else accent
+        gain = rng.uniform(0.7, 1.0)
+        color = (round(r * gain), round(g * gain), round(b * gain))
+        start = radius * 0.10
+        x0 = cx + math.cos(angle) * start
+        y0 = cy + math.sin(angle) * start
+        xm = cx + math.cos(angle) * reach * 0.55
+        ym = cy + math.sin(angle) * reach * 0.55
+        x1 = cx + math.cos(angle) * reach
+        y1 = cy + math.sin(angle) * reach + reach * 0.10  # 重力微垂
+        width = 2 if reach > radius * 0.8 else 1
+        draw.line((x0, y0, xm, ym), fill=color + (235,), width=width)
+        draw.line((xm, ym, x1, y1), fill=color + (115,), width=1)
+        draw.ellipse((x1 - 1.6, y1 - 1.6, x1 + 1.6, y1 + 1.6), fill=(r, g, b, 200))
+    core = max(3, radius // 8)
+    draw.ellipse((cx - core, cy - core, cx + core, cy + core), fill=(255, 252, 240, 235))
 
 
 def _font(size: int, bold: bool = False):
@@ -154,25 +223,44 @@ def _public_url(path: Path) -> str:
 def render_event_image(event: dict) -> Path:
     """把与大屏一致的事件内容渲染成 16:9 PNG，供钉钉内联显示。"""
     width, height = 1200, 675
-    image = Image.new("RGB", (width, height), _BRAND_YELLOW)
+    aurora = _is_aurora_event(event)
+    if aurora:
+        image = _aurora_background(width, height)
+        ink, sub_ink, pill_ink, amount_ink = "#3F2A17", "#6B4A2E", "#FFF6EA", "#C2410C"
+    else:
+        image = Image.new("RGB", (width, height), _BRAND_YELLOW)
+        ink, sub_ink, pill_ink, amount_ink = _BRAND_BLACK, "#332600", _BRAND_YELLOW, _BRAND_BLACK
+    if aurora:
+        fireworks = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        _draw_colorful_firework(fireworks, (690, 104), 52, seed=11)
+        _draw_colorful_firework(fireworks, (920, 486), 38, seed=27)
+        _draw_colorful_firework(fireworks, (1060, 470), 28, seed=43)
+        glow = fireworks.filter(ImageFilter.GaussianBlur(5))
+        image = Image.alpha_composite(image.convert("RGBA"), glow)
+        image = Image.alpha_composite(image, fireworks).convert("RGB")
     draw = ImageDraw.Draw(image)
     # 品牌图的核心识别来自纯黄底 + 黑色字标；装饰保持克制，避免抢事件正文。
-    draw.ellipse((1120, -210, 1420, 90), outline=_BRAND_BLACK, width=22)
-    _draw_firework(draw, (690, 104), 42)
-    _draw_firework(draw, (920, 486), 30)
-    _draw_sparkle(draw, (510, 455), 14)
-    _draw_sparkle(draw, (810, 185), 10)
-    _draw_sparkle(draw, (1080, 365), 12)
-    _draw_flower(draw, (1060, 470))
-    draw.text((900, 54), "leShine Hair®", font=_font(28, bold=True), fill=_BRAND_BLACK)
+    # 新签/大单/名次类高光事件切换为奶油底黄色系极光，烟花改为彩色。
+    draw.ellipse((1120, -210, 1420, 90), outline=ink, width=22)
+    if aurora:
+        _draw_sparkle(draw, (510, 455), 14, fill=_FIREWORK_PALETTE[1])
+        _draw_sparkle(draw, (810, 185), 10, fill=_FIREWORK_PALETTE[0])
+        _draw_sparkle(draw, (1080, 365), 12, fill=_FIREWORK_PALETTE[3])
+    else:
+        _draw_firework(draw, (690, 104), 42)
+        _draw_firework(draw, (920, 486), 30)
+        _draw_sparkle(draw, (510, 455), 14)
+        _draw_sparkle(draw, (810, 185), 10)
+        _draw_sparkle(draw, (1080, 365), 12)
+        _draw_flower(draw, (1060, 470))
+    draw.text((900, 54), "leShine Hair®", font=_font(28, bold=True), fill=ink)
 
-    accent = _BRAND_BLACK
     draw.rounded_rectangle((44, 38, width - 44, height - 38), radius=34,
-                           outline=accent, width=5)
-    draw.rounded_rectangle((78, 70, 390, 126), radius=28, fill=accent)
-    draw.ellipse((106, 92, 120, 106), fill=_BRAND_YELLOW)
+                           outline=ink, width=5)
+    draw.rounded_rectangle((78, 70, 390, 126), radius=28, fill=ink)
+    draw.ellipse((106, 92, 120, 106), fill=pill_ink)
     draw.text((132, 80), str(event.get("label") or "高光事件"),
-              font=_font(25, bold=True), fill=_BRAND_YELLOW)
+              font=_font(25, bold=True), fill=pill_ink)
 
     subject_name = str(event.get("subject_name") or "")
     assets_root = _REPO_ROOT / "frontend" / "public" / "festival" / "assets"
@@ -190,26 +278,26 @@ def render_event_image(event: dict) -> Path:
         mask = Image.new("L", (150, 150), 0)
         ImageDraw.Draw(mask).ellipse((0, 0, 149, 149), fill=255)
         image.paste(subject_image, (82, 176), mask)
-        draw.ellipse((78, 172, 236, 330), outline=accent, width=6)
+        draw.ellipse((78, 172, 236, 330), outline=ink, width=6)
         text_x = 278
 
     name_font = _font(68, bold=True)
-    draw.text((text_x, 176), subject_name, font=name_font, fill=_BRAND_BLACK)
+    draw.text((text_x, 176), subject_name, font=name_font, fill=ink)
     detail = str(event.get("detail") or "")
     detail_font = _font(34)
     for idx, line in enumerate(_wrap(draw, detail, detail_font, width - text_x - 100)):
-        draw.text((text_x, 275 + idx * 52), line, font=detail_font, fill="#332600")
+        draw.text((text_x, 275 + idx * 52), line, font=detail_font, fill=sub_ink)
 
     amount = event.get("amount")
     if amount:
-        draw.text((82, 445), f"${float(amount):,.0f}", font=_font(66, bold=True), fill=accent)
+        draw.text((82, 445), f"${float(amount):,.0f}", font=_font(66, bold=True), fill=amount_ink)
     created = event.get("created_at")
     if isinstance(created, datetime):
         created_text = created.strftime("%Y-%m-%d %H:%M")
     else:
         created_text = str(created or datetime.now().strftime("%Y-%m-%d %H:%M"))
     draw.text((82, 565), f"2026 莱莎采购节  ·  {created_text}",
-              font=_font(24), fill=_BRAND_BLACK)
+              font=_font(24), fill=ink)
 
     token = _event_token(str(event["dedup_key"]))
     output = _UPLOAD_ROOT / "events" / f"{token}.png"
