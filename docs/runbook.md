@@ -1260,9 +1260,11 @@ Journal 判读和重跑规则：`intent` 与 `syscall_returned` 都只是操作�
 
 目标入口固定为 `https://media.leshine.cloud`。方舟仍是业务主系统，媒体域上的后端连接同一业务数据库，只由 Nginx 暴露 `/api/customer-media/`；静态门户发布到 `/srv/ark-customer-media`，原件位于私有目录 `/data/customer-media`，不得通过 Nginx `root/alias` 直接暴露。首期仅支持上传、审核、发布、查看和下载，不提供图片编辑。
 
+**IP 兜底入口（备案完成前可用，2026-08-14 实测）**：`.cloud` 域名 HTTPS 被机房未备案拦截（见上线门禁第 1 条），正式客户访问前可通过 `https://154.8.205.162/customer-media/` 使用门户——IP 入口走 `ark-ip-ssl.conf` 的 `default_server`（IP 自签证书），其通用 `location /api/ { proxy_pass http://127.0.0.1:8001 }` 已覆盖 `customer-media` 的 API 前缀，静态页 + 登录 + 素材接口全链可用（测试 `POST /api/customer-media/portal/login` 返回 401「邮箱或密码错误」、`GET /api/customer-media/portal/me` 返回 401「请先登录」即为后端正常响应）。两点限制：①IP 自签证书，浏览器会提示「不安全」，点继续访问即可，正式客户见不到此提示；②`client_max_body_size` 在 IP 入口是 5m（`media.leshine.cloud.conf` 是 501m），大文件上传会在 IP 入口受限，素材查看/预览/小图下载不受影响。备案完成后回归 `.work` 正式域名 + 正式证书。
+
 ### 上线门禁
 
-1. DNS `media.leshine.cloud` 指向目标服务器，80/443 可达且 ICP/HTTPS 阻断已解除；证书签发后先用 `curl -I https://media.leshine.cloud/` 验证。当前已知现状（2026-08-13）：`leshine.cloud` 解析到 `154.8.205.162`，HTTP 会跳 HTTPS，但 HTTPS 连接被重置，因此在修复前不得宣称门户已上线。
+1. DNS `media.leshine.cloud` 指向目标服务器，80/443 可达且 ICP/HTTPS 阻断已解除；证书签发后先用 `curl -I https://media.leshine.cloud/` 验证。当前已知现状（2026-08-13）：`leshine.cloud` 解析到 `154.8.205.162`，HTTP 会跳 HTTPS，但 HTTPS 连接被重置——**`.cloud` 后缀统一未备案，机房在出口按域名特征重置 TLS（连 `media.leshine.cloud` 同命，2026-08-13 独立验证：本机 `curl -skI https://media.leshine.cloud` 200、外部网络 TLS 握手 RST）**，因此在备案完成前不得宣称门户已上线；备案与 `.work` 正式域名落地前用上节 IP 兜底入口。
 2. 备份数据库。确认 `alembic heads` 只有一个 head，审阅 `114_customer_media_portal` 的 MySQL 离线 SQL，再执行 `alembic upgrade head`。迁移只允许在一个实例执行。
 3. 云端 `.env` 至少配置：
 
