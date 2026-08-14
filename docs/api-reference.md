@@ -771,14 +771,14 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 | GET | `/overview?date_from=&date_to=&team=&user_id=&countries=&models=&colors=&sources=` | 经营摘要、月趋势、来源、金额分布、产品趋势、客户风险、预测与数据质量；多选参数使用重复 query key |
 | GET | `/countries?date_from=&date_to=&team=&user_id=&countries=&models=&colors=&sources=` | 国家新签/复购/GMV/周期/流失、产品偏好、机会评分与投流方向建议 |
 | GET | `/people?dimension=team\|user&date_from=&date_to=&team=&user_id=&countries=&models=&colors=&sources=` | 团队或个人的相对能力画像、变化、优势国家与证据等级 |
-| GET | `/customer-profiles?date_from=&date_to=&team=&user_id=&countries=&models=&colors=&sources=` | 按国家、来源、客户性质、新签 B1/B3 画像输出首返/平均复购周期、复购型号/幅度及统计期畅销产品/颜色/幅度 |
-| GET | `/customers?date_from=&as_of=&risk_status=due\|abnormal\|insufficient_data&country=&page=&page_size=&team=&user_id=&countries=&models=&colors=&sources=` | 分析期内命中客户的行动清单；达到画像平均复购周期即提醒，严格超过 2 倍标记异常 |
+| GET | `/customer-profiles?date_from=&date_to=&team=&user_id=&countries=&models=&colors=&sources=` | 按国家、来源、客户性质、新签 B1/B3 画像输出型号归类原因、首返/稳健典型复购周期、复购型号/幅度及统计期畅销产品/颜色/幅度 |
+| GET | `/customers?date_from=&as_of=&risk_status=due\|abnormal\|insufficient_data&country=&page=&page_size=&team=&user_id=&countries=&models=&colors=&sources=` | 分析期内命中客户的行动清单；达到稳健典型复购周期即提醒，严格超过 2 倍标记异常；画像小样本时仅在客户自身至少有 3 个间隔时使用个人中位数 |
 | POST | `/ai-brief` | 202 提交后台简报任务；同一用户有 queued/running 任务时返回原任务，不重复生成 |
 | GET | `/ai-brief/active` | 恢复当前用户的进行中简报；queued 任务会自动重新调度 |
 | GET | `/ai-brief/latest` | 返回当前用户最近一次简报，刷新页面后可恢复已完成结果 |
 | GET | `/ai-brief/{job_id}` | 查询本人简报任务状态与结果，供前端轮询 |
 
-有效订单沿用采购节口径：排除 `trail` 含“个人”的订单，保留 `status=13972831656` 或 `status=13972831654 且 status_name=已结清`。新签/复购/首返分别读取 OKKI 自定义字段 `22595163468=是`、`22595163468=否`、`20528142733548=是`。新签和首返按自然月内客户去重；复购订单数按订单计数，复购金额按订单 `amount_usd` 求和。客户画像中的“客户性质”只读取 `customer_info.trail_status_name`，“无”或空值统一归为未知。经营 GMV 使用订单 `amount_usd`；产品趋势使用明细 `quantity/amount`，两者不混算。型号/颜色筛选以订单明细匹配到的订单为统计集合，产品偏好只统计匹配明细；画像基准和客户周期读取截至期末的完整有效订单史。来源从 `45285192666116` 归一为阿里询盘/阿里生态/社媒自主开发/社媒分配/转介绍/官网/其他/未知；订单数据没有广告消耗与询盘漏斗，因此只给“投流方向”，不生成 ROAS/CAC。
+有效订单沿用采购节口径：排除 `trail` 含“个人”的订单，保留 `status=13972831656` 或 `status=13972831654 且 status_name=已结清`。新签/复购/首返分别读取 OKKI 自定义字段 `22595163468=是`、`22595163468=否`、`20528142733548=是`。新签和首返按自然月内客户去重；顶部复购率为统计期首返客户数 ÷ 新签客户数 × 100%（分母为 0 时记 0%）；复购订单数按订单计数，复购金额按订单 `amount_usd` 求和。客户画像中的“客户性质”只读取 `customer_info.trail_status_name`，“无”或空值统一归为未知。经营 GMV 使用订单 `amount_usd`；产品趋势使用明细 `quantity/amount`，两者不混算。型号/颜色筛选以订单明细匹配到的订单为统计集合，产品偏好只统计匹配明细；画像基准和客户周期读取截至期末的完整有效订单史。来源从 `45285192666116` 归一为阿里询盘/阿里生态/社媒自主开发/社媒分配/转介绍/官网/其他/未知；订单数据没有广告消耗与询盘漏斗，因此只给“投流方向”，不生成 ROAS/CAC。
 
 简报任务持久化到 `ark_order_intelligence_brief_jobs`，活动唯一键防止双击、多标签页或并发请求重复调用 AI；进行中任务超过 30 分钟会转失败并释放锁。AI 调用仍统一经由 `app.ai.service`，preset=`order_intelligence_brief`，AI 不可用时保留规则简报降级。
 
