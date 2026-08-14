@@ -12,8 +12,8 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import get_current_user
 from app.core.database import get_db
 from app.core.response import ok
-from app.dashboard import service
-from app.dashboard.schemas import DashboardPrefs
+from app.dashboard import greeting_service, service
+from app.dashboard.schemas import DashboardPrefs, GreetingRequest
 
 router = APIRouter()
 
@@ -45,3 +45,16 @@ def reset_preference(
 ):
     service.reset_prefs(db, int(current_user["sub"]))
     return ok()
+
+
+@router.post("/greeting", summary="获取今日 AI 问候（未配置模型时规则兜底）")
+def get_greeting(
+    payload: GreetingRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    # 与 preference 同模式：个人域文案，user_id 取自 JWT sub，无页面权限码
+    user_name = payload.context.user_name or "同事"
+    return ok(
+        greeting_service.get_greeting(db, int(current_user["sub"]), user_name, payload)
+    )

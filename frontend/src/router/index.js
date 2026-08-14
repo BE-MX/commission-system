@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { NAV_ENTRIES } from '@/config/navigation'
+import { recordRecentNav } from '@/utils/recentNav'
 import {
   bypassCustomerImageRoute,
   captureCustomerImageRouteToken,
@@ -115,6 +116,19 @@ router.beforeEach(async (to, from, next) => {
   }
 
   next()
+})
+
+// ── 最近使用记录（工作台「最近使用」快跳的数据源）──────────────
+// 只记侧边栏菜单页（entry.menu 存在），工作台本身与详情页不进列表；
+// 被中止的导航（移动端重定向/权限拦截）不算到访
+const MENU_ENTRY_BY_NAME = new Map(
+  NAV_ENTRIES.filter(entry => entry.menu).map(entry => [entry.name, entry])
+)
+router.afterEach((to, from, failure) => {
+  if (failure) return
+  const entry = MENU_ENTRY_BY_NAME.get(to.name)
+  if (!entry || entry.name === 'Dashboard') return
+  recordRecentNav({ name: entry.name, path: to.fullPath })
 })
 
 export default router

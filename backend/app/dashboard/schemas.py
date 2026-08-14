@@ -25,3 +25,33 @@ class DashboardPrefs(BaseModel):
     version: int = Field(1, ge=1, le=100)
     metrics: SectionPrefs = Field(default_factory=SectionPrefs)
     actions: SectionPrefs = Field(default_factory=SectionPrefs)
+
+
+# ── AI 问候 ─────────────────────────────────────────────
+# 上下文由前端聚合（节假日本来就是前端算的，口径唯一）；字段全部限长，
+# 防止异常 payload 撑爆 prompt。
+
+
+class GreetingContext(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    date: Annotated[str, StringConstraints(max_length=10)] = ""
+    weekday: Annotated[str, StringConstraints(max_length=8)] = ""
+    period: Annotated[str, StringConstraints(max_length=8)] = ""
+    user_name: Annotated[str, StringConstraints(max_length=32)] = ""
+    holidays_today: list[Annotated[str, StringConstraints(max_length=40)]] = Field(
+        default_factory=list, max_length=8
+    )
+    upcoming_holidays: list[Annotated[str, StringConstraints(max_length=60)]] = Field(
+        default_factory=list, max_length=8
+    )
+    pending: dict[Annotated[str, StringConstraints(max_length=16)], int] = Field(
+        default_factory=dict, max_length=8
+    )
+
+
+class GreetingRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    refresh: bool = False
+    context: GreetingContext = Field(default_factory=GreetingContext)

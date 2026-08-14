@@ -14,10 +14,26 @@
         </h1>
       </div>
       <p class="hero-subtitle">{{ data.subtitleText }}</p>
-      <p v-if="data.dailyTip" class="hero-tip">
-        <el-icon class="tip-icon"><Star /></el-icon>
-        <span class="tip-text">{{ data.dailyTip }}</span>
-      </p>
+      <!-- AI 助理每日一句：首屏本地 tip 占位，AI 文案回来后交叉淡入替换 -->
+      <div class="hero-assistant">
+        <span class="assistant-badge" :class="`is-${data.assistantSource}`">
+          <el-icon class="badge-icon"><MagicStick /></el-icon>
+          {{ assistantBadge }}
+        </span>
+        <Transition name="assistant" mode="out-in">
+          <p :key="data.assistantLine" class="assistant-text">{{ data.assistantLine }}</p>
+        </Transition>
+        <button
+          type="button"
+          class="assistant-refresh"
+          :class="{ 'is-loading': data.assistantLoading }"
+          title="换一句"
+          aria-label="换一句"
+          @click="data.loadGreeting(true)"
+        >
+          <el-icon><Refresh /></el-icon>
+        </button>
+      </div>
     </div>
     <div class="hero-decoration">
       <div class="geo-shape geo-square" />
@@ -28,14 +44,21 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import { useAuthStore } from '@/stores/auth'
-import { Star } from '@element-plus/icons-vue'
+import { MagicStick, Refresh } from '@element-plus/icons-vue'
 
-defineProps({
+const props = defineProps({
   data: { type: Object, required: true }, // reactive 化的 useDashboardData 返回
 })
 
 const authStore = useAuthStore()
+
+const assistantBadge = computed(() => ({
+  ai: 'AI 助理',
+  fallback: '今日提醒',
+  tip: '每日一句',
+}[props.data.assistantSource] || '每日一句'))
 </script>
 
 <style scoped>
@@ -128,30 +151,118 @@ const authStore = useAuthStore()
   margin: 0;
 }
 
-.hero-tip {
-  display: inline-flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin-top: 12px;
-  padding: 8px 14px;
+/* AI 助理问候条 */
+.hero-assistant {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 8px 12px 8px 14px;
   background: rgba(245, 203, 92, 0.08);
   border: 1px solid rgba(245, 203, 92, 0.15);
-  border-radius: 8px;
-  max-width: 520px;
+  border-radius: 10px;
+  max-width: 640px;
+  min-height: 38px;
 }
 
-.tip-icon {
-  color: var(--color-gold);
-  font-size: 14px;
-  margin-top: 2px;
+.assistant-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   flex-shrink: 0;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--ink-dark);
+  background: var(--color-gold);
+}
+.assistant-badge.is-tip,
+.assistant-badge.is-fallback {
+  color: var(--color-gold);
+  background: rgba(245, 203, 92, 0.12);
+  border: 1px solid rgba(245, 203, 92, 0.25);
+}
+.badge-icon {
+  font-size: 11px;
 }
 
-.tip-text {
+.assistant-text {
+  flex: 1;
+  min-width: 0;
   font-family: var(--font-body);
   font-size: 13px;
-  color: rgba(245, 203, 92, 0.85);
-  line-height: 1.5;
+  color: rgba(245, 203, 92, 0.88);
+  line-height: 1.55;
+  margin: 0;
+}
+
+.assistant-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(245, 203, 92, 0.55);
+  cursor: pointer;
+  transition: transform 160ms var(--ease-out-strong), color 140ms ease, background-color 140ms ease;
+}
+.assistant-refresh:active {
+  transform: scale(0.88);
+}
+@media (hover: hover) and (pointer: fine) {
+  .assistant-refresh:hover {
+    color: var(--color-gold);
+    background: rgba(245, 203, 92, 0.1);
+  }
+}
+.assistant-refresh:focus-visible {
+  outline: 2px solid var(--color-gold);
+  outline-offset: 1px;
+}
+.assistant-refresh.is-loading {
+  animation: refreshSpin 0.9s linear infinite;
+  pointer-events: none;
+}
+@keyframes refreshSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* 文案换场：交叉淡入 + 轻模糊遮罩（Emil：blur 弥合两态切换的生硬） */
+.assistant-enter-active,
+.assistant-leave-active {
+  transition: opacity 220ms ease, transform 220ms var(--ease-out-strong), filter 220ms ease;
+}
+.assistant-enter-from {
+  opacity: 0;
+  transform: translateY(4px);
+  filter: blur(2px);
+}
+.assistant-leave-to {
+  opacity: 0;
+  transform: translateY(-3px);
+  filter: blur(2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .assistant-refresh.is-loading {
+    animation: none;
+  }
+  .assistant-enter-active,
+  .assistant-leave-active {
+    transition: opacity 160ms ease;
+  }
+  .assistant-enter-from,
+  .assistant-leave-to {
+    transform: none;
+    filter: none;
+  }
 }
 
 /* Hero 几何装饰 */

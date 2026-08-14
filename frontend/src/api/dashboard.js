@@ -13,3 +13,13 @@ export function saveDashboardPreference(prefs) {
 export function resetDashboardPreference() {
   return dashboardClient.delete('/preference', { showLoading: false })
 }
+
+// AI 每日问候：模型调用可能较慢，单请求放宽超时；suppressToast——开屏第一句问候
+// 不该弹错误条，失败由调用方静默降级本地文案
+export function fetchGreeting(payload) {
+  return dashboardClient.post('/greeting', payload, {
+    showLoading: false,
+    timeout: 45000,
+    suppressToast: true,
+  })
+}

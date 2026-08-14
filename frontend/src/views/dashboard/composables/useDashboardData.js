@@ -9,7 +9,7 @@
  * 全部 fetch 都有权限保护(authStore.hasAnyPermission),失败 try/catch 忽略,
  * 不让单个 API 报错阻塞 Dashboard 渲染。
  */
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onActivated } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 
 import { getSnapshotList } from '@/api/customer'
@@ -18,8 +18,10 @@ import { getEmployeeList } from '@/api/employee'
 import { getSyncedPayments } from '@/api/payment'
 import { getShipmentList, getTrackingStats } from '@/api/tracking'
 import { getRequests, getTaskList, getDesignStats } from '@/api/design'
+import { fetchGreeting } from '@/api/dashboard'
 
 import dailyTipsData from '@/assets/daily-tips.json'
+import { getTodayHolidays, getUpcomingHolidays } from '../holidays'
 
 
 // ── 状态映射工具 ─────────────────────────────────────────
@@ -111,9 +113,94 @@ export function useDashboardData() {
   const recentTrackings = ref([])
   const recentDesigns = ref([])
   const recentPayments = ref([])
+  const recentShipments = ref([]) // 在途运单（物流进度卡）
 
   const donutData = ref([])
   const donutLabel = ref('')
+
+  // ── 节假日日历（纯前端计算，挂载时算一次） ──────────────
+  const todayHolidays = ref([])
+  const upcomingHolidays = ref([])
+
+  // ── AI 助理每日一句 ──────────────────────────────────
+  // 首屏先用本地 daily tip 占位，AI 问候回来后无感替换；
+  // source: 'ai' | 'fallback' | 'tip'
+  const assistantLine = ref('')
+  const assistantSource = ref('tip')
+  const assistantLoading = ref(false)
+
+  const GREETING_CACHE_KEY = 'ark_ai_greeting_v1'
+
+  function todayISO() {
+    return toLocalISODate(new Date())
+  }
+
+  function buildGreetingContext() {
+    const now = new Date()
+    const hour = now.getHours()
+    const period = hour < 5 ? '晚上' : hour < 11 ? '上午' : hour < 14 ? '中午' : hour < 18 ? '下午' : '晚上'
+    const weekday = `周${'日一二三四五六'[now.getDay()]}`
+    const pending = {}
+    if (authStore.hasAnyPermission(['design:audit']) && pendingApprovals.value > 0) pending['待审批预约'] = pendingApprovals.value
+    if (authStore.hasAnyPermission(['tracking:read']) && trackingAbnormal.value > 0) pending['物流异常'] = trackingAbnormal.value
+    if (authStore.hasAnyPermission(['customer:write']) && incompleteCount.value > 0) pending['待补充归属'] = incompleteCount.value
+    if (authStore.hasAnyPermission(['design:manage']) && todayShootCount.value > 0) pending['今日拍摄'] = todayShootCount.value
+    return {
+      date: todayISO(),
+      weekday,
+      period,
+      user_name: authStore.user?.real_name || '',
+      holidays_today: todayHolidays.value
+        .slice(0, 8) // 与后端 GreetingContext max_length=8 对齐（元旦 12 国全中，不截断会 422）
+        .map(h => `${h.country}·${h.name}`),
+      upcoming_holidays: upcomingHolidays.value
+        .filter(h => h.daysUntil > 0 && h.daysUntil <= 30)
+        .slice(0, 4)
+        .map(h => `${h.country}·${h.name}(还有${h.daysUntil}天)`),
+      pending,
+    }
+  }
+
+  function readGreetingCache() {
+    try {
+      const cached = JSON.parse(localStorage.getItem(GREETING_CACHE_KEY) || 'null')
+      if (cached && cached.uid === authStore.user?.id && cached.date === todayISO()) return cached
+    } catch { /* ignore */ }
+    return null
+  }
+
+  async function loadGreeting(refresh = false) {
+    if (!refresh) {
+      const cached = readGreetingCache()
+      if (cached?.text) {
+        assistantLine.value = cached.text
+        assistantSource.value = cached.source || 'ai'
+        return
+      }
+    }
+    assistantLoading.value = true
+    try {
+      const res = await fetchGreeting({ refresh, context: buildGreetingContext() })
+      const data = res.data || {}
+      if (data.text) {
+        assistantLine.value = data.text
+        assistantSource.value = data.source || 'ai'
+        try {
+          localStorage.setItem(GREETING_CACHE_KEY, JSON.stringify({
+            uid: authStore.user?.id,
+            date: todayISO(),
+            text: assistantLine.value,
+            source: assistantSource.value,
+          }))
+        } catch { /* ignore */ }
+      }
+    } catch {
+      // 静默降级（suppressToast 已关掉拦截器弹条）：保留现有文案与徽章——
+      // 首次失败时就是本地每日一句 + 'tip'；刷新失败时旧 AI 文案不降级徽章
+    } finally {
+      assistantLoading.value = false
+    }
+  }
 
   // 副文案 — 角色 + 待办数量动态显示
   const subtitleText = computed(() => {
@@ -250,6 +337,12 @@ export function useDashboardData() {
           statusText: item.current_status || '-',
           time: formatDate(item.last_event_time || item.updated_at)
         }))
+        // 在途运单（物流进度卡）：最近有动态的在途单优先
+        const activeRes = await getShipmentList({
+          is_active: '1', page: 1, page_size: 6,
+          sort_field: 'updated_at', sort_order: 'desc',
+        })
+        recentShipments.value = activeRes.data?.items || []
       } catch { /* ignore */ }
     }
 
@@ -336,8 +429,21 @@ export function useDashboardData() {
   }
 
   onMounted(() => {
+    // 节假日：挂载即算（纯本地，零等待）
+    todayHolidays.value = getTodayHolidays()
+    upcomingHolidays.value = getUpcomingHolidays({ days: 60 })
+    // 首屏 instantly 给一句本地 tip，AI 问候在业务数据就位后再请求（上下文更准）
     pickDailyTip()
-    loadAllData()
+    assistantLine.value = dailyTip.value
+    loadAllData().finally(() => loadGreeting())
+  })
+
+  // Dashboard 被 tab KeepAlive 缓存：回切时重算节假日（本地计算，零成本），
+  // 隔夜则缓存失效、重新生成当日问候；同日命中缓存时组件状态本就最新，零请求
+  onActivated(() => {
+    todayHolidays.value = getTodayHolidays()
+    upcomingHolidays.value = getUpcomingHolidays({ days: 60 })
+    if (!readGreetingCache()) loadGreeting()
   })
 
   return {
@@ -347,8 +453,12 @@ export function useDashboardData() {
     dailyTip,
     incompleteCount, batchCount, latestBatch, employeeCount,
     trackingCount, trackingAbnormal, todayShootCount, pendingApprovals, latestPayment,
-    recentCommissions, recentTrackings, recentDesigns, recentPayments,
+    recentCommissions, recentTrackings, recentDesigns, recentPayments, recentShipments,
     donutData, donutLabel,
+    todayHolidays, upcomingHolidays,
+    assistantLine, assistantSource, assistantLoading,
+    // methods
+    loadGreeting,
     // helpers (template 内可能用到)
     batchStatusType, batchStatusLabel,
     normalizeStatus, translateDesignStatus,

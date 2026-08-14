@@ -8,51 +8,65 @@
     </div>
 
     <div class="dashboard-sections anim-stagger">
-      <!-- ① Hero 欢迎区（深色玻璃锚点） -->
+      <!-- ① Hero 欢迎区（AI 助理问候 + 深色玻璃锚点） -->
       <HeroSection :data="dash" />
 
-      <!-- ② 待办提醒（紧急信息，不可配置） -->
+      <!-- ② 最近使用快跳（不可配置，随访问自动更新） -->
+      <QuickNav v-if="!editing" />
+
+      <!-- ③ 待办提醒（紧急信息，不可配置） -->
       <TodoAlerts v-if="!editing" :data="dash" />
 
-      <!-- ③ 指标卡（可配置） -->
-      <section>
-        <div class="section-toolbar">
-          <span v-if="editing" class="section-label">数据指标</span>
-          <span v-else />
-          <GlassButton
-            v-if="!editing"
-            variant="ghost"
-            size="sm"
-            :left-icon="Setting"
-            @click="enterEdit"
-          >
-            自定义
-          </GlassButton>
-        </div>
-        <MetricsGrid
-          :data="dash"
-          :cards="metricCards"
-          :editing="editing"
-          :is-hidden-fn="isHidden"
-          @reorder="keys => reorder('metrics', keys)"
-          @toggle="key => toggleHidden('metrics', key)"
-        />
-      </section>
+      <!-- ④ 主辅双列：数据指标+快捷操作 ｜ 节假日日历+物流进度 -->
+      <div class="dashboard-columns" :class="{ 'has-aside': !editing }">
+        <div class="column-main">
+          <section>
+            <div class="section-toolbar">
+              <span v-if="editing" class="section-label">数据指标</span>
+              <span v-else />
+              <GlassButton
+                v-if="!editing"
+                variant="ghost"
+                size="sm"
+                :left-icon="Setting"
+                @click="enterEdit"
+              >
+                自定义
+              </GlassButton>
+            </div>
+            <MetricsGrid
+              :data="dash"
+              :cards="metricCards"
+              :editing="editing"
+              :is-hidden-fn="isHidden"
+              @reorder="keys => reorder('metrics', keys)"
+              @toggle="key => toggleHidden('metrics', key)"
+            />
+          </section>
 
-      <!-- ④ 快捷操作（可配置） -->
-      <section>
-        <div v-if="editing" class="section-toolbar">
-          <span class="section-label">快捷操作</span>
+          <section>
+            <div v-if="editing" class="section-toolbar">
+              <span class="section-label">快捷操作</span>
+            </div>
+            <ActionsGrid
+              :data="dash"
+              :cards="actionCards"
+              :editing="editing"
+              :is-hidden-fn="isHidden"
+              @reorder="keys => reorder('actions', keys)"
+              @toggle="key => toggleHidden('actions', key)"
+            />
+          </section>
         </div>
-        <ActionsGrid
-          :data="dash"
-          :cards="actionCards"
-          :editing="editing"
-          :is-hidden-fn="isHidden"
-          @reorder="keys => reorder('actions', keys)"
-          @toggle="key => toggleHidden('actions', key)"
-        />
-      </section>
+
+        <aside v-if="!editing" class="column-aside">
+          <HolidayCard :data="dash" />
+          <LogisticsCard
+            v-if="authStore.hasAnyPermission(['tracking:read'])"
+            :data="dash"
+          />
+        </aside>
+      </div>
 
       <!-- ⑤ 动态概览（不可配置） -->
       <OverviewPanels v-if="!editing" :data="dash" />
@@ -86,9 +100,12 @@ import WelcomeModal from '@/components/WelcomeModal.vue'
 import GlassButton from '@/components/GlassButton.vue'
 
 import HeroSection from './components/HeroSection.vue'
+import QuickNav from './components/QuickNav.vue'
 import TodoAlerts from './components/TodoAlerts.vue'
 import MetricsGrid from './components/MetricsGrid.vue'
 import ActionsGrid from './components/ActionsGrid.vue'
+import HolidayCard from './components/HolidayCard.vue'
+import LogisticsCard from './components/LogisticsCard.vue'
 import OverviewPanels from './components/OverviewPanels.vue'
 import CustomizeBar from './components/CustomizeBar.vue'
 
@@ -158,6 +175,43 @@ const actionCards = computed(() => arrange('actions', ACTION_CARDS))
   color: var(--text-secondary);
 }
 
+/* ========== 主辅双列 ========== */
+.dashboard-columns {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+  align-items: start;
+}
+.dashboard-columns.has-aside {
+  grid-template-columns: minmax(0, 1fr) 340px;
+}
+.column-main {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+.column-aside {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+  /* 侧栏两张卡稍晚入场，形成由主到辅的视觉次序 */
+  animation-delay: 120ms;
+}
+.column-aside > * {
+  animation: dashFadeInUp 260ms var(--ease-out-strong) both;
+}
+.column-aside > *:nth-child(2) {
+  animation-delay: 60ms;
+}
+
+@media (max-width: 1100px) {
+  .dashboard-columns.has-aside {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ========== 入场动效（Emil：高频页面收敛到 250ms/8px/50ms 间隔） ========== */
 .anim-stagger > * {
   animation: dashFadeInUp 250ms var(--ease-out-strong) forwards;
@@ -168,6 +222,7 @@ const actionCards = computed(() => arrange('actions', ACTION_CARDS))
 .anim-stagger > *:nth-child(3) { animation-delay: 100ms; }
 .anim-stagger > *:nth-child(4) { animation-delay: 150ms; }
 .anim-stagger > *:nth-child(5) { animation-delay: 200ms; }
+.anim-stagger > *:nth-child(6) { animation-delay: 250ms; }
 
 @keyframes dashFadeInUp {
   from { opacity: 0; transform: translateY(8px); }
@@ -177,6 +232,9 @@ const actionCards = computed(() => arrange('actions', ACTION_CARDS))
 @media (prefers-reduced-motion: reduce) {
   .anim-stagger > * {
     animation: dashFadeIn 200ms ease forwards;
+  }
+  .column-aside > * {
+    animation: dashFadeIn 200ms ease both;
   }
   @keyframes dashFadeIn {
     from { opacity: 0; }
