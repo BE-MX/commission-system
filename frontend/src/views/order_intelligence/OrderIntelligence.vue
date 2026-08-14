@@ -38,7 +38,12 @@
         <article class="oi-metric lg-card is-static">
           <span>复购客户 / 金额</span>
           <strong>{{ number(overview.metrics.repeat_customers) }}</strong>
-          <p>${{ compactMoney(overview.metrics.repeat_amount_usd) }} · {{ overview.metrics.repeat_customer_rate }}%</p>
+          <p>${{ compactMoney(overview.metrics.repeat_amount_usd) }}</p>
+        </article>
+        <article class="oi-metric lg-card is-static">
+          <span>复购率</span>
+          <strong>{{ overview.metrics.repurchase_rate }}%</strong>
+          <p>首返 {{ number(overview.metrics.first_return_customers) }} / 新签 {{ number(overview.metrics.new_sign_customers) }}</p>
         </article>
         <article class="oi-metric oi-metric--risk lg-card is-static">
           <span>需行动客户</span>
@@ -200,7 +205,7 @@
             <el-table-column label="型号归类说明" prop="new_sign_model_reason_summary" min-width="220" show-overflow-tooltip />
             <el-table-column label="本期客户" prop="active_customer_count" min-width="88" />
             <el-table-column label="同画像客户" prop="peer_customer_count" min-width="100" />
-            <el-table-column label="首返周期" min-width="106"><template #default="{ row }">{{ row.avg_first_return_cycle_days != null ? `${row.avg_first_return_cycle_days} 天` : '样本不足' }}</template></el-table-column>
+            <el-table-column label="典型首返周期" min-width="122"><template #default="{ row }">{{ row.typical_first_return_cycle_days != null ? `${row.typical_first_return_cycle_days} 天` : '样本不足' }}</template></el-table-column>
             <el-table-column label="首返样本" prop="first_return_sample_count" min-width="88" />
             <el-table-column label="典型复购周期" min-width="122"><template #default="{ row }">{{ row.typical_repeat_cycle_days ? `${row.typical_repeat_cycle_days} 天` : '样本不足' }}</template></el-table-column>
             <el-table-column label="复购间隔样本" prop="repeat_interval_count" min-width="110" />
