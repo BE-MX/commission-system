@@ -314,6 +314,8 @@ def test_business_pool_cross_table_id_joins_ignore_column_collation():
     gateway = object.__new__(public_pool_service.BusinessPoolGateway)
     gateway.schema = "lsordertest"
     gateway.website_column = None
+    gateway.address_column = "address"
+    gateway.locality_columns = {"city": "city_name", "region": None}
 
     contact_sql = gateway._contact_cte
     assert "BINARY ccs.customer_id = BINARY cc.customer_id" in contact_sql
@@ -342,12 +344,107 @@ def test_business_pool_cross_table_id_joins_ignore_column_collation():
     assert "BINARY cr.company_id = BINARY ci.company_id" in session.statement
     assert "BINARY o.company_id = BINARY ci.company_id" in session.statement
     assert "BINARY s.source_customer_id = BINARY CAST(f.company_id AS CHAR)" in session.statement
+    assert "NULLIF(TRIM(ci.`address`), '') AS customer_address" in session.statement
+    assert "NULLIF(TRIM(ci.`city_name`), '') AS customer_city" in session.statement
+
+
+def test_business_pool_candidate_exposes_only_minimized_address_search_hint():
+    candidate = public_pool_service.BusinessPoolGateway._candidate({
+        "company_id": "1",
+        "company_name": "Weak Lead",
+        "country_name": "Brazil",
+        "customer_address": "Rua Exemplo 123, São Paulo",
+        "customer_city": "São Paulo",
+        "order_count": 0,
+        "primary_email": "person@gmail.com",
+    }, "T3")
+
+    assert candidate["source_snapshot"]["address_search_hint"] == "São Paulo"
+    assert "address" not in candidate["source_snapshot"]
+    assert "address" not in candidate["contact_snapshot"]
+
+
+def test_agent_context_requires_bounded_weak_lead_address_crosscheck(db):
+    batch = _generate(db, quota=1)
+    task = db.query(models.PublicPoolTask).filter(
+        models.PublicPoolTask.batch_id == batch.id,
+        models.PublicPoolTask.tier == "T3",
+    ).one()
+    subject = db.get(models.ResearchSubject, task.subject_id)
+    subject.source_snapshot = {**(subject.source_snapshot or {}), "address_search_hint": "São Paulo"}
+    db.commit()
+
+    context = _agent_client(db).get(
+        f"/api/sales-automation/agent/public-pool/tasks/{task.id}/context"
+    ).json()["data"]
+
+    assert context["trusted_seed"]["address_search_hint"] == "São Paulo"
+    rule = context["research_rules"]["weak_lead_address_crosscheck"]
+    assert "弱线索" in rule
+    assert "私人电话" in rule
+    assert "禁止仅凭位置" in rule
+
+
+def test_address_flows_from_gateway_batch_into_agent_context(db):
+    class AddressGateway(FakeGateway):
+        def fetch_tier_candidates(self, tier, limit, seed, cooldown_days=180):
+            candidates = super().fetch_tier_candidates(tier, limit, seed, cooldown_days)
+            for candidate in candidates:
+                candidate["source_snapshot"]["address_search_hint"] = "São Paulo"
+            return candidates
+
+    batch = public_pool_service.generate_batch(
+        db, {"batch_date": date(2026, 8, 12), "quota_per_tier": 1, "policy_version": "address-v1"},
+        actor_id=7, gateway=AddressGateway(),
+    )
+    task = db.query(models.PublicPoolTask).filter(
+        models.PublicPoolTask.batch_id == batch.id,
+        models.PublicPoolTask.tier == "T3",
+    ).one()
+
+    context = _agent_client(db).get(
+        f"/api/sales-automation/agent/public-pool/tasks/{task.id}/context"
+    ).json()["data"]
+
+    assert context["trusted_seed"]["address_search_hint"] == "São Paulo"
+    assert "Rua Exemplo" not in str(context["trusted_seed"])
+
+
+def test_address_column_capability_fails_closed_for_older_customer_schema():
+    gateway = object.__new__(public_pool_service.BusinessPoolGateway)
+    gateway.address_column = None
+    gateway.locality_columns = {"city": None, "region": None}
+    assert gateway._address_expr == "NULL"
+    assert gateway._locality_expr("city") == "NULL"
+
+
+@pytest.mark.parametrize("raw", [
+    "Rua Exemplo 123",
+    "Rua Exemplo 123, Apt 4",
+    "person@example.com, São Paulo",
+    "https://maps.example/address, São Paulo",
+    "Acme, 上海市浦东新区世纪大道一百号, 中国",
+    "Acme, Sunshine Apartments, Springfield",
+])
+def test_address_search_hint_never_parses_free_text_addresses(raw):
+    assert public_pool_service.address_search_hint(raw) is None
+
+
+def test_address_search_hint_uses_only_explicit_structured_locality():
+    assert public_pool_service.address_search_hint(
+        "123 Main Street, Suite 4", city="Austin", region="Texas"
+    ) == "Austin, Texas"
+    assert public_pool_service.address_search_hint(
+        '{"street":"世纪大道一百号","city":"上海市","region":"上海市"}'
+    ) == "上海市"
 
 
 def test_t1_excludes_customers_with_orders_in_last_60_days():
     gateway = object.__new__(public_pool_service.BusinessPoolGateway)
     gateway.schema = "lsordertest"
     gateway.website_column = None
+    gateway.address_column = None
+    gateway.locality_columns = {"city": None, "region": None}
 
     class RecordingSession:
         def __init__(self):

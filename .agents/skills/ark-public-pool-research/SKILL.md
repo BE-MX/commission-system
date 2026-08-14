@@ -15,13 +15,14 @@ Process exactly one Ark public-pool task without inventing identity, contacts, p
 4. Run the low-cost industry gate using identity anchors and the smallest set of high-value public sources. Classify `core`, `adjacent`, `uncertain`, or `irrelevant`.
 5. Submit the gate with `ark_submit_public_pool_industry_gate`. If it returns `deep_research_authorized=false`, stop immediately; the task is already completed as `gate_only`. Do not collect contacts, relationships, supplier/risk intelligence, qualification dimensions, outreach angles, or a draft.
 6. Only when the gate returns `deep_research_authorized=true`, verify identity with two compatible anchors where possible. For customers without a useful website, prioritize Instagram, Facebook, TikTok, LinkedIn, Pinterest, YouTube, Google Business, and booking/store pages. Treat username matches as candidates until bio, location, logo/avatar, website, business content, or reciprocal links agree.
-7. Apply tier focus:
+7. If the first pass remains a weak lead—`identity_decision` is `candidate`/`unverifiable` or `industry_relevance` is `uncertain`—and `trusted_seed.address_search_hint` is non-empty, consider a bounded address cross-check before concluding. The backend has already reduced this hint to coarse location components; combine it only with the company/business name in at most 2-3 searches. Never add a person's name, private phone, WhatsApp, email, email local part, or reconstruct a more precise address from other fields. Require an opened public business source plus another compatible anchor, never merge a same-name entity from location alone, and never copy the internal hint into a fact.
+8. Apply tier focus:
    - T1: current operating state, change since historical orders, reactivation trigger, relationship risk.
    - T2: product fit, buyer type, purchasing role, supplier/switch evidence, active business channels.
    - T3: light identity/social verification first; deepen only after a credible business anchor appears. A free email or missing website is not itself a rejection.
-8. Deepen research only when it can change customer grade or next action. Capture activity, classification, commercial signals, risks, contacts, and low-risk verification questions per the framework.
-9. Score only sourced or clearly marked inference. Submit structured research and an optional English opening draft for human review; never send it.
-10. Submit `unverifiable` honestly when identity cannot be established. Use failure only for operational failure.
+9. Deepen research only when it can change customer grade or next action. Capture activity, classification, commercial signals, risks, contacts, and low-risk verification questions per the framework.
+10. Score only sourced or clearly marked inference. Submit structured research and an optional English opening draft for human review; never send it.
+11. Submit `unverifiable` honestly when identity cannot be established. Use failure only for operational failure.
 
 ## Hard rules
 

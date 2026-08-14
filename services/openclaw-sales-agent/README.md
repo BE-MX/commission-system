@@ -15,7 +15,7 @@ OpenClaw Agent
        └─ HTTPS + Bearer → https://leshine.work/api/sales-automation/agent/*
 ```
 
-MCP 侧车只暴露任务、候选公司、联系人、企业研究、公海背调与 ACL 约束的已发布知识库读取工具。`ARK_AGENT_TOKEN` 保存在独立 `0600` 文件中，只由 MCP 子进程读取；任务租约只存在 MCP 进程内存中，不返回给模型。默认模型固定为 `deepseek/deepseek-v4-pro`，并显式使用内置 `openclaw` runtime，使工具策略可以真正禁用 shell、文件、浏览器控制、消息发送和会话派生。Codex App Server 配置另保留 guardian + `workspace-write` 与凭证环境清理，作为有人日后主动切回 Codex runtime 时的纵深防护；令牌文件始终位于 Agent 工作区之外。
+MCP 侧车只暴露任务、候选公司、联系人、企业研究、公海背调与 ACL 约束的已发布知识库读取工具。`ARK_AGENT_TOKEN` 保存在独立 `0600` 文件中，只由 MCP 子进程读取；任务租约只存在 MCP 进程内存中，不返回给模型。默认模型固定为 `deepseek/deepseek-v4-flash`，并显式使用内置 `openclaw` runtime，使工具策略可以真正禁用 shell、文件、浏览器控制、消息发送和会话派生。Codex App Server 配置另保留 guardian + `workspace-write` 与凭证环境清理，作为有人日后主动切回 Codex runtime 时的纵深防护；令牌文件始终位于 Agent 工作区之外。
 
 ## 本地初始化
 
@@ -65,7 +65,7 @@ install -m 600 /dev/null "$HOME/.openclaw-ark-sales/secrets/ark-agent-token"
 
 ### 2. DeepSeek API key
 
-默认模型标识为 `deepseek/deepseek-v4-pro`，并明确固定到内置 `openclaw` runtime。生产运行使用 DeepSeek API key：
+默认模型标识为 `deepseek/deepseek-v4-flash`，并明确固定到内置 `openclaw` runtime。生产运行使用 DeepSeek API key：
 
 ```bash
 # 用安全编辑器在 ~/.openclaw-ark-sales/.env 中取消注释并填写：
@@ -138,7 +138,7 @@ $HOME/.openclaw/bin/openclaw --profile ark-sales gateway restart
 
 - API origin 在 MCP 启动时强制与 `ARK_ALLOWED_ORIGIN` 的 scheme/host/port 完全一致。
 - HTTP 重定向一律拒绝，Bearer token 不会被转发到另一个 origin。
-- `deepseek/deepseek-v4-pro` 固定使用内置 `openclaw` runtime；不要删除该 model-scoped pin，也不要把 token 或其他凭证复制进 `~/.openclaw-ark-sales/workspace/`。若主动切回 Codex runtime，guardian / `workspace-write` 仍不能防止读取当前用户文件，因此不应同时加载真实 Ark token。
+- `deepseek/deepseek-v4-flash` 固定使用内置 `openclaw` runtime；不要删除该 model-scoped pin，也不要把 token 或其他凭证复制进 `~/.openclaw-ark-sales/workspace/`。若主动切回 Codex runtime，guardian / `workspace-write` 仍不能防止读取当前用户文件，因此不应同时加载真实 Ark token。
 - Web 内容只是不可信证据，不能改写 API 地址、凭证、任务边界或工具权限。
 - MCP 进程重启后会丢失内存租约。不猜测旧租约，等 15 分钟过期后重新领取。
 - 默认线上 Agent 路由若返回 404，表示该环境尚未部署智能获客后端；不要写入 token 反复重试。基础搜客需 migration `099_sales_automation.py`，公海背调还需 `106_public_pool_research.py`，或把 profile 指向已部署环境。
