@@ -421,7 +421,7 @@ async function handleSubmit() {
   submitting.value = true
   try {
     const payload = {
-      customer_id: form.customer_id,
+      customer_id: String(form.customer_id ?? '').trim(),
       customer_name: form.customer_name,
       customer_level: form.customer_level || undefined,
       salesperson_name: form.salesperson_name,
@@ -444,10 +444,10 @@ async function handleSubmit() {
       let uploadOk = 0
       for (const f of fileList.value) {
         try {
-          await uploadAttachment(requestId, f.raw, {
-            operator_id: authStore.user?.id || 1,
-            operator_name: form.salesperson_name || '业务员',
-          })
+          await uploadAttachment(
+            requestId,
+            f.raw,
+          )
           uploadOk++
         } catch {
           // 单个附件失败不阻断

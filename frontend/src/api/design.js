@@ -122,11 +122,10 @@ export function importRequests(formData, params) {
 
 // --- Attachments ---
 
-export function uploadAttachment(requestId, file, params = {}) {
+export function uploadAttachment(requestId, file) {
   const formData = new FormData()
   formData.append('file', file)
   return designApi.post(`/requests/${requestId}/attachments`, formData, {
-    params,
     headers: { 'Content-Type': 'multipart/form-data' },
     loadingText: '正在上传...',
   })

@@ -912,22 +912,35 @@ async def import_requests(
 # ── 附件管理 ──────────────────────────────────────────────
 
 
+def _can_upload_request_attachment(
+    request: DesignScheduleRequest,
+    user_id: int,
+    payload: dict,
+) -> bool:
+    return (
+        request.salesperson_id == user_id
+        or "super_admin" in payload.get("roles", [])
+        or "design:manage" in payload.get("permissions", [])
+    )
+
+
 @router.post("/requests/{request_id}/attachments")
 async def upload_attachment(
     request_id: int,
     file: UploadFile = File(...),
-    operator_id: int = Query(1),
-    operator_name: str = Query("管理员"),
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_permission('design:write')),
+    _user: dict = Depends(require_any_permission('design:write', 'design:manage')),
 ):
     """上传附件到指定预约单"""
+    operator_id, operator_name, _ = customer_media_service.user_identity(db, _user)
     req = db.query(DesignScheduleRequest).filter(
         DesignScheduleRequest.id == request_id,
         DesignScheduleRequest.deleted_at.is_(None),
     ).first()
     if not req:
         return {"code": 404, "message": "预约单不存在", "data": None}
+    if not _can_upload_request_attachment(req, operator_id, _user):
+        return {"code": 403, "message": "只能向本人预约上传附件", "data": None}
 
     # 检查附件数量限制
     existing_count = db.query(DesignRequestAttachment).filter(
@@ -1033,11 +1046,20 @@ def delete_attachment(
     _user: dict = Depends(require_any_permission('design:write', 'design:manage')),
 ):
     """删除附件"""
+    operator_id, _, _ = customer_media_service.user_identity(db, _user)
     attachment = db.query(DesignRequestAttachment).filter(
         DesignRequestAttachment.id == attachment_id,
     ).first()
     if not attachment:
         return {"code": 404, "message": "附件不存在", "data": None}
+    request = db.query(DesignScheduleRequest).filter(
+        DesignScheduleRequest.id == attachment.request_id,
+        DesignScheduleRequest.deleted_at.is_(None),
+    ).first()
+    if not request:
+        return {"code": 404, "message": "预约单不存在", "data": None}
+    if not _can_upload_request_attachment(request, operator_id, _user):
+        return {"code": 403, "message": "只能删除本人预约的附件", "data": None}
 
     # 删除物理文件
     file_path = UPLOAD_DIR / attachment.file_path

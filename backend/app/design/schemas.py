@@ -3,7 +3,7 @@
 from datetime import date, datetime
 from typing import Optional, Literal
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 PeriodType = Optional[Literal["am", "pm"]]
 
@@ -22,10 +22,11 @@ class OperatorMixin(BaseModel):
 
 class DesignRequestCreate(OperatorMixin):
     customer_id: str
-    customer_name: str
+    customer_name: str = ""
     customer_level: Optional[str] = None
-    salesperson_id: int
-    salesperson_name: str
+    # 销售身份由路由根据登录态覆盖，不能要求客户端提供或信任客户端值。
+    salesperson_id: Optional[int] = None
+    salesperson_name: str = ""
     shoot_type: str
     shoot_type_remark: Optional[str] = None
     props_requirement: Optional[str] = None
@@ -36,6 +37,18 @@ class DesignRequestCreate(OperatorMixin):
     priority: str = "normal"
     remark: Optional[str] = None
     preferred_designer_id: Optional[int] = None
+
+    @field_validator("customer_id", mode="before")
+    @classmethod
+    def normalize_customer_id(cls, value):
+        # 兼容旧前端/旧 OKKI 驱动返回的数字 ID；bool 虽是 int 子类，
+        # 但绝不是合法客户 ID，必须显式拒绝。
+        if isinstance(value, bool) or not isinstance(value, (str, int)):
+            raise ValueError("请选择有效客户")
+        normalized = str(value).strip()
+        if not normalized or len(normalized) > 64:
+            raise ValueError("请选择有效客户")
+        return normalized
 
     @model_validator(mode="after")
     def validate_dates(self):
