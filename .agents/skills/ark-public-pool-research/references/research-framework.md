@@ -42,6 +42,12 @@ For each profile capture:
 
 One matching handle is only an OSINT candidate. Confirm it through two compatible anchors or label it low confidence. Social bio and post content may prove current operations; they do not by themselves prove legal entity, supplier, purchase volume, or decision authority.
 
+### Weak-lead address cross-check
+
+Trigger this bounded fallback only when the first pass remains weak: identity is `candidate`/`unverifiable` or industry relevance is `uncertain`. T3 alone is not sufficient. The backend never parses or exposes raw free-text `customer_info.address`; it exposes `trusted_seed.address_search_hint` only when the address is present and a city/region comes from an explicit structured column or structured JSON key. If that hint is absent, do not use address search. Combine it only with the company/business name in at most 2-3 searches. Never add a person's name, private phone/WhatsApp, email address, email local part, or reconstruct a precise address from other fields. Prefer public business registries, official business/social profiles, booking/store pages, and reputable directories.
+
+`address_search_hint` is an internal search hint, not proof. Do not publish it as a research fact or use it to join a same-name entity unless an opened public business source independently matches the coarse location plus at least one other business anchor. Record only the public source URL and its observed claim. If no corroboration appears, keep identity unresolved; do not broaden into residential-person research.
+
 ## 4. Focused and deep research
 
 After the gate, choose the smallest depth that changes action:

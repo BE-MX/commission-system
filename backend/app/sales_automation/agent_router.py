@@ -73,6 +73,7 @@ def _public_pool_context(db: Session, task_id: int) -> dict:
                 "uncertain": "证据不足不等于行业无关；保留 uncertain，并沿社媒与弱线索轨做有限核验",
             },
             "social_first": "无独立站或官网贫乏时，将 Instagram、Facebook、TikTok、LinkedIn、Pinterest、YouTube、Google Business/预约页作为重点；核验账号互链、地点、业务内容和近期活跃度",
+            "weak_lead_address_crosscheck": "当初步核验仍为弱线索（identity 为 candidate/unverifiable 或行业为 uncertain）且 trusted_seed.address_search_hint 非空时，只能把该后端已最小化的位置提示与公司/业务名称组合检索 2–3 次；禁止添加个人姓名、私人电话/WhatsApp、邮箱、邮箱前缀或从其他字段恢复更精确地址。必须由打开的公开业务来源和另一业务锚点交叉印证，禁止仅凭位置合并同名主体或把内部位置提示直接当作公开事实",
             "tier_focus": {
                 "T1": "优先核实历史合作、当前经营状态和可触发二次激活的变化",
                 "T2": "围绕官网、企业邮箱或业务社媒核实产品匹配、采购角色和切换供应商诱因",

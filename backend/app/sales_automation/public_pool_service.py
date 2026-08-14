@@ -45,6 +45,11 @@ FREE_EMAIL_DOMAINS = {
     "protonmail.com", "gmx.com", "gmx.de", "yandex.com", "yandex.ru",
 }
 WEBSITE_COLUMNS = ("website", "company_website", "web_site", "homepage", "company_url")
+ADDRESS_COLUMNS = ("address",)
+LOCALITY_COLUMN_GROUPS = {
+    "city": ("city", "city_name"),
+    "region": ("region", "region_name", "state", "state_name", "province", "province_name"),
+}
 
 
 def _now() -> datetime:
@@ -104,6 +109,34 @@ def email_domain_type(value: Any) -> str:
     if not domain or "." not in domain:
         return "unknown"
     return "free" if domain in FREE_EMAIL_DOMAINS else "corporate"
+
+
+def address_search_hint(address: Any, city: Any = None, region: Any = None) -> str | None:
+    """Use only explicitly structured locality fields; never parse free-text streets."""
+    if not str(address or "").strip():
+        return None
+    structured = {}
+    raw = str(address).strip()
+    if raw.startswith("{") and len(raw) <= 2000:
+        try:
+            value = json.loads(raw)
+            if isinstance(value, dict):
+                structured = value
+        except (json.JSONDecodeError, TypeError):
+            pass
+    values = [
+        city or structured.get("city") or structured.get("city_name"),
+        region or structured.get("region") or structured.get("state") or structured.get("province"),
+    ]
+    safe = []
+    for value in values:
+        text_value = " ".join(str(value or "").split()).strip(" .,-")
+        if not (2 <= len(text_value) <= 80) or any(char.isdigit() for char in text_value):
+            continue
+        if any(marker in text_value for marker in ("@", "/", "\\", ":", "+")):
+            continue
+        safe.append(text_value)
+    return ", ".join(dict.fromkeys(safe))[:160] or None
 
 
 def compute_deal_scores(
@@ -316,23 +349,36 @@ class BusinessPoolGateway:
         self.db = db
         self.settings = get_settings()
         self.schema = self.settings.BUSINESS_DB_NAME
-        self.website_column = self._website_column()
+        self.customer_columns = self._customer_columns()
+        self.website_column = next((name for name in WEBSITE_COLUMNS if name in self.customer_columns), None)
+        self.address_column = next((name for name in ADDRESS_COLUMNS if name in self.customer_columns), None)
+        self.locality_columns = {
+            key: next((name for name in names if name in self.customer_columns), None)
+            for key, names in LOCALITY_COLUMN_GROUPS.items()
+        }
 
-    def _website_column(self) -> str | None:
+    def _customer_columns(self) -> set[str]:
         try:
-            columns = {
+            return {
                 str(item["name"]).lower()
                 for item in inspect(self.db.get_bind()).get_columns("customer_info", schema=self.schema)
             }
         except SQLAlchemyError as exc:
-            logger.warning("public pool website capability inspection failed: %s", type(exc).__name__)
-            print("public pool website capability inspection failed", flush=True)
-            return None
-        return next((name for name in WEBSITE_COLUMNS if name in columns), None)
+            logger.warning("public pool customer capability inspection failed: %s", type(exc).__name__)
+            print("public pool customer capability inspection failed", flush=True)
+            return set()
 
     @property
     def _website_expr(self) -> str:
         return f"NULLIF(TRIM(ci.`{self.website_column}`), '')" if self.website_column else "NULL"
+
+    @property
+    def _address_expr(self) -> str:
+        return f"NULLIF(TRIM(ci.`{self.address_column}`), '')" if self.address_column else "NULL"
+
+    def _locality_expr(self, key: str) -> str:
+        column = self.locality_columns.get(key)
+        return f"NULLIF(TRIM(ci.`{column}`), '')" if column else "NULL"
 
     @property
     def _contact_cte(self) -> str:
@@ -377,6 +423,9 @@ class BusinessPoolGateway:
             cr.contact_name,
             cr.social_summary,
             {self._website_expr} AS website,
+            {self._address_expr} AS customer_address,
+            {self._locality_expr("city")} AS customer_city,
+            {self._locality_expr("region")} AS customer_region,
             CASE WHEN (
                 (ci.email LIKE '%@%' AND LOWER(SUBSTRING_INDEX(SUBSTRING_INDEX(ci.email, ',', 1), '@', -1)) NOT IN ({free_domains}))
                 OR COALESCE(cr.has_corporate_contact_email, 0) = 1
@@ -504,6 +553,9 @@ class BusinessPoolGateway:
             "contact_phone": row.get("primary_phone"),
             "social_summary": row.get("social_summary"),
             "website": row.get("website"),
+            "address_search_hint": address_search_hint(
+                row.get("customer_address"), row.get("customer_city"), row.get("customer_region")
+            ),
             "order_count": int(row.get("order_count") or 0),
             "order_amount_usd": float(row.get("order_amount_usd") or 0),
             "last_order_at": _json_safe(row.get("last_order_at")),

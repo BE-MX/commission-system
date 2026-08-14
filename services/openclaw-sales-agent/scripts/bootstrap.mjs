@@ -172,8 +172,9 @@ async function main() {
   setConfig("gateway.terminal.enabled", false);
   setConfig("gateway.controlUi.enabled", true);
   setConfig("agents.defaults.workspace", workspace);
-  setConfig("agents.defaults.model", { primary: "deepseek/deepseek-v4-pro" });
+  setConfig("agents.defaults.model", { primary: "deepseek/deepseek-v4-flash" });
   setConfig("agents.defaults.models", {
+    "deepseek/deepseek-v4-flash": { agentRuntime: { id: "openclaw" } },
     "deepseek/deepseek-v4-pro": { agentRuntime: { id: "openclaw" } },
   });
   setConfig("agents.defaults.skills", [
