@@ -977,9 +977,9 @@ def get_customer_actions(
         top_models = customer["top_models"]
         top_colors = customer["top_colors"]
         if customer["risk_status"] == "due":
-            action = "已达到所属画像平均返单周期，本周确认库存、销量与下一批需求"
+            action = "已达到稳健典型返单周期，本周确认库存、销量与下一批需求"
         elif customer["risk_status"] == "abnormal":
-            action = "已超过所属画像平均返单周期 2 倍，立即核实流失原因并制定激活方案"
+            action = "已超过稳健典型返单周期 2 倍，立即核实流失原因并制定激活方案"
         else:
             action = "同画像复购样本不足，先补充客户性质与新签型号信息"
         customer.update({
@@ -1007,7 +1007,7 @@ def get_customer_actions(
         "page": page,
         "page_size": page_size,
         "analysis_window": {"date_from": window_start.isoformat(), "date_to": as_of.isoformat()},
-        "risk_definition": "使用客户所属画像的平均复购周期：达到平均周期即提醒，严格超过平均周期 2 倍标记异常；无复购间隔样本时不做强预警。",
+        "risk_definition": "使用抗异常值的典型复购周期：画像满足最小样本时取客户中位数的中位数；画像样本不足但客户至少有 3 个历史间隔时取个人中位数。达到周期提醒，严格超过 2 倍异常。",
     }
 
 
