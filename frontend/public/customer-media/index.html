@@ -1,36 +1,377 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="robots" content="noindex,nofollow,noarchive" />
   <meta name="referrer" content="no-referrer" />
+  <link rel="icon" href="favicon.svg" />
+  <link rel="stylesheet" href="hub.css" />
   <title>LeShine 客户专属素材库</title>
-  <style>
-    :root{--gold:#d4941c;--gold-dark:#a86f10;--ink:#1d1b18;--muted:#746f67;--line:rgba(61,51,35,.13);--paper:#f7f2e8;--card:rgba(255,255,255,.78);font-family:Arial,"PingFang SC","Microsoft YaHei",sans-serif;color:var(--ink);background:var(--paper)}
-    *{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 85% 0,rgba(245,203,92,.34),transparent 34%),radial-gradient(circle at 0 55%,rgba(232,173,106,.2),transparent 30%),linear-gradient(150deg,#fffaf1,#f4eee4)}button,input{font:inherit}button{cursor:pointer}.hidden{display:none!important}
-    .brand{display:flex;align-items:center;gap:12px;font-weight:800;letter-spacing:.04em}.brand-mark{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:white;font:800 22px Georgia,serif;box-shadow:0 7px 18px rgba(168,111,16,.22)}.brand small{display:block;color:var(--muted);font-weight:500;letter-spacing:.08em;font-size:10px;margin-top:3px}
-    .login{min-height:100vh;display:grid;place-items:center;padding:24px}.login-card{width:min(430px,100%);padding:34px;border:1px solid rgba(255,255,255,.85);border-radius:24px;background:rgba(255,255,255,.66);box-shadow:0 22px 70px rgba(117,79,24,.16);backdrop-filter:blur(18px)}.login-card h1{font-size:30px;margin:34px 0 8px}.login-card>p{color:var(--muted);line-height:1.7;margin:0 0 28px}.field{display:grid;gap:7px;margin:14px 0}.field label{font-size:12px;font-weight:700;color:#5d554b}.field input{height:46px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.85);padding:0 14px;outline:none}.field input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(212,148,28,.12)}.primary{width:100%;height:46px;border:0;border-radius:12px;background:linear-gradient(135deg,var(--gold),var(--gold-dark));color:white;font-weight:700;margin-top:10px;box-shadow:0 9px 20px rgba(168,111,16,.2)}.error{min-height:21px;color:#b42332;font-size:13px;margin-top:12px}
-    .app{min-height:100vh}.topbar{height:72px;padding:0 max(24px,calc((100vw - 1320px)/2));display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);background:rgba(255,255,255,.64);backdrop-filter:blur(14px);position:sticky;top:0;z-index:4}.account{text-align:right}.account strong,.account span{display:block}.account span{font-size:12px;color:var(--muted);margin-top:3px}.logout{margin-left:18px;border:1px solid var(--line);border-radius:10px;background:white;padding:8px 12px}
-    main{max-width:1320px;margin:0 auto;padding:42px 24px 70px}.hero{display:flex;justify-content:space-between;gap:24px;align-items:flex-end;margin-bottom:28px}.eyebrow{color:var(--gold-dark);font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase}.hero h1{font-size:clamp(30px,4vw,50px);margin:10px 0 8px;letter-spacing:-.03em}.hero p{margin:0;color:var(--muted)}.stats{display:flex;gap:12px}.stat{min-width:110px;padding:14px 18px;border:1px solid var(--line);border-radius:16px;background:var(--card)}.stat strong{display:block;font-size:24px}.stat span{color:var(--muted);font-size:12px}
-    .toolbar{display:flex;gap:12px;margin-bottom:28px}.toolbar input{flex:1;max-width:440px;height:42px;padding:0 14px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.8)}.batch{margin:0 0 34px}.batch-head{display:flex;justify-content:space-between;align-items:end;margin-bottom:14px}.batch-head h2{font-size:19px;margin:0 0 4px}.batch-head span{font-size:12px;color:var(--muted)}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px}.asset{border:1px solid rgba(255,255,255,.85);border-radius:18px;background:var(--card);box-shadow:0 9px 30px rgba(117,79,24,.1);overflow:hidden}.media{width:100%;aspect-ratio:4/3;display:block;object-fit:cover;background:#e9e5df}.asset img{cursor:zoom-in}.meta{padding:13px 14px;display:flex;justify-content:space-between;gap:8px;align-items:center}.meta strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px}.download{flex:0 0 auto;color:var(--gold-dark);text-decoration:none;font-size:12px;font-weight:700}.empty{text-align:center;color:var(--muted);padding:80px 20px;border:1px dashed var(--line);border-radius:18px}
-    .lightbox{position:fixed;inset:0;background:rgba(16,14,12,.88);display:grid;place-items:center;z-index:10;padding:30px}.lightbox img{max-width:95vw;max-height:90vh;object-fit:contain}.lightbox button{position:absolute;right:22px;top:18px;background:none;border:0;color:white;font-size:34px}
-    @media(max-width:700px){.topbar{padding:0 16px}.account{display:none}main{padding:28px 16px}.hero{align-items:flex-start;flex-direction:column}.stats{width:100%}.stat{flex:1;min-width:0}.grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.meta{display:grid}.asset{border-radius:13px}.brand span{font-size:13px}}
-  </style>
 </head>
 <body>
-  <section id="login" class="login"><form id="login-form" class="login-card"><div class="brand"><span class="brand-mark" aria-hidden="true">L</span><span>LESHINE<small>CLIENT CONTENT HUB</small></span></div><h1>客户专属素材库</h1><p>安全查看和下载由 LeShine 团队为您完成的拍摄素材。</p><div class="field"><label for="email">登录邮箱</label><input id="email" type="email" autocomplete="username" required /></div><div class="field"><label for="password">登录密码</label><input id="password" type="password" autocomplete="current-password" required /></div><button class="primary" type="submit">登录素材库</button><div id="error" class="error" role="alert"></div></form></section>
-  <section id="app" class="app hidden"><header class="topbar"><div class="brand"><span class="brand-mark" aria-hidden="true">L</span><span>LESHINE<small>CLIENT CONTENT HUB</small></span></div><div style="display:flex;align-items:center"><div class="account"><strong id="customer-name"></strong><span id="customer-id"></span></div><button id="logout" class="logout">退出</button></div></header><main><section class="hero"><div><div class="eyebrow">Your Content Archive</div><h1>您的专属拍摄素材</h1><p>按拍摄批次归档，所有下载均为审核通过的原始文件。</p></div><div class="stats"><div class="stat"><strong id="image-count">0</strong><span>图片</span></div><div class="stat"><strong id="video-count">0</strong><span>视频</span></div></div></section><div class="toolbar"><input id="search" placeholder="搜索文件名" /></div><div id="library"></div></main></section>
-  <div id="lightbox" class="lightbox hidden"><button aria-label="关闭">×</button><img alt="素材预览" /></div>
+  <!-- 开场屏：1:1 复用客户专属素材库 Splash -->
+  <main id="splash" class="splash-screen">
+    <div class="splash-card">
+      <img src="leshine-splash-logo.png" alt="LeShine Hair" />
+      <div class="splash-copy">
+        <h1>Your Exclusive Content Library</h1>
+        <p>All your product photos and videos, organized in one private place.</p>
+      </div>
+      <button id="splash-enter" disabled>Preparing Library…</button>
+    </div>
+  </main>
+
+  <!-- 登录屏：复用 access-screen（门户账号需邮箱+密码） -->
+  <main id="login" class="access-screen hidden">
+    <div class="logo" aria-label="LeShine Content Hub"><img class="brand-logo" src="leshine-logo.png" alt="LeShine Hair" /><span class="logo-divider" aria-hidden="true"></span><span class="logo-word">CONTENT<br />HUB</span></div>
+    <div class="access-card">
+      <span class="eyebrow">PRIVATE CLIENT CONTENT DELIVERY</span>
+      <h1>Enter your library</h1>
+      <p>Use the email and password your LeShine contact created for you.</p>
+      <form class="email-login-form" id="login-form">
+        <label><span>APPROVED EMAIL</span><input id="email" type="email" autocomplete="username" required placeholder="name@company.com" /></label>
+        <label><span>PASSWORD</span><input id="password" type="password" autocomplete="current-password" required placeholder="Your portal password" /></label>
+        <button class="access-button" type="submit" id="login-submit">Enter library</button>
+      </form>
+      <p class="auth-error hidden" id="login-error" role="alert"></p>
+    </div>
+  </main>
+
+  <!-- 客户图书馆：复用 client-mode 布局 -->
+  <main id="app" class="app client-mode hidden">
+    <header class="topbar">
+      <div class="logo" aria-label="LeShine Content Hub"><img class="brand-logo" src="leshine-logo.png" alt="LeShine Hair" /><span class="logo-divider" aria-hidden="true"></span><span class="logo-word">CONTENT<br />HUB</span></div>
+      <div class="portal-label"><span>PRIVATE COLLECTION</span><strong id="portal-customer"></strong></div>
+      <div class="top-actions">
+        <button class="text-button" id="logout">Sign out</button>
+        <button class="primary-button" id="browse-files">Browse files ↓</button>
+      </div>
+    </header>
+
+    <div class="shell">
+      <section class="content">
+        <div class="collection-head">
+          <div class="collection-identity">
+            <div class="collection-logo" id="collection-logo"></div>
+            <div>
+              <div class="breadcrumb">PRIVATE COLLECTION <span>/</span> <b id="crumb-name"></b></div>
+              <div class="title-line"><h1 id="collection-title"></h1></div>
+              <p>Browse and download your product photos and videos by delivery batch.</p>
+            </div>
+          </div>
+        </div>
+
+        <section class="library-stats" aria-label="Content library totals">
+          <div><strong id="stat-photos">0</strong><span>Photos</span></div>
+          <div><strong id="stat-videos">0</strong><span>Videos</span></div>
+          <div><strong id="stat-batches">0</strong><span>Batches</span></div>
+          <div><strong id="stat-files">0</strong><span>Files</span></div>
+        </section>
+
+        <div class="notice-bar"><div><span class="check">✓</span><span><strong id="notice-count"></strong> Uploaded images and videos can be downloaded individually.</span></div></div>
+
+        <section class="sku-finder" aria-label="Find your materials">
+          <div class="finder-heading">
+            <div><span class="eyebrow">FIND YOUR MATERIALS</span><h2>Choose a batch</h2></div>
+            <label class="search-field"><span>⌕</span><input id="search" aria-label="Search files" placeholder="Search file name" /></label>
+          </div>
+          <div class="finder-row"><span>Batch</span><div class="finder-options" id="batch-filters" role="tablist" aria-label="Batches"></div></div>
+        </section>
+
+        <div class="bulk-download-bar hidden" id="bulk-bar">
+          <label><input type="checkbox" id="select-all" /> Select all visible</label>
+          <span id="selected-count">0 selected across this page</span>
+          <button id="download-selected" disabled>Download selected ↓</button>
+        </div>
+
+        <div class="sku-library" id="library"></div>
+
+        <div class="empty-state hidden" id="empty">
+          <span>00</span>
+          <h3 id="empty-title"></h3>
+          <button id="empty-clear" class="hidden">Clear filters</button>
+        </div>
+
+        <footer>
+          <div class="logo" aria-label="LeShine Content Hub"><img class="brand-logo" src="leshine-logo.png" alt="LeShine Hair" /><span class="logo-divider" aria-hidden="true"></span><span class="logo-word">CONTENT<br />HUB</span></div>
+          <p>Private Client Content Delivery Platform</p>
+          <span>© 2026 LeShine Hair</span>
+        </footer>
+      </section>
+    </div>
+  </main>
+
+  <!-- 预览灯箱：复用 lightbox（左右切换 + 下载原图） -->
+  <div id="lightbox" class="lightbox hidden" role="dialog" aria-modal="true" aria-label="Asset preview">
+    <button class="lightbox-close" id="lb-close" aria-label="Close preview">×</button>
+    <button class="lightbox-nav previous hidden" id="lb-prev" aria-label="Previous asset">←</button>
+    <div class="lightbox-content" id="lb-content"></div>
+    <button class="lightbox-nav next hidden" id="lb-next" aria-label="Next asset">→</button>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
   <script>
-    const API='/api/customer-media/portal';let batches=[];const $=id=>document.getElementById(id);function size(n){return n<1048576?(n/1024).toFixed(1)+' KB':(n/1048576).toFixed(1)+' MB'}function date(v){return v?new Date(v).toLocaleString('zh-CN',{year:'numeric',month:'long',day:'numeric'}):''}
-    async function request(path,opt={}){const r=await fetch(API+path,{credentials:'same-origin',...opt});const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.detail||data.message||'请求失败');return data.data}
-    function showLogin(){ $('login').classList.remove('hidden');$('app').classList.add('hidden') }function showApp(me){$('login').classList.add('hidden');$('app').classList.remove('hidden');$('customer-name').textContent=me.customer_name;$('customer-id').textContent='客户ID '+me.customer_id}
-    function render(){const q=$('search').value.trim().toLowerCase();let images=0,videos=0;const html=batches.map((batch,index)=>{const assets=batch.assets.filter(a=>a.file_name.toLowerCase().includes(q));assets.forEach(a=>a.media_type==='image'?images++:videos++);if(!assets.length)return'';return `<section class="batch"><div class="batch-head"><div><h2>拍摄交付 ${batches.length-index}</h2><span>${date(batch.published_at)} · ${assets.length} 个文件</span></div></div><div class="grid">${assets.map(a=>`<article class="asset">${a.media_type==='image'?`<img class="media preview" src="${a.content_url}" data-src="${a.content_url}" alt="${escapeAttr(a.file_name)}" loading="lazy">`:`<video class="media" src="${a.content_url}" controls preload="metadata"></video>`}<div class="meta"><div style="min-width:0"><strong title="${escapeAttr(a.file_name)}">${escapeHtml(a.file_name)}</strong><div style="font-size:11px;color:var(--muted);margin-top:3px">${size(a.file_size)}</div></div><a class="download" href="${a.content_url}?download=true">下载</a></div></article>`).join('')}</div></section>`}).join('');$('library').innerHTML=html||'<div class="empty">暂无已发布素材</div>';$('image-count').textContent=images;$('video-count').textContent=videos;document.querySelectorAll('.preview').forEach(img=>img.onclick=()=>{$('lightbox').querySelector('img').src=img.dataset.src;$('lightbox').classList.remove('hidden')})}
-    function escapeHtml(v){const d=document.createElement('div');d.textContent=v;return d.innerHTML}function escapeAttr(v){return escapeHtml(v).replaceAll('&quot;','&#34;').replaceAll("'",'&#39;')}
-    async function load(){try{const me=await request('/me');showApp(me);batches=await request('/library');render()}catch{showLogin()}}
-    $('login-form').onsubmit=async e=>{e.preventDefault();$('error').textContent='';try{const me=await request('/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:$('email').value,password:$('password').value})});showApp(me);batches=await request('/library');render()}catch(err){$('error').textContent=err.message}}
-    $('logout').onclick=async()=>{await request('/logout',{method:'POST'}).catch(()=>{});showLogin()};$('search').oninput=render;$('lightbox').onclick=e=>{if(e.target!==$('lightbox').querySelector('img'))$('lightbox').classList.add('hidden')};load()
+    'use strict';
+    const API = '/api/customer-media/portal';
+    const $ = id => document.getElementById(id);
+
+    let session = null;          // { customer_id, customer_name, email }
+    let batches = [];            // [{ id, seq, published_at, assets }]
+    let activeBatch = 'all';     // 'all' | String(batch.id)
+    let selected = new Set();    // 已勾选素材 id
+    let previewState = null;     // { batchId, assetId }
+    let toastTimer = 0;
+
+    async function request(path, opt = {}) {
+      const r = await fetch(API + path, { credentials: 'same-origin', ...opt });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.detail || data.message || '请求失败');
+      return data.data;
+    }
+
+    function escapeHtml(v) { const d = document.createElement('div'); d.textContent = v; return d.innerHTML; }
+    function escapeAttr(v) { return escapeHtml(v).replaceAll('&quot;', '&#34;').replaceAll("'", '&#39;'); }
+    function pad(n) { return String(n).padStart(2, '0'); }
+    function initials(name) {
+      const text = String(name || '').trim();
+      const parts = text.split(/\s+/).filter(Boolean);
+      if (parts.length > 1) return parts.map(w => w[0]).join('').slice(0, 2).toUpperCase();
+      return text.slice(0, 2).toUpperCase();
+    }
+    function fmtDate(v) {
+      if (!v) return '—';
+      return new Date(v).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    }
+    function showToast(msg) {
+      const el = $('toast');
+      el.textContent = '✓ ' + msg;
+      el.classList.remove('hidden');
+      window.clearTimeout(toastTimer);
+      toastTimer = window.setTimeout(() => el.classList.add('hidden'), 2400);
+    }
+
+    function visibleBatches() {
+      const q = $('search').value.trim().toLowerCase();
+      return batches
+        .filter(b => activeBatch === 'all' || String(b.id) === activeBatch)
+        .map(b => ({ ...b, viewAssets: b.assets.filter(a => a.file_name.toLowerCase().includes(q)) }))
+        .filter(b => b.viewAssets.length > 0);
+    }
+    function allAssets() { return batches.flatMap(b => b.assets); }
+
+    function render() {
+      const assets = allAssets();
+      const photos = assets.filter(a => a.media_type === 'image').length;
+      const videos = assets.length - photos;
+      $('stat-photos').textContent = photos;
+      $('stat-videos').textContent = videos;
+      $('stat-batches').textContent = batches.length;
+      $('stat-files').textContent = assets.length;
+      $('notice-count').textContent = batches.length + (batches.length === 1 ? ' batch for this client.' : ' batches for this client.');
+
+      // 批次筛选 chips
+      $('batch-filters').innerHTML =
+        `<button class="${activeBatch === 'all' ? 'active' : ''}" data-batch="all" role="tab">All batches</button>` +
+        batches.map(b => `<button class="${activeBatch === String(b.id) ? 'active' : ''}" data-batch="${b.id}" role="tab">Batch ${pad(b.seq)}</button>`).join('');
+
+      // SKU 分区（每批次一节，最新在前）
+      const shown = visibleBatches();
+      $('library').innerHTML = shown.map((b, index) => {
+        const imgs = b.viewAssets.filter(a => a.media_type === 'image').length;
+        const vids = b.viewAssets.length - imgs;
+        return `<section class="sku-section" id="batch-${b.id}">
+          <header class="sku-heading"><div>
+            <span>${pad(index + 1)} · BATCH ${pad(b.seq)}</span>
+            <h2>${fmtDate(b.published_at)}</h2>
+            <p>${b.viewAssets.length} ${b.viewAssets.length === 1 ? 'asset' : 'assets'} · ${imgs} photos · ${vids} videos</p>
+          </div></header>
+          <div class="asset-gallery">${b.viewAssets.map((a, i) => `
+            <article class="asset-card ${selected.has(a.id) ? 'selected' : ''}" data-card="${a.id}">
+              <label class="asset-select"><input type="checkbox" data-select="${a.id}" ${selected.has(a.id) ? 'checked' : ''} /><span>Select</span></label>
+              <button class="asset-preview" data-preview-batch="${b.id}" data-preview-asset="${a.id}" aria-label="Open ${escapeAttr(a.file_name)}">
+                ${a.media_type === 'image'
+                  ? `<img src="${a.content_url}" alt="${escapeAttr(a.file_name)}" loading="lazy" />`
+                  : `<video src="${a.content_url}" muted preload="metadata"></video><span class="asset-play">▶</span>`}
+              </button>
+              <div class="asset-footer"><span>View ${pad(i + 1)}</span><a href="${a.content_url}?download=true">Download ↓</a></div>
+            </article>`).join('')}
+          </div>
+        </section>`;
+      }).join('');
+
+      // 空状态
+      const empty = $('empty');
+      if (shown.length === 0) {
+        empty.classList.remove('hidden');
+        $('empty-title').textContent = batches.length ? 'No batch matches your search.' : 'No materials published yet.';
+        $('empty-clear').classList.toggle('hidden', !batches.length);
+      } else {
+        empty.classList.add('hidden');
+      }
+
+      // 批量下载条
+      const visibleIds = shown.flatMap(b => b.viewAssets.map(a => a.id));
+      const bar = $('bulk-bar');
+      bar.classList.toggle('hidden', visibleIds.length === 0);
+      const pickedVisible = visibleIds.filter(id => selected.has(id));
+      $('select-all').checked = visibleIds.length > 0 && pickedVisible.length === visibleIds.length;
+      $('selected-count').textContent = `${selected.size} selected across this page`;
+      $('download-selected').disabled = selected.size === 0;
+    }
+
+    // 灯箱
+    function previewAssets() {
+      const b = visibleBatches().find(item => String(item.id) === String(previewState?.batchId));
+      return b ? b.viewAssets : [];
+    }
+    function renderLightbox() {
+      const list = previewAssets();
+      const index = list.findIndex(a => String(a.id) === String(previewState?.assetId));
+      const asset = index >= 0 ? list[index] : null;
+      const lb = $('lightbox');
+      if (!asset) { lb.classList.add('hidden'); previewState = null; return; }
+      const b = batches.find(item => String(item.id) === String(previewState.batchId));
+      $('lb-content').innerHTML =
+        (asset.media_type === 'image'
+          ? `<img src="${asset.content_url}" alt="${escapeAttr(asset.file_name)}" />`
+          : `<video src="${asset.content_url}" controls autoplay></video>`) +
+        `<div class="lightbox-caption"><span><strong>Batch ${pad(b ? b.seq : 0)}</strong> · ${escapeHtml(asset.file_name)} · ${index + 1}/${list.length}</span><a href="${asset.content_url}?download=true">Download original ↓</a></div>`;
+      lb.classList.remove('hidden');
+      $('lb-prev').classList.toggle('hidden', list.length < 2);
+      $('lb-next').classList.toggle('hidden', list.length < 2);
+    }
+    function stepPreview(delta) {
+      const list = previewAssets();
+      if (!list.length) return;
+      const index = list.findIndex(a => String(a.id) === String(previewState.assetId));
+      const next = (index + delta + list.length) % list.length;
+      previewState = { batchId: previewState.batchId, assetId: list[next].id };
+      renderLightbox();
+    }
+
+    // 视图切换
+    function showLogin() {
+      $('splash').classList.add('hidden');
+      $('app').classList.add('hidden');
+      $('login').classList.remove('hidden');
+    }
+    function showApp() {
+      $('splash').classList.add('hidden');
+      $('login').classList.add('hidden');
+      $('app').classList.remove('hidden');
+      $('portal-customer').textContent = session.customer_name;
+      $('crumb-name').textContent = String(session.customer_name).toUpperCase();
+      $('collection-title').textContent = session.customer_name + ' Content Library';
+      $('collection-logo').textContent = initials(session.customer_name);
+    }
+    async function loadLibrary() {
+      batches = await request('/library');
+      batches.sort((a, b) => String(b.published_at || '').localeCompare(String(a.published_at || '')));
+      [...batches].sort((a, b) => String(a.published_at || '').localeCompare(String(b.published_at || '')))
+        .forEach((b, i) => { b.seq = i + 1; });
+      activeBatch = 'all';
+      selected = new Set();
+      previewState = null;
+      render();
+    }
+
+    // 事件
+    $('splash-enter').onclick = () => { session ? enterApp() : showLogin(); };
+    async function enterApp() {
+      try { await loadLibrary(); showApp(); }
+      catch { session = null; showLogin(); }
+    }
+    $('login-form').onsubmit = async e => {
+      e.preventDefault();
+      const btn = $('login-submit'), err = $('login-error');
+      err.classList.add('hidden');
+      btn.disabled = true; btn.textContent = 'Signing in…';
+      try {
+        session = await request('/login', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ email: $('email').value, password: $('password').value }),
+        });
+        $('password').value = '';
+        await enterApp();
+      } catch (error) {
+        err.textContent = error.message;
+        err.classList.remove('hidden');
+      } finally {
+        btn.disabled = false; btn.textContent = 'Enter library';
+      }
+    };
+    $('logout').onclick = async () => {
+      await request('/logout', { method: 'POST' }).catch(() => {});
+      session = null; batches = []; selected = new Set(); previewState = null;
+      showLogin();
+    };
+    $('browse-files').onclick = () => document.querySelector('.sku-finder')?.scrollIntoView({ behavior: 'smooth' });
+    $('search').oninput = render;
+    $('empty-clear').onclick = () => { activeBatch = 'all'; $('search').value = ''; render(); };
+    $('batch-filters').addEventListener('click', e => {
+      const btn = e.target.closest('button[data-batch]');
+      if (!btn) return;
+      activeBatch = btn.dataset.batch;
+      render();
+      window.setTimeout(() => document.querySelector('.sku-library')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+    });
+    $('library').addEventListener('click', e => {
+      const btn = e.target.closest('.asset-preview');
+      if (!btn) return;
+      previewState = { batchId: btn.dataset.previewBatch, assetId: btn.dataset.previewAsset };
+      renderLightbox();
+    });
+    $('library').addEventListener('change', e => {
+      const box = e.target.closest('input[data-select]');
+      if (!box) return;
+      const id = Number(box.dataset.select);
+      box.checked ? selected.add(id) : selected.delete(id);
+      render();
+    });
+    $('select-all').onchange = () => {
+      const visibleIds = visibleBatches().flatMap(b => b.viewAssets.map(a => a.id));
+      if (visibleIds.every(id => selected.has(id))) visibleIds.forEach(id => selected.delete(id));
+      else visibleIds.forEach(id => selected.add(id));
+      render();
+    };
+    $('download-selected').onclick = async () => {
+      const byId = new Map(allAssets().map(a => [a.id, a]));
+      const items = [...selected].map(id => byId.get(id)).filter(Boolean);
+      if (!items.length) return;
+      for (const asset of items) {
+        const link = document.createElement('a');
+        link.href = asset.content_url + '?download=true';
+        link.download = asset.file_name;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        await new Promise(resolve => window.setTimeout(resolve, 180));
+      }
+      showToast(`${items.length} downloads started`);
+    };
+    $('lb-close').onclick = () => { $('lightbox').classList.add('hidden'); previewState = null; };
+    $('lb-prev').onclick = e => { e.stopPropagation(); stepPreview(-1); };
+    $('lb-next').onclick = e => { e.stopPropagation(); stepPreview(1); };
+    $('lightbox').addEventListener('mousedown', e => {
+      if (e.target === $('lightbox')) { $('lightbox').classList.add('hidden'); previewState = null; }
+    });
+    window.addEventListener('keydown', e => {
+      if (!previewState) return;
+      if (e.key === 'Escape') { $('lightbox').classList.add('hidden'); previewState = null; }
+      if (e.key === 'ArrowLeft') stepPreview(-1);
+      if (e.key === 'ArrowRight') stepPreview(1);
+    });
+
+    // 启动：先探活会话，再放开开场屏入口
+    (async () => {
+      try { session = await request('/me'); } catch { session = null; }
+      const btn = $('splash-enter');
+      btn.disabled = false;
+      btn.textContent = 'Enter Library';
+    })();
   </script>
 </body>
 </html>
