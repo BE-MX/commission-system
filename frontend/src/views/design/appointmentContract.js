@@ -8,3 +8,8 @@ export function normalizeCustomerId(value) {
   if (typeof value === 'number' && !Number.isSafeInteger(value)) return ''
   return String(value).trim()
 }
+
+export function formatCustomerOptionLabel(customer) {
+  const country = String(customer?.country || '').trim() || '未知国家'
+  return `${String(customer?.name || '').trim()} · ${country}`
+}

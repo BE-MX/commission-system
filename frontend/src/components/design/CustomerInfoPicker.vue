@@ -8,25 +8,25 @@
       clearable
       :remote-method="search"
       :loading="loading"
-      placeholder="输入客户名称或ID搜索"
+      placeholder="输入客户名称或联系人名称搜索"
       style="width: 100%"
       @change="select"
     >
       <el-option
         v-for="item in options"
         :key="item.id"
-        :label="`${item.name} · ${item.country || '未知国家'} · ID ${item.id}`"
+        :label="formatCustomerOptionLabel(item)"
         :value="normalizeCustomerId(item.id)"
       />
     </el-select>
-    <div class="field-hint">客户来自 OKKI customer_info，提交后按客户ID归档素材</div>
+    <div class="field-hint">客户来自 OKKI，提交后将关联到所选客户</div>
   </div>
 </template>
 
 <script setup>
 import { ref } from 'vue'
 import { searchMediaCustomers } from '@/api/customerMedia'
-import { normalizeCustomerId } from '@/views/design/appointmentContract'
+import { formatCustomerOptionLabel, normalizeCustomerId } from '@/views/design/appointmentContract'
 
 const customerId = defineModel({ type: String, default: '' })
 const emit = defineEmits(['select'])
