@@ -65,8 +65,12 @@ def list_customers(db: Session, payload: dict, search: str) -> list[dict]:
 
 
 def validate_customer_access(db: Session, payload: dict, customer_id: str) -> dict:
-    matches = list_customers(db, payload, customer_id)
-    match = next((row for row in matches if str(row["id"]) == str(customer_id)), None)
+    from app.customer_image.service import CustomerScopeConflictError, get_available_customer
+    user_id, _, _ = user_identity(db, payload)
+    try:
+        match = get_available_customer(db, user_id, is_admin(payload), customer_id)
+    except CustomerScopeConflictError as exc:
+        raise CustomerMediaConflict(str(exc)) from exc
     if not match:
         raise CustomerMediaForbidden("所选客户不存在或不在当前用户负责范围内")
     return match

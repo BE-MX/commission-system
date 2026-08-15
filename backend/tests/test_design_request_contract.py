@@ -5,7 +5,9 @@ from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
+from sqlalchemy import text
 
+from app.customer_media import service as customer_media_service
 from app.design import router as design_router
 from app.customer_image.service import list_available_customers
 from app.design.models import DesignRequestAttachment, DesignScheduleRequest
@@ -74,6 +76,33 @@ def test_customer_search_serializes_driver_numeric_id_as_string():
     rows = list_available_customers(Db(), ark_user_id=1, is_admin=True, search="Madeline")
 
     assert rows[0]["id"] == "14427527374439"
+
+
+def test_validate_customer_access_uses_exact_internal_customer_id(db, monkeypatch):
+    db.execute(text(
+        "INSERT INTO lsordertest.customer_info "
+        "(company_id, company_name, country_name, origin_name) "
+        "VALUES ('internal-100', 'Acme Hair', 'US', 'OKKI')"
+    ))
+    db.flush()
+    monkeypatch.setattr(
+        customer_media_service,
+        "user_identity",
+        lambda *_args: (7, "Test User", object()),
+    )
+
+    customer = customer_media_service.validate_customer_access(
+        db,
+        {"roles": ["super_admin"]},
+        "internal-100",
+    )
+
+    assert customer == {
+        "id": "internal-100",
+        "name": "Acme Hair",
+        "country": "US",
+        "origin": "OKKI",
+    }
 
 
 def test_attachment_upload_scope_uses_authenticated_identity():

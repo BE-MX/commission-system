@@ -40,6 +40,22 @@ def _seed_customer(db, customer_id, name, country="CN", origin="OKKI"):
     )
 
 
+def _seed_contact(db, contact_id, customer_id, name):
+    db.execute(
+        text(
+            "INSERT INTO lsordertest.customer_contacts "
+            "(id, company_id, customer_id, name) "
+            "VALUES (:id, :company_id, :contact_customer_id, :name)"
+        ),
+        {
+            "id": contact_id,
+            "company_id": customer_id,
+            "contact_customer_id": f"contact-{contact_id}",
+            "name": name,
+        },
+    )
+
+
 def _bind_okki(db, user_id, external_id, **overrides):
     db.add(ArkUserExternalBinding(
         ark_user_id=user_id,
@@ -93,6 +109,52 @@ def test_admin_searches_all_customers_without_okki_binding(db):
     rows = list_available_customers(db, 99, True, "beta")
 
     assert [row["id"] for row in rows] == ["c2"]
+
+
+def test_customer_search_matches_customer_name(db):
+    _seed_customer(db, "internal-100", "Acme Hair")
+    db.flush()
+
+    assert [
+        row["id"] for row in list_available_customers(db, 99, True, "Acme")
+    ] == ["internal-100"]
+
+
+def test_customer_search_matches_contact_name(db):
+    _seed_customer(db, "internal-200", "Beta Hair")
+    _seed_contact(db, 100, "internal-200", "Alice Buyer")
+    db.flush()
+
+    assert [
+        row["id"] for row in list_available_customers(db, 99, True, "Alice")
+    ] == ["internal-200"]
+
+
+def test_customer_search_does_not_match_company_id(db):
+    _seed_customer(db, "internal-100", "Acme Hair")
+    db.flush()
+
+    assert list_available_customers(db, 99, True, "internal-100") == []
+
+
+def test_contact_search_preserves_ownership_and_deduplicates_customers(db):
+    _seed_customer(db, "owned-a", "Alpha Customer")
+    _seed_customer(db, "owned-b", "Beta Customer")
+    _seed_customer(db, "unowned", "Other Customer")
+    _seed_contact(db, 201, "owned-a", "Shared Contact One")
+    _seed_contact(db, 202, "owned-a", "Shared Contact Two")
+    _seed_contact(db, 203, "owned-b", "Shared Contact Three")
+    _seed_contact(db, 204, "owned-b", "Shared Contact Four")
+    _seed_contact(db, 205, "unowned", "Shared Contact Five")
+    _bind_okki(db, 7, "1007")
+    _snapshot(db, "owned-a", "1007")
+    _snapshot(db, "owned-b", "1007")
+    _snapshot(db, "unowned", "1008")
+    db.flush()
+
+    rows = list_available_customers(db, 7, False, "Shared Contact")
+
+    assert [row["id"] for row in rows] == ["owned-a", "owned-b"]
 
 
 def test_invite_customer_lookup_is_exact_and_not_limited_by_autocomplete(db):

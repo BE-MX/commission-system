@@ -3,7 +3,7 @@
 from copy import deepcopy
 from datetime import UTC, datetime
 
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import String, column, func, or_, select, table, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -32,6 +32,14 @@ from app.customer_image.schemas import (
     CustomerImageProductUpsert,
 )
 from app.customer_image.token_service import issue_invite_token
+
+
+_customer_contacts = table(
+    "customer_contacts",
+    column("company_id", String(64)),
+    column("name", String(256)),
+    schema=CustomerInfo.__table__.schema,
+)
 
 
 OKKI_BINDING_REQUIRED_MESSAGE = "请先在系统管理 -> 外部账号绑定中绑定 OKKI 账号"
@@ -327,16 +335,11 @@ def _okki_account_id(db: Session, ark_user_id: int) -> str:
     raise CustomerScopeConflictError(OKKI_BINDING_REQUIRED_MESSAGE)
 
 
-def list_available_customers(
+def _available_customer_statement(
     db: Session,
     ark_user_id: int,
     is_admin: bool,
-    search: str,
-    limit: int = 20,
-) -> list[dict]:
-    term = search.strip()
-    if not term:
-        return []
+):
     statement = select(
         CustomerInfo.company_id,
         CustomerInfo.company_name,
@@ -352,28 +355,60 @@ def list_available_customers(
             CustomerCommissionSnapshot.is_current.is_(True),
             CustomerCommissionSnapshot.salesperson_id == okki_user_id,
         ).distinct()
+    return statement
+
+
+def _serialize_customer(row) -> dict:
+    return {
+        # customer_info.company_id 在不同 OKKI 库实例中可能由驱动返回
+        # int 或 str；对外统一成字符串，避免大整数 ID 穿过 JSON/JS 后
+        # 发生类型漂移或精度损失。
+        "id": str(row.company_id),
+        "name": row.company_name,
+        "country": row.country_name,
+        "origin": row.origin_name,
+    }
+
+
+def list_available_customers(
+    db: Session,
+    ark_user_id: int,
+    is_admin: bool,
+    search: str,
+    limit: int = 20,
+) -> list[dict]:
+    term = search.strip()
+    if not term:
+        return []
 
     pattern = f"%{term}%"
+    contact_name_match = select(1).select_from(_customer_contacts).where(
+        _customer_contacts.c.company_id == CustomerInfo.company_id,
+        _customer_contacts.c.name.ilike(pattern),
+    ).exists()
+    statement = _available_customer_statement(db, ark_user_id, is_admin)
     statement = statement.where(or_(
-        CustomerInfo.company_id.ilike(pattern),
         CustomerInfo.company_name.ilike(pattern),
+        contact_name_match,
     ))
     statement = statement.order_by(
         CustomerInfo.company_name, CustomerInfo.company_id
     ).limit(min(max(limit, 1), 20))
 
-    return [
-        {
-            # customer_info.company_id 在不同 OKKI 库实例中可能由驱动返回
-            # int 或 str；对外统一成字符串，避免大整数 ID 穿过 JSON/JS 后
-            # 发生类型漂移或精度损失。
-            "id": str(row.company_id),
-            "name": row.company_name,
-            "country": row.country_name,
-            "origin": row.origin_name,
-        }
-        for row in db.execute(statement).all()
-    ]
+    return [_serialize_customer(row) for row in db.execute(statement).all()]
+
+
+def get_available_customer(
+    db: Session,
+    ark_user_id: int,
+    is_admin: bool,
+    customer_id: str,
+) -> dict | None:
+    statement = _available_customer_statement(db, ark_user_id, is_admin).where(
+        CustomerInfo.company_id == customer_id,
+    ).limit(1)
+    row = db.execute(statement).first()
+    return _serialize_customer(row) if row else None
 
 
 def _customer_for_invite(
