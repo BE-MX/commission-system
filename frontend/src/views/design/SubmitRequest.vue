@@ -9,8 +9,12 @@
 
     <div class="form-card">
       <div class="form-card-header">
-        <h3>提交设计预约</h3>
-        <p>填写拍摄需求信息，日期无冲突时直接进入排期，有冲突时进入审批流程</p>
+        <span class="header-mark" aria-hidden="true"><el-icon><Camera /></el-icon></span>
+        <div class="header-text">
+          <span class="header-kicker">DESIGN BOOKING</span>
+          <h3>提交设计预约</h3>
+          <p>填写拍摄需求信息，日期无冲突时直接进入排期，有冲突时进入审批流程</p>
+        </div>
       </div>
 
       <el-form
@@ -199,7 +203,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Promotion, RefreshLeft, UploadFilled } from '@element-plus/icons-vue'
+import { Camera, Promotion, RefreshLeft, UploadFilled } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { submitRequest, checkConflict, getUnavailableDates, uploadAttachment, getDesigners } from '@/api/design'
 import { getDictItems } from '@/api/system'
@@ -495,7 +499,7 @@ function resetForm() {
   z-index: 1;
 }
 
-/* 表单面板：同款渐变玻璃（覆盖原白底卡片；overflow:hidden 保留给深色页头带） */
+/* 表单面板：同款渐变玻璃（覆盖原白底卡片；overflow:hidden 保留给页头色带） */
 .form-card {
   border: 1px solid var(--dash-glass-border);
   border-radius: var(--dash-card-radius);
@@ -503,21 +507,63 @@ function resetForm() {
   box-shadow: var(--dash-glass-shadow), var(--dash-glass-highlight);
   overflow: hidden;
 }
+/* 页头色带：深铜 → 琥珀 → 金的斜向渐变（替代原近黑渐变，与暖金极光页协调），
+   叠一条 115deg 光带 + 右上角柔光，配方呼应 .lg-aurora */
 .form-card-header {
-  background: linear-gradient(135deg, #141210 0%, #1E1B18 60%, #141210 100%);
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
   padding: 24px 32px;
-  color: #fff;
+  overflow: hidden;
+  background: linear-gradient(118deg, #5C430A 0%, #8A6410 34%, var(--color-primary) 68%, var(--color-gold) 112%);
+  color: var(--text-on-dark);
+}
+.form-card-header::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(115deg, transparent 56%, rgba(255, 255, 255, 0.22) 62%, rgba(255, 255, 255, 0.06) 71%, transparent 77%),
+    radial-gradient(circle at 88% -25%, rgba(253, 244, 220, 0.4) 0%, rgba(253, 244, 220, 0) 52%);
+  pointer-events: none;
+}
+.header-mark {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  color: var(--color-gold);
+  font-size: 20px;
+}
+.header-text { position: relative; z-index: 1; min-width: 0; }
+.header-kicker {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--color-gold);
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
 }
 .form-card-header h3 {
   margin: 0 0 4px;
-  font-size: 18px;
+  font-size: 19px;
   font-weight: 700;
   font-family: var(--font-display);
+  letter-spacing: 0.01em;
 }
 .form-card-header p {
   margin: 0;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(255, 255, 255, 0.72);
 }
 .submit-form {
   padding: 28px 32px;
