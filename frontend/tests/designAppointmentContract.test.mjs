@@ -12,6 +12,13 @@ const customerPickerSource = readFileSync(
   'utf8',
 )
 const customerOptionSource = customerPickerSource.match(/<el-option[\s\S]*?\/>/)?.[0] || ''
+const customerMediaAccountsSource = readFileSync(
+  new URL('../src/views/design/CustomerMediaAccounts.vue', import.meta.url),
+  'utf8',
+)
+const accountCustomerSelectSource = customerMediaAccountsSource.match(
+  /<el-form-item v-if="!editing" label="客户">[\s\S]*?<\/el-form-item>/,
+)?.[0] || ''
 
 test('customer ids stay strings across picker and submit boundaries', () => {
   assert.equal(normalizeCustomerId(14427527374439), '14427527374439')
@@ -55,4 +62,10 @@ test('customer picker copy searches by customer or contact name and exposes no i
   assert.doesNotMatch(customerPickerSource, /客户ID/)
   assert.doesNotMatch(customerPickerSource, /客户 ID/)
   assert.doesNotMatch(customerPickerSource, /ID \$\{item\.id\}/)
+})
+
+test('portal account customer picker searches by customer or contact name without exposing ids', () => {
+  assert.match(accountCustomerSelectSource, /placeholder="输入客户名称或联系人名称搜索"/)
+  assert.match(accountCustomerSelectSource, /:label="formatCustomerOptionLabel\(item\)"/)
+  assert.doesNotMatch(accountCustomerSelectSource, /:label="[^"]*item\.id[^"]*"/)
 })

@@ -11,7 +11,7 @@
     </el-table></div>
     <el-dialog v-model="dialog" :title="editing ? '修改门户账号' : '新建门户账号'" width="520px">
       <el-form label-position="top">
-        <el-form-item v-if="!editing" label="客户"><el-select v-model="form.customer_id" filterable remote :remote-method="searchCustomers" :loading="customerLoading" style="width:100%" placeholder="输入客户名称或ID"><el-option v-for="item in customers" :key="item.id" :label="`${item.name} · ID ${item.id}`" :value="item.id" /></el-select></el-form-item>
+        <el-form-item v-if="!editing" label="客户"><el-select v-model="form.customer_id" filterable remote :remote-method="searchCustomers" :loading="customerLoading" style="width:100%" placeholder="输入客户名称或联系人名称搜索"><el-option v-for="item in customers" :key="item.id" :label="formatCustomerOptionLabel(item)" :value="item.id" /></el-select></el-form-item>
         <el-form-item label="登录邮箱"><el-input v-model="form.login_email" autocomplete="off" /></el-form-item>
         <el-form-item :label="editing ? '重置密码（留空则不修改）' : '初始密码'"><el-input v-model="form.password" type="password" show-password autocomplete="new-password" /><div class="field-hint">至少10位并包含字母和数字；保存后不会再次显示。</div></el-form-item>
       </el-form>
@@ -23,6 +23,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { createPortalAccount, getPortalAccounts, searchMediaCustomers, updatePortalAccount } from '@/api/customerMedia'
+import { formatCustomerOptionLabel } from './appointmentContract'
 const rows=ref([]),loading=ref(false),search=ref(''),dialog=ref(false),editing=ref(null),saving=ref(false),customers=ref([]),customerLoading=ref(false)
 const form=reactive({customer_id:'',login_email:'',password:''})
 async function load(){loading.value=true;try{rows.value=(await getPortalAccounts(search.value)).data||[]}finally{loading.value=false}}

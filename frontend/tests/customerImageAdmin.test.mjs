@@ -7,6 +7,7 @@ import {
   createAssetBlobController,
   createProductCoverController,
   createEmptyProductDraft,
+  customerOptionLabel,
   customerImageAdminCapabilities,
   inviteSubmissionErrorMessage,
   validateInviteDraft,
@@ -15,6 +16,10 @@ import {
 } from '../src/views/customer-image/admin/composables/useCustomerImageAdmin.js'
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8')
+const inviteCreateDialogSource = read('../src/views/customer-image/admin/InviteCreateDialog.vue')
+const inviteCustomerOptionSource = inviteCreateDialogSource.match(
+  /<el-option\s+v-for="customer in customers"[\s\S]*?\/>/,
+)?.[0] || ''
 
 function deferred() {
   let resolve
@@ -22,6 +27,14 @@ function deferred() {
   const promise = new Promise((res, rej) => { resolve = res; reject = rej })
   return { promise, resolve, reject }
 }
+
+test('invite customer options show names and countries without exposing ids', () => {
+  assert.equal(customerOptionLabel({ id: 'c1', name: 'Alpha Hair', country: 'US' }), 'Alpha Hair · US')
+  assert.equal(customerOptionLabel({ id: 'c1', name: '   ', country: '' }), '未知客户 · 未知国家')
+  assert.match(inviteCreateDialogSource, /placeholder="输入客户名称或联系人名称搜索"/)
+  assert.match(inviteCustomerOptionSource, /:label="customerOptionLabel\(customer\)"/)
+  assert.doesNotMatch(inviteCustomerOptionSource, /:label="[^"]*customer\.id[^"]*"/)
+})
 
 test('asset blob epochs ignore inverse late loads and disposal without creating URLs', async () => {
   const requests = new Map()

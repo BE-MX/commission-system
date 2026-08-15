@@ -13,12 +13,12 @@
             reserve-keyword
             :remote-method="searchCustomers"
             :loading="customerLoading"
-            placeholder="输入客户名称或编号搜索"
+            placeholder="输入客户名称或联系人名称搜索"
           >
             <el-option
               v-for="customer in customers"
               :key="customer.id"
-              :label="`${customer.name || customer.id}${customer.country ? ` · ${customer.country}` : ''}`"
+              :label="customerOptionLabel(customer)"
               :value="customer.id"
             />
           </el-select>
@@ -87,7 +87,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { inviteSubmissionErrorMessage, validateInviteDraft } from './composables/useCustomerImageAdmin'
+import { customerOptionLabel, inviteSubmissionErrorMessage, validateInviteDraft } from './composables/useCustomerImageAdmin'
 
 const props = defineProps({ state: { type: Object, required: true } })
 const { customers, oneTimeInviteUrl, productCoverUrls, products } = props.state

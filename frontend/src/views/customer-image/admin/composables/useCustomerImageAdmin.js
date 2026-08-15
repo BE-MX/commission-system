@@ -1,5 +1,11 @@
 import { ref } from 'vue'
 
+export function customerOptionLabel(customer) {
+  const name = String(customer?.name || '').trim() || '未知客户'
+  const country = String(customer?.country || '').trim() || '未知国家'
+  return `${name} · ${country}`
+}
+
 export function customerImageAdminCapabilities(hasPermission) {
   const canAdmin = hasPermission('customer_image:admin')
   return {
