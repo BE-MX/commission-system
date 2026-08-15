@@ -10,6 +10,7 @@ export function normalizeCustomerId(value) {
 }
 
 export function formatCustomerOptionLabel(customer) {
+  const name = String(customer?.name || '').trim() || '未知客户'
   const country = String(customer?.country || '').trim() || '未知国家'
-  return `${String(customer?.name || '').trim()} · ${country}`
+  return `${name} · ${country}`
 }
