@@ -56,10 +56,8 @@ _AURORA_LABELS = {"首单新签", "新签喜报", "大单来袭", "超级大单"
 _AURORA_BASE_TOP = (255, 251, 245)
 _AURORA_BASE_BOTTOM = (253, 242, 222)
 _AURORA_BANDS = ((255, 240, 200), (255, 228, 150), (255, 219, 118), (255, 236, 180))
-_FIREWORK_PALETTE = (
-    (255, 122, 89), (236, 72, 153), (245, 158, 11),
-    (139, 92, 246), (56, 189, 248), (16, 185, 129),
-)
+_FIREWORK_GOLD = (242, 165, 32)
+_FIREWORK_WHITE = (255, 252, 244)
 
 
 def _draw_firework(draw: ImageDraw.ImageDraw, center: tuple[int, int], radius: int) -> None:
@@ -133,19 +131,17 @@ def _aurora_background(width: int, height: int) -> Image.Image:
     return base.filter(ImageFilter.GaussianBlur(130))
 
 
-def _draw_colorful_firework(layer: Image.Image, center: tuple[int, int],
-                            radius: int, seed: int = 0) -> None:
-    """在透明图层上画一朵烟花：单朵限 1-2 个主色，火花细长、外端衰减微垂，
+def _draw_gold_firework(layer: Image.Image, center: tuple[int, int],
+                        radius: int, seed: int = 0) -> None:
+    """在透明图层上画一朵烟花：金色为主、白色点缀，火花细长、外端衰减微垂，
     末端带亮点，中心留白色高温核——模拟真实礼花弹而非卡通星芒。"""
     rng = random.Random(seed)
     cx, cy = center
-    base = _FIREWORK_PALETTE[seed % len(_FIREWORK_PALETTE)]
-    accent = (255, 214, 120)  # 金色伴星——真实礼花多为单主色 + 金/银伴星
     draw = ImageDraw.Draw(layer)
     for _ in range(max(28, int(radius * 1.7))):
         angle = rng.uniform(0.0, math.tau)
         reach = radius * rng.uniform(0.45, 1.0)
-        r, g, b = base if rng.random() < 0.72 else accent
+        r, g, b = _FIREWORK_GOLD if rng.random() < 0.75 else _FIREWORK_WHITE
         gain = rng.uniform(0.7, 1.0)
         color = (round(r * gain), round(g * gain), round(b * gain))
         start = radius * 0.10
@@ -161,6 +157,34 @@ def _draw_colorful_firework(layer: Image.Image, center: tuple[int, int],
         draw.ellipse((x1 - 1.6, y1 - 1.6, x1 + 1.6, y1 + 1.6), fill=(r, g, b, 200))
     core = max(3, radius // 8)
     draw.ellipse((cx - core, cy - core, cx + core, cy + core), fill=(255, 252, 240, 235))
+
+
+def _display_font(size: int):
+    """主题字艺术字体：优先仓库内置华康海报体，缺失时依次回退其他美术字/常规粗体。"""
+    candidates = [
+        _REPO_ROOT / "backend" / "assets" / "fonts" / "huakang-haibao-w12.ttf",
+        Path("C:/Users/windb/AppData/Local/Microsoft/Windows/Fonts/华康海报体W12.TTF"),
+        Path("C:/Windows/Fonts/STHUPO.TTF"),
+        Path("C:/Windows/Fonts/FZYTK.TTF"),
+        Path("C:/Windows/Fonts/STXINWEI.TTF"),
+    ]
+    for path in candidates:
+        if path.is_file():
+            return ImageFont.truetype(str(path), size=size)
+    return _font(size, bold=True)
+
+
+def _draw_headline(image: Image.Image, text: str) -> None:
+    """主题字：琥珀美术字 + 整体斜切 + 投影 + 奶白描边，制造冲击力。"""
+    font = _display_font(88)
+    layer = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    layer_draw = ImageDraw.Draw(layer)
+    layer_draw.text((85, 57), text, font=font, fill=(61, 34, 8, 110))
+    layer_draw.text((78, 50), text, font=font, fill=(194, 65, 12, 255),
+                    stroke_width=2, stroke_fill=(255, 247, 232, 255))
+    slanted = layer.transform(image.size, Image.Transform.AFFINE,
+                              (1, -0.10, 0, 0, 1, 0), resample=Image.BICUBIC)
+    image.alpha_composite(slanted)
 
 
 def _font(size: int, bold: bool = False):
@@ -232,20 +256,22 @@ def render_event_image(event: dict) -> Path:
         ink, sub_ink, pill_ink, amount_ink = _BRAND_BLACK, "#332600", _BRAND_YELLOW, _BRAND_BLACK
     if aurora:
         fireworks = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-        _draw_colorful_firework(fireworks, (690, 104), 52, seed=11)
-        _draw_colorful_firework(fireworks, (920, 486), 38, seed=27)
-        _draw_colorful_firework(fireworks, (1060, 470), 28, seed=43)
+        _draw_gold_firework(fireworks, (710, 118), 72, seed=11)
+        _draw_gold_firework(fireworks, (930, 490), 52, seed=27)
+        _draw_gold_firework(fireworks, (1065, 468), 40, seed=43)
         glow = fireworks.filter(ImageFilter.GaussianBlur(5))
-        image = Image.alpha_composite(image.convert("RGBA"), glow)
-        image = Image.alpha_composite(image, fireworks).convert("RGB")
+        composed = Image.alpha_composite(image.convert("RGBA"), glow)
+        composed = Image.alpha_composite(composed, fireworks)
+        _draw_headline(composed, str(event.get("label") or "高光事件"))
+        image = composed.convert("RGB")
     draw = ImageDraw.Draw(image)
     # 品牌图的核心识别来自纯黄底 + 黑色字标；装饰保持克制，避免抢事件正文。
-    # 新签/大单/名次类高光事件切换为奶油底黄色系极光，烟花改为彩色。
+    # 新签/大单/名次类高光事件切换为奶油底黄色系极光 + 金白烟花。
     draw.ellipse((1120, -210, 1420, 90), outline=ink, width=22)
     if aurora:
-        _draw_sparkle(draw, (510, 455), 14, fill=_FIREWORK_PALETTE[1])
-        _draw_sparkle(draw, (810, 185), 10, fill=_FIREWORK_PALETTE[0])
-        _draw_sparkle(draw, (1080, 365), 12, fill=_FIREWORK_PALETTE[3])
+        _draw_sparkle(draw, (510, 455), 14, fill=_FIREWORK_GOLD)
+        _draw_sparkle(draw, (810, 185), 10, fill=(214, 138, 20))
+        _draw_sparkle(draw, (1080, 365), 12, fill=_FIREWORK_GOLD)
     else:
         _draw_firework(draw, (690, 104), 42)
         _draw_firework(draw, (920, 486), 30)
@@ -257,10 +283,11 @@ def render_event_image(event: dict) -> Path:
 
     draw.rounded_rectangle((44, 38, width - 44, height - 38), radius=34,
                            outline=ink, width=5)
-    draw.rounded_rectangle((78, 70, 390, 126), radius=28, fill=ink)
-    draw.ellipse((106, 92, 120, 106), fill=pill_ink)
-    draw.text((132, 80), str(event.get("label") or "高光事件"),
-              font=_font(25, bold=True), fill=pill_ink)
+    if not aurora:
+        draw.rounded_rectangle((78, 70, 390, 126), radius=28, fill=ink)
+        draw.ellipse((106, 92, 120, 106), fill=pill_ink)
+        draw.text((132, 80), str(event.get("label") or "高光事件"),
+                  font=_font(25, bold=True), fill=pill_ink)
 
     subject_name = str(event.get("subject_name") or "")
     assets_root = _REPO_ROOT / "frontend" / "public" / "festival" / "assets"
