@@ -382,14 +382,13 @@ def list_available_customers(
         return []
 
     pattern = f"%{term}%"
-    contact_name_match = select(1).select_from(_customer_contacts).where(
-        _customer_contacts.c.company_id == CustomerInfo.company_id,
+    contact_customer_ids = select(_customer_contacts.c.company_id).where(
         _customer_contacts.c.name.ilike(pattern),
-    ).exists()
+    )
     statement = _available_customer_statement(db, ark_user_id, is_admin)
     statement = statement.where(or_(
         CustomerInfo.company_name.ilike(pattern),
-        contact_name_match,
+        CustomerInfo.company_id.in_(contact_customer_ids),
     ))
     statement = statement.order_by(
         CustomerInfo.company_name, CustomerInfo.company_id

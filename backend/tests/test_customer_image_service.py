@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta, timezone
 import pytest
 from pydantic import ValidationError
 from sqlalchemy import text
+from sqlalchemy.dialects import mysql
 
 from app.auth.models import ArkPermission, ArkRole, ArkUserExternalBinding
 from app.auth.service import seed_role_permissions
@@ -18,6 +19,7 @@ from app.customer_image.schemas import CustomerImageInviteCreate, CustomerImageP
 from app.customer_image.service import (
     OKKI_BINDING_REQUIRED_MESSAGE,
     CustomerScopeConflictError,
+    get_available_customer,
     list_available_customers,
     validate_public_requirement,
     create_product,
@@ -137,6 +139,30 @@ def test_customer_search_does_not_match_company_id(db):
     assert list_available_customers(db, 99, True, "internal-100") == []
 
 
+def test_contact_search_compiles_to_non_correlated_company_id_subquery():
+    class Result:
+        @staticmethod
+        def all():
+            return []
+
+    class Db:
+        statement = None
+
+        def execute(self, statement):
+            self.statement = statement
+            return Result()
+
+    db = Db()
+    list_available_customers(db, 99, True, "Alice")
+
+    sql = str(db.statement.compile(
+        dialect=mysql.dialect(),
+        compile_kwargs={"literal_binds": True},
+    ))
+    assert "customer_info.company_id IN (SELECT" in sql
+    assert "customer_contacts.company_id = lsordertest.customer_info.company_id" not in sql
+
+
 def test_contact_search_preserves_ownership_and_deduplicates_customers(db):
     _seed_customer(db, "owned-a", "Alpha Customer")
     _seed_customer(db, "owned-b", "Beta Customer")
@@ -155,6 +181,23 @@ def test_contact_search_preserves_ownership_and_deduplicates_customers(db):
     rows = list_available_customers(db, 7, False, "Shared Contact")
 
     assert [row["id"] for row in rows] == ["owned-a", "owned-b"]
+
+
+def test_exact_customer_lookup_preserves_non_admin_scope(db):
+    _seed_customer(db, "owned", "Owned Customer", "US", "OKKI")
+    _seed_customer(db, "unowned", "Unowned Customer")
+    _bind_okki(db, 7, "1007")
+    _snapshot(db, "owned", "1007")
+    _snapshot(db, "unowned", "1008")
+    db.flush()
+
+    assert get_available_customer(db, 7, False, "owned") == {
+        "id": "owned",
+        "name": "Owned Customer",
+        "country": "US",
+        "origin": "OKKI",
+    }
+    assert get_available_customer(db, 7, False, "unowned") is None
 
 
 def test_invite_customer_lookup_is_exact_and_not_limited_by_autocomplete(db):
