@@ -1258,9 +1258,11 @@ Journal 判读和重跑规则：`intent` 与 `syscall_returned` 都只是操作�
 
 ## 客户拍摄素材门户上线与恢复
 
-目标入口固定为 `https://media.leshine.cloud`。方舟仍是业务主系统，媒体域上的后端连接同一业务数据库，只由 Nginx 暴露 `/api/customer-media/`；静态门户发布到 `/srv/ark-customer-media`，原件位于私有目录 `/data/customer-media`，不得通过 Nginx `root/alias` 直接暴露。首期仅支持上传、审核、发布、查看和下载，不提供图片编辑。
+目标入口固定为 `https://media.leshine.cloud`。方舟仍是业务主系统，媒体域上的后端连接同一业务数据库，只由 Nginx 暴露 `/api/customer-media/`；静态门户发布到 `/var/www/ark-dist/customer-media/`（IP 兜底入口，ark-ip-ssl.conf default_server root 拼接）与 `/var/www/ark-static/customer-media/`（域名入口，两套目录内容保持一致），原件位于私有目录 `/data/customer-media`，不得通过 Nginx `root/alias` 直接暴露。首期仅支持上传、审核、发布、查看和下载，不提供图片编辑。
 
-**IP 兜底入口（备案完成前可用，2026-08-14 实测）**：`.cloud` 域名 HTTPS 被机房未备案拦截（见上线门禁第 1 条），正式客户访问前可通过 `https://154.8.205.162/customer-media/` 使用门户——IP 入口走 `ark-ip-ssl.conf` 的 `default_server`（IP 自签证书），其通用 `location /api/ { proxy_pass http://127.0.0.1:8001 }` 已覆盖 `customer-media` 的 API 前缀，静态页 + 登录 + 素材接口全链可用（测试 `POST /api/customer-media/portal/login` 返回 401「邮箱或密码错误」、`GET /api/customer-media/portal/me` 返回 401「请先登录」即为后端正常响应）。两点限制：①IP 自签证书，浏览器会提示「不安全」，点继续访问即可，正式客户见不到此提示；②`client_max_body_size` 在 IP 入口是 5m（`media.leshine.cloud.conf` 是 501m），大文件上传会在 IP 入口受限，素材查看/预览/小图下载不受影响。备案完成后回归 `.work` 正式域名 + 正式证书。
+**IP 兜底入口（备案完成前可用，2026-08-14 实测）**：`.cloud` 域名 HTTPS 被机房未备案拦截（见上线门禁第 1 条），正式客户访问前可通过 `https://154.8.205.162/customer-media/` 使用门户——IP 入口走 `ark-ip-ssl.conf` 的 `default_server`（IP 自签证书），其通用 `location /api/ { proxy_pass http://127.0.0.1:8001 }` 已覆盖 `customer-media` 的 API 前缀，静态页 + 登录 + 素材接口全链可用（测试 `POST /api/customer-media/portal/login` 返回 401「邮箱或密码错误」、`GET /api/customer-media/portal/me` 返回 401「请先登录」即为后端正常响应）。两点限制：①IP 自签证书，浏览器会提示「不安全」，点继续访问即可，正式客户见不到此提示；②通用 `location /api/` 在 IP 入口是 5m body 限制，但 `/api/customer-media/` 已单独开 501m（见下条），素材上传/下载不受限。备案完成后回归 `.work` 正式域名 + 正式证书。
+
+**上传链路 relay 与存储根（2026-08-14 修复「门户图片无法显示」）**：素材原件的唯一存放点是北京云 `/data/customer-media`（云端 `backend/.env` 已配 `CUSTOMER_MEDIA_STORAGE_ROOT=/data/customer-media`——修复前缺省值是 Windows 路径 `D:\WORKSOURCE\customer-media`，在 Linux 上被解析成后端工作目录下的相对目录，文件根本读不到）。为保证「上传落云、门户同机读取」，办公室入口（119.28.107.92 `leshine.conf`）把 `location ^~ /api/customer-media/` 整体反代到 `https://154.8.205.162`（自签证书故 `proxy_ssl_verify off`；501m body、`proxy_request_buffering off`、3600s 超时），北京侧 `ark-ip-ssl.conf` 为同前缀单独开 501m；内部上传/审核/预览与门户读取由此全部落到北京云 8001 一个后端。两台机的 nginx 备份在各自 home 目录 `*.bak-20260814`。排障口诀：门户图裂先看北京云 `storage_for('local').root` 是否为 `/data/customer-media`，再看 `location` 是否命中 relay（北京 access.log 里来源 IP 应是 119.28.107.92）。
 
 ### 上线门禁
 
