@@ -507,11 +507,11 @@
 
 | 方法 | 路径 | 权限 | 契约 |
 |---|---|---|---|
-| GET | `/config` | read | 生图模型目录（`id/label/available`）、默认模型、尺寸、质量、附件/上传限制、草稿 TTL、当日额度；不暴露 Provider、Preset 或密钥 |
+| GET | `/config` | read | 生图模型目录（`id/label/available`）、默认模型、尺寸、质量、`accepted_upload_mime_types`、单页 PDF 限制、附件/上传限制、草稿 TTL、当日额度；不暴露 Provider、Preset 或密钥 |
 | POST | `/sessions` | write | 创建会话，body `{title?}`，默认“新对话”，标题 1～200 字 |
 | GET | `/sessions` | read | `limit=20`（1～100）与不透明 `cursor` 的 owner 会话分页 |
 | GET | `/sessions/{session_id}` | read | 会话、消息、未删除/未过期资产与该会话全部历史 jobs（按创建时间升序，不只 active） |
-| POST | `/sessions/{session_id}/assets` | write | multipart 字段 `file`；JPEG/PNG/WebP，实际格式必须匹配 MIME |
+| POST | `/sessions/{session_id}/assets` | write | multipart 字段 `file`；JPEG/PNG/WebP 图片，或单页 PDF、SVG 刀版；实际格式必须匹配 MIME。PDF/SVG 在限并发、限时、限内存的隔离子进程中转为最大边 2048px 的白底 PNG 预览后存储和发送给模型，不保存或直传原始文档；SVG 禁止脚本、DOCTYPE/ENTITY、外部资源及超预算元素/内嵌图片。渲染服务不可用返回 503 |
 | DELETE | `/assets/{asset_id}` | write | 仅未被任务引用的 draft 可删 |
 | POST | `/sessions/{session_id}/turns` | write | 202；可能返回待确认 clarification、1 个组合图 job 或 2～4 个独立 queued jobs；body 的 `session_id` 若存在必须与路径一致 |
 | POST | `/sessions/{session_id}/messages/{message_id}/actions` | write | 幂等确认输出方式；body `{request_id, action:"choose_output_mode", mode:"composite"|"separate"}` |
