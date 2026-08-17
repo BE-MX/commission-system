@@ -4,6 +4,7 @@ import base64
 import hashlib
 import json
 import logging
+import re
 import time
 from copy import deepcopy
 from dataclasses import dataclass
@@ -470,10 +471,39 @@ def _uses_chat_style(preset: AiPreset) -> bool:
     return str((preset.parameters or {}).get(API_STYLE_KEY, "")).strip().lower() == API_STYLE_CHAT
 
 
-def _chat_image_payload(preset: AiPreset, prompt: str, images: list[ImageInput]) -> dict:
+def _chat_image_prompt(
+    prompt: str,
+    size: Optional[str] = None,
+    quality: Optional[str] = None,
+) -> str:
+    """Encode image-only options in text for chat-compatible image models."""
+    requirements: list[str] = []
+    if size:
+        requirements.append(f"目标画布尺寸为 {size.replace('x', '×')}，保持对应宽高比")
+    quality_labels = {
+        "low": "草稿质量",
+        "medium": "标准成品质量",
+        "high": "高精细成品质量",
+    }
+    if quality in quality_labels:
+        requirements.append(quality_labels[quality])
+    if not requirements:
+        return prompt
+    return f"{prompt}\n\n输出要求：{'；'.join(requirements)}。只返回最终图片。"
+
+
+def _chat_image_payload(
+    preset: AiPreset,
+    prompt: str,
+    images: list[ImageInput],
+    size: Optional[str] = None,
+    quality: Optional[str] = None,
+) -> dict:
     """多模态 chat 入参：文本在前、图片按传入顺序在后——顺序即 prompt 里
     「The FIRST image is the customer's own photo」这类位置锚点的依据，不可打乱。"""
-    content: list[dict] = [{"type": "text", "text": prompt}]
+    content: list[dict] = [
+        {"type": "text", "text": _chat_image_prompt(prompt, size, quality)}
+    ]
     for image in images:
         encoded = base64.b64encode(image["content"]).decode()
         content.append({
@@ -489,26 +519,58 @@ def _chat_image_payload(preset: AiPreset, prompt: str, images: list[ImageInput])
 
 
 def _extract_chat_image_content(result: dict) -> str:
-    """从 chat 响应取图。实测 wlai + gemini-3-pro-image 的产物是 content 里的一段
-    markdown data URL（`![image](data:image/png;base64,...)`），整段回给调用方即可——
-    上层的图片解析器已能吃 data URL / 裸 base64 / http URL 三种形态。"""
+    """Extract an exact data/HTTPS URL or bare base64 image from chat output."""
     choices = result.get("choices") or []
     if not choices:
         return ""
-    content = (choices[0].get("message") or {}).get("content")
+    message = choices[0].get("message") or {}
+    content = message.get("content")
+    structured_parts: list[str] = []
+    text_parts: list[str] = []
     if isinstance(content, list):  # 部分网关返回内容块数组，拼平后再交给正则
-        parts: list[str] = []
         for block in content:
             if not isinstance(block, dict):
                 continue
             if block.get("text"):
-                parts.append(str(block["text"]))
+                text_parts.append(str(block["text"]))
             image_url = block.get("image_url")
             url = image_url.get("url") if isinstance(image_url, dict) else image_url
             if url:
-                parts.append(str(url))
-        content = " ".join(parts)
-    return content if isinstance(content, str) else ""
+                structured_parts.append(str(url))
+    elif isinstance(content, str):
+        text_parts.append(content)
+    # OpenAI-compatible image chat gateways may return generated images beside
+    # content instead of embedding them in Markdown.
+    images = message.get("images") or []
+    if isinstance(images, (str, dict)):
+        images = [images]
+    if isinstance(images, list):
+        for image in images:
+            if isinstance(image, str):
+                structured_parts.append(image)
+                continue
+            if not isinstance(image, dict):
+                continue
+            image_url = image.get("image_url")
+            url = image_url.get("url") if isinstance(image_url, dict) else image_url
+            url = url or image.get("url")
+            if url:
+                structured_parts.append(str(url))
+            elif image.get("b64_json"):
+                structured_parts.append(f"data:image/png;base64,{image['b64_json']}")
+    parts = [*structured_parts, *text_parts]
+    if not parts:
+        return ""
+    content = " ".join(parts).strip()
+    embedded = re.search(
+        r"data:image/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+|https://[^\s)]+",
+        content,
+        flags=re.IGNORECASE,
+    )
+    if embedded:
+        return embedded.group(0)
+    # Some compatible gateways return bare base64 instead of a data URL.
+    return content if len(content) >= 128 and not any(char.isspace() for char in content) else ""
 
 
 def _extract_image_content(result: dict, output_format: Optional[str] = None) -> str:
@@ -596,17 +658,34 @@ def generate_image(
     try:
         api_key = decrypt_key(provider.api_key) if provider.api_key else None
         headers = build_headers(provider, api_key)
-        url = build_image_url(provider.api_base, "generations")
-        transport = _send_with_retry(
-            lambda client: _build_request(
-                client,
-                "POST", url, headers=headers,
-                json=_generation_params(preset, prompt, size, quality),
-            ),
-            _effective_timeout_sec(provider), caller_module, "image generation",
-        )
+        timeout_sec = _effective_timeout_sec(provider)
+        if _uses_chat_style(preset):
+            url = build_chat_url(provider.api_base, provider.api_type or "openai")
+            transport = _post_chat_image(
+                url,
+                headers,
+                _chat_image_payload(preset, prompt, [], size, quality),
+                timeout_sec,
+                caller_module,
+            )
+        else:
+            url = build_image_url(provider.api_base, "generations")
+            transport = _send_with_retry(
+                lambda client: _build_request(
+                    client,
+                    "POST", url, headers=headers,
+                    json=_generation_params(preset, prompt, size, quality),
+                ),
+                timeout_sec, caller_module, "image generation",
+            )
         result = transport.json
-        content = _extract_image_content(result, (preset.parameters or {}).get("output_format"))
+        content = (
+            _extract_chat_image_content(result)
+            if _uses_chat_style(preset)
+            else _extract_image_content(
+                result, (preset.parameters or {}).get("output_format")
+            )
+        )
         if not content:
             raise ValueError("图片接口响应中未找到 url 或 b64_json")
 
@@ -687,11 +766,14 @@ def edit_image(
         timeout_sec = _effective_timeout_sec(provider)
 
         if _uses_chat_style(preset):
-            # size 在 chat 端点没有对应入参，输出规格只能靠 prompt 内的文字锚定
-            # （expo 的 _PORTRAIT_SPEC_CLAUSE 已声明 6 寸 2:3 竖版）
+            # chat 端点没有 images API 的 size/quality 入参，统一编码进文本要求。
             url = build_chat_url(provider.api_base, provider.api_type or "openai")
             transport = _post_chat_image(
-                url, headers, _chat_image_payload(preset, prompt, images), timeout_sec, caller_module,
+                url,
+                headers,
+                _chat_image_payload(preset, prompt, images, size, quality),
+                timeout_sec,
+                caller_module,
             )
             result = transport.json
             content = _extract_chat_image_content(result)

@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import require_permission
 from app.core.database import get_db
 from app.core.response import ok
-from app.design_image import file_service, library_service, service
+from app.design_image import file_service, library_service, model_catalog, service
 from app.design_image.schemas import (
     LibraryAssetClone,
     MessageActionRequest,
@@ -160,6 +160,7 @@ def _job(row) -> dict:
         "base_asset_id": row.base_asset_id,
         "mode": row.mode,
         "status": row.status,
+        "model": row.model if model_catalog.get_model_option(row.model or "") else None,
         "size": parameters.get("size"),
         "quality": parameters.get("quality"),
         "output_asset_id": row.output_asset_id,

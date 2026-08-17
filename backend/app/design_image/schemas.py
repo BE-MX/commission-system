@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.design_image.model_catalog import DEFAULT_IMAGE_MODEL_ID, ImageModelId
+
 
 VERIFIED_SIZES = ("1024x1024", "1024x1536", "1536x1024")
 VERIFIED_QUALITIES = ("low", "medium", "high")
@@ -27,6 +29,7 @@ class TurnCreate(BaseModel):
     reference_asset_ids: list[int] = Field(
         default_factory=list, max_length=MAX_REFERENCE_ASSETS
     )
+    model: ImageModelId = DEFAULT_IMAGE_MODEL_ID
     size: str = Field(default="1024x1024")
     quality: str = Field(default="medium")
 
@@ -81,6 +84,7 @@ class InteractionRequestSnapshot(BaseModel):
 
     base_asset_id: int | None = Field(default=None, gt=0)
     reference_asset_ids: list[int] = Field(default_factory=list, max_length=MAX_REFERENCE_ASSETS)
+    model: ImageModelId = DEFAULT_IMAGE_MODEL_ID
     size: Literal["1024x1024", "1024x1536", "1536x1024"]
     quality: Literal["low", "medium", "high"]
 
