@@ -33,11 +33,24 @@ def get_process(db: Session, process_id: int) -> Process | None:
     return db.query(Process).get(process_id)
 
 
-def create_process(db: Session, *, name: str, description: str | None = None, sort_order: int = 0) -> Process:
+def create_process(
+    db: Session,
+    *,
+    name: str,
+    description: str | None = None,
+    sort_order: int = 0,
+    show_in_domestic_track: int = 1,
+) -> Process:
     existing = db.query(Process).filter(Process.name == name).first()
     if existing:
         raise ValueError(f"工序名称「{name}」已存在")
-    obj = Process(name=name, description=description, sort_order=sort_order, status=1)
+    obj = Process(
+        name=name,
+        description=description,
+        sort_order=sort_order,
+        status=1,
+        show_in_domestic_track=show_in_domestic_track,
+    )
     db.add(obj)
     db.flush()
     return obj

@@ -48,6 +48,7 @@ def list_processes(
         "items": [
             {"id": i.id, "name": i.name, "description": i.description,
              "sort_order": i.sort_order, "status": i.status,
+             "show_in_domestic_track": i.show_in_domestic_track,
              "created_at": i.created_at, "updated_at": i.updated_at}
             for i in items
         ],
@@ -61,10 +62,17 @@ def create_process(
     _user=Depends(require_permission("production:admin")),
 ):
     try:
-        obj = process_service.create_process(db, name=body.name, description=body.description, sort_order=body.sort_order)
+        obj = process_service.create_process(
+            db,
+            name=body.name,
+            description=body.description,
+            sort_order=body.sort_order,
+            show_in_domestic_track=body.show_in_domestic_track,
+        )
         db.commit()
         return {"id": obj.id, "name": obj.name, "description": obj.description,
                 "sort_order": obj.sort_order, "status": obj.status,
+                "show_in_domestic_track": obj.show_in_domestic_track,
                 "created_at": obj.created_at, "updated_at": obj.updated_at}
     except ValueError as e:
         raise HTTPException(409, str(e))
@@ -82,6 +90,7 @@ def update_process(
         db.commit()
         return {"id": obj.id, "name": obj.name, "description": obj.description,
                 "sort_order": obj.sort_order, "status": obj.status,
+                "show_in_domestic_track": obj.show_in_domestic_track,
                 "created_at": obj.created_at, "updated_at": obj.updated_at}
     except LookupError:
         raise HTTPException(404, "工序不存在")

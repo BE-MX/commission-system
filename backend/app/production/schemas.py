@@ -12,6 +12,7 @@ class ProcessCreate(BaseModel):
     name: str = Field(..., min_length=2, max_length=100)
     description: Optional[str] = Field(None, max_length=500)
     sort_order: int = Field(0, ge=0)
+    show_in_domestic_track: int = Field(1, ge=0, le=1)
 
 
 class ProcessUpdate(BaseModel):
@@ -19,6 +20,7 @@ class ProcessUpdate(BaseModel):
     description: Optional[str] = Field(None, max_length=500)
     sort_order: Optional[int] = Field(None, ge=0)
     status: Optional[int] = Field(None, ge=0, le=1)
+    show_in_domestic_track: Optional[int] = Field(None, ge=0, le=1)
 
 
 class ProcessResponse(BaseModel):
@@ -27,6 +29,7 @@ class ProcessResponse(BaseModel):
     description: Optional[str] = None
     sort_order: int
     status: int
+    show_in_domestic_track: int = 1
     created_at: datetime
     updated_at: datetime
 

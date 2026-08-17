@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.auth.models import ArkUser
+from app.auth.service import get_user_permissions
 from app.mini.auth import get_current_mini_user, create_mini_token, jscode2session
 from app.mini import service
 from app.mini.schemas import (
@@ -18,11 +19,26 @@ from app.mini.schemas import (
 from app.domestic import file_service as domestic_file_service
 from app.domestic import order_service as domestic_order_service
 from app.domestic import report_service as domestic_report_service
-from app.domestic.constants import QR_PREFIX as DOMESTIC_QR_PREFIX
+from app.domestic import constants as domestic_constants
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
 router = APIRouter()
+
+
+def _domestic_report_mode(user: ArkUser) -> str:
+    """Two explicit permissions are mutually exclusive for ordinary worker roles.
+
+    Both/none resolve to the legacy quantity mode, so existing workers and admin users
+    are not silently switched to a different production behavior after deployment.
+    """
+    permissions = set(get_user_permissions(user))
+    if (
+        domestic_constants.REPORT_UNIT_PERMISSION in permissions
+        and domestic_constants.REPORT_QUANTITY_PERMISSION not in permissions
+    ):
+        return "unit"
+    return "quantity"
 
 
 # ── 认证 ──────────────────────────────────────────────────
@@ -209,8 +225,8 @@ async def vision_recognize(
 
 # ── 内贸报工 ──────────────────────────────────────────────
 # 业务逻辑全在 app/domestic/report_service，这里只做薄路由。
-# 与上面的外贸报工两点不同：二维码前缀是 ARK-D、报工带数量（支持拆批）。
-# 鉴权沿用 get_current_mini_user（小程序端一贯不接 RBAC，见 docs/api-reference.md）。
+# 与上面的外贸报工两点不同：二维码前缀是 ARK-D/ARK-DU、报工可按数量或逐件。
+# 登录仍沿用 mini token；角色权限只用来决定报工模式。
 
 @router.get("/domestic/scan/{item_id}", summary="内贸扫码：取明细与可报数量")
 async def domestic_scan(
@@ -220,14 +236,55 @@ async def domestic_scan(
     db: Session = Depends(get_db),
 ):
     valid, signed_id = domestic_report_service.verify_qr_data(
-        f"{DOMESTIC_QR_PREFIX}:{item_id}:{sign}"
+        f"{domestic_constants.QR_PREFIX}:{item_id}:{sign}"
     )
     if not valid or signed_id != item_id:
         raise HTTPException(
             status_code=400,
             detail={"code": "SIGN_INVALID", "message": "二维码无效，请用系统打印的内贸流转卡"},
         )
-    return domestic_report_service.scan_item(db, item_id, current_user.id)
+    mode = _domestic_report_mode(current_user)
+    if mode == "unit":
+        return {
+            "can_submit": False,
+            "block_reason": "UNIT_QR_REQUIRED",
+            "block_message": "当前账号已配置逐件扫码模式，请扫描 A1-01 这类单件二维码",
+            "report_mode": mode,
+        }
+    data = domestic_report_service.scan_item(db, item_id, current_user.id)
+    data["report_mode"] = mode
+    return data
+
+
+@router.get("/domestic/unit-scan/{unit_id}", summary="内贸逐件二维码扫码")
+async def domestic_unit_scan(
+    unit_id: int,
+    sign: str = Query(..., description="逐件二维码 HMAC 签名"),
+    current_user: ArkUser = Depends(get_current_mini_user),
+    db: Session = Depends(get_db),
+):
+    valid, signed_id = domestic_report_service.verify_unit_qr_data(
+        f"{domestic_constants.UNIT_QR_PREFIX}:{unit_id}:{sign}"
+    )
+    if not valid or signed_id != unit_id:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "SIGN_INVALID", "message": "单件二维码无效，请用系统打印的逐件标签"},
+        )
+    mode = _domestic_report_mode(current_user)
+    if mode == "unit":
+        return domestic_report_service.scan_unit(db, unit_id, current_user.id)
+
+    # Quantity-mode workers may scan any unit label to identify the product, but the
+    # actual submission still consumes A1-01/A1-02/... in sequence.
+    from app.domestic.models import DomesticItemUnit
+
+    unit = db.query(DomesticItemUnit).get(unit_id)
+    if not unit or unit.status != 1:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "单件二维码不存在或已失效"})
+    data = domestic_report_service.scan_item(db, unit.item_id, current_user.id)
+    data.update({"report_mode": mode, "scanned_unit_id": unit.id, "scanned_unit_no": unit.unit_no})
+    return data
 
 
 @router.post("/domestic/scan/submit", summary="内贸报工（带数量，可拆批）")
@@ -237,9 +294,22 @@ async def domestic_submit(
     db: Session = Depends(get_db),
 ):
     try:
+        mode = _domestic_report_mode(current_user)
+        if mode == "unit" and not body.unit_id:
+            raise ValueError("逐件扫码模式必须提交单件二维码")
+        if mode == "unit":
+            valid, signed_id = domestic_report_service.verify_unit_qr_data(
+                f"{domestic_constants.UNIT_QR_PREFIX}:{body.unit_id}:{body.unit_sign or ''}"
+            )
+            if not valid or signed_id != body.unit_id:
+                raise ValueError("单件二维码签名无效，请重新扫描标签")
+        if mode == "unit" and body.qty != 1:
+            raise ValueError("逐件扫码模式每次只能报 1 件")
         return domestic_report_service.submit_report(
             db, item_id=body.item_id, progress_id=body.progress_id,
-            qty=body.qty, user_id=current_user.id, source="mini",
+            qty=1 if mode == "unit" else body.qty,
+            unit_id=body.unit_id if mode == "unit" else None,
+            user_id=current_user.id, source="mini",
             request_id=body.request_id,
         )
     except ValueError as exc:
@@ -314,6 +384,7 @@ async def domestic_orders(
     _ = current_user
     items, total = domestic_order_service.list_orders(
         db, page=page, page_size=page_size, keyword=keyword, status=status,
+        include_finance=False,
     )
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
@@ -326,22 +397,24 @@ async def domestic_lookup(
 ):
     _ = current_user
     try:
-        return domestic_order_service.lookup_order(db, code)
+        data = domestic_order_service.lookup_order(db, code, include_finance=False)
+        db.commit()
+        return data
     except ValueError as exc:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": str(exc)})
 
 
-@router.get("/domestic/track", summary="订单产品进度（小程序码免登录查看）")
+@router.get("/domestic/track", summary="完整订单进度（小程序码免登录查看）")
 async def domestic_track(
     scene: str = Query(..., description="小程序码 scene：i:<item_id>:<hmac16>"),
     db: Session = Depends(get_db),
 ):
     """无鉴权白名单端点：微信扫「进度小程序码」进来的客户没有方舟账号。
     授权凭证是 scene 里的 HMAC 签名——码只能由主站有 domestic 权限的人生成，
-    拿到码 = 被授权看这一个订单产品；验签不过一律 403。
+    拿到码 = 被授权看这一张订单；验签不过一律 403。
     亮哥 2026-07-28 拍板：进度信息对客户公开，字段不遮挡。
-    返回形状与订单详情一致，但 items 只含码指向的那一条明细（码是明细级授权，
-    不能连带看到同单其他产品）。
+    2026-08-17 起返回完整订单详情和全部明细，但每条明细的工序仍由
+    process.show_in_domestic_track 在服务端过滤。
     """
     # 密钥还是仓库默认值时签名可被离线伪造，验证侧同样必须拒绝服务
     if domestic_report_service.qr_secret_is_default():
@@ -356,11 +429,51 @@ async def domestic_track(
     if not item:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "订单明细不存在"})
     try:
-        detail = domestic_order_service.get_order_detail(db, item.order_id)
+        detail = domestic_order_service.get_order_detail(
+            db, item.order_id, public_progress_only=True, include_finance=False,
+        )
     except ValueError:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "订单不存在或已删除"})
-    detail["items"] = [i for i in detail["items"] if i["id"] == item_id]
+    db.commit()
     return detail
+
+
+@router.get("/domestic/track-image", summary="进度码授权范围内的参考图")
+async def domestic_track_image(
+    scene: str = Query(...),
+    rel_path: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    """无登录图片端点，但 scene 只能读取其明细真实引用的图片路径。"""
+    if domestic_report_service.qr_secret_is_default():
+        raise HTTPException(status_code=503, detail={"code": "NOT_CONFIGURED", "message": "服务未完成安全配置"})
+    valid, item_id = domestic_report_service.verify_track_scene(scene)
+    if not valid:
+        raise HTTPException(status_code=403, detail={"code": "BAD_SCENE", "message": "二维码无效"})
+    from app.domestic.models import DomesticOrder, DomesticOrderItem
+
+    item = db.query(DomesticOrderItem).get(item_id)
+    order = db.query(DomesticOrder).get(item.order_id) if item else None
+    if not item or not order or order.deleted_flag:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "订单不存在"})
+    order_items = db.query(DomesticOrderItem).filter(
+        DomesticOrderItem.order_id == order.id,
+    ).all()
+    allowed = {
+        path
+        for order_item in order_items
+        for field in ("hairstyle_images", "color_images", "style_images", "remark_images")
+        for path in (getattr(order_item, field) or [])
+    }
+    if rel_path not in allowed:
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "图片不属于该进度码"})
+    try:
+        abs_path = domestic_file_service.resolve_path(rel_path)
+    except domestic_file_service.FileValidationError as exc:
+        raise HTTPException(status_code=400, detail={"code": "BAD_PATH", "message": str(exc)})
+    if not abs_path.is_file():
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "图片不存在"})
+    return FileResponse(abs_path)
 
 
 @router.get("/domestic/orders/{order_id}", summary="内贸订单明细进度")
@@ -371,6 +484,8 @@ async def domestic_order_detail(
 ):
     _ = current_user
     try:
-        return domestic_order_service.get_order_detail(db, order_id)
+        data = domestic_order_service.get_order_detail(db, order_id, include_finance=False)
+        db.commit()
+        return data
     except ValueError as exc:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": str(exc)})

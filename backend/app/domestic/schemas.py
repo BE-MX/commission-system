@@ -12,6 +12,10 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 class CustomerCreate(BaseModel):
     shop_name: str = Field(..., min_length=1, max_length=120, description="客户店名")
+    custom_code: str | None = Field(None, max_length=64, description="客户自定义编码")
+    membership_level: str | None = Field(None, max_length=32, description="会员等级")
+    province: str | None = Field(None, max_length=64)
+    city: str | None = Field(None, max_length=64)
     contact: str | None = Field(None, max_length=60)
     phone: str | None = Field(None, max_length=40)
     address: str | None = Field(None, max_length=255)
@@ -25,14 +29,36 @@ class CustomerCreate(BaseModel):
             raise ValueError("客户店名不能为空")
         return v
 
+    @field_validator("custom_code", "membership_level", "province", "city", "contact", "phone", "address", "remark")
+    @classmethod
+    def _strip_optional(cls, v: str | None) -> str | None:
+        value = v.strip() if isinstance(v, str) else v
+        return value or None
+
 
 class CustomerUpdate(BaseModel):
     shop_name: str | None = Field(None, min_length=1, max_length=120)
+    custom_code: str | None = Field(None, max_length=64)
+    membership_level: str | None = Field(None, max_length=32)
+    province: str | None = Field(None, max_length=64)
+    city: str | None = Field(None, max_length=64)
     contact: str | None = Field(None, max_length=60)
     phone: str | None = Field(None, max_length=40)
     address: str | None = Field(None, max_length=255)
     remark: str | None = Field(None, max_length=500)
     status: int | None = Field(None, ge=0, le=1)
+
+    @field_validator("custom_code", "membership_level", "province", "city", "contact", "phone", "address", "remark")
+    @classmethod
+    def _strip_optional(cls, v: str | None) -> str | None:
+        value = v.strip() if isinstance(v, str) else v
+        return value or None
+
+
+class CustomerRechargeCreate(BaseModel):
+    amount: Decimal = Field(..., gt=0, le=999999999999, max_digits=14, decimal_places=2)
+    remark: str | None = Field(None, max_length=500)
+    request_id: str | None = Field(None, max_length=64, description="客户端幂等键")
 
 
 # ── 产品属性 ──────────────────────────────────────────
@@ -78,7 +104,11 @@ _IMG_FIELD = Field(default_factory=list, description="图片相对路径列表")
 
 class OrderItemInput(BaseModel):
     attrs: ProductAttrs
-    order_qty: int = Field(..., gt=0, le=100000, description="下单数量")
+    order_qty: int = Field(..., gt=0, le=2000, description="下单数量（逐件码物化，单明细最多2000件）")
+    unit_price: Decimal = Field(
+        Decimal("0.00"), ge=0, le=999999999999,
+        max_digits=14, decimal_places=2, description="产品单价",
+    )
     hairstyle: str | None = Field(None, max_length=1000)
     hairstyle_images: list[str] = _IMG_FIELD
     color: str | None = Field(None, max_length=1000)
@@ -89,14 +119,25 @@ class OrderItemInput(BaseModel):
     remark_images: list[str] = _IMG_FIELD
 
 
+class OrderItemAppend(OrderItemInput):
+    request_id: str = Field(..., min_length=8, max_length=64, description="客户端追加明细幂等键")
+
+    @field_validator("request_id", mode="before")
+    @classmethod
+    def _strip_request_id(cls, v: str) -> str:
+        return v.strip()
+
+
 class OrderCreate(BaseModel):
+    request_id: str = Field(..., min_length=8, max_length=64, description="客户端建单幂等键")
     order_no: str = Field(..., min_length=1, max_length=64, description="客户订单号")
     order_date: date
     customer_id: int | None = Field(None, description="已有客户 ID")
     customer_shop_name: str | None = Field(None, max_length=120, description="就地新建客户的店名")
     order_type: Literal["normal", "special"] = "normal"
+    is_draft: bool = Field(False, description="true=只存草稿，不扣客户余额")
     remark: str | None = Field(None, max_length=1000)
-    items: list[OrderItemInput] = Field(..., min_length=1)
+    items: list[OrderItemInput] = Field(..., min_length=1, max_length=50)
 
     @field_validator("order_no")
     @classmethod
@@ -106,10 +147,17 @@ class OrderCreate(BaseModel):
             raise ValueError("订单号不能为空")
         return v
 
+    @field_validator("request_id", mode="before")
+    @classmethod
+    def _strip_request_id(cls, v: str) -> str:
+        return v.strip()
+
     @model_validator(mode="after")
     def _need_customer(self):
         if not self.customer_id and not (self.customer_shop_name or "").strip():
             raise ValueError("请选择客户或填写客户店名")
+        if sum(item.order_qty for item in self.items) > 5000:
+            raise ValueError("单张订单合计数量不能超过 5000 件")
         return self
 
 
@@ -126,7 +174,10 @@ class OrderUpdate(BaseModel):
 class OrderItemUpdate(BaseModel):
     """明细编辑。order_qty 已开始报工后不允许改小到低于已完成数（service 校验）。"""
 
-    order_qty: int | None = Field(None, gt=0, le=100000)
+    order_qty: int | None = Field(None, gt=0, le=2000)
+    unit_price: Decimal | None = Field(
+        None, ge=0, le=999999999999, max_digits=14, decimal_places=2,
+    )
     hairstyle: str | None = Field(None, max_length=1000)
     hairstyle_images: list[str] | None = None
     color: str | None = Field(None, max_length=1000)

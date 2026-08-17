@@ -18,13 +18,15 @@ from sqlalchemy.orm import Session
 from app.auth.models import ArkUser
 from app.core.config import get_settings
 from app.domestic import constants as C
-from app.domestic import progress_service
+from app.domestic import progress_service, unit_service
 from app.domestic.models import (
     DomesticCustomer,
     DomesticItemProgress,
     DomesticOrder,
     DomesticOrderItem,
     DomesticReportLog,
+    DomesticItemUnit,
+    DomesticReportUnit,
 )
 from app.production.models import Process, UserProcessBinding
 
@@ -69,7 +71,29 @@ def verify_qr_data(qr_data: str) -> tuple[bool, int]:
     return qr_sign_matches(item_id, match.group(2)), item_id
 
 
-# ── 订单产品进度小程序码（微信扫码免登录查看单个明细）──
+def generate_unit_qr_sign(unit_id: int, secret: str) -> str:
+    message = f"{C.UNIT_QR_PREFIX}:{unit_id}"
+    return hmac.new(key=secret.encode(), msg=message.encode(), digestmod=hashlib.sha256).hexdigest()[:8]
+
+
+def generate_unit_qr_data(unit_id: int) -> str:
+    return f"{C.UNIT_QR_PREFIX}:{unit_id}:{generate_unit_qr_sign(unit_id, settings.QR_SIGN_SECRET)}"
+
+
+def verify_unit_qr_data(qr_data: str) -> tuple[bool, int]:
+    match = re.match(rf"^{C.UNIT_QR_PREFIX}:(\d+):([a-f0-9]{{8}})$", qr_data or "")
+    if not match:
+        return False, 0
+    unit_id = int(match.group(1))
+    sign = match.group(2)
+    if hmac.compare_digest(sign, generate_unit_qr_sign(unit_id, settings.QR_SIGN_SECRET)):
+        return True, unit_id
+    legacy = settings.QR_SIGN_SECRET_LEGACY
+    valid = bool(legacy) and hmac.compare_digest(sign, generate_unit_qr_sign(unit_id, legacy))
+    return valid, unit_id
+
+
+# ── 订单进度小程序码（微信扫码免登录查看完整订单）──
 #
 # scene 是微信小程序码的带参字段，限 32 个可见字符，格式 `i:<item_id>:<hmac16>`。
 # 签名消息域用 ARK-DT:<item_id>（T=track），与流转卡的 ARK-D:<item_id> 严格隔离：
@@ -103,7 +127,7 @@ def verify_track_scene(scene: str) -> tuple[bool, int]:
     """校验小程序码 scene，返回 (是否有效, item_id)。
 
     这是免登录进度页的**唯一**授权凭证：签名对得上 = 拿到了主站有权限
-    的人生成的码 = 被授权看这一个订单产品。
+    的人生成的码 = 被授权看该明细所属的完整订单。
     """
     match = re.match(r"^i:(\d+):([a-f0-9]{16})$", (scene or "").strip())
     if not match:
@@ -119,6 +143,7 @@ def verify_track_scene(scene: str) -> tuple[bool, int]:
 BLOCK_ITEM_NOT_FOUND = "ITEM_NOT_FOUND"
 BLOCK_NO_ROUTE = "NO_ROUTE"
 BLOCK_ORDER_TERMINATED = "ORDER_TERMINATED"
+BLOCK_ORDER_DRAFT = "ORDER_DRAFT"
 BLOCK_ALL_DONE = "ALL_DONE"
 BLOCK_NOT_ASSIGNED = "NOT_ASSIGNED"
 BLOCK_NOTHING_REPORTABLE = "NOTHING_REPORTABLE"
@@ -127,6 +152,7 @@ BLOCK_MESSAGES = {
     BLOCK_ITEM_NOT_FOUND: "找不到这张卡对应的订单明细",
     BLOCK_NO_ROUTE: "这个产品还没配工艺路线，请联系跟单",
     BLOCK_ORDER_TERMINATED: "订单已终止或已删除，不能报工",
+    BLOCK_ORDER_DRAFT: "订单还是草稿，请跟单提交后再报工",
     BLOCK_ALL_DONE: "这批货所有工序都做完了",
     BLOCK_NOT_ASSIGNED: "你没有被分配到这道工序",
     BLOCK_NOTHING_REPORTABLE: "上一道工序还没做出可接的数量，请稍后再扫",
@@ -146,20 +172,27 @@ def _assert_order_reportable(db: Session, order_id: int) -> None:
     软删这条容易漏：卡片还贴在车间墙上，二维码不含时效也不含订单状态，
     删单之后工人照样扫得动——工时就会挂在一张查不到的订单上。
     """
-    order = db.query(DomesticOrder).get(order_id)
+    # 与终止/删单/草稿提交争用同一订单行锁：先抢到终止锁的
+    # 请求提交后，排队中的报工必须读到最新状态并被拦截。
+    order = db.query(DomesticOrder).filter(
+        DomesticOrder.id == order_id
+    ).with_for_update().first()
     if not order:
         raise ValueError("订单不存在")
     if order.deleted_flag:
         raise ValueError("订单已删除，不能报工")
+    if order.status == C.ORDER_DRAFT:
+        raise ValueError("订单还是草稿，不能报工")
     if order.status == C.ORDER_TERMINATED:
         raise ValueError("订单已终止，不能报工")
 
 
-def _replay_result(db: Session, log: DomesticReportLog) -> dict:
+def _replay_result(db: Session, log: DomesticReportLog, *, lock: bool = False) -> dict:
     """幂等重放：同一个 request_id 再来一次，原样返回首次的结果。"""
     progress = db.query(DomesticItemProgress).get(log.progress_id)
     item = db.query(DomesticOrderItem).get(log.item_id)
     process_name = db.query(Process.name).filter(Process.id == log.process_id).scalar()
+    units = unit_service.units_for_log(db, log.id, lock=lock)
     return {
         "log_id": log.id,
         "item_id": log.item_id,
@@ -171,8 +204,49 @@ def _replay_result(db: Session, log: DomesticReportLog) -> dict:
         "step_finished": bool(progress and progress.status == 1),
         "item_finished": bool(item and item.status >= C.ITEM_DONE),
         "reported_at": log.reported_at,
+        "unit_ids": [unit.id for unit in units],
+        "unit_codes": [unit_service.unit_display_code(item, unit.unit_no) for unit in units] if item else [],
         "replayed": True,
     }
+
+
+def _report_replay_if_exists(
+    db: Session,
+    *,
+    request_id: str | None,
+    item_id: int,
+    progress_id: int,
+    qty: int,
+    worker_id: int,
+    unit_id: int | None,
+    lock: bool = False,
+) -> dict | None:
+    if not request_id:
+        return None
+    query = db.query(DomesticReportLog).filter(
+        DomesticReportLog.request_id == request_id
+    )
+    if lock:
+        query = query.with_for_update()
+    existing = query.first()
+    if not existing:
+        return None
+    same_request = (
+        existing.item_id == item_id
+        and existing.progress_id == progress_id
+        and existing.report_qty == qty
+        and existing.reported_by_user_id == worker_id
+        and existing.report_mode == ("unit" if unit_id is not None else "quantity")
+    )
+    if unit_id is not None:
+        same_request = same_request and any(
+            unit.id == unit_id for unit in unit_service.units_for_log(
+                db, existing.id, lock=lock,
+            )
+        )
+    if not same_request:
+        raise ValueError("该报工请求号已用于另一笔报工，请重新扫码")
+    return _replay_result(db, existing, lock=lock)
 
 
 def scan_item(db: Session, item_id: int, user_id: int) -> dict:
@@ -195,10 +269,15 @@ def scan_item(db: Session, item_id: int, user_id: int) -> dict:
         "order_id": item.order_id,
         "domestic_no": order.domestic_no if order else None,
         "order_no": order.order_no if order else None,
+        "order_type_label": C.ORDER_TYPES.get(order.order_type) if order else None,
         "customer_name": customer.shop_name if customer else None,
         "product_name": item.product_name,
+        "line_no": item.line_no,
+        "line_code": f"A{item.line_no or 1}",
         "attrs": item.attrs_snapshot or {},
         "order_qty": item.order_qty,
+        "unit_price": float(item.unit_price or 0),
+        "line_amount": float((item.unit_price or 0) * item.order_qty),
         "hairstyle": item.hairstyle,
         "hairstyle_images": item.hairstyle_images or [],
         "color": item.color,
@@ -216,6 +295,8 @@ def scan_item(db: Session, item_id: int, user_id: int) -> dict:
 
     if not order or order.deleted_flag or order.status == C.ORDER_TERMINATED:
         return blocked(BLOCK_ORDER_TERMINATED)
+    if order.status == C.ORDER_DRAFT:
+        return blocked(BLOCK_ORDER_DRAFT)
     if not steps:
         return blocked(BLOCK_NO_ROUTE)
     if all(s["completed_qty"] >= item.order_qty for s in steps):
@@ -234,6 +315,57 @@ def scan_item(db: Session, item_id: int, user_id: int) -> dict:
             "next_step": target}
 
 
+def scan_unit(db: Session, unit_id: int, user_id: int) -> dict:
+    """逐件扫码：只允许码指向的这一件进入它实际可做的下一道工序。"""
+    unit = db.query(DomesticItemUnit).get(unit_id)
+    if not unit or unit.status != 1:
+        return {
+            "can_submit": False,
+            "block_reason": BLOCK_ITEM_NOT_FOUND,
+            "block_message": "找不到这个单件二维码，或该单件已因数量调整停用",
+        }
+    base = scan_item(db, unit.item_id, user_id)
+    item = db.query(DomesticOrderItem).get(unit.item_id)
+    base.update({
+        "unit_id": unit.id,
+        "unit_no": unit.unit_no,
+        "unit_code": unit_service.unit_display_code(item, unit.unit_no),
+        "report_mode": "unit",
+    })
+    if not item or base.get("block_reason") in {
+        BLOCK_ITEM_NOT_FOUND, BLOCK_NO_ROUTE, BLOCK_ORDER_TERMINATED,
+        BLOCK_ORDER_DRAFT, BLOCK_ALL_DONE, BLOCK_NOT_ASSIGNED,
+    }:
+        return base
+
+    my_processes = _user_process_ids(db, user_id)
+    target = None
+    for step in base.get("steps") or []:
+        if step["process_id"] not in my_processes:
+            continue
+        progress = db.query(DomesticItemProgress).get(step["progress_id"])
+        if unit_service.eligible_units(
+            db, item, progress, limit=1, unit_id=unit.id,
+        ):
+            target = {**step, "reportable_qty": 1}
+            break
+    if target is None:
+        return {
+            **base,
+            "can_submit": False,
+            "block_reason": BLOCK_NOTHING_REPORTABLE,
+            "block_message": f"单件 {unit_service.unit_display_code(item, unit.unit_no)} 的上一道还没完成，或你负责的工序已报过",
+            "next_step": None,
+        }
+    return {
+        **base,
+        "can_submit": True,
+        "block_reason": None,
+        "block_message": None,
+        "next_step": target,
+    }
+
+
 # ── 报工提交 ──────────────────────────────────────────
 
 
@@ -247,6 +379,7 @@ def submit_report(
     source: str = "mini",
     request_id: str | None = None,
     on_behalf_user_id: int | None = None,
+    unit_id: int | None = None,
 ) -> dict:
     """提交一次报工。数量守恒由「上游累计 − 本道累计」当场校验。
 
@@ -259,14 +392,13 @@ def submit_report(
     if qty <= 0:
         raise ValueError("报工数量必须大于 0")
 
-    if request_id:
-        existing = (
-            db.query(DomesticReportLog)
-            .filter(DomesticReportLog.request_id == request_id)
-            .first()
-        )
-        if existing:
-            return _replay_result(db, existing)
+    worker_id = on_behalf_user_id or user_id
+    replay = _report_replay_if_exists(
+        db, request_id=request_id, item_id=item_id, progress_id=progress_id,
+        qty=qty, worker_id=worker_id, unit_id=unit_id,
+    )
+    if replay:
+        return replay
 
     # 明细行锁放最前：同一明细的所有报工/撤销在这里排队，锁顺序统一避免死锁
     item = db.query(DomesticOrderItem).filter(DomesticOrderItem.id == item_id).with_for_update().first()
@@ -284,8 +416,17 @@ def submit_report(
 
     _assert_order_reportable(db, item.order_id)
 
+    # 首次快查可能在 MySQL RR 快照里看不到刚提交的并发请求。同一明细已由
+    # item 行锁串行化，此处 locking read 必须重查一次再动累计数。
+    replay = _report_replay_if_exists(
+        db, request_id=request_id, item_id=item_id, progress_id=progress_id,
+        qty=qty, worker_id=worker_id, unit_id=unit_id, lock=True,
+    )
+    if replay:
+        db.rollback()
+        return replay
+
     # 代报工：件数记到实际做活的人头上，不是记到操作电脑的人头上（计件工资口径）
-    worker_id = on_behalf_user_id or user_id
     if progress.process_id not in _user_process_ids(db, worker_id):
         who = "该工人" if on_behalf_user_id else "你"
         raise ValueError(f"{who}没有被分配到这道工序")
@@ -295,6 +436,13 @@ def submit_report(
         raise ValueError("上一道工序还没做出可接的数量")
     if qty > available:
         raise ValueError(f"最多还能报 {available} 件，本次填了 {qty} 件")
+    selected_units = unit_service.select_units_for_report(
+        db,
+        item=item,
+        progress=progress,
+        qty=qty,
+        unit_id=unit_id,
+    )
 
     now = _bj_now()
     progress.completed_qty += qty
@@ -313,12 +461,14 @@ def submit_report(
         reported_by_user_id=worker_id,
         reported_by_name=getattr(worker, "real_name", None) or getattr(worker, "username", None),
         source=source,
+        report_mode="unit" if unit_id is not None else "quantity",
         request_id=request_id,
         reported_at=now,
         revoked=0,
     )
     db.add(log)
     db.flush()
+    unit_service.add_report_units(db, log=log, units=selected_units)
 
     progress_service.recalc_item_status(db, item)
     progress_service.sync_order_status(db, item.order_id)
@@ -336,6 +486,8 @@ def submit_report(
         "step_finished": progress.status == 1,
         "item_finished": item.status >= C.ITEM_DONE,
         "reported_at": now,
+        "unit_ids": [unit.id for unit in selected_units],
+        "unit_codes": [unit_service.unit_display_code(item, unit.unit_no) for unit in selected_units],
     }
 
 
@@ -368,6 +520,19 @@ def revoke_report(db: Session, log_id: int, user_id: int, is_admin: bool = False
     )
     if not progress:
         raise ValueError("工序进度不存在")
+
+    # 终止单与撤销必须争用同一订单行锁。否则 MySQL RR 下撤销事务
+    # 可以在退款后仍读到旧的「生产中」快照，再把终止状态覆盖掉。
+    order = db.query(DomesticOrder).filter(
+        DomesticOrder.id == item.order_id
+    ).with_for_update().first()
+    if not order:
+        raise ValueError("订单不存在")
+
+    # Aggregate conservation alone is not enough once exact unit identities exist:
+    # never revoke A1-01 upstream while A1-01 itself is already completed downstream.
+    unit_service.assert_log_units_not_consumed_downstream(db, log=log, item=item)
+    unit_service.assert_quantity_log_is_current_tail(db, log=log, item=item)
 
     remaining = progress.completed_qty - log.report_qty
     downstream = progress_service.downstream_completed_qty(db, item.id, progress.step_order, lock=True)
@@ -410,10 +575,22 @@ def _log_rows_to_view(db: Session, logs: list[DomesticReportLog]) -> list[dict]:
     process_names = dict(
         db.query(Process.id, Process.name).filter(Process.id.in_({log.process_id for log in logs})).all()
     )
+    unit_rows = db.query(
+        DomesticReportUnit.log_id,
+        DomesticItemUnit.unit_no,
+    ).join(
+        DomesticItemUnit, DomesticItemUnit.id == DomesticReportUnit.unit_id
+    ).filter(DomesticReportUnit.log_id.in_({log.id for log in logs})).order_by(
+        DomesticReportUnit.log_id.asc(), DomesticItemUnit.unit_no.asc()
+    ).all()
+    units_by_log: dict[int, list[int]] = {}
+    for log_id, unit_no in unit_rows:
+        units_by_log.setdefault(log_id, []).append(unit_no)
     view = []
     for log in logs:
         item = items.get(log.item_id)
         order = orders.get(item.order_id) if item else None
+        unit_nos = units_by_log.get(log.id, [])
         view.append({
             "log_id": log.id,
             "item_id": log.item_id,
@@ -424,6 +601,9 @@ def _log_rows_to_view(db: Session, logs: list[DomesticReportLog]) -> list[dict]:
             "process_name": process_names.get(log.process_id),
             "step_order": log.step_order,
             "report_qty": log.report_qty,
+            "unit_codes": [
+                unit_service.unit_display_code(item, unit_no) for unit_no in unit_nos
+            ] if item else [],
             "reported_by_name": log.reported_by_name,
             "reported_at": log.reported_at,
             "revoked": log.revoked,
