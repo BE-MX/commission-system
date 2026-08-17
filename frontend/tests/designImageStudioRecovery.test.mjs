@@ -82,6 +82,21 @@ test('composer exposes only server-configured image model choices', () => {
   assert.match(studio, /selectedModelAvailable\.value/)
 })
 
+test('prompt library separates logo and dieline packaging workflows', () => {
+  const composer = read('../src/views/design/image-studio/components/PromptComposer.vue')
+  const library = read('../src/views/design/image-studio/components/PromptLibraryDialog.vue')
+  const page = read('../src/views/design/image-studio/ImageStudio.vue')
+  const studio = read('../src/views/design/image-studio/composables/useImageStudio.js')
+
+  assert.match(library, /包装效果图:\s*['"]LOGO生成包装效果图['"]/)
+  assert.match(library, /刀版图生成包装效果图/)
+  assert.match(library, /支持上传单页 PDF、SVG、JPG、PNG 或 WebP 刀版/)
+  assert.match(composer, /:accept="uploadAccept"/)
+  assert.match(composer, /参考文件 \{\{ attachments\.length \}\}\/4/)
+  assert.match(page, /:accepted-upload-mime-types="studio\.config\.value\.accepted_upload_mime_types \|\| \[\]"/)
+  assert.match(studio, /normalizeReferenceUploadFile/)
+})
+
 test('new conversation preserves the current workspace until creation succeeds', () => {
   const studio = read('../src/views/design/image-studio/composables/useImageStudio.js')
   const page = read('../src/views/design/image-studio/ImageStudio.vue')

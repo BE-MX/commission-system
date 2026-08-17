@@ -70,6 +70,7 @@
         :attachments="studio.draftAttachments.value"
         :base-asset="studio.baseAsset.value"
         :models="studio.config.value.models || []"
+        :accepted-upload-mime-types="studio.config.value.accepted_upload_mime_types || []"
         :sizes="studio.config.value.sizes || []"
         :qualities="studio.config.value.qualities || []"
         :upload-fn="studio.uploadReference"

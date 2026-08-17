@@ -20,6 +20,11 @@
         >{{ item.label }}</button>
       </div>
 
+      <div v-if="isDielineCategory" class="dieline-note">
+        <el-icon><Document /></el-icon>
+        <span>支持上传单页 PDF、SVG、JPG、PNG 或 WebP 刀版；PDF/SVG 会安全转换为预览图后交给生图模型。</span>
+      </div>
+
       <div class="tpl-main">
         <div class="tpl-list" role="listbox" aria-label="模板列表">
           <button
@@ -124,7 +129,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { Brush, Setting } from '@element-plus/icons-vue'
+import { Brush, Document, Setting } from '@element-plus/icons-vue'
 import GlassButton from '@/components/GlassButton.vue'
 import { listPantoneColors, listPromptTemplates, seedPromptTemplates } from '@/api/designImage'
 import { msgError, msgSuccess } from '@/utils/feedback'
@@ -137,6 +142,9 @@ const props = defineProps({
 const emit = defineEmits(['update:visible', 'apply'])
 
 const CATEGORY_LABELS = {
+  包装效果图: 'LOGO生成包装效果图',
+  LOGO生成包装效果图: 'LOGO生成包装效果图',
+  刀版图生成包装效果图: '刀版图生成包装效果图',
   product: '产品图',
   scene: '场景图',
   poster: '海报',
@@ -217,6 +225,7 @@ const categories = computed(() => {
 const filteredTemplates = computed(() => (
   templates.value.filter(tpl => !category.value || tpl.category === category.value)
 ))
+const isDielineCategory = computed(() => category.value === '刀版图生成包装效果图')
 const composed = computed(() => composePrompt(selected.value, selections.value))
 const missing = computed(() => missingPromptParams(selected.value, selections.value))
 
@@ -275,6 +284,12 @@ function apply() {
 <style scoped>
 .tpl-body { min-height: 320px; }
 .tpl-categories { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.dieline-note {
+  display: flex; align-items: flex-start; gap: 7px; margin: -4px 0 14px; padding: 9px 11px;
+  border: 1px solid var(--border-color); border-radius: var(--radius-md, 8px);
+  background: var(--color-primary-light); color: var(--text-secondary); font-size: 12px; line-height: 1.55;
+}
+.dieline-note .el-icon { flex: 0 0 auto; margin-top: 2px; color: var(--color-gold-muted); }
 .category-chip {
   padding: 6px 14px; border: 1px solid var(--border-color); border-radius: 999px;
   background: var(--toolbar-bg); color: var(--text-secondary); cursor: pointer; font-size: 12px;

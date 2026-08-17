@@ -25,7 +25,7 @@
         :autosize="{ minRows: 2, maxRows: 6 }"
         maxlength="4000"
         resize="none"
-        placeholder="描述你想生成或修改的画面…可直接粘贴截图作为参考图"
+        placeholder="描述你想生成或修改的画面…可添加图片、SVG 或单页 PDF 参考文件"
         @update:model-value="emit('update:prompt', $event)"
         @keydown="onKeydown"
         @paste="onPaste"
@@ -56,7 +56,7 @@
           <AppUpload
             :model-value="uploadModel"
             :upload-fn="uploadFn"
-            accept="image/jpeg,image/png,image/webp"
+            :accept="uploadAccept"
             :max-size-mb="maxUploadMb"
             :multiple="true"
             :limit="4"
@@ -64,9 +64,9 @@
             button-text="添加参考图"
             @update:model-value="uploadModel = []"
           >
-            <GlassButton variant="ghost" size="sm" :disabled="uploadDisabled" title="上传 1～4 张参考图">
+            <GlassButton variant="ghost" size="sm" :disabled="uploadDisabled" title="上传 1～4 个参考文件，刀版支持单页 PDF、SVG 和图片">
               <template #left-icon><el-icon><Paperclip /></el-icon></template>
-              参考图 {{ attachments.length }}/4
+              参考文件 {{ attachments.length }}/4
             </GlassButton>
           </AppUpload>
         </div>
@@ -126,6 +126,7 @@ const props = defineProps({
   baseAsset: { type: Object, default: null },
   models: { type: Array, default: () => [] },
   model: { type: String, default: '' },
+  acceptedUploadMimeTypes: { type: Array, default: () => [] },
   sizes: { type: Array, default: () => [] },
   size: { type: String, default: '1024x1024' },
   qualities: { type: Array, default: () => [] },
@@ -142,6 +143,15 @@ const uploadModel = ref([])
 const inputRef = ref(null)
 const auth = useAuthStore()
 const maxUploadMb = computed(() => Math.max(props.maxUploadBytes / (1024 * 1024), 0.01))
+const uploadAccept = computed(() => {
+  const mimeTypes = props.acceptedUploadMimeTypes.length
+    ? props.acceptedUploadMimeTypes
+    : ['image/jpeg', 'image/png', 'image/webp', 'image/svg+xml', 'application/pdf']
+  const extensions = []
+  if (mimeTypes.includes('image/svg+xml')) extensions.push('.svg')
+  if (mimeTypes.includes('application/pdf')) extensions.push('.pdf')
+  return [...mimeTypes, ...extensions].join(',')
+})
 
 const sizeLabels = { '1024x1024': '正方形', '1024x1536': '竖版', '1536x1024': '横版' }
 const qualityLabels = { low: '快速', medium: '标准', high: '精细' }

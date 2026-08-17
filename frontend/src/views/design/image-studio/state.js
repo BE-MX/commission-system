@@ -177,6 +177,21 @@ export function resolveImageModelSelection(models = [], current = '', preferred 
   return available[0]?.id ?? ''
 }
 
+export const REFERENCE_UPLOAD_MIME_TYPES = Object.freeze([
+  'image/jpeg', 'image/png', 'image/webp', 'image/svg+xml', 'application/pdf',
+])
+
+export function normalizeReferenceUploadFile(file, accepted = REFERENCE_UPLOAD_MIME_TYPES) {
+  const filename = file?.name?.toLowerCase() ?? ''
+  const extensionMime = filename.endsWith('.pdf')
+    ? 'application/pdf'
+    : (filename.endsWith('.svg') ? 'image/svg+xml' : '')
+  const mime = (extensionMime || file?.type || '').split(';', 1)[0].trim().toLowerCase()
+  if (!accepted.includes(mime)) throw new Error('unsupported reference upload type')
+  if (file.type === mime) return file
+  return new File([file], file.name, { type: mime, lastModified: file.lastModified })
+}
+
 export function upsertAttachment(items, uploadId, patch) {
   const index = items.findIndex(item => item.uploadId === uploadId)
   if (index === -1) return [...items, { uploadId, ...patch }]

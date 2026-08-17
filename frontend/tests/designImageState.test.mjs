@@ -14,6 +14,7 @@ import {
   groupSessionsByDayHalf,
   isColorParam,
   missingPromptParams,
+  normalizeReferenceUploadFile,
   replaceActiveJob,
   resolveImageModelSelection,
   restoreActiveJob,
@@ -89,6 +90,22 @@ test('image model selection keeps an available choice and falls back safely', ()
   assert.equal(resolveImageModelSelection(models, 'grok-image-2', 'gpt-image-2'), 'gpt-image-2')
   assert.equal(resolveImageModelSelection(models, '', 'missing'), 'gpt-image-2')
   assert.equal(resolveImageModelSelection([], 'gpt-image-2', 'gpt-image-2'), '')
+})
+
+test('reference uploads normalize PDF/SVG browser MIME and reject unsupported files', () => {
+  const pdf = normalizeReferenceUploadFile(
+    new File(['%PDF-1.7'], 'layout.pdf', { type: 'application/octet-stream' }),
+  )
+  const svg = normalizeReferenceUploadFile(
+    new File(['<svg/>'], 'layout.svg', { type: '' }),
+  )
+
+  assert.equal(pdf.type, 'application/pdf')
+  assert.equal(svg.type, 'image/svg+xml')
+  assert.throws(
+    () => normalizeReferenceUploadFile(new File(['x'], 'layout.ai', { type: 'application/postscript' })),
+    /unsupported reference upload type/,
+  )
 })
 
 test('concurrent attachment completion updates immutable snapshots without losing items', () => {
