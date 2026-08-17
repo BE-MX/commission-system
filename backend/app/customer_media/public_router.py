@@ -117,10 +117,13 @@ def me(request: Request, db: Session = Depends(get_db)):
 def library(request: Request, db: Session = Depends(get_db)):
     account = _session_account(request, db)
     rows = service.portal_library(db, account)
+    task_meta = service.portal_task_meta(db, rows)
     return ok([{
         "id": row.id,
         "task_id": row.task_id,
         "revision": row.revision,
+        "title": task_meta.get(row.task_id, {}).get("task_name") or "拍摄交付",
+        "shoot_type": task_meta.get(row.task_id, {}).get("shoot_type"),
         "published_at": row.published_at.isoformat() if row.published_at else None,
         "assets": [_asset(asset, internal=False) for asset in row.assets if asset.deleted_at is None],
     } for row in rows])

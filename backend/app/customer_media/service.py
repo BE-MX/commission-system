@@ -10,7 +10,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from app.auth.models import ArkUser
+from app.auth.models import ArkUser, ArkUserExternalBinding
 from app.auth.utils import hash_password, verify_password
 from app.customer_media.models import (
     CustomerMediaAsset, CustomerMediaBatch, CustomerMediaDownload,
@@ -19,6 +19,7 @@ from app.customer_media.models import (
 from app.customer_media.storage import StoredUpload, storage_for
 from app.design.models import DesignDesigner, DesignScheduleRequest, DesignScheduleTask
 from app.models.business import CustomerInfo
+from app.models.customer import CustomerCommissionSnapshot
 
 
 class CustomerMediaError(ValueError):
@@ -53,6 +54,160 @@ def user_identity(db: Session, payload: dict) -> tuple[int, str, ArkUser]:
 
 def is_admin(payload: dict) -> bool:
     return "super_admin" in payload.get("roles", []) or "customer_media:admin" in payload.get("permissions", [])
+
+
+def can_read_all_portals(payload: dict) -> bool:
+    return is_admin(payload) or "customer_media_portal:read_all" in payload.get("permissions", [])
+
+
+def _okki_account_id(db: Session, ark_user_id: int) -> str:
+    external_ids = db.scalars(
+        select(ArkUserExternalBinding.external_account_id).where(
+            ArkUserExternalBinding.ark_user_id == ark_user_id,
+            ArkUserExternalBinding.provider == "okki",
+            ArkUserExternalBinding.binding_status == "active",
+            ArkUserExternalBinding.deleted_at.is_(None),
+        ).order_by(
+            ArkUserExternalBinding.is_primary.desc(),
+            ArkUserExternalBinding.id,
+        )
+    ).all()
+    for external_id in external_ids:
+        normalized = external_id.strip() if external_id else ""
+        if normalized.isdigit():
+            return normalized
+    raise CustomerMediaConflict("请先在系统管理 -> 外部账号绑定中绑定 OKKI 账号")
+
+
+def _sales_portal_account_statement(db: Session, payload: dict):
+    user_id, _, _ = user_identity(db, payload)
+    statement = select(CustomerPortalAccount)
+    if can_read_all_portals(payload):
+        return statement
+    okki_user_id = _okki_account_id(db, user_id)
+    assigned_customer_ids = select(CustomerCommissionSnapshot.customer_id).where(
+        CustomerCommissionSnapshot.is_current.is_(True),
+        CustomerCommissionSnapshot.salesperson_id == okki_user_id,
+    )
+    return statement.where(CustomerPortalAccount.customer_id.in_(assigned_customer_ids))
+
+
+def _portal_status(account: CustomerPortalAccount, statuses: set[str]) -> str:
+    if not account.is_active:
+        return "disabled"
+    for candidate in ("pending_review", "changes_requested", "published", "draft"):
+        if candidate in statuses:
+            return {
+                "pending_review": "in_review",
+                "changes_requested": "changes_requested",
+                "published": "ready",
+                "draft": "draft",
+            }[candidate]
+    return "empty"
+
+
+def _summarize_sales_portal_accounts(
+    db: Session, accounts: list[CustomerPortalAccount]
+) -> list[dict]:
+    customer_ids = [row.customer_id for row in accounts]
+    if not customer_ids:
+        return []
+
+    batch_rows = db.execute(select(
+        CustomerMediaBatch.customer_id,
+        CustomerMediaBatch.status,
+        CustomerMediaBatch.updated_at,
+        CustomerMediaBatch.published_at,
+    ).where(CustomerMediaBatch.customer_id.in_(customer_ids))).all()
+    statuses: dict[str, set[str]] = {customer_id: set() for customer_id in customer_ids}
+    last_updates: dict[str, datetime] = {}
+    published_batches: dict[str, int] = {customer_id: 0 for customer_id in customer_ids}
+    for customer_id, batch_status, updated_at, published_at in batch_rows:
+        statuses.setdefault(customer_id, set()).add(batch_status)
+        if batch_status == "published":
+            published_batches[customer_id] = published_batches.get(customer_id, 0) + 1
+            candidate = max(
+                [value for value in (updated_at, published_at) if value is not None],
+                default=None,
+            )
+            if candidate and (
+                customer_id not in last_updates or candidate > last_updates[customer_id]
+            ):
+                last_updates[customer_id] = candidate
+
+    asset_counts: dict[str, dict[str, int]] = {
+        customer_id: {"image": 0, "video": 0} for customer_id in customer_ids
+    }
+    count_rows = db.execute(select(
+        CustomerMediaBatch.customer_id,
+        CustomerMediaAsset.media_type,
+        func.count(CustomerMediaAsset.id),
+    ).join(
+        CustomerMediaAsset, CustomerMediaAsset.batch_id == CustomerMediaBatch.id,
+    ).where(
+        CustomerMediaBatch.customer_id.in_(customer_ids),
+        CustomerMediaBatch.status == "published",
+        CustomerMediaAsset.deleted_at.is_(None),
+    ).group_by(
+        CustomerMediaBatch.customer_id,
+        CustomerMediaAsset.media_type,
+    )).all()
+    for customer_id, media_type, count in count_rows:
+        asset_counts.setdefault(customer_id, {"image": 0, "video": 0})[media_type] = count
+
+    summaries = []
+    for account in accounts:
+        counts = asset_counts.get(account.customer_id, {"image": 0, "video": 0})
+        content_updated_at = last_updates.get(account.customer_id)
+        summaries.append({
+            "id": account.id,
+            "customer_id": account.customer_id,
+            "customer_name": account.customer_name_snapshot,
+            "login_email": account.login_email,
+            "is_active": account.is_active,
+            "status": _portal_status(account, statuses.get(account.customer_id, set())),
+            "asset_count": counts.get("image", 0) + counts.get("video", 0),
+            "image_count": counts.get("image", 0),
+            "video_count": counts.get("video", 0),
+            "published_batch_count": published_batches.get(account.customer_id, 0),
+            "last_login_at": account.last_login_at,
+            "updated_at": content_updated_at or account.updated_at,
+        })
+    return summaries
+
+
+def list_sales_portal_customers(db: Session, payload: dict, search: str = "") -> list[dict]:
+    statement = _sales_portal_account_statement(db, payload)
+    if search.strip():
+        pattern = f"%{search.strip()}%"
+        statement = statement.where(or_(
+            CustomerPortalAccount.customer_id.ilike(pattern),
+            CustomerPortalAccount.customer_name_snapshot.ilike(pattern),
+            CustomerPortalAccount.login_email.ilike(pattern),
+        ))
+    accounts = list(db.scalars(statement.order_by(
+        CustomerPortalAccount.customer_name_snapshot,
+        CustomerPortalAccount.id,
+    )))
+    return _summarize_sales_portal_accounts(db, accounts)
+
+
+def sales_portal_customer_detail(db: Session, payload: dict, customer_id: str) -> dict:
+    account = db.scalar(_sales_portal_account_statement(db, payload).where(
+        CustomerPortalAccount.customer_id == customer_id,
+    ))
+    if not account:
+        # 未授权与不存在统一 404，避免枚举其他业务员的客户门户。
+        raise CustomerMediaNotFound("客户素材门户不存在")
+
+    summaries = _summarize_sales_portal_accounts(db, [account])
+    # 停用账号的真实客户体验是无法登录；业务预览不签发任何素材 URL。
+    batches = portal_library(db, account) if account.is_active else []
+    return {
+        "customer": summaries[0],
+        "batches": batches,
+        "task_meta": portal_task_meta(db, batches),
+    }
 
 
 def list_customers(db: Session, payload: dict, search: str) -> list[dict]:
@@ -467,6 +622,23 @@ def portal_library(db: Session, account: CustomerPortalAccount) -> list[Customer
     ).order_by(CustomerMediaBatch.published_at.desc())).unique())
 
 
+def portal_task_meta(
+    db: Session, batches: list[CustomerMediaBatch]
+) -> dict[int, dict]:
+    task_ids = [row.task_id for row in batches]
+    if not task_ids:
+        return {}
+    task_rows = db.execute(select(
+        DesignScheduleTask.id,
+        DesignScheduleTask.task_name,
+        DesignScheduleTask.shoot_type,
+    ).where(DesignScheduleTask.id.in_(task_ids))).all()
+    return {
+        task_id: {"task_name": task_name, "shoot_type": shoot_type}
+        for task_id, task_name, shoot_type in task_rows
+    }
+
+
 def portal_asset(db: Session, account: CustomerPortalAccount, asset_id: int) -> CustomerMediaAsset:
     asset = db.scalar(select(CustomerMediaAsset).join(
         CustomerMediaBatch, CustomerMediaBatch.id == CustomerMediaAsset.batch_id,
@@ -478,6 +650,24 @@ def portal_asset(db: Session, account: CustomerPortalAccount, asset_id: int) -> 
     ))
     if not asset:
         raise CustomerMediaNotFound("素材不存在")
+    return asset
+
+
+def sales_portal_asset(db: Session, asset_id: int) -> CustomerMediaAsset:
+    """业务预览素材每次读取都重验门户启用与发布状态。"""
+    asset = db.scalar(select(CustomerMediaAsset).join(
+        CustomerMediaBatch, CustomerMediaBatch.id == CustomerMediaAsset.batch_id,
+    ).join(
+        CustomerPortalAccount,
+        CustomerPortalAccount.customer_id == CustomerMediaBatch.customer_id,
+    ).where(
+        CustomerMediaAsset.id == asset_id,
+        CustomerMediaAsset.deleted_at.is_(None),
+        CustomerMediaBatch.status == "published",
+        CustomerPortalAccount.is_active.is_(True),
+    ))
+    if not asset:
+        raise CustomerMediaNotFound("素材不存在或已下架")
     return asset
 
 
@@ -507,4 +697,31 @@ def verify_internal_preview(asset_id: int, expires: int, token: str) -> bool:
     if expires < int(time.time()) or expires > int(time.time()) + 3900:
         return False
     expected = _preview_signature(asset_id, expires)
+    return hmac.compare_digest(expected, token)
+
+
+def _sales_portal_preview_signature(asset_id: int, expires: int) -> str:
+    from app.core.config import get_settings
+    settings = get_settings()
+    secret = settings.CUSTOMER_MEDIA_SIGN_SECRET or settings.JWT_SECRET_KEY
+    message = f"customer-media:sales-portal:{asset_id}:{expires}".encode()
+    return hmac.new(secret.encode(), message, hashlib.sha256).hexdigest()
+
+
+def sales_portal_preview_url(asset_id: int, ttl_seconds: int = 3600) -> str:
+    from app.core.config import get_settings
+    settings = get_settings()
+    expires = int(time.time()) + ttl_seconds
+    token = _sales_portal_preview_signature(asset_id, expires)
+    origin = settings.CUSTOMER_MEDIA_PORTAL_ORIGIN.rstrip("/")
+    return (
+        f"{origin}/api/customer-media/sales-portal/assets/{asset_id}/content"
+        f"?expires={expires}&token={token}"
+    )
+
+
+def verify_sales_portal_preview(asset_id: int, expires: int, token: str) -> bool:
+    if expires < int(time.time()) or expires > int(time.time()) + 3900:
+        return False
+    expected = _sales_portal_preview_signature(asset_id, expires)
     return hmac.compare_digest(expected, token)
