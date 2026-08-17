@@ -169,17 +169,24 @@
 
 - `ark_dashboard_preference`：每用户一行的工作台布局配置。`user_id`（INT UNSIGNED FK→ark_users.id ON DELETE CASCADE，UNIQUE）+ `prefs`（JSON：`{version, metrics:{hidden,order}, actions:{hidden,order}}`）+ 时间戳。卡片 key 的合法性不在库层校验——真相源是前端 `views/dashboard/cards.js` 注册表，未知 key 前端忽略（注册表增删卡片对存量配置向前兼容）。
 
-## 内贸订单（迁移 081，报工幂等键 082，2026-07-27）
+## 内贸订单（迁移 081/082/116，2026-07-27、2026-08-17）
 
 与外贸生产订单/报工**平行**的一套表。不复用 `order_product_process_progress`：那张表 FK 硬绑 `ark_production_order_items` 且是整行 0/1 流转，内贸要按数量拆批，结构不同；平行建表换取外贸链路零改动。共用的是 `process` / `process_route` / `process_route_step` / `user_process_binding`（工序、路线、工人分工内外贸同一套）。
 
-- `ark_domestic_customers`：内贸客户，`shop_name` UNIQUE（店名是业务主标识，下单可就地新建）。有订单的客户禁删只停用。
+> **116 必须停写升级，禁止滚动混部。** 升级前停止全部旧版主站/小程序写实例，确认无建单、改单、充值、报工请求后执行 116，再只启动含 116 逻辑的新版本。旧版不会维护预存款账本与逐件报工映射；迁移后若让旧实例继续写，会造成漏扣款或逐件链路断裂。回填与一致性校验在迁移内完成，任一进度累计与有效流水不一致会直接中止迁移。
+
+- `ark_domestic_customers`：内贸客户，`shop_name` UNIQUE，`custom_code` 可选且 UNIQUE，另存会员等级、省/市和 `balance` 充值余额。有订单的客户禁删只停用。
+- `ark_domestic_customer_ledger`：客户充值/订单扣款/差额补扣/退款流水。`amount` 是有符号变动额，`balance_after` 是变动后快照，`business_key` 唯一；充值时将客户端 `request_id` 编码为业务键实现幂等。所有余额变动在客户行锁下完成，不允许透支。
 - `ark_domestic_products`：下单选属性后 find-or-create 沉淀，`attrs_key`（`type|craft|net_color|size|length|density`，中文直接入 key）UNIQUE 即产品身份；`route_id` 按工艺映射自动绑定，可人工改绑。属性值域在 `sys_dict` 的 `domestic_*` type（081 种初值，之后归用户管；刻意不做 bootstrap upsert，否则删掉的选项每次重启复活）。
 - `ark_domestic_craft_routes`：`(product_type, craft)` UNIQUE → `route_id`。这张表是「下单人零操作」的支点：配一次，之后同工艺的新产品自动带路线。
-- `ark_domestic_orders`：`domestic_no`（系统号 `DO{YYYYMMDD}-{NNN}` UNIQUE）+ `order_no`（客户订单号，格式不统一只存不约束）+ 客户 + 普货/特单 + `status`（1生产中/2已完工/3已发货/4已终止）+ 软删。
-- `ark_domestic_order_items`：一单多品，每行独立走路线。含发型/颜色/发型要求/备注四组「文字 + 图片路径 JSON」、`route_id` 下单时快照（后改映射不影响在制单）、`ship_time` + `ship_weight`（发货登记在**明细级**——克重是单件属性）。
+- `ark_domestic_orders`：`domestic_no`（系统号 `DO{YYYYMMDD}-{NNN}` UNIQUE）+ `order_no`（客户订单号）+ 客户 + 普货/特单 + `status`（0草稿/1生产中/2已完工/3已发货/4已终止）+ `total_amount` + `charged_amount` + 软删。`request_id` UNIQUE 与 `request_hash` 防止弱网重试重复建单/扣款；`next_line_no` 在订单行锁下分配 A1/A2/…，避免追加明细与改单/报工发生反向锁序；`item_count` / `total_unit_qty` 在同一订单锁下维护当前行数和合计件数。草稿不扣款，提交时一次性扣款；在制单改数量/单价只结算差额，终止或可删除时退回已扣金额。
+- `ark_domestic_order_items`：一单多品，`line_no` 是订单内稳定非空序号（展示 A1/A2/…），`unit_price` 与 `order_qty` 推导明细金额。逐件码需同步物化，API 限制每单最多 50 行、合计 5000 件、单明细 2000 件。其余含四组图文要求、路线快照和明细级发货信息。
+- `ark_domestic_item_append_requests`：追加明细的持久化幂等占位，`(order_id, request_id)` UNIQUE 并保存请求指纹与首次创建的 `item_id`；明细后来删除也保留占位，避免弱网旧请求再次创建和扣款。
+- `ark_domestic_item_units`：每个明细数量物化为一行，`(item_id, unit_no)` UNIQUE；显示码如 `A1-01`。数量报工始终选取当前工序最小可报 `unit_no`，保证 01/02/03 后续从 04 开始。
+- `ark_domestic_report_units`：报工流水到具体单件的映射，`(log_id, unit_id)` UNIQUE。撤销保留映射供审计，因此同一单件+工序历史上可有多条映射；「当前只有一条有效映射」由明细行锁下的服务校验保证，有效性由关联流水的 `revoked` 决定。下游已消耗同一件时不得撤销上游。
 - `ark_domestic_item_progress`：**按数量累计，不是 0/1**。`(item_id, step_order)` UNIQUE，`completed_qty` 是本道累计完成数。全系统唯一口径：`可报数量(第N道) = completed_qty(第N-1道) − completed_qty(第N道)`，首道上游 = `order_qty`。刻意不存冗余的「待做数量」字段——推导值永远自洽。`step_order` 由 `init_item_progress` 按位置从 1 重排，不沿用路线表编号（跳号会让相邻序号不等于上下游）。
-- `ark_domestic_report_logs`：报工流水（外贸侧没有这张表，撤销即抹掉不可追溯）。撤销是 `revoked=1` 而非删行；`request_id` UNIQUE 是客户端幂等键（弱网重试不重复累加，NULL 不参与唯一性判定）。计件统计口径 = `revoked=0` 的 `report_qty` 求和。
+- `ark_domestic_report_logs`：报工流水（外贸侧没有这张表，撤销即抹掉不可追溯）。`report_mode` 记录 quantity/unit；撤销是 `revoked=1` 而非删行，数量模式只允许倒序撤销当前尾批；`request_id` UNIQUE 是客户端幂等键（弱网重试不重复累加，NULL 不参与唯一性判定）。计件统计口径 = `revoked=0` 的 `report_qty` 求和。
+- 共用 `process.show_in_domestic_track`：控制该工序是否出现在客户免登录进度页；内部订单页和报工不受影响。
 
 ## 采购节大屏（迁移 084/087，2026-07-30、2026-08-04）
 
