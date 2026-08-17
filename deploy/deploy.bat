@@ -116,6 +116,12 @@ if errorlevel 1 (
     echo         Set PDF_CJK_FONT_PATH in backend\.env to an existing Chinese .ttf/.ttc font
     goto :error
 )
+REM Exercise native PDFium/resvg imports plus the real spawn-isolated render path.
+.\.venv\Scripts\python.exe scripts\check_design_image_document_render.py
+if errorlevel 1 (
+    echo [ERROR] AI dieline PDF/SVG render preflight failed
+    goto :error
+)
 echo      OK
 echo.
 

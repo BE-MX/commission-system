@@ -450,7 +450,7 @@ def create_draft_asset(
     now: datetime | None = None,
 ) -> DesignImageAsset:
     _owner_session(db, owner_user_id, session_id)
-    normalized = file_service.normalize_upload(content, declared_mime)
+    normalized = file_service.normalize_upload(content, declared_mime, True)
     stored = file_service.save_private_image(
         normalized, owner_user_id=owner_user_id, kind="upload"
     )
@@ -1328,6 +1328,14 @@ def get_config(
     return {
         "models": model_catalog.public_model_options(db),
         "default_model": model_catalog.DEFAULT_IMAGE_MODEL_ID,
+        "accepted_upload_mime_types": [
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+            "image/svg+xml",
+            "application/pdf",
+        ],
+        "pdf_page_limit": 1,
         "sizes": list(VERIFIED_SIZES),
         "qualities": list(VERIFIED_QUALITIES),
         "default_size": "1024x1024",

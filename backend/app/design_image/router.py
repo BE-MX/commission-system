@@ -7,6 +7,7 @@ import logging
 from typing import Callable, Literal, TypeVar
 
 from starlette.background import BackgroundTask
+from starlette.concurrency import run_in_threadpool
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
@@ -78,6 +79,8 @@ def _call(function: Callable[..., T], *args, **kwargs) -> T:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "请求参数不正确") from exc
     except file_service.ImageValidationError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    except file_service.ImageProcessingUnavailableError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
     except file_service.ImageStorageError as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
 
@@ -202,7 +205,7 @@ async def _read_bounded(upload: UploadFile) -> bytes:
             if total > byte_limit:
                 raise HTTPException(
                     status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                    f"图片不能超过 {byte_limit // file_service.MEBIBYTE}MiB",
+                    f"参考文件不能超过 {byte_limit // file_service.MEBIBYTE}MiB",
                 )
             chunks.append(chunk)
         return b"".join(chunks)
@@ -273,7 +276,8 @@ async def upload_asset(
     payload: dict = Depends(require_permission("design_image:write")),
 ):
     content = await _read_bounded(file)
-    asset = _call(
+    asset = await run_in_threadpool(
+        _call,
         service.create_draft_asset,
         db,
         _user_id(payload),
