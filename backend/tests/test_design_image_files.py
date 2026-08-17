@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import http.client
 import io
@@ -17,6 +18,7 @@ from pathlib import Path
 
 import pytest
 from PIL import Image, PngImagePlugin
+from pypdf import PdfWriter
 
 
 MAX_BYTES = 20 * 1024 * 1024
@@ -51,6 +53,17 @@ def _png_with_dimensions(width: int, height: int) -> bytes:
     return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IEND", b"")
 
 
+def _pdf_bytes(page_count: int = 1, *, encrypted: bool = False) -> bytes:
+    output = io.BytesIO()
+    writer = PdfWriter()
+    for _ in range(page_count):
+        writer.add_blank_page(width=300, height=150)
+    if encrypted:
+        writer.encrypt("secret")
+    writer.write(output)
+    return output.getvalue()
+
+
 @pytest.mark.parametrize(
     ("fmt", "declared_mime", "expected_magic", "expected_mime"),
     [
@@ -72,6 +85,163 @@ def test_normalize_upload_accepts_real_supported_images(
         assert normalized.content[8:12] == b"WEBP"
     assert (normalized.width, normalized.height) == (64, 32)
     assert normalized.sha256 == hashlib.sha256(normalized.content).hexdigest()
+
+
+@pytest.mark.parametrize(
+    ("content", "mime"),
+    [
+        (_pdf_bytes(), "application/pdf"),
+        (
+            b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">'
+            b'<path d="M10 10 H190 V90 H10 Z" fill="none" stroke="red"/></svg>',
+            "image/svg+xml",
+        ),
+    ],
+)
+def test_normalize_upload_rasterizes_single_page_pdf_and_svg(content, mime):
+    from app.design_image.file_service import normalize_upload
+
+    normalized = normalize_upload(content, mime, True)
+
+    assert normalized.mime_type == "image/png"
+    assert normalized.content.startswith(b"\x89PNG\r\n\x1a\n")
+    assert (normalized.width, normalized.height) == (2048, 1024)
+
+
+def test_normalize_upload_rejects_multipage_pdf():
+    from app.design_image.file_service import ImageValidationError, normalize_upload
+
+    with pytest.raises(ImageValidationError, match="仅支持单页"):
+        normalize_upload(_pdf_bytes(2), "application/pdf", True)
+
+
+def test_normalize_upload_rejects_encrypted_pdf():
+    from app.design_image.file_service import ImageValidationError, normalize_upload
+
+    with pytest.raises(ImageValidationError, match="加密"):
+        normalize_upload(_pdf_bytes(encrypted=True), "application/pdf", True)
+
+
+@pytest.mark.parametrize(
+    "svg",
+    [
+        b'<svg xmlns="http://www.w3.org/2000/svg"><image href="https://evil.test/a.png"/></svg>',
+        b'<!DOCTYPE svg [<!ENTITY x "boom">]><svg xmlns="http://www.w3.org/2000/svg">&x;</svg>',
+        b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
+    ],
+)
+def test_normalize_upload_rejects_unsafe_svg(svg):
+    from app.design_image.file_service import ImageValidationError, normalize_upload
+
+    with pytest.raises(ImageValidationError):
+        normalize_upload(svg, "image/svg+xml", True)
+
+
+def test_normalize_upload_keeps_documents_opt_in_for_other_upload_surfaces():
+    from app.design_image.file_service import ImageValidationError, normalize_upload
+
+    with pytest.raises(ImageValidationError, match="MIME"):
+        normalize_upload(_pdf_bytes(), "application/pdf")
+
+
+def test_normalize_upload_rejects_svg_element_and_embedded_pixel_bombs():
+    from app.design_image.file_service import ImageValidationError, normalize_upload
+
+    too_many_elements = (
+        '<svg xmlns="http://www.w3.org/2000/svg">'
+        + "<path/>" * 20_001
+        + "</svg>"
+    ).encode()
+    pixel_bomb = base64.b64encode(_png_with_dimensions(10_000, 7_000)).decode()
+    embedded_bomb = (
+        f'<svg xmlns="http://www.w3.org/2000/svg"><image href="data:image/png;base64,{pixel_bomb}"/></svg>'
+    ).encode()
+
+    with pytest.raises(ImageValidationError, match="元素过多"):
+        normalize_upload(too_many_elements, "image/svg+xml", True)
+    with pytest.raises(ImageValidationError, match="分辨率过高"):
+        normalize_upload(embedded_bomb, "image/svg+xml", True)
+
+
+def test_document_renderer_busy_and_unavailable_errors_are_retryable(monkeypatch):
+    from app.design_image import file_service, reference_document
+
+    class BusySlots:
+        def acquire(self, **_kwargs):
+            return False
+
+    monkeypatch.setattr(reference_document, "_DOCUMENT_RENDER_SLOTS", BusySlots())
+    with pytest.raises(reference_document.ReferenceDocumentUnavailableError):
+        reference_document.rasterize_reference_document(
+            _pdf_bytes(), "application/pdf", max_edge=2048
+        )
+
+    def unavailable(*_args, **_kwargs):
+        raise reference_document.ReferenceDocumentUnavailableError("暂不可用")
+
+    monkeypatch.setattr(reference_document, "rasterize_reference_document", unavailable)
+    with pytest.raises(file_service.ImageProcessingUnavailableError, match="暂不可用"):
+        file_service.normalize_upload(_pdf_bytes(), "application/pdf", True)
+
+
+def test_document_renderer_timeout_terminates_child_and_releases_slot(monkeypatch):
+    from app.design_image import reference_document
+
+    class Slots:
+        released = 0
+
+        def acquire(self, **_kwargs):
+            return True
+
+        def release(self):
+            self.released += 1
+
+    class Connection:
+        def poll(self, _timeout):
+            return False
+
+        def close(self):
+            pass
+
+    class Process:
+        alive = True
+        terminated = False
+
+        def start(self):
+            pass
+
+        def is_alive(self):
+            return self.alive
+
+        def terminate(self):
+            self.terminated = True
+            self.alive = False
+
+        def join(self, **_kwargs):
+            pass
+
+        def kill(self):
+            self.alive = False
+
+    receive, send, process, slots = Connection(), Connection(), Process(), Slots()
+
+    class Context:
+        def Pipe(self, **_kwargs):
+            return receive, send
+
+        def Process(self, **_kwargs):
+            return process
+
+    monkeypatch.setattr(reference_document, "_DOCUMENT_RENDER_SLOTS", slots)
+    monkeypatch.setattr(reference_document.multiprocessing, "get_context", lambda *_: Context())
+
+    with pytest.raises(reference_document.ReferenceDocumentUnavailableError, match="超时"):
+        reference_document.rasterize_reference_document(
+            _pdf_bytes(), "application/pdf", max_edge=2048
+        )
+
+    assert process.terminated is True
+    assert slots.released == 1
 
 
 @pytest.mark.parametrize(

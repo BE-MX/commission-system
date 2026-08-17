@@ -532,6 +532,20 @@ def test_upload_is_bounded_closes_file_and_rejects_fake_mime(api, monkeypatch):
     )
     assert response.status_code == 400
 
+    monkeypatch.setattr(
+        service,
+        "create_draft_asset",
+        lambda *_a, **_k: (_ for _ in ()).throw(
+            module.file_service.ImageProcessingUnavailableError("转换繁忙")
+        ),
+    )
+    response = client.post(
+        "/api/design-image/sessions/11/assets",
+        files={"file": ("dieline.pdf", b"%PDF-1.7", "application/pdf")},
+    )
+    assert response.status_code == 503
+    assert "转换繁忙" in response.text
+
 
 def test_router_rejects_configured_upload_limit_before_service(api, monkeypatch):
     client, _, module, service = api
