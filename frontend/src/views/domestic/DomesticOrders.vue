@@ -47,6 +47,9 @@
         <el-table-column label="明细 / 数量" min-width="110">
           <template #default="{ row }">{{ row.item_count }} 行 / {{ row.total_qty }} 件</template>
         </el-table-column>
+        <el-table-column label="订单总价" min-width="110" align="right">
+          <template #default="{ row }">¥{{ Number(row.total_amount || 0).toFixed(2) }}</template>
+        </el-table-column>
         <el-table-column label="生产进度" min-width="150">
           <template #default="{ row }">
             <el-progress :percentage="row.progress_pct" :stroke-width="10" />
@@ -60,7 +63,8 @@
         <el-table-column label="操作" min-width="170" fixed="right">
           <template #default="{ row }">
             <GlassButton variant="link" left-icon="View" @click="openDetail(row)">详情</GlassButton>
-            <GlassButton v-permission="'domestic:write'" variant="link" left-icon="CircleClose" :disabled="row.status >= 3" @click="handleTerminate(row)">终止</GlassButton>
+            <GlassButton v-if="row.status === 0" v-permission="'domestic:write'" variant="link" left-icon="Promotion" @click="handleSubmitDraft(row)">提交</GlassButton>
+            <GlassButton v-else v-permission="'domestic:write'" variant="link" left-icon="CircleClose" :disabled="row.status >= 3" @click="handleTerminate(row)">终止</GlassButton>
             <GlassButton v-permission="'domestic:admin'" variant="link" link-tone="danger" left-icon="Delete" @click="handleDelete(row)">删除</GlassButton>
           </template>
         </el-table-column>
@@ -81,8 +85,14 @@
             <span>下单日期：{{ detail.order_date }}</span>
             <span>类型：{{ detail.order_type_label }}</span>
             <span>状态：{{ detail.status_label }}</span>
+            <span>订单总价：¥{{ Number(detail.total_amount || 0).toFixed(2) }}</span>
+            <span>已扣余额：¥{{ Number(detail.charged_amount || 0).toFixed(2) }}</span>
+            <span v-if="detail.customer_custom_code">客户编码：{{ detail.customer_custom_code }}</span>
+            <span v-if="detail.customer_membership_level">会员等级：{{ detail.customer_membership_level }}</span>
+            <span v-if="detail.customer_province || detail.customer_city">地区：{{ [detail.customer_province, detail.customer_city].filter(Boolean).join(' / ') }}</span>
             <span v-if="detail.customer_contact">联系人：{{ detail.customer_contact }}</span>
             <span v-if="detail.customer_phone">电话：{{ detail.customer_phone }}</span>
+            <span v-if="detail.customer_address">地址：{{ detail.customer_address }}</span>
           </div>
           <div v-if="detail.remark" class="notes-line">备注：{{ detail.remark }}</div>
         </div>
@@ -94,15 +104,17 @@
 
         <div v-for="item in detail.items" :key="item.id" class="item-block">
           <div class="item-title">
-            <span class="item-name">{{ item.product_name }}</span>
+            <span class="item-name">{{ item.line_code }} · {{ item.product_name }}</span>
             <el-tag size="small" effect="plain">{{ item.order_qty }} 件</el-tag>
+            <el-tag size="small" effect="plain">¥{{ Number(item.unit_price || 0).toFixed(2) }} / 件</el-tag>
+            <span class="item-amount">小计 ¥{{ Number(item.line_amount || 0).toFixed(2) }}</span>
             <el-tag size="small" :type="item.status === 2 ? 'info' : (item.status === 1 ? 'success' : '')">{{ item.status_label }}</el-tag>
             <span class="item-current">当前：{{ item.current_process }}</span>
             <div class="item-actions">
-              <GlassButton variant="link" left-icon="Printer" @click="openPrintCard(item)">流转卡</GlassButton>
-              <GlassButton variant="link" left-icon="Grid" @click="openQrLabel(item)">二维码</GlassButton>
-              <GlassButton variant="link" left-icon="Share" @click="openWxacode(item)">进度码</GlassButton>
-              <GlassButton variant="link" left-icon="Tickets" @click="openLogs(item)">报工流水</GlassButton>
+              <GlassButton v-if="detail.status !== 0" variant="link" left-icon="Printer" @click="openPrintCard(item)">流转卡</GlassButton>
+              <GlassButton variant="link" left-icon="Grid" @click="openQrLabel(item)">逐件码</GlassButton>
+              <GlassButton v-if="detail.status !== 0" variant="link" left-icon="Share" @click="openWxacode(item)">进度码</GlassButton>
+              <GlassButton v-if="detail.status !== 0" variant="link" left-icon="Tickets" @click="openLogs(item)">报工流水</GlassButton>
               <GlassButton v-if="!item.route_id" v-permission="'domestic:write'" variant="link" left-icon="Connection" @click="openAttachRoute(item)">配工艺路线</GlassButton>
               <GlassButton v-if="item.status === 1" v-permission="'domestic:write'" variant="link" left-icon="Van" @click="openShip(item)">登记发货</GlassButton>
             </div>
@@ -193,6 +205,9 @@
       <el-table :data="logDialog.logs" v-loading="logDialog.loading" size="small" border style="width: 100%" class="list-table">
         <el-table-column prop="process_name" label="工序" min-width="100" />
         <el-table-column prop="report_qty" label="数量" min-width="70" />
+        <el-table-column label="单件" min-width="140" show-overflow-tooltip>
+          <template #default="{ row }">{{ (row.unit_codes || []).join('、') || '-' }}</template>
+        </el-table-column>
         <el-table-column prop="reported_by_name" label="报工人" min-width="90" />
         <el-table-column prop="reported_at" label="时间" min-width="150" show-overflow-tooltip />
         <el-table-column label="状态" min-width="80">
@@ -278,7 +293,7 @@ const {
   attachDialog, openAttachRoute, confirmAttachRoute,
   printDialog, openPrintCard, openQrLabel, openWxacodeLabel,
   wxacodeDialog, openWxacode, downloadWxacode,
-  handleTerminate, handleDelete, goCreate,
+  handleSubmitDraft, handleTerminate, handleDelete, goCreate,
 } = useDomesticOrders()
 </script>
 
@@ -345,6 +360,7 @@ const {
 }
 
 .item-name { font-weight: 600; }
+.item-amount { font-size: 13px; font-weight: 600; color: var(--el-text-color-primary); }
 
 .item-current {
   font-size: 13px;

@@ -17,7 +17,14 @@
 
     <template #footer>
       <div class="footer-bar">
-        <div v-if="isLabel" class="copies">
+        <div v-if="mode === 'label'" class="copies unit-range">
+          <span class="copies-label">单件范围</span>
+          <el-input-number v-model="rangeStart" :min="1" :max="rangeEnd" size="small" controls-position="right" />
+          <span>至</span>
+          <el-input-number v-model="rangeEnd" :min="rangeStart" :max="Math.min(unitTotal, rangeStart + 199)" size="small" controls-position="right" />
+          <GlassButton variant="ghost" size="small" :disabled="loading" @click="loadUnitLabels">更新预览</GlassButton>
+        </div>
+        <div v-else-if="isLabel" class="copies">
           <span class="copies-label">份数</span>
           <el-input-number v-model="copies" :min="1" :max="50" size="small" />
         </div>
@@ -43,10 +50,10 @@
  */
 import { computed, ref, watch } from 'vue'
 import { Loading } from '@element-plus/icons-vue'
-import { fetchImageDataUrl, getItemWxacode, getPrintCard } from '@/api/domestic'
+import { fetchImageDataUrl, getItemUnitQrcodes, getItemWxacode, getPrintCard } from '@/api/domestic'
 import GlassButton from '@/components/GlassButton.vue'
 import logoUrl from '@/assets/domestic-logo.png'
-import { buildCardDoc, buildLabelDoc, buildWxacodeLabelDoc } from './printDocs'
+import { buildCardDoc, buildUnitLabelDoc, buildWxacodeLabelDoc } from './printDocs'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -59,6 +66,9 @@ const loading = ref(false)
 const loadError = ref('')
 const card = ref(null)
 const copies = ref(1)
+const rangeStart = ref(1)
+const rangeEnd = ref(1)
+const unitTotal = ref(1)
 const frameRef = ref(null)
 
 const isLabel = computed(() => props.mode !== 'card')
@@ -78,7 +88,7 @@ const docHtml = computed(() => {
     })
   }
   return props.mode === 'label'
-    ? buildLabelDoc({ card: card.value, logoUrl, copies: copies.value })
+    ? buildUnitLabelDoc({ data: card.value, logoUrl })
     : buildCardDoc({ card: card.value, imageMap: imageMap.value })
 })
 
@@ -109,6 +119,8 @@ async function load() {
     if (props.mode === 'wxacode') {
       const res = await getItemWxacode(props.itemId)
       card.value = res.data
+    } else if (props.mode === 'label') {
+      await loadUnitLabels()
     } else {
       const res = await getPrintCard(props.itemId)
       card.value = res.data
@@ -120,6 +132,30 @@ async function load() {
     loadError.value = props.mode === 'wxacode'
       ? '进度码没生成出来，原因见右上角报错提示'
       : '这张卡对应的明细已经不存在了（订单可能已被删除）'
+  } finally {
+    loading.value = false
+  }
+}
+
+async function loadUnitLabels() {
+  loading.value = true
+  loadError.value = ''
+  try {
+    const res = await getItemUnitQrcodes(props.itemId, {
+      start_no: rangeStart.value,
+      end_no: rangeEnd.value,
+    })
+    const data = res.data || {}
+    unitTotal.value = data.order_qty || 1
+    rangeEnd.value = data.end_no || rangeStart.value
+    const QRCode = (await import('qrcode')).default
+    data.units = await Promise.all((data.units || []).map(async unit => ({
+      ...unit,
+      qr_image: await QRCode.toDataURL(unit.qr_data, { margin: 1, width: 256 }),
+    })))
+    card.value = data
+  } catch {
+    loadError.value = '逐件二维码生成失败，请检查打印范围后重试'
   } finally {
     loading.value = false
   }
@@ -138,7 +174,14 @@ function close() {
 }
 
 watch(() => [props.visible, props.itemId, props.mode], ([isOpen]) => {
-  if (isOpen && props.itemId) load()
+  if (isOpen && props.itemId) {
+    if (props.mode === 'label') {
+      rangeStart.value = 1
+      rangeEnd.value = 50
+      unitTotal.value = 2000
+    }
+    load()
+  }
 }, { immediate: true })
 </script>
 

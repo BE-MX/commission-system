@@ -17,12 +17,19 @@
                 :remote-method="searchCustomers" :loading="customerLoading"
                 placeholder="搜索已有客户，没有就在下面直接填新店名" style="width: 100%"
               >
-                <el-option v-for="c in customers" :key="c.id" :label="c.shop_name" :value="c.id" />
+                <el-option
+                  v-for="c in customers" :key="c.id"
+                  :label="`${c.shop_name}（余额 ¥${Number(c.balance || 0).toFixed(2)}）`"
+                  :value="c.id"
+                />
               </el-select>
               <el-input
                 v-if="!form.customer_id" v-model="form.customer_shop_name"
                 placeholder="新客户：直接输入店名，下单时自动建档" class="new-customer"
               />
+              <div v-if="selectedCustomer" class="balance-hint">
+                当前余额 ¥{{ Number(selectedCustomer.balance || 0).toFixed(2) }}
+              </div>
             </el-form-item>
           </el-col>
           <el-col :span="5">
@@ -43,6 +50,7 @@
             </el-form-item>
           </el-col>
         </el-row>
+
         <el-form-item label="订单备注">
           <el-input v-model="form.remark" type="textarea" :rows="1" placeholder="整单说明，选填" />
         </el-form-item>
@@ -83,7 +91,20 @@
           </el-col>
           <el-col :span="6">
             <el-form-item label="数量" required>
-              <el-input-number v-model="item.order_qty" :min="1" :max="100000" style="width: 100%" />
+              <el-input-number v-model="item.order_qty" :min="1" :max="2000" style="width: 100%" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="16" class="price-row">
+          <el-col :span="6">
+            <el-form-item label="产品单价" required>
+              <el-input-number v-model="item.unit_price" :min="0" :precision="2" :step="10" style="width: 100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="6">
+            <el-form-item label="明细总价">
+              <span class="amount-value">¥{{ (Number(item.order_qty || 0) * Number(item.unit_price || 0)).toFixed(2) }}</span>
             </el-form-item>
           </el-col>
         </el-row>
@@ -150,7 +171,9 @@
       <GlassButton variant="ghost" left-icon="Plus" @click="addItem">再加一行明细</GlassButton>
       <div class="footer-right">
         <span v-if="unroutedCount" class="warn-text">{{ unroutedCount }} 行明细的工艺未配路线</span>
-        <GlassButton variant="primary" left-icon="Check" :loading="submitting" @click="submit">提交订单</GlassButton>
+        <span class="order-total">订单总价：¥{{ orderTotal.toFixed(2) }}</span>
+        <GlassButton variant="ghost" left-icon="Document" :loading="submitting" @click="submit(true)">保存草稿</GlassButton>
+        <GlassButton variant="primary" left-icon="Check" :loading="submitting" @click="submit(false)">提交订单</GlassButton>
       </div>
     </div>
   </div>
@@ -168,7 +191,7 @@ import { useDomesticOrderCreate } from './composables/useDomesticOrderCreate'
 
 const {
   loading, submitting, options, customers, customerLoading, form,
-  attrOptions, hasField, routeOf, unroutedCount,
+  attrOptions, hasField, routeOf, unroutedCount, orderTotal, selectedCustomer,
   onProductTypeChange, addItem, copyItem, removeItem,
   makeUploadFn, removeImage, searchCustomers, submit,
 } = useDomesticOrderCreate()
@@ -204,6 +227,9 @@ const {
 .item-actions { display: flex; gap: 4px; }
 
 .new-customer { margin-top: 8px; }
+.balance-hint { margin-top: 6px; color: var(--el-color-success); font-size: 12px; }
+.price-row { margin-top: 2px; }
+.amount-value, .order-total { font-weight: 600; color: var(--el-text-color-primary); }
 .section-upload { margin-top: 8px; }
 
 .thumb-row {

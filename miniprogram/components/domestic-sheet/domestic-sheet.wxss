@@ -118,6 +118,14 @@
   flex-shrink: 0;
 }
 
+.unit-code { color: var(--m-accent-d); font-weight: 700; }
+
+.unit-mode-card { background: var(--m-accent-bg); }
+.unit-mode-main { display: flex; align-items: baseline; justify-content: space-between; }
+.unit-mode-code { font-size: 42rpx; font-weight: 800; color: var(--m-accent-d); }
+.unit-mode-qty { font-size: 26rpx; font-weight: 600; color: var(--text-main); }
+.unit-mode-tip { display: block; margin-top: 12rpx; font-size: 23rpx; line-height: 1.5; color: var(--text-sub); }
+
 /* ── 图文要求（默认折叠）── */
 .req-head {
   display: flex;

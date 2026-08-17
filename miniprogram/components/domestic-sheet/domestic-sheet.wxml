@@ -31,10 +31,14 @@
           <text class="info-lbl">所属订单</text>
           <text class="info-val" style="color:var(--text-sub)">{{item.order_no || '-'}}</text>
         </view>
+        <view class="info-row" wx:if="{{item.unit_code}}">
+          <text class="info-lbl">单件编号</text>
+          <text class="info-val unit-code">{{item.unit_code}}</text>
+        </view>
       </view>
 
       <!-- 报工工序 -->
-      <view class="sheet-section">
+      <view class="sheet-section" wx:if="{{item.report_mode !== 'unit'}}">
         <text class="sheet-sec-label">报工工序</text>
         <view class="info-row">
           <text class="info-lbl">当前工序</text>
@@ -49,8 +53,18 @@
         </view>
       </view>
 
+      <view class="sheet-section unit-mode-card" wx:else>
+        <text class="sheet-sec-label">逐件扫码模式</text>
+        <view class="unit-mode-main">
+          <text class="unit-mode-code">{{item.unit_code}}</text>
+          <text class="unit-mode-qty">本次固定报工 1 件</text>
+        </view>
+        <text class="unit-mode-tip">当前工序：{{nextStep.process_name || '-'}}</text>
+        <text class="unit-mode-tip">每个二维码只对应这一件产品；同一道工序重复扫描会被系统拦截</text>
+      </view>
+
       <!-- 报工数量（内贸独有：整批一键、拆批调小） -->
-      <view class="sheet-section">
+      <view class="sheet-section" wx:if="{{item.report_mode !== 'unit'}}">
         <view class="qty-head">
           <text class="sheet-sec-label" style="margin:0">报工数量</text>
           <text class="qty-max">最多 {{maxQty}} 件 · 下单 {{item.order_qty}} 件</text>
@@ -100,7 +114,7 @@
       <button class="btn-cancel" bindtap="onCancel">取消</button>
       <button class="btn-confirm" bindtap="onConfirm" disabled="{{submitting}}">
         <text wx:if="{{submitting}}">提交中...</text>
-        <block wx:else>✓ 确认报 {{qty}} 件</block>
+        <block wx:else>✓ 确认报 {{item.report_mode === 'unit' ? 1 : qty}} 件</block>
       </button>
     </view>
   </view>

@@ -7,7 +7,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   attachItemRoute, deleteOrder, getItemWxacode, getOrder, getProcessRoutes,
   listOrders, listProcessWorkers, listReports, newRequestId, revokeReport,
-  shipItem, submitReport, terminateOrder,
+  shipItem, submitDraftOrder, submitReport, terminateOrder,
 } from '@/api/domestic'
 import { useListPage } from '@/composables/useListPage'
 import { confirmDanger, msgSuccess } from '@/utils/feedback'
@@ -177,6 +177,19 @@ export function useDomesticOrders() {
   }
 
   // ── 订单动作 ──
+  async function handleSubmitDraft(row) {
+    try {
+      await ElMessageBox.confirm(
+        `提交后将从客户充值余额扣除 ¥${Number(row.total_amount || 0).toFixed(2)}，确认继续？`,
+        '提交草稿',
+        { type: 'warning', confirmButtonText: '提交并扣款' },
+      )
+    } catch { return }
+    await submitDraftOrder(row.id)
+    msgSuccess('提交订单')
+    await refreshAll()
+  }
+
   async function handleTerminate(row) {
     let value
     try {
@@ -260,6 +273,6 @@ export function useDomesticOrders() {
     attachDialog, openAttachRoute, confirmAttachRoute,
     printDialog, openPrintCard, openQrLabel, openWxacodeLabel,
     wxacodeDialog, openWxacode, downloadWxacode,
-    handleTerminate, handleDelete, goCreate,
+    handleSubmitDraft, handleTerminate, handleDelete, goCreate,
   }
 }

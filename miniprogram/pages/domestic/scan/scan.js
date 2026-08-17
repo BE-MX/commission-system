@@ -12,6 +12,8 @@ var BLOCK_MESSAGES = {
   ITEM_NOT_FOUND: '找不到这张卡对应的订单明细',
   NO_ROUTE: '这个产品还没配工艺路线，请联系跟单',
   ORDER_TERMINATED: '订单已终止或已删除，不能报工',
+  ORDER_DRAFT: '订单还是草稿，请跟单提交后再报工',
+  UNIT_QR_REQUIRED: '当前账号是逐件扫码模式，请扫描 A1-01 这类单件二维码',
   ALL_DONE: '这批货所有工序都做完了',
   NOT_ASSIGNED: '你没有被分配到这道工序',
   NOTHING_REPORTABLE: '上一道工序还没做出可接的数量，请稍后再扫'
@@ -74,7 +76,8 @@ Page({
     var pending = app.globalData.pendingDomesticScan
     if (pending) {
       app.globalData.pendingDomesticScan = null
-      this._loadItem(pending.itemId, pending.sign)
+      if (pending.unitId) this._loadUnit(pending.unitId, pending.sign)
+      else this._loadItem(pending.itemId, pending.sign)
     }
     if (this.data.state === 'idle') this.loadTodayHistory()
   },
@@ -133,6 +136,11 @@ Page({
       scanType: ['qrCode'],
       success: function (scan) {
         var raw = scan.result || ''
+        var unit = raw.match(/^ARK-DU:(\d+):([a-f0-9]+)$/)
+        if (unit) {
+          self._loadUnit(parseInt(unit[1]), unit[2])
+          return
+        }
         var m = raw.match(/^ARK-D:(\d+):([a-f0-9]+)$/)
         if (!m) {
           // 扫到外贸卡：说清楚再切过去，别让工人一头雾水
@@ -150,11 +158,19 @@ Page({
   },
 
   _loadItem: function (itemId, sign) {
+    this._loadScan('/api/mini/domestic/scan/' + itemId + '?sign=' + sign, '')
+  },
+
+  _loadUnit: function (unitId, sign) {
+    this._loadScan('/api/mini/domestic/unit-scan/' + unitId + '?sign=' + sign, sign)
+  },
+
+  _loadScan: function (path, unitSign) {
     var self = this
     this.setData({ loading: true })
     this._syncTabBar()
     wx.request({
-      url: app.globalData.baseUrl + '/api/mini/domestic/scan/' + itemId + '?sign=' + sign,
+      url: app.globalData.baseUrl + path,
       method: 'GET',
       header: this._header(),
       timeout: 30000,
@@ -168,6 +184,7 @@ Page({
           return
         }
         var data = res.data || {}
+        data.unit_sign = unitSign || ''
         if (!data.can_submit) {
           self._error('暂时不能报工',
             data.block_message || BLOCK_MESSAGES[data.block_reason] || '请联系跟单')
@@ -245,6 +262,8 @@ Page({
         item_id: this.data.scanned.item_id,
         progress_id: this.data.nextStep.progress_id,
         qty: qty,
+        unit_id: this.data.scanned.report_mode === 'unit' ? this.data.scanned.unit_id : null,
+        unit_sign: this.data.scanned.report_mode === 'unit' ? this.data.scanned.unit_sign : null,
         request_id: this._requestId
       },
       success: function (res) {
@@ -257,7 +276,8 @@ Page({
           return
         }
         var data = res.data || {}
-        var msg = data.process_name + ' · ' + data.reported_qty + ' 件'
+        var codes = (data.unit_codes || []).join('、')
+        var msg = data.process_name + ' · ' + data.reported_qty + ' 件' + (codes ? ' · ' + codes : '')
         var title = '报工成功'
         if (data.replayed) title = '这笔已经报过了'
         else if (data.item_finished) msg += '，这批货全部做完了'

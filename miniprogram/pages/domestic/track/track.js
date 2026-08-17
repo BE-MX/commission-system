@@ -72,6 +72,20 @@ Page({
     for (var p = 0; p < prevItems.length; p++) prevExpanded[prevItems[p].id] = prevItems[p].expanded
     var items = order.items || []
     for (var i = 0; i < items.length; i++) {
+      var attrs = items[i].attrs || {}
+      items[i].attrText = [attrs.craft, attrs.net_color, attrs.size, attrs.length, attrs.density].filter(Boolean).join(' / ')
+      items[i].unitPriceText = Number(items[i].unit_price || 0).toFixed(2)
+      items[i].lineAmountText = Number(items[i].line_amount || 0).toFixed(2)
+      var imageFields = ['hairstyle_images', 'color_images', 'style_images', 'remark_images']
+      var imageUrls = []
+      for (var f = 0; f < imageFields.length; f++) {
+        var paths = items[i][imageFields[f]] || []
+        for (var k = 0; k < paths.length; k++) {
+          imageUrls.push(app.globalData.baseUrl + '/api/mini/domestic/track-image?scene=' +
+            encodeURIComponent(this._scene) + '&rel_path=' + encodeURIComponent(paths[k]))
+        }
+      }
+      items[i].imageUrls = imageUrls
       var steps = items[i].steps || []
       var view = []
       for (var j = 0; j < steps.length; j++) {
@@ -96,6 +110,8 @@ Page({
       items[i].expanded = prevExpanded[items[i].id] || false   // 默认只出前 3 道
     }
     order.items = items
+    order.totalAmountText = Number(order.total_amount || 0).toFixed(2)
+    order.regionText = [order.customer_province, order.customer_city].filter(Boolean).join(' / ')
     return order
   },
 
@@ -105,5 +121,11 @@ Page({
     var obj = {}
     obj[key] = !this.data.order.items[idx].expanded
     this.setData(obj)
+  },
+
+  onPreviewImage: function (e) {
+    var item = this.data.order.items[e.currentTarget.dataset.item]
+    var index = e.currentTarget.dataset.index
+    wx.previewImage({ current: item.imageUrls[index], urls: item.imageUrls })
   }
 })
