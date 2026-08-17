@@ -20,3 +20,9 @@ export const unpublishMediaBatch = (batchId, comment) => customerMediaClient.pos
 export const getPortalAccounts = search => customerMediaClient.get('/portal-accounts', { params: { search }, showLoading: false })
 export const createPortalAccount = data => customerMediaClient.post('/portal-accounts', data)
 export const updatePortalAccount = (id, data) => customerMediaClient.patch(`/portal-accounts/${id}`, data)
+export const getSalesPortalCustomers = (search = '') => customerMediaClient.get('/sales-portal/customers', {
+  params: { search }, showLoading: false, suppressToast: true,
+})
+export const getSalesPortalCustomer = customerId => customerMediaClient.get(`/sales-portal/customers/${encodeURIComponent(customerId)}`, {
+  showLoading: false, suppressToast: true,
+})

@@ -181,11 +181,13 @@
       $('library').innerHTML = shown.map((b, index) => {
         const imgs = b.viewAssets.filter(a => a.media_type === 'image').length;
         const vids = b.viewAssets.length - imgs;
+        const title = b.title || `Delivery Batch ${pad(b.seq)}`;
+        const shootType = b.shoot_type ? ` · ${escapeHtml(b.shoot_type)}` : '';
         return `<section class="sku-section" id="batch-${b.id}">
           <header class="sku-heading"><div>
             <span>${pad(index + 1)} · BATCH ${pad(b.seq)}</span>
-            <h2>${fmtDate(b.published_at)}</h2>
-            <p>${b.viewAssets.length} ${b.viewAssets.length === 1 ? 'asset' : 'assets'} · ${imgs} photos · ${vids} videos</p>
+            <h2>${escapeHtml(title)}</h2>
+            <p>${fmtDate(b.published_at)} · ${b.viewAssets.length} ${b.viewAssets.length === 1 ? 'asset' : 'assets'} · ${imgs} photos · ${vids} videos${shootType}</p>
           </div></header>
           <div class="asset-gallery">${b.viewAssets.map((a, i) => `
             <article class="asset-card ${selected.has(a.id) ? 'selected' : ''}" data-card="${a.id}">

@@ -147,6 +147,7 @@ export const MENU_GROUPS = {
       'design:read', 'design:write', 'design:audit', 'design:manage',
       'design_gantt:read', 'design_my:read', 'design_stats:read',
       'customer_media:read', 'customer_media:write', 'customer_media:admin',
+      'customer_media_portal:read',
     ],
   },
   report: {
@@ -1100,6 +1101,17 @@ export const NAV_ENTRIES = [
     menu: {
       group: 'design', title: '我的预约', icon: Document, order: 30,
       permission: 'design_my:read',
+    },
+  },
+  {
+    path: '/design/media/portal',
+    name: 'CustomerMediaPortalPreview',
+    component: () => import('@/views/design/customer-media/CustomerMediaPortalPreview.vue'),
+    title: '客户素材门户',
+    anyPermission: ['customer_media_portal:read', 'customer_media:admin'],
+    menu: {
+      group: 'design', title: '客户素材门户', icon: Monitor, order: 34,
+      anyPermission: ['customer_media_portal:read', 'customer_media:admin'],
     },
   },
   {
