@@ -69,6 +69,19 @@ test('upload limit, disclosure, lightbox failures, and moderation retry are expl
   assert.match(card, /v-if="canRetry"/)
 })
 
+test('composer exposes only server-configured image model choices', () => {
+  const composer = read('../src/views/design/image-studio/components/PromptComposer.vue')
+  const page = read('../src/views/design/image-studio/ImageStudio.vue')
+  const studio = read('../src/views/design/image-studio/composables/useImageStudio.js')
+  assert.match(composer, /aria-label="生图模型"/)
+  assert.match(composer, /v-for="option in models"/)
+  assert.match(composer, /:disabled="!option\.available"/)
+  assert.match(page, /v-model:model="studio\.model\.value"/)
+  assert.match(page, /:models="studio\.config\.value\.models \|\| \[\]"/)
+  assert.match(studio, /model:\s*sentModel/)
+  assert.match(studio, /selectedModelAvailable\.value/)
+})
+
 test('new conversation preserves the current workspace until creation succeeds', () => {
   const studio = read('../src/views/design/image-studio/composables/useImageStudio.js')
   const page = read('../src/views/design/image-studio/ImageStudio.vue')

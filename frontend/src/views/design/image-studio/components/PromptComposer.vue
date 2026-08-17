@@ -71,6 +71,21 @@
           </AppUpload>
         </div>
 
+        <el-select
+          :model-value="model"
+          class="tool-select model-select"
+          aria-label="生图模型"
+          :disabled="sending"
+          @update:model-value="emit('update:model', $event)"
+        >
+          <el-option
+            v-for="option in models"
+            :key="option.id"
+            :label="option.available ? option.label : `${option.label}（未配置）`"
+            :value="option.id"
+            :disabled="!option.available"
+          />
+        </el-select>
         <el-select :model-value="size" class="tool-select" aria-label="图片尺寸" @update:model-value="emit('update:size', $event)">
           <el-option v-for="option in sizes" :key="option" :label="sizeLabel(option)" :value="option" />
         </el-select>
@@ -109,6 +124,8 @@ const props = defineProps({
   prompt: { type: String, default: '' },
   attachments: { type: Array, default: () => [] },
   baseAsset: { type: Object, default: null },
+  models: { type: Array, default: () => [] },
+  model: { type: String, default: '' },
   sizes: { type: Array, default: () => [] },
   size: { type: String, default: '1024x1024' },
   qualities: { type: Array, default: () => [] },
@@ -120,7 +137,7 @@ const props = defineProps({
   canSend: { type: Boolean, default: false },
   sending: { type: Boolean, default: false },
 })
-const emit = defineEmits(['update:prompt', 'update:size', 'update:quality', 'submit', 'remove', 'clear-base', 'open-prompt-library', 'open-reference-library'])
+const emit = defineEmits(['update:prompt', 'update:model', 'update:size', 'update:quality', 'submit', 'remove', 'clear-base', 'open-prompt-library', 'open-reference-library'])
 const uploadModel = ref([])
 const inputRef = ref(null)
 const auth = useAuthStore()
@@ -224,6 +241,7 @@ defineExpose({ focus })
 .upload-action.is-disabled { pointer-events: none; opacity: 0.55; }
 
 .tool-select { width: 104px; }
+.model-select { width: 154px; }
 .tool-select :deep(.el-select__wrapper) {
   min-height: 30px; border-radius: 999px; background: var(--toolbar-bg);
   box-shadow: 0 0 0 1px var(--border-color) inset; font-size: 12px;
@@ -248,6 +266,7 @@ defineExpose({ focus })
   .key-hint { display: none; }
   .send-button { flex: 1; margin-left: 0; }
   .tool-select { flex: 1; min-width: 92px; }
+  .model-select { min-width: 138px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .composer-card, .tool-select :deep(.el-select__wrapper) { transition: none; }

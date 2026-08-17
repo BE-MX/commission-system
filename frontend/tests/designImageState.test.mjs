@@ -15,6 +15,7 @@ import {
   isColorParam,
   missingPromptParams,
   replaceActiveJob,
+  resolveImageModelSelection,
   restoreActiveJob,
   restoreActiveJobs,
   selectBaseAsset,
@@ -76,6 +77,18 @@ test('upload guard rejects duplicate uploads and send races', () => {
   assert.equal(canStartUpload({}), true)
   assert.equal(canStartUpload({ uploadInFlight: true }), false)
   assert.equal(canStartUpload({ sendInFlight: true }), false)
+})
+
+test('image model selection keeps an available choice and falls back safely', () => {
+  const models = [
+    { id: 'gpt-image-2', available: true },
+    { id: 'grok-image-2', available: false },
+    { id: 'gemini-3-pro-image', available: true },
+  ]
+  assert.equal(resolveImageModelSelection(models, 'gemini-3-pro-image', 'gpt-image-2'), 'gemini-3-pro-image')
+  assert.equal(resolveImageModelSelection(models, 'grok-image-2', 'gpt-image-2'), 'gpt-image-2')
+  assert.equal(resolveImageModelSelection(models, '', 'missing'), 'gpt-image-2')
+  assert.equal(resolveImageModelSelection([], 'gpt-image-2', 'gpt-image-2'), '')
 })
 
 test('concurrent attachment completion updates immutable snapshots without losing items', () => {

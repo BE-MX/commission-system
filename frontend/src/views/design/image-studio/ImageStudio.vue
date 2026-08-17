@@ -64,10 +64,12 @@
       <PromptComposer
         ref="composerRef"
         v-model:prompt="studio.prompt.value"
+        v-model:model="studio.model.value"
         v-model:size="studio.size.value"
         v-model:quality="studio.quality.value"
         :attachments="studio.draftAttachments.value"
         :base-asset="studio.baseAsset.value"
+        :models="studio.config.value.models || []"
         :sizes="studio.config.value.sizes || []"
         :qualities="studio.config.value.qualities || []"
         :upload-fn="studio.uploadReference"

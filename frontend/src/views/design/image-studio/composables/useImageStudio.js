@@ -5,13 +5,12 @@ import {
 } from '@/api/designImage'
 import { msgError } from '@/utils/feedback'
 import {
-  acceptConversationResponse, advanceJob, canStartSend, replaceActiveJob,
-  createSessionSingleFlight, nextConversationGeneration, reconcileSubmittedDraft, reconcileTurnResult,
-  recoverComposerDrafts, restoreActiveJobs, safeBusinessErrorMessage, selectSessionActiveJob, upsertAttachment,
+  acceptConversationResponse, advanceJob, canStartSend, createSessionSingleFlight, nextConversationGeneration,
+  reconcileSubmittedDraft, reconcileTurnResult, recoverComposerDrafts, replaceActiveJob, resolveImageModelSelection,
+  restoreActiveJobs, safeBusinessErrorMessage, selectSessionActiveJob, upsertAttachment,
 } from '../state'
 import { useAssetObjectUrls } from './useAssetObjectUrls'
 import { useJobPolling } from './useJobPolling'
-
 const ACTIVE_STATUSES = new Set(['queued', 'running'])
 function requestId(prefix) {
   const uuid = globalThis.crypto?.randomUUID?.()
@@ -27,7 +26,6 @@ function safeRequestMessage(error) {
   if (status === 400 || status === 422) return '图片或输入内容不符合要求，请调整后重试'
   return '操作未完成，请检查网络后重试'
 }
-
 export async function refreshConflictSession(error, sessionId, refreshSession) {
   if (error?.response?.status !== 409) return false
   await refreshSession(sessionId)
@@ -41,8 +39,9 @@ export function useImageStudio() {
   const messages = ref([])
   const assets = ref([])
   const jobs = ref([])
-  const config = ref({ sizes: [], qualities: [], remaining_today: 0, daily_limit: 0 })
+  const config = ref({ models: [], sizes: [], qualities: [], remaining_today: 0, daily_limit: 0 })
   const prompt = ref('')
+  const model = ref('')
   const size = ref('1024x1024')
   const quality = ref('medium')
   const draftAttachments = ref([])
@@ -68,12 +67,12 @@ export function useImageStudio() {
   const activeSessionIds = computed(() => [...activeJobs.values()]
     .filter(job => ACTIVE_STATUSES.has(job.status))
     .map(job => job.session_id))
+  const selectedModelAvailable = computed(() => config.value.models?.some(option => option.id === model.value && option.available))
   const canSend = computed(() => !newSessionInFlight.value && canStartSend({
     sendInFlight: sendInFlight.value,
     uploadInFlight: uploadInFlight.value > 0,
     activeJob: sessionActiveJob.value,
-  }) && prompt.value.trim().length > 0 && config.value.remaining_today > 0)
-
+  }) && prompt.value.trim().length > 0 && selectedModelAvailable.value && config.value.remaining_today > 0)
   function mergeSession(session) {
     if (!session) return
     const index = sessions.value.findIndex(item => item.id === session.id)
@@ -166,6 +165,7 @@ export function useImageStudio() {
   async function loadConfig() {
     const response = await getConfig()
     config.value = response?.data ?? config.value
+    model.value = resolveImageModelSelection(config.value.models, model.value, config.value.default_model)
     size.value = size.value || config.value.default_size
     quality.value = quality.value || config.value.default_quality
   }
@@ -330,6 +330,7 @@ export function useImageStudio() {
     const sentAttachments = draftAttachments.value.filter(item => item.status === 'ready')
     const sentUploadIds = sentAttachments.map(item => item.uploadId)
     const sentBaseId = baseAsset.value?.id ?? null
+    const sentModel = model.value
     sendInFlight.value = true
     let responseGeneration = null
     let sessionIdSnapshot = null
@@ -343,6 +344,7 @@ export function useImageStudio() {
         prompt: sentPrompt.trim(),
         base_asset_id: sentBaseId,
         reference_asset_ids: sentAttachments.map(item => item.asset.id),
+        model: sentModel,
         size: size.value,
         quality: quality.value,
       }
@@ -488,11 +490,9 @@ export function useImageStudio() {
 
   return {
     activeJob, activeSessionIds, assets, assetUrl: assetUrls.get, baseAsset, canSend, chooseBaseAsset, chooseOutputMode,
-    clearBaseAsset,
-    closeLightbox, config, currentSession, currentSessionId, downloadAsset, draftAttachments,
+    clearBaseAsset, closeLightbox, config, currentSession, currentSessionId, downloadAsset, draftAttachments,
     drawerOpen, ensureSession, initializing, jobs, lightboxAsset, lightboxUrl, loadMoreSessions: () => loadSessions({ append: true }),
-    isConfirmationSubmitting, messages, newSessionInFlight, newConversation, nextCursor, openLightbox, prompt, quality, removeAttachment,
-    retry, selectLibraryBaseAsset, selectSession, sendInFlight, sessionActiveJob, sessions, sessionsLoading, size, submit,
-    uploadInFlight, uploadReference,
+    isConfirmationSubmitting, messages, model, newSessionInFlight, newConversation, nextCursor, openLightbox, prompt, quality, removeAttachment,
+    retry, selectLibraryBaseAsset, selectSession, sendInFlight, sessionActiveJob, sessions, sessionsLoading, size, submit, uploadInFlight, uploadReference,
   }
 }

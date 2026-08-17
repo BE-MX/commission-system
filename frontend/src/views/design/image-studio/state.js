@@ -170,6 +170,13 @@ export function canStartUpload({ uploadInFlight, sendInFlight } = {}) {
   return !uploadInFlight && !sendInFlight
 }
 
+export function resolveImageModelSelection(models = [], current = '', preferred = '') {
+  const available = models.filter(option => option?.available && option?.id)
+  if (available.some(option => option.id === current)) return current
+  if (available.some(option => option.id === preferred)) return preferred
+  return available[0]?.id ?? ''
+}
+
 export function upsertAttachment(items, uploadId, patch) {
   const index = items.findIndex(item => item.uploadId === uploadId)
   if (index === -1) return [...items, { uploadId, ...patch }]
