@@ -40,7 +40,7 @@ def _preset(db) -> AiPreset:
     provider = AiProvider(
         name="Design image provider",
         provider_type="direct",
-        api_base="https://example.test",
+        api_base="https://api.teamorouter.com",
         api_type="openai",
         api_key="encrypted",
         is_enabled=True,
@@ -53,6 +53,26 @@ def _preset(db) -> AiPreset:
         provider_id=provider.id,
         model="gpt-image-2",
         parameters={"output_format": "png"},
+        is_enabled=True,
+    )
+    db.add(preset)
+    db.flush()
+    return preset
+
+
+def _additional_model_preset(
+    db,
+    *,
+    preset_name: str,
+    model: str,
+    parameters: dict | None = None,
+) -> AiPreset:
+    provider = db.query(AiProvider).filter_by(api_base="https://api.teamorouter.com").one()
+    preset = AiPreset(
+        preset_name=preset_name,
+        provider_id=provider.id,
+        model=model,
+        parameters=parameters or {"output_format": "png"},
         is_enabled=True,
     )
     db.add(preset)
@@ -154,10 +174,13 @@ def _turn(**overrides) -> TurnCreate:
     return TurnCreate(**values)
 
 
-def test_turn_schema_forbids_client_controlled_mode_model_provider_and_bad_choices():
-    for field in ("mode", "model", "provider"):
+def test_turn_schema_allows_catalog_model_and_forbids_controlled_preset_provider_and_bad_choices():
+    assert _turn(model="grok-image-2").model == "grok-image-2"
+    for field in ("mode", "preset", "provider"):
         with pytest.raises(PydanticValidationError):
             _turn(**{field: "client-controlled"})
+    with pytest.raises(PydanticValidationError):
+        _turn(model="client-controlled")
     with pytest.raises(PydanticValidationError):
         _turn(size="2048x2048")
     with pytest.raises(PydanticValidationError):
@@ -166,6 +189,87 @@ def test_turn_schema_forbids_client_controlled_mode_model_provider_and_bad_choic
         _turn(reference_asset_ids=[1, 2, 3, 4, 5])
     with pytest.raises(PydanticValidationError):
         _turn(base_asset_id=1, reference_asset_ids=[1])
+
+
+def test_turn_and_retry_snapshot_the_selected_teamrouter_model(configured, db):
+    owner, _ = configured
+    preset = _additional_model_preset(
+        db,
+        preset_name="design_image_generation_grok_image_2",
+        model="grok-image-2",
+    )
+    db.commit()
+
+    result = service.create_turn(
+        db,
+        owner.id,
+        _turn(request_id="grok-turn", model="grok-image-2"),
+    )
+    job = result.jobs[0]
+    assert job.model == "grok-image-2"
+    assert job.preset_name == preset.preset_name
+
+    job.status = "failed"
+    db.commit()
+    retried = service.retry_job(
+        db,
+        owner.id,
+        job.id,
+        RetryJobRequest(request_id="grok-retry"),
+    )
+    assert retried.jobs[0].model == "grok-image-2"
+    assert retried.jobs[0].preset_name == preset.preset_name
+
+
+def test_retry_legacy_null_model_falls_back_to_original_default(configured, db):
+    owner, _ = configured
+    session = _session(db, owner.id)
+    message = _message(db, session.id)
+    legacy = _job(
+        db,
+        owner.id,
+        session.id,
+        message.id,
+        key="legacy-null-model",
+        status="failed",
+    )
+    legacy.model = None
+    db.commit()
+
+    retried = service.retry_job(
+        db,
+        owner.id,
+        legacy.id,
+        RetryJobRequest(request_id="retry-legacy-null-model"),
+    )
+
+    assert retried.jobs[0].model == "gpt-image-2"
+    assert retried.jobs[0].preset_name == "design_image_generation"
+
+
+def test_gemini_model_is_available_only_with_chat_style_teamrouter_preset(configured, db):
+    owner, _ = configured
+    preset = _additional_model_preset(
+        db,
+        preset_name="design_image_generation_nano_banana_pro",
+        model="gemini-3-pro-image",
+        parameters={"api_style": "chat", "max_tokens": 4096},
+    )
+    db.commit()
+
+    models = {item["id"]: item for item in service.get_config(db, owner.id)["models"]}
+    assert models["gemini-3-pro-image"]["available"] is True
+
+    preset.parameters = {"output_format": "png"}
+    db.commit()
+    models = {item["id"]: item for item in service.get_config(db, owner.id)["models"]}
+    assert models["gemini-3-pro-image"]["available"] is False
+    with pytest.raises(service.DesignImageConfigurationError):
+        service.create_turn(
+            db,
+            owner.id,
+            _turn(request_id="bad-gemini-style", model="gemini-3-pro-image"),
+        )
 
 
 def test_owner_scoped_resources_hide_absent_and_cross_owner_with_one_error(configured, db):
@@ -1241,6 +1345,13 @@ def test_config_reports_verified_choices_limit_and_remaining(configured, db, mon
     )
 
     assert config == {
+        "models": [
+            {"id": "gpt-image-2", "label": "GPT Image 2", "available": True},
+            {"id": "grok-image-2", "label": "Grok Image 2", "available": False},
+            {"id": "gemini-3-pro-image", "label": "Nano Banana Pro", "available": False},
+            {"id": "gemini-3.1-flash-image", "label": "Nano Banana 2", "available": False},
+        ],
+        "default_model": "gpt-image-2",
         "sizes": ["1024x1024", "1024x1536", "1536x1024"],
         "qualities": ["low", "medium", "high"],
         "default_size": "1024x1024",

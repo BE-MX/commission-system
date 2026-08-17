@@ -217,6 +217,13 @@ def test_every_json_endpoint_returns_ok_envelope_without_sensitive_fields(
         assert secret not in rendered
 
 
+def test_job_serializer_exposes_only_public_catalog_model_ids(api):
+    _client, _app, module, _service = api
+
+    assert module._job(_row(model="gpt-image-2"))["model"] == "gpt-image-2"
+    assert module._job(_row(model="secret-model"))["model"] is None
+
+
 def test_turn_and_retry_use_unified_jobs_array_without_single_job_field(api):
     client, *_ = api
     for method, path, payload in (
