@@ -1061,7 +1061,9 @@ AI_IMAGE_PROXY=
 
 `DESIGN_IMAGE_STALE_SECONDS` 必须大于 lease。调度总开关是 `SCHEDULER_ENABLED`，时区 `SCHEDULER_TIMEZONE=Asia/Shanghai`，任务 ID 为 `design_image_queue`，`max_instances=1 / coalesce=true`。目标态只允许 office-primary 开启此 worker，并让同一实例访问同一私有根；展会/云实例不得同时消费。不要为关闭单个生图任务而直接关全局 Scheduler，因为会连带停掉其他定时任务。
 
-部署前用 Windows ACL 检查并收紧存储根及其父目录：服务账号需要读、写、建目录、替换和删除；普通用户、Web 静态服务和其他应用账号不得写入，也不得通过 junction/reparse point 进入该根。先以服务账号创建测试图并删除，再启动灰度。Preset 必须为启用的 direct Provider、名称 `design_image_generation`、model 精确为 `gpt-image-2`；不要在证据里记录密钥。
+部署前用 Windows ACL 检查并收紧存储根及其父目录：服务账号需要读、写、建目录、替换和删除；普通用户、Web 静态服务和其他应用账号不得写入，也不得通过 junction/reparse point 进入该根。先以服务账号创建测试图并删除，再启动灰度。默认 Preset 必须为启用的 direct/openai TeamRouter Provider（`https://api.teamorouter.com`）、名称 `design_image_generation`、model 精确为 `gpt-image-2`；不要在证据里记录密钥。
+
+可选模型使用独立 Preset，禁止覆盖默认 Preset 的 model：Grok Image 2 为 `design_image_generation_grok_image_2 / grok-image-2`，Nano Banana Pro 为 `design_image_generation_nano_banana_pro / gemini-3-pro-image`，Nano Banana 2 为 `design_image_generation_nano_banana_2 / gemini-3.1-flash-image`。Gemini Preset 必须额外配置 `parameters.api_style="chat"`；该兼容端点的尺寸/质量仅为提示词软约束，不能当成协议级像素保证。先用同一 TeamRouter Key 调 `GET /v1/models` 确认精确 model ID 存在，再分别完成无参考图 generation、单参考图 edit、多参考图 edit、Markdown 与 `message.images[]` 响应、错误与 usage 探针，最后才启用 Preset；否则页面会显示“未配置”且不可选。2026-08-17 实时目录尚无 `grok-image-2` 与 `gemini-3-pro-image`，不得用相近文本模型或别名冒充。
 
 ### 上线与核验
 

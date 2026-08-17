@@ -798,6 +798,17 @@ frontend/src/
 
 ## 设计部 AI 生图工作台（design_image，2026-08-05）
 
+**多模型选择（2026-08-17）**：输入框工具栏新增服务端模型目录，默认仍为 `gpt-image-2`。浏览器只提交模型 ID；后端固定映射到独立 Preset，任务落库时同时快照 `preset_name/model/provider_id/config_version/rate_card`，多输出确认和失败重试均沿用原模型，不能由客户端直接指定 Preset 或 Provider。目录如下：
+
+| 页面名称 | model | Preset | API style |
+|---|---|---|---|
+| GPT Image 2 | `gpt-image-2` | `design_image_generation` | `/v1/images/*` |
+| Grok Image 2 | `grok-image-2` | `design_image_generation_grok_image_2` | `/v1/images/*` |
+| Nano Banana Pro | `gemini-3-pro-image` | `design_image_generation_nano_banana_pro` | `chat` |
+| Nano Banana 2 | `gemini-3.1-flash-image` | `design_image_generation_nano_banana_2` | `chat` |
+
+每个 Preset 必须启用并绑定带 API Key 的 `direct + openai` TeamRouter Provider，base 仅允许 `https://api.teamorouter.com` 或其 `/v1` 形式；Gemini 两项还必须配置 `parameters.api_style="chat"`。配置不完整的目录项仍显示，但标为“未配置”且不可选；后端同样 fail-closed 返回 503。2026-08-17 用现有 TeamRouter Key 调 `GET /v1/models` 的实测结果中，图片模型只有 `gpt-image-2` 与 `gemini-3.1-flash-image`；没有 `grok-image-2` 或 `gemini-3-pro-image`。因此 Grok Image 2 与 Nano Banana Pro 只完成产品与调用链预接入，在 TeamRouter 实时模型目录出现对应 ID 且完成真实 generation/edit 探针之前不得创建为可用 Preset，也不得对外宣称已可生成。Gemini 的无参考图 generation 已补齐 chat-style 分支，不再误走 `/v1/images/generations`，并兼容 Markdown data URL 与 `message.images[]` 两种返回形态；chat-style 无独立 size/quality 字段，用户选择只会转换为提示词软约束，不能承诺精确像素或质量档位。
+
 **上下文口径**：会话记录用于展示、恢复和追溯，不等于把完整历史重新喂给模型。每轮只发送显式 `base_asset_id`、最多 4 张本轮参考图和当前 prompt；生成结果用 `source_asset_id` 形成版本链。因此连续编辑的成本主要取决于本轮输入图片与输出质量，不会因聊天轮数自动线性累加全部历史图片。
 
 **会话命名**：首轮 turn 自动用首条消息命名会话——仅当标题仍是默认名 `新对话` 且会话尚无消息（显式起过名的不覆盖）；压平换行/连续空白后截断 30 字。隐式建会话（不带 session_id 的 turn）同样走这个派生。前端在 submit 响应里同步 `currentSession.title`，页头与侧栏即时更新，无需刷新。
