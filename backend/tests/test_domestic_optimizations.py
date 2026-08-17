@@ -311,6 +311,15 @@ def test_append_item_request_id_prevents_duplicate_item_and_charge(db):
     with pytest.raises(ValueError, match="不同明细内容"):
         order_service.add_item(db, order.id, changed, creator.id)
 
+    order_service.delete_item(db, first["id"], creator.id)
+    db.refresh(customer)
+    db.refresh(order)
+    assert customer.balance == Decimal("100.00")
+    assert order.item_count == 1
+    assert order.total_unit_qty == 1
+    with pytest.raises(ValueError, match="已删除"):
+        order_service.add_item(db, order.id, payload, creator.id)
+
 
 def test_order_scale_limits_creation_and_append(db):
     item = OrderItemInput(attrs=_attrs(), order_qty=1, unit_price=Decimal("0"))

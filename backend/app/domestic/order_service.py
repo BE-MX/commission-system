@@ -703,6 +703,11 @@ def delete_item(db: Session, item_id: int, user_id: int | None = None) -> None:
         raise ValueError("订单至少保留一行明细；如需作废请终止订单")
     order.item_count = max(0, int(order.item_count or 0) - 1)
     order.total_unit_qty = max(0, int(order.total_unit_qty or 0) - item.order_qty)
+    # 主动清空幂等记录的 item_id，既不依赖测试库是否启用 FK pragma，也让
+    # 重放在锁订单后只读幂等行，不再为“确认明细是否存在”反向锁回明细行。
+    db.query(DomesticItemAppendRequest).filter(
+        DomesticItemAppendRequest.item_id == item.id
+    ).update({DomesticItemAppendRequest.item_id: None}, synchronize_session=False)
     db.delete(item)
     db.flush()
     progress_service.sync_order_status(db, order_id)
