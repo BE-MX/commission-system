@@ -14,7 +14,8 @@
     "test:expo-publicurl": "node --test tests/expoPublicUrl.test.mjs",
     "test:expo-variants": "node --test tests/expoPromptVariants.test.mjs",
     "test:navigation-layout": "node --test tests/navigationLayout.test.mjs",
-    "test:holidays": "node --test tests/holidays.test.mjs"
+    "test:holidays": "node --test tests/holidays.test.mjs",
+    "test:customer-media-portal": "node --test tests/customerMediaPortalState.test.mjs"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.0",

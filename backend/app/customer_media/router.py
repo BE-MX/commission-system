@@ -100,6 +100,33 @@ def _account(row) -> dict:
     }
 
 
+def _portal_customer(row: dict) -> dict:
+    return {
+        **row,
+        "last_login_at": row["last_login_at"].isoformat() if row["last_login_at"] else None,
+        "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
+    }
+
+
+def _portal_preview_batch(row, task_meta: dict) -> dict:
+    task = task_meta.get(row.task_id, {})
+    return {
+        "id": row.id,
+        "task_id": row.task_id,
+        "revision": row.revision,
+        "title": task.get("task_name") or "拍摄交付",
+        "shoot_type": task.get("shoot_type"),
+        "published_at": row.published_at.isoformat() if row.published_at else None,
+        "assets": [
+            {
+                **_asset(asset),
+                "content_url": service.sales_portal_preview_url(asset.id),
+            }
+            for asset in row.assets if asset.deleted_at is None
+        ],
+    }
+
+
 @router.get("/customers")
 def customers(
     search: str = Query(default="", max_length=200),
@@ -107,6 +134,36 @@ def customers(
     payload: dict = Depends(require_any_permission("design:write", "design:manage", "customer_media:admin")),
 ):
     return ok(_call(service.list_customers, db, payload, search))
+
+
+@router.get("/sales-portal/customers")
+def sales_portal_customers(
+    search: str = Query(default="", max_length=200),
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_any_permission(
+        "customer_media_portal:read", "customer_media:admin",
+    )),
+):
+    rows = _call(service.list_sales_portal_customers, db, payload, search)
+    return ok([_portal_customer(row) for row in rows])
+
+
+@router.get("/sales-portal/customers/{customer_id}")
+def sales_portal_customer(
+    customer_id: str,
+    db: Session = Depends(get_db),
+    payload: dict = Depends(require_any_permission(
+        "customer_media_portal:read", "customer_media:admin",
+    )),
+):
+    detail = _call(service.sales_portal_customer_detail, db, payload, customer_id)
+    return ok({
+        "customer": _portal_customer(detail["customer"]),
+        "batches": [
+            _portal_preview_batch(row, detail["task_meta"])
+            for row in detail["batches"]
+        ],
+    })
 
 
 @router.get("/tasks/{task_id}/batch")
@@ -193,6 +250,30 @@ def internal_asset_content(
     asset = db.get(service.CustomerMediaAsset, asset_id)
     if not asset or asset.deleted_at:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "素材不存在")
+    path = storage_for(asset.storage_provider).resolve(asset.object_key)
+    if not path.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "素材文件不存在")
+    return FileResponse(
+        path,
+        media_type=asset.content_type,
+        filename=asset.file_name if download else None,
+        content_disposition_type="attachment" if download else "inline",
+    )
+
+
+@router.get("/sales-portal/assets/{asset_id}/content")
+# require_permission exemption: 业务预览原生媒体标签使用 purpose-bound HMAC；
+# 读取时 sales_portal_asset 仍会重验批次 published 状态。
+def sales_portal_asset_content(
+    asset_id: int,
+    expires: int = Query(..., gt=0),
+    token: str = Query(..., min_length=64, max_length=64),
+    download: bool = Query(default=False),
+    db: Session = Depends(get_db),
+):
+    if not service.verify_sales_portal_preview(asset_id, expires, token):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "预览链接无效或已过期")
+    asset = _call(service.sales_portal_asset, db, asset_id)
     path = storage_for(asset.storage_provider).resolve(asset.object_key)
     if not path.is_file():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "素材文件不存在")

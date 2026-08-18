@@ -237,6 +237,17 @@
 
 worker 通过 queued/running、lease 与 claim 字段实现可恢复领取。失败只在明确属于可退款分类且尚未 `refunded_at` 时原子退款一次；不能证明未计费的 Provider 失败不退款。`ark_customer_image_assets.deleted_at` 是邀请 LOGO/输出的软删除边界；邀请过期满保留期且不存在 queued/running generation 时才进入清理，数据库先提交软删除，再按记录的精确原图/缩略图路径 best-effort 删除，文件失败由下一次任务重试。
 
+## 客户拍摄素材交付与门户（迁移 114，2026-08-14；业务预览无新迁移，2026-08-17）
+
+- `ark_customer_media_batches`：一条设计任务一个交付批次，保存客户与申请人快照、审核状态、修订号、乐观锁和发布/下架时间；`task_id` 唯一。
+- `ark_customer_media_assets`：批次图片/视频私有原件元数据，存储适配器与 object key 唯一；`deleted_at` 是软删除边界。
+- `ark_customer_media_reviews`：送审、通过、退回、下架等不可变审计记录，按批次与时间索引。
+- `ark_customer_portal_accounts`：一个 customer_id 一个门户账号、登录邮箱唯一；只保存 bcrypt 密码哈希和会话失效版本。
+- `ark_customer_portal_sessions`：只保存会话 token 的 SHA-256、版本、IP/UA、过期和撤销时间；账号删除级联会话。
+- `ark_customer_media_downloads`：客户下载素材审计，素材和账号均为 RESTRICT，避免历史记录悬空。
+
+业务员客户切换与预览复用以上表，不新增副本或迁移。客户范围实时联结 active `ark_user_external_bindings(provider='okki')` 与当前 `customer_commission_snapshot.salesperson_id`；门户内容仍由 `ark_customer_media_batches.status='published'` 和素材 `deleted_at IS NULL` 决定，因此业务预览与客户实际可见内容保持同一真相源。
+
 ## 客户 AI 方案对话（迁移 100，2026-08-09）
 
 - `ark_ai_chat_sessions`：owner 会话；`owner_user_id → ark_users.id RESTRICT`，索引 `idx_ai_chat_session_owner_updated(owner_user_id, updated_at)` 支撑最近会话分页。

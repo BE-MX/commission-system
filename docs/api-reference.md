@@ -583,6 +583,24 @@ LOGO 写接口和 generation 提交使用两个独立 limiter，均按 `invite i
 
 主要错误：邀请不可用统一 401、multipart/图片校验及超过动态补充要求上限 400、资源不存在或越权 404、生成前置条件或额度 409、LOGO 超过当前应用字节上限时 413（文案按实际配置动态展示）、LOGO 或 generation 写入过频 429、图片存储或生图预设不可用 503。公开 API 永不按内部 owner/业务员 scope 判断；其唯一数据边界是当前 active invitation。
 
+## 客户拍摄素材门户（`/api/customer-media`，114 迁移，2026-08-17 业务预览入口）
+
+内部素材交付沿用 `customer_media:*` 权限；业务员预览入口使用页面权限 `customer_media_portal:read`。普通业务员通过本人 active OKKI 绑定映射到当前 `customer_commission_snapshot.salesperson_id`，只能看到当前归属客户；`customer_media_portal:read_all` 或 `customer_media:admin` 可查看全部已配置门户账号。详情越权与不存在统一返回 404。预览数据与客户门户共用 `portal_library()`，只返回仍处于 `published` 状态的批次和未删除素材，草稿、待审核、待修改与已下架批次不会进入响应。
+
+| 方法 | 路径 | 权限 / 会话 | 契约 |
+|---|---|---|---|
+| GET | `/sales-portal/customers?search=` | `customer_media_portal:read` 或 `customer_media:admin` | 返回调用者范围内已配置门户的客户摘要、门户状态、图片/视频/交付批次数和最近更新时间。 |
+| GET | `/sales-portal/customers/{customer_id}` | 同上 | 返回客户摘要及其实际可见的已发布批次；批次标题与拍摄类型也由客户公开门户返回。停用账号不签发素材 URL。 |
+| GET | `/sales-portal/assets/{asset_id}/content?expires=&token=&download=` | 业务预览 purpose-bound HMAC | 返回业务预览或下载文件；签名绑定用途、素材 ID 与过期时间，并在每次读取时重验门户账号仍启用、所属批次仍为 published，停用或下架立即 404。 |
+| GET | `/assets/{asset_id}/content?expires=&token=&download=` | 内部审核 HMAC | 返回设计审核工作流中的内部预览或下载文件；与业务预览签名不可互换。 |
+| POST | `/portal/login` | 公开门户邮箱密码 | 登录限流后签发 HttpOnly 门户 Cookie；错误账号与密码统一 401。 |
+| POST | `/portal/logout` | 门户 Cookie | 撤销当前会话并删除 Cookie。 |
+| GET | `/portal/me` | 门户 Cookie | 返回当前客户身份。 |
+| GET | `/portal/library` | 门户 Cookie | 按账号 customer_id 返回该客户已发布批次，包含与业务预览一致的任务标题、拍摄类型和素材。 |
+| GET | `/portal/assets/{asset_id}/content?download=` | 门户 Cookie | 再校验客户归属和批次发布状态；下载时写下载审计。 |
+
+业务预览页面位于 `/design/media/portal`，左侧客户导航只展示 API 已授权的门户；右侧直接渲染详情响应，不模拟草稿或审核中素材。`search` 只是授权结果集上的名称、客户 ID、登录邮箱过滤条件，不能扩大数据范围。
+
 ## 客户 AI 方案对话（`/api/ai-chat`，100 迁移，2026-08-09）
 
 共 8 个 URL pattern、9 个 HTTP 操作（`/sessions` 同时提供 GET/POST）。资源按当前用户 owner 隔离；跨账号与不存在资源统一返回 404。`ai_chat:read` 用于配置、会话和附件内容读取，`ai_chat:write` 用于建会话、上传/删除草稿附件、发送和重试；`ai_chat:admin` 已登记但不绕过 owner，也没有 MVP 管理端点。

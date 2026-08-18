@@ -17,6 +17,7 @@ const SALESPERSON_CODES = [
   'customer_radar:read', 'customer_radar:write',
   'asset:read', 'asset_favorites:read', 'asset_stats:read',
   'design:read', 'design:write', 'design_gantt:read', 'design_my:read',
+  'customer_media_portal:read',
   'expo:write', 'expo_lead:read', 'expo_lead:write',
   'training:read', 'training:write',
 ]
@@ -28,6 +29,7 @@ const SUPERVISOR_CODES = [
   'supervisor:read',
   'tracking:read_all', 'invoice:read_all',
   'design:audit', 'design_stats:read',
+  'customer_media_portal:read_all',
   'insight:internal_read', 'insight_ai_tools:read',
   'insight_minutes:write',
   'customer_opportunity:manage',

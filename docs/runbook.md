@@ -1287,7 +1287,7 @@ Journal 判读和重跑规则：`intent` 与 `syscall_returned` 都只是操作�
    方舟前端构建时配置 `VITE_CUSTOMER_MEDIA_API_BASE=https://media.leshine.cloud/api/customer-media`，让大文件直接到云端，不经办公室主站转发。云端必须连接与方舟一致的数据库；不得启动第二套 Scheduler。首期门户登录限速是进程内滑动窗口，因此云端后端固定单 worker；扩容多 worker 前先迁移到 Redis 等共享限速器。
 4. 创建私有存储根并只授予方舟服务账号读写权限；以服务账号完成“写入临时文件 → fsync → 原子替换 → 删除”测试。确认磁盘容量、备份和低水位告警后再开放上传。
 5. 将 `frontend/public/customer-media/` 中内容发布到 `/srv/ark-customer-media/`，安装并启用 [Nginx 模板](../deploy/nginx/customer-media.leshine.cloud.conf)，执行 `nginx -t` 后 reload。启动云端后端后，浏览器从方舟完成一次图片、视频上传，从发起人账号批准发布，再用客户账号验证只能看到本 `customer_id` 已发布批次并可下载。
-6. 权限最小化：设计师角色授予 `customer_media:write`，预约发起人授予 `customer_media:read`，仅管理员授予 `customer_media:admin`。门户账号一客户仅一条，登录邮箱全局唯一；改邮箱、改密码、停用账号都会使旧会话失效。
+6. 权限最小化：设计师角色授予 `customer_media:write`，预约发起人授予 `customer_media:read`，仅管理员授予 `customer_media:admin`。重启后权限 seed 会让已有 `commission:self_read` 业务角色首次继承 `customer_media_portal:read` 页面入口；只有 `commission_my:read` 的财务等角色不会继承。抽查一个业务账号只看到当前 OKKI 归属客户。主管若需全量查看，必须显式授予 `customer_media_portal:read_all`（或重新套用主管模板），该数据范围不会自动扩大。门户账号一客户仅一条，登录邮箱全局唯一；改邮箱、改密码、停用账号都会使旧会话失效。
 
 ### 运维与回滚
 

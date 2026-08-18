@@ -196,7 +196,7 @@ def list_okki_department_options(db: Session) -> list[dict]:
 
 
 # kind 派生规则（权限重设计方案）：data=数据范围，read/日报=页面可见，其余=操作级
-_DATA_KIND_CODES = {"tracking:read_all", "commission:self_read", "insight:internal_read", "invoice:read_all", "expo_lead:read_all", "festival_order:read_all", "order_intelligence:read_all"}
+_DATA_KIND_CODES = {"tracking:read_all", "commission:self_read", "insight:internal_read", "invoice:read_all", "expo_lead:read_all", "festival_order:read_all", "order_intelligence:read_all", "customer_media_portal:read_all"}
 _PAGE_KIND_EXTRA = {"tracking:daily_report"}
 
 
@@ -273,6 +273,8 @@ def seed_role_permissions(db: Session):
         ("customer_media:read", "customer_media", "read", "查看和审核客户拍摄素材"),
         ("customer_media:write", "customer_media", "write", "上传并提交客户拍摄素材"),
         ("customer_media:admin", "customer_media", "admin", "管理客户素材门户账号和发布"),
+        ("customer_media_portal:read", "customer_media", "read", "查看本人客户素材门户预览"),
+        ("customer_media_portal:read_all", "customer_media", "read_all", "查看全部客户素材门户预览（数据范围）"),
         # 账号体系（2026-07-03 起 user/role 统一挂 module=user，随 upsert 修复 DB 漂移）
         ("user:read",      "user", "read",     "查看用户/角色"),
         ("user:write",     "user", "write",    "创建/编辑用户"),
@@ -447,6 +449,7 @@ def seed_role_permissions(db: Session):
     # upsert：活跃权限 + 已下架权限统一处理，元数据每次启动刷新
     existing_map = {p.code: p for p in db.query(ArkPermission).all()}
     invoice_price_write_created = "invoice_price:write" not in existing_map
+    customer_media_portal_read_created = "customer_media_portal:read" not in existing_map
     module_counter: dict = {}
     for entry in [(s, 0) for s in seeds] + [(s, 1) for s in LEGACY_SEEDS]:
         (code, module, action, label), legacy = entry
@@ -480,6 +483,31 @@ def seed_role_permissions(db: Session):
             if not link:
                 db.add(ArkRolePermission(role_id=role_id, permission_id=invoice_price_write_perm.id))
         db.flush()
+
+    # 客户素材门户是业务员现有客户工作流的新页面：首次登记权限时，继承已有
+    # “本人提成数据范围”业务角色的页面访问能力。API 仍按 OKKI 当前归属过滤，不扩大数据范围。
+    if customer_media_portal_read_created:
+        portal_read_perm = db.query(ArkPermission).filter(
+            ArkPermission.code == "customer_media_portal:read",
+        ).first()
+        salesperson_perm_ids = [row[0] for row in db.query(ArkPermission.id).filter(
+            ArkPermission.code == "commission:self_read",
+        ).all()]
+        if portal_read_perm and salesperson_perm_ids:
+            role_ids = {row[0] for row in db.query(ArkRolePermission.role_id).filter(
+                ArkRolePermission.permission_id.in_(salesperson_perm_ids),
+            ).all()}
+            for role_id in role_ids:
+                link = db.query(ArkRolePermission).filter(
+                    ArkRolePermission.role_id == role_id,
+                    ArkRolePermission.permission_id == portal_read_perm.id,
+                ).first()
+                if not link:
+                    db.add(ArkRolePermission(
+                        role_id=role_id,
+                        permission_id=portal_read_perm.id,
+                    ))
+            db.flush()
 
     # 高爆炸半径权限只能人工授予；启动 seed 不得静默扩大既有 admin 的生产控制权。
     manual_grant_codes = {"operations:admin"}
