@@ -1,6 +1,8 @@
 from datetime import date
+from types import SimpleNamespace
 
 import pytest
+from fastapi import HTTPException
 
 from app.order_intelligence import service
 from app.order_intelligence.filtering import AnalysisFilters, group_countries, model_expression, order_sql
@@ -757,3 +759,64 @@ def test_top_attributes_exposes_equal_window_quantity_change():
         "name": "A", "quantity": 15, "previous_quantity": 10, "quantity_growth": 50.0,
     }
     assert result[1]["quantity_growth"] is None
+
+
+class _BindingQuery:
+    """模拟 resolve_scope 里 db.query(...).filter(...).order_by(...).first() 链。"""
+
+    def __init__(self, binding):
+        self._binding = binding
+
+    def filter(self, *_args, **_kwargs):
+        return self
+
+    def order_by(self, *_args, **_kwargs):
+        return self
+
+    def first(self):
+        return self._binding
+
+
+class _BindingDb:
+    def __init__(self, binding):
+        self._binding = binding
+
+    def query(self, *_args, **_kwargs):
+        return _BindingQuery(self._binding)
+
+
+def test_resolve_scope_read_all_holder_sees_all_and_can_filter():
+    user = {"sub": "1", "roles": [], "permissions": ["order_intelligence:read", "order_intelligence:read_all"]}
+    # can_read_all 分支不触库，db 传 None 证明这一点
+    assert service.resolve_scope(None, user) == service.AnalysisScope("all", None, None, True)
+    scoped = service.resolve_scope(None, user, requested_user_id="U9", requested_team="团队一")
+    assert scoped == service.AnalysisScope("filtered", "U9", "团队一", True)
+
+
+def test_resolve_scope_super_admin_sees_all_without_data_permission():
+    user = {"sub": "1", "roles": ["super_admin"], "permissions": []}
+    assert service.resolve_scope(None, user) == service.AnalysisScope("all", None, None, True)
+
+
+def test_resolve_scope_salesperson_locked_to_own_okki_binding():
+    binding = SimpleNamespace(external_account_id="9001")
+    user = {"sub": "7", "roles": ["salesperson"], "permissions": ["order_intelligence:read"]}
+    scope = service.resolve_scope(_BindingDb(binding), user)
+    assert scope == service.AnalysisScope("self", "9001", None, False)
+    # 显式请求本人 user_id 视为同意，不报错
+    assert service.resolve_scope(_BindingDb(binding), user, requested_user_id="9001") == scope
+
+
+def test_resolve_scope_salesperson_cannot_view_other_salesperson():
+    binding = SimpleNamespace(external_account_id="9001")
+    user = {"sub": "7", "roles": ["salesperson"], "permissions": ["order_intelligence:read"]}
+    with pytest.raises(HTTPException) as exc:
+        service.resolve_scope(_BindingDb(binding), user, requested_user_id="U9")
+    assert exc.value.status_code == 403
+
+
+def test_resolve_scope_salesperson_without_binding_rejected():
+    user = {"sub": "7", "roles": ["salesperson"], "permissions": ["order_intelligence:read"]}
+    with pytest.raises(HTTPException) as exc:
+        service.resolve_scope(_BindingDb(None), user)
+    assert exc.value.status_code == 422

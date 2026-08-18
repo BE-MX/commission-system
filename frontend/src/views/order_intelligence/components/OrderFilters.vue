@@ -18,6 +18,7 @@
         </el-select>
       </div>
     </template>
+    <el-tag v-if="!options.can_read_all" class="oi-scope-tag" size="small" effect="plain" type="info">数据范围：仅本人</el-tag>
     <div class="oi-filter">
       <span>国家（大洲 / 国家）</span>
       <el-cascader
@@ -82,6 +83,7 @@ const countryProps = {
 .oi-filter > span { color: var(--text-secondary); font-size: 11px; font-weight: 700; }
 .oi-filter :deep(.el-select), .oi-filter :deep(.el-cascader) { width: 190px; }
 .oi-filter--date :deep(.el-date-editor) { width: 270px; }
+.oi-scope-tag { align-self: center; }
 @media (max-width: 1250px) { .oi-toolbar small { width: 100%; margin-left: 0; } }
 @media (max-width: 820px) {
   .oi-toolbar { align-items: stretch; flex-direction: column; }

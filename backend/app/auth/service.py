@@ -352,7 +352,7 @@ def seed_role_permissions(db: Session):
         ("festival_order:read",     "festival_order", "read",     "查看采购节数据明细"),
         ("festival_order:read_all", "festival_order", "read_all", "查看全部采购节订单（数据范围）"),
         # 订单经营智能分析：默认仅本人，read_all 放开全公司/团队/个人筛选。
-        ("order_intelligence:read",     "order_intelligence", "read",     "查看订单经营智能分析"),
+        ("order_intelligence:read",     "order_intelligence", "read",     "查看订单经营分析（仅本人数据）"),
         ("order_intelligence:read_all", "order_intelligence", "read_all", "查看全部订单经营分析（数据范围）"),
         # 客户售后管理（2026-07-12 售后分析拆独立码；2026-07-14 审核拆 aftersales:review，
         # 支持 仅录单 / 录单+审核 / 仅审核 三档，069 迁移已给存量 write 角色补授 review）

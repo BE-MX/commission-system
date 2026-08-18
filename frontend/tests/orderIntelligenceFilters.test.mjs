@@ -44,10 +44,21 @@ test('AI brief generation includes the active multidimensional filters', () => {
 test('customer profiles expose segment dimensions, product distributions, and profile alerts', () => {
   const page = read('../src/views/order_intelligence/OrderIntelligence.vue')
   const composable = read('../src/views/order_intelligence/composables/useOrderIntelligence.js')
-  for (const label of ['客户画像', '客户性质', '新签型号', '首返周期', '平均复购周期', '统计期畅销产品', '统计期颜色', '统计期幅度']) {
+  for (const label of ['客户画像', '客户性质', '新签型号', '首返周期', '典型复购周期', '统计期畅销产品', '统计期颜色', '统计期幅度']) {
     assert.match(page, new RegExp(label))
   }
   assert.match(page, /到期提醒/)
   assert.match(page, /周期异常/)
   assert.match(composable, /getCustomerProfileAnalysis/)
+})
+
+test('country opportunity list shows first-return customers right after new-sign customers', () => {
+  const page = read('../src/views/order_intelligence/OrderIntelligence.vue')
+  assert.match(page, /label="新签客户" prop="new_sign_customers" min-width="104" \/>\s*<el-table-column label="首返客户" prop="first_return_customers"/)
+})
+
+test('salespersons see an explicit self-scope hint while team/user filters stay admin-only', () => {
+  const filters = read('../src/views/order_intelligence/components/OrderFilters.vue')
+  assert.match(filters, /v-if="options\.can_read_all"/)
+  assert.match(filters, /v-if="!options\.can_read_all"[^>]*>数据范围：仅本人/)
 })

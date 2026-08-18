@@ -137,6 +137,7 @@
               <template #default="{ row }"><el-tag effect="plain" :type="scoreType(row.opportunity_score)">{{ row.opportunity_score }}</el-tag></template>
             </el-table-column>
             <el-table-column label="新签客户" prop="new_sign_customers" min-width="104" />
+            <el-table-column label="首返客户" prop="first_return_customers" min-width="104" />
             <el-table-column label="复购客户" prop="repeat_customers" min-width="104" />
             <el-table-column label="复购金额" min-width="128"><template #default="{ row }">${{ money(row.repeat_amount_usd) }}</template></el-table-column>
             <el-table-column label="客单中位" min-width="112"><template #default="{ row }">${{ money(row.median_order_amount_usd) }}</template></el-table-column>
