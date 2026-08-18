@@ -5,6 +5,7 @@ import { domesticClient } from './clients'
 export const PRODUCT_TYPE_LABELS = { cap: '头套', piece: '发片' }
 export const ORDER_TYPE_LABELS = { normal: '普货', special: '特单' }
 export const ORDER_STATUS = [
+  { value: 0, label: '草稿', tag: 'warning' },
   { value: 1, label: '生产中', tag: '' },
   { value: 2, label: '已完工', tag: 'success' },
   { value: 3, label: '已发货', tag: 'info' },
@@ -58,6 +59,14 @@ export function deleteCustomer(id) {
   return domesticClient.delete(`/customers/${id}`)
 }
 
+export function rechargeCustomer(id, data) {
+  return domesticClient.post(`/customers/${id}/recharges`, data)
+}
+
+export function listCustomerBalanceLedger(id, params) {
+  return domesticClient.get(`/customers/${id}/balance-ledger`, { params })
+}
+
 // ── 产品与工艺映射 ──
 export function listProducts(params) {
   return domesticClient.get('/products', { params })
@@ -96,6 +105,10 @@ export function updateOrder(id, data) {
   return domesticClient.put(`/orders/${id}`, data)
 }
 
+export function submitDraftOrder(id) {
+  return domesticClient.post(`/orders/${id}/submit`)
+}
+
 export function terminateOrder(id, reason) {
   return domesticClient.post(`/orders/${id}/status`, { status: 4, reason })
 }
@@ -104,7 +117,7 @@ export function deleteOrder(id) {
   return domesticClient.delete(`/orders/${id}`)
 }
 
-// 订单产品进度小程序码：微信扫码免登录看该明细进度，可发客户
+// 订单进度小程序码：从任一明细生成，微信扫码免登录看完整订单
 export function getItemWxacode(itemId) {
   return domesticClient.get(`/items/${itemId}/wxacode`)
 }
@@ -120,6 +133,10 @@ export function shipItem(itemId, data) {
 
 export function getPrintCard(itemId) {
   return domesticClient.get(`/items/${itemId}/print-card`)
+}
+
+export function getItemUnitQrcodes(itemId, params) {
+  return domesticClient.get(`/items/${itemId}/unit-qrcodes`, { params })
 }
 
 // ── 报工 ──

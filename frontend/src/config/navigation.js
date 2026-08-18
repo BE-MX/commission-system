@@ -102,7 +102,7 @@ export const MENU_GROUPS = {
   domestic: {
     title: '内贸订单',
     icon: Tickets,
-    anyPermission: ['domestic:read', 'domestic:write', 'domestic:admin'],
+    anyPermission: ['domestic:read', 'domestic:write', 'domestic:recharge', 'domestic:admin'],
   },
   asset: {
     title: '素材管理',
@@ -775,10 +775,10 @@ export const NAV_ENTRIES = [
     name: 'DomesticCustomers',
     component: () => import('@/views/domestic/DomesticCustomers.vue'),
     title: '内贸客户',
-    anyPermission: ['domestic:read', 'domestic:write', 'domestic:admin'],
+    anyPermission: ['domestic:read', 'domestic:write', 'domestic:recharge', 'domestic:admin'],
     menu: {
       group: 'domestic', title: '客户管理', icon: OfficeBuilding, order: 13,
-      anyPermission: ['domestic:read', 'domestic:write', 'domestic:admin'],
+      anyPermission: ['domestic:read', 'domestic:write', 'domestic:recharge', 'domestic:admin'],
     },
   },
   // 流转卡 / 二维码标签没有独立路由：它们是订单详情里的打印弹框

@@ -31,17 +31,43 @@
       <view class="lk-order-meta">
         <text>{{order.order_type_label}}</text>
         <text>下单 {{order.order_date}}</text>
+        <text>总价 ¥{{order.totalAmountText}}</text>
       </view>
+      <view class="tk-detail-grid">
+        <text wx:if="{{order.customer_custom_code}}">客户编码：{{order.customer_custom_code}}</text>
+        <text wx:if="{{order.customer_membership_level}}">会员等级：{{order.customer_membership_level}}</text>
+        <text wx:if="{{order.regionText}}">地区：{{order.regionText}}</text>
+        <text wx:if="{{order.customer_contact}}">联系人：{{order.customer_contact}}</text>
+        <text wx:if="{{order.customer_phone}}">电话：{{order.customer_phone}}</text>
+        <text wx:if="{{order.customer_address}}">地址：{{order.customer_address}}</text>
+      </view>
+      <text class="tk-order-remark" wx:if="{{order.remark}}">订单备注：{{order.remark}}</text>
     </view>
 
     <view class="lk-item" wx:for="{{order.items}}" wx:key="id" wx:for-item="it" wx:for-index="idx">
       <view class="lk-item-head">
-        <text class="lk-item-name">{{it.product_name}}</text>
+        <text class="lk-item-name">{{it.line_code}} · {{it.product_name}}</text>
         <view class="lk-item-qty"><text class="lk-qty-num">{{it.order_qty}}</text><text class="lk-qty-unit">件</text></view>
       </view>
       <view class="lk-item-sub">
         <text class="lk-badge lk-badge--i{{it.status}}">{{it.status_label}}</text>
         <text class="lk-cur">当前：{{it.current_process}}</text>
+      </view>
+      <view class="tk-item-detail">
+        <text wx:if="{{it.attrText}}">属性：{{it.attrText}}</text>
+        <text>单价 ¥{{it.unitPriceText}} · 明细总价 ¥{{it.lineAmountText}}</text>
+        <text wx:if="{{it.hairstyle}}">发型：{{it.hairstyle}}</text>
+        <text wx:if="{{it.color}}">颜色：{{it.color}}</text>
+        <text wx:if="{{it.style_requirement}}">发型要求：{{it.style_requirement}}</text>
+        <text wx:if="{{it.remark}}">明细备注：{{it.remark}}</text>
+        <text wx:if="{{it.ship_time}}">发货：{{it.ship_time}} · {{it.ship_weight}}g</text>
+      </view>
+      <view class="tk-images" wx:if="{{it.imageUrls.length}}">
+        <image
+          wx:for="{{it.imageUrls}}" wx:key="*this" wx:for-item="url"
+          class="tk-image" src="{{url}}" mode="aspectFill"
+          data-item="{{idx}}" data-index="{{index}}" bindtap="onPreviewImage"
+        />
       </view>
 
       <view class="lk-steps">
@@ -85,7 +111,7 @@
         <view class="lk-chev {{it.expanded ? 'is-open' : ''}}"></view>
       </view>
 
-      <view class="lk-noroute" wx:if="{{it.stepView.length === 0}}">未配工艺路线，还没有工序进度</view>
+      <view class="lk-noroute" wx:if="{{it.stepView.length === 0}}">{{it.progress_hidden ? '工序进度暂不展示' : '未配工艺路线，还没有工序进度'}}</view>
     </view>
   </block>
 </view>

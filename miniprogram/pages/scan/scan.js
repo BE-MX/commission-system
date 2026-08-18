@@ -282,6 +282,18 @@ Page({
   _handleScanResult: function (scan) {
     var raw = scan.result || ''
 
+    // 内贸逐件码优先识别（ARK-DU 是独立签名域）。
+    var domesticUnit = raw.match(/^ARK-DU:(\d+):([a-f0-9]+)$/)
+    if (domesticUnit) {
+      this.setData({ state: 'idle' })
+      app.globalData.pendingDomesticScan = {
+        unitId: parseInt(domesticUnit[1]),
+        sign: domesticUnit[2]
+      }
+      wx.switchTab({ url: '/pages/domestic/scan/scan' })
+      return
+    }
+
     // 内贸流转卡（ARK-D）自动切到内贸报工：工人从哪个入口扫都不会扫错，零思考。
     // switchTab 不能带 query，payload 先存 globalData，内贸页 onShow 取走
     var domestic = raw.match(/^ARK-D:(\d+):([a-f0-9]+)$/)

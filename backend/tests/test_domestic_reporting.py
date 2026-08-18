@@ -6,6 +6,7 @@
 
 from datetime import date, datetime
 from decimal import Decimal
+from uuid import uuid4
 
 import pytest
 
@@ -84,6 +85,7 @@ def _attrs(craft="递针旋全头套"):
 
 def _create_order(db, user, qty=20, craft="递针旋全头套"):
     payload = OrderCreate(
+        request_id=str(uuid4()),
         order_no="710",
         order_date=date(2026, 7, 27),
         customer_shop_name="马姐假发",
@@ -622,16 +624,16 @@ def test_workload_summary_excludes_revoked(db, craft_mapping, workers):
     """计件工资的唯一口径：撤销掉的件数不能算钱。"""
     creator = _user(db, "planner")
     item = _item_of(db, _create_order(db, creator, qty=20)["id"])
-    first = _report(db, item, 0, workers[0], 12)
-    _report(db, item, 0, workers[0], 8)
-    report_service.revoke_report(db, first["log_id"], workers[0].id)
+    _report(db, item, 0, workers[0], 12)
+    latest = _report(db, item, 0, workers[0], 8)
+    report_service.revoke_report(db, latest["log_id"], workers[0].id)
 
     rows = report_service.get_workload_summary(
         db, date_start=datetime(2026, 1, 1), date_end=datetime(2099, 1, 1)
     )
     mine = [r for r in rows if r["user_id"] == workers[0].id]
     assert len(mine) == 1
-    assert mine[0]["total_qty"] == 8
+    assert mine[0]["total_qty"] == 12
     assert mine[0]["report_count"] == 1
 
 
@@ -639,6 +641,7 @@ def test_multi_item_order_status_rolls_up_partially(db, craft_mapping, workers):
     """一单多品：一行做完不等于整单做完，一行发货不等于整单发货。"""
     creator = _user(db, "planner")
     payload = OrderCreate(
+        request_id=str(uuid4()),
         order_no="712", order_date=date(2026, 7, 27), customer_shop_name="马姐假发",
         items=[
             OrderItemInput(attrs=_attrs(), order_qty=3),

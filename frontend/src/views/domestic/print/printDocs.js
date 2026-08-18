@@ -65,6 +65,28 @@ export function buildLabelDoc({ card, logoUrl, copies = 1 }) {
   return wrapDoc(`二维码标签 ${card.domestic_no}`, LABEL_CSS, one.repeat(Math.max(1, copies)))
 }
 
+// 逐件标签：每个数量一张不同二维码，A1-01/A1-02/... 印在标签上便于人工核对。
+export function buildUnitLabelDoc({ data, logoUrl }) {
+  const units = data.units || []
+  const body = units.map(unit => `<div class="label unit-label">
+    <div class="unit-meta">
+      ${img(logoUrl, 'unit-logo', '莱莎健康假发')}
+      <strong class="unit-code">${esc(unit.unit_code)}</strong>
+      <span class="unit-order">${esc(data.domestic_no)}</span>
+    </div>
+    ${img(unit.qr_image, 'unit-qr', `单件 ${unit.unit_code}`)}
+  </div>`).join('')
+  const css = `${LABEL_CSS}
+    .unit-label{gap:.6mm}
+    .unit-meta{width:10.6mm;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:0}
+    .unit-logo{width:9.5mm;height:8mm;object-fit:contain}
+    .unit-code{font-size:2.4mm;line-height:1.15;white-space:nowrap}
+    .unit-order{max-width:10.2mm;font-size:1.25mm;line-height:1.15;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+    .unit-qr{width:16.8mm;height:16.8mm;object-fit:contain;image-rendering:pixelated;flex-shrink:0}
+  `
+  return wrapDoc(`逐件二维码 ${data.domestic_no}`, css, body)
+}
+
 // 订单进度小程序码标签：同一版式（左 LOGO 右码），码换成微信小程序码
 export function buildWxacodeLabelDoc({ image, domesticNo, logoUrl, copies = 1 }) {
   const one = `<div class="label">${img(logoUrl, 'label-logo', '莱莎健康假发')}${img(image, 'label-qr', '订单进度码')}</div>`

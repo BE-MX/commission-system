@@ -68,6 +68,8 @@ export const PREFIX_LABELS = {
   ai_chat: 'AI 方案对话',
   customer_image: '客户产品效果图',
   domestic: '内贸订单',
+  domestic_quantity_report: '内贸数量报工模式',
+  domestic_unit_report: '内贸逐件扫码模式',
   user: '用户管理',
   role: '角色权限',
   dict: '基础字典',
@@ -95,6 +97,8 @@ export const PREFIX_LABELS = {
  * 新增页面码时同步维护，漏登记只影响缩进层级、不影响功能。
  */
 export const PAGE_PARENTS = {
+  domestic_quantity_report: 'domestic',
+  domestic_unit_report: 'domestic',
   commission_my: 'commission',
   aftersales_analytics: 'aftersales',
   invoice_price: 'invoice',
@@ -129,7 +133,8 @@ export const PAGE_PARENTS = {
 const ROW_GROUPS = [
   { label: '经营 · 提成与客户', prefixes: ['commission', 'commission_my', 'payment', 'customer', 'sales_automation', 'customer_opportunity', 'customer_radar', 'employee', 'supervisor'] },
   { label: '单据 · 订单与物流', prefixes: [
-    'invoice', 'invoice_price', 'invoice_okki', 'invoice_repair', 'invoice_private_filter', 'festival', 'festival_order', 'order_intelligence', 'domestic',
+    'invoice', 'invoice_price', 'invoice_okki', 'invoice_repair', 'invoice_private_filter', 'festival', 'festival_order', 'order_intelligence',
+    'domestic', 'domestic_quantity_report', 'domestic_unit_report',
     'aftersales', 'aftersales_analytics', 'tracking',
     'stock', 'stock_daily',
     'production', 'production_product', 'production_dashboard', 'production_route',

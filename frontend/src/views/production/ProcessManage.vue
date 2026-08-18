@@ -29,6 +29,13 @@
         <el-table-column prop="name" label="工序名称" min-width="140" max-width="210" show-overflow-tooltip />
         <el-table-column prop="description" label="描述" min-width="200" max-width="300" show-overflow-tooltip />
         <el-table-column prop="sort_order" label="排序" min-width="80" max-width="120" />
+        <el-table-column label="客户进度页" min-width="110" max-width="140">
+          <template #default="{ row }">
+            <el-tag :type="row.show_in_domestic_track ? 'success' : 'info'" size="small" effect="plain">
+              {{ row.show_in_domestic_track ? '显示' : '隐藏' }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="状态" min-width="80" max-width="120">
           <template #default="{ row }">
             <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small" effect="plain">
@@ -68,6 +75,9 @@
         <el-form-item label="排序权重">
           <el-input-number v-model="form.sort_order" :min="0" :step="1" />
         </el-form-item>
+        <el-form-item label="客户可见">
+          <el-switch v-model="form.show_in_domestic_track" :active-value="1" :inactive-value="0" active-text="进度码页显示" inactive-text="隐藏" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="formVisible = false">取消</el-button>
@@ -93,7 +103,7 @@ const filterStatus = ref(null)
 
 const formVisible = ref(false)
 const submitting = ref(false)
-const form = ref({ name: '', description: '', sort_order: 0 })
+const form = ref({ name: '', description: '', sort_order: 0, show_in_domestic_track: 1 })
 const formRef = ref(null)
 const formRules = {
   name: [{ required: true, message: '请输入工序名称', trigger: 'blur' }, { min: 2, max: 100, message: '2-100字', trigger: 'blur' }],
@@ -117,9 +127,12 @@ async function loadData() {
 
 function openForm(row) {
   if (row) {
-    form.value = { id: row.id, name: row.name, description: row.description || '', sort_order: row.sort_order }
+    form.value = {
+      id: row.id, name: row.name, description: row.description || '', sort_order: row.sort_order,
+      show_in_domestic_track: row.show_in_domestic_track ?? 1,
+    }
   } else {
-    form.value = { name: '', description: '', sort_order: 0 }
+    form.value = { name: '', description: '', sort_order: 0, show_in_domestic_track: 1 }
   }
   formVisible.value = true
 }

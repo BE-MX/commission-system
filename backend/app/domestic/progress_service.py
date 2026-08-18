@@ -66,7 +66,12 @@ def init_item_progress(db: Session, item: DomesticOrderItem, route_id: int | Non
     return len(steps)
 
 
-def build_progress_view(db: Session, item: DomesticOrderItem) -> list[dict]:
+def build_progress_view(
+    db: Session,
+    item: DomesticOrderItem,
+    *,
+    public_only: bool = False,
+) -> list[dict]:
     """逐工序视图，带每道的可报数量。工序名批量取，不在循环里单查。"""
     rows = (
         db.query(DomesticItemProgress)
@@ -77,22 +82,29 @@ def build_progress_view(db: Session, item: DomesticOrderItem) -> list[dict]:
     if not rows:
         return []
 
-    names = dict(
-        db.query(Process.id, Process.name)
+    process_meta = {
+        process_id: (name, bool(show_in_track))
+        for process_id, name, show_in_track in db.query(
+            Process.id, Process.name, Process.show_in_domestic_track,
+        )
         .filter(Process.id.in_({r.process_id for r in rows}))
         .all()
-    )
+    }
     last_by = _last_reporter_map(db, item.id)
 
     view = []
     upstream = item.order_qty
     for r in rows:
         last = last_by.get(r.step_order) or {}
+        process_name, show_in_track = process_meta.get(
+            r.process_id, (f"工序{r.process_id}", True)
+        )
         view.append({
             "progress_id": r.id,
             "step_order": r.step_order,
             "process_id": r.process_id,
-            "process_name": names.get(r.process_id, f"工序{r.process_id}"),
+            "process_name": process_name,
+            "show_in_domestic_track": show_in_track,
             "order_qty": item.order_qty,
             "upstream_qty": upstream,
             "completed_qty": r.completed_qty,
@@ -105,7 +117,7 @@ def build_progress_view(db: Session, item: DomesticOrderItem) -> list[dict]:
             "last_report_qty": last.get("qty"),
         })
         upstream = r.completed_qty
-    return view
+    return [row for row in view if row["show_in_domestic_track"]] if public_only else view
 
 
 def _last_reporter_map(db: Session, item_id: int) -> dict[int, dict]:
@@ -179,7 +191,7 @@ def recalc_item_status(db: Session, item: DomesticOrderItem) -> None:
 def sync_order_status(db: Session, order_id: int) -> None:
     """由明细状态回算订单状态。已终止的订单不受业务动作影响。"""
     order = db.query(DomesticOrder).get(order_id)
-    if not order or order.status == C.ORDER_TERMINATED:
+    if not order or order.status in (C.ORDER_DRAFT, C.ORDER_TERMINATED):
         return
     statuses = [
         s for (s,) in db.query(DomesticOrderItem.status)

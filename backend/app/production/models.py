@@ -27,6 +27,10 @@ class Process(Base):
     description = Column(String(500), nullable=True, comment="工序描述/备注")
     sort_order = Column(Integer, nullable=False, default=0, comment="展示排序权重")
     status = Column(SmallInteger, nullable=False, default=1, comment="0=禁用,1=启用")
+    show_in_domestic_track = Column(
+        SmallInteger, nullable=False, default=1,
+        comment="1=在内贸客户进度页显示,0=隐藏",
+    )
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
 

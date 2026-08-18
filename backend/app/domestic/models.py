@@ -36,10 +36,15 @@ class DomesticCustomer(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
     shop_name = Column(String(120), nullable=False, unique=True, comment="客户店名（业务主标识）")
+    custom_code = Column(String(64), unique=True, comment="客户自定义编码")
+    membership_level = Column(String(32), comment="会员等级")
+    province = Column(String(64), comment="省份")
+    city = Column(String(64), comment="城市")
     contact = Column(String(60), comment="联系人")
     phone = Column(String(40), comment="联系电话")
     address = Column(String(255), comment="收货地址")
     remark = Column(String(500), comment="备注")
+    balance = Column(Numeric(14, 2), nullable=False, default=0, comment="充值可用余额")
     status = Column(SmallInteger, nullable=False, default=1, comment="0=停用,1=启用")
     created_by = Column(_UINT, ForeignKey("ark_users.id"), nullable=False, comment="创建人")
     created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
@@ -102,7 +107,14 @@ class DomesticOrder(Base):
     order_date = Column(Date, nullable=False, comment="下单日期")
     customer_id = Column(Integer, ForeignKey("ark_domestic_customers.id", ondelete="RESTRICT"), nullable=False, comment="客户")
     order_type = Column(String(16), nullable=False, default="normal", comment="normal=普货,special=特单")
-    status = Column(SmallInteger, nullable=False, default=1, comment="1=生产中,2=已完工,3=已发货,4=已终止")
+    status = Column(SmallInteger, nullable=False, default=1, comment="0=草稿,1=生产中,2=已完工,3=已发货,4=已终止")
+    total_amount = Column(Numeric(14, 2), nullable=False, default=0, comment="订单明细总金额")
+    charged_amount = Column(Numeric(14, 2), nullable=False, default=0, comment="已从客户余额扣除金额")
+    next_line_no = Column(Integer, nullable=False, default=1, comment="下一条明细的稳定序号")
+    item_count = Column(Integer, nullable=False, default=0, comment="当前有效明细行数")
+    total_unit_qty = Column(Integer, nullable=False, default=0, comment="当前有效明细总件数")
+    request_id = Column(String(64), comment="客户端建单幂等键")
+    request_hash = Column(String(64), comment="建单载荷 SHA-256 指纹")
     remark = Column(String(1000), comment="订单备注")
     created_by = Column(_UINT, ForeignKey("ark_users.id"), nullable=False, comment="下单人")
     deleted_flag = Column(SmallInteger, nullable=False, default=0, comment="0=正常,1=已删除")
@@ -118,6 +130,7 @@ class DomesticOrder(Base):
         Index("idx_dom_order_customer", "customer_id"),
         Index("idx_dom_order_date", "order_date"),
         Index("idx_dom_order_no", "order_no"),
+        Index("uq_dom_order_request_id", "request_id", unique=True),
     )
 
 
@@ -128,12 +141,14 @@ class DomesticOrderItem(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
     order_id = Column(Integer, ForeignKey("ark_domestic_orders.id", ondelete="CASCADE"), nullable=False, comment="所属订单")
+    line_no = Column(Integer, nullable=False, comment="订单内稳定明细序号 A1/A2/...")
     product_id = Column(Integer, ForeignKey("ark_domestic_products.id", ondelete="RESTRICT"), nullable=False, comment="内贸产品")
     product_name = Column(String(255), nullable=False, comment="产品名快照")
     attrs_snapshot = Column(JSON, comment="属性快照")
     route_id = Column(Integer, ForeignKey("process_route.id", ondelete="RESTRICT"),
                       comment="下单时锁定的路线快照，后改映射不影响在制单")
     order_qty = Column(Integer, nullable=False, comment="下单数量")
+    unit_price = Column(Numeric(14, 2), nullable=False, default=0, comment="产品单价")
     hairstyle = Column(String(1000), comment="发型（文字）")
     hairstyle_images = Column(JSON, comment="发型参考图 [相对路径]")
     color = Column(String(1000), comment="颜色（文字）")
@@ -155,9 +170,37 @@ class DomesticOrderItem(Base):
                             order_by="DomesticItemProgress.step_order")
 
     __table_args__ = (
+        UniqueConstraint("order_id", "line_no", name="uq_dom_item_order_line"),
         Index("idx_dom_item_order", "order_id"),
         Index("idx_dom_item_status", "status"),
         Index("idx_dom_item_product", "product_id"),
+    )
+
+
+class DomesticItemAppendRequest(Base):
+    """追加明细幂等记录；即使明细后来删除，请求号也不会被复用。"""
+
+    __tablename__ = "ark_domestic_item_append_requests"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
+    order_id = Column(
+        Integer,
+        ForeignKey("ark_domestic_orders.id", ondelete="CASCADE"),
+        nullable=False,
+        comment="所属订单",
+    )
+    item_id = Column(
+        Integer,
+        ForeignKey("ark_domestic_order_items.id", ondelete="SET NULL"),
+        comment="首次请求创建的明细；删除后置空但保留幂等占位",
+    )
+    request_id = Column(String(64), nullable=False, comment="客户端追加明细幂等键")
+    request_hash = Column(String(64), nullable=False, comment="追加载荷 SHA-256 指纹")
+    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
+
+    __table_args__ = (
+        UniqueConstraint("order_id", "request_id", name="uq_dom_append_order_request"),
+        Index("idx_dom_append_item", "item_id"),
     )
 
 
@@ -205,6 +248,7 @@ class DomesticReportLog(Base):
     reported_by_user_id = Column(_UINT, ForeignKey("ark_users.id"), nullable=False, comment="报工人")
     reported_by_name = Column(String(60), comment="报工人姓名快照")
     source = Column(String(16), nullable=False, default="mini", comment="mini=小程序,web=主站")
+    report_mode = Column(String(16), nullable=False, default="quantity", comment="quantity=数量报工,unit=逐件扫码")
     request_id = Column(String(64), unique=True,
                         comment="客户端幂等键：弱网重试同一个 id 不重复累加数量")
     reported_at = Column(DateTime, nullable=False, comment="报工时间（北京时）")
@@ -216,4 +260,62 @@ class DomesticReportLog(Base):
         Index("idx_dom_log_item", "item_id", "step_order"),
         Index("idx_dom_log_user_time", "reported_by_user_id", "reported_at"),
         Index("idx_dom_log_progress", "progress_id", "revoked"),
+    )
+
+
+class DomesticCustomerLedger(Base):
+    """客户充值与订单扣款账本；amount 为有符号变动额。"""
+
+    __tablename__ = "ark_domestic_customer_ledger"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
+    customer_id = Column(Integer, ForeignKey("ark_domestic_customers.id", ondelete="RESTRICT"), nullable=False)
+    order_id = Column(Integer, ForeignKey("ark_domestic_orders.id", ondelete="RESTRICT"))
+    transaction_type = Column(String(32), nullable=False, comment="recharge/order_charge/order_adjustment/order_refund")
+    amount = Column(Numeric(14, 2), nullable=False, comment="充值/退款为正，扣款为负")
+    balance_before = Column(Numeric(14, 2), nullable=False, comment="变动前余额")
+    balance_after = Column(Numeric(14, 2), nullable=False, comment="变动后余额")
+    business_key = Column(String(128), unique=True, comment="可选幂等键")
+    remark = Column(String(500), comment="说明")
+    created_by = Column(_UINT, ForeignKey("ark_users.id", ondelete="RESTRICT"), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
+
+    __table_args__ = (
+        Index("idx_dom_ledger_customer_time", "customer_id", "created_at"),
+        Index("idx_dom_ledger_order", "order_id"),
+    )
+
+
+class DomesticItemUnit(Base):
+    """订单明细中的单件实体；每行对应一个可打印二维码。"""
+
+    __tablename__ = "ark_domestic_item_units"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
+    item_id = Column(Integer, ForeignKey("ark_domestic_order_items.id", ondelete="CASCADE"), nullable=False)
+    unit_no = Column(Integer, nullable=False, comment="明细内单件序号，从1开始")
+    status = Column(SmallInteger, nullable=False, default=1, comment="0=数量缩减停用,1=有效")
+    created_at = Column(DateTime, nullable=False, default=datetime.now)
+
+    __table_args__ = (
+        UniqueConstraint("item_id", "unit_no", name="uq_dom_unit_item_no"),
+        Index("idx_dom_unit_item_status", "item_id", "status", "unit_no"),
+    )
+
+
+class DomesticReportUnit(Base):
+    """一条报工流水实际覆盖的单件清单；撤销时随流水状态一起失效。"""
+
+    __tablename__ = "ark_domestic_report_units"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="主键")
+    log_id = Column(BigInteger, ForeignKey("ark_domestic_report_logs.id", ondelete="CASCADE"), nullable=False, comment="报工流水 ID")
+    unit_id = Column(BigInteger, ForeignKey("ark_domestic_item_units.id", ondelete="RESTRICT"), nullable=False, comment="单件 ID")
+    progress_id = Column(Integer, ForeignKey("ark_domestic_item_progress.id", ondelete="CASCADE"), nullable=False)
+    completed_at = Column(DateTime, nullable=False, comment="该单件在本工序完成时间")
+
+    __table_args__ = (
+        UniqueConstraint("log_id", "unit_id", name="uq_dom_report_log_unit"),
+        Index("idx_dom_report_unit_progress", "progress_id", "unit_id"),
+        Index("idx_dom_report_unit_unit", "unit_id", "progress_id"),
     )

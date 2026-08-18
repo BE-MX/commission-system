@@ -1,7 +1,7 @@
 """内贸订单产品进度小程序码：scene 签名 / 免登录 track 端点 / 码生成端点
 
 免登录端点的唯一授权凭证是 HMAC 签名——签名域隔离（track vs 流转卡，同一个
-item_id 两个域）、伪签拒绝、软删单拦截、明细过滤（一码只看一条），都是这个
+item_id 两个域）、伪签拒绝、软删单拦截、完整订单返回，都是这个
 口子的安全边界，必须钉死。
 """
 
@@ -9,6 +9,7 @@ import hashlib
 import hmac as hmac_mod
 from contextlib import contextmanager
 from datetime import date
+from uuid import uuid4
 
 import pytest
 from fastapi import FastAPI
@@ -51,6 +52,7 @@ def _attrs(craft="递针旋全头套"):
 
 def _create_order(db, user, item_count=1):
     payload = OrderCreate(
+        request_id=str(uuid4()),
         order_no="710",
         order_date=date(2026, 7, 28),
         customer_shop_name="马姐假发",
@@ -161,8 +163,8 @@ def test_default_secret_locks_generation_and_verification(db, monkeypatch):
 # ── 免登录 track 端点 ─────────────────────────────────
 
 
-def test_track_returns_only_scanned_item(db):
-    """两条明细的订单，扫 A 产品的码只能看到 A——码是明细级授权"""
+def test_track_returns_complete_order(db):
+    """任一进度码都返回其所属订单的全部明细。"""
     creator = _user(db)
     order = _create_order(db, creator, item_count=2)
     first, second = _items_of(db, order["id"])
@@ -173,9 +175,38 @@ def test_track_returns_only_scanned_item(db):
     assert resp.status_code == 200
     data = resp.json()
     assert data["id"] == order["id"]
-    assert [i["id"] for i in data["items"]] == [first.id]
+    assert [i["id"] for i in data["items"]] == [first.id, second.id]
     assert data["items"][0]["order_qty"] == first.order_qty
-    assert second.id not in [i["id"] for i in data["items"]]
+    assert data["items"][1]["order_qty"] == second.order_qty
+    assert "customer_balance" not in data
+    assert "charged_amount" not in data
+
+
+def test_track_image_allows_other_item_in_same_order_only(db, tmp_path, monkeypatch):
+    creator = _user(db)
+    order = _create_order(db, creator, item_count=2)
+    first, second = _items_of(db, order["id"])
+    second.style_images = ["refs/second.png"]
+    db.flush()
+    root = tmp_path / "domestic"
+    image = root / "refs" / "second.png"
+    image.parent.mkdir(parents=True)
+    image.write_bytes(b"png-test")
+    monkeypatch.setattr(get_settings(), "DOMESTIC_STORAGE_ROOT", str(root))
+    scene = report_service.generate_track_scene(first.id)
+
+    with _mini_client(db) as client:
+        allowed = client.get(
+            "/api/mini/domestic/track-image",
+            params={"scene": scene, "rel_path": "refs/second.png"},
+        )
+        denied = client.get(
+            "/api/mini/domestic/track-image",
+            params={"scene": scene, "rel_path": "refs/not-referenced.png"},
+        )
+    assert allowed.status_code == 200
+    assert allowed.content == b"png-test"
+    assert denied.status_code == 403
 
 
 def test_track_rejects_bad_signature(db):

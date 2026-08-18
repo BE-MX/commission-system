@@ -18,11 +18,17 @@ function todayStr() {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
 }
 
+function makeRequestId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID()
+  return `order-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`
+}
+
 function emptyItem() {
   return {
     key: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     attrs: { product_type: 'cap', craft: '', net_color: '', size: '', length: '', density: '' },
     order_qty: 1,
+    unit_price: 0,
     hairstyle: '', hairstyle_images: [],
     color: '', color_images: [],
     style_requirement: '', style_images: [],
@@ -39,6 +45,7 @@ export function useDomesticOrderCreate() {
   const craftRoutes = ref([])
   const customers = ref([])
   const customerLoading = ref(false)
+  const orderRequestId = ref(makeRequestId())
 
   const form = reactive({
     order_no: '',
@@ -71,6 +78,15 @@ export function useDomesticOrderCreate() {
 
   const unroutedCount = computed(
     () => form.items.filter(i => i.attrs.craft && !routeOf(i)).length,
+  )
+
+  const orderTotal = computed(() => form.items.reduce(
+    (sum, item) => sum + Number(item.order_qty || 0) * Number(item.unit_price || 0),
+    0,
+  ))
+
+  const selectedCustomer = computed(
+    () => customers.value.find(c => c.id === form.customer_id) || null,
   )
 
   function onProductTypeChange(item) {
@@ -148,12 +164,14 @@ export function useDomesticOrderCreate() {
         }
       }
       if (!(item.order_qty > 0)) return `${label}的数量要大于 0`
+      if (!(Number(item.unit_price) >= 0)) return `${label}的单价不能小于 0`
     }
     return ''
   }
 
   function buildPayload() {
     return {
+      request_id: orderRequestId.value,
       order_no: form.order_no.trim(),
       order_date: form.order_date,
       customer_id: form.customer_id || null,
@@ -166,6 +184,7 @@ export function useDomesticOrderCreate() {
           net_color: item.attrs.product_type === 'cap' ? (item.attrs.net_color || null) : null,
         },
         order_qty: item.order_qty,
+        unit_price: Number(item.unit_price || 0),
         hairstyle: item.hairstyle || null,
         hairstyle_images: item.hairstyle_images.map(f => f.path),
         color: item.color || null,
@@ -178,13 +197,24 @@ export function useDomesticOrderCreate() {
     }
   }
 
-  async function submit() {
+  async function submit(isDraft = false) {
     const error = validate()
     if (error) {
       msgError(error)
       return
     }
-    if (unroutedCount.value) {
+    if (!isDraft && !form.customer_id && orderTotal.value > 0) {
+      msgError('新客户还没有充值账户：请先保存草稿，到客户管理充值后再提交')
+      return
+    }
+    if (
+      !isDraft && selectedCustomer.value
+      && Number(selectedCustomer.value.balance || 0) < orderTotal.value
+    ) {
+      msgError(`客户余额不足：当前 ¥${Number(selectedCustomer.value.balance || 0).toFixed(2)}，订单需 ¥${orderTotal.value.toFixed(2)}`)
+      return
+    }
+    if (unroutedCount.value && !isDraft) {
       try {
         await ElMessageBox.confirm(
           `有 ${unroutedCount.value} 行明细的工艺还没配工艺路线，下单后这些货暂时不能开工（配好映射即可补上）。要继续吗？`,
@@ -198,9 +228,9 @@ export function useDomesticOrderCreate() {
 
     submitting.value = true
     try {
-      const res = await createOrder(buildPayload())
+      const res = await createOrder({ ...buildPayload(), is_draft: isDraft })
       const data = res.data || {}
-      ElMessage.success(`下单成功：${data.domestic_no}`)
+      ElMessage.success(`${isDraft ? '草稿已保存' : '下单成功'}：${data.domestic_no}`)
       router.push({ name: 'DomesticOrders', query: { keyword: data.domestic_no } })
     } catch { /* 拦截器已提示 */ } finally {
       submitting.value = false
@@ -221,7 +251,7 @@ export function useDomesticOrderCreate() {
 
   return {
     loading, submitting, options, customers, customerLoading, form,
-    attrOptions, hasField, routeOf, unroutedCount,
+    attrOptions, hasField, routeOf, unroutedCount, orderTotal, selectedCustomer,
     onProductTypeChange, addItem, copyItem, removeItem,
     makeUploadFn, removeImage, searchCustomers, submit,
   }

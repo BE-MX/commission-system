@@ -38,11 +38,12 @@ ATTR_DICTS = {
 }
 
 # 订单状态
+ORDER_DRAFT = 0
 ORDER_PRODUCING = 1
 ORDER_DONE = 2
 ORDER_SHIPPED = 3
 ORDER_TERMINATED = 4
-ORDER_STATUS_LABELS = {1: "生产中", 2: "已完工", 3: "已发货", 4: "已终止"}
+ORDER_STATUS_LABELS = {0: "草稿", 1: "生产中", 2: "已完工", 3: "已发货", 4: "已终止"}
 
 # 明细状态
 ITEM_PRODUCING = 0
@@ -52,5 +53,16 @@ ITEM_STATUS_LABELS = {0: "生产中", 1: "已完工", 2: "已发货"}
 
 # 二维码前缀。外贸是 ARK-P，内贸 ARK-D，小程序按前缀分流互不干扰
 QR_PREFIX = "ARK-D"
+# 逐件码。明细码继续用于兼容批量报工，逐件码用于精确到 A1-01 的模式。
+UNIT_QR_PREFIX = "ARK-DU"
+
+# 普通角色用两项权限二选一；两项都有（如 super_admin）时批量模式优先。
+REPORT_QUANTITY_PERMISSION = "domestic_quantity_report:write"
+REPORT_UNIT_PERMISSION = "domestic_unit_report:write"
+
+# 逐件二维码会按数量物化数据库行，给单据设置双层上限，避免误录或恶意请求
+# 一次创建数万/数十万行拖垮 API。追加和改单也必须复用同一口径。
+MAX_ORDER_ITEMS = 50
+MAX_ORDER_UNITS = 5000
 # 小程序免登录进度页路径（订单进度小程序码 page 参数）
 TRACK_PAGE = "pages/domestic/track/track"

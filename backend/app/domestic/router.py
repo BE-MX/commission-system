@@ -19,21 +19,24 @@ from app.core.database import get_db
 from app.core.response import ok, page_result
 from app.domestic import constants as C
 from app.domestic import (
+    balance_service,
     customer_service,
     file_service,
     order_service,
     product_service,
     progress_service,
     report_service,
+    unit_service,
 )
 from app.domestic.models import DomesticOrder, DomesticOrderItem
 from app.domestic.schemas import (
     CraftRouteUpsert,
     CustomerCreate,
+    CustomerRechargeCreate,
     CustomerUpdate,
     ItemShipRequest,
     OrderCreate,
-    OrderItemInput,
+    OrderItemAppend,
     OrderItemUpdate,
     OrderStatusUpdate,
     OrderUpdate,
@@ -50,6 +53,7 @@ logger = logging.getLogger("commission")
 router = APIRouter()
 
 _READ = ("domestic:read", "domestic:write", "domestic:admin")
+_CUSTOMER_READ = (*_READ, "domestic:recharge")
 
 
 def _uid(current_user: dict) -> int:
@@ -120,7 +124,7 @@ def list_customers(
     keyword: str = Query(""),
     status: int | None = Query(None),
     db: Session = Depends(get_db),
-    _user: dict = Depends(require_any_permission(*_READ)),
+    _user: dict = Depends(require_any_permission(*_CUSTOMER_READ)),
 ):
     items, total = customer_service.list_customers(
         db, page=page, page_size=page_size, keyword=keyword, status=status
@@ -166,6 +170,44 @@ def delete_customer(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return ok(message="已删除")
+
+
+@router.post("/customers/{customer_id}/recharges", summary="客户充值")
+def recharge_customer(
+    customer_id: int,
+    payload: CustomerRechargeCreate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_any_permission("domestic:recharge", "domestic:admin")),
+):
+    try:
+        data = balance_service.recharge_customer(
+            db,
+            customer_id=customer_id,
+            amount=payload.amount,
+            user_id=_uid(current_user),
+            remark=payload.remark,
+            request_id=payload.request_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ok(data, message="该笔充值已经处理过" if data["replayed"] else "充值成功")
+
+
+@router.get("/customers/{customer_id}/balance-ledger", summary="客户余额流水")
+def list_customer_balance_ledger(
+    customer_id: int,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission("domestic:recharge", "domestic:admin")),
+):
+    try:
+        items, total = balance_service.list_customer_ledger(
+            db, customer_id=customer_id, page=page, page_size=page_size,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return ok(page_result(items, total, page, page_size))
 
 
 # ── 产品与工艺路线映射 ────────────────────────────────
@@ -255,9 +297,9 @@ def create_order(
         data = order_service.create_order(db, payload, _uid(current_user))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    message = "下单成功"
+    message = "草稿已保存" if data["is_draft"] else "下单成功"
     if data["warnings"]:
-        message = "下单成功，但有明细暂时不能开工，见提示"
+        message = ("草稿已保存" if data["is_draft"] else "下单成功") + "，但有明细暂时不能开工，见提示"
     return ok(data, message=message)
 
 
@@ -292,7 +334,11 @@ def get_order(
     _user: dict = Depends(require_any_permission(*_READ)),
 ):
     try:
-        return ok(order_service.get_order_detail(db, order_id))
+        data = order_service.get_order_detail(db, order_id)
+        # 滚动发布期间旧实例可能写入 line_no=NULL；详情读取会在订单锁内补号，
+        # 这里提交修复，避免每次请求都回滚后再次得到重复的 A1 标签。
+        db.commit()
+        return ok(data)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
@@ -311,6 +357,23 @@ def update_order(
     return ok(message="已保存")
 
 
+@router.post("/orders/{order_id}/submit", summary="提交草稿并从客户余额扣款")
+def submit_draft_order(
+    order_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_permission("domestic:write")),
+):
+    try:
+        order = order_service.submit_draft(db, order_id, _uid(current_user))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ok({
+        "id": order.id,
+        "status": order.status,
+        "charged_amount": float(order.charged_amount or 0),
+    }, message="订单已提交，余额扣款成功")
+
+
 @router.post("/orders/{order_id}/status", summary="终止订单")
 def update_order_status(
     order_id: int,
@@ -319,7 +382,7 @@ def update_order_status(
     _user: dict = Depends(require_permission("domestic:write")),
 ):
     try:
-        order_service.terminate_order(db, order_id, payload.reason)
+        order_service.terminate_order(db, order_id, payload.reason, _uid(_user))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return ok(message="订单已终止")
@@ -332,7 +395,7 @@ def delete_order(
     _user: dict = Depends(require_permission("domestic:admin")),
 ):
     try:
-        order_service.delete_order(db, order_id)
+        order_service.delete_order(db, order_id, _uid(_user))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return ok(message="已删除")
@@ -344,12 +407,12 @@ def delete_order(
 @router.post("/orders/{order_id}/items", summary="追加明细")
 def add_item(
     order_id: int,
-    payload: OrderItemInput,
+    payload: OrderItemAppend,
     db: Session = Depends(get_db),
     _user: dict = Depends(require_permission("domestic:write")),
 ):
     try:
-        data = order_service.add_item(db, order_id, payload)
+        data = order_service.add_item(db, order_id, payload, _uid(_user))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return ok(data, message=data.get("warning") or "明细已添加")
@@ -363,7 +426,7 @@ def update_item(
     _user: dict = Depends(require_permission("domestic:write")),
 ):
     try:
-        order_service.update_item(db, item_id, payload)
+        order_service.update_item(db, item_id, payload, _uid(_user))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return ok(message="已保存")
@@ -376,7 +439,7 @@ def delete_item(
     _user: dict = Depends(require_permission("domestic:write")),
 ):
     try:
-        order_service.delete_item(db, item_id)
+        order_service.delete_item(db, item_id, _uid(_user))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return ok(message="已删除")
@@ -443,6 +506,7 @@ def get_print_card(
     except ValueError as exc:  # 订单已软删
         raise HTTPException(status_code=404, detail=str(exc))
     item_view = next((i for i in detail["items"] if i["id"] == item_id), None)
+    db.commit()
 
     qr_data = report_service.generate_qr_data(item_id)
     return ok({
@@ -458,7 +522,50 @@ def get_print_card(
     })
 
 
-@router.get("/items/{item_id}/wxacode", summary="订单产品进度小程序码（微信扫码免登录看该明细进度）")
+@router.get("/items/{item_id}/unit-qrcodes", summary="逐件二维码标签数据")
+def get_item_unit_qrcodes(
+    item_id: int,
+    start_no: int = Query(1, ge=1),
+    end_no: int | None = Query(None, ge=1),
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission(*_READ)),
+):
+    item = db.query(DomesticOrderItem).get(item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="订单明细不存在")
+    try:
+        detail = order_service.get_order_detail(db, item.order_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    last = min(end_no or item.order_qty, item.order_qty)
+    if last < start_no:
+        raise HTTPException(status_code=400, detail="结束序号不能小于开始序号")
+    if last - start_no + 1 > 200:
+        raise HTTPException(status_code=400, detail="单次最多生成 200 个逐件标签，请分段打印")
+    units = unit_service.list_item_units(
+        db, item=item, start_no=start_no, end_no=last,
+    )
+    # 正常情况迁移/下单时已建齐；这里的 commit 只是让滚动发布期间
+    # 旧服务新建的明细在首次打标签时持久化补齐的单件行。
+    db.commit()
+    for unit in units:
+        unit["qr_data"] = report_service.generate_unit_qr_data(unit["id"])
+    item_view = next((row for row in detail["items"] if row["id"] == item.id), None)
+    return ok({
+        "item_id": item.id,
+        "line_code": f"A{item.line_no or 1}",
+        "product_name": item.product_name,
+        "domestic_no": detail["domestic_no"],
+        "order_qty": item.order_qty,
+        "start_no": start_no,
+        "end_no": last,
+        "item": item_view,
+        "units": units,
+    })
+
+
+@router.get("/items/{item_id}/wxacode", summary="订单进度小程序码（微信扫码免登录看完整订单）")
+# 鉴权仍由函数参数 Depends(require_any_permission(*_READ)) 执行；这里只更新了端点摘要。
 def get_item_wxacode(
     item_id: int,
     db: Session = Depends(get_db),
@@ -488,6 +595,8 @@ def get_item_wxacode(
     ).first()
     if not order:
         raise HTTPException(status_code=404, detail="订单不存在")
+    if order.status == C.ORDER_DRAFT:
+        raise HTTPException(status_code=400, detail="草稿订单提交后才能生成客户进度码")
 
     scene = report_service.generate_track_scene(item_id)
     try:

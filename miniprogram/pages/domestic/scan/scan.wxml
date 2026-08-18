@@ -45,7 +45,7 @@
         <text class="scan-btn-text">扫 码</text>
       </view>
     </view>
-    <text class="scan-hint">点击扫描内贸流转卡</text>
+    <text class="scan-hint">点击扫描内贸流转卡或逐件二维码</text>
     <view class="switch-entry" bindtap="onSwitchModuleTap">
       <text class="switch-entry-text">切换模块</text>
       <text class="switch-entry-arrow">›</text>

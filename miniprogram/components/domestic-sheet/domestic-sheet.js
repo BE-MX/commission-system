@@ -78,7 +78,7 @@ Component({
     },
     onConfirm: function () {
       if (this.data.submitting) return
-      var q = this.data.qty
+      var q = this.data.item && this.data.item.report_mode === 'unit' ? 1 : this.data.qty
       if (!(q > 0) || q > this.data.maxQty) {
         this.triggerEvent('invalidqty', { maxQty: this.data.maxQty })
         return
