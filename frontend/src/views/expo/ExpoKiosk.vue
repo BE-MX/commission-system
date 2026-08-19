@@ -11,6 +11,11 @@
         <span v-if="quota?.bound" class="xk-quota" :class="{ 'is-zero': quota.remaining === 0 }">
           剩余 {{ quota.remaining }} 张
         </span>
+        <button
+          v-if="flow.step.value === 'attract'"
+          class="xk-nav"
+          @click="requestLogout"
+        >退出登录</button>
         <span class="xk-step">{{ stepLabel }}</span>
         <Transition name="xnav">
           <button v-if="showNav" class="xk-nav" @click="requestHome">⌂ 主页</button>
@@ -56,6 +61,24 @@
       </div>
     </Transition>
 
+    <Transition name="xconfirm">
+      <div v-if="logoutConfirm" class="xk-confirm" @click.self="logoutConfirm = false">
+        <div
+          class="xk-confirm-panel"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="logout-confirm-title"
+        >
+          <div id="logout-confirm-title" class="xc-title">确认退出登录？</div>
+          <div class="xc-sub">退出后需要重新输入展会设备账号才能继续使用</div>
+          <div class="xc-actions">
+            <button class="xk-btn ghost" @click="logoutConfirm = false">取消</button>
+            <button class="xk-btn" @click="confirmLogout">退出登录</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
     <!-- 魔法镜框：流光金环 + 四角饰件 + 金尘粒子（纯装饰层，pointer-events 穿透） -->
     <div class="xk-mirror" aria-hidden="true">
       <div class="xk-mirror-glow" />
@@ -73,6 +96,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
+import { useAuthStore } from '@/stores/auth'
 import { useTryOnFlow } from './composables/useTryOnFlow'
 import { useStoreQuota } from './composables/useStoreQuota'
 import AttractScreen from './kiosk/AttractScreen.vue'
@@ -85,6 +109,7 @@ import ResultScreen from './kiosk/ResultScreen.vue'
 import SalesPanel from './kiosk/SalesPanel.vue'
 
 const flow = useTryOnFlow()
+const authStore = useAuthStore()
 provide('tryonFlow', flow)
 
 // ── 门店额度（2026-08-06）──
@@ -136,6 +161,7 @@ const showNav = computed(() => flow.step.value !== 'attract')
 const backDisabled = computed(() => flow.step.value === 'result' && flow.generating.value)
 
 const homeConfirm = ref(false)
+const logoutConfirm = ref(false)
 function requestHome() {
   if (!flow.sessionId.value) {
     flow.resetAll() // 未拍照建会话，流程无实际代价，直接回
@@ -144,9 +170,17 @@ function requestHome() {
   homeConfirm.value = true
   flow.touch()
 }
+function requestLogout() {
+  logoutConfirm.value = true
+  flow.touch()
+}
 function confirmHome() {
   homeConfirm.value = false
   flow.resetAll()
+}
+async function confirmLogout() {
+  logoutConfirm.value = false
+  await authStore.logout()
 }
 // 60s 空闲自动清场等其他路径回到 attract 时，收掉残留的确认弹层；
 // 进入生成相关屏（甄选/场景/结果）时刷新一次额度，生成扣减后余额即刻反映
