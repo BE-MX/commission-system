@@ -29,6 +29,15 @@ object ScanPayloadParser {
 
 data class AuthSession(val token: String, val userName: String)
 
+enum class ScanSource { KEYBOARD, BROADCAST, MANUAL }
+
+data class PendingSubmission(
+    val scan: String,
+    val rawPayload: String,
+    val qty: Int,
+    val requestId: String,
+)
+
 data class HistoryRecord(
     val logId: Long,
     val productName: String,

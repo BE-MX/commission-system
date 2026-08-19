@@ -2,6 +2,7 @@ package com.leshine.pdareporting
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.WindowManager
@@ -12,14 +13,28 @@ import android.widget.Toast
 import org.json.JSONObject
 import java.io.IOException
 import java.util.UUID
+import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.Executors
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 class MainActivity : Activity() {
     private val executor = Executors.newFixedThreadPool(3)
+    private val imageExecutor = ThreadPoolExecutor(
+        2,
+        2,
+        0L,
+        TimeUnit.MILLISECONDS,
+        ArrayBlockingQueue(8),
+        ThreadPoolExecutor.DiscardOldestPolicy(),
+    )
+    private val historyGeneration = AtomicInteger()
     private lateinit var api: ApiClient
     private lateinit var scannerInput: ScannerInput
     private lateinit var feedback: Feedback
     private val prefs by lazy { getSharedPreferences(PREFS, MODE_PRIVATE) }
+    private val pendingStore by lazy { PendingSubmissionStore(prefs) }
     private var loginScreen: LoginScreen? = null
     private var reportingScreen: ReportingScreen? = null
     private var busy = false
@@ -30,7 +45,13 @@ class MainActivity : Activity() {
         window.navigationBarColor = Ui.page
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
-        api = ApiClient(prefs.getString(KEY_SERVER, getString(R.string.default_server_url))!!)
+        val defaultServer = getString(R.string.default_server_url)
+        val storedServer = prefs.getString(KEY_SERVER, defaultServer).orEmpty()
+        val safeServer = runCatching { ApiClient.normalizeBaseUrl(storedServer) }.getOrElse {
+            prefs.edit().putString(KEY_SERVER, defaultServer).apply()
+            defaultServer
+        }
+        api = ApiClient(safeServer)
         api.token = prefs.getString(KEY_TOKEN, "") ?: ""
         feedback = Feedback(this)
         scannerInput = ScannerInput(this, ::handleRawScan)
@@ -50,6 +71,7 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         executor.shutdownNow()
+        imageExecutor.shutdownNow()
         super.onDestroy()
     }
 
@@ -69,11 +91,29 @@ class MainActivity : Activity() {
                 ui { showReporting(name) }
             } catch (error: Exception) {
                 ui {
-                    clearSession()
-                    showLogin(if (error is ApiException && error.statusCode == 401) "登录已过期，请重新登录" else "无法连接服务器，请重新登录")
+                    if (error is ApiException && error.statusCode == 401) {
+                        clearSession()
+                        showLogin("登录已过期，请重新登录")
+                    } else {
+                        showConnectionRetry(readableError(error))
+                    }
                 }
             }
         }
+    }
+
+    private fun showConnectionRetry(message: String) {
+        showLoadingPage("服务器暂时无法连接")
+        AlertDialog.Builder(this)
+            .setTitle("登录状态尚未验证")
+            .setMessage("$message\n\n登录信息已保留，网络恢复后可直接重试。")
+            .setCancelable(false)
+            .setNegativeButton("重新登录 / 设置") { _, _ ->
+                clearSession()
+                showLogin("如服务器地址有变化，请先打开服务器设置")
+            }
+            .setPositiveButton("重试") { _, _ -> verifySession() }
+            .show()
     }
 
     private fun showLoadingPage(message: String) {
@@ -102,6 +142,11 @@ class MainActivity : Activity() {
 
     private fun login(username: String, password: String) {
         val screen = loginScreen ?: return
+        val previousUser = prefs.getString(KEY_USERNAME, "").orEmpty()
+        if (pendingStore.get() != null && previousUser.isNotBlank() && username != previousUser) {
+            screen.showError("存在上一账号的待确认报工，请使用原账号登录并先处理")
+            return
+        }
         screen.setLoading(true)
         executor.execute {
             try {
@@ -127,10 +172,18 @@ class MainActivity : Activity() {
         reportingScreen = ReportingScreen(
             this,
             userName,
-            onManualScan = ::handleRawScan,
+            onManualScan = { handleRawScan(it, ScanSource.MANUAL) },
             onRevoke = ::revoke,
             onSettings = ::showSettings,
-            onLogout = {
+            onLogout = logout@{
+                if (busy || pendingStore.get() != null) {
+                    AlertDialog.Builder(this)
+                        .setTitle("暂不能退出")
+                        .setMessage("还有一笔扫码或提交正在处理。请确认结果后再退出，避免重复报工。")
+                        .setPositiveButton("知道了", null)
+                        .show()
+                    return@logout
+                }
                 AlertDialog.Builder(this)
                     .setTitle("退出登录")
                     .setMessage("退出后需要重新输入方舟账号密码。")
@@ -142,13 +195,22 @@ class MainActivity : Activity() {
         busy = false
         scannerInput.setEnabled(true)
         loadHistory()
+        pendingStore.get()?.let {
+            busy = true
+            showRetryDialog("检测到上次提交结果尚未确认", it)
+        }
     }
 
-    private fun handleRawScan(raw: String) {
+    private fun handleRawScan(raw: String, source: ScanSource) {
         if (reportingScreen == null) return
         if (busy) {
             feedback.error()
             Toast.makeText(this, "上一笔还在处理中，请稍候", Toast.LENGTH_SHORT).show()
+            return
+        }
+        pendingStore.get()?.let {
+            busy = true
+            showRetryDialog("上一笔提交结果仍待确认，请先处理", it)
             return
         }
         val payload = ScanPayloadParser.parse(raw)
@@ -167,16 +229,16 @@ class MainActivity : Activity() {
                 if (!scan.optBoolean("can_submit")) {
                     throw ApiException(422, scan.optString("block_message", "当前不能报工"))
                 }
-                ui { handleScanResult(payload, scan) }
+                ui { handleScanResult(payload, scan, source) }
             } catch (error: Exception) {
                 ui { handleFailure(error, written = false) }
             }
         }
     }
 
-    private fun handleScanResult(payload: ScanPayload, scan: JSONObject) {
+    private fun handleScanResult(payload: ScanPayload, scan: JSONObject, source: ScanSource) {
         val isUnit = scan.optString("report_mode") == "unit"
-        if (isUnit && prefs.getBoolean(KEY_AUTO_UNIT, true)) {
+        if (isUnit && source == ScanSource.KEYBOARD && prefs.getBoolean(KEY_AUTO_UNIT, true)) {
             val requestId = UUID.randomUUID().toString()
             submit(scan, payload, 1, requestId)
             return
@@ -190,12 +252,17 @@ class MainActivity : Activity() {
     }
 
     private fun submit(scan: JSONObject, payload: ScanPayload, qty: Int, requestId: String) {
+        if (!pendingStore.persist(scan, payload, qty, requestId)) {
+            handleFailure(IllegalStateException("无法保存待提交事务，请检查设备存储"), written = true)
+            return
+        }
         val next = scan.optJSONObject("next_step") ?: JSONObject()
         reportingScreen?.showSubmitting(scan.optString("product_name", "产品"), next.optString("process_name", "工序"))
         executor.execute {
             try {
                 val result = api.submit(scan, payload, qty, requestId)
                 ui {
+                    pendingStore.clear(requestId)
                     val codes = result.optJSONArray("unit_codes")?.let { array ->
                         (0 until array.length()).joinToString("、") { array.optString(it) }
                     }.orEmpty()
@@ -213,40 +280,50 @@ class MainActivity : Activity() {
                 }
             } catch (error: Exception) {
                 ui {
-                    if (error is IOException || (error is ApiException && error.statusCode >= 500)) {
-                        showRetryDialog(error.message ?: "网络异常", scan, payload, qty, requestId)
-                    } else {
+                    if (error is ApiException && error.statusCode in 400..499) {
+                        if (error.statusCode != 401) pendingStore.clear(requestId)
                         handleFailure(error, written = true)
+                    } else {
+                        // A transport, 5xx or response-decoding failure may happen after
+                        // the server committed. Keep the transaction and retry its ID.
+                        showRetryDialog(
+                            error.message ?: "网络异常",
+                            PendingSubmission(scan.toString(), payload.raw, qty, requestId),
+                        )
                     }
                 }
             }
         }
     }
 
-    private fun showRetryDialog(
-        message: String,
-        scan: JSONObject,
-        payload: ScanPayload,
-        qty: Int,
-        requestId: String,
-    ) {
+    private fun showRetryDialog(message: String, pending: PendingSubmission) {
+        val payload = ScanPayloadParser.parse(pending.rawPayload)
+        val scan = runCatching { JSONObject(pending.scan) }.getOrNull()
+        if (payload == null || scan == null) {
+            pendingStore.clear(pending.requestId)
+            handleFailure(IllegalStateException("待确认提交数据损坏，请重新扫码"), written = true)
+            return
+        }
         feedback.error()
         reportingScreen?.showError("网络中断，提交结果未知")
         AlertDialog.Builder(this)
             .setTitle("提交结果未知")
-            .setMessage("网络异常：$message\n\n请点“重试同一笔”。APP 会沿用同一个幂等请求号，后端不会重复累计数量。")
+            .setMessage("$message\n\n请点“重试同一笔”。APP 会沿用同一个幂等请求号，后端不会重复累计数量。若暂时返回核对记录，下一次扫码仍会先提示处理这笔。")
             .setCancelable(false)
             .setNegativeButton("返回并核对记录") { _, _ ->
                 busy = false
-                reportingScreen?.showError("请先核对今日记录；未看到这笔再重新扫码")
+                reportingScreen?.showError("请先核对今日记录；下一次扫码会再次提示处理待确认提交")
                 loadHistory()
             }
-            .setPositiveButton("重试同一笔") { _, _ -> submit(scan, payload, qty, requestId) }
+            .setPositiveButton("重试同一笔") { _, _ -> submit(scan, payload, pending.qty, pending.requestId) }
             .show()
     }
 
     private fun revoke(record: HistoryRecord) {
-        if (busy) return
+        if (busy || pendingStore.get() != null) {
+            Toast.makeText(this, "请先处理待确认提交，再撤销记录", Toast.LENGTH_SHORT).show()
+            return
+        }
         busy = true
         reportingScreen?.showSubmitting(record.productName, "撤销 ${record.processName}")
         executor.execute {
@@ -268,21 +345,41 @@ class MainActivity : Activity() {
     }
 
     private fun loadHistory() {
+        val generation = historyGeneration.incrementAndGet()
+        val tokenSnapshot = api.token
         executor.execute {
             try {
                 val (records, stats) = api.history()
-                ui { reportingScreen?.setHistory(records, stats.first, stats.second) }
+                ui {
+                    if (generation == historyGeneration.get()) {
+                        reportingScreen?.setHistory(records, stats.first, stats.second)
+                    }
+                }
             } catch (error: Exception) {
-                if (error is ApiException && error.statusCode == 401) ui { sessionExpired() }
+                if (error is ApiException && error.statusCode == 401) ui {
+                    if (generation == historyGeneration.get() && tokenSnapshot == api.token) sessionExpired()
+                }
             }
         }
     }
 
     private fun loadImage(path: String, view: ImageView) {
-        executor.execute {
+        imageExecutor.execute {
             try {
                 val bytes = api.image(path)
-                ui { reportingScreen?.displayImage(bytes, view) }
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                var sample = 1
+                while (bounds.outWidth / sample > IMAGE_EDGE_PX * 2 || bounds.outHeight / sample > IMAGE_EDGE_PX * 2) {
+                    sample *= 2
+                }
+                val bitmap = BitmapFactory.decodeByteArray(
+                    bytes,
+                    0,
+                    bytes.size,
+                    BitmapFactory.Options().apply { inSampleSize = sample },
+                ) ?: return@execute
+                ui { reportingScreen?.displayImage(bitmap, view) }
             } catch (_: Exception) {
                 // 图片加载失败不阻塞报工，文本要求和核心操作仍可继续。
             }
@@ -306,6 +403,10 @@ class MainActivity : Activity() {
     }
 
     private fun showSettings() {
+        if (busy) {
+            Toast.makeText(this, "当前操作处理完成后才能修改设置", Toast.LENGTH_SHORT).show()
+            return
+        }
         scannerInput.setEnabled(false)
         val wrapper = Ui.vertical(this, 20)
         val server = EditText(this).apply {
@@ -334,6 +435,10 @@ class MainActivity : Activity() {
                 try {
                     val normalized = ApiClient.normalizeBaseUrl(server.text.toString())
                     val serverChanged = normalized != api.baseUrl
+                    if (serverChanged && pendingStore.get() != null) {
+                        server.error = "存在待确认报工，处理完成前不能切换服务器"
+                        return@setOnClickListener
+                    }
                     prefs.edit().putString(KEY_SERVER, normalized).putBoolean(KEY_AUTO_UNIT, autoUnit.isChecked).apply()
                     api.updateBaseUrl(normalized)
                     dialog.dismiss()
@@ -373,5 +478,6 @@ class MainActivity : Activity() {
         private const val KEY_USER_NAME = "user_name"
         private const val KEY_USERNAME = "username"
         private const val KEY_AUTO_UNIT = "auto_unit_submit"
+        private const val IMAGE_EDGE_PX = 320
     }
 }

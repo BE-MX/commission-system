@@ -2,7 +2,7 @@ package com.leshine.pdareporting
 
 import android.app.AlertDialog
 import android.content.Context
-import android.graphics.BitmapFactory
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.text.InputType
 import android.view.Gravity
@@ -342,7 +342,7 @@ class ReportingScreen(
         }
     }
 
-    fun displayImage(bytes: ByteArray, view: ImageView) {
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.let(view::setImageBitmap)
+    fun displayImage(bitmap: Bitmap, view: ImageView) {
+        view.setImageBitmap(bitmap)
     }
 }

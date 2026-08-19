@@ -8,4 +8,4 @@
 - 单件码前缀是 `ARK-DU`，明细流转码是 `ARK-D`，客户进度 scene 签名域是 `ARK-DT`，三者不得混用。
 - 客户进度页返回完整订单，但工序必须在服务端按 `process.show_in_domestic_track` 过滤，不能只靠前端隐藏。
 - 关键权限：`domestic:recharge`、`domestic_quantity_report:write`、`domestic_unit_report:write`。仅有逐件权限时进逐件模式，两者皆有/皆无保持旧数量模式兼容。
-- PDA Android 客户端在 `pda-reporting/`：用主站 `/api/auth/login` 登录后直接复用 `/api/mini/domestic/*`；`get_current_mini_user` 可读取主站 JWT 的 `sub`，所以不要为 PDA 复制一套报工后端。扫描优先走键盘模拟 + Enter，广播统一 action 为 `com.leshine.pdareporting.SCAN`。逐件模式可自动报 1 件，数量模式必须确认；写请求失败重试必须沿用同一个 `request_id`。
+- PDA Android 客户端在 `pda-reporting/`：用主站 `/api/auth/login` 登录后直接复用 `/api/mini/domestic/*`；`get_current_mini_user` 可读取主站 JWT 的 `sub`，所以不要为 PDA 复制一套报工后端。扫描优先走键盘模拟 + Enter，广播统一 action 为 `com.leshine.pdareporting.SCAN`。键盘逐件模式可自动报 1 件（广播必须确认），数量模式必须确认；写请求失败重试必须沿用同一个、提交前持久化的 `request_id`，仅允许 HTTPS 服务地址。

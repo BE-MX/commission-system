@@ -19,7 +19,7 @@ import androidx.core.content.ContextCompat
  */
 class ScannerInput(
     private val context: Context,
-    private val onCode: (String) -> Unit,
+    private val onCode: (String, ScanSource) -> Unit,
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private val keyBuffer = StringBuilder()
@@ -32,7 +32,7 @@ class ScannerInput(
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (!enabled || intent == null) return
-            extractCode(intent)?.let(onCode)
+            extractCode(intent)?.let { onCode(it, ScanSource.BROADCAST) }
         }
     }
 
@@ -88,7 +88,7 @@ class ScannerInput(
         val value = keyBuffer.toString().trim()
         keyBuffer.clear()
         lastKeyAt = 0L
-        if (value.length >= 8) onCode(value)
+        if (value.length >= 8) onCode(value, ScanSource.KEYBOARD)
     }
 
     private fun extractCode(intent: Intent): String? {

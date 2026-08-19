@@ -160,11 +160,10 @@ class ApiClient(baseUrl: String) {
     companion object {
         fun normalizeBaseUrl(input: String): String {
             val trimmed = input.trim().trimEnd('/')
-            require(trimmed.startsWith("https://") || trimmed.startsWith("http://")) {
-                "服务器地址必须以 http:// 或 https:// 开头"
+            require(trimmed.startsWith("https://")) {
+                "服务器地址必须以 https:// 开头"
             }
             return trimmed
         }
     }
 }
-
