@@ -1,60 +1,91 @@
 <template>
-  <!-- 对外库存查询页：客户官网外链嵌入（lislahairfactory.com 同风格），无登录，全英文 -->
+  <!-- 对外库存查询页：leshine.work/inventory 全公开（无登录无 key），全英文。
+       列收敛为 类型/尺寸/颜色/克重/是否有货，不出具体库存数量。 -->
   <div class="pi-page">
     <header class="pi-header">
       <span class="pi-brand">lislahair factory store</span>
-      <span class="pi-title">Live Inventory</span>
+      <span class="pi-live"><i class="pi-live-dot" />Live Inventory</span>
     </header>
 
     <main class="pi-main">
-      <h1>Stock Availability</h1>
-      <p class="pi-sub">Real-time inventory, updated directly from our factory warehouse.</p>
+      <section class="pi-hero">
+        <p class="pi-overline">Factory Direct · Wholesale</p>
+        <h1>Stock <em>Availability</em></h1>
+        <p class="pi-sub">
+          Live availability from our factory warehouse, synced directly from our inventory
+          system. Contact your sales representative to place an order.
+        </p>
+      </section>
 
-      <!-- 链接无 key / key 无效 -->
-      <div v-if="keyMissing || invalidKey" class="pi-notice">
-        This inventory link is invalid or has expired.<br />
-        Please contact your sales representative for an updated link.
-      </div>
-
-      <template v-else>
+      <section class="pi-toolbar">
         <form class="pi-search" @submit.prevent="doSearch">
+          <svg class="pi-search-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="1.6" />
+            <path d="m13.5 13.5 3.5 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+          </svg>
           <input
             v-model="keyword"
             type="text"
-            placeholder="Search by product name or model…"
+            placeholder="Search texture, length or color…"
             aria-label="Search products"
           />
           <button type="submit">Search</button>
         </form>
+        <label class="pi-toggle">
+          <input v-model="inStockOnly" type="checkbox" @change="doSearch" />
+          <span class="pi-toggle-track"><span class="pi-toggle-thumb" /></span>
+          <span class="pi-toggle-label">In stock only</span>
+        </label>
+      </section>
 
-        <div class="pi-table-wrap">
-          <table class="pi-table">
-            <thead>
-              <tr><th>Product</th><th>Model</th><th class="num">Available</th><th>Status</th></tr>
-            </thead>
-            <tbody v-if="!loading && items.length">
-              <tr v-for="item in items" :key="item.product_id">
-                <td>{{ item.name }}</td>
-                <td class="model">{{ item.model || '—' }}</td>
-                <td class="num">{{ item.available }}</td>
-                <td><span class="badge" :class="item.availability">{{ TIER_LABELS[item.availability] }}</span></td>
-              </tr>
-            </tbody>
-            <tbody v-else-if="loading">
-              <tr v-for="i in 6" :key="'s' + i" class="skeleton"><td colspan="4"><span /></td></tr>
-            </tbody>
-            <tbody v-else>
-              <tr><td colspan="4" class="empty">{{ errorText || 'No products match your search.' }}</td></tr>
-            </tbody>
-          </table>
-        </div>
+      <section class="pi-card">
+        <table class="pi-table">
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Size</th>
+              <th>Color</th>
+              <th>Weight</th>
+              <th class="avail">Availability</th>
+            </tr>
+          </thead>
+          <tbody v-if="!loading && items.length">
+            <tr v-for="item in items" :key="item.product_id">
+              <td data-label="Type" class="type">{{ item.type || '—' }}</td>
+              <td data-label="Size">{{ item.size || '—' }}</td>
+              <td data-label="Color">{{ item.color || '—' }}</td>
+              <td data-label="Weight">{{ item.weight || '—' }}</td>
+              <td data-label="Availability" class="avail">
+                <span class="pi-pill" :class="item.in_stock ? 'in' : 'out'">
+                  <i class="pi-pill-dot" />{{ item.in_stock ? 'In Stock' : 'Out of Stock' }}
+                </span>
+              </td>
+            </tr>
+          </tbody>
+          <tbody v-else-if="loading">
+            <tr v-for="i in 8" :key="'s' + i" class="skeleton"><td colspan="5"><span /></td></tr>
+          </tbody>
+          <tbody v-else>
+            <tr>
+              <td colspan="5" class="empty">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M4 8.5 12 4l8 4.5v7L12 20l-8-4.5v-7Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+                  <path d="M4 8.5 12 13l8-4.5M12 13v7" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+                </svg>
+                {{ errorText || emptyText }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
 
-        <nav v-if="total > pageSize" class="pi-paging">
-          <button :disabled="page <= 1 || loading" @click="go(page - 1)">‹ Prev</button>
-          <span>Page {{ page }} of {{ totalPages }}</span>
-          <button :disabled="page >= totalPages || loading" @click="go(page + 1)">Next ›</button>
+        <nav v-if="total > 0" class="pi-paging">
+          <span class="pi-paging-info">Showing {{ rangeStart }}–{{ rangeEnd }} of {{ total }} products</span>
+          <span class="pi-paging-btns">
+            <button :disabled="page <= 1 || loading" @click="go(page - 1)">‹ Prev</button>
+            <button :disabled="page >= totalPages || loading" @click="go(page + 1)">Next ›</button>
+          </span>
         </nav>
-      </template>
+      </section>
     </main>
 
     <footer class="pi-footer">
@@ -66,44 +97,41 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
 import { getPublicInventory } from '@/api/stock'
 
-const TIER_LABELS = {
-  in_stock: 'In Stock',
-  low_stock: 'Low Stock',
-  out_of_stock: 'Out of Stock',
-}
-
-const route = useRoute()
-const accessKey = String(route.query.key || '')
-const keyMissing = !accessKey
-const invalidKey = ref(false)
-
 const keyword = ref('')
+const inStockOnly = ref(false)
 const items = ref([])
 const total = ref(0)
 const page = ref(1)
-const pageSize = 20
+const pageSize = 50
 const loading = ref(false)
 const errorText = ref('')
 const year = new Date().getFullYear()
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
+const rangeStart = computed(() => (page.value - 1) * pageSize + 1)
+const rangeEnd = computed(() => Math.min(page.value * pageSize, total.value))
+const emptyText = computed(() =>
+  keyword.value.trim()
+    ? `No products match “${keyword.value.trim()}”.`
+    : 'No products available right now.',
+)
 
 async function fetchData() {
   loading.value = true
   errorText.value = ''
   try {
     const res = await getPublicInventory({
-      key: accessKey, page: page.value, page_size: pageSize,
+      page: page.value,
+      page_size: pageSize,
       keyword: keyword.value.trim() || undefined,
+      in_stock_only: inStockOnly.value || undefined,
     })
     items.value = res.data.items || []
     total.value = res.data.total || 0
-  } catch (e) {
-    if (e?.response?.status === 403) invalidKey.value = true
-    else errorText.value = 'Unable to load inventory right now. Please try again shortly.'
+  } catch {
+    errorText.value = 'Unable to load inventory right now. Please try again shortly.'
     items.value = []
     total.value = 0
   } finally {
@@ -123,97 +151,193 @@ function go(p) {
 
 onMounted(() => {
   document.title = 'Stock Availability | lislahair factory store' // 覆盖守卫默认的中文站名后缀
-  if (!keyMissing) fetchData()
+  fetchData()
 })
 </script>
 
 <style scoped>
-/* Lisla 官网风格：极简白底 / 深灰黑文字 / sans-serif / 弱化按钮（细边框矩形）。
-   刻意不用 tokens.css：本页嵌入客户官网，跟随客户品牌而非方舟设计系统（同 expo kiosk 例外） */
+/* Lisla 官网风格二期：暖纸底 + 墨色 + 铜金点缀 + 衬线大标题（编辑目录感）。
+   刻意不用 tokens.css：本页面向外部客户，跟随客户品牌而非方舟设计系统（同 expo kiosk 例外） */
 .pi-page {
+  --ink: #1c1917;
+  --muted: #78716c;
+  --faint: #a8a29e;
+  --line: #ece7df;
+  --accent: #a97844;
+  --accent-dark: #8f6537;
+  --paper: #faf7f2;
   min-height: 100dvh; display: flex; flex-direction: column;
-  background: #fff; color: #1a1a1a;
-  font-family: -apple-system, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  background:
+    radial-gradient(1100px 480px at 85% -10%, rgba(169, 120, 68, 0.10), transparent 60%),
+    radial-gradient(900px 420px at 5% 0%, rgba(169, 120, 68, 0.07), transparent 55%),
+    var(--paper);
+  color: var(--ink);
+  font-family: -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
+
 .pi-header {
   display: flex; justify-content: space-between; align-items: center;
-  padding: 18px clamp(16px, 5vw, 48px); border-bottom: 1px solid #e8e8e8;
+  padding: 20px clamp(20px, 5vw, 56px);
 }
-.pi-brand { font-size: 15px; letter-spacing: 0.04em; font-weight: 600; text-transform: lowercase; }
-.pi-title { font-size: 12px; color: #6b6b6b; letter-spacing: 0.12em; text-transform: uppercase; }
+.pi-brand { font-size: 15px; letter-spacing: 0.04em; font-weight: 600; }
+.pi-live {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted);
+}
+.pi-live-dot { width: 7px; height: 7px; border-radius: 50%; background: #16a34a; animation: pi-ping 2.4s ease-out infinite; }
 
-.pi-main { flex: 1; width: min(920px, 92vw); margin: 0 auto; padding: 40px 0 56px; }
-.pi-main h1 { font-size: 26px; font-weight: 600; margin: 0 0 6px; }
-.pi-sub { color: #6b6b6b; font-size: 14px; margin: 0 0 28px; }
+.pi-main { flex: 1; width: min(980px, 92vw); margin: 0 auto; padding: 32px 0 64px; }
 
-.pi-notice {
-  margin-top: 24px; padding: 28px; text-align: center; line-height: 1.8;
-  border: 1px solid #e8e8e8; color: #6b6b6b; font-size: 14px;
+.pi-hero { text-align: center; margin-bottom: 34px; animation: pi-rise 480ms ease both; }
+.pi-overline {
+  font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase;
+  color: var(--accent); margin: 0 0 12px; font-weight: 600;
+}
+.pi-hero h1 {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(30px, 5vw, 44px); font-weight: 500; margin: 0 0 14px; letter-spacing: 0.01em;
+}
+.pi-hero h1 em { font-style: italic; color: var(--accent); }
+.pi-sub {
+  max-width: 560px; margin: 0 auto; color: var(--muted);
+  font-size: 14.5px; line-height: 1.7;
 }
 
-.pi-search { display: flex; gap: 10px; margin-bottom: 22px; }
+.pi-toolbar {
+  display: flex; gap: 14px; align-items: center; justify-content: space-between;
+  margin-bottom: 18px; flex-wrap: wrap;
+  animation: pi-rise 480ms 80ms ease both;
+}
+.pi-search {
+  flex: 1; min-width: 260px; display: flex; align-items: center; gap: 8px;
+  height: 46px; padding: 0 6px 0 16px;
+  background: #fff; border: 1px solid var(--line); border-radius: 999px;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+.pi-search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(169, 120, 68, 0.14); }
+.pi-search-icon { width: 17px; height: 17px; color: var(--faint); flex: none; }
 .pi-search input {
-  flex: 1; height: 42px; padding: 0 14px; font-size: 14px;
-  border: 1px solid #d9d9d9; border-radius: 2px; outline: none; color: #1a1a1a;
-  transition: border-color 160ms ease;
+  flex: 1; min-width: 0; border: none; outline: none; background: transparent;
+  font-size: 14px; color: var(--ink);
 }
-.pi-search input:focus { border-color: #1a1a1a; }
+.pi-search input::placeholder { color: var(--faint); }
 .pi-search button {
-  height: 42px; padding: 0 26px; font-size: 13px; letter-spacing: 0.08em;
-  background: #1a1a1a; color: #fff; border: 1px solid #1a1a1a; border-radius: 2px;
-  cursor: pointer; transition: opacity 160ms ease, transform 160ms ease;
+  height: 36px; padding: 0 22px; font-size: 13px; letter-spacing: 0.06em;
+  background: var(--ink); color: #fff; border: none; border-radius: 999px;
+  cursor: pointer; transition: background 160ms ease, transform 160ms ease;
 }
-.pi-search button:hover { opacity: 0.85; }
+.pi-search button:hover { background: var(--accent-dark); }
 .pi-search button:active { transform: scale(0.97); }
 
-.pi-table-wrap { overflow-x: auto; border: 1px solid #e8e8e8; }
+.pi-toggle { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; padding: 6px 2px; }
+.pi-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+.pi-toggle-track {
+  width: 38px; height: 22px; border-radius: 999px; background: #e7e2d9;
+  display: inline-flex; align-items: center; padding: 2px;
+  transition: background 180ms ease;
+}
+.pi-toggle-thumb {
+  width: 18px; height: 18px; border-radius: 50%; background: #fff;
+  box-shadow: 0 1px 3px rgba(28, 25, 23, 0.25);
+  transition: transform 180ms ease;
+}
+.pi-toggle input:checked + .pi-toggle-track { background: #16a34a; }
+.pi-toggle input:checked + .pi-toggle-track .pi-toggle-thumb { transform: translateX(16px); }
+.pi-toggle input:focus-visible + .pi-toggle-track { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pi-toggle-label { font-size: 13.5px; color: var(--muted); }
+
+.pi-card {
+  background: #fff; border: 1px solid var(--line); border-radius: 18px;
+  box-shadow: 0 18px 45px -30px rgba(28, 25, 23, 0.28);
+  overflow: hidden;
+  animation: pi-rise 480ms 160ms ease both;
+}
 .pi-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .pi-table th {
-  text-align: left; font-weight: 600; font-size: 12px; letter-spacing: 0.08em;
-  text-transform: uppercase; color: #6b6b6b;
-  padding: 12px 16px; border-bottom: 1px solid #e8e8e8; background: #fafafa;
+  text-align: left; font-weight: 600; font-size: 11px; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--faint);
+  padding: 15px 20px; border-bottom: 1px solid var(--line); background: #fcfbf8;
 }
-.pi-table td { padding: 13px 16px; border-bottom: 1px solid #f0f0f0; }
-.pi-table tr:last-child td { border-bottom: none; }
-.pi-table .model { color: #6b6b6b; }
-.pi-table .num { text-align: right; font-variant-numeric: tabular-nums; }
-.pi-table th.num { text-align: right; }
-.empty { text-align: center; color: #9a9a9a; padding: 36px 16px; }
+.pi-table td { padding: 15px 20px; border-bottom: 1px solid #f3efe9; color: #44403c; }
+.pi-table tbody tr { transition: background 120ms ease; }
+.pi-table tbody tr:hover { background: #fbf8f3; }
+.pi-table tbody tr:last-child td { border-bottom: none; }
+.pi-table .type { color: var(--ink); font-weight: 550; }
+.pi-table th.avail, .pi-table td.avail { text-align: right; }
 
-.badge { display: inline-block; font-size: 12px; padding: 3px 10px; border: 1px solid; border-radius: 2px; }
-.badge.in_stock { color: #1e7f4f; border-color: #bfe3d0; background: #f2faf6; }
-.badge.low_stock { color: #9a6b00; border-color: #ecd9a8; background: #fdf8ec; }
-.badge.out_of_stock { color: #8a8a8a; border-color: #dcdcdc; background: #f7f7f7; }
+.pi-pill {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 12.5px; font-weight: 600; padding: 5px 12px;
+  border: 1px solid; border-radius: 999px; white-space: nowrap;
+}
+.pi-pill-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.pi-pill.in { color: #15803d; border-color: #bbe6c9; background: #f2fbf5; }
+.pi-pill.in .pi-pill-dot { animation: pi-ping 2.4s ease-out infinite; }
+.pi-pill.out { color: #8a8580; border-color: #e7e5e4; background: #f7f6f5; }
 
 .pi-paging {
-  display: flex; justify-content: center; align-items: center; gap: 18px;
-  margin-top: 24px; font-size: 13px; color: #6b6b6b;
+  display: flex; justify-content: space-between; align-items: center; gap: 14px;
+  padding: 14px 20px; border-top: 1px solid var(--line); background: #fcfbf8;
+  font-size: 12.5px; color: var(--muted); flex-wrap: wrap;
 }
+.pi-paging-btns { display: inline-flex; gap: 8px; }
 .pi-paging button {
-  padding: 8px 18px; font-size: 13px; background: #fff; color: #1a1a1a;
-  border: 1px solid #d9d9d9; border-radius: 2px; cursor: pointer;
+  padding: 7px 16px; font-size: 12.5px; background: #fff; color: var(--ink);
+  border: 1px solid var(--line); border-radius: 999px; cursor: pointer;
   transition: border-color 160ms ease, transform 160ms ease;
 }
-.pi-paging button:hover:not(:disabled) { border-color: #1a1a1a; }
+.pi-paging button:hover:not(:disabled) { border-color: var(--ink); }
 .pi-paging button:active:not(:disabled) { transform: scale(0.97); }
-.pi-paging button:disabled { color: #c0c0c0; cursor: default; }
+.pi-paging button:disabled { color: #d0ccc5; cursor: default; }
+
+.empty { text-align: center; color: var(--faint); padding: 44px 16px !important; font-size: 14px; }
+.empty svg { width: 34px; height: 34px; display: block; margin: 0 auto 12px; color: #d8d2c8; }
 
 .pi-footer {
   display: flex; flex-direction: column; gap: 4px; align-items: center;
-  padding: 22px 16px; border-top: 1px solid #e8e8e8;
-  font-size: 12px; color: #9a9a9a; text-align: center;
+  padding: 24px 16px 30px; font-size: 12px; color: var(--faint); text-align: center;
 }
-.skeleton td { padding: 13px 16px; }
+
+.skeleton td { padding: 16px 20px; }
 .skeleton span {
-  display: block; height: 14px; border-radius: 2px;
-  background: linear-gradient(90deg, #f2f2f2 25%, #e9e9e9 45%, #f2f2f2 65%);
+  display: block; height: 14px; border-radius: 999px;
+  background: linear-gradient(90deg, #f4f1eb 25%, #eae6de 45%, #f4f1eb 65%);
   background-size: 300% 100%; animation: pi-shimmer 1.4s linear infinite;
 }
 @keyframes pi-shimmer { from { background-position: 120% 0; } to { background-position: -180% 0; } }
-@media (prefers-reduced-motion: reduce) { .skeleton span { animation: none; } }
-@media (max-width: 560px) {
-  .pi-main h1 { font-size: 21px; }
-  .pi-search { flex-direction: column; }
-  .pi-search button { width: 100%; }
+@keyframes pi-ping {
+  0% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.35); }
+  70% { box-shadow: 0 0 0 6px rgba(22, 163, 74, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); }
+}
+@keyframes pi-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .pi-hero, .pi-toolbar, .pi-card { animation: none; }
+  .pi-live-dot, .pi-pill.in .pi-pill-dot { animation: none; }
+  .skeleton span { animation: none; }
+}
+
+/* 移动端：表格折成带标签的行卡片，Availability 徽章保持醒目 */
+@media (max-width: 640px) {
+  .pi-main { padding-top: 20px; }
+  .pi-toolbar { flex-direction: column; align-items: stretch; }
+  .pi-toggle { align-self: flex-start; }
+  .pi-table thead { display: none; }
+  .pi-table tbody tr { display: block; padding: 8px 0; border-bottom: 1px solid #f3efe9; }
+  .pi-table tbody tr:hover { background: transparent; }
+  .pi-table td {
+    display: flex; justify-content: space-between; align-items: center; gap: 16px;
+    padding: 7px 18px; border-bottom: none;
+  }
+  .pi-table td::before {
+    content: attr(data-label);
+    font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--faint);
+  }
+  .pi-table td.avail { text-align: right; }
+  .pi-table td[colspan] { display: block; text-align: center; }
+  .pi-table td[colspan]::before { content: none; }
+  .pi-paging { justify-content: center; }
 }
 </style>

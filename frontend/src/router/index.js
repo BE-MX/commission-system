@@ -36,7 +36,7 @@ const routes = [
     meta: { title: 'AI 智能试戴', permission: 'expo:write' },
   },
   {
-    // 对外库存查询 — 客户官网外链嵌入（无登录；数据门禁在 API 层 key 参数）
+    // 对外库存查询 — 客户公开页（无登录无 key，全公开；数据层只出四要素 + 有货标识）
     path: '/inventory',
     name: 'PublicInventory',
     component: () => import('@/views/stock/PublicInventory.vue'),
