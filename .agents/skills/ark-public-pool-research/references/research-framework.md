@@ -17,6 +17,8 @@ Search narrowly for: target industries and exclusions; product families and diff
 
 Use only low-cost identity/business signals first: trusted seed, search results opened at source, official/social bio, visible product/service content, local business/booking listing, and historical order context.
 
+For `source_system=ark_lead`, the trusted seed comes from intelligent acquisition rather than OKKI. Its profile match score and reasons are routing signals only: independently verify the official domain, entity, industry, products, activity, and exclusions before passing the gate.
+
 - `core`: directly sells, installs, teaches, distributes, brands, or repeatedly discusses target products/services.
 - `adjacent`: serves the same buyer/use case and has a plausible cross-sell path, but the target category is not proven core business.
 - `uncertain`: entity or business scope remains too sparse/ambiguous. Continue only a bounded identity/social check.
