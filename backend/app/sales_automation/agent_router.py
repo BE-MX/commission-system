@@ -60,12 +60,14 @@ def _public_pool_context(db: Session, task_id: int) -> dict:
     task = detail["task"]
     subject = detail["subject"]
     assessment = detail["assessment"]
+    source_label = "OKKI公海客户" if subject.source_system == "okki" else "智能获客70分以上候选"
     return {
         "task": _pool_task(task, subject, assessment),
         "subject": _subject(subject),
         "trusted_seed": subject.source_snapshot or {},
         "research_rules": {
-            "identity_boundary": "先用公司名、企业域名、官网、国家和历史订单确认主体；主体不明时标记 unverifiable，禁止拼接同名公司的资料",
+            "source_type": source_label,
+            "identity_boundary": "先用公司名、企业域名、官网、国家和已有业务线索确认主体；主体不明时标记 unverifiable，禁止拼接同名公司的资料",
             "knowledge_baseline": "先检索当前账号可访问的已发布企业知识，确认目标行业、产品、优势、排除项与成交经验；知识库仅用于内部匹配判断，不是客户公开事实",
             "industry_gate": {
                 "order": "先低成本核验实体、主营业务与目标行业相关性，再决定是否深挖",
@@ -76,13 +78,14 @@ def _public_pool_context(db: Session, task_id: int) -> dict:
             "weak_lead_address_crosscheck": "当初步核验仍为弱线索（identity 为 candidate/unverifiable 或行业为 uncertain）且 trusted_seed.address_search_hint 非空时，只能把该后端已最小化的位置提示与公司/业务名称组合检索 2–3 次；禁止添加个人姓名、私人电话/WhatsApp、邮箱、邮箱前缀或从其他字段恢复更精确地址。必须由打开的公开业务来源和另一业务锚点交叉印证，禁止仅凭位置合并同名主体或把内部位置提示直接当作公开事实",
             "tier_focus": {
                 "T1": "优先核实历史合作、当前经营状态和可触发二次激活的变化",
-                "T2": "围绕官网、企业邮箱或业务社媒核实产品匹配、采购角色和切换供应商诱因",
+                "T2": "围绕官网、企业邮箱或业务社媒核实产品匹配、采购角色和切换供应商诱因；智能获客高分候选还须核验其原始匹配分与公开证据是否一致",
                 "T3": "只有私人邮箱、电话或 WhatsApp 时先做轻量身份确认；缺少锚点时停止深挖",
             },
             "required_evidence": ["公开来源URL", "captured_at", "confidence"],
             "forbidden": ["猜测邮箱", "无来源事实", "跨主体拼接", "发送邮件或消息"],
         },
         "output_contract": {
+            "source_system": subject.source_system,
             "identity_decisions": ["confirmed", "candidate", "unverifiable", "rejected"],
             "industry_relevance": ["core", "adjacent", "uncertain", "irrelevant"],
             "research_depth": ["gate_only", "focused", "deep"],
