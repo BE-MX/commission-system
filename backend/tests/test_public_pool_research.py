@@ -572,6 +572,72 @@ def test_agent_lease_completion_and_conflicting_retry(db):
     assert assessment.commercial_profile["qualification_coverage"] == 65.0
 
 
+def test_score_70_lead_reuses_public_pool_research_and_links_outputs(db):
+    company = models.LeadCompany(
+        normalized_domain="lead-score.example",
+        name="Score Seventy Lead",
+        website="https://lead-score.example",
+        country="United States",
+        industry="hair salon",
+        description="Professional extension salon",
+        match_score=70,
+        score_reasons=["hair salon", "human hair wigs", "hair toppers"],
+        created_by=7,
+        updated_by=7,
+    )
+    db.add(company)
+    db.flush()
+    task, queued = public_pool_service.queue_high_score_lead_research(
+        db, company, job_id=42, actor_id=7,
+    )
+    db.commit()
+
+    assert queued is True
+    assert task is not None and task.status == "pending"
+    subject = db.query(models.ResearchSubject).filter_by(id=task.subject_id).one()
+    assert subject.subject_type == "lead_company"
+    assert subject.source_system == "ark_lead"
+    assert subject.linked_company_id == company.id
+    same_task, queued_again = public_pool_service.queue_high_score_lead_research(
+        db, company, job_id=43, actor_id=7,
+    )
+    assert queued_again is False
+    assert same_task.id == task.id
+    assert db.query(models.PublicPoolBatch).count() == 1
+
+    _row, lease = public_pool_service.claim_task(db, task.id, 17, "pool-agent")
+    public_pool_service.submit_industry_gate(db, task.id, _gate_payload(lease), actor_id=17)
+    completed, assessment = public_pool_service.complete_task_research(
+        db, task.id, _research_payload(lease), actor_id=17,
+    )
+
+    assert completed.status == "completed"
+    assert assessment.subject_id == subject.id
+    run = db.query(models.ResearchRun).one()
+    assert run.subject_id == subject.id
+    assert run.company_id == company.id
+    contact = db.query(models.LeadContact).one()
+    assert contact.subject_id == subject.id
+    assert contact.company_id == company.id
+    assert public_pool_service.list_tasks(db, 1, 20)[1] == 0
+    assert public_pool_service.list_batches(db, 1, 20)[1] == 0
+    with pytest.raises(public_pool_service.ConflictError, match="客户池审核"):
+        public_pool_service.approve_task(db, task.id, actor_id=7)
+    task.review_status = "approved"
+    db.commit()
+    with pytest.raises(public_pool_service.ConflictError, match="不能通过公海领取"):
+        public_pool_service.claim_approved_task(db, task.id, actor_id=7)
+    detail = _human_client(db).get(
+        f"/api/sales-automation/leads/{company.id}"
+    )
+    assert detail.status_code == 200, detail.text
+    deep_research = detail.json()["data"]["public_pool_research"]
+    assert deep_research["id"] == task.id
+    assert deep_research["subject"]["source_system"] == "ark_lead"
+    assert deep_research["assessment"]["grade"] == assessment.grade
+    assert len(deep_research["research"]["facts"]) == 2
+
+
 def test_irrelevant_industry_gate_stops_deep_research_and_forces_zero_grade(db):
     _generate(db, quota=1)
     task = db.query(models.PublicPoolTask).filter(models.PublicPoolTask.tier == "T2").one()
