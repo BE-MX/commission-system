@@ -57,6 +57,14 @@ test('country opportunity list shows first-return customers right after new-sign
   assert.match(page, /label="新签客户" prop="new_sign_customers" min-width="104" \/>\s*<el-table-column label="首返客户" prop="first_return_customers"/)
 })
 
+test('metrics board adds first-return card after new-sign and hides risk/forecast cards', () => {
+  const page = read('../src/views/order_intelligence/OrderIntelligence.vue')
+  const metrics = page.match(/<section class="oi-metrics"[\s\S]*?<\/section>/)[0]
+  assert.ok(metrics.includes('首返客户'))
+  assert.ok(metrics.indexOf('新签客户') < metrics.indexOf('首返客户'))
+  assert.doesNotMatch(metrics, /需行动客户|GMV 预测/)
+})
+
 test('salespersons see an explicit self-scope hint while team/user filters stay admin-only', () => {
   const filters = read('../src/views/order_intelligence/components/OrderFilters.vue')
   assert.match(filters, /v-if="options\.can_read_all"/)

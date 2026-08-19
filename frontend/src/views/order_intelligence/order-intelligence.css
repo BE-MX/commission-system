@@ -6,13 +6,11 @@
 .oi-header p { margin: 0; color: var(--text-secondary); font-size: 13px; }
 .oi-eyebrow { display: flex; align-items: center; gap: 7px; color: var(--color-primary); font: 700 11px/1 var(--font-display); letter-spacing: .13em; }
 .oi-error { margin-bottom: 16px; }
-.oi-metrics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
+.oi-metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
 .oi-metric { min-height: 126px; padding: 18px; overflow: hidden; }
 .oi-metric span { color: var(--text-secondary); font-size: 12px; font-weight: 700; }
 .oi-metric strong { display: block; margin: 13px 0 8px; color: var(--text-primary); font: 800 25px/1 var(--font-display); font-variant-numeric: tabular-nums; }
 .oi-metric p { margin: 0; color: var(--text-secondary); font-size: 12px; }
-.oi-metric--risk { border-bottom: 3px solid var(--color-danger); }
-.oi-metric--forecast { border-bottom: 3px solid var(--color-primary); }
 .is-up { color: var(--color-success-text) !important; font-weight: 700; }
 .is-down { color: var(--color-danger-text) !important; font-weight: 700; }
 .oi-tabs { padding: 0 18px 18px; }

@@ -36,6 +36,11 @@
           <p :class="changeClass(overview.metrics.changes.new_sign_customers)">{{ changeText(overview.metrics.changes.new_sign_customers) }} 较上期</p>
         </article>
         <article class="oi-metric lg-card is-static">
+          <span>首返客户</span>
+          <strong>{{ number(overview.metrics.first_return_customers) }}</strong>
+          <p :class="changeClass(overview.metrics.changes.first_return_customers)">{{ changeText(overview.metrics.changes.first_return_customers) }} 较上期</p>
+        </article>
+        <article class="oi-metric lg-card is-static">
           <span>复购客户 / 金额</span>
           <strong>{{ number(overview.metrics.repeat_customers) }}</strong>
           <p>${{ compactMoney(overview.metrics.repeat_amount_usd) }}</p>
@@ -44,16 +49,6 @@
           <span>复购率</span>
           <strong>{{ overview.metrics.repurchase_rate }}%</strong>
           <p>首返 {{ number(overview.metrics.first_return_customers) }} / 新签 {{ number(overview.metrics.new_sign_customers) }}</p>
-        </article>
-        <article class="oi-metric oi-metric--risk lg-card is-static">
-          <span>需行动客户</span>
-          <strong>{{ number(riskTotal) }}</strong>
-          <p>到期 {{ overview.customer_risk.due }} · 异常 {{ overview.customer_risk.abnormal }} · 样本不足 {{ overview.customer_risk.insufficient_data }}</p>
-        </article>
-        <article class="oi-metric oi-metric--forecast lg-card is-static">
-          <span>未来 30 天 GMV 预测</span>
-          <strong>{{ overview.forecast.next_30d_amount_usd == null ? '样本不足' : `$${compactMoney(overview.forecast.next_30d_amount_usd)}` }}</strong>
-          <p>可解释加权趋势 · {{ confidenceLabel(overview.forecast.confidence) }}</p>
         </article>
       </section>
 
@@ -287,15 +282,11 @@ const briefDisplayContent = computed(() => {
   if (aiBrief.value.status === 'running') return '正在汇总国家、人员与客户行动证据，完成后将自动显示…'
   return aiBrief.value.error_message || '暂无简报内容'
 })
-const riskTotal = computed(() => overview.value
-  ? Number(overview.value.customer_risk.due || 0) + Number(overview.value.customer_risk.abnormal || 0)
-  : 0)
 const number = value => Number(value || 0).toLocaleString('zh-CN')
 const money = value => Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
 const compactMoney = value => Number(value || 0).toLocaleString('en-US', { notation: 'compact', maximumFractionDigits: 1 })
 const changeText = value => value == null ? '—' : `${value > 0 ? '+' : ''}${value}%`
 const changeClass = value => value > 0 ? 'is-up' : (value < 0 ? 'is-down' : '')
-const confidenceLabel = value => ({ high: '高置信', medium: '中等置信', low: '低置信' }[value] || '待评估')
 const evidenceLabel = value => ({ high: '高证据', medium: '中证据', low: '小样本' }[value] || '待评估')
 const scoreType = value => value >= 70 ? 'success' : (value >= 45 ? 'warning' : 'info')
 const riskType = value => ({ abnormal: 'danger', due: 'warning', insufficient_data: 'info' }[value] || 'info')
