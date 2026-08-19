@@ -14,6 +14,7 @@ import re
 import time
 from pathlib import Path
 
+import httpx
 from sqlalchemy.orm import Session
 
 from app.training import file_service
@@ -53,20 +54,19 @@ def _parse_json(content: str) -> dict:
 
 
 def _chat_with_transient_retry(db: Session, preset_name: str, messages: list) -> dict:
-    import urllib.error
-
     from app.ai.service import chat
 
     last_exc: Exception | None = None
     for attempt in range(1, _CHAT_MAX_ATTEMPTS + 1):
         try:
             return chat(db=db, preset_name=preset_name, messages=messages, caller_module="training")
-        except urllib.error.HTTPError as exc:
-            if exc.code not in _CHAT_RETRY_STATUS:
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code
+            if status_code not in _CHAT_RETRY_STATUS:
                 raise
             last_exc = exc
         if attempt < _CHAT_MAX_ATTEMPTS:
-            msg = f"[training] {preset_name} transient {getattr(last_exc, 'code', '?')}, retry {attempt}"
+            msg = f"[training] {preset_name} transient {status_code}, retry {attempt}"
             logger.warning(msg)
             print(msg, flush=True)
             time.sleep(1.5 * attempt)

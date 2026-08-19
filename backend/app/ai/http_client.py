@@ -6,6 +6,8 @@
 
 import re
 
+import httpx
+
 from app.ai.models import AiProvider
 
 # data URL: data:<media_type>;base64,<data>
@@ -106,6 +108,24 @@ def build_headers(provider: AiProvider, api_key: str | None) -> dict:
         else:
             headers["Authorization"] = f"Bearer {api_key}"
     return headers
+
+
+def post_json(
+    url: str,
+    *,
+    headers: dict,
+    body: dict,
+    timeout_sec: int | float,
+) -> dict:
+    """通过 httpx 的受信任 CA 链发送通用 AI JSON 请求。"""
+    with httpx.Client(
+        timeout=timeout_sec,
+        verify=True,
+        follow_redirects=False,
+    ) as client:
+        response = client.post(url, headers=headers, json=body)
+        response.raise_for_status()
+        return response.json()
 
 
 def build_anthropic_body(

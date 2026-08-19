@@ -448,19 +448,19 @@ _CHAT_MAX_ATTEMPTS = 3  # 首次 + 2 次重试
 def _chat_with_transient_retry(db, preset_name: str, messages: list) -> dict:
     """chat 调用对上游 502/503 自动重试（与合成同口径；分析也偶发网关 502，2026-07-16 实证）。
     504/超时/其他错误不重试，按原样抛（守看门狗预算，见上方常量注释）。"""
-    import urllib.error
     from app.ai.service import chat
 
     last_exc: Exception | None = None
     for attempt in range(1, _CHAT_MAX_ATTEMPTS + 1):
         try:
             return chat(db=db, preset_name=preset_name, messages=messages, caller_module="expo")
-        except urllib.error.HTTPError as exc:
-            if exc.code not in _CHAT_RETRY_STATUS:
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code
+            if status_code not in _CHAT_RETRY_STATUS:
                 raise
             last_exc = exc
         if attempt < _CHAT_MAX_ATTEMPTS:
-            msg = f"[expo] {preset_name} transient {getattr(last_exc,'code','?')}, retry {attempt}/{_CHAT_MAX_ATTEMPTS-1}"
+            msg = f"[expo] {preset_name} transient {status_code}, retry {attempt}/{_CHAT_MAX_ATTEMPTS-1}"
             logger.warning(msg)
             print(msg, flush=True)
             time.sleep(1.5 * attempt)

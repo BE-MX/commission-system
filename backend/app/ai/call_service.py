@@ -4,7 +4,6 @@ import json
 import hashlib
 import logging
 import time
-import urllib.request
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
@@ -16,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.ai.models import AiPreset, AiCallLog
 from app.ai.keyring import decrypt_key
 from app.ai.http_client import (
-    build_chat_url, build_headers,
+    build_chat_url, build_headers, post_json,
     build_anthropic_body, extract_anthropic_content, extract_anthropic_usage,
 )
 from app.ai.log_snapshot import serialize_response_snapshot
@@ -149,15 +148,12 @@ def chat(
             print(f"[AI-DIAG] request with image | provider={provider.name} model={preset.model} "
                   f"api_type={api_type} url={url} msg_count={len(full_messages)} timeout={timeout_sec}s", flush=True)
 
-        req = urllib.request.Request(
+        result = post_json(
             url,
-            data=json.dumps(params).encode(),
             headers=headers,
-            method="POST",
+            body=params,
+            timeout_sec=timeout_sec,
         )
-        with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
-            raw_bytes = resp.read()
-            result = json.loads(raw_bytes.decode())
 
         # 按协议类型解析响应
         if api_type == "anthropic":

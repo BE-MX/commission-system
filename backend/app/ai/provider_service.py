@@ -5,12 +5,13 @@ import time
 from datetime import datetime
 from typing import Optional
 
+import httpx
 from sqlalchemy.orm import Session
 
 from app.ai.models import AiProvider, AiPreset
 from app.ai.keyring import encrypt_key, decrypt_key
 from app.ai.http_client import (
-    build_chat_url, build_headers,
+    build_chat_url, build_headers, post_json,
     build_anthropic_body, extract_anthropic_content,
 )
 
@@ -197,17 +198,13 @@ def test_provider(db: Session, provider_id: int) -> dict:
                 "messages": [{"role": "user", "content": "hi"}],
                 "max_completion_tokens": 10,
             }
-        payload = json.dumps(body).encode()
-
         url = build_chat_url(p.api_base, api_type)
-        req = urllib.request.Request(
+        result = post_json(
             url,
-            data=payload,
             headers=headers,
-            method="POST",
+            body=body,
+            timeout_sec=p.timeout_sec,
         )
-        with urllib.request.urlopen(req, timeout=p.timeout_sec) as resp:
-            result = json.loads(resp.read().decode())
 
         if api_type == "anthropic":
             content = extract_anthropic_content(result)
@@ -219,6 +216,25 @@ def test_provider(db: Session, provider_id: int) -> dict:
             "detail": f"Model responded with {len(content)} chars",
         }
 
+    except httpx.HTTPStatusError as e:
+        resp_body = e.response.text[:500]
+        try:
+            err_json = json.loads(resp_body)
+            error_value = err_json.get("error") if isinstance(err_json, dict) else None
+            if isinstance(error_value, dict):
+                err_msg = error_value.get("message", resp_body)
+            elif error_value is not None:
+                err_msg = str(error_value)
+            else:
+                err_msg = resp_body
+        except json.JSONDecodeError:
+            err_msg = resp_body
+        return {
+            "latency_ms": _elapsed(),
+            "status": "error",
+            "detail": f"HTTP {e.response.status_code} {e.response.reason_phrase}: {err_msg}",
+            "request_body": body,
+        }
     except urllib.error.HTTPError as e:
         resp_body = e.read().decode("utf-8", errors="replace")[:500]
         try:
