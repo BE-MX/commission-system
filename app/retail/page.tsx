@@ -1,5 +1,7 @@
-import ShopApp from "../shop-app";
+import RetailProtectedPage from "./protected-page";
+
+export const dynamic = "force-dynamic";
 
 export default function RetailHome() {
-  return <ShopApp mode="retail" view="home" />;
+  return <RetailProtectedPage view="home" />;
 }

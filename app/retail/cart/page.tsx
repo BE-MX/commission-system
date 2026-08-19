@@ -1,5 +1,7 @@
-import ShopApp from "../../shop-app";
+import RetailProtectedPage from "../protected-page";
+
+export const dynamic = "force-dynamic";
 
 export default function RetailCart() {
-  return <ShopApp mode="retail" view="cart" />;
+  return <RetailProtectedPage view="cart" />;
 }

@@ -52,3 +52,18 @@ export const wholesaleAccessLogs = sqliteTable("wholesale_access_logs", {
   result: text("result").notNull(),
   accessAt: text("access_at").notNull(),
 }, (table) => [index("idx_wholesale_access_logs_time").on(table.accessAt)]);
+
+export const retailSessions = sqliteTable("retail_sessions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  token: text("token").notNull().unique(),
+  phone: text("phone").notNull(),
+  expiresAt: text("expires_at").notNull(),
+  createdAt: text("created_at").notNull(),
+}, (table) => [index("idx_retail_sessions_phone").on(table.phone)]);
+
+export const retailAccessLogs = sqliteTable("retail_access_logs", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  phone: text("phone").notNull(),
+  result: text("result").notNull(),
+  accessAt: text("access_at").notNull(),
+}, (table) => [index("idx_retail_access_logs_time").on(table.accessAt)]);

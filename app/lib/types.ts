@@ -18,4 +18,5 @@ export type WholesaleAccount = {
 export type AccessLog = {
   id: number; companyName: string | null; phone: string; level: "a" | "b" | null;
   salesPerson: string | null; result: "success" | "failed" | "unknown"; accessAt: string;
+  channel: "retail" | "wholesale";
 };

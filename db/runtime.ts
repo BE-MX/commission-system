@@ -66,6 +66,21 @@ async function initialize() {
       access_at TEXT NOT NULL
     )`),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_wholesale_access_logs_time ON wholesale_access_logs(access_at)"),
+    db.prepare(`CREATE TABLE IF NOT EXISTS retail_sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      token TEXT NOT NULL UNIQUE,
+      phone TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )`),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_retail_sessions_phone ON retail_sessions(phone)"),
+    db.prepare(`CREATE TABLE IF NOT EXISTS retail_access_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      phone TEXT NOT NULL,
+      result TEXT NOT NULL,
+      access_at TEXT NOT NULL
+    )`),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_retail_access_logs_time ON retail_access_logs(access_at)"),
   ]);
 
   await db.prepare("PRAGMA optimize").run();

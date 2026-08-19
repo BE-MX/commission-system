@@ -130,16 +130,16 @@ export default function AdminPage() {
         </>}
 
         {tab === "access" && <>
-          <div className="admin-title"><div><p>安全记录</p><h1>批发商进入记录</h1><span>记录手机号验证结果、账户等级、来源销售员和进入时间</span></div><button className="admin-primary" onClick={load}>刷新记录</button></div>
+          <div className="admin-title"><div><p>安全记录</p><h1>商城登录与进入记录</h1><span>分别记录零售登录和批发商账户验证结果</span></div><button className="admin-primary" onClick={load}>刷新记录</button></div>
           <section className="stat-grid access-stats">
             <article><span>全部验证</span><strong>{accessLogs.length}</strong><small>最近100条记录</small></article>
-            <article><span>成功进入</span><strong>{accessLogs.filter((item) => item.result === "success").length}</strong><small>手机号与验证码通过</small></article>
+            <article><span>零售登录</span><strong>{accessLogs.filter((item) => item.channel === "retail" && item.result === "success").length}</strong><small>手机号验证通过</small></article>
+            <article><span>批发进入</span><strong>{accessLogs.filter((item) => item.channel === "wholesale" && item.result === "success").length}</strong><small>后台登记账户</small></article>
             <article><span>验证码失败</span><strong>{accessLogs.filter((item) => item.result === "failed").length}</strong><small>验证码不正确</small></article>
-            <article><span>未登记号码</span><strong>{accessLogs.filter((item) => item.result === "unknown").length}</strong><small>未建立批发商档案</small></article>
           </section>
           <section className="admin-panel"><div className="panel-head"><div><strong>手机号验证记录</strong><span>新记录按时间倒序显示</span></div></div>
-            <div className="product-table-wrap"><table className="product-table access-table"><thead><tr><th>进入时间</th><th>手机号码</th><th>批发商</th><th>账户等级</th><th>来源销售员</th><th>验证结果</th></tr></thead><tbody>
-              {accessLogs.length ? accessLogs.map((log) => <tr key={log.id}><td>{new Date(log.accessAt).toLocaleString("zh-CN", { hour12: false })}</td><td>{log.phone}</td><td>{log.companyName ?? "未登记账户"}</td><td>{log.level ? <span className={`access-pill ${log.level}`}>批发{log.level.toUpperCase()}</span> : "—"}</td><td>{log.salesPerson ?? "—"}</td><td><span className={`verify-result ${log.result}`}>{log.result === "success" ? "验证成功" : log.result === "failed" ? "验证码错误" : "未登记号码"}</span></td></tr>) : <tr><td colSpan={6} className="empty-records">暂无进入记录，请先使用批发商手机号完成一次验证</td></tr>}
+            <div className="product-table-wrap"><table className="product-table access-table"><thead><tr><th>进入时间</th><th>商城类型</th><th>手机号码</th><th>客户/批发商</th><th>账户等级</th><th>来源销售员</th><th>验证结果</th></tr></thead><tbody>
+              {accessLogs.length ? accessLogs.map((log) => <tr key={`${log.channel}-${log.id}`}><td>{new Date(log.accessAt).toLocaleString("zh-CN", { hour12: false })}</td><td><span className={`channel-pill ${log.channel}`}>{log.channel === "retail" ? "零售商城" : "批发商城"}</span></td><td>{log.phone}</td><td>{log.channel === "retail" ? "零售客户" : log.companyName ?? "未登记账户"}</td><td>{log.level ? <span className={`access-pill ${log.level}`}>批发{log.level.toUpperCase()}</span> : "—"}</td><td>{log.salesPerson ?? "—"}</td><td><span className={`verify-result ${log.result}`}>{log.result === "success" ? "验证成功" : log.result === "failed" ? "验证码错误" : "未登记号码"}</span></td></tr>) : <tr><td colSpan={7} className="empty-records">暂无登录记录</td></tr>}
             </tbody></table></div>
           </section>
         </>}
