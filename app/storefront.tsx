@@ -24,13 +24,13 @@ export default function Storefront() {
   return (
     <main>
       <header className="site-header">
-        <a className="brand" href="#top" aria-label="云鬓假发首页"><span className="brand-mark">云</span><span>云鬓假发</span></a>
+        <a className="brand" href="#top" aria-label="莱莎健康假发首页"><span className="brand-mark">莱</span><span>莱莎健康假发</span></a>
         <nav aria-label="主导航"><a href="#products">全部款式</a><a href="#levels">批发权益</a><a href="/admin" className="admin-link">管理后台</a></nav>
       </header>
 
       <section className="hero" id="top">
         <div className="hero-copy">
-          <p className="eyebrow">YUNBIN HAIR · 2026</p>
+          <p className="eyebrow">LAISHA HEALTH HAIR · 2026</p>
           <h1>每一面，<br />都自然得恰到好处。</h1>
           <p className="hero-text">精选真人发与轻盈发网，提供零售与专业批发价格。登录不同等级账户，即可查看对应商品与专属价格。</p>
           <div className="hero-actions"><a className="button primary" href="#products">浏览本季款式</a><a className="button secondary" href="#levels">了解批发等级</a></div>

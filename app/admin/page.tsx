@@ -67,7 +67,7 @@ export default function AdminPage() {
   return (
     <div className="admin-shell">
       <aside className="admin-sidebar">
-        <a className="brand admin-brand" href="/"><span className="brand-mark">云</span><span>云鬓管理台</span></a>
+        <a className="brand admin-brand" href="/"><span className="brand-mark">莱</span><span>莱莎管理台</span></a>
         <div className="admin-menu-label">经营管理</div>
         <button className={tab === "products" ? "selected" : ""} onClick={() => setTab("products")}><span>款</span>商品与款式</button>
         <button className={tab === "levels" ? "selected" : ""} onClick={() => setTab("levels")}><span>级</span>批发等级</button>
