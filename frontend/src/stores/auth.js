@@ -69,13 +69,13 @@ export const useAuthStore = defineStore('auth', () => {
     return data
   }
 
-  async function logout() {
+  async function logout(target = '/login') {
     try { await authApi.logout() } catch { /* ignore */ }
     _setGlobalToken(null)
     user.value = null
     // 清除欢迎弹框的会话标记，下次登录时重新弹出
     sessionStorage.removeItem('leshine_welcome_shown_session')
-    router.push('/login')
+    await router.push(target)
   }
 
   async function refreshToken() {

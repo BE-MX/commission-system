@@ -62,7 +62,7 @@
     </Transition>
 
     <Transition name="xconfirm">
-      <div v-if="logoutConfirm" class="xk-confirm" @click.self="logoutConfirm = false">
+      <div v-if="logoutConfirm" class="xk-confirm" @click.self="cancelLogout">
         <div
           class="xk-confirm-panel"
           role="dialog"
@@ -72,8 +72,8 @@
           <div id="logout-confirm-title" class="xc-title">确认退出登录？</div>
           <div class="xc-sub">退出后需要重新输入展会设备账号才能继续使用</div>
           <div class="xc-actions">
-            <button class="xk-btn ghost" @click="logoutConfirm = false">取消</button>
-            <button class="xk-btn" @click="confirmLogout">退出登录</button>
+            <button class="xk-btn ghost" :disabled="logoutPending" @click="cancelLogout">取消</button>
+            <button class="xk-btn" :disabled="logoutPending" @click="confirmLogout">退出登录</button>
           </div>
         </div>
       </div>
@@ -162,6 +162,7 @@ const backDisabled = computed(() => flow.step.value === 'result' && flow.generat
 
 const homeConfirm = ref(false)
 const logoutConfirm = ref(false)
+const logoutPending = ref(false)
 function requestHome() {
   if (!flow.sessionId.value) {
     flow.resetAll() // 未拍照建会话，流程无实际代价，直接回
@@ -174,13 +175,25 @@ function requestLogout() {
   logoutConfirm.value = true
   flow.touch()
 }
+function cancelLogout() {
+  if (logoutPending.value) return
+  logoutConfirm.value = false
+}
 function confirmHome() {
   homeConfirm.value = false
   flow.resetAll()
 }
 async function confirmLogout() {
-  logoutConfirm.value = false
-  await authStore.logout()
+  if (logoutPending.value) return
+  logoutPending.value = true
+  try {
+    await authStore.logout({
+      name: 'Login',
+      query: { redirect: '/expo/kiosk' },
+    })
+  } finally {
+    logoutPending.value = false
+  }
 }
 // 60s 空闲自动清场等其他路径回到 attract 时，收掉残留的确认弹层；
 // 进入生成相关屏（甄选/场景/结果）时刷新一次额度，生成扣减后余额即刻反映
@@ -425,6 +438,7 @@ function brandClick() {
   cursor: pointer;
 }
 .xk-btn:active { transform: scale(0.97); }
+.xk-btn:disabled { opacity: 0.45; cursor: default; }
 .xk-btn.ghost {
   background: transparent;
   color: var(--xk-gold);
