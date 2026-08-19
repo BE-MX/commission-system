@@ -40,6 +40,7 @@ def test_message_serializes_only_public_output_mode_confirmation_fields():
         "request": {
             "base_asset_id": None,
             "reference_asset_ids": [11],
+            "model": "gpt-image-2",
             "size": "1024x1024",
             "quality": "medium",
             "prompt_snapshot": "never expose this",
@@ -64,6 +65,7 @@ def test_message_serializes_only_public_output_mode_confirmation_fields():
         "request": {
             "base_asset_id": None,
             "reference_asset_ids": [11],
+            "model": "gpt-image-2",
             "size": "1024x1024",
             "quality": "medium",
         },

@@ -16,7 +16,13 @@ def _no_image_proxy(monkeypatch):
     monkeypatch.setattr(image_service, "get_settings", lambda: _S())
 
 
-def _create_image_preset(db, *, preset_name="expo_wig_composite", parameters=None):
+def _create_image_preset(
+    db,
+    *,
+    preset_name="expo_wig_composite",
+    model="gpt-image-2",
+    parameters=None,
+):
     provider = AiProvider(
         name="Image Provider",
         provider_type="direct",
@@ -31,7 +37,7 @@ def _create_image_preset(db, *, preset_name="expo_wig_composite", parameters=Non
     preset = AiPreset(
         preset_name=preset_name,
         provider_id=provider.id,
-        model="gpt-image-2",
+        model=model,
         parameters=parameters or {"max_tokens": 4096, "size": "1024x1024", "quality": "high"},
         is_enabled=True,
     )
@@ -135,6 +141,119 @@ def test_generate_image_posts_whitelisted_json_and_records_metadata(db, monkeypa
     assert "sig=secret" not in log.response_snapshot
     assert "user:pass" not in log.response_snapshot
     assert "keep-before" in log.response_snapshot and "keep-after" in log.response_snapshot
+
+
+def test_generate_image_chat_style_uses_chat_endpoint_without_image_only_parameters(
+    db, monkeypatch
+):
+    _create_image_preset(
+        db,
+        preset_name="design_image_generation_nano_banana_pro",
+        model="gemini-3-pro-image",
+        parameters={"api_style": "chat", "max_tokens": 4096, "quality": "high"},
+    )
+    captured = {}
+    raw_b64 = "QUJD" * 40
+
+    def fake_post(url, headers, payload, timeout_sec, caller_module):
+        captured.update(
+            url=url,
+            headers=headers,
+            payload=payload,
+            timeout_sec=timeout_sec,
+            caller_module=caller_module,
+        )
+        return image_service.ImageTransportResult(
+            {
+                "choices": [
+                    {
+                        "message": {
+                            "content": f"图片已生成：![result](data:image/png;base64,{raw_b64})"
+                        }
+                    }
+                ],
+                "usage": {"input_tokens": 5, "output_tokens": 8, "total_tokens": 13},
+            },
+            1,
+            "gemini-request",
+        )
+
+    monkeypatch.setattr(image_service, "decrypt_key", lambda value: "sk-test")
+    monkeypatch.setattr(image_service, "_post_chat_image", fake_post)
+
+    result = image_service.generate_image(
+        db=db,
+        preset_name="design_image_generation_nano_banana_pro",
+        prompt="生成一张产品海报",
+        caller_module="design_image",
+        caller_user_id=9,
+        size="1536x1024",
+        quality="high",
+    )
+
+    assert captured["url"] == "https://example.test/v1/chat/completions"
+    assert captured["payload"] == {
+        "model": "gemini-3-pro-image",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": (
+                            "生成一张产品海报\n\n输出要求：目标画布尺寸为 1536×1024，"
+                            "保持对应宽高比；高精细成品质量。只返回最终图片。"
+                        ),
+                    }
+                ],
+            }
+        ],
+        "max_tokens": 4096,
+    }
+    assert result["content"] == f"data:image/png;base64,{raw_b64}"
+    assert result["tokens_used"] == 13
+
+
+def test_extract_chat_image_content_does_not_keep_trailing_prose():
+    content = "https://cdn.test/result.png 图片已生成"
+    result = {"choices": [{"message": {"content": content}}]}
+
+    assert image_service._extract_chat_image_content(result) == "https://cdn.test/result.png"
+
+
+@pytest.mark.parametrize(
+    ("image", "expected"),
+    [
+        (
+            {"type": "image_url", "image_url": {"url": "https://cdn.test/result.png"}},
+            "https://cdn.test/result.png",
+        ),
+        ({"b64_json": "QUJD" * 40}, f"data:image/png;base64,{'QUJD' * 40}"),
+    ],
+)
+def test_extract_chat_image_content_supports_message_images(image, expected):
+    result = {
+        "choices": [
+            {"message": {"content": "图片已生成", "images": [image]}}
+        ]
+    }
+
+    assert image_service._extract_chat_image_content(result) == expected
+
+
+def test_extract_chat_image_content_prefers_structured_image_over_text_link():
+    result = {
+        "choices": [
+            {
+                "message": {
+                    "content": "说明文档：https://docs.test/image-help",
+                    "images": [{"image_url": {"url": "https://cdn.test/result.png"}}],
+                }
+            }
+        ]
+    }
+
+    assert image_service._extract_chat_image_content(result) == "https://cdn.test/result.png"
 
 
 @pytest.mark.parametrize(

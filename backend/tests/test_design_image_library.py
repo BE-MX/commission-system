@@ -74,6 +74,9 @@ def test_seed_prompt_templates_is_idempotent_and_listed_in_order(db):
     assert [row.sort for row in rows] == sorted(row.sort for row in rows)
     assert all(row.is_active for row in rows)
     assert all(row.options for row in rows)
+    dieline = next(row for row in rows if row.name == "通用刀版包装效果图")
+    assert dieline.category == "刀版图生成包装效果图"
+    assert "刀线" in dieline.content
 
 
 def test_prompt_template_crud_and_soft_delete(db):

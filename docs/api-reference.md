@@ -507,11 +507,11 @@
 
 | 方法 | 路径 | 权限 | 契约 |
 |---|---|---|---|
-| GET | `/config` | read | 尺寸、质量、附件/上传限制、草稿 TTL、当日额度；不暴露 Provider 或密钥 |
+| GET | `/config` | read | 生图模型目录（`id/label/available`）、默认模型、尺寸、质量、`accepted_upload_mime_types`、单页 PDF 限制、附件/上传限制、草稿 TTL、当日额度；不暴露 Provider、Preset 或密钥 |
 | POST | `/sessions` | write | 创建会话，body `{title?}`，默认“新对话”，标题 1～200 字 |
 | GET | `/sessions` | read | `limit=20`（1～100）与不透明 `cursor` 的 owner 会话分页 |
 | GET | `/sessions/{session_id}` | read | 会话、消息、未删除/未过期资产与该会话全部历史 jobs（按创建时间升序，不只 active） |
-| POST | `/sessions/{session_id}/assets` | write | multipart 字段 `file`；JPEG/PNG/WebP，实际格式必须匹配 MIME |
+| POST | `/sessions/{session_id}/assets` | write | multipart 字段 `file`；JPEG/PNG/WebP 图片，或单页 PDF、SVG 刀版；实际格式必须匹配 MIME。PDF/SVG 在限并发、限时、限内存的隔离子进程中转为最大边 2048px 的白底 PNG 预览后存储和发送给模型，不保存或直传原始文档；SVG 禁止脚本、DOCTYPE/ENTITY、外部资源及超预算元素/内嵌图片。渲染服务不可用返回 503 |
 | DELETE | `/assets/{asset_id}` | write | 仅未被任务引用的 draft 可删 |
 | POST | `/sessions/{session_id}/turns` | write | 202；可能返回待确认 clarification、1 个组合图 job 或 2～4 个独立 queued jobs；body 的 `session_id` 若存在必须与路径一致 |
 | POST | `/sessions/{session_id}/messages/{message_id}/actions` | write | 幂等确认输出方式；body `{request_id, action:"choose_output_mode", mode:"composite"|"separate"}` |
@@ -521,11 +521,11 @@
 | GET | `/assets/{asset_id}/content` | read | `download=false`、`thumbnail=false`；鉴权预览/缩略图/下载 |
 | GET | `/usage` | admin | 可按 `owner_user_id`、`start_at`、`end_at`、`status` 过滤 |
 
-`turns` 请求：`prompt` 1～4000 字；`request_id` 1～64，仅字母、数字、下划线、连字符；`size` 仅 `1024x1024 / 1024x1536 / 1536x1024`；`quality` 仅 `low / medium / high`；`reference_asset_ids` 最多 4 个、正整数且不重复；`base_asset_id` 不得同时出现在参考图列表。无 `base_asset_id` 是 generation，有则是 edit；连续对话不会回传全部历史图，只发送显式基准图、本轮参考图和本轮要求。
+`turns` 请求：`prompt` 1～4000 字；`request_id` 1～64，仅字母、数字、下划线、连字符；`model` 仅允许服务端目录中的 `gpt-image-2 / grok-image-2 / gemini-3-pro-image / gemini-3.1-flash-image`，默认 `gpt-image-2`，且所选项必须在 `/config.models` 中 `available=true`；`size` 仅 `1024x1024 / 1024x1536 / 1536x1024`；`quality` 仅 `low / medium / high`；`reference_asset_ids` 最多 4 个、正整数且不重复；`base_asset_id` 不得同时出现在参考图列表。无 `base_asset_id` 是 generation，有则是 edit；连续对话不会回传全部历史图，只发送显式基准图、本轮参考图和本轮要求。模型 ID 只映射服务端固定 Preset，客户端不能指定任意 Preset、Provider 或 API 地址。
 
 创建、确认和重试三类 mutation 统一返回 `data.mode / data.jobs[] / data.clarification`，不再返回单数 `job` 字段。`mode=clarification` 时不创建 job、不扣生成额度；确认 `composite` 后创建 1 个同画布 job，只占 1 次生成额度并按 1 个 job 计费；确认 `separate` 后按标准角度或版本创建 2～4 个独立 job，N 张图占 N 次生成额度并分别计费。判定是确定性的：明确写出“同一张图/同一张画布/拼图/三视图/四视图/排版展示”时直接走 `composite`；明确写出“分别生成/每个角度一张/独立图片/单独出图”时直接走 `separate`；只出现 2～4 张、角度或版本数量而未说明输出方式时返回 clarification。一次最多 4 张；超过上限返回 `multi_output_limit`，文案固定为“一次最多生成 4 张，请拆成多轮请求。”且 `meta.max_outputs=4`。
 同一批独立图片共享原始 user message，但每个 job 有独立状态、响应消息、输出资产和重试链。任一批量 root job 仍为 queued/running 时，该用户的所有新 turn（包括其他会话的普通单图请求）和所有确认 action 均被阻止；全部终态后恢复。`DESIGN_IMAGE_MAX_ACTIVE_PER_USER` 是 worker 的每用户 running 上限，不代表 `/jobs/active` 只返回一个任务。
-消息响应新增 nullable `interaction`。当前公开类型仅 `output_mode_confirmation`，字段白名单为 `type/status/source_message_id/request_id/count/item_kind/labels/request/selected_mode/resolved_at`；其中必填 `item_kind=angle|variant` 决定前端使用角度或版本文案，`request` 只含 `base_asset_id/reference_asset_ids/size/quality`。未知或损坏的存储 JSON 返回 `interaction: null` 并记录服务端警告，绝不透传原始 JSON；若幂等回放指向无 root job 且无有效 confirmation 的脏状态，mutation 返回 503 和安全的重新发送指引。
+消息响应新增 nullable `interaction`。当前公开类型仅 `output_mode_confirmation`，字段白名单为 `type/status/source_message_id/request_id/count/item_kind/labels/request/selected_mode/resolved_at`；其中必填 `item_kind=angle|variant` 决定前端使用角度或版本文案，`request` 只含 `base_asset_id/reference_asset_ids/model/size/quality`，旧记录缺少 `model` 时按 `gpt-image-2` 兼容。未知或损坏的存储 JSON 返回 `interaction: null` 并记录服务端警告，绝不透传原始 JSON；若幂等回放指向无 root job 且无有效 confirmation 的脏状态，mutation 返回 503 和安全的重新发送指引。
 
 主要错误：校验 400/422、未认证 401、无权限 403、owner 隔离或不存在 404、已引用资产/已有 active job 409、上传超限 413、日额度 429、Preset/存储/一致性不可用 503。确认时附件过期返回 `attachment_unavailable`，文案固定为“附件已失效，请重新上传后发送新请求。”，不得引导用户重试旧确认。重试是新 accepted job，因此占用新的当日额度；失败调用可能已经触达 Provider，不能解释为“零成本”。
 

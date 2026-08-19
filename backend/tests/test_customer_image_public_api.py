@@ -710,6 +710,21 @@ def test_oversized_logo_returns_413_before_decode_or_storage(public_api, monkeyp
     assert list(tmp_path.rglob("*")) == []
 
 
+def test_public_logo_upload_does_not_enable_dieline_documents(public_api):
+    client, db, _tmp_path = public_api
+    _invite_row, token = _invite(db)
+
+    response = client.post(
+        "/api/customer-image/public/logo",
+        headers=_auth(token),
+        files={"file": ("dieline.pdf", b"%PDF-1.7\n", "application/pdf")},
+    )
+
+    assert response.status_code == 400
+    assert "MIME" in response.text
+    _assert_security_headers(response)
+
+
 @pytest.mark.parametrize("token", [None, "invalid"])
 def test_unavailable_invite_does_not_parse_multipart(public_api, monkeypatch, token):
     from starlette.requests import Request

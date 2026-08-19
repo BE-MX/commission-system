@@ -88,6 +88,10 @@ class ImageValidationError(ValueError):
     """The supplied bytes are not an acceptable image."""
 
 
+class ImageProcessingUnavailableError(RuntimeError):
+    """An isolated image/document processor is temporarily unavailable."""
+
+
 class ImageStorageError(ValueError):
     """A private storage path violates the storage boundary."""
 
@@ -172,15 +176,35 @@ def _encode_image(image: Image.Image, fmt: str) -> bytes:
     return output.getvalue()
 
 
-def normalize_upload(content: bytes, declared_mime: str) -> NormalizedImage:
-    """Validate real image bytes, orient, resize, and re-encode without metadata."""
+def normalize_upload(
+    content: bytes,
+    declared_mime: str,
+    allow_reference_documents: bool = False,
+) -> NormalizedImage:
+    """Validate/rasterize a reference file and re-encode it without metadata."""
     if not content:
-        raise ImageValidationError("图片内容为空")
+        raise ImageValidationError("参考文件内容为空")
     byte_limit = effective_max_upload_bytes()
     if len(content) > byte_limit:
-        raise ImageValidationError(f"图片不能超过 {byte_limit // MEBIBYTE}MiB")
+        raise ImageValidationError(f"参考文件不能超过 {byte_limit // MEBIBYTE}MiB")
 
     mime = (declared_mime or "").split(";", 1)[0].strip().lower()
+    if allow_reference_documents and mime in {"application/pdf", "image/svg+xml"}:
+        from app.design_image.reference_document import (
+            ReferenceDocumentError,
+            ReferenceDocumentUnavailableError,
+            rasterize_reference_document,
+        )
+
+        try:
+            content = rasterize_reference_document(
+                content, mime, max_edge=MAX_IMAGE_EDGE
+            )
+        except ReferenceDocumentUnavailableError as exc:
+            raise ImageProcessingUnavailableError(str(exc)) from exc
+        except ReferenceDocumentError as exc:
+            raise ImageValidationError(str(exc)) from exc
+        mime = "image/png"
     fmt = _magic_format(content)
     if fmt is None or mime not in _MIME_FORMAT or _MIME_FORMAT[mime] != fmt:
         raise ImageValidationError("图片真实格式与声明的 MIME 不匹配")

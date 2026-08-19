@@ -23,11 +23,12 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, noload
 
-from app.ai.models import AiCallLog, AiPreset, AiProvider
+from app.ai.models import AiCallLog
 from app.ai.service import build_image_config_version
 from app.auth.models import ArkUser
 from app.core.config import get_settings
 from app.design_image import file_service
+from app.design_image import model_catalog
 from app.design_image.multi_output_intent import (
     MultiOutputIntent,
     build_composite_prompt,
@@ -55,8 +56,9 @@ from app.design_image.schemas import (
 logger = logging.getLogger("commission")
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 UTC = timezone.utc
-PRESET_NAME = "design_image_generation"
-EXPECTED_MODEL = "gpt-image-2"
+# Compatibility aliases retained for callers/tests that import the original default.
+PRESET_NAME = model_catalog.IMAGE_MODEL_OPTIONS[0].preset_name
+EXPECTED_MODEL = model_catalog.DEFAULT_IMAGE_MODEL_ID
 ACTIVE_STATUSES = ("queued", "running")
 JOB_STATUSES = ("queued", "running", "succeeded", "failed")
 NOT_FOUND_MESSAGE = "资源不存在"
@@ -448,7 +450,7 @@ def create_draft_asset(
     now: datetime | None = None,
 ) -> DesignImageAsset:
     _owner_session(db, owner_user_id, session_id)
-    normalized = file_service.normalize_upload(content, declared_mime)
+    normalized = file_service.normalize_upload(content, declared_mime, True)
     stored = file_service.save_private_image(
         normalized, owner_user_id=owner_user_id, kind="upload"
     )
@@ -696,31 +698,23 @@ def _enforce_clarification_guard(
         raise DesignImageActiveJobError("当前对话已有任务进行中，请等待完成")
 
 
-def _preset_snapshot(db: Session) -> tuple[str, str, int, dict | None, dict]:
-    row = (
-        db.query(AiPreset, AiProvider)
-        .join(AiProvider, AiProvider.id == AiPreset.provider_id)
-        .filter(
-            AiPreset.preset_name == PRESET_NAME,
-            AiPreset.deleted_at.is_(None),
-            AiPreset.is_enabled.is_(True),
-            AiProvider.deleted_at.is_(None),
-            AiProvider.is_enabled.is_(True),
-            AiProvider.provider_type == "direct",
-        )
-        .first()
-    )
-    if row is None or row[0].model != EXPECTED_MODEL:
+def _preset_snapshot(
+    db: Session,
+    model_id: str = model_catalog.DEFAULT_IMAGE_MODEL_ID,
+) -> tuple[str, str, int, dict | None, dict]:
+    configured = model_catalog.configured_model_row(db, model_id)
+    if configured is None:
         raise DesignImageConfigurationError("生图服务配置不可用，请联系管理员")
-    rate_card = (row[0].parameters or {}).get("rate_card")
+    _option, preset, provider = configured
+    rate_card = (preset.parameters or {}).get("rate_card")
     if rate_card is not None and not isinstance(rate_card, dict):
         raise DesignImageConfigurationError("生图价格配置不可用，请联系管理员")
     config_version = {
-        "provider_id": row[1].id,
-        "fingerprint": build_image_config_version(row[0], row[1]),
+        "provider_id": provider.id,
+        "fingerprint": build_image_config_version(preset, provider),
     }
     return (
-        row[0].preset_name, row[0].model, row[0].provider_id,
+        preset.preset_name, preset.model, preset.provider_id,
         deepcopy(rate_card), config_version,
     )
 
@@ -854,7 +848,9 @@ def _create_jobs_for_intent(
     *,
     operation_time: datetime,
 ) -> tuple[DesignImageJob, ...]:
-    preset_name, model, provider_id, pricing_snapshot, config_version = _preset_snapshot(db)
+    preset_name, model, provider_id, pricing_snapshot, config_version = _preset_snapshot(
+        db, payload.model
+    )
     labels: tuple[str | None, ...] = intent.labels if intent.mode == "separate" else (None,)
     rows: list[DesignImageJob] = []
     for position, label in enumerate(labels, start=1):
@@ -1032,6 +1028,7 @@ def create_turn(
                     "request": {
                         "base_asset_id": payload.base_asset_id,
                         "reference_asset_ids": list(payload.reference_asset_ids),
+                        "model": payload.model,
                         "size": payload.size,
                         "quality": payload.quality,
                     },
@@ -1136,6 +1133,7 @@ def resolve_message_action(
             session_id=session.id,
             base_asset_id=request.base_asset_id,
             reference_asset_ids=list(request.reference_asset_ids),
+            model=request.model,
             size=request.size,
             quality=request.quality,
         )
@@ -1259,7 +1257,9 @@ def retry_job(
                 db, owner_user_id, winner.id, context="retry"
             )
         _enforce_capacity(db, owner_user_id, now, session_id=old.session_id)
-        preset_name, model, provider_id, pricing_snapshot, config_version = _preset_snapshot(db)
+        preset_name, model, provider_id, pricing_snapshot, config_version = _preset_snapshot(
+            db, old.model or model_catalog.DEFAULT_IMAGE_MODEL_ID
+        )
         links = db.execute(
             select(DesignImageJobAsset)
             .where(DesignImageJobAsset.job_id == old.id)
@@ -1326,6 +1326,16 @@ def get_config(
     limit = settings.DESIGN_IMAGE_DAILY_LIMIT
     used = _accepted_count(db, owner_user_id, now)
     return {
+        "models": model_catalog.public_model_options(db),
+        "default_model": model_catalog.DEFAULT_IMAGE_MODEL_ID,
+        "accepted_upload_mime_types": [
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+            "image/svg+xml",
+            "application/pdf",
+        ],
+        "pdf_page_limit": 1,
         "sizes": list(VERIFIED_SIZES),
         "qualities": list(VERIFIED_QUALITIES),
         "default_size": "1024x1024",

@@ -202,15 +202,17 @@
 - `ark_card_entries` — 沟通纪要：entry_type text/image、title/content、attachment_path（`uploads/card/` uuid 命名，公开静态可读）；客户凭口令可见，FK CASCADE 随客户删除。
 - `ark_card_inquiries` — 客户询盘：contact 原文 + message、customer_id 命中档案时回填（FK SET NULL）、status new/handled 驱动跟进。
 
-## 设计部 AI 生图工作台（迁移 089/103，2026-08-05）
+## 设计部 AI 生图工作台（迁移 089/091/103/115，2026-08-05）
 
 迁移 `089_design_image_studio` 在 `ark_ai_call_logs` 增加 nullable JSON `usage_detail`，并建立五张领域表。迁移采用存在性检查以收敛已有对象；`downgrade()` 刻意不删审计数据或表，回滚走权限/Preset 开关，结构清理由单独审计迁移完成。
 
 - `ark_design_image_sessions`：owner 会话；`owner_user_id → ark_users.id RESTRICT`。索引 `idx_di_session_owner_updated(owner_user_id, updated_at)`。
 - `ark_design_image_messages`：用户/助手消息；`session_id → sessions.id RESTRICT`。迁移 `103_di_message_interact` 增加 nullable `client_request_id VARCHAR(64)` 与 `interaction_json JSON`；`uq_di_message_session_client_request(session_id, client_request_id)` 让无 job 的确认轮次也能按会话幂等。`interaction_json` 只保存输出方式确认所需的结构化状态和最小请求快照：`output_mode_confirmation` 必须含 `pending|resolved` 状态、`count`、`item_kind=angle|variant` 与最小附件请求；HTTP 序列化使用字段白名单，不返回提示词快照、Provider 参数或内部错误。索引 `idx_di_message_session_created(session_id, created_at)`。
-- `ark_design_image_assets`：私有上传与输出元数据，保存相对路径、MIME、字节数、宽高、SHA-256、draft/attached 状态和软删除时间。`session_id → sessions`、`message_id → messages`、`source_asset_id → assets`、`created_by → ark_users` 均为 RESTRICT。索引 `idx_di_asset_session_created(session_id, created_at)`、`idx_di_asset_draft(status, expires_at)`。
+- `ark_design_image_assets`：私有上传与输出元数据，保存相对路径、MIME、字节数、宽高、SHA-256、draft/attached 状态和软删除时间。JPEG/PNG/WebP 原图经清理后保存；单页 PDF 与 SVG 刀版在入口转成白底 PNG 预览，原始文档不落库。`session_id → sessions`、`message_id → messages`、`source_asset_id → assets`、`created_by → ark_users` 均为 RESTRICT。索引 `idx_di_asset_session_created(session_id, created_at)`、`idx_di_asset_draft(status, expires_at)`。
 - `ark_design_image_jobs`：状态、输入/配置快照、租约、用量、计费确定性及错误。`owner_user_id → ark_users.id`、`session_id → ark_design_image_sessions.id`、`request_message_id/response_message_id → ark_design_image_messages.id`、`base_asset_id/output_asset_id → ark_design_image_assets.id`、`ai_call_log_id → ark_ai_call_logs.id`、`retry_of_job_id → ark_design_image_jobs.id` 均为 RESTRICT；`uq_di_job_owner_idem(owner_user_id, idempotency_key)` 保证用户范围幂等。索引 `idx_di_job_claim(status, lease_expires_at, created_at)`、`idx_di_job_owner_day(owner_user_id, created_at, status)`、`idx_di_job_session_created(session_id, created_at)`。
 - `ark_design_image_job_assets`：任务参考图顺序；`job_id → jobs.id CASCADE`、`asset_id → assets.id RESTRICT`，唯一约束 `uq_di_job_asset(job_id, asset_id)`，检查约束 `ck_di_job_asset_position(position >= 0)`，索引 `idx_di_job_asset_position(job_id, position)`。
+- `ark_design_image_prompt_templates`：迁移 091 建立的提示词模板，保存 category/name/content/options/is_active/sort。迁移 115 将历史“包装效果图”分类改为“LOGO生成包装效果图”，并按 `(category, name)` 幂等新增“刀版图生成包装效果图 / 通用刀版包装效果图”；不覆盖现有模板正文或参数配置。该迁移为 forward-only 数据变更，downgrade 不回改用户可能已编辑的数据。
+- `ark_design_image_library_assets`：迁移 091 建立的公/私参考图库；public 全员可见、private 仅 owner 可见，上传仅支持 JPEG/PNG/WebP 图片。
 
 关联真相链为 `request_message → job → ai_call_log/output_asset/response_message`；一条用户消息可对应 1 个组合图 root job，或 2～4 个共享该消息的独立 root jobs。输出资产的 `source_asset_id` 指回显式编辑基准，参考图顺序在 job_assets 中冻结。用量不另建汇总表：`/usage` 从 jobs LEFT JOIN `AiCallLog` 派生，job token 快照优先、日志 token 兜底。成本只有配置了调用时的 rate-card 快照且细分 usage 可计算时才为估算值，否则 `billing_certainty=unknown`。
 

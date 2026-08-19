@@ -798,13 +798,24 @@ frontend/src/
 
 ## 设计部 AI 生图工作台（design_image，2026-08-05）
 
+**多模型选择（2026-08-17）**：输入框工具栏新增服务端模型目录，默认仍为 `gpt-image-2`。浏览器只提交模型 ID；后端固定映射到独立 Preset，任务落库时同时快照 `preset_name/model/provider_id/config_version/rate_card`，多输出确认和失败重试均沿用原模型，不能由客户端直接指定 Preset 或 Provider。目录如下：
+
+| 页面名称 | model | Preset | API style |
+|---|---|---|---|
+| GPT Image 2 | `gpt-image-2` | `design_image_generation` | `/v1/images/*` |
+| Grok Image 2 | `grok-image-2` | `design_image_generation_grok_image_2` | `/v1/images/*` |
+| Nano Banana Pro | `gemini-3-pro-image` | `design_image_generation_nano_banana_pro` | `chat` |
+| Nano Banana 2 | `gemini-3.1-flash-image` | `design_image_generation_nano_banana_2` | `chat` |
+
+每个 Preset 必须启用并绑定带 API Key 的 `direct + openai` TeamRouter Provider，base 仅允许 `https://api.teamorouter.com` 或其 `/v1` 形式；Gemini 两项还必须配置 `parameters.api_style="chat"`。配置不完整的目录项仍显示，但标为“未配置”且不可选；后端同样 fail-closed 返回 503。2026-08-17 用现有 TeamRouter Key 调 `GET /v1/models` 的实测结果中，图片模型只有 `gpt-image-2` 与 `gemini-3.1-flash-image`；没有 `grok-image-2` 或 `gemini-3-pro-image`。因此 Grok Image 2 与 Nano Banana Pro 只完成产品与调用链预接入，在 TeamRouter 实时模型目录出现对应 ID 且完成真实 generation/edit 探针之前不得创建为可用 Preset，也不得对外宣称已可生成。Gemini 的无参考图 generation 已补齐 chat-style 分支，不再误走 `/v1/images/generations`，并兼容 Markdown data URL 与 `message.images[]` 两种返回形态；chat-style 无独立 size/quality 字段，用户选择只会转换为提示词软约束，不能承诺精确像素或质量档位。
+
 **上下文口径**：会话记录用于展示、恢复和追溯，不等于把完整历史重新喂给模型。每轮只发送显式 `base_asset_id`、最多 4 张本轮参考图和当前 prompt；生成结果用 `source_asset_id` 形成版本链。因此连续编辑的成本主要取决于本轮输入图片与输出质量，不会因聊天轮数自动线性累加全部历史图片。
 
 **会话命名**：首轮 turn 自动用首条消息命名会话——仅当标题仍是默认名 `新对话` 且会话尚无消息（显式起过名的不覆盖）；压平换行/连续空白后截断 30 字。隐式建会话（不带 session_id 的 turn）同样走这个派生。前端在 submit 响应里同步 `currentSession.title`，页头与侧栏即时更新，无需刷新。
 
 **并发口径**：放开的是同时在途数，不是总量——每日额度规则不变；同一用户最多 `DESIGN_IMAGE_MAX_ACTIVE_PER_USER`（默认 2）个进行中任务，**同一会话仍只允许 1 个**（保住会话内单活跃卡片的交互模型）。create_turn 与 retry 共用 `_enforce_capacity`（先额度、再用户在途数、最后会话级检查）。`GET /jobs/active` 返回全部进行中任务列表；前端单循环轮询该列表，从列表消失的任务补拉一次终态驱动结果卡片与额度刷新。发送闸只看当前会话的进行中任务，别的会话在生成不阻塞新会话。
 
-**提示词库**：`ark_design_image_prompt_templates` 预置完整模板，`content` 内 `{key}` 为参数占位，`options` JSON 定义参数槽（key/label/choices）；前端选择类型→模板→参数取值后本地拼装（`composePrompt`），填入输入框可再编辑。读取要 `design_image:read`，管理与 `POST /prompt-templates/seed` 种子导入要 `design_image:admin`；种子按 name 幂等，不覆盖人工修改。管理界面在提示词库对话框内（admin 可见「管理模板」按钮）：新增/编辑（含参数槽编辑器，前端校验与后端 schema 同口径：占位必须有参数槽、key 唯一小写、取值非空）、停用/启用；`GET /prompt-templates?include_inactive=true` 仅 admin，用于查看和恢复已停用模板。**颜色类参数槽**（key 或显示名含 color/色）在选择项后带「潘通色卡」入口：`GET /pantone-colors` 只返回色彩模块 `ark_pantone_reference` 的 Solid Coated collection（V5 3219 条，前端缓存一次拉取、面板内过滤、上限渲染 240 条防爆）；选中色卡后该参数的取值即其 HEX 码（替代选项文本），点普通选项则替换回来。Solid Coated 数据来自非官方 2024 V5 色库，仓库内按上游 commit + SHA-256 固定版本；Lab 以 Photoshop D50 解释并经 Bradford 色适应转 sRGB，HEX 仅用于屏幕近似预览，不作为印刷打样依据。
+**提示词库**：`ark_design_image_prompt_templates` 预置完整模板，`content` 内 `{key}` 为参数占位，`options` JSON 定义参数槽（key/label/choices）；前端选择类型→模板→参数取值后本地拼装（`composePrompt`），填入输入框可再编辑。迁移 115 将历史大类“包装效果图”改为“LOGO生成包装效果图”，并增加“刀版图生成包装效果图 / 通用刀版包装效果图”，提供包装材质、表面工艺与展示方式参数。刀版附件支持 JPEG/PNG/WebP、SVG 和单页 PDF；PDFium/resvg 在受并发、20 秒超时和生产 Windows/Linux 768MiB 进程内存上限保护的 spawn 子进程中，将文档渲染为最大边 2048px 的白底 PNG，再沿用既有私有图片存储、缩略图和模型 edit 链路，原始 PDF/SVG 不落库也不直传模型。SVG 拒绝脚本、XML 实体、DOCTYPE、外部资源、超过 2 万元素或内嵌图片预算的文件，PDF 拒绝多页和加密/损坏文件；转换设施故障以 503 返回。读取要 `design_image:read`，管理与 `POST /prompt-templates/seed` 种子导入要 `design_image:admin`；种子按 name 幂等，不覆盖人工修改。管理界面在提示词库对话框内（admin 可见「管理模板」按钮）：新增/编辑（含参数槽编辑器，前端校验与后端 schema 同口径：占位必须有参数槽、key 唯一小写、取值非空）、停用/启用；`GET /prompt-templates?include_inactive=true` 仅 admin，用于查看和恢复已停用模板。**颜色类参数槽**（key 或显示名含 color/色）在选择项后带「潘通色卡」入口：`GET /pantone-colors` 只返回色彩模块 `ark_pantone_reference` 的 Solid Coated collection（V5 3219 条，前端缓存一次拉取、面板内过滤、上限渲染 240 条防爆）；选中色卡后该参数的取值即其 HEX 码（替代选项文本），点普通选项则替换回来。Solid Coated 数据来自非官方 2024 V5 色库，仓库内按上游 commit + SHA-256 固定版本；Lab 以 Photoshop D50 解释并经 Bradford 色适应转 sRGB，HEX 仅用于屏幕近似预览，不作为印刷打样依据。
 
 **参考图库（公/私库）**：`ark_design_image_library_assets` 的 `scope` 决定可见性——`public` 公库全员可读可用（上传/删除仅 admin），`private` 私库仅创建者本人可见可用（业务员为自己的客户备的私图）；他人私库的读取/复制/删除与随机不存在 ID 同为 404，不泄露存在性。选用时 `POST /library-assets/{id}/clone` 把原图复制为会话内 draft `DesignImageAsset`，作为 `base_asset_id` 走现有生成链路，不另开通道。**基准图允许 draft**：克隆产物即 draft，`create_turn` 对 base 用 `allow_draft=True` 校验并在本轮使用后转正为 attached（message_id 关联本轮消息、清 expires_at），语义与草稿参考图一致；过期草稿基准图仍按 404 拒绝。
 

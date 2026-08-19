@@ -217,6 +217,13 @@ def test_every_json_endpoint_returns_ok_envelope_without_sensitive_fields(
         assert secret not in rendered
 
 
+def test_job_serializer_exposes_only_public_catalog_model_ids(api):
+    _client, _app, module, _service = api
+
+    assert module._job(_row(model="gpt-image-2"))["model"] == "gpt-image-2"
+    assert module._job(_row(model="secret-model"))["model"] is None
+
+
 def test_turn_and_retry_use_unified_jobs_array_without_single_job_field(api):
     client, *_ = api
     for method, path, payload in (
@@ -524,6 +531,20 @@ def test_upload_is_bounded_closes_file_and_rejects_fake_mime(api, monkeypatch):
         files={"file": ("fake.png", b"not-png", "image/png")},
     )
     assert response.status_code == 400
+
+    monkeypatch.setattr(
+        service,
+        "create_draft_asset",
+        lambda *_a, **_k: (_ for _ in ()).throw(
+            module.file_service.ImageProcessingUnavailableError("转换繁忙")
+        ),
+    )
+    response = client.post(
+        "/api/design-image/sessions/11/assets",
+        files={"file": ("dieline.pdf", b"%PDF-1.7", "application/pdf")},
+    )
+    assert response.status_code == 503
+    assert "转换繁忙" in response.text
 
 
 def test_router_rejects_configured_upload_limit_before_service(api, monkeypatch):

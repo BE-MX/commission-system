@@ -5,29 +5,30 @@ import {
 } from '@/api/designImage'
 import { msgError } from '@/utils/feedback'
 import {
-  acceptConversationResponse, advanceJob, canStartSend, replaceActiveJob,
-  createSessionSingleFlight, nextConversationGeneration, reconcileSubmittedDraft, reconcileTurnResult,
-  recoverComposerDrafts, restoreActiveJobs, safeBusinessErrorMessage, selectSessionActiveJob, upsertAttachment,
+  acceptConversationResponse, advanceJob, canStartSend, createSessionSingleFlight, nextConversationGeneration,
+  normalizeReferenceUploadFile, reconcileSubmittedDraft, reconcileTurnResult, recoverComposerDrafts, replaceActiveJob, resolveImageModelSelection,
+  REFERENCE_UPLOAD_MIME_TYPES,
+  restoreActiveJobs, safeBusinessErrorMessage, selectSessionActiveJob, upsertAttachment,
 } from '../state'
 import { useAssetObjectUrls } from './useAssetObjectUrls'
 import { useJobPolling } from './useJobPolling'
-
 const ACTIVE_STATUSES = new Set(['queued', 'running'])
 function requestId(prefix) {
   const uuid = globalThis.crypto?.randomUUID?.()
   return `${prefix}-${uuid || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`
 }
 function safeRequestMessage(error) {
+  if (error?.message === 'unsupported reference upload type') return '仅支持 JPG、PNG、WebP、SVG 或单页 PDF 参考文件'
   const businessMessage = safeBusinessErrorMessage(error)
   if (businessMessage) return businessMessage
   const status = error?.response?.status
   if (status === 429) return '今日额度已用完或当前任务较多，请稍后再试'
+  if (status === 503) return '文件转换或生图服务暂不可用，请稍后重试'
   if (status === 409) return '已有任务正在生成，请等待完成后再发送'
   if (status === 413) return '图片超过上传限制，请压缩后重试'
   if (status === 400 || status === 422) return '图片或输入内容不符合要求，请调整后重试'
   return '操作未完成，请检查网络后重试'
 }
-
 export async function refreshConflictSession(error, sessionId, refreshSession) {
   if (error?.response?.status !== 409) return false
   await refreshSession(sessionId)
@@ -41,8 +42,9 @@ export function useImageStudio() {
   const messages = ref([])
   const assets = ref([])
   const jobs = ref([])
-  const config = ref({ sizes: [], qualities: [], remaining_today: 0, daily_limit: 0 })
+  const config = ref({ models: [], sizes: [], qualities: [], accepted_upload_mime_types: REFERENCE_UPLOAD_MIME_TYPES, remaining_today: 0, daily_limit: 0 })
   const prompt = ref('')
+  const model = ref('')
   const size = ref('1024x1024')
   const quality = ref('medium')
   const draftAttachments = ref([])
@@ -62,18 +64,17 @@ export function useImageStudio() {
   const polling = useJobPolling()
   const sessionCreation = createSessionSingleFlight()
   let conversationGeneration = 0
-
   const activeJob = computed(() => [...activeJobs.values()].find(job => ACTIVE_STATUSES.has(job.status)) ?? null)
   const sessionActiveJob = computed(() => selectSessionActiveJob(activeJobs, currentSessionId.value))
   const activeSessionIds = computed(() => [...activeJobs.values()]
     .filter(job => ACTIVE_STATUSES.has(job.status))
     .map(job => job.session_id))
+  const selectedModelAvailable = computed(() => config.value.models?.some(option => option.id === model.value && option.available))
   const canSend = computed(() => !newSessionInFlight.value && canStartSend({
     sendInFlight: sendInFlight.value,
     uploadInFlight: uploadInFlight.value > 0,
     activeJob: sessionActiveJob.value,
-  }) && prompt.value.trim().length > 0 && config.value.remaining_today > 0)
-
+  }) && prompt.value.trim().length > 0 && selectedModelAvailable.value && config.value.remaining_today > 0)
   function mergeSession(session) {
     if (!session) return
     const index = sessions.value.findIndex(item => item.id === session.id)
@@ -81,7 +82,6 @@ export function useImageStudio() {
       ? [session, ...sessions.value]
       : sessions.value.map(item => item.id === session.id ? { ...item, ...session } : item)
   }
-
   function mergeSessionPage(items, append) {
     const incomingIds = new Set(items.map(item => item.id))
     const existingById = new Map(sessions.value.map(item => [item.id, item]))
@@ -166,6 +166,7 @@ export function useImageStudio() {
   async function loadConfig() {
     const response = await getConfig()
     config.value = response?.data ?? config.value
+    model.value = resolveImageModelSelection(config.value.models, model.value, config.value.default_model)
     size.value = size.value || config.value.default_size
     quality.value = quality.value || config.value.default_quality
   }
@@ -273,7 +274,7 @@ export function useImageStudio() {
       throw new Error('new session guarded')
     }
     if (sendInFlight.value || draftAttachments.value.length + uploadInFlight.value >= 4) {
-      msgError('每轮最多添加 4 张参考图')
+      msgError('每轮最多添加 4 个参考文件')
       throw new Error('upload guarded')
     }
     const uploadId = requestId('upload')
@@ -281,6 +282,7 @@ export function useImageStudio() {
     let uploadGeneration = null
     let sessionIdSnapshot = null
     try {
+      const uploadFile = normalizeReferenceUploadFile(file, config.value.accepted_upload_mime_types)
       const session = await ensureSession()
       if (!session) throw new Error('session unavailable')
       if (currentSessionId.value !== session.id || draftAttachments.value.length >= 4) {
@@ -291,7 +293,7 @@ export function useImageStudio() {
       draftAttachments.value = upsertAttachment(draftAttachments.value, uploadId, {
         name: file.name, status: 'uploading', progress: 0,
       })
-      const response = await uploadAsset(session.id, file)
+      const response = await uploadAsset(session.id, uploadFile)
       const asset = response?.data
       if (uploadGeneration !== conversationGeneration || currentSessionId.value !== sessionIdSnapshot) return asset
       draftAttachments.value = upsertAttachment(draftAttachments.value, uploadId, {
@@ -330,6 +332,7 @@ export function useImageStudio() {
     const sentAttachments = draftAttachments.value.filter(item => item.status === 'ready')
     const sentUploadIds = sentAttachments.map(item => item.uploadId)
     const sentBaseId = baseAsset.value?.id ?? null
+    const sentModel = model.value
     sendInFlight.value = true
     let responseGeneration = null
     let sessionIdSnapshot = null
@@ -343,6 +346,7 @@ export function useImageStudio() {
         prompt: sentPrompt.trim(),
         base_asset_id: sentBaseId,
         reference_asset_ids: sentAttachments.map(item => item.asset.id),
+        model: sentModel,
         size: size.value,
         quality: quality.value,
       }
@@ -478,21 +482,17 @@ export function useImageStudio() {
       initializing.value = false
     }
   }
-
   onMounted(initialize)
   onBeforeUnmount(() => {
     conversationGeneration = nextConversationGeneration(conversationGeneration)
     polling.stopPolling()
     assetUrls.cleanup()
   })
-
   return {
     activeJob, activeSessionIds, assets, assetUrl: assetUrls.get, baseAsset, canSend, chooseBaseAsset, chooseOutputMode,
-    clearBaseAsset,
-    closeLightbox, config, currentSession, currentSessionId, downloadAsset, draftAttachments,
+    clearBaseAsset, closeLightbox, config, currentSession, currentSessionId, downloadAsset, draftAttachments,
     drawerOpen, ensureSession, initializing, jobs, lightboxAsset, lightboxUrl, loadMoreSessions: () => loadSessions({ append: true }),
-    isConfirmationSubmitting, messages, newSessionInFlight, newConversation, nextCursor, openLightbox, prompt, quality, removeAttachment,
-    retry, selectLibraryBaseAsset, selectSession, sendInFlight, sessionActiveJob, sessions, sessionsLoading, size, submit,
-    uploadInFlight, uploadReference,
+    isConfirmationSubmitting, messages, model, newSessionInFlight, newConversation, nextCursor, openLightbox, prompt, quality, removeAttachment,
+    retry, selectLibraryBaseAsset, selectSession, sendInFlight, sessionActiveJob, sessions, sessionsLoading, size, submit, uploadInFlight, uploadReference,
   }
 }

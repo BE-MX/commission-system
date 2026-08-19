@@ -1061,16 +1061,19 @@ AI_IMAGE_PROXY=
 
 `DESIGN_IMAGE_STALE_SECONDS` 必须大于 lease。调度总开关是 `SCHEDULER_ENABLED`，时区 `SCHEDULER_TIMEZONE=Asia/Shanghai`，任务 ID 为 `design_image_queue`，`max_instances=1 / coalesce=true`。目标态只允许 office-primary 开启此 worker，并让同一实例访问同一私有根；展会/云实例不得同时消费。不要为关闭单个生图任务而直接关全局 Scheduler，因为会连带停掉其他定时任务。
 
-部署前用 Windows ACL 检查并收紧存储根及其父目录：服务账号需要读、写、建目录、替换和删除；普通用户、Web 静态服务和其他应用账号不得写入，也不得通过 junction/reparse point 进入该根。先以服务账号创建测试图并删除，再启动灰度。Preset 必须为启用的 direct Provider、名称 `design_image_generation`、model 精确为 `gpt-image-2`；不要在证据里记录密钥。
+部署前用 Windows ACL 检查并收紧存储根及其父目录：服务账号需要读、写、建目录、替换和删除；普通用户、Web 静态服务和其他应用账号不得写入，也不得通过 junction/reparse point 进入该根。先以服务账号创建测试图并删除，再启动灰度。默认 Preset 必须为启用的 direct/openai TeamRouter Provider（`https://api.teamorouter.com`）、名称 `design_image_generation`、model 精确为 `gpt-image-2`；不要在证据里记录密钥。
+
+可选模型使用独立 Preset，禁止覆盖默认 Preset 的 model：Grok Image 2 为 `design_image_generation_grok_image_2 / grok-image-2`，Nano Banana Pro 为 `design_image_generation_nano_banana_pro / gemini-3-pro-image`，Nano Banana 2 为 `design_image_generation_nano_banana_2 / gemini-3.1-flash-image`。Gemini Preset 必须额外配置 `parameters.api_style="chat"`；该兼容端点的尺寸/质量仅为提示词软约束，不能当成协议级像素保证。先用同一 TeamRouter Key 调 `GET /v1/models` 确认精确 model ID 存在，再分别完成无参考图 generation、单参考图 edit、多参考图 edit、Markdown 与 `message.images[]` 响应、错误与 usage 探针，最后才启用 Preset；否则页面会显示“未配置”且不可选。2026-08-17 实时目录尚无 `grok-image-2` 与 `gemini-3-pro-image`，不得用相近文本模型或别名冒充。
 
 ### 上线与核验
 
-1. 备份数据库和私有根。先执行 `cd backend; alembic heads`，唯一结果必须为 `104_ci_generation_snapshots (head)`；再用 `alembic upgrade 101_knowledge_poc:104_ci_generation_snapshots --sql` 审阅离线 DDL，最后执行 `alembic upgrade head`。在有 Docker 的隔离环境运行 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test_di_migration_mysql.ps1`，且必须通过后才能部署；SQLite 或离线 SQL 不能替代真实 MySQL 门禁。
+1. 备份数据库和私有根。先执行 `cd backend; alembic heads`，唯一结果必须为 `115_di_dieline_prompt (head)`；再用 `alembic upgrade 114_customer_media_portal:115_di_dieline_prompt --sql` 审阅本次数据迁移，最后执行 `alembic upgrade head`。确认历史“包装效果图”已改为“LOGO生成包装效果图”，且“通用刀版包装效果图”仅有一条。在有 Docker 的隔离环境运行 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test_di_migration_mysql.ps1`，且必须通过后才能部署；SQLite 或离线 SQL 不能替代真实 MySQL 门禁。
 2. 部署后端但先不分配权限；确认启动日志已注册 `design_image_queue`，目标实例可写私有根，非目标实例不运行 worker。
 3. 构建前端，创建专用试点角色，只授予 `design_image:read/write` 给 2～3 名具名设计用户；非必要不授予 admin。
 4. 通过业务页面/API 做 1 次 low 首次生成 + 3 次显式以上一结果为基准的 edit，并验证 6 个多输出场景：含数字但方式不明确时只出现确认卡且不轮询；同画布生成 1 个 job；分别生成 2～4 个 jobs；超过 4 张返回固定上限提示；有活跃批次时其他会话的新 turn/确认均 409；失败的单 job 重试不会重跑同批成功项。把脱敏 ID、耗时、usage 写入 [Phase 5 证据模板](requirements/evidence/2026-08-05-design-image-phase5-pilot.json)。
 5. 对每轮核对 `job.ai_call_log_id`、job tokens、`AiCallLog.usage_detail`、output asset 元数据/SHA-256 和文件存在；第二账号访问他人资产应与随机不存在 ID 同为 404；验证刷新/切换恢复 active job 且 Object URL 被释放。
 6. 在真实 MySQL 用独立连接并发提交和领取，验证统一 `owner → job` 锁序、整批 daily limit、同 key 幂等赢家、同用户 running 上限，以及另一个未饱和用户不会被饿死；SQLite 测试不能替代此项。
+7. 刀版灰度分别上传 JPG/PNG/WebP、单页 PDF、SVG，确认响应资产统一为 PNG 预览且能完成 generation/edit；多页/加密 PDF、伪造 MIME、SVG 外链/脚本/DOCTYPE 必须在 Provider 调用前 400 拒绝。`deploy.bat` 会在迁移前执行 `scripts/check_design_image_document_render.py`，验证 `pypdfium2`、`resvg_py` 与真实 spawn 隔离渲染；失败必须停止部署。再用真实刀版核对文字、刀线与开窗位置；文档转图会栅格化，不能承诺矢量级像素精确。
 
 2026-08-09 旧分支历史证据：当时唯一 head 与 098→101 离线 SQL 曾通过；该编号链已在整合最新 main 后废弃，不能作为当前迁移或上线门禁证据。
 

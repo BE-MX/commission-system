@@ -32,7 +32,7 @@ def configured_owner(db):
     provider = AiProvider(
         name="Multi output provider",
         provider_type="direct",
-        api_base="https://example.test",
+        api_base="https://api.teamorouter.com",
         api_type="openai",
         api_key="encrypted",
         is_enabled=True,
@@ -115,6 +115,42 @@ def test_variant_clarification_persists_required_item_kind(configured_owner, db)
     )
 
     assert result.clarification.interaction_json["item_kind"] == "variant"
+
+
+def test_clarification_resolution_preserves_selected_model(configured_owner, db):
+    owner, session = configured_owner
+    provider = db.query(AiProvider).one()
+    db.add(
+        AiPreset(
+            preset_name="design_image_generation_grok_image_2",
+            provider_id=provider.id,
+            model="grok-image-2",
+            parameters={"output_format": "png"},
+            is_enabled=True,
+        )
+    )
+    db.commit()
+    payload = _turn(session.id, "grok-clarify", "请生成三个角度的人像图")
+    payload = payload.model_copy(update={"model": "grok-image-2"})
+
+    pending = service.create_turn(db, owner.id, payload)
+    assert pending.clarification.interaction_json["request"]["model"] == "grok-image-2"
+
+    resolved = service.resolve_message_action(
+        db,
+        owner.id,
+        session.id,
+        pending.clarification.id,
+        MessageActionRequest(
+            request_id="resolve-grok",
+            action="choose_output_mode",
+            mode="composite",
+        ),
+    )
+    assert {job.model for job in resolved.jobs} == {"grok-image-2"}
+    assert {job.preset_name for job in resolved.jobs} == {
+        "design_image_generation_grok_image_2"
+    }
 
 
 def test_explicit_separate_turn_creates_three_fixed_width_jobs(configured_owner, db):
