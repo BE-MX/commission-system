@@ -24,19 +24,19 @@ export default function Storefront() {
   return (
     <main>
       <header className="site-header">
-        <a className="brand" href="#top" aria-label="莱莎健康假发首页"><span className="brand-mark">莱</span><span>莱莎健康假发</span></a>
+        <a className="brand" href="#top" aria-label="莱莎健康假发首页"><span className="brand-mark">莱</span><span><b>LESHINE</b>莱莎健康假发</span></a>
         <nav aria-label="主导航"><a href="#products">全部款式</a><a href="#levels">批发权益</a><a href="/admin" className="admin-link">管理后台</a></nav>
       </header>
 
       <section className="hero" id="top">
         <div className="hero-copy">
-          <p className="eyebrow">LAISHA HEALTH HAIR · 2026</p>
-          <h1>每一面，<br />都自然得恰到好处。</h1>
-          <p className="hero-text">精选真人发与轻盈发网，提供零售与专业批发价格。登录不同等级账户，即可查看对应商品与专属价格。</p>
+          <p className="eyebrow">LESHINE HEALTH HAIR</p>
+          <h1>34年，<br />专注健康假发。</h1>
+          <p className="hero-text">从舒适佩戴到自然造型，莱莎坚持为每一位顾客提供更安心的健康假发。零售与专业批发价格，按账户等级清晰可见。</p>
           <div className="hero-actions"><a className="button primary" href="#products">浏览本季款式</a><a className="button secondary" href="#levels">了解批发等级</a></div>
           <div className="trust-row"><span>山东自有仓发货</span><span>专业客服选款</span><span>物流轨迹可查</span></div>
         </div>
-        <div className="hero-visual" aria-label="深棕色自然波浪假发风格展示"><div className="halo" /><div className="hair-shape"><span /></div><div className="hero-note"><strong>45cm</strong><span>轻盈自然波浪</span></div></div>
+        <div className="hero-visual" aria-label="莱莎健康假发品牌标识"><img src="/leshine-brand.jpg" alt="LESHINE 莱莎健康假发，34年健康假发的坚守者" /><div className="hero-note"><strong>LESHINE</strong><span>34年健康假发的坚守者</span></div></div>
       </section>
 
       <section className="catalog" id="products">
