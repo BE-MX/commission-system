@@ -1,5 +1,5 @@
-import Storefront from "./storefront";
+import AccessGateway from "./access-gateway";
 
 export default function Home() {
-  return <Storefront />;
+  return <AccessGateway />;
 }

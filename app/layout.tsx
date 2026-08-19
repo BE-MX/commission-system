@@ -7,8 +7,8 @@ export async function generateMetadata(): Promise<Metadata> {
   const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "localhost:3000";
   const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.includes("localhost") ? "http" : "https");
   const image = `${protocol}://${host}/leshine-brand.jpg`;
-  const title = "莱莎健康假发｜零售与专业批发";
-  const description = "莱莎健康假发零售、分级批发与销售推广一体化商城。";
+  const title = "莱莎健康假发｜零售商城与批发商城";
+  const description = "莱莎健康假发独立零售商城、批发商分级商城与经营管理后台。";
   return {
     title, description,
     icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
