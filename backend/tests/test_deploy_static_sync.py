@@ -45,6 +45,17 @@ def test_deploy_loads_versioned_pantone_solid_coated_data() -> None:
     assert r".\.venv\Scripts\python.exe scripts\import_pantone.py" in script
 
 
+def test_design_image_render_preflight_runs_as_backend_module() -> None:
+    """The preflight must keep backend/ on sys.path so it can import app."""
+    script = DEPLOY_SCRIPT.read_text(encoding="utf-8")
+
+    assert (
+        r".\.venv\Scripts\python.exe -m scripts.check_design_image_document_render"
+        in script
+    )
+    assert r"scripts\check_design_image_document_render.py" not in script
+
+
 def test_deploy_stops_backend_before_database_migration() -> None:
     """Old application code must not write while a data migration is running."""
     script = DEPLOY_SCRIPT.read_text(encoding="utf-8")

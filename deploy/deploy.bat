@@ -117,7 +117,7 @@ if errorlevel 1 (
     goto :error
 )
 REM Exercise native PDFium/resvg imports plus the real spawn-isolated render path.
-.\.venv\Scripts\python.exe scripts\check_design_image_document_render.py
+.\.venv\Scripts\python.exe -m scripts.check_design_image_document_render
 if errorlevel 1 (
     echo [ERROR] AI dieline PDF/SVG render preflight failed
     goto :error
