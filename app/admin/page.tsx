@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import type { AccessLog, LevelCode, Product, WholesaleLevel } from "../lib/types";
+import type { AccessLog, LevelCode, Product, WholesaleAccount, WholesaleLevel } from "../lib/types";
 
 const emptyProduct: Omit<Product, "id" | "createdAt"> = {
   name: "", material: "真人发", length: "45cm", color: "自然黑", retailPrice: 0,
@@ -16,6 +16,8 @@ export default function AdminPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [levels, setLevels] = useState<WholesaleLevel[]>([]);
   const [accessLogs, setAccessLogs] = useState<AccessLog[]>([]);
+  const [wholesaleAccounts, setWholesaleAccounts] = useState<WholesaleAccount[]>([]);
+  const [accountForm, setAccountForm] = useState({ companyName: "", phone: "", level: "a", salesPerson: "", note: "" });
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState<Omit<Product, "id" | "createdAt">>(emptyProduct);
   const [modalOpen, setModalOpen] = useState(false);
@@ -23,8 +25,8 @@ export default function AdminPage() {
   const [notice, setNotice] = useState("");
 
   const load = async () => {
-    const [p, l, a] = await Promise.all([fetch("/api/products").then((r) => r.json()), fetch("/api/levels").then((r) => r.json()), fetch("/api/access-logs").then((r) => r.json())]);
-    setProducts(p.products ?? []); setLevels(l.levels ?? []); setAccessLogs(a.logs ?? []);
+    const [p, l, a, w] = await Promise.all([fetch("/api/products").then((r) => r.json()), fetch("/api/levels").then((r) => r.json()), fetch("/api/access-logs").then((r) => r.json()), fetch("/api/wholesale-accounts").then((r) => r.json())]);
+    setProducts(p.products ?? []); setLevels(l.levels ?? []); setAccessLogs(a.logs ?? []); setWholesaleAccounts(w.accounts ?? []);
   };
   useEffect(() => { load(); }, []);
 
@@ -63,6 +65,15 @@ export default function AdminPage() {
     const payload = levelDraft.map((level) => ({ ...level, name: String(formData.get(`${level.code}-name`) ?? level.name), threshold: Number(formData.get(`${level.code}-threshold`) ?? level.threshold) }));
     await fetch("/api/levels", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ levels: payload }) });
     setNotice("批发等级要求已保存"); await load();
+  };
+
+  const addWholesaleAccount = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setNotice("");
+    const response = await fetch("/api/wholesale-accounts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(accountForm) });
+    const data = await response.json();
+    if (!response.ok) return setNotice(data.error ?? "添加失败");
+    setAccountForm({ companyName: "", phone: "", level: "a", salesPerson: "", note: "" });
+    setNotice("批发商手机号账户已添加，可以进行验证登录"); await load();
   };
 
   return (
@@ -119,12 +130,11 @@ export default function AdminPage() {
         </>}
 
         {tab === "customers" && <>
-          <div className="admin-title"><div><p>客户管理</p><h1>批发商账户与销售来源</h1><span>查看客户等级、累计采购和来源销售员</span></div></div>
-          <section className="admin-panel"><div className="panel-head"><div><strong>演示账户</strong><span>正式版将从真实订单自动累计</span></div></div>
-            <div className="product-table-wrap"><table className="product-table customer-table"><thead><tr><th>批发商</th><th>当前等级</th><th>累计净采购</th><th>来源销售员</th><th>首次进入</th><th>备注</th></tr></thead><tbody>
-              <tr><td><strong>青岛尚美发制品</strong><small>138****2031</small></td><td><span className="access-pill b">批发B</span></td><td>¥28,650</td><td>销售员 · 李娜</td><td>2026-08-03</td><td>长期客户</td></tr>
-              <tr><td><strong>济南悦己造型</strong><small>186****7712</small></td><td><span className="access-pill a">批发A</span></td><td>¥8,920</td><td>销售员 · 王海</td><td>2026-08-11</td><td>关注短发款</td></tr>
-              <tr><td><strong>临沂优发门店</strong><small>152****4486</small></td><td><span className="access-pill retail">零售会员</span></td><td>¥2,180</td><td>销售员 · 李娜</td><td>2026-08-17</td><td>待跟进升级</td></tr>
+          <div className="admin-title"><div><p>客户管理</p><h1>批发商手机号账户</h1><span>只有后台已添加的手机号，验证后才可进入批发商城</span></div></div>
+          <form className="admin-panel account-create" onSubmit={addWholesaleAccount}><div className="panel-head"><div><strong>添加批发商账户</strong><span>建立账户时指定批发等级和来源销售员</span></div><button className="admin-primary">＋ 添加账户</button></div><div className="account-create-grid"><label>批发商/门店名称<input required value={accountForm.companyName} onChange={(e) => setAccountForm({ ...accountForm, companyName: e.target.value })} placeholder="例如：青岛尚美发制品" /></label><label>登录手机号<input required value={accountForm.phone} onChange={(e) => setAccountForm({ ...accountForm, phone: e.target.value.replace(/\D/g, "").slice(0, 11) })} placeholder="11位手机号" /></label><label>账户等级<select value={accountForm.level} onChange={(e) => setAccountForm({ ...accountForm, level: e.target.value })}><option value="a">批发A</option><option value="b">批发B</option></select></label><label>来源销售员<input value={accountForm.salesPerson} onChange={(e) => setAccountForm({ ...accountForm, salesPerson: e.target.value })} placeholder="业务员姓名" /></label><label>备注<input value={accountForm.note} onChange={(e) => setAccountForm({ ...accountForm, note: e.target.value })} placeholder="客户备注" /></label></div></form>
+          <section className="admin-panel account-list-panel"><div className="panel-head"><div><strong>已开通批发商账户</strong><span>共 {wholesaleAccounts.length} 个手机号账户</span></div></div>
+            <div className="product-table-wrap"><table className="product-table customer-table"><thead><tr><th>批发商</th><th>登录手机号</th><th>当前等级</th><th>来源销售员</th><th>备注</th></tr></thead><tbody>
+              {wholesaleAccounts.map((account) => <tr key={account.id}><td><strong>{account.companyName}</strong></td><td>{account.phone}</td><td><span className={`access-pill ${account.level}`}>批发{account.level.toUpperCase()}</span></td><td>{account.salesPerson}</td><td>{account.note || "—"}</td></tr>)}
             </tbody></table></div>
           </section>
         </>}
