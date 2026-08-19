@@ -477,6 +477,10 @@
 
 沿用 mini 的 `get_current_mini_user` 鉴权、裸 dict 响应和 `HTTPException(detail={code,message})`错误形状；报工模式额外读取用户 RBAC 权限。
 
+Android PDA 客户端位于 `pda-reporting/`，不新增报工业务端点：先用方舟 `POST /api/auth/login`
+取得 access token（`get_current_mini_user` 兼容同一 JWT 的 `sub`），之后完整复用本节接口。客户端只负责
+扫描头键盘/广播输入与手持设备交互；数量校验、逐件身份、工序权限、幂等和撤销均以服务端为准。
+
 - `GET /lookup?code=` — **订单速查**：一个参数吃三种输入（二维码原文 `ARK-D:...` / 系统单号 `DO...` / 客户订单号），服务端自行分辨，直接返回订单详情（含逐明细逐工序进度）。查不到或二维码验签失败返回 404 `{code:"NOT_FOUND", message}`；已软删订单一律查不到。
 - `GET /scan/{item_id}?sign=` — 数量模式扫明细码；`GET /unit-scan/{unit_id}?sign=` — 逐件模式扫单件码。逐件 `POST /scan/submit` 必须再次携带 `unit_id + unit_sign`，写端复验标签签名，不能只枚举 ID。模式不匹配返回 `UNIT_QR_REQUIRED`；草稿订单返回 `ORDER_DRAFT`。
 - `POST /scan/submit` — 数量模式传 `{item_id, progress_id, qty, request_id?}`，服务端按 unit_no 从小到大分配单件；逐件模式额外必须传 `unit_id` 且 `qty=1`。结果返回本次 `unit_codes`，`request_id` 幂等重放返回首次结果。
