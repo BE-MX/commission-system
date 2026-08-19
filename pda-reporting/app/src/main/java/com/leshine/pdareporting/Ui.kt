@@ -78,4 +78,3 @@ object Ui {
         setMargins(dp(context, left), dp(context, top), dp(context, right), dp(context, bottom))
     }
 }
-

@@ -174,7 +174,7 @@ class ReportingScreen(
         }
         val content = Ui.vertical(context).apply {
             addView(Ui.text(context, record.productName, 15f, Ui.ink, true))
-            val unitSuffix = if (record.unitCodes.isEmpty()) "" else " · ${record.unitCodes.joinToString("、")}" 
+            val unitSuffix = if (record.unitCodes.isEmpty()) "" else " · ${record.unitCodes.joinToString("、")}"
             addView(Ui.text(context, "${record.processName} × ${record.reportQty} 件$unitSuffix", 13f, Ui.green, true), Ui.margin(top = 5, context = context))
             val bottom = listOf(record.orderLabel, record.reportedAt).filter { it.isNotBlank() }.joinToString(" · ")
             addView(Ui.text(context, bottom, 11f, Ui.muted), Ui.margin(top = 5, context = context))
