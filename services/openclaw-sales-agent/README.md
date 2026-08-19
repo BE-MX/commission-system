@@ -42,6 +42,8 @@ Bootstrap 会固定安装 OpenClaw 官方 `@openclaw/parallel-plugin`、创建�
 
 `bootstrap.mjs` 会从 profile 私有 `.env` 读取 `ARK_BASE_URL`、`ARK_ALLOWED_ORIGIN`、`ARK_AGENT_ID` 与超时值，再把校验后的固定值写入 MCP 定义；网页和 Agent 提示无法覆盖这些值。若 API 尚未部署到默认的 `https://leshine.work`，先在该 `.env` 中把前两项同时改为实际的 Ark API origin，再重跑 bootstrap。
 
+Agent 只开放工作区内的 `read`，用于按需加载已安装的 `SKILL.md`；`write`、`edit`、`apply_patch`、shell 和工作区外读取继续禁用，因此位于工作区外的 Ark token 仍不可见。`HEARTBEAT.md` 是 bootstrap 管理的自动化策略，每次 bootstrap 都会更新：仅 main 获客代理启用 5 分钟 heartbeat，每轮优先处理最早一条 `target_count <= 20` 的搜索任务，较大任务留待人工显式执行；搜索队列没有合格任务时才处理一条公海背调任务，两个队列都无任务时静默返回。Heartbeat 使用 30 分钟上限的轻量隔离会话，每轮只加载当前策略，不继承主会话的历史行为；同一 Agent 忙碌时自动推迟，并要求最迟每 10 分钟续租、25 分钟前可控收尾，避免重叠领取或在有效租约中硬终止。
+
 ## 需要人工补充的凭证
 
 ### 1. 方舟 Agent token

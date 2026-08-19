@@ -22,11 +22,26 @@
       },
       skills: ["ark-lead-discovery", "ark-company-research", "ark-public-pool-research"],
     },
+    list: [{
+      id: "main",
+      heartbeat: {
+        every: "5m",
+        target: "none",
+        lightContext: true,
+        isolatedSession: true,
+        skipWhenBusy: true,
+        timeoutSeconds: 1800,
+      },
+    }],
   },
   tools: {
     profile: "minimal",
-    alsoAllow: ["web_search", "web_fetch", "ark-sales__*"],
-    deny: ["exec", "process", "group:fs", "browser", "group:messaging", "group:sessions", "cron"],
+    alsoAllow: ["read", "web_search", "web_fetch", "ark-sales__*"],
+    deny: [
+      "exec", "process", "write", "edit", "apply_patch", "browser",
+      "group:messaging", "group:sessions", "cron",
+    ],
+    fs: { workspaceOnly: true },
     web: {
       search: {
         enabled: true,
