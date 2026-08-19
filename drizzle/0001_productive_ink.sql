@@ -1,0 +1,1 @@
+CREATE INDEX `idx_products_status_level` ON `products` (`status`,`min_level`);
