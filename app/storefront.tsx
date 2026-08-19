@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { LevelCode, Product, WholesaleLevel } from "./lib/types";
 
 const rank: Record<LevelCode, number> = { retail: 0, a: 1, b: 2 };
-const roleLabel: Record<LevelCode, string> = { retail: "零售", a: "批发A", b: "批发B" };
+const roleLabel: Record<LevelCode, string> = { retail: "零售会员", a: "批发 A", b: "批发 B" };
 
 export default function Storefront() {
   const [level, setLevel] = useState<LevelCode>("retail");
@@ -22,48 +22,72 @@ export default function Storefront() {
   const getPrice = (product: Product) => level === "retail" ? product.retailPrice : level === "a" ? product.priceA : product.priceB;
 
   return (
-    <main>
-      <header className="site-header">
-        <a className="brand" href="#top" aria-label="莱莎健康假发首页"><span className="brand-mark">莱</span><span><b>LESHINE</b>莱莎健康假发</span></a>
-        <nav aria-label="主导航"><a href="#products">全部款式</a><a href="#levels">批发权益</a><a href="/admin" className="admin-link">管理后台</a></nav>
-      </header>
+    <main className="app-store">
+      <div className="app-frame">
+        <header className="app-topbar">
+          <a className="app-brand" href="#home" aria-label="莱莎健康假发首页">
+            <span className="app-brand-mark">莱</span>
+            <span><b>LESHINE</b><small>莱莎健康假发</small></span>
+          </a>
+          <div className="app-actions"><button aria-label="消息">消息</button><a href="/admin">管理</a></div>
+        </header>
 
-      <section className="hero" id="top">
-        <div className="hero-copy">
-          <p className="eyebrow">LESHINE HEALTH HAIR</p>
-          <h1>34年，<br />专注健康假发。</h1>
-          <p className="hero-text">从舒适佩戴到自然造型，莱莎坚持为每一位顾客提供更安心的健康假发。零售与专业批发价格，按账户等级清晰可见。</p>
-          <div className="hero-actions"><a className="button primary" href="#products">浏览本季款式</a><a className="button secondary" href="#levels">了解批发等级</a></div>
-          <div className="trust-row"><span>山东自有仓发货</span><span>专业客服选款</span><span>物流轨迹可查</span></div>
+        <div className="app-content" id="home">
+          <label className="app-search"><span>⌕</span><input aria-label="搜索假发款式" placeholder="搜索款式、长度、颜色" /><button>搜索</button></label>
+
+          <section className="app-hero-card">
+            <div className="app-hero-copy">
+              <p>34 YEARS OF CARE</p>
+              <h1>34年健康假发<br />的坚守者</h1>
+              <span>舒适佩戴 · 自然造型 · 山东自有仓</span>
+              <a href="#products">立即选款</a>
+            </div>
+            <div className="app-hero-logo"><img src="/leshine-brand.jpg" alt="LESHINE 莱莎健康假发品牌标识" /></div>
+          </section>
+
+          <section className="quick-grid" aria-label="快捷分类">
+            <a href="#products"><i>全</i><strong>全部假发</strong><span>查看全部款式</span></a>
+            <a href="#products"><i>真</i><strong>真人发</strong><span>自然质感系列</span></a>
+            <a href="#products"><i>短</i><strong>短发系列</strong><span>轻盈日常造型</span></a>
+            <a href="#wholesale"><i>批</i><strong>批发专区</strong><span>等级专属价格</span></a>
+          </section>
+
+          <section className="app-section role-card">
+            <div className="app-section-title"><div><span>账户价格</span><h2>切换身份预览</h2></div><small>实际价格按登录账户显示</small></div>
+            <div className="app-role-switch" role="group" aria-label="模拟查看等级">
+              {(["retail", "a", "b"] as LevelCode[]).map((item) => <button key={item} onClick={() => setLevel(item)} className={level === item ? "active" : ""}><span>{roleLabel[item]}</span><small>{item === "retail" ? "日常购买" : "专属批发价"}</small></button>)}
+            </div>
+          </section>
+
+          <section className="app-section product-section" id="products">
+            <div className="app-section-title"><div><span>RECOMMENDED</span><h2>精选假发款式</h2></div><button>筛选</button></div>
+            {loading ? <div className="loading-state">正在准备款式…</div> : <div className="product-grid app-product-grid">
+              {activeProducts.map((product, index) => {
+                const canView = rank[level] >= rank[product.minLevel];
+                return <article className={`product-card app-product-card ${!canView ? "locked" : ""}`} key={product.id}>
+                  <div className={`product-art ${product.tone}`}><span className="number">{String(index + 1).padStart(2, "0")}</span><span className="favorite">♡</span><div className="mini-hair" />{!canView && <div className="lock-panel"><span>仅{roleLabel[product.minLevel]}可见</span><small>升级后解锁款式与价格</small></div>}</div>
+                  <div className="app-product-info"><span className="product-tag">{canView ? product.material : "等级专属"}</span><h3>{canView ? product.name : "批发专属款式"}</h3><p>{canView ? `${product.length} · ${product.color}` : "登录对应等级查看"}</p><div><strong>{canView ? `¥${getPrice(product)}` : "—"}</strong><button aria-label={`添加${product.name}到购物车`}>＋</button></div></div>
+                </article>;
+              })}
+            </div>}
+          </section>
+
+          <section className="app-section wholesale-card" id="wholesale">
+            <div className="app-section-title light"><div><span>WHOLESALE</span><h2>批发等级权益</h2></div><small>累计净采购自动升级</small></div>
+            <div className="app-level-list">{levels.map((item, index) => <article key={item.code}><i>0{index + 1}</i><div><strong>{item.name}</strong><span>{item.code === "retail" ? "新人默认等级，享受零售权益" : `累计采购满 ¥${item.threshold.toLocaleString()} 自动升级`}</span></div><b>›</b></article>)}</div>
+          </section>
+
+          <section className="service-strip"><div><b>✓</b><span>山东自有仓</span></div><div><b>✓</b><span>专业客服选款</span></div><div><b>✓</b><span>物流轨迹可查</span></div></section>
         </div>
-        <div className="hero-visual" aria-label="莱莎健康假发品牌标识"><img src="/leshine-brand.jpg" alt="LESHINE 莱莎健康假发，34年健康假发的坚守者" /><div className="hero-note"><strong>LESHINE</strong><span>34年健康假发的坚守者</span></div></div>
-      </section>
 
-      <section className="catalog" id="products">
-        <div className="section-heading">
-          <div><p className="eyebrow">SELECTED STYLES</p><h2>本季精选款式</h2></div>
-          <div className="level-switch" role="group" aria-label="模拟查看等级"><span>预览身份</span>{(["retail", "a", "b"] as LevelCode[]).map((item) => <button key={item} onClick={() => setLevel(item)} className={level === item ? "active" : ""}>{roleLabel[item]}</button>)}</div>
-        </div>
-
-        {loading ? <div className="loading-state">正在准备款式…</div> : (
-          <div className="product-grid">
-            {activeProducts.map((product, index) => {
-              const canView = rank[level] >= rank[product.minLevel];
-              return (
-                <article className={`product-card ${!canView ? "locked" : ""}`} key={product.id}>
-                  <div className={`product-art ${product.tone}`}><span className="number">{String(index + 1).padStart(2, "0")}</span><div className="mini-hair" />{!canView && <div className="lock-panel"><span>仅{roleLabel[product.minLevel]}可见</span><small>升级后解锁款式与价格</small></div>}</div>
-                  <div className="product-info"><div><h3>{canView ? product.name : "批发专属款式"}</h3><p>{canView ? `${product.material} · ${product.length} · ${product.color}` : "登录对应等级账户查看"}</p></div><strong>{canView ? `¥${getPrice(product)}` : "—"}</strong></div>
-                </article>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-      <section className="level-band" id="levels">
-        <div><p className="eyebrow">WHOLESALE LEVELS</p><h2>采购越稳定，价格越有优势</h2></div>
-        <div className="level-cards">{levels.map((item, index) => <article key={item.code}><span>0{index + 1}</span><h3>{item.name}</h3><p>{item.code === "retail" ? "享受零售价与新人专享福利" : `累计净采购满 ¥${item.threshold.toLocaleString()}，自动解锁对应价格与款式`}</p></article>)}</div>
-      </section>
+        <nav className="app-bottom-nav" aria-label="底部导航">
+          <a className="active" href="#home"><i>⌂</i><span>首页</span></a>
+          <a href="#products"><i>▦</i><span>分类</span></a>
+          <a href="#wholesale"><i>◇</i><span>批发</span></a>
+          <a href="#products"><i>▢</i><span>购物车</span></a>
+          <a href="/admin"><i>○</i><span>我的</span></a>
+        </nav>
+      </div>
     </main>
   );
 }
