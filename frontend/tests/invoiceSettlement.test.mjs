@@ -106,10 +106,10 @@ test('handling hint warns when the fee no longer matches the rate x base', () =>
   assert.match(settlementFields, /computeHandlingFee/)
 })
 
-test('footer separates order total (base) from the deducted handling fee', () => {
+test('footer marks the handling fee as Ark-only', () => {
   assert.match(totalsFooter, /订单总金额/)
   assert.match(totalsFooter, /应付合计/)
-  assert.match(totalsFooter, /OKKI 侧扣减/)
+  assert.match(totalsFooter, /仅方舟记录/)
   assert.match(invoiceView, /:base-amount="formBaseAmount"/)
 })
 

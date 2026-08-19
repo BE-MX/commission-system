@@ -197,13 +197,13 @@ def test_build_push_payload_stock_custom_and_backfilled(db):
     assert "product_model" not in rows[2] and "unit" not in rows[2]
 
     # 明细 cost_amount 已含行折扣，费用清单不能再次推 Discount。
-    # 包装/运费按正数加项；手续费用户填正数(5)、OKKI 侧取负扣减(-5)
+    # 包装/运费按正数加项；手续费只在方舟体现，不推送到 OKKI。
     costs = payload["cost_list"]
-    assert len(costs) == 3
+    assert len(costs) == 2
     assert all(c["percent_type"] == 0 for c in costs)
-    assert [c["percent_amount"] for c in costs] == [2.0, 10.0, -5.0]
-    assert [c["cost"] for c in costs] == [2.0, 10.0, -5.0]
-    assert [c["cost_name"] for c in costs] == ["Packaging", "Shipping fee", "Handling Fee"]
+    assert [c["percent_amount"] for c in costs] == [2.0, 10.0]
+    assert [c["cost"] for c in costs] == [2.0, 10.0]
+    assert [c["cost_name"] for c in costs] == ["Packaging", "Shipping fee"]
     # 付款条款并入备注
     assert "hello" in payload["remark"] and "30% deposit" in payload["remark"]
     # 订单级金额不传，OKKI 自算
@@ -494,17 +494,14 @@ def test_resolve_okki_flags_history_fallback(db):
     assert flags == {"okki_new_deal": 0, "okki_free_shipping": 1, "okki_first_return": 0}
 
 
-def test_build_cost_list_handling_fee_is_negative(db):
-    # 用户填正数手续费，推 OKKI 的 cost_list 取负（扣减，不抬高订单总额）
+def test_build_cost_list_omits_handling_fee(db):
+    # 手续费保存在方舟，但不进入 OKKI 的 cost_list。
     invoice = _make_invoice(
         db, shipping_fee=Decimal("0"), internal_accessory=Decimal("0"),
         surcharge_amount=Decimal("12.34"),
     )
     costs = xiaoman_service._build_cost_list(invoice)
-    assert costs == [{
-        "cost_name": "Handling Fee", "percent_type": 0,
-        "percent_amount": -12.34, "cost": -12.34,
-    }]
+    assert costs == []
     # 无手续费时不推该行
     invoice.surcharge_amount = Decimal("0")
     assert xiaoman_service._build_cost_list(invoice) == []

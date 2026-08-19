@@ -15,7 +15,7 @@
       <span class="summary-operator">=</span>
       <span class="summary-chip base">订单总金额 <strong>{{ form.currency }} {{ money(baseAmount) }}</strong></span>
       <span class="summary-divider">·</span>
-      <span class="summary-chip handling">手续费 <strong>{{ money(form.surcharge_amount) }}</strong><em class="chip-note">OKKI 侧扣减</em></span>
+      <span class="summary-chip handling">手续费 <strong>{{ money(form.surcharge_amount) }}</strong><em class="chip-note">仅方舟记录</em></span>
       <span class="summary-operator">→</span>
       <span class="summary-chip total">应付合计 <strong>{{ form.currency }} {{ money(total) }}</strong></span>
     </div>
