@@ -1,10 +1,12 @@
-"""对外库存查询（无登录，key 门禁）。
+"""对外库存查询（无登录、无门禁）。
 
-供两类消费方：
-1. 客户官网嵌入的独立查询页（/inventory?key=xxx）
-2. 客户系统直接 API 对接（如 Shopify 库存同步，客户主动拉取）
+消费方：
+1. leshine.work/inventory 客户公开查询页（全英文，直接访问）
+2. 客户系统直接 API 拉取（如 Shopify 库存同步，客户主动拉取）
 
-只暴露产品标识 + 可用数量，销量/安全库存/在产等经营数据一律不出。
+2026-08-19 二期起取消 key 门禁（一期曾走 PUBLIC_STOCK_KEYS，配置项已废弃保留兼容）。
+响应字段收敛为「类型/尺寸/颜色/克重/是否有货」——不暴露具体库存数量，
+销量/安全库存/在产等经营数据一律不出。
 """
 
 from typing import Optional
@@ -13,28 +15,33 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-
-# 可用性分层阈值（低于此数量提示 Low Stock，帮客户判断要不要抓紧下单）
-LOW_STOCK_THRESHOLD = 10
+from app.stock.overview_service import _parse_name
 
 
-def parse_keys(raw: str | None) -> set[str]:
-    """PUBLIC_STOCK_KEYS 逗号分隔 → 有效 key 集合（空串条目剔除）。"""
-    return {k.strip() for k in (raw or "").split(",") if k.strip()}
+def _parse_display_name(name: str) -> dict:
+    """产品名 → 类型/尺寸/颜色/克重（面向客户展示，避免内部拆分在短名称上的重复段）。
 
+    真实库分布（2026-08-19）：4 段 353 条、5 段 417 条（完整约定）；
+    2 段 17 条（Micro Beads/#1，第 2 段是颜色）；1 段 8 条；3 段 0 条。
 
-def is_valid_key(key: str | None) -> bool:
-    """key 门禁：未配置任何 key 时端点视为关闭（默认安全）。"""
-    keys = parse_keys(get_settings().PUBLIC_STOCK_KEYS)
-    return bool(key) and key in keys
-
-
-def availability_tier(qty: int) -> str:
-    if qty <= 0:
-        return "out_of_stock"
-    if qty < LOW_STOCK_THRESHOLD:
-        return "low_stock"
-    return "in_stock"
+    - 无 '/'：整段落入类型列，其余留空
+    - 2 段：第 2 段以 # 开头判为颜色（Micro Beads/#1 → 颜色 #1），否则判为尺寸
+    - 3 段：按 # 启发式判颜色（当前库无此类，防御性处理）
+    - ≥4 段：完整约定 类型/尺寸/颜色/克重，复用内部一览同款拆分（含 #x/y 合并色）
+    """
+    if "/" not in name:
+        return {"type": name, "size": "", "color": "", "weight": ""}
+    parts = name.split("/")
+    n = len(parts)
+    if n >= 4:
+        return _parse_name(name)
+    if n == 2:
+        if parts[1].startswith("#"):
+            return {"type": parts[0], "size": "", "color": parts[1], "weight": ""}
+        return {"type": parts[0], "size": parts[1], "color": "", "weight": ""}
+    if parts[1].startswith("#"):
+        return {"type": parts[0], "size": "", "color": parts[1], "weight": parts[2]}
+    return {"type": parts[0], "size": parts[1], "color": "", "weight": parts[2]}
 
 
 def query_public_inventory(
@@ -42,8 +49,9 @@ def query_public_inventory(
     page: int = 1,
     page_size: int = 20,
     keyword: Optional[str] = None,
+    in_stock_only: bool = False,
 ) -> dict:
-    """产品 + 可用库存分页查询（口径与 stock/overview 的 enable_count 一致）。"""
+    """产品四要素 + 有货标识分页查询（有货口径 = 小满可用库存 enable_count > 0）。"""
     business_db = get_settings().BUSINESS_DB_NAME
 
     kw_clause = ""
@@ -51,6 +59,8 @@ def query_public_inventory(
     if keyword:
         kw_clause = "AND (p.name LIKE :kw OR p.model LIKE :kw)"
         params["kw"] = f"%{keyword.strip()}%"
+
+    stock_clause = "AND COALESCE(inv.enable_count, 0) > 0" if in_stock_only else ""
 
     base = f"""
         FROM `{business_db}`.okki_products p
@@ -62,6 +72,7 @@ def query_public_inventory(
         ) inv ON inv.product_id = p.product_id
         WHERE p.disable_flag = 0
           {kw_clause}
+          {stock_clause}
     """
 
     total = int(db.execute(text(f"SELECT COUNT(*) {base}"), params).scalar() or 0)
@@ -72,10 +83,9 @@ def query_public_inventory(
         text(f"""
             SELECT p.product_id AS product_id,
                    p.name       AS name,
-                   p.model      AS model,
                    COALESCE(inv.enable_count, 0) AS available
             {base}
-            ORDER BY p.model, p.name
+            ORDER BY p.name, p.product_id
             LIMIT :limit OFFSET :offset
         """),
         {**params, "limit": page_size, "offset": (page - 1) * page_size},
@@ -83,13 +93,10 @@ def query_public_inventory(
 
     items = []
     for r in rows:
-        # 库存异常为负时对客户钳位到 0（负数会引起客户困惑，异常留内部系统排查）
-        available = max(0, int(r["available"]))
         items.append({
             "product_id": r["product_id"],
-            "name": r["name"],
-            "model": r["model"],
-            "available": available,
-            "availability": availability_tier(available),
+            **_parse_display_name(r["name"] or ""),
+            # 库存异常为负时视为无货（负数会引起客户困惑，异常留内部系统排查）
+            "in_stock": int(r["available"]) > 0,
         })
     return {"total": total, "items": items}

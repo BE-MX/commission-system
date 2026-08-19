@@ -60,12 +60,12 @@ class Settings(BaseSettings):
     TFT_SERVICE_ENABLED: bool = False
     TFT_SERVICE_URL: str = ""
 
-    # ── 对外库存查询（客户官网嵌入页 / 客户系统 API） ─────
-    # 逗号分隔的访问 key，可按客户发放与单独吊销；留空 = 端点整体关闭
+    # ── 对外库存查询（客户公开查询页 / 客户系统 API） ─────
+    # 2026-08-19 二期起端点全公开免 key，本配置废弃（保留字段兼容存量 .env）
     PUBLIC_STOCK_KEYS: str = ""
 
     # ── 采购节大屏（免登录局域网大屏取数） ─────────────────
-    # 逗号分隔访问 key；留空 = 端点整体关闭（fail-closed，同 PUBLIC_STOCK_KEYS）。
+    # 逗号分隔访问 key；留空 = 端点整体关闭（fail-closed）。
     # 第一个 key 由 /api/festival/screen-key 发给登录用户；改动后需重启后端生效
     FESTIVAL_SCREEN_KEYS: str = ""
     # 取数轨道：okki=保底轨(lsordertest 小满同步) / ark=主轨(方舟发票域，仅 synced)

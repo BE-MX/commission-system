@@ -1,6 +1,6 @@
 import { stockClient as stockApi, publicStockClient } from './clients'
 
-// ── 对外库存查询（无登录，key 门禁；客户官网嵌入页用） ──
+// ── 对外库存查询（无登录，全公开；客户查询页 /inventory 用） ──
 export function getPublicInventory(params) {
   return publicStockClient.get('/products', { params, showLoading: false, suppressToast: true })
 }
