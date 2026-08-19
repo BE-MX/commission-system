@@ -22,6 +22,14 @@ const node = process.env.OPENCLAW_NODE || join(home, ".openclaw/tools/node/bin/n
 const parallelPlugin = process.env.OPENCLAW_PARALLEL_PLUGIN
   || "@openclaw/parallel-plugin@2026.7.1";
 const envFile = join(stateDir, ".env");
+const mainHeartbeat = {
+  every: "5m",
+  target: "none",
+  lightContext: true,
+  isolatedSession: true,
+  skipWhenBusy: true,
+  timeoutSeconds: 1800,
+};
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -77,12 +85,17 @@ async function ensureEnvFile() {
 async function installWorkspaceTemplates() {
   await mkdir(workspace, { recursive: true, mode: 0o700 });
   const mappings = [
-    ["AGENTS.template.md", "AGENTS.md"],
-    ["SOUL.template.md", "SOUL.md"],
-    ["USER.template.md", "USER.md"],
-    ["HEARTBEAT.template.md", "HEARTBEAT.md"],
+    ["AGENTS.template.md", "AGENTS.md", false],
+    ["SOUL.template.md", "SOUL.md", false],
+    ["USER.template.md", "USER.md", false],
+    // HEARTBEAT.md is managed automation policy, not user-authored memory.
+    ["HEARTBEAT.template.md", "HEARTBEAT.md", true],
   ];
-  for (const [source, target] of mappings) {
+  for (const [source, target, managed] of mappings) {
+    if (managed) {
+      await copyFile(join(serviceDir, "workspace-template", source), join(workspace, target));
+      continue;
+    }
     try {
       await readFile(join(workspace, target));
     } catch (error) {
@@ -152,6 +165,37 @@ function setConfig(path, value) {
   run(openclaw, ["--profile", profile, "config", "set", path, JSON.stringify(value), "--strict-json"]);
 }
 
+function clearDefaultHeartbeat() {
+  const defaults = JSON.parse(run(openclaw, [
+    "--profile", profile, "config", "get", "agents.defaults",
+  ], { capture: true }));
+  if (Object.hasOwn(defaults, "heartbeat")) {
+    run(openclaw, ["--profile", profile, "config", "unset", "agents.defaults.heartbeat"]);
+  }
+}
+
+function configureMainAgentTools() {
+  const agents = JSON.parse(run(openclaw, [
+    "--profile", profile, "config", "get", "agents.list",
+  ], { capture: true }));
+  const main = agents.find((agent) => agent.id === "main");
+  if (!main) throw new Error("OpenClaw baseline did not create the main agent");
+  main.tools = {
+    ...(main.tools || {}),
+    profile: "minimal",
+    alsoAllow: ["read", "web_search", "web_fetch", "ark-sales__*"],
+    deny: [
+      "exec", "process", "write", "edit", "apply_patch", "browser",
+      "group:messaging", "group:sessions", "cron",
+    ],
+    fs: { ...(main.tools?.fs || {}), workspaceOnly: true },
+  };
+  // Keep queue automation scoped to the sales agent. A defaults-level
+  // heartbeat would silently schedule unrelated agents such as email outreach.
+  main.heartbeat = mainHeartbeat;
+  setConfig("agents.list", agents);
+}
+
 async function main() {
   await ensureEnvFile();
   await installWorkspaceTemplates();
@@ -199,10 +243,14 @@ async function main() {
     ],
   });
   setConfig("tools.profile", "minimal");
-  setConfig("tools.alsoAllow", ["web_search", "web_fetch", "ark-sales__*"]);
+  setConfig("tools.alsoAllow", ["read", "web_search", "web_fetch", "ark-sales__*"]);
   setConfig("tools.deny", [
-    "exec", "process", "group:fs", "browser", "group:messaging", "group:sessions", "cron",
+    "exec", "process", "write", "edit", "apply_patch", "browser",
+    "group:messaging", "group:sessions", "cron",
   ]);
+  setConfig("tools.fs.workspaceOnly", true);
+  clearDefaultHeartbeat();
+  configureMainAgentTools();
   setConfig("plugins.entries.parallel.enabled", true);
   // Keep DuckDuckGo installed as a manual fallback, but Parallel Free is the
   // tested default on networks where DuckDuckGo HTML is unavailable.
