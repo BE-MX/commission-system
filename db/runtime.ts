@@ -38,7 +38,37 @@ async function initialize() {
       created_at TEXT NOT NULL
     )`),
     db.prepare("CREATE INDEX IF NOT EXISTS idx_products_status_level ON products(status, min_level)"),
+    db.prepare(`CREATE TABLE IF NOT EXISTS wholesale_accounts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      company_name TEXT NOT NULL,
+      phone TEXT NOT NULL UNIQUE,
+      level TEXT NOT NULL DEFAULT 'a',
+      sales_person TEXT NOT NULL DEFAULT '未分配',
+      note TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS wholesale_sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      token TEXT NOT NULL UNIQUE,
+      account_id INTEGER NOT NULL,
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )`),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_wholesale_sessions_account ON wholesale_sessions(account_id)"),
+    db.prepare(`CREATE TABLE IF NOT EXISTS wholesale_access_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_id INTEGER,
+      phone TEXT NOT NULL,
+      level TEXT,
+      sales_person TEXT,
+      result TEXT NOT NULL,
+      access_at TEXT NOT NULL
+    )`),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_wholesale_access_logs_time ON wholesale_access_logs(access_at)"),
   ]);
+
+  await db.prepare("PRAGMA optimize").run();
 
   const levelCount = await db.prepare("SELECT COUNT(*) AS total FROM wholesale_levels").first<{ total: number }>();
   if (!levelCount?.total) {
@@ -57,6 +87,15 @@ async function initialize() {
       db.prepare("INSERT INTO products (name, material, length, color, retail_price, price_a, price_b, min_level, stock, status, tone, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind("自然头皮直发", "真人发", "55cm", "自然黑", 1299, 999, 849, "a", 42, "active", "espresso", now),
       db.prepare("INSERT INTO products (name, material, length, color, retail_price, price_a, price_b, min_level, stock, status, tone, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind("高定蕾丝卷发", "真人发", "60cm", "栗棕色", 1899, 1499, 1299, "b", 18, "active", "chestnut", now),
       db.prepare("INSERT INTO products (name, material, length, color, retail_price, price_a, price_b, min_level, stock, status, tone, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind("空气感短发", "高温丝", "30cm", "自然黑", 499, 359, 299, "retail", 120, "active", "charcoal", now),
+    ]);
+  }
+
+  const accountCount = await db.prepare("SELECT COUNT(*) AS total FROM wholesale_accounts").first<{ total: number }>();
+  if (!accountCount?.total) {
+    const now = new Date().toISOString();
+    await db.batch([
+      db.prepare("INSERT INTO wholesale_accounts (company_name, phone, level, sales_person, note, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").bind("青岛尚美发制品", "13800132031", "b", "李娜", "长期客户", "active", now),
+      db.prepare("INSERT INTO wholesale_accounts (company_name, phone, level, sales_person, note, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").bind("济南悦己造型", "18600167712", "a", "王海", "关注短发款", "active", now),
     ]);
   }
 }

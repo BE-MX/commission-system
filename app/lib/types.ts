@@ -9,3 +9,13 @@ export type Product = {
 export type WholesaleLevel = {
   id: number; code: LevelCode; name: string; threshold: number; rank: number;
 };
+
+export type WholesaleAccount = {
+  id: number; companyName: string; phone: string; level: "a" | "b";
+  salesPerson: string; note: string;
+};
+
+export type AccessLog = {
+  id: number; companyName: string | null; phone: string; level: "a" | "b" | null;
+  salesPerson: string | null; result: "success" | "failed" | "unknown"; accessAt: string;
+};

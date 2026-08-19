@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import type { LevelCode, Product, WholesaleLevel } from "../lib/types";
+import type { AccessLog, LevelCode, Product, WholesaleLevel } from "../lib/types";
 
 const emptyProduct: Omit<Product, "id" | "createdAt"> = {
   name: "", material: "真人发", length: "45cm", color: "自然黑", retailPrice: 0,
@@ -9,12 +9,13 @@ const emptyProduct: Omit<Product, "id" | "createdAt"> = {
 };
 const levelName: Record<LevelCode, string> = { retail: "所有客户", a: "批发A及以上", b: "仅批发B" };
 
-type Tab = "products" | "levels" | "customers";
+type Tab = "products" | "levels" | "customers" | "access";
 
 export default function AdminPage() {
   const [tab, setTab] = useState<Tab>("products");
   const [products, setProducts] = useState<Product[]>([]);
   const [levels, setLevels] = useState<WholesaleLevel[]>([]);
+  const [accessLogs, setAccessLogs] = useState<AccessLog[]>([]);
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState<Omit<Product, "id" | "createdAt">>(emptyProduct);
   const [modalOpen, setModalOpen] = useState(false);
@@ -22,8 +23,8 @@ export default function AdminPage() {
   const [notice, setNotice] = useState("");
 
   const load = async () => {
-    const [p, l] = await Promise.all([fetch("/api/products").then((r) => r.json()), fetch("/api/levels").then((r) => r.json())]);
-    setProducts(p.products ?? []); setLevels(l.levels ?? []);
+    const [p, l, a] = await Promise.all([fetch("/api/products").then((r) => r.json()), fetch("/api/levels").then((r) => r.json()), fetch("/api/access-logs").then((r) => r.json())]);
+    setProducts(p.products ?? []); setLevels(l.levels ?? []); setAccessLogs(a.logs ?? []);
   };
   useEffect(() => { load(); }, []);
 
@@ -72,6 +73,7 @@ export default function AdminPage() {
         <button className={tab === "products" ? "selected" : ""} onClick={() => setTab("products")}><span>款</span>商品与款式</button>
         <button className={tab === "levels" ? "selected" : ""} onClick={() => setTab("levels")}><span>级</span>批发等级</button>
         <button className={tab === "customers" ? "selected" : ""} onClick={() => setTab("customers")}><span>客</span>批发商账户</button>
+        <button className={tab === "access" ? "selected" : ""} onClick={() => setTab("access")}><span>访</span>进入记录 <i>{accessLogs.length || ""}</i></button>
         <div className="admin-menu-label secondary-label">其他模块</div>
         <button disabled><span>单</span>订单发货 <i>规划中</i></button>
         <button disabled><span>销</span>销售推广 <i>规划中</i></button>
@@ -123,6 +125,21 @@ export default function AdminPage() {
               <tr><td><strong>青岛尚美发制品</strong><small>138****2031</small></td><td><span className="access-pill b">批发B</span></td><td>¥28,650</td><td>销售员 · 李娜</td><td>2026-08-03</td><td>长期客户</td></tr>
               <tr><td><strong>济南悦己造型</strong><small>186****7712</small></td><td><span className="access-pill a">批发A</span></td><td>¥8,920</td><td>销售员 · 王海</td><td>2026-08-11</td><td>关注短发款</td></tr>
               <tr><td><strong>临沂优发门店</strong><small>152****4486</small></td><td><span className="access-pill retail">零售会员</span></td><td>¥2,180</td><td>销售员 · 李娜</td><td>2026-08-17</td><td>待跟进升级</td></tr>
+            </tbody></table></div>
+          </section>
+        </>}
+
+        {tab === "access" && <>
+          <div className="admin-title"><div><p>安全记录</p><h1>批发商进入记录</h1><span>记录手机号验证结果、账户等级、来源销售员和进入时间</span></div><button className="admin-primary" onClick={load}>刷新记录</button></div>
+          <section className="stat-grid access-stats">
+            <article><span>全部验证</span><strong>{accessLogs.length}</strong><small>最近100条记录</small></article>
+            <article><span>成功进入</span><strong>{accessLogs.filter((item) => item.result === "success").length}</strong><small>手机号与验证码通过</small></article>
+            <article><span>验证码失败</span><strong>{accessLogs.filter((item) => item.result === "failed").length}</strong><small>验证码不正确</small></article>
+            <article><span>未登记号码</span><strong>{accessLogs.filter((item) => item.result === "unknown").length}</strong><small>未建立批发商档案</small></article>
+          </section>
+          <section className="admin-panel"><div className="panel-head"><div><strong>手机号验证记录</strong><span>新记录按时间倒序显示</span></div></div>
+            <div className="product-table-wrap"><table className="product-table access-table"><thead><tr><th>进入时间</th><th>手机号码</th><th>批发商</th><th>账户等级</th><th>来源销售员</th><th>验证结果</th></tr></thead><tbody>
+              {accessLogs.length ? accessLogs.map((log) => <tr key={log.id}><td>{new Date(log.accessAt).toLocaleString("zh-CN", { hour12: false })}</td><td>{log.phone}</td><td>{log.companyName ?? "未登记账户"}</td><td>{log.level ? <span className={`access-pill ${log.level}`}>批发{log.level.toUpperCase()}</span> : "—"}</td><td>{log.salesPerson ?? "—"}</td><td><span className={`verify-result ${log.result}`}>{log.result === "success" ? "验证成功" : log.result === "failed" ? "验证码错误" : "未登记号码"}</span></td></tr>) : <tr><td colSpan={6} className="empty-records">暂无进入记录，请先使用批发商手机号完成一次验证</td></tr>}
             </tbody></table></div>
           </section>
         </>}

@@ -1,5 +1,7 @@
-import ShopApp from "../../shop-app";
+import WholesaleProtectedPage from "../protected-page";
+
+export const dynamic = "force-dynamic";
 
 export default function WholesaleCart() {
-  return <ShopApp mode="wholesale" view="cart" />;
+  return <WholesaleProtectedPage view="cart" />;
 }
