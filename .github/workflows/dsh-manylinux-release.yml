@@ -1,0 +1,229 @@
+name: DSH rc8 manylinux candidate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/agent-runtime-phase1
+    paths:
+      - .github/workflows/dsh-manylinux-release.yml
+      - services/dsh-agent-worker/**
+
+permissions: {}
+
+env:
+  CANDIDATE_NAME: dsh-rc8-manylinux_2_28-x86_64-untrusted-${{ github.sha }}
+  BUNDLE_DIR: .artifacts/dsh-rc8-manylinux-x86_64
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    container:
+      # Official pypa manylinux_2_28_x86_64 repeatable tag 2026.05.07-2.
+      image: quay.io/pypa/manylinux_2_28_x86_64@sha256:443eabd378e140996780a772e12c1a1ef10551da933fe76d74a1bab61f68a7b7
+      options: --user root
+
+    steps:
+      - name: Check out the reviewed source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Install the hash-pinned DSH build toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          for command_name in auditwheel curl find git readelf sha256sum sha512sum tar xz; do
+            command -v "$command_name" >/dev/null
+          done
+          curl --fail --location --silent --show-error \
+            https://nodejs.org/dist/v24.4.1/node-v24.4.1-linux-x64.tar.xz \
+            --output /tmp/node-v24.4.1-linux-x64.tar.xz
+          echo "7e067b13cd0dc7ee8b239f4ebe1ae54f3bba3a6e904553fcb5f581530eb8306d  /tmp/node-v24.4.1-linux-x64.tar.xz" \
+            | sha256sum --check --strict
+          mkdir -p /opt/node-v24.4.1
+          tar -xJf /tmp/node-v24.4.1-linux-x64.tar.xz --strip-components=1 -C /opt/node-v24.4.1
+
+          curl --fail --location --silent --show-error \
+            https://registry.npmjs.org/pnpm/-/pnpm-11.7.0.tgz \
+            --output /tmp/pnpm-11.7.0.tgz
+          echo "19cc852c120c7125760f2443ee6be0ca5b40f9f50598de1a09a1f177503e010e57c23c77646e01e761de59bf874fb22a3398c33ab9691fc13eb946b6f0f4d620  /tmp/pnpm-11.7.0.tgz" \
+            | sha512sum --check --strict
+          mkdir -p /opt/pnpm-11.7.0 /opt/ark-real-pnpm
+          tar -xzf /tmp/pnpm-11.7.0.tgz --strip-components=1 -C /opt/pnpm-11.7.0
+          chmod 0555 /opt/pnpm-11.7.0/bin/pnpm.mjs
+          ln -s /opt/pnpm-11.7.0/bin/pnpm.mjs /opt/ark-real-pnpm/pnpm
+
+          curl --fail --location --silent --show-error \
+            https://github.com/astral-sh/uv/releases/download/0.8.12/uv-x86_64-unknown-linux-gnu.tar.gz \
+            --output /tmp/uv-0.8.12.tar.gz
+          echo "f976ebdc612e71209f46664ab6c0325fa0090059b4474e047edd39eb9395373b  /tmp/uv-0.8.12.tar.gz" \
+            | sha256sum --check --strict
+          mkdir -p /opt/uv-0.8.12
+          tar -xzf /tmp/uv-0.8.12.tar.gz --strip-components=1 -C /opt/uv-0.8.12
+
+          export PATH="/opt/node-v24.4.1/bin:/opt/ark-real-pnpm:/opt/uv-0.8.12:/opt/python/cp312-cp312/bin:$PATH"
+          pnpm --dir services/dsh-agent-worker/release-toolchain \
+            install --frozen-lockfile --ignore-scripts
+          chmod -R a-w services/dsh-agent-worker/release-toolchain/node_modules
+          echo "/opt/node-v24.4.1/bin" >> "$GITHUB_PATH"
+          echo "/opt/ark-real-pnpm" >> "$GITHUB_PATH"
+          echo "/opt/uv-0.8.12" >> "$GITHUB_PATH"
+          echo "/opt/python/cp312-cp312/bin" >> "$GITHUB_PATH"
+
+      - name: Build and seal the pinned rc8 candidate
+        shell: bash
+        env:
+          ARK_DSH_MANYLINUX_2_28_CONFIRMED: "1"
+          ARK_DSH_BUILDER_IMAGE_DIGEST: sha256:443eabd378e140996780a772e12c1a1ef10551da933fe76d74a1bab61f68a7b7
+          ARK_DSH_PKG_BIN: ${{ github.workspace }}/services/dsh-agent-worker/release-toolchain/node_modules/.bin/pkg
+          ARK_DSH_REAL_PNPM: /opt/ark-real-pnpm/pnpm
+        run: |
+          set -euo pipefail
+          useradd --create-home --shell /bin/bash dshbuild
+          install -d -o dshbuild -g dshbuild "$GITHUB_WORKSPACE/$BUNDLE_DIR"
+          runuser -u dshbuild -- env \
+            ARK_DSH_MANYLINUX_2_28_CONFIRMED="$ARK_DSH_MANYLINUX_2_28_CONFIRMED" \
+            ARK_DSH_BUILDER_IMAGE_DIGEST="$ARK_DSH_BUILDER_IMAGE_DIGEST" \
+            ARK_DSH_PKG_BIN="$ARK_DSH_PKG_BIN" \
+            ARK_DSH_REAL_PNPM="$ARK_DSH_REAL_PNPM" \
+            GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
+            GITHUB_WORKFLOW="$GITHUB_WORKFLOW" \
+            GITHUB_RUN_ID="$GITHUB_RUN_ID" \
+            GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
+            GITHUB_SHA="$GITHUB_SHA" \
+            PATH="$PATH" \
+            services/dsh-agent-worker/scripts/build_dsh_release.sh "$GITHUB_WORKSPACE/$BUNDLE_DIR"
+          python services/dsh-agent-worker/scripts/verify_dsh_release.py \
+            "$BUNDLE_DIR" --source-sha "$GITHUB_SHA" \
+            --initialize-report "$BUNDLE_DIR/VERIFICATION.json"
+          (
+            cd "$BUNDLE_DIR"
+            sha256sum VERIFICATION.json >> SHA256SUMS
+            sha256sum --check --strict SHA256SUMS
+          )
+          python services/dsh-agent-worker/scripts/verify_dsh_release.py \
+            "$BUNDLE_DIR" --source-sha "$GITHUB_SHA"
+
+      - name: Upload immutable untrusted candidate
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ env.CANDIDATE_NAME }}
+          path: ${{ env.BUNDLE_DIR }}/
+          if-no-files-found: error
+          retention-days: 7
+
+  smoke:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    container:
+      # Rocky 8.9 is a clean glibc 2.28 runtime baseline, separate from the builder.
+      image: docker.io/library/rockylinux@sha256:c584db6d77f40a71ab2364b55be18c154b8e92ba48189e2d82ba0aef64ffee32
+      options: --user root
+
+    steps:
+      - name: Install the minimum smoke runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          microdnf install -y findutils git gzip python3.11 python3.11-pip shadow-utils tar
+          microdnf clean all
+
+      - name: Check out tests only
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Download the immutable candidate
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ env.CANDIDATE_NAME }}
+          path: ${{ env.BUNDLE_DIR }}
+
+      - name: Run the candidate as an unprivileged user
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+            cd "$BUNDLE_DIR"
+            sha256sum --check --strict SHA256SUMS
+          )
+          chown -R root:root "$BUNDLE_DIR"
+          chmod -R a-w "$BUNDLE_DIR"
+          useradd --create-home --shell /bin/bash dsh-smoke
+          runuser -u dsh-smoke -- python3.11 -m venv /tmp/ark-dsh-smoke-venv
+          runuser -u dsh-smoke -- /tmp/ark-dsh-smoke-venv/bin/pip install \
+            --disable-pip-version-check --require-hashes \
+            -r services/dsh-agent-worker/requirements-smoke.lock
+          runuser -u dsh-smoke -- /tmp/ark-dsh-smoke-venv/bin/pip install \
+            --disable-pip-version-check --no-deps \
+            "$BUNDLE_DIR"/deepseek_harness_sdk-0.1.0rc8-py3-none-any.whl \
+            "$BUNDLE_DIR"/deepseek_harness_runtime_bin-0.1.0rc8-py3-none-manylinux_2_28_x86_64.whl
+          runuser -u dsh-smoke -- env \
+            RUN_REAL_DSH_SMOKE=1 \
+            PYTHONPATH="$GITHUB_WORKSPACE/services/dsh-agent-worker" \
+            /tmp/ark-dsh-smoke-venv/bin/python -m pytest -q services/dsh-agent-worker/tests
+          (
+            cd "$BUNDLE_DIR"
+            sha256sum --check --strict SHA256SUMS
+          )
+
+  attest-candidate:
+    needs: smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    container:
+      image: quay.io/pypa/manylinux_2_28_x86_64@sha256:443eabd378e140996780a772e12c1a1ef10551da933fe76d74a1bab61f68a7b7
+      options: --user root
+
+    steps:
+      - name: Check out the verifier from the same source SHA
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Download the original immutable candidate
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ env.CANDIDATE_NAME }}
+          path: ${{ env.BUNDLE_DIR }}
+
+      - name: Re-verify the sealed bundle in a fresh job
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="/opt/python/cp312-cp312/bin:$PATH"
+          python services/dsh-agent-worker/scripts/verify_dsh_release.py \
+            "$BUNDLE_DIR" --source-sha "$GITHUB_SHA"
+
+      - name: Create GitHub OIDC build provenance
+        uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45
+        with:
+          subject-path: ${{ env.BUNDLE_DIR }}/*
+
+      - name: Recheck after attestation and upload the reviewed candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+            cd "$BUNDLE_DIR"
+            sha256sum --check --strict SHA256SUMS
+          )
+
+      - name: Upload reviewed candidate
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dsh-rc8-manylinux_2_28-x86_64-candidate-${{ github.sha }}
+          path: ${{ env.BUNDLE_DIR }}/
+          if-no-files-found: error
+          retention-days: 90

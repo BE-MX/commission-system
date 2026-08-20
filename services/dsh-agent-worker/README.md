@@ -22,6 +22,8 @@ services/dsh-agent-worker/scripts/build_dsh_release.sh /tmp/dsh-rc8-wheels
 
 构建机需要 Node 24、pnpm 11、Python 3.10+ 与 `uv`；Linux Runtime 必须在目标架构的 manylinux 2.28 构建环境中生成。升级 DSH 必须作为独立变更重新跑真实 Runtime smoke、权限和事件契约回归。
 
+仓库的 `DSH rc8 manylinux candidate` GitHub Actions 流水线固定 manylinux/Rocky 镜像 digest、Node/pnpm/uv 下载哈希、`@yao-pkg/pkg` 完整传递依赖 lock 和 Actions commit。它先在非特权用户下构建不可变候选，再在独立 Rocky 8（glibc 2.28）Job 中以只读 bundle、非特权用户运行完整 Worker 测试和真实 Runtime+MCP smoke，最后由第三个干净 Job 重新校验并生成 GitHub OIDC provenance。验证器同时检查 wheel RECORD、轮内许可证、SDK 依赖、两个固定 ELF payload/执行位/架构、DT_NEEDED allowlist、glibc 符号和 auditwheel policy。只有三段流水线全绿后才可下载 90 天留存的 `dsh-rc8-manylinux_2_28-x86_64-candidate-<commit>`；构建日志、第一段 untrusted artifact 或单独 wheel 都不是生产制品。
+
 ## 安装与配置
 
 ```bash
@@ -32,7 +34,11 @@ python -m venv /opt/leshine-ark-dsh/.venv
   deepseek_harness_runtime_bin-0.1.0rc8-py3-none-manylinux_2_28_x86_64.whl
 /opt/leshine-ark-dsh/.venv/bin/python -c \
   "from importlib.metadata import version; assert version('deepseek-harness-sdk') == version('deepseek-harness-runtime-bin') == '0.1.0rc8'"
+python services/dsh-agent-worker/scripts/verify_dsh_release.py \
+  /path/to/release-bundle --source-sha <expected-40-char-git-sha>
 ```
+
+候选进入内部制品库前还必须执行 `gh attestation verify --repo BE-MX/commission-system <bundle-files>`，确认 signer workflow 为本仓库 `.github/workflows/dsh-manylinux-release.yml`、source ref 为受保护 `main`、source SHA 与上面的 `--source-sha` 相同。功能分支产生的 candidate 只用于兼容性验证，不能晋级生产。
 
 复制本目录的 `.env.example` 为 `/etc/leshine/ark-dsh-worker.env` 并设为 `0600`。Worker 明文 token 要生成独立随机值，后台只配置 SHA-256：
 

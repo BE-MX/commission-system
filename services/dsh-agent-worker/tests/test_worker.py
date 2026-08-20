@@ -196,6 +196,44 @@ def test_release_builder_pins_the_reviewed_rc8_commit():
     assert "--frozen-lockfile" in script
     assert "SHA256SUMS" in script
     assert "ARK_DSH_MANYLINUX_2_28_CONFIRMED" in script
+    assert "SOURCE_DATE_EPOCH" in script
+    assert "BUILD_PROVENANCE.json" in script
+    assert "THIRD_PARTY_NOTICES.md" in script
+    assert "release output directory must be empty" in script
+    assert "ARK_DSH_PKG_BIN" in script
+    assert "pnpm_release_wrapper.sh" in script
+    assert "PNPM_CONFIG_OFFLINE=true" in script
+
+
+def test_manylinux_release_workflow_is_pinned_and_runs_real_smoke():
+    workflow = (
+        Path(__file__).resolve().parents[3]
+        / ".github" / "workflows" / "dsh-manylinux-release.yml"
+    ).read_text()
+    assert "quay.io/pypa/manylinux_2_28_x86_64@sha256:443eabd" in workflow
+    assert "docker.io/library/rockylinux@sha256:c584db6" in workflow
+    assert "node-v24.4.1-linux-x64.tar.xz" in workflow
+    assert "pnpm-11.7.0.tgz" in workflow
+    assert "uv-0.8.12.tar.gz" in workflow
+    assert "--frozen-lockfile --ignore-scripts" in workflow
+    assert "verify_dsh_release.py" in workflow
+    assert "RUN_REAL_DSH_SMOKE=1" in workflow
+    assert "--require-hashes" in workflow
+    assert "chmod -R a-w" in workflow
+    assert "needs: smoke" in workflow
+    assert "actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45" in workflow
+    assert "actions/checkout@11d5960a326750d5838078e36cf38b85af677262" in workflow
+    assert "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02" in workflow
+    assert "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093" in workflow
+
+
+def test_release_toolchain_locks_pkg_and_all_transitive_integrities():
+    root = Path(__file__).resolve().parents[1] / "release-toolchain"
+    package = json.loads((root / "package.json").read_text())
+    lock = (root / "pnpm-lock.yaml").read_text()
+    assert package["dependencies"] == {"@yao-pkg/pkg": "6.21.0"}
+    assert "'@yao-pkg/pkg@6.21.0':" in lock
+    assert lock.count("integrity: sha512-") > 100
 
 
 def test_sdk_preflight_fails_before_worker_can_claim(tmp_path, monkeypatch):
