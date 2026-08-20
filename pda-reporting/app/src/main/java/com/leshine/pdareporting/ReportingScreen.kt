@@ -295,6 +295,12 @@ class ReportingScreen(
     fun showUnitSuccess(message: String): Boolean =
         unitReportDialog?.render(UnitReportFlow.success(message)) == true
 
+    fun showUnitScanning(): Boolean =
+        unitReportDialog?.render(UnitReportFlow.scanning()) == true
+
+    fun showUnitSubmitting(): Boolean =
+        unitReportDialog?.render(UnitReportFlow.submitting()) == true
+
     fun showUnitError(message: String): Boolean =
         unitReportDialog?.render(UnitReportFlow.error(message)) == true
 

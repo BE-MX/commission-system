@@ -25,6 +25,16 @@ class UnitReportFlowTest {
     }
 
     @Test
+    fun scanning_next_item_clears_previous_result_and_blocks_actions() {
+        val state = UnitReportFlow.scanning()
+
+        assertEquals(UnitReportTone.PROGRESS, state.tone)
+        assertEquals("正在识别下一件…", state.message)
+        assertFalse(state.closeEnabled)
+        assertFalse(state.nextScanEnabled)
+    }
+
+    @Test
     fun success_allows_close_and_next_scan_for_three_seconds() {
         val state = UnitReportFlow.success("植发 · 1 件")
 

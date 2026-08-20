@@ -19,6 +19,13 @@ object UnitReportFlow {
 
     fun shouldAutoSubmit(reportMode: String): Boolean = reportMode == "unit"
 
+    fun scanning(): UnitReportPresentation = UnitReportPresentation(
+        tone = UnitReportTone.PROGRESS,
+        message = "正在识别下一件…",
+        closeEnabled = false,
+        nextScanEnabled = false,
+    )
+
     fun submitting(): UnitReportPresentation = UnitReportPresentation(
         tone = UnitReportTone.PROGRESS,
         message = "正在报工…",

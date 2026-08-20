@@ -8,7 +8,6 @@ import android.view.KeyEvent
 import android.view.WindowManager
 import android.widget.EditText
 import android.widget.ImageView
-import android.widget.Switch
 import android.widget.Toast
 import org.json.JSONObject
 import java.io.IOException
@@ -201,7 +200,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun handleRawScan(raw: String, source: ScanSource) {
+    private fun handleRawScan(raw: String, @Suppress("UNUSED_PARAMETER") source: ScanSource) {
         if (reportingScreen == null) return
         if (busy) {
             feedback.error()
@@ -216,22 +215,31 @@ class MainActivity : Activity() {
         val payload = ScanPayloadParser.parse(raw)
         if (payload == null) {
             feedback.error()
-            reportingScreen?.showError(
-                if (raw.trim().startsWith("ARK-P:")) "这是外贸流转卡，本 APP 只处理内贸报工" else "二维码无效，请扫描 ARK-D 或 ARK-DU 内贸二维码",
-            )
+            val message = if (raw.trim().startsWith("ARK-P:")) {
+                "这是外贸流转卡，本 APP 只处理内贸报工"
+            } else {
+                "二维码无效，请扫描 ARK-D 或 ARK-DU 内贸二维码"
+            }
+            if (reportingScreen?.showUnitError(message) != true) reportingScreen?.showError(message)
             return
         }
         busy = true
-        reportingScreen?.showScanning(payload.raw)
+        if (reportingScreen?.showUnitScanning() != true) reportingScreen?.showScanning(payload.raw)
         executor.execute {
             try {
                 val scan = api.scan(payload)
                 if (!scan.optBoolean("can_submit")) {
                     throw ApiException(422, scan.optString("block_message", "当前不能报工"))
                 }
-                ui { handleScanResult(payload, scan, source) }
+                ui { handleScanResult(payload, scan) }
             } catch (error: Exception) {
-                ui { handleFailure(error, written = false) }
+                ui {
+                    handleFailure(
+                        error,
+                        written = false,
+                        preferUnitDialog = reportingScreen?.isUnitDialogShowing() == true,
+                    )
+                }
             }
         }
     }
@@ -244,11 +252,10 @@ class MainActivity : Activity() {
         )
     }
 
-    private fun handleScanResult(payload: ScanPayload, scan: JSONObject, source: ScanSource) {
-        val isUnit = scan.optString("report_mode") == "unit"
-        if (isUnit && source == ScanSource.KEYBOARD && prefs.getBoolean(KEY_AUTO_UNIT, true)) {
-            val requestId = UUID.randomUUID().toString()
-            submit(scan, payload, 1, requestId)
+    private fun handleScanResult(payload: ScanPayload, scan: JSONObject) {
+        if (UnitReportFlow.shouldAutoSubmit(scan.optString("report_mode"))) {
+            reportingScreen?.showUnitReport(scan, ::loadImage)
+            submit(scan, payload, 1, UUID.randomUUID().toString())
             return
         }
         reportingScreen?.showQuantityConfirmation(
@@ -260,12 +267,21 @@ class MainActivity : Activity() {
     }
 
     private fun submit(scan: JSONObject, payload: ScanPayload, qty: Int, requestId: String) {
+        val unitMode = UnitReportFlow.shouldAutoSubmit(scan.optString("report_mode"))
         if (!pendingStore.persist(scan, payload, qty, requestId)) {
-            handleFailure(IllegalStateException("无法保存待提交事务，请检查设备存储"), written = true)
+            handleFailure(
+                IllegalStateException("无法保存待提交事务，请检查设备存储"),
+                written = true,
+                preferUnitDialog = unitMode,
+            )
             return
         }
         val next = scan.optJSONObject("next_step") ?: JSONObject()
-        reportingScreen?.showSubmitting(scan.optString("product_name", "产品"), next.optString("process_name", "工序"))
+        if (unitMode) {
+            reportingScreen?.showUnitSubmitting()
+        } else {
+            reportingScreen?.showSubmitting(scan.optString("product_name", "产品"), next.optString("process_name", "工序"))
+        }
         executor.execute {
             try {
                 val result = api.submit(scan, payload, qty, requestId)
@@ -283,14 +299,16 @@ class MainActivity : Activity() {
                     }
                     busy = false
                     feedback.success()
-                    reportingScreen?.showSuccess(message)
+                    if (!unitMode || reportingScreen?.showUnitSuccess(message) != true) {
+                        reportingScreen?.showSuccess(message)
+                    }
                     loadHistory()
                 }
             } catch (error: Exception) {
                 ui {
                     if (error is ApiException && error.statusCode in 400..499) {
                         if (error.statusCode != 401) pendingStore.clear(requestId)
-                        handleFailure(error, written = true)
+                        handleFailure(error, written = true, preferUnitDialog = unitMode)
                     } else {
                         // A transport, 5xx or response-decoding failure may happen after
                         // the server committed. Keep the transaction and retry its ID.
@@ -394,7 +412,7 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun handleFailure(error: Exception, written: Boolean) {
+    private fun handleFailure(error: Exception, written: Boolean, preferUnitDialog: Boolean = false) {
         if (error is ApiException && error.statusCode == 401) {
             sessionExpired()
             return
@@ -402,7 +420,10 @@ class MainActivity : Activity() {
         busy = false
         feedback.error()
         val prefix = if (written) "操作失败：" else "扫码失败："
-        reportingScreen?.showError(prefix + readableError(error))
+        val message = prefix + readableError(error)
+        if (!preferUnitDialog || reportingScreen?.showUnitError(message) != true) {
+            reportingScreen?.showError(message)
+        }
     }
 
     private fun sessionExpired() {
@@ -422,14 +443,8 @@ class MainActivity : Activity() {
             hint = "https://leshine.work"
             isSingleLine = true
         }
-        val autoUnit = Switch(this).apply {
-            text = "逐件二维码识别后自动报 1 件"
-            isChecked = prefs.getBoolean(KEY_AUTO_UNIT, true)
-            setTextColor(Ui.ink)
-        }
         wrapper.addView(Ui.text(this, "服务器地址", 13f, Ui.secondary, true))
         wrapper.addView(server, Ui.margin(top = 6, context = this))
-        wrapper.addView(autoUnit, Ui.margin(top = 16, context = this))
         wrapper.addView(
             Ui.text(
                 this,
@@ -455,7 +470,7 @@ class MainActivity : Activity() {
                         server.error = "存在待确认报工，处理完成前不能切换服务器"
                         return@setOnClickListener
                     }
-                    prefs.edit().putString(KEY_SERVER, normalized).putBoolean(KEY_AUTO_UNIT, autoUnit.isChecked).apply()
+                    prefs.edit().putString(KEY_SERVER, normalized).apply()
                     api.updateBaseUrl(normalized)
                     dialog.dismiss()
                     if (serverChanged) {
@@ -493,7 +508,6 @@ class MainActivity : Activity() {
         private const val KEY_TOKEN = "access_token"
         private const val KEY_USER_NAME = "user_name"
         private const val KEY_USERNAME = "username"
-        private const val KEY_AUTO_UNIT = "auto_unit_submit"
         private const val IMAGE_EDGE_PX = 320
     }
 }
