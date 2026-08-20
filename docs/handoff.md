@@ -97,7 +97,7 @@
 - ✅ NSSM 服务托管（CommissionSystem + WhatsAppConnector 双服务）
 - ✅ 前端路由 + 菜单单一来源（`navigation.js`）
 - ✅ API client 统一（`clients.js` 集中导出，禁止自建 axios）
-- ✅ 项目记忆精简协议（`.wolf/cerebrum.md` 唯一教训库；anatomy/memory/buglog 2026-07-03 宣布停用，**但写它们的 6 个 `.wolf/hooks/*.js` 直到 2026-07-25 才从 `.claude/settings.json` 摘除**，文件与脚本同日归档到 `.wolf/_retired-2026-07-25/`——教训见 cerebrum「文档宣布停用≠hook 停了」）+ `scripts/check_conventions.py` 增量约定检查
+- 🚧 **Agent 记忆系统换代**（2026-08-14，分支 `codex/claude-mem-mem0`）：旧 `.wolf` hooks 保持退役；本机已安装 Claude Code 2.1.232、claude-mem 13.15.0、Bun 1.3.14、uv 0.12.4，worker/SQLite 健康且 telemetry 已关闭；新增 `scripts/memory/` 白名单增量同步器（独立游标、文件锁、来源键去重、失败重试/异步恢复、dry-run、敏感信息整条排除、默认不回填）和双 Agent 检索协议。稳定 `user_id=leshine-ark-owner-v1`，本机 `source_device=mac-mini-11`，游标已在空库 `max(id)=0` 初始化。**待完成**：Claude/Mem0 账户授权、Keychain API key、真实新会话 observation、本地/跨 Agent/跨机器盲测；未经亮哥确认不得历史回填。
 - ✅ 权限矩阵配置（2026-07-03：23×5 矩阵抽屉 + 6 角色模板 + 按导航反查 + 变更审计 + v-permission 指令；81 权限清理为 69 有效）
 - ✅ **多智能体 Git 协作治理**（2026-07-18）：`AGENTS.md` 约定（分支 `<tool>/<topic>`、每代理独立 worktree、feature 分支随时推 / main push 等指令、合并只在主 worktree）+ `scripts/git_sweep.py` 巡检看板（六类欠账含跨分支 Alembic 撞号检测）+ Windows 计划任务 `LeShine-GitSweep` 每日 18:00 推钉钉；同日发现并修复 `DINGTALK_WEBHOOK_URL` 长期为空——定时任务告警/培训推送/巡检通知三条管道此前全部静默失效
 
@@ -117,6 +117,7 @@
     - 与外贸「生产订单 + 生产报工」**平行的一套**，不共用订单/产品/进度表——外贸报工是整行 0/1 流转，内贸要按数量拆批，进度表结构不同；只共用 `process` / `process_route` / `process_route_step` / `user_process_binding` 四类全局资产
     - 主站：下单（选属性 → find-or-create 产品 → 按「工艺→路线」映射自动配路线）、订单跟踪（逐明细逐工序数量进度）、产品与工艺映射、客户管理、流转卡与 30×20mm 二维码标签打印
     - 小程序：登录后落在模块选择页（外贸报工 / 内贸报工 / 订单速查），内贸报工并入 tabBar 第 2 项；扫码按数量报工可拆批，报工流水可撤销
+    - Android PDA：`pda-reporting/` 原生客户端直接接扫描头（键盘模拟 + 常见广播），复用 `/api/auth/login` 与全部 `/api/mini/domestic/*` 后端；数量码确认/拆批、键盘逐件码可自动报 1 件（广播须确认），弱网/进程重启沿用持久化幂等号；仅连 HTTPS，不申请相机权限
     - 081/082 迁移，7 张表 + 报工幂等键；`domestic:read/write/admin` 权限
     - **上线后仍需人工配置**：角色管理页分配 `domestic:*` 权限 → 「产品与工艺」页配好「工艺→路线」映射 → 给内贸工人绑工序。**不配映射的单能下但开不了工**
 
@@ -331,7 +332,7 @@
 
 ## 备注
 
-- 项目记忆用精简版协议（2026-07-03 治理）：`.wolf/cerebrum.md` 是唯一教训库，anatomy/memory/buglog 已停用并于 2026-07-25 连同 6 个写它们的 hook 一起归档到 `.wolf/_retired-2026-07-25/`（`.claude/settings.json` 现无 hooks 段，勿再挂回）；模块知识在 AI 的 auto-memory
+- 项目记忆已切换为“claude-mem 单机捕获 + Mem0 跨 Agent/跨机器精选共享”；旧 `.wolf` 文件仅作历史只读材料，退役 hooks 不得复挂。代码走 Git、进度走本文件、为什么/怎么做走 Mem0。
 - CLAUDE.md 已瘦身为 ~110 行宪法；API 清单在 `docs/api-reference.md`、表结构在 `docs/database.md`、模块专题在 `docs/module-notes.md`
 - 完工前跑 `python scripts/check_conventions.py`（增量约定检查，红=必须修）
 - 所有 UI 决策以 `DESIGN.md` 为准

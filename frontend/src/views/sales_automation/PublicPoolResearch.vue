@@ -2,8 +2,8 @@
   <div class="sales-page">
     <header class="page-heading">
       <div>
-        <h1>公海客户背调</h1>
-        <p>按历史订单、企业身份锚点和低信息量联系方式分档。Agent 只补全证据与开发草稿，由业务员确认后才进入机会雷达。</p>
+        <h1>客户背调</h1>
+        <p>覆盖 OKKI 公海客户与智能获客 70 分以上候选。Agent 只补全证据与开发草稿，由业务员确认后才进入机会雷达。</p>
       </div>
       <div class="heading-actions">
         <GlassButton v-permission="'sales_automation:admin'" variant="secondary" left-icon="Refresh" :loading="auditLoading" @click="refreshAudit">重新审计</GlassButton>
@@ -39,7 +39,7 @@
     <section class="surface-card table-card">
       <el-table v-loading="loading" :data="tasks" border class="list-table">
         <el-table-column label="客户" min-width="210">
-          <template #default="{ row }"><div class="company-cell"><strong>{{ row.subject.display_name }}</strong><span>{{ row.subject.country || '地区未知' }} · OKKI {{ row.subject.source_customer_id }}</span></div></template>
+          <template #default="{ row }"><div class="company-cell"><strong>{{ row.subject.display_name }}</strong><span>{{ row.subject.country || '地区未知' }} · {{ sourceLabel(row.subject) }}</span></div></template>
         </el-table-column>
         <el-table-column label="档位" min-width="105"><template #default="{ row }"><el-tag :type="tierMeta(row.tier).type">{{ tierMeta(row.tier).label }}</el-tag></template></el-table-column>
         <el-table-column label="订单 / 完整度" min-width="145"><template #default="{ row }">{{ row.subject.order_count }} 单 / {{ row.subject.completeness_score }}%</template></el-table-column>
@@ -69,11 +69,12 @@
           <div v-if="detail.assessment" class="score-stack"><strong>{{ detail.assessment.grade }}</strong><span>优先分 {{ detail.assessment.priority_score }}</span></div>
         </div>
         <el-tabs v-model="activeTab">
-          <el-tab-pane label="OKKI 原始线索" name="seed">
+          <el-tab-pane :label="detail.subject.source_system === 'okki' ? 'OKKI 原始线索' : '智能获客线索'" name="seed">
             <el-descriptions :column="2" border>
               <el-descriptions-item label="企业邮箱">{{ detail.subject.primary_email || '-' }}</el-descriptions-item><el-descriptions-item label="独立站"><a v-if="detail.subject.website" :href="detail.subject.website" target="_blank" rel="noopener noreferrer">打开官网</a><span v-else>-</span></el-descriptions-item>
               <el-descriptions-item label="历史订单">{{ detail.subject.order_count }} 单</el-descriptions-item><el-descriptions-item label="历史金额">USD {{ number(detail.subject.order_amount_usd) }}</el-descriptions-item>
               <el-descriptions-item label="最近订单">{{ formatTime(detail.subject.last_order_at) }}</el-descriptions-item><el-descriptions-item label="电话">{{ detail.subject.primary_phone || '-' }}</el-descriptions-item>
+              <el-descriptions-item v-if="detail.subject.source_system === 'ark_lead'" label="画像匹配分">{{ detail.subject.source_snapshot?.match_score ?? '-' }}</el-descriptions-item><el-descriptions-item v-if="detail.subject.source_system === 'ark_lead'" label="来源任务">#{{ detail.subject.source_snapshot?.search_job_id || '-' }}</el-descriptions-item>
             </el-descriptions>
           </el-tab-pane>
           <el-tab-pane label="公开证据" name="evidence">
@@ -130,6 +131,7 @@ const purchaseStageLabel = v => ({ first_purchase: '首次采购', first_cross_b
 const scaleStageLabel = v => ({ solo_professional: '独立专业者', small_team: '小团队 / 单店', multi_location: '多门店', regional_operation: '区域经营', expansion_stage: '扩张期', unclear: '不明确' }[v] || '-')
 const volumeLabel = v => ({ small_trial: '小单试水', stable_medium: '中等稳定', high_volume: '大批量', unclear: '不明确' }[v] || '-')
 const number = v => Number(v || 0).toLocaleString('zh-CN'); const formatTime = v => v ? new Date(v).toLocaleString('zh-CN', { hour12: false }) : '-'
+const sourceLabel = subject => subject.source_system === 'ark_lead' ? `智能获客 #${subject.linked_company_id || subject.source_customer_id}` : `OKKI ${subject.source_customer_id}`
 
 const { loading, list: tasks, total, page, pageSize, searchForm: filters, fetchList: fetchTasks, handleSearch: search, handlePageChange, handleSizeChange } = useListPage(async params => {
   const clean = Object.fromEntries(Object.entries(params).filter(([, value]) => value !== '')); const res = await getPublicPoolTasks(clean); return res.data || {}

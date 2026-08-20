@@ -11,7 +11,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import and_, func, inspect, or_, text
+from sqlalchemy import and_, bindparam, func, inspect, or_, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -19,10 +19,11 @@ from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.insight.models import CustomerOpportunity
 from app.insight.customer_profile_service import ingest_opportunity_event
-from app.sales_automation.identity import normalize_source_url
+from app.sales_automation.identity import normalize_domain, normalize_source_url
 from app.sales_automation.models import (
     DealAssessment,
     LeadContact,
+    LeadCompany,
     PublicPoolBatch,
     PublicPoolTask,
     ResearchFact,
@@ -38,6 +39,7 @@ TIERS = ("T1", "T2", "T3")
 LEASE_MINUTES = 15
 DEFAULT_COOLDOWN_DAYS = 180
 REACTIVATION_INACTIVE_DAYS = 60
+HIGH_SCORE_RESEARCH_THRESHOLD = 70
 FREE_EMAIL_DOMAINS = {
     "gmail.com", "googlemail.com", "hotmail.com", "outlook.com", "live.com",
     "yahoo.com", "ymail.com", "icloud.com", "me.com", "aol.com", "qq.com",
@@ -349,7 +351,7 @@ class BusinessPoolGateway:
         self.db = db
         self.settings = get_settings()
         self.schema = self.settings.BUSINESS_DB_NAME
-        self.customer_columns = self._customer_columns()
+        self.customer_columns = set() if self.db.get_bind().dialect.name == "sqlite" else self._customer_columns()
         self.website_column = next((name for name in WEBSITE_COLUMNS if name in self.customer_columns), None)
         self.address_column = next((name for name in ADDRESS_COLUMNS if name in self.customer_columns), None)
         self.locality_columns = {
@@ -371,6 +373,19 @@ class BusinessPoolGateway:
     @property
     def _website_expr(self) -> str:
         return f"NULLIF(TRIM(ci.`{self.website_column}`), '')" if self.website_column else "NULL"
+
+    @property
+    def _website_domain_expr(self) -> str:
+        raw = self._website_expr
+        authority = (
+            f"SUBSTRING_INDEX(CASE WHEN LOCATE('://', {raw}) > 0 "
+            f"THEN SUBSTRING_INDEX({raw}, '://', -1) ELSE {raw} END, '/', 1)"
+        )
+        host = (
+            "LOWER(TRIM(TRAILING '.' FROM SUBSTRING_INDEX(SUBSTRING_INDEX(SUBSTRING_INDEX("
+            f"{authority}, '?', 1), '#', 1), ':', 1)))"
+        )
+        return f"CASE WHEN {host} LIKE 'www.%' THEN SUBSTRING({host}, 5) ELSE {host} END"
 
     @property
     def _address_expr(self) -> str:
@@ -521,6 +536,118 @@ class BusinessPoolGateway:
         }).mappings().all()
         return [self._candidate(dict(row), tier) for row in rows]
 
+    def find_public_customers_by_domains(self, domains: list[str]) -> dict[str, dict]:
+        """Batch-resolve current OKKI public customers by exact website/corporate-email domain."""
+        normalized_domains = list(dict.fromkeys(normalize_domain(item) for item in domains))
+        if not normalized_domains:
+            return {}
+        dialect = self.db.get_bind().dialect.name
+        if dialect == "sqlite":
+            # Unit-test databases do not attach the read-only OKKI schema.
+            return {}
+        if not self.customer_columns:
+            raise SalesAutomationError("公海客户身份字段不可用，已停止候选入库以避免重复开发")
+        free_domains = ",".join(f"'{item}'" for item in sorted(FREE_EMAIL_DOMAINS))
+        customer_email_domain = (
+            "LOWER(TRIM(TRAILING '.' FROM "
+            "SUBSTRING_INDEX(SUBSTRING_INDEX(ci.email, ',', 1), '@', -1)))"
+        )
+        contact_email_domain = (
+            "LOWER(TRIM(TRAILING '.' FROM "
+            "SUBSTRING_INDEX(SUBSTRING_INDEX(match_contact.email, ',', 1), '@', -1)))"
+        )
+        sql = text(f"""
+        WITH identity_candidates AS (
+            SELECT ci.company_id, {self._website_domain_expr} AS matched_domain, 0 AS match_priority
+            FROM `{self.schema}`.customer_info ci
+            WHERE JSON_LENGTH(COALESCE(ci.owner_user_ids, JSON_ARRAY())) = 0
+              AND {self._website_domain_expr} IN :domains
+            UNION ALL
+            SELECT ci.company_id,
+                   {customer_email_domain} AS matched_domain,
+                   1 AS match_priority
+            FROM `{self.schema}`.customer_info ci
+            WHERE JSON_LENGTH(COALESCE(ci.owner_user_ids, JSON_ARRAY())) = 0
+              AND ci.email LIKE '%@%'
+              AND {customer_email_domain} NOT IN ({free_domains})
+              AND {customer_email_domain} IN :domains
+            UNION ALL
+            SELECT ci.company_id,
+                   {contact_email_domain} AS matched_domain,
+                   1 AS match_priority
+            FROM `{self.schema}`.customer_info ci
+            JOIN `{self.schema}`.customer_contacts match_contact
+              ON BINARY match_contact.company_id = BINARY ci.company_id
+            WHERE JSON_LENGTH(COALESCE(ci.owner_user_ids, JSON_ARRAY())) = 0
+              AND match_contact.email LIKE '%@%'
+              AND {contact_email_domain} NOT IN ({free_domains})
+              AND {contact_email_domain} IN :domains
+        ), identity_matches AS (
+            SELECT company_id, matched_domain, MIN(match_priority) AS match_priority
+            FROM identity_candidates
+            GROUP BY company_id, matched_domain
+        ), matched_ids AS (
+            SELECT DISTINCT company_id FROM identity_matches
+        ), contact_rollup AS (
+            SELECT
+                cc.company_id,
+                MAX(NULLIF(TRIM(cc.email), '')) AS contact_email,
+                MAX(NULLIF(TRIM(cc.tel), '')) AS contact_phone,
+                MAX(NULLIF(TRIM(cc.name), '')) AS contact_name,
+                MAX(CASE
+                    WHEN cc.email LIKE '%@%'
+                     AND LOWER(SUBSTRING_INDEX(SUBSTRING_INDEX(cc.email, ',', 1), '@', -1)) NOT IN ({free_domains})
+                    THEN 1 ELSE 0 END) AS has_corporate_contact_email,
+                MAX(CASE WHEN LOWER(COALESCE(ccs.platform, '')) LIKE '%whatsapp%' AND NULLIF(TRIM(ccs.value), '') IS NOT NULL THEN 1 ELSE 0 END) AS has_whatsapp,
+                MAX(CASE WHEN LOWER(COALESCE(ccs.platform, '')) NOT LIKE '%whatsapp%' AND NULLIF(TRIM(ccs.value), '') IS NOT NULL THEN 1 ELSE 0 END) AS has_business_social,
+                GROUP_CONCAT(DISTINCT CASE WHEN NULLIF(TRIM(ccs.value), '') IS NOT NULL THEN CONCAT(COALESCE(ccs.platform, 'social'), ':', ccs.value) END ORDER BY ccs.id SEPARATOR ' | ') AS social_summary
+            FROM `{self.schema}`.customer_contacts cc
+            JOIN matched_ids matched ON BINARY matched.company_id = BINARY cc.company_id
+            LEFT JOIN `{self.schema}`.customer_contact_socials ccs
+              ON BINARY ccs.customer_id = BINARY cc.customer_id
+            GROUP BY cc.company_id
+        ), order_rollup AS (
+            SELECT orders.company_id, COUNT(*) AS order_count,
+                   COALESCE(SUM(orders.amount_usd), 0) AS order_amount_usd,
+                   MAX(orders.account_date) AS last_order_at
+            FROM `{self.schema}`.okki_orders orders
+            JOIN matched_ids matched ON BINARY matched.company_id = BINARY orders.company_id
+            GROUP BY orders.company_id
+        ), features AS (
+            SELECT ci.company_id, ci.company_name, ci.country_name, ci.email AS customer_email,
+                   identities.matched_domain, identities.match_priority,
+                   {self._feature_sql}
+            FROM identity_matches identities
+            JOIN `{self.schema}`.customer_info ci ON BINARY ci.company_id = BINARY identities.company_id
+            LEFT JOIN contact_rollup cr ON BINARY cr.company_id = BINARY ci.company_id
+            LEFT JOIN order_rollup o ON BINARY o.company_id = BINARY ci.company_id
+        )
+        SELECT f.*,
+               CASE WHEN f.match_priority = 0 THEN 'website' ELSE 'corporate_email' END AS match_basis
+        FROM features f
+        ORDER BY f.matched_domain, f.match_priority, f.company_id
+        """).bindparams(bindparam("domains", expanding=True))
+        rows = self.db.execute(sql, {"domains": normalized_domains}).mappings().all()
+        matches: dict[str, dict] = {}
+        for row in rows:
+            data = dict(row)
+            matched_domain = data["matched_domain"]
+            if matched_domain in matches:
+                continue
+            tier = "T1" if int(data.get("order_count") or 0) > 0 else (
+                "T2" if data.get("has_corporate_email") or data.get("has_website") or data.get("has_business_social")
+                else "T3"
+            )
+            candidate = self._candidate(data, tier)
+            candidate["match_basis"] = data.get("match_basis") or "website"
+            candidate["matched_domain"] = matched_domain
+            matches[matched_domain] = candidate
+        return matches
+
+    def find_public_customer_by_domain(self, domain: str) -> dict | None:
+        normalized = normalize_domain(domain)
+        return self.find_public_customers_by_domains([normalized]).get(normalized)
+
     @staticmethod
     def _candidate(row: dict, tier: str) -> dict:
         email = row.get("primary_email") or row.get("customer_email")
@@ -601,14 +728,39 @@ def _upsert_subject(db: Session, candidate: dict, actor_id: int | None) -> Resea
     external_key = f"okki:{candidate['source_customer_id']}"
     subject = db.query(ResearchSubject).filter(ResearchSubject.external_key == external_key).first()
     if subject is None:
-        subject = ResearchSubject(
+        candidate_subject = ResearchSubject(
             subject_type="okki_customer",
             external_key=external_key,
             source_system="okki",
             source_customer_id=candidate["source_customer_id"],
+            display_name=candidate["display_name"],
+            country=candidate.get("country"),
+            primary_email=candidate.get("primary_email"),
+            email_domain_type=candidate.get("email_domain_type") or "unknown",
+            primary_phone=candidate.get("primary_phone"),
+            website=candidate.get("website"),
+            seed_tier=candidate["tier"],
+            eligibility_status="eligible",
+            completeness_score=candidate.get("completeness_score") or 0,
+            order_count=candidate.get("order_count") or 0,
+            order_amount_usd=candidate.get("order_amount_usd") or 0,
+            last_order_at=candidate.get("last_order_at"),
+            contact_snapshot=candidate.get("contact_snapshot") or {},
+            source_snapshot=candidate.get("source_snapshot") or {},
+            source_snapshot_hash=_snapshot_hash(candidate.get("source_snapshot") or {}),
+            last_selected_at=_now(),
             created_by=actor_id,
+            updated_by=actor_id,
         )
-        db.add(subject)
+        try:
+            with db.begin_nested():
+                db.add(candidate_subject)
+                db.flush()
+            subject = candidate_subject
+        except IntegrityError:
+            subject = db.query(ResearchSubject).filter(ResearchSubject.external_key == external_key).first()
+            if subject is None:
+                raise
     for field in (
         "display_name", "country", "primary_email", "email_domain_type", "primary_phone",
         "website", "completeness_score", "order_count", "order_amount_usd", "last_order_at",
@@ -622,6 +774,166 @@ def _upsert_subject(db: Session, candidate: dict, actor_id: int | None) -> Resea
     subject.updated_by = actor_id
     db.flush()
     return subject
+
+
+def find_current_public_customer(db: Session, domain: str) -> dict | None:
+    """Fail closed in production when the current OKKI public-pool identity cannot be checked."""
+    return BusinessPoolGateway(db).find_public_customer_by_domain(domain)
+
+
+def record_public_pool_duplicate(
+    db: Session,
+    candidate: dict,
+    actor_id: int | None,
+    linked_company: LeadCompany | None = None,
+) -> ResearchSubject:
+    subject = _upsert_subject(db, candidate, actor_id)
+    if linked_company is not None:
+        subject.linked_company_id = linked_company.id
+        subject.updated_by = actor_id
+        db.flush()
+    return subject
+
+
+def queue_high_score_lead_research(
+    db: Session,
+    company: LeadCompany,
+    job_id: int,
+    actor_id: int | None,
+) -> tuple[PublicPoolTask | None, bool]:
+    """Queue one public-pool-shaped OpenClaw research task for an accepted score-70+ lead."""
+    if float(company.match_score or 0) < HIGH_SCORE_RESEARCH_THRESHOLD:
+        return None, False
+
+    external_key = f"lead_company:{company.id}"
+    subject = db.query(ResearchSubject).filter(ResearchSubject.external_key == external_key).first()
+    snapshot = {
+        "source": "intelligent_acquisition",
+        "search_job_id": job_id,
+        "company_id": company.id,
+        "company_name": company.name,
+        "website": company.website,
+        "country": company.country,
+        "industry": company.industry,
+        "description": company.description,
+        "match_score": float(company.match_score or 0),
+        "score_reasons": company.score_reasons or [],
+    }
+    if subject is None:
+        candidate_subject = ResearchSubject(
+            subject_type="lead_company",
+            external_key=external_key,
+            source_system="ark_lead",
+            source_customer_id=str(company.id),
+            linked_company_id=company.id,
+            display_name=company.name,
+            country=company.country,
+            primary_email=None,
+            email_domain_type="unknown",
+            primary_phone=None,
+            website=company.website,
+            seed_tier="T2",
+            eligibility_status="eligible",
+            completeness_score=min(100, 50 + 15 * int(bool(company.country)) + 15 * int(bool(company.industry)) + 20 * int(bool(company.description))),
+            order_count=0,
+            order_amount_usd=0,
+            contact_snapshot={},
+            source_snapshot=snapshot,
+            source_snapshot_hash=_snapshot_hash(snapshot),
+            last_selected_at=_now(),
+            created_by=actor_id,
+            updated_by=actor_id,
+        )
+        try:
+            with db.begin_nested():
+                db.add(candidate_subject)
+                db.flush()
+            subject = candidate_subject
+        except IntegrityError:
+            subject = db.query(ResearchSubject).filter(ResearchSubject.external_key == external_key).first()
+            if subject is None:
+                raise
+    else:
+        subject.linked_company_id = company.id
+        subject.display_name = company.name
+        subject.country = company.country
+        subject.website = company.website
+        subject.source_snapshot = snapshot
+        subject.source_snapshot_hash = _snapshot_hash(snapshot)
+        subject.last_selected_at = _now()
+        subject.updated_by = actor_id
+        db.flush()
+
+    # Serialize task creation across different search jobs that rediscover the same company.
+    subject = db.query(ResearchSubject).filter(ResearchSubject.id == subject.id).with_for_update().one()
+
+    existing = db.query(PublicPoolTask).filter(
+        PublicPoolTask.subject_id == subject.id,
+        PublicPoolTask.deleted_at.is_(None),
+    ).order_by(PublicPoolTask.created_at.desc(), PublicPoolTask.id.desc()).first()
+    if existing is not None and existing.status in {"pending", "running", "completed"}:
+        return existing, False
+    if existing is not None:
+        existing.status = "pending"
+        existing.review_status = "pending"
+        existing.gate_status = "pending"
+        existing.gate_snapshot = None
+        existing.claimed_by = None
+        existing.lease_token_hash = None
+        existing.lease_expires_at = None
+        existing.error_message = None
+        existing.started_at = None
+        existing.finished_at = None
+        existing.selection_reason = [
+            f"智能获客匹配分 {round(float(company.match_score or 0), 2)} ≥ {HIGH_SCORE_RESEARCH_THRESHOLD}",
+            "自动使用公海背调技能进行证据化研判",
+        ]
+        existing.updated_by = actor_id
+        db.flush()
+        return existing, True
+
+    batch_key = f"lead-research-job-{job_id}"
+    batch = db.query(PublicPoolBatch).filter(PublicPoolBatch.idempotency_key == batch_key).first()
+    if batch is None:
+        batch = PublicPoolBatch(
+            batch_date=date.today(),
+            policy_version="lead-score-70-v1",
+            status="completed",
+            quota_per_tier=1,
+            quotas={"lead_company": 1},
+            audit_snapshot={
+                "source": "intelligent_acquisition",
+                "search_job_id": job_id,
+                "score_threshold": HIGH_SCORE_RESEARCH_THRESHOLD,
+            },
+            result_counts={"queued": 0},
+            idempotency_key=batch_key,
+            started_at=_now(),
+            finished_at=_now(),
+            created_by=actor_id,
+            updated_by=actor_id,
+        )
+        db.add(batch)
+        db.flush()
+
+    queued = int((batch.result_counts or {}).get("queued") or 0)
+    task = PublicPoolTask(
+        batch_id=batch.id,
+        subject_id=subject.id,
+        tier="T2",
+        selection_rank=queued + 1,
+        selection_reason=[
+            f"智能获客匹配分 {round(float(company.match_score or 0), 2)} ≥ {HIGH_SCORE_RESEARCH_THRESHOLD}",
+            "自动使用公海背调技能进行证据化研判",
+        ],
+        created_by=actor_id,
+        updated_by=actor_id,
+    )
+    db.add(task)
+    batch.result_counts = {**(batch.result_counts or {}), "queued": queued + 1}
+    batch.updated_by = actor_id
+    db.flush()
+    return task, True
 
 
 def prepare_batch(
@@ -765,7 +1077,10 @@ def run_batch_in_background(batch_id: int) -> None:
 
 
 def list_batches(db: Session, page: int, page_size: int) -> tuple[list[PublicPoolBatch], int]:
-    query = db.query(PublicPoolBatch).filter(PublicPoolBatch.deleted_at.is_(None))
+    query = db.query(PublicPoolBatch).filter(
+        PublicPoolBatch.deleted_at.is_(None),
+        PublicPoolBatch.policy_version != "lead-score-70-v1",
+    )
     total = query.count()
     rows = query.order_by(PublicPoolBatch.batch_date.desc(), PublicPoolBatch.id.desc()).offset(
         (page - 1) * page_size
@@ -798,7 +1113,10 @@ def list_tasks(
     ).outerjoin(DealAssessment, DealAssessment.task_id == PublicPoolTask.id).outerjoin(
         CustomerOpportunity, CustomerOpportunity.id == PublicPoolTask.opportunity_id,
     ).filter(
-        PublicPoolTask.deleted_at.is_(None), ResearchSubject.deleted_at.is_(None),
+        PublicPoolTask.deleted_at.is_(None),
+        ResearchSubject.deleted_at.is_(None),
+        ResearchSubject.source_system == "okki",
+        ResearchSubject.subject_type == "okki_customer",
     )
     if status:
         query = query.filter(PublicPoolTask.status == status)
@@ -926,8 +1244,15 @@ def _upsert_subject_contacts(db: Session, subject: ResearchSubject, contacts: li
             LeadContact.subject_id == subject.id, LeadContact.identity_key == identity_key,
         ).first()
         if row is None:
-            row = LeadContact(subject_id=subject.id, identity_key=identity_key, created_by=actor_id)
+            row = LeadContact(
+                company_id=subject.linked_company_id,
+                subject_id=subject.id,
+                identity_key=identity_key,
+                created_by=actor_id,
+            )
             db.add(row)
+        elif subject.linked_company_id is not None:
+            row.company_id = subject.linked_company_id
         row.name = name or row.name
         row.role = role or row.role
         row.email = email or row.email
@@ -969,6 +1294,7 @@ def _create_subject_research(
         existing_facts = db.query(ResearchFact).filter(ResearchFact.run_id == existing.id).all()
         return existing, existing_facts
     run = ResearchRun(
+        company_id=subject.linked_company_id,
         subject_id=subject.id,
         status="completed",
         summary=data.get("summary") or "",
@@ -1152,6 +1478,8 @@ def approve_task(db: Session, task_id: int, actor_id: int) -> PublicPoolTask:
     assessment = db.query(DealAssessment).filter(DealAssessment.task_id == task.id).first()
     if subject is None or assessment is None:
         raise ConflictError("任务缺少研究主体或成交研判")
+    if subject.source_system != "okki" or subject.subject_type != "okki_customer":
+        raise ConflictError("智能获客背调结果只能回到客户池审核，不能进入公海领取流程")
     if (
         assessment.identity_decision == "rejected"
         or assessment.industry_relevance == "irrelevant"
@@ -1172,15 +1500,21 @@ def claim_approved_task(db: Session, task_id: int, actor_id: int) -> CustomerOpp
     task = get_task(db, task_id, for_update=True)
     if task.status != "completed" or task.review_status != "approved":
         raise ConflictError("只有审核通过的客户可以领取")
+    # High-score intelligent-acquisition leads reuse the research engine only;
+    # they must still pass LeadCompany approval and can never become OKKI opportunities.
+    subject = db.query(ResearchSubject).filter(
+        ResearchSubject.id == task.subject_id,
+    ).with_for_update().first()
+    if subject is None:
+        raise ConflictError("任务缺少研究主体")
+    if subject.source_system != "okki" or subject.subject_type != "okki_customer":
+        raise ConflictError("智能获客背调结果不能通过公海领取，须回客户池单独审批")
     if task.opportunity_id is not None:
         claimed = db.query(CustomerOpportunity).filter(CustomerOpportunity.id == task.opportunity_id).first()
         if claimed is not None and claimed.owner_user_id == actor_id:
             return claimed
         raise ConflictError("该公海客户已被其他业务员领取")
     # 同一客户可能跨批次产生多个 task；锁共享 subject，跨 task 抢领也串行化。
-    subject = db.query(ResearchSubject).filter(
-        ResearchSubject.id == task.subject_id,
-    ).with_for_update().first()
     assessment = db.query(DealAssessment).filter(DealAssessment.task_id == task.id).first()
     if subject is None or assessment is None:
         raise ConflictError("任务缺少研究主体或成交研判")

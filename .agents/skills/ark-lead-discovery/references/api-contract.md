@@ -38,7 +38,7 @@ The response contains a one-time `lease_token`. Keep it only in process memory. 
 {
   "agent_id": "openclaw-sales-01",
   "lease_token": "<lease>",
-  "request_key": "job-42-batch-1",
+  "request_key": "job-42-attempt-1-batch-1",
   "candidates": [
     {
       "name": "Example Wigs",
@@ -55,6 +55,8 @@ The response contains a one-time `lease_token`. Keep it only in process memory. 
 ```
 
 Required per candidate: `name`, `website`, `source_url`, `captured_at`.
+
+Build `request_key` from the job ID, the `attempt_count` returned by the current claim, and the batch number. A retry within the same claim must resend the identical payload under the same key; a reclaim uses its new attempt number so it cannot conflict with a prior attempt's receipt.
 
 ## Finish
 

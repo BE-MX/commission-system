@@ -3,7 +3,7 @@
     <header class="page-heading">
       <div>
         <h1>客户池</h1>
-        <p>公司以官网域名作为唯一身份。先看匹配理由与研究证据，再确认进入正式开发队列。</p>
+        <p>官网域名会同时查询 OKKI 公海，命中即阻止重复开发；匹配分 70 以上自动进入 OpenClaw 公海式背调。</p>
       </div>
     </header>
 
@@ -13,6 +13,7 @@
         <el-option label="待确认" value="candidate" />
         <el-option label="已确认" value="approved" />
         <el-option label="已拒绝" value="rejected" />
+        <el-option label="公海重复" value="duplicate" />
       </el-select>
       <GlassButton variant="primary" left-icon="Search" @click="search">查询</GlassButton>
       <GlassButton variant="secondary" left-icon="Refresh" :loading="loading" @click="fetchLeads">刷新</GlassButton>
@@ -84,6 +85,8 @@
               <el-descriptions-item label="行业">{{ detail.industry || '-' }}</el-descriptions-item>
               <el-descriptions-item label="状态">{{ leadStatus(detail.status).label }}</el-descriptions-item>
               <el-descriptions-item label="负责人">{{ detail.owner_user_id || '待分配' }}</el-descriptions-item>
+              <el-descriptions-item v-if="detail.public_pool_duplicate" label="公海去重">已拦截 · OKKI {{ detail.public_pool_customer_id }}</el-descriptions-item>
+              <el-descriptions-item v-if="detail.research_task_id" label="深度背调任务">#{{ detail.research_task_id }} · {{ researchStatus(detail.research_status).label }}</el-descriptions-item>
             </el-descriptions>
             <h3 class="detail-section-title">匹配理由</h3>
             <div class="tag-list">
@@ -129,6 +132,41 @@
             </template>
             <div v-else class="empty-hint">Agent 尚未提交企业研究。</div>
           </el-tab-pane>
+
+          <el-tab-pane v-if="detail.public_pool_research" label="公海式背调" name="deep-research">
+            <div class="detail-summary">
+              <div><h2>结构化成交研判</h2><p>{{ detail.public_pool_research.selection_reason?.join('；') }}</p></div>
+              <div v-if="detail.public_pool_research.assessment" class="score-badge"><strong>{{ detail.public_pool_research.assessment.grade }}</strong><span>优先分 {{ detail.public_pool_research.assessment.priority_score }}</span></div>
+            </div>
+            <template v-if="detail.public_pool_research.assessment">
+              <el-descriptions :column="2" border>
+                <el-descriptions-item label="身份判断">{{ identityLabel(detail.public_pool_research.assessment.identity_decision) }}</el-descriptions-item>
+                <el-descriptions-item label="行业相关性">{{ relevanceLabel(detail.public_pool_research.assessment.industry_relevance) }}</el-descriptions-item>
+                <el-descriptions-item label="业务质量分">{{ detail.public_pool_research.assessment.business_quality_score }}</el-descriptions-item>
+                <el-descriptions-item label="成交分">{{ detail.public_pool_research.assessment.deal_score }}</el-descriptions-item>
+                <el-descriptions-item label="证据置信度">{{ evidenceConfidenceLabel(detail.public_pool_research.assessment.evidence_confidence) }}</el-descriptions-item>
+                <el-descriptions-item label="供应商状态">{{ supplierLabel(detail.public_pool_research.assessment.supplier_status) }}</el-descriptions-item>
+              </el-descriptions>
+              <h3 class="detail-section-title">行业门控</h3>
+              <p class="summary-text">{{ detail.public_pool_research.assessment.industry_relevance_reason }}</p>
+              <h3 class="detail-section-title">客户画像与成交信号</h3>
+              <div class="tag-list">
+                <el-tag v-for="item in detail.public_pool_research.assessment.commercial_profile?.positive_signals || []" :key="`positive-${item}`" type="success" effect="plain">{{ item }}</el-tag>
+                <el-tag v-for="item in detail.public_pool_research.assessment.commercial_profile?.negative_signals || []" :key="`negative-${item}`" type="warning" effect="plain">{{ item }}</el-tag>
+                <el-tag v-for="item in detail.public_pool_research.assessment.risks || []" :key="`risk-${item}`" type="danger" effect="plain">{{ item }}</el-tag>
+              </div>
+              <h3 class="detail-section-title">公开证据</h3>
+              <article v-for="fact in detail.public_pool_research.research?.facts || []" :key="fact.id" class="evidence-card">
+                <p>{{ fact.claim }}</p>
+                <div class="evidence-meta"><span>置信度 {{ confidence(fact.confidence) }}</span><span>{{ formatTime(fact.captured_at) }}</span><a :href="fact.source_url" target="_blank" rel="noopener noreferrer">打开来源</a></div>
+              </article>
+              <h3 class="detail-section-title">建议策略</h3>
+              <p class="summary-text">{{ detail.public_pool_research.assessment.recommended_strategy }}</p>
+              <h3 class="detail-section-title">英文开场草稿（未发送）</h3>
+              <p class="draft-text">{{ detail.public_pool_research.assessment.opening_message_en || '未生成' }}</p>
+            </template>
+            <div v-else class="empty-hint">OpenClaw {{ researchStatus(detail.public_pool_research.status).label }}，完成后将在这里输出结构化背调结果。</div>
+          </el-tab-pane>
         </el-tabs>
       </template>
       <template v-if="detail?.status === 'candidate'" #footer>
@@ -156,6 +194,7 @@ const leadStatus = value => ({
   candidate: { label: '待确认', type: 'warning' },
   approved: { label: '已确认', type: 'success' },
   rejected: { label: '已拒绝', type: 'info' },
+  duplicate: { label: '公海重复', type: 'danger' },
 }[value] || { label: value || '-', type: 'info' })
 const researchStatus = value => ({
   pending: { label: '待研究', type: 'info' },
@@ -171,6 +210,10 @@ const emailStatus = value => ({
 }[value] || { label: value || '-', type: 'info' })
 const formatTime = value => value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '-'
 const confidence = value => `${Math.round((value || 0) * 100)}%`
+const identityLabel = value => ({ confirmed: '已确认', candidate: '候选匹配', unverifiable: '无法验证', rejected: '主体不符' }[value] || '-')
+const relevanceLabel = value => ({ core: '核心相关', adjacent: '邻近相关', uncertain: '待确认', irrelevant: '行业无关' }[value] || '-')
+const evidenceConfidenceLabel = value => ({ high: '高', medium: '中', low: '低' }[value] || '-')
+const supplierLabel = value => ({ stable: '已有稳定供应商', looking: '正在寻找', switching: '可能切换', unknown: '未知' }[value] || '-')
 
 const {
   loading, list: leads, total, page, pageSize, searchForm: filters,
@@ -226,11 +269,13 @@ a:hover { text-decoration: underline; }
 .score { color: var(--color-primary); font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .detail-summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px; margin-bottom: 12px; border: 1px solid var(--border-color); border-radius: var(--card-radius); background: var(--toolbar-bg); }
 .detail-summary h2 { margin: 0 0 4px; color: var(--text-primary); font-size: 18px; }
+.detail-summary p { margin: 0; color: var(--text-muted); font-size: 12px; }
 .score-badge { display: grid; min-width: 70px; text-align: center; }
 .score-badge strong { color: var(--color-primary); font-size: 26px; line-height: 1; }
 .score-badge span { margin-top: 4px; color: var(--text-muted); font-size: 11px; }
 .detail-section-title { margin: 20px 0 10px; color: var(--text-primary); font-size: 14px; }
 .tag-list { display: flex; flex-wrap: wrap; gap: 8px; }
 .summary-text { margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.75; white-space: pre-wrap; }
+.draft-text { padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--toolbar-bg); color: var(--text-secondary); line-height: 1.7; white-space: pre-wrap; }
 @media (max-width: 720px) { .lead-filter { width: 100%; } }
 </style>
