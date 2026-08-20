@@ -172,7 +172,8 @@ const handleSubmit = async () => {
     // 或目标是展会 kiosk（展位 iPad 不进移动端素材页）
     const isMobileUA = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
     const desktopMode = sessionStorage.getItem('ark_desktop_mode') === '1'
-    if (isMobileUA && !desktopMode && !redirect.startsWith('/expo')) {
+    const keepMainRoute = redirect.startsWith('/expo') || redirect.startsWith('/domestic/reporting')
+    if (isMobileUA && !desktopMode && !keepMainRoute) {
       window.location.href = '/m/'
       return
     }

@@ -36,6 +36,13 @@ const routes = [
     meta: { title: 'AI 智能试戴', permission: 'expo:write' },
   },
   {
+    // 手机/PDA 浏览器扫码报工 — 全屏轻量页面，不加载桌面 MainLayout
+    path: '/domestic/reporting',
+    name: 'MobileDomesticReporting',
+    component: () => import('@/views/domestic/reporting/MobileDomesticReporting.vue'),
+    meta: { title: '内贸扫码报工' },
+  },
+  {
     // 对外库存查询 — 客户公开页（无登录无 key，全公开；数据层只出四要素 + 有货标识）
     path: '/inventory',
     name: 'PublicInventory',
@@ -72,9 +79,10 @@ router.beforeEach(async (to, from, next) => {
   const desktopMode = sessionStorage.getItem('ark_desktop_mode') === '1'
 
   // 移动端访问登录页：直接走移动端独立登录页
-  // 例外：目标是展会 kiosk（展位 iPad 用主站登录，不进移动端素材页）
+  // 例外：展会 kiosk 和内贸扫码页使用主站登录，以便登录后恢复深链
   const redirectTarget = String(to.query.redirect || '')
-  if (isMobileUA && !desktopMode && to.path === '/login' && !redirectTarget.startsWith('/expo')) {
+  const keepMainLogin = redirectTarget.startsWith('/expo') || redirectTarget.startsWith('/domestic/reporting')
+  if (isMobileUA && !desktopMode && to.path === '/login' && !keepMainLogin) {
     window.location.href = '/m/login.html'
     return false
   }

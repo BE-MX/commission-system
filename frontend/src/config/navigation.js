@@ -102,7 +102,10 @@ export const MENU_GROUPS = {
   domestic: {
     title: '内贸订单',
     icon: Tickets,
-    anyPermission: ['domestic:read', 'domestic:write', 'domestic:recharge', 'domestic:admin'],
+    anyPermission: [
+      'domestic:read', 'domestic:write', 'domestic:recharge', 'domestic:admin',
+      'domestic_quantity_report:write', 'domestic_unit_report:write',
+    ],
   },
   asset: {
     title: '素材管理',
@@ -738,6 +741,19 @@ export const NAV_ENTRIES = [
   },
 
   // ── 内贸订单 ───────────────────────────────────────────
+  {
+    path: '/domestic/reporting',
+    name: 'MobileDomesticReportingLink',
+    title: '扫码报工',
+    external: true,
+    menu: {
+      group: 'domestic', title: '扫码报工', icon: Camera, order: 5,
+      anyPermission: [
+        'domestic:read', 'domestic:write', 'domestic:admin',
+        'domestic_quantity_report:write', 'domestic_unit_report:write',
+      ],
+    },
+  },
   {
     path: '/domestic/orders',
     name: 'DomesticOrders',
