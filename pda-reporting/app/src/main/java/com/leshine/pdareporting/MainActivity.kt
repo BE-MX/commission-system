@@ -54,7 +54,7 @@ class MainActivity : Activity() {
         api = ApiClient(safeServer)
         api.token = prefs.getString(KEY_TOKEN, "") ?: ""
         feedback = Feedback(this)
-        scannerInput = ScannerInput(this, ::handleRawScan)
+        scannerInput = ScannerInput(this, ::handleRawScan, ::handleMalformedBroadcast)
 
         if (api.token.isBlank()) showLogin() else verifySession()
     }
@@ -234,6 +234,14 @@ class MainActivity : Activity() {
                 ui { handleFailure(error, written = false) }
             }
         }
+    }
+
+    private fun handleMalformedBroadcast(action: String) {
+        if (reportingScreen == null || busy) return
+        feedback.error()
+        reportingScreen?.showError(
+            "已收到 PDA 扫描广播，但 barcode_string 为空；请检查扫描设置中的广播数据标签\n$action",
+        )
     }
 
     private fun handleScanResult(payload: ScanPayload, scan: JSONObject, source: ScanSource) {
@@ -422,7 +430,15 @@ class MainActivity : Activity() {
         wrapper.addView(Ui.text(this, "服务器地址", 13f, Ui.secondary, true))
         wrapper.addView(server, Ui.margin(top = 6, context = this))
         wrapper.addView(autoUnit, Ui.margin(top = 16, context = this))
-        wrapper.addView(Ui.text(this, "广播扫描配置：Action = ${ScannerInput.CUSTOM_ACTION}\nExtra 可用 data 或 DataWedge 默认 data_string；键盘输出模式无需配置。", 12f, Ui.muted), Ui.margin(top = 12, context = this))
+        wrapper.addView(
+            Ui.text(
+                this,
+                "实体键广播配置：Action = ${ScanBroadcastContract.VENDOR_ACTION}\n数据标签 = ${ScanBroadcastContract.VENDOR_EXTRA}",
+                12f,
+                Ui.muted,
+            ),
+            Ui.margin(top = 12, context = this),
+        )
 
         val dialog = AlertDialog.Builder(this)
             .setTitle("PDA 设置")

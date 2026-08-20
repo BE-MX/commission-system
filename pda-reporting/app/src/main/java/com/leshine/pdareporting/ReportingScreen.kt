@@ -67,7 +67,7 @@ class ReportingScreen(
             addView(statusTitle)
             addView(statusDetail, Ui.margin(top = 7, context = context))
             addView(
-                Ui.text(context, "▦  硬件扫描头输入", 13f, Ui.green, true).apply {
+                Ui.text(context, "▦  按 PDA 实体扫描键扫码", 13f, Ui.green, true).apply {
                     gravity = Gravity.CENTER
                     setPadding(0, Ui.dp(context, 13), 0, Ui.dp(context, 13))
                     background = Ui.rounded(Ui.greenSoft, 10, context)
