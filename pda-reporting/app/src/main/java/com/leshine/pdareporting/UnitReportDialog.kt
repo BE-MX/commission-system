@@ -32,6 +32,7 @@ class UnitReportDialog(
         minHeight = Ui.dp(context, 56)
     }
     private val root = Ui.vertical(context, 18).apply {
+        minimumHeight = (context.resources.displayMetrics.heightPixels * 0.72f).toInt()
         addView(banner)
         addView(
             ScrollView(context).apply { addView(details) },
