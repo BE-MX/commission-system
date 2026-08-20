@@ -221,6 +221,7 @@ def get_context(db: Session, run_id: int, *, worker_id: str, lease_token: str) -
         "profile": {
             "id": profile.id,
             "profile_key": profile.profile_key,
+            "name": profile.name,
             "version": profile.version,
             "model_preset": profile.model_preset,
             "model": preset.model,

@@ -64,7 +64,11 @@ def heartbeat_agent_run(
         runtime_run_id=payload.runtime_run_id,
         steps_used=payload.steps_used,
     )
-    return ok({"run_id": row.id, "lease_expires_at": row.lease_expires_at.isoformat()})
+    return ok({
+        "run_id": row.id,
+        "lease_expires_at": row.lease_expires_at.isoformat(),
+        "cancel_requested": bool(row.cancel_requested),
+    })
 
 
 @router.get("/runs/{run_id}/context")
@@ -153,4 +157,3 @@ def fail_agent_run(
         ambiguous=payload.ambiguous,
     )
     return ok(presenters.run_view(row))
-

@@ -109,7 +109,7 @@ def _load_run_and_profile(db: Session, claims: dict) -> tuple[AgentRun, AgentPro
     return run, profile
 
 
-def _validate_tools(profile: AgentProfile, claims: dict, tools: list[dict]) -> None:
+def _filter_tools(profile: AgentProfile, claims: dict, tools: list[dict], tool_choice) -> list[dict]:
     allowed = set(profile.tool_allowlist or [])
     token_allowed = set(claims.get("tools") or [])
     if token_allowed != allowed:
@@ -117,9 +117,15 @@ def _validate_tools(profile: AgentProfile, claims: dict, tools: list[dict]) -> N
     requested = [_raw_tool_name(_tool_name(item)) for item in tools]
     if any(not name for name in requested):
         raise ValueError("tools 中存在缺少 function.name 的定义")
-    denied = sorted(set(requested) - allowed)
-    if denied:
-        raise ForbiddenError(f"Agent Run 无权使用工具: {', '.join(denied)}")
+    # Ark MCP serves personal-token and multiple Profile tools on one endpoint.
+    # DSH discovers the superset; the model gateway projects only this Run's
+    # immutable allowlist before any definition reaches the provider.
+    effective = [item for item, raw_name in zip(tools, requested) if raw_name in allowed]
+    if isinstance(tool_choice, dict):
+        chosen = _raw_tool_name(str(((tool_choice.get("function") or {}).get("name")) or ""))
+        if chosen not in allowed:
+            raise ForbiddenError(f"Agent Run 无权强制调用工具: {chosen or 'unknown'}")
+    return effective
 
 
 def _load_openai_preset(db: Session, profile: AgentProfile):
@@ -172,7 +178,7 @@ def prepare_agent_chat(
         raise ValueError("tools 数量不能超过 100")
 
     run, profile = _load_run_and_profile(db, claims)
-    _validate_tools(profile, claims, tools)
+    effective_tools = _filter_tools(profile, claims, tools, tool_choice)
     _check_budget(db, run, profile)
     preset, provider = _load_openai_preset(db, profile)
 
@@ -185,8 +191,8 @@ def prepare_agent_chat(
         configured = body.get("max_completion_tokens", body.get("max_tokens", max_output))
         body["max_tokens"] = min(int(configured), max_output)
         body.pop("max_completion_tokens", None)
-    if tools:
-        body["tools"] = tools
+    if effective_tools:
+        body["tools"] = effective_tools
         if tool_choice is not None:
             body["tool_choice"] = tool_choice
         if parallel_tool_calls is not None:
@@ -201,7 +207,7 @@ def prepare_agent_chat(
         preset_name=preset.preset_name,
         provider_type=provider.provider_type,
         model=preset.model,
-        prompt_snapshot=_message_snapshot(messages, tools),
+        prompt_snapshot=_message_snapshot(messages, effective_tools),
         status="pending",
     )
     db.add(log)

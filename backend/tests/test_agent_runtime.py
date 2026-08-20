@@ -412,6 +412,8 @@ class _FakeModelResponse:
 
 
 class _FakeModelClient:
+    last_body = None
+
     def __init__(self, **_kwargs):
         pass
 
@@ -422,6 +424,7 @@ class _FakeModelClient:
         return False
 
     def stream(self, *_args, **_kwargs):
+        type(self).last_body = _kwargs.get("json")
         return _FakeModelResponse()
 
 
@@ -439,11 +442,16 @@ def test_agent_model_gateway_preserves_tool_calls_and_accounts_usage(db, monkeyp
         messages=[{"role": "user", "content": "请查询知识"}],
         tools=[{"type": "function", "function": {
             "name": "mcp__ark__search_knowledge", "parameters": {"type": "object"},
+        }}, {"type": "function", "function": {
+            "name": "mcp__ark__record_shipment", "parameters": {"type": "object"},
         }}],
     )
     raw = b"".join(stream).decode("utf-8")
     assert model == "deepseek-chat"
     assert "mcp__ark__search_knowledge" in raw
+    assert [item["function"]["name"] for item in _FakeModelClient.last_body["tools"]] == [
+        "mcp__ark__search_knowledge"
+    ]
     log = db.query(AiCallLog).one()
     assert log.status == "success"
     assert log.tokens_used == 17
@@ -452,7 +460,7 @@ def test_agent_model_gateway_preserves_tool_calls_and_accounts_usage(db, monkeyp
     assert (refreshed.prompt_tokens, refreshed.completion_tokens) == (12, 5)
 
 
-def test_agent_model_gateway_rejects_tool_outside_profile(db):
+def test_agent_model_gateway_rejects_forced_tool_outside_profile(db):
     _seed_agent_preset(db)
     run = _run(db, _session(db))
     claim = _claim(db)
@@ -466,6 +474,7 @@ def test_agent_model_gateway_rejects_tool_outside_profile(db):
             tools=[{"type": "function", "function": {
                 "name": "mcp__ark__record_shipment", "parameters": {"type": "object"},
             }}],
+            tool_choice={"type": "function", "function": {"name": "mcp__ark__record_shipment"}},
         )
 
 
