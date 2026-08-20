@@ -22,5 +22,7 @@
 
 - 代码固定并校验 DSH `0.1.0rc8`，上游 tag `dsh-v0.1.0-rc.8`、commit `141eb6fef83422698aef7a981029e843e8161534`。
 - PyPI rc7 SDK/runtime 已发布，但 Runtime 闭包不含 MCP Client，不能用于方舟。固定 rc8 源码构建的 macOS arm64 wheel 已通过本地 OpenAI 协议桩、真实 Streamable HTTP MCP 与 JSONL 的 Runtime 二进制 E2E；生产仍需 manylinux 2.28 环境构建、审查并安装同版本 Linux wheels。
+- 客户副驾驶 30 题使用固定版本目录 `customer_order_copilot_v1`；管理员只能在自身客户数据范围选真实客户，服务端冻结题目/客户边界，普通问答和同题重跑不虚增样本。
+- 正式标准题只覆盖现有客户绑定工具可证明的画像/订单摘要/复购/行动；启动前按题预检权限与真实数据。每个 cohort 还固定 Profile、Prompt、工具、Schema、限额和模型 Preset 的契约 hash，契约变更后不混算旧样本。
 - 管理员用 `/api/agent-runtime/evaluations/readiness` 汇总 30/200/50 门槛；接口未返回业务验收完成时必须保持 Shadow。
 - 开发完成不等于生产启用。所有 Agent flags 默认 false，迁移、Preset、Worker、权限与灰度样本验收完成前不得开启正式流量。

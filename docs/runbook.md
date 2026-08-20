@@ -1401,7 +1401,14 @@ AGENT_RUNTIME_SALES_SHADOW_ENABLED=false
 AGENT_RUNTIME_SHADOW_SAMPLE_RATE=0
 ```
 
-先用内部账号完成客户副驾驶标准问题：任务领取、事件连续、取消、Artifact 保持 draft、接受/拒绝与日志脱敏均正确。30 个标准题的 Run input 必须标记 `evaluation_suite=customer_order_copilot_v1` 和互不重复的 `evaluation_case_id`，普通业务问答与同题重跑不会进入门槛统计。之后再开复购，抽查规则召回与已处理行动不被覆盖。最后配置 Brave Key，开启受控 Web Search 与 5% Shadow 抽样；Shadow 对照按不同 `search_job` 计数，达到 50 个同输入样本前不得提高流量，更不得替代 OpenClaw 正式链路。管理员定期读取 `GET /api/agent-runtime/evaluations/readiness`；只有返回 `business_validation_complete=true` 才进入人工晋级评审，该接口本身不会自动切流。
+先用内部账号完成客户副驾驶标准问题：任务领取、事件连续、取消、Artifact 保持 draft、接受/拒绝与日志脱敏均正确。管理员从任务中心的“执行标准评测”进入版本化 30 题目录：
+
+1. 给评测账号授予 `agent_runtime:admin/invoke`、`customer_radar:read` 和 `order_intelligence:read`；非 `manage/read_all`账号仍只能选本人负责客户/订单。评测题已限定在现有工具可证明的画像、订单摘要、复购周期和行动范围；未提供运单号或完整产品参数时，不把物流/价格问题纳入正式 30 题。
+2. 每题选择一个确实具备页面所列数据的真实内部客户，二次确认后启动。后端会按题目预检权限、画像事件/行动、OKKI 绑定、近三年有效订单和可计算复购周期；预检失败的 Run 不会创建。不得为凑数使用伪造客户。
+3. Run 终态后进入详情核对证据、数量和建议，必须提交 `useful/not_useful/corrected` 人工反馈。“执行完成”不等于“可直接使用”。
+4. 30 个 Run 由服务端自动冻结 `evaluation_suite=customer_order_copilot_v1`、互不重复的 `evaluation_case_id`、客户边界与 `evaluation_contract_hash`。契约 hash 包含完整 30 题及评分规则、Profile 版本与实际 Prompt、工具/Schema/限额/策略、Preset 模型与参数、Provider 非密钥运行参数及全局硬限额；任一变化会自动进入新的空 cohort，不与旧样本混算。普通问答、非目录题、同题重跑都不会虚增样本；门槛固定取当前 cohort 每题第一个完成结果，避免事后挑选。
+
+之后再开复购，抽查规则召回与已处理行动不被覆盖。最后配置 Brave Key，开启受控 Web Search 与 5% Shadow 抽样；Shadow 对照按不同 `search_job` 计数，达到 50 个同输入样本前不得提高流量，更不得替代 OpenClaw 正式链路。管理员定期读取 `GET /api/agent-runtime/evaluations/readiness`；只有返回 `business_validation_complete=true` 才进入人工晋级评审，该接口本身不会自动切流。
 
 ### 观测与止损
 

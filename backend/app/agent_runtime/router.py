@@ -10,7 +10,13 @@ from sqlalchemy.orm import Session
 from app.agent_runtime import artifact_service, evaluation_service, presenters, service
 from app.agent_runtime.contracts import RunStatus, TERMINAL_RUN_STATUSES
 from app.agent_runtime.errors import AgentRuntimeError, RuntimeDisabledError
-from app.agent_runtime.schemas import ArtifactDecisionInput, FeedbackInput, RunCreate, SessionCreate
+from app.agent_runtime.schemas import (
+    ArtifactDecisionInput,
+    CopilotEvaluationRunCreate,
+    FeedbackInput,
+    RunCreate,
+    SessionCreate,
+)
 from app.auth.dependencies import require_any_permission
 from app.core.config import get_settings
 from app.core.database import SessionLocal, get_db
@@ -285,6 +291,54 @@ def get_agent_evaluation_readiness(
 ):
     """Return conservative 30/200/50 business-validation gates for gray release."""
     return ok(evaluation_service.readiness_report(db))
+
+
+@router.get("/evaluations/copilot/cases")
+def get_copilot_evaluation_cases(
+    db: Session = Depends(get_db),
+    _current_user: dict = Depends(require_any_permission(*ADMIN_PERMISSIONS)),
+):
+    return ok(evaluation_service.copilot_case_catalog(db))
+
+
+@router.get("/evaluations/copilot/customers")
+def get_copilot_evaluation_customers(
+    keyword: str | None = Query(None, max_length=100),
+    limit: int = Query(20, ge=1, le=50),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_any_permission(*ADMIN_PERMISSIONS)),
+):
+    rows = _call(
+        evaluation_service.search_copilot_evaluation_customers,
+        db,
+        user_id=_user_id(current_user),
+        permissions=_permissions(current_user),
+        roles=set(current_user.get("roles", [])),
+        keyword=keyword,
+        limit=limit,
+    )
+    return ok(rows)
+
+
+@router.post("/evaluations/copilot/cases/{case_id}/runs", status_code=202)
+def start_copilot_evaluation_case(
+    case_id: str,
+    payload: CopilotEvaluationRunCreate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_any_permission(*ADMIN_PERMISSIONS)),
+):
+    _call(_require_enabled)
+    row = _call(
+        evaluation_service.start_copilot_evaluation_case,
+        db,
+        case_id=case_id,
+        customer_profile_id=payload.customer_profile_id,
+        idempotency_key=payload.idempotency_key,
+        user_id=_user_id(current_user),
+        permissions=_permissions(current_user),
+        roles=set(current_user.get("roles", [])),
+    )
+    return ok(presenters.run_view(row), "标准评测任务已创建", 202)
 
 
 @router.post("/artifacts/{artifact_id}/accept")

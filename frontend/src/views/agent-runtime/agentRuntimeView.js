@@ -20,6 +20,20 @@ export function statusMeta(status) {
   return STATUS_META[status] || { label: status || '未知', type: 'info' }
 }
 
+export function evaluationCaseMeta(item) {
+  if (item?.completed_run_id) return { label: '已完成', type: 'success' }
+  if (item?.latest_status && item.latest_status !== 'not_started') {
+    return statusMeta(item.latest_status)
+  }
+  return { label: '未开始', type: 'info' }
+}
+
+export function evaluationProgress(completed, total) {
+  const safeTotal = Math.max(0, Number(total || 0))
+  const safeCompleted = Math.min(safeTotal, Math.max(0, Number(completed || 0)))
+  return safeTotal ? Math.round((safeCompleted / safeTotal) * 100) : 0
+}
+
 export function formatTime(value) {
   return value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '-'
 }

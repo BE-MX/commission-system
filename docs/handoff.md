@@ -13,8 +13,8 @@
 - 上线必须按 `docs/runbook.md` 的“DSH Agent Runtime 灰度与回滚”执行：唯一实例迁移、三只 AI Preset、机器 token hash、Run secret、最小角色权限、内部副驾驶、复购、5% 获客 Shadow 逐层开启。
 - 不改变现有 OpenClaw 正式获客和邮件链路。DSH Shadow 只产生 Artifact；复购成果只有人工接受且原行动仍 pending 才投影。止损优先关 Profile/Runtime flag，保留 118 数据结构和审计记录。
 - 2026-08-20 对抗性复审已清除 P0/P1：Run Token 绑定 attempt/lease、Worker runtime 绑定、独立租约回收、递归成果 Schema 与本 Run evidence ledger、客户委托范围、跨 owner 写权限、硬步骤/时长/Token 预算、无 usage/断流保守计费、Shadow best-effort 以及复购刷新去重均有回归测试。后续又补齐多成果决策锁、Web peer fail-close、角色快照、工具结果哈希、MCP `ok:false` 业务失败不得进入成功证据账本、定量结论逐条引用和本地 Session 90 天留存清理。
-- 管理员可用 `/api/agent-runtime/evaluations/readiness` 汇总 30/200/50 业务门槛；当前没有生产样本，必须保持 Shadow，不能把真实 Runtime E2E 通过等同于业务灰度完成。
-- 最终验证：Agent Runtime/MCP 46 项、DSH Worker 15 项、调度器 15 项、Agent/权限前端 10 项及真实 rc8 Runtime E2E 1 项通过；前端生产构建与后端 861 路由导入通过；后端全量 2,780 通过、8 项既有环境/基线失败，前端全量 327 通过、7 项既有断言失败。Alembic 唯一 head 为 `118_agent_runtime`；Feature Flag 仍全关，未做生产部署。
+- 管理员可在任务中心使用版本化 30 题目录，从自身客户数据范围选真实客户并启动正式评测；后端按题校验客户雷达/订单权限及真实数据，Session+Run 原子创建，题目/客户/契约 cohort 冻结并去重统计。Profile 或模型 Preset 变更后不混算旧样本。`/api/agent-runtime/evaluations/readiness` 汇总 30/200/50 业务门槛；当前没有生产样本，必须保持 Shadow，不能把真实 Runtime E2E 通过等同于业务灰度完成。
+- 最终验证：Agent Runtime/调度器定向 70 项、DSH Worker 15 项及真实 rc8 Runtime E2E 1 项通过；前端生产构建与后端 864 路由导入通过；后端全量 2,789 通过、8 项既有环境/基线失败，前端全量 328 通过、7 项既有断言失败。Alembic 唯一 head 为 `118_agent_runtime`；当前环境没有 MySQL/Docker，真实 InnoDB 双连接并发仍列为上线前验证项。Feature Flag 仍全关，未做生产部署。
 
 ## 项目概况
 

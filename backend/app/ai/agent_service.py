@@ -164,6 +164,19 @@ def _load_openai_preset(db: Session, profile: AgentProfile):
     return preset, provider
 
 
+def _verify_evaluation_contract(db: Session, run: AgentRun) -> None:
+    expected = str((run.input_json or {}).get("evaluation_contract_hash") or "")
+    if not expected:
+        return
+    # Imported lazily to keep the generic model gateway independent for all
+    # ordinary Runs while making formal evaluation cohorts fail closed.
+    from app.agent_runtime.evaluation_contract import copilot_contract
+
+    current = copilot_contract(db)
+    if not current["ready"] or current["hash"] != expected:
+        raise ConflictError("标准评测契约已变更，该 Run 不得继续执行或混入当前 cohort")
+
+
 def _reserve_budget(
     db: Session, run: AgentRun, profile: AgentProfile,
     *, messages: list[dict], tools: list[dict], desired_output_tokens: int,
@@ -269,6 +282,7 @@ def prepare_agent_chat(
     remaining_runtime = _remaining_runtime_seconds(db, run, profile)
     effective_tools = _filter_tools(profile, claims, tools, tool_choice)
     preset, provider = _load_openai_preset(db, profile)
+    _verify_evaluation_contract(db, run)
     governed_messages = [
         {"role": "system", "content": profile.system_prompt},
         *(item for item in messages if item.get("role") != "system"),

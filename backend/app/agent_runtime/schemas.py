@@ -39,6 +39,11 @@ class FeedbackInput(BaseModel):
     note: str | None = Field(None, max_length=1000)
 
 
+class CopilotEvaluationRunCreate(BaseModel):
+    customer_profile_id: int = Field(..., ge=1)
+    idempotency_key: str = Field(..., min_length=8, max_length=128)
+
+
 class ArtifactDecisionInput(BaseModel):
     note: str | None = Field(None, max_length=1000)
 

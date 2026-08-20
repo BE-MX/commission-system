@@ -188,6 +188,6 @@ Worker API：
 仓库固定 `dsh-v0.1.0-rc.8` / `141eb6fef83422698aef7a981029e843e8161534`；已从该提交构建 rc8 SDK 与
 macOS arm64 Runtime wheel，并通过本地真实二进制 E2E：DSH 模型请求、Streamable HTTP MCP 调用、工具结果回灌、
 结构化成果与 JSONL Session 落盘全部贯通。生产仍必须在受审查的 manylinux 2.28 构建环境生成 Linux wheel、核对
-SHA-256/许可证并安装。`GET /api/agent-runtime/evaluations/readiness` 以保守口径汇总 30/200/50 门槛：副驾驶只统计
-`customer_order_copilot_v1` 套件内不同 `evaluation_case_id`，影子对照只统计不同 `search_job`；业务样本未达标时
+SHA-256/许可证并安装。任务中心已提供版本化 30 题目录、按账号数据范围选择真实客户、权限/数据预检、二次确认启动和执行进度。正式题只使用当前工具可证明的画像、订单摘要、复购周期和行动数据；契约 hash 固定完整题库与评分规则、Profile/实际 Prompt/工具/Schema/限额、模型 Preset、Provider 非密钥运行参数及全局硬限额，变更后自动切换空 cohort 并拒绝旧 Run 继续调用模型。`GET /api/agent-runtime/evaluations/readiness` 以保守口径汇总 30/200/50 门槛：副驾驶只统计
+`customer_order_copilot_v1` 当前 cohort 内不同 `evaluation_case_id`，影子对照只统计不同 `search_job`；业务样本未达标时
 固定保持 Shadow，不得把“开发完成”标记成“业务灰度完成”。

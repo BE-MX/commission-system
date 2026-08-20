@@ -21,6 +21,9 @@
 | POST | `/sessions/{id}/runs` | `agent_runtime:write/admin` | 以用户级 `idempotency_key` 创建 Run，冻结权限与业务上下文 |
 | GET | `/tasks?status=&runtime=&page=&page_size=` | `agent_runtime:read/write/admin` | 任务中心服务端分页 |
 | GET | `/evaluations/readiness` | `agent_runtime:admin` | 只读汇总 30/200/50 灰度验收门槛；副驾驶仅统计 `evaluation_suite=customer_order_copilot_v1` 下不同 `evaluation_case_id`，Shadow 仅按不同 `search_job` 计数；未达标时固定返回 `remain_in_shadow` |
+| GET | `/evaluations/copilot/cases` | `agent_runtime:admin` | 返回版本化的 30 题标准题库、数据要求、`cohort_id/evaluation_contract_hash` 和每题执行进度；Profile/Prompt/工具/Schema/限额或模型 Preset 变更会自动切换空 cohort |
+| GET | `/evaluations/copilot/customers?keyword=&limit=` | `agent_runtime:admin` + 客户雷达权限 | 在当前用户数据范围内搜索真实客户；无 `manage` 时只返回本人负责客户 |
+| POST | `/evaluations/copilot/cases/{case_id}/runs` | `agent_runtime:admin/invoke` + 客户雷达权限；订单题另需 `order_intelligence:read` | body `{customer_profile_id,idempotency_key}`；服务端先校验权限、画像事件/行动、OKKI 绑定、有效订单/复购周期，再原子创建 Session+Run 并冻结题目、客户与评测契约 |
 | GET | `/runs/{id}` | 同上 | Run 计量与结构化 Artifact |
 | GET | `/runs/{id}/events?after_sequence=&limit=` | 同上 | 追加式脱敏事件；非管理员看不到 admin 事件 |
 | GET | `/runs/{id}/stream?after_sequence=` | 同上 | SSE 事件流；需要可附带 Authorization 的客户端 |

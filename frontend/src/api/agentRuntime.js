@@ -5,6 +5,14 @@ const quiet = { showLoading: false }
 export const getAgentRuntimeConfig = () => agentRuntimeClient.get('/config', quiet)
 export const getAgentProfiles = () => agentRuntimeClient.get('/profiles', quiet)
 export const getAgentTasks = params => agentRuntimeClient.get('/tasks', { params, showLoading: false })
+export const getAgentEvaluationReadiness = () => agentRuntimeClient.get('/evaluations/readiness', quiet)
+export const getCopilotEvaluationCases = () => agentRuntimeClient.get('/evaluations/copilot/cases', quiet)
+export const searchCopilotEvaluationCustomers = params => (
+  agentRuntimeClient.get('/evaluations/copilot/customers', { params, showLoading: false })
+)
+export const startCopilotEvaluationCase = (caseId, data) => (
+  agentRuntimeClient.post(`/evaluations/copilot/cases/${caseId}/runs`, data)
+)
 export const getAgentRun = runId => agentRuntimeClient.get(`/runs/${runId}`, quiet)
 export const getAgentEvents = (runId, params = {}) => (
   agentRuntimeClient.get(`/runs/${runId}/events`, { params, showLoading: false })

@@ -50,6 +50,7 @@ def profile_feature_enabled(profile_key: str) -> bool:
 
 def create_session(
     db: Session, data: dict, *, user_id: int, system_initiated: bool = False,
+    commit: bool = True,
 ) -> AgentSession:
     profile = get_active_profile(db, data["profile_key"])
     if not system_initiated and profile.mode != "interactive":
@@ -65,8 +66,11 @@ def create_session(
         status="active",
     )
     db.add(row)
-    db.commit()
-    db.refresh(row)
+    if commit:
+        db.commit()
+        db.refresh(row)
+    else:
+        db.flush()
     return row
 
 
@@ -106,6 +110,7 @@ def create_run(
     permissions: list[str],
     roles: list[str],
     system_initiated: bool = False,
+    evaluation_initiated: bool = False,
 ) -> AgentRun:
     effective_permissions = set(permissions)
     if "super_admin" in set(roles):
@@ -115,6 +120,10 @@ def create_run(
         effective_permissions.add("agent_runtime:invoke")
     if "agent_runtime:invoke" not in effective_permissions:
         raise ForbiddenError("创建 Agent 任务需要 Agent 调用权限")
+    run_input = data.get("input") or {}
+    reserved_evaluation_fields = {"evaluation_suite", "evaluation_case_id"}
+    if reserved_evaluation_fields & set(run_input) and not evaluation_initiated:
+        raise ForbiddenError("标准评测标记只能由方舟评测流程生成")
     # Serialize all create decisions for this owner, then lock the session.
     # This closes both the per-user and per-session count-then-insert races on MySQL.
     if db.query(ArkUser).filter(ArkUser.id == user_id).with_for_update().one_or_none() is None:
@@ -137,7 +146,7 @@ def create_run(
             raise ForbiddenError("用户入口只能启动交互式 Agent 任务")
         if profile.profile_key == "customer_order_copilot":
             ref_id = str(data.get("business_ref_id") or "")
-            input_profile_id = str((data.get("input") or {}).get("customer_profile_id") or "")
+            input_profile_id = str(run_input.get("customer_profile_id") or "")
             if (
                 session.context_type != "customer"
                 or data.get("business_ref_type") != "customer_profile"

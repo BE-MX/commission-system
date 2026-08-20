@@ -12,8 +12,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.agent_runtime import artifact_service, evaluation_service, maintenance, models, router, seed, service, worker_service
+from app.agent_runtime import artifact_service, evaluation_contract, evaluation_service, maintenance, models, router, seed, service, worker_service
 from app.agent_runtime import orchestration
+from app.agent_runtime.evaluation_cases import COPILOT_EVALUATION_CASES
 from app.agent_runtime.dependencies import allowed_worker_runtimes, require_agent_worker, verify_worker_token
 from app.agent_runtime.errors import ConflictError, ForbiddenError, LeaseError, NotFoundError
 from app.agent_runtime.schemas import ArtifactInput, WorkerEventInput
@@ -79,6 +80,7 @@ def db():
     session.commit()
     session.expunge_all()
     seed.seed_default_profiles(session)
+    _seed_agent_preset(session)
     try:
         yield session
     finally:
@@ -322,11 +324,14 @@ def test_worker_lease_event_replay_and_complete_artifact(db):
 
 
 def test_readiness_report_counts_only_reviewed_and_evidence_bound_copilot_runs(db):
+    contract_hash = evaluation_service.copilot_contract(db)["hash"]
     run = _run(db, _session(db))
     run.input_json = {
         **(run.input_json or {}),
+        "question": COPILOT_EVALUATION_CASES[0]["question"],
         "evaluation_suite": "customer_order_copilot_v1",
         "evaluation_case_id": "standard-01",
+        "evaluation_contract_hash": contract_hash,
     }
     db.commit()
     claim = _claim(db)
@@ -348,6 +353,11 @@ def test_readiness_report_counts_only_reviewed_and_evidence_bound_copilot_runs(d
     assert report["copilot"] == {
         "completed_standard_runs": 1,
         "evaluation_suite": "customer_order_copilot_v1",
+        "cohort_id": f"customer_order_copilot_v1:{contract_hash[:12]}",
+        "evaluation_contract_hash": contract_hash,
+        "contract_ready": True,
+        "profile_version": 1,
+        "model": "deepseek-chat",
         "reviewed_runs": 1,
         "directly_usable_runs": 1,
         "direct_use_rate": 1.0,
@@ -359,13 +369,16 @@ def test_readiness_report_counts_only_reviewed_and_evidence_bound_copilot_runs(d
 
 
 def test_readiness_does_not_count_unlabelled_or_duplicate_copilot_cases(db):
+    contract_hash = evaluation_service.copilot_contract(db)["hash"]
     first = _run(db, _session(db), key="eval-first")
     second = _run(db, _session(db), key="eval-second")
     for run in (first, second):
         run.input_json = {
             **(run.input_json or {}),
+            "question": COPILOT_EVALUATION_CASES[0]["question"],
             "evaluation_suite": "customer_order_copilot_v1",
             "evaluation_case_id": "standard-01",
+            "evaluation_contract_hash": contract_hash,
         }
     db.commit()
     for run in (first, second):
@@ -392,6 +405,327 @@ def test_readiness_does_not_count_unlabelled_or_duplicate_copilot_cases(db):
     report = evaluation_service.readiness_report(db)
     assert report["copilot"]["completed_standard_runs"] == 1
     assert report["copilot"]["directly_usable_runs"] == 0
+
+
+def test_copilot_evaluation_catalog_is_versioned_and_complete(db):
+    catalog = evaluation_service.copilot_case_catalog(db)
+    assert catalog["suite"] == "customer_order_copilot_v1"
+    assert catalog["total_cases"] == 30
+    assert catalog["completed_cases"] == 0
+    assert [item["case_id"] for item in catalog["cases"]] == [
+        f"standard-{index:02d}" for index in range(1, 31)
+    ]
+    assert len({item["question"] for item in COPILOT_EVALUATION_CASES}) == 30
+    assert all(item["rubric"] and item["requires"] for item in catalog["cases"])
+    assert catalog["contract_ready"] is True
+    assert catalog["profile_version"] == 1
+    assert catalog["model"] == "deepseek-chat"
+    assert not {
+        "shipment", "pricing", "knowledge",
+    } & {requirement for item in catalog["cases"] for requirement in item["requires"]}
+
+
+def test_generic_run_cannot_forge_reserved_evaluation_markers(db):
+    session = _session(db)
+    with pytest.raises(ForbiddenError, match="标准评测标记"):
+        service.create_run(
+            db,
+            session.id,
+            {
+                "idempotency_key": "forged-evaluation-0001",
+                "input": {
+                    "question": COPILOT_EVALUATION_CASES[0]["question"],
+                    "customer_profile_id": 1,
+                    "evaluation_suite": "customer_order_copilot_v1",
+                    "evaluation_case_id": "standard-01",
+                },
+                "trigger_type": "user",
+                "business_ref_type": "customer_profile",
+                "business_ref_id": "1",
+            },
+            user_id=7,
+            permissions=["agent_runtime:write", "agent_runtime:invoke"],
+            roles=["sales"],
+        )
+
+
+def test_admin_can_start_idempotent_copilot_evaluation_for_scoped_customer(db):
+    customer = CustomerProfile(
+        customer_name="Acme Buyer",
+        customer_company="Acme Hair",
+        customer_external_id="C-EVAL-1",
+        owner_user_id=7,
+        owner_resolve_status="resolved",
+        priority_score=80,
+        total_events=3,
+        first_seen_at=datetime.utcnow(),
+        status="active",
+    )
+    other = CustomerProfile(
+        customer_name="Other Buyer",
+        customer_external_id="C-EVAL-2",
+        owner_user_id=8,
+        owner_resolve_status="resolved",
+        priority_score=20,
+        first_seen_at=datetime.utcnow(),
+        status="active",
+    )
+    db.add_all([customer, other])
+    db.commit()
+    permissions = {"agent_runtime:admin", "agent_runtime:invoke", "customer_radar:read"}
+    customers = evaluation_service.search_copilot_evaluation_customers(
+        db, user_id=7, permissions=permissions, roles=set(), keyword="Acme", limit=20,
+    )
+    assert customers == [{
+        "id": customer.id,
+        "customer_name": "Acme Buyer",
+        "customer_company": "Acme Hair",
+        "customer_region": None,
+        "priority_score": 80,
+        "has_order_binding": True,
+        "has_profile_events": True,
+    }]
+    run = evaluation_service.start_copilot_evaluation_case(
+        db,
+        case_id="standard-01",
+        customer_profile_id=customer.id,
+        idempotency_key="evaluation-request-0001",
+        user_id=7,
+        permissions=permissions,
+        roles=set(),
+    )
+    assert run.input_json == {
+        "question": COPILOT_EVALUATION_CASES[0]["question"],
+        "customer_profile_id": customer.id,
+        "evaluation_suite": "customer_order_copilot_v1",
+        "evaluation_case_id": "standard-01",
+        "evaluation_contract_hash": evaluation_service.copilot_contract(db)["hash"],
+    }
+    replay = evaluation_service.start_copilot_evaluation_case(
+        db,
+        case_id="standard-01",
+        customer_profile_id=customer.id,
+        idempotency_key="evaluation-request-0001",
+        user_id=7,
+        permissions=permissions,
+        roles=set(),
+    )
+    assert replay.id == run.id
+    assert db.query(models.AgentSession).count() == 1
+    catalog = evaluation_service.copilot_case_catalog(db)
+    first = catalog["cases"][0]
+    assert first["attempt_count"] == 1
+    assert first["latest_run_id"] == run.id
+    assert first["latest_status"] == "queued"
+
+    with pytest.raises(NotFoundError, match="数据范围"):
+        evaluation_service.start_copilot_evaluation_case(
+            db,
+            case_id="standard-02",
+            customer_profile_id=other.id,
+            idempotency_key="evaluation-request-0002",
+            user_id=7,
+            permissions=permissions,
+            roles=set(),
+        )
+    with pytest.raises(ConflictError, match="不同标准评测"):
+        evaluation_service.start_copilot_evaluation_case(
+            db,
+            case_id="standard-02",
+            customer_profile_id=customer.id,
+            idempotency_key="evaluation-request-0001",
+            user_id=7,
+            permissions=permissions,
+            roles=set(),
+        )
+
+
+def test_copilot_evaluation_requires_customer_data_permission(db):
+    with pytest.raises(ForbiddenError, match="客户经营雷达"):
+        evaluation_service.search_copilot_evaluation_customers(
+            db,
+            user_id=7,
+            permissions={"agent_runtime:admin", "agent_runtime:invoke"},
+            roles=set(),
+            keyword=None,
+            limit=20,
+        )
+
+
+def test_copilot_evaluation_preflight_rejects_missing_case_permission_and_data(db):
+    customer = CustomerProfile(
+        customer_name="Preflight Buyer",
+        customer_external_id=None,
+        owner_user_id=7,
+        owner_resolve_status="resolved",
+        priority_score=50,
+        first_seen_at=datetime.utcnow(),
+        status="active",
+    )
+    db.add(customer)
+    db.commit()
+    base = {"agent_runtime:admin", "agent_runtime:invoke", "customer_radar:read"}
+    with pytest.raises(ForbiddenError, match="订单经营分析"):
+        evaluation_service.start_copilot_evaluation_case(
+            db,
+            case_id="standard-06",
+            customer_profile_id=customer.id,
+            idempotency_key="evaluation-preflight-0001",
+            user_id=7,
+            permissions=base,
+            roles=set(),
+        )
+    with pytest.raises(ConflictError, match="OKKI"):
+        evaluation_service.start_copilot_evaluation_case(
+            db,
+            case_id="standard-06",
+            customer_profile_id=customer.id,
+            idempotency_key="evaluation-preflight-0002",
+            user_id=7,
+            permissions={*base, "order_intelligence:read"},
+            roles=set(),
+        )
+
+
+def test_copilot_evaluation_preflight_rejects_insufficient_repurchase_cycle(db, monkeypatch):
+    customer = CustomerProfile(
+        customer_name="Short Cycle Buyer",
+        customer_external_id="C-SHORT-CYCLE",
+        owner_user_id=7,
+        owner_resolve_status="resolved",
+        priority_score=50,
+        first_seen_at=datetime.utcnow(),
+        status="active",
+    )
+    db.add(customer)
+    db.commit()
+    monkeypatch.setattr(evaluation_service.order_service, "resolve_scope", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(evaluation_service.order_service, "get_customer_order_timeline", lambda *_args, **_kwargs: {
+        "summary": {"orders": 1},
+    })
+    monkeypatch.setattr(evaluation_service.order_service, "get_customer_repurchase_analysis", lambda *_args, **_kwargs: {
+        "found": True,
+        "analysis": {"typical_cycle_days": None, "risk_status": "insufficient_data"},
+    })
+    with pytest.raises(ConflictError, match="可计算复购周期"):
+        evaluation_service.start_copilot_evaluation_case(
+            db,
+            case_id="standard-11",
+            customer_profile_id=customer.id,
+            idempotency_key="evaluation-preflight-cycle-0001",
+            user_id=7,
+            permissions={
+                "agent_runtime:admin", "agent_runtime:invoke",
+                "customer_radar:read", "order_intelligence:read",
+            },
+            roles=set(),
+        )
+
+
+def test_copilot_evaluation_failure_rolls_back_session_and_run_atomically(db, monkeypatch):
+    customer = CustomerProfile(
+        customer_name="Race Buyer",
+        customer_external_id="C-EVAL-RACE",
+        owner_user_id=7,
+        owner_resolve_status="resolved",
+        priority_score=50,
+        first_seen_at=datetime.utcnow(),
+        status="active",
+    )
+    db.add(customer)
+    db.commit()
+    permissions = {"agent_runtime:admin", "agent_runtime:invoke", "customer_radar:read"}
+    def fail_create_run(*_args, **_kwargs):
+        raise ConflictError("simulated create failure")
+
+    monkeypatch.setattr(evaluation_service.runtime_service, "create_run", fail_create_run)
+    with pytest.raises(ConflictError, match="simulated"):
+        evaluation_service.start_copilot_evaluation_case(
+            db,
+            case_id="standard-01",
+            customer_profile_id=customer.id,
+            idempotency_key="evaluation-race-0001",
+            user_id=7,
+            permissions=permissions,
+            roles=set(),
+        )
+    assert db.query(models.AgentSession).count() == 0
+    assert db.query(models.AgentRun).count() == 0
+
+
+def test_copilot_evaluation_contract_change_starts_a_new_empty_cohort(db):
+    customer = CustomerProfile(
+        customer_name="Contract Buyer",
+        owner_user_id=7,
+        owner_resolve_status="resolved",
+        priority_score=50,
+        first_seen_at=datetime.utcnow(),
+        status="active",
+    )
+    db.add(customer)
+    db.commit()
+    permissions = {"agent_runtime:admin", "agent_runtime:invoke", "customer_radar:read"}
+    run = evaluation_service.start_copilot_evaluation_case(
+        db,
+        case_id="standard-01",
+        customer_profile_id=customer.id,
+        idempotency_key="evaluation-contract-0001",
+        user_id=7,
+        permissions=permissions,
+        roles=set(),
+    )
+    first = evaluation_service.copilot_case_catalog(db)
+    assert first["cases"][0]["latest_run_id"] == run.id
+
+    preset = db.query(AiPreset).filter(AiPreset.preset_name == "agent_runtime_copilot").one()
+    preset.model = "deepseek-chat-v2"
+    db.commit()
+    second = evaluation_service.copilot_case_catalog(db)
+    assert second["cohort_id"] != first["cohort_id"]
+    assert second["completed_cases"] == 0
+    assert second["cases"][0]["latest_run_id"] is None
+    claim = _claim(db)
+    _start(db, run.id, claim)
+    with pytest.raises(ConflictError, match="评测契约已变更"):
+        agent_service.prepare_agent_chat(
+            db,
+            claims=decode_run_token(claim["run_token"]),
+            messages=[{"role": "user", "content": "evaluate"}],
+            tools=[],
+        )
+
+
+def test_copilot_contract_hash_covers_cases_prompt_provider_and_global_limits(db, monkeypatch):
+    original = evaluation_contract.copilot_contract(db)["hash"]
+    cases = list(evaluation_contract.COPILOT_EVALUATION_CASES)
+    cases[0] = {**cases[0], "question": cases[0]["question"] + "契约变更"}
+    monkeypatch.setattr(evaluation_contract, "COPILOT_EVALUATION_CASES", tuple(cases))
+    changed_case = evaluation_contract.copilot_contract(db)["hash"]
+    assert changed_case != original
+    monkeypatch.setattr(evaluation_contract, "COPILOT_EVALUATION_CASES", tuple(COPILOT_EVALUATION_CASES))
+
+    profile = service.get_active_profile(db, "customer_order_copilot")
+    profile.system_prompt += "\n新约束"
+    db.commit()
+    changed_prompt = evaluation_contract.copilot_contract(db)["hash"]
+    assert changed_prompt != original
+
+    profile.system_prompt = profile.system_prompt.removesuffix("\n新约束")
+    preset = db.query(AiPreset).filter(AiPreset.preset_name == "agent_runtime_copilot").one()
+    provider = db.get(AiProvider, preset.provider_id)
+    provider.timeout_sec += 1
+    provider.extra_headers = {"X-Routing-Tier": "evaluation"}
+    db.commit()
+    changed_provider = evaluation_contract.copilot_contract(db)["hash"]
+    assert changed_provider != original
+
+    monkeypatch.setattr(
+        service.get_settings(),
+        "AGENT_RUNTIME_MAX_STEPS_PER_RUN",
+        service.get_settings().AGENT_RUNTIME_MAX_STEPS_PER_RUN + 1,
+    )
+    changed_limit = evaluation_contract.copilot_contract(db)["hash"]
+    assert changed_limit != changed_provider
 
 
 def test_worker_completion_enforces_profile_artifact_type_and_count(db):
@@ -680,6 +1014,10 @@ def test_user_router_permission_envelope(db, runtime_settings):
     readiness = client.get("/api/agent-runtime/evaluations/readiness")
     assert readiness.status_code == 200
     assert readiness.json()["data"]["promotion_decision"] == "remain_in_shadow"
+    cases = client.get("/api/agent-runtime/evaluations/copilot/cases")
+    assert cases.status_code == 200
+    assert cases.json()["data"]["total_cases"] == 30
+    assert client.get("/api/agent-runtime/evaluations/copilot/customers").status_code == 403
 
 
 def test_read_all_does_not_grant_cross_owner_mutation():
@@ -712,6 +1050,8 @@ def test_worker_token_is_instance_bound(runtime_settings):
 
 
 def _seed_agent_preset(db):
+    if db.query(AiPreset).filter(AiPreset.preset_name == "agent_runtime_copilot").count():
+        return
     provider = AiProvider(
         name="agent-test-provider",
         provider_type="direct",
