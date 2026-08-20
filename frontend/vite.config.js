@@ -1,11 +1,16 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import legacy from '@vitejs/plugin-legacy'
 import path from 'path'
 import fs from 'fs'
 
 export default defineConfig({
   plugins: [
     vue(),
+    legacy({
+      // PDA 为 Android 6.0.1：同时输出 SystemJS 兼容包，避免老 Chrome 直接白屏。
+      targets: ['Android >= 6', 'Chrome >= 49'],
+    }),
     {
       // public/<dir>/ 静态页（/m/、/caigoujie/ 等）的目录 URL：Vite dev 不解析
       // 目录 index.html，会回退成 SPA 壳导致白屏。这里对齐生产 Nginx / 8001

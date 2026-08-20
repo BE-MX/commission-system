@@ -29,6 +29,11 @@ export const publicStockClient = createApiClient({ baseURL: '/api/public/stock',
 export const trainingClient = createApiClient({ baseURL: '/api/training', timeout: 30000 }) // 培训速递（AI 提炼单独放长超时）
 export const dashboardClient = createApiClient({ baseURL: '/api/dashboard', timeout: 15000 }) // 工作台布局配置
 export const domesticClient = createApiClient({ baseURL: '/api/domestic', timeout: 60000 }) // 内贸订单（图片上传放宽超时）
+export const miniDomesticClient = createApiClient({
+  baseURL: '/api/mini/domestic',
+  timeout: 30000,
+  redirectOnUnauthorized: false,
+}) // 手机浏览器报工：复用小程序报工契约，401 由页面保留深链处理
 export const cardClient = createApiClient({ baseURL: '/api/card', timeout: 60000 }) // 名片管家（业务员电子名片）
 export const designImageClient = createApiClient({ baseURL: '/api/design-image', timeout: 300000 })
 export const customerImageClient = createApiClient({

@@ -1,5 +1,5 @@
 // 内贸订单 API（响应拦截器已解包信封，调用方取数用 res.data）
-import { domesticClient } from './clients'
+import { domesticClient, miniDomesticClient } from './clients'
 
 // 与后端 constants.py 同一套口径
 export const PRODUCT_TYPE_LABELS = { cap: '头套', piece: '发片' }
@@ -154,6 +154,44 @@ export function submitReport(data) {
 
 export function revokeReport(logId) {
   return domesticClient.post('/reports/revoke', { log_id: logId })
+}
+
+// ── 手机浏览器报工（与小程序 / PDA 共用同一后端契约） ──
+export function getMobileReportingHistory() {
+  return miniDomesticClient.get('/history', { showLoading: false, suppressToast: true })
+}
+
+export function scanMobileDomesticCode(payload) {
+  const route = payload.type === 'unit' ? 'unit-scan' : 'scan'
+  return miniDomesticClient.get(`/${route}/${payload.id}`, {
+    params: { sign: payload.sign },
+    showLoading: false,
+    suppressToast: true,
+  })
+}
+
+export function submitMobileDomesticReport(data) {
+  return miniDomesticClient.post('/scan/submit', data, {
+    showLoading: false,
+    suppressToast: true,
+  })
+}
+
+export function revokeMobileDomesticReport(logId) {
+  return miniDomesticClient.post('/scan/revoke', { log_id: logId }, {
+    showLoading: false,
+    suppressToast: true,
+  })
+}
+
+export async function fetchMobileReportingImage(path) {
+  const encoded = String(path).split('/').map(encodeURIComponent).join('/')
+  const res = await miniDomesticClient.get(`/images/${encoded}`, {
+    responseType: 'blob',
+    showLoading: false,
+    suppressToast: true,
+  })
+  return URL.createObjectURL(res.data)
 }
 
 // ── 参考图 ──
