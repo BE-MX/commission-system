@@ -223,16 +223,21 @@ def test_track_scope_read_all_sees_any(db):
 
 # ── B1 回归锁:工具 inputSchema 不得含 ctx(必须靠 Context 注解注入)──────
 
+EXPECTED_MCP_TOOLS = {
+    "record_shipment", "track_shipment", "list_my_shipments",
+    "list_asset_taxonomy", "search_assets",
+    "search_knowledge", "get_knowledge_document",
+    "get_standard_price", "find_product",
+    "get_customer_profile", "get_customer_order_timeline",
+    "get_customer_repurchase_analysis", "get_customer_actions",
+    "get_order_intelligence_snapshot", "get_search_job_context",
+    "search_web", "fetch_public_page",
+}
+
 async def test_tools_schema_excludes_ctx():
     from app.mcp.server import mcp
     tools = await mcp.list_tools()
-    assert {t.name for t in tools} == {
-        "record_shipment", "track_shipment", "list_my_shipments",
-        "list_asset_taxonomy", "search_assets",
-        "search_knowledge", "get_knowledge_document",
-        "get_standard_price",
-        "find_product",
-    }
+    assert {t.name for t in tools} == EXPECTED_MCP_TOOLS
     for t in tools:
         schema = t.inputSchema or {}
         props = schema.get("properties", {})
@@ -285,13 +290,7 @@ async def test_http_end_to_end_tools_and_auth():
 
             rl = await c.post("/mcp/", json={"jsonrpc": "2.0", "id": 2, "method": "tools/list"}, headers=H2)
             names = {t["name"] for t in (_sse_or_json(rl).get("result") or {}).get("tools", [])}
-            assert names == {
-                "record_shipment", "track_shipment", "list_my_shipments",
-                "list_asset_taxonomy", "search_assets",
-                "search_knowledge", "get_knowledge_document",
-                "get_standard_price",
-                "find_product",
-            }
+            assert names == EXPECTED_MCP_TOOLS
 
             rc = await c.post("/mcp/", json={
                 "jsonrpc": "2.0", "id": 3, "method": "tools/call",

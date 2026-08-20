@@ -261,13 +261,14 @@ class Settings(BaseSettings):
     AGENT_RUNTIME_PUBLIC_FETCH_MAX_BYTES: _PositiveInt = 1_000_000
     AGENT_RUNTIME_WORKER_LEASE_SECONDS: _PositiveInt = 180
     AGENT_RUNTIME_MAX_ACTIVE_PER_USER: _PositiveInt = 2
-    AGENT_RUNTIME_MAX_STEPS_PER_RUN: _PositiveInt = 12
-    AGENT_RUNTIME_RUN_TIMEOUT_SECONDS: _PositiveInt = 300
+    AGENT_RUNTIME_MAX_STEPS_PER_RUN: _PositiveInt = 20
+    AGENT_RUNTIME_RUN_TIMEOUT_SECONDS: _PositiveInt = 600
     AGENT_RUNTIME_RAW_EVENT_RETENTION_DAYS: _PositiveInt = 90
     AGENT_RUNTIME_SHADOW_SAMPLE_RATE: float = 0.0
     AGENT_RUNTIME_DAILY_TOKEN_BUDGET: _PositiveInt = 200_000
     # JSON: {"worker-instance-id": ["<sha256-of-bearer-token>"]}
     AGENT_RUNTIME_WORKER_TOKEN_HASHES_JSON: str = ""
+    AGENT_RUNTIME_WORKER_RUNTIMES_JSON: str = ""
     # Run 委托 JWT 独立密钥；开发留空时回退 JWT_SECRET_KEY，生产必须显式配置。
     AGENT_RUNTIME_RUN_TOKEN_SECRET: str = ""
 
@@ -330,6 +331,25 @@ class Settings(BaseSettings):
                 raise ValueError("Worker token hash 必须是 64 位 SHA-256 十六进制字符串")
         return raw
 
+    @field_validator("AGENT_RUNTIME_WORKER_RUNTIMES_JSON")
+    @classmethod
+    def _validate_agent_worker_runtimes(cls, value: str) -> str:
+        raw = str(value or "").strip()
+        if not raw:
+            return ""
+        try:
+            mapping = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ValueError("AGENT_RUNTIME_WORKER_RUNTIMES_JSON 必须是 JSON 对象") from exc
+        allowed = {"dsh", "openclaw", "native"}
+        if not isinstance(mapping, dict) or any(
+            not worker_id or not isinstance(runtimes, list) or not runtimes
+            or any(item not in allowed for item in runtimes)
+            for worker_id, runtimes in mapping.items()
+        ):
+            raise ValueError("Worker runtime 映射必须是非空 dsh/openclaw/native 数组")
+        return raw
+
     @model_validator(mode="after")
     def _validate_production(self):
         """production 模式启动前校验关键安全配置"""
@@ -372,6 +392,8 @@ class Settings(BaseSettings):
             errors.append("启用 AGENT_RUNTIME 时必须配置至少 32 字符的独立 AGENT_RUNTIME_RUN_TOKEN_SECRET")
         if self.AGENT_RUNTIME_DSH_ENABLED and self.AGENT_RUNTIME_WORKER_TOKEN_HASHES_JSON in {"", "{}"}:
             errors.append("启用 DSH Runtime 时必须配置 AGENT_RUNTIME_WORKER_TOKEN_HASHES_JSON")
+        if self.AGENT_RUNTIME_DSH_ENABLED and self.AGENT_RUNTIME_WORKER_RUNTIMES_JSON in {"", "{}"}:
+            errors.append("启用 DSH Runtime 时必须配置 AGENT_RUNTIME_WORKER_RUNTIMES_JSON")
         if self.AGENT_RUNTIME_SALES_SHADOW_ENABLED and not self.AGENT_RUNTIME_BRAVE_SEARCH_API_KEY:
             errors.append("启用获客 Shadow 时必须配置 AGENT_RUNTIME_BRAVE_SEARCH_API_KEY")
         if errors:

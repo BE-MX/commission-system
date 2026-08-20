@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 
 from app.agent_runtime import presenters, worker_service
-from app.agent_runtime.dependencies import require_agent_worker
+from app.agent_runtime.dependencies import allowed_worker_runtimes, require_agent_worker
 from app.agent_runtime.errors import AgentRuntimeError
 from app.agent_runtime.schemas import (
     WorkerClaimInput,
@@ -42,7 +42,10 @@ def claim_agent_run(
 ):
     """Machine-only: atomically claim one compatible Run with a short lease."""
     _require_matching_worker(worker_id, payload.worker_id)
-    data = _call(worker_service.claim_run, db, worker_id=worker_id, runtimes=payload.runtimes)
+    runtimes = sorted(set(payload.runtimes) & allowed_worker_runtimes(worker_id))
+    if not runtimes:
+        raise HTTPException(status_code=403, detail="Worker 凭证未授权所请求的 Runtime")
+    data = _call(worker_service.claim_run, db, worker_id=worker_id, runtimes=runtimes)
     return ok(data, "暂无可领取任务" if data is None else "任务已领取")
 
 

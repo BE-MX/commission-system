@@ -1384,7 +1384,7 @@ Journal 判读和重跑规则：`intent` 与 `syscall_returned` 都只是操作�
 2. 在方舟 AI 管理中确认 `agent_runtime_copilot`、`agent_runtime_repurchase`、`agent_runtime_sales_shadow` 均绑定启用的 `direct/openai` Provider；模型真实 API Key 只保存在方舟。
 3. 从官方固定 tag `dsh-v0.1.0-rc.8`（commit `141eb6fef83422698aef7a981029e843e8161534`）构建并审查 SDK/runtime wheels。官方 PyPI 与 GitHub Release 尚无可安装 wheel 时，不得改用浮动 master 或伪造依赖。
 4. 创建 Linux 低权限用户与 `/var/lib/leshine-ark-dsh/sessions`（0700），按 `services/dsh-agent-worker/.env.example` 配置 `/etc/leshine/ark-dsh-worker.env`（0600），安装 `deploy/systemd/leshine-ark-dsh-worker.service`。
-5. 为 Worker 生成独立随机 token；明文只放 Worker，方舟 `AGENT_RUNTIME_WORKER_TOKEN_HASHES_JSON` 只放 SHA-256。另配至少 32 字符的独立 `AGENT_RUNTIME_RUN_TOKEN_SECRET`。
+5. 为 Worker 生成独立随机 token；明文只放 Worker，方舟 `AGENT_RUNTIME_WORKER_TOKEN_HASHES_JSON` 只放 SHA-256；并用 `AGENT_RUNTIME_WORKER_RUNTIMES_JSON={"dsh-worker-01":["dsh"]}` 将机器凭证绑定到 Runtime。另配至少 32 字符的独立 `AGENT_RUNTIME_RUN_TOKEN_SECRET`。
 6. 给内部试点角色最小权限：任务页面 `agent_runtime:read/write`，执行 `agent_runtime:invoke`，再叠加场景所需 `customer_radar:read`、`order_intelligence:read` 或 `sales_automation:read`。`read_all/admin` 不授普通业务员。
 
 ### 开关顺序

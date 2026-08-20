@@ -29,7 +29,7 @@
       <div class="metric-card"><span>执行步数</span><strong>{{ run.steps_used }}</strong></div>
       <div class="metric-card"><span>输入 Token</span><strong>{{ number(run.prompt_tokens) }}</strong></div>
       <div class="metric-card"><span>输出 Token</span><strong>{{ number(run.completion_tokens) }}</strong></div>
-      <div class="metric-card"><span>估算成本</span><strong>${{ run.cost_usd }}</strong></div>
+      <div class="metric-card"><span>成本</span><strong>{{ run.cost_status === 'unpriced' ? '未计价' : `$${run.cost_usd}` }}</strong></div>
     </section>
 
     <section v-if="artifacts.length" class="content-card">

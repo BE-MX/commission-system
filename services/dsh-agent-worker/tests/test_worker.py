@@ -4,7 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from ark_dsh_worker.adapter import AdapterResult
+from ark_dsh_worker.adapter import AdapterResult, DshSdkAdapter, DshUnavailableError
+from ark_dsh_worker import adapter as adapter_module
 from ark_dsh_worker.config import ConfigError, WorkerConfig
 from ark_dsh_worker.events import EventNormalizer
 from ark_dsh_worker.runner import Worker
@@ -132,3 +133,57 @@ def test_cordis_composition_has_no_local_execution_tools():
     forbidden = ("tool-bash", "tool-jobs", "fs-local", "str-replace-editor", "agent-team")
     assert all(name not in text for name in forbidden)
     assert "dsh-mcp-client" in text
+
+
+def test_sdk_preflight_fails_before_worker_can_claim(tmp_path, monkeypatch):
+    def missing(_name):
+        raise adapter_module.metadata.PackageNotFoundError
+
+    monkeypatch.setattr(adapter_module.metadata, "version", missing)
+    with pytest.raises(DshUnavailableError, match="尚未安装"):
+        DshSdkAdapter(_config(tmp_path)).ensure_available()
+
+
+def test_worker_stops_when_profile_step_limit_is_exceeded(tmp_path):
+    class TooManyStepsAdapter:
+        def run(self, _context, _token, on_notification):
+            for seq in (1, 2):
+                on_notification(SimpleNamespace(
+                    method="session.event",
+                    payload={"sessionId": "s1", "event": {
+                        "type": "step/start", "seq": seq, "data": {"turn": 1, "step": seq},
+                    }},
+                ))
+            return AdapterResult("never", "{}", "completed")
+
+    client = FakeClient()
+    worker = Worker(_config(tmp_path), client, TooManyStepsAdapter())
+    assert worker.run_once() is True
+    assert client.completed is None
+    assert client.failed["code"] == "DSH_EXECUTION_FAILED"
+
+
+def test_adapter_exports_the_validated_session_root(tmp_path, monkeypatch):
+    captured = {}
+
+    class FakeHarness:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def run(self, *_args, **_kwargs):
+            return SimpleNamespace(final_response="{}", finish_reason="completed")
+
+    adapter = DshSdkAdapter(_config(tmp_path))
+    monkeypatch.setattr(adapter, "_sdk", lambda: FakeHarness)
+    adapter.run({
+        "run": {"id": 1, "input": {}, "business_ref_type": "customer", "business_ref_id": "1"},
+        "session": {"id": 1},
+        "profile": {"model": "deepseek-chat", "system_prompt": "facts", "limits": {}, "output_schema": {}},
+    }, "run.jwt.token", lambda _event: None)
+    assert captured["env"]["DSH_SESSION_ROOT"] == str(tmp_path)

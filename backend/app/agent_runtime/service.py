@@ -7,10 +7,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.agent_runtime.contracts import ACTIVE_RUN_STATUSES, RunStatus
-from app.agent_runtime.errors import ConflictError, NotFoundError
+from app.agent_runtime.errors import ConflictError, ForbiddenError, NotFoundError
 from app.agent_runtime.event_service import append_event, content_hash
 from app.agent_runtime.models import AgentArtifact, AgentEvent, AgentProfile, AgentRun, AgentSession
 from app.agent_runtime.state_machine import require_transition
+from app.auth.models import ArkUser
 from app.core.config import get_settings
 
 
@@ -47,8 +48,12 @@ def profile_feature_enabled(profile_key: str) -> bool:
     return bool(settings.AGENT_RUNTIME_ENABLED and gates.get(profile_key, False))
 
 
-def create_session(db: Session, data: dict, *, user_id: int) -> AgentSession:
+def create_session(
+    db: Session, data: dict, *, user_id: int, system_initiated: bool = False,
+) -> AgentSession:
     profile = get_active_profile(db, data["profile_key"])
+    if not system_initiated and profile.mode != "interactive":
+        raise ForbiddenError("定时与影子 Agent 只能由方舟服务端编排启动")
     if not profile_feature_enabled(profile.profile_key):
         raise ConflictError("该 Agent 业务场景尚未开启灰度")
     row = AgentSession(
@@ -100,8 +105,26 @@ def create_run(
     user_id: int,
     permissions: list[str],
     roles: list[str],
+    system_initiated: bool = False,
 ) -> AgentRun:
-    session = _session_for_user(db, session_id, user_id, False)
+    effective_permissions = set(permissions)
+    if "super_admin" in set(roles):
+        # Auth treats super_admin as a permission bypass. Materialize the one
+        # delegated capability the Run Token must carry so downstream checks
+        # stay explicit and the immutable snapshot remains self-contained.
+        effective_permissions.add("agent_runtime:invoke")
+    if "agent_runtime:invoke" not in effective_permissions:
+        raise ForbiddenError("创建 Agent 任务需要 Agent 调用权限")
+    # Serialize all create decisions for this owner, then lock the session.
+    # This closes both the per-user and per-session count-then-insert races on MySQL.
+    if db.query(ArkUser).filter(ArkUser.id == user_id).with_for_update().one_or_none() is None:
+        raise NotFoundError("Agent 任务所有者不存在")
+    session = db.query(AgentSession).filter(
+        AgentSession.id == session_id,
+        AgentSession.owner_user_id == user_id,
+    ).with_for_update().one_or_none()
+    if session is None:
+        raise NotFoundError("Agent 会话不存在")
     if session.status != "active":
         raise ConflictError("归档会话不能创建新任务")
     profile = db.query(AgentProfile).filter(AgentProfile.id == session.profile_id).one()
@@ -109,6 +132,20 @@ def create_run(
         raise ConflictError("该 Agent Profile 已停用")
     if not profile_feature_enabled(profile.profile_key):
         raise ConflictError("该 Agent 业务场景尚未开启灰度")
+    if not system_initiated:
+        if profile.mode != "interactive" or data.get("trigger_type", "user") != "user":
+            raise ForbiddenError("用户入口只能启动交互式 Agent 任务")
+        if profile.profile_key == "customer_order_copilot":
+            ref_id = str(data.get("business_ref_id") or "")
+            input_profile_id = str((data.get("input") or {}).get("customer_profile_id") or "")
+            if (
+                session.context_type != "customer"
+                or data.get("business_ref_type") != "customer_profile"
+                or not ref_id
+                or ref_id != str(session.context_id)
+                or input_profile_id != ref_id
+            ):
+                raise ForbiddenError("客户经营副驾驶必须绑定会话中的同一客户画像")
     existing = db.query(AgentRun).filter(
         AgentRun.owner_user_id == user_id,
         AgentRun.idempotency_key == data["idempotency_key"],
@@ -134,7 +171,7 @@ def create_run(
 
     context_snapshot = {
         "owner_user_id": user_id,
-        "permissions": sorted(set(permissions)),
+        "permissions": sorted(effective_permissions),
         "roles": sorted(set(roles)),
         "profile_key": profile.profile_key,
         "profile_version": profile.version,

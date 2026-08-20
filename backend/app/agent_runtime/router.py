@@ -44,6 +44,10 @@ def _is_admin(payload: dict) -> bool:
     return "super_admin" in payload.get("roles", []) or "agent_runtime:admin" in _permissions(payload)
 
 
+def _can_manage_all(payload: dict) -> bool:
+    return _is_admin(payload)
+
+
 def _call(fn, *args, **kwargs):
     try:
         return fn(*args, **kwargs)
@@ -176,7 +180,7 @@ def cancel_agent_run(
         db,
         run_id,
         user_id=_user_id(current_user),
-        can_read_all=_can_read_all(current_user),
+        can_read_all=_can_manage_all(current_user),
     )
     return ok(presenters.run_view(row), "取消请求已记录")
 
@@ -287,7 +291,7 @@ def accept_agent_artifact(
         user_id=_user_id(current_user),
         decision="accepted",
         note=payload.note,
-        can_read_all=_can_read_all(current_user),
+        can_read_all=_can_manage_all(current_user),
     )
     return ok(presenters.artifact_view(row), "成果已接受")
 
@@ -306,7 +310,7 @@ def reject_agent_artifact(
         user_id=_user_id(current_user),
         decision="rejected",
         note=payload.note,
-        can_read_all=_can_read_all(current_user),
+        can_read_all=_can_manage_all(current_user),
     )
     return ok(presenters.artifact_view(row), "成果已拒绝")
 
@@ -323,7 +327,7 @@ def submit_agent_feedback(
         db,
         run_id,
         user_id=_user_id(current_user),
-        can_read_all=_can_read_all(current_user),
+        can_read_all=_can_manage_all(current_user),
         rating=payload.rating,
         note=payload.note,
     )

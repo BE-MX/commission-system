@@ -225,7 +225,6 @@ def generate_daily_actions(
     existing_rows = db.query(CustomerAction).filter(
         CustomerAction.owner_user_id == owner_user_id,
         CustomerAction.action_date == action_date,
-        CustomerAction.source_type == "rule",
     ).order_by(CustomerAction.id.desc()).all()
     existing_by_profile = {}
     for existing in existing_rows:
@@ -302,7 +301,7 @@ def generate_daily_actions(
             )
             db.add(action)
             existing_by_profile[profile.id] = action
-        elif action.action_status == "pending":
+        elif action.action_status == "pending" and action.source_type == "rule":
             action.thread_group = thread
             action.thread_priority = thread_info["priority_label"]
             action.action_reason = reason

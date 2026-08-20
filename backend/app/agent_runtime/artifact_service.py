@@ -3,50 +3,73 @@
 from datetime import datetime
 from typing import Any
 
+from jsonschema import Draft202012Validator
 from sqlalchemy.orm import Session
 
 from app.agent_runtime.errors import ConflictError, NotFoundError
 from app.agent_runtime.event_service import append_event, content_hash
-from app.agent_runtime.models import AgentArtifact, AgentProfile, AgentRun
+from app.agent_runtime.models import AgentArtifact, AgentEvent, AgentProfile, AgentRun
 
 
-_JSON_TYPES = {
-    "object": dict,
-    "array": list,
-    "string": str,
-    "number": (int, float),
-    "integer": int,
-    "boolean": bool,
-}
+def _raw_tool_name(value: str) -> str:
+    if value.startswith("mcp__") and "__" in value[5:]:
+        return value.split("__", 2)[-1]
+    return value
 
 
-def validate_output(content: dict[str, Any], evidence: list[dict], profile: AgentProfile) -> list[str]:
+def _successful_tool_calls(db: Session, run_id: int) -> dict[str, str]:
+    rows = db.query(AgentEvent).filter(
+        AgentEvent.run_id == run_id,
+        AgentEvent.event_type.in_(["tool.requested", "tool.succeeded"]),
+    ).order_by(AgentEvent.sequence_no).all()
+    requested: dict[str, str] = {}
+    succeeded: set[str] = set()
+    for row in rows:
+        payload = row.payload_json or {}
+        call_id = str(payload.get("call_id") or "")
+        if not call_id:
+            continue
+        if row.event_type == "tool.requested":
+            requested[call_id] = _raw_tool_name(str(payload.get("tool_name") or ""))
+        else:
+            succeeded.add(call_id)
+    return {call_id: requested[call_id] for call_id in succeeded if call_id in requested}
+
+
+def validate_output(
+    content: dict[str, Any], evidence: list[dict], profile: AgentProfile,
+    *, successful_tool_calls: dict[str, str] | None = None,
+) -> list[str]:
     errors: list[str] = []
     schema = profile.output_schema or {}
-    if schema.get("type") == "object" and not isinstance(content, dict):
-        return ["成果必须是对象"]
-    for key in schema.get("required") or []:
-        if key not in content:
-            errors.append(f"缺少必填字段: {key}")
-    for key, definition in (schema.get("properties") or {}).items():
-        if key not in content:
-            continue
-        expected = _JSON_TYPES.get(definition.get("type"))
-        if expected and not isinstance(content[key], expected):
-            errors.append(f"字段 {key} 类型必须是 {definition['type']}")
-    if schema.get("additionalProperties") is False:
-        unknown = set(content) - set((schema.get("properties") or {}))
-        if unknown:
-            errors.append(f"存在未声明字段: {', '.join(sorted(unknown))}")
+    for error in Draft202012Validator(schema).iter_errors(content):
+        path = ".".join(str(item) for item in error.absolute_path) or "成果"
+        errors.append(f"{path}: {error.message}")
     policy = profile.policy_json or {}
     if policy.get("evidence_required") and not evidence:
         errors.append("该 Profile 要求至少一条证据")
-    for index, item in enumerate(evidence):
-        if not isinstance(item, dict):
-            errors.append(f"第 {index + 1} 条证据必须是对象")
-            continue
-        if not item.get("source") and not item.get("tool_call_id") and not item.get("source_url"):
-            errors.append(f"第 {index + 1} 条证据缺少 source/tool_call_id/source_url")
+    embedded = content.get("evidence")
+    if not isinstance(embedded, list):
+        embedded = content.get("candidates") if isinstance(content.get("candidates"), list) else []
+    evidence_sets = [("证据", evidence)]
+    if embedded != evidence:
+        evidence_sets.append(("成果内证据", embedded))
+    for label, items in evidence_sets:
+        for index, item in enumerate(items):
+            if not isinstance(item, dict):
+                errors.append(f"{label}第 {index + 1} 条必须是对象")
+                continue
+            call_id = str(item.get("tool_call_id") or "")
+            if not call_id:
+                errors.append(f"{label}第 {index + 1} 条缺少 tool_call_id")
+                continue
+            if successful_tool_calls is not None and call_id not in successful_tool_calls:
+                errors.append(f"{label}第 {index + 1} 条未关联本任务成功的工具调用")
+                continue
+            source = str(item.get("source") or "")
+            expected_source = (successful_tool_calls or {}).get(call_id)
+            if source and expected_source and _raw_tool_name(source) != expected_source:
+                errors.append(f"{label}第 {index + 1} 条来源与工具调用不匹配")
     return errors
 
 
@@ -61,7 +84,10 @@ def create_artifact(
     content: dict,
     evidence: list[dict],
 ) -> AgentArtifact:
-    errors = validate_output(content, evidence, profile)
+    errors = validate_output(
+        content, evidence, profile,
+        successful_tool_calls=_successful_tool_calls(db, run.id),
+    )
     if errors:
         raise ConflictError("成果校验失败: " + "; ".join(errors))
     digest = content_hash({"content": content, "evidence": evidence})

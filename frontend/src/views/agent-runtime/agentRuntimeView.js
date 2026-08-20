@@ -2,7 +2,7 @@ export const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled', 'a
 
 export const STATUS_META = {
   queued: { label: '排队中', type: 'info' },
-  claimed: { label: '已领取', type: 'warning' },
+  leased: { label: '已领取', type: 'warning' },
   running: { label: '执行中', type: 'warning' },
   completed: { label: '已完成', type: 'success' },
   failed: { label: '失败', type: 'danger' },

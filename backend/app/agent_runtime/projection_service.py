@@ -45,4 +45,3 @@ def project_accepted_artifact(
     action.policy_version = f"{profile.profile_key}-v{profile.version}"
     action.evidence_status = "valid"
     action.generated_at = datetime.utcnow()
-

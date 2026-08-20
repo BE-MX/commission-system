@@ -31,6 +31,18 @@ def verify_worker_token(worker_id: str, token: str) -> bool:
     return matched
 
 
+def allowed_worker_runtimes(worker_id: str) -> set[str]:
+    raw = str(get_settings().AGENT_RUNTIME_WORKER_RUNTIMES_JSON or "").strip()
+    try:
+        mapping = json.loads(raw) if raw else {}
+    except json.JSONDecodeError:
+        return set()
+    values = mapping.get(worker_id) if isinstance(mapping, dict) else None
+    if not isinstance(values, list):
+        return set()
+    return {item for item in values if item in {"dsh", "openclaw", "native"}}
+
+
 def require_agent_worker(
     authorization: str | None = Header(default=None),
     x_agent_worker_id: str | None = Header(default=None),
@@ -41,4 +53,3 @@ def require_agent_worker(
     if scheme.lower() != "bearer" or not verify_worker_token(worker_id, token):
         raise HTTPException(status_code=401, detail="Agent Worker 凭证无效")
     return worker_id
-

@@ -52,7 +52,19 @@ def _has_perm(user: dict, *codes: str) -> bool:
     return "super_admin" in set(user.get("roles") or []) or bool(set(codes) & set(user.get("permissions") or []))
 
 
+def _require_agent_identity(ctx, db, *, tool_name: str) -> dict:
+    """Agent business tools are callable only inside a governed Run scope."""
+    identity = require_identity(ctx, db, tool_name=tool_name)
+    if not identity.get("_agent_run"):
+        raise MCPAuthError("该工具仅允许受控 Agent Run 调用")
+    return identity
+
+
 def _profile_for_user(db, profile_id: int, user: dict) -> CustomerProfile | None:
+    run_scope = user.get("_agent_run") or {}
+    bound_profile_id = run_scope.get("customer_profile_id")
+    if bound_profile_id is not None and str(bound_profile_id) != str(profile_id):
+        return None
     row = db.query(CustomerProfile).filter(CustomerProfile.id == profile_id).one_or_none()
     if row is None:
         return None
@@ -94,7 +106,7 @@ def register_agent_tools(mcp) -> None:
     async def get_customer_profile(params: CustomerInput, ctx: Context) -> str:
         with _session() as db:
             try:
-                user = require_identity(ctx, db, tool_name="get_customer_profile")
+                user = _require_agent_identity(ctx, db, tool_name="get_customer_profile")
             except MCPAuthError as exc:
                 return _err(str(exc))
             if not _has_perm(user, "customer_radar:read", "customer_radar:write", "customer_radar:manage"):
@@ -131,7 +143,7 @@ def register_agent_tools(mcp) -> None:
     async def get_customer_order_timeline(params: CustomerOrderInput, ctx: Context) -> str:
         with _session() as db:
             try:
-                user = require_identity(ctx, db, tool_name="get_customer_order_timeline")
+                user = _require_agent_identity(ctx, db, tool_name="get_customer_order_timeline")
             except MCPAuthError as exc:
                 return _err(str(exc))
             if not _has_perm(user, "order_intelligence:read", "order_intelligence:read_all"):
@@ -154,7 +166,7 @@ def register_agent_tools(mcp) -> None:
     async def get_customer_repurchase_analysis(params: CustomerOrderInput, ctx: Context) -> str:
         with _session() as db:
             try:
-                user = require_identity(ctx, db, tool_name="get_customer_repurchase_analysis")
+                user = _require_agent_identity(ctx, db, tool_name="get_customer_repurchase_analysis")
             except MCPAuthError as exc:
                 return _err(str(exc))
             if not _has_perm(user, "order_intelligence:read", "order_intelligence:read_all"):
@@ -177,7 +189,7 @@ def register_agent_tools(mcp) -> None:
     async def get_customer_actions(params: CustomerInput, ctx: Context) -> str:
         with _session() as db:
             try:
-                user = require_identity(ctx, db, tool_name="get_customer_actions")
+                user = _require_agent_identity(ctx, db, tool_name="get_customer_actions")
             except MCPAuthError as exc:
                 return _err(str(exc))
             if not _has_perm(user, "customer_radar:read", "customer_radar:write", "customer_radar:manage"):
@@ -203,7 +215,7 @@ def register_agent_tools(mcp) -> None:
     async def get_order_intelligence_snapshot(params: SnapshotInput, ctx: Context) -> str:
         with _session() as db:
             try:
-                user = require_identity(ctx, db, tool_name="get_order_intelligence_snapshot")
+                user = _require_agent_identity(ctx, db, tool_name="get_order_intelligence_snapshot")
             except MCPAuthError as exc:
                 return _err(str(exc))
             if not _has_perm(user, "order_intelligence:read", "order_intelligence:read_all"):
@@ -224,7 +236,7 @@ def register_agent_tools(mcp) -> None:
     async def get_search_job_context(params: SearchJobInput, ctx: Context) -> str:
         with _session() as db:
             try:
-                user = require_identity(ctx, db, tool_name="get_search_job_context")
+                user = _require_agent_identity(ctx, db, tool_name="get_search_job_context")
             except MCPAuthError as exc:
                 return _err(str(exc))
             if not _has_perm(user, "sales_automation:read", "sales_automation:invoke"):
@@ -249,7 +261,7 @@ def register_agent_tools(mcp) -> None:
                 "profile": row.profile_snapshot or {},
                 "output_contract": {
                     "identity": "normalized company website domain",
-                    "required_fields": ["name", "website", "source_url", "captured_at"],
+                    "required_fields": ["name", "website", "source_url", "captured_at", "tool_call_id"],
                     "forbidden": ["invented company", "unsourced claim", "personal email guess"],
                 },
             })

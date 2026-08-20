@@ -46,8 +46,13 @@ def _evidence(content: dict) -> list[dict]:
     candidates = content.get("candidates")
     if isinstance(candidates, list):
         return [
-            {"source_url": item.get("source_url"), "source": "public_web"}
-            for item in candidates if isinstance(item, dict) and item.get("source_url")
+            {
+                "source_url": item.get("source_url"),
+                "source": item.get("source") or "fetch_public_page",
+                "tool_call_id": item.get("tool_call_id"),
+            }
+            for item in candidates
+            if isinstance(item, dict) and item.get("source_url")
         ]
     return []
 
@@ -80,6 +85,10 @@ class Worker:
         lease_token = claim["lease_token"]
         context = self.client.context(run_id, lease_token)
         normalizer = EventNormalizer(run_id, int(claim["next_sequence_no"]))
+        limits = context["profile"].get("limits") or {}
+        max_steps = int(limits.get("max_steps") or 1)
+        timeout_seconds = int(limits.get("timeout_seconds") or 300)
+        deadline = time.monotonic() + timeout_seconds
         start_event = {
             "sequence_no": normalizer.next_sequence,
             "event_id": f"dsh-{run_id}-{normalizer.next_sequence}",
@@ -106,8 +115,12 @@ class Worker:
         def on_notification(notification) -> None:
             if cancelled.is_set():
                 raise RunCancelled("任务已请求取消")
+            if time.monotonic() > deadline:
+                raise ValueError("DSH 执行时间超过 Profile 限制")
             event = normalizer.normalize(notification)
             if event is not None:
+                if normalizer.steps > max_steps:
+                    raise ValueError("DSH 步骤数超过 Profile 限制")
                 response = self.client.events(run_id, lease_token, [event])
                 normalizer.next_sequence = int(response["next_sequence_no"])
 
@@ -118,6 +131,8 @@ class Worker:
             heartbeat.join(timeout=min(self.config.heartbeat_seconds, 5))
         if cancelled.is_set():
             raise RunCancelled("任务已请求取消")
+        if time.monotonic() > deadline:
+            raise ValueError("DSH 执行时间超过 Profile 限制")
         if result.finish_reason != "completed":
             raise ValueError(f"DSH 未正常完成: {result.finish_reason or 'unknown'}")
         content = _parse_artifact(result.final_response)

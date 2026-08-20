@@ -44,6 +44,7 @@ python -m venv /opt/leshine-ark-dsh/.venv
 
 ```text
 AGENT_RUNTIME_WORKER_TOKEN_HASHES_JSON={"dsh-worker-01":["<sha256>"]}
+AGENT_RUNTIME_WORKER_RUNTIMES_JSON={"dsh-worker-01":["dsh"]}
 AGENT_RUNTIME_RUN_TOKEN_SECRET=<独立高熵密钥>
 ```
 

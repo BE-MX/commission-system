@@ -84,6 +84,7 @@ export const PREFIX_LABELS = {
   dingtalk: '钉钉集成',
   mcp: 'MCP 网关',
   operations: '运行与自动化中心',
+  agent_runtime: 'AI Agent 任务中心',
   knowledge: '企业知识库',
   knowledge_ai: '知识库 AI 优化',
   salary: '薪资计算',
@@ -133,8 +134,8 @@ export const PAGE_PARENTS = {
 const ROW_GROUPS = [
   { label: '经营 · 提成与客户', prefixes: ['commission', 'commission_my', 'payment', 'customer', 'sales_automation', 'customer_opportunity', 'customer_radar', 'employee', 'supervisor'] },
   { label: '单据 · 订单与物流', prefixes: [
-    'invoice', 'invoice_price', 'invoice_okki', 'invoice_repair', 'invoice_private_filter', 'festival', 'festival_order', 'order_intelligence',
-    'domestic', 'domestic_quantity_report', 'domestic_unit_report',
+    'invoice', 'invoice_price', 'invoice_okki', 'invoice_repair', 'invoice_private_filter', 'festival', 'festival_order', 'order_intelligence', 'domestic',
+    'domestic_quantity_report', 'domestic_unit_report',
     'aftersales', 'aftersales_analytics', 'tracking',
     'stock', 'stock_daily',
     'production', 'production_product', 'production_dashboard', 'production_route',
@@ -148,7 +149,7 @@ const ROW_GROUPS = [
     'design', 'design_gantt', 'design_my', 'design_stats', 'design_image', 'ai_chat', 'customer_image',
   ] },
   { label: '协作 · 知识与薪资', prefixes: ['knowledge', 'knowledge_ai', 'salary'] },
-  { label: '系统 · 接入与运维', prefixes: ['user', 'role', 'dict', 'ai', 'report', 'governance', 'governance_graph', 'governance_log', 'external_binding', 'whatsapp', 'dingtalk', 'mcp', 'operations'] },
+  { label: '系统 · 接入与运维', prefixes: ['user', 'role', 'dict', 'ai', 'report', 'governance', 'governance_graph', 'governance_log', 'external_binding', 'whatsapp', 'dingtalk', 'mcp', 'operations', 'agent_runtime'] },
 ]
 
 export const MATRIX_COLUMNS = [

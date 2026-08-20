@@ -92,6 +92,8 @@ def resolve_run_token(db: Session, raw_token: str) -> dict:
         or claims.get("session_id") != run.session_id
         or claims.get("profile_key") != profile.profile_key
         or claims.get("runtime") != run.source_runtime
+        or claims.get("attempt_no") != run.attempt_no
+        or claims.get("lease_nonce") != run.lease_token_hash
     ):
         raise MCPAuthError("Agent Run 委托范围与当前任务不匹配")
     if run.status not in {RunStatus.RUNNING.value, RunStatus.WAITING_INPUT.value}:
@@ -103,11 +105,21 @@ def resolve_run_token(db: Session, raw_token: str) -> dict:
 
     current = build_current_user(user)
     delegated_permissions = set(claims.get("permissions") or [])
+    if "agent_runtime:invoke" not in delegated_permissions:
+        raise MCPAuthError("Agent Run 委托令牌缺少 Agent 调用权限")
+    if (
+        "super_admin" not in set(current.get("roles") or [])
+        and "agent_runtime:invoke" not in set(current.get("permissions") or [])
+    ):
+        raise MCPAuthError("当前账号的 Agent 调用权限已被撤销")
     current["permissions"] = sorted(set(current["permissions"]) & delegated_permissions)
     current["_agent_run"] = {
         "run_id": run.id,
         "profile_id": profile.id,
         "tools": list(profile.tool_allowlist or []),
+        "business_ref_type": run.business_ref_type,
+        "business_ref_id": run.business_ref_id,
+        "customer_profile_id": (run.input_json or {}).get("customer_profile_id"),
     }
     if set(claims.get("tools") or []) != set(profile.tool_allowlist or []):
         raise MCPAuthError("Agent Run 工具范围与 Profile 版本不匹配")

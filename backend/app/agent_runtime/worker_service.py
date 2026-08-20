@@ -26,6 +26,39 @@ def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+def _runtime_limits(profile: AgentProfile) -> tuple[int, int]:
+    limits = profile.limits_json or {}
+    settings = get_settings()
+    max_steps = min(
+        int(limits.get("max_steps", settings.AGENT_RUNTIME_MAX_STEPS_PER_RUN)),
+        settings.AGENT_RUNTIME_MAX_STEPS_PER_RUN,
+    )
+    timeout_seconds = min(
+        int(limits.get("timeout_seconds", settings.AGENT_RUNTIME_RUN_TIMEOUT_SECONDS)),
+        settings.AGENT_RUNTIME_RUN_TIMEOUT_SECONDS,
+    )
+    return max_steps, timeout_seconds
+
+
+def _fail_runtime_limit(db: Session, row: AgentRun, message: str) -> None:
+    require_transition(row.status, RunStatus.FAILED)
+    row.status = RunStatus.FAILED.value
+    row.completed_at = _now()
+    row.error_code = "RUN_LIMIT_EXCEEDED"
+    row.error_message = message
+    row.lease_token_hash = None
+    row.lease_expires_at = None
+    append_event(
+        db, row,
+        event_id=f"run-{row.id}-limit-{row.attempt_no}",
+        event_type="run.failed",
+        actor_type="control_plane",
+        payload={"error_code": row.error_code, "message": message},
+        visibility="admin",
+    )
+    db.commit()
+
+
 def reconcile_expired_runs(db: Session, *, limit: int = 100) -> int:
     now = _now()
     rows = db.query(AgentRun).filter(
@@ -35,20 +68,38 @@ def reconcile_expired_runs(db: Session, *, limit: int = 100) -> int:
     ).order_by(AgentRun.lease_expires_at).with_for_update(skip_locked=True).limit(limit).all()
     for row in rows:
         previous_worker = row.claimed_by
-        if row.status == RunStatus.LEASED.value and row.attempt_no < row.max_attempts:
-            require_transition(row.status, RunStatus.QUEUED)
-            row.status = RunStatus.QUEUED.value
-            row.claimed_by = None
-            row.lease_token_hash = None
-            row.lease_expires_at = None
-            append_event(
-                db, row,
-                event_id=f"run-{row.id}-requeued-{row.attempt_no}",
-                event_type="run.requeued",
-                actor_type="control_plane",
-                payload={"expired_worker": previous_worker, "attempt_no": row.attempt_no},
-                visibility="admin",
-            )
+        if row.status == RunStatus.LEASED.value:
+            if row.attempt_no < row.max_attempts:
+                require_transition(row.status, RunStatus.QUEUED)
+                row.status = RunStatus.QUEUED.value
+                row.claimed_by = None
+                row.lease_token_hash = None
+                row.lease_expires_at = None
+                append_event(
+                    db, row,
+                    event_id=f"run-{row.id}-requeued-{row.attempt_no}",
+                    event_type="run.requeued",
+                    actor_type="control_plane",
+                    payload={"expired_worker": previous_worker, "attempt_no": row.attempt_no},
+                    visibility="admin",
+                )
+            else:
+                require_transition(row.status, RunStatus.FAILED)
+                row.status = RunStatus.FAILED.value
+                row.completed_at = now
+                row.error_code = "WORKER_LEASE_EXHAUSTED"
+                row.error_message = "Worker 多次领取后均未开始执行"
+                row.lease_token_hash = None
+                row.lease_expires_at = None
+                append_event(
+                    db, row,
+                    event_id=f"run-{row.id}-lease-exhausted-{row.attempt_no}",
+                    event_type="run.failed",
+                    actor_type="control_plane",
+                    payload={"expired_worker": previous_worker, "attempt_no": row.attempt_no,
+                             "error_code": row.error_code},
+                    visibility="admin",
+                )
         else:
             require_transition(row.status, RunStatus.AMBIGUOUS)
             row.status = RunStatus.AMBIGUOUS.value
@@ -68,6 +119,15 @@ def reconcile_expired_runs(db: Session, *, limit: int = 100) -> int:
     if rows:
         db.flush()
     return len(rows)
+
+
+def reconcile_expired_runs_job() -> int:
+    """Scheduler entry point so stale leases clear even with no live Worker."""
+    from app.core.database import SessionLocal
+    with SessionLocal() as db:
+        count = reconcile_expired_runs(db)
+        db.commit()
+        return count
 
 
 def claim_run(db: Session, *, worker_id: str, runtimes: list[str]) -> dict | None:
@@ -177,6 +237,15 @@ def heartbeat(
     steps_used: int | None,
 ) -> AgentRun:
     row = _leased_run(db, run_id, worker_id=worker_id, lease_token=lease_token)
+    profile = db.query(AgentProfile).filter(AgentProfile.id == row.profile_id).one()
+    max_steps, timeout_seconds = _runtime_limits(profile)
+    effective_steps = steps_used if steps_used is not None else row.steps_used
+    if effective_steps > max_steps:
+        _fail_runtime_limit(db, row, "Agent 步骤数超过 Profile 限制")
+        raise ConflictError("Agent 步骤数超过 Profile 限制")
+    if row.started_at and (_now() - row.started_at).total_seconds() > timeout_seconds:
+        _fail_runtime_limit(db, row, "Agent 执行时间超过 Profile 限制")
+        raise ConflictError("Agent 执行时间超过 Profile 限制")
     if runtime_run_id:
         if row.runtime_run_id and row.runtime_run_id != runtime_run_id:
             raise ConflictError("Runtime Run ID 不能变更")
@@ -325,12 +394,14 @@ def complete_run(
             raise ConflictError("Runtime Run ID 不能变更")
         row.runtime_run_id = runtime_run_id
     limits = profile.limits_json or {}
-    max_steps = min(
-        int(limits.get("max_steps", get_settings().AGENT_RUNTIME_MAX_STEPS_PER_RUN)),
-        get_settings().AGENT_RUNTIME_MAX_STEPS_PER_RUN,
-    )
+    max_steps, timeout_seconds = _runtime_limits(profile)
     if steps_used > max_steps:
         raise ConflictError("Agent 步骤数超过 Profile 限制")
+    if row.started_at and (_now() - row.started_at).total_seconds() > timeout_seconds:
+        raise ConflictError("Agent 执行时间超过 Profile 限制")
+    max_total_tokens = int(limits.get("max_total_tokens") or 0)
+    if max_total_tokens and max(row.prompt_tokens + row.completion_tokens, prompt_tokens + completion_tokens) > max_total_tokens:
+        raise ConflictError("Agent Run Token 预算已用尽")
     require_transition(row.status, RunStatus.COMPLETED)
     row.status = RunStatus.COMPLETED.value
     row.steps_used = steps_used

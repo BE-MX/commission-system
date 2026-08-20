@@ -12,10 +12,11 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     config = WorkerConfig.from_env()
     config.ensure_runtime_dirs()
+    adapter = DshSdkAdapter(config)
+    adapter.ensure_available()
     with ArkClient(config) as client:
-        Worker(config, client, DshSdkAdapter(config)).serve_forever()
+        Worker(config, client, adapter).serve_forever()
 
 
 if __name__ == "__main__":
     main()
-

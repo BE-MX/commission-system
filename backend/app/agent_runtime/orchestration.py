@@ -75,7 +75,7 @@ def enqueue_repurchase_runs(db: Session, *, action_date: date | None = None, lim
                 "title": f"复购行动分析 #{action.id}",
                 "context_type": "customer",
                 "context_id": str(action.profile_id),
-            }, user_id=action.owner_user_id)
+            }, user_id=action.owner_user_id, system_initiated=True)
             service.create_run(db, session.id, {
                 "idempotency_key": f"repurchase-action-{action.id}-{(action.source_fingerprint or 'rule')[:32]}",
                 "input": {
@@ -86,7 +86,8 @@ def enqueue_repurchase_runs(db: Session, *, action_date: date | None = None, lim
                 "trigger_type": "schedule",
                 "business_ref_type": "customer_action",
                 "business_ref_id": str(action.id),
-            }, user_id=action.owner_user_id, permissions=permissions, roles=roles)
+            }, user_id=action.owner_user_id, permissions=permissions, roles=roles,
+                system_initiated=True)
             created += 1
         except ConflictError:
             db.rollback()
@@ -125,15 +126,25 @@ def maybe_enqueue_sales_shadow(db: Session, job: SearchJob, current_user: dict) 
             "title": f"DSH 影子评测：{job.name}",
             "context_type": "search_job",
             "context_id": str(job.id),
-        }, user_id=user_id)
+        }, user_id=user_id, system_initiated=True)
         return service.create_run(db, session.id, {
             "idempotency_key": f"sales-shadow-search-job-{job.id}",
             "input": {"search_job_id": job.id},
             "trigger_type": "shadow",
             "business_ref_type": "search_job",
             "business_ref_id": str(job.id),
-        }, user_id=user_id, permissions=permissions, roles=roles)
+        }, user_id=user_id, permissions=permissions, roles=roles, system_initiated=True)
     except ConflictError:
         db.rollback()
         _cleanup_empty_session(db, session)
+        return None
+    except Exception as exc:  # noqa: BLE001
+        # Shadow evaluation is optional and must never change the success
+        # semantics of the already-committed core SearchJob operation.
+        db.rollback()
+        try:
+            _cleanup_empty_session(db, session)
+        except Exception:  # noqa: BLE001
+            db.rollback()
+        logger.warning("DSH sales shadow enqueue skipped: %s", type(exc).__name__)
         return None

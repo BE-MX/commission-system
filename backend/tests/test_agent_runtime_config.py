@@ -40,3 +40,11 @@ def test_worker_hash_config_accepts_rotation_list():
         ),
     )
     assert "dsh-worker-01" in settings.AGENT_RUNTIME_WORKER_TOKEN_HASHES_JSON
+
+
+def test_worker_runtime_config_rejects_unknown_runtime():
+    with pytest.raises(ValidationError, match="Worker runtime"):
+        Settings(
+            _env_file=None,
+            AGENT_RUNTIME_WORKER_RUNTIMES_JSON='{"dsh-worker-01":["shell"]}',
+        )

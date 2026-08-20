@@ -65,6 +65,13 @@ class WorkerEventInput(BaseModel):
     source_event_ids: list[str] = Field(default_factory=list, max_length=100)
     created_at: datetime | None = None
 
+    @field_validator("raw_payload_cipher")
+    @classmethod
+    def reject_unverified_raw_payload(cls, value: str | None):
+        if value:
+            raise ValueError("原始事件载荷尚未启用服务端认证加密，当前禁止提交")
+        return None
+
 
 class WorkerEventBatch(WorkerLeaseInput):
     events: list[WorkerEventInput] = Field(..., min_length=1, max_length=200)
@@ -104,4 +111,3 @@ class WorkerFailInput(WorkerLeaseInput):
 class WorkerHeartbeatInput(WorkerLeaseInput):
     runtime_run_id: str | None = Field(None, max_length=255)
     steps_used: int | None = Field(None, ge=0)
-

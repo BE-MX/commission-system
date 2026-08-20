@@ -44,6 +44,8 @@ def _err(message: str) -> str:
 def _authorized(ctx, tool_name: str):
     with _session() as db:
         identity = require_identity(ctx, db, tool_name=tool_name)
+        if not identity.get("_agent_run"):
+            raise MCPAuthError("公开网络工具仅允许受控 Agent Run 调用")
         roles = set(identity.get("roles") or [])
         permissions = set(identity.get("permissions") or [])
         if "super_admin" not in roles and not ({"sales_automation:read", "sales_automation:invoke"} & permissions):
@@ -196,4 +198,3 @@ def register_public_web_tools(mcp) -> None:
             "text": text[:params.max_chars],
             "truncated": len(text) > params.max_chars,
         })
-

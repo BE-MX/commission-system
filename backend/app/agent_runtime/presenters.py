@@ -55,7 +55,8 @@ def run_view(row: AgentRun) -> dict:
         "steps_used": row.steps_used,
         "prompt_tokens": row.prompt_tokens,
         "completion_tokens": row.completion_tokens,
-        "cost_usd": str(row.cost_usd or 0),
+        "cost_usd": None if row.source_runtime == "dsh" else str(row.cost_usd or 0),
+        "cost_status": "unpriced" if row.source_runtime == "dsh" else "reported",
         "error_code": row.error_code,
         "error_message": row.error_message,
         "started_at": _iso(row.started_at),
@@ -103,4 +104,3 @@ def artifact_view(row: AgentArtifact) -> dict:
         "business_ref_id": row.business_ref_id,
         "created_at": _iso(row.created_at),
     }
-
