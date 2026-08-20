@@ -196,7 +196,7 @@ def list_okki_department_options(db: Session) -> list[dict]:
 
 
 # kind 派生规则（权限重设计方案）：data=数据范围，read/日报=页面可见，其余=操作级
-_DATA_KIND_CODES = {"tracking:read_all", "commission:self_read", "insight:internal_read", "invoice:read_all", "expo_lead:read_all", "festival_order:read_all", "order_intelligence:read_all", "customer_media_portal:read_all"}
+_DATA_KIND_CODES = {"tracking:read_all", "commission:self_read", "insight:internal_read", "invoice:read_all", "expo_lead:read_all", "festival_order:read_all", "order_intelligence:read_all", "customer_media_portal:read_all", "agent_runtime:read_all"}
 _PAGE_KIND_EXTRA = {"tracking:daily_report"}
 
 
@@ -440,6 +440,12 @@ def seed_role_permissions(db: Session):
         # 运行与自动化中心：读取状态与控制任务严格分离；不提供任意远程命令执行。
         ("operations:read", "operations", "read", "查看运行服务与定时任务状态"),
         ("operations:admin", "operations", "admin", "立即执行、暂停或恢复本实例定时任务"),
+        # AI Agent 任务中心：read_all 仅扩展数据范围，Worker 使用独立机器凭证。
+        ("agent_runtime:read", "agent_runtime", "read", "查看本人 AI Agent 任务"),
+        ("agent_runtime:write", "agent_runtime", "write", "创建、取消和反馈 AI Agent 任务"),
+        ("agent_runtime:read_all", "agent_runtime", "read_all", "查看全部 AI Agent 任务（数据范围）"),
+        ("agent_runtime:invoke", "agent_runtime", "invoke", "调用受控 Agent 模型与工具"),
+        ("agent_runtime:admin", "agent_runtime", "admin", "管理 Agent Profile、运行时与敏感审计"),
         # 薪资计算。write 与 admin 按**爆炸半径**切：改一个人的档案是 write，
         # 改职级表/规则参数会改全员发薪口径，必须 admin。
         ("salary:read",  "salary", "read",  "查看员工档案/规则参数/工资批次"),

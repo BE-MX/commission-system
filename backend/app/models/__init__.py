@@ -75,6 +75,13 @@ from app.customer_media.models import (
     CustomerPortalSession,
     CustomerMediaDownload,
 )
+from app.agent_runtime.models import (
+    AgentProfile,
+    AgentSession,
+    AgentRun,
+    AgentEvent,
+    AgentArtifact,
+)
 
 __all__ = [
     # 提成系统自有表
@@ -159,4 +166,10 @@ __all__ = [
     "CustomerPortalAccount",
     "CustomerPortalSession",
     "CustomerMediaDownload",
+    # AI Agent 控制面
+    "AgentProfile",
+    "AgentSession",
+    "AgentRun",
+    "AgentEvent",
+    "AgentArtifact",
 ]

@@ -246,6 +246,22 @@ class Settings(BaseSettings):
     OPERATIONS_JOB_RUN_RETENTION_DAYS: int = 90
     OPERATIONS_ALERT_TIMEOUT_SECONDS: float = 10.0
 
+    # ── Agent Runtime 控制面 / DSH Worker ─────────────────
+    # 首次部署默认关闭；完成迁移、Worker 凭证与模型网关配置后按 Profile 灰度开启。
+    AGENT_RUNTIME_ENABLED: bool = False
+    AGENT_RUNTIME_DSH_ENABLED: bool = False
+    AGENT_RUNTIME_WORKER_LEASE_SECONDS: _PositiveInt = 180
+    AGENT_RUNTIME_MAX_ACTIVE_PER_USER: _PositiveInt = 2
+    AGENT_RUNTIME_MAX_STEPS_PER_RUN: _PositiveInt = 12
+    AGENT_RUNTIME_RUN_TIMEOUT_SECONDS: _PositiveInt = 300
+    AGENT_RUNTIME_RAW_EVENT_RETENTION_DAYS: _PositiveInt = 90
+    AGENT_RUNTIME_SHADOW_SAMPLE_RATE: float = 0.0
+    AGENT_RUNTIME_DAILY_TOKEN_BUDGET: _PositiveInt = 200_000
+    # JSON: {"worker-instance-id": ["<sha256-of-bearer-token>"]}
+    AGENT_RUNTIME_WORKER_TOKEN_HASHES_JSON: str = ""
+    # Run 委托 JWT 独立密钥；开发留空时回退 JWT_SECRET_KEY，生产必须显式配置。
+    AGENT_RUNTIME_RUN_TOKEN_SECRET: str = ""
+
     # ── 微信小程序 ────────────────────────────────────────
     WX_MINI_APPID: str = ""  # 微信小程序 AppID
     WX_MINI_SECRET: str = ""  # 微信小程序 AppSecret
@@ -302,6 +318,10 @@ class Settings(BaseSettings):
             errors.append("ARK_SALARY_ENCRYPTION_KEY 必须显式配置（薪资身份证/银行卡加密）")
         if not self.ARK_SALARY_HASH_KEY:
             errors.append("ARK_SALARY_HASH_KEY 必须显式配置（薪资 PII 哈希匹配）")
+        if self.AGENT_RUNTIME_ENABLED and not self.AGENT_RUNTIME_RUN_TOKEN_SECRET:
+            errors.append("启用 AGENT_RUNTIME 时必须配置独立 AGENT_RUNTIME_RUN_TOKEN_SECRET")
+        if not 0 <= self.AGENT_RUNTIME_SHADOW_SAMPLE_RATE <= 1:
+            errors.append("AGENT_RUNTIME_SHADOW_SAMPLE_RATE 必须在 0 到 1 之间")
         if errors:
             details = "\n  - ".join(errors)
             raise ValueError(
