@@ -1,6 +1,6 @@
 ---
 name: ark-public-pool-research
-description: Research one Ark OKKI public-pool customer with enterprise-knowledge grounding, staged industry triage, social-first identity verification, evidence-backed deal scoring, and an unsent outreach recommendation. Use for Ark T1/T2/T3 public-pool background checks, customer grading, reactivation judgment, social-media buyer research, or deal-likelihood assessment.
+description: Research one Ark public-pool-style task for an OKKI customer or score-70+ intelligent-acquisition lead with enterprise-knowledge grounding, staged industry triage, social-first identity verification, evidence-backed deal scoring, and an unsent outreach recommendation. Use for Ark T1/T2/T3 public-pool background checks, high-score lead research, customer grading, reactivation judgment, social-media buyer research, or deal-likelihood assessment.
 ---
 
 # Ark Public Pool Research
@@ -10,7 +10,7 @@ Process exactly one Ark public-pool task without inventing identity, contacts, p
 ## Workflow
 
 1. List claimable tasks and claim exactly one.
-2. Read the task context. Treat `trusted_seed` as a lead to verify, never permission to merge a similarly named business.
+2. Read the task context and `research_rules.source_type`. The subject may be an OKKI public-pool customer or an accepted intelligent-acquisition lead with profile score 70 or above. Treat `trusted_seed` as a lead to verify, never permission to merge a similarly named business or accept the discovery score as proof.
 3. Search published enterprise knowledge for target industries, products, advantages, exclusions, and relevant sales experience. Read only useful returned documents. Record only immutable document/revision/version IDs; never copy internal text into the sales result or cite it as a customer fact.
 4. Run the low-cost industry gate using identity anchors and the smallest set of high-value public sources. Classify `core`, `adjacent`, `uncertain`, or `irrelevant`.
 5. Submit the gate with `ark_submit_public_pool_industry_gate`. If it returns `deep_research_authorized=false`, stop immediately; the task is already completed as `gate_only`. Do not collect contacts, relationships, supplier/risk intelligence, qualification dimensions, outreach angles, or a draft.
@@ -20,6 +20,7 @@ Process exactly one Ark public-pool task without inventing identity, contacts, p
    - T1: current operating state, change since historical orders, reactivation trigger, relationship risk.
    - T2: product fit, buyer type, purchasing role, supplier/switch evidence, active business channels.
    - T3: light identity/social verification first; deepen only after a credible business anchor appears. A free email or missing website is not itself a rejection.
+   - Intelligent-acquisition lead: independently validate its website identity, target-industry fit, profile score reasons, buying signals, reachability, risks, and recommended next action using the same structured public-pool output.
 9. Deepen research only when it can change customer grade or next action. Capture activity, classification, commercial signals, risks, contacts, and low-risk verification questions per the framework.
 10. Score only sourced or clearly marked inference. Submit structured research and an optional English opening draft for human review; never send it.
 11. Submit `unverifiable` honestly when identity cannot be established. Use failure only for operational failure.

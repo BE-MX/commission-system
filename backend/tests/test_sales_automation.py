@@ -14,7 +14,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.auth.dependencies import get_current_user
 from app.core.database import Base, get_db
-from app.sales_automation import agent_router, enrichment_service, models, router, service
+from app.sales_automation import agent_router, enrichment_service, models, public_pool_service, router, service
 from app.sales_automation.dependencies import require_sales_agent
 
 
@@ -30,6 +30,10 @@ def db():
         models.SearchJob.__table__,
         models.LeadCompany.__table__,
         models.SearchResult.__table__,
+        models.ResearchSubject.__table__,
+        models.PublicPoolBatch.__table__,
+        models.PublicPoolTask.__table__,
+        models.DealAssessment.__table__,
         models.LeadContact.__table__,
         models.ResearchRun.__table__,
         models.ResearchFact.__table__,
@@ -124,7 +128,10 @@ def test_agent_candidate_ingestion_is_idempotent_and_domain_deduplicated(db):
     first = _ingest(db, job.id, payload, "batch-001", lease)
     second = _ingest(db, job.id, payload, "batch-001", lease)
 
-    assert first == {"received": 1, "created": 1, "updated": 0, "deduplicated": 0}
+    assert first == {
+        "received": 1, "accepted": 1, "created": 1, "updated": 0, "deduplicated": 0,
+        "public_pool_deduplicated": 0, "research_queued": 1, "public_pool_duplicates": [],
+    }
     assert second == first
     leads, total = service.list_leads(db, page=1, page_size=20)
     assert total == 1
@@ -132,6 +139,153 @@ def test_agent_candidate_ingestion_is_idempotent_and_domain_deduplicated(db):
     assert leads[0].match_score > 0
     assert "wig retailer" in leads[0].score_reasons
     assert profile.id == job.profile_id
+    queued = db.query(models.PublicPoolTask).one()
+    subject = db.query(models.ResearchSubject).one()
+    assert queued.status == "pending"
+    assert subject.subject_type == "lead_company"
+    assert subject.linked_company_id == leads[0].id
+
+
+def test_public_pool_domain_match_is_blocked_before_lead_creation(db):
+    service.upsert_profile(db, PROFILE, actor_id=7)
+    job = service.create_search_job(db, {"name": "public duplicate", "target_count": 1}, actor_id=7)
+    lease = _claim(db, job.id)
+    candidate = {
+        "name": "Existing OKKI Customer",
+        "website": "https://www.pool-match.example/about",
+        "country": "United States",
+        "industry": "wig retailer",
+        "source_url": "https://pool-match.example/about",
+        "captured_at": "2026-08-19T00:00:00",
+    }
+    public_match = {
+        "source_customer_id": "OKKI-9001",
+        "display_name": "Existing OKKI Customer",
+        "country": "United States",
+        "primary_email": "buyer@pool-match.example",
+        "email_domain_type": "corporate",
+        "primary_phone": None,
+        "website": "https://pool-match.example",
+        "tier": "T2",
+        "completeness_score": 75,
+        "order_count": 0,
+        "order_amount_usd": 0,
+        "last_order_at": None,
+        "contact_snapshot": {},
+        "source_snapshot": {"company_id": "OKKI-9001", "website": "https://pool-match.example"},
+        "selection_reason": ["current public-pool customer"],
+        "match_basis": "website",
+    }
+    summary = service.ingest_candidates(
+        db, job.id, [candidate], "public-duplicate-1",
+        lease["actor_id"], lease["agent_id"], lease["lease_token"],
+        public_pool_lookup=lambda domain: public_match if domain == "pool-match.example" else None,
+    )
+
+    assert summary["accepted"] == 0
+    assert summary["deduplicated"] == 1
+    assert summary["public_pool_deduplicated"] == 1
+    assert summary["public_pool_duplicates"][0]["source_customer_id"] == "OKKI-9001"
+    assert db.query(models.LeadCompany).count() == 0
+    assert db.query(models.SearchResult).count() == 0
+    subject = db.query(models.ResearchSubject).one()
+    assert subject.source_system == "okki"
+    refreshed = service.get_search_job(db, job.id)
+    assert refreshed.result_count == 0
+    assert refreshed.public_pool_deduplicated_count == 1
+
+
+def test_ingestion_batches_public_pool_identity_lookup_once(db, monkeypatch):
+    service.upsert_profile(db, PROFILE, actor_id=7)
+    job = service.create_search_job(db, {"name": "batch identity", "target_count": 2}, actor_id=7)
+    lease = _claim(db, job.id)
+    calls = []
+
+    class FakeGateway:
+        def __init__(self, _db):
+            pass
+
+        def find_public_customers_by_domains(self, domains):
+            calls.append(domains)
+            return {}
+
+    monkeypatch.setattr(public_pool_service, "BusinessPoolGateway", FakeGateway)
+    summary = _ingest(db, job.id, [
+        {
+            "name": "First Candidate", "website": "https://first.example",
+            "source_url": "https://first.example/about", "captured_at": "2026-08-19T00:00:00",
+        },
+        {
+            "name": "Second Candidate", "website": "https://second.example",
+            "source_url": "https://second.example/about", "captured_at": "2026-08-19T00:00:00",
+        },
+    ], "batch-identity", lease)
+
+    assert summary["accepted"] == 2
+    assert calls == [["first.example", "second.example"]]
+
+
+def test_exact_score_70_queues_public_pool_shaped_research(db):
+    service.upsert_profile(db, PROFILE, actor_id=7)
+    job = service.create_search_job(db, {"name": "score boundary", "target_count": 1}, actor_id=7)
+    lease = _claim(db, job.id)
+    summary = _ingest(db, job.id, [{
+        "name": "Boundary Retailer",
+        "website": "https://score-70.example",
+        "country": "Mexico",
+        "industry": "wig retailer",
+        "description": "Human hair wigs and hair toppers for a wig retailer",
+        "source_url": "https://score-70.example/about",
+        "captured_at": "2026-08-19T00:00:00",
+    }], "score-70", lease)
+
+    company = db.query(models.LeadCompany).one()
+    assert company.match_score == 70
+    assert summary["research_queued"] == 1
+    task = db.query(models.PublicPoolTask).one()
+    subject = db.query(models.ResearchSubject).one()
+    assert task.status == "pending"
+    assert task.tier == "T2"
+    assert subject.source_snapshot["match_score"] == 70
+
+
+def test_later_public_pool_match_blocks_an_existing_candidate_from_approval(db):
+    service.upsert_profile(db, PROFILE, actor_id=7)
+    first_job = service.create_search_job(db, {"name": "first discovery", "target_count": 1}, actor_id=7)
+    first_lease = _claim(db, first_job.id)
+    payload = [{
+        "name": "Later Public Customer",
+        "website": "https://later-public.example",
+        "country": "Mexico",
+        "industry": "other",
+        "source_url": "https://later-public.example/about",
+        "captured_at": "2026-08-19T00:00:00",
+    }]
+    _ingest(db, first_job.id, payload, "first", first_lease)
+    company = db.query(models.LeadCompany).one()
+    assert company.status == "candidate"
+
+    second_job = service.create_search_job(db, {"name": "rediscovery", "target_count": 1}, actor_id=7)
+    second_lease = _claim(db, second_job.id)
+    public_match = {
+        "source_customer_id": "OKKI-9002", "display_name": "Later Public Customer",
+        "country": "Mexico", "primary_email": None, "email_domain_type": "unknown",
+        "primary_phone": None, "website": "https://later-public.example", "tier": "T2",
+        "completeness_score": 50, "order_count": 0, "order_amount_usd": 0,
+        "last_order_at": None, "contact_snapshot": {},
+        "source_snapshot": {"company_id": "OKKI-9002", "website": "https://later-public.example"},
+        "selection_reason": ["current public-pool customer"], "match_basis": "website",
+    }
+    service.ingest_candidates(
+        db, second_job.id, payload, "second",
+        second_lease["actor_id"], second_lease["agent_id"], second_lease["lease_token"],
+        public_pool_lookup=lambda _domain: public_match,
+    )
+
+    db.refresh(company)
+    assert company.status == "duplicate"
+    with pytest.raises(service.ConflictError, match="公海去重"):
+        service.approve_lead(db, company.id, actor_id=7)
 
 
 def test_approve_contact_and_research_require_traceable_evidence(db):
@@ -269,7 +423,10 @@ def test_duplicate_batch_rows_are_stable_with_production_autoflush_disabled(db):
         "source_url": "https://duplicate.example/contact", "captured_at": "2026-08-09T08:10:00+08:00",
     }]
     summary = _ingest(db, job.id, candidates, "duplicates-1", lease)
-    assert summary == {"received": 2, "created": 1, "updated": 0, "deduplicated": 1}
+    assert summary == {
+        "received": 2, "accepted": 1, "created": 1, "updated": 0, "deduplicated": 1,
+        "public_pool_deduplicated": 0, "research_queued": 0, "public_pool_duplicates": [],
+    }
     assert db.query(models.LeadCompany).count() == 1
     result = db.query(models.SearchResult).one()
     assert result.source_url == "https://duplicate.example/contact"
@@ -452,3 +609,14 @@ def test_model_identity_audit_and_user_fk_contract():
     assert fk.ondelete == "SET NULL"
     assert models.SearchJob.profile.property.lazy == "noload"
     assert models.SearchJob.results.property.lazy == "noload"
+
+
+def test_migration_117_tracks_public_pool_deduplication():
+    path = Path(__file__).parents[1] / "alembic/versions/117_sales_pool_dedupe.py"
+    spec = importlib.util.spec_from_file_location("migration_117_sales_pool_dedupe", path)
+    migration = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(migration)
+    assert migration.revision == "117_sales_pool_dedupe"
+    assert migration.down_revision == "116_domestic_order_opt"
+    assert "public_pool_deduplicated_count" in path.read_text(encoding="utf-8")

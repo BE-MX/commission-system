@@ -79,6 +79,7 @@ def _job(row):
         "result_count": row.result_count,
         "created_count": row.created_count,
         "deduplicated_count": row.deduplicated_count,
+        "public_pool_deduplicated_count": row.public_pool_deduplicated_count,
         "attempt_count": row.attempt_count,
         "error_code": row.error_code,
         "error_message": row.error_message,
@@ -98,6 +99,20 @@ def _company(db: Session, row):
         ResearchRun.company_id == row.id,
         ResearchRun.deleted_at.is_(None),
     ).order_by(ResearchRun.created_at.desc()).first()
+    lead_research = db.query(PublicPoolTask, ResearchSubject).join(
+        ResearchSubject, ResearchSubject.id == PublicPoolTask.subject_id,
+    ).filter(
+        ResearchSubject.linked_company_id == row.id,
+        ResearchSubject.subject_type == "lead_company",
+        PublicPoolTask.deleted_at.is_(None),
+        ResearchSubject.deleted_at.is_(None),
+    ).order_by(PublicPoolTask.created_at.desc(), PublicPoolTask.id.desc()).first()
+    duplicate_subject = db.query(ResearchSubject).filter(
+        ResearchSubject.linked_company_id == row.id,
+        ResearchSubject.source_system == "okki",
+        ResearchSubject.deleted_at.is_(None),
+    ).order_by(ResearchSubject.created_at.asc()).first()
+    lead_research_task = lead_research[0] if lead_research is not None else None
     return {
         "id": row.id,
         "name": row.name,
@@ -114,7 +129,11 @@ def _company(db: Session, row):
         "valid_email_count": sum(
             1 for item in contacts if item.email and item.email_status == "valid" and item.verified_at is not None
         ),
-        "research_status": research.status if research else "pending",
+        "research_status": lead_research_task.status if lead_research_task is not None else (research.status if research else "pending"),
+        "research_task_id": lead_research_task.id if lead_research_task is not None else None,
+        "public_pool_duplicate": duplicate_subject is not None,
+        "public_pool_subject_id": duplicate_subject.id if duplicate_subject is not None else None,
+        "public_pool_customer_id": duplicate_subject.source_customer_id if duplicate_subject is not None else None,
         "approved_at": _iso(row.approved_at),
         "created_at": _iso(row.created_at),
         "updated_at": _iso(row.updated_at),
@@ -156,6 +175,9 @@ def _batch(row):
 def _subject(row: ResearchSubject):
     return {
         "id": row.id,
+        "subject_type": row.subject_type,
+        "source_system": row.source_system,
+        "linked_company_id": row.linked_company_id,
         "external_key": row.external_key,
         "source_customer_id": row.source_customer_id,
         "display_name": row.display_name,
@@ -350,6 +372,32 @@ def get_lead(
             "confidence": fact.confidence,
         } for fact in facts],
     }
+    if data["research_task_id"] is None:
+        data["public_pool_research"] = None
+    else:
+        detail = _call(public_pool_service.get_task_detail, db, data["research_task_id"])
+        deep_research = _pool_task(
+            detail["task"], detail["subject"], detail["assessment"], detail["opportunity"],
+        )
+        run = detail["research_run"]
+        deep_research["research"] = None if run is None else {
+            "id": run.id,
+            "summary": run.summary,
+            "outreach_angles": run.outreach_angles or [],
+            "risks": run.risks or [],
+            "provider": run.provider,
+            "model": run.model,
+            "finished_at": _iso(run.finished_at),
+            "facts": [{
+                "id": fact.id,
+                "fact_type": fact.fact_type,
+                "claim": fact.claim,
+                "source_url": fact.source_url,
+                "captured_at": _iso(fact.captured_at),
+                "confidence": fact.confidence,
+            } for fact in detail["facts"]],
+        }
+        data["public_pool_research"] = deep_research
     return ok(data)
 
 

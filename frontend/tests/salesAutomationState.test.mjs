@@ -8,6 +8,7 @@ const clients = read('../src/api/clients.js')
 const api = read('../src/api/salesAutomation.js')
 const jobs = read('../src/views/sales_automation/SearchJobs.vue')
 const leads = read('../src/views/sales_automation/LeadPool.vue')
+const publicPool = read('../src/views/sales_automation/PublicPoolResearch.vue')
 const matrix = read('../src/views/system/composables/usePermissionMatrix.js')
 
 test('intelligent acquisition has one navigation group and three goal pages', () => {
@@ -40,4 +41,13 @@ test('research evidence is rendered as text with source, capture time and confid
   assert.match(leads, /fact\.source_url/)
   assert.match(leads, /fact\.captured_at/)
   assert.match(leads, /fact\.confidence/)
+})
+
+test('public-pool dedupe and score-70 deep research are visible to sales users', () => {
+  assert.match(jobs, /public_pool_deduplicated_count/)
+  assert.match(leads, /公海重复/)
+  assert.match(leads, /public_pool_research/)
+  assert.match(leads, /结构化成交研判/)
+  assert.match(publicPool, /智能获客 70 分以上候选/)
+  assert.match(publicPool, /source_system === 'ark_lead'/)
 })

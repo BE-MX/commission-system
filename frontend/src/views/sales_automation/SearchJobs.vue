@@ -33,6 +33,7 @@
         </el-table-column>
         <el-table-column prop="created_count" label="新客户" min-width="90" />
         <el-table-column prop="deduplicated_count" label="已去重" min-width="90" />
+        <el-table-column prop="public_pool_deduplicated_count" label="公海去重" min-width="100" />
         <el-table-column prop="attempt_count" label="执行次数" min-width="90" />
         <el-table-column label="创建时间" min-width="155">
           <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
@@ -102,7 +103,7 @@ const STATUS_OPTIONS = [
 ]
 const statusMeta = value => STATUS_OPTIONS.find(item => item.value === value) || { label: value || '-', type: 'info' }
 const formatTime = value => value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '-'
-const resultText = row => row.status === 'completed' ? `新增 ${row.created_count}，去重 ${row.deduplicated_count}` : '等待结果'
+const resultText = row => row.status === 'completed' ? `新增 ${row.created_count}，去重 ${row.deduplicated_count}（公海 ${row.public_pool_deduplicated_count || 0}）` : '等待结果'
 
 const {
   loading, list: jobs, total, page, pageSize, searchForm: filters,

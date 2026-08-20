@@ -332,6 +332,7 @@ def ingest_candidates(
     actor_id: int,
     agent_id: str,
     lease_token: str,
+    public_pool_lookup=None,
 ) -> dict:
     if not request_key:
         raise SalesAutomationError("request_key 必填")
@@ -350,14 +351,66 @@ def ingest_candidates(
     if profile is None:
         raise ConflictError("搜索任务引用的获客模型不存在")
 
-    summary = {"received": len(candidates), "created": 0, "updated": 0, "deduplicated": 0}
+    # Local import avoids a module cycle: public_pool_service reuses this module's errors and helpers.
+    from app.sales_automation import public_pool_service
+
+    prepared_candidates = []
     for rank, raw in enumerate(candidates, start=1):
         data = _data(raw)
-        domain = normalize_domain(data.get("website"))
-        source_url = normalize_source_url(data.get("source_url"))
-        captured_at = _datetime(data.get("captured_at"), "captured_at")
-        score, reasons = _score(profile, data)
+        prepared_candidates.append({
+            "rank": rank,
+            "data": data,
+            "domain": normalize_domain(data.get("website")),
+            "source_url": normalize_source_url(data.get("source_url")),
+            "captured_at": _datetime(data.get("captured_at"), "captured_at"),
+            "score_and_reasons": _score(profile, data),
+        })
+    if public_pool_lookup is None:
+        public_pool_matches = public_pool_service.BusinessPoolGateway(db).find_public_customers_by_domains(
+            [item["domain"] for item in prepared_candidates]
+        )
+        lookup = public_pool_matches.get
+    else:
+        lookup = public_pool_lookup
+    batch_results: dict[int, SearchResult] = {}
+    summary = {
+        "received": len(candidates),
+        "accepted": 0,
+        "created": 0,
+        "updated": 0,
+        "deduplicated": 0,
+        "public_pool_deduplicated": 0,
+        "research_queued": 0,
+        "public_pool_duplicates": [],
+    }
+    for prepared in prepared_candidates:
+        rank = prepared["rank"]
+        data = prepared["data"]
+        domain = prepared["domain"]
+        source_url = prepared["source_url"]
+        captured_at = prepared["captured_at"]
+        score, reasons = prepared["score_and_reasons"]
         company = db.query(LeadCompany).filter(LeadCompany.normalized_domain == domain).first()
+        public_pool_candidate = lookup(domain)
+        if public_pool_candidate is not None:
+            if company is not None and company.status == "candidate":
+                company.status = "duplicate"
+                duplicate_reason = f"公海客户去重：OKKI {public_pool_candidate['source_customer_id']}"
+                company.score_reasons = list(dict.fromkeys([*(company.score_reasons or []), duplicate_reason]))
+                company.updated_by = actor_id
+            subject = public_pool_service.record_public_pool_duplicate(
+                db, public_pool_candidate, actor_id, linked_company=company,
+            )
+            summary["deduplicated"] += 1
+            summary["public_pool_deduplicated"] += 1
+            summary["public_pool_duplicates"].append({
+                "domain": domain,
+                "subject_id": subject.id,
+                "source_customer_id": public_pool_candidate["source_customer_id"],
+                "display_name": public_pool_candidate["display_name"],
+                "match_basis": public_pool_candidate.get("match_basis") or "website",
+            })
+            continue
         was_created = company is None
         if company is None:
             candidate_company = LeadCompany(
@@ -393,7 +446,7 @@ def ingest_candidates(
                 company.score_reasons = reasons
             company.updated_by = job.created_by
 
-        existing_result = db.query(SearchResult).filter(
+        existing_result = batch_results.get(company.id) or db.query(SearchResult).filter(
             SearchResult.job_id == job.id,
             SearchResult.company_id == company.id,
         ).first()
@@ -405,6 +458,7 @@ def ingest_candidates(
             existing_result.raw_payload = _json_safe(data)
             existing_result.rank = rank
             existing_result.score = score
+            batch_results[company.id] = existing_result
             summary["deduplicated"] += 1
             continue
         result = SearchResult(
@@ -422,12 +476,20 @@ def ingest_candidates(
         )
         db.add(result)
         db.flush()
+        batch_results[company.id] = result
+        summary["accepted"] += 1
         if not was_created:
             summary["updated"] += 1
+        _task, queued = public_pool_service.queue_high_score_lead_research(
+            db, company, job.id, actor_id,
+        )
+        if queued:
+            summary["research_queued"] += 1
 
-    job.result_count += summary["received"]
+    job.result_count += summary["accepted"]
     job.created_count += summary["created"]
     job.deduplicated_count += summary["deduplicated"]
+    job.public_pool_deduplicated_count += summary["public_pool_deduplicated"]
     receipts[request_key] = {"payload_hash": payload_hash, "summary": summary}
     job.ingestion_receipts = receipts
     db.commit()
@@ -465,6 +527,8 @@ def get_lead(db: Session, company_id: int, *, for_update: bool = False) -> LeadC
 
 def approve_lead(db: Session, company_id: int, actor_id: int) -> LeadCompany:
     company = get_lead(db, company_id)
+    if company.status != "candidate":
+        raise ConflictError("只有待确认且未命中公海去重的客户可以进入开发队列")
     company.status = "approved"
     company.owner_user_id = actor_id
     company.approved_at = _now()

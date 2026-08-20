@@ -311,7 +311,7 @@ PII 密钥 `ARK_SALARY_ENCRYPTION_KEY` / `ARK_SALARY_HASH_KEY` 在 `backend/.env
 主动获客是独立领域，不写入只读 OKKI `lsordertest.customer_info/customer_contacts`，也不复用入站询盘 `ark_customer_opportunities`。候选被人工确认后，后续阶段才允许投影成销售机会。
 
 - `ark_sales_target_profiles`：本公司产品能力、优势、目标国家/行业/角色和排除条件；`profile_key=default` 唯一。
-- `ark_sales_search_jobs`：异步 Agent 任务、冻结画像、补充条件、任务幂等键、批次回执、统计、15 分钟租约和失败原因；只保存 `lease_token_hash`，原始租约只在领取响应中返回一次；状态 `pending/running/completed/failed`。
+- `ark_sales_search_jobs`：异步 Agent 任务、冻结画像、补充条件、任务幂等键、批次回执、统计、15 分钟租约和失败原因；迁移 117 增加 `public_pool_deduplicated_count`，单独记录命中当前 OKKI 公海而被阻止入开发池的候选；只保存 `lease_token_hash`，原始租约只在领取响应中返回一次；状态 `pending/running/completed/failed`。
 - `ark_sales_companies`：候选公司主档；`normalized_domain` 非空唯一，是公司身份真相源，显示名称不参与去重；状态 `candidate/approved/rejected`；确认后 `owner_user_id → ark_users.id SET NULL`。
 - `ark_sales_search_results`：任务与公司多对多来源快照；`(job_id,company_id)` 唯一，保留来源 URL、采集时间、原始载荷、排名和本次评分。
 - `ark_sales_contacts`：公司联系人；`(company_id,identity_key)` 唯一，邮箱优先作为身份，保存 `unknown/valid/risky/invalid` 验证状态及来源证据。
@@ -324,7 +324,7 @@ PII 密钥 `ARK_SALARY_ENCRYPTION_KEY` / `ARK_SALARY_HASH_KEY` 在 `backend/.env
 
 迁移 106 只在方舟库建表；`lsordertest` 仍由 `BusinessPoolGateway` 用只读 SQL 查询，不建立跨库外键，也不回写 OKKI。
 
-- `ark_sales_research_subjects`：统一研究主体。OKKI 客户用 `external_key=okki:{company_id}` 和 `(source_system,source_customer_id)` 双重唯一约束；允许在尚无官网域名时进入背调。保存初筛档位、信息完整度、历史订单汇总和只读来源快照哈希。
+- `ark_sales_research_subjects`：统一研究主体。OKKI 客户用 `external_key=okki:{company_id}`，智能获客高分候选用 `external_key=lead_company:{company_id}`，并由 `(source_system,source_customer_id)` 双重唯一约束；允许在尚无官网域名时进入背调。保存初筛档位、信息完整度、历史订单/画像评分摘要和来源快照哈希。
 - `ark_sales_public_pool_batches`：每日抽样批次。`idempotency_key=日期+策略版本+每档配额`，保存生成时公海审计快照、T1/T2/T3 配额和实际选取数。
 - `ark_sales_public_pool_tasks`：逐客户背调任务。状态 `pending/running/completed/failed/skipped`，具备 15 分钟租约；人工审核状态与 Agent 执行状态分列，确认后可关联 `ark_customer_opportunities`。
 - `ark_sales_public_pool_tasks`：迁移 113 增加 `gate_status` / `gate_snapshot` 两阶段止损；只有行业门控通过才允许昂贵的深入背调，无关客户在门控提交时直接完成。
@@ -332,6 +332,8 @@ PII 密钥 `ARK_SALARY_ENCRYPTION_KEY` / `ARK_SALARY_HASH_KEY` 在 `backend/.env
 - `ark_sales_contacts` / `ark_sales_research_runs`：新增 nullable `subject_id`，并将原 `company_id` 改为 nullable，使无官网的 OKKI 主体也能复用有来源联系人与原子事实模型。两种主体至少命中一种由服务层保证。
 
 T1 = 当前公海且有历史订单；T2 = 无历史订单但有企业邮箱、独立站或非 WhatsApp 业务社媒；T3 = 不满足 T2、但有私人邮箱、电话或 WhatsApp；其余进入冷藏区。每日默认每档选 20 条，其中 16 条按确定性质量排序、最多 4 条固定种子探索，180 天内已进入有效任务的客户不重复抽取。
+
+智能获客候选在创建 `ark_sales_companies` 前，以归一化官网域名（无官网时可用非免费企业邮箱域名）精确查询当前 OKKI 公海，命中即拦截；未命中且画像匹配分 `>=70` 时创建 `lead_company` 研究主体和 T2 形态任务，继续复用 `ark_sales_deal_assessments` 的结构化背调结果。
 
 ## 企业知识库（迁移 101/105/112，2026-08-09 至 2026-08-13）
 
