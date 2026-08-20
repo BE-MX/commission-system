@@ -30,3 +30,4 @@ from app.ai.image_service import (  # noqa: F401
     edit_image,
     generate_image,
 )
+from app.ai.agent_service import prepare_agent_chat  # noqa: F401

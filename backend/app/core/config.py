@@ -291,6 +291,13 @@ class Settings(BaseSettings):
             return [o.strip() for o in v.split(",") if o.strip()]
         return v
 
+    @field_validator("AGENT_RUNTIME_SHADOW_SAMPLE_RATE")
+    @classmethod
+    def _validate_agent_shadow_rate(cls, value: float) -> float:
+        if not 0 <= value <= 1:
+            raise ValueError("AGENT_RUNTIME_SHADOW_SAMPLE_RATE 必须在 0 到 1 之间")
+        return value
+
     @model_validator(mode="after")
     def _validate_production(self):
         """production 模式启动前校验关键安全配置"""
@@ -320,8 +327,6 @@ class Settings(BaseSettings):
             errors.append("ARK_SALARY_HASH_KEY 必须显式配置（薪资 PII 哈希匹配）")
         if self.AGENT_RUNTIME_ENABLED and not self.AGENT_RUNTIME_RUN_TOKEN_SECRET:
             errors.append("启用 AGENT_RUNTIME 时必须配置独立 AGENT_RUNTIME_RUN_TOKEN_SECRET")
-        if not 0 <= self.AGENT_RUNTIME_SHADOW_SAMPLE_RATE <= 1:
-            errors.append("AGENT_RUNTIME_SHADOW_SAMPLE_RATE 必须在 0 到 1 之间")
         if errors:
             details = "\n  - ".join(errors)
             raise ValueError(

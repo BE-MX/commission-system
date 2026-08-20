@@ -2,6 +2,7 @@
 
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -13,13 +14,18 @@ from sqlalchemy.pool import StaticPool
 
 from app.agent_runtime import artifact_service, models, router, seed, service, worker_service
 from app.agent_runtime.dependencies import require_agent_worker, verify_worker_token
-from app.agent_runtime.errors import ConflictError, LeaseError, NotFoundError
+from app.agent_runtime.errors import ConflictError, ForbiddenError, LeaseError, NotFoundError
 from app.agent_runtime.schemas import ArtifactInput, WorkerEventInput
+from app.agent_runtime.token_service import decode_run_token
 from app.auth.dependencies import get_current_user
-from app.auth.models import ArkUser
+from app.auth.models import ArkPermission, ArkRole, ArkRolePermission, ArkUser, ArkUserRole
+from app.ai import agent_service
+from app.ai.models import AiCallLog, AiPreset, AiProvider
 from app.core.database import Base, get_db
 from app.insight import customer_radar_service
 from app.insight.models import CustomerAction, CustomerOpportunity, CustomerProfile
+from app.mcp import auth as mcp_auth
+from app.mcp.models import MCPToken
 
 
 @pytest.fixture()
@@ -31,6 +37,14 @@ def db():
     )
     Base.metadata.create_all(engine, tables=[
         ArkUser.__table__,
+        ArkRole.__table__,
+        ArkPermission.__table__,
+        ArkUserRole.__table__,
+        ArkRolePermission.__table__,
+        AiProvider.__table__,
+        AiPreset.__table__,
+        AiCallLog.__table__,
+        MCPToken.__table__,
         models.AgentProfile.__table__,
         models.AgentSession.__table__,
         models.AgentRun.__table__,
@@ -64,6 +78,7 @@ def runtime_settings(monkeypatch):
         AGENT_RUNTIME_MAX_STEPS_PER_RUN=12,
         AGENT_RUNTIME_RUN_TIMEOUT_SECONDS=300,
         AGENT_RUNTIME_RUN_TOKEN_SECRET="test-run-secret-at-least-32-characters",
+        AGENT_RUNTIME_DAILY_TOKEN_BUDGET=200_000,
         JWT_SECRET_KEY="test-jwt-secret-at-least-32-characters",
         JWT_ALGORITHM="HS256",
         AGENT_RUNTIME_WORKER_TOKEN_HASHES_JSON="",
@@ -74,6 +89,7 @@ def runtime_settings(monkeypatch):
     monkeypatch.setattr(token_service, "get_settings", lambda: settings)
     monkeypatch.setattr(dependencies, "get_settings", lambda: settings)
     monkeypatch.setattr(router, "get_settings", lambda: settings)
+    monkeypatch.setattr(agent_service, "get_settings", lambda: settings)
     return settings
 
 
@@ -340,3 +356,128 @@ def test_worker_token_is_instance_bound(runtime_settings):
     assert verify_worker_token("dsh-worker-01", token)
     assert not verify_worker_token("dsh-worker-02", token)
     assert not verify_worker_token("dsh-worker-01", "wrong-token-with-more-than-24-characters")
+
+
+def _seed_agent_preset(db):
+    provider = AiProvider(
+        name="agent-test-provider",
+        provider_type="direct",
+        api_base="https://models.example/v1",
+        api_type="openai",
+        is_enabled=True,
+        timeout_sec=30,
+    )
+    db.add(provider)
+    db.flush()
+    db.add(AiPreset(
+        preset_name="agent_runtime_copilot",
+        provider_id=provider.id,
+        model="deepseek-chat",
+        system_prompt="",
+        parameters={"temperature": 0.1, "max_tokens": 3000},
+        is_enabled=True,
+    ))
+    db.commit()
+
+
+class _FakeModelResponse:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def raise_for_status(self):
+        return None
+
+    def iter_lines(self):
+        chunks = [
+            {"id": "chat-1", "model": "deepseek-chat", "choices": [{
+                "delta": {"tool_calls": [{"function": {
+                    "name": "mcp__ark__search_knowledge", "arguments": "{}",
+                }}]}, "finish_reason": None,
+            }]},
+            {"id": "chat-1", "model": "deepseek-chat", "choices": [{
+                "delta": {"content": "有证据的结论"}, "finish_reason": "stop",
+            }]},
+            {"id": "chat-1", "choices": [], "usage": {
+                "prompt_tokens": 12, "completion_tokens": 5, "total_tokens": 17,
+            }},
+        ]
+        for chunk in chunks:
+            yield f"data: {json.dumps(chunk, ensure_ascii=False)}"
+            yield ""
+        yield "data: [DONE]"
+        yield ""
+
+
+class _FakeModelClient:
+    def __init__(self, **_kwargs):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def stream(self, *_args, **_kwargs):
+        return _FakeModelResponse()
+
+
+def test_agent_model_gateway_preserves_tool_calls_and_accounts_usage(db, monkeypatch):
+    _seed_agent_preset(db)
+    run = _run(db, _session(db))
+    claim = _claim(db)
+    _start(db, run.id, claim)
+    monkeypatch.setattr(agent_service.httpx, "Client", _FakeModelClient)
+
+    claims = decode_run_token(claim["run_token"])
+    stream, model = agent_service.prepare_agent_chat(
+        db,
+        claims=claims,
+        messages=[{"role": "user", "content": "请查询知识"}],
+        tools=[{"type": "function", "function": {
+            "name": "mcp__ark__search_knowledge", "parameters": {"type": "object"},
+        }}],
+    )
+    raw = b"".join(stream).decode("utf-8")
+    assert model == "deepseek-chat"
+    assert "mcp__ark__search_knowledge" in raw
+    log = db.query(AiCallLog).one()
+    assert log.status == "success"
+    assert log.tokens_used == 17
+    assert "请查询知识" not in log.prompt_snapshot
+    refreshed = db.get(models.AgentRun, run.id)
+    assert (refreshed.prompt_tokens, refreshed.completion_tokens) == (12, 5)
+
+
+def test_agent_model_gateway_rejects_tool_outside_profile(db):
+    _seed_agent_preset(db)
+    run = _run(db, _session(db))
+    claim = _claim(db)
+    _start(db, run.id, claim)
+    claims = decode_run_token(claim["run_token"])
+    with pytest.raises(ForbiddenError, match="record_shipment"):
+        agent_service.prepare_agent_chat(
+            db,
+            claims=claims,
+            messages=[{"role": "user", "content": "越权调用"}],
+            tools=[{"type": "function", "function": {
+                "name": "mcp__ark__record_shipment", "parameters": {"type": "object"},
+            }}],
+        )
+
+
+def test_mcp_run_token_is_bound_to_profile_tool_allowlist(db):
+    run = _run(db, _session(db))
+    claim = _claim(db)
+    _start(db, run.id, claim)
+
+    request = SimpleNamespace(headers={"authorization": f"Bearer {claim['run_token']}"})
+    ctx = SimpleNamespace(request_context=SimpleNamespace(request=request))
+    identity = mcp_auth.require_identity(ctx, db, tool_name="search_knowledge")
+    assert identity["sub"] == "7"
+    assert identity["_agent_run"]["run_id"] == run.id
+    with pytest.raises(mcp_auth.MCPAuthError, match="record_shipment"):
+        mcp_auth.require_identity(ctx, db, tool_name="record_shipment")

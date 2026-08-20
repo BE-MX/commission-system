@@ -14,6 +14,10 @@ from app.auth.models import ArkUser
 from app.auth.service import get_user_roles, get_user_permissions
 from app.auth.utils import hash_token
 from app.mcp.models import MCPToken
+from app.agent_runtime.contracts import RunStatus
+from app.agent_runtime.errors import AgentRuntimeError
+from app.agent_runtime.models import AgentProfile, AgentRun
+from app.agent_runtime.token_service import decode_run_token
 
 logger = logging.getLogger("commission.mcp.auth")
 
@@ -67,6 +71,49 @@ def resolve_token(db: Session, raw_token: str) -> dict:
     return identity
 
 
+def resolve_run_token(db: Session, raw_token: str) -> dict:
+    """Resolve a short-lived Agent Run JWT into a user plus tool scope."""
+    try:
+        claims = decode_run_token(raw_token.strip())
+        run_id = int(claims["run_id"])
+        profile_id = int(claims["profile_id"])
+        user_id = int(claims["sub"])
+    except (AgentRuntimeError, KeyError, TypeError, ValueError) as exc:
+        raise MCPAuthError("Agent Run access token 无效或已过期") from exc
+
+    run = db.query(AgentRun).filter(AgentRun.id == run_id).one_or_none()
+    profile = db.query(AgentProfile).filter(AgentProfile.id == profile_id).one_or_none()
+    user = db.query(ArkUser).filter(ArkUser.id == user_id).one_or_none()
+    if run is None or profile is None or user is None:
+        raise MCPAuthError("Agent Run 委托范围不存在")
+    if (
+        run.profile_id != profile.id
+        or run.owner_user_id != user.id
+        or claims.get("session_id") != run.session_id
+        or claims.get("profile_key") != profile.profile_key
+        or claims.get("runtime") != run.source_runtime
+    ):
+        raise MCPAuthError("Agent Run 委托范围与当前任务不匹配")
+    if run.status not in {RunStatus.RUNNING.value, RunStatus.WAITING_INPUT.value}:
+        raise MCPAuthError("Agent Run 尚未开始或已经结束")
+    if run.cancel_requested or profile.status != "active":
+        raise MCPAuthError("Agent Run 已取消或 Profile 已停用")
+    if run.lease_expires_at is None or run.lease_expires_at <= datetime.utcnow():
+        raise MCPAuthError("Agent Run 租约已过期")
+
+    current = build_current_user(user)
+    delegated_permissions = set(claims.get("permissions") or [])
+    current["permissions"] = sorted(set(current["permissions"]) & delegated_permissions)
+    current["_agent_run"] = {
+        "run_id": run.id,
+        "profile_id": profile.id,
+        "tools": list(profile.tool_allowlist or []),
+    }
+    if set(claims.get("tools") or []) != set(profile.tool_allowlist or []):
+        raise MCPAuthError("Agent Run 工具范围与 Profile 版本不匹配")
+    return current
+
+
 def _extract_bearer_from_ctx(ctx) -> str:
     """从 FastMCP Context 拿 Authorization 头（streamable HTTP 下为 Starlette Request）。"""
     req = getattr(getattr(ctx, "request_context", None), "request", None)
@@ -79,10 +126,20 @@ def _extract_bearer_from_ctx(ctx) -> str:
     return auth
 
 
-def require_identity(ctx, db: Session) -> dict:
+def require_identity(ctx, db: Session, *, tool_name: str | None = None) -> dict:
     """工具内统一入口：读请求头 → resolve_token → current_user dict。
 
     在工具自身的执行上下文里解析（不依赖 contextvar 跨 task 传播），失败抛 MCPAuthError。
     """
     raw = _extract_bearer_from_ctx(ctx)
-    return resolve_token(db, raw)
+    # Personal tokens are opaque; Run Tokens are compact JWTs.  Route by
+    # credential shape so an invalid/expired delegated token never falls back
+    # to the unrelated personal-token error path.
+    identity = resolve_run_token(db, raw) if raw.count(".") == 2 else resolve_token(db, raw)
+    scope = identity.get("_agent_run")
+    if scope is not None:
+        if not tool_name:
+            raise MCPAuthError("Agent 工具调用缺少服务端工具标识")
+        if tool_name not in set(scope.get("tools") or []):
+            raise MCPAuthError(f"Agent Run 无权调用工具 {tool_name}")
+    return identity

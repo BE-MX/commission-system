@@ -652,6 +652,84 @@ def get_customer_profile_analysis(
     return result
 
 
+def get_customer_order_timeline(
+    db: Session,
+    scope: AnalysisScope,
+    company_id: str,
+    date_from: date,
+    date_to: date,
+    *,
+    limit: int = 50,
+) -> dict:
+    """Return a scoped, deterministic order timeline for one OKKI company."""
+    target = str(company_id or "").strip()
+    if not target:
+        raise ValueError("company_id 不能为空")
+    rows = [
+        row for row in _load_orders(db, scope, date_from, date_to)
+        if row["company_id"] == target
+    ]
+    rows.sort(key=lambda item: (item["account_date"], item["order_id"]), reverse=True)
+    visible = rows[:max(1, min(limit, 100))]
+    return {
+        "company_id": target,
+        "customer_name": rows[0]["company_name"] if rows else None,
+        "window": {"date_from": date_from.isoformat(), "date_to": date_to.isoformat()},
+        "summary": {
+            "orders": len(rows),
+            "amount_usd": round(sum(item["amount_usd"] for item in rows), 2),
+            "first_order_date": rows[-1]["account_date"].isoformat() if rows else None,
+            "last_order_date": rows[0]["account_date"].isoformat() if rows else None,
+        },
+        "items": [{
+            "order_id": item["order_id"],
+            "order_no": item["order_no"],
+            "account_date": item["account_date"].isoformat(),
+            "amount_usd": item["amount_usd"],
+            "new_deal": item["new_deal"],
+            "first_return": item["first_return"],
+            "source_category": item["source_category"],
+            "country": item["country"],
+        } for item in visible],
+        "truncated": len(rows) > len(visible),
+        "definition": "仅含当前账号数据范围内的有效 OKKI 订单；排除私人订单和非有效状态订单",
+    }
+
+
+def get_customer_repurchase_analysis(
+    db: Session,
+    scope: AnalysisScope,
+    company_id: str,
+    date_from: date,
+    date_to: date,
+) -> dict:
+    """Return the existing deterministic customer-cycle result for one company."""
+    target = str(company_id or "").strip()
+    if not target:
+        raise ValueError("company_id 不能为空")
+    result = _profile_analysis(db, scope, date_from, date_to, AnalysisFilters())
+    cycle = result["customer_cycles"].get(target)
+    if cycle is None:
+        return {
+            "company_id": target,
+            "found": False,
+            "window": {"date_from": date_from.isoformat(), "date_to": date_to.isoformat()},
+            "reason": "当前数据范围和分析窗口内没有足够的有效订单证据",
+            "definitions": result["definitions"],
+        }
+    item = deepcopy(cycle)
+    for key in ("last_order_date", "expected_order_date", "abnormal_date"):
+        if item.get(key) is not None:
+            item[key] = item[key].isoformat()
+    return {
+        "company_id": target,
+        "found": True,
+        "window": {"date_from": date_from.isoformat(), "date_to": date_to.isoformat()},
+        "analysis": item,
+        "definitions": result["definitions"],
+    }
+
+
 def get_overview(
     db: Session,
     scope: AnalysisScope,

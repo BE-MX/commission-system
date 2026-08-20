@@ -137,7 +137,7 @@ def register_tools(mcp) -> None:
         """
         with _session() as db:
             try:
-                user = require_identity(ctx, db)
+                user = require_identity(ctx, db, tool_name="record_shipment")
             except MCPAuthError as e:
                 return _err(str(e))
 
@@ -222,7 +222,7 @@ def register_tools(mcp) -> None:
         """
         with _session() as db:
             try:
-                user = require_identity(ctx, db)
+                user = require_identity(ctx, db, tool_name="track_shipment")
             except MCPAuthError as e:
                 return _err(str(e))
 
@@ -299,7 +299,7 @@ def register_tools(mcp) -> None:
         """
         with _session() as db:
             try:
-                user = require_identity(ctx, db)
+                user = require_identity(ctx, db, tool_name="list_my_shipments")
             except MCPAuthError as e:
                 return _err(str(e))
 

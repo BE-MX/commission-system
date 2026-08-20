@@ -57,6 +57,7 @@ from app.customer_media.public_router import (
 )
 from app.agent_runtime.router import router as agent_runtime_router
 from app.agent_runtime.worker_router import router as agent_runtime_worker_router
+from app.agent_runtime.model_router import router as agent_runtime_model_router
 
 
 def register_routers(app: FastAPI) -> None:
@@ -117,5 +118,6 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(operations_router, prefix="/api/operations", tags=["运行与自动化中心"])
     app.include_router(agent_runtime_router, prefix="/api/agent-runtime", tags=["AI Agent 任务中心"])
     app.include_router(agent_runtime_worker_router, prefix="/api/agent-runtime/worker", tags=["AI Agent Worker"])
+    app.include_router(agent_runtime_model_router, prefix="/api/agent-runtime/model", tags=["AI Agent 模型网关"])
     app.include_router(customer_media_public_router, prefix="/api/customer-media/portal", tags=["客户拍摄素材门户-公开"])
     app.include_router(customer_media_router, prefix="/api/customer-media", tags=["客户拍摄素材交付"])

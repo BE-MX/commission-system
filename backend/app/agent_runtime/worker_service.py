@@ -15,6 +15,7 @@ from app.agent_runtime.schemas import ArtifactInput, WorkerEventInput
 from app.agent_runtime.state_machine import require_transition
 from app.agent_runtime.token_service import create_run_token
 from app.core.config import get_settings
+from app.ai.models import AiPreset
 
 
 def _now() -> datetime:
@@ -194,6 +195,13 @@ def get_context(db: Session, run_id: int, *, worker_id: str, lease_token: str) -
     row = _leased_run(db, run_id, worker_id=worker_id, lease_token=lease_token)
     profile = db.query(AgentProfile).filter(AgentProfile.id == row.profile_id).one()
     session = db.query(AgentSession).filter(AgentSession.id == row.session_id).one()
+    preset = db.query(AiPreset).filter(
+        AiPreset.preset_name == profile.model_preset,
+        AiPreset.deleted_at.is_(None),
+        AiPreset.is_enabled.is_(True),
+    ).one_or_none()
+    if preset is None:
+        raise ConflictError(f"Agent 模型预设 {profile.model_preset} 不存在或未启用")
     return {
         "run": {
             "id": row.id,
@@ -215,6 +223,7 @@ def get_context(db: Session, run_id: int, *, worker_id: str, lease_token: str) -
             "profile_key": profile.profile_key,
             "version": profile.version,
             "model_preset": profile.model_preset,
+            "model": preset.model,
             "system_prompt": profile.system_prompt,
             "prompt_hash": profile.prompt_hash,
             "skill_manifest": profile.skill_manifest or [],
@@ -324,8 +333,11 @@ def complete_run(
     require_transition(row.status, RunStatus.COMPLETED)
     row.status = RunStatus.COMPLETED.value
     row.steps_used = steps_used
-    row.prompt_tokens = prompt_tokens
-    row.completion_tokens = completion_tokens
+    # DSH uses Ark's model gateway, whose counters are authoritative.  max()
+    # also keeps native/OpenClaw workers compatible when they report usage at
+    # completion without going through that gateway.
+    row.prompt_tokens = max(row.prompt_tokens, prompt_tokens)
+    row.completion_tokens = max(row.completion_tokens, completion_tokens)
     row.cost_usd = cost_usd
     row.completed_at = _now()
     row.lease_token_hash = None

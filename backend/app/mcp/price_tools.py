@@ -173,7 +173,7 @@ def register_price_tools(mcp) -> None:
         """
         with _session() as db:
             try:
-                identity = require_identity(ctx, db)
+                identity = require_identity(ctx, db, tool_name="get_standard_price")
             except MCPAuthError as exc:
                 return _json({"ok": False, "error": str(exc)})
             return _get_standard_price(
@@ -212,7 +212,7 @@ def register_price_tools(mcp) -> None:
         """
         with _session() as db:
             try:
-                identity = require_identity(ctx, db)
+                identity = require_identity(ctx, db, tool_name="find_product")
             except MCPAuthError as exc:
                 return _json({"ok": False, "error": str(exc)})
             return _find_product(

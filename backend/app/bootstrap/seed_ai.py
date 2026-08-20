@@ -90,6 +90,7 @@ def _auto_create_preset(
     parameters: dict,
     description: str,
     provider_name_hint: Optional[str] = None,
+    require_direct_openai: bool = False,
 ) -> None:
     """通用 preset 自动初始化。已存在则跳过,找不到 provider 时打 warning。
 
@@ -109,21 +110,27 @@ def _auto_create_preset(
 
             provider = None
             if provider_name_hint:
-                provider = (
-                    db.query(AiProvider)
-                    .filter(
-                        AiProvider.is_enabled.is_(True),
-                        AiProvider.deleted_at.is_(None),
-                        AiProvider.name == provider_name_hint,
+                query = db.query(AiProvider).filter(
+                    AiProvider.is_enabled.is_(True),
+                    AiProvider.deleted_at.is_(None),
+                    AiProvider.name == provider_name_hint,
+                )
+                if require_direct_openai:
+                    query = query.filter(
+                        AiProvider.provider_type == "direct",
+                        AiProvider.api_type == "openai",
                     )
-                    .first()
-                )
+                provider = query.first()
             if provider is None:
-                provider = (
-                    db.query(AiProvider)
-                    .filter(AiProvider.is_enabled.is_(True), AiProvider.deleted_at.is_(None))
-                    .first()
+                query = db.query(AiProvider).filter(
+                    AiProvider.is_enabled.is_(True), AiProvider.deleted_at.is_(None)
                 )
+                if require_direct_openai:
+                    query = query.filter(
+                        AiProvider.provider_type == "direct",
+                        AiProvider.api_type == "openai",
+                    )
+                provider = query.first()
             if provider is None:
                 logger.warning(
                     "No active AI provider found, %s preset not auto-created", preset_name
@@ -220,3 +227,15 @@ def auto_init_ai_presets() -> None:
         parameters={"temperature": 0.2, "max_tokens": 4096},
         description="订单经营智能分析：基于确定性指标生成证据化经营简报",
     )
+    for preset_name, max_tokens, description in (
+        ("agent_runtime_copilot", 4000, "Agent Runtime：客户与订单经营副驾驶模型边界"),
+        ("agent_runtime_repurchase", 2500, "Agent Runtime：复购与流失干预模型边界"),
+        ("agent_runtime_sales_shadow", 6000, "Agent Runtime：新客户开发影子评测模型边界"),
+    ):
+        _auto_create_preset(
+            preset_name=preset_name,
+            system_prompt="",
+            parameters={"temperature": 0.2, "max_tokens": max_tokens},
+            description=description,
+            require_direct_openai=True,
+        )

@@ -78,7 +78,7 @@ def register_knowledge_tools(mcp) -> None:
         """检索当前账号有权访问的已发布企业知识；草稿和待审版本永不返回。"""
         with _session() as db:
             try:
-                identity = require_identity(ctx, db)
+                identity = require_identity(ctx, db, tool_name="search_knowledge")
             except MCPAuthError as exc:
                 return _json({"ok": False, "error": str(exc)})
             return _search(db, identity, params.query, params.limit)
@@ -97,7 +97,7 @@ def register_knowledge_tools(mcp) -> None:
         """读取当前账号有权访问的单个已发布文档纯文本。"""
         with _session() as db:
             try:
-                identity = require_identity(ctx, db)
+                identity = require_identity(ctx, db, tool_name="get_knowledge_document")
             except MCPAuthError as exc:
                 return _json({"ok": False, "error": str(exc)})
             return _get_document(db, identity, params.document_id)

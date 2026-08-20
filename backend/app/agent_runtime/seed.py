@@ -49,7 +49,7 @@ PROFILE_SEEDS = [
         "tool_allowlist": [
             "get_customer_profile", "get_customer_order_timeline", "get_customer_repurchase_analysis",
             "get_order_intelligence_snapshot", "get_customer_actions", "search_knowledge",
-            "track_shipment", "get_product_price",
+            "track_shipment", "get_standard_price",
         ],
         "limits_json": {"max_steps": 12, "timeout_seconds": 300, "max_output_tokens": 4000},
         "policy_json": {"read_only": True, "human_confirm_business_write": True, "evidence_required": True},
@@ -120,4 +120,3 @@ def seed_default_profiles(db: Session) -> int:
         created += 1
     db.commit()
     return created
-
