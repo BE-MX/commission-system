@@ -547,6 +547,12 @@ class CustomerAction(Base):
     user_feedback = Column(String(50), comment="用户反馈")
     user_note = Column(Text, comment="用户备注")
     sort_order = Column(Integer, nullable=False, default=0, comment="排序")
+    source_type = Column(String(20), nullable=False, default="rule", comment="rule/dsh/manual")
+    source_run_id = Column(BigInteger, nullable=True, comment="来源Agent Run ID")
+    source_fingerprint = Column(String(64), nullable=True, unique=True, comment="行动生成幂等指纹")
+    policy_version = Column(String(32), nullable=True, comment="行动策略版本")
+    evidence_status = Column(String(20), nullable=False, default="unverified", comment="unverified/valid/invalid")
+    generated_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="本版本生成时间")
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
 
@@ -556,5 +562,6 @@ class CustomerAction(Base):
         Index("idx_action_owner_date", "owner_user_id", "action_date", "thread_group"),
         Index("idx_action_profile", "profile_id", "action_date"),
         Index("idx_action_status", "owner_user_id", "action_status", "action_date"),
+        Index("idx_customer_action_run", "source_run_id"),
         {"comment": "客户经营雷达-行动候选池"},
     )
