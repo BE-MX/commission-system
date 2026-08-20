@@ -180,6 +180,7 @@ def test_track_returns_complete_order(db):
     assert data["items"][1]["order_qty"] == second.order_qty
     assert "customer_balance" not in data
     assert "charged_amount" not in data
+    assert "created_by_name" not in data
 
 
 def test_track_image_allows_other_item_in_same_order_only(db, tmp_path, monkeypatch):

@@ -5,12 +5,13 @@ import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  attachItemRoute, deleteOrder, getItemWxacode, getOrder, getProcessRoutes,
+  attachItemRoute, deleteOrder, exportOrder, getItemWxacode, getOrder, getProcessRoutes,
   listOrders, listProcessWorkers, listReports, newRequestId, revokeReport,
   shipItem, submitDraftOrder, submitReport, terminateOrder,
 } from '@/api/domestic'
 import { useListPage } from '@/composables/useListPage'
 import { confirmDanger, msgSuccess } from '@/utils/feedback'
+import { downloadBlob } from '@/utils/download'
 
 export function useDomesticOrders() {
   const route = useRoute()
@@ -177,6 +178,11 @@ export function useDomesticOrders() {
   }
 
   // ── 订单动作 ──
+  async function handleExport(row) {
+    const response = await exportOrder(row.id)
+    downloadBlob(response)
+  }
+
   async function handleSubmitDraft(row) {
     try {
       await ElMessageBox.confirm(
@@ -273,6 +279,6 @@ export function useDomesticOrders() {
     attachDialog, openAttachRoute, confirmAttachRoute,
     printDialog, openPrintCard, openQrLabel, openWxacodeLabel,
     wxacodeDialog, openWxacode, downloadWxacode,
-    handleSubmitDraft, handleTerminate, handleDelete, goCreate,
+    handleExport, handleSubmitDraft, handleTerminate, handleDelete, goCreate,
   }
 }

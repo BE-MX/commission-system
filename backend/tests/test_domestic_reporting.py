@@ -119,6 +119,8 @@ def test_order_expands_route_into_progress_rows(db, craft_mapping, workers):
     result = _create_order(db, creator, qty=20)
 
     assert result["warnings"] == []
+    detail = order_service.get_order_detail(db, result["id"])
+    assert detail["created_by_name"] == "planner"
     item = _item_of(db, result["id"])
     steps = _steps(db, item)
     assert [s["process_name"] for s in steps] == PROCESS_NAMES

@@ -9,6 +9,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.auth.models import ArkUser
 from app.domestic import constants as C
 from app.domestic import (
     balance_service,
@@ -524,6 +525,9 @@ def get_order_detail(
     # 实际扣款和客户余额属于内部财务数据；免登录进度页、普通绑定小程序
     # 都不返回。主站 RBAC 详情才包含这两个字段。
     if include_finance:
+        detail["created_by_name"] = db.query(ArkUser.real_name).filter(
+            ArkUser.id == order.created_by
+        ).scalar()
         detail["charged_amount"] = float(order.charged_amount or 0)
         detail["customer_balance"] = float(customer.balance or 0) if customer else None
     return detail

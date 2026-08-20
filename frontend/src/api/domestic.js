@@ -101,6 +101,10 @@ export function getOrder(id) {
   return domesticClient.get(`/orders/${id}`)
 }
 
+export function exportOrder(orderId) {
+  return domesticClient.get(`/orders/${orderId}/export`, { responseType: 'blob' })
+}
+
 export function updateOrder(id, data) {
   return domesticClient.put(`/orders/${id}`, data)
 }

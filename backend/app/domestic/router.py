@@ -9,9 +9,10 @@ import base64
 import io
 import logging
 from datetime import date, datetime
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_any_permission, require_permission
@@ -21,6 +22,7 @@ from app.domestic import constants as C
 from app.domestic import (
     balance_service,
     customer_service,
+    export_service,
     file_service,
     order_service,
     product_service,
@@ -325,6 +327,26 @@ def list_orders(
         sort_field=sort_field, sort_order=sort_order,
     )
     return ok(page_result(items, total, page, page_size))
+
+
+@router.get("/orders/{order_id}/export", summary="导出内贸订单领货单 Excel")
+def export_order(
+    order_id: int,
+    db: Session = Depends(get_db),
+    _user: dict = Depends(require_any_permission(*_READ)),
+):
+    try:
+        data = order_service.get_order_detail(db, order_id)
+        db.commit()
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    stream = export_service.build_order_workbook(data, data.get("created_by_name") or "")
+    filename = quote(f"内贸订单-{data['domestic_no']}.xlsx")
+    return StreamingResponse(
+        stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
+    )
 
 
 @router.get("/orders/{order_id}", summary="订单详情（含逐明细工序进度）")

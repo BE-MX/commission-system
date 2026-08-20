@@ -60,9 +60,10 @@
             <el-tag size="small" :type="ORDER_STATUS_TAGS[row.status]">{{ row.status_label }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" min-width="170" fixed="right">
+        <el-table-column label="操作" min-width="220" fixed="right">
           <template #default="{ row }">
             <GlassButton variant="link" left-icon="View" @click="openDetail(row)">详情</GlassButton>
+            <GlassButton variant="link" left-icon="Download" @click="handleExport(row)">导出</GlassButton>
             <GlassButton v-if="row.status === 0" v-permission="'domestic:write'" variant="link" left-icon="Promotion" @click="handleSubmitDraft(row)">提交</GlassButton>
             <GlassButton v-else v-permission="'domestic:write'" variant="link" left-icon="CircleClose" :disabled="row.status >= 3" @click="handleTerminate(row)">终止</GlassButton>
             <GlassButton v-permission="'domestic:admin'" variant="link" link-tone="danger" left-icon="Delete" @click="handleDelete(row)">删除</GlassButton>
@@ -293,7 +294,7 @@ const {
   attachDialog, openAttachRoute, confirmAttachRoute,
   printDialog, openPrintCard, openQrLabel, openWxacodeLabel,
   wxacodeDialog, openWxacode, downloadWxacode,
-  handleSubmitDraft, handleTerminate, handleDelete, goCreate,
+  handleExport, handleSubmitDraft, handleTerminate, handleDelete, goCreate,
 } = useDomesticOrders()
 </script>
 
