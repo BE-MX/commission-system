@@ -247,9 +247,8 @@ class MainActivity : Activity() {
     private fun handleMalformedBroadcast(action: String) {
         if (reportingScreen == null || busy) return
         feedback.error()
-        reportingScreen?.showError(
-            "已收到 PDA 扫描广播，但 barcode_string 为空；请检查扫描设置中的广播数据标签\n$action",
-        )
+        val message = "已收到 PDA 扫描广播，但 barcode_string 为空；请检查扫描设置中的广播数据标签\n$action"
+        if (reportingScreen?.showUnitError(message) != true) reportingScreen?.showError(message)
     }
 
     private fun handleScanResult(payload: ScanPayload, scan: JSONObject) {
@@ -331,12 +330,15 @@ class MainActivity : Activity() {
             return
         }
         feedback.error()
-        reportingScreen?.showError("网络中断，提交结果未知")
+        if (reportingScreen?.showUnitResultUnknown() != true) {
+            reportingScreen?.showError("网络中断，提交结果未知")
+        }
         AlertDialog.Builder(this)
             .setTitle("提交结果未知")
             .setMessage("$message\n\n请点“重试同一笔”。APP 会沿用同一个幂等请求号，后端不会重复累计数量。若暂时返回核对记录，下一次扫码仍会先提示处理这笔。")
             .setCancelable(false)
             .setNegativeButton("返回并核对记录") { _, _ ->
+                reportingScreen?.dismissUnitReport()
                 busy = false
                 reportingScreen?.showError("请先核对今日记录；下一次扫码会再次提示处理待确认提交")
                 loadHistory()

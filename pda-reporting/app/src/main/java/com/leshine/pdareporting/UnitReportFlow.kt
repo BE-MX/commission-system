@@ -47,4 +47,11 @@ object UnitReportFlow {
         closeEnabled = true,
         nextScanEnabled = true,
     )
+
+    fun resultUnknown(): UnitReportPresentation = UnitReportPresentation(
+        tone = UnitReportTone.ERROR,
+        message = "提交结果未知，请按提示重试或返回核对记录",
+        closeEnabled = true,
+        nextScanEnabled = false,
+    )
 }

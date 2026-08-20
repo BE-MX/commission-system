@@ -54,4 +54,15 @@ class UnitReportFlowTest {
         assertTrue(state.nextScanEnabled)
         assertNull(state.autoHideAfterMs)
     }
+
+    @Test
+    fun unknown_result_allows_closing_but_blocks_the_next_scan() {
+        val state = UnitReportFlow.resultUnknown()
+
+        assertEquals(UnitReportTone.ERROR, state.tone)
+        assertEquals("提交结果未知，请按提示重试或返回核对记录", state.message)
+        assertTrue(state.closeEnabled)
+        assertFalse(state.nextScanEnabled)
+        assertNull(state.autoHideAfterMs)
+    }
 }

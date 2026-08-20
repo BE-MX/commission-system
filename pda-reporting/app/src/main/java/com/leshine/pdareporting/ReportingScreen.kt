@@ -304,6 +304,13 @@ class ReportingScreen(
     fun showUnitError(message: String): Boolean =
         unitReportDialog?.render(UnitReportFlow.error(message)) == true
 
+    fun showUnitResultUnknown(): Boolean =
+        unitReportDialog?.render(UnitReportFlow.resultUnknown()) == true
+
+    fun dismissUnitReport() {
+        unitReportDialog?.dismiss()
+    }
+
     fun isUnitDialogShowing(): Boolean = unitReportDialog?.isShowing() == true
 
     override fun onDetachedFromWindow() {

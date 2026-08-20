@@ -85,6 +85,10 @@ class UnitReportDialog(
 
     fun isShowing(): Boolean = dialog?.isShowing == true
 
+    fun dismiss() {
+        dialog?.dismiss()
+    }
+
     fun dispose() {
         disposed = true
         handler.removeCallbacks(hideBanner)
