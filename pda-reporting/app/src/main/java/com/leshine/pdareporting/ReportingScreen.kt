@@ -16,6 +16,11 @@ import android.widget.ScrollView
 import android.widget.TextView
 import org.json.JSONObject
 
+enum class ReportingSuccessType(val title: String) {
+    REPORT("✓ 报工成功"),
+    REVOKE("✓ 撤销成功"),
+}
+
 class ReportingScreen(
     context: Context,
     userName: String,
@@ -133,9 +138,9 @@ class ReportingScreen(
         statusDetail.text = "$product · $process"
     }
 
-    fun showSuccess(message: String) {
+    fun showSuccess(type: ReportingSuccessType, message: String) {
         statusCard.background = Ui.rounded(Ui.greenSoft, 16, context, Ui.greenBright)
-        statusTitle.text = "✓ 报工成功"
+        statusTitle.text = type.title
         statusTitle.setTextColor(Ui.green)
         statusDetail.text = message
     }

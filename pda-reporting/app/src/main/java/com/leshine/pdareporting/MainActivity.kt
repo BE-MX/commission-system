@@ -299,7 +299,7 @@ class MainActivity : Activity() {
                     busy = false
                     feedback.success()
                     if (!unitMode || reportingScreen?.showUnitSuccess(message) != true) {
-                        reportingScreen?.showSuccess(message)
+                        reportingScreen?.showSuccess(ReportingSuccessType.REPORT, message)
                     }
                     loadHistory()
                 }
@@ -360,7 +360,10 @@ class MainActivity : Activity() {
                 ui {
                     busy = false
                     feedback.success()
-                    reportingScreen?.showSuccess("已撤销 ${record.processName} × ${record.reportQty} 件")
+                    reportingScreen?.showSuccess(
+                        ReportingSuccessType.REVOKE,
+                        "已撤销 ${record.processName} × ${record.reportQty} 件",
+                    )
                     loadHistory()
                 }
             } catch (error: Exception) {
