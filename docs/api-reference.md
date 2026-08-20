@@ -481,6 +481,12 @@ Android PDA 客户端位于 `pda-reporting/`，不新增报工业务端点：先
 取得 access token（`get_current_mini_user` 兼容同一 JWT 的 `sub`），之后完整复用本节接口。客户端只负责
 扫描头键盘/广播输入与手持设备交互；数量校验、逐件身份、工序权限、幂等和撤销均以服务端为准。
 
+手机/PDA 浏览器备用入口是主站全屏路由 `/domestic/reporting`，同样使用主站登录和本节接口。页面支持
+HTTPS 后置摄像头识码、扫描头键盘模拟（建议回车结束符）及手工输入；旧 Android 浏览器走构建时生成的
+兼容脚本，若浏览器没有 `getUserMedia` 则只关闭摄像头入口，不影响扫描头与手工输入。未确认写请求在
+`localStorage` 中按用户 ID 隔离保存原 `request_id`，重试不得换号；数量码可拆批，逐件码可配置扫描头识别后自动报 1 件。
+参考图按需逐张鉴权加载，切换图片会释放上一张 Blob，避免低内存 Android 设备同时解码多张原图。
+
 - `GET /lookup?code=` — **订单速查**：一个参数吃三种输入（二维码原文 `ARK-D:...` / 系统单号 `DO...` / 客户订单号），服务端自行分辨，直接返回订单详情（含逐明细逐工序进度）。查不到或二维码验签失败返回 404 `{code:"NOT_FOUND", message}`；已软删订单一律查不到。
 - `GET /scan/{item_id}?sign=` — 数量模式扫明细码；`GET /unit-scan/{unit_id}?sign=` — 逐件模式扫单件码。逐件 `POST /scan/submit` 必须再次携带 `unit_id + unit_sign`，写端复验标签签名，不能只枚举 ID。模式不匹配返回 `UNIT_QR_REQUIRED`；草稿订单返回 `ORDER_DRAFT`。
 - `POST /scan/submit` — 数量模式传 `{item_id, progress_id, qty, request_id?}`，服务端按 unit_no 从小到大分配单件；逐件模式额外必须传 `unit_id` 且 `qty=1`。结果返回本次 `unit_codes`，`request_id` 幂等重放返回首次结果。
