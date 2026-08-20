@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.agent_runtime import artifact_service, presenters, service
+from app.agent_runtime import artifact_service, evaluation_service, presenters, service
 from app.agent_runtime.contracts import RunStatus, TERMINAL_RUN_STATUSES
 from app.agent_runtime.errors import AgentRuntimeError, RuntimeDisabledError
 from app.agent_runtime.schemas import ArtifactDecisionInput, FeedbackInput, RunCreate, SessionCreate
@@ -20,6 +20,7 @@ from app.core.response import ok, page_result
 router = APIRouter()
 READ_PERMISSIONS = ("agent_runtime:read", "agent_runtime:write", "agent_runtime:admin")
 WRITE_PERMISSIONS = ("agent_runtime:write", "agent_runtime:admin")
+ADMIN_PERMISSIONS = ("agent_runtime:admin",)
 
 
 def _user_id(payload: dict) -> int:
@@ -275,6 +276,15 @@ def get_agent_tasks(
         page_size=page_size,
     )
     return ok(page_result([presenters.run_view(row) for row in rows], total, page, page_size))
+
+
+@router.get("/evaluations/readiness")
+def get_agent_evaluation_readiness(
+    db: Session = Depends(get_db),
+    _current_user: dict = Depends(require_any_permission(*ADMIN_PERMISSIONS)),
+):
+    """Return conservative 30/200/50 business-validation gates for gray release."""
+    return ok(evaluation_service.readiness_report(db))
 
 
 @router.post("/artifacts/{artifact_id}/accept")

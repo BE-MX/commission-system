@@ -83,7 +83,9 @@ def _validate_public_url(url: str) -> str:
 def _validate_peer(response: httpx.Response) -> None:
     stream = response.extensions.get("network_stream")
     peer = stream.get_extra_info("server_addr") if stream is not None else None
-    if peer and not _public_ip(str(peer[0])):
+    if not isinstance(peer, (tuple, list)) or not peer:
+        raise ValueError("无法验证实际连接目标地址")
+    if not _public_ip(str(peer[0])):
         raise ValueError("实际连接目标不是公开地址")
 
 

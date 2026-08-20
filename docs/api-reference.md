@@ -20,6 +20,7 @@
 | GET | `/sessions`、`/sessions/{id}` | `agent_runtime:read/write/admin` | 默认仅本人；`read_all` 只扩大数据范围 |
 | POST | `/sessions/{id}/runs` | `agent_runtime:write/admin` | 以用户级 `idempotency_key` 创建 Run，冻结权限与业务上下文 |
 | GET | `/tasks?status=&runtime=&page=&page_size=` | `agent_runtime:read/write/admin` | 任务中心服务端分页 |
+| GET | `/evaluations/readiness` | `agent_runtime:admin` | 只读汇总 30/200/50 灰度验收门槛；副驾驶仅统计 `evaluation_suite=customer_order_copilot_v1` 下不同 `evaluation_case_id`，Shadow 仅按不同 `search_job` 计数；未达标时固定返回 `remain_in_shadow` |
 | GET | `/runs/{id}` | 同上 | Run 计量与结构化 Artifact |
 | GET | `/runs/{id}/events?after_sequence=&limit=` | 同上 | 追加式脱敏事件；非管理员看不到 admin 事件 |
 | GET | `/runs/{id}/stream?after_sequence=` | 同上 | SSE 事件流；需要可附带 Authorization 的客户端 |

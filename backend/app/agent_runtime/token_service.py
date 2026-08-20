@@ -35,6 +35,7 @@ def create_run_token(run: AgentRun, profile: AgentProfile, *, ttl_seconds: int) 
         "lease_nonce": run.lease_token_hash,
         "tools": list(profile.tool_allowlist or []),
         "permissions": list((run.context_snapshot or {}).get("permissions") or []),
+        "roles": list((run.context_snapshot or {}).get("roles") or []),
     }
     settings = get_settings()
     return jwt.encode(payload, _secret(), algorithm=settings.JWT_ALGORITHM)

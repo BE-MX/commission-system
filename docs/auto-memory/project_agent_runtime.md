@@ -21,5 +21,6 @@
 ## 发布事实与未完成外部条件
 
 - 代码固定并校验 DSH `0.1.0rc8`，上游 tag `dsh-v0.1.0-rc.8`、commit `141eb6fef83422698aef7a981029e843e8161534`。
-- 截至 2026-08-20，官方文档声明的 Python SDK/runtime 尚无 PyPI 包和 GitHub wheel 附件；真实 DSH E2E 必须等待官方制品或从固定 tag 内部构建、审查并安装同版本 wheels。
+- PyPI rc7 SDK/runtime 已发布，但 Runtime 闭包不含 MCP Client，不能用于方舟。固定 rc8 源码构建的 macOS arm64 wheel 已通过本地 OpenAI 协议桩、真实 Streamable HTTP MCP 与 JSONL 的 Runtime 二进制 E2E；生产仍需 manylinux 2.28 环境构建、审查并安装同版本 Linux wheels。
+- 管理员用 `/api/agent-runtime/evaluations/readiness` 汇总 30/200/50 门槛；接口未返回业务验收完成时必须保持 Shadow。
 - 开发完成不等于生产启用。所有 Agent flags 默认 false，迁移、Preset、Worker、权限与灰度样本验收完成前不得开启正式流量。

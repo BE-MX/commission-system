@@ -1,7 +1,7 @@
 # 方舟 Agent Runtime 第一阶段实施规格
 
 日期：2026-08-20  
-状态：开发完成，待真实 DSH 制品与业务灰度验收
+状态：开发与本地真实 DSH Runtime E2E 完成，待生产制品审查与 30/200/50 业务灰度验收
 范围：统一 Agent 控制面、客户与订单副驾驶、复购行动卡、DSH 获客影子任务、AI 任务中心
 
 ## 1. 目标
@@ -184,7 +184,10 @@ Worker API：
 控制面、五表迁移、状态机、租约、短时委托令牌、模型/工具治理、三个 Profile、业务编排、
 任务中心、运行时间线、部署模板、灰度开关和自动化测试均已实现。Feature Flag 默认关闭。
 
-截至 2026-08-20，上游官方尚未发布可从 PyPI 或 GitHub Release 安装的 Python SDK/runtime wheels。
-仓库适配器会校验 `0.1.0rc8` 并在缺失时 fail-fast；因此当前完成的是模拟 Adapter 下的全链路测试，
-不是实际 DSH 二进制 E2E。生产验收必须从固定 tag/commit 构建并审查同版本 wheels 后，完成本节既定的
-30/200/50 业务样本门槛；在此之前不得标记业务灰度完成。
+上游 PyPI 已发布 `0.1.0rc7` SDK/runtime wheel，但 rc7 Runtime 闭包不含 MCP Client，不能满足方舟受控取数边界。
+仓库固定 `dsh-v0.1.0-rc.8` / `141eb6fef83422698aef7a981029e843e8161534`；已从该提交构建 rc8 SDK 与
+macOS arm64 Runtime wheel，并通过本地真实二进制 E2E：DSH 模型请求、Streamable HTTP MCP 调用、工具结果回灌、
+结构化成果与 JSONL Session 落盘全部贯通。生产仍必须在受审查的 manylinux 2.28 构建环境生成 Linux wheel、核对
+SHA-256/许可证并安装。`GET /api/agent-runtime/evaluations/readiness` 以保守口径汇总 30/200/50 门槛：副驾驶只统计
+`customer_order_copilot_v1` 套件内不同 `evaluation_case_id`，影子对照只统计不同 `search_job`；业务样本未达标时
+固定保持 Shadow，不得把“开发完成”标记成“业务灰度完成”。

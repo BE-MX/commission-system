@@ -107,10 +107,16 @@ def _load_run_and_profile(db: Session, claims: dict) -> tuple[AgentRun, AgentPro
     if profile.status != "active":
         raise ForbiddenError("Agent Profile 已停用")
     delegated_permissions = set(claims.get("permissions") or [])
+    delegated_roles = set(claims.get("roles") or [])
     frozen_permissions = set((run.context_snapshot or {}).get("permissions") or [])
+    frozen_roles = set((run.context_snapshot or {}).get("roles") or [])
     current_permissions = set(get_user_permissions(user))
     current_roles = set(get_user_roles(user))
-    if "agent_runtime:invoke" not in delegated_permissions or delegated_permissions != frozen_permissions:
+    if (
+        "agent_runtime:invoke" not in delegated_permissions
+        or delegated_permissions != frozen_permissions
+        or delegated_roles != frozen_roles
+    ):
         raise ForbiddenError("Agent Run 委托权限与任务快照不匹配")
     if "super_admin" not in current_roles and "agent_runtime:invoke" not in current_permissions:
         raise ForbiddenError("当前账号的 Agent 调用权限已被撤销")

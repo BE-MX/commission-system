@@ -6,6 +6,42 @@ import hashlib
 import json
 
 
+def _walk_result(value, *, depth: int = 0):
+    if depth > 8:
+        return
+    yield value
+    if isinstance(value, dict):
+        for child in value.values():
+            yield from _walk_result(child, depth=depth + 1)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _walk_result(child, depth=depth + 1)
+
+
+def _ark_tool_envelope(content) -> dict | None:
+    """Extract Ark's ``{ok, data|error}`` envelope without retaining content."""
+    for candidate in _walk_result(content):
+        parsed = candidate
+        if isinstance(candidate, str):
+            try:
+                parsed = json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+        if isinstance(parsed, dict) and "ok" in parsed:
+            return parsed
+    return None
+
+
+def _tool_call_id(message: dict):
+    source = message.get("source") if isinstance(message.get("source"), dict) else {}
+    if source.get("kind") == "tool" and source.get("callId"):
+        return source["callId"]
+    for item in _walk_result(message):
+        if isinstance(item, dict) and item.get("toolCallId"):
+            return item["toolCallId"]
+    return None
+
+
 class EventNormalizer:
     def __init__(self, run_id: int, next_sequence: int):
         self.run_id = run_id
@@ -67,13 +103,27 @@ class EventNormalizer:
             })
         elif event_type == "tool/result":
             error = data.get("error") if isinstance(data.get("error"), dict) else None
-            normalized_type = "tool.failed" if error else "tool.succeeded"
+            result_message = data.get("message") if isinstance(data.get("message"), dict) else {}
+            result_serialized = json.dumps(result_message, ensure_ascii=False, sort_keys=True, default=str)
+            envelope = _ark_tool_envelope(result_message.get("content"))
+            business_success = envelope is not None and envelope.get("ok") is True
+            nested_error = any(
+                isinstance(item, dict) and item.get("isError") is True
+                for item in _walk_result(result_message)
+            )
+            normalized_type = "tool.succeeded" if not error and not nested_error and business_success else "tool.failed"
+            error_code = error.get("code") if error else None
+            if error_code is None and nested_error:
+                error_code = "DSH_TOOL_ERROR"
+            elif error_code is None and not business_success:
+                error_code = "ARK_TOOL_ERROR" if envelope is not None else "INVALID_TOOL_RESULT"
             actor = "tool"
             normalized_payload.update({
                 "turn": data.get("turn"), "step": data.get("step"),
-                "call_id": ((data.get("message") or {}).get("toolCallId")
-                            if isinstance(data.get("message"), dict) else None),
-                "error_code": error.get("code") if error else None,
+                "call_id": _tool_call_id(result_message),
+                "result_length": len(result_serialized),
+                "result_sha256": self._hash(result_message),
+                "error_code": error_code,
             })
         elif event_type == "turn/end":
             normalized_type = "plan.updated"

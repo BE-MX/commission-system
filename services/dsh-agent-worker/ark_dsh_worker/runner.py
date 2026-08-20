@@ -12,6 +12,7 @@ from .adapter import AdapterResult, HarnessAdapter
 from .client import AmbiguousSubmissionError, ArkClient, ArkClientError
 from .config import WorkerConfig
 from .events import EventNormalizer
+from .retention import prune_expired_session_logs
 
 
 logger = logging.getLogger("ark_dsh_worker")
@@ -27,15 +28,19 @@ class RunCancelled(RuntimeError):
     pass
 
 
+class DshRunError(ValueError):
+    """Whitelisted business-safe error whose text may be returned to Ark."""
+
+
 def _parse_artifact(text: str) -> dict:
     match = _FENCE_RE.match(text or "")
     raw = match.group(1) if match else (text or "").strip()
     try:
         value = json.loads(raw)
     except json.JSONDecodeError as exc:
-        raise ValueError("DSH 最终响应不是合法 JSON 成果") from exc
+        raise DshRunError("DSH 最终响应不是合法 JSON 成果") from exc
     if not isinstance(value, dict):
-        raise ValueError("DSH 最终成果必须是 JSON 对象")
+        raise DshRunError("DSH 最终成果必须是 JSON 对象")
     return value
 
 
@@ -62,8 +67,10 @@ class Worker:
         self.config = config
         self.client = client
         self.adapter = adapter
+        self._next_retention_check = 0.0
 
     def run_once(self) -> bool:
+        self._prune_sessions_if_due()
         claim = self.client.claim()
         if claim is None:
             return False
@@ -79,6 +86,18 @@ class Worker:
             logger.warning("DSH run %s failed: %s", run_id, type(exc).__name__)
             self._safe_fail(run_id, lease_token, "DSH_EXECUTION_FAILED", _safe_message(exc), False)
         return True
+
+    def _prune_sessions_if_due(self) -> None:
+        now = time.monotonic()
+        if now < self._next_retention_check:
+            return
+        self._next_retention_check = now + 86_400
+        removed = prune_expired_session_logs(
+            self.config.session_root,
+            retention_days=self.config.session_retention_days,
+        )
+        if removed:
+            logger.info("Pruned %s expired DSH session log(s)", removed)
 
     def _execute(self, claim: dict) -> None:
         run_id = int(claim["run_id"])
@@ -116,11 +135,11 @@ class Worker:
             if cancelled.is_set():
                 raise RunCancelled("任务已请求取消")
             if time.monotonic() > deadline:
-                raise ValueError("DSH 执行时间超过 Profile 限制")
+                raise DshRunError("DSH 执行时间超过 Profile 限制")
             event = normalizer.normalize(notification)
             if event is not None:
                 if normalizer.steps > max_steps:
-                    raise ValueError("DSH 步骤数超过 Profile 限制")
+                    raise DshRunError("DSH 步骤数超过 Profile 限制")
                 response = self.client.events(run_id, lease_token, [event])
                 normalizer.next_sequence = int(response["next_sequence_no"])
 
@@ -132,14 +151,14 @@ class Worker:
         if cancelled.is_set():
             raise RunCancelled("任务已请求取消")
         if time.monotonic() > deadline:
-            raise ValueError("DSH 执行时间超过 Profile 限制")
+            raise DshRunError("DSH 执行时间超过 Profile 限制")
         if result.finish_reason != "completed":
-            raise ValueError(f"DSH 未正常完成: {result.finish_reason or 'unknown'}")
+            raise DshRunError(f"DSH 未正常完成: {result.finish_reason or 'unknown'}")
         content = _parse_artifact(result.final_response)
         profile_key = context["profile"]["profile_key"]
         artifact_type = _ARTIFACT_TYPES.get(profile_key)
         if artifact_type is None:
-            raise ValueError(f"未配置成果类型的 Profile: {profile_key}")
+            raise DshRunError(f"未配置成果类型的 Profile: {profile_key}")
         self.client.complete(run_id, lease_token, {
             "runtime_run_id": result.runtime_run_id,
             "artifacts": [{
@@ -181,6 +200,6 @@ class Worker:
 
 
 def _safe_message(exc: Exception) -> str:
-    if isinstance(exc, ValueError):
+    if isinstance(exc, DshRunError):
         return str(exc)[:1000]
     return f"DSH Worker 执行失败 ({type(exc).__name__})"

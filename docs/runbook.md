@@ -1382,7 +1382,7 @@ Journal 判读和重跑规则：`intent` 与 `syscall_returned` 都只是操作�
 
 1. 备份数据库，确认 `alembic heads` 只有 `118_agent_runtime`，再由唯一实例执行 `alembic upgrade head`。
 2. 在方舟 AI 管理中确认 `agent_runtime_copilot`、`agent_runtime_repurchase`、`agent_runtime_sales_shadow` 均绑定启用的 `direct/openai` Provider；模型真实 API Key 只保存在方舟。
-3. 从官方固定 tag `dsh-v0.1.0-rc.8`（commit `141eb6fef83422698aef7a981029e843e8161534`）构建并审查 SDK/runtime wheels。官方 PyPI 与 GitHub Release 尚无可安装 wheel 时，不得改用浮动 master 或伪造依赖。
+3. 从官方固定 tag `dsh-v0.1.0-rc.8`（commit `141eb6fef83422698aef7a981029e843e8161534`）构建并审查 SDK/runtime wheels。PyPI 的 rc7 Runtime 不含 MCP Client，不得用于方舟；rc8 Release 暂无 wheel，使用 `services/dsh-agent-worker/scripts/build_dsh_release.sh` 在受审查的 manylinux 2.28 目标环境构建，核对 `SHA256SUMS` 后进入内部制品库。不得改用浮动 master。
 4. 创建 Linux 低权限用户与 `/var/lib/leshine-ark-dsh/sessions`（0700），按 `services/dsh-agent-worker/.env.example` 配置 `/etc/leshine/ark-dsh-worker.env`（0600），安装 `deploy/systemd/leshine-ark-dsh-worker.service`。
 5. 为 Worker 生成独立随机 token；明文只放 Worker，方舟 `AGENT_RUNTIME_WORKER_TOKEN_HASHES_JSON` 只放 SHA-256；并用 `AGENT_RUNTIME_WORKER_RUNTIMES_JSON={"dsh-worker-01":["dsh"]}` 将机器凭证绑定到 Runtime。另配至少 32 字符的独立 `AGENT_RUNTIME_RUN_TOKEN_SECRET`。
 6. 给内部试点角色最小权限：任务页面 `agent_runtime:read/write`，执行 `agent_runtime:invoke`，再叠加场景所需 `customer_radar:read`、`order_intelligence:read` 或 `sales_automation:read`。`read_all/admin` 不授普通业务员。
@@ -1401,7 +1401,7 @@ AGENT_RUNTIME_SALES_SHADOW_ENABLED=false
 AGENT_RUNTIME_SHADOW_SAMPLE_RATE=0
 ```
 
-先用内部账号完成客户副驾驶标准问题：任务领取、事件连续、取消、Artifact 保持 draft、接受/拒绝与日志脱敏均正确。之后再开复购，抽查规则召回与已处理行动不被覆盖。最后配置 Brave Key，开启受控 Web Search 与 5% Shadow 抽样；达到 50 个同输入样本前不得提高流量，更不得替代 OpenClaw 正式链路。
+先用内部账号完成客户副驾驶标准问题：任务领取、事件连续、取消、Artifact 保持 draft、接受/拒绝与日志脱敏均正确。30 个标准题的 Run input 必须标记 `evaluation_suite=customer_order_copilot_v1` 和互不重复的 `evaluation_case_id`，普通业务问答与同题重跑不会进入门槛统计。之后再开复购，抽查规则召回与已处理行动不被覆盖。最后配置 Brave Key，开启受控 Web Search 与 5% Shadow 抽样；Shadow 对照按不同 `search_job` 计数，达到 50 个同输入样本前不得提高流量，更不得替代 OpenClaw 正式链路。管理员定期读取 `GET /api/agent-runtime/evaluations/readiness`；只有返回 `business_validation_complete=true` 才进入人工晋级评审，该接口本身不会自动切流。
 
 ### 观测与止损
 
@@ -1417,4 +1417,4 @@ journalctl -u leshine-ark-dsh-worker -n 200 --no-pager
 3. 停止 Worker。正在执行且失联的任务等待租约到期进入 `ambiguous`，人工核查，不直接重跑。
 4. 保留迁移 118、Run/Event/Artifact 与客户行动来源字段。代码回滚只回应用和前端；除非已完成数据导出与影响审计，不执行 118 downgrade。
 
-恢复时先修复根因并轮换 Worker token/Run secret（若疑似泄露），再按上线顺序逐层开启。标准化事件与用户反馈保留；超过保留期只清空可选原始密文。
+恢复时先修复根因并轮换 Worker token/Run secret（若疑似泄露），再按上线顺序逐层开启。标准化事件与用户反馈保留；方舟可选原始事件密文与 Worker 本地 `session.jsonl` 默认保留 90 天，Worker 每日只清理根目录下过期的常规 Session 日志，不跟随符号链接。

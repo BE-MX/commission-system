@@ -32,16 +32,19 @@ class DshSdkAdapter:
 
     def _sdk(self):
         try:
-            version = metadata.version("deepseek-harness-sdk")
+            sdk_version = metadata.version("deepseek-harness-sdk")
+            runtime_version = metadata.version("deepseek-harness-runtime-bin")
             from deepseek_harness import DeepSeekHarness
         except (metadata.PackageNotFoundError, ImportError) as exc:
             raise DshUnavailableError(
                 "deepseek-harness-sdk 尚未安装；请按 README 从固定上游 tag 构建同版本 SDK/runtime wheels"
             ) from exc
-        normalized = version.replace("-rc.", "rc").replace("-rc", "rc")
-        if normalized != self.config.dsh_expected_version:
+        normalized_sdk = sdk_version.replace("-rc.", "rc").replace("-rc", "rc")
+        normalized_runtime = runtime_version.replace("-rc.", "rc").replace("-rc", "rc")
+        if normalized_sdk != self.config.dsh_expected_version or normalized_runtime != self.config.dsh_expected_version:
             raise DshUnavailableError(
-                f"DSH SDK 版本不匹配: expected={self.config.dsh_expected_version}, actual={version}"
+                "DSH SDK/Runtime 版本不匹配: "
+                f"expected={self.config.dsh_expected_version}, sdk={sdk_version}, runtime={runtime_version}"
             )
         return DeepSeekHarness
 

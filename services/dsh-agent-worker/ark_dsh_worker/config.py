@@ -35,6 +35,7 @@ class WorkerConfig:
     poll_seconds: int = 5
     heartbeat_seconds: int = 45
     request_timeout_seconds: int = 30
+    session_retention_days: int = 90
     dsh_expected_version: str = "0.1.0rc8"
 
     @property
@@ -71,10 +72,10 @@ class WorkerConfig:
             poll_seconds=_positive_int(env, "ARK_AGENT_POLL_SECONDS", 5),
             heartbeat_seconds=_positive_int(env, "ARK_AGENT_HEARTBEAT_SECONDS", 45),
             request_timeout_seconds=_positive_int(env, "ARK_AGENT_HTTP_TIMEOUT_SECONDS", 30),
+            session_retention_days=_positive_int(env, "ARK_DSH_SESSION_RETENTION_DAYS", 90),
             dsh_expected_version=str(env.get("DSH_SDK_EXPECTED_VERSION") or "0.1.0rc8"),
         )
 
     def ensure_runtime_dirs(self) -> None:
         self.session_root.mkdir(mode=0o700, parents=True, exist_ok=True)
         os.chmod(self.session_root, 0o700)
-

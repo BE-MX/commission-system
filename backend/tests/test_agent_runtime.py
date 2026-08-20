@@ -12,7 +12,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.agent_runtime import artifact_service, maintenance, models, router, seed, service, worker_service
+from app.agent_runtime import artifact_service, evaluation_service, maintenance, models, router, seed, service, worker_service
 from app.agent_runtime import orchestration
 from app.agent_runtime.dependencies import allowed_worker_runtimes, require_agent_worker, verify_worker_token
 from app.agent_runtime.errors import ConflictError, ForbiddenError, LeaseError, NotFoundError
@@ -27,7 +27,7 @@ from app.insight import customer_radar_service
 from app.insight.models import CustomerAction, CustomerOpportunity, CustomerProfile
 from app.mcp import agent_tools, auth as mcp_auth
 from app.mcp.models import MCPToken
-from app.mcp.public_web_tools import _validate_public_url
+from app.mcp.public_web_tools import _validate_peer, _validate_public_url
 
 
 @pytest.fixture()
@@ -170,6 +170,29 @@ def _tool_success(db, run, claim, *, call_id="tool-1", tool_name="get_customer_r
     )
 
 
+def _copilot_artifact(artifact_type="copilot_answer"):
+    evidence = [{"tool_call_id": "tool-1", "source": "get_customer_repurchase_analysis"}]
+    return ArtifactInput(
+        artifact_type=artifact_type,
+        title="Acme 跟进建议",
+        content={
+            "summary": "客户进入复购窗口",
+            "key_findings": [{
+                "text": "距离历史周期还剩 7 天",
+                "evidence_call_ids": ["tool-1"],
+            }],
+            "risks": [],
+            "recommended_actions": [{
+                "text": "确认下一批采购计划",
+                "evidence_call_ids": ["tool-1"],
+            }],
+            "evidence": evidence,
+            "open_questions": [],
+        },
+        evidence=evidence,
+    )
+
+
 def _claim(db, worker_id="dsh-worker-01"):
     return worker_service.claim_run(db, worker_id=worker_id, runtimes=["dsh"])
 
@@ -276,19 +299,7 @@ def test_worker_lease_event_replay_and_complete_artifact(db):
     assert db.query(models.AgentEvent).filter(models.AgentEvent.run_id == run.id).count() == 3
     _tool_success(db, run, claim)
 
-    artifact = ArtifactInput(
-        artifact_type="copilot_answer",
-        title="Acme 跟进建议",
-        content={
-            "summary": "客户进入复购窗口",
-            "key_findings": ["距离历史周期还剩 7 天"],
-            "risks": [],
-            "recommended_actions": ["确认下一批采购计划"],
-            "evidence": [{"tool_call_id": "tool-1", "source": "get_customer_repurchase_analysis"}],
-            "open_questions": [],
-        },
-        evidence=[{"tool_call_id": "tool-1", "source": "get_customer_repurchase_analysis"}],
-    )
+    artifact = _copilot_artifact()
     completed, artifacts = worker_service.complete_run(
         db, run.id,
         worker_id="dsh-worker-01",
@@ -308,6 +319,104 @@ def test_worker_lease_event_replay_and_complete_artifact(db):
         "run.created", "run.claimed", "run.started", "tool.requested", "tool.succeeded",
         "artifact.created", "artifact.validated", "run.completed",
     ]
+
+
+def test_readiness_report_counts_only_reviewed_and_evidence_bound_copilot_runs(db):
+    run = _run(db, _session(db))
+    run.input_json = {
+        **(run.input_json or {}),
+        "evaluation_suite": "customer_order_copilot_v1",
+        "evaluation_case_id": "standard-01",
+    }
+    db.commit()
+    claim = _claim(db)
+    _start(db, run.id, claim)
+    _tool_success(db, run, claim)
+    worker_service.complete_run(
+        db, run.id,
+        worker_id="dsh-worker-01", lease_token=claim["lease_token"],
+        runtime_run_id="dsh-eval", artifacts=[_copilot_artifact()], steps_used=2,
+        prompt_tokens=20, completion_tokens=10, cost_usd=Decimal("0"),
+    )
+    service.add_feedback(
+        db, run.id, user_id=7, can_read_all=False, rating="useful", note="可直接使用",
+    )
+
+    report = evaluation_service.readiness_report(db)
+    assert report["business_validation_complete"] is False
+    assert report["promotion_decision"] == "remain_in_shadow"
+    assert report["copilot"] == {
+        "completed_standard_runs": 1,
+        "evaluation_suite": "customer_order_copilot_v1",
+        "reviewed_runs": 1,
+        "directly_usable_runs": 1,
+        "direct_use_rate": 1.0,
+        "evidence_bound_runs": 1,
+        "evidence_binding_rate": 1.0,
+        "thresholds": {"samples": 30, "reviewed": 30, "direct_use_rate": 0.8, "evidence_binding_rate": 1.0},
+        "passed": False,
+    }
+
+
+def test_readiness_does_not_count_unlabelled_or_duplicate_copilot_cases(db):
+    first = _run(db, _session(db), key="eval-first")
+    second = _run(db, _session(db), key="eval-second")
+    for run in (first, second):
+        run.input_json = {
+            **(run.input_json or {}),
+            "evaluation_suite": "customer_order_copilot_v1",
+            "evaluation_case_id": "standard-01",
+        }
+    db.commit()
+    for run in (first, second):
+        claim = _claim(db)
+        _start(db, run.id, claim)
+        _tool_success(db, run, claim)
+        worker_service.complete_run(
+            db, run.id,
+            worker_id="dsh-worker-01", lease_token=claim["lease_token"],
+            runtime_run_id=f"dsh-eval-{run.id}", artifacts=[_copilot_artifact()], steps_used=2,
+            prompt_tokens=20, completion_tokens=10, cost_usd=Decimal("0"),
+        )
+    service.add_feedback(
+        db, first.id, user_id=7, can_read_all=False, rating="not_useful", note="首次结果不可用",
+    )
+    service.add_feedback(
+        db, second.id, user_id=7, can_read_all=False, rating="useful", note="重跑结果可用",
+    )
+
+    unlabelled = _run(db, _session(db), key="eval-unlabelled")
+    unlabelled.status = "completed"
+    db.commit()
+
+    report = evaluation_service.readiness_report(db)
+    assert report["copilot"]["completed_standard_runs"] == 1
+    assert report["copilot"]["directly_usable_runs"] == 0
+
+
+def test_worker_completion_enforces_profile_artifact_type_and_count(db):
+    run = _run(db, _session(db))
+    claim = _claim(db)
+    _start(db, run.id, claim)
+    _tool_success(db, run, claim)
+    kwargs = {
+        "worker_id": "dsh-worker-01",
+        "lease_token": claim["lease_token"],
+        "runtime_run_id": "dsh-run-contract",
+        "steps_used": 1,
+        "prompt_tokens": 10,
+        "completion_tokens": 5,
+        "cost_usd": Decimal("0"),
+    }
+    with pytest.raises(ConflictError, match="只接受 copilot_answer"):
+        worker_service.complete_run(
+            db, run.id, artifacts=[_copilot_artifact("unexpected_type")], **kwargs,
+        )
+    with pytest.raises(ConflictError, match="最多提交 1 个"):
+        worker_service.complete_run(
+            db, run.id, artifacts=[_copilot_artifact(), _copilot_artifact()], **kwargs,
+        )
+    assert db.query(models.AgentArtifact).filter(models.AgentArtifact.run_id == run.id).count() == 0
 
 
 def test_event_id_cannot_be_reused_with_different_payload(db):
@@ -493,6 +602,36 @@ def test_artifact_rejects_made_up_evidence_source(db):
     assert any("未关联本任务成功" in error for error in errors)
 
 
+def test_copilot_quantitative_claims_require_successful_citations(db):
+    profile = service.get_active_profile(db, "customer_order_copilot")
+    evidence = [{"source": "get_customer_order_timeline", "tool_call_id": "orders-1"}]
+    valid = {
+        "summary": "客户已经接近历史复购窗口",
+        "key_findings": [{"text": "距离平均复购周期还有 7 天", "evidence_call_ids": ["orders-1"]}],
+        "risks": [],
+        "recommended_actions": [{"text": "本周确认采购计划", "evidence_call_ids": ["orders-1"]}],
+        "evidence": evidence,
+        "open_questions": [],
+    }
+    assert artifact_service.validate_output(
+        valid, evidence, profile, successful_tool_calls={"orders-1": "get_customer_order_timeline"},
+    ) == []
+
+    numeric_summary = {**valid, "summary": "客户还有 7 天进入复购窗口"}
+    assert any("定量结论" in error for error in artifact_service.validate_output(
+        numeric_summary, evidence, profile,
+        successful_tool_calls={"orders-1": "get_customer_order_timeline"},
+    ))
+    missing_citation = {
+        **valid,
+        "key_findings": [{"text": "距离平均复购周期还有 7 天", "evidence_call_ids": ["ghost"]}],
+    }
+    assert any("未列入 evidence" in error for error in artifact_service.validate_output(
+        missing_citation, evidence, profile,
+        successful_tool_calls={"orders-1": "get_customer_order_timeline"},
+    ))
+
+
 def test_customer_radar_refresh_preserves_completed_action(db):
     profile = CustomerProfile(
         customer_name="Acme",
@@ -533,6 +672,14 @@ def test_user_router_permission_envelope(db, runtime_settings):
     assert response.status_code == 200
     assert response.json()["code"] == 200
     assert response.json()["data"]["owner_user_id"] == 7
+    assert client.get("/api/agent-runtime/evaluations/readiness").status_code == 403
+
+    app.dependency_overrides[get_current_user] = lambda: {
+        "sub": "7", "roles": [], "permissions": ["agent_runtime:admin"],
+    }
+    readiness = client.get("/api/agent-runtime/evaluations/readiness")
+    assert readiness.status_code == 200
+    assert readiness.json()["data"]["promotion_decision"] == "remain_in_shadow"
 
 
 def test_read_all_does_not_grant_cross_owner_mutation():
@@ -844,6 +991,20 @@ def test_mcp_run_token_is_bound_to_profile_tool_allowlist(db):
         mcp_auth.require_identity(ctx, db, tool_name="record_shipment")
 
 
+def test_run_token_does_not_inherit_role_granted_after_creation(db):
+    run = _run(db, _session(db))
+    claim = _claim(db)
+    _start(db, run.id, claim)
+    db.add(ArkRole(id=2, name="super_admin", label="Super Admin"))
+    db.flush()
+    db.add(ArkUserRole(user_id=7, role_id=2))
+    db.commit()
+
+    identity = mcp_auth.resolve_run_token(db, claim["run_token"])
+    assert "super_admin" not in identity["roles"]
+    assert identity["roles"] == []
+
+
 def test_agent_business_tools_reject_personal_mcp_identity(db, monkeypatch):
     monkeypatch.setattr(agent_tools, "require_identity", lambda *_args, **_kwargs: {
         "sub": "7",
@@ -990,6 +1151,21 @@ def test_public_fetch_url_guard_rejects_private_dns(monkeypatch):
     ])
     with pytest.raises(ValueError, match="非公开"):
         _validate_public_url("https://example.com/private")
+
+
+def test_public_fetch_peer_guard_fails_closed_without_verified_public_peer():
+    class Stream:
+        def __init__(self, peer):
+            self.peer = peer
+
+        def get_extra_info(self, _name):
+            return self.peer
+
+    with pytest.raises(ValueError, match="无法验证"):
+        _validate_peer(SimpleNamespace(extensions={}))
+    with pytest.raises(ValueError, match="不是公开"):
+        _validate_peer(SimpleNamespace(extensions={"network_stream": Stream(("127.0.0.1", 443))}))
+    _validate_peer(SimpleNamespace(extensions={"network_stream": Stream(("93.184.216.34", 443))}))
 
 
 def test_sales_shadow_failure_never_breaks_committed_core_job(db, monkeypatch):

@@ -84,7 +84,7 @@ def resolve_run_token(db: Session, raw_token: str) -> dict:
     run = db.query(AgentRun).filter(AgentRun.id == run_id).one_or_none()
     profile = db.query(AgentProfile).filter(AgentProfile.id == profile_id).one_or_none()
     user = db.query(ArkUser).filter(ArkUser.id == user_id).one_or_none()
-    if run is None or profile is None or user is None:
+    if run is None or profile is None or user is None or not user.is_active or user.deleted_at is not None:
         raise MCPAuthError("Agent Run 委托范围不存在")
     if (
         run.profile_id != profile.id
@@ -105,6 +105,13 @@ def resolve_run_token(db: Session, raw_token: str) -> dict:
 
     current = build_current_user(user)
     delegated_permissions = set(claims.get("permissions") or [])
+    delegated_roles = set(claims.get("roles") or [])
+    snapshot = run.context_snapshot or {}
+    if (
+        delegated_permissions != set(snapshot.get("permissions") or [])
+        or delegated_roles != set(snapshot.get("roles") or [])
+    ):
+        raise MCPAuthError("Agent Run 委托身份与任务快照不匹配")
     if "agent_runtime:invoke" not in delegated_permissions:
         raise MCPAuthError("Agent Run 委托令牌缺少 Agent 调用权限")
     if (
@@ -113,6 +120,9 @@ def resolve_run_token(db: Session, raw_token: str) -> dict:
     ):
         raise MCPAuthError("当前账号的 Agent 调用权限已被撤销")
     current["permissions"] = sorted(set(current["permissions"]) & delegated_permissions)
+    # A role granted after Run creation must not expand frozen delegated
+    # authority (especially the super_admin bypass used by business tools).
+    current["roles"] = sorted(set(current["roles"]) & delegated_roles)
     current["_agent_run"] = {
         "run_id": run.id,
         "profile_id": profile.id,

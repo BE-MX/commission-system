@@ -1,5 +1,8 @@
 import json
+import os
 from pathlib import Path
+import sys
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -9,6 +12,7 @@ from ark_dsh_worker import adapter as adapter_module
 from ark_dsh_worker.config import ConfigError, WorkerConfig
 from ark_dsh_worker.events import EventNormalizer
 from ark_dsh_worker.runner import Worker
+from ark_dsh_worker.retention import prune_expired_session_logs
 
 
 def _config(tmp_path):
@@ -71,7 +75,16 @@ class FakeAdapter:
                 "arguments": '{"q":"secret customer"}',
             }},
             {"type": "tool/result", "seq": 3, "data": {
-                "turn": 1, "step": 1, "message": {"toolCallId": "c1", "content": "private"},
+                "turn": 1, "step": 1, "message": {
+                    "source": {"kind": "tool", "callId": "c1"},
+                    "content": [{
+                        "type": "tool-result", "toolCallId": "c1", "isError": False,
+                        "content": [{
+                            "type": "text",
+                            "text": '{"ok":true,"data":{"answer":"private"}}',
+                        }],
+                    }],
+                },
             }},
         ]
         for event in events:
@@ -79,7 +92,7 @@ class FakeAdapter:
                 method="session.event", payload={"sessionId": "s1", "event": event},
             ))
         content = {
-            "summary": "结论", "key_findings": [], "risks": [],
+            "summary": "结论", "key_findings": [{"text": "事实", "evidence_call_ids": ["c1"]}], "risks": [],
             "recommended_actions": [],
             "evidence": [{"source": "search_knowledge", "tool_call_id": "c1"}],
             "open_questions": [],
@@ -96,7 +109,9 @@ def test_worker_completes_structured_artifact_and_redacts_tool_arguments(tmp_pat
     assert client.completed["steps_used"] == 1
     serialized = json.dumps(client.event_rows, ensure_ascii=False)
     assert "secret customer" not in serialized
+    assert "private" not in serialized
     assert "arguments_sha256" in serialized
+    assert "result_sha256" in serialized
 
 
 def test_event_normalizer_ignores_stream_chunks_and_keeps_usage_metadata():
@@ -117,6 +132,45 @@ def test_event_normalizer_ignores_stream_chunks_and_keeps_usage_metadata():
     assert "private" not in json.dumps(result)
 
 
+@pytest.mark.parametrize("content", [
+    '{"ok":false,"error":"权限不足"}',
+    [{"type": "text", "text": '{"ok":false,"error":"抓取失败"}'}],
+    "not-an-ark-envelope",
+])
+def test_event_normalizer_never_marks_business_failure_as_successful_evidence(content):
+    normalizer = EventNormalizer(1, 1)
+    notification = SimpleNamespace(method="session.event", payload={
+        "sessionId": "s", "event": {"type": "tool/result", "seq": 1, "data": {
+            "message": {"toolCallId": "c-denied", "content": content},
+        }},
+    })
+    result = normalizer.normalize(notification)
+    assert result["event_type"] == "tool.failed"
+    assert result["payload"]["call_id"] == "c-denied"
+    assert result["payload"]["error_code"] in {"ARK_TOOL_ERROR", "INVALID_TOOL_RESULT"}
+    assert "权限不足" not in json.dumps(result, ensure_ascii=False)
+    assert "抓取失败" not in json.dumps(result, ensure_ascii=False)
+
+
+def test_event_normalizer_reads_official_nested_result_and_call_id():
+    normalizer = EventNormalizer(1, 1)
+    notification = SimpleNamespace(method="session.event", payload={
+        "sessionId": "s", "event": {"type": "tool/result", "seq": 1, "data": {
+            "message": {
+                "source": {"kind": "tool", "callId": "c-ok"},
+                "content": [{
+                    "type": "tool-result", "toolCallId": "c-ok", "isError": False,
+                    "content": [{"type": "text", "text": '{"ok":true,"data":{"secret":"x"}}'}],
+                }],
+            },
+        }},
+    })
+    result = normalizer.normalize(notification)
+    assert result["event_type"] == "tool.succeeded"
+    assert result["payload"]["call_id"] == "c-ok"
+    assert "secret" not in json.dumps(result)
+
+
 def test_config_rejects_cross_origin_mcp_token_forwarding(tmp_path):
     with pytest.raises(ConfigError, match="同源"):
         WorkerConfig.from_env({
@@ -135,12 +189,37 @@ def test_cordis_composition_has_no_local_execution_tools():
     assert "dsh-mcp-client" in text
 
 
+def test_release_builder_pins_the_reviewed_rc8_commit():
+    script = (Path(__file__).resolve().parents[1] / "scripts" / "build_dsh_release.sh").read_text()
+    assert 'DSH_TAG="dsh-v0.1.0-rc.8"' in script
+    assert 'DSH_COMMIT="141eb6fef83422698aef7a981029e843e8161534"' in script
+    assert "--frozen-lockfile" in script
+    assert "SHA256SUMS" in script
+    assert "ARK_DSH_MANYLINUX_2_28_CONFIRMED" in script
+
+
 def test_sdk_preflight_fails_before_worker_can_claim(tmp_path, monkeypatch):
     def missing(_name):
         raise adapter_module.metadata.PackageNotFoundError
 
     monkeypatch.setattr(adapter_module.metadata, "version", missing)
     with pytest.raises(DshUnavailableError, match="尚未安装"):
+        DshSdkAdapter(_config(tmp_path)).ensure_available()
+
+
+def test_sdk_preflight_rejects_mixed_sdk_and_runtime_versions(tmp_path, monkeypatch):
+    actual_version = adapter_module.metadata.version
+
+    def mixed(name):
+        if name == "deepseek-harness-sdk":
+            return "0.1.0rc8"
+        if name == "deepseek-harness-runtime-bin":
+            return "0.1.0rc7"
+        return actual_version(name)
+
+    monkeypatch.setattr(adapter_module.metadata, "version", mixed)
+    monkeypatch.setitem(sys.modules, "deepseek_harness", SimpleNamespace(DeepSeekHarness=object))
+    with pytest.raises(DshUnavailableError, match="SDK/Runtime 版本不匹配"):
         DshSdkAdapter(_config(tmp_path)).ensure_available()
 
 
@@ -161,6 +240,18 @@ def test_worker_stops_when_profile_step_limit_is_exceeded(tmp_path):
     assert worker.run_once() is True
     assert client.completed is None
     assert client.failed["code"] == "DSH_EXECUTION_FAILED"
+
+
+def test_worker_does_not_expose_arbitrary_runtime_exception_text(tmp_path):
+    class LeakyAdapter:
+        def run(self, _context, _token, _on_notification):
+            raise ValueError("upstream leaked secret=/private/runtime/token")
+
+    client = FakeClient()
+    worker = Worker(_config(tmp_path), client, LeakyAdapter())
+    assert worker.run_once() is True
+    assert client.failed["message"] == "DSH Worker 执行失败 (ValueError)"
+    assert "secret" not in client.failed["message"]
 
 
 def test_adapter_exports_the_validated_session_root(tmp_path, monkeypatch):
@@ -187,3 +278,22 @@ def test_adapter_exports_the_validated_session_root(tmp_path, monkeypatch):
         "profile": {"model": "deepseek-chat", "system_prompt": "facts", "limits": {}, "output_schema": {}},
     }, "run.jwt.token", lambda _event: None)
     assert captured["env"]["DSH_SESSION_ROOT"] == str(tmp_path)
+
+
+def test_session_retention_only_removes_old_regular_jsonl(tmp_path):
+    old = tmp_path / "project" / "session-old" / "session.jsonl"
+    fresh = tmp_path / "project" / "session-fresh" / "session.jsonl"
+    old.parent.mkdir(parents=True)
+    fresh.parent.mkdir(parents=True)
+    old.write_text("old raw event")
+    fresh.write_text("fresh raw event")
+    cutoff_age = time.time() - 91 * 86_400
+    os.utime(old, (cutoff_age, cutoff_age))
+    link = tmp_path / "linked" / "session.jsonl"
+    link.parent.mkdir()
+    link.symlink_to(fresh)
+
+    assert prune_expired_session_logs(tmp_path, retention_days=90) == 1
+    assert not old.exists()
+    assert fresh.read_text() == "fresh raw event"
+    assert link.is_symlink()

@@ -13,7 +13,8 @@ logger = logging.getLogger("commission")
 
 
 _COPILOT_PROMPT = """你是莱莎方舟客户与订单经营副驾驶。你只能依据方舟授权工具返回的事实回答。
-先确定问题需要哪些证据，再调用最少的工具。所有定量结论都必须关联 evidence 中的工具调用和字段。
+先确定问题需要哪些证据，再调用最少的工具。summary 只能做不含数字的定性概括；所有事实、风险和建议
+都必须按 text + evidence_call_ids 输出，并关联 evidence 中本次成功工具调用的 call_id。
 事实、推断、建议必须分开；证据不足时明确说明，不得补造客户、订单、价格、物流或库存信息。
 每条 evidence 必须原样回传成功工具调用的 tool_call_id，并以 source 填写对应工具名。
 你只能生成建议和草案，不能代表公司对客户作出承诺，也不能直接修改业务数据。"""
@@ -54,6 +55,26 @@ def _evidence_array() -> dict:
     }
 
 
+def _cited_statement_array() -> dict:
+    return {
+        "type": "array",
+        "items": {
+            "type": "object",
+            "required": ["text", "evidence_call_ids"],
+            "properties": {
+                "text": {"type": "string", "minLength": 1},
+                "evidence_call_ids": {
+                    "type": "array",
+                    "items": {"type": "string", "minLength": 1},
+                    "minItems": 1,
+                    "uniqueItems": True,
+                },
+            },
+            "additionalProperties": False,
+        },
+    }
+
+
 PROFILE_SEEDS = [
     {
         "profile_key": "customer_order_copilot",
@@ -71,12 +92,16 @@ PROFILE_SEEDS = [
             "track_shipment", "get_standard_price",
         ],
         "limits_json": {"max_steps": 12, "timeout_seconds": 300, "max_output_tokens": 4000, "max_total_tokens": 12000},
-        "policy_json": {"read_only": True, "human_confirm_business_write": True, "evidence_required": True},
+        "policy_json": {
+            "read_only": True, "human_confirm_business_write": True, "evidence_required": True,
+            "claim_evidence_required": True,
+            "artifact_type": "copilot_answer", "max_artifacts": 1,
+        },
         "output_schema": _schema(
             ["summary", "key_findings", "risks", "recommended_actions", "evidence", "open_questions"],
             {
-                "summary": {"type": "string"}, "key_findings": {"type": "array"},
-                "risks": {"type": "array"}, "recommended_actions": {"type": "array"},
+                "summary": {"type": "string"}, "key_findings": _cited_statement_array(),
+                "risks": _cited_statement_array(), "recommended_actions": _cited_statement_array(),
                 "evidence": _evidence_array(), "open_questions": {"type": "array"},
             },
         ),
@@ -96,7 +121,10 @@ PROFILE_SEEDS = [
             "get_customer_actions", "search_knowledge",
         ],
         "limits_json": {"max_steps": 8, "timeout_seconds": 240, "max_output_tokens": 2500, "max_total_tokens": 8000},
-        "policy_json": {"read_only": True, "projection": "customer_action", "evidence_required": True},
+        "policy_json": {
+            "read_only": True, "projection": "customer_action", "evidence_required": True,
+            "artifact_type": "repurchase_action_card", "max_artifacts": 1,
+        },
         "output_schema": _schema(
             ["action_reason", "suggested_next_action", "suggested_message", "evidence"],
             {
@@ -117,7 +145,10 @@ PROFILE_SEEDS = [
         "skill_manifest": [{"name": "ark-lead-discovery-shadow", "version": "1"}],
         "tool_allowlist": ["get_search_job_context", "search_web", "fetch_public_page"],
         "limits_json": {"max_steps": 20, "timeout_seconds": 600, "max_output_tokens": 6000, "max_total_tokens": 30000},
-        "policy_json": {"read_only": True, "shadow_only": True, "evidence_required": True},
+        "policy_json": {
+            "read_only": True, "shadow_only": True, "evidence_required": True,
+            "artifact_type": "sales_discovery_shadow_result", "max_artifacts": 1,
+        },
         "output_schema": _schema(["candidates"], {"candidates": {
             "type": "array",
             "items": {

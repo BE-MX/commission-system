@@ -1,6 +1,7 @@
 """Artifact validation, idempotency and human decisions."""
 
 from datetime import datetime
+import re
 from typing import Any
 
 from jsonschema import Draft202012Validator
@@ -9,6 +10,9 @@ from sqlalchemy.orm import Session
 from app.agent_runtime.errors import ConflictError, NotFoundError
 from app.agent_runtime.event_service import append_event, content_hash
 from app.agent_runtime.models import AgentArtifact, AgentEvent, AgentProfile, AgentRun
+
+
+_ARABIC_QUANTITY_RE = re.compile(r"[0-9０-９]|[%％$￥¥€]")
 
 
 def _raw_tool_name(value: str) -> str:
@@ -70,6 +74,23 @@ def validate_output(
             expected_source = (successful_tool_calls or {}).get(call_id)
             if source and expected_source and _raw_tool_name(source) != expected_source:
                 errors.append(f"{label}第 {index + 1} 条来源与工具调用不匹配")
+    if policy.get("claim_evidence_required"):
+        evidence_ids = {
+            str(item.get("tool_call_id"))
+            for item in evidence
+            if isinstance(item, dict) and item.get("tool_call_id")
+        }
+        if _ARABIC_QUANTITY_RE.search(str(content.get("summary") or "")):
+            errors.append("summary 只能做不含数字的定性概括；定量结论必须放入带证据的结构化条目")
+        for field in ("key_findings", "risks", "recommended_actions"):
+            for index, item in enumerate(content.get(field) or []):
+                if not isinstance(item, dict):
+                    continue
+                for call_id in item.get("evidence_call_ids") or []:
+                    if call_id not in evidence_ids:
+                        errors.append(f"{field}第 {index + 1} 条引用了未列入 evidence 的工具调用")
+                    elif successful_tool_calls is not None and call_id not in successful_tool_calls:
+                        errors.append(f"{field}第 {index + 1} 条未关联本任务成功的工具调用")
     return errors
 
 
@@ -140,10 +161,14 @@ def decide_artifact(
     note: str | None,
     can_read_all: bool,
 ) -> AgentArtifact:
-    artifact = db.query(AgentArtifact).filter(AgentArtifact.id == artifact_id).with_for_update().one_or_none()
-    if artifact is None:
+    artifact_ref = db.query(AgentArtifact).filter(AgentArtifact.id == artifact_id).one_or_none()
+    if artifact_ref is None:
         raise NotFoundError("Agent 成果不存在")
-    run = db.query(AgentRun).filter(AgentRun.id == artifact.run_id).one()
+    # Serialize every decision/event append for the Run before locking the
+    # individual Artifact. Multiple artifacts can otherwise allocate the same
+    # next event sequence concurrently.
+    run = db.query(AgentRun).filter(AgentRun.id == artifact_ref.run_id).with_for_update().one()
+    artifact = db.query(AgentArtifact).filter(AgentArtifact.id == artifact_id).with_for_update().one()
     if run.owner_user_id != user_id and not can_read_all:
         raise NotFoundError("Agent 成果不存在")
     if artifact.validation_status != "valid":

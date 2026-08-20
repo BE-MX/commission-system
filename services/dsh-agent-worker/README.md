@@ -4,7 +4,7 @@
 
 ## 已实现边界
 
-- 固定 `dsh-v0.1.0-rc.8`（上游 commit `141eb6fef83422698aef7a981029e843e8161534`），启动时校验 Python distribution 版本 `0.1.0rc8`。
+- 固定 `dsh-v0.1.0-rc.8`（上游 commit `141eb6fef83422698aef7a981029e843e8161534`），启动时校验 Python distribution 版本 `0.1.0rc8`，版本漂移直接拒绝领取任务。
 - `cordis.safe.yml` 只装 Agent spine、DeepSeek LLM、Ark MCP 与 JSONL session persistence；没有 shell、文件系统、编辑器、jobs、skills、subagent 或 workspace context。
 - 模型 API Key 实际是单 Run JWT；真实模型凭证只存在方舟 AI Provider。MCP 使用同一短时 JWT，并由 Profile tool allowlist 与用户当前权限双重收敛。
 - DSH 原始流不写方舟：仅上传步骤、Token、工具名、调用参数哈希、成功/失败等规范事件。最终 JSON 通过 Profile schema 和 evidence policy 后才成为草稿成果。
@@ -12,23 +12,15 @@
 
 ## 上游 SDK 当前发布状态
 
-截至 2026-08-20，上游仓库文档已经声明 `deepseek-harness-sdk` / `deepseek-harness-runtime-bin`，但 PyPI 尚无可安装发行版，GitHub RC release 也没有 wheel 附件。因此仓库没有伪造一个可解析的 PyPI 依赖；未安装 SDK 时 Worker 会明确 fail-fast，并把 Run 置为失败。
+截至 2026-08-20，PyPI 已发布官方 `0.1.0rc7` SDK/Runtime wheel，但 rc7 的 Runtime 闭包不含 `@deepseek-ai/dsh-mcp-client`，无法承载方舟的受控 MCP 取数；真实 Runtime 回归会明确拒绝把它当作生产基线。`dsh-v0.1.0-rc.8` 已在上游固定 tag 中补齐 MCP Client，但 GitHub Release 暂无 wheel 资产，因此必须从上面的固定 commit 构建两只 rc8 wheel、写入内部制品库并按 SHA-256 安装。不要从浮动 `master` 构建生产 Worker。
 
-在官方 wheel 发布前，按固定 tag 从源代码构建同版本 wheel：
+仓库脚本会校验 tag 对应 commit、构建当前机器平台的单文件 Runtime 与 SDK wheel，并输出校验和：
 
 ```bash
-git clone --branch dsh-v0.1.0-rc.8 --depth 1 https://github.com/deepseek-ai/deepseek-harness.git
-cd deepseek-harness
-pnpm install
-pnpm exec tsx scripts/build-exe-for-python-sdk.ts --targets=node24-linux-x64
-python scripts/build-python-release.py --package sdk --output-dir dist-python
-python scripts/build-python-release.py --package runtime \
-  --platform linux-x64 \
-  --runtime-exe dist-exe/dsh-jsonrpc-agent-pkg-linux-x64 \
-  --output-dir dist-python
+services/dsh-agent-worker/scripts/build_dsh_release.sh /tmp/dsh-rc8-wheels
 ```
 
-把两只同版本 wheel 放入内部制品库，经 SHA-256 与许可证审查后安装。不要从浮动 `master` 构建生产 Worker。
+构建机需要 Node 24、pnpm 11、Python 3.10+ 与 `uv`；Linux Runtime 必须在目标架构的 manylinux 2.28 构建环境中生成。升级 DSH 必须作为独立变更重新跑真实 Runtime smoke、权限和事件契约回归。
 
 ## 安装与配置
 
@@ -37,7 +29,9 @@ python -m venv /opt/leshine-ark-dsh/.venv
 /opt/leshine-ark-dsh/.venv/bin/pip install -r requirements.txt
 /opt/leshine-ark-dsh/.venv/bin/pip install \
   deepseek_harness_sdk-0.1.0rc8-py3-none-any.whl \
-  deepseek_harness_runtime_bin-0.1.0rc8-py3-none-linux_x86_64.whl
+  deepseek_harness_runtime_bin-0.1.0rc8-py3-none-manylinux_2_28_x86_64.whl
+/opt/leshine-ark-dsh/.venv/bin/python -c \
+  "from importlib.metadata import version; assert version('deepseek-harness-sdk') == version('deepseek-harness-runtime-bin') == '0.1.0rc8'"
 ```
 
 复制本目录的 `.env.example` 为 `/etc/leshine/ark-dsh-worker.env` 并设为 `0600`。Worker 明文 token 要生成独立随机值，后台只配置 SHA-256：
@@ -50,7 +44,9 @@ AGENT_RUNTIME_RUN_TOKEN_SECRET=<独立高熵密钥>
 
 Worker 环境必须配置 `ARK_BASE_URL`、同源 `ARK_MCP_URL`、`ARK_AGENT_WORKER_ID`、
 `ARK_AGENT_WORKER_TOKEN` 和仅 Worker 用户可读的 `ARK_DSH_SESSION_ROOT`。非本机地址拒绝 HTTP，
-MCP 与方舟不同源时拒绝启动，避免单 Run 委托令牌被转发。
+MCP 与方舟不同源时拒绝启动，避免单 Run 委托令牌被转发。本地 `session.jsonl` 默认保留 90 天；
+Worker 每日只清理 Session 根目录内过期的常规日志，不跟随符号链接，可用
+`ARK_DSH_SESSION_RETENTION_DAYS` 缩短但不能设为 0。
 
 完成 migration 118、确认三个 `agent_runtime_*` AI Preset 都绑定启用的 `direct/openai` Provider、部署 Worker 后，才依次开启：
 
@@ -83,6 +79,8 @@ sudo journalctl -u leshine-ark-dsh-worker -n 100 --no-pager
 ```bash
 python -m pytest services/dsh-agent-worker/tests -q
 python -m pytest backend/tests/test_agent_runtime.py -q
+RUN_REAL_DSH_SMOKE=1 PYTHONPATH=services/dsh-agent-worker \
+  python -m pytest services/dsh-agent-worker/tests/test_real_runtime_integration.py -q
 ```
 
 首次灰度只开内部测试账号和 `customer_order_copilot`。确认任务中心能看到连续事件、取消生效、成果保持 `draft` 且模型日志没有原文后，再开定时复购分析。新客户开发仅运行 shadow，不得写正式线索或发送消息。

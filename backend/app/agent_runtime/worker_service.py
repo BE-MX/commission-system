@@ -18,6 +18,13 @@ from app.core.config import get_settings
 from app.ai.models import AiPreset
 
 
+_FIRST_PARTY_ARTIFACT_TYPES = {
+    "customer_order_copilot": "copilot_answer",
+    "repurchase_risk_analyst": "repurchase_action_card",
+    "sales_discovery_shadow": "sales_discovery_shadow_result",
+}
+
+
 def _now() -> datetime:
     return datetime.utcnow()
 
@@ -378,6 +385,15 @@ def complete_run(
     profile = db.query(AgentProfile).filter(AgentProfile.id == row.profile_id).one()
     if profile.output_schema and not artifacts:
         raise ConflictError("该 Agent Profile 必须提交至少一个成果")
+    policy = profile.policy_json or {}
+    max_artifacts = int(policy.get("max_artifacts") or 1)
+    if len(artifacts) > max_artifacts:
+        raise ConflictError(f"该 Agent Profile 最多提交 {max_artifacts} 个成果")
+    expected_artifact_type = str(
+        policy.get("artifact_type") or _FIRST_PARTY_ARTIFACT_TYPES.get(profile.profile_key) or ""
+    )
+    if expected_artifact_type and any(item.artifact_type != expected_artifact_type for item in artifacts):
+        raise ConflictError(f"该 Agent Profile 只接受 {expected_artifact_type} 成果")
     created = [
         artifact_service.create_artifact(
             db, row, profile,
