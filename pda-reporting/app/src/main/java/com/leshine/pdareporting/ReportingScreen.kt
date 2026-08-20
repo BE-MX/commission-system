@@ -30,6 +30,7 @@ class ReportingScreen(
     private val countText = metric("0", "今日次数")
     private val qtyText = metric("0", "今日件数")
     private val historyList = Ui.vertical(context)
+    private var unitReportDialog: UnitReportDialog? = null
     private val emptyText = Ui.text(context, "今天还没有报工记录\n扫描第一张流转卡开始报工", 14f, Ui.muted).apply {
         gravity = Gravity.CENTER
         setPadding(0, Ui.dp(context, 32), 0, Ui.dp(context, 32))
@@ -225,13 +226,11 @@ class ReportingScreen(
         val orderLabel = listOf(scan.optString("domestic_no"), scan.optString("order_no"))
             .filter { it.isNotBlank() && it != "null" }.joinToString(" · ").ifBlank { "-" }
         content.addView(infoBlock("订单", orderLabel))
-        val isUnit = scan.optString("report_mode") == "unit"
-        if (isUnit) content.addView(infoBlock("单件编号", scan.optString("unit_code", "-"), true))
         content.addView(infoBlock("当前工序", next.optString("process_name", "-"), true))
 
         val qtyLabel = Ui.text(
             context,
-            if (isUnit) "本次固定报工 1 件" else "报工数量（最多 $maxQty 件）",
+            "报工数量（最多 $maxQty 件）",
             14f,
             Ui.ink,
             true,
@@ -241,7 +240,6 @@ class ReportingScreen(
             inputType = InputType.TYPE_CLASS_NUMBER
             setText(maxQty.toString())
             selectAll()
-            isEnabled = !isUnit
             textSize = 24f
             gravity = Gravity.CENTER
             background = Ui.rounded(Color.WHITE, 10, context, Ui.greenBright)
@@ -250,8 +248,7 @@ class ReportingScreen(
         content.addView(
             Ui.text(
                 context,
-                if (isUnit) "单件二维码只对应这一件产品；同一道工序重复扫描会被后端拦截。"
-                else "默认报当前全部可报数量；改小即拆批，剩余数量之后继续扫同一张卡。",
+                "默认报当前全部可报数量；改小即拆批，剩余数量之后继续扫同一张卡。",
                 12f,
                 Ui.secondary,
             ),
@@ -286,6 +283,27 @@ class ReportingScreen(
         }
         dialog.setOnDismissListener { if (!confirmed) onCancel() }
         dialog.show()
+    }
+
+    fun showUnitReport(scan: JSONObject, loadImage: (String, ImageView) -> Unit) {
+        val renderer = unitReportDialog ?: UnitReportDialog(context, loadImage, ::showReady).also {
+            unitReportDialog = it
+        }
+        renderer.show(scan, UnitReportFlow.submitting())
+    }
+
+    fun showUnitSuccess(message: String): Boolean =
+        unitReportDialog?.render(UnitReportFlow.success(message)) == true
+
+    fun showUnitError(message: String): Boolean =
+        unitReportDialog?.render(UnitReportFlow.error(message)) == true
+
+    fun isUnitDialogShowing(): Boolean = unitReportDialog?.isShowing() == true
+
+    override fun onDetachedFromWindow() {
+        unitReportDialog?.dispose()
+        unitReportDialog = null
+        super.onDetachedFromWindow()
     }
 
     private fun infoBlock(label: String, value: String, emphasize: Boolean = false): View {
