@@ -4,7 +4,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.KeyEvent
@@ -20,6 +19,7 @@ import androidx.core.content.ContextCompat
 class ScannerInput(
     private val context: Context,
     private val onCode: (String, ScanSource) -> Unit,
+    private val onMalformedBroadcast: (String) -> Unit,
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private val keyBuffer = StringBuilder()
@@ -28,30 +28,42 @@ class ScannerInput(
     private var enabled = false
 
     private val idleSubmit = Runnable { submitKeyBuffer() }
+    private val bridgeListener: (String, String?) -> Unit = ::handleBroadcast
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (!enabled || intent == null) return
-            extractCode(intent)?.let { onCode(it, ScanSource.BROADCAST) }
+            handleBroadcast(intent.action.orEmpty(), ScanBroadcastContract.extract(intent.extras))
         }
     }
 
     fun start() {
         if (registered) return
         val filter = IntentFilter().apply {
-            COMMON_ACTIONS.forEach(::addAction)
-            addCategory(Intent.CATEGORY_DEFAULT)
+            ScanBroadcastContract.dynamicActions.forEach(::addAction)
+            ScanBroadcastContract.requiredCategories.forEach(::addCategory)
         }
         ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_EXPORTED)
+        ScanBroadcastBridge.attach(bridgeListener)
         registered = true
     }
 
     fun stop() {
         if (!registered) return
+        ScanBroadcastBridge.detach(bridgeListener)
         context.unregisterReceiver(receiver)
         registered = false
         handler.removeCallbacks(idleSubmit)
         keyBuffer.clear()
+    }
+
+    private fun handleBroadcast(action: String, code: String?) {
+        if (!enabled) return
+        if (code == null) {
+            onMalformedBroadcast(action)
+        } else {
+            onCode(code, ScanSource.BROADCAST)
+        }
     }
 
     fun setEnabled(value: Boolean) {
@@ -91,52 +103,8 @@ class ScannerInput(
         if (value.length >= 8) onCode(value, ScanSource.KEYBOARD)
     }
 
-    private fun extractCode(intent: Intent): String? {
-        EXTRA_KEYS.forEach { key ->
-            extractValue(intent.extras, key)?.let { if (it.isNotBlank()) return it.trim() }
-        }
-        intent.extras?.keySet()?.forEach { key ->
-            val value = extractValue(intent.extras, key) ?: return@forEach
-            if (value.contains("ARK-D", ignoreCase = true)) return value.trim()
-        }
-        return null
-    }
-
-    @Suppress("DEPRECATION")
-    private fun extractValue(extras: Bundle?, key: String): String? {
-        val value = extras?.get(key) ?: return null
-        return when (value) {
-            is String -> value
-            is ByteArray -> value.toString(Charsets.UTF_8).trimEnd('\u0000')
-            is CharSequence -> value.toString()
-            else -> null
-        }
-    }
-
     companion object {
-        const val CUSTOM_ACTION = "com.leshine.pdareporting.SCAN"
         private const val KEY_SEQUENCE_GAP_MS = 250L
         private const val IDLE_SUBMIT_MS = 180L
-
-        private val COMMON_ACTIONS = listOf(
-            CUSTOM_ACTION,
-            "com.sunmi.scanner.ACTION_DATA_CODE_RECEIVED",
-            "android.intent.ACTION_DECODE_DATA",
-            "nlscan.action.SCANNER_RESULT",
-            "com.honeywell.aidc.action.ACTION_BARCODE_READ_EVENT",
-            "com.android.server.scannerservice.broadcast",
-        )
-
-        private val EXTRA_KEYS = listOf(
-            "com.symbol.datawedge.data_string",
-            "com.honeywell.aidc.extra.EXTRA_BARCODE_DATA",
-            "data",
-            "barcode",
-            "barcode_string",
-            "barcodeData",
-            "decode_data",
-            "SCAN_BARCODE1",
-            "scannerdata",
-        )
     }
 }
