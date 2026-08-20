@@ -220,4 +220,3 @@ https://www.leshine.work/inventory-mcp/messages?sessionId=...
 
 1. `https://www.leshine.work/inventory-mcp/sse` 可完成真实 `initialize`、`tools/list` 和 `inventory_search("1006")`，并返回产品库存字段。
 2. 首页、现有 `/mcp/`、nginx 运行状态均无回归；交付备份路径、修改前后 SHA256、实际配置 diff、验证命令原始输出、回滚命令，以及 `PROGRESS.md` 和 `BLOCKED.md`（无阻塞也写“无”）。
-

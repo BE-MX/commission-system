@@ -100,4 +100,3 @@ https://www.leshine.work/inventory-mcp/sse
 5. 失败发生在连接、初始化、工具发现还是工具调用阶段。
 
 不要只反馈“连接失败”或“空响应”。
-
