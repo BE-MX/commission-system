@@ -1,6 +1,8 @@
 """环境变量配置（Pydantic Settings）"""
 
+import json
 from pathlib import Path
+import string
 from typing import Annotated
 from urllib.parse import quote_plus
 
@@ -305,6 +307,29 @@ class Settings(BaseSettings):
             raise ValueError("AGENT_RUNTIME_SHADOW_SAMPLE_RATE 必须在 0 到 1 之间")
         return value
 
+    @field_validator("AGENT_RUNTIME_WORKER_TOKEN_HASHES_JSON")
+    @classmethod
+    def _validate_agent_worker_hashes(cls, value: str) -> str:
+        raw = str(value or "").strip()
+        if not raw:
+            return ""
+        try:
+            mapping = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ValueError("AGENT_RUNTIME_WORKER_TOKEN_HASHES_JSON 必须是 JSON 对象") from exc
+        if not isinstance(mapping, dict):
+            raise ValueError("AGENT_RUNTIME_WORKER_TOKEN_HASHES_JSON 必须是 JSON 对象")
+        for worker_id, hashes in mapping.items():
+            values = hashes if isinstance(hashes, list) else [hashes]
+            if not worker_id or not values or any(
+                not isinstance(item, str)
+                or len(item) != 64
+                or any(char not in string.hexdigits for char in item)
+                for item in values
+            ):
+                raise ValueError("Worker token hash 必须是 64 位 SHA-256 十六进制字符串")
+        return raw
+
     @model_validator(mode="after")
     def _validate_production(self):
         """production 模式启动前校验关键安全配置"""
@@ -317,6 +342,17 @@ class Settings(BaseSettings):
                 "CUSTOMER_IMAGE_STALE_SECONDS must be greater than "
                 "CUSTOMER_IMAGE_LEASE_SECONDS"
             )
+        agent_profiles_enabled = any((
+            self.AGENT_RUNTIME_COPILOT_ENABLED,
+            self.AGENT_RUNTIME_REPURCHASE_ENABLED,
+            self.AGENT_RUNTIME_SALES_SHADOW_ENABLED,
+        ))
+        if self.AGENT_RUNTIME_DSH_ENABLED and not self.AGENT_RUNTIME_ENABLED:
+            raise ValueError("启用 DSH Runtime 前必须启用 AGENT_RUNTIME_ENABLED")
+        if agent_profiles_enabled and not self.AGENT_RUNTIME_DSH_ENABLED:
+            raise ValueError("启用首期 Agent Profile 前必须启用 AGENT_RUNTIME_DSH_ENABLED")
+        if self.AGENT_RUNTIME_SALES_SHADOW_ENABLED and not self.AGENT_RUNTIME_WEB_SEARCH_ENABLED:
+            raise ValueError("启用获客 Shadow 前必须启用 AGENT_RUNTIME_WEB_SEARCH_ENABLED")
         if self.APP_ENV != "production":
             return self
         errors = []
@@ -332,8 +368,10 @@ class Settings(BaseSettings):
             errors.append("ARK_SALARY_ENCRYPTION_KEY 必须显式配置（薪资身份证/银行卡加密）")
         if not self.ARK_SALARY_HASH_KEY:
             errors.append("ARK_SALARY_HASH_KEY 必须显式配置（薪资 PII 哈希匹配）")
-        if self.AGENT_RUNTIME_ENABLED and not self.AGENT_RUNTIME_RUN_TOKEN_SECRET:
-            errors.append("启用 AGENT_RUNTIME 时必须配置独立 AGENT_RUNTIME_RUN_TOKEN_SECRET")
+        if self.AGENT_RUNTIME_ENABLED and len(self.AGENT_RUNTIME_RUN_TOKEN_SECRET) < 32:
+            errors.append("启用 AGENT_RUNTIME 时必须配置至少 32 字符的独立 AGENT_RUNTIME_RUN_TOKEN_SECRET")
+        if self.AGENT_RUNTIME_DSH_ENABLED and self.AGENT_RUNTIME_WORKER_TOKEN_HASHES_JSON in {"", "{}"}:
+            errors.append("启用 DSH Runtime 时必须配置 AGENT_RUNTIME_WORKER_TOKEN_HASHES_JSON")
         if self.AGENT_RUNTIME_SALES_SHADOW_ENABLED and not self.AGENT_RUNTIME_BRAVE_SEARCH_API_KEY:
             errors.append("启用获客 Shadow 时必须配置 AGENT_RUNTIME_BRAVE_SEARCH_API_KEY")
         if errors:

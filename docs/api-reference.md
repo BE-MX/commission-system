@@ -7,6 +7,35 @@
 
 业务 API 统一前缀 `/api/v1/`（提成相关共享层），认证与领域模块直接挂在 `/api/`：
 
+### AI Agent 任务中心（`/api/agent-runtime`，迁移 118，2026-08-20）
+
+方舟是控制面，DSH Worker 是无数据库权限的执行面。用户 API 继续使用方舟 JWT；Worker API 使用
+`X-Agent-Worker-ID + Bearer machine token`；模型网关和 MCP 使用只绑定单次 Run 的短时 JWT。
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | `/config` | `agent_runtime:read/write/admin` 任一 | 返回总开关、DSH 与三个 Profile 灰度状态，不返回密钥 |
+| GET | `/profiles` | 同上 | 返回最新 active Profile 的公开配置与工具白名单 |
+| POST | `/sessions` | `agent_runtime:write/admin` | 创建绑定 Profile 与业务对象的会话；场景开关未开时拒绝 |
+| GET | `/sessions`、`/sessions/{id}` | `agent_runtime:read/write/admin` | 默认仅本人；`read_all` 只扩大数据范围 |
+| POST | `/sessions/{id}/runs` | `agent_runtime:write/admin` | 以用户级 `idempotency_key` 创建 Run，冻结权限与业务上下文 |
+| GET | `/tasks?status=&runtime=&page=&page_size=` | `agent_runtime:read/write/admin` | 任务中心服务端分页 |
+| GET | `/runs/{id}` | 同上 | Run 计量与结构化 Artifact |
+| GET | `/runs/{id}/events?after_sequence=&limit=` | 同上 | 追加式脱敏事件；非管理员看不到 admin 事件 |
+| GET | `/runs/{id}/stream?after_sequence=` | 同上 | SSE 事件流；需要可附带 Authorization 的客户端 |
+| POST | `/runs/{id}/cancel` | `agent_runtime:write/admin` | 排队任务立即取消，执行中任务设置取消请求，由 Worker 在安全点停止 |
+| POST | `/artifacts/{id}/accept`、`/reject` | `agent_runtime:write/admin` | 人工决策；仅接受会触发受支持的业务投影 |
+| POST | `/runs/{id}/feedback` | `agent_runtime:write/admin` | `useful/not_useful/corrected` 离线评测反馈 |
+
+Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`context`、`events`、
+`complete`、`fail`。租约明文只返回一次，数据库仅存 SHA-256；完成请求网络结果不确定时 Worker
+提交 `ambiguous`，不得盲目重试。模型路由 `POST /api/agent-runtime/model/v1/chat/completions`
+只接受 Run JWT，并由 Profile 覆盖客户端模型、参数和工具列表。
+
+首期业务约束：客户副驾驶只读；复购成果只有人工接受且原行动仍为 `pending` 时才更新
+`ark_customer_actions`；获客 Shadow 只写 Agent Artifact，不写正式公司、联系人、研究或邮件表。
+浏览器任务详情目前用活动态轮询，因为现有 Bearer 认证不能由原生 `EventSource` 安全附加请求头。
+
 ### 运行与自动化中心（`/api/operations`，2026-08-12）
 
 - `GET /overview`：服务、调度器与跨服务器运行实例汇总（`operations:read` 或 `operations:admin`）。

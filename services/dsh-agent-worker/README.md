@@ -40,12 +40,16 @@ python -m venv /opt/leshine-ark-dsh/.venv
   deepseek_harness_runtime_bin-0.1.0rc8-py3-none-linux_x86_64.whl
 ```
 
-复制 `.env.example` 到权限 `0600` 的部署环境文件。Worker 明文 token 要生成独立随机值，后台只配置 SHA-256：
+复制本目录的 `.env.example` 为 `/etc/leshine/ark-dsh-worker.env` 并设为 `0600`。Worker 明文 token 要生成独立随机值，后台只配置 SHA-256：
 
 ```text
 AGENT_RUNTIME_WORKER_TOKEN_HASHES_JSON={"dsh-worker-01":["<sha256>"]}
 AGENT_RUNTIME_RUN_TOKEN_SECRET=<独立高熵密钥>
 ```
+
+Worker 环境必须配置 `ARK_BASE_URL`、同源 `ARK_MCP_URL`、`ARK_AGENT_WORKER_ID`、
+`ARK_AGENT_WORKER_TOKEN` 和仅 Worker 用户可读的 `ARK_DSH_SESSION_ROOT`。非本机地址拒绝 HTTP，
+MCP 与方舟不同源时拒绝启动，避免单 Run 委托令牌被转发。
 
 完成 migration 118、确认三个 `agent_runtime_*` AI Preset 都绑定启用的 `direct/openai` Provider、部署 Worker 后，才依次开启：
 
@@ -60,6 +64,19 @@ AGENT_RUNTIME_DSH_ENABLED=true
 PYTHONPATH=services/dsh-agent-worker python -m ark_dsh_worker.main
 ```
 
+systemd 安装与观测：
+
+```bash
+sudo install -m 0644 deploy/systemd/leshine-ark-dsh-worker.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now leshine-ark-dsh-worker
+sudo systemctl status leshine-ark-dsh-worker --no-pager
+sudo journalctl -u leshine-ark-dsh-worker -n 100 --no-pager
+```
+
+紧急止损先关闭业务 Profile flag，阻止新建任务；再关闭 `AGENT_RUNTIME_DSH_ENABLED`，阻止领取排队任务；
+最后停止 Worker。不要删除 Run、Event 或 Artifact，执行中失联的 Run 会在租约过期后进入 `ambiguous`，由人工核查。
+
 ## 验证
 
 ```bash
@@ -68,4 +85,3 @@ python -m pytest backend/tests/test_agent_runtime.py -q
 ```
 
 首次灰度只开内部测试账号和 `customer_order_copilot`。确认任务中心能看到连续事件、取消生效、成果保持 `draft` 且模型日志没有原文后，再开定时复购分析。新客户开发仅运行 shadow，不得写正式线索或发送消息。
-

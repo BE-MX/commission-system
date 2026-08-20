@@ -1375,3 +1375,46 @@ Journal 判读和重跑规则：`intent` 与 `syscall_returned` 都只是操作�
 - 文件上传失败会删除临时/新原件；数据库提交成功后物理删除失败形成孤儿文件，需按 `object_key` 与数据库差集逐文件审计，禁止递归删除存储根。
 - 应用回滚时保留 114 迁移和六张业务表；先撤回三个权限并在 Nginx 对上传接口返回 503。静态站可继续只读，若数据库版本不兼容则整个门户进入维护页。
 - 迁移 COS 时保持数据库 `storage_provider/object_key` 契约：复制并校验 SHA-256，按批切换 provider，验证下载后再逐对象清理本地文件；不能直接改 Nginx 路径代替迁移。
+
+## DSH Agent Runtime 灰度与回滚（迁移 118）
+
+### 上线前置
+
+1. 备份数据库，确认 `alembic heads` 只有 `118_agent_runtime`，再由唯一实例执行 `alembic upgrade head`。
+2. 在方舟 AI 管理中确认 `agent_runtime_copilot`、`agent_runtime_repurchase`、`agent_runtime_sales_shadow` 均绑定启用的 `direct/openai` Provider；模型真实 API Key 只保存在方舟。
+3. 从官方固定 tag `dsh-v0.1.0-rc.8`（commit `141eb6fef83422698aef7a981029e843e8161534`）构建并审查 SDK/runtime wheels。官方 PyPI 与 GitHub Release 尚无可安装 wheel 时，不得改用浮动 master 或伪造依赖。
+4. 创建 Linux 低权限用户与 `/var/lib/leshine-ark-dsh/sessions`（0700），按 `services/dsh-agent-worker/.env.example` 配置 `/etc/leshine/ark-dsh-worker.env`（0600），安装 `deploy/systemd/leshine-ark-dsh-worker.service`。
+5. 为 Worker 生成独立随机 token；明文只放 Worker，方舟 `AGENT_RUNTIME_WORKER_TOKEN_HASHES_JSON` 只放 SHA-256。另配至少 32 字符的独立 `AGENT_RUNTIME_RUN_TOKEN_SECRET`。
+6. 给内部试点角色最小权限：任务页面 `agent_runtime:read/write`，执行 `agent_runtime:invoke`，再叠加场景所需 `customer_radar:read`、`order_intelligence:read` 或 `sales_automation:read`。`read_all/admin` 不授普通业务员。
+
+### 开关顺序
+
+所有开关初始保持 false。先开控制面和 Runtime，再逐场景灰度；每一步重启后端并验证 `/api/agent-runtime/config`：
+
+```env
+AGENT_RUNTIME_ENABLED=true
+AGENT_RUNTIME_DSH_ENABLED=true
+AGENT_RUNTIME_COPILOT_ENABLED=true
+AGENT_RUNTIME_REPURCHASE_ENABLED=false
+AGENT_RUNTIME_WEB_SEARCH_ENABLED=false
+AGENT_RUNTIME_SALES_SHADOW_ENABLED=false
+AGENT_RUNTIME_SHADOW_SAMPLE_RATE=0
+```
+
+先用内部账号完成客户副驾驶标准问题：任务领取、事件连续、取消、Artifact 保持 draft、接受/拒绝与日志脱敏均正确。之后再开复购，抽查规则召回与已处理行动不被覆盖。最后配置 Brave Key，开启受控 Web Search 与 5% Shadow 抽样；达到 50 个同输入样本前不得提高流量，更不得替代 OpenClaw 正式链路。
+
+### 观测与止损
+
+```bash
+systemctl status leshine-ark-dsh-worker --no-pager
+journalctl -u leshine-ark-dsh-worker -n 200 --no-pager
+```
+
+任务中心重点检查 `queued` 堆积、`ambiguous`、租约过期、步骤/Token/成本和 Artifact 证据。紧急止损按以下顺序执行：
+
+1. 关闭对应 Profile flag，阻止新任务；复购开关关闭后调度任务不再注册，Shadow 开关关闭后 SearchJob 不再抽样。
+2. 关闭 `AGENT_RUNTIME_DSH_ENABLED`，Worker 无法领取新任务；需要完全冻结时再关闭 `AGENT_RUNTIME_ENABLED`。
+3. 停止 Worker。正在执行且失联的任务等待租约到期进入 `ambiguous`，人工核查，不直接重跑。
+4. 保留迁移 118、Run/Event/Artifact 与客户行动来源字段。代码回滚只回应用和前端；除非已完成数据导出与影响审计，不执行 118 downgrade。
+
+恢复时先修复根因并轮换 Worker token/Run secret（若疑似泄露），再按上线顺序逐层开启。标准化事件与用户反馈保留；超过保留期只清空可选原始密文。

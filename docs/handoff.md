@@ -6,6 +6,13 @@
 >
 > ⚠️ **发布状态提醒（2026-08-13 核实）**：本地 `main` 与 `origin/main` 同步（提交 `0372766`），`cloud/main`（北京展会实例）已于 2026-08-13 推送代码但**服务尚未重启**——生产校验新增 `ARK_SALARY_ENCRYPTION_KEY` 和 `ARK_SALARY_HASH_KEY` 两项必填环境变量（config.py:283-286，薪资模块 PII 加密），云端 `.env` 缺配会导致启动失败，需补齐后才能执行 runbook 的重启步骤。**「已合入 main」不等于「已上线」**：本清单里 2026-08-05 之后的条目默认只到「本地已提交」，逐条发布状态见各条标注。main 的 push 等亮哥指令。
 
+## 2026-08-20 DSH Agent Runtime 交接
+
+- 开发分支 `codex/agent-runtime-phase1` 已实现迁移 118、统一 Agent 控制面、受控模型/MCP 网关、隔离 DSH Worker、客户经营副驾驶、复购行动卡、获客 Shadow、任务中心和运行时间线；Feature Flag 全部默认关闭，尚未合入 main 或部署生产。
+- Worker 固定 DSH `0.1.0rc8`；官方 Python wheel 当前缺失，仓库只完成适配层与模拟测试，没有声称真实 DSH Runtime E2E 已通过。生产前按 Worker README 从固定 tag 构建并审查 wheels。
+- 上线必须按 `docs/runbook.md` 的“DSH Agent Runtime 灰度与回滚”执行：唯一实例迁移、三只 AI Preset、机器 token hash、Run secret、最小角色权限、内部副驾驶、复购、5% 获客 Shadow 逐层开启。
+- 不改变现有 OpenClaw 正式获客和邮件链路。DSH Shadow 只产生 Artifact；复购成果只有人工接受且原行动仍 pending 才投影。止损优先关 Profile/Runtime flag，保留 118 数据结构和审计记录。
+
 ## 项目概况
 
 - **项目名称**：莱莎方舟平台（LeShine Ark Platform）

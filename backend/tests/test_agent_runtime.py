@@ -12,7 +12,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.agent_runtime import artifact_service, models, router, seed, service, worker_service
+from app.agent_runtime import artifact_service, maintenance, models, router, seed, service, worker_service
 from app.agent_runtime import orchestration
 from app.agent_runtime.dependencies import require_agent_worker, verify_worker_token
 from app.agent_runtime.errors import ConflictError, ForbiddenError, LeaseError, NotFoundError
@@ -279,6 +279,24 @@ def test_event_id_cannot_be_reused_with_different_payload(db):
             events=[changed],
         )
     db.rollback()
+
+
+def test_raw_event_retention_redacts_cipher_but_keeps_audit_event(db):
+    run = _run(db, _session(db))
+    events = db.query(models.AgentEvent).filter(
+        models.AgentEvent.run_id == run.id,
+    ).order_by(models.AgentEvent.id).all()
+    events[0].raw_payload_cipher = "encrypted-old-payload"
+    events[0].created_at = datetime(2026, 1, 1)
+    db.commit()
+
+    assert maintenance.redact_expired_raw_events(
+        db, now=datetime(2026, 4, 2), retention_days=90,
+    ) == 1
+    db.refresh(events[0])
+    assert events[0].raw_payload_cipher is None
+    assert events[0].event_type == "run.created"
+    assert events[0].payload_json["profile_key"] == "customer_order_copilot"
 
 
 def test_expired_running_lease_becomes_ambiguous_and_rejects_stale_worker(db):
