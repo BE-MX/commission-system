@@ -202,6 +202,26 @@ export const NAV_ENTRIES = [
     title: '工作台',
     menu: { icon: DataAnalysis, order: 0 },
   },
+  {
+    path: '/agent-runtime/tasks',
+    name: 'AgentTaskCenter',
+    component: () => import('@/views/agent-runtime/AgentTaskCenter.vue'),
+    title: 'AI Agent 任务中心',
+    anyPermission: ['agent_runtime:read', 'agent_runtime:write', 'agent_runtime:admin'],
+    menu: {
+      title: 'AI Agent 任务中心', icon: Monitor, order: 5,
+      anyPermission: ['agent_runtime:read', 'agent_runtime:write', 'agent_runtime:admin'],
+    },
+  },
+  {
+    path: '/agent-runtime/tasks/:runId',
+    name: 'AgentRunDetail',
+    component: () => import('@/views/agent-runtime/AgentRunDetail.vue'),
+    title: 'Agent 运行详情',
+    anyPermission: ['agent_runtime:read', 'agent_runtime:write', 'agent_runtime:admin'],
+    activeMenu: '/agent-runtime/tasks',
+    hideInMenu: true,
+  },
 
   {
     path: '/knowledge',
