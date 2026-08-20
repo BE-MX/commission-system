@@ -5,14 +5,22 @@
   "type": "module",
   "description": "Narrow MCP bridge between OpenClaw and Ark sales-automation APIs",
   "scripts": {
+    "build:email-tools": "node scripts/build-email-tools.mjs",
+    "configure:email": "node scripts/configure-email-agent.mjs",
     "start": "node src/server.mjs",
-    "test": "node --test"
+    "test": "node --test",
+    "verify:email": "node scripts/verify-email-agent.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
+    "date-holidays": "3.34.1",
+    "luxon": "3.7.2",
     "zod": "4.4.3"
   },
   "engines": {
     "node": ">=24.15.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
   }
 }
