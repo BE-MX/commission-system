@@ -13,6 +13,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.agent_runtime import artifact_service, models, router, seed, service, worker_service
+from app.agent_runtime import orchestration
 from app.agent_runtime.dependencies import require_agent_worker, verify_worker_token
 from app.agent_runtime.errors import ConflictError, ForbiddenError, LeaseError, NotFoundError
 from app.agent_runtime.schemas import ArtifactInput, WorkerEventInput
@@ -26,6 +27,7 @@ from app.insight import customer_radar_service
 from app.insight.models import CustomerAction, CustomerOpportunity, CustomerProfile
 from app.mcp import auth as mcp_auth
 from app.mcp.models import MCPToken
+from app.mcp.public_web_tools import _validate_public_url
 
 
 @pytest.fixture()
@@ -60,6 +62,22 @@ def db():
         ArkUser(id=8, username="other", password_hash="x", real_name="Other"),
     ])
     session.commit()
+    role = ArkRole(id=1, name="agent_test", label="Agent Test")
+    permission_codes = [
+        "agent_runtime:invoke", "customer_radar:read", "order_intelligence:read",
+        "sales_automation:read",
+    ]
+    permissions = [
+        ArkPermission(id=index + 1, code=code, module=code.split(":")[0], action=code.split(":")[1], label=code)
+        for index, code in enumerate(permission_codes)
+    ]
+    session.add(role)
+    session.add_all(permissions)
+    session.flush()
+    session.add(ArkUserRole(user_id=7, role_id=role.id))
+    session.add_all([ArkRolePermission(role_id=role.id, permission_id=item.id) for item in permissions])
+    session.commit()
+    session.expunge_all()
     seed.seed_default_profiles(session)
     try:
         yield session
@@ -73,6 +91,13 @@ def runtime_settings(monkeypatch):
     settings = SimpleNamespace(
         AGENT_RUNTIME_ENABLED=True,
         AGENT_RUNTIME_DSH_ENABLED=True,
+        AGENT_RUNTIME_COPILOT_ENABLED=True,
+        AGENT_RUNTIME_REPURCHASE_ENABLED=True,
+        AGENT_RUNTIME_SALES_SHADOW_ENABLED=True,
+        AGENT_RUNTIME_REPURCHASE_BATCH_SIZE=20,
+        AGENT_RUNTIME_WEB_SEARCH_ENABLED=True,
+        AGENT_RUNTIME_BRAVE_SEARCH_API_KEY="test-brave-key",
+        AGENT_RUNTIME_SHADOW_SAMPLE_RATE=1.0,
         AGENT_RUNTIME_WORKER_LEASE_SECONDS=180,
         AGENT_RUNTIME_MAX_ACTIVE_PER_USER=2,
         AGENT_RUNTIME_MAX_STEPS_PER_RUN=12,
@@ -90,6 +115,7 @@ def runtime_settings(monkeypatch):
     monkeypatch.setattr(dependencies, "get_settings", lambda: settings)
     monkeypatch.setattr(router, "get_settings", lambda: settings)
     monkeypatch.setattr(agent_service, "get_settings", lambda: settings)
+    monkeypatch.setattr(orchestration, "get_settings", lambda: settings)
     return settings
 
 
@@ -490,3 +516,116 @@ def test_mcp_run_token_is_bound_to_profile_tool_allowlist(db):
     assert identity["_agent_run"]["run_id"] == run.id
     with pytest.raises(mcp_auth.MCPAuthError, match="record_shipment"):
         mcp_auth.require_identity(ctx, db, tool_name="record_shipment")
+
+
+def test_accepted_repurchase_artifact_projects_only_to_pending_action(db):
+    profile = CustomerProfile(
+        customer_name="Repeat Buyer",
+        customer_external_id="C-REPEAT",
+        owner_user_id=7,
+        owner_resolve_status="resolved",
+        priority_score=80,
+        first_seen_at=datetime.utcnow(),
+        status="active",
+    )
+    db.add(profile)
+    db.flush()
+    action = CustomerAction(
+        profile_id=profile.id,
+        owner_user_id=7,
+        thread_group="reorder_window",
+        thread_priority="重点",
+        action_reason="规则理由",
+        suggested_next_action="规则动作",
+        suggested_message="rule draft",
+        source_evidence={"source": "rule"},
+        action_status="pending",
+        action_date=date(2026, 8, 20),
+        source_type="rule",
+        source_fingerprint="rule-projection-test",
+        evidence_status="valid",
+    )
+    db.add(action)
+    db.commit()
+    session = _session(db, profile_key="repurchase_risk_analyst")
+    run = service.create_run(db, session.id, {
+        "idempotency_key": "repurchase-projection-run",
+        "input": {"customer_profile_id": profile.id},
+        "trigger_type": "schedule",
+        "business_ref_type": "customer_action",
+        "business_ref_id": str(action.id),
+    }, user_id=7, permissions=["agent_runtime:invoke"], roles=[])
+    claim = _claim(db)
+    _start(db, run.id, claim)
+    artifact = ArtifactInput(
+        artifact_type="repurchase_action_card",
+        content={
+            "action_reason": "DSH 有证据理由",
+            "suggested_next_action": "确认库存和采购周期",
+            "suggested_message": "Could we review your next replenishment window?",
+            "evidence": [{"source": "get_customer_repurchase_analysis"}],
+        },
+        evidence=[{"source": "get_customer_repurchase_analysis"}],
+    )
+    _, artifacts = worker_service.complete_run(
+        db, run.id,
+        worker_id="dsh-worker-01", lease_token=claim["lease_token"],
+        runtime_run_id="dsh-repurchase", artifacts=[artifact], steps_used=2,
+        prompt_tokens=20, completion_tokens=10, cost_usd=Decimal("0"),
+    )
+    artifact_service.decide_artifact(
+        db, artifacts[0].id, user_id=7, decision="accepted", note=None, can_read_all=False,
+    )
+    db.refresh(action)
+    assert action.source_type == "dsh"
+    assert action.source_run_id == run.id
+    assert action.action_reason == "DSH 有证据理由"
+
+    # A later replay/decision must never rewrite user-handled action state.
+    action.action_status = "done"
+    action.action_reason = "用户处理后的事实"
+    db.commit()
+    from app.agent_runtime.projection_service import project_accepted_artifact
+    project_accepted_artifact(db, artifacts[0], run)
+    db.commit()
+    assert db.get(CustomerAction, action.id).action_reason == "用户处理后的事实"
+
+
+def test_repurchase_scheduler_enqueues_once_from_rule_candidate(db):
+    profile = CustomerProfile(
+        customer_name="Scheduled Buyer", customer_external_id="C-SCHEDULED",
+        owner_user_id=7, owner_resolve_status="resolved", priority_score=70,
+        first_seen_at=datetime.utcnow(), status="active",
+    )
+    db.add(profile)
+    db.flush()
+    action = CustomerAction(
+        profile_id=profile.id, owner_user_id=7, thread_group="reorder_window",
+        thread_priority="重点", action_reason="进入规则复购窗口",
+        suggested_next_action="确认需求", suggested_message="draft",
+        source_evidence={"source": "rule"}, action_status="pending",
+        action_date=date(2026, 8, 20), source_type="rule",
+        source_fingerprint="rule-scheduled-test", evidence_status="valid",
+    )
+    db.add(action)
+    db.commit()
+    assert orchestration.enqueue_repurchase_runs(
+        db, action_date=date(2026, 8, 20), limit=10,
+    ) == 1
+    run = db.query(models.AgentRun).filter(
+        models.AgentRun.business_ref_type == "customer_action",
+        models.AgentRun.business_ref_id == str(action.id),
+    ).one()
+    assert run.status == "queued"
+    assert run.trigger_type == "schedule"
+    assert orchestration.enqueue_repurchase_runs(
+        db, action_date=date(2026, 8, 20), limit=10,
+    ) == 0
+
+
+def test_public_fetch_url_guard_rejects_private_dns(monkeypatch):
+    monkeypatch.setattr("app.mcp.public_web_tools.socket.getaddrinfo", lambda *_args, **_kwargs: [
+        (None, None, None, None, ("127.0.0.1", 443)),
+    ])
+    with pytest.raises(ValueError, match="非公开"):
+        _validate_public_url("https://example.com/private")

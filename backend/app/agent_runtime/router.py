@@ -67,6 +67,12 @@ def get_agent_runtime_config(
         "enabled": settings.AGENT_RUNTIME_ENABLED,
         "dsh_enabled": settings.AGENT_RUNTIME_DSH_ENABLED,
         "max_active_per_user": settings.AGENT_RUNTIME_MAX_ACTIVE_PER_USER,
+        "profiles": {
+            "customer_order_copilot": settings.AGENT_RUNTIME_COPILOT_ENABLED,
+            "repurchase_risk_analyst": settings.AGENT_RUNTIME_REPURCHASE_ENABLED,
+            "sales_discovery_shadow": settings.AGENT_RUNTIME_SALES_SHADOW_ENABLED,
+        },
+        "web_search_enabled": settings.AGENT_RUNTIME_WEB_SEARCH_ENABLED,
     })
 
 

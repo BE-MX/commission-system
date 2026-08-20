@@ -56,6 +56,7 @@ JOB_RUNTIME_HEARTBEAT_MONITOR = "runtime_heartbeat_monitor"
 JOB_OPERATIONS_HISTORY_CLEANUP = "operations_history_cleanup"
 JOB_KNOWLEDGE_AI_QUEUE = "knowledge_ai_queue"
 JOB_KNOWLEDGE_IMAGE_CLEANUP = "knowledge_image_cleanup"
+JOB_AGENT_REPURCHASE_ENQUEUE = "agent_repurchase_enqueue"
 
 
 def _console_safe(value: object, encoding: str | None = None) -> str:
@@ -93,6 +94,7 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
     from app.operations.observability import clear_old_job_runs, monitor_runtime_heartbeats
     from app.knowledge.ai_worker import process_queue as process_knowledge_ai_queue
     from app.knowledge.asset_service import cleanup_expired_images
+    from app.agent_runtime.orchestration import enqueue_repurchase_job
 
     settings = get_settings()
 
@@ -262,6 +264,17 @@ def _register_jobs(scheduler: AsyncIOScheduler) -> None:
             max_instances=1,
             coalesce=True,
             misfire_grace_time=3600,
+        )
+    if settings.AGENT_RUNTIME_REPURCHASE_ENABLED:
+        scheduler.add_job(
+            enqueue_repurchase_job,
+            trigger="interval",
+            minutes=10,
+            id=JOB_AGENT_REPURCHASE_ENQUEUE,
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=300,
         )
     scheduler.add_job(
         monitor_runtime_heartbeats,

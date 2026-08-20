@@ -19,6 +19,7 @@ from app.mcp.asset_tools import register_asset_tools
 from app.mcp.knowledge_tools import register_knowledge_tools
 from app.mcp.price_tools import register_price_tools
 from app.mcp.agent_tools import register_agent_tools
+from app.mcp.public_web_tools import register_public_web_tools
 
 logger = logging.getLogger("commission.mcp.server")
 
@@ -40,6 +41,7 @@ register_asset_tools(mcp)
 register_knowledge_tools(mcp)
 register_price_tools(mcp)
 register_agent_tools(mcp)
+register_public_web_tools(mcp)
 
 # 构建 ASGI 子应用（同时初始化 session_manager）
 _mcp_asgi_app = mcp.streamable_http_app()

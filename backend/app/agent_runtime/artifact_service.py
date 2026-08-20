@@ -83,6 +83,8 @@ def create_artifact(
         validation_status="valid",
         validation_errors=[],
         decision_status="draft",
+        business_ref_type=run.business_ref_type,
+        business_ref_id=run.business_ref_id,
     )
     db.add(artifact)
     db.flush()
@@ -126,6 +128,9 @@ def decide_artifact(
     artifact.decided_by = user_id
     artifact.decided_at = datetime.utcnow()
     artifact.feedback_note = note
+    if decision == "accepted":
+        from app.agent_runtime.projection_service import project_accepted_artifact
+        project_accepted_artifact(db, artifact, run)
     append_event(
         db, run,
         event_id=f"artifact-{artifact.id}-{decision}",
@@ -136,4 +141,3 @@ def decide_artifact(
     db.commit()
     db.refresh(artifact)
     return artifact
-

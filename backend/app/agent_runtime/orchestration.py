@@ -1,0 +1,139 @@
+"""Business-event and scheduled entry points for first-party Agent Profiles."""
+
+from __future__ import annotations
+
+from datetime import date
+import hashlib
+import logging
+
+from sqlalchemy.orm import Session
+
+from app.agent_runtime import service
+from app.agent_runtime.errors import ConflictError
+from app.agent_runtime.models import AgentRun, AgentSession
+from app.auth.models import ArkUser
+from app.auth.service import get_user_permissions, get_user_roles
+from app.core.config import get_settings
+from app.core.database import SessionLocal
+from app.insight.models import CustomerAction
+from app.sales_automation.models import SearchJob
+
+
+logger = logging.getLogger("commission.agent_runtime.orchestration")
+
+
+def _identity(user: ArkUser) -> tuple[list[str], list[str]]:
+    return get_user_permissions(user), get_user_roles(user)
+
+
+def _has_permissions(permissions: list[str], *required: str) -> bool:
+    values = set(permissions)
+    return all(item in values for item in required)
+
+
+def _cleanup_empty_session(db: Session, session: AgentSession | None) -> None:
+    if session is not None and db.query(AgentRun).filter(AgentRun.session_id == session.id).count() == 0:
+        db.delete(session)
+        db.commit()
+
+
+def enqueue_repurchase_runs(db: Session, *, action_date: date | None = None, limit: int | None = None) -> int:
+    settings = get_settings()
+    if not settings.AGENT_RUNTIME_REPURCHASE_ENABLED or not settings.AGENT_RUNTIME_DSH_ENABLED:
+        return 0
+    target_date = action_date or date.today()
+    batch_size = min(limit or settings.AGENT_RUNTIME_REPURCHASE_BATCH_SIZE, 100)
+    actions = db.query(CustomerAction).filter(
+        CustomerAction.action_date == target_date,
+        CustomerAction.thread_group == "reorder_window",
+        CustomerAction.action_status == "pending",
+        CustomerAction.source_run_id.is_(None),
+    ).order_by(CustomerAction.sort_order.desc(), CustomerAction.id).limit(batch_size).all()
+    created = 0
+    for action in actions:
+        if db.query(AgentRun).filter(
+            AgentRun.business_ref_type == "customer_action",
+            AgentRun.business_ref_id == str(action.id),
+        ).count():
+            continue
+        user = db.query(ArkUser).filter(
+            ArkUser.id == action.owner_user_id,
+            ArkUser.is_active.is_(True),
+            ArkUser.deleted_at.is_(None),
+        ).one_or_none()
+        if user is None:
+            continue
+        permissions, roles = _identity(user)
+        if "super_admin" not in roles and not _has_permissions(
+            permissions, "agent_runtime:invoke", "customer_radar:read", "order_intelligence:read",
+        ):
+            continue
+        session = None
+        try:
+            session = service.create_session(db, {
+                "profile_key": "repurchase_risk_analyst",
+                "title": f"复购行动分析 #{action.id}",
+                "context_type": "customer",
+                "context_id": str(action.profile_id),
+            }, user_id=action.owner_user_id)
+            service.create_run(db, session.id, {
+                "idempotency_key": f"repurchase-action-{action.id}-{(action.source_fingerprint or 'rule')[:32]}",
+                "input": {
+                    "customer_profile_id": action.profile_id,
+                    "action_id": action.id,
+                    "rule_reason": action.action_reason,
+                },
+                "trigger_type": "schedule",
+                "business_ref_type": "customer_action",
+                "business_ref_id": str(action.id),
+            }, user_id=action.owner_user_id, permissions=permissions, roles=roles)
+            created += 1
+        except ConflictError:
+            db.rollback()
+            _cleanup_empty_session(db, session)
+    return created
+
+
+def enqueue_repurchase_job() -> int:
+    with SessionLocal() as db:
+        return enqueue_repurchase_runs(db)
+
+
+def maybe_enqueue_sales_shadow(db: Session, job: SearchJob, current_user: dict) -> AgentRun | None:
+    settings = get_settings()
+    if not (
+        settings.AGENT_RUNTIME_SALES_SHADOW_ENABLED
+        and settings.AGENT_RUNTIME_WEB_SEARCH_ENABLED
+        and settings.AGENT_RUNTIME_DSH_ENABLED
+        and settings.AGENT_RUNTIME_SHADOW_SAMPLE_RATE > 0
+    ):
+        return None
+    threshold = int(hashlib.sha256(f"search-job:{job.id}".encode()).hexdigest()[:8], 16) / (2 ** 32)
+    if threshold >= settings.AGENT_RUNTIME_SHADOW_SAMPLE_RATE:
+        return None
+    permissions = list(current_user.get("permissions") or [])
+    roles = list(current_user.get("roles") or [])
+    if "super_admin" not in roles and not _has_permissions(
+        permissions, "agent_runtime:invoke", "sales_automation:read",
+    ):
+        return None
+    user_id = int(current_user["sub"])
+    session = None
+    try:
+        session = service.create_session(db, {
+            "profile_key": "sales_discovery_shadow",
+            "title": f"DSH 影子评测：{job.name}",
+            "context_type": "search_job",
+            "context_id": str(job.id),
+        }, user_id=user_id)
+        return service.create_run(db, session.id, {
+            "idempotency_key": f"sales-shadow-search-job-{job.id}",
+            "input": {"search_job_id": job.id},
+            "trigger_type": "shadow",
+            "business_ref_type": "search_job",
+            "business_ref_id": str(job.id),
+        }, user_id=user_id, permissions=permissions, roles=roles)
+    except ConflictError:
+        db.rollback()
+        _cleanup_empty_session(db, session)
+        return None

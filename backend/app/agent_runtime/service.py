@@ -34,8 +34,23 @@ def list_profiles(db: Session) -> list[AgentProfile]:
     return list(latest.values())
 
 
+def profile_feature_enabled(profile_key: str) -> bool:
+    settings = get_settings()
+    gates = {
+        "customer_order_copilot": settings.AGENT_RUNTIME_COPILOT_ENABLED,
+        "repurchase_risk_analyst": settings.AGENT_RUNTIME_REPURCHASE_ENABLED,
+        "sales_discovery_shadow": (
+            settings.AGENT_RUNTIME_SALES_SHADOW_ENABLED
+            and settings.AGENT_RUNTIME_WEB_SEARCH_ENABLED
+        ),
+    }
+    return bool(settings.AGENT_RUNTIME_ENABLED and gates.get(profile_key, False))
+
+
 def create_session(db: Session, data: dict, *, user_id: int) -> AgentSession:
     profile = get_active_profile(db, data["profile_key"])
+    if not profile_feature_enabled(profile.profile_key):
+        raise ConflictError("该 Agent 业务场景尚未开启灰度")
     row = AgentSession(
         owner_user_id=user_id,
         profile_id=profile.id,
@@ -92,6 +107,8 @@ def create_run(
     profile = db.query(AgentProfile).filter(AgentProfile.id == session.profile_id).one()
     if profile.status != "active":
         raise ConflictError("该 Agent Profile 已停用")
+    if not profile_feature_enabled(profile.profile_key):
+        raise ConflictError("该 Agent 业务场景尚未开启灰度")
     existing = db.query(AgentRun).filter(
         AgentRun.owner_user_id == user_id,
         AgentRun.idempotency_key == data["idempotency_key"],

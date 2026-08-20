@@ -250,6 +250,13 @@ class Settings(BaseSettings):
     # 首次部署默认关闭；完成迁移、Worker 凭证与模型网关配置后按 Profile 灰度开启。
     AGENT_RUNTIME_ENABLED: bool = False
     AGENT_RUNTIME_DSH_ENABLED: bool = False
+    AGENT_RUNTIME_COPILOT_ENABLED: bool = False
+    AGENT_RUNTIME_REPURCHASE_ENABLED: bool = False
+    AGENT_RUNTIME_SALES_SHADOW_ENABLED: bool = False
+    AGENT_RUNTIME_REPURCHASE_BATCH_SIZE: _PositiveInt = 20
+    AGENT_RUNTIME_WEB_SEARCH_ENABLED: bool = False
+    AGENT_RUNTIME_BRAVE_SEARCH_API_KEY: str = ""
+    AGENT_RUNTIME_PUBLIC_FETCH_MAX_BYTES: _PositiveInt = 1_000_000
     AGENT_RUNTIME_WORKER_LEASE_SECONDS: _PositiveInt = 180
     AGENT_RUNTIME_MAX_ACTIVE_PER_USER: _PositiveInt = 2
     AGENT_RUNTIME_MAX_STEPS_PER_RUN: _PositiveInt = 12
@@ -327,6 +334,8 @@ class Settings(BaseSettings):
             errors.append("ARK_SALARY_HASH_KEY 必须显式配置（薪资 PII 哈希匹配）")
         if self.AGENT_RUNTIME_ENABLED and not self.AGENT_RUNTIME_RUN_TOKEN_SECRET:
             errors.append("启用 AGENT_RUNTIME 时必须配置独立 AGENT_RUNTIME_RUN_TOKEN_SECRET")
+        if self.AGENT_RUNTIME_SALES_SHADOW_ENABLED and not self.AGENT_RUNTIME_BRAVE_SEARCH_API_KEY:
+            errors.append("启用获客 Shadow 时必须配置 AGENT_RUNTIME_BRAVE_SEARCH_API_KEY")
         if errors:
             details = "\n  - ".join(errors)
             raise ValueError(
