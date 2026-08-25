@@ -65,6 +65,11 @@ class Invoice(Base):
     okki_free_shipping = Column(SmallInteger, nullable=True, comment="OKKI必填-是否包邮:1是/0否/NULL推单时按运费是否为0兜底")
     okki_first_return = Column(SmallInteger, nullable=True, comment="OKKI必填-是否首返:1是/0否/NULL推单时默认否")
     remark = Column(Text, nullable=True, comment="备注")
+    source_type = Column(String(32), nullable=False, default="manual", server_default="manual", comment="来源：manual/okki_screenshot")
+    source_order_id = Column(String(64), nullable=True, comment="截图匹配到的既有OKKI订单ID")
+    source_order_no = Column(String(64), nullable=True, comment="截图匹配到的既有OKKI订单号")
+    source_order_name = Column(String(256), nullable=True, comment="截图识别的OKKI订单名称")
+    source_image_sha256 = Column(String(64), nullable=True, comment="来源截图SHA-256；不保存原图")
     xiaoman_order_id = Column(String(64), nullable=True, comment="OKKI 订单ID")
     xiaoman_order_no = Column(String(64), nullable=True, comment="OKKI 订单编号")
     sync_status = Column(String(32), nullable=False, default="not_synced", comment="OKKI 推单状态 not_synced/synced/sync_failed")
@@ -87,6 +92,8 @@ class Invoice(Base):
         Index("idx_ark_invoices_customer", "customer_id"),
         Index("idx_ark_invoices_status", "status"),
         Index("idx_ark_invoices_created_at", "created_at"),
+        Index("uq_invoice_source_order", "source_type", "source_order_id", unique=True),
+        Index("uq_invoice_source_image", "source_type", "source_image_sha256", unique=True),
         {"comment": "订单发票主表（库存单/生产单，含 OKKI 推单状态）"},
     )
 

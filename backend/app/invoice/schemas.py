@@ -4,7 +4,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class CustomerSearchItem(BaseModel):
@@ -55,6 +55,7 @@ class InvoiceImportRow(BaseModel):
     weight: str = Field(..., max_length=64)
     quantity: int | str
     unit_price: Decimal | str
+    product_no: Optional[str] = Field(None, max_length=64)
 
 
 class InvoiceImportPreviewRequest(BaseModel):
@@ -67,6 +68,76 @@ class InvoiceImportPreviewRequest(BaseModel):
     @classmethod
     def _normalize_currency(cls, value):
         return str(value or "").strip().upper()
+
+
+class ScreenshotExtractedItem(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    source_row: int = Field(..., ge=1, le=200)
+    product_no: Optional[str] = Field(None, max_length=64)
+    product_name: Optional[str] = Field(None, max_length=512)
+    product_display: Optional[str] = Field(None, max_length=256)
+    product_model: Optional[str] = Field(None, max_length=128)
+    length: Optional[str] = Field(None, max_length=128)
+    color: Optional[str] = Field(None, max_length=128)
+    weight: Optional[str] = Field(None, max_length=64)
+    quantity: Optional[int] = Field(None, gt=0)
+    unit_price: Optional[Decimal] = Field(None, gt=0)
+    subtotal: Optional[Decimal] = Field(None, ge=0)
+    confidence: float = Field(default=0, ge=0, le=1)
+
+
+class ScreenshotExtraction(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    order_name: Optional[str] = Field(None, max_length=256)
+    order_status: Optional[str] = Field(None, max_length=64)
+    customer_name: Optional[str] = Field(None, max_length=256)
+    salesperson_name: Optional[str] = Field(None, max_length=100)
+    department_name: Optional[str] = Field(None, max_length=100)
+    order_date: Optional[date] = None
+    currency: Optional[str] = Field(None, pattern="^[A-Z]{3}$")
+    order_amount: Optional[Decimal] = Field(None, ge=0)
+    product_amount: Optional[Decimal] = Field(None, ge=0)
+    additional_fee_amount: Optional[Decimal] = Field(None, ge=0)
+    items: list[ScreenshotExtractedItem] = Field(default_factory=list, max_length=200)
+    confidence: dict[str, float] = Field(default_factory=dict)
+
+    @field_validator("currency", mode="before")
+    @classmethod
+    def _normalize_optional_currency(cls, value):
+        normalized = str(value or "").strip().upper()
+        return normalized or None
+
+    @field_validator("confidence")
+    @classmethod
+    def _validate_confidence(cls, value):
+        if any(not 0 <= float(score) <= 1 for score in value.values()):
+            raise ValueError("confidence 必须在 0 到 1 之间")
+        return value
+
+    @model_validator(mode="after")
+    def _unique_source_rows(self):
+        rows = [item.source_row for item in self.items]
+        if len(rows) != len(set(rows)):
+            raise ValueError("产品明细 source_row 不能重复")
+        return self
+
+
+class ScreenshotProductSelection(BaseModel):
+    source_row: int = Field(..., ge=1, le=200)
+    product_id: int = Field(..., gt=0)
+    sku_id: int = Field(..., gt=0)
+
+
+class ScreenshotResolveRequest(BaseModel):
+    extraction: ScreenshotExtraction
+    source_image_sha256: str = Field(..., min_length=64, max_length=64, pattern="^[0-9a-f]{64}$")
+    order_type: str = Field(default="stock", pattern="^(stock|production)$")
+    customer_id: Optional[str] = Field(None, max_length=64)
+    sales_user_id: Optional[int] = Field(None, gt=0)
+    product_selections: list[ScreenshotProductSelection] = Field(default_factory=list, max_length=200)
+    custom_rows: list[int] = Field(default_factory=list, max_length=200)
 
 
 class InvoiceItemPayload(BaseModel):
@@ -142,6 +213,12 @@ class _InvoiceHeaderPayload(BaseModel):
     okki_free_shipping: Optional[int] = Field(None, ge=0, le=1)
     okki_first_return: Optional[int] = Field(None, ge=0, le=1)
     remark: Optional[str] = None
+    source_type: str = Field(default="manual", pattern="^(manual|okki_screenshot)$")
+    source_order_id: Optional[str] = Field(None, max_length=64)
+    source_order_no: Optional[str] = Field(None, max_length=64)
+    source_order_name: Optional[str] = Field(None, max_length=256)
+    source_image_sha256: Optional[str] = Field(None, min_length=64, max_length=64, pattern="^[0-9a-f]{64}$")
+    source_preview_token: Optional[str] = Field(None, max_length=2048)
     items: list[InvoiceItemPayload] = Field(default_factory=list)
 
     @field_validator("customer_id", mode="before")
@@ -191,6 +268,9 @@ class InvoiceListItem(BaseModel):
     currency: str
     status: str
     sync_status: str
+    source_type: str = "manual"
+    source_order_id: Optional[str] = None
+    source_order_no: Optional[str] = None
     total_amount: Decimal
     item_count: int
     created_at: datetime

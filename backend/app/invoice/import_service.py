@@ -24,9 +24,10 @@ def normalize_row(raw: Mapping[str, object]) -> dict:
     weight = _normalize_weight(raw.get("weight"))
     quantity = _positive_int(raw.get("quantity"), "quantity")
     unit_price = _positive_money(raw.get("unit_price"))
+    product_no = _display_text(raw.get("product_no"))
     if not all((product, length, color)):
         raise ValueError("Product、Length、Color 必填")
-    return {
+    normalized = {
         "source_row": source_row,
         "product": product,
         "length": length,
@@ -35,6 +36,9 @@ def normalize_row(raw: Mapping[str, object]) -> dict:
         "quantity": quantity,
         "unit_price": unit_price,
     }
+    if product_no:
+        normalized["product_no"] = product_no
+    return normalized
 
 
 def normalize_rows(raw_rows: Sequence[Mapping[str, object]]) -> list[dict]:
@@ -85,8 +89,11 @@ def preview_import(
             parsed_rows.append({"normalized": normalized})
             valid_rows.append(normalized)
 
-    product_index = _load_product_index(db)
-    hits_by_row = [product_index.get(_product_key(row), []) for row in valid_rows]
+    product_index, product_no_index = _load_product_indexes(db)
+    hits_by_row = [
+        _resolve_catalog_hits(row, product_index, product_no_index)
+        for row in valid_rows
+    ]
     product_ids = {int(hit["product_id"]) for hits in hits_by_row for hit in hits}
     sku_map = _load_sku_map(db, product_ids)
     pricing_context = _load_pricing_context(db, customer_id=str(customer_id))
@@ -119,13 +126,18 @@ def preview_import(
     }
 
 
-def _load_product_index(db: Session) -> dict[tuple[str, str, str, str], list[dict]]:
+def _load_product_indexes(db: Session) -> tuple[
+    dict[tuple[str, str, str, str], list[dict]],
+    dict[str, list[dict]],
+]:
     index: dict[tuple[str, str, str, str], list[dict]] = {}
+    product_no_index: dict[str, list[dict]] = {}
     for row in product_service.load_okki_rows(db, limit=None):
         product_name = str(row["product_name"] or "")
         product_display = product_name.split("/", 1)[0].strip()
         item = {
             "product_id": int(row["product_id"]),
+            "product_no": str(row.get("product_no") or ""),
             "product_name": product_name,
             "product_display": product_display,
             "color": str(row["color"] or ""),
@@ -139,7 +151,38 @@ def _load_product_index(db: Session) -> dict[tuple[str, str, str, str], list[dic
             price_service.normalize_text(item["net_weight_grams"]),
         )
         index.setdefault(key, []).append(item)
-    return index
+        if item["product_no"]:
+            product_no_index.setdefault(item["product_no"].casefold(), []).append(item)
+    return index, product_no_index
+
+
+def _resolve_catalog_hits(
+    row: Mapping[str, object],
+    product_index: dict[tuple[str, str, str, str], list[dict]],
+    product_no_index: dict[str, list[dict]],
+) -> list[dict]:
+    attribute_hits = product_index.get(_product_key(row), [])
+    product_no = str(row.get("product_no") or "").strip().casefold()
+    if not product_no:
+        return attribute_hits
+    number_hits = product_no_index.get(product_no, [])
+    # 编号与四维属性必须同时指向同一产品；任一 OCR 误读都不能让编号静默覆盖属性。
+    consistent = [hit for hit in number_hits if _hit_key(hit) == _product_key(row)]
+    if consistent:
+        return consistent
+    # 返回带标记的编号候选，由结果构造器拦截并展示冲突，而不是退回属性匹配。
+    if number_hits:
+        return [{**hit, "_product_no_conflict": True} for hit in number_hits]
+    return [{**hit, "_product_no_missing": True} for hit in attribute_hits]
+
+
+def _hit_key(hit: Mapping[str, object]) -> tuple[str, str, str, str]:
+    return (
+        price_service.normalize_text(str(hit["product_display"])),
+        price_service.normalize_color(str(hit["color"])),
+        price_service.normalize_length(str(hit["length"])),
+        price_service.normalize_text(str(hit["net_weight_grams"])),
+    )
 
 
 def _invalid_result(raw: Mapping[str, object], error: str) -> dict:
@@ -201,17 +244,34 @@ def _product_key(row: Mapping[str, object]) -> tuple[str, str, str, str]:
 
 
 def _build_match_result(row: dict, hits: list[dict], sku_map: dict[int, list[int]], order_type: str) -> dict:
+    number_conflict = any(hit.get("_product_no_conflict") for hit in hits)
+    number_missing = any(hit.get("_product_no_missing") for hit in hits)
     candidates = []
     for hit in sorted(hits, key=lambda item: item["product_id"]):
         sku_ids = sku_map.get(hit["product_id"], [])
-        candidates.extend({**hit, "sku_id": sku_id} for sku_id in sku_ids)
+        candidates.extend(
+            {
+                key: value
+                for key, value in {**hit, "sku_id": sku_id}.items()
+                if not key.startswith("_")
+            }
+            for sku_id in sku_ids
+        )
         if not sku_ids:
-            candidates.append({**hit, "sku_id": None})
+            candidates.append({
+                key: value
+                for key, value in {**hit, "sku_id": None}.items()
+                if not key.startswith("_")
+            })
 
     matched = candidates[0] if len(candidates) == 1 else None
     errors: list[str] = []
+    warnings: list[str] = []
     can_create_custom = False
-    if len(candidates) > 1:
+    if number_conflict:
+        errors.append(f"第 {row['source_row']} 行产品编号与 Product/Length/Color/Weight 不一致，请核对截图")
+        matched = None
+    elif len(candidates) > 1:
         product_count = len({candidate["product_id"] for candidate in candidates})
         subject = f"{product_count} 个产品" if product_count > 1 else f"{len(candidates)} 个 SKU"
         errors.append(f"第 {row['source_row']} 行找到 {subject}，请选择正确的 SKU")
@@ -224,6 +284,8 @@ def _build_match_result(row: dict, hits: list[dict], sku_map: dict[int, list[int
     elif matched["sku_id"] is None:
         can_create_custom = order_type == "production"
         errors.append(f"第 {row['source_row']} 行匹配产品没有可用 SKU")
+    if number_missing:
+        warnings.append(f"第 {row['source_row']} 行未找到产品编号 {row.get('product_no')}，已按产品属性匹配")
 
     return {
         "source_row": row["source_row"],
@@ -237,7 +299,7 @@ def _build_match_result(row: dict, hits: list[dict], sku_map: dict[int, list[int
         "price_source": "missing_std",
         "status": "blocked" if errors else "passed",
         "errors": errors,
-        "warnings": [],
+        "warnings": warnings,
     }
 
 
@@ -384,4 +446,6 @@ def _positive_money(value: object) -> Decimal:
         raise ValueError("Unit Price 必须是大于 0 的数字") from exc
     if parsed <= 0:
         raise ValueError("Unit Price 必须是大于 0 的数字")
-    return parsed.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    # OKKI permits four-decimal unit prices (the sample screenshot has 30.048).
+    # Rounding here to cents changes the invoice total after multiplication.
+    return parsed.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
