@@ -21,10 +21,17 @@ from app.auth.utils import create_access_token
 from app.ai.models import AiPreset, AiProvider
 from app.bootstrap import seed_ai
 from app.core.database import get_db
-from app.invoice import screenshot_import_service, service, xiaoman_service
-from app.invoice.models import Invoice, InvoiceDelegateGrant
+from app.invoice import (
+    okki_client,
+    product_service,
+    screenshot_import_service,
+    service,
+    xiaoman_service,
+)
+from app.invoice.models import Invoice, InvoiceDelegateGrant, InvoiceSyncLog, XiaomanSettings
 from app.invoice.schemas import InvoiceCreate, ScreenshotExtraction, ScreenshotResolveRequest
 from app.invoice.screenshot_ai import extract_screenshot
+from app.invoice.screenshot_source import external_source_key, is_external_source_key
 from app.invoice.screenshot_token import issue_preview_token
 
 
@@ -224,7 +231,7 @@ def test_unbound_delegate_cannot_be_selected_for_screenshot_source(db):
     assert result["sales_match"]["selected"] is None
 
 
-def test_screenshot_invoice_is_guarded_by_order_and_image_and_cannot_sync(db):
+def test_screenshot_invoice_matched_in_current_okki_is_blocked_when_syncing(db):
     _seed_example(db)
     preview = _resolve(db)
     invoice = service.create_invoice(
@@ -240,7 +247,9 @@ def test_screenshot_invoice_is_guarded_by_order_and_image_and_cannot_sync(db):
 
     assert invoice.source_order_no == "25278"
     assert invoice.total_amount == Decimal("90.14")
-    assert xiaoman_service.sync_invoice(db, invoice, operator_id=27)["ok"] is False
+    sync_result = xiaoman_service.sync_invoice(db, invoice, operator_id=27)
+    assert sync_result["ok"] is False
+    assert "本系统 OKKI" in sync_result["issues"][0]["message"]
 
     duplicate = _resolve(db)
     assert duplicate["ready"] is False
@@ -319,18 +328,301 @@ def test_non_usd_preview_does_not_associate_usd_projection(db):
 
     assert result["source_order"]["status"] == "missing"
     assert result["source_order"]["reason"] == "non_usd_amount_unavailable"
-    assert result["invoice_patch"]["source_order_id"] is None
+    assert is_external_source_key(result["invoice_patch"]["source_order_id"])
     assert any("非 USD" in warning for warning in result["warnings"])
 
 
-def test_unique_source_order_name_mismatch_is_an_explicit_blocker(db):
+def test_different_order_name_in_current_okki_does_not_block_external_import(db):
     _seed_example(db)
 
     result = _resolve(db, _sample_extraction(order_name="OCR 识别错误名称"))
 
-    assert result["ready"] is False
-    assert result["source_order"]["status"] == "name_mismatch"
-    assert any("订单名称" in message for message in result["blockers"])
+    assert result["ready"] is True
+    assert result["source_order"]["status"] == "missing"
+    assert is_external_source_key(result["invoice_patch"]["source_order_id"])
+    assert any("保存并同步时" in message for message in result["warnings"])
+
+
+def test_screenshot_sync_rechecks_projection_after_invoice_was_saved(db, monkeypatch):
+    _seed_example(db)
+    order_name = "External Order 260825"
+    preview = _resolve(db, _sample_extraction(order_name=order_name))
+    invoice = service.create_invoice(
+        db,
+        InvoiceCreate.model_validate({
+            **preview["invoice_patch"],
+            "invoice_no": order_name,
+        }),
+        user_id=27,
+        allow_screenshot_source=True,
+    )
+    db.commit()
+    assert is_external_source_key(invoice.source_order_id)
+
+    # 保存后、本次同步前，投影刚同步到本系统 OKKI 的同名订单，必须再次拦截。
+    db.execute(text("""
+        INSERT INTO lsordertest.okki_orders
+            (order_id, order_no, name, company_id, amount_usd, user_id,
+             account_date, status_name)
+        VALUES
+            ('newly-projected', '260825', :name, '105720449849411', 90.14,
+             '57130855', '2026-08-24', '已完成(已确认)')
+    """), {"name": "External\u00a0Order\t260825"})
+    db.commit()
+    called = False
+
+    def unexpected_push(_db, _payload):
+        nonlocal called
+        called = True
+        return {}
+
+    monkeypatch.setattr(okki_client, "push_order", unexpected_push)
+    result = xiaoman_service.sync_invoice(db, invoice, operator_id=27)
+
+    assert result["ok"] is False
+    assert "本系统 OKKI" in result["issues"][0]["message"]
+    assert called is False
+
+
+def test_external_screenshot_syncs_when_current_okki_has_no_same_order(db, monkeypatch):
+    _seed_example(db)
+    order_name = "外部系统订单#可同步"
+    preview = _resolve(db, _sample_extraction(order_name=order_name))
+    invoice = service.create_invoice(
+        db,
+        InvoiceCreate.model_validate({
+            **preview["invoice_patch"],
+            "invoice_no": order_name,
+        }),
+        user_id=27,
+        allow_screenshot_source=True,
+    )
+    db.add(XiaomanSettings(id=1, default_order_status="13972831654"))
+    db.commit()
+
+    monkeypatch.setattr(
+        product_service,
+        "reconcile_custom_products",
+        lambda _db: {"checked": 0, "linked": 0},
+    )
+    monkeypatch.setattr(okki_client, "push_order", lambda _db, payload: {
+        "order_id": "created-in-current-okki",
+        "product_list": [{
+            "unique_id": "line-1",
+            "product_id": payload["product_list"][0]["product_id"],
+            "sku_id": payload["product_list"][0]["sku_id"],
+        }],
+    })
+
+    result = xiaoman_service.sync_invoice(db, invoice, operator_id=27)
+
+    assert result["ok"] is True
+    assert invoice.xiaoman_order_id == "created-in-current-okki"
+    assert invoice.sync_status == "synced"
+
+
+def test_missing_screenshot_order_name_blocks_preview_and_sync(db):
+    _seed_example(db)
+    preview = _resolve(db, _sample_extraction(order_name=None))
+
+    assert preview["ready"] is False
+    assert any("未识别到订单名称" in message for message in preview["blockers"])
+
+    invoice = Invoice(
+        invoice_no="legacy-missing-name",
+        customer_id="105720449849411",
+        customer_name="hair_madebymads",
+        invoice_date=date(2026, 8, 25),
+        source_type="okki_screenshot",
+        source_order_name=None,
+        source_image_sha256="b" * 64,
+    )
+    db.add(invoice)
+    db.flush()
+    issue = xiaoman_service._screenshot_sync_issue(db, invoice)
+
+    assert "缺少客户或订单名称" in issue["message"]
+
+
+def test_legacy_screenshot_sync_claim_is_unique_by_customer_and_order_name(db):
+    name = "Legacy External Order"
+    first = Invoice(
+        invoice_no="legacy-claim-1",
+        customer_id="C-1",
+        customer_name="Customer One",
+        invoice_date=date(2026, 8, 25),
+        source_type="okki_screenshot",
+        source_order_name=name,
+        source_image_sha256="c" * 64,
+    )
+    second = Invoice(
+        invoice_no="legacy-claim-2",
+        customer_id="C-1",
+        customer_name="Customer One",
+        invoice_date=date(2026, 8, 25),
+        source_type="okki_screenshot",
+        source_order_name=" Legacy  External\tOrder ",
+        source_image_sha256="d" * 64,
+    )
+    db.add_all([first, second])
+    db.flush()
+
+    first_issue = xiaoman_service._screenshot_sync_issue(db, first)
+    second_issue = xiaoman_service._screenshot_sync_issue(db, second)
+
+    assert first.source_order_id == external_source_key("C-1", name)
+    assert "投影缺少订单名称" in first_issue["message"]
+    assert "另一张发票占用" in second_issue["message"]
+
+
+def test_external_source_key_blocks_a_second_saved_invoice(db):
+    _seed_example(db)
+    name = "External Order Dedup"
+    first_preview = _resolve(db, _sample_extraction(order_name=name))
+    service.create_invoice(
+        db,
+        InvoiceCreate.model_validate({
+            **first_preview["invoice_patch"],
+            "invoice_no": name,
+        }),
+        user_id=27,
+        allow_screenshot_source=True,
+    )
+    db.commit()
+
+    second_preview = _resolve(
+        db,
+        _sample_extraction(order_name=name),
+        source_image_sha256="e" * 64,
+    )
+    with pytest.raises(ValueError, match="重复导入"):
+        service.create_invoice(
+            db,
+            InvoiceCreate.model_validate({
+                **second_preview["invoice_patch"],
+                "invoice_no": f"{name}-copy",
+            }),
+            user_id=27,
+            allow_screenshot_source=True,
+        )
+
+
+def test_admin_resolves_uncertain_sync_with_audit_log(db):
+    _seed_example(db)
+    invoice = Invoice(
+        invoice_no="uncertain-resolution",
+        customer_id="105720449849411",
+        customer_name="hair_madebymads",
+        invoice_date=date(2026, 8, 25),
+        source_type="okki_screenshot",
+        source_order_name="External uncertain order",
+        source_order_id=external_source_key(
+            "105720449849411", "External uncertain order",
+        ),
+        source_image_sha256="f" * 64,
+        status="sync_uncertain",
+        sync_status="sync_uncertain",
+        created_by=27,
+    )
+    db.add(invoice)
+    db.commit()
+
+    with _api_client(db, ["invoice:sync"]) as client:
+        denied = client.post(
+            f"/api/invoice/invoices/{invoice.id}/sync-uncertain/resolve",
+            json={"resolution": "confirm_not_created", "reason": "人工确认未生成"},
+        )
+    assert denied.status_code == 403
+
+    with _api_client(db, ["invoice:admin"]) as client:
+        cleared = client.post(
+            f"/api/invoice/invoices/{invoice.id}/sync-uncertain/resolve",
+            json={"resolution": "confirm_not_created", "reason": "人工确认未生成"},
+        )
+    assert cleared.status_code == 200
+    assert invoice.sync_status == "not_synced"
+
+    invoice.sync_status = "sync_uncertain"
+    invoice.status = "sync_uncertain"
+    db.commit()
+    db.execute(text("""
+        INSERT INTO lsordertest.okki_orders
+            (order_id, order_no, name, company_id, amount_usd, user_id,
+             account_date, status_name, departments)
+        VALUES
+            ('105724678099999', '260825', 'uncertain-resolution',
+             '105720449849411', 90.14, '57130855', '2026-08-25',
+             '已完成(已确认)', NULL)
+    """))
+    with _api_client(db, ["invoice:admin"]) as client:
+        bound = client.post(
+            f"/api/invoice/invoices/{invoice.id}/sync-uncertain/resolve",
+            json={
+                "resolution": "bind_order",
+                "xiaoman_order_id": "105724678099999",
+                "reason": "已在 OKKI 后台找到订单",
+            },
+        )
+    assert bound.status_code == 200
+    assert invoice.xiaoman_order_id == "105724678099999"
+    assert invoice.sync_status == "not_synced"
+    actions = [
+        row.action
+        for row in db.query(InvoiceSyncLog)
+        .filter(InvoiceSyncLog.invoice_id == invoice.id)
+        .order_by(InvoiceSyncLog.id)
+    ]
+    assert actions == ["resolve_uncertain_clear", "resolve_uncertain_bind"]
+
+
+def test_admin_uncertain_binding_rejects_missing_wrong_customer_and_wrong_name(db):
+    _seed_example(db)
+    invoice = Invoice(
+        invoice_no="expected-invoice-name",
+        customer_id="105720449849411",
+        customer_name="hair_madebymads",
+        invoice_date=date(2026, 8, 25),
+        source_type="okki_screenshot",
+        source_order_name="External uncertain order",
+        source_order_id=external_source_key(
+            "105720449849411", "External uncertain order",
+        ),
+        source_image_sha256="e" * 64,
+        status="sync_uncertain",
+        sync_status="sync_uncertain",
+        created_by=27,
+    )
+    db.add(invoice)
+    db.execute(text("""
+        INSERT INTO lsordertest.okki_orders
+            (order_id, order_no, name, company_id)
+        VALUES
+            ('700001', 'wrong-customer', 'expected-invoice-name', 'another-customer'),
+            ('700002', 'wrong-name', 'another-invoice-name', '105720449849411')
+    """))
+    db.commit()
+
+    def bind(order_id):
+        with _api_client(db, ["invoice:admin"]) as client:
+            return client.post(
+                f"/api/invoice/invoices/{invoice.id}/sync-uncertain/resolve",
+                json={
+                    "resolution": "bind_order",
+                    "xiaoman_order_id": order_id,
+                    "reason": "人工核对测试",
+                },
+            )
+
+    missing = bind("700000")
+    assert missing.status_code == 400
+    assert "查不到" in missing.json()["detail"]
+    wrong_customer = bind("700001")
+    assert wrong_customer.status_code == 400
+    assert "不属于" in wrong_customer.json()["detail"]
+    wrong_name = bind("700002")
+    assert wrong_name.status_code == 400
+    assert "名称" in wrong_name.json()["detail"]
+    assert invoice.xiaoman_order_id is None
 
 
 def test_ai_boundary_hashes_original_and_uses_metadata_snapshot(db, monkeypatch):
@@ -673,3 +965,41 @@ def test_migration_119_upgrades_and_downgrades_legacy_invoice_table():
         migration.downgrade()
         columns = {item["name"] for item in inspect(connection).get_columns("ark_invoices")}
         assert not any(name.startswith("source_") for name in columns)
+
+
+def test_migration_122_adds_unique_okki_order_binding_and_rejects_duplicates():
+    path = Path(__file__).parents[1] / "alembic/versions/122_invoice_okki_order_unique.py"
+    spec = importlib.util.spec_from_file_location("migration_122", path)
+    migration = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(migration)
+    assert migration.down_revision == "121_invoice_inventory_sync_key"
+    migration_engine = create_engine("sqlite:///:memory:")
+
+    with migration_engine.begin() as connection:
+        connection.execute(text("""
+            CREATE TABLE ark_invoices (
+                id INTEGER PRIMARY KEY,
+                xiaoman_order_id TEXT NULL
+            )
+        """))
+        connection.execute(text("""
+            INSERT INTO ark_invoices (id, xiaoman_order_id)
+            VALUES (1, ''), (2, ''), (3, '900001')
+        """))
+        migration.op = Operations(MigrationContext.configure(connection))
+        migration.upgrade()
+        indexes = {
+            item["name"]: item["unique"]
+            for item in inspect(connection).get_indexes("ark_invoices")
+        }
+        assert indexes["uq_invoice_xiaoman_order_id"] == 1
+        empty_values = connection.execute(text("""
+            SELECT COUNT(*) FROM ark_invoices WHERE xiaoman_order_id IS NULL
+        """)).scalar_one()
+        assert empty_values == 2
+        with pytest.raises(Exception):
+            connection.execute(text("""
+                INSERT INTO ark_invoices (id, xiaoman_order_id) VALUES (4, '900001')
+            """))
+        migration.downgrade()

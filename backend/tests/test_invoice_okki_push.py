@@ -665,7 +665,38 @@ def test_sync_create_without_order_id_marks_failed(db, monkeypatch, no_reconcile
     result = xiaoman_service.sync_invoice(db, invoice)
 
     assert result["ok"] is False and "order_id" in result["message"]
-    assert invoice.sync_status == "sync_failed"
+    assert invoice.sync_status == "sync_uncertain"
+    assert invoice.xiaoman_order_id is None
+    service.mark_ready_if_valid(invoice)
+    assert invoice.status == "sync_uncertain"
+
+    monkeypatch.setattr(
+        okki_client,
+        "push_order",
+        lambda *_args, **_kwargs: pytest.fail("待核对状态不应再次调用 OKKI"),
+    )
+    retry = xiaoman_service.sync_invoice(db, invoice)
+    assert retry["ok"] is False and "禁止自动重试" in retry["message"]
+
+
+def test_sync_create_transport_uncertainty_blocks_retry(db, monkeypatch, no_reconcile):
+    _seed_settings(db)
+    _seed_binding(db)
+    invoice = _make_invoice(db)
+    invoice.items.append(_stock_item())
+    db.flush()
+
+    monkeypatch.setattr(
+        okki_client,
+        "push_order",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            okki_client.OkkiOutcomeUncertainError("请求超时，结果不确定")
+        ),
+    )
+    result = xiaoman_service.sync_invoice(db, invoice)
+
+    assert result["ok"] is False
+    assert invoice.sync_status == "sync_uncertain"
     assert invoice.xiaoman_order_id is None
 
 

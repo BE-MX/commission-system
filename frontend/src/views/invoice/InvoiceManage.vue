@@ -64,6 +64,7 @@
           <el-option label="可同步" value="ready" />
           <el-option label="已同步" value="synced" />
           <el-option label="同步失败" value="sync_failed" />
+          <el-option label="同步结果待核对" value="sync_uncertain" />
         </el-select>
         <el-button @click="loadInvoices">
           <el-icon><Search /></el-icon>
@@ -94,15 +95,12 @@
         </el-table-column>
         <el-table-column label="状态" min-width="84" max-width="110">
           <template #default="{ row }">
-            <el-tag :type="row.source_type === 'okki_screenshot' ? 'success' : statusType(row.status)" effect="plain">
-              {{ row.source_type === 'okki_screenshot' ? '已镜像' : statusText(row.status) }}
-            </el-tag>
+            <el-tag :type="statusType(row.status)" effect="plain">{{ statusText(row.status) }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="同步" min-width="84" max-width="110">
           <template #default="{ row }">
-            <el-tag v-if="row.source_type === 'okki_screenshot'" type="success" effect="plain">OKKI已存在</el-tag>
-            <el-tag v-else :type="syncType(row.sync_status)" effect="plain">{{ syncText(row.sync_status) }}</el-tag>
+            <el-tag :type="syncType(row.sync_status)" effect="plain">{{ syncText(row.sync_status) }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="创建人" min-width="84" max-width="120" show-overflow-tooltip>
@@ -132,28 +130,34 @@
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
-              <el-tooltip
-                :disabled="row.source_type !== 'okki_screenshot'"
-                content="该发票由既有 OKKI 订单截图导入，禁止重复同步"
+              <el-button
+                v-permission="'invoice:sync'"
+                link
+                type="warning"
+                :loading="isInvoiceSyncing(row.id)"
+                @click="validateAndSync(row.id)"
               >
-                <span>
-                  <el-button
-                    v-permission="'invoice:sync'"
-                    link
-                    type="warning"
-                    :disabled="row.source_type === 'okki_screenshot'"
-                    :loading="isInvoiceSyncing(row.id)"
-                    @click="validateAndSync(row.id)"
-                  >
-                    <el-icon><Refresh /></el-icon>
-                    {{ isInvoiceSyncing(row.id) ? '同步中' : '同步' }}
-                  </el-button>
-                </span>
-              </el-tooltip>
+                <el-icon><Refresh /></el-icon>
+                {{ isInvoiceSyncing(row.id) ? '同步中' : '同步' }}
+              </el-button>
               <el-button v-permission="'invoice:read'" link @click="openSyncLogs(row)">
                 <el-icon><Document /></el-icon>
                 日志
               </el-button>
+              <el-dropdown
+                v-if="row.sync_status === 'sync_uncertain'"
+                v-permission="'invoice:admin'"
+                trigger="click"
+                @command="command => resolveUncertain(row, command)"
+              >
+                <el-button link type="danger">处理待核对</el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="bind_order">绑定已生成订单</el-dropdown-item>
+                    <el-dropdown-item command="confirm_not_created">确认未生成并允许重试</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
               <el-button v-permission="'invoice:write'" link type="danger" @click="removeInvoice(row)">
                 <el-icon><Delete /></el-icon>
                 删除
@@ -292,8 +296,8 @@
               <el-alert
                 v-if="form.source_type === 'okki_screenshot'"
                 class="span-6 source-order-alert"
-                :title="`来自既有 OKKI 订单 ${form.source_order_no || form.source_order_id || '暂未匹配'}，只允许保存，不会再次同步。`"
-                type="success"
+                title="来自外部 OKKI 截图；保存并同步时会校验本系统 OKKI 是否已有同一订单。"
+                type="info"
                 :closable="false"
                 show-icon
               />
@@ -399,8 +403,6 @@
           :accessory-discount="formAccessoryDiscount"
           :money="money"
           :syncing="saveAndSyncSubmitting"
-          :sync-blocked="form.source_type === 'okki_screenshot'"
-          sync-blocked-reason="既有 OKKI 订单截图导入的发票禁止重复同步"
           @cancel="drawerVisible = false"
           @save="saveDraft"
           @sync="saveAndSync"
@@ -454,7 +456,7 @@ const {
   actionText, bindIssueHandler, filters, formatDateTime, handleExport, invoices, loadInvoices,
   loading, money, money4, openSyncLogs, pagination, removeInvoice, statusText, statusType,
   summary, syncLogs, syncLogsLoading, syncLogsTitle, syncLogsVisible, syncText, syncType,
-  isInvoiceSyncing, validateAndSync,
+  isInvoiceSyncing, resolveUncertain, validateAndSync,
 } = page
 const {
   drawerVisible, customerLoading, customerOptions, salesUserOptions, selectedCustomer, customerRule,

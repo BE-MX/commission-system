@@ -47,7 +47,7 @@ class Invoice(Base):
     sales_email = Column(String(256), nullable=True, comment="业务员邮箱快照")
     invoice_date = Column(Date, nullable=False, comment="发票日期")
     currency = Column(String(16), nullable=False, default="USD", comment="币种，默认 USD")
-    status = Column(String(32), nullable=False, default="draft", comment="draft/ready/synced/sync_failed")
+    status = Column(String(32), nullable=False, default="draft", comment="draft/ready/synced/sync_failed/sync_uncertain")
     express_channel = Column(String(64), nullable=True, comment="DHL/FedEx...")
     shipping_fee = Column(Numeric(14, 2), nullable=False, default=0, comment="运费（发票币种，计入总额）")
     surcharge_name = Column(String(128), nullable=True, comment="e.g. Paypal Surcharge")
@@ -67,13 +67,13 @@ class Invoice(Base):
     okki_first_return = Column(SmallInteger, nullable=True, comment="OKKI必填-是否首返:1是/0否/NULL推单时默认否")
     remark = Column(Text, nullable=True, comment="备注")
     source_type = Column(String(32), nullable=False, default="manual", server_default="manual", comment="来源：manual/okki_screenshot")
-    source_order_id = Column(String(64), nullable=True, comment="截图匹配到的既有OKKI订单ID")
+    source_order_id = Column(String(64), nullable=True, comment="本系统OKKI订单ID，或外部截图订单幂等键")
     source_order_no = Column(String(64), nullable=True, comment="截图匹配到的既有OKKI订单号")
     source_order_name = Column(String(256), nullable=True, comment="截图识别的OKKI订单名称")
     source_image_sha256 = Column(String(64), nullable=True, comment="来源截图SHA-256；不保存原图")
     xiaoman_order_id = Column(String(64), nullable=True, comment="OKKI 订单ID")
     xiaoman_order_no = Column(String(64), nullable=True, comment="OKKI 订单编号")
-    sync_status = Column(String(32), nullable=False, default="not_synced", comment="OKKI 推单状态 not_synced/synced/sync_failed")
+    sync_status = Column(String(32), nullable=False, default="not_synced", comment="OKKI 推单状态 not_synced/synced/sync_failed/sync_uncertain")
     xiaoman_removed_lines = Column(Text, nullable=True, comment="已推OKKI后本地删除的明细快照JSON[{unique_id,product_id,sku_id}]，下次推单发remove:1，成功后清空")
     sync_error = Column(Text, nullable=True, comment="最近一次推单失败信息")
     synced_at = Column(DateTime, nullable=True, comment="最近成功推单时间")
@@ -93,6 +93,7 @@ class Invoice(Base):
         Index("idx_ark_invoices_customer", "customer_id"),
         Index("idx_ark_invoices_status", "status"),
         Index("idx_ark_invoices_created_at", "created_at"),
+        Index("uq_invoice_xiaoman_order_id", "xiaoman_order_id", unique=True),
         Index("uq_invoice_source_order", "source_type", "source_order_id", unique=True),
         Index("uq_invoice_source_image", "source_type", "source_image_sha256", unique=True),
         {"comment": "订单发票主表（库存单/生产单，含 OKKI 推单状态）"},

@@ -33,6 +33,10 @@ class OkkiApiError(ValueError):
     """Raised for credential/HTTP failures; message is safe to show admins."""
 
 
+class OkkiOutcomeUncertainError(OkkiApiError):
+    """The request may have been accepted, so automatically retrying could duplicate it."""
+
+
 def _base_url() -> str:
     return get_settings().OKKI_API_BASE.rstrip("/")
 
@@ -146,17 +150,30 @@ def _post_json(path: str, token: str, payload: dict, *, context: str) -> dict | 
         # 超时时 OKKI 可能已受理：盲目重试会建出第二张真实订单
         logger.warning("OKKI POST %s timeout: %s", path, exc)
         print(f"[okki_client] POST {path} timeout: {exc}", flush=True)
-        raise OkkiApiError(
-            f"OKKI {context}请求超时：订单可能已在 OKKI 生成，请先到 OKKI 后台确认，再决定是否重试（避免重复建单）"
+        raise OkkiOutcomeUncertainError(
+            f"OKKI {context}请求超时：订单可能已在 OKKI 生成，请先到 OKKI 后台确认，禁止直接重试"
         ) from exc
     except httpx.HTTPError as exc:
         logger.warning("OKKI POST %s failed: %s", path, exc)
         print(f"[okki_client] POST {path} failed: {exc}", flush=True)
-        raise OkkiApiError(f"OKKI {context}请求失败：{exc}") from exc
+        raise OkkiOutcomeUncertainError(
+            f"OKKI {context}请求连接中断：订单可能已被受理，请先到 OKKI 后台确认，禁止直接重试"
+        ) from exc
 
     if resp.status_code == 401:
         return None
-    body = _parse_json(resp, context=context)
+    try:
+        body = _parse_json(resp, context=context)
+    except OkkiApiError as exc:
+        raise OkkiOutcomeUncertainError(
+            f"OKKI {context}响应无法解析：订单可能已被受理，请先到 OKKI 后台确认，禁止直接重试"
+        ) from exc
+    if resp.status_code >= 500:
+        detail = body.get("message") or resp.text[:500]
+        raise OkkiOutcomeUncertainError(
+            f"OKKI {context}服务异常（HTTP {resp.status_code}）：{detail}；"
+            "订单可能已被受理，请先确认，禁止直接重试"
+        )
     if body.get("error") == "access_denied":
         return None
     if resp.status_code != 200 or (body.get("code") not in (None, 200)):

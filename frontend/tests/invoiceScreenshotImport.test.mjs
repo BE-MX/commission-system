@@ -86,11 +86,14 @@ test('recognized order name becomes the screenshot invoice number', () => {
 })
 
 
-test('existing OKKI source is visibly and mechanically excluded from sync', () => {
-  assert.match(view, /OKKI已存在/)
-  assert.match(view, /:disabled="row\.source_type === 'okki_screenshot'"/)
-  assert.match(view, /:sync-blocked="form\.source_type === 'okki_screenshot'"/)
-  assert.match(editor, /if \(form\.source_type === 'okki_screenshot'\)/)
-  assert.match(page, /invoice\.source_type !== 'okki_screenshot'/)
+test('external OKKI screenshots may sync and are checked for duplicates by backend', () => {
+  assert.match(view, /来自外部 OKKI 截图/)
+  assert.doesNotMatch(view, /:disabled="row\.source_type === 'okki_screenshot'"/)
+  assert.doesNotMatch(view, /:sync-blocked="form\.source_type === 'okki_screenshot'"/)
+  assert.doesNotMatch(editor, /if \(form\.source_type === 'okki_screenshot'\)/)
+  assert.doesNotMatch(page, /invoice\.source_type !== 'okki_screenshot'/)
+  assert.match(editor, /escapeHtml/)
+  assert.match(view, /处理待核对/)
+  assert.match(api, /sync-uncertain\/resolve/)
   assert.match(footer, /syncBlockedReason/)
 })

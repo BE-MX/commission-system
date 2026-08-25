@@ -108,6 +108,12 @@ export function syncInvoice(id) {
   return unwrap(request.post(`/invoices/${id}/sync`, null, { loadingText: '正在同步小满...' }))
 }
 
+export function resolveInvoiceSyncUncertain(id, data) {
+  return unwrap(request.post(`/invoices/${id}/sync-uncertain/resolve`, data, {
+    loadingText: '正在处理待核对状态...',
+  }))
+}
+
 export function getInvoiceSyncLogs(id) {
   return unwrap(request.get(`/invoices/${id}/sync-logs`, { showLoading: false }))
 }

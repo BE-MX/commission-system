@@ -514,10 +514,6 @@ export function useInvoiceEditor({ onSaved } = {}) {
 
   // 保存 → 校验 → 推送小满一步到位；校验/推送失败留在抽屉里让用户就地修，成功才收工关闭
   async function saveAndSync() {
-    if (form.source_type === 'okki_screenshot') {
-      ElMessage.warning('该发票来自既有 OKKI 订单截图，只能保存，不能再次同步小满')
-      return
-    }
     if (saveAndSyncSubmitting.value) {
       ElMessage.warning('发票正在保存并同步，请勿重复提交')
       return
@@ -537,7 +533,15 @@ export function useInvoiceEditor({ onSaved } = {}) {
   }
 
   function showIssues(issues = []) {
-    const html = issues.map(i => `<p>${i.field}: ${i.message}</p>`).join('') || '校验未通过'
+    const escapeHtml = value => String(value ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;')
+    const html = issues
+      .map(i => `<p>${escapeHtml(i.field)}: ${escapeHtml(i.message)}</p>`)
+      .join('') || '校验未通过'
     ElMessageBox.alert(html, '同步前校验', { dangerouslyUseHTMLString: true, confirmButtonText: '知道了' })
   }
 

@@ -946,6 +946,42 @@ def sync_invoice(
     return ok(result)
 
 
+class ResolveSyncUncertainPayload(BaseModel):
+    resolution: str = Field(..., pattern="^(bind_order|confirm_not_created)$")
+    reason: str = Field(..., min_length=2, max_length=500)
+    xiaoman_order_id: str | None = Field(None, max_length=64)
+
+
+@router.post(
+    "/invoices/{invoice_id}/sync-uncertain/resolve",
+    summary="Resolve an uncertain first OKKI push",
+)
+def resolve_sync_uncertain(
+    invoice_id: int,
+    body: ResolveSyncUncertainPayload,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("invoice:admin")),
+):
+    invoice = service.get_invoice(db, invoice_id, for_update=True)
+    if not invoice:
+        raise HTTPException(404, "发票不存在")
+    try:
+        xiaoman_service.resolve_sync_uncertain(
+            db,
+            invoice,
+            resolution=body.resolution,
+            reason=body.reason,
+            xiaoman_order_id=body.xiaoman_order_id,
+            operator_id=_user_id(current_user),
+        )
+        db.commit()
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(400, str(exc))
+    db.refresh(invoice)
+    return ok(service.serialize_detail(service.get_invoice(db, invoice.id)))
+
+
 @router.get("/invoices/{invoice_id}/sync-logs", summary="OKKI push audit logs")
 def get_sync_logs(
     invoice_id: int,
