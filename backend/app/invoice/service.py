@@ -1,6 +1,7 @@
 """Business logic for order invoices."""
 
 import json
+import re
 from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -8,10 +9,11 @@ from fastapi import HTTPException
 from sqlalchemy import and_, exists, func, or_, select, text
 from sqlalchemy.orm import Session, selectinload
 
-from app.auth.models import ArkUser
+from app.auth.models import ArkUser, ArkUserExternalBinding
 from app.invoice import accessory_price_service, delegation_service, price_service, product_service
 from app.invoice.models import Invoice, InvoiceDelegateGrant, InvoiceItem
 from app.invoice.schemas import InvoiceCreate, InvoiceUpdate
+from app.invoice.screenshot_token import verify_preview_token
 from app.invoice.time_utils import beijing_now, to_beijing_time
 
 _HEADER_FIELDS = (
@@ -22,6 +24,11 @@ _HEADER_FIELDS = (
     "packaging_quantity", "internal_accessory", "internal_received", "internal_balance",
     "internal_shipping_type", "okki_new_deal", "okki_free_shipping", "okki_first_return",
     "remark",
+)
+
+_SOURCE_FIELDS = (
+    "source_type", "source_order_id", "source_order_no", "source_order_name",
+    "source_image_sha256",
 )
 
 
@@ -220,7 +227,19 @@ def get_invoice(db: Session, invoice_id: int, *, for_update: bool = False) -> In
     return query.first()
 
 
-def create_invoice(db: Session, body: InvoiceCreate, user_id: int | None = None) -> Invoice:
+def create_invoice(
+    db: Session,
+    body: InvoiceCreate,
+    user_id: int | None = None,
+    *,
+    allow_screenshot_source: bool = False,
+) -> Invoice:
+    if body.source_type == "okki_screenshot" and not allow_screenshot_source:
+        raise ValueError("截图来源发票必须通过截图预览入口创建")
+    if allow_screenshot_source and body.source_type != "okki_screenshot":
+        raise ValueError("截图创建入口只接受已确认的 OKKI 截图发票")
+    if body.source_type == "manual" and body.source_preview_token:
+        raise ValueError("手工发票不能携带截图预览凭证")
     sales_user_id = body.sales_user_id or user_id
     # HTTP 新流程显式提交 sales_user_id，必须校验本人/代办授权。未显式提交仅保留给
     # 既有内部调用与测试；路由仍由登录依赖保证真实请求存在 user_id。
@@ -247,6 +266,8 @@ def create_invoice(db: Session, body: InvoiceCreate, user_id: int | None = None)
     )
     for field in _HEADER_FIELDS:
         setattr(invoice, field, getattr(body, field))
+    for field in _SOURCE_FIELDS:
+        setattr(invoice, field, getattr(body, field))
     # 业务归属只认 sales_user_id；请求中的文本快照不可改变真实归属。
     if sales_user is not None:
         invoice.sales_user_name = sales_user.username
@@ -259,6 +280,14 @@ def create_invoice(db: Session, body: InvoiceCreate, user_id: int | None = None)
     _replace_items(db, invoice, body, user_id=user_id)
     _refresh_invoice_totals(invoice)
     _validate_internal_settlement(invoice)
+    _validate_screenshot_source(
+        db,
+        invoice,
+        preview_token=body.source_preview_token,
+        actor_user_id=user_id,
+        require_preview_token=allow_screenshot_source,
+        request_payload=body,
+    )
     db.flush()
     return invoice
 
@@ -266,6 +295,9 @@ def create_invoice(db: Session, body: InvoiceCreate, user_id: int | None = None)
 def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: int | None = None) -> Invoice:
     if body.sales_user_id is not None and body.sales_user_id != invoice.sales_user_id:
         raise ValueError("订单归属业务员不可修改，请重新创建订单")
+    for field in _SOURCE_FIELDS:
+        if getattr(body, field) != getattr(invoice, field):
+            raise ValueError("订单来源信息不可修改，请重新创建订单")
     # 发票号开放编辑：空值=不改；改动需全库唯一（排除自身）
     new_no = (body.invoice_no or "").strip()
     if new_no and new_no != invoice.invoice_no:
@@ -293,6 +325,7 @@ def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: 
     _replace_items(db, invoice, body, user_id=user_id)
     _refresh_invoice_totals(invoice)
     _validate_internal_settlement(invoice)
+    _validate_screenshot_source(db, invoice)
     db.flush()
     return invoice
 
@@ -381,6 +414,11 @@ def serialize_detail(invoice: Invoice) -> dict:
         "okki_free_shipping": invoice.okki_free_shipping,
         "okki_first_return": invoice.okki_first_return,
         "remark": invoice.remark,
+        "source_type": invoice.source_type,
+        "source_order_id": invoice.source_order_id,
+        "source_order_no": invoice.source_order_no,
+        "source_order_name": invoice.source_order_name,
+        "source_image_sha256": invoice.source_image_sha256,
         "xiaoman_order_id": invoice.xiaoman_order_id,
         "xiaoman_order_no": invoice.xiaoman_order_no,
         "sync_error": invoice.sync_error,
@@ -682,10 +720,108 @@ def _invoice_list_row(invoice: Invoice, item_count: int, creator_name: str | Non
         "currency": invoice.currency,
         "status": invoice.status,
         "sync_status": invoice.sync_status,
+        "source_type": invoice.source_type,
+        "source_order_id": invoice.source_order_id,
+        "source_order_no": invoice.source_order_no,
         "total_amount": invoice.total_amount,
         "item_count": int(item_count or 0),
         "created_at": to_beijing_time(invoice.created_at),
     }
+
+
+def _validate_screenshot_source(
+    db: Session,
+    invoice: Invoice,
+    *,
+    preview_token: str | None = None,
+    actor_user_id: int | None = None,
+    require_preview_token: bool = False,
+    request_payload=None,
+) -> None:
+    source_type = str(invoice.source_type or "manual").strip()
+    source_values = (
+        invoice.source_order_id, invoice.source_order_no,
+        invoice.source_order_name, invoice.source_image_sha256,
+    )
+    if source_type == "manual":
+        if any(value for value in source_values):
+            raise ValueError("手工发票不能携带 OKKI 截图来源信息")
+        return
+    if source_type != "okki_screenshot":
+        raise ValueError("不支持的发票来源")
+    if require_preview_token:
+        if not preview_token or actor_user_id is None:
+            raise ValueError("截图预览凭证缺失，请重新识别")
+        verify_preview_token(
+            preview_token,
+            actor_user_id=actor_user_id,
+            invoice=invoice,
+            request_payload=request_payload,
+        )
+    image_hash = str(invoice.source_image_sha256 or "")
+    if re.fullmatch(r"[0-9a-f]{64}", image_hash) is None:
+        raise ValueError("OKKI 截图来源缺少有效的图片指纹")
+
+    duplicate_hash_query = db.query(Invoice.id).filter(
+        Invoice.source_type == "okki_screenshot",
+        Invoice.source_image_sha256 == image_hash,
+    )
+    if invoice.id is not None:
+        duplicate_hash_query = duplicate_hash_query.filter(Invoice.id != invoice.id)
+    with db.no_autoflush:
+        duplicate_hash = duplicate_hash_query.first()
+    if duplicate_hash:
+        raise ValueError("这张 OKKI 截图已经创建过发票，请勿重复导入")
+
+    if not invoice.source_order_id:
+        return
+    duplicate_order_query = db.query(Invoice.id).filter(
+        Invoice.source_type == "okki_screenshot",
+        Invoice.source_order_id == str(invoice.source_order_id),
+    )
+    if invoice.id is not None:
+        duplicate_order_query = duplicate_order_query.filter(Invoice.id != invoice.id)
+    with db.no_autoflush:
+        duplicate_order = duplicate_order_query.first()
+    if duplicate_order:
+        raise ValueError(f"OKKI 订单 {invoice.source_order_no or invoice.source_order_id} 已导入，请勿重复创建")
+
+    schema = product_service._schema()
+    order_columns = product_service._table_columns(db, "okki_orders")
+    name_expr = "name" if "name" in order_columns else "NULL"
+    row = db.execute(text(f"""
+        SELECT order_id, order_no, {name_expr} AS name,
+               company_id, amount_usd, account_date, user_id
+        FROM `{schema}`.okki_orders
+        WHERE order_id = :order_id
+        LIMIT 1
+    """), {"order_id": str(invoice.source_order_id)}).mappings().first()
+    if row is None:
+        raise ValueError("匹配到的 OKKI 来源订单已不存在，请重新识别截图")
+    if str(row["company_id"] or "") != str(invoice.customer_id or ""):
+        raise ValueError("OKKI 来源订单与所选客户不一致")
+    if str(row["account_date"] or "") != invoice.invoice_date.isoformat():
+        raise ValueError("OKKI 来源订单日期与发票日期不一致")
+    if str(invoice.currency or "").upper() == "USD" and row["amount_usd"] is not None:
+        if _money(Decimal(row["amount_usd"])) != _money(Decimal(invoice.total_amount or 0)):
+            raise ValueError("OKKI 来源订单金额与发票应付合计不一致")
+
+    binding = db.query(ArkUserExternalBinding.external_account_id).filter(
+        ArkUserExternalBinding.ark_user_id == invoice.sales_user_id,
+        ArkUserExternalBinding.provider == "okki",
+        ArkUserExternalBinding.binding_status == "active",
+        ArkUserExternalBinding.deleted_at.is_(None),
+    ).order_by(
+        ArkUserExternalBinding.is_primary.desc(), ArkUserExternalBinding.id,
+    ).first() if invoice.sales_user_id else None
+    bound_okki_user = binding[0] if binding else None
+    if row["user_id"]:
+        if bound_okki_user is None:
+            raise ValueError("订单归属业务员未绑定 OKKI 账号，无法核对来源订单")
+        if str(row["user_id"]) != str(bound_okki_user):
+            raise ValueError("OKKI 来源订单的业务员与订单归属业务员不一致")
+    invoice.source_order_no = str(row["order_no"] or "") or None
+    invoice.source_order_name = str(row["name"] or invoice.source_order_name or "") or None
 
 
 def _serialize_item(item: InvoiceItem) -> dict:

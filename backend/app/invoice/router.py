@@ -24,12 +24,21 @@ from app.invoice import (
     price_service,
     product_service,
     receipt_repair_service,
+    screenshot_import_service,
     service,
     xiaoman_service,
 )
-from app.invoice.schemas import AccessoryPricePayload, InvoiceCreate, InvoiceImportPreviewRequest, InvoiceUpdate
+from app.invoice.schemas import (
+    AccessoryPricePayload,
+    InvoiceCreate,
+    InvoiceImportPreviewRequest,
+    InvoiceUpdate,
+    ScreenshotResolveRequest,
+)
 
 logger = logging.getLogger(__name__)
+_MAX_SCREENSHOT_BYTES = 10 * 1024 * 1024
+_UPLOAD_CHUNK_BYTES = 1024 * 1024
 
 router = APIRouter()
 
@@ -245,6 +254,63 @@ def preview_invoice_import(
             order_type=body.order_type,
             currency=body.currency,
             raw_rows=[row.model_dump() for row in body.rows],
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return ok(result)
+
+
+@router.post("/import/screenshot/preview", summary="Recognize and preview one OKKI order screenshot")
+async def preview_invoice_screenshot(
+    image: UploadFile = File(...),
+    order_type: str = Query("stock", pattern="^(stock|production)$"),
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("invoice:write")),
+):
+    user_id = _user_id(current_user)
+    if user_id is None:
+        raise HTTPException(403, "无法确认用户身份")
+    try:
+        image_bytes = await _read_screenshot_upload(image)
+        result = screenshot_import_service.recognize_preview(
+            db,
+            image_bytes=image_bytes,
+            content_type=image.content_type or "application/octet-stream",
+            order_type=order_type,
+            actor_user_id=user_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - AI/provider failures are reported and surfaced safely
+        logger.warning("OKKI screenshot recognition failed: %s", type(exc).__name__)
+        print(f"[invoice_screenshot] recognition failed: {type(exc).__name__}", flush=True)
+        raise HTTPException(502, "AI 识别服务暂不可用，请稍后重试") from exc
+    return ok(result)
+
+
+async def _read_screenshot_upload(image: UploadFile) -> bytes:
+    chunks: list[bytes] = []
+    total = 0
+    while chunk := await image.read(_UPLOAD_CHUNK_BYTES):
+        total += len(chunk)
+        if total > _MAX_SCREENSHOT_BYTES:
+            raise ValueError("截图不能超过 10MB")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+@router.post("/import/screenshot/resolve", summary="Re-resolve an OKKI screenshot preview")
+def resolve_invoice_screenshot(
+    body: ScreenshotResolveRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("invoice:write")),
+):
+    user_id = _user_id(current_user)
+    if user_id is None:
+        raise HTTPException(403, "无法确认用户身份")
+    try:
+        result = screenshot_import_service.resolve_preview(
+            db, request=body, actor_user_id=user_id,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -688,11 +754,17 @@ def _write_invoice_or_400(db: Session, write):
         db.commit()
         return result
     except ValueError as exc:
+        db.rollback()
         raise HTTPException(400, str(exc))
     except IntegrityError as exc:
         db.rollback()  # flush/commit 失败必须 rollback，否则 session 污染（cerebrum 2026-05-26）
         logger.warning("invoice 写入唯一约束冲突: %s", exc)
         print(f"[invoice] integrity error on write: {exc}", flush=True)
+        constraint = str(getattr(exc, "orig", exc))
+        if "uq_invoice_source_order" in constraint or "source_order_id" in constraint:
+            raise HTTPException(400, "该 OKKI 订单已导入，请勿重复创建")
+        if "uq_invoice_source_image" in constraint or "source_image_sha256" in constraint:
+            raise HTTPException(400, "这张 OKKI 截图已创建过发票，请勿重复导入")
         raise HTTPException(400, "发票号已被占用（并发冲突），请修改后重试")
 
 
@@ -704,6 +776,29 @@ def create_invoice(
 ):
     invoice = _write_invoice_or_400(
         db, lambda: service.create_invoice(db, body, user_id=_user_id(current_user)),
+    )
+    db.refresh(invoice)
+    invoice = service.get_invoice(db, invoice.id)
+    return ok(service.serialize_detail(invoice))
+
+
+@router.post("/import/screenshot/create", summary="Create invoice from a signed screenshot preview", status_code=201)
+def create_invoice_from_screenshot(
+    body: InvoiceCreate,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("invoice:write")),
+):
+    user_id = _user_id(current_user)
+    if user_id is None:
+        raise HTTPException(403, "无法确认用户身份")
+    invoice = _write_invoice_or_400(
+        db,
+        lambda: service.create_invoice(
+            db,
+            body,
+            user_id=user_id,
+            allow_screenshot_source=True,
+        ),
     )
     db.refresh(invoice)
     invoice = service.get_invoice(db, invoice.id)

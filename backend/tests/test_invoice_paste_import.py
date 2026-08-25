@@ -68,8 +68,12 @@ def test_normalize_import_row_accepts_historical_formats():
         "color": "#1B",
         "weight": "100g",
         "quantity": 2,
-        "unit_price": Decimal("36.00"),
+        "unit_price": Decimal("36.0000"),
     }
+
+
+def test_normalize_import_row_preserves_okki_four_decimal_unit_price():
+    assert import_service.normalize_row(valid_row(unit_price="30.048"))["unit_price"] == Decimal("30.0480")
 
 
 @pytest.mark.parametrize(("raw", "expected"), [

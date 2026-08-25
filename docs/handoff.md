@@ -6,6 +6,8 @@
 >
 > ⚠️ **发布状态提醒（2026-08-13 核实）**：本地 `main` 与 `origin/main` 同步（提交 `0372766`），`cloud/main`（北京展会实例）已于 2026-08-13 推送代码但**服务尚未重启**——生产校验新增 `ARK_SALARY_ENCRYPTION_KEY` 和 `ARK_SALARY_HASH_KEY` 两项必填环境变量（config.py:283-286，薪资模块 PII 加密），云端 `.env` 缺配会导致启动失败，需补齐后才能执行 runbook 的重启步骤。**「已合入 main」不等于「已上线」**：本清单里 2026-08-05 之后的条目默认只到「本地已提交」，逐条发布状态见各条标注。main 的 push 等亮哥指令。
 
+> 🚧 **当前开发（2026-08-25）**：`codex/invoice-screenshot-import` 已实现 OKKI 订单截图 AI 字段提取、确定性客户/业务员/产品/SKU/来源订单核对、人工预览填入、签名预览凭证、同图/同订单防重和重复推送禁用；迁移为 `119_invoice_screenshot_src`。独立对抗审查已完成，其发现的预览来源可伪造、上传整体读入、无候选时定制产品入口不可达、非 USD 订单误关联和 OCR 订单名不一致问题均已加固；专项后端 54 例、前端专项测试和 Vite 构建通过。迁移 119 已在合并前改接 118，需重跑 `alembic heads/upgrade` 确认唯一 head。
+
 ## 2026-08-20 DSH Agent Runtime 交接
 
 - 开发分支 `codex/agent-runtime-phase1` 已实现迁移 118、统一 Agent 控制面、受控模型/MCP 网关、隔离 DSH Worker、客户经营副驾驶、复购行动卡、获客 Shadow、任务中心和运行时间线；Feature Flag 全部默认关闭，尚未合入 main 或部署生产。

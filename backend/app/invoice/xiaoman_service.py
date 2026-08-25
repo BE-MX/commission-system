@@ -54,6 +54,15 @@ def sync_invoice(db: Session, invoice: Invoice, operator_id: int | None = None) 
     order with no local record means the next sync creates a duplicate REAL
     order. Caller (router) owns the final commit for everything else.
     """
+    if invoice.source_type == "okki_screenshot":
+        return {
+            "ok": False,
+            "message": "该发票由既有 OKKI 订单截图导入，禁止再次同步以免重复建单",
+            "issues": [{
+                "field": "source_order_id",
+                "message": f"来源 OKKI 订单 {invoice.source_order_no or invoice.source_order_id or '未匹配'} 已存在",
+            }],
+        }
     issues = validate_invoice(invoice)
     if issues:
         return {"ok": False, "message": "发票未通过同步前校验", "issues": issues}
