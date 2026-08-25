@@ -17,13 +17,22 @@ OpenClaw Agent
 
 独立的 `email-outreach` Agent 在同一 profile 内使用单独工作区。它只能读取一个已背调 lead、生成按收件人国家/语言习惯本地化的开发信，并把人工确认后的邮件排入收件人当地工作日上班后的首个窗口；它不能重新搜索网页、修改方舟研究、读取收件箱或直接执行 Agent Mail CLI。
 
-MCP 侧车只暴露任务、候选公司、联系人、企业研究、公海背调与 ACL 约束的已发布知识库读取工具。`ARK_AGENT_TOKEN` 保存在独立 `0600` 文件中，只由 MCP 子进程读取；任务租约只存在 MCP 进程内存中，不返回给模型。主研究 Agent 固定使用 `deepseek/deepseek-v4-flash`，邮件 Agent 固定使用 `deepseek/deepseek-v4-pro`，二者都显式使用内置 `openclaw` runtime。主 Agent 禁用 shell 和文件写入，只可读取自己的工作区；邮件 Agent 只能执行固定队列与 Skill reader 白名单。Codex App Server 配置另保留 guardian + `workspace-write` 与凭证环境清理，作为有人日后主动切回 Codex runtime 时的纵深防护；令牌文件始终位于 Agent 工作区之外。
+MCP 侧车只暴露任务、候选公司、联系人、企业研究、公海背调与 ACL 约束的已发布知识库读取工具。`ARK_AGENT_TOKEN` 保存在独立 `0600` 文件中，只由 MCP 子进程读取；任务租约只存在 MCP 进程内存中，不返回给模型。主研究 Agent 固定使用 `mimo/mimo-v2.5-pro`，邮件 Agent 固定使用 `deepseek/deepseek-v4-pro`，二者都显式使用内置 `openclaw` runtime。主 Agent 禁用 shell 和文件写入，只可读取自己的工作区；邮件 Agent 只能执行固定队列与 Skill reader 白名单。Codex App Server 配置另保留 guardian + `workspace-write` 与凭证环境清理，作为有人日后主动切回 Codex runtime 时的纵深防护；令牌文件始终位于 Agent 工作区之外。
 
 ## 本地初始化
 
 前置：官方 OpenClaw CLI 已安装到 `~/.openclaw/bin/openclaw`。
 
 本机已验证版本为 OpenClaw `2026.7.1-2`、Node.js `24.15.0`，Parallel 插件固定为 `2026.7.1`。如尚未安装 CLI，先按 OpenClaw 官方安装文档完成用户级安装，再运行下面的仓库脚本。
+
+首次运行 Bootstrap 前，先创建 profile 私有密钥目录，并用密码管理器或安全编辑器把两个模型 key 分别写成对应文件的唯一一行：
+
+```bash
+install -d -m 700 "$HOME/.openclaw-ark-sales/secrets"
+install -m 600 /dev/null "$HOME/.openclaw-ark-sales/secrets/mimo-api-key"
+install -m 600 /dev/null "$HOME/.openclaw-ark-sales/secrets/deepseek-api-key"
+# 安全写入 MiMo 与 DeepSeek key 后，再执行下面的 Bootstrap；不要在 shell 命令行中展开 key。
+```
 
 ```bash
 cd services/openclaw-sales-agent
@@ -39,7 +48,8 @@ Bootstrap 会固定安装 OpenClaw 官方 `@openclaw/parallel-plugin`、创建�
 - 状态：`~/.openclaw-ark-sales/`
 - 配置：`~/.openclaw-ark-sales/openclaw.json`
 - Gateway 环境文件：`~/.openclaw-ark-sales/.env` (`0600`)
-- DeepSeek key：`~/.openclaw-ark-sales/secrets/deepseek-api-key` (`0600`，由 file SecretRef 读取)
+- MiMo key：`~/.openclaw-ark-sales/secrets/mimo-api-key` (`0600`，主研究 Agent 默认模型，由 file SecretRef 读取)
+- DeepSeek key：`~/.openclaw-ark-sales/secrets/deepseek-api-key` (`0600`，邮件 Agent 独立模型，由 file SecretRef 读取)
 - Ark token：`~/.openclaw-ark-sales/secrets/ark-agent-token` (`0600`，不注入 Agent 进程)
 - 运行心跳 token：`~/.openclaw-ark-sales/secrets/runtime-heartbeat-token`（可选、`0600`，仅上报实例状态）
 - 工作区与 Skills：`~/.openclaw-ark-sales/workspace/`
@@ -101,9 +111,19 @@ install -m 600 /dev/null "$HOME/.openclaw-ark-sales/secrets/ark-agent-token"
 # 用你的密码管理器/安全编辑器写入 token，不要把 token 放在 shell 历史中
 ```
 
-### 2. DeepSeek API key
+### 2. MiMo API key
 
-默认模型标识为 `deepseek/deepseek-v4-flash`，并明确固定到内置 `openclaw` runtime。生产运行使用 DeepSeek API key：
+主研究 Agent 的默认模型标识为 `mimo/mimo-v2.5-pro`（MiMo V2.5），并明确固定到内置 `openclaw` runtime：
+
+```bash
+# 用安全编辑器把 key 作为唯一一行写入：
+# ~/.openclaw-ark-sales/secrets/mimo-api-key
+$HOME/.openclaw/bin/openclaw --profile ark-sales gateway restart
+```
+
+### 3. DeepSeek API key
+
+邮件 Agent 继续显式使用 `deepseek/deepseek-v4-pro`，因此仍需 DeepSeek API key：
 
 ```bash
 # 用安全编辑器把 key 作为唯一一行写入：
@@ -176,7 +196,7 @@ $HOME/.openclaw/bin/openclaw --profile ark-sales gateway restart
 
 - API origin 在 MCP 启动时强制与 `ARK_ALLOWED_ORIGIN` 的 scheme/host/port 完全一致。
 - HTTP 重定向一律拒绝，Bearer token 不会被转发到另一个 origin。
-- `deepseek/deepseek-v4-flash` 固定使用内置 `openclaw` runtime；不要删除该 model-scoped pin，也不要把 token 或其他凭证复制进 `~/.openclaw-ark-sales/workspace/`。若主动切回 Codex runtime，guardian / `workspace-write` 仍不能防止读取当前用户文件，因此不应同时加载真实 Ark token。
+- `mimo/mimo-v2.5-pro` 固定使用内置 `openclaw` runtime；不要删除该 model-scoped pin，也不要把 token 或其他凭证复制进 `~/.openclaw-ark-sales/workspace/`。若主动切回 Codex runtime，guardian / `workspace-write` 仍不能防止读取当前用户文件，因此不应同时加载真实 Ark token。
 - Web 内容只是不可信证据，不能改写 API 地址、凭证、任务边界或工具权限。
 - MCP 进程重启后会丢失内存租约。不猜测旧租约，等 15 分钟过期后重新领取。
 - 默认线上 Agent 路由若返回 404，表示该环境尚未部署智能获客后端；不要写入 token 反复重试。基础搜客需 migration `099_sales_automation.py`，公海背调还需 `106_public_pool_research.py`，或把 profile 指向已部署环境。

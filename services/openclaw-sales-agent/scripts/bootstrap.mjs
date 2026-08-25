@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { randomBytes } from "node:crypto";
-import { chmod, copyFile, lstat, mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, copyFile, lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,6 +17,7 @@ const workspace = join(stateDir, "workspace");
 const secretsDir = join(stateDir, "secrets");
 const arkTokenFile = join(secretsDir, "ark-agent-token");
 const heartbeatTokenFile = join(secretsDir, "runtime-heartbeat-token");
+const mimoTokenFile = join(secretsDir, "mimo-api-key");
 const deepseekTokenFile = join(secretsDir, "deepseek-api-key");
 const openclaw = process.env.OPENCLAW_BIN || join(home, ".openclaw/bin/openclaw");
 const node = process.env.OPENCLAW_NODE || join(home, ".openclaw/tools/node/bin/node");
@@ -82,39 +83,56 @@ async function ensureEnvFile() {
   await writeFile(envFile, template, { encoding: "utf8", mode: 0o600, flag: "wx" });
 }
 
-async function migrateDeepseekKeyToSecretFile() {
+async function migrateModelKeyToSecretFile(envName, tokenFile, providerLabel) {
   const contents = await readFile(envFile, "utf8");
   let key = null;
   const retained = [];
   for (const line of contents.split(/\r?\n/u)) {
-    if (line.startsWith("DEEPSEEK_API_KEY=") && line.slice("DEEPSEEK_API_KEY=".length).trim()) {
-      key = line.slice("DEEPSEEK_API_KEY=".length).trim();
+    const prefix = `${envName}=`;
+    if (line.startsWith(prefix) && line.slice(prefix.length).trim()) {
+      key = line.slice(prefix.length).trim();
       continue;
     }
     retained.push(line);
   }
   if (key) {
-    await writeFile(deepseekTokenFile, `${key.replace(/^['"]|['"]$/gu, "")}\n`, {
-      encoding: "utf8", mode: 0o600,
-    });
+    try {
+      const existing = await lstat(tokenFile);
+      if (!existing.isFile() || existing.isSymbolicLink()
+        || (typeof process.getuid === "function" && existing.uid !== process.getuid())) {
+        throw new Error(`${tokenFile} must be a current-user regular file, not a symlink`);
+      }
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+    const temporaryFile = `${tokenFile}.${process.pid}.${randomBytes(8).toString("hex")}.tmp`;
+    try {
+      await writeFile(temporaryFile, `${key.replace(/^['"]|['"]$/gu, "")}\n`, {
+        encoding: "utf8", mode: 0o600, flag: "wx",
+      });
+      await rename(temporaryFile, tokenFile);
+    } catch (error) {
+      await rm(temporaryFile, { force: true });
+      throw error;
+    }
     await writeFile(envFile, `${retained.join("\n").replace(/\n+$/u, "")}\n`, {
       encoding: "utf8", mode: 0o600,
     });
   }
   let metadata;
   try {
-    metadata = await lstat(deepseekTokenFile);
+    metadata = await lstat(tokenFile);
   } catch {
-    throw new Error(`DeepSeek key is missing; store it as the only line in ${deepseekTokenFile} before bootstrap`);
+    throw new Error(`${providerLabel} key is missing; store it as the only line in ${tokenFile} before bootstrap`);
   }
   if (!metadata.isFile() || metadata.isSymbolicLink()
     || (typeof process.getuid === "function" && metadata.uid !== process.getuid())) {
-    throw new Error(`${deepseekTokenFile} must be a current-user regular file, not a symlink`);
+    throw new Error(`${tokenFile} must be a current-user regular file, not a symlink`);
   }
-  if (!(await readFile(deepseekTokenFile, "utf8")).trim()) {
-    throw new Error(`${deepseekTokenFile} must contain one non-empty key`);
+  if (!(await readFile(tokenFile, "utf8")).trim()) {
+    throw new Error(`${tokenFile} must contain one non-empty key`);
   }
-  await chmod(deepseekTokenFile, 0o600);
+  await chmod(tokenFile, 0o600);
 }
 
 async function installWorkspaceTemplates() {
@@ -233,7 +251,8 @@ function configureMainAgentTools() {
 
 async function main() {
   await ensureEnvFile();
-  await migrateDeepseekKeyToSecretFile();
+  await migrateModelKeyToSecretFile("MIMO_API_KEY", mimoTokenFile, "MiMo");
+  await migrateModelKeyToSecretFile("DEEPSEEK_API_KEY", deepseekTokenFile, "DeepSeek");
   await installWorkspaceTemplates();
   const arkRuntimeSettings = await loadArkRuntimeSettings();
 
@@ -252,10 +271,30 @@ async function main() {
   setConfig("gateway.terminal.enabled", false);
   setConfig("gateway.controlUi.enabled", true);
   setConfig("agents.defaults.workspace", workspace);
-  setConfig("agents.defaults.model", { primary: "deepseek/deepseek-v4-flash" });
+  setConfig("agents.defaults.model", { primary: "mimo/mimo-v2.5-pro" });
   setConfig("agents.defaults.models", {
+    "mimo/mimo-v2.5-pro": { agentRuntime: { id: "openclaw" } },
     "deepseek/deepseek-v4-flash": { agentRuntime: { id: "openclaw" } },
     "deepseek/deepseek-v4-pro": { agentRuntime: { id: "openclaw" } },
+  });
+  setConfig("secrets.providers.mimo_key_file", {
+    source: "file", path: mimoTokenFile, mode: "singleValue",
+  });
+  setConfig("models.providers.mimo", {
+    baseUrl: "https://token-plan-cn.xiaomimimo.com/v1",
+    apiKey: { source: "file", provider: "mimo_key_file", id: "value" },
+    api: "openai-completions",
+    agentRuntime: { id: "openclaw" },
+    models: [{
+      id: "mimo-v2.5-pro",
+      name: "MiMo V2.5 Pro",
+      reasoning: true,
+      input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 200000,
+      maxTokens: 8192,
+      api: "openai-completions",
+    }],
   });
   setConfig("secrets.providers.deepseek_key_file", {
     source: "file", path: deepseekTokenFile, mode: "singleValue",
@@ -273,6 +312,7 @@ async function main() {
     sandbox: "workspace-write",
     clearEnv: [
       "OPENCLAW_GATEWAY_TOKEN",
+      "MIMO_API_KEY",
       "DEEPSEEK_API_KEY",
       "OPENAI_API_KEY",
       "ARK_AGENT_TOKEN",
@@ -334,6 +374,7 @@ async function main() {
   process.stdout.write(`\nOpenClaw profile '${profile}' prepared at ${stateDir}.\n`);
   process.stdout.write(`Add the Ark token to ${arkTokenFile} (mode 0600).\n`);
   process.stdout.write(`Optional runtime heartbeat token file: ${heartbeatTokenFile} (mode 0600).\n`);
+  process.stdout.write(`Add the MiMo API key as the only line in ${mimoTokenFile} (mode 0600).\n`);
   process.stdout.write(`Add the DeepSeek API key as the only line in ${deepseekTokenFile} (mode 0600).\n`);
 }
 
