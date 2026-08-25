@@ -8,6 +8,7 @@ from pathlib import Path
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
+from app.auth.models import ArkUser
 from app.expo import ai_pipeline, store_service, upload_service
 from app.expo.models import (
     ExpoCustomer,
@@ -15,6 +16,7 @@ from app.expo.models import (
     ExpoHairColor,
     ExpoResult,
     ExpoSession,
+    ExpoStore,
     ExpoWig,
     ExpoWigColor,
 )
@@ -236,7 +238,17 @@ def _heal_stale_session(db: Session, session: ExpoSession) -> None:
 
     if session.status == "pending" and age > STALE_PENDING_SECS:
         session.status = "failed"
-        session.error_message = f"watchdog: analysis stale over {STALE_PENDING_SECS}s"
+        if not (
+            (current_issue := ai_pipeline.parse_ai_issue(session.error_message))
+            and current_issue.get("state") == "contact_admin"
+        ):
+            session.error_message = ai_pipeline.format_ai_issue(
+                stage="analysis",
+                state="contact_admin",
+                reason="timeout",
+                retry_count=ai_pipeline.AI_MAX_RETRIES,
+                detail=f"watchdog: analysis stale over {STALE_PENDING_SECS}s",
+            )
     elif session.status == "generating" and age > STALE_GENERATING_SECS:
         for r in session.results:
             if r.status in ("pending", "generating"):
@@ -245,7 +257,17 @@ def _heal_stale_session(db: Session, session: ExpoSession) -> None:
             session.status = "done"  # 有成品照常展示，只收掉卡死的
         else:
             session.status = "failed"
-            session.error_message = f"watchdog: all composites stale over {STALE_GENERATING_SECS}s"
+            if not (
+                (current_issue := ai_pipeline.parse_ai_issue(session.error_message))
+                and current_issue.get("state") == "contact_admin"
+            ):
+                session.error_message = ai_pipeline.format_ai_issue(
+                    stage="composite",
+                    state="contact_admin",
+                    reason="timeout",
+                    retry_count=ai_pipeline.AI_MAX_RETRIES,
+                    detail=f"watchdog: all composites stale over {STALE_GENERATING_SECS}s",
+                )
     else:
         return
     msg = f"[expo] watchdog healed session={session.id} -> {session.status} (age={int(age)}s)"
@@ -317,12 +339,184 @@ def serialize_session(db: Session, session: ExpoSession, include_internal: bool 
             for r in session.results
         ],
         "photo_url": _to_url(session.photo_path),
+        "ai_issue": _public_ai_issue(db, session),
     }
     if include_internal:
         payload["analysis_internal"] = (session.analysis_json or {}).get("internal")
         payload["strategy"] = session.strategy_json
         payload["error_message"] = session.error_message
     return payload
+
+
+def _ai_admin_users(db: Session) -> list[ArkUser]:
+    """Active users whose assigned role grants expo administration.
+
+    The explicit role/permission relationship is authoritative.  ``super_admin``
+    is included because it bypasses permission checks by platform contract even
+    when an older database has not backfilled every permission row.
+    """
+    users = (
+        db.query(ArkUser)
+        .filter(
+            ArkUser.is_active.is_(True),
+            ArkUser.deleted_at.is_(None),
+        )
+        .order_by(ArkUser.id)
+        .all()
+    )
+    return [
+        user
+        for user in users
+        if any(
+            role.name == "super_admin"
+            or any(permission.code == "expo:admin" for permission in role.permissions)
+            for role in user.roles
+        )
+    ]
+
+
+def _admin_phone(db: Session, session: ExpoSession) -> str | None:
+    """Prefer the current store's published contact, then an expo admin's phone."""
+    if session.store_id:
+        store = db.get(ExpoStore, session.store_id)
+        if store and (store.contact_phone or "").strip():
+            return store.contact_phone.strip()
+    for user in _ai_admin_users(db):
+        if (user.phone or "").strip():
+            return user.phone.strip()
+    return None
+
+
+def _public_ai_issue(db: Session, session: ExpoSession) -> dict | None:
+    issue = ai_pipeline.parse_ai_issue(session.error_message)
+    if not issue:
+        return None
+    notified_marker = str(issue.get("notified_at") or "")
+    notifying = notified_marker.startswith("pending:")
+    payload = {
+        "stage": issue["stage"],
+        "state": issue["state"],
+        "reason": issue["reason"],
+        "retry_count": issue.get("retry_count", 0),
+        "message": (
+            ai_pipeline.AI_RETRY_MESSAGE
+            if issue["state"] == "retrying"
+            else "请联系管理员"
+        ),
+        "notified": bool(notified_marker) and not notifying,
+    }
+    if issue["state"] == "contact_admin":
+        payload["admin_phone"] = _admin_phone(db, session)
+        payload["notifying"] = notifying
+    return payload
+
+
+async def notify_ai_issue_admins(db: Session, session: ExpoSession) -> dict:
+    """Send one idempotent DingTalk work notice for a terminal expo AI issue."""
+    issue = ai_pipeline.parse_ai_issue(session.error_message)
+    if not issue or issue.get("state") != "contact_admin":
+        raise ValueError("当前会话没有需要联系管理员的 AI 异常")
+
+    phone = _admin_phone(db, session)
+    notified_marker = issue.get("notified_at")
+    if notified_marker and not str(notified_marker).startswith("pending:"):
+        return {"sent": True, "already_notified": True, "admin_phone": phone}
+    if notified_marker:
+        try:
+            claimed_at = datetime.fromisoformat(str(notified_marker).removeprefix("pending:"))
+        except ValueError:
+            claimed_at = datetime.utcnow()
+        if (datetime.utcnow() - claimed_at).total_seconds() < 120:
+            return {
+                "sent": False,
+                "already_notified": False,
+                "in_progress": True,
+                "admin_phone": phone,
+            }
+
+    dingtalk_ids = list(dict.fromkeys(
+        user.dingtalk_id.strip()
+        for user in _ai_admin_users(db)
+        if (user.dingtalk_id or "").strip()
+    ))
+    if not dingtalk_ids:
+        raise RuntimeError("未找到已绑定钉钉的展会 AI 试戴管理员")
+
+    customer = db.get(ExpoCustomer, session.customer_id)
+    customer_name = (customer.name if customer else "未知") or "未知"
+    stage_label = "人脸识别" if issue["stage"] == "analysis" else "效果图合成"
+    text = f"{customer_name}用户在展会AI试戴功能的{stage_label}环节发生问题，请及时解决。"
+
+    # 在 await 外先用条件 UPDATE 抢占发送权，避免双击/多 worker 同时通过检查各发一条。
+    original_error = session.error_message
+    claim_marker = f"pending:{datetime.utcnow().isoformat(timespec='seconds')}"
+    claim_error = ai_pipeline.format_ai_issue(
+        stage=issue["stage"],
+        state=issue["state"],
+        reason=issue["reason"],
+        retry_count=issue.get("retry_count", 0),
+        detail=issue.get("detail", ""),
+        result_id=issue.get("result_id"),
+        notified_at=claim_marker,
+    )
+    claimed = (
+        db.query(ExpoSession)
+        .filter(
+            ExpoSession.id == session.id,
+            ExpoSession.error_message == original_error,
+        )
+        .update({"error_message": claim_error}, synchronize_session=False)
+    )
+    db.commit()
+    if not claimed:
+        db.refresh(session)
+        latest = ai_pipeline.parse_ai_issue(session.error_message)
+        if latest and latest.get("notified_at"):
+            marker = str(latest["notified_at"])
+            if marker.startswith("pending:"):
+                return {
+                    "sent": False,
+                    "already_notified": False,
+                    "in_progress": True,
+                    "admin_phone": phone,
+                }
+            return {"sent": True, "already_notified": True, "admin_phone": phone}
+        raise RuntimeError("管理员通知状态发生变化，请重试")
+
+    from app.dingtalk.work_notify import get_work_notifier
+
+    try:
+        sent = await get_work_notifier().send_to_users(
+            user_ids=dingtalk_ids,
+            title="展会 AI 试戴异常提醒",
+            markdown_text=text,
+        )
+    except Exception:
+        sent = False
+    if not sent:
+        db.query(ExpoSession).filter(
+            ExpoSession.id == session.id,
+            ExpoSession.error_message == claim_error,
+        ).update({"error_message": original_error}, synchronize_session=False)
+        db.commit()
+        raise RuntimeError("钉钉管理员通知发送失败")
+
+    notified_at = datetime.utcnow().isoformat(timespec="seconds")
+    final_error = ai_pipeline.format_ai_issue(
+        stage=issue["stage"],
+        state=issue["state"],
+        reason=issue["reason"],
+        retry_count=issue.get("retry_count", 0),
+        detail=issue.get("detail", ""),
+        result_id=issue.get("result_id"),
+        notified_at=notified_at,
+    )
+    db.query(ExpoSession).filter(
+        ExpoSession.id == session.id,
+        ExpoSession.error_message == claim_error,
+    ).update({"error_message": final_error}, synchronize_session=False)
+    db.commit()
+    return {"sent": True, "already_notified": False, "admin_phone": phone}
 
 
 def _to_url(path: str | None) -> str | None:

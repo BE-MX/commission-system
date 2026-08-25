@@ -63,6 +63,10 @@ export function getSession(sessionId, { internal = false } = {}) {
   })
 }
 
+export function contactExpoAdmin(sessionId) {
+  return expoClient.post(`/sessions/${sessionId}/contact-admin`, null, { ...KIOSK })
+}
+
 export function generateResults(sessionId, { wigIds = null, batch = 0, hairColorId = null, sceneKey = null, sceneKeys = null, quality = null, promptVariant = null } = {}) {
   return expoClient.post(`/sessions/${sessionId}/generate`, {
     wig_ids: wigIds, batch, hair_color_id: hairColorId, scene_key: sceneKey, scene_keys: sceneKeys,

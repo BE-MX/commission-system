@@ -45,6 +45,8 @@
       </div>
     </Transition>
 
+    <AiIssueNotice />
+
     <div v-if="flow.errorText.value" class="xk-error">{{ flow.errorText.value }}</div>
 
     <!-- 返回主页确认：拍照之后流程有实际代价（照片/分析/效果图），误触清场损失大 -->
@@ -107,6 +109,7 @@ import MatchingScreen from './kiosk/MatchingScreen.vue'
 import SceneScreen from './kiosk/SceneScreen.vue'
 import ResultScreen from './kiosk/ResultScreen.vue'
 import SalesPanel from './kiosk/SalesPanel.vue'
+import AiIssueNotice from './kiosk/AiIssueNotice.vue'
 
 const flow = useTryOnFlow()
 const authStore = useAuthStore()

@@ -158,6 +158,45 @@ def test_all_502_raises_after_max_attempts(monkeypatch):
     assert caught.value.provider_attempt_count == 3
 
 
+def test_caller_can_disable_inner_retries(monkeypatch):
+    """Expo owns a user-visible retry counter, so one facade call must equal one attempt."""
+    calls = {"n": 0}
+
+    def make(timeout=None, **kwargs):
+        calls["n"] += 1
+        return _FakeClient(_FakeResp(502))
+
+    monkeypatch.setattr(image_service.httpx, "Client", make)
+    with pytest.raises(httpx.HTTPStatusError) as caught:
+        image_service._post_image_edits(
+            "http://x/edits", {}, {}, [], 300, "expo", max_attempts=1,
+        )
+    assert calls["n"] == 1
+    assert caught.value.provider_attempt_count == 1
+
+
+def test_caller_can_disable_unsupported_parameter_fallback(monkeypatch):
+    calls = {"n": 0}
+
+    def make(timeout=None, **kwargs):
+        calls["n"] += 1
+        return _FakeClient(_FakeResp(400, {"error": {"param": "quality"}}))
+
+    monkeypatch.setattr(image_service.httpx, "Client", make)
+    with pytest.raises(httpx.HTTPStatusError):
+        image_service._post_image_edits(
+            "http://x/edits",
+            {},
+            {"quality": "high"},
+            [],
+            300,
+            "expo",
+            max_attempts=1,
+            allow_parameter_fallback=False,
+        )
+    assert calls["n"] == 1
+
+
 def test_504_not_retried(monkeypatch):
     # 504=网关等上游超时(慢)，重试会顶穿看门狗预算 → 立即抛不重试
     calls = {"n": 0}

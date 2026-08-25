@@ -23,12 +23,19 @@ from pathlib import Path
 
 import httpx
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from app.core.database import SessionLocal
 from app.expo import matching, script_service
 from app.expo.models import ExpoResult, ExpoSession, ExpoWig, ExpoWigColor
 
 logger = logging.getLogger("commission.expo")
+
+AI_ISSUE_PREFIX = "expo_ai_issue:"
+AI_MAX_RETRIES = 3
+AI_RETRY_MESSAGE = "当前接口服务负载较高，已自动重试，请耐心等待"
+_AI_RETRY_HTTP_STATUS = {408, 429, 502, 503, 504}
+_AI_RETRY_BACKOFF_SEC = 1.5
 
 # 锚定仓库根：/uploads 静态挂载指向 REPO_ROOT/uploads（见 bootstrap/static_files.py），
 # 不能用相对路径（CWD 是 backend/，会写错目录导致 URL 404）
@@ -75,6 +82,171 @@ def _log_fail(stage: str, session_id: int, exc: Exception) -> None:
     msg = f"[expo] {stage} failed session={session_id} err={type(exc).__name__}: {exc}"
     logger.exception(msg)
     print(msg, flush=True)
+
+
+def format_ai_issue(
+    *,
+    stage: str,
+    state: str,
+    reason: str,
+    retry_count: int = 0,
+    detail: str = "",
+    result_id: int | None = None,
+    notified_at: str | None = None,
+) -> str:
+    """Encode the kiosk-safe AI issue state in the existing diagnostic column.
+
+    ``ExpoSession.error_message`` historically stores free-form diagnostics.  The
+    prefix keeps old values readable while giving the kiosk a stable contract
+    without a schema migration.  ``detail`` remains internal; serializers expose
+    only the explicit public fields.
+    """
+    payload = {
+        "stage": stage,
+        "state": state,
+        "reason": reason,
+        "retry_count": retry_count,
+        "detail": (detail or "")[:500],
+    }
+    if result_id is not None:
+        payload["result_id"] = result_id
+    if notified_at:
+        payload["notified_at"] = notified_at
+    return AI_ISSUE_PREFIX + json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+
+def parse_ai_issue(value: str | None) -> dict | None:
+    """Decode an expo AI issue; legacy/free-form diagnostics return ``None``."""
+    if not value or not value.startswith(AI_ISSUE_PREFIX):
+        return None
+    try:
+        payload = json.loads(value[len(AI_ISSUE_PREFIX):])
+    except (TypeError, json.JSONDecodeError):
+        return None
+    if payload.get("stage") not in {"analysis", "composite"}:
+        return None
+    if payload.get("state") not in {"retrying", "contact_admin"}:
+        return None
+    return payload
+
+
+def _is_retryable_ai_error(exc: Exception) -> bool:
+    if isinstance(exc, (TimeoutError, httpx.TimeoutException, httpx.TransportError)):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code in _AI_RETRY_HTTP_STATUS
+    return False
+
+
+def _set_ai_issue(
+    db: Session,
+    session_id: int,
+    *,
+    stage: str,
+    state: str,
+    reason: str,
+    exc: Exception,
+    retry_count: int = 0,
+    result_id: int | None = None,
+) -> None:
+    error_message = format_ai_issue(
+        stage=stage,
+        state=state,
+        reason=reason,
+        retry_count=retry_count,
+        detail=f"{type(exc).__name__}: {exc}",
+        result_id=result_id,
+    )
+    now = datetime.utcnow()
+    terminal_pattern = f'{AI_ISSUE_PREFIX}%"state":"contact_admin"%'
+    # 条件 UPDATE 让 contact_admin 成为数据库层面的单调终态：无论并发线程
+    # 谁先读到旧值，后续 retrying/terminal 都不能覆盖已提交的终态及 notified_at。
+    updated = (
+        db.query(ExpoSession)
+        .filter(
+            ExpoSession.id == session_id,
+            or_(
+                ExpoSession.error_message.is_(None),
+                ~ExpoSession.error_message.like(terminal_pattern),
+            ),
+        )
+        .update(
+            {"error_message": error_message, "updated_at": now},
+            synchronize_session=False,
+        )
+    )
+    if not updated:
+        db.query(ExpoSession).filter(ExpoSession.id == session_id).update(
+            {"updated_at": now}, synchronize_session=False,
+        )
+    db.commit()
+
+
+def _clear_own_ai_issue(
+    db: Session,
+    session_id: int,
+    *,
+    stage: str,
+    result_id: int | None = None,
+) -> None:
+    """Clear this worker's issue after success, never another result's failure.
+
+    This also heals a watchdog terminal marker if a slow provider response arrives
+    successfully just after the stale threshold.
+    """
+    session = db.get(ExpoSession, session_id)
+    if not session:
+        return
+    observed_error = session.error_message
+    issue = parse_ai_issue(observed_error)
+    if not issue or issue.get("stage") != stage:
+        return
+    if result_id is not None and issue.get("result_id") != result_id:
+        return
+    db.query(ExpoSession).filter(
+        ExpoSession.id == session_id,
+        ExpoSession.error_message == observed_error,
+    ).update({"error_message": None}, synchronize_session=False)
+    db.commit()
+
+
+def _call_with_ai_retry(
+    call,
+    db: Session,
+    session_id: int,
+    *,
+    stage: str,
+    result_id: int | None = None,
+):
+    """Run one provider operation with exactly three retry opportunities."""
+    for attempt in range(AI_MAX_RETRIES + 1):
+        try:
+            result = call()
+            _clear_own_ai_issue(
+                db, session_id, stage=stage, result_id=result_id,
+            )
+            return result
+        except Exception as exc:
+            if not _is_retryable_ai_error(exc) or attempt >= AI_MAX_RETRIES:
+                raise
+            retry_count = attempt + 1
+            _set_ai_issue(
+                db,
+                session_id,
+                stage=stage,
+                state="retrying",
+                reason="timeout",
+                exc=exc,
+                retry_count=retry_count,
+                result_id=result_id,
+            )
+            msg = (
+                f"[expo] {stage} transient error, retry {retry_count}/{AI_MAX_RETRIES} "
+                f"session={session_id} result={result_id}: {type(exc).__name__}: {exc}"
+            )
+            logger.warning(msg)
+            print(msg, flush=True)
+            time.sleep(_AI_RETRY_BACKOFF_SEC * retry_count)
 
 
 def _image_message(text: str, image_paths: list[Path]) -> list[dict]:
@@ -438,41 +610,62 @@ def _parse_json(content: str) -> dict:
         raise ValueError(f"AI 返回内容无法解析为 JSON: {text[:200]}")
 
 
-# 只重试快速失败的 502/503（与合成同口径）。**504 不重试**：网关等上游超时本质就慢，
-# 分析走多模态 chat 单次超时下限 120s、分析看门狗 STALE_PENDING_SECS(240s)，2 次慢速请求即越界，
-# 迟到成功会被看门狗判死后覆写、前端已离场——同图片侧看门狗预算论证。
-_CHAT_RETRY_STATUS = {502, 503}
-_CHAT_MAX_ATTEMPTS = 3  # 首次 + 2 次重试
+def _chat_with_transient_retry(
+    db,
+    preset_name: str,
+    messages: list,
+    *,
+    session_id: int | None = None,
+) -> dict:
+    """Chat call with the expo retry policy for user-visible face analysis.
 
-
-def _chat_with_transient_retry(db, preset_name: str, messages: list) -> dict:
-    """chat 调用对上游 502/503 自动重试（与合成同口径；分析也偶发网关 502，2026-07-16 实证）。
-    504/超时/其他错误不重试，按原样抛（守看门狗预算，见上方常量注释）。"""
+    Strategy generation keeps the historical quick-retry behavior.  Face analysis
+    supplies ``session_id`` and therefore gets the complete three-retry policy plus
+    a persisted kiosk status message.
+    """
     from app.ai.service import chat
 
+    call = lambda: chat(
+        db=db,
+        preset_name=preset_name,
+        messages=messages,
+        caller_module="expo",
+    )
+    if session_id is not None:
+        return _call_with_ai_retry(
+            call, db, session_id, stage="analysis",
+        )
+
+    # Sales strategy is not shown on the kiosk.  Preserve its existing policy:
+    # retry 502/503 twice, and leave timeout/direct errors to the caller.
     last_exc: Exception | None = None
-    for attempt in range(1, _CHAT_MAX_ATTEMPTS + 1):
+    for attempt in range(3):
         try:
-            return chat(db=db, preset_name=preset_name, messages=messages, caller_module="expo")
+            return call()
         except httpx.HTTPStatusError as exc:
-            status_code = exc.response.status_code
-            if status_code not in _CHAT_RETRY_STATUS:
+            if exc.response.status_code not in {502, 503}:
                 raise
             last_exc = exc
-        if attempt < _CHAT_MAX_ATTEMPTS:
-            msg = f"[expo] {preset_name} transient {status_code}, retry {attempt}/{_CHAT_MAX_ATTEMPTS-1}"
-            logger.warning(msg)
-            print(msg, flush=True)
-            time.sleep(1.5 * attempt)
+        if attempt < 2:
+            time.sleep(_AI_RETRY_BACKOFF_SEC * (attempt + 1))
     raise last_exc
 
 
-def _chat_json(db, preset_name: str, messages: list, retries: int = 1) -> dict:
+def _chat_json(
+    db,
+    preset_name: str,
+    messages: list,
+    retries: int = 1,
+    *,
+    session_id: int | None = None,
+) -> dict:
     """chat + JSON 解析；解析失败带纠错反馈重试（模型偶发输出非法 JSON，
     如字符串值内未转义双引号——线上 session=9/10 实case）。"""
     last_exc: Exception | None = None
     for attempt in range(retries + 1):
-        result = _chat_with_transient_retry(db, preset_name, messages)
+        result = _chat_with_transient_retry(
+            db, preset_name, messages, session_id=session_id,
+        )
         content = result.get("content", "")
         try:
             return _parse_json(content)
@@ -533,6 +726,7 @@ def _run_analysis(session_id: int) -> None:
             db,
             ANALYSIS_PRESET,
             _image_message(_ANALYSIS_INSTRUCTION, [to_abs(session.photo_path)]),
+            session_id=session_id,
         )
 
         reg = {
@@ -550,10 +744,18 @@ def _run_analysis(session_id: int) -> None:
     except Exception as exc:
         db.rollback()
         _log_fail("analysis", session_id, exc)
+        _set_ai_issue(
+            db,
+            session_id,
+            stage="analysis",
+            state="contact_admin",
+            reason="timeout" if _is_retryable_ai_error(exc) else "error",
+            exc=exc,
+            retry_count=AI_MAX_RETRIES if _is_retryable_ai_error(exc) else 0,
+        )
         session = db.get(ExpoSession, session_id)
         if session:
             session.status = "failed"
-            session.error_message = f"analysis: {exc}"
             db.commit()
     finally:
         db.close()
@@ -1267,6 +1469,9 @@ def prepare_composite_batch(
     if not session:
         return [], False
     session.status = "generating"
+    # A manual regeneration starts a fresh operation.  Do not leak the previous
+    # terminal/retry support card into the new batch while the provider is healthy.
+    session.error_message = None
     result_ids: list[int] = []
     for row in rows:
         db.add(row)
@@ -1390,16 +1595,31 @@ def _run_composite(session_id: int, result_id: int) -> None:
         prompt, images, size = _build_prompt(
             session, row, wig, variant=row.prompt_variant,
         )
-        result = edit_image(
-            db=db,
-            preset_name=COMPOSITE_PRESET,
-            prompt=prompt,
-            images=[_prep_image(path) for path in images],
-            caller_module="expo",
-            size=size,
-            quality=row.quality,  # 客户在甄选页选的档位；空则回落 preset 配置
+        prepared_images = [_prep_image(path) for path in images]
+
+        def call_and_save():
+            result = edit_image(
+                db=db,
+                preset_name=COMPOSITE_PRESET,
+                prompt=prompt,
+                images=prepared_images,
+                caller_module="expo",
+                size=size,
+                quality=row.quality,  # 客户在甄选页选的档位；空则回落 preset 配置
+                # Expo owns the exact user-visible retry count.  Disable the
+                # image service's inner recovery to avoid hidden extra calls.
+                transport_max_attempts=1,
+                transport_allow_parameter_fallback=False,
+            )
+            return _save_result_image(result, result_id)
+
+        image_path = _call_with_ai_retry(
+            call_and_save,
+            db,
+            session_id,
+            stage="composite",
+            result_id=result_id,
         )
-        image_path = _save_result_image(result, result_id)
         stamp_logo(image_path)          # 品牌水印，必须早于展示版派生
         make_display_image(image_path)  # kiosk 展示版，失败不阻断（回退原图）
 
@@ -1411,14 +1631,20 @@ def _run_composite(session_id: int, result_id: int) -> None:
     except Exception as exc:
         db.rollback()
         _log_fail("composite", session_id, exc)
+        _set_ai_issue(
+            db,
+            session_id,
+            stage="composite",
+            state="contact_admin",
+            reason="timeout" if _is_retryable_ai_error(exc) else "error",
+            exc=exc,
+            retry_count=AI_MAX_RETRIES if _is_retryable_ai_error(exc) else 0,
+            result_id=result_id,
+        )
         row = db.get(ExpoResult, result_id)
         if row:
             row.status = "failed"
             row.gen_ms = int((time.monotonic() - started) * 1000)
-            # 失败原因落会话（销售面板/线索台可见），免得排障只能翻 AI 调用日志
-            session = db.get(ExpoSession, session_id)
-            if session:
-                session.error_message = f"composite#{result_id}: {exc}"
             db.commit()
     finally:
         _refresh_session_status(session_id)

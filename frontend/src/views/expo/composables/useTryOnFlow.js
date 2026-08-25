@@ -12,6 +12,8 @@ import {
   createSession, generateResults, getScenes,
   getSession, getWigColors, registerCustomer, setReaction, submitFeedback, updateCustomer,
 } from '@/api/expo'
+import { normalisePhone } from './expoPhone'
+import { useAiIssueSupport } from './useAiIssueSupport'
 import { useQrUpload } from './useQrUpload'
 
 const POLL_MS = 2000
@@ -19,25 +21,9 @@ const IDLE_MS = 60000
 // 轮询连续失败 5 次（约 10s）才提示网络拥堵——单次抖动不打扰客户；恢复后自动撤下
 const POLL_FAIL_HINT_AT = 5
 const NET_CONGESTION_HINT = '现场网络拥堵，生成仍在继续，请稍候…'
-// 不判 idle 的步骤：analyzing=客户在等待不算离开；matching=甄选发型/发色是客户慢慢挑的
-// 决策页；result=展示页。三者都只允许手动返回主页，不自动跳回
+// 不判 idle：analyzing 是等待；matching/result 允许客户慢慢挑选，只手动返回主页。
 //（用户指令 2026-07-07 result / 2026-07-08 matching——挑款看图不能被清场）
 const NO_IDLE_STEPS = ['analyzing', 'matching', 'result']
-
-/**
- * 手机号归一 + 校验，返回 11 位纯数字；不合格返回 ''。
- *
- * 与后端 CustomerRegister._normalise_phone 是同一套规则，两处同步维护。
- * 前端这份不是「防线」（kiosk 页面可绕过，真关卡在后端），而是为了让客户在点
- * 「下一步」当场知道错在哪——等后端 422 回来只会得到一句笼统的提交失败。
- * normalize('NFKC') 折全角数字：中文输入法全角态下打出的「１３８…」肉眼看着对，
- * 不折就会卡在「填了 11 位却说格式不对」。
- */
-function normalisePhone(raw) {
-  const digits = (raw || '').normalize('NFKC').replace(/\D/g, '')
-  const local = digits.length === 13 && digits.startsWith('86') ? digits.slice(2) : digits
-  return local.length === 11 ? local : ''
-}
 
 export function useTryOnFlow() {
   const step = ref('attract')
@@ -57,8 +43,7 @@ export function useTryOnFlow() {
   const guideShown = ref(false)      // 拍摄示范浮层一客只自动弹一次（register↔capture 往返不重弹）
   const tryonScenes = ref([])        // tryon 生成场景选项（职业/生活场景，滑动选择）
   const selectedTryonScene = ref(null) // 默认选中第一个；仅弱网加载失败时留 null=原景兜底
-  // 合成版本（2026-08-01）：必选项，默认真实版。三版差别在皮肤怎么处理，用光一律打好——
-  // 值域与后端 GenerateRequest.prompt_variant 的 pattern 同步维护（改一处必须改另一处）
+  // 合成版本必选、默认真实；值域与后端 GenerateRequest.prompt_variant 同步。
   const PROMPT_VARIANTS = [
     { value: 'real', label: '真实', hint: '如实还原 · 不修皮肤' },
     { value: 'soft', label: '柔光', hint: '光线更柔 · 保留质感' },
@@ -101,6 +86,9 @@ export function useTryOnFlow() {
   const canSwapMatches = computed(() => allMatches.value.length > 3)
   const results = computed(() => session.value?.results || [])
   const doneResults = computed(() => results.value.filter(r => r.status === 'done'))
+  const {
+    aiIssue, contactAdmin, contactAdminPending, resetAiIssueSupport,
+  } = useAiIssueSupport({ session, sessionId, errorText })
 
   // ── 空闲回归 ──
   function touch() {
@@ -125,6 +113,7 @@ export function useTryOnFlow() {
     sessionId.value = null
     session.value = null
     generating.value = false
+    resetAiIssueSupport()
     errorText.value = ''
     selectedWigId.value = null
     matchPage.value = 0
@@ -351,6 +340,7 @@ export function useTryOnFlow() {
       if (errorText.value === NET_CONGESTION_HINT) errorText.value = ''
       session.value = res.data
       const status = res.data.status
+      const issue = res.data.ai_issue
 
       if (step.value === 'analyzing' && status === 'analyzed') {
         step.value = 'matching'
@@ -363,11 +353,11 @@ export function useTryOnFlow() {
         touch()
       }
       if (status === 'failed') {
-        errorText.value = '现场网络拥堵，请稍后重试或呼叫顾问'
+        if (!issue) errorText.value = '处理未成功，请返回上一步重试或呼叫顾问'
         stopPolling()
         generating.value = false
-        // analyzing 属 BUSY_STEPS 不挂 idle 定时器，停在原地会永久卡屏——退回拍摄可重拍
-        if (step.value === 'analyzing') step.value = 'capture'
+        // AI 接口错误停在当前步骤展示管理员卡；其他历史失败仍退回拍摄。
+        if (step.value === 'analyzing' && !issue) step.value = 'capture'
         touch()
       }
       if (status === 'done') {
@@ -375,7 +365,7 @@ export function useTryOnFlow() {
         stopPolling()
         // 整批效果图全部失败：给出明确反馈，ResultScreen 等待区会露出重试/呼叫顾问
         const anyDone = (res.data.results || []).some(r => r.status === 'done')
-        if (!anyDone) errorText.value = '本次生成未成功，可重试或呼叫顾问'
+        if (!anyDone && !issue) errorText.value = '本次生成未成功，可重试或呼叫顾问'
         touch()
       }
     } catch (e) {
@@ -406,6 +396,7 @@ export function useTryOnFlow() {
     if (generating.value || !selectedWigId.value) return
     errorText.value = ''
     generating.value = true
+    if (session.value) session.value.ai_issue = null
     step.value = 'result'
     touch() // 忙态已置位：只清残留 idle 定时器不再武装（防 pointerdown 先于 click 的竞态跳屏）
     try {
@@ -437,6 +428,7 @@ export function useTryOnFlow() {
     if (!selectedSceneKeys.value.length) return
     errorText.value = ''
     generating.value = true
+    if (session.value) session.value.ai_issue = null
     step.value = 'result'
     touch() // 同 generate：清残留 idle 定时器
     try {
@@ -494,7 +486,7 @@ export function useTryOnFlow() {
 
   return {
     step, mode, regForm, errorText, generating,
-    session, analysis, matches, results, doneResults,
+    session, analysis, matches, results, doneResults, aiIssue,
     selectedWigId, selectWig, canSwapMatches, swapMatches, backToMatching, goBack,
     customerId, sessionId,
     hairColors, selectedColorId, scenes, selectedSceneKeys, guideShown,
@@ -502,7 +494,7 @@ export function useTryOnFlow() {
     PROMPT_VARIANTS, promptVariant,
     start, submitRegister, submitPhoto, generate, react,
     loadScenes, toggleScene, generateScenes, reselectScenes,
-    openSales, submitSales, resetAll, touch,
+    openSales, submitSales, contactAdmin, contactAdminPending, resetAll, touch,
     qrUrl, qrExpiresAt, pendingName, openQr, closeQr, setPendingHandler,
   }
 }
