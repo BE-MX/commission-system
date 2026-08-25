@@ -216,6 +216,7 @@ def test_manylinux_release_workflow_is_pinned_and_runs_real_smoke():
     assert "pnpm-11.7.0.tgz" in workflow
     assert "uv-0.8.12.tar.gz" in workflow
     assert "--frozen-lockfile --ignore-scripts" in workflow
+    assert "NODE_OPTIONS: --max-old-space-size=4096" in workflow
     assert "verify_dsh_release.py" in workflow
     assert "RUN_REAL_DSH_SMOKE=1" in workflow
     assert "--require-hashes" in workflow

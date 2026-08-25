@@ -81,6 +81,7 @@ jobs:
           ARK_DSH_BUILDER_IMAGE_DIGEST: sha256:443eabd378e140996780a772e12c1a1ef10551da933fe76d74a1bab61f68a7b7
           ARK_DSH_PKG_BIN: ${{ github.workspace }}/services/dsh-agent-worker/release-toolchain/node_modules/.bin/pkg
           ARK_DSH_REAL_PNPM: /opt/ark-real-pnpm/pnpm
+          NODE_OPTIONS: --max-old-space-size=4096
         run: |
           set -euo pipefail
           useradd --create-home --shell /bin/bash dshbuild
@@ -90,6 +91,7 @@ jobs:
             ARK_DSH_BUILDER_IMAGE_DIGEST="$ARK_DSH_BUILDER_IMAGE_DIGEST" \
             ARK_DSH_PKG_BIN="$ARK_DSH_PKG_BIN" \
             ARK_DSH_REAL_PNPM="$ARK_DSH_REAL_PNPM" \
+            NODE_OPTIONS="$NODE_OPTIONS" \
             GITHUB_REPOSITORY="$GITHUB_REPOSITORY" \
             GITHUB_WORKFLOW="$GITHUB_WORKFLOW" \
             GITHUB_RUN_ID="$GITHUB_RUN_ID" \
