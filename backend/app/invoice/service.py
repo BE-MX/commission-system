@@ -14,6 +14,7 @@ from app.invoice import accessory_price_service, delegation_service, price_servi
 from app.invoice.models import Invoice, InvoiceDelegateGrant, InvoiceItem
 from app.invoice.schemas import InvoiceCreate, InvoiceUpdate
 from app.invoice.screenshot_token import verify_preview_token
+from app.invoice.screenshot_source import external_source_key, is_external_source_key
 from app.invoice.time_utils import beijing_now, to_beijing_time
 
 _HEADER_FIELDS = (
@@ -209,8 +210,8 @@ def delete_invoice(db: Session, invoice: Invoice) -> None:
     """Judge by xiaoman_order_id, not sync_status: editing flips a synced invoice
     back to not_synced while the real OKKI order still exists, and deleting would
     orphan it AND cascade-drop its push audit logs."""
-    if invoice.xiaoman_order_id or invoice.sync_status == "synced":
-        raise ValueError("该发票已在小满建单，不允许本地删除，请先在小满侧处理")
+    if invoice.xiaoman_order_id or invoice.sync_status in {"synced", "sync_uncertain"}:
+        raise ValueError("该发票已同步或同步结果待核对，不允许删除，请先在小满侧确认")
     # 半成品同步失败可能留下 allocated=0 的审计占位行。它们不代表真实出库，
     # 删除草稿时一并清掉；pending 或非零分配必须先恢复/冲销，不能静默丢失。
     from app.semifinished.models import InvoiceAllocation
@@ -270,6 +271,14 @@ def create_invoice(
             raise ValueError(f"发票号 {invoice_no} 已存在，请更换")
     else:
         invoice_no = suggest_invoice_no(db, user_id, body.order_type)
+    if body.source_type == "okki_screenshot" and body.source_order_id:
+        with db.no_autoflush:
+            duplicate_source = db.query(Invoice.id).filter(
+                Invoice.source_type == "okki_screenshot",
+                Invoice.source_order_id == str(body.source_order_id),
+            ).first()
+        if duplicate_source:
+            raise ValueError("同一 OKKI 截图订单已经创建过发票，请勿重复导入")
     invoice = Invoice(
         invoice_no=invoice_no,
         order_type=body.order_type,
@@ -402,7 +411,8 @@ def validate_invoice(invoice: Invoice) -> list[dict]:
 
 def mark_ready_if_valid(invoice: Invoice) -> list[dict]:
     issues = validate_invoice(invoice)
-    invoice.status = "ready" if not issues and invoice.sync_status != "synced" else invoice.status
+    if not issues and invoice.sync_status not in {"synced", "sync_uncertain"}:
+        invoice.status = "ready"
     return issues
 
 
@@ -838,6 +848,12 @@ def _validate_screenshot_source(
         duplicate_order = duplicate_order_query.first()
     if duplicate_order:
         raise ValueError(f"OKKI 订单 {invoice.source_order_no or invoice.source_order_id} 已导入，请勿重复创建")
+
+    if is_external_source_key(invoice.source_order_id):
+        expected_key = external_source_key(invoice.customer_id, invoice.source_order_name)
+        if not expected_key or invoice.source_order_id != expected_key:
+            raise ValueError("外部 OKKI 截图订单幂等标识无效，请重新识别截图")
+        return
 
     schema = product_service._schema()
     order_columns = product_service._table_columns(db, "okki_orders")

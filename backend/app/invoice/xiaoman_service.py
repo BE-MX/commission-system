@@ -32,6 +32,11 @@ from app.auth.models import ArkUser, ArkUserExternalBinding
 from app.core.config import get_settings
 from app.invoice import accessory_price_service, okki_client, product_service
 from app.invoice.models import CustomProduct, Invoice, InvoiceSyncLog, XiaomanSettings
+from app.invoice.screenshot_source import (
+    external_source_key,
+    is_external_source_key,
+    normalize_order_name,
+)
 from app.invoice.service import resolve_okki_flags, validate_invoice
 from app.invoice.time_utils import beijing_now, to_beijing_time
 
@@ -59,14 +64,21 @@ def sync_invoice(
     order with no local record means the next sync creates a duplicate REAL
     order. Caller (router) owns the final commit for everything else.
     """
-    if invoice.source_type == "okki_screenshot":
+    if invoice.sync_status == "sync_uncertain" and not invoice.xiaoman_order_id:
         return {
             "ok": False,
-            "message": "该发票由既有 OKKI 订单截图导入，禁止再次同步以免重复建单",
+            "message": "上次首推结果待核对，禁止自动重试以免重复建单",
             "issues": [{
-                "field": "source_order_id",
-                "message": f"来源 OKKI 订单 {invoice.source_order_no or invoice.source_order_id or '未匹配'} 已存在",
+                "field": "sync_status",
+                "message": "请先到 OKKI 确认订单是否已生成，并由管理员补录订单 ID 或处理待核对状态",
             }],
+        }
+    screenshot_issue = _screenshot_sync_issue(db, invoice)
+    if screenshot_issue:
+        return {
+            "ok": False,
+            "message": "截图订单同步前查重未通过",
+            "issues": [screenshot_issue],
         }
     issues = validate_invoice(invoice)
     if issues:
@@ -88,6 +100,9 @@ def sync_invoice(
     action = "update" if invoice.xiaoman_order_id else "create"
     try:
         data = okki_client.push_order(db, payload)
+    except okki_client.OkkiOutcomeUncertainError as exc:
+        _mark_sync_uncertain(db, invoice, str(exc), action, payload, operator_id)
+        return {"ok": False, "message": str(exc), "issues": []}
     except okki_client.OkkiApiError as exc:
         _mark_sync_failed(db, invoice, str(exc), action, payload, operator_id)
         return {"ok": False, "message": str(exc), "issues": []}
@@ -100,8 +115,8 @@ def sync_invoice(
     order_id = (data or {}).get("order_id")
     if action == "create" and not order_id:
         # 响应异常（无 order_id）不能标成功：本地记不住单号，重推必然重复建单
-        message = "OKKI 响应异常（未返回 order_id）：请先到 OKKI 后台确认订单是否已生成，再决定是否重试"
-        _mark_sync_failed(db, invoice, message, action, payload, operator_id, response=data)
+        message = "OKKI 响应异常（未返回 order_id）：订单可能已生成，请先到 OKKI 后台确认，禁止直接重试"
+        _mark_sync_uncertain(db, invoice, message, action, payload, operator_id, response=data)
         return {"ok": False, "message": message, "issues": []}
 
     # 第一段落库：order_id + 审计日志立即固化（此后任何回写失败都不会丢单号）
@@ -149,6 +164,148 @@ def sync_invoice(
         "issues": [],
         "xiaoman_order_id": invoice.xiaoman_order_id,
     }
+
+
+def _screenshot_sync_issue(db: Session, invoice: Invoice) -> dict | None:
+    """Claim external screenshot identity and re-check this OKKI tenant before push."""
+    if invoice.source_type != "okki_screenshot" or invoice.xiaoman_order_id:
+        return None
+
+    customer_id = str(invoice.customer_id or "").strip()
+    order_name = normalize_order_name(invoice.source_order_name)
+    source_key = external_source_key(customer_id, invoice.source_order_name)
+    if not source_key:
+        return {
+            "field": "source_order_name",
+            "message": "截图订单缺少客户或订单名称，无法安全查重，已停止同步",
+        }
+
+    if invoice.source_order_id and not is_external_source_key(invoice.source_order_id):
+        identity = invoice.source_order_no or invoice.source_order_name or invoice.source_order_id
+        return {
+            "field": "source_order_name",
+            "message": f"本系统 OKKI 订单 {identity} 已存在，请核对后处理",
+        }
+
+    if invoice.source_order_id and invoice.source_order_id != source_key:
+        return {
+            "field": "source_order_name",
+            "message": "截图订单幂等标识与客户、订单名称不一致，请重新识别后再同步",
+        }
+
+    # 兼容 source_order_id 为空的存量截图发票：利用既有唯一索引原子抢占同一
+    # 客户+订单名，避免两个本地发票在 OKKI 投影回流前并发首推。
+    if not invoice.source_order_id:
+        try:
+            with db.begin_nested():
+                invoice.source_order_id = source_key
+                db.flush()
+        except IntegrityError:
+            db.refresh(invoice, attribute_names=["source_order_id"])
+            return {
+                "field": "source_order_name",
+                "message": "同一客户和截图订单名称已被另一张发票占用，请勿重复同步",
+            }
+
+    schema = product_service._schema()
+    columns = product_service._table_columns(db, "okki_orders")
+    if "name" not in columns:
+        return {
+            "field": "source_order_name",
+            "message": "本系统 OKKI 订单投影缺少订单名称，暂时无法安全查重",
+        }
+    rows = db.execute(text(f"""
+        SELECT order_id, order_no, name
+        FROM `{schema}`.okki_orders
+        WHERE company_id = :company_id
+        ORDER BY order_id DESC
+    """), {
+        "company_id": customer_id,
+    }).mappings().all()
+    duplicate = next((row for row in rows if normalize_order_name(row["name"]) == order_name), None)
+    if duplicate:
+        identity = duplicate["order_no"] or duplicate["name"] or duplicate["order_id"]
+        return {
+            "field": "source_order_name",
+            "message": f"本系统 OKKI 订单 {identity} 已存在，请核对后处理",
+        }
+    return None
+
+
+def resolve_sync_uncertain(
+    db: Session,
+    invoice: Invoice,
+    *,
+    resolution: str,
+    reason: str,
+    operator_id: int | None,
+    xiaoman_order_id: str | None = None,
+) -> Invoice:
+    if invoice.sync_status != "sync_uncertain" or invoice.xiaoman_order_id:
+        raise ValueError("该发票当前不是待核对的首次推送")
+    note = str(reason or "").strip()
+    if not note:
+        raise ValueError("请填写人工核对原因")
+
+    if resolution == "bind_order":
+        order_id = str(xiaoman_order_id or "").strip()
+        if not order_id.isdigit():
+            raise ValueError("请填写有效的 OKKI 数字订单 ID")
+
+        columns = product_service._table_columns(db, "okki_orders")
+        required_columns = {"order_id", "order_no", "name", "company_id"}
+        if not required_columns.issubset(columns):
+            raise ValueError("本系统 OKKI 订单投影字段不完整，暂时无法安全绑定")
+        schema = product_service._schema()
+        projected_order = db.execute(text(f"""
+            SELECT order_id, order_no, name, company_id
+            FROM `{schema}`.okki_orders
+            WHERE order_id = :order_id
+            LIMIT 1
+        """), {"order_id": order_id}).mappings().first()
+        if not projected_order:
+            raise ValueError("本系统 OKKI 订单投影中查不到该订单 ID，请等待投影更新后再绑定")
+        if str(projected_order["company_id"] or "").strip() != str(invoice.customer_id or "").strip():
+            raise ValueError("该 OKKI 订单不属于当前发票客户，已拒绝绑定")
+        if normalize_order_name(projected_order["name"]) != normalize_order_name(invoice.invoice_no):
+            raise ValueError("该 OKKI 订单名称与当前发票号不一致，已拒绝绑定")
+
+        duplicate = db.query(Invoice.id).filter(
+            Invoice.xiaoman_order_id == order_id,
+            Invoice.id != invoice.id,
+        ).first()
+        if duplicate:
+            raise ValueError("该 OKKI 订单 ID 已绑定其他发票")
+        try:
+            # 数据库唯一索引是并发管理员绑定的最终防线。
+            with db.begin_nested():
+                invoice.xiaoman_order_id = order_id
+                db.flush()
+        except IntegrityError as exc:
+            raise ValueError("该 OKKI 订单 ID 已绑定其他发票") from exc
+        action = "resolve_uncertain_bind"
+        audit_payload = {"resolution": resolution, "xiaoman_order_id": order_id, "reason": note}
+        invoice.sync_error = f"管理员已绑定 OKKI 订单 {order_id}，待重新同步核对：{note}"
+    elif resolution == "confirm_not_created":
+        action = "resolve_uncertain_clear"
+        audit_payload = {"resolution": resolution, "reason": note}
+        invoice.sync_error = f"管理员确认 OKKI 未生成订单，已允许重试：{note}"
+    else:
+        raise ValueError("不支持的待核对处理方式")
+
+    invoice.sync_status = "not_synced"
+    invoice.status = "ready"
+    _write_sync_log(
+        db,
+        invoice,
+        action=action,
+        success=True,
+        payload=audit_payload,
+        response=None,
+        error=None,
+        operator_id=operator_id,
+    )
+    return invoice
 
 
 def build_push_payload(
@@ -545,6 +702,24 @@ def _mark_sync_failed(
 ) -> None:
     invoice.sync_status = "sync_failed"
     invoice.status = "sync_failed"
+    invoice.sync_error = message
+    _write_sync_log(
+        db, invoice, action=action, success=False,
+        payload=payload, response=response, error=message, operator_id=operator_id,
+    )
+
+
+def _mark_sync_uncertain(
+    db: Session,
+    invoice: Invoice,
+    message: str,
+    action: str,
+    payload: dict | None,
+    operator_id: int | None,
+    response: dict | None = None,
+) -> None:
+    invoice.sync_status = "sync_uncertain"
+    invoice.status = "sync_uncertain"
     invoice.sync_error = message
     _write_sync_log(
         db, invoice, action=action, success=False,

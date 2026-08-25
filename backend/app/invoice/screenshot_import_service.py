@@ -11,6 +11,7 @@ from app.invoice import delegation_service, import_service, product_service
 from app.invoice.models import Invoice
 from app.invoice.schemas import ScreenshotExtraction, ScreenshotResolveRequest
 from app.invoice.screenshot_ai import extract_screenshot
+from app.invoice.screenshot_source import external_source_key, normalize_order_name
 from app.invoice.screenshot_token import issue_preview_token
 
 
@@ -37,6 +38,9 @@ def resolve_preview(db: Session, *, request: ScreenshotResolveRequest, actor_use
     extraction = request.extraction
     warnings: list[str] = []
     blockers: list[str] = []
+
+    if not normalize_order_name(extraction.order_name):
+        blockers.append("未识别到订单名称，无法安全校验本系统 OKKI 是否存在重复订单")
 
     customer_match = _resolve_customer(db, extraction.customer_name, request.customer_id)
     if customer_match["status"] != "matched":
@@ -94,14 +98,12 @@ def resolve_preview(db: Session, *, request: ScreenshotResolveRequest, actor_use
             f"OKKI 订单 {source_order.get('order_no') or source_order.get('order_id')} 已导入发票"
         )
     if source_order["status"] == "ambiguous":
-        blockers.append("匹配到多张可能的 OKKI 来源订单，请稍后等待订单同步完整或人工核对")
-    elif source_order["status"] == "name_mismatch":
-        blockers.append("唯一候选 OKKI 订单的订单名称与截图不一致，请核对或重新识别")
+        warnings.append("本系统 OKKI 匹配到多张同名候选订单；保存并同步时将再次校验重复")
     elif source_order["status"] == "missing":
         if source_order.get("reason") == "non_usd_amount_unavailable":
-            warnings.append("非 USD 订单缺少原币金额投影，不自动关联 OKKI 来源订单；将仅用截图指纹去重")
+            warnings.append("非 USD 订单不在导入阶段关联本系统 OKKI；保存并同步时将再次校验重复")
         else:
-            warnings.append("业务库暂未同步到这张 OKKI 订单；将仅用截图指纹防止原图重复导入")
+            warnings.append("本系统 OKKI 暂未发现同一订单；保存并同步时将再次校验重复")
 
     existing_hash = db.query(Invoice.id, Invoice.invoice_no).filter(
         Invoice.source_type == "okki_screenshot",
@@ -323,14 +325,7 @@ def _match_source_order(db: Session, *, extraction, customer, sales_user) -> dic
     candidates = [dict(row) for row in rows]
     if has_name_column and extraction.order_name:
         named = [row for row in candidates if _norm(row.get("name")) == _norm(extraction.order_name)]
-        if len(candidates) == 1 and not named:
-            return {
-                "status": "name_mismatch",
-                "candidates": candidates,
-                "duplicate_invoice": False,
-            }
-        if named:
-            candidates = named
+        candidates = named
     if sales_user and len(candidates) > 1:
         binding = db.query(ArkUserExternalBinding).filter(
             ArkUserExternalBinding.ark_user_id == int(sales_user["id"]),
@@ -407,7 +402,11 @@ def _build_invoice_patch(
         "internal_accessory": fees["packaging_fee"],
         "surcharge_amount": fees["handling_fee"],
         "source_type": "okki_screenshot",
-        "source_order_id": str(source_order.get("order_id")) if source_order.get("order_id") else None,
+        "source_order_id": (
+            str(source_order["order_id"])
+            if source_order.get("order_id")
+            else external_source_key(customer["company_id"], extraction.order_name)
+        ),
         "source_order_no": str(source_order.get("order_no")) if source_order.get("order_no") else None,
         "source_order_name": extraction.order_name,
         "source_image_sha256": source_hash,

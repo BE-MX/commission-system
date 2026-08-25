@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
 from app.invoice import okki_client, xiaoman_service
@@ -17,6 +18,11 @@ class _FakeResp:
 
     def json(self):
         return self._payload
+
+
+class _NonJsonResp(_FakeResp):
+    def json(self):
+        raise ValueError("not json")
 
 
 def _patch_credentials(monkeypatch, client_id="cid", secret="sec"):
@@ -51,6 +57,33 @@ def test_fetch_token_requires_credentials(monkeypatch):
     _patch_credentials(monkeypatch, client_id="", secret="")
     with pytest.raises(okki_client.OkkiApiError, match="OKKI_CLIENT_ID"):
         okki_client.fetch_token()
+
+
+def test_post_transport_failure_is_outcome_uncertain(monkeypatch):
+    monkeypatch.setattr(
+        okki_client.httpx,
+        "post",
+        lambda *args, **kwargs: (_ for _ in ()).throw(httpx.ReadTimeout("timeout")),
+    )
+
+    with pytest.raises(okki_client.OkkiOutcomeUncertainError, match="禁止直接重试"):
+        okki_client._post_json("/v1/invoices/order/push", "token", {}, context="订单推送")
+
+    monkeypatch.setattr(
+        okki_client.httpx,
+        "post",
+        lambda *args, **kwargs: _NonJsonResp("gateway html", status_code=200),
+    )
+    with pytest.raises(okki_client.OkkiOutcomeUncertainError, match="响应无法解析"):
+        okki_client._post_json("/v1/invoices/order/push", "token", {}, context="订单推送")
+
+    monkeypatch.setattr(
+        okki_client.httpx,
+        "post",
+        lambda *args, **kwargs: _FakeResp({"message": "gateway error"}, status_code=502),
+    )
+    with pytest.raises(okki_client.OkkiOutcomeUncertainError, match="HTTP 502"):
+        okki_client._post_json("/v1/invoices/order/push", "token", {}, context="订单推送")
 
 
 def test_ensure_access_token_uses_cache_and_refreshes(db, monkeypatch):

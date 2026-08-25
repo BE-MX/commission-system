@@ -1,4 +1,5 @@
 import { computed, onMounted, reactive, ref } from 'vue'
+import { ElMessageBox } from 'element-plus'
 import { msgSuccess, confirmDanger } from '@/utils/feedback'
 import {
   deleteInvoice,
@@ -7,6 +8,7 @@ import {
   fetchInvoicePrintHtml,
   getInvoiceSyncLogs,
   listInvoices,
+  resolveInvoiceSyncUncertain,
 } from '@/api/invoice'
 import { INVOICE_SYNC_OUTCOME, isInvoiceSyncing, validateThenSync } from './invoiceSyncFlow'
 import { formatInvoiceDateTime } from './invoiceDateTime'
@@ -25,7 +27,7 @@ export function useInvoiceManagePage() {
   const summary = computed(() => invoices.value.reduce((acc, invoice) => {
     acc.total += 1
     acc.amount += Number(invoice.total_amount || 0)
-    if (invoice.status === 'ready' && invoice.source_type !== 'okki_screenshot') acc.ready += 1
+    if (invoice.status === 'ready') acc.ready += 1
     if (invoice.status === 'draft') acc.draft += 1
     return acc
   }, { total: 0, ready: 0, draft: 0, amount: 0 }))
@@ -46,6 +48,34 @@ export function useInvoiceManagePage() {
   async function validateAndSync(id) {
     const outcome = await validateThenSync(id, showIssues)
     if (outcome !== INVOICE_SYNC_OUTCOME.DUPLICATE) await loadInvoices()
+  }
+
+  async function resolveUncertain(row, resolution) {
+    try {
+      let xiaomanOrderId = null
+      if (resolution === 'bind_order') {
+        const result = await ElMessageBox.prompt(
+          '请填写已在 OKKI 后台确认的数字订单 ID',
+          '绑定已生成订单',
+          { inputPattern: /^\d+$/, inputErrorMessage: '请输入有效的数字订单 ID' },
+        )
+        xiaomanOrderId = result.value.trim()
+      }
+      const reasonResult = await ElMessageBox.prompt(
+        resolution === 'bind_order' ? '请填写绑定依据' : '请填写确认 OKKI 未生成订单的依据',
+        '人工核对原因',
+        { inputPattern: /\S{2,}/, inputErrorMessage: '请至少填写 2 个非空字符' },
+      )
+      await resolveInvoiceSyncUncertain(row.id, {
+        resolution,
+        reason: reasonResult.value.trim(),
+        xiaoman_order_id: xiaomanOrderId,
+      })
+      msgSuccess('待核对状态处理')
+      await loadInvoices()
+    } catch (error) {
+      if (error !== 'cancel' && error !== 'close') throw error
+    }
   }
 
   async function openSyncLogs(row) {
@@ -96,16 +126,16 @@ export function useInvoiceManagePage() {
   const formatDateTime = formatInvoiceDateTime
   const money = value => Number(value || 0).toFixed(2)
   const money4 = value => Number(value || 0).toFixed(4)
-  const statusText = status => ({ draft: '草稿', ready: '可同步', synced: '已同步', sync_failed: '同步失败' })[status] || status
-  const statusType = status => ({ draft: 'info', ready: 'success', synced: 'success', sync_failed: 'danger' })[status] || 'info'
-  const syncText = status => ({ not_synced: '未同步', synced: '已同步', sync_failed: '失败' })[status] || status
-  const syncType = status => ({ not_synced: 'info', synced: 'success', sync_failed: 'danger' })[status] || 'info'
+  const statusText = status => ({ draft: '草稿', ready: '可同步', synced: '已同步', sync_failed: '同步失败', sync_uncertain: '同步结果待核对' })[status] || status
+  const statusType = status => ({ draft: 'info', ready: 'success', synced: 'success', sync_failed: 'danger', sync_uncertain: 'warning' })[status] || 'info'
+  const syncText = status => ({ not_synced: '未同步', synced: '已同步', sync_failed: '失败', sync_uncertain: '待核对' })[status] || status
+  const syncType = status => ({ not_synced: 'info', synced: 'success', sync_failed: 'danger', sync_uncertain: 'warning' })[status] || 'info'
 
   onMounted(loadInvoices)
   return {
     actionText, bindIssueHandler, filters, formatDateTime, handleExport, invoices, loadInvoices,
     loading, money, money4, openSyncLogs, pagination, removeInvoice, statusText, statusType,
     summary, syncLogs, syncLogsLoading, syncLogsTitle, syncLogsVisible, syncText, syncType,
-    isInvoiceSyncing, validateAndSync,
+    isInvoiceSyncing, resolveUncertain, validateAndSync,
   }
 }
