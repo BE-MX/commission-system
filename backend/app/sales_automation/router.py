@@ -164,6 +164,7 @@ def _batch(row):
         "quota_per_tier": row.quota_per_tier,
         "quotas": row.quotas or {},
         "audit_snapshot": row.audit_snapshot or {},
+        "profile_conditions": (row.audit_snapshot or {}).get("profile_conditions") or {},
         "result_counts": row.result_counts or {},
         "error_message": row.error_message,
         "started_at": _iso(row.started_at),

@@ -1,6 +1,7 @@
 """智能获客 HTTP 输入模型。"""
 
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -103,10 +104,61 @@ class ResearchUpsert(BaseModel):
     idempotency_key: str | None = Field(None, max_length=64)
 
 
+class PublicPoolValueRules(BaseModel):
+    min_order_count: int | None = Field(2, ge=1, le=1000)
+    total_amount_over_usd: Decimal | None = Field(Decimal("1500"), ge=0, le=Decimal("1000000000"))
+    single_order_over_usd: Decimal | None = Field(Decimal("1000"), ge=0, le=Decimal("1000000000"))
+    sample_only_orders: bool = True
+
+    @model_validator(mode="after")
+    def validate_value_rules(self):
+        paired = (self.min_order_count is not None, self.total_amount_over_usd is not None)
+        if paired[0] != paired[1]:
+            raise ValueError("成交单数与累计金额条件必须同时启用或同时关闭")
+        if not (all(paired) or self.single_order_over_usd is not None or self.sample_only_orders):
+            raise ValueError("至少启用一条成交画像条件")
+        return self
+
+
+class PublicPoolProfileConditions(BaseModel):
+    value_rules: PublicPoolValueRules = Field(default_factory=PublicPoolValueRules)
+    top_country_limit: int | None = Field(10, ge=1, le=50)
+    contact_channels: list[Literal["instagram", "facebook", "phone"]] = Field(
+        default_factory=lambda: ["instagram", "facebook", "phone"], max_length=3,
+    )
+    product_keywords: list[str] = Field(
+        default_factory=lambda: ["天才", "平型", "贴发"], max_length=20,
+    )
+    inactive_order_days: int | None = Field(60, ge=1, le=3650)
+    stale_followup_days: int | None = Field(30, ge=1, le=3650)
+
+    @field_validator("contact_channels")
+    @classmethod
+    def unique_contact_channels(cls, value: list[str]) -> list[str]:
+        priority = {"instagram": 0, "facebook": 1, "phone": 2}
+        return sorted(set(value), key=priority.__getitem__)
+
+    @field_validator("product_keywords")
+    @classmethod
+    def clean_product_keywords(cls, value: list[str]) -> list[str]:
+        cleaned = sorted(set(item.strip() for item in value if item.strip()))
+        if any(len(item) > 64 for item in cleaned):
+            raise ValueError("产品关键词不能超过 64 个字符")
+        return cleaned
+
+
 class PublicPoolBatchCreate(BaseModel):
     batch_date: date | None = None
     quota_per_tier: int = Field(20, ge=1, le=100)
-    policy_version: str = Field("v2", min_length=1, max_length=32)
+    policy_version: str = Field("v3", min_length=1, max_length=32)
+    profile_conditions: PublicPoolProfileConditions | None = None
+
+    @field_validator("policy_version")
+    @classmethod
+    def reject_reserved_policy_version(cls, value: str) -> str:
+        if value == "lead-score-70-v1":
+            raise ValueError("该策略版本为系统保留值")
+        return value
 
 
 class DealScoreComponents(BaseModel):
