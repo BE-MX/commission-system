@@ -250,7 +250,7 @@ def verify(root: Path, *, require_report: bool = True, source_sha: str | None = 
     if artifact.get("builder_image_digest") != EXPECTED_BUILDER_IMAGE:
         raise VerificationError("builder image provenance mismatch")
     toolchain = provenance.get("toolchain") or {}
-    if toolchain.get("node") != "v24.4.1" or toolchain.get("pnpm") != "11.7.0":
+    if toolchain.get("node") != "v22.19.0" or toolchain.get("pnpm") != "11.7.0":
         raise VerificationError("build toolchain version mismatch")
     if toolchain.get("uv") != "uv 0.8.12":
         raise VerificationError("uv build tool version mismatch")

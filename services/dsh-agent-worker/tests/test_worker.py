@@ -212,7 +212,7 @@ def test_manylinux_release_workflow_is_pinned_and_runs_real_smoke():
     ).read_text()
     assert "quay.io/pypa/manylinux_2_28_x86_64@sha256:443eabd" in workflow
     assert "docker.io/library/rockylinux@sha256:c584db6" in workflow
-    assert "node-v24.4.1-linux-x64.tar.xz" in workflow
+    assert "node-v22.19.0-linux-x64.tar.xz" in workflow
     assert "pnpm-11.7.0.tgz" in workflow
     assert "uv-0.8.12.tar.gz" in workflow
     assert "--frozen-lockfile --ignore-scripts" in workflow
