@@ -1,7 +1,7 @@
 # 方舟 Agent Runtime 第一阶段实施规格
 
-日期：2026-08-20  
-状态：开发与本地真实 DSH Runtime E2E 完成，待生产制品审查与 30/200/50 业务灰度验收
+日期：2026-08-20（2026-08-25 更新）
+状态：开发、真实 DSH Runtime E2E、Linux 候选构建/冒烟/OIDC 证明完成；待生产安装与 30/200/50 业务灰度验收
 范围：统一 Agent 控制面、客户与订单副驾驶、复购行动卡、DSH 获客影子任务、AI 任务中心
 
 ## 1. 目标
@@ -185,9 +185,14 @@ Worker API：
 任务中心、运行时间线、部署模板、灰度开关和自动化测试均已实现。Feature Flag 默认关闭。
 
 上游 PyPI 已发布 `0.1.0rc7` SDK/runtime wheel，但 rc7 Runtime 闭包不含 MCP Client，不能满足方舟受控取数边界。
-仓库固定 `dsh-v0.1.0-rc.8` / `141eb6fef83422698aef7a981029e843e8161534`；已从该提交构建 rc8 SDK 与
-macOS arm64 Runtime wheel，并通过本地真实二进制 E2E：DSH 模型请求、Streamable HTTP MCP 调用、工具结果回灌、
-结构化成果与 JSONL Session 落盘全部贯通。生产仍必须在受审查的 manylinux 2.28 构建环境生成 Linux wheel、核对
-SHA-256/许可证并安装。任务中心已提供版本化 30 题目录、按账号数据范围选择真实客户、权限/数据预检、二次确认启动和执行进度。正式题只使用当前工具可证明的画像、订单摘要、复购周期和行动数据；契约 hash 固定完整题库与评分规则、Profile/实际 Prompt/工具/Schema/限额、模型 Preset、Provider 非密钥运行参数及全局硬限额，变更后自动切换空 cohort 并拒绝旧 Run 继续调用模型。`GET /api/agent-runtime/evaluations/readiness` 以保守口径汇总 30/200/50 门槛：副驾驶只统计
+仓库固定 `dsh-v0.1.0-rc.8` / `141eb6fef83422698aef7a981029e843e8161534`。除 macOS arm64 本地真实二进制
+E2E 外，GitHub Actions run `32798681826` 已在 digest 固定的 manylinux 2.28 x86_64 构建器中完成 Linux 候选，
+在 digest 固定的 Rocky 8.9 全新容器内以非特权用户完成真实 Runtime 冒烟，并在第三个全新 job 中复验后生成
+GitHub OIDC/SLSA provenance。最终 reviewed artifact 为
+`dsh-rc8-manylinux_2_28-x86_64-candidate-3b9a2e2c413ec479ef9cac179df261354d57a54d`；Runtime wheel
+SHA-256 为 `ead23bd2a1802c96be35e7dcb14267ea7df99ea930c2de210b8b071e0d73bc1d`，auditwheel policy 为
+`manylinux_2_28_x86_64`，2 个 ELF 的最高 GLIBC 符号为 2.28。本机下载后清单 7/7、OIDC attestation subjects 7/7
+复验通过，签名限定 GitHub 托管 runner、同一 workflow、分支与 source SHA。候选仍位于 feature branch，尚未合入
+main、安装生产或开放 Feature Flag，不能将“制品可安装”写成“生产已发布”。任务中心已提供版本化 30 题目录、按账号数据范围选择真实客户、权限/数据预检、二次确认启动和执行进度。正式题只使用当前工具可证明的画像、订单摘要、复购周期和行动数据；契约 hash 固定完整题库与评分规则、Profile/实际 Prompt/工具/Schema/限额、模型 Preset、Provider 非密钥运行参数及全局硬限额，变更后自动切换空 cohort 并拒绝旧 Run 继续调用模型。`GET /api/agent-runtime/evaluations/readiness` 以保守口径汇总 30/200/50 门槛：副驾驶只统计
 `customer_order_copilot_v1` 当前 cohort 内不同 `evaluation_case_id`，影子对照只统计不同 `search_job`；业务样本未达标时
 固定保持 Shadow，不得把“开发完成”标记成“业务灰度完成”。

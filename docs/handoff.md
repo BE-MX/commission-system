@@ -1,7 +1,7 @@
 # 莱莎方舟平台 项目交接清单
 
 > **版本**：v1.6
-> **最后更新**：2026-08-13
+> **最后更新**：2026-08-25
 > **项目状态**：运行中，持续迭代
 >
 > ⚠️ **发布状态提醒（2026-08-13 核实）**：本地 `main` 与 `origin/main` 同步（提交 `0372766`），`cloud/main`（北京展会实例）已于 2026-08-13 推送代码但**服务尚未重启**——生产校验新增 `ARK_SALARY_ENCRYPTION_KEY` 和 `ARK_SALARY_HASH_KEY` 两项必填环境变量（config.py:283-286，薪资模块 PII 加密），云端 `.env` 缺配会导致启动失败，需补齐后才能执行 runbook 的重启步骤。**「已合入 main」不等于「已上线」**：本清单里 2026-08-05 之后的条目默认只到「本地已提交」，逐条发布状态见各条标注。main 的 push 等亮哥指令。
@@ -9,12 +9,12 @@
 ## 2026-08-20 DSH Agent Runtime 交接
 
 - 开发分支 `codex/agent-runtime-phase1` 已实现迁移 118、统一 Agent 控制面、受控模型/MCP 网关、隔离 DSH Worker、客户经营副驾驶、复购行动卡、获客 Shadow、任务中心和运行时间线；Feature Flag 全部默认关闭，尚未合入 main 或部署生产。
-- Worker 固定 DSH `0.1.0rc8`；PyPI rc7 Runtime 不含 MCP Client，不能用于方舟。已从固定 rc8 commit 构建 SDK/macOS arm64 Runtime wheel，并以本地 OpenAI 协议桩和真实 Streamable HTTP MCP 跑通真实 Runtime 二进制、工具结果回灌、结构化成果与 JSONL Session E2E；生产前仍须在 manylinux 2.28 环境构建并审查 Linux wheels。
+- Worker 固定 DSH `0.1.0rc8`；PyPI rc7 Runtime 不含 MCP Client，不能用于方舟。除本地 macOS arm64 真实 Runtime E2E 外，2026-08-25 已由 GitHub Actions run `32798681826` 从固定 upstream commit `141eb6f` 构建 Linux x86_64 候选：manylinux 2.28 构建与严格封包校验通过，Rocky 8.9 全新容器以非特权用户完成真实 DSH 冒烟，第三个全新 job 复验后生成 GitHub OIDC/SLSA provenance。reviewed artifact 为 `dsh-rc8-manylinux_2_28-x86_64-candidate-3b9a2e2c413ec479ef9cac179df261354d57a54d`，保留 90 天；Runtime wheel SHA-256 为 `ead23bd2a1802c96be35e7dcb14267ea7df99ea930c2de210b8b071e0d73bc1d`。本机下载后 `SHA256SUMS` 与 attestation subjects 均 7/7 复验通过。该结果只证明 feature-branch 候选可安装，不代表已合入 main 或已部署生产。
 - 上线必须按 `docs/runbook.md` 的“DSH Agent Runtime 灰度与回滚”执行：唯一实例迁移、三只 AI Preset、机器 token hash、Run secret、最小角色权限、内部副驾驶、复购、5% 获客 Shadow 逐层开启。
 - 不改变现有 OpenClaw 正式获客和邮件链路。DSH Shadow 只产生 Artifact；复购成果只有人工接受且原行动仍 pending 才投影。止损优先关 Profile/Runtime flag，保留 118 数据结构和审计记录。
 - 2026-08-20 对抗性复审已清除 P0/P1：Run Token 绑定 attempt/lease、Worker runtime 绑定、独立租约回收、递归成果 Schema 与本 Run evidence ledger、客户委托范围、跨 owner 写权限、硬步骤/时长/Token 预算、无 usage/断流保守计费、Shadow best-effort 以及复购刷新去重均有回归测试。后续又补齐多成果决策锁、Web peer fail-close、角色快照、工具结果哈希、MCP `ok:false` 业务失败不得进入成功证据账本、定量结论逐条引用和本地 Session 90 天留存清理。
 - 管理员可在任务中心使用版本化 30 题目录，从自身客户数据范围选真实客户并启动正式评测；后端按题校验客户雷达/订单权限及真实数据，Session+Run 原子创建，题目/客户/契约 cohort 冻结并去重统计。Profile 或模型 Preset 变更后不混算旧样本。`/api/agent-runtime/evaluations/readiness` 汇总 30/200/50 业务门槛；当前没有生产样本，必须保持 Shadow，不能把真实 Runtime E2E 通过等同于业务灰度完成。
-- 最终验证：Agent Runtime/调度器定向 70 项、DSH Worker 15 项及真实 rc8 Runtime E2E 1 项通过；前端生产构建与后端 864 路由导入通过；后端全量 2,789 通过、8 项既有环境/基线失败，前端全量 328 通过、7 项既有断言失败。Alembic 唯一 head 为 `118_agent_runtime`；当前环境没有 MySQL/Docker，真实 InnoDB 双连接并发仍列为上线前验证项。Feature Flag 仍全关，未做生产部署。
+- 最终验证：Agent Runtime/调度器定向 70 项、DSH Worker 本地回归 22 项通过（1 项平台条件跳过）及本地真实 rc8 Runtime E2E 1 项通过；Linux 候选的 auditwheel policy 为 `manylinux_2_28_x86_64`，2 个 ELF 已核对且最高 GLIBC 符号为 2.28，GitHub 双容器构建/冒烟/OIDC 证明全绿。前端生产构建与后端 864 路由导入通过；后端全量 2,789 通过、8 项既有环境/基线失败，前端全量 328 通过、7 项既有断言失败。Alembic 唯一 head 为 `118_agent_runtime`；当前环境没有 MySQL/Docker，真实 InnoDB 双连接并发仍列为上线前验证项。Feature Flag 仍全关，未合入 main、未安装生产 wheel、未做 30/200/50 真实业务灰度。
 
 ## 项目概况
 
