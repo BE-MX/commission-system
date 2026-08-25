@@ -82,7 +82,13 @@ def _checksum_manifest(root: Path, *, require_report: bool) -> dict[str, str]:
             raise VerificationError(f"release bundle contains non-regular artifact: {path.name}")
         present.add(path.name)
     if present != expected | {"SHA256SUMS"}:
-        raise VerificationError("release bundle contains unchecksummed or missing files")
+        allowed = expected | {"SHA256SUMS"}
+        unexpected = sorted(present - allowed)
+        missing = sorted(allowed - present)
+        raise VerificationError(
+            f"release bundle contains unchecksummed or missing files: "
+            f"unexpected={unexpected}, missing={missing}"
+        )
     for name, expected_hash in entries.items():
         if _sha256(root / name) != expected_hash:
             raise VerificationError(f"checksum mismatch: {name}")
