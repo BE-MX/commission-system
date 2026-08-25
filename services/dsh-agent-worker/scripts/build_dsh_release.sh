@@ -100,6 +100,8 @@ UV_PYTHON="$(command -v python3)" python3 "$source_dir/scripts/build-python-rele
 UV_PYTHON="$(command -v python3)" python3 "$source_dir/scripts/build-python-release.py" \
   --package sdk \
   --output-dir "$output_dir"
+# uv creates this output-directory marker; it is build metadata, not a release artifact.
+rm -f -- "$output_dir/.gitignore"
 
 export ARK_DSH_BUILD_OUTPUT="$output_dir/BUILD_PROVENANCE.json"
 export ARK_DSH_RUNTIME_PLATFORM="$runtime_platform"

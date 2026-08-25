@@ -205,6 +205,7 @@ def test_release_builder_pins_the_reviewed_rc8_commit():
     assert "PNPM_CONFIG_OFFLINE=true" in script
     assert "dsh-rc8-lockfile-deploy.patch" in script
     assert "ARK_DSH_DEPLOY_PATCH_SHA256" in script
+    assert 'rm -f -- "$output_dir/.gitignore"' in script
 
 
 def test_manylinux_release_workflow_is_pinned_and_runs_real_smoke():
