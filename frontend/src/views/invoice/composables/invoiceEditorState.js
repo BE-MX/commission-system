@@ -10,7 +10,9 @@ export function emptyInvoiceForm() {
     internal_payment_method: '', internal_discount: 0, packaging_quantity: 0,
     internal_accessory: 0, internal_received: null, internal_balance: null,
     internal_shipping_type: '', okki_new_deal: 1, okki_free_shipping: 1,
-    okki_first_return: 0, remark: '', items: [],
+    okki_first_return: 0, remark: '', source_type: 'manual', source_order_id: null,
+    source_order_no: null, source_order_name: null, source_image_sha256: null,
+    source_preview_token: null, items: [],
   }
 }
 
@@ -61,6 +63,10 @@ export function buildInvoicePayload(form, hairDiscount) {
     internal_balance: form.internal_balance, internal_shipping_type: form.internal_shipping_type || null,
     okki_new_deal: form.okki_new_deal ?? null, okki_free_shipping: form.okki_free_shipping ?? null,
     okki_first_return: form.okki_first_return ?? null, remark: form.remark,
+    source_type: form.source_type || 'manual', source_order_id: form.source_order_id || null,
+    source_order_no: form.source_order_no || null, source_order_name: form.source_order_name || null,
+    source_image_sha256: form.source_image_sha256 || null,
+    source_preview_token: form.source_preview_token || null,
     items: form.items.map(line => ({
       id: line.id || null, product_kind: line.product_kind || 'hair', item_type: line.item_type,
       product_id: line.product_id, sku_id: line.sku_id, product_name: line.product_name,

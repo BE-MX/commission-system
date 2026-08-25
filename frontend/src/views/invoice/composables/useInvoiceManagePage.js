@@ -25,7 +25,7 @@ export function useInvoiceManagePage() {
   const summary = computed(() => invoices.value.reduce((acc, invoice) => {
     acc.total += 1
     acc.amount += Number(invoice.total_amount || 0)
-    if (invoice.status === 'ready') acc.ready += 1
+    if (invoice.status === 'ready' && invoice.source_type !== 'okki_screenshot') acc.ready += 1
     if (invoice.status === 'draft') acc.draft += 1
     return acc
   }, { total: 0, ready: 0, draft: 0, amount: 0 }))

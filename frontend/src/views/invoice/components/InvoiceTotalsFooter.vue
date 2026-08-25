@@ -22,10 +22,14 @@
     <div class="footer-actions">
       <el-button @click="$emit('cancel')">取消</el-button>
       <!-- 无同步权限时「保存」升为主按钮，避免抽屉底部没有主操作 -->
-      <el-button v-permission="'invoice:write'" :type="canSync ? '' : 'primary'" @click="$emit('save')">保存</el-button>
-      <el-button v-permission="'invoice:sync'" type="primary" :loading="syncing" @click="$emit('sync')">
-        {{ syncing ? '保存并同步中' : '保存并同步' }}
-      </el-button>
+      <el-button v-permission="'invoice:write'" :type="canSync && !syncBlocked ? '' : 'primary'" @click="$emit('save')">保存</el-button>
+      <el-tooltip :disabled="!syncBlocked" :content="syncBlockedReason">
+        <span>
+          <el-button v-permission="'invoice:sync'" type="primary" :disabled="syncBlocked" :loading="syncing" @click="$emit('sync')">
+            {{ syncing ? '保存并同步中' : '保存并同步' }}
+          </el-button>
+        </span>
+      </el-tooltip>
     </div>
   </div>
 </template>
@@ -44,6 +48,8 @@ defineProps({
   accessoryDiscount: { type: Number, required: true },
   money: { type: Function, required: true },
   syncing: { type: Boolean, default: false },
+  syncBlocked: { type: Boolean, default: false },
+  syncBlockedReason: { type: String, default: '' },
 })
 defineEmits(['cancel', 'save', 'sync'])
 

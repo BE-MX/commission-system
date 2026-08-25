@@ -13,6 +13,9 @@
         <p>客户发票、产品明细、价格管控、导出与小满同步集中处理。</p>
       </div>
       <div class="header-actions">
+        <GlassButton v-permission="'invoice:write'" variant="secondary" :left-icon="Picture" @click="screenshotImportVisible = true">
+          AI 识别 OKKI 截图
+        </GlassButton>
         <GlassButton v-permission="'invoice:write'" variant="primary" :left-icon="Plus" class="primary-action" @click="openCreate('stock')">
           新建库存单
         </GlassButton>
@@ -91,12 +94,15 @@
         </el-table-column>
         <el-table-column label="状态" min-width="84" max-width="110">
           <template #default="{ row }">
-            <el-tag :type="statusType(row.status)" effect="plain">{{ statusText(row.status) }}</el-tag>
+            <el-tag :type="row.source_type === 'okki_screenshot' ? 'success' : statusType(row.status)" effect="plain">
+              {{ row.source_type === 'okki_screenshot' ? '已镜像' : statusText(row.status) }}
+            </el-tag>
           </template>
         </el-table-column>
         <el-table-column label="同步" min-width="84" max-width="110">
           <template #default="{ row }">
-            <el-tag :type="syncType(row.sync_status)" effect="plain">{{ syncText(row.sync_status) }}</el-tag>
+            <el-tag v-if="row.source_type === 'okki_screenshot'" type="success" effect="plain">OKKI已存在</el-tag>
+            <el-tag v-else :type="syncType(row.sync_status)" effect="plain">{{ syncText(row.sync_status) }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="创建人" min-width="84" max-width="120" show-overflow-tooltip>
@@ -126,16 +132,24 @@
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
-              <el-button
-                v-permission="'invoice:sync'"
-                link
-                type="warning"
-                :loading="isInvoiceSyncing(row.id)"
-                @click="validateAndSync(row.id)"
+              <el-tooltip
+                :disabled="row.source_type !== 'okki_screenshot'"
+                content="该发票由既有 OKKI 订单截图导入，禁止重复同步"
               >
-                <el-icon><Refresh /></el-icon>
-                {{ isInvoiceSyncing(row.id) ? '同步中' : '同步' }}
-              </el-button>
+                <span>
+                  <el-button
+                    v-permission="'invoice:sync'"
+                    link
+                    type="warning"
+                    :disabled="row.source_type === 'okki_screenshot'"
+                    :loading="isInvoiceSyncing(row.id)"
+                    @click="validateAndSync(row.id)"
+                  >
+                    <el-icon><Refresh /></el-icon>
+                    {{ isInvoiceSyncing(row.id) ? '同步中' : '同步' }}
+                  </el-button>
+                </span>
+              </el-tooltip>
               <el-button v-permission="'invoice:read'" link @click="openSyncLogs(row)">
                 <el-icon><Document /></el-icon>
                 日志
@@ -275,6 +289,14 @@
           <section class="head-section">
             <div class="col-title">订单信息</div>
             <div class="head-grid">
+              <el-alert
+                v-if="form.source_type === 'okki_screenshot'"
+                class="span-6 source-order-alert"
+                :title="`来自既有 OKKI 订单 ${form.source_order_no || form.source_order_id || '暂未匹配'}，只允许保存，不会再次同步。`"
+                type="success"
+                :closable="false"
+                show-icon
+              />
               <el-form-item label="发票号" class="span-2" :error="invoiceNoTaken ? '发票号已存在，请更换' : ''">
                 <el-input
                   v-model="form.invoice_no"
@@ -377,6 +399,8 @@
           :accessory-discount="formAccessoryDiscount"
           :money="money"
           :syncing="saveAndSyncSubmitting"
+          :sync-blocked="form.source_type === 'okki_screenshot'"
+          sync-blocked-reason="既有 OKKI 订单截图导入的发票禁止重复同步"
           @cancel="drawerVisible = false"
           @save="saveDraft"
           @sync="saveAndSync"
@@ -394,37 +418,32 @@
       @append="appendPastedLines"
     />
 
-    <el-dialog v-model="syncLogsVisible" :title="syncLogsTitle" width="720px">
-      <el-table v-loading="syncLogsLoading" :data="syncLogs" border class="list-table" max-height="420">
-        <el-table-column label="时间" min-width="150" max-width="170" show-overflow-tooltip>
-          <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
-        </el-table-column>
-        <el-table-column label="动作" min-width="96" max-width="110">
-          <template #default="{ row }">{{ actionText(row.action) }}</template>
-        </el-table-column>
-        <el-table-column label="结果" min-width="80" max-width="90">
-          <template #default="{ row }">
-            <el-tag :type="row.success ? 'success' : 'danger'" effect="plain">
-              {{ row.success ? '成功' : '失败' }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="信息" min-width="240" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.error_message || (row.success ? 'OKKI 已受理' : '-') }}</template>
-        </el-table-column>
-      </el-table>
-    </el-dialog>
+    <InvoiceScreenshotImport
+      v-model="screenshotImportVisible"
+      @apply="applyScreenshotPreview"
+    />
+
+    <InvoiceSyncLogsDialog
+      v-model="syncLogsVisible"
+      :title="syncLogsTitle"
+      :loading="syncLogsLoading"
+      :rows="syncLogs"
+      :format-date-time="formatDateTime"
+      :action-text="actionText"
+    />
   </div>
 </template>
 
 <script setup>
 import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { ArrowDown, Delete, Document, Download, Edit, Plus, Printer, Refresh, Search } from '@element-plus/icons-vue'
+import { ArrowDown, Delete, Document, Download, Edit, Picture, Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { EXPRESS_CHANNEL_OPTIONS, PAYMENT_METHOD_OPTIONS } from './composables/invoiceSettlement'
 import { contactLabel, customerLabel, describeCustomerRule, useInvoiceEditor } from './composables/useInvoiceEditor'
 import { useInvoiceManagePage } from './composables/useInvoiceManagePage'
 import InvoicePasteImport from './components/InvoicePasteImport.vue'
+import InvoiceScreenshotImport from './components/InvoiceScreenshotImport.vue'
+import InvoiceSyncLogsDialog from './components/InvoiceSyncLogsDialog.vue'
 import InvoiceAccessoryTable from './components/InvoiceAccessoryTable.vue'
 import InvoiceSettlementFields from './components/InvoiceSettlementFields.vue'
 import InvoiceTotalsFooter from './components/InvoiceTotalsFooter.vue'
@@ -446,6 +465,7 @@ const {
   formAccessoryDiscount, formBaseAmount, formTotal, lastOrderDate, settlementError, isProduction,
   searchCustomers, searchContacts,
   onCustomerChange, onSalesUserChange, onCurrencyChange, onContactChange, onInvoiceNoInput, onInvoiceNoBlur, openCreate, openEdit,
+  applyScreenshotPreview,
   addLine, addAccessory, selectAccessory, removeAccessory, searchAccessoryOptions,
   updateAccessoryTotal, removeLine, loadLineOptions, onLineFilterChange, onCustomFieldChange,
   onPriceInput, onLineDiscountChange, updateLineTotal, appendImportedLines, saveDraft,
@@ -454,6 +474,7 @@ const {
 bindIssueHandler(showIssues)
 
 const pasteImportVisible = ref(false)
+const screenshotImportVisible = ref(false)
 const canPasteImport = computed(() => Boolean(form.customer_id && form.order_type && form.currency))
 const pasteImportDisabledReason = computed(() => {
   const missing = []

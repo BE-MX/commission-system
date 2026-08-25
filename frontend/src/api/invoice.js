@@ -60,6 +60,26 @@ export function previewInvoiceImport(data) {
   }))
 }
 
+export function previewInvoiceScreenshot(formData, orderType = 'stock') {
+  return unwrap(request.post('/import/screenshot/preview', formData, {
+    params: { order_type: orderType },
+    headers: { 'Content-Type': 'multipart/form-data' },
+    loadingText: 'AI 正在识别 OKKI 订单截图...',
+  }))
+}
+
+export function resolveInvoiceScreenshot(data) {
+  return unwrap(request.post('/import/screenshot/resolve', data, {
+    loadingText: '正在重新校验识别结果...',
+  }))
+}
+
+export function createInvoiceFromScreenshot(data) {
+  return unwrap(request.post('/import/screenshot/create', data, {
+    loadingText: '正在创建截图来源发票...',
+  }))
+}
+
 export function listInvoices(params) {
   return unwrap(request.get('/invoices', { params, showLoading: false }))
 }

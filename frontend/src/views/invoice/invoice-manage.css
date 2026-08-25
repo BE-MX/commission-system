@@ -189,6 +189,10 @@
   padding-right: 12px;
 }
 
+.source-order-alert {
+  margin-bottom: 14px;
+}
+
 .invoice-form :deep(.el-input__wrapper),
 .invoice-form :deep(.el-select__wrapper) {
   min-height: 36px;

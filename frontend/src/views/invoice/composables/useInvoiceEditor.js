@@ -3,6 +3,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   checkInvoiceNo,
   createInvoice,
+  createInvoiceFromScreenshot,
   getCustomerContactDefaults,
   getCustomerRule,
   getInvoice,
@@ -380,6 +381,27 @@ export function useInvoiceEditor({ onSaved } = {}) {
     if (form.order_type === 'production') loadEntryOptions()
   }
 
+  async function applyScreenshotPreview(preview) {
+    const patch = preview?.invoice_patch
+    if (!preview?.ready || !patch) {
+      ElMessage.warning('识别结果仍有待处理项，暂不能创建发票')
+      return
+    }
+    resetForm({ ...patch, invoice_no: '', id: null })
+    await loadSalesUsers()
+    applySalesUserSnapshot()
+    selectedCustomer.value = {
+      company_id: patch.customer_id,
+      company_name: patch.customer_name,
+    }
+    ensureCustomerOption(selectedCustomer.value)
+    await Promise.all([loadCustomerRule(), fillContactDefaults()])
+    drawerVisible.value = true
+    fetchSuggestedInvoiceNo()
+    if (patch.order_type === 'production') loadEntryOptions()
+    ElMessage.success('识别结果已填入发票，请确认缺失的结算和联系信息后保存')
+  }
+
   async function loadSalesUsers() {
     const res = await getInvoiceAssignees()
     salesUserOptions.value = res.items || []
@@ -462,9 +484,12 @@ export function useInvoiceEditor({ onSaved } = {}) {
       ElMessage.warning(settlementError.value)
       return null
     }
+    const payload = buildInvoicePayload(form, formLineDiscountTotal.value)
     const saved = form.id
-      ? await updateInvoice(form.id, buildInvoicePayload(form, formLineDiscountTotal.value))
-      : await createInvoice(buildInvoicePayload(form, formLineDiscountTotal.value))
+      ? await updateInvoice(form.id, payload)
+      : form.source_type === 'okki_screenshot'
+        ? await createInvoiceFromScreenshot(payload)
+        : await createInvoice(payload)
     resetForm(saved)
     ElMessage.success('发票已保存')
     onSaved?.()
@@ -473,6 +498,10 @@ export function useInvoiceEditor({ onSaved } = {}) {
 
   // 保存 → 校验 → 推送小满一步到位；校验/推送失败留在抽屉里让用户就地修，成功才收工关闭
   async function saveAndSync() {
+    if (form.source_type === 'okki_screenshot') {
+      ElMessage.warning('该发票来自既有 OKKI 订单截图，只能保存，不能再次同步小满')
+      return
+    }
     if (saveAndSyncSubmitting.value) {
       ElMessage.warning('发票正在保存并同步，请勿重复提交')
       return
@@ -538,6 +567,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     onInvoiceNoBlur,
     openCreate,
     openEdit,
+    applyScreenshotPreview,
     addLine,
     addAccessory: accessories.addAccessory,
     selectAccessory: accessories.selectAccessory,
