@@ -1,7 +1,7 @@
 """track invoices imported from OKKI screenshots
 
 Revision ID: 119_invoice_screenshot_src
-Revises: 117_sales_pool_dedupe
+Revises: 118_agent_runtime
 Create Date: 2026-08-25
 """
 
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 revision = "119_invoice_screenshot_src"
-down_revision = "117_sales_pool_dedupe"
+down_revision = "118_agent_runtime"
 branch_labels = None
 depends_on = None
 

@@ -482,6 +482,7 @@ def test_migration_119_upgrades_and_downgrades_legacy_invoice_table():
     migration = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(migration)
+    assert migration.down_revision == "118_agent_runtime"
     migration_engine = create_engine("sqlite:///:memory:")
 
     with migration_engine.begin() as connection:
