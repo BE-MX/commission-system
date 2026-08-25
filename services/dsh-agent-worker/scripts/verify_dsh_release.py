@@ -29,6 +29,7 @@ EXPECTED_UPSTREAM = {
     "commit": "141eb6fef83422698aef7a981029e843e8161534",
 }
 EXPECTED_BUILDER_IMAGE = "sha256:443eabd378e140996780a772e12c1a1ef10551da933fe76d74a1bab61f68a7b7"
+EXPECTED_DEPLOY_PATCH_SHA256 = "1bdbcced101a3ea68be24e4fc534b985343e10627196584e4a81144dca73d4b1"
 EXPECTED_RUNTIME_PAYLOADS = {
     "deepseek_harness_runtime/runtime/dsh-jsonrpc-agent-pkg-linux-x64",
     "deepseek_harness_runtime/runtime/dsh-jsonrpc-agent-pkg-linux-x64-rg",
@@ -254,6 +255,12 @@ def verify(root: Path, *, require_report: bool = True, source_sha: str | None = 
         raise VerificationError("build toolchain version mismatch")
     if toolchain.get("uv") != "uv 0.8.12":
         raise VerificationError("uv build tool version mismatch")
+    build_patch = provenance.get("build_patch") or {}
+    if (
+        build_patch.get("name") != "dsh-rc8-lockfile-deploy.patch"
+        or build_patch.get("sha256") != EXPECTED_DEPLOY_PATCH_SHA256
+    ):
+        raise VerificationError("reviewed DSH deploy patch provenance mismatch")
     if source_sha is not None:
         ci = provenance.get("ci") or {}
         if ci.get("repository") != "BE-MX/commission-system" or ci.get("source_sha") != source_sha:

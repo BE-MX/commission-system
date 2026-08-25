@@ -22,7 +22,7 @@ services/dsh-agent-worker/scripts/build_dsh_release.sh /tmp/dsh-rc8-wheels
 
 构建机需要 Node 24、pnpm 11、Python 3.10+ 与 `uv`；Linux Runtime 必须在目标架构的 manylinux 2.28 构建环境中生成。升级 DSH 必须作为独立变更重新跑真实 Runtime smoke、权限和事件契约回归。
 
-仓库的 `DSH rc8 manylinux candidate` GitHub Actions 流水线固定 manylinux/Rocky 镜像 digest、Node/pnpm/uv 下载哈希、`@yao-pkg/pkg` 完整传递依赖 lock 和 Actions commit。它先在非特权用户下构建不可变候选，再在独立 Rocky 8（glibc 2.28）Job 中以只读 bundle、非特权用户运行完整 Worker 测试和真实 Runtime+MCP smoke，最后由第三个干净 Job 重新校验并生成 GitHub OIDC provenance。验证器同时检查 wheel RECORD、轮内许可证、SDK 依赖、两个固定 ELF payload/执行位/架构、DT_NEEDED allowlist、glibc 符号和 auditwheel policy。只有三段流水线全绿后才可下载 90 天留存的 `dsh-rc8-manylinux_2_28-x86_64-candidate-<commit>`；构建日志、第一段 untrusted artifact 或单独 wheel 都不是生产制品。
+仓库的 `DSH rc8 manylinux candidate` GitHub Actions 流水线固定 manylinux/Rocky 镜像 digest、Node/pnpm/uv 下载哈希、`@yao-pkg/pkg` 完整传递依赖 lock 和 Actions commit。rc8 上游的 legacy deploy 会脱离 workspace lock 重新解析 registry，因此构建会先应用仓库审查且 SHA-256 固定的 `dsh-rc8-lockfile-deploy.patch`，改为 lockfile-aware deploy，并在断网解析模式下完成最终闭包；该补丁哈希同时写入 provenance 并由验证器硬校验。流水线先在非特权用户下构建不可变候选，再在独立 Rocky 8（glibc 2.28）Job 中以只读 bundle、非特权用户运行完整 Worker 测试和真实 Runtime+MCP smoke，最后由第三个干净 Job 重新校验并生成 GitHub OIDC provenance。验证器同时检查 wheel RECORD、轮内许可证、SDK 依赖、两个固定 ELF payload/执行位/架构、DT_NEEDED allowlist、glibc 符号和 auditwheel policy。只有三段流水线全绿后才可下载 90 天留存的 `dsh-rc8-manylinux_2_28-x86_64-candidate-<commit>`；构建日志、第一段 untrusted artifact 或单独 wheel 都不是生产制品。
 
 ## 安装与配置
 
