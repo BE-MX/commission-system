@@ -97,6 +97,7 @@ export const MENU_GROUPS = {
       'stock:read', 'stock:write', 'stock:admin', 'stock_daily:read',
       'production:read', 'production:write', 'production:print', 'production:admin',
       'production_product:read', 'production_dashboard:read', 'production_route:read',
+      'semifinished:read', 'semifinished:write', 'semifinished:admin',
     ],
   },
   domestic: {
@@ -701,6 +702,30 @@ export const NAV_ENTRIES = [
       group: 'stock', title: '生产订单打印', icon: Printer, order: 41,
       permission: 'production:print',
     },
+  },
+  {
+    path: '/stock/semifinished-materials',
+    name: 'SemifinishedMaterials',
+    component: () => import('@/views/semifinished/MaterialManage.vue'),
+    title: '半成品列表',
+    permission: 'semifinished:read',
+    menu: { group: 'stock', title: '半成品列表', icon: CollectionTag, order: 42, permission: 'semifinished:read' },
+  },
+  {
+    path: '/stock/semifinished-orders',
+    name: 'SemifinishedOrders',
+    component: () => import('@/views/semifinished/OrderManage.vue'),
+    title: '半成品订单',
+    permission: 'semifinished:read',
+    menu: { group: 'stock', title: '半成品订单', icon: Goods, order: 43, permission: 'semifinished:read' },
+  },
+  {
+    path: '/stock/semifinished-inventory',
+    name: 'SemifinishedInventory',
+    component: () => import('@/views/semifinished/InventoryManage.vue'),
+    title: '半成品库存',
+    permission: 'semifinished:read',
+    menu: { group: 'stock', title: '半成品库存', icon: DataLine, order: 44, permission: 'semifinished:read' },
   },
 
   // ── 生产报工 ───────────────────────────────────────────

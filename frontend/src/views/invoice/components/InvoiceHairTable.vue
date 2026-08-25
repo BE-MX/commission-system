@@ -100,6 +100,21 @@
             </el-select>
           </template>
         </el-table-column>
+        <el-table-column v-if="isProduction" label="半成品库存" min-width="240" max-width="320">
+          <template #default="{ row }">
+            <div class="semifinished-cell">
+              <el-checkbox v-model="row.semifinished_enabled" :disabled="row.semifinished_loading" @change="enabled => onSemifinishedToggle(row, enabled)">自动使用</el-checkbox>
+              <template v-if="row.semifinished_enabled">
+                <div v-for="item in row.semifinished_plan" :key="item.material_id" class="semifinished-line">
+                  <span>{{ item.size }}/{{ item.color_code }}</span>
+                  <el-input-number v-model="item.quantity_grams" :min="0.001" :precision="3" :controls="false" />
+                  <small>g</small>
+                </div>
+                <el-button link type="primary" :loading="row.semifinished_loading" @click="loadSemifinished(row)">重新计算</el-button>
+              </template>
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column v-if="!isProduction" label="Product_name" min-width="230" max-width="360" show-overflow-tooltip>
           <template #default="{ row }">
             <div :class="['product-cell', row.product_name ? 'is-matched' : 'is-pending']">
@@ -136,7 +151,7 @@
           </template>
         </el-table-column>
         <el-table-column label="Quantity" min-width="100" max-width="140">
-          <template #default="{ row }"><el-input-number v-model="row.quantity" :min="1" :precision="0" :controls="false" @change="updateLineTotal(row)" /></template>
+          <template #default="{ row }"><el-input-number v-model="row.quantity" :min="1" :precision="0" :controls="false" @change="onQuantityChange(row)" /></template>
         </el-table-column>
         <el-table-column label="折扣" min-width="110" max-width="150">
           <template #default="{ row }"><el-input-number v-model="row.discount_amount" :precision="2" :controls="false" class="line-discount-input" @change="onLineDiscountChange(row)" /></template>
@@ -154,10 +169,12 @@
 
 <script setup>
 import { ref } from 'vue'
+import { ElMessage } from 'element-plus'
 import { ArrowDown, ArrowUp, Delete, DocumentCopy, Plus } from '@element-plus/icons-vue'
 import { CURL_OPTIONS } from '../composables/useInvoiceEditor'
+import { quoteSemifinished } from '@/api/semifinished'
 
-defineProps({
+const props = defineProps({
   items: { type: Array, required: true },
   isProduction: Boolean,
   entryOptions: { type: Object, required: true },
@@ -174,6 +191,41 @@ defineProps({
 })
 defineEmits(['paste', 'add', 'remove'])
 const showOptionalCols = ref(false)
+
+async function loadSemifinished(row) {
+  if (!row.product_id) {
+    row.semifinished_enabled = false
+    row.semifinished_plan = []
+    ElMessage.warning('该产品尚未绑定 OKKI 产品，不能自动使用半成品')
+    return
+  }
+  row.semifinished_loading = true
+  try {
+    const quote = await quoteSemifinished({ product_id: row.product_id, finished_qty: Number(row.quantity || 1) })
+    row.semifinished_plan = (quote.items || []).map(item => ({
+      material_id: item.material_id,
+      material_code: item.material_code,
+      size: item.size,
+      color_code: item.color_code,
+      available_grams: Number(item.available_grams),
+      quantity_grams: Number(item.suggested_qty_grams),
+    }))
+  } catch (error) {
+    row.semifinished_enabled = false
+    row.semifinished_plan = []
+    ElMessage.warning(error?.response?.data?.detail || error.message || '半成品计划计算失败')
+  } finally { row.semifinished_loading = false }
+}
+
+function onSemifinishedToggle(row, enabled) {
+  if (enabled) loadSemifinished(row)
+  else row.semifinished_plan = []
+}
+
+function onQuantityChange(row) {
+  props.updateLineTotal(row)
+  if (row.semifinished_enabled) loadSemifinished(row)
+}
 
 const OPTION_GROUP_LABELS = { models: '全部型号', colors: '全部颜色', sizes: '全部长度', units: '全部克重' }
 // 级联候选（按行内其余维度过滤）置顶，全量差集垫底：整行复制后其余维度已满时，
@@ -201,4 +253,7 @@ function lineOptionGroups(options, key) {
 .std-price { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .price-cell.is-manual :deep(.el-input__wrapper) { background: var(--color-warning-bg); }
 .line-discount-input :deep(input) { color: var(--color-danger); font-variant-numeric: tabular-nums; }
+.semifinished-cell { display: flex; flex-direction: column; gap: 6px; }
+.semifinished-line { display: grid; grid-template-columns: minmax(85px, 1fr) 90px 14px; align-items: center; gap: 6px; font-size: 12px; }
+.semifinished-line small { color: var(--text-muted); }
 </style>

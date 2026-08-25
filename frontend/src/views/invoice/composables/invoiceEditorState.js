@@ -39,6 +39,9 @@ export function normalizeHairRow(line = {}) {
     discount_amount: normalizeDiscount(line.discount_amount),
     total_price: Number(line.total_price || 0),
     price_source: line.price_source || 'manual',
+    semifinished_enabled: Boolean(line.semifinished_enabled),
+    semifinished_plan: (line.semifinished_plan || []).map(item => ({ ...item, quantity_grams: Number(item.quantity_grams || 0) })),
+    semifinished_loading: false,
     _importBatchFingerprint: line._importBatchFingerprint || '',
     options: { models: [], colors: [], sizes: [], units: [], all_models: [], all_colors: [], all_sizes: [], all_units: [] },
     matching: false,
@@ -74,6 +77,10 @@ export function buildInvoicePayload(form, hairDiscount) {
       curl: line.curl || null, model: line.model || null, color: line.color,
       length: line.length, quantity: line.quantity, price_per_piece: line.price_per_piece,
       discount_amount: normalizeDiscount(line.discount_amount), price_source: line.price_source || 'manual',
+      semifinished_enabled: Boolean(line.semifinished_enabled),
+      semifinished_plan: line.semifinished_enabled
+        ? (line.semifinished_plan || []).map(item => ({ material_id: item.material_id, quantity_grams: Number(item.quantity_grams) }))
+        : [],
     })),
   }
 }
