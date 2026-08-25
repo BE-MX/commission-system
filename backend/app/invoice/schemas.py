@@ -140,6 +140,13 @@ class ScreenshotResolveRequest(BaseModel):
     custom_rows: list[int] = Field(default_factory=list, max_length=200)
 
 
+class InvoiceSemifinishedPlanItem(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    material_id: int = Field(..., gt=0)
+    quantity_grams: Decimal = Field(..., gt=0, max_digits=14, decimal_places=3)
+
+
 class InvoiceItemPayload(BaseModel):
     # 编辑时回传既有行 id，用于跨保存传承 xiaoman_unique_id（OKKI 编辑推单按行更新）
     id: Optional[int] = None
@@ -160,6 +167,8 @@ class InvoiceItemPayload(BaseModel):
     )
     discount_amount: Decimal = Field(default=Decimal("0"), le=0)
     price_source: str = Field(default="manual", max_length=32)
+    semifinished_enabled: bool = False
+    semifinished_plan: list[InvoiceSemifinishedPlanItem] = Field(default_factory=list, max_length=20)
 
     @field_validator("discount_amount", mode="before")
     @classmethod

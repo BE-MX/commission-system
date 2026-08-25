@@ -562,6 +562,11 @@ def _replace_items(db: Session, invoice: Invoice, body, user_id: int | None = No
             quantity=payload.quantity,
             price_per_piece=payload.price_per_piece,
             discount_amount=payload.discount_amount,
+            semifinished_enabled=1 if payload.semifinished_enabled else 0,
+            semifinished_plan=(
+                [row.model_dump(mode="json") for row in payload.semifinished_plan]
+                if payload.semifinished_enabled else None
+            ),
         )
         if payload.item_type == "custom" and _custom_line_complete(payload):
             resolved = product_service.ensure_custom_product(
@@ -847,4 +852,6 @@ def _serialize_item(item: InvoiceItem) -> dict:
         "discount_amount": item.discount_amount,
         "price_source": item.price_source,
         "total_price": item.total_price,
+        "semifinished_enabled": bool(item.semifinished_enabled),
+        "semifinished_plan": item.semifinished_plan or [],
     }

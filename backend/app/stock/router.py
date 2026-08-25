@@ -24,6 +24,7 @@ from app.api.deps import get_db
 from app.auth.dependencies import require_any_permission, require_permission
 from app.core.response import ok as _ok
 from app.stock import service
+from app.semifinished import order_service as semifinished_order_service
 from app.stock.schemas import (
     AutoGenerateRequest,
     CartAddRequest,
@@ -342,16 +343,21 @@ def add_to_cart(
 ):
     """加入购物车(已存在则更新)"""
     user_id = _get_user_id(user)
-    result = service.add_or_update_cart(
-        db,
-        user_id=user_id,
-        product_id=req.product_id,
-        product_name=req.product_name,
-        model=req.model,
-        spec_info=req.spec_info,
-        order_qty=req.order_qty,
-        remark=req.remark,
-    )
+    try:
+        result = service.add_or_update_cart(
+            db,
+            user_id=user_id,
+            product_id=req.product_id,
+            product_name=req.product_name,
+            model=req.model,
+            spec_info=req.spec_info,
+            order_qty=req.order_qty,
+            remark=req.remark,
+            semifinished_items=[item.model_dump() for item in req.semifinished_items],
+        )
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc))
     action_label = "更新" if result["action"] == "updated" else "添加"
     return _ok(result, message=f"已{action_label}到购物车")
 
@@ -459,12 +465,38 @@ def create_production_order(
             expected_delivery_date=req.expected_delivery_date,
             operator_id=user_id,
             operator_name=user.get("username", ""),
+            commit=False,
         )
+        semifinished_items: dict[int, dict] = {}
+        for cart in cart_items:
+            for plan in cart.get("semifinished_items") or []:
+                material_id = int(plan["material_id"])
+                current = semifinished_items.setdefault(material_id, {"material_id": material_id, "quantity_grams": 0})
+                current["quantity_grams"] += plan["quantity_grams"]
+        semifinished_order = None
+        if semifinished_items:
+            semifinished_order = semifinished_order_service.create_order(
+                db,
+                items=list(semifinished_items.values()),
+                user_id=user_id,
+                batch_no=req.batch_no,
+                is_urgent=req.is_urgent,
+                expected_delivery_date=req.expected_delivery_date,
+                remark=f"随产成品订单 {result['order_no']} 同步创建",
+                source_type="production_sync",
+                production_order_id=result["order_id"],
+                commit=False,
+            )
+        service.delete_cart_items(db, user_id, req.cart_ids, commit=False)
+        db.commit()
     except ValueError as e:
+        db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
 
-    # 从购物车移除已选中的
-    service.delete_cart_items(db, user_id, req.cart_ids)
+    service.initialize_order_progress(db, result["order_id"])
+    if semifinished_order:
+        result["semifinished_order_id"] = semifinished_order.id
+        result["semifinished_order_no"] = semifinished_order.order_no
 
     return _ok(result, message="生产订单创建成功", code=201)
 

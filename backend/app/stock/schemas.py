@@ -7,6 +7,8 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
+from app.semifinished.schemas import CartPlanInput
+
 
 class SafetyStockSaveItem(BaseModel):
     product_id: int
@@ -45,6 +47,7 @@ class CartAddRequest(BaseModel):
     spec_info: Optional[str] = Field(None, max_length=255)
     order_qty: int = Field(gt=0, le=999999)
     remark: Optional[str] = Field(None, max_length=500)
+    semifinished_items: List[CartPlanInput] = Field(default_factory=list)
 
 
 class CartUpdateRequest(BaseModel):

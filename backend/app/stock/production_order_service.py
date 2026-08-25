@@ -89,6 +89,7 @@ def create_order(
     expected_delivery_date: Optional[date] = None,
     operator_id: int = 0,
     operator_name: str = "",
+    commit: bool = True,
 ) -> dict:
     """从购物车项生成生产订单
 
@@ -142,21 +143,27 @@ def create_order(
         snapshot={"batch_no": batch_no, "item_count": len(cart_items), "is_urgent": is_urgent, "expected_delivery_date": str(expected_delivery_date) if expected_delivery_date else None},
     )
 
-    db.commit()
+    if commit:
+        db.commit()
+        initialize_order_progress(db, order.id)
 
-    # 订单创建后，自动为每个明细初始化工序进度（静默忽略未绑定路线的产品）
+    return {"order_id": order.id, "order_no": order_no}
+
+
+def initialize_order_progress(db: Session, order_id: int) -> None:
+    """事务成功后初始化工序；未绑定路线不影响订单创建。"""
     try:
         from app.production.report_service import init_order_product_progress
-        for item_obj in db.query(ProductionOrderItem).filter(ProductionOrderItem.order_id == order.id).all():
+        for item_obj in db.query(ProductionOrderItem).filter(ProductionOrderItem.order_id == order_id).all():
             try:
                 init_order_product_progress(db, item_obj.id)
             except (ValueError, LookupError):
-                pass  # 产品未绑定路线或路线无工序，静默忽略
+                pass
         db.commit()
-    except Exception as e:
-        logger.warning(f"自动初始化工序进度失败（不影响订单创建）: {e}")
-
-    return {"order_id": order.id, "order_no": order_no}
+    except Exception as exc:  # noqa: BLE001 - 工序初始化失败不回滚已创建订单，但必须留日志
+        db.rollback()
+        logger.warning("自动初始化工序进度失败（不影响订单创建）: %s", exc)
+        print(f"[production] init progress failed order={order_id}: {exc}", flush=True)
 
 
 def get_order_list(

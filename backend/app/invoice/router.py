@@ -35,6 +35,7 @@ from app.invoice.schemas import (
     InvoiceUpdate,
     ScreenshotResolveRequest,
 )
+from app.semifinished import invoice_service as semifinished_invoice_service
 
 logger = logging.getLogger(__name__)
 _MAX_SCREENSHOT_BYTES = 10 * 1024 * 1024
@@ -880,8 +881,53 @@ def sync_invoice(
     if not invoice:
         raise HTTPException(404, "发票不存在")
     _ensure_invoice_visible(db, invoice, current_user)
-    result = xiaoman_service.sync_invoice(db, invoice, operator_id=_user_id(current_user))
-    db.commit()
+    operator_id = _user_id(current_user)
+    operation_key = None
+    try:
+        operation_key = semifinished_invoice_service.prepare_invoice_sync(db, invoice, operator_id)
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(409, str(exc))
+    # prepare 可能提交预占并释放原发票行锁；重新加锁，避免预占后的并发编辑/同步。
+    invoice = service.get_invoice(db, invoice_id, for_update=True)
+    try:
+        semifinished_invoice_service.ensure_pending_matches_invoice(db, invoice, operation_key)
+    except ValueError as exc:
+        db.rollback()
+        try:
+            semifinished_invoice_service.release_invoice_sync(db, invoice_id, operation_key, operator_id)
+            db.commit()
+        except Exception:  # noqa: BLE001 - 释放失败保留 pending，由管理员恢复
+            db.rollback()
+            raise HTTPException(409, f"{exc}；半成品预占释放异常，请联系管理员")
+        raise HTTPException(409, str(exc))
+    result = xiaoman_service.sync_invoice(db, invoice, operator_id=operator_id)
+    if result.get("ok"):
+        try:
+            semifinished_invoice_service.finalize_invoice_sync(db, invoice_id, operation_key, operator_id)
+        except Exception as exc:  # noqa: BLE001 - OKKI 已受理，保留 pending 供人工恢复，绝不能误释放
+            logger.warning("semifinished finalize failed invoice=%s: %s", invoice_id, exc)
+            print(f"[semifinished] finalize failed invoice={invoice_id}: {exc}", flush=True)
+            db.rollback()
+            result = {
+                "ok": False,
+                "message": "OKKI 已同步，但半成品出库待恢复，请联系管理员处理",
+                "issues": [],
+                "xiaoman_order_id": invoice.xiaoman_order_id,
+                "inventory_pending": True,
+            }
+        else:
+            db.commit()
+    else:
+        try:
+            semifinished_invoice_service.release_invoice_sync(db, invoice_id, operation_key, operator_id)
+            db.commit()
+        except Exception as exc:  # noqa: BLE001 - 释放异常必须显式暴露并保留日志
+            logger.warning("semifinished release failed invoice=%s: %s", invoice_id, exc)
+            print(f"[semifinished] release failed invoice={invoice_id}: {exc}", flush=True)
+            db.rollback()
+            result["message"] = f"{result.get('message') or '同步失败'}；半成品预占释放异常，请联系管理员"
+            result["inventory_pending"] = True
     return ok(result)
 
 
