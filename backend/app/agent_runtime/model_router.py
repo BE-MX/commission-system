@@ -67,4 +67,3 @@ def agent_chat_completions(
             "X-Ark-Agent-Model": model,
         },
     )
-

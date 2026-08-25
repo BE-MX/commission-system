@@ -103,4 +103,3 @@ class ArkClient:
             "error_message": message[:1000],
             "ambiguous": ambiguous,
         })
-

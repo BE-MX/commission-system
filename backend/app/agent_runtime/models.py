@@ -177,4 +177,3 @@ class AgentArtifact(Base):
         Index("idx_agent_artifact_decision", "decision_status", "created_at"),
         {"comment": "Agent结构化成果与业务决策"},
     )
-

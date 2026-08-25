@@ -28,4 +28,3 @@ class LeaseError(ConflictError):
 class RuntimeDisabledError(AgentRuntimeError):
     status_code = 503
     error_code = "RUNTIME_DISABLED"
-

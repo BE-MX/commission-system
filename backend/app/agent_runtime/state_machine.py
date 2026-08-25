@@ -40,4 +40,3 @@ def require_transition(current: str | RunStatus, target: str | RunStatus) -> Non
         raise InvalidRunTransition(f"终态任务不能从 {source.value} 迁移到 {destination.value}")
     if not can_transition(source, destination):
         raise InvalidRunTransition(f"不允许从 {source.value} 迁移到 {destination.value}")
-

@@ -56,7 +56,7 @@ DSH Worker 部署在独立 Linux 服务，主动领取任务，不连接方舟�
 
 ```text
 queued -> leased -> running -> waiting_input -> completed
-  |          |         |              |             
+  |          |         |              |
   +----------+---------+--------------+-> cancelled
              +---------+--------------+-> failed
                        +--------------+-> ambiguous
