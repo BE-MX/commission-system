@@ -3,7 +3,7 @@ set -euo pipefail
 
 readonly DSH_TAG="dsh-v0.1.0-rc.8"
 readonly DSH_COMMIT="141eb6fef83422698aef7a981029e843e8161534"
-readonly DEPLOY_PATCH_SHA256="0ffea168d91b55bb4976545b0eec4bc6fa055e87ed0f93ef1f3cfa1d4632d43f"
+readonly DEPLOY_PATCH_SHA256="b22a50106260b41ef0a171e9a44058a27f6bb4dbf747f3f5106ec197f1528da4"
 readonly OUTPUT_DIR="${1:?usage: build_dsh_release.sh OUTPUT_DIR}"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 deploy_patch="$script_dir/../patches/dsh-rc8-lockfile-deploy.patch"

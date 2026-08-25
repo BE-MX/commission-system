@@ -5,11 +5,13 @@ index 02e1555..14af7a4 100644
 @@ -5,0 +6 @@ settings:
 +  injectWorkspacePackages: true
 diff --git a/pnpm-workspace.yaml b/pnpm-workspace.yaml
-index ec6cfd3..0c72a00 100644
+index ec6cfd3..f4c283e 100644
 --- a/pnpm-workspace.yaml
 +++ b/pnpm-workspace.yaml
 @@ -25,0 +26 @@ linkWorkspacePackages: true
 +injectWorkspacePackages: true
+@@ -55,0 +57 @@ allowBuilds:
++  '@deepseek-ai/dsh-subprocess-local': true
 diff --git a/scripts/build-exe-for-python-sdk.ts b/scripts/build-exe-for-python-sdk.ts
 index 4773a50..f788c22 100644
 --- a/scripts/build-exe-for-python-sdk.ts
