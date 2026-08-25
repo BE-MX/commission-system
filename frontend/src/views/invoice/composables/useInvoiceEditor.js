@@ -26,7 +26,14 @@ import {
 } from './invoiceSettlement'
 import { normalizeAccessoryRow } from './accessoryPricing'
 import { useInvoiceAccessories } from './useInvoiceAccessories'
-import { buildInvoicePayload, emptyInvoiceForm, normalizeHairRow } from './invoiceEditorState'
+import {
+  buildInvoicePayload,
+  emptyInvoiceForm,
+  INVOICE_NO_MAX_LENGTH,
+  normalizeHairRow,
+  screenshotInvoiceNo,
+  screenshotOrderName,
+} from './invoiceEditorState'
 import { useInvoiceHairItems } from './useInvoiceHairItems'
 
 export const CURL_OPTIONS = ['Straight', 'Body Wave', 'Deep Wave', 'Loose Wave', 'Kinky Curly', 'Water Wave']
@@ -387,7 +394,11 @@ export function useInvoiceEditor({ onSaved } = {}) {
       ElMessage.warning('识别结果仍有待处理项，暂不能创建发票')
       return
     }
-    resetForm({ ...patch, invoice_no: '', id: null })
+    const recognizedOrderName = screenshotOrderName(preview)
+    const invoiceNo = screenshotInvoiceNo(preview)
+    resetForm({ ...patch, invoice_no: invoiceNo, id: null })
+    // 截图订单名就是本次发票号；标记为已确认，避免异步建议号覆盖识别结果。
+    invoiceNoEdited = Boolean(invoiceNo)
     await loadSalesUsers()
     applySalesUserSnapshot()
     selectedCustomer.value = {
@@ -397,9 +408,14 @@ export function useInvoiceEditor({ onSaved } = {}) {
     ensureCustomerOption(selectedCustomer.value)
     await Promise.all([loadCustomerRule(), fillContactDefaults()])
     drawerVisible.value = true
-    fetchSuggestedInvoiceNo()
+    if (!invoiceNo) fetchSuggestedInvoiceNo()
     if (patch.order_type === 'production') loadEntryOptions()
-    ElMessage.success('识别结果已填入发票，请确认缺失的结算和联系信息后保存')
+    let successMessage = '订单名称已填入发票号，请确认缺失的结算和联系信息后保存'
+    if (!invoiceNo) successMessage = '未识别到订单名称，正在生成系统发票号，请确认后保存'
+    else if (recognizedOrderName.length > INVOICE_NO_MAX_LENGTH) {
+      successMessage = `订单名称超过 ${INVOICE_NO_MAX_LENGTH} 个字符，已截取后填入发票号，请确认后保存`
+    }
+    ElMessage.success(successMessage)
   }
 
   async function loadSalesUsers() {

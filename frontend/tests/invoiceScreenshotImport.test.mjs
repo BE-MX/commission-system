@@ -2,7 +2,13 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
-import { buildInvoicePayload, emptyInvoiceForm } from '../src/views/invoice/composables/invoiceEditorState.js'
+import {
+  buildInvoicePayload,
+  emptyInvoiceForm,
+  INVOICE_NO_MAX_LENGTH,
+  screenshotInvoiceNo,
+  screenshotOrderName,
+} from '../src/views/invoice/composables/invoiceEditorState.js'
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8')
 const view = read('../src/views/invoice/InvoiceManage.vue')
@@ -52,7 +58,31 @@ test('screenshot provenance survives editor submission', () => {
   assert.equal(payload.source_image_sha256, 'a'.repeat(64))
   assert.equal(payload.source_preview_token, 'signed-preview-token')
   assert.match(editor, /applyScreenshotPreview/)
-  assert.match(editor, /resetForm\(\{ \.\.\.patch, invoice_no: '', id: null \}\)/)
+  assert.match(editor, /resetForm\(\{ \.\.\.patch, invoice_no: invoiceNo, id: null \}\)/)
+  assert.match(editor, /invoiceNoEdited = Boolean\(invoiceNo\)/)
+  assert.match(editor, /if \(!invoiceNo\) fetchSuggestedInvoiceNo\(\)/)
+})
+
+
+test('recognized order name becomes the screenshot invoice number', () => {
+  assert.equal(screenshotInvoiceNo({
+    extraction: { order_name: '  凯丽比努尔#260808  ' },
+    invoice_patch: { source_order_name: 'fallback' },
+  }), '凯丽比努尔#260808')
+
+  assert.equal(screenshotInvoiceNo({
+    invoice_patch: { source_order_name: 'fallback order name' },
+  }), 'fallback order name')
+
+  assert.equal(screenshotOrderName({
+    extraction: { order_name: '   ' },
+    invoice_patch: { source_order_name: ' whitespace fallback ' },
+  }), 'whitespace fallback')
+
+  assert.equal(
+    screenshotInvoiceNo({ extraction: { order_name: 'A'.repeat(INVOICE_NO_MAX_LENGTH + 1) } }).length,
+    INVOICE_NO_MAX_LENGTH,
+  )
 })
 
 
