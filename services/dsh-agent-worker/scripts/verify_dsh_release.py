@@ -29,7 +29,7 @@ EXPECTED_UPSTREAM = {
     "commit": "141eb6fef83422698aef7a981029e843e8161534",
 }
 EXPECTED_BUILDER_IMAGE = "sha256:443eabd378e140996780a772e12c1a1ef10551da933fe76d74a1bab61f68a7b7"
-EXPECTED_DEPLOY_PATCH_SHA256 = "3ac0e4634c55dcbd0825de007f9f892f5143b4c626f4927cd763d5320edaf599"
+EXPECTED_DEPLOY_PATCH_SHA256 = "0ffea168d91b55bb4976545b0eec4bc6fa055e87ed0f93ef1f3cfa1d4632d43f"
 EXPECTED_RUNTIME_PAYLOADS = {
     "deepseek_harness_runtime/runtime/dsh-jsonrpc-agent-pkg-linux-x64",
     "deepseek_harness_runtime/runtime/dsh-jsonrpc-agent-pkg-linux-x64-rg",
