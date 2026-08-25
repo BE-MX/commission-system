@@ -320,6 +320,17 @@ PII 密钥 `ARK_SALARY_ENCRYPTION_KEY` / `ARK_SALARY_HASH_KEY` 在 `backend/.env
 
 所有表具备 `created_by/updated_by/created_at/updated_at/deleted_at` 审计字段。M1 只覆盖搜索、联系人和研究，不建邮件发送、回复或 WhatsApp 外发表。
 
+## AI Agent 控制面（迁移 118，2026-08-20）
+
+- `ark_agent_profiles`：不可变 Profile 版本，冻结 Runtime、模型 Preset、系统提示词与哈希、Skill 清单、工具白名单、预算/策略和输出 Schema；`(profile_key,version)` 唯一。
+- `ark_agent_sessions`：用户围绕客户、订单或 SearchJob 的业务会话；owner 与 Profile 均为 `RESTRICT`，业务对象用 `context_type/context_id` 软引用。
+- `ark_agent_runs`：单次执行、用户范围幂等键、触发方式、冻结权限上下文、租约哈希、重试次数、步骤/Token/成本和终态错误。`(owner_user_id,idempotency_key)` 唯一；`idx_agent_run_claim` 支撑 Worker 原子领取。
+- `ark_agent_events`：每个 Run 的追加式事件账本；`(run_id,sequence_no)` 与 `(run_id,event_id)` 双唯一保证连续顺序和提交幂等。`payload_json` 只保存标准化脱敏载荷，`raw_payload_cipher` 为可选密文。每日 03:50 仅清空超过 `AGENT_RUNTIME_RAW_EVENT_RETENTION_DAYS` 的原始密文，标准事件和哈希不删除。
+- `ark_agent_artifacts`：通过 Profile Schema 与 evidence policy 校验的结构化成果；`(run_id,artifact_type,content_sha256)` 唯一，人工决策为 `draft/accepted/rejected`。
+
+迁移同时给 `ark_customer_actions` 增加 `source_type/source_run_id/source_fingerprint/policy_version/evidence_status/generated_at`。
+规则刷新沿用稳定 fingerprint 幂等，禁止覆盖 `done/dismissed/snoozed` 用户事实；DSH 复购成果仅在人工接受、归属匹配且原行动仍为 `pending` 时投影。`downgrade()` 会删除控制面五表及以上行动来源列，因此生产回滚应优先关闭 Feature Flag 并保留 118 结构，不执行破坏性 downgrade。
+
 ### 公海背调与成交研判（迁移 106/113，2026-08-11 至 2026-08-13）
 
 迁移 106 只在方舟库建表；`lsordertest` 仍由 `BusinessPoolGateway` 用只读 SQL 查询，不建立跨库外键，也不回写 OKKI。

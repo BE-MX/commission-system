@@ -1,6 +1,8 @@
 """环境变量配置（Pydantic Settings）"""
 
+import json
 from pathlib import Path
+import string
 from typing import Annotated
 from urllib.parse import quote_plus
 
@@ -246,6 +248,30 @@ class Settings(BaseSettings):
     OPERATIONS_JOB_RUN_RETENTION_DAYS: int = 90
     OPERATIONS_ALERT_TIMEOUT_SECONDS: float = 10.0
 
+    # ── Agent Runtime 控制面 / DSH Worker ─────────────────
+    # 首次部署默认关闭；完成迁移、Worker 凭证与模型网关配置后按 Profile 灰度开启。
+    AGENT_RUNTIME_ENABLED: bool = False
+    AGENT_RUNTIME_DSH_ENABLED: bool = False
+    AGENT_RUNTIME_COPILOT_ENABLED: bool = False
+    AGENT_RUNTIME_REPURCHASE_ENABLED: bool = False
+    AGENT_RUNTIME_SALES_SHADOW_ENABLED: bool = False
+    AGENT_RUNTIME_REPURCHASE_BATCH_SIZE: _PositiveInt = 20
+    AGENT_RUNTIME_WEB_SEARCH_ENABLED: bool = False
+    AGENT_RUNTIME_BRAVE_SEARCH_API_KEY: str = ""
+    AGENT_RUNTIME_PUBLIC_FETCH_MAX_BYTES: _PositiveInt = 1_000_000
+    AGENT_RUNTIME_WORKER_LEASE_SECONDS: _PositiveInt = 180
+    AGENT_RUNTIME_MAX_ACTIVE_PER_USER: _PositiveInt = 2
+    AGENT_RUNTIME_MAX_STEPS_PER_RUN: _PositiveInt = 20
+    AGENT_RUNTIME_RUN_TIMEOUT_SECONDS: _PositiveInt = 600
+    AGENT_RUNTIME_RAW_EVENT_RETENTION_DAYS: _PositiveInt = 90
+    AGENT_RUNTIME_SHADOW_SAMPLE_RATE: float = 0.0
+    AGENT_RUNTIME_DAILY_TOKEN_BUDGET: _PositiveInt = 200_000
+    # JSON: {"worker-instance-id": ["<sha256-of-bearer-token>"]}
+    AGENT_RUNTIME_WORKER_TOKEN_HASHES_JSON: str = ""
+    AGENT_RUNTIME_WORKER_RUNTIMES_JSON: str = ""
+    # Run 委托 JWT 独立密钥；开发留空时回退 JWT_SECRET_KEY，生产必须显式配置。
+    AGENT_RUNTIME_RUN_TOKEN_SECRET: str = ""
+
     # ── 微信小程序 ────────────────────────────────────────
     WX_MINI_APPID: str = ""  # 微信小程序 AppID
     WX_MINI_SECRET: str = ""  # 微信小程序 AppSecret
@@ -275,6 +301,55 @@ class Settings(BaseSettings):
             return [o.strip() for o in v.split(",") if o.strip()]
         return v
 
+    @field_validator("AGENT_RUNTIME_SHADOW_SAMPLE_RATE")
+    @classmethod
+    def _validate_agent_shadow_rate(cls, value: float) -> float:
+        if not 0 <= value <= 1:
+            raise ValueError("AGENT_RUNTIME_SHADOW_SAMPLE_RATE 必须在 0 到 1 之间")
+        return value
+
+    @field_validator("AGENT_RUNTIME_WORKER_TOKEN_HASHES_JSON")
+    @classmethod
+    def _validate_agent_worker_hashes(cls, value: str) -> str:
+        raw = str(value or "").strip()
+        if not raw:
+            return ""
+        try:
+            mapping = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ValueError("AGENT_RUNTIME_WORKER_TOKEN_HASHES_JSON 必须是 JSON 对象") from exc
+        if not isinstance(mapping, dict):
+            raise ValueError("AGENT_RUNTIME_WORKER_TOKEN_HASHES_JSON 必须是 JSON 对象")
+        for worker_id, hashes in mapping.items():
+            values = hashes if isinstance(hashes, list) else [hashes]
+            if not worker_id or not values or any(
+                not isinstance(item, str)
+                or len(item) != 64
+                or any(char not in string.hexdigits for char in item)
+                for item in values
+            ):
+                raise ValueError("Worker token hash 必须是 64 位 SHA-256 十六进制字符串")
+        return raw
+
+    @field_validator("AGENT_RUNTIME_WORKER_RUNTIMES_JSON")
+    @classmethod
+    def _validate_agent_worker_runtimes(cls, value: str) -> str:
+        raw = str(value or "").strip()
+        if not raw:
+            return ""
+        try:
+            mapping = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ValueError("AGENT_RUNTIME_WORKER_RUNTIMES_JSON 必须是 JSON 对象") from exc
+        allowed = {"dsh", "openclaw", "native"}
+        if not isinstance(mapping, dict) or any(
+            not worker_id or not isinstance(runtimes, list) or not runtimes
+            or any(item not in allowed for item in runtimes)
+            for worker_id, runtimes in mapping.items()
+        ):
+            raise ValueError("Worker runtime 映射必须是非空 dsh/openclaw/native 数组")
+        return raw
+
     @model_validator(mode="after")
     def _validate_production(self):
         """production 模式启动前校验关键安全配置"""
@@ -287,6 +362,17 @@ class Settings(BaseSettings):
                 "CUSTOMER_IMAGE_STALE_SECONDS must be greater than "
                 "CUSTOMER_IMAGE_LEASE_SECONDS"
             )
+        agent_profiles_enabled = any((
+            self.AGENT_RUNTIME_COPILOT_ENABLED,
+            self.AGENT_RUNTIME_REPURCHASE_ENABLED,
+            self.AGENT_RUNTIME_SALES_SHADOW_ENABLED,
+        ))
+        if self.AGENT_RUNTIME_DSH_ENABLED and not self.AGENT_RUNTIME_ENABLED:
+            raise ValueError("启用 DSH Runtime 前必须启用 AGENT_RUNTIME_ENABLED")
+        if agent_profiles_enabled and not self.AGENT_RUNTIME_DSH_ENABLED:
+            raise ValueError("启用首期 Agent Profile 前必须启用 AGENT_RUNTIME_DSH_ENABLED")
+        if self.AGENT_RUNTIME_SALES_SHADOW_ENABLED and not self.AGENT_RUNTIME_WEB_SEARCH_ENABLED:
+            raise ValueError("启用获客 Shadow 前必须启用 AGENT_RUNTIME_WEB_SEARCH_ENABLED")
         if self.APP_ENV != "production":
             return self
         errors = []
@@ -302,6 +388,14 @@ class Settings(BaseSettings):
             errors.append("ARK_SALARY_ENCRYPTION_KEY 必须显式配置（薪资身份证/银行卡加密）")
         if not self.ARK_SALARY_HASH_KEY:
             errors.append("ARK_SALARY_HASH_KEY 必须显式配置（薪资 PII 哈希匹配）")
+        if self.AGENT_RUNTIME_ENABLED and len(self.AGENT_RUNTIME_RUN_TOKEN_SECRET) < 32:
+            errors.append("启用 AGENT_RUNTIME 时必须配置至少 32 字符的独立 AGENT_RUNTIME_RUN_TOKEN_SECRET")
+        if self.AGENT_RUNTIME_DSH_ENABLED and self.AGENT_RUNTIME_WORKER_TOKEN_HASHES_JSON in {"", "{}"}:
+            errors.append("启用 DSH Runtime 时必须配置 AGENT_RUNTIME_WORKER_TOKEN_HASHES_JSON")
+        if self.AGENT_RUNTIME_DSH_ENABLED and self.AGENT_RUNTIME_WORKER_RUNTIMES_JSON in {"", "{}"}:
+            errors.append("启用 DSH Runtime 时必须配置 AGENT_RUNTIME_WORKER_RUNTIMES_JSON")
+        if self.AGENT_RUNTIME_SALES_SHADOW_ENABLED and not self.AGENT_RUNTIME_BRAVE_SEARCH_API_KEY:
+            errors.append("启用获客 Shadow 时必须配置 AGENT_RUNTIME_BRAVE_SEARCH_API_KEY")
         if errors:
             details = "\n  - ".join(errors)
             raise ValueError(

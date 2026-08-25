@@ -34,9 +34,9 @@ Agent run ID：`f0701041-96b0-40c3-9ef5-38b6f91cd4ab`。工具摘要为 17 次�
 
 该次 E2E 后续已按当前测试策略更新为：
 
-- 默认 `deepseek/deepseek-v4-flash` 使用 model-scoped `agentRuntime.id = "openclaw"`；
+- 当前默认 `mimo/mimo-v2.5` 使用 model-scoped `agentRuntime.id = "openclaw"`；
 - OpenClaw 工具策略只允许 `web_search`、`web_fetch` 与 `ark-sales__*`；
 - Codex harness 仅作未加载 Ark token 时的开发诊断，不作生产运行；
 - 真实运行必须由用户补充模型 provider API key 与 Ark Agent token。
 
-当前 profile 已验证 DeepSeek 模型可用。任何模型 provider 缺少 API key 时都必须明确失败，不允许静默回退到权限更宽的 Codex harness。
+当前 profile 已验证 MiMo V2.5 与邮件 Agent 的 DeepSeek 模型可用。任何模型 provider 缺少 API key 时都必须明确失败，不允许静默回退到权限更宽的 Codex harness。

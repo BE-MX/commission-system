@@ -316,6 +316,8 @@ def create_search_job(
     user=Depends(require_any_permission(*WRITE_PERMISSIONS)),
 ):
     row = _call(service.create_search_job, db, payload, _user_id(user))
+    from app.agent_runtime.orchestration import maybe_enqueue_sales_shadow
+    maybe_enqueue_sales_shadow(db, row, user)
     return ok(_job(row), code=201)
 
 

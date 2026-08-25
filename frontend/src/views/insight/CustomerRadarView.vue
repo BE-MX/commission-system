@@ -98,6 +98,10 @@
               <el-tag size="small" type="info" effect="plain">{{ selectedProfile.customer_region }}</el-tag>
             </div>
           </div>
+          <GlassButton
+            v-if="canStartCopilot" variant="primary" :left-icon="MagicStick"
+            :loading="copilotStarting" @click="startCopilot"
+          >AI 经营副驾驶</GlassButton>
         </div>
 
         <div class="cr-profile-scroll">
@@ -206,7 +210,11 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { startCustomerCopilot } from '@/api/agentRuntime'
+import { useAuthStore } from '@/stores/auth'
 import { useCustomerRadar } from './composables/useCustomerRadar'
 import {
   RefreshRight, CircleCheck, Search, MagicStick, PriceTag, Aim,
@@ -222,6 +230,15 @@ const {
   completeAction, dismissAction, snoozeAction, sendFeedback,
   loadSources, saveNote, refresh,
 } = useCustomerRadar()
+
+const router = useRouter()
+const auth = useAuthStore()
+const copilotStarting = ref(false)
+const canStartCopilot = computed(() => (
+  auth.hasPermission('agent_runtime:write')
+  && auth.hasPermission('agent_runtime:invoke')
+  && auth.hasPermission('order_intelligence:read')
+))
 
 const snoozeUntil = new Date(Date.now() + 24 * 3600 * 1000).toISOString().slice(0, 16)
 
@@ -251,7 +268,32 @@ function openSources(type) {
   }
 }
 
-import { ElMessage } from 'element-plus'
+async function startCopilot() {
+  let question
+  try {
+    const result = await ElMessageBox.prompt(
+      '副驾驶将只读取你有权访问的客户、订单、知识、物流与价格事实，不会自动修改业务数据。',
+      `分析 ${selectedProfile.value.customer_name}`,
+      {
+        inputType: 'textarea',
+        inputPlaceholder: '例如：这个客户近期最值得跟进的机会和风险是什么？',
+        inputValue: '这个客户近期最值得跟进的机会、风险和下一步动作是什么？',
+        inputValidator: value => value?.trim().length >= 5 || '请至少输入 5 个字的问题',
+      },
+    )
+    question = result.value.trim()
+  } catch { return }
+  copilotStarting.value = true
+  try {
+    const run = await startCustomerCopilot({
+      profileId: selectedProfile.value.id,
+      customerName: selectedProfile.value.customer_name,
+      question,
+    })
+    router.push({ name: 'AgentRunDetail', params: { runId: run.id } })
+  } finally { copilotStarting.value = false }
+}
+
 </script>
 
 <style scoped>
@@ -307,7 +349,7 @@ import { ElMessage } from 'element-plus'
 .cr-action-text { font-weight: 800; font-size: 12px; color: #344155; line-height: 1.4; }
 
 /* 右栏 */
-.cr-profile-head { padding: 12px 14px; border-bottom: 1px solid #e0e6ef; flex-shrink: 0; }
+.cr-profile-head { padding: 12px 14px; border-bottom: 1px solid #e0e6ef; flex-shrink: 0; display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .cr-profile-head h2 { margin: 0; font-size: 17px; }
 .cr-profile-meta { display: flex; gap: 5px; margin-top: 6px; flex-wrap: wrap; }
 .cr-profile-scroll { padding: 10px 14px; overflow: auto; flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; }

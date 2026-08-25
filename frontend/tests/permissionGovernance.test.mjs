@@ -14,6 +14,7 @@ test('new domains have Chinese permission ownership instead of falling into Engl
     festival_order: '采购节数据明细',
     knowledge: '企业知识库',
     operations: '运行与自动化中心',
+    agent_runtime: 'AI Agent 任务中心',
     order_intelligence: '订单经营决策台',
     salary: '薪资计算',
   }

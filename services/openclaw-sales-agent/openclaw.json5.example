@@ -12,11 +12,48 @@
     terminal: { enabled: false },
     controlUi: { enabled: true },
   },
+  secrets: {
+    providers: {
+      mimo_key_file: {
+        source: "file",
+        path: "~/.openclaw-ark-sales/secrets/mimo-api-key",
+        mode: "singleValue",
+      },
+      deepseek_key_file: {
+        source: "file",
+        path: "~/.openclaw-ark-sales/secrets/deepseek-api-key",
+        mode: "singleValue",
+      },
+    },
+  },
+  models: {
+    providers: {
+      mimo: {
+        baseUrl: "https://token-plan-cn.xiaomimimo.com/v1",
+        apiKey: { source: "file", provider: "mimo_key_file", id: "value" },
+        api: "openai-completions",
+        agentRuntime: { id: "openclaw" },
+        models: [{
+          id: "mimo-v2.5",
+          name: "MiMo V2.5",
+          reasoning: true,
+          input: ["text"],
+          contextWindow: 200000,
+          maxTokens: 8192,
+          api: "openai-completions",
+        }],
+      },
+      deepseek: {
+        apiKey: { source: "file", provider: "deepseek_key_file", id: "value" },
+      },
+    },
+  },
   agents: {
     defaults: {
       workspace: "~/.openclaw-ark-sales/workspace",
-      model: { primary: "deepseek/deepseek-v4-flash" },
+      model: { primary: "mimo/mimo-v2.5" },
       models: {
+        "mimo/mimo-v2.5": { agentRuntime: { id: "openclaw" } },
         "deepseek/deepseek-v4-flash": { agentRuntime: { id: "openclaw" } },
         "deepseek/deepseek-v4-pro": { agentRuntime: { id: "openclaw" } },
       },
@@ -66,6 +103,7 @@
             sandbox: "workspace-write",
             clearEnv: [
               "OPENCLAW_GATEWAY_TOKEN",
+              "MIMO_API_KEY",
               "DEEPSEEK_API_KEY",
               "OPENAI_API_KEY",
               "ARK_AGENT_TOKEN",

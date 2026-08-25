@@ -7,6 +7,7 @@ MVP 策略：纯规则引擎，无 AI 调用。
 from __future__ import annotations
 
 import logging
+import hashlib
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -208,23 +209,26 @@ def generate_daily_actions(
     1. 查询该用户的所有活跃画像
     2. 对每个画像查最近的机会数据
     3. 规则分类 + 生成行动
-    4. Upsert 到 ark_customer_actions
+    4. 按客户+日期+策略幂等更新 ark_customer_actions
+
+    已完成、已忽略和已延后的行动属于用户事实，刷新不得覆盖。
     """
     if not action_date:
         action_date = date.today()
 
-    # 清除该用户今日旧行动
-    db.query(CustomerAction).filter(
-        CustomerAction.owner_user_id == owner_user_id,
-        CustomerAction.action_date == action_date,
-    ).delete()
-    db.flush()
-
-    # 查询活跃画像
+    policy_version = "rule-v2-idempotent"
+    # 锁住画像行，串行化同一业务员的并发刷新；唯一指纹是第二道防线。
     profiles = db.query(CustomerProfile).filter(
         CustomerProfile.owner_user_id == owner_user_id,
         CustomerProfile.status == "active",
-    ).all()
+    ).with_for_update().all()
+    existing_rows = db.query(CustomerAction).filter(
+        CustomerAction.owner_user_id == owner_user_id,
+        CustomerAction.action_date == action_date,
+    ).order_by(CustomerAction.id.desc()).all()
+    existing_by_profile = {}
+    for existing in existing_rows:
+        existing_by_profile.setdefault(existing.profile_id, existing)
 
     now = datetime.utcnow()
     actions = []
@@ -272,20 +276,47 @@ def generate_daily_actions(
         # 排序权重：priority_score + thread 排序加分
         sort_order = profile.priority_score * 10 + (100 - thread_info["sort"])
 
-        action = CustomerAction(
-            profile_id=profile.id,
-            owner_user_id=owner_user_id,
-            thread_group=thread,
-            thread_priority=thread_info["priority_label"],
-            action_reason=reason,
-            suggested_next_action=next_action,
-            suggested_message=message,
-            source_evidence=evidence,
-            action_status="pending",
-            action_date=action_date,
-            sort_order=sort_order,
-        )
-        db.add(action)
+        fingerprint = hashlib.sha256(
+            f"rule|{policy_version}|{profile.id}|{action_date.isoformat()}".encode("utf-8")
+        ).hexdigest()
+        action = existing_by_profile.get(profile.id)
+        if action is None:
+            action = CustomerAction(
+                profile_id=profile.id,
+                owner_user_id=owner_user_id,
+                thread_group=thread,
+                thread_priority=thread_info["priority_label"],
+                action_reason=reason,
+                suggested_next_action=next_action,
+                suggested_message=message,
+                source_evidence=evidence,
+                action_status="pending",
+                action_date=action_date,
+                sort_order=sort_order,
+                source_type="rule",
+                source_fingerprint=fingerprint,
+                policy_version=policy_version,
+                evidence_status="valid",
+                generated_at=now,
+            )
+            db.add(action)
+            existing_by_profile[profile.id] = action
+        elif action.action_status == "pending" and action.source_type == "rule":
+            action.thread_group = thread
+            action.thread_priority = thread_info["priority_label"]
+            action.action_reason = reason
+            action.suggested_next_action = next_action
+            action.suggested_message = message
+            action.source_evidence = evidence
+            action.sort_order = sort_order
+            action.source_fingerprint = fingerprint
+            action.policy_version = policy_version
+            action.evidence_status = "valid"
+            action.generated_at = now
+        elif not action.source_fingerprint:
+            # 只为历史行补齐幂等元数据，不触碰用户处理结果和建议正文。
+            action.source_fingerprint = fingerprint
+            action.policy_version = policy_version
         actions.append(action)
 
     db.commit()

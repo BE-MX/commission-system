@@ -1,0 +1,32 @@
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 02e1555..14af7a4 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -5,0 +6 @@ settings:
++  injectWorkspacePackages: true
+diff --git a/pnpm-workspace.yaml b/pnpm-workspace.yaml
+index ec6cfd3..0c72a00 100644
+--- a/pnpm-workspace.yaml
++++ b/pnpm-workspace.yaml
+@@ -25,0 +26 @@ linkWorkspacePackages: true
++injectWorkspacePackages: true
+diff --git a/scripts/build-exe-for-python-sdk.ts b/scripts/build-exe-for-python-sdk.ts
+index 4773a50..e6a695b 100644
+--- a/scripts/build-exe-for-python-sdk.ts
++++ b/scripts/build-exe-for-python-sdk.ts
+@@ -255 +254,0 @@ class SingleExeBuild {
+-      '--legacy',
+@@ -258 +257 @@ class SingleExeBuild {
+-      '--config.auto-install-peers=false',
++      '--config.strict-dep-builds=false',
+@@ -261,0 +261,10 @@ class SingleExeBuild {
++    await this.run('restore reviewed node-pty helper mode', process.execPath, [
++      join(
++        this.staging,
++        'node_modules',
++        '@deepseek-ai',
++        'dsh-subprocess-local',
++        'scripts',
++        'ensure-spawn-helper.mjs',
++      ),
++    ])

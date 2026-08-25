@@ -103,6 +103,7 @@ class TestSchedulerRegistration:
                 "knowledge_image_cleanup",
                 "runtime_heartbeat_monitor",
                 "operations_history_cleanup",
+                "agent_raw_event_redaction",
             }
             design_image = scheduler.get_job("design_image_queue")
             assert design_image.max_instances == 1
@@ -118,6 +119,10 @@ class TestSchedulerRegistration:
             cleanup_fields = {field.name: str(field) for field in customer_cleanup.trigger.fields}
             assert cleanup_fields["hour"] == "3"
             assert cleanup_fields["minute"] == "30"
+            agent_cleanup = scheduler.get_job("agent_raw_event_redaction")
+            agent_cleanup_fields = {field.name: str(field) for field in agent_cleanup.trigger.fields}
+            assert agent_cleanup_fields["hour"] == "3"
+            assert agent_cleanup_fields["minute"] == "50"
             daily = scheduler.get_job("festival_daily_report")
             daily_fields = {field.name: str(field) for field in daily.trigger.fields}
             assert daily_fields["hour"] == "17"

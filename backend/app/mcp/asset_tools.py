@@ -185,7 +185,7 @@ def register_asset_tools(mcp) -> None:
         """
         with _session() as db:
             try:
-                user = require_identity(ctx, db)
+                user = require_identity(ctx, db, tool_name="list_asset_taxonomy")
             except MCPAuthError as e:
                 return _err(str(e))
             if not {"asset:read"} & set(user.get("permissions", [])) and "super_admin" not in user.get("roles", []):
@@ -230,7 +230,7 @@ def register_asset_tools(mcp) -> None:
         """
         with _session() as db:
             try:
-                user = require_identity(ctx, db)
+                user = require_identity(ctx, db, tool_name="search_assets")
             except MCPAuthError as e:
                 return _err(str(e))
             if not {"asset:read"} & set(user.get("permissions", [])) and "super_admin" not in user.get("roles", []):

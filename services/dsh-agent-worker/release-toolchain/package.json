@@ -1,0 +1,9 @@
+{
+  "name": "@leshine/ark-dsh-release-toolchain",
+  "private": true,
+  "version": "0.0.0",
+  "packageManager": "pnpm@11.7.0",
+  "dependencies": {
+    "@yao-pkg/pkg": "6.21.0"
+  }
+}
