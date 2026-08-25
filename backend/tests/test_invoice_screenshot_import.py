@@ -18,6 +18,8 @@ from sqlalchemy import create_engine, inspect, text
 
 from app.auth.models import ArkUser, ArkUserExternalBinding
 from app.auth.utils import create_access_token
+from app.ai.models import AiPreset, AiProvider
+from app.bootstrap import seed_ai
 from app.core.database import get_db
 from app.invoice import screenshot_import_service, service, xiaoman_service
 from app.invoice.models import Invoice, InvoiceDelegateGrant
@@ -371,6 +373,174 @@ def test_ai_boundary_rejects_non_image_without_calling_provider(db, monkeypatch)
             db, image_bytes=b"not-an-image", content_type="image/png", actor_user_id=27,
         )
     assert called is False
+
+
+def test_invoice_screenshot_seed_requires_the_anthropic_teamrouter_provider(monkeypatch):
+    calls = []
+    monkeypatch.setattr(seed_ai, "_auto_create_preset", lambda **kwargs: calls.append(kwargs))
+    monkeypatch.setattr(seed_ai, "_upgrade_teamrouter_chat_endpoint", lambda: None)
+    monkeypatch.setattr(seed_ai, "_upgrade_invoice_screenshot_preset", lambda: None)
+    monkeypatch.setattr(seed_ai, "_upgrade_asset_analyze_prompt", lambda: None)
+
+    seed_ai.auto_init_ai_presets()
+
+    screenshot = next(call for call in calls if call["preset_name"] == "invoice_screenshot_extract")
+    assert screenshot["provider_name_hint"] == "TeamRouter-Chat"
+    assert screenshot["require_direct_anthropic"] is True
+    assert screenshot["allow_provider_fallback"] is False
+    assert screenshot["model_name_hint"] == "claude-fable-5"
+
+
+def test_teamrouter_chat_endpoint_upgrade_only_changes_the_known_old_host(db, monkeypatch):
+    provider = AiProvider(
+        name="TeamRouter-Chat",
+        provider_type="direct",
+        api_type="anthropic",
+        api_base="https://api.teamorouter.com/",
+        is_enabled=True,
+        timeout_sec=120,
+    )
+    db.add(provider)
+    db.commit()
+
+    class SessionContext:
+        def __enter__(self):
+            return db
+
+        def __exit__(self, *_args):
+            return False
+
+    monkeypatch.setattr(seed_ai, "SessionLocal", SessionContext)
+    seed_ai._upgrade_teamrouter_chat_endpoint()
+
+    db.refresh(provider)
+    assert provider.api_base == "https://api.teamorouter.cn"
+
+    provider.api_base = "https://chat.internal.example/v1"
+    db.commit()
+    seed_ai._upgrade_teamrouter_chat_endpoint()
+    db.refresh(provider)
+    assert provider.api_base == "https://chat.internal.example/v1"
+
+
+def test_strict_screenshot_seed_does_not_fallback_to_mimo(db, monkeypatch):
+    db.add(AiProvider(
+        name="MIMO",
+        provider_type="direct",
+        api_type="openai",
+        api_base="https://example.invalid/v1",
+        is_enabled=True,
+        timeout_sec=120,
+    ))
+    db.commit()
+
+    class SessionContext:
+        def __enter__(self):
+            return db
+
+        def __exit__(self, *_args):
+            return False
+
+    monkeypatch.setattr(seed_ai, "SessionLocal", SessionContext)
+    seed_ai._auto_create_preset(
+        preset_name="invoice_screenshot_extract",
+        system_prompt="extract",
+        parameters={"max_tokens": 4096},
+        description="screenshot",
+        provider_name_hint="TeamRouter-Chat",
+        require_direct_anthropic=True,
+        allow_provider_fallback=False,
+        model_name_hint="claude-fable-5",
+    )
+
+    assert db.query(AiPreset).filter(AiPreset.preset_name == "invoice_screenshot_extract").first() is None
+
+
+def test_existing_mimo_screenshot_preset_is_repaired_idempotently(db, monkeypatch):
+    mimo = AiProvider(
+        name="MIMO", provider_type="direct", api_type="openai",
+        api_base="https://mimo.example/v1", is_enabled=True, timeout_sec=120,
+    )
+    target = AiProvider(
+        name="TeamRouter-Chat", provider_type="direct", api_type="anthropic",
+        api_base="https://api.teamorouter.cn", is_enabled=True, timeout_sec=120,
+    )
+    db.add_all([mimo, target])
+    db.flush()
+    preset = AiPreset(
+        preset_name="invoice_screenshot_extract",
+        provider_id=mimo.id,
+        model="mimo-v2.5-pro",
+        system_prompt="管理员自定义提示词",
+        parameters={"temperature": 0},
+        description="customized",
+        is_enabled=False,
+    )
+    db.add(preset)
+    db.commit()
+
+    class SessionContext:
+        def __enter__(self):
+            return db
+
+        def __exit__(self, *_args):
+            return False
+
+    monkeypatch.setattr(seed_ai, "SessionLocal", SessionContext)
+    seed_ai._upgrade_invoice_screenshot_preset()
+    seed_ai._upgrade_invoice_screenshot_preset()
+
+    db.refresh(preset)
+    assert preset.provider_id == target.id
+    assert preset.model == "claude-fable-5"
+    assert preset.system_prompt == "管理员自定义提示词"
+    assert preset.parameters == {"temperature": 0}
+    assert preset.is_enabled is False
+
+    preset.model = "mimo-v2.5-pro"
+    db.commit()
+    seed_ai._upgrade_invoice_screenshot_preset()
+    db.refresh(preset)
+    assert preset.provider_id == target.id
+    assert preset.model == "claude-fable-5"
+
+
+def test_screenshot_preset_upgrade_waits_for_an_enabled_target(db, monkeypatch):
+    mimo = AiProvider(
+        name="MIMO", provider_type="direct", api_type="openai",
+        api_base="https://mimo.example/v1", is_enabled=True, timeout_sec=120,
+    )
+    target = AiProvider(
+        name="TeamRouter-Chat", provider_type="direct", api_type="anthropic",
+        api_base="https://api.teamorouter.cn", is_enabled=False, timeout_sec=120,
+    )
+    db.add_all([mimo, target])
+    db.flush()
+    preset = AiPreset(
+        preset_name="invoice_screenshot_extract", provider_id=mimo.id,
+        model="mimo-v2.5-pro", is_enabled=True,
+    )
+    db.add(preset)
+    db.commit()
+
+    class SessionContext:
+        def __enter__(self):
+            return db
+
+        def __exit__(self, *_args):
+            return False
+
+    monkeypatch.setattr(seed_ai, "SessionLocal", SessionContext)
+    seed_ai._upgrade_invoice_screenshot_preset()
+    db.refresh(preset)
+    assert preset.provider_id == mimo.id
+
+    target.is_enabled = True
+    db.commit()
+    seed_ai._upgrade_invoice_screenshot_preset()
+    db.refresh(preset)
+    assert preset.provider_id == target.id
+    assert preset.model == "claude-fable-5"
 
 
 def test_screenshot_preview_endpoint_requires_write_permission(db):

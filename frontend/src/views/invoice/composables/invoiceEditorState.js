@@ -1,5 +1,17 @@
 import { normalizeDiscount } from './invoiceSettlement.js'
 
+export const INVOICE_NO_MAX_LENGTH = 64
+
+export function screenshotOrderName(preview = {}) {
+  const extracted = String(preview?.extraction?.order_name || '').trim()
+  const patched = String(preview?.invoice_patch?.source_order_name || '').trim()
+  return extracted || patched
+}
+
+export function screenshotInvoiceNo(preview = {}) {
+  return screenshotOrderName(preview).slice(0, INVOICE_NO_MAX_LENGTH)
+}
+
 export function emptyInvoiceForm() {
   return {
     id: null, invoice_no: '', order_type: 'stock', sales_user_id: null, customer_id: '', customer_name: '',
