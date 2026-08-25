@@ -780,7 +780,7 @@ def create_invoice(
     )
     db.refresh(invoice)
     invoice = service.get_invoice(db, invoice.id)
-    return ok(service.serialize_detail(invoice))
+    return ok(service.serialize_detail(invoice, db))
 
 
 @router.post("/import/screenshot/create", summary="Create invoice from a signed screenshot preview", status_code=201)
@@ -803,7 +803,7 @@ def create_invoice_from_screenshot(
     )
     db.refresh(invoice)
     invoice = service.get_invoice(db, invoice.id)
-    return ok(service.serialize_detail(invoice))
+    return ok(service.serialize_detail(invoice, db))
 
 
 @router.get("/invoices/{invoice_id}", summary="Invoice detail")
@@ -816,7 +816,7 @@ def get_invoice(
     if not invoice:
         raise HTTPException(404, "发票不存在")
     _ensure_invoice_visible(db, invoice, current_user)
-    return ok(service.serialize_detail(invoice))
+    return ok(service.serialize_detail(invoice, db))
 
 
 @router.put("/invoices/{invoice_id}", summary="Update invoice")
@@ -826,7 +826,7 @@ def update_invoice(
     db: Session = Depends(get_db),
     current_user=Depends(require_permission("invoice:write")),
 ):
-    invoice = service.get_invoice(db, invoice_id)
+    invoice = service.get_invoice(db, invoice_id, for_update=True)
     if not invoice:
         raise HTTPException(404, "发票不存在")
     _ensure_invoice_visible(db, invoice, current_user)
@@ -834,7 +834,7 @@ def update_invoice(
         db, lambda: service.update_invoice(db, invoice, body, user_id=_user_id(current_user)),
     )
     invoice = service.get_invoice(db, invoice.id)
-    return ok(service.serialize_detail(invoice))
+    return ok(service.serialize_detail(invoice, db))
 
 
 @router.delete("/invoices/{invoice_id}", summary="Delete invoice")
@@ -843,7 +843,7 @@ def delete_invoice(
     db: Session = Depends(get_db),
     current_user=Depends(require_permission("invoice:write")),
 ):
-    invoice = service.get_invoice(db, invoice_id)
+    invoice = service.get_invoice(db, invoice_id, for_update=True)
     if not invoice:
         raise HTTPException(404, "发票不存在")
     _ensure_invoice_visible(db, invoice, current_user)
@@ -901,7 +901,12 @@ def sync_invoice(
             db.rollback()
             raise HTTPException(409, f"{exc}；半成品预占释放异常，请联系管理员")
         raise HTTPException(409, str(exc))
-    result = xiaoman_service.sync_invoice(db, invoice, operator_id=operator_id)
+    result = xiaoman_service.sync_invoice(
+        db,
+        invoice,
+        operator_id=operator_id,
+        inventory_operation_key=operation_key,
+    )
     if result.get("ok"):
         try:
             semifinished_invoice_service.finalize_invoice_sync(db, invoice_id, operation_key, operator_id)
@@ -918,6 +923,16 @@ def sync_invoice(
             }
         else:
             db.commit()
+    elif result.get("okki_accepted") and operation_key:
+        # OKKI 已建单但响应缺行：无法可靠判断哪些产品已经生效，保留整批预占，
+        # 由管理员核对 OKKI 后选择 finalize/release，禁止恢复为可用库存造成超卖。
+        result["message"] = f"{result.get('message') or 'OKKI 已受理但回写不完整'}；半成品库存保持预占，请核对后恢复"
+        result["inventory_pending"] = True
+        try:
+            db.commit()
+        except Exception as exc:  # noqa: BLE001 - 预占已在第一阶段提交，失败时仍安全保持 pending
+            logger.warning("invoice partial-accept state commit failed invoice=%s: %s", invoice_id, exc)
+            db.rollback()
     else:
         try:
             semifinished_invoice_service.release_invoice_sync(db, invoice_id, operation_key, operator_id)

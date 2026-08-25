@@ -32,6 +32,15 @@
 - 订单智能分析索引（2026-08-13，业务库幂等在线 DDL，不进 Alembic）：`okki_orders.idx_order_intel_user_account_date(user_id, account_date)`，加速个人范围和由团队成员反查订单的日期区间查询；执行 `cd backend && python -m scripts.ensure_order_intelligence_indexes`
 
 **主要业务表（commission_db）**：
+- `ark_semifinished_materials` — 半成品主数据；`(size,color_key)` 唯一，数量业务统一用 g，颜色类型描述物料本身（solid/t/named_t）。
+- `ark_semifinished_product_mappings` / `ark_semifinished_product_components` — OKKI 产品解析快照与半成品组成；产品唯一键 `(source_type,product_id)`，组成比例合计由服务层保证为 1，自动结果可进入 `needs_review`。
+- `ark_semifinished_orders` / `ark_semifinished_order_items` — 手工或随生产订单创建的半成品订单及明细；状态 `submitted/partial/completed/terminated`，订购量和累计入库量均为 `DECIMAL(14,3)` g。
+- `ark_semifinished_inventory_balances` — 每物料唯一余额快照，分 `on_hand_grams` 与 `reserved_grams`；可用量实时计算为实存减占用，更新时持有行锁。
+- `ark_semifinished_inventory_ledger` — 不可变库存流水；全局 `idempotency_key` 唯一，记录变化后实存/占用、业务来源及操作人。
+- `ark_semifinished_cart_plans` — 生产购物车行的半成品同步下单计划；购物车数量变化时按比例缩放，创建生产订单后级联删除。
+- `ark_invoice_semifinished_allocations` — 发票当前已出库量和 OKKI 同步期间待处理差额；`(invoice_id,material_id)` 唯一，`pending` 批次通过 `operation_key` 串联预占、完成或释放。
+- `ark_invoice_sync_logs.inventory_operation_key` — 121 迁移新增；把 OKKI 成功日志与本次半成品预占批次精确关联，管理员恢复时禁止用历史成功日志误确认新批次。
+- `ark_invoice_items.semifinished_enabled` / `semifinished_plan` — 生产型发票行是否使用半成品及当次计划快照；JSON 只保存 `material_id/quantity_grams`，同步前重新校验已审核映射。
 - `sys_dict` — 系统字典（type, code, label, sort, is_active）；`(type, code)` 唯一索引
 - `ark_permissions` — 权限表（code 唯一, module, action, label；046 起新增 **kind** page/action/data、**is_legacy** 下架标记、**sort**；seed 为 upsert，元数据每次启动刷新）
 - `ark_permission_audit` — 角色权限变更审计（046 迁移：role_id/role_name, operator, added_codes/removed_codes JSON）

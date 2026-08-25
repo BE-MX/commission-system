@@ -5,7 +5,7 @@ from decimal import Decimal, InvalidOperation
 import re
 
 
-PARSER_VERSION = "sf-v1"
+PARSER_VERSION = "sf-v2"
 _SIZE_RE = re.compile(r"^\d+(?:\.\d+)?$")
 _WEIGHT_RE = re.compile(r"^(\d+(?:\.\d+)?)\s*g$", re.I)
 
@@ -67,7 +67,13 @@ def split_color_expression(expression: str) -> tuple[tuple[str, ...], str, list[
     components: list[str] = []
     errors: list[str] = []
     types: list[str] = []
-    branches = [part for part in (expression or "").split("&") if part.strip()]
+    normalized = normalize_color(expression)
+    # 英文命名色（如 "Salt & Pepper"）整体就是一个 T 色名称；只有带 # 的
+    # 编码表达式才把 & 解释为多个半成品分支。
+    branches = (
+        [part for part in normalized.split("&") if part.strip()]
+        if normalized.startswith("#") else [normalized]
+    )
     for branch in branches:
         values, color_type, branch_errors = _split_branch(branch)
         components.extend(values)
@@ -126,4 +132,3 @@ def parse_product(
         parse_status=status,
         message="；".join(errors) or None,
     )
-

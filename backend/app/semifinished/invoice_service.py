@@ -1,12 +1,12 @@
 """订单发票同步时的半成品预占、正式出库和失败释放。"""
 
-from datetime import datetime
 from decimal import Decimal
 from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
 from app.invoice.models import Invoice, InvoiceSyncLog
+from app.invoice.time_utils import beijing_now
 from app.semifinished.inventory_service import lock_balance, qty, write_ledger
 from app.semifinished.models import (
     InvoiceAllocation, ProductComponent, ProductMapping, SemifinishedMaterial,
@@ -100,7 +100,7 @@ def prepare_invoice_sync(db: Session, invoice: Invoice, operator_id: int | None)
         allocation.pending_delta_grams = delta
         allocation.operation_key = operation_key
         allocation.status = "pending"
-        allocation.pending_at = datetime.utcnow()
+        allocation.pending_at = beijing_now()
     db.commit()
     return operation_key
 
@@ -136,9 +136,12 @@ def finalize_invoice_sync(db: Session, invoice_id: int, operation_key: str | Non
     rows = (
         db.query(InvoiceAllocation)
         .filter(InvoiceAllocation.invoice_id == invoice_id, InvoiceAllocation.operation_key == operation_key, InvoiceAllocation.status == "pending")
+        .order_by(InvoiceAllocation.material_id)
         .with_for_update()
         .all()
     )
+    if not rows:
+        raise RuntimeError("未找到对应的半成品待出库批次")
     for allocation in rows:
         delta = qty(allocation.pending_delta_grams)
         balance = lock_balance(db, allocation.material_id)
@@ -178,9 +181,12 @@ def release_invoice_sync(db: Session, invoice_id: int, operation_key: str | None
     rows = (
         db.query(InvoiceAllocation)
         .filter(InvoiceAllocation.invoice_id == invoice_id, InvoiceAllocation.operation_key == operation_key, InvoiceAllocation.status == "pending")
+        .order_by(InvoiceAllocation.material_id)
         .with_for_update()
         .all()
     )
+    if not rows:
+        raise RuntimeError("未找到对应的半成品待释放批次")
     for allocation in rows:
         delta = qty(allocation.pending_delta_grams)
         if delta > 0:
@@ -210,6 +216,7 @@ def recover_invoice_sync(db: Session, invoice_id: int, action: str, operator_id:
     rows = (
         db.query(InvoiceAllocation)
         .filter(InvoiceAllocation.invoice_id == invoice_id, InvoiceAllocation.status == "pending")
+        .order_by(InvoiceAllocation.material_id)
         .with_for_update()
         .all()
     )
@@ -221,9 +228,15 @@ def recover_invoice_sync(db: Session, invoice_id: int, action: str, operator_id:
     operation_key = next(iter(operation_keys))
     if action == "finalize":
         invoice = db.get(Invoice, invoice_id)
+        pending_times = [row.pending_at for row in rows if row.pending_at]
+        if len(pending_times) != len(rows):
+            raise ValueError("待恢复记录缺少操作时间，请人工核对数据库")
+        pending_since = min(pending_times)
         accepted = bool(invoice and invoice.xiaoman_order_id and db.query(InvoiceSyncLog.id).filter(
             InvoiceSyncLog.invoice_id == invoice_id,
             InvoiceSyncLog.success == 1,
+            InvoiceSyncLog.inventory_operation_key == operation_key,
+            InvoiceSyncLog.created_at >= pending_since,
         ).first())
         if not accepted:
             raise ValueError("未找到 OKKI 已受理证据，禁止正式出库")

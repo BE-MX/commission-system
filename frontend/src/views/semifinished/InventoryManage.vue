@@ -32,7 +32,7 @@
     <el-dialog v-model="adjustVisible" title="库存调整" width="460px">
       <p>{{ currentMaterial?.size }}/{{ currentMaterial?.color_code }}，当前实存 {{ grams(currentMaterial?.on_hand_grams) }}g</p>
       <el-form label-width="90px"><el-form-item label="调整数量"><el-input-number v-model="adjustForm.quantity_grams" :precision="3" /> g</el-form-item><el-form-item label="调整原因" required><el-input v-model="adjustForm.remark" type="textarea" :rows="2" maxlength="500" /></el-form-item></el-form>
-      <template #footer><el-button @click="adjustVisible=false">取消</el-button><el-button type="primary" @click="submitAdjust">确认调整</el-button></template>
+      <template #footer><el-button @click="adjustVisible=false">取消</el-button><el-button type="primary" :loading="adjustSubmitting" @click="submitAdjust">确认调整</el-button></template>
     </el-dialog>
   </div>
 </template>
@@ -45,6 +45,8 @@ import { adjustSemifinishedInventory, getInventoryLedger, getSemifinishedInvento
 const rows = ref([]); const loading = ref(false); const keyword = ref(''); const pagination = reactive({ page: 1, page_size: 20, total: 0 })
 const ledgerVisible = ref(false); const ledgerRows = ref([]); const currentMaterial = ref(null)
 const adjustVisible = ref(false); const adjustForm = reactive({ quantity_grams: 0, remark: '' })
+const adjustSubmitting = ref(false)
+const adjustIdempotencyKey = ref('')
 const grams = value => Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 3 })
 const signed = value => `${Number(value) > 0 ? '+' : ''}${grams(value)}`
 const stockText = value => ({ shortage: '短缺', warning: '预警', sufficient: '充足' }[value] || value)
@@ -53,8 +55,8 @@ const movementText = value => ({ inbound: '入库', outbound: '出库', reserve:
 async function load() { loading.value = true; try { const data = await getSemifinishedInventory({ page: pagination.page, page_size: pagination.page_size, keyword: keyword.value || undefined }); rows.value = data.items || []; pagination.total = data.total || 0 } finally { loading.value = false } }
 function search() { pagination.page = 1; load() }
 async function openLedger(row) { currentMaterial.value = row; const data = await getInventoryLedger(row.material_id, { page: 1, page_size: 100 }); ledgerRows.value = data.items || []; ledgerVisible.value = true }
-function openAdjust(row) { currentMaterial.value = row; Object.assign(adjustForm, { quantity_grams: 0, remark: '' }); adjustVisible.value = true }
-async function submitAdjust() { if (!Number(adjustForm.quantity_grams)) return ElMessage.warning('调整数量不能为0'); if (!adjustForm.remark.trim()) return ElMessage.warning('请填写调整原因'); await adjustSemifinishedInventory(currentMaterial.value.material_id, { ...adjustForm, idempotency_key: crypto.randomUUID() }); ElMessage.success('库存调整成功'); adjustVisible.value = false; load() }
+function openAdjust(row) { currentMaterial.value = row; Object.assign(adjustForm, { quantity_grams: 0, remark: '' }); adjustIdempotencyKey.value = crypto.randomUUID(); adjustVisible.value = true }
+async function submitAdjust() { if (!Number(adjustForm.quantity_grams)) return ElMessage.warning('调整数量不能为0'); if (!adjustForm.remark.trim()) return ElMessage.warning('请填写调整原因'); adjustSubmitting.value = true; try { await adjustSemifinishedInventory(currentMaterial.value.material_id, { ...adjustForm, idempotency_key: adjustIdempotencyKey.value }); ElMessage.success('库存调整成功'); adjustVisible.value = false; load() } finally { adjustSubmitting.value = false } }
 load()
 </script>
 

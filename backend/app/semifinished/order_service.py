@@ -2,6 +2,7 @@
 
 from datetime import date
 from decimal import Decimal
+from uuid import uuid4
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
@@ -16,20 +17,8 @@ ACTIVE_STATUSES = ("submitted", "partial")
 
 
 def _next_order_no(db: Session) -> str:
-    prefix = f"SFO{date.today():%Y%m%d}-"
-    latest = (
-        db.query(SemifinishedOrder.order_no)
-        .filter(SemifinishedOrder.order_no.like(f"{prefix}%"))
-        .order_by(SemifinishedOrder.order_no.desc())
-        .first()
-    )
-    sequence = 1
-    if latest:
-        try:
-            sequence = int(latest[0].rsplit("-", 1)[-1]) + 1
-        except (TypeError, ValueError):
-            sequence = 1
-    return f"{prefix}{sequence:03d}"
+    del db  # 订单号不依赖“查最大值”，避免并发下单生成重复号。
+    return f"SFO{date.today():%Y%m%d}-{uuid4().hex[:12].upper()}"
 
 
 def create_order(
@@ -169,11 +158,12 @@ def get_order(db: Session, order_id: int) -> dict | None:
     }
 
 
-def _refresh_order_status(order: SemifinishedOrder) -> None:
+def _refresh_order_status(order: SemifinishedOrder, items: list[SemifinishedOrderItem] | None = None) -> None:
     if order.status == "terminated":
         return
-    all_complete = all(qty(item.received_qty_grams) >= qty(item.order_qty_grams) for item in order.items)
-    any_received = any(qty(item.received_qty_grams) > 0 for item in order.items)
+    lines = items if items is not None else order.items
+    all_complete = all(qty(item.received_qty_grams) >= qty(item.order_qty_grams) for item in lines)
+    any_received = any(qty(item.received_qty_grams) > 0 for item in lines)
     order.status = "completed" if all_complete else ("partial" if any_received else "submitted")
 
 
@@ -186,34 +176,53 @@ def receive_item(
     operator_id: int,
     remark: str | None,
 ) -> dict:
-    existing = db.query(InventoryLedger).filter(InventoryLedger.idempotency_key == idempotency_key).one_or_none()
-    if existing:
-        return {"ledger_id": existing.id, "replayed": True}
-    item = (
-        db.query(SemifinishedOrderItem)
-        .filter(SemifinishedOrderItem.id == item_id)
-        .with_for_update()
-        .one_or_none()
-    )
-    if not item:
+    amount = qty(quantity_grams)
+    order_id = db.query(SemifinishedOrderItem.order_id).filter(SemifinishedOrderItem.id == item_id).scalar()
+    if order_id is None:
         raise ValueError("半成品订单明细不存在")
+    # 同一订单的收货必须先锁订单头，再按固定顺序锁全部明细；否则两条明细
+    # 并发完成时，各事务可能基于旧快照都把订单留在 partial。
     order = (
         db.query(SemifinishedOrder)
-        .options(selectinload(SemifinishedOrder.items))
-        .filter(SemifinishedOrder.id == item.order_id)
+        .filter(SemifinishedOrder.id == order_id)
         .with_for_update()
         .one()
     )
+    items = (
+        db.query(SemifinishedOrderItem)
+        .filter(SemifinishedOrderItem.order_id == order_id)
+        .order_by(SemifinishedOrderItem.id)
+        .populate_existing()
+        .with_for_update()
+        .all()
+    )
+    item = next((row for row in items if row.id == item_id), None)
+    if item is None:
+        raise ValueError("半成品订单明细不存在")
+    existing = (
+        db.query(InventoryLedger)
+        .filter(InventoryLedger.idempotency_key == idempotency_key)
+        .with_for_update()
+        .one_or_none()
+    )
+    if existing:
+        if not (
+            existing.movement_type == "inbound"
+            and existing.business_type == "semifinished_order"
+            and existing.business_line_id == item_id
+            and qty(existing.quantity_grams) == amount
+        ):
+            raise ValueError("幂等键已被其他库存操作使用")
+        return {"ledger_id": existing.id, "replayed": True}
     if order.status not in ACTIVE_STATUSES:
         raise ValueError("当前订单状态不允许入库")
-    amount = qty(quantity_grams)
     if amount <= 0 or qty(item.received_qty_grams) + amount > qty(item.order_qty_grams):
         raise ValueError("入库数量必须大于0且不能超过剩余数量")
     balance = lock_balance(db, item.material_id)
     item.received_qty_grams = qty(item.received_qty_grams) + amount
     balance.on_hand_grams = qty(balance.on_hand_grams) + amount
     balance.version += 1
-    _refresh_order_status(order)
+    _refresh_order_status(order, items)
     entry = write_ledger(
         db,
         balance=balance,

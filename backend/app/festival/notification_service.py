@@ -11,7 +11,7 @@ import random
 import subprocess
 import tempfile
 from datetime import date, datetime, time as dt_time, timedelta
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from urllib.parse import urlencode
 
 import anyio
@@ -333,15 +333,16 @@ def render_event_image(event: dict) -> Path:
     return output
 
 
-def _browser_executable() -> Path:
+def _browser_executable() -> Path | PureWindowsPath:
     configured = get_settings().FESTIVAL_BROWSER_EXECUTABLE.strip()
     candidates = [Path(configured)] if configured and "edge" not in configured.lower() else []
     candidates.extend([
-        Path("C:/Program Files/Google/Chrome/Application/chrome.exe"),
-        Path("C:/Program Files (x86)/Google/Chrome/Application/chrome.exe"),
+        PureWindowsPath("C:/Program Files/Google/Chrome/Application/chrome.exe"),
+        PureWindowsPath("C:/Program Files (x86)/Google/Chrome/Application/chrome.exe"),
     ])
     for path in candidates:
-        if path.is_file():
+        probe = path if isinstance(path, Path) else Path(str(path))
+        if probe.is_file():
             return path
     raise RuntimeError("采购节截图未找到 Google Chrome，请配置 FESTIVAL_BROWSER_EXECUTABLE")
 

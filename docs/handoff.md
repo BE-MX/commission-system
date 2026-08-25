@@ -8,6 +8,8 @@
 
 > 🚧 **当前开发（2026-08-25）**：`codex/invoice-screenshot-import` 已实现 OKKI 订单截图 AI 字段提取、确定性客户/业务员/产品/SKU/来源订单核对、人工预览填入、签名预览凭证、同图/同订单防重和重复推送禁用；迁移为 `119_invoice_screenshot_src`。独立对抗审查已完成，其发现的预览来源可伪造、上传整体读入、无候选时定制产品入口不可达、非 USD 订单误关联和 OCR 订单名不一致问题均已加固；专项后端 54 例、前端专项测试和 Vite 构建通过。迁移 119 已在合并前改接 118，需重跑 `alembic heads/upgrade` 确认唯一 head。
 
+> ✅ **功能分支完成（2026-08-25）**：`codex/semifinished-inventory` 已实现迁移 120/121 的半成品列表、产品解析关联与人工组成修正、按 g 下单/分批入库、实存/占用/可用/在制库存、生产购物车同步下单及生产发票的 OKKI 同步预占—出库—补偿恢复。线上迁移已到 121，产品同步结果为 794 个关联、233 个半成品、429 个待审核关联；待审核项不会自动下单或领料。详细规则见 `docs/requirements/2026-08-25-semifinished-orders-inventory.md`；尚未合入 main、发布前端或重启后端。
+
 ## 2026-08-20 DSH Agent Runtime 交接
 
 - 开发分支 `codex/agent-runtime-phase1` 已实现迁移 118、统一 Agent 控制面、受控模型/MCP 网关、隔离 DSH Worker、客户经营副驾驶、复购行动卡、获客 Shadow、任务中心和运行时间线；Feature Flag 全部默认关闭，尚未合入 main 或部署生产。

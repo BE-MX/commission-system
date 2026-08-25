@@ -175,6 +175,9 @@ def apply_sync(db: Session) -> dict:
         mapping.parse_message = result.message
         db.flush()
         mapping.components.clear()
+        # 先落旧组成的 DELETE，再插入同一物料的新组成；否则 MySQL 可能先执行
+        # INSERT，触发 uq_semifinished_mapping_material 重复键。
+        db.flush()
         component_count = len(result.components)
         base_ratio = (Decimal("1") / Decimal(component_count)).quantize(Decimal("0.000001"))
         assigned = Decimal("0")

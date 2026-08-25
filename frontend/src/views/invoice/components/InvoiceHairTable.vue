@@ -106,9 +106,9 @@
               <el-checkbox v-model="row.semifinished_enabled" :disabled="row.semifinished_loading" @change="enabled => onSemifinishedToggle(row, enabled)">自动使用</el-checkbox>
               <template v-if="row.semifinished_enabled">
                 <div v-for="item in row.semifinished_plan" :key="item.material_id" class="semifinished-line">
-                  <span>{{ item.size }}/{{ item.color_code }}</span>
+                  <span>{{ item.size && item.color_code ? `${item.size}/${item.color_code}` : `物料 #${item.material_id}` }}</span>
                   <el-input-number v-model="item.quantity_grams" :min="0.001" :precision="3" :controls="false" />
-                  <small>g</small>
+                  <small>g · 可用 {{ item.available_grams == null ? '--' : Number(item.available_grams).toLocaleString() }}g</small>
                 </div>
                 <el-button link type="primary" :loading="row.semifinished_loading" @click="loadSemifinished(row)">重新计算</el-button>
               </template>

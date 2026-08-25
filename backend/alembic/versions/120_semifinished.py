@@ -33,6 +33,10 @@ def _columns(table: str) -> set[str]:
     return {item["name"] for item in _inspector().get_columns(table)}
 
 
+def _indexes(table: str) -> set[str]:
+    return {item["name"] for item in _inspector().get_indexes(table)}
+
+
 def upgrade() -> None:
     if not _has_table("ark_semifinished_materials"):
         op.create_table(
@@ -52,6 +56,7 @@ def upgrade() -> None:
             sa.UniqueConstraint("size", "color_key", name="uq_semifinished_size_color"),
             comment="半成品主数据",
         )
+    if "idx_semifinished_material_status" not in _indexes("ark_semifinished_materials"):
         op.create_index("idx_semifinished_material_status", "ark_semifinished_materials", ["status", "size"])
 
     if not _has_table("ark_semifinished_product_mappings"):
@@ -74,6 +79,7 @@ def upgrade() -> None:
             sa.UniqueConstraint("source_type", "product_id", name="uq_semifinished_product_source"),
             comment="产品半成品解析结果",
         )
+    if "idx_semifinished_mapping_status" not in _indexes("ark_semifinished_product_mappings"):
         op.create_index("idx_semifinished_mapping_status", "ark_semifinished_product_mappings", ["parse_status", "product_id"])
 
     if not _has_table("ark_semifinished_product_components"):
@@ -111,6 +117,7 @@ def upgrade() -> None:
             sa.UniqueConstraint("order_no", name="uq_semifinished_order_no"),
             comment="半成品订单",
         )
+    if "idx_semifinished_order_status" not in _indexes("ark_semifinished_orders"):
         op.create_index("idx_semifinished_order_status", "ark_semifinished_orders", ["status", "created_at"])
 
     if not _has_table("ark_semifinished_order_items"):
@@ -165,6 +172,7 @@ def upgrade() -> None:
             sa.UniqueConstraint("idempotency_key", name="uq_semifinished_ledger_idempotency"),
             comment="半成品库存不可变流水",
         )
+    if "idx_semifinished_ledger_material" not in _indexes("ark_semifinished_inventory_ledger"):
         op.create_index("idx_semifinished_ledger_material", "ark_semifinished_inventory_ledger", ["material_id", "created_at"])
 
     if not _has_table("ark_semifinished_cart_plans"):
@@ -197,6 +205,7 @@ def upgrade() -> None:
             sa.UniqueConstraint("invoice_id", "material_id", name="uq_invoice_semifinished_material"),
             comment="发票半成品当前分配与同步差额",
         )
+    if "idx_invoice_semifinished_pending" not in _indexes("ark_invoice_semifinished_allocations"):
         op.create_index("idx_invoice_semifinished_pending", "ark_invoice_semifinished_allocations", ["status", "pending_at"])
 
     invoice_columns = _columns("ark_invoice_items")

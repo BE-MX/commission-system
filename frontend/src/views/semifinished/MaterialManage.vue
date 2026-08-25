@@ -63,12 +63,16 @@
     <el-dialog v-model="mappingVisible" title="确认半成品配比" width="620px">
       <p class="sf-muted">{{ editingMapping?.product_name }}</p>
       <div class="sf-component-list">
-        <div v-for="item in mappingComponents" :key="item.material_id" class="sf-component-row">
-          <span>{{ item.size }}/{{ item.color_code }}</span>
+        <div v-for="(item, index) in mappingComponents" :key="`${index}-${item.material_id}`" class="sf-component-row sf-mapping-row">
+          <el-select v-model="item.material_id" filterable placeholder="选择半成品">
+            <el-option v-for="material in mappingMaterialOptions" :key="material.id" :value="material.id" :label="`${material.size}/${material.color_code} · ${material.material_code}`" />
+          </el-select>
           <el-input-number v-model="item.ratio" :min="0.000001" :max="1" :precision="6" :step="0.05" />
           <span>{{ percent(item.ratio) }}</span>
+          <el-button link type="danger" @click="mappingComponents.splice(index, 1)">删除</el-button>
         </div>
       </div>
+      <el-button link type="primary" @click="mappingComponents.push({ material_id: null, ratio: 0 })">+ 添加组成物料</el-button>
       <p :class="ratioValid ? 'sf-success' : 'sf-danger'">配比合计：{{ percent(ratioTotal) }}</p>
       <template #footer><el-button @click="mappingVisible = false">取消</el-button><el-button type="primary" :disabled="!ratioValid" @click="saveMapping">确认配比</el-button></template>
     </el-dialog>
@@ -101,12 +105,19 @@ const preview = ref(null)
 const mappingVisible = ref(false)
 const editingMapping = ref(null)
 const mappingComponents = ref([])
+const mappingMaterialOptions = ref([])
 const orderVisible = ref(false)
 const orderItems = ref([])
 const orderRemark = ref('')
 
 const ratioTotal = computed(() => mappingComponents.value.reduce((sum, item) => sum + Number(item.ratio || 0), 0))
-const ratioValid = computed(() => Math.abs(ratioTotal.value - 1) < 0.000001)
+const ratioValid = computed(() => {
+  const ids = mappingComponents.value.map(item => item.material_id).filter(Boolean)
+  return ids.length === mappingComponents.value.length
+    && new Set(ids).size === ids.length
+    && ids.length > 0
+    && Math.abs(ratioTotal.value - 1) < 0.000001
+})
 const grams = value => Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 3 })
 const percent = value => `${(Number(value || 0) * 100).toFixed(2)}%`
 
@@ -128,7 +139,17 @@ async function applySync() {
   ElMessage.success(`已同步 ${result.applied} 个产品，${result.needs_review} 个待审核`)
   loadCurrent()
 }
-function editMapping(row) { editingMapping.value = row; mappingComponents.value = row.components.map(item => ({ ...item, ratio: Number(item.ratio) })); mappingVisible.value = true }
+async function loadAllMaterials() {
+  const first = await getMaterials({ page: 1, page_size: 100 })
+  const items = [...(first.items || [])]
+  const pages = Math.ceil(Number(first.total || items.length) / 100)
+  for (let page = 2; page <= pages; page += 1) {
+    const next = await getMaterials({ page, page_size: 100 })
+    items.push(...(next.items || []))
+  }
+  return items
+}
+async function editMapping(row) { editingMapping.value = row; mappingMaterialOptions.value = await loadAllMaterials(); mappingComponents.value = row.components.map(item => ({ ...item, ratio: Number(item.ratio) })); mappingVisible.value = true }
 async function saveMapping() {
   await updateMapping(editingMapping.value.id, { components: mappingComponents.value.map(item => ({ material_id: item.material_id, ratio: item.ratio })) })
   ElMessage.success('配比已确认'); mappingVisible.value = false; loadCurrent()

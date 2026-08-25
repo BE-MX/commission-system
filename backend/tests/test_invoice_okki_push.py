@@ -590,7 +590,9 @@ def test_sync_invoice_success_state_and_unique_id_writeback(db, monkeypatch, no_
         }
 
     monkeypatch.setattr(okki_client, "push_order", fake_push)
-    result = xiaoman_service.sync_invoice(db, invoice, operator_id=7)
+    result = xiaoman_service.sync_invoice(
+        db, invoice, operator_id=7, inventory_operation_key="inventory-batch-1",
+    )
 
     assert result["ok"] is True
     assert invoice.sync_status == "synced"
@@ -609,6 +611,7 @@ def test_sync_invoice_success_state_and_unique_id_writeback(db, monkeypatch, no_
 
     log = db.query(InvoiceSyncLog).filter(InvoiceSyncLog.invoice_id == invoice.id).one()
     assert log.action == "create" and log.success == 1 and log.operator_id == 7
+    assert log.inventory_operation_key == "inventory-batch-1"
     assert json.loads(log.request_digest)["company_id"] == 123456
 
 
@@ -623,7 +626,9 @@ def test_sync_invoice_failure_state_and_log(db, monkeypatch, no_reconcile):
         raise okki_client.OkkiApiError("OKKI 订单推送失败：boom")
 
     monkeypatch.setattr(okki_client, "push_order", fake_push)
-    result = xiaoman_service.sync_invoice(db, invoice, operator_id=7)
+    result = xiaoman_service.sync_invoice(
+        db, invoice, operator_id=7, inventory_operation_key="inventory-batch-1",
+    )
 
     assert result["ok"] is False
     assert invoice.sync_status == "sync_failed"
@@ -682,14 +687,18 @@ def test_sync_partial_response_fails_but_keeps_order_id(db, monkeypatch, no_reco
         }
 
     monkeypatch.setattr(okki_client, "push_order", fake_push)
-    result = xiaoman_service.sync_invoice(db, invoice, operator_id=7)
+    result = xiaoman_service.sync_invoice(
+        db, invoice, operator_id=7, inventory_operation_key="inventory-batch-1",
+    )
 
     assert result["ok"] is False and "1 行" in result["message"]
+    assert result["okki_accepted"] is True
     assert invoice.xiaoman_order_id == "424242"  # 单号已固化，重推走编辑语义
     assert invoice.sync_status == "sync_failed"
     assert invoice.items[0].xiaoman_unique_id == "111"  # 成功的行照常回写
     logs = db.query(InvoiceSyncLog).filter(InvoiceSyncLog.invoice_id == invoice.id).all()
     assert [log.success for log in logs] == [1, 0]  # 受理日志 + 缺行告警日志
+    assert logs[0].inventory_operation_key == "inventory-batch-1"
 
 
 def test_edit_push_generic_rows_merge_and_stock_duplicates_blocked(db):

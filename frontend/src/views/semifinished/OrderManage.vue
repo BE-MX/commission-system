@@ -48,7 +48,7 @@
         </el-form-item>
         <el-form-item label="备注"><el-input v-model="createForm.remark" type="textarea" :rows="2" maxlength="500" /></el-form-item>
       </el-form>
-      <template #footer><el-button @click="createVisible = false">取消</el-button><el-button type="primary" @click="submitCreate">提交</el-button></template>
+      <template #footer><el-button @click="createVisible = false">取消</el-button><el-button type="primary" :loading="createSubmitting" @click="submitCreate">提交</el-button></template>
     </el-dialog>
 
     <el-drawer v-model="detailVisible" title="半成品订单详情" size="760px">
@@ -72,7 +72,7 @@
     <el-dialog v-model="receiveVisible" title="录入半成品入库" width="460px">
       <p>{{ receivingItem?.size }}/{{ receivingItem?.color_code }}，剩余 {{ grams(receivingItem?.remaining_qty_grams) }}g</p>
       <el-form label-width="90px"><el-form-item label="本次入库"><el-input-number v-model="receiveForm.quantity_grams" :min="0.001" :max="Number(receivingItem?.remaining_qty_grams || 0)" :precision="3" /> g</el-form-item><el-form-item label="备注"><el-input v-model="receiveForm.remark" maxlength="500" /></el-form-item></el-form>
-      <template #footer><el-button @click="receiveVisible = false">取消</el-button><el-button type="primary" @click="submitReceive">确认入库</el-button></template>
+      <template #footer><el-button @click="receiveVisible = false">取消</el-button><el-button type="primary" :loading="receiveSubmitting" @click="submitReceive">确认入库</el-button></template>
     </el-dialog>
   </div>
 </template>
@@ -87,9 +87,12 @@ const filters = reactive({ keyword: '', status: '' })
 const pagination = reactive({ page: 1, page_size: 20, total: 0 })
 const rows = ref([]); const loading = ref(false)
 const createVisible = ref(false); const materialOptions = ref([])
+const createSubmitting = ref(false)
 const createForm = reactive({ batch_no: '', expected_delivery_date: null, is_urgent: false, remark: '', items: [] })
 const detailVisible = ref(false); const detail = ref(null)
 const receiveVisible = ref(false); const receivingItem = ref(null); const receiveForm = reactive({ quantity_grams: 0, remark: '' })
+const receiveSubmitting = ref(false)
+const receiveIdempotencyKey = ref('')
 const grams = value => Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 3 })
 const statusText = value => statusOptions.find(item => item.value === value)?.label || value
 const statusType = value => ({ submitted: 'primary', partial: 'warning', completed: 'success', terminated: 'info' }[value] || 'info')
@@ -97,12 +100,12 @@ const statusType = value => ({ submitted: 'primary', partial: 'warning', complet
 async function load() { loading.value = true; try { const data = await getSemifinishedOrders({ ...filters, page: pagination.page, page_size: pagination.page_size }); rows.value = data.items || []; pagination.total = data.total || 0 } finally { loading.value = false } }
 function search() { pagination.page = 1; load() }
 function reset() { filters.keyword = ''; filters.status = ''; search() }
-async function openCreate() { const data = await getMaterials({ page: 1, page_size: 100 }); materialOptions.value = data.items || []; Object.assign(createForm, { batch_no: '', expected_delivery_date: null, is_urgent: false, remark: '', items: [{ material_id: null, quantity_grams: 100 }] }); createVisible.value = true }
-async function submitCreate() { if (!createForm.items.length || createForm.items.some(item => !item.material_id || Number(item.quantity_grams) <= 0)) return ElMessage.warning('请完整填写订单明细'); await createSemifinishedOrder({ ...createForm }); ElMessage.success('订单已创建'); createVisible.value = false; load() }
+async function openCreate() { const first = await getMaterials({ page: 1, page_size: 100 }); const items = [...(first.items || [])]; const pages = Math.ceil(Number(first.total || items.length) / 100); for (let page = 2; page <= pages; page += 1) { const next = await getMaterials({ page, page_size: 100 }); items.push(...(next.items || [])) } materialOptions.value = items; Object.assign(createForm, { batch_no: '', expected_delivery_date: null, is_urgent: false, remark: '', items: [{ material_id: null, quantity_grams: 100 }] }); createVisible.value = true }
+async function submitCreate() { if (!createForm.items.length || createForm.items.some(item => !item.material_id || Number(item.quantity_grams) <= 0)) return ElMessage.warning('请完整填写订单明细'); createSubmitting.value = true; try { await createSemifinishedOrder({ ...createForm }); ElMessage.success('订单已创建'); createVisible.value = false; load() } finally { createSubmitting.value = false } }
 async function openDetail(row) { detail.value = await getSemifinishedOrder(row.id); detailVisible.value = true }
 async function terminate(row) { await ElMessageBox.confirm(`确认终止订单 ${row.order_no}？已有入库不会撤销。`, '终止订单'); await terminateSemifinishedOrder(row.id); ElMessage.success('订单已终止'); load(); if (detail.value?.id === row.id) detail.value = await getSemifinishedOrder(row.id) }
-function openReceive(row) { receivingItem.value = row; receiveForm.quantity_grams = Number(row.remaining_qty_grams); receiveForm.remark = ''; receiveVisible.value = true }
-async function submitReceive() { await receiveSemifinishedItem(receivingItem.value.id, { quantity_grams: receiveForm.quantity_grams, idempotency_key: crypto.randomUUID(), remark: receiveForm.remark || null }); ElMessage.success('入库成功'); receiveVisible.value = false; detail.value = await getSemifinishedOrder(detail.value.id); load() }
+function openReceive(row) { receivingItem.value = row; receiveForm.quantity_grams = Number(row.remaining_qty_grams); receiveForm.remark = ''; receiveIdempotencyKey.value = crypto.randomUUID(); receiveVisible.value = true }
+async function submitReceive() { receiveSubmitting.value = true; try { await receiveSemifinishedItem(receivingItem.value.id, { quantity_grams: receiveForm.quantity_grams, idempotency_key: receiveIdempotencyKey.value, remark: receiveForm.remark || null }); ElMessage.success('入库成功'); receiveVisible.value = false; detail.value = await getSemifinishedOrder(detail.value.id); load() } finally { receiveSubmitting.value = false } }
 load()
 </script>
 

@@ -265,6 +265,7 @@ class InvoiceSyncLog(Base):
     response_body = Column(Text, nullable=True, comment="OKKI 响应原文")
     error_message = Column(Text, nullable=True, comment="失败错误信息")
     operator_id = Column(Integer, nullable=True, comment="操作人 user_id")
+    inventory_operation_key = Column(String(64), nullable=True, comment="本次半成品库存预占批次键")
     created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间（北京时间）")
 
     __table_args__ = (

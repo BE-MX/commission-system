@@ -26,9 +26,7 @@ def lock_balance(db: Session, material_id: int) -> InventoryBalance:
         .one_or_none()
     )
     if balance is None:
-        balance = InventoryBalance(material_id=material_id, on_hand_grams=ZERO, reserved_grams=ZERO)
-        db.add(balance)
-        db.flush()
+        raise RuntimeError(f"半成品物料 {material_id} 缺少库存余额，请先修复主数据")
     return balance
 
 
@@ -148,16 +146,36 @@ def adjust_inventory(
     remark: str,
     operator_id: int,
 ) -> InventoryLedger:
+    delta = qty(quantity_grams)
     existing = db.query(InventoryLedger).filter(InventoryLedger.idempotency_key == idempotency_key).one_or_none()
     if existing:
+        if not (
+            existing.movement_type == "adjust"
+            and existing.material_id == material_id
+            and qty(existing.quantity_grams) == delta
+        ):
+            raise ValueError("幂等键已被其他库存操作使用")
         return existing
     material = db.get(SemifinishedMaterial, material_id)
     if not material or material.status != "active":
         raise ValueError("半成品不存在或已停用")
-    delta = qty(quantity_grams)
     if delta == ZERO:
         raise ValueError("调整数量不能为0")
     balance = lock_balance(db, material_id)
+    existing = (
+        db.query(InventoryLedger)
+        .filter(InventoryLedger.idempotency_key == idempotency_key)
+        .with_for_update()
+        .one_or_none()
+    )
+    if existing:
+        if not (
+            existing.movement_type == "adjust"
+            and existing.material_id == material_id
+            and qty(existing.quantity_grams) == delta
+        ):
+            raise ValueError("幂等键已被其他库存操作使用")
+        return existing
     if qty(balance.on_hand_grams) + delta < qty(balance.reserved_grams):
         raise ValueError("调整后实存不能小于已占用数量")
     balance.on_hand_grams = qty(balance.on_hand_grams) + delta

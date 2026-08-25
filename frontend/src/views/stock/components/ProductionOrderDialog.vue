@@ -28,7 +28,7 @@
     </div>
     <template #footer>
       <el-button @click="visible = false">取消</el-button>
-      <el-button type="primary" @click="submit">确认加入购物车</el-button>
+      <el-button type="primary" :loading="submitting" @click="submit">确认加入购物车</el-button>
     </template>
   </el-dialog>
 </template>
@@ -43,6 +43,7 @@ const props = defineProps({ row: { type: Object, default: null }, addToCart: { t
 const form = reactive({ order_qty: 1, remark: '', semifinished_enabled: false, semifinished_items: [] })
 const loading = ref(false)
 const error = ref('')
+const submitting = ref(false)
 let quoteTimer = null
 let quoteSerial = 0
 
@@ -105,13 +106,16 @@ function parseSpec(name) {
 async function submit() {
   if (!props.row) return
   if (form.semifinished_enabled && !form.semifinished_items.length) return ElMessage.warning(error.value || '未取得可下单的半成品计划')
-  const ok = await props.addToCart({
-    product_id: props.row.product_id, product_name: props.row.product_name, model: props.row.model,
-    spec_info: parseSpec(props.row.product_name), order_qty: form.order_qty, remark: form.remark,
-    semifinished_items: form.semifinished_enabled
-      ? form.semifinished_items.map(item => ({ material_id: item.material_id, quantity_grams: item.quantity_grams })) : [],
-  })
-  if (ok) visible.value = false
+  submitting.value = true
+  try {
+    const ok = await props.addToCart({
+      product_id: props.row.product_id, product_name: props.row.product_name, model: props.row.model,
+      spec_info: parseSpec(props.row.product_name), order_qty: form.order_qty, remark: form.remark,
+      semifinished_items: form.semifinished_enabled
+        ? form.semifinished_items.map(item => ({ material_id: item.material_id, quantity_grams: item.quantity_grams })) : [],
+    })
+    if (ok) visible.value = false
+  } finally { submitting.value = false }
 }
 </script>
 
