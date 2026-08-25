@@ -34,6 +34,7 @@ from app.sales_automation import models as _sales_automation_models  # noqa: F40
 from app.insight import models as _insight_models  # noqa: F401
 from app.customer_media import models as _customer_media_models  # noqa: F401
 from app.agent_runtime import models as _agent_runtime_models  # noqa: F401
+from app.semifinished import models as _semifinished_models  # noqa: F401
 
 
 # SQLite 不支持 BIGINT 自增，编译时替换为 INTEGER

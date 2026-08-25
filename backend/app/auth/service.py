@@ -318,6 +318,10 @@ def seed_role_permissions(db: Session):
         ("stock:write",           "stock",   "write",         "设置安全库存 / AI 生成建议"),
         ("stock:admin",           "stock",   "admin",         "手动触发日报生成 / 调试推送"),
         ("stock_daily:read",      "stock",   "read",          "查看安全库存日报"),
+        # 半成品订单及库存（尺寸+颜色为共享物料，库存单位g）
+        ("semifinished:read",     "semifinished", "read",     "查看半成品列表、订单、库存和流水"),
+        ("semifinished:write",    "semifinished", "write",    "维护半成品映射、创建订单和录入入库"),
+        ("semifinished:admin",    "semifinished", "admin",    "同步产品解析、调整库存和处理异常"),
         # 生产订单管理（2026-07-12 产品管理/生产看板/工序路线拆独立页面码；
         # production:read 保留给生产订单管理页+流转卡打印，production:admin 保留给工序管理页+操作）
         ("production:read",       "production", "read",       "查看生产订单"),
