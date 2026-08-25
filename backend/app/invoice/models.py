@@ -10,6 +10,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     Numeric,
     SmallInteger,
     String,
@@ -143,6 +144,8 @@ class InvoiceItem(Base):
     total_price = Column(Numeric(14, 2), nullable=False, default=0, comment="行小计=成交单价×数量+行级折扣（发票币种）")
     price_source = Column(String(32), nullable=False, default="manual", comment="customer_rule/manual/missing_std")
     xiaoman_unique_id = Column(String(64), nullable=True, comment="OKKI 明细行唯一ID")
+    semifinished_enabled = Column(SmallInteger, nullable=False, default=0, server_default="0", comment="是否自动使用半成品")
+    semifinished_plan = Column(JSON, nullable=True, comment="半成品计划快照[{material_id,quantity_grams}]")
     created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间（北京时间）")
     updated_at = Column(DateTime, nullable=False, default=beijing_now, onupdate=beijing_now, comment="最后修改时间（北京时间）")
 
@@ -262,6 +265,7 @@ class InvoiceSyncLog(Base):
     response_body = Column(Text, nullable=True, comment="OKKI 响应原文")
     error_message = Column(Text, nullable=True, comment="失败错误信息")
     operator_id = Column(Integer, nullable=True, comment="操作人 user_id")
+    inventory_operation_key = Column(String(64), nullable=True, comment="本次半成品库存预占批次键")
     created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间（北京时间）")
 
     __table_args__ = (

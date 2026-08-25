@@ -82,6 +82,17 @@ from app.agent_runtime.models import (
     AgentEvent,
     AgentArtifact,
 )
+from app.semifinished.models import (
+    CartPlan,
+    InventoryBalance,
+    InventoryLedger,
+    InvoiceAllocation,
+    ProductComponent,
+    ProductMapping,
+    SemifinishedMaterial,
+    SemifinishedOrder,
+    SemifinishedOrderItem,
+)
 
 __all__ = [
     # 提成系统自有表
@@ -172,4 +183,14 @@ __all__ = [
     "AgentRun",
     "AgentEvent",
     "AgentArtifact",
+    # 半成品订单与库存
+    "SemifinishedMaterial",
+    "ProductMapping",
+    "ProductComponent",
+    "SemifinishedOrder",
+    "SemifinishedOrderItem",
+    "InventoryBalance",
+    "InventoryLedger",
+    "CartPlan",
+    "InvoiceAllocation",
 ]

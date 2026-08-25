@@ -18,7 +18,7 @@ import time
 import warnings
 from concurrent.futures import Future, TimeoutError as FutureTimeoutError
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from urllib.parse import urljoin, urlsplit
 from uuid import uuid4
 
@@ -285,7 +285,8 @@ def _validate_storage_boundary_unlocked(relative_path: str | None = None) -> Pat
     if not isinstance(relative_path, str) or not relative_path.strip():
         raise ImageStorageError("非法文件路径")
     candidate = Path(relative_path)
-    if candidate.is_absolute() or candidate.drive:
+    windows_candidate = PureWindowsPath(relative_path)
+    if candidate.is_absolute() or candidate.drive or windows_candidate.is_absolute() or windows_candidate.drive:
         raise ImageStorageError("非法文件路径")
     try:
         target = Path(os.path.abspath(root / candidate))

@@ -223,52 +223,11 @@
       </template>
     </el-dialog>
 
-    <!-- 生产下单弹窗 -->
-    <el-dialog v-model="productionDialogVisible" title="生产下单" width="520px" align-center>
-      <div v-if="currentProductionRow" class="production-dialog-content">
-        <div class="prod-info-row">
-          <span class="prod-label">产品名称</span>
-          <span class="prod-value">{{ currentProductionRow.product_name }}</span>
-        </div>
-        <div class="prod-info-row">
-          <span class="prod-label">型号</span>
-          <span class="prod-value">{{ currentProductionRow.model }}</span>
-        </div>
-        <div class="prod-info-row">
-          <span class="prod-label">近30日销量</span>
-          <span class="prod-value">{{ currentProductionRow.sales_30d || 0 }} 件</span>
-        </div>
-        <div class="prod-info-row">
-          <span class="prod-label">生产在途</span>
-          <span class="prod-value" :class="currentProductionRow.production_in_transit > 0 ? 'in-transit-active' : ''">{{ currentProductionRow.production_in_transit || 0 }} 件</span>
-        </div>
-        <div class="prod-info-row">
-          <span class="prod-label">当前库存</span>
-          <span class="prod-value">{{ Math.round(currentProductionRow.enable_count || 0) }} 件</span>
-        </div>
-        <div class="prod-info-row">
-          <span class="prod-label">安全库存</span>
-          <span class="prod-value">{{ currentProductionRow.safety_stock || 0 }} 件</span>
-        </div>
-        <div class="prod-info-row">
-          <span class="prod-label">差值</span>
-          <span class="prod-value" :class="suggestedOrderQty > 0 ? 'value-danger' : ''">{{ suggestedOrderQty }}</span>
-        </div>
-        <el-divider />
-        <el-form :model="productionForm" label-width="100px">
-          <el-form-item label="生产下单数量" required class="order-qty-form-item">
-            <el-input-number v-model="productionForm.order_qty" :min="1" :max="999999" :step="1" controls-position="right" style="width:160px" />
-          </el-form-item>
-          <el-form-item label="备注">
-            <el-input v-model="productionForm.remark" type="textarea" :rows="2" placeholder="可选" maxlength="500" show-word-limit />
-          </el-form-item>
-        </el-form>
-      </div>
-      <template #footer>
-        <el-button @click="productionDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="confirmAddToCart">确认加入购物车</el-button>
-      </template>
-    </el-dialog>
+    <ProductionOrderDialog
+      v-model="productionDialogVisible"
+      :row="currentProductionRow"
+      :add-to-cart="addToCart"
+    />
 
     <!-- 购物车抽屉 -->
     <el-drawer v-model="cartDrawerVisible" title="生产单购物车" size="580px">
@@ -426,6 +385,7 @@ import {
 } from '@/api/stock'
 import { getProgress, initProgress } from '@/api/production'
 import { useProductionCart } from './composables/useProductionCart'
+import ProductionOrderDialog from './components/ProductionOrderDialog.vue'
 import { useTableSort } from '@/composables/useTableSort'
 
 const authStore = useAuthStore()
@@ -703,42 +663,10 @@ const cartDrawerVisible = ref(false)
 
 const productionDialogVisible = ref(false)
 const currentProductionRow = ref(null)
-const productionForm = reactive({ order_qty: 0, remark: '' })
-
-const suggestedOrderQty = computed(() => {
-  if (!currentProductionRow.value) return 0
-  const safety = (currentProductionRow.value.safety_stock || 0) * 2
-  const enable = currentProductionRow.value.enable_count || 0
-  const inTransit = currentProductionRow.value.production_in_transit || 0
-  return Math.max(0, safety - enable - inTransit)
-})
 
 function openProductionDialog(row) {
   currentProductionRow.value = row
-  productionForm.order_qty = suggestedOrderQty.value > 0 ? suggestedOrderQty.value : 1
-  productionForm.remark = ''
   productionDialogVisible.value = true
-}
-
-async function confirmAddToCart() {
-  if (!currentProductionRow.value) return
-  if (productionForm.order_qty <= 0) {
-    ElMessage.warning('生产下单数量必须大于0')
-    return
-  }
-  const parts = parseProductName(currentProductionRow.value.product_name)
-  const spec = `${parts.type}/${parts.size}/${parts.color}/${parts.weight}`
-  const ok = await addToCart({
-    product_id: currentProductionRow.value.product_id,
-    product_name: currentProductionRow.value.product_name,
-    model: currentProductionRow.value.model,
-    spec_info: spec,
-    order_qty: productionForm.order_qty,
-    remark: productionForm.remark,
-  })
-  if (ok) {
-    productionDialogVisible.value = false
-  }
 }
 
 // ── 购物车 drawer ─────────────────────────────

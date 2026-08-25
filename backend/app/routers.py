@@ -58,6 +58,7 @@ from app.customer_media.public_router import (
 from app.agent_runtime.router import router as agent_runtime_router
 from app.agent_runtime.worker_router import router as agent_runtime_worker_router
 from app.agent_runtime.model_router import router as agent_runtime_model_router
+from app.semifinished.router import router as semifinished_router
 
 
 def register_routers(app: FastAPI) -> None:
@@ -82,6 +83,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(insight_router, prefix="/api/insight", tags=["方舟洞见"])
     app.include_router(stock_router, prefix="/api/stock", tags=["备货管理"])
     app.include_router(stock_public_router, prefix="/api/public/stock", tags=["对外库存查询"])
+    app.include_router(semifinished_router, prefix="/api/semifinished", tags=["半成品订单与库存"])
     app.include_router(asset_router, prefix="/api/assets", tags=["素材管理"])
     app.include_router(color_router, prefix="/api/color", tags=["色彩管理"])
     app.include_router(report_center_router, prefix="/api/report", tags=["报表中心"])

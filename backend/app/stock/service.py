@@ -53,7 +53,7 @@ from app.stock.production_cart_service import (  # noqa: F401
 
 # 生产订单
 from app.stock.production_order_service import (  # noqa: F401
-    create_order, get_order_list, get_order_detail,
+    create_order, get_order_list, get_order_detail, initialize_order_progress,
     update_order, delete_order,
     get_order_item_list, update_order_item,
     update_item_status, update_item_received,

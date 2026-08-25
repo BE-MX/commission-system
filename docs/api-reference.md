@@ -40,6 +40,29 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
 `ark_customer_actions`；获客 Shadow 只写 Agent Artifact，不写正式公司、联系人、研究或邮件表。
 浏览器任务详情目前用活动态轮询，因为现有 Bearer 认证不能由原生 `EventSource` 安全附加请求头。
 
+### 半成品订单与库存（`/api/semifinished`，迁移 120/121，2026-08-25）
+
+所有数量单位均为克（g），最多三位小数。产品报价只接受已确认的产品—半成品配比；解析出的多色、复合色及异常回退记录默认 `needs_review`，人工确认前不得自动下单或占用库存。
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| POST | `/materials/sync-preview` | `semifinished:admin` | 只读预览 OKKI 有效产品解析结果、待新增/变更/审核数量 |
+| POST | `/materials/sync-apply` | `semifinished:admin` | 幂等应用自动解析；保留人工确认的映射，不覆盖手工配比 |
+| GET | `/materials` | `semifinished:read` | 半成品分页列表，支持关键词和只看待审核关联 |
+| GET | `/mappings` | `semifinished:read` | 产品映射分页列表及组成、比例、克重 |
+| PUT | `/mappings/{id}` | `semifinished:write` | 确认组成与比例；比例合计必须为 1，确认后来源标记为 manual |
+| POST | `/quote` | read/production write/invoice write 任一 | 按 `product_id + finished_qty` 计算半成品需求及当前实存/占用/可用量 |
+| POST | `/orders` | `semifinished:write` | 按 g 创建手工半成品订单 |
+| GET | `/orders`、`/orders/{id}` | `semifinished:read` | 订单分页与详情 |
+| POST | `/order-items/{id}/receive` | `semifinished:write` | 分批入库；8~128 位 `idempotency_key` 防止重复入账 |
+| PUT | `/orders/{id}/status` | `semifinished:write` | 将未完成订单终止，已入库数量不回滚 |
+| GET | `/inventory` | `semifinished:read` | 实存、占用、可用、在制及安全库存口径 |
+| GET | `/inventory/{material_id}/ledger` | `semifinished:read` | 不可变库存流水 |
+| POST | `/inventory/{material_id}/adjust` | `semifinished:admin` | 带原因和幂等键的库存盘盈/盘亏 |
+| POST | `/inventory/reconcile-invoice/{invoice_id}` | `semifinished:admin` | 对异常 pending 批次执行 `finalize` 或 `release`；finalize 必须存在 OKKI 订单号及与当前库存批次键精确匹配的成功同步日志 |
+
+生产购物车 `POST /api/stock/cart/add` 可附带 `semifinished_items=[{material_id,quantity_grams}]`；提交生产订单时与关联半成品订单在同一数据库事务创建。生产型发票明细可保存 `semifinished_enabled` 与 `semifinished_plan`；同步 OKKI 前先预占、成功后转正式出库、明确失败才释放。若 OKKI 已受理但响应缺行，则整批保持 pending，管理员核对 OKKI 后再选择正式出库或释放；pending 存续期间发票禁止编辑和删除。
+
 ### 运行与自动化中心（`/api/operations`，2026-08-12）
 
 - `GET /overview`：服务、调度器与跨服务器运行实例汇总（`operations:read` 或 `operations:admin`）。

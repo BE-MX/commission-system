@@ -159,11 +159,6 @@
     "lines_over_500": 60,
     "transition_all": 0
   },
-  "frontend/src/views/design/SubmitRequest.vue": {
-    "hex_colors": 5,
-    "lines_over_500": 64,
-    "transition_all": 0
-  },
   "frontend/src/views/expo/ExpoKiosk.vue": {
     "hex_colors": 8,
     "lines_over_500": 0,
@@ -350,13 +345,13 @@
     "transition_all": 0
   },
   "frontend/src/views/stock/PublicInventory.vue": {
-    "hex_colors": 37,
+    "hex_colors": 27,
     "lines_over_500": 0,
     "transition_all": 0
   },
   "frontend/src/views/stock/SafetyConfig.vue": {
     "hex_colors": 45,
-    "lines_over_500": 491,
+    "lines_over_500": 419,
     "transition_all": 0
   },
   "frontend/src/views/stock/StockOverview.vue": {

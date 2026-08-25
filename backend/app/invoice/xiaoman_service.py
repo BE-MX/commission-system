@@ -45,7 +45,12 @@ FIELD_FREE_SHIPPING = "20528077262544"  # 是否包邮：是/否
 FIELD_FIRST_RETURN = "20528142733548"   # 是否首返：是/否
 
 
-def sync_invoice(db: Session, invoice: Invoice, operator_id: int | None = None) -> dict:
+def sync_invoice(
+    db: Session,
+    invoice: Invoice,
+    operator_id: int | None = None,
+    inventory_operation_key: str | None = None,
+) -> dict:
     """Push one invoice to OKKI (create or edit). Never raises for expected
     failures — state + sync log are always persisted.
 
@@ -105,6 +110,7 @@ def sync_invoice(db: Session, invoice: Invoice, operator_id: int | None = None) 
     _write_sync_log(
         db, invoice, action=action, success=True,
         payload=payload, response=data, error=None, operator_id=operator_id,
+        inventory_operation_key=inventory_operation_key,
     )
     db.commit()
 
@@ -118,7 +124,13 @@ def sync_invoice(db: Session, invoice: Invoice, operator_id: int | None = None) 
             "请核对 OKKI 订单明细后重推补齐"
         )
         _mark_sync_failed(db, invoice, message, action, payload, operator_id, response=data)
-        return {"ok": False, "message": message, "issues": [], "xiaoman_order_id": invoice.xiaoman_order_id}
+        return {
+            "ok": False,
+            "message": message,
+            "issues": [],
+            "xiaoman_order_id": invoice.xiaoman_order_id,
+            "okki_accepted": True,
+        }
 
     invoice.sync_status = "synced"
     invoice.status = "synced"
@@ -550,6 +562,7 @@ def _write_sync_log(
     response: dict | None,
     error: str | None,
     operator_id: int | None,
+    inventory_operation_key: str | None = None,
 ) -> None:
     # payload 无凭证（token 在 header），原样落审计
     db.add(InvoiceSyncLog(
@@ -560,6 +573,7 @@ def _write_sync_log(
         response_body=json.dumps(response, ensure_ascii=False, default=str) if response is not None else None,
         error_message=error,
         operator_id=operator_id,
+        inventory_operation_key=inventory_operation_key,
     ))
 
 

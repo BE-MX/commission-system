@@ -211,6 +211,20 @@ def delete_invoice(db: Session, invoice: Invoice) -> None:
     orphan it AND cascade-drop its push audit logs."""
     if invoice.xiaoman_order_id or invoice.sync_status == "synced":
         raise ValueError("该发票已在小满建单，不允许本地删除，请先在小满侧处理")
+    # 半成品同步失败可能留下 allocated=0 的审计占位行。它们不代表真实出库，
+    # 删除草稿时一并清掉；pending 或非零分配必须先恢复/冲销，不能静默丢失。
+    from app.semifinished.models import InvoiceAllocation
+
+    allocations = db.query(InvoiceAllocation).filter(InvoiceAllocation.invoice_id == invoice.id).all()
+    if any(
+        row.status == "pending"
+        or Decimal(row.allocated_qty_grams or 0) != 0
+        or Decimal(row.pending_delta_grams or 0) != 0
+        for row in allocations
+    ):
+        raise ValueError("该发票存在半成品库存记录，请先完成库存恢复后再删除")
+    for row in allocations:
+        db.delete(row)
     db.delete(invoice)
 
 
@@ -293,6 +307,14 @@ def create_invoice(
 
 
 def update_invoice(db: Session, invoice: Invoice, body: InvoiceUpdate, user_id: int | None = None) -> Invoice:
+    from app.semifinished.models import InvoiceAllocation
+
+    pending = db.query(InvoiceAllocation.id).filter(
+        InvoiceAllocation.invoice_id == invoice.id,
+        InvoiceAllocation.status == "pending",
+    ).first()
+    if pending:
+        raise ValueError("该发票正在同步或等待半成品库存恢复，暂不能编辑")
     if body.sales_user_id is not None and body.sales_user_id != invoice.sales_user_id:
         raise ValueError("订单归属业务员不可修改，请重新创建订单")
     for field in _SOURCE_FIELDS:
@@ -384,8 +406,34 @@ def mark_ready_if_valid(invoice: Invoice) -> list[dict]:
     return issues
 
 
-def serialize_detail(invoice: Invoice) -> dict:
+def serialize_detail(invoice: Invoice, db: Session | None = None) -> dict:
     summary = summarize_items(invoice)
+    material_state: dict[int, dict] = {}
+    if db is not None:
+        from app.semifinished.models import InventoryBalance, SemifinishedMaterial
+
+        material_ids = {
+            int(plan["material_id"])
+            for item in invoice.items
+            for plan in (item.semifinished_plan or [])
+            if plan.get("material_id")
+        }
+        if material_ids:
+            rows = (
+                db.query(SemifinishedMaterial, InventoryBalance)
+                .join(InventoryBalance, InventoryBalance.material_id == SemifinishedMaterial.id)
+                .filter(SemifinishedMaterial.id.in_(material_ids))
+                .all()
+            )
+            material_state = {
+                material.id: {
+                    "material_code": material.material_code,
+                    "size": material.size,
+                    "color_code": material.color_code,
+                    "available_grams": Decimal(balance.on_hand_grams or 0) - Decimal(balance.reserved_grams or 0),
+                }
+                for material, balance in rows
+            }
     return {
         **_invoice_list_row(invoice, len(invoice.items)),
         "contact_name": invoice.contact_name,
@@ -424,7 +472,7 @@ def serialize_detail(invoice: Invoice) -> dict:
         "sync_error": invoice.sync_error,
         "synced_at": to_beijing_time(invoice.synced_at),
         "updated_at": to_beijing_time(invoice.updated_at),
-        "items": [_serialize_item(item) for item in invoice.items],
+        "items": [_serialize_item(item, material_state) for item in invoice.items],
     }
 
 
@@ -562,6 +610,11 @@ def _replace_items(db: Session, invoice: Invoice, body, user_id: int | None = No
             quantity=payload.quantity,
             price_per_piece=payload.price_per_piece,
             discount_amount=payload.discount_amount,
+            semifinished_enabled=1 if payload.semifinished_enabled else 0,
+            semifinished_plan=(
+                [row.model_dump(mode="json") for row in payload.semifinished_plan]
+                if payload.semifinished_enabled else None
+            ),
         )
         if payload.item_type == "custom" and _custom_line_complete(payload):
             resolved = product_service.ensure_custom_product(
@@ -824,7 +877,11 @@ def _validate_screenshot_source(
     invoice.source_order_name = str(row["name"] or invoice.source_order_name or "") or None
 
 
-def _serialize_item(item: InvoiceItem) -> dict:
+def _serialize_item(item: InvoiceItem, material_state: dict[int, dict] | None = None) -> dict:
+    plans = []
+    for plan in item.semifinished_plan or []:
+        material_id = int(plan["material_id"])
+        plans.append({**plan, **((material_state or {}).get(material_id) or {})})
     return {
         "id": item.id,
         "sort_order": item.sort_order,
@@ -847,4 +904,6 @@ def _serialize_item(item: InvoiceItem) -> dict:
         "discount_amount": item.discount_amount,
         "price_source": item.price_source,
         "total_price": item.total_price,
+        "semifinished_enabled": bool(item.semifinished_enabled),
+        "semifinished_plan": plans,
     }
