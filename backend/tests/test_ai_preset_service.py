@@ -58,6 +58,30 @@ def _create_image_preset(db):
     return preset
 
 
+def _create_generation_preset(db):
+    provider = AiProvider(
+        name="Image Generation Provider",
+        provider_type="direct",
+        api_base="https://api.teamorouter.cn",
+        api_type="openai",
+        api_key="encrypted",
+        is_enabled=True,
+        timeout_sec=300,
+    )
+    db.add(provider)
+    db.flush()
+    preset = AiPreset(
+        preset_name="design_image_generation",
+        provider_id=provider.id,
+        model="gpt-image-2",
+        parameters={"output_format": "png"},
+        is_enabled=True,
+    )
+    db.add(preset)
+    db.flush()
+    return preset
+
+
 def test_preset_test_uses_shared_chat_service(db, monkeypatch):
     preset = _create_vision_preset(db)
     calls = []
@@ -90,6 +114,49 @@ def test_preset_test_uses_shared_chat_service(db, monkeypatch):
         "response": '{"face_shape":"oval"}',
         "tokens_used": 12,
         "duration_ms": 34,
+    }
+
+
+def test_generation_preset_test_uses_image_generation_service(db, monkeypatch):
+    preset = _create_generation_preset(db)
+    calls = []
+
+    def fake_generate_image(db, preset_name, prompt, caller_module, caller_user_id=None):
+        calls.append(
+            {
+                "preset_name": preset_name,
+                "prompt": prompt,
+                "caller_module": caller_module,
+                "caller_user_id": caller_user_id,
+            }
+        )
+        return {
+            "content": "data:image/png;base64,abc",
+            "tokens_used": 42,
+            "duration_ms": 123,
+        }
+
+    def fail_chat(*_args, **_kwargs):
+        raise AssertionError("image generation preset must not use chat/completions")
+
+    monkeypatch.setattr(preset_service, "generate_image", fake_generate_image, raising=False)
+    monkeypatch.setattr(preset_service, "chat", fail_chat)
+
+    result = preset_service.test_preset(db, preset.id, "draw a product")
+
+    assert calls == [
+        {
+            "preset_name": "design_image_generation",
+            "prompt": "draw a product",
+            "caller_module": "ai_preset_test",
+            "caller_user_id": None,
+        }
+    ]
+    assert result == {
+        "status": "ok",
+        "response": "data:image/png;base64,abc",
+        "tokens_used": 42,
+        "duration_ms": 123,
     }
 
 

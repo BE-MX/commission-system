@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.models import AiPreset, AiProvider
 from app.ai.call_service import chat
-from app.ai.image_service import edit_image
+from app.ai.image_service import edit_image, generate_image
 from app.ai.provider_service import get_provider
 
 MAX_TEST_IMAGE_BYTES = 10 * 1024 * 1024
@@ -161,16 +161,24 @@ def delete_preset(db: Session, preset_id: int) -> None:
 
 
 def test_preset(db: Session, preset_id: int, test_message: str) -> dict:
-    """Send a preset test through the same chat path used by business callers."""
+    """Send a preset test through the same path used by business callers."""
     p = get_preset(db, preset_id)
     start = time.time()
     try:
-        result = chat(
-            db=db,
-            preset_name=p.preset_name,
-            messages=[{"role": "user", "content": test_message}],
-            caller_module="ai_preset_test",
-        )
+        if p.preset_name.startswith("design_image_generation"):
+            result = generate_image(
+                db=db,
+                preset_name=p.preset_name,
+                prompt=test_message,
+                caller_module="ai_preset_test",
+            )
+        else:
+            result = chat(
+                db=db,
+                preset_name=p.preset_name,
+                messages=[{"role": "user", "content": test_message}],
+                caller_module="ai_preset_test",
+            )
     except Exception as exc:
         return _test_error_result(exc, start)
 
