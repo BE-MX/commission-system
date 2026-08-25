@@ -8,7 +8,7 @@
       <div class="heading-actions">
         <GlassButton v-permission="'sales_automation:admin'" variant="secondary" left-icon="Refresh" :loading="auditLoading" @click="refreshAudit">重新审计</GlassButton>
         <span v-if="activeBatch" class="batch-state">批次 #{{ activeBatch.id }} 后台生成中</span>
-        <GlassButton v-any-permission="['sales_automation:write', 'sales_automation:admin']" variant="primary" left-icon="Plus" :loading="batchLoading" :disabled="Boolean(activeBatch)" @click="generateBatch">{{ activeBatch ? '批次生成中' : '生成今日批次' }}</GlassButton>
+        <GlassButton v-any-permission="['sales_automation:write', 'sales_automation:admin']" variant="primary" left-icon="Plus" :loading="batchLoading" :disabled="Boolean(activeBatch)" @click="batchDialogVisible = true">{{ activeBatch ? '批次生成中' : '生成今日批次' }}</GlassButton>
       </div>
     </header>
 
@@ -62,6 +62,8 @@
       <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" class="pager" @current-change="handlePageChange" @size-change="handleSizeChange" />
     </section>
 
+    <PublicPoolBatchDialog v-model="batchDialogVisible" :loading="batchLoading" @submit="generateBatch" />
+
     <DetailDrawer v-model="detailVisible" :title="detail ? `公海背调 · ${detail.subject.display_name}` : '公海背调'" width="min(820px, 94vw)" :loading="detailLoading">
       <template v-if="detail">
         <div class="detail-summary">
@@ -105,11 +107,13 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import DetailDrawer from '@/components/DetailDrawer.vue'
 import GlassButton from '@/components/GlassButton.vue'
+import PublicPoolBatchDialog from './components/PublicPoolBatchDialog.vue'
 import { approvePublicPoolTask, claimPublicPoolTask, createPublicPoolBatch, getPublicPoolAudit, getPublicPoolBatches, getPublicPoolTask, getPublicPoolTasks, refreshPublicPoolAudit, rejectPublicPoolTask } from '@/api/salesAutomation'
 import { useListPage } from '@/composables/useListPage'
 import { msgSuccess } from '@/utils/feedback'
 
 const audit = ref({}); const auditLoading = ref(false); const batchLoading = ref(false)
+const batchDialogVisible = ref(false)
 const activeBatch = ref(null); let batchPollTimer = null
 const metrics = computed(() => [
   { key: 'public_customers', label: '公海客户', note: 'owner_user_ids 为空' }, { key: 'tier_t1', label: 'T1 历史订单', note: '最近 60 天无下单' },
@@ -148,11 +152,12 @@ async function syncBatchState() {
   if (activeBatch.value) scheduleBatchPoll()
   else if (wasActive && latest?.status === 'completed') { msgSuccess('今日批次生成完成'); await Promise.all([loadAudit(), fetchTasks()]) }
 }
-async function generateBatch() {
+async function generateBatch(payload) {
   if (activeBatch.value) return
   batchLoading.value = true
   try {
-    const row = (await createPublicPoolBatch({ quota_per_tier: 20, policy_version: 'v2' })).data
+    const row = (await createPublicPoolBatch(payload)).data
+    batchDialogVisible.value = false
     if (['pending', 'running'].includes(row.status)) { activeBatch.value = row; msgSuccess(row.enqueued ? '批次已进入后台生成' : '该批次正在生成，请勿重复提交'); scheduleBatchPoll() }
     else msgSuccess('今日批次已生成')
   } finally { batchLoading.value = false }

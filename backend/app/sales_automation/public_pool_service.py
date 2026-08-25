@@ -30,6 +30,7 @@ from app.sales_automation.models import (
     ResearchRun,
     ResearchSubject,
 )
+from app.sales_automation.schemas import PublicPoolProfileConditions
 from app.sales_automation.service import ConflictError, NotFoundError, SalesAutomationError
 
 
@@ -40,6 +41,8 @@ LEASE_MINUTES = 15
 DEFAULT_COOLDOWN_DAYS = 180
 REACTIVATION_INACTIVE_DAYS = 60
 HIGH_SCORE_RESEARCH_THRESHOLD = 70
+PUBLIC_POOL_EXECUTION_LOCK_NAME = "ark:public_pool_batch_execution"
+PUBLIC_POOL_EXECUTION_LOCK_WAIT_SECONDS = 600
 FREE_EMAIL_DOMAINS = {
     "gmail.com", "googlemail.com", "hotmail.com", "outlook.com", "live.com",
     "yahoo.com", "ymail.com", "icloud.com", "me.com", "aol.com", "qq.com",
@@ -52,6 +55,14 @@ LOCALITY_COLUMN_GROUPS = {
     "city": ("city", "city_name"),
     "region": ("region", "region_name", "state", "state_name", "province", "province_name"),
 }
+
+
+def _valid_order_sql(alias: str) -> str:
+    return (
+        f"(({alias}.status = '13972831656' OR "
+        f"({alias}.status = '13972831654' AND {alias}.status_name = '已结清')) "
+        f"AND ({alias}.trail IS NULL OR CAST({alias}.trail AS CHAR) NOT LIKE '%个人%'))"
+    )
 
 
 def _now() -> datetime:
@@ -83,6 +94,19 @@ def _json_safe(value: Any) -> Any:
 def _snapshot_hash(snapshot: dict) -> str:
     payload = json.dumps(_json_safe(snapshot), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return _hash(payload)
+
+
+def normalize_profile_conditions(value: Any) -> dict:
+    """Validate and canonicalize one batch's deterministic public-pool profile."""
+    if value is None:
+        return {}
+    validated = PublicPoolProfileConditions.model_validate(value)
+    return _json_safe(validated.model_dump(mode="python"))
+
+
+def default_profile_conditions() -> dict:
+    """Default manual/scheduled profile matching the sales team's current target."""
+    return normalize_profile_conditions(PublicPoolProfileConditions())
 
 
 def _as_datetime(value: Any) -> datetime | None:
@@ -410,6 +434,8 @@ class BusinessPoolGateway:
                      AND LOWER(SUBSTRING_INDEX(SUBSTRING_INDEX(cc.email, ',', 1), '@', -1)) NOT IN ({free_domains})
                     THEN 1 ELSE 0 END) AS has_corporate_contact_email,
                 MAX(CASE WHEN LOWER(COALESCE(ccs.platform, '')) LIKE '%whatsapp%' AND NULLIF(TRIM(ccs.value), '') IS NOT NULL THEN 1 ELSE 0 END) AS has_whatsapp,
+                MAX(CASE WHEN LOWER(COALESCE(ccs.platform, '')) REGEXP 'instagram|(^|[^a-z])ins([^a-z]|$)' AND NULLIF(TRIM(ccs.value), '') IS NOT NULL THEN 1 ELSE 0 END) AS has_instagram,
+                MAX(CASE WHEN LOWER(COALESCE(ccs.platform, '')) REGEXP 'facebook|(^|[^a-z])fb([^a-z]|$)' AND NULLIF(TRIM(ccs.value), '') IS NOT NULL THEN 1 ELSE 0 END) AS has_facebook,
                 MAX(CASE WHEN LOWER(COALESCE(ccs.platform, '')) NOT LIKE '%whatsapp%' AND NULLIF(TRIM(ccs.value), '') IS NOT NULL THEN 1 ELSE 0 END) AS has_business_social,
                 GROUP_CONCAT(DISTINCT CASE WHEN NULLIF(TRIM(ccs.value), '') IS NOT NULL THEN CONCAT(COALESCE(ccs.platform, 'social'), ':', ccs.value) END ORDER BY ccs.id SEPARATOR ' | ') AS social_summary
             FROM `{self.schema}`.customer_contacts cc
@@ -418,11 +444,29 @@ class BusinessPoolGateway:
             GROUP BY cc.company_id
         ),
         order_rollup AS (
-            SELECT company_id, COUNT(*) AS order_count,
-                   COALESCE(SUM(amount_usd), 0) AS order_amount_usd,
-                   MAX(account_date) AS last_order_at
-            FROM `{self.schema}`.okki_orders
-            GROUP BY company_id
+            SELECT orders.company_id, COUNT(*) AS order_count,
+                   COALESCE(SUM(orders.amount_usd), 0) AS order_amount_usd,
+                   MAX(orders.account_date) AS last_order_at
+            FROM `{self.schema}`.okki_orders orders
+            GROUP BY orders.company_id
+        )
+        """
+
+    @property
+    def _profile_order_cte(self) -> str:
+        """Extra valid-order aggregation used only by profile-filtered batches."""
+        valid_order = _valid_order_sql("profile_source_order")
+        return f"""
+        profile_order_rollup AS (
+            SELECT profile_source_order.company_id,
+                   SUM(CASE WHEN {valid_order} THEN 1 ELSE 0 END) AS qualifying_order_count,
+                   COALESCE(SUM(CASE WHEN {valid_order} THEN profile_source_order.amount_usd ELSE 0 END), 0) AS qualifying_order_amount_usd,
+                   COALESCE(MAX(CASE WHEN {valid_order} THEN profile_source_order.amount_usd END), 0) AS qualifying_max_order_amount_usd,
+                   SUM(CASE WHEN {valid_order} AND (LOWER(COALESCE(profile_source_order.name, '')) LIKE '%sample%' OR COALESCE(profile_source_order.name, '') REGEXP '样品|样单') THEN 1 ELSE 0 END) AS qualifying_sample_order_count,
+                   SUM(CASE WHEN {valid_order} AND NOT (LOWER(COALESCE(profile_source_order.name, '')) LIKE '%sample%' OR COALESCE(profile_source_order.name, '') REGEXP '样品|样单') THEN 1 ELSE 0 END) AS qualifying_non_sample_order_count,
+                   MAX(CASE WHEN {valid_order} THEN profile_source_order.account_date END) AS qualifying_last_order_at
+            FROM `{self.schema}`.okki_orders profile_source_order
+            GROUP BY profile_source_order.company_id
         )
         """
 
@@ -447,7 +491,21 @@ class BusinessPoolGateway:
             ) THEN 1 ELSE 0 END AS has_corporate_email,
             COALESCE(cr.has_business_social, 0) AS has_business_social,
             COALESCE(cr.has_whatsapp, 0) AS has_whatsapp,
+            COALESCE(cr.has_instagram, 0) AS has_instagram,
+            COALESCE(cr.has_facebook, 0) AS has_facebook,
             CASE WHEN {self._website_expr} IS NOT NULL THEN 1 ELSE 0 END AS has_website
+        """
+
+    @property
+    def _profile_feature_sql(self) -> str:
+        return """
+            COALESCE(po.qualifying_order_count, 0) AS qualifying_order_count,
+            COALESCE(po.qualifying_order_amount_usd, 0) AS qualifying_order_amount_usd,
+            COALESCE(po.qualifying_max_order_amount_usd, 0) AS qualifying_max_order_amount_usd,
+            COALESCE(po.qualifying_sample_order_count, 0) AS qualifying_sample_order_count,
+            COALESCE(po.qualifying_non_sample_order_count, 0) AS qualifying_non_sample_order_count,
+            po.qualifying_last_order_at,
+            ci.update_time AS last_followup_at
         """
 
     def audit(self) -> dict:
@@ -486,37 +544,163 @@ class BusinessPoolGateway:
         })
         return data
 
+    def _profile_filter(
+        self,
+        profile_conditions: dict,
+    ) -> tuple[str, dict, str]:
+        """Compile validated profile conditions into bound read-only SQL."""
+        if not profile_conditions:
+            return "", {}, ""
+        conditions = normalize_profile_conditions(profile_conditions)
+        value_rules = conditions["value_rules"]
+        params: dict[str, Any] = {}
+        filters: list[str] = []
+        value_filters: list[str] = []
+        if value_rules.get("min_order_count") is not None:
+            params["profile_min_order_count"] = value_rules["min_order_count"]
+            params["profile_total_amount_over_usd"] = value_rules["total_amount_over_usd"]
+            value_filters.append(
+                "(f.qualifying_order_count >= :profile_min_order_count "
+                "AND f.qualifying_order_amount_usd > :profile_total_amount_over_usd)"
+            )
+        if value_rules.get("single_order_over_usd") is not None:
+            params["profile_single_order_over_usd"] = value_rules["single_order_over_usd"]
+            value_filters.append("f.qualifying_max_order_amount_usd > :profile_single_order_over_usd")
+        if value_rules.get("sample_only_orders"):
+            value_filters.append(
+                "(f.qualifying_order_count > 0 AND "
+                "f.qualifying_sample_order_count = f.qualifying_order_count "
+                "AND f.qualifying_non_sample_order_count = 0)"
+            )
+        filters.append(f"({' OR '.join(value_filters)})")
+
+        top_country_limit = conditions.get("top_country_limit")
+        if top_country_limit is not None:
+            # LIMIT is interpolated only after Pydantic constrains it to 1..50.
+            filters.append(f"""
+                f.country_name IN (
+                    SELECT ranked_country.country_name
+                    FROM (
+                        SELECT top_ci.country_name
+                        FROM `{self.schema}`.okki_orders top_o
+                        JOIN `{self.schema}`.customer_info top_ci
+                          ON BINARY top_ci.company_id = BINARY top_o.company_id
+                        WHERE NULLIF(TRIM(top_ci.country_name), '') IS NOT NULL
+                          AND {_valid_order_sql("top_o")}
+                        GROUP BY top_ci.country_name
+                        ORDER BY SUM(COALESCE(top_o.amount_usd, 0)) DESC, top_ci.country_name
+                        LIMIT {int(top_country_limit)}
+                    ) ranked_country
+                )
+            """)
+
+        channels = conditions.get("contact_channels") or []
+        channel_filters = {
+            "instagram": "f.has_instagram = 1",
+            "facebook": "f.has_facebook = 1",
+            "phone": "f.primary_phone IS NOT NULL",
+        }
+        if channels:
+            filters.append(f"({' OR '.join(channel_filters[item] for item in channels)})")
+
+        keywords = conditions.get("product_keywords") or []
+        if keywords:
+            keyword_filters = []
+            for index, keyword in enumerate(keywords):
+                key = f"profile_product_keyword_{index}"
+                params[key] = keyword
+                keyword_filters.append(
+                    f"LOCATE(LOWER(:{key}), LOWER(CONCAT_WS(' ', "
+                    "profile_product.model, profile_product.name, profile_product.cn_name, "
+                    "profile_item.product_model, profile_item.product_name, profile_item.product_cn_name))) > 0"
+                )
+            filters.append(f"""
+                EXISTS (
+                    SELECT 1
+                    FROM `{self.schema}`.okki_orders profile_order
+                    JOIN `{self.schema}`.okki_order_items profile_item
+                      ON profile_item.order_id = profile_order.order_id
+                    LEFT JOIN `{self.schema}`.okki_products profile_product
+                      ON profile_product.product_id = profile_item.product_id
+                    WHERE BINARY profile_order.company_id = BINARY f.company_id
+                      AND {_valid_order_sql("profile_order")}
+                      AND ({' OR '.join(keyword_filters)})
+                )
+            """)
+
+        stale_days = conditions.get("stale_followup_days")
+        if stale_days is not None:
+            filters.append(
+                "(f.last_followup_at IS NULL OR "
+                f"f.last_followup_at <= DATE_SUB(NOW(), INTERVAL {int(stale_days)} DAY))"
+            )
+
+        priority = []
+        if "instagram" in channels:
+            priority.append("f.has_instagram DESC")
+        if "facebook" in channels:
+            priority.append("f.has_facebook DESC")
+        if "phone" in channels:
+            priority.append("CASE WHEN f.primary_phone IS NOT NULL THEN 1 ELSE 0 END DESC")
+        return " AND " + " AND ".join(filters), params, (", ".join(priority) + ", " if priority else "")
+
     def fetch_tier_candidates(
         self,
         tier: str,
         limit: int,
         seed: str,
         cooldown_days: int = DEFAULT_COOLDOWN_DAYS,
+        profile_conditions: dict | None = None,
     ) -> list[dict]:
         if tier not in TIERS:
             raise SalesAutomationError("tier 必须是 T1/T2/T3")
+        conditions = normalize_profile_conditions(profile_conditions)
+        # Every supported value rule requires at least one historical order, so a
+        # profiled batch can only yield T1 reactivation customers. Avoid two
+        # expensive cross-schema queries that are provably empty.
+        if conditions and tier in {"T2", "T3"}:
+            return []
+        inactive_days = conditions.get("inactive_order_days") or REACTIVATION_INACTIVE_DAYS
         tier_filter = {
-            "T1": f"f.order_count > 0 AND f.last_order_at <= DATE_SUB(CURDATE(), INTERVAL {REACTIVATION_INACTIVE_DAYS} DAY)",
+            "T1": (
+                f"f.qualifying_order_count > 0 AND f.qualifying_last_order_at <= "
+                f"DATE_SUB(CURDATE(), INTERVAL {int(inactive_days)} DAY)"
+            ) if conditions else (
+                f"f.order_count > 0 AND f.last_order_at <= "
+                f"DATE_SUB(CURDATE(), INTERVAL {REACTIVATION_INACTIVE_DAYS} DAY)"
+            ),
             "T2": "f.order_count = 0 AND (f.has_corporate_email = 1 OR f.has_website = 1 OR f.has_business_social = 1)",
             "T3": "f.order_count = 0 AND f.has_corporate_email = 0 AND f.has_website = 0 AND f.has_business_social = 0 AND (f.primary_email IS NOT NULL OR f.primary_phone IS NOT NULL OR f.has_whatsapp = 1)",
         }[tier]
         order_by = {
-            "T1": "f.last_order_at DESC, f.order_count DESC, f.order_amount_usd DESC",
+            "T1": (
+                "f.qualifying_last_order_at DESC, f.qualifying_order_count DESC, "
+                "f.qualifying_order_amount_usd DESC"
+            ) if conditions else "f.last_order_at DESC, f.order_count DESC, f.order_amount_usd DESC",
             "T2": "(f.has_corporate_email * 35 + f.has_website * 35 + f.has_business_social * 20 + CASE WHEN f.primary_phone IS NOT NULL THEN 10 ELSE 0 END) DESC",
             "T3": "CASE WHEN f.primary_email IS NOT NULL THEN 1 ELSE 0 END DESC",
         }[tier]
+        profile_filter, profile_params, profile_order = self._profile_filter(conditions)
+        profile_cte = f", {self._profile_order_cte}" if conditions else ""
+        profile_fields = f", {self._profile_feature_sql}" if conditions else ""
+        profile_join = (
+            "LEFT JOIN profile_order_rollup po ON BINARY po.company_id = BINARY ci.company_id"
+            if conditions else ""
+        )
         sql = text(f"""
-        WITH {self._contact_cte}, features AS (
+        WITH {self._contact_cte}{profile_cte}, features AS (
             SELECT ci.company_id, ci.company_name, ci.country_name, ci.email AS customer_email,
-                   {self._feature_sql}
+                   {self._feature_sql}{profile_fields}
             FROM `{self.schema}`.customer_info ci
             LEFT JOIN contact_rollup cr ON BINARY cr.company_id = BINARY ci.company_id
             LEFT JOIN order_rollup o ON BINARY o.company_id = BINARY ci.company_id
+            {profile_join}
             WHERE JSON_LENGTH(COALESCE(ci.owner_user_ids, JSON_ARRAY())) = 0
         )
         SELECT f.*
         FROM features f
         WHERE {tier_filter}
+          {profile_filter}
           AND NOT EXISTS (
               SELECT 1
               FROM ark_sales_research_subjects s
@@ -526,15 +710,16 @@ class BusinessPoolGateway:
                 AND t.created_at >= :cooldown_cutoff
                 AND t.status IN ('pending', 'running', 'completed')
           )
-        ORDER BY {order_by}, CRC32(CONCAT(CAST(f.company_id AS CHAR), :seed))
+        ORDER BY {profile_order}{order_by}, CRC32(CONCAT(CAST(f.company_id AS CHAR), :seed))
         LIMIT :limit
         """)
         rows = self.db.execute(sql, {
             "cooldown_cutoff": _now() - timedelta(days=cooldown_days),
             "seed": seed,
             "limit": max(limit, 1),
+            **profile_params,
         }).mappings().all()
-        return [self._candidate(dict(row), tier) for row in rows]
+        return [self._candidate(dict(row), tier, conditions) for row in rows]
 
     def find_public_customers_by_domains(self, domains: list[str]) -> dict[str, dict]:
         """Batch-resolve current OKKI public customers by exact website/corporate-email domain."""
@@ -599,6 +784,8 @@ class BusinessPoolGateway:
                      AND LOWER(SUBSTRING_INDEX(SUBSTRING_INDEX(cc.email, ',', 1), '@', -1)) NOT IN ({free_domains})
                     THEN 1 ELSE 0 END) AS has_corporate_contact_email,
                 MAX(CASE WHEN LOWER(COALESCE(ccs.platform, '')) LIKE '%whatsapp%' AND NULLIF(TRIM(ccs.value), '') IS NOT NULL THEN 1 ELSE 0 END) AS has_whatsapp,
+                MAX(CASE WHEN LOWER(COALESCE(ccs.platform, '')) REGEXP 'instagram|(^|[^a-z])ins([^a-z]|$)' AND NULLIF(TRIM(ccs.value), '') IS NOT NULL THEN 1 ELSE 0 END) AS has_instagram,
+                MAX(CASE WHEN LOWER(COALESCE(ccs.platform, '')) REGEXP 'facebook|(^|[^a-z])fb([^a-z]|$)' AND NULLIF(TRIM(ccs.value), '') IS NOT NULL THEN 1 ELSE 0 END) AS has_facebook,
                 MAX(CASE WHEN LOWER(COALESCE(ccs.platform, '')) NOT LIKE '%whatsapp%' AND NULLIF(TRIM(ccs.value), '') IS NOT NULL THEN 1 ELSE 0 END) AS has_business_social,
                 GROUP_CONCAT(DISTINCT CASE WHEN NULLIF(TRIM(ccs.value), '') IS NOT NULL THEN CONCAT(COALESCE(ccs.platform, 'social'), ':', ccs.value) END ORDER BY ccs.id SEPARATOR ' | ') AS social_summary
             FROM `{self.schema}`.customer_contacts cc
@@ -649,8 +836,18 @@ class BusinessPoolGateway:
         return self.find_public_customers_by_domains([normalized]).get(normalized)
 
     @staticmethod
-    def _candidate(row: dict, tier: str) -> dict:
+    def _candidate(row: dict, tier: str, profile_conditions: dict | None = None) -> dict:
         email = row.get("primary_email") or row.get("customer_email")
+        conditions = profile_conditions or {}
+        profiled = bool(profile_conditions)
+        order_count = int((row.get("qualifying_order_count") if profiled else row.get("order_count")) or 0)
+        order_amount = float(
+            (row.get("qualifying_order_amount_usd") if profiled else row.get("order_amount_usd")) or 0
+        )
+        max_order_amount = float(row.get("qualifying_max_order_amount_usd") or 0) if profiled else 0.0
+        sample_order_count = int(row.get("qualifying_sample_order_count") or 0) if profiled else 0
+        non_sample_order_count = int(row.get("qualifying_non_sample_order_count") or 0) if profiled else 0
+        last_order_at = row.get("qualifying_last_order_at") if profiled else row.get("last_order_at")
         completeness = min(100, (
             25 * int(bool(row.get("has_corporate_email")))
             + 25 * int(bool(row.get("has_website")))
@@ -659,8 +856,9 @@ class BusinessPoolGateway:
             + 10 * int(bool(row.get("primary_phone")))
             + 5 * int(bool(row.get("country_name")))
         ))
+        inactive_days = conditions.get("inactive_order_days") or REACTIVATION_INACTIVE_DAYS
         reasons = {
-            "T1": [f"当前公海且存在历史订单记录，最近 {REACTIVATION_INACTIVE_DAYS} 天无下单"],
+            "T1": [f"当前公海且存在历史订单记录，最近 {inactive_days} 天无下单"],
             "T2": ["当前公海、无历史订单且具备企业身份锚点"],
             "T3": ["当前公海、无历史订单且仅有低信息量联系方式"],
         }[tier]
@@ -670,6 +868,31 @@ class BusinessPoolGateway:
             reasons.append("存在独立站")
         if row.get("has_business_social"):
             reasons.append("存在非WhatsApp社媒")
+        value_rules = conditions.get("value_rules") or {}
+        if (
+            value_rules.get("min_order_count") is not None
+            and order_count >= int(value_rules["min_order_count"])
+            and order_amount > float(value_rules["total_amount_over_usd"])
+        ):
+            reasons.append("成交单数与累计金额命中画像")
+        if (
+            value_rules.get("single_order_over_usd") is not None
+            and max_order_amount > float(value_rules["single_order_over_usd"])
+        ):
+            reasons.append("单笔成交金额命中画像")
+        if (
+            value_rules.get("sample_only_orders")
+            and order_count > 0
+            and sample_order_count == order_count
+            and non_sample_order_count == 0
+        ):
+            reasons.append("历史成交仅包含样品订单")
+        if row.get("has_instagram"):
+            reasons.append("存在 Instagram 账号（优先）")
+        elif row.get("has_facebook"):
+            reasons.append("存在 Facebook 账号")
+        elif row.get("primary_phone"):
+            reasons.append("存在联系电话")
         snapshot = {
             "company_id": str(row.get("company_id")),
             "company_name": row.get("company_name") or "未命名客户",
@@ -683,9 +906,12 @@ class BusinessPoolGateway:
             "address_search_hint": address_search_hint(
                 row.get("customer_address"), row.get("customer_city"), row.get("customer_region")
             ),
-            "order_count": int(row.get("order_count") or 0),
-            "order_amount_usd": float(row.get("order_amount_usd") or 0),
-            "last_order_at": _json_safe(row.get("last_order_at")),
+            "order_count": order_count,
+            "order_amount_usd": order_amount,
+            "max_order_amount_usd": max_order_amount,
+            "sample_order_count": sample_order_count,
+            "last_order_at": _json_safe(last_order_at),
+            "last_followup_at": _json_safe(row.get("last_followup_at")),
         }
         return {
             "source_customer_id": str(row.get("company_id")),
@@ -697,14 +923,16 @@ class BusinessPoolGateway:
             "website": row.get("website"),
             "tier": tier,
             "completeness_score": completeness,
-            "order_count": int(row.get("order_count") or 0),
-            "order_amount_usd": float(row.get("order_amount_usd") or 0),
-            "last_order_at": _as_datetime(row.get("last_order_at")),
+            "order_count": order_count,
+            "order_amount_usd": order_amount,
+            "last_order_at": _as_datetime(last_order_at),
             "contact_snapshot": {
                 "contact_name": row.get("contact_name"),
                 "social_summary": row.get("social_summary"),
                 "has_whatsapp": bool(row.get("has_whatsapp")),
                 "has_business_social": bool(row.get("has_business_social")),
+                "has_instagram": bool(row.get("has_instagram")),
+                "has_facebook": bool(row.get("has_facebook")),
             },
             "source_snapshot": snapshot,
             "selection_reason": reasons,
@@ -726,7 +954,9 @@ def latest_audit(db: Session, refresh: bool = False, gateway: BusinessPoolGatewa
 
 def _upsert_subject(db: Session, candidate: dict, actor_id: int | None) -> ResearchSubject:
     external_key = f"okki:{candidate['source_customer_id']}"
-    subject = db.query(ResearchSubject).filter(ResearchSubject.external_key == external_key).first()
+    subject = db.query(ResearchSubject).filter(
+        ResearchSubject.external_key == external_key,
+    ).with_for_update().first()
     if subject is None:
         candidate_subject = ResearchSubject(
             subject_type="okki_customer",
@@ -758,7 +988,9 @@ def _upsert_subject(db: Session, candidate: dict, actor_id: int | None) -> Resea
                 db.flush()
             subject = candidate_subject
         except IntegrityError:
-            subject = db.query(ResearchSubject).filter(ResearchSubject.external_key == external_key).first()
+            subject = db.query(ResearchSubject).filter(
+                ResearchSubject.external_key == external_key,
+            ).with_for_update().first()
             if subject is None:
                 raise
     for field in (
@@ -945,8 +1177,12 @@ def prepare_batch(
     data = _data(payload)
     batch_date = data.get("batch_date") or date.today()
     quota = int(data.get("quota_per_tier") or 20)
-    policy_version = str(data.get("policy_version") or "v1")
-    idempotency_key = f"public-pool-{batch_date.isoformat()}-{policy_version}-{quota}"
+    policy_version = str(data.get("policy_version") or "v3")
+    if policy_version == "lead-score-70-v1":
+        raise SalesAutomationError("该策略版本为系统保留值")
+    profile_conditions = normalize_profile_conditions(data.get("profile_conditions"))
+    profile_suffix = f"-{_snapshot_hash(profile_conditions)[:16]}" if profile_conditions else ""
+    idempotency_key = f"public-pool-{batch_date.isoformat()}-{policy_version}-{quota}{profile_suffix}"
     existing = db.query(PublicPoolBatch).filter(
         PublicPoolBatch.idempotency_key == idempotency_key,
     ).with_for_update().first()
@@ -957,7 +1193,7 @@ def prepare_batch(
         db.query(PublicPoolTask).filter(PublicPoolTask.batch_id == existing.id).delete(synchronize_session=False)
         batch = existing
         batch.status = "pending"
-        batch.audit_snapshot = {}
+        batch.audit_snapshot = {"profile_conditions": profile_conditions} if profile_conditions else {}
         batch.result_counts = {}
         batch.error_message = None
         batch.started_at = None
@@ -970,7 +1206,7 @@ def prepare_batch(
             status="pending",
             quota_per_tier=quota,
             quotas={tier: quota for tier in TIERS},
-            audit_snapshot={},
+            audit_snapshot={"profile_conditions": profile_conditions} if profile_conditions else {},
             result_counts={},
             idempotency_key=idempotency_key,
             created_by=actor_id,
@@ -1007,35 +1243,89 @@ def execute_batch(
     db.refresh(batch)
     quota = batch.quota_per_tier
     actor_id = batch.updated_by
+    profile_conditions = normalize_profile_conditions(
+        (batch.audit_snapshot or {}).get("profile_conditions")
+    )
     source = gateway or BusinessPoolGateway(db)
+    named_lock_acquired = False
     try:
-        batch.audit_snapshot = source.audit()
+        dialect = db.get_bind().dialect.name
+        if dialect in {"mysql", "mariadb"}:
+            # A named lock is session-scoped and is not subject to InnoDB's row
+            # lock wait timeout while a preceding profile query runs. Distinct
+            # profile batches therefore queue reliably instead of racing.
+            acquired = db.execute(text("SELECT GET_LOCK(:lock_name, :wait_seconds)"), {
+                "lock_name": PUBLIC_POOL_EXECUTION_LOCK_NAME,
+                "wait_seconds": PUBLIC_POOL_EXECUTION_LOCK_WAIT_SECONDS,
+            }).scalar()
+            if int(acquired or 0) != 1:
+                raise SalesAutomationError("公海批次执行锁等待超时")
+            named_lock_acquired = True
+        else:
+            # Test/non-MySQL fallback. Production OKKI runs on MySQL and uses the
+            # named-lock branch above.
+            execution_mutex = db.query(PublicPoolBatch.id).filter(
+                PublicPoolBatch.deleted_at.is_(None),
+                or_(
+                    PublicPoolBatch.id == batch.id,
+                    PublicPoolBatch.policy_version != "lead-score-70-v1",
+                ),
+            ).order_by(PublicPoolBatch.id.asc()).with_for_update().first()
+            if execution_mutex is None:
+                raise SalesAutomationError("公海批次执行锁不可用")
+        batch.audit_snapshot = {
+            **source.audit(),
+            "profile_conditions": profile_conditions,
+            "profile_filter_applied": bool(profile_conditions),
+            "followup_time_source": "customer_info.update_time" if profile_conditions.get("stale_followup_days") else None,
+        }
         result_counts: dict[str, int] = {}
         for tier in TIERS:
-            candidates = source.fetch_tier_candidates(
-                tier,
-                limit=max(quota * 4, quota),
-                seed=f"{batch.batch_date.isoformat()}:{tier}:{batch.policy_version}",
-            )
-            top_count = min(len(candidates), max(0, quota - min(4, quota)))
-            selected = candidates[:top_count]
-            remaining = candidates[top_count:]
-            exploration_count = min(quota - len(selected), len(remaining))
-            if exploration_count:
-                rng = random.Random(f"{batch.batch_date.isoformat()}:{tier}:{batch.policy_version}")
-                selected.extend(rng.sample(remaining, exploration_count))
-            for rank, candidate in enumerate(selected[:quota], start=1):
+            fetch_kwargs = {
+                "limit": max(quota * 4, quota),
+                "seed": f"{batch.batch_date.isoformat()}:{tier}:{batch.policy_version}",
+            }
+            if profile_conditions:
+                fetch_kwargs["profile_conditions"] = profile_conditions
+            candidates = source.fetch_tier_candidates(tier, **fetch_kwargs)
+            quality_count = min(len(candidates), max(0, quota - min(4, quota)))
+            selected = candidates[:quality_count]
+            remaining = candidates[quality_count:]
+            rng = random.Random(f"{batch.batch_date.isoformat()}:{tier}:{batch.policy_version}")
+            rng.shuffle(remaining)
+            selected.extend(remaining)
+            created_count = 0
+            for candidate in selected:
+                if created_count >= quota:
+                    break
+                external_key = f"okki:{candidate['source_customer_id']}"
+                existing_subject = db.query(ResearchSubject).filter(
+                    ResearchSubject.external_key == external_key,
+                ).with_for_update().first()
+                if existing_subject is not None:
+                    # Recheck after taking the stable subject lock and before
+                    # mutating its snapshot. This keeps skipped subjects intact.
+                    recent_task = db.query(PublicPoolTask.id).filter(
+                        PublicPoolTask.subject_id == existing_subject.id,
+                        PublicPoolTask.batch_id != batch.id,
+                        PublicPoolTask.deleted_at.is_(None),
+                        PublicPoolTask.created_at >= _now() - timedelta(days=DEFAULT_COOLDOWN_DAYS),
+                        PublicPoolTask.status.in_(("pending", "running", "completed")),
+                    ).first()
+                    if recent_task is not None:
+                        continue
                 subject = _upsert_subject(db, candidate, actor_id)
+                created_count += 1
                 db.add(PublicPoolTask(
                     batch_id=batch.id,
                     subject_id=subject.id,
                     tier=tier,
-                    selection_rank=rank,
+                    selection_rank=created_count,
                     selection_reason=candidate["selection_reason"],
                     created_by=actor_id,
                     updated_by=actor_id,
                 ))
-            result_counts[tier] = min(len(selected), quota)
+            result_counts[tier] = created_count
         batch.result_counts = {"selected": result_counts, "total": sum(result_counts.values())}
         batch.status = "completed"
         batch.finished_at = _now()
@@ -1053,6 +1343,18 @@ def execute_batch(
         logger.warning("public pool batch generation failed: %s", type(exc).__name__)
         print(f"public pool batch generation failed: {type(exc).__name__}", flush=True)
         raise
+    finally:
+        if named_lock_acquired:
+            try:
+                db.execute(text("SELECT RELEASE_LOCK(:lock_name)"), {
+                    "lock_name": PUBLIC_POOL_EXECUTION_LOCK_NAME,
+                })
+                db.commit()
+            except SQLAlchemyError:
+                # A broken/disconnected MySQL session releases its named locks;
+                # do not mask the completed batch or the original failure.
+                db.rollback()
+                logger.exception("public pool named execution lock release failed")
 
 
 def generate_batch(

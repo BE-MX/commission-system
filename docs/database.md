@@ -325,13 +325,17 @@ PII 密钥 `ARK_SALARY_ENCRYPTION_KEY` / `ARK_SALARY_HASH_KEY` 在 `backend/.env
 迁移 106 只在方舟库建表；`lsordertest` 仍由 `BusinessPoolGateway` 用只读 SQL 查询，不建立跨库外键，也不回写 OKKI。
 
 - `ark_sales_research_subjects`：统一研究主体。OKKI 客户用 `external_key=okki:{company_id}`，智能获客高分候选用 `external_key=lead_company:{company_id}`，并由 `(source_system,source_customer_id)` 双重唯一约束；允许在尚无官网域名时进入背调。保存初筛档位、信息完整度、历史订单/画像评分摘要和来源快照哈希。
-- `ark_sales_public_pool_batches`：每日抽样批次。`idempotency_key=日期+策略版本+每档配额`，保存生成时公海审计快照、T1/T2/T3 配额和实际选取数。
+- `ark_sales_public_pool_batches`：每日抽样批次。`idempotency_key=日期+策略版本+每档配额+规范化画像哈希（有画像时）`，保存生成时公海审计快照、冻结的 `audit_snapshot.profile_conditions`、T1/T2/T3 配额和实际选取数；画像条件变化会创建独立批次，同画像重试保持幂等。
 - `ark_sales_public_pool_tasks`：逐客户背调任务。状态 `pending/running/completed/failed/skipped`，具备 15 分钟租约；人工审核状态与 Agent 执行状态分列，确认后可关联 `ark_customer_opportunities`。
 - `ark_sales_public_pool_tasks`：迁移 113 增加 `gate_status` / `gate_snapshot` 两阶段止损；只有行业门控通过才允许昂贵的深入背调，无关客户在门控提交时直接完成。
 - `ark_sales_deal_assessments`：后端重算的 A/B/C/D 成交研判。业务质量分、成交分、证据置信度和优先分分开保存；迁移 113 增加行业相关性与停止原因、调研深度、社媒活跃画像、企业知识不可变版本引用、客户类型/采购阶段/体量/正负信号，以及真实性、采购潜力、需求准备度、专业度、产品市场匹配、增长、决策权、交易合规、互动和战略价值十维资格研判。后端另算已评分维度的归一资格分与证据覆盖率。行业无关由 schema 与 service 双层清空社媒关系、风险、资格研判、正向得分、联系人、供应商判断和触达内容。
 - `ark_sales_contacts` / `ark_sales_research_runs`：新增 nullable `subject_id`，并将原 `company_id` 改为 nullable，使无官网的 OKKI 主体也能复用有来源联系人与原子事实模型。两种主体至少命中一种由服务层保证。
 
 T1 = 当前公海且有历史订单；T2 = 无历史订单但有企业邮箱、独立站或非 WhatsApp 业务社媒；T3 = 不满足 T2、但有私人邮箱、电话或 WhatsApp；其余进入冷藏区。每日默认每档选 20 条，其中 16 条按确定性质量排序、最多 4 条固定种子探索，180 天内已进入有效任务的客户不重复抽取。
+
+手工与定时的 v3 默认画像先取满足任一成交条件的 T1 客户：`成交数 >=2 且累计金额 > USD 1500`、`任一单 > USD 1000`、`全部历史成交单名均为 Sample/样品/样单`；再同时限制历史成交额 Top 10 国家、Instagram/Facebook/电话至少一项、历史产品包含天才/平型/贴发任一关键词、至少 60 天未下单、客户资料至少 30 天未更新。成交单沿用订单经营分析有效口径（已结束，或终止且已结清；排除 `trail` 含“个人”），金额、最近下单、样单及产品均只从该口径计算。联系方式排序为 Instagram → Facebook → 电话。同步业务库没有独立跟进记录表，`customer_info.update_time` 仅作为最近跟进的代理字段；空值按从未跟进纳入，批次快照通过 `followup_time_source` 明示该口径。
+
+2026-08-25 已对 `lsordertest` 做只读列检查并以 `LIMIT 1` 执行完整画像 SQL，确认 `customer_info.update_time`、`okki_order_items.product_cn_name` 及画像查询链路可用；该检查不写入同步业务库。
 
 智能获客候选在创建 `ark_sales_companies` 前，以归一化官网域名（无官网时可用非免费企业邮箱域名）精确查询当前 OKKI 公海，命中即拦截；未命中且画像匹配分 `>=70` 时创建 `lead_company` 研究主体和 T2 形态任务，继续复用 `ark_sales_deal_assessments` 的结构化背调结果。
 

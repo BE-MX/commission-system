@@ -14,7 +14,7 @@ from sqlalchemy.pool import StaticPool
 from app.auth.dependencies import get_current_user
 from app.core.database import Base, get_db
 from app.insight import models as insight_models
-from app.sales_automation import agent_router, models, public_pool_service, router
+from app.sales_automation import agent_router, models, public_pool_service, router, scheduler as public_pool_scheduler
 from app.sales_automation.dependencies import require_sales_agent
 
 
@@ -310,6 +310,245 @@ def test_http_batch_creation_returns_202_and_enqueues_once(db, monkeypatch):
     assert queued == [first.json()["data"]["id"]]
 
 
+def test_profile_conditions_are_canonical_frozen_and_part_of_batch_idempotency(db):
+    profile = public_pool_service.default_profile_conditions()
+    reordered = {
+        **profile,
+        "contact_channels": ["phone", "instagram", "facebook"],
+        "product_keywords": ["贴发", "天才", "平型"],
+    }
+    first, first_should_start = public_pool_service.prepare_batch(db, {
+        "batch_date": date(2026, 8, 25), "quota_per_tier": 20,
+        "policy_version": "v3", "profile_conditions": profile,
+    }, actor_id=7)
+    duplicate, duplicate_should_start = public_pool_service.prepare_batch(db, {
+        "batch_date": date(2026, 8, 25), "quota_per_tier": 20,
+        "policy_version": "v3", "profile_conditions": reordered,
+    }, actor_id=8)
+    changed, changed_should_start = public_pool_service.prepare_batch(db, {
+        "batch_date": date(2026, 8, 25), "quota_per_tier": 20,
+        "policy_version": "v3",
+        "profile_conditions": {
+            **profile,
+            "value_rules": {**profile["value_rules"], "total_amount_over_usd": 1600},
+        },
+    }, actor_id=7)
+
+    assert first_should_start is True
+    assert duplicate_should_start is False
+    assert duplicate.id == first.id
+    assert duplicate.audit_snapshot["profile_conditions"] == profile
+    assert changed_should_start is True
+    assert changed.id != first.id
+
+
+def test_different_profile_batches_recheck_global_cooldown_before_task_insert(db):
+    class SameCustomerGateway(FakeGateway):
+        def fetch_tier_candidates(
+            self, tier, limit, seed, cooldown_days=180, profile_conditions=None,
+        ):
+            assert profile_conditions
+            return [_candidate("T1", 1)] if tier == "T1" else []
+
+    first_profile = public_pool_service.default_profile_conditions()
+    second_profile = {
+        **first_profile,
+        "value_rules": {**first_profile["value_rules"], "total_amount_over_usd": 1600},
+    }
+    first = public_pool_service.generate_batch(db, {
+        "batch_date": date(2026, 8, 25), "quota_per_tier": 1,
+        "policy_version": "v3", "profile_conditions": first_profile,
+    }, actor_id=7, gateway=SameCustomerGateway())
+    second = public_pool_service.generate_batch(db, {
+        "batch_date": date(2026, 8, 25), "quota_per_tier": 1,
+        "policy_version": "v3", "profile_conditions": second_profile,
+    }, actor_id=8, gateway=SameCustomerGateway())
+
+    assert first.result_counts["total"] == 1
+    assert second.id != first.id
+    assert second.result_counts == {"selected": {"T1": 0, "T2": 0, "T3": 0}, "total": 0}
+    assert db.query(models.PublicPoolTask).count() == 1
+
+
+def test_cooldown_skip_preserves_subject_snapshot_and_refills_quota(db):
+    class FirstGateway(FakeGateway):
+        def fetch_tier_candidates(
+            self, tier, limit, seed, cooldown_days=180, profile_conditions=None,
+        ):
+            return [_candidate("T1", 1)] if tier == "T1" else []
+
+    class RefillGateway(FakeGateway):
+        def fetch_tier_candidates(
+            self, tier, limit, seed, cooldown_days=180, profile_conditions=None,
+        ):
+            if tier != "T1":
+                return []
+            stale = _candidate("T1", 1)
+            stale["display_name"] = "SHOULD NOT REPLACE"
+            stale["source_snapshot"] = {"mutated": True}
+            return [stale, *[_candidate("T1", item) for item in range(2, 7)]]
+
+    first_profile = public_pool_service.default_profile_conditions()
+    first = public_pool_service.generate_batch(db, {
+        "batch_date": date(2026, 8, 25), "quota_per_tier": 5,
+        "policy_version": "v3", "profile_conditions": first_profile,
+    }, actor_id=7, gateway=FirstGateway())
+    original_subject = db.query(models.ResearchSubject).filter_by(external_key="okki:T1-1").one()
+    original_name = original_subject.display_name
+    original_snapshot = dict(original_subject.source_snapshot)
+    second_profile = {
+        **first_profile,
+        "value_rules": {**first_profile["value_rules"], "total_amount_over_usd": 1600},
+    }
+
+    second = public_pool_service.generate_batch(db, {
+        "batch_date": date(2026, 8, 25), "quota_per_tier": 5,
+        "policy_version": "v3", "profile_conditions": second_profile,
+    }, actor_id=8, gateway=RefillGateway())
+
+    db.refresh(original_subject)
+    assert first.result_counts["total"] == 1
+    assert second.result_counts == {"selected": {"T1": 5, "T2": 0, "T3": 0}, "total": 5}
+    assert db.query(models.PublicPoolTask).count() == 6
+    assert original_subject.display_name == original_name
+    assert original_subject.source_snapshot == original_snapshot
+
+
+def test_http_rejects_batch_profile_without_any_value_rule(db):
+    response = _human_client(db).post("/api/sales-automation/public-pool/batches", json={
+        "profile_conditions": {
+            "value_rules": {
+                "min_order_count": None,
+                "total_amount_over_usd": None,
+                "single_order_over_usd": None,
+                "sample_only_orders": False,
+            },
+        },
+    })
+
+    assert response.status_code == 422
+
+
+def test_public_batch_rejects_reserved_high_score_policy_version(db):
+    response = _human_client(db).post("/api/sales-automation/public-pool/batches", json={
+        "policy_version": "lead-score-70-v1",
+    })
+    assert response.status_code == 422
+
+    with pytest.raises(public_pool_service.SalesAutomationError, match="系统保留值"):
+        public_pool_service.prepare_batch(db, {
+            "batch_date": date(2026, 8, 25),
+            "quota_per_tier": 1,
+            "policy_version": "lead-score-70-v1",
+        }, actor_id=7)
+
+
+def test_daily_scheduler_uses_the_same_default_profile(monkeypatch):
+    captured = {}
+
+    class SessionContext:
+        def __enter__(self):
+            return object()
+
+        def __exit__(self, *_args):
+            return False
+
+    class Batch:
+        id = 9
+        batch_date = date(2026, 8, 25)
+        status = "completed"
+        result_counts = {"total": 1}
+
+    def fake_generate(_db, payload, actor_id):
+        captured.update(payload)
+        captured["actor_id"] = actor_id
+        return Batch()
+
+    monkeypatch.setattr(public_pool_scheduler, "SessionLocal", SessionContext)
+    monkeypatch.setattr(public_pool_scheduler, "generate_batch", fake_generate)
+    monkeypatch.setattr(
+        public_pool_scheduler, "get_settings",
+        lambda: type("Settings", (), {"SALES_PUBLIC_POOL_QUOTA_PER_TIER": 20})(),
+    )
+
+    public_pool_scheduler.generate_public_pool_daily_batch()
+
+    assert captured["policy_version"] == "v3"
+    assert captured["profile_conditions"] == public_pool_service.default_profile_conditions()
+    assert captured["actor_id"] is None
+
+
+def test_business_pool_profile_compiles_bound_filters_and_instagram_priority():
+    gateway = object.__new__(public_pool_service.BusinessPoolGateway)
+    gateway.schema = "lsordertest"
+    gateway.website_column = "homepage"
+    gateway.address_column = "address"
+    gateway.locality_columns = {"city": "city", "region": "region"}
+
+    class RecordingSession:
+        def __init__(self):
+            self.statement = ""
+            self.params = {}
+
+        def execute(self, statement, params=None):
+            self.statement = str(statement)
+            self.params = params or {}
+
+            class Result:
+                @staticmethod
+                def mappings():
+                    return Result()
+
+                @staticmethod
+                def all():
+                    return []
+
+            return Result()
+
+    session = RecordingSession()
+    gateway.db = session
+    gateway.fetch_tier_candidates(
+        "T1", limit=20, seed="profile-test",
+        profile_conditions=public_pool_service.default_profile_conditions(),
+    )
+
+    assert "f.qualifying_order_count >= :profile_min_order_count" in session.statement
+    assert "f.qualifying_order_amount_usd > :profile_total_amount_over_usd" in session.statement
+    assert "f.qualifying_max_order_amount_usd > :profile_single_order_over_usd" in session.statement
+    assert "f.qualifying_sample_order_count = f.qualifying_order_count" in session.statement
+    assert "profile_order.status = '13972831656'" in session.statement
+    assert "CAST(profile_order.trail AS CHAR) NOT LIKE '%个人%'" in session.statement
+    assert "ORDER BY f.has_instagram DESC, f.has_facebook DESC" in session.statement
+    assert "f.qualifying_last_order_at DESC, f.qualifying_order_count DESC" in session.statement
+    assert "profile_order_rollup AS" in session.statement
+    assert "LEFT JOIN profile_order_rollup po" in session.statement
+    assert "LIMIT 10" in session.statement
+    assert "INTERVAL 60 DAY" in session.statement
+    assert "INTERVAL 30 DAY" in session.statement
+    assert "LOCATE(LOWER(:profile_product_keyword_0)" in session.statement
+    assert set(session.params.values()) >= {2, 1500.0, 1000.0, "天才", "平型", "贴发"}
+
+
+def test_candidate_records_profile_matches_and_followup_proxy():
+    candidate = public_pool_service.BusinessPoolGateway._candidate({
+        "company_id": "88", "company_name": "Profile Match", "country_name": "美国",
+        "order_count": 3, "order_amount_usd": 2000,
+        "qualifying_order_count": 2, "qualifying_order_amount_usd": 1800,
+        "qualifying_max_order_amount_usd": 1200,
+        "qualifying_sample_order_count": 0, "qualifying_non_sample_order_count": 2,
+        "qualifying_last_order_at": datetime(2026, 5, 1),
+        "has_instagram": 1, "has_facebook": 1, "primary_phone": "+1 555",
+        "last_followup_at": datetime(2026, 6, 1),
+    }, "T1", public_pool_service.default_profile_conditions())
+
+    assert "成交单数与累计金额命中画像" in candidate["selection_reason"]
+    assert "单笔成交金额命中画像" in candidate["selection_reason"]
+    assert "存在 Instagram 账号（优先）" in candidate["selection_reason"]
+    assert candidate["source_snapshot"]["max_order_amount_usd"] == 1200
+    assert candidate["source_snapshot"]["order_count"] == 2
+    assert candidate["source_snapshot"]["last_followup_at"] == "2026-06-01T00:00:00"
+
+
 def test_business_pool_cross_table_id_joins_ignore_column_collation():
     gateway = object.__new__(public_pool_service.BusinessPoolGateway)
     gateway.schema = "lsordertest"
@@ -343,6 +582,9 @@ def test_business_pool_cross_table_id_joins_ignore_column_collation():
     gateway.fetch_tier_candidates("T1", limit=1, seed="test")
     assert "BINARY cr.company_id = BINARY ci.company_id" in session.statement
     assert "BINARY o.company_id = BINARY ci.company_id" in session.statement
+    assert "profile_order_rollup" not in session.statement
+    assert "qualifying_order_count" not in session.statement
+    assert "ci.update_time" not in session.statement
     assert "BINARY s.source_customer_id = BINARY CAST(f.company_id AS CHAR)" in session.statement
     assert "NULLIF(TRIM(ci.`address`), '') AS customer_address" in session.statement
     assert "NULLIF(TRIM(ci.`city_name`), '') AS customer_city" in session.statement
