@@ -35,7 +35,7 @@ def _seed_job(db, *, mode="generate", created_at=None, parameters=None, **job_va
     if preset is None:
         provider = AiProvider(
             name="Worker provider", provider_type="direct",
-            api_base="https://api.teamorouter.com", api_type="openai",
+            api_base="https://api.teamorouter.cn", api_type="openai",
             api_key="encrypted",
             is_enabled=True, timeout_sec=30,
         )

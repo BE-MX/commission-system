@@ -24,7 +24,7 @@ ImageModelId = Literal[
 ]
 
 DEFAULT_IMAGE_MODEL_ID: ImageModelId = "gpt-image-2"
-TEAMROUTER_HOST = "api.teamorouter.com"
+TEAMROUTER_HOST = "api.teamorouter.cn"
 
 
 @dataclass(frozen=True, slots=True)

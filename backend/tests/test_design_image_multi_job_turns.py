@@ -32,7 +32,7 @@ def configured_owner(db):
     provider = AiProvider(
         name="Multi output provider",
         provider_type="direct",
-        api_base="https://api.teamorouter.com",
+        api_base="https://api.teamorouter.cn",
         api_type="openai",
         api_key="encrypted",
         is_enabled=True,

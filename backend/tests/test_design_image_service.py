@@ -40,7 +40,7 @@ def _preset(db) -> AiPreset:
     provider = AiProvider(
         name="Design image provider",
         provider_type="direct",
-        api_base="https://api.teamorouter.com",
+        api_base="https://api.teamorouter.cn",
         api_type="openai",
         api_key="encrypted",
         is_enabled=True,
@@ -67,7 +67,7 @@ def _additional_model_preset(
     model: str,
     parameters: dict | None = None,
 ) -> AiPreset:
-    provider = db.query(AiProvider).filter_by(api_base="https://api.teamorouter.com").one()
+    provider = db.query(AiProvider).filter_by(api_base="https://api.teamorouter.cn").one()
     preset = AiPreset(
         preset_name=preset_name,
         provider_id=provider.id,

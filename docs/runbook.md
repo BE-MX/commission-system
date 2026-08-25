@@ -996,7 +996,8 @@ grep "job completed" logs\service.log | tail -20
 - 服务：`sudo systemctl status|restart ark-backend`（uvicorn 单 worker，127.0.0.1:8001，nginx 80 反代）
 - **部署更新（不走 GitHub）**：开发机 `git push cloud main`（remote `cloud` = ssh bare 仓库）→ `ssh ubuntu@154.8.205.162 "cd ~/commission-system && git pull && sudo systemctl restart ark-backend"`；前端变更时开发机 `npm run build` 后 `tar czf - dist | ssh ubuntu@154.8.205.162 "cd /tmp && tar xzf - && sudo rsync -a --delete dist/ /var/www/ark-dist/ && rm -rf dist"`
 - 素材：`uploads/expo/`（wigs/hair_colors/scenes/results）2026-07-22 从开发机同步；**切流量前需与办公室生产核对增量**
-- **生图已切 TeamRouter 直连，隧道当晚即停用（2026-07-31 晚）**：云雾（wlai）的 gpt-image 模型 2026-07-31 24:00 起停止服务，生图 preset `expo_wig_composite` 当晚切到 **TeamRouter**（`https://api.teamorouter.com`，provider id=10）。**该域名从北京云机直连可达**（`/models` 0.2s），因此 `backend/.env` 的 `AI_IMAGE_PROXY` 已注释停用、隧道不再参与生图链路（原值备份在 `backend/.env.bak-20260731`）。
+- **生图已切 TeamRouter 直连，隧道当晚即停用（2026-07-31 晚；2026-08-25 更新域名）**：云雾（wlai）的 gpt-image 模型 2026-07-31 24:00 起停止服务，生图 preset `expo_wig_composite` 当晚切到 **TeamRouter**（provider id=10）。当前官方 Base URL 为 `https://api.teamorouter.cn`；开发机直连 `/v1/models` 实测 0.6s，旧 `.com` 域名已出现直连超时。`backend/.env` 的 `AI_IMAGE_PROXY` 保持留空，隧道不参与生图链路（原值备份在 `backend/.env.bak-20260731`）。
+  - **域名切换必须同窗完成**：代码白名单、共享 Provider `api_base`、办公室后端重启三者不可分步跨窗口；切换后立即从办公室与北京云实例分别验证 `/v1/models`，并各跑一条 generation/edit 探针。共享 Provider 先改而旧代码未重启时，设计工作台会暂时显示“未配置”；代码先发而 Provider 未改时同样会返回 503。
   - **切换当天踩的坑**：只改 preset 不动 `.env` 会立刻全失败——`AI_IMAGE_PROXY` 一旦有值，生图强制走隧道，而新加坡侧 `permitopen` 白名单只放行 wlai/elbnt 两个域名，sshd 直接拒连，报 `SOCKS Malformed reply`。**换生图 provider 域名时，`.env` 的代理配置和 preset 必须一起改**（改 .env 后需 `systemctl restart ark-backend`，Settings 是启动期读取）。
   - **实测收益**：单张 21~50s（12 次采样中位 27s），云雾时代是 165~190s，快 6~8 倍；且 TeamRouter 接受 `input_fidelity=high`（wlai 自 2026-07-20 起拒收该参数），保真度明显回升——preset parameters 必须带 `{"input_fidelity": "high"}`，漏了会出现把客户圆脸做成瘦脸尖下巴的情况。
   - `wlai-tunnel.service` **暂留未停**（回退退路，不消耗资源）。确认 TeamRouter 稳定后可 `sudo systemctl disable --now wlai-tunnel`。下面这段隧道方案文档保留备查——**当前生图链路不依赖它**。
@@ -1138,7 +1139,7 @@ AI_IMAGE_PROXY=
 
 `DESIGN_IMAGE_STALE_SECONDS` 必须大于 lease。调度总开关是 `SCHEDULER_ENABLED`，时区 `SCHEDULER_TIMEZONE=Asia/Shanghai`，任务 ID 为 `design_image_queue`，`max_instances=1 / coalesce=true`。目标态只允许 office-primary 开启此 worker，并让同一实例访问同一私有根；展会/云实例不得同时消费。不要为关闭单个生图任务而直接关全局 Scheduler，因为会连带停掉其他定时任务。
 
-部署前用 Windows ACL 检查并收紧存储根及其父目录：服务账号需要读、写、建目录、替换和删除；普通用户、Web 静态服务和其他应用账号不得写入，也不得通过 junction/reparse point 进入该根。先以服务账号创建测试图并删除，再启动灰度。默认 Preset 必须为启用的 direct/openai TeamRouter Provider（`https://api.teamorouter.com`）、名称 `design_image_generation`、model 精确为 `gpt-image-2`；不要在证据里记录密钥。
+部署前用 Windows ACL 检查并收紧存储根及其父目录：服务账号需要读、写、建目录、替换和删除；普通用户、Web 静态服务和其他应用账号不得写入，也不得通过 junction/reparse point 进入该根。先以服务账号创建测试图并删除，再启动灰度。默认 Preset 必须为启用的 direct/openai TeamRouter Provider（`https://api.teamorouter.cn`）、名称 `design_image_generation`、model 精确为 `gpt-image-2`；不要在证据里记录密钥。
 
 可选模型使用独立 Preset，禁止覆盖默认 Preset 的 model：Grok Image 2 为 `design_image_generation_grok_image_2 / grok-image-2`，Nano Banana Pro 为 `design_image_generation_nano_banana_pro / gemini-3-pro-image`，Nano Banana 2 为 `design_image_generation_nano_banana_2 / gemini-3.1-flash-image`。Gemini Preset 必须额外配置 `parameters.api_style="chat"`；该兼容端点的尺寸/质量仅为提示词软约束，不能当成协议级像素保证。先用同一 TeamRouter Key 调 `GET /v1/models` 确认精确 model ID 存在，再分别完成无参考图 generation、单参考图 edit、多参考图 edit、Markdown 与 `message.images[]` 响应、错误与 usage 探针，最后才启用 Preset；否则页面会显示“未配置”且不可选。2026-08-17 实时目录尚无 `grok-image-2` 与 `gemini-3-pro-image`，不得用相近文本模型或别名冒充。
 

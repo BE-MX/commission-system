@@ -30,23 +30,23 @@ def _configured_model(db, *, api_base: str, api_style: str | None = None):
 
 
 def test_model_catalog_accepts_only_exact_https_teamrouter_host(db):
-    _configured_model(db, api_base="https://api.teamorouter.com")
+    _configured_model(db, api_base="https://api.teamorouter.cn")
     assert model_catalog.configured_model_row(db, "gpt-image-2") is not None
 
 
 def test_model_catalog_rejects_teamrouter_lookalike_host(db):
-    _configured_model(db, api_base="https://api.teamorouter.com.evil.test")
+    _configured_model(db, api_base="https://api.teamorouter.cn.evil.test")
     assert model_catalog.configured_model_row(db, "gpt-image-2") is None
 
 
 def test_model_catalog_rejects_wrong_api_style(db):
-    _configured_model(db, api_base="https://api.teamorouter.com", api_style="chat")
+    _configured_model(db, api_base="https://api.teamorouter.cn", api_style="chat")
     assert model_catalog.configured_model_row(db, "gpt-image-2") is None
 
 
 def test_model_catalog_rejects_missing_teamrouter_api_key(db):
     _preset, provider = _configured_model(
-        db, api_base="https://api.teamorouter.com/v1"
+        db, api_base="https://api.teamorouter.cn/v1"
     )
     provider.api_key = None
     db.flush()
@@ -56,7 +56,7 @@ def test_model_catalog_rejects_missing_teamrouter_api_key(db):
 
 def test_model_catalog_rejects_non_api_base_path(db):
     _configured_model(
-        db, api_base="https://api.teamorouter.com/v1/chat/completions"
+        db, api_base="https://api.teamorouter.cn/v1/chat/completions"
     )
 
     assert model_catalog.configured_model_row(db, "gpt-image-2") is None
@@ -64,7 +64,7 @@ def test_model_catalog_rejects_non_api_base_path(db):
 
 def test_gemini_model_requires_its_exact_preset_and_chat_style(db):
     preset, _provider = _configured_model(
-        db, api_base="https://api.teamorouter.com", api_style="chat"
+        db, api_base="https://api.teamorouter.cn", api_style="chat"
     )
     preset.preset_name = "design_image_generation_nano_banana_pro"
     preset.model = "gemini-3-pro-image"

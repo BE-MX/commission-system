@@ -540,11 +540,11 @@ frontend/src/
 - 云 Nginx `/uploads/expo/` 开 proxy_cache（30d TTL + use_stale 隧道断连出旧图），实测 MISS 1.06s → HIT 0.015s；素材除场景示意图外全 uuid 命名换图即换 URL 天然不脏，场景图固定名由 `scene_image_url()` 拼 `?v=<mtime>` 破缓存。清缓存命令与注意事项见 runbook「性能监控」节
 
 **生图 provider 切 TeamRouter（2026-07-31 晚，云雾当日 24 点停服倒逼）**
-- 云雾（wlai）gpt-image 模型 2026-07-31 24:00 停服。`expo_wig_composite` 切到 **TeamRouter**（provider id=10，`https://api.teamorouter.com`），model 仍是 `gpt-image-2`
+- 云雾（wlai）gpt-image 模型 2026-07-31 24:00 停服。`expo_wig_composite` 切到 **TeamRouter**（provider id=10；当前官方地址 `https://api.teamorouter.cn`），model 仍是 `gpt-image-2`
 - **preset parameters 必须带 `{"input_fidelity": "high"}`**：该参数专治合成脸变形，wlai 自 2026-07-20 起拒收、只能靠摘参兜底，TeamRouter 接受且带上后反而更快。实测不带它时五张里有一张把客户圆脸做成瘦脸尖下巴眼睛放大；带上后四张脸颊饱满度/眼睛大小/轮廓都忠实。**漏配等于放弃保真控制**
 - `quality` 已从 parameters 移除（在 wlai 上已证伪不生效，在 TeamRouter 上未验证，22s 已够快不必冒不确定性）
 - **实测**：走 `edit_image` 真实链路 21.3/50.2/26.8s；裸测 12 次采样中位 27s、最慢 50.2s；云雾同期 165~190s，**快 6~8 倍**。TeamRouter 13 次调用全成功，云雾同期 3 次挂 1 次
-- **直连可达免隧道**：`api.teamorouter.com` 从北京云机直连 0.2s。`.env` 的 `AI_IMAGE_PROXY` 已注释——**只改 preset 不改 .env 会立刻全失败**（代理有值就强制走隧道，而隧道 permitopen 白名单不含新域名，sshd 直接拒连报 `SOCKS Malformed reply`）。改 .env 后必须重启后端
+- **直连可达免隧道**：2026-08-25 官方 Base URL 已变更为 `api.teamorouter.cn`；开发机直连 `/v1/models` 实测 0.6s，旧 `.com` 域名直连超时并导致设计生图与展会试戴连续失败。`.env` 的 `AI_IMAGE_PROXY` 保持留空，生产直接访问 `.cn`；若显式配置代理，改动后必须重启后端
 - api_base 不带 `/v1` 无妨：`build_image_url` 会自动补，拼成 `/v1/images/edits`
 - 待办：生图从 180s 降到 25s 后，`MIN_IMAGE_EDIT_TIMEOUT_SEC=300` 与 `STALE_GENERATING_SECS=420` 显得过宽（provider 挂了客户要等 5 分钟才见错误），可评估收紧，但需先摸清展位并发下的排队分布
 
@@ -807,7 +807,7 @@ frontend/src/
 | Nano Banana Pro | `gemini-3-pro-image` | `design_image_generation_nano_banana_pro` | `chat` |
 | Nano Banana 2 | `gemini-3.1-flash-image` | `design_image_generation_nano_banana_2` | `chat` |
 
-每个 Preset 必须启用并绑定带 API Key 的 `direct + openai` TeamRouter Provider，base 仅允许 `https://api.teamorouter.com` 或其 `/v1` 形式；Gemini 两项还必须配置 `parameters.api_style="chat"`。配置不完整的目录项仍显示，但标为“未配置”且不可选；后端同样 fail-closed 返回 503。2026-08-17 用现有 TeamRouter Key 调 `GET /v1/models` 的实测结果中，图片模型只有 `gpt-image-2` 与 `gemini-3.1-flash-image`；没有 `grok-image-2` 或 `gemini-3-pro-image`。因此 Grok Image 2 与 Nano Banana Pro 只完成产品与调用链预接入，在 TeamRouter 实时模型目录出现对应 ID 且完成真实 generation/edit 探针之前不得创建为可用 Preset，也不得对外宣称已可生成。Gemini 的无参考图 generation 已补齐 chat-style 分支，不再误走 `/v1/images/generations`，并兼容 Markdown data URL 与 `message.images[]` 两种返回形态；chat-style 无独立 size/quality 字段，用户选择只会转换为提示词软约束，不能承诺精确像素或质量档位。
+每个 Preset 必须启用并绑定带 API Key 的 `direct + openai` TeamRouter Provider，base 仅允许 `https://api.teamorouter.cn` 或其 `/v1` 形式；Gemini 两项还必须配置 `parameters.api_style="chat"`。配置不完整的目录项仍显示，但标为“未配置”且不可选；后端同样 fail-closed 返回 503。2026-08-17 用现有 TeamRouter Key 调 `GET /v1/models` 的实测结果中，图片模型只有 `gpt-image-2` 与 `gemini-3.1-flash-image`；没有 `grok-image-2` 或 `gemini-3-pro-image`。因此 Grok Image 2 与 Nano Banana Pro 只完成产品与调用链预接入，在 TeamRouter 实时模型目录出现对应 ID 且完成真实 generation/edit 探针之前不得创建为可用 Preset，也不得对外宣称已可生成。Gemini 的无参考图 generation 已补齐 chat-style 分支，不再误走 `/v1/images/generations`，并兼容 Markdown data URL 与 `message.images[]` 两种返回形态；chat-style 无独立 size/quality 字段，用户选择只会转换为提示词软约束，不能承诺精确像素或质量档位。
 
 **上下文口径**：会话记录用于展示、恢复和追溯，不等于把完整历史重新喂给模型。每轮只发送显式 `base_asset_id`、最多 4 张本轮参考图和当前 prompt；生成结果用 `source_asset_id` 形成版本链。因此连续编辑的成本主要取决于本轮输入图片与输出质量，不会因聊天轮数自动线性累加全部历史图片。
 
