@@ -8,7 +8,7 @@ import {
   getInvoiceSyncLogs,
   listInvoices,
 } from '@/api/invoice'
-import { validateThenSync } from './invoiceSyncFlow'
+import { INVOICE_SYNC_OUTCOME, isInvoiceSyncing, validateThenSync } from './invoiceSyncFlow'
 import { formatInvoiceDateTime } from './invoiceDateTime'
 
 export function useInvoiceManagePage() {
@@ -44,8 +44,8 @@ export function useInvoiceManagePage() {
   }
 
   async function validateAndSync(id) {
-    await validateThenSync(id, showIssues)
-    loadInvoices()
+    const outcome = await validateThenSync(id, showIssues)
+    if (outcome !== INVOICE_SYNC_OUTCOME.DUPLICATE) await loadInvoices()
   }
 
   async function openSyncLogs(row) {
@@ -106,6 +106,6 @@ export function useInvoiceManagePage() {
     actionText, bindIssueHandler, filters, formatDateTime, handleExport, invoices, loadInvoices,
     loading, money, money4, openSyncLogs, pagination, removeInvoice, statusText, statusType,
     summary, syncLogs, syncLogsLoading, syncLogsTitle, syncLogsVisible, syncText, syncType,
-    validateAndSync,
+    isInvoiceSyncing, validateAndSync,
   }
 }

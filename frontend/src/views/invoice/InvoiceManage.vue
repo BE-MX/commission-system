@@ -126,9 +126,15 @@
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
-              <el-button v-permission="'invoice:sync'" link type="warning" @click="validateAndSync(row.id)">
+              <el-button
+                v-permission="'invoice:sync'"
+                link
+                type="warning"
+                :loading="isInvoiceSyncing(row.id)"
+                @click="validateAndSync(row.id)"
+              >
                 <el-icon><Refresh /></el-icon>
-                同步
+                {{ isInvoiceSyncing(row.id) ? '同步中' : '同步' }}
               </el-button>
               <el-button v-permission="'invoice:read'" link @click="openSyncLogs(row)">
                 <el-icon><Document /></el-icon>
@@ -370,6 +376,7 @@
           :accessory-amount="formAccessoryAmount"
           :accessory-discount="formAccessoryDiscount"
           :money="money"
+          :syncing="saveAndSyncSubmitting"
           @cancel="drawerVisible = false"
           @save="saveDraft"
           @sync="saveAndSync"
@@ -428,12 +435,13 @@ const {
   actionText, bindIssueHandler, filters, formatDateTime, handleExport, invoices, loadInvoices,
   loading, money, money4, openSyncLogs, pagination, removeInvoice, statusText, statusType,
   summary, syncLogs, syncLogsLoading, syncLogsTitle, syncLogsVisible, syncText, syncType,
-  validateAndSync,
+  isInvoiceSyncing, validateAndSync,
 } = page
 const {
   drawerVisible, customerLoading, customerOptions, salesUserOptions, selectedCustomer, customerRule,
   contactLoading, contactOptions, selectedContact, privateOnlyCompany, privateOnlyContact,
   canTogglePrivate, okkiBound, invoiceNoTaken, entryOptions, form, hairItems, accessoryItems,
+  saveAndSyncSubmitting,
   accessoryOptions, accessoryLoading, formHairPrice, formLineDiscountTotal, formAccessoryAmount,
   formAccessoryDiscount, formBaseAmount, formTotal, lastOrderDate, settlementError, isProduction,
   searchCustomers, searchContacts,

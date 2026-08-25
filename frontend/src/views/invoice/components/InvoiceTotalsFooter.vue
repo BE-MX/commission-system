@@ -23,7 +23,9 @@
       <el-button @click="$emit('cancel')">取消</el-button>
       <!-- 无同步权限时「保存」升为主按钮，避免抽屉底部没有主操作 -->
       <el-button v-permission="'invoice:write'" :type="canSync ? '' : 'primary'" @click="$emit('save')">保存</el-button>
-      <el-button v-permission="'invoice:sync'" type="primary" @click="$emit('sync')">保存并同步</el-button>
+      <el-button v-permission="'invoice:sync'" type="primary" :loading="syncing" @click="$emit('sync')">
+        {{ syncing ? '保存并同步中' : '保存并同步' }}
+      </el-button>
     </div>
   </div>
 </template>
@@ -41,6 +43,7 @@ defineProps({
   accessoryAmount: { type: Number, required: true },
   accessoryDiscount: { type: Number, required: true },
   money: { type: Function, required: true },
+  syncing: { type: Boolean, default: false },
 })
 defineEmits(['cancel', 'save', 'sync'])
 

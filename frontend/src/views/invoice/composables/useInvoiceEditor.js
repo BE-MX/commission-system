@@ -12,7 +12,7 @@ import {
   suggestInvoiceNo,
   updateInvoice,
 } from '@/api/invoice'
-import { validateThenSync } from './invoiceSyncFlow'
+import { INVOICE_SYNC_OUTCOME, validateThenSync } from './invoiceSyncFlow'
 import { useAuthStore } from '@/stores/auth'
 import {
   calculateBalance,
@@ -50,6 +50,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
   // false = 当前账号未绑定 OKKI，私海筛选无从判定（前端提示去绑定）
   const okkiBound = ref(true)
   const invoiceNoTaken = ref(false)
+  const saveAndSyncSubmitting = ref(false)
   const entryOptions = ref({ displays: [], models: [], colors: [], sizes: [], units: [] })
 
   const form = reactive(emptyInvoiceForm())
@@ -472,11 +473,22 @@ export function useInvoiceEditor({ onSaved } = {}) {
 
   // 保存 → 校验 → 推送小满一步到位；校验/推送失败留在抽屉里让用户就地修，成功才收工关闭
   async function saveAndSync() {
-    const saved = await saveDraft() // saveDraft 内已触发 onSaved 刷新列表
-    if (!saved) return
-    const synced = await validateThenSync(form.id, showIssues)
-    onSaved?.() // 同步会改单据状态，列表需按最新状态再刷一次
-    if (synced) drawerVisible.value = false
+    if (saveAndSyncSubmitting.value) {
+      ElMessage.warning('发票正在保存并同步，请勿重复提交')
+      return
+    }
+
+    saveAndSyncSubmitting.value = true
+    try {
+      const saved = await saveDraft() // saveDraft 内已触发 onSaved 刷新列表
+      if (!saved) return
+      const outcome = await validateThenSync(form.id, showIssues)
+      if (outcome === INVOICE_SYNC_OUTCOME.DUPLICATE) return
+      onSaved?.() // 同步会改单据状态，列表需按最新状态再刷一次
+      if (outcome === INVOICE_SYNC_OUTCOME.SUCCESS) drawerVisible.value = false
+    } finally {
+      saveAndSyncSubmitting.value = false
+    }
   }
 
   function showIssues(issues = []) {
@@ -499,6 +511,7 @@ export function useInvoiceEditor({ onSaved } = {}) {
     canTogglePrivate,
     okkiBound,
     invoiceNoTaken,
+    saveAndSyncSubmitting,
     entryOptions,
     form,
     hairItems: accessories.hairItems,
