@@ -214,8 +214,10 @@ async function loadArkRuntimeSettings() {
   };
 }
 
-function setConfig(path, value) {
-  run(openclaw, ["--profile", profile, "config", "set", path, JSON.stringify(value), "--strict-json"]);
+function setConfig(path, value, { replace = false } = {}) {
+  const args = ["--profile", profile, "config", "set", path, JSON.stringify(value), "--strict-json"];
+  if (replace) args.push("--replace");
+  run(openclaw, args);
 }
 
 function clearDefaultHeartbeat() {
@@ -271,12 +273,12 @@ async function main() {
   setConfig("gateway.terminal.enabled", false);
   setConfig("gateway.controlUi.enabled", true);
   setConfig("agents.defaults.workspace", workspace);
-  setConfig("agents.defaults.model", { primary: "mimo/mimo-v2.5-pro" });
+  setConfig("agents.defaults.model", { primary: "mimo/mimo-v2.5" });
   setConfig("agents.defaults.models", {
-    "mimo/mimo-v2.5-pro": { agentRuntime: { id: "openclaw" } },
+    "mimo/mimo-v2.5": { agentRuntime: { id: "openclaw" } },
     "deepseek/deepseek-v4-flash": { agentRuntime: { id: "openclaw" } },
     "deepseek/deepseek-v4-pro": { agentRuntime: { id: "openclaw" } },
-  });
+  }, { replace: true });
   setConfig("secrets.providers.mimo_key_file", {
     source: "file", path: mimoTokenFile, mode: "singleValue",
   });
@@ -286,8 +288,8 @@ async function main() {
     api: "openai-completions",
     agentRuntime: { id: "openclaw" },
     models: [{
-      id: "mimo-v2.5-pro",
-      name: "MiMo V2.5 Pro",
+      id: "mimo-v2.5",
+      name: "MiMo V2.5",
       reasoning: true,
       input: ["text"],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },

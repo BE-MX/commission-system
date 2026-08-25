@@ -45,18 +45,18 @@ const defaultModel = captureJson(openclaw, [
 ]);
 const mimoProvider = rawConfig?.models?.providers?.mimo;
 const mimoSecretProvider = rawConfig?.secrets?.providers?.mimo_key_file;
-if (defaultModel?.primary !== "mimo/mimo-v2.5-pro") {
-  throw new Error("default model must be mimo/mimo-v2.5-pro");
+if (defaultModel?.primary !== "mimo/mimo-v2.5") {
+  throw new Error("default model must be mimo/mimo-v2.5");
 }
-if (modelPolicies?.["mimo/mimo-v2.5-pro"]?.agentRuntime?.id !== "openclaw") {
-  throw new Error("mimo/mimo-v2.5-pro must be pinned to the built-in openclaw runtime");
+if (modelPolicies?.["mimo/mimo-v2.5"]?.agentRuntime?.id !== "openclaw") {
+  throw new Error("mimo/mimo-v2.5 must be pinned to the built-in openclaw runtime");
 }
 if (mimoProvider?.baseUrl !== "https://token-plan-cn.xiaomimimo.com/v1"
   || mimoProvider?.api !== "openai-completions"
   || mimoProvider?.apiKey?.source !== "file"
   || mimoProvider?.apiKey?.provider !== "mimo_key_file"
   || mimoProvider?.apiKey?.id !== "value"
-  || mimoProvider?.models?.[0]?.id !== "mimo-v2.5-pro") {
+  || mimoProvider?.models?.[0]?.id !== "mimo-v2.5") {
   throw new Error("MiMo provider must use the pinned endpoint, model, and file SecretRef");
 }
 const expectedMimoKeyFile = join(stateDir, "secrets", "mimo-api-key");
@@ -65,11 +65,11 @@ if (mimoSecretProvider?.source !== "file" || mimoSecretProvider?.mode !== "singl
   throw new Error("MiMo key provider must read the profile-private mimo-api-key file");
 }
 const modelList = captureJson(openclaw, ["--profile", profile, "models", "list", "--json"]);
-const listedMimo = modelList?.models?.find((model) => model.key === "mimo/mimo-v2.5-pro");
+const listedMimo = modelList?.models?.find((model) => model.key === "mimo/mimo-v2.5");
 if (!listedMimo?.available || !listedMimo?.tags?.includes("default")) {
-  throw new Error("mimo/mimo-v2.5-pro must be available and tagged as the default model");
+  throw new Error("mimo/mimo-v2.5 must be available and tagged as the default model");
 }
-process.stdout.write("Runtime policy OK: default mimo/mimo-v2.5-pro -> openclaw (no Codex native shell).\n");
+process.stdout.write("Runtime policy OK: default mimo/mimo-v2.5 -> openclaw (no Codex native shell).\n");
 
 const requiredReadTools = ["read", "web_search", "web_fetch", "ark-sales__*"];
 const requiredDeniedTools = ["process", "write", "edit", "apply_patch"];

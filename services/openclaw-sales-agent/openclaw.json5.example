@@ -34,8 +34,8 @@
         api: "openai-completions",
         agentRuntime: { id: "openclaw" },
         models: [{
-          id: "mimo-v2.5-pro",
-          name: "MiMo V2.5 Pro",
+          id: "mimo-v2.5",
+          name: "MiMo V2.5",
           reasoning: true,
           input: ["text"],
           contextWindow: 200000,
@@ -51,9 +51,9 @@
   agents: {
     defaults: {
       workspace: "~/.openclaw-ark-sales/workspace",
-      model: { primary: "mimo/mimo-v2.5-pro" },
+      model: { primary: "mimo/mimo-v2.5" },
       models: {
-        "mimo/mimo-v2.5-pro": { agentRuntime: { id: "openclaw" } },
+        "mimo/mimo-v2.5": { agentRuntime: { id: "openclaw" } },
         "deepseek/deepseek-v4-flash": { agentRuntime: { id: "openclaw" } },
         "deepseek/deepseek-v4-pro": { agentRuntime: { id: "openclaw" } },
       },
