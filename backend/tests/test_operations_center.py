@@ -698,6 +698,15 @@ async def test_runtime_heartbeat_three_misses_degrades_once(monkeypatch):
         OPERATIONS_HEARTBEAT_RETENTION_DAYS=7,
     ))
 
+    class MissingWebhookSender:
+        async def send_markdown(self, *_args, **_kwargs):
+            raise RuntimeError("webhook is not configured")
+
+    monkeypatch.setattr(
+        "app.dingtalk.webhook.get_webhook_sender",
+        lambda: MissingWebhookSender(),
+    )
+
     await observability.monitor_runtime_heartbeats()
 
     with session_factory() as db:
