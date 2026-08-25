@@ -15,8 +15,9 @@ export function useAiIssueSupport({ session, sessionId, errorText }) {
     contactAdminPending.value = true
     errorText.value = ''
     try {
-      await contactExpoAdmin(sessionId.value)
-      if (session.value?.ai_issue) session.value.ai_issue.notified = true
+      const res = await contactExpoAdmin(sessionId.value)
+      if (res.data?.sent && session.value?.ai_issue) session.value.ai_issue.notified = true
+      if (res.data?.in_progress) errorText.value = '管理员通知正在发送，请耐心等待'
     } catch (e) {
       errorText.value = '管理员通知发送失败，请直接拨打下方电话'
     } finally {

@@ -15,10 +15,10 @@
         <div class="xac-phone">管理员电话：{{ issue.admin_phone || '暂未配置' }}</div>
         <button
           class="xk-btn xac-action"
-          :disabled="flow.contactAdminPending.value || issue.notified"
+          :disabled="flow.contactAdminPending.value || issue.notified || issue.notifying"
           @click="flow.contactAdmin()"
         >
-          {{ issue.notified ? '已通知管理员' : (flow.contactAdminPending.value ? '正在通知…' : '联系管理员') }}
+          {{ issue.notified ? '已通知管理员' : ((flow.contactAdminPending.value || issue.notifying) ? '正在通知…' : '联系管理员') }}
         </button>
       </div>
     </div>

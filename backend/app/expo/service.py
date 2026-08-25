@@ -391,6 +391,8 @@ def _public_ai_issue(db: Session, session: ExpoSession) -> dict | None:
     issue = ai_pipeline.parse_ai_issue(session.error_message)
     if not issue:
         return None
+    notified_marker = str(issue.get("notified_at") or "")
+    notifying = notified_marker.startswith("pending:")
     payload = {
         "stage": issue["stage"],
         "state": issue["state"],
@@ -401,10 +403,11 @@ def _public_ai_issue(db: Session, session: ExpoSession) -> dict | None:
             if issue["state"] == "retrying"
             else "请联系管理员"
         ),
-        "notified": bool(issue.get("notified_at")),
+        "notified": bool(notified_marker) and not notifying,
     }
     if issue["state"] == "contact_admin":
         payload["admin_phone"] = _admin_phone(db, session)
+        payload["notifying"] = notifying
     return payload
 
 
@@ -424,7 +427,12 @@ async def notify_ai_issue_admins(db: Session, session: ExpoSession) -> dict:
         except ValueError:
             claimed_at = datetime.utcnow()
         if (datetime.utcnow() - claimed_at).total_seconds() < 120:
-            return {"sent": True, "already_notified": True, "admin_phone": phone}
+            return {
+                "sent": False,
+                "already_notified": False,
+                "in_progress": True,
+                "admin_phone": phone,
+            }
 
     dingtalk_ids = list(dict.fromkeys(
         user.dingtalk_id.strip()
@@ -464,6 +472,14 @@ async def notify_ai_issue_admins(db: Session, session: ExpoSession) -> dict:
         db.refresh(session)
         latest = ai_pipeline.parse_ai_issue(session.error_message)
         if latest and latest.get("notified_at"):
+            marker = str(latest["notified_at"])
+            if marker.startswith("pending:"):
+                return {
+                    "sent": False,
+                    "already_notified": False,
+                    "in_progress": True,
+                    "admin_phone": phone,
+                }
             return {"sent": True, "already_notified": True, "admin_phone": phone}
         raise RuntimeError("管理员通知状态发生变化，请重试")
 

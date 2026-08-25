@@ -248,6 +248,7 @@ def test_retrying_and_terminal_payloads_hide_internal_detail_and_use_store_phone
     payload = service.serialize_session(db, retrying)
     assert payload["ai_issue"]["message"] == "请联系管理员"
     assert payload["ai_issue"]["admin_phone"] == "0571-12345678"
+    assert payload["ai_issue"]["notifying"] is False
 
 
 @pytest.mark.asyncio
@@ -326,8 +327,41 @@ async def test_contact_admin_claim_prevents_reentrant_duplicate(db, monkeypatch)
     result = await service.notify_ai_issue_admins(db, session)
 
     assert result["already_notified"] is False
-    assert nested_results[0]["already_notified"] is True
+    assert nested_results[0] == {
+        "sent": False,
+        "already_notified": False,
+        "in_progress": True,
+        "admin_phone": "13900000000",
+    }
     assert not ai_pipeline.parse_ai_issue(session.error_message)["notified_at"].startswith("pending:")
+
+
+@pytest.mark.asyncio
+async def test_failed_sender_rolls_back_claim_after_reentrant_request(db, monkeypatch):
+    session = _session(
+        db,
+        error_message=ai_pipeline.format_ai_issue(
+            stage="analysis",
+            state="contact_admin",
+            reason="error",
+        ),
+    )
+    _admin(db)
+    nested_results = []
+
+    class FailingNotifier:
+        async def send_to_users(self, user_ids, title, markdown_text):
+            nested_results.append(await service.notify_ai_issue_admins(db, session))
+            return False
+
+    monkeypatch.setattr(work_notify, "get_work_notifier", lambda: FailingNotifier())
+    with pytest.raises(RuntimeError, match="发送失败"):
+        await service.notify_ai_issue_admins(db, session)
+
+    assert nested_results[0]["sent"] is False
+    issue = ai_pipeline.parse_ai_issue(session.error_message)
+    assert not issue.get("notified_at")
+    assert service.serialize_session(db, session)["ai_issue"]["notified"] is False
 
 
 def test_legacy_error_message_does_not_leak_to_public_ai_issue(db):
