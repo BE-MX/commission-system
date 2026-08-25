@@ -212,6 +212,8 @@ def _unsupported_param(exc: httpx.HTTPStatusError, data: dict) -> Optional[str]:
 
 def _post_image_edits(
     url, headers, data, files, timeout_sec: int, caller_module: str,
+    max_attempts: int | None = None,
+    allow_parameter_fallback: bool = True,
 ) -> ImageTransportResult:
     """带摘参兜底的 edits 调用：上游 400 明确指认某可选参数不支持时（2026-07-20 中转站
     突然不认 gpt-image-2 + input_fidelity，preset 配置没变、上游能力漂移），摘掉该参数
@@ -222,14 +224,17 @@ def _post_image_edits(
     total_attempts = 0
     while True:
         try:
-            transport = _post_image_edits_once(url, headers, data, files, timeout_sec, caller_module)
+            transport = _post_image_edits_once(
+                url, headers, data, files, timeout_sec, caller_module,
+                max_attempts=max_attempts,
+            )
             return ImageTransportResult(
                 transport.json, total_attempts + transport.attempts, transport.request_id,
             )
         except httpx.HTTPStatusError as exc:
             total_attempts += getattr(exc, "provider_attempt_count", 1)
             bad = _unsupported_param(exc, data)
-            if not bad or bad in stripped:
+            if not allow_parameter_fallback or not bad or bad in stripped:
                 raise _with_attempt_count(exc, total_attempts)
             stripped.add(bad)
             data.pop(bad, None)
@@ -242,32 +247,42 @@ def _post_image_edits(
 
 def _post_image_edits_once(
     url, headers, data, files, timeout_sec: int, caller_module: str,
+    max_attempts: int | None = None,
 ) -> ImageTransportResult:
     """POST 到 /images/edits（multipart）。"""
-    return _send_with_retry(
+    args = (
         lambda client: _build_request(
             client,
             "POST", url, headers=headers, data=data, files=files
         ),
         timeout_sec, caller_module, "image edit",
     )
+    # 省略默认关键字，兼容历史测试/调用方对该内部发送函数的轻量 monkeypatch。
+    if max_attempts is None:
+        return _send_with_retry(*args)
+    return _send_with_retry(*args, max_attempts=max_attempts)
 
 
 def _post_chat_image(
     url, headers, payload, timeout_sec: int, caller_module: str,
+    max_attempts: int | None = None,
 ) -> ImageTransportResult:
     """POST 到 /chat/completions（JSON 多模态）——Google 系生图模型的调用形态。
 
     没有 edits 那套摘参兜底：chat 入参白名单本就极窄（CHAT_IMAGE_PARAMETER_KEYS），
     不存在 size/quality 这类会被上游临时拒收的可选增强参数。"""
-    return _send_with_retry(
+    args = (
         lambda client: _build_request(client, "POST", url, headers=headers, json=payload),
         timeout_sec, caller_module, "chat image",
     )
+    if max_attempts is None:
+        return _send_with_retry(*args)
+    return _send_with_retry(*args, max_attempts=max_attempts)
 
 
 def _send_with_retry(
     build_request, timeout_sec: int, caller_module: str, label: str,
+    max_attempts: int | None = None,
 ) -> ImageTransportResult:
     """两条生图链路共用的发送+重试：对 502/503 与连接瞬断自动重试；504/ReadTimeout 不重试直接抛。
 
@@ -282,8 +297,9 @@ def _send_with_retry(
     proxy = (get_settings().AI_IMAGE_PROXY or "").strip()
     if proxy:
         client_kwargs["proxy"] = proxy
+    attempt_limit = max(1, max_attempts or _IMAGE_MAX_ATTEMPTS)
     last_exc: Exception | None = None
-    for attempt in range(1, _IMAGE_MAX_ATTEMPTS + 1):
+    for attempt in range(1, attempt_limit + 1):
         try:
             with httpx.Client(**client_kwargs) as client:
                 request = build_request(client)
@@ -314,15 +330,15 @@ def _send_with_retry(
                 )
                 raise _with_attempt_count(error, attempt) from exc
             raise _with_attempt_count(exc, attempt)
-        if attempt < _IMAGE_MAX_ATTEMPTS:
+        if attempt < attempt_limit:
             msg = (f"[{caller_module}] {label} transient error, retry {attempt}/"
-                   f"{_IMAGE_MAX_ATTEMPTS - 1}: {type(last_exc).__name__}: {last_exc}")
+                   f"{attempt_limit - 1}: {type(last_exc).__name__}: {last_exc}")
             logger.warning(msg)
             print(msg, flush=True)
             time.sleep(_IMAGE_RETRY_BACKOFF_SEC * attempt)
     if isinstance(last_exc, httpx.HTTPStatusError):
-        raise _with_attempt_count(_enrich_status_error(last_exc), _IMAGE_MAX_ATTEMPTS) from last_exc
-    raise _with_attempt_count(last_exc, _IMAGE_MAX_ATTEMPTS)
+        raise _with_attempt_count(_enrich_status_error(last_exc), attempt_limit) from last_exc
+    raise _with_attempt_count(last_exc, attempt_limit)
 
 
 def _get_enabled_direct_preset(db: Session, preset_name: str) -> tuple[AiPreset, object]:
@@ -736,8 +752,16 @@ def edit_image(
     size: Optional[str] = None,
     quality: Optional[str] = None,
     expected_config_version: Optional[dict] = None,
+    transport_max_attempts: int | None = None,
+    transport_allow_parameter_fallback: bool = True,
 ) -> ImageCallResult:
-    """Call an OpenAI-compatible image edit endpoint and return an image URL/data URL."""
+    """Call an OpenAI-compatible image edit endpoint and return an image URL/data URL.
+
+    Transport controls default to the shared image-service recovery policy.  A
+    domain that owns a user-visible retry state machine may set attempts to ``1``
+    and disable parameter fallback, so its displayed retry/error state matches the
+    actual provider responses.
+    """
     preset, provider = _get_enabled_direct_preset(db, preset_name)
     _assert_config_version(preset, provider, expected_config_version)
     preset, provider = _freeze_image_call_config(preset, provider)
@@ -774,6 +798,7 @@ def edit_image(
                 _chat_image_payload(preset, prompt, images, size, quality),
                 timeout_sec,
                 caller_module,
+                max_attempts=transport_max_attempts,
             )
             result = transport.json
             content = _extract_chat_image_content(result)
@@ -791,7 +816,10 @@ def edit_image(
 
             transport = _post_image_edits(
                 url, headers, _image_params(preset, prompt, size, quality), files,
-                timeout_sec, caller_module,
+                timeout_sec,
+                caller_module,
+                max_attempts=transport_max_attempts,
+                allow_parameter_fallback=transport_allow_parameter_fallback,
             )
             result = transport.json
             content = _extract_image_content(result, (preset.parameters or {}).get("output_format"))

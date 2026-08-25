@@ -123,6 +123,33 @@ def get_session(
     return ok(service.serialize_session(db, session, include_internal=bool(internal)))
 
 
+@router.post("/sessions/{session_id}/contact-admin", summary="AI 异常时通知展会试戴管理员")
+async def contact_ai_admin(
+    session_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_permission("expo:write")),
+):
+    session = service.get_session(db, session_id)
+    if not session:
+        raise HTTPException(404, "会话不存在")
+    store = store_service.get_active_store_by_user(db, _user_id(current_user))
+    if store is None:
+        raise HTTPException(400, "当前账号未绑定有效门店，无法通知管理员")
+    if session.store_id != store.id:
+        raise HTTPException(400, "当前会话已归属其他门店，无法通知管理员")
+    try:
+        result = await service.notify_ai_issue_admins(db, session)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except Exception as exc:
+        db.rollback()
+        msg = f"[expo] contact admin failed session={session_id}: {exc}"
+        logger.warning(msg)
+        print(msg, flush=True)
+        raise HTTPException(503, "管理员通知发送失败，请直接拨打管理员电话") from None
+    return ok(result)
+
+
 @router.post("/sessions/{session_id}/generate", summary="触发效果图合成（tryon 换发/发色 · scene 场景大片）")
 def generate(
     session_id: int,
