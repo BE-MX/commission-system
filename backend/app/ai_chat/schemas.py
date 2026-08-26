@@ -12,6 +12,7 @@ from app.ai_chat.models import (
     MESSAGE_STATUSES,
 )
 from app.core.config import get_settings
+from app.ai_chat.mode_service import MODE_IDS
 
 
 MessageRole = Literal[*MESSAGE_ROLES]
@@ -36,6 +37,8 @@ class TurnStreamRequest(BaseModel):
         pattern=r"^[A-Za-z0-9_-]+$",
     )
     content: str = Field(default="", max_length=12_000)
+    mode_id: Literal[*MODE_IDS] | None = None
+    mode_version: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     attachment_ids: list[int] = Field(
         default_factory=list,
         max_length=MAX_ATTACHMENTS,
@@ -52,6 +55,8 @@ class TurnStreamRequest(BaseModel):
 
     @model_validator(mode="after")
     def require_content_or_attachment(self):
+        if bool(self.mode_id) != bool(self.mode_version):
+            raise ValueError("对话方式与版本必须同时提供")
         if not self.content.strip() and not self.attachment_ids:
             raise ValueError("消息或附件至少填写一项")
         return self

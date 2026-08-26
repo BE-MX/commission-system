@@ -99,6 +99,45 @@ def test_config_requires_read_permission_and_uses_ok_envelope(engine, db):
     assert response.json()["data"]["configured"] is False
 
 
+def test_mode_catalog_loads_real_files_and_requires_permission(engine, db):
+    owner = _seed_user(db, "mode-reader")
+    client = TestClient(_app(engine, _claims(owner.id, "ai_chat:read")))
+    response = client.get("/api/ai-chat/modes")
+    assert response.status_code == 200
+    modes = response.json()["data"]["items"]
+    assert [m["title"] for m in modes] == ["深度思考", "天赋挖掘", "未知领域引导", "寓言讲概念"]
+    assert all("content" not in m for m in modes)
+    for mode in modes:
+        detail = client.get(f'/api/ai-chat/modes/{mode["id"]}').json()["data"]
+        assert detail["content"].strip()
+        assert len(detail["version"]) == 64
+    assert client.get("/api/ai-chat/modes/not-a-mode").status_code == 404
+    denied = TestClient(_app(engine, _claims(owner.id)))
+    assert denied.get("/api/ai-chat/modes").status_code == 403
+
+
+def test_session_mode_preview_is_private_and_snapshot_survives_file_change(engine, db, monkeypatch):
+    from app.ai_chat import mode_service
+
+    owner = _seed_user(db, "snapshot-owner")
+    stranger = _seed_user(db, "snapshot-stranger")
+    conversation = service.create_session(db, owner.id)
+    mode = mode_service.load_mode("unknowns")
+    from app.ai_chat.schemas import TurnStreamRequest
+    service.begin_turn(db, owner.id, conversation.id, TurnStreamRequest(
+        request_id="mode_preview_01", content="我想了解供应链", mode_id=mode["id"], mode_version=mode["version"],
+    ))
+    monkeypatch.setattr(mode_service, "load_mode", lambda *_: (_ for _ in ()).throw(AssertionError("must use saved snapshot")))
+    client = TestClient(_app(engine, _claims(owner.id, "ai_chat:read")))
+    detail = client.get(f"/api/ai-chat/sessions/{conversation.id}/mode").json()["data"]
+    assert detail == mode
+    session_data = client.get(f"/api/ai-chat/sessions/{conversation.id}").json()["data"]["session"]
+    assert session_data["mode"]["id"] == "unknowns"
+    assert "content" not in session_data["mode"]
+    other = TestClient(_app(engine, _claims(stranger.id, "ai_chat:read")))
+    assert other.get(f"/api/ai-chat/sessions/{conversation.id}/mode").status_code == 404
+
+
 def test_mutations_require_write_and_owner_resource_is_404(engine, db):
     owner = _seed_user(db, "router-mutation-owner")
     stranger = _seed_user(db, "router-mutation-stranger")

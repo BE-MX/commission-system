@@ -81,6 +81,15 @@ def test_parse_anthropic_refusal_is_not_reported_as_success():
     ]
 
 
+def test_parse_stream_exposes_output_limit_for_explicit_continuation():
+    lines = [
+        _sse({"type": "content_block_delta", "delta": {"type": "text_delta", "text": "partial report"}}),
+        _sse({"type": "message_delta", "delta": {"stop_reason": "max_tokens"}}),
+        _sse({"type": "message_stop"}),
+    ]
+    assert list(parse_provider_stream("anthropic", lines))[-1]["finish_reason"] == "max_tokens"
+
+
 def test_parse_openai_stream_collects_delta_usage_and_done():
     lines = [
         _sse({"model": "gpt-test", "choices": [{"delta": {"role": "assistant"}}]}),

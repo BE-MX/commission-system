@@ -214,6 +214,100 @@ def test_build_context_keeps_recent_twenty_and_excludes_failed_or_streaming(db):
     assert "still streaming" not in str(context)
 
 
+def test_selected_mode_pins_rules_and_keeps_early_interview_answers(db):
+    from app.ai_chat import mode_service
+
+    owner = _user(db, "mode-context-owner")
+    conversation = _session(db, owner.id)
+    mode = mode_service.load_mode("talent")
+    request = TurnStreamRequest(request_id="mode_first_01", content="请开始天赋探索", mode_id="talent", mode_version=mode["version"])
+    turn = service.begin_turn(db, owner.id, conversation.id, request)
+    assert service.begin_turn(db, owner.id, conversation.id, request).reused
+    service.finish_turn(db, owner.id, turn.assistant_message.id, "你小时候喜欢什么？")
+    for index in range(26):
+        _message(db, conversation.id, "user" if index % 2 == 0 else "assistant", f"interview-{index}")
+    db.expire_all()
+    context = service.build_context(db, owner.id, conversation.id)
+    assert mode["content"] in context[0]["content"]
+    assert "interview-0" in str(context)
+    assert "interview-25" in str(context)
+    assert db.get(AiChatSession, conversation.id).mode_snapshot == mode
+
+
+def test_mode_is_locked_after_first_send_and_stale_versions_are_rejected(db):
+    from app.ai_chat import mode_service
+
+    owner = _user(db, "mode-lock-owner")
+    conversation = _session(db, owner.id)
+    mode = mode_service.load_mode("deep-thinking")
+    with pytest.raises(service.RequestConflictError, match="更新"):
+        service.begin_turn(db, owner.id, conversation.id, TurnStreamRequest(
+            request_id="mode_stale_01", content="是否采用新方案", mode_id=mode["id"], mode_version="0" * 64,
+        ))
+    assert db.query(AiChatMessage).filter_by(session_id=conversation.id).count() == 0
+    service.begin_turn(db, owner.id, conversation.id, TurnStreamRequest(
+        request_id="mode_locked_01", content="是否采用新方案", mode_id=mode["id"], mode_version=mode["version"],
+    ))
+    for request_id in ("mode_locked_01", "mode_changed_02"):
+        with pytest.raises(service.RequestConflictError, match="新对话"):
+            service.begin_turn(db, owner.id, conversation.id, TurnStreamRequest(
+                request_id=request_id, content="是否采用新方案", mode_id="unknowns", mode_version="0" * 64,
+            ))
+
+
+def test_mode_context_overflow_fails_explicitly_without_losing_answers(db, monkeypatch):
+    from app.ai_chat import mode_service
+
+    owner = _user(db, "mode-budget-owner")
+    conversation = _session(db, owner.id)
+    conversation.mode_snapshot = mode_service.load_mode("talent")
+    db.commit()
+    _message(db, conversation.id, "user", "early answer" * 100)
+    monkeypatch.setattr(mode_service, "MAX_DIALOGUE_CHARS", 10)
+    with pytest.raises(mode_service.ModeContextError, match="完整"):
+        service.build_context(db, owner.id, conversation.id)
+
+
+def test_plain_turn_replay_cannot_silently_add_a_mode(db):
+    from app.ai_chat import mode_service
+    owner = _user(db, "mode-replay-owner")
+    conversation = _session(db, owner.id)
+    service.begin_turn(db, owner.id, conversation.id, TurnStreamRequest(request_id="plain_replay_1", content="hello"))
+    mode = mode_service.load_mode("talent")
+    with pytest.raises(service.RequestConflictError, match="新对话"):
+        service.begin_turn(db, owner.id, conversation.id, TurnStreamRequest(request_id="plain_replay_1", content="hello", mode_id=mode["id"], mode_version=mode["version"]))
+
+
+def test_mode_refuses_incomplete_reference_attachments(db, monkeypatch):
+    from app.ai_chat import mode_service, context_service
+    from types import SimpleNamespace
+    owner = _user(db, "mode-attachment-owner")
+    conversation = _session(db, owner.id)
+    conversation.mode_snapshot = mode_service.load_mode("talent")
+    db.commit()
+    first = _message(db, conversation.id, "user", "童年经历见附件")
+    _attachment(db, conversation.id, owner.id, status="attached", message_id=first.id, text="CRUCIAL_EARLY_ANSWER")
+    last = _message(db, conversation.id, "user", "工作经历见附件")
+    _attachment(db, conversation.id, owner.id, status="attached", message_id=last.id, text="later" * 20)
+    monkeypatch.setattr(context_service, "get_settings", lambda: SimpleNamespace(AI_CHAT_MAX_TURN_ATTACHMENT_CHARS=30))
+    with pytest.raises(mode_service.ModeContextError, match="附件"):
+        service.build_context(db, owner.id, conversation.id)
+
+
+def test_mode_retry_context_stops_at_original_user_not_future_turns(db):
+    from app.ai_chat import mode_service
+    owner = _user(db, "mode-retry-context")
+    conversation = _session(db, owner.id)
+    conversation.mode_snapshot = mode_service.load_mode("deep-thinking")
+    db.commit()
+    first = _message(db, conversation.id, "user", "original question")
+    stopped = _message(db, conversation.id, "assistant", "partial", status="stopped", reply_to_message_id=first.id)
+    _message(db, conversation.id, "user", "future question")
+    context = service.build_context(db, owner.id, conversation.id, exclude_assistant_id=stopped.id)
+    assert context[-1]["content"] == "original question"
+    assert "future question" not in str(context)
+
+
 def test_build_context_reconstructs_document_and_image_without_persisting_base64(
     db, monkeypatch
 ):

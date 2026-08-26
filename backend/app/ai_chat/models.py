@@ -11,6 +11,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Integer,
+    JSON,
     String,
     Text,
     UniqueConstraint,
@@ -48,6 +49,7 @@ class AiChatSession(Base):
         comment="会话所有者",
     )
     title = Column(String(200), nullable=False, comment="会话标题")
+    mode_snapshot = Column(JSON, nullable=True, comment="首次发送选定的内置规则及版本快照")
     created_at = Column(DateTime, nullable=False, default=beijing_now, comment="创建时间")
     updated_at = Column(
         DateTime,

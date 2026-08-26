@@ -72,6 +72,7 @@ def parse_provider_stream(api_type: str, lines: Iterable[str]) -> Iterator[dict]
     if api_type not in {"anthropic", "openai"}:
         raise ValueError(f"不支持的 AI API 类型: {api_type}")
 
+    finish = {}
     input_tokens = None
     output_tokens = None
     total_tokens = None
@@ -85,7 +86,7 @@ def parse_provider_stream(api_type: str, lines: Iterable[str]) -> Iterator[dict]
         if not payload:
             continue
         if api_type == "openai" and payload == "[DONE]":
-            yield {"type": "done", **_normalized_usage(input_tokens, output_tokens, total_tokens)}
+            yield {"type": "done", **_normalized_usage(input_tokens, output_tokens, total_tokens), **finish}
             return
         try:
             data = json.loads(payload)
@@ -124,8 +125,10 @@ def parse_provider_stream(api_type: str, lines: Iterable[str]) -> Iterator[dict]
                 if delta.get("stop_reason") == "refusal":
                     yield _stream_error("provider_error")
                     return
+                if delta.get("stop_reason"):
+                    finish = {"finish_reason": delta["stop_reason"]}
             elif event_type == "message_stop":
-                yield {"type": "done", **_normalized_usage(input_tokens, output_tokens)}
+                yield {"type": "done", **_normalized_usage(input_tokens, output_tokens), **finish}
                 return
         else:
             usage = data.get("usage") or {}
@@ -138,6 +141,8 @@ def parse_provider_stream(api_type: str, lines: Iterable[str]) -> Iterator[dict]
                 yield {"type": "meta", "model": model}
             choices = data.get("choices") or []
             if choices and isinstance(choices[0], dict):
+                if choices[0].get("finish_reason"):
+                    finish = {"finish_reason": choices[0]["finish_reason"]}
                 delta = choices[0].get("delta") or {}
                 text = delta.get("content")
                 if not text:

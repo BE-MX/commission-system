@@ -11,7 +11,7 @@ from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.ai.service import chat_stream
-from app.ai_chat import file_service, service
+from app.ai_chat import file_service, service, mode_service
 from app.ai_chat.schemas import (
     AttachmentResponse,
     MessageResponse,
@@ -41,10 +41,12 @@ def _resource_call(function, *args, **kwargs):
         raise HTTPException(status_code=404, detail="资源不存在") from None
     except service.RequestConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
+    except mode_service.ModeLoadError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from None
 
 
 def _session_data(row) -> dict:
-    return SessionResponse.model_validate(row).model_dump(mode="json")
+    return {**SessionResponse.model_validate(row).model_dump(mode="json"), "mode": mode_service.summary(row.mode_snapshot)}
 
 
 def _message_data(row) -> dict:
@@ -213,6 +215,10 @@ def _stream_assistant_events(
                 partial.append(text)
                 yield sse_event("delta", {"text": text})
             elif event_type == "done":
+                if event.get("finish_reason") in {"max_tokens", "length"}:
+                    notice = '\n\n> 本次输出已达到长度上限，内容尚未完成。回复“继续”，我会接着完成。'
+                    partial.append(notice)
+                    yield sse_event("delta", {"text": notice})
                 service.finish_turn(
                     db,
                     owner_user_id,
@@ -245,6 +251,9 @@ def _stream_assistant_events(
             db, owner_user_id, assistant["id"], "".join(partial), message, log_id
         )
         yield sse_event("error", {"code": "stream_incomplete", "message": message})
+    except mode_service.ModeContextError as exc:
+        service.fail_turn(db, owner_user_id, assistant["id"], "".join(partial), str(exc), log_id)
+        yield sse_event("error", {"code": "context_limit", "message": str(exc)})
     except GeneratorExit:
         try:
             service.stop_turn(
@@ -294,6 +303,28 @@ def get_config(
     _current_user: dict = Depends(require_permission("ai_chat:read")),
 ):
     return ok(service.get_config(db))
+
+
+@router.get("/modes")
+def list_modes(_current_user: dict = Depends(require_permission("ai_chat:read"))):
+    return ok({"items": mode_service.catalog()})
+
+
+@router.get("/modes/{mode_id}")
+def get_mode(mode_id: str, _current_user: dict = Depends(require_permission("ai_chat:read"))):
+    if mode_id not in mode_service.MODE_IDS:
+        raise HTTPException(status_code=404, detail="资源不存在")
+    return ok(_resource_call(mode_service.load_mode, mode_id))
+
+
+@router.get("/sessions/{session_id}/mode")
+def get_session_mode(
+    session_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(require_permission("ai_chat:read")),
+):
+    session = _resource_call(service.get_session, db, session_id, _owner_id(current_user))
+    return ok(session.mode_snapshot)
 
 
 @router.post("/sessions")

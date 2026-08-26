@@ -11,7 +11,7 @@ from sqlalchemy import and_, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.ai_chat import context_service, file_service
+from app.ai_chat import context_service, file_service, mode_service
 from app.ai_chat.file_service import StoredAttachment
 from app.ai_chat.models import AiChatAttachment, AiChatMessage, AiChatSession
 from app.ai_chat.schemas import RetryStreamRequest, TurnStreamRequest
@@ -285,12 +285,32 @@ def begin_turn(
     session_id: int,
     request: TurnStreamRequest,
 ) -> TurnPair:
-    session = get_session(db, session_id, owner_user_id)
+    session = (
+        db.query(AiChatSession)
+        .filter(AiChatSession.id == session_id, AiChatSession.owner_user_id == owner_user_id)
+        .populate_existing().with_for_update().first()
+    )
+    if session is None:
+        _not_found()
+    snapshot = session.mode_snapshot
+    if snapshot and request.mode_id and (request.mode_id != snapshot["id"] or request.mode_version != snapshot["version"]):
+        raise RequestConflictError("本会话方式已固定，请新对话换方式")
     existing = _existing_turn(db, session_id, request.request_id)
     if existing:
+        if not snapshot and request.mode_id:
+            raise RequestConflictError("本会话已开始，请新对话换方式")
         _validate_existing_turn_request(db, existing, request)
         return existing
     try:
+        if not snapshot and request.mode_id:
+            if db.query(AiChatMessage.id).filter_by(session_id=session_id).first():
+                raise RequestConflictError("本会话已开始，请新对话换方式")
+            snapshot = mode_service.load_mode(request.mode_id)
+            if snapshot["version"] != request.mode_version:
+                raise RequestConflictError("规则文件已更新，请重新选择对话方式")
+            if not request.content.strip():
+                raise RequestConflictError("请先填写问题或主题，再发送")
+            session.mode_snapshot = snapshot
         attachments = []
         if request.attachment_ids:
             attachments = (

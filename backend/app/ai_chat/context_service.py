@@ -6,7 +6,7 @@ from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from app.ai.models import AiPreset, AiProvider
-from app.ai_chat import file_service
+from app.ai_chat import file_service, mode_service
 from app.ai_chat.models import AiChatAttachment, AiChatMessage, AiChatSession
 from app.core.config import get_settings
 
@@ -63,7 +63,7 @@ def build_context(
     *,
     exclude_assistant_id: int | None = None,
 ) -> list[dict]:
-    _require_session(db, session_id, owner_user_id)
+    session = _require_session(db, session_id, owner_user_id)
     allowed_status = or_(
         and_(AiChatMessage.role == "user", AiChatMessage.status == "completed"),
         and_(
@@ -76,13 +76,25 @@ def build_context(
     )
     if exclude_assistant_id is not None:
         query = query.filter(AiChatMessage.id != exclude_assistant_id)
+        original = db.query(AiChatMessage).filter(
+            AiChatMessage.id == exclude_assistant_id,
+            AiChatMessage.session_id == session_id,
+            AiChatMessage.role == "assistant",
+        ).first()
+        if original and original.reply_to_message_id:
+            query = query.filter(AiChatMessage.id <= original.reply_to_message_id)
     messages = list(
         reversed(
             query.order_by(AiChatMessage.created_at.desc(), AiChatMessage.id.desc())
-            .limit(20)
+            .limit(mode_service.MAX_DIALOGUE_MESSAGES + 1 if session.mode_snapshot else 20)
             .all()
         )
     )
+    if session.mode_snapshot and (
+        len(messages) > mode_service.MAX_DIALOGUE_MESSAGES
+        or sum(len(message.content) for message in messages) > mode_service.MAX_DIALOGUE_CHARS
+    ):
+        raise mode_service.ModeContextError("本会话内容已超过完整读取上限，不能在遗漏早期经历的情况下继续分析。请新建对话并提供精简后的完整背景。")
     user_ids = [message.id for message in messages if message.role == "user"]
     attachments_by_message: dict[int, list[AiChatAttachment]] = {
         message_id: [] for message_id in user_ids
@@ -101,11 +113,20 @@ def build_context(
         )
         for row in rows:
             attachments_by_message[row.message_id].append(row)
+    document_texts = [
+        row.extracted_text or "" for rows in attachments_by_message.values()
+        for row in rows if row.attachment_type == "document"
+    ]
+    if session.mode_snapshot and (
+        sum(map(len, document_texts)) > get_settings().AI_CHAT_MAX_TURN_ATTACHMENT_CHARS
+        or any(file_service.TRUNCATION_MARKER in text for text in document_texts)
+    ):
+        raise mode_service.ModeContextError("附件内容超出完整读取上限，不能遗漏早期材料继续分析。请新建对话并提供精简后的完整附件。")
     text_by_attachment = _attachment_allowances(
         attachments_by_message,
         get_settings().AI_CHAT_MAX_TURN_ATTACHMENT_CHARS,
     )
-    context = []
+    context = [mode_service.instruction_message(session.mode_snapshot)] if session.mode_snapshot else []
     for message in messages:
         attachments = attachments_by_message.get(message.id, [])
         if not attachments:
