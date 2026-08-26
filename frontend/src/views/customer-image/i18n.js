@@ -16,6 +16,7 @@ const MESSAGES = {
     'portal.empty.detail': 'Please ask your account manager to add products to this invitation.',
     'portal.error.title': 'We can’t load this page right now',
     'portal.retry': 'Reload',
+    'portal.title': 'LeShine Product Visual Studio',
     'portal.brand.kicker': 'LESHINE STUDIO',
     'portal.brand.subtitle': 'LeShine Product Visuals',
     'portal.exclusiveChannel': 'Private customization channel',
@@ -133,6 +134,7 @@ const MESSAGES = {
     'portal.empty.detail': '请联系您的业务经理为此邀请添加产品。',
     'portal.error.title': '页面暂时无法加载',
     'portal.retry': '重新加载',
+    'portal.title': '莱莎产品效果图',
     'portal.brand.kicker': 'LESHINE STUDIO',
     'portal.brand.subtitle': '莱莎产品效果图',
     'portal.exclusiveChannel': '专属定制通道',
@@ -278,9 +280,51 @@ export function translateCustomerImage(locale, key, params = {}, messages = MESS
   return template.replace(/\{(\w+)\}/g, (_, name) => String(params[name] ?? ''))
 }
 
+export const CUSTOMER_IMAGE_DOWNLOAD_FILENAME_MAX_BYTES = 180
+
+const FILENAME_ID_MAX_BYTES = 48
+const FILENAME_UNSAFE_PATTERN = /[<>:"/\\|?*\u0000-\u001f]+/g
+
+function utf8Length(value) {
+  return new TextEncoder().encode(value).byteLength
+}
+
+function truncateUtf8(value, maxBytes) {
+  let result = ''
+  let bytes = 0
+  for (const character of value) {
+    const characterBytes = utf8Length(character)
+    if (bytes + characterBytes > maxBytes) break
+    result += character
+    bytes += characterBytes
+  }
+  return result
+}
+
+function safeFilenamePart(value) {
+  return String(value ?? '')
+    .replace(FILENAME_UNSAFE_PATTERN, '-')
+    .trim()
+    .replace(/[. ]+$/g, '')
+    .replace(/-+$/g, '')
+}
+
+function safeGenerationIdPart(value) {
+  return String(value ?? '')
+    .replace(/[^A-Za-z0-9._-]+/g, '-')
+    .replace(/^[.]+|[.]+$/g, '')
+    .replace(/-+$/g, '')
+}
+
 export function customerImageDownloadFilename(locale, generation) {
-  const product = generation?.product_name || translateCustomerImage(locale, 'download.productFallback')
-  return `${product}-${translateCustomerImage(locale, 'download.suffix')}-${generation?.id}.png`
+  const fallback = translateCustomerImage(locale, 'download.productFallback')
+  const product = safeFilenamePart(generation?.product_name) || fallback
+  const suffix = translateCustomerImage(locale, 'download.suffix')
+  const generationId = truncateUtf8(safeGenerationIdPart(generation?.id) || 'generation', FILENAME_ID_MAX_BYTES)
+  const preservedTail = `-${suffix}-${generationId}.png`
+  const productBudget = CUSTOMER_IMAGE_DOWNLOAD_FILENAME_MAX_BYTES - utf8Length(preservedTail)
+  const safeProduct = safeFilenamePart(truncateUtf8(product, productBudget)) || fallback
+  return `${safeProduct}${preservedTail}`
 }
 
 function browserStorage() {
@@ -294,11 +338,13 @@ function browserStorage() {
 export function provideCustomerImageI18n(storage = browserStorage()) {
   const locale = ref(readCustomerImageLocale(storage))
   let previousDocumentLanguage
+  let previousDocumentTitle
   let mounted = false
 
-  function syncDocumentLanguage(value) {
+  function syncDocument(value) {
     if (mounted && globalThis.document?.documentElement) {
       globalThis.document.documentElement.lang = value
+      globalThis.document.title = translateCustomerImage(value, 'portal.title')
     }
   }
 
@@ -317,18 +363,20 @@ export function provideCustomerImageI18n(storage = browserStorage()) {
   }
 
   provide(CUSTOMER_IMAGE_I18N_KEY, i18n)
-  watch(locale, syncDocumentLanguage, { flush: 'sync' })
+  watch(locale, syncDocument, { flush: 'sync' })
 
   onMounted(() => {
     if (!globalThis.document?.documentElement) return
     previousDocumentLanguage = globalThis.document.documentElement.lang
+    previousDocumentTitle = globalThis.document.title
     mounted = true
-    syncDocumentLanguage(locale.value)
+    syncDocument(locale.value)
   })
 
   onBeforeUnmount(() => {
     if (mounted && globalThis.document?.documentElement) {
       globalThis.document.documentElement.lang = previousDocumentLanguage
+      globalThis.document.title = previousDocumentTitle
     }
     mounted = false
   })

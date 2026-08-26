@@ -40,6 +40,8 @@ const languageOptions = Object.freeze([
 }
 
 button {
+  box-sizing: border-box;
+  width: 44px;
   min-width: 44px;
   min-height: 44px;
   padding: 0 12px;

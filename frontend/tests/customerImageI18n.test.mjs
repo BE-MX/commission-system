@@ -2,6 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { createRenderer, defineComponent, h } from 'vue'
+import vm from 'node:vm'
+import * as customerImageI18n from '../src/views/customer-image/i18n.js'
 
 import {
   CUSTOMER_IMAGE_LOCALE_KEY,
@@ -26,6 +28,7 @@ function read(relativePath) {
 
 const languageSwitcherSource = read('../src/views/customer-image/components/LanguageSwitcher.vue')
 const portalSource = read('../src/views/customer-image/CustomerImagePortal.vue')
+const indexSource = read('../index.html')
 const fixedCopySources = {
   catalog: read('../src/views/customer-image/CustomerProductCatalog.vue'),
   editor: read('../src/views/customer-image/CustomerProductEditor.vue'),
@@ -127,7 +130,7 @@ test('contains bilingual fixed UI copy for every portal surface', () => {
   const keys = [
     'portal.loading.title', 'portal.loading.detail', 'portal.invalid.title', 'portal.invalid.detail',
     'portal.contactManager', 'portal.empty.title', 'portal.empty.detail', 'portal.error.title',
-    'portal.retry', 'portal.brand.kicker', 'portal.brand.subtitle', 'portal.exclusiveChannel',
+    'portal.retry', 'portal.title', 'portal.brand.kicker', 'portal.brand.subtitle', 'portal.exclusiveChannel',
     'language.label', 'language.english', 'language.chinese',
     'catalog.eyebrow', 'catalog.title', 'catalog.titleForCustomer', 'catalog.intro',
     'catalog.search.label', 'catalog.search.placeholder', 'catalog.categories.label',
@@ -160,7 +163,7 @@ test('contains bilingual fixed UI copy for every portal surface', () => {
   const messages = CUSTOMER_IMAGE_MESSAGES
   assert.ok(messages, 'the production catalog must be directly inspectable')
   assert.equal(Object.isFrozen(messages), true, 'the catalog root must be read-only')
-  assert.equal(keys.length, 104)
+  assert.equal(keys.length, 105)
 
   for (const locale of ['en', 'zh-CN']) {
     assert.equal(Object.isFrozen(messages[locale]), true, `${locale} catalog must be read-only`)
@@ -172,14 +175,14 @@ test('contains bilingual fixed UI copy for every portal surface', () => {
   }
 })
 
-test('provides one reactive locale and restores the document language on unmount', async () => {
+test('provides one reactive locale and restores document language and title on unmount', async () => {
   const writes = []
   const storage = {
     getItem: () => 'zh-CN',
     setItem: (key, value) => writes.push([key, value]),
   }
   const originalDocument = globalThis.document
-  globalThis.document = { documentElement: { lang: 'fr' } }
+  globalThis.document = { documentElement: { lang: 'fr' }, title: 'Previous title' }
 
   let injected
   const Child = defineComponent({
@@ -212,15 +215,18 @@ test('provides one reactive locale and restores the document language on unmount
     app.mount({ children: [] })
     assert.equal(injected.locale.value, 'zh-CN')
     assert.equal(globalThis.document.documentElement.lang, 'zh-CN')
+    assert.equal(globalThis.document.title, '莱莎产品效果图')
     assert.equal(injected.tm(customerImageMessage('portal.retry')), '重新加载')
 
     injected.setLocale('en')
     assert.equal(injected.locale.value, 'en')
     assert.equal(globalThis.document.documentElement.lang, 'en')
+    assert.equal(globalThis.document.title, 'LeShine Product Visual Studio')
     assert.deepEqual(writes, [[CUSTOMER_IMAGE_LOCALE_KEY, 'en']])
 
     app.unmount()
     assert.equal(globalThis.document.documentElement.lang, 'fr')
+    assert.equal(globalThis.document.title, 'Previous title')
   } finally {
     globalThis.document = originalDocument
   }
@@ -262,6 +268,85 @@ test('language switcher is a native accessible two-language control', () => {
   assert.match(languageSwitcherSource, /@click="setLocale\(option\.value\)"/)
   assert.match(languageSwitcherSource, /\{\{\s*option\.shortLabel\s*\}\}/)
   assert.match(languageSwitcherSource, /min-height:\s*44px/)
+  assert.match(languageSwitcherSource, /box-sizing:\s*border-box/)
+  assert.match(languageSwitcherSource, /(?:^|\n)\s*width:\s*44px/)
+})
+
+test('language switcher width fits the desktop and safe-area mobile topbar reservations', () => {
+  const buttonWidth = Number(languageSwitcherSource.match(/(?:^|\n)\s*width:\s*(\d+)px/)?.[1])
+  const switcherGap = Number(languageSwitcherSource.match(/gap:\s*(\d+)px/)?.[1])
+  const switcherPadding = Number(languageSwitcherSource.match(/padding:\s*(\d+)px/)?.[1])
+  const switcherBorder = Number(languageSwitcherSource.match(/border:\s*(\d+)px\s+solid/)?.[1])
+  const desktopRight = Number(languageSwitcherSource.match(/right:\s*(\d+)px/)?.[1])
+  const mobileRight = Number(languageSwitcherSource.match(/right:\s*max\((\d+)px,\s*env\(safe-area-inset-right\)\)/)?.[1])
+  const desktopReservation = Number(portalSource.match(/padding:\s*0\s+(\d+)px\s+0\s+28px/)?.[1])
+  const mobileReservation = Number(portalSource.match(/\.topbar\s*\{[^}]*padding:\s*0\s+(\d+)px\s+0\s+14px/)?.[1])
+  const controlWidth = (buttonWidth * 2) + switcherGap + (switcherPadding * 2) + (switcherBorder * 2)
+
+  assert.equal(controlWidth, 98)
+  assert.ok(desktopRight + controlWidth <= desktopReservation)
+  assert.ok(mobileRight + controlWidth <= mobileReservation)
+})
+
+test('create boot scripts execute before resources and localize initial and slow copy without touching internal defaults', () => {
+  const setupScript = indexSource.match(/<script id="customer-image-boot-locale">([\s\S]*?)<\/script>/)?.[1]
+  const copyScript = indexSource.match(/<script id="customer-image-boot-copy">([\s\S]*?)<\/script>/)?.[1]
+  const setupOffset = indexSource.indexOf('<script id="customer-image-boot-locale">')
+  const firstExternalResource = Math.min(
+    ...['<link rel="icon"', '<link rel="preconnect"', '<script type="module"']
+      .map(marker => indexSource.indexOf(marker))
+      .filter(offset => offset >= 0),
+  )
+  assert.ok(setupScript && copyScript, 'boot scripts need stable ids')
+  assert.ok(setupOffset >= 0 && setupOffset < firstExternalResource)
+  assert.match(indexSource, /<html lang="zh-CN">/)
+  assert.match(indexSource, /<title>莱莎方舟平台<\/title>/)
+
+  function run(pathname, storedValue, storageError = false) {
+    const elements = {
+      'boot-hint': { textContent: 'Loading…' },
+      'boot-slow': { textContent: 'Network is slow. Still loading…' },
+    }
+    const document = {
+      documentElement: { lang: 'en' },
+      title: 'LeShine Product Visual Studio',
+      getElementById: id => elements[id] || null,
+    }
+    const context = {
+      document,
+      location: { pathname },
+      localStorage: { getItem: () => {
+        if (storageError) throw new Error('denied')
+        return storedValue
+      } },
+    }
+    context.window = context
+    vm.runInNewContext(setupScript, context)
+    vm.runInNewContext(copyScript, context)
+    return { document, elements }
+  }
+
+  const english = run('/create/token', null)
+  assert.equal(english.document.documentElement.lang, 'en')
+  assert.equal(english.document.title, 'LeShine Product Visual Studio')
+  assert.equal(english.elements['boot-hint'].textContent, 'Loading…')
+  assert.equal(english.elements['boot-slow'].textContent, 'Network is slow. Still loading…')
+
+  const chinese = run('/create', 'zh-CN')
+  assert.equal(chinese.document.documentElement.lang, 'zh-CN')
+  assert.equal(chinese.document.title, '莱莎产品效果图')
+  assert.equal(chinese.elements['boot-hint'].textContent, '正在载入…')
+  assert.equal(chinese.elements['boot-slow'].textContent, '网络较慢，仍在载入…')
+
+  assert.equal(run('/create/token', 'broken').document.documentElement.lang, 'en')
+  assert.equal(run('/create/token', 'zh-CN', true).document.documentElement.lang, 'en')
+  const internal = run('/dashboard', 'en')
+  assert.equal(internal.document.documentElement.lang, 'zh-CN')
+  assert.equal(internal.document.title, '莱莎方舟平台')
+  assert.equal(internal.elements['boot-hint'].textContent, '正在载入…')
+  assert.equal(internal.elements['boot-slow'].textContent, '网络较慢，仍在载入…')
+  assert.match(indexSource, /<span id="boot-hint"[^>]*>Loading…<\/span>/)
+  assert.match(indexSource, /<span id="boot-slow"[^>]*>Network is slow\. Still loading…<\/span>/)
 })
 
 test('language switcher motion is bounded and pointer-aware', () => {
@@ -396,6 +481,34 @@ test('production download filename uses locale catalog and preserves business pr
     '产品效果图-效果图-93.png',
   )
   assert.match(portalSource, /customerImageDownloadFilename\(locale\.value,\s*generation\)/)
+})
+
+test('download filenames are Windows-safe and retain localized suffix id and extension within a UTF-8 budget', () => {
+  assert.equal(customerImageI18n.CUSTOMER_IMAGE_DOWNLOAD_FILENAME_MAX_BYTES, 180)
+  const byteLength = value => new TextEncoder().encode(value).byteLength
+  const illegal = /[<>:"/\\|?*\u0000-\u001f]/u
+  const cases = [
+    ['en', { id: 92, product_name: '  Box<>:"/\\|?*\u0001.  ' }, 'Box-visual-92.png'],
+    ['zh-CN', { id: '9<2', product_name: '<>:"/\\|?*\u0000. ' }, '产品效果图-效果图-9-2.png'],
+    ['en', { id: '9\u007f2', product_name: 'Box' }, 'Box-visual-9-2.png'],
+    ['en', { id: 93, product_name: '.  ' }, 'product-visual-visual-93.png'],
+  ]
+  for (const [locale, generation, expected] of cases) {
+    const filename = customerImageDownloadFilename(locale, generation)
+    assert.equal(filename, expected)
+    assert.doesNotMatch(filename, illegal)
+    assert.doesNotMatch(filename, /[. ]\.png$/u)
+  }
+
+  for (const locale of ['en', 'zh-CN']) {
+    for (const product_name of ['汉'.repeat(200), '😀'.repeat(200)]) {
+      const filename = customerImageDownloadFilename(locale, { id: 987654, product_name })
+      assert.ok(byteLength(filename) <= customerImageI18n.CUSTOMER_IMAGE_DOWNLOAD_FILENAME_MAX_BYTES)
+      assert.ok(filename.endsWith(`-${translateCustomerImage(locale, 'download.suffix')}-987654.png`))
+      assert.equal(filename.includes('\uFFFD'), false, 'must not split a Unicode code point')
+      assert.doesNotMatch(filename, illegal)
+    }
+  }
 })
 
 test('catalog all-category sentinel cannot collide with a backend category value', () => {
