@@ -219,6 +219,10 @@ Worker 路由在 `/api/agent-runtime/worker` 下提供 `claim`、`heartbeat`、`
   - `GET /dicts?type=xx&only_active=true` — 按类型查字典项
   - `POST /dicts` / `PUT /dicts/{id}` / `DELETE /dicts/{id}` — CRUD
 - `/api/dingtalk` — 钉钉手动消息发送、消息日志、回调日志（需 `dingtalk:admin`，2026-07-03 B-6 收口）
+  - `GET /gmv-daily/config` — 读取 GMV 日报队伍、成员、管理员接收人配置及候选项；首次未保存时返回已确认的八队默认名单
+  - `PUT /gmv-daily/config` — 保存 GMV 日报配置；队长和管理员接收人必须有有效钉钉绑定
+  - `POST /gmv-daily/preview` — 按指定 `report_date`（不传则北京时间昨天）计算队长版和管理员版 Markdown，不发送
+  - `POST /gmv-daily/send` — 手动发送/补发，`scope=all|teams|admins`；同一日期、队伍/接收人成功后幂等跳过，失败重试沿用第一次消息快照
 - `/api/dingtalk/callback` — 钉钉事件回调入口（审批状态变更等，无前缀挂载）
 - `/api/governance` — 数据概念治理（`governance/router.py`，需 `governance:read/write/admin`）
   - `GET /concepts` — 概念列表（分页+筛选+搜索，需 `governance:read`）

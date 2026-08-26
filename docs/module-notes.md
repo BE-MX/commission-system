@@ -133,6 +133,17 @@ nssm start CommissionSystem    # 正常启动
 
 **用户绑定**：用户管理页"同步钉钉"按钮通过手机号调 API 获取钉钉 userId，存入 `ark_users.dingtalk_id`。
 
+### 每日 GMV 点对点推送
+
+- 配置入口：系统管理 → GMV 日报配置（`dingtalk:admin`）；管理员日报只发给页面中明确勾选、且已绑定钉钉的用户。至少选择一名管理员并保存后才允许发送，避免首次上线只发队长版、漏发管理员版。
+- 调度：北京时间每天 08:00 统计前一天 `account_date`，08:05、08:15、08:30 自动补发尚未成功的接收人；多实例用 MySQL `GET_LOCK` 避免同日并发。
+- 有效订单：`status=13972831656`，或 `status=13972831654 AND status_name=已结清`；同时排除 `trail` 含“个人”的订单。金额使用 `amount_usd`，保留退款/负数。
+- 归属：解析订单 `departments`，按每项 `rate` 分摊到队；100% 分摊时将分位舍入差额补到最后一项，非 100% 不静默归一并在管理员日报提示异常。
+- 展示与排除：启用成员即使 GMV 为 0 也展示；罗馨瑜只在行则将至队伍汇总中排除，凯丽只在乘风队伍汇总中排除，个人行和原始 GMV 仍展示。配置外但有订单的人员/队伍也展示并告警，保证可对账。
+- 配置存储：复用 `sys_dict` 的 `dingtalk_gmv_team/member/admin` 三个保留 type，无新增表；首次返回八队默认配置，后台保存后完全按字典配置运行。
+- 投递可靠性：复用 `dingtalk_message_log`，在首次外部调用前一次事务冻结整批接收人的 Markdown 快照；成功后重复执行直接跳过，失败重试不因后续订单变化而改写当天已生成内容。调度仍有接收人失败时本次任务记失败，供运行中心告警。钉钉接口不提供业务幂等键，因此外部已受理、成功状态落库前进程崩溃时仍是 at-least-once（可能重复）语义，不宣称 exactly-once。
+- 数据阻断：金额为空/非法/非有限数值，部门或 rate 无法识别、为负/非有限，或 rate 合计不等于 100% 时允许后台预览异常，但禁止正式发送，避免把不可对账的数据伪装成 0 GMV。
+
 **定时任务**：`backend/app/schedulers/registry.py` 在 `start_scheduler()` 中创建 `AsyncIOScheduler`；当前完整 20 项目录以 `app/operations/models.py` 为准。下列是本节相关的早期任务清单（main.py 仅调用 `start_scheduler()`/`shutdown_scheduler()`，任务定义集中在 registry）：
   - `design_shoot_reminder` — 拍摄提醒，cron 每天 08:30（`check_today_shoot_reminders()`）
   - `shipping_daily_report` — 物流日报，cron 每天 08:30（`generate_daily_reports()`）
