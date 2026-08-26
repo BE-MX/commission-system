@@ -137,6 +137,11 @@ def _row_key(alias: str, columns: tuple[str, ...]) -> str:
     return f"CONCAT_WS(':', {values})"
 
 
+def _binary_key_match(left: str, right: str) -> str:
+    """Compare backup keys independently of source/table collations."""
+    return f"CAST({left} AS BINARY) = CAST({right} AS BINARY)"
+
+
 def _create_backup_table() -> None:
     if not op.get_context().as_sql and sa.inspect(op.get_bind()).has_table(BACKUP_TABLE):
         return
@@ -181,7 +186,7 @@ def _backup_verify(table: str, column: str) -> None:
             f"LEFT JOIN `{BACKUP_TABLE}` AS backup "
             f"ON backup.`table_name` = '{table}' "
             f"AND backup.`column_name` = '{column}' "
-            f"AND backup.`row_key` = {key} "
+            f"AND {_binary_key_match('backup.`row_key`', key)} "
             f"WHERE source.`{column}` IS NOT NULL AND backup.`row_key` IS NULL"
         )).scalar_one()
         if source_count != backup_count or missing_keys:
@@ -203,7 +208,7 @@ def _convert_verify(table: str, column: str) -> None:
         f"UPDATE `{table}` AS target JOIN `{BACKUP_TABLE}` AS backup "
         f"ON backup.`table_name` = '{table}' "
         f"AND backup.`column_name` = '{column}' "
-        f"AND backup.`row_key` = {target_key} "
+        f"AND {_binary_key_match('backup.`row_key`', target_key)} "
         f"SET target.`{column}` = DATE_ADD(backup.`original_value`, INTERVAL 8 HOUR)"
         f"{_on_update_assignment(table, column)}"
     ))
@@ -212,7 +217,7 @@ def _convert_verify(table: str, column: str) -> None:
             f"SELECT COUNT(*) FROM `{table}` AS target JOIN `{BACKUP_TABLE}` AS backup "
             f"ON backup.`table_name` = '{table}' "
             f"AND backup.`column_name` = '{column}' "
-            f"AND backup.`row_key` = {target_key} "
+            f"AND {_binary_key_match('backup.`row_key`', target_key)} "
             f"WHERE NOT (target.`{column}` <=> DATE_ADD(backup.`original_value`, INTERVAL 8 HOUR))"
         )).scalar_one()
         if mismatches:
@@ -243,7 +248,7 @@ def downgrade() -> None:
                 f"UPDATE `{BACKUP_TABLE}` AS backup JOIN `{table}` AS target "
                 f"ON backup.`table_name` = '{table}' "
                 f"AND backup.`column_name` = '{column}' "
-                f"AND backup.`row_key` = {target_key} "
+                f"AND {_binary_key_match('backup.`row_key`', target_key)} "
                 "SET backup.`rollback_value` = CASE "
                 f"WHEN target.`{column}` <=> backup.`original_value` "
                 "THEN backup.`original_value` "
@@ -258,7 +263,7 @@ def downgrade() -> None:
                 f"UPDATE `{table}` AS target LEFT JOIN `{BACKUP_TABLE}` AS backup "
                 f"ON backup.`table_name` = '{table}' "
                 f"AND backup.`column_name` = '{column}' "
-                f"AND backup.`row_key` = {target_key} "
+                f"AND {_binary_key_match('backup.`row_key`', target_key)} "
                 f"SET target.`{column}` = DATE_SUB(target.`{column}`, INTERVAL 8 HOUR)"
                 f"{_on_update_assignment(table, column)} "
                 f"WHERE backup.`row_key` IS NULL AND target.`{column}` IS NOT NULL"
@@ -267,7 +272,7 @@ def downgrade() -> None:
                 f"UPDATE `{table}` AS target JOIN `{BACKUP_TABLE}` AS backup "
                 f"ON backup.`table_name` = '{table}' "
                 f"AND backup.`column_name` = '{column}' "
-                f"AND backup.`row_key` = {target_key} "
+                f"AND {_binary_key_match('backup.`row_key`', target_key)} "
                 f"SET target.`{column}` = backup.`rollback_value`"
                 f"{_on_update_assignment(table, column)}"
             ))
@@ -276,7 +281,7 @@ def downgrade() -> None:
                     f"SELECT COUNT(*) FROM `{table}` AS target JOIN `{BACKUP_TABLE}` AS backup "
                     f"ON backup.`table_name` = '{table}' "
                     f"AND backup.`column_name` = '{column}' "
-                    f"AND backup.`row_key` = {target_key} "
+                    f"AND {_binary_key_match('backup.`row_key`', target_key)} "
                     f"WHERE NOT (target.`{column}` <=> backup.`rollback_value`)"
                 )).scalar_one()
                 if mismatches:

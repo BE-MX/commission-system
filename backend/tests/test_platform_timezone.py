@@ -158,6 +158,20 @@ def test_migration_requires_maintenance_and_backs_up_all_columns_before_conversi
     assert last_backup < first_convert
 
 
+def test_migration_backup_keys_ignore_mixed_mysql_collations():
+    migration = _load_migration()
+    source_key = migration._row_key("source", ("id",))
+    condition = migration._binary_key_match("backup.`row_key`", source_key)
+
+    assert condition == (
+        "CAST(backup.`row_key` AS BINARY) = "
+        "CAST(CONCAT_WS(':', CAST(source.`id` AS CHAR)) AS BINARY)"
+    )
+    source = Path(migration.__file__).read_text(encoding="utf-8")
+    assert "backup.`row_key` = {key}" not in source
+    assert "backup.`row_key` = {target_key}" not in source
+
+
 def test_external_offset_times_are_converted_to_beijing_without_dropping_offset():
     assert _parse_dt("2026-08-26T12:00:00Z") == datetime(2026, 8, 26, 20)
     assert _parse_dt("2026-08-26T12:00:00-05:00") == datetime(2026, 8, 27, 1)
