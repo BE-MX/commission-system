@@ -235,6 +235,33 @@ def test_rotate_updates_same_app_and_invalidates_old_token_immediately():
         engine.dispose()
 
 
+def test_expired_app_cannot_rotate_and_preserves_existing_token_identity():
+    client, _, db, engine, _, _ = _setup()
+    try:
+        issued = _issue(client, name="Expired site")
+        row = db.query(IntegrationApp).filter(IntegrationApp.id == issued["id"]).one()
+        row.expires_at = beijing_now() - timedelta(seconds=1)
+        db.commit()
+        original_hash = row.token_hash
+        original_suffix = row.token_suffix
+
+        response = client.post(
+            f"/api/integrations/admin/apps/{issued['id']}/rotate",
+            json={"current_token_suffix": original_suffix},
+        )
+
+        assert response.status_code == 409, response.text
+        assert response.json()["detail"] == "接入应用已过期，不能轮换，请新建凭证"
+        db.expire_all()
+        unchanged = db.query(IntegrationApp).filter(IntegrationApp.id == issued["id"]).one()
+        assert unchanged.token_hash == original_hash
+        assert unchanged.token_suffix == original_suffix
+    finally:
+        client.close()
+        db.close()
+        engine.dispose()
+
+
 def test_revoked_and_disabled_apps_fail_authentication_and_rotate_is_blocked():
     client, _, db, engine, _, _ = _setup()
     try:

@@ -536,6 +536,8 @@ def rotate_app_token(db: Session, app_id: int, *, current_token_suffix: str) -> 
         raise HTTPException(status_code=404, detail="接入应用不存在")
     if not row.is_active:
         raise HTTPException(status_code=409, detail="接入应用已吊销，不能轮换凭证")
+    if row.expires_at is not None and row.expires_at <= beijing_now():
+        raise HTTPException(status_code=409, detail="接入应用已过期，不能轮换，请新建凭证")
     if row.token_suffix != current_token_suffix:
         raise HTTPException(status_code=409, detail="凭证已被其他请求轮换，请刷新后重试")
     owner = _active_owner(db, row.owner_user_id)

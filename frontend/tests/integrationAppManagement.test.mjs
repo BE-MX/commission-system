@@ -5,6 +5,7 @@ import test from 'node:test'
 import {
   INVOICE_API_ENDPOINT,
   buildServerEnvSnippet,
+  canRotateIntegrationApp,
   createOneTimeSecretState,
   filterIntegrationApps,
   getIntegrationAppStatus,
@@ -58,6 +59,17 @@ test('status labels distinguish active, expired and revoked apps', () => {
 })
 
 
+test('only an active, unexpired app offers credential rotation', () => {
+  const now = new Date('2026-08-26T00:00:00+08:00')
+  assert.equal(canRotateIntegrationApp({ is_active: true, expires_at: null }, now), true)
+  assert.equal(canRotateIntegrationApp({
+    is_active: true,
+    expires_at: '2026-08-25T23:59:59',
+  }, now), false)
+  assert.equal(canRotateIntegrationApp({ is_active: false, expires_at: null }, now), false)
+})
+
+
 test('one-time secret state clears plaintext on demand', () => {
   const state = createOneTimeSecretState()
   const issued = { id: 1, token: 'ark_live_once', name: 'Sales portal' }
@@ -82,14 +94,20 @@ test('admin client and API functions use the integrations admin contract', () =>
 })
 
 
-test('navigation is permission protected and plaintext is cleared on close and unmount', () => {
+test('navigation is protected and lifecycle updates expiry while clearing secrets and timers', () => {
   const navigation = readFileSync(new URL('../src/config/navigation.js', import.meta.url), 'utf8')
   const page = readFileSync(new URL('../src/views/system/IntegrationAppManagement.vue', import.meta.url), 'utf8')
 
   assert.match(navigation, /path: ['"]\/system\/integration-apps['"]/)
   assert.match(navigation, /permission: ['"]integration:admin['"]/)
   assert.match(page, /@closed="clearIssuedSecret"/)
-  assert.match(page, /onBeforeUnmount\(clearIssuedSecret\)/)
+  assert.match(page, /currentNow/)
+  assert.match(page, /setInterval\([\s\S]*60_000/)
+  assert.match(page, /clearInterval/)
+  assert.match(page, /onBeforeUnmount\(cleanupPage\)/)
+  assert.match(page, /canRotateIntegrationApp\(row, currentNow\)/)
+  assert.match(page, /已过期，请新建凭证/)
   assert.match(page, /服务端调用，禁止放浏览器/)
   assert.doesNotMatch(page, /localStorage|sessionStorage|console\.(?:log|info|warn|error)|window\.location|URLSearchParams/)
+  assert.doesNotMatch(page, /prefers-reduced-motion/)
 })

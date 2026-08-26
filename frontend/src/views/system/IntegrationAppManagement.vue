@@ -91,8 +91,8 @@
         </el-table-column>
         <el-table-column label="状态" min-width="100">
           <template #default="{ row }">
-            <el-tag :type="getIntegrationAppStatus(row).type" effect="plain" size="small">
-              {{ getIntegrationAppStatus(row).label }}
+            <el-tag :type="statusFor(row).type" effect="plain" size="small">
+              {{ statusFor(row).label }}
             </el-tag>
           </template>
         </el-table-column>
@@ -100,6 +100,7 @@
           <template #default="{ row }">
             <template v-if="row.is_active">
               <GlassButton
+                v-if="canRotateIntegrationApp(row, currentNow)"
                 v-permission="'integration:admin'"
                 variant="link"
                 left-icon="Refresh"
@@ -107,6 +108,7 @@
               >
                 轮换
               </GlassButton>
+              <span v-else class="expired-note">已过期，请新建凭证</span>
               <GlassButton
                 v-permission="'integration:admin'"
                 variant="link"
@@ -239,7 +241,15 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onDeactivated, onMounted, reactive, ref } from 'vue'
+import {
+  computed,
+  onActivated,
+  onBeforeUnmount,
+  onDeactivated,
+  onMounted,
+  reactive,
+  ref,
+} from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, WarningFilled } from '@element-plus/icons-vue'
 import GlassButton from '@/components/GlassButton.vue'
@@ -254,6 +264,7 @@ import { copyToClipboard } from './mcpTokenManagement'
 import {
   INVOICE_API_ENDPOINT,
   buildServerEnvSnippet,
+  canRotateIntegrationApp,
   createOneTimeSecretState,
   filterIntegrationApps,
   formatCredentialTime,
@@ -271,10 +282,12 @@ const candidateLoading = ref(false)
 const secretVisible = ref(false)
 const issuedSecret = ref(null)
 const secretState = createOneTimeSecretState((value) => { issuedSecret.value = value })
+const currentNow = ref(new Date())
+let nowTimer = null
 
-const filteredRows = computed(() => filterIntegrationApps(rows.value, filters))
+const filteredRows = computed(() => filterIntegrationApps(rows.value, filters, currentNow.value))
 const metrics = computed(() => rows.value.reduce((result, row) => {
-  result[getIntegrationAppStatus(row).key] += 1
+  result[getIntegrationAppStatus(row, currentNow.value).key] += 1
   return result
 }, { active: 0, expired: 0, revoked: 0 }))
 const selectedCandidate = computed(() => candidates.value.find(
@@ -321,6 +334,29 @@ function showIssuedSecret(secret) {
 function clearIssuedSecret() {
   secretVisible.value = false
   secretState.clear()
+}
+
+function statusFor(row) {
+  return getIntegrationAppStatus(row, currentNow.value)
+}
+
+function startClock() {
+  if (nowTimer !== null) return
+  currentNow.value = new Date()
+  nowTimer = setInterval(() => {
+    currentNow.value = new Date()
+  }, 60_000)
+}
+
+function stopClock() {
+  if (nowTimer === null) return
+  clearInterval(nowTimer)
+  nowTimer = null
+}
+
+function cleanupPage() {
+  stopClock()
+  clearIssuedSecret()
 }
 
 async function submitCreate() {
@@ -376,9 +412,13 @@ async function copyText(value, successMessage) {
   else ElMessage.error('自动复制失败，请手动选择复制')
 }
 
-onMounted(loadApps)
-onDeactivated(clearIssuedSecret)
-onBeforeUnmount(clearIssuedSecret)
+onMounted(() => {
+  loadApps()
+  startClock()
+})
+onActivated(startClock)
+onDeactivated(cleanupPage)
+onBeforeUnmount(cleanupPage)
 </script>
 
 <style scoped>
@@ -413,6 +453,7 @@ h1 { margin: 4px 0 5px; font-size: 23px; letter-spacing: -.02em; }
 .account-cell small,
 .candidate-option small,
 .muted { color: var(--text-tertiary); }
+.expired-note { margin-right: 8px; color: var(--color-warning-text); font-size: 12px; }
 .suffix { color: var(--text-secondary); font-size: 12px; }
 .candidate-option { display: flex; align-items: center; justify-content: space-between; width: 100%; }
 .field-hint { margin-top: 4px; color: var(--text-tertiary); font-size: 11px; }
@@ -439,9 +480,4 @@ h1 { margin: 4px 0 5px; font-size: 23px; letter-spacing: -.02em; }
   .metrics { grid-template-columns: 1fr; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .integration-page *,
-  .integration-page *::before,
-  .integration-page *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
-}
 </style>

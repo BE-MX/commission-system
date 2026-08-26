@@ -35,6 +35,10 @@ export function getIntegrationAppStatus(row, now = new Date()) {
   return { key: 'active', label: '有效', type: 'success' }
 }
 
+export function canRotateIntegrationApp(row, now = new Date()) {
+  return getIntegrationAppStatus(row, now).key === 'active'
+}
+
 export function filterIntegrationApps(rows, filters, now = new Date()) {
   const keyword = String(filters?.keyword || '').trim().toLowerCase()
   const status = filters?.status || 'all'
