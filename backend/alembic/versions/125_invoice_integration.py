@@ -124,11 +124,6 @@ def upgrade() -> None:
         comment="外部系统发票幂等接入请求",
     )
     op.create_index(
-        "idx_invoice_ingest_app",
-        "ark_invoice_ingest_requests",
-        ["integration_app_id"],
-    )
-    op.create_index(
         "idx_invoice_ingest_status",
         "ark_invoice_ingest_requests",
         ["status", "updated_at"],

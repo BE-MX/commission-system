@@ -139,7 +139,6 @@ class InvoiceIngestRequest(Base):
             "attempt_count > 0",
             name="ck_invoice_ingest_attempt_positive",
         ),
-        Index("idx_invoice_ingest_app", "integration_app_id"),
         Index("idx_invoice_ingest_status", "status", "updated_at"),
         Index("idx_invoice_ingest_invoice", "invoice_id"),
         {"comment": "外部系统发票幂等接入请求"},

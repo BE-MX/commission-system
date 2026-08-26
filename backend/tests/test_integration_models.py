@@ -1,9 +1,18 @@
 from datetime import datetime
 import importlib.util
 from pathlib import Path
+import subprocess
+import sys
 
 import pytest
-from sqlalchemy import CheckConstraint, JSON, UniqueConstraint, inspect
+from sqlalchemy import (
+    CheckConstraint,
+    Column,
+    ForeignKeyConstraint,
+    JSON,
+    UniqueConstraint,
+    inspect,
+)
 from sqlalchemy.dialects import mysql, sqlite
 from sqlalchemy.exc import IntegrityError
 
@@ -43,6 +52,27 @@ def _request(app_id: int, public_id: str, external_order_id: str) -> InvoiceInge
         external_order_id=external_order_id,
         request_sha256=(public_id * 64)[:64],
     )
+
+
+def test_app_models_import_registers_and_exports_integration_models():
+    probe = """
+from app.core.database import Base
+assert "ark_integration_apps" not in Base.metadata.tables
+assert "ark_invoice_ingest_requests" not in Base.metadata.tables
+import app.models as models
+assert models.IntegrationApp.__name__ == "IntegrationApp"
+assert models.InvoiceIngestRequest.__name__ == "InvoiceIngestRequest"
+assert "ark_integration_apps" in Base.metadata.tables
+assert "ark_invoice_ingest_requests" in Base.metadata.tables
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        cwd=Path(__file__).parents[1],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_model_metadata_matches_external_invoice_contract():
@@ -92,8 +122,7 @@ def test_model_metadata_matches_external_invoice_contract():
     assert "rejected" in check_sql["ck_invoice_ingest_status"]
     assert "attempt_count > 0" == check_sql["ck_invoice_ingest_attempt_positive"]
 
-    assert {index.name for index in request.indexes} >= {
-        "idx_invoice_ingest_app",
+    assert {index.name for index in request.indexes} == {
         "idx_invoice_ingest_status",
         "idx_invoice_ingest_invoice",
     }
@@ -220,8 +249,111 @@ def test_migration_chains_from_current_head_and_creates_contract_tables(monkeypa
         "ark_integration_apps",
         "ark_invoice_ingest_requests",
     ]
-    assert {name for name, _table, _columns, _kwargs in created_indexes} >= {
-        "idx_invoice_ingest_app",
+
+    table_args = {name: args for name, args, _kwargs in created_tables}
+    app_args = table_args["ark_integration_apps"]
+    request_args = table_args["ark_invoice_ingest_requests"]
+    app_columns = {item.name: item for item in app_args if isinstance(item, Column)}
+    request_columns = {
+        item.name: item for item in request_args if isinstance(item, Column)
+    }
+
+    assert set(app_columns) == {
+        "id",
+        "public_id",
+        "name",
+        "owner_user_id",
+        "token_hash",
+        "token_suffix",
+        "scopes",
+        "is_active",
+        "expires_at",
+        "last_used_at",
+        "created_by",
+        "created_at",
+        "updated_at",
+    }
+    assert set(request_columns) == {
+        "id",
+        "public_id",
+        "integration_app_id",
+        "external_order_id",
+        "request_sha256",
+        "invoice_id",
+        "status",
+        "error_code",
+        "error_json",
+        "attempt_count",
+        "created_at",
+        "finished_at",
+        "updated_at",
+    }
+
+    mysql_dialect = mysql.dialect()
+    assert app_columns["id"].type.compile(dialect=mysql_dialect) == "BIGINT"
+    assert app_columns["owner_user_id"].type.compile(dialect=mysql_dialect) == "INTEGER UNSIGNED"
+    assert app_columns["created_by"].type.compile(dialect=mysql_dialect) == "INTEGER UNSIGNED"
+    assert request_columns["integration_app_id"].type.compile(dialect=mysql_dialect) == "BIGINT"
+    assert request_columns["invoice_id"].type.compile(dialect=mysql_dialect) == "BIGINT"
+
+    assert str(app_columns["is_active"].server_default.arg) == "true"
+    assert str(app_columns["created_at"].server_default.arg) == "CURRENT_TIMESTAMP"
+    assert (
+        str(app_columns["updated_at"].server_default.arg)
+        == "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+    )
+    assert str(request_columns["status"].server_default.arg) == "processing"
+    assert str(request_columns["attempt_count"].server_default.arg) == "1"
+    assert str(request_columns["created_at"].server_default.arg) == "CURRENT_TIMESTAMP"
+    assert (
+        str(request_columns["updated_at"].server_default.arg)
+        == "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+    )
+
+    def foreign_keys(args):
+        return {
+            tuple(item.column_keys): (
+                tuple(element._colspec for element in item.elements),
+                item.ondelete,
+            )
+            for item in args
+            if isinstance(item, ForeignKeyConstraint)
+        }
+
+    assert foreign_keys(app_args) == {
+        ("owner_user_id",): (("ark_users.id",), "CASCADE"),
+        ("created_by",): (("ark_users.id",), "SET NULL"),
+    }
+    assert foreign_keys(request_args) == {
+        ("integration_app_id",): (("ark_integration_apps.id",), "CASCADE"),
+        ("invoice_id",): (("ark_invoices.id",), "SET NULL"),
+    }
+
+    checks = {
+        item.name: str(item.sqltext)
+        for item in request_args
+        if isinstance(item, CheckConstraint)
+    }
+    assert checks == {
+        "ck_invoice_ingest_status": "status IN ('processing', 'created', 'rejected')",
+        "ck_invoice_ingest_attempt_positive": "attempt_count > 0",
+    }
+
+    unique_constraints = {
+        item.name: tuple(item._pending_colargs)
+        for item in (*app_args, *request_args)
+        if isinstance(item, UniqueConstraint)
+    }
+    assert unique_constraints == {
+        "uq_integration_app_public_id": ("public_id",),
+        "uq_integration_app_token_hash": ("token_hash",),
+        "uq_invoice_ingest_public_id": ("public_id",),
+        "uq_invoice_ingest_app_order": ("integration_app_id", "external_order_id"),
+    }
+
+    assert {name for name, _table, _columns, _kwargs in created_indexes} == {
+        "idx_integration_app_owner",
+        "idx_integration_app_active",
         "idx_invoice_ingest_status",
         "idx_invoice_ingest_invoice",
     }
