@@ -119,22 +119,28 @@ def test_variant_clarification_persists_required_item_kind(configured_owner, db)
 
 def test_clarification_resolution_preserves_selected_model(configured_owner, db):
     owner, session = configured_owner
-    provider = db.query(AiProvider).one()
+    provider = AiProvider(
+        name="Openlux image provider", provider_type="direct",
+        api_base="https://api.openlux.ai/v1", api_type="openai",
+        api_key="encrypted", is_enabled=True, timeout_sec=30,
+    )
+    db.add(provider)
+    db.flush()
     db.add(
         AiPreset(
             preset_name="design_image_generation_grok_image_2",
             provider_id=provider.id,
-            model="grok-image-2",
+            model="grok-imagine-image-2.0",
             parameters={"output_format": "png"},
             is_enabled=True,
         )
     )
     db.commit()
     payload = _turn(session.id, "grok-clarify", "请生成三个角度的人像图")
-    payload = payload.model_copy(update={"model": "grok-image-2"})
+    payload = payload.model_copy(update={"model": "grok-imagine-image-2.0"})
 
     pending = service.create_turn(db, owner.id, payload)
-    assert pending.clarification.interaction_json["request"]["model"] == "grok-image-2"
+    assert pending.clarification.interaction_json["request"]["model"] == "grok-imagine-image-2.0"
 
     resolved = service.resolve_message_action(
         db,
@@ -147,7 +153,7 @@ def test_clarification_resolution_preserves_selected_model(configured_owner, db)
             mode="composite",
         ),
     )
-    assert {job.model for job in resolved.jobs} == {"grok-image-2"}
+    assert {job.model for job in resolved.jobs} == {"grok-imagine-image-2.0"}
     assert {job.preset_name for job in resolved.jobs} == {
         "design_image_generation_grok_image_2"
     }

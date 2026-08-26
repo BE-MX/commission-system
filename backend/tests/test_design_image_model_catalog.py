@@ -1,3 +1,5 @@
+import pytest
+
 from app.ai.models import AiPreset, AiProvider
 from app.design_image import model_catalog
 
@@ -74,3 +76,35 @@ def test_gemini_model_requires_its_exact_preset_and_chat_style(db):
 
     assert configured is not None
     assert configured[1] is preset
+
+
+@pytest.mark.parametrize("api_base", ["https://api.openlux.ai", "https://api.openlux.ai/v1"])
+def test_grok_image_2_uses_verified_openlux_model(db, api_base):
+    preset, _ = _configured_model(db, api_base=api_base)
+    preset.preset_name = "design_image_generation_grok_image_2"
+    preset.model = "grok-imagine-image-2.0"
+    db.flush()
+    configured = model_catalog.configured_model_row(db, "grok-imagine-image-2.0")
+    assert configured is not None
+    assert configured[1] is preset
+    assert model_catalog.get_model_option("grok-image-2") is None
+    assert {item["id"]: item["available"] for item in model_catalog.public_model_options(db)}[preset.model]
+
+
+@pytest.mark.parametrize("api_base", [
+    "https://api.teamorouter.cn/v1", "https://api.openlux.ai.evil.test/v1",
+    "http://api.openlux.ai/v1", "https://api.openlux.ai:8443/v1",
+    "https://user@api.openlux.ai/v1", "https://api.openlux.ai/v1?proxy=true",
+    "https://api.openlux.ai/v1#fragment", "https://api.openlux.ai/v1/images/generations",
+])
+def test_grok_image_2_rejects_unverified_provider(db, api_base):
+    preset, _ = _configured_model(db, api_base=api_base)
+    preset.preset_name = "design_image_generation_grok_image_2"
+    preset.model = "grok-imagine-image-2.0"
+    db.flush()
+    assert model_catalog.configured_model_row(db, "grok-imagine-image-2.0") is None
+
+
+def test_openlux_does_not_enable_other_catalog_models(db):
+    _configured_model(db, api_base="https://api.openlux.ai/v1")
+    assert model_catalog.configured_model_row(db, "gpt-image-2") is None

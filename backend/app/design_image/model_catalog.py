@@ -18,7 +18,7 @@ from app.ai.models import AiPreset, AiProvider
 
 ImageModelId = Literal[
     "gpt-image-2",
-    "grok-image-2",
+    "grok-imagine-image-2.0",
     "gemini-3-pro-image",
     "gemini-3.1-flash-image",
 ]
@@ -33,6 +33,7 @@ class ImageModelOption:
     label: str
     preset_name: str
     api_style: Literal["images", "chat"]
+    provider_host: str = TEAMROUTER_HOST
 
 
 IMAGE_MODEL_OPTIONS: tuple[ImageModelOption, ...] = (
@@ -43,10 +44,11 @@ IMAGE_MODEL_OPTIONS: tuple[ImageModelOption, ...] = (
         api_style="images",
     ),
     ImageModelOption(
-        id="grok-image-2",
+        id="grok-imagine-image-2.0",
         label="Grok Image 2",
         preset_name="design_image_generation_grok_image_2",
         api_style="images",
+        provider_host="api.openlux.ai",
     ),
     ImageModelOption(
         id="gemini-3-pro-image",
@@ -68,7 +70,7 @@ def get_model_option(model_id: str) -> ImageModelOption | None:
     return _OPTION_BY_ID.get(model_id)
 
 
-def _is_teamrouter_provider(provider: AiProvider) -> bool:
+def _is_allowed_provider(provider: AiProvider, host_name: str) -> bool:
     try:
         parsed = urlsplit(provider.api_base)
         host = (parsed.hostname or "").rstrip(".").lower()
@@ -77,7 +79,7 @@ def _is_teamrouter_provider(provider: AiProvider) -> bool:
         return False
     return (
         parsed.scheme.lower() == "https"
-        and host == TEAMROUTER_HOST
+        and host == host_name
         and port == 443
         and parsed.username is None
         and parsed.password is None
@@ -112,7 +114,7 @@ def _matches_option(
         and bool(preset.is_enabled)
         and preset.deleted_at is None
         and style_matches
-        and _is_teamrouter_provider(provider)
+        and _is_allowed_provider(provider, option.provider_host)
     )
 
 

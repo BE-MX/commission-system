@@ -3,6 +3,7 @@ const SAFE_BUSINESS_ERROR_CODES = new Set([
   'multi_output_limit',
   'daily_limit_exceeded',
   'attachment_unavailable',
+  'model_reference_limit',
 ])
 const JOB_STATUS_RANK = {
   queued: 0,

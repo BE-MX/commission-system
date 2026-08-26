@@ -20,6 +20,7 @@ import {
   restoreActiveJob,
   restoreActiveJobs,
   selectBaseAsset,
+  safeBusinessErrorMessage,
   selectSessionActiveJob,
   upsertAttachment,
 } from '../src/views/design/image-studio/state.js'
@@ -83,11 +84,11 @@ test('upload guard rejects duplicate uploads and send races', () => {
 test('image model selection keeps an available choice and falls back safely', () => {
   const models = [
     { id: 'gpt-image-2', available: true },
-    { id: 'grok-image-2', available: false },
+    { id: 'grok-imagine-image-2.0', available: false },
     { id: 'gemini-3-pro-image', available: true },
   ]
   assert.equal(resolveImageModelSelection(models, 'gemini-3-pro-image', 'gpt-image-2'), 'gemini-3-pro-image')
-  assert.equal(resolveImageModelSelection(models, 'grok-image-2', 'gpt-image-2'), 'gpt-image-2')
+  assert.equal(resolveImageModelSelection(models, 'grok-imagine-image-2.0', 'gpt-image-2'), 'gpt-image-2')
   assert.equal(resolveImageModelSelection(models, '', 'missing'), 'gpt-image-2')
   assert.equal(resolveImageModelSelection([], 'gpt-image-2', 'gpt-image-2'), '')
 })
@@ -549,4 +550,12 @@ test('polling and object URL composables expose snapshot guards and centralized 
   )
   assert.match(studio, /advanceJob\(jobSnapshots\.get\(job\.id\),\s*job\)/)
   assert.match(studio, /currentSession\.value\s*=\s*null[\s\S]*messages\.value\s*=\s*\[\][\s\S]*assets\.value\s*=\s*\[\][\s\S]*jobs\.value\s*=\s*\[\]/)
+})
+
+
+test('model reference limit displays actionable server feedback', () => {
+  const message = 'Grok Image 2 最多支持 3 张输入图片（含基准图），请移除多余参考图后重试。'
+  assert.equal(safeBusinessErrorMessage({ response: { data: { detail: {
+    code: 'model_reference_limit', message, meta: { max_input_images: 3 },
+  } } } }), message)
 })

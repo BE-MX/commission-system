@@ -1001,6 +1001,12 @@ def create_turn(
             )
             for asset_id in payload.reference_asset_ids
         ]
+        if payload.model == "grok-imagine-image-2.0" and len(references) + (base is not None) > 3:
+            raise DesignImageValidationError(
+                "Grok Image 2 最多支持 3 张输入图片（含基准图），请移除多余参考图后重试。",
+                code="model_reference_limit",
+                public_meta={"max_input_images": 3},
+            )
         message = DesignImageMessage(
             session_id=session.id,
             role="user",

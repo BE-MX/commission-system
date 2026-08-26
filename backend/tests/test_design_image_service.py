@@ -66,8 +66,17 @@ def _additional_model_preset(
     preset_name: str,
     model: str,
     parameters: dict | None = None,
+    api_base: str = "https://api.teamorouter.cn",
 ) -> AiPreset:
-    provider = db.query(AiProvider).filter_by(api_base="https://api.teamorouter.cn").one()
+    provider = db.query(AiProvider).filter_by(api_base=api_base).one_or_none()
+    if provider is None:
+        provider = AiProvider(
+            name="Additional image provider", provider_type="direct",
+            api_base=api_base, api_type="openai", api_key="encrypted",
+            is_enabled=True, timeout_sec=30,
+        )
+        db.add(provider)
+        db.flush()
     preset = AiPreset(
         preset_name=preset_name,
         provider_id=provider.id,
@@ -175,7 +184,7 @@ def _turn(**overrides) -> TurnCreate:
 
 
 def test_turn_schema_allows_catalog_model_and_forbids_controlled_preset_provider_and_bad_choices():
-    assert _turn(model="grok-image-2").model == "grok-image-2"
+    assert _turn(model="grok-imagine-image-2.0").model == "grok-imagine-image-2.0"
     for field in ("mode", "preset", "provider"):
         with pytest.raises(PydanticValidationError):
             _turn(**{field: "client-controlled"})
@@ -191,22 +200,23 @@ def test_turn_schema_allows_catalog_model_and_forbids_controlled_preset_provider
         _turn(base_asset_id=1, reference_asset_ids=[1])
 
 
-def test_turn_and_retry_snapshot_the_selected_teamrouter_model(configured, db):
+def test_turn_and_retry_snapshot_the_selected_openlux_model(configured, db):
     owner, _ = configured
     preset = _additional_model_preset(
         db,
         preset_name="design_image_generation_grok_image_2",
-        model="grok-image-2",
+        model="grok-imagine-image-2.0",
+        api_base="https://api.openlux.ai/v1",
     )
     db.commit()
 
     result = service.create_turn(
         db,
         owner.id,
-        _turn(request_id="grok-turn", model="grok-image-2"),
+        _turn(request_id="grok-turn", model="grok-imagine-image-2.0"),
     )
     job = result.jobs[0]
-    assert job.model == "grok-image-2"
+    assert job.model == "grok-imagine-image-2.0"
     assert job.preset_name == preset.preset_name
 
     job.status = "failed"
@@ -217,7 +227,7 @@ def test_turn_and_retry_snapshot_the_selected_teamrouter_model(configured, db):
         job.id,
         RetryJobRequest(request_id="grok-retry"),
     )
-    assert retried.jobs[0].model == "grok-image-2"
+    assert retried.jobs[0].model == "grok-imagine-image-2.0"
     assert retried.jobs[0].preset_name == preset.preset_name
 
 
@@ -1347,7 +1357,7 @@ def test_config_reports_verified_choices_limit_and_remaining(configured, db, mon
     assert config == {
         "models": [
             {"id": "gpt-image-2", "label": "GPT Image 2", "available": True},
-            {"id": "grok-image-2", "label": "Grok Image 2", "available": False},
+            {"id": "grok-imagine-image-2.0", "label": "Grok Image 2", "available": False},
             {"id": "gemini-3-pro-image", "label": "Nano Banana Pro", "available": False},
             {"id": "gemini-3.1-flash-image", "label": "Nano Banana 2", "available": False},
         ],
@@ -1496,3 +1506,39 @@ def test_usage_end_to_end_duration_includes_completed_job_without_ai_log(configu
 
     assert usage["end_to_end_duration_ms"] == {"p50": 5000, "p95": 5000}
     assert usage["provider_duration_ms"] == {"p50": None, "p95": None}
+
+
+@pytest.mark.parametrize("has_base,reference_count", [(False, 4), (True, 3)])
+@pytest.mark.parametrize("prompt", ["改成蓝色", "请生成三个角度的人像图"])
+def test_grok_rejects_more_than_three_inputs_before_queueing(configured, db, has_base, reference_count, prompt):
+    owner, _ = configured
+    _additional_model_preset(db, preset_name="design_image_generation_grok_image_2",
+                             model="grok-imagine-image-2.0", api_base="https://api.openlux.ai/v1")
+    session = _session(db, owner.id)
+    refs = [_asset(db, owner.id, session.id) for _ in range(reference_count)]
+    base = _asset(db, owner.id, session.id) if has_base else None
+    db.commit()
+    with pytest.raises(service.DesignImageValidationError, match="3") as caught:
+        service.create_turn(db, owner.id, _turn(
+            model="grok-imagine-image-2.0", session_id=session.id, prompt=prompt,
+            reference_asset_ids=[row.id for row in refs], base_asset_id=base.id if base else None,
+        ))
+    assert caught.value.code == "model_reference_limit"
+    assert db.query(DesignImageJob).count() == 0
+    assert db.query(DesignImageMessage).count() == 0
+
+
+def test_grok_accepts_base_plus_two_references(configured, db):
+    owner, _ = configured
+    _additional_model_preset(db, preset_name="design_image_generation_grok_image_2",
+                             model="grok-imagine-image-2.0", api_base="https://api.openlux.ai/v1")
+    session = _session(db, owner.id)
+    base = _asset(db, owner.id, session.id)
+    refs = [_asset(db, owner.id, session.id) for _ in range(2)]
+    db.commit()
+    result = service.create_turn(db, owner.id, _turn(
+        model="grok-imagine-image-2.0", session_id=session.id,
+        reference_asset_ids=[row.id for row in refs], base_asset_id=base.id,
+    ))
+    assert result.jobs[0].model == "grok-imagine-image-2.0"
+    assert result.jobs[0].base_asset_id == base.id

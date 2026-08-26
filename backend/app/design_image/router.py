@@ -67,6 +67,7 @@ def _call(function: Callable[..., T], *args, **kwargs) -> T:
         if exc.code in {
             "multi_output_limit",
             "attachment_unavailable",
+            "model_reference_limit",
         }:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,
