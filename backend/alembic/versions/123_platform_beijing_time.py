@@ -138,17 +138,34 @@ def _row_key(alias: str, columns: tuple[str, ...]) -> str:
 
 
 def _binary_key_match(left: str, right: str) -> str:
-    """Compare backup keys independently of source/table collations."""
-    return f"CAST({left} AS BINARY) = CAST({right} AS BINARY)"
+    """Compare an indexed VARBINARY backup key with a generated text key."""
+    return f"{left} = CAST({right} AS BINARY)"
 
 
 def _create_backup_table() -> None:
-    if not op.get_context().as_sql and sa.inspect(op.get_bind()).has_table(BACKUP_TABLE):
-        return
+    if not op.get_context().as_sql:
+        inspector = sa.inspect(op.get_bind())
+        if inspector.has_table(BACKUP_TABLE):
+            row_key = next(
+                column for column in inspector.get_columns(BACKUP_TABLE)
+                if column["name"] == "row_key"
+            )
+            if not isinstance(row_key["type"], sa.VARBINARY):
+                # Early 123 attempts created row_key as VARCHAR. Normalize the
+                # resumable backup table so mixed source collations cannot fail,
+                # while keeping the primary-key lookup index usable.
+                op.alter_column(
+                    BACKUP_TABLE,
+                    "row_key",
+                    existing_type=row_key["type"],
+                    type_=sa.VARBINARY(255),
+                    existing_nullable=False,
+                )
+            return
     op.create_table(
         BACKUP_TABLE,
         sa.Column("table_name", sa.String(64), nullable=False),
-        sa.Column("row_key", sa.String(255), nullable=False),
+        sa.Column("row_key", sa.VARBINARY(255), nullable=False),
         sa.Column("column_name", sa.String(64), nullable=False),
         sa.Column("original_value", sa.DateTime(), nullable=False),
         sa.Column("rollback_value", sa.DateTime(), nullable=True),

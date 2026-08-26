@@ -164,12 +164,40 @@ def test_migration_backup_keys_ignore_mixed_mysql_collations():
     condition = migration._binary_key_match("backup.`row_key`", source_key)
 
     assert condition == (
-        "CAST(backup.`row_key` AS BINARY) = "
+        "backup.`row_key` = "
         "CAST(CONCAT_WS(':', CAST(source.`id` AS CHAR)) AS BINARY)"
     )
     source = Path(migration.__file__).read_text(encoding="utf-8")
     assert "backup.`row_key` = {key}" not in source
     assert "backup.`row_key` = {target_key}" not in source
+
+
+def test_migration_normalizes_partial_varchar_backup_table(monkeypatch):
+    migration = _load_migration()
+    existing_type = migration.sa.String(255)
+    altered = []
+
+    class Inspector:
+        @staticmethod
+        def has_table(table):
+            return table == migration.BACKUP_TABLE
+
+        @staticmethod
+        def get_columns(table):
+            assert table == migration.BACKUP_TABLE
+            return [{"name": "row_key", "type": existing_type, "nullable": False}]
+
+    monkeypatch.setattr(migration.op, "get_context", lambda: type("Ctx", (), {"as_sql": False})())
+    monkeypatch.setattr(migration.op, "get_bind", lambda: object())
+    monkeypatch.setattr(migration.sa, "inspect", lambda _bind: Inspector())
+    monkeypatch.setattr(migration.op, "alter_column", lambda *args, **kwargs: altered.append((args, kwargs)))
+
+    migration._create_backup_table()
+
+    assert altered[0][0] == (migration.BACKUP_TABLE, "row_key")
+    assert isinstance(altered[0][1]["type_"], migration.sa.VARBINARY)
+    assert altered[0][1]["existing_type"] is existing_type
+    assert altered[0][1]["existing_nullable"] is False
 
 
 def test_external_offset_times_are_converted_to_beijing_without_dropping_offset():
