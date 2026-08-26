@@ -1,6 +1,6 @@
 """业务库只读映射（跨库查询，不建表）"""
 
-from sqlalchemy import Column, String, Date, DECIMAL, Text
+from sqlalchemy import JSON, Column, String, Date, DECIMAL, Text
 from sqlalchemy.orm import DeclarativeBase
 
 from app.core.config import get_settings
@@ -35,6 +35,7 @@ class CustomerInfo(BusinessBase):
     origin_name = Column(String(128))
     archive_type = Column(String(64))
     trail_status_name = Column(String(64))
+    owner_user_ids = Column(JSON, comment="归属 OKKI 用户 ID 数组")
 
 
 class OkkiOrder(BusinessBase):

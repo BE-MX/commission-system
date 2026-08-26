@@ -848,7 +848,7 @@ frontend/src/
 
 ## 客户产品效果图门户（customer_image，2026-08-10）
 
-**客户与归属**：门户不复制客户主数据。客户搜索只读 OKKI `customer_info`，普通业务员通过 active `ArkUserExternalBinding(provider="okki")` 映射到 OKKI user ID，再按当前 `customer_commission_snapshot` 归属过滤；管理员可搜索全量。邀请一旦创建就冻结客户展示信息，后续 OKKI 改名不会改写历史。
+**客户与归属**：门户不复制客户主数据。客户搜索只读 OKKI `customer_info`，普通业务员通过 active `ArkUserExternalBinding(provider="okki")` 映射到 OKKI user ID，再按 `customer_info.owner_user_ids` 的实时私海归属过滤；管理员可搜索全量，但客户无实时负责人时不能创建邀请。邀请一旦创建就冻结客户展示信息和当时负责人：业务员自己创建时记自身 OKKI ID，管理员代建时记客户的首位 OKKI 负责人。后续 OKKI 改名或转移归属不会改写历史。
 
 ### 订单经营智能分析（2026-08-12）
 
